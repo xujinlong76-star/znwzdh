@@ -14,6 +14,7 @@ import {
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
 import type { FullTextStore } from "./fts.ts";
+import { bindSqlite, toPgSql } from "./repository.ts";
 import type { VectorStore } from "./vector/types.ts";
 
 /**
@@ -43,14 +44,29 @@ export interface SearchEngineOptions {
   perChannel?: number;
 }
 
+/**
+ * 「启用中」的**值**写法（供 `enabled = <值>` 使用）。
+ * SQLite 里 enabled 是 INTEGER(0/1)，PostgreSQL 里是 BOOLEAN；
+ * 直接写 `enabled = 1` 在 PG 上会报 "operator does not exist: boolean = integer"。
+ */
+function enabledValue(dialect: "sqlite" | "pg"): string {
+  return dialect === "sqlite" ? "1" : "TRUE";
+}
+
+/**
+ * 原始行形态。
+ *
+ * 属性名一律**小写**：PostgreSQL 会把未加引号的别名折叠为小写，
+ * 因此统一用小写键可以同时适配两种方言（SQLite 保留原样，但我们的别名也是小写）。
+ */
 interface SiteRow {
   id: string;
   url: string;
   title: string;
   description: string | null;
-  categoryId: string;
-  pinyinFull: string;
-  pinyinInitials: string;
+  categoryid: string;
+  pinyinfull: string;
+  pinyininitials: string;
   status: string;
   tags: string | null;
 }
@@ -66,6 +82,11 @@ export class SearchEngine {
 
   get semanticAvailable(): boolean {
     return Boolean(this.deps.vectors && this.deps.embed);
+  }
+
+  /** 「启用中」的值：SQLite 用 1，PostgreSQL 用 TRUE */
+  private get enabled(): string {
+    return enabledValue(this.deps.db.dialect);
   }
 
   async search(q: SearchQuery): Promise<SearchResult> {
@@ -118,10 +139,10 @@ export class SearchEngine {
   private async channelExact(q: string, opt: SearchQuery): Promise<SearchCandidate[]> {
     const like = "%" + q.toLowerCase() + "%";
     const rows = await this.rawRows(
-      `SELECT id, url, title, description, category_id AS categoryId,
-              pinyin_full AS pinyinFull, pinyin_initials AS pinyinInitials, status, NULL AS tags
+      `SELECT id, url, title, description, category_id AS categoryid,
+              pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
          FROM sites
-        WHERE enabled = 1
+        WHERE enabled = ${this.enabled}
           AND (lower(title) LIKE ? OR lower(url) LIKE ? OR lower(coalesce(description,'')) LIKE ?
                OR pinyin_full LIKE ? OR pinyin_initials LIKE ?)
         ORDER BY weight DESC, sort ASC
@@ -139,8 +160,8 @@ export class SearchEngine {
       const hits = await this.deps.fts.search(q, this.perChannel);
       if (hits.length === 0) return [];
       const rows = await this.rawRows(
-        `SELECT id, url, title, description, category_id AS categoryId,
-                pinyin_full AS pinyinFull, pinyin_initials AS pinyinInitials, status, NULL AS tags
+        `SELECT id, url, title, description, category_id AS categoryid,
+                pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
            FROM sites WHERE id IN (${hits.map(() => "?").join(",")})`,
         hits.map((h) => h.siteId),
       );
@@ -161,10 +182,10 @@ export class SearchEngine {
     const { full, initials } = normalizeQueryPinyin(q);
     if (!full) return [];
     const rows = await this.rawRows(
-      `SELECT id, url, title, description, category_id AS categoryId,
-              pinyin_full AS pinyinFull, pinyin_initials AS pinyinInitials, status, NULL AS tags
+      `SELECT id, url, title, description, category_id AS categoryid,
+              pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
          FROM sites
-        WHERE enabled = 1 AND (pinyin_full LIKE ? OR pinyin_initials LIKE ?)
+        WHERE enabled = ${this.enabled} AND (pinyin_full LIKE ? OR pinyin_initials LIKE ?)
         ORDER BY
           CASE WHEN pinyin_initials = ? THEN 0
                WHEN pinyin_full = ? THEN 0
@@ -186,8 +207,8 @@ export class SearchEngine {
       const matches = await this.deps.vectors.search(vec, this.perChannel);
       if (matches.length === 0) return [];
       const rows = await this.rawRows(
-        `SELECT id, url, title, description, category_id AS categoryId,
-                pinyin_full AS pinyinFull, pinyin_initials AS pinyinInitials, status, NULL AS tags
+        `SELECT id, url, title, description, category_id AS categoryid,
+                pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
            FROM sites WHERE id IN (${matches.map(() => "?").join(",")})`,
         matches.map((m) => m.siteId),
       );
@@ -213,7 +234,7 @@ export class SearchEngine {
     }
     if (opt.categoryId) {
       const ids = await this.categoryWithDescendants(opt.categoryId);
-      out = out.filter((r) => ids.has(r.categoryId));
+      out = out.filter((r) => ids.has(r.categoryid));
     }
     if (opt.tag) {
       const ids = await this.siteIdsWithTag(opt.tag);
@@ -224,9 +245,9 @@ export class SearchEngine {
 
   private async browse(q: SearchQuery, limit: number): Promise<SearchHit[]> {
     const rows = await this.rawRows(
-      `SELECT id, url, title, description, category_id AS categoryId,
-              pinyin_full AS pinyinFull, pinyin_initials AS pinyinInitials, status, NULL AS tags
-         FROM sites WHERE enabled = 1 ORDER BY featured DESC, weight DESC, sort ASC LIMIT ?`,
+      `SELECT id, url, title, description, category_id AS categoryid,
+              pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
+         FROM sites WHERE enabled = ${this.enabled} ORDER BY featured DESC, weight DESC, sort ASC LIMIT ?`,
       [limit],
     );
     const filtered = await this.postFilter(rows, q);
@@ -237,26 +258,32 @@ export class SearchEngine {
     const map = new Map<string, PersonalizableSite>();
     if (ids.length === 0) return map;
     const rows = await this.rawRows(
-      `SELECT s.id, s.category_id AS categoryId,
+      `SELECT s.id, s.category_id AS categoryid,
               (SELECT group_concat(t.slug) FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id) AS tags
          FROM sites s WHERE s.id IN (${ids.map(() => "?").join(",")})`,
       ids,
     );
     for (const r of rows) {
-      map.set(r.id, { siteId: r.id, categoryId: r.categoryId, tags: r.tags ? r.tags.split(",") : [] });
+      map.set(r.id, { siteId: r.id, categoryId: r.categoryid, tags: r.tags ? r.tags.split(",") : [] });
     }
     return map;
   }
 
   /** 类目含后代（anchor 物化路径前缀） */
   private async categoryWithDescendants(categoryId: string): Promise<Set<string>> {
-    const rows = await this.rawRows(`SELECT anchor FROM categories WHERE id = ?`, [categoryId]);
-    // rawRows 返回 SiteRow（为复用统一的行读取路径），这里只取 anchor 字段
-    const anchor = (rows[0] as unknown as { anchor?: string } | undefined)?.anchor;
+    // rawRows 统一返回 SiteRow 形态（复用同一条行读取路径），因此这里需要显式取值
+    const rows = await this.rawRows(`SELECT anchor FROM categories WHERE id = ?`, [categoryId]) as unknown as Array<{ anchor?: string }>;
+    const anchor = rows[0]?.anchor;
     const ids = new Set<string>([categoryId]);
     if (!anchor) return ids;
-    const descendants = await this.rawRows(`SELECT id FROM categories WHERE anchor LIKE ?`, [anchor + "/%"]);
-    for (const d of descendants) ids.add(d.id);
+    // 必须显式取别名：rawRows 的返回值是按列名取值的，写 `SELECT id` 会得到 { id }，
+    // 而下面读的是 d.categoryid —— 之前正是漏了别名导致子类目 id 全是 undefined，
+    // 于是「父类目包含子类目」在子类目没有直属站点时返回空结果。
+    const descendants = await this.rawRows(
+      `SELECT id AS categoryid FROM categories WHERE anchor LIKE ?`,
+      [anchor + "/%"],
+    ) as unknown as Array<{ categoryid?: string }>;
+    for (const d of descendants) if (d.categoryid) ids.add(d.categoryid);
     return ids;
   }
 
@@ -276,15 +303,17 @@ export class SearchEngine {
   /** 方言无关的原始查询：sqlite 同步、pg 异步，这里统一成 Promise */
   private async rawRows(sqlText: string, params: unknown[]): Promise<SiteRow[]> {
     if (this.deps.db.dialect === "sqlite") {
-      const runner = this.deps.db.sqlite!;
-      // sqlite 参数不支持 boolean/undefined
-      const safe = params.map((p) => (typeof p === "boolean" ? (p ? 1 : 0) : p));
-      return runner.prepare(sqlText).all(...safe) as SiteRow[];
+      return this.deps.db.sqlite!.prepare(sqlText).all(...bindSqlite(params)) as SiteRow[];
     }
-    // pg 用 $1..$n 占位符
-    let i = 0;
-    const pgSql = sqlText.replace(/\?/g, () => "$" + ++i);
-    const res = await this.deps.db.pg!.query(pgSql, params);
-    return res.rows as SiteRow[];
+    // PostgreSQL 用 $1..$n 占位符，且布尔必须是 true/false（不能传 0/1）
+    const res = await this.deps.db.pg!.query(toPgSql(sqlText), params);
+    // 关键：PostgreSQL 会把**未加引号的别名**折叠成小写，
+    // 于是 `AS categoryid` 实际返回列名 `categoryid`，导致 r.categoryid 恒为 undefined。
+    // 这里统一把 PG 的列名小写化，读取侧一律用小写属性名。
+    return (res.rows as Record<string, unknown>[]).map((r) => {
+      const out: Record<string, unknown> = {};
+      for (const k of Object.keys(r)) out[k.toLowerCase()] = r[k];
+      return out as unknown as SiteRow;
+    });
   }
 }

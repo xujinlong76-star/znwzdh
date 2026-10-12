@@ -52,26 +52,41 @@ export class Repository {
   async listSites(filter: { categoryId?: string; status?: SiteStatus; limit?: number } = {}): Promise<Site[]> {
     const where: string[] = [];
     const params: unknown[] = [];
-    if (filter.categoryId) { where.push("category_id = ?"); params.push(filter.categoryId); }
-    if (filter.status) { where.push("status = ?"); params.push(filter.status); }
-    const sqlText =
-      "SELECT * FROM sites" +
+    if (filter.categoryId) { where.push("s.category_id = ?"); params.push(filter.categoryId); }
+    if (filter.status) { where.push("s.status = ?"); params.push(filter.status); }
+    const sqlText = this.selectSitesSql() +
       (where.length ? " WHERE " + where.join(" AND ") : "") +
-      " ORDER BY sort ASC, weight DESC" +
+      " GROUP BY s.id" +
+      " ORDER BY s.sort ASC, s.weight DESC" +
       (filter.limit ? " LIMIT ?" : "");
     if (filter.limit) params.push(filter.limit);
     const rows = await this.raw(sqlText, params);
     return rows.map(rowToSite);
   }
 
+  /**
+   * 站点查询的公共 SELECT。
+   *
+   * 必须带上标签聚合：最初 rowToSite 把 tags 硬编码成空数组，
+   * 结果站点创建后 tags 能写进 site_tags 表，却**永远读不回来**。
+   * 聚合函数在两种方言里名字不同（SQLite 用 group_concat，PG 用 string_agg），
+   * 这是少数必须分支的地方。
+   */
+  private selectSitesSql(): string {
+    const tagExpr = this.db.dialect === "sqlite"
+      ? "(SELECT group_concat(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id)"
+      : "(SELECT string_agg(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id)";
+    return "SELECT s.*, " + tagExpr + " AS tag_slugs FROM sites s";
+  }
+
   async getSite(idOrUrl: string): Promise<Site | null> {
-    const rows = await this.raw("SELECT * FROM sites WHERE id = ? OR url = ? LIMIT 1", [idOrUrl, idOrUrl]);
+    const rows = await this.raw(this.selectSitesSql() + " WHERE s.id = ? OR s.url = ? LIMIT 1", [idOrUrl, idOrUrl]);
     const row = rows[0];
     return row ? rowToSite(row) : null;
   }
 
   async findSiteByUrl(url: string): Promise<Site | null> {
-    const rows = await this.raw("SELECT * FROM sites WHERE url = ? LIMIT 1", [url]);
+    const rows = await this.raw(this.selectSitesSql() + " WHERE s.url = ? LIMIT 1", [url]);
     const row = rows[0];
     return row ? rowToSite(row) : null;
   }
@@ -288,32 +303,23 @@ export class Repository {
 
   private async raw(sqlText: string, params: unknown[]): Promise<Record<string, any>[]> {
     if (this.db.dialect === "sqlite") {
-      const safe = params.map((p) => {
-        if (typeof p === "boolean") return p ? 1 : 0;
-        if (p instanceof Float32Array) return Buffer.from(p.buffer, p.byteOffset, p.byteLength);
-        return p;
-      });
-      return this.db.sqlite!.prepare(sqlText).all(...safe) as Record<string, any>[];
+      return this.db.sqlite!.prepare(sqlText).all(...bindSqlite(params)) as Record<string, any>[];
     }
-    let i = 0;
-    const pgSql = sqlText.replace(/\?/g, () => "$" + ++i);
-    const res = await this.db.pg!.query(pgSql, params);
-    return res.rows as Record<string, any>[];
+    const res = await this.db.pg!.query(toPgSql(sqlText), params);
+    // PostgreSQL 折叠未加引号的别名为小写，这里统一归一化，读取侧用小写键
+    return (res.rows as Record<string, unknown>[]).map((r) => {
+      const out: Record<string, unknown> = {};
+      for (const k of Object.keys(r)) out[k.toLowerCase()] = r[k];
+      return out as Record<string, any>;
+    });
   }
 
   private async run(sqlText: string, params: unknown[]): Promise<void> {
     if (this.db.dialect === "sqlite") {
-      const safe = params.map((p) => {
-        if (typeof p === "boolean") return p ? 1 : 0;
-        if (p instanceof Float32Array) return Buffer.from(p.buffer, p.byteOffset, p.byteLength);
-        return p;
-      });
-      this.db.sqlite!.prepare(sqlText).run(...safe);
+      this.db.sqlite!.prepare(sqlText).run(...bindSqlite(params));
       return;
     }
-    let i = 0;
-    const pgSql = sqlText.replace(/\?/g, () => "$" + ++i);
-    await this.db.pg!.query(pgSql, params);
+    await this.db.pg!.query(toPgSql(sqlText), params);
   }
 }
 
@@ -347,7 +353,8 @@ function rowToSite(row: Record<string, any>): Site {
     screenshotKey: row.screenshot_key ?? null,
     categoryId: String(row.category_id),
     subCategoryId: row.sub_category_id ?? null,
-    tags: [],
+    // 标签由 selectSitesSql 聚合而来（group_concat / string_agg），按 slug 存储
+    tags: row.tag_slugs ? String(row.tag_slugs).split(",").filter(Boolean) : [],
     status: (row.status ?? "active") as SiteStatus,
     enabled: Boolean(row.enabled),
     sort: Number(row.sort ?? 0),
@@ -381,4 +388,29 @@ function rowToCategory(row: Record<string, any>): Category {
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
   };
+}
+/* ------------------------------------------------------------------ *
+ * 方言适配辅助
+ * ------------------------------------------------------------------ */
+
+/**
+ * SQLite 的参数绑定。
+ *
+ * 关键点：SQLite 没有真正的布尔类型，`enabled = ?` 必须传 0/1；
+ * 而 PostgreSQL 是强类型，`boolean = 0` 会直接报
+ * `operator does not exist: boolean = integer`。
+ * 因此布尔值必须**按方言**转换，不能统一转成 0/1。
+ */
+export function bindSqlite(params: unknown[]): unknown[] {
+  return params.map((p) => {
+    if (typeof p === "boolean") return p ? 1 : 0;
+    if (p instanceof Float32Array) return Buffer.from(p.buffer, p.byteOffset, p.byteLength);
+    return p;
+  });
+}
+
+/** 把 `?` 占位符转成 PostgreSQL 的 `$1..$n` */
+export function toPgSql(sqlText: string): string {
+  let i = 0;
+  return sqlText.replace(/\?/g, () => "$" + ++i);
 }

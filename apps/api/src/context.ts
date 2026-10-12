@@ -91,6 +91,17 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       const { MemoryVectorStore } = await import("@navhub/store");
       vectors = new MemoryVectorStore(config.embedding.dim);
     }
+    // standard 模式的全文通道：PostgreSQL tsvector（语料仍用 navhub 的 CJK 二元分词）
+    try {
+      const { PgFtsStore } = await import("@navhub/store");
+      const store = new PgFtsStore(db.pg as never);
+      await store.init();
+      fts = store;
+      notes.push("PostgreSQL tsvector 全文索引就绪（CJK 二元分词 + GIN 表达式索引）");
+    } catch (err) {
+      notes.push("PostgreSQL 全文索引不可用：" + msg(err));
+      fts = null;
+    }
   }
 
   // ---- 本地 embedding（惰性加载，不阻塞启动） ----

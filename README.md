@@ -72,9 +72,28 @@ pnpm --filter @navhub/api start      # http://localhost:8787
 ### Docker
 
 ```bash
-docker compose up -d                              # lite
-docker compose --profile standard up -d            # PostgreSQL + pgvector
-NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d   # 额外开 MCP HTTP
+docker compose up -d                                     # lite：仅中枢
+docker compose --profile web up -d                       # 追加 Web 前端
+docker compose --profile standard up -d                  # PostgreSQL + pgvector
+NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d  # 追加 MCP HTTP
+```
+
+**如果 Docker Hub 不可达**（部分地区网络会 EOF），配置镜像源：
+
+```json
+// ~/.docker/daemon.json
+{ "registry-mirrors": ["https://docker.m.daocloud.io", "https://docker.1ms.run"] }
+```
+
+或直接用镜像前缀拉取：`docker pull docker.m.daocloud.io/pgvector/pgvector:pg17`
+
+### standard 模式验证
+
+需要真实 PostgreSQL 的分档验证（**17/17 通过**，详见 [验收报告](docs/acceptance-report.md)）：
+
+```bash
+docker compose --profile standard up -d postgres
+node --experimental-strip-types scripts/pg-check.mts
 ```
 
 ---

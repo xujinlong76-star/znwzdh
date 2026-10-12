@@ -66,6 +66,10 @@ services:
     container_name: navhub-postgres
     profiles: ["standard"]
     restart: unless-stopped
+    ports:
+      # 暴露给宿主机，便于本地开发时把中枢指到容器里的数据库
+      # （api-standard 容器之间走 compose 网络，不依赖这个映射）
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: navhub
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-navhub}
@@ -118,7 +122,10 @@ services:
     environment:
       NAVHUB_MCP_HTTP_HOST: 0.0.0.0
       NAVHUB_MCP_HTTP_PORT: "8790"
-      NAVHUB_MCP_TOKEN: ${NAVHUB_MCP_TOKEN:?mcp profile requires NAVHUB_MCP_TOKEN}
+      # 注意：这里刻意不用 ":?" 强制校验。Compose 会**在解析期**校验所有 profile 的变量，
+      # 用 ":?" 会导致仅想启动 postgres 的命令也直接失败。
+      # 真正的强制校验放在 mcp/src/http.ts 启动逻辑里（未设 token 时拒绝启动并退出码 2）。
+      NAVHUB_MCP_TOKEN: ${NAVHUB_MCP_TOKEN:-}
       NAVHUB_MCP_SCOPES: ${NAVHUB_MCP_SCOPES:-read,write}
       NAVHUB_SQLITE_PATH: /data/navhub.db
       NAVHUB_EMBEDDING_CACHE: /data/models

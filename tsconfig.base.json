@@ -12,13 +12,16 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    // 全仓统一使用显式 .ts 后缀导入（Node 22 的 --experimental-strip-types 直接运行源码所需）
+    // 全仓统一用显式 .ts 后缀导入（Node 的 --experimental-strip-types 直接跑源码所需）
     "allowImportingTsExtensions": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
     "forceConsistentCasingInFileNames": true,
-    // 原生依赖（sqlite-vec）没有类型声明，自定义 ambient 声明放在仓库根的 types/
+    // 原生依赖（sqlite-vec）没有类型声明，自定义 ambient 声明放在仓库根 types/
     "typeRoots": ["./types", "./node_modules/@types"]
-  }
+  },
+  // scripts/ 下是本地验证脚手架（pg-check 等），会连真实数据库、依赖运行时环境变量，
+  // 不适合纳入严格类型检查
+  "exclude": ["node_modules", "dist", ".next", "data", "scripts"]
 }

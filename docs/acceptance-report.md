@@ -175,11 +175,77 @@ tools count: 9
 （自然语言查询会召回语义相近的站点），并不是该站点被写入了。
 判定「是否落库」必须按 URL 或总数核对，这也是这次验收里修正过的一个误读。
 
+## standard 模式验收（PostgreSQL 17 + pgvector，实机）
+
+此前这是唯一未验证的架构假设。本次通过 Docker 起了真实 `pgvector/pgvector:pg17`，**17/17 通过**。
+
+```
+capabilities: ["pgvector (HNSW) 就绪",
+               "PostgreSQL tsvector 全文索引就绪（CJK 二元分词 + GIN 表达式索引）",
+               "embedding 已被配置关闭，语义通道不可用"]
+
+  PASS  pgvector (HNSW) 就绪
+  PASS  类目物化路径  anchor=pg-cat/pg-sub
+  PASS  创建站点
+  PASS  中文标签可写回  tags=["天气","生活"]
+  PASS  按 URL 读回且标签不为空  tags=["天气","生活"]
+  PASS  更新站点
+  PASS  tsvector 命中中文子串『天气』  hits=1
+  PASS  tsvector 命中『天气预报』
+  PASS  检索引擎『天气』命中  channels=["exact","fts"]
+  PASS  拼音首字母 zgtqw 命中中国天气网
+  PASS  浏览模式可用  hits=1
+  PASS  父类目过滤包含子类目  hits=2
+  PASS  中文标签过滤命中  hits=1
+  PASS  重复 URL 可被检测
+  PASS  删除后读不到
+  PASS  统计返回真实计数  {"sites":1,"categories":2,"tags":2,"broken":0,"disputed":0}
+  PASS  审计与事件落库
+
+STANDARD MODE: 17/17 passed
+```
+
+环境：Docker 29.4.3 + `pgvector/pgvector:pg17`（pgvector 0.8.7）。
+
+### 这一步又抓出 4 个只在 PostgreSQL 上暴露的真实缺陷
+
+这些问题在 SQLite 上**全部正常**，只有在真实 PG 上才会失败 —— 也正是"必须实机验证"的原因：
+
+1. **`boolean = integer` 类型错误**：
+   SQLite 没有布尔类型，代码里把 `true/false` 统一绑成 `0/1`；
+   PG 是强类型，`enabled = 1` 直接报 `operator does not exist: boolean = integer`。
+   已改为**按方言**绑定（`bindSqlite` / `toPgSql`），并让 `enabled = ?` 谓词按方言取 `1` 或 `TRUE`。
+
+2. **PostgreSQL 折叠未加引号的别名为小写**（最隐蔽的一个）：
+   `SELECT category_id AS categoryId` 在 PG 上返回的列名是 **`categoryid`**，
+   而读取侧写的是 `r.categoryId`，于是恒为 `undefined`。
+   后果是「父类目过滤包含子类目」在子类目没有直属站点时静默返回空结果。
+   已在 `rawRows` 与仓储层统一做**行键小写归一化**，并加测试锁住该约定。
+
+3. **子类目 id 取了不存在的字段名**：
+   `SELECT id FROM categories ...` 返回 `{ id }`，但代码读的是 `d.categoryId`，
+   导致子类目 id 全是 `undefined`。已补别名（这个问题在 SQLite 上被"父类目恰好有直属站点"掩盖了）。
+
+4. **标签永远读不回来**：
+   `rowToSite` 把 `tags` 硬编码为 `[]`，标签能写进 `site_tags` 表却读不回来。
+   已补上按方言的聚合查询（SQLite `group_concat` / PG `string_agg`）。
+
+### 顺带发现的环境问题
+
+- Docker Hub 在本机不可达（`registry-1.docker.io` EOF）。
+  可用镜像源：`docker.m.daocloud.io`、`docker.1ms.run`、`dockerproxy.net`。
+  已在本地 `~/.docker/daemon.json` 配置，并用镜像前缀拉取了 pgvector 镜像。
+- `docker-compose.yml` 里 `mcp` profile 曾用 `${NAVHUB_MCP_TOKEN:?}` 强制校验；
+  Compose 会**在解析期**校验所有 profile 的变量，导致仅想启动 postgres 的命令也直接失败。
+  已改为可缺省，强制校验留在 `mcp/src/http.ts` 的启动逻辑里。
+- `postgres` 服务原先没有端口映射，宿主机无法直连；已补 `POSTGRES_PORT`（默认 5432）。
+
+
 ## 已知未完成项
 
-- `standard`（PostgreSQL + pgvector）模式的**代码已实现但未在本机运行验证** ——
-  本机 Docker 守护进程未启动（Docker Desktop 已安装，需要管理员权限启动）。
-  已实现 `PgVectorStore`，且与 `SqliteVecStore` 共享同一套测试接口。
+- `standard` 模式：**已完成实机验证（17/17）**，见上节。
+  `PgVectorStore` 与 `SqliteVecStore` 共享同一套接口，但**尚无自动化跨方言一致性测试**
+  （`scripts/pg-check.mts` 是手工验证脚本，需要真实 PostgreSQL 才跑）。
 - `apps/web` 的 `StorageAdapter` 已写好并可通过 `STORAGE_ADAPTER=http` 接入，
   但尚未把 NavSphere 的 `getFileContent`/`commitFile` 替换为适配器调用（改动面为 2 个函数）。
 - 健康巡检、对话式侧边栏、PWA、主题系统尚未实现。

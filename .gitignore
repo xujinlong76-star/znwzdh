@@ -17,3 +17,18 @@ coverage/
 .turbo/
 .DS_Store
 Thumbs.db
+
+# --- vendored 上游底座（apps/web）---
+# apps/web 是 NavSphere 的完整副本，通过 `node scripts/vendor-web.mjs` 拉取，
+# 不纳入版本管理：这样本仓库只保留 NavHub 自己的改动，也便于跟进上游更新。
+apps/web/*
+# 我们对上游的改动必须跟踪（上面规则之后用否定规则放行）
+!apps/web/src/
+apps/web/src/*
+!apps/web/src/lib/
+apps/web/src/lib/*
+!apps/web/src/lib/github.ts
+!apps/web/src/lib/storage-adapter.ts
+!apps/web/next.config.js
+!apps/web/package.json
+!apps/web/UPSTREAM.md

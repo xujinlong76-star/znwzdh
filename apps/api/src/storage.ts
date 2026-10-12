@@ -19,6 +19,7 @@ export const NAVIGATION_PATH = "src/navsphere/content/navigation.json";
 export const SITE_PATH = "src/navsphere/content/site.json";
 export const RESOURCE_PATH = "src/navsphere/content/resource-metadata.json";
 export const DEFAULT_NAVIGATION_PATH = "src/navsphere/content/navigation-default.json";
+export const VIDEOS_PATH = "src/navsphere/content/videos.json";
 
 /** NavSphere 的站点项结构（= NavHub 的 site，但字段名要映射） */
 interface NsItem {
@@ -110,8 +111,24 @@ export async function buildNavigationData(ctx: AppContext): Promise<NsNavigation
 }
 
 /**
+ * 「前端快照托管」的 source 集合——只有这些来源的记录会被全量对齐删除。
+ *   null / navsphere：NavSphere 前端自己创建/编辑的（默认托管）
+ *   seed：一次性导入的初始内容（管理员在后台里照常管理，可删）
+ * 其余来源（manual / api / mcp / mcp-batch / ai / submission / import）
+ * 是经其它通道创建的，即使不在快照里也必须保留——否则用 MCP 加一个站点、
+ * 前端后台再保存一次导航，那个站点就被静默删除了（D1：真实的数据丢失）。
+ */
+const SNAPSHOT_MANAGED_SOURCES = new Set<string | null>([null, "navsphere", "seed"]);
+
+function isSnapshotManaged(source: string | null | undefined): boolean {
+  return SNAPSHOT_MANAGED_SOURCES.has(source ?? null);
+}
+
+/**
  * 把 NavSphere 提交上来的 navigation.json 整体写回数据库。
  * 采用「全量对齐」而非逐条 diff：前台提交的就是完整快照，语义更明确、也更不容易漏。
+ *
+ * 全量对齐的删除语义有**来源过滤**（D1 缺陷的修复），见 isSnapshotManaged。
  */
 export async function writeNavigationData(ctx: AppContext, data: NsNavigationData): Promise<{ categories: number; sites: number }> {
   const input = Array.isArray(data?.navigationItems) ? data.navigationItems : [];
@@ -138,7 +155,7 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
     } else {
       await ctx.repo.createCategory({
         id: top.id, title: top.title, icon: top.icon ?? null,
-        description: top.description ?? null, sort: catSort,
+        description: top.description ?? null, sort: catSort, source: "navsphere",
       });
     }
     categoryCount++;
@@ -162,7 +179,7 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
       } else {
         await ctx.repo.createCategory({
           id: sub.id, title: sub.title, icon: sub.icon ?? null,
-          description: sub.description ?? null, parentId: top.id, sort: catSort,
+          description: sub.description ?? null, parentId: top.id, sort: catSort, source: "navsphere",
         });
       }
       categoryCount++;
@@ -177,13 +194,22 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
     }
   }
 
-  // 快照语义：本次未出现的站点/类目视为被删除。
+  // 快照语义：本次未出现的「前端托管」站点/类目视为被删除。
   // 这是"全量对齐"必须付的代价，也是它比 diff 更可靠的原因。
-  for (const s of existingSites) {
-    if (!seenSiteIds.has(s.id)) await ctx.repo.deleteSite(s.id);
+  // 但删除范围被 source 严格限界（D1 缺陷修复）：经 API/MCP/AI/投稿创建的
+  // 记录即使不在快照里也保留——否则用 MCP 加一个站点、前端后台再保存一次
+  // 导航，那个站点就被静默删除了（真实的数据丢失）。
+  const removedSiteIds = existingSites
+    .filter((s) => isSnapshotManaged(s.source) && !seenSiteIds.has(s.id))
+    .map((s) => s.id);
+  for (const id of removedSiteIds) {
+    await ctx.repo.deleteSite(id);
+  }
+  if (removedSiteIds.length > 0) {
+    await ctx.vectors.remove(removedSiteIds).catch(() => undefined);
   }
   for (const c of existingCats) {
-    if (!seenCategoryIds.has(c.id)) await ctx.repo.deleteCategory(c.id);
+    if (isSnapshotManaged(c.source) && !seenCategoryIds.has(c.id)) await ctx.repo.deleteCategory(c.id);
   }
 
   return { categories: categoryCount, sites: siteCount };
@@ -260,9 +286,24 @@ export async function writeResourceMetadata(ctx: AppContext, data: unknown): Pro
   await writeKv(ctx, "resource-metadata", data);
 }
 
+/** videos.json：视频导航数据 */
+export async function readVideosData(ctx: AppContext): Promise<unknown> {
+  return (await readKv(ctx, "videos")) ?? { navigationItems: [] };
+}
+
+export async function writeVideosData(ctx: AppContext, data: unknown): Promise<void> {
+  await writeKv(ctx, "videos", data);
+}
+
 /* --------------------------- 键值读写（复用 jobs 表） --------------------------- */
 
-async function readKv(ctx: AppContext, key: string): Promise<unknown> {
+/**
+ * 读取键值。
+ *
+ * 注意：返回 null 表示「从未写入过」，与「写入过空对象」是不同语义 ——
+ * 调用方需要据此决定是否返回默认值。
+ */
+export async function readKv(ctx: AppContext, key: string): Promise<unknown> {
   const db = ctx.db;
   if (db.dialect === "sqlite") {
     const row = db.sqlite!.prepare("SELECT payload FROM jobs WHERE id = ?").get("kv:" + key) as { payload: string } | undefined;
@@ -291,18 +332,37 @@ async function writeKv(ctx: AppContext, key: string, value: unknown): Promise<vo
   );
 }
 
+/** 内容文件的 basename（用于类型分发） */
+function basename(path: string): string {
+  return path.split("/").pop() ?? path;
+}
+
+/**
+ * 把任意内容路径归一化成键值存储的 key。
+ *
+ * 存在的意义：NavSphere 的内容文件不止导航/站点/资源/视频这几个，
+ * 而"哪些文件值得结构化建模"会随业务演进变化。与其每次新增文件都改一遍后端，
+ * 不如给未知文件一个**通用 JSON 文档**通路 —— 后端因此不会被上游的文件清单卡住。
+ */
+export function pathToKey(path: string): string {
+  return "doc:" + path.replace(/^\/+/, "");
+}
+
 /** 分发：把 NavSphere 的 path 映射到上面的处理函数 */
 export async function readStoragePath(ctx: AppContext, path: string): Promise<unknown> {
-  if (path.includes("navigation-default.json")) return buildNavigationData(ctx);
-  if (path.includes("navigation.json")) return buildNavigationData(ctx);
-  if (path.includes("site.json")) return readSiteConfig(ctx);
-  if (path.includes("resource-metadata.json")) return readResourceMetadata(ctx);
-  return {};
+  const name = basename(path);
+  // navigation-default.json 是"默认模板"，当前实现下与导航数据同源
+  if (name === "navigation-default.json" || name === "navigation.json") return buildNavigationData(ctx);
+  if (name === "site.json") return readSiteConfig(ctx);
+  if (name === "resource-metadata.json") return readResourceMetadata(ctx);
+  if (name === "videos.json") return readVideosData(ctx);
+  // 其余内容文件走通用 JSON 文档；从未写入过时返回空对象（而非报错）
+  return (await readKv(ctx, pathToKey(path))) ?? {};
 }
 
 export async function writeStoragePath(ctx: AppContext, path: string, content: string): Promise<{ ok: true; note: string }> {
   const parsed = content.trim() ? JSON.parse(content) : {};
-  if (path.includes("navigation.json")) {
+  if (basename(path) === "navigation.json") {
     const r = await writeNavigationData(ctx, parsed as NsNavigationData);
     return { ok: true, note: "已写入 " + r.categories + " 个类目 / " + r.sites + " 个站点" };
   }
@@ -313,6 +373,10 @@ export async function writeStoragePath(ctx: AppContext, path: string, content: s
   if (path.includes("resource-metadata.json")) {
     await writeResourceMetadata(ctx, parsed);
     return { ok: true, note: "资源元数据已更新" };
+  }
+  if (basename(path) === "videos.json") {
+    await writeVideosData(ctx, parsed);
+    return { ok: true, note: "视频导航数据已更新" };
   }
   return { ok: true, note: "路径未被处理（已忽略）" };
 }

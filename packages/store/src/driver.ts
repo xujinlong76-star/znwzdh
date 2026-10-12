@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { migrateColumns } from "./migrate.ts";
 
 /**
  * 数据库驱动抽象。
@@ -52,6 +53,7 @@ CREATE TABLE IF NOT EXISTS categories (
   icon TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
   sort INTEGER NOT NULL DEFAULT 0,
+  source TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -84,6 +86,9 @@ CREATE TABLE IF NOT EXISTS sites (
   redirect_to TEXT,
   health_error TEXT,
   last_checked_at INTEGER,
+  visit_count INTEGER NOT NULL DEFAULT 0,
+  last_visited_at INTEGER,
+  trend_score REAL NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -118,7 +123,8 @@ CREATE INDEX IF NOT EXISTS collection_items_col_idx ON collection_items(collecti
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, username TEXT NOT NULL, password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'admin', created_at INTEGER NOT NULL
+  role TEXT NOT NULL DEFAULT 'admin', email TEXT, avatar TEXT,
+  source TEXT NOT NULL DEFAULT 'local', created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users(username);
 
@@ -167,6 +173,47 @@ CREATE TABLE IF NOT EXISTS embeddings (
   site_id TEXT PRIMARY KEY, model TEXT NOT NULL, dim INTEGER NOT NULL,
   vector BLOB, updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS favorites (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  site_id TEXT NOT NULL,
+  folder_id TEXT,
+  note TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS favorites_user_site_idx ON favorites(user_id, site_id);
+CREATE INDEX IF NOT EXISTS favorites_user_idx ON favorites(user_id);
+
+CREATE TABLE IF NOT EXISTS favorite_folders (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS favorite_folders_user_idx ON favorite_folders(user_id);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+  user_id TEXT PRIMARY KEY,
+  top_categories TEXT NOT NULL DEFAULT '[]',
+  top_tags TEXT NOT NULL DEFAULT '[]',
+  visited_site_ids TEXT NOT NULL DEFAULT '[]',
+  favorite_site_ids TEXT NOT NULL DEFAULT '[]',
+  search_count INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS search_history (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  query TEXT NOT NULL,
+  result_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history(user_id);
+CREATE INDEX IF NOT EXISTS search_history_created_idx ON search_history(created_at);
 `;
 
 const DDL_PG = `
@@ -180,6 +227,7 @@ CREATE TABLE IF NOT EXISTS categories (
   icon TEXT,
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   sort INTEGER NOT NULL DEFAULT 0,
+  source TEXT,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
@@ -212,6 +260,9 @@ CREATE TABLE IF NOT EXISTS sites (
   redirect_to TEXT,
   health_error TEXT,
   last_checked_at BIGINT,
+  visit_count INTEGER NOT NULL DEFAULT 0,
+  last_visited_at BIGINT,
+  trend_score DOUBLE PRECISION NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
@@ -249,7 +300,8 @@ CREATE INDEX IF NOT EXISTS collection_items_col_idx ON collection_items(collecti
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, username TEXT NOT NULL, password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'admin', created_at BIGINT NOT NULL
+  role TEXT NOT NULL DEFAULT 'admin', email TEXT, avatar TEXT,
+  source TEXT NOT NULL DEFAULT 'local', created_at BIGINT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users(username);
 
@@ -298,6 +350,47 @@ CREATE TABLE IF NOT EXISTS embeddings (
   site_id TEXT PRIMARY KEY, model TEXT NOT NULL, dim INTEGER NOT NULL,
   vector BYTEA, updated_at BIGINT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS favorites (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  site_id TEXT NOT NULL,
+  folder_id TEXT,
+  note TEXT,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS favorites_user_site_idx ON favorites(user_id, site_id);
+CREATE INDEX IF NOT EXISTS favorites_user_idx ON favorites(user_id);
+
+CREATE TABLE IF NOT EXISTS favorite_folders (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  sort INTEGER NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS favorite_folders_user_idx ON favorite_folders(user_id);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+  user_id TEXT PRIMARY KEY,
+  top_categories TEXT NOT NULL DEFAULT '[]',
+  top_tags TEXT NOT NULL DEFAULT '[]',
+  visited_site_ids TEXT NOT NULL DEFAULT '[]',
+  favorite_site_ids TEXT NOT NULL DEFAULT '[]',
+  search_count INTEGER NOT NULL DEFAULT 0,
+  updated_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS search_history (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  query TEXT NOT NULL,
+  result_count INTEGER NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history(user_id);
+CREATE INDEX IF NOT EXISTS search_history_created_idx ON search_history(created_at);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;
@@ -316,24 +409,28 @@ export async function openDb(config: {
     raw.pragma("foreign_keys = ON");
     raw.exec(DDL_SQLITE);
     const { drizzle } = await import("drizzle-orm/better-sqlite3");
-    return {
+    const db: Db = {
       dialect: "sqlite",
       orm: drizzle(raw),
       sqlite: raw,
       async close() { raw.close(); },
     };
+    await migrateColumns(db);
+    return db;
   }
 
   const { default: pg } = await import("pg");
   const pool = new pg.Pool({ connectionString: config.databaseUrl });
   await pool.query(DDL_PG);
   const { drizzle } = await import("drizzle-orm/node-postgres");
-  return {
+  const db: Db = {
     dialect: "pg",
     orm: drizzle(pool),
     pg: pool,
     async close() { await pool.end(); },
   };
+  await migrateColumns(db);
+  return db;
 }
 
 /** 供 drizzle 查询使用的原始 SQL 助手 */

@@ -257,3 +257,64 @@ describe("事件与审计", () => {
     expect(res.json().ok).toBe(true);
   });
 });
+
+describe("NavSphere 兼容存储接口 (/api/storage)", () => {
+  it("读写 videos.json 能正确持久化", async () => {
+    const testVideos = { navigationItems: [{ id: "v1", title: "科技视频", items: [] }] };
+    const putRes = await app.inject({
+      method: "PUT",
+      url: "/api/storage",
+      payload: { path: "src/navsphere/content/videos.json", content: JSON.stringify(testVideos) },
+    });
+    expect(putRes.statusCode).toBe(200);
+
+    const getRes = await app.inject({
+      method: "GET",
+      url: "/api/storage?path=src/navsphere/content/videos.json",
+    });
+    expect(getRes.statusCode).toBe(200);
+    expect(getRes.json()).toEqual(testVideos);
+  });
+});
+
+describe("中文编码往返（曾因写请求编码被压成问号）", () => {
+  it("站点配置中的中文经 HTTP 往返后不丢失", async () => {
+    const title = "NavHub 导航 · 中文标题测试";
+    const config = {
+      basic: { title, description: "含中文的描述 —— 破折号也要保留", keywords: "网址导航,语义检索" },
+      appearance: { logo: "/a.webp", favicon: "/b.webp", theme: "system" },
+      navigation: { linkTarget: "_blank" },
+    };
+
+    const put = await app.inject({
+      method: "PUT", url: "/api/storage",
+      payload: { path: "src/navsphere/content/site.json", content: JSON.stringify(config), message: "encoding test" },
+    });
+    expect(put.statusCode).toBe(200);
+
+    const got = (await app.inject({ method: "GET", url: "/api/storage?path=src/navsphere/content/site.json" })).json();
+    expect(got.basic.title).toBe(title);
+    // 逐字核对码点：问号(3f) 一旦出现就说明编码被破坏
+    expect([...got.basic.title].map((c: string) => c.codePointAt(0))).toContain(0x5bfc); // 导
+    expect(got.basic.title).not.toContain("?");
+    expect(got.basic.description).toContain("——");
+  });
+
+  it("通用 JSON 文档（videos.json）的中文同样能往返", async () => {
+    const payload = { navigationItems: [{ id: "v1", title: "视频导航·中文", items: [] }] };
+    const put = await app.inject({
+      method: "PUT", url: "/api/storage",
+      payload: { path: "src/navsphere/content/videos.json", content: JSON.stringify(payload), message: "videos" },
+    });
+    expect(put.statusCode).toBe(200);
+
+    const got = (await app.inject({ method: "GET", url: "/api/storage?path=src/navsphere/content/videos.json" })).json();
+    expect(got.navigationItems[0].title).toBe("视频导航·中文");
+  });
+
+  it("未写入过的未知内容文件返回空对象而不是报错", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/storage?path=src/navsphere/content/some-unknown.json" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({});
+  });
+});

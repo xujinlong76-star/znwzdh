@@ -308,12 +308,22 @@ async function tryLlm(
   return null;
 }
 
-/** 模型有时仍会包一层 markdown 代码块，剥掉 */
+/** 模型有时仍会包一层 markdown 代码块或夹带前后说明文字，提取干净的 JSON 字符串 */
 export function stripCodeFence(s: string): string {
   const t = s.trim();
   const fence = String.fromCharCode(96).repeat(3);
   if (t.startsWith(fence) && t.endsWith(fence)) {
     return t.slice(fence.length, t.length - fence.length).replace(/^(json)?\s*/i, "").trim();
   }
+  const match = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (match?.[1]) {
+    return match[1].trim();
+  }
+  const firstBrace = s.indexOf("{");
+  const lastBrace = s.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    return s.slice(firstBrace, lastBrace + 1).trim();
+  }
   return t;
 }
+

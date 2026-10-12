@@ -16,6 +16,7 @@ import { auth } from "@/lib/auth";
 // 注意：这是「内容兜底」而不是「配置兜底」—— 正常情况下数据来自中枢。
 import baselineNavigation from "@/navsphere/content/navigation.json";
 import baselineSite from "@/navsphere/content/site.json";
+import baselineVideos from "@/navsphere/content/videos.json";
 import {
   createStorageAdapter,
   resolveAdapterKind,
@@ -86,41 +87,67 @@ function getAdapter(): StorageAdapter {
   return cached;
 }
 
-/** 判断中枢返回的导航数据是否"有内容" */
+/** 内容文件的 basename */
+function basename(path: string): string {
+  return path.split("/").pop() ?? path;
+}
+
+/** 判断导航类数据是否"有内容"（空数组等同没有数据） */
 function hasNavigation(data: unknown): boolean {
   const items = (data as { navigationItems?: unknown } | null)?.navigationItems;
   return Array.isArray(items) && items.length > 0;
 }
 
+/** 判断是否为"空结构" */
+function isEmptyObject(data: unknown): boolean {
+  return data === null || data === undefined || typeof data !== "object" || Object.keys(data as object).length === 0;
+}
+
 /**
- * 读取一个"文件"。签名与原版完全一致，因此调用点无需修改。
+ * 按文件类型取构建期内联的基线。
+ *
+ * 为什么需要基线：中枢返回的空结构（库还没数据）与"读取失败"在渲染层的后果一样 ——
+ * 页面会变空。用上游自带的内容兜底，可以让「中枢没起来」「库是空的」这两种情况
+ * 依然呈现一个可用的导航页，而不是白屏。
+ *
+ * 返回 undefined 表示该文件没有基线（例如用户自定义的文档）。
+ */
+function baselineFor(name: string): unknown | undefined {
+  if (name === "navigation.json" || name === "navigation-default.json") return baselineNavigation;
+  if (name === "site.json") return baselineSite;
+  if (name === "videos.json") return baselineVideos;
+  return undefined;
+}
+
+/**
+ * 读取一个"文件"。签名与原版完全一致，因此 69 处调用点无需修改。
  *
  * 兜底策略（两级）：
- *   1. 适配器读取失败 -> 落到构建期内联的基线数据；
- *   2. 适配器返回空结构（例如中枢库还是空的）-> 同样落到基线。
- * 目的是让"中枢没起来"或"库是空的"这两个场景下，站点仍然是一个可用的导航页，
- * 而不是白屏或空列表。
+ *   1. 适配器读取失败          -> 落到构建期内联基线；
+ *   2. 适配器返回空结构        -> 同样落到基线。
+ * 没有基线的文件返回 {}（与原版一致的宽松语义）。
  */
-export async function getFileContent(path: string) {
-  const isNavigation = path.includes("navigation.json");
-  const isSite = path.includes("site.json");
+export async function getFileContent<T = any>(path: string): Promise<T> {
+  const name = basename(path);
+  const baseline = baselineFor(name);
 
   try {
     const data = await getAdapter().read(path);
-    if (isNavigation && !hasNavigation(data)) {
-      console.warn("[storage] 中枢返回空导航数据，回退到构建期基线:", path);
-      return baselineNavigation;
+
+    // 空值判定按文件类型区分：导航类看数组长度，配置类看对象是否为空
+    const looksEmpty = (name === "navigation.json" || name === "navigation-default.json" || name === "videos.json")
+      ? !hasNavigation(data)
+      : isEmptyObject(data);
+
+    if (baseline !== undefined && looksEmpty) {
+      console.warn("[storage] 中枢返回空数据，回退到构建期基线:", path);
+      return baseline as T;
     }
-    if (isSite && (data === null || typeof data !== "object" || Object.keys(data as object).length === 0)) {
-      console.warn("[storage] 中枢返回空站点配置，回退到构建期基线:", path);
-      return baselineSite;
-    }
-    return data;
+    return data as T;
   } catch (error) {
     console.error("[storage] read failed:", path, error);
-    if (isNavigation) return baselineNavigation;
-    if (isSite) return baselineSite;
-    return {};
+    if (baseline !== undefined) return baseline as T;
+    return {} as T;
   }
 }
 

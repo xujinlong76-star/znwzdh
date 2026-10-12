@@ -23,6 +23,8 @@ export const categories = sqliteTable("categories", {
   icon: text("icon"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   sort: integer("sort").notNull().default(0),
+  /** 来源：navsphere（前端快照托管）| api | ai | seed；null 视为前端托管（兼容旧数据） */
+  source: text("source"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 }, (t) => [
@@ -48,6 +50,14 @@ export const sites = sqliteTable("sites", {
   weight: real("weight").notNull().default(0),
   featured: integer("featured", { mode: "boolean" }).notNull().default(false),
   source: text("source"),
+
+  /* ---- 行为统计（由 events 聚合写入，供热度排序使用） ---- */
+  /** 总点击次数 */
+  visitCount: integer("visit_count").notNull().default(0),
+  /** 最近一次点击时间 */
+  lastVisitedAt: integer("last_visited_at"),
+  /** 热度分（recompute_rank 任务重算；浏览排序的第二键） */
+  trendScore: real("trend_score").notNull().default(0),
 
   /* ---- 检索线索（写入期预计算，查询期零成本） ---- */
   /** CJK 二元分词后的 FTS 语料 */
@@ -115,6 +125,11 @@ export const users = sqliteTable("users", {
   username: text("username").notNull(),
   passwordHash: text("password_hash").notNull(),
   role: text("role").notNull().default("admin"),
+  /** 终端用户资料（管理员账号这两列为空） */
+  email: text("email"),
+  avatar: text("avatar"),
+  /** 身份来源：github（OAuth 登录用户）| local（内置管理员） */
+  source: text("source").notNull().default("local"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [uniqueIndex("users_username_idx").on(t.username)]);
 
@@ -201,7 +216,66 @@ export const embeddings = sqliteTable("embeddings", {
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 });
 
+/* ------------------------------------------------------------------ *
+ * 终端用户：收藏夹 / 收藏夹文件夹 / 个性化画像 / 搜索历史
+ * ------------------------------------------------------------------ */
+
+/** 用户收藏。匿名用户先用 localStorage，登录后合并至此 */
+export const favorites = sqliteTable("favorites", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  siteId: text("site_id").notNull(),
+  folderId: text("folder_id"),
+  note: text("note"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+}, (t) => [
+  uniqueIndex("favorites_user_site_idx").on(t.userId, t.siteId),
+  index("favorites_user_idx").on(t.userId),
+]);
+
+/** 收藏夹文件夹 */
+export const favoriteFolders = sqliteTable("favorite_folders", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  sort: integer("sort").notNull().default(0),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [index("favorite_folders_user_idx").on(t.userId)]);
+
+/**
+ * 个性化画像：由 events 聚合而来，供 /api/search 注入 personalize 信号。
+ * 刻意做成「宽表 + JSON 文本列」而不是规范化的偏好表——读取路径每次搜索都要用，
+ * 聚合是批量的，读写频率极度不对称。
+ */
+export const userProfiles = sqliteTable("user_profiles", {
+  userId: text("user_id").primaryKey(),
+  /** JSON: string[]  时间衰减加权后的 top 分类 id */
+  topCategories: text("top_categories").notNull().default("[]"),
+  /** JSON: string[]  top 标签 slug */
+  topTags: text("top_tags").notNull().default("[]"),
+  /** JSON: string[]  最近点击站点 id（保序） */
+  visitedSiteIds: text("visited_site_ids").notNull().default("[]"),
+  /** JSON: string[]  收藏站点 id */
+  favoriteSiteIds: text("favorite_site_ids").notNull().default("[]"),
+  searchCount: integer("search_count").notNull().default(0),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+});
+
+/** 搜索历史：匿名存 anonId（localStorage 生成），登录后按 userId 归一 */
+export const searchHistory = sqliteTable("search_history", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  query: text("query").notNull(),
+  resultCount: integer("result_count").notNull().default(0),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [
+  index("search_history_user_idx").on(t.userId),
+  index("search_history_created_idx").on(t.createdAt),
+]);
+
 export const schema = {
   categories, sites, tags, siteTags, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings,
+  favorites, favoriteFolders, userProfiles, searchHistory,
 };

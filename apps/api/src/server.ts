@@ -65,6 +65,10 @@ export async function buildServer(ctx: AppContext) {
     tag: z.string().optional(),
     disableSemantic: queryBool.optional(),
     disablePersonal: queryBool.optional(),
+    /** 身份标识：登录用户传 canonical userId，匿名传 anonId（前端 localStorage 生成）。
+     *  服务端据此解析个性化信号——调用方不传 signals，避免伪造与多端不一致。 */
+    userId: z.string().max(64).optional(),
+    anonId: z.string().max(64).optional(),
     personalize: z.object({
       topCategories: z.array(z.string()).optional(),
       topTags: z.array(z.string()).optional(),
@@ -85,13 +89,37 @@ export async function buildServer(ctx: AppContext) {
   });
 
   async function runSearch(input: z.infer<typeof searchBody>) {
-    const result = await ctx.search.search(input);
+    // 个性化信号服务端解析：身份 -> user_profiles -> personalize。
+    // 显式传 personalize 的调用方（测试 / MCP）优先，保持向后兼容。
+    let personalize = input.personalize;
+    const identity = input.userId ?? input.anonId ?? null;
+    if (!personalize && identity) {
+      const profile = await ctx.repo.getUserProfile(identity);
+      if (profile && (profile.topCategories.length > 0 || profile.topTags.length > 0 || profile.visitedSiteIds.length > 0)) {
+        personalize = {
+          topCategories: profile.topCategories,
+          topTags: profile.topTags,
+          visitedSiteIds: profile.visitedSiteIds,
+        };
+      }
+    }
+
+    const result = await ctx.search.search({ ...input, personalize });
     const hits = await Promise.all(result.hits.map(async (h) => ({
       ...h,
       site: await ctx.repo.getSite(h.siteId),
     })));
-    if (input.q.trim()) {
-      await ctx.repo.recordEvent("search", { query: input.q.trim() }).catch(() => undefined);
+
+    const q = input.q.trim();
+    if (q) {
+      // 搜索事件（现有行为）+ 零结果事件（指导补录）+ 搜索历史（匿名也可）
+      await ctx.repo.recordEvent("search", { query: q }).catch(() => undefined);
+      if (result.hits.length === 0) {
+        await ctx.repo.recordEvent("zero_result", { query: q }).catch(() => undefined);
+      }
+      if (identity) {
+        await ctx.repo.recordSearch(identity, q, result.hits.length).catch(() => undefined);
+      }
     }
     return { ...result, hits };
   }
@@ -179,10 +207,309 @@ export async function buildServer(ctx: AppContext) {
       sort: z.number().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    const cat = await ctx.repo.createCategory(body.data);
+    const cat = await ctx.repo.createCategory({ ...body.data, source: "api" });
     await ctx.repo.audit({ actor: "api", action: "category.create", target: cat.id });
     reply.code(201);
     return cat;
+  });
+
+  /* --------------------- 分类管理（增强） --------------------- */
+
+  const categoryPatch = z.object({
+    title: z.string().min(1).optional(),
+    titleEn: z.string().nullable().optional(),
+    icon: z.string().nullable().optional(),
+    description: z.string().nullable().optional(),
+    enabled: z.boolean().optional(),
+    sort: z.number().optional(),
+  });
+
+  app.patch("/api/categories/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = categoryPatch.safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    const before = await ctx.repo.getCategory(id);
+    const cat = await ctx.repo.updateCategory(id, body.data);
+    if (!cat) { reply.code(404); return { error: "类目不存在" }; }
+    await ctx.repo.audit({ actor: "api", action: "category.update", target: id, diff: { before, after: body.data } });
+    return cat;
+  });
+
+  /**
+   * 删除类目：站点移入「未分类」（不级联删除），子类目提升到父级。
+   * 这修正了旧行为——曾经删除类目会把它下面的站点一起删掉。
+   */
+  app.delete("/api/categories/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const before = await ctx.repo.getCategory(id);
+    if (!before) { reply.code(404); return { error: "类目不存在" }; }
+    await ctx.repo.deleteCategory(id);
+    await ctx.repo.audit({ actor: "api", action: "category.delete", target: id, diff: { title: before.title } });
+    reply.code(204);
+    return null;
+  });
+
+  /** 移动类目（换父级，anchor 级联更新） */
+  app.post("/api/categories/:id/move", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({ parentId: z.string().nullable() }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    try {
+      const cat = await ctx.repo.moveCategory(id, body.data.parentId);
+      if (!cat) { reply.code(404); return { error: "类目不存在" }; }
+      await ctx.repo.audit({ actor: "api", action: "category.move", target: id, diff: { parentId: body.data.parentId } });
+      return cat;
+    } catch (err) {
+      reply.code(400);
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  /** 合并类目：源（含后代）站点迁入目标后删源子树 */
+  app.post("/api/categories/merge", async (req, reply) => {
+    const body = z.object({ sourceId: z.string().min(1), targetId: z.string().min(1) }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    try {
+      const result = await ctx.repo.mergeCategories(body.data.sourceId, body.data.targetId);
+      await ctx.repo.audit({
+        actor: "api", action: "category.merge",
+        target: body.data.sourceId, diff: { into: body.data.targetId, ...result },
+      });
+      return { ok: true, ...result };
+    } catch (err) {
+      reply.code(400);
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  /* ------------------------- 标签 ------------------------- */
+
+  /** 标签云（带计数，按热度降序） */
+  app.get("/api/tags", async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const minCount = Number(q.minCount);
+    return ctx.repo.listTagsWithCounts(Number.isFinite(minCount) && minCount > 0 ? minCount : 1);
+  });
+
+  app.patch("/api/tags/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({ name: z.string().min(1).max(24) }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    try {
+      await ctx.repo.renameTag(id, body.data.name);
+      await ctx.repo.audit({ actor: "api", action: "tag.rename", target: id, diff: { name: body.data.name } });
+      return { ok: true };
+    } catch (err) {
+      reply.code(400);
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  app.post("/api/tags/merge", async (req, reply) => {
+    const body = z.object({ sourceId: z.string().min(1), targetId: z.string().min(1) }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    try {
+      const result = await ctx.repo.mergeTags(body.data.sourceId, body.data.targetId);
+      await ctx.repo.audit({
+        actor: "api", action: "tag.merge",
+        target: body.data.sourceId, diff: { into: body.data.targetId, ...result },
+      });
+      return { ok: true, ...result };
+    } catch (err) {
+      reply.code(400);
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  /* ----------------------- 精选专题 ----------------------- */
+
+  app.get("/api/collections", async () => ctx.repo.listCollections());
+
+  app.get("/api/collections/:slug", async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    const col = await ctx.repo.getCollectionBySlug(slug);
+    if (!col) { reply.code(404); return { error: "专题不存在" }; }
+    return { collection: col, sites: await ctx.repo.listCollectionSites(slug) };
+  });
+
+  /* --------------------- 收藏夹（终端用户） --------------------- */
+
+  /**
+   * 身份由调用方传入（登录用户的 canonical userId，或前端 localStorage 里的 anonId）。
+   * 说明：这是个人导航站的轻量方案——不引入终端用户鉴权体系；
+   * 多用户公开场景应改为 Bearer token（api_tokens 表已具备能力）。
+   */
+  const favoriteInput = z.object({
+    siteId: z.string().min(1),
+    folderId: z.string().nullable().optional(),
+    note: z.string().max(200).nullable().optional(),
+  });
+
+  function identityOf(req: { query: Record<string, unknown>; body: unknown }): string | null {
+    const fromQuery = (req.query ?? {}) as Record<string, string>;
+    const fromBody = (req.body ?? {}) as Record<string, string>;
+    return fromQuery.userId ?? fromQuery.anonId ?? fromBody.userId ?? fromBody.anonId ?? null;
+  }
+
+  app.get("/api/favorites", async (req) => {
+    const identity = identityOf(req as never);
+    if (!identity) return { error: "缺少 userId 或 anonId" };
+    const items = await ctx.repo.listFavorites(identity);
+    const folders = await ctx.repo.listFavoriteFolders(identity);
+    const sites = await Promise.all(items.map((f) => ctx.repo.getSite(f.siteId)));
+    return {
+      items: items.map((f, i) => ({ ...f, site: sites[i] })),
+      folders,
+    };
+  });
+
+  app.post("/api/favorites", async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    const body = favoriteInput.safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    const site = await ctx.repo.getSite(body.data.siteId);
+    if (!site) { reply.code(404); return { error: "站点不存在" }; }
+    const { favorite, existed } = await ctx.repo.addFavorite({
+      userId: identity,
+      siteId: body.data.siteId,
+      folderId: body.data.folderId ?? null,
+      note: body.data.note ?? null,
+    });
+    await ctx.repo.recordEvent("favorite", { siteId: body.data.siteId, meta: { identity } }).catch(() => undefined);
+    reply.code(existed ? 200 : 201);
+    return { favorite, existed };
+  });
+
+  app.delete("/api/favorites/:siteId", async (req) => {
+    const { siteId } = req.params as { siteId: string };
+    const identity = identityOf(req as never);
+    if (!identity) return { error: "缺少 userId 或 anonId" };
+    const removed = await ctx.repo.removeFavorite(identity, siteId);
+    if (removed) {
+      await ctx.repo.recordEvent("unfavorite", { siteId, meta: { identity } }).catch(() => undefined);
+    }
+    return { ok: true, removed };
+  });
+
+  app.post("/api/favorites/folders", async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    const body = z.object({ name: z.string().min(1).max(30) }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    const folder = await ctx.repo.createFavoriteFolder(identity, body.data.name);
+    reply.code(201);
+    return folder;
+  });
+
+  app.delete("/api/favorites/folders/:id", async (req) => {
+    const { id } = req.params as { id: string };
+    const identity = identityOf(req as never);
+    if (!identity) return { error: "缺少 userId 或 anonId" };
+    await ctx.repo.deleteFavoriteFolder(identity, id);
+    return { ok: true };
+  });
+
+  /* ------------------------ 推荐排序 ------------------------ */
+
+  /** 热度榜（trend_score 由 recompute_rank 任务重算） */
+  app.get("/api/rank/trending", async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Number(q.limit) || 20, 100);
+    const sites = await ctx.repo.hotSites(limit);
+    return {
+      hits: sites.map((s) => ({
+        site: s,
+        // 可解释的热度分量：前端 tooltip 展示「为什么排在这儿」
+        trend: { visits: s.visitCount ?? 0, trendScore: s.trendScore ?? 0, lastVisitedAt: s.lastVisitedAt ?? null },
+      })),
+    };
+  });
+
+  /** 新品榜 */
+  app.get("/api/rank/new", async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Number(q.limit) || 20, 100);
+    return { hits: (await ctx.repo.newestSites(limit)).map((s) => ({ site: s })) };
+  });
+
+  /** 相似站点（向量 KNN，零新依赖的相关推荐） */
+  app.get("/api/rank/similar/:siteId", async (req, reply) => {
+    const { siteId } = req.params as { siteId: string };
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Number(q.limit) || 6, 20);
+    if (!ctx.embedding || !ctx.vectors) {
+      return { hits: [], semanticAvailable: false, reason: "语义检索不可用" };
+    }
+    try {
+      const vec = await ctx.repo.getEmbedding(siteId);
+      if (!vec) return { hits: [], semanticAvailable: true, reason: "该站点暂无向量" };
+      const matches = await ctx.vectors.search(vec, limit + 1);
+      const hits = await Promise.all(
+        matches
+          .filter((m) => m.siteId !== siteId)
+          .slice(0, limit)
+          .map(async (m) => ({ site: await ctx.repo.getSite(m.siteId), distance: m.distance })),
+      );
+      return { hits: hits.filter((h) => h.site), semanticAvailable: true };
+    } catch {
+      // 模型不可用不该让推荐端点 5xx
+      return { hits: [], semanticAvailable: false, reason: "向量检索失败" };
+    }
+  });
+
+  /* ------------------------ 搜索历史 ------------------------ */
+
+  app.get("/api/search-history", async (req) => {
+    const identity = identityOf(req as never);
+    if (!identity) return { items: [] };
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Number(q.limit) || 10, 50);
+    return { items: await ctx.repo.listSearchHistory(identity, limit) };
+  });
+
+  app.delete("/api/search-history", async (req) => {
+    const identity = identityOf(req as never);
+    if (!identity) return { ok: false, error: "缺少 userId 或 anonId" };
+    await ctx.repo.clearSearchHistory(identity);
+    return { ok: true };
+  });
+
+  /* --------------------- 终端用户身份同步 --------------------- */
+
+  /**
+   * OAuth 登录后由 Web 前端调用：把 GitHub 身份 upsert 进 users 表，
+   * 返回 canonical userId（后续收藏夹 / 画像都用它，保证多端一致）。
+   */
+  app.post("/api/users/sync", async (req, reply) => {
+    const body = z.object({
+      provider: z.string().min(1).default("github"),
+      providerId: z.string().min(1),
+      username: z.string().min(1).max(64),
+      email: z.string().email().nullable().optional(),
+      avatar: z.string().url().nullable().optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    const user = await ctx.repo.upsertOauthUser({
+      id: body.data.provider + ":" + body.data.providerId,
+      username: body.data.username,
+      email: body.data.email ?? null,
+      avatar: body.data.avatar ?? null,
+    });
+    return user;
+  });
+
+  /* ------------------------ 运营统计 ------------------------ */
+
+  app.get("/api/admin/stats/trends", async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const days = Math.min(Math.max(Number(q.days) || 30, 1), 365);
+    const [top, zero, hot] = await Promise.all([
+      ctx.repo.topQueries(days, 20),
+      ctx.repo.zeroResultQueries(days, 20),
+      ctx.repo.hotSites(20),
+    ]);
+    return { days, topQueries: top, zeroResultQueries: zero, hotSites: hot };
   });
 
   /* ---------------------------- AI 富化 ---------------------------- */
@@ -249,15 +576,34 @@ export async function buildServer(ctx: AppContext) {
 
   app.get("/api/stats", async () => ctx.repo.stats());
 
+  /**
+   * 事件上报（前端点击/收藏等行为）。
+   * kind 白名单：防止脏 kind 污染画像聚合与统计。
+   * click 事件联动 visit_count（热度排序的原始信号）。
+   */
+  const EVENT_KINDS = ["click", "favorite", "unfavorite", "impression", "dismiss"] as const;
+
   app.post("/api/events", async (req) => {
     const body = z.object({
-      kind: z.string().min(1),
+      kind: z.enum(EVENT_KINDS),
       siteId: z.string().optional(),
       query: z.string().optional(),
       categoryId: z.string().optional(),
+      /** 身份标识（登录 userId 或匿名 anonId），用于归属画像聚合 */
+      userId: z.string().max(64).optional(),
+      anonId: z.string().max(64).optional(),
     }).safeParse(req.body ?? {});
-    if (!body.success) return { error: "参数无效" };
-    await ctx.repo.recordEvent(body.data.kind, body.data);
+    if (!body.success) return { error: "参数无效", detail: body.error.issues };
+    const identity = body.data.userId ?? body.data.anonId ?? null;
+    await ctx.repo.recordEvent(body.data.kind, {
+      siteId: body.data.siteId,
+      query: body.data.query,
+      categoryId: body.data.categoryId,
+      meta: identity ? { identity } : undefined,
+    });
+    if (body.data.kind === "click" && body.data.siteId) {
+      await ctx.repo.bumpVisit(body.data.siteId).catch(() => undefined);
+    }
     return { ok: true };
   });
 

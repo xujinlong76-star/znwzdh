@@ -195,5 +195,7 @@ describe("AI 富化：启发式降级路径", () => {
     const wrapped = FENCE + "json\n" + '{"a":1}' + "\n" + FENCE;
     expect(stripCodeFence(wrapped)).toBe('{"a":1}');
     expect(stripCodeFence('{"a":1}')).toBe('{"a":1}');
+    expect(stripCodeFence('这里是结果：\n' + wrapped + '\n祝使用愉快！')).toBe('{"a":1}');
+    expect(stripCodeFence('请看：{"a":1} 已经生成完成')).toBe('{"a":1}');
   });
 });

@@ -105,8 +105,14 @@ export interface Site {
   /** 命中的检索线索数（点击/曝光/搜索命中），用于个性化 */
   weight: number;
   featured?: boolean;
-  /** 来源：manual | import | submission | ai | seed */
+  /** 来源：manual | import | submission | ai | seed | navsphere | api | mcp */
   source?: string | null;
+  /** 总点击次数（events 聚合写入） */
+  visitCount?: number;
+  /** 最近一次点击时间 */
+  lastVisitedAt?: number | null;
+  /** 热度分（recompute_rank 任务重算） */
+  trendScore?: number;
   health?: SiteHealth;
   createdAt: number;
   updatedAt: number;
@@ -123,6 +129,8 @@ export interface Category {
   icon?: string | null;
   enabled: boolean;
   sort: number;
+  /** 来源：navsphere（前端快照托管）| api | ai | seed；null 视为前端托管（兼容旧数据） */
+  source?: string | null;
   createdAt: number;
   updatedAt: number;
 }

@@ -355,6 +355,49 @@ GET http://127.0.0.1:3000/  ->  <title> 立刻变为修改后的值
   含数据库站点中国天气网  FALSE  （数据库不可达，符合预期）
 ```
 
+### 全页面读路径打通（本轮扩展）
+
+首页打通后，把其余仍读构建期静态 JSON 的页面一并改造：
+
+| 页面 | 原数据来源 | 现状 |
+| --- | --- | --- |
+| `/` | `navigation.json` + `site.json` 静态导入 | ✅ 异步读中枢 |
+| `/submit` | `navigation.json` 静态导入 | ✅ 异步读中枢（类目下拉反映真实类目） |
+| `/videos` | `videos.json` + `site.json` 静态导入 | ✅ 异步读中枢 |
+| `/videos/player` | 同上 | ✅ 异步读中枢 |
+| 根 `layout.tsx` | 硬编码 `NavSphere` 品牌 | ✅ 读中枢站点配置 |
+
+改造后仅剩 `src/lib/github.ts` 里**刻意保留**的构建期基线导入（兜底用）。
+
+```
+GET /              -> 200   title="NavHub 导航"
+GET /submit        -> 200   title="网站投稿 - NavHub 导航"
+GET /videos        -> 200   title="Videos - NavHub 导航"
+GET /videos/player -> 200   title="视频播放器 - NavHub 导航"
+
+首页仍渲染数据库站点：中国天气网 TRUE  魔搭 ModelScope TRUE
+渲染内容中已无硬编码品牌（唯一一处 NavSphere 是上游 GitHub 仓库的署名链接，应当保留）
+```
+
+### 这一轮又抓到 3 个问题
+
+1. **`<title>` 品牌重复**（`X - NavHub 导航 - NavHub 导航`）。
+   根 layout 的 `title.template` 会统一追加站点名，而子页面标题里又拼了一次。
+   已约定：**子页面只写页面名，品牌由 layout 单一来源追加**。
+
+2. **根 layout 硬编码 `NavSphere` 品牌**：所有子页面标题都被追加 ` - NavSphere`，
+   与中枢里的品牌名并存，用户看到两个品牌。已改为读中枢站点配置。
+
+3. **数据库里的站点配置标题被写坏（`NavHub ??`）** —— 这条最值得记录：
+   ```
+   中枢 site.json basic.title = "NavHub ??"
+   码点 = ["4e","61","76","48","75","62","20","3f","3f"]   // 3f 3f = 两个问号
+   ```
+   成因：用 **PowerShell 发 PUT 请求**时中文被压成了 `?`，即缺陷在"写请求的编码"而不是应用逻辑。
+   这也说明一件事：**验证时必须连数据的字节级正确性一起核对** ——
+   页面上显示"NavHub 导航"看起来是对的，但实际存的是问号，只有当编码/字体不同步时才会暴露。
+   已改用 Node 的 `fetch` 发请求（显式 UTF-8）修复，并新增 2 个测试锁住中文编码往返。
+
 ### 改动要点与踩到的坑
 
 1. **首页原本是同步读静态 JSON**（`import navigationData from "@/navsphere/content/navigation.json"`），

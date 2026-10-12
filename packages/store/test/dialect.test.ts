@@ -101,3 +101,13 @@ describe("PostgreSQL 索引语料与 SQLite 一致", () => {
     expect(pgTokens("GitHub Copilot")).toContain("GitHub");
   });
 });
+
+describe("方言：标签聚合表达式", () => {
+  it("SQLite 使用 group_concat，PostgreSQL 使用 string_agg", () => {
+    const sqliteExpr = (dialect: "sqlite" | "pg") =>
+      dialect === "sqlite" ? "group_concat(t.slug)" : "string_agg(t.slug, ',')";
+    expect(sqliteExpr("sqlite")).toContain("group_concat");
+    expect(sqliteExpr("pg")).toContain("string_agg");
+  });
+});
+

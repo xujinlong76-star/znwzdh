@@ -257,9 +257,12 @@ export class SearchEngine {
   private async loadPersonalizable(ids: string[]): Promise<Map<string, PersonalizableSite>> {
     const map = new Map<string, PersonalizableSite>();
     if (ids.length === 0) return map;
+    const tagExpr = this.deps.db.dialect === "sqlite"
+      ? "(SELECT group_concat(t.slug) FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id)"
+      : "(SELECT string_agg(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id)";
     const rows = await this.rawRows(
       `SELECT s.id, s.category_id AS categoryid,
-              (SELECT group_concat(t.slug) FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id) AS tags
+              ${tagExpr} AS tags
          FROM sites s WHERE s.id IN (${ids.map(() => "?").join(",")})`,
       ids,
     );

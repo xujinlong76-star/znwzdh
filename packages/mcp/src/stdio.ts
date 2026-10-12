@@ -22,7 +22,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
+import { zodToJsonSchema as zodToJsonSchemaImpl } from "zod-to-json-schema";
 import { createContext } from "@navhub/api";
 import { loadConfig } from "@navhub/api";
 import { TOOL_DEFS, type McpScope, type ToolContext } from "./tools.ts";
@@ -79,13 +79,15 @@ async function main() {
 
 /**
  * zod -> JSON Schema（MCP 用 JSON Schema 描述工具入参）。
- * zod v4 内置 z.toJSONSchema，无需额外依赖。
+ *
+ * 全仓 zod 固定在 v3（原因见 pnpm-workspace.yaml），v3 没有内置的
+ * toJSONSchema，因此使用官方社区实现 zod-to-json-schema。
+ * 转换失败时退回宽松描述，保证工具仍可被发现与调用。
  */
 function zodToJsonSchema(schema: unknown): Record<string, unknown> {
   try {
-    return z.toJSONSchema(schema as never) as Record<string, unknown>;
+    return zodToJsonSchemaImpl(schema as never, { $refStrategy: "none" }) as Record<string, unknown>;
   } catch {
-    // 某些 schema（如 z.object({}) 的空对象）在严格模式下可能失败，退回宽松描述
     return { type: "object", additionalProperties: true };
   }
 }

@@ -6,12 +6,14 @@
   "scripts": {
     "build": "pnpm -r --filter './packages/**' build && pnpm --filter @navhub/api build",
     "dev": "pnpm --filter @navhub/api dev",
-    "dev:web": "pnpm --filter navhub-web dev",
+    "dev:web": "node scripts/run.mjs --filter navsphere-web dev",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm -r exec tsc --noEmit",
     "seed": "pnpm --filter @navhub/api seed",
-    "mcp:stdio": "pnpm --filter @navhub/mcp start"
+    "mcp:stdio": "pnpm --filter @navhub/mcp start",
+    "vendor:web": "node scripts/vendor-web.mjs",
+    "test:pg": "node --experimental-strip-types scripts/pg-check.mts"
   },
   "devDependencies": {
     "typescript": "5.9.3",

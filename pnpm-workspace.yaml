@@ -7,11 +7,21 @@ packages:
 #  - esbuild:          下载平台二进制（vitest / tsx 依赖）
 #  - onnxruntime-node: 下载 ONNX 运行时的本地二进制（本地 embedding 必需）
 #  - protobufjs:       生成 protobuf 代码（onnxruntime 依赖）
+#  - sharp:            Next.js 图片优化用的原生模块（vendored 前端需要）
+#  - msw / workerd:    vendored 前端的测试/边缘运行时依赖，非必需但允许其安装脚本
 allowBuilds:
   better-sqlite3: true
   esbuild: true
   onnxruntime-node: true
   protobufjs: true
+  sharp: true
+  msw: false
+  workerd: false
 
-minimumReleaseAgeExclude:
-  - zod@4.6.6
+# zod 统一固定在 v3。
+# 原因：vendored 前端用 @hookform/resolvers@3 + react-hook-form，它只支持 zod v3；
+# 若让前端解析到 zod v4，类型检查会直接失败
+#   （Type error: ZodObject<...> is missing ... from type 'ZodType<any,any,$ZodTypeInternals>'）。
+# 后端本来也能跑 v3，所以整仓统一到 v3 最省心，避免同仓两个 zod 大版本共存。
+overrides:
+  zod: ^3.25.76

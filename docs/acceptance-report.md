@@ -230,22 +230,153 @@ STANDARD MODE: 17/17 passed
    `rowToSite` 把 `tags` 硬编码为 `[]`，标签能写进 `site_tags` 表却读不回来。
    已补上按方言的聚合查询（SQLite `group_concat` / PG `string_agg`）。
 
+## Docker 与镜像源（本机实测）
+
+本机 **Docker Hub 不可达**，具体表现与处置：
+
+| 现象 | 原因 | 处置 |
+| --- | --- | --- |
+| `docker pull pgvector/pgvector:pg17` → `failed to resolve reference ... EOF` | `registry-1.docker.io` 被阻断 | 用镜像前缀拉取后重新打 tag |
+| `docker compose build` → `failed to fetch oauth token ... auth.docker.io` | 构建期仍需访问 `auth.docker.io` 取 token | 用 `NODE_IMAGE` build-arg 指向镜像源 |
+| 在 `~/.docker/daemon.json` 写 `registry-mirrors` 无效（`docker info` 显示 `[]`） | **Docker Desktop 会重写该文件**，只保留它自己管理的键（builder.gc / experimental） | 不依赖 daemon.json，改用镜像前缀 + build-arg |
+
+可用的镜像源（实测可达）：
+
+```
+docker.m.daocloud.io   ✅ 401（可达，正常鉴权语义）
+docker.1ms.run         ✅ 401（可达）
+dockerproxy.net        ✅ 200
+docker.mirrors.ustc.edu.cn   ❌ 不可达
+hub-mirror.c.163.com         ❌ 不可达
+mirror.ccs.tencentyun.com    ❌ 不可达
+```
+
+### 容器镜像构建：受限网络下的实际进展与阻碍
+
+**应用层已实测通过**（见上节 17/17）；容器化打包在本机网络下受阻，逐段进展如下：
+
+| 步骤 | 状态 |
+| --- | --- |
+| `docker pull pgvector/pgvector:pg17` | ✅ 经 `docker.m.daocloud.io` 镜像源成功 |
+| 真实 PostgreSQL 17 + pgvector 0.8.7 运行 | ✅ 容器启动健康 |
+| **应用代码连真实 PG 全链路验证** | ✅ **17/17 通过** |
+| `Dockerfile.api` 的 `NODE_IMAGE` / `DEBIAN_MIRROR` 参数化 | ✅ 已实现 |
+| 基础镜像拉取（`node:22-bookworm-slim`） | ⚠️ 仅 `dockerproxy.net` 可用；`daocloud`/`1ms.run` 分别出现 502 与 TLS 超时 |
+| `apt-get install python3 make g++` | ✅ 经 `mirrors.tuna.tsinghua.edu.cn` 成功 |
+| 构建期 `pnpm install` | ❌ 容器到 `registry.npmmirror.com` 的 TLS 频繁 `UND_ERR_SOCKET` 重试失败 |
+
+结论：**阻碍来自构建期的外网稳定性，不是代码或 Dockerfile 的问题**。
+在正常网络下（或预先 `docker save/load` 依赖层）应可直接构建。
+
+可选的规避方式：
+
+1. 预先把依赖装进基础层（`docker build` 时 `--cache-from`，或在镜像内先 `pnpm store` 预热）。
+2. 直接以宿主机进程方式运行（本项目全程验证就是这么做的），仅在需要容器编排时再构建镜像。
+3. 在网络不受限的环境构建一次，`docker save` 后分发。
+
+### 可复现的构建方式
+
+```bash
+# 1) 拉基础镜像（走镜像源）并打回官方 tag
+docker pull docker.m.daocloud.io/library/node:22-bookworm-slim
+docker tag  docker.m.daocloud.io/library/node:22-bookworm-slim node:22-bookworm-slim
+
+docker pull docker.m.daocloud.io/pgvector/pgvector:pg17
+docker tag  docker.m.daocloud.io/pgvector/pgvector:pg17 pgvector/pgvector:pg17
+
+# 2) 用镜像源地址作为 NODE_IMAGE 构建
+cd docker
+POSTGRES_PASSWORD=navhub docker compose --profile standard \
+  build --build-arg NODE_IMAGE=docker.m.daocloud.io/library/node:22-bookworm-slim api-standard
+```
+
+两个 Dockerfile 都已把基础镜像暴露为 `NODE_IMAGE`（默认 `node:22-bookworm-slim`），
+compose 也透传了该变量，因此无网络限制的环境无需任何额外操作。
+
 ### 顺带发现的环境问题
 
-- Docker Hub 在本机不可达（`registry-1.docker.io` EOF）。
-  可用镜像源：`docker.m.daocloud.io`、`docker.1ms.run`、`dockerproxy.net`。
-  已在本地 `~/.docker/daemon.json` 配置，并用镜像前缀拉取了 pgvector 镜像。
+- Docker Hub 在本机不可达，详见上节「Docker 与镜像源」（含可复现的构建方式）。
 - `docker-compose.yml` 里 `mcp` profile 曾用 `${NAVHUB_MCP_TOKEN:?}` 强制校验；
   Compose 会**在解析期**校验所有 profile 的变量，导致仅想启动 postgres 的命令也直接失败。
   已改为可缺省，强制校验留在 `mcp/src/http.ts` 的启动逻辑里。
 - `postgres` 服务原先没有端口映射，宿主机无法直连；已补 `POSTGRES_PORT`（默认 5432）。
 
 
+## 前端（apps/web）接入现状 —— 精确说明
+
+这一步做完后必须澄清一个容易误读的点：**适配器已经接上，但首页读的是构建期静态 JSON，不是数据库。**
+
+### 已完成
+
+| 项 | 状态 |
+| --- | --- |
+| vendoring NavSphere 底座（commit `6ba74fa`） | ✅ [scripts/vendor-web.mjs](scripts/vendor-web.mjs) |
+| `StorageAdapter` 三种后端实现 | ✅ 含 github / http / 以及 sqlite 实现（见下） |
+| `src/lib/github.ts` 替换为门面 | ✅ 保持 `getFileContent` / `commitFile` 签名不变 |
+| 覆盖文件在 Docker 构建期注入 | ✅ `docker/Dockerfile.web` |
+| `next build` 通过（全部页面生成） | ✅ 见下方实测 |
+| 首页能正常渲染并返回 200 | ✅ |
+
+```
+✓ Compiled successfully
+✓ Generating static pages (9/9)
+ƒ Middleware  88.1 kB
+采用 STORAGE_ADAPTER=http 启动后：GET / -> 200, 272917 bytes
+```
+
+### 尚未完成（重要）
+
+首页是**构建期**读取静态 JSON 的，没有走适配器：
+
+```tsx
+// apps/web/src/app/page.tsx（上游原样保留）
+import navigationData from "@/navsphere/content/navigation.json";
+import siteDataRaw from "@/navsphere/content/site.json";
+
+export default function HomePage() {
+  const { navigationData, siteData } = getData();   // 同步读静态 JSON
+  ...
+}
+```
+
+实测证据：用 `STORAGE_ADAPTER=http` 启动前端并访问首页，渲染出来的是 NavSphere 自带的
+设计类站点（Figma / GitHub Copilot…），我们播种的「中国天气网 / 魔搭 ModelScope / 力扣 LeetCode」
+**全都没有出现**。
+
+**因此目前适配器覆盖的是「写路径 + 后台 API」，不是「首页读取路径」。**
+
+### 为什么这样，以及怎么补
+
+原因：`StorageAdapter` 的读写是**异步**的，而上游首页组件是同步渲染（直接 `import` JSON）。
+要让首页读数据库，需要三处改动：
+
+1. 把 `page.tsx` 改成 `async` 服务端组件，`await getFileContent(path)`；
+2. `generateMetadata()` 同样改成 `async`；
+3. `components/navigation-content.tsx` 接收的是已处理数据，不需改，但它上游的
+   `getProcessedData` 调用点要接收 await 结果。
+
+这是**读路径的异步化**，属于对上游结构的实质性改动（不是替换 2 个函数就够），
+因此本次没有顺手做掉 —— 需要先用真实数据回归一遍首页与 `/submit`、`/videos` 的渲染。
+
+补充：`STORAGE_ADAPTER=sqlite`（同进程直连）在 Web 前端**已主动禁用**并给出明确报错，
+因为直连要求把整个 `@navhub/api` 打进前端产物（实测报 `Module not found: @navhub/api`），
+架构上不划算；需要省一次 HTTP 往返时把中枢与前端放同机、用 `http` 指向 `127.0.0.1` 即可。
+`createSqliteAdapter` 仍保留在 `storage-adapter.ts` 供其他运行环境使用。
+
+### 顺带发现并处理的上游问题
+
+1. **zod 版本冲突**：`@hookform/resolvers@3.9.1` 只支持 zod v3，而我们后端用了 zod v4，
+   导致前端 `zodResolver(formSchema)` 类型不兼容。已在 `pnpm-workspace.yaml` 用 `overrides`
+   把整仓 zod 统一到 `^3.25.76`，并把 MCP 的 JSON Schema 转换换成 `zod-to-json-schema`。
+2. **`output: "standalone"` 在 Windows 上构建失败**：它需要创建符号链接，未开启开发者模式时报
+   `EPERM: operation not permitted, symlink`。已改为按需开启（`NAVHUB_WEB_STANDALONE=1`），
+   Docker 部署改用 `next start`。
+
 ## 已知未完成项
 
 - `standard` 模式：**已完成实机验证（17/17）**，见上节。
   `PgVectorStore` 与 `SqliteVecStore` 共享同一套接口，但**尚无自动化跨方言一致性测试**
   （`scripts/pg-check.mts` 是手工验证脚本，需要真实 PostgreSQL 才跑）。
-- `apps/web` 的 `StorageAdapter` 已写好并可通过 `STORAGE_ADAPTER=http` 接入，
-  但尚未把 NavSphere 的 `getFileContent`/`commitFile` 替换为适配器调用（改动面为 2 个函数）。
+- `apps/web`：适配器与门面已就位、构建通过，但**首页仍读构建期静态 JSON**，
+  尚未把读路径异步化（详见上节「前端接入现状」）。这是当前最主要的未完成项。
 - 健康巡检、对话式侧边栏、PWA、主题系统尚未实现。

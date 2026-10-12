@@ -4,7 +4,9 @@
 # 因此在 Docker 里是**开箱可用**的，不需要先在宿主机跑 vendor 脚本。
 #
 # 依赖存储 API，所以用 standard profile（与 api 服务同网络）。
-FROM node:22-bookworm-slim
+# 基础镜像可覆盖（同 Dockerfile.api 的说明）
+ARG NODE_IMAGE=node:22-bookworm-slim
+FROM ${NODE_IMAGE}
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tar \
     && rm -rf /var/lib/apt/lists/*
@@ -19,8 +21,12 @@ RUN curl -fsSL "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/refs/he
     && mkdir -p /app/web && cp -a /tmp/ns/. /app/web/ \
     && rm -rf /tmp/ns /tmp/ns.tgz
 
-# 2) 注入 NavHub 的存储适配层（这是唯一需要改动上游的地方）
+# 2) 注入 NavHub 的存储层改动（这是唯一需要覆盖上游的地方）
+#    - storage-adapter.ts: 三种后端（http | github | sqlite）的实现
+#    - github.ts:          保持原函数签名的门面，内部改走适配器。
+#                          因此 NavSphere 那 16 个 route / 约 69 处调用点一行都不用改。
 COPY apps/web/src/lib/storage-adapter.ts /app/web/src/lib/storage-adapter.ts
+COPY apps/web/src/lib/github.ts /app/web/src/lib/github.ts
 
 WORKDIR /app/web
 RUN pnpm install --no-frozen-lockfile
@@ -29,5 +35,8 @@ ENV NODE_ENV=production \
     STORAGE_ADAPTER=http \
     NEXT_PUBLIC_API_URL=http://api:8787
 
+# 生产构建（不使用 standalone：避免 Windows/受限环境下创建符号链接失败）
+RUN pnpm build
+
 EXPOSE 3000
-CMD ["pnpm", "dev"]
+CMD ["pnpm", "start"]

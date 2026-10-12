@@ -1,0 +1,21 @@
+{
+  "name": "navhub",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --filter './packages/**' build && pnpm --filter @navhub/api build",
+    "dev": "pnpm --filter @navhub/api dev",
+    "dev:web": "pnpm --filter navhub-web dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r exec tsc --noEmit",
+    "seed": "pnpm --filter @navhub/api seed",
+    "mcp:stdio": "pnpm --filter @navhub/mcp start"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "3.2.4",
+    "@types/node": "22.18.13"
+  }
+}

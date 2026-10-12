@@ -1,0 +1,240 @@
+/**
+ * NavHub 领域模型。
+ *
+ * 设计约束（重要）：
+ * 1. NavSphere 的线上契约是 navigation.json 的三层结构（category -> subCategory -> item），
+ *    本文件的 `NavSphereNavigationData` 必须与该契约**字节级兼容**，否则前端无需改动的目标就破产。
+ * 2. NavHub 的内部模型（`Site` / `Category`）比该契约更丰富（拼音、向量、健康度等），
+ *    因此需要一个**双向映射层**（见 toNavSphereData / fromNavSphereData）。
+ */
+
+export type Id = string;
+
+/* ------------------------------------------------------------------ *
+ * NavSphere 线格式（禁止随意变更）
+ * ------------------------------------------------------------------ */
+
+export interface NavSphereVideoConfig {
+  type: "bilibili" | "youtube";
+  videoId?: string;
+  bvid?: string;
+  aid?: string;
+  cid?: string;
+  p?: number;
+}
+
+export interface NavSphereItem {
+  id: string;
+  title: string;
+  titleEn?: string;
+  description?: string;
+  descriptionEn?: string;
+  href: string;
+  icon?: string;
+  useDefaultIcon?: boolean;
+  enabled: boolean;
+  videoConfig?: NavSphereVideoConfig;
+}
+
+export interface NavSphereSubCategory {
+  id: string;
+  title: string;
+  icon?: string;
+  description?: string;
+  parentId?: string;
+  enabled?: boolean;
+  items?: NavSphereItem[];
+}
+
+export interface NavSphereCategory {
+  id: string;
+  title: string;
+  description?: string;
+  icon?: string;
+  enabled?: boolean;
+  items?: NavSphereItem[];
+  subCategories?: NavSphereSubCategory[];
+}
+
+export interface NavSphereNavigationData {
+  navigationItems: NavSphereCategory[];
+}
+
+export interface NavSphereSiteConfig {
+  siteName?: string;
+  siteDescription?: string;
+  logo?: string;
+  favicon?: string;
+  appearance?: { theme?: "light" | "dark" | "system" };
+  navigation?: { linkTarget?: "_blank" | "_self" };
+  seo?: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
+/* ------------------------------------------------------------------ *
+ * NavHub 内部模型
+ * ------------------------------------------------------------------ */
+
+export type SiteStatus = "active" | "pending" | "broken" | "archived";
+
+export interface SiteHealth {
+  httpStatus?: number | null;
+  ok: boolean;
+  latencyMs?: number | null;
+  redirectTo?: string | null;
+  error?: string | null;
+  lastCheckedAt?: number | null;
+}
+
+export interface Site {
+  id: Id;
+  url: string;
+  title: string;
+  titleEn?: string | null;
+  description?: string | null;
+  descriptionEn?: string | null;
+  iconKey?: string | null;
+  screenshotKey?: string | null;
+  categoryId: Id;
+  subCategoryId?: Id | null;
+  tags: string[];
+  status: SiteStatus;
+  enabled: boolean;
+  /** 排序权重，兼作拖拽顺序 */
+  sort: number;
+  /** 命中的检索线索数（点击/曝光/搜索命中），用于个性化 */
+  weight: number;
+  featured?: boolean;
+  /** 来源：manual | import | submission | ai | seed */
+  source?: string | null;
+  health?: SiteHealth;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Category {
+  id: Id;
+  /** 物化路径 "a/b/c"，避免"插入时父不存在"的循环外键问题 */
+  anchor: string;
+  parentId: Id | null;
+  title: string;
+  titleEn?: string | null;
+  description?: string | null;
+  icon?: string | null;
+  enabled: boolean;
+  sort: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type CollectionKind = "topic" | "geo" | "roadmap";
+export interface Collection {
+  id: Id;
+  slug: string;
+  title: string;
+  description?: string | null;
+  kind: CollectionKind;
+  icon?: string | null;
+  sort: number;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+export interface CollectionItem {
+  collectionId: Id;
+  siteId: Id;
+  sort: number;
+  note?: string | null;
+}
+
+/* ------------------------------------------------------------------ *
+ * 检索
+ * ------------------------------------------------------------------ */
+
+/**
+ * 召回通道。前四路是"相关性"通道，personal 是"偏好"通道 —— 二者都进入 RRF 融合。
+ *
+ * 设计要点：个性化**不是**融合后的后处理加成，而是与相关性通道并列进入 RRF 的一路。
+ * 原因是实测发现 RRF（k=60）会把排名 1~10 压缩到仅 ~3% 的分数差，
+ * 任何"融合后再乘系数"的做法都会轻易翻转相关性顺序。
+ * 把它变成一路、并给一个明确小于相关性通道的权重，翻转能力就被权重天然限界了。
+ */
+export const SEARCH_CHANNELS = ["exact", "fts", "pinyin", "semantic", "personal"] as const;
+export type SearchChannel = (typeof SEARCH_CHANNELS)[number];
+
+export interface SearchCandidate {
+  siteId: Id;
+  channel: SearchChannel;
+  /** 通道内排名，从 1 开始 */
+  rank: number;
+  /** 通道原始分（可解释性用） */
+  rawScore?: number;
+}
+
+export interface SearchHit {
+  siteId: Id;
+  score: number;
+  /** 每路召回的贡献，用于「为什么是它」的可解释排序 */
+  contributions: Partial<Record<SearchChannel, { rank: number; value: number }>>;
+}
+
+/** 个性化偏好信号（由行为事件聚合而来） */
+export interface PersonalizationSignals {
+  topCategories?: Id[];
+  topTags?: string[];
+  visitedSiteIds?: Id[];
+}
+
+/** 参与个性化打分所需的最小站点信息 */
+export interface PersonalizableSite {
+  siteId: Id;
+  categoryId: Id;
+  tags: string[];
+}
+
+export interface SearchQuery {
+  q: string;
+  limit?: number;
+  categoryId?: Id;
+  tag?: string;
+  statuses?: SiteStatus[];
+  /** 关闭语义通道（无模型或追求极低延迟时） */
+  disableSemantic?: boolean;
+  /** 关闭个性化通道 */
+  disablePersonal?: boolean;
+  /** 个性化：用户近来偏好 */
+  personalize?: PersonalizationSignals;
+}
+
+export interface SearchResult {
+  hits: SearchHit[];
+  /** 每个通道是否真正参与，用于「AI 不可用」的诚实降级提示 */
+  channelsUsed: SearchChannel[];
+  semanticAvailable: boolean;
+  tookMs: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * AI 富化
+ * ------------------------------------------------------------------ */
+
+export interface EnrichmentInput {
+  url: string;
+  title?: string;
+  description?: string;
+  categoryHint?: string;
+}
+
+export interface EnrichmentResult {
+  title: string;
+  description: string;
+  categoryId?: Id | null;
+  suggestedCategoryName?: string | null;
+  tags: string[];
+  keywords: string[];
+  lang?: string | null;
+  /** 富化来源：llm | heuristic | none —— 用户可据此判断可信度 */
+  provenance: "llm" | "heuristic" | "none";
+  imageUrl?: string | null;
+  iconUrl?: string | null;
+}

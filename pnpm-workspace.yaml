@@ -1,0 +1,13 @@
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+# 安装期构建脚本白名单（pnpm 11 的配置位置）
+#  - better-sqlite3: 需要编译原生扩展
+#  - esbuild: 需要下载平台二进制（vitest / tsx 依赖）
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - zod@4.6.6

@@ -35,7 +35,11 @@ VOLUME ["/data"]
 EXPOSE 8787
 
 # 健康检查直接打真实接口，而不是只看端口是否监听
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
   CMD curl -fsS http://127.0.0.1:8787/api/health || exit 1
 
-CMD ["node", "--experimental-strip-types", "apps/api/src/server.ts"]
+# 入口负责可选的种子导入，再启动服务（见 entrypoint.sh）
+COPY docker/entrypoint.sh /usr/local/bin/navhub-entrypoint
+RUN chmod +x /usr/local/bin/navhub-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/navhub-entrypoint"]

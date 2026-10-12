@@ -40,7 +40,12 @@ function buildIndexFields(input: { title: string; description?: string | null; u
 }
 
 export class Repository {
-  constructor(private db: Db) {}
+  /** 显式字段（不用参数属性语法：Node 的 strip-only 模式不支持） */
+  private db: Db;
+
+  constructor(db: Db) {
+    this.db = db;
+  }
 
   /* ------------------------- 站点 ------------------------- */
 
@@ -312,8 +317,22 @@ export class Repository {
   }
 }
 
+/**
+ * 生成标签 slug。
+ *
+ * 必须**保留中文**：最初的实现把非 [a-z0-9] 字符全部删掉，
+ * 导致中文标签「天气」被 slug 成空字符串，于是中文标签永远无法被过滤命中。
+ * 对中文优先的导航站来说，这是硬伤。
+ *
+ * 空结果兜底为 "tag"：避免出现空 slug 导致多个标签互相覆盖。
+ */
 export function slugify(input: string): string {
-  return input.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\u4e00-\u9fff-]/g, "");
+  const s = input
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9\u4e00-\u9fff-]/g, "");
+  return s.length > 0 ? s : "tag";
 }
 
 function rowToSite(row: Record<string, any>): Site {

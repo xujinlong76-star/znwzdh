@@ -50,13 +50,21 @@ export async function buildServer(ctx: AppContext) {
 
   /* ------------------------------ 检索 ------------------------------ */
 
+  /**
+   * 注意：同一个 schema 要同时服务于 GET（query string，值全是字符串）
+   * 和 POST（JSON，值有原生类型）。
+   * 因此数字与布尔必须用 coerce 解析，否则 GET /api/search?limit=3 会因为
+   * "expected number, received string" 被直接拒绝 —— 这是最容易漏掉的坑。
+   */
+  const queryBool = z.union([z.boolean(), z.enum(["true", "false", "1", "0"])]).transform((v) => v === true || v === "true" || v === "1");
+
   const searchBody = z.object({
     q: z.string().default(""),
-    limit: z.number().int().min(1).max(100).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
     categoryId: z.string().optional(),
     tag: z.string().optional(),
-    disableSemantic: z.boolean().optional(),
-    disablePersonal: z.boolean().optional(),
+    disableSemantic: queryBool.optional(),
+    disablePersonal: queryBool.optional(),
     personalize: z.object({
       topCategories: z.array(z.string()).optional(),
       topTags: z.array(z.string()).optional(),
@@ -95,7 +103,7 @@ export async function buildServer(ctx: AppContext) {
     return ctx.repo.listSites({
       categoryId: q.categoryId,
       status: q.status as never,
-      limit: q.limit ? Number(q.limit) : undefined,
+      limit: q.limit && Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined,
     });
   });
 

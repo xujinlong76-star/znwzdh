@@ -260,10 +260,15 @@ export class SearchEngine {
     return ids;
   }
 
-  private async siteIdsWithTag(tagSlug: string): Promise<Set<string>> {
+  /**
+   * 按标签过滤。
+   * 同时匹配 slug 与 name：调用方（前端、MCP）可能传「天气」这种展示名，
+   * 只匹配 slug 会让中文标签查不到东西。
+   */
+  private async siteIdsWithTag(tag: string): Promise<Set<string>> {
     const rows = await this.rawRows(
-      `SELECT st.site_id AS id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE t.slug = ?`,
-      [tagSlug],
+      `SELECT st.site_id AS id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE t.slug = ? OR t.name = ?`,
+      [tag, tag],
     );
     return new Set(rows.map((r) => r.id));
   }

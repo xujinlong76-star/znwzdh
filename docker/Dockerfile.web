@@ -1,0 +1,33 @@
+# NavHub Web 前端镜像。
+#
+# 构建期就把 NavSphere 底座拉下来并注入 NavHub 的存储适配器，
+# 因此在 Docker 里是**开箱可用**的，不需要先在宿主机跑 vendor 脚本。
+#
+# 依赖存储 API，所以用 standard profile（与 api 服务同网络）。
+FROM node:22-bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tar \
+    && rm -rf /var/lib/apt/lists/*
+RUN npm install -g pnpm@11.7.0 --registry=https://registry.npmmirror.com
+
+WORKDIR /app
+
+# 1) 拉取 NavSphere 底座（MIT），并用 NavHub 自己的适配器覆盖存储层
+ARG NAVSPHERE_REF=main
+RUN curl -fsSL "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/refs/heads/${NAVSPHERE_REF}" -o /tmp/ns.tgz \
+    && mkdir -p /tmp/ns && tar -xzf /tmp/ns.tgz -C /tmp/ns --strip-components=1 \
+    && mkdir -p /app/web && cp -a /tmp/ns/. /app/web/ \
+    && rm -rf /tmp/ns /tmp/ns.tgz
+
+# 2) 注入 NavHub 的存储适配层（这是唯一需要改动上游的地方）
+COPY apps/web/src/lib/storage-adapter.ts /app/web/src/lib/storage-adapter.ts
+
+WORKDIR /app/web
+RUN pnpm install --no-frozen-lockfile
+
+ENV NODE_ENV=production \
+    STORAGE_ADAPTER=http \
+    NEXT_PUBLIC_API_URL=http://api:8787
+
+EXPOSE 3000
+CMD ["pnpm", "dev"]

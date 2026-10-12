@@ -25,9 +25,13 @@ export interface ToolContext {
 }
 
 export class McpAuthError extends Error {
-  constructor(message: string, readonly requiredScope: McpScope) {
+  /** 显式字段（不用参数属性语法：Node 的 strip-only 模式不支持） */
+  readonly requiredScope: McpScope;
+
+  constructor(message: string, requiredScope: McpScope) {
     super(message);
     this.name = "McpAuthError";
+    this.requiredScope = requiredScope;
   }
 }
 

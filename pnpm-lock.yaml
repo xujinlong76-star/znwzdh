@@ -35,9 +35,15 @@ importers:
       '@navhub/store':
         specifier: workspace:*
         version: link:../../packages/store
+      better-sqlite3:
+        specifier: 13.0.3
+        version: 13.0.3
       fastify:
         specifier: 5.12.5
         version: 5.12.5
+      sqlite-vec:
+        specifier: 0.1.9
+        version: 0.1.9
       zod:
         specifier: 4.6.6
         version: 4.6.6

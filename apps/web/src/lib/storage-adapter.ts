@@ -27,9 +27,17 @@ export interface StorageAdapter {
 }
 
 export class StorageError extends Error {
-  constructor(message: string, readonly status?: number) {
+  /**
+   * 显式字段声明 + 赋值，而不是 TS 的构造函数参数属性语法。
+   * 原因：Node 的 --experimental-strip-types 只做类型擦除，不支持参数属性这类
+   * 会生成运行时代码的语法（报 ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX）。
+   */
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
     super(message);
     this.name = "StorageError";
+    this.status = status;
   }
 }
 

@@ -65,9 +65,9 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   return { categories, sites, skipped, embedded };
 }
 
-const isMain = import.meta.url === ("file://" + process.argv[1]?.replace(/\\/g, "/"));
-if (isMain) {
-  const t0 = Date.now();
-  const r = await runSeed({ withEmbeddings: process.env.NAVHUB_SEED_EMBEDDINGS !== "0" });
-  console.log("[seed] 完成", r, "耗时", Date.now() - t0, "ms");
-}
+/**
+ * 注意：这里**不做** "是否作为主模块运行" 的判断。
+ * Windows 上 process.argv[1] 与 import.meta.url 的形式（盘符大小写、斜杠方向）不一定一致，
+ * 这种判断曾经让脚本静默退出且无任何输出。
+ * CLI 入口统一放在 seed-main.ts。
+ */

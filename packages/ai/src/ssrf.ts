@@ -35,9 +35,13 @@ export const DEFAULT_GUARD: FetchGuardOptions = {
 };
 
 export class SsrfBlockedError extends Error {
-  constructor(message: string, readonly reason: string) {
+  /** 显式字段（不用参数属性语法：Node 的 strip-only 模式不支持） */
+  readonly reason: string;
+
+  constructor(message: string, reason: string) {
     super(message);
     this.name = "SsrfBlockedError";
+    this.reason = reason;
   }
 }
 

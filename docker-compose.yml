@@ -1,18 +1,15 @@
 # NavHub Docker Compose
 #
-# 三种用法：
+# 用法：
+#   docker compose up -d                                   # lite：仅中枢（SQLite，单容器零外部依赖）
+#   docker compose --profile web up -d                     # 追加 Web 前端（从 NavSphere 底座构建）
+#   docker compose --profile standard up -d                # PostgreSQL + pgvector（多用户/公开站）
+#   NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d # 追加 MCP HTTP（供远程 AI 客户端）
 #
-#   1) lite（默认，单容器，SQLite，零外部依赖）
-#        docker compose up -d
-#
-#   2) standard（PostgreSQL + pgvector，多用户 / 公开站）
-#        docker compose --profile standard up -d
-#
-#   3) 加上 MCP HTTP 服务（供远程 AI 客户端接入）
-#        NAVHUB_MCP_TOKEN=your-token docker compose --profile mcp up -d
-#
-# 注意：embedding 模型在首次启动时按需下载到 /data/models（约 24MB，来自 hf-mirror）。
-#       若需完全离线，把模型目录预先挂载到 /data/models 并设 NAVHUB_EMBEDDING_ALLOW_REMOTE=false。
+# 说明：
+#  - embedding 模型在首次启动时下载到 /data/models（约 24MB，来自 hf-mirror）。
+#    完全离线部署：把模型目录预先挂载到 /data/models。
+#  - 种子数据默认自动导入（NAVHUB_SEED_ON_START=1），50 个真实中文站点。
 
 services:
   api:
@@ -42,9 +39,28 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 40s
 
-  # ---------------- standard 模式：PostgreSQL + pgvector ----------------
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+      args:
+        NAVSPHERE_REF: ${NAVSPHERE_REF:-main}
+    image: navhub/web:0.1.0
+    container_name: navhub-web
+    profiles: ["web"]
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${NAVHUB_WEB_PORT:-3000}:3000"
+    environment:
+      STORAGE_ADAPTER: http
+      NEXT_PUBLIC_API_URL: http://api:8787
+      NAVHUB_STORAGE_BASE_URL: http://api:8787
+
   postgres:
     image: pgvector/pgvector:pg17
     container_name: navhub-postgres
@@ -86,7 +102,6 @@ services:
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-change-me-in-production}
 
-  # ---------------- MCP HTTP：给远程 AI 客户端用 ----------------
   mcp:
     build:
       context: ..
@@ -97,14 +112,13 @@ services:
     restart: unless-stopped
     command: ["node", "--experimental-strip-types", "packages/mcp/src/http.ts"]
     ports:
-      # 容器内必须监听 0.0.0.0 才能被宿主访问；对外暴露的开关交给防火墙/反代
       - "${NAVHUB_MCP_PORT:-8790}:8790"
     volumes:
       - navhub-data:/data
     environment:
       NAVHUB_MCP_HTTP_HOST: 0.0.0.0
       NAVHUB_MCP_HTTP_PORT: "8790"
-      NAVHUB_MCP_TOKEN: ${NAVHUB_MCP_TOKEN:?mcp profile 需要设置 NAVHUB_MCP_TOKEN}
+      NAVHUB_MCP_TOKEN: ${NAVHUB_MCP_TOKEN:?mcp profile requires NAVHUB_MCP_TOKEN}
       NAVHUB_MCP_SCOPES: ${NAVHUB_MCP_SCOPES:-read,write}
       NAVHUB_SQLITE_PATH: /data/navhub.db
       NAVHUB_EMBEDDING_CACHE: /data/models

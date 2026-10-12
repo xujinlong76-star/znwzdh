@@ -128,6 +128,53 @@ TypeScript 严格模式 `tsc --noEmit`：**0 错误**。
    `import.meta.url === "file://" + process.argv[1]` 在 Windows 上因盘符大小写/斜杠形式不一致而恒为 false，
    `server.ts` 直接运行会**退出码 0 且无任何输出**（比报错更难查）。已改为独立入口 `main.ts` / `seed-main.ts`。
 
+## MCP 端到端验收（真实 JSON-RPC 握手）
+
+用真实 MCP 客户端协议（stdio + `initialize` + `tools/list` + `tools/call`）验证，非模拟。
+
+```
+handshake: ok
+server: {"name":"navhub","version":"0.1.0"}
+tools count: 9
+  - search_sites   [query,limit,categoryId,tag]
+  - get_site       [idOrUrl]
+  - list_categories[includeCounts]
+  - get_stats      []
+  - create_site    [url,title,description,categoryId,tags,enrich,idempotencyKey]
+  - update_site    [id,title,description,categoryId,tags,featured]
+  - set_status     [id,status]
+  - batch_import   [sites,defaultCategoryId,dryRun,idempotencyKey]
+  - health_check   [limit,onlyUnchecked]
+```
+
+### 真实工具调用结果
+
+```
+[search_sites] query=写代码的AI count=3 channels=["fts","semantic"] tookMs=609
+   Cursor          matchedBy={"fts":1,"semantic":1}
+   GitHub Copilot  matchedBy={"fts":2,"semantic":2}
+   Claude          matchedBy={"fts":4,"semantic":4}
+
+[batch_import dryRun] dryRun=true wouldCreate=1
+   plan=[{"url":"https://example.com/mcp-dry","action":"create","title":"MCP 干跑"}]
+
+[get_stats] sites=50 categories=5 semantic=true
+```
+
+`matchedBy` 让 AI 能解释「为什么推荐这个站点」，而不是只给一个不透明的排序。
+
+### dryRun 未落库（已核对）
+
+```
+调用 batch_import（未显式传 dryRun）后：
+  库中站点数           50  -> 50   （未增加）
+  库中 example.com 站点  0          （未写入）
+```
+
+注意：用「干跑」两个字做一次语义搜索会返回 20 条结果 —— 那是**语义通道的正常行为**
+（自然语言查询会召回语义相近的站点），并不是该站点被写入了。
+判定「是否落库」必须按 URL 或总数核对，这也是这次验收里修正过的一个误读。
+
 ## 已知未完成项
 
 - `standard`（PostgreSQL + pgvector）模式的**代码已实现但未在本机运行验证** ——

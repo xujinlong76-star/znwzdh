@@ -302,81 +302,89 @@ compose 也透传了该变量，因此无网络限制的环境无需任何额外
 - `postgres` 服务原先没有端口映射，宿主机无法直连；已补 `POSTGRES_PORT`（默认 5432）。
 
 
-## 前端（apps/web）接入现状 —— 精确说明
+## 前端（apps/web）接入 —— 已完成读 + 写双路径
 
-这一步做完后必须澄清一个容易误读的点：**适配器已经接上，但首页读的是构建期静态 JSON，不是数据库。**
-
-### 已完成
+### 完成情况
 
 | 项 | 状态 |
 | --- | --- |
 | vendoring NavSphere 底座（commit `6ba74fa`） | ✅ [scripts/vendor-web.mjs](scripts/vendor-web.mjs) |
-| `StorageAdapter` 三种后端实现 | ✅ 含 github / http / 以及 sqlite 实现（见下） |
-| `src/lib/github.ts` 替换为门面 | ✅ 保持 `getFileContent` / `commitFile` 签名不变 |
+| `StorageAdapter` 三后端（http / github / sqlite 实现） | ✅ |
+| `src/lib/github.ts` 替换为门面（签名不变，69 处调用点零改动） | ✅ |
+| **首页读路径改为异步读中枢** | ✅ `page.tsx` 已改 |
+| **路由强制动态渲染** | ✅ `export const dynamic = "force-dynamic"` |
+| 中枢不可用时的降级 | ✅ 回退到构建期内联基线 |
+| `next build` 通过 | ✅ 全部页面生成 |
 | 覆盖文件在 Docker 构建期注入 | ✅ `docker/Dockerfile.web` |
-| `next build` 通过（全部页面生成） | ✅ 见下方实测 |
-| 首页能正常渲染并返回 200 | ✅ |
+
+### 实测证据
+
+**1. 首页渲染的是数据库内容，不是上游静态 JSON**
 
 ```
-✓ Compiled successfully
-✓ Generating static pages (9/9)
-ƒ Middleware  88.1 kB
-采用 STORAGE_ADAPTER=http 启动后：GET / -> 200, 272917 bytes
+中枢：{sites:50, categories:5, tags:77}
+中枢 /api/storage?path=.../navigation.json：5 个类目 × 11 站点
+中枢 /api/storage?path=.../site.json：title = NavHub 导航
+
+GET http://127.0.0.1:3000/  ->  200, 89466 bytes
+<title> = NavHub 导航
+description = AI 原生的网址导航 —— 支持中文语义检索、拼音与关键词混合召回
+
+库中站点是否渲染：
+  中国天气网      TRUE
+  魔搭 ModelScope TRUE
+  力扣 LeetCode   TRUE
+  Excalidraw      TRUE
 ```
 
-### 尚未完成（重要）
+**2. 后台改完，前台立即生效（读路径真正打通）**
 
-首页是**构建期**读取静态 JSON 的，没有走适配器：
-
-```tsx
-// apps/web/src/app/page.tsx（上游原样保留）
-import navigationData from "@/navsphere/content/navigation.json";
-import siteDataRaw from "@/navsphere/content/site.json";
-
-export default function HomePage() {
-  const { navigationData, siteData } = getData();   // 同步读静态 JSON
-  ...
-}
+```
+PUT /api/storage  (修改 site.json 的 title)
+GET http://127.0.0.1:3000/  ->  <title> 立刻变为修改后的值
+（随后已还原）
 ```
 
-实测证据：用 `STORAGE_ADAPTER=http` 启动前端并访问首页，渲染出来的是 NavSphere 自带的
-设计类站点（Figma / GitHub Copilot…），我们播种的「中国天气网 / 魔搭 ModelScope / 力扣 LeetCode」
-**全都没有出现**。
+**3. 中枢不可用时优雅降级（不白屏、不 500）**
 
-**因此目前适配器覆盖的是「写路径 + 后台 API」，不是「首页读取路径」。**
+```
+停止中枢后 GET /：
+  status = 200, 272876 bytes
+  title  = NavSphere导航        （回退到构建期基线）
+  含上游基线站点 Vercel   TRUE   （基线生效）
+  含数据库站点中国天气网  FALSE  （数据库不可达，符合预期）
+```
 
-### 为什么这样，以及怎么补
+### 改动要点与踩到的坑
 
-原因：`StorageAdapter` 的读写是**异步**的，而上游首页组件是同步渲染（直接 `import` JSON）。
-要让首页读数据库，需要三处改动：
+1. **首页原本是同步读静态 JSON**（`import navigationData from "@/navsphere/content/navigation.json"`），
+   而适配器读写是异步的。已把 `page.tsx` 与 `generateMetadata()` 改为 `async`。
 
-1. 把 `page.tsx` 改成 `async` 服务端组件，`await getFileContent(path)`；
-2. `generateMetadata()` 同样改成 `async`；
-3. `components/navigation-content.tsx` 接收的是已处理数据，不需改，但它上游的
-   `getProcessedData` 调用点要接收 await 结果。
+2. **`generateMetadata` 被构建期固化**（实测踩到）：只改成 async 还不够 —— 首页参与预渲染时，
+   `<title>` 会被写死在构建产物里。证据：库里标题已是「NavHub 导航」，页面 `<title>` 却仍是构建时的
+   回退值「NavSphere导航」。加 `export const dynamic = "force-dynamic"` 后每次请求实时读取，问题消失。
+   （站点列表当时看起来正常，是因为它恰好走了动态路径，掩盖了这个问题。）
 
-这是**读路径的异步化**，属于对上游结构的实质性改动（不是替换 2 个函数就够），
-因此本次没有顺手做掉 —— 需要先用真实数据回归一遍首页与 `/submit`、`/videos` 的渲染。
+3. **站点配置必须有基线**：前端 `generateMetadata()` 直接读 `siteData.basic.title`，
+   若中枢在「从未保存过站点配置」时返回 `{}`，首页会在渲染期抛错。
+   已在中枢侧提供 `DEFAULT_SITE_CONFIG`（NavHub 品牌），并由 seed 落库。
 
-补充：`STORAGE_ADAPTER=sqlite`（同进程直连）在 Web 前端**已主动禁用**并给出明确报错，
-因为直连要求把整个 `@navhub/api` 打进前端产物（实测报 `Module not found: @navhub/api`），
-架构上不划算；需要省一次 HTTP 往返时把中枢与前端放同机、用 `http` 指向 `127.0.0.1` 即可。
+4. **两级兜底**：`getFileContent` 在「适配器报错」和「返回空结构」两种情况下都回退到构建期内联基线，
+   保证「中枢没起来」与「库是空的」都不会让站点变成空壳。
+
+### 主动禁用的能力
+
+`STORAGE_ADAPTER=sqlite`（同进程直连）在 Web 前端**已禁用并给出明确报错**：
+直连要求把整个 `@navhub/api` 打进前端产物（实测报 `Module not found: @navhub/api`，
+标记为 external 又会与 Next 内部 webpack 插件冲突）。需要省一次 HTTP 往返时，
+把中枢与前端放同机、用 `http` 指向 `127.0.0.1` 即可。
 `createSqliteAdapter` 仍保留在 `storage-adapter.ts` 供其他运行环境使用。
-
-### 顺带发现并处理的上游问题
-
-1. **zod 版本冲突**：`@hookform/resolvers@3.9.1` 只支持 zod v3，而我们后端用了 zod v4，
-   导致前端 `zodResolver(formSchema)` 类型不兼容。已在 `pnpm-workspace.yaml` 用 `overrides`
-   把整仓 zod 统一到 `^3.25.76`，并把 MCP 的 JSON Schema 转换换成 `zod-to-json-schema`。
-2. **`output: "standalone"` 在 Windows 上构建失败**：它需要创建符号链接，未开启开发者模式时报
-   `EPERM: operation not permitted, symlink`。已改为按需开启（`NAVHUB_WEB_STANDALONE=1`），
-   Docker 部署改用 `next start`。
 
 ## 已知未完成项
 
 - `standard` 模式：**已完成实机验证（17/17）**，见上节。
   `PgVectorStore` 与 `SqliteVecStore` 共享同一套接口，但**尚无自动化跨方言一致性测试**
   （`scripts/pg-check.mts` 是手工验证脚本，需要真实 PostgreSQL 才跑）。
-- `apps/web`：适配器与门面已就位、构建通过，但**首页仍读构建期静态 JSON**，
-  尚未把读路径异步化（详见上节「前端接入现状」）。这是当前最主要的未完成项。
+- `apps/web`：读写双路径均已打通并实测（见上节）。
+  `/submit`、`/videos` 等页面的数据来源仍沿用上游写法，未逐一改造。
 - 健康巡检、对话式侧边栏、PWA、主题系统尚未实现。

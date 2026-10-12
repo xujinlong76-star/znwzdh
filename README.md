@@ -87,7 +87,7 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d  # 追加 MCP HTTP
 
 或直接用镜像前缀拉取：`docker pull docker.m.daocloud.io/pgvector/pgvector:pg17`
 
-### standard 模式验证
+### Web 前端（读写双路径）
 
 需要真实 PostgreSQL 的分档验证（**17/17 通过**，详见 [验收报告](docs/acceptance-report.md)）：
 

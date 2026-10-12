@@ -214,10 +214,37 @@ async function upsertSite(
   }
 }
 
-/** site.json：站点全局配置。用 jobs 表里的键值存储，避免为此加一张表 */
+/**
+ * site.json 的基线默认值。
+ *
+ * 为什么必须有基线：前端的 generateMetadata() 直接读 siteData.basic.title 等字段，
+ * 若中枢在"用户从未保存过站点配置"时返回 {}，首页会在渲染期抛错。
+ * 因此这里给出可用的默认品牌信息，用户后台保存后会覆盖它。
+ */
+export const DEFAULT_SITE_CONFIG = {
+  basic: {
+    title: "NavHub 导航",
+    description: "AI 原生的网址导航 —— 支持中文语义检索、拼音与关键词混合召回",
+    keywords: "网址导航,导航站,AI 导航,语义检索,书签",
+  },
+  appearance: {
+    logo: "/assets/images/alogo.webp",
+    favicon: "/assets/images/favicon.webp",
+    theme: "system",
+  },
+  navigation: { linkTarget: "_blank" },
+} as const;
+
+/**
+ * site.json：站点全局配置。用 jobs 表里的键值存储，避免为此另加一张表。
+ * 未保存过时返回 DEFAULT_SITE_CONFIG（而不是空对象），保证前端渲染不炸。
+ */
 export async function readSiteConfig(ctx: AppContext): Promise<Record<string, unknown>> {
   const row = await readKv(ctx, "site-config");
-  return (row ?? {}) as Record<string, unknown>;
+  if (!row || typeof row !== "object" || Object.keys(row as object).length === 0) {
+    return structuredClone(DEFAULT_SITE_CONFIG) as unknown as Record<string, unknown>;
+  }
+  return row as Record<string, unknown>;
 }
 
 export async function writeSiteConfig(ctx: AppContext, config: Record<string, unknown>): Promise<void> {

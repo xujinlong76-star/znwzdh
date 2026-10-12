@@ -13,6 +13,7 @@ import { hashSiteId } from "@navhub/store";
 import { siteEmbeddingText } from "@navhub/ai";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
+import { DEFAULT_SITE_CONFIG, writeSiteConfig } from "./storage.ts";
 
 interface SeedShape {
   categories: Array<{ id: string; title: string; icon?: string; description?: string }>;
@@ -20,12 +21,51 @@ interface SeedShape {
   collections?: Array<{ slug: string; title: string; kind: string; description: string; sites: string[] }>;
 }
 
-export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<{ categories: number; sites: number; skipped: number; embedded: number }> {
+/** 只读"库里是否真的存过站点配置"，不触发默认值回退 */
+async function readStoredSiteConfig(ctx: { db: { dialect: string; sqlite?: unknown; pg?: unknown } }): Promise<unknown | null> {
+  const db = ctx.db as {
+    dialect: string;
+    sqlite?: { prepare(sql: string): { get(...p: unknown[]): unknown } };
+    pg?: { query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }> };
+  };
+  const KEY = "kv:site-config";
+  if (db.dialect === "sqlite") {
+    const row = db.sqlite!.prepare("SELECT payload FROM jobs WHERE id = ?").get(KEY) as { payload: string } | undefined;
+    return row?.payload ? JSON.parse(row.payload) : null;
+  }
+  const res = await db.pg!.query("SELECT payload FROM jobs WHERE id = $1", [KEY]);
+  const row = res.rows[0] as { payload: string } | undefined;
+  return row?.payload ? JSON.parse(row.payload) : null;
+}
+
+export interface SeedResult {
+  categories: number;
+  sites: number;
+  skipped: number;
+  embedded: number;
+  siteConfigSeeded: boolean;
+}
+
+export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<SeedResult> {
   const here = dirname(fileURLToPath(import.meta.url));
   const raw = JSON.parse(readFileSync(join(here, "seed-data.json"), "utf8")) as SeedShape;
 
   const config = loadConfig();
   const ctx = await createContext(config);
+
+  /**
+   * 站点全局配置：只在从未保存过时落库 NavHub 的品牌基线。
+   *
+   * 注意：中枢的 readSiteConfig() 在"未保存过"时会返回 DEFAULT_SITE_CONFIG，
+   * 因此这里不能拿返回值判断"是否已保存"（永远会是基线值），
+   * 而是直接检查库里的键值是否真的存在。
+   */
+  const storedConfig = await readStoredSiteConfig(ctx);
+  let siteConfigSeeded = false;
+  if (storedConfig === null) {
+    await writeSiteConfig(ctx, structuredClone(DEFAULT_SITE_CONFIG) as unknown as Record<string, unknown>);
+    siteConfigSeeded = true;
+  }
 
   let categories = 0;
   for (const c of raw.categories) {
@@ -62,7 +102,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   }
 
   await ctx.close();
-  return { categories, sites, skipped, embedded };
+  return { categories, sites, skipped, embedded, siteConfigSeeded };
 }
 
 /**

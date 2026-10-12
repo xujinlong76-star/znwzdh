@@ -12,6 +12,10 @@
  *   sqlite -> 同进程直连（单机部署，省一次网络往返）
  */
 import { auth } from "@/lib/auth";
+// 构建期即内联的基线数据（NavSphere 自带），用作中枢不可用时的兜底。
+// 注意：这是「内容兜底」而不是「配置兜底」—— 正常情况下数据来自中枢。
+import baselineNavigation from "@/navsphere/content/navigation.json";
+import baselineSite from "@/navsphere/content/site.json";
 import {
   createStorageAdapter,
   resolveAdapterKind,
@@ -82,16 +86,40 @@ function getAdapter(): StorageAdapter {
   return cached;
 }
 
+/** 判断中枢返回的导航数据是否"有内容" */
+function hasNavigation(data: unknown): boolean {
+  const items = (data as { navigationItems?: unknown } | null)?.navigationItems;
+  return Array.isArray(items) && items.length > 0;
+}
+
 /**
  * 读取一个"文件"。签名与原版完全一致，因此调用点无需修改。
+ *
+ * 兜底策略（两级）：
+ *   1. 适配器读取失败 -> 落到构建期内联的基线数据；
+ *   2. 适配器返回空结构（例如中枢库还是空的）-> 同样落到基线。
+ * 目的是让"中枢没起来"或"库是空的"这两个场景下，站点仍然是一个可用的导航页，
+ * 而不是白屏或空列表。
  */
 export async function getFileContent(path: string) {
+  const isNavigation = path.includes("navigation.json");
+  const isSite = path.includes("site.json");
+
   try {
-    return await getAdapter().read(path);
+    const data = await getAdapter().read(path);
+    if (isNavigation && !hasNavigation(data)) {
+      console.warn("[storage] 中枢返回空导航数据，回退到构建期基线:", path);
+      return baselineNavigation;
+    }
+    if (isSite && (data === null || typeof data !== "object" || Object.keys(data as object).length === 0)) {
+      console.warn("[storage] 中枢返回空站点配置，回退到构建期基线:", path);
+      return baselineSite;
+    }
+    return data;
   } catch (error) {
     console.error("[storage] read failed:", path, error);
-    // 与原版一致的兜底语义：读不到时返回空结构，避免首屏直接 500
-    if (path.includes("navigation.json")) return { navigationItems: [] };
+    if (isNavigation) return baselineNavigation;
+    if (isSite) return baselineSite;
     return {};
   }
 }

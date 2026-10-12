@@ -251,7 +251,8 @@ export class SearchEngine {
   /** 类目含后代（anchor 物化路径前缀） */
   private async categoryWithDescendants(categoryId: string): Promise<Set<string>> {
     const rows = await this.rawRows(`SELECT anchor FROM categories WHERE id = ?`, [categoryId]);
-    const anchor = rows[0]?.anchor;
+    // rawRows 返回 SiteRow（为复用统一的行读取路径），这里只取 anchor 字段
+    const anchor = (rows[0] as unknown as { anchor?: string } | undefined)?.anchor;
     const ids = new Set<string>([categoryId]);
     if (!anchor) return ids;
     const descendants = await this.rawRows(`SELECT id FROM categories WHERE anchor LIKE ?`, [anchor + "/%"]);

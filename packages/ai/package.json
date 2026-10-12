@@ -1,0 +1,24 @@
+{
+  "name": "@navhub/ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "4.3.1",
+    "@navhub/core": "workspace:*",
+    "zod": "4.6.6"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

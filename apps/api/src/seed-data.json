@@ -1,0 +1,70 @@
+{
+  "categories": [
+    { "id": "cat-ai", "title": "AI 工具", "icon": "sparkles", "description": "大模型、AI 编程、生成式工具" },
+    { "id": "cat-dev", "title": "开发运维", "icon": "code", "description": "代码托管、包管理、部署与监控" },
+    { "id": "cat-design", "title": "设计资源", "icon": "palette", "description": "UI 设计、图片素材、配色与字体" },
+    { "id": "cat-learn", "title": "学习教育", "icon": "book", "description": "文档、教程、百科与课程" },
+    { "id": "cat-life", "title": "生活服务", "icon": "coffee", "description": "天气、地图、出行与购物" }
+  ],
+  "sites": [
+    { "url": "https://github.com/features/copilot", "title": "GitHub Copilot", "description": "AI 代码补全与编程助手，支持 VS Code、JetBrains 等主流编辑器", "categoryId": "cat-ai", "tags": ["代码补全", "编程助手"] },
+    { "url": "https://cursor.com", "title": "Cursor", "description": "AI 驱动的代码编辑器，用自然语言写代码、改代码", "categoryId": "cat-ai", "tags": ["代码编辑器", "AI 编程"] },
+    { "url": "https://claude.ai", "title": "Claude", "description": "Anthropic 的大语言模型对话助手，擅长长文本与代码理解", "categoryId": "cat-ai", "tags": ["大模型", "对话"] },
+    { "url": "https://chat.deepseek.com", "title": "DeepSeek", "description": "深度求索的大模型对话与推理服务，中文表现优秀", "categoryId": "cat-ai", "tags": ["大模型", "中文"] },
+    { "url": "https://chatgpt.com", "title": "ChatGPT", "description": "OpenAI 的对话式 AI 助手", "categoryId": "cat-ai", "tags": ["大模型", "对话"] },
+    { "url": "https://huggingface.co", "title": "Hugging Face", "description": "开源模型与数据集社区，模型下载与在线推理", "categoryId": "cat-ai", "tags": ["模型库", "数据集"] },
+    { "url": "https://ollama.com", "title": "Ollama", "description": "本地一键运行开源大模型，隐私友好", "categoryId": "cat-ai", "tags": ["本地部署", "大模型"] },
+    { "url": "https://midjourney.com", "title": "Midjourney", "description": "AI 绘画与图像生成工具", "categoryId": "cat-ai", "tags": ["AI 绘图", "生成"] },
+    { "url": "https://suno.com", "title": "Suno", "description": "AI 音乐生成，输入歌词即可出歌", "categoryId": "cat-ai", "tags": ["AI 音乐", "生成"] },
+    { "url": "https://modelscope.cn", "title": "魔搭 ModelScope", "description": "阿里达摩院开源模型社区，国内模型下载优选", "categoryId": "cat-ai", "tags": ["模型库", "国内"] },
+
+    { "url": "https://github.com", "title": "GitHub", "description": "全球最大的代码托管与协作平台", "categoryId": "cat-dev", "tags": ["代码托管", "开源"] },
+    { "url": "https://gitee.com", "title": "Gitee 码云", "description": "国内代码托管平台，访问速度快", "categoryId": "cat-dev", "tags": ["代码托管", "国内"] },
+    { "url": "https://npmjs.com", "title": "npm", "description": "JavaScript 包管理器与依赖仓库", "categoryId": "cat-dev", "tags": ["包管理", "JavaScript"] },
+    { "url": "https://registry.npmmirror.com", "title": "npmmirror", "description": "淘宝 NPM 镜像，国内安装依赖加速", "categoryId": "cat-dev", "tags": ["镜像", "包管理"] },
+    { "url": "https://hub.docker.com", "title": "Docker Hub", "description": "容器镜像仓库，镜像拉取与发布", "categoryId": "cat-dev", "tags": ["容器", "部署"] },
+    { "url": "https://kubernetes.io", "title": "Kubernetes", "description": "容器编排系统官方文档与下载", "categoryId": "cat-dev", "tags": ["容器", "编排"] },
+    { "url": "https://developer.mozilla.org", "title": "MDN Web Docs", "description": "Web 技术权威文档，HTML/CSS/JS 参考", "categoryId": "cat-dev", "tags": ["文档", "Web"] },
+    { "url": "https://stackoverflow.com", "title": "Stack Overflow", "description": "程序员问答社区，几乎所有报错都能找到答案", "categoryId": "cat-dev", "tags": ["问答", "社区"] },
+    { "url": "https://vercel.com", "title": "Vercel", "description": "前端部署平台，推送即上线", "categoryId": "cat-dev", "tags": ["部署", "托管"] },
+    { "url": "https://cloudflare.com", "title": "Cloudflare", "description": "CDN、DNS、Workers 边缘计算与 Pages 部署", "categoryId": "cat-dev", "tags": ["CDN", "边缘计算"] },
+
+    { "url": "https://figma.com", "title": "Figma", "description": "在线 UI 设计与原型协作工具，多人实时编辑", "categoryId": "cat-design", "tags": ["UI 设计", "协作"] },
+    { "url": "https://unsplash.com", "title": "Unsplash", "description": "免费高清图片素材库，可商用", "categoryId": "cat-design", "tags": ["图片素材", "免费"] },
+    { "url": "https://iconify.design", "title": "Iconify", "description": "海量开源图标聚合，支持多套图标集", "categoryId": "cat-design", "tags": ["图标", "素材"] },
+    { "url": "https://coolors.co", "title": "Coolors", "description": "快速生成与微调配色方案", "categoryId": "cat-design", "tags": ["配色", "工具"] },
+    { "url": "https://excalidraw.com", "title": "Excalidraw", "description": "在线手绘风格白板，画流程图与架构图", "categoryId": "cat-design", "tags": ["白板", "流程图"] },
+    { "url": "https://fonts.google.com", "title": "Google Fonts", "description": "免费开源字体库，中英文字体齐全", "categoryId": "cat-design", "tags": ["字体", "免费"] },
+    { "url": "https://tinypng.com", "title": "TinyPNG", "description": "在线图片压缩，显著减小体积且保持画质", "categoryId": "cat-design", "tags": ["压缩", "图片处理"] },
+    { "url": "https://uiverse.io", "title": "Uiverse", "description": "社区分享的开源 UI 组件与 CSS 特效", "categoryId": "cat-design", "tags": ["组件", "CSS"] },
+    { "url": "https://dribbble.com", "title": "Dribbble", "description": "设计师作品社区，寻找设计灵感", "categoryId": "cat-design", "tags": ["灵感", "社区"] },
+    { "url": "https://www.remove.bg", "title": "Remove.bg", "description": "AI 一键抠图去背景", "categoryId": "cat-design", "tags": ["抠图", "AI"] },
+
+    { "url": "https://developer.mozilla.org/zh-CN", "title": "MDN 中文", "description": "MDN Web 文档中文版，前端必读", "categoryId": "cat-learn", "tags": ["文档", "前端"] },
+    { "url": "https://zh.wikipedia.org", "title": "维基百科", "description": "自由的百科全书", "categoryId": "cat-learn", "tags": ["百科", "知识"] },
+    { "url": "https://www.runoob.com", "title": "菜鸟教程", "description": "编程入门教程，覆盖主流语言与框架", "categoryId": "cat-learn", "tags": ["教程", "入门"] },
+    { "url": "https://www.bilibili.com", "title": "哔哩哔哩", "description": "国内视频社区，技术课程与学习资源丰富", "categoryId": "cat-learn", "tags": ["视频", "课程"] },
+    { "url": "https://leetcode.cn", "title": "力扣 LeetCode", "description": "算法题库与在线编程练习", "categoryId": "cat-learn", "tags": ["算法", "练习"] },
+    { "url": "https://www.coursera.org", "title": "Coursera", "description": "国际名校在线课程平台", "categoryId": "cat-learn", "tags": ["课程", "国际"] },
+    { "url": "https://arxiv.org", "title": "arXiv", "description": "预印本论文库，AI 与计算机科学前沿", "categoryId": "cat-learn", "tags": ["论文", "科研"] },
+    { "url": "https://github.com/trending", "title": "GitHub Trending", "description": "每日热门开源项目榜，追踪技术趋势", "categoryId": "cat-learn", "tags": ["趋势", "开源"] },
+    { "url": "https://paperswithcode.com", "title": "Papers with Code", "description": "论文与开源实现对照，AI 研究必备", "categoryId": "cat-learn", "tags": ["论文", "代码"] },
+    { "url": "https://roadmap.sh", "title": "roadmap.sh", "description": "开发者学习路线图，规划技术成长路径", "categoryId": "cat-learn", "tags": ["路线图", "规划"] },
+
+    { "url": "https://weather.com.cn", "title": "中国天气网", "description": "全国天气预报与灾害预警查询", "categoryId": "cat-life", "tags": ["天气", "查询"] },
+    { "url": "https://map.baidu.com", "title": "百度地图", "description": "地图导航、路线规划与周边搜索", "categoryId": "cat-life", "tags": ["地图", "导航"] },
+    { "url": "https://www.amap.com", "title": "高德地图", "description": "地图导航与实时路况", "categoryId": "cat-life", "tags": ["地图", "路况"] },
+    { "url": "https://www.12306.cn", "title": "铁路 12306", "description": "火车票与高铁票官方购票平台", "categoryId": "cat-life", "tags": ["出行", "购票"] },
+    { "url": "https://www.taobao.com", "title": "淘宝", "description": "综合电商购物平台", "categoryId": "cat-life", "tags": ["购物", "电商"] },
+    { "url": "https://www.jd.com", "title": "京东", "description": "自营电商，数码家电配送快", "categoryId": "cat-life", "tags": ["购物", "电商"] },
+    { "url": "https://www.xiaohongshu.com", "title": "小红书", "description": "生活方式分享社区，攻略与测评", "categoryId": "cat-life", "tags": ["社区", "生活"] },
+    { "url": "https://www.zhihu.com", "title": "知乎", "description": "中文问答社区，深度讨论与经验分享", "categoryId": "cat-life", "tags": ["问答", "社区"] },
+    { "url": "https://www.douban.com", "title": "豆瓣", "description": "书影音评分与评论社区", "categoryId": "cat-life", "tags": ["书影音", "评分"] },
+    { "url": "https://www.12377.cn", "title": "国家网信办举报中心", "description": "网络违法和不良信息举报平台", "categoryId": "cat-life", "tags": ["政务", "举报"] }
+  ],
+  "collections": [
+    { "slug": "ai-coding", "title": "AI 编程工具链", "kind": "topic", "description": "从补全到重构，用 AI 提升编码效率", "sites": ["https://github.com/features/copilot", "https://cursor.com", "https://chat.deepseek.com"] },
+    { "slug": "frontend-starter", "title": "前端入门路线", "kind": "roadmap", "description": "零基础到能独立做项目", "sites": ["https://developer.mozilla.org/zh-CN", "https://www.runoob.com", "https://roadmap.sh", "https://github.com/trending"] },
+    { "slug": "design-toolkit", "title": "设计速查工具箱", "kind": "topic", "description": "配色、图标、字体、抠图一站备齐", "sites": ["https://figma.com", "https://iconify.design", "https://coolors.co", "https://fonts.google.com", "https://www.remove.bg"] }
+  ]
+}

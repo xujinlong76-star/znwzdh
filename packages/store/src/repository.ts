@@ -72,7 +72,18 @@ export class Repository {
   }
 
   async createSite(input: SiteInput): Promise<Site> {
-    const id = randomUUID();
+    return this.createSiteWithId({ ...input, id: randomUUID() });
+  }
+
+  /**
+   * 用指定 id 创建站点。
+   *
+   * 存在的意义：NavSphere 前端提交的 navigation.json 里带有它自己生成的站点 id，
+   * 如果我们在入库时换成新 id，前端后续针对该 id 的 PATCH/DELETE 就会全部落空。
+   * 因此这条兼容路径必须保留调用方的 id。
+   */
+  async createSiteWithId(input: SiteInput & { id: string }): Promise<Site> {
+    const id = input.id;
     const now = Date.now();
     const index = buildIndexFields({ title: input.title ?? input.url, description: input.description, url: input.url, tags: input.tags });
     await this.run(

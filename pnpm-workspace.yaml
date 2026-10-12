@@ -3,11 +3,15 @@ packages:
   - 'apps/*'
 
 # 安装期构建脚本白名单（pnpm 11 的配置位置）
-#  - better-sqlite3: 需要编译原生扩展
-#  - esbuild: 需要下载平台二进制（vitest / tsx 依赖）
+#  - better-sqlite3:   编译原生 SQLite 扩展
+#  - esbuild:          下载平台二进制（vitest / tsx 依赖）
+#  - onnxruntime-node: 下载 ONNX 运行时的本地二进制（本地 embedding 必需）
+#  - protobufjs:       生成 protobuf 代码（onnxruntime 依赖）
 allowBuilds:
   better-sqlite3: true
   esbuild: true
+  onnxruntime-node: true
+  protobufjs: true
 
 minimumReleaseAgeExclude:
   - zod@4.6.6

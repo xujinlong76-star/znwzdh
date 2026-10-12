@@ -1,9 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": [
-      "ES2023"
-    ],
+    "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
@@ -14,9 +12,13 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    // 全仓统一使用显式 .ts 后缀导入（Node 22 的 --experimental-strip-types 直接运行源码所需）
+    "allowImportingTsExtensions": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    // 原生依赖（sqlite-vec）没有类型声明，自定义 ambient 声明放在仓库根的 types/
+    "typeRoots": ["./types", "./node_modules/@types"]
   }
 }

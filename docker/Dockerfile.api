@@ -1,0 +1,41 @@
+# NavHub 中枢服务镜像（lite 模式默认：SQLite + sqlite-vec + FTS5）
+FROM node:22-bookworm-slim AS base
+
+# better-sqlite3 在 lite 模式下需要编译；standard 模式用不到但保留 node-gyp 能力
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 make g++ ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# pnpm：不依赖 corepack（corepack 会尝试从网络拉取 version，构建环境常不可用）
+RUN npm install -g pnpm@11.7.0 --registry=https://registry.npmmirror.com
+
+WORKDIR /app
+
+# 先只拷贝清单，最大化利用层缓存
+COPY package.json pnpm-workspace.yaml .npmrc tsconfig.base.json ./
+COPY packages/core/package.json ./packages/core/
+COPY packages/store/package.json ./packages/store/
+COPY packages/ai/package.json ./packages/ai/
+COPY packages/mcp/package.json ./packages/mcp/
+COPY apps/api/package.json ./apps/api/
+
+# 允许原生模块构建（与 pnpm-workspace.yaml 的 allowBuilds 一致）
+RUN pnpm install --no-frozen-lockfile
+
+COPY packages ./packages
+COPY apps/api ./apps/api
+
+ENV NODE_ENV=production \
+    NAVHUB_MODE=lite \
+    NAVHUB_SQLITE_PATH=/data/navhub.db \
+    NAVHUB_EMBEDDING_CACHE=/data/models \
+    PORT=8787
+
+VOLUME ["/data"]
+EXPOSE 8787
+
+# 健康检查直接打真实接口，而不是只看端口是否监听
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8787/api/health || exit 1
+
+CMD ["node", "--experimental-strip-types", "apps/api/src/server.ts"]

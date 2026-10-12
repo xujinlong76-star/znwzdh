@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.next
+data
+*.db
+*.db-journal
+*.db-wal
+.git
+.research
+.spike
+coverage
+*.log

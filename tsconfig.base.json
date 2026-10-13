@@ -21,9 +21,24 @@
     // 原生依赖（sqlite-vec）没有类型声明，自定义 ambient 声明放在仓库根 types/
     "typeRoots": ["./types", "./node_modules/@types"]
   },
-  // scripts/ 下是本地验证脚手架（pg-check 等），会连真实数据库、依赖运行时环境变量，
-  // 不适合纳入严格类型检查
-  // apps/web 是 vendored 的上游底座（有自己的 tsconfig 与构建流程），
-  // 不纳入本仓库的严格类型检查，避免与上游代码风格冲突
-  "exclude": ["node_modules", "dist", ".next", "data", "scripts", "apps/web"]
+  // 排除说明：
+  //  - scripts/         本地验证脚手架（pg-check 等），连真实数据库、依赖运行时环境变量
+  //  - apps/web         vendored 的上游底座（有自己的 tsconfig 与 Next 构建流程）
+  //  - apps/web-overlay NavHub 自研前端覆盖层，由 vendor 脚本合并进 apps/web 后
+  //                     由 Next 编译；它本身没有 package.json / React 类型，
+  //                     放在根 tsconfig 里直接检查会因缺少 jsx 与 react 类型而报错
+  //  - **/test/**       测试代码不受 noUncheckedIndexedAccess 的严格下标检查约束
+  //                     （测试里大量 __proto__/字面量下标访问，收紧会产出噪音而非真问题）；
+  //                     测试由 vitest 负责编译与运行
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".next",
+    "data",
+    "scripts",
+    "apps/web",
+    "apps/web-overlay",
+    "packages/*/test",
+    "apps/api/test"
+  ]
 }

@@ -16,6 +16,7 @@ export * from "./vault.ts";
 export * from "./prefetch.ts";
 export * from "./modular.ts";
 export * from "./diy-layout.ts";
-
-
-
+export * from "./bookmark-parser.ts";
+export * from "./keyboard-nav.ts";
+export * from "./deterministic-favicon.ts";
+export * from "./batch-operations.ts";

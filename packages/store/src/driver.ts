@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { migrateColumns } from "./migrate.ts";
+import { migrateColumns, migrateSiteIndexes } from "./migrate.ts";
 
 /**
  * 数据库驱动抽象。
@@ -86,13 +86,15 @@ CREATE TABLE IF NOT EXISTS sites (
   redirect_to TEXT,
   health_error TEXT,
   last_checked_at INTEGER,
+  deleted_at INTEGER,
   visit_count INTEGER NOT NULL DEFAULT 0,
   last_visited_at INTEGER,
   trend_score REAL NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS sites_url_idx ON sites(url);
+-- 注意：sites 的 url 唯一索引（部分索引 WHERE deleted_at IS NULL）不在此处创建——
+-- 旧库还没有 deleted_at 列，DDL 会失败。由 migrateSiteIndexes 在列迁移后创建。
 CREATE INDEX IF NOT EXISTS sites_category_idx ON sites(category_id);
 CREATE INDEX IF NOT EXISTS sites_status_idx ON sites(status);
 CREATE INDEX IF NOT EXISTS sites_pinyin_full_idx ON sites(pinyin_full);
@@ -161,9 +163,11 @@ CREATE INDEX IF NOT EXISTS audit_logs_actor_idx ON audit_logs(actor);
 
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT, status TEXT NOT NULL DEFAULT 'pending',
-  attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+  attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  next_run_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
+CREATE INDEX IF NOT EXISTS jobs_next_run_idx ON jobs(status, next_run_at);
 
 CREATE TABLE IF NOT EXISTS idempotency (
   key TEXT PRIMARY KEY, response TEXT, created_at INTEGER NOT NULL
@@ -206,7 +210,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 
 CREATE TABLE IF NOT EXISTS search_history (
-  id TEXT PRIMARY KEY,
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id TEXT NOT NULL,
   query TEXT NOT NULL,
   result_count INTEGER NOT NULL DEFAULT 0,
@@ -214,6 +218,13 @@ CREATE TABLE IF NOT EXISTS search_history (
 );
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history(user_id);
 CREATE INDEX IF NOT EXISTS search_history_created_idx ON search_history(created_at);
+
+CREATE TABLE IF NOT EXISTS user_vault_sync (
+  user_id TEXT PRIMARY KEY,
+  payload TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 const DDL_PG = `
@@ -260,13 +271,15 @@ CREATE TABLE IF NOT EXISTS sites (
   redirect_to TEXT,
   health_error TEXT,
   last_checked_at BIGINT,
+  deleted_at BIGINT,
   visit_count INTEGER NOT NULL DEFAULT 0,
   last_visited_at BIGINT,
   trend_score DOUBLE PRECISION NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS sites_url_idx ON sites(url);
+-- 注意：sites 的 url 唯一索引（部分索引 WHERE deleted_at IS NULL）不在此处创建——
+-- 旧库还没有 deleted_at 列，DDL 会失败。由 migrateSiteIndexes 在列迁移后创建。
 CREATE INDEX IF NOT EXISTS sites_category_idx ON sites(category_id);
 CREATE INDEX IF NOT EXISTS sites_status_idx ON sites(status);
 CREATE INDEX IF NOT EXISTS sites_pinyin_full_idx ON sites(pinyin_full);
@@ -338,9 +351,11 @@ CREATE INDEX IF NOT EXISTS audit_logs_actor_idx ON audit_logs(actor);
 
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT, status TEXT NOT NULL DEFAULT 'pending',
-  attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL
+  attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,
+  next_run_at BIGINT
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
+CREATE INDEX IF NOT EXISTS jobs_next_run_idx ON jobs(status, next_run_at);
 
 CREATE TABLE IF NOT EXISTS idempotency (
   key TEXT PRIMARY KEY, response TEXT, created_at BIGINT NOT NULL
@@ -383,7 +398,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 
 CREATE TABLE IF NOT EXISTS search_history (
-  id TEXT PRIMARY KEY,
+  id BIGSERIAL PRIMARY KEY,
   user_id TEXT NOT NULL,
   query TEXT NOT NULL,
   result_count INTEGER NOT NULL DEFAULT 0,
@@ -391,6 +406,13 @@ CREATE TABLE IF NOT EXISTS search_history (
 );
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history(user_id);
 CREATE INDEX IF NOT EXISTS search_history_created_idx ON search_history(created_at);
+
+CREATE TABLE IF NOT EXISTS user_vault_sync (
+  user_id TEXT PRIMARY KEY,
+  payload TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  updated_at BIGINT NOT NULL
+);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;
@@ -416,6 +438,7 @@ export async function openDb(config: {
       async close() { raw.close(); },
     };
     await migrateColumns(db);
+    await migrateSiteIndexes(db);
     return db;
   }
 
@@ -430,6 +453,7 @@ export async function openDb(config: {
     async close() { await pool.end(); },
   };
   await migrateColumns(db);
+  await migrateSiteIndexes(db);
   return db;
 }
 

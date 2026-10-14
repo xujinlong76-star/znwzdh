@@ -4,16 +4,18 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "pnpm -r --filter './packages/**' build && pnpm --filter @navhub/api build",
+    "build": "pnpm -r --filter \"@navhub/*\" build",
     "dev": "pnpm --filter @navhub/api dev",
-    "dev:web": "node scripts/run.mjs --filter navsphere-web dev",
+    "dev:web": "node scripts/run.mjs --filter navsphere dev",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm -r exec tsc --noEmit",
     "seed": "pnpm --filter @navhub/api seed",
     "mcp:stdio": "pnpm --filter @navhub/mcp start",
     "vendor:web": "node scripts/vendor-web.mjs",
-    "test:pg": "node --experimental-strip-types scripts/pg-check.mts"
+    "test:pg": "node --experimental-strip-types scripts/pg-check.mts",
+    "check:overlay": "node scripts/check-web-overlay.mjs",
+    "verify": "node scripts/check-web-overlay.mjs && pnpm -r exec tsc --noEmit && vitest run"
   },
   "devDependencies": {
     "typescript": "5.9.3",

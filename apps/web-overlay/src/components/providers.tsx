@@ -1,0 +1,21 @@
+'use client'
+
+import { SWRConfig } from 'swr'
+import { DensityProvider } from '@/components/density-provider'
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <SWRConfig
+      value={{
+        provider: () => new Map(),
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false
+      }}
+    >
+      <DensityProvider>
+        {children}
+      </DensityProvider>
+    </SWRConfig>
+  )
+}
+

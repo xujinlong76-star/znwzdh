@@ -122,9 +122,12 @@ function baselineFor(name: string): unknown | undefined {
 /**
  * 读取一个"文件"。签名与原版完全一致，因此 69 处调用点无需修改。
  *
- * 兜底策略（两级）：
- *   1. 适配器读取失败          -> 落到构建期内联基线；
- *   2. 适配器返回空结构        -> 同样落到基线。
+ * 兜底策略（三级，按"是否值得告警"区分）：
+ *   1. 中枢返回 null（该文件从未写入过）-> **静默**回退到基线。
+ *      这是正常状态而非故障；若也告警，像 videos.json 这种从没存过的文件
+ *      会在每个请求上刷一条日志（实测确实如此），把真正的问题淹没。
+ *   2. 中枢返回了数据但内容为空      -> 告警后回退（可能是数据异常）。
+ *   3. 读取失败（中枢不可达/报错）    -> 告警后回退。
  * 没有基线的文件返回 {}（与原版一致的宽松语义）。
  */
 export async function getFileContent<T = any>(path: string): Promise<T> {
@@ -134,18 +137,25 @@ export async function getFileContent<T = any>(path: string): Promise<T> {
   try {
     const data = await getAdapter().read(path);
 
+    // 情况 1：从未写入过 —— 静默回退，不告警
+    if (data === null || data === undefined) {
+      return (baseline ?? {}) as T;
+    }
+
+    // 情况 2：有数据但为空 —— 告警后回退
     // 空值判定按文件类型区分：导航类看数组长度，配置类看对象是否为空
     const looksEmpty = (name === "navigation.json" || name === "navigation-default.json" || name === "videos.json")
       ? !hasNavigation(data)
       : isEmptyObject(data);
 
     if (baseline !== undefined && looksEmpty) {
-      console.warn("[storage] 中枢返回空数据，回退到构建期基线:", path);
+      console.warn("[storage] 中枢返回了数据但内容为空，回退到构建期基线:", path);
       return baseline as T;
     }
     return data as T;
   } catch (error) {
-    console.error("[storage] read failed:", path, error);
+    // 情况 3：真正的故障
+    console.error("[storage] 读取失败，回退到构建期基线:", path, error);
     if (baseline !== undefined) return baseline as T;
     return {} as T;
   }

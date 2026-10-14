@@ -193,3 +193,31 @@ describe("个性化与相关性的关系（关键安全性质）", () => {
     expect(hits[0]!.contributions.personal).toBeDefined();
   });
 });
+
+describe("4.0 生态增强与平替雷达", () => {
+  it("能匹配 Figma 的开源平替与社区深链", async () => {
+    const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
+    const data = getEnhancedSiteData("https://www.figma.com");
+    expect(data.workspaces).toContain("design");
+    expect(data.relations).toBeDefined();
+    const penpot = data.relations?.find((r) => r.targetTitle === "Penpot");
+    expect(penpot).toBeDefined();
+    expect(penpot?.isFreeOrOpenSource).toBe(true);
+    expect(data.actions?.length).toBeGreaterThan(0);
+  });
+
+  it("能匹配 Notion 的本地化双链平替 Obsidian 与 AppFlowy", async () => {
+    const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
+    const data = getEnhancedSiteData("https://notion.so");
+    expect(data.workspaces).toContain("efficiency");
+    const obsidian = data.relations?.find((r) => r.targetTitle === "Obsidian");
+    expect(obsidian).toBeDefined();
+  });
+
+  it("能对未收录站点基于标题与语义智能推断场景工作台", async () => {
+    const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
+    const aiSite = getEnhancedSiteData("https://unknown-startup.ai", "新一代代码大模型");
+    expect(aiSite.workspaces).toContain("ai");
+    expect(aiSite.workspaces).toContain("dev");
+  });
+});

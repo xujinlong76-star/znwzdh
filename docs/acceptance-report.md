@@ -429,5 +429,356 @@ GET /videos/player -> 200   title="视频播放器 - NavHub 导航"
   `PgVectorStore` 与 `SqliteVecStore` 共享同一套接口，但**尚无自动化跨方言一致性测试**
   （`scripts/pg-check.mts` 是手工验证脚本，需要真实 PostgreSQL 才跑）。
 - `apps/web`：读写双路径均已打通并实测（见上节）。
-  `/submit`、`/videos` 等页面的数据来源仍沿用上游写法，未逐一改造。
-- 健康巡检、对话式侧边栏、PWA、主题系统尚未实现。
+  `/submit`、`/videos` 等页面**已确认接中枢**（`getFileContent` → StorageAdapter(http) → `/api/storage`，
+  见上文「全页面读路径打通」表；全仓无残留静态 `import *.json`，仅 `lib/github.ts` 的兜底基线）。
+  原「数据来源仍沿用上游写法」的记录已过期，于 2026-10-14 复核更正。
+- 健康巡检（任务与巡检历史/趋势查询已完成，见 docs/wiki）、PWA（含更新提示）已实现；
+  对话式侧边栏、主题系统部分实现。
+---
+
+# 第二轮验收：导航功能增强（2026-10-13，实测）
+
+基于 `docs/navigation-enhancement-plan.md` 实施 Phase 0-4 后的实测记录。
+
+## 测试规模
+
+```
+Test Files  8 passed (8)
+     Tests  216 passed (216)     （第一轮基线 132，新增 84）
+```
+
+| 套件 | 用例数 | 新增覆盖 |
+| --- | --- | --- |
+| `packages/core` | 24 + 14 | 热度公式（对数/年龄惩罚/收藏权重）、画像聚合（衰减/保序去重/收藏 2 倍权重/空事件） |
+| `packages/store` | 21 + 17 | 分类移动 anchor 级联、防成环、合并、删除归类、标签云/重命名/合并、收藏幂等、画像 roundtrip、搜索历史、OAuth upsert、任务队列、迁移幂等、旧库自动补列 |
+| `apps/api` | 21 + 16 + 10 | 分类管理四路由、标签/专题、收藏夹全流程、榜单、事件白名单+点击计数、用户同步、搜索历史、**D1 双向回归**；JobRunner 四任务 + 锁 + 画像闭环 |
+| `packages/mcp` | 20 + 8 | 新工具 4 个（get_trending/list_tags/refresh_site/run_job）、admin 边界 |
+| `packages/ai` | 26 | 不变（SSRF 复用，无新抓取路径） |
+
+TypeScript 严格模式 `tsc --noEmit`：**0 错误**（core / store / ai / mcp / api 五个包）。
+Next.js 生产构建：**通过**（新页面 /tags /tags/[slug] /hot /favorites /site/[id] /admin/jobs /admin/stats 全部生成）。
+
+## D1 缺陷修复：三向实测（真实服务 + 真实快照写回）
+
+| 场景 | 结果 |
+| --- | --- |
+| 经 API 创建的站点不在快照里 | **幸存**（51 → 51，旧行为会静默删除） |
+| navsphere 源站点从快照移除 | **被删除**（全量对齐管理语义未破坏） |
+| seed 源站点从快照移除 | **被删除**（初始内容仍可管理） |
+
+自动化版本固化为 `apps/api/test/api.test.ts` 的「D1 缺陷回归」两个用例。
+
+## 任务 Runner 实测（真实 SQLite，30s 轮询）
+
+- 入队 `recompute_rank` → 35 秒内自动执行完（`status=done`）
+- 热度分真实产出：有点击的站点 0.69，无互动站点 0（公式下限钳位生效）
+- `health_check` 对 SSRF 目标（127.0.0.1:9）判 broken 并记录原因，任务本身 done（抓取失败是业务的正常结果）
+- 坏 siteId 的 `refetch_metadata` 标记 failed 且不阻塞同轮其它任务
+- 并发 tick 只有一个真正执行（防重入）；锁行执行后释放（TTL 120s 兜底）
+
+## 个性化闭环实测
+
+```
+3 次 click 事件（anon-loop）→ buildProfile 聚合（7 天半衰期）
+  → user_profiles.topCategories = [AI 类目]
+  → GET /api/search?q=AI&anonId=anon-loop
+  → channelsUsed = exact + fts + personal     （personal 通道真实出现）
+```
+
+## 迁移实测
+
+- `pnpm --filter @navhub/api migrate`（此前 package.json 声明了脚本但文件缺失，直接失败）现在可用
+- 旧库（缺 visit_count/trend_score/email 等列的 2026-10-12 数据库）经 openDb 自动补齐，测试锁定
+- 幂等：第二次执行为空操作
+
+## 前端实测
+
+- Next.js 15.5.21 生产构建通过，7 个新页面全部生成
+- `/api/hub/*` 服务端代理接入（同源、无 CORS、兼容 docker 内部主机名）
+- SearchPalette：防抖 200ms + AbortController + 通道徽标 + 语义降级提示 + 最近搜索
+- 收藏夹 v1：localStorage 优先，未登录可用；星标按钮在卡片/搜索/榜单/详情四处均可用
+
+## 已知边界（如实记录）
+
+1. 收藏夹云端同步的身份由调用方传入（anonId / userId），未做终端用户鉴权——多用户公开场景需加 Bearer token（api_tokens 表已具备能力）
+2. `refetch_metadata` 默认只走启发式（不烧 LLM 额度），LLM 需显式 `llm: true`
+3. NavSphere 线格式仍只表达两级分类；更深层级经新 API 暴露给新 UI，兼容快照保持两级
+4. PG（standard）路径未在本次实测（Docker 未运行）；双方言 DDL 与 SQL 分支已按既有约定编写，`scripts/pg-check.mts` 保持可用
+
+---
+
+# 第三轮验收：PWA / 投稿统一 / 通道注册表（2026-10-13，实测）
+
+## 测试规模
+
+```
+Test Files  8 passed (8)
+     Tests  216 passed (216)     （第二轮 205，新增 11）
+```
+
+新增覆盖：投稿 6 例（pending 落库 / 409 去重 / 400 校验 / 审核队列 / 审核流转）、
+通道注册表 5 例（内置权重不变 / 注册 / 非法入参 / fuse 纳入新通道 / reset 隔离）。
+
+## PWA 实测（真实 next start + 真实产物）
+
+| 项 | 结果 |
+| --- | --- |
+| `/manifest.webmanifest` | 200 `application/manifest+json`，内容含 name/short_name/standalone/theme_color/三个图标/三个快捷方式 |
+| 图标 4 枚（192/512/maskable/apple-touch-icon） | 200 `image/png`，字节数真实（3351B/13228B/8617B/1946B） |
+| `/sw.js` | 200 `application/javascript` |
+| 首页 HTML | `rel="manifest"` ✓、`theme-color` ✓、`apple-touch-icon` ✓、SW 注册代码在 layout chunk ✓ |
+| 生产构建 | 通过，`/manifest.webmanifest` 路由生成 |
+
+踩坑记录：`metadata.icons.apple` 在 Next 15.5 **只渲染 meta 不渲染 link**（实测），
+改用 `<head>` 显式 `<link rel="apple-touch-icon">`；SW 注册走 `useEffect`（生产才注册），
+HTML 里本来就不该出现内联脚本，验证方式是检查 layout chunk 含注册代码。
+
+## 投稿统一实测
+
+- 无 GitHub 配置时（NavHub 默认部署），`POST /api/submissions` 经 Web 路由回退到中枢：
+  创建 `status=pending, source=submission` 站点，限流 5 次/小时/IP，重复 URL 409
+- 审核闭环：`GET /api/sites?status=pending` 出队 → `PATCH /api/sites/:id {status:"active"}` 通过
+- 配置了 `GITHUB_OWNER/REPO/PAT` 时保持上游 Issue 流程（向后兼容，两通道并存）
+
+## 通道注册表演实
+
+- 内置五路开箱即用，权重与重构前完全一致（1.4/1.0/0.9/1.15/0.3）
+- `registerChannel("collab", 1.0)` 后 `searchChannels()` 含新通道，`fuse` 将其纳入
+  融合与 coverage 统计（两路命中的站点排到单路前面）
+- 非法通道名（空串）与非法权重（负数/NaN）抛错；`resetChannels()` 保证测试隔离
+
+## 部署集成
+
+- `apps/web-overlay/` 现为 29 个文件（新增 manifest.ts / pwa-register.tsx / layout.tsx /
+  sw.js / 4 枚图标 / submissions 路由），`scripts/check-web-overlay.mjs` 校验一致
+- `scripts/gen-pwa-icons.mjs`：图标可再生（sharp 经 createRequire 锚定 apps/web 解析）
+
+---
+
+# 第四轮验收：全面排错（真实浏览器实测，2026-10-14）
+
+用 agent-browser（真实 Chromium）逐页采集 console/errors/performance entries，
+375px 与 1280px 双视口验证，发现并修复以下问题。全部修复后复验通过。
+
+## 修复清单
+
+| # | 严重度 | 问题 | 位置 | 根因 | 修复 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | **P0** | 搜索结果/标签/榜单/收藏云同步/站点详情/管理面板数据全部静默为空 | `apps/web/src/lib/navhub-api.ts` | `getJson` 已拼 `/api/hub` 基址，调用方又传 `/api/...` 路径 → 实际请求 `/api/hub/api/search` 双重前缀 404，被 catch 吞掉只显示空态 | 新增 `hubUrl()` 归一化（兼容 `/api/search`、`/search`、`/api/hub/search` 三种写法），回归测试 `scripts/navhub-api.test.ts` |
+| 2 | **P0** | 大量样式缺失：/tags 在 375px 横向溢出 4369px、标签不换行、页脚文字竖排 | `src/styles/globals.css` + 构建产物 | Tailwind v4 自动源检测漏扫大部分 src 文件：构建 CSS 仅 32KB，`flex-wrap`/`space-y-*`/`rounded-2xl`/`flex-row` 等工具类整批缺失（grep 实证 0 命中） | globals.css 加 `@source '../**/*.{js,ts,jsx,tsx,mdx}'`；CSS 恢复 90KB，全部工具类生成 |
+| 3 | P1 | `/site/[id]` 永远显示「站点不存在」（数据请求被 #1 连带） | `src/app/site/[id]/page.tsx` | 同 #1（performance entries 实锤请求了 `/api/hub/api/sites/...`） | 随 #1 修复，实测详情正常渲染（标题/描述/点击数） |
+| 4 | P1 | 水合不匹配（控制台 hydration 报错） | `quick-tools-widget.tsx`、`quick-tools-drawer.tsx` | `useState(() => Date.now()/randomUUID())` 初始值在 SSR 与客户端必然不同且直接渲染 | 初始 0/'' + `useEffect` 挂载后赋值，渲染加占位符 |
+| 5 | P1 | `Container` 不支持 className：/custom 页面类型错误 + 页面级间距被静默丢弃 | `src/components/ui/container.tsx` | 组件只接收 children | 加 `className` 合并（cn） |
+| 6 | P2 | iOS 桌面图标缺失 | `src/app/layout.tsx` | Next 15.5 的 `metadata.icons.apple` 只渲染 meta 不渲染 link（实测） | head 显式 `<link rel="apple-touch-icon">` |
+| 7 | P2 | overlay 与 apps/web 漂移（并行会话直接改工作区，手工同步必漏） | `apps/web-overlay/` | 多写者无同步机制 | 新建 `scripts/sync-web-overlay.mjs`：下载上游 tarball 精确 diff（不同/新增→进 overlay，一致→移出），当前 88 文件全部一致 |
+
+## 复验结果（修复后，真实浏览器）
+
+| 项 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 搜索请求 URL | `/api/hub/api/search?...`（404） | `/api/hub/search?...`（200） |
+| 搜索下拉 | 空态 | 结果 + 通道徽标渲染 |
+| /tags 375px | scrollWidth 4369px 横向溢出 | scrollWidth=clientWidth，76 个标签正常换行 |
+| /tags 数据 | 空 | 76 个标签 + 搜索过滤 |
+| /hot 数据 | 空 | 热度榜渲染（含"3 次热度"分量） |
+| /site/[id] | 「站点不存在」 | 详情完整渲染 |
+| /custom 水合 | hydration 报错 | 控制台干净 |
+| 首页 console（375/1280px） | — | 0 错误 0 页面异常 |
+
+## 测试规模（最终）
+
+```
+Test Files  12 passed (12)      Tests  269 passed (269)
+apps/web/scripts/navhub-api.test.ts  8 断言通过（tsx 运行）
+tsc --noEmit（core/store/ai/mcp/api/web）  0 错误
+Next.js 生产构建  通过（.next-bugfix2，含 @source 修复）
+```
+
+## 过程经验（复用价值）
+
+- **agent-browser 与沙箱**：持久 daemon 会被调用间回收 → 单次调用内完成 open→采集→close；
+  refs 不跨调用；`wait --load networkidle` 会挂（用 load 或跳过）
+- **a11y snapshot 文本拼接是假象**（如 "2026NavHub" 缺空格），核实以原始 HTML 为准
+- **performance entries 是定位前端请求 bug 的利器**：直接列出页面实际请求的 URL
+- Tailwind v4 漏扫的表象是"部分类缺失"，与文件无关（同一文件里有的类在有的不在），
+  排查方法是 grep 构建 CSS 里的工具类，修复用显式 `@source`
+
+---
+
+# 第五轮验收：PWA 离线能力补测 + 新发现 BUG-8（2026-10-14）
+
+对上一轮未覆盖区域补测：/algorithms、/videos、/submit 页面、收藏持久化、
+暗色模式、离线（Service Worker）、overlay 同步脚本稳定性。
+
+## BUG-8（P1）Service Worker 从未注册，PWA 离线能力 100% 失效
+
+| 项 | 内容 |
+|---|---|
+| 位置 | `apps/web/src/components/pwa-register.tsx` |
+| 根因 | 注册代码挂在 `window.addEventListener('load', ...)`，而 React 水合通常在 `load` **之后**才执行 —— 监听回调永不被调用 |
+| 证据 | 浏览器实测：`navigator.serviceWorker.getRegistrations()` → `count: 0`；`performance` 中 `/sw.js` **零请求**；离线访问 `net::ERR_INTERNET_DISCONNECTED` |
+| 影响 | PWA 完全摆设：manifest/SW/图标都在，但离线打不开、无法安装到桌面 |
+| 修复 | 删除 load 监听，effect 内直接 `register`；注册失败由静默 `catch` 改为 `console.warn` |
+| 复验 | 注册数 1 / scope `/` / state `activated`；二次访问 `controller: true`；**离线仍能加载首页（52 张卡片）** |
+
+```tsx
+// 修复后（完整可替换）
+export function PwaRegister() {
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') return
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+
+    // 直接注册；不等 load 事件（水合在 load 之后，监听器不会触发）
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
+      console.warn('[pwa] service worker 注册失败：', err)
+    })
+  }, [])
+
+  return null
+}
+```
+
+同时把 `public/sw.js` 的预缓存失败从静默吞掉改为 `console.warn`
+（同一"静默 catch"反模式，曾让"PWA 已接入"的验收结论失真）。
+
+## 其它补测结果（全部通过，无需修复）
+
+| 项 | 结果 |
+|---|---|
+| /algorithms、/videos、/submit | 页面渲染正常，console 0 错误 |
+| 收藏持久化 | 点星 → localStorage 落库（"DeepSeek"）→ 刷新后仍保留，星标呈已收藏态 |
+| 暗色模式 | `html.dark` + 背景 `rgb(9,9,11)` 生效 |
+| 离线（修复后） | 首页正常渲染，52 张卡片 |
+| overlay 同步脚本 | 曾间歇性崩溃（约两次一次，写入被占用）→ 写入加重试后连跑 4 次全通过 |
+
+## 最终状态
+
+```
+vitest        269 passed（12 文件）
+tsc --noEmit  0 错误
+next build    通过（含 SW 注册修复）
+浏览器        双视口 + 暗色 + 离线，console 0 错误
+```
+
+---
+
+# 第六轮验收：边界探测 + 限流分桶修复（2026-10-14）
+
+## BUG-9（P1）按 IP 的限流退化成"整站一个桶"
+
+| 项 | 内容 |
+|---|---|
+| **位置（调用链）** | 浏览器 → `apps/web/src/app/api/hub/[...path]/route.ts`（代理）→ `apps/api/src/server.ts`（Fastify + `@fastify/rate-limit`） |
+| **根因** | 代理只转发 `content-type/accept/authorization`，**不带客户端 IP**；中枢默认 `trustProxy=false`，`req.ip` 恒为前端进程地址 → 所有访客共享同一限流桶 |
+| **触发条件** | 任何经前端代理的写接口；最致命是投稿 `5 次/小时`：第 6 位访客就被 429 挡住 |
+| **影响范围** | 功能可用性（投稿/批量导入/富化等写接口）；不限数据正确性、无性能影响 |
+
+复现（修复前，直连中枢）：
+```
+POST /api/submissions  x5 → 201, 第6次 → 429（x-ratelimit-limit: 5）
+带 X-Forwarded-For: 1.2.3.4 / 5.6.7.8 → 仍 429   ← XFF 被忽略
+```
+
+修复（两处，各一行级改动）：
+```ts
+// apps/web/src/app/api/hub/[...path]/route.ts
+const xff = request.headers.get('x-forwarded-for')
+if (xff) headers['x-forwarded-for'] = xff
+```
+```ts
+// apps/api/src/server.ts
+const trustProxy = process.env.NAVHUB_TRUST_PROXY !== "0";   // 直连公网时设 0 防伪造
+const app = Fastify({ logger: { level: logLevel }, bodyLimit: 4 * 1024 * 1024, trustProxy });
+```
+
+**取舍**：`trustProxy` 全开意味着信任 XFF；若中枢被直接暴露到公网，客户端可伪造 XFF 绕过限流。
+提供 `NAVHUB_TRUST_PROXY=0` 开关：仅在"中枢直连公网"时关闭。架构上中枢本就不该公网暴露，故默认开。
+
+复验（修复后，端到端经前端代理）：
+```
+XFF=201.1.1.1 → 201   XFF=202.2.2.2 → 201        （各自独立桶，修复前全是 429）
+XFF=201.1.1.1 连打：1-4 → 201，第5/6 → 429        （限流仍生效，未被绕过）
+无 XFF → 201                                        （退回前端进程 IP 桶）
+```
+
+## 排查过但**确认无问题**的项（附证据，避免重复排查）
+
+| 排查项 | 结论 |
+|---|---|
+| `limit` 越界/负数/非数字 | zod 已校验 1..100，返回 400 + `detail` 明细 |
+| `hit.site` 为空（搜索结果 null） | 两处均有 `if (!site) return/null` 守卫 |
+| 收藏 localStorage / JSON 导入 | `try/catch` + `Array.isArray` 校验；`importJson` 返回 `{ok,error}` |
+| 搜索防抖的 abort 竞态 | `searchSites` 透传 AbortError，组件 `.catch` 内判 `aborted` 后忽略 → 无未捕获拒绝 |
+| JobRunner 单实例锁 | SQLite 持久锁行 + TTL 抢占 + 唯一键冲突兜底；PG advisory lock；手动触发与定时不会重入 |
+| 中枢不可用时代理降级 | 返回 502 + `{error, details}` JSON |
+| 暗色模式 / 离线 SW / 收藏持久化 | 均实测通过 |
+
+## 一个被**证伪**的假设（已回滚，留作记录）
+
+我曾判定"`/api/sites/:id` 匹配不了 URL 形态（含斜杠）404"，据此加了 `/api/sites/by-url` 路由。
+**该前提是错的**：实测 `/api/sites/https%3A%2F%2Fchatgpt.com` → **200**（find-my-way 会解码 %2F）；
+早先看到的 404 只是因为那个 URL 不在库里。已回滚路由与 `fetchSite` 改动，
+改为用测试锁定真实契约："URL 百分号编码后可经 `/api/sites/:id` 查到"。
+不编码的原始 URL 仍 404 —— 属 HTTP 路由固有行为，非缺陷。
+
+## 最终状态
+
+```
+vitest         271 passed（12 文件）
+tsx navhub-api 8 断言通过
+tsc --noEmit   0 错误（core/store/ai/mcp/api/web）
+next build     通过
+端到端         经代理的限流分桶、离线 SW、双视口 console 0 错误
+```
+
+---
+
+# 第七轮验收：模块化页面系统深化（2026-10-14）
+
+## 现状研究结论（22 文件 / ~3900 行已有实现）
+
+架构：`src/lib/modular/registry.ts`（13 类模块注册表，含 min/max 列行约束）+
+`use-modular-layout.ts`（多看板 + 增删/重排/缩放/模板/导入导出/紧凑重排/撤销重做，
+localStorage v2 格式含 v1 迁移）+ `modular-canvas.tsx`（12 栅格 CSS Grid）+
+`modular-item.tsx`（模块卡片）。响应式：移动端 col-span-12 堆叠、md/lg 折算跨度。
+
+## 本轮修复的三个缺陷
+
+### BUG-10（P1）模块间没有真正的故障隔离
+- **根因**：React 渲染是整棵树——任一模块 render 抛错即整页白屏，"模块独立"只是形式
+- **修复**：新增 `module-error-boundary.tsx`（getDerivedStateFromError + 重试换 key 重挂载 +
+  编辑模式内移除入口），包裹每个模块内容
+- **复验**：注入 `?fault=1` 强制时钟模块渲染抛错 → 页面存活、7 个模块容器全在、
+  故障卡片显示错误信息与重试入口、其余模块照常渲染、console 仅告警
+
+### BUG-11（P1）缩放手柄被父级原生拖拽劫持，**拖拽缩放在真实鼠标下 100% 失败**
+- **位置（调用链）**：`modular-item.tsx` 手柄 onPointerDown → 父卡片 `draggable={isEditing}`
+- **根因**：手柄按下并移动 → 父级触发原生 HTML5 `dragstart` → 浏览器 `pointercancel` 掉指针流。
+  插桩实锤：`{ds:1, pc:1, pu:0}`（dragstart 1 次、pointercancel 1 次、pointerup 永不到来）
+- **修复**：卡片 `onDragStart` 内检测 `isResizingRef.current` → `e.preventDefault()` 拒绝劫持；
+  手柄加 `z-10` + `touch-none`
+- **复验**：真实鼠标拖手柄 +142px → colSpan 3→5（与实测列宽 75px 完全吻合）、纵向拖 → 行高 1→2
+
+### BUG-12（P2）缩放把"80px=1 列"写死 + 每步都压历史
+- **根因**：列宽映射假设容器 1200px（1440 屏实际 110px/列，375 屏 20px/列）→ 手感跳格；
+  每个栅格变化做一次 boards 深拷贝 + 历史入栈 → 拖一次塞十几条快照，撤销只能回退一格
+- **修复**：按下时实测容器宽度与 columnGap 算真实列宽；行高按 115px 档位；
+  新增 `beginInteraction()`（开始时压**一份**快照，过程中 recordHistory=false）
+- **复验**：一次拖拽 = 一步撤销（undo 直接回到拖拽前 3×1）；Pointer Events 统一鼠标/触屏
+
+## 实测证据汇总（真实 Chromium）
+
+| 项 | 结果 |
+| --- | --- |
+| 横向拖拽缩放 | +142px → colSpan 3→5，落库一致 |
+| 纵向拖拽缩放 | +125px → rowSpan 1→2 |
+| 撤销 | 一次拖拽一步撤销，回到拖拽前状态 |
+| 故障隔离 | 崩溃模块局部降级，页面与其余模块存活 |
+| 375px 响应式 | 无横向溢出，7 模块全宽堆叠 |
+| console | 0 错误 |
+| 回归 | vitest 271 全绿 · tsc 0 错误 · 生产构建通过 |
+
+## 已知边界（如实记录）
+
+- 模块重排仍用 HTML5 DnD（桌面拖拽流畅），触屏用 ⬆️/⬇️ 按钮替代——触屏拖拽换位未实现
+- rowSpan 档位高度（175/290/420px）为约定值，拖拽按 115px 增量归档，非像素级自由高度

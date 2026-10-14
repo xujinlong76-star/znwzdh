@@ -22,26 +22,24 @@ import type {
   SearchChannel,
   SearchHit,
 } from "./types.ts";
-import { SEARCH_CHANNELS } from "./types.ts";
+import { channelWeights, searchChannels } from "./channels.ts";
 
 export interface FusionWeights {
-  exact: number;
-  fts: number;
-  pinyin: number;
-  semantic: number;
-  /** 个性化作为独立通道的权重；刻意低于相关性通道 */
-  personal: number;
   /** coverage 放大强度：0 = 关闭，1 = 标准 */
   coverageStrength: number;
+  /** RRF 的 k（原论文经验值 60） */
   k: number;
+  /** 每通道权重（含注册表扩展的通道；未列出的通道按 0 处理） */
+  [channel: string]: number;
 }
 
+/**
+ * 默认权重：由通道注册表生成（内置五路 + 任何已注册的扩展通道）。
+ * 注意：这是**构造时快照**——运行期 registerChannel 之后，
+ * 调用方应显式传新的 weights 对象（fuse 的第二个参数）。
+ */
 export const DEFAULT_WEIGHTS: FusionWeights = {
-  exact: 1.4,
-  fts: 1.0,
-  pinyin: 0.9,
-  semantic: 1.15,
-  personal: 0.3,
+  ...channelWeights(),
   coverageStrength: 0.35,
   k: 60,
 };
@@ -138,5 +136,5 @@ export function personalCandidates(
 /** 汇总实际参与融合的通道，供前端做诚实的能力提示 */
 export function channelsUsed(candidates: SearchCandidate[]): SearchChannel[] {
   const set = new Set(candidates.map((c) => c.channel));
-  return SEARCH_CHANNELS.filter((c) => set.has(c));
+  return searchChannels().filter((c) => set.has(c));
 }

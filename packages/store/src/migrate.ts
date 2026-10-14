@@ -28,10 +28,41 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "sites", column: "visit_count", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   { table: "sites", column: "last_visited_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "sites", column: "trend_score", sqlite: "REAL NOT NULL DEFAULT 0", pg: "DOUBLE PRECISION NOT NULL DEFAULT 0" },
+  { table: "sites", column: "deleted_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "users", column: "email", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "avatar", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "source", sqlite: "TEXT NOT NULL DEFAULT 'local'", pg: "TEXT NOT NULL DEFAULT 'local'" },
+  // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
+  { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
 ];
+
+/**
+ * 软删除（回收站）需要的索引演进。必须在 migrateColumns 之后调用
+ * （依赖 deleted_at 列存在），因此不放进 DDL。
+ *
+ * 1. `sites_url_idx` 从「全表唯一」改为「仅未删除行唯一」（部分唯一索引）。
+ *    旧索引会挡住「删完同 URL 站点后重新添加」。删旧建新的窗口极小
+ *    且发生在启动期（尚无写入），可接受。
+ * 2. `sites_deleted_at_idx`：回收站探针的部分索引，体积只随删除量增长。
+ */
+export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  const statements = [
+    "DROP INDEX IF EXISTS sites_url_idx",
+    "CREATE UNIQUE INDEX IF NOT EXISTS sites_url_idx ON sites(url) WHERE deleted_at IS NULL",
+    "CREATE INDEX IF NOT EXISTS sites_deleted_at_idx ON sites(deleted_at) WHERE deleted_at IS NOT NULL",
+  ];
+  for (const sqlText of statements) {
+    try {
+      if (db.dialect === "sqlite") {
+        db.sqlite.exec(sqlText);
+      } else {
+        await db.pg.query(sqlText);
+      }
+    } catch {
+      // 并发启动 / 只读副本等场景下允许跳过，下次启动兜底
+    }
+  }
+}
 
 async function tableColumns(db: { dialect: string; sqlite?: any; pg?: any }, table: string): Promise<Set<string>> {
   if (db.dialect === "sqlite") {

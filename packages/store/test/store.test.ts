@@ -270,3 +270,619 @@ describe("SQLite 集成：FTS5 + sqlite-vec + 混合检索", () => {
     expect(Number(events.c)).toBeGreaterThan(0);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * 集成：零结果兜底（两级放宽）
+ * ------------------------------------------------------------------ */
+
+describe("SQLite 集成：零结果兜底", () => {
+  let dir: string;
+  let db: Db;
+  let repo: Repository;
+  let engine: SearchEngine;
+
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), "navhub-fallback-"));
+    db = await openDb({ dialect: "sqlite", sqlitePath: join(dir, "test.db") });
+    repo = new Repository(db);
+    await repo.createCategory({ id: "c-dev", title: "开发" });
+    await repo.createCategory({ id: "c-life", title: "生活" });
+    await repo.createSite({ url: "https://example.com/startup", title: "启动脚本", description: "服务启动脚本", categoryId: "c-dev", tags: ["devops"] });
+    await repo.createSite({ url: "https://npmjs.com", title: "npm", description: "JavaScript 包管理器", categoryId: "c-dev", tags: ["devops"] });
+    // fts/vectors 全关：纯 exact 通道，验证兜底重试本身而非搭 FTS 的便车
+    engine = new SearchEngine({ db, fts: null, vectors: null, embed: null });
+  });
+
+  afterAll(async () => {
+    await db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("第 1 级：类目过滤太窄时放宽过滤并标记 fallback=filter", async () => {
+    // 「启动」在 c-dev；限定 c-life 后为零 → 放宽到全库
+    const r = await engine.search({ q: "启动", categoryId: "c-life", limit: 10 });
+    expect(r.fallback).toBe("filter");
+    const titles: string[] = [];
+    for (const h of r.hits) titles.push((await repo.getSite(h.siteId))!.title);
+    expect(titles).toContain("启动脚本");
+  });
+
+  it("第 2 级：英文多词整串不中时按词拆分 OR 并标记 fallback=fuzzy", async () => {
+    // 整串 "%javascript package%" 不匹配任何 title/url/desc；
+    // fuzzy 拆词后 "javascript" 命中 npm 描述
+    const r = await engine.search({ q: "javascript package", limit: 10 });
+    expect(r.fallback).toBe("fuzzy");
+    expect(r.hits.length).toBeGreaterThan(0);
+    const top = await repo.getSite(r.hits[0]!.siteId);
+    expect(top?.title).toBe("npm");
+  });
+
+  it("拼音归一化 + 包含匹配兜住非前缀输入（fuzzy 第 2 级内）", async () => {
+    // "Dong Jiao"：exact 的 "%dong jiao%" 不中（pinyin_full 无空格），
+    // pinyin 通道归一化为 "dongjiao" 但前缀匹配 "qidongjiaoben" 也不中
+    // → 第 1 轮零结果 → fuzzy 包含匹配命中启动脚本
+    const r = await engine.search({ q: "Dong Jiao", limit: 10 });
+    expect(r.fallback).toBe("fuzzy");
+    const titles: string[] = [];
+    for (const h of r.hits) titles.push((await repo.getSite(h.siteId))!.title);
+    expect(titles).toContain("启动脚本");
+  });
+
+  it("过滤存在且查询真不存在时：不兜底、如实返回空", async () => {
+    const r = await engine.search({ q: "纯属虚构zzz", categoryId: "c-life", limit: 10 });
+    expect(r.hits).toEqual([]);
+    expect(r.fallback).toBeUndefined();
+  });
+
+  it("有正常结果时 fallback 字段缺席（前端无需判断）", async () => {
+    const r = await engine.search({ q: "启动", limit: 10 });
+    expect(r.hits.length).toBeGreaterThan(0);
+    expect(r.fallback).toBeUndefined();
+  });
+
+  it("放宽过滤发生在模糊匹配之前（级别顺序不乱）", async () => {
+    // 类目不匹配 + 整串英文不中：第 1 级放宽过滤就能出结果 → 应标 filter 而非 fuzzy
+    const r = await engine.search({ q: "javascript", categoryId: "c-life", limit: 10 });
+    expect(r.fallback).toBe("filter");
+    expect(r.hits.length).toBeGreaterThan(0);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 集成：搜索分页（offset + hasMore）
+ * ------------------------------------------------------------------ */
+
+describe("SQLite 集成：搜索分页", () => {
+  let dir: string;
+  let db: Db;
+  let repo: Repository;
+  let engine: SearchEngine;
+
+  /** 15 个中文站点，压成固定 3 页（limit=5） */
+  const SEEDS = Array.from({ length: 15 }, (_, i) => ({
+    url: "https://page-" + i + ".example.com",
+    title: "分页站点" + String(i + 1).padStart(2, "0"),
+    description: "用于分页测试的站点",
+    categoryId: "c-all",
+    tags: ["分页"],
+  }));
+
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), "navhub-paging-"));
+    db = await openDb({ dialect: "sqlite", sqlitePath: join(dir, "test.db") });
+    repo = new Repository(db);
+    await repo.createCategory({ id: "c-all", title: "全部" });
+    for (const s of SEEDS) await repo.createSite(s);
+    engine = new SearchEngine({ db, fts: null, vectors: null, embed: null });
+  });
+
+  afterAll(async () => {
+    await db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("第 1 页返回 limit 条且 hasMore=true；翻页拼接与一次取全一致", async () => {
+    const p1 = await engine.search({ q: "分页站点", limit: 5, offset: 0 });
+    expect(p1.hits.length).toBe(5);
+    expect(p1.hasMore).toBe(true);
+    expect(p1.offset).toBe(0);
+
+    const p2 = await engine.search({ q: "分页站点", limit: 5, offset: 5 });
+    expect(p2.hits.length).toBe(5);
+    expect(p2.hasMore).toBe(true);
+
+    const p3 = await engine.search({ q: "分页站点", limit: 5, offset: 10 });
+    expect(p3.hits.length).toBe(5);
+    expect(p3.hasMore).toBe(false);
+
+    // 三页拼接 == 一次取 15 条（RRF 确定性：同输入同输出）
+    const full = await engine.search({ q: "分页站点", limit: 15, offset: 0 });
+    const joined = [...p1.hits, ...p2.hits, ...p3.hits].map((h) => h.siteId);
+    expect(joined).toEqual(full.hits.map((h) => h.siteId));
+    // 无重复
+    expect(new Set(joined).size).toBe(joined.length);
+  });
+
+  it("offset 超过总量时返回空且 hasMore=false（不报错）", async () => {
+    const r = await engine.search({ q: "分页站点", limit: 5, offset: 999 });
+    expect(r.hits).toEqual([]);
+    expect(r.hasMore).toBe(false);
+  });
+
+  it("浏览模式（空查询）同样分页，hasMore 探针准确", async () => {
+    const p1 = await engine.search({ q: "", limit: 10, offset: 0 });
+    expect(p1.hits.length).toBe(10);
+    expect(p1.hasMore).toBe(true);
+
+    const p2 = await engine.search({ q: "", limit: 10, offset: 10 });
+    expect(p2.hits.length).toBe(5);       // 只剩 5 条
+    expect(p2.hasMore).toBe(false);       // 第 11 条探针不存在
+
+    const p3 = await engine.search({ q: "", limit: 10, offset: 20 });
+    expect(p3.hits).toEqual([]);
+    expect(p3.hasMore).toBe(false);
+  });
+
+  it("浏览末页多取 1 条的探针不会漏（15 条 / limit=14 → 第 1 页 hasMore）", async () => {
+    const p1 = await engine.search({ q: "", limit: 14, offset: 0 });
+    expect(p1.hits.length).toBe(14);
+    expect(p1.hasMore).toBe(true);
+    const p2 = await engine.search({ q: "", limit: 14, offset: 14 });
+    expect(p2.hits.length).toBe(1);
+    expect(p2.hasMore).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 集成：新增能力（分类管理 / 标签 / 收藏 / 画像 / 历史 / 用户 / 任务 / 迁移）
+ * ------------------------------------------------------------------ */
+
+describe("SQLite 集成：软删除回收站", () => {
+  let dir: string;
+  let db: Db;
+  let repo: Repository;
+  let engine: SearchEngine;
+
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), "navhub-trash-"));
+    db = await openDb({ dialect: "sqlite", sqlitePath: join(dir, "test.db") });
+    repo = new Repository(db);
+    await repo.createCategory({ id: "c-trash", title: "回收站测试" });
+    engine = new SearchEngine({ db, fts: null, vectors: null, embed: null });
+  });
+
+  afterAll(async () => {
+    await db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("删除是软删：行仍在，deletedAt 被打戳，且不出现在常规查询", async () => {
+    const site = await repo.createSite({ url: "https://trash-1.example.com", title: "软删站点一", categoryId: "c-trash", tags: ["软删"] });
+    await repo.deleteSite(site.id);
+
+    // getSite / listSites / findSiteByUrl 都排除
+    expect(await repo.getSite(site.id)).toBeNull();
+    expect(await repo.getSite(site.url)).toBeNull();
+    expect(await repo.findSiteByUrl(site.url)).toBeNull();
+    expect((await repo.listSites()).map((s) => s.id)).not.toContain(site.id);
+
+    // 行还在，且带 deletedAt
+    const deleted = await repo.getDeletedSite(site.id);
+    expect(deleted).not.toBeNull();
+    expect(typeof deleted!.deletedAt).toBe("number");
+    expect(deleted!.title).toBe("软删站点一");
+
+    // 检索（exact 通道）也排除
+    const r = await engine.search({ q: "软删站点一", limit: 10 });
+    expect(r.hits.map((h) => h.siteId)).not.toContain(site.id);
+  });
+
+  it("删除后同 URL 可以立即重新添加（部分唯一索引生效）", async () => {
+    const url = "https://trash-2.example.com";
+    const first = await repo.createSite({ url, title: "旧站", categoryId: "c-trash" });
+    await repo.deleteSite(first.id);
+    // 旧库里 sites_url_idx 是全表唯一 → 这里会被 UNIQUE 约束挡下
+    const second = await repo.createSite({ url, title: "新站", categoryId: "c-trash" });
+    expect(second.url).toBe(url);
+    expect(second.title).toBe("新站");
+    expect(second.id).not.toBe(first.id);
+    // 新站在常规查询里可见，旧站在回收站里
+    expect((await repo.getSite(url))!.title).toBe("新站");
+    expect((await repo.getDeletedSite(first.id))!.title).toBe("旧站");
+  });
+
+  it("恢复：清 deletedAt，站点回到常规查询；向量/标签语义保留", async () => {
+    const site = await repo.createSite({ url: "https://trash-3.example.com", title: "待恢复站", categoryId: "c-trash", tags: ["恢复"] });
+    await repo.deleteSite(site.id);
+    const restored = await repo.restoreSite(site.id);
+    expect(restored).not.toBeNull();
+    expect(restored!.deletedAt).toBeNull();
+    expect((await repo.getSite(site.id))!.title).toBe("待恢复站");
+    expect(await repo.getDeletedSite(site.id)).toBeNull();
+    // 标签保留（软删不动 site_tags）
+    expect((await repo.getSite(site.id))!.tags).toContain("恢复");
+  });
+
+  it("恢复时若同 URL 已有新站点，API 层拒绝（409）——仓储层只提供信息", async () => {
+    const url = "https://trash-4.example.com";
+    const oldSite = await repo.createSite({ url, title: "旧站4", categoryId: "c-trash" });
+    await repo.deleteSite(oldSite.id);
+    await repo.createSite({ url, title: "新站4", categoryId: "c-trash" });
+    // 仓储层不拦截，但 getDeletedSite 仍能取到旧记录（供 API 层做 clash 判断）
+    expect(await repo.getDeletedSite(oldSite.id)).not.toBeNull();
+  });
+
+  it("purge：彻底删除行与关联（site_tags / embeddings）", async () => {
+    const site = await repo.createSite({ url: "https://trash-5.example.com", title: "永久删除站", categoryId: "c-trash", tags: ["彻底"] });
+    await repo.saveEmbedding(site.id, "test", new Float32Array([1, 2, 3]));
+    await repo.deleteSite(site.id);
+
+    await repo.purgeSite(site.id);
+    expect(db.sqlite!.prepare("SELECT COUNT(*) AS c FROM sites WHERE id = ?").get(site.id)).toMatchObject({ c: 0 });
+    expect(db.sqlite!.prepare("SELECT COUNT(*) AS c FROM site_tags WHERE site_id = ?").get(site.id)).toMatchObject({ c: 0 });
+    expect(db.sqlite!.prepare("SELECT COUNT(*) AS c FROM embeddings WHERE site_id = ?").get(site.id)).toMatchObject({ c: 0 });
+    expect(await repo.getDeletedSite(site.id)).toBeNull();
+  });
+
+  it("stats：软删站点不计入 sites，trashed 计数回收站", async () => {
+    const before = await repo.stats();
+    const site = await repo.createSite({ url: "https://trash-6.example.com", title: "统计站", categoryId: "c-trash" });
+    const mid = await repo.stats();
+    expect(mid.sites).toBe(before.sites + 1);
+    const trashedBefore = mid.trashed;
+    await repo.deleteSite(site.id);
+    const after = await repo.stats();
+    expect(after.sites).toBe(before.sites);       // 删掉后回到原值
+    expect(after.trashed).toBe(trashedBefore + 1); // 但回收站 +1
+  });
+
+  it("listDeletedSites：只含软删站点，倒序（新的在前）", async () => {
+    const a = await repo.createSite({ url: "https://trash-7a.example.com", title: "倒序A", categoryId: "c-trash" });
+    await repo.deleteSite(a.id);
+    await new Promise((r) => setTimeout(r, 5));   // 保证时间戳不同
+    const b = await repo.createSite({ url: "https://trash-7b.example.com", title: "倒序B", categoryId: "c-trash" });
+    await repo.deleteSite(b.id);
+
+    const list = await repo.listDeletedSites(500);
+    const ids = list.map((s) => s.id);
+    expect(ids.indexOf(b.id)).toBeLessThan(ids.indexOf(a.id));   // b 后删，排更前
+    // 列表里全是软删的（不含正常站点）
+    for (const s of list) expect(typeof s.deletedAt).toBe("number");
+  });
+
+  it("同 id 复活：createSiteWithId 遇到软删同 id 行时复活而非主键冲突", async () => {
+    const id = "fixed-id-revive";
+    const first = await repo.createSiteWithId({ id, url: "https://trash-8.example.com", title: "原站", categoryId: "c-trash" });
+    await repo.deleteSite(first.id);
+
+    // 模拟快照写回用原 id 重建
+    const revived = await repo.createSiteWithId({ id, url: "https://trash-8.example.com", title: "快照重建站", categoryId: "c-trash", source: "navsphere" });
+    expect(revived.id).toBe(id);
+    expect(revived.title).toBe("快照重建站");
+    expect(revived.deletedAt).toBeNull();
+    expect(revived.source).toBe("navsphere");
+    expect(await repo.getDeletedSite(id)).toBeNull();
+  });
+});
+
+describe("SQLite 集成：导航增强能力", () => {
+  let dir: string;
+  let db: Db;
+  let repo: Repository;
+
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), "navhub-store2-"));
+    db = await openDb({ dialect: "sqlite", sqlitePath: join(dir, "test.db") });
+    repo = new Repository(db);
+    await repo.createCategory({ id: "c1", title: "开发" });
+    await repo.createCategory({ id: "c2", title: "设计", parentId: "c1" });
+    await repo.createCategory({ id: "c3", title: "子类", parentId: "c2" });
+    await repo.createSite({ url: "https://a.com", title: "站点A", categoryId: "c3", tags: ["工具"] });
+    await repo.createSite({ url: "https://b.com", title: "站点B", categoryId: "c1", tags: ["工具", "开发"] });
+  });
+
+  afterAll(async () => {
+    await db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /* ------------------------- 分类管理 ------------------------- */
+
+  it("移动类目时全部后代的 anchor 同步级联更新", async () => {
+    await repo.createCategory({ id: "root-x", title: "另一个根" });
+    const moved = await repo.moveCategory("c1", "root-x");
+    expect(moved).not.toBeNull();
+    expect(moved!.anchor).toBe("root-x/c1");
+    const c2 = await repo.getCategory("c2");
+    const c3 = await repo.getCategory("c3");
+    expect(c2!.anchor).toBe("root-x/c1/c2");
+    expect(c3!.anchor).toBe("root-x/c1/c2/c3");
+    expect(c2!.parentId).toBe("c1");
+  });
+
+  it("拒绝把类目移动到它自己或它的子类目下面（防成环）", async () => {
+    await expect(repo.moveCategory("c1", "c1")).rejects.toThrow(/自己/);
+    await expect(repo.moveCategory("c1", "c3")).rejects.toThrow(/子类目/);
+  });
+
+  it("合并类目：源子树的站点迁入目标，源子树被删除", async () => {
+    await repo.createCategory({ id: "m1", title: "合并源" });
+    await repo.createCategory({ id: "m2", title: "合并源子", parentId: "m1" });
+    await repo.createSite({ url: "https://m1.com", title: "合并站1", categoryId: "m1" });
+    await repo.createSite({ url: "https://m2.com", title: "合并站2", categoryId: "m2" });
+    await repo.createCategory({ id: "m-target", title: "合并目标" });
+
+    const result = await repo.mergeCategories("m1", "m-target");
+    expect(result.movedSites).toBe(2);
+    expect(result.removedCategories).toBe(2);
+    expect(await repo.getCategory("m1")).toBeNull();
+    expect(await repo.getCategory("m2")).toBeNull();
+    const s1 = await repo.findSiteByUrl("https://m1.com");
+    expect(s1!.categoryId).toBe("m-target");
+    const s2 = await repo.findSiteByUrl("https://m2.com");
+    expect(s2!.categoryId).toBe("m-target");
+  });
+
+  it("删除类目时站点被移入「未分类」而不是被级联删除", async () => {
+    const siteA = await repo.findSiteByUrl("https://a.com");
+    expect(siteA!.categoryId).toBe("c3");
+    await repo.deleteCategory("c3");
+    const after = await repo.findSiteByUrl("https://a.com");
+    expect(after).not.toBeNull();
+    const fallback = await repo.getCategory((await repo.listCategories()).find((c) => c.title === "未分类")!.id);
+    expect(after!.categoryId).toBe(fallback!.id);
+    // 子类目被提升，没有成孤儿
+    expect(await repo.getCategory("c3")).toBeNull();
+  });
+
+  /* ------------------------- 标签 ------------------------- */
+
+  it("标签云返回真实计数", async () => {
+    const tags = await repo.listTagsWithCounts();
+    expect(tags.length).toBeGreaterThan(0);
+    const gongju = tags.find((t) => t.name === "工具");
+    expect(gongju).toBeTruthy();
+    expect(gongju!.count).toBeGreaterThanOrEqual(2);
+  });
+
+  it("重命名标签会同步 slug", async () => {
+    const before = (await repo.listTagsWithCounts()).find((t) => t.name === "工具")!;
+    await repo.renameTag(before.id, "工具箱");
+    const after = (await repo.listTagsWithCounts()).find((t) => t.id === before.id)!;
+    expect(after.name).toBe("工具箱");
+    expect(after.slug).toBe("工具箱");
+  });
+
+  it("合并标签把关联迁到目标并删源", async () => {
+    const tags = await repo.listTagsWithCounts();
+    const dev = tags.find((t) => t.name === "开发")!;
+    const box = tags.find((t) => t.name === "工具箱")!;
+    const result = await repo.mergeTags(box.id, dev.id);
+    expect(result.moved).toBeGreaterThanOrEqual(0);
+    expect((await repo.listTagsWithCounts()).find((t) => t.id === box.id)).toBeUndefined();
+  });
+
+  it("删除标签解除关联、站点 tags 同步剔除，并刷新站点检索索引", async () => {
+    // 造一个只属于某站点的专属标签，保证删除前后可对比
+    const site = (await repo.findSiteByUrl("https://a.com"))!;
+    await repo.setSiteTags(site.id, [...site.tags, "孤独特有标签"]);
+    const before = (await repo.getSite(site.id))!;
+    expect(before.tags).toContain("孤独特有标签");
+
+    const tag = (await repo.listTagsWithCounts()).find((t) => t.name === "孤独特有标签")!;
+    const result = await repo.deleteTag(tag.id);
+    expect(result.unbound).toBeGreaterThanOrEqual(1);
+    // 标签行没了、站点侧同步剔除
+    expect((await repo.listTagsWithCounts()).find((t) => t.id === tag.id)).toBeUndefined();
+    const after = (await repo.getSite(site.id))!;
+    expect(after.tags).not.toContain("孤独特有标签");
+    // 索引语料已重算：fts_tokens 不再含被删标签（否则搜它还会命中，静默不一致）
+    expect(after).not.toBeNull();
+    const rows = await (repo as unknown as { raw(sql: string, p: unknown[]): Promise<Record<string, unknown>[]> })
+      .raw("SELECT fts_tokens FROM sites WHERE id = ?", [site.id]);
+    expect(String(rows[0]!.fts_tokens)).not.toContain("孤独特有标签");
+    // 不存在的标签 → 报错而不是静默成功
+    await expect(repo.deleteTag(tag.id)).rejects.toThrow(/不存在/);
+  });
+
+  /* ------------------------- 收藏夹 ------------------------- */
+
+  it("收藏幂等：重复收藏返回 existed 而不是报错或重复行", async () => {
+    const site = await repo.findSiteByUrl("https://b.com");
+    const first = await repo.addFavorite({ userId: "u1", siteId: site!.id });
+    expect(first.existed).toBe(false);
+    const second = await repo.addFavorite({ userId: "u1", siteId: site!.id });
+    expect(second.existed).toBe(true);
+    const list = await repo.listFavorites("u1");
+    expect(list.length).toBe(1);
+    expect(list[0]!.siteId).toBe(site!.id);
+  });
+
+  it("取消收藏与文件夹管理", async () => {
+    const site = await repo.findSiteByUrl("https://b.com");
+    const folder = await repo.createFavoriteFolder("u1", "常用");
+    await repo.addFavorite({ userId: "u1", siteId: site!.id, folderId: folder.id });
+    const folders = await repo.listFavoriteFolders("u1");
+    expect(folders.length).toBe(1);
+    // 删文件夹：收藏变未分组但不消失
+    await repo.deleteFavoriteFolder("u1", folder.id);
+    const list = await repo.listFavorites("u1");
+    expect(list.length).toBe(1);
+    expect(list[0]!.folderId).toBeNull();
+    // 取消收藏
+    expect(await repo.removeFavorite("u1", site!.id)).toBe(true);
+    expect(await repo.removeFavorite("u1", site!.id)).toBe(false);
+    expect((await repo.listFavorites("u1")).length).toBe(0);
+  });
+
+  /* ------------------------- 个性化画像 ------------------------- */
+
+  it("画像写入与读回 roundtrip", async () => {
+    await repo.saveUserProfile("u1", {
+      topCategories: ["c1"], topTags: ["devops"], visitedSiteIds: ["x", "y"], favoriteSiteIds: ["z"], searchCount: 3,
+    });
+    const p = await repo.getUserProfile("u1");
+    expect(p).not.toBeNull();
+    expect(p!.topCategories).toEqual(["c1"]);
+    expect(p!.visitedSiteIds).toEqual(["x", "y"]);
+    expect(p!.searchCount).toBe(3);
+    // 覆盖写（ON CONFLICT）而不是插第二条
+    await repo.saveUserProfile("u1", {
+      topCategories: ["c2"], topTags: [], visitedSiteIds: [], favoriteSiteIds: [], searchCount: 4,
+    });
+    const p2 = await repo.getUserProfile("u1");
+    expect(p2!.topCategories).toEqual(["c2"]);
+    expect(p2!.searchCount).toBe(4);
+  });
+
+  it("画像 JSON 损坏时返回空数组而不是抛错", async () => {
+    db.sqlite!.prepare("INSERT OR REPLACE INTO user_profiles (user_id, top_categories, top_tags, visited_site_ids, favorite_site_ids, search_count, updated_at) VALUES (?,?,?,?,?,?,?)")
+      .run("broken", "not-json", "", "", "", 0, Date.now());
+    const p = await repo.getUserProfile("broken");
+    expect(p!.topCategories).toEqual([]);
+  });
+
+  /* ------------------------- 搜索历史 ------------------------- */
+
+  it("搜索历史记录 / 列表 / 清空", async () => {
+    await repo.recordSearch("u1", "  天气  ", 3);
+    await repo.recordSearch("u1", "", 0); // 空查询被忽略
+    await repo.recordSearch("u1", "设计", 1);
+    const items = await repo.listSearchHistory("u1", 10);
+    expect(items.length).toBe(2);
+    expect(items[0]!.query).toBe("设计");
+    expect(items[1]!.query).toBe("天气"); // trim 过
+    await repo.clearSearchHistory("u1");
+    expect((await repo.listSearchHistory("u1")).length).toBe(0);
+  });
+
+  /* ------------------------- 终端用户 ------------------------- */
+
+  it("OAuth 用户 upsert：新建、更新、按 email 归一", async () => {
+    const created = await repo.upsertOauthUser({ id: "github:1", username: "alice", email: "alice@example.com" });
+    expect(created.role).toBe("user");
+    expect(created.source).toBe("github");
+
+    // 同一 username 再登录：更新资料而不是新建
+    const again = await repo.upsertOauthUser({ username: "alice", email: "alice@example.com", avatar: "https://a.png" });
+    expect(again.id).toBe(created.id);
+    expect(again.avatar).toBe("https://a.png");
+
+    // 换 username 但同 email：归一到同一用户
+    const byEmail = await repo.upsertOauthUser({ username: "alice2", email: "alice@example.com" });
+    expect(byEmail.id).toBe(created.id);
+
+    const fetched = await repo.getUser("alice");
+    expect(fetched!.email).toBe("alice@example.com");
+  });
+
+  /* ------------------------- 行为统计 ------------------------- */
+
+  it("点击计数与热度分写入", async () => {
+    const site = (await repo.findSiteByUrl("https://a.com"))!;
+    await repo.bumpVisit(site.id);
+    await repo.bumpVisit(site.id);
+    const after = await repo.findSiteByUrl("https://a.com");
+    expect(after!.visitCount).toBe(2);
+    expect(after!.lastVisitedAt).toBeGreaterThan(0);
+
+    await repo.setTrendScores([{ id: site.id, trendScore: 9.5 }]);
+    const hot = await repo.hotSites(10);
+    expect(hot[0]!.id).toBe(site.id);
+    expect(hot[0]!.trendScore).toBeCloseTo(9.5);
+
+    const newest = await repo.newestSites(1);
+    expect(newest.length).toBe(1);
+  });
+
+  /* ------------------------- 任务队列 ------------------------- */
+
+  it("任务入队 / 抢占 / 完成 / 列表", async () => {
+    const id = await repo.enqueueJob("health_check", { siteId: "x" });
+    expect(id).toBeTruthy();
+    const claimed = await repo.claimNextJob();
+    expect(claimed).not.toBeNull();
+    expect(claimed!.kind).toBe("health_check");
+    expect(claimed!.attempts).toBe(1);
+    expect(claimed!.payload).toEqual({ siteId: "x" });
+    // 没有更多 pending
+    expect(await repo.claimNextJob()).toBeNull();
+    await repo.completeJob(claimed!.id, null);
+    const done = (await repo.listJobs("done", 10)).find((j) => j.id === claimed!.id);
+    expect(done).toBeTruthy();
+    await repo.completeJob(claimed!.id, "boom");
+    const failed = (await repo.listJobs("failed", 10)).find((j) => j.id === claimed!.id);
+    expect(failed!.error).toBe("boom");
+  });
+
+  /* ------------------------- 迁移幂等 ------------------------- */
+
+  it("列迁移幂等：第二次执行返回空", async () => {
+    const { migrateColumns } = await import("../src/migrate.ts");
+    const added = await migrateColumns(db);
+    expect(added).toEqual([]);
+    // 新列真实存在
+    const cols = (db.sqlite!.prepare("PRAGMA table_info(sites)").all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).toContain("visit_count");
+    expect(cols).toContain("trend_score");
+    expect(cols).toContain("last_visited_at");
+    const tables = (db.sqlite!.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((t) => t.name);
+    for (const t of ["favorites", "favorite_folders", "user_profiles", "search_history", "user_vault_sync"]) {
+      expect(tables).toContain(t);
+    }
+  });
+
+  it("用户端侧加密金库云端持久化 (user_vault_sync)：支持保存、读回、版本自增与删除", async () => {
+    const testUserId = "user-test-e2ee-vault";
+    const initialPayload = JSON.stringify({ ciphertext: "encrypted_abc", iv: "iv_123" });
+
+    // 初始读取为空
+    const empty = await repo.getUserVault(testUserId);
+    expect(empty).toBeNull();
+
+    // 首次保存
+    const saved1 = await repo.saveUserVault(testUserId, initialPayload);
+    expect(saved1.version).toBe(1);
+    expect(saved1.updatedAt).toBeGreaterThan(0);
+
+    const fetched1 = await repo.getUserVault(testUserId);
+    expect(fetched1).not.toBeNull();
+    expect(fetched1?.userId).toBe(testUserId);
+    expect(fetched1?.payload).toBe(initialPayload);
+    expect(fetched1?.version).toBe(1);
+
+    // 二次保存更新，版本自增
+    const updatedPayload = JSON.stringify({ ciphertext: "encrypted_xyz_updated", iv: "iv_456" });
+    const saved2 = await repo.saveUserVault(testUserId, updatedPayload);
+    expect(saved2.version).toBe(2);
+
+    const fetched2 = await repo.getUserVault(testUserId);
+    expect(fetched2?.payload).toBe(updatedPayload);
+    expect(fetched2?.version).toBe(2);
+
+    // 删除
+    const deleted = await repo.deleteUserVault(testUserId);
+    expect(deleted).toBe(true);
+    expect(await repo.getUserVault(testUserId)).toBeNull();
+  });
+
+  it("旧库（缺新列）在 openDb 时被自动补齐", async () => {
+    // 用「旧 DDL」建一个缺列的库，再走 openDb，验证自动迁移
+    const oldDir = mkdtempSync(join(tmpdir(), "navhub-olddb-"));
+    const oldPath = join(oldDir, "old.db");
+    const Database = (await import("better-sqlite3")).default;
+    const raw = new Database(oldPath);
+    raw.exec("CREATE TABLE sites (id TEXT PRIMARY KEY, url TEXT NOT NULL, title TEXT NOT NULL, category_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', enabled INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 0, weight REAL NOT NULL DEFAULT 0, featured INTEGER NOT NULL DEFAULT 0, source TEXT, fts_tokens TEXT NOT NULL DEFAULT '', pinyin_full TEXT NOT NULL DEFAULT '', pinyin_initials TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
+    raw.exec("CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'admin', created_at INTEGER NOT NULL)");
+    raw.close();
+
+    const db2 = await openDb({ dialect: "sqlite", sqlitePath: oldPath });
+    const cols = (db2.sqlite!.prepare("PRAGMA table_info(sites)").all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).toContain("visit_count");
+    const ucols = (db2.sqlite!.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>).map((c) => c.name);
+    expect(ucols).toContain("email");
+    expect(ucols).toContain("source");
+    await db2.close();
+    rmSync(oldDir, { recursive: true, force: true });
+  });
+});

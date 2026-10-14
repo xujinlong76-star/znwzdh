@@ -22,13 +22,41 @@ Thumbs.db
 # apps/web 是 NavSphere 的完整副本，通过 `node scripts/vendor-web.mjs` 拉取，
 # 不纳入版本管理：这样本仓库只保留 NavHub 自己的改动，也便于跟进上游更新。
 apps/web/*
-# 我们对上游的改动必须跟踪（上面规则之后用否定规则放行）
+!apps/web/next.config.js
+!apps/web/package.json
+!apps/web/UPSTREAM.md
 !apps/web/src/
+
 apps/web/src/*
 !apps/web/src/lib/
 apps/web/src/lib/*
 !apps/web/src/lib/github.ts
 !apps/web/src/lib/storage-adapter.ts
-!apps/web/next.config.js
-!apps/web/package.json
-!apps/web/UPSTREAM.md
+
+!apps/web/src/components/
+apps/web/src/components/*
+!apps/web/src/components/navigation-content.tsx
+!apps/web/src/components/search-bar.tsx
+
+!apps/web/src/app/
+apps/web/src/app/*
+!apps/web/src/app/page.tsx
+!apps/web/src/app/videos/
+apps/web/src/app/videos/*
+!apps/web/src/app/videos/page.tsx
+
+!apps/web/src/app/api/
+apps/web/src/app/api/*
+!apps/web/src/app/api/search/
+apps/web/src/app/api/search/*
+!apps/web/src/app/api/search/route.ts
+
+!apps/web/src/app/api/home/
+apps/web/src/app/api/home/*
+!apps/web/src/app/api/home/navigation/
+apps/web/src/app/api/home/navigation/*
+!apps/web/src/app/api/home/navigation/route.ts
+!apps/web/src/app/api/home/site/
+apps/web/src/app/api/home/site/*
+!apps/web/src/app/api/home/site/route.ts
+

@@ -41,6 +41,20 @@ export interface AppConfig {
     userAgent: string;
   };
   corsOrigins: string[];
+  /**
+   * 是否对管理面强制 Bearer token 鉴权。
+   *
+   * 默认 false（开放模式）：个人 / NAS 部署零配置可用，且不改变存量行为。
+   * 公开部署设 NAVHUB_AUTH_REQUIRED=true 后，写类路由必须带 api_tokens 里的 token。
+   */
+  authRequired: boolean;
+  /**
+   * 引导 token（明文）：解决「启用鉴权后库里还没有 token」的鸡生蛋问题。
+   *
+   * 设置后，持有它的请求视同 admin——运维先用它调用 POST /api/tokens
+   * 创建正式的库内 token，之后应删除本变量重启。不入库、只在内存比对。
+   */
+  bootstrapToken: string | null;
 }
 
 function env(key: string, fallback?: string): string {
@@ -73,11 +87,11 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 
   const base: AppConfig = {
     mode,
-    port: num("PORT", 8787),
-    host: env("HOST", "0.0.0.0"),
+    port: process.env.NAVHUB_PORT ? num("NAVHUB_PORT", 8787) : num("PORT", 8787),
+    host: env("NAVHUB_HOST", env("HOST", "0.0.0.0")),
     publicUrl: env("NAVHUB_PUBLIC_URL", "http://localhost:8787"),
     sessionSecret: env("NAVHUB_SESSION_SECRET", "insecure-dev-secret-change-me"),
-    sqlitePath: env("NAVHUB_SQLITE_PATH", "./data/navhub.db"),
+    sqlitePath: env("NAVHUB_SQLITE_PATH", env("NAVHUB_DB_PATH", "./data/navhub.db")),
     databaseUrl: process.env.NAVHUB_DATABASE_URL || null,
     embedding: {
       model: env("NAVHUB_EMBEDDING_MODEL", "Xenova/bge-small-zh-v1.5"),
@@ -102,6 +116,8 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       userAgent: env("NAVHUB_USER_AGENT", "NavHubBot/0.1"),
     },
     corsOrigins: env("NAVHUB_CORS_ORIGINS", "*").split(",").map((s) => s.trim()).filter(Boolean),
+    authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
+    bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
   };
 
   if (mode === "standard" && !base.databaseUrl && !overrides.databaseUrl) {

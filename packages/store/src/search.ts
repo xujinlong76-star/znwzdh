@@ -92,29 +92,49 @@ export class SearchEngine {
   async search(q: SearchQuery): Promise<SearchResult> {
     const started = Date.now();
     const limit = q.limit ?? 20;
+    const offset = Math.max(0, q.offset ?? 0);
     const raw = (q.q ?? "").trim();
     const weights = this.deps.weights ?? DEFAULT_WEIGHTS;
-    const pool = Math.max(limit * 3, 60);
-    const candidates: SearchCandidate[] = [];
+    // 召回池必须覆盖「已取走的 + 本页要展示的」，否则翻到第 2 页就空了
+    const pool = Math.max((offset + limit) * 3, 60);
 
     // 空查询 = 浏览模式：按 featured/weight/sort 出列表，不经过 RRF
     if (raw.length === 0) {
-      const browse = await this.browse(q, limit);
+      const browse = await this.browse(q, limit, offset);
       return {
-        hits: browse,
+        hits: browse.hits,
         channelsUsed: [],
         semanticAvailable: this.semanticAvailable,
         tookMs: Date.now() - started,
+        offset,
+        hasMore: browse.hasMore,
       };
     }
 
-    const [exact, ftsHits, pinyin, semantic] = await Promise.all([
-      this.channelExact(raw, q),
-      this.channelFts(raw, q),
-      this.channelPinyin(raw, q),
-      q.disableSemantic ? Promise.resolve([]) : this.channelSemantic(raw, q),
-    ]);
-    candidates.push(...exact, ...ftsHits, ...pinyin, ...semantic);
+    const hasFilter = Boolean(q.categoryId || q.tag);
+    let fallback: SearchResult["fallback"];
+    let candidates = await this.runChannels(raw, q, false);
+
+    // ---- 零结果兜底（两级放宽） ----
+    // 第 1 级：原查询带类目/标签过滤 → 先怀疑是过滤器太窄（用户常在类目内搜索后
+    //          换了想搜的词），去掉过滤重试。这是最常见的「明明有却不显示」。
+    if (candidates.length === 0 && hasFilter) {
+      const widened = await this.runChannels(raw, { ...q, categoryId: undefined, tag: undefined }, false);
+      if (widened.length > 0) {
+        candidates = widened;
+        fallback = "filter";
+      }
+    }
+    // 第 2 级：拼音从「前缀」放宽为「包含」、英文多词改逐词 OR。
+    //   覆盖：搜 "code editor"（整串子串匹配不中，但 code 单词能中）
+    //         搜 "tianq"（不在全拼/首字母开头，但包含能中）
+    if (candidates.length === 0) {
+      const widened = await this.runChannels(raw, q, true);
+      if (widened.length > 0) {
+        candidates = widened;
+        fallback = "fuzzy";
+      }
+    }
 
     // 个性化作为独立通道参与融合（而不是事后加成），见 fusion.ts 的说明。
     // 只对"已经被相关性通道召回"的站点施加偏好，避免偏好把无关站点带进结果。
@@ -128,26 +148,66 @@ export class SearchEngine {
 
     const used = new Set(candidates.map((c) => c.channel));
     return {
-      hits: hits.slice(0, limit),
+      // RRF 是纯函数 → 融合结果稳定，按 offset 切片即可（漂移说明见 types.ts）
+      hits: hits.slice(offset, offset + limit),
       channelsUsed: [...used] as SearchChannel[],
       semanticAvailable: this.semanticAvailable,
       tookMs: Date.now() - started,
+      offset,
+      hasMore: offset + limit < hits.length,
+      ...(fallback ? { fallback } : {}),
     };
   }
 
-  /** 通道 1：子串精确匹配（中文最可靠的一路） */
-  private async channelExact(q: string, opt: SearchQuery): Promise<SearchCandidate[]> {
-    const like = "%" + q.toLowerCase() + "%";
+  /** 并行跑四路召回。fuzzy=true 时放宽拼音与英文匹配（供零结果兜底用）。 */
+  private async runChannels(raw: string, opt: SearchQuery, fuzzy: boolean): Promise<SearchCandidate[]> {
+    const [exact, ftsHits, pinyin, semantic] = await Promise.all([
+      this.channelExact(raw, opt, fuzzy),
+      this.channelFts(raw, opt),
+      this.channelPinyin(raw, opt, fuzzy),
+      opt.disableSemantic ? Promise.resolve([]) : this.channelSemantic(raw, opt),
+    ]);
+    return [...exact, ...ftsHits, ...pinyin, ...semantic];
+  }
+
+  /**
+   * 通道 1：子串精确匹配（中文最可靠的一路）。
+   *
+   * fuzzy 模式下英文长查询按空白/标点拆词，改为逐词 OR——
+   * "ai code editor" 作为整串子串匹配不到任何标题，但其中任一词能匹配。
+   * 中文不拆（CJK 拆词无意义，语义靠 semantic、相关性靠 fts）。
+   */
+  private async channelExact(q: string, opt: SearchQuery, fuzzy = false): Promise<SearchCandidate[]> {
+    const lowered = q.toLowerCase();
+    const terms: string[] = [lowered];
+    if (fuzzy && !/[一-鿿]/.test(q)) {
+      const parts = q.split(/[\s,;|/]+/).map((t) => t.trim().toLowerCase()).filter((t) => t.length >= 2);
+      if (parts.length > 1) terms.push(...parts);
+    }
+
+    const conditions = [
+      "lower(title) LIKE ?", "lower(url) LIKE ?", "lower(coalesce(description,'')) LIKE ?",
+      "pinyin_full LIKE ?", "pinyin_initials LIKE ?",
+    ];
+    // 每个 term 一组 5 个 LIKE；组内 OR、组间 OR
+    const orGroups: string[] = [];
+    const likeParams: unknown[] = [];
+    for (const t of terms) {
+      const like = "%" + t + "%";
+      orGroups.push("(" + conditions.join(" OR ") + ")");
+      likeParams.push(like, like, like, like, like);
+    }
+
     const rows = await this.rawRows(
       `SELECT id, url, title, description, category_id AS categoryid,
               pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
          FROM sites
         WHERE enabled = ${this.enabled}
-          AND (lower(title) LIKE ? OR lower(url) LIKE ? OR lower(coalesce(description,'')) LIKE ?
-               OR pinyin_full LIKE ? OR pinyin_initials LIKE ?)
+          AND deleted_at IS NULL
+          AND (${orGroups.join(" OR ")})
         ORDER BY weight DESC, sort ASC
         LIMIT ?`,
-      [like, like, like, like, like, this.perChannel],
+      [...likeParams, this.perChannel],
     );
     const filtered = await this.postFilter(rows, opt);
     return filtered.map((r, i) => ({ siteId: r.id, channel: "exact" as const, rank: i + 1 }));
@@ -162,7 +222,7 @@ export class SearchEngine {
       const rows = await this.rawRows(
         `SELECT id, url, title, description, category_id AS categoryid,
                 pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
-           FROM sites WHERE id IN (${hits.map(() => "?").join(",")})`,
+           FROM sites WHERE id IN (${hits.map(() => "?").join(",")}) AND deleted_at IS NULL`,
         hits.map((h) => h.siteId),
       );
       const allowed = await this.postFilter(rows, opt);
@@ -176,16 +236,23 @@ export class SearchEngine {
     }
   }
 
-  /** 通道 3：拼音 */
-  private async channelPinyin(q: string, opt: SearchQuery): Promise<SearchCandidate[]> {
+  /**
+   * 通道 3：拼音。
+   *
+   * 默认前缀匹配（`tianqi` → 中国天气网）；fuzzy 模式改为**包含**匹配，
+   * 兜住「打了一半 / 拼错开头 / 非首字母」的查询（如 `tianq`、`gtqw`）。
+   */
+  private async channelPinyin(q: string, opt: SearchQuery, fuzzy = false): Promise<SearchCandidate[]> {
     if (!looksLikeLatinQuery(q) && !/[\u4e00-\u9fff]/.test(q)) return [];
     const { full, initials } = normalizeQueryPinyin(q);
     if (!full) return [];
+    const pattern = fuzzy ? "%" + full + "%" : full + "%";
+    const initialPattern = fuzzy ? "%" + initials + "%" : initials + "%";
     const rows = await this.rawRows(
       `SELECT id, url, title, description, category_id AS categoryid,
               pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
          FROM sites
-        WHERE enabled = ${this.enabled} AND (pinyin_full LIKE ? OR pinyin_initials LIKE ?)
+        WHERE enabled = ${this.enabled} AND deleted_at IS NULL AND (pinyin_full LIKE ? OR pinyin_initials LIKE ?)
         ORDER BY
           CASE WHEN pinyin_initials = ? THEN 0
                WHEN pinyin_full = ? THEN 0
@@ -193,7 +260,7 @@ export class SearchEngine {
                ELSE 2 END,
           weight DESC, sort ASC
         LIMIT ?`,
-      [full + "%", initials + "%", initials, full, initials + "%", this.perChannel],
+      [pattern, initialPattern, initials, full, initialPattern, this.perChannel],
     );
     const filtered = await this.postFilter(rows, opt);
     return filtered.map((r, i) => ({ siteId: r.id, channel: "pinyin" as const, rank: i + 1 }));
@@ -209,7 +276,7 @@ export class SearchEngine {
       const rows = await this.rawRows(
         `SELECT id, url, title, description, category_id AS categoryid,
                 pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
-           FROM sites WHERE id IN (${matches.map(() => "?").join(",")})`,
+           FROM sites WHERE id IN (${matches.map(() => "?").join(",")}) AND deleted_at IS NULL`,
         matches.map((m) => m.siteId),
       );
       const allowed = await this.postFilter(rows, opt);
@@ -243,15 +310,53 @@ export class SearchEngine {
     return out;
   }
 
-  private async browse(q: SearchQuery, limit: number): Promise<SearchHit[]> {
+  /** 浏览模式：多取 1 条用于判断 hasMore（避免 COUNT 往返） */
+  private async browse(q: SearchQuery, limit: number, offset: number): Promise<{ hits: SearchHit[]; hasMore: boolean }> {
+    // 浏览排序：编辑精选(featured) > 热度(trend_score) > 权重(weight) > 手工序(sort)。
+    // trend_score 由 recompute_rank 任务写入；为 0 时自然退化为旧行为，
+    // 因此这次排序升级对存量数据零影响。
+    const wheres: string[] = [`enabled = ${this.enabled}`, "deleted_at IS NULL"];
+    const params: unknown[] = [];
+
+    if (q.statuses?.length) {
+      wheres.push(`status IN (${q.statuses.map(() => "?").join(",")})`);
+      params.push(...q.statuses);
+    } else {
+      wheres.push(`status != 'archived'`);
+    }
+
+    if (q.categoryId) {
+      const ids = await this.categoryWithDescendants(q.categoryId);
+      if (ids.size > 0) {
+        wheres.push(`category_id IN (${[...ids].map(() => "?").join(",")})`);
+        params.push(...ids);
+      } else {
+        return { hits: [], hasMore: false };
+      }
+    }
+
+    if (q.tag) {
+      const ids = await this.siteIdsWithTag(q.tag);
+      if (ids.size > 0) {
+        wheres.push(`id IN (${[...ids].map(() => "?").join(",")})`);
+        params.push(...ids);
+      } else {
+        return { hits: [], hasMore: false };
+      }
+    }
+
+    // 多取 1 条 = hasMore 探针；browse 是排行榜而非 RRF，offset 直接下推 SQL
+    params.push(limit + 1, offset);
     const rows = await this.rawRows(
       `SELECT id, url, title, description, category_id AS categoryid,
               pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
-         FROM sites WHERE enabled = ${this.enabled} ORDER BY featured DESC, weight DESC, sort ASC LIMIT ?`,
-      [limit],
+         FROM sites WHERE ${wheres.join(" AND ")}
+        ORDER BY featured DESC, trend_score DESC, weight DESC, sort ASC LIMIT ? OFFSET ?`,
+      params,
     );
-    const filtered = await this.postFilter(rows, q);
-    return filtered.map((r) => ({ siteId: r.id, score: 1, contributions: {} }));
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    return { hits: page.map((r) => ({ siteId: r.id, score: 1, contributions: {} })), hasMore };
   }
 
   private async loadPersonalizable(ids: string[]): Promise<Map<string, PersonalizableSite>> {
@@ -263,7 +368,7 @@ export class SearchEngine {
     const rows = await this.rawRows(
       `SELECT s.id, s.category_id AS categoryid,
               ${tagExpr} AS tags
-         FROM sites s WHERE s.id IN (${ids.map(() => "?").join(",")})`,
+         FROM sites s WHERE s.id IN (${ids.map(() => "?").join(",")}) AND s.deleted_at IS NULL`,
       ids,
     );
     for (const r of rows) {

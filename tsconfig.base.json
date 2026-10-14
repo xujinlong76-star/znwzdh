@@ -14,6 +14,7 @@
     "verbatimModuleSyntax": true,
     // 全仓统一用显式 .ts 后缀导入（Node 的 --experimental-strip-types 直接跑源码所需）
     "allowImportingTsExtensions": true,
+    "emitDeclarationOnly": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

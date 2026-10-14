@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "NavHub 智能导航随身助手",
+  "version": "1.0.0",
+  "description": "基于 NavHub 的下一代智能网址导航扩展：地址栏 nh 极速语义搜索、一键收录当前网页、平替雷达直达。",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "omnibox": {
+    "keyword": "nh"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "NavHub 随身导航"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

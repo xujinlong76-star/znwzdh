@@ -228,16 +228,43 @@ AI 富化需要抓取用户提交的 URL，这是本系统唯一的「用户可�
 ## 十、测试
 
 ```bash
-pnpm test          # 117 个测试
+pnpm test          # 216 个测试
 ```
 
 | 套件 | 覆盖 |
 | --- | --- |
-| `packages/core` | CJK 分词、FTS5 MATCH 表达式、拼音、RRF 融合、个性化通道 |
-| `packages/store` | 向量存储（内存/真实 sqlite-vec 双实现一致性）、真实 SQLite 集成 15 项 |
+| `packages/core` | CJK 分词、FTS5 MATCH 表达式、拼音、RRF 融合、个性化通道、热度公式、画像聚合 |
+| `packages/store` | 向量存储（内存/真实 sqlite-vec 双实现一致性）、真实 SQLite 集成、分类管理（移动/合并/删除归类）、收藏夹、画像、任务队列、schema 迁移幂等 |
 | `packages/ai` | SSRF 网段判定（含 IPv4 映射绕过）、元数据抽取、启发式降级 |
-| `apps/api` | **真实 HTTP 端到端**：检索、CRUD、去重、索引同步、降级、审计 |
-| `packages/mcp` | 权限硬边界、dryRun 默认行为、幂等、审计 |
+| `apps/api` | **真实 HTTP 端到端**：检索、CRUD、去重、索引同步、降级、审计、收藏夹、榜单、D1 快照误删回归；JobRunner 四任务 + 单实例锁 |
+| `packages/mcp` | 权限硬边界、dryRun 默认行为、幂等、审计、admin 级工具 |
+
+### 导航增强能力（第二轮，2026-10-13）
+
+- **前端接入混合检索**：SearchPalette（防抖 + AbortController + 通道徽标 + 降级提示），走 `/api/hub/*` 同源代理
+- **收藏夹**：localStorage 优先（未登录可用）+ 云端同步（登录后合并），JSON 导入导出
+- **标签系统**：标签云（真实计数）、标签结果页、重命名/合并
+- **推荐排序**：热度榜（近 7 天点击 + 收藏 − 年龄惩罚，`recompute_rank` 任务重算）、新品榜、相似站点（向量 KNN）
+- **个性化闭环**：点击/收藏事件 → 画像聚合（7 天半衰期）→ `personal` 通道（权重 0.3，不翻车）
+- **自动化**：JobRunner（health_check / refetch_metadata / recompute_rank / reindex，单实例锁 + TTL）
+- **管理端**：`/admin/jobs` 任务面板、`/admin/stats` 运营看板（热门搜索/零结果搜索/热度榜）
+- **schema 迁移**：`pnpm --filter @navhub/api migrate`，旧库自动补列（幂等）
+- **MCP 新工具**：`get_trending` / `list_tags` / `refresh_site`（write）/ `run_job`（admin）
+
+### PWA 与投稿（第三轮，2026-10-13）
+
+- **PWA**：`app/manifest.ts`（standalone + 主题色 + 快捷方式）、`public/sw.js`
+  （导航 network-first 离线回退、API 不走缓存、静态资源 SWR）、
+  图标由 `node scripts/gen-pwa-icons.mjs` 从 SVG 栅格化生成（192/512/maskable/apple-touch-icon）
+- **投稿统一**：无 GitHub 配置时（NavHub 默认部署）投稿落库为 `status=pending, source=submission`
+  的站点（限流 5 次/小时/IP，重复 URL 409），审核队列 `GET /api/sites?status=pending`；
+  配置了 `GITHUB_OWNER/REPO/PAT` 时仍走上游的 Issue 流程
+- **检索通道注册表**：`registerChannel(name, weight)` 运行时追加召回通道，
+  fusion 自动纳入融合与 coverage 统计（内置五路权重不变）
+
+> ⚠️ **D1 缺陷已修**：`writeNavigationData` 的全量对齐删除增加了 source 过滤——
+> 经 API/MCP/AI 创建的站点不再被前端保存 navigation.json 时静默删除
+> （`{null, navsphere, seed}` 仍按快照管理，回归测试锁定）。
 
 ---
 

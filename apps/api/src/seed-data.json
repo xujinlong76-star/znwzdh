@@ -17,8 +17,15 @@
     { "url": "https://midjourney.com", "title": "Midjourney", "description": "AI 绘画与图像生成工具", "categoryId": "cat-ai", "tags": ["AI 绘图", "生成"] },
     { "url": "https://suno.com", "title": "Suno", "description": "AI 音乐生成，输入歌词即可出歌", "categoryId": "cat-ai", "tags": ["AI 音乐", "生成"] },
     { "url": "https://modelscope.cn", "title": "魔搭 ModelScope", "description": "阿里达摩院开源模型社区，国内模型下载优选", "categoryId": "cat-ai", "tags": ["模型库", "国内"] },
+    { "url": "https://github.com/cline/cline", "title": "Cline", "description": "自主型 AI 编程 Agent，直接执行终端命令、读写文件并迭代解决工程任务", "categoryId": "cat-ai", "tags": ["Agent", "AI 编程", "自主"] },
+    { "url": "https://windsurf.ai", "title": "Windsurf", "description": "Codeium 打造的下一代 Agentic AI IDE，支持级联思考 (Cascade)", "categoryId": "cat-ai", "tags": ["Agentic IDE", "AI 编程"] },
+    { "url": "https://github.com/vllm-project/vllm", "title": "vLLM", "description": "高吞吐、低显存占用的大模型推理与服务引擎，支持 PagedAttention", "categoryId": "cat-ai", "tags": ["模型推理", "高吞吐"] },
+    { "url": "https://github.com/QwenLM/Qwen2.5", "title": "Qwen 2.5", "description": "阿里通义千问开源大模型，具备极强代码与数学推理能力", "categoryId": "cat-ai", "tags": ["大模型", "开源"] },
+    { "url": "https://github.com/langchain-ai/langgraph", "title": "LangGraph", "description": "构建可控、有状态、支持循环工作流的多智能体编排引擎", "categoryId": "cat-ai", "tags": ["多智能体", "编排"] },
 
-    { "url": "https://github.com", "title": "GitHub", "description": "全球最大的代码托管与协作平台", "categoryId": "cat-dev", "tags": ["代码托管", "开源"] },
+    { "url": "https://orm.drizzle.team", "title": "Drizzle ORM", "description": "现代轻量、无头、零运行时开销的 100% 类型安全 TypeScript SQL ORM", "categoryId": "cat-dev", "tags": ["ORM", "TypeScript", "数据库"] },
+    { "url": "https://bun.sh", "title": "Bun", "description": "全功能超高速 JavaScript/TypeScript 运行时、打包器与测试套件", "categoryId": "cat-dev", "tags": ["运行时", "极速"] },
+    { "url": "https://fastify.dev", "title": "Fastify", "description": "极速且低开销的 Node.js 现代微服务后端框架", "categoryId": "cat-dev", "tags": ["后端框架", "高性能"] },
     { "url": "https://gitee.com", "title": "Gitee 码云", "description": "国内代码托管平台，访问速度快", "categoryId": "cat-dev", "tags": ["代码托管", "国内"] },
     { "url": "https://npmjs.com", "title": "npm", "description": "JavaScript 包管理器与依赖仓库", "categoryId": "cat-dev", "tags": ["包管理", "JavaScript"] },
     { "url": "https://registry.npmmirror.com", "title": "npmmirror", "description": "淘宝 NPM 镜像，国内安装依赖加速", "categoryId": "cat-dev", "tags": ["镜像", "包管理"] },
@@ -63,6 +70,7 @@
     { "url": "https://www.12377.cn", "title": "国家网信办举报中心", "description": "网络违法和不良信息举报平台", "categoryId": "cat-life", "tags": ["政务", "举报"] }
   ],
   "collections": [
+    { "slug": "agentic-ai", "title": "2026 前沿 Agentic AI 生产力矩阵", "kind": "topic", "description": "从自主型智能体 Agent、级联推理 IDE 到高吞吐大模型推理引擎", "sites": ["https://github.com/cline/cline", "https://windsurf.ai", "https://github.com/vllm-project/vllm", "https://github.com/langchain-ai/langgraph", "https://cursor.com", "https://ollama.com"] },
     { "slug": "ai-coding", "title": "AI 编程工具链", "kind": "topic", "description": "从补全到重构，用 AI 提升编码效率", "sites": ["https://github.com/features/copilot", "https://cursor.com", "https://chat.deepseek.com"] },
     { "slug": "frontend-starter", "title": "前端入门路线", "kind": "roadmap", "description": "零基础到能独立做项目", "sites": ["https://developer.mozilla.org/zh-CN", "https://www.runoob.com", "https://roadmap.sh", "https://github.com/trending"] },
     { "slug": "design-toolkit", "title": "设计速查工具箱", "kind": "topic", "description": "配色、图标、字体、抠图一站备齐", "sites": ["https://figma.com", "https://iconify.design", "https://coolors.co", "https://fonts.google.com", "https://www.remove.bg"] }

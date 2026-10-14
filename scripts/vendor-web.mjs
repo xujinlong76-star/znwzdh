@@ -1,7 +1,7 @@
 
 import { mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, cpSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { join, resolve, relative } from "node:path";
 
 const ROOT = resolve(".");
 const TARGET = join(ROOT, "apps", "web");
@@ -38,17 +38,33 @@ const inner = readdirSync(stage).map((d) => join(stage, d)).find((p) => {
 });
 if (!inner) { console.error("[vendor] nothing extracted"); process.exit(1); }
 
-// 4) preserve NavHub-owned files
-mkdirSync(join(TARGET, "src", "lib"), { recursive: true });
-const adapter = join(TARGET, "src", "lib", "storage-adapter.ts");
-const adapterBackup = existsSync(adapter) ? readFileSync(adapter) : null;
+// 4) preserve NavHub-owned files: the whole overlay is applied AFTER the
+//    upstream copy, so overlay always wins (single source of truth).
+const OVERLAY = join(ROOT, "apps", "web-overlay");
+if (!existsSync(OVERLAY)) {
+  console.error("[vendor] overlay not found: " + OVERLAY);
+  process.exit(1);
+}
 
 // 5) copy upstream over the target
 cpSync(inner, TARGET, { recursive: true, force: true });
 
-// 6) restore NavHub-owned files
-if (adapterBackup) writeFileSync(adapter, adapterBackup);
-console.log("[vendor] restored src/lib/storage-adapter.ts");
+// 6) apply NavHub overlay (storage seam + all self-built pages/components)
+const overlayFiles = [];
+(function walkAndCopy(srcDir, dstDir) {
+  mkdirSync(dstDir, { recursive: true });
+  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+    const s = join(srcDir, entry.name);
+    const d = join(dstDir, entry.name);
+    if (entry.isDirectory()) {
+      walkAndCopy(s, d);
+    } else {
+      cpSync(s, d, { force: true });
+      overlayFiles.push(entry.name);
+    }
+  }
+})(OVERLAY, TARGET);
+console.log("[vendor] applied overlay: " + overlayFiles.length + " files");
 
 // 7) write UPSTREAM.md
 writeFileSync(join(TARGET, "UPSTREAM.md"), [
@@ -61,8 +77,12 @@ writeFileSync(join(TARGET, "UPSTREAM.md"), [
   "- Vendored at: " + new Date().toISOString(),
   "- Re-vendor: node scripts/vendor-web.mjs",
   "",
-  "NavHub-owned files (do not overwrite from upstream):",
+  "NavHub-owned files live in apps/web-overlay/ (applied on top of upstream):",
   "- src/lib/storage-adapter.ts -- storage seam (github | http | sqlite)",
+  "- src/lib/github.ts -- facade keeping upstream's two-function signature",
+  "- src/lib/navhub-api.ts, src/lib/identity.ts, src/hooks/useFavorites.ts",
+  "- src/components/search-palette.tsx, favorite-button.tsx, ...",
+  "- src/app/tags|hot|favorites|site/[id]|admin/jobs|admin/stats pages",
   "",
 ].join("\n"), "utf8");
 

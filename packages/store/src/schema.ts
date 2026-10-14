@@ -75,6 +75,9 @@ export const sites = sqliteTable("sites", {
   healthError: text("health_error"),
   lastCheckedAt: integer("last_checked_at"),
 
+  /* ---- 软删除（回收站）：NULL=正常，非 NULL=删除时刻，可恢复 ---- */
+  deletedAt: integer("deleted_at"),
+
   createdAt: integer("created_at").notNull().$defaultFn(now),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 }, (t) => [
@@ -262,9 +265,11 @@ export const userProfiles = sqliteTable("user_profiles", {
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 });
 
-/** 搜索历史：匿名存 anonId（localStorage 生成），登录后按 userId 归一 */
+/** 搜索历史：匿名存 anonId（localStorage 生成），登录后按 userId 归一。
+ *  id 用自增整数而不是 uuid：这是 append-only 日志，自增主键同时解决
+ *  「同毫秒多条记录的稳定排序」问题（与 events / audit_logs 一致）。 */
 export const searchHistory = sqliteTable("search_history", {
-  id: text("id").primaryKey(),
+  id: integer("id").primaryKey({ autoIncrement: true }),
   userId: text("user_id").notNull(),
   query: text("query").notNull(),
   resultCount: integer("result_count").notNull().default(0),
@@ -274,8 +279,20 @@ export const searchHistory = sqliteTable("search_history", {
   index("search_history_created_idx").on(t.createdAt),
 ]);
 
+/**
+ * 用户端侧加密金库云端同步表（E2EE 零知识持久化）。
+ * 服务端仅存密文 payload，无主密钥无法解密。
+ */
+export const userVaultSync = sqliteTable("user_vault_sync", {
+  userId: text("user_id").primaryKey(),
+  payload: text("payload").notNull(),
+  version: integer("version").notNull().default(1),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+});
+
 export const schema = {
   categories, sites, tags, siteTags, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings,
-  favorites, favoriteFolders, userProfiles, searchHistory,
+  favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync,
 };
+

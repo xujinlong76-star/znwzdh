@@ -86,6 +86,30 @@ export interface SiteHealth {
   lastCheckedAt?: number | null;
 }
 
+export interface SiteAction {
+  id: string;
+  label: string;
+  urlTemplate: string;
+  placeholder?: string;
+  icon?: string;
+}
+
+export interface SiteRelation {
+  targetTitle: string;
+  targetUrl: string;
+  relationType: "alternative" | "ecosystem" | "upstream" | "mirror";
+  isFreeOrOpenSource?: boolean;
+  note?: string;
+}
+
+export interface SiteLiveMetrics {
+  githubStars?: number;
+  latestVersion?: string;
+  openSource?: boolean;
+  license?: string;
+  latencyMs?: number;
+}
+
 export interface Site {
   id: Id;
   url: string;
@@ -113,7 +137,20 @@ export interface Site {
   lastVisitedAt?: number | null;
   /** 热度分（recompute_rank 任务重算） */
   trendScore?: number;
+  /**
+   * 软删除（回收站）戳：null/undefined=正常，非 null=已删除时刻。
+   * 正常查询一律排除软删站点，只有回收站入口返回带此值的记录。
+   */
+  deletedAt?: number | null;
   health?: SiteHealth;
+  /** 深链快速微动作（带参数直达核心能力） */
+  actions?: SiteAction[];
+  /** 生态与替代品（平替雷达与技术栈关系） */
+  relations?: SiteRelation[];
+  /** 实时脉搏数据（GitHub Star、版本、开源协议） */
+  liveMetrics?: SiteLiveMetrics;
+  /** 适用的场景工作台（dev | design | ai | content） */
+  workspaces?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -166,9 +203,13 @@ export interface CollectionItem {
  * 原因是实测发现 RRF（k=60）会把排名 1~10 压缩到仅 ~3% 的分数差，
  * 任何"融合后再乘系数"的做法都会轻易翻转相关性顺序。
  * 把它变成一路、并给一个明确小于相关性通道的权重，翻转能力就被权重天然限界了。
+ *
+ * 类型说明：内置通道（BuiltinChannel）保留字面量自动补全；
+ * `(string & {})` 允许注册表扩展的新通道不报类型错（见 channels.ts）。
  */
-export const SEARCH_CHANNELS = ["exact", "fts", "pinyin", "semantic", "personal"] as const;
-export type SearchChannel = (typeof SEARCH_CHANNELS)[number];
+import type { BuiltinChannel } from "./channels.ts";
+
+export type SearchChannel = BuiltinChannel | (string & {});
 
 export interface SearchCandidate {
   siteId: Id;
@@ -203,6 +244,14 @@ export interface PersonalizableSite {
 export interface SearchQuery {
   q: string;
   limit?: number;
+  /**
+   * 结果偏移（分页）。0 = 第一页。
+   *
+   * RRF 融合是纯函数（同输入同输出），因此对融合结果做偏移切片是稳定的；
+   * 底层数据在翻页间隙被修改时可能有轻微漂移——对导航检索可接受，
+   * 换取的是无需维护游标语义的简单实现。
+   */
+  offset?: number;
   categoryId?: Id;
   tag?: string;
   statuses?: SiteStatus[];
@@ -220,6 +269,25 @@ export interface SearchResult {
   channelsUsed: SearchChannel[];
   semanticAvailable: boolean;
   tookMs: number;
+  /** 本次分页的偏移（默认 0） */
+  offset?: number;
+  /**
+   * 召回池里是否还有未展示的结果——据此渲染「加载更多」。
+   *
+   * 注意语义：这是「本次召回池内还有余量」，**不是**全库匹配总数
+   * （每通道各召回 50 条，池子有上限）。叫 total 会误导，故用布尔。
+   */
+  hasMore?: boolean;
+  /**
+   * 零结果时的兜底放宽级别（有结果时为 undefined）。
+   *
+   *   "filter"  原查询带类目/标签过滤且过滤后为空 → 放宽过滤重试
+   *   "fuzzy"   过滤放宽仍为空 → 拼音改包含匹配、英文按词拆分 OR 重试
+   *
+   * 前端据此提示「已放宽筛选」而不是假装这就是精确结果——
+   * 降级要诚实，但不能什么都不给。
+   */
+  fallback?: "filter" | "fuzzy";
 }
 
 /* ------------------------------------------------------------------ *

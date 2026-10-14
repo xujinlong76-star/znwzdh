@@ -10,17 +10,55 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
 import type { AppContext } from "./context.ts";
 import { createContext } from "./context.ts";
 import { loadConfig } from "./config.ts";
 import { readStoragePath, writeStoragePath } from "./storage.ts";
+import { indexSite } from "./index-site.ts";
+import { refreshUserProfile, resetUserProfile } from "./profile-service.ts";
+import {
+  ANONYMOUS_IDENTITY,
+  bearerOf,
+  generateToken,
+  hashToken,
+  parseScopes,
+  scopeSatisfies,
+  secureEqual,
+  type ApiScope,
+  type AuthIdentity,
+  type RouteScope,
+} from "./auth.ts";
+
+/**
+ * site.id → 数值投稿编号，与前端（Next 侧）的 hashNumericId 规则必须一致。
+ * 算法：djb2 变体（((hash<<5)-hash)+ch），与 apps/web 的 hashNumericId 相同。
+ */
+export function submissionNumber(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) || 1;
+}
 
 export async function buildServer(ctx: AppContext) {
   // 测试里默认静音，避免日志淹没断言输出；生产用 NAVHUB_LOG_LEVEL 控制
   const logLevel = process.env.NAVHUB_LOG_LEVEL ?? (process.env.VITEST ? "silent" : "info");
-  const app = Fastify({ logger: { level: logLevel }, bodyLimit: 4 * 1024 * 1024 });
+  // 信任 X-Forwarded-For：前端 /api/hub/* 代理会把真实客户端 IP 透传过来。
+  // 不开启的话 req.ip 永远是代理进程的地址 —— 按 IP 的限流（全局 300/min、
+  // 投稿 5/hour）会退化成"整站共享一个桶"，第 6 个投稿者就被 429 挡在门外。
+  // 若中枢**直接**暴露到公网（不经过自家代理），设 NAVHUB_TRUST_PROXY=0 关闭，
+  // 否则客户端可伪造 XFF 绕过限流。
+  const trustProxy = process.env.NAVHUB_TRUST_PROXY !== "0";
+  const app = Fastify({
+    logger: { level: logLevel },
+    bodyLimit: 4 * 1024 * 1024,
+    trustProxy,
+  });
 
   await app.register(cors, {
     origin: ctx.config.corsOrigins.includes("*") ? true : ctx.config.corsOrigins,
@@ -28,9 +66,99 @@ export async function buildServer(ctx: AppContext) {
   });
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
 
+  /* ---------------------------- 响应缓存 ---------------------------- */
+
+  /**
+   * 路由级缓存策略（在 route config 里声明 `cache: { maxAge, etag }`）。
+   * 不声明 = `no-store`（见下方 hook）——这是刻意的安全默认：
+   * GET 缺缓存头时，浏览器与中间代理会走「启发式缓存」，
+   * 可能把管理面/含身份的数据缓存下来，属于静默的正确性风险。
+   */
+  interface CachePolicy {
+    /** 秒；0 = 每次再验证（`private, no-cache`，配合 ETag 用 304 省流量） */
+    maxAge: number;
+    /** 生成 ETag 并处理 If-None-Match → 304 */
+    etag?: boolean;
+  }
+
+  app.addHook("onSend", async (req, reply, payload) => {
+    const policy = (req.routeOptions?.config as { cache?: CachePolicy } | undefined)?.cache;
+    if (req.method !== "GET" || !policy || reply.statusCode !== 200) {
+      reply.header("cache-control", "no-store");
+      return payload;
+    }
+    // private：避免共享代理（CDN/nginx）把不同用户/不同 token 的响应串在一起。
+    // TTL 只省浏览器端重复请求，不牺牲隔离性。
+    reply.header("cache-control", policy.maxAge > 0 ? "private, max-age=" + policy.maxAge : "private, no-cache");
+
+    if (!policy.etag || typeof payload !== "string") return payload;
+    const etag = '"' + createHash("sha1").update(payload).digest("base64url") + '"';
+    reply.header("etag", etag);
+    const inm = String(req.headers["if-none-match"] ?? "");
+    const matched = inm.split(",").some((v) => v.trim().replace(/^W\//, "") === etag);
+    if (matched) {
+      reply.code(304);
+      // 304 不允许带 body；Fastify 不会自动清这两个头，残留会与空 body 冲突
+      reply.removeHeader("content-type");
+      reply.removeHeader("content-length");
+      return "";
+    }
+    return payload;
+  });
+
+  /* ---------------------------- 鉴权 ---------------------------- */
+
+  /**
+   * 路由分级：
+   *   public  终端用户功能（搜索 / 事件 / 收藏 / 投稿 / 榜单 / 健康），匿名可用
+   *   read    管理面只读（列表 / 统计 / 审计查询）
+   *   write   管理面写入（站点与类目 CRUD / 任务入队 / 存储写入 / 富化）
+   *   admin   高危（token 管理 / 删除站点）
+   *
+   * 开放模式（默认）下 hook 只挂载身份、不做拦截，行为与历史版本完全一致；
+   * 开启 NAVHUB_AUTH_REQUIRED 后，read/write/admin 路由必须带 Bearer token，
+   * 且 token 的 scope 不低于路由要求（admin ⊇ write ⊇ read）。
+   */
+  app.addHook("onRequest", async (req, reply) => {
+    const required = ((req.routeOptions?.config as { scope?: RouteScope } | undefined)?.scope ?? "public") as RouteScope;
+    const auth: AuthIdentity = { ...ANONYMOUS_IDENTITY };
+    req.auth = auth;
+
+    if (!ctx.config.authRequired || required === "public") return;
+
+    const token = bearerOf(req);
+    if (!token) {
+      return reply.code(401).send({ error: "缺少 Bearer token（该路由要求 " + required + " 权限）" });
+    }
+
+    // 引导 token：内存比对，视同 admin。用于首次创建库内 token 的一次性 bootstrap
+    if (ctx.config.bootstrapToken && secureEqual(token, ctx.config.bootstrapToken)) {
+      auth.actor = "bootstrap";
+      auth.kind = "static";
+      auth.scopes = ["read", "write", "admin"];
+      return;
+    }
+
+    const record = await ctx.repo.findApiTokenByHash(hashToken(token));
+    if (!record) {
+      return reply.code(401).send({ error: "token 无效或已过期" });
+    }
+    const tokenScopes = parseScopes(Array.isArray(record.scopes) ? record.scopes.join(",") : String(record.scopes ?? ""));
+    if (!scopeSatisfies(tokenScopes, required)) {
+      return reply.code(403).send({ error: "token 的 scope 不足以执行该操作（需要 " + required + "，当前 " + tokenScopes.join(",") + "）" });
+    }
+
+    // 鉴权通过：写入真实身份，审计从这一刻起记录「谁」而不是笼统的 "api"
+    auth.actor = record.name;
+    auth.kind = "token";
+    auth.tokenId = record.id;
+    auth.scopes = tokenScopes;
+    void ctx.repo.touchApiToken(record.id).catch(() => undefined);
+  });
+
   /* ---------------------------- 健康与能力 ---------------------------- */
 
-  app.get("/api/health", async () => ({
+  app.get("/api/health", { config: { cache: { maxAge: 15 } } }, async () => ({
     ok: true,
     mode: ctx.config.mode,
     capabilities: ctx.capabilities,
@@ -41,7 +169,7 @@ export async function buildServer(ctx: AppContext) {
    * 显式预热 embedding 模型。
    * 默认惰性加载（不拖慢启动），需要时可主动调用（例如部署完成后预热）。
    */
-  app.post("/api/warmup", async () => {
+  app.post("/api/warmup", { config: { scope: "write" } }, async () => {
     const t0 = Date.now();
     if (!ctx.embedding) return { ok: false, reason: "embedding 未启用" };
     const ok = await ctx.embedding.warmup();
@@ -61,6 +189,8 @@ export async function buildServer(ctx: AppContext) {
   const searchBody = z.object({
     q: z.string().default(""),
     limit: z.coerce.number().int().min(1).max(100).optional(),
+    /** 分页偏移（0 = 第一页）。翻页时必须带上原查询，保证 RRF 输入一致。 */
+    offset: z.coerce.number().int().min(0).max(1000).optional(),
     categoryId: z.string().optional(),
     tag: z.string().optional(),
     disableSemantic: queryBool.optional(),
@@ -76,7 +206,7 @@ export async function buildServer(ctx: AppContext) {
     }).optional(),
   });
 
-  app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req) => {
+  app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true } } }, async (req) => {
     const parsed = searchBody.safeParse(req.query ?? {});
     if (!parsed.success) return { error: "参数无效", detail: parsed.error.issues };
     return runSearch(parsed.data);
@@ -91,8 +221,11 @@ export async function buildServer(ctx: AppContext) {
   async function runSearch(input: z.infer<typeof searchBody>) {
     // 个性化信号服务端解析：身份 -> user_profiles -> personalize。
     // 显式传 personalize 的调用方（测试 / MCP）优先，保持向后兼容。
-    let personalize = input.personalize;
+    // 检索前顺手刷新画像（节流 60s）：第一次搜索没有画像就没有个性化，符合预期。
     const identity = input.userId ?? input.anonId ?? null;
+    if (identity) void refreshUserProfile(ctx, identity);
+
+    let personalize = input.personalize;
     if (!personalize && identity) {
       const profile = await ctx.repo.getUserProfile(identity);
       if (profile && (profile.topCategories.length > 0 || profile.topTags.length > 0 || profile.visitedSiteIds.length > 0)) {
@@ -111,22 +244,45 @@ export async function buildServer(ctx: AppContext) {
     })));
 
     const q = input.q.trim();
+    const isFirstPage = (input.offset ?? 0) === 0;
+    let suggestions: string[] = [];
+    let popular: string[] = [];
     if (q) {
-      // 搜索事件（现有行为）+ 零结果事件（指导补录）+ 搜索历史（匿名也可）
-      await ctx.repo.recordEvent("search", { query: q }).catch(() => undefined);
-      if (result.hits.length === 0) {
-        await ctx.repo.recordEvent("zero_result", { query: q }).catch(() => undefined);
+      // 事件只记第一页：翻页（offset>0）是同一次查询的延续，
+      // 若不区分，加载更多 3 次就把 search/topQueries 计数灌水 3 倍。
+      if (isFirstPage) {
+        await ctx.repo.recordEvent("search", { query: q }).catch(() => undefined);
       }
-      if (identity) {
+      // 零结果建议只对第一页有意义（翻到头的空页不是「没搜到」）
+      if (result.hits.length === 0 && isFirstPage) {
+        await ctx.repo.recordEvent("zero_result", { query: q }).catch(() => undefined);
+        // 零结果兜底：给「别人搜什么能搜到」而不是空白。
+        // topQueries 是所有搜索词，用 zeroResultQueries 差集剔除「同样搜不到的词」——
+        // 否则会把用户带进另一个死胡同。
+        const [top, zero] = await Promise.all([
+          ctx.repo.topQueries(180, 30),
+          ctx.repo.zeroResultQueries(180, 30),
+        ]);
+        const zeroSet = new Set(zero.map((z) => z.query));
+        suggestions = top.filter((t) => !zeroSet.has(t.query) && t.query !== q).slice(0, 5).map((t) => t.query);
+        popular = top.filter((t) => !zeroSet.has(t.query)).slice(0, 8).map((t) => t.query);
+      }
+      if (identity && isFirstPage) {
         await ctx.repo.recordSearch(identity, q, result.hits.length).catch(() => undefined);
       }
     }
-    return { ...result, hits };
+    return {
+      ...result,
+      hits,
+      items: hits,
+      // 仅零结果时携带（字段缺席 = 正常结果，前端无需判断）
+      ...(result.hits.length === 0 && q && isFirstPage ? { suggestions, popular } : {}),
+    };
   }
 
   /* ------------------------------ 站点 ------------------------------ */
 
-  app.get("/api/sites", async (req) => {
+  app.get("/api/sites", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
     return ctx.repo.listSites({
       categoryId: q.categoryId,
@@ -135,7 +291,10 @@ export async function buildServer(ctx: AppContext) {
     });
   });
 
-  app.get("/api/sites/:id", async (req, reply) => {
+  // 说明：URL 形态查询走本路由即可，前提是调用方对 URL 做 encodeURIComponent
+  // （实测 `/api/sites/https%3A%2F%2Fchatgpt.com` → 200；不编码的原始 URL
+  //  `/api/sites/https://chatgpt.com` 会被切成多段 → 404，属 HTTP 路由固有行为）。
+  app.get("/api/sites/:id", { config: { scope: "read" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const site = await ctx.repo.getSite(id);
     if (!site) { reply.code(404); return { error: "站点不存在" }; }
@@ -155,7 +314,42 @@ export async function buildServer(ctx: AppContext) {
     source: z.string().nullable().optional(),
   });
 
-  app.post("/api/sites", async (req, reply) => {
+  app.post("/api/sites", { config: { scope: "write" } }, async (req, reply) => {
+    const rawBody = (req.body ?? {}) as Record<string, unknown>;
+    // 兼容客户端（如浏览器插件）在 POST /api/sites 时传入 enrich: true 且未指定有效 categoryId 的自动富化入库调用
+    if (rawBody.enrich === true && (!rawBody.categoryId || typeof rawBody.categoryId !== "string")) {
+      const url = typeof rawBody.url === "string" ? rawBody.url.trim() : "";
+      if (!url) { reply.code(400); return { error: "缺少 URL 参数" }; }
+      const dup = await ctx.repo.findSiteByUrl(url);
+      if (dup) { reply.code(409); return { error: "该网址已存在", siteId: dup.id, site: dup, created: false, reason: "已存在" }; }
+      const categories = await ctx.repo.listCategories();
+      const enriched = await enrichUrl(url, {
+        llm: ctx.config.llm,
+        guard: ctx.config.fetch,
+        knownCategories: categories.map((c) => c.title),
+      });
+      let categoryId = enriched.suggestedCategory
+        ? categories.find((c) => c.title === enriched.suggestedCategory)?.id ?? null
+        : null;
+      if (!categoryId) {
+        const created = await ctx.repo.createCategory({ title: enriched.suggestedCategory ?? "未分类" });
+        categoryId = created.id;
+      }
+      const site = await ctx.repo.createSite({
+        url: enriched.url,
+        title: (typeof rawBody.title === "string" && rawBody.title.trim()) ? rawBody.title.trim() : enriched.title,
+        description: enriched.description,
+        categoryId,
+        iconKey: enriched.iconUrl,
+        tags: Array.isArray(rawBody.tags) ? (rawBody.tags as string[]) : enriched.tags,
+        source: "ai",
+      });
+      await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
+      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance } });
+      reply.code(201);
+      return site;
+    }
+
     const parsed = siteInput.safeParse(req.body ?? {});
     if (!parsed.success) { reply.code(400); return { error: "参数无效", detail: parsed.error.issues }; }
 
@@ -167,38 +361,138 @@ export async function buildServer(ctx: AppContext) {
       ...parsed.data,
       title: parsed.data.title ?? parsed.data.url,
     });
-    await indexSite(site.id, site.title, site.description ?? null, site.url);
-    await ctx.repo.audit({ actor: "api", action: "site.create", target: site.id, diff: parsed.data });
+    await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.create", target: site.id, diff: parsed.data });
     reply.code(201);
     return site;
   });
 
-  app.patch("/api/sites/:id", async (req, reply) => {
+  app.patch("/api/sites/:id", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const parsed = siteInput.partial().safeParse(req.body ?? {});
     if (!parsed.success) { reply.code(400); return { error: "参数无效", detail: parsed.error.issues }; }
     const before = await ctx.repo.getSite(id);
     const site = await ctx.repo.updateSite(id, parsed.data);
     if (!site) { reply.code(404); return { error: "站点不存在" }; }
-    await indexSite(site.id, site.title, site.description ?? null, site.url);
-    await ctx.repo.audit({ actor: "api", action: "site.update", target: id, diff: { before, after: parsed.data } });
+    await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.update", target: id, diff: { before, after: parsed.data } });
     return site;
   });
 
-  app.delete("/api/sites/:id", async (req, reply) => {
+  /** 删除 = 软删除（进回收站）。向量与标签都保留，恢复时无需重建索引 */
+  app.delete("/api/sites/:id", { config: { scope: "admin" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     await ctx.repo.deleteSite(id);
-    await ctx.vectors.remove([id]).catch(() => undefined);
-    await ctx.repo.audit({ actor: "api", action: "site.delete", target: id });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.delete", target: id });
+    reply.code(204);
+    return null;
+  });
+
+  /**
+   * 批量操作：移动类目 / 改状态 / 删除（软删）。
+   *
+   * 语义对齐 MCP 的 batch_import：**dryRun 默认 true**，先返回将要做出的改动，
+   * 确认后再以 dryRun=false 执行——批量删除是不可逆面最大的操作，默认不落库。
+   * scope 用 admin（≥ write）：操作集含删除，按最危险的成员定级。
+   */
+  app.post("/api/sites/bulk", { config: { scope: "admin" } }, async (req, reply) => {
+    const body = z.object({
+      op: z.enum(["delete", "setCategory", "setStatus"]),
+      ids: z.array(z.string().min(1)).min(1).max(200),
+      categoryId: z.string().optional(),
+      status: z.enum(["active", "pending", "broken", "archived"]).optional(),
+      dryRun: z.boolean().default(true),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    const { op, ids, dryRun } = body.data;
+    if (op === "setCategory" && !body.data.categoryId) { reply.code(400); return { error: "setCategory 需要 categoryId" }; }
+    if (op === "setStatus" && !body.data.status) { reply.code(400); return { error: "setStatus 需要 status" }; }
+
+    // 逐个解析存在性：不存在的 id 计入 plan 的 skip，不整批失败——
+    // 批量场景下部分目标已被人删掉是常态，报错会让操作方无法完成剩余部分
+    const plan: Array<{ id: string; action: "apply" | "skip"; reason?: string }> = [];
+    const targets: string[] = [];
+    for (const id of ids) {
+      const site = await ctx.repo.getSite(id);
+      if (!site) { plan.push({ id, action: "skip", reason: "站点不存在或已在回收站" }); continue; }
+      plan.push({ id, action: "apply" });
+      targets.push(id);
+    }
+    if (dryRun) {
+      return { dryRun: true, op, total: ids.length, wouldApply: targets.length, plan };
+    }
+
+    let applied = 0;
+    for (const id of targets) {
+      if (op === "delete") {
+        await ctx.repo.deleteSite(id);
+      } else if (op === "setCategory") {
+        await ctx.repo.updateSite(id, { categoryId: body.data.categoryId });
+      } else {
+        await ctx.repo.updateSite(id, { status: body.data.status as never });
+      }
+      applied++;
+    }
+    await ctx.repo.audit({
+      ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
+      action: "site.bulk", diff: { op, requested: ids.length, applied, skipped: ids.length - applied },
+    });
+    return { dryRun: false, op, applied, skipped: ids.length - applied, plan };
+  });
+
+  /* ---------------------------- 回收站 ---------------------------- */
+
+  /** 回收站列表（软删站点，倒序） */
+  app.get("/api/trash", { config: { scope: "read" } }, async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 500);
+    return { items: await ctx.repo.listDeletedSites(limit) };
+  });
+
+  /** 恢复软删站点；URL 已被新站点占用时拒绝（避免恢复出重复 URL） */
+  app.post("/api/trash/:id/restore", { config: { scope: "write" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const deleted = await ctx.repo.getDeletedSite(id);
+    if (!deleted) { reply.code(404); return { error: "回收站中不存在该站点（可能已恢复或已永久删除）" }; }
+
+    const clash = await ctx.repo.findSiteByUrl(deleted.url);
+    if (clash) {
+      reply.code(409);
+      return { error: "同网址已存在新站点，无法恢复（可先删除新站点）", existingSiteId: clash.id };
+    }
+
+    const site = await ctx.repo.restoreSite(id);
+    // 向量在软删期间保留，恢复即生效；保险起见重建一次（幂等）
+    await indexSite(ctx, site!.id, site!.title, site!.description ?? null, site!.url);
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.restore", target: id });
+    return site;
+  });
+
+  /** 永久删除：从回收站彻底清除（不可撤销） */
+  app.delete("/api/trash/:id", { config: { scope: "admin" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const deleted = await ctx.repo.getDeletedSite(id);
+    if (!deleted) { reply.code(404); return { error: "回收站中不存在该站点" }; }
+
+    await ctx.repo.purgeSite(id);
+    await ctx.vectors.remove([id]).catch(() => undefined);   // 永久删除才清向量
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.purge", target: id, diff: { url: deleted.url, title: deleted.title } });
     reply.code(204);
     return null;
   });
 
   /* ------------------------------ 类目 ------------------------------ */
 
-  app.get("/api/categories", async () => ctx.repo.listCategories());
+  app.get("/api/categories", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async () => ctx.repo.listCategories());
 
-  app.post("/api/categories", async (req, reply) => {
+  app.get("/api/categories/:id", { config: { scope: "read" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const cat = await ctx.repo.getCategory(id);
+    if (!cat) { reply.code(404); return { error: "类目不存在" }; }
+    return cat;
+  });
+
+  app.post("/api/categories", { config: { scope: "write" } }, async (req, reply) => {
     const body = z.object({
       title: z.string().min(1),
       parentId: z.string().nullable().optional(),
@@ -208,7 +502,7 @@ export async function buildServer(ctx: AppContext) {
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const cat = await ctx.repo.createCategory({ ...body.data, source: "api" });
-    await ctx.repo.audit({ actor: "api", action: "category.create", target: cat.id });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "category.create", target: cat.id });
     reply.code(201);
     return cat;
   });
@@ -224,14 +518,14 @@ export async function buildServer(ctx: AppContext) {
     sort: z.number().optional(),
   });
 
-  app.patch("/api/categories/:id", async (req, reply) => {
+  app.patch("/api/categories/:id", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = categoryPatch.safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const before = await ctx.repo.getCategory(id);
     const cat = await ctx.repo.updateCategory(id, body.data);
     if (!cat) { reply.code(404); return { error: "类目不存在" }; }
-    await ctx.repo.audit({ actor: "api", action: "category.update", target: id, diff: { before, after: body.data } });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "category.update", target: id, diff: { before, after: body.data } });
     return cat;
   });
 
@@ -239,25 +533,25 @@ export async function buildServer(ctx: AppContext) {
    * 删除类目：站点移入「未分类」（不级联删除），子类目提升到父级。
    * 这修正了旧行为——曾经删除类目会把它下面的站点一起删掉。
    */
-  app.delete("/api/categories/:id", async (req, reply) => {
+  app.delete("/api/categories/:id", { config: { scope: "admin" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const before = await ctx.repo.getCategory(id);
     if (!before) { reply.code(404); return { error: "类目不存在" }; }
     await ctx.repo.deleteCategory(id);
-    await ctx.repo.audit({ actor: "api", action: "category.delete", target: id, diff: { title: before.title } });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "category.delete", target: id, diff: { title: before.title } });
     reply.code(204);
     return null;
   });
 
   /** 移动类目（换父级，anchor 级联更新） */
-  app.post("/api/categories/:id/move", async (req, reply) => {
+  app.post("/api/categories/:id/move", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = z.object({ parentId: z.string().nullable() }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     try {
       const cat = await ctx.repo.moveCategory(id, body.data.parentId);
       if (!cat) { reply.code(404); return { error: "类目不存在" }; }
-      await ctx.repo.audit({ actor: "api", action: "category.move", target: id, diff: { parentId: body.data.parentId } });
+      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "category.move", target: id, diff: { parentId: body.data.parentId } });
       return cat;
     } catch (err) {
       reply.code(400);
@@ -266,13 +560,13 @@ export async function buildServer(ctx: AppContext) {
   });
 
   /** 合并类目：源（含后代）站点迁入目标后删源子树 */
-  app.post("/api/categories/merge", async (req, reply) => {
+  app.post("/api/categories/merge", { config: { scope: "write" } }, async (req, reply) => {
     const body = z.object({ sourceId: z.string().min(1), targetId: z.string().min(1) }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     try {
       const result = await ctx.repo.mergeCategories(body.data.sourceId, body.data.targetId);
       await ctx.repo.audit({
-        actor: "api", action: "category.merge",
+        actor: req.auth.actor, actorKind: req.auth.kind, action: "category.merge",
         target: body.data.sourceId, diff: { into: body.data.targetId, ...result },
       });
       return { ok: true, ...result };
@@ -285,19 +579,19 @@ export async function buildServer(ctx: AppContext) {
   /* ------------------------- 标签 ------------------------- */
 
   /** 标签云（带计数，按热度降序） */
-  app.get("/api/tags", async (req) => {
+  app.get("/api/tags", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
     const minCount = Number(q.minCount);
     return ctx.repo.listTagsWithCounts(Number.isFinite(minCount) && minCount > 0 ? minCount : 1);
   });
 
-  app.patch("/api/tags/:id", async (req, reply) => {
+  app.patch("/api/tags/:id", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const body = z.object({ name: z.string().min(1).max(24) }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     try {
       await ctx.repo.renameTag(id, body.data.name);
-      await ctx.repo.audit({ actor: "api", action: "tag.rename", target: id, diff: { name: body.data.name } });
+      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "tag.rename", target: id, diff: { name: body.data.name } });
       return { ok: true };
     } catch (err) {
       reply.code(400);
@@ -305,13 +599,29 @@ export async function buildServer(ctx: AppContext) {
     }
   });
 
-  app.post("/api/tags/merge", async (req, reply) => {
+  /**
+   * 删除标签：解除与所有站点的关联后删除标签本身（不影响站点数据）。
+   * 标签不存在时返回 404——脚本重试时把 404 视作「已删除」即可。
+   */
+  app.delete("/api/tags/:id", { config: { scope: "write" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    try {
+      const result = await ctx.repo.deleteTag(id);
+      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "tag.delete", target: id, diff: result });
+      return { ok: true, ...result };
+    } catch (err) {
+      reply.code(/不存在/.test(String(err)) ? 404 : 400);
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+
+  app.post("/api/tags/merge", { config: { scope: "write" } }, async (req, reply) => {
     const body = z.object({ sourceId: z.string().min(1), targetId: z.string().min(1) }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     try {
       const result = await ctx.repo.mergeTags(body.data.sourceId, body.data.targetId);
       await ctx.repo.audit({
-        actor: "api", action: "tag.merge",
+        actor: req.auth.actor, actorKind: req.auth.kind, action: "tag.merge",
         target: body.data.sourceId, diff: { into: body.data.targetId, ...result },
       });
       return { ok: true, ...result };
@@ -323,9 +633,9 @@ export async function buildServer(ctx: AppContext) {
 
   /* ----------------------- 精选专题 ----------------------- */
 
-  app.get("/api/collections", async () => ctx.repo.listCollections());
+  app.get("/api/collections", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async () => ctx.repo.listCollections());
 
-  app.get("/api/collections/:slug", async (req, reply) => {
+  app.get("/api/collections/:slug", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
     const { slug } = req.params as { slug: string };
     const col = await ctx.repo.getCollectionBySlug(slug);
     if (!col) { reply.code(404); return { error: "专题不存在" }; }
@@ -413,7 +723,7 @@ export async function buildServer(ctx: AppContext) {
   /* ------------------------ 推荐排序 ------------------------ */
 
   /** 热度榜（trend_score 由 recompute_rank 任务重算） */
-  app.get("/api/rank/trending", async (req) => {
+  app.get("/api/rank/trending", { config: { cache: { maxAge: 60, etag: true } } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
     const limit = Math.min(Number(q.limit) || 20, 100);
     const sites = await ctx.repo.hotSites(limit);
@@ -427,7 +737,7 @@ export async function buildServer(ctx: AppContext) {
   });
 
   /** 新品榜 */
-  app.get("/api/rank/new", async (req) => {
+  app.get("/api/rank/new", { config: { cache: { maxAge: 60, etag: true } } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
     const limit = Math.min(Number(q.limit) || 20, 100);
     return { hits: (await ctx.repo.newestSites(limit)).map((s) => ({ site: s })) };
@@ -475,6 +785,62 @@ export async function buildServer(ctx: AppContext) {
     return { ok: true };
   });
 
+  /* --------------------- 个性化画像（「我的偏好」） --------------------- */
+
+  /** 读画像：让终端用户看到「系统据我的行为推断出了什么」——可解释性即信任 */
+  app.get("/api/profile", async (req) => {
+    const identity = identityOf(req as never);
+    if (!identity) return { error: "缺少 userId 或 anonId" };
+    return { profile: await ctx.repo.getUserProfile(identity) };
+  });
+
+  /**
+   * 重置画像：清 user_profiles + 该身份的行为事件（画像是从中聚合的）。
+   * 收藏夹与搜索历史保留——那是用户自己的数据，不是被推断的偏好。
+   */
+  app.delete("/api/profile", async (req) => {
+    const identity = identityOf(req as never);
+    if (!identity) return { ok: false, error: "缺少 userId 或 anonId" };
+    const result = await resetUserProfile(ctx, identity);
+    return { ok: true, ...result };
+  });
+
+  /* ------------------- E2EE 零知识云端金库同步 ------------------- */
+
+  /**
+   * 读云端密文金库。服务端零知识存储，永不触碰明文。
+   */
+  app.get("/api/vault/sync", async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    const vault = await ctx.repo.getUserVault(identity);
+    return { ok: true, vault };
+  });
+
+  /**
+   * 推送密文金库到云端中枢。
+   */
+  app.put("/api/vault/sync", async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    const body = z.object({
+      payload: z.string().min(1).max(512 * 1024),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    const result = await ctx.repo.saveUserVault(identity, body.data.payload);
+    return { ok: true, ...result };
+  });
+
+  /**
+   * 清除云端金库。
+   */
+  app.delete("/api/vault/sync", async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    await ctx.repo.deleteUserVault(identity);
+    return { ok: true };
+  });
+
   /* --------------------- 终端用户身份同步 --------------------- */
 
   /**
@@ -499,9 +865,65 @@ export async function buildServer(ctx: AppContext) {
     return user;
   });
 
+  /* ------------------------ 审计日志 ------------------------ */
+  /**
+   * 谁在什么时候改了什么——与鉴权配套的可见性闭环。
+   * 分页参数与 /api/search 一致（limit + offset + hasMore），
+   * action/actor 过滤用于「只看 token 调用」「只看删除」这类排查。
+   */
+  app.get("/api/admin/audit", { config: { scope: "read", cache: { maxAge: 0 } } }, async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
+    const offset = Math.max(0, Number(q.offset) || 0);
+    const [page, actions] = await Promise.all([
+      ctx.repo.listAuditLogs({ limit, offset, action: q.action || undefined, actor: q.actor || undefined }),
+      ctx.repo.listAuditActions(50),
+    ]);
+    return { ...page, limit, offset, actions };
+  });
+
   /* ------------------------ 运营统计 ------------------------ */
 
-  app.get("/api/admin/stats/trends", async (req) => {
+  /**
+   * 健康巡检趋势：按天分桶（桶在 JS 里做，避开 SQLite/PG 的日期函数方言差异）。
+   * 返回 `days` 天的 `{date, checked, failed, rate, avgLatencyMs}`——
+   * 只要有历史数据就能画出曲线，没有检查记录时返回空数组（不是 404/500）。
+   */
+  app.get("/api/admin/health/trend", { config: { scope: "read", cache: { maxAge: 30 } } }, async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const days = Math.min(Math.max(Number(q.days) || 14, 1), 90);
+    const since = Date.now() - days * 86_400_000;
+    const series = await ctx.repo.healthCheckSeries(since);
+
+    // 分桶：从今天往前推 days 天，缺数据的日期也要出现（否则曲线有洞）
+    const buckets = new Map<string, { checked: number; failed: number; latencySum: number; latencyN: number }>();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86_400_000);
+      buckets.set(d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()), { checked: 0, failed: 0, latencySum: 0, latencyN: 0 });
+    }
+    for (const row of series) {
+      const d = new Date(row.checkedAt);
+      const key = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+      const b = buckets.get(key);
+      if (!b) continue;
+      b.checked++;
+      if (!row.ok) b.failed++;
+      if (row.latencyMs !== null) { b.latencySum += row.latencyMs; b.latencyN++; }
+    }
+
+    const points = [...buckets.entries()].map(([date, b]) => ({
+      date,
+      checked: b.checked,
+      failed: b.failed,
+      // 成功率：该天没有检查时为 null（不要写 100%，那会把「没巡检」画成「很健康」）
+      rate: b.checked > 0 ? Math.round(((b.checked - b.failed) / b.checked) * 1000) / 10 : null,
+      avgLatencyMs: b.latencyN > 0 ? Math.round(b.latencySum / b.latencyN) : null,
+    }));
+    return { days, points, total: series.length };
+  });
+
+  app.get("/api/admin/stats/trends", { config: { scope: "read" } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
     const days = Math.min(Math.max(Number(q.days) || 30, 1), 365);
     const [top, zero, hot] = await Promise.all([
@@ -512,9 +934,161 @@ export async function buildServer(ctx: AppContext) {
     return { days, topQueries: top, zeroResultQueries: zero, hotSites: hot };
   });
 
+  /* -------------------------- 投稿 -------------------------- */
+
+  /**
+   * 匿名投稿：创建 status=pending、source=submission 的站点，进入审核队列。
+   * 比全局限流（300/min）严格得多：5 次/小时/IP，防垃圾提交。
+   * 重复 URL 返回 409（与 create_site 一致的去重语义）。
+   */
+  app.post("/api/submissions", { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } }, async (req, reply) => {
+    const body = z.object({
+      title: z.string().min(1).max(120),
+      url: z.string().url(),
+      description: z.string().max(500).default(""),
+      categoryId: z.string().min(1),
+      subCategoryId: z.string().nullable().optional(),
+      submitterNote: z.string().max(500).nullable().optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { success: false, message: "请填写完整的投稿信息" }; }
+
+    const dup = await ctx.repo.findSiteByUrl(body.data.url);
+    if (dup) {
+      reply.code(409);
+      return { success: false, message: "该网址已存在", siteId: dup.id };
+    }
+
+    const category = await ctx.repo.getCategory(body.data.categoryId);
+    if (!category) { reply.code(400); return { success: false, message: "投稿类目不存在" }; }
+
+    const site = await ctx.repo.createSite({
+      url: body.data.url,
+      title: body.data.title,
+      description: body.data.description || null,
+      categoryId: body.data.categoryId,
+      subCategoryId: body.data.subCategoryId ?? null,
+      status: "pending",
+      source: "submission",
+    });
+    await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
+    await ctx.repo.recordEvent("submission", { siteId: site.id, categoryId: category.id }).catch(() => undefined);
+    await ctx.repo.audit({ ip: req.ip, actor: "anonymous", actorKind: "user", action: "site.submit", target: site.id, diff: { url: site.url, title: site.title } });
+    reply.code(201);
+    return { success: true, message: "投稿已提交，等待审核", siteId: site.id };
+  });
+
+  /* --------------------- 投稿审核（收编中枢） --------------------- */
+
+  /**
+   * 投稿列表（审核队列数据源）。
+   *
+   * 与 Next 端 /api/submissions 的 GitHub 通道**同形状**（success + submissions），
+   * 前端审核队列无论走哪条通道都拿到同样的数据结构。
+   * number 是 site.id 的稳定数值 hash（见 submissionNumber），
+   * 让沿用 GitHub Issue 语义的前端拿到的 id 仍是 GitHub 路径可用的形态。
+   */
+  app.get("/api/submissions", { config: { scope: "read", cache: { maxAge: 0 } } }, async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const requested = q.status ?? "pending";
+    const statusMap: Record<string, string | undefined> = {
+      pending: "pending", approved: "active", rejected: "archived", all: undefined,
+    };
+    if (!(requested in statusMap)) { reply.code(400); return { success: false, message: "无效的状态筛选" }; }
+    const siteStatus = statusMap[requested];
+    const sites = await ctx.repo.listSites({ status: siteStatus as never, limit: 200 });
+    // 只要投稿来源的站点——`all` 时 listSites 会带回全部站点，不能原样吐给审核队列
+    const submissions = sites
+      .filter((s) => s.source === "submission")
+      .map((site) => {
+        const isPending = site.status === "pending";
+        const label = isPending ? "pending" : (site.status === "active" ? "approved" : "rejected");
+        return {
+          id: submissionNumber(site.id),
+          number: submissionNumber(site.id),
+          title: site.title,
+          body: site.description ?? "",
+          state: isPending ? "open" : "closed",
+          created_at: new Date(site.createdAt).toISOString(),
+          updated_at: new Date(site.updatedAt).toISOString(),
+          html_url: site.url,
+          submissionData: {
+            title: site.title,
+            url: site.url,
+            description: site.description ?? "",
+            category: site.categoryId,
+            subcategory: site.subCategoryId ?? undefined,
+          },
+          _status: site.status,
+          _label: label,
+          siteId: site.id,
+        };
+      });
+    return { success: true, submissions };
+  });
+
+  /**
+   * 审核投稿（approve → active / reject → archived）。
+   *
+   * :number 是前端沿用的 GitHub Issue number（site.id 的 hash），这里反查回
+   * 真实 site id——此前 Next 的 hub 回退直接拿 hash number 调 /api/sites/:id，
+   * 必然 404，审核按钮在 NavHub 模式下是**静默失效**的（本次收编修复）。
+   * 审核动作落 submission.approve / submission.reject 审计（此前只有 POST 有审计）。
+   */
+  app.patch("/api/submissions/:number", { config: { scope: "write" } }, async (req, reply) => {
+    const { number } = req.params as { number: string };
+    const body = z.object({
+      action: z.enum(["approve", "reject"]),
+      reason: z.string().max(500).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { success: false, message: "无效的操作" }; }
+
+    const wanted = Number(number);
+    if (!Number.isFinite(wanted)) { reply.code(400); return { success: false, message: "无效的投稿编号" }; }
+    // 投稿池有限（100 条内），逐个算 hash 反查——比多存一张映射表简单可靠
+    const candidates = await ctx.repo.listSites({ limit: 200 });
+    const site = candidates.find((s) => s.source === "submission" && submissionNumber(s.id) === wanted);
+    if (!site) { reply.code(404); return { success: false, message: "投稿不存在" }; }
+
+    const nextStatus = body.data.action === "approve" ? "active" : "archived";
+    await ctx.repo.updateSite(site.id, { status: nextStatus as never });
+    await ctx.repo.audit({
+      ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
+      action: body.data.action === "approve" ? "submission.approve" : "submission.reject",
+      target: site.id, diff: { url: site.url, title: site.title, reason: body.data.reason ?? null },
+    });
+    return {
+      success: true,
+      message: body.data.action === "approve" ? "投稿已通过并已上架" : "投稿已拒绝",
+      siteId: site.id,
+    };
+  });
+
+  /* ------------------------ 任务队列管理 ------------------------ */
+
+  const JOB_KIND_LIST = ["health_check", "refetch_metadata", "recompute_rank", "reindex"] as const;
+
+  /** 入队（管理端 / 脚本用）。Runner 每 30s 自动消费。 */
+  app.post("/api/jobs", { config: { rateLimit: { max: 30, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
+    const body = z.object({
+      kind: z.enum(JOB_KIND_LIST),
+      payload: z.record(z.unknown()).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    const id = await ctx.repo.enqueueJob(body.data.kind, body.data.payload ?? {});
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.enqueue", target: id, diff: { kind: body.data.kind } });
+    reply.code(201);
+    return { id, kind: body.data.kind };
+  });
+
+  app.get("/api/jobs", { config: { scope: "read" } }, async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Number(q.limit) || 50, 200);
+    return ctx.repo.listJobs(q.status, limit);
+  });
+
   /* ---------------------------- AI 富化 ---------------------------- */
 
-  app.post("/api/enrich", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post("/api/enrich", { config: { rateLimit: { max: 20, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
     const body = z.object({ url: z.string().url() }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
@@ -529,7 +1103,7 @@ export async function buildServer(ctx: AppContext) {
   });
 
   /** 一步到位：抓取 + 富化 + 入库（AI 自动入库的核心接口） */
-  app.post("/api/sites/auto", { config: { rateLimit: { max: 15, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post("/api/sites/auto", { config: { rateLimit: { max: 15, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
     const body = z.object({
       url: z.string().url(),
       categoryId: z.string().optional(),
@@ -566,15 +1140,15 @@ export async function buildServer(ctx: AppContext) {
       tags: body.data.tags ?? enriched.tags,
       source: "ai",
     });
-    await indexSite(site.id, site.title, site.description ?? null, site.url);
-    await ctx.repo.audit({ actor: "api", action: "site.auto", target: site.id, diff: { provenance: enriched.provenance } });
+    await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance } });
     reply.code(201);
     return { created: true, site, enrichment: enriched };
   });
 
   /* ------------------------------ 统计 ------------------------------ */
 
-  app.get("/api/stats", async () => ctx.repo.stats());
+  app.get("/api/stats", { config: { scope: "read" } }, async () => ctx.repo.stats());
 
   /**
    * 事件上报（前端点击/收藏等行为）。
@@ -583,7 +1157,7 @@ export async function buildServer(ctx: AppContext) {
    */
   const EVENT_KINDS = ["click", "favorite", "unfavorite", "impression", "dismiss"] as const;
 
-  app.post("/api/events", async (req) => {
+  app.post("/api/events", async (req, reply) => {
     const body = z.object({
       kind: z.enum(EVENT_KINDS),
       siteId: z.string().optional(),
@@ -593,7 +1167,7 @@ export async function buildServer(ctx: AppContext) {
       userId: z.string().max(64).optional(),
       anonId: z.string().max(64).optional(),
     }).safeParse(req.body ?? {});
-    if (!body.success) return { error: "参数无效", detail: body.error.issues };
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const identity = body.data.userId ?? body.data.anonId ?? null;
     await ctx.repo.recordEvent(body.data.kind, {
       siteId: body.data.siteId,
@@ -603,6 +1177,10 @@ export async function buildServer(ctx: AppContext) {
     });
     if (body.data.kind === "click" && body.data.siteId) {
       await ctx.repo.bumpVisit(body.data.siteId).catch(() => undefined);
+    }
+    // 行为变化 -> 刷新个性化画像（节流 60s，失败静默）
+    if (identity && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "unfavorite")) {
+      void refreshUserProfile(ctx, identity);
     }
     return { ok: true };
   });
@@ -615,13 +1193,13 @@ export async function buildServer(ctx: AppContext) {
    * 整个后台（增删改查、拖拽排序、投稿审核）就自动落到真实数据库上。
    * path 沿用它的原值（如 src/navsphere/content/navigation.json），前端连常量都不用改。
    */
-  app.get("/api/storage", async (req, reply) => {
+  app.get("/api/storage", { config: { scope: "read" } }, async (req, reply) => {
     const path = String((req.query as Record<string, string>)?.path ?? "");
     if (!path) { reply.code(400); return { error: "缺少 path 参数" }; }
     return readStoragePath(ctx, path);
   });
 
-  app.put("/api/storage", async (req, reply) => {
+  app.put("/api/storage", { config: { scope: "write" } }, async (req, reply) => {
     const body = z.object({
       path: z.string().min(1),
       content: z.string(),
@@ -631,7 +1209,7 @@ export async function buildServer(ctx: AppContext) {
 
     try {
       const result = await writeStoragePath(ctx, body.data.path, body.data.content);
-      await ctx.repo.audit({ actor: "web", action: "storage.write", target: body.data.path, diff: { note: result.note } });
+      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "storage.write", target: body.data.path, diff: { note: result.note } });
       return result;
     } catch (err) {
       reply.code(400);
@@ -639,44 +1217,54 @@ export async function buildServer(ctx: AppContext) {
     }
   });
 
-  /* --------------------------- 内部工具 --------------------------- */
-
+  /* ------------------------ API Token 管理 ------------------------ */
   /**
-   * 为站点建立检索线索：拼音 + 向量。
-   * 向量写入失败不算错误（模型可能不可用），但要在 notes 里可见，避免静默失效。
+   * token 是鉴权体系的入口，因此创建/列出/删除全部要求 admin。
+   * 明文只在创建响应里返回一次，库里只有 sha256 —— 之后无法再取回。
+   *
+   * 首次启用鉴权的引导路径：
+   *   NAVHUB_AUTH_REQUIRED=true NAVHUB_BOOTSTRAP_TOKEN=<自定义串> 启动
+   *   → 用该串作为 Bearer 调 POST /api/tokens 建正式 token
+   *   → 删除 NAVHUB_BOOTSTRAP_TOKEN 重启
    */
-  async function indexSite(id: string, title: string, description: string | null, url: string) {
-    if (!ctx.embedding) return;
-    try {
-      const { siteEmbeddingText } = await import("@navhub/ai");
-      const { hashSiteId } = await import("@navhub/store");
-      const vec = await ctx.embedding.encode(siteEmbeddingText({ title, description, url }));
-      await ctx.vectors.upsert([{ key: hashSiteId(id), siteId: id, vector: vec }]);
-      await ctx.repo.saveEmbedding(id, ctx.config.embedding.model, vec);
-    } catch (err) {
-      ctx.capabilities.notes.push("站点 " + id + " 向量化失败：" + (err instanceof Error ? err.message : String(err)));
-    }
-  }
+  app.post("/api/tokens", { config: { scope: "admin" } }, async (req, reply) => {
+    const body = z.object({
+      name: z.string().min(1).max(64),
+      /** 逗号分隔：read / write / admin；默认只读 */
+      scopes: z.string().default("read"),
+      /** 过期时间（毫秒时间戳）；不传则长期有效 */
+      expiresAt: z.number().int().positive().nullable().optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+
+    const scopes = parseScopes(body.data.scopes);
+    if (scopes.length === 0) { reply.code(400); return { error: "scopes 至少要有一个有效值（read / write / admin）" }; }
+
+    const raw = generateToken();
+    const record = await ctx.repo.createApiToken({
+      name: body.data.name,
+      tokenHash: hashToken(raw),
+      scopes: scopes.join(","),
+      expiresAt: body.data.expiresAt ?? null,
+    });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.create", target: record.id, diff: { name: record.name, scopes } });
+    reply.code(201);
+    // 明文只在这里出现一次
+    return { token: raw, ...record, note: "请立即保存：明文只显示这一次，库里只存 sha256。" };
+  });
+
+  app.get("/api/tokens", { config: { scope: "admin" } }, async () => ctx.repo.listApiTokens());
+
+  app.delete("/api/tokens/:id", { config: { scope: "admin" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await ctx.repo.deleteApiToken(id);
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.delete", target: id });
+    reply.code(204);
+    return null;
+  });
+
+  /* --------------------------- 内部工具 --------------------------- */
 
   return app;
 }
 
-/* ------------------------------------------------------------------ */
-
-if (import.meta.url === ("file://" + process.argv[1]?.replace(/\\/g, "/"))) {
-  const config = loadConfig();
-  const ctx = await createContext(config);
-  const app = await buildServer(ctx);
-
-  const shutdown = async (signal: string) => {
-    app.log.info({ signal }, "正在关闭");
-    await app.close();
-    await ctx.close();
-    process.exit(0);
-  };
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-
-  await app.listen({ port: config.port, host: config.host });
-  app.log.info({ mode: config.mode, capabilities: ctx.capabilities }, "NavHub 已启动");
-}

@@ -1,0 +1,73 @@
+{
+  "compilerOptions": {
+    "target": "es2017",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    },
+    "baseUrl": "."
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".next-bugfix/types/**/*.ts",
+    ".next-bugfix2/types/**/*.ts",
+    ".next-final-mod/types/**/*.ts",
+    ".next-final/types/**/*.ts",
+    ".next-hl-check/types/**/*.ts",
+    ".next-mod/types/**/*.ts",
+    ".next-pref-check/types/**/*.ts",
+    ".next-pwa/types/**/*.ts",
+    ".next-pwa2/types/**/*.ts",
+    ".next-trash-check/types/**/*.ts",
+    ".next-v11/types/**/*.ts",
+    ".next-v12/types/**/*.ts",
+    ".next-v14/types/**/*.ts",
+    ".next-v15/types/**/*.ts",
+    ".next-v18/types/**/*.ts",
+    ".next-v2/types/**/*.ts",
+    ".next-v20/types/**/*.ts",
+    ".next-v21/types/**/*.ts",
+    ".next-v22/types/**/*.ts",
+    ".next-v25/types/**/*.ts",
+    ".next-v26/types/**/*.ts",
+    ".next-v28/types/**/*.ts",
+    ".next-v30/types/**/*.ts",
+    ".next-v32/types/**/*.ts",
+    ".next-v4/types/**/*.ts",
+    ".next-verify/types/**/*.ts",
+    ".next-verify5/types/**/*.ts",
+    ".next-verify6/types/**/*.ts",
+    ".next-wiki-check/types/**/*.ts",
+    ".next/types/**/*.ts",
+    ".vercel/output/static/types/**/*.ts",
+    "next-env.d.ts",
+    ".next-trend-check/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

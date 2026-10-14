@@ -73,6 +73,7 @@ export class PgFtsStore implements FullTextStore {
       "  + CASE WHEN $2 <> '' AND s.title ILIKE '%' || $2 || '%' THEN 1.0 ELSE 0 END) AS score",
       " FROM sites s",
       " WHERE s.enabled = TRUE",
+      "   AND s.deleted_at IS NULL",
       "   AND " + vec + " @@ to_tsquery('" + CFG + "', $1)",
       " ORDER BY score DESC, s.weight DESC, s.sort ASC",
       " LIMIT $3",

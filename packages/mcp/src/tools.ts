@@ -101,6 +101,39 @@ export const HealthCheckInput = z.object({
   onlyUnchecked: z.boolean().default(false).describe("只检查从未检查过的站点"),
 });
 
+/* ---- Phase 4 新增工具 ---- */
+
+export const GetTrendingInput = z.object({
+  limit: z.number().int().min(1).max(50).default(10).describe("返回条数上限"),
+});
+
+export const ListTagsInput = z.object({
+  minCount: z.number().int().min(1).default(1).describe("最少关联站点数"),
+  limit: z.number().int().min(1).max(200).default(50).describe("返回条数上限"),
+});
+
+export const RefreshSiteInput = z.object({
+  idOrUrl: z.string().describe("站点 id 或完整网址"),
+  llm: z.boolean().default(false).describe("是否用 LLM 富化（默认 false，只走启发式，不消耗额度）"),
+});
+
+export const RunJobInput = z.object({
+  kind: z.enum(["health_check", "refetch_metadata", "recompute_rank", "reindex"]).describe("任务类型"),
+  payload: z.record(z.unknown()).optional().describe("任务参数（如 refetch_metadata 需要 siteId）"),
+});
+
+export const DeleteSiteInput = z.object({
+  idOrUrl: z.string().describe("站点 id 或完整网址"),
+  idempotencyKey: z.string().optional().describe("幂等键；重复调用不会重复处理"),
+});
+
+export const ExportSitesInput = z.object({
+  categoryId: z.string().optional().describe("限定类目"),
+  status: z.enum(["active", "pending", "broken", "archived"]).optional().describe("限定状态"),
+  format: z.enum(["json", "csv"]).default("json").describe("导出格式"),
+  limit: z.number().int().min(1).max(1000).default(200).describe("导出条数上限"),
+});
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -154,8 +187,38 @@ export const TOOL_DEFS: ToolDefinition[] = [
   },
   {
     name: "health_check",
-    description: "对站点执行可用性巡检（HTTP 状态、响应耗时、重定向），并写回健康状态。",
+    description: "对站点执行可用性巡检（HTTP 状态、响应耗时、重定向），并写回健康状态。lite(SQLite) 与 full(PostgreSQL) 模式均可用。",
     scope: "write", inputSchema: HealthCheckInput, mutating: true,
+  },
+  {
+    name: "delete_site",
+    description: "删除一个站点（软删除，进回收站，可恢复）。站点不存在时默认返回成功（幂等），便于 Agent 重试。",
+    scope: "write", inputSchema: DeleteSiteInput, mutating: true,
+  },
+  {
+    name: "export_sites",
+    description: "导出站点清单（JSON 或 CSV），可按类目/状态过滤。适合备份、迁移到别处或交给用户下载。",
+    scope: "read", inputSchema: ExportSitesInput, mutating: false,
+  },
+  {
+    name: "get_trending",
+    description: "获取热度榜（近 7 天点击 + 收藏 − 年龄惩罚，由 recompute_rank 任务重算）。适合回答「最近什么网站最热门」。",
+    scope: "read", inputSchema: GetTrendingInput, mutating: false,
+  },
+  {
+    name: "list_tags",
+    description: "列出全部标签及关联站点数（按热度降序）。适合了解导航库的话题分布。",
+    scope: "read", inputSchema: ListTagsInput, mutating: false,
+  },
+  {
+    name: "refresh_site",
+    description: "刷新单个站点的元数据（标题/描述/图标）：入队 refetch_metadata 任务，由 Runner 异步执行。可选 LLM 富化。",
+    scope: "write", inputSchema: RefreshSiteInput, mutating: true,
+  },
+  {
+    name: "run_job",
+    description: "入队一个后台任务（health_check / refetch_metadata / recompute_rank / reindex）。任务由 Runner 异步执行，不会立即返回结果。",
+    scope: "admin", inputSchema: RunJobInput, mutating: true,
   },
 ];
 

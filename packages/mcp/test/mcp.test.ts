@@ -58,11 +58,16 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 4 个只读工具与 5 个写工具", () => {
+  it("包含 7 个只读工具与 8 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
-    expect(read.map((t) => t.name).sort()).toEqual(["get_site", "get_stats", "list_categories", "search_sites"]);
-    expect(write.length).toBe(5);
+    expect(read.map((t) => t.name).sort()).toEqual(["export_sites", "get_site", "get_stats", "get_trending", "list_categories", "list_tags", "search_sites"]);
+    expect(write.length).toBe(8);
+  });
+
+  it("run_job 需要 admin 权限（触发全站扫描是危险操作）", () => {
+    const runJob = TOOL_DEFS.find((t) => t.name === "run_job");
+    expect(runJob?.scope).toBe("admin");
   });
 
   it("每个工具都有 scope 与描述（否则 AI 无法正确选择）", () => {
@@ -118,11 +123,12 @@ describe("权限是硬边界", () => {
     await expect(handlers.create_site({ url: "https://example.com/x" }, READONLY)).rejects.toThrow(/权限/);
   });
 
-  it("只读 token 调用 update_site / set_status / batch_import / health_check 全部被拒绝", async () => {
+  it("只读 token 调用 update_site / set_status / batch_import / health_check / delete_site 全部被拒绝", async () => {
     await expect(handlers.update_site({ id: "x", title: "y" }, READONLY)).rejects.toThrow(/权限/);
     await expect(handlers.set_status({ id: "x", status: "active" }, READONLY)).rejects.toThrow(/权限/);
     await expect(handlers.batch_import({ sites: [{ url: "https://example.com/y" }] }, READONLY)).rejects.toThrow(/权限/);
     await expect(handlers.health_check({}, READONLY)).rejects.toThrow(/权限/);
+    await expect(handlers.delete_site({ idOrUrl: "https://weather.com.cn" }, READONLY)).rejects.toThrow(/权限/);
   });
 
   it("只读 token 可以正常使用只读工具", async () => {
@@ -208,5 +214,110 @@ describe("健康巡检", () => {
     expect(Array.isArray(body.broken)).toBe(true);
     // 所有测试用 URL 都不会真正联网成功，因此 broken 应等于 checked
     expect(body.healthy + body.broken.length).toBe(body.checked);
+  });
+});
+
+describe("Phase 4 新工具", () => {
+  const WRITE_ONLY: ToolContext = {
+    actor: "mcp:write", scopes: ["read", "write"],
+    has: (s: McpScope) => s !== "admin",
+  };
+
+  it("get_trending 返回带热度分量与名次的榜单", async () => {
+    const res = await handlers.get_trending({ limit: 5 }, READONLY);
+    const body = payload(res);
+    expect(body.count).toBeGreaterThan(0);
+    expect(body.results[0].rank).toBe(1);
+    expect(typeof body.results[0].trendScore).toBe("number");
+    expect(body.results[0].url).toBeTruthy();
+  });
+
+  it("list_tags 返回标签与计数", async () => {
+    const res = await handlers.list_tags({ minCount: 1, limit: 10 }, READONLY);
+    const body = payload(res);
+    expect(body.tags.length).toBeGreaterThan(0);
+    expect(body.tags[0].count).toBeGreaterThanOrEqual(1);
+  });
+
+  it("refresh_site 入队任务并落审计", async () => {
+    const res = await handlers.refresh_site({ idOrUrl: "https://weather.com.cn" }, FULL);
+    const body = payload(res);
+    expect(body.queued).toBe(true);
+    expect(body.jobId).toBeTruthy();
+    const jobs = await ctx.repo.listJobs("pending", 10);
+    expect(jobs.some((j) => j.kind === "refetch_metadata")).toBe(true);
+    const audit = ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE action = ?").get("job.enqueue") as { c: number };
+    expect(Number(audit.c)).toBeGreaterThan(0);
+  });
+
+  it("refresh_site 找不到站点时返回 isError", async () => {
+    const res = await handlers.refresh_site({ idOrUrl: "no-such" }, FULL);
+    expect(res.isError).toBe(true);
+  });
+
+  it("run_job 需要 admin：write token 被拒绝", async () => {
+    await expect(handlers.run_job({ kind: "recompute_rank" }, WRITE_ONLY)).rejects.toThrow(/admin/);
+  });
+
+  it("run_job 有 admin 权限时正常入队", async () => {
+    const admin: ToolContext = { actor: "mcp:admin", scopes: ["read", "write", "admin"], has: () => true };
+    const res = await handlers.run_job({ kind: "recompute_rank" }, admin);
+    const body = payload(res);
+    expect(body.queued).toBe(true);
+    expect(body.kind).toBe("recompute_rank");
+  });
+
+  it("只读 token 调用新写工具被拒绝", async () => {
+    await expect(handlers.refresh_site({ idOrUrl: "https://weather.com.cn" }, READONLY)).rejects.toThrow(/write/);
+    await expect(handlers.run_job({ kind: "reindex" }, READONLY)).rejects.toThrow(/admin/);
+  });
+});
+
+describe("删除与导出工具", () => {
+  it("delete_site 软删除并落审计，站点进入回收站", async () => {
+    const created = payload(await handlers.create_site({
+      url: "https://example.com/del-me", title: "待删除", categoryId: "cat-dev", enrich: false,
+    }, FULL));
+    const res = await handlers.delete_site({ idOrUrl: created.site.id }, FULL);
+    const body = payload(res);
+    expect(body.deleted).toBe(true);
+    expect(body.mode).toBe("soft");
+    // 正常查询已排除（fail 返回纯文本，不是 JSON）
+    const gone = await handlers.get_site({ idOrUrl: created.site.id }, FULL);
+    expect(gone.isError).toBe(true);
+    const audit = ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE action = ? AND target = ?")
+      .get("site.delete", created.site.id) as { c: number };
+    expect(Number(audit.c)).toBeGreaterThan(0);
+  });
+
+  it("delete_site 对不存在的站点返回 not_found 而不是报错（幂等重试）", async () => {
+    const res = await handlers.delete_site({ idOrUrl: "no-such-site" }, FULL);
+    expect(res.isError).toBeUndefined();
+    expect(payload(res).reason).toBe("not_found");
+  });
+
+  it("export_sites 支持 JSON 与 CSV，CSV 转义公式注入", async () => {
+    const json = payload(await handlers.export_sites({ format: "json" }, READONLY));
+    expect(json.format).toBe("json");
+    expect(Array.isArray(json.sites)).toBe(true);
+    expect(json.count).toBeGreaterThan(0);
+
+    const csv = payload(await handlers.export_sites({ format: "csv" }, READONLY));
+    const lines = String(csv.csv).split("\n");
+    expect(lines[0]).toContain("url");
+    // 数据行里以 = 开头的值必须被转义（防 Excel 公式注入）
+    const injected = payload(await handlers.create_site({
+      url: "https://example.com/csv-inject", title: "=HYPERLINK(\"http://evil\")", categoryId: "cat-dev", enrich: false,
+    }, FULL));
+    expect(injected.created).toBe(true);
+    const csv2 = payload(await handlers.export_sites({ format: "csv" }, READONLY));
+    expect(String(csv2.csv)).toContain("'=HYPERLINK");
+    // 审计留痕
+    const audit = ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE action = ?").get("site.export") as { c: number };
+    expect(Number(audit.c)).toBeGreaterThan(0);
+  });
+
+  it("export_sites 超出上限的 limit 被 zod 拒绝", async () => {
+    await expect(handlers.export_sites({ limit: 5000 }, READONLY)).rejects.toThrow();
   });
 });

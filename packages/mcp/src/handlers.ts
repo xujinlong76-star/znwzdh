@@ -12,10 +12,16 @@ import type { AppContext } from "@navhub/api";
 import {
   BatchImportInput,
   CreateSiteInput,
+  DeleteSiteInput,
+  ExportSitesInput,
   GetSiteInput,
+  GetTrendingInput,
   HealthCheckInput,
   ListCategoriesInput,
+  ListTagsInput,
   MAX_BATCH_ITEMS,
+  RefreshSiteInput,
+  RunJobInput,
   SearchSitesInput,
   SetStatusInput,
   UpdateSiteInput,
@@ -36,10 +42,6 @@ function fail(message: string): ToolResult {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
-const SQL_BROKEN = [
-  "UPDATE sites SET health_ok = 0, health_error = ?, last_checked_at = ?, status = 'broken' WHERE id = ?",
-].join("");
-
 export function createHandlers(ctx: AppContext) {
   /**
    * 幂等键处理：命中则直接返回上次结果。
@@ -48,14 +50,23 @@ export function createHandlers(ctx: AppContext) {
   async function withIdempotency(key: string | undefined, compute: () => Promise<unknown>): Promise<ToolResult> {
     if (!key) return ok(await compute());
     const db = ctx.db;
-    if (db.dialect === "sqlite") {
-      const existing = db.sqlite!.prepare("SELECT response FROM idempotency WHERE key = ?").get(key) as { response: string } | undefined;
+    if (db.dialect === "sqlite" && db.sqlite) {
+      const existing = db.sqlite.prepare("SELECT response FROM idempotency WHERE key = ?").get(key) as { response: string } | undefined;
       if (existing?.response) return ok({ replayed: true, result: JSON.parse(existing.response) });
+    } else if (db.dialect === "pg" && db.pg) {
+      const { rows } = await db.pg.query("SELECT response FROM idempotency WHERE key = $1", [key]);
+      const row = rows[0] as { response: string } | undefined;
+      if (row?.response) return ok({ replayed: true, result: JSON.parse(row.response) });
     }
     const result = await compute();
-    if (db.dialect === "sqlite") {
-      db.sqlite!.prepare("INSERT OR REPLACE INTO idempotency (key, response, created_at) VALUES (?,?,?)")
+    if (db.dialect === "sqlite" && db.sqlite) {
+      db.sqlite.prepare("INSERT OR REPLACE INTO idempotency (key, response, created_at) VALUES (?,?,?)")
         .run(key, JSON.stringify(result), Date.now());
+    } else if (db.dialect === "pg" && db.pg) {
+      await db.pg.query(
+        "INSERT INTO idempotency (key, response, created_at) VALUES ($1, $2, $3) ON CONFLICT (key) DO UPDATE SET response = $2, created_at = $3",
+        [key, JSON.stringify(result), Date.now()]
+      );
     }
     return ok(result);
   }
@@ -227,9 +238,6 @@ export function createHandlers(ctx: AppContext) {
       const input = HealthCheckInput.parse(args ?? {});
       const all = await ctx.repo.listSites({ limit: input.limit });
       const target = input.onlyUnchecked ? all.filter((s) => !s.health?.lastCheckedAt) : all;
-      if (ctx.db.dialect !== "sqlite") {
-        return fail("health_check 目前仅在 lite(SQLite) 模式下可用");
-      }
 
       const results: Array<{ url: string; ok: boolean; status: number | null; latencyMs: number; error?: string }> = [];
       for (const site of target) {
@@ -239,19 +247,111 @@ export function createHandlers(ctx: AppContext) {
           const latency = Date.now() - t0;
           const ok = res.status >= 200 && res.status < 400;
           results.push({ url: site.url, ok, status: res.status, latencyMs: latency });
-          ctx.db.sqlite!.prepare(
-            "UPDATE sites SET http_status = ?, health_ok = ?, latency_ms = ?, redirect_to = ?, health_error = NULL, last_checked_at = ?, status = ? WHERE id = ?",
-          ).run(res.status, ok ? 1 : 0, latency, res.redirects.at(-1) ?? null, Date.now(), ok ? site.status : "broken", site.id);
+          // 走 Repository 抽象（而非直接写 SQLite）：health_checks 表 + sites 冗余列，
+          // 两种方言都由仓储层消化——此前 PG 模式直接 fail，属于"能力分裂"。
+          await ctx.repo.updateSiteHealth(site.id, {
+            httpStatus: res.status, ok, latencyMs: latency,
+            redirectTo: res.redirects.at(-1) ?? null, error: null,
+            currentStatus: site.status,
+          });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           results.push({ url: site.url, ok: false, status: null, latencyMs: Date.now() - t0, error: message });
-          ctx.db.sqlite!.prepare(SQL_BROKEN).run(message, Date.now(), site.id);
+          await ctx.repo.updateSiteHealth(site.id, {
+            httpStatus: null, ok: false, latencyMs: Date.now() - t0,
+            redirectTo: null, error: message, currentStatus: site.status,
+          });
         }
       }
 
       const broken = results.filter((r) => !r.ok);
       await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.healthCheck", diff: { checked: results.length, broken: broken.length } });
       return ok({ checked: results.length, healthy: results.length - broken.length, broken, results });
+    },
+
+    async delete_site(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "write");
+      const input = DeleteSiteInput.parse(args ?? {});
+      return withIdempotency(input.idempotencyKey, async () => {
+        const site = await ctx.repo.getSite(input.idOrUrl);
+        // 幂等：站点不存在不算错误——Agent 重试或并发删除是常态，报错会引发无效重试
+        if (!site) return { deleted: false, reason: "not_found", idOrUrl: input.idOrUrl };
+        await ctx.repo.deleteSite(site.id);
+        await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.delete", target: site.id, diff: { soft: true, url: site.url } });
+        // 软删除（进回收站），恢复走 REST：POST /api/trash/:id/restore
+        return { deleted: true, id: site.id, url: site.url, mode: "soft", note: "已移入回收站，可通过 /api/trash/:id/restore 恢复" };
+      });
+    },
+
+    async export_sites(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = ExportSitesInput.parse(args ?? {});
+      const sites = await ctx.repo.listSites({
+        categoryId: input.categoryId,
+        status: input.status as never,
+        limit: input.limit,
+      });
+      if (input.format === "csv") {
+        // CSV 里公式注入是真实风险（=、+、-、@ 开头会被 Excel 当公式执行）：
+        // 给这些值加前导单引号转义。
+        const esc = (v: unknown) => {
+          const s = v === null || v === undefined ? "" : String(v);
+          return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+        };
+        const header = "id,url,title,description,categoryId,tags,status,featured";
+        const lines = sites.map((s) =>
+          [s.id, s.url, s.title, s.description ?? "", s.categoryId, (s.tags ?? []).join("|"), s.status, s.featured ? 1 : 0]
+            .map((v) => '"' + esc(v).replace(/"/g, '""') + '"').join(","));
+        await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.export", diff: { format: "csv", count: sites.length } });
+        return ok({ format: "csv", count: sites.length, csv: [header, ...lines].join("\n") });
+      }
+      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.export", diff: { format: "json", count: sites.length } });
+      return ok({ format: "json", count: sites.length, sites });
+    },
+
+    async get_trending(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = GetTrendingInput.parse(args ?? {});
+      const sites = await ctx.repo.hotSites(input.limit);
+      return ok({
+        count: sites.length,
+        // 带热度分量，Agent 可以解释「为什么排这儿」
+        results: sites.map((s, i) => ({
+          rank: i + 1,
+          title: s.title,
+          url: s.url,
+          description: s.description,
+          tags: s.tags,
+          visits7d: s.visitCount ?? 0,
+          trendScore: s.trendScore ?? 0,
+        })),
+      });
+    },
+
+    async list_tags(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = ListTagsInput.parse(args ?? {});
+      const all = await ctx.repo.listTagsWithCounts(input.minCount);
+      return ok({ count: Math.min(all.length, input.limit), tags: all.slice(0, input.limit) });
+    },
+
+    async refresh_site(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "write");
+      const input = RefreshSiteInput.parse(args ?? {});
+      const site = await ctx.repo.getSite(input.idOrUrl);
+      if (!site) return fail("未找到站点：" + input.idOrUrl);
+      const jobId = await ctx.repo.enqueueJob("refetch_metadata", { siteId: site.id, llm: input.llm });
+      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "job.enqueue", target: jobId, diff: { kind: "refetch_metadata", siteId: site.id } });
+      return ok({ queued: true, jobId, siteId: site.id, url: site.url, note: "Runner 会在 30 秒内执行；刷新是异步的，不会立即返回新元数据。" });
+    },
+
+    async run_job(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      // run_job 需要 admin：它会触发全站扫描（健康巡检/重算/重建索引）
+      requireScope(tc, "admin");
+      const input = RunJobInput.parse(args ?? {});
+      const jobId = await ctx.repo.enqueueJob(input.kind, input.payload ?? {});
+      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "job.enqueue", target: jobId, diff: { kind: input.kind, payload: input.payload ?? {} } });
+      return ok({ queued: true, jobId, kind: input.kind, note: "任务已入队，Runner 会在 30 秒内执行。用 GET /api/jobs 查询执行状态。" });
     },
   };
 }

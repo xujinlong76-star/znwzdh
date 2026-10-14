@@ -14,6 +14,7 @@
  * 本模块实现服务端一侧：以 path 为键，读写等价的 JSON 结构。
  */
 import type { AppContext } from "./context.ts";
+import { getEnhancedSiteData, type SiteAction, type SiteRelation, type SiteLiveMetrics, type SiteHealth } from "@navhub/core";
 
 export const NAVIGATION_PATH = "src/navsphere/content/navigation.json";
 export const SITE_PATH = "src/navsphere/content/site.json";
@@ -21,7 +22,7 @@ export const RESOURCE_PATH = "src/navsphere/content/resource-metadata.json";
 export const DEFAULT_NAVIGATION_PATH = "src/navsphere/content/navigation-default.json";
 export const VIDEOS_PATH = "src/navsphere/content/videos.json";
 
-/** NavSphere 的站点项结构（= NavHub 的 site，但字段名要映射） */
+/** NavSphere 的站点项结构（= NavHub 的 site，扩展 4.0 动态特性） */
 interface NsItem {
   id: string;
   title: string;
@@ -30,6 +31,12 @@ interface NsItem {
   icon?: string;
   useDefaultIcon?: boolean;
   enabled: boolean;
+  tags?: string[];
+  actions?: SiteAction[];
+  relations?: SiteRelation[];
+  liveMetrics?: SiteLiveMetrics;
+  workspaces?: string[];
+  health?: SiteHealth;
 }
 
 interface NsSubCategory {
@@ -68,14 +75,23 @@ export async function buildNavigationData(ctx: AppContext): Promise<NsNavigation
     if (list) list.push(s); else byCategory.set(s.categoryId, [s]);
   }
 
-  const toItem = (s: (typeof sites)[number], tags: string[]): NsItem => ({
-    id: s.id,
-    title: s.title,
-    href: s.url,
-    description: s.description ?? undefined,
-    icon: s.iconKey ?? undefined,
-    enabled: s.enabled,
-  });
+  const toItem = (s: (typeof sites)[number], tags: string[]): NsItem => {
+    const enhanced = getEnhancedSiteData(s.url, s.title);
+    return {
+      id: s.id,
+      title: s.title,
+      href: s.url,
+      description: s.description ?? undefined,
+      icon: s.iconKey ?? undefined,
+      enabled: s.enabled,
+      tags: s.tags ?? tags,
+      actions: s.actions ?? enhanced.actions,
+      relations: s.relations ?? enhanced.relations,
+      liveMetrics: s.liveMetrics ?? enhanced.liveMetrics,
+      workspaces: s.workspaces ?? enhanced.workspaces,
+      health: s.health,
+    };
+  };
 
   const tops = categories.filter((c) => c.parentId === null);
   const navigationItems: NsCategory[] = tops.map((c) => {
@@ -286,9 +302,16 @@ export async function writeResourceMetadata(ctx: AppContext, data: unknown): Pro
   await writeKv(ctx, "resource-metadata", data);
 }
 
-/** videos.json：视频导航数据 */
+/**
+ * videos.json：视频导航数据。
+ *
+ * 从未写入过时返回 **null**（而不是 { navigationItems: [] }）。
+ * 这是刻意的：null 让前端能区分「本来就没数据」（静默回退到构建期基线）
+ * 与「中枢里确实存了空列表」—— 否则像 /videos 这种从没存过的页面
+ * 会在**每个请求**上刷一条回退警告，把真正的问题淹没。
+ */
 export async function readVideosData(ctx: AppContext): Promise<unknown> {
-  return (await readKv(ctx, "videos")) ?? { navigationItems: [] };
+  return readKv(ctx, "videos");
 }
 
 export async function writeVideosData(ctx: AppContext, data: unknown): Promise<void> {
@@ -356,8 +379,9 @@ export async function readStoragePath(ctx: AppContext, path: string): Promise<un
   if (name === "site.json") return readSiteConfig(ctx);
   if (name === "resource-metadata.json") return readResourceMetadata(ctx);
   if (name === "videos.json") return readVideosData(ctx);
-  // 其余内容文件走通用 JSON 文档；从未写入过时返回空对象（而非报错）
-  return (await readKv(ctx, pathToKey(path))) ?? {};
+  // 其余内容文件走通用 JSON 文档。从未写入过时返回 null（与"保存了空对象"区分开），
+  // 由调用方决定是静默回退还是告警。
+  return readKv(ctx, pathToKey(path));
 }
 
 export async function writeStoragePath(ctx: AppContext, path: string, content: string): Promise<{ ok: true; note: string }> {
@@ -378,5 +402,6 @@ export async function writeStoragePath(ctx: AppContext, path: string, content: s
     await writeVideosData(ctx, parsed);
     return { ok: true, note: "视频导航数据已更新" };
   }
-  return { ok: true, note: "路径未被处理（已忽略）" };
+  await writeKv(ctx, pathToKey(path), parsed);
+  return { ok: true, note: "内容文件已更新: " + basename(path) };
 }

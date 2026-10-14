@@ -153,9 +153,13 @@ export function createGithubAdapter(opts: GithubAdapterOptions): StorageAdapter 
       const meta = await doFetch(metaUrl, metaInit);
       if (meta.ok) sha = ((await meta.json()) as { sha: string }).sha;
 
+      const base64Content = typeof Buffer !== "undefined"
+        ? Buffer.from(content, "utf8").toString("base64")
+        : btoa(unescape(encodeURIComponent(content)));
+
       const body = JSON.stringify({
         message,
-        content: Buffer.from(content, "utf8").toString("base64"),
+        content: base64Content,
         sha,
         branch,
       });

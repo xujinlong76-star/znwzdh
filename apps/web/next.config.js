@@ -1,5 +1,8 @@
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  // 构建输出目录可用 NEXT_DIST_DIR 覆盖（默认 .next）。
+  // 用途：CI / 验证构建不想动现有产物时指定独立目录。
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   // standalone 产物用于自包含部署（Docker / Cloudflare），它需要在构建期创建符号链接。
   // Windows 上若未开启"开发者模式"，创建符号链接会 EPERM 失败，
   // 因此改为**按需开启**：设置 NAVHUB_WEB_STANDALONE=1 时才生成 standalone 产物。
@@ -19,6 +22,8 @@ const nextConfig = {
     remotePatterns: [{ protocol: "https", hostname: "**" }],
   },
   async rewrites() {
+    // /api/hub/* 不走 rewrite：改用 src/app/api/hub/[...path]/route.ts 运行时转发
+    // （rewrite 目标在构建期固化，改中枢地址要重新构建；路由在运行时读环境变量）。
     return [
       { source: "/api/auth/:path*", destination: "/api/auth/:path*" },
       { source: "/auth/:path*", destination: "/auth/:path*" },

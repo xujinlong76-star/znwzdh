@@ -98,6 +98,7 @@ export class SqliteFtsStore implements FullTextStore {
            FROM ${this.table}
            JOIN sites ON sites.rowid = ${this.table}.rowid
           WHERE ${this.table} MATCH ?
+            AND sites.deleted_at IS NULL
           ORDER BY bm25(${this.table}, 10.0, 4.0, 6.0, 2.0, 2.0)
           LIMIT ?`,
       )

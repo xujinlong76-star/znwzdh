@@ -1,0 +1,489 @@
+'use client'
+
+/**
+ * SearchPalette —— 接入中枢混合检索引擎的命令面板。
+ *
+ * 与上游 search-bar 的区别：上游只在客户端对 navigation.json 做 includes() 过滤，
+ * 拼音 / 语义 / BM25 / 个性化全部闲置。本组件把同一个 ⌘K 面板接到
+ * /api/search 上，四路召回 + RRF 融合的结果直接可用。
+ *
+ * 工程要点：
+ *  - 防抖 200ms + AbortController 取消在途请求（快打字不抖动、不竞态）
+ *  - 结果带通道徽标（exact/fts/pinyin/semantic/personal）与语义可用性提示
+ *  - 中枢不可用时明示降级，而不是假装"没有结果"
+ *  - 空查询展示最近搜索（服务端历史，匿名 anonId 也可用）
+ */
+
+import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { Input } from '@/registry/new-york/ui/input'
+import { Command, CommandList, CommandGroup, CommandItem } from '@/registry/new-york/ui/command'
+import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight } from 'lucide-react'
+import { Button } from '@/registry/new-york/ui/button'
+import { searchSites, reportClick, fetchSearchHistory, type HubSearchHit } from '@/lib/navhub-api'
+import { highlightParts } from '@/lib/highlight'
+import { getIdentity } from '@/lib/identity'
+import { useFavorites } from '@/hooks/useFavorites'
+import type { SiteConfig } from '@/types/site'
+import { parseSpeculativeIntent } from '@/lib/speculative'
+import { SpeculativeIntentCard } from '@/components/speculative-intent-card'
+import { parseTechComparisonQuery } from '@/lib/comparison'
+import { findMatchingArchitectureRecipe } from '@/lib/architecture-recipe'
+import { TechComparisonCard } from '@/components/tech-comparison-card'
+import { ArchitectureRecipeCard } from '@/components/architecture-recipe-card'
+
+
+
+const CHANNEL_LABELS: Record<string, string> = {
+  exact: '精确',
+  fts: '全文',
+  pinyin: '拼音',
+  semantic: '语义',
+  personal: '个性化',
+}
+
+/** 结果行文本高亮：命中片段上色，未命中原样（仅字面命中的词有高亮，拼音/语义召回本就无字面） */
+function Highlighted({ text, query }: { text: string; query: string }) {
+  return (
+    <>
+      {highlightParts(text, query).map((seg, i) =>
+        seg.hit ? (
+          <span key={i} className="text-primary font-semibold bg-primary/10 rounded-xs px-0.5">
+            {seg.text}
+          </span>
+        ) : (
+          <Fragment key={i}>{seg.text}</Fragment>
+        ),
+      )}
+    </>
+  )
+}
+
+interface SearchPaletteProps {
+  siteConfig?: SiteConfig
+  /** 类目筛选（侧栏点击类目时带入） */
+  categoryId?: string
+  placeholder?: string
+}
+
+export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）' }: SearchPaletteProps) {
+  const [query, setQuery] = useState('')
+  const [isFocused, setIsFocused] = useState(false)
+  const [hits, setHits] = useState<HubSearchHit[]>([])
+  const [loading, setLoading] = useState(false)
+  const [degraded, setDegraded] = useState(false)
+  const [semanticAvailable, setSemanticAvailable] = useState(true)
+  /** 分页：召回池是否还有余量 / 追加页加载中 */
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  /** 零结果兜底：推荐词 / 热门词 / 放宽提示（仅零结果时有值） */
+  const [suggestions, setSuggestions] = useState<string[]>([])
+  const [popular, setPopular] = useState<string[]>([])
+  const [fallbackHint, setFallbackHint] = useState<'filter' | 'fuzzy' | undefined>(undefined)
+  const [recent, setRecent] = useState<string[]>([])
+  const searchRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  /** 已加载到的偏移（不进 React state，避免其变化误触发第一页重查） */
+  const offsetRef = useRef(0)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const identity = useMemo(() => getIdentity(), [])
+  const favorites = useFavorites()
+  const speculativeResult = useMemo(() => parseSpeculativeIntent(query), [query])
+  const comparisonMatrix = useMemo(() => parseTechComparisonQuery(query), [query])
+  const architectureRecipe = useMemo(() => findMatchingArchitectureRecipe(query), [query])
+
+
+
+  /* 最近搜索：聚焦且空查询时加载 */
+  useEffect(() => {
+    if (isFocused && !query.trim() && identity) {
+      void fetchSearchHistory(identity).then(setRecent)
+    }
+  }, [isFocused, query, identity])
+
+  /* 点击外部关闭 */
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setIsFocused(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [])
+
+  /* ⌘K / Ctrl+K 聚焦，Esc 关闭 */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsFocused(false)
+        inputRef.current?.blur()
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        inputRef.current?.focus()
+        setIsFocused(true)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
+  /* 防抖检索 + 取消在途请求 */
+  useEffect(() => {
+    const q = query.trim()
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (abortRef.current) abortRef.current.abort()
+    if (!q) {
+      setHits([])
+      setLoading(false)
+      setDegraded(false)
+      setHasMore(false)
+      setSuggestions([])
+      setPopular([])
+      setFallbackHint(undefined)
+      offsetRef.current = 0
+      return
+    }
+    // 新查询 = 回到第一页（offsetRef 不进依赖，否则追加页会触发重查）
+    offsetRef.current = 0
+    setLoading(true)
+    debounceRef.current = setTimeout(() => {
+      const controller = new AbortController()
+      abortRef.current = controller
+      void searchSites({ q, limit: 12, categoryId, identity }, controller.signal)
+        .then((res) => {
+          if (controller.signal.aborted) return
+          setHits(res.hits)
+          setDegraded(Boolean(res.degraded))
+          setSemanticAvailable(res.semanticAvailable)
+          setHasMore(Boolean(res.hasMore))
+          setSuggestions(res.suggestions ?? [])
+          setPopular(res.popular ?? [])
+          setFallbackHint(res.fallback)
+          offsetRef.current = res.hits.length
+          setLoading(false)
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return
+          setLoading(false)
+          setDegraded(true)
+        })
+    }, 200)
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [query, categoryId, identity])
+
+  /** 加载下一页并追加（同一查询的延续——服务端因此不重复记事件） */
+  const loadMore = useCallback(() => {
+    const q = query.trim()
+    if (!q || loadingMore) return
+    setLoadingMore(true)
+    void searchSites({ q, limit: 12, offset: offsetRef.current, categoryId, identity })
+      .then((res) => {
+        setHits((prev) => [...prev, ...res.hits])
+        offsetRef.current += res.hits.length
+        setHasMore(Boolean(res.hasMore))
+        // 追加页为空 = 池子到底（防御：服务端说有但实际没有）
+        if (res.hits.length === 0) setHasMore(false)
+      })
+      .catch(() => { /* 追加失败保持现有结果，按到底处理 */ setHasMore(false) })
+      .finally(() => setLoadingMore(false))
+  }, [query, categoryId, identity, loadingMore])
+
+  const openSite = useCallback((hit: HubSearchHit) => {
+    const site = hit.site
+    if (!site) return
+    reportClick(site.id, identity)
+    const target = siteConfig?.navigation?.linkTarget || '_blank'
+    if (target === '_self') window.location.href = site.url
+    else window.open(site.url, target)
+    setQuery('')
+    setIsFocused(false)
+  }, [identity, siteConfig])
+
+  const showResults = isFocused && query.trim().length > 0
+
+  return (
+    <div ref={searchRef} className="relative w-full max-w-lg mx-auto">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          ref={inputRef}
+          placeholder={placeholder}
+          value={query}
+          onChange={(e) => { setQuery(e.target.value); setIsFocused(true) }}
+          onFocus={() => setIsFocused(true)}
+          className="pl-10 pr-20 h-10 rounded-xl border border-border/70 hover:border-border bg-background/90 dark:bg-muted/20 focus:border-primary/50 focus:ring-2 focus:ring-primary/20 shadow-xs text-sm transition-all"
+        />
+        <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1.5">
+          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+          {query && (
+            <Button variant="ghost" size="sm" onClick={() => { setQuery(''); inputRef.current?.focus() }} className="h-6 w-6 p-0 rounded-full hover:bg-muted">
+              <X className="h-3 w-3" />
+            </Button>
+          )}
+          <kbd className="hidden h-5 select-none items-center gap-1 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 sm:flex shadow-2xs">
+            <span>⌘</span>K
+          </kbd>
+        </div>
+      </div>
+
+      {isFocused && !query.trim() && (
+        <div className="absolute top-full left-0 right-0 mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
+          {recent.length > 0 && (
+            <div>
+              <div className="px-3.5 py-2 text-xs font-medium text-muted-foreground flex items-center gap-1.5 bg-muted/40">
+                <Clock className="h-3 w-3" /> 最近搜索
+              </div>
+              <div className="p-1">
+                {recent.map((r) => (
+                  <button
+                    key={r}
+                    className="w-full text-left px-3 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground hover:text-foreground flex items-center justify-between"
+                    onClick={() => setQuery(r)}
+                  >
+                    <span>{r}</span>
+                    <ArrowRight className="h-3 w-3 opacity-40" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="p-3 bg-card">
+            <div className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 mb-2">
+              <Sparkles className="h-3 w-3 text-amber-500" />
+              下一代认知推测与架构探索（点击立即体验）
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <div className="text-xs text-muted-foreground/80 mb-1 flex items-center gap-1">
+                  <GitCompare className="h-2.5 w-2.5 text-blue-500" /> 竞品选型多维判胜矩阵
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'React vs Vue', q: 'react vs vue' },
+                    { label: 'Cursor vs VS Code', q: 'cursor vs vscode' },
+                    { label: 'pnpm vs Bun', q: 'pnpm vs bun' },
+                  ].map((chip) => (
+                    <button
+                      key={chip.q}
+                      onClick={() => setQuery(chip.q)}
+                      className="px-2 py-0.5 rounded text-xs bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 border border-blue-500/20 transition-colors"
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs text-muted-foreground/80 mb-1 flex items-center gap-1">
+                  <Layers className="h-2.5 w-2.5 text-purple-500" /> Graph-RAG 技术栈蓝图配方
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: '本地 RAG 知识库配方', q: '@recipe 本地rag' },
+                    { label: '协同富文本配方', q: '@recipe 协同文档' },
+                  ].map((chip) => (
+                    <button
+                      key={chip.q}
+                      onClick={() => setQuery(chip.q)}
+                      className="px-2 py-0.5 rounded text-xs bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 transition-colors"
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs text-muted-foreground/80 mb-1 flex items-center gap-1">
+                  <Zap className="h-2.5 w-2.5 text-emerald-500" /> 0-RTT 端侧推测执行
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: '2^10 * 8 (计算器)', q: '2^10 * 8' },
+                    { label: '#3b82f6 (色彩空间)', q: '#3b82f6' },
+                    { label: 'now (时间戳)', q: 'now' },
+                    { label: '@b64 Hello (编解码)', q: '@b64 Hello' },
+                  ].map((chip) => (
+                    <button
+                      key={chip.q}
+                      onClick={() => setQuery(chip.q)}
+                      className="px-2 py-0.5 rounded text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors font-mono"
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showResults && (
+        <div className="absolute top-full left-0 right-0 mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[70vh] overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+          <Command className="border-0 shadow-none" shouldFilter={false}>
+            <CommandList className="max-h-[70vh] overflow-y-auto">
+              {degraded && (
+                <div className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 border-b">
+                  检索服务暂时不可用，已降级。请稍后重试。
+                </div>
+              )}
+              {!degraded && !semanticAvailable && (
+                <div className="px-3 py-2 text-xs text-muted-foreground border-b">
+                  语义检索不可用（未配置本地模型），当前为关键词 / 拼音 / 全文混合检索。
+                </div>
+              )}
+              {fallbackHint && hits.length > 0 && (
+                <div className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 border-b">
+                  {fallbackHint === 'filter'
+                    ? '当前筛选下没有结果，已放宽到全库匹配（结果可能来自其他类目）。'
+                    : '没有精确匹配，以下是放宽匹配后的结果。'}
+                </div>
+              )}
+              {speculativeResult && (
+                <div className="p-2 border-b">
+                  <SpeculativeIntentCard result={speculativeResult} />
+                </div>
+              )}
+              {comparisonMatrix && (
+                <div className="p-2 border-b">
+                  <TechComparisonCard matrix={comparisonMatrix} />
+                </div>
+              )}
+              {architectureRecipe && (
+                <div className="p-2 border-b">
+                  <ArchitectureRecipeCard recipe={architectureRecipe} />
+                </div>
+              )}
+              {hits.length === 0 && !loading ? (
+                !speculativeResult && !comparisonMatrix && !architectureRecipe && (
+                  <div className="py-6 px-3 text-center">
+                    <div className="text-muted-foreground text-sm">
+                      未找到与 “<span className="font-medium">{query}</span>” 相关的导航
+                    </div>
+                    <div className="text-xs text-muted-foreground/70 mt-1">
+                      试试拼音首字母（如 zgtqw）或描述你的需求
+                    </div>
+                    {suggestions.length > 0 && (
+                      <div className="mt-4">
+                        <div className="text-xs text-muted-foreground mb-2">试试这些搜索</div>
+                        <div className="flex flex-wrap justify-center gap-1.5">
+                          {suggestions.map((s) => (
+                            <button
+                              key={s}
+                              className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                              onClick={() => setQuery(s)}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {popular.length > 0 && (
+                      <div className="mt-4">
+                        <div className="text-xs text-muted-foreground mb-2">热门搜索</div>
+                        <div className="flex flex-wrap justify-center gap-1.5">
+                          {popular.map((s) => (
+                            <button
+                              key={s}
+                              className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:bg-accent transition-colors"
+                              onClick={() => setQuery(s)}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              ) : (
+
+
+                hits.map((hit) => {
+                  const site = hit.site
+                  if (!site) return null
+                  const channels = Object.keys(hit.contributions ?? {})
+                  const faved = favorites.isFavorite(site.id)
+                  return (
+                    <CommandItem
+                      key={hit.siteId}
+                      value={site.title}
+                      onSelect={() => openSite(hit)}
+                      className="flex items-center gap-3 py-3 px-3 cursor-pointer hover:bg-accent/50"
+                    >
+                      <div className="flex-shrink-0 w-8 h-8">
+                        {site.iconKey ? (
+                          <img
+                            src={site.iconKey}
+                            alt={site.title + ' icon'}
+                            className="w-full h-full object-contain rounded"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                          />
+                        ) : (
+                          <div className="w-full h-full rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">
+                            {site.title.slice(0, 1)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col flex-1 gap-1 min-w-0">
+                        <span className="text-sm font-medium truncate">
+                          <Highlighted text={site.title} query={query} />
+                        </span>
+                        {site.description && (
+                          <span className="text-xs text-muted-foreground line-clamp-1">
+                            <Highlighted text={site.description} query={query} />
+                          </span>
+                        )}
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {channels.map((c) => (
+                            <span key={c} className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                              {CHANNEL_LABELS[c] ?? c}
+                            </span>
+                          ))}
+                          {site.tags?.slice(0, 3).map((t) => (
+                            <span key={t} className="text-xs px-2 py-0.5 rounded bg-primary/10 text-primary">{t}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <button
+                        className="flex-shrink-0 p-1 rounded hover:bg-muted"
+                        title={faved ? '取消收藏' : '收藏'}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void favorites.toggle({
+                            siteId: site.id, title: site.title, href: site.url,
+                            icon: site.iconKey ?? undefined, description: site.description ?? undefined,
+                          })
+                        }}
+                      >
+                        <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
+                      </button>
+                    </CommandItem>
+                  )
+                })
+              )}
+              {showResults && hits.length > 0 && hasMore && (
+                <div className="p-2 border-t">
+                  <button
+                    className="w-full text-xs py-2 rounded-md bg-muted hover:bg-accent text-muted-foreground transition-colors disabled:opacity-50"
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? '加载中…' : `加载更多（已显示 ${hits.length} 条）`}
+                  </button>
+                </div>
+              )}
+            </CommandList>
+          </Command>
+        </div>
+      )}
+    </div>
+  )
+}

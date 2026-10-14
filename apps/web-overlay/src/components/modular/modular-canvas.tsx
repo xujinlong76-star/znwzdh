@@ -1,0 +1,559 @@
+'use client'
+
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useModularLayout } from '@/lib/modular/use-modular-layout'
+import type { WidgetInstance } from '@/types/modular'
+import { WIDGET_REGISTRY } from '@/lib/modular/registry'
+import { ModularItem } from './modular-item'
+import { ModuleLibraryModal } from './module-library-modal'
+import { TemplateModal } from './template-modal'
+import { WidgetConfigModal } from './widget-config-modal'
+import { 
+  Plus, 
+  SlidersHorizontal, 
+  Check, 
+  RotateCcw, 
+  LayoutTemplate, 
+  Download, 
+  Upload, 
+  Sparkles,
+  Grid,
+  Layers,
+  Trash2,
+  Undo2,
+  Redo2,
+  Palette
+} from 'lucide-react'
+import { Button } from '@/registry/new-york/ui/button'
+import { DensityToggle } from '@/components/density-toggle'
+
+export function ModularCanvas() {
+  const {
+    boards,
+    activeBoardId,
+    currentBoard,
+    widgets,
+    isEditing,
+    setIsEditing,
+    initialized,
+    addWidget,
+    removeWidget,
+    reorderWidgets,
+    shiftWidget,
+    resizeWidget,
+    beginInteraction,
+    updateWidgetConfig,
+    applyTemplate,
+    resetToDefault,
+    createBoard,
+    switchBoard,
+    deleteBoard,
+    exportLayoutJson,
+    importLayoutJson,
+    compactLayout,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useModularLayout()
+
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false)
+  const [isTemplateOpen, setIsTemplateOpen] = useState(false)
+  const [configTargetWidget, setConfigTargetWidget] = useState<any | null>(null)
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const [exportNotice, setExportNotice] = useState<string | null>(null)
+  const [isCreatingBoard, setIsCreatingBoard] = useState(false)
+  const [newBoardName, setNewBoardName] = useState('')
+  const [canvasBg, setCanvasBg] = useState<'dots' | 'grid' | 'aurora' | 'clean'>('dots')
+
+  // reorderWidgets 的 ref 镜像：handleDragEnd 通过函数式 setState 嵌套读取最新值，
+  // 避免 useCallback 依赖 reorderWidgets（其引用随 activeBoardId 变化，会破坏 memo）
+  const reorderWidgetsRef = useRef(reorderWidgets)
+  useEffect(() => {
+    reorderWidgetsRef.current = reorderWidgets
+  }, [reorderWidgets])
+
+  // 初始化画布背景样式偏好
+  useEffect(() => {
+    try {
+      const savedBg = localStorage.getItem('navhub_modular_bg_style')
+      if (savedBg && ['dots', 'grid', 'aurora', 'clean'].includes(savedBg)) {
+        setCanvasBg(savedBg as any)
+      }
+    } catch {}
+  }, [])
+
+  // 画布背景风格切换
+  const handleSelectBg = (bg: 'dots' | 'grid' | 'aurora' | 'clean') => {
+    setCanvasBg(bg)
+    try {
+      localStorage.setItem('navhub_modular_bg_style', bg)
+    } catch {}
+  }
+
+  // 打开模块配置弹窗（useCallback：传给 memo 化的 ModularItem）
+  const handleOpenConfig = useCallback((w: WidgetInstance) => {
+    setConfigTargetWidget(w)
+  }, [])
+
+  // 快捷键支持：Ctrl+Z (撤销) 与 Ctrl+Y / Ctrl+Shift+Z (重做)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (e.shiftKey) {
+          e.preventDefault()
+          if (canRedo) redo()
+        } else {
+          e.preventDefault()
+          if (canUndo) undo()
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault()
+        if (canRedo) redo()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [undo, redo, canUndo, canRedo])
+
+  // 拖拽开始（useCallback：ModularItem 已 memo 化，引用稳定才能让未受拖拽影响的卡片跳过重渲染）
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDraggedIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(index))
+  }, [])
+
+  // 拖拽悬停 (Drop Target)：函数式 setState 消除 dragOverIndex 依赖，保持引用稳定
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverIndex((prev) => (prev === index ? prev : index))
+  }, [])
+
+  // 拖拽结束释放
+  const handleDragEnd = useCallback(() => {
+    setDraggedIndex((from) => {
+      setDragOverIndex((over) => {
+        if (from !== null && over !== null && from !== over) reorderWidgetsRef.current(from, over)
+        return null
+      })
+      return null
+    })
+  }, [])
+
+  // 创建新看板
+  const handleCreateBoardSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newBoardName.trim()) return
+    createBoard(newBoardName)
+    setNewBoardName('')
+    setIsCreatingBoard(false)
+    setExportNotice(`已创建并激活新看板「${newBoardName}」`)
+    setTimeout(() => setExportNotice(null), 2500)
+  }
+
+  // 导出 JSON
+  const handleExport = () => {
+    const json = exportLayoutJson()
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `navhub-boards-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    // 延迟回收：个别浏览器（旧 Safari）下载是异步读取 blob 的，立即 revoke 会截断文件
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setExportNotice('全部工作台看板配置已导出为 JSON')
+    setTimeout(() => setExportNotice(null), 2500)
+  }
+
+  // 导入 JSON
+  const handleImport = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const text = String(event.target?.result || '')
+        const ok = importLayoutJson(text)
+        if (ok) {
+          setExportNotice('工作台配置已成功还原！')
+        } else {
+          setExportNotice('导入失败：无效的布局文件格式')
+        }
+        setTimeout(() => setExportNotice(null), 2500)
+      }
+      reader.readAsText(file)
+    }
+    input.click()
+  }
+
+  if (!initialized) {
+    return (
+      <div className="py-20 flex flex-col items-center justify-center space-y-3 text-muted-foreground">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs font-mono">正在加载自定义模块化排版系统...</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* 多看板工作区切换标签栏 (Multi-Board Switcher) */}
+      <div className="flex items-center justify-between gap-3 overflow-x-auto pb-1 border-b border-border/50 text-xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1 text-muted-foreground mr-1 text-xs font-mono">
+            <Layers className="w-3.5 h-3.5 text-primary" />
+            <span>我的工作台:</span>
+          </div>
+          {boards.map((b) => (
+            <div key={b.id} className="flex items-center group/tab">
+              <button
+                onClick={() => switchBoard(b.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 ${
+                  activeBoardId === b.id
+                    ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
+                    : 'bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <span>{b.name}</span>
+                <span className="text-xs font-mono opacity-75">({b.widgets.length})</span>
+              </button>
+              {isEditing && boards.length > 1 && (
+                <button
+                  onClick={() => deleteBoard(b.id)}
+                  className="p-1 text-muted-foreground hover:text-red-500 transition-opacity ml-0.5 opacity-50 sm:opacity-0 sm:group-hover/tab:opacity-100"
+                  title="删除此看板"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          ))}
+
+          {/* 新建看板表单/按钮 */}
+          {isEditing && (
+            isCreatingBoard ? (
+              <form onSubmit={handleCreateBoardSubmit} className="flex items-center gap-1">
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="看板名称..."
+                  value={newBoardName}
+                  onChange={(e) => setNewBoardName(e.target.value)}
+                  className="h-7 px-2 text-xs rounded-lg border border-border bg-background outline-none focus:ring-1 focus:ring-primary w-28"
+                />
+                <Button size="sm" type="submit" className="h-7 px-2 text-xs rounded-lg">
+                  确定
+                </Button>
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs rounded-lg"
+                  onClick={() => setIsCreatingBoard(false)}
+                >
+                  取消
+                </Button>
+              </form>
+            ) : (
+              <button
+                onClick={() => setIsCreatingBoard(true)}
+                className="px-2.5 py-1.5 rounded-xl border border-dashed border-border/80 hover:border-primary/60 text-muted-foreground hover:text-foreground text-xs flex items-center gap-1 transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+                <span>新建工作台</span>
+              </button>
+            )
+          )}
+        </div>
+      </div>
+
+      {/* 顶部控制栏与操作工具箱 */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl border border-border/80 glass-surface shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
+            <Grid className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm sm:text-base font-bold text-foreground">
+                {currentBoard.name}
+              </h2>
+              <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium">
+                12 栅格自适应
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {isEditing
+                ? '💡 编辑模式：可拖拽把手换位、拖动右下角手柄缩放尺寸，小屏可用 ⬆️/⬇️ 按钮快速上下移动'
+                : '模块沙箱独立运行，点击右侧按钮开启自由排版'}
+            </p>
+          </div>
+        </div>
+
+        {/* 快捷操作胶囊按钮组 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* 画布背景风格切换 */}
+          <div className="flex items-center gap-1 border border-border/60 rounded-xl p-0.5 bg-background/50 text-xs">
+            <Palette className="w-3 h-3 text-muted-foreground ml-1 mr-0.5" />
+            <button
+              onClick={() => handleSelectBg('dots')}
+              className={`px-1.5 py-0.5 rounded-lg transition-colors ${
+                canvasBg === 'dots' ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="赛博点阵画布"
+            >
+              点阵
+            </button>
+            <button
+              onClick={() => handleSelectBg('grid')}
+              className={`px-1.5 py-0.5 rounded-lg transition-colors ${
+                canvasBg === 'grid' ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="工程网格画布"
+            >
+              网格
+            </button>
+            <button
+              onClick={() => handleSelectBg('aurora')}
+              className={`px-1.5 py-0.5 rounded-lg transition-colors ${
+                canvasBg === 'aurora' ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="极光微光画布"
+            >
+              极光
+            </button>
+            <button
+              onClick={() => handleSelectBg('clean')}
+              className={`px-1.5 py-0.5 rounded-lg transition-colors ${
+                canvasBg === 'clean' ? 'bg-primary/15 text-primary font-semibold' : 'text-muted-foreground hover:text-foreground'
+              }`}
+              title="纯净底色"
+            >
+              纯净
+            </button>
+          </div>
+
+          {isEditing && (
+            <>
+              {/* 撤销 / 重做按钮组 */}
+              <div className="flex items-center gap-0.5 border border-border/60 rounded-xl p-0.5 bg-background/50">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  onClick={undo}
+                  disabled={!canUndo}
+                  title="撤销历史操作 (Ctrl+Z)"
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0 rounded-lg text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  onClick={redo}
+                  disabled={!canRedo}
+                  title="重做撤销操作 (Ctrl+Y / Ctrl+Shift+Z)"
+                >
+                  <Redo2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                onClick={() => setIsLibraryOpen(true)}
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>添加模块</span>
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-2.5 text-xs rounded-xl gap-1.5"
+                onClick={() => setIsTemplateOpen(true)}
+              >
+                <LayoutTemplate className="w-3.5 h-3.5" />
+                <span>套用模版</span>
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
+                onClick={() => {
+                  compactLayout()
+                  setExportNotice('已完成 12 栅格智能紧凑重排，消除了多余空间碎片！')
+                  setTimeout(() => setExportNotice(null), 2500)
+                }}
+                title="自动紧凑排版：根据 12 栅格行容器贪心重排，消除空隙"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>智能紧凑</span>
+              </Button>
+
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2 text-xs rounded-xl text-muted-foreground hover:text-foreground"
+                onClick={resetToDefault}
+                title="重置为默认模版"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </Button>
+
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2 text-xs rounded-xl text-muted-foreground hover:text-foreground"
+                onClick={handleExport}
+                title="导出为 JSON 备份"
+              >
+                <Download className="w-3.5 h-3.5" />
+              </Button>
+
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2 text-xs rounded-xl text-muted-foreground hover:text-foreground"
+                onClick={handleImport}
+                title="导入 JSON 配置文件"
+              >
+                <Upload className="w-3.5 h-3.5" />
+              </Button>
+            </>
+          )}
+
+          {/* 内容排版密度矩阵切换 */}
+          <DensityToggle className="h-8 w-8" />
+
+          {/* 切换编辑模式主按钮 */}
+          <Button
+            size="sm"
+            className={`h-8 px-3.5 text-xs rounded-xl gap-1.5 font-medium shadow-xs transition-all ${
+              isEditing
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                : 'bg-primary text-primary-foreground hover:opacity-90'
+            }`}
+            onClick={() => setIsEditing(!isEditing)}
+          >
+            {isEditing ? <Check className="w-3.5 h-3.5" /> : <SlidersHorizontal className="w-3.5 h-3.5" />}
+            <span>{isEditing ? '完成排版' : '自定义排版'}</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* 提示消息浮层 */}
+      {exportNotice && (
+        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-center gap-2 animate-in fade-in duration-150">
+          <Sparkles className="w-4 h-4" />
+          <span>{exportNotice}</span>
+        </div>
+      )}
+
+      {/* 12 栅格自适应主画布 */}
+      {widgets.length === 0 ? (
+        <div className="p-12 rounded-2xl border-2 border-dashed border-border/80 text-center space-y-3 glass-surface">
+          <div className="w-12 h-12 rounded-2xl bg-muted/50 mx-auto flex items-center justify-center text-muted-foreground">
+            <Grid className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-semibold text-foreground">当前工作台为空</h3>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              当前看板中没有小组件。可点击下方按钮添加常用功能模块，或直接套用预设模版。
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-2 pt-2">
+            <Button size="sm" onClick={() => setIsLibraryOpen(true)} className="gap-1.5 text-xs rounded-xl">
+              <Plus className="w-3.5 h-3.5" />
+              <span>选择并添加模块</span>
+            </Button>
+            <Button size="sm" variant="outline" onClick={resetToDefault} className="text-xs rounded-xl">
+              恢复默认模版
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className={`p-2.5 sm:p-4 rounded-3xl border border-border/50 transition-all duration-300 ${
+          canvasBg === 'dots'
+            ? 'bg-[radial-gradient(#80808020_1px,transparent_1px)] [background-size:16px_16px]'
+            : canvasBg === 'grid'
+            ? 'bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]'
+            : canvasBg === 'aurora'
+            ? 'relative before:absolute before:inset-0 before:bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] before:from-primary/10 before:via-transparent before:to-transparent before:pointer-events-none'
+            : ''
+        }`}>
+          <div className="grid grid-cols-12 transition-all duration-300" style={{ gap: 'var(--density-grid-gap, 1rem)' }}>
+            {widgets.map((widget, index) => (
+              <ModularItem
+                key={widget.id}
+                widget={widget}
+                index={index}
+                totalWidgets={widgets.length}
+                isEditing={isEditing}
+                onRemove={removeWidget}
+                onResize={resizeWidget}
+                onBeginInteraction={beginInteraction}
+                onShiftPosition={shiftWidget}
+                onOpenConfig={handleOpenConfig}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragEnd={handleDragEnd}
+                isDragging={draggedIndex === index}
+                isDraggedOver={dragOverIndex === index && draggedIndex !== index}
+              />
+            ))}
+
+            {isEditing && (
+              <button
+                type="button"
+                onClick={() => setIsLibraryOpen(true)}
+                className="col-span-12 sm:col-span-6 md:col-span-4 lg:col-span-3 min-h-[175px] rounded-2xl border-2 border-dashed border-border/80 hover:border-primary/60 hover:bg-primary/5 transition-all flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary group shadow-2xs"
+              >
+                <div className="w-10 h-10 rounded-xl bg-muted/60 group-hover:bg-primary/10 flex items-center justify-center transition-colors">
+                  <Plus className="w-5 h-5 text-muted-foreground group-hover:text-primary" />
+                </div>
+                <span className="text-xs font-semibold">添加更多功能模块</span>
+                <span className="text-xs text-muted-foreground/70">浏览 {Object.keys(WIDGET_REGISTRY).length} 大组件库</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+
+      {/* 模块配置弹窗 */}
+      <WidgetConfigModal
+        widget={configTargetWidget}
+        isOpen={Boolean(configTargetWidget)}
+        onClose={() => setConfigTargetWidget(null)}
+        onSaveConfig={updateWidgetConfig}
+      />
+
+      {/* 模块库弹窗 */}
+      <ModuleLibraryModal
+        isOpen={isLibraryOpen}
+        onClose={() => setIsLibraryOpen(false)}
+        onAddModule={addWidget}
+      />
+
+      {/* 预设模版弹窗 */}
+      <TemplateModal
+        isOpen={isTemplateOpen}
+        onClose={() => setIsTemplateOpen(false)}
+        onApplyTemplate={applyTemplate}
+      />
+    </div>
+  )
+}

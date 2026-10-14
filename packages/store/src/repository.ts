@@ -66,6 +66,13 @@ export interface UserProfileRecord {
   updatedAt: number;
 }
 
+export interface UserVaultRecord {
+  userId: string;
+  payload: string;
+  version: number;
+  updatedAt: number;
+}
+
 export interface UserRecord {
   id: string;
   username: string;
@@ -73,6 +80,28 @@ export interface UserRecord {
   email: string | null;
   avatar: string | null;
   source: string;
+}
+
+/** API token 记录（**不含 token_hash 明文**——哈希只在查询入参里出现，不进返回值） */
+export interface ApiTokenRecord {
+  id: string;
+  name: string;
+  scopes: string[];
+  expiresAt: number | null;
+  lastUsedAt: number | null;
+  createdAt: number;
+}
+
+/** 审计日志记录；diff 已解析（库里存的是 JSON 文本） */
+export interface AuditLogRecord {
+  id: number;
+  actor: string;
+  actorKind: string;
+  action: string;
+  target: string | null;
+  diff: unknown;
+  ip: string | null;
+  createdAt: number;
 }
 
 export interface JobRecord {
@@ -84,6 +113,8 @@ export interface JobRecord {
   error: string | null;
   createdAt: number;
   updatedAt: number;
+  /** 下次可被认领的时间（退避中任务的 pending 到点时间；NULL = 立即可认领） */
+  nextRunAt: number | null;
 }
 
 export interface TagWithCount {
@@ -114,12 +145,12 @@ export class Repository {
   /* ------------------------- 站点 ------------------------- */
 
   async listSites(filter: { categoryId?: string; status?: SiteStatus; limit?: number } = {}): Promise<Site[]> {
-    const where: string[] = [];
+    const where: string[] = ["s.deleted_at IS NULL"];
     const params: unknown[] = [];
     if (filter.categoryId) { where.push("s.category_id = ?"); params.push(filter.categoryId); }
     if (filter.status) { where.push("s.status = ?"); params.push(filter.status); }
     const sqlText = this.selectSitesSql() +
-      (where.length ? " WHERE " + where.join(" AND ") : "") +
+      " WHERE " + where.join(" AND ") +
       " GROUP BY s.id" +
       " ORDER BY s.sort ASC, s.weight DESC" +
       (filter.limit ? " LIMIT ?" : "");
@@ -144,13 +175,29 @@ export class Repository {
   }
 
   async getSite(idOrUrl: string): Promise<Site | null> {
-    const rows = await this.raw(this.selectSitesSql() + " WHERE s.id = ? OR s.url = ? LIMIT 1", [idOrUrl, idOrUrl]);
+    const rows = await this.raw(
+      this.selectSitesSql() + " WHERE (s.id = ? OR s.url = ?) AND s.deleted_at IS NULL LIMIT 1",
+      [idOrUrl, idOrUrl],
+    );
+    const row = rows[0];
+    return row ? rowToSite(row) : null;
+  }
+
+  /** 软删除的站点（回收站）：正常查询一律排除，只有这里返回 */
+  async getDeletedSite(id: string): Promise<Site | null> {
+    const rows = await this.raw(
+      this.selectSitesSql() + " WHERE s.id = ? AND s.deleted_at IS NOT NULL LIMIT 1",
+      [id],
+    );
     const row = rows[0];
     return row ? rowToSite(row) : null;
   }
 
   async findSiteByUrl(url: string): Promise<Site | null> {
-    const rows = await this.raw(this.selectSitesSql() + " WHERE s.url = ? LIMIT 1", [url]);
+    const rows = await this.raw(
+      this.selectSitesSql() + " WHERE s.url = ? AND s.deleted_at IS NULL LIMIT 1",
+      [url],
+    );
     const row = rows[0];
     return row ? rowToSite(row) : null;
   }
@@ -170,6 +217,27 @@ export class Repository {
     const id = input.id;
     const now = Date.now();
     const index = buildIndexFields({ title: input.title ?? input.url, description: input.description, url: input.url, tags: input.tags });
+    // 同 id 的软删行会让主键冲突（快照写回会用原 id 复活站点）——
+    // 这里直接"复活"该行：清 deleted_at 并覆盖内容，语义等价于重建。
+    const deleted = await this.getDeletedSite(id);
+    if (deleted) {
+      await this.run(
+        `UPDATE sites SET url = ?, title = ?, description = ?, category_id = ?, sub_category_id = ?,
+           icon_key = ?, status = ?, enabled = ?, sort = ?, featured = ?, source = ?,
+           fts_tokens = ?, pinyin_full = ?, pinyin_initials = ?, deleted_at = NULL, updated_at = ?
+         WHERE id = ?`,
+        [
+          input.url, input.title ?? input.url, input.description ?? null, input.categoryId,
+          input.subCategoryId ?? null, input.iconKey ?? null, input.status ?? "active",
+          input.enabled === false ? 0 : 1, input.sort ?? 0, input.featured ? 1 : 0,
+          input.source ?? "manual", index.ftsTokens, index.pinyinFull, index.pinyinInitials, now, id,
+        ],
+      );
+      if (input.tags?.length) await this.setSiteTags(id, input.tags);
+      const revived = await this.getSite(id);
+      if (!revived) throw new Error("复活站点后无法读回");
+      return revived;
+    }
     await this.run(
       `INSERT INTO sites (
          id, url, title, description, category_id, sub_category_id, icon_key, status, enabled, sort,
@@ -219,11 +287,40 @@ export class Repository {
     return this.getSite(id);
   }
 
+  /**
+   * 软删除（进回收站）：只打 deleted_at 戳，不删行、不动 site_tags/embeddings。
+   *
+   * 为什么：删除是可撤销操作——回收站里能看到、能恢复；
+   * 同时保留向量与标签意味着「恢复」是瞬时的，不用重新索引。
+   * url 的唯一约束是部分索引（WHERE deleted_at IS NULL），因此删完
+   * 同 URL 站点可以立即重新添加。
+   */
   async deleteSite(id: string): Promise<boolean> {
+    await this.run("UPDATE sites SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL", [Date.now(), Date.now(), id]);
+    return true;
+  }
+
+  /** 恢复软删站点：清 deleted_at（行、标签、向量都还在，无需重建索引） */
+  async restoreSite(id: string): Promise<Site | null> {
+    await this.run("UPDATE sites SET deleted_at = NULL, updated_at = ? WHERE id = ?", [Date.now(), id]);
+    return this.getSite(id);
+  }
+
+  /** 永久删除：从回收站彻底清除（连带 site_tags / embeddings） */
+  async purgeSite(id: string): Promise<boolean> {
     await this.run("DELETE FROM site_tags WHERE site_id = ?", [id]);
     await this.run("DELETE FROM embeddings WHERE site_id = ?", [id]);
     await this.run("DELETE FROM sites WHERE id = ?", [id]);
     return true;
+  }
+
+  /** 回收站列表（只含软删站点，倒序按删除时间） */
+  async listDeletedSites(limit = 100): Promise<Site[]> {
+    const rows = await this.raw(
+      this.selectSitesSql() + " WHERE s.deleted_at IS NOT NULL GROUP BY s.id ORDER BY s.deleted_at DESC LIMIT ?",
+      [limit],
+    );
+    return rows.map(rowToSite);
   }
 
   /** 重排：一次事务写多行 sort，避免前端拖拽后出现重复序号 */
@@ -445,14 +542,16 @@ export class Repository {
 
   /* ------------------------- 统计与事件 ------------------------- */
 
-  async stats(): Promise<{ sites: number; categories: number; tags: number; broken: number; pending: number }> {
+  async stats(): Promise<{ sites: number; categories: number; tags: number; broken: number; pending: number; trashed: number }> {
     const one = async (q: string, p: unknown[] = []) => Number((await this.raw(q, p))[0]?.c ?? 0);
     return {
-      sites: await one("SELECT COUNT(*) AS c FROM sites"),
+      sites: await one("SELECT COUNT(*) AS c FROM sites WHERE deleted_at IS NULL"),
       categories: await one("SELECT COUNT(*) AS c FROM categories"),
       tags: await one("SELECT COUNT(*) AS c FROM tags"),
-      broken: await one("SELECT COUNT(*) AS c FROM sites WHERE status = ?", ["broken"]),
-      pending: await one("SELECT COUNT(*) AS c FROM sites WHERE status = ?", ["pending"]),
+      broken: await one("SELECT COUNT(*) AS c FROM sites WHERE status = ? AND deleted_at IS NULL", ["broken"]),
+      pending: await one("SELECT COUNT(*) AS c FROM sites WHERE status = ? AND deleted_at IS NULL", ["pending"]),
+      // 回收站里的数量——让运营者知道还有可恢复的数据
+      trashed: await one("SELECT COUNT(*) AS c FROM sites WHERE deleted_at IS NOT NULL"),
     };
   }
 
@@ -472,7 +571,92 @@ export class Repository {
     );
   }
 
+  /**
+   * 审计日志查询（倒序分页 + 可选过滤）。
+   *
+   * 与 events/search_history 一样用「多取 1 条」探针判断 hasMore，避免 COUNT 往返。
+   * 追加页与首页用同一条件 → 拼接一致。
+   */
+  async listAuditLogs(filter: {
+    limit?: number;
+    offset?: number;
+    action?: string;
+    actor?: string;
+  } = {}): Promise<{ items: AuditLogRecord[]; hasMore: boolean }> {
+    const wheres: string[] = [];
+    const params: unknown[] = [];
+    if (filter.action) { wheres.push("action = ?"); params.push(filter.action); }
+    if (filter.actor) { wheres.push("actor = ?"); params.push(filter.actor); }
+    const where = wheres.length ? " WHERE " + wheres.join(" AND ") : "";
+    const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
+    const offset = Math.max(0, filter.offset ?? 0);
+    params.push(limit + 1, offset);
+    const rows = await this.raw(
+      `SELECT * FROM audit_logs${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+      params,
+    );
+    const hasMore = rows.length > limit;
+    const page = hasMore ? rows.slice(0, limit) : rows;
+    return { items: page.map(rowToAuditLog), hasMore };
+  }
+
+  /** 出现过的 action 全集（供过滤下拉；审计量大时也是「谁在动库」的概览） */
+  async listAuditActions(limit = 50): Promise<string[]> {
+    const rows = await this.raw(
+      "SELECT action, MAX(id) AS newest FROM audit_logs GROUP BY action ORDER BY newest DESC LIMIT ?",
+      [limit],
+    );
+    return rows.map((r) => String(r.action));
+  }
+
   /* ------------------------- 行为统计 ------------------------- */
+
+  /** 写回健康巡检结果（health_checks 表 + sites 的冗余列） */
+  async updateSiteHealth(siteId: string, health: {
+    httpStatus: number | null
+    ok: boolean
+    latencyMs: number
+    redirectTo: string | null
+    error: string | null
+    /** 失败时是否把 status 置为 broken */
+    markBroken?: boolean
+    currentStatus?: string
+  }): Promise<void> {
+    const now = Date.now();
+    await this.run(
+      `UPDATE sites SET http_status = ?, health_ok = ?, latency_ms = ?, redirect_to = ?,
+              health_error = ?, last_checked_at = ?, status = ? WHERE id = ?`,
+      [
+        health.httpStatus, health.ok, health.latencyMs, health.redirectTo, health.error, now,
+        health.ok ? (health.currentStatus ?? "active") : (health.markBroken === false ? (health.currentStatus ?? "active") : "broken"),
+        siteId,
+      ],
+    );
+    await this.run(
+      "INSERT INTO health_checks (site_id, checked_at, ok, http_status, latency_ms, redirect_to, error) VALUES (?,?,?,?,?,?,?)",
+      [siteId, now, health.ok, health.httpStatus, health.latencyMs, health.redirectTo, health.error],
+    );
+  }
+
+  /**
+   * 健康巡检历史（趋势数据源）：取 since 之后的检查记录。
+   *
+   * 刻意**返回原始行而不是按天聚合**——按天分桶在两种方言里写法完全不同
+   * （SQLite `strftime('%Y-%m-%d', …)` vs PG `to_char(to_timestamp(…), …)`），
+   * 由调用方在 JS 里分桶可完全避开方言分支。
+   */
+  async healthCheckSeries(since: number, limit = 5000): Promise<Array<{ siteId: string; checkedAt: number; ok: boolean; latencyMs: number | null }>> {
+    const rows = await this.raw(
+      "SELECT site_id, checked_at, ok, latency_ms FROM health_checks WHERE checked_at >= ? ORDER BY checked_at ASC LIMIT ?",
+      [since, limit],
+    );
+    return rows.map((r) => ({
+      siteId: String(r.site_id),
+      checkedAt: Number(r.checked_at ?? 0),
+      ok: r.ok === null || r.ok === undefined ? false : Boolean(r.ok),
+      latencyMs: r.latency_ms === null || r.latency_ms === undefined ? null : Number(r.latency_ms),
+    }));
+  }
 
   /** 点击计数 + 最近点击时间（热度排序的原始信号） */
   async bumpVisit(siteId: string): Promise<void> {
@@ -514,6 +698,44 @@ export class Repository {
     const name = newName.trim();
     if (!name) throw new Error("标签名不能为空");
     await this.run("UPDATE tags SET name = ?, slug = ? WHERE id = ?", [name, slugify(name), id]);
+  }
+
+  /**
+   * 删除标签：解除它与所有站点的关联，然后删标签行。
+   *
+   * 站点侧无需处理——tags 是通过 site_tags 关联实时聚合出来的（见 selectSitesSql），
+   * 关联删掉后站点的 tags 自动不再包含该标签。
+   */
+  async deleteTag(id: string): Promise<{ unbound: number }> {
+    const found = await this.raw("SELECT id FROM tags WHERE id = ? LIMIT 1", [id]);
+    if (!found.length) throw new Error("标签不存在");
+    const affected = await this.raw(
+      "SELECT s.id, s.title, s.description, s.url FROM sites s JOIN site_tags st ON st.site_id = s.id WHERE st.tag_id = ?",
+      [id],
+    );
+    await this.run("DELETE FROM site_tags WHERE tag_id = ?", [id]);
+    await this.run("DELETE FROM tags WHERE id = ?", [id]);
+    // 站点的 fts_tokens / pinyin_full 是「标题+描述+标签」拼出来的（见 buildIndexFields）。
+    // 关联删了但索引不刷新的话，搜已删标签**仍然会命中**这些站点——
+    // 属于静默不一致（不报错，只是结果不对），必须就地重算。
+    for (const r of affected) {
+      const siteId = String(r.id);
+      const rest = await this.raw(
+        "SELECT t.slug FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = ?",
+        [siteId],
+      );
+      const index = buildIndexFields({
+        title: String(r.title),
+        description: r.description ?? null,
+        url: String(r.url),
+        tags: rest.map((t) => String(t.slug)),
+      });
+      await this.run(
+        "UPDATE sites SET fts_tokens = ?, pinyin_full = ?, pinyin_initials = ?, updated_at = ? WHERE id = ?",
+        [index.ftsTokens, index.pinyinFull, index.pinyinInitials, Date.now(), siteId],
+      );
+    }
+    return { unbound: affected.length };
   }
 
   /** 合并标签：源标签的关联迁到目标（已关联的跳过），然后删源 */
@@ -600,9 +822,88 @@ export class Repository {
 
   /* ------------------------- 个性化画像 ------------------------- */
 
+  /* ------------------------- 个性化聚合 ------------------------- */
+
+  /**
+   * 取某身份的近期行为事件（click/favorite），附带站点类目与标签。
+   * 身份写在 events.meta 的 JSON 里（{"identity":"..."}），用 LIKE 过滤——
+   * 身份串只含 uuid / "github:<id>" 字符，无 LIKE 通配符（构建 pattern 前仍做清洗）。
+   */
+  async behaviorEvents(identity: string, since: number, limit = 500): Promise<Array<{ kind: string; siteId: string; categoryId: string | null; tags: string[]; createdAt: number }>> {
+    const pattern = '%"identity":"' + identity.replace(/[%_\\]/g, "") + '"%';
+    const tagExpr = this.db.dialect === "sqlite"
+      ? "(SELECT group_concat(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = e.site_id)"
+      : "(SELECT string_agg(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = e.site_id)";
+    const rows = await this.raw(
+      `SELECT e.kind AS kind, e.site_id AS siteid, s.category_id AS categoryid,
+              ${tagExpr} AS tagslugs, e.created_at AS createdat
+         FROM events e LEFT JOIN sites s ON s.id = e.site_id
+        WHERE e.kind IN ('click', 'favorite') AND e.created_at >= ?
+          AND e.meta LIKE ?
+        ORDER BY e.created_at DESC LIMIT ?`,
+      [since, pattern, limit],
+    );
+    return rows
+      .filter((r) => r.siteid)
+      .map((r) => ({
+        kind: String(r.kind),
+        siteId: String(r.siteid),
+        categoryId: r.categoryid ?? null,
+        tags: r.tagslugs ? String(r.tagslugs).split(",").filter(Boolean) : [],
+        createdAt: Number(r.createdat ?? 0),
+      }));
+  }
+
+  async countSearches(userId: string): Promise<number> {
+    const rows = await this.raw("SELECT COUNT(*) AS c FROM search_history WHERE user_id = ?", [userId]);
+    return Number(rows[0]?.c ?? 0);
+  }
+
+  /** 近 N 天每站点的点击次数（recompute_rank 用） */
+  async clickCountsSince(since: number): Promise<Map<string, number>> {
+    const rows = await this.raw(
+      "SELECT site_id AS siteid, COUNT(*) AS c FROM events WHERE kind = 'click' AND site_id IS NOT NULL AND created_at >= ? GROUP BY site_id",
+      [since],
+    );
+    const out = new Map<string, number>();
+    for (const r of rows) out.set(String(r.siteid), Number(r.c ?? 0));
+    return out;
+  }
+
+  /** 近 N 天每站点的被收藏次数（recompute_rank 用） */
+  async favoriteCountsSince(since: number): Promise<Map<string, number>> {
+    const rows = await this.raw(
+      "SELECT site_id AS siteid, COUNT(*) AS c FROM favorites WHERE created_at >= ? GROUP BY site_id",
+      [since],
+    );
+    const out = new Map<string, number>();
+    for (const r of rows) out.set(String(r.siteid), Number(r.c ?? 0));
+    return out;
+  }
+
   async getUserProfile(userId: string): Promise<UserProfileRecord | null> {
     const row = (await this.raw("SELECT * FROM user_profiles WHERE user_id = ?", [userId]))[0];
     return row ? rowToProfile(row) : null;
+  }
+
+  async deleteUserProfile(userId: string): Promise<void> {
+    await this.run("DELETE FROM user_profiles WHERE user_id = ?", [userId]);
+  }
+
+  /**
+   * 删除某身份的行为事件（click/favorite，identity 存在 meta JSON 里）。
+   * 「重置个性化」用——events 同时供 recompute_rank 统计点击热度，
+   * 因此这里只删带该 identity 的行，不碰匿名/其他身份的事件。
+   */
+  async deleteBehaviorEvents(identity: string): Promise<number> {
+    const pattern = '%"identity":"' + identity.replace(/[%_\\]/g, "") + '"%';
+    const rows = await this.raw(
+      "SELECT COUNT(*) AS c FROM events WHERE kind IN ('click','favorite') AND meta LIKE ?",
+      [pattern],
+    );
+    const removed = Number(rows[0]?.c ?? 0);
+    await this.run("DELETE FROM events WHERE kind IN ('click','favorite') AND meta LIKE ?", [pattern]);
+    return removed;
   }
 
   async saveUserProfile(userId: string, profile: Omit<UserProfileRecord, "userId" | "updatedAt">): Promise<void> {
@@ -629,20 +930,62 @@ export class Repository {
     );
   }
 
+  /* ------------------- E2EE 零知识云端金库同步 ------------------- */
+
+  async getUserVault(userId: string): Promise<UserVaultRecord | null> {
+    const rows = await this.raw(
+      "SELECT user_id, payload, version, updated_at AS updatedat FROM user_vault_sync WHERE user_id = ? LIMIT 1",
+      [userId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      userId: String(row.user_id),
+      payload: String(row.payload),
+      version: Number(row.version ?? 1),
+      updatedAt: Number(row.updatedat ?? 0),
+    };
+  }
+
+  async saveUserVault(userId: string, payload: string): Promise<{ version: number; updatedAt: number }> {
+    const now = Date.now();
+    await this.run(
+      `INSERT INTO user_vault_sync (user_id, payload, version, updated_at)
+       VALUES (?,?, 1, ?)
+       ON CONFLICT (user_id) DO UPDATE SET
+         payload = excluded.payload,
+         version = user_vault_sync.version + 1,
+         updated_at = excluded.updated_at`,
+      [userId, payload, now],
+    );
+    const updated = await this.getUserVault(userId);
+    return {
+      version: updated?.version ?? 1,
+      updatedAt: updated?.updatedAt ?? now,
+    };
+  }
+
+  async deleteUserVault(userId: string): Promise<boolean> {
+    await this.run("DELETE FROM user_vault_sync WHERE user_id = ?", [userId]);
+    return true;
+  }
+
   /* ------------------------- 搜索历史 ------------------------- */
 
   async recordSearch(userId: string, query: string, resultCount: number): Promise<void> {
     const q = query.trim();
     if (!q) return;
+    // id 自增：同毫秒的多条记录也能按插入顺序稳定排序
     await this.run(
-      "INSERT INTO search_history (id, user_id, query, result_count, created_at) VALUES (?,?,?,?,?)",
-      [randomUUID(), userId, q, resultCount, Date.now()],
+      "INSERT INTO search_history (user_id, query, result_count, created_at) VALUES (?,?,?,?)",
+      [userId, q, resultCount, Date.now()],
     );
   }
 
   async listSearchHistory(userId: string, limit = 10): Promise<Array<{ query: string; resultCount: number; createdAt: number }>> {
+    // 自增 id 作次级排序键：created_at 同毫秒时按真实插入顺序
     const rows = await this.raw(
-      "SELECT query, result_count AS resultcount, created_at AS createdat FROM search_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+      "SELECT query, result_count AS resultcount, created_at AS createdat FROM search_history WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?",
       [userId, limit],
     );
     return rows.map((r) => ({
@@ -691,6 +1034,59 @@ export class Repository {
     return row ? rowToUser(row) : null;
   }
 
+  /* ------------------------- API Token ------------------------- */
+
+  /**
+   * 创建 API token 记录。
+   *
+   * 只存 token_hash（sha256 十六进制），**永不落明文**：
+   * 调用方在创建时拿到明文一次，之后无法再从库里还原。
+   * scopes 用逗号分隔存储（与 api_tokens 表定义一致）。
+   */
+  async createApiToken(input: {
+    name: string;
+    tokenHash: string;
+    scopes?: string;
+    expiresAt?: number | null;
+  }): Promise<ApiTokenRecord> {
+    const id = randomUUID();
+    const now = Date.now();
+    await this.run(
+      "INSERT INTO api_tokens (id, name, token_hash, scopes, expires_at, created_at) VALUES (?,?,?,?,?,?)",
+      [id, input.name, input.tokenHash, input.scopes ?? "read", input.expiresAt ?? null, now],
+    );
+    return { id, name: input.name, scopes: (input.scopes ?? "read").split(",").map((s) => s.trim()).filter(Boolean), expiresAt: input.expiresAt ?? null, lastUsedAt: null, createdAt: now };
+  }
+
+  /**
+   * 按明文 token 查记录。
+   *
+   * 调用方先算出 sha256 再传入——本方法只做哈希列的等值查询。
+   * 查不到返回 null；过期的 token 同样返回 null（由调用方视为无效）。
+   */
+  async findApiTokenByHash(tokenHash: string): Promise<ApiTokenRecord | null> {
+    const row = (await this.raw("SELECT * FROM api_tokens WHERE token_hash = ? LIMIT 1", [tokenHash]))[0];
+    if (!row) return null;
+    if (row.expires_at != null && Number(row.expires_at) < Date.now()) return null;
+    return rowToApiToken(row);
+  }
+
+  /** 刷新最近使用时间；失败不影响鉴权主流程 */
+  async touchApiToken(id: string): Promise<void> {
+    await this.run("UPDATE api_tokens SET last_used_at = ? WHERE id = ?", [Date.now(), id]);
+  }
+
+  /** 列出全部 token（不含 hash——列表页不泄露凭据） */
+  async listApiTokens(): Promise<ApiTokenRecord[]> {
+    const rows = await this.raw("SELECT * FROM api_tokens ORDER BY created_at DESC", []);
+    return rows.map(rowToApiToken);
+  }
+
+  async deleteApiToken(id: string): Promise<boolean> {
+    await this.run("DELETE FROM api_tokens WHERE id = ?", [id]);
+    return true;
+  }
+
   /* ------------------------- 精选专题 ------------------------- */
 
   async listCollections(onlyEnabled = true): Promise<Collection[]> {
@@ -709,7 +1105,7 @@ export class Repository {
     const rows = await this.raw(
       this.selectSitesSql() +
         " JOIN collection_items ci ON ci.site_id = s.id" +
-        " WHERE ci.collection_id = ? AND s.enabled = " + this.enabledLiteral +
+        " WHERE ci.collection_id = ? AND s.enabled = " + this.enabledLiteral + " AND s.deleted_at IS NULL" +
         " GROUP BY s.id ORDER BY ci.sort ASC",
       [col.id],
     );
@@ -746,7 +1142,7 @@ export class Repository {
   async hotSites(limit = 20): Promise<Site[]> {
     const rows = await this.raw(
       this.selectSitesSql() +
-        " WHERE s.enabled = " + this.enabledLiteral + " AND s.status != 'archived'" +
+        " WHERE s.enabled = " + this.enabledLiteral + " AND s.status != 'archived' AND s.deleted_at IS NULL" +
         " GROUP BY s.id ORDER BY s.trend_score DESC, s.visit_count DESC, s.sort ASC LIMIT ?",
       [limit],
     );
@@ -757,7 +1153,7 @@ export class Repository {
   async newestSites(limit = 20): Promise<Site[]> {
     const rows = await this.raw(
       this.selectSitesSql() +
-        " WHERE s.enabled = " + this.enabledLiteral + " AND s.status != 'archived'" +
+        " WHERE s.enabled = " + this.enabledLiteral + " AND s.status != 'archived' AND s.deleted_at IS NULL" +
         " GROUP BY s.id ORDER BY s.created_at DESC LIMIT ?",
       [limit],
     );
@@ -780,28 +1176,57 @@ export class Repository {
     const id = randomUUID();
     const now = Date.now();
     await this.run(
-      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?, 'pending', 0, ?, ?)",
+      // next_run_at 显式置 NULL：重试/重入同一语义 = 立即可被认领
+      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at, next_run_at) VALUES (?,?,?, 'pending', 0, ?, ?, NULL)",
       [id, kind, payload === undefined ? null : JSON.stringify(payload), now, now],
     );
     return id;
   }
 
-  /** 取最早的一个 pending 并标记 running（单实例锁由调用方负责） */
+  /**
+   * 取最早的一个**到点** pending 并标记 running（单实例锁由调用方负责）。
+   *
+   * `next_run_at IS NULL OR <= now`：失败退避的任务在到点前不被认领——
+   * 否则一个必失败的坏任务会每 30s 抢占一次队列、把正常任务饿死。
+   * 复合索引 (status, next_run_at) 覆盖这个查询。
+   */
   async claimNextJob(): Promise<JobRecord | null> {
-    const rows = await this.raw("SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1", []);
+    const rows = await this.raw(
+      "SELECT * FROM jobs WHERE status = 'pending' AND (next_run_at IS NULL OR next_run_at <= ?) ORDER BY created_at ASC LIMIT 1",
+      [Date.now()],
+    );
     const row = rows[0];
     if (!row) return null;
     await this.run(
-      "UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = ? WHERE id = ?",
+      "UPDATE jobs SET status = 'running', attempts = attempts + 1, next_run_at = NULL, updated_at = ? WHERE id = ?",
       [Date.now(), String(row.id)],
     );
-    return rowToJob(row);
+    // 返回更新后的行（attempts 已 +1），调用方拿到的就是最新状态
+    const updated = (await this.raw("SELECT * FROM jobs WHERE id = ?", [String(row.id)]))[0];
+    return updated ? rowToJob(updated) : rowToJob(row);
   }
 
-  async completeJob(id: string, error?: string | null): Promise<void> {
+  /**
+   * 收尾任务。三态：
+   *   done    成功
+   *   retry   失败但还有重试机会（回 pending，next_run_at = 退避后时间）
+   *   failed  重试耗尽（maxAttempts）
+   *
+   * 之前只有 done/failed 两态且失败即终态——瞬时抖动（网络/磁盘）会直接把
+   * 任务打死，且失败任务永远留在 failed 列表里没有「重试」语义。
+   */
+  async completeJob(id: string, error?: string | null, opts: { retryAt?: number | null; exhausted?: boolean } | null = null): Promise<void> {
+    const now = Date.now();
+    if (error && !opts?.exhausted && opts?.retryAt) {
+      await this.run(
+        "UPDATE jobs SET status = 'pending', error = ?, next_run_at = ?, updated_at = ? WHERE id = ?",
+        [error, opts.retryAt, now, id],
+      );
+      return;
+    }
     await this.run(
-      "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE id = ?",
-      [error ? "failed" : "done", error ?? null, Date.now(), id],
+      "UPDATE jobs SET status = ?, error = ?, next_run_at = NULL, updated_at = ? WHERE id = ?",
+      [error ? "failed" : "done", error ?? null, now, id],
     );
   }
 
@@ -892,6 +1317,7 @@ function rowToSite(row: Record<string, any>): Site {
     visitCount: Number(row.visit_count ?? 0),
     lastVisitedAt: row.last_visited_at ?? null,
     trendScore: Number(row.trend_score ?? 0),
+    deletedAt: row.deleted_at == null ? null : Number(row.deleted_at),
     health: {
       ok: row.health_ok === null || row.health_ok === undefined ? false : Boolean(row.health_ok),
       httpStatus: row.http_status ?? null,
@@ -979,6 +1405,7 @@ function rowToJob(row: Record<string, any>): JobRecord {
     error: row.error ?? null,
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
+    nextRunAt: row.next_run_at === null || row.next_run_at === undefined ? null : Number(row.next_run_at),
   };
 }
 
@@ -993,6 +1420,35 @@ function rowToUser(row: Record<string, any>): UserRecord {
   };
 }
 
+/** token_hash 列刻意不映射进记录——哈希只用于查询，不进返回值 */
+function rowToApiToken(row: Record<string, any>): ApiTokenRecord {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    scopes: String(row.scopes ?? "read").split(",").map((s: string) => s.trim()).filter(Boolean),
+    expiresAt: row.expires_at == null ? null : Number(row.expires_at),
+    lastUsedAt: row.last_used_at == null ? null : Number(row.last_used_at),
+    createdAt: Number(row.created_at ?? 0),
+  };
+}
+
+/** diff 列在库里是 JSON 文本，读出时解析；损坏则保留原字符串（不让整页查询挂掉） */
+function rowToAuditLog(row: Record<string, any>): AuditLogRecord {
+  let diff: unknown = null;
+  if (typeof row.diff === "string" && row.diff) {
+    try { diff = JSON.parse(row.diff); } catch { diff = row.diff; }
+  }
+  return {
+    id: Number(row.id),
+    actor: String(row.actor),
+    actorKind: String(row.actor_kind ?? "user"),
+    action: String(row.action),
+    target: row.target == null ? null : String(row.target),
+    diff,
+    ip: row.ip == null ? null : String(row.ip),
+    createdAt: Number(row.created_at ?? 0),
+  };
+}
 function rowToCollection(row: Record<string, any>): Collection {
   return {
     id: String(row.id),

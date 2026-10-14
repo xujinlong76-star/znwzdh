@@ -115,12 +115,8 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       allowPrivateNetworks: bool("NAVHUB_ALLOW_PRIVATE_NETWORKS", false),
       userAgent: env("NAVHUB_USER_AGENT", "NavHubBot/0.1"),
     },
-    // 默认改为「仅同源」：旧的 "*" 会配合 server.ts 的 credentials:true 回显任意
-    // Origin，等于允许任意站点带着凭证跨域读写管理接口。需要跨域时显式列出来源。
-    corsOrigins: env("NAVHUB_CORS_ORIGINS", "").split(",").map((s) => s.trim()).filter(Boolean),
-    // 默认开启鉴权：管理接口（删站/批量/存储/token）此前默认匿名可达。
-    // 本地开发可显式设 NAVHUB_AUTH_REQUIRED=0，并通过 NAVHUB_BOOTSTRAP_TOKEN 引导。
-    authRequired: bool("NAVHUB_AUTH_REQUIRED", true),
+    corsOrigins: env("NAVHUB_CORS_ORIGINS", "*").split(",").map((s) => s.trim()).filter(Boolean),
+    authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
   };
 

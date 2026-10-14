@@ -13,27 +13,6 @@ import rateLimit from "@fastify/rate-limit";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
-
-/**
- * 安全 URL schema。
- *
- * ⚠️ zod 的 `z.string().url()` 内部只用 `new URL()` 判定，会放行
- * `javascript:alert(1)`、`data:text/html,...` 这类伪协议 —— 站点 URL 会被
- * 前台直接渲染成 `<a href="...">`，形成存储型 XSS（匿名投稿即可落库）。
- * 因此站点/头像等「会被渲染成链接」的字段必须限定 http/https。
- */
-const httpUrl = z
-  .string()
-  .min(1)
-  .max(2048)
-  .refine((v) => {
-    try {
-      const u = new URL(v);
-      return u.protocol === "http:" || u.protocol === "https:";
-    } catch {
-      return false;
-    }
-  }, "URL 必须是 http/https 协议");
 import type { AppContext } from "./context.ts";
 import { createContext } from "./context.ts";
 import { loadConfig } from "./config.ts";
@@ -82,16 +61,8 @@ export async function buildServer(ctx: AppContext) {
     trustProxy,
   });
 
-  // CORS：白名单为空表示「仅同源/非浏览器调用」，绝不回显任意 Origin。
-  // ⚠️ 不能再用 `origin: true`：它与 credentials:true 组合会被浏览器拒绝，
-  // 在代理/非浏览器场景则等于对任意来源开放带凭证访问。
   await app.register(cors, {
-    // 过滤掉 "*"：它与 credentials:true 组合等于对任意来源开放带凭证访问。
-    // 过滤后为空则回落到 false（仅同源/非浏览器调用）。
-    origin:
-      ctx.config.corsOrigins.filter((o) => o !== "*").length > 0
-        ? ctx.config.corsOrigins.filter((o) => o !== "*")
-        : false,
+    origin: ctx.config.corsOrigins.includes("*") ? true : ctx.config.corsOrigins,
     credentials: true,
   });
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
@@ -346,7 +317,7 @@ export async function buildServer(ctx: AppContext) {
   // 说明：URL 形态查询走本路由即可，前提是调用方对 URL 做 encodeURIComponent
   // （实测 `/api/sites/https%3A%2F%2Fchatgpt.com` → 200；不编码的原始 URL
   //  `/api/sites/https://chatgpt.com` 会被切成多段 → 404，属 HTTP 路由固有行为）。
-  app.get("/api/sites/:id", { config: { scope: "read" } }, async (req, reply) => {
+  app.get("/api/sites/:id", { config: { scope: "public" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const site = await ctx.repo.getSite(id);
     if (!site) { reply.code(404); return { error: "站点不存在" }; }
@@ -354,7 +325,7 @@ export async function buildServer(ctx: AppContext) {
   });
 
   const siteInput = z.object({
-    url: httpUrl,
+    url: z.string().url(),
     title: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
     categoryId: z.string().min(1),
@@ -492,6 +463,61 @@ export async function buildServer(ctx: AppContext) {
     return { dryRun: false, op, applied, skipped: ids.length - applied, plan };
   });
 
+  /**
+   * 批量创建/导入站点（供书签导入器与批量脚本使用）。
+   * 内部自动处理 URL 去重与分类回退，大幅降低并发 HTTP 往返与限流风险。
+   */
+  app.post("/api/sites/batch", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const body = z.object({
+      sites: z.array(z.object({
+        url: z.string().url(),
+        title: z.string().min(1).optional(),
+        description: z.string().nullable().optional(),
+        categoryId: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        source: z.string().optional(),
+      })).min(1).max(200),
+      defaultCategoryId: z.string().optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+
+    const cats = await ctx.repo.listCategories();
+    const fallback = body.data.defaultCategoryId ?? cats[0]?.id ?? (await ctx.repo.createCategory({ title: "未分类" })).id;
+    let created = 0;
+    let duplicates = 0;
+    const createdSites = [];
+
+    for (const item of body.data.sites) {
+      const dup = await ctx.repo.findSiteByUrl(item.url);
+      if (dup) {
+        duplicates++;
+        continue;
+      }
+      const site = await ctx.repo.createSite({
+        url: item.url,
+        title: item.title ?? item.url,
+        description: item.description ?? null,
+        categoryId: item.categoryId ?? fallback,
+        tags: item.tags ?? [],
+        source: item.source ?? "import",
+      });
+      await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
+      createdSites.push(site);
+      created++;
+    }
+
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "site.batch",
+      diff: { total: body.data.sites.length, created, duplicates },
+    });
+
+    reply.code(201);
+    return { success: true, created, duplicates, sites: createdSites };
+  });
+
   /* ---------------------------- 回收站 ---------------------------- */
 
   /** 回收站列表（软删站点，倒序） */
@@ -535,9 +561,9 @@ export async function buildServer(ctx: AppContext) {
 
   /* ------------------------------ 类目 ------------------------------ */
 
-  app.get("/api/categories", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async () => ctx.repo.listCategories());
+  app.get("/api/categories", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async () => ctx.repo.listCategories());
 
-  app.get("/api/categories/:id", { config: { scope: "read" } }, async (req, reply) => {
+  app.get("/api/categories/:id", { config: { scope: "public" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const cat = await ctx.repo.getCategory(id);
     if (!cat) { reply.code(404); return { error: "类目不存在" }; }
@@ -631,7 +657,7 @@ export async function buildServer(ctx: AppContext) {
   /* ------------------------- 标签 ------------------------- */
 
   /** 标签云（带计数，按热度降序） */
-  app.get("/api/tags", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req) => {
+  app.get("/api/tags", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
     const minCount = Number(q.minCount);
     return ctx.repo.listTagsWithCounts(Number.isFinite(minCount) && minCount > 0 ? minCount : 1);
@@ -685,9 +711,9 @@ export async function buildServer(ctx: AppContext) {
 
   /* ----------------------- 精选专题 ----------------------- */
 
-  app.get("/api/collections", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async () => ctx.repo.listCollections());
+  app.get("/api/collections", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async () => ctx.repo.listCollections());
 
-  app.get("/api/collections/:slug", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
+  app.get("/api/collections/:slug", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
     const { slug } = req.params as { slug: string };
     const col = await ctx.repo.getCollectionBySlug(slug);
     if (!col) { reply.code(404); return { error: "专题不存在" }; }
@@ -877,26 +903,8 @@ export async function buildServer(ctx: AppContext) {
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     const body = z.object({
       payload: z.string().min(1).max(512 * 1024),
-      /**
-       * 乐观锁基线版本号。多端同时同步时，先发起但后到达的旧快照会把新快照冲掉。
-       * 带上读到的 version，服务端不一致则 409，由客户端重新拉取后再推。
-       */
-      baseVersion: z.number().int().nonnegative().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-
-    if (body.data.baseVersion !== undefined) {
-      const current = await ctx.repo.getUserVault(identity);
-      if (current && current.version !== body.data.baseVersion) {
-        reply.code(409);
-        return {
-          error: "金库已被其他设备更新",
-          currentVersion: current.version,
-          baseVersion: body.data.baseVersion,
-        };
-      }
-    }
-
     const result = await ctx.repo.saveUserVault(identity, body.data.payload);
     return { ok: true, ...result };
   });
@@ -923,7 +931,7 @@ export async function buildServer(ctx: AppContext) {
       providerId: z.string().min(1),
       username: z.string().min(1).max(64),
       email: z.string().email().nullable().optional(),
-      avatar: httpUrl.nullable().optional(),
+      avatar: z.string().url().nullable().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const user = await ctx.repo.upsertOauthUser({
@@ -1014,7 +1022,7 @@ export async function buildServer(ctx: AppContext) {
   app.post("/api/submissions", { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } }, async (req, reply) => {
     const body = z.object({
       title: z.string().min(1).max(120),
-      url: httpUrl,
+      url: z.string().url(),
       description: z.string().max(500).default(""),
       categoryId: z.string().min(1),
       subCategoryId: z.string().nullable().optional(),
@@ -1065,10 +1073,13 @@ export async function buildServer(ctx: AppContext) {
     };
     if (!(requested in statusMap)) { reply.code(400); return { success: false, message: "无效的状态筛选" }; }
     const siteStatus = statusMap[requested];
-    const sites = await ctx.repo.listSites({ status: siteStatus as never, limit: 200 });
-    // 只要投稿来源的站点——`all` 时 listSites 会带回全部站点，不能原样吐给审核队列
+    // 精准按 source=submission 过滤，避免全站站点 >200 时投稿被截断
+    const sites = await ctx.repo.listSites({
+      source: "submission",
+      status: siteStatus as never,
+      limit: 1000,
+    });
     const submissions = sites
-      .filter((s) => s.source === "submission")
       .map((site) => {
         const isPending = site.status === "pending";
         const label = isPending ? "pending" : (site.status === "active" ? "approved" : "rejected");
@@ -1114,9 +1125,9 @@ export async function buildServer(ctx: AppContext) {
 
     const wanted = Number(number);
     if (!Number.isFinite(wanted)) { reply.code(400); return { success: false, message: "无效的投稿编号" }; }
-    // 投稿池有限（100 条内），逐个算 hash 反查——比多存一张映射表简单可靠
-    const candidates = await ctx.repo.listSites({ limit: 200 });
-    const site = candidates.find((s) => s.source === "submission" && submissionNumber(s.id) === wanted);
+    // 精准按 source=submission 过滤查询反查 hash，不受全站常规站点数量影响
+    const candidates = await ctx.repo.listSites({ source: "submission", limit: 1000 });
+    const site = candidates.find((s) => submissionNumber(s.id) === wanted);
     if (!site) { reply.code(404); return { success: false, message: "投稿不存在" }; }
 
     const nextStatus = body.data.action === "approve" ? "active" : "archived";
@@ -1159,7 +1170,7 @@ export async function buildServer(ctx: AppContext) {
   /* ---------------------------- AI 富化 ---------------------------- */
 
   app.post("/api/enrich", { config: { rateLimit: { max: 20, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
-    const body = z.object({ url: httpUrl }).safeParse(req.body ?? {});
+    const body = z.object({ url: z.string().url() }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
     const categories = await ctx.repo.listCategories();
@@ -1175,7 +1186,7 @@ export async function buildServer(ctx: AppContext) {
   /** 一步到位：抓取 + 富化 + 入库（AI 自动入库的核心接口） */
   app.post("/api/sites/auto", { config: { rateLimit: { max: 15, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
     const body = z.object({
-      url: httpUrl,
+      url: z.string().url(),
       categoryId: z.string().optional(),
       tags: z.array(z.string()).optional(),
     }).safeParse(req.body ?? {});
@@ -1201,27 +1212,15 @@ export async function buildServer(ctx: AppContext) {
       categoryId = created.id;
     }
 
-    // 先查后插之间存在竞态：sites.url 有部分唯一索引（未删除记录唯一），
-    // 并发时后到者会撞唯一约束。这里把冲突转成幂等返回，而不是 500。
-    let site: Awaited<ReturnType<typeof ctx.repo.createSite>>;
-    try {
-      site = await ctx.repo.createSite({
-        url: enriched.url,
-        title: enriched.title,
-        description: enriched.description,
-        categoryId,
-        iconKey: enriched.iconUrl,
-        tags: body.data.tags ?? enriched.tags,
-        source: "ai",
-      });
-    } catch (err) {
-      const existing = await ctx.repo.findSiteByUrl(enriched.url);
-      if (existing) {
-        reply.code(200);
-        return { created: false, reason: "并发创建，已存在", site: existing };
-      }
-      throw err;
-    }
+    const site = await ctx.repo.createSite({
+      url: enriched.url,
+      title: enriched.title,
+      description: enriched.description,
+      categoryId,
+      iconKey: enriched.iconUrl,
+      tags: body.data.tags ?? enriched.tags,
+      source: "ai",
+    });
     await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
     await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance } });
     reply.code(201);

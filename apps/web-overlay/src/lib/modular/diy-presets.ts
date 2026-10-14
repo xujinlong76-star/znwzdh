@@ -209,6 +209,75 @@ export function computeAdaptiveSiteRanking<
   })
 }
 
+// =========================================================================
+// 5.1 生物钟上下文时序感知排版算法 (Context-Aware Temporal Ranking Engine)
+// =========================================================================
+
+export type TemporalTimeSlot = 'morning' | 'workday' | 'evening' | 'night'
+
+export interface TemporalRankingOptions {
+  currentHour?: number // 0-23
+  pinnedItemIds?: string[]
+}
+
+export function getTemporalTimeSlot(hour: number): TemporalTimeSlot {
+  if (hour >= 5 && hour < 10) return 'morning'
+  if (hour >= 10 && hour < 18) return 'workday'
+  if (hour >= 18 && hour < 23) return 'evening'
+  return 'night'
+}
+
+const TEMPORAL_KEYWORDS: Record<TemporalTimeSlot, string[]> = {
+  morning: ['新闻', '早报', '资讯', '今日', '天气', '邮件', '待办', 'todo', 'daily', 'news', 'morning', 'mail'],
+  workday: ['开发', '代码', '架构', '框架', '文档', 'api', 'dev', 'tool', 'git', 'design', '设计', '运维', 'cloud', 'ai', 'gpt', '模型'],
+  evening: ['社区', '论坛', '影音', '视频', '音乐', '游戏', '阅读', '博客', 'v2ex', 'bilibili', 'youtube', 'movie', 'game', 'stream'],
+  night: ['专注', '笔记', '极简', '暗黑', '书签', 'night', 'zen', 'note', 'doc'],
+}
+
+/**
+ * 生物钟时序流体自适应加权排序算法
+ */
+export function computeTemporalSiteRanking<
+  T extends {
+    id: string
+    title: string
+    description?: string
+    tags?: string[]
+  }
+>(items: T[], options: TemporalRankingOptions = {}): T[] {
+  const {
+    currentHour = new Date().getHours(),
+    pinnedItemIds = [],
+  } = options
+
+  const slot = getTemporalTimeSlot(currentHour)
+  const keywords = TEMPORAL_KEYWORDS[slot] || []
+
+  const computeScore = (item: T): number => {
+    let score = 0
+    if (pinnedItemIds.includes(item.id)) {
+      score += 10000 - pinnedItemIds.indexOf(item.id) * 10
+    }
+
+    const text = `${item.title} ${item.description || ''} ${(item.tags || []).join(' ')}`.toLowerCase()
+
+    for (const kw of keywords) {
+      if (text.includes(kw.toLowerCase())) {
+        score += 25
+      }
+    }
+
+    return score
+  }
+
+  return [...items].sort((a, b) => {
+    const sA = computeScore(a)
+    const sB = computeScore(b)
+    if (sA !== sB) return sB - sA
+    return 0
+  })
+}
+
 /**
  * 6. 人机工程学与香农信息熵排版健康度评估算法
  */
@@ -578,6 +647,9 @@ export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: 
     accentColor: typeof raw.accentColor === 'string' ? raw.accentColor : 'default',
     heroDeckCollapsed: Boolean(raw.heroDeckCollapsed),
     heroDeckWidgets: Array.isArray(raw.heroDeckWidgets) ? raw.heroDeckWidgets : ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'],
+    enableAdaptiveRanking: Boolean(raw.enableAdaptiveRanking),
+    enableTemporalRanking: Boolean(raw.enableTemporalRanking),
+    enableKeyboardNav: raw.enableKeyboardNav !== false,
     categoryOrder: Array.isArray(raw.categoryOrder) ? raw.categoryOrder : [],
     pinnedCategoryIds: Array.isArray(raw.pinnedCategoryIds) ? raw.pinnedCategoryIds : [],
     hiddenCategoryIds: Array.isArray(raw.hiddenCategoryIds) ? raw.hiddenCategoryIds : [],

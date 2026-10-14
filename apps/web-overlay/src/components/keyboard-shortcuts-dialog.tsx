@@ -31,13 +31,21 @@ const SHORTCUT_GROUPS = [
     ],
   },
   {
-    title: '检索与导航',
+    title: '极客全键盘漫游流',
+    shortcuts: [
+      { key: 'J / ↓', desc: '向前漫游聚焦下一个站点卡片' },
+      { key: 'K / ↑', desc: '向后漫游聚焦上一个站点卡片' },
+      { key: 'Enter', desc: '在新标签页极速直达聚焦的站点' },
+      { key: 'Space', desc: '聚焦卡片时呼出沙箱速览与微动作 (Peek)' },
+      { key: 'Esc', desc: '取消当前卡片焦点 / 关闭浮层弹窗' },
+    ],
+  },
+  {
+    title: '检索与快捷工具',
     shortcuts: [
       { key: '/', desc: '极速聚焦智能检索引擎 (Search Palette)' },
-      { key: 'Space', desc: '聚焦卡片时触发沙箱速览与微动作 (Peek)' },
       { key: 'T', desc: '打开开发者微工具箱 (Base64/JSON/UUID)' },
       { key: '?', desc: '打开或关闭本快捷键指南' },
-      { key: 'Esc', desc: '关闭弹窗 / 退出速览' },
     ],
   },
 ]

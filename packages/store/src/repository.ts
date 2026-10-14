@@ -142,13 +142,40 @@ export class Repository {
     this.db = db;
   }
 
+  /** 双方言事务包裹辅助方法 */
+  async withTransaction<T>(action: () => Promise<T>): Promise<T> {
+    if (this.db.dialect === "sqlite" && this.db.sqlite) {
+      this.db.sqlite.exec("BEGIN IMMEDIATE");
+      try {
+        const result = await action();
+        this.db.sqlite.exec("COMMIT");
+        return result;
+      } catch (err) {
+        try { this.db.sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
+        throw err;
+      }
+    } else if (this.db.dialect === "pg" && this.db.pg) {
+      await this.db.pg.query("BEGIN");
+      try {
+        const result = await action();
+        await this.db.pg.query("COMMIT");
+        return result;
+      } catch (err) {
+        try { await this.db.pg.query("ROLLBACK"); } catch { /* ignore */ }
+        throw err;
+      }
+    }
+    return action();
+  }
+
   /* ------------------------- 站点 ------------------------- */
 
-  async listSites(filter: { categoryId?: string; status?: SiteStatus; limit?: number } = {}): Promise<Site[]> {
+  async listSites(filter: { categoryId?: string; status?: SiteStatus; limit?: number; source?: string } = {}): Promise<Site[]> {
     const where: string[] = ["s.deleted_at IS NULL"];
     const params: unknown[] = [];
     if (filter.categoryId) { where.push("s.category_id = ?"); params.push(filter.categoryId); }
     if (filter.status) { where.push("s.status = ?"); params.push(filter.status); }
+    if (filter.source) { where.push("s.source = ?"); params.push(filter.source); }
     const sqlText = this.selectSitesSql() +
       " WHERE " + where.join(" AND ") +
       " GROUP BY s.id" +
@@ -325,9 +352,12 @@ export class Repository {
 
   /** 重排：一次事务写多行 sort，避免前端拖拽后出现重复序号 */
   async reorderSites(order: Array<{ id: string; sort: number }>): Promise<void> {
-    for (const o of order) {
-      await this.run("UPDATE sites SET sort = ?, updated_at = ? WHERE id = ?", [o.sort, Date.now(), o.id]);
-    }
+    await this.withTransaction(async () => {
+      const now = Date.now();
+      for (const o of order) {
+        await this.run("UPDATE sites SET sort = ?, updated_at = ? WHERE id = ?", [o.sort, now, o.id]);
+      }
+    });
   }
 
   async setSiteTags(siteId: string, tagNames: string[]): Promise<void> {
@@ -667,12 +697,14 @@ export class Repository {
     );
   }
 
-  /** 批量写入热度分（recompute_rank 任务用，一次事务多行） */
+  /** 批量写入热度分（recompute_rank 任务用，同步更新 weight 并包裹事务） */
   async setTrendScores(scores: Array<{ id: string; trendScore: number }>): Promise<void> {
-    const now = Date.now();
-    for (const s of scores) {
-      await this.run("UPDATE sites SET trend_score = ?, updated_at = ? WHERE id = ?", [s.trendScore, now, s.id]);
-    }
+    await this.withTransaction(async () => {
+      const now = Date.now();
+      for (const s of scores) {
+        await this.run("UPDATE sites SET trend_score = ?, weight = ?, updated_at = ? WHERE id = ?", [s.trendScore, s.trendScore, now, s.id]);
+      }
+    });
   }
 
   /* ------------------------- 标签管理 ------------------------- */
@@ -1088,6 +1120,61 @@ export class Repository {
   }
 
   /* ------------------------- 精选专题 ------------------------- */
+
+  async upsertCollection(input: {
+    id?: string;
+    slug: string;
+    title: string;
+    description?: string | null;
+    kind?: "topic" | "geo" | "roadmap";
+    icon?: string | null;
+    sort?: number;
+    enabled?: boolean;
+    sites?: string[];
+  }): Promise<Collection> {
+    const slug = input.slug.trim();
+    if (!slug) throw new Error("专题 slug 不能为空");
+    const existing = await this.getCollectionBySlug(slug);
+    const id = existing?.id ?? input.id ?? randomUUID();
+    const now = Date.now();
+    const kind = input.kind ?? "topic";
+    const sort = input.sort ?? 0;
+    const enabled = input.enabled !== false;
+    const icon = input.icon ?? null;
+    const description = input.description ?? null;
+
+    await this.withTransaction(async () => {
+      if (existing) {
+        await this.run(
+          "UPDATE collections SET title = ?, description = ?, kind = ?, icon = ?, sort = ?, enabled = ?, updated_at = ? WHERE id = ?",
+          [input.title, description, kind, icon, sort, enabled ? 1 : 0, now, id],
+        );
+      } else {
+        await this.run(
+          "INSERT INTO collections (id, slug, title, description, kind, icon, sort, enabled, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+          [id, slug, input.title, description, kind, icon, sort, enabled ? 1 : 0, now, now],
+        );
+      }
+
+      if (input.sites && Array.isArray(input.sites)) {
+        await this.run("DELETE FROM collection_items WHERE collection_id = ?", [id]);
+        let itemSort = 0;
+        for (const siteRef of input.sites) {
+          const site = await this.getSite(siteRef);
+          if (site) {
+            await this.run(
+              "INSERT INTO collection_items (collection_id, site_id, sort, note) VALUES (?,?,?,?)",
+              [id, site.id, itemSort++, null],
+            );
+          }
+        }
+      }
+    });
+
+    const saved = await this.getCollectionBySlug(slug);
+    if (!saved) throw new Error("保存专题后无法读回: " + slug);
+    return saved;
+  }
 
   async listCollections(onlyEnabled = true): Promise<Collection[]> {
     const rows = await this.raw("SELECT * FROM collections ORDER BY sort ASC, title ASC", []);

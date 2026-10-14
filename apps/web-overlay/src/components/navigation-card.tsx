@@ -31,6 +31,7 @@ interface NavigationCardProps {
   onTogglePinInCategory?: (categoryId: string, siteId: string) => void
   isDraggable?: boolean
   sourceCategoryId?: string
+  isKeyboardFocused?: boolean
 }
 
 function NavigationCardImpl({
@@ -42,6 +43,7 @@ function NavigationCardImpl({
   onTogglePinInCategory,
   isDraggable = false,
   sourceCategoryId,
+  isKeyboardFocused = false,
 }: NavigationCardProps) {
   const { toast } = useToast()
   const linkTarget = siteConfig?.navigation?.linkTarget || '_blank'
@@ -107,6 +109,7 @@ function NavigationCardImpl({
         <Tooltip>
           <TooltipTrigger asChild>
             <div
+              id={`nav-card-${item.id}`}
               tabIndex={0}
               onKeyDown={handleKeyDown}
               draggable={isDraggable}
@@ -114,6 +117,7 @@ function NavigationCardImpl({
               className={cn(
                 "group relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
+                isKeyboardFocused && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-md shadow-primary/25 scale-[1.02] border-primary/80 z-20",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30"
               )}
             >
@@ -208,6 +212,7 @@ function NavigationCardImpl({
         <Tooltip>
           <TooltipTrigger asChild>
             <Card
+              id={`nav-card-${item.id}`}
               tabIndex={0}
               onKeyDown={handleKeyDown}
               draggable={isDraggable}
@@ -215,6 +220,7 @@ function NavigationCardImpl({
               className={cn(
                 "group @container relative overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
+                isKeyboardFocused && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-xl shadow-primary/30 scale-[1.02] border-primary/80 z-20",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/70 hover:ring-1 hover:ring-primary/40"
               )}
             >
@@ -354,6 +360,7 @@ function NavigationCardImpl({
       <Tooltip>
         <TooltipTrigger asChild>
           <Card
+            id={`nav-card-${item.id}`}
             tabIndex={0}
             onKeyDown={handleKeyDown}
             draggable={isDraggable}
@@ -361,6 +368,7 @@ function NavigationCardImpl({
             className={cn(
               "group @container relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
               isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
+              isKeyboardFocused && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg shadow-primary/30 scale-[1.02] border-primary/80 z-20",
               isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30"
             )}
           >

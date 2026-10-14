@@ -41,6 +41,7 @@ async function readStoredSiteConfig(ctx: { db: { dialect: string; sqlite?: unkno
 export interface SeedResult {
   categories: number;
   sites: number;
+  collections: number;
   skipped: number;
   embedded: number;
   siteConfigSeeded: boolean;
@@ -101,8 +102,25 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
     }
   }
 
+  let collections = 0;
+  for (const col of raw.collections ?? []) {
+    try {
+      await ctx.repo.upsertCollection({
+        slug: col.slug,
+        title: col.title,
+        description: col.description,
+        kind: (col.kind as any) ?? "topic",
+        sites: col.sites,
+        sort: collections,
+      });
+      collections++;
+    } catch (err) {
+      console.warn("专题导入跳过: " + col.slug, err);
+    }
+  }
+
   await ctx.close();
-  return { categories, sites, skipped, embedded, siteConfigSeeded };
+  return { categories, sites, collections, skipped, embedded, siteConfigSeeded };
 }
 
 /**

@@ -52,11 +52,7 @@ beforeAll(async () => {
     corsOrigins: ["*"],
   };
 
-  // 安全默认已改为 authRequired=true（管理接口不再默认匿名可达），
-  // 这里显式关闭以继续覆盖"开放模式"这一历史分支。
-  openCtx = await createContext(
-    loadConfig({ ...base, sqlitePath: join(dir, "open.db"), authRequired: false })
-  );
+  openCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "open.db") }));
   openApp = await buildServer(openCtx);
   await openApp.ready();
 
@@ -77,7 +73,7 @@ afterAll(async () => {
  * 1. 开放模式：存量行为零变化
  * ------------------------------------------------------------------ */
 
-describe("开放模式（显式 authRequired=false）", () => {
+describe("开放模式（默认，authRequired=false）", () => {
   it("管理面写操作无需 token", async () => {
     const res = await openApp.inject({
       method: "POST", url: "/api/sites",

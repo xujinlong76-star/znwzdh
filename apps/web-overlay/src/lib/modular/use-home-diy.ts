@@ -55,6 +55,8 @@ export interface HomeDIYConfig {
   heroDeckCollapsed: boolean
   heroDeckWidgets: string[]
   enableAdaptiveRanking: boolean
+  enableTemporalRanking?: boolean
+  enableKeyboardNav?: boolean
   // 分类可视化编排
   categoryOrder: string[]
   pinnedCategoryIds: string[]
@@ -85,6 +87,8 @@ const DEFAULT_CONFIG: HomeDIYConfig = {
   heroDeckCollapsed: false,
   heroDeckWidgets: DEFAULT_HERO_WIDGETS,
   enableAdaptiveRanking: false,
+  enableTemporalRanking: false,
+  enableKeyboardNav: true,
   categoryOrder: [],
   pinnedCategoryIds: [],
   hiddenCategoryIds: [],
@@ -329,6 +333,24 @@ export function useHomeDIY() {
     persistConfig((prev) => ({
       ...prev,
       enableAdaptiveRanking: !prev.enableAdaptiveRanking,
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
+
+  // 16.2 生物钟时序感知排版开关
+  const toggleTemporalRanking = useCallback(() => {
+    persistConfig((prev) => ({
+      ...prev,
+      enableTemporalRanking: !prev.enableTemporalRanking,
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
+
+  // 16.3 全键盘漫游导航开关
+  const toggleKeyboardNav = useCallback(() => {
+    persistConfig((prev) => ({
+      ...prev,
+      enableKeyboardNav: prev.enableKeyboardNav === false ? true : false,
       updatedAt: Date.now(),
     }))
   }, [persistConfig])
@@ -659,6 +681,10 @@ export function useHomeDIY() {
     removeSiteFromCustomCategory,
     isAdaptiveRankingEnabled: Boolean(config.enableAdaptiveRanking),
     toggleAdaptiveRanking,
+    isTemporalRankingEnabled: Boolean(config.enableTemporalRanking),
+    toggleTemporalRanking,
+    isKeyboardNavEnabled: config.enableKeyboardNav !== false,
+    toggleKeyboardNav,
     applyDIYPreset,
     exportDIYConfig,
     importDIYConfig,

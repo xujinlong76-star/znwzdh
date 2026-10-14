@@ -146,46 +146,15 @@ function isSnapshotManaged(source: string | null | undefined): boolean {
  *
  * 全量对齐的删除语义有**来源过滤**（D1 缺陷的修复），见 isSnapshotManaged。
  */
-/**
- * 跨方言事务包装。
- *
- * lite（SQLite）走 better-sqlite3 的原生 BEGIN/COMMIT/ROLLBACK —— 真事务，
- * 中途抛错时已写入的部分会整体回滚，不会留下半截数据。
- * standard（PG）当前仓储层是「每次 run 从连接池取连接」，无法在外部持有
- * 同一连接，因此降级为尽力：仍然包一层，失败时立刻抛出中断后续写入
- * （把"半截写入"的窗口压到最小）。要真正事务化需让 Repository 支持传入 client。
- */
-async function withTransaction<T>(ctx: AppContext, fn: () => Promise<T>): Promise<T> {
-  const sqlite = ctx.db.sqlite;
-  if (sqlite) {
-    sqlite.exec("BEGIN");
-    try {
-      const out = await fn();
-      sqlite.exec("COMMIT");
-      return out;
-    } catch (err) {
-      try {
-        sqlite.exec("ROLLBACK");
-      } catch {
-        /* 回滚失败也要抛出原始错误 */
-      }
-      throw err;
-    }
-  }
-  // PG：无外部连接可持，直接执行（失败立即中断）
-  return fn();
-}
-
 export async function writeNavigationData(ctx: AppContext, data: NsNavigationData): Promise<{ categories: number; sites: number }> {
   const input = Array.isArray(data?.navigationItems) ? data.navigationItems : [];
   let categoryCount = 0;
   let siteCount = 0;
 
-  return await withTransaction(ctx, async () => {
-    const existingCats = await ctx.repo.listCategories();
-    const existingSites = await ctx.repo.listSites();
-    const seenCategoryIds = new Set<string>();
-    const seenSiteIds = new Set<string>();
+  const existingCats = await ctx.repo.listCategories();
+  const existingSites = await ctx.repo.listSites();
+  const seenCategoryIds = new Set<string>();
+  const seenSiteIds = new Set<string>();
 
   let catSort = 0;
   for (const top of input) {
@@ -255,12 +224,11 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
   if (removedSiteIds.length > 0) {
     await ctx.vectors.remove(removedSiteIds).catch(() => undefined);
   }
-    for (const c of existingCats) {
-      if (isSnapshotManaged(c.source) && !seenCategoryIds.has(c.id)) await ctx.repo.deleteCategory(c.id);
-    }
+  for (const c of existingCats) {
+    if (isSnapshotManaged(c.source) && !seenCategoryIds.has(c.id)) await ctx.repo.deleteCategory(c.id);
+  }
 
-    return { categories: categoryCount, sites: siteCount };
-  });
+  return { categories: categoryCount, sites: siteCount };
 }
 
 async function upsertSite(

@@ -1,6 +1,5 @@
 'use client'
 
-import { memo } from 'react'
 import Link from 'next/link'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/registry/new-york/ui/card'
 import type { NavigationSubItem } from '@/types/navigation'
@@ -13,13 +12,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Eye, Star, Zap, Pin, Check } from 'lucide-react'
+import { Eye, Star, Zap, Pin } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { useToast } from "@/components/ui/use-toast"
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { cn } from '@/lib/utils'
-import { safeHref } from '@/lib/safe-url'
 
 interface NavigationCardProps {
   item: NavigationSubItem
@@ -27,17 +25,12 @@ interface NavigationCardProps {
   onPeek?: (item: NavigationSubItem) => void
   cardDisplayMode?: CardDisplayMode
   isPinnedInCategory?: boolean
-  /** 传 (categoryId, siteId)：把 categoryId 作为参数下传，父级才能给稳定引用（memo 前提） */
-  onTogglePinInCategory?: (categoryId: string, siteId: string) => void
+  onTogglePinInCategory?: (siteId: string) => void
   isDraggable?: boolean
   sourceCategoryId?: string
-  isKeyboardFocused?: boolean
-  isSelectMode?: boolean
-  isSelected?: boolean
-  onToggleSelect?: (siteId: string) => void
 }
 
-function NavigationCardImpl({
+export function NavigationCard({
   item,
   siteConfig,
   onPeek,
@@ -46,10 +39,6 @@ function NavigationCardImpl({
   onTogglePinInCategory,
   isDraggable = false,
   sourceCategoryId,
-  isKeyboardFocused = false,
-  isSelectMode = false,
-  isSelected = false,
-  onToggleSelect,
 }: NavigationCardProps) {
   const { toast } = useToast()
   const linkTarget = siteConfig?.navigation?.linkTarget || '_blank'
@@ -100,18 +89,12 @@ function NavigationCardImpl({
     e.preventDefault()
     e.stopPropagation()
     if (onTogglePinInCategory) {
-      onTogglePinInCategory(sourceCategoryId ?? '', item.id)
+      onTogglePinInCategory(item.id)
       toast({
         title: isPinnedInCategory ? '已取消分类内置顶' : '📌 已在当前分类置顶',
         description: isPinnedInCategory ? `站点「${item.title}」已恢复默认排序` : `站点「${item.title}」已优先排至该分类首位`,
       })
     }
-  }
-
-  const handleToggleSelect = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    onToggleSelect?.(item.id)
   }
 
   // 1. 紧凑单行条形多态 (Compact Bar Mode)
@@ -121,7 +104,6 @@ function NavigationCardImpl({
         <Tooltip>
           <TooltipTrigger asChild>
             <div
-              id={`nav-card-${item.id}`}
               tabIndex={0}
               onKeyDown={handleKeyDown}
               draggable={isDraggable}
@@ -129,29 +111,11 @@ function NavigationCardImpl({
               className={cn(
                 "group relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
-                isSelected && "ring-2 ring-primary ring-offset-1 ring-offset-background bg-primary/5 dark:bg-primary/10 border-primary/70 shadow-xs",
-                isKeyboardFocused && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-md shadow-primary/25 scale-[1.02] border-primary/80 z-20",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30"
               )}
             >
-              {(isSelectMode || isSelected) && (
-                <button
-                  type="button"
-                  onClick={handleToggleSelect}
-                  aria-label={isSelected ? "取消选择" : "选择卡片"}
-                  className={cn(
-                    "w-4 h-4 rounded-md border flex items-center justify-center transition-all shrink-0 cursor-pointer",
-                    isSelected
-                      ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                      : "border-muted-foreground/40 bg-background/80 hover:border-primary"
-                  )}
-                >
-                  {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                </button>
-              )}
-
               <Link
-                href={safeHref(item.href)}
+                href={item.href}
                 target={linkTarget}
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
@@ -160,7 +124,6 @@ function NavigationCardImpl({
                 <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover:scale-105">
                   <SiteFavicon
                     title={item.title}
-                    url={item.href}
                     icon={item.icon}
                     useDefaultIcon={item.useDefaultIcon}
                     className="w-full h-full object-contain rounded-xs"
@@ -242,7 +205,6 @@ function NavigationCardImpl({
         <Tooltip>
           <TooltipTrigger asChild>
             <Card
-              id={`nav-card-${item.id}`}
               tabIndex={0}
               onKeyDown={handleKeyDown}
               draggable={isDraggable}
@@ -250,32 +212,11 @@ function NavigationCardImpl({
               className={cn(
                 "group @container relative overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
-                isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/5 dark:bg-primary/10 border-primary/70 shadow-lg shadow-primary/10",
-                isKeyboardFocused && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-xl shadow-primary/30 scale-[1.02] border-primary/80 z-20",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/70 hover:ring-1 hover:ring-primary/40"
               )}
             >
-              {(isSelectMode || isSelected) && (
-                <button
-                  type="button"
-                  onClick={handleToggleSelect}
-                  aria-label={isSelected ? "取消选择" : "选择卡片"}
-                  className={cn(
-                    "absolute top-2 left-2 z-20 w-5 h-5 rounded-md border flex items-center justify-center transition-all cursor-pointer shadow-xs",
-                    isSelected
-                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                      : "border-border/80 bg-background/90 hover:border-primary hover:scale-105"
-                  )}
-                >
-                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                </button>
-              )}
-
               {isPinnedInCategory && (
-                <div className={cn(
-                  "absolute top-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-medium",
-                  (isSelectMode || isSelected) ? "left-8.5" : "left-1.5"
-                )}>
+                <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-medium">
                   <Pin className="w-2.5 h-2.5 fill-amber-500" />
                   <span>已置顶</span>
                 </div>
@@ -293,7 +234,6 @@ function NavigationCardImpl({
                     <div className="flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                       <SiteFavicon
                         title={item.title}
-                        url={item.href}
                         icon={item.icon}
                         useDefaultIcon={item.useDefaultIcon}
                         className="w-full h-full object-contain rounded-sm"
@@ -411,7 +351,6 @@ function NavigationCardImpl({
       <Tooltip>
         <TooltipTrigger asChild>
           <Card
-            id={`nav-card-${item.id}`}
             tabIndex={0}
             onKeyDown={handleKeyDown}
             draggable={isDraggable}
@@ -419,32 +358,11 @@ function NavigationCardImpl({
             className={cn(
               "group @container relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
               isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
-              isSelected && "ring-2 ring-primary ring-offset-1 ring-offset-background bg-primary/5 dark:bg-primary/10 border-primary/70 shadow-md shadow-primary/10",
-              isKeyboardFocused && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg shadow-primary/30 scale-[1.02] border-primary/80 z-20",
               isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30"
             )}
           >
-            {(isSelectMode || isSelected) && (
-              <button
-                type="button"
-                onClick={handleToggleSelect}
-                aria-label={isSelected ? "取消选择" : "选择卡片"}
-                className={cn(
-                  "absolute top-1.5 left-1.5 z-20 w-4.5 h-4.5 rounded-md border flex items-center justify-center transition-all cursor-pointer shadow-xs",
-                  isSelected
-                    ? "bg-primary text-primary-foreground border-primary shadow-2xs"
-                    : "border-border/80 bg-background/90 hover:border-primary hover:scale-105"
-                )}
-              >
-                {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
-              </button>
-            )}
-
             {isPinnedInCategory && (
-              <div className={cn(
-                "absolute top-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-medium",
-                (isSelectMode || isSelected) ? "left-7.5" : "left-1.5"
-              )}>
+              <div className="absolute top-1.5 left-1.5 z-10 flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 font-medium">
                 <Pin className="w-2.5 h-2.5 fill-amber-500" />
                 <span>已置顶</span>
               </div>
@@ -462,7 +380,6 @@ function NavigationCardImpl({
                   <div className="flex-shrink-0 w-9 h-9 @[280px]:w-10 @[280px]:h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                     <SiteFavicon
                       title={item.title}
-                      url={item.href}
                       icon={item.icon}
                       useDefaultIcon={item.useDefaultIcon}
                       className="w-full h-full object-contain rounded-xs"
@@ -572,10 +489,3 @@ function NavigationCardImpl({
     </TooltipProvider>
   )
 }
-
-/**
- * memo：首页/分类页一次渲染数百张卡片，父组件任何 state 变化（折叠、拖拽悬停、
- * 搜索）都会让全部卡片重渲染。前提是 props 引用稳定 —— 父级已把回调 useCallback 化。
- */
-export const NavigationCard = memo(NavigationCardImpl)
-

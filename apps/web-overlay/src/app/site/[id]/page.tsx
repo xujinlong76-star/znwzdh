@@ -27,7 +27,7 @@ export default function SiteDetailPage() {
 
   const handleCopyUrl = () => {
     if (!site?.url) return
-    void navigator.clipboard?.writeText(site.url)?.catch(() => {})
+    navigator.clipboard.writeText(site.url)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

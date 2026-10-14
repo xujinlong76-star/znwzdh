@@ -10,11 +10,10 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { SiteFavicon } from '@/components/site-favicon'
-import { ExternalLink, Star, ShieldCheck, Sparkles, Zap, ArrowRight, Eye, Code, Search, History, Archive } from 'lucide-react'
+import { ExternalLink, Star, ShieldCheck, Sparkles, Zap, ArrowRight, Eye, Code, Search } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { buildWaybackSnapshotUrl, buildWaybackSaveUrl } from '@/lib/wayback-resolver'
 
 interface SitePeekDialogProps {
   item: NavigationSubItem | null
@@ -46,7 +45,6 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
               <div className="w-11 h-11 p-2 rounded-xl bg-muted/60 border border-border/60 shadow-xs flex-shrink-0 flex items-center justify-center">
                 <SiteFavicon
                   title={item.title}
-                  url={item.href}
                   icon={item.icon}
                   useDefaultIcon={item.useDefaultIcon}
                   className="w-full h-full object-contain"
@@ -72,27 +70,15 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                 </DialogDescription>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 h-8.5 px-2.5 text-xs border-border/70 hover:bg-muted font-medium"
-                title="通过 Internet Archive Wayback Machine 访问该站点的历史镜像快照"
-                onClick={() => window.open(buildWaybackSnapshotUrl(item.href), '_blank', 'noopener,noreferrer')}
-              >
-                <History className="w-3.5 h-3.5 text-indigo-500" />
-                <span className="hidden sm:inline">时间机器</span>
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                className="gap-1.5 shrink-0 h-8.5 px-3.5 shadow-xs font-medium"
-                onClick={() => window.open(item.href, '_blank', 'noopener,noreferrer')}
-              >
-                <span>访问主站</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </Button>
-            </div>
+            <Button
+              variant="default"
+              size="sm"
+              className="gap-1.5 shrink-0 h-8.5 px-3.5 shadow-xs font-medium"
+              onClick={() => window.open(item.href, '_blank', 'noopener,noreferrer')}
+            >
+              <span>访问主站</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </Button>
           </div>
         </DialogHeader>
 
@@ -229,24 +215,13 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
             <span>网址:</span>
             <span className="font-mono text-foreground/80 truncate max-w-[280px]">{item.href}</span>
           </div>
-          <div className="flex items-center gap-3">
-            {item.health && (
-              <div className="flex items-center gap-1.5 font-mono">
-                <span className={`w-2 h-2 rounded-full ${item.health.ok ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                <span>SLA: {item.health.ok ? '在线正常' : '响应缓慢'}</span>
-                {item.health.latencyMs && <span>({item.health.latencyMs}ms)</span>}
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => window.open(buildWaybackSaveUrl(item.href), '_blank', 'noopener,noreferrer')}
-              className="text-[11px] text-muted-foreground hover:text-foreground hover:underline transition-colors flex items-center gap-1 cursor-pointer"
-              title="请求 Internet Archive 立即归档此网页快照"
-            >
-              <Archive className="w-3 h-3 text-amber-500" />
-              <span>永久存证</span>
-            </button>
-          </div>
+          {item.health && (
+            <div className="flex items-center gap-1.5 font-mono">
+              <span className={`w-2 h-2 rounded-full ${item.health.ok ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              <span>SLA: {item.health.ok ? '在线正常' : '响应缓慢'}</span>
+              {item.health.latencyMs && <span>({item.health.latencyMs}ms)</span>}
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

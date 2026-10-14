@@ -351,7 +351,7 @@ export default function ResourceManagement() {
   };
 
   const copyToClipboard = (url: string) => {
-    void navigator.clipboard?.writeText(url)?.then(() => {
+    navigator.clipboard.writeText(url).then(() => {
       toast({
         title: "成功",
         description: "链接已复制到剪贴板",

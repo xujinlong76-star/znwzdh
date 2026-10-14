@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import { SUBMISSION_LABELS, parseSubmissionFromIssueBody } from '@/types/submission'
 import { getFileContent, commitFile } from '@/lib/github'
 
-export const runtime = 'nodejs'
+export const runtime = 'edge'
 
 
 
@@ -100,7 +100,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
         if (action === 'approve') {
             // 验证管理员有 accessToken
-            if (!getServerGithubToken(session.user.id)!) {
+            if (!session.user.accessToken) {
                 return NextResponse.json(
                     { success: false, message: '缺少访问令牌，请重新登录' },
                     { status: 401 }
@@ -171,7 +171,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
                     filePath,
                     JSON.stringify(navigationData, null, 2),
                     `✅ Add submission: ${submissionData.title}`,
-                    getServerGithubToken(session.user.id)!
+                    session.user.accessToken
                 )
             } catch (commitError) {
                 console.error('GitHub file commit error:', commitError)

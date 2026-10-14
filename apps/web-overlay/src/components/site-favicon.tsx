@@ -1,47 +1,46 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { LetterAvatar } from './letter-avatar'
+import React, { useState } from 'react'
+import { Globe } from 'lucide-react'
 
-interface SiteFaviconProps {
-  title: string
-  url?: string
+export interface SiteFaviconProps {
+  title?: string
   icon?: string
   useDefaultIcon?: boolean
   className?: string
 }
 
-/**
- * 自适应网站 Favicon 徽标管线
- * - 若 useDefaultIcon === true、无 icon、或图片远程加载失败 (onError)
- *   自动退避至「确定性自适应渐变徽标」(Deterministic Gradient Monogram Avatar)，
- *   彻底终结死链图裂与千篇一律的灰色占位符。
- */
 export function SiteFavicon({
-  title,
-  url,
+  title = '',
   icon,
-  useDefaultIcon,
-  className,
+  useDefaultIcon = false,
+  className = 'w-full h-full object-contain',
 }: SiteFaviconProps) {
-  const [errored, setErrored] = useState(false)
+  const [loadFailed, setLoadFailed] = useState(false)
 
-  // icon 变化时重置错误态(同一组件实例复用于不同 item 时)
-  useEffect(() => {
-    setErrored(false)
-  }, [icon])
-
-  if (useDefaultIcon || !icon || errored) {
-    return <LetterAvatar title={title} url={url} className={className} />
+  // 若明确指定使用默认图标，或缺少图标地址，或图片加载失败，展示首字头像/缺省图标
+  if (useDefaultIcon || !icon || loadFailed) {
+    const firstChar = title ? title.trim().charAt(0).toUpperCase() : ''
+    if (firstChar) {
+      return (
+        <div
+          className={`flex items-center justify-center font-bold text-xs select-none rounded-sm bg-primary/10 text-primary ${className}`}
+          title={title}
+        >
+          {firstChar}
+        </div>
+      )
+    }
+    return <Globe className={`text-muted-foreground ${className}`} />
   }
 
   return (
     <img
       src={icon}
-      alt={`${title} icon`}
+      alt={title ? `${title} 图标` : '站点图标'}
       className={className}
       loading="lazy"
-      onError={() => setErrored(true)}
+      onError={() => setLoadFailed(true)}
     />
   )
 }

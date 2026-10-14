@@ -6,7 +6,7 @@ import { FileText, Eye, Edit3, Copy, Check, Sparkles } from 'lucide-react'
 export function NotesWidget() {
   const [content, setContent] = useState('')
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved')
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved')
   const [copied, setCopied] = useState(false)
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -38,12 +38,7 @@ export function NotesWidget() {
       try {
         localStorage.setItem('navhub_modular_quick_notes', val)
         setSaveStatus('saved')
-      } catch (e) {
-        // 此前 catch 为空：配额超限 / 隐私模式下 UI 会永远停在「保存中」，
-        // 用户以为写进去了，实际刷新即丢。这里明确给出失败态。
-        console.warn('便签写入 localStorage 失败', e)
-        setSaveStatus('error')
-      }
+      } catch {}
     }, 600)
   }
 
@@ -199,20 +194,10 @@ export function NotesWidget() {
         <div className="flex items-center gap-1">
           <span
             className={`w-1.5 h-1.5 rounded-full ${
-              saveStatus === 'saved'
-                ? 'bg-emerald-500'
-                : saveStatus === 'error'
-                  ? 'bg-red-500'
-                  : 'bg-amber-500 animate-pulse'
+              saveStatus === 'saved' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
             }`}
           />
-          <span className="font-mono">
-            {saveStatus === 'saved'
-              ? '自动已存'
-              : saveStatus === 'error'
-                ? '保存失败（存储不可用）'
-                : '正在保存...'}
-          </span>
+          <span className="font-mono">{saveStatus === 'saved' ? '自动已存' : '正在保存...'}</span>
         </div>
         <div className="font-mono text-muted-foreground/70">
           {content.length} 字符 · {content.split('\n').filter(Boolean).length} 行

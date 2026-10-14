@@ -15,7 +15,7 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
 
   const handleCopy = () => {
     if (recipe.quickStartSnippet) {
-      void navigator.clipboard?.writeText(recipe.quickStartSnippet)?.catch(() => {})
+      void navigator.clipboard.writeText(recipe.quickStartSnippet)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }

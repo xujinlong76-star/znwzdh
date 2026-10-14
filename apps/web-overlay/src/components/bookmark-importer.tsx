@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/registry/new-york/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -26,10 +26,22 @@ const CATEGORY_OPTIONS = [
 
 export function BookmarkImporter() {
   const [bookmarks, setBookmarks] = useState<ParsedBookmark[]>([])
+  const [categories, setCategories] = useState<Array<{ id: string; label: string }>>([])
   const [isParsing, setIsParsing] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ success: number; failed: number; duplicate: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/hub/categories')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setCategories(data.map((c: any) => ({ id: c.id, label: (c.icon ? c.icon + " " : "") + c.title })))
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -79,28 +91,32 @@ export function BookmarkImporter() {
     let failedCount = 0
     let duplicateCount = 0
 
-    // 分批次调用中枢创建接口
-    for (const b of toImport) {
+    // 分块并发批量入库，大幅减少网络往返并避免触发 300/min 限流
+    const chunkSize = 50
+    for (let i = 0; i < toImport.length; i += chunkSize) {
+      const chunk = toImport.slice(i, i + chunkSize)
       try {
-        const res = await fetch('/api/hub/sites', {
+        const res = await fetch('/api/hub/sites/batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            url: b.url,
-            title: b.title,
-            categoryId: b.suggestedCategory,
-            source: 'bookmark-import',
+            sites: chunk.map((b) => ({
+              url: b.url,
+              title: b.title,
+              categoryId: b.suggestedCategory,
+              source: 'bookmark-import',
+            })),
           }),
         })
         if (res.ok) {
-          successCount++
-        } else if (res.status === 409) {
-          duplicateCount++
+          const data = await res.json().catch(() => ({}))
+          successCount += data.created ?? chunk.length
+          duplicateCount += data.duplicates ?? 0
         } else {
-          failedCount++
+          failedCount += chunk.length
         }
       } catch {
-        failedCount++
+        failedCount += chunk.length
       }
     }
 
@@ -260,7 +276,7 @@ export function BookmarkImporter() {
                       }}
                       className="bg-background border border-border/70 rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-1 focus:ring-primary shrink-0"
                     >
-                      {CATEGORY_OPTIONS.map((opt) => (
+                      {(categories.length > 0 ? categories : CATEGORY_OPTIONS).map((opt) => (
                         <option key={opt.id} value={opt.id}>
                           {opt.label}
                         </option>

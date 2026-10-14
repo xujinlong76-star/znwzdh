@@ -101,6 +101,11 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
     addSiteToCustomCategory,
     reorderCategory,
     toggleCollapseCategory,
+    siteCategoryOverrides,
+    reclassifySite,
+    customWallpaperUrl,
+    glassmorphismBlur,
+    cardOpacity,
   } = useHomeDIY()
 
   // 拖拽编排分类状态
@@ -171,8 +176,29 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
       allIds.push(cat.id)
     }
 
+    // 应用卡片跨分类归类重映射 (siteCategoryOverrides)
+    let processedCombined = combined;
+    if (siteCategoryOverrides && Object.keys(siteCategoryOverrides).length > 0) {
+      const movedMap: Record<string, any[]> = {};
+      processedCombined = combined.map((cat) => {
+        const remaining = ((cat.items as any[]) || []).filter((item: any) => {
+          const targetId = siteCategoryOverrides[item.id];
+          if (targetId && targetId !== cat.id) {
+            if (!movedMap[targetId]) movedMap[targetId] = [];
+            movedMap[targetId]!.push(item);
+            return false;
+          }
+          return true;
+        });
+        return { ...cat, items: remaining };
+      }).map((cat) => {
+        const incoming = movedMap[cat.id] || [];
+        return incoming.length > 0 ? { ...cat, items: [...(cat.items || []), ...incoming] } : cat;
+      });
+    }
+
     // 过滤掉隐藏的分类
-    const visible = combined.filter((c) => !hiddenCategoryIds.includes(c.id))
+    const visible = processedCombined.filter((c) => !hiddenCategoryIds.includes(c.id))
 
     // 排序逻辑：置顶分类优先，其余依据 categoryOrder，其次保留原序
     const sorted = [...visible].sort((a, b) => {
@@ -288,7 +314,16 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
         </div>
       </div>
 
-      <main className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-300", canvasBgClass)}>
+      <main
+        className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-300", canvasBgClass)}
+        style={customWallpaperUrl ? {
+          backgroundImage: `url(${customWallpaperUrl})`,
+          backgroundSize: 'cover',
+          backgroundAttachment: 'fixed',
+          backgroundPosition: 'center',
+          backdropFilter: `blur(${glassmorphismBlur || 0}px)`
+        } : undefined}
+      >
         <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-4 sm:px-6 border-b border-border/40 shadow-2xs">
           <div className="flex h-14 items-center justify-between gap-3">
             <div className="flex-1 max-w-xl">
@@ -532,8 +567,52 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                         }
                       }}
                       onDrop={(e) => {
-                        // 1. 处理卡片拖拽收录进专属分类
-                        if (isCustom && e.dataTransfer.types.includes('text/navhub-card-payload')) {
+                        // 1. 处理卡片拖拽跨分类移动与自建分类收录
+                        if (e.dataTransfer.types.includes('text/navhub-card-payload')) {
+                          e.preventDefault()
+                          setDragOverCustomCatId(null)
+                          try {
+                            const raw = e.dataTransfer.getData('text/navhub-card-payload')
+                            if (raw) {
+                              const card = JSON.parse(raw)
+                              if (isCustom && card.title && card.href) {
+                                const exists = (category.items as any[])?.some(
+                                  (item: any) => item.href === card.href || item.title === card.title
+                                )
+                                if (exists) {
+                                  toast({
+                                    title: 'ℹ️ 站点已存在',
+                                    description: `站点「${card.title}」已收录在「${category.title}」中。`,
+                                  })
+                                  return
+                                }
+                                addSiteToCustomCategory(category.id, {
+                                  id: `custom_site_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                                  title: card.title,
+                                  href: card.href,
+                                  description: card.description || undefined,
+                                  icon: card.icon || undefined,
+                                })
+                                toast({
+                                  title: '📥 拖拽收录成功',
+                                  description: `已成功将站点「${card.title}」收录进专属分类「${category.title}」！`,
+                                })
+                                return
+                              } else if (isEditingLayout && card.id && card.sourceCategoryId !== category.id) {
+                                reclassifySite(card.id, category.id)
+                                toast({
+                                  title: '🔄 跨分类迁移成功',
+                                  description: `已将站点「${card.title}」重排归类至「${category.title}」！`,
+                                })
+                                return
+                              }
+                            }
+                          } catch (err) {
+                            console.error('拖拽卡片解析失败', err)
+                          }
+                          return
+                        }
+                        if (false && isCustom) {
                           e.preventDefault()
                           setDragOverCustomCatId(null)
                           try {

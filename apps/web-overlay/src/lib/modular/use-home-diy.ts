@@ -55,8 +55,6 @@ export interface HomeDIYConfig {
   heroDeckCollapsed: boolean
   heroDeckWidgets: string[]
   enableAdaptiveRanking: boolean
-  enableTemporalRanking?: boolean
-  enableKeyboardNav?: boolean
   // 分类可视化编排
   categoryOrder: string[]
   pinnedCategoryIds: string[]
@@ -64,6 +62,10 @@ export interface HomeDIYConfig {
   collapsedCategoryIds: string[]
   pinnedSiteIdsByCategory: Record<string, string[]>
   customCategories: CustomCategory[]
+  siteCategoryOverrides: Record<string, string>
+  customWallpaperUrl?: string
+  glassmorphismBlur?: number
+  cardOpacity?: number
   updatedAt: number
 }
 
@@ -87,14 +89,16 @@ const DEFAULT_CONFIG: HomeDIYConfig = {
   heroDeckCollapsed: false,
   heroDeckWidgets: DEFAULT_HERO_WIDGETS,
   enableAdaptiveRanking: false,
-  enableTemporalRanking: false,
-  enableKeyboardNav: true,
   categoryOrder: [],
   pinnedCategoryIds: [],
   hiddenCategoryIds: [],
   collapsedCategoryIds: [],
   pinnedSiteIdsByCategory: {},
   customCategories: [],
+  siteCategoryOverrides: {},
+  customWallpaperUrl: '',
+  glassmorphismBlur: 12,
+  cardOpacity: 0.9,
   updatedAt: Date.now(),
 }
 
@@ -333,24 +337,6 @@ export function useHomeDIY() {
     persistConfig((prev) => ({
       ...prev,
       enableAdaptiveRanking: !prev.enableAdaptiveRanking,
-      updatedAt: Date.now(),
-    }))
-  }, [persistConfig])
-
-  // 16.2 生物钟时序感知排版开关
-  const toggleTemporalRanking = useCallback(() => {
-    persistConfig((prev) => ({
-      ...prev,
-      enableTemporalRanking: !prev.enableTemporalRanking,
-      updatedAt: Date.now(),
-    }))
-  }, [persistConfig])
-
-  // 16.3 全键盘漫游导航开关
-  const toggleKeyboardNav = useCallback(() => {
-    persistConfig((prev) => ({
-      ...prev,
-      enableKeyboardNav: prev.enableKeyboardNav === false ? true : false,
       updatedAt: Date.now(),
     }))
   }, [persistConfig])
@@ -636,8 +622,107 @@ export function useHomeDIY() {
     }))
   }, [persistConfig])
 
+
+  // 跨分类重归类卡片 (Cross-Category Reclassification)
+  const reclassifySite = useCallback((siteId: string, targetCategoryId: string) => {
+    persistConfig((prev) => {
+      const nextOverrides = { ...prev.siteCategoryOverrides, [siteId]: targetCategoryId };
+      return { ...prev, siteCategoryOverrides: nextOverrides, updatedAt: Date.now() };
+    });
+  }, [persistConfig]);
+
+  const resetSiteCategoryOverrides = useCallback(() => {
+    persistConfig((prev) => {
+      return { ...prev, siteCategoryOverrides: {}, updatedAt: Date.now() };
+    });
+  }, [persistConfig]);
+
+  // 自定义壁纸与毛玻璃美学调节
+  const setCustomWallpaper = useCallback((url: string) => {
+    persistConfig((prev) => {
+      return { ...prev, customWallpaperUrl: url.trim(), updatedAt: Date.now() };
+    });
+  }, [persistConfig]);
+
+  const setAestheticSliders = useCallback((blur: number, opacity: number) => {
+    persistConfig((prev) => {
+      return {
+        ...prev,
+        glassmorphismBlur: Math.min(30, Math.max(0, blur)),
+        cardOpacity: Math.min(1.0, Math.max(0.2, opacity)),
+        updatedAt: Date.now()
+      };
+    });
+  }, [persistConfig]);
+
+  // URL Hash 免登预设分享与即时加载
+  const exportPresetToUrlHash = useCallback((): string => {
+    try {
+      const payload = {
+        v: config.version,
+        vm: config.viewMode,
+        cdm: config.cardDisplayMode,
+        bg: config.canvasBackground,
+        ac: config.accentColor,
+        co: config.categoryOrder,
+        pco: config.pinnedCategoryIds,
+        hco: config.hiddenCategoryIds,
+        sco: config.siteCategoryOverrides,
+        wp: config.customWallpaperUrl,
+        gb: config.glassmorphismBlur,
+        co_op: config.cardOpacity,
+      };
+      const json = JSON.stringify(payload);
+      const b64 = typeof window !== 'undefined' ? btoa(encodeURIComponent(json)) : '';
+      return `${window.location.origin}${window.location.pathname}#diy=${b64}`;
+    } catch {
+      return '';
+    }
+  }, [config]);
+
+  const importPresetFromUrlHash = useCallback((hashStr?: string): boolean => {
+    try {
+      const hash = hashStr || (typeof window !== 'undefined' ? window.location.hash : '');
+      if (!hash.includes('#diy=')) return false;
+      const b64 = hash.replace(/^#diy=/, '');
+      const json = decodeURIComponent(atob(b64));
+      const parsed = JSON.parse(json);
+      if (!parsed || typeof parsed !== 'object') return false;
+
+      persistConfig((prev) => ({
+        ...prev,
+        viewMode: parsed.vm || prev.viewMode,
+        cardDisplayMode: parsed.cdm || prev.cardDisplayMode,
+        canvasBackground: parsed.bg || prev.canvasBackground,
+        accentColor: parsed.ac || prev.accentColor,
+        categoryOrder: Array.isArray(parsed.co) ? parsed.co : prev.categoryOrder,
+        pinnedCategoryIds: Array.isArray(parsed.pco) ? parsed.pco : prev.pinnedCategoryIds,
+        hiddenCategoryIds: Array.isArray(parsed.hco) ? parsed.hco : prev.hiddenCategoryIds,
+        siteCategoryOverrides: parsed.sco && typeof parsed.sco === 'object' ? parsed.sco : prev.siteCategoryOverrides,
+        customWallpaperUrl: parsed.wp || prev.customWallpaperUrl,
+        glassmorphismBlur: typeof parsed.gb === 'number' ? parsed.gb : prev.glassmorphismBlur,
+        cardOpacity: typeof parsed.co_op === 'number' ? parsed.co_op : prev.cardOpacity,
+        updatedAt: Date.now(),
+      }));
+      return true;
+    } catch {
+      return false;
+    }
+  }, [persistConfig]);
+
   return {
     config,
+    reclassifySite,
+    resetSiteCategoryOverrides,
+    setCustomWallpaper,
+    setAestheticSliders,
+    exportPresetToUrlHash,
+    importPresetFromUrlHash,
+    siteCategoryOverrides: config.siteCategoryOverrides || {},
+    customWallpaperUrl: config.customWallpaperUrl || '',
+    glassmorphismBlur: config.glassmorphismBlur ?? 12,
+    cardOpacity: config.cardOpacity ?? 0.9,
+
     mounted,
     viewMode: config.viewMode,
     cardDisplayMode: config.cardDisplayMode,
@@ -681,10 +766,6 @@ export function useHomeDIY() {
     removeSiteFromCustomCategory,
     isAdaptiveRankingEnabled: Boolean(config.enableAdaptiveRanking),
     toggleAdaptiveRanking,
-    isTemporalRankingEnabled: Boolean(config.enableTemporalRanking),
-    toggleTemporalRanking,
-    isKeyboardNavEnabled: config.enableKeyboardNav !== false,
-    toggleKeyboardNav,
     applyDIYPreset,
     exportDIYConfig,
     importDIYConfig,

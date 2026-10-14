@@ -17,7 +17,6 @@ import { Flame, Sparkles, ArrowLeft, Trophy, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
-import { safeHref } from '@/lib/safe-url'
 
 export default function HotPage() {
   const [trending, setTrending] = useState<HubSite[]>([])
@@ -76,7 +75,7 @@ export default function HotPage() {
             <div className="shrink-0 pt-0.5">
               {getRankBadge(i)}
             </div>
-            <a href={safeHref(site.url)} target="_blank" rel="noopener noreferrer" className="block min-w-0 flex-1">
+            <a href={site.url} target="_blank" rel="noopener noreferrer" className="block min-w-0 flex-1">
               <div className="flex items-start gap-2.5">
                 <div className="shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                   {site.iconKey ? (

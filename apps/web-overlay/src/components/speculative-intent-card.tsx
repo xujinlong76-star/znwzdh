@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Copy, Sparkles, Calculator, Clock, Palette, FileCode, Hash, ArrowRight } from 'lucide-react'
+import { Check, Copy, Sparkles, Calculator, Clock, Palette, FileCode, Hash, ArrowRight, Timer, KeyRound, Terminal } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import type { SpeculativeIntentResult } from '@/lib/speculative'
 
@@ -24,6 +24,12 @@ export function SpeculativeIntentCard({ result }: SpeculativeIntentCardProps) {
 
   const getIcon = () => {
     switch (result.type) {
+      case 'cron':
+        return <Timer className="w-4 h-4 text-emerald-500" />
+      case 'jwt':
+        return <KeyRound className="w-4 h-4 text-amber-500" />
+      case 'curl_to_fetch':
+        return <Terminal className="w-4 h-4 text-sky-500" />
       case 'color':
         return <Palette className="w-4 h-4 text-pink-500" />
       case 'math':

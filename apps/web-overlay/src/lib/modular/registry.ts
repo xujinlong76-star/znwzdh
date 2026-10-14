@@ -1,3 +1,5 @@
+import { RssFeedWidget } from '@/components/modular/modules/rss-feed-widget'
+import { LiveApiWidget } from '@/components/modular/modules/live-api-widget'
 import React from 'react'
 import type { ModularWidgetDefinition, ModularPresetTemplate, WidgetInstance } from '@/types/modular'
 import { ClockWidget } from '@/components/modular/modules/clock-widget'
@@ -212,6 +214,36 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     maxRowSpan: 3,
     badge: '安全沙箱',
     component: IframeWidget,
+  },
+  'live-api': {
+    type: 'live-api',
+    title: 'REST 动态接口遥测',
+    description: '低代码轮询任意外部 REST/JSON API 接口，实时提取并监控关键数据指标。',
+    category: 'tools',
+    icon: 'Activity',
+    defaultColSpan: 4,
+    defaultRowSpan: 1,
+    minColSpan: 3,
+    maxColSpan: 8,
+    minRowSpan: 1,
+    maxRowSpan: 2,
+    badge: '低代码动态流',
+    component: LiveApiWidget,
+  },
+  'rss-feed': {
+    type: 'rss-feed',
+    title: '技术动态与社区早报',
+    description: '聚合前沿框架 Release、博客动态与社区头条，保持敏锐技术嗅觉。',
+    category: 'content',
+    icon: 'Rss',
+    defaultColSpan: 5,
+    defaultRowSpan: 2,
+    minColSpan: 4,
+    maxColSpan: 8,
+    minRowSpan: 1,
+    maxRowSpan: 3,
+    badge: '技术动态',
+    component: RssFeedWidget,
   },
 }
 

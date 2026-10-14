@@ -23,6 +23,9 @@ import {
   History,
   Trash2,
   Menu,
+  BarChart3,
+  ListChecks,
+  KeyRound,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
 import {
@@ -87,6 +90,16 @@ const menuItems = [
     icon: Inbox
   },
   {
+    title: "运营数据",
+    href: "/admin/stats",
+    icon: BarChart3
+  },
+  {
+    title: "任务队列",
+    href: "/admin/jobs",
+    icon: ListChecks
+  },
+  {
     title: "审计日志",
     href: "/admin/audit",
     icon: History
@@ -95,6 +108,11 @@ const menuItems = [
     title: "回收站",
     href: "/admin/trash",
     icon: Trash2
+  },
+  {
+    title: "API Token",
+    href: "/admin/tokens",
+    icon: KeyRound
   },
   {
     title: "资源管理",

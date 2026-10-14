@@ -33,8 +33,6 @@ import {
   Undo2,
   Redo2,
   ChevronsUpDown,
-  SunMoon,
-  Keyboard,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -57,8 +55,7 @@ import { Input } from '@/registry/new-york/ui/input'
 import { Textarea } from '@/registry/new-york/ui/textarea'
 import { useHomeDIY, type CardDisplayMode, type CanvasBackground, type AccentColor } from '@/lib/modular/use-home-diy'
 import { useDensity } from '@/components/density-provider'
-import { BUILTIN_DIY_PRESETS, evaluateLayoutErgonomics, getTemporalTimeSlot, type DIYPreset } from '@/lib/modular/diy-presets'
-import { parseUniversalBookmarks, deduplicateBookmarkItems } from '@/lib/bookmark-parser'
+import { BUILTIN_DIY_PRESETS, evaluateLayoutErgonomics, type DIYPreset } from '@/lib/modular/diy-presets'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -92,10 +89,6 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     customCategories,
     isAdaptiveRankingEnabled,
     toggleAdaptiveRanking,
-    isTemporalRankingEnabled,
-    toggleTemporalRanking,
-    isKeyboardNavEnabled,
-    toggleKeyboardNav,
     togglePinCategory,
     toggleHideCategory,
     unhideCategory,
@@ -104,7 +97,6 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     resetCategoryLayout,
     addCustomCategory,
     deleteCustomCategory,
-    addSiteToCustomCategory,
     applyDIYPreset,
     exportDIYConfig,
     importDIYConfig,
@@ -121,6 +113,8 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     toggleCollapseCategory,
     collapseAllCategories,
     expandAllCategories,
+    exportPresetToUrlHash,
+    importPresetFromUrlHash,
   } = useHomeDIY()
 
   const { density, setDensity } = useDensity()
@@ -136,19 +130,6 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
       hiddenCategoryIds,
     })
   }, [categories, allCategoryIds, categoryTitleMap, pinnedCategoryIds, hiddenCategoryIds])
-
-  // 生物钟时段计算
-  const temporalSlot = useMemo(() => {
-    const hour = new Date().getHours()
-    const slot = getTemporalTimeSlot(hour)
-    const labels: Record<typeof slot, string> = {
-      morning: '早报',
-      workday: '日间',
-      evening: '晚间',
-      night: '深夜',
-    }
-    return { slot, label: labels[slot] }
-  }, [])
 
   // 弹窗状态
   const [isAddCatOpen, setIsAddCatOpen] = useState(false)
@@ -266,9 +247,49 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
   }
 
   // 复制配置 JSON 到剪贴板
+  // 依据香农信息熵与人机工效学的一键算法智能自愈整理
+  const handleAutoTidyLayout = () => {
+    const targetCats = categories && categories.length > 0
+      ? categories
+      : allCategoryIds.map((id) => ({ id, title: categoryTitleMap[id] || id, items: [] }));
+
+    let tidyCount = 0;
+    for (const cat of targetCats) {
+      const directCount = (cat.items || []).length;
+      const subCount = (cat.subCategories || []).reduce((acc: number, s: any) => acc + ((s.items || []).length), 0);
+      const total = directCount + subCount;
+      if (total === 0 && !hiddenCategoryIds.includes(cat.id)) {
+        toggleHideCategory(cat.id);
+        tidyCount++;
+      } else if (total > 25 && !collapsedCategoryIds.includes(cat.id)) {
+        toggleCollapseCategory(cat.id);
+        tidyCount++;
+      }
+    }
+    if (!isAdaptiveRankingEnabled) {
+      toggleAdaptiveRanking();
+      tidyCount++;
+    }
+    toast({
+      title: '🎉 算法智能自愈整理已完成！',
+      description: `已自动优化排版结构，隐藏闲置分类并开启时序半衰期推荐，健康度显著提升。`,
+    });
+  };
+
+  const handleShareUrlHash = () => {
+    const url = exportPresetToUrlHash();
+    if (url) {
+      void navigator.clipboard.writeText(url);
+      toast({
+        title: '🔗 已复制免登专属分享链接！',
+        description: '好友直接在浏览器打开该链接，即可一键预览并应用您的专属排版与壁纸。',
+      });
+    }
+  };
+
   const handleCopyConfig = () => {
     const json = exportDIYConfig()
-    void navigator.clipboard?.writeText(json)?.catch(() => {})
+    navigator.clipboard.writeText(json)
     toast({
       title: '📋 配置已复制到剪贴板',
       description: '您可以将配置妥善保管或分享给其他设备。',
@@ -299,7 +320,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     }
     try {
       const encryptedJson = await exportEncryptedDIYConfig(vaultPassphrase.trim())
-      void navigator.clipboard?.writeText(encryptedJson)?.catch(() => {})
+      navigator.clipboard.writeText(encryptedJson)
       toast({
         title: '🔐 已复制零知识加密密文',
         description: '配置数据已通过 AES-256-GCM 高度认证加密。',
@@ -333,80 +354,18 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     }
   }
 
-  // 导入明文配置或通用书签 (支持 NavHub JSON, Chrome bookmarks.html, OneTab, Markdown)
+  // 导入明文配置
   const handleImportSubmit = () => {
     if (!importJsonText.trim()) return
-
-    // 1. 优先尝试 NavHub DIY 标准配置 JSON 导入
-    const diyRes = importDIYConfig(importJsonText.trim())
-    if (diyRes.ok) {
-      toast({
-        title: '🎉 NavHub 排版配置导入成功',
-        description: diyRes.message,
-      })
-      setIsBackupOpen(false)
-      setImportJsonText('')
-      return
-    }
-
-    // 2. 尝试通用书签解析器（Chrome HTML / OneTab / Markdown）
-    const parsed = parseUniversalBookmarks(importJsonText.trim())
-    if (parsed.folders.length > 0 && parsed.totalItems > 0) {
-      let createdCatCount = 0
-      let totalAddedSites = 0
-      let totalDupes = 0
-
-      for (const folder of parsed.folders) {
-        if (!folder.items || folder.items.length === 0) continue
-
-        // 查找或新建分类
-        let catId = customCategories.find((c) => c.title === folder.title)?.id
-        if (!catId) {
-          catId = addCustomCategory(folder.title)
-          createdCatCount++
-        }
-
-        if (catId) {
-          const currentCat = customCategories.find((c) => c.id === catId)
-          const existingItems = currentCat ? currentCat.items : []
-          const deduped = deduplicateBookmarkItems(existingItems, folder.items)
-          totalDupes += deduped.stats.duplicateCount
-
-          for (const item of deduped.unique) {
-            addSiteToCustomCategory(catId, {
-              id: `imported_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-              title: item.title,
-              href: item.href,
-              description: item.description,
-              icon: item.icon,
-            })
-            totalAddedSites++
-          }
-        }
-      }
-
-      const formatNames: Record<string, string> = {
-        netscape_html: 'Chrome/Edge 书签 HTML',
-        onetab_text: 'OneTab 链接清单',
-        markdown: 'Markdown 书签文档',
-        json: 'JSON 书签集',
-      }
-
-      toast({
-        title: `🎉 成功识别并解析 ${formatNames[parsed.format] || '书签'}`,
-        description: `新建 ${createdCatCount} 个分类，收录 ${totalAddedSites} 个站点${totalDupes > 0 ? ` (自动过滤 ${totalDupes} 个重复项)` : ''}。`,
-      })
-      setIsBackupOpen(false)
-      setImportJsonText('')
-      return
-    }
-
-    // 格式未能识别
+    const res = importDIYConfig(importJsonText.trim())
     toast({
-      title: '导入失败',
-      description: '未能识别有效内容，请粘贴 NavHub JSON 配置、Chrome bookmarks.html 或 OneTab 链接列表。',
-      variant: 'destructive',
+      title: res.ok ? '🎉 导入成功' : '导入失败',
+      description: res.message,
     })
+    if (res.ok) {
+      setIsBackupOpen(false)
+      setImportJsonText('')
+    }
   }
 
   // 解密并还原加密配置
@@ -639,58 +598,6 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                 <Sparkles className={cn("w-3.5 h-3.5", isAdaptiveRankingEnabled ? "text-amber-300" : "text-violet-500")} />
                 <span className="hidden sm:inline">自适应:</span>
                 <span>{isAdaptiveRankingEnabled ? '已开' : '关'}</span>
-              </Button>
-
-              {/* 生物钟时钟流时序感知排版开关 */}
-              <Button
-                variant={isTemporalRankingEnabled ? "default" : "outline"}
-                size="sm"
-                onClick={() => {
-                  toggleTemporalRanking()
-                  toast({
-                    title: !isTemporalRankingEnabled ? '🕒 已开启生物钟时钟流排版' : '已关闭生物钟时钟流',
-                    description: !isTemporalRankingEnabled
-                      ? `当前时段为「${temporalSlot.label}」，已自动提升契合该时段的高频站点权重。`
-                      : '已恢复常规站点排序。',
-                  })
-                }}
-                className={cn(
-                  "h-8 px-2.5 rounded-full text-xs gap-1 border-border/70 transition-all",
-                  isTemporalRankingEnabled
-                    ? "bg-amber-600 hover:bg-amber-700 text-white shadow-xs border-amber-500"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                title={`生物钟时序排版：当前感知为「${temporalSlot.label}」，智能提升对应时段的站点展示优先级`}
-              >
-                <SunMoon className={cn("w-3.5 h-3.5", isTemporalRankingEnabled ? "text-yellow-200" : "text-amber-500")} />
-                <span className="hidden sm:inline">时序:</span>
-                <span>{isTemporalRankingEnabled ? temporalSlot.label : '关'}</span>
-              </Button>
-
-              {/* 全键盘极客漫游导航开关 */}
-              <Button
-                variant={isKeyboardNavEnabled ? "default" : "outline"}
-                size="sm"
-                onClick={() => {
-                  toggleKeyboardNav()
-                  toast({
-                    title: !isKeyboardNavEnabled ? '⌨️ 已开启全键盘漫游导航' : '已关闭键盘漫游',
-                    description: !isKeyboardNavEnabled
-                      ? '支持 j/k 漫游、Enter 极速直达、Space 沙箱速览、Esc 退出聚焦。'
-                      : '已恢复常规纯鼠标交互模式。',
-                  })
-                }}
-                className={cn(
-                  "h-8 px-2.5 rounded-full text-xs gap-1 border-border/70 transition-all",
-                  isKeyboardNavEnabled
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs border-emerald-500"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                title="极客全键盘漫游流：开启后可通过 Vim 键位 (j/k/h/l) 或方向键全键盘操控卡片"
-              >
-                <Keyboard className={cn("w-3.5 h-3.5", isKeyboardNavEnabled ? "text-emerald-100" : "text-emerald-500")} />
-                <span className="hidden sm:inline">键盘流:</span>
-                <span>{isKeyboardNavEnabled ? '开' : '关'}</span>
               </Button>
 
               {/* 分类全景大纲管理 */}
@@ -1087,7 +994,14 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
             /* 明文 JSON 模式 */
             <div className="py-2 space-y-3.5">
               <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={handleCopyConfig} className="text-xs gap-1.5 flex-1">
+                              <div className="pt-1">
+                <Button size="sm" onClick={handleShareUrlHash} className="w-full text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white shadow-xs">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  <span>复制免登专属分享链接 (URL-Hash)</span>
+                </Button>
+              </div>
+
+              <Button size="sm" variant="outline" onClick={handleCopyConfig} className="text-xs gap-1.5 flex-1">
                   <Copy className="w-3.5 h-3.5" />
                   <span>复制配置 JSON</span>
                 </Button>

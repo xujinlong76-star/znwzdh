@@ -69,25 +69,6 @@ export function ModularCanvas() {
 
   // reorderWidgets 的 ref 镜像：handleDragEnd 通过函数式 setState 嵌套读取最新值，
   // 避免 useCallback 依赖 reorderWidgets（其引用随 activeBoardId 变化，会破坏 memo）
-  // 提示条 / blob 回收定时器集中管理：组件卸载（切看板、离开 /custom）时统一清理，
-  // 否则回调仍会对已卸载组件 setState（React 警告）并延迟回收 blob。
-  const timersRef = useRef<Array<ReturnType<typeof setTimeout>>>([])
-  const scheduleTimer = useCallback((fn: () => void, ms: number) => {
-    const id = setTimeout(() => {
-      timersRef.current = timersRef.current.filter((t) => t !== id)
-      fn()
-    }, ms)
-    timersRef.current.push(id)
-    return id
-  }, [])
-  useEffect(
-    () => () => {
-      timersRef.current.forEach(clearTimeout)
-      timersRef.current = []
-    },
-    []
-  )
-
   const reorderWidgetsRef = useRef(reorderWidgets)
   useEffect(() => {
     reorderWidgetsRef.current = reorderWidgets
@@ -172,7 +153,7 @@ export function ModularCanvas() {
     setNewBoardName('')
     setIsCreatingBoard(false)
     setExportNotice(`已创建并激活新看板「${newBoardName}」`)
-    scheduleTimer(() => setExportNotice(null), 2500)
+    setTimeout(() => setExportNotice(null), 2500)
   }
 
   // 导出 JSON
@@ -185,9 +166,9 @@ export function ModularCanvas() {
     a.download = `navhub-boards-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     // 延迟回收：个别浏览器（旧 Safari）下载是异步读取 blob 的，立即 revoke 会截断文件
-    scheduleTimer(() => URL.revokeObjectURL(url), 1000)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
     setExportNotice('全部工作台看板配置已导出为 JSON')
-    scheduleTimer(() => setExportNotice(null), 2500)
+    setTimeout(() => setExportNotice(null), 2500)
   }
 
   // 导入 JSON
@@ -207,7 +188,7 @@ export function ModularCanvas() {
         } else {
           setExportNotice('导入失败：无效的布局文件格式')
         }
-        scheduleTimer(() => setExportNotice(null), 2500)
+        setTimeout(() => setExportNotice(null), 2500)
       }
       reader.readAsText(file)
     }
@@ -414,7 +395,7 @@ export function ModularCanvas() {
                 onClick={() => {
                   compactLayout()
                   setExportNotice('已完成 12 栅格智能紧凑重排，消除了多余空间碎片！')
-                  scheduleTimer(() => setExportNotice(null), 2500)
+                  setTimeout(() => setExportNotice(null), 2500)
                 }}
                 title="自动紧凑排版：根据 12 栅格行容器贪心重排，消除空隙"
               >

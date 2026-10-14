@@ -15,6 +15,8 @@ interface SearchHit {
 
 interface Preferences {
   apiUrl?: string;
+  apiToken?: string;
+  webUrl?: string;
 }
 
 export default function SearchNavHub() {
@@ -35,7 +37,11 @@ export default function SearchNavHub() {
     setIsLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`${apiBase}/api/search?q=${encodeURIComponent(searchText.trim())}&limit=12`);
+        const headers: Record<string, string> = {};
+        if (preferences.apiToken) {
+          headers["Authorization"] = `Bearer ${preferences.apiToken.trim()}`;
+        }
+        const res = await fetch(`${apiBase}/api/search?q=${encodeURIComponent(searchText.trim())}&limit=12`, { headers });
         if (!res.ok) throw new Error("Search failed");
         const data = (await res.json()) as { hits?: SearchHit[]; items?: SearchHit[] };
         if (active) {
@@ -79,8 +85,9 @@ export default function SearchNavHub() {
                 <ActionPanel>
                   <Action.OpenInBrowser url={site.url} title="在浏览器打开" />
                   <Action.CopyToClipboard content={site.url} title="复制网址" />
+                  <Action.CopyToClipboard content={`[${site.title}](${site.url})`} title="复制 Markdown 超链接" />
                   <Action.OpenInBrowser
-                    url="http://localhost:3000"
+                    url={preferences.webUrl || "http://localhost:3000"}
                     title="打开 NavHub 完整站"
                     icon={Icon.Compass}
                   />

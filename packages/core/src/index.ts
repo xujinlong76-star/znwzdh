@@ -20,3 +20,5 @@ export * from "./bookmark-parser.ts";
 export * from "./keyboard-nav.ts";
 export * from "./deterministic-favicon.ts";
 export * from "./batch-operations.ts";
+export * from "./crdt-sync.ts";
+export * from "./wayback-resolver.ts";

@@ -247,7 +247,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
   // 复制配置 JSON 到剪贴板
   const handleCopyConfig = () => {
     const json = exportDIYConfig()
-    navigator.clipboard.writeText(json)
+    void navigator.clipboard?.writeText(json)?.catch(() => {})
     toast({
       title: '📋 配置已复制到剪贴板',
       description: '您可以将配置妥善保管或分享给其他设备。',
@@ -278,7 +278,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     }
     try {
       const encryptedJson = await exportEncryptedDIYConfig(vaultPassphrase.trim())
-      navigator.clipboard.writeText(encryptedJson)
+      void navigator.clipboard?.writeText(encryptedJson)?.catch(() => {})
       toast({
         title: '🔐 已复制零知识加密密文',
         description: '配置数据已通过 AES-256-GCM 高度认证加密。',

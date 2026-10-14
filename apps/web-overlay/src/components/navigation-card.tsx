@@ -1,5 +1,6 @@
 'use client'
 
+import { memo } from 'react'
 import Link from 'next/link'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/registry/new-york/ui/card'
 import type { NavigationSubItem } from '@/types/navigation'
@@ -18,6 +19,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-url'
 
 interface NavigationCardProps {
   item: NavigationSubItem
@@ -25,12 +27,13 @@ interface NavigationCardProps {
   onPeek?: (item: NavigationSubItem) => void
   cardDisplayMode?: CardDisplayMode
   isPinnedInCategory?: boolean
-  onTogglePinInCategory?: (siteId: string) => void
+  /** 传 (categoryId, siteId)：把 categoryId 作为参数下传，父级才能给稳定引用（memo 前提） */
+  onTogglePinInCategory?: (categoryId: string, siteId: string) => void
   isDraggable?: boolean
   sourceCategoryId?: string
 }
 
-export function NavigationCard({
+function NavigationCardImpl({
   item,
   siteConfig,
   onPeek,
@@ -89,7 +92,7 @@ export function NavigationCard({
     e.preventDefault()
     e.stopPropagation()
     if (onTogglePinInCategory) {
-      onTogglePinInCategory(item.id)
+      onTogglePinInCategory(sourceCategoryId ?? '', item.id)
       toast({
         title: isPinnedInCategory ? '已取消分类内置顶' : '📌 已在当前分类置顶',
         description: isPinnedInCategory ? `站点「${item.title}」已恢复默认排序` : `站点「${item.title}」已优先排至该分类首位`,
@@ -115,7 +118,7 @@ export function NavigationCard({
               )}
             >
               <Link
-                href={item.href}
+                href={safeHref(item.href)}
                 target={linkTarget}
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
@@ -489,3 +492,10 @@ export function NavigationCard({
     </TooltipProvider>
   )
 }
+
+/**
+ * memo：首页/分类页一次渲染数百张卡片，父组件任何 state 变化（折叠、拖拽悬停、
+ * 搜索）都会让全部卡片重渲染。前提是 props 引用稳定 —— 父级已把回调 useCallback 化。
+ */
+export const NavigationCard = memo(NavigationCardImpl)
+

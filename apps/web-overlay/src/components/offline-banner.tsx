@@ -1,11 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { WifiOff, Wifi, ShieldCheck } from 'lucide-react'
 
 export function OfflineBanner() {
   const [isOnline, setIsOnline] = useState(true)
   const [justReconnected, setJustReconnected] = useState(false)
+  /**
+   * 重连提示的定时器必须存在 ref 里由 effect cleanup 清理。
+   * 原实现把 `return () => clearTimeout(timer)` 写在事件回调内 —— 该返回值被
+   * addEventListener 直接丢弃，重连一次就堆一个永不取消的定时器，
+   * 卸载后回调还会对已卸载组件 setState。
+   */
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -15,15 +22,20 @@ export function OfflineBanner() {
     const handleOnline = () => {
       setIsOnline(true)
       setJustReconnected(true)
-      const timer = setTimeout(() => {
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = setTimeout(() => {
         setJustReconnected(false)
+        reconnectTimerRef.current = null
       }, 3500)
-      return () => clearTimeout(timer)
     }
 
     const handleOffline = () => {
       setIsOnline(false)
       setJustReconnected(false)
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
     }
 
     window.addEventListener('online', handleOnline)
@@ -32,6 +44,10 @@ export function OfflineBanner() {
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
     }
   }, [])
 

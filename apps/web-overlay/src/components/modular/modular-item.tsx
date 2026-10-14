@@ -84,6 +84,15 @@ function ModularItemImpl({
 
   // 缩放手柄拖拽状态（必须在任何提前 return 之前声明，保证 hook 顺序稳定）
   const isResizingRef = useRef(false)
+  /** 缩放期间 window 监听器的解绑函数；卸载时统一调用，避免监听器泄漏 */
+  const detachResizeRef = useRef<(() => void) | null>(null)
+  const detachResizeListeners = () => {
+    detachResizeRef.current?.()
+  }
+  useEffect(() => () => {
+    // 缩放途中被删除/切看板/离开页面：必须解绑，否则闭包会持续 onResize 到已卸载树
+    detachResizeRef.current?.()
+  }, [])
   const currentColRef = useRef(widget.colSpan || 4)
   const currentRowRef = useRef(widget.rowSpan || 1)
 
@@ -204,9 +213,17 @@ function ModularItemImpl({
 
     const handleUp = () => {
       isResizingRef.current = false
+      detachResizeListeners()
+    }
+
+    // 保存解绑函数：除 pointerup 正常结束外，组件卸载（缩放途中删卡片/切看板/路由离开）
+    // 也必须解绑，否则监听器与闭包里的 widget/itemRef 会长期驻留，
+    // 后续 pointermove 还会继续 onResize 到已卸载的树。
+    detachResizeRef.current = () => {
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
       window.removeEventListener('pointercancel', handleUp)
+      detachResizeRef.current = null
     }
 
     window.addEventListener('pointermove', handleMove)

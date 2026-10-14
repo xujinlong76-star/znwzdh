@@ -79,7 +79,15 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
 
   const highlightText = (text: string) => {
     if (!searchQuery) return text
-    const parts = text.split(new RegExp(`(${searchQuery})`, 'gi'))
+    // 用户输入直接进入正则：键入 "(" "*" "[" 等元字符会抛 SyntaxError，
+    // 整个搜索结果区白屏（该区域没有错误边界兜底）。这里先转义元字符。
+    const escaped = searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    let parts: string[]
+    try {
+      parts = text.split(new RegExp(`(${escaped})`, 'gi'))
+    } catch {
+      return text
+    }
     return parts.map((part, i) => 
       part.toLowerCase() === searchQuery.toLowerCase() ? 
         <span key={i} className="text-primary font-semibold underline decoration-primary/40 underline-offset-2 bg-primary/10 px-0.5 rounded-xs">{part}</span> : part

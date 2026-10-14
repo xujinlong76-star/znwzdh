@@ -56,6 +56,9 @@ UNDONE=$(ev "document.querySelector('[title*=\"当前尺寸\"]').parentElement.c
 if [ "$UNDONE" = "$BEFORE" ]; then ok "撤销恢复到拖拽前尺寸（$UNDONE）"; else bad "撤销异常（期望 $BEFORE，实际 $UNDONE）"; fi
 
 echo "=== [6] 失效模块类型：加载时净化（防僵尸卡片）==="
+# 先等持久化防抖落盘（200ms）：否则本地未落盘改动会在 reload 时被 flush 写回，
+# 覆盖掉这里注入的测试数据（"最后写入者胜"的正确语义，但会干扰本用例）
+$AB wait 800
 ev "localStorage.setItem('navhub_modular_multi_boards_v2', JSON.stringify({version:2,activeBoardId:'default',boards:[{id:'default',name:'回归测试看板',widgets:[{id:'z1',type:'ghost-widget',colSpan:6,rowSpan:1,config:{},createdAt:1},{id:'z2',type:'clock-pomodoro',colSpan:3,rowSpan:1,config:{},createdAt:2}]}]})) && 'injected'"
 $AB reload > /dev/null 2>&1
 $AB wait 3000

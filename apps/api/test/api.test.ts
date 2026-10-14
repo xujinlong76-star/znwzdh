@@ -42,6 +42,9 @@ beforeAll(async () => {
     llm: { baseUrl: "https://api.deepseek.com", apiKey: null, model: "deepseek-chat", timeoutMs: 5000 },
     fetch: { timeoutMs: 2000, maxBytes: 262144, maxRedirects: 2, allowPrivateNetworks: false, userAgent: "NavHubTest/0.1" },
     corsOrigins: ["*"],
+    // 安全默认已改为 authRequired=true（管理接口不再默认匿名可达）。
+    // 本文件覆盖的是鉴权之外的功能面，显式关闭以维持原有测试语义。
+    authRequired: false,
   });
   ctx = await createContext(config);
   app = await buildServer(ctx);

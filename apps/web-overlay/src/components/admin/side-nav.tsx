@@ -9,7 +9,9 @@ import {
   Menu as MenuIcon,
   Database,
   ListChecks,
-  BarChart3
+  BarChart3,
+  Tag as TagIcon,
+  FolderTree
 } from "lucide-react"
 
 const sidebarNavItems = [
@@ -37,6 +39,16 @@ const sidebarNavItems = [
     title: "运营数据",
     href: "/admin/stats",
     icon: BarChart3,
+  },
+  {
+    title: "分类管理",
+    href: "/admin/categories",
+    icon: FolderTree,
+  },
+  {
+    title: "标签管理",
+    href: "/admin/tags",
+    icon: TagIcon,
   },
   {
     title: "任务队列",

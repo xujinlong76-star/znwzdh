@@ -698,7 +698,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                                     onPeek={setPeekItem}
                                     cardDisplayMode={cardDisplayMode}
                                     isPinnedInCategory={categoryPinnedItemIds.includes(item.id)}
-                                    onTogglePinInCategory={(siteId) => togglePinSiteInCategory(category.id, siteId)}
+                                    onTogglePinInCategory={togglePinSiteInCategory}
                                     isDraggable={isEditingLayout}
                                     sourceCategoryId={category.id}
                                   />
@@ -758,7 +758,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                                           onPeek={setPeekItem}
                                           cardDisplayMode={cardDisplayMode}
                                           isPinnedInCategory={subPinnedItemIds.includes(item.id)}
-                                          onTogglePinInCategory={(siteId) => togglePinSiteInCategory(subCategory.id, siteId)}
+                                          onTogglePinInCategory={togglePinSiteInCategory}
                                           isDraggable={isEditingLayout}
                                           sourceCategoryId={subCategory.id}
                                         />

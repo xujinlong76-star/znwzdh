@@ -36,6 +36,7 @@
     ".next-bugfix/types/**/*.ts",
     ".next-bugfix2/types/**/*.ts",
     ".next-export-check/types/**/*.ts",
+    ".next-final-check/types/**/*.ts",
     ".next-final-mod/types/**/*.ts",
     ".next-final/types/**/*.ts",
     ".next-hl-check/types/**/*.ts",
@@ -60,6 +61,9 @@
     ".next-v28/types/**/*.ts",
     ".next-v30/types/**/*.ts",
     ".next-v32/types/**/*.ts",
+    ".next-v34/types/**/*.ts",
+    ".next-v35/types/**/*.ts",
+    ".next-v36/types/**/*.ts",
     ".next-v4/types/**/*.ts",
     ".next-verify/types/**/*.ts",
     ".next-verify5/types/**/*.ts",
@@ -68,7 +72,7 @@
     ".next/types/**/*.ts",
     ".vercel/output/static/types/**/*.ts",
     "next-env.d.ts",
-    ".next-final-check/types/**/*.ts"
+    ".next-verify2/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -46,7 +46,13 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
 
   const copyToClipboard = async (text: string, id: string) => {
     if (!text) return
-    await navigator.clipboard.writeText(text)
+    // 非安全上下文（http）或权限被拒时 writeText 会 reject，
+    // 未处理会产生 unhandled rejection 并静默失败。
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      return
+    }
     setCopied(id)
     setTimeout(() => setCopied(null), 1500)
   }

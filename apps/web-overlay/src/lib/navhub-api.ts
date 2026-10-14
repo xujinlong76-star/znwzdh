@@ -96,7 +96,7 @@ function hubError(status: number): Error & { status: number } {
   return err
 }
 
-async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'DELETE', body?: unknown, signal?: AbortSignal): Promise<T> {
+async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(hubUrl(path), {
     method,
     signal,

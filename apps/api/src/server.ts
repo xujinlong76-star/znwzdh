@@ -13,6 +13,27 @@ import rateLimit from "@fastify/rate-limit";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
+
+/**
+ * 安全 URL schema。
+ *
+ * ⚠️ zod 的 `z.string().url()` 内部只用 `new URL()` 判定，会放行
+ * `javascript:alert(1)`、`data:text/html,...` 这类伪协议 —— 站点 URL 会被
+ * 前台直接渲染成 `<a href="...">`，形成存储型 XSS（匿名投稿即可落库）。
+ * 因此站点/头像等「会被渲染成链接」的字段必须限定 http/https。
+ */
+const httpUrl = z
+  .string()
+  .min(1)
+  .max(2048)
+  .refine((v) => {
+    try {
+      const u = new URL(v);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "URL 必须是 http/https 协议");
 import type { AppContext } from "./context.ts";
 import { createContext } from "./context.ts";
 import { loadConfig } from "./config.ts";
@@ -61,8 +82,16 @@ export async function buildServer(ctx: AppContext) {
     trustProxy,
   });
 
+  // CORS：白名单为空表示「仅同源/非浏览器调用」，绝不回显任意 Origin。
+  // ⚠️ 不能再用 `origin: true`：它与 credentials:true 组合会被浏览器拒绝，
+  // 在代理/非浏览器场景则等于对任意来源开放带凭证访问。
   await app.register(cors, {
-    origin: ctx.config.corsOrigins.includes("*") ? true : ctx.config.corsOrigins,
+    // 过滤掉 "*"：它与 credentials:true 组合等于对任意来源开放带凭证访问。
+    // 过滤后为空则回落到 false（仅同源/非浏览器调用）。
+    origin:
+      ctx.config.corsOrigins.filter((o) => o !== "*").length > 0
+        ? ctx.config.corsOrigins.filter((o) => o !== "*")
+        : false,
     credentials: true,
   });
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
@@ -325,7 +354,7 @@ export async function buildServer(ctx: AppContext) {
   });
 
   const siteInput = z.object({
-    url: z.string().url(),
+    url: httpUrl,
     title: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
     categoryId: z.string().min(1),
@@ -848,8 +877,26 @@ export async function buildServer(ctx: AppContext) {
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     const body = z.object({
       payload: z.string().min(1).max(512 * 1024),
+      /**
+       * 乐观锁基线版本号。多端同时同步时，先发起但后到达的旧快照会把新快照冲掉。
+       * 带上读到的 version，服务端不一致则 409，由客户端重新拉取后再推。
+       */
+      baseVersion: z.number().int().nonnegative().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+
+    if (body.data.baseVersion !== undefined) {
+      const current = await ctx.repo.getUserVault(identity);
+      if (current && current.version !== body.data.baseVersion) {
+        reply.code(409);
+        return {
+          error: "金库已被其他设备更新",
+          currentVersion: current.version,
+          baseVersion: body.data.baseVersion,
+        };
+      }
+    }
+
     const result = await ctx.repo.saveUserVault(identity, body.data.payload);
     return { ok: true, ...result };
   });
@@ -876,7 +923,7 @@ export async function buildServer(ctx: AppContext) {
       providerId: z.string().min(1),
       username: z.string().min(1).max(64),
       email: z.string().email().nullable().optional(),
-      avatar: z.string().url().nullable().optional(),
+      avatar: httpUrl.nullable().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const user = await ctx.repo.upsertOauthUser({
@@ -967,7 +1014,7 @@ export async function buildServer(ctx: AppContext) {
   app.post("/api/submissions", { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } }, async (req, reply) => {
     const body = z.object({
       title: z.string().min(1).max(120),
-      url: z.string().url(),
+      url: httpUrl,
       description: z.string().max(500).default(""),
       categoryId: z.string().min(1),
       subCategoryId: z.string().nullable().optional(),
@@ -1112,7 +1159,7 @@ export async function buildServer(ctx: AppContext) {
   /* ---------------------------- AI 富化 ---------------------------- */
 
   app.post("/api/enrich", { config: { rateLimit: { max: 20, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
-    const body = z.object({ url: z.string().url() }).safeParse(req.body ?? {});
+    const body = z.object({ url: httpUrl }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
     const categories = await ctx.repo.listCategories();
@@ -1128,7 +1175,7 @@ export async function buildServer(ctx: AppContext) {
   /** 一步到位：抓取 + 富化 + 入库（AI 自动入库的核心接口） */
   app.post("/api/sites/auto", { config: { rateLimit: { max: 15, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
     const body = z.object({
-      url: z.string().url(),
+      url: httpUrl,
       categoryId: z.string().optional(),
       tags: z.array(z.string()).optional(),
     }).safeParse(req.body ?? {});
@@ -1154,15 +1201,27 @@ export async function buildServer(ctx: AppContext) {
       categoryId = created.id;
     }
 
-    const site = await ctx.repo.createSite({
-      url: enriched.url,
-      title: enriched.title,
-      description: enriched.description,
-      categoryId,
-      iconKey: enriched.iconUrl,
-      tags: body.data.tags ?? enriched.tags,
-      source: "ai",
-    });
+    // 先查后插之间存在竞态：sites.url 有部分唯一索引（未删除记录唯一），
+    // 并发时后到者会撞唯一约束。这里把冲突转成幂等返回，而不是 500。
+    let site: Awaited<ReturnType<typeof ctx.repo.createSite>>;
+    try {
+      site = await ctx.repo.createSite({
+        url: enriched.url,
+        title: enriched.title,
+        description: enriched.description,
+        categoryId,
+        iconKey: enriched.iconUrl,
+        tags: body.data.tags ?? enriched.tags,
+        source: "ai",
+      });
+    } catch (err) {
+      const existing = await ctx.repo.findSiteByUrl(enriched.url);
+      if (existing) {
+        reply.code(200);
+        return { created: false, reason: "并发创建，已存在", site: existing };
+      }
+      throw err;
+    }
     await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
     await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance } });
     reply.code(201);

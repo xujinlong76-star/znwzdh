@@ -16,11 +16,14 @@ jobs:
   test-sqlite:
     name: 测试（SQLite 默认方言）
     runs-on: ubuntu-latest
+    env:
+      # 仓库 .npmrc 固定了 npmmirror（本机网络），CI 上覆盖回 npmjs
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -32,6 +35,10 @@ jobs:
   test-postgres:
     name: 跨方言测试（PostgreSQL）
     runs-on: ubuntu-latest
+    env:
+      NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+      # 未配置时该套件会整体 skip；这里配置了就必须真的连上并全绿
+      NAVHUB_TEST_DATABASE_URL: postgres://navhub:navhub@127.0.0.1:5432/navhub_test
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -47,14 +54,11 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      # 未配置时该套件会整体 skip；这里配置了就必须真的连上并全绿
-      NAVHUB_TEST_DATABASE_URL: postgres://navhub:navhub@127.0.0.1:5432/navhub_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 20

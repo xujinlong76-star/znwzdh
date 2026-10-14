@@ -13,6 +13,13 @@ import {
   suggestCategoryForSite,
   BUILTIN_DIY_PRESETS,
   validateAndCleanDIYConfig,
+  createLayoutHistory,
+  pushLayoutHistory,
+  undoLayoutHistory,
+  redoLayoutHistory,
+  toggleCollapsedCategory,
+  collapseAllCategories,
+  expandAllCategories,
 } from '../src/diy-layout'
 
 describe('首页次世代 DIY 排版与核心算法引擎全景测试 (DIY Core Layout Engine)', () => {
@@ -314,5 +321,94 @@ describe('首页次世代 DIY 排版与核心算法引擎全景测试 (DIY Core 
     expect(validateAndCleanDIYConfig('invalid').valid).toBe(false)
     const validRaw = { viewMode: 'classic', version: 2 }
     expect(validateAndCleanDIYConfig(validRaw).valid).toBe(true)
+  })
+
+  it('时间旅行撤销/重做算法引擎 (Time-Travel Layout History Engine)', () => {
+    const s0 = { categoryOrder: ['a', 'b', 'c'] }
+    let history = createLayoutHistory(s0)
+
+    expect(history.past).toHaveLength(0)
+    expect(history.present).toEqual(s0)
+    expect(history.future).toHaveLength(0)
+
+    // 1. 无变更压栈：相同数据自动防重，不产生无意义历史记录
+    history = pushLayoutHistory(history, { categoryOrder: ['a', 'b', 'c'] })
+    expect(history.past).toHaveLength(0)
+
+    // 2. 正常状态变更压栈
+    const s1 = { categoryOrder: ['b', 'a', 'c'] }
+    history = pushLayoutHistory(history, s1)
+    expect(history.past).toHaveLength(1)
+    expect(history.past[0]).toEqual(s0)
+    expect(history.present).toEqual(s1)
+    expect(history.future).toHaveLength(0)
+
+    const s2 = { categoryOrder: ['b', 'c', 'a'] }
+    history = pushLayoutHistory(history, s2)
+    expect(history.past).toHaveLength(2)
+    expect(history.present).toEqual(s2)
+
+    // 3. 撤销一步 (Undo)
+    history = undoLayoutHistory(history)
+    expect(history.present).toEqual(s1)
+    expect(history.past).toHaveLength(1)
+    expect(history.future).toHaveLength(1)
+    expect(history.future[0]).toEqual(s2)
+
+    // 4. 再撤销一步至初始态
+    history = undoLayoutHistory(history)
+    expect(history.present).toEqual(s0)
+    expect(history.past).toHaveLength(0)
+    expect(history.future).toHaveLength(2)
+
+    // 5. 已经到初始态，无法再继续撤销，保持幂等
+    const unchangedUndo = undoLayoutHistory(history)
+    expect(unchangedUndo).toBe(history)
+
+    // 6. 重做一步 (Redo)
+    history = redoLayoutHistory(history)
+    expect(history.present).toEqual(s1)
+    expect(history.past).toHaveLength(1)
+    expect(history.future).toHaveLength(1)
+
+    // 7. 处于分支状态时发生新变动，自动截断清除已废弃的 future 分支
+    const sBranch = { categoryOrder: ['c', 'b', 'a'] }
+    history = pushLayoutHistory(history, sBranch)
+    expect(history.present).toEqual(sBranch)
+    expect(history.past).toHaveLength(2)
+    expect(history.future).toHaveLength(0)
+
+    // 8. 环形深度缓冲区截断保护 (maxDepth)
+    let deepHistory = createLayoutHistory(0)
+    for (let i = 1; i <= 30; i++) {
+      deepHistory = pushLayoutHistory(deepHistory, i, 10)
+    }
+    expect(deepHistory.past.length).toBe(10)
+    expect(deepHistory.present).toBe(30)
+    expect(deepHistory.past[0]).toBe(20)
+  })
+
+  it('分类手风琴折叠纯算法 (Accordion Collapse Algorithms)', () => {
+    let collapsed: string[] = []
+
+    // 1. 展开 -> 折叠
+    collapsed = toggleCollapsedCategory(collapsed, 'cat-dev')
+    expect(collapsed).toEqual(['cat-dev'])
+
+    // 2. 累加折叠
+    collapsed = toggleCollapsedCategory(collapsed, 'cat-ai')
+    expect(collapsed).toEqual(['cat-dev', 'cat-ai'])
+
+    // 3. 折叠 -> 展开
+    collapsed = toggleCollapsedCategory(collapsed, 'cat-dev')
+    expect(collapsed).toEqual(['cat-ai'])
+
+    // 4. 一键全部折叠 (去重保护)
+    const all = ['cat-dev', 'cat-ai', 'cat-design', 'cat-dev']
+    const allCollapsed = collapseAllCategories(all)
+    expect(allCollapsed).toEqual(['cat-dev', 'cat-ai', 'cat-design'])
+
+    // 5. 一键全部展开
+    expect(expandAllCategories()).toEqual([])
   })
 })

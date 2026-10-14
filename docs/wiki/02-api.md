@@ -10,7 +10,8 @@
 | --- | --- | --- |
 | [main.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/main.ts) | 46 | **服务入口**：装配 config → context → server → JobRunner → listen + 优雅关闭 + 启动横幅 |
 | [auth.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/auth.ts) | ~110 | **REST 鉴权**：Bearer token 解析、sha256 哈希、scope 校验（admin ⊇ write ⊇ read）、timingSafeEqual |
-| [server.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/server.ts) | ~1360 | **59 条 REST 路由** + 鉴权 hook + Fastify 全局配置（CORS / 限流 / bodyLimit / trustProxy） |
+| [server.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/server.ts) | ~1400 | **61 条 REST 路由** + 鉴权 hook + Fastify 全局配置（CORS / 限流 / bodyLimit / trustProxy） |
+| [openapi.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/openapi.ts) | ~230 | **OpenAPI 3.1 文档生成**：从 Fastify `onRoute` 收集的路由表自动生成 `/api/openapi.json` + `/api/docs` HTML 视图 |
 | [storage.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts) | ~410 | **存储适配层**：NavSphere 的「JSON 文件」语义 → 数据库语义 |
 | [context.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/context.ts) | 144 | **应用上下文装配**：双模式差异的唯一消化点，能力可选、失败不致命 |
 | [config.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/config.ts) | 112 | 运行配置 `loadConfig()`：环境变量解析与默认值 |
@@ -30,7 +31,7 @@
 ```ts
 const config = loadConfig();            // 1. 环境变量 → AppConfig
 const ctx    = await createContext(config);  // 2. 装配 DB / 向量 / 全文 / embedding / 检索
-const app    = await buildServer(ctx);       // 3. Fastify + 59 条路由
+const app    = await buildServer(ctx);       // 3. Fastify + 61 条路由
 
 const jobsEnabled = process.env.NAVHUB_JOBS_ENABLED !== "0" && ... ;
 const runner = jobsEnabled ? new JobRunner(ctx) : null;
@@ -164,7 +165,7 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 
 测试：[apps/api/test/auth.test.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/test/auth.test.ts)——27 个用例覆盖开放模式回归、逐级拦截、scope 含义、生命周期、审计身份。
 
-## 3. REST 路由完整清单（59 条）
+## 3. REST 路由完整清单（61 条）
 
 ### 3.1 健康与能力
 
@@ -371,6 +372,23 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 **ETag 语义**：对序列化后的 payload 取 sha1（base64url），处理 `If-None-Match`（含 `W/` 前缀与逗号列表）→ 命中回 **304 且不带 body**（同时移除 `content-type`/`content-length`，否则残留头与空 body 冲突）。未命中照常 200。
 
 测试：`apps/api/test/api.test.ts > 响应缓存头`（TTL、304、no-store 默认各一条）。
+
+### 3.18 OpenAPI 文档（自动生成）
+
+| 方法 | 路径 | 功能 | scope |
+| --- | --- | --- | --- |
+| GET | `/api/openapi.json` | **OpenAPI 3.1** 文档（`maxAge: 60`） | public |
+| GET | `/api/docs` | 文档 HTML 视图（深色端点表格 + 鉴权标注，**不依赖外部 CDN**，内网可直接看） | public |
+
+**为什么自动生成**（[openapi.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/openapi.ts)）：`buildServer` 里注册 `onRoute` 钩子，在每条路由注册时收集 `{method, url, scope}` ——文档与真实路由**同源**，新增/删除路由时同步变化，不存在手写清单漂移（手写清单必然漂移，而本文档存在的唯一目的就是防漂移）。
+
+生成内容：
+- `:name` → `{name}` path 模板 + `parameters`（`id` 标注「站点可传 URL，需 encodeURIComponent」）
+- scope → `security`：`public` 空数组；`read/write/admin` → `[{bearerAuth: []}]`（`components.securitySchemes.bearerAuth`）
+- 错误响应按语义补：非 public 补 401/403；带 path 参数/POST 补 400/404；`POST /api/sites`、`POST /api/trash/:id/restore` 补 409
+- 请求体给 `{type:"object", additionalProperties:true}`——**不在没人保证的细节上编造**，字段语义指向各 zod schema 源码
+
+测试：`api.test.ts > OpenAPI 文档`——18 个代表性路径覆盖断言（各分区均有）+ public/read security 断言 + HTML 视图断言。
 
 ## 4. storage.ts —— 存储适配层
 

@@ -51,6 +51,7 @@ import {
   Pin,
   Sparkles,
   Plus,
+  ChevronDown,
 } from 'lucide-react'
 
 import Link from 'next/link'
@@ -92,12 +93,14 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
     categoryOrder,
     pinnedCategoryIds,
     hiddenCategoryIds,
+    collapsedCategoryIds,
     pinnedSiteIdsByCategory,
     customCategories,
     isAdaptiveRankingEnabled,
     togglePinSiteInCategory,
     addSiteToCustomCategory,
     reorderCategory,
+    toggleCollapseCategory,
   } = useHomeDIY()
 
   // 拖拽编排分类状态
@@ -476,6 +479,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                 {sortedCategories.map((category, index) => {
                   const isPinned = pinnedCategoryIds.includes(category.id)
                   const isCustom = Boolean((category as any).isCustom)
+                  const isCollapsed = collapsedCategoryIds.includes(category.id)
                   const directCount = (category.items as any[])?.length || 0
                   const subCats = (category.subCategories as any[]) || []
                   const subCount = subCats.reduce((acc: number, sub: any) => acc + ((sub.items as any[])?.length || 0), 0)
@@ -607,12 +611,27 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                       <div className="space-y-4">
                         {/* 一级分类标题头 */}
                         <div className="flex items-center justify-between pb-3 border-b border-border/50">
-                          <div className="flex items-center gap-2.5 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* 手风琴折叠展开按钮 */}
+                            <button
+                              type="button"
+                              onClick={() => toggleCollapseCategory(category.id)}
+                              className="p-1 -ml-1 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-muted/80 transition-all flex items-center justify-center cursor-pointer"
+                              title={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
+                              aria-expanded={!isCollapsed}
+                            >
+                              <ChevronDown className={cn("w-4 h-4 transition-transform duration-200", isCollapsed && "-rotate-90")} />
+                            </button>
+
                             <span className={cn(
                               "w-1.5 h-5 rounded-full",
                               isCustom ? "bg-emerald-500" : isPinned ? "bg-amber-500" : "bg-primary"
                             )} />
-                            <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                            <h2
+                              className="text-lg sm:text-xl font-bold tracking-tight text-foreground flex items-center gap-2 cursor-pointer select-none"
+                              onClick={() => toggleCollapseCategory(category.id)}
+                              title={isCollapsed ? "点击展开" : "点击折叠"}
+                            >
                               <span>{category.title}</span>
                               {isPinned && (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-medium">
@@ -636,6 +655,16 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                             <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border/40 font-medium">
                               {totalCount} 站点
                             </span>
+                            {isCollapsed && (
+                              <button
+                                type="button"
+                                onClick={() => toggleCollapseCategory(category.id)}
+                                className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-medium hover:bg-sky-500/20 transition-all cursor-pointer"
+                                title="点击展开该分类"
+                              >
+                                <span>已收起 (点击展开)</span>
+                              </button>
+                            )}
                           </div>
 
                           {/* 就地可视化排版控制器（置顶 / 上移 / 下移 / 隐藏） */}
@@ -652,95 +681,100 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                           )}
                         </div>
 
-                        {/* 一级分类下直接挂载的站点 */}
-                        {(sortedDirectItems.length > 0 || isCustom) && (
-                          <div
-                            className={cn(gridColumnsClass, "transition-all duration-200")}
-                            style={{ gap: 'var(--density-grid-gap, 1rem)' }}
-                          >
-                            {sortedDirectItems.map((item: any) => (
-                              <NavigationCard
-                                key={item.id}
-                                item={item}
-                                siteConfig={siteData}
-                                onPeek={setPeekItem}
-                                cardDisplayMode={cardDisplayMode}
-                                isPinnedInCategory={categoryPinnedItemIds.includes(item.id)}
-                                onTogglePinInCategory={(siteId) => togglePinSiteInCategory(category.id, siteId)}
-                                isDraggable={isEditingLayout}
-                                sourceCategoryId={category.id}
-                              />
-                            ))}
-
-                            {/* 专属私人分类末尾的“添加自定义网址”槽位 */}
-                            {isCustom && (
-                              <button
-                                type="button"
-                                onClick={() => setAddSiteTargetCatId(category.id)}
-                                className={cn(
-                                  "group flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-semibold transition-all hover:scale-[1.02] cursor-pointer",
-                                  cardDisplayMode === 'compact' ? "h-9" : "min-h-[72px]"
-                                )}
-                                title="添加自定义网站到该专属分类"
+                        {/* 未折叠时渲染分类下挂载的站点和二级分类 */}
+                        {!isCollapsed && (
+                          <>
+                            {/* 一级分类下直接挂载的站点 */}
+                            {(sortedDirectItems.length > 0 || isCustom) && (
+                              <div
+                                className={cn(gridColumnsClass, "transition-all duration-200")}
+                                style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                               >
-                                <Plus className="w-4 h-4 transition-transform group-hover:rotate-90" />
-                                <span>添加自定义网址</span>
-                              </button>
-                            )}
-                          </div>
-                        )}
+                                {sortedDirectItems.map((item: any) => (
+                                  <NavigationCard
+                                    key={item.id}
+                                    item={item}
+                                    siteConfig={siteData}
+                                    onPeek={setPeekItem}
+                                    cardDisplayMode={cardDisplayMode}
+                                    isPinnedInCategory={categoryPinnedItemIds.includes(item.id)}
+                                    onTogglePinInCategory={(siteId) => togglePinSiteInCategory(category.id, siteId)}
+                                    isDraggable={isEditingLayout}
+                                    sourceCategoryId={category.id}
+                                  />
+                                ))}
 
-                        {/* 二级分类及其站点 */}
-                        {category.subCategories && category.subCategories.length > 0 &&
-                          category.subCategories.map((subCategory: any) => {
-                            const subPinnedItemIds = pinnedSiteIdsByCategory[subCategory.id] || []
-                            const sortedSubItems = isAdaptiveRankingEnabled
-                              ? computeAdaptiveSiteRanking((subCategory.items as any[]) || [], {
-                                  pinnedItemIds: subPinnedItemIds,
-                                })
-                              : sortCategoryItemsWithPinned(
-                                  (subCategory.items as any[]) || [],
-                                  subPinnedItemIds
-                                )
-
-                            return (
-                              <div key={subCategory.id} id={subCategory.id} className="space-y-3 pt-2">
-                                <div className="flex items-center gap-2 pb-0.5 pt-1">
-                                  <span className="w-1 h-3.5 rounded-full bg-muted-foreground/40" />
-                                  <h3 className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">
-                                    {subCategory.title}
-                                  </h3>
-                                  <span className="text-xs text-muted-foreground/60 font-mono">
-                                    ({subCategory.items?.length || 0})
-                                  </span>
-                                </div>
-                                <div
-                                  className={cn(gridColumnsClass, "transition-all duration-200")}
-                                  style={{ gap: 'var(--density-grid-gap, 1rem)' }}
-                                >
-                                  {sortedSubItems.map((item: any) => (
-                                    <NavigationCard
-                                      key={item.id}
-                                      item={item}
-                                      siteConfig={siteData}
-                                      onPeek={setPeekItem}
-                                      cardDisplayMode={cardDisplayMode}
-                                      isPinnedInCategory={subPinnedItemIds.includes(item.id)}
-                                      onTogglePinInCategory={(siteId) => togglePinSiteInCategory(subCategory.id, siteId)}
-                                      isDraggable={isEditingLayout}
-                                      sourceCategoryId={subCategory.id}
-                                    />
-                                  ))}
-                                </div>
+                                {/* 专属私人分类末尾的“添加自定义网址”槽位 */}
+                                {isCustom && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setAddSiteTargetCatId(category.id)}
+                                    className={cn(
+                                      "group flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 text-xs font-semibold transition-all hover:scale-[1.02] cursor-pointer",
+                                      cardDisplayMode === 'compact' ? "h-9" : "min-h-[72px]"
+                                    )}
+                                    title="添加自定义网站到该专属分类"
+                                  >
+                                    <Plus className="w-4 h-4 transition-transform group-hover:rotate-90" />
+                                    <span>添加自定义网址</span>
+                                  </button>
+                                )}
                               </div>
-                            )
-                          })}
+                            )}
 
-                        {/* 空分类提示 */}
-                        {totalCount === 0 && !isCustom && (
-                          <div className="text-center py-6 border border-dashed border-border/60 rounded-xl text-muted-foreground text-xs">
-                            该分类下暂无收录站点，可通过卡片右上角的图钉或添加站点进行收录。
-                          </div>
+                            {/* 二级分类及其站点 */}
+                            {category.subCategories && category.subCategories.length > 0 &&
+                              category.subCategories.map((subCategory: any) => {
+                                const subPinnedItemIds = pinnedSiteIdsByCategory[subCategory.id] || []
+                                const sortedSubItems = isAdaptiveRankingEnabled
+                                  ? computeAdaptiveSiteRanking((subCategory.items as any[]) || [], {
+                                      pinnedItemIds: subPinnedItemIds,
+                                    })
+                                  : sortCategoryItemsWithPinned(
+                                      (subCategory.items as any[]) || [],
+                                      subPinnedItemIds
+                                    )
+
+                                return (
+                                  <div key={subCategory.id} id={subCategory.id} className="space-y-3 pt-2">
+                                    <div className="flex items-center gap-2 pb-0.5 pt-1">
+                                      <span className="w-1 h-3.5 rounded-full bg-muted-foreground/40" />
+                                      <h3 className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">
+                                        {subCategory.title}
+                                      </h3>
+                                      <span className="text-xs text-muted-foreground/60 font-mono">
+                                        ({subCategory.items?.length || 0})
+                                      </span>
+                                    </div>
+                                    <div
+                                      className={cn(gridColumnsClass, "transition-all duration-200")}
+                                      style={{ gap: 'var(--density-grid-gap, 1rem)' }}
+                                    >
+                                      {sortedSubItems.map((item: any) => (
+                                        <NavigationCard
+                                          key={item.id}
+                                          item={item}
+                                          siteConfig={siteData}
+                                          onPeek={setPeekItem}
+                                          cardDisplayMode={cardDisplayMode}
+                                          isPinnedInCategory={subPinnedItemIds.includes(item.id)}
+                                          onTogglePinInCategory={(siteId) => togglePinSiteInCategory(subCategory.id, siteId)}
+                                          isDraggable={isEditingLayout}
+                                          sourceCategoryId={subCategory.id}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+
+                            {/* 空分类提示 */}
+                            {totalCount === 0 && !isCustom && (
+                              <div className="text-center py-6 border border-dashed border-border/60 rounded-xl text-muted-foreground text-xs">
+                                该分类下暂无收录站点，可通过卡片右上角的图钉或添加站点进行收录。
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     </section>

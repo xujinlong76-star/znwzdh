@@ -35,14 +35,17 @@
     "**/*.tsx",
     ".next-bugfix/types/**/*.ts",
     ".next-bugfix2/types/**/*.ts",
+    ".next-export-check/types/**/*.ts",
     ".next-final-mod/types/**/*.ts",
     ".next-final/types/**/*.ts",
     ".next-hl-check/types/**/*.ts",
     ".next-mod/types/**/*.ts",
     ".next-pref-check/types/**/*.ts",
+    ".next-pwa-check/types/**/*.ts",
     ".next-pwa/types/**/*.ts",
     ".next-pwa2/types/**/*.ts",
     ".next-trash-check/types/**/*.ts",
+    ".next-trend-check/types/**/*.ts",
     ".next-v11/types/**/*.ts",
     ".next-v12/types/**/*.ts",
     ".next-v14/types/**/*.ts",
@@ -65,7 +68,7 @@
     ".next/types/**/*.ts",
     ".vercel/output/static/types/**/*.ts",
     "next-env.d.ts",
-    ".next-trend-check/types/**/*.ts"
+    ".next-final-check/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

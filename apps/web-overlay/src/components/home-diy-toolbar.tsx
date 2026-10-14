@@ -30,6 +30,9 @@ import {
   Cloud,
   CloudUpload,
   CloudDownload,
+  Undo2,
+  Redo2,
+  ChevronsUpDown,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -102,6 +105,14 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     syncToCloudVault,
     syncFromCloudVault,
     checkCloudVaultStatus,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    collapsedCategoryIds,
+    toggleCollapseCategory,
+    collapseAllCategories,
+    expandAllCategories,
   } = useHomeDIY()
 
   const { density, setDensity } = useDensity()
@@ -571,6 +582,72 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                 <span className="hidden sm:inline">新建</span>
               </Button>
 
+              {/* 撤销 (Undo) */}
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={!canUndo}
+                onClick={undo}
+                className={cn(
+                  "h-8 w-8 rounded-full transition-all",
+                  !canUndo ? "opacity-30 cursor-not-allowed text-muted-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+                title="撤销编排变更 (快捷键: Ctrl+Z / Cmd+Z)"
+              >
+                <Undo2 className="w-3.5 h-3.5" />
+              </Button>
+
+              {/* 重做 (Redo) */}
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={!canRedo}
+                onClick={redo}
+                className={cn(
+                  "h-8 w-8 rounded-full transition-all",
+                  !canRedo ? "opacity-30 cursor-not-allowed text-muted-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+                title="重做编排变更 (快捷键: Ctrl+Shift+Z / Cmd+Shift+Z)"
+              >
+                <Redo2 className="w-3.5 h-3.5" />
+              </Button>
+
+              {/* 分类折叠/展开控制 */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2.5 rounded-full text-xs gap-1 border-border/70"
+                    title="分类手风琴展开与折叠"
+                  >
+                    <ChevronsUpDown className="w-3.5 h-3.5 text-sky-500" />
+                    <span className="hidden sm:inline">折叠</span>
+                    <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40 p-1.5">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      collapseAllCategories(allCategoryIds)
+                      toast({ title: '📦 已全部折叠', description: '所有分类视图已收起。' })
+                    }}
+                    className="text-xs cursor-pointer"
+                  >
+                    <span>全部折叠 ({allCategoryIds.length})</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      expandAllCategories()
+                      toast({ title: '📖 已全部展开', description: '所有分类视图已还原展开。' })
+                    }}
+                    className="text-xs cursor-pointer"
+                  >
+                    <span>全部展开</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               {/* 备份与分享生态 */}
               <Button
                 variant="ghost"
@@ -687,6 +764,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
               const title = categoryTitleMap[id] || id
               const isPinned = pinnedCategoryIds.includes(id)
               const isHidden = hiddenCategoryIds.includes(id)
+              const isCollapsed = collapsedCategoryIds.includes(id)
               const customCat = customCategories.find((c) => c.id === id)
 
               return (
@@ -717,6 +795,11 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                       <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0 flex items-center gap-0.5">
                         <Pin className="w-2.5 h-2.5 fill-amber-500" />
                         <span>置顶</span>
+                      </span>
+                    )}
+                    {isCollapsed && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 shrink-0">
+                        已收起
                       </span>
                     )}
                   </div>
@@ -757,6 +840,16 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                     <Button
                       variant="ghost"
                       size="icon"
+                      onClick={() => toggleCollapseCategory(id)}
+                      className={cn("h-7 w-7 rounded-md", isCollapsed ? "text-sky-500 bg-sky-500/10" : "text-muted-foreground hover:text-foreground")}
+                      title={isCollapsed ? "展开分类" : "收起/折叠分类"}
+                    >
+                      <ChevronsUpDown className="w-3.5 h-3.5" />
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => toggleHideCategory(id)}
                       className={cn("h-7 w-7 rounded-md", isHidden ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-foreground")}
                       title={isHidden ? "显示分类" : "隐藏分类"}
@@ -782,9 +875,25 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
           </div>
 
           <DialogFooter className="border-t border-border/40 pt-3 flex items-center justify-between sm:justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => collapseAllCategories(allCategoryIds)}
+                className="text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+              >
+                全部收起
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={expandAllCategories}
+                className="text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+              >
+                全部展开
+              </Button>
               {hiddenCategoryIds.length > 0 && (
-                <Button variant="ghost" size="sm" onClick={unhideAllCategories} className="text-xs text-primary">
+                <Button variant="ghost" size="sm" onClick={unhideAllCategories} className="text-xs text-primary h-7 px-2">
                   恢复所有隐藏 ({hiddenCategoryIds.length})
                 </Button>
               )}

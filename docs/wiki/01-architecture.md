@@ -246,7 +246,7 @@ MCP create_site (scope=write)
 
 ## 9. 质量保障
 
-- **测试**：375 个测试，`pnpm test`（套件清单见 [09-run-and-test.md](./09-run-and-test.md)）
+- **测试**：381 个测试（+ 10 个 PostgreSQL 跨方言用例，设 `NAVHUB_TEST_DATABASE_URL` 时运行，否则 skip），`pnpm test`（套件清单见 [09-run-and-test.md](./09-run-and-test.md)）
 - **类型检查**：`pnpm typecheck`（`packages/*` + `apps/api` 严格 tsc；`apps/web` 因上游依赖组合问题在 next.config 中忽略）
 - **验收**：PostgreSQL 分档验证 17/17 通过，见 [docs/acceptance-report.md](../acceptance-report.md)
 - **回归**：D1 缺陷（navigation.json 全量对齐误删）有专门回归测试与脚本 `scripts/d1-regression.mjs`

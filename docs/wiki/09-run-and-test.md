@@ -29,7 +29,7 @@ pnpm --filter @navhub/api start
 | `pnpm dev` | `pnpm --filter @navhub/api dev` | 中枢开发模式 |
 | `pnpm dev:web` | `node scripts/run.mjs --filter navsphere dev` | 前端（:3000） |
 | `pnpm build` | `pnpm -r --filter "@navhub/*" build` | 全部包构建 |
-| `pnpm test` | `vitest run` | 375 个测试 |
+| `pnpm test` | `vitest run` | 381 个测试（另含 10 个 PG 跨方言用例，未配 `NAVHUB_TEST_DATABASE_URL` 时 skip） |
 | `pnpm test:watch` | `vitest` | 监听模式 |
 | `pnpm typecheck` | `pnpm -r exec tsc --noEmit` | 全仓类型检查 |
 | `pnpm seed` | `pnpm --filter @navhub/api seed` | 播种 |
@@ -203,10 +203,23 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 ### 6.1 运行
 
 ```bash
-pnpm test          # 全部 375 个测试
+pnpm test          # 全部 381 个测试
 pnpm test:watch    # 监听
-pnpm test:pg       # PostgreSQL 分档验收（需先起 postgres）
+pnpm test:pg       # PostgreSQL 手工验收（scripts/pg-check.mts，需先起 postgres）
 ```
+
+### 6.2 跨方言自动化测试（#19）
+
+[packages/store/test/pg-dialect.e2e.test.ts](file:///c:/Users/许进龙/Desktop/web/packages/store/test/pg-dialect.e2e.test.ts)：
+把 SQLite 套件的**核心断言**（标签聚合、类目物化路径、FTS/拼音/浏览、软删除部分唯一索引、标签删除索引刷新、巡检历史、任务队列退避、审计/事件、画像 roundtrip）复跑到**真 PostgreSQL** 上。
+
+| 要点 | 说明 |
+| --- | --- |
+| **连不上不红** | 未设 `NAVHUB_TEST_DATABASE_URL` → 整套件 skip（并 console.warn 说明原因）；设了但连不上 → **失败**（不能悄悄跳过） |
+| 覆盖的方言坑 | `group_concat` vs `string_agg`、`?` → `$n` 占位符、`BOOLEAN` vs `INTEGER`、PG 别名小写折叠、`WHERE deleted_at IS NULL` 部分唯一索引 |
+| CI | [.github/workflows/ci.yml](file:///c:/Users/许进龙/Desktop/web/.github/workflows/ci.yml)：`test-sqlite`（typecheck + 全量测试）与 `test-postgres`（**pgvector/pgvector:pg16 service** + 只跑本套件）两个 job，PG 连接串经 `NAVHUB_TEST_DATABASE_URL` 注入 |
+
+本地跑：起 postgres 后 `set NAVHUB_TEST_DATABASE_URL=postgres://... && pnpm exec vitest run packages/store/test/pg-dialect.e2e.test.ts`。
 
 [vitest.config.ts](file:///c:/Users/许进龙/Desktop/web/vitest.config.ts)：
 

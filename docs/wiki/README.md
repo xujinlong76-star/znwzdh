@@ -8,7 +8,7 @@
 | # | 文档 | 内容 | 适合谁 |
 | --- | --- | --- | --- |
 | 1 | [01-architecture.md](./01-architecture.md) | 项目定位、整体架构、目录结构、运行模式、核心设计决策、模块依赖与数据流 | 所有人，先读这篇 |
-| 2 | [02-api.md](./02-api.md) | `apps/api` Fastify 中枢：启动流程、59 条 REST 路由、鉴权、存储适配层、任务队列 | 后端开发 |
+| 2 | [02-api.md](./02-api.md) | `apps/api` Fastify 中枢：启动流程、61 条 REST 路由、鉴权、存储适配层、任务队列 | 后端开发 |
 | 3 | [03-web.md](./03-web.md) | `apps/web` Next.js 前端：路由地图、存储接缝、搜索面板、PWA、上游覆盖机制 | 前端开发 |
 | 4 | [04-core.md](./04-core.md) | `packages/core` 领域层：数据模型、CJK 分词、拼音、RRF 融合、排序与画像、扩展算法 | 检索/算法 |
 | 5 | [05-store.md](./05-store.md) | `packages/store` 存储层：19 张表 schema、双驱动、Repository、四通道检索引擎、向量与全文实现 | 后端开发 |

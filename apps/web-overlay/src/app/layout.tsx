@@ -8,13 +8,13 @@ import { PwaRegister } from '@/components/pwa-register'
 import { getFileContent } from '@/lib/github'
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
-import { Inter } from 'next/font/google'
-
-const inter = Inter({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-inter',
-})
+/**
+ * 字体配置：优雅回退至原生跨平台系统字体栈，解耦构建期对外部 Google Fonts 网络的脆弱依赖，
+ * 避免因外部网络环境对 fonts.googleapis.com 的 TLS 握手断开导致构建挂起或失败。
+ */
+const inter = {
+  variable: '',
+}
 
 /** 与页面层保持一致的路径常量 */
 const SITE_PATH = 'src/navsphere/content/site.json'

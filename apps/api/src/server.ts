@@ -19,6 +19,7 @@ import { loadConfig } from "./config.ts";
 import { readStoragePath, writeStoragePath } from "./storage.ts";
 import { indexSite } from "./index-site.ts";
 import { refreshUserProfile, resetUserProfile } from "./profile-service.ts";
+import { buildOpenApiDoc, renderDocsHtml, type RouteEntry } from "./openapi.ts";
 import {
   ANONYMOUS_IDENTITY,
   bearerOf,
@@ -65,6 +66,28 @@ export async function buildServer(ctx: AppContext) {
     credentials: true,
   });
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
+
+  /* ---------------------------- OpenAPI 路由收集 ---------------------------- */
+
+  /**
+   * onRoute 在每条路由注册时触发——文档与真实路由**同源**，不会手写漂移。
+   * 必须在任何 app.get/post… 之前注册，否则收不到已有路由。
+   */
+  const routeEntries: RouteEntry[] = [];
+  app.addHook("onRoute", (route) => {
+    const method = typeof route.method === "string" ? route.method : String(route.method);
+    const scope = ((route.config as { scope?: RouteScope } | undefined)?.scope ?? "public") as RouteScope;
+    routeEntries.push({ method: method.toUpperCase(), url: route.url, scope });
+  });
+
+  app.get("/api/openapi.json", { config: { scope: "public", cache: { maxAge: 60 } } }, async () =>
+    buildOpenApiDoc(routeEntries.filter((r) => r.url !== "/api/openapi.json" && r.url !== "/api/docs")),
+  );
+  app.get("/api/docs", { config: { scope: "public", cache: { maxAge: 60 } } }, async (_req, reply) => {
+    const doc = buildOpenApiDoc(routeEntries.filter((r) => r.url !== "/api/openapi.json" && r.url !== "/api/docs"));
+    reply.header("content-type", "text/html; charset=utf-8");
+    return renderDocsHtml(doc);
+  });
 
   /* ---------------------------- 响应缓存 ---------------------------- */
 

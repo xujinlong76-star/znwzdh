@@ -1152,6 +1152,52 @@ describe("个性化画像：查看与重置", () => {
   });
 });
 
+describe("OpenAPI 文档", () => {
+  it("/api/openapi.json 与真实路由同源（doc 由 onRoute 收集的路由表生成）且带 scope 安全声明", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/openapi.json" });
+    expect(res.statusCode).toBe(200);
+    const doc = res.json();
+    expect(doc.openapi).toBe("3.1.0");
+    expect(doc.components.securitySchemes.bearerAuth.scheme).toBe("bearer");
+
+    // 文档必须覆盖各分区的代表性路由（新增路由走 onRoute 自动进入，这里锁住覆盖面）
+    for (const t of [
+      "/api/health", "/api/search", "/api/sites", "/api/sites/{id}", "/api/sites/bulk",
+      "/api/trash", "/api/trash/{id}/restore", "/api/submissions", "/api/submissions/{number}",
+      "/api/profile", "/api/admin/audit", "/api/admin/health/trend", "/api/tags/{id}",
+      "/api/categories/merge", "/api/favorites", "/api/storage", "/api/tokens", "/api/jobs",
+    ]) {
+      expect(Object.keys(doc.paths), "缺少路径: " + t).toContain(t);
+    }
+    // HEAD 被过滤（OpenAPI 不描述它），端点数应接近路由数而非翻倍
+    const ops = Object.values(doc.paths as Record<string, Record<string, unknown>>)
+      .reduce((n, ops) => n + Object.keys(ops).length, 0);
+    expect(ops).toBeGreaterThanOrEqual(50);
+  });
+
+  it("public 路由无锁，read 路由声明 bearer", async () => {
+    const doc = (await app.inject({ method: "GET", url: "/api/openapi.json" })).json();
+    // public：检索/健康
+    expect((doc.paths["/api/search"].get.security)).toEqual([]);
+    expect((doc.paths["/api/health"].get.security)).toEqual([]);
+    // read：站点列表
+    expect((doc.paths["/api/sites"].get.security)).toEqual([{ bearerAuth: [] }]);
+    // write：提交类站点
+    expect((doc.paths["/api/sites"].post.security).length).toBe(1);
+    // path 参数被提取（:id → {id}）
+    expect(doc.paths["/api/sites/{id}"]).toBeTruthy();
+    expect(doc.paths["/api/sites/{id}"].get.parameters[0].name).toBe("id");
+  });
+
+  it("/api/docs 返回 HTML 且包含端点表格", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/docs" });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/html");
+    expect(res.body).toContain("/api/openapi.json");
+    expect(res.body).toContain("/api/sites");
+  });
+});
+
 describe("响应缓存头", () => {
   it("声明了缓存策略的 GET 返回 private + TTL 与 ETag", async () => {
     const res = await app.inject({ method: "GET", url: "/api/sites" });

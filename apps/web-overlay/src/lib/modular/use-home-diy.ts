@@ -5,9 +5,17 @@ import {
   sortCategoryItemsWithPinned,
   togglePinnedSiteInCategory,
   reorderCategoryToTarget,
+  createLayoutHistory,
+  pushLayoutHistory,
+  undoLayoutHistory,
+  redoLayoutHistory,
+  toggleCollapsedCategory as toggleCollapsedCategoryPure,
+  collapseAllCategories as collapseAllCategoriesPure,
+  expandAllCategories as expandAllCategoriesPure,
   BUILTIN_DIY_PRESETS,
   validateAndCleanDIYConfig,
   type DIYPreset,
+  type LayoutHistoryState,
 } from '@/lib/modular/diy-presets'
 import {
   encryptGenericPayload,
@@ -51,6 +59,7 @@ export interface HomeDIYConfig {
   categoryOrder: string[]
   pinnedCategoryIds: string[]
   hiddenCategoryIds: string[]
+  collapsedCategoryIds: string[]
   pinnedSiteIdsByCategory: Record<string, string[]>
   customCategories: CustomCategory[]
   updatedAt: number
@@ -79,6 +88,7 @@ const DEFAULT_CONFIG: HomeDIYConfig = {
   categoryOrder: [],
   pinnedCategoryIds: [],
   hiddenCategoryIds: [],
+  collapsedCategoryIds: [],
   pinnedSiteIdsByCategory: {},
   customCategories: [],
   updatedAt: Date.now(),
@@ -86,6 +96,7 @@ const DEFAULT_CONFIG: HomeDIYConfig = {
 
 export function useHomeDIY() {
   const [config, setConfig] = useState<HomeDIYConfig>(DEFAULT_CONFIG)
+  const [history, setHistory] = useState<LayoutHistoryState<HomeDIYConfig>>(() => createLayoutHistory(DEFAULT_CONFIG))
   const [mounted, setMounted] = useState(false)
   const [isEditingLayout, setIsEditingLayout] = useState(false)
 
@@ -109,10 +120,12 @@ export function useHomeDIY() {
               categoryOrder: Array.isArray(parsedV2.categoryOrder) ? parsedV2.categoryOrder : [],
               pinnedCategoryIds: Array.isArray(parsedV2.pinnedCategoryIds) ? parsedV2.pinnedCategoryIds : [],
               hiddenCategoryIds: Array.isArray(parsedV2.hiddenCategoryIds) ? parsedV2.hiddenCategoryIds : [],
+              collapsedCategoryIds: Array.isArray(parsedV2.collapsedCategoryIds) ? parsedV2.collapsedCategoryIds : [],
               customCategories: Array.isArray(parsedV2.customCategories) ? parsedV2.customCategories : [],
               updatedAt: Date.now(),
             }
             setConfig(migrated)
+            setHistory(createLayoutHistory(migrated))
             localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
             setMounted(true)
             return
@@ -132,6 +145,7 @@ export function useHomeDIY() {
               updatedAt: Date.now(),
             }
             setConfig(migrated)
+            setHistory(createLayoutHistory(migrated))
             localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
             setMounted(true)
             return
@@ -143,10 +157,13 @@ export function useHomeDIY() {
         const parsed = JSON.parse(raw)
         const check = validateAndCleanDIYConfig(parsed)
         if (check.valid && check.config) {
-          setConfig({
+          const initialLoaded: HomeDIYConfig = {
             ...check.config,
+            collapsedCategoryIds: Array.isArray(check.config.collapsedCategoryIds) ? check.config.collapsedCategoryIds : [],
             accentColor: ['default', 'violet', 'emerald', 'amber', 'rose'].includes(parsed.accentColor) ? parsed.accentColor : 'default',
-          })
+          }
+          setConfig(initialLoaded)
+          setHistory(createLayoutHistory(initialLoaded))
         }
       }
     } catch (e) {
@@ -166,7 +183,7 @@ export function useHomeDIY() {
     }
   }, [config.accentColor])
 
-  // 3. 持久化存储与事件广播
+  // 3. 持久化存储与事件广播 (同时压入撤销历史栈)
   const persistConfig = useCallback((updater: (prev: HomeDIYConfig) => HomeDIYConfig) => {
     setConfig((prev) => {
       const next = updater(prev)
@@ -174,6 +191,7 @@ export function useHomeDIY() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
         window.dispatchEvent(new Event('navhub_home_diy_updated'))
       } catch {}
+      setHistory((curr) => pushLayoutHistory(curr, next))
       return next
     })
   }, [])
@@ -507,6 +525,95 @@ export function useHomeDIY() {
     setIsEditingLayout((v) => !v)
   }, [])
 
+  // 28. 撤销 (Undo)
+  const canUndo = history.past.length > 0
+  const canRedo = history.future.length > 0
+
+  const undo = useCallback(() => {
+    setHistory((currHistory) => {
+      if (currHistory.past.length === 0) return currHistory
+      const nextHistory = undoLayoutHistory(currHistory)
+      setConfig(nextHistory.present)
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory.present))
+        window.dispatchEvent(new Event('navhub_home_diy_updated'))
+      } catch {}
+      return nextHistory
+    })
+  }, [])
+
+  // 29. 重做 (Redo)
+  const redo = useCallback(() => {
+    setHistory((currHistory) => {
+      if (currHistory.future.length === 0) return currHistory
+      const nextHistory = redoLayoutHistory(currHistory)
+      setConfig(nextHistory.present)
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory.present))
+        window.dispatchEvent(new Event('navhub_home_diy_updated'))
+      } catch {}
+      return nextHistory
+    })
+  }, [])
+
+  // 30. 全局快捷键监听 (编排模式下支持 Ctrl+Z / Cmd+Z 撤销, Ctrl+Shift+Z / Cmd+Shift+Z / Ctrl+Y 重做)
+  useEffect(() => {
+    if (!isEditingLayout) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+      const metaOrCtrl = isMac ? e.metaKey : e.ctrlKey
+      if (!metaOrCtrl) return
+
+      // 避免在输入框/文本域中拦截原生撤销
+      const activeEl = document.activeElement
+      const isInput =
+        activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          (activeEl as HTMLElement).isContentEditable)
+      if (isInput) return
+
+      if (e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) {
+          e.preventDefault()
+          redo()
+        } else {
+          e.preventDefault()
+          undo()
+        }
+      } else if (e.key.toLowerCase() === 'y' && !isMac) {
+        e.preventDefault()
+        redo()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isEditingLayout, undo, redo])
+
+  // 31. 分类手风琴折叠展开操作
+  const toggleCollapseCategory = useCallback((categoryId: string) => {
+    persistConfig((prev) => {
+      const next = toggleCollapsedCategoryPure(prev.collapsedCategoryIds || [], categoryId)
+      return { ...prev, collapsedCategoryIds: next, updatedAt: Date.now() }
+    })
+  }, [persistConfig])
+
+  const collapseAllCategories = useCallback((allCategoryIds: string[]) => {
+    persistConfig((prev) => ({
+      ...prev,
+      collapsedCategoryIds: collapseAllCategoriesPure(allCategoryIds),
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
+
+  const expandAllCategories = useCallback(() => {
+    persistConfig((prev) => ({
+      ...prev,
+      collapsedCategoryIds: expandAllCategoriesPure(),
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
+
   return {
     config,
     mounted,
@@ -519,11 +626,19 @@ export function useHomeDIY() {
     categoryOrder: config.categoryOrder,
     pinnedCategoryIds: config.pinnedCategoryIds,
     hiddenCategoryIds: config.hiddenCategoryIds,
+    collapsedCategoryIds: config.collapsedCategoryIds || [],
     pinnedSiteIdsByCategory: config.pinnedSiteIdsByCategory,
     customCategories: config.customCategories,
     isEditingLayout,
     setIsEditingLayout,
     toggleEditingLayout,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    toggleCollapseCategory,
+    collapseAllCategories,
+    expandAllCategories,
     setViewMode,
     setCardDisplayMode,
     setCanvasBackground,

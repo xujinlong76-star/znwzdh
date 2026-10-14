@@ -15,6 +15,15 @@ import {
   mobiusAdd,
   computeHyperbolicAlternativeScore,
   findTopAlternativesInHyperbolicSpace,
+  updateDiscountedArmReward,
+  computeDwellTimeReward,
+  expandPoly2Features,
+  lorentzInnerProduct,
+  lorentzDistance,
+  poincareToLorentz,
+  lorentzToPoincare,
+  KalmanFilter2D,
+  determinePrefetchStrategy,
   calculateShannonEntropy,
   hammingDistance64,
   auditPageHealth,
@@ -265,5 +274,107 @@ describe('页面视觉感知防劫持与软 404 巡检引擎', () => {
     );
     expect(audit.status).toBe('SUSPICIOUS_PARKED');
     expect(audit.minHammingDistance).toBe(1);
+  });
+});
+
+
+describe('前沿算法进阶改造测试套件', () => {
+  describe('Discounted-LinUCB 与隐式驻留时长奖励', () => {
+    it('应当在时序衰减折扣下平滑更新协方差与偏置向量', () => {
+      const model = createLinUCBModel(0.2);
+      const query = 'react hooks 源码';
+      updateDiscountedArmReward(model, 'exact', query, 1.0, 0.95);
+      expect(model.arms.exact.A[0]?.[0]).toBeGreaterThan(1.0);
+      expect(model.arms.exact.b[0]).toBeGreaterThan(0);
+    });
+
+    it('应当正确计算短跳出惩罚与高驻留正反馈', () => {
+      expect(computeDwellTimeReward(1.0, 'bounce')).toBe(-0.5);
+      expect(computeDwellTimeReward(0.8, 'click')).toBe(-0.5);
+      expect(computeDwellTimeReward(20.0, 'click')).toBeGreaterThan(1.0);
+      expect(computeDwellTimeReward(5.0, 'copy')).toBe(2.0);
+    });
+
+    it('应当执行二阶特征多项式升维', () => {
+      const base = [0.1, 0.5];
+      const poly = expandPoly2Features(base);
+      // 原有 2 维 + 交叉 3 项 (0*0, 0*1, 1*1) = 5 维
+      expect(poly.length).toBe(5);
+      expect(poly[0]).toBe(0.1);
+      expect(poly[1]).toBe(0.5);
+    });
+  });
+
+  describe('洛伦兹双曲超曲面模型 (Lorentz Hyperboloid)', () => {
+    it('应当满足庞加莱球与洛伦兹坐标双向同构映射', () => {
+      const p = [0.2, 0.3];
+      const lorentz = poincareToLorentz(p);
+      expect(lorentz.length).toBe(3);
+      expect(lorentz[0]).toBeGreaterThan(1.0); // 时间分量 u_0 > 1
+
+      const pBack = lorentzToPoincare(lorentz);
+      expect(pBack[0]).toBeCloseTo(0.2, 4);
+      expect(pBack[1]).toBeCloseTo(0.3, 4);
+    });
+
+    it('应当计算恒正且数值平滑的洛伦兹测地线距离', () => {
+      const u = poincareToLorentz([0.1, 0.2]);
+      const v = poincareToLorentz([0.3, 0.4]);
+      const dist = lorentzDistance(u, v);
+      expect(dist).toBeGreaterThan(0);
+
+      // 同一点自距离应当为 0
+      const selfDist = lorentzDistance(u, u);
+      expect(selfDist).toBeCloseTo(0, 4);
+    });
+  });
+
+  describe('0-RTT 推测执行新语法微解析器 (Cron, JWT, Curl)', () => {
+    it('应当解析并用自然语言解释 Cron 表达式', () => {
+      const resEvery5 = parseSpeculativeIntent('*/5 * * * *');
+      expect(resEvery5?.type).toBe('cron');
+      expect(resEvery5?.subtitle).toContain('每隔 5 分钟');
+
+      const resMidnight = parseSpeculativeIntent('0 0 * * *');
+      expect(resMidnight?.type).toBe('cron');
+      expect(resMidnight?.subtitle).toContain('午夜 00:00');
+    });
+
+    it('应当解析 JWT Token 并分析过期状态', () => {
+      // 构造模拟 JWT: header {"alg":"HS256"}, payload {"sub":"user123","exp":9999999999}
+      const h = Buffer.from(JSON.stringify({ alg: 'HS256' })).toString('base64');
+      const p = Buffer.from(JSON.stringify({ sub: 'user123', exp: 9999999999 })).toString('base64');
+      const token = `${h}.${p}.dummy_signature`;
+
+      const res = parseSpeculativeIntent(token);
+      expect(res?.type).toBe('jwt');
+      expect(res?.details?.['状态']).toContain('有效期内');
+    });
+
+    it('应当将 Curl 命令行转换为 Fetch 语法脚本', () => {
+      const curlCmd = 'curl -X POST https://api.example.com/v1/search -d "query=ai"';
+      const res = parseSpeculativeIntent(curlCmd);
+      expect(res?.type).toBe('curl_to_fetch');
+      expect(res?.previewValue).toContain('fetch("https://api.example.com/v1/search"');
+      expect(res?.previewValue).toContain('method: "POST"');
+    });
+  });
+
+  describe('二维卡尔曼轨迹平滑与自适应预取', () => {
+    it('卡尔曼滤波器应当平滑光标抖动并预测未来位置', () => {
+      const kf = new KalmanFilter2D(100, 100);
+      kf.update(105, 102, 16);
+      kf.update(110, 105, 16);
+      const future = kf.predictFuture(100);
+      expect(future.x).toBeGreaterThan(110);
+      expect(future.y).toBeGreaterThan(105);
+    });
+
+    it('应当根据连接模式自适应降级预取策略', () => {
+      expect(determinePrefetchStrategy({ saveData: true })).toBe('none');
+      expect(determinePrefetchStrategy({ effectiveType: '2g' })).toBe('none');
+      expect(determinePrefetchStrategy({ effectiveType: '3g' })).toBe('dns-prefetch');
+      expect(determinePrefetchStrategy({ effectiveType: '4g' })).toBe('preconnect');
+    });
   });
 });

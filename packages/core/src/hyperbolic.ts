@@ -179,3 +179,64 @@ export function findTopAlternativesInHyperbolicSpace(
   results.sort((a, b) => b.alternativeScore - a.alternativeScore);
   return results.slice(0, limit);
 }
+
+
+/**
+ * -------------------------------------------------------------
+ * 洛伦兹双曲超曲面模型 (Lorentz / Minkowski Hyperboloid Model)
+ * -------------------------------------------------------------
+ * 洛伦兹模型在整个双曲空间无边界奇点，无需频繁裁剪，具有更优异的数值稳定性。
+ */
+
+/**
+ * 洛伦兹内积 (Minkowski Bilinear Form)
+ * <u, v>_L = -u_0 * v_0 + sum_{i=1}^{d-1} (u_i * v_i)
+ */
+export function lorentzInnerProduct(u: number[], v: number[]): number {
+  if (u.length === 0 || v.length === 0) return 0;
+  let spatialDot = 0;
+  const n = Math.min(u.length, v.length);
+  for (let i = 1; i < n; i++) {
+    spatialDot += (u[i] ?? 0) * (v[i] ?? 0);
+  }
+  const timeComponent = (u[0] ?? 0) * (v[0] ?? 0);
+  return -timeComponent + spatialDot;
+}
+
+/**
+ * 洛伦兹测地线距离
+ * d_L(u, v) = arcosh(max(1.0, -<u, v>_L))
+ */
+export function lorentzDistance(u: number[], v: number[]): number {
+  const prod = lorentzInnerProduct(u, v);
+  const coshVal = Math.max(1.0, -prod);
+  // arcosh(x) = ln(x + sqrt(x^2 - 1))
+  return Math.acosh(coshVal);
+}
+
+/**
+ * 庞加莱球坐标映射至洛伦兹超曲面 (Poincaré Ball -> Lorentz Hyperboloid)
+ * u_0 = (1 + ||x||^2) / (1 - ||x||^2)
+ * u_i = 2 * x_i / (1 - ||x||^2)
+ */
+export function poincareToLorentz(p: number[]): number[] {
+  const clamped = clampToBall(p);
+  const normSq = euclideanNorm(clamped) ** 2;
+  const denom = Math.max(EPSILON, 1.0 - normSq);
+  
+  const time0 = (1.0 + normSq) / denom;
+  const spatial = clamped.map((val) => (2.0 * val) / denom);
+  return [time0, ...spatial];
+}
+
+/**
+ * 洛伦兹超曲面映射至庞加莱球坐标 (Lorentz Hyperboloid -> Poincaré Ball)
+ * x_i = u_i / (1 + u_0)
+ */
+export function lorentzToPoincare(l: number[]): number[] {
+  if (l.length <= 1) return [];
+  const time0 = l[0] ?? 1.0;
+  const denom = Math.max(EPSILON, 1.0 + time0);
+  const spatial = l.slice(1);
+  return clampToBall(spatial.map((val) => val / denom));
+}

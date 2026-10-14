@@ -44,38 +44,13 @@ function isExcluded(rel) {
   return false;
 }
 
-// 1) 下载或复用上游 tarball
+// 1) 下载上游 tarball
+console.log("[sync] 下载上游 NavSphere@" + REF + " …");
+const url = "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/refs/heads/" + REF;
+const res = await fetch(url);
+if (!res.ok) { console.error("[sync] 下载失败 HTTP " + res.status); process.exit(1); }
 const tgz = join(ROOT, ".vendor-ns.tgz");
-let hasValidTgz = false;
-try {
-  if (existsSync(tgz) && statSync(tgz).size > 100000) {
-    hasValidTgz = true;
-    console.log("[sync] 复用本地已存在的上游 NavSphere tarball …");
-  }
-} catch {}
-
-if (!hasValidTgz) {
-  console.log("[sync] 下载上游 NavSphere@" + REF + " …");
-  const url = "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/refs/heads/" + REF;
-  try {
-    const res = await fetch(url);
-    if (res.ok) {
-      writeFileSync(tgz, Buffer.from(await res.arrayBuffer()));
-      hasValidTgz = true;
-    }
-  } catch {}
-
-  if (!hasValidTgz) {
-    console.log("[sync] fetch 下载失败，尝试使用 curl (带代理) 下载 …");
-    try {
-      execFileSync("curl.exe", ["--ssl-no-revoke", "-x", "127.0.0.1:3067", "-L", "-o", ".vendor-ns.tgz", url], { cwd: ROOT, stdio: "inherit" });
-      hasValidTgz = true;
-    } catch (e) {
-      console.error("[sync] 下载失败：" + (e.message || e));
-      process.exit(1);
-    }
-  }
-}
+writeFileSync(tgz, Buffer.from(await res.arrayBuffer()));
 
 // 2) 解压到暂存目录（相对路径 + cwd：Windows 系统 tar 对反斜杠绝对路径会 status 2）
 const stage = join(ROOT, ".vendor-stage");

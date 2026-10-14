@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo } from 'react'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { NavigationCard } from '@/components/navigation-card'
@@ -52,10 +52,7 @@ import {
   Sparkles,
   Plus,
   ChevronDown,
-  CheckSquare,
 } from 'lucide-react'
-import { BatchOperationDock } from '@/components/batch-operation-dock'
-import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -265,103 +262,6 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
     )
   }, [customSiteTitle, customSiteHref, customSiteDesc, sortedCategories])
 
-  // 7. 多选批量操作控制状态
-  const [selectedSiteIds, setSelectedSiteIds] = useState<Set<string>>(new Set())
-  const [isSelectMode, setIsSelectMode] = useState(false)
-
-  // 收集当前排序分类下所有可见站点，用于快速匹配与全选
-  const allVisibleSites = useMemo(() => {
-    const list: NavigationSubItem[] = []
-    for (const cat of sortedCategories) {
-      if (cat.items) {
-        list.push(...(cat.items as NavigationSubItem[]))
-      }
-      if (cat.subCategories) {
-        for (const sub of cat.subCategories) {
-          if (sub.items) {
-            list.push(...(sub.items as NavigationSubItem[]))
-          }
-        }
-      }
-    }
-    return list
-  }, [sortedCategories])
-
-  const selectedSitesList = useMemo(() => {
-    if (selectedSiteIds.size === 0) return []
-    const map = new Map<string, NavigationSubItem>()
-    for (const s of allVisibleSites) {
-      if (selectedSiteIds.has(s.id)) {
-        map.set(s.id, s)
-      }
-    }
-    return Array.from(map.values())
-  }, [selectedSiteIds, allVisibleSites])
-
-  const handleToggleSelectSite = useCallback((siteId: string) => {
-    setSelectedSiteIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(siteId)) {
-        next.delete(siteId)
-      } else {
-        next.add(siteId)
-      }
-      return next
-    })
-  }, [])
-
-  const handleSelectAllSites = useCallback(() => {
-    setSelectedSiteIds(new Set(allVisibleSites.map((s) => s.id)))
-  }, [allVisibleSites])
-
-  const handleClearSelection = useCallback(() => {
-    setSelectedSiteIds(new Set())
-    setIsSelectMode(false)
-  }, [])
-
-  const handleBatchAddToCustomCategory = useCallback((targetCategoryId: string) => {
-    if (selectedSitesList.length === 0) return
-    const targetCat = customCategories.find((c) => c.id === targetCategoryId)
-    let addedCount = 0
-
-    for (const site of selectedSitesList) {
-      addSiteToCustomCategory(targetCategoryId, {
-        id: `custom_site_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        title: site.title,
-        href: site.href,
-        description: site.description,
-        icon: site.icon,
-      })
-      addedCount++
-    }
-
-    toast({
-      title: '📥 批量收录成功',
-      description: `已成功将 ${addedCount} 个站点批量注入专属分类「${targetCat?.title || '目标分类'}」！`,
-    })
-    setSelectedSiteIds(new Set())
-  }, [selectedSitesList, customCategories, addSiteToCustomCategory, toast])
-
-  const handleBatchPinToWorkbench = useCallback(() => {
-    if (selectedSitesList.length === 0) return
-    let count = 0
-    for (const site of selectedSitesList) {
-      pinSiteToWorkbench({
-        siteId: site.id,
-        title: site.title,
-        href: site.href,
-        icon: site.icon,
-        description: site.description,
-      })
-      count++
-    }
-    toast({
-      title: '📌 批量固定成功',
-      description: `已将 ${count} 个站点固定至模块化工作台快捷启动坞。`,
-    })
-    setSelectedSiteIds(new Set())
-  }, [selectedSitesList, toast])
-
   return (
     <div className="flex flex-col md:flex-row min-h-screen">
       <div className="hidden md:block">
@@ -396,30 +296,6 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
               <SearchPalette siteConfig={siteData} />
             </div>
             <div className="flex items-center gap-1 shrink-0">
-              {/* 多选模式开关按钮 */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "h-8.5 w-8.5 rounded-lg transition-colors",
-                  isSelectMode || selectedSiteIds.size > 0
-                    ? "text-primary bg-primary/10 border border-primary/20 shadow-2xs"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                )}
-                onClick={() => {
-                  if (isSelectMode && selectedSiteIds.size > 0) {
-                    setSelectedSiteIds(new Set())
-                    setIsSelectMode(false)
-                  } else {
-                    setIsSelectMode(!isSelectMode)
-                  }
-                }}
-                title={isSelectMode ? "退出多选" : "开启多选模式 (可批量导出、收录与固定)"}
-                aria-label="多选模式"
-              >
-                <CheckSquare className="h-4 w-4" />
-              </Button>
-
               {/* 开发者极速微工具箱按钮 */}
               <Button
                 variant="ghost"
@@ -825,9 +701,6 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                                     onTogglePinInCategory={(siteId) => togglePinSiteInCategory(category.id, siteId)}
                                     isDraggable={isEditingLayout}
                                     sourceCategoryId={category.id}
-                                    isSelectMode={isSelectMode || selectedSiteIds.size > 0}
-                                    isSelected={selectedSiteIds.has(item.id)}
-                                    onToggleSelect={handleToggleSelectSite}
                                   />
                                 ))}
 
@@ -888,9 +761,6 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                                           onTogglePinInCategory={(siteId) => togglePinSiteInCategory(subCategory.id, siteId)}
                                           isDraggable={isEditingLayout}
                                           sourceCategoryId={subCategory.id}
-                                          isSelectMode={isSelectMode || selectedSiteIds.size > 0}
-                                          isSelected={selectedSiteIds.has(item.id)}
-                                          onToggleSelect={handleToggleSelectSite}
                                         />
                                       ))}
                                     </div>
@@ -929,17 +799,6 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
           allCategoryIds={allCategoryIds}
           categoryTitleMap={categoryTitleMap}
           categories={sortedCategories}
-        />
-
-        {/* 屏幕底端多选批量操作浮坞 */}
-        <BatchOperationDock
-          selectedSites={selectedSitesList}
-          customCategories={customCategories}
-          onClearSelection={handleClearSelection}
-          onSelectAll={handleSelectAllSites}
-          totalCount={allVisibleSites.length}
-          onBatchAddToCustomCategory={handleBatchAddToCustomCategory}
-          onBatchPinToWorkbench={handleBatchPinToWorkbench}
         />
 
         {/* 页脚 */}

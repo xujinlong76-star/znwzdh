@@ -19,6 +19,8 @@ export interface LlmConfig {
   apiKey: string | null;
   model: string;
   timeoutMs: number;
+  /** 备选 LLM 轮换池配置（主模型失败或超时后依次尝试） */
+  fallbacks?: LlmConfig[];
 }
 
 export const DEFAULT_LLM: LlmConfig = {
@@ -198,23 +200,26 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
   const canUseLlm = !options.heuristicOnly && Boolean(llm.apiKey);
 
   if (canUseLlm) {
-    const payload = await tryLlm(
-      llm,
-      { url: finalUrl, title: fallbackTitle, description: metaDesc, knownCategories: options.knownCategories },
-      warnings,
-    );
-    if (payload) {
-      return {
-        url: finalUrl, httpStatus,
-        title: payload.title,
-        description: payload.description,
-        tags: payload.tags,
-        keywords: payload.keywords,
-        suggestedCategory: payload.category,
-        iconUrl, imageUrl, lang,
-        provenance: "llm",
+    const configsToTry = [llm, ...(llm.fallbacks || [])].filter((c) => Boolean(c.apiKey));
+    for (const activeLlm of configsToTry) {
+      const payload = await tryLlm(
+        activeLlm,
+        { url: finalUrl, title: fallbackTitle, description: metaDesc, knownCategories: options.knownCategories },
         warnings,
-      };
+      );
+      if (payload) {
+        return {
+          url: finalUrl, httpStatus,
+          title: payload.title,
+          description: payload.description,
+          tags: payload.tags,
+          keywords: payload.keywords,
+          suggestedCategory: payload.category,
+          iconUrl, imageUrl, lang,
+          provenance: "llm",
+          warnings,
+        };
+      }
     }
     warnings.push("LLM 富化失败，已降级为启发式");
   } else if (!options.heuristicOnly) {

@@ -272,3 +272,82 @@ export function deserializeLinUCB(jsonStr: string): LinUCBModel {
   }
   return createLinUCBModel();
 }
+
+
+/**
+ * 带时序衰减因子的在线强化学习更新 (Discounted-LinUCB Update)
+ * 引入衰减因子 gamma (默认 0.98)，自适应抑制历史远期数据钝化，快速捕捉近期技术偏好漂移。
+ * 公式：
+ *   A_a = gamma * A_a + (1 - gamma) * I + x * x^T
+ *   b_a = gamma * b_a + reward * x
+ */
+export function updateDiscountedArmReward(
+  model: LinUCBModel,
+  channel: RetrievalChannel,
+  query: string,
+  reward: number,
+  gamma = 0.98
+): void {
+  const arm = model.arms[channel];
+  if (!arm) return;
+
+  const x = extractContextFeatures(query);
+  const dim = model.dimension;
+  const safeGamma = Math.min(1.0, Math.max(0.8, gamma));
+
+  // 1) 协方差矩阵时序折扣更新：gamma * A + (1 - gamma) * I + x * x^T
+  for (let i = 0; i < dim; i++) {
+    const row = arm.A[i];
+    const xi = x[i] ?? 0;
+    if (row) {
+      for (let j = 0; j < dim; j++) {
+        const curVal = row[j] ?? 0;
+        const identityDelta = i === j ? (1.0 - safeGamma) : 0;
+        row[j] = safeGamma * curVal + identityDelta + xi * (x[j] ?? 0);
+      }
+    }
+  }
+
+  // 2) 累积奖励偏置时序折扣更新：gamma * b + reward * x
+  for (let i = 0; i < dim; i++) {
+    arm.b[i] = safeGamma * (arm.b[i] ?? 0) + reward * (x[i] ?? 0);
+  }
+}
+
+/**
+ * 驻留时长与交互行为双重隐式奖励模型 (Dwell-Time Implicit Feedback)
+ * @param dwellSeconds 用户在目标卡片/站点的驻留观察时长（秒）
+ * @param interactionType 交互行为（click / copy / bounce）
+ * @returns 连续归一化奖励得分 [-1.0, 2.0]
+ */
+export function computeDwellTimeReward(
+  dwellSeconds: number,
+  interactionType: 'click' | 'copy' | 'bounce' = 'click'
+): number {
+  if (interactionType === 'bounce' || dwellSeconds < 1.5) {
+    // 快速回退跳出：给予负向惩罚
+    return -0.5;
+  }
+  if (interactionType === 'copy') {
+    // 触发有效复制或书签操作：极强正反馈
+    return 2.0;
+  }
+  // 驻留 1.5s ~ 30s 按照饱和对数曲线平滑映射 [0.2, 1.5]
+  const logScore = Math.log(dwellSeconds + 1) / Math.log(31);
+  return Number((Math.min(1.5, Math.max(0.2, logScore * 1.5))).toFixed(2));
+}
+
+/**
+ * 二阶多项式特征交叉投影 (Poly2 Feature Expansion)
+ * 将基础线性特征升维至包含成对交互项的高阶空间，捕捉非线性意图关联。
+ */
+export function expandPoly2Features(features: number[]): number[] {
+  const expanded = [...features];
+  const n = features.length;
+  for (let i = 0; i < n; i++) {
+    for (let j = i; j < n; j++) {
+      expanded.push(Number(((features[i] ?? 0) * (features[j] ?? 0)).toFixed(4)));
+    }
+  }
+  return expanded;
+}

@@ -1,3 +1,15 @@
+
+const tokenInput = document.getElementById("token-input");
+if (tokenInput) {
+  try {
+    const savedToken = localStorage.getItem("navhub_api_token") || "";
+    tokenInput.value = savedToken;
+    tokenInput.addEventListener("input", (e) => {
+      localStorage.setItem("navhub_api_token", e.target.value.trim());
+    });
+  } catch (err) {}
+}
+
 const API_BASE = "http://127.0.0.1:8787";
 
 const searchInput = document.getElementById("search-input");
@@ -12,6 +24,11 @@ let currentTab = null;
 async function checkHealth() {
   try {
     const res = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(2000) });
+    if (res.status === 401) {
+      saveBtn.textContent = "❌ 401 未授权：请在下方填入有效 API Token";
+      saveBtn.style.background = "#ef4444";
+      return;
+    }
     if (res.ok) {
       statusIndicator.textContent = "中枢已连接";
       statusIndicator.style.color = "#10b981";
@@ -90,14 +107,24 @@ saveBtn.addEventListener("click", async () => {
   saveBtn.textContent = "正在调用 AI 抓取并富化...";
 
   try {
+    const headers = { "Content-Type": "application/json" };
+    const savedToken = tokenInput ? tokenInput.value.trim() : (localStorage.getItem("navhub_api_token") || "");
+    if (savedToken) {
+      headers["Authorization"] = `Bearer ${savedToken}`;
+    }
     const res = await fetch(`${API_BASE}/api/sites/auto`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         url: currentTab.url,
       }),
     });
 
+    if (res.status === 401) {
+      saveBtn.textContent = "❌ 401 未授权：请在下方填入有效 API Token";
+      saveBtn.style.background = "#ef4444";
+      return;
+    }
     if (res.ok) {
       const data = await res.json().catch(() => ({}));
       if (data.created === false && data.reason) {

@@ -102,3 +102,79 @@ export function shouldPreconnectOrigin(
   if (connectedOrigins.size >= maxConnections) return false;
   return true;
 }
+
+
+/**
+ * -------------------------------------------------------------
+ * 二维卡尔曼滤波器 (2D Kalman Trajectory Filter)
+ * -------------------------------------------------------------
+ * 状态向量 x = [pos_x, pos_y, vel_x, vel_y]^T
+ * 用于平滑鼠标轨迹微小手震并预测未来 100~300ms 的置信落点
+ */
+export class KalmanFilter2D {
+  private x: number;
+  private y: number;
+  private vx: number;
+  private vy: number;
+  private q: number; // 过程噪声协方差 (Process Noise)
+  private r: number; // 观测噪声协方差 (Measurement Noise)
+
+  constructor(initX = 0, initY = 0, q = 0.6, r = 0.2) {
+    this.x = initX;
+    this.y = initY;
+    this.vx = 0;
+    this.vy = 0;
+    this.q = q;
+    this.r = r;
+  }
+
+  /**
+   * 观测并更新卡尔曼状态
+   */
+  update(measuredX: number, measuredY: number, dtMs: number): { x: number; y: number; vx: number; vy: number } {
+    const dt = Math.max(1, dtMs);
+    const prevX = this.x;
+    const prevY = this.y;
+
+    // 预测步骤
+    const predX = this.x + this.vx * dt;
+    const predY = this.y + this.vy * dt;
+
+    // 简易卡尔曼增益平滑 (稳态增益)
+    const k = this.q / (this.q + this.r);
+    this.x = predX + k * (measuredX - predX);
+    this.y = predY + k * (measuredY - predY);
+
+    // 速度更新：融合瞬时观测微分速度与惯性速度
+    const measuredVx = (measuredX - prevX) / dt;
+    const measuredVy = (measuredY - prevY) / dt;
+    this.vx = this.vx + k * (measuredVx - this.vx);
+    this.vy = this.vy + k * (measuredVy - this.vy);
+
+    return { x: this.x, y: this.y, vx: this.vx, vy: this.vy };
+  }
+
+  /**
+   * 预测未来 deltaMs 毫秒后的光标物理坐标
+   */
+  predictFuture(deltaMs: number): { x: number; y: number } {
+    return {
+      x: this.x + this.vx * deltaMs,
+      y: this.y + this.vy * deltaMs,
+    };
+  }
+}
+
+/**
+ * 根据网络状态自适应确定预取深度
+ */
+export function determinePrefetchStrategy(connection?: {
+  saveData?: boolean;
+  effectiveType?: string;
+}): 'none' | 'dns-prefetch' | 'preconnect' {
+  if (!connection) return 'preconnect';
+  if (connection.saveData) return 'none';
+  if (connection.effectiveType === 'slow-2g' || connection.effectiveType === '2g') return 'none';
+  if (connection.effectiveType === '3g') return 'dns-prefetch';
+  return 'preconnect';
+}

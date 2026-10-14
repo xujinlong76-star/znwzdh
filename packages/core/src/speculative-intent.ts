@@ -7,6 +7,9 @@
  */
 
 export type SpeculativeIntentType =
+  | 'cron'
+  | 'jwt'
+  | 'curl_to_fetch'
   | 'base64_decode'
   | 'base64_encode'
   | 'timestamp'
@@ -406,12 +409,147 @@ function tryDetectIp(input: string): SpeculativeIntentResult | null {
 /**
  * 主入口：推测性意图解析
  */
+
+/**
+ * Cron 表达式解析与自然语言解释
+ */
+function tryParseCron(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+  const parts = trimmed.split(/\s+/);
+  if (parts.length !== 5 && parts.length !== 6) return null;
+
+  // 基础 Cron 字符集校验
+  const validChars = /^[0-9\*\/\,\-]+$/;
+  if (!parts.every(p => validChars.test(p))) return null;
+
+  const [min, hour, dom, mon, dow] = parts;
+  let explanation = '定时执行任务: ';
+  if (min === '*' && hour === '*') {
+    explanation = '每分钟执行一次';
+  } else if (min?.startsWith('*/')) {
+    const step = min.slice(2);
+    explanation = `每隔 ${step} 分钟执行一次`;
+  } else if (min === '0' && hour === '0' && dom === '*' && mon === '*' && dow === '*') {
+    explanation = '每天午夜 00:00 执行一次';
+  } else if (min === '0' && hour !== '*' && dom === '*' && mon === '*' && dow === '*') {
+    explanation = `每天 ${hour}:00 执行一次`;
+  } else if (dow !== '*' && dom === '*') {
+    explanation = `每周特定工作日/周末执行 (星期: ${dow})`;
+  } else {
+    explanation = `计划表达式: [分:${min} 时:${hour} 日:${dom} 月:${mon} 周:${dow}]`;
+  }
+
+  return {
+    type: 'cron',
+    title: 'Cron 定时任务表达式',
+    subtitle: explanation,
+    previewValue: trimmed,
+    actionLabel: '复制 Cron 语法',
+    copyValue: trimmed,
+    details: {
+      '标准格式': trimmed,
+      '语义释义': explanation,
+      '分/时/日/月/周': parts.slice(0, 5).join(' | '),
+    },
+  };
+}
+
+/**
+ * JWT 离线解码与过期时间分析
+ */
+function tryParseJwt(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith('eyJ') || !trimmed.includes('.')) return null;
+
+  const parts = trimmed.split('.');
+  if (parts.length !== 3) return null;
+
+  try {
+    const decodeB64Url = (str: string) => {
+      let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4 !== 0) b64 += '=';
+      if (typeof Buffer !== 'undefined') {
+        return Buffer.from(b64, 'base64').toString('utf-8');
+      }
+      return decodeURIComponent(escape(atob(b64)));
+    };
+
+    const header = JSON.parse(decodeB64Url(parts[0] || ''));
+    const payload = JSON.parse(decodeB64Url(parts[1] || ''));
+
+    let status = '有效';
+    let expireInfo = '未设置过期时间';
+    if (payload.exp && typeof payload.exp === 'number') {
+      const expDate = new Date(payload.exp * 1000);
+      const now = Date.now();
+      if (expDate.getTime() < now) {
+        status = '⚠️ 已过期';
+        expireInfo = `于 ${expDate.toLocaleString()} 过期`;
+      } else {
+        const diffMins = Math.round((expDate.getTime() - now) / 60000);
+        status = '✅ 有效期内';
+        expireInfo = `将于 ${expDate.toLocaleString()} 过期 (约 ${diffMins} 分钟后)`;
+      }
+    }
+
+    return {
+      type: 'jwt',
+      title: `JWT 结构反序列化 (${status})`,
+      subtitle: `算法: ${header.alg || '未知'} | 签发者/主题: ${payload.iss || payload.sub || '缺省'}`,
+      previewValue: JSON.stringify(payload, null, 2),
+      actionLabel: '复制 Payload 详情',
+      copyValue: JSON.stringify(payload, null, 2),
+      details: {
+        '算法': String(header.alg || 'none'),
+        '状态': status,
+        '到期时间': expireInfo,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Curl 语句转 Fetch 脚本生成器
+ */
+function tryParseCurl(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+  if (!trimmed.startsWith('curl ') && !trimmed.startsWith('curl.exe ')) return null;
+
+  // 简易 URL 匹配
+  const urlMatch = trimmed.match(/https?:\/\/[^\s"']+/);
+  if (!urlMatch) return null;
+  const targetUrl = urlMatch[0];
+
+  const methodMatch = trimmed.match(/-X\s+([A-Z]+)/i);
+  const method = methodMatch ? (methodMatch[1] || 'GET').toUpperCase() : (trimmed.includes('-d ') || trimmed.includes('--data') ? 'POST' : 'GET');
+
+  const generatedFetch = `fetch("${targetUrl}", {\n  method: "${method}",\n  headers: { "Content-Type": "application/json" }\n})`;
+
+  return {
+    type: 'curl_to_fetch',
+    title: 'Curl 转 Fetch 代码生成',
+    subtitle: `目标: ${method} ${targetUrl}`,
+    previewValue: generatedFetch,
+    actionLabel: '复制代码',
+    copyValue: generatedFetch,
+    details: {
+      '请求方法': method,
+      '目标地址': targetUrl,
+    },
+  };
+}
+
 export function parseSpeculativeIntent(input: string): SpeculativeIntentResult | null {
   if (!input || input.trim().length === 0) return null;
   const q = input.trim();
 
   // 优先级逐层匹配
   return (
+    tryParseCron(q) ||
+    tryParseJwt(q) ||
+    tryParseCurl(q) ||
     tryParseColor(q) ||
     tryParseMath(q) ||
     tryParseTimestamp(q) ||

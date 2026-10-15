@@ -11,9 +11,15 @@ declare module 'next-auth' {
     user: {
       /** 用户在 IdP 的唯一 ID（服务端按它索引 token） */
       id?: string
+      role?: string
     } & DefaultSession['user']
   }
   interface JWT {
     accessToken?: string
+    role?: string
+  }
+  interface User {
+    accessToken?: string
+    role?: string
   }
 }

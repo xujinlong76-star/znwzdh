@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { NavigationCard } from '@/components/navigation-card'
@@ -9,13 +10,32 @@ import { SearchPalette } from '@/components/search-palette'
 import { ModeToggle } from '@/components/mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
 import { ViewModeToggle } from '@/components/view-mode-toggle'
-import { HomeHeroDeck } from '@/components/home-hero-deck'
-import { ModularCanvas } from '@/components/modular/modular-canvas'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { HomeDIYToolbar } from '@/components/home-diy-toolbar'
-import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { Footer } from '@/components/footer'
+
+// 性能优化：动态懒加载大型组件，大幅缩减首屏 JS 体积与主线程阻塞时间
+const ModularCanvas = dynamic(
+  () => import('@/components/modular/modular-canvas').then((m) => m.ModularCanvas),
+  { ssr: false }
+)
+const HomeHeroDeck = dynamic(
+  () => import('@/components/home-hero-deck').then((m) => m.HomeHeroDeck),
+  { ssr: false }
+)
+const KeyboardShortcutsDialog = dynamic(
+  () => import('@/components/keyboard-shortcuts-dialog').then((m) => m.KeyboardShortcutsDialog),
+  { ssr: false }
+)
+const SitePeekDialog = dynamic(
+  () => import('@/components/site-peek-dialog').then((m) => m.SitePeekDialog),
+  { ssr: false }
+)
+const QuickToolsDrawer = dynamic(
+  () => import('@/components/quick-tools-drawer').then((m) => m.QuickToolsDrawer),
+  { ssr: false }
+)
 import { Button } from '@/registry/new-york/ui/button'
 import {
   DropdownMenu,
@@ -57,8 +77,6 @@ import {
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
-import { SitePeekDialog } from '@/components/site-peek-dialog'
-import { QuickToolsDrawer } from '@/components/quick-tools-drawer'
 import {
   sortCategoryItemsWithPinned,
   computeAdaptiveSiteRanking,

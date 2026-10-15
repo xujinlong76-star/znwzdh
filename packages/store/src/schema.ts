@@ -153,6 +153,12 @@ export const apiTokens = sqliteTable("api_tokens", {
   lastUsedAt: integer("last_used_at"),
   expiresAt: integer("expires_at"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
+  /** 软吊销时间；非空即失效，但记录保留以便审计可追溯 */
+  revokedAt: integer("revoked_at"),
+  /** 上次轮换时间；轮换不重写 created_at */
+  rotatedAt: integer("rotated_at"),
+  /** 明文前缀（如 nh_1a2b），仅用于列表区分，不含可还原部分 */
+  tokenPrefix: text("token_prefix"),
 }, (t) => [uniqueIndex("api_tokens_hash_idx").on(t.tokenHash)]);
 
 export const events = sqliteTable("events", {

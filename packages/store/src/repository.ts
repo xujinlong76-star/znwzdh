@@ -92,6 +92,17 @@ export interface ApiTokenRecord {
   expiresAt: number | null;
   lastUsedAt: number | null;
   createdAt: number;
+  /**
+   * 软吊销时间戳。非 null = 已停用，鉴权一律拒绝。
+   *
+   * 为什么要有"停用"而不是只有"删除"：审核日志里 token 是以 id 记录的，
+   * 硬删之后 audit_logs.target 变成悬空 id，"哪条凭据做过什么"就永远查不到了。
+   */
+  revokedAt: number | null;
+  /** 上次轮换时间；null = 从未轮换。轮换**不**重写 created_at */
+  rotatedAt: number | null;
+  /** 明文前缀（如 nh_1a2b3c），仅用于列表区分凭据 */
+  tokenPrefix: string | null;
 }
 
 /** 审计日志记录；diff 已解析（库里存的是 JSON 文本） */
@@ -136,9 +147,14 @@ function buildIndexFields(input: { title: string; description?: string | null; u
   };
 }
 
+/** last_used_at 的写入节流窗口：同 id 在这个间隔内只写一次 */
+export const TOKEN_TOUCH_THROTTLE_MS = 60_000;
+
 export class Repository {
   /** 显式字段（不用参数属性语法：Node 的 strip-only 模式不支持） */
   private db: Db;
+  /** tokenId -> 上次写入 last_used_at 的时间（进程内节流，不落库） */
+  private tokenTouchAt = new Map<string, number>();
 
   constructor(db: Db) {
     this.db = db;
@@ -1108,6 +1124,8 @@ export class Repository {
     tokenHash: string;
     scopes?: string;
     expiresAt?: number | null;
+    /** 明文前缀（不含可还原部分），供列表页区分凭据 */
+    tokenPrefix?: string | null;
   }): Promise<ApiTokenRecord> {
     const id = randomUUID();
     const now = Date.now();
@@ -1115,10 +1133,20 @@ export class Repository {
     // 落库也始终是干净的 "read,write,admin" 集合。
     const scopes = normalizeTokenScopes(input.scopes);
     await this.run(
-      "INSERT INTO api_tokens (id, name, token_hash, scopes, expires_at, created_at) VALUES (?,?,?,?,?,?)",
-      [id, input.name, input.tokenHash, scopes, input.expiresAt ?? null, now],
+      "INSERT INTO api_tokens (id, name, token_hash, scopes, expires_at, created_at, token_prefix) VALUES (?,?,?,?,?,?,?)",
+      [id, input.name, input.tokenHash, scopes, input.expiresAt ?? null, now, input.tokenPrefix ?? null],
     );
-    return { id, name: input.name, scopes: scopes.split(","), expiresAt: input.expiresAt ?? null, lastUsedAt: null, createdAt: now };
+    return {
+      id,
+      name: input.name,
+      scopes: scopes.split(","),
+      expiresAt: input.expiresAt ?? null,
+      lastUsedAt: null,
+      createdAt: now,
+      revokedAt: null,
+      rotatedAt: null,
+      tokenPrefix: input.tokenPrefix ?? null,
+    };
   }
 
   /**
@@ -1137,18 +1165,52 @@ export class Repository {
   }
 
   /**
-   * 轮换：为同一记录换新哈希（对应新明文），并重置最近使用时间。
+   * 轮换：为同一记录换新哈希（对应新明文），保留 name / scopes / created_at。
+   *
    * 调用方生成新明文并算好 sha256 后传入；本方法只更新记录，不产明文。
    * 返回 null 表示 id 不存在。
+   *
+   * 修掉的 bug：旧实现会顺手把 created_at 重写成 now，导致
+   *   1. 管理页"创建于"在轮换后跳变成今天，凭据的真实服役起点丢失
+   *   2. 轮换与"重新签发"在审计上无法区分
+   * 现在 created_at 只表示签发时间，轮换另记 rotated_at。
    */
-  async rotateApiToken(id: string, tokenHash: string, expiresAt?: number | null): Promise<ApiTokenRecord | null> {
+  async rotateApiToken(
+    id: string,
+    tokenHash: string,
+    expiresAt?: number | null,
+    tokenPrefix?: string | null
+  ): Promise<ApiTokenRecord | null> {
     const existing = (await this.raw("SELECT * FROM api_tokens WHERE id = ? LIMIT 1", [id]))[0];
     if (!existing) return null;
     const finalExpiresAt = expiresAt !== undefined ? expiresAt : (existing.expires_at == null ? null : Number(existing.expires_at));
+    const finalPrefix = tokenPrefix !== undefined ? tokenPrefix : (existing.token_prefix == null ? null : String(existing.token_prefix));
+    const now = Date.now();
     await this.run(
-      "UPDATE api_tokens SET token_hash = ?, expires_at = ?, last_used_at = NULL, created_at = ? WHERE id = ?",
-      [tokenHash, finalExpiresAt, Date.now(), id],
+      "UPDATE api_tokens SET token_hash = ?, expires_at = ?, token_prefix = ?, last_used_at = NULL, rotated_at = ? WHERE id = ?",
+      [tokenHash, finalExpiresAt, finalPrefix, now, id],
     );
+    const row = (await this.raw("SELECT * FROM api_tokens WHERE id = ? LIMIT 1", [id]))[0]!;
+    return rowToApiToken(row);
+  }
+
+  /**
+   * 软吊销：标记停用但保留记录。
+   *
+   * 与 deleteApiToken 的区别：删除是真的抹掉（GDPR 式彻底清除），
+   * 吊销是"立刻失效但留痕"——审计日志里 target 仍能对应到这条凭据。
+   * 已经吊销的重复调用是幂等的（不覆盖首次吊销时间）。
+   *
+   * 返回 null 表示 id 不存在。
+   */
+  async revokeApiToken(id: string): Promise<ApiTokenRecord | null> {
+    const existing = (await this.raw("SELECT * FROM api_tokens WHERE id = ? LIMIT 1", [id]))[0];
+    if (!existing) return null;
+    const now = Date.now();
+    const already = existing.revoked_at != null;
+    if (!already) {
+      await this.run("UPDATE api_tokens SET revoked_at = ? WHERE id = ?", [now, id]);
+    }
     const row = (await this.raw("SELECT * FROM api_tokens WHERE id = ? LIMIT 1", [id]))[0]!;
     return rowToApiToken(row);
   }
@@ -1157,18 +1219,32 @@ export class Repository {
    * 按明文 token 查记录。
    *
    * 调用方先算出 sha256 再传入——本方法只做哈希列的等值查询。
-   * 查不到返回 null；过期的 token 同样返回 null（由调用方视为无效）。
+   * 查不到 / 已过期 / 已吊销一律返回 null（三种失败对调用方不可区分，
+   * 避免经由错误信息泄露"这个哈希存在但被停用了"）。
    */
   async findApiTokenByHash(tokenHash: string): Promise<ApiTokenRecord | null> {
     const row = (await this.raw("SELECT * FROM api_tokens WHERE token_hash = ? LIMIT 1", [tokenHash]))[0];
     if (!row) return null;
+    if (row.revoked_at != null) return null;
     if (row.expires_at != null && Number(row.expires_at) < Date.now()) return null;
     return rowToApiToken(row);
   }
 
-  /** 刷新最近使用时间；失败不影响鉴权主流程 */
+  /**
+   * 刷新最近使用时间；失败不影响鉴权主流程。
+   *
+   * 节流的原因：这个写操作在鉴权钩子里**每个请求**都会触发。
+   * MCP Agent 一轮会话能打出上百次检索，等于每次都多一次 UPDATE——
+   * 在 SQLite 的单写者模型下这是纯粹的锁竞争开销，而"最近使用"
+   * 这个信息本身只需要分钟级精度。
+   */
   async touchApiToken(id: string): Promise<void> {
-    await this.run("UPDATE api_tokens SET last_used_at = ? WHERE id = ?", [Date.now(), id]);
+    const now = Date.now();
+    const last = this.tokenTouchAt.get(id) ?? 0;
+    if (now - last < TOKEN_TOUCH_THROTTLE_MS) return;
+    // 先记后写：即使写失败也不会在下一毫秒重试，避免失败风暴
+    this.tokenTouchAt.set(id, now);
+    await this.run("UPDATE api_tokens SET last_used_at = ? WHERE id = ?", [now, id]);
   }
 
   /** 列出全部 token（不含 hash——列表页不泄露凭据） */
@@ -1599,6 +1675,10 @@ function rowToApiToken(row: Record<string, any>): ApiTokenRecord {
     expiresAt: row.expires_at == null ? null : Number(row.expires_at),
     lastUsedAt: row.last_used_at == null ? null : Number(row.last_used_at),
     createdAt: Number(row.created_at ?? 0),
+    revokedAt: row.revoked_at == null ? null : Number(row.revoked_at),
+    rotatedAt: row.rotated_at == null ? null : Number(row.rotated_at),
+    // 老库没这一列 -> null，管理页显示"未知"即可，不能因为缺列让整个列表挂掉
+    tokenPrefix: row.token_prefix == null ? null : String(row.token_prefix),
   };
 }
 

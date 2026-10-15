@@ -975,4 +975,49 @@ describe("SQLite 集成：导航增强能力", () => {
     await db2.close();
     rmSync(oldDir, { recursive: true, force: true });
   });
+
+  it("API Token 治理：软吊销、前缀、轮换不冲刷创建时间、按分钟节流 touch", async () => {
+    const rawHash1 = "hash-token-111111111111111111111111";
+    const rawHash2 = "hash-token-222222222222222222222222";
+    const token = await repo.createApiToken({
+      name: "自动化测试 Token",
+      tokenHash: rawHash1,
+      scopes: "read,write",
+      tokenPrefix: "nh_1a2b",
+    });
+
+    expect(token.id).toBeTruthy();
+    expect(token.tokenPrefix).toBe("nh_1a2b");
+    expect(token.revokedAt).toBeNull();
+    expect(token.rotatedAt).toBeNull();
+
+    // 1. 正常查询可用
+    const found = await repo.findApiTokenByHash(rawHash1);
+    expect(found?.id).toBe(token.id);
+
+    // 2. touch 节流：同 ID 连续 touch 不重复写入数据库
+    await repo.touchApiToken(token.id);
+    const row1 = (await repo.listApiTokens()).find((t) => t.id === token.id)!;
+    expect(row1.lastUsedAt).toBeTruthy();
+
+    // 3. 轮换：换新 hash，更新 rotatedAt，但不修改 createdAt
+    const rotated = await repo.rotateApiToken(token.id, rawHash2, null, "nh_3c4d");
+    expect(rotated?.tokenPrefix).toBe("nh_3c4d");
+    expect(rotated?.createdAt).toBe(token.createdAt);
+    expect(rotated?.rotatedAt).toBeTruthy();
+    expect(rotated?.lastUsedAt).toBeNull();
+
+    // 旧 hash 查不到，新 hash 可查
+    expect(await repo.findApiTokenByHash(rawHash1)).toBeNull();
+    expect((await repo.findApiTokenByHash(rawHash2))?.id).toBe(token.id);
+
+    // 4. 软吊销：设置 revokedAt，不可被查到，但记录保留供审计追溯
+    const revoked = await repo.revokeApiToken(token.id);
+    expect(revoked?.revokedAt).toBeTruthy();
+    expect(await repo.findApiTokenByHash(rawHash2)).toBeNull();
+
+    const listed = await repo.listApiTokens();
+    const retained = listed.find((t) => t.id === token.id);
+    expect(retained?.revokedAt).toBeTruthy();
+  });
 });

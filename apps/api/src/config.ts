@@ -55,6 +55,13 @@ export interface AppConfig {
    * 创建正式的库内 token，之后应删除本变量重启。不入库、只在内存比对。
    */
   bootstrapToken: string | null;
+  /** 凭据签发策略：给"永不过期"和"无限签发"这两个默认行为装上闸门 */
+  tokenPolicy: {
+    /** 单条凭据最长有效期（天）；0 = 不限制 */
+    maxLifetimeDays: number;
+    /** 未吊销凭据的最大并存数量 */
+    maxActiveTokens: number;
+  };
 }
 
 function env(key: string, fallback?: string): string {
@@ -125,6 +132,19 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     corsOrigins: env("NAVHUB_CORS_ORIGINS", "*").split(",").map((s) => s.trim()).filter(Boolean),
     authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
+    tokenPolicy: {
+      /**
+       * 单条凭据的最长有效期（天）。
+       * 没有上限时，"永不过期"会变成默认选择，一条泄露的凭据等于永久后门。
+       * 0 表示不限制（需要长期机器凭据时显式关闭）。
+       */
+      maxLifetimeDays: num("NAVHUB_TOKEN_MAX_LIFETIME_DAYS", 365),
+      /**
+       * 同时存在的未吊销凭据上限。
+       * 防止脚本失控或误操作签发成百上千条凭据，把吊销变成不可能完成的工作。
+       */
+      maxActiveTokens: num("NAVHUB_TOKEN_MAX_ACTIVE", 50),
+    },
   };
 
   if (mode === "standard" && !base.databaseUrl && !overrides.databaseUrl) {

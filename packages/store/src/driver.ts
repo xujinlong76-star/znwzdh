@@ -136,7 +136,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS api_tokens (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL,
-  scopes TEXT NOT NULL DEFAULT 'read', last_used_at INTEGER, expires_at INTEGER, created_at INTEGER NOT NULL
+  scopes TEXT NOT NULL DEFAULT 'read', last_used_at INTEGER, expires_at INTEGER, created_at INTEGER NOT NULL,
+  revoked_at INTEGER, rotated_at INTEGER, token_prefix TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_idx ON api_tokens(token_hash);
 
@@ -324,7 +325,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE TABLE IF NOT EXISTS api_tokens (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL,
-  scopes TEXT NOT NULL DEFAULT 'read', last_used_at BIGINT, expires_at BIGINT, created_at BIGINT NOT NULL
+  scopes TEXT NOT NULL DEFAULT 'read', last_used_at BIGINT, expires_at BIGINT, created_at BIGINT NOT NULL,
+  revoked_at BIGINT, rotated_at BIGINT, token_prefix TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_idx ON api_tokens(token_hash);
 

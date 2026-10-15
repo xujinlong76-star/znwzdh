@@ -40,6 +40,17 @@ export function generateToken(): string {
   return "nh_" + randomBytes(24).toString("base64url");
 }
 
+/**
+ * 明文前缀：列表页用来区分"哪条凭据是哪条"，取代把哈希或完整明文暴露出去。
+ *
+ * 取 12 个字符 = `nh_` + 9 个 base64url 字符 ≈ 54 位。相对 192 位总熵，
+ * 泄露这 54 位没有任何枚举价值（剩余 138 位仍需爆破），但足以让人在
+ * 客户端的 ~/.config 里一眼认出对应的是哪一条。
+ */
+export function tokenPrefixOf(raw: string): string {
+  return raw.slice(0, 12);
+}
+
 /** 解析 "read,write" 形式的 scope 串；非法值静默丢弃（不放大权限） */
 export function parseScopes(raw: string | null | undefined): ApiScope[] {
   if (!raw) return [];

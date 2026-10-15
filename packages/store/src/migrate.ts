@@ -34,6 +34,14 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "users", column: "source", sqlite: "TEXT NOT NULL DEFAULT 'local'", pg: "TEXT NOT NULL DEFAULT 'local'" },
   // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
   { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
+  // API 凭据治理：
+  //   revoked_at   软吊销时间戳。硬删会把 audit_logs 里的 target 变成悬空 id，
+  //                事后无法追查"哪条凭据做过什么"，所以默认停用而非抹除。
+  //   rotated_at   上次轮换时间。轮换不该重写 created_at（那会抹掉凭据的真实服役起点）。
+  //   token_prefix 明文的前若干字符，供管理页区分凭据；不含可还原部分，192 位熵不受影响。
+  { table: "api_tokens", column: "revoked_at", sqlite: "INTEGER", pg: "BIGINT" },
+  { table: "api_tokens", column: "rotated_at", sqlite: "INTEGER", pg: "BIGINT" },
+  { table: "api_tokens", column: "token_prefix", sqlite: "TEXT", pg: "TEXT" },
 ];
 
 /**

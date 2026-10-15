@@ -247,6 +247,54 @@ describe("鉴权模式：token 生命周期", () => {
   it("bootstrap token 用错（长度不同）同样 401", async () => {
     expect((await as(BOOTSTRAP + "x", "GET", "/api/sites")).statusCode).toBe(401);
   });
+
+  it("软吊销 token：立即失效但记录保留，且落审计日志", async () => {
+    const raw = await mintToken("待吊销", "read");
+    expect((await as(raw, "GET", "/api/sites")).statusCode).toBe(200);
+    const list = (await as(BOOTSTRAP, "GET", "/api/tokens")).json();
+    const tokenObj = list.find((t: any) => t.name === "待吊销");
+    expect(tokenObj.tokenPrefix).toMatch(/^nh_/);
+    expect(tokenObj.revokedAt).toBeNull();
+
+    const revokeRes = await as(BOOTSTRAP, "POST", "/api/tokens/" + tokenObj.id + "/revoke");
+    expect(revokeRes.statusCode).toBe(200);
+    expect(revokeRes.json().revokedAt).toBeTruthy();
+
+    // 吊销后鉴权立即被拒
+    expect((await as(raw, "GET", "/api/sites")).statusCode).toBe(401);
+
+    // 记录仍然在列表里且标记为 revokedAt
+    const afterList = (await as(BOOTSTRAP, "GET", "/api/tokens")).json();
+    const retained = afterList.find((t: any) => t.id === tokenObj.id);
+    expect(retained).toBeTruthy();
+    expect(retained.revokedAt).toBeTruthy();
+  });
+
+  it("轮换 token：保留 created_at，更新 rotated_at，并使旧明文失效", async () => {
+    const rawOld = await mintToken("待轮换", "read");
+    const list1 = (await as(BOOTSTRAP, "GET", "/api/tokens")).json();
+    const orig = list1.find((t: any) => t.name === "待轮换");
+
+    const rotateRes = await as(BOOTSTRAP, "POST", "/api/tokens/" + orig.id + "/rotate");
+    expect(rotateRes.statusCode).toBe(200);
+    const rotJson = rotateRes.json();
+    expect(rotJson.token).toBeTruthy();
+    expect(rotJson.token).not.toBe(rawOld);
+    expect(rotJson.createdAt).toBe(orig.createdAt);
+    expect(rotJson.rotatedAt).toBeTruthy();
+    expect(rotJson.tokenPrefix).toMatch(/^nh_/);
+
+    // 旧 token 401，新 token 200
+    expect((await as(rawOld, "GET", "/api/sites")).statusCode).toBe(401);
+    expect((await as(rotJson.token, "GET", "/api/sites")).statusCode).toBe(200);
+  });
+
+  it("有效期超出 tokenPolicy.maxLifetimeDays 时被拒绝", async () => {
+    const farFuture = Date.now() + 367 * 86_400_000;
+    const res = await as(BOOTSTRAP, "POST", "/api/tokens", { name: "过长寿命", scopes: "read", expiresAt: farFuture });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("超出最长有效期");
+  });
 });
 
 describe("鉴权模式：审计记录真实身份", () => {

@@ -66,10 +66,18 @@ import {
   parseScopes,
   scopeSatisfies,
   secureEqual,
+  tokenPrefixOf,
   type ApiScope,
   type AuthIdentity,
   type RouteScope,
 } from "./auth.ts";
+
+/**
+ * 鉴权失败审计的节流窗口：同一 IP + 同一失败动作，在这个间隔内只记一条。
+ * 失败路径是未认证的，不节流会让"刷失败请求"变成撑爆 audit_logs 的新攻击面。
+ */
+const AUTH_FAIL_AUDIT_THROTTLE_MS = 10_000;
+const AUTH_FAIL_AUDIT_AT = new Map<string, number>();
 
 /**
  * site.id → 数值投稿编号，与前端（Next 侧）的 hashNumericId 规则必须一致。
@@ -185,8 +193,37 @@ export async function buildServer(ctx: AppContext) {
 
     if (!ctx.config.authRequired || required === "public") return;
 
+    /**
+     * 鉴权失败落审计。
+     *
+     * 此前 401/403 只回一个错误体就结束，审计日志里一片空白。后果是：
+     * 有人拿泄露的凭据在扫接口、或在枚举 token，运维完全看不见，
+     * 事后也无法还原"哪条凭据被滥用过"。
+     *
+     * 两条硬约束：
+     *  1. **绝不记录凭据本身**——明文与哈希都不写进 diff，只写原因与路径。
+     *  2. **按 IP+动作节流**：失败路径是未认证的，不节流的话攻击者可以
+     *     用一堆失败请求把 audit_logs 撑爆，反而形成新的 DoS 面。
+     */
+    const auditAuthFailure = (action: string, detail: string, target: string | null = null): void => {
+      const now = Date.now();
+      const key = action + "|" + (req.ip ?? "-");
+      const last = AUTH_FAIL_AUDIT_AT.get(key) ?? 0;
+      if (now - last < AUTH_FAIL_AUDIT_THROTTLE_MS) return;
+      AUTH_FAIL_AUDIT_AT.set(key, now);
+      void ctx.repo.audit({
+        ip: req.ip,
+        actor: "anonymous",
+        actorKind: "anonymous",
+        action,
+        target: target ?? undefined,
+        diff: { detail, path: req.url, required },
+      }).catch(() => undefined);
+    };
+
     const token = bearerOf(req);
     if (!token) {
+      void auditAuthFailure("auth.missing_token", "缺少 Bearer token，要求 " + required);
       return reply.code(401).send({ error: "缺少 Bearer token（该路由要求 " + required + " 权限）" });
     }
 
@@ -200,10 +237,12 @@ export async function buildServer(ctx: AppContext) {
 
     const record = await ctx.repo.findApiTokenByHash(hashToken(token));
     if (!record) {
+      void auditAuthFailure("auth.invalid_token", "token 无效 / 已过期 / 已吊销");
       return reply.code(401).send({ error: "token 无效或已过期" });
     }
     const tokenScopes = parseScopes(Array.isArray(record.scopes) ? record.scopes.join(",") : String(record.scopes ?? ""));
     if (!scopeSatisfies(tokenScopes, required)) {
+      void auditAuthFailure("auth.scope_denied", "需要 " + required + "，当前 " + tokenScopes.join(","), record.id);
       return reply.code(403).send({ error: "token 的 scope 不足以执行该操作（需要 " + required + "，当前 " + tokenScopes.join(",") + "）" });
     }
 
@@ -2165,11 +2204,26 @@ export async function buildServer(ctx: AppContext) {
    *   → 删除 NAVHUB_BOOTSTRAP_TOKEN 重启
    */
   /**
-   * 校验 expiresAt：必须是未来的毫秒时间戳。
-   * 过去时间会导致"刚创建就已过期"，属于无效输入。
+   * 校验 expiresAt：必须是未来的毫秒时间戳，且不超过策略允许的最长有效期。
+   *
+   * 过去时间会导致"刚创建就已过期"，属于无效输入；
+   * 超过上限则让"永不过期"变成显式选择而不是默认结果——
+   * 一条泄露的永久凭据等于一个永久后门。
    */
   const validFutureExpiry = (v: number | null | undefined): v is number | null =>
     v === null || v === undefined || v > Date.now();
+
+  const maxLifetimeMs = ctx.config.tokenPolicy.maxLifetimeDays > 0
+    ? ctx.config.tokenPolicy.maxLifetimeDays * 86_400_000
+    : 0;
+
+  const expiryViolation = (v: number | null | undefined): string | null => {
+    if (!validFutureExpiry(v)) return "expiresAt 必须是未来的时间戳";
+    if (maxLifetimeMs > 0 && v != null && v - Date.now() > maxLifetimeMs) {
+      return "expiresAt 超出最长有效期（" + ctx.config.tokenPolicy.maxLifetimeDays + " 天）；确需更长请调 NAVHUB_TOKEN_MAX_LIFETIME_DAYS";
+    }
+    return null;
+  };
 
   app.post("/api/tokens", { config: { scope: "admin" } }, async (req, reply) => {
     const body = z.object({
@@ -2183,7 +2237,18 @@ export async function buildServer(ctx: AppContext) {
 
     const scopes = parseScopes(body.data.scopes);
     if (scopes.length === 0) { reply.code(400); return { error: "scopes 至少要有一个有效值（read / write / admin）" }; }
-    if (!validFutureExpiry(body.data.expiresAt)) { reply.code(400); return { error: "expiresAt 必须是未来的时间戳" }; }
+    const expiryErr = expiryViolation(body.data.expiresAt);
+    if (expiryErr) { reply.code(400); return { error: expiryErr }; }
+
+    // 并存数量闸门：防止脚本失控签发成百上千条凭据，让"吊销"变成不可能完成的工作
+    const maxActive = ctx.config.tokenPolicy.maxActiveTokens;
+    if (maxActive > 0) {
+      const active = (await ctx.repo.listApiTokens()).filter((t) => t.revokedAt === null).length;
+      if (active >= maxActive) {
+        reply.code(409);
+        return { error: "未吊销的凭据已达上限（" + maxActive + " 条）；请先吊销不用的，或调 NAVHUB_TOKEN_MAX_ACTIVE" };
+      }
+    }
 
     const raw = generateToken();
     const record = await ctx.repo.createApiToken({
@@ -2191,6 +2256,7 @@ export async function buildServer(ctx: AppContext) {
       tokenHash: hashToken(raw),
       scopes: scopes.join(","),
       expiresAt: body.data.expiresAt ?? null,
+      tokenPrefix: tokenPrefixOf(raw),
     });
     await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.create", target: record.id, diff: { name: record.name, scopes } });
     reply.code(201);
@@ -2215,8 +2281,9 @@ export async function buildServer(ctx: AppContext) {
     if (body.data.scopes !== undefined && parseScopes(body.data.scopes).length === 0) {
       reply.code(400); return { error: "scopes 至少要有一个有效值（read / write / admin）" };
     }
-    if (body.data.expiresAt !== undefined && !validFutureExpiry(body.data.expiresAt)) {
-      reply.code(400); return { error: "expiresAt 必须是未来的时间戳" };
+    if (body.data.expiresAt !== undefined) {
+      const expiryErr = expiryViolation(body.data.expiresAt);
+      if (expiryErr) { reply.code(400); return { error: expiryErr }; }
     }
 
     const record = await ctx.repo.updateApiToken(id, {
@@ -2240,16 +2307,33 @@ export async function buildServer(ctx: AppContext) {
       expiresAt: z.number().int().positive().nullable().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    if (body.data.expiresAt !== undefined && !validFutureExpiry(body.data.expiresAt)) {
-      reply.code(400); return { error: "expiresAt 必须是未来的时间戳" };
+    if (body.data.expiresAt !== undefined) {
+      const expiryErr = expiryViolation(body.data.expiresAt);
+      if (expiryErr) { reply.code(400); return { error: expiryErr }; }
     }
 
     const raw = generateToken();
-    const record = await ctx.repo.rotateApiToken(id, hashToken(raw), body.data.expiresAt);
+    const record = await ctx.repo.rotateApiToken(id, hashToken(raw), body.data.expiresAt, tokenPrefixOf(raw));
     if (!record) { reply.code(404); return { error: "token 不存在" }; }
     await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.rotate", target: id, diff: { name: record.name, scopes: record.scopes } });
     // 明文只在这里出现一次
     return { token: raw, ...record, note: "轮换成功：旧明文已立即失效，请保存新明文。" };
+  });
+
+  /**
+   * 软吊销：立刻失效，但保留记录。
+   *
+   * 与 DELETE 的分工：
+   *   revoke = 停用并留痕（审计日志里的 target 仍对应得到这条凭据）——日常应该用这个
+   *   delete = 彻底抹除（合规 / 数据清除场景）
+   * 以前只有 delete，等于"想停用就必须先销毁证据"。
+   */
+  app.post("/api/tokens/:id/revoke", { config: { scope: "admin" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const record = await ctx.repo.revokeApiToken(id);
+    if (!record) { reply.code(404); return { error: "token 不存在" }; }
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.revoke", target: id, diff: { name: record.name } });
+    return record;
   });
 
   app.delete("/api/tokens/:id", { config: { scope: "admin" } }, async (req, reply) => {

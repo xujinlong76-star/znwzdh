@@ -216,6 +216,10 @@ describe.skipIf(!ctx)("跨方言：新增 API 在 PG 与 SQLite 行一致", () =
     expect(added.existed).toBe(false);
     expect((await repo().addCollectionItem(col.id, fixSiteId)).existed).toBe(true);
     expect((await repo().listCollectionItems(col.id)).length).toBe(1);
+    // 公开详情：按 slug 取条目站点。PG 对「GROUP BY s.id + ORDER BY ci.sort」直接报错
+    // （SQLite 宽松允许），必须用聚合排序——此断言即为该方言 bug 的回归护栏。
+    const colSites = await repo().listCollectionSites(col.slug);
+    expect(colSites.map((s) => s.id)).toContain(fixSiteId);
     expect(await repo().removeCollectionItem(col.id, fixSiteId)).toBe(true);
     expect(await repo().deleteCollection(col.id)).toBe(true);
     expect(await repo().findSiteByUrl("https://example.com/pg-newapi")).not.toBeNull(); // 站点不受影响

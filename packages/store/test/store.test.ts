@@ -1070,6 +1070,30 @@ describe("SQLite 集成：导航增强能力", () => {
     rmSync(oldDir, { recursive: true, force: true });
   });
 
+  it("旧库 jobs 表缺 next_run_at 列时 openDb 不崩（索引先于迁移的启动阻断）", async () => {
+    // 真实故障复现：data/navhub.db 这类老库 jobs 表已存在但无 next_run_at，
+    // DDL 里 CREATE INDEX ON jobs(status, next_run_at) 先崩，服务无法启动。
+    const oldDir = mkdtempSync(join(tmpdir(), "navhub-oldjobs-"));
+    const oldPath = join(oldDir, "old.db");
+    const Database = (await import("better-sqlite3")).default;
+    const raw = new Database(oldPath);
+    raw.exec("CREATE TABLE jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
+    raw.close();
+
+    const db2 = await openDb({ dialect: "sqlite", sqlitePath: oldPath });
+    const cols = (db2.sqlite!.prepare("PRAGMA table_info(jobs)").all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).toContain("next_run_at");
+    // 索引在重放后真实存在（不只是列补了、索引跳过）
+    const idx = (db2.sqlite!.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'jobs_next_run_idx'").all() as Array<{ name: string }>);
+    expect(idx.length).toBe(1);
+    // 队列在该库上可正常使用
+    const repo2 = new Repository(db2);
+    const id = await repo2.enqueueJob("recompute_rank", {});
+    expect((await repo2.claimNextJob())?.id).toBe(id);
+    await db2.close();
+    rmSync(oldDir, { recursive: true, force: true });
+  });
+
   it("app_settings: 支持全局键值对持久化与更新", async () => {
     expect(await repo.getSetting("non_existent")).toBeNull();
     await repo.setSetting("test_key", "value_1");

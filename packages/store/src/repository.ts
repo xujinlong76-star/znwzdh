@@ -1254,7 +1254,9 @@ export class Repository {
       this.selectSitesSql() +
         " JOIN collection_items ci ON ci.site_id = s.id" +
         " WHERE ci.collection_id = ? AND s.enabled = " + this.enabledLiteral + " AND s.deleted_at IS NULL" +
-        " GROUP BY s.id ORDER BY ci.sort ASC",
+        // ORDER BY 必须用聚合：PG 不允许按「未分组且非 s.id 函数依赖」的列排序
+        // （GROUP BY s.id + ORDER BY ci.sort 在 SQLite 能跑、到 PG 报错）。
+        " GROUP BY s.id ORDER BY MIN(ci.sort) ASC",
       [col.id],
     );
     return rows.map(rowToSite);

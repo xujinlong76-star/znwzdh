@@ -792,6 +792,32 @@ describe("标签与专题", () => {
     const siteAfter = await app.inject({ method: "GET", url: "/api/sites/" + site.id });
     expect(siteAfter.statusCode).toBe(200);
   });
+
+  it("专题公开详情：按 slug 返回启用中的条目站点", async () => {
+    const created = await app.inject({
+      method: "POST", url: "/api/collections",
+      payload: { slug: "pub-col", title: "公开专题" },
+    });
+    expect(created.statusCode).toBe(201);
+    const col = created.json();
+    expect(col.enabled).toBeTruthy();
+
+    const site = (await app.inject({
+      method: "POST", url: "/api/sites",
+      payload: { url: "https://example.com/pub-col-item", title: "公开条目站", categoryId: "cat-ai" },
+    })).json();
+    const added = await app.inject({
+      method: "POST", url: "/api/collections/" + col.id + "/items",
+      payload: { siteId: site.id },
+    });
+    expect(added.statusCode).toBe(201);
+
+    const detail = await app.inject({ method: "GET", url: "/api/collections/pub-col" });
+    expect(detail.statusCode).toBe(200);
+    const body = detail.json();
+    expect(body.collection.slug).toBe("pub-col");
+    expect(body.sites.map((s: { id: string }) => s.id)).toContain(site.id);
+  });
 });
 
 describe("收藏夹", () => {

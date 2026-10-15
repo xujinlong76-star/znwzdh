@@ -44,6 +44,7 @@ function isExcluded(rel) {
   for (const p of EXCLUDE_PREFIX) if (norm.startsWith(p)) return true;
   for (const s of EXCLUDE_SUFFIX) if (norm.endsWith(s)) return true;
   if (norm === "next-env.d.ts") return true; // next 生成文件
+  if (norm === "UPSTREAM.md") return true; // vendor-web 生成的元数据（每次带时间戳/commit，不参与镜像比对）
   return false;
 }
 // ---- 排除规则结束 ----

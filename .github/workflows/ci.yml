@@ -36,7 +36,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # 覆盖层比对在 check-web-overlay 作业里单独跑（全新检出需先 vendor，见那里）
-      - run: pnpm -r exec tsc --noEmit
+      - run: pnpm run typecheck
       - run: pnpm test
 
   test-postgres:

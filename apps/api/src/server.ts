@@ -48,6 +48,7 @@ import {
   type JsonRpcRequest,
   type CRDTOperation,
   type RetrievalChannel,
+  SiteCreateBody,
 } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import type { AppContext } from "./context.ts";
@@ -360,18 +361,12 @@ export async function buildServer(ctx: AppContext) {
     return site;
   });
 
-  const siteInput = z.object({
-    url: z.string().url(),
-    title: z.string().min(1).optional(),
-    description: z.string().nullable().optional(),
-    categoryId: z.string().min(1),
-    subCategoryId: z.string().nullable().optional(),
-    iconKey: z.string().nullable().optional(),
-    tags: z.array(z.string()).optional(),
-    status: z.enum(["active", "pending", "broken", "archived"]).optional(),
-    featured: z.boolean().optional(),
-    source: z.string().nullable().optional(),
-  });
+  /**
+   * 站点写入体不再本地手写：与 MCP 的 create_site 工具共用同一份 zod 契约
+   * （packages/core/src/mcp-schemas.ts 的 SiteCreateBody，由 CreateSiteInput 派生）。
+   * OpenAPI 的 requestBody 也从同一份契约生成，三处不会再各自漂移。
+   */
+  const siteInput = SiteCreateBody;
 
   app.post("/api/sites", { config: { scope: "write" } }, async (req, reply) => {
     const rawBody = (req.body ?? {}) as Record<string, unknown>;

@@ -6,15 +6,27 @@
  * method / path / scope（config.scope）在注册时已确定，onRoute 钩子
  * 能在注册瞬间拿到——文档与真实路由同源。
  *
- * 覆盖不了的部分（请求体字段语义、响应形状）按最小约定给出：
+ * 覆盖不了的部分（响应形状）按最小约定给出：
  *   - path 参数从 `:name` 提取
  *   - scope → security（public 无锁；read/write/admin → Bearer）
- *   - 请求体 → 通用 object（带 note 指向各 schema 的 zod 定义处）
- * 这样文档在「哪些端点存在、需要什么权限、路径参数是什么」上永远正确，
- * 不在没人保证的细节上编造。
+ *   - 请求体 → **从 @navhub/core 的 zod 契约生成**（见 REST_SCHEMA_BINDINGS）
+ *
+ * 请求体为什么不再手写：MCP 工具与 REST 端点本来就是同一批能力，
+ * 两边各写一份字段清单必然漂移（改了 MCP 忘改 REST，或反过来）。
+ * 现在 zod 契约只在 packages/core/src/mcp-schemas.ts 定义一次，
+ * MCP 的 inputSchema 与本文件的 requestBody / query 参数都从它派生。
+ * 未绑定契约的端点仍然退回「通用 object」——宁可不写，也不编造字段。
  */
 
 import type { RouteScope } from "./auth.ts";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import {
+  MCP_TOOL_DEFS,
+  REST_SCHEMA_BINDINGS,
+  SiteCreateBody,
+  SiteUpdateBody,
+  type ZodSchemaLike,
+} from "@navhub/core";
 
 export interface RouteEntry {
   method: string;
@@ -68,8 +80,61 @@ function pathOf(url: string): { template: string; params: string[] } {
   return { template, params };
 }
 
+/* ------------------------------------------------------------------ *
+ * zod -> JSON Schema（OpenAPI 组件）
+ * ------------------------------------------------------------------ */
+
+/** 转换失败时退回宽松 object：文档可以少写细节，但不能因为 schema 太新而 500 */
+function jsonSchemaOf(schema: ZodSchemaLike): Record<string, unknown> {
+  try {
+    const js = zodToJsonSchema(schema, { target: "openApi3", $refStrategy: "none" });
+    return (js ?? {}) as Record<string, unknown>;
+  } catch {
+    return { type: "object", additionalProperties: true };
+  }
+}
+
+const MCP_COMPONENT_PREFIX = "MCP_";
+
+function buildComponentSchemas(): {
+  schemas: Record<string, unknown>;
+  refOf: Map<ZodSchemaLike, string>;
+} {
+  const schemas: Record<string, unknown> = {
+    SiteCreateBody: jsonSchemaOf(SiteCreateBody),
+    SiteUpdateBody: jsonSchemaOf(SiteUpdateBody),
+  };
+  const refOf = new Map<ZodSchemaLike, string>();
+  refOf.set(SiteCreateBody as ZodSchemaLike, "SiteCreateBody");
+  refOf.set(SiteUpdateBody as ZodSchemaLike, "SiteUpdateBody");
+
+  for (const def of MCP_TOOL_DEFS) {
+    if (!def.inputSchema) continue;
+    const key = MCP_COMPONENT_PREFIX + def.name;
+    schemas[key] = jsonSchemaOf(def.inputSchema);
+    refOf.set(def.inputSchema, key);
+  }
+
+  return { schemas, refOf };
+}
+
+/** 把 zod 契约展开成 query 参数列表（GET 端点用） */
+function queryParametersOf(schema: ZodSchemaLike): Array<Record<string, unknown>> {
+  const js = jsonSchemaOf(schema);
+  const props = (js.properties ?? {}) as Record<string, Record<string, unknown>>;
+  const required = new Set(Array.isArray(js.required) ? (js.required as string[]) : []);
+  return Object.entries(props).map(([name, sub]) => ({
+    name,
+    in: "query",
+    required: required.has(name),
+    schema: sub,
+    description: typeof sub?.description === "string" ? sub.description : name,
+  }));
+}
+
 export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
   const paths: Record<string, Record<string, unknown>> = {};
+  const { schemas, refOf } = buildComponentSchemas();
 
   for (const r of routes) {
     const method = r.method.toLowerCase();
@@ -88,17 +153,30 @@ export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
         "200": { description: "成功", content: { "application/json": { schema: { type: "object" } } } },
       },
     };
-    if (params.length > 0) {
-      operation.parameters = params.map((name) => ({
-        name, in: "path", required: true,
-        schema: { type: "string" },
-        description: name === "id" ? "资源 id（站点可传 URL，需 encodeURIComponent）" : name,
-      }));
+    const pathParams = params.map((name) => ({
+      name, in: "path", required: true,
+      schema: { type: "string" },
+      description: name === "id" ? "资源 id（站点可传 URL，需 encodeURIComponent）" : name,
+    }));
+
+    // 契约绑定：请求体 / query 参数都从 core 的 zod 契约生成，不手写
+    const binding = REST_SCHEMA_BINDINGS[key];
+    const queryParams = binding?.in === "query" ? queryParametersOf(binding.schema) : [];
+    if (pathParams.length + queryParams.length > 0) {
+      operation.parameters = [...pathParams, ...queryParams];
     }
+
     if (["post", "put", "patch"].includes(method)) {
+      const refName = binding?.in === "body" ? refOf.get(binding.schema) : undefined;
       operation.requestBody = {
         required: method !== "patch",
-        content: { "application/json": { schema: { type: "object", additionalProperties: true } } },
+        content: {
+          "application/json": {
+            schema: refName
+              ? { $ref: "#/components/schemas/" + refName }
+              : { type: "object", additionalProperties: true },
+          },
+        },
       };
     }
     // 错误响应：写操作与详情类端点可能 400/401/404/409 —— 只声明确有语义的
@@ -130,7 +208,17 @@ export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
         "响应缓存：声明了策略的 GET 返回 private + max-age/ETag，其余一律 no-store。",
     },
     servers: [{ url: "/", description: "当前实例" }],
+    // MCP 工具契约同源发布：Agent 拿这份文档就能直接知道每个工具收什么参数
+    "x-mcp-tools": MCP_TOOL_DEFS.map((t) => ({
+      name: t.name,
+      description: t.description,
+      scope: t.scope,
+      mutating: t.mutating,
+      inputSchema: { $ref: "#/components/schemas/" + MCP_COMPONENT_PREFIX + t.name },
+    })),
     components: {
+      // 全部由 zod 契约生成，这里是唯一出口
+      schemas,
       securitySchemes: {
         bearerAuth: { type: "http", scheme: "bearer", description: "API token 明文（POST /api/tokens 创建，仅创建时返回一次）" },
       },

@@ -31,6 +31,10 @@ import {
   mergeOperationLogs,
   compactOperationLogs,
   reduceOperationsToState,
+  analyzeColorPalette,
+  parseSpeculativeIntent,
+  WebMcpBridge,
+  type JsonRpcRequest,
   type CRDTOperation,
   type RetrievalChannel,
 } from "@navhub/core";
@@ -71,12 +75,10 @@ export function submissionNumber(id: string): number {
 export async function buildServer(ctx: AppContext) {
   // 测试里默认静音，避免日志淹没断言输出；生产用 NAVHUB_LOG_LEVEL 控制
   const logLevel = process.env.NAVHUB_LOG_LEVEL ?? (process.env.VITEST ? "silent" : "info");
-  // 信任 X-Forwarded-For：前端 /api/hub/* 代理会把真实客户端 IP 透传过来。
-  // 不开启的话 req.ip 永远是代理进程的地址 —— 按 IP 的限流（全局 300/min、
-  // 投稿 5/hour）会退化成"整站共享一个桶"，第 6 个投稿者就被 429 挡在门外。
-  // 若中枢**直接**暴露到公网（不经过自家代理），设 NAVHUB_TRUST_PROXY=0 关闭，
-  // 否则客户端可伪造 XFF 绕过限流。
-  const trustProxy = process.env.NAVHUB_TRUST_PROXY !== "0";
+  // 信任 X-Forwarded-For：只有经过自家 /api/hub/* 代理时才开。
+  // 默认关闭（直连公网伪造 XFF 可绕过按 IP 限流）；docker-compose 经代理时显式设 NAVHUB_TRUST_PROXY=1。
+  // 不开启时 req.ip 会退化成代理地址，按 IP 的限流（300/min、投稿 5/hour）会整站共享一桶——按部署拓扑二选一。
+  const trustProxy = process.env.NAVHUB_TRUST_PROXY === "1" || process.env.NAVHUB_TRUST_PROXY?.toLowerCase() === "true";
   const app = Fastify({
     logger: { level: logLevel },
     bodyLimit: 4 * 1024 * 1024,
@@ -208,6 +210,7 @@ export async function buildServer(ctx: AppContext) {
     mode: ctx.config.mode,
     capabilities: ctx.capabilities,
     stats: await ctx.repo.stats(),
+    embedding: ctx.embedding?.stats ? { cache: ctx.embedding.stats() } : undefined,
   }));
 
   /**
@@ -283,10 +286,10 @@ export async function buildServer(ctx: AppContext) {
     }
 
     const result = await ctx.search.search({ ...input, personalize });
-    const hits = await Promise.all(result.hits.map(async (h) => ({
-      ...h,
-      site: await ctx.repo.getSite(h.siteId),
-    })));
+    // 批量取站点：一次 IN 查询代替逐条 getSite（与 MCP 同一 N+1 优化）
+    const sites = await ctx.repo.getSitesByIds(result.hits.map((h) => h.siteId));
+    const byId = new Map(sites.map((s) => [s.id, s]));
+    const hits = result.hits.map((h) => ({ ...h, site: byId.get(h.siteId) ?? null }));
 
     const q = input.q.trim();
     const isFirstPage = (input.offset ?? 0) === 0;
@@ -896,6 +899,119 @@ export async function buildServer(ctx: AppContext) {
 
     const result = autoClusterSites(sitesToCluster, body.data.targetK);
     return { ok: true, result };
+  });
+
+  /* --------------------- Next-Gen 7.0 视觉设计与 WebMCP --------------------- */
+
+  /**
+   * 视觉指纹与调色板 WCAG 对比度/美学和谐度审计端点
+   */
+  app.post("/api/design/harmony", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
+    const body = z.object({
+      palette: z.array(z.string()).min(1),
+      foreground: z.string().optional().default("#ffffff"),
+      background: z.string().optional().default("#0f172a"),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    const report = analyzeColorPalette(body.data.palette, body.data.foreground, body.data.background);
+    return { ok: true, report };
+  });
+
+  const webMcp = new WebMcpBridge();
+
+  webMcp.registerTool({
+    name: "get_architecture_recipe",
+    description: "端到端技术栈架构链路配方查询",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string", description: "架构目标或技术栈关键词" } },
+      required: ["query"],
+    },
+  }, (args) => findMatchingArchitectureRecipe(String(args.query ?? "")));
+
+  webMcp.registerTool({
+    name: "compare_technologies",
+    description: "结构化技术选型对比与裁决矩阵",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string", description: "对比查询，如 react vs vue" } },
+      required: ["query"],
+    },
+  }, (args) => parseTechComparisonQuery(String(args.query ?? "")));
+
+  webMcp.registerTool({
+    name: "evaluate_developer_intent",
+    description: "开发者输入技术意图原地推测计算",
+    inputSchema: {
+      type: "object",
+      properties: { input: { type: "string", description: "技术文本（JWT/Cron/Curl/颜色/时间戳）" } },
+      required: ["input"],
+    },
+  }, (args) => parseSpeculativeIntent(String(args.input ?? "")) ?? { matched: false });
+
+  webMcp.registerTool({
+    name: "analyze_color_harmony",
+    description: "UI 调色板美学与 WCAG 2.1 对比度审计",
+    inputSchema: {
+      type: "object",
+      properties: {
+        palette: { type: "array", items: { type: "string" }, description: "调色板颜色列表" },
+        foreground: { type: "string", description: "前景文字色" },
+        background: { type: "string", description: "背景色" },
+      },
+      required: ["palette"],
+    },
+  }, (args) => analyzeColorPalette(
+    Array.isArray(args.palette) ? args.palette as string[] : ["#3b82f6"],
+    typeof args.foreground === "string" ? args.foreground : "#ffffff",
+    typeof args.background === "string" ? args.background : "#0f172a"
+  ));
+
+  webMcp.registerTool({
+    name: "find_tech_path",
+    description: "技术栈知识图谱寻路演进链路",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "起始技术" },
+        to: { type: "string", description: "目标技术" },
+      },
+      required: ["from", "to"],
+    },
+  }, (args) => findShortestTechPath(String(args.from ?? ""), String(args.to ?? ""), PRESET_TECH_GRAPH));
+
+  webMcp.registerTool({
+    name: "analyze_stack_compatibility",
+    description: "技术选型协同契合度诊断与组件补齐建议",
+    inputSchema: {
+      type: "object",
+      properties: {
+        techs: { type: "array", items: { type: "string" }, description: "已选技术列表" },
+      },
+      required: ["techs"],
+    },
+  }, (args) => analyzeStackCompatibility(
+    Array.isArray(args.techs) ? args.techs.map(String) : [],
+    PRESET_TECH_GRAPH
+  ));
+
+  webMcp.registerTool({
+    name: "list_categories",
+    description: "获取全部导航类目清单",
+    inputSchema: { type: "object", properties: {} },
+  }, async () => ctx.repo.listCategories());
+
+  /**
+   * Next-Gen 7.0 浏览器端 Model Context Protocol (WebMCP) 标准 HTTP JSON-RPC 2.0 端点
+   */
+  app.post("/api/mcp", { config: { scope: "public" } }, async (req, reply) => {
+    const rpcRes = await webMcp.handleRpc(req.body as JsonRpcRequest);
+    return rpcRes;
   });
 
   /* --------------------- 收藏夹（终端用户） --------------------- */

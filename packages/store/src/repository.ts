@@ -143,18 +143,31 @@ export class Repository {
     this.db = db;
   }
 
-  /** 双方言事务包裹辅助方法 */
+  /** 双方言事务包裹辅助方法（SQLite 加 busy_timeout + 指数退避，避免高并发写 SQLITE_BUSY） */
   async withTransaction<T>(action: () => Promise<T>): Promise<T> {
     if (this.db.dialect === "sqlite" && this.db.sqlite) {
-      this.db.sqlite.exec("BEGIN IMMEDIATE");
-      try {
-        const result = await action();
-        this.db.sqlite.exec("COMMIT");
-        return result;
-      } catch (err) {
-        try { this.db.sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
-        throw err;
+      try { this.db.sqlite.exec("PRAGMA busy_timeout = 5000"); } catch { /* ignore */ }
+      let lastErr: unknown = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          this.db.sqlite.exec("BEGIN IMMEDIATE");
+          try {
+            const result = await action();
+            this.db.sqlite.exec("COMMIT");
+            return result;
+          } catch (err) {
+            try { this.db.sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
+            throw err;
+          }
+        } catch (err) {
+          lastErr = err;
+          const msg = err instanceof Error ? err.message : String(err);
+          // 只有 BUSY/LOCKED 才重试，其它错误直接抛
+          if (!/BUSY|LOCKED/i.test(msg) || attempt === 3) throw err;
+          await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
+        }
       }
+      throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
     } else if (this.db.dialect === "pg" && this.db.pg) {
       await this.db.pg.query("BEGIN");
       try {
@@ -209,6 +222,16 @@ export class Repository {
     );
     const row = rows[0];
     return row ? rowToSite(row) : null;
+  }
+
+  async getSitesByIds(ids: string[]): Promise<Site[]> {
+    if (ids.length === 0) return [];
+    const placeholders = ids.map(() => "?").join(", ");
+    const rows = await this.raw(
+      this.selectSitesSql() + " WHERE s.id IN (" + placeholders + ") AND s.deleted_at IS NULL",
+      ids,
+    );
+    return rows.map(rowToSite);
   }
 
   /** 软删除的站点（回收站）：正常查询一律排除，只有这里返回 */

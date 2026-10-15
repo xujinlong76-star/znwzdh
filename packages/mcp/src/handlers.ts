@@ -22,10 +22,12 @@ import {
   compactOperationLogs,
   reduceOperationsToState,
   parseSpeculativeIntent,
+  analyzeColorPalette,
   type CRDTOperation,
 } from "@navhub/core";
 import type { AppContext } from "@navhub/api";
 import {
+  AnalyzeColorHarmonyInput,
   AnalyzeStackCompatibilityInput,
   BatchImportInput,
   ClusterSitesInput,
@@ -523,6 +525,13 @@ export function createHandlers(ctx: AppContext) {
         });
       }
       return ok({ matched: true, ...result });
+    },
+
+    async analyze_color_harmony(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = AnalyzeColorHarmonyInput.parse(args ?? {});
+      const report = analyzeColorPalette(input.palette, input.foreground, input.background);
+      return ok({ success: true, ...report });
     },
   };
 }

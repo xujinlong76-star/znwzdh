@@ -85,6 +85,13 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     throw new Error("NAVHUB_MODE 只能是 lite 或 standard，收到: " + mode);
   }
 
+  const isProd = (process.env.NODE_ENV ?? "") === "production";
+  const rawSecret = process.env.NAVHUB_SESSION_SECRET;
+  // 生产必须显式配长密钥：默认占位密钥只能跑 dev/test，避免公开部署裸奔
+  if (isProd && (!rawSecret || rawSecret.length < 32 || rawSecret === "change-me-please-use-a-long-random-string" || rawSecret === "insecure-dev-secret-change-me" || rawSecret === "change-me-in-production")) {
+    throw new Error("生产环境必须设置 NAVHUB_SESSION_SECRET（>=32 字符随机串），当前为默认值/过短");
+  }
+
   const base: AppConfig = {
     mode,
     port: process.env.NAVHUB_PORT ? num("NAVHUB_PORT", 8787) : num("PORT", 8787),

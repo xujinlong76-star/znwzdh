@@ -1389,4 +1389,79 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     });
     expect(delRes.statusCode).toBe(200);
   });
+
+  it("POST /api/design/harmony 调色板美学与 WCAG 2.1 对比度审计", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/design/harmony",
+      payload: {
+        palette: ["#0f172a", "#3b82f6", "#10b981"],
+        foreground: "#ffffff",
+        background: "#0f172a",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.report).toBeTruthy();
+    expect(json.report.wcagContrastRatio).toBeGreaterThan(4.5);
+    expect(["AAA", "AA"]).toContain(json.report.wcagPassLevel);
+    expect(json.report.harmonyScore).toBeGreaterThanOrEqual(50);
+  });
+
+  it("POST /api/mcp 浏览器端 JSON-RPC 2.0 WebMCP 协议网桥", async () => {
+    // 1. ping
+    const pingRes = await app.inject({
+      method: "POST",
+      url: "/api/mcp",
+      payload: { jsonrpc: "2.0", id: 1, method: "ping" },
+    });
+    expect(pingRes.statusCode).toBe(200);
+    const pingJson = pingRes.json();
+    expect(pingJson.result.status).toBe("pong");
+
+    // 2. tools/list
+    const listRes = await app.inject({
+      method: "POST",
+      url: "/api/mcp",
+      payload: { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    });
+    expect(listRes.statusCode).toBe(200);
+    const listJson = listRes.json();
+    expect(listJson.result.tools.length).toBeGreaterThanOrEqual(4);
+    const toolNames = listJson.result.tools.map((t: { name: string }) => t.name);
+    expect(toolNames).toContain("navhub_echo");
+    expect(toolNames).toContain("get_architecture_recipe");
+    expect(toolNames).toContain("evaluate_developer_intent");
+
+    // 3. tools/call: navhub_echo
+    const callRes = await app.inject({
+      method: "POST",
+      url: "/api/mcp",
+      payload: {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "navhub_echo", arguments: { message: "hello-webmcp" } },
+      },
+    });
+    expect(callRes.statusCode).toBe(200);
+    const callJson = callRes.json();
+    expect(callJson.result.content[0].text).toContain("hello-webmcp");
+
+    // 4. tools/call: evaluate_developer_intent (秒级解析 cron)
+    const intentRes = await app.inject({
+      method: "POST",
+      url: "/api/mcp",
+      payload: {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: { name: "evaluate_developer_intent", arguments: { input: "0 0 * * *" } },
+      },
+    });
+    expect(intentRes.statusCode).toBe(200);
+    const intentJson = intentRes.json();
+    expect(intentJson.result.content[0].text).toContain("每天午夜 00:00 执行一次");
+  });
 });

@@ -227,3 +227,9 @@ export function analyzeVisualFingerprint(
     recommendations,
   };
 }
+
+export const analyzeColorPalette = (
+  palette: string[],
+  foregroundHex = '#ffffff',
+  backgroundHex = '#0f172a'
+): ColorHarmonyReport => analyzeVisualFingerprint(palette, backgroundHex, foregroundHex);

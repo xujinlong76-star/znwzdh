@@ -185,6 +185,12 @@ export const EvaluateDeveloperIntentInput = z.object({
   input: z.string().describe("开发者输入的原始技术文本（如 Cron 表达式、JWT Token、Curl 命令、十六进制颜色、时间戳、JSON 字符串、Base64 或数学算式）"),
 });
 
+export const AnalyzeColorHarmonyInput = z.object({
+  palette: z.array(z.string()).min(1).describe("调色板 HEX 颜色数组，例如 ['#0f172a', '#3b82f6', '#10b981']"),
+  foreground: z.string().default("#ffffff").describe("文本/前景 HEX 颜色，默认 #ffffff"),
+  background: z.string().default("#0f172a").describe("页面/背景 HEX 颜色，默认 #0f172a"),
+});
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -310,6 +316,11 @@ export const TOOL_DEFS: ToolDefinition[] = [
     name: "evaluate_developer_intent",
     description: "原地推测并计算开发者输入的技术意图（秒级解析 JWT、Cron 人类语言翻译、Curl 语法转 Fetch 代码、时间戳/颜色/Base64/JSON 实时转换），0 外部网络耗时。",
     scope: "read", inputSchema: EvaluateDeveloperIntentInput, mutating: false,
+  },
+  {
+    name: "analyze_color_harmony",
+    description: "分析 UI 调色板的美学和谐度、WCAG 2.1 对比度评级 (AAA/AA/Fail)、视觉情绪风格与改进建议。",
+    scope: "read", inputSchema: AnalyzeColorHarmonyInput, mutating: false,
   },
 ];
 

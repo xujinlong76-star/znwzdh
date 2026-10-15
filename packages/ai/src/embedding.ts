@@ -43,6 +43,8 @@ export interface EmbeddingService {
   ready(): boolean;
   /** 主动预热（可选），用于启动时不阻塞首个请求 */
   warmup(): Promise<boolean>;
+  /** 缓存命中统计（可选实现：内存 LRU 的 size/hits/misses） */
+  stats?: () => { size: number; hits: number; misses: number };
 }
 
 type Extractor = (text: string, opts: { pooling: "cls" | "mean"; normalize: boolean }) => Promise<{ data: ArrayLike<number> }>;

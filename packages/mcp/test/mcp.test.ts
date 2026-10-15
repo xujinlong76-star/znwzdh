@@ -58,10 +58,11 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 13 个只读工具与 10 个写工具", () => {
+  it("包含 14 个只读工具与 10 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
+      "analyze_color_harmony",
       "analyze_stack_compatibility",
       "cluster_sites",
       "compare_technologies",
@@ -476,5 +477,19 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     const plainRes = await handlers.evaluate_developer_intent({ input: "普通普通的网站检索文本" }, READONLY);
     const plainBody = payload(plainRes);
     expect(plainBody.matched).toBe(false);
+  });
+
+  it("analyze_color_harmony 审计 UI 调色板对比度与和谐度", async () => {
+    const res = await handlers.analyze_color_harmony({
+      palette: ["#0f172a", "#3b82f6", "#10b981"],
+      foreground: "#ffffff",
+      background: "#0f172a",
+    }, READONLY);
+    const body = payload(res);
+    expect(body.success).toBe(true);
+    expect(body.wcagContrastRatio).toBeGreaterThan(4.5);
+    expect(["AAA", "AA"]).toContain(body.wcagPassLevel);
+    expect(body.harmonyScore).toBeGreaterThanOrEqual(50);
+    expect(body.dominantColors).toHaveLength(3);
   });
 });

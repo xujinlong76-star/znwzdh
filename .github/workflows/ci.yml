@@ -53,6 +53,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # 覆盖层比对在 check-web-overlay 作业里单独跑（全新检出需先 vendor，见那里）
       - run: pnpm run typecheck
+      # apps/web/test/*.test.ts 打的是存储接缝：github.ts 顶层 import @/lib/auth 与
+      # @/navsphere/content/*.json。这些同属 gitignore 的生成物（来自上游），全新检出
+      # 并不存在 —— 不先 vendor 重建 apps/web，vitest 会以
+      # "Cannot find package '@/lib/auth'" 整作业失败。vendor 只重建 apps/web，
+      # 而 typecheck / build 都 --filter "@navhub/*"，故不受影响。
+      - run: node scripts/vendor-web.mjs
       - run: pnpm test
       # 打包构建闸门：tsc 能过但声明导出/入口路径坏了只有 build 能发现
       - run: pnpm build

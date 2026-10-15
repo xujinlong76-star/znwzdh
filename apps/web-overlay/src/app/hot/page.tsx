@@ -17,6 +17,7 @@ import { Flame, Sparkles, ArrowLeft, Trophy, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
+import { SiteFavicon } from '@/components/site-favicon'
 
 export default function HotPage() {
   const [trending, setTrending] = useState<HubSite[]>([])
@@ -78,18 +79,12 @@ export default function HotPage() {
             <a href={site.url} target="_blank" rel="noopener noreferrer" className="block min-w-0 flex-1">
               <div className="flex items-start gap-2.5">
                 <div className="shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
-                  {site.iconKey ? (
-                    <img
-                      src={site.iconKey}
-                      alt=""
-                      className="w-full h-full object-contain rounded-xs"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                    />
-                  ) : (
-                    <div className="w-full h-full rounded bg-muted flex items-center justify-center text-xs font-bold text-muted-foreground">
-                      {site.title.slice(0, 1)}
-                    </div>
-                  )}
+                  <SiteFavicon
+                    title={site.title}
+                    url={site.url}
+                    icon={site.iconKey ?? undefined}
+                    className="w-full h-full object-contain rounded-xs"
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors truncate pr-8">

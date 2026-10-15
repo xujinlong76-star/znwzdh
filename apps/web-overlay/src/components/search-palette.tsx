@@ -30,6 +30,7 @@ import { parseTechComparisonQuery } from '@/lib/comparison'
 import { findMatchingArchitectureRecipe } from '@/lib/architecture-recipe'
 import { TechComparisonCard } from '@/components/tech-comparison-card'
 import { ArchitectureRecipeCard } from '@/components/architecture-recipe-card'
+import { SiteFavicon } from '@/components/site-favicon'
 
 
 
@@ -418,19 +419,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       onSelect={() => openSite(hit)}
                       className="flex items-center gap-3 py-3 px-3 cursor-pointer hover:bg-accent/50"
                     >
-                      <div className="flex-shrink-0 w-8 h-8">
-                        {site.iconKey ? (
-                          <img
-                            src={site.iconKey}
-                            alt={site.title + ' icon'}
-                            className="w-full h-full object-contain rounded"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                          />
-                        ) : (
-                          <div className="w-full h-full rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">
-                            {site.title.slice(0, 1)}
-                          </div>
-                        )}
+                      <div className="flex-shrink-0 w-8 h-8 rounded-md p-1 bg-muted/60 dark:bg-muted/30 border border-border/50 flex items-center justify-center">
+                        <SiteFavicon
+                          title={site.title}
+                          url={site.url}
+                          icon={site.iconKey ?? undefined}
+                          className="w-full h-full object-contain rounded-xs"
+                        />
                       </div>
                       <div className="flex flex-col flex-1 gap-1 min-w-0">
                         <span className="text-sm font-medium truncate">

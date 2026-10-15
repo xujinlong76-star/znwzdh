@@ -69,6 +69,7 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
               <div className="w-11 h-11 p-2 rounded-xl bg-muted/60 border border-border/60 shadow-xs flex-shrink-0 flex items-center justify-center">
                 <SiteFavicon
                   title={item.title}
+                  url={item.href}
                   icon={item.icon}
                   useDefaultIcon={item.useDefaultIcon}
                   className="w-full h-full object-contain"

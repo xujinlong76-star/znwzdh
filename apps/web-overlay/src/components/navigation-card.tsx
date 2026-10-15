@@ -122,6 +122,7 @@ export function NavigationCard({
                 <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover:scale-105">
                   <SiteFavicon
                     title={item.title}
+                    url={item.href}
                     icon={item.icon}
                     useDefaultIcon={item.useDefaultIcon}
                     className="w-full h-full object-contain rounded-xs"
@@ -230,6 +231,7 @@ export function NavigationCard({
                     <div className="flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                       <SiteFavicon
                         title={item.title}
+                        url={item.href}
                         icon={item.icon}
                         useDefaultIcon={item.useDefaultIcon}
                         className="w-full h-full object-contain rounded-sm"
@@ -374,6 +376,7 @@ export function NavigationCard({
                   <div className="flex-shrink-0 w-9 h-9 @[280px]:w-10 @[280px]:h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                     <SiteFavicon
                       title={item.title}
+                      url={item.href}
                       icon={item.icon}
                       useDefaultIcon={item.useDefaultIcon}
                       className="w-full h-full object-contain rounded-xs"

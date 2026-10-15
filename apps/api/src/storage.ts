@@ -14,7 +14,7 @@
  * 本模块实现服务端一侧：以 path 为键，读写等价的 JSON 结构。
  */
 import type { AppContext } from "./context.ts";
-import { getEnhancedSiteData, type SiteAction, type SiteRelation, type SiteLiveMetrics, type SiteHealth } from "@navhub/core";
+import { getEnhancedSiteData, resolveSiteIcon, type SiteAction, type SiteRelation, type SiteLiveMetrics, type SiteHealth } from "@navhub/core";
 
 export const NAVIGATION_PATH = "src/navsphere/content/navigation.json";
 export const SITE_PATH = "src/navsphere/content/site.json";
@@ -95,7 +95,7 @@ export async function buildNavigationData(ctx: AppContext): Promise<NsNavigation
       title: s.title,
       href: s.url,
       description: s.description ?? undefined,
-      icon: s.iconKey ?? undefined,
+      icon: s.iconKey || resolveSiteIcon(s.url, s.title),
       enabled: s.enabled,
       tags: s.tags ?? tags,
       actions: s.actions ?? enhanced.actions,
@@ -254,17 +254,18 @@ async function upsertSite(
   const found = existing.find((s) => s.id === item.id);
   const title = item.title ?? item.href;
   const description = item.description ?? null;
+  const resolvedIcon = item.icon || resolveSiteIcon(item.href, item.title);
   if (found) {
     await ctx.repo.updateSite(item.id, {
       url: item.href, title, description, categoryId,
-      iconKey: item.icon ?? null, enabled: item.enabled !== false, sort,
+      iconKey: resolvedIcon || null, enabled: item.enabled !== false, sort,
     });
     await ctx.repo.setSiteTags(item.id, found.tags);
   } else {
     // 保持 NavSphere 传下来的 id，避免前端接下来的更新请求丢失目标
     await ctx.repo.createSiteWithId({
       id: item.id, url: item.href, title, description, categoryId,
-      iconKey: item.icon ?? null, enabled: item.enabled !== false, sort, source: "navsphere",
+      iconKey: resolvedIcon || null, enabled: item.enabled !== false, sort, source: "navsphere",
     });
   }
 }

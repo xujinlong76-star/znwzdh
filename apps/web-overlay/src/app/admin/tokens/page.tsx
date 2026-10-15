@@ -1,15 +1,30 @@
 'use client'
 
 /**
- * 管理端：API Token 管理页面。
- * 提供 API 鉴权 Token 的签发、权限范围（read/write/admin）配置、明文一次性复制与吊销功能。
+ * 管理端：API Token 访问凭据管理。
+ *
+ * 这一版补上的能力（后端早已有接口，但 UI 之前完全接不到）：
+ *   - 轮换（rotate）：凭据泄露后的紧急处置，旧明文立即失效
+ *   - 编辑（patch）：改名 / 改权限 / 改有效期，不必删了重建
+ *   - 软吊销（revoke）：停用但留痕，审计日志仍能对应到这条凭据
+ *   - 彻底删除（delete）：仅用于合规清除
+ *
+ * 两个刻意的交互约束：
+ *   1. 权限是**单选的"最大权限"**而不是多选 checkbox。read/write/admin 是
+ *      层级关系（admin ⊇ write ⊇ read），勾选 read+admin 没有意义，只会让人
+ *      误以为能单独关掉某一级。
+ *   2. 复制明文必须**确认真的成功**。明文只出现一次，`navigator.clipboard`
+ *      在非 HTTPS / 无权限时会静默失败，假装成功等于让用户永久丢失凭据。
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 import { useToast } from '@/components/ui/use-toast'
-import { KeyRound, Plus, Trash2, Copy, Check, AlertTriangle, ShieldCheck, Clock, Calendar } from 'lucide-react'
+import {
+  KeyRound, Plus, Trash2, Copy, Check, AlertTriangle, ShieldCheck,
+  RefreshCw, Pencil, Ban, ShieldOff,
+} from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -21,6 +36,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 
+type MaxScope = 'read' | 'write' | 'admin'
+
 interface ApiToken {
   id: string
   name: string
@@ -28,24 +45,104 @@ interface ApiToken {
   expiresAt: number | null
   lastUsedAt: number | null
   createdAt: number
+  revokedAt: number | null
+  rotatedAt: number | null
+  tokenPrefix: string | null
 }
 
-interface CreateTokenResponse extends ApiToken {
+interface TokenWithPlaintext extends ApiToken {
   token: string
-  note: string
+  note?: string
+}
+
+/** 权限等级：管理员最高。API 侧 admin ⊇ write ⊇ read，UI 只让用户选最高那级 */
+const SCOPE_RANK: Record<MaxScope, number> = { read: 1, write: 2, admin: 3 }
+
+function maxScopeOf(scopes: string[]): MaxScope {
+  let best: MaxScope = 'read'
+  for (const s of scopes) {
+    const k = s.toLowerCase() as MaxScope
+    if (k in SCOPE_RANK && SCOPE_RANK[k] > SCOPE_RANK[best]) best = k
+  }
+  return best
+}
+
+/** 距过期还有几天（已过期为负）；永不过期返回 null */
+function daysUntil(ts: number | null): number | null {
+  if (ts === null) return null
+  return Math.ceil((ts - Date.now()) / 86_400_000)
+}
+
+type TokenState = 'revoked' | 'expired' | 'expiring' | 'permanent' | 'active'
+
+function stateOf(t: ApiToken): TokenState {
+  if (t.revokedAt !== null) return 'revoked'
+  if (t.expiresAt === null) return 'permanent'
+  const d = daysUntil(t.expiresAt)
+  if (d !== null && d <= 0) return 'expired'
+  if (d !== null && d <= 30) return 'expiring'
+  return 'active'
+}
+
+const STATE_META: Record<TokenState, { label: string; className: string }> = {
+  revoked: { label: '已吊销', className: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20' },
+  expired: { label: '已过期', className: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20' },
+  expiring: { label: '即将过期', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' },
+  permanent: { label: '长期有效', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' },
+  active: { label: '正常', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' },
+}
+
+/**
+ * 复制明文：先试 Clipboard API，不可用再退回 execCommand。
+ * 返回是否真的成功——调用方据此决定要不要把弹窗关掉。
+ */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // 无权限 / 非安全上下文 -> 走下面的降级分支
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.top = '-1000px'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
 }
 
 export default function AdminTokensPage() {
   const { toast } = useToast()
   const [tokens, setTokens] = useState<ApiToken[]>([])
   const [loading, setLoading] = useState(true)
+
+  // 创建
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [newTokenName, setNewTokenName] = useState('')
-  const [selectedScopes, setSelectedScopes] = useState<string[]>(['read', 'write'])
+  const [newName, setNewName] = useState('')
+  const [newScope, setNewScope] = useState<MaxScope>('write')
   const [expiresDays, setExpiresDays] = useState<string>('30')
-  const [createdResult, setCreatedResult] = useState<CreateTokenResponse | null>(null)
+
+  // 编辑
+  const [editing, setEditing] = useState<ApiToken | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editScope, setEditScope] = useState<MaxScope>('write')
+  const [editExpiresDays, setEditExpiresDays] = useState<string>('30')
+
+  // 明文结果（创建 / 轮换共用）
+  const [plainResult, setPlainResult] = useState<TokenWithPlaintext | null>(null)
   const [copied, setCopied] = useState(false)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   const loadTokens = useCallback(async () => {
     setLoading(true)
@@ -68,30 +165,40 @@ export default function AdminTokensPage() {
     void loadTokens()
   }, [loadTokens])
 
+  const stats = useMemo(() => {
+    let active = 0
+    let revoked = 0
+    let expired = 0
+    for (const t of tokens) {
+      const s = stateOf(t)
+      if (s === 'revoked') revoked++
+      else if (s === 'expired') expired++
+      else active++
+    }
+    return { total: tokens.length, active, revoked, expired }
+  }, [tokens])
+
+  /* ------------------------------ 创建 ------------------------------ */
+
   const handleCreateToken = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newTokenName.trim()) {
+    if (!newName.trim()) {
       toast({ title: '请输入 Token 名称', variant: 'destructive' })
       return
     }
-    if (selectedScopes.length === 0) {
-      toast({ title: '请至少勾选一个权限 Scope', variant: 'destructive' })
-      return
-    }
-
     try {
       const days = Number(expiresDays)
-      const expiresAt = days > 0 ? Date.now() + days * 86_400_000 : null
-      const res = await hubSend<CreateTokenResponse>('/api/tokens', 'POST', {
-        name: newTokenName.trim(),
-        scopes: selectedScopes.join(','),
-        expiresAt,
+      const res = await hubSend<TokenWithPlaintext>('/api/tokens', 'POST', {
+        name: newName.trim(),
+        // 只发最高那级：API 侧 admin 已隐含 write/read，不需要重复列举
+        scopes: newScope,
+        expiresAt: days > 0 ? Date.now() + days * 86_400_000 : null,
       })
-
-      setCreatedResult(res)
+      setPlainResult(res)
+      setCopied(false)
       setIsCreateOpen(false)
-      setNewTokenName('')
-      setSelectedScopes(['read', 'write'])
+      setNewName('')
+      setNewScope('write')
       setExpiresDays('30')
       void loadTokens()
     } catch (err) {
@@ -103,25 +210,122 @@ export default function AdminTokensPage() {
     }
   }
 
-  const handleDeleteToken = async (id: string, name: string) => {
-    if (!window.confirm(`确定要吊销 Token「${name}」吗？吊销后依赖该 Token 的 MCP 客户端或外部服务将立即无法访问。`)) {
+  /* ------------------------------ 编辑 ------------------------------ */
+
+  const openEdit = (t: ApiToken) => {
+    setEditing(t)
+    setEditName(t.name)
+    setEditScope(maxScopeOf(t.scopes))
+    const d = daysUntil(t.expiresAt)
+    setEditExpiresDays(t.expiresAt === null ? '0' : String(Math.max(1, d ?? 30)))
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editing) return
+    if (!editName.trim()) {
+      toast({ title: '名称不能为空', variant: 'destructive' })
       return
     }
-    setDeletingId(id)
+    setBusyId(editing.id)
     try {
-      await hubSend(`/api/tokens/${encodeURIComponent(id)}`, 'DELETE')
-      toast({ title: '已成功吊销 Token', description: `Token「${name}」已失效。` })
-      setTokens((prev) => prev.filter((t) => t.id !== id))
-    } catch {
-      toast({ title: '吊销失败', variant: 'destructive' })
+      const days = Number(editExpiresDays)
+      await hubSend(`/api/tokens/${encodeURIComponent(editing.id)}`, 'PATCH', {
+        name: editName.trim(),
+        scopes: editScope,
+        expiresAt: days > 0 ? Date.now() + days * 86_400_000 : null,
+      })
+      toast({ title: '已更新凭据', description: `Token「${editName.trim()}」的权限与有效期已保存。` })
+      setEditing(null)
+      void loadTokens()
+    } catch (err) {
+      toast({
+        title: '更新失败',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      })
     } finally {
-      setDeletingId(null)
+      setBusyId(null)
     }
   }
 
-  const handleCopyNewToken = () => {
-    if (!createdResult?.token) return
-    navigator.clipboard.writeText(createdResult.token)
+  /* ------------------------------ 轮换 ------------------------------ */
+
+  const handleRotate = async (t: ApiToken) => {
+    if (!window.confirm(`轮换后「${t.name}」的当前明文会立即失效，依赖它的客户端需要改用新明文。确定继续吗？`)) return
+    setBusyId(t.id)
+    try {
+      const res = await hubSend<TokenWithPlaintext>(`/api/tokens/${encodeURIComponent(t.id)}/rotate`, 'POST', {})
+      setPlainResult(res)
+      setCopied(false)
+      toast({ title: '轮换成功', description: '旧明文已失效，请立即保存新明文。' })
+      void loadTokens()
+    } catch (err) {
+      toast({
+        title: '轮换失败',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  /* ---------------------------- 吊销 / 删除 ---------------------------- */
+
+  const handleRevoke = async (t: ApiToken) => {
+    if (!window.confirm(`确定要吊销「${t.name}」吗？依赖它的客户端将立即无法访问，但审计记录会保留。`)) return
+    setBusyId(t.id)
+    try {
+      await hubSend(`/api/tokens/${encodeURIComponent(t.id)}/revoke`, 'POST', {})
+      toast({ title: '已吊销', description: `Token「${t.name}」已停用，记录保留以便追溯。` })
+      void loadTokens()
+    } catch (err) {
+      toast({
+        title: '吊销失败',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handlePurge = async (t: ApiToken) => {
+    const typed = window.prompt(`彻底删除「${t.name}」会抹掉它的全部记录（含审计可追溯性）。\n如确认，请输入名称以继续：`)
+    if (typed !== t.name) {
+      if (typed !== null) toast({ title: '名称不匹配，已取消', variant: 'destructive' })
+      return
+    }
+    setBusyId(t.id)
+    try {
+      await hubSend(`/api/tokens/${encodeURIComponent(t.id)}`, 'DELETE')
+      toast({ title: '已彻底删除', description: `Token「${t.name}」的记录已抹除。` })
+      void loadTokens()
+    } catch (err) {
+      toast({
+        title: '删除失败',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  /* ------------------------------ 复制 ------------------------------ */
+
+  const handleCopy = async () => {
+    if (!plainResult?.token) return
+    const ok = await copyText(plainResult.token)
+    if (!ok) {
+      // 绝不假装成功：明文只出现一次，复制失败必须让用户知道要手动选中
+      toast({
+        title: '自动复制失败',
+        description: '请手动选中上方明文并复制（Ctrl/Cmd + C）。关闭后无法再次查看。',
+        variant: 'destructive',
+      })
+      return
+    }
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -144,6 +348,22 @@ export default function AdminTokensPage() {
         </Button>
       </div>
 
+      {!loading && tokens.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: '凭据总数', value: stats.total, tone: 'text-foreground' },
+            { label: '生效中', value: stats.active, tone: 'text-emerald-600 dark:text-emerald-400' },
+            { label: '已吊销', value: stats.revoked, tone: 'text-red-600 dark:text-red-400' },
+            { label: '已过期', value: stats.expired, tone: 'text-amber-600 dark:text-amber-400' },
+          ].map((s) => (
+            <div key={s.label} className="rounded-xl border border-border/70 bg-card/50 px-3 py-2.5">
+              <div className="text-[11px] text-muted-foreground">{s.label}</div>
+              <div className={`text-lg font-bold ${s.tone}`}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div className="text-sm text-muted-foreground py-12 text-center">正在加载 Token 列表…</div>
       ) : tokens.length === 0 ? (
@@ -160,7 +380,7 @@ export default function AdminTokensPage() {
             <thead>
               <tr className="border-b bg-muted/40 text-xs font-medium text-muted-foreground">
                 <th className="text-left px-4 py-3">标识名称</th>
-                <th className="text-left px-4 py-3">权限范围 (Scopes)</th>
+                <th className="text-left px-4 py-3">最大权限</th>
                 <th className="text-left px-4 py-3">最近调用</th>
                 <th className="text-left px-4 py-3">有效期限</th>
                 <th className="text-right px-4 py-3">操作</th>
@@ -168,59 +388,82 @@ export default function AdminTokensPage() {
             </thead>
             <tbody className="divide-y divide-border/40">
               {tokens.map((t) => {
-                const isExpired = t.expiresAt !== null && t.expiresAt < Date.now()
+                const state = stateOf(t)
+                const meta = STATE_META[state]
+                const d = daysUntil(t.expiresAt)
+                const disabled = busyId === t.id
                 return (
-                  <tr key={t.id} className="hover:bg-muted/30 transition-colors">
+                  <tr key={t.id} className={`hover:bg-muted/30 transition-colors ${state === 'revoked' ? 'opacity-60' : ''}`}>
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-foreground flex items-center gap-1.5">
+                      <div className="font-semibold text-foreground flex items-center gap-1.5 flex-wrap">
                         <span>{t.name}</span>
-                        {isExpired && <Badge variant="destructive" className="text-[10px] h-4">已过期</Badge>}
+                        <Badge variant="outline" className={`text-[10px] h-4 ${meta.className}`}>{meta.label}</Badge>
+                        {t.rotatedAt !== null && (
+                          <Badge variant="outline" className="text-[10px] h-4 border-border/60">已轮换</Badge>
+                        )}
                       </div>
-                      <div className="text-[11px] font-mono text-muted-foreground/80 mt-0.5">
-                        创建于 {new Date(t.createdAt).toLocaleDateString('zh-CN')}
+                      <div className="text-[11px] font-mono text-muted-foreground/80 mt-0.5 space-x-2">
+                        <span>创建于 {new Date(t.createdAt).toLocaleDateString('zh-CN')}</span>
+                        {t.tokenPrefix && <span>· {t.tokenPrefix}…</span>}
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {t.scopes.map((s) => (
-                          <span
-                            key={s}
-                            className={`text-[11px] font-mono px-2 py-0.5 rounded-full border ${
-                              s === 'admin'
-                                ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 font-bold'
-                                : s === 'write'
-                                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                                : 'bg-primary/10 text-primary border-primary/20'
-                            }`}
-                          >
-                            {s}
-                          </span>
-                        ))}
-                      </div>
+                      <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full border ${
+                        maxScopeOf(t.scopes) === 'admin'
+                          ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20 font-bold'
+                          : maxScopeOf(t.scopes) === 'write'
+                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                          : 'bg-primary/10 text-primary border-primary/20'
+                      }`}>
+                        {maxScopeOf(t.scopes)}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
                       {t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleString('zh-CN') : '从未调用'}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground font-mono">
-                      {t.expiresAt ? (
-                        <span className={isExpired ? 'text-red-500 font-bold' : ''}>
-                          {new Date(t.expiresAt).toLocaleDateString('zh-CN')}
-                        </span>
+                      {t.expiresAt === null ? (
+                        <span className="text-amber-600 dark:text-amber-400">长期有效</span>
                       ) : (
-                        <span className="text-emerald-600 dark:text-emerald-400">长期有效</span>
+                        <span className={state === 'expired' || state === 'expiring' ? 'text-amber-600 dark:text-amber-400 font-semibold' : ''}>
+                          {new Date(t.expiresAt).toLocaleDateString('zh-CN')}
+                          {state !== 'expired' && d !== null && <span className="ml-1 opacity-70">（{d} 天）</span>}
+                        </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-lg gap-1"
-                        disabled={deletingId === t.id}
-                        onClick={() => handleDeleteToken(t.id, t.name)}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>吊销</span>
-                      </Button>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          size="sm" variant="ghost" title="编辑名称 / 权限 / 有效期"
+                          className="h-7 text-xs rounded-lg gap-1" disabled={disabled}
+                          onClick={() => openEdit(t)}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="sm" variant="ghost" title="轮换明文（旧明文立即失效）"
+                          className="h-7 text-xs rounded-lg gap-1" disabled={disabled || state === 'revoked'}
+                          onClick={() => handleRotate(t)}
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="sm" variant="ghost" title="吊销（停用但保留记录）"
+                          className="h-7 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-500/10 rounded-lg gap-1"
+                          disabled={disabled || state === 'revoked'}
+                          onClick={() => handleRevoke(t)}
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="sm" variant="ghost" title="彻底删除（抹除全部记录）"
+                          className="h-7 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-lg gap-1"
+                          disabled={disabled}
+                          onClick={() => handlePurge(t)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -230,7 +473,7 @@ export default function AdminTokensPage() {
         </div>
       )}
 
-      {/* 创建 Token 弹窗 */}
+      {/* 创建弹窗 */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="max-w-md p-6 rounded-2xl glass-surface depth-modal">
           <DialogHeader>
@@ -248,43 +491,47 @@ export default function AdminTokensPage() {
               <label className="text-xs font-semibold text-foreground">Token 标识名称</label>
               <Input
                 placeholder="例如: claude-desktop-agent / chrome-ext"
-                value={newTokenName}
-                onChange={(e) => setNewTokenName(e.target.value)}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
                 className="h-8.5 text-xs"
                 required
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">权限范围 (Scopes)</label>
+              <label className="text-xs font-semibold text-foreground">最大权限</label>
+              <p className="text-[11px] text-muted-foreground">权限是层级的：全权 ⊇ 读写 ⊇ 只读。选择需要的**最高**一级即可。</p>
               <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'read', label: '只读 (read)' },
-                  { id: 'write', label: '读写 (write)' },
-                  { id: 'admin', label: '全权 (admin)' },
-                ].map((scope) => {
-                  const checked = selectedScopes.includes(scope.id)
-                  return (
-                    <label
-                      key={scope.id}
-                      className={`flex items-center gap-2 p-2 rounded-xl border text-xs cursor-pointer transition-colors ${
-                        checked ? 'bg-primary/10 border-primary/40 text-primary font-medium' : 'border-border/60 hover:bg-muted/40'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedScopes([...selectedScopes, scope.id])
-                          else setSelectedScopes(selectedScopes.filter((s) => s !== scope.id))
-                        }}
-                        className="rounded text-primary h-3.5 w-3.5"
-                      />
-                      <span>{scope.label}</span>
-                    </label>
-                  )
-                })}
+                {([
+                  { id: 'read', label: '只读' },
+                  { id: 'write', label: '读写' },
+                  { id: 'admin', label: '全权' },
+                ] as Array<{ id: MaxScope; label: string }>).map((scope) => (
+                  <label
+                    key={scope.id}
+                    className={`flex items-center justify-center gap-1.5 p-2 rounded-xl border text-xs cursor-pointer transition-colors ${
+                      newScope === scope.id
+                        ? 'bg-primary/10 border-primary/40 text-primary font-medium'
+                        : 'border-border/60 hover:bg-muted/40'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="new-scope"
+                      checked={newScope === scope.id}
+                      onChange={() => setNewScope(scope.id)}
+                      className="h-3 w-3 text-primary"
+                    />
+                    <span>{scope.label}</span>
+                  </label>
+                ))}
               </div>
+              {newScope === 'admin' && (
+                <p className="text-[11px] text-red-600 dark:text-red-400 flex items-start gap-1.5">
+                  <ShieldOff className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>全权凭据可签发与管理其它 Token，请仅在必要时授予，并尽量缩短有效期。</span>
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
@@ -298,8 +545,14 @@ export default function AdminTokensPage() {
                 <option value="30">30 天后过期 (推荐)</option>
                 <option value="90">90 天后过期</option>
                 <option value="365">1 年后过期</option>
-                <option value="0">长期有效 (永不过期)</option>
+                <option value="0">长期有效 (不推荐)</option>
               </select>
+              {expiresDays === '0' && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>长期凭据一旦泄露即为永久后门，且无法通过"等它过期"来止血。</span>
+                </p>
+              )}
             </div>
 
             <DialogFooter className="pt-2">
@@ -314,31 +567,108 @@ export default function AdminTokensPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 签发成功展示弹窗 */}
-      <Dialog open={createdResult !== null} onOpenChange={(open) => { if (!open) setCreatedResult(null) }}>
+      {/* 编辑弹窗 */}
+      <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null) }}>
+        <DialogContent className="max-w-md p-6 rounded-2xl glass-surface depth-modal">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-primary" />
+              <span>编辑凭据</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              可修改名称、权限与有效期。明文不受影响——需要换明文请用「轮换」。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">标识名称</label>
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="h-8.5 text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">最大权限</label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { id: 'read', label: '只读' },
+                  { id: 'write', label: '读写' },
+                  { id: 'admin', label: '全权' },
+                ] as Array<{ id: MaxScope; label: string }>).map((scope) => (
+                  <label
+                    key={scope.id}
+                    className={`flex items-center justify-center gap-1.5 p-2 rounded-xl border text-xs cursor-pointer transition-colors ${
+                      editScope === scope.id
+                        ? 'bg-primary/10 border-primary/40 text-primary font-medium'
+                        : 'border-border/60 hover:bg-muted/40'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="edit-scope"
+                      checked={editScope === scope.id}
+                      onChange={() => setEditScope(scope.id)}
+                      className="h-3 w-3 text-primary"
+                    />
+                    <span>{scope.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">有效期（自今天起）</label>
+              <select
+                value={editExpiresDays}
+                onChange={(e) => setEditExpiresDays(e.target.value)}
+                className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-xs"
+              >
+                <option value="7">7 天</option>
+                <option value="30">30 天</option>
+                <option value="90">90 天</option>
+                <option value="365">365 天</option>
+                <option value="0">长期有效</option>
+              </select>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setEditing(null)} className="text-xs">
+              取消
+            </Button>
+            <Button size="sm" className="text-xs font-semibold" disabled={busyId !== null} onClick={handleSaveEdit}>
+              保存修改
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 明文展示弹窗（创建 / 轮换共用） */}
+      <Dialog open={plainResult !== null} onOpenChange={(open) => { if (!open) setPlainResult(null) }}>
         <DialogContent className="max-w-md p-6 rounded-2xl glass-surface depth-modal space-y-4">
           <DialogHeader>
             <DialogTitle className="text-base font-bold flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
               <ShieldCheck className="w-5 h-5" />
-              <span>Token 签发成功</span>
+              <span>Token 明文（仅此一次）</span>
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              请立即复制保存此 Token 明文。出于安全考虑，系统仅存储加密哈希，关闭此弹窗后将无法再次查看！
+              请立即复制保存。系统仅存储哈希，关闭此弹窗后将无法再次查看。
             </DialogDescription>
           </DialogHeader>
 
           <div className="p-3 rounded-xl bg-muted/60 border border-border/80 space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground font-mono">
-              <span>{createdResult?.name}</span>
-              <span>{createdResult?.scopes.join(', ')}</span>
+              <span>{plainResult?.name}</span>
+              <span>{plainResult?.scopes.join(', ')}</span>
             </div>
             <div className="font-mono text-xs bg-background p-2.5 rounded-lg border border-border/60 break-all select-all font-semibold text-primary">
-              {createdResult?.token}
+              {plainResult?.token}
             </div>
             <Button
               size="sm"
               className="w-full h-8 text-xs gap-1.5 font-semibold"
-              onClick={handleCopyNewToken}
+              onClick={handleCopy}
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               <span>{copied ? '已复制到剪贴板！' : '复制 Token 明文'}</span>
@@ -347,12 +677,17 @@ export default function AdminTokensPage() {
 
           <div className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span>可在 HTTP 请求头中添加 <code>Authorization: Bearer &lt;Token&gt;</code> 使用。</span>
+            <span>在请求头中使用 <code>Authorization: Bearer &lt;Token&gt;</code>。</span>
           </div>
 
           <DialogFooter>
-            <Button size="sm" onClick={() => setCreatedResult(null)} className="w-full text-xs">
-              我已安全保存，关闭弹窗
+            <Button
+              size="sm"
+              onClick={() => setPlainResult(null)}
+              className="w-full text-xs"
+              variant={copied ? 'default' : 'outline'}
+            >
+              {copied ? '我已安全保存，关闭弹窗' : '未复制也关闭（明文将永久丢失）'}
             </Button>
           </DialogFooter>
         </DialogContent>

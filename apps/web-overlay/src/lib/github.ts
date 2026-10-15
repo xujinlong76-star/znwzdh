@@ -33,12 +33,14 @@ let cached: StorageAdapter | null = null;
 /**
  * 连接冷静期（毫秒）：中枢不可达时，多久内不再向它发起新连接。
  * 默认 5 秒 —— 足够吸收一次 SSR 突发（十几个模块的并发读取），
- * 又能在中枢启动后迅速恢复。置 0 表示关闭熔断（每次请求都尝试连接）。
+ * 又能在中枢启动后迅速恢复。显式置 0 表示关闭熔断（每次请求都尝试连接）。
  */
 function cooldownFromEnv(env: Record<string, string | undefined>): number {
-  const raw = Number(env.NAVHUB_STORAGE_COOLDOWN_MS);
-  if (!Number.isFinite(raw) || raw <= 0) return 5_000;
-  return Math.floor(raw);
+  const raw = env.NAVHUB_STORAGE_COOLDOWN_MS;
+  if (raw === undefined || raw.trim() === "") return 5_000;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 5_000;
+  return Math.floor(n);
 }
 
 function getAdapter(): StorageAdapter {

@@ -103,13 +103,19 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
     const now = Date.now();
     if (now >= unreachableUntil) {
       console.warn(
-        "[storage] NavHub 中枢不可达（" +
-          base +
-          "）：" +
-          reason +
-          "。已进入 " +
-          Math.round(cooldownMs / 1000) +
-          " 秒连接冷静期，期间读取回退构建期基线（未启动中枢时此为预期状态，不是故障）。",
+        cooldownMs > 0
+          ? "[storage] NavHub 中枢不可达（" +
+              base +
+              "）：" +
+              reason +
+              "。已进入 " +
+              Math.round(cooldownMs / 1000) +
+              " 秒连接冷静期，期间读取回退构建期基线（未启动中枢时此为预期状态，不是故障）。"
+          : "[storage] NavHub 中枢不可达（" +
+              base +
+              "）：" +
+              reason +
+              "。连接熔断已关闭（cooldownMs=0），读取回退构建期基线（未启动中枢时此为预期状态，不是故障）。",
       );
     }
     unreachableUntil = now + cooldownMs;

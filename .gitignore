@@ -33,6 +33,10 @@ apps/web/src/lib/*
 !apps/web/src/lib/github.ts
 !apps/web/src/lib/storage-adapter.ts
 
+# 存储接缝的测试（github.ts / storage-adapter.ts 是 NavHub 自己维护的文件，
+# 不是上游代码；根 vitest.config.ts 只放行 apps/web/test 这一个目录）
+!apps/web/test/
+
 !apps/web/src/components/
 apps/web/src/components/*
 !apps/web/src/components/navigation-content.tsx

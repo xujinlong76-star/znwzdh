@@ -113,8 +113,10 @@ export function createHandlers(ctx: AppContext) {
       requireScope(tc, "read");
       const input = SearchSitesInput.parse(args ?? {});
       const result = await ctx.search.search({ q: input.query, limit: input.limit, categoryId: input.categoryId, tag: input.tag });
-      const results = await Promise.all(result.hits.map(async (h) => {
-        const site = await ctx.repo.getSite(h.siteId);
+      const sites = await ctx.repo.getSitesByIds(result.hits.map((h) => h.siteId));
+      const byId = new Map(sites.map((s) => [s.id, s]));
+      const results = result.hits.map((h) => {
+        const site = byId.get(h.siteId);
         return {
           title: site?.title, url: site?.url, description: site?.description,
           icon: site?.iconKey, tags: site?.tags ?? [],
@@ -122,7 +124,7 @@ export function createHandlers(ctx: AppContext) {
           /** 解释「为什么是它」：每路召回的名次 */
           matchedBy: Object.fromEntries(Object.entries(h.contributions).map(([k, v]) => [k, v?.rank])),
         };
-      }));
+      });
       return ok({
         query: input.query, count: results.length,
         channelsUsed: result.channelsUsed, semanticAvailable: result.semanticAvailable,

@@ -13,11 +13,7 @@ fi
 
 if [ -n "$REPO" ]; then
   if [[ "$REPO" != http* ]] && [[ "$REPO" != git@* ]]; then
-    if [ -n "$TOKEN" ]; then
-      TARGET_URL="https://${TOKEN}@github.com/${REPO}.git"
-    else
-      TARGET_URL="https://github.com/${REPO}.git"
-    fi
+    TARGET_URL="https://github.com/${REPO}.git"
   else
     TARGET_URL="$REPO"
   fi
@@ -31,5 +27,11 @@ git add -A
 git commit -m "feat: complete codebase defect repair, architecture wiring, and parity sync" 2>/dev/null || echo "[git] 工作区干净，无新改动需提交"
 
 echo "[git] 推送至 GitHub main 分支..."
-git push -u origin main
+if [ -n "$TOKEN" ]; then
+  # 使用一次性 HTTP Basic Header 传递 PAT，避免把明文 Token 写入 .git/config
+  AUTH_B64=$(printf "x-access-token:%s" "$TOKEN" | base64 | tr -d '\n')
+  git -c "http.https://github.com/.extraHeader=Authorization: Basic ${AUTH_B64}" push -u origin main
+else
+  git push -u origin main
+fi
 echo "[git] 推送成功！"

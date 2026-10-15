@@ -1,5 +1,7 @@
 # ==========================================
-# NavHub 生产级多阶段容器镜像
+# [DEPRECATED] 历史单镜像草案（仅供本地快速试验参考）
+# 生产与标准容器化部署请使用 `docker/Dockerfile.api`、`docker/Dockerfile.web`
+# 以及 `docker/docker-compose.yml`（支持 lite / web / standard / mcp 四个 profile）。
 # ==========================================
 
 FROM node:22-bookworm-slim AS base

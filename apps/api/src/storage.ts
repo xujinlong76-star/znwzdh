@@ -62,10 +62,23 @@ interface NsCategory {
 interface NsNavigationData { navigationItems: NsCategory[] }
 
 /**
+ * 单次导出 navigation.json 允许的最大站点数（防大库全表拉取 OOM，可通过 NAVHUB_NAVIGATION_MAX_SITES 调整）。
+ */
+const NAVIGATION_MAX_SITES = Math.max(100, Number(process.env.NAVHUB_NAVIGATION_MAX_SITES || 8000));
+
+/**
  * 把数据库读成 NavSphere 的 navigation.json 形状。
  * 组级顺序严格按 sort，保证前端拖拽排序结果可复现。
  */
 export async function buildNavigationData(ctx: AppContext): Promise<NsNavigationData> {
+  const stats = await ctx.repo.stats();
+  if (stats.sites > NAVIGATION_MAX_SITES) {
+    const err = new Error(
+      `站点总数 (${stats.sites}) 超过单文件快照上限 (${NAVIGATION_MAX_SITES})，请改用分页接口 /api/sites 或调大 NAVHUB_NAVIGATION_MAX_SITES`,
+    ) as Error & { statusCode?: number };
+    err.statusCode = 413;
+    throw err;
+  }
   const categories = (await ctx.repo.listCategories()).filter((c) => c.enabled).sort((a, b) => a.sort - b.sort);
   const sites = await ctx.repo.listSites();
 

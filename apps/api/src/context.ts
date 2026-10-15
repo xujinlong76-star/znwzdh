@@ -72,7 +72,15 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
     }
     try {
       const store = new SqliteFtsStore(db.sqlite as never);
-      store.init(true);
+      // 首次初始化虚拟表结构，但**不**每次启动都强制全表 DELETE+INSERT 重建：
+      // 增量写入已由 Repository.createSite/updateSite/deleteSite 维护，
+      // 仅当 sites 表非空而 sites_fts 为空（例如首次升级）时才触发全量 rebuild。
+      store.init(false);
+      const siteCount = (db.sqlite!.prepare("SELECT COUNT(*) AS n FROM sites WHERE deleted_at IS NULL").get() as { n: number })?.n ?? 0;
+      if (siteCount > 0) {
+        const ftsCount = (db.sqlite!.prepare("SELECT COUNT(*) AS n FROM sites_fts").get() as { n: number })?.n ?? 0;
+        if (ftsCount === 0) store.rebuild();
+      }
       fts = store;
       notes.push("FTS5 全文索引就绪（CJK 二元分词）");
     } catch (err) {

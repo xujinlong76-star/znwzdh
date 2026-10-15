@@ -89,7 +89,9 @@ export class JobRunner {
 
   start(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.tick(), this.intervalMs);
+    // 引入 ±20% 抖动（jitter）：多实例部署时错开唤醒峰值，避免同时抢锁打满 DB
+    const jitterMs = Math.max(200, Math.round(this.intervalMs * (0.8 + Math.random() * 0.4)));
+    this.timer = setInterval(() => void this.tick(), jitterMs);
     // 不阻塞启动：首个周期也交给定时器
     if (typeof this.timer.unref === "function") this.timer.unref();
   }

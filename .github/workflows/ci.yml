@@ -29,6 +29,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: node scripts/check-web-overlay.mjs
       - run: pnpm -r exec tsc --noEmit
       - run: pnpm test
 

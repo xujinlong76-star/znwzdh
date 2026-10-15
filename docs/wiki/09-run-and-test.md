@@ -73,7 +73,7 @@ docker compose --profile standard up -d                  # PostgreSQL + pgvector
 NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d  # 追加 MCP HTTP
 ```
 
-根目录还有简版 `docker-compose.yml`（api + web 双服务）。详细配置见 [08-extensions-scripts-docker.md](./08-extensions-scripts-docker.md)。
+根目录保留了一份历史简版 `docker-compose.yml`（已标记 Deprecated，请统一使用 `docker/docker-compose.yml`）。详细配置见 [08-extensions-scripts-docker.md](./08-extensions-scripts-docker.md)。
 
 ## 4. MCP 接入
 
@@ -115,9 +115,10 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 | `NAVHUB_PORT` / `PORT` | `8787` | `NAVHUB_PORT` 优先 |
 | `NAVHUB_HOST` / `HOST` | `0.0.0.0` | |
 | `NAVHUB_PUBLIC_URL` | `http://localhost:8787` | |
-| `NAVHUB_SESSION_SECRET` | `insecure-dev-secret-change-me` | **生产必须改** |
+| `NAVHUB_SESSION_SECRET` | `insecure-dev-secret-change-me` | **生产（`NODE_ENV=production`）强制要求 ≥32 字符且非默认值，否则拒绝启动** |
 | `NAVHUB_LOG_LEVEL` | `info`（测试时 `silent`） | |
-| `NAVHUB_TRUST_PROXY` | 开启（`=0` 关闭） | 信任 `X-Forwarded-For`；**中枢直暴露公网时必须设 0**，否则可伪造 XFF 绕过限流 |
+| `NAVHUB_TRUST_PROXY` | 关闭（`=1`/`true` 开启） | 默认不信任 `X-Forwarded-For`（防公网直连伪造 XFF 绕过限流）；部署在可信反代/Next.js 代理后设为 `1` |
+| `NAVHUB_NAVIGATION_MAX_SITES` | `8000` | `navigation.json` 单文件快照站点数上限，超限返回 HTTP 413 |
 | `NAVHUB_CORS_ORIGINS` | `*` | 逗号分隔 |
 | `NAVHUB_JOBS_ENABLED` | 开启（`=0`/`false` 关闭） | 任务队列开关 |
 | `NAVHUB_JOBS_INTERVAL_MS` | `30000`（<1000 视为非法回退） | 任务轮询间隔（毫秒），见 [02-api.md §5.2](./02-api.md) |
@@ -281,7 +282,7 @@ node --experimental-strip-types scripts/pg-check.mts     # 或 pnpm test:pg
 ### 7.4 检索与网络
 
 8. **`NAVHUB_EMBEDDING_ENDPOINT`**：不是 `HF_ENDPOINT`——`transformers.js` v4 不读取该环境变量，必须走 `env.remoteHost`
-9. **中枢直暴露公网要设 `NAVHUB_TRUST_PROXY=0`**，否则客户端可伪造 `X-Forwarded-For` 绕过限流
+9. **`NAVHUB_TRUST_PROXY` 默认关闭（`false`）**：公网直连时防止客户端伪造 `X-Forwarded-For` 绕过限流；若置于可信反向代理或 Next.js `/api/hub/*` 代理之后，请显式设 `NAVHUB_TRUST_PROXY=1`
 10. **前端代理必须透传 `X-Forwarded-For`**：否则所有访客共享一个限流桶，投稿第 6 位就被 429 挡住
 11. **URL 形态查询要 `encodeURIComponent`**：`/api/sites/https://chatgpt.com` 会被切成多段 → 404（HTTP 路由固有行为）
 

@@ -1,3 +1,5 @@
+# [DEPRECATED] 请优先使用 `cd docker && docker compose up -d`（完整支持 lite / web / standard / mcp profiles）。
+# 本文件仅作为根目录历史兼容简版保留。
 version: '3.8'
 
 services:

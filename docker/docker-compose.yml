@@ -42,7 +42,8 @@ services:
       NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.deepseek.com}
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
       NAVHUB_LLM_MODEL: ${NAVHUB_LLM_MODEL:-deepseek-chat}
-      NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-change-me-in-production}
+      NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-change-me-in-production-min-32-chars-secret-key}
+      NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-1}
       NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
       NAVHUB_SEED_ON_START: ${NAVHUB_SEED_ON_START:-1}
     healthcheck:
@@ -123,7 +124,8 @@ services:
       NAVHUB_EMBEDDING_ENDPOINT: ${NAVHUB_EMBEDDING_ENDPOINT:-https://hf-mirror.com}
       NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.deepseek.com}
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
-      NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-change-me-in-production}
+      NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-change-me-in-production-min-32-chars-secret-key}
+      NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-1}
 
   mcp:
     build:

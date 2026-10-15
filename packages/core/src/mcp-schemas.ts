@@ -225,3 +225,88 @@ export const ExchangeP2pMeshInput = z.object({
   }).describe("传入的 P2P 网格报文"),
 });
 
+
+/* ------------------------------------------------------------------ *
+ * 契约注册表：OpenAPI 文档与 MCP 工具清单都从这里取，杜绝第二份手写清单
+ * ------------------------------------------------------------------ */
+
+export type ZodSchemaLike = z.ZodTypeAny;
+
+/** 工具名 -> 输入 schema（顺序与 TOOL_DEFS 对齐；缺失的工具视为无入参） */
+export const MCP_INPUT_SCHEMAS: Record<string, ZodSchemaLike> = {
+  search_sites: SearchSitesInput,
+  get_site: GetSiteInput,
+  list_categories: ListCategoriesInput,
+  create_site: CreateSiteInput,
+  update_site: UpdateSiteInput,
+  set_status: SetStatusInput,
+  batch_import: BatchImportInput,
+  health_check: HealthCheckInput,
+  delete_site: DeleteSiteInput,
+  export_sites: ExportSitesInput,
+  get_trending: GetTrendingInput,
+  list_tags: ListTagsInput,
+  refresh_site: RefreshSiteInput,
+  run_job: RunJobInput,
+  get_architecture_recipe: GetArchitectureRecipeInput,
+  compare_technologies: CompareTechnologiesInput,
+  heal_broken_site: HealBrokenSiteInput,
+  find_tech_path: FindTechPathInput,
+  analyze_stack_compatibility: AnalyzeStackCompatibilityInput,
+  cluster_sites: ClusterSitesInput,
+  sync_crdt_operations: SyncCrdtOperationsInput,
+  evaluate_developer_intent: EvaluateDeveloperIntentInput,
+  analyze_color_harmony: AnalyzeColorHarmonyInput,
+  get_federated_recommendations: GetFederatedRecommendationsInput,
+  compile_speculation_rules: CompileSpeculationRulesInput,
+  synthesize_agent_tool: SynthesizeAgentToolInput,
+  exchange_p2p_mesh: ExchangeP2pMeshInput,
+};
+
+/**
+ * REST 站点写入体：与 MCP 的 CreateSiteInput / UpdateSiteInput 同源派生，
+ * 只在 REST 侧收紧/补齐（categoryId 必填、允许 nullable 的字段、REST 特有的
+ * subCategoryId / iconKey / source / status / featured）。
+ *
+ * 这样两边不会再各自长出一版字段清单：MCP 加字段，REST 自动跟着有。
+ */
+export const SiteStatusSchema = z.enum(["active", "pending", "broken", "archived"]);
+
+export const SiteCreateBody = CreateSiteInput.omit({ enrich: true, idempotencyKey: true }).extend({
+  description: z.string().nullable().optional().describe("描述；null 表示清空"),
+  categoryId: z.string().min(1).describe("类目 id（REST 侧必填）"),
+  subCategoryId: z.string().nullable().optional(),
+  iconKey: z.string().nullable().optional(),
+  source: z.string().nullable().optional(),
+  status: SiteStatusSchema.optional(),
+  featured: z.boolean().optional(),
+});
+
+export const SiteUpdateBody = UpdateSiteInput.omit({ id: true }).extend({
+  description: z.string().nullable().optional().describe("描述；null 表示清空"),
+  categoryId: z.string().min(1).optional(),
+  status: SiteStatusSchema.optional(),
+});
+
+/**
+ * REST 端点 -> 契约 schema 的绑定表。
+ * key 必须是 OpenAPI 路径模板（`:id` 已转成 `{id}`）+ 大写方法。
+ * 未绑定的端点退回"通用 object"，不会谎报字段。
+ */
+export const REST_SCHEMA_BINDINGS: Record<string, { schema: ZodSchemaLike; in: "body" | "query" }> = {
+  "POST /api/sites": { schema: SiteCreateBody, in: "body" },
+  "PATCH /api/sites/{id}": { schema: SiteUpdateBody, in: "body" },
+  "POST /api/crdt/sync": { schema: SyncCrdtOperationsInput, in: "body" },
+  "POST /api/design/harmony": { schema: AnalyzeColorHarmonyInput, in: "body" },
+  "POST /api/speculation/rules": { schema: CompileSpeculationRulesInput, in: "body" },
+  "POST /api/rank/federated": { schema: GetFederatedRecommendationsInput, in: "body" },
+  "POST /api/graph/path": { schema: FindTechPathInput, in: "body" },
+  "POST /api/graph/compatibility": { schema: AnalyzeStackCompatibilityInput, in: "body" },
+  "POST /api/sites/cluster": { schema: ClusterSitesInput, in: "body" },
+  "POST /api/comparisons": { schema: CompareTechnologiesInput, in: "body" },
+  "POST /api/recipes": { schema: GetArchitectureRecipeInput, in: "body" },
+  "POST /api/tools/synthesize": { schema: SynthesizeAgentToolInput, in: "body" },
+  "POST /api/p2p/signal": { schema: ExchangeP2pMeshInput, in: "body" },
+  "GET /api/tags": { schema: ListTagsInput, in: "query" },
+  "GET /api/rank/trending": { schema: GetTrendingInput, in: "query" },
+};

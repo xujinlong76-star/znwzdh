@@ -1,4 +1,5 @@
 export * from "./types.ts";
+export * from "./mcp-schemas.ts";
 export * from "./channels.ts";
 export * from "./cjk.ts";
 export * from "./pinyin.ts";

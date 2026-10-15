@@ -26,6 +26,9 @@ import {
   BarChart3,
   ListChecks,
   KeyRound,
+  FolderTree,
+  Tags,
+  Layers,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
 import {
@@ -98,6 +101,21 @@ const menuItems = [
     title: "任务队列",
     href: "/admin/jobs",
     icon: ListChecks
+  },
+  {
+    title: "分类管理",
+    href: "/admin/categories",
+    icon: FolderTree
+  },
+  {
+    title: "标签管理",
+    href: "/admin/tags",
+    icon: Tags
+  },
+  {
+    title: "精选专题",
+    href: "/admin/collections",
+    icon: Layers
   },
   {
     title: "审计日志",

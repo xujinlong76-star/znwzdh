@@ -19,7 +19,7 @@ import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList, CommandGroup, CommandItem } from '@/registry/new-york/ui/command'
 import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
-import { searchSites, reportClick, reportInteractionFeedback, fetchSearchHistory, type HubSearchHit } from '@/lib/navhub-api'
+import { searchSites, reportClick, reportInteractionFeedback, fetchSearchHistory, fetchSuggest, type HubSearchHit, type HubSuggest } from '@/lib/navhub-api'
 import { highlightParts } from '@/lib/highlight'
 import { getIdentity } from '@/lib/identity'
 import { useFavorites } from '@/hooks/useFavorites'
@@ -80,6 +80,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [popular, setPopular] = useState<string[]>([])
   const [fallbackHint, setFallbackHint] = useState<'filter' | 'fuzzy' | undefined>(undefined)
   const [recent, setRecent] = useState<string[]>([])
+  /** 联想条：独立防抖/abort，不干扰主检索 */
+  const [suggest, setSuggest] = useState<HubSuggest | null>(null)
+  const suggestAbortRef = useRef<AbortController | null>(null)
+  const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -132,6 +136,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     const q = query.trim()
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (abortRef.current) abortRef.current.abort()
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current)
+    if (suggestAbortRef.current) suggestAbortRef.current.abort()
     if (!q) {
       setHits([])
       setLoading(false)
@@ -140,6 +146,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       setSuggestions([])
       setPopular([])
       setFallbackHint(undefined)
+      setSuggest(null)
       offsetRef.current = 0
       return
     }
@@ -172,6 +179,30 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [query, categoryId, identity])
+
+  /* 联想：比主检索更快（150ms），独立 abort；失败静默（联想是增强） */
+  useEffect(() => {
+    const q = query.trim()
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current)
+    if (suggestAbortRef.current) suggestAbortRef.current.abort()
+    if (!q) {
+      setSuggest(null)
+      return
+    }
+    suggestDebounceRef.current = setTimeout(() => {
+      const controller = new AbortController()
+      suggestAbortRef.current = controller
+      void fetchSuggest(q, 6, controller.signal)
+        .then((res) => {
+          if (controller.signal.aborted) return
+          setSuggest(res)
+        })
+        .catch(() => { /* abort 或降级都静默，联想不挡主结果 */ })
+    }, 150)
+    return () => {
+      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current)
+    }
+  }, [query])
 
   /** 加载下一页并追加（同一查询的延续——服务端因此不重复记事件） */
   const loadMore = useCallback(() => {
@@ -358,6 +389,35 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   {fallbackHint === 'filter'
                     ? '当前筛选下没有结果，已放宽到全库匹配（结果可能来自其他类目）。'
                     : '没有精确匹配，以下是放宽匹配后的结果。'}
+                </div>
+              )}
+              {suggest && (suggest.queries.length > 0 || suggest.sites.length > 0) && (
+                <div className="px-3 py-2 border-b flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">联想</span>
+                  {suggest.queries.slice(0, 4).map((s) => (
+                    <button
+                      key={s.query}
+                      className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                      onClick={() => setQuery(s.query)}
+                    >
+                      {s.query}
+                    </button>
+                  ))}
+                  {suggest.sites.slice(0, 3).map((s) => (
+                    <button
+                      key={s.id}
+                      className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors truncate max-w-40"
+                      title={s.url}
+                      onClick={() => {
+                        reportClick(s.id, identity)
+                        window.open(s.url, siteConfig?.navigation?.linkTarget || '_blank')
+                        setQuery('')
+                        setIsFocused(false)
+                      }}
+                    >
+                      {s.title}
+                    </button>
+                  ))}
                 </div>
               )}
               {speculativeResult && (

@@ -213,8 +213,7 @@ export async function fetchTags(): Promise<HubTag[]> {
 
 /* ------------------------------ 榜单 ------------------------------ */
 
-export async function fetchTrending(limit = 20): Promise<HubSite[]> {
-  try {
+export async function fetchTrending(limit = 20): Promise<HubSite[]> {  try {
     const data = await getJson<{ hits: Array<{ site: HubSite }> }>('/api/rank/trending?limit=' + limit)
     return data.hits.map((h) => h.site).filter(Boolean)
   } catch {
@@ -228,6 +227,32 @@ export async function fetchNewSites(limit = 20): Promise<HubSite[]> {
     return data.hits.map((h) => h.site).filter(Boolean)
   } catch {
     return []
+  }
+}
+
+/* ------------------------------ 搜索联想 ------------------------------ */
+
+export interface HubSuggest {
+  q: string
+  queries: Array<{ query: string; count: number }>
+  tags: Array<{ name: string; slug: string; count: number }>
+  sites: Array<{ id: string; title: string; url: string }>
+}
+
+/**
+ * 搜索联想（keystroke 级调用，调用方自行防抖）。
+ * 失败返回空联想（不抛错）：联想是增强，不是检索主路径。
+ * 服务端不记 search 事件，可放心按敲击调用。
+ */
+export async function fetchSuggest(q: string, limit = 6, signal?: AbortSignal): Promise<HubSuggest> {
+  const empty: HubSuggest = { q, queries: [], tags: [], sites: [] }
+  if (!q.trim()) return empty
+  try {
+    const params = new URLSearchParams({ q: q.trim(), limit: String(limit) })
+    return await getJson<HubSuggest>('/api/suggest?' + params.toString(), signal)
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') throw err
+    return empty
   }
 }
 

@@ -612,6 +612,18 @@ describe("中文编码往返（曾因写请求编码被压成问号）", () => {
     expect(got.navigationItems[0].title).toBe("视频导航·中文");
   });
 
+  it("resource-metadata.json 未写入过时返回 {} 而不是 null（调用方会直接点属性）", async () => {
+    // 这条与 videos.json 的语义刻意相反：
+    // videos 的消费者是页面（可在 null 时回退），而 resource-metadata 的消费者
+    // 是 /api/resource，它会执行 metadata.metadata.unshift(...)，
+    // 返回 null 会直接抛错。因此这里保持 {} 并依赖前端基线兜底。
+    const res = await app.inject({ method: "GET", url: "/api/storage?path=src/navsphere/content/resource-metadata.json" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).not.toBeNull();
+    expect(typeof body).toBe("object");
+  });
+
   it("未写入过的未知内容文件返回 null（而不是 {}）", async () => {
     // null 与 {} 语义不同：{} 会被前端当成"中枢里存了空对象"而告警，
     // null 表示"该文件从未写入过"，前端据此静默回退到构建期基线。

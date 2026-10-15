@@ -17,6 +17,9 @@ import { auth } from "@/lib/auth";
 import baselineNavigation from "@/navsphere/content/navigation.json";
 import baselineSite from "@/navsphere/content/site.json";
 import baselineVideos from "@/navsphere/content/videos.json";
+// resource-metadata.json 也必须有基线：调用方会执行 `metadata.metadata.unshift(...)`，
+// 一旦拿到空对象就会抛 "Cannot read properties of undefined (reading 'unshift')"。
+import baselineResourceMetadata from "@/navsphere/content/resource-metadata.json";
 import {
   createStorageAdapter,
   resolveAdapterKind,
@@ -104,6 +107,18 @@ function isEmptyObject(data: unknown): boolean {
 }
 
 /**
+ * resource-metadata.json 的内容判定。
+ *
+ * 调用方（/api/resource）会执行 `metadata.metadata.unshift(...)`，
+ * 因此 metadata 必须是**非空数组**；不能像普通配置那样只判"对象是否为空"，
+ * 否则一个合法的空对象会一路传到 unshift 上直接抛错。
+ */
+function hasMetadataArray(data: unknown): boolean {
+  const list = (data as { metadata?: unknown } | null)?.metadata;
+  return Array.isArray(list) && list.length > 0;
+}
+
+/**
  * 按文件类型取构建期内联的基线。
  *
  * 为什么需要基线：中枢返回的空结构（库还没数据）与"读取失败"在渲染层的后果一样 ——
@@ -116,6 +131,7 @@ function baselineFor(name: string): unknown | undefined {
   if (name === "navigation.json" || name === "navigation-default.json") return baselineNavigation;
   if (name === "site.json") return baselineSite;
   if (name === "videos.json") return baselineVideos;
+  if (name === "resource-metadata.json") return baselineResourceMetadata;
   return undefined;
 }
 
@@ -143,10 +159,16 @@ export async function getFileContent<T = any>(path: string): Promise<T> {
     }
 
     // 情况 2：有数据但为空 —— 告警后回退
-    // 空值判定按文件类型区分：导航类看数组长度，配置类看对象是否为空
-    const looksEmpty = (name === "navigation.json" || name === "navigation-default.json" || name === "videos.json")
-      ? !hasNavigation(data)
-      : isEmptyObject(data);
+    // 空值判定按文件类型区分：
+    //   - 导航类（navigation / videos）看 navigationItems 是否有元素
+    //   - resource-metadata 看 metadata 数组（调用方会对它执行 .unshift）
+    //   - 其余配置类看对象是否为空
+    const looksEmpty =
+      name === "navigation.json" || name === "navigation-default.json" || name === "videos.json"
+        ? !hasNavigation(data)
+        : name === "resource-metadata.json"
+          ? !hasMetadataArray(data)
+          : isEmptyObject(data);
 
     if (baseline !== undefined && looksEmpty) {
       console.warn("[storage] 中枢返回了数据但内容为空，回退到构建期基线:", path);

@@ -26,6 +26,12 @@ import {
   Lock,
   Unlock,
   Key,
+  Network,
+  Palette,
+  Bot,
+  Send,
+  Eye,
+  Sliders,
 } from 'lucide-react'
 import Link from 'next/link'
 import {
@@ -38,6 +44,19 @@ import {
   type EncryptedVaultPayload,
   type VaultItem,
 } from '@/lib/vault'
+import {
+  findShortestTechPath,
+  analyzeStackCompatibility,
+  PRESET_TECH_GRAPH,
+  type GraphNode,
+} from '@/lib/knowledge-graph'
+import {
+  analyzeVisualFingerprint,
+  type VisualMood,
+} from '@/lib/visual-fingerprint'
+import {
+  getWebMcpBridge,
+} from '@/lib/webmcp-bridge'
 
 
 /* ------------------ 算法 1：LinUCB 浏览器侧纯计算 ------------------ */
@@ -250,6 +269,53 @@ export function AlgorithmLab() {
     }
   }
 
+  /* --- 模块 6：知识拓扑星图与多跳寻路状态 --- */
+  const [graphStart, setGraphStart] = useState('react')
+  const [graphTarget, setGraphTarget] = useState('postgres')
+  const techPathResult = useMemo(
+    () => findShortestTechPath(graphStart, graphTarget),
+    [graphStart, graphTarget]
+  )
+  const [selectedStackTechs, setSelectedStackTechs] = useState<string[]>([
+    'react',
+    'nextjs',
+    'drizzle',
+  ])
+  const stackReport = useMemo(
+    () => analyzeStackCompatibility(selectedStackTechs),
+    [selectedStackTechs]
+  )
+
+  /* --- 模块 7：视觉指纹分析与色彩和谐度状态 --- */
+  const [visualPalette, setVisualPalette] = useState<string[]>(['#00ffff', '#ff00ff', '#1e1b4b'])
+  const [visualBg, setVisualBg] = useState<string>('#030712')
+  const [visualText, setVisualText] = useState<string>('#f9fafb')
+  const visualReport = useMemo(
+    () => analyzeVisualFingerprint(visualPalette, visualBg, visualText),
+    [visualPalette, visualBg, visualText]
+  )
+
+  /* --- 模块 8：端侧 WebMCP 网桥状态 --- */
+  const [mcpToolName, setMcpToolName] = useState('navhub_system_info')
+  const [mcpArgMsg, setMcpArgMsg] = useState('Hello from NavHub In-Browser Agent!')
+  const [mcpResponse, setMcpResponse] = useState<any>(null)
+  const [mcpLatency, setMcpLatency] = useState<number | null>(null)
+
+  const handleRunMcpTool = async (tool: string) => {
+    const bridge = getWebMcpBridge()
+    const t0 = performance.now()
+    const args = tool === 'navhub_echo' ? { message: mcpArgMsg } : {}
+    const res = await bridge.handleRpc({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: 'tools/call',
+      params: { name: tool, arguments: args },
+    })
+    const elapsed = Math.round(performance.now() - t0)
+    setMcpResponse(res)
+    setMcpLatency(elapsed)
+  }
+
   return (
     <div className="container max-w-6xl mx-auto py-6 sm:py-10 px-4 space-y-6 sm:space-y-8">
       {/* 头部导航与沉浸式 Hero 展板 */}
@@ -278,7 +344,7 @@ export function AlgorithmLab() {
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                5 大前沿引擎全就绪
+                8 大前沿认知引擎全就绪
               </span>
             </div>
           </div>
@@ -293,79 +359,102 @@ export function AlgorithmLab() {
             <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
               实时推演与体验超越传统导航的技术奇点：<span className="text-foreground font-medium">LinUCB 浏览器端在线多臂学习</span>、
               <span className="text-foreground font-medium">Poincaré 双曲空间平替拓扑推演</span>、
+              <span className="text-foreground font-medium">技术拓扑星图与多跳 Dijkstra 寻路</span>、
+              <span className="text-foreground font-medium">视觉指纹与 WCAG 2.1 色彩和谐度</span>、
+              <span className="text-foreground font-medium">端侧 WebMCP JSON-RPC 2.0 网桥</span>、
               <span className="text-foreground font-medium">Shannon 文本熵防假 200 巡检</span>、
               <span className="text-foreground font-medium">0-RTT 推测性意图瞬时计算</span> 与
               <span className="text-foreground font-medium">AES-256-GCM 零知识端到端私密金库</span>。
             </p>
           </div>
 
-          {/* 5 大算法指标快速指示牌 */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 pt-2">
-            <div className="p-2.5 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
-              <div className="text-xs text-muted-foreground">多臂自适应融合</div>
-              <div className="font-bold font-mono text-primary flex items-center gap-1">
-                LinUCB 5-Channel
-              </div>
+          {/* 8 大算法指标快速指示牌 */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 pt-2">
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+              <div className="text-[11px] text-muted-foreground">多臂自适应</div>
+              <div className="font-bold font-mono text-primary text-xs">LinUCB</div>
             </div>
-            <div className="p-2.5 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
-              <div className="text-xs text-muted-foreground">双曲平替曲率</div>
-              <div className="font-bold font-mono text-violet-500 flex items-center gap-1">
-                Poincaré c = -1
-              </div>
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+              <div className="text-[11px] text-muted-foreground">双曲平替</div>
+              <div className="font-bold font-mono text-violet-500 text-xs">Poincaré</div>
             </div>
-            <div className="p-2.5 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
-              <div className="text-xs text-muted-foreground">假死链防欺骗</div>
-              <div className="font-bold font-mono text-emerald-500 flex items-center gap-1">
-                Shannon H &gt; 3.5
-              </div>
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+              <div className="text-[11px] text-muted-foreground">知识星图</div>
+              <div className="font-bold font-mono text-indigo-500 text-xs">Dijkstra</div>
             </div>
-            <div className="p-2.5 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
-              <div className="text-xs text-muted-foreground">推测执行吞吐</div>
-              <div className="font-bold font-mono text-amber-500 flex items-center gap-1">
-                0-RTT &lt; 1ms
-              </div>
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+              <div className="text-[11px] text-muted-foreground">视觉指纹</div>
+              <div className="font-bold font-mono text-pink-500 text-xs">WCAG 2.1</div>
             </div>
-            <div className="p-2.5 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5 col-span-2 sm:col-span-1">
-              <div className="text-xs text-muted-foreground">零知识密码学</div>
-              <div className="font-bold font-mono text-cyan-500 flex items-center gap-1">
-                AES-GCM-256 E2EE
-              </div>
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+              <div className="text-[11px] text-muted-foreground">端侧网桥</div>
+              <div className="font-bold font-mono text-emerald-500 text-xs">WebMCP</div>
+            </div>
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+              <div className="text-[11px] text-muted-foreground">防假死链</div>
+              <div className="font-bold font-mono text-emerald-600 text-xs">Entropy</div>
+            </div>
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+              <div className="text-[11px] text-muted-foreground">推测执行</div>
+              <div className="font-bold font-mono text-amber-500 text-xs">0-RTT</div>
+            </div>
+            <div className="p-2 rounded-xl bg-background/70 border border-border/50 text-xs space-y-0.5">
+              <div className="text-[11px] text-muted-foreground">密码金库</div>
+              <div className="font-bold font-mono text-cyan-500 text-xs">AES-256</div>
             </div>
           </div>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 w-full h-auto p-1.5 bg-muted/40 border border-border/60 rounded-xl backdrop-blur-md gap-1">
+        <TabsList className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 w-full h-auto p-1.5 bg-muted/40 border border-border/60 rounded-xl backdrop-blur-md gap-1">
           <TabsTrigger
             value="linucb"
-            className="py-2 text-xs sm:text-sm flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
+            className="py-2 text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
           >
-            <Layers className="w-4 h-4 text-primary" /> LinUCB 自适应融合
+            <Layers className="w-3.5 h-3.5 text-primary" /> LinUCB
           </TabsTrigger>
           <TabsTrigger
             value="hyperbolic"
-            className="py-2 text-xs sm:text-sm flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
+            className="py-2 text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
           >
-            <Orbit className="w-4 h-4 text-violet-500" /> 庞加莱双曲平替
+            <Orbit className="w-3.5 h-3.5 text-violet-500" /> 庞加莱平替
+          </TabsTrigger>
+          <TabsTrigger
+            value="graph"
+            className="py-2 text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
+          >
+            <Network className="w-3.5 h-3.5 text-indigo-500" /> 知识星图
+          </TabsTrigger>
+          <TabsTrigger
+            value="visual"
+            className="py-2 text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
+          >
+            <Palette className="w-3.5 h-3.5 text-pink-500" /> 视觉指纹
+          </TabsTrigger>
+          <TabsTrigger
+            value="webmcp"
+            className="py-2 text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
+          >
+            <Bot className="w-3.5 h-3.5 text-emerald-500" /> WebMCP
           </TabsTrigger>
           <TabsTrigger
             value="health"
-            className="py-2 text-xs sm:text-sm flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
+            className="py-2 text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
           >
-            <ShieldCheck className="w-4 h-4 text-emerald-500" /> 文本熵防假 200
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> 文本熵巡检
           </TabsTrigger>
           <TabsTrigger
             value="intent"
-            className="py-2 text-xs sm:text-sm flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
+            className="py-2 text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
           >
-            <Zap className="w-4 h-4 text-amber-500" /> 0-RTT 推测执行
+            <Zap className="w-3.5 h-3.5 text-amber-500" /> 0-RTT 推测
           </TabsTrigger>
           <TabsTrigger
             value="vault"
-            className="py-2 text-xs sm:text-sm flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium col-span-2 sm:col-span-1"
+            className="py-2 text-xs flex items-center justify-center gap-1.5 rounded-lg data-[state=active]:bg-background data-[state=active]:shadow-xs data-[state=active]:border data-[state=active]:border-border/60 transition-all font-medium"
           >
-            <Lock className="w-4 h-4 text-cyan-500" /> 零知识 E2EE 金库
+            <Lock className="w-3.5 h-3.5 text-cyan-500" /> E2EE 金库
           </TabsTrigger>
         </TabsList>
 
@@ -965,6 +1054,403 @@ export function AlgorithmLab() {
                     </div>
                   )}
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ================= 6. 知识拓扑星图与多跳寻路 ================= */}
+        <TabsContent value="graph" className="space-y-4 mt-6">
+          <Card className="nav-card-glow border-border/70 shadow-xs overflow-hidden">
+            <CardHeader className="bg-muted/15 border-b border-border/50 pb-5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg font-bold flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500">
+                      <Network className="w-4 h-4" />
+                    </div>
+                    <span>技术栈知识拓扑图谱与双向 Dijkstra 寻路</span>
+                  </CardTitle>
+                  <CardDescription className="mt-1 text-xs sm:text-sm">
+                    终结孤立陈列。基于有向加权图谱构建全栈协同拓扑，秒级解算任意两项技术之间的协同演进路径与补齐缺失基础设施。
+                  </CardDescription>
+                </div>
+                <Badge variant="outline" className="text-indigo-500 border-indigo-500/30 bg-indigo-500/5 text-xs">
+                  Bi-directional Dijkstra
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6 pt-6">
+              {/* 寻路选择器 */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                    <span>起始技术 (From)：</span>
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PRESET_TECH_GRAPH.nodes.slice(0, 9).map((n) => (
+                      <Button
+                        key={n.id}
+                        size="sm"
+                        variant={graphStart === n.id ? 'default' : 'outline'}
+                        onClick={() => setGraphStart(n.id)}
+                        className={`text-xs h-7 px-2.5 rounded-lg transition-all ${
+                          graphStart === n.id ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'border-border/60'
+                        }`}
+                      >
+                        {n.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                    <span>目标技术 (To)：</span>
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PRESET_TECH_GRAPH.nodes.slice(9).map((n) => (
+                      <Button
+                        key={n.id}
+                        size="sm"
+                        variant={graphTarget === n.id ? 'default' : 'outline'}
+                        onClick={() => setGraphTarget(n.id)}
+                        className={`text-xs h-7 px-2.5 rounded-lg transition-all ${
+                          graphTarget === n.id ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'border-border/60'
+                        }`}
+                      >
+                        {n.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* 寻路解算结果看板 */}
+              <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-3">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span className="flex items-center gap-1.5 text-indigo-500">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    协同演进链路推演结果：
+                  </span>
+                  <span className="font-mono text-muted-foreground">
+                    拓扑代价距离：<span className="text-foreground font-bold">{techPathResult.distance}</span> | 跃点数：{techPathResult.steps.length}
+                  </span>
+                </div>
+
+                {techPathResult.found ? (
+                  <div className="flex flex-wrap items-center gap-2 pt-2">
+                    {techPathResult.nodeChain.map((node, idx) => (
+                      <div key={node.id} className="flex items-center gap-2">
+                        <div className="px-3 py-1.5 rounded-lg bg-background border border-indigo-500/40 shadow-xs flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                          <span className="text-xs font-bold text-foreground">{node.name}</span>
+                          <span className="text-[10px] text-muted-foreground font-mono">({node.layer})</span>
+                        </div>
+                        {idx < techPathResult.nodeChain.length - 1 && (
+                          <div className="flex items-center text-xs font-mono text-indigo-500 px-1">
+                            <span className="text-[11px] bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-500/20 mr-1">
+                              {techPathResult.steps[idx]?.relation}
+                            </span>
+                            <ArrowRight className="w-3.5 h-3.5 text-indigo-400" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground py-2 font-mono">未找到连通链路</div>
+                )}
+              </div>
+
+              {/* 技术栈兼容性自测 */}
+              <div className="p-4 rounded-xl border border-border/60 bg-card space-y-3">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span>技术栈方案兼容度与补齐诊断：</span>
+                  <Badge variant="outline" className="text-xs font-mono text-indigo-500">
+                    契合度: {stackReport.coherenceScore} / 100
+                  </Badge>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {PRESET_TECH_GRAPH.nodes.map((node) => {
+                    const isSelected = selectedStackTechs.includes(node.id)
+                    return (
+                      <Button
+                        key={node.id}
+                        size="sm"
+                        variant={isSelected ? 'default' : 'outline'}
+                        onClick={() => {
+                          if (isSelected) {
+                            if (selectedStackTechs.length > 1) {
+                              setSelectedStackTechs(selectedStackTechs.filter((id) => id !== node.id))
+                            }
+                          } else {
+                            setSelectedStackTechs([...selectedStackTechs, node.id])
+                          }
+                        }}
+                        className={`text-xs h-6.5 px-2.5 rounded-md ${
+                          isSelected ? 'bg-primary text-primary-foreground' : 'border-border/50'
+                        }`}
+                      >
+                        {isSelected ? '✓ ' : '+ '}
+                        {node.name}
+                      </Button>
+                    )
+                  })}
+                </div>
+
+                {stackReport.synergies.length > 0 && (
+                  <div className="space-y-1 text-xs pt-1">
+                    <span className="text-muted-foreground font-medium">协同优势：</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {stackReport.synergies.map((syn, idx) => (
+                        <span key={idx} className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[11px]">
+                          ✓ {syn}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {stackReport.missingLayers.length > 0 && (
+                  <div className="space-y-1 text-xs pt-1">
+                    <span className="text-amber-500 font-medium">缺失分层建议补齐：</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {stackReport.suggestedAdditions.map((item) => (
+                        <span key={item.id} className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-[11px]">
+                          + 推荐引入 {item.name} ({item.reason})
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ================= 7. 视觉指纹分析与色彩和谐度 ================= */}
+        <TabsContent value="visual" className="space-y-4 mt-6">
+          <Card className="nav-card-glow border-border/70 shadow-xs overflow-hidden">
+            <CardHeader className="bg-muted/15 border-b border-border/50 pb-5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg font-bold flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-pink-500/10 text-pink-500">
+                      <Palette className="w-4 h-4" />
+                    </div>
+                    <span>视觉指纹分析与 WCAG 2.1 色彩和谐度</span>
+                  </CardTitle>
+                  <CardDescription className="mt-1 text-xs sm:text-sm">
+                    提取调色板的 RGB/HSL 分布与相对亮度，自动评定 WCAG 2.1 文本对比度标准 (AAA/AA)，并识别赛博朋克、海洋、极简等前沿视觉情绪。
+                  </CardDescription>
+                </div>
+                <Badge variant="outline" className="text-pink-500 border-pink-500/30 bg-pink-500/5 text-xs">
+                  WCAG 2.1 Compliance
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6 pt-6">
+              {/* 调色板预设 */}
+              <div className="space-y-2">
+                <span className="text-xs font-semibold text-muted-foreground">调色板美学预设模板：</span>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { name: '赛博朋克 (Cyberpunk)', palette: ['#00ffff', '#ff00ff', '#1e1b4b'], bg: '#030712', text: '#f9fafb' },
+                    { name: '黑客矩阵 (Matrix Green)', palette: ['#10b981', '#22c55e', '#064e3b'], bg: '#022c22', text: '#ecfdf5' },
+                    { name: '蔚蓝深海 (Ocean Breeze)', palette: ['#0ea5e9', '#06b6d4', '#1e3a8a'], bg: '#0f172a', text: '#f8fafc' },
+                    { name: '温暖夕阳 (Warm Sunset)', palette: ['#f97316', '#eab308', '#7c2d12'], bg: '#1c1917', text: '#fef3c7' },
+                    { name: '极简纯白 (Minimalist)', palette: ['#64748b', '#94a3b8', '#cbd5e1'], bg: '#ffffff', text: '#0f172a' },
+                  ].map((preset) => (
+                    <Button
+                      key={preset.name}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setVisualPalette(preset.palette)
+                        setVisualBg(preset.bg)
+                        setVisualText(preset.text)
+                      }}
+                      className="text-xs h-7.5 px-3 border-border/60 hover:border-pink-500/40 gap-1.5"
+                    >
+                      <div className="flex -space-x-1">
+                        {preset.palette.map((c, i) => (
+                          <span key={i} className="w-2.5 h-2.5 rounded-full border border-background shadow-xs" style={{ backgroundColor: c }} />
+                        ))}
+                      </div>
+                      <span>{preset.name}</span>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 实时分析看板 */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-3">
+                  <span className="text-xs font-semibold text-muted-foreground">美学情绪与识别风格：</span>
+                  <div className="flex items-center gap-2">
+                    <Badge className="text-xs uppercase px-2.5 py-1 bg-pink-500/10 text-pink-500 border border-pink-500/20 font-bold">
+                      {visualReport.detectedMood}
+                    </Badge>
+                    <span className="text-xs font-mono text-muted-foreground">
+                      和谐度得分: {visualReport.harmonyScore}/100
+                    </span>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                    <div className="bg-pink-500 h-2 rounded-full transition-all" style={{ width: `${visualReport.harmonyScore}%` }} />
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-2">
+                  <span className="text-xs font-semibold text-muted-foreground">WCAG 2.1 对比度审计：</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xl font-bold font-mono text-foreground">{visualReport.wcagContrastRatio} : 1</span>
+                    <Badge
+                      variant={visualReport.wcagPassLevel === 'Fail' ? 'destructive' : 'default'}
+                      className={`text-xs ${visualReport.wcagPassLevel === 'AAA' ? 'bg-emerald-600 text-white' : visualReport.wcagPassLevel === 'AA' ? 'bg-blue-600 text-white' : ''}`}
+                    >
+                      {visualReport.wcagPassLevel} 级别合规
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    标准：AA 级要求 ≥ 4.5:1，AAA 级要求 ≥ 7.0:1
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-2">
+                  <span className="text-xs font-semibold text-muted-foreground">色盘明度与饱和度均值：</span>
+                  <div className="flex justify-between text-xs font-mono">
+                    <span className="text-muted-foreground">平均明度 (Luminance):</span>
+                    <span className="font-bold">{visualReport.averageLuminance}%</span>
+                  </div>
+                  <div className="flex justify-between text-xs font-mono">
+                    <span className="text-muted-foreground">平均饱和度 (Saturation):</span>
+                    <span className="font-bold">{visualReport.averageSaturation}%</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 实时视觉沙盒卡片 */}
+              <div
+                className="p-5 rounded-xl border transition-all space-y-3"
+                style={{ backgroundColor: visualBg, color: visualText, borderColor: visualPalette[0] || '#334155' }}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold tracking-tight">NavHub 实时色卡沙盒预览</span>
+                  <div className="flex gap-1.5">
+                    {visualPalette.map((c, i) => (
+                      <span key={i} className="px-2 py-0.5 rounded text-[10px] font-mono border" style={{ backgroundColor: c, color: visualBg }}>
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs opacity-90 leading-relaxed">
+                  通过纯前端算法提取调色板的欧氏色彩距离与测度，实时确保高饱和高对比度背景下的可读性与无障碍视力友好。
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ================= 8. 端侧 WebMCP 运行态网桥 ================= */}
+        <TabsContent value="webmcp" className="space-y-4 mt-6">
+          <Card className="nav-card-glow border-border/70 shadow-xs overflow-hidden">
+            <CardHeader className="bg-muted/15 border-b border-border/50 pb-5">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-lg font-bold flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500">
+                      <Bot className="w-4 h-4" />
+                    </div>
+                    <span>浏览器端端侧 WebMCP JSON-RPC 2.0 通信总线</span>
+                  </CardTitle>
+                  <CardDescription className="mt-1 text-xs sm:text-sm">
+                    为端侧 AI Agent、浏览器扩展及 Chrome Built-in AI 提供原生的 Model Context Protocol 协议交互入口，在浏览器内零网络开销执行本地工具。
+                  </CardDescription>
+                </div>
+                <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 bg-emerald-500/5 text-xs font-mono">
+                  JSON-RPC 2.0
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6 pt-6">
+              {/* 工具调用快速触发面板 */}
+              <div className="space-y-3">
+                <span className="text-xs font-semibold text-muted-foreground">选择端侧 MCP 工具并执行：</span>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { tool: 'navhub_system_info', label: '查询系统能力 (navhub_system_info)' },
+                    { tool: 'navhub_echo', label: '测试回显通道 (navhub_echo)' },
+                  ].map((item) => (
+                    <Button
+                      key={item.tool}
+                      size="sm"
+                      variant={mcpToolName === item.tool ? 'default' : 'outline'}
+                      onClick={() => {
+                        setMcpToolName(item.tool)
+                        handleRunMcpTool(item.tool)
+                      }}
+                      className={`text-xs h-8 px-3.5 rounded-lg transition-all ${
+                        mcpToolName === item.tool ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'border-border/60 hover:border-emerald-500/40'
+                      }`}
+                    >
+                      <Bot className="w-3.5 h-3.5 mr-1.5" />
+                      {item.label}
+                    </Button>
+                  ))}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      const bridge = getWebMcpBridge()
+                      const t0 = performance.now()
+                      const res = await bridge.handleRpc({ jsonrpc: '2.0', id: Date.now(), method: 'tools/list' })
+                      setMcpResponse(res)
+                      setMcpLatency(Math.round(performance.now() - t0))
+                    }}
+                    className="text-xs h-8 px-3.5 rounded-lg border-border/60 hover:border-emerald-500/40"
+                  >
+                    列出所有工具 (tools/list)
+                  </Button>
+                </div>
+              </div>
+
+              {mcpToolName === 'navhub_echo' && (
+                <div className="flex gap-2 items-center">
+                  <Input
+                    value={mcpArgMsg}
+                    onChange={(e) => setMcpArgMsg(e.target.value)}
+                    placeholder="输入要发送给 WebMCP 的 Echo 消息..."
+                    className="text-xs h-9"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={() => handleRunMcpTool('navhub_echo')}
+                    className="text-xs h-9 bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                  >
+                    <Send className="w-3.5 h-3.5" /> 发送
+                  </Button>
+                </div>
+              )}
+
+              {/* 实时响应结果 */}
+              <div className="p-4 rounded-xl border border-border/60 bg-muted/20 space-y-2">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span className="text-emerald-500 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    JSON-RPC 2.0 运行态响应结果：
+                  </span>
+                  {mcpLatency !== null && (
+                    <span className="font-mono text-muted-foreground text-[11px]">
+                      端侧耗时：<span className="text-emerald-500 font-bold">{mcpLatency} ms</span>
+                    </span>
+                  )}
+                </div>
+                <pre className="p-3.5 rounded-lg bg-background border border-border/50 text-[11px] font-mono overflow-x-auto text-foreground/90 max-h-60">
+                  {mcpResponse ? JSON.stringify(mcpResponse, null, 2) : '// 点击上方工具按钮，实时在浏览器端执行 JSON-RPC 2.0 协议交互'}
+                </pre>
               </div>
             </CardContent>
           </Card>

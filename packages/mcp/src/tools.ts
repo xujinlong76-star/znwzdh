@@ -146,6 +146,15 @@ export const HealBrokenSiteInput = z.object({
   idOrUrl: z.string().describe("故障/失效站点的 ID 或完整网址"),
 });
 
+export const FindTechPathInput = z.object({
+  from: z.string().describe("起始技术名称或 ID (如 'react', 'vue', 'fastify')"),
+  to: z.string().describe("目标技术名称或 ID (如 'postgres', 'docker', 'ollama')"),
+});
+
+export const AnalyzeStackCompatibilityInput = z.object({
+  techs: z.array(z.string()).min(1).describe("已选技术栈名称或 ID 列表 (如 ['react', 'nextjs', 'drizzle'])"),
+});
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -246,6 +255,16 @@ export const TOOL_DEFS: ToolDefinition[] = [
     name: "heal_broken_site",
     description: "对故障/失效站点执行智能自愈诊断：分析失效根因，调用 Wayback 提取归档快照，并基于图谱推荐同生态健康替代品。",
     scope: "write", inputSchema: HealBrokenSiteInput, mutating: true,
+  },
+  {
+    name: "find_tech_path",
+    description: "在技术栈知识图谱中通过双向 Dijkstra 寻路，查找任意两项技术之间的协同演进链路与组合桥梁。",
+    scope: "read", inputSchema: FindTechPathInput, mutating: false,
+  },
+  {
+    name: "analyze_stack_compatibility",
+    description: "分析技术选型方案的协同契合度、已覆盖与缺失的基础设施分层，并推断推荐补齐组件。",
+    scope: "read", inputSchema: AnalyzeStackCompatibilityInput, mutating: false,
   },
 ];
 

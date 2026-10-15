@@ -58,12 +58,14 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 9 个只读工具与 9 个写工具", () => {
+  it("包含 11 个只读工具与 9 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
+      "analyze_stack_compatibility",
       "compare_technologies",
       "export_sites",
+      "find_tech_path",
       "get_architecture_recipe",
       "get_site",
       "get_stats",
@@ -367,5 +369,25 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     expect(body.report.waybackFallbackUrl).toContain("web.archive.org");
     const audit = ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE action = ?").get("site.heal") as { c: number };
     expect(Number(audit.c)).toBeGreaterThan(0);
+  });
+
+  it("find_tech_path 计算技术栈间多跳演进路径", async () => {
+    const res = await handlers.find_tech_path({ from: "react", to: "postgres" }, READONLY);
+    const body = payload(res);
+    expect(body.success).toBe(true);
+    expect(body.found).toBe(true);
+    expect(body.nodeChain.length).toBeGreaterThanOrEqual(3);
+    expect(body.nodeChain[0].id).toBe("react");
+    expect(body.nodeChain[body.nodeChain.length - 1].id).toBe("postgres");
+  });
+
+  it("analyze_stack_compatibility 诊断技术选型并补齐缺失层", async () => {
+    const res = await handlers.analyze_stack_compatibility({ techs: ["react", "nextjs"] }, READONLY);
+    const body = payload(res);
+    expect(body.success).toBe(true);
+    expect(body.selectedTechIds).toContain("react");
+    expect(body.coveredLayers).toContain("frontend");
+    expect(body.missingLayers).toContain("database");
+    expect(body.suggestedAdditions.length).toBeGreaterThan(0);
   });
 });

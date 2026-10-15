@@ -13,14 +13,19 @@ import {
   parseTechComparisonQuery,
   PRESET_RECIPES,
   runAutonomousHealing,
+  findShortestTechPath,
+  analyzeStackCompatibility,
+  PRESET_TECH_GRAPH,
 } from "@navhub/core";
 import type { AppContext } from "@navhub/api";
 import {
+  AnalyzeStackCompatibilityInput,
   BatchImportInput,
   CompareTechnologiesInput,
   CreateSiteInput,
   DeleteSiteInput,
   ExportSitesInput,
+  FindTechPathInput,
   GetArchitectureRecipeInput,
   GetSiteInput,
   GetTrendingInput,
@@ -412,6 +417,20 @@ export function createHandlers(ctx: AppContext) {
       });
 
       return ok({ healed: true, report });
+    },
+
+    async find_tech_path(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = FindTechPathInput.parse(args ?? {});
+      const pathResult = findShortestTechPath(input.from, input.to, PRESET_TECH_GRAPH);
+      return ok({ success: true, ...pathResult });
+    },
+
+    async analyze_stack_compatibility(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = AnalyzeStackCompatibilityInput.parse(args ?? {});
+      const report = analyzeStackCompatibility(input.techs, PRESET_TECH_GRAPH);
+      return ok({ success: true, ...report });
     },
   };
 }

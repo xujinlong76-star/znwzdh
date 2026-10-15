@@ -23,6 +23,10 @@ import {
   poincareToLorentz,
   PRESET_RECIPES,
   runAutonomousHealing,
+  findShortestTechPath,
+  computeGraphCentrality,
+  analyzeStackCompatibility,
+  PRESET_TECH_GRAPH,
   type RetrievalChannel,
 } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
@@ -759,6 +763,41 @@ export async function buildServer(ctx: AppContext) {
     const matrix = parseTechComparisonQuery(q);
     return { ok: Boolean(matrix), matrix };
   });
+
+  /**
+   * 结构化技术知识图谱：双向最短演进链路寻路 (Dijkstra)
+   */
+  app.get("/api/graph/path", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const from = String(q.from ?? "").trim();
+    const to = String(q.to ?? "").trim();
+    if (!from || !to) {
+      reply.code(400);
+      return { ok: false, error: "需要指定 from 与 to 查询参数" };
+    }
+    const pathResult = findShortestTechPath(from, to, PRESET_TECH_GRAPH);
+    return { ok: true, result: pathResult };
+  });
+
+  /**
+   * 结构化技术知识图谱：技术栈兼容性诊断与补齐建议
+   */
+  app.get("/api/graph/compatibility", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const rawTechs = String(q.techs ?? "").trim();
+    const techList = rawTechs ? rawTechs.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const report = analyzeStackCompatibility(techList, PRESET_TECH_GRAPH);
+    return { ok: true, report };
+  });
+
+  /**
+   * 结构化技术知识图谱：Kleinberg HITS 权威度与枢纽度分析
+   */
+  app.get("/api/graph/centrality", { config: { scope: "public", cache: { maxAge: 300 } } }, async () => {
+    const centrality = computeGraphCentrality(PRESET_TECH_GRAPH);
+    return { ok: true, ...centrality };
+  });
+
 
   /**
    * 确定性 SVG Favicon 代理端点（解决小众/外网站点 Favicon 裂开或 CORS 阻断）

@@ -58,13 +58,14 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 12 个只读工具与 9 个写工具", () => {
+  it("包含 13 个只读工具与 10 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
       "analyze_stack_compatibility",
       "cluster_sites",
       "compare_technologies",
+      "evaluate_developer_intent",
       "export_sites",
       "find_tech_path",
       "get_architecture_recipe",
@@ -75,7 +76,7 @@ describe("工具清单", () => {
       "list_tags",
       "search_sites",
     ]);
-    expect(write.length).toBe(9);
+    expect(write.length).toBe(10);
   });
 
   it("run_job 需要 admin 权限（触发全站扫描是危险操作）", () => {
@@ -400,5 +401,80 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     expect(body.clusterCount).toBeGreaterThanOrEqual(1);
     expect(body.averageCohesion).toBeGreaterThan(0);
     expect(body.clusters[0]?.suggestedName).toBeTruthy();
+  });
+
+  it("sync_crdt_operations 多端操作日志协同同步与因果收敛", async () => {
+    // 1. 只读 scope 调用应失败
+    await expect(handlers.sync_crdt_operations({
+      userId: "mcp_crdt_user",
+      operations: [
+        {
+          id: "op_mcp_1",
+          type: "SET_CATEGORY_PIN",
+          entityId: "cat_fe",
+          payload: { isPinned: true },
+          timestamp: 2000,
+          clientId: "mcp_client",
+        },
+      ],
+    }, READONLY)).rejects.toThrow();
+
+    // 2. 具备写权限调用
+    const res = await handlers.sync_crdt_operations({
+      userId: "mcp_crdt_user",
+      operations: [
+        {
+          id: "op_mcp_1",
+          type: "SET_CATEGORY_PIN",
+          entityId: "cat_fe",
+          payload: { isPinned: true },
+          timestamp: 2000,
+          clientId: "mcp_client",
+        },
+        {
+          id: "op_mcp_2",
+          type: "UPSERT_CUSTOM_CATEGORY",
+          entityId: "cat_mobile",
+          payload: { id: "cat_mobile", title: "跨端移动开发", items: [] },
+          timestamp: 2010,
+          clientId: "mcp_client",
+        },
+      ],
+    }, FULL);
+
+    const body = payload(res);
+    expect(body.merged).toBe(true);
+    expect(body.clientCount).toBe(2);
+    expect(body.state.pinnedCategoryIds).toContain("cat_fe");
+    expect(body.state.customCategories[0].title).toBe("跨端移动开发");
+  });
+
+  it("evaluate_developer_intent 秒级解析开发者输入语义意图", async () => {
+    // 1. Cron 表达式解析
+    const cronRes = await handlers.evaluate_developer_intent({ input: "0 0 * * *" }, READONLY);
+    const cronBody = payload(cronRes);
+    expect(cronBody.matched).toBe(true);
+    expect(cronBody.type).toBe("cron");
+    expect(cronBody.subtitle).toContain("每天");
+
+    // 2. 十六进制颜色代码解析
+    const colorRes = await handlers.evaluate_developer_intent({ input: "#3b82f6" }, READONLY);
+    const colorBody = payload(colorRes);
+    expect(colorBody.matched).toBe(true);
+    expect(colorBody.type).toBe("color");
+    expect(colorBody.previewValue).toBe("#3B82F6");
+    expect(colorBody.subtitle).toContain("rgb");
+
+    // 3. Curl 语句转 Fetch 脚本
+    const curlRes = await handlers.evaluate_developer_intent({ input: "curl -X POST https://api.example.com/data" }, READONLY);
+    const curlBody = payload(curlRes);
+    expect(curlBody.matched).toBe(true);
+    expect(curlBody.type).toBe("curl_to_fetch");
+    expect(curlBody.previewValue).toContain("fetch");
+
+    // 4. 普通非意图查询
+    const plainRes = await handlers.evaluate_developer_intent({ input: "普通普通的网站检索文本" }, READONLY);
+    const plainBody = payload(plainRes);
+    expect(plainBody.matched).toBe(false);
   });
 });

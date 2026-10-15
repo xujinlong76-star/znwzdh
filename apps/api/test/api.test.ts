@@ -1298,4 +1298,95 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     const nonExist = await app.inject({ method: "POST", url: "/api/sites/no-such-site/heal" });
     expect(nonExist.statusCode).toBe(404);
   });
+
+  it("CRDT 本地优先协同漫游网络：多设备原子操作无损合流与状态收敛", async () => {
+    // 1. 无 identity 时返回 400
+    const noAuth = await app.inject({
+      method: "POST",
+      url: "/api/crdt/sync",
+      payload: { operations: [] },
+    });
+    expect(noAuth.statusCode).toBe(400);
+
+    // 2. 客户端 A 提交置顶与自定义类目
+    const clientAOps = [
+      {
+        id: "op_1_clientA",
+        type: "SET_CATEGORY_PIN",
+        entityId: "cat_dev",
+        payload: { isPinned: true },
+        timestamp: 1000,
+        clientId: "client_device_A",
+      },
+      {
+        id: "op_2_clientA",
+        type: "UPSERT_CUSTOM_CATEGORY",
+        entityId: "cat_ai_tools",
+        payload: { id: "cat_ai_tools", title: "AI 常用工具", items: [] },
+        timestamp: 1010,
+        clientId: "client_device_A",
+      },
+    ];
+
+    const resA = await app.inject({
+      method: "POST",
+      url: "/api/crdt/sync",
+      headers: { "x-anon-id": "anon_test_user_crdt" },
+      payload: { operations: clientAOps },
+    });
+    expect(resA.statusCode).toBe(200);
+    const jsonA = resA.json();
+    expect(jsonA.ok).toBe(true);
+    expect(jsonA.state.pinnedCategoryIds).toContain("cat_dev");
+    expect(jsonA.state.customCategories).toHaveLength(1);
+    expect(jsonA.state.customCategories[0].title).toBe("AI 常用工具");
+
+    // 3. 客户端 B 离线添加新站点到该类目并提交合流
+    const clientBOps = [
+      {
+        id: "op_3_clientB",
+        type: "UPSERT_CUSTOM_SITE",
+        entityId: "site_deepseek",
+        payload: {
+          categoryId: "cat_ai_tools",
+          site: { id: "site_deepseek", title: "DeepSeek", href: "https://chat.deepseek.com" },
+        },
+        timestamp: 1020,
+        clientId: "client_device_B",
+      },
+    ];
+
+    const resB = await app.inject({
+      method: "POST",
+      url: "/api/crdt/sync",
+      headers: { "x-anon-id": "anon_test_user_crdt" },
+      payload: { operations: clientBOps },
+    });
+    expect(resB.statusCode).toBe(200);
+    const jsonB = resB.json();
+    expect(jsonB.ok).toBe(true);
+    // 双方操作合并，既有 A 的类目又有 B 的站点
+    expect(jsonB.state.pinnedCategoryIds).toContain("cat_dev");
+    expect(jsonB.state.customCategories[0].items).toHaveLength(1);
+    expect(jsonB.state.customCategories[0].items[0].title).toBe("DeepSeek");
+
+    // 4. GET 查询已合流状态
+    const getRes = await app.inject({
+      method: "GET",
+      url: "/api/crdt/sync",
+      headers: { "x-anon-id": "anon_test_user_crdt" },
+    });
+    expect(getRes.statusCode).toBe(200);
+    const getJson = getRes.json();
+    expect(getJson.operations).toHaveLength(3);
+    expect(getJson.state.pinnedCategoryIds).toContain("cat_dev");
+
+    // 5. DELETE 清除
+    const delRes = await app.inject({
+      method: "DELETE",
+      url: "/api/crdt/sync",
+      headers: { "x-anon-id": "anon_test_user_crdt" },
+    });
+    expect(delRes.statusCode).toBe(200);
+  });
 });

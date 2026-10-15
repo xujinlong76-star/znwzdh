@@ -17,6 +17,12 @@ import {
   analyzeStackCompatibility,
   PRESET_TECH_GRAPH,
   autoClusterSites,
+  auditPageHealth,
+  mergeOperationLogs,
+  compactOperationLogs,
+  reduceOperationsToState,
+  parseSpeculativeIntent,
+  type CRDTOperation,
 } from "@navhub/core";
 import type { AppContext } from "@navhub/api";
 import {
@@ -40,6 +46,8 @@ import {
   RunJobInput,
   SearchSitesInput,
   SetStatusInput,
+  SyncCrdtOperationsInput,
+  EvaluateDeveloperIntentInput,
   UpdateSiteInput,
   requireScope,
   type ToolContext,
@@ -261,13 +269,21 @@ export function createHandlers(ctx: AppContext) {
         try {
           const res = await guardedFetch(site.url, { ...ctx.config.fetch });
           const latency = Date.now() - t0;
-          const ok = res.status >= 200 && res.status < 400;
-          results.push({ url: site.url, ok, status: res.status, latencyMs: latency });
+          let ok = res.status >= 200 && res.status < 400;
+          let reason: string | null = null;
+          if (ok && res.body) {
+            const audit = auditPageHealth(site.url, res.body);
+            if (audit.status === "SUSPICIOUS_PARKED" || audit.status === "SOFT_404") {
+              ok = false;
+              reason = "伪健康识别: " + audit.reason;
+            }
+          }
+          results.push({ url: site.url, ok, status: res.status, latencyMs: latency, error: reason ?? undefined });
           // 走 Repository 抽象（而非直接写 SQLite）：health_checks 表 + sites 冗余列，
           // 两种方言都由仓储层消化——此前 PG 模式直接 fail，属于"能力分裂"。
           await ctx.repo.updateSiteHealth(site.id, {
             httpStatus: res.status, ok, latencyMs: latency,
-            redirectTo: res.redirects.at(-1) ?? null, error: null,
+            redirectTo: res.redirects.at(-1) ?? null, error: reason,
             currentStatus: site.status,
           });
         } catch (err) {
@@ -451,6 +467,62 @@ export function createHandlers(ctx: AppContext) {
       }));
       const result = autoClusterSites(items, input.targetK);
       return ok({ success: true, ...result });
+    },
+
+    async sync_crdt_operations(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "write");
+      const input = SyncCrdtOperationsInput.parse(args ?? {});
+      const crdtKey = "crdt:" + input.userId;
+      const existing = await ctx.repo.getUserVault(crdtKey);
+      let serverOps: CRDTOperation[] = [];
+      if (existing?.payload) {
+        try {
+          const parsed = JSON.parse(existing.payload) as { operations?: CRDTOperation[] };
+          if (Array.isArray(parsed.operations)) {
+            serverOps = parsed.operations;
+          }
+        } catch { /* 容错 */ }
+      }
+
+      const merged = mergeOperationLogs(serverOps, input.operations as CRDTOperation[]);
+      const finalOps = merged.length > 100 ? compactOperationLogs(merged) : merged;
+      const reduced = reduceOperationsToState(finalOps);
+
+      await ctx.repo.saveUserVault(crdtKey, JSON.stringify({
+        version: 1,
+        operations: finalOps,
+        state: reduced,
+        updatedAt: Date.now(),
+      }));
+
+      await ctx.repo.audit({
+        actor: tc.actor,
+        actorKind: "mcp",
+        action: "crdt.sync",
+        target: input.userId,
+        diff: { clientOps: input.operations.length, totalOps: finalOps.length },
+      });
+
+      return ok({
+        merged: true,
+        clientCount: input.operations.length,
+        totalCount: finalOps.length,
+        state: reduced,
+      });
+    },
+
+    async evaluate_developer_intent(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = EvaluateDeveloperIntentInput.parse(args ?? {});
+      const result = parseSpeculativeIntent(input.input);
+      if (!result) {
+        return ok({
+          matched: false,
+          query: input.input,
+          message: "未匹配到特定开发者意图语法模式（可尝试输入 JWT、Cron、Curl、颜色、时间戳或 Base64）",
+        });
+      }
+      return ok({ matched: true, ...result });
     },
   };
 }

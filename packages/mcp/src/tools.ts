@@ -160,6 +160,31 @@ export const ClusterSitesInput = z.object({
   targetK: z.number().int().min(1).max(10).default(3).describe("目标聚类簇数 K"),
 });
 
+export const SyncCrdtOperationsInput = z.object({
+  userId: z.string().describe("用户身份 ID (如 anon_xxx 或 user_xxx)"),
+  operations: z.array(z.object({
+    id: z.string(),
+    type: z.enum([
+      "SET_CATEGORY_PIN",
+      "REORDER_CATEGORIES",
+      "PIN_SITE_IN_CATEGORY",
+      "UNPIN_SITE_IN_CATEGORY",
+      "UPSERT_CUSTOM_CATEGORY",
+      "DELETE_CUSTOM_CATEGORY",
+      "UPSERT_CUSTOM_SITE",
+      "DELETE_CUSTOM_SITE",
+    ]),
+    entityId: z.string(),
+    payload: z.unknown(),
+    timestamp: z.number(),
+    clientId: z.string(),
+  })).min(1).max(200).describe("待合流的 CRDT 操作日志列表"),
+});
+
+export const EvaluateDeveloperIntentInput = z.object({
+  input: z.string().describe("开发者输入的原始技术文本（如 Cron 表达式、JWT Token、Curl 命令、十六进制颜色、时间戳、JSON 字符串、Base64 或数学算式）"),
+});
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -275,6 +300,16 @@ export const TOOL_DEFS: ToolDefinition[] = [
     name: "cluster_sites",
     description: "基于 K-Means++ 与语义词袋向量对站点进行自适应聚类，自动提取高频技术特征并合成可解释的类目名称与凝聚度打分。",
     scope: "read", inputSchema: ClusterSitesInput, mutating: false,
+  },
+  {
+    name: "sync_crdt_operations",
+    description: "合流多端本地优先原子操作日志 (Local-First CRDT)，具备交换律与因果收敛，无冲突同步自定义分类、站点置顶与拖拽排序。",
+    scope: "write", inputSchema: SyncCrdtOperationsInput, mutating: true,
+  },
+  {
+    name: "evaluate_developer_intent",
+    description: "原地推测并计算开发者输入的技术意图（秒级解析 JWT、Cron 人类语言翻译、Curl 语法转 Fetch 代码、时间戳/颜色/Base64/JSON 实时转换），0 外部网络耗时。",
+    scope: "read", inputSchema: EvaluateDeveloperIntentInput, mutating: false,
   },
 ];
 

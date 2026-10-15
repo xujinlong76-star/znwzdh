@@ -335,6 +335,8 @@ export function compactOperationLog(
   return compacted
 }
 
+export const compactOperationLogs = compactOperationLog;
+
 export type CrdtOperation<T = any> = CRDTOperation<T>
 
 export type VectorClock = Record<string, number>

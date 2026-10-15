@@ -334,3 +334,5 @@ export function compactOperationLog(
 
   return compacted
 }
+
+export const compactOperationLogs = compactOperationLog;

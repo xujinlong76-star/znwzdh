@@ -239,7 +239,7 @@ export class JobRunner {
     const poolLimit = Math.min(2000, Math.max(limit, limit * 4));
     const pool = await this.ctx.repo.listSites({ limit: poolLimit });
     const alive = pool.filter((s): s is NonNullable<typeof s> => Boolean(s));
-    if (alive.length <= limit) return alive;
+    if (alive.length === 0) return [];
 
     const plan = planPatrol(
       alive.map((s) => ({

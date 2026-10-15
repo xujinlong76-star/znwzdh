@@ -91,6 +91,20 @@ export default function RootLayout({
                     return true;
                   }
                 }, true);
+
+                // 本地开发环境自动清理旧 SW 与 CacheStorage，杜绝历史缓存导致的水合与分包不一致
+                if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                  if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(function(regs) {
+                      for (var i = 0; i < regs.length; i++) regs[i].unregister();
+                    }).catch(function() {});
+                  }
+                  if ('caches' in window) {
+                    caches.keys().then(function(keys) {
+                      for (var j = 0; j < keys.length; j++) caches.delete(keys[j]);
+                    }).catch(function() {});
+                  }
+                }
               })();
             `,
           }}

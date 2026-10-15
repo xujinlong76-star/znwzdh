@@ -58,7 +58,7 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 14 个只读工具与 10 个写工具", () => {
+  it("包含 16 个只读工具与 10 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
@@ -66,10 +66,12 @@ describe("工具清单", () => {
       "analyze_stack_compatibility",
       "cluster_sites",
       "compare_technologies",
+      "compile_speculation_rules",
       "evaluate_developer_intent",
       "export_sites",
       "find_tech_path",
       "get_architecture_recipe",
+      "get_federated_recommendations",
       "get_site",
       "get_stats",
       "get_trending",
@@ -491,5 +493,44 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     expect(["AAA", "AA"]).toContain(body.wcagPassLevel);
     expect(body.harmonyScore).toBeGreaterThanOrEqual(50);
     expect(body.dominantColors).toHaveLength(3);
+  });
+
+  it("get_federated_recommendations 执行 LDP 差分隐私协同推荐排序", async () => {
+    const res = await handlers.get_federated_recommendations({
+      localVector: [1, 0, 1, 0],
+      globalVector: [0.5, 0.5, 0.5, 0.5],
+      candidates: [
+        { id: "cand-1", name: "AI Dev", featureVector: [1, 0, 1, 0] },
+        { id: "cand-2", name: "Design", featureVector: [0, 1, 0, 1] },
+      ],
+      personalWeight: 0.7,
+      privatize: true,
+      epsilon: 1.0,
+    }, READONLY);
+    const body = payload(res);
+    expect(body.count).toBe(2);
+    expect(body.recommendations[0].itemId).toBe("cand-1");
+    expect(body.recommendations[0].score).toBeGreaterThan(body.recommendations[1].score);
+    expect(body.privacy.epsilon).toBe(1.0);
+    expect(body.privacy.privatizedVector).toHaveLength(4);
+  });
+
+  it("compile_speculation_rules 编译 W3C Speculation Rules 规则负载", async () => {
+    const res = await handlers.compile_speculation_rules({
+      candidates: [
+        { url: "https://cursor.com", confidence: 0.95, predictedArrivalMs: 120 },
+        { url: "https://npmjs.com", confidence: 0.60, predictedArrivalMs: 300 },
+        { url: "https://example.com/logout", confidence: 0.99, predictedArrivalMs: 50 }, // 应该被过滤
+      ],
+      prerenderConfidenceThreshold: 0.8,
+      prefetchConfidenceThreshold: 0.4,
+    }, READONLY);
+    const body = payload(res);
+    expect(body.hasRules).toBe(true);
+    expect(body.rules.prerender[0].urls).toContain("https://cursor.com");
+    expect(body.rules.prefetch[0].urls).toContain("https://npmjs.com");
+    expect(body.rules.prerender[0].urls).not.toContain("https://example.com/logout");
+    expect(body.script).toContain("prerender");
+    expect(body.fallbackTags.length).toBeGreaterThanOrEqual(1);
   });
 });

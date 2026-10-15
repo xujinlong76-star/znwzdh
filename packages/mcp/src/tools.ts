@@ -191,6 +191,31 @@ export const AnalyzeColorHarmonyInput = z.object({
   background: z.string().default("#0f172a").describe("页面/背景 HEX 颜色，默认 #0f172a"),
 });
 
+export const GetFederatedRecommendationsInput = z.object({
+  localVector: z.array(z.number()).describe("本地私有偏好向量"),
+  globalVector: z.array(z.number()).optional().describe("脱敏全局偏好趋势向量（可选）"),
+  candidates: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    featureVector: z.array(z.number()),
+  })).min(1).describe("候选推荐项列表"),
+  personalWeight: z.number().min(0).max(1).default(0.6).describe("私有偏好权重占比 (0.0 ~ 1.0)"),
+  privatize: z.boolean().default(false).describe("是否对偏好向量进行 Laplace 差分隐私加噪"),
+  epsilon: z.number().positive().default(1.0).describe("差分隐私预算 epsilon"),
+});
+
+export const CompileSpeculationRulesInput = z.object({
+  candidates: z.array(z.object({
+    url: z.string().describe("推测目标 URL"),
+    confidence: z.number().min(0).max(1).describe("意图置信度 (0.0 ~ 1.0)"),
+    predictedArrivalMs: z.number().nonnegative().describe("预计抵达耗时 (ms)"),
+  })).min(1).describe("推测预加载候选列表"),
+  prerenderConfidenceThreshold: z.number().min(0).max(1).default(0.82).describe("触发 Prerender 最小置信度阈值"),
+  prefetchConfidenceThreshold: z.number().min(0).max(1).default(0.45).describe("触发 Prefetch 最小置信度阈值"),
+  maxPrerenderCount: z.number().int().min(1).max(5).default(2).describe("允许最大预渲染数"),
+  maxPrefetchCount: z.number().int().min(1).max(10).default(5).describe("允许最大预取数"),
+});
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -321,6 +346,16 @@ export const TOOL_DEFS: ToolDefinition[] = [
     name: "analyze_color_harmony",
     description: "分析 UI 调色板的美学和谐度、WCAG 2.1 对比度评级 (AAA/AA/Fail)、视觉情绪风格与改进建议。",
     scope: "read", inputSchema: AnalyzeColorHarmonyInput, mutating: false,
+  },
+  {
+    name: "get_federated_recommendations",
+    description: "基于客户端本地差分隐私 (LDP Laplace) 与群体脱敏趋势向量的协同排序推荐引擎。",
+    scope: "read", inputSchema: GetFederatedRecommendationsInput, mutating: false,
+  },
+  {
+    name: "compile_speculation_rules",
+    description: "根据意图轨迹预测置信度与抵达耗时，编译原生 W3C Speculation Rules 预渲染与预取规则负载及 HTML 脚本标签。",
+    scope: "read", inputSchema: CompileSpeculationRulesInput, mutating: false,
   },
 ];
 

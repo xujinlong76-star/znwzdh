@@ -1464,4 +1464,68 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     const intentJson = intentRes.json();
     expect(intentJson.result.content[0].text).toContain("每天午夜 00:00 执行一次");
   });
+
+  it("POST /api/rank/federated 客户端 LDP 差分隐私协同推荐排序", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/rank/federated",
+      payload: {
+        localVector: [1, 0, 1, 0],
+        globalVector: [0.5, 0.5, 0.5, 0.5],
+        candidates: [
+          { id: "site-ai", name: "AI Tool", featureVector: [1, 0, 1, 0] },
+          { id: "site-news", name: "News Site", featureVector: [0, 1, 0, 1] },
+        ],
+        personalWeight: 0.8,
+        privatize: true,
+        epsilon: 1.0,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.count).toBe(2);
+    expect(json.recommendations[0].itemId).toBe("site-ai");
+    expect(json.recommendations[0].score).toBeGreaterThan(json.recommendations[1].score);
+    expect(json.privacy.epsilon).toBe(1.0);
+    expect(json.privacy.privatizedVector).toHaveLength(4);
+
+    // 候选缺省时自动基于库内站点生成
+    const autoRes = await app.inject({
+      method: "POST",
+      url: "/api/rank/federated",
+      payload: {
+        localVector: [0.8, 0.2, 0.9, 0.1],
+      },
+    });
+    expect(autoRes.statusCode).toBe(200);
+    const autoJson = autoRes.json();
+    expect(autoJson.ok).toBe(true);
+    expect(autoJson.count).toBeGreaterThan(0);
+  });
+
+  it("POST /api/speculation/rules 原生 W3C Speculation Rules 预渲染编译器", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/speculation/rules",
+      payload: {
+        candidates: [
+          { url: "https://cursor.com", confidence: 0.92, predictedArrivalMs: 110 },
+          { url: "https://npmjs.com", confidence: 0.55, predictedArrivalMs: 280 },
+          { url: "https://example.com/admin/delete", confidence: 0.99, predictedArrivalMs: 40 }, // 高危拦截
+        ],
+        prerenderConfidenceThreshold: 0.8,
+        prefetchConfidenceThreshold: 0.5,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.hasRules).toBe(true);
+    expect(json.rules.prerender[0].urls).toEqual(["https://cursor.com"]);
+    expect(json.rules.prefetch[0].urls).toEqual(["https://npmjs.com"]);
+    expect(json.script).toContain("prerender");
+    expect(json.fallbackTags.length).toBe(2);
+    expect(json.fallbackTags[0]).toContain("rel=\"prerender\"");
+  });
 });

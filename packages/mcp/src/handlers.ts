@@ -23,6 +23,11 @@ import {
   reduceOperationsToState,
   parseSpeculativeIntent,
   analyzeColorPalette,
+  rankItemsWithPrivacy,
+  privatizeVector,
+  compileSpeculationRules,
+  renderSpeculationRulesScript,
+  generateFallbackLinkTags,
   type CRDTOperation,
 } from "@navhub/core";
 import type { AppContext } from "@navhub/api";
@@ -32,11 +37,13 @@ import {
   BatchImportInput,
   ClusterSitesInput,
   CompareTechnologiesInput,
+  CompileSpeculationRulesInput,
   CreateSiteInput,
   DeleteSiteInput,
   ExportSitesInput,
   FindTechPathInput,
   GetArchitectureRecipeInput,
+  GetFederatedRecommendationsInput,
   GetSiteInput,
   GetTrendingInput,
   HealBrokenSiteInput,
@@ -534,6 +541,50 @@ export function createHandlers(ctx: AppContext) {
       const input = AnalyzeColorHarmonyInput.parse(args ?? {});
       const report = analyzeColorPalette(input.palette, input.foreground, input.background);
       return ok({ success: true, ...report });
+    },
+
+    async get_federated_recommendations(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = GetFederatedRecommendationsInput.parse(args ?? {});
+      const globalVec = input.globalVector ?? input.localVector.map(() => 0);
+      const results = rankItemsWithPrivacy(
+        input.localVector,
+        globalVec,
+        input.candidates,
+        input.personalWeight
+      );
+      const privatized = input.privatize ? privatizeVector(input.localVector, input.epsilon) : undefined;
+      return ok({
+        count: results.length,
+        recommendations: results,
+        privacy: input.privatize ? { epsilon: input.epsilon, privatizedVector: privatized } : undefined,
+      });
+    },
+
+    async compile_speculation_rules(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = CompileSpeculationRulesInput.parse(args ?? {});
+      const payload = compileSpeculationRules(input.candidates, {
+        prerenderConfidenceThreshold: input.prerenderConfidenceThreshold,
+        prefetchConfidenceThreshold: input.prefetchConfidenceThreshold,
+        maxPrerenderCount: input.maxPrerenderCount,
+        maxPrefetchCount: input.maxPrefetchCount,
+      });
+      if (!payload) {
+        return ok({
+          hasRules: false,
+          rules: null,
+          script: "",
+          fallbackTags: [],
+          message: "无符合阈值或安全过滤条件的推测预加载规则",
+        });
+      }
+      return ok({
+        hasRules: true,
+        rules: payload,
+        script: renderSpeculationRulesScript(payload),
+        fallbackTags: generateFallbackLinkTags(payload),
+      });
     },
   };
 }

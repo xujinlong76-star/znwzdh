@@ -33,6 +33,11 @@ import {
   reduceOperationsToState,
   analyzeColorPalette,
   parseSpeculativeIntent,
+  rankItemsWithPrivacy,
+  privatizeVector,
+  compileSpeculationRules,
+  renderSpeculationRulesScript,
+  generateFallbackLinkTags,
   WebMcpBridge,
   type JsonRpcRequest,
   type CRDTOperation,
@@ -1006,6 +1011,90 @@ export async function buildServer(ctx: AppContext) {
     inputSchema: { type: "object", properties: {} },
   }, async () => ctx.repo.listCategories());
 
+  webMcp.registerTool({
+    name: "get_federated_recommendations",
+    description: "客户端本地差分隐私 (LDP Laplace) 联邦协同推荐排序",
+    inputSchema: {
+      type: "object",
+      properties: {
+        localVector: { type: "array", items: { type: "number" }, description: "本地私有偏好向量" },
+        globalVector: { type: "array", items: { type: "number" }, description: "脱敏群体趋势向量" },
+        candidates: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              name: { type: "string" },
+              featureVector: { type: "array", items: { type: "number" } },
+            },
+            required: ["id", "name", "featureVector"],
+          },
+          description: "候选推荐列表",
+        },
+        personalWeight: { type: "number", description: "本地偏好权重占比" },
+        privatize: { type: "boolean", description: "是否差分隐私加噪" },
+        epsilon: { type: "number", description: "隐私预算" },
+      },
+      required: ["localVector", "candidates"],
+    },
+  }, (args) => {
+    const localVec = Array.isArray(args.localVector) ? (args.localVector as unknown[]).map(Number) : [1, 0];
+    const globalVec = Array.isArray(args.globalVector) ? (args.globalVector as unknown[]).map(Number) : localVec.map(() => 0);
+    const candidates = Array.isArray(args.candidates) ? args.candidates as any[] : [];
+    const personalWeight = typeof args.personalWeight === "number" ? args.personalWeight : 0.6;
+    const privatize = Boolean(args.privatize);
+    const epsilon = typeof args.epsilon === "number" && args.epsilon > 0 ? args.epsilon : 1.0;
+    const results = rankItemsWithPrivacy(localVec, globalVec, candidates, personalWeight);
+    const privatized = privatize ? privatizeVector(localVec, epsilon) : undefined;
+    return {
+      count: results.length,
+      recommendations: results,
+      privacy: privatize ? { epsilon, privatizedVector: privatized } : undefined,
+    };
+  });
+
+  webMcp.registerTool({
+    name: "compile_speculation_rules",
+    description: "编译原生 W3C Speculation Rules 预渲染/预取规则负载与 HTML 标签",
+    inputSchema: {
+      type: "object",
+      properties: {
+        candidates: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              url: { type: "string" },
+              confidence: { type: "number" },
+              predictedArrivalMs: { type: "number" },
+            },
+            required: ["url", "confidence", "predictedArrivalMs"],
+          },
+        },
+        prerenderConfidenceThreshold: { type: "number" },
+        prefetchConfidenceThreshold: { type: "number" },
+        maxPrerenderCount: { type: "number" },
+        maxPrefetchCount: { type: "number" },
+      },
+      required: ["candidates"],
+    },
+  }, (args) => {
+    const candidates = Array.isArray(args.candidates) ? args.candidates as any[] : [];
+    const payload = compileSpeculationRules(candidates, {
+      prerenderConfidenceThreshold: typeof args.prerenderConfidenceThreshold === "number" ? args.prerenderConfidenceThreshold : 0.82,
+      prefetchConfidenceThreshold: typeof args.prefetchConfidenceThreshold === "number" ? args.prefetchConfidenceThreshold : 0.45,
+      maxPrerenderCount: typeof args.maxPrerenderCount === "number" ? args.maxPrerenderCount : 2,
+      maxPrefetchCount: typeof args.maxPrefetchCount === "number" ? args.maxPrefetchCount : 5,
+    });
+    return {
+      hasRules: Boolean(payload),
+      rules: payload,
+      script: payload ? renderSpeculationRulesScript(payload) : "",
+      fallbackTags: payload ? generateFallbackLinkTags(payload) : [],
+    };
+  });
+
   /**
    * Next-Gen 7.0 浏览器端 Model Context Protocol (WebMCP) 标准 HTTP JSON-RPC 2.0 端点
    */
@@ -1238,6 +1327,93 @@ export async function buildServer(ctx: AppContext) {
   app.get("/api/search/linucb", { config: { scope: "public" } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
     return ctx.search.getLinUCBStatus(q.q || "react");
+  });
+
+  /**
+   * 客户端本地差分隐私 (Local Differential Privacy, LDP Laplace) 联邦协同推荐排序端点
+   */
+  app.post("/api/rank/federated", { config: { scope: "public" } }, async (req, reply) => {
+    const body = z.object({
+      localVector: z.array(z.number()),
+      globalVector: z.array(z.number()).optional(),
+      candidates: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        featureVector: z.array(z.number()),
+      })).optional(),
+      personalWeight: z.number().min(0).max(1).default(0.6),
+      privatize: z.boolean().default(false),
+      epsilon: z.number().positive().default(1.0),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    let candidates = body.data.candidates;
+    if (!candidates || candidates.length === 0) {
+      const sites = await ctx.repo.listSites({ limit: 30 });
+      const dim = body.data.localVector.length || 4;
+      candidates = sites.map((s, idx) => ({
+        id: s.id,
+        name: s.title,
+        featureVector: Array.from({ length: dim }, (_, i) => Math.round((Math.sin(idx + i + 1) * 0.5 + 0.5) * 100) / 100),
+      }));
+    }
+
+    const globalVec = body.data.globalVector ?? body.data.localVector.map(() => 0.5);
+    const results = rankItemsWithPrivacy(
+      body.data.localVector,
+      globalVec,
+      candidates,
+      body.data.personalWeight
+    );
+
+    const privatized = body.data.privatize ? privatizeVector(body.data.localVector, body.data.epsilon) : undefined;
+    return {
+      ok: true,
+      count: results.length,
+      recommendations: results,
+      privacy: body.data.privatize ? { epsilon: body.data.epsilon, privatizedVector: privatized } : undefined,
+    };
+  });
+
+  /**
+   * 原生 W3C Speculation Rules 预渲染与预取规则编译器端点
+   */
+  app.post("/api/speculation/rules", { config: { scope: "public" } }, async (req, reply) => {
+    const body = z.object({
+      candidates: z.array(z.object({
+        url: z.string(),
+        confidence: z.number().min(0).max(1),
+        predictedArrivalMs: z.number().nonnegative(),
+      })).min(1),
+      prerenderConfidenceThreshold: z.number().min(0).max(1).optional(),
+      prefetchConfidenceThreshold: z.number().min(0).max(1).optional(),
+      maxPrerenderCount: z.number().int().min(1).max(5).optional(),
+      maxPrefetchCount: z.number().int().min(1).max(10).optional(),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    const payload = compileSpeculationRules(body.data.candidates, {
+      prerenderConfidenceThreshold: body.data.prerenderConfidenceThreshold,
+      prefetchConfidenceThreshold: body.data.prefetchConfidenceThreshold,
+      maxPrerenderCount: body.data.maxPrerenderCount,
+      maxPrefetchCount: body.data.maxPrefetchCount,
+    });
+
+    return {
+      ok: true,
+      hasRules: Boolean(payload),
+      rules: payload,
+      script: payload ? renderSpeculationRulesScript(payload) : "",
+      fallbackTags: payload ? generateFallbackLinkTags(payload) : [],
+    };
   });
 
   /* ------------------------ 搜索历史 ------------------------ */

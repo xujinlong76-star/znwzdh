@@ -67,8 +67,53 @@ export default function RootLayout({
   const gaId = safeGaId
 
   return (
-    <html lang="zh-CN" suppressHydrationWarning className={inter.variable}>
+    <html lang="zh-CN" suppressHydrationWarning data-scroll-behavior="smooth" className={inter.variable}>
       <head>
+        {/* 浏览器插件隔离护盾：阻断宿主浏览器第三方插件（如 QoderWork 等）产生的无害通讯断开报错 */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                if (typeof window === 'undefined') return;
+                function isExtensionError(err) {
+                  var m = (err && (err.message || err.reason || err)) || '';
+                  if (typeof m !== 'string') return false;
+                  return m.indexOf('Could not establish connection') !== -1 ||
+                         m.indexOf('Receiving end does not exist') !== -1 ||
+                         m.indexOf('message channel closed') !== -1 ||
+                         m.indexOf('Extension context invalidated') !== -1;
+                }
+                window.addEventListener('unhandledrejection', function(e) {
+                  if (e && isExtensionError(e.reason)) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                  }
+                }, true);
+                window.addEventListener('error', function(e) {
+                  if (e && (isExtensionError(e.message) || isExtensionError(e.error))) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    return true;
+                  }
+                }, true);
+
+                // 本地开发环境自动清理旧 SW 与 CacheStorage，杜绝历史缓存导致的水合与分包不一致
+                if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                  if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(function(regs) {
+                      for (var i = 0; i < regs.length; i++) regs[i].unregister();
+                    }).catch(function() {});
+                  }
+                  if ('caches' in window) {
+                    caches.keys().then(function(keys) {
+                      for (var j = 0; j < keys.length; j++) caches.delete(keys[j]);
+                    }).catch(function() {});
+                  }
+                }
+              })();
+            `,
+          }}
+        />
         <link rel="preconnect" href="https://www.googletagmanager.com" />
         {/* iOS 桌面图标（apple-touch-icon）：用显式 link 而不是 metadata.icons.apple——
             实测 Next 15.5 只渲染 appleWebApp 的 meta 而不渲染该 link */}

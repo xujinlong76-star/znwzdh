@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Copy, Sparkles, Calculator, Clock, Palette, FileCode, Hash, ArrowRight, Timer, KeyRound, Terminal } from 'lucide-react'
+import { Check, Copy, Sparkles, Calculator, Clock, Palette, FileCode, Hash, Timer, KeyRound, Terminal } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import type { SpeculativeIntentResult } from '@/lib/speculative'
 

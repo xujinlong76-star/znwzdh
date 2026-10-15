@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   buildFtsTokens,
+  canonicalizeUrl,
   pinyinTraits,
   type Category,
   type Collection,
@@ -143,19 +144,34 @@ export class Repository {
     this.db = db;
   }
 
-  /** 双方言事务包裹辅助方法（可重入：嵌套调用直接复用外层事务，避免 SQLITE BEGIN 嵌套报错） */
+  /** 双方言事务包裹辅助方法（可重入：嵌套调用直接复用外层事务，避免 SQLITE BEGIN 嵌套报错；SQLite 另加 busy_timeout + 指数退避，避免高并发写 SQLITE_BUSY） */
   async withTransaction<T>(action: () => Promise<T>): Promise<T> {
     if (this.txDepth > 0) return action();
     if (this.db.dialect === "sqlite" && this.db.sqlite) {
-      this.db.sqlite.exec("BEGIN IMMEDIATE");
       this.txDepth++;
       try {
-        const result = await action();
-        this.db.sqlite.exec("COMMIT");
-        return result;
-      } catch (err) {
-        try { this.db.sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
-        throw err;
+        try { this.db.sqlite.exec("PRAGMA busy_timeout = 5000"); } catch { /* ignore */ }
+        let lastErr: unknown = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            this.db.sqlite.exec("BEGIN IMMEDIATE");
+            try {
+              const result = await action();
+              this.db.sqlite.exec("COMMIT");
+              return result;
+            } catch (err) {
+              try { this.db.sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
+              throw err;
+            }
+          } catch (err) {
+            lastErr = err;
+            const msg = err instanceof Error ? err.message : String(err);
+            // 只有 BUSY/LOCKED 才重试，其它错误直接抛
+            if (!/BUSY|LOCKED/i.test(msg) || attempt === 3) throw err;
+            await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
+          }
+        }
+        throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
       } finally {
         this.txDepth--;
       }
@@ -277,9 +293,10 @@ export class Repository {
   }
 
   async findSiteByUrl(url: string): Promise<Site | null> {
+    const canonical = canonicalizeUrl(url);
     const rows = await this.raw(
-      this.selectSitesSql() + " WHERE s.url = ? AND s.deleted_at IS NULL LIMIT 1",
-      [url],
+      this.selectSitesSql() + " WHERE (s.url = ? OR s.url = ?) AND s.deleted_at IS NULL LIMIT 1",
+      [url, canonical],
     );
     const row = rows[0];
     return row ? rowToSite(row) : null;
@@ -1278,7 +1295,9 @@ export class Repository {
       this.selectSitesSql() +
         " JOIN collection_items ci ON ci.site_id = s.id" +
         " WHERE ci.collection_id = ? AND s.enabled = " + this.enabledLiteral + " AND s.deleted_at IS NULL" +
-        " GROUP BY s.id ORDER BY ci.sort ASC",
+        // ORDER BY 必须用聚合：PG 不允许按「未分组且非 s.id 函数依赖」的列排序
+        // （GROUP BY s.id + ORDER BY ci.sort 在 SQLite 能跑、到 PG 报错）。
+        " GROUP BY s.id ORDER BY MIN(ci.sort) ASC",
       [col.id],
     );
     return rows.map(rowToSite);

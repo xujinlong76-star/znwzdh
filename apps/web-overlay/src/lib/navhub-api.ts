@@ -83,7 +83,8 @@ export interface HubTag {
 async function getJson<T>(path: string, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
   const res = await fetch(hubUrl(path), { signal, headers: { Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) } })
   if (!res.ok) throw hubError(res.status)
-  return (await res.json()) as T
+  const text = await res.text()
+  return (text.trim() ? JSON.parse(text) : {}) as T
 }
 
 /**
@@ -229,36 +230,6 @@ export async function fetchNewSites(limit = 20): Promise<HubSite[]> {
   }
 }
 
-/* ------------------------------ 精选专题 ------------------------------ */
-
-export interface HubCollection {
-  id: string
-  slug: string
-  title: string
-  description?: string | null
-  kind: 'topic' | 'geo' | 'roadmap'
-  icon?: string | null
-  sort: number
-  enabled: boolean
-}
-
-export async function fetchCollections(): Promise<HubCollection[]> {
-  try {
-    return await getJson<HubCollection[]>('/api/collections')
-  } catch {
-    return []
-  }
-}
-
-/** 专题详情（含站点列表；不存在时返回 null） */
-export async function fetchCollectionDetail(slug: string): Promise<{ collection: HubCollection; sites: HubSite[] } | null> {
-  try {
-    return await getJson<{ collection: HubCollection; sites: HubSite[] }>('/api/collections/' + encodeURIComponent(slug))
-  } catch {
-    return null
-  }
-}
-
 /** 单个站点详情（找不到时返回 null） */
 export async function fetchSite(idOrUrl: string): Promise<HubSite | null> {
   try {
@@ -370,6 +341,39 @@ export async function deleteCloudVault(identity: string): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+/* ------------------------------ 精选专题 ------------------------------ */
+
+export interface HubCollection {
+  id: string
+  slug: string
+  title: string
+  description?: string | null
+  kind: 'topic' | 'geo' | 'roadmap'
+  coverUrl?: string | null
+  icon?: string | null
+  enabled: boolean
+  sort: number
+  siteCount?: number
+  createdAt?: number
+  updatedAt?: number
+}
+
+export async function fetchCollections(): Promise<HubCollection[]> {
+  try {
+    return await getJson<HubCollection[]>('/api/collections')
+  } catch {
+    return []
+  }
+}
+
+export async function fetchCollectionDetail(slug: string): Promise<{ collection: HubCollection; sites: HubSite[] } | null> {
+  try {
+    return await getJson<{ collection: HubCollection; sites: HubSite[] }>('/api/collections/' + encodeURIComponent(slug))
+  } catch {
+    return null
   }
 }
 

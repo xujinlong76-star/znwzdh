@@ -8,14 +8,52 @@
  */
 import { hashSiteId } from "@navhub/store";
 import { enrichUrl, siteEmbeddingText, guardedFetch } from "@navhub/ai";
+import {
+  findMatchingArchitectureRecipe,
+  parseTechComparisonQuery,
+  PRESET_RECIPES,
+  runAutonomousHealing,
+  findShortestTechPath,
+  analyzeStackCompatibility,
+  PRESET_TECH_GRAPH,
+  autoClusterSites,
+  auditPageHealth,
+  mergeOperationLogs,
+  compactOperationLogs,
+  reduceOperationsToState,
+  parseSpeculativeIntent,
+  analyzeColorPalette,
+  rankItemsWithPrivacy,
+  privatizeVector,
+  compileSpeculationRules,
+  renderSpeculationRulesScript,
+  generateFallbackLinkTags,
+  synthesizeRestTool,
+  synthesizeSiteSearchTool,
+  parseOpenApiToSpecs,
+  P2PMeshNode,
+  type P2PMessage,
+  type MinimalOpenApiSpec,
+  type CRDTOperation,
+} from "@navhub/core";
 import type { AppContext } from "@navhub/api";
 import {
+  AnalyzeColorHarmonyInput,
+  AnalyzeStackCompatibilityInput,
   BatchImportInput,
+  ClusterSitesInput,
+  CompareTechnologiesInput,
+  CompileSpeculationRulesInput,
   CreateSiteInput,
   DeleteSiteInput,
+  ExchangeP2pMeshInput,
   ExportSitesInput,
+  FindTechPathInput,
+  GetArchitectureRecipeInput,
+  GetFederatedRecommendationsInput,
   GetSiteInput,
   GetTrendingInput,
+  HealBrokenSiteInput,
   HealthCheckInput,
   ListCategoriesInput,
   ListTagsInput,
@@ -24,6 +62,9 @@ import {
   RunJobInput,
   SearchSitesInput,
   SetStatusInput,
+  SyncCrdtOperationsInput,
+  SynthesizeAgentToolInput,
+  EvaluateDeveloperIntentInput,
   UpdateSiteInput,
   requireScope,
   type ToolContext,
@@ -87,8 +128,9 @@ export function createHandlers(ctx: AppContext) {
       requireScope(tc, "read");
       const input = SearchSitesInput.parse(args ?? {});
       const result = await ctx.search.search({ q: input.query, limit: input.limit, categoryId: input.categoryId, tag: input.tag });
-      const results = await Promise.all(result.hits.map(async (h) => {
-        const site = await ctx.repo.getSite(h.siteId);
+      const byId = await ctx.repo.getSitesByIds(result.hits.map((h) => h.siteId));
+      const results = result.hits.map((h) => {
+        const site = byId.get(h.siteId);
         return {
           title: site?.title, url: site?.url, description: site?.description,
           icon: site?.iconKey, tags: site?.tags ?? [],
@@ -96,7 +138,7 @@ export function createHandlers(ctx: AppContext) {
           /** 解释「为什么是它」：每路召回的名次 */
           matchedBy: Object.fromEntries(Object.entries(h.contributions).map(([k, v]) => [k, v?.rank])),
         };
-      }));
+      });
       return ok({
         query: input.query, count: results.length,
         channelsUsed: result.channelsUsed, semanticAvailable: result.semanticAvailable,
@@ -245,13 +287,21 @@ export function createHandlers(ctx: AppContext) {
         try {
           const res = await guardedFetch(site.url, { ...ctx.config.fetch });
           const latency = Date.now() - t0;
-          const ok = res.status >= 200 && res.status < 400;
-          results.push({ url: site.url, ok, status: res.status, latencyMs: latency });
+          let ok = res.status >= 200 && res.status < 400;
+          let reason: string | null = null;
+          if (ok && res.body) {
+            const audit = auditPageHealth(site.url, res.body);
+            if (audit.status === "SUSPICIOUS_PARKED" || audit.status === "SOFT_404") {
+              ok = false;
+              reason = "伪健康识别: " + audit.reason;
+            }
+          }
+          results.push({ url: site.url, ok, status: res.status, latencyMs: latency, error: reason ?? undefined });
           // 走 Repository 抽象（而非直接写 SQLite）：health_checks 表 + sites 冗余列，
           // 两种方言都由仓储层消化——此前 PG 模式直接 fail，属于"能力分裂"。
           await ctx.repo.updateSiteHealth(site.id, {
             httpStatus: res.status, ok, latencyMs: latency,
-            redirectTo: res.redirects.at(-1) ?? null, error: null,
+            redirectTo: res.redirects.at(-1) ?? null, error: reason,
             currentStatus: site.status,
           });
         } catch (err) {
@@ -352,6 +402,247 @@ export function createHandlers(ctx: AppContext) {
       const jobId = await ctx.repo.enqueueJob(input.kind, input.payload ?? {});
       await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "job.enqueue", target: jobId, diff: { kind: input.kind, payload: input.payload ?? {} } });
       return ok({ queued: true, jobId, kind: input.kind, note: "任务已入队，Runner 会在 30 秒内执行。用 GET /api/jobs 查询执行状态。" });
+    },
+
+    async get_architecture_recipe(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = GetArchitectureRecipeInput.parse(args ?? {});
+      const matched = findMatchingArchitectureRecipe(input.query);
+      if (!matched) {
+        return ok({ matched: false, query: input.query, availableRecipes: PRESET_RECIPES.map((r) => ({ id: r.id, title: r.title, targetGoal: r.targetGoal })) });
+      }
+      return ok({ matched: true, recipe: matched });
+    },
+
+    async compare_technologies(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = CompareTechnologiesInput.parse(args ?? {});
+      const matrix = parseTechComparisonQuery(input.query);
+      if (!matrix) {
+        return ok({ matched: false, query: input.query, note: "未找到预设对比矩阵，请尝试 'react vs vue', 'cursor vs vscode', 'pnpm vs bun', 'ollama vs vllm'" });
+      }
+      return ok({ matched: true, matrix });
+    },
+
+    async heal_broken_site(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "write");
+      const input = HealBrokenSiteInput.parse(args ?? {});
+      const site = await ctx.repo.getSite(input.idOrUrl);
+      if (!site) return fail("未找到站点：" + input.idOrUrl);
+
+      const peers = await ctx.repo.listSites({ categoryId: site.categoryId, status: "active", limit: 20 });
+      const report = runAutonomousHealing({
+        siteId: site.id,
+        url: site.url,
+        title: site.title,
+        categoryId: site.categoryId,
+        tags: site.tags,
+        availablePeers: peers,
+      });
+
+      await ctx.repo.audit({
+        actor: tc.actor,
+        actorKind: "mcp",
+        action: "site.heal",
+        target: site.id,
+        diff: {
+          recommendedAction: report.recommendedAction,
+          waybackFallbackUrl: report.waybackFallbackUrl,
+          suggestedCount: report.suggestedReplacements.length,
+        },
+      });
+
+      return ok({ healed: true, report });
+    },
+
+    async find_tech_path(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = FindTechPathInput.parse(args ?? {});
+      const pathResult = findShortestTechPath(input.from, input.to, PRESET_TECH_GRAPH);
+      return ok({ success: true, ...pathResult });
+    },
+
+    async analyze_stack_compatibility(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = AnalyzeStackCompatibilityInput.parse(args ?? {});
+      const report = analyzeStackCompatibility(input.techs, PRESET_TECH_GRAPH);
+      return ok({ success: true, ...report });
+    },
+
+    async cluster_sites(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = ClusterSitesInput.parse(args ?? {});
+      const list = await ctx.repo.listSites({
+        categoryId: input.categoryId,
+        limit: 100,
+        status: "active",
+      });
+      const items = list.map((s) => ({
+        id: s.id,
+        title: s.title,
+        url: s.url,
+        tags: s.tags || [],
+      }));
+      const result = autoClusterSites(items, input.targetK);
+      return ok({ success: true, ...result });
+    },
+
+    async sync_crdt_operations(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "write");
+      const input = SyncCrdtOperationsInput.parse(args ?? {});
+      const crdtKey = "crdt:" + input.userId;
+      const existing = await ctx.repo.getUserVault(crdtKey);
+      let serverOps: CRDTOperation[] = [];
+      if (existing?.payload) {
+        try {
+          const parsed = JSON.parse(existing.payload) as { operations?: CRDTOperation[] };
+          if (Array.isArray(parsed.operations)) {
+            serverOps = parsed.operations;
+          }
+        } catch { /* 容错 */ }
+      }
+
+      const merged = mergeOperationLogs(serverOps, input.operations as CRDTOperation[]);
+      const finalOps = merged.length > 100 ? compactOperationLogs(merged) : merged;
+      const reduced = reduceOperationsToState(finalOps);
+
+      await ctx.repo.saveUserVault(crdtKey, JSON.stringify({
+        version: 1,
+        operations: finalOps,
+        state: reduced,
+        updatedAt: Date.now(),
+      }));
+
+      await ctx.repo.audit({
+        actor: tc.actor,
+        actorKind: "mcp",
+        action: "crdt.sync",
+        target: input.userId,
+        diff: { clientOps: input.operations.length, totalOps: finalOps.length },
+      });
+
+      return ok({
+        merged: true,
+        clientCount: input.operations.length,
+        totalCount: finalOps.length,
+        state: reduced,
+      });
+    },
+
+    async evaluate_developer_intent(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = EvaluateDeveloperIntentInput.parse(args ?? {});
+      const result = parseSpeculativeIntent(input.input);
+      if (!result) {
+        return ok({
+          matched: false,
+          query: input.input,
+          message: "未匹配到特定开发者意图语法模式（可尝试输入 JWT、Cron、Curl、颜色、时间戳或 Base64）",
+        });
+      }
+      return ok({ matched: true, ...result });
+    },
+
+    async analyze_color_harmony(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = AnalyzeColorHarmonyInput.parse(args ?? {});
+      const report = analyzeColorPalette(input.palette, input.foreground, input.background);
+      return ok({ success: true, ...report });
+    },
+
+    async get_federated_recommendations(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = GetFederatedRecommendationsInput.parse(args ?? {});
+      const globalVec = input.globalVector ?? input.localVector.map(() => 0);
+      const results = rankItemsWithPrivacy(
+        input.localVector,
+        globalVec,
+        input.candidates,
+        input.personalWeight
+      );
+      const privatized = input.privatize ? privatizeVector(input.localVector, input.epsilon) : undefined;
+      return ok({
+        count: results.length,
+        recommendations: results,
+        privacy: input.privatize ? { epsilon: input.epsilon, privatizedVector: privatized } : undefined,
+      });
+    },
+
+    async compile_speculation_rules(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = CompileSpeculationRulesInput.parse(args ?? {});
+      const payload = compileSpeculationRules(input.candidates, {
+        prerenderConfidenceThreshold: input.prerenderConfidenceThreshold,
+        prefetchConfidenceThreshold: input.prefetchConfidenceThreshold,
+        maxPrerenderCount: input.maxPrerenderCount,
+        maxPrefetchCount: input.maxPrefetchCount,
+      });
+      if (!payload) {
+        return ok({
+          hasRules: false,
+          rules: null,
+          script: "",
+          fallbackTags: [],
+          message: "无符合阈值或安全过滤条件的推测预加载规则",
+        });
+      }
+      return ok({
+        hasRules: true,
+        rules: payload,
+        script: renderSpeculationRulesScript(payload),
+        fallbackTags: generateFallbackLinkTags(payload),
+      });
+    },
+
+    async synthesize_agent_tool(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = SynthesizeAgentToolInput.parse(args ?? {});
+
+      if (input.kind === "site_search" && input.siteSearchSpec) {
+        const synthesized = synthesizeSiteSearchTool(input.siteSearchSpec);
+        return ok({
+          kind: "site_search",
+          tool: synthesized.definition,
+          exampleInvocation: synthesized.handler({ query: "example" }),
+        });
+      }
+
+      if (input.kind === "openapi" && input.openApiSpec) {
+        const specs = parseOpenApiToSpecs(input.openApiSpec as MinimalOpenApiSpec);
+        const tools = specs.map((s) => synthesizeRestTool(s).definition);
+        return ok({
+          kind: "openapi",
+          count: tools.length,
+          tools,
+        });
+      }
+
+      if (input.restSpec) {
+        const synthesized = synthesizeRestTool(input.restSpec);
+        return ok({
+          kind: "rest",
+          tool: synthesized.definition,
+        });
+      }
+
+      return ok({
+        kind: "unknown",
+        message: "缺少 restSpec、siteSearchSpec 或 openApiSpec 有效配置",
+      });
+    },
+
+    async exchange_p2p_mesh(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = ExchangeP2pMeshInput.parse(args ?? {});
+      const node = new P2PMeshNode(input.nodeId);
+      const outgoing = node.handleIncomingMessage(input.message as P2PMessage<any>);
+      return ok({
+        nodeId: input.nodeId,
+        receivedType: input.message.type,
+        peerState: node.getPeer(input.message.senderId)?.state ?? "READY",
+        outgoingResponse: outgoing,
+        vectorClock: node.store.getVectorClock(),
+      });
     },
   };
 }

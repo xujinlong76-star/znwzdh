@@ -134,6 +134,128 @@ export const ExportSitesInput = z.object({
   limit: z.number().int().min(1).max(1000).default(200).describe("导出条数上限"),
 });
 
+export const GetArchitectureRecipeInput = z.object({
+  query: z.string().describe("架构目标或技术栈关键词（如 '协同编辑', '本地大模型', '全栈Web', '微前端'）"),
+});
+
+export const CompareTechnologiesInput = z.object({
+  query: z.string().describe("技术选型对比查询（如 'react vs vue', 'cursor vs vscode', 'pnpm vs bun', 'ollama vs vllm'）"),
+});
+
+export const HealBrokenSiteInput = z.object({
+  idOrUrl: z.string().describe("故障/失效站点的 ID 或完整网址"),
+});
+
+export const FindTechPathInput = z.object({
+  from: z.string().describe("起始技术名称或 ID (如 'react', 'vue', 'fastify')"),
+  to: z.string().describe("目标技术名称或 ID (如 'postgres', 'docker', 'ollama')"),
+});
+
+export const AnalyzeStackCompatibilityInput = z.object({
+  techs: z.array(z.string()).min(1).describe("已选技术栈名称或 ID 列表 (如 ['react', 'nextjs', 'drizzle'])"),
+});
+
+export const ClusterSitesInput = z.object({
+  categoryId: z.string().optional().describe("限定要聚类的类目 ID（不传则聚类全库站点）"),
+  targetK: z.number().int().min(1).max(10).default(3).describe("目标聚类簇数 K"),
+});
+
+export const SyncCrdtOperationsInput = z.object({
+  userId: z.string().describe("用户身份 ID (如 anon_xxx 或 user_xxx)"),
+  operations: z.array(z.object({
+    id: z.string(),
+    type: z.enum([
+      "SET_CATEGORY_PIN",
+      "REORDER_CATEGORIES",
+      "PIN_SITE_IN_CATEGORY",
+      "UNPIN_SITE_IN_CATEGORY",
+      "UPSERT_CUSTOM_CATEGORY",
+      "DELETE_CUSTOM_CATEGORY",
+      "UPSERT_CUSTOM_SITE",
+      "DELETE_CUSTOM_SITE",
+    ]),
+    entityId: z.string(),
+    payload: z.unknown(),
+    timestamp: z.number(),
+    clientId: z.string(),
+  })).min(1).max(200).describe("待合流的 CRDT 操作日志列表"),
+});
+
+export const EvaluateDeveloperIntentInput = z.object({
+  input: z.string().describe("开发者输入的原始技术文本（如 Cron 表达式、JWT Token、Curl 命令、十六进制颜色、时间戳、JSON 字符串、Base64 或数学算式）"),
+});
+
+export const AnalyzeColorHarmonyInput = z.object({
+  palette: z.array(z.string()).min(1).describe("调色板 HEX 颜色数组，例如 ['#0f172a', '#3b82f6', '#10b981']"),
+  foreground: z.string().default("#ffffff").describe("文本/前景 HEX 颜色，默认 #ffffff"),
+  background: z.string().default("#0f172a").describe("页面/背景 HEX 颜色，默认 #0f172a"),
+});
+
+export const GetFederatedRecommendationsInput = z.object({
+  localVector: z.array(z.number()).describe("本地私有偏好向量"),
+  globalVector: z.array(z.number()).optional().describe("脱敏全局偏好趋势向量（可选）"),
+  candidates: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    featureVector: z.array(z.number()),
+  })).min(1).describe("候选推荐项列表"),
+  personalWeight: z.number().min(0).max(1).default(0.6).describe("私有偏好权重占比 (0.0 ~ 1.0)"),
+  privatize: z.boolean().default(false).describe("是否对偏好向量进行 Laplace 差分隐私加噪"),
+  epsilon: z.number().positive().default(1.0).describe("差分隐私预算 epsilon"),
+});
+
+export const CompileSpeculationRulesInput = z.object({
+  candidates: z.array(z.object({
+    url: z.string().describe("推测目标 URL"),
+    confidence: z.number().min(0).max(1).describe("意图置信度 (0.0 ~ 1.0)"),
+    predictedArrivalMs: z.number().nonnegative().describe("预计抵达耗时 (ms)"),
+  })).min(1).describe("推测预加载候选列表"),
+  prerenderConfidenceThreshold: z.number().min(0).max(1).default(0.82).describe("触发 Prerender 最小置信度阈值"),
+  prefetchConfidenceThreshold: z.number().min(0).max(1).default(0.45).describe("触发 Prefetch 最小置信度阈值"),
+  maxPrerenderCount: z.number().int().min(1).max(5).default(2).describe("允许最大预渲染数"),
+  maxPrefetchCount: z.number().int().min(1).max(10).default(5).describe("允许最大预取数"),
+});
+
+export const SynthesizeAgentToolInput = z.object({
+  kind: z.enum(["rest", "site_search", "openapi"]).default("rest").describe("合成源类型：rest (单端点), site_search (站点站内检索), openapi (OpenAPI 3.0 规范)"),
+  restSpec: z.object({
+    name: z.string(),
+    description: z.string(),
+    url: z.string(),
+    method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).default("GET"),
+    headers: z.record(z.string()).optional(),
+    parameters: z.array(z.object({
+      name: z.string(),
+      type: z.enum(["string", "number", "boolean"]),
+      description: z.string().optional(),
+      required: z.boolean().optional(),
+      in: z.enum(["query", "path", "body", "header"]),
+      default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    })).optional(),
+    bodyType: z.enum(["json", "form"]).optional(),
+  }).optional().describe("REST 单端点参数规格（kind=rest 时生效）"),
+  siteSearchSpec: z.object({
+    siteId: z.string(),
+    siteName: z.string(),
+    searchUrlTemplate: z.string().optional(),
+    apiEndpoint: z.string().optional(),
+    category: z.string().optional(),
+  }).optional().describe("站点站内检索动作规格（kind=site_search 时生效）"),
+  openApiSpec: z.record(z.unknown()).optional().describe("OpenAPI 规范 JSON（kind=openapi 时生效）"),
+});
+
+export const ExchangeP2pMeshInput = z.object({
+  nodeId: z.string().describe("当前节点的唯一身份 ID (如 peer_xxx)"),
+  message: z.object({
+    type: z.enum(["HELLO", "SYNC_REQUEST", "DELTA_BATCH", "ACK", "HEARTBEAT"]),
+    senderId: z.string(),
+    targetId: z.string().optional(),
+    seq: z.number().int().nonnegative(),
+    timestamp: z.number().int().positive(),
+    payload: z.unknown(),
+  }).describe("传入的 P2P 网格报文"),
+});
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -219,6 +341,71 @@ export const TOOL_DEFS: ToolDefinition[] = [
     name: "run_job",
     description: "入队一个后台任务（health_check / refetch_metadata / recompute_rank / reindex）。任务由 Runner 异步执行，不会立即返回结果。",
     scope: "admin", inputSchema: RunJobInput, mutating: true,
+  },
+  {
+    name: "get_architecture_recipe",
+    description: "基于 Graph-RAG 子图匹配端到端技术栈链路配方 (Architecture Recipe)，获取分层选型、替代方案与快速启动代码。",
+    scope: "read", inputSchema: GetArchitectureRecipeInput, mutating: false,
+  },
+  {
+    name: "compare_technologies",
+    description: "结构化技术选型对比矩阵 (Side-by-Side Comparison Matrix)，原地对比两项技术的优缺点、权衡点、多维参数与选型裁决。",
+    scope: "read", inputSchema: CompareTechnologiesInput, mutating: false,
+  },
+  {
+    name: "heal_broken_site",
+    description: "对故障/失效站点执行智能自愈诊断：分析失效根因，调用 Wayback 提取归档快照，并基于图谱推荐同生态健康替代品。",
+    scope: "write", inputSchema: HealBrokenSiteInput, mutating: true,
+  },
+  {
+    name: "find_tech_path",
+    description: "在技术栈知识图谱中通过双向 Dijkstra 寻路，查找任意两项技术之间的协同演进链路与组合桥梁。",
+    scope: "read", inputSchema: FindTechPathInput, mutating: false,
+  },
+  {
+    name: "analyze_stack_compatibility",
+    description: "分析技术选型方案的协同契合度、已覆盖与缺失的基础设施分层，并推断推荐补齐组件。",
+    scope: "read", inputSchema: AnalyzeStackCompatibilityInput, mutating: false,
+  },
+  {
+    name: "cluster_sites",
+    description: "基于 K-Means++ 与语义词袋向量对站点进行自适应聚类，自动提取高频技术特征并合成可解释的类目名称与凝聚度打分。",
+    scope: "read", inputSchema: ClusterSitesInput, mutating: false,
+  },
+  {
+    name: "sync_crdt_operations",
+    description: "合流多端本地优先原子操作日志 (Local-First CRDT)，具备交换律与因果收敛，无冲突同步自定义分类、站点置顶与拖拽排序。",
+    scope: "write", inputSchema: SyncCrdtOperationsInput, mutating: true,
+  },
+  {
+    name: "evaluate_developer_intent",
+    description: "原地推测并计算开发者输入的技术意图（秒级解析 JWT、Cron 人类语言翻译、Curl 语法转 Fetch 代码、时间戳/颜色/Base64/JSON 实时转换），0 外部网络耗时。",
+    scope: "read", inputSchema: EvaluateDeveloperIntentInput, mutating: false,
+  },
+  {
+    name: "analyze_color_harmony",
+    description: "分析 UI 调色板的美学和谐度、WCAG 2.1 对比度评级 (AAA/AA/Fail)、视觉情绪风格与改进建议。",
+    scope: "read", inputSchema: AnalyzeColorHarmonyInput, mutating: false,
+  },
+  {
+    name: "get_federated_recommendations",
+    description: "基于客户端本地差分隐私 (LDP Laplace) 与群体脱敏趋势向量的协同排序推荐引擎。",
+    scope: "read", inputSchema: GetFederatedRecommendationsInput, mutating: false,
+  },
+  {
+    name: "compile_speculation_rules",
+    description: "根据意图轨迹预测置信度与抵达耗时，编译原生 W3C Speculation Rules 预渲染与预取规则负载及 HTML 脚本标签。",
+    scope: "read", inputSchema: CompileSpeculationRulesInput, mutating: false,
+  },
+  {
+    name: "synthesize_agent_tool",
+    description: "动态将外部 REST 端点、站点检索动作或 OpenAPI 规范合成为具备 SSRF 防护的 WebMCP 智能体工具。",
+    scope: "read", inputSchema: SynthesizeAgentToolInput, mutating: false,
+  },
+  {
+    name: "exchange_p2p_mesh",
+    description: "通过无中心 WebRTC / DataChannel 网格消息协议交换多端书签 CRDT 增量并实现因果收敛。",
+    scope: "read", inputSchema: ExchangeP2pMeshInput, mutating: false,
   },
 ];
 

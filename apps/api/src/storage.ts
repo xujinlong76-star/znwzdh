@@ -14,7 +14,7 @@
  * 本模块实现服务端一侧：以 path 为键，读写等价的 JSON 结构。
  */
 import type { AppContext } from "./context.ts";
-import { getEnhancedSiteData, type SiteAction, type SiteRelation, type SiteLiveMetrics, type SiteHealth } from "@navhub/core";
+import { getEnhancedSiteData, resolveSiteIcon, type SiteAction, type SiteRelation, type SiteLiveMetrics, type SiteHealth } from "@navhub/core";
 
 export const NAVIGATION_PATH = "src/navsphere/content/navigation.json";
 export const SITE_PATH = "src/navsphere/content/site.json";
@@ -62,10 +62,23 @@ interface NsCategory {
 interface NsNavigationData { navigationItems: NsCategory[] }
 
 /**
+ * 单次导出 navigation.json 允许的最大站点数（防大库全表拉取 OOM，可通过 NAVHUB_NAVIGATION_MAX_SITES 调整）。
+ */
+const NAVIGATION_MAX_SITES = Math.max(100, Number(process.env.NAVHUB_NAVIGATION_MAX_SITES || 8000));
+
+/**
  * 把数据库读成 NavSphere 的 navigation.json 形状。
  * 组级顺序严格按 sort，保证前端拖拽排序结果可复现。
  */
 export async function buildNavigationData(ctx: AppContext): Promise<NsNavigationData> {
+  const stats = await ctx.repo.stats();
+  if (stats.sites > NAVIGATION_MAX_SITES) {
+    const err = new Error(
+      `站点总数 (${stats.sites}) 超过单文件快照上限 (${NAVIGATION_MAX_SITES})，请改用分页接口 /api/sites 或调大 NAVHUB_NAVIGATION_MAX_SITES`,
+    ) as Error & { statusCode?: number };
+    err.statusCode = 413;
+    throw err;
+  }
   const categories = (await ctx.repo.listCategories()).filter((c) => c.enabled).sort((a, b) => a.sort - b.sort);
   const sites = await ctx.repo.listSites();
 
@@ -82,7 +95,7 @@ export async function buildNavigationData(ctx: AppContext): Promise<NsNavigation
       title: s.title,
       href: s.url,
       description: s.description ?? undefined,
-      icon: s.iconKey ?? undefined,
+      icon: s.iconKey || resolveSiteIcon(s.url, s.title),
       enabled: s.enabled,
       tags: s.tags ?? tags,
       actions: s.actions ?? enhanced.actions,
@@ -241,17 +254,18 @@ async function upsertSite(
   const found = existing.find((s) => s.id === item.id);
   const title = item.title ?? item.href;
   const description = item.description ?? null;
+  const resolvedIcon = item.icon || resolveSiteIcon(item.href, item.title);
   if (found) {
     await ctx.repo.updateSite(item.id, {
       url: item.href, title, description, categoryId,
-      iconKey: item.icon ?? null, enabled: item.enabled !== false, sort,
+      iconKey: resolvedIcon || null, enabled: item.enabled !== false, sort,
     });
     await ctx.repo.setSiteTags(item.id, found.tags);
   } else {
     // 保持 NavSphere 传下来的 id，避免前端接下来的更新请求丢失目标
     await ctx.repo.createSiteWithId({
       id: item.id, url: item.href, title, description, categoryId,
-      iconKey: item.icon ?? null, enabled: item.enabled !== false, sort, source: "navsphere",
+      iconKey: resolvedIcon || null, enabled: item.enabled !== false, sort, source: "navsphere",
     });
   }
 }

@@ -17,12 +17,17 @@ export * from "./prefetch.ts";
 export * from "./modular.ts";
 export * from "./diy-layout.ts";
 export * from "./deterministic-favicon.ts";
-export * from "./batch-operations.ts";
-export * from "./bookmark-parser.ts";
-export * from "./crdt-sync.ts";
-export * from "./keyboard-nav.ts";
 export * from "./wayback-resolver.ts";
-
-
-
-
+export * from "./crdt-sync.ts";
+export * from "./bookmark-parser.ts";
+export * from "./batch-operations.ts";
+export * from "./client-vector-search.ts";
+export * from "./p2p-mesh-sync.ts";
+export * from "./speculative-prerender.ts";
+export * from "./autonomous-healing.ts";
+export * from "./knowledge-graph.ts";
+export * from "./visual-fingerprint.ts";
+export * from "./webmcp-bridge.ts";
+export * from "./federated-recommendation.ts";
+export * from "./semantic-clustering.ts";
+export * from "./dynamic-tool-synthesizer.ts";

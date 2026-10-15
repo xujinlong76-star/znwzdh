@@ -12,6 +12,43 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import {
+  canonicalizeUrl,
+  clampToBall,
+  computeHyperbolicAlternativeScore,
+  findMatchingArchitectureRecipe,
+  generateDeterministicSvg,
+  lorentzDistance,
+  parseTechComparisonQuery,
+  poincareToLorentz,
+  PRESET_RECIPES,
+  runAutonomousHealing,
+  findShortestTechPath,
+  computeGraphCentrality,
+  analyzeStackCompatibility,
+  PRESET_TECH_GRAPH,
+  autoClusterSites,
+  mergeOperationLogs,
+  compactOperationLogs,
+  reduceOperationsToState,
+  analyzeColorPalette,
+  parseSpeculativeIntent,
+  rankItemsWithPrivacy,
+  privatizeVector,
+  compileSpeculationRules,
+  renderSpeculationRulesScript,
+  generateFallbackLinkTags,
+  synthesizeRestTool,
+  synthesizeSiteSearchTool,
+  parseOpenApiToSpecs,
+  P2PMeshNode,
+  type P2PMessage,
+  type MinimalOpenApiSpec,
+  WebMcpBridge,
+  type JsonRpcRequest,
+  type CRDTOperation,
+  type RetrievalChannel,
+} from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import type { AppContext } from "./context.ts";
 import { createContext } from "./context.ts";
@@ -51,11 +88,9 @@ export function submissionNumber(id: string): number {
 export async function buildServer(ctx: AppContext) {
   // 测试里默认静音，避免日志淹没断言输出；生产用 NAVHUB_LOG_LEVEL 控制
   const logLevel = process.env.NAVHUB_LOG_LEVEL ?? (process.env.VITEST ? "silent" : "info");
-  // 信任 X-Forwarded-For：前端 /api/hub/* 代理会把真实客户端 IP 透传过来。
-  // 不开启的话 req.ip 永远是代理进程的地址 —— 按 IP 的限流（全局 300/min、
-  // 投稿 5/hour）会退化成"整站共享一个桶"，第 6 个投稿者就被 429 挡在门外。
-  // 若中枢**直接**暴露到公网（不经过自家代理），设 NAVHUB_TRUST_PROXY=0 关闭，
-  // 否则客户端可伪造 XFF 绕过限流。
+  // 信任 X-Forwarded-For：只有经过自家 /api/hub/* 代理时才开（由 ctx.config.trustProxy 统一解析，见 config.ts）。
+  // 默认关闭（直连公网伪造 XFF 可绕过按 IP 限流）；docker/docker-compose.yml 经代理时默认注入 NAVHUB_TRUST_PROXY=1。
+  // 不开启时 req.ip 会退化成代理地址，按 IP 的限流（300/min、投稿 5/hour）会整站共享一桶——按部署拓扑二选一。
   const app = Fastify({
     logger: { level: logLevel },
     bodyLimit: 4 * 1024 * 1024,
@@ -304,6 +339,7 @@ export async function buildServer(ctx: AppContext) {
     mode: ctx.config.mode,
     capabilities: ctx.capabilities,
     stats: await ctx.repo.stats(),
+    embedding: ctx.embedding?.stats ? { cache: ctx.embedding.stats() } : undefined,
   }));
 
   // 就绪探针：compose depends_on 应指 /ready（迁移水位+embedding 就绪），/health 仅表进程存活
@@ -638,13 +674,14 @@ export async function buildServer(ctx: AppContext) {
     // DB 写入包事务（去重检查 + 创建原子提交）；向量索引在提交后补做，避免长事务持有写锁。
     await ctx.repo.withTransaction(async () => {
     for (const item of body.data.sites) {
-      const dup = await ctx.repo.findSiteByUrl(item.url);
+      const cleanUrl = canonicalizeUrl(item.url);
+      const dup = await ctx.repo.findSiteByUrl(cleanUrl);
       if (dup) {
         duplicates++;
         continue;
       }
       const site = await ctx.repo.createSite({
-        url: item.url,
+        url: cleanUrl,
         title: item.title ?? item.url,
         description: item.description ?? null,
         categoryId: item.categoryId ?? fallback,
@@ -873,6 +910,412 @@ export async function buildServer(ctx: AppContext) {
     return { collection: col, sites: await ctx.repo.listCollectionSites(slug) };
   });
 
+  /* ----------------- 架构配方 & 竞品对比 & 确定性 Favicon ----------------- */
+
+  /**
+   * Graph-RAG 多跳技术栈链路配方查询
+   */
+  app.get("/api/recipes", { config: { scope: "public", cache: { maxAge: 300, etag: true } } }, async (req) => {
+    const q = String((req.query as Record<string, string>)?.q ?? "").trim();
+    if (!q) {
+      return { items: PRESET_RECIPES };
+    }
+    const matched = findMatchingArchitectureRecipe(q);
+    return { item: matched, items: matched ? [matched] : [] };
+  });
+
+  /**
+   * 端侧竞品并排对比矩阵合成
+   */
+  app.get("/api/comparisons", { config: { scope: "public", cache: { maxAge: 300, etag: true } } }, async (req) => {
+    const q = String((req.query as Record<string, string>)?.q ?? "").trim();
+    if (!q) {
+      return { ok: false, matrix: null };
+    }
+    const matrix = parseTechComparisonQuery(q);
+    return { ok: Boolean(matrix), matrix };
+  });
+
+  /**
+   * 结构化技术知识图谱：双向最短演进链路寻路 (Dijkstra)
+   */
+  app.get("/api/graph/path", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const from = String(q.from ?? "").trim();
+    const to = String(q.to ?? "").trim();
+    if (!from || !to) {
+      reply.code(400);
+      return { ok: false, error: "需要指定 from 与 to 查询参数" };
+    }
+    const pathResult = findShortestTechPath(from, to, PRESET_TECH_GRAPH);
+    return { ok: true, result: pathResult };
+  });
+
+  /**
+   * 结构化技术知识图谱：技术栈兼容性诊断与补齐建议
+   */
+  app.get("/api/graph/compatibility", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const rawTechs = String(q.techs ?? "").trim();
+    const techList = rawTechs ? rawTechs.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const report = analyzeStackCompatibility(techList, PRESET_TECH_GRAPH);
+    return { ok: true, report };
+  });
+
+  /**
+   * 结构化技术知识图谱：Kleinberg HITS 权威度与枢纽度分析
+   */
+  app.get("/api/graph/centrality", { config: { scope: "public", cache: { maxAge: 300 } } }, async () => {
+    const centrality = computeGraphCentrality(PRESET_TECH_GRAPH);
+    return { ok: true, ...centrality };
+  });
+
+
+  /**
+   * 确定性 SVG Favicon 代理端点（解决小众/外网站点 Favicon 裂开或 CORS 阻断）
+   */
+  app.get("/api/favicon/:id", { config: { scope: "public", cache: { maxAge: 86400, etag: true } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const site = await ctx.repo.getSite(id);
+    const title = site ? site.title : id;
+    const url = site ? site.url : undefined;
+    const svg = generateDeterministicSvg(title, url);
+    reply.type("image/svg+xml; charset=utf-8");
+    return svg;
+  });
+
+  /**
+   * AI 自动自愈端点：对故障/失效站点诊断、提取 Wayback 快照并在同生态推荐最佳替代品
+   */
+  app.post("/api/sites/:id/heal", { config: { scope: "write" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const site = await ctx.repo.getSite(id);
+    if (!site) { reply.code(404); return { error: "站点不存在" }; }
+
+    const peers = await ctx.repo.listSites({ categoryId: site.categoryId, status: "active", limit: 20 });
+    const report = runAutonomousHealing({
+      siteId: site.id,
+      url: site.url,
+      title: site.title,
+      categoryId: site.categoryId,
+      tags: site.tags,
+      availablePeers: peers,
+    });
+
+    await ctx.repo.audit({
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "site.heal",
+      target: site.id,
+      diff: {
+        diagnosis: report.diagnosis,
+        recommendedAction: report.recommendedAction,
+        topReplacement: report.suggestedReplacements[0]?.url,
+      },
+    });
+
+    return { ok: true, report };
+  });
+
+  /**
+   * Next-Gen 5.0 语义聚类与自适应类目生成端点
+   * 对未分类、批量导入或指定分类下的站点进行 K-Means++ 语义聚类与命名生成
+   */
+  app.post("/api/sites/cluster", { config: { scope: "public" } }, async (req, reply) => {
+    const body = z.object({
+      siteIds: z.array(z.string()).optional(),
+      categoryId: z.string().optional(),
+      targetK: z.number().int().min(1).max(20).optional().default(4),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    let sitesToCluster: Array<{ id: string; title: string; url: string; tags: string[] }> = [];
+
+    if (body.data.siteIds && body.data.siteIds.length > 0) {
+      const all = await Promise.all(body.data.siteIds.map((id) => ctx.repo.getSite(id)));
+      sitesToCluster = all.filter((s): s is NonNullable<typeof s> => Boolean(s)).map((s) => ({
+        id: s.id,
+        title: s.title,
+        url: s.url,
+        tags: s.tags || [],
+      }));
+    } else {
+      const list = await ctx.repo.listSites({
+        categoryId: body.data.categoryId,
+        limit: 100,
+        status: "active",
+      });
+      sitesToCluster = list.map((s) => ({
+        id: s.id,
+        title: s.title,
+        url: s.url,
+        tags: s.tags || [],
+      }));
+    }
+
+    if (sitesToCluster.length === 0) {
+      return { totalItems: 0, clusterCount: 0, clusters: [], averageCohesion: 100 };
+    }
+
+    const result = autoClusterSites(sitesToCluster, body.data.targetK);
+    return { ok: true, result };
+  });
+
+  /* --------------------- Next-Gen 7.0 视觉设计与 WebMCP --------------------- */
+
+  /**
+   * 视觉指纹与调色板 WCAG 对比度/美学和谐度审计端点
+   */
+  app.post("/api/design/harmony", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
+    const body = z.object({
+      palette: z.array(z.string()).min(1),
+      foreground: z.string().optional().default("#ffffff"),
+      background: z.string().optional().default("#0f172a"),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    const report = analyzeColorPalette(body.data.palette, body.data.foreground, body.data.background);
+    return { ok: true, report };
+  });
+
+  const webMcp = new WebMcpBridge();
+
+  webMcp.registerTool({
+    name: "get_architecture_recipe",
+    description: "端到端技术栈架构链路配方查询",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string", description: "架构目标或技术栈关键词" } },
+      required: ["query"],
+    },
+  }, (args) => findMatchingArchitectureRecipe(String(args.query ?? "")));
+
+  webMcp.registerTool({
+    name: "compare_technologies",
+    description: "结构化技术选型对比与裁决矩阵",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string", description: "对比查询，如 react vs vue" } },
+      required: ["query"],
+    },
+  }, (args) => parseTechComparisonQuery(String(args.query ?? "")));
+
+  webMcp.registerTool({
+    name: "evaluate_developer_intent",
+    description: "开发者输入技术意图原地推测计算",
+    inputSchema: {
+      type: "object",
+      properties: { input: { type: "string", description: "技术文本（JWT/Cron/Curl/颜色/时间戳）" } },
+      required: ["input"],
+    },
+  }, (args) => parseSpeculativeIntent(String(args.input ?? "")) ?? { matched: false });
+
+  webMcp.registerTool({
+    name: "analyze_color_harmony",
+    description: "UI 调色板美学与 WCAG 2.1 对比度审计",
+    inputSchema: {
+      type: "object",
+      properties: {
+        palette: { type: "array", items: { type: "string" }, description: "调色板颜色列表" },
+        foreground: { type: "string", description: "前景文字色" },
+        background: { type: "string", description: "背景色" },
+      },
+      required: ["palette"],
+    },
+  }, (args) => analyzeColorPalette(
+    Array.isArray(args.palette) ? args.palette as string[] : ["#3b82f6"],
+    typeof args.foreground === "string" ? args.foreground : "#ffffff",
+    typeof args.background === "string" ? args.background : "#0f172a"
+  ));
+
+  webMcp.registerTool({
+    name: "find_tech_path",
+    description: "技术栈知识图谱寻路演进链路",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "起始技术" },
+        to: { type: "string", description: "目标技术" },
+      },
+      required: ["from", "to"],
+    },
+  }, (args) => findShortestTechPath(String(args.from ?? ""), String(args.to ?? ""), PRESET_TECH_GRAPH));
+
+  webMcp.registerTool({
+    name: "analyze_stack_compatibility",
+    description: "技术选型协同契合度诊断与组件补齐建议",
+    inputSchema: {
+      type: "object",
+      properties: {
+        techs: { type: "array", items: { type: "string" }, description: "已选技术列表" },
+      },
+      required: ["techs"],
+    },
+  }, (args) => analyzeStackCompatibility(
+    Array.isArray(args.techs) ? args.techs.map(String) : [],
+    PRESET_TECH_GRAPH
+  ));
+
+  webMcp.registerTool({
+    name: "list_categories",
+    description: "获取全部导航类目清单",
+    inputSchema: { type: "object", properties: {} },
+  }, async () => ctx.repo.listCategories());
+
+  webMcp.registerTool({
+    name: "get_federated_recommendations",
+    description: "客户端本地差分隐私 (LDP Laplace) 联邦协同推荐排序",
+    inputSchema: {
+      type: "object",
+      properties: {
+        localVector: { type: "array", items: { type: "number" }, description: "本地私有偏好向量" },
+        globalVector: { type: "array", items: { type: "number" }, description: "脱敏群体趋势向量" },
+        candidates: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              name: { type: "string" },
+              featureVector: { type: "array", items: { type: "number" } },
+            },
+            required: ["id", "name", "featureVector"],
+          },
+          description: "候选推荐列表",
+        },
+        personalWeight: { type: "number", description: "本地偏好权重占比" },
+        privatize: { type: "boolean", description: "是否差分隐私加噪" },
+        epsilon: { type: "number", description: "隐私预算" },
+      },
+      required: ["localVector", "candidates"],
+    },
+  }, (args) => {
+    const localVec = Array.isArray(args.localVector) ? (args.localVector as unknown[]).map(Number) : [1, 0];
+    const globalVec = Array.isArray(args.globalVector) ? (args.globalVector as unknown[]).map(Number) : localVec.map(() => 0);
+    const candidates = Array.isArray(args.candidates) ? args.candidates as any[] : [];
+    const personalWeight = typeof args.personalWeight === "number" ? args.personalWeight : 0.6;
+    const privatize = Boolean(args.privatize);
+    const epsilon = typeof args.epsilon === "number" && args.epsilon > 0 ? args.epsilon : 1.0;
+    const results = rankItemsWithPrivacy(localVec, globalVec, candidates, personalWeight);
+    const privatized = privatize ? privatizeVector(localVec, epsilon) : undefined;
+    return {
+      count: results.length,
+      recommendations: results,
+      privacy: privatize ? { epsilon, privatizedVector: privatized } : undefined,
+    };
+  });
+
+  webMcp.registerTool({
+    name: "compile_speculation_rules",
+    description: "编译原生 W3C Speculation Rules 预渲染/预取规则负载与 HTML 标签",
+    inputSchema: {
+      type: "object",
+      properties: {
+        candidates: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              url: { type: "string" },
+              confidence: { type: "number" },
+              predictedArrivalMs: { type: "number" },
+            },
+            required: ["url", "confidence", "predictedArrivalMs"],
+          },
+        },
+        prerenderConfidenceThreshold: { type: "number" },
+        prefetchConfidenceThreshold: { type: "number" },
+        maxPrerenderCount: { type: "number" },
+        maxPrefetchCount: { type: "number" },
+      },
+      required: ["candidates"],
+    },
+  }, (args) => {
+    const candidates = Array.isArray(args.candidates) ? args.candidates as any[] : [];
+    const payload = compileSpeculationRules(candidates, {
+      prerenderConfidenceThreshold: typeof args.prerenderConfidenceThreshold === "number" ? args.prerenderConfidenceThreshold : 0.82,
+      prefetchConfidenceThreshold: typeof args.prefetchConfidenceThreshold === "number" ? args.prefetchConfidenceThreshold : 0.45,
+      maxPrerenderCount: typeof args.maxPrerenderCount === "number" ? args.maxPrerenderCount : 2,
+      maxPrefetchCount: typeof args.maxPrefetchCount === "number" ? args.maxPrefetchCount : 5,
+    });
+    return {
+      hasRules: Boolean(payload),
+      rules: payload,
+      script: payload ? renderSpeculationRulesScript(payload) : "",
+      fallbackTags: payload ? generateFallbackLinkTags(payload) : [],
+    };
+  });
+
+  webMcp.registerTool({
+    name: "synthesize_agent_tool",
+    description: "动态将外部 REST 端点、站点检索动作或 OpenAPI 规范合成为具备 SSRF 防护的 WebMCP 智能体工具",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["rest", "site_search", "openapi"] },
+        restSpec: { type: "object" },
+        siteSearchSpec: { type: "object" },
+        openApiSpec: { type: "object" },
+      },
+    },
+  }, (args) => {
+    const kind = args.kind ?? "rest";
+    if (kind === "site_search" && args.siteSearchSpec) {
+      const syn = synthesizeSiteSearchTool(args.siteSearchSpec as any);
+      return { kind: "site_search", tool: syn.definition };
+    }
+    if (kind === "openapi" && args.openApiSpec) {
+      const specs = parseOpenApiToSpecs(args.openApiSpec as MinimalOpenApiSpec);
+      return { kind: "openapi", count: specs.length, tools: specs.map((s) => synthesizeRestTool(s).definition) };
+    }
+    if (args.restSpec) {
+      const syn = synthesizeRestTool(args.restSpec as any);
+      return { kind: "rest", tool: syn.definition };
+    }
+    return { kind: "unknown", message: "缺少配置" };
+  });
+
+  webMcp.registerTool({
+    name: "exchange_p2p_mesh",
+    description: "通过无中心 WebRTC / DataChannel 网格消息协议交换多端书签 CRDT 增量",
+    inputSchema: {
+      type: "object",
+      properties: {
+        nodeId: { type: "string" },
+        message: { type: "object" },
+      },
+      required: ["nodeId", "message"],
+    },
+  }, (args) => {
+    const nodeId = String(args.nodeId ?? "node_anon");
+    const msg = (args.message ?? {}) as P2PMessage<any>;
+    const node = new P2PMeshNode(nodeId);
+    const outgoing = node.handleIncomingMessage(msg);
+    return {
+      nodeId,
+      receivedType: msg.type,
+      peerState: node.getPeer(msg.senderId)?.state ?? "READY",
+      outgoingResponse: outgoing,
+      vectorClock: node.store.getVectorClock(),
+    };
+  });
+
+  /**
+   * Next-Gen 7.0 浏览器端 Model Context Protocol (WebMCP) 标准 HTTP JSON-RPC 2.0 端点
+   */
+  app.post("/api/mcp", { config: { scope: "public" } }, async (req, reply) => {
+    const rpcRes = await webMcp.handleRpc(req.body as JsonRpcRequest);
+    return rpcRes;
+  });
+
   /* --------------------- 收藏夹（终端用户） --------------------- */
 
   /**
@@ -1015,6 +1458,314 @@ export async function buildServer(ctx: AppContext) {
     }
   });
 
+  /**
+   * 洛伦兹/庞加莱双曲空间平替推理端点（Hyperbolic Alternative Inference）
+   * 结合真实 BGE 语义向量（或标签/类目特征降级投影）计算双曲测地线距离与同层级平替得分。
+   */
+  app.get("/api/rank/alternatives/:siteId", { config: { scope: "public" } }, async (req, reply) => {
+    const { siteId } = req.params as { siteId: string };
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Number(q.limit) || 6, 20);
+
+    const targetSite = await ctx.repo.getSite(siteId);
+    if (!targetSite) {
+      reply.code(404);
+      return { error: "站点不存在" };
+    }
+
+    try {
+      // 优先尝试真实向量召回 + 洛伦兹双曲流形重排
+      if (ctx.embedding && ctx.vectors) {
+        const vec = await ctx.repo.getEmbedding(siteId);
+        if (vec) {
+          const matches = await ctx.vectors.search(vec, Math.max(limit * 3, 24));
+          const targetBall = clampToBall(Array.from(vec.slice(0, 16)).map((v) => v * 0.6));
+          const targetLorentz = poincareToLorentz(targetBall);
+
+          const scored = [];
+          for (const m of matches) {
+            if (m.siteId === siteId) continue;
+            const candSite = await ctx.repo.getSite(m.siteId);
+            if (!candSite || candSite.status === "broken") continue;
+            const candVec = await ctx.repo.getEmbedding(m.siteId);
+            const candBall = candVec
+              ? clampToBall(Array.from(candVec.slice(0, 16)).map((v) => v * 0.6))
+              : targetBall.map((v, idx) => v * (idx % 2 === 0 ? 0.85 : 0.9));
+            const candLorentz = poincareToLorentz(candBall);
+            const lDist = lorentzDistance(targetLorentz, candLorentz);
+            const altScore = computeHyperbolicAlternativeScore(targetBall, candBall);
+            scored.push({
+              site: candSite,
+              geodesicDistance: Number(lDist.toFixed(4)),
+              alternativeScore: altScore,
+              sameCategory: candSite.categoryId === targetSite.categoryId,
+            });
+          }
+          scored.sort((a, b) => b.alternativeScore - a.alternativeScore);
+          return {
+            hits: scored.slice(0, limit),
+            manifold: "lorentz-hyperboloid",
+            semanticAvailable: true,
+          };
+        }
+      }
+
+      // 启发式双曲特征投影兜底（无本地向量时按同分类 + 标签 Jaccard 构造双曲坐标）
+      const allSites = await ctx.repo.listSites({ limit: 200 });
+      const targetTags = new Set(targetSite.tags ?? []);
+      const fallbackHits = allSites
+        .filter((s) => s.id !== siteId && s.status !== "broken")
+        .map((cand) => {
+          const candTags = new Set(cand.tags ?? []);
+          let overlap = 0;
+          for (const t of targetTags) if (candTags.has(t)) overlap++;
+          const union = new Set([...targetTags, ...candTags]).size || 1;
+          const jaccard = overlap / union;
+          const catMatch = cand.categoryId === targetSite.categoryId ? 1 : 0;
+
+          const uBall = [0.45, 0.35, 0.25];
+          const vBall = [
+            0.45 + (1 - catMatch) * 0.25,
+            0.35 + (1 - jaccard) * 0.3,
+            0.25,
+          ];
+          const lDist = lorentzDistance(poincareToLorentz(uBall), poincareToLorentz(vBall));
+          const altScore = computeHyperbolicAlternativeScore(uBall, vBall);
+          return {
+            site: cand,
+            geodesicDistance: Number(lDist.toFixed(4)),
+            alternativeScore: Number((altScore + catMatch * 0.15 + jaccard * 0.2).toFixed(4)),
+            sameCategory: Boolean(catMatch),
+          };
+        })
+        .sort((a, b) => b.alternativeScore - a.alternativeScore)
+        .slice(0, limit);
+
+      return {
+        hits: fallbackHits,
+        manifold: "lorentz-heuristic",
+        semanticAvailable: false,
+      };
+    } catch {
+      return { hits: [], manifold: "none", semanticAvailable: false };
+    }
+  });
+
+  /** 在线 Discounted-LinUCB 检索模型状态探针 */
+  app.get("/api/search/linucb", { config: { scope: "public" } }, async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    return ctx.search.getLinUCBStatus(q.q || "react");
+  });
+
+  /**
+   * 客户端本地差分隐私 (Local Differential Privacy, LDP Laplace) 联邦协同推荐排序端点
+   */
+  app.post("/api/rank/federated", { config: { scope: "public" } }, async (req, reply) => {
+    const body = z.object({
+      localVector: z.array(z.number()),
+      globalVector: z.array(z.number()).optional(),
+      candidates: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        featureVector: z.array(z.number()),
+      })).optional(),
+      personalWeight: z.number().min(0).max(1).default(0.6),
+      privatize: z.boolean().default(false),
+      epsilon: z.number().positive().default(1.0),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    let candidates = body.data.candidates;
+    if (!candidates || candidates.length === 0) {
+      const sites = await ctx.repo.listSites({ limit: 30 });
+      const dim = body.data.localVector.length || 4;
+      candidates = sites.map((s, idx) => ({
+        id: s.id,
+        name: s.title,
+        featureVector: Array.from({ length: dim }, (_, i) => Math.round((Math.sin(idx + i + 1) * 0.5 + 0.5) * 100) / 100),
+      }));
+    }
+
+    const globalVec = body.data.globalVector ?? body.data.localVector.map(() => 0.5);
+    const results = rankItemsWithPrivacy(
+      body.data.localVector,
+      globalVec,
+      candidates,
+      body.data.personalWeight
+    );
+
+    const privatized = body.data.privatize ? privatizeVector(body.data.localVector, body.data.epsilon) : undefined;
+    return {
+      ok: true,
+      count: results.length,
+      recommendations: results,
+      privacy: body.data.privatize ? { epsilon: body.data.epsilon, privatizedVector: privatized } : undefined,
+    };
+  });
+
+  /**
+   * 原生 W3C Speculation Rules 预渲染与预取规则编译器端点
+   */
+  app.post("/api/speculation/rules", { config: { scope: "public" } }, async (req, reply) => {
+    const body = z.object({
+      candidates: z.array(z.object({
+        url: z.string(),
+        confidence: z.number().min(0).max(1),
+        predictedArrivalMs: z.number().nonnegative(),
+      })).min(1),
+      prerenderConfidenceThreshold: z.number().min(0).max(1).optional(),
+      prefetchConfidenceThreshold: z.number().min(0).max(1).optional(),
+      maxPrerenderCount: z.number().int().min(1).max(5).optional(),
+      maxPrefetchCount: z.number().int().min(1).max(10).optional(),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    const payload = compileSpeculationRules(body.data.candidates, {
+      prerenderConfidenceThreshold: body.data.prerenderConfidenceThreshold,
+      prefetchConfidenceThreshold: body.data.prefetchConfidenceThreshold,
+      maxPrerenderCount: body.data.maxPrerenderCount,
+      maxPrefetchCount: body.data.maxPrefetchCount,
+    });
+
+    return {
+      ok: true,
+      hasRules: Boolean(payload),
+      rules: payload,
+      script: payload ? renderSpeculationRulesScript(payload) : "",
+      fallbackTags: payload ? generateFallbackLinkTags(payload) : [],
+    };
+  });
+
+  /**
+   * 动态 WebMCP 智能体工具合成器端点 (支持 REST 单端点、站点检索动作与 OpenAPI 规格合成)
+   */
+  app.post("/api/tools/synthesize", { config: { scope: "public" } }, async (req, reply) => {
+    const body = z.object({
+      kind: z.enum(["rest", "site_search", "openapi"]).default("rest"),
+      restSpec: z.object({
+        name: z.string(),
+        description: z.string(),
+        url: z.string(),
+        method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).default("GET"),
+        headers: z.record(z.string()).optional(),
+        parameters: z.array(z.object({
+          name: z.string(),
+          type: z.enum(["string", "number", "boolean"]),
+          description: z.string().optional(),
+          required: z.boolean().optional(),
+          in: z.enum(["query", "path", "body", "header"]),
+          default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+        })).optional(),
+        bodyType: z.enum(["json", "form"]).optional(),
+      }).optional(),
+      siteSearchSpec: z.object({
+        siteId: z.string(),
+        siteName: z.string(),
+        searchUrlTemplate: z.string().optional(),
+        apiEndpoint: z.string().optional(),
+        category: z.string().optional(),
+      }).optional(),
+      openApiSpec: z.record(z.unknown()).optional(),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    if (body.data.kind === "site_search" && body.data.siteSearchSpec) {
+      const syn = synthesizeSiteSearchTool(body.data.siteSearchSpec);
+      webMcp.registerTool(syn.definition, (p) => syn.handler(p));
+      return {
+        ok: true,
+        kind: "site_search",
+        tool: syn.definition,
+        registered: true,
+      };
+    }
+
+    if (body.data.kind === "openapi" && body.data.openApiSpec) {
+      const specs = parseOpenApiToSpecs(body.data.openApiSpec as MinimalOpenApiSpec);
+      const tools = specs.map((s) => {
+        const syn = synthesizeRestTool(s);
+        webMcp.registerTool(syn.definition, (p) => syn.handler(p));
+        return syn.definition;
+      });
+      return {
+        ok: true,
+        kind: "openapi",
+        count: tools.length,
+        tools,
+        registered: true,
+      };
+    }
+
+    if (body.data.restSpec) {
+      const syn = synthesizeRestTool(body.data.restSpec);
+      webMcp.registerTool(syn.definition, (p) => syn.handler(p));
+      return {
+        ok: true,
+        kind: "rest",
+        tool: syn.definition,
+        registered: true,
+      };
+    }
+
+    reply.code(400);
+    return { error: "缺少 restSpec、siteSearchSpec 或 openApiSpec 有效配置" };
+  });
+
+  /**
+   * P2P 网格信令与去中心化 WebRTC 状态协商端点 (P2P Mesh Signaling & Consensus Broker)
+   */
+  const p2pBrokerNodes = new Map<string, P2PMeshNode>();
+
+  app.post("/api/p2p/signal", { config: { scope: "public" } }, async (req, reply) => {
+    const body = z.object({
+      nodeId: z.string().min(1),
+      message: z.object({
+        type: z.enum(["HELLO", "SYNC_REQUEST", "DELTA_BATCH", "ACK", "HEARTBEAT"]),
+        senderId: z.string().min(1),
+        targetId: z.string().optional(),
+        seq: z.number().int().nonnegative(),
+        timestamp: z.number().int().positive(),
+        payload: z.unknown(),
+      }),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    let node = p2pBrokerNodes.get(body.data.nodeId);
+    if (!node) {
+      node = new P2PMeshNode(body.data.nodeId);
+      p2pBrokerNodes.set(body.data.nodeId, node);
+    }
+
+    const outgoing = node.handleIncomingMessage(body.data.message as P2PMessage<any>);
+    const peer = node.getPeer(body.data.message.senderId);
+
+    return {
+      ok: true,
+      nodeId: body.data.nodeId,
+      receivedType: body.data.message.type,
+      peerState: peer?.state ?? "READY",
+      outgoingResponse: outgoing,
+      vectorClock: node.store.getVectorClock(),
+      activePeers: node.listPeers().length,
+    };
+  });
+
   /* ------------------------ 搜索历史 ------------------------ */
 
   app.get("/api/search-history", async (req) => {
@@ -1085,6 +1836,101 @@ export async function buildServer(ctx: AppContext) {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     await ctx.repo.deleteUserVault(identity);
+    return { ok: true };
+  });
+
+  /* --------------------- CRDT 零冲突操作日志漫游网络 --------------------- */
+
+  /**
+   * 拉取当前身份的 CRDT 操作日志与最新折叠状态
+   */
+  app.get("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    const crdtRecord = await ctx.repo.getUserVault("crdt:" + identity);
+    let serverOps: CRDTOperation[] = [];
+    if (crdtRecord?.payload) {
+      try {
+        const parsed = JSON.parse(crdtRecord.payload) as { operations?: CRDTOperation[] };
+        if (Array.isArray(parsed.operations)) {
+          serverOps = parsed.operations;
+        }
+      } catch { /* 容错 */ }
+    }
+    const state = reduceOperationsToState(serverOps);
+    return { ok: true, operations: serverOps, state };
+  });
+
+  /**
+   * 提交本地原子操作日志，与云端合流、压缩并返回最新全局状态
+   */
+  app.post("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    const body = z.object({
+      operations: z.array(z.object({
+        id: z.string(),
+        type: z.enum([
+          "SET_CATEGORY_PIN",
+          "REORDER_CATEGORIES",
+          "PIN_SITE_IN_CATEGORY",
+          "UNPIN_SITE_IN_CATEGORY",
+          "UPSERT_CUSTOM_CATEGORY",
+          "DELETE_CUSTOM_CATEGORY",
+          "UPSERT_CUSTOM_SITE",
+          "DELETE_CUSTOM_SITE",
+        ]),
+        entityId: z.string(),
+        payload: z.unknown(),
+        timestamp: z.number(),
+        clientId: z.string(),
+      })).max(200),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    const crdtKey = "crdt:" + identity;
+    const existing = await ctx.repo.getUserVault(crdtKey);
+    let serverOps: CRDTOperation[] = [];
+    if (existing?.payload) {
+      try {
+        const parsed = JSON.parse(existing.payload) as { operations?: CRDTOperation[] };
+        if (Array.isArray(parsed.operations)) {
+          serverOps = parsed.operations;
+        }
+      } catch { /* 容错 */ }
+    }
+
+    const merged = mergeOperationLogs(serverOps, body.data.operations as CRDTOperation[]);
+    const finalOps = merged.length > 100 ? compactOperationLogs(merged) : merged;
+    const reduced = reduceOperationsToState(finalOps);
+
+    await ctx.repo.saveUserVault(crdtKey, JSON.stringify({
+      version: 1,
+      operations: finalOps,
+      state: reduced,
+      updatedAt: Date.now(),
+    }));
+
+    return {
+      ok: true,
+      operations: finalOps,
+      state: reduced,
+      mergedCount: body.data.operations.length,
+      totalCount: finalOps.length,
+    };
+  });
+
+  /**
+   * 清除 CRDT 漫游日志
+   */
+  app.delete("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    await ctx.repo.deleteUserVault("crdt:" + identity);
     return { ok: true };
   });
 
@@ -1414,6 +2260,9 @@ export async function buildServer(ctx: AppContext) {
       siteId: z.string().optional(),
       query: z.string().optional(),
       categoryId: z.string().optional(),
+      channel: z.enum(["exact", "fts", "pinyin", "semantic", "personal"]).optional(),
+      dwellSeconds: z.number().min(0).max(3600).optional(),
+      interactionType: z.enum(["click", "copy", "bounce"]).optional(),
       /** 身份标识（登录 userId 或匿名 anonId），用于归属画像聚合 */
       userId: z.string().max(64).optional(),
       anonId: z.string().max(64).optional(),
@@ -1428,6 +2277,17 @@ export async function buildServer(ctx: AppContext) {
     });
     if (body.data.kind === "click" && body.data.siteId) {
       await ctx.repo.bumpVisit(body.data.siteId).catch(() => undefined);
+    }
+    // 在线强化学习闭环：若带有搜索词，实时反馈更新 Discounted-LinUCB 通道权重
+    if (body.data.query && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "dismiss")) {
+      const targetChannel: RetrievalChannel = body.data.channel ?? "exact";
+      const explicitReward =
+        body.data.kind === "favorite" ? 2.0 : body.data.kind === "dismiss" ? -0.5 : undefined;
+      ctx.search.recordFeedback(targetChannel, body.data.query, {
+        reward: explicitReward,
+        dwellSeconds: body.data.dwellSeconds,
+        interactionType: body.data.interactionType,
+      });
     }
     // 行为变化 -> 刷新个性化画像（节流 60s，失败静默）
     if (identity && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "unfavorite")) {

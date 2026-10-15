@@ -170,7 +170,7 @@ export function parseNetscapeBookmarksHtml(htmlString: string): ParsedBookmarkFo
       const iconMatch = token.match(/icon=["']([^"']+)["']/i)
       const addDateMatch = token.match(/add_date=["']([^"']+)["']/i)
 
-      let href = hrefMatch ? hrefMatch[1] : ''
+      const href = hrefMatch ? hrefMatch[1] : ''
       let title = ''
 
       // 提取标题

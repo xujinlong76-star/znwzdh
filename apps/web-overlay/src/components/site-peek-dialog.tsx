@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import type { NavigationSubItem, SiteAction, SiteRelation } from '@/types/navigation'
+import { useState, useEffect } from 'react'
+import type { NavigationSubItem, SiteAction } from '@/types/navigation'
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { SiteFavicon } from '@/components/site-favicon'
-import { ExternalLink, Star, ShieldCheck, Sparkles, Zap, ArrowRight, Eye, Code, Search } from 'lucide-react'
+import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -25,6 +25,30 @@ interface SitePeekDialogProps {
 export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps) {
   const [actionInputs, setActionInputs] = useState<Record<string, string>>({})
   const [showIframe, setShowIframe] = useState(false)
+  const [hyperbolicAlts, setHyperbolicAlts] = useState<Array<{
+    site: { id: string; title: string; url: string; description?: string }
+    geodesicDistance: number
+    alternativeScore: number
+  }>>([])
+
+  useEffect(() => {
+    if (!open || !item?.id) {
+      setHyperbolicAlts([])
+      return
+    }
+    let cancelled = false
+    fetch(`/api/hub/rank/alternatives/${encodeURIComponent(item.id)}?limit=4`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data && Array.isArray(data.hits)) {
+          setHyperbolicAlts(data.hits)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [open, item?.id])
 
   if (!item) return null
 
@@ -51,6 +75,7 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
               <div className="w-11 h-11 p-2 rounded-xl bg-muted/60 border border-border/60 shadow-xs flex-shrink-0 flex items-center justify-center">
                 <SiteFavicon
                   title={item.title}
+                  url={item.href}
                   icon={item.icon}
                   useDefaultIcon={item.useDefaultIcon}
                   className="w-full h-full object-contain"
@@ -179,6 +204,63 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                       if (!isSafeHttpUrl(rel.targetUrl)) return
                       window.open(rel.targetUrl, '_blank', 'noopener,noreferrer')
                     }}
+                  >
+                    <ExternalLink className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 巡检哨兵防劫持与死链安全告警横幅 */}
+        {item.health && item.health.ok === false && (
+          <div className="mt-3 p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/10 flex items-start gap-2.5 text-xs text-rose-600 dark:text-rose-400">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-semibold">安全哨兵告警：该站点当前响应异常或疑似失效</div>
+              <div className="text-muted-foreground">
+                系统后台可用性巡检检测到该外链响应超时或状态异常，建议优先使用下方为您实时推导的洛伦兹双曲平替站点。
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 洛伦兹双曲空间实时平替推荐 (Lorentz Hyperbolic Alternatives) */}
+        {hyperbolicAlts.length > 0 && (
+          <div className="mt-4 space-y-2.5">
+            <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <Orbit className="w-4 h-4 text-cyan-500" />
+                <span>洛伦兹双曲流形实时平替推导 (Lorentz Hyperboloid)</span>
+              </span>
+              <span className="text-[11px] font-mono text-cyan-600 dark:text-cyan-400">测地线度量</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {hyperbolicAlts.map((alt) => (
+                <div
+                  key={alt.site.id}
+                  className="flex items-start justify-between p-3 rounded-xl border border-border/60 bg-card hover:border-cyan-500/40 transition-all shadow-2xs group"
+                >
+                  <div className="space-y-1 min-w-0 pr-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold truncate group-hover:text-cyan-500 transition-colors">
+                        {alt.site.title}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-mono shrink-0">
+                        d_L={alt.geodesicDistance}
+                      </span>
+                    </div>
+                    {alt.site.description && (
+                      <p className="text-xs text-muted-foreground line-clamp-1">{alt.site.description}</p>
+                    )}
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 rounded-lg shrink-0"
+                    onClick={() => window.open(alt.site.url, '_blank', 'noopener,noreferrer')}
+                    title="访问双曲平替站点"
                   >
                     <ExternalLink className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
                   </Button>

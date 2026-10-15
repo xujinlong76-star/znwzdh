@@ -15,6 +15,7 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { ExternalLink, ArrowLeft, Copy, Check, Sparkles, Activity } from 'lucide-react'
 import { fetchSite, fetchSimilar, type HubSite } from '@/lib/navhub-api'
+import { SiteFavicon } from '@/components/site-favicon'
 
 export default function SiteDetailPage() {
   const params = useParams<{ id: string }>()
@@ -90,18 +91,12 @@ export default function SiteDetailPage() {
         <div className="rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-8 shadow-xs space-y-6">
           <div className="flex flex-col sm:flex-row items-start gap-5">
             <div className="flex-shrink-0 w-16 h-16 rounded-2xl bg-muted/60 border border-border/60 p-2 flex items-center justify-center overflow-hidden shadow-2xs">
-              {site.iconKey ? (
-                <img
-                  src={site.iconKey}
-                  alt={site.title}
-                  className="w-full h-full object-contain rounded-xl"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                />
-              ) : (
-                <span className="text-2xl font-extrabold text-muted-foreground font-mono">
-                  {site.title.slice(0, 1)}
-                </span>
-              )}
+              <SiteFavicon
+                title={site.title}
+                url={site.url}
+                icon={site.iconKey ?? undefined}
+                className="w-full h-full object-contain rounded-xl"
+              />
             </div>
             <div className="flex-1 min-w-0 space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -210,18 +205,12 @@ export default function SiteDetailPage() {
                 >
                   <a href={s.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3">
                     <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-muted/60 border border-border/50 p-1 flex items-center justify-center overflow-hidden">
-                      {s.iconKey ? (
-                        <img
-                          src={s.iconKey}
-                          alt=""
-                          className="w-full h-full object-contain rounded"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                        />
-                      ) : (
-                        <span className="text-xs font-bold text-muted-foreground font-mono">
-                          {s.title.slice(0, 1)}
-                        </span>
-                      )}
+                      <SiteFavicon
+                        title={s.title}
+                        url={s.url}
+                        icon={s.iconKey ?? undefined}
+                        className="w-full h-full object-contain rounded"
+                      />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-xs sm:text-sm font-semibold truncate group-hover:text-primary transition-colors">

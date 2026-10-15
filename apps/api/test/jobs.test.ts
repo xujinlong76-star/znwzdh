@@ -250,4 +250,25 @@ describe("个性化画像服务", () => {
     expect(profile!.topCategories).toEqual([]);
     expect(profile!.searchCount).toBe(0);
   });
+
+  it("site_self_healing 任务执行自愈诊断并落审计", async () => {
+    const site = await ctx.repo.createSite({
+      url: "https://healing-test.example.com",
+      title: "自愈测试站",
+      categoryId: "ai-cat",
+      status: "broken",
+    });
+
+    const jobId = await ctx.repo.enqueueJob("site_self_healing", { siteId: site.id });
+    const runner = new JobRunner(ctx, { intervalMs: 1000 });
+    await runner.tick();
+
+    const jobs = await ctx.repo.listJobs(undefined, 10);
+    const job = jobs.find((j) => j.id === jobId);
+    expect(job?.status).toBe("done");
+
+    const audit = ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE action = ? AND target = ?")
+      .get("site.heal", site.id) as { c: number };
+    expect(Number(audit.c)).toBeGreaterThan(0);
+  });
 });

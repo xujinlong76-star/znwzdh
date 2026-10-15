@@ -1,6 +1,5 @@
 'use client'
 
-import { Badge } from '@/components/ui/badge'
 import { Sparkles, Code2, Palette, Bot, Compass, Coffee } from 'lucide-react'
 
 export type WorkspaceId = 'all' | 'dev' | 'design' | 'ai' | 'efficiency'

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Zap, CornerDownLeft, Sparkles } from 'lucide-react'
+import { Zap, CornerDownLeft } from 'lucide-react'
 
 export function SpeculativeTerminalWidget() {
   const [expr, setExpr] = useState('2^10 * 8')

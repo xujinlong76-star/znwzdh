@@ -11,13 +11,14 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { hashSiteId } from "@navhub/store";
 import { siteEmbeddingText } from "@navhub/ai";
+import { resolveSiteIcon } from "@navhub/core";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
 import { DEFAULT_SITE_CONFIG, writeSiteConfig } from "./storage.ts";
 
 interface SeedShape {
   categories: Array<{ id: string; title: string; icon?: string; description?: string }>;
-  sites: Array<{ url: string; title: string; description: string; categoryId: string; tags?: string[] }>;
+  sites: Array<{ url: string; title: string; description: string; categoryId: string; tags?: string[]; icon?: string }>;
   collections?: Array<{ slug: string; title: string; kind: string; description: string; sites: string[] }>;
 }
 
@@ -87,6 +88,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
     const site = await ctx.repo.createSite({
       url: s.url, title: s.title, description: s.description,
       categoryId: s.categoryId, tags: s.tags ?? [], source: "seed",
+      iconKey: s.icon ?? resolveSiteIcon(s.url, s.title),
     });
     sites++;
 

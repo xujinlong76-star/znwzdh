@@ -636,6 +636,18 @@ describe("中文编码往返（曾因写请求编码被压成问号）", () => {
     expect(got.navigationItems[0].title).toBe("视频导航·中文");
   });
 
+  it("resource-metadata.json 未写入过时返回 {} 而不是 null（调用方会直接点属性）", async () => {
+    // 这条与 videos.json 的语义刻意相反：
+    // videos 的消费者是页面（可在 null 时回退），而 resource-metadata 的消费者
+    // 是 /api/resource，它会执行 metadata.metadata.unshift(...)，
+    // 返回 null 会直接抛错。因此这里保持 {} 并依赖前端基线兜底。
+    const res = await app.inject({ method: "GET", url: "/api/storage?path=src/navsphere/content/resource-metadata.json" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).not.toBeNull();
+    expect(typeof body).toBe("object");
+  });
+
   it("未写入过的未知内容文件返回 null（而不是 {}）", async () => {
     // null 与 {} 语义不同：{} 会被前端当成"中枢里存了空对象"而告警，
     // null 表示"该文件从未写入过"，前端据此静默回退到构建期基线。
@@ -1262,5 +1274,362 @@ describe("响应缓存头", () => {
     // 搜索命中 zero-branch 的属性不受影响
     const search = await app.inject({ method: "GET", url: "/api/search?q=" + encodeURIComponent("天气") });
     expect(search.headers["cache-control"]).toMatch(/^private, max-age=20$/);
+  });
+});
+
+describe("次世代架构配方、选型对比与确定性 Favicon 端点", () => {
+  it("GET /api/recipes 支持空查询与关键词子图匹配", async () => {
+    const listRes = await app.inject({ method: "GET", url: "/api/recipes" });
+    expect(listRes.statusCode).toBe(200);
+    const listJson = listRes.json();
+    expect(Array.isArray(listJson.items)).toBe(true);
+    expect(listJson.items.length).toBeGreaterThanOrEqual(1);
+
+    const matchRes = await app.inject({ method: "GET", url: "/api/recipes?q=" + encodeURIComponent("协同编辑") });
+    expect(matchRes.statusCode).toBe(200);
+    const matchJson = matchRes.json();
+    expect(matchJson.item).toBeTruthy();
+    expect(matchJson.item.id).toBe("collaborative-editor");
+    expect(matchJson.item.layers.length).toBeGreaterThan(0);
+  });
+
+  it("GET /api/comparisons 解析技术对决语法并返回结构化矩阵", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/comparisons?q=" + encodeURIComponent("react vs vue") });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.matrix).toBeTruthy();
+    expect(json.matrix.id).toBe("react-vs-vue");
+    expect(json.matrix.dimensions.length).toBeGreaterThan(0);
+    expect(typeof json.matrix.verdict).toBe("string");
+
+    const emptyRes = await app.inject({ method: "GET", url: "/api/comparisons" });
+    expect(emptyRes.statusCode).toBe(200);
+    expect(emptyRes.json().ok).toBe(false);
+  });
+
+  it("GET /api/favicon/:id 生成高质量确定性 SVG 矢量图标", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/favicon/site-github" });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("image/svg+xml");
+    expect(res.body).toContain("<svg");
+    expect(res.body).toContain("linearGradient");
+    expect(res.headers["cache-control"]).toContain("private, max-age=86400");
+  });
+
+  it("POST /api/sites/:id/heal 触发自动诊断并返回自愈报告与落审计", async () => {
+    const site = (await app.inject({
+      method: "POST", url: "/api/sites",
+      payload: { url: "https://broken-legacy.example.com", title: "失效站点", categoryId: "cat-ai" },
+    })).json();
+
+    const res = await app.inject({ method: "POST", url: "/api/sites/" + site.id + "/heal" });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.report).toBeTruthy();
+    expect(json.report.waybackFallbackUrl).toContain("web.archive.org");
+    expect(typeof json.report.recommendedAction).toBe("string");
+
+    const nonExist = await app.inject({ method: "POST", url: "/api/sites/no-such-site/heal" });
+    expect(nonExist.statusCode).toBe(404);
+  });
+
+  it("CRDT 本地优先协同漫游网络：多设备原子操作无损合流与状态收敛", async () => {
+    // 1. 无 identity 时返回 400
+    const noAuth = await app.inject({
+      method: "POST",
+      url: "/api/crdt/sync",
+      payload: { operations: [] },
+    });
+    expect(noAuth.statusCode).toBe(400);
+
+    // 2. 客户端 A 提交置顶与自定义类目
+    const clientAOps = [
+      {
+        id: "op_1_clientA",
+        type: "SET_CATEGORY_PIN",
+        entityId: "cat_dev",
+        payload: { isPinned: true },
+        timestamp: 1000,
+        clientId: "client_device_A",
+      },
+      {
+        id: "op_2_clientA",
+        type: "UPSERT_CUSTOM_CATEGORY",
+        entityId: "cat_ai_tools",
+        payload: { id: "cat_ai_tools", title: "AI 常用工具", items: [] },
+        timestamp: 1010,
+        clientId: "client_device_A",
+      },
+    ];
+
+    const resA = await app.inject({
+      method: "POST",
+      url: "/api/crdt/sync",
+      headers: { "x-anon-id": "anon_test_user_crdt" },
+      payload: { operations: clientAOps },
+    });
+    expect(resA.statusCode).toBe(200);
+    const jsonA = resA.json();
+    expect(jsonA.ok).toBe(true);
+    expect(jsonA.state.pinnedCategoryIds).toContain("cat_dev");
+    expect(jsonA.state.customCategories).toHaveLength(1);
+    expect(jsonA.state.customCategories[0].title).toBe("AI 常用工具");
+
+    // 3. 客户端 B 离线添加新站点到该类目并提交合流
+    const clientBOps = [
+      {
+        id: "op_3_clientB",
+        type: "UPSERT_CUSTOM_SITE",
+        entityId: "site_deepseek",
+        payload: {
+          categoryId: "cat_ai_tools",
+          site: { id: "site_deepseek", title: "DeepSeek", href: "https://chat.deepseek.com" },
+        },
+        timestamp: 1020,
+        clientId: "client_device_B",
+      },
+    ];
+
+    const resB = await app.inject({
+      method: "POST",
+      url: "/api/crdt/sync",
+      headers: { "x-anon-id": "anon_test_user_crdt" },
+      payload: { operations: clientBOps },
+    });
+    expect(resB.statusCode).toBe(200);
+    const jsonB = resB.json();
+    expect(jsonB.ok).toBe(true);
+    // 双方操作合并，既有 A 的类目又有 B 的站点
+    expect(jsonB.state.pinnedCategoryIds).toContain("cat_dev");
+    expect(jsonB.state.customCategories[0].items).toHaveLength(1);
+    expect(jsonB.state.customCategories[0].items[0].title).toBe("DeepSeek");
+
+    // 4. GET 查询已合流状态
+    const getRes = await app.inject({
+      method: "GET",
+      url: "/api/crdt/sync",
+      headers: { "x-anon-id": "anon_test_user_crdt" },
+    });
+    expect(getRes.statusCode).toBe(200);
+    const getJson = getRes.json();
+    expect(getJson.operations).toHaveLength(3);
+    expect(getJson.state.pinnedCategoryIds).toContain("cat_dev");
+
+    // 5. DELETE 清除
+    const delRes = await app.inject({
+      method: "DELETE",
+      url: "/api/crdt/sync",
+      headers: { "x-anon-id": "anon_test_user_crdt" },
+    });
+    expect(delRes.statusCode).toBe(200);
+  });
+
+  it("POST /api/design/harmony 调色板美学与 WCAG 2.1 对比度审计", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/design/harmony",
+      payload: {
+        palette: ["#0f172a", "#3b82f6", "#10b981"],
+        foreground: "#ffffff",
+        background: "#0f172a",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.report).toBeTruthy();
+    expect(json.report.wcagContrastRatio).toBeGreaterThan(4.5);
+    expect(["AAA", "AA"]).toContain(json.report.wcagPassLevel);
+    expect(json.report.harmonyScore).toBeGreaterThanOrEqual(50);
+  });
+
+  it("POST /api/mcp 浏览器端 JSON-RPC 2.0 WebMCP 协议网桥", async () => {
+    // 1. ping
+    const pingRes = await app.inject({
+      method: "POST",
+      url: "/api/mcp",
+      payload: { jsonrpc: "2.0", id: 1, method: "ping" },
+    });
+    expect(pingRes.statusCode).toBe(200);
+    const pingJson = pingRes.json();
+    expect(pingJson.result.status).toBe("pong");
+
+    // 2. tools/list
+    const listRes = await app.inject({
+      method: "POST",
+      url: "/api/mcp",
+      payload: { jsonrpc: "2.0", id: 2, method: "tools/list" },
+    });
+    expect(listRes.statusCode).toBe(200);
+    const listJson = listRes.json();
+    expect(listJson.result.tools.length).toBeGreaterThanOrEqual(4);
+    const toolNames = listJson.result.tools.map((t: { name: string }) => t.name);
+    expect(toolNames).toContain("navhub_echo");
+    expect(toolNames).toContain("get_architecture_recipe");
+    expect(toolNames).toContain("evaluate_developer_intent");
+
+    // 3. tools/call: navhub_echo
+    const callRes = await app.inject({
+      method: "POST",
+      url: "/api/mcp",
+      payload: {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "navhub_echo", arguments: { message: "hello-webmcp" } },
+      },
+    });
+    expect(callRes.statusCode).toBe(200);
+    const callJson = callRes.json();
+    expect(callJson.result.content[0].text).toContain("hello-webmcp");
+
+    // 4. tools/call: evaluate_developer_intent (秒级解析 cron)
+    const intentRes = await app.inject({
+      method: "POST",
+      url: "/api/mcp",
+      payload: {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: { name: "evaluate_developer_intent", arguments: { input: "0 0 * * *" } },
+      },
+    });
+    expect(intentRes.statusCode).toBe(200);
+    const intentJson = intentRes.json();
+    expect(intentJson.result.content[0].text).toContain("每天午夜 00:00 执行一次");
+  });
+
+  it("POST /api/rank/federated 客户端 LDP 差分隐私协同推荐排序", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/rank/federated",
+      payload: {
+        localVector: [1, 0, 1, 0],
+        globalVector: [0.5, 0.5, 0.5, 0.5],
+        candidates: [
+          { id: "site-ai", name: "AI Tool", featureVector: [1, 0, 1, 0] },
+          { id: "site-news", name: "News Site", featureVector: [0, 1, 0, 1] },
+        ],
+        personalWeight: 0.8,
+        privatize: true,
+        epsilon: 1.0,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.count).toBe(2);
+    expect(json.recommendations[0].itemId).toBe("site-ai");
+    expect(json.recommendations[0].score).toBeGreaterThan(json.recommendations[1].score);
+    expect(json.privacy.epsilon).toBe(1.0);
+    expect(json.privacy.privatizedVector).toHaveLength(4);
+
+    // 候选缺省时自动基于库内站点生成
+    const autoRes = await app.inject({
+      method: "POST",
+      url: "/api/rank/federated",
+      payload: {
+        localVector: [0.8, 0.2, 0.9, 0.1],
+      },
+    });
+    expect(autoRes.statusCode).toBe(200);
+    const autoJson = autoRes.json();
+    expect(autoJson.ok).toBe(true);
+    expect(autoJson.count).toBeGreaterThan(0);
+  });
+
+  it("POST /api/speculation/rules 原生 W3C Speculation Rules 预渲染编译器", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/speculation/rules",
+      payload: {
+        candidates: [
+          { url: "https://cursor.com", confidence: 0.92, predictedArrivalMs: 110 },
+          { url: "https://npmjs.com", confidence: 0.55, predictedArrivalMs: 280 },
+          { url: "https://example.com/admin/delete", confidence: 0.99, predictedArrivalMs: 40 }, // 高危拦截
+        ],
+        prerenderConfidenceThreshold: 0.8,
+        prefetchConfidenceThreshold: 0.5,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.hasRules).toBe(true);
+    expect(json.rules.prerender[0].urls).toEqual(["https://cursor.com"]);
+    expect(json.rules.prefetch[0].urls).toEqual(["https://npmjs.com"]);
+    expect(json.script).toContain("prerender");
+    expect(json.fallbackTags.length).toBe(2);
+    expect(json.fallbackTags[0]).toContain("rel=\"prerender\"");
+  });
+
+  it("POST /api/tools/synthesize 动态智能体工具合成与 WebMCP 实时挂载", async () => {
+    // 1. 合成站点站内检索动作
+    const siteRes = await app.inject({
+      method: "POST",
+      url: "/api/tools/synthesize",
+      payload: {
+        kind: "site_search",
+        siteSearchSpec: {
+          siteId: "mdn",
+          siteName: "MDN Web Docs",
+          searchUrlTemplate: "https://developer.mozilla.org/zh-CN/search?q={query}",
+          category: "文档",
+        },
+      },
+    });
+    expect(siteRes.statusCode).toBe(200);
+    const siteJson = siteRes.json();
+    expect(siteJson.ok).toBe(true);
+    expect(siteJson.registered).toBe(true);
+    expect(siteJson.tool.name).toBe("search_mdn");
+
+    // 2. 合成单端点 REST 工具
+    const restRes = await app.inject({
+      method: "POST",
+      url: "/api/tools/synthesize",
+      payload: {
+        kind: "rest",
+        restSpec: {
+          name: "get_package_version",
+          description: "获取特定 npm 包版本详情",
+          url: "https://registry.npmjs.org/{pkg}",
+          method: "GET",
+          parameters: [
+            { name: "pkg", type: "string", in: "path", required: true },
+          ],
+        },
+      },
+    });
+    expect(restRes.statusCode).toBe(200);
+    const restJson = restRes.json();
+    expect(restJson.ok).toBe(true);
+    expect(restJson.tool.name).toBe("get_package_version");
+  });
+
+  it("POST /api/p2p/signal P2P 网格信令与去中心化状态协商 Broker", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/p2p/signal",
+      payload: {
+        nodeId: "broker-node-primary",
+        message: {
+          type: "HELLO",
+          senderId: "client-peer-alpha",
+          seq: 1,
+          timestamp: Date.now(),
+          payload: { clock: { "client-peer-alpha": 2 }, siteCount: 8 },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.nodeId).toBe("broker-node-primary");
+    expect(json.receivedType).toBe("HELLO");
+    expect(json.peerState).toBe("SYNCING");
+    expect(json.outgoingResponse.type).toBe("SYNC_REQUEST");
   });
 });

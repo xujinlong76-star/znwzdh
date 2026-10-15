@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { searchSites, type HubSite } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
+import { SiteFavicon } from '@/components/site-favicon'
 
 export default function TagDetailPage() {
   const params = useParams<{ slug: string }>()
@@ -90,18 +91,12 @@ export default function TagDetailPage() {
                 <a href={site.url} target="_blank" rel="noopener noreferrer" className="block min-w-0">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-muted/60 border border-border/50 p-1 flex items-center justify-center overflow-hidden">
-                      {site.iconKey ? (
-                        <img
-                          src={site.iconKey}
-                          alt=""
-                          className="w-full h-full object-contain rounded"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                        />
-                      ) : (
-                        <span className="text-xs font-bold text-muted-foreground font-mono">
-                          {site.title.slice(0, 1)}
-                        </span>
-                      )}
+                      <SiteFavicon
+                        title={site.title}
+                        url={site.url}
+                        icon={site.iconKey ?? undefined}
+                        className="w-full h-full object-contain rounded"
+                      />
                     </div>
                     <div className="min-w-0 flex-1 pr-6">
                       <div className="text-sm font-semibold truncate group-hover:text-primary transition-colors">

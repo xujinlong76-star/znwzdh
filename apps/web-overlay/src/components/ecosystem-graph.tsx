@@ -105,6 +105,9 @@ export function EcosystemGraph() {
   const isDraggingRef = useRef(false)
   const dragStartRef = useRef({ x: 0, y: 0 })
 
+  const [edges, setEdges] = useState<GraphEdge[]>(DEFAULT_EDGES)
+  const [liveCount, setLiveCount] = useState(0)
+
   // 初始化带有圆周布局的节点坐标
   const [nodes, setNodes] = useState<GraphNode[]>(() => {
     const width = 900
@@ -124,6 +127,110 @@ export function EcosystemGraph() {
       }
     })
   })
+
+
+  // 动态对接中枢真实站点库并基于标签共现推导拓扑连线
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/hub/sites?limit=60')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return
+        const items = Array.isArray(data.items) ? data.items : Array.isArray(data.sites) ? data.sites : []
+        if (items.length === 0) return
+
+        const existingUrls = new Set(DEFAULT_NODES.map((n) => n.url.replace(/\/$/, '').toLowerCase()))
+        const dynamicNodes: GraphNode[] = []
+        const rawTagMap = new Map<string, string[]>()
+
+        for (const s of items) {
+          if (!s || !s.url || !s.title) continue
+          const normUrl = String(s.url).replace(/\/$/, '').toLowerCase()
+          if (existingUrls.has(normUrl)) continue
+          existingUrls.add(normUrl)
+
+          const catStr = `${s.categoryId || ''} ${(s.tags || []).join(' ')}`.toLowerCase()
+          const cat: GraphNode['category'] = catStr.includes('ai') || catStr.includes('模型')
+            ? 'ai'
+            : catStr.includes('design') || catStr.includes('设计') || catStr.includes('ui')
+              ? 'design'
+              : catStr.includes('效率') || catStr.includes('文档') || catStr.includes('笔记')
+                ? 'efficiency'
+                : 'dev'
+
+          const nodeId = `db_${s.id}`
+          dynamicNodes.push({
+            id: nodeId,
+            title: String(s.title).slice(0, 24),
+            url: String(s.url),
+            category: cat,
+            description: String(s.description || s.url),
+          })
+          if (Array.isArray(s.tags) && s.tags.length > 0) {
+            rawTagMap.set(nodeId, s.tags.map((t: any) => String(t).toLowerCase()))
+          }
+          if (dynamicNodes.length >= 24) break
+        }
+
+        if (dynamicNodes.length === 0) return
+
+        const allCombined = [...DEFAULT_NODES, ...dynamicNodes]
+        const width = 900
+        const height = 600
+        const cx = width / 2
+        const cy = height / 2
+
+        const positioned = allCombined.map((n, i) => {
+          const angle = (i / allCombined.length) * 2 * Math.PI
+          const r = 170 + ((i % 4) * 65)
+          return {
+            ...n,
+            x: cx + r * Math.cos(angle),
+            y: cy + r * Math.sin(angle),
+            vx: 0,
+            vy: 0,
+          }
+        })
+
+        // 基于共享标签与同分类自动推导动态关联边
+        const extraEdges: GraphEdge[] = []
+        for (let i = 0; i < dynamicNodes.length; i++) {
+          const a = dynamicNodes[i]!
+          const tagsA = rawTagMap.get(a.id) || []
+          // 与内置核心节点或其它动态节点建立连接
+          const matchPreset = DEFAULT_NODES.find((p) => p.category === a.category)
+          if (matchPreset) {
+            extraEdges.push({
+              source: a.id,
+              target: matchPreset.id,
+              type: 'ecosystem',
+              label: '同域生态',
+            })
+          }
+          for (let j = i + 1; j < dynamicNodes.length; j++) {
+            const b = dynamicNodes[j]!
+            const tagsB = rawTagMap.get(b.id) || []
+            const shared = tagsA.find((t) => tagsB.includes(t))
+            if (shared) {
+              extraEdges.push({
+                source: a.id,
+                target: b.id,
+                type: 'alternative',
+                label: `共享:${shared}`,
+              })
+            }
+          }
+        }
+
+        setNodes(positioned)
+        setEdges([...DEFAULT_EDGES, ...extraEdges])
+        setLiveCount(dynamicNodes.length)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // 简易力导引松弛算法（使得连接更舒展）
   useEffect(() => {
@@ -187,14 +294,14 @@ export function EcosystemGraph() {
   const filteredNodeIds = useMemo(() => new Set(filteredNodes.map((n) => n.id)), [filteredNodes])
 
   const visibleEdges = useMemo(() => {
-    return DEFAULT_EDGES.filter((e) => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target))
-  }, [filteredNodeIds])
+    return edges.filter((e) => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target))
+  }, [edges, filteredNodeIds])
 
   // 当前选中节点的所有关联
   const relatedEdges = useMemo(() => {
     if (!selectedNode) return []
-    return DEFAULT_EDGES.filter((e) => e.source === selectedNode.id || e.target === selectedNode.id)
-  }, [selectedNode])
+    return edges.filter((e) => e.source === selectedNode.id || e.target === selectedNode.id)
+  }, [edges, selectedNode])
 
   // 画布鼠标拖拽平移
   const handleMouseDown = (e: React.MouseEvent) => {

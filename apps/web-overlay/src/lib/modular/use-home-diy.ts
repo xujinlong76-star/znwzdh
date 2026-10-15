@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  sortCategoryItemsWithPinned,
   togglePinnedSiteInCategory,
   reorderCategoryToTarget,
   createLayoutHistory,
@@ -20,7 +19,6 @@ import {
 import {
   encryptGenericPayload,
   decryptGenericPayload,
-  type EncryptedPayloadEnvelope,
 } from '@/lib/vault'
 import { getIdentity } from '@/lib/identity'
 import { fetchCloudVault, saveCloudVault, deleteCloudVault } from '@/lib/navhub-api'
@@ -162,7 +160,7 @@ export function useHomeDIY() {
           }
         }
       }
-      let raw = localStorage.getItem(STORAGE_KEY)
+      const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) {
         // 尝试从 v2 迁移
         const v2Raw = localStorage.getItem(LEGACY_STORAGE_KEY_V2)
@@ -676,17 +674,20 @@ export function useHomeDIY() {
 
   // 跨分类重归类卡片 (Cross-Category Reclassification)
   const reclassifySite = useCallback((siteId: string, targetCategoryId: string) => {
-    persistConfig((prev) => {
-      const nextOverrides = { ...prev.siteCategoryOverrides, [siteId]: targetCategoryId };
-      return { ...prev, siteCategoryOverrides: nextOverrides, updatedAt: Date.now() };
-    });
-  }, [persistConfig]);
+    persistConfig((prev) => ({
+      ...prev,
+      siteCategoryOverrides: { ...prev.siteCategoryOverrides, [siteId]: targetCategoryId },
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
 
   const resetSiteCategoryOverrides = useCallback(() => {
-    persistConfig((prev) => {
-      return { ...prev, siteCategoryOverrides: {}, updatedAt: Date.now() };
-    });
-  }, [persistConfig]);
+    persistConfig((prev) => ({
+      ...prev,
+      siteCategoryOverrides: {},
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
 
   // 自定义壁纸与毛玻璃美学调节
   // 安全：入口即校验，非法直接置空（由 diy-presets 的白名单口径决定，避免脏数据入库）
@@ -703,15 +704,13 @@ export function useHomeDIY() {
   }, [persistConfig]);
 
   const setAestheticSliders = useCallback((blur: number, opacity: number) => {
-    persistConfig((prev) => {
-      return {
-        ...prev,
-        glassmorphismBlur: Math.min(30, Math.max(0, blur)),
-        cardOpacity: Math.min(1.0, Math.max(0.2, opacity)),
-        updatedAt: Date.now()
-      };
-    });
-  }, [persistConfig]);
+    persistConfig((prev) => ({
+      ...prev,
+      glassmorphismBlur: Math.min(30, Math.max(0, blur)),
+      cardOpacity: Math.min(1.0, Math.max(0.2, opacity)),
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
 
   // URL Hash 免登预设分享与即时加载
   const exportPresetToUrlHash = useCallback((): string => {
@@ -780,7 +779,7 @@ export function useHomeDIY() {
         glassmorphismBlur: check.config.glassmorphismBlur ?? prev.glassmorphismBlur,
         cardOpacity: check.config.cardOpacity ?? prev.cardOpacity,
         updatedAt: Date.now(),
-      }));
+      }))
       return true;
     } catch {
       return false;

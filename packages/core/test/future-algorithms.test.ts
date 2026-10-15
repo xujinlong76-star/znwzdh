@@ -24,6 +24,7 @@ import {
   lorentzToPoincare,
   KalmanFilter2D,
   determinePrefetchStrategy,
+  canonicalizeUrl,
   calculateShannonEntropy,
   hammingDistance64,
   auditPageHealth,
@@ -375,6 +376,18 @@ describe('前沿算法进阶改造测试套件', () => {
       expect(determinePrefetchStrategy({ effectiveType: '2g' })).toBe('none');
       expect(determinePrefetchStrategy({ effectiveType: '3g' })).toBe('dns-prefetch');
       expect(determinePrefetchStrategy({ effectiveType: '4g' })).toBe('preconnect');
+    });
+  });
+
+  describe('URL 规范化指纹清洗器 (canonicalizeUrl)', () => {
+    it('应当剥离 utm_*、spm、fbclid 等追踪参数并归一化域名与斜杠', () => {
+      expect(
+        canonicalizeUrl('HTTPS://Example.COM:443/docs/?utm_source=twitter&spm=a2c.123&lang=zh&fbclid=xyz')
+      ).toBe('https://example.com/docs?lang=zh');
+
+      expect(
+        canonicalizeUrl('https://trash-e2e.example.com/?utm_medium=social')
+      ).toBe('https://trash-e2e.example.com');
     });
   });
 });

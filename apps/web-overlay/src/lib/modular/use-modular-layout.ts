@@ -16,9 +16,6 @@ export interface Board {
   widgets: WidgetInstance[]
 }
 
-/** 兜底看板（无任何配置时的空态）：必须是常量，否则每次渲染都产生新引用 */
-const EMPTY_BOARD: Board = { id: 'default', name: '工作台', widgets: [] }
-
 interface StoredWorkspaceState {
   version: number
   activeBoardId: string
@@ -46,16 +43,9 @@ export function useModularLayout() {
   const boardsRef = useRef(boards)
   const historyRef = useRef(history)
   const futureRef = useRef(future)
-  /** 是否有尚未落盘的改动（决定卸载 flush 是否真的写存储） */
-  const dirtyRef = useRef(false)
-  /** activeBoardId 的 ref 镜像：事件处理器里要读最新值做「与当前比较」 */
-  const activeBoardIdRef = useRef(activeBoardId)
   useEffect(() => {
     boardsRef.current = boards
   }, [boards])
-  useEffect(() => {
-    activeBoardIdRef.current = activeBoardId
-  }, [activeBoardId])
   useEffect(() => {
     historyRef.current = history
   }, [history])
@@ -155,19 +145,6 @@ export function useModularLayout() {
     const handleExternalUpdate = () => {
       const loaded = loadWorkspaceFromStorage()
       if (!loaded) return
-      const prev = boardsRef.current
-      // 内容相同则跳过：持久化 effect 与外源刷新都写同一个 key，
-      // 无谓的 setState 会触发一次全量序列化写盘。
-      const same =
-        prev.length === loaded.boards.length &&
-        prev.every((b, i) => b === loaded.boards[i])
-      if (same && loaded.activeBoardId === activeBoardIdRef.current) return
-      // 外源刷新也要可撤销：否则它会静默冲掉本地正在进行的编辑且无法回退。
-      const newHistory = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), prev]
-      historyRef.current = newHistory
-      futureRef.current = []
-      setHistory(newHistory)
-      setFuture([])
       boardsRef.current = loaded.boards
       setBoards(loaded.boards)
       setActiveBoardId(loaded.activeBoardId)
@@ -184,67 +161,22 @@ export function useModularLayout() {
   }, [initialized, loadWorkspaceFromStorage])
 
   // 2. 状态改变自动持久化
-  //
-  // 防抖写入：拖拽/缩放时 boards 每帧都变，原先每帧一次 JSON.stringify + 同步
-  // setItem 会阻塞主线程（模块多时明显掉帧）。改为静默 200ms 后落盘；
-  // 页面隐藏/卸载前由下面的 flush 保证最后一批改动不丢。
-  const persistNow = useCallback((force = false) => {
-    if (!initialized || boardsRef.current.length === 0) return
-    // 只有「有未落盘改动」时才写。否则页面卸载/隐藏时会把当前（可能已过期）
-    // 的 state 写回存储，覆盖掉其它标签页或 bridge 刚写入的新数据。
-    if (!force && !dirtyRef.current) return
+  useEffect(() => {
+    if (!initialized || boards.length === 0) return
     try {
       const state: StoredWorkspaceState = {
         version: 2,
-        activeBoardId: activeBoardIdRef.current,
-        boards: boardsRef.current,
+        activeBoardId,
+        boards,
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-      dirtyRef.current = false
     } catch (e) {
       console.error('保存多看板工作台布局失败', e)
     }
-  }, [initialized])
-
-  useEffect(() => {
-    if (!initialized || boards.length === 0) return
-    // 与存储内容一致则不写：初始化/外源刷新会让 boards 变化好几次
-    // （boards、activeBoardId、initialized 各自触发一次 effect），
-    // 用「一次性标记」挡不住全部，改为直接比较序列化结果 —— 既不会误标 dirty，
-    // 也避免在刷新时把刚从存储读到的内容原样写回、覆盖其它标签页的新数据。
-    try {
-      const nextRaw = JSON.stringify({ version: 2, activeBoardId, boards })
-      if (localStorage.getItem(STORAGE_KEY) === nextRaw) return
-    } catch {
-      /* 读存储失败则按有改动处理 */
-    }
-    dirtyRef.current = true
-    const timer = setTimeout(() => persistNow(), 200)
-    return () => clearTimeout(timer)
-  }, [boards, activeBoardId, initialized, persistNow])
-
-  // 页面隐藏/关闭前立即落盘，避免防抖窗口内的最后一批改动丢失
-  useEffect(() => {
-    if (!initialized) return
-    const flush = () => persistNow()
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') flush()
-    }
-    window.addEventListener('pagehide', flush)
-    window.addEventListener('beforeunload', flush)
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      window.removeEventListener('pagehide', flush)
-      window.removeEventListener('beforeunload', flush)
-      document.removeEventListener('visibilitychange', onVisibility)
-      // 卸载时兜底写一次
-      flush()
-    }
-  }, [initialized, persistNow])
+  }, [boards, activeBoardId, initialized])
 
   // 当前激活的看板与小部件列表
-  // 兜底对象提为模块级常量：每次 render 新建会让 widgets 引用变化，击穿下游 memo
-  const currentBoard = boards.find((b) => b.id === activeBoardId) || boards[0] || EMPTY_BOARD
+  const currentBoard = boards.find((b) => b.id === activeBoardId) || boards[0] || { id: 'default', name: '工作台', widgets: [] }
   const widgets = currentBoard.widgets
 
   // 更新当前看板的 widgets 辅助方法（ref 原子写入，无嵌套 setState）
@@ -258,19 +190,13 @@ export function useModularLayout() {
         setHistory(newHistory)
         setFuture([])
       }
-      // 目标看板缺失时（初始化竞态 / 导入后 activeBoardId 与 boards 不一致）
-      // 回退到第一个看板，避免 map 出空数组把整个工作台冲空。
-      const targetId = prevBoards.some((b) => b.id === activeBoardId)
-        ? activeBoardId
-        : prevBoards[0]?.id
       const nextBoards = prevBoards.map((b) => {
-        if (b.id !== targetId) return b
+        if (b.id !== activeBoardId) return b
         return {
           ...b,
           widgets: updater(b.widgets),
         }
       })
-      if (!targetId) return
       boardsRef.current = nextBoards
       setBoards(nextBoards)
     },
@@ -533,26 +459,16 @@ export function useModularLayout() {
       if (parsed.widgets && Array.isArray(parsed.widgets)) {
         const widgetsToImport = sanitizeWidgetInstances<WidgetInstance>(parsed.widgets, isKnownType)
         if (widgetsToImport.length === 0) return false
-        const importedId = `imported-${Date.now()}`
         const nextBoards: Board[] = [
           ...boardsRef.current,
           {
-            id: importedId,
+            id: `imported-${Date.now()}`,
             name: `导入看板 (${new Date().toLocaleDateString('zh-CN')})`,
             widgets: widgetsToImport,
           },
         ]
-        // 压入历史：导入属于可撤销的破坏性操作
-        const newHistory = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), boardsRef.current]
-        historyRef.current = newHistory
-        futureRef.current = []
-        setHistory(newHistory)
-        setFuture([])
         boardsRef.current = nextBoards
         setBoards(nextBoards)
-        // 切到新导入的看板：否则界面还停在旧看板，用户会以为导入没生效
-        activeBoardIdRef.current = importedId
-        setActiveBoardId(importedId)
         return true
       }
     } catch {}

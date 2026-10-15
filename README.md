@@ -132,6 +132,8 @@ pnpm test
 NavHub 提供了多阶段构建的轻量镜像，不依赖宿主机复杂的构建环境。
 
 ```bash
+cd docker
+
 # 1. 采用 lite 模式一键启动（单机零外部依赖）
 docker compose up -d
 

@@ -60,9 +60,10 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       sqliteVec.load(db.sqlite as never);
       const store = new SqliteVecStore({ db: db.sqlite as never, dim: config.embedding.dim });
       store.init();
-      // 进程重启后重建 key -> siteId 映射（vec0 表里只有整数键）
+      // 进程重启后重建 key -> siteId 映射，并在 vec0 表为空（如刚迁移）时用向量重灌。
+      // savedEmbeddings() 返回 { key, siteId, vector }，正好是 VectorRecord[]。
       const saved = await repo.savedEmbeddings();
-      store.rehydrate(saved.map((s) => ({ key: s.key, siteId: s.siteId })));
+      store.rehydrate(saved);
       vectors = store;
       notes.push("sqlite-vec 已加载，向量维度 " + config.embedding.dim);
     } catch (err) {
@@ -72,7 +73,15 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
     }
     try {
       const store = new SqliteFtsStore(db.sqlite as never);
-      store.init(true);
+      // 首次初始化虚拟表结构，但**不**每次启动都强制全表 DELETE+INSERT 重建：
+      // 增量写入已由 Repository.createSite/updateSite/deleteSite 维护，
+      // 仅当 sites 表非空而 sites_fts 为空（例如首次升级）时才触发全量 rebuild。
+      store.init(false);
+      const siteCount = (db.sqlite!.prepare("SELECT COUNT(*) AS n FROM sites WHERE deleted_at IS NULL").get() as { n: number })?.n ?? 0;
+      if (siteCount > 0) {
+        const ftsCount = (db.sqlite!.prepare("SELECT COUNT(*) AS n FROM sites_fts").get() as { n: number })?.n ?? 0;
+        if (ftsCount === 0) store.rebuild();
+      }
       fts = store;
       notes.push("FTS5 全文索引就绪（CJK 二元分词）");
     } catch (err) {

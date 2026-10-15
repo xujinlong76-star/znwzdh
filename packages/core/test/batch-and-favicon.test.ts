@@ -5,6 +5,7 @@ import {
   extractFaviconMonogram,
   generateDeterministicSvg,
   generateDeterministicSvgDataUrl,
+  resolveSiteIcon,
   batchSetPinnedSitesInCategory,
   batchMoveSitesBetweenCustomCategories,
   batchDeleteSitesFromCustomCategories,
@@ -57,6 +58,23 @@ describe('确定性渐变徽标与自适应 Favicon 生成管线 (Deterministic 
 
     const dataUrl = generateDeterministicSvgDataUrl('Docker', 'https://hub.docker.com', 48)
     expect(dataUrl.startsWith('data:image/svg+xml;charset=utf-8,')).toBe(true)
+  })
+
+  it('智能解析站点图标：支持本地品牌资产、标题关键词与高速 CDN 回退 (resolveSiteIcon)', () => {
+    // 1. 显式自定义图标优先级最高
+    expect(resolveSiteIcon('https://github.com', 'GitHub', 'https://custom.icon/gh.png')).toBe('https://custom.icon/gh.png')
+
+    // 2. 本地高画质 Logo 映射 (ChatGPT, Claude, Vercel, Figma)
+    expect(resolveSiteIcon('https://chatgpt.com', 'ChatGPT')).toBe('/assets/images/logos/chatgpt.webp')
+    expect(resolveSiteIcon('https://claude.ai', 'Claude')).toBe('/assets/images/logos/claude.webp')
+    expect(resolveSiteIcon('https://vercel.com', 'Vercel')).toBe('/assets/images/logos/vercel.webp')
+    expect(resolveSiteIcon('https://figma.com', 'Figma')).toBe('/assets/images/logos/figma.webp')
+    expect(resolveSiteIcon('https://fonts.google.com', 'Google Fonts')).toBe('/assets/images/logos/Materialicons.webp')
+
+    // 3. 通用域名路由至无跨域限制的高清 CDN (icon.horse)
+    expect(resolveSiteIcon('https://github.com/features/copilot', 'GitHub Copilot')).toBe('https://icon.horse/icon/github.com')
+    expect(resolveSiteIcon('https://bilibili.com', '哔哩哔哩')).toBe('https://icon.horse/icon/bilibili.com')
+    expect(resolveSiteIcon('https://taobao.com', '淘宝')).toBe('https://icon.horse/icon/taobao.com')
   })
 })
 

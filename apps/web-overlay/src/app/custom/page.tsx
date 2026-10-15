@@ -1,6 +1,6 @@
 import { Metadata } from 'next'
 import { Container } from '@/components/ui/container'
-import { ModularCanvas } from '@/components/modular/modular-canvas'
+import { ModularCanvasClient } from '@/components/modular/modular-canvas-client'
 import { Footer } from '@/components/footer'
 import Link from 'next/link'
 import { ArrowLeft, LayoutGrid, Sparkles, Move, Maximize2, ShieldCheck } from 'lucide-react'
@@ -65,7 +65,7 @@ export default function CustomPage() {
           </div>
 
           {/* 模块化排版核心画布 */}
-          <ModularCanvas />
+          <ModularCanvasClient />
         </Container>
       </main>
 

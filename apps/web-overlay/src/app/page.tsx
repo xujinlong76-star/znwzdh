@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { NavigationContent } from "@/components/navigation-content";
 import { Metadata } from "next/types";
 import { ScrollToTop } from "@/components/ScrollToTop";
@@ -26,14 +27,14 @@ export const dynamic = "force-dynamic";
 const NAVIGATION_PATH = "src/navsphere/content/navigation.json";
 const SITE_PATH = "src/navsphere/content/site.json";
 
-async function getData() {
+const getData = cache(async () => {
   // 并行读取，避免两次串行往返
   const [navigationRaw, siteRaw] = await Promise.all([
     getFileContent(NAVIGATION_PATH),
     getFileContent(SITE_PATH),
   ]);
   return getProcessedData(navigationRaw as never, siteRaw as never);
-}
+});
 
 export async function generateMetadata(): Promise<Metadata> {
   const { siteData } = await getData();

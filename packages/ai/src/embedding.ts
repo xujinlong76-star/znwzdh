@@ -43,6 +43,8 @@ export interface EmbeddingService {
   ready(): boolean;
   /** 主动预热（可选），用于启动时不阻塞首个请求 */
   warmup(): Promise<boolean>;
+  /** 缓存命中统计（可选实现：内存 LRU 的 size/hits/misses） */
+  stats?: () => { size: number; hits: number; misses: number };
 }
 
 type Extractor = (text: string, opts: { pooling: "cls" | "mean"; normalize: boolean }) => Promise<{ data: ArrayLike<number> }>;
@@ -88,9 +90,23 @@ export function createEmbeddingService(config: Partial<EmbeddingConfig> = {}): E
     return extractorPromise;
   }
 
+  const cacheLimit = 2048;
+  const cache = new Map<string, Float32Array>();
+  let cacheHits = 0;
+  let cacheMisses = 0;
+
   async function encodeOne(text: string): Promise<Float32Array> {
     const sliced = (text ?? "").slice(0, 2000);
     if (!sliced.trim()) throw new Error("embedding 输入为空");
+    const cached = cache.get(sliced);
+    if (cached) {
+      cacheHits++;
+      // 刷新 LRU 位置
+      cache.delete(sliced);
+      cache.set(sliced, cached);
+      return cached;
+    }
+    cacheMisses++;
     const ext = await load();
     if (!ext) throw new Error("embedding 模型不可用: " + (lastError ?? "未知原因"));
     // 超时保护：pipeline 卡死时不让请求挂死
@@ -101,6 +117,12 @@ export function createEmbeddingService(config: Partial<EmbeddingConfig> = {}): E
     ]);
     const vec = Float32Array.from(out.data);
     if (vec.length !== cfg.dim) throw new Error(`embedding 维度不符：期望 ${cfg.dim}，实际 ${vec.length}`);
+    if (cache.size >= cacheLimit) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(sliced, vec);
+    return vec;
     return vec;
   }
 
@@ -108,6 +130,7 @@ export function createEmbeddingService(config: Partial<EmbeddingConfig> = {}): E
     dim: cfg.dim,
     model: cfg.model,
     ready: () => loaded,
+    stats: () => ({ size: cache.size, hits: cacheHits, misses: cacheMisses }),
     async warmup() {
       try { await load(); return loaded; } catch { return false; }
     },

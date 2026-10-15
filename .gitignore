@@ -60,8 +60,3 @@ apps/web/src/app/api/home/navigation/*
 apps/web/src/app/api/home/site/*
 !apps/web/src/app/api/home/site/route.ts
 
-# Vendor temp & caches
-.vendor-ns.tgz
-.vendor-stage/
-apps/.buildcheck/
-

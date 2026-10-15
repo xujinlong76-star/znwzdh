@@ -87,7 +87,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                     submitterNote: ''
                 })
             }
-        } catch (error) {
+        } catch {
             setResult({
                 success: false,
                 message: '网络错误，请稍后重试'

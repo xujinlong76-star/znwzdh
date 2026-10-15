@@ -49,6 +49,8 @@ afterAll(async () => {
 describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", () => {
   const catId = "pg-e2e-cat";
   const subId = "pg-e2e-sub";
+  // 拼音断言（zgtqw → 中国天气网）用；单独挂一个类目，避免影响后面的类目/标签计数断言
+  const lifeId = "pg-e2e-life";
   let siteId = "";
 
   beforeAll(async () => {
@@ -65,6 +67,11 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
     expect(cat.anchor).toBeTruthy();
     // 物化路径：子类目锚点必须挂在父级下（曾有 PG 行为差异）
     expect(sub.anchor.startsWith(catId + "/")).toBe(true);
+
+    // 拼音首字母用例需要在库里有标题可归一为 zgtqw 的站点（与 SQLite 套件同款断言）；
+    // 之前这里没建该站点，导致 "zgtqw" 必然零命中——是测试夹具缺失，不是检索 bug。
+    await ctx.repo.createCategory({ id: lifeId, title: "PG 方言生活类目" });
+    await ctx.repo.createSite({ url: "https://weather.example.com/pg", title: "中国天气网", categoryId: lifeId });
   });
 
   it("站点 + 中文标签写入与读回（group_concat vs string_agg 的聚合差异点）", async () => {
@@ -159,10 +166,12 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
     await ctx!.repo.completeJob(id, "测试失败", { retryAt: Date.now() + 3_600_000 });
     const pending = await ctx!.repo.claimNextJob();
     expect(pending === null || pending.id !== id).toBe(true);
-    // 到点后可再次认领
-    await ctx!.repo.completeJob(id, null);
+    // 到点后可再次认领：把退避时间拨到过去模拟时间流逝（与 apps/api/test/jobs.test.ts 同做法）。
+    // 注意不能用 completeJob(id, null)——那会把任务落成 done，当然再认领不到。
+    await ctx!.db.pg!.query("UPDATE jobs SET next_run_at = $1 WHERE id = $2", [Date.now() - 1, id]);
     const again = await ctx!.repo.claimNextJob();
     expect(again?.id).toBe(id);
+    expect(again!.attempts).toBe(2);
     await ctx!.repo.completeJob(again!.id, null);
   });
 
@@ -183,6 +192,16 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
     expect(profile!.searchCount).toBe(3);
     await ctx!.repo.deleteUserProfile("pg-e2e-user");
     expect(await ctx!.repo.getUserProfile("pg-e2e-user")).toBeNull();
+  });
+
+  it("专题条目按 item sort 聚合排序（PG 不允许 GROUP BY s.id + ORDER BY ci.sort）", async () => {
+    const a = await ctx!.repo.createSite({ url: "https://example.com/pg-col-a", title: "专题条目甲", categoryId: lifeId });
+    const b = await ctx!.repo.createSite({ url: "https://example.com/pg-col-b", title: "专题条目乙", categoryId: lifeId });
+    await ctx!.repo.upsertCollection({ slug: "pg-e2e-col", title: "PG 专题", sites: [b.id, a.id] });
+    // PG 上 ORDER BY ci.sort 会直接报错（列必须出现在 GROUP BY 或聚合里），
+    // SQLite 宽松放行——回归护栏：双方言都必须按 sort 返回。
+    const sites = await ctx!.repo.listCollectionSites("pg-e2e-col");
+    expect(sites.map((s) => s.id)).toEqual([b.id, a.id]);
   });
 });
 

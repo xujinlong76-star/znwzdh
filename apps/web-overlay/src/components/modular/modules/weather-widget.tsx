@@ -5,7 +5,7 @@
  * 避免冒充实时：UI 已标注“演示数据”，接入真实数据源后请移除该标注。
  */
 import React, { useState } from 'react'
-import { CloudSun, Sun, CloudRain, Wind, Droplets, Gauge, MapPin } from 'lucide-react'
+import { CloudSun, Sun, CloudRain, Wind, Droplets, MapPin } from 'lucide-react'
 
 interface WeatherWidgetProps {
   config?: {

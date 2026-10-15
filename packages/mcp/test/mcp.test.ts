@@ -58,11 +58,30 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 7 个只读工具与 8 个写工具", () => {
+  it("包含 18 个只读工具与 10 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
-    expect(read.map((t) => t.name).sort()).toEqual(["export_sites", "get_site", "get_stats", "get_trending", "list_categories", "list_tags", "search_sites"]);
-    expect(write.length).toBe(8);
+    expect(read.map((t) => t.name).sort()).toEqual([
+      "analyze_color_harmony",
+      "analyze_stack_compatibility",
+      "cluster_sites",
+      "compare_technologies",
+      "compile_speculation_rules",
+      "evaluate_developer_intent",
+      "exchange_p2p_mesh",
+      "export_sites",
+      "find_tech_path",
+      "get_architecture_recipe",
+      "get_federated_recommendations",
+      "get_site",
+      "get_stats",
+      "get_trending",
+      "list_categories",
+      "list_tags",
+      "search_sites",
+      "synthesize_agent_tool",
+    ]);
+    expect(write.length).toBe(10);
   });
 
   it("run_job 需要 admin 权限（触发全站扫描是危险操作）", () => {
@@ -319,5 +338,254 @@ describe("删除与导出工具", () => {
 
   it("export_sites 超出上限的 limit 被 zod 拒绝", async () => {
     await expect(handlers.export_sites({ limit: 5000 }, READONLY)).rejects.toThrow();
+  });
+});
+
+describe("次世代 Agentic 工具：架构配方与选型对比", () => {
+  it("get_architecture_recipe 匹配预设链路子图", async () => {
+    const res = await handlers.get_architecture_recipe({ query: "协同编辑" }, READONLY);
+    const body = payload(res);
+    expect(body.matched).toBe(true);
+    expect(body.recipe.id).toBe("collaborative-editor");
+    expect(body.recipe.layers.length).toBeGreaterThan(0);
+
+    const noMatch = await handlers.get_architecture_recipe({ query: "火星航天测控" }, READONLY);
+    const noMatchBody = payload(noMatch);
+    expect(noMatchBody.matched).toBe(false);
+    expect(Array.isArray(noMatchBody.availableRecipes)).toBe(true);
+  });
+
+  it("compare_technologies 对比两项关键技术并给出权衡决断", async () => {
+    const res = await handlers.compare_technologies({ query: "cursor vs vscode" }, READONLY);
+    const body = payload(res);
+    expect(body.matched).toBe(true);
+    expect(body.matrix.id).toBe("cursor-vs-vscode");
+    expect(body.matrix.dimensions.length).toBeGreaterThan(0);
+    expect(body.matrix.verdict).toBeTruthy();
+
+    const noMatch = await handlers.compare_technologies({ query: "apple vs banana" }, READONLY);
+    const noMatchBody = payload(noMatch);
+    expect(noMatchBody.matched).toBe(false);
+  });
+
+  it("heal_broken_site 诊断故障站点并生成自愈报告", async () => {
+    const res = await handlers.heal_broken_site({ idOrUrl: "https://weather.com.cn" }, FULL);
+    const body = payload(res);
+    expect(body.healed).toBe(true);
+    expect(body.report).toBeTruthy();
+    expect(body.report.waybackFallbackUrl).toContain("web.archive.org");
+    const audit = ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE action = ?").get("site.heal") as { c: number };
+    expect(Number(audit.c)).toBeGreaterThan(0);
+  });
+
+  it("find_tech_path 计算技术栈间多跳演进路径", async () => {
+    const res = await handlers.find_tech_path({ from: "react", to: "postgres" }, READONLY);
+    const body = payload(res);
+    expect(body.success).toBe(true);
+    expect(body.found).toBe(true);
+    expect(body.nodeChain.length).toBeGreaterThanOrEqual(3);
+    expect(body.nodeChain[0].id).toBe("react");
+    expect(body.nodeChain[body.nodeChain.length - 1].id).toBe("postgres");
+  });
+
+  it("analyze_stack_compatibility 诊断技术选型并补齐缺失层", async () => {
+    const res = await handlers.analyze_stack_compatibility({ techs: ["react", "nextjs"] }, READONLY);
+    const body = payload(res);
+    expect(body.success).toBe(true);
+    expect(body.selectedTechIds).toContain("react");
+    expect(body.coveredLayers).toContain("frontend");
+    expect(body.missingLayers).toContain("database");
+    expect(body.suggestedAdditions.length).toBeGreaterThan(0);
+  });
+
+  it("cluster_sites 对站点执行 K-Means++ 语义聚类并自动命名分类", async () => {
+    const res = await handlers.cluster_sites({ targetK: 2 }, READONLY);
+    const body = payload(res);
+    expect(body.success).toBe(true);
+    expect(body.totalItems).toBeGreaterThanOrEqual(1);
+    expect(body.clusterCount).toBeGreaterThanOrEqual(1);
+    expect(body.averageCohesion).toBeGreaterThan(0);
+    expect(body.clusters[0]?.suggestedName).toBeTruthy();
+  });
+
+  it("sync_crdt_operations 多端操作日志协同同步与因果收敛", async () => {
+    // 1. 只读 scope 调用应失败
+    await expect(handlers.sync_crdt_operations({
+      userId: "mcp_crdt_user",
+      operations: [
+        {
+          id: "op_mcp_1",
+          type: "SET_CATEGORY_PIN",
+          entityId: "cat_fe",
+          payload: { isPinned: true },
+          timestamp: 2000,
+          clientId: "mcp_client",
+        },
+      ],
+    }, READONLY)).rejects.toThrow();
+
+    // 2. 具备写权限调用
+    const res = await handlers.sync_crdt_operations({
+      userId: "mcp_crdt_user",
+      operations: [
+        {
+          id: "op_mcp_1",
+          type: "SET_CATEGORY_PIN",
+          entityId: "cat_fe",
+          payload: { isPinned: true },
+          timestamp: 2000,
+          clientId: "mcp_client",
+        },
+        {
+          id: "op_mcp_2",
+          type: "UPSERT_CUSTOM_CATEGORY",
+          entityId: "cat_mobile",
+          payload: { id: "cat_mobile", title: "跨端移动开发", items: [] },
+          timestamp: 2010,
+          clientId: "mcp_client",
+        },
+      ],
+    }, FULL);
+
+    const body = payload(res);
+    expect(body.merged).toBe(true);
+    expect(body.clientCount).toBe(2);
+    expect(body.state.pinnedCategoryIds).toContain("cat_fe");
+    expect(body.state.customCategories[0].title).toBe("跨端移动开发");
+  });
+
+  it("evaluate_developer_intent 秒级解析开发者输入语义意图", async () => {
+    // 1. Cron 表达式解析
+    const cronRes = await handlers.evaluate_developer_intent({ input: "0 0 * * *" }, READONLY);
+    const cronBody = payload(cronRes);
+    expect(cronBody.matched).toBe(true);
+    expect(cronBody.type).toBe("cron");
+    expect(cronBody.subtitle).toContain("每天");
+
+    // 2. 十六进制颜色代码解析
+    const colorRes = await handlers.evaluate_developer_intent({ input: "#3b82f6" }, READONLY);
+    const colorBody = payload(colorRes);
+    expect(colorBody.matched).toBe(true);
+    expect(colorBody.type).toBe("color");
+    expect(colorBody.previewValue).toBe("#3B82F6");
+    expect(colorBody.subtitle).toContain("rgb");
+
+    // 3. Curl 语句转 Fetch 脚本
+    const curlRes = await handlers.evaluate_developer_intent({ input: "curl -X POST https://api.example.com/data" }, READONLY);
+    const curlBody = payload(curlRes);
+    expect(curlBody.matched).toBe(true);
+    expect(curlBody.type).toBe("curl_to_fetch");
+    expect(curlBody.previewValue).toContain("fetch");
+
+    // 4. 普通非意图查询
+    const plainRes = await handlers.evaluate_developer_intent({ input: "普通普通的网站检索文本" }, READONLY);
+    const plainBody = payload(plainRes);
+    expect(plainBody.matched).toBe(false);
+  });
+
+  it("analyze_color_harmony 审计 UI 调色板对比度与和谐度", async () => {
+    const res = await handlers.analyze_color_harmony({
+      palette: ["#0f172a", "#3b82f6", "#10b981"],
+      foreground: "#ffffff",
+      background: "#0f172a",
+    }, READONLY);
+    const body = payload(res);
+    expect(body.success).toBe(true);
+    expect(body.wcagContrastRatio).toBeGreaterThan(4.5);
+    expect(["AAA", "AA"]).toContain(body.wcagPassLevel);
+    expect(body.harmonyScore).toBeGreaterThanOrEqual(50);
+    expect(body.dominantColors).toHaveLength(3);
+  });
+
+  it("get_federated_recommendations 执行 LDP 差分隐私协同推荐排序", async () => {
+    const res = await handlers.get_federated_recommendations({
+      localVector: [1, 0, 1, 0],
+      globalVector: [0.5, 0.5, 0.5, 0.5],
+      candidates: [
+        { id: "cand-1", name: "AI Dev", featureVector: [1, 0, 1, 0] },
+        { id: "cand-2", name: "Design", featureVector: [0, 1, 0, 1] },
+      ],
+      personalWeight: 0.7,
+      privatize: true,
+      epsilon: 1.0,
+    }, READONLY);
+    const body = payload(res);
+    expect(body.count).toBe(2);
+    expect(body.recommendations[0].itemId).toBe("cand-1");
+    expect(body.recommendations[0].score).toBeGreaterThan(body.recommendations[1].score);
+    expect(body.privacy.epsilon).toBe(1.0);
+    expect(body.privacy.privatizedVector).toHaveLength(4);
+  });
+
+  it("compile_speculation_rules 编译 W3C Speculation Rules 规则负载", async () => {
+    const res = await handlers.compile_speculation_rules({
+      candidates: [
+        { url: "https://cursor.com", confidence: 0.95, predictedArrivalMs: 120 },
+        { url: "https://npmjs.com", confidence: 0.60, predictedArrivalMs: 300 },
+        { url: "https://example.com/logout", confidence: 0.99, predictedArrivalMs: 50 }, // 应该被过滤
+      ],
+      prerenderConfidenceThreshold: 0.8,
+      prefetchConfidenceThreshold: 0.4,
+    }, READONLY);
+    const body = payload(res);
+    expect(body.hasRules).toBe(true);
+    expect(body.rules.prerender[0].urls).toContain("https://cursor.com");
+    expect(body.rules.prefetch[0].urls).toContain("https://npmjs.com");
+    expect(body.rules.prerender[0].urls).not.toContain("https://example.com/logout");
+    expect(body.script).toContain("prerender");
+    expect(body.fallbackTags.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("synthesize_agent_tool 动态将 REST 端点与站点检索合成为 WebMCP 工具", async () => {
+    // 1. 合成站点搜索工具
+    const siteRes = await handlers.synthesize_agent_tool({
+      kind: "site_search",
+      siteSearchSpec: {
+        siteId: "github",
+        siteName: "GitHub",
+        searchUrlTemplate: "https://github.com/search?q={query}",
+        category: "开发平台",
+      },
+    }, READONLY);
+    const siteBody = payload(siteRes);
+    expect(siteBody.kind).toBe("site_search");
+    expect(siteBody.tool.name).toBe("search_github");
+    expect(siteBody.exampleInvocation.navigableUrl).toContain("https://github.com/search?q=example");
+
+    // 2. 合成单端点 REST 工具
+    const restRes = await handlers.synthesize_agent_tool({
+      kind: "rest",
+      restSpec: {
+        name: "get_weather_report",
+        description: "获取特定城市的实时天气",
+        url: "https://api.weather.example.com/v1/query",
+        method: "GET",
+        parameters: [
+          { name: "city", type: "string", in: "query", required: true },
+        ],
+      },
+    }, READONLY);
+    const restBody = payload(restRes);
+    expect(restBody.kind).toBe("rest");
+    expect(restBody.tool.name).toBe("get_weather_report");
+    expect(restBody.tool.inputSchema.properties.city).toBeDefined();
+  });
+
+  it("exchange_p2p_mesh 通过网格报文协议交换多端书签 CRDT 增量", async () => {
+    const res = await handlers.exchange_p2p_mesh({
+      nodeId: "local-node-1",
+      message: {
+        type: "HELLO",
+        senderId: "remote-peer-2",
+        seq: 1,
+        timestamp: Date.now(),
+        payload: { clock: { "remote-peer-2": 3 }, siteCount: 15 },
+      },
+    }, READONLY);
+    const body = payload(res);
+    expect(body.nodeId).toBe("local-node-1");
+    expect(body.receivedType).toBe("HELLO");
+    expect(body.peerState).toBe("SYNCING");
+    expect(body.outgoingResponse.type).toBe("SYNC_REQUEST");
   });
 });

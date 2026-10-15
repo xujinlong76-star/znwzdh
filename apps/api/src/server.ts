@@ -22,6 +22,7 @@ import {
   parseTechComparisonQuery,
   poincareToLorentz,
   PRESET_RECIPES,
+  runAutonomousHealing,
   type RetrievalChannel,
 } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
@@ -770,6 +771,39 @@ export async function buildServer(ctx: AppContext) {
     const svg = generateDeterministicSvg(title, url);
     reply.type("image/svg+xml; charset=utf-8");
     return svg;
+  });
+
+  /**
+   * AI 自动自愈端点：对故障/失效站点诊断、提取 Wayback 快照并在同生态推荐最佳替代品
+   */
+  app.post("/api/sites/:id/heal", { config: { scope: "write" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const site = await ctx.repo.getSite(id);
+    if (!site) { reply.code(404); return { error: "站点不存在" }; }
+
+    const peers = await ctx.repo.listSites({ categoryId: site.categoryId, status: "active", limit: 20 });
+    const report = runAutonomousHealing({
+      siteId: site.id,
+      url: site.url,
+      title: site.title,
+      categoryId: site.categoryId,
+      tags: site.tags,
+      availablePeers: peers,
+    });
+
+    await ctx.repo.audit({
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "site.heal",
+      target: site.id,
+      diff: {
+        diagnosis: report.diagnosis,
+        recommendedAction: report.recommendedAction,
+        topReplacement: report.suggestedReplacements[0]?.url,
+      },
+    });
+
+    return { ok: true, report };
   });
 
   /* --------------------- 收藏夹（终端用户） --------------------- */

@@ -58,7 +58,7 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 9 个只读工具与 8 个写工具", () => {
+  it("包含 9 个只读工具与 9 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
@@ -72,7 +72,7 @@ describe("工具清单", () => {
       "list_tags",
       "search_sites",
     ]);
-    expect(write.length).toBe(8);
+    expect(write.length).toBe(9);
   });
 
   it("run_job 需要 admin 权限（触发全站扫描是危险操作）", () => {
@@ -357,5 +357,15 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     const noMatch = await handlers.compare_technologies({ query: "apple vs banana" }, READONLY);
     const noMatchBody = payload(noMatch);
     expect(noMatchBody.matched).toBe(false);
+  });
+
+  it("heal_broken_site 诊断故障站点并生成自愈报告", async () => {
+    const res = await handlers.heal_broken_site({ idOrUrl: "https://weather.com.cn" }, FULL);
+    const body = payload(res);
+    expect(body.healed).toBe(true);
+    expect(body.report).toBeTruthy();
+    expect(body.report.waybackFallbackUrl).toContain("web.archive.org");
+    const audit = ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE action = ?").get("site.heal") as { c: number };
+    expect(Number(audit.c)).toBeGreaterThan(0);
   });
 });

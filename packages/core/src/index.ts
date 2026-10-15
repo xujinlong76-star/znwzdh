@@ -21,6 +21,10 @@ export * from "./wayback-resolver.ts";
 export * from "./crdt-sync.ts";
 export * from "./bookmark-parser.ts";
 export * from "./batch-operations.ts";
+export * from "./client-vector-search.ts";
+export * from "./p2p-mesh-sync.ts";
+export * from "./speculative-prerender.ts";
+export * from "./autonomous-healing.ts";
 
 
 

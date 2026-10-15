@@ -52,6 +52,9 @@ export function buildWaybackSnapshotUrl(
   return `https://web.archive.org/web/${timeSeg}/${clean}`
 }
 
+/** 别名兼容：根据目标网址生成 Wayback 归档快照拯救链接 */
+export const generateWaybackRecoveryUrl = buildWaybackSnapshotUrl;
+
 /**
  * 3. 构造主动向 Wayback Machine 归档请求的 URL
  */

@@ -15,14 +15,14 @@
  */
 
 import { enrichUrl } from "@navhub/ai";
-import { ageInDays, trendScore, auditPageHealth } from "@navhub/core";
+import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing } from "@navhub/core";
 import type { AppContext } from "./context.ts";
 import { indexSite } from "./index-site.ts";
 
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing"];
 
 const LOCK_KEY = "lock:job-runner";
 const LOCK_TTL_MS = 120_000;
@@ -188,6 +188,9 @@ export class JobRunner {
         case "reindex":
           await this.runReindex((payload ?? {}) as { siteId?: string; vectors?: boolean });
           break;
+        case "site_self_healing":
+          await this.runSiteSelfHealing((payload ?? {}) as { siteId?: string });
+          break;
         default:
           throw new Error("未知任务类型: " + kind);
       }
@@ -331,6 +334,41 @@ export class JobRunner {
       count++;
     }
     await this.ctx.repo.recordEvent("reindex", { meta: { sites: count, vectors: payload.vectors !== false } }).catch(() => undefined);
+  }
+
+  /** AI 自动自愈：对 broken/失效站点执行 Wayback 归档解析与同图谱健康替代推荐 */
+  private async runSiteSelfHealing(payload: { siteId?: string }): Promise<void> {
+    if (!payload.siteId) throw new Error("site_self_healing 需要 siteId");
+    const site = await this.ctx.repo.getSite(payload.siteId);
+    if (!site) throw new Error("站点不存在: " + payload.siteId);
+
+    const peers = await this.ctx.repo.listSites({ categoryId: site.categoryId, status: "active", limit: 20 });
+    const report = runAutonomousHealing({
+      siteId: site.id,
+      url: site.url,
+      title: site.title,
+      categoryId: site.categoryId,
+      tags: site.tags,
+      availablePeers: peers,
+    });
+
+    await this.ctx.repo.audit({
+      actor: "system:job-runner",
+      actorKind: "job",
+      action: "site.heal",
+      target: site.id,
+      diff: {
+        diagnosis: report.diagnosis,
+        recommendedAction: report.recommendedAction,
+        waybackFallbackUrl: report.waybackFallbackUrl,
+        topReplacement: report.suggestedReplacements[0]?.url,
+      },
+    });
+
+    await this.ctx.repo.recordEvent("site_healing", {
+      siteId: site.id,
+      meta: { action: report.recommendedAction, autoResolvable: report.autoResolvable },
+    }).catch(() => undefined);
   }
 
   /* --------------------------- 底层执行 --------------------------- */

@@ -142,6 +142,10 @@ export const CompareTechnologiesInput = z.object({
   query: z.string().describe("技术选型对比查询（如 'react vs vue', 'cursor vs vscode', 'pnpm vs bun', 'ollama vs vllm'）"),
 });
 
+export const HealBrokenSiteInput = z.object({
+  idOrUrl: z.string().describe("故障/失效站点的 ID 或完整网址"),
+});
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -237,6 +241,11 @@ export const TOOL_DEFS: ToolDefinition[] = [
     name: "compare_technologies",
     description: "结构化技术选型对比矩阵 (Side-by-Side Comparison Matrix)，原地对比两项技术的优缺点、权衡点、多维参数与选型裁决。",
     scope: "read", inputSchema: CompareTechnologiesInput, mutating: false,
+  },
+  {
+    name: "heal_broken_site",
+    description: "对故障/失效站点执行智能自愈诊断：分析失效根因，调用 Wayback 提取归档快照，并基于图谱推荐同生态健康替代品。",
+    scope: "write", inputSchema: HealBrokenSiteInput, mutating: true,
   },
 ];
 

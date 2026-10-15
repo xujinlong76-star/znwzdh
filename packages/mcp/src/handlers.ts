@@ -12,6 +12,7 @@ import {
   findMatchingArchitectureRecipe,
   parseTechComparisonQuery,
   PRESET_RECIPES,
+  runAutonomousHealing,
 } from "@navhub/core";
 import type { AppContext } from "@navhub/api";
 import {
@@ -23,6 +24,7 @@ import {
   GetArchitectureRecipeInput,
   GetSiteInput,
   GetTrendingInput,
+  HealBrokenSiteInput,
   HealthCheckInput,
   ListCategoriesInput,
   ListTagsInput,
@@ -379,6 +381,37 @@ export function createHandlers(ctx: AppContext) {
         return ok({ matched: false, query: input.query, note: "未找到预设对比矩阵，请尝试 'react vs vue', 'cursor vs vscode', 'pnpm vs bun', 'ollama vs vllm'" });
       }
       return ok({ matched: true, matrix });
+    },
+
+    async heal_broken_site(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "write");
+      const input = HealBrokenSiteInput.parse(args ?? {});
+      const site = await ctx.repo.getSite(input.idOrUrl);
+      if (!site) return fail("未找到站点：" + input.idOrUrl);
+
+      const peers = await ctx.repo.listSites({ categoryId: site.categoryId, status: "active", limit: 20 });
+      const report = runAutonomousHealing({
+        siteId: site.id,
+        url: site.url,
+        title: site.title,
+        categoryId: site.categoryId,
+        tags: site.tags,
+        availablePeers: peers,
+      });
+
+      await ctx.repo.audit({
+        actor: tc.actor,
+        actorKind: "mcp",
+        action: "site.heal",
+        target: site.id,
+        diff: {
+          recommendedAction: report.recommendedAction,
+          waybackFallbackUrl: report.waybackFallbackUrl,
+          suggestedCount: report.suggestedReplacements.length,
+        },
+      });
+
+      return ok({ healed: true, report });
     },
   };
 }

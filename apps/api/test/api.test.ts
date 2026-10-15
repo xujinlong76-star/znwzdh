@@ -1280,4 +1280,22 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     expect(res.body).toContain("linearGradient");
     expect(res.headers["cache-control"]).toContain("private, max-age=86400");
   });
+
+  it("POST /api/sites/:id/heal 触发自动诊断并返回自愈报告与落审计", async () => {
+    const site = (await app.inject({
+      method: "POST", url: "/api/sites",
+      payload: { url: "https://broken-legacy.example.com", title: "失效站点", categoryId: "cat-ai" },
+    })).json();
+
+    const res = await app.inject({ method: "POST", url: "/api/sites/" + site.id + "/heal" });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.report).toBeTruthy();
+    expect(json.report.waybackFallbackUrl).toContain("web.archive.org");
+    expect(typeof json.report.recommendedAction).toBe("string");
+
+    const nonExist = await app.inject({ method: "POST", url: "/api/sites/no-such-site/heal" });
+    expect(nonExist.statusCode).toBe(404);
+  });
 });

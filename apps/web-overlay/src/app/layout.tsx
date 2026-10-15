@@ -62,7 +62,7 @@ export default function RootLayout({
   const gaId = process.env.GA_ID
 
   return (
-    <html lang="zh-CN" suppressHydrationWarning className={inter.variable}>
+    <html lang="zh-CN" suppressHydrationWarning data-scroll-behavior="smooth" className={inter.variable}>
       <head>
         <link rel="preconnect" href="https://www.googletagmanager.com" />
         {/* iOS 桌面图标（apple-touch-icon）：用显式 link 而不是 metadata.icons.apple——

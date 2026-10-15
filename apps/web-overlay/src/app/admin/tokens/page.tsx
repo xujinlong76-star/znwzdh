@@ -545,14 +545,10 @@ export default function AdminTokensPage() {
                 <option value="30">30 天后过期 (推荐)</option>
                 <option value="90">90 天后过期</option>
                 <option value="365">1 年后过期</option>
-                <option value="0">长期有效 (不推荐)</option>
               </select>
-              {expiresDays === '0' && (
-                <p className="text-[11px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                  <span>长期凭据一旦泄露即为永久后门，且无法通过"等它过期"来止血。</span>
-                </p>
-              )}
+              <p className="text-[11px] text-muted-foreground">
+                本实例禁止签发长期（永不过期）凭据——泄露的永久凭据等于永久后门，且无法通过"等它过期"止血。
+              </p>
             </div>
 
             <DialogFooter className="pt-2">
@@ -628,8 +624,10 @@ export default function AdminTokensPage() {
                 <option value="30">30 天</option>
                 <option value="90">90 天</option>
                 <option value="365">365 天</option>
-                <option value="0">长期有效</option>
               </select>
+              <p className="text-[11px] text-muted-foreground">
+                不支持设为长期有效；需更长有效期请联系运维调整 NAVHUB_TOKEN_MAX_LIFETIME_DAYS。
+              </p>
             </div>
           </div>
 

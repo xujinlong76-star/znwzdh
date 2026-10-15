@@ -2200,25 +2200,38 @@ export async function buildServer(ctx: AppContext) {
    *   → 删除 NAVHUB_BOOTSTRAP_TOKEN 重启
    */
   /**
-   * 校验 expiresAt：必须是未来的毫秒时间戳，且不超过策略允许的最长有效期。
+   * 有效期策略：
+   *   - maxLifetimeDays（NAVHUB_TOKEN_MAX_LIFETIME_DAYS，默认 365，0=不限制）：
+   *     显式 expiresAt 距离现在的最远天数；
+   *   - allowPermanentTokens（NAVHUB_TOKEN_ALLOW_PERMANENT，默认 false）：
+   *     是否允许"永不过期"凭据。
    *
-   * 过去时间会导致"刚创建就已过期"，属于无效输入；
-   * 超过上限则让"永不过期"变成显式选择而不是默认结果——
-   * 一条泄露的永久凭据等于一个永久后门。
+   * expiresAt 的三种输入分开对待——过去它们都塌缩成"永久有效"，
+   * 策略只拦显式传值的人，省略字段就绕过：
+   *   - undefined（省略）：一律落策略上限（now + maxLifetimeDays）；
+   *     仅当上限=0（显式关闭限制）时才为 null。"永不过期"是显式选择，不是默认结果
+   *   - null（显式请求永久）：仅 allowPermanentTokens 放行，否则 400
+   *   - number：必须未来且不超上限
    */
-  const validFutureExpiry = (v: number | null | undefined): v is number | null =>
-    v === null || v === undefined || v > Date.now();
-
   const maxLifetimeMs = ctx.config.tokenPolicy.maxLifetimeDays > 0
     ? ctx.config.tokenPolicy.maxLifetimeDays * 86_400_000
     : 0;
+  const allowPermanent = ctx.config.tokenPolicy.allowPermanentTokens;
 
-  const expiryViolation = (v: number | null | undefined): string | null => {
-    if (!validFutureExpiry(v)) return "expiresAt 必须是未来的时间戳";
-    if (maxLifetimeMs > 0 && v != null && v - Date.now() > maxLifetimeMs) {
-      return "expiresAt 超出最长有效期（" + ctx.config.tokenPolicy.maxLifetimeDays + " 天）；确需更长请调 NAVHUB_TOKEN_MAX_LIFETIME_DAYS";
+  const resolveExpiry = (v: number | null | undefined): { expiresAt: number | null; error: string | null } => {
+    if (v === undefined) {
+      return { expiresAt: maxLifetimeMs === 0 ? null : Date.now() + maxLifetimeMs, error: null };
     }
-    return null;
+    if (v === null) {
+      return allowPermanent
+        ? { expiresAt: null, error: null }
+        : { expiresAt: null, error: "本实例禁止签发长期（永不过期）凭据：请传 expiresAt，或设置 NAVHUB_TOKEN_ALLOW_PERMANENT=true 放行" };
+    }
+    if (v <= Date.now()) return { expiresAt: null, error: "expiresAt 必须是未来的时间戳" };
+    if (maxLifetimeMs > 0 && v - Date.now() > maxLifetimeMs) {
+      return { expiresAt: null, error: "expiresAt 超出最长有效期（" + ctx.config.tokenPolicy.maxLifetimeDays + " 天）；确需更长请调 NAVHUB_TOKEN_MAX_LIFETIME_DAYS" };
+    }
+    return { expiresAt: v, error: null };
   };
 
   app.post("/api/tokens", { config: { scope: "admin" } }, async (req, reply) => {
@@ -2233,8 +2246,8 @@ export async function buildServer(ctx: AppContext) {
 
     const scopes = parseScopes(body.data.scopes);
     if (scopes.length === 0) { reply.code(400); return { error: "scopes 至少要有一个有效值（read / write / admin）" }; }
-    const expiryErr = expiryViolation(body.data.expiresAt);
-    if (expiryErr) { reply.code(400); return { error: expiryErr }; }
+    const expiry = resolveExpiry(body.data.expiresAt);
+    if (expiry.error) { reply.code(400); return { error: expiry.error }; }
 
     // 并存数量闸门：防止脚本失控签发成百上千条凭据，让"吊销"变成不可能完成的工作
     const maxActive = ctx.config.tokenPolicy.maxActiveTokens;
@@ -2251,10 +2264,10 @@ export async function buildServer(ctx: AppContext) {
       name: body.data.name,
       tokenHash: hashToken(raw),
       scopes: scopes.join(","),
-      expiresAt: body.data.expiresAt ?? null,
+      expiresAt: expiry.expiresAt,
       tokenPrefix: tokenPrefixOf(raw),
     });
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.create", target: record.id, diff: { name: record.name, scopes } });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.create", target: record.id, diff: { name: record.name, scopes, expiresAt: expiry.expiresAt } });
     reply.code(201);
     // 明文只在这里出现一次
     return { token: raw, ...record, note: "请立即保存：明文只显示这一次，库里只存 sha256。" };
@@ -2277,15 +2290,19 @@ export async function buildServer(ctx: AppContext) {
     if (body.data.scopes !== undefined && parseScopes(body.data.scopes).length === 0) {
       reply.code(400); return { error: "scopes 至少要有一个有效值（read / write / admin）" };
     }
+    // 省略 expiresAt = 保留原有效期（编辑名称不该顺带改期）；
+    // 显式传值（含 null）才过策略
+    let patchedExpiry: number | null | undefined;
     if (body.data.expiresAt !== undefined) {
-      const expiryErr = expiryViolation(body.data.expiresAt);
-      if (expiryErr) { reply.code(400); return { error: expiryErr }; }
+      const expiry = resolveExpiry(body.data.expiresAt);
+      if (expiry.error) { reply.code(400); return { error: expiry.error }; }
+      patchedExpiry = expiry.expiresAt;
     }
 
     const record = await ctx.repo.updateApiToken(id, {
       name: body.data.name,
       scopes: body.data.scopes,
-      expiresAt: body.data.expiresAt,
+      expiresAt: patchedExpiry,
     });
     if (!record) { reply.code(404); return { error: "token 不存在" }; }
     await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.update", target: id, diff: { name: record.name, scopes: record.scopes } });
@@ -2303,13 +2320,16 @@ export async function buildServer(ctx: AppContext) {
       expiresAt: z.number().int().positive().nullable().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    // 同 PATCH：省略保留原有效期，显式传值（含 null）才过策略
+    let rotatedExpiry: number | null | undefined;
     if (body.data.expiresAt !== undefined) {
-      const expiryErr = expiryViolation(body.data.expiresAt);
-      if (expiryErr) { reply.code(400); return { error: expiryErr }; }
+      const expiry = resolveExpiry(body.data.expiresAt);
+      if (expiry.error) { reply.code(400); return { error: expiry.error }; }
+      rotatedExpiry = expiry.expiresAt;
     }
 
     const raw = generateToken();
-    const record = await ctx.repo.rotateApiToken(id, hashToken(raw), body.data.expiresAt, tokenPrefixOf(raw));
+    const record = await ctx.repo.rotateApiToken(id, hashToken(raw), rotatedExpiry, tokenPrefixOf(raw));
     if (!record) { reply.code(404); return { error: "token 不存在" }; }
     await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.rotate", target: id, diff: { name: record.name, scopes: record.scopes } });
     // 明文只在这里出现一次

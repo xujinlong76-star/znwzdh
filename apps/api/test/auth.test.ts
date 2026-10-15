@@ -20,7 +20,15 @@ import { hashToken } from "../src/auth.ts";
 
 const BOOTSTRAP = "boot-secret-please-rotate";
 
-let dir: string;
+const dir = mkdtempSync(join(tmpdir(), "navhub-auth-"));
+const base = {
+  mode: "lite" as const,
+  embedding: { model: "m", endpoint: "https://hf-mirror.com", dtype: "q8" as const, cacheDir: join(dir, "models"), dim: 512, enabled: false },
+  llm: { baseUrl: "https://api.deepseek.com", apiKey: null, model: "deepseek-chat", timeoutMs: 3000 },
+  fetch: { timeoutMs: 1000, maxBytes: 65536, maxRedirects: 1, allowPrivateNetworks: false, userAgent: "NavHubTest/0.1" },
+  corsOrigins: ["*"],
+};
+
 let openCtx: AppContext;      // 开放模式
 let openApp: Awaited<ReturnType<typeof buildServer>>;
 let authCtx: AppContext;      // 鉴权模式
@@ -44,15 +52,6 @@ async function mintToken(name: string, scopes: string, expiresAt?: number): Prom
 }
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), "navhub-auth-"));
-  const base = {
-    mode: "lite" as const,
-    embedding: { model: "m", endpoint: "https://hf-mirror.com", dtype: "q8" as const, cacheDir: join(dir, "models"), dim: 512, enabled: false },
-    llm: { baseUrl: "https://api.deepseek.com", apiKey: null, model: "deepseek-chat", timeoutMs: 3000 },
-    fetch: { timeoutMs: 1000, maxBytes: 65536, maxRedirects: 1, allowPrivateNetworks: false, userAgent: "NavHubTest/0.1" },
-    corsOrigins: ["*"],
-  };
-
   openCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "open.db") }));
   openApp = await buildServer(openCtx);
   await openApp.ready();
@@ -294,6 +293,82 @@ describe("鉴权模式：token 生命周期", () => {
     const res = await as(BOOTSTRAP, "POST", "/api/tokens", { name: "过长寿命", scopes: "read", expiresAt: farFuture });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toContain("超出最长有效期");
+  });
+
+  it("省略 expiresAt 时落到策略上限，而不是永久有效", async () => {
+    const res = await as(BOOTSTRAP, "POST", "/api/tokens", { name: "默认有效期", scopes: "read" });
+    expect(res.statusCode).toBe(201);
+    const expiresAt = res.json().expiresAt as number | null;
+    expect(expiresAt).not.toBeNull();
+    // 默认上限 365 天：落点应在 (now+364d, now+365d]
+    const delta = expiresAt! - Date.now();
+    expect(delta).toBeGreaterThan(364 * 86_400_000);
+    expect(delta).toBeLessThanOrEqual(365 * 86_400_000);
+  });
+
+  it("显式 expiresAt=null 在默认策略下被拒绝（禁止长期凭据）", async () => {
+    const res = await as(BOOTSTRAP, "POST", "/api/tokens", { name: "请求永久", scopes: "read", expiresAt: null });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("禁止签发长期");
+  });
+
+  it("PATCH 显式 expiresAt=null 同样被拒绝；省略则保留原有效期", async () => {
+    await mintToken("待编辑", "read");
+    const list = (await as(BOOTSTRAP, "GET", "/api/tokens")).json();
+    const tok = list.find((t: any) => t.name === "待编辑");
+    const originalExpiry = tok.expiresAt as number;
+
+    const denied = await as(BOOTSTRAP, "PATCH", "/api/tokens/" + tok.id, { expiresAt: null });
+    expect(denied.statusCode).toBe(400);
+    expect(denied.json().error).toContain("禁止签发长期");
+
+    // 只改名字：有效期原样保留（编辑名称不该顺带改期）
+    const kept = await as(BOOTSTRAP, "PATCH", "/api/tokens/" + tok.id, { name: "改个名" });
+    expect(kept.statusCode).toBe(200);
+    expect(kept.json().expiresAt).toBe(originalExpiry);
+  });
+});
+
+describe("tokenPolicy.allowPermanentTokens=true：显式放行长期凭据", () => {
+  let permDir: string;
+  let permCtx: AppContext;
+  let permApp: Awaited<ReturnType<typeof buildServer>>;
+
+  beforeAll(async () => {
+    permDir = mkdtempSync(join(tmpdir(), "navhub-perm-"));
+    permCtx = await createContext(loadConfig({
+      ...base,
+      sqlitePath: join(permDir, "perm.db"),
+      authRequired: true,
+      bootstrapToken: BOOTSTRAP,
+      tokenPolicy: { maxLifetimeDays: 365, maxActiveTokens: 50, allowPermanentTokens: true },
+    }));
+    permApp = await buildServer(permCtx);
+    await permApp.ready();
+  });
+
+  afterAll(async () => {
+    await permApp.close(); await permCtx.close();
+    rmSync(permDir, { recursive: true, force: true });
+  });
+
+  it("显式 expiresAt=null 放行；省略仍落策略上限", async () => {
+    const permanent = await permApp.inject({
+      method: "POST", url: "/api/tokens",
+      payload: { name: "机器凭据", scopes: "read", expiresAt: null } as never,
+      headers: { authorization: "Bearer " + BOOTSTRAP },
+    });
+    expect(permanent.statusCode).toBe(201);
+    expect(permanent.json().expiresAt).toBeNull();
+
+    // 放行永久 ≠ 默认永久：省略仍拿有界默认
+    const defaulted = await permApp.inject({
+      method: "POST", url: "/api/tokens",
+      payload: { name: "默认", scopes: "read" } as never,
+      headers: { authorization: "Bearer " + BOOTSTRAP },
+    });
+    expect(defaulted.statusCode).toBe(201);
+    expect(defaulted.json().expiresAt).not.toBeNull();
   });
 });
 

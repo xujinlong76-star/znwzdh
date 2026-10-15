@@ -61,6 +61,8 @@ export interface AppConfig {
     maxLifetimeDays: number;
     /** 未吊销凭据的最大并存数量 */
     maxActiveTokens: number;
+    /** 是否允许"永不过期"凭据；false 时显式 expiresAt=null 被拒绝 */
+    allowPermanentTokens: boolean;
   };
 }
 
@@ -139,6 +141,13 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
        * 0 表示不限制（需要长期机器凭据时显式关闭）。
        */
       maxLifetimeDays: num("NAVHUB_TOKEN_MAX_LIFETIME_DAYS", 365),
+      /**
+       * 是否允许"永不过期"凭据。
+       * 关闭时（默认）：省略 expiresAt 落到策略上限，显式传 null 被拒绝——
+       * "永不过期"必须是运营者显式放行的选择，而不是字段省略的副产品。
+       * 需要长期机器凭据的部署显式打开即可。
+       */
+      allowPermanentTokens: bool("NAVHUB_TOKEN_ALLOW_PERMANENT", false),
       /**
        * 同时存在的未吊销凭据上限。
        * 防止脚本失控或误操作签发成百上千条凭据，把吊销变成不可能完成的工作。

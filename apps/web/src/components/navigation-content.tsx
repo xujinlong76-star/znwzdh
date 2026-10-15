@@ -105,7 +105,6 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
     reclassifySite,
     customWallpaperUrl,
     glassmorphismBlur,
-    cardOpacity,
   } = useHomeDIY()
 
   // 拖拽编排分类状态

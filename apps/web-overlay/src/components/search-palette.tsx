@@ -16,7 +16,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { Input } from '@/registry/new-york/ui/input'
-import { Command, CommandList, CommandGroup, CommandItem } from '@/registry/new-york/ui/command'
+import { Command, CommandList, CommandItem } from '@/registry/new-york/ui/command'
 import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { searchSites, reportClick, fetchSearchHistory, type HubSearchHit } from '@/lib/navhub-api'

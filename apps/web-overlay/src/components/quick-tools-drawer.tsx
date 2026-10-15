@@ -92,7 +92,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
   const handleDecodeBase64 = () => {
     try {
       setB64Output(decodeURIComponent(escape(atob(b64Input))))
-    } catch (e) {
+    } catch {
       setB64Output('解码失败（非有效 Base64）')
     }
   }

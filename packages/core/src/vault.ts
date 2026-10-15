@@ -168,7 +168,7 @@ export async function decryptVault(
       throw new Error('解密数据格式异常');
     }
     return items as VaultItem[];
-  } catch (err) {
+  } catch {
     // 密码错误或数据被篡改时 AES-GCM 认证标签匹配失败
     throw new Error('金库解密失败：主密码不匹配或密文已被篡改');
   }

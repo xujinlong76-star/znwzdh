@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { NavigationSubItem, SiteAction, SiteRelation } from '@/types/navigation'
+import type { NavigationSubItem, SiteAction } from '@/types/navigation'
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { SiteFavicon } from '@/components/site-favicon'
-import { ExternalLink, Star, ShieldCheck, Sparkles, Zap, ArrowRight, Eye, Code, Search, AlertTriangle, Orbit } from 'lucide-react'
+import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'

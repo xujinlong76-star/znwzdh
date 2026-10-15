@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { FileText, Eye, Edit3, Copy, Check, Sparkles } from 'lucide-react'
+import { FileText, Eye, Edit3, Copy, Check } from 'lucide-react'
 
 export function NotesWidget() {
   const [content, setContent] = useState('')

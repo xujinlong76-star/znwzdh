@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { CloudSun, Sun, CloudRain, Wind, Droplets, Gauge, MapPin } from 'lucide-react'
+import { CloudSun, Sun, CloudRain, Wind, Droplets, MapPin } from 'lucide-react'
 
 interface WeatherWidgetProps {
   config?: {

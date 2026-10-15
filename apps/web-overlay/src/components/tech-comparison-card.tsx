@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
-import { Scale, Check, Trophy, Sparkles, AlertCircle } from 'lucide-react'
+import { Scale, Check, Trophy, Sparkles } from 'lucide-react'
 import type { TechComparisonMatrix } from '@/lib/comparison'
 
 interface TechComparisonCardProps {

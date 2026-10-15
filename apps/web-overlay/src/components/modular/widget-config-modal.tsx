@@ -3,14 +3,14 @@
 import React, { useState, useEffect } from 'react'
 import type { WidgetInstance } from '@/types/modular'
 import { WIDGET_REGISTRY } from '@/lib/modular/registry'
-import { X, Sliders, Check, RotateCcw, Sparkles } from 'lucide-react'
+import { X, Sliders, Check, RotateCcw } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 
 interface WidgetConfigModalProps {
   widget: WidgetInstance | null
   isOpen: boolean
   onClose: () => void
-  onSaveConfig: (id: string, newConfig: Record<string, any>, newTitle?: string) => void
+  onSaveConfig: (id: string, newConfig: Record<string, unknown>, newTitle?: string) => void
 }
 
 export function WidgetConfigModal({
@@ -19,7 +19,7 @@ export function WidgetConfigModal({
   onClose,
   onSaveConfig,
 }: WidgetConfigModalProps) {
-  const [configValues, setConfigValues] = useState<Record<string, any>>({})
+  const [configValues, setConfigValues] = useState<Record<string, unknown>>({})
   const [customTitle, setCustomTitle] = useState('')
 
   useEffect(() => {
@@ -36,7 +36,7 @@ export function WidgetConfigModal({
 
   const schemas = def.configSchema || []
 
-  const handleFieldChange = (key: string, value: any) => {
+  const handleFieldChange = (key: string, value: unknown) => {
     setConfigValues((prev) => ({
       ...prev,
       [key]: value,
@@ -50,7 +50,7 @@ export function WidgetConfigModal({
   }
 
   const handleResetDefaults = () => {
-    const defaults: Record<string, any> = {}
+    const defaults: Record<string, unknown> = {}
     schemas.forEach((s) => {
       defaults[s.key] = s.defaultValue
     })
@@ -105,7 +105,7 @@ export function WidgetConfigModal({
 
                 {schema.type === 'select' && (
                   <select
-                    value={configValues[schema.key] ?? schema.defaultValue}
+                    value={String(configValues[schema.key] ?? schema.defaultValue ?? '')}
                     onChange={(e) => handleFieldChange(schema.key, e.target.value)}
                     className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60"
                   >
@@ -132,7 +132,7 @@ export function WidgetConfigModal({
                 {schema.type === 'number' && (
                   <input
                     type="number"
-                    value={configValues[schema.key] ?? schema.defaultValue}
+                    value={Number(configValues[schema.key] ?? schema.defaultValue ?? 0)}
                     onChange={(e) => handleFieldChange(schema.key, Number(e.target.value))}
                     className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60"
                   />
@@ -141,7 +141,7 @@ export function WidgetConfigModal({
                 {schema.type === 'text' && (
                   <input
                     type="text"
-                    value={configValues[schema.key] ?? schema.defaultValue}
+                    value={String(configValues[schema.key] ?? schema.defaultValue ?? '')}
                     onChange={(e) => handleFieldChange(schema.key, e.target.value)}
                     className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60 font-mono"
                   />

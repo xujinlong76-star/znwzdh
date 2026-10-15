@@ -163,7 +163,7 @@ export async function decryptVault(
       throw new Error('解密数据格式异常');
     }
     return items as VaultItem[];
-  } catch (err) {
+  } catch {
     throw new Error('金库解密失败：主密码不匹配或密文已被篡改');
   }
 }

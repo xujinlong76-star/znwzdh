@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Search, ArrowRight, Globe } from 'lucide-react'
+import { Search, ArrowRight } from 'lucide-react'
 
 interface SearchEngine {
   id: string
@@ -37,8 +37,8 @@ const SEARCH_ENGINES: Record<string, SearchEngine> = {
   },
 }
 
-export function QuickSearchWidget({ config }: { config?: Record<string, any> }) {
-  const defaultEngineKey = config?.defaultEngine || 'google'
+export function QuickSearchWidget({ config }: { config?: Record<string, unknown> }) {
+  const defaultEngineKey = (typeof config?.defaultEngine === 'string' ? config.defaultEngine : null) || 'google'
   const [selectedEngine, setSelectedEngine] = useState<string>(defaultEngineKey)
   const [query, setQuery] = useState('')
 

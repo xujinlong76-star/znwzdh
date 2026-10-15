@@ -1,19 +1,19 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 
 export interface NavigableCardItem {
   id: string
   title: string
   href: string
   categoryTitle?: string
-  rawItem?: any
+  rawItem?: unknown
 }
 
 export interface UseKeyboardNavigatorProps {
   enabled?: boolean
   cards: NavigableCardItem[]
-  onPeek?: (item: any) => void
+  onPeek?: (item: unknown) => void
   linkTarget?: string
 }
 

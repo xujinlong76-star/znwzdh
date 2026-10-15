@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { Rss, ExternalLink, RefreshCw, Sparkles, Clock } from 'lucide-react'
+import React, { useState, useCallback } from 'react'
+import { Rss, ExternalLink, RefreshCw, Clock } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 
 interface FeedItem {

@@ -132,7 +132,28 @@ RRF（k=60）会把靠前名次压得**非常接近**，因此任何 ≥11% 的�
 - 发写请求统一用 Node 的 `fetch`（显式 UTF-8），不要用 PowerShell 的内建 cmdlet；
 - 验证时不要只"看页面"，要核对**码点或数据库原始值**。
 
-## 8. 已验证的测试覆盖
+## 9. vec0 语义检索静默失效（2026-10 修复）
+
+**症状**：`/api/health` 显示 `semantic: true`，但 `/api/search` 的 `channelsUsed`
+**从不出现 "semantic"**。关键词/拼音/全文正常，只有语义通道失效，且无任何报错。
+
+**根因**：早期 `SqliteVecStore` 的 vec0 表只存 `site_key`（FNV 哈希整数），
+靠进程内的 `keyToSite` Map 把哈希还原成站点 UUID。该映射只在**进程启动时** rehydrate 一次。
+当 seed 脚本/另一个服务实例**直接写 DB** 后，运行中服务的映射就陈旧了：
+`search()` 里 `keyToSite.get(key)` 返回 undefined，兜底成 `String(key)`（哈希数字），
+匹配不到任何站点 UUID → 语义通道返回空。`channelSemantic` 的 catch 又把这个逻辑错误的表现
+静默吞掉，所以对外毫无征兆。
+
+**修复**：vec0 表加 `site_id TEXT` 元数据列（`site_key INTEGER PRIMARY KEY, site_id TEXT, embedding float[N]`），
+`search()` 直接从行里读 site_id，彻底摆脱进程内映射。旧 schema 在 `init()` 里检测并迁移，
+`rehydrate()` 按「计数不一致就重建」的原则用 embeddings 表（唯一事实源）重灌 vec0。
+
+**教训**：
+1. 派生索引（vec0）不要依赖进程内状态做键映射 —— 把业务键（site_id）存进索引本身。
+2. `catch { return [] }` 式的静默降级会掩盖逻辑错误，关键通道应至少记一条 debug 日志。
+3. 验证语义检索不能只看 `capabilities.semantic`，必须断言 `channelsUsed` 里真的含 "semantic"。
+
+## 10. 已验证的测试覆盖
 
 ```
 packages/core/test/core.test.ts    24 passed   CJK 分词 / MATCH 表达式 / 拼音 / RRF / 个性化通道

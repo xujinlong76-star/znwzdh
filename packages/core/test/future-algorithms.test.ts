@@ -4,7 +4,6 @@ import {
   extractContextFeatures,
   createLinUCBModel,
   predictArmWeights,
-  predictFusionWeights,
   updateArmReward,
   invertMatrix,
   matVecMul,
@@ -25,6 +24,7 @@ import {
   lorentzToPoincare,
   KalmanFilter2D,
   determinePrefetchStrategy,
+  canonicalizeUrl,
   calculateShannonEntropy,
   hammingDistance64,
   auditPageHealth,
@@ -159,32 +159,6 @@ describe('LinUCB 情境自适应多通道融合引擎', () => {
     const serialized = serializeLinUCB(model);
     const restored = deserializeLinUCB(serialized);
     expect(restored.arms.fts.b[0]).toBe(model.arms.fts.b[0]);
-  });
-
-  it('predictFusionWeights 输出与 RRF 融合接口完全契合的权重', () => {
-    const model = createLinUCBModel(0.25);
-    const fw = predictFusionWeights(model, 'react 开发工具', { coverageStrength: 0.4, k: 50 });
-    expect(fw.coverageStrength).toBe(0.4);
-    expect(fw.k).toBe(50);
-    expect(fw.exact).toBeGreaterThan(0);
-    expect(fw.fts).toBeGreaterThan(0);
-    expect(fw.semantic).toBeGreaterThan(0);
-  });
-
-  it('Sherman-Morrison 维护的 A_inv 与全量矩阵求逆保持数值一致', () => {
-    const model = createLinUCBModel(0.2);
-    // 更新若干次
-    updateArmReward(model, 'semantic', '自然语言模型', 1.0);
-    updateArmReward(model, 'semantic', '深度学习框架', 0.8);
-
-    const cachedInv = model.arms.semantic.A_inv!;
-    const freshInv = invertMatrix(model.arms.semantic.A);
-
-    for (let i = 0; i < model.dimension; i++) {
-      for (let j = 0; j < model.dimension; j++) {
-        expect(cachedInv[i][j]).toBeCloseTo(freshInv[i][j], 4);
-      }
-    }
   });
 });
 
@@ -402,6 +376,18 @@ describe('前沿算法进阶改造测试套件', () => {
       expect(determinePrefetchStrategy({ effectiveType: '2g' })).toBe('none');
       expect(determinePrefetchStrategy({ effectiveType: '3g' })).toBe('dns-prefetch');
       expect(determinePrefetchStrategy({ effectiveType: '4g' })).toBe('preconnect');
+    });
+  });
+
+  describe('URL 规范化指纹清洗器 (canonicalizeUrl)', () => {
+    it('应当剥离 utm_*、spm、fbclid 等追踪参数并归一化域名与斜杠', () => {
+      expect(
+        canonicalizeUrl('HTTPS://Example.COM:443/docs/?utm_source=twitter&spm=a2c.123&lang=zh&fbclid=xyz')
+      ).toBe('https://example.com/docs?lang=zh');
+
+      expect(
+        canonicalizeUrl('https://trash-e2e.example.com/?utm_medium=social')
+      ).toBe('https://trash-e2e.example.com');
     });
   });
 });

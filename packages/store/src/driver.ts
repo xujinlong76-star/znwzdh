@@ -225,12 +225,6 @@ CREATE TABLE IF NOT EXISTS user_vault_sync (
   version INTEGER NOT NULL DEFAULT 1,
   updated_at INTEGER NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS app_settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);
 `;
 
 const DDL_PG = `
@@ -419,12 +413,6 @@ CREATE TABLE IF NOT EXISTS user_vault_sync (
   version INTEGER NOT NULL DEFAULT 1,
   updated_at BIGINT NOT NULL
 );
-
-CREATE TABLE IF NOT EXISTS app_settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL,
-  updated_at BIGINT NOT NULL
-);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;
@@ -440,9 +428,8 @@ export async function openDb(config: {
     const raw = new Database(config.sqlitePath ?? "./data/navhub.db");
     // WAL 提升并发读性能；foreign_keys 打开以便后续加约束
     raw.pragma("journal_mode = WAL");
-    raw.pragma("synchronous = NORMAL");
-    raw.pragma("journal_size_limit = 67108864");
     raw.pragma("foreign_keys = ON");
+    raw.exec(DDL_SQLITE);
     const { drizzle } = await import("drizzle-orm/better-sqlite3");
     const db: Db = {
       dialect: "sqlite",
@@ -450,16 +437,6 @@ export async function openDb(config: {
       sqlite: raw,
       async close() { raw.close(); },
     };
-    try {
-      raw.exec(DDL_SQLITE);
-    } catch {
-      // 旧库启动保护：表存在但缺新列时（如 jobs 缺 next_run_at），
-      // DDL 里的 CREATE INDEX 先崩（IF NOT EXISTS 只 guard 索引名，不 guard 列），
-      // migrateColumns 还没机会补列——曾导致老部署升级即无法启动。
-      // 先补列再重放 DDL（全是 IF NOT EXISTS，重放安全）；仍失败则原样抛出。
-      await migrateColumns(db);
-      raw.exec(DDL_SQLITE);
-    }
     await migrateColumns(db);
     await migrateSiteIndexes(db);
     return db;
@@ -467,6 +444,7 @@ export async function openDb(config: {
 
   const { default: pg } = await import("pg");
   const pool = new pg.Pool({ connectionString: config.databaseUrl });
+  await pool.query(DDL_PG);
   const { drizzle } = await import("drizzle-orm/node-postgres");
   const db: Db = {
     dialect: "pg",
@@ -474,13 +452,6 @@ export async function openDb(config: {
     pg: pool,
     async close() { await pool.end(); },
   };
-  try {
-    await pool.query(DDL_PG);
-  } catch {
-    // 同上：旧 PG 库缺列时索引先崩，先补列再重放（幂等语句，重放安全）。
-    await migrateColumns(db);
-    await pool.query(DDL_PG);
-  }
   await migrateColumns(db);
   await migrateSiteIndexes(db);
   return db;

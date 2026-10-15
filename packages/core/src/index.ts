@@ -17,12 +17,10 @@ export * from "./prefetch.ts";
 export * from "./modular.ts";
 export * from "./diy-layout.ts";
 export * from "./deterministic-favicon.ts";
-export * from "./batch-operations.ts";
-export * from "./bookmark-parser.ts";
-export * from "./crdt-sync.ts";
-export * from "./keyboard-nav.ts";
 export * from "./wayback-resolver.ts";
-
+export * from "./crdt-sync.ts";
+export * from "./bookmark-parser.ts";
+export * from "./batch-operations.ts";
 
 
 

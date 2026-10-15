@@ -81,7 +81,7 @@ export interface HubTag {
 }
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(hubUrl(path), { signal, headers: { Accept: 'application/json', ...authHeaders() } })
+  const res = await fetch(hubUrl(path), { signal, headers: { Accept: 'application/json' } })
   if (!res.ok) throw hubError(res.status)
   return (await res.json()) as T
 }
@@ -100,48 +100,12 @@ async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DEL
   const res = await fetch(hubUrl(path), {
     method,
     signal,
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders() },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (!res.ok) throw hubError(res.status)
   const text = await res.text()
   return (text ? JSON.parse(text) : {}) as T
-}
-
-/**
- * 终端用户云端身份 token（多端/多用户场景）。
- *
- * 中枢侧规则（见 apps/api/src/server.ts resolveIdentity）：请求带有效 Bearer
- * 时，收藏/金库/画像/历史强制绑定 "token:<id>" 身份并忽略自报 anonId；
- * 不带时回退匿名行为。token 存 localStorage 只存本机，永不进 URL。
- * 获取方式：管理员 POST /api/tokens 建只读 token，把明文填到「偏好设置」。
- */
-const API_TOKEN_KEY = 'navhub_api_token'
-
-export function getApiToken(): string | null {
-  try {
-    return localStorage.getItem(API_TOKEN_KEY)
-  } catch {
-    return null
-  }
-}
-
-export function setApiToken(token: string | null): void {
-  try {
-    if (!token || !token.trim()) localStorage.removeItem(API_TOKEN_KEY)
-    else localStorage.setItem(API_TOKEN_KEY, token.trim())
-  } catch {
-    // 隐私模式等不可写存储：静默保持匿名行为
-  }
-}
-
-function authHeaders(): Record<string, string> {
-  try {
-    const t = typeof localStorage === 'undefined' ? null : localStorage.getItem(API_TOKEN_KEY)
-    return t && t.trim() ? { Authorization: 'Bearer ' + t.trim() } : {}
-  } catch {
-    return {}
-  }
 }
 
 /** 通用 GET / 发送（管理端等自定义端点用；失败抛错，由调用方决定降级） */
@@ -181,26 +145,6 @@ export function reportClick(siteId: string, identity?: string): void {
   void sendJson('/api/events' + query, 'POST', { kind: 'click', siteId }).catch(() => undefined)
 }
 
-/** 驻留时长与交互行为在线强化学习反馈上报（fire-and-forget，失败静默） */
-export function reportInteractionFeedback(params: {
-  siteId?: string
-  query?: string
-  channel?: 'exact' | 'fts' | 'pinyin' | 'semantic' | 'personal'
-  dwellMs: number
-  interactionType?: 'click' | 'copy' | 'bounce'
-  identity?: string
-}): void {
-  const query = params.identity ? '?anonId=' + encodeURIComponent(params.identity) : ''
-  void sendJson('/api/events' + query, 'POST', {
-    kind: 'interaction_feedback',
-    siteId: params.siteId,
-    query: params.query,
-    channel: params.channel,
-    dwellMs: params.dwellMs,
-    interactionType: params.interactionType ?? 'click',
-  }).catch(() => undefined)
-}
-
 /* ------------------------------ 标签 ------------------------------ */
 
 export async function fetchTags(): Promise<HubTag[]> {
@@ -213,7 +157,8 @@ export async function fetchTags(): Promise<HubTag[]> {
 
 /* ------------------------------ 榜单 ------------------------------ */
 
-export async function fetchTrending(limit = 20): Promise<HubSite[]> {  try {
+export async function fetchTrending(limit = 20): Promise<HubSite[]> {
+  try {
     const data = await getJson<{ hits: Array<{ site: HubSite }> }>('/api/rank/trending?limit=' + limit)
     return data.hits.map((h) => h.site).filter(Boolean)
   } catch {
@@ -227,62 +172,6 @@ export async function fetchNewSites(limit = 20): Promise<HubSite[]> {
     return data.hits.map((h) => h.site).filter(Boolean)
   } catch {
     return []
-  }
-}
-
-/* ------------------------------ 搜索联想 ------------------------------ */
-
-export interface HubSuggest {
-  q: string
-  queries: Array<{ query: string; count: number }>
-  tags: Array<{ name: string; slug: string; count: number }>
-  sites: Array<{ id: string; title: string; url: string }>
-}
-
-/**
- * 搜索联想（keystroke 级调用，调用方自行防抖）。
- * 失败返回空联想（不抛错）：联想是增强，不是检索主路径。
- * 服务端不记 search 事件，可放心按敲击调用。
- */
-export async function fetchSuggest(q: string, limit = 6, signal?: AbortSignal): Promise<HubSuggest> {
-  const empty: HubSuggest = { q, queries: [], tags: [], sites: [] }
-  if (!q.trim()) return empty
-  try {
-    const params = new URLSearchParams({ q: q.trim(), limit: String(limit) })
-    return await getJson<HubSuggest>('/api/suggest?' + params.toString(), signal)
-  } catch (err) {
-    if ((err as Error)?.name === 'AbortError') throw err
-    return empty
-  }
-}
-
-/* ------------------------------ 精选专题 ------------------------------ */
-
-export interface HubCollection {
-  id: string
-  slug: string
-  title: string
-  description?: string | null
-  kind: 'topic' | 'geo' | 'roadmap'
-  icon?: string | null
-  sort: number
-  enabled: boolean
-}
-
-export async function fetchCollections(): Promise<HubCollection[]> {
-  try {
-    return await getJson<HubCollection[]>('/api/collections')
-  } catch {
-    return []
-  }
-}
-
-/** 专题详情（含站点列表；不存在时返回 null） */
-export async function fetchCollectionDetail(slug: string): Promise<{ collection: HubCollection; sites: HubSite[] } | null> {
-  try {
-    return await getJson<{ collection: HubCollection; sites: HubSite[] }>('/api/collections/' + encodeURIComponent(slug))
-  } catch {
-    return null
   }
 }
 
@@ -306,33 +195,6 @@ export async function fetchSimilar(siteId: string, limit = 6): Promise<HubSite[]
     return data.hits.map((h) => h.site).filter(Boolean)
   } catch {
     return []
-  }
-}
-
-export interface HubSiteAlternative {
-  site: HubSite
-  alternativeScore: number
-  geodesicDistance: number
-}
-
-/** 庞加莱/洛伦兹双曲平替推理与开源替代品发现 */
-export async function fetchSiteAlternatives(
-  siteId: string,
-  limit = 4,
-): Promise<{ alternatives: HubSiteAlternative[]; fallback: boolean }> {
-  try {
-    const data = await getJson<{
-      target?: HubSite
-      alternatives: HubSiteAlternative[]
-      count: number
-      fallback: boolean
-    }>('/api/sites/' + encodeURIComponent(siteId) + '/alternatives?limit=' + limit)
-    return {
-      alternatives: data.alternatives ?? [],
-      fallback: Boolean(data.fallback),
-    }
-  } catch {
-    return { alternatives: [], fallback: true }
   }
 }
 
@@ -420,6 +282,39 @@ export async function deleteCloudVault(identity: string): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+/* ------------------------------ 精选专题 ------------------------------ */
+
+export interface HubCollection {
+  id: string
+  slug: string
+  title: string
+  description?: string | null
+  kind: 'topic' | 'geo' | 'roadmap'
+  coverUrl?: string | null
+  icon?: string | null
+  enabled: boolean
+  sort: number
+  siteCount?: number
+  createdAt?: number
+  updatedAt?: number
+}
+
+export async function fetchCollections(): Promise<HubCollection[]> {
+  try {
+    return await getJson<HubCollection[]>('/api/collections')
+  } catch {
+    return []
+  }
+}
+
+export async function fetchCollectionDetail(slug: string): Promise<{ collection: HubCollection; sites: HubSite[] } | null> {
+  try {
+    return await getJson<{ collection: HubCollection; sites: HubSite[] }>('/api/collections/' + encodeURIComponent(slug))
+  } catch {
+    return null
   }
 }
 

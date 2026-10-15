@@ -83,34 +83,13 @@ export function createEmbeddingService(config: Partial<EmbeddingConfig> = {}): E
     return extractorPromise;
   }
 
-  const cacheLimit = 2048;
-  const cache = new Map<string, Float32Array>();
-
   async function encodeOne(text: string): Promise<Float32Array> {
-    const key = text.trim();
-    if (!key) return new Float32Array(cfg.dim);
-
-    const hit = cache.get(key);
-    if (hit) {
-      // LRU refresh: 提升命中热度
-      cache.delete(key);
-      cache.set(key, hit);
-      return hit;
-    }
-
     const ext = await load();
     if (!ext) throw new Error("embedding 模型不可用: " + (lastError ?? "未知原因"));
     // cls 与 mean 池化实测都能通过中文语义用例；这里用 cls 并归一化，
     // 归一化后余弦距离等价于点积，简化向量存储实现。
-    const out = await ext(key, { pooling: "cls", normalize: true });
-    const vec = Float32Array.from(out.data);
-
-    if (cache.size >= cacheLimit) {
-      const oldestKey = cache.keys().next().value;
-      if (oldestKey !== undefined) cache.delete(oldestKey);
-    }
-    cache.set(key, vec);
-    return vec;
+    const out = await ext(text, { pooling: "cls", normalize: true });
+    return Float32Array.from(out.data);
   }
 
   return {

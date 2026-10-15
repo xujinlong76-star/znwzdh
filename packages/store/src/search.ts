@@ -1,12 +1,16 @@
 import {
   DEFAULT_WEIGHTS,
+  createLinUCBModel,
+  predictArmWeights,
+  updateDiscountedArmReward,
+  computeDwellTimeReward,
   fuse,
+  type LinUCBModel,
+  type RetrievalChannel,
   looksLikeLatinQuery,
   normalizeQueryPinyin,
   personalCandidates,
-  predictFusionWeights,
   type FusionWeights,
-  type LinUCBModel,
   type PersonalizableSite,
   type SearchCandidate,
   type SearchChannel,
@@ -39,7 +43,6 @@ export interface SearchEngineDeps {
   vectors: VectorStore | null;
   embed?: ((text: string) => Promise<Float32Array>) | null;
   weights?: FusionWeights;
-  bandit?: LinUCBModel | null;
 }
 
 export interface SearchEngineOptions {
@@ -77,10 +80,55 @@ interface SiteRow {
 export class SearchEngine {
   private deps: SearchEngineDeps;
   private perChannel: number;
+  private linucbModel: LinUCBModel;
+  private feedbackCount = 0;
 
   constructor(deps: SearchEngineDeps, opts: SearchEngineOptions = {}) {
     this.deps = deps;
     this.perChannel = opts.perChannel ?? 50;
+    this.linucbModel = createLinUCBModel(0.15);
+  }
+
+  /**
+   * 在线强化学习反馈更新：根据用户点击/驻留行为实时更新 Discounted-LinUCB 模型
+   */
+  recordFeedback(
+    channel: RetrievalChannel,
+    query: string,
+    rewardOrDwell?: { reward?: number; dwellSeconds?: number; interactionType?: "click" | "copy" | "bounce" }
+  ): void {
+    const q = (query ?? "").trim();
+    if (!q) return;
+    const reward =
+      rewardOrDwell?.reward !== undefined
+        ? rewardOrDwell.reward
+        : rewardOrDwell?.dwellSeconds !== undefined
+          ? computeDwellTimeReward(rewardOrDwell.dwellSeconds, rewardOrDwell.interactionType ?? "click")
+          : 1.0;
+    updateDiscountedArmReward(this.linucbModel, channel, q, reward, 0.98);
+    this.feedbackCount++;
+  }
+
+  /**
+   * 获取当前在线 LinUCB 模型快照与针对指定查询词的预测动态权重
+   */
+  getLinUCBStatus(sampleQuery = "react"): {
+    feedbackCount: number;
+    predictedWeights: Record<RetrievalChannel, number>;
+    model: LinUCBModel;
+  } {
+    const basePriors: Record<RetrievalChannel, number> = {
+      exact: DEFAULT_WEIGHTS.exact ?? 1.4,
+      fts: DEFAULT_WEIGHTS.fts ?? 1.0,
+      pinyin: DEFAULT_WEIGHTS.pinyin ?? 0.9,
+      semantic: DEFAULT_WEIGHTS.semantic ?? 1.15,
+      personal: DEFAULT_WEIGHTS.personal ?? 0.3,
+    };
+    return {
+      feedbackCount: this.feedbackCount,
+      predictedWeights: predictArmWeights(this.linucbModel, sampleQuery, basePriors),
+      model: this.linucbModel,
+    };
   }
 
   get semanticAvailable(): boolean {
@@ -92,22 +140,26 @@ export class SearchEngine {
     return enabledValue(this.deps.db.dialect);
   }
 
-  get bandit(): LinUCBModel | null {
-    return this.deps.bandit ?? null;
-  }
-
-  setBandit(bandit: LinUCBModel | null): void {
-    this.deps.bandit = bandit;
-  }
-
   async search(q: SearchQuery): Promise<SearchResult> {
     const started = Date.now();
     const limit = q.limit ?? 20;
     const offset = Math.max(0, q.offset ?? 0);
     const raw = (q.q ?? "").trim();
-    const weights = this.deps.bandit
-      ? predictFusionWeights(this.deps.bandit, raw, this.deps.weights)
-      : (this.deps.weights ?? DEFAULT_WEIGHTS);
+    // 若已累积在线强化学习反馈且未硬性锁死静态权重，启用 Discounted-LinUCB 动态情境权重
+    const weights: FusionWeights =
+      this.deps.weights ??
+      (this.feedbackCount > 0 && raw.length > 0
+        ? {
+            ...DEFAULT_WEIGHTS,
+            ...predictArmWeights(this.linucbModel, raw, {
+              exact: DEFAULT_WEIGHTS.exact ?? 1.4,
+              fts: DEFAULT_WEIGHTS.fts ?? 1.0,
+              pinyin: DEFAULT_WEIGHTS.pinyin ?? 0.9,
+              semantic: DEFAULT_WEIGHTS.semantic ?? 1.15,
+              personal: DEFAULT_WEIGHTS.personal ?? 0.3,
+            }),
+          }
+        : DEFAULT_WEIGHTS);
     // 召回池必须覆盖「已取走的 + 本页要展示的」，否则翻到第 2 页就空了
     const pool = Math.max((offset + limit) * 3, 60);
 

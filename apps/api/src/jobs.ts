@@ -18,7 +18,6 @@ import { enrichUrl } from "@navhub/ai";
 import { ageInDays, trendScore, auditPageHealth } from "@navhub/core";
 import type { AppContext } from "./context.ts";
 import { indexSite } from "./index-site.ts";
-import { sendWebhookAlert } from "./alerts.ts";
 
 
 export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex";
@@ -210,8 +209,6 @@ export class JobRunner {
   /**
    * 失败告警：默认 console.error（生产可见于进程输出/容器日志），可注入 onAlert 收集
    * （测试用）。**只在重试耗尽时触发一次**——不搞每次失败都喊的告警风暴。
-   * 配置了 NAVHUB_ALERT_WEBHOOK_URL 时再投递一份 webhook（fire-and-forget，
-   * 投递失败静默吞掉，绝不拖住 tick）。
    */
   private alert(message: string, detail: { kind: string; attempts: number; error: string }): void {
     try {
@@ -220,11 +217,6 @@ export class JobRunner {
     try {
       this.onAlert?.(message, detail);
     } catch { /* 回调失败不影响任务流 */ }
-    const url = this.ctx.config.alerts?.webhookUrl;
-    if (url) {
-      void sendWebhookAlert(url, message, detail, this.ctx.config.alerts?.webhookTimeoutMs)
-        .catch(() => undefined);
-    }
   }
 
   /** 健康巡检：与 MCP health_check 同一套抓取逻辑，但走仓储（双方言） */

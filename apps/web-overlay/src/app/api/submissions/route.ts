@@ -48,18 +48,7 @@ async function submitToHub(data: SubmissionData): Promise<NextResponse> {
     })
     const body = await res.json().catch(() => ({}))
     if (res.status === 409) {
-        // 透传中枢的去重细节（reason=duplicate_url|duplicate_title，status=pending|active），
-        // 表单据此渲染「在排队」还是「已上架直达」，而不是一句干巴巴的"已存在"。
-        return NextResponse.json(
-            {
-                success: false,
-                message: body.message || '该网址已存在',
-                reason: body.reason,
-                status: body.status,
-                siteId: body.siteId,
-            },
-            { status: 409 },
-        )
+        return NextResponse.json({ success: false, message: '该网址已存在' }, { status: 409 })
     }
     if (!res.ok) {
         return NextResponse.json(

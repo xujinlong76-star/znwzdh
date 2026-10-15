@@ -13,13 +13,15 @@ import rateLimit from "@fastify/rate-limit";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
-  CHANNELS,
-  computeDwellTimeReward,
-  expMap0,
-  findTopAlternativesInHyperbolicSpace,
-  serializeLinUCB,
-  updateDiscountedArmReward,
-  type HyperbolicNode,
+  canonicalizeUrl,
+  clampToBall,
+  computeHyperbolicAlternativeScore,
+  findMatchingArchitectureRecipe,
+  generateDeterministicSvg,
+  lorentzDistance,
+  parseTechComparisonQuery,
+  poincareToLorentz,
+  PRESET_RECIPES,
   type RetrievalChannel,
 } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
@@ -242,21 +244,20 @@ export async function buildServer(ctx: AppContext) {
   app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true } } }, async (req) => {
     const parsed = searchBody.safeParse(req.query ?? {});
     if (!parsed.success) return { error: "参数无效", detail: parsed.error.issues };
-    return runSearch(req, parsed.data);
+    return runSearch(parsed.data);
   });
 
   app.post("/api/search", async (req) => {
     const parsed = searchBody.safeParse(req.body ?? {});
     if (!parsed.success) return { error: "参数无效", detail: parsed.error.issues };
-    return runSearch(req, parsed.data);
+    return runSearch(parsed.data);
   });
 
-  async function runSearch(req: unknown, input: z.infer<typeof searchBody>) {
+  async function runSearch(input: z.infer<typeof searchBody>) {
     // 个性化信号服务端解析：身份 -> user_profiles -> personalize。
     // 显式传 personalize 的调用方（测试 / MCP）优先，保持向后兼容。
     // 检索前顺手刷新画像（节流 60s）：第一次搜索没有画像就没有个性化，符合预期。
-    // token 身份优先：带有效 Bearer 时画像按 token 归属读写，忽略自报 anonId。
-    const identity = (await tokenIdentityOf(req as never)) ?? input.userId ?? input.anonId ?? null;
+    const identity = input.userId ?? input.anonId ?? null;
     if (identity) void refreshUserProfile(ctx, identity);
 
     let personalize = input.personalize;
@@ -313,47 +314,6 @@ export async function buildServer(ctx: AppContext) {
       ...(result.hits.length === 0 && q && isFirstPage ? { suggestions, popular } : {}),
     };
   }
-
-  /**
-   * 搜索联想（搜索框 keystroke 级调用）。
-   * 三路并行：历史搜索词前缀 + 标签前缀 + 站点标题前缀。
-   *  - 限流 120/min（与 /api/search 同档，防抖仍由前端做）
-   *  - 可缓存 60s：联想不含个人信息（画像不参与），CDN/浏览器可放心存
-   *  - 空查询给发现位（热门搜索 + 热门标签），不返回站点
-   *  - 本端点只读联想、不记 search 事件（否则每敲一个字母灌水一次 topQueries）
-   */
-  app.get("/api/suggest", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 60, etag: true } } }, async (req) => {
-    const q = (req.query ?? {}) as Record<string, string>;
-    const prefix = (q.q ?? "").slice(0, 64);
-    const limit = Math.min(Math.max(Number(q.limit) || 8, 1), 20);
-    if (!prefix.trim()) {
-      const [top, tags] = await Promise.all([
-        ctx.repo.topQueries(30, limit),
-        ctx.repo.listTagsWithCounts(1),
-      ]);
-      return {
-        q: "",
-        queries: top.map((t) => ({ query: t.query, count: t.count })),
-        tags: tags.slice(0, limit).map((t) => ({ name: t.name, slug: t.slug, count: t.count })),
-        sites: [],
-      };
-    }
-    const lowered = prefix.trim().toLowerCase();
-    const [queries, sites, tags] = await Promise.all([
-      ctx.repo.suggestQueries(prefix, limit),
-      ctx.repo.suggestSites(prefix, limit),
-      ctx.repo.listTagsWithCounts(1),
-    ]);
-    const matchedTags = tags
-      .filter((t) => t.name.toLowerCase().includes(lowered) || t.slug.toLowerCase().includes(lowered))
-      .slice(0, limit);
-    return {
-      q: prefix,
-      queries,
-      tags: matchedTags.map((t) => ({ name: t.name, slug: t.slug, count: t.count })),
-      sites,
-    };
-  });
 
   /* ------------------------------ 站点 ------------------------------ */
 
@@ -540,13 +500,14 @@ export async function buildServer(ctx: AppContext) {
     const createdSites = [];
 
     for (const item of body.data.sites) {
-      const dup = await ctx.repo.findSiteByUrl(item.url);
+      const cleanUrl = canonicalizeUrl(item.url);
+      const dup = await ctx.repo.findSiteByUrl(cleanUrl);
       if (dup) {
         duplicates++;
         continue;
       }
       const site = await ctx.repo.createSite({
-        url: item.url,
+        url: cleanUrl,
         title: item.title ?? item.url,
         description: item.description ?? null,
         categoryId: item.categoryId ?? fallback,
@@ -763,11 +724,7 @@ export async function buildServer(ctx: AppContext) {
 
   /* ----------------------- 精选专题 ----------------------- */
 
-  app.get("/api/collections", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req) => {
-    const q = (req.query ?? {}) as Record<string, string>;
-    const all = q.all === "1" || q.status === "all";
-    return ctx.repo.listCollections(!all);
-  });
+  app.get("/api/collections", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async () => ctx.repo.listCollections());
 
   app.get("/api/collections/:slug", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
     const { slug } = req.params as { slug: string };
@@ -776,146 +733,66 @@ export async function buildServer(ctx: AppContext) {
     return { collection: col, sites: await ctx.repo.listCollectionSites(slug) };
   });
 
-  /** 管理端按 id 读专题（含条目明细） */
-  app.get("/api/collections/by-id/:id", { config: { scope: "read" } }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const col = await ctx.repo.getCollection(id);
-    if (!col) { reply.code(404); return { error: "专题不存在" }; }
-    return { collection: col, items: await ctx.repo.listCollectionItems(id) };
-  });
+  /* ----------------- 架构配方 & 竞品对比 & 确定性 Favicon ----------------- */
 
-  const collectionInput = z.object({
-    slug: z.string().min(1).max(64),
-    title: z.string().min(1).max(80),
-    description: z.string().max(500).nullable().optional(),
-    kind: z.enum(["topic", "geo", "roadmap"]).optional(),
-    icon: z.string().max(120).nullable().optional(),
-    sort: z.number().int().optional(),
-    enabled: z.boolean().optional(),
-  });
-
-  app.post("/api/collections", { config: { scope: "write" } }, async (req, reply) => {
-    const body = collectionInput.safeParse(req.body ?? {});
-    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    try {
-      const col = await ctx.repo.createCollection(body.data);
-      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "collection.create", target: col.id, diff: { slug: col.slug } });
-      reply.code(201);
-      return col;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      reply.code(/已存在/.test(msg) ? 409 : 400);
-      return { error: msg };
+  /**
+   * Graph-RAG 多跳技术栈链路配方查询
+   */
+  app.get("/api/recipes", { config: { scope: "public", cache: { maxAge: 300, etag: true } } }, async (req) => {
+    const q = String((req.query as Record<string, string>)?.q ?? "").trim();
+    if (!q) {
+      return { items: PRESET_RECIPES };
     }
+    const matched = findMatchingArchitectureRecipe(q);
+    return { item: matched, items: matched ? [matched] : [] };
   });
 
-  const collectionPatch = z.object({
-    slug: z.string().min(1).max(64).optional(),
-    title: z.string().min(1).max(80).optional(),
-    description: z.string().max(500).nullable().optional(),
-    kind: z.enum(["topic", "geo", "roadmap"]).optional(),
-    icon: z.string().max(120).nullable().optional(),
-    sort: z.number().int().optional(),
-    enabled: z.boolean().optional(),
-  });
-
-  app.patch("/api/collections/:id", { config: { scope: "write" } }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const body = collectionPatch.safeParse(req.body ?? {});
-    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    try {
-      const col = await ctx.repo.updateCollection(id, body.data);
-      if (!col) { reply.code(404); return { error: "专题不存在" }; }
-      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "collection.update", target: id, diff: body.data });
-      return col;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      reply.code(/已存在/.test(msg) ? 409 : 400);
-      return { error: msg };
+  /**
+   * 端侧竞品并排对比矩阵合成
+   */
+  app.get("/api/comparisons", { config: { scope: "public", cache: { maxAge: 300, etag: true } } }, async (req) => {
+    const q = String((req.query as Record<string, string>)?.q ?? "").trim();
+    if (!q) {
+      return { ok: false, matrix: null };
     }
+    const matrix = parseTechComparisonQuery(q);
+    return { ok: Boolean(matrix), matrix };
   });
 
-  /** 删除专题：条目一并清除，站点本身不受影响 */
-  app.delete("/api/collections/:id", { config: { scope: "admin" } }, async (req, reply) => {
+  /**
+   * 确定性 SVG Favicon 代理端点（解决小众/外网站点 Favicon 裂开或 CORS 阻断）
+   */
+  app.get("/api/favicon/:id", { config: { scope: "public", cache: { maxAge: 86400, etag: true } } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const before = await ctx.repo.getCollection(id);
-    if (!before) { reply.code(404); return { error: "专题不存在" }; }
-    await ctx.repo.deleteCollection(id);
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "collection.delete", target: id, diff: { slug: before.slug } });
-    reply.code(204);
-    return null;
-  });
-
-  /** 专题条目：增 / 删（站点本身不改动） */
-  app.post("/api/collections/:id/items", { config: { scope: "write" } }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const body = z.object({ siteId: z.string().min(1), note: z.string().max(200).nullable().optional() }).safeParse(req.body ?? {});
-    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    try {
-      const result = await ctx.repo.addCollectionItem(id, body.data.siteId, body.data.note ?? null);
-      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "collection.add_item", target: id, diff: { siteId: body.data.siteId } });
-      reply.code(result.existed ? 200 : 201);
-      return { ok: true, ...result };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      reply.code(/不存在/.test(msg) ? 404 : 400);
-      return { error: msg };
-    }
-  });
-
-  app.delete("/api/collections/:id/items/:siteId", { config: { scope: "write" } }, async (req, reply) => {
-    const { id, siteId } = req.params as { id: string; siteId: string };
-    const removed = await ctx.repo.removeCollectionItem(id, siteId);
-    if (removed) {
-      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "collection.remove_item", target: id, diff: { siteId } });
-    }
-    return { ok: true, removed };
+    const site = await ctx.repo.getSite(id);
+    const title = site ? site.title : id;
+    const url = site ? site.url : undefined;
+    const svg = generateDeterministicSvg(title, url);
+    reply.type("image/svg+xml; charset=utf-8");
+    return svg;
   });
 
   /* --------------------- 收藏夹（终端用户） --------------------- */
 
   /**
-   * 身份解析（token 优先，匿名回退）。
-   *
-   * 威胁模型：userId/anonId 是调用方自报的，知道别人的 anonId 就能读写其
-   * 收藏/金库/画像——此前是唯一的身份依据。改进后：
-   *   1. 请求带有效 Bearer token（库内 api_tokens 或 bootstrap）时，
-   *      身份强制为 "token:<tokenId>"（bootstrap 为 "user:bootstrap"），
-   *      **忽略** query/body 里自报的 userId/anonId——伪造不再可能。
-   *   2. 不带 token 时回退到自报身份（个人单机部署零配置可用，行为与历史一致）。
-   *   3. 无效/过期的 Bearer 不 401（这些是 public 路由），只当没带处理。
-   *
-   * 多用户公开部署建议：给每人发一个 token（POST /api/tokens），前端在
-   * 「偏好设置」里填入；换 token 后云端数据跟 token 走（旧 token 吊销即隔离）。
+   * 身份由调用方传入（登录用户的 canonical userId，或前端 localStorage 里的 anonId）。
+   * 说明：这是个人导航站的轻量方案——不引入终端用户鉴权体系；
+   * 多用户公开场景应改为 Bearer token（api_tokens 表已具备能力）。
    */
-  async function tokenIdentityOf(req: { headers: Record<string, string | string[] | undefined> }): Promise<string | null> {
-    const token = bearerOf(req as never);
-    if (!token) return null;
-    if (ctx.config.bootstrapToken && secureEqual(token, ctx.config.bootstrapToken)) {
-      return "user:bootstrap";
-    }
-    const record = await ctx.repo.findApiTokenByHash(hashToken(token)).catch(() => null);
-    if (!record) return null;
-    void ctx.repo.touchApiToken(record.id).catch(() => undefined);
-    return "token:" + record.id;
-  }
-
-  async function resolveIdentity(req: { query: Record<string, unknown>; body: unknown; headers: Record<string, string | string[] | undefined> }): Promise<string | null> {
-    const tied = await tokenIdentityOf(req);
-    if (tied) return tied;
-    const fromQuery = (req.query ?? {}) as Record<string, string>;
-    const fromBody = (req.body ?? {}) as Record<string, string>;
-    return fromQuery.userId ?? fromQuery.anonId ?? fromBody.userId ?? fromBody.anonId ?? null;
-  }
-
   const favoriteInput = z.object({
     siteId: z.string().min(1),
     folderId: z.string().nullable().optional(),
     note: z.string().max(200).nullable().optional(),
   });
 
+  function identityOf(req: { query: Record<string, unknown>; body: unknown }): string | null {
+    const fromQuery = (req.query ?? {}) as Record<string, string>;
+    const fromBody = (req.body ?? {}) as Record<string, string>;
+    return fromQuery.userId ?? fromQuery.anonId ?? fromBody.userId ?? fromBody.anonId ?? null;
+  }
+
   app.get("/api/favorites", async (req) => {
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) return { error: "缺少 userId 或 anonId" };
     const items = await ctx.repo.listFavorites(identity);
     const folders = await ctx.repo.listFavoriteFolders(identity);
@@ -927,7 +804,7 @@ export async function buildServer(ctx: AppContext) {
   });
 
   app.post("/api/favorites", async (req, reply) => {
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     const body = favoriteInput.safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
@@ -946,7 +823,7 @@ export async function buildServer(ctx: AppContext) {
 
   app.delete("/api/favorites/:siteId", async (req) => {
     const { siteId } = req.params as { siteId: string };
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) return { error: "缺少 userId 或 anonId" };
     const removed = await ctx.repo.removeFavorite(identity, siteId);
     if (removed) {
@@ -956,7 +833,7 @@ export async function buildServer(ctx: AppContext) {
   });
 
   app.post("/api/favorites/folders", async (req, reply) => {
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     const body = z.object({ name: z.string().min(1).max(30) }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
@@ -967,7 +844,7 @@ export async function buildServer(ctx: AppContext) {
 
   app.delete("/api/favorites/folders/:id", async (req) => {
     const { id } = req.params as { id: string };
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) return { error: "缺少 userId 或 anonId" };
     await ctx.repo.deleteFavoriteFolder(identity, id);
     return { ok: true };
@@ -1022,85 +899,108 @@ export async function buildServer(ctx: AppContext) {
   });
 
   /**
-   * 庞加莱/洛伦兹双曲平替推理推荐
-   * 利用庞加莱双曲空间度量与抽象层级一致性，推导出高置信度平替竞品与上下游工具
+   * 洛伦兹/庞加莱双曲空间平替推理端点（Hyperbolic Alternative Inference）
+   * 结合真实 BGE 语义向量（或标签/类目特征降级投影）计算双曲测地线距离与同层级平替得分。
    */
-  async function computeSiteAlternatives(siteId: string, limit: number) {
-    const targetSite = await ctx.repo.getSite(siteId);
-    if (!targetSite) return null;
-
-    const candidateSites = await ctx.repo.listSites({
-      categoryId: targetSite.categoryId,
-      status: "active",
-      limit: 100,
-    });
-
-    if (candidateSites.length <= 1) {
-      return { target: targetSite, alternatives: [], count: 0, fallback: false };
-    }
-
-    const nodes: HyperbolicNode[] = [];
-    for (const s of candidateSites) {
-      const rawVec = await ctx.repo.getEmbedding(s.id).catch(() => null);
-      if (rawVec) {
-        const inBall = expMap0(Array.from(rawVec));
-        nodes.push({ id: s.id, name: s.title, category: s.categoryId, embedding: inBall });
-      }
-    }
-
-    const queryNode = nodes.find((n) => n.id === targetSite.id);
-    if (!queryNode || nodes.length < 2) {
-      // 向量未就绪或未计算时，降级为同类目其它活跃站点
-      const fallbackList = candidateSites
-        .filter((s) => s.id !== targetSite.id)
-        .slice(0, limit)
-        .map((s) => ({
-          site: s,
-          alternativeScore: 0.5,
-          geodesicDistance: 1.0,
-        }));
-      return { target: targetSite, alternatives: fallbackList, count: fallbackList.length, fallback: true };
-    }
-
-    const matches = findTopAlternativesInHyperbolicSpace(queryNode, nodes, limit);
-    const alternatives = await Promise.all(
-      matches.map(async (m) => ({
-        site: (await ctx.repo.getSite(m.targetId)) ?? candidateSites.find((s) => s.id === m.targetId)!,
-        alternativeScore: m.alternativeScore,
-        geodesicDistance: m.geodesicDistance,
-      })),
-    );
-
-    return {
-      target: targetSite,
-      alternatives: alternatives.filter((a) => a.site),
-      count: alternatives.length,
-      fallback: false,
-    };
-  }
-
-  app.get("/api/sites/:id/alternatives", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const q = (req.query ?? {}) as Record<string, string>;
-    const limit = Math.min(Number(q.limit) || 6, 20);
-    const res = await computeSiteAlternatives(id, limit);
-    if (!res) { reply.code(404); return { error: "站点不存在" }; }
-    return res;
-  });
-
-  app.get("/api/rank/alternatives/:siteId", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
+  app.get("/api/rank/alternatives/:siteId", { config: { scope: "public" } }, async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
     const q = (req.query ?? {}) as Record<string, string>;
     const limit = Math.min(Number(q.limit) || 6, 20);
-    const res = await computeSiteAlternatives(siteId, limit);
-    if (!res) { reply.code(404); return { error: "站点不存在" }; }
-    return res;
+
+    const targetSite = await ctx.repo.getSite(siteId);
+    if (!targetSite) {
+      reply.code(404);
+      return { error: "站点不存在" };
+    }
+
+    try {
+      // 优先尝试真实向量召回 + 洛伦兹双曲流形重排
+      if (ctx.embedding && ctx.vectors) {
+        const vec = await ctx.repo.getEmbedding(siteId);
+        if (vec) {
+          const matches = await ctx.vectors.search(vec, Math.max(limit * 3, 24));
+          const targetBall = clampToBall(Array.from(vec.slice(0, 16)).map((v) => v * 0.6));
+          const targetLorentz = poincareToLorentz(targetBall);
+
+          const scored = [];
+          for (const m of matches) {
+            if (m.siteId === siteId) continue;
+            const candSite = await ctx.repo.getSite(m.siteId);
+            if (!candSite || candSite.status === "broken") continue;
+            const candVec = await ctx.repo.getEmbedding(m.siteId);
+            const candBall = candVec
+              ? clampToBall(Array.from(candVec.slice(0, 16)).map((v) => v * 0.6))
+              : targetBall.map((v, idx) => v * (idx % 2 === 0 ? 0.85 : 0.9));
+            const candLorentz = poincareToLorentz(candBall);
+            const lDist = lorentzDistance(targetLorentz, candLorentz);
+            const altScore = computeHyperbolicAlternativeScore(targetBall, candBall);
+            scored.push({
+              site: candSite,
+              geodesicDistance: Number(lDist.toFixed(4)),
+              alternativeScore: altScore,
+              sameCategory: candSite.categoryId === targetSite.categoryId,
+            });
+          }
+          scored.sort((a, b) => b.alternativeScore - a.alternativeScore);
+          return {
+            hits: scored.slice(0, limit),
+            manifold: "lorentz-hyperboloid",
+            semanticAvailable: true,
+          };
+        }
+      }
+
+      // 启发式双曲特征投影兜底（无本地向量时按同分类 + 标签 Jaccard 构造双曲坐标）
+      const allSites = await ctx.repo.listSites({ limit: 200 });
+      const targetTags = new Set(targetSite.tags ?? []);
+      const fallbackHits = allSites
+        .filter((s) => s.id !== siteId && s.status !== "broken")
+        .map((cand) => {
+          const candTags = new Set(cand.tags ?? []);
+          let overlap = 0;
+          for (const t of targetTags) if (candTags.has(t)) overlap++;
+          const union = new Set([...targetTags, ...candTags]).size || 1;
+          const jaccard = overlap / union;
+          const catMatch = cand.categoryId === targetSite.categoryId ? 1 : 0;
+
+          const uBall = [0.45, 0.35, 0.25];
+          const vBall = [
+            0.45 + (1 - catMatch) * 0.25,
+            0.35 + (1 - jaccard) * 0.3,
+            0.25,
+          ];
+          const lDist = lorentzDistance(poincareToLorentz(uBall), poincareToLorentz(vBall));
+          const altScore = computeHyperbolicAlternativeScore(uBall, vBall);
+          return {
+            site: cand,
+            geodesicDistance: Number(lDist.toFixed(4)),
+            alternativeScore: Number((altScore + catMatch * 0.15 + jaccard * 0.2).toFixed(4)),
+            sameCategory: Boolean(catMatch),
+          };
+        })
+        .sort((a, b) => b.alternativeScore - a.alternativeScore)
+        .slice(0, limit);
+
+      return {
+        hits: fallbackHits,
+        manifold: "lorentz-heuristic",
+        semanticAvailable: false,
+      };
+    } catch {
+      return { hits: [], manifold: "none", semanticAvailable: false };
+    }
+  });
+
+  /** 在线 Discounted-LinUCB 检索模型状态探针 */
+  app.get("/api/search/linucb", { config: { scope: "public" } }, async (req) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    return ctx.search.getLinUCBStatus(q.q || "react");
   });
 
   /* ------------------------ 搜索历史 ------------------------ */
 
   app.get("/api/search-history", async (req) => {
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) return { items: [] };
     const q = (req.query ?? {}) as Record<string, string>;
     const limit = Math.min(Number(q.limit) || 10, 50);
@@ -1108,7 +1008,7 @@ export async function buildServer(ctx: AppContext) {
   });
 
   app.delete("/api/search-history", async (req) => {
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) return { ok: false, error: "缺少 userId 或 anonId" };
     await ctx.repo.clearSearchHistory(identity);
     return { ok: true };
@@ -1118,7 +1018,7 @@ export async function buildServer(ctx: AppContext) {
 
   /** 读画像：让终端用户看到「系统据我的行为推断出了什么」——可解释性即信任 */
   app.get("/api/profile", async (req) => {
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) return { error: "缺少 userId 或 anonId" };
     return { profile: await ctx.repo.getUserProfile(identity) };
   });
@@ -1128,7 +1028,7 @@ export async function buildServer(ctx: AppContext) {
    * 收藏夹与搜索历史保留——那是用户自己的数据，不是被推断的偏好。
    */
   app.delete("/api/profile", async (req) => {
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) return { ok: false, error: "缺少 userId 或 anonId" };
     const result = await resetUserProfile(ctx, identity);
     return { ok: true, ...result };
@@ -1140,7 +1040,7 @@ export async function buildServer(ctx: AppContext) {
    * 读云端密文金库。服务端零知识存储，永不触碰明文。
    */
   app.get("/api/vault/sync", async (req, reply) => {
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     const vault = await ctx.repo.getUserVault(identity);
     return { ok: true, vault };
@@ -1150,7 +1050,7 @@ export async function buildServer(ctx: AppContext) {
    * 推送密文金库到云端中枢。
    */
   app.put("/api/vault/sync", async (req, reply) => {
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     const body = z.object({
       payload: z.string().min(1).max(512 * 1024),
@@ -1164,7 +1064,7 @@ export async function buildServer(ctx: AppContext) {
    * 清除云端金库。
    */
   app.delete("/api/vault/sync", async (req, reply) => {
-    const identity = await resolveIdentity(req as never);
+    const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     await ctx.repo.deleteUserVault(identity);
     return { ok: true };
@@ -1205,7 +1105,7 @@ export async function buildServer(ctx: AppContext) {
     const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
     const offset = Math.max(0, Number(q.offset) || 0);
     const [page, actions] = await Promise.all([
-      ctx.repo.listAuditLogs({ limit, offset, action: q.action || undefined, actor: q.actor || undefined, target: q.target || undefined }),
+      ctx.repo.listAuditLogs({ limit, offset, action: q.action || undefined, actor: q.actor || undefined }),
       ctx.repo.listAuditActions(50),
     ]);
     return { ...page, limit, offset, actions };
@@ -1281,17 +1181,10 @@ export async function buildServer(ctx: AppContext) {
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { success: false, message: "请填写完整的投稿信息" }; }
 
-    // 去重两层：URL（含归一化形态，防加减斜杠绕过）+ 标题精确匹配（防换 URL 重投）。
-    // 返回已存在站点的状态：审核中的告诉用户"在排队"，已上架的直接给链接。
-    const dup = await ctx.repo.findSiteByUrlOrVariant(body.data.url);
+    const dup = await ctx.repo.findSiteByUrl(body.data.url);
     if (dup) {
       reply.code(409);
-      return { success: false, message: "该网址已存在", siteId: dup.id, reason: "duplicate_url", status: dup.status };
-    }
-    const sameTitle = await ctx.repo.findSiteByTitle(body.data.title);
-    if (sameTitle) {
-      reply.code(409);
-      return { success: false, message: "同名站点已存在", siteId: sameTitle.id, reason: "duplicate_title", status: sameTitle.status };
+      return { success: false, message: "该网址已存在", siteId: dup.id };
     }
 
     const category = await ctx.repo.getCategory(body.data.categoryId);
@@ -1366,15 +1259,6 @@ export async function buildServer(ctx: AppContext) {
   });
 
   /**
-   * 审核统计（审核工作台表头用）：待审数 + 最早待审时间（SLA）+ 通过/拒绝累计。
-   * 与 PATCH /:number 无方法冲突，与 GET / 精确路径无歧义，可独立缓存 30s。
-   */
-  app.get("/api/submissions/stats", { config: { scope: "read", cache: { maxAge: 30 } } }, async () => {
-    const counts = await ctx.repo.countSubmissionsByStatus();
-    return { success: true, ...counts };
-  });
-
-  /**
    * 审核投稿（approve → active / reject → archived）。
    *
    * :number 是前端沿用的 GitHub Issue number（site.id 的 hash），这里反查回
@@ -1432,42 +1316,6 @@ export async function buildServer(ctx: AppContext) {
     const q = (req.query ?? {}) as Record<string, string>;
     const limit = Math.min(Number(q.limit) || 50, 200);
     return ctx.repo.listJobs(q.status, limit);
-  });
-
-  /** 队列概览（运营看板表头）：各状态计数 + 最早待处理。静态路由优先于 :id，無歧義。 */
-  app.get("/api/jobs/stats", { config: { scope: "read", cache: { maxAge: 15 } } }, async () => {
-    return ctx.repo.jobStats();
-  });
-
-  /** 任务详情（含 payload/error，失败排查用） */
-  app.get("/api/jobs/:id", { config: { scope: "read" } }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const job = await ctx.repo.getJob(id);
-    if (!job) { reply.code(404); return { error: "任务不存在" }; }
-    return job;
-  });
-
-  /** 手动重试：仅 failed 可重试；其余状态 409（状态机语义，不静默无操作） */
-  app.post("/api/jobs/:id/retry", { config: { scope: "write" } }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const existing = await ctx.repo.getJob(id);
-    if (!existing) { reply.code(404); return { error: "任务不存在" }; }
-    if (existing.status !== "failed") { reply.code(409); return { error: "仅 failed 状态可重试，当前为 " + existing.status }; }
-    const job = await ctx.repo.retryJob(id);
-    if (!job) { reply.code(409); return { error: "任务状态已变化，请刷新后重试" }; }
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.retry", target: id, diff: { kind: job.kind } });
-    return job;
-  });
-
-  /** 取消任务：仅 pending/running 可取消；done/failed/canceled 重复取消 409 */
-  app.post("/api/jobs/:id/cancel", { config: { scope: "write" } }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const existing = await ctx.repo.getJob(id);
-    if (!existing) { reply.code(404); return { error: "任务不存在" }; }
-    const job = await ctx.repo.cancelJob(id);
-    if (!job) { reply.code(409); return { error: "当前状态不可取消：" + existing.status }; }
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.cancel", target: id, diff: { kind: job.kind, from: existing.status } });
-    return job;
   });
 
   /* ---------------------------- AI 富化 ---------------------------- */
@@ -1539,7 +1387,7 @@ export async function buildServer(ctx: AppContext) {
    * kind 白名单：防止脏 kind 污染画像聚合与统计。
    * click 事件联动 visit_count（热度排序的原始信号）。
    */
-  const EVENT_KINDS = ["click", "favorite", "unfavorite", "impression", "dismiss", "interaction_feedback"] as const;
+  const EVENT_KINDS = ["click", "favorite", "unfavorite", "impression", "dismiss"] as const;
 
   app.post("/api/events", async (req, reply) => {
     const body = z.object({
@@ -1548,62 +1396,39 @@ export async function buildServer(ctx: AppContext) {
       query: z.string().optional(),
       categoryId: z.string().optional(),
       channel: z.enum(["exact", "fts", "pinyin", "semantic", "personal"]).optional(),
-      dwellMs: z.number().nonnegative().optional(),
+      dwellSeconds: z.number().min(0).max(3600).optional(),
       interactionType: z.enum(["click", "copy", "bounce"]).optional(),
       /** 身份标识（登录 userId 或匿名 anonId），用于归属画像聚合 */
       userId: z.string().max(64).optional(),
       anonId: z.string().max(64).optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    // token 身份优先：带有效 Bearer 的点击/收藏归属到 token，避免画像被自报 anonId 污染
-    const identity = (await tokenIdentityOf(req as never)) ?? body.data.userId ?? body.data.anonId ?? null;
+    const identity = body.data.userId ?? body.data.anonId ?? null;
     await ctx.repo.recordEvent(body.data.kind, {
       siteId: body.data.siteId,
       query: body.data.query,
       categoryId: body.data.categoryId,
-      meta: {
-        ...(identity ? { identity } : {}),
-        ...(body.data.dwellMs !== undefined ? { dwellMs: body.data.dwellMs, channel: body.data.channel } : {}),
-      },
+      meta: identity ? { identity } : undefined,
     });
     if (body.data.kind === "click" && body.data.siteId) {
       await ctx.repo.bumpVisit(body.data.siteId).catch(() => undefined);
     }
-    // LinUCB 在线强化学习反馈（Dwell-time 连续收益闭环更新）
-    if (body.data.channel && body.data.query && body.data.dwellMs !== undefined) {
-      const dwellSeconds = body.data.dwellMs / 1000.0;
-      const reward = computeDwellTimeReward(dwellSeconds, body.data.interactionType ?? "click");
-      updateDiscountedArmReward(ctx.bandit, body.data.channel, body.data.query, reward);
-      void ctx.repo.setSetting("linucb_bandit_model", serializeLinUCB(ctx.bandit)).catch(() => undefined);
+    // 在线强化学习闭环：若带有搜索词，实时反馈更新 Discounted-LinUCB 通道权重
+    if (body.data.query && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "dismiss")) {
+      const targetChannel: RetrievalChannel = body.data.channel ?? "exact";
+      const explicitReward =
+        body.data.kind === "favorite" ? 2.0 : body.data.kind === "dismiss" ? -0.5 : undefined;
+      ctx.search.recordFeedback(targetChannel, body.data.query, {
+        reward: explicitReward,
+        dwellSeconds: body.data.dwellSeconds,
+        interactionType: body.data.interactionType,
+      });
     }
     // 行为变化 -> 刷新个性化画像（节流 60s，失败静默）
-    if (identity && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "unfavorite" || body.data.kind === "interaction_feedback")) {
+    if (identity && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "unfavorite")) {
       void refreshUserProfile(ctx, identity);
     }
     return { ok: true };
-  });
-
-  /**
-   * 生产级运维与算法自回归可观测指标端点
-   */
-  app.get("/api/metrics", { config: { scope: "public" } }, async () => {
-    return {
-      ok: true,
-      timestamp: Date.now(),
-      capabilities: ctx.capabilities,
-      bandit: {
-        alpha: ctx.bandit.alpha,
-        dimension: ctx.bandit.dimension,
-        arms: Object.fromEntries(
-          CHANNELS.map((ch) => [
-            ch,
-            {
-              biasNorm: Number(Math.hypot(...ctx.bandit.arms[ch].b).toFixed(4)),
-            },
-          ]),
-        ),
-      },
-    };
   });
 
   /* ------------------- NavSphere 兼容存储 API ------------------- */

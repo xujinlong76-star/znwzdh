@@ -31,8 +31,6 @@ export interface LinUCBArmState {
   A: number[][];
   /** b 向量: d x 1，初始化为零向量 */
   b: number[];
-  /** 缓存或 Sherman-Morrison 维护的逆矩阵 A^(-1): d x d */
-  A_inv?: number[][];
 }
 
 export interface LinUCBModel {
@@ -171,11 +169,11 @@ export function dotProduct(u: number[], v: number[]): number {
  */
 export function createLinUCBModel(alpha = 0.25): LinUCBModel {
   const arms: Record<RetrievalChannel, LinUCBArmState> = {
-    exact: { A: createIdentityMatrix(CONTEXT_DIM), b: new Array(CONTEXT_DIM).fill(0), A_inv: createIdentityMatrix(CONTEXT_DIM) },
-    fts: { A: createIdentityMatrix(CONTEXT_DIM), b: new Array(CONTEXT_DIM).fill(0), A_inv: createIdentityMatrix(CONTEXT_DIM) },
-    pinyin: { A: createIdentityMatrix(CONTEXT_DIM), b: new Array(CONTEXT_DIM).fill(0), A_inv: createIdentityMatrix(CONTEXT_DIM) },
-    semantic: { A: createIdentityMatrix(CONTEXT_DIM), b: new Array(CONTEXT_DIM).fill(0), A_inv: createIdentityMatrix(CONTEXT_DIM) },
-    personal: { A: createIdentityMatrix(CONTEXT_DIM), b: new Array(CONTEXT_DIM).fill(0), A_inv: createIdentityMatrix(CONTEXT_DIM) },
+    exact: { A: createIdentityMatrix(CONTEXT_DIM), b: new Array(CONTEXT_DIM).fill(0) },
+    fts: { A: createIdentityMatrix(CONTEXT_DIM), b: new Array(CONTEXT_DIM).fill(0) },
+    pinyin: { A: createIdentityMatrix(CONTEXT_DIM), b: new Array(CONTEXT_DIM).fill(0) },
+    semantic: { A: createIdentityMatrix(CONTEXT_DIM), b: new Array(CONTEXT_DIM).fill(0) },
+    personal: { A: createIdentityMatrix(CONTEXT_DIM), b: new Array(CONTEXT_DIM).fill(0) },
   };
 
   return {
@@ -204,8 +202,7 @@ export function predictArmWeights(
 
   for (const channel of CHANNELS) {
     const arm = model.arms[channel];
-    const A_inv = arm.A_inv ?? invertMatrix(arm.A);
-    arm.A_inv = A_inv;
+    const A_inv = invertMatrix(arm.A);
     const theta = matVecMul(A_inv, arm.b);
 
     // 均值收益期望：theta^T * x
@@ -226,24 +223,7 @@ export function predictArmWeights(
 }
 
 /**
- * 预测通道权重并转换为 RRF FusionWeights 结构
- */
-export function predictFusionWeights(
-  model: LinUCBModel,
-  query: string,
-  base?: { coverageStrength?: number; k?: number; priors?: Record<RetrievalChannel, number> }
-): { coverageStrength: number; k: number; [channel: string]: number } {
-  const armWeights = predictArmWeights(model, query, base?.priors);
-  return {
-    coverageStrength: base?.coverageStrength ?? 0.35,
-    k: base?.k ?? 60,
-    ...armWeights,
-  };
-}
-
-/**
  * 在线强化学习反馈更新 (Update Bandit with observed reward)
- * 采用 Sherman-Morrison 公式在 O(d^2) 复杂度内保持 A^(-1) 增量更新。
  * @param reward 奖励值（如被采纳/点击则 reward = 1.0；跳出则 reward = 0.0）
  */
 export function updateArmReward(
@@ -258,27 +238,7 @@ export function updateArmReward(
   const x = extractContextFeatures(query);
   const dim = model.dimension;
 
-  // 1) Sherman-Morrison rank-1 增量更新 A_inv：
-  //    (A + x x^T)^(-1) = A^(-1) - (A^(-1) x x^T A^(-1)) / (1 + x^T A^(-1) x)
-  if (arm.A_inv) {
-    const v = matVecMul(arm.A_inv, x); // A_inv * x (d x 1)
-    const denom = 1.0 + dotProduct(x, v); // 1 + x^T * A_inv * x
-    if (Math.abs(denom) > 1e-12) {
-      for (let i = 0; i < dim; i++) {
-        const vi = v[i] ?? 0;
-        const row = arm.A_inv[i];
-        if (row) {
-          for (let j = 0; j < dim; j++) {
-            row[j] = (row[j] ?? 0) - (vi * (v[j] ?? 0)) / denom;
-          }
-        }
-      }
-    } else {
-      arm.A_inv = undefined;
-    }
-  }
-
-  // 2) A_a = A_a + x * x^T
+  // A_a = A_a + x * x^T
   for (let i = 0; i < dim; i++) {
     const row = arm.A[i];
     const xi = x[i] ?? 0;
@@ -289,10 +249,11 @@ export function updateArmReward(
     }
   }
 
-  // 3) b_a = b_a + reward * x
+  // b_a = b_a + reward * x
   for (let i = 0; i < dim; i++) {
     arm.b[i] = (arm.b[i] ?? 0) + reward * (x[i] ?? 0);
   }
+
 }
 
 /**
@@ -335,9 +296,6 @@ export function updateDiscountedArmReward(
   const safeGamma = Math.min(1.0, Math.max(0.8, gamma));
 
   // 1) 协方差矩阵时序折扣更新：gamma * A + (1 - gamma) * I + x * x^T
-  // 由于对角项偏移，使已缓存的 A_inv 失效，下次预测时惰性重新计算并缓存
-  arm.A_inv = undefined;
-
   for (let i = 0; i < dim; i++) {
     const row = arm.A[i];
     const xi = x[i] ?? 0;

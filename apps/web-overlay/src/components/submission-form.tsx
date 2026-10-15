@@ -138,19 +138,6 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                                     查看处理看板 →
                                 </a>
                             )}
-                            {!result.success && result.status === 'pending' && (
-                                <span className="block mt-1 text-xs opacity-80">
-                                    该站点已在审核队列中，请耐心等待，无需重复提交。
-                                </span>
-                            )}
-                            {!result.success && result.status === 'active' && result.siteId && (
-                                <a
-                                    href={'/site/' + result.siteId}
-                                    className="block mt-1 text-xs underline font-semibold hover:no-underline"
-                                >
-                                    该站点已上架，直接查看 →
-                                </a>
-                            )}
                         </AlertDescription>
                     </Alert>
                 )}

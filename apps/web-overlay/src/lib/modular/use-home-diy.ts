@@ -654,35 +654,38 @@ export function useHomeDIY() {
 
   // 跨分类重归类卡片 (Cross-Category Reclassification)
   const reclassifySite = useCallback((siteId: string, targetCategoryId: string) => {
-    persistConfig((prev) => {
-      const nextOverrides = { ...prev.siteCategoryOverrides, [siteId]: targetCategoryId };
-      return { ...prev, siteCategoryOverrides: nextOverrides, updatedAt: Date.now() };
-    });
-  }, [persistConfig]);
+    persistConfig((prev) => ({
+      ...prev,
+      siteCategoryOverrides: { ...prev.siteCategoryOverrides, [siteId]: targetCategoryId },
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
 
   const resetSiteCategoryOverrides = useCallback(() => {
-    persistConfig((prev) => {
-      return { ...prev, siteCategoryOverrides: {}, updatedAt: Date.now() };
-    });
-  }, [persistConfig]);
+    persistConfig((prev) => ({
+      ...prev,
+      siteCategoryOverrides: {},
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
 
   // 自定义壁纸与毛玻璃美学调节
   const setCustomWallpaper = useCallback((url: string) => {
-    persistConfig((prev) => {
-      return { ...prev, customWallpaperUrl: url.trim(), updatedAt: Date.now() };
-    });
-  }, [persistConfig]);
+    persistConfig((prev) => ({
+      ...prev,
+      customWallpaperUrl: url.trim(),
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
 
   const setAestheticSliders = useCallback((blur: number, opacity: number) => {
-    persistConfig((prev) => {
-      return {
-        ...prev,
-        glassmorphismBlur: Math.min(30, Math.max(0, blur)),
-        cardOpacity: Math.min(1.0, Math.max(0.2, opacity)),
-        updatedAt: Date.now()
-      };
-    });
-  }, [persistConfig]);
+    persistConfig((prev) => ({
+      ...prev,
+      glassmorphismBlur: Math.min(30, Math.max(0, blur)),
+      cardOpacity: Math.min(1.0, Math.max(0.2, opacity)),
+      updatedAt: Date.now(),
+    }))
+  }, [persistConfig])
 
   // URL Hash 免登预设分享与即时加载
   const exportPresetToUrlHash = useCallback((): string => {
@@ -732,7 +735,7 @@ export function useHomeDIY() {
         glassmorphismBlur: typeof parsed.gb === 'number' ? parsed.gb : prev.glassmorphismBlur,
         cardOpacity: typeof parsed.co_op === 'number' ? parsed.co_op : prev.cardOpacity,
         updatedAt: Date.now(),
-      }));
+      }))
       return true;
     } catch {
       return false;

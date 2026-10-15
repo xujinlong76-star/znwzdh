@@ -58,13 +58,21 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 10 个只读工具与 10 个写工具", () => {
+  it("包含 9 个只读工具与 8 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
-    expect(read.map((t) => t.name).sort()).toEqual(["export_sites", "get_collection", "get_site", "get_stats", "get_trending", "list_categories", "list_collections", "list_submissions", "list_tags", "search_sites"]);
-    expect(write.length).toBe(10);
-    expect(TOOL_DEFS.find((t) => t.name === "list_submissions")).toMatchObject({ scope: "read", mutating: false });
-    expect(TOOL_DEFS.find((t) => t.name === "review_submission")).toMatchObject({ scope: "write", mutating: true });
+    expect(read.map((t) => t.name).sort()).toEqual([
+      "compare_technologies",
+      "export_sites",
+      "get_architecture_recipe",
+      "get_site",
+      "get_stats",
+      "get_trending",
+      "list_categories",
+      "list_tags",
+      "search_sites",
+    ]);
+    expect(write.length).toBe(8);
   });
 
   it("run_job 需要 admin 权限（触发全站扫描是危险操作）", () => {
@@ -273,103 +281,6 @@ describe("Phase 4 新工具", () => {
     await expect(handlers.refresh_site({ idOrUrl: "https://weather.com.cn" }, READONLY)).rejects.toThrow(/write/);
     await expect(handlers.run_job({ kind: "reindex" }, READONLY)).rejects.toThrow(/admin/);
   });
-
-  it("add_to_collection 只读 token 被拒绝", async () => {
-    await expect(handlers.add_to_collection({ slug: "x", idOrUrl: "https://weather.com.cn" }, READONLY)).rejects.toThrow(/write/);
-  });
-});
-
-describe("精选专题工具", () => {
-  beforeAll(async () => {
-    await ctx.repo.createCollection({ slug: "mcp-col", title: "MCP 测试专题", description: "给 Agent 用的合集" });
-  });
-
-  it("list_collections 列出专题", async () => {
-    const body = payload(await handlers.list_collections({}, READONLY));
-    expect(body.count).toBeGreaterThan(0);
-    expect(body.collections.some((c: any) => c.slug === "mcp-col")).toBe(true);
-  });
-
-  it("get_collection 返回专题与站点（空专题是空数组，不 404）", async () => {
-    const body = payload(await handlers.get_collection({ slug: "mcp-col" }, READONLY));
-    expect(body.title).toBe("MCP 测试专题");
-    expect(body.sites).toEqual([]);
-    const missing = await handlers.get_collection({ slug: "no-such-col" }, READONLY);
-    expect(missing.isError).toBe(true);
-  });
-
-  it("add_to_collection 收录站点且幂等，重复收录不翻倍", async () => {
-    const first = payload(await handlers.add_to_collection(
-      { slug: "mcp-col", idOrUrl: "https://weather.com.cn", idempotencyKey: "mcp-col-test-1" }, FULL));
-    expect(first.ok).toBe(true);
-    expect(first.existed).toBe(false);
-    // 幂等键重放：直接返回上次结果
-    const replayed = payload(await handlers.add_to_collection(
-      { slug: "mcp-col", idOrUrl: "https://weather.com.cn", idempotencyKey: "mcp-col-test-1" }, FULL));
-    expect(replayed.replayed).toBe(true);
-    // 不带幂等键重复收录：existed=true，不产生第二条
-    const second = payload(await handlers.add_to_collection(
-      { slug: "mcp-col", idOrUrl: "https://weather.com.cn" }, FULL));
-    expect(second.existed).toBe(true);
-    expect((await ctx.repo.listCollectionItems((await ctx.repo.getCollectionBySlug("mcp-col"))!.id)).length).toBe(1);
-    // 详情页能看到收录的站点
-    const detail = payload(await handlers.get_collection({ slug: "mcp-col" }, READONLY));
-    expect(detail.sites.some((s: any) => s.url === "https://weather.com.cn")).toBe(true);
-  });
-
-  it("add_to_collection 专题/站点不存在时返回 isError", async () => {
-    expect((await handlers.add_to_collection({ slug: "no-such", idOrUrl: "https://weather.com.cn" }, FULL)).isError).toBe(true);
-    expect((await handlers.add_to_collection({ slug: "mcp-col", idOrUrl: "https://nope.example" }, FULL)).isError).toBe(true);
-  });
-});
-
-describe("投稿审核工具", () => {
-  it("list_submissions 列出待审队列（含 number 与 siteId）", async () => {
-    await ctx.repo.createSite({ url: "https://example.com/mcp-review-1", title: "MCP 审核站1", categoryId: "cat-ai", status: "pending", source: "submission" });
-    const body = payload(await handlers.list_submissions({ status: "pending" }, READONLY));
-    expect(body.count).toBeGreaterThanOrEqual(1);
-    const item = body.submissions.find((s: any) => s.url === "https://example.com/mcp-review-1");
-    expect(item).toBeTruthy();
-    expect(typeof item.number).toBe("number");
-    expect(typeof item.siteId).toBe("string");
-  });
-
-  it("review_submission 按 number 拒绝并记理由，幂等键防重放", async () => {
-    const site = await ctx.repo.createSite({ url: "https://example.com/mcp-review-2", title: "MCP 审核站2", categoryId: "cat-ai", status: "pending", source: "submission" });
-    const { submissionNumber } = await import("@navhub/api");
-    const num = submissionNumber(site.id);
-    const first = payload(await handlers.review_submission(
-      { number: num, action: "reject", reason: "广告太多", idempotencyKey: "mcp-review-test-1" }, FULL));
-    expect(first.ok).toBe(true);
-    expect(first.status).toBe("archived");
-    expect(first.siteId).toBe(site.id);
-    // 幂等键重放：直接返回上次结果，不重复落审计
-    const replayed = payload(await handlers.review_submission(
-      { number: num, action: "reject", reason: "广告太多", idempotencyKey: "mcp-review-test-1" }, FULL));
-    expect(replayed.replayed).toBe(true);
-    // 审计里有拒绝理由
-    const audit = await ctx.repo.listAuditLogs({ action: "submission.reject", target: site.id });
-    expect(audit.items.length).toBeGreaterThanOrEqual(1);
-    expect(JSON.stringify(audit.items[0]!.diff)).toContain("广告太多");
-  });
-
-  it("review_submission 按 siteId 通过，非投稿拒绝处理", async () => {
-    const site = await ctx.repo.createSite({ url: "https://example.com/mcp-review-3", title: "MCP 审核站3", categoryId: "cat-ai", status: "pending", source: "submission" });
-    const res = payload(await handlers.review_submission({ siteId: site.id, action: "approve" }, FULL));
-    expect(res.ok).toBe(true);
-    expect(res.status).toBe("active");
-    // 普通站点（非投稿）走 update_site，这里明确拒绝
-    const normal = await ctx.repo.createSite({ url: "https://example.com/mcp-normal", title: "普通站", categoryId: "cat-ai" });
-    const bad = await handlers.review_submission({ siteId: normal.id, action: "approve" }, FULL);
-    expect(bad.isError).toBe(true);
-    // 不存在的 number
-    const missing = await handlers.review_submission({ number: 1, action: "approve" }, FULL);
-    expect(missing.isError).toBe(true);
-  });
-
-  it("只读 token 不能审核", async () => {
-    await expect(handlers.review_submission({ siteId: "x", action: "approve" }, READONLY)).rejects.toThrow(/write/);
-  });
 });
 
 describe("删除与导出工具", () => {
@@ -418,5 +329,33 @@ describe("删除与导出工具", () => {
 
   it("export_sites 超出上限的 limit 被 zod 拒绝", async () => {
     await expect(handlers.export_sites({ limit: 5000 }, READONLY)).rejects.toThrow();
+  });
+});
+
+describe("次世代 Agentic 工具：架构配方与选型对比", () => {
+  it("get_architecture_recipe 匹配预设链路子图", async () => {
+    const res = await handlers.get_architecture_recipe({ query: "协同编辑" }, READONLY);
+    const body = payload(res);
+    expect(body.matched).toBe(true);
+    expect(body.recipe.id).toBe("collaborative-editor");
+    expect(body.recipe.layers.length).toBeGreaterThan(0);
+
+    const noMatch = await handlers.get_architecture_recipe({ query: "火星航天测控" }, READONLY);
+    const noMatchBody = payload(noMatch);
+    expect(noMatchBody.matched).toBe(false);
+    expect(Array.isArray(noMatchBody.availableRecipes)).toBe(true);
+  });
+
+  it("compare_technologies 对比两项关键技术并给出权衡决断", async () => {
+    const res = await handlers.compare_technologies({ query: "cursor vs vscode" }, READONLY);
+    const body = payload(res);
+    expect(body.matched).toBe(true);
+    expect(body.matrix.id).toBe("cursor-vs-vscode");
+    expect(body.matrix.dimensions.length).toBeGreaterThan(0);
+    expect(body.matrix.verdict).toBeTruthy();
+
+    const noMatch = await handlers.compare_technologies({ query: "apple vs banana" }, READONLY);
+    const noMatchBody = payload(noMatch);
+    expect(noMatchBody.matched).toBe(false);
   });
 });

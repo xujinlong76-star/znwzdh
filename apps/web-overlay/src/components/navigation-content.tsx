@@ -181,7 +181,8 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
     if (siteCategoryOverrides && Object.keys(siteCategoryOverrides).length > 0) {
       const movedMap: Record<string, any[]> = {};
       processedCombined = combined.map((cat) => {
-        const remaining = ((cat.items as any[]) || []).filter((item: any) => {
+        const catItems = Array.isArray(cat.items) ? (cat.items as any[]) : [];
+        const remaining = catItems.filter((item: any) => {
           const targetId = siteCategoryOverrides[item.id];
           if (targetId && targetId !== cat.id) {
             if (!movedMap[targetId]) movedMap[targetId] = [];
@@ -193,7 +194,8 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
         return { ...cat, items: remaining };
       }).map((cat) => {
         const incoming = movedMap[cat.id] || [];
-        return incoming.length > 0 ? { ...cat, items: [...(cat.items || []), ...incoming] } : cat;
+        const currentItems = Array.isArray(cat.items) ? (cat.items as any[]) : [];
+        return incoming.length > 0 ? { ...cat, items: [...currentItems, ...incoming] } : cat;
       });
     }
 

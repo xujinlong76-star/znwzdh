@@ -11,7 +11,6 @@
  */
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { createLinUCBModel, deserializeLinUCB, type LinUCBModel } from "@navhub/core";
 import { createEmbeddingService, type EmbeddingService } from "@navhub/ai";
 import { Repository, SearchEngine, SqliteFtsStore, SqliteVecStore, openDb, type Db, type FullTextStore, type VectorStore } from "@navhub/store";
 import type { AppConfig } from "./config.ts";
@@ -31,7 +30,6 @@ export interface AppContext {
   vectors: VectorStore;
   fts: FullTextStore | null;
   embedding: EmbeddingService | null;
-  bandit: LinUCBModel;
   capabilities: Capabilities;
   close(): Promise<void>;
 }
@@ -121,26 +119,11 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
     notes.push("embedding 已被配置关闭，语义通道不可用");
   }
 
-  // ---- LinUCB 动态上下文多臂机 ----
-  let bandit: LinUCBModel = createLinUCBModel();
-  try {
-    const saved = await repo.getSetting("linucb_bandit_model");
-    if (saved) {
-      bandit = deserializeLinUCB(saved);
-      notes.push("LinUCB 多臂机权重已从持久化存储恢复");
-    } else {
-      notes.push("LinUCB 多臂机已就绪（先验权重自适应引导）");
-    }
-  } catch {
-    notes.push("LinUCB 多臂机初始化为基准状态");
-  }
-
   const search = new SearchEngine({
     db,
     fts,
     vectors,
     embed: embedding ? (text: string) => embedding!.encode(text) : null,
-    bandit,
   });
 
   const capabilities: Capabilities = {
@@ -151,7 +134,7 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
   };
 
   return {
-    config, db, repo, search, vectors, fts, embedding, bandit, capabilities,
+    config, db, repo, search, vectors, fts, embedding, capabilities,
     async close() { await db.close(); },
   };
 }

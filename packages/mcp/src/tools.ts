@@ -122,38 +122,6 @@ export const RunJobInput = z.object({
   payload: z.record(z.unknown()).optional().describe("任务参数（如 refetch_metadata 需要 siteId）"),
 });
 
-/* ---- 精选专题工具 ---- */
-
-export const ListCollectionsInput = z.object({
-  includeDisabled: z.boolean().default(false).describe("是否包含已停用的专题"),
-});
-
-export const GetCollectionInput = z.object({
-  slug: z.string().describe("专题 slug"),
-  limit: z.number().int().min(1).max(100).default(30).describe("返回站点条数上限"),
-});
-
-export const AddToCollectionInput = z.object({
-  slug: z.string().describe("专题 slug"),
-  idOrUrl: z.string().describe("站点 id 或完整网址"),
-  idempotencyKey: z.string().optional().describe("幂等键；重复调用不会重复收录"),
-});
-
-/* ---- 投稿审核工具（Agent 可见的审核队列） ---- */
-
-export const ListSubmissionsInput = z.object({
-  status: z.enum(["pending", "approved", "rejected", "all"]).default("pending").describe("投稿状态筛选"),
-  limit: z.number().int().min(1).max(100).default(30).describe("返回条数上限"),
-});
-
-export const ReviewSubmissionInput = z.object({
-  number: z.number().int().optional().describe("投稿编号（审核队列里看到的 number）"),
-  siteId: z.string().optional().describe("站点 id（与 number 二选一）"),
-  action: z.enum(["approve", "reject"]).describe("approve=通过上架，reject=拒绝归档"),
-  reason: z.string().max(500).optional().describe("拒绝理由（会记入审计，管理员可在后台看到）"),
-  idempotencyKey: z.string().optional().describe("幂等键；Agent 重试不会重复审核"),
-}).refine((v) => v.number !== undefined || v.siteId !== undefined, "number 与 siteId 至少传一个");
-
 export const DeleteSiteInput = z.object({
   idOrUrl: z.string().describe("站点 id 或完整网址"),
   idempotencyKey: z.string().optional().describe("幂等键；重复调用不会重复处理"),
@@ -164,6 +132,14 @@ export const ExportSitesInput = z.object({
   status: z.enum(["active", "pending", "broken", "archived"]).optional().describe("限定状态"),
   format: z.enum(["json", "csv"]).default("json").describe("导出格式"),
   limit: z.number().int().min(1).max(1000).default(200).describe("导出条数上限"),
+});
+
+export const GetArchitectureRecipeInput = z.object({
+  query: z.string().describe("架构目标或技术栈关键词（如 '协同编辑', '本地大模型', '全栈Web', '微前端'）"),
+});
+
+export const CompareTechnologiesInput = z.object({
+  query: z.string().describe("技术选型对比查询（如 'react vs vue', 'cursor vs vscode', 'pnpm vs bun', 'ollama vs vllm'）"),
 });
 
 export interface ToolDefinition {
@@ -253,29 +229,14 @@ export const TOOL_DEFS: ToolDefinition[] = [
     scope: "admin", inputSchema: RunJobInput, mutating: true,
   },
   {
-    name: "list_collections",
-    description: "列出精选专题（站长策划的主题合集）。适合回答「有没有新手入门合集」这类问题。",
-    scope: "read", inputSchema: ListCollectionsInput, mutating: false,
+    name: "get_architecture_recipe",
+    description: "基于 Graph-RAG 子图匹配端到端技术栈链路配方 (Architecture Recipe)，获取分层选型、替代方案与快速启动代码。",
+    scope: "read", inputSchema: GetArchitectureRecipeInput, mutating: false,
   },
   {
-    name: "get_collection",
-    description: "按 slug 获取专题详情及其收录站点。适合把一整个主题的站点一次性推荐给用户。",
-    scope: "read", inputSchema: GetCollectionInput, mutating: false,
-  },
-  {
-    name: "add_to_collection",
-    description: "把一个站点收录进指定专题。重复收录返回 existed 而不报错；支持幂等键。",
-    scope: "write", inputSchema: AddToCollectionInput, mutating: true,
-  },
-  {
-    name: "list_submissions",
-    description: "列出用户投稿队列（含投稿编号 number、标题、网址、状态）。审核前先用它看队列；number 供 review_submission 使用。",
-    scope: "read", inputSchema: ListSubmissionsInput, mutating: false,
-  },
-  {
-    name: "review_submission",
-    description: "审核单条投稿：approve 通过上架，reject 拒绝归档（理由记入审计）。按 number 或 siteId 定位；支持幂等键。",
-    scope: "write", inputSchema: ReviewSubmissionInput, mutating: true,
+    name: "compare_technologies",
+    description: "结构化技术选型对比矩阵 (Side-by-Side Comparison Matrix)，原地对比两项技术的优缺点、权衡点、多维参数与选型裁决。",
+    scope: "read", inputSchema: CompareTechnologiesInput, mutating: false,
   },
 ];
 

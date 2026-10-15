@@ -10,14 +10,15 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
-import { Wrench, Copy, Check, RefreshCw, Braces, Binary, Clock, Link2 } from 'lucide-react'
+import { Wrench, Copy, Check, RefreshCw, Braces, Binary, Clock, Link2, KeyRound, Timer, Terminal } from 'lucide-react'
+import { parseSpeculativeIntent } from '@/lib/speculative'
 
 interface QuickToolsDrawerProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
-type ToolTab = 'json' | 'base64' | 'uuid-time' | 'url'
+type ToolTab = 'json' | 'base64' | 'uuid-time' | 'url' | 'jwt' | 'cron' | 'curl'
 
 export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) {
   const [activeTab, setActiveTab] = useState<ToolTab>('json')
@@ -43,6 +44,11 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
   // URL 工具状态
   const [urlInput, setUrlInput] = useState('')
   const [urlOutput, setUrlOutput] = useState('')
+
+  // 0-RTT 扩展微工具状态 (JWT / Cron / Curl)
+  const [jwtInput, setJwtInput] = useState('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJuYXZodWItZGV2IiwiaXNzIjoibmF2aHViLmh1YiIsImV4cCI6OTk5OTk5OTk5OX0.signature')
+  const [cronInput, setCronInput] = useState('*/5 * * * *')
+  const [curlInput, setCurlInput] = useState('curl -X POST https://api.navhub.local/v1/search -d "{\"q\":\"ai\"}"')
 
   const copyToClipboard = async (text: string, id: string) => {
     if (!text) return
@@ -182,6 +188,33 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           >
             <Link2 className="w-3.5 h-3.5" />
             <span>URL 编解码</span>
+          </Button>
+          <Button
+            size="sm"
+            variant={activeTab === 'jwt' ? 'default' : 'ghost'}
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all"
+            onClick={() => setActiveTab('jwt')}
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>JWT 透视</span>
+          </Button>
+          <Button
+            size="sm"
+            variant={activeTab === 'cron' ? 'default' : 'ghost'}
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all"
+            onClick={() => setActiveTab('cron')}
+          >
+            <Timer className="w-3.5 h-3.5" />
+            <span>Cron 推演</span>
+          </Button>
+          <Button
+            size="sm"
+            variant={activeTab === 'curl' ? 'default' : 'ghost'}
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all"
+            onClick={() => setActiveTab('curl')}
+          >
+            <Terminal className="w-3.5 h-3.5" />
+            <span>Curl 转 Fetch</span>
           </Button>
         </div>
 
@@ -395,6 +428,121 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             </div>
           </div>
         )}
+        {/* Tab 5: JWT 离线解码透视 */}
+        {activeTab === 'jwt' && (() => {
+          const parsedJwt = parseSpeculativeIntent(jwtInput)
+          const preview = parsedJwt?.type === 'jwt' ? parsedJwt.previewValue : '请输入以 eyJ 开头的标准三段式 JWT 字符串...'
+          return (
+            <div className="space-y-3.5 pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {parsedJwt?.type === 'jwt' ? parsedJwt.subtitle : '支持端侧零网络开销解码 Header/Payload 并探测过期时间'}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs gap-1.5 border-border/60"
+                  onClick={() => copyToClipboard(preview, 'jwt')}
+                >
+                  {copied === 'jwt' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied === 'jwt' ? '已复制' : '复制 Payload'}</span>
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1.5">
+                  <span className="text-xs font-semibold text-muted-foreground font-mono">输入 JWT Token:</span>
+                  <textarea
+                    value={jwtInput}
+                    onChange={(e) => setJwtInput(e.target.value)}
+                    placeholder="粘贴 eyJ... 格式的 JWT..."
+                    className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <span className="text-xs font-semibold text-muted-foreground font-mono">解码 Payload 与状态:</span>
+                  <textarea
+                    readOnly
+                    value={preview}
+                    className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
+                  />
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Tab 6: Cron 定时表达式推演 */}
+        {activeTab === 'cron' && (() => {
+          const parsedCron = parseSpeculativeIntent(cronInput)
+          return (
+            <div className="space-y-3.5 pt-2">
+              <div className="space-y-1.5">
+                <span className="text-xs font-semibold text-muted-foreground font-mono">输入 5 段或 6 段 Cron 表达式:</span>
+                <Input
+                  value={cronInput}
+                  onChange={(e) => setCronInput(e.target.value)}
+                  placeholder="例如: */5 * * * * 或 0 0 * * *"
+                  className="font-mono text-xs h-9 bg-background/90"
+                />
+              </div>
+              <div className="p-4 rounded-xl border border-border/60 bg-muted/30 space-y-2">
+                <div className="text-xs font-semibold text-foreground">
+                  {parsedCron?.type === 'cron' ? parsedCron.subtitle : '请输入合法的 Cron 表达式（如 */5 * * * *）'}
+                </div>
+                {parsedCron?.details && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 text-xs font-mono">
+                    {Object.entries(parsedCron.details).map(([k, v]) => (
+                      <div key={k} className="p-2 rounded-lg bg-background/80 border border-border/50">
+                        <div className="text-[10px] text-muted-foreground">{k}</div>
+                        <div className="font-semibold mt-0.5">{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Tab 7: Curl 转 Fetch 代码生成器 */}
+        {activeTab === 'curl' && (() => {
+          const parsedCurl = parseSpeculativeIntent(curlInput)
+          const codeOut = parsedCurl?.type === 'curl_to_fetch' ? parsedCurl.previewValue : '// 请输入以 curl 开头的命令...'
+          return (
+            <div className="space-y-3.5 pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">将终端 Curl 命令即时逆向转换为标准 Fetch 脚本</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs gap-1.5 border-border/60"
+                  onClick={() => copyToClipboard(codeOut, 'curl')}
+                >
+                  {copied === 'curl' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copied === 'curl' ? '已复制' : '复制 Fetch 代码'}</span>
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1.5">
+                  <span className="text-xs font-semibold text-muted-foreground font-mono">输入 Curl 命令:</span>
+                  <textarea
+                    value={curlInput}
+                    onChange={(e) => setCurlInput(e.target.value)}
+                    className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <span className="text-xs font-semibold text-muted-foreground font-mono">生成 Fetch 代码:</span>
+                  <textarea
+                    readOnly
+                    value={codeOut}
+                    className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
+                  />
+                </div>
+              </div>
+            </div>
+          )
+        })()}
       </DialogContent>
     </Dialog>
   )

@@ -314,3 +314,72 @@ export interface EnrichmentResult {
   imageUrl?: string | null;
   iconUrl?: string | null;
 }
+
+
+/* ------------------------------------------------------------------ *
+ * URL 规范化指纹清洗器 (URL Canonicalization & Tracking Stripper)
+ * ------------------------------------------------------------------ */
+
+const TRACKING_PARAMS = new Set([
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_term",
+  "utm_content",
+  "utm_id",
+  "spm",
+  "fbclid",
+  "gclid",
+  "msclkid",
+  "mc_cid",
+  "mc_eid",
+  "_hsenc",
+  "_hsmi",
+  "ref_src",
+  "from_source",
+]);
+
+/**
+ * 规范化 URL：剥离营销追踪参数、统一小写域名、移除默认端口与冗余尾部斜杠。
+ * 用于站点入库精确去重与指纹比对。
+ */
+export function canonicalizeUrl(rawUrl: string): string {
+  const trimmed = (rawUrl ?? "").trim();
+  if (!trimmed) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return trimmed;
+    }
+    parsed.hostname = parsed.hostname.toLowerCase();
+    if (
+      (parsed.protocol === "http:" && parsed.port === "80") ||
+      (parsed.protocol === "https:" && parsed.port === "443")
+    ) {
+      parsed.port = "";
+    }
+    // 剥离追踪参数并按字母序排列剩余参数
+    const cleanParams = new URLSearchParams();
+    const entries = [...parsed.searchParams.entries()].filter(
+      ([k]) => !TRACKING_PARAMS.has(k.toLowerCase()) && !k.toLowerCase().startsWith("utm_")
+    );
+    entries.sort(([a], [b]) => a.localeCompare(b));
+    for (const [k, v] of entries) {
+      cleanParams.append(k, v);
+    }
+    const searchStr = cleanParams.toString();
+    parsed.search = searchStr ? `?${searchStr}` : "";
+
+    // 路径尾部斜杠归一化：非根路径去掉末尾多余 '/'，根路径 '/' 且无查询串/锚点时去掉末尾 '/'
+    if (parsed.pathname.length > 1 && parsed.pathname.endsWith("/")) {
+      parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    }
+    let out = parsed.toString();
+    if (parsed.pathname === "/" && !parsed.search && !parsed.hash && out.endsWith("/")) {
+      out = out.slice(0, -1);
+    }
+    return out;
+  } catch {
+    return trimmed;
+  }
+}

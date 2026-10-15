@@ -158,12 +158,17 @@ export interface AppContext {
 | 方法 | 路径 | 行为 |
 | --- | --- | --- |
 | POST | `/api/tokens` | `{name, scopes?, expiresAt?}` → 201 + **明文只返回一次** + 提示语 |
+| PATCH | `/api/tokens/:id` | 更新 name / scopes / expiresAt（省略的字段不动） |
+| POST | `/api/tokens/:id/rotate` | 轮换明文（旧明文立即失效），可顺带更新有效期 |
+| POST | `/api/tokens/:id/revoke` | 软吊销：立即失效但保留记录留痕 |
 | GET | `/api/tokens` | 列表（**不含明文也不含 hash**） |
 | DELETE | `/api/tokens/:id` | 204，删除后立即失效 |
 
+`expiresAt`（毫秒时间戳）按输入分三种语义：**省略** = 落策略上限 `NAVHUB_TOKEN_MAX_LIFETIME_DAYS`（默认 365 天）；**显式 `null`** = 请求永不过期，仅 `NAVHUB_TOKEN_ALLOW_PERMANENT=true`（默认 false）时放行；**数字** = 必须未来且不超上限。PATCH / rotate 省略 `expiresAt` 则保留原有效期（改个名字不顺带改期）。
+
 scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每次成功鉴权刷新。
 
-测试：[apps/api/test/auth.test.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/test/auth.test.ts)——27 个用例覆盖开放模式回归、逐级拦截、scope 含义、生命周期、审计身份。
+测试：[apps/api/test/auth.test.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/test/auth.test.ts)——37 个用例覆盖开放模式回归、逐级拦截、scope 含义、生命周期（含省略落上限 / 显式永久被拒 / 放行实例）、审计身份。
 
 ## 3. REST 路由完整清单（61 条）
 
@@ -342,8 +347,13 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 | 方法 | 路径 | 功能 | 状态码 |
 | --- | --- | --- | --- |
 | POST | `/api/tokens` | `{name, scopes?, expiresAt?}` 创建，**明文只返回一次** | 201 |
+| PATCH | `/api/tokens/:id` | 更新 name / scopes / expiresAt（省略不动） | 200 |
+| POST | `/api/tokens/:id/rotate` | 轮换明文，旧明文立即失效 | 200 |
+| POST | `/api/tokens/:id/revoke` | 软吊销（留痕，可恢复查询） | 200 |
 | GET | `/api/tokens` | 列表（不含明文/hash） | 200 |
 | DELETE | `/api/tokens/:id` | 删除，立即失效 | 204 |
+
+`expiresAt`：省略落策略上限（`NAVHUB_TOKEN_MAX_LIFETIME_DAYS`，默认 365 天）；显式 `null` = 请求永久，仅 `NAVHUB_TOKEN_ALLOW_PERMANENT=true`（默认 false）放行；数字须未来且不超上限。
 
 详见 [§2.3 REST 鉴权](#23-rest-鉴权authts--onrequest-hook)。
 

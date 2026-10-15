@@ -2239,7 +2239,7 @@ export async function buildServer(ctx: AppContext) {
       name: z.string().min(1).max(64),
       /** 逗号分隔：read / write / admin；默认只读 */
       scopes: z.string().default("read"),
-      /** 过期时间（毫秒时间戳）；不传则长期有效 */
+      /** 过期时间（毫秒时间戳）；省略落策略上限，显式 null = 请求永久（受 NAVHUB_TOKEN_ALLOW_PERMANENT 管辖） */
       expiresAt: z.number().int().positive().nullable().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }

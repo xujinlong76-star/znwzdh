@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import {
-  sortCategoryItemsWithPinned,
   togglePinnedSiteInCategory,
   reorderCategoryToTarget,
   createLayoutHistory,
@@ -20,7 +19,6 @@ import {
 import {
   encryptGenericPayload,
   decryptGenericPayload,
-  type EncryptedPayloadEnvelope,
 } from '@/lib/vault'
 import { getIdentity } from '@/lib/identity'
 import { fetchCloudVault, saveCloudVault, deleteCloudVault } from '@/lib/navhub-api'
@@ -140,7 +138,7 @@ export function useHomeDIY() {
           return;
         }
       }
-      let raw = localStorage.getItem(STORAGE_KEY)
+      const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) {
         // 尝试从 v2 迁移
         const v2Raw = localStorage.getItem(LEGACY_STORAGE_KEY_V2)

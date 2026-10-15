@@ -231,8 +231,8 @@ export function analyzeStackCompatibility(
     .filter((n): n is GraphNode => Boolean(n));
 
   const layersCovered = new Set(validNodes.map((n) => n.layer));
-  const allLayers = ['frontend', 'backend', 'database', 'devops'];
-  const missingLayers = allLayers.filter((l) => !layersCovered.has(l as any));
+  const allLayers: Array<GraphNode['layer']> = ['frontend', 'backend', 'database', 'devops'];
+  const missingLayers = allLayers.filter((l) => !layersCovered.has(l));
 
   let connectedEdges = 0;
   const synergies: string[] = [];

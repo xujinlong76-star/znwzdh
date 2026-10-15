@@ -6,17 +6,17 @@ export interface JsonRpcRequest {
   jsonrpc: '2.0';
   id: string | number;
   method: string;
-  params?: Record<string, any>;
+  params?: Record<string, unknown>;
 }
 
 export interface JsonRpcResponse {
   jsonrpc: '2.0';
   id: string | number;
-  result?: any;
+  result?: unknown;
   error?: {
     code: number;
     message: string;
-    data?: any;
+    data?: unknown;
   };
 }
 
@@ -25,12 +25,12 @@ export interface WebMcpToolDefinition {
   description: string;
   inputSchema: {
     type: 'object';
-    properties: Record<string, any>;
+    properties: Record<string, unknown>;
     required?: string[];
   };
 }
 
-export type WebMcpToolHandler = (params: Record<string, any>) => Promise<any> | any;
+export type WebMcpToolHandler = (params: Record<string, unknown>) => Promise<unknown> | unknown;
 
 export class WebMcpBridge {
   private tools: Map<string, { def: WebMcpToolDefinition; handler: WebMcpToolHandler }> = new Map();
@@ -71,7 +71,11 @@ export class WebMcpBridge {
 
       if (method === 'tools/call') {
         const toolName = params?.name;
-        const toolArgs = params?.arguments || {};
+        const rawArgs = params?.arguments;
+        const toolArgs: Record<string, unknown> =
+          typeof rawArgs === 'object' && rawArgs !== null
+            ? (rawArgs as Record<string, unknown>)
+            : {};
 
         if (!toolName || typeof toolName !== 'string') {
           return {
@@ -118,11 +122,12 @@ export class WebMcpBridge {
         id,
         error: { code: -32601, message: `Method not found: ${method}` },
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const data = err instanceof Error ? err.message : String(err);
       return {
         jsonrpc: '2.0',
         id,
-        error: { code: -32603, message: 'Internal error', data: err?.message || String(err) },
+        error: { code: -32603, message: 'Internal error', data },
       };
     }
   }
@@ -140,7 +145,7 @@ export class WebMcpBridge {
           required: ['message'],
         },
       },
-      (args) => ({ echoed: args.message, receivedAt: new Date().toISOString() })
+      (args) => ({ echoed: String(args.message ?? ''), receivedAt: new Date().toISOString() })
     );
 
     this.registerTool(

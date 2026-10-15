@@ -15,28 +15,20 @@ import {
   ArrowRight,
   Sparkles,
   RefreshCw,
-  Copy,
   Check,
   CheckCircle2,
-  AlertTriangle,
-  Flame,
-  Binary,
   Layers,
   ArrowLeft,
   Lock,
   Unlock,
-  Key,
   Network,
   Palette,
   Bot,
   Send,
-  Eye,
-  Sliders,
 } from 'lucide-react'
 import Link from 'next/link'
 import {
   parseSpeculativeIntent,
-  type SpeculativeIntentResult,
 } from '@/lib/speculative'
 import {
   encryptVault,
@@ -48,14 +40,13 @@ import {
   findShortestTechPath,
   analyzeStackCompatibility,
   PRESET_TECH_GRAPH,
-  type GraphNode,
 } from '@/lib/knowledge-graph'
 import {
   analyzeVisualFingerprint,
-  type VisualMood,
 } from '@/lib/visual-fingerprint'
 import {
   getWebMcpBridge,
+  type JsonRpcResponse,
 } from '@/lib/webmcp-bridge'
 
 
@@ -298,7 +289,7 @@ export function AlgorithmLab() {
   /* --- 模块 8：端侧 WebMCP 网桥状态 --- */
   const [mcpToolName, setMcpToolName] = useState('navhub_system_info')
   const [mcpArgMsg, setMcpArgMsg] = useState('Hello from NavHub In-Browser Agent!')
-  const [mcpResponse, setMcpResponse] = useState<any>(null)
+  const [mcpResponse, setMcpResponse] = useState<JsonRpcResponse | null>(null)
   const [mcpLatency, setMcpLatency] = useState<number | null>(null)
 
   const handleRunMcpTool = async (tool: string) => {

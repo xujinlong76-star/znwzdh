@@ -75,6 +75,8 @@ import {
   CompileSpeculationRulesInput,
   SynthesizeAgentToolInput,
   ExchangeP2pMeshInput,
+  GetAlternativesInput,
+  ResolveWaybackInput,
 } from "@navhub/core";
 
 export {
@@ -106,6 +108,8 @@ export {
   CompileSpeculationRulesInput,
   SynthesizeAgentToolInput,
   ExchangeP2pMeshInput,
+  GetAlternativesInput,
+  ResolveWaybackInput,
 };
 
 /** 工具元数据清单（同源：OpenAPI 的 x-mcp-tools 也取这一份） */

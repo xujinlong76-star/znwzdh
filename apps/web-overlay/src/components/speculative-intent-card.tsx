@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Copy, Sparkles, Calculator, Clock, Palette, FileCode, Hash, Timer, KeyRound, Terminal } from 'lucide-react'
+import { Check, Copy, Sparkles, Calculator, Clock, Palette, FileCode, Hash, Timer, KeyRound, Terminal, Code2, GitCompare, Globe } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import type { SpeculativeIntentResult } from '@/lib/speculative'
 
@@ -30,6 +30,12 @@ export function SpeculativeIntentCard({ result }: SpeculativeIntentCardProps) {
         return <KeyRound className="w-4 h-4 text-amber-500" />
       case 'curl_to_fetch':
         return <Terminal className="w-4 h-4 text-sky-500" />
+      case 'regex':
+        return <Code2 className="w-4 h-4 text-purple-500" />
+      case 'semver':
+        return <GitCompare className="w-4 h-4 text-blue-500" />
+      case 'http_status':
+        return <Globe className="w-4 h-4 text-amber-500" />
       case 'color':
         return <Palette className="w-4 h-4 text-pink-500" />
       case 'math':

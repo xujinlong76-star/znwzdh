@@ -58,7 +58,7 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 18 个只读工具与 10 个写工具", () => {
+  it("包含 20 个只读工具与 10 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
@@ -71,6 +71,7 @@ describe("工具清单", () => {
       "exchange_p2p_mesh",
       "export_sites",
       "find_tech_path",
+      "get_alternatives",
       "get_architecture_recipe",
       "get_federated_recommendations",
       "get_site",
@@ -78,6 +79,7 @@ describe("工具清单", () => {
       "get_trending",
       "list_categories",
       "list_tags",
+      "resolve_wayback",
       "search_sites",
       "synthesize_agent_tool",
     ]);
@@ -587,5 +589,22 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     expect(body.receivedType).toBe("HELLO");
     expect(body.peerState).toBe("SYNCING");
     expect(body.outgoingResponse.type).toBe("SYNC_REQUEST");
+  });
+
+  it("get_alternatives 在双曲空间推导平替", async () => {
+    const site = (await ctx.repo.listSites({ limit: 1 }))[0]!;
+    const res = await handlers.get_alternatives({ idOrUrl: site.id, limit: 3 }, READONLY);
+    const body = payload(res);
+    expect(body.target.id).toBe(site.id);
+    expect(body.alternatives).toBeDefined();
+    expect(Array.isArray(body.alternatives)).toBe(true);
+  });
+
+  it("resolve_wayback 查询或生成时间机器快照与拯救链接", async () => {
+    const res = await handlers.resolve_wayback({ url: "https://example.com/dead-page" }, READONLY);
+    const body = payload(res);
+    expect(body.targetUrl).toBe("https://example.com/dead-page");
+    expect(body.recoveryUrl).toContain("web.archive.org/web");
+    expect(body.saveUrl).toContain("web.archive.org/save");
   });
 });

@@ -124,6 +124,16 @@ export const HealBrokenSiteInput = z.object({
   idOrUrl: z.string().describe("故障/失效站点的 ID 或完整网址"),
 });
 
+export const GetAlternativesInput = z.object({
+  idOrUrl: z.string().describe("目标站点 ID 或完整网址"),
+  limit: z.number().int().min(1).max(20).default(6).describe("返回条数上限"),
+});
+
+export const ResolveWaybackInput = z.object({
+  url: z.string().describe("待查询或自愈的目标网址或站点 ID"),
+  timestamp: z.string().optional().describe("期望的历史快照时间戳（如 20240101，可选，默认取最近一次可用快照）"),
+});
+
 export const FindTechPathInput = z.object({
   from: z.string().describe("起始技术名称或 ID (如 'react', 'vue', 'fastify')"),
   to: z.string().describe("目标技术名称或 ID (如 'postgres', 'docker', 'ollama')"),
@@ -270,6 +280,8 @@ export const MCP_INPUT_SCHEMAS: Record<string, ZodSchemaLike> = {
   compile_speculation_rules: CompileSpeculationRulesInput,
   synthesize_agent_tool: SynthesizeAgentToolInput,
   exchange_p2p_mesh: ExchangeP2pMeshInput,
+  get_alternatives: GetAlternativesInput,
+  resolve_wayback: ResolveWaybackInput,
 };
 
 /**
@@ -475,5 +487,15 @@ export const MCP_TOOL_DEFS: ToolDefinition[] = [
     name: "exchange_p2p_mesh",
     description: "通过无中心 WebRTC / DataChannel 网格消息协议交换多端书签 CRDT 增量并实现因果收敛。",
     scope: "read", inputSchema: ExchangeP2pMeshInput, mutating: false,
+  },
+  {
+    name: "get_alternatives",
+    description: "在洛伦兹/庞加莱双曲空间中推导目标站点的最佳平替与同生态技术，返回双曲测地线距离、同分类判定与多维替代得分。适合回答「有什么能替代 X 的工具」。",
+    scope: "read", inputSchema: GetAlternativesInput, mutating: false,
+  },
+  {
+    name: "resolve_wayback",
+    description: "查询 Internet Archive Wayback 历史归档快照，为失效/下线/404 站点提供时间机器历史快照拯救链接，实现全网永久可用。",
+    scope: "read", inputSchema: ResolveWaybackInput, mutating: false,
   },
 ];

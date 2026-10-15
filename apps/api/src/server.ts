@@ -50,8 +50,13 @@ import {
   type RetrievalChannel,
   SiteCreateBody,
   RunJobInput,
+  normalizeTargetUrl,
+  buildWaybackSnapshotUrl,
+  buildWaybackSaveUrl,
+  parseWaybackAvailabilityResponse,
+  type WaybackSnapshotInfo,
 } from "@navhub/core";
-import { enrichUrl } from "@navhub/ai";
+import { enrichUrl, guardedFetch } from "@navhub/ai";
 import type { AppContext } from "./context.ts";
 import { createContext } from "./context.ts";
 import { loadConfig } from "./config.ts";
@@ -1050,6 +1055,39 @@ export async function buildServer(ctx: AppContext) {
     });
 
     return { ok: true, report };
+  });
+
+  /**
+   * Wayback 时间机器自愈端点：查询指定站点的历史镜像快照与瞬时访问入口
+   */
+  app.get("/api/sites/:id/wayback", { config: { scope: "public", cache: { maxAge: 300 } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const site = await ctx.repo.getSite(id);
+    if (!site) {
+      reply.code(404);
+      return { ok: false, error: "站点不存在" };
+    }
+    const cleanUrl = normalizeTargetUrl(site.url);
+    let snapshot: WaybackSnapshotInfo = { available: false };
+    try {
+      const apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(cleanUrl)}`;
+      const res = await guardedFetch(apiUrl, { timeoutMs: 3000 });
+      if (res.status === 200) {
+        const data = JSON.parse(res.body);
+        snapshot = parseWaybackAvailabilityResponse(data);
+      }
+    } catch {
+      // 网络离线或超时降级
+    }
+
+    return {
+      ok: true,
+      siteId: site.id,
+      url: cleanUrl,
+      snapshot,
+      recoveryUrl: buildWaybackSnapshotUrl(cleanUrl, snapshot.timestamp),
+      saveUrl: buildWaybackSaveUrl(cleanUrl),
+    };
   });
 
   /**

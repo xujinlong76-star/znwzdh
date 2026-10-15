@@ -105,6 +105,62 @@ describe('推测性意图 0-RTT 预执行引擎 (Speculative Intent)', () => {
     expect(sha256?.title).toContain('SHA-256');
   });
 
+  it('应当精准解析并执行正则表达式匹配 (Regex)', () => {
+    // 语法有效性
+    const valid = parseSpeculativeIntent('regex: ^[a-z0-9_-]{3,16}$');
+    expect(valid?.type).toBe('regex');
+    expect(valid?.title).toContain('语法有效');
+
+    // 带测试文本成功匹配
+    const match = parseSpeculativeIntent('regex: /(\\d{4})-(\\d{2})-(\\d{2})/ 2026-10-16');
+    expect(match?.type).toBe('regex');
+    expect(match?.title).toContain('匹配成功');
+    expect(match?.copyValue).toBe('2026-10-16');
+    expect(match?.previewValue).toContain('2026');
+
+    // 隐式斜杠格式
+    const slash = parseSpeculativeIntent('/([a-z]+)@([a-z.]+)/i test@example.com');
+    expect(slash?.type).toBe('regex');
+    expect(slash?.title).toContain('匹配成功');
+    expect(slash?.copyValue).toBe('test@example.com');
+  });
+
+  it('应当精准对比与反序列化语义化版本 (Semver)', () => {
+    // 范围兼容性测试
+    const satisfies = parseSpeculativeIntent('semver: ^1.2.3 vs 1.4.0');
+    expect(satisfies?.type).toBe('semver');
+    expect(satisfies?.title).toContain('满足');
+    expect(satisfies?.copyValue).toBe('true');
+
+    // 版本升级等级对比
+    const majorBump = parseSpeculativeIntent('semver: 1.2.0 vs 2.0.0');
+    expect(majorBump?.type).toBe('semver');
+    expect(majorBump?.title).toContain('Major');
+
+    // 单版本结构化解析
+    const single = parseSpeculativeIntent('semver: v2.5.1-beta.2');
+    expect(single?.type).toBe('semver');
+    expect(single?.details?.['Major (重大破坏)']).toBe('2');
+    expect(single?.details?.['Minor (特性增强)']).toBe('5');
+    expect(single?.details?.['Patch (补丁修复)']).toBe('1');
+    expect(single?.details?.['Prerelease']).toBe('beta.2');
+  });
+
+  it('应当即时解析 HTTP 状态码百科与诊断处理方案 (HTTP Status)', () => {
+    const s418 = parseSpeculativeIntent('status: 418');
+    expect(s418?.type).toBe('http_status');
+    expect(s418?.title).toContain('teapot');
+
+    const s502 = parseSpeculativeIntent('502');
+    expect(s502?.type).toBe('http_status');
+    expect(s502?.title).toContain('Bad Gateway');
+    expect(s502?.previewValue).toContain('反向代理');
+
+    const s404 = parseSpeculativeIntent('http 404');
+    expect(s404?.type).toBe('http_status');
+    expect(s404?.title).toContain('Not Found');
+  });
+
   it('常规导航查询应当回退为 null', () => {
     expect(parseSpeculativeIntent('github')).toBeNull();
     expect(parseSpeculativeIntent('react 官网')).toBeNull();

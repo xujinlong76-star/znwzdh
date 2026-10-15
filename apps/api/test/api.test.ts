@@ -1335,6 +1335,24 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     expect(nonExist.statusCode).toBe(404);
   });
 
+  it("GET /api/sites/:id/wayback 返回 Wayback 历史归档快照与自愈入口", async () => {
+    const site = (await app.inject({
+      method: "POST", url: "/api/sites",
+      payload: { url: "https://wayback-test.example.com", title: "Wayback测试站点", categoryId: "cat-ai" },
+    })).json();
+
+    const res = await app.inject({ method: "GET", url: "/api/sites/" + site.id + "/wayback" });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.siteId).toBe(site.id);
+    expect(json.recoveryUrl).toContain("web.archive.org/web");
+    expect(json.saveUrl).toContain("web.archive.org/save");
+
+    const nonExist = await app.inject({ method: "GET", url: "/api/sites/no-such-site/wayback" });
+    expect(nonExist.statusCode).toBe(404);
+  });
+
   it("CRDT 本地优先协同漫游网络：多设备原子操作无损合流与状态收敛", async () => {
     // 1. 无 identity 时返回 400
     const noAuth = await app.inject({

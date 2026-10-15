@@ -10,11 +10,12 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { SiteFavicon } from '@/components/site-favicon'
-import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit } from 'lucide-react'
+import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit, History } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { safeHref, safeSrc, isSafeHttpUrl } from '@/lib/safe-url'
+import { buildWaybackSnapshotUrl } from '@/lib/wayback-resolver'
 
 interface SitePeekDialogProps {
   item: NavigationSubItem | null
@@ -101,19 +102,34 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                 </DialogDescription>
               </div>
             </div>
-            <Button
-              variant="default"
-              size="sm"
-              className="gap-1.5 shrink-0 h-8.5 px-3.5 shadow-xs font-medium"
-              onClick={() => {
-                const u = safeHref(item.href, '')
-                if (!u || !isSafeHttpUrl(u)) return
-                window.open(u, '_blank', 'noopener,noreferrer')
-              }}
-            >
-              <span>访问主站</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 h-8.5 px-3 shadow-2xs font-medium text-xs text-muted-foreground hover:text-foreground border-border/70"
+                title="调取 Internet Archive Wayback 历史归档快照"
+                onClick={() => {
+                  const snap = buildWaybackSnapshotUrl(item.href)
+                  if (snap) window.open(snap, '_blank', 'noopener,noreferrer')
+                }}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">历史快照</span>
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                className="gap-1.5 shrink-0 h-8.5 px-3.5 shadow-xs font-medium"
+                onClick={() => {
+                  const u = safeHref(item.href, '')
+                  if (!u || !isSafeHttpUrl(u)) return
+                  window.open(u, '_blank', 'noopener,noreferrer')
+                }}
+              >
+                <span>访问主站</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Button>
+            </div>
           </div>
         </DialogHeader>
 
@@ -215,13 +231,29 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
 
         {/* 巡检哨兵防劫持与死链安全告警横幅 */}
         {item.health && item.health.ok === false && (
-          <div className="mt-3 p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/10 flex items-start gap-2.5 text-xs text-rose-600 dark:text-rose-400">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <div className="font-semibold">安全哨兵告警：该站点当前响应异常或疑似失效</div>
-              <div className="text-muted-foreground">
-                系统后台可用性巡检检测到该外链响应超时或状态异常，建议优先使用下方为您实时推导的洛伦兹双曲平替站点。
+          <div className="mt-3 p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/10 space-y-2.5 text-xs text-rose-600 dark:text-rose-400">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div className="font-semibold">安全哨兵告警：该站点当前响应异常或疑似失效</div>
+                <div className="text-muted-foreground">
+                  系统后台可用性巡检检测到该外链响应超时或状态异常，建议优先使用下方为您实时推导的洛伦兹双曲平替站点，或通过时间机器调取历史归档。
+                </div>
               </div>
+            </div>
+            <div className="pt-0.5 pl-6.5 flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 px-2.5 text-xs gap-1.5 border-rose-500/40 bg-background/80 hover:bg-rose-500/15 text-rose-700 dark:text-rose-300 font-medium"
+                onClick={() => {
+                  const snap = buildWaybackSnapshotUrl(item.href)
+                  if (snap) window.open(snap, '_blank', 'noopener,noreferrer')
+                }}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>访问时间机器历史镜像 (Wayback Machine)</span>
+              </Button>
             </div>
           </div>
         )}

@@ -83,7 +83,8 @@ export interface HubTag {
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(hubUrl(path), { signal, headers: { Accept: 'application/json' } })
   if (!res.ok) throw hubError(res.status)
-  return (await res.json()) as T
+  const text = await res.text()
+  return (text.trim() ? JSON.parse(text) : {}) as T
 }
 
 /**

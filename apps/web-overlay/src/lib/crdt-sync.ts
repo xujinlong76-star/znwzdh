@@ -336,3 +336,111 @@ export function compactOperationLog(
 }
 
 export const compactOperationLogs = compactOperationLog;
+
+export type CrdtOperation<T = any> = CRDTOperation<T>
+
+export type VectorClock = Record<string, number>
+
+export function compareVectorClocks(
+  a: VectorClock,
+  b: VectorClock
+): 'EQUAL' | 'GREATER' | 'LESS' | 'CONCURRENT' {
+  let hasGreater = false
+  let hasLess = false
+  const allKeys = new Set([...Object.keys(a), ...Object.keys(b)])
+
+  for (const k of allKeys) {
+    const valA = a[k] ?? 0
+    const valB = b[k] ?? 0
+    if (valA > valB) hasGreater = true
+    if (valA < valB) hasLess = true
+  }
+
+  if (hasGreater && hasLess) return 'CONCURRENT'
+  if (hasGreater) return 'GREATER'
+  if (hasLess) return 'LESS'
+  return 'EQUAL'
+}
+
+export class CrdtStore {
+  readonly clientId: string
+  private clock: VectorClock = {}
+  private operations: CRDTOperation[] = []
+  private sites = new Map<
+    string,
+    { id: string; url: string; title: string; categoryId: string; deleted?: boolean; updatedAt: number }
+  >()
+
+  constructor(clientId: string) {
+    this.clientId = clientId
+    this.clock[clientId] = 0
+  }
+
+  getVectorClock(): VectorClock {
+    return { ...this.clock }
+  }
+
+  getOperations(): CRDTOperation[] {
+    return [...this.operations]
+  }
+
+  addSite(site: { url: string; title: string; categoryId: string; id?: string }): string {
+    const id = site.id || `site_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    this.clock[this.clientId] = (this.clock[this.clientId] ?? 0) + 1
+    const op = createCRDTOperation(
+      'UPSERT_CUSTOM_SITE',
+      id,
+      { categoryId: site.categoryId, site: { id, title: site.title, href: site.url } },
+      this.clientId,
+      Date.now()
+    )
+    this.operations.push(op)
+    this.sites.set(site.url, {
+      id,
+      url: site.url,
+      title: site.title,
+      categoryId: site.categoryId,
+      updatedAt: op.timestamp,
+    })
+    return id
+  }
+
+  getSiteByUrl(url: string) {
+    const s = this.sites.get(url)
+    if (!s || s.deleted) return undefined
+    return s
+  }
+
+  getActiveSites() {
+    return Array.from(this.sites.values()).filter((s) => !s.deleted)
+  }
+
+  getDeltaSince(remoteClock: VectorClock): CRDTOperation[] {
+    return this.operations.filter((op) => {
+      const remoteCount = remoteClock[op.clientId] ?? 0
+      return remoteCount === 0 || op.timestamp > 0
+    })
+  }
+
+  applyRemoteBatch(ops: CRDTOperation[]): number {
+    let applied = 0
+    for (const op of ops) {
+      if (this.operations.some((existing) => existing.id === op.id)) continue
+      this.operations.push(op)
+      this.clock[op.clientId] = Math.max(this.clock[op.clientId] ?? 0, (this.clock[op.clientId] ?? 0) + 1)
+      if (op.type === 'UPSERT_CUSTOM_SITE' && op.payload?.site) {
+        const s = op.payload.site
+        this.sites.set(s.href, {
+          id: s.id,
+          url: s.href,
+          title: s.title,
+          categoryId: op.payload.categoryId || 'default',
+          updatedAt: op.timestamp,
+        })
+      }
+      applied++
+    }
+    return applied
+  }
+}
+

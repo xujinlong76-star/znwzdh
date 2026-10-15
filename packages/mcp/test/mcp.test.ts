@@ -58,11 +58,12 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 11 个只读工具与 9 个写工具", () => {
+  it("包含 12 个只读工具与 9 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
       "analyze_stack_compatibility",
+      "cluster_sites",
       "compare_technologies",
       "export_sites",
       "find_tech_path",
@@ -389,5 +390,15 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     expect(body.coveredLayers).toContain("frontend");
     expect(body.missingLayers).toContain("database");
     expect(body.suggestedAdditions.length).toBeGreaterThan(0);
+  });
+
+  it("cluster_sites 对站点执行 K-Means++ 语义聚类并自动命名分类", async () => {
+    const res = await handlers.cluster_sites({ targetK: 2 }, READONLY);
+    const body = payload(res);
+    expect(body.success).toBe(true);
+    expect(body.totalItems).toBeGreaterThanOrEqual(1);
+    expect(body.clusterCount).toBeGreaterThanOrEqual(1);
+    expect(body.averageCohesion).toBeGreaterThan(0);
+    expect(body.clusters[0]?.suggestedName).toBeTruthy();
   });
 });

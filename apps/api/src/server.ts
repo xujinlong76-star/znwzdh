@@ -27,6 +27,7 @@ import {
   computeGraphCentrality,
   analyzeStackCompatibility,
   PRESET_TECH_GRAPH,
+  autoClusterSites,
   type RetrievalChannel,
 } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
@@ -843,6 +844,54 @@ export async function buildServer(ctx: AppContext) {
     });
 
     return { ok: true, report };
+  });
+
+  /**
+   * Next-Gen 5.0 语义聚类与自适应类目生成端点
+   * 对未分类、批量导入或指定分类下的站点进行 K-Means++ 语义聚类与命名生成
+   */
+  app.post("/api/sites/cluster", { config: { scope: "public" } }, async (req, reply) => {
+    const body = z.object({
+      siteIds: z.array(z.string()).optional(),
+      categoryId: z.string().optional(),
+      targetK: z.number().int().min(1).max(20).optional().default(4),
+    }).safeParse(req.body ?? {});
+
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+
+    let sitesToCluster: Array<{ id: string; title: string; url: string; tags: string[] }> = [];
+
+    if (body.data.siteIds && body.data.siteIds.length > 0) {
+      const all = await Promise.all(body.data.siteIds.map((id) => ctx.repo.getSite(id)));
+      sitesToCluster = all.filter((s): s is NonNullable<typeof s> => Boolean(s)).map((s) => ({
+        id: s.id,
+        title: s.title,
+        url: s.url,
+        tags: s.tags || [],
+      }));
+    } else {
+      const list = await ctx.repo.listSites({
+        categoryId: body.data.categoryId,
+        limit: 100,
+        status: "active",
+      });
+      sitesToCluster = list.map((s) => ({
+        id: s.id,
+        title: s.title,
+        url: s.url,
+        tags: s.tags || [],
+      }));
+    }
+
+    if (sitesToCluster.length === 0) {
+      return { totalItems: 0, clusterCount: 0, clusters: [], averageCohesion: 100 };
+    }
+
+    const result = autoClusterSites(sitesToCluster, body.data.targetK);
+    return { ok: true, result };
   });
 
   /* --------------------- 收藏夹（终端用户） --------------------- */

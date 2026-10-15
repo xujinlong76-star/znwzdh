@@ -155,6 +155,11 @@ export const AnalyzeStackCompatibilityInput = z.object({
   techs: z.array(z.string()).min(1).describe("已选技术栈名称或 ID 列表 (如 ['react', 'nextjs', 'drizzle'])"),
 });
 
+export const ClusterSitesInput = z.object({
+  categoryId: z.string().optional().describe("限定要聚类的类目 ID（不传则聚类全库站点）"),
+  targetK: z.number().int().min(1).max(10).default(3).describe("目标聚类簇数 K"),
+});
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -265,6 +270,11 @@ export const TOOL_DEFS: ToolDefinition[] = [
     name: "analyze_stack_compatibility",
     description: "分析技术选型方案的协同契合度、已覆盖与缺失的基础设施分层，并推断推荐补齐组件。",
     scope: "read", inputSchema: AnalyzeStackCompatibilityInput, mutating: false,
+  },
+  {
+    name: "cluster_sites",
+    description: "基于 K-Means++ 与语义词袋向量对站点进行自适应聚类，自动提取高频技术特征并合成可解释的类目名称与凝聚度打分。",
+    scope: "read", inputSchema: ClusterSitesInput, mutating: false,
   },
 ];
 

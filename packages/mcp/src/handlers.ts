@@ -16,11 +16,13 @@ import {
   findShortestTechPath,
   analyzeStackCompatibility,
   PRESET_TECH_GRAPH,
+  autoClusterSites,
 } from "@navhub/core";
 import type { AppContext } from "@navhub/api";
 import {
   AnalyzeStackCompatibilityInput,
   BatchImportInput,
+  ClusterSitesInput,
   CompareTechnologiesInput,
   CreateSiteInput,
   DeleteSiteInput,
@@ -431,6 +433,24 @@ export function createHandlers(ctx: AppContext) {
       const input = AnalyzeStackCompatibilityInput.parse(args ?? {});
       const report = analyzeStackCompatibility(input.techs, PRESET_TECH_GRAPH);
       return ok({ success: true, ...report });
+    },
+
+    async cluster_sites(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = ClusterSitesInput.parse(args ?? {});
+      const list = await ctx.repo.listSites({
+        categoryId: input.categoryId,
+        limit: 100,
+        status: "active",
+      });
+      const items = list.map((s) => ({
+        id: s.id,
+        title: s.title,
+        url: s.url,
+        tags: s.tags || [],
+      }));
+      const result = autoClusterSites(items, input.targetK);
+      return ok({ success: true, ...result });
     },
   };
 }

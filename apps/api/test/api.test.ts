@@ -1528,4 +1528,72 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     expect(json.fallbackTags.length).toBe(2);
     expect(json.fallbackTags[0]).toContain("rel=\"prerender\"");
   });
+
+  it("POST /api/tools/synthesize 动态智能体工具合成与 WebMCP 实时挂载", async () => {
+    // 1. 合成站点站内检索动作
+    const siteRes = await app.inject({
+      method: "POST",
+      url: "/api/tools/synthesize",
+      payload: {
+        kind: "site_search",
+        siteSearchSpec: {
+          siteId: "mdn",
+          siteName: "MDN Web Docs",
+          searchUrlTemplate: "https://developer.mozilla.org/zh-CN/search?q={query}",
+          category: "文档",
+        },
+      },
+    });
+    expect(siteRes.statusCode).toBe(200);
+    const siteJson = siteRes.json();
+    expect(siteJson.ok).toBe(true);
+    expect(siteJson.registered).toBe(true);
+    expect(siteJson.tool.name).toBe("search_mdn");
+
+    // 2. 合成单端点 REST 工具
+    const restRes = await app.inject({
+      method: "POST",
+      url: "/api/tools/synthesize",
+      payload: {
+        kind: "rest",
+        restSpec: {
+          name: "get_package_version",
+          description: "获取特定 npm 包版本详情",
+          url: "https://registry.npmjs.org/{pkg}",
+          method: "GET",
+          parameters: [
+            { name: "pkg", type: "string", in: "path", required: true },
+          ],
+        },
+      },
+    });
+    expect(restRes.statusCode).toBe(200);
+    const restJson = restRes.json();
+    expect(restJson.ok).toBe(true);
+    expect(restJson.tool.name).toBe("get_package_version");
+  });
+
+  it("POST /api/p2p/signal P2P 网格信令与去中心化状态协商 Broker", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/p2p/signal",
+      payload: {
+        nodeId: "broker-node-primary",
+        message: {
+          type: "HELLO",
+          senderId: "client-peer-alpha",
+          seq: 1,
+          timestamp: Date.now(),
+          payload: { clock: { "client-peer-alpha": 2 }, siteCount: 8 },
+        },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.nodeId).toBe("broker-node-primary");
+    expect(json.receivedType).toBe("HELLO");
+    expect(json.peerState).toBe("SYNCING");
+    expect(json.outgoingResponse.type).toBe("SYNC_REQUEST");
+  });
 });

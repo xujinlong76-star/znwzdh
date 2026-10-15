@@ -216,6 +216,46 @@ export const CompileSpeculationRulesInput = z.object({
   maxPrefetchCount: z.number().int().min(1).max(10).default(5).describe("允许最大预取数"),
 });
 
+export const SynthesizeAgentToolInput = z.object({
+  kind: z.enum(["rest", "site_search", "openapi"]).default("rest").describe("合成源类型：rest (单端点), site_search (站点站内检索), openapi (OpenAPI 3.0 规范)"),
+  restSpec: z.object({
+    name: z.string(),
+    description: z.string(),
+    url: z.string(),
+    method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).default("GET"),
+    headers: z.record(z.string()).optional(),
+    parameters: z.array(z.object({
+      name: z.string(),
+      type: z.enum(["string", "number", "boolean"]),
+      description: z.string().optional(),
+      required: z.boolean().optional(),
+      in: z.enum(["query", "path", "body", "header"]),
+      default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    })).optional(),
+    bodyType: z.enum(["json", "form"]).optional(),
+  }).optional().describe("REST 单端点参数规格（kind=rest 时生效）"),
+  siteSearchSpec: z.object({
+    siteId: z.string(),
+    siteName: z.string(),
+    searchUrlTemplate: z.string().optional(),
+    apiEndpoint: z.string().optional(),
+    category: z.string().optional(),
+  }).optional().describe("站点站内检索动作规格（kind=site_search 时生效）"),
+  openApiSpec: z.record(z.unknown()).optional().describe("OpenAPI 规范 JSON（kind=openapi 时生效）"),
+});
+
+export const ExchangeP2pMeshInput = z.object({
+  nodeId: z.string().describe("当前节点的唯一身份 ID (如 peer_xxx)"),
+  message: z.object({
+    type: z.enum(["HELLO", "SYNC_REQUEST", "DELTA_BATCH", "ACK", "HEARTBEAT"]),
+    senderId: z.string(),
+    targetId: z.string().optional(),
+    seq: z.number().int().nonnegative(),
+    timestamp: z.number().int().positive(),
+    payload: z.unknown(),
+  }).describe("传入的 P2P 网格报文"),
+});
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -356,6 +396,16 @@ export const TOOL_DEFS: ToolDefinition[] = [
     name: "compile_speculation_rules",
     description: "根据意图轨迹预测置信度与抵达耗时，编译原生 W3C Speculation Rules 预渲染与预取规则负载及 HTML 脚本标签。",
     scope: "read", inputSchema: CompileSpeculationRulesInput, mutating: false,
+  },
+  {
+    name: "synthesize_agent_tool",
+    description: "动态将外部 REST 端点、站点检索动作或 OpenAPI 规范合成为具备 SSRF 防护的 WebMCP 智能体工具。",
+    scope: "read", inputSchema: SynthesizeAgentToolInput, mutating: false,
+  },
+  {
+    name: "exchange_p2p_mesh",
+    description: "通过无中心 WebRTC / DataChannel 网格消息协议交换多端书签 CRDT 增量并实现因果收敛。",
+    scope: "read", inputSchema: ExchangeP2pMeshInput, mutating: false,
   },
 ];
 

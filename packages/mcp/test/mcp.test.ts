@@ -58,7 +58,7 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 16 个只读工具与 10 个写工具", () => {
+  it("包含 18 个只读工具与 10 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
@@ -68,6 +68,7 @@ describe("工具清单", () => {
       "compare_technologies",
       "compile_speculation_rules",
       "evaluate_developer_intent",
+      "exchange_p2p_mesh",
       "export_sites",
       "find_tech_path",
       "get_architecture_recipe",
@@ -78,6 +79,7 @@ describe("工具清单", () => {
       "list_categories",
       "list_tags",
       "search_sites",
+      "synthesize_agent_tool",
     ]);
     expect(write.length).toBe(10);
   });
@@ -532,5 +534,58 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     expect(body.rules.prerender[0].urls).not.toContain("https://example.com/logout");
     expect(body.script).toContain("prerender");
     expect(body.fallbackTags.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("synthesize_agent_tool 动态将 REST 端点与站点检索合成为 WebMCP 工具", async () => {
+    // 1. 合成站点搜索工具
+    const siteRes = await handlers.synthesize_agent_tool({
+      kind: "site_search",
+      siteSearchSpec: {
+        siteId: "github",
+        siteName: "GitHub",
+        searchUrlTemplate: "https://github.com/search?q={query}",
+        category: "开发平台",
+      },
+    }, READONLY);
+    const siteBody = payload(siteRes);
+    expect(siteBody.kind).toBe("site_search");
+    expect(siteBody.tool.name).toBe("search_github");
+    expect(siteBody.exampleInvocation.navigableUrl).toContain("https://github.com/search?q=example");
+
+    // 2. 合成单端点 REST 工具
+    const restRes = await handlers.synthesize_agent_tool({
+      kind: "rest",
+      restSpec: {
+        name: "get_weather_report",
+        description: "获取特定城市的实时天气",
+        url: "https://api.weather.example.com/v1/query",
+        method: "GET",
+        parameters: [
+          { name: "city", type: "string", in: "query", required: true },
+        ],
+      },
+    }, READONLY);
+    const restBody = payload(restRes);
+    expect(restBody.kind).toBe("rest");
+    expect(restBody.tool.name).toBe("get_weather_report");
+    expect(restBody.tool.inputSchema.properties.city).toBeDefined();
+  });
+
+  it("exchange_p2p_mesh 通过网格报文协议交换多端书签 CRDT 增量", async () => {
+    const res = await handlers.exchange_p2p_mesh({
+      nodeId: "local-node-1",
+      message: {
+        type: "HELLO",
+        senderId: "remote-peer-2",
+        seq: 1,
+        timestamp: Date.now(),
+        payload: { clock: { "remote-peer-2": 3 }, siteCount: 15 },
+      },
+    }, READONLY);
+    const body = payload(res);
+    expect(body.nodeId).toBe("local-node-1");
+    expect(body.receivedType).toBe("HELLO");
+    expect(body.peerState).toBe("SYNCING");
+    expect(body.outgoingResponse.type).toBe("SYNC_REQUEST");
   });
 });

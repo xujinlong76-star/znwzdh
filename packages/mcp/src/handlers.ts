@@ -28,6 +28,12 @@ import {
   compileSpeculationRules,
   renderSpeculationRulesScript,
   generateFallbackLinkTags,
+  synthesizeRestTool,
+  synthesizeSiteSearchTool,
+  parseOpenApiToSpecs,
+  P2PMeshNode,
+  type P2PMessage,
+  type MinimalOpenApiSpec,
   type CRDTOperation,
 } from "@navhub/core";
 import type { AppContext } from "@navhub/api";
@@ -40,6 +46,7 @@ import {
   CompileSpeculationRulesInput,
   CreateSiteInput,
   DeleteSiteInput,
+  ExchangeP2pMeshInput,
   ExportSitesInput,
   FindTechPathInput,
   GetArchitectureRecipeInput,
@@ -56,6 +63,7 @@ import {
   SearchSitesInput,
   SetStatusInput,
   SyncCrdtOperationsInput,
+  SynthesizeAgentToolInput,
   EvaluateDeveloperIntentInput,
   UpdateSiteInput,
   requireScope,
@@ -584,6 +592,57 @@ export function createHandlers(ctx: AppContext) {
         rules: payload,
         script: renderSpeculationRulesScript(payload),
         fallbackTags: generateFallbackLinkTags(payload),
+      });
+    },
+
+    async synthesize_agent_tool(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = SynthesizeAgentToolInput.parse(args ?? {});
+
+      if (input.kind === "site_search" && input.siteSearchSpec) {
+        const synthesized = synthesizeSiteSearchTool(input.siteSearchSpec);
+        return ok({
+          kind: "site_search",
+          tool: synthesized.definition,
+          exampleInvocation: synthesized.handler({ query: "example" }),
+        });
+      }
+
+      if (input.kind === "openapi" && input.openApiSpec) {
+        const specs = parseOpenApiToSpecs(input.openApiSpec as MinimalOpenApiSpec);
+        const tools = specs.map((s) => synthesizeRestTool(s).definition);
+        return ok({
+          kind: "openapi",
+          count: tools.length,
+          tools,
+        });
+      }
+
+      if (input.restSpec) {
+        const synthesized = synthesizeRestTool(input.restSpec);
+        return ok({
+          kind: "rest",
+          tool: synthesized.definition,
+        });
+      }
+
+      return ok({
+        kind: "unknown",
+        message: "缺少 restSpec、siteSearchSpec 或 openApiSpec 有效配置",
+      });
+    },
+
+    async exchange_p2p_mesh(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = ExchangeP2pMeshInput.parse(args ?? {});
+      const node = new P2PMeshNode(input.nodeId);
+      const outgoing = node.handleIncomingMessage(input.message as P2PMessage<any>);
+      return ok({
+        nodeId: input.nodeId,
+        receivedType: input.message.type,
+        peerState: node.getPeer(input.message.senderId)?.state ?? "READY",
+        outgoingResponse: outgoing,
+        vectorClock: node.store.getVectorClock(),
       });
     },
   };

@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { getFileContent } from '@/lib/github'
 
 export const runtime = 'nodejs'
 
 export async function GET() {
   try {
-    const session = await auth()
-    if (!session?.user || !getServerGithubToken(session.user.id)) {
-      return new Response('Unauthorized', { status: 401 })
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
     }
 
     try {
@@ -17,12 +17,12 @@ export async function GET() {
       // 验证文件格式
       const isValid = defaultData &&
         typeof defaultData === 'object' &&
-        Array.isArray(defaultData.navigationItems)
+        Array.isArray((defaultData as { navigationItems?: unknown[] }).navigationItems)
 
       return NextResponse.json({
         exists: true,
         valid: isValid,
-        itemCount: isValid ? defaultData.navigationItems.length : 0
+        itemCount: isValid ? (defaultData as { navigationItems: unknown[] }).navigationItems.length : 0
       })
     } catch (error) {
       // 文件不存在

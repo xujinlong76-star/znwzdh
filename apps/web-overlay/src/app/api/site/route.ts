@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, getFileContent } from '@/lib/github'
 import type { SiteInfo } from '@/types/site'
 
@@ -31,19 +31,19 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    if (!session?.user || !getServerGithubToken(session.user.id)) {
-      return new Response('Unauthorized', { status: 401 })
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
     }
 
     const data: SiteInfo = await request.json()
 
-    // 提交到 GitHub
+    // 提交到存储层（HTTP 适配器直存 NavHub / GitHub 适配器提交仓库）
     await commitFile(
       'src/navsphere/content/site.json',
       JSON.stringify(data, null, 2),
       'Update site configuration',
-      getServerGithubToken(session.user.id)!
+      authCheck.githubToken || undefined
     )
 
     return NextResponse.json({ success: true })
@@ -54,4 +54,4 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
-} 
+}

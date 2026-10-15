@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, getFileContent } from '@/lib/github'
 import type { NavigationData, NavigationItem } from '@/types/navigation'
 
@@ -7,9 +7,9 @@ export const runtime = 'nodejs'
 
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    if (!session?.user || !getServerGithubToken(session.user.id)) {
-      return new Response('Unauthorized', { status: 401 })
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
     }
 
     const { sourceIndex, destinationIndex, itemId } = await request.json()
@@ -34,12 +34,12 @@ export async function POST(request: Request) {
     // 更新数据
     data.navigationItems = updatedItems
 
-    // 提交更改到 GitHub
+    // 提交更改到存储层
     await commitFile(
       'src/navsphere/content/navigation.json',
       JSON.stringify(data, null, 2),
       `重新排序导航项 - ${new Date().toISOString()}`,
-      getServerGithubToken(session.user.id)!
+      authCheck.githubToken || undefined
     )
 
     return NextResponse.json(data.navigationItems, { status: 200 })

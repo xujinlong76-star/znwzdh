@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { uint8ArrayToBase64 } from '@/lib/buffer-utils'
 import { guardedFetch, isProbablySafeUrl, SsrfBlockedError } from '@/lib/ssrf-guard'
 
@@ -25,9 +25,9 @@ interface WebsiteMetadata {
 
 export async function POST(request: Request) {
     try {
-        const session = await auth()
-        if (!session?.user || !getServerGithubToken(session.user.id)) {
-            return new Response('Unauthorized', { status: 401 })
+        const authCheck = await verifyAdminSession()
+        if (!authCheck.ok) {
+            return new Response(authCheck.error, { status: authCheck.status })
         }
 
         const { url } = await request.json()
@@ -43,13 +43,15 @@ export async function POST(request: Request) {
             throw new Error('Failed to fetch valid metadata')
         }
 
-        // 处理封面/OG图片
-        if (metadata.image) {
+        const token = authCheck.githubToken
+
+        // 处理封面/OG图片（若有 GitHub Token 则上传，否则保留原始 URL）
+        if (metadata.image && token) {
             try {
                 // 使用页面 URL 作为 Referer，并将文件前缀设为 'cover'，存储到 assets/cover 目录
                 const imageUrl = await downloadAndUploadIcon(
                     metadata.image,
-                    getServerGithubToken(session.user.id)!,
+                    token,
                     url,
                     'cover',
                     'assets/cover'
@@ -61,15 +63,15 @@ export async function POST(request: Request) {
             }
         }
 
-        // 如果获取到了 favicon，下载并上传到 GitHub
+        // 如果获取到了 favicon，且有 GitHub Token 则下载并上传
         // 对于视频链接（如 Bilibili），如果已有封面图片，则不需要处理 favicon
         const isVideoUrl = extractBilibiliVideoId(url) !== null
         const skipFavicon = isVideoUrl && metadata.image
 
-        if (metadata.icon && !skipFavicon) {
+        if (metadata.icon && !skipFavicon && token) {
             try {
                 // 使用页面 URL 作为 Referer
-                const iconUrl = await downloadAndUploadIcon(metadata.icon, getServerGithubToken(session.user.id)!, url, 'favicon')
+                const iconUrl = await downloadAndUploadIcon(metadata.icon, token, url, 'favicon')
                 metadata.icon = iconUrl
 
             } catch (error) {
@@ -77,7 +79,7 @@ export async function POST(request: Request) {
                 // 如果图标下载失败，尝试使用 Google favicon 服务
                 try {
                     const domain = new URL(url).hostname
-                    const fallbackIconUrl = await downloadGoogleFavicon(domain, getServerGithubToken(session.user.id)!)
+                    const fallbackIconUrl = await downloadGoogleFavicon(domain, token)
                     metadata.icon = fallbackIconUrl
                 } catch (fallbackError) {
                     console.warn('Failed to download Google favicon:', fallbackError)

@@ -2,7 +2,7 @@ import NextAuth from 'next-auth'
 import GithubProvider from 'next-auth/providers/github'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import type { NextAuthConfig } from 'next-auth'
-import { authConfig, authSecret } from './auth.config'
+import { authConfig, authSecret, isAdminIdentity } from './auth.config'
 
 /**
  * 服务端侧的 GitHub token 保管（进程内、仅服务端可读）。
@@ -152,3 +152,32 @@ const handler = NextAuth(config)
 
 export const auth = handler.auth
 export const { handlers: { GET, POST } } = handler
+
+/**
+ * 校验当前请求是否具备管理员权限（供后台管理 API 路由统一调用）。
+ */
+export async function verifyAdminSession() {
+  const session = await auth()
+  if (!session?.user) {
+    return { ok: false as const, error: 'Unauthorized', status: 401 }
+  }
+
+  const user = session.user as { id?: string; email?: string; name?: string; role?: string }
+  const githubToken = getServerGithubToken(user.id) || process.env.GITHUB_PAT || ''
+
+  // 1. 管理员凭证登录
+  if (user.role === 'admin' || user.id === 'admin' || user.email === 'admin@navhub.local') {
+    return { ok: true as const, session, user, githubToken }
+  }
+
+  // 2. GitHub 身份白名单校验
+  const identity = user.email || user.name
+  const isDev = process.env.NODE_ENV !== 'production'
+  const hasAdminIds = Boolean(process.env.NAVHUB_ADMIN_IDS)
+
+  if (isAdminIdentity(identity) || (isDev && !hasAdminIds)) {
+    return { ok: true as const, session, user, githubToken }
+  }
+
+  return { ok: false as const, error: 'Forbidden', status: 403 }
+}

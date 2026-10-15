@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, getFileContent } from '@/lib/github'
 
 export const runtime = 'nodejs'
 
 export async function POST() {
   try {
-    const session = await auth()
-    if (!session?.user || !getServerGithubToken(session.user.id)) {
-      return new Response('Unauthorized', { status: 401 })
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
     }
 
     // 检查默认数据文件是否存在
@@ -16,7 +16,7 @@ export async function POST() {
       const defaultData = await getFileContent('src/navsphere/content/navigation-default.json')
 
       // 验证默认数据格式
-      if (!defaultData || typeof defaultData !== 'object' || !defaultData.navigationItems) {
+      if (!defaultData || typeof defaultData !== 'object' || !(defaultData as { navigationItems?: unknown[] }).navigationItems) {
         return NextResponse.json(
           {
             error: 'Invalid default data format',
@@ -31,7 +31,7 @@ export async function POST() {
         'src/navsphere/content/navigation.json',
         JSON.stringify(defaultData, null, 2),
         'Restore navigation data to default',
-        getServerGithubToken(session.user.id)!
+        authCheck.githubToken || undefined
       )
 
       return NextResponse.json(defaultData)

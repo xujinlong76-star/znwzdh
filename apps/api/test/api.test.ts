@@ -730,6 +730,68 @@ describe("标签与专题", () => {
     const missing = await app.inject({ method: "GET", url: "/api/collections/nope" });
     expect(missing.statusCode).toBe(404);
   });
+
+  it("专题 CRUD：创建 / 改名 / 加条目 / 删条目 / 删除", async () => {
+    // 创建
+    const created = await app.inject({
+      method: "POST", url: "/api/collections",
+      payload: { slug: "e2e-col", title: "端到端专题", kind: "topic" },
+    });
+    expect(created.statusCode).toBe(201);
+    const col = created.json();
+    expect(col.slug).toBe("e2e-col");
+    // slug 冲突 → 409 而不是 500
+    const dup = await app.inject({
+      method: "POST", url: "/api/collections",
+      payload: { slug: "e2e-col", title: "重复" },
+    });
+    expect(dup.statusCode).toBe(409);
+    // 改名 + 停用
+    const patched = await app.inject({
+      method: "PATCH", url: "/api/collections/" + col.id,
+      payload: { title: "端到端专题 v2", enabled: false },
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json().title).toBe("端到端专题 v2");
+    // 默认列表过滤停用，all=1 可见
+    const list = (await app.inject({ method: "GET", url: "/api/collections" })).json();
+    expect(list.find((c: { id: string }) => c.id === col.id)).toBeUndefined();
+    const all = (await app.inject({ method: "GET", url: "/api/collections?all=1" })).json();
+    expect(all.find((c: { id: string }) => c.id === col.id)).toBeTruthy();
+    // 加条目：先造一个站点
+    const site = (await app.inject({
+      method: "POST", url: "/api/sites",
+      payload: { url: "https://example.com/col-item", title: "专题条目站", categoryId: "cat-ai" },
+    })).json();
+    const added = await app.inject({
+      method: "POST", url: "/api/collections/" + col.id + "/items",
+      payload: { siteId: site.id },
+    });
+    expect(added.statusCode).toBe(201);
+    // 重复添加幂等 200
+    const readded = await app.inject({
+      method: "POST", url: "/api/collections/" + col.id + "/items",
+      payload: { siteId: site.id },
+    });
+    expect(readded.statusCode).toBe(200);
+    expect(readded.json().existed).toBe(true);
+    // 详情含条目
+    const detail = (await app.inject({ method: "GET", url: "/api/collections/by-id/" + col.id })).json();
+    expect(detail.items.length).toBe(1);
+    expect(detail.items[0].siteId).toBe(site.id);
+    // 删条目
+    const removed = await app.inject({ method: "DELETE", url: "/api/collections/" + col.id + "/items/" + site.id });
+    expect(removed.json().removed).toBe(true);
+    const removedAgain = await app.inject({ method: "DELETE", url: "/api/collections/" + col.id + "/items/" + site.id });
+    expect(removedAgain.json().removed).toBe(false);
+    // 删除专题：站点本身不受影响
+    const del = await app.inject({ method: "DELETE", url: "/api/collections/" + col.id });
+    expect(del.statusCode).toBe(204);
+    const delAgain = await app.inject({ method: "DELETE", url: "/api/collections/" + col.id });
+    expect(delAgain.statusCode).toBe(404);
+    const siteAfter = await app.inject({ method: "GET", url: "/api/sites/" + site.id });
+    expect(siteAfter.statusCode).toBe(200);
+  });
 });
 
 describe("收藏夹", () => {
@@ -917,6 +979,66 @@ describe("投稿（统一到 pending 站点）", () => {
     await app.inject({ method: "PATCH", url: "/api/sites/" + created.siteId, payload: { status: "active" } });
     const pending = (await app.inject({ method: "GET", url: "/api/sites?status=pending" })).json();
     expect(pending.some((s: any) => s.id === created.siteId)).toBe(false);
+  });
+
+  it("归一化 URL 去重：加减斜杠/大小写绕不过 409", async () => {
+    // 独立 IP：投稿限流 5 次/小时/IP，前面测试已占满默认 IP 的桶
+    const ip = "10.20.30.41";
+    const first = await app.inject({
+      method: "POST", url: "/api/submissions", remoteAddress: ip,
+      payload: { title: "归一化去重站", url: "https://example.com/norm-dup", description: "x", categoryId: "cat-ai" },
+    });
+    expect(first.statusCode).toBe(201);
+    const retry = await app.inject({
+      method: "POST", url: "/api/submissions", remoteAddress: ip,
+      payload: { title: "换个标题也白搭", url: "HTTPS://example.com/norm-dup/", description: "x", categoryId: "cat-ai" },
+    });
+    expect(retry.statusCode).toBe(409);
+    const body = retry.json();
+    expect(body.reason).toBe("duplicate_url");
+    expect(body.siteId).toBe(first.json().siteId);
+    expect(body.status).toBe("pending");
+  });
+
+  it("同名不同 URL 同样 409（防换址重投）", async () => {
+    const ip = "10.20.30.42";
+    const first = await app.inject({
+      method: "POST", url: "/api/submissions", remoteAddress: ip,
+      payload: { title: "同名去重站", url: "https://example.com/same-title-1", description: "x", categoryId: "cat-ai" },
+    });
+    expect(first.statusCode).toBe(201);
+    const retry = await app.inject({
+      method: "POST", url: "/api/submissions", remoteAddress: ip,
+      payload: { title: "同名去重站", url: "https://example.com/same-title-2", description: "x", categoryId: "cat-ai" },
+    });
+    expect(retry.statusCode).toBe(409);
+    expect(retry.json().reason).toBe("duplicate_title");
+    expect(retry.json().siteId).toBe(first.json().siteId);
+  });
+
+  it("审核统计返回待审数与最早待审时间", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/submissions/stats" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.success).toBe(true);
+    expect(body.pending).toBeGreaterThanOrEqual(1);
+    expect(typeof body.oldestPendingAt).toBe("number");
+    expect(typeof body.approved).toBe("number");
+    expect(typeof body.rejected).toBe("number");
+  });
+
+  it("审计支持按 target 查某投稿的拒绝理由", async () => {
+    const created = (await app.inject({
+      method: "POST", url: "/api/sites",
+      payload: { url: "https://example.com/reject-reason", title: "理由查询站", description: "x", categoryId: "cat-ai", status: "pending", source: "submission" },
+    })).json();
+    let hash = 0;
+    for (let i = 0; i < created.id.length; i++) { hash = ((hash << 5) - hash) + created.id.charCodeAt(i); hash |= 0; }
+    const num = Math.abs(hash) || 1;
+    await app.inject({ method: "PATCH", url: "/api/submissions/" + num, payload: { action: "reject", reason: "广告太多" } });
+    const audit = (await app.inject({ method: "GET", url: "/api/admin/audit?action=submission.reject&target=" + created.id })).json();
+    expect(audit.items.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(audit.items[0].diff)).toContain("广告太多");
   });
 });
 
@@ -1152,6 +1274,101 @@ describe("个性化画像：查看与重置", () => {
   });
 });
 
+describe("任务队列运维：详情 / 重试 / 取消 / 统计", () => {
+  it("入队 → 详情可见 payload → 统计计数", async () => {
+    const created = (await app.inject({
+      method: "POST", url: "/api/jobs",
+      payload: { kind: "recompute_rank", payload: { reason: "ops-test" } },
+    })).json();
+    expect(created.id).toBeTruthy();
+    const detail = await app.inject({ method: "GET", url: "/api/jobs/" + created.id });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().payload).toEqual({ reason: "ops-test" });
+    const missing = await app.inject({ method: "GET", url: "/api/jobs/no-such" });
+    expect(missing.statusCode).toBe(404);
+    const stats = (await app.inject({ method: "GET", url: "/api/jobs/stats" })).json();
+    expect(stats.pending).toBeGreaterThanOrEqual(1);
+    expect(typeof stats.oldestPendingAt).toBe("number");
+  });
+
+  it("失败任务可重试，非失败重试 409", async () => {
+    const created = (await app.inject({
+      method: "POST", url: "/api/jobs",
+      payload: { kind: "refetch_metadata", payload: { siteId: "no-such-site" } },
+    })).json();
+    // pending 不可重试
+    const early = await app.inject({ method: "POST", url: "/api/jobs/" + created.id + "/retry" });
+    expect(early.statusCode).toBe(409);
+    // 造失败：直接跑 Runner（坏 siteId 必失败，3 次耗尽 too slow——走 repo 直写 failed）
+    await ctx.repo.completeJob(created.id, "boom", { exhausted: true });
+    const retry = await app.inject({ method: "POST", url: "/api/jobs/" + created.id + "/retry" });
+    expect(retry.statusCode).toBe(200);
+    expect(retry.json().status).toBe("pending");
+    // 重试后再次重试 409（已是 pending）
+    const again = await app.inject({ method: "POST", url: "/api/jobs/" + created.id + "/retry" });
+    expect(again.statusCode).toBe(409);
+    // 不存在 404
+    expect((await app.inject({ method: "POST", url: "/api/jobs/no-such/retry" })).statusCode).toBe(404);
+  });
+
+  it("取消 pending，终态取消 409，取消落审计", async () => {
+    const created = (await app.inject({
+      method: "POST", url: "/api/jobs",
+      payload: { kind: "reindex" },
+    })).json();
+    const cancel = await app.inject({ method: "POST", url: "/api/jobs/" + created.id + "/cancel" });
+    expect(cancel.statusCode).toBe(200);
+    expect(cancel.json().status).toBe("canceled");
+    // 重复取消 409
+    const again = await app.inject({ method: "POST", url: "/api/jobs/" + created.id + "/cancel" });
+    expect(again.statusCode).toBe(409);
+    // 审计有记录
+    const audit = (await app.inject({ method: "GET", url: "/api/admin/audit?action=job.cancel&target=" + created.id })).json();
+    expect(audit.items.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("搜索联想 /api/suggest", () => {
+  it("前缀同时命中历史搜索词、标签与站点", async () => {
+    // 造历史搜索热度（suggest 不记 search 事件，这里用 events 直写 similarly）
+    await ctx.repo.recordEvent("search", { query: "联想路由测试" });
+    await ctx.repo.recordEvent("search", { query: "联想路由测试" });
+    const res = await app.inject({ method: "GET", url: "/api/suggest?q=" + encodeURIComponent("联想路由") });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.q).toBe("联想路由");
+    expect(body.queries.some((x: any) => x.query === "联想路由测试")).toBe(true);
+    expect(Array.isArray(body.tags)).toBe(true);
+    expect(Array.isArray(body.sites)).toBe(true);
+  });
+
+  it("空查询给发现位（热门搜索 + 热门标签，不猜站点）", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/suggest" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.sites).toEqual([]);
+    expect(Array.isArray(body.queries)).toBe(true);
+    expect(Array.isArray(body.tags)).toBe(true);
+  });
+
+  it("联想不产生 search 事件（不灌水 topQueries）", async () => {
+    const before = (await app.inject({ method: "GET", url: "/api/admin/stats/trends?days=30" })).json();
+    const beforeCount = (before.topQueries as any[]).reduce((s, q) => s + q.count, 0);
+    await app.inject({ method: "GET", url: "/api/suggest?q=" + encodeURIComponent("灌水探测词xyz") });
+    await app.inject({ method: "GET", url: "/api/suggest?q=" + encodeURIComponent("灌水探测词xyz") });
+    const after = (await app.inject({ method: "GET", url: "/api/admin/stats/trends?days=30" })).json();
+    const afterCount = (after.topQueries as any[]).reduce((s, q) => s + q.count, 0);
+    expect(afterCount).toBe(beforeCount);
+    expect((after.topQueries as any[]).some((q) => q.query === "灌水探测词xyz")).toBe(false);
+  });
+
+  it("超长 q 被截断且 limit 越界被钳制", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/suggest?q=" + encodeURIComponent("x".repeat(200)) + "&limit=999" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().q.length).toBeLessThanOrEqual(64);
+  });
+});
+
 describe("OpenAPI 文档", () => {
   it("/api/openapi.json 与真实路由同源（doc 由 onRoute 收集的路由表生成）且带 scope 安全声明", async () => {
     const res = await app.inject({ method: "GET", url: "/api/openapi.json" });
@@ -1162,10 +1379,13 @@ describe("OpenAPI 文档", () => {
 
     // 文档必须覆盖各分区的代表性路由（新增路由走 onRoute 自动进入，这里锁住覆盖面）
     for (const t of [
-      "/api/health", "/api/search", "/api/sites", "/api/sites/{id}", "/api/sites/bulk",
+      "/api/health", "/api/search", "/api/suggest", "/api/sites", "/api/sites/{id}", "/api/sites/bulk",
       "/api/trash", "/api/trash/{id}/restore", "/api/submissions", "/api/submissions/{number}",
-      "/api/profile", "/api/admin/audit", "/api/admin/health/trend", "/api/tags/{id}",
+      "/api/submissions/stats", "/api/profile", "/api/admin/audit", "/api/admin/health/trend", "/api/tags/{id}",
       "/api/categories/merge", "/api/favorites", "/api/storage", "/api/tokens", "/api/jobs",
+      "/api/jobs/stats", "/api/jobs/{id}", "/api/jobs/{id}/retry", "/api/jobs/{id}/cancel",
+      "/api/collections", "/api/collections/{slug}", "/api/collections/by-id/{id}",
+      "/api/collections/{id}", "/api/collections/{id}/items",
     ]) {
       expect(Object.keys(doc.paths), "缺少路径: " + t).toContain(t);
     }

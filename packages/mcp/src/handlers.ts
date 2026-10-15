@@ -8,19 +8,26 @@
  */
 import { hashSiteId } from "@navhub/store";
 import { enrichUrl, siteEmbeddingText, guardedFetch } from "@navhub/ai";
-import type { AppContext } from "@navhub/api";
+// submissionNumber 与中枢 REST 共用同一实现（djb2）：MCP 返回的 number
+// 必须和 GET /api/submissions 里的一致，否则前端按 number 审核会对不上。
+import { submissionNumber, type AppContext } from "@navhub/api";
 import {
+  AddToCollectionInput,
   BatchImportInput,
   CreateSiteInput,
   DeleteSiteInput,
   ExportSitesInput,
+  GetCollectionInput,
   GetSiteInput,
   GetTrendingInput,
   HealthCheckInput,
   ListCategoriesInput,
+  ListCollectionsInput,
+  ListSubmissionsInput,
   ListTagsInput,
   MAX_BATCH_ITEMS,
   RefreshSiteInput,
+  ReviewSubmissionInput,
   RunJobInput,
   SearchSitesInput,
   SetStatusInput,
@@ -352,6 +359,107 @@ export function createHandlers(ctx: AppContext) {
       const jobId = await ctx.repo.enqueueJob(input.kind, input.payload ?? {});
       await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "job.enqueue", target: jobId, diff: { kind: input.kind, payload: input.payload ?? {} } });
       return ok({ queued: true, jobId, kind: input.kind, note: "任务已入队，Runner 会在 30 秒内执行。用 GET /api/jobs 查询执行状态。" });
+    },
+
+    async list_collections(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = ListCollectionsInput.parse(args ?? {});
+      const all = await ctx.repo.listCollections(!input.includeDisabled);
+      return ok({
+        count: all.length,
+        collections: all.map((c) => ({
+          slug: c.slug, title: c.title, description: c.description ?? null,
+          kind: c.kind, enabled: c.enabled, sort: c.sort,
+        })),
+      });
+    },
+
+    async get_collection(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = GetCollectionInput.parse(args ?? {});
+      const col = await ctx.repo.getCollectionBySlug(input.slug);
+      if (!col) return fail("未找到专题：" + input.slug);
+      const sites = (await ctx.repo.listCollectionSites(input.slug)).slice(0, input.limit);
+      return ok({
+        slug: col.slug, title: col.title, description: col.description ?? null, kind: col.kind,
+        count: sites.length,
+        sites: sites.map((s) => ({ title: s.title, url: s.url, description: s.description, tags: s.tags })),
+      });
+    },
+
+    async add_to_collection(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "write");
+      const input = AddToCollectionInput.parse(args ?? {});
+      const compute = async () => {
+        const col = await ctx.repo.getCollectionBySlug(input.slug);
+        if (!col) throw new Error("未找到专题：" + input.slug);
+        const site = await ctx.repo.getSite(input.idOrUrl);
+        if (!site) throw new Error("未找到站点：" + input.idOrUrl);
+        const result = await ctx.repo.addCollectionItem(col.id, site.id);
+        await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "collection.add_item", target: col.id, diff: { siteId: site.id } });
+        return { ok: true, slug: col.slug, siteId: site.id, ...result };
+      };
+      try {
+        return await withIdempotency(input.idempotencyKey, compute);
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
+    },
+
+    async list_submissions(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "read");
+      const input = ListSubmissionsInput.parse(args ?? {});
+      const statusMap = { pending: "pending", approved: "active", rejected: "archived", all: undefined } as const;
+      const sites = await ctx.repo.listSites({ source: "submission", status: statusMap[input.status] as never, limit: input.limit });
+      return ok({
+        status: input.status,
+        count: sites.length,
+        submissions: sites.map((s) => ({
+          number: submissionNumber(s.id),
+          siteId: s.id,
+          title: s.title,
+          url: s.url,
+          description: s.description ?? "",
+          categoryId: s.categoryId,
+          state: s.status,
+          createdAt: s.createdAt,
+        })),
+      });
+    },
+
+    async review_submission(args: unknown, tc: ToolContext): Promise<ToolResult> {
+      requireScope(tc, "write");
+      const input = ReviewSubmissionInput.parse(args ?? {});
+      const compute = async () => {
+        let site = input.siteId ? await ctx.repo.getSite(input.siteId) : null;
+        if (!site && input.number !== undefined) {
+          // 投稿池有限（与 REST 同策略）：逐个算 hash 反查，不另建映射表
+          const candidates = await ctx.repo.listSites({ source: "submission", limit: 1000 });
+          const found = candidates.find((s) => submissionNumber(s.id) === input.number);
+          if (!found) throw new Error("未找到投稿：" + input.number);
+          site = found;
+        }
+        if (!site) throw new Error("未找到投稿");
+        if (site.source !== "submission") {
+          throw new Error("该站点不是投稿（source=" + site.source + "），请用 update_site 修改");
+        }
+        const nextStatus = input.action === "approve" ? "active" : "archived";
+        await ctx.repo.updateSite(site.id, { status: nextStatus as never });
+        await ctx.repo.audit({
+          actor: tc.actor, actorKind: "mcp",
+          action: input.action === "approve" ? "submission.approve" : "submission.reject",
+          target: site.id, diff: { url: site.url, title: site.title, reason: input.reason ?? null },
+        });
+        return {
+          ok: true, siteId: site.id, number: submissionNumber(site.id),
+          action: input.action, status: nextStatus,
+        };
+      };
+      try {
+        return await withIdempotency(input.idempotencyKey, compute);
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
+      }
     },
   };
 }

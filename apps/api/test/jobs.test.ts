@@ -16,6 +16,8 @@ import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { JobRunner, backoffMs } from "../src/jobs.ts";
 import { refreshUserProfile } from "../src/profile-service.ts";
+import { clampWebhookTimeout, sendWebhookAlert } from "../src/alerts.ts";
+import { createServer, type AddressInfo } from "node:http";
 
 let dir: string;
 let ctx: AppContext;
@@ -249,5 +251,100 @@ describe("个性化画像服务", () => {
     const profile = await ctx.repo.getUserProfile("u-stranger");
     expect(profile!.topCategories).toEqual([]);
     expect(profile!.searchCount).toBe(0);
+  });
+});
+
+describe("失败告警 webhook 通道", () => {
+  it("sendWebhookAlert 投递标准 JSON，2xx 算送达", async () => {
+    const received: Array<{ url?: string; contentType?: string; body: any }> = [];
+    const server = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (c) => { raw += c; });
+      req.on("end", () => {
+        received.push({ url: req.url, contentType: req.headers["content-type"], body: JSON.parse(raw) });
+        res.statusCode = 200;
+        res.end("ok");
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const ok = await sendWebhookAlert(
+        "http://127.0.0.1:" + port + "/hook", "测试告警",
+        { kind: "recompute_rank", attempts: 3, error: "boom" }, 2000,
+      );
+      expect(ok).toBe(true);
+      expect(received.length).toBe(1);
+      expect(received[0]!.contentType).toContain("application/json");
+      expect(received[0]!.body.source).toBe("navhub-jobs");
+      expect(received[0]!.body.text).toBe("测试告警");
+      expect(received[0]!.body.detail).toEqual({ kind: "recompute_rank", attempts: 3, error: "boom" });
+      expect(typeof received[0]!.body.at).toBe("number");
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  it("非法协议 / 非法 URL / 不可达地址返回 false 且不抛错", async () => {
+    const detail = { kind: "a", attempts: 1, error: "e" };
+    expect(await sendWebhookAlert("file:///etc/passwd", "x", detail)).toBe(false);
+    expect(await sendWebhookAlert("not a url", "x", detail)).toBe(false);
+    expect(await sendWebhookAlert("", "x", detail)).toBe(false);
+    // 本机 discard 端口：连接被拒，必须快速失败而不是挂住
+    expect(await sendWebhookAlert("http://127.0.0.1:9/hook", "x", detail, 1500)).toBe(false);
+  });
+
+  it("clampWebhookTimeout 钳制在 1s~30s", async () => {
+    expect(clampWebhookTimeout(100)).toBe(1000);
+    expect(clampWebhookTimeout(120_000)).toBe(30_000);
+    expect(clampWebhookTimeout(2500)).toBe(2500);
+    expect(clampWebhookTimeout(Number.NaN)).toBe(5000);
+  });
+
+  it("Runner 重试耗尽时向 webhook 投递且仅一次", async () => {
+    const received: any[] = [];
+    const server = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (c) => { raw += c; });
+      req.on("end", () => { received.push(JSON.parse(raw)); res.statusCode = 200; res.end("ok"); });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const loud = { ...ctx, config: { ...ctx.config, alerts: { webhookUrl: "http://127.0.0.1:" + port + "/hook", webhookTimeoutMs: 2000 } } };
+      const runner = new JobRunner(loud, {});
+      const id = await ctx.repo.enqueueJob("refetch_metadata", { siteId: "no-such-site-alert" });
+      const past = Date.now() - 1;
+      await runner.tick(); // attempts=1 → 退避
+      ctx.db.sqlite!.prepare("UPDATE jobs SET next_run_at = ? WHERE id = ?").run(past, id);
+      await runner.tick(); // attempts=2 → 退避
+      ctx.db.sqlite!.prepare("UPDATE jobs SET next_run_at = ? WHERE id = ?").run(past, id);
+      await runner.tick(); // attempts=3 → 耗尽 → failed + webhook（fire-and-forget）
+      expect((await ctx.repo.getJob(id))!.status).toBe("failed");
+      // fire-and-forget 投递：轮询等它，最多 3 秒
+      const deadline = Date.now() + 3000;
+      while (received.length === 0 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(received.length).toBe(1);
+      expect(received[0].detail.kind).toBe("refetch_metadata");
+      expect(received[0].detail.attempts).toBe(3);
+      expect(received[0].source).toBe("navhub-jobs");
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  it("未配置 webhook 时只有日志没有投递（行为不变）", async () => {
+    expect(ctx.config.alerts.webhookUrl).toBeNull();
+    const runner = new JobRunner(ctx, {});
+    const id = await ctx.repo.enqueueJob("refetch_metadata", { siteId: "no-such-site-quiet" });
+    const past = Date.now() - 1;
+    await runner.tick();
+    ctx.db.sqlite!.prepare("UPDATE jobs SET next_run_at = ? WHERE id = ?").run(past, id);
+    await runner.tick();
+    ctx.db.sqlite!.prepare("UPDATE jobs SET next_run_at = ? WHERE id = ?").run(past, id);
+    await runner.tick();
+    expect((await ctx.repo.getJob(id))!.status).toBe("failed");
   });
 });

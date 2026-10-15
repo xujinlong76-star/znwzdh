@@ -55,6 +55,17 @@ export interface AppConfig {
    * 创建正式的库内 token，之后应删除本变量重启。不入库、只在内存比对。
    */
   bootstrapToken: string | null;
+  /**
+   * 任务失败告警的 webhook 通道（可选）。
+   *
+   * 任务重试耗尽时，除 console.error 外再 POST 一份 JSON 到 webhookUrl
+   * （飞书/钉钉/Slack/自建网关均可直接收）。不配置则只打日志——
+   * 告警缺失不能影响 Runner 本体（发送失败静默吞掉）。
+   */
+  alerts: {
+    webhookUrl: string | null;
+    webhookTimeoutMs: number;
+  };
 }
 
 function env(key: string, fallback?: string): string {
@@ -118,6 +129,10 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     corsOrigins: env("NAVHUB_CORS_ORIGINS", "*").split(",").map((s) => s.trim()).filter(Boolean),
     authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
+    alerts: {
+      webhookUrl: process.env.NAVHUB_ALERT_WEBHOOK_URL || null,
+      webhookTimeoutMs: num("NAVHUB_ALERT_WEBHOOK_TIMEOUT_MS", 5000),
+    },
   };
 
   if (mode === "standard" && !base.databaseUrl && !overrides.databaseUrl) {

@@ -686,6 +686,50 @@ describe("SQLite 集成：导航增强能力", () => {
     await expect(repo.deleteTag(tag.id)).rejects.toThrow(/不存在/);
   });
 
+  /* ------------------------- 投稿去重与审核统计 ------------------------- */
+
+  it("normalizeSiteUrl 归一化 scheme/host/端口/斜杠/fragment", async () => {
+    const { normalizeSiteUrl } = await import("../src/repository.ts");
+    expect(normalizeSiteUrl("HTTPS://Example.COM:443/a/?x=1#frag")).toBe("https://example.com/a?x=1");
+    expect(normalizeSiteUrl("http://example.com:80/a/")).toBe("http://example.com/a");
+    expect(normalizeSiteUrl("https://example.com/")).toBe("https://example.com/");
+    expect(normalizeSiteUrl("not a url")).toBe("not a url");
+  });
+
+  it("findSiteByUrlOrVariant 容忍末尾斜杠与大小写", async () => {
+    // 库里是 https://a.com（无斜杠）
+    expect((await repo.findSiteByUrlOrVariant("https://a.com/"))?.title).toBe("站点A");
+    expect((await repo.findSiteByUrlOrVariant("HTTPS://A.COM"))?.title).toBe("站点A");
+    expect(await repo.findSiteByUrlOrVariant("https://nope.example/xyz")).toBeNull();
+  });
+
+  it("findSiteByTitle 大小写不敏感精确匹配", async () => {
+    expect((await repo.findSiteByTitle("站点A"))?.url).toBe("https://a.com");
+    expect((await repo.findSiteByTitle("  站点A  "))?.url).toBe("https://a.com");
+    expect(await repo.findSiteByTitle("不存在的站")).toBeNull();
+    expect(await repo.findSiteByTitle("  ")).toBeNull();
+  });
+
+  it("countSubmissionsByStatus 按状态计数并给出最早待审", async () => {
+    const before = await repo.countSubmissionsByStatus();
+    await repo.createSite({ url: "https://sub-stat.example/1", title: "统计投稿1", categoryId: "c1", status: "pending", source: "submission" });
+    await repo.createSite({ url: "https://sub-stat.example/2", title: "统计投稿2", categoryId: "c1", status: "active", source: "submission" });
+    const after = await repo.countSubmissionsByStatus();
+    expect(after.pending).toBe(before.pending + 1);
+    expect(after.approved).toBe(before.approved + 1);
+    expect(after.oldestPendingAt).not.toBeNull();
+    expect(after.oldestPendingAt!).toBeLessThanOrEqual(Date.now());
+  });
+
+  it("listAuditLogs 支持按 target 过滤（查某投稿的审核轨迹）", async () => {
+    await repo.audit({ actor: "tester", actorKind: "user", action: "submission.reject", target: "site-xyz", diff: { reason: "暂不收录" } });
+    const hit = await repo.listAuditLogs({ action: "submission.reject", target: "site-xyz" });
+    expect(hit.items.length).toBeGreaterThanOrEqual(1);
+    expect(hit.items[0]!.target).toBe("site-xyz");
+    const miss = await repo.listAuditLogs({ action: "submission.reject", target: "no-such-site" });
+    expect(miss.items).toEqual([]);
+  });
+
   /* ------------------------- 收藏夹 ------------------------- */
 
   it("收藏幂等：重复收藏返回 existed 而不是报错或重复行", async () => {
@@ -757,6 +801,51 @@ describe("SQLite 集成：导航增强能力", () => {
     expect((await repo.listSearchHistory("u1")).length).toBe(0);
   });
 
+  /* ------------------------- 搜索联想 ------------------------- */
+
+  it("escapeLike 转义反斜杠与通配符", async () => {
+    const { escapeLike } = await import("../src/repository.ts");
+    expect(escapeLike("100%_x\\y")).toBe("100\\%\\_x\\\\y");
+    expect(escapeLike("天气")).toBe("天气");
+  });
+
+  it("suggestQueries 按前缀返回历史搜索词（热度排序）", async () => {
+    await repo.recordEvent("search", { query: "联想香蕉" });
+    await repo.recordEvent("search", { query: "联想香蕉" });
+    await repo.recordEvent("search", { query: "联想苹果" });
+    const hits = await repo.suggestQueries("联想", 5);
+    expect(hits.length).toBe(2);
+    expect(hits[0]!.query).toBe("联想香蕉"); // 计数 2 排前面
+    expect(hits[0]!.count).toBe(2);
+    // 前缀不匹配 → 空
+    expect(await repo.suggestQueries("不存在的前缀xyz", 5)).toEqual([]);
+    // 空前缀 → 空（发现位由路由层组装，这里不猜）
+    expect(await repo.suggestQueries("  ", 5)).toEqual([]);
+  });
+
+  it("suggestQueries 里用户输入的 % 不会变成通配符", async () => {
+    await repo.recordEvent("search", { query: "100%纯棉" });
+    // 若 % 未转义，"100" 会匹配所有含 100 的词；转义后只匹配字面 "100%" 前缀
+    const hits = await repo.suggestQueries("100%", 5);
+    expect(hits.some((h) => h.query === "100%纯棉")).toBe(true);
+    // "100" 前缀不应把 "100%纯棉" 之外的无关词带进来——至少它自己要能命中
+    const plain = await repo.suggestQueries("100", 5);
+    expect(plain.some((h) => h.query === "100%纯棉")).toBe(true);
+  });
+
+  it("suggestSites 只返回可用站点（标题前缀，热度排序）", async () => {
+    const hits = await repo.suggestSites("站点", 8);
+    expect(hits.length).toBeGreaterThanOrEqual(2);
+    expect(hits.every((h) => h.title.startsWith("站点"))).toBe(true);
+    expect(hits[0]).toHaveProperty("url");
+    // 归档站点不出现
+    const site = (await repo.findSiteByUrl("https://a.com"))!;
+    await repo.updateSite(site.id, { status: "archived" as never });
+    expect((await repo.suggestSites("站点", 8)).some((h) => h.id === site.id)).toBe(false);
+    await repo.updateSite(site.id, { status: "active" as never });
+    expect((await repo.suggestSites("站点", 8)).some((h) => h.id === site.id)).toBe(true);
+  });
+
   /* ------------------------- 终端用户 ------------------------- */
 
   it("OAuth 用户 upsert：新建、更新、按 email 归一", async () => {
@@ -816,6 +905,51 @@ describe("SQLite 集成：导航增强能力", () => {
     expect(failed!.error).toBe("boom");
   });
 
+  it("任务详情 / 重试 / 取消 / 统计", async () => {
+    // 详情：不存在返回 null
+    expect(await repo.getJob("no-such-job")).toBeNull();
+    // 造一个失败任务
+    const failId = await repo.enqueueJob("recompute_rank", {});
+    await repo.completeJob(failId, "boom", { exhausted: true });
+    expect((await repo.getJob(failId))!.status).toBe("failed");
+    // 重试：回到 pending，attempts/error 清零
+    const retried = await repo.retryJob(failId);
+    expect(retried!.status).toBe("pending");
+    expect(retried!.attempts).toBe(0);
+    expect(retried!.error).toBeNull();
+    // 非 failed 不可重试
+    expect(await repo.retryJob(failId)).toBeNull();
+    expect(await repo.retryJob("no-such-job")).toBeNull();
+    // 取消 pending
+    const canceled = await repo.cancelJob(failId);
+    expect(canceled!.status).toBe("canceled");
+    // 终态不可重复取消
+    expect(await repo.cancelJob(failId)).toBeNull();
+    // done 也不可取消
+    const doneId = await repo.enqueueJob("reindex", {});
+    await repo.completeJob(doneId, null);
+    expect(await repo.cancelJob(doneId)).toBeNull();
+    // 统计含 canceled 计数
+    const stats = await repo.jobStats();
+    expect(stats.canceled).toBeGreaterThanOrEqual(1);
+    expect(stats.done).toBeGreaterThanOrEqual(1);
+  });
+
+  it("取消保护：执行中被取消的任务，Runner 落定时不翻转状态", async () => {
+    const id = await repo.enqueueJob("health_check", {});
+    await repo.claimNextJob(); // running
+    expect((await repo.cancelJob(id))!.status).toBe("canceled");
+    // Runner 不知情地落定成功/失败：行纹丝不动
+    await repo.completeJob(id, null);
+    expect((await repo.getJob(id))!.status).toBe("canceled");
+    await repo.completeJob(id, "late error", { exhausted: true });
+    expect((await repo.getJob(id))!.status).toBe("canceled");
+    // 被取消的任务不再被认领（claim 只取 pending）
+    await repo.enqueueJob("recompute_rank", {});
+    const claimed = await repo.claimNextJob();
+    expect(claimed!.id).not.toBe(id);
+  });
+
   /* ------------------------- 迁移幂等 ------------------------- */
 
   it("列迁移幂等：第二次执行返回空", async () => {
@@ -865,6 +999,55 @@ describe("SQLite 集成：导航增强能力", () => {
     const deleted = await repo.deleteUserVault(testUserId);
     expect(deleted).toBe(true);
     expect(await repo.getUserVault(testUserId)).toBeNull();
+  });
+
+  /* ------------------------- 精选专题 CRUD ------------------------- */
+
+  it("专题创建 / 读回 / 列表（含停用过滤）", async () => {
+    const col = await repo.createCollection({ slug: "AI-Starter", title: "AI 入门必备", kind: "topic" });
+    expect(col.slug).toBe("ai-starter"); // slug 归一化为小写
+    expect(col.enabled).toBe(true);
+    expect(await repo.getCollection(col.id)).not.toBeNull();
+    expect(await repo.getCollectionBySlug("ai-starter")).not.toBeNull();
+    // 停用后默认列表过滤，加 all 参数才可见
+    await repo.updateCollection(col.id, { enabled: false });
+    expect((await repo.listCollections()).find((c) => c.id === col.id)).toBeUndefined();
+    expect((await repo.listCollections(false)).find((c) => c.id === col.id)).toBeTruthy();
+    await repo.updateCollection(col.id, { enabled: true });
+  });
+
+  it("专题 slug 冲突时明确报错", async () => {
+    await repo.createCollection({ slug: "dup-slug", title: "第一个" });
+    await expect(repo.createCollection({ slug: "dup-slug", title: "第二个" })).rejects.toThrow(/已存在/);
+    // 更新时撞别人的 slug 同样拒绝
+    const other = await repo.createCollection({ slug: "other-slug", title: "另一个" });
+    await expect(repo.updateCollection(other.id, { slug: "dup-slug" })).rejects.toThrow(/已存在/);
+    // 空标题拒绝
+    await expect(repo.createCollection({ slug: "x", title: "  " })).rejects.toThrow(/标题/);
+  });
+
+  it("专题条目增删幂等，删除专题不影响站点", async () => {
+    const col = await repo.createCollection({ slug: "col-items", title: "条目测试" });
+    const siteA = (await repo.findSiteByUrl("https://a.com"))!;
+    const siteB = (await repo.findSiteByUrl("https://b.com"))!;
+    const first = await repo.addCollectionItem(col.id, siteA.id);
+    expect(first.existed).toBe(false);
+    expect((await repo.addCollectionItem(col.id, siteA.id)).existed).toBe(true);
+    await repo.addCollectionItem(col.id, siteB.id);
+    const items = await repo.listCollectionItems(col.id);
+    expect(items.length).toBe(2);
+    expect(items[0]!.siteId).toBe(siteA.id); // 按加入顺序排列
+    // 不存在的专题/站点明确报错
+    await expect(repo.addCollectionItem("no-such-col", siteA.id)).rejects.toThrow(/专题不存在/);
+    await expect(repo.addCollectionItem(col.id, "no-such-site")).rejects.toThrow(/站点不存在/);
+    // 移除条目幂等
+    expect(await repo.removeCollectionItem(col.id, siteA.id)).toBe(true);
+    expect(await repo.removeCollectionItem(col.id, siteA.id)).toBe(false);
+    // 删除专题：站点本身不受影响
+    expect(await repo.deleteCollection(col.id)).toBe(true);
+    expect(await repo.deleteCollection(col.id)).toBe(false);
+    expect(await repo.findSiteByUrl("https://a.com")).not.toBeNull();
+    expect(await repo.findSiteByUrl("https://b.com")).not.toBeNull();
   });
 
   it("旧库（缺新列）在 openDb 时被自动补齐", async () => {

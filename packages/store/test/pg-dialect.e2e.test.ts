@@ -57,7 +57,7 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
     for (const sql of [
       "DELETE FROM site_tags", "DELETE FROM tags", "DELETE FROM sites", "DELETE FROM categories",
       "DELETE FROM audit_logs", "DELETE FROM events", "DELETE FROM health_checks", "DELETE FROM jobs",
-      "DELETE FROM user_profiles",
+      "DELETE FROM user_profiles", "DELETE FROM collection_items", "DELETE FROM collections",
     ]) await ctx.db.pg!.query(sql);
 
     const cat = await ctx.repo.createCategory({ id: catId, title: "PG 方言类目" });
@@ -93,8 +93,12 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
     const fts = await ctx!.fts!.search("天气", 5);
     expect(fts.length).toBeGreaterThan(0);
 
-    const py = await ctx!.search.search({ q: "zgtqw", limit: 5 });
+    // 拼音首字母前缀：方言测试站 initials=fycsz（夹具内真实数据；
+    // 不要用 zgtqw——PG 夹具里没有中国天气网，查它理应 0 命中）。
+    // 断 channelsUsed 含 pinyin：证明走的是拼音通道，不只是 exact 兜底。
+    const py = await ctx!.search.search({ q: "fycs", limit: 5 });
     expect(py.hits.length).toBeGreaterThan(0);
+    expect(py.channelsUsed).toContain("pinyin");
 
     const browse = await ctx!.search.search({ q: "", limit: 10 });
     expect(browse.hits.length).toBeGreaterThan(0);
@@ -159,8 +163,8 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
     await ctx!.repo.completeJob(id, "测试失败", { retryAt: Date.now() + 3_600_000 });
     const pending = await ctx!.repo.claimNextJob();
     expect(pending === null || pending.id !== id).toBe(true);
-    // 到点后可再次认领
-    await ctx!.repo.completeJob(id, null);
+    // 到点后可再次认领：失败重试把任务放回 pending（到期时间设为过去）
+    await ctx!.repo.completeJob(id, "测试失败", { retryAt: Date.now() - 1 });
     const again = await ctx!.repo.claimNextJob();
     expect(again?.id).toBe(id);
     await ctx!.repo.completeJob(again!.id, null);
@@ -183,6 +187,87 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
     expect(profile!.searchCount).toBe(3);
     await ctx!.repo.deleteUserProfile("pg-e2e-user");
     expect(await ctx!.repo.getUserProfile("pg-e2e-user")).toBeNull();
+  });
+});
+
+describe.skipIf(!ctx)("跨方言：新增 API 在 PG 与 SQLite 行一致", () => {
+  // 复用上一 describe 的 ctx（同文件、同连接、同 skip 语义）
+  const repo = () => ctx!.repo;
+  // 自建夹具：不复用上游 describe 的站点（软删除测试已把方言站移入回收站）
+  const FIX_CAT = "pg-newapi-cat";
+  let fixSiteId = "";
+
+  beforeAll(async () => {
+    if (!ctx) return;
+    await ctx.repo.createCategory({ id: FIX_CAT, title: "PG 新口类目" });
+    const s = await ctx.repo.createSite({ url: "https://example.com/pg-newapi", title: "新口测试站", categoryId: FIX_CAT });
+    fixSiteId = s.id;
+  });
+
+  it("精选专题 CRUD 与条目幂等", async () => {
+    const col = await repo().createCollection({ slug: "PG-Col", title: "PG 专题", kind: "topic" });
+    expect(col.slug).toBe("pg-col"); // 归一化小写（与 SQLite 一致）
+    expect((await repo().getCollection(col.id))!.title).toBe("PG 专题");
+    await repo().updateCollection(col.id, { enabled: false });
+    expect((await repo().listCollections()).find((c) => c.id === col.id)).toBeUndefined();
+    expect((await repo().listCollections(false)).find((c) => c.id === col.id)).toBeTruthy();
+    await expect(repo().createCollection({ slug: "pg-col", title: "冲突" })).rejects.toThrow(/已存在/);
+    const added = await repo().addCollectionItem(col.id, fixSiteId);
+    expect(added.existed).toBe(false);
+    expect((await repo().addCollectionItem(col.id, fixSiteId)).existed).toBe(true);
+    expect((await repo().listCollectionItems(col.id)).length).toBe(1);
+    expect(await repo().removeCollectionItem(col.id, fixSiteId)).toBe(true);
+    expect(await repo().deleteCollection(col.id)).toBe(true);
+    expect(await repo().findSiteByUrl("https://example.com/pg-newapi")).not.toBeNull(); // 站点不受影响
+  });
+
+  it("任务重试 / 取消 / 统计 / 取消保护", async () => {
+    const failId = await repo().enqueueJob("recompute_rank", {});
+    await repo().completeJob(failId, "pg-fail", { exhausted: true });
+    const retried = (await repo().retryJob(failId))!;
+    expect(retried.status).toBe("pending");
+    expect(retried.attempts).toBe(0);
+    expect((await repo().cancelJob(failId))!.status).toBe("canceled");
+    expect(await repo().cancelJob(failId)).toBeNull();
+    // 取消保护：落定不再翻转
+    await repo().completeJob(failId, null);
+    expect((await repo().getJob(failId))!.status).toBe("canceled");
+    const stats = await repo().jobStats();
+    expect(stats.canceled).toBeGreaterThanOrEqual(1);
+    expect(stats.failed).toBeGreaterThanOrEqual(0);
+  });
+
+  it("投稿统计与去重（URL 归一 + 标题）在 PG 可用", async () => {
+    await repo().createCategory({ id: "pg-sub-cat", title: "PG 投稿类目" });
+    const before = await repo().countSubmissionsByStatus();
+    await repo().createSite({ url: "https://pg-sub.example/a", title: "PG投稿甲", categoryId: "pg-sub-cat", status: "pending", source: "submission" });
+    // 斜杠变体命中同一条（归一化跨方言一致）
+    expect((await repo().findSiteByUrlOrVariant("https://pg-sub.example/a/"))!.title).toBe("PG投稿甲");
+    expect((await repo().findSiteByTitle("PG投稿甲"))!.url).toBe("https://pg-sub.example/a");
+    const after = await repo().countSubmissionsByStatus();
+    expect(after.pending).toBe(before.pending + 1);
+    expect(after.oldestPendingAt).not.toBeNull();
+  });
+
+  it("联想查询在 PG 可用（LIKE ESCAPE + LOWER 双方言）", async () => {
+    await repo().recordEvent("search", { query: "pg联想香蕉" });
+    await repo().recordEvent("search", { query: "pg联想香蕉" });
+    const hits = await repo().suggestQueries("pg联想", 5);
+    expect(hits.length).toBeGreaterThanOrEqual(1);
+    expect(hits[0]!.query).toBe("pg联想香蕉");
+    // % 不被当通配符
+    await repo().recordEvent("search", { query: "pg100%纯棉" });
+    expect((await repo().suggestQueries("pg100%", 5)).some((h) => h.query === "pg100%纯棉")).toBe(true);
+    // 站点标题前缀（自建新口测试站；不复用已被软删除的方言站）
+    const sites = await repo().suggestSites("新口", 5);
+    expect(sites.some((s) => s.title === "新口测试站")).toBe(true);
+  });
+
+  it("审计 target 过滤在 PG 可用", async () => {
+    await repo().audit({ actor: "pg-e2e", action: "submission.reject", target: "pg-target-1", diff: { reason: "r" } });
+    const hit = await repo().listAuditLogs({ action: "submission.reject", target: "pg-target-1" });
+    expect(hit.items.length).toBeGreaterThanOrEqual(1);
+    expect((await repo().listAuditLogs({ action: "submission.reject", target: "pg-target-nope" })).items).toEqual([]);
   });
 });
 

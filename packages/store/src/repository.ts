@@ -229,6 +229,64 @@ export class Repository {
     return row ? rowToSite(row) : null;
   }
 
+  /**
+   * 去重增强版 URL 查找：精确匹配失败后，再试归一化形态
+   * （大小写 scheme/host、默认端口、末尾斜杠、fragment）。
+   * `https://x.com/a` 与 `https://x.com/a/` 是同一个站——此前只比字符串，
+   * 换个斜杠就能绕过 409 重复投稿。
+   */
+  async findSiteByUrlOrVariant(url: string): Promise<Site | null> {
+    const direct = await this.findSiteByUrl(url);
+    if (direct) return direct;
+    const normalized = normalizeSiteUrl(url);
+    if (normalized !== url) {
+      const hit = await this.findSiteByUrl(normalized);
+      if (hit) return hit;
+    }
+    // 末尾斜杠双向容忍（归一化已去斜杠，这里覆盖库里存的是带斜杠形态的旧数据）
+    const toggled = normalized.endsWith("/") ? normalized.slice(0, -1) : normalized + "/";
+    if (toggled !== url && toggled !== normalized) {
+      return this.findSiteByUrl(toggled);
+    }
+    return null;
+  }
+
+  /** 标题精确去重（大小写不敏感）：换个 URL 投稿同一站点同样 409 */
+  async findSiteByTitle(title: string): Promise<Site | null> {
+    const name = title.trim();
+    if (!name) return null;
+    const rows = await this.raw(
+      this.selectSitesSql() + " WHERE LOWER(s.title) = LOWER(?) AND s.deleted_at IS NULL LIMIT 1",
+      [name],
+    );
+    const row = rows[0];
+    return row ? rowToSite(row) : null;
+  }
+
+  /**
+   * 投稿审核统计：各状态计数 + 最早待审时间（审核 SLA 用）。
+   * 单条 GROUP BY 查询，双方言通用。
+   */
+  async countSubmissionsByStatus(): Promise<{ pending: number; approved: number; rejected: number; oldestPendingAt: number | null }> {
+    const rows = await this.raw(
+      "SELECT status, COUNT(*) AS cnt FROM sites WHERE source = 'submission' AND deleted_at IS NULL GROUP BY status",
+      [],
+    );
+    let pending = 0, approved = 0, rejected = 0;
+    for (const r of rows) {
+      const n = Number(r.cnt ?? 0);
+      if (r.status === "pending") pending = n;
+      else if (r.status === "active") approved = n;
+      else if (r.status === "archived") rejected = n;
+    }
+    const oldest = (await this.raw(
+      "SELECT MIN(created_at) AS oldest FROM sites WHERE source = 'submission' AND status = 'pending' AND deleted_at IS NULL",
+      [],
+    ))[0];
+    const oldestPendingAt = oldest?.oldest == null ? null : Number(oldest.oldest);
+    return { pending, approved, rejected, oldestPendingAt };
+  }
+
   async createSite(input: SiteInput): Promise<Site> {
     return this.createSiteWithId({ ...input, id: randomUUID() });
   }
@@ -612,11 +670,14 @@ export class Repository {
     offset?: number;
     action?: string;
     actor?: string;
+    /** 按目标 id 精确过滤（如查某投稿的审核轨迹 submission.approve/reject） */
+    target?: string;
   } = {}): Promise<{ items: AuditLogRecord[]; hasMore: boolean }> {
     const wheres: string[] = [];
     const params: unknown[] = [];
     if (filter.action) { wheres.push("action = ?"); params.push(filter.action); }
     if (filter.actor) { wheres.push("actor = ?"); params.push(filter.actor); }
+    if (filter.target) { wheres.push("target = ?"); params.push(filter.target); }
     const where = wheres.length ? " WHERE " + wheres.join(" AND ") : "";
     const limit = Math.min(Math.max(filter.limit ?? 50, 1), 200);
     const offset = Math.max(0, filter.offset ?? 0);
@@ -1199,6 +1260,130 @@ export class Repository {
     return rows.map(rowToSite);
   }
 
+  /** 按 id 读专题（管理端编辑用；公开页仍按 slug） */
+  async getCollection(id: string): Promise<Collection | null> {
+    const row = (await this.raw("SELECT * FROM collections WHERE id = ? LIMIT 1", [id]))[0];
+    return row ? rowToCollection(row) : null;
+  }
+
+  /** 新建专题：slug 唯一（大小写不敏感归一后比较），冲突抛错由调用方转 409 */
+  async createCollection(input: {
+    slug: string;
+    title: string;
+    description?: string | null;
+    kind?: "topic" | "geo" | "roadmap";
+    icon?: string | null;
+    sort?: number;
+    enabled?: boolean;
+  }): Promise<Collection> {
+    const slug = input.slug.trim().toLowerCase();
+    if (!slug) throw new Error("专题 slug 不能为空");
+    if (!input.title.trim()) throw new Error("专题标题不能为空");
+    const dup = await this.getCollectionBySlug(slug);
+    if (dup) throw new Error("slug 已存在");
+    const id = randomUUID();
+    const now = Date.now();
+    await this.run(
+      "INSERT INTO collections (id, slug, title, description, kind, icon, sort, enabled, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+      [id, slug, input.title.trim(), input.description ?? null, input.kind ?? "topic",
+        input.icon ?? null, input.sort ?? 0, input.enabled !== false ? 1 : 0, now, now],
+    );
+    const saved = await this.getCollection(id);
+    if (!saved) throw new Error("创建专题后无法读回");
+    return saved;
+  }
+
+  /** 更新专题：只改传了的字段；改 slug 时同样做唯一校验 */
+  async updateCollection(id: string, patch: {
+    slug?: string;
+    title?: string;
+    description?: string | null;
+    kind?: "topic" | "geo" | "roadmap";
+    icon?: string | null;
+    sort?: number;
+    enabled?: boolean;
+  }): Promise<Collection | null> {
+    const existing = await this.getCollection(id);
+    if (!existing) return null;
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    if (patch.slug !== undefined) {
+      const slug = patch.slug.trim().toLowerCase();
+      if (!slug) throw new Error("专题 slug 不能为空");
+      const dup = await this.getCollectionBySlug(slug);
+      if (dup && dup.id !== id) throw new Error("slug 已存在");
+      sets.push("slug = ?");
+      params.push(slug);
+    }
+    if (patch.title !== undefined) {
+      if (!patch.title.trim()) throw new Error("专题标题不能为空");
+      sets.push("title = ?");
+      params.push(patch.title.trim());
+    }
+    if (patch.description !== undefined) { sets.push("description = ?"); params.push(patch.description); }
+    if (patch.kind !== undefined) { sets.push("kind = ?"); params.push(patch.kind); }
+    if (patch.icon !== undefined) { sets.push("icon = ?"); params.push(patch.icon); }
+    if (patch.sort !== undefined) { sets.push("sort = ?"); params.push(patch.sort); }
+    if (patch.enabled !== undefined) { sets.push("enabled = ?"); params.push(patch.enabled ? 1 : 0); }
+    if (sets.length === 0) return existing;
+    sets.push("updated_at = ?");
+    params.push(Date.now(), id);
+    await this.run("UPDATE collections SET " + sets.join(", ") + " WHERE id = ?", params);
+    return this.getCollection(id);
+  }
+
+  /** 删除专题：先清条目再删专题行（站点本身不受影响） */
+  async deleteCollection(id: string): Promise<boolean> {
+    const existing = await this.getCollection(id);
+    if (!existing) return false;
+    await this.withTransaction(async () => {
+      await this.run("DELETE FROM collection_items WHERE collection_id = ?", [id]);
+      await this.run("DELETE FROM collections WHERE id = ?", [id]);
+    });
+    return true;
+  }
+
+  /** 专题内站点条目（含排序位；重复添加返回 existed 而不报错） */
+  async listCollectionItems(collectionId: string): Promise<Array<{ siteId: string; sort: number; note: string | null }>> {
+    const rows = await this.raw(
+      "SELECT site_id, sort, note FROM collection_items WHERE collection_id = ? ORDER BY sort ASC",
+      [collectionId],
+    );
+    return rows.map((r) => ({ siteId: String(r.site_id), sort: Number(r.sort ?? 0), note: (r.note as string | null) ?? null }));
+  }
+
+  async addCollectionItem(collectionId: string, siteId: string, note?: string | null): Promise<{ existed: boolean }> {
+    const col = await this.getCollection(collectionId);
+    if (!col) throw new Error("专题不存在");
+    const site = await this.getSite(siteId);
+    if (!site) throw new Error("站点不存在");
+    const dup = await this.raw(
+      "SELECT 1 FROM collection_items WHERE collection_id = ? AND site_id = ? LIMIT 1",
+      [collectionId, siteId],
+    );
+    if (dup.length > 0) return { existed: true };
+    const maxRow = (await this.raw(
+      "SELECT MAX(sort) AS maxsort FROM collection_items WHERE collection_id = ?",
+      [collectionId],
+    ))[0];
+    const nextSort = Number(maxRow?.maxsort ?? -1) + 1;
+    await this.run(
+      "INSERT INTO collection_items (collection_id, site_id, sort, note) VALUES (?,?,?,?)",
+      [collectionId, siteId, nextSort, note ?? null],
+    );
+    return { existed: false };
+  }
+
+  async removeCollectionItem(collectionId: string, siteId: string): Promise<boolean> {
+    const dup = await this.raw(
+      "SELECT 1 FROM collection_items WHERE collection_id = ? AND site_id = ? LIMIT 1",
+      [collectionId, siteId],
+    );
+    if (dup.length === 0) return false;
+    await this.run("DELETE FROM collection_items WHERE collection_id = ? AND site_id = ?", [collectionId, siteId]);
+    return true;
+  }
+
   /* ------------------------- 统计分析 ------------------------- */
 
   /** 热门搜索词（指导补录与运营） */
@@ -1211,6 +1396,43 @@ export class Repository {
       [since, limit],
     );
     return rows.map((r) => ({ query: String(r.query), count: Number(r.cnt ?? 0) }));
+  }
+
+  /**
+   * 联想：历史搜索词按前缀匹配（热度排序）。
+   * LIKE 通配符必须转义——用户输入 `%`/`_` 不能变成通配符（否则联想结果错乱，
+   * 更糟的是不同输入返回相同结果，缓存会放大污染）。
+   * ESCAPE 子句双方言通用；大小写不敏感（拉丁前缀大小写皆可）。
+   */
+  async suggestQueries(prefix: string, limit = 5, days = 30): Promise<Array<{ query: string; count: number }>> {
+    const p = prefix.trim().toLowerCase();
+    if (!p) return [];
+    const since = Date.now() - days * 86_400_000;
+    const rows = await this.raw(
+      "SELECT query, COUNT(*) AS cnt FROM events " +
+        "WHERE kind = 'search' AND query IS NOT NULL AND query != '' AND created_at >= ? " +
+        "AND LOWER(query) LIKE ? ESCAPE '\\' " +
+        "GROUP BY query ORDER BY cnt DESC LIMIT ?",
+      [since, escapeLike(p) + "%", Math.min(Math.max(limit, 1), 20)],
+    );
+    return rows.map((r) => ({ query: String(r.query), count: Number(r.cnt ?? 0) }));
+  }
+
+  /**
+   * 联想：站点标题前缀匹配（只返回可用站点，按热度排序）。
+   * 空前缀返回空数组——空查询的发现位留给热门搜索/标签云，不做无意义全表。
+   */
+  async suggestSites(prefix: string, limit = 8): Promise<Array<{ id: string; title: string; url: string }>> {
+    const p = prefix.trim().toLowerCase();
+    if (!p) return [];
+    const rows = await this.raw(
+      "SELECT id, title, url FROM sites " +
+        "WHERE LOWER(title) LIKE ? ESCAPE '\\' AND enabled = " + this.enabledLiteral + " " +
+        "AND status = 'active' AND deleted_at IS NULL " +
+        "ORDER BY featured DESC, visit_count DESC, sort ASC LIMIT ?",
+      [escapeLike(p) + "%", Math.min(Math.max(limit, 1), 20)],
+    );
+    return rows.map((r) => ({ id: String(r.id), title: String(r.title), url: String(r.url) }));
   }
 
   /** 零结果搜索词（用户找了但库里没有） */
@@ -1301,18 +1523,21 @@ export class Repository {
    *
    * 之前只有 done/failed 两态且失败即终态——瞬时抖动（网络/磁盘）会直接把
    * 任务打死，且失败任务永远留在 failed 列表里没有「重试」语义。
+   *
+   * 取消保护：WHERE 统一带 `status != 'canceled'`——任务执行中被管理员取消后，
+   * Runner 落定时不再把它翻成 done/failed，取消是终态（单语句原子，无竞态）。
    */
   async completeJob(id: string, error?: string | null, opts: { retryAt?: number | null; exhausted?: boolean } | null = null): Promise<void> {
     const now = Date.now();
     if (error && !opts?.exhausted && opts?.retryAt) {
       await this.run(
-        "UPDATE jobs SET status = 'pending', error = ?, next_run_at = ?, updated_at = ? WHERE id = ?",
+        "UPDATE jobs SET status = 'pending', error = ?, next_run_at = ?, updated_at = ? WHERE id = ? AND status != 'canceled'",
         [error, opts.retryAt, now, id],
       );
       return;
     }
     await this.run(
-      "UPDATE jobs SET status = ?, error = ?, next_run_at = NULL, updated_at = ? WHERE id = ?",
+      "UPDATE jobs SET status = ?, error = ?, next_run_at = NULL, updated_at = ? WHERE id = ? AND status != 'canceled'",
       [error ? "failed" : "done", error ?? null, now, id],
     );
   }
@@ -1322,6 +1547,58 @@ export class Repository {
       ? await this.raw("SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?", [status, limit])
       : await this.raw("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", [limit]);
     return rows.map(rowToJob);
+  }
+
+  /** 任务详情（含 payload/error，管理端排查用） */
+  async getJob(id: string): Promise<JobRecord | null> {
+    const row = (await this.raw("SELECT * FROM jobs WHERE id = ? LIMIT 1", [id]))[0];
+    return row ? rowToJob(row) : null;
+  }
+
+  /**
+   * 手动重试：仅 failed 可重试（回到 pending，attempts 清零，error 清空）。
+   * 非 failed 返回 null——调用方转 409（状态机语义，不是静默无操作）。
+   */
+  async retryJob(id: string): Promise<JobRecord | null> {
+    const job = await this.getJob(id);
+    if (!job || job.status !== "failed") return null;
+    await this.run(
+      "UPDATE jobs SET status = 'pending', attempts = 0, error = NULL, next_run_at = NULL, updated_at = ? WHERE id = ?",
+      [Date.now(), id],
+    );
+    return this.getJob(id);
+  }
+
+  /**
+   * 取消任务：仅 pending/running 可取消。running 的取消靠 completeJob 的
+   * `status != 'canceled'` 守卫协作完成——执行中取消后，Runner 落定时跳过
+   * 该行（单条 UPDATE 原子判断），不会把它翻成 done/failed。
+   */
+  async cancelJob(id: string): Promise<JobRecord | null> {
+    const job = await this.getJob(id);
+    if (!job || (job.status !== "pending" && job.status !== "running")) return null;
+    await this.run("UPDATE jobs SET status = 'canceled', next_run_at = NULL, updated_at = ? WHERE id = ?", [Date.now(), id]);
+    return this.getJob(id);
+  }
+
+  /** 队列概览（运营看板表头）：各状态计数 + 最早待处理时间 */
+  async jobStats(): Promise<{ pending: number; running: number; done: number; failed: number; canceled: number; oldestPendingAt: number | null }> {
+    const rows = await this.raw("SELECT status, COUNT(*) AS cnt FROM jobs GROUP BY status", []);
+    const stats = { pending: 0, running: 0, done: 0, failed: 0, canceled: 0, oldestPendingAt: null as number | null };
+    for (const r of rows) {
+      const n = Number(r.cnt ?? 0);
+      if (r.status === "pending") stats.pending = n;
+      else if (r.status === "running") stats.running = n;
+      else if (r.status === "done") stats.done = n;
+      else if (r.status === "failed") stats.failed = n;
+      else if (r.status === "canceled") stats.canceled = n;
+    }
+    const oldest = (await this.raw(
+      "SELECT MIN(created_at) AS oldest FROM jobs WHERE status = 'pending'",
+      [],
+    ))[0];
+    stats.oldestPendingAt = oldest?.oldest == null ? null : Number(oldest.oldest);
+    return stats;
   }
 
   /* ------------------------- 底层执行 ------------------------- */
@@ -1399,6 +1676,37 @@ export function slugify(input: string): string {
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9\u4e00-\u9fff-]/g, "");
   return s.length > 0 ? s : "tag";
+}
+
+/**
+ * LIKE 模式转义：`\`、`%`、`_` 前加反斜杠，配合 `ESCAPE '\'` 使用。
+ * 调用方传参时直接拼 `%` 做前后缀匹配即可，转义保证用户输入的字面含义。
+ */
+export function escapeLike(input: string): string {
+  return input.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+/**
+ * 站点 URL 归一化（去重用，不改写入形态）：
+ * scheme/host 小写、去默认端口、去 fragment、路径末尾斜杠归一（根路径保留 "/"）。
+ * 非法 URL 原样返回（调用方 zod 会先拦，这里不抛错）。
+ */
+export function normalizeSiteUrl(input: string): string {
+  try {
+    const u = new URL(input.trim());
+    u.protocol = u.protocol.toLowerCase();
+    u.hostname = u.hostname.toLowerCase();
+    if ((u.protocol === "http:" && u.port === "80") || (u.protocol === "https:" && u.port === "443")) {
+      u.port = "";
+    }
+    u.hash = "";
+    if (u.pathname.length > 1 && u.pathname.endsWith("/")) {
+      u.pathname = u.pathname.slice(0, -1);
+    }
+    return u.toString();
+  } catch {
+    return input;
+  }
 }
 
 function rowToSite(row: Record<string, any>): Site {

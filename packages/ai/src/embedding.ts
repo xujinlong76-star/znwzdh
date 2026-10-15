@@ -139,12 +139,17 @@ export function createEmbeddingService(config: Partial<EmbeddingConfig> = {}): E
           env.allowLocalModels = true;
           env.useBrowserCache = false;
           env.useFSCache = true;
+          const validDtypes = new Set(["q8", "fp16", "fp32", "q4"]);
+          if (!validDtypes.has(cfg.dtype)) throw new Error("非法 embedding dtype: " + cfg.dtype);
           const pipe = await pipeline("feature-extraction", cfg.model, { dtype: cfg.dtype });
           loaded = true;
+          lastError = null;
           return pipe as Extractor;
         } catch (err) {
           lastError = err instanceof Error ? err.message : String(err);
           loaded = false;
+          // 失败不永久缓存：置空允许下次重试（首启断网抖动一次即终身不可用是线上最痛）
+          extractorPromise = null;
           return null;
         }
       })();
@@ -158,12 +163,22 @@ export function createEmbeddingService(config: Partial<EmbeddingConfig> = {}): E
   async function encodeOne(text: string): Promise<Float32Array> {
     // 键归一化 + 并发合并都收拢在缓存里；compute 只在真正未命中时跑一次
     return vecCache.getOrCompute(text, async (normalized) => {
+      // 输入截断与空值防护：超长文本对语义向量无增益，只会拖慢前向
+      const sliced = normalized.slice(0, 2000);
+      if (!sliced.trim()) throw new Error("embedding 输入为空");
       const ext = await load();
       if (!ext) throw new Error("embedding 模型不可用: " + (lastError ?? "未知原因"));
       // cls 与 mean 池化实测都能通过中文语义用例；这里用 cls 并归一化，
       // 归一化后余弦距离等价于点积，简化向量存储实现。
-      const out = await ext(normalized, { pooling: "cls", normalize: true });
-      return Float32Array.from(out.data);
+      // 超时保护：pipeline 卡死时不让请求挂死
+      const timeoutMs = 30_000;
+      const out = await Promise.race([
+        ext(sliced, { pooling: "cls", normalize: true }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("embedding 编码超时")), timeoutMs)),
+      ]);
+      const vec = Float32Array.from(out.data);
+      if (vec.length !== cfg.dim) throw new Error(`embedding 维度不符：期望 ${cfg.dim}，实际 ${vec.length}`);
+      return vec;
     });
   }
 
@@ -177,13 +192,17 @@ export function createEmbeddingService(config: Partial<EmbeddingConfig> = {}): E
     },
     encode: encodeOne,
     async encodeBatch(texts: string[]) {
-      const CONC = 4;
-      const out = new Array<Float32Array>(texts.length);
-      for (let i = 0; i < texts.length; i += CONC) {
-        const slice = texts.slice(i, i + CONC);
-        const res = await Promise.all(slice.map((t) => encodeOne(t)));
-        for (let j = 0; j < res.length; j++) out[i + j] = res[j]!;
+      // 并发限流：串行千站索引太慢，无限并发又会 OOM，取 4 并发
+      const CONCURRENCY = 4;
+      const out: Float32Array[] = new Array(texts.length);
+      let cursor = 0;
+      async function worker() {
+        while (cursor < texts.length) {
+          const i = cursor++;
+          out[i] = await encodeOne(texts[i] ?? "");
+        }
       }
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, texts.length) }, () => worker()));
       return out;
     },
   };

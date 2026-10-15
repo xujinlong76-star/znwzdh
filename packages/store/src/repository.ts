@@ -155,45 +155,80 @@ export class Repository {
   private db: Db;
   /** tokenId -> 上次写入 last_used_at 的时间（进程内节流，不落库） */
   private tokenTouchAt = new Map<string, number>();
+  private txDepth = 0;
 
   constructor(db: Db) {
     this.db = db;
   }
 
-  /** 双方言事务包裹辅助方法（SQLite 加 busy_timeout + 指数退避，避免高并发写 SQLITE_BUSY） */
+  /** 双方言事务包裹辅助方法（可重入：嵌套调用直接复用外层事务，避免 SQLITE BEGIN 嵌套报错；SQLite 另加 busy_timeout + 指数退避，避免高并发写 SQLITE_BUSY） */
   async withTransaction<T>(action: () => Promise<T>): Promise<T> {
+    if (this.txDepth > 0) return action();
     if (this.db.dialect === "sqlite" && this.db.sqlite) {
-      try { this.db.sqlite.exec("PRAGMA busy_timeout = 5000"); } catch { /* ignore */ }
-      let lastErr: unknown = null;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          this.db.sqlite.exec("BEGIN IMMEDIATE");
+      this.txDepth++;
+      try {
+        try { this.db.sqlite.exec("PRAGMA busy_timeout = 5000"); } catch { /* ignore */ }
+        let lastErr: unknown = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
           try {
-            const result = await action();
-            this.db.sqlite.exec("COMMIT");
-            return result;
+            this.db.sqlite.exec("BEGIN IMMEDIATE");
+            try {
+              const result = await action();
+              this.db.sqlite.exec("COMMIT");
+              return result;
+            } catch (err) {
+              try { this.db.sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
+              throw err;
+            }
           } catch (err) {
-            try { this.db.sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
-            throw err;
+            lastErr = err;
+            const msg = err instanceof Error ? err.message : String(err);
+            // 只有 BUSY/LOCKED 才重试，其它错误直接抛
+            if (!/BUSY|LOCKED/i.test(msg) || attempt === 3) throw err;
+            await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
           }
+        }
+        throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+      } finally {
+        this.txDepth--;
+      }
+    } else if (this.db.dialect === "pg" && this.db.pg) {
+      // 必须在独占连接上跑 BEGIN/COMMIT，否则 pool 会把语句打散到不同连接，原子性丢失。
+      const poolAny = this.db.pg as unknown as {
+        query(sql: string, params?: unknown[]): Promise<unknown>;
+        connect(): Promise<{ query(sql: string, params?: unknown[]): Promise<unknown>; release(): void }>;
+      };
+      if (typeof poolAny.connect === "function") {
+        const client = await poolAny.connect();
+        // 事务期间把 this.db.pg 临时指向该独占连接，保证内部 run/raw 走同一连接
+        const origPg = this.db.pg;
+        (this as unknown as { db: { pg: unknown } }).db.pg = client as never;
+        this.txDepth++;
+        try {
+          await client.query("BEGIN", []);
+          const result = await action();
+          await client.query("COMMIT", []);
+          return result;
         } catch (err) {
-          lastErr = err;
-          const msg = err instanceof Error ? err.message : String(err);
-          // 只有 BUSY/LOCKED 才重试，其它错误直接抛
-          if (!/BUSY|LOCKED/i.test(msg) || attempt === 3) throw err;
-          await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
+          try { await client.query("ROLLBACK", []); } catch { /* ignore */ }
+          throw err;
+        } finally {
+          (this as unknown as { db: { pg: unknown } }).db.pg = origPg as never;
+          client.release();
+          this.txDepth--;
         }
       }
-      throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
-    } else if (this.db.dialect === "pg" && this.db.pg) {
-      await this.db.pg.query("BEGIN");
+      this.txDepth++;
       try {
+        await this.db.pg.query("BEGIN");
         const result = await action();
         await this.db.pg.query("COMMIT");
         return result;
       } catch (err) {
         try { await this.db.pg.query("ROLLBACK"); } catch { /* ignore */ }
         throw err;
+      } finally {
+        this.txDepth--;
       }
     }
     return action();
@@ -201,20 +236,43 @@ export class Repository {
 
   /* ------------------------- 站点 ------------------------- */
 
-  async listSites(filter: { categoryId?: string; status?: SiteStatus; limit?: number; source?: string } = {}): Promise<Site[]> {
+  async listSites(filter: { categoryId?: string; status?: SiteStatus; limit?: number; offset?: number; source?: string } = {}): Promise<Site[]> {
     const where: string[] = ["s.deleted_at IS NULL"];
     const params: unknown[] = [];
     if (filter.categoryId) { where.push("s.category_id = ?"); params.push(filter.categoryId); }
     if (filter.status) { where.push("s.status = ?"); params.push(filter.status); }
     if (filter.source) { where.push("s.source = ?"); params.push(filter.source); }
+    // 默认 limit 100、上限 1000：无限制的全表扫是慢查询主因；调用方需显式传 limit 覆盖。
+    const limit = Math.min(Math.max(filter.limit ?? 100, 1), 1000);
+    const offset = Math.max(0, filter.offset ?? 0);
     const sqlText = this.selectSitesSql() +
       " WHERE " + where.join(" AND ") +
       " GROUP BY s.id" +
       " ORDER BY s.sort ASC, s.weight DESC" +
-      (filter.limit ? " LIMIT ?" : "");
-    if (filter.limit) params.push(filter.limit);
+      " LIMIT ? OFFSET ?";
+    params.push(limit, offset);
     const rows = await this.raw(sqlText, params);
     return rows.map(rowToSite);
+  }
+
+  /**
+   * 批量按 id 取站点（N+1 消除用）。
+   * 空数组直接返回空 Map；分批每批 500 防 SQLite/PG 变量上限（SQLITE_MAX_VARIABLE_NUMBER / PG 65535）。
+   */
+  async getSitesByIds(ids: string[]): Promise<Map<string, Site>> {
+    const out = new Map<string, Site>();
+    const uniq = [...new Set(ids.filter(Boolean))];
+    if (uniq.length === 0) return out;
+    for (let i = 0; i < uniq.length; i += 500) {
+      const chunk = uniq.slice(i, i + 500);
+      const placeholders = chunk.map(() => "?").join(", ");
+      const rows = await this.raw(
+        this.selectSitesSql() + " WHERE s.id IN (" + placeholders + ") AND s.deleted_at IS NULL",
+        chunk,
+      );
+      for (const r of rows.map(rowToSite)) out.set(r.id, r);
+    }
+    return out;
   }
 
   /**
@@ -239,16 +297,6 @@ export class Repository {
     );
     const row = rows[0];
     return row ? rowToSite(row) : null;
-  }
-
-  async getSitesByIds(ids: string[]): Promise<Site[]> {
-    if (ids.length === 0) return [];
-    const placeholders = ids.map(() => "?").join(", ");
-    const rows = await this.raw(
-      this.selectSitesSql() + " WHERE s.id IN (" + placeholders + ") AND s.deleted_at IS NULL",
-      ids,
-    );
-    return rows.map(rowToSite);
   }
 
   /** 软删除的站点（回收站）：正常查询一律排除，只有这里返回 */
@@ -283,6 +331,7 @@ export class Repository {
    * 因此这条兼容路径必须保留调用方的 id。
    */
   async createSiteWithId(input: SiteInput & { id: string }): Promise<Site> {
+    return this.withTransaction(async () => {
     const id = input.id;
     const now = Date.now();
     const index = buildIndexFields({ title: input.title ?? input.url, description: input.description, url: input.url, tags: input.tags });
@@ -323,11 +372,13 @@ export class Repository {
     const created = await this.getSite(id);
     if (!created) throw new Error("创建站点后无法读回");
     return created;
+    });
   }
 
   async updateSite(id: string, patch: Partial<SiteInput>): Promise<Site | null> {
     const existing = await this.getSite(id);
     if (!existing) return null;
+    return this.withTransaction(async () => {
 
     const title = patch.title ?? existing.title;
     const description = patch.description === undefined ? existing.description : patch.description;
@@ -354,6 +405,7 @@ export class Repository {
     await this.run(`UPDATE sites SET ${sets.join(", ")} WHERE id = ?`, params);
     if (patch.tags !== undefined) await this.setSiteTags(id, patch.tags);
     return this.getSite(id);
+    });
   }
 
   /**
@@ -377,9 +429,11 @@ export class Repository {
 
   /** 永久删除：从回收站彻底清除（连带 site_tags / embeddings） */
   async purgeSite(id: string): Promise<boolean> {
+    await this.withTransaction(async () => {
     await this.run("DELETE FROM site_tags WHERE site_id = ?", [id]);
     await this.run("DELETE FROM embeddings WHERE site_id = ?", [id]);
     await this.run("DELETE FROM sites WHERE id = ?", [id]);
+    });
     return true;
   }
 
@@ -508,6 +562,7 @@ export class Repository {
     if (!source) throw new Error("源类目不存在: " + sourceId);
     const target = await this.getCategory(targetId);
     if (!target) throw new Error("目标类目不存在: " + targetId);
+    return this.withTransaction(async () => {
 
     const subtree = await this.raw(
       "SELECT id FROM categories WHERE anchor = ? OR anchor LIKE ?",
@@ -528,6 +583,7 @@ export class Repository {
     }
     for (const cid of ids) await this.run("DELETE FROM categories WHERE id = ?", [cid]);
     return { movedSites: moved, removedCategories: ids.length };
+    });
   }
 
   async updateCategory(id: string, patch: Partial<Pick<Category, "title" | "titleEn" | "icon" | "description" | "enabled" | "sort">>): Promise<Category | null> {
@@ -558,6 +614,7 @@ export class Repository {
   async deleteCategory(id: string): Promise<void> {
     const existing = await this.getCategory(id);
     if (!existing) return;
+    await this.withTransaction(async () => {
     const now = Date.now();
 
     // 1. 直接子类目挂到被删类目的父级（根则 parent_id = NULL）
@@ -582,6 +639,7 @@ export class Repository {
 
     // 4. 最后删除类目自身
     await this.run("DELETE FROM categories WHERE id = ?", [id]);
+    });
   }
 
   /* ------------------------- 向量 ------------------------- */
@@ -629,11 +687,25 @@ export class Repository {
     };
   }
 
-  async recordEvent(kind: string, payload: { siteId?: string; query?: string; categoryId?: string; meta?: unknown } = {}): Promise<void> {
+  /**
+   * 记录一条行为/统计事件。
+   *
+   * identity（登录 userId 或匿名 anonId）落**独立列**（events.identity + 索引），
+   * 供 behaviorEvents / deleteBehaviorEvents 等值过滤。
+   * meta 里仍保留 identity 键（向后兼容旧数据/读方），但查询不再依赖 meta LIKE。
+   * 显式 payload.identity 优先；否则从 meta.identity 提取（兼容既有调用点）。
+   */
+  async recordEvent(kind: string, payload: { siteId?: string; query?: string; categoryId?: string; identity?: string; meta?: unknown } = {}): Promise<void> {
+    const metaIdentity = typeof payload.meta === "object" && payload.meta !== null
+      ? (payload.meta as { identity?: unknown }).identity
+      : undefined;
+    const identity = payload.identity
+      ?? (typeof metaIdentity === "string" ? metaIdentity : undefined)
+      ?? null;
     await this.run(
-      "INSERT INTO events (kind, site_id, query, category_id, meta, created_at) VALUES (?,?,?,?,?,?)",
+      "INSERT INTO events (kind, site_id, query, category_id, meta, identity, created_at) VALUES (?,?,?,?,?,?,?)",
       [kind, payload.siteId ?? null, payload.query ?? null, payload.categoryId ?? null,
-       payload.meta === undefined ? null : JSON.stringify(payload.meta), Date.now()],
+       payload.meta === undefined ? null : JSON.stringify(payload.meta), identity, Date.now()],
     );
   }
 
@@ -785,6 +857,7 @@ export class Repository {
   async deleteTag(id: string): Promise<{ unbound: number }> {
     const found = await this.raw("SELECT id FROM tags WHERE id = ? LIMIT 1", [id]);
     if (!found.length) throw new Error("标签不存在");
+    return this.withTransaction(async () => {
     const affected = await this.raw(
       "SELECT s.id, s.title, s.description, s.url FROM sites s JOIN site_tags st ON st.site_id = s.id WHERE st.tag_id = ?",
       [id],
@@ -812,24 +885,27 @@ export class Repository {
       );
     }
     return { unbound: affected.length };
+    });
   }
 
   /** 合并标签：源标签的关联迁到目标（已关联的跳过），然后删源 */
   async mergeTags(sourceId: string, targetId: string): Promise<{ moved: number }> {
     if (sourceId === targetId) throw new Error("源标签与目标标签不能相同");
-    const rows = await this.raw(
-      "SELECT site_id FROM site_tags WHERE tag_id = ? AND site_id NOT IN (SELECT site_id FROM site_tags WHERE tag_id = ?)",
-      [sourceId, targetId],
-    );
-    for (const r of rows) {
-      await this.run(
-        "UPDATE site_tags SET tag_id = ? WHERE tag_id = ? AND site_id = ?",
-        [targetId, sourceId, String(r.site_id)],
+    return this.withTransaction(async () => {
+      const rows = await this.raw(
+        "SELECT site_id FROM site_tags WHERE tag_id = ? AND site_id NOT IN (SELECT site_id FROM site_tags WHERE tag_id = ?)",
+        [sourceId, targetId],
       );
-    }
-    await this.run("DELETE FROM site_tags WHERE tag_id = ?", [sourceId]);
-    await this.run("DELETE FROM tags WHERE id = ?", [sourceId]);
-    return { moved: rows.length };
+      for (const r of rows) {
+        await this.run(
+          "UPDATE site_tags SET tag_id = ? WHERE tag_id = ? AND site_id = ?",
+          [targetId, sourceId, String(r.site_id)],
+        );
+      }
+      await this.run("DELETE FROM site_tags WHERE tag_id = ?", [sourceId]);
+      await this.run("DELETE FROM tags WHERE id = ?", [sourceId]);
+      return { moved: rows.length };
+    });
   }
 
   /* ------------------------- 收藏夹 ------------------------- */
@@ -902,11 +978,12 @@ export class Repository {
 
   /**
    * 取某身份的近期行为事件（click/favorite），附带站点类目与标签。
-   * 身份写在 events.meta 的 JSON 里（{"identity":"..."}），用 LIKE 过滤——
-   * 身份串只含 uuid / "github:<id>" 字符，无 LIKE 通配符（构建 pattern 前仍做清洗）。
+   *
+   * identity 走独立列等值过滤（events.identity + events_identity_idx）——
+   * 旧实现是 meta JSON 的 LIKE '%..."identity":"..."%'，无法走索引且随
+   * events 表增长变慢。历史行的 identity 由启动时 migrateEventIdentity 回填。
    */
   async behaviorEvents(identity: string, since: number, limit = 500): Promise<Array<{ kind: string; siteId: string; categoryId: string | null; tags: string[]; createdAt: number }>> {
-    const pattern = '%"identity":"' + identity.replace(/[%_\\]/g, "") + '"%';
     const tagExpr = this.db.dialect === "sqlite"
       ? "(SELECT group_concat(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = e.site_id)"
       : "(SELECT string_agg(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = e.site_id)";
@@ -915,9 +992,9 @@ export class Repository {
               ${tagExpr} AS tagslugs, e.created_at AS createdat
          FROM events e LEFT JOIN sites s ON s.id = e.site_id
         WHERE e.kind IN ('click', 'favorite') AND e.created_at >= ?
-          AND e.meta LIKE ?
+          AND e.identity = ?
         ORDER BY e.created_at DESC LIMIT ?`,
-      [since, pattern, limit],
+      [since, identity, limit],
     );
     return rows
       .filter((r) => r.siteid)
@@ -967,18 +1044,18 @@ export class Repository {
   }
 
   /**
-   * 删除某身份的行为事件（click/favorite，identity 存在 meta JSON 里）。
+   * 删除某身份的行为事件（click/favorite，identity 走独立列等值过滤）。
    * 「重置个性化」用——events 同时供 recompute_rank 统计点击热度，
-   * 因此这里只删带该 identity 的行，不碰匿名/其他身份的事件。
+   * 因此这里只删该 identity 的行，不碰匿名/其他身份的事件。
+   * 历史行（identity 列为 NULL 但 meta 里有身份）由启动时回填覆盖，无需 LIKE 兜底。
    */
   async deleteBehaviorEvents(identity: string): Promise<number> {
-    const pattern = '%"identity":"' + identity.replace(/[%_\\]/g, "") + '"%';
     const rows = await this.raw(
-      "SELECT COUNT(*) AS c FROM events WHERE kind IN ('click','favorite') AND meta LIKE ?",
-      [pattern],
+      "SELECT COUNT(*) AS c FROM events WHERE kind IN ('click','favorite') AND identity = ?",
+      [identity],
     );
     const removed = Number(rows[0]?.c ?? 0);
-    await this.run("DELETE FROM events WHERE kind IN ('click','favorite') AND meta LIKE ?", [pattern]);
+    await this.run("DELETE FROM events WHERE kind IN ('click','favorite') AND identity = ?", [identity]);
     return removed;
   }
 
@@ -1419,21 +1496,40 @@ export class Repository {
    * `next_run_at IS NULL OR <= now`：失败退避的任务在到点前不被认领——
    * 否则一个必失败的坏任务会每 30s 抢占一次队列、把正常任务饿死。
    * 复合索引 (status, next_run_at) 覆盖这个查询。
+   *
+   * 原子性：旧实现 SELECT + UPDATE 分两步，多 worker 并发会重复认领同一任务。
+   * PG 用单条 UPDATE...FROM (SELECT...FOR UPDATE SKIP LOCKED)...RETURNING 原子认领；
+   * SQLite 用 BEGIN IMMEDIATE 事务包裹 SELECT+UPDATE（withTransaction 已是 IMMEDIATE，写锁互斥）。
    */
   async claimNextJob(): Promise<JobRecord | null> {
-    const rows = await this.raw(
-      "SELECT * FROM jobs WHERE status = 'pending' AND (next_run_at IS NULL OR next_run_at <= ?) ORDER BY created_at ASC LIMIT 1",
-      [Date.now()],
-    );
-    const row = rows[0];
-    if (!row) return null;
-    await this.run(
-      "UPDATE jobs SET status = 'running', attempts = attempts + 1, next_run_at = NULL, updated_at = ? WHERE id = ?",
-      [Date.now(), String(row.id)],
-    );
-    // 返回更新后的行（attempts 已 +1），调用方拿到的就是最新状态
-    const updated = (await this.raw("SELECT * FROM jobs WHERE id = ?", [String(row.id)]))[0];
-    return updated ? rowToJob(updated) : rowToJob(row);
+    if (this.db.dialect === "pg") {
+      const now = Date.now();
+      const rows = await this.raw(
+        "WITH next AS (" +
+          "SELECT id FROM jobs WHERE status = 'pending' AND (next_run_at IS NULL OR next_run_at <= ?) " +
+          "ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED" +
+          ") UPDATE jobs SET status = 'running', attempts = attempts + 1, next_run_at = NULL, updated_at = ? " +
+          "FROM next WHERE jobs.id = next.id RETURNING jobs.*",
+        [now, now],
+      );
+      const row = rows[0];
+      return row ? rowToJob(row) : null;
+    }
+    return this.withTransaction(async () => {
+      const rows = await this.raw(
+        "SELECT * FROM jobs WHERE status = 'pending' AND (next_run_at IS NULL OR next_run_at <= ?) ORDER BY created_at ASC LIMIT 1",
+        [Date.now()],
+      );
+      const row = rows[0];
+      if (!row) return null;
+      await this.run(
+        "UPDATE jobs SET status = 'running', attempts = attempts + 1, next_run_at = NULL, updated_at = ? WHERE id = ? AND status = 'pending'",
+        [Date.now(), String(row.id)],
+      );
+      // 返回更新后的行（attempts 已 +1），调用方拿到的就是最新状态
+      const updated = (await this.raw("SELECT * FROM jobs WHERE id = ?", [String(row.id)]))[0];
+      return updated ? rowToJob(updated) : rowToJob(row);
+    });
   }
 
   /**

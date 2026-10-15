@@ -11,11 +11,14 @@ import {
 
 const MAX_PRECONNECTS = 8
 const THROTTLE_MS = 60
+// 注入 link 节点总数上限（dns-prefetch + preconnect 各一，共 2×origins），防 DOM 无限膨胀
+const MAX_INJECTED_LINKS = MAX_PRECONNECTS * 2
 
 export function PredictivePrefetchProvider({ children }: { children: React.ReactNode }) {
   const lastPointRef = useRef<Point | null>(null)
   const lastTimeRef = useRef<number>(0)
   const connectedOriginsRef = useRef<Set<string>>(new Set())
+  const injectedLinksRef = useRef<HTMLLinkElement[]>([])
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return
@@ -24,6 +27,8 @@ export function PredictivePrefetchProvider({ children }: { children: React.React
       if (!shouldPreconnectOrigin(origin, connectedOriginsRef.current, MAX_PRECONNECTS)) {
         return
       }
+      // 去重上限：已注入节点过多则拒绝新增（防长会话 DOM 膨胀）
+      if (injectedLinksRef.current.length >= MAX_INJECTED_LINKS) return
 
       connectedOriginsRef.current.add(origin)
 
@@ -31,13 +36,17 @@ export function PredictivePrefetchProvider({ children }: { children: React.React
       const dnsLink = document.createElement('link')
       dnsLink.rel = 'dns-prefetch'
       dnsLink.href = origin
+      dnsLink.dataset.predictivePrefetch = '1'
       document.head.appendChild(dnsLink)
+      injectedLinksRef.current.push(dnsLink)
 
       const preconnLink = document.createElement('link')
       preconnLink.rel = 'preconnect'
       preconnLink.href = origin
       preconnLink.crossOrigin = 'anonymous'
+      preconnLink.dataset.predictivePrefetch = '1'
       document.head.appendChild(preconnLink)
+      injectedLinksRef.current.push(preconnLink)
     }
 
     const onPointerMove = (e: PointerEvent) => {
@@ -100,6 +109,13 @@ export function PredictivePrefetchProvider({ children }: { children: React.React
     return () => {
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerdown', onPointerDown)
+      // 卸载清理：移除本 provider 注入的 link，释放 Set/point 引用（防 SPA 切页泄漏）
+      for (const el of injectedLinksRef.current) {
+        el.remove()
+      }
+      injectedLinksRef.current = []
+      connectedOriginsRef.current.clear()
+      lastPointRef.current = null
     }
   }, [])
 

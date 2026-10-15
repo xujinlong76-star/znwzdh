@@ -123,7 +123,7 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       cacheDir: config.embedding.cacheDir,
       dim: config.embedding.dim,
     });
-    notes.push("embedding 服务已装配（惰性加载：" + config.embedding.model + " via " + config.embedding.endpoint + "）");
+    notes.push("embedding 服务已装配（惰性加载：" + config.embedding.model + " via " + config.embedding.endpoint + "，health 在 ready() 前如实报 semantic=false）");
   } else {
     notes.push("embedding 已被配置关闭，语义通道不可用");
   }
@@ -136,7 +136,9 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
   });
 
   const capabilities: Capabilities = {
-    semantic: Boolean(embedding && vectors),
+    // embedding 为惰性加载：装配时 ready() 必为 false，此处如实上报 false，
+    // warmup/首次 encode 成功后由 /api/health 动态读取 ready()（见 server.ts 健康端点）。
+    semantic: Boolean(embedding?.ready() && vectors),
     fts: Boolean(fts),
     llm: Boolean(config.llm.apiKey),
     notes,

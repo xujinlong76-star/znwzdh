@@ -952,6 +952,33 @@ describe("SQLite 集成：导航增强能力", () => {
     rmSync(oldDir, { recursive: true, force: true });
   });
 
+  it("events.identity：新事件落独立列，历史行从 meta 回填，等值查询/删除生效", async () => {
+    // 1) 新写入：recordEvent 从 payload/meta 提取 identity 落列
+    await repo.recordEvent("click", { siteId: (await repo.listSites({ limit: 1 }))[0]?.id, meta: { identity: "user-roundtrip" } });
+    const row = db.sqlite!.prepare("SELECT identity FROM events WHERE meta LIKE '%user-roundtrip%'").get() as { identity: string | null };
+    expect(row.identity).toBe("user-roundtrip");
+
+    // 2) 历史行回填：模拟旧库——identity 列为 NULL、身份藏在 meta JSON 里
+    db.sqlite!.prepare("UPDATE events SET identity = NULL WHERE meta LIKE '%user-roundtrip%'").run();
+    const { migrateEventIdentity } = await import("../src/migrate.ts");
+    const backfilled = await migrateEventIdentity(db);
+    expect(backfilled).toBeGreaterThan(0);
+    const after = db.sqlite!.prepare("SELECT identity FROM events WHERE meta LIKE '%user-roundtrip%'").get() as { identity: string | null };
+    expect(after.identity).toBe("user-roundtrip");
+
+    // 3) 等值查询命中（不再依赖 meta LIKE）
+    const events = await repo.behaviorEvents("user-roundtrip", 0);
+    expect(events.length).toBeGreaterThan(0);
+
+    // 4) 等值删除只删该身份
+    db.sqlite!.prepare("UPDATE events SET identity = 'other-user' WHERE meta LIKE '%user-roundtrip%' AND id <> (SELECT MAX(id) FROM events WHERE meta LIKE '%user-roundtrip%')").run();
+    const removed = await repo.deleteBehaviorEvents("user-roundtrip");
+    expect(removed).toBe(1);
+    expect((await repo.behaviorEvents("user-roundtrip", 0)).length).toBe(0);
+    // 幂等：重复回填第二次不应再改行（identity 已非 NULL）
+    expect(await migrateEventIdentity(db)).toBe(0);
+  });
+
   it("旧库 jobs 表缺 next_run_at 列时 openDb 不崩（索引先于迁移的启动阻断）", async () => {
     // 真实故障复现：老库 jobs 表已存在但无 next_run_at，
     // DDL 的 CREATE INDEX ON jobs(status, next_run_at) 先崩，服务无法启动。

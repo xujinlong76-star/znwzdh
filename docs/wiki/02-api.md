@@ -170,13 +170,15 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 
 测试：[apps/api/test/auth.test.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/test/auth.test.ts)——37 个用例覆盖开放模式回归、逐级拦截、scope 含义、生命周期（含省略落上限 / 显式永久被拒 / 放行实例）、审计身份。
 
-## 3. REST 路由完整清单（61 条）
+## 3. REST 路由完整清单（62 条）
 
 ### 3.1 健康与能力
 
 | 方法 | 路径 | 功能 | 备注 |
 | --- | --- | --- | --- |
-| GET | `/api/health` | 模式 + `capabilities` + `stats` | 降级状态唯一权威出口 |
+| GET | `/api/health` | 模式 + `capabilities` + `stats` | 降级状态唯一权威出口；仅表进程存活 |
+| GET | `/api/ready` | 就绪探针：`semantic` / `embeddingReady` / `fts` | compose `depends_on` 应指此；迁移水位 + embedding 就绪 |
+| GET | `/api/metrics` | Prometheus 文本指标 | scope: **read**（开放模式匿名可抓；开启 `NAVHUB_AUTH_REQUIRED` 后需 read 及以上 token）；只暴露有界基数维度（method × 路由模板 × 状态码），不含站点内容/身份 |
 | POST | `/api/warmup` | 显式预热 embedding 模型 | 默认惰性加载，部署后可主动调用 |
 
 ### 3.2 检索
@@ -362,7 +364,7 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 | 方法 | 路径 | 功能 | 身份 |
 | --- | --- | --- | --- |
 | GET | `/api/profile` | 读画像 `topCategories` / `topTags` / `visitedSiteIds` / `favoriteSiteIds` / `searchCount`；缺身份 → `{error}` | `userId` 或 `anonId` |
-| DELETE | `/api/profile` | **重置画像**：清 `user_profiles` 行 + 该身份的 `events`（click/favorite，identity 在 meta JSON 里），返回 `{ok, profileCleared, eventsRemoved}` | 同上 |
+| DELETE | `/api/profile` | **重置画像**：清 `user_profiles` 行 + 该身份的 `events`（click/favorite，按独立列 `events.identity` 等值删除），返回 `{ok, profileCleared, eventsRemoved}` | 同上 |
 
 **重置语义**（[profile-service.ts `resetUserProfile`](file:///c:/Users/许进龙/Desktop/web/apps/api/src/profile-service.ts)）：两件都清——只删画像行没用，下次搜索的 `refreshUserProfile` 会从残留事件重建。**收藏夹与搜索历史不动**（用户自己的数据，不是被推断的偏好）；同时清掉节流表条目，避免新行为延迟生效。前端入口：`/preferences`（我的偏好页）。
 

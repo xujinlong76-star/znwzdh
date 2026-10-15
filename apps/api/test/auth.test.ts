@@ -438,11 +438,11 @@ describe("生产配置硬校验与批量查询回归", () => {
   });
 
   it("Repository.getSitesByIds 批量查询返回完整站点与标签且忽略空数组", async () => {
-    expect(await openCtx.repo.getSitesByIds([])).toEqual([]);
+    expect((await openCtx.repo.getSitesByIds([])).size).toBe(0);
     const s1 = await openCtx.repo.createSite({ url: "https://batch1.example.com", title: "Batch1", categoryId: "cat-ai", tags: ["t1"] });
     const s2 = await openCtx.repo.createSite({ url: "https://batch2.example.com", title: "Batch2", categoryId: "cat-ai", tags: ["t2"] });
-    const list = await openCtx.repo.getSitesByIds([s1.id, s2.id, "non-existent"]);
-    expect(list.map((s) => s.id).sort()).toEqual([s1.id, s2.id].sort());
-    expect(list.find((s) => s.id === s1.id)?.tags).toContain("t1");
+    const map = await openCtx.repo.getSitesByIds([s1.id, s2.id, "non-existent"]);
+    expect([...map.keys()].sort()).toEqual([s1.id, s2.id].sort());
+    expect(map.get(s1.id)?.tags).toContain("t1");
   });
 });

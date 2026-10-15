@@ -76,6 +76,30 @@ describe("健康检查与能力上报", () => {
   });
 });
 
+describe("Prometheus 指标", () => {
+  it("返回文本格式指标，含进程/能力/数据规模维度", async () => {
+    // 先打几个不同路由，让计数器有内容
+    await app.inject({ method: "GET", url: "/api/health" });
+    await app.inject({ method: "GET", url: "/api/search?q=" });
+
+    const res = await app.inject({ method: "GET", url: "/api/metrics" });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/plain");
+    const text = res.body;
+    expect(text).toContain("# TYPE navhub_up gauge");
+    expect(text).toMatch(/navhub_up 1/);
+    expect(text).toContain("navhub_build_info{mode=\"lite\"");
+    expect(text).toContain("navhub_capability{name=\"fts\"} 1");
+    expect(text).toContain("navhub_capability{name=\"semantic\"} 0");
+    expect(text).toContain("navhub_sites{status=\"active\"} 5");
+    // 路由模板做标签（有界基数），不是原始 URL
+    expect(text).toMatch(/navhub_http_requests_total\{method="GET",route="\/api\/search",status="200"\} \d+/);
+    expect(text).toContain("navhub_http_request_duration_seconds_count");
+    // 抓取自身不计入
+    expect(text).not.toContain('route="/api/metrics"');
+  });
+});
+
 describe("检索接口", () => {
   it("中文子串命中", async () => {
     const res = await app.inject({ method: "GET", url: "/api/search?q=" + encodeURIComponent("天气") });

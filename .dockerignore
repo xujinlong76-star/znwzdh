@@ -7,3 +7,7 @@ build
 *.log
 .system_generated
 .env*.local
+# 密钥与本地数据永不进镜像
+.env*
+data/*.db
+*.db

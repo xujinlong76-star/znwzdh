@@ -2,14 +2,19 @@
 # NavHub (znwzdh) 统一 CI 工作流
 #
 # 覆盖矩阵：
-# 1. test（matrix: sqlite / postgres，两个矩阵腿独立成败）:
-#    - Web 覆盖层一致性校验 + 全 Monorepo 类型检查 + 全量 Vitest（pnpm verify）
+# 1. test-sqlite（Lite 模式 / 默认引擎）:
+#    - 全 Monorepo 类型检查（pnpm typecheck）
+#    - 全量 Vitest（SQLite + sqlite-vec + FTS5 CJK 二元分词）
 #    - 核心包与 SDK 打包构建（pnpm build）
-#    - postgres 腿：pgvector 服务容器 + pg-dialect 跨方言 E2E（12 项断言）
-#      + scripts/pg-check.mts 标准模式 12 项真实数据库方言检测（pnpm test:pg）
-#    - sqlite 腿：sqlite-vec 是 packages/store 正式依赖，--frozen-lockfile 直接装，
-#      不需要（也不能）在 CI 里 pnpm add——那会污染工作区且与 frozen lockfile 矛盾
-# 2. ci-passed:
+# 2. test-postgres（Standard 模式 / 企业跨方言引擎）:
+#    - pgvector 服务容器注入 NAVHUB_TEST_DATABASE_URL
+#      （pg-dialect.e2e.test.ts 与 scripts/pg-check.mts 都只认这个变量名，
+#       设成 DATABASE_URL 是没人读的死变量——PG 测试会整套静默 skip，假绿灯）
+#    - pg-dialect 跨方言 E2E（12 项断言）+ pg-check.mts 标准模式 12 项基准检验
+# 3. check-web-overlay:
+#    - vendor 重建 apps/web 后与 overlay 字节级比对（全新检出的前提，见作业内注释）
+# 4. audit: 依赖审计（continue-on-error，先告警不卡门）
+# 5. ci-passed:
 #    - 聚合闸门作业，供 GitHub 分支保护规则 (Branch Protection Rules) 设置单一必经项
 # ==============================================================================
 
@@ -22,6 +27,10 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# 最小权限 + 同分支新 push 自动取消旧运行
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -31,18 +40,31 @@ env:
   NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
 
 jobs:
-  test:
-    name: 测试矩阵 (${{ matrix.db }})
+  test-sqlite:
+    name: 测试（SQLite 默认方言）
     runs-on: ubuntu-latest
-    strategy:
-      # 不让一个腿的失败取消另一个腿：双方言信号要各自独立可见
-      fail-fast: false
-      matrix:
-        db: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # 覆盖层比对在 check-web-overlay 作业里单独跑（全新检出需先 vendor，见那里）
+      - run: pnpm run typecheck
+      - run: pnpm test
+      # 打包构建闸门：tsc 能过但声明导出/入口路径坏了只有 build 能发现
+      - run: pnpm build
+
+  test-postgres:
+    name: 跨方言测试（PostgreSQL）
+    runs-on: ubuntu-latest
+    env:
+      # 未配置时该套件会整体 skip；这里配置了就必须真的连上并全绿
+      NAVHUB_TEST_DATABASE_URL: postgres://navhub:navhub@127.0.0.1:5432/navhub_test
     services:
       postgres:
-        # 仅 postgres 腿启动服务容器
-        if: matrix.db == 'postgres'
         image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: navhub
@@ -50,71 +72,75 @@ jobs:
           POSTGRES_DB: navhub_test
         ports:
           - 5432:5432
+        # 健康检查：等 PG 真正就绪再跑测试（避免 CI 抖动的连接失败）
         options: >-
           --health-cmd "pg_isready -U navhub -d navhub_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      NODE_OPTIONS: "--max-old-space-size=4096"
-      # pg-dialect.e2e.test.ts 与 scripts/pg-check.mts 都只认 NAVHUB_TEST_DATABASE_URL。
-      # 设成 DATABASE_URL 是没人读的死变量——PG 测试会整套静默 skip，postgres 腿假绿灯。
-      # 空串对下游等同未设置（e2e 按 truthy 判断），sqlite 腿天然跳过 PG 测试。
-      NAVHUB_TEST_DATABASE_URL: ${{ matrix.db == 'postgres' && 'postgresql://navhub:navhub@localhost:5432/navhub_test' || '' }}
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 安装 pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - name: 配置 Node.js (v22 LTS)
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # 只跑 PG 套件（SQLite 套件在 test-sqlite job 已覆盖）
+      - run: pnpm exec vitest run packages/store/test/pg-dialect.e2e.test.ts
+      # 标准模式 12 项真实数据库方言基准检验（同样只认 NAVHUB_TEST_DATABASE_URL）
+      - run: pnpm test:pg
 
-      - name: 安装依赖
-        run: pnpm install --frozen-lockfile
+  check-web-overlay:
+    name: 覆盖层一致性检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # apps/web 是 gitignore 的生成物：全新检出只剩 12 个已跟踪文件，直接比对必然"缺失"
+      # （这正是 main 长期红灯的原因）。先用 vendor 重建 apps/web = 上游 + overlay，
+      # overlay 覆写优先，之后比对即为真；顺带也 smoke test 了 Docker/vendor 这条路径。
+      - run: node scripts/vendor-web.mjs
+      # overlay 是 Docker 构建与 vendor 的事实源；apps/web 改了没同步回去会在这里失败
+      - run: node scripts/check-web-overlay.mjs
 
-      # vector 扩展由 PgVectorStore 构造时自建（pgvector.ts:44），
-      # 这里只做就绪等待；连不上时尽早明确失败，而不是让 e2e 超时后模糊报错
-      - name: 等待 PostgreSQL 就绪（postgres 腿）
-        if: matrix.db == 'postgres'
-        run: |
-          for i in {1..30}; do
-            pg_isready -h localhost -p 5432 -U navhub -d navhub_test && exit 0
-            echo "Waiting for PostgreSQL..."
-            sleep 1
-          done
-          echo "PostgreSQL 30s 未就绪"
-          exit 1
-        env:
-          PGPASSWORD: navhub
-
-      - name: 覆盖层校验 + 全 Monorepo 类型检查 + 全量 Vitest
-        run: pnpm verify
-
-      - name: PostgreSQL 标准模式 12 项基准检验（postgres 腿）
-        if: matrix.db == 'postgres'
-        run: pnpm test:pg
-
-      - name: 核心包与 SDK 打包构建
-        run: pnpm build
+  audit:
+    name: 依赖审计（允许失败）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # 先只告警不卡门：历史漏洞清零后再去掉 continue-on-error 转为硬门禁
+      - run: pnpm audit --audit-level high
+        continue-on-error: true
 
   ci-passed:
     name: CI 整体通过 (All Checks Passed)
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test-sqlite, test-postgres, check-web-overlay, audit]
     if: always()
     steps:
       - name: 评估检查结果
         run: |
-          if [ "${{ needs.test.result }}" != "success" ]; then
+          if [ "${{ needs.test-sqlite.result }}" != "success" ] || \
+             [ "${{ needs.test-postgres.result }}" != "success" ] || \
+             [ "${{ needs.check-web-overlay.result }}" != "success" ] || \
+             [ "${{ needs.audit.result }}" != "success" ]; then
             echo "CI 检查未全部通过！"
-            echo "test: ${{ needs.test.result }}"
+            echo "SQLite:  ${{ needs.test-sqlite.result }}"
+            echo "PG:      ${{ needs.test-postgres.result }}"
+            echo "Overlay: ${{ needs.check-web-overlay.result }}"
+            echo "Audit:   ${{ needs.audit.result }}"
             exit 1
           fi
           echo "🎉 所有 CI 检查均已顺利通过！"

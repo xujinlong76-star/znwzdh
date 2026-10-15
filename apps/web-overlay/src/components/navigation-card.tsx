@@ -17,6 +17,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-url'
 
 interface NavigationCardProps {
   item: NavigationSubItem
@@ -113,7 +114,7 @@ export function NavigationCard({
               )}
             >
               <Link
-                href={item.href}
+                href={safeHref(item.href)}
                 target={linkTarget}
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
@@ -220,7 +221,7 @@ export function NavigationCard({
               )}
 
               <Link
-                href={item.href}
+                href={safeHref(item.href)}
                 target={linkTarget}
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
@@ -365,7 +366,7 @@ export function NavigationCard({
             )}
 
             <Link
-              href={item.href}
+              href={safeHref(item.href)}
               target={linkTarget}
               rel="noopener noreferrer"
               data-prefetch-target="true"

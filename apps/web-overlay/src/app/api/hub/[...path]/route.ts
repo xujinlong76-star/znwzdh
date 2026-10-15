@@ -31,20 +31,15 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     const v = request.headers.get(h)
     if (v) headers[h] = v
   }
-  // 服务端代理鉴权补全：若客户端未传 Authorization 头，而环境变量配置了存储/中枢 Token，
-  // 自动注入 Bearer Token，保证开启 NAVHUB_AUTH_REQUIRED 后管理端路由访问通畅
-  if (!headers['authorization']) {
-    const serverToken = process.env.NAVHUB_STORAGE_TOKEN || process.env.NAVHUB_MCP_TOKEN || process.env.NAVHUB_BOOTSTRAP_TOKEN;
-    if (serverToken) {
-      headers['authorization'] = 'Bearer ' + serverToken;
-    }
-  }
+  // 安全说明：不再做服务端 Token 自动注入。
+  // 曾在此处当客户端无 Authorization 时注入 NAVHUB_STORAGE_TOKEN，
+  // 导致任意匿名访客经同源代理即获得服务端特权。管理路由必须由客户端显式携带 Bearer。
   // 透传客户端 IP：中枢的限流按 req.ip 分桶，若不传，所有访客共享同一个桶
   // （投稿 5 次/小时后，第 6 位访客就被 429 挡住）。
   // 前提：前端前面有反向代理（nginx/caddy/traefik）写入 X-Forwarded-For；
   // Next 15 已移除 NextRequest.ip，路由处理器拿不到 socket IP，
   // 因此无 XFF 时只能退回"中枢看到的对端地址"（= 前端进程，仍是共享桶）。
-  // 中枢需 trustProxy 才会读取该头（默认开，NAVHUB_TRUST_PROXY=0 关闭）。
+  // 中枢需 trustProxy 才会读取该头（默认关，经代理部署时设 NAVHUB_TRUST_PROXY=1 开启）。
   const xff = request.headers.get('x-forwarded-for')
   if (xff) headers['x-forwarded-for'] = xff
 
@@ -52,6 +47,10 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const hasBody = method !== 'GET' && method !== 'HEAD'
   const body = hasBody ? await request.text() : undefined
   if (hasBody && body && !headers['content-type']) headers['content-type'] = 'application/json'
+  // body 上限 ~1MB，防止代理被大体拖死
+  if (body && body.length > 1024 * 1024) {
+    return NextResponse.json({ error: '请求体过大（上限 1MB）' }, { status: 413 })
+  }
 
   try {
     const upstream = await fetch(target, {
@@ -67,10 +66,8 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
       headers: { 'content-type': upstream.headers.get('content-type') ?? 'application/json' },
     })
   } catch (error) {
-    return NextResponse.json(
-      { error: 'NavHub 中枢不可用', details: String(error) },
-      { status: 502 },
-    )
+    console.error('[hub proxy] upstream unavailable:', error)
+    return NextResponse.json({ error: 'NavHub 中枢不可用' }, { status: 502 })
   }
 }
 

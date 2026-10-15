@@ -52,6 +52,15 @@ services:
       timeout: 5s
       retries: 3
       start_period: 40s
+    # ---- 资源上限示例（默认关闭，保持现有可运行性） ----
+    # 公开部署建议取消注释，防止 embedding/检索把宿主机内存吃光：
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: "2.0"
+    #       memory: 2G
+    #     reservations:
+    #       memory: 512M
 
   web:
     build:

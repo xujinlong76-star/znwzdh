@@ -83,6 +83,8 @@ const AUTH_FAIL_AUDIT_AT = new Map<string, number>();
 /**
  * site.id → 数值投稿编号，与前端（Next 侧）的 hashNumericId 规则必须一致。
  * 算法：djb2 变体（((hash<<5)-hash)+ch），与 apps/web 的 hashNumericId 相同。
+ * 注意：djb2 32bit 易碰撞且反查靠 listSites(limit 1000) 截断匹配（见 PATCH /api/submissions/:number）；
+ * 超 1000 投稿会被截断漏掉。保留兼容旧前端，新前端逐步切 siteId 直传。
  */
 export function submissionNumber(id: string): number {
   let hash = 0;
@@ -96,21 +98,137 @@ export function submissionNumber(id: string): number {
 export async function buildServer(ctx: AppContext) {
   // 测试里默认静音，避免日志淹没断言输出；生产用 NAVHUB_LOG_LEVEL 控制
   const logLevel = process.env.NAVHUB_LOG_LEVEL ?? (process.env.VITEST ? "silent" : "info");
-  // 信任 X-Forwarded-For：只有经过自家 /api/hub/* 代理时才开。
-  // 默认关闭（直连公网伪造 XFF 可绕过按 IP 限流）；docker-compose 经代理时显式设 NAVHUB_TRUST_PROXY=1。
+  // 信任 X-Forwarded-For：只有经过自家 /api/hub/* 代理时才开（由 ctx.config.trustProxy 统一解析，见 config.ts）。
+  // 默认关闭（直连公网伪造 XFF 可绕过按 IP 限流）；docker/docker-compose.yml 经代理时默认注入 NAVHUB_TRUST_PROXY=1。
   // 不开启时 req.ip 会退化成代理地址，按 IP 的限流（300/min、投稿 5/hour）会整站共享一桶——按部署拓扑二选一。
-  const trustProxy = process.env.NAVHUB_TRUST_PROXY === "1" || process.env.NAVHUB_TRUST_PROXY?.toLowerCase() === "true";
   const app = Fastify({
     logger: { level: logLevel },
     bodyLimit: 4 * 1024 * 1024,
-    trustProxy,
+    trustProxy: ctx.config.trustProxy,
   });
 
+  // CORS：credentials:true 不能配 origin:*（浏览器会拒绝），* 时退为不带凭据
+  const allowAll = ctx.config.corsOrigins.includes("*");
   await app.register(cors, {
-    origin: ctx.config.corsOrigins.includes("*") ? true : ctx.config.corsOrigins,
-    credentials: true,
+    origin: allowAll ? true : ctx.config.corsOrigins,
+    credentials: !allowAll,
   });
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
+
+  /* ---------------------------- 指标采集（Prometheus） ---------------------------- */
+
+  /**
+   * 轻量进程内指标：不引入 prom-client，避免为一个 /metrics 端点加依赖。
+   * 只记「有界基数」维度（method / 路由模板 / 状态码），绝不以原始 URL 作标签
+   * ——否则 /api/search?q=xxx 会让时间序列爆炸（cardinality 失控是 Prometheus 头号杀手）。
+   * 路由模板取自 Fastify 的 routeOptions.url（如 /api/sites/:id），天然有界。
+   */
+  const metricsStartedAt = Date.now();
+  /** key: method\u0000route\u0000status -> 次数 */
+  const httpCounts = new Map<string, number>();
+  /** key: method\u0000route -> 累计耗时 */
+  const httpDurations = new Map<string, { count: number; sumMs: number }>();
+
+  app.addHook("onResponse", async (req, reply) => {
+    const route = (req.routeOptions?.url as string | undefined) ?? "unmatched";
+    if (route === "/api/metrics") return; // 不把抓取自身计入，避免自反馈噪音
+    const ckey = req.method + "\u0000" + route + "\u0000" + String(reply.statusCode);
+    httpCounts.set(ckey, (httpCounts.get(ckey) ?? 0) + 1);
+    const dkey = req.method + "\u0000" + route;
+    const d = httpDurations.get(dkey) ?? { count: 0, sumMs: 0 };
+    d.count += 1;
+    d.sumMs += Number(reply.elapsedTime ?? 0);
+    httpDurations.set(dkey, d);
+  });
+
+  /** 转义 Prometheus 文本格式的标签值（反斜杠 / 引号 / 换行） */
+  const escLabel = (v: string): string => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+  /** 还原采集时的复合 key；缺失位以空串兜底（noUncheckedIndexedAccess 友好） */
+  const splitKey = (k: string): [string, string, string] => {
+    const p = k.split("\u0000");
+    return [p[0] ?? "", p[1] ?? "", p[2] ?? ""];
+  };
+
+  /** DB 统计加重询，避免 Prometheus 高频抓取把 COUNT 打满（5s 内复用） */
+  let statsCache: { at: number; value: Awaited<ReturnType<typeof ctx.repo.stats>> } | null = null;
+  async function cachedStats() {
+    if (statsCache && Date.now() - statsCache.at < 5000) return statsCache.value;
+    const value = await ctx.repo.stats();
+    statsCache = { at: Date.now(), value };
+    return value;
+  }
+
+  async function renderMetrics(): Promise<string> {
+    const out: string[] = [];
+    const metric = (name: string, help: string, type: "gauge" | "counter" | "summary", lines: string[]) => {
+      if (lines.length === 0) return;
+      out.push("# HELP " + name + " " + help);
+      out.push("# TYPE " + name + " " + type);
+      out.push(...lines);
+    };
+    const gauge = (name: string, help: string, value: number, labels = "") =>
+      metric(name, help, "gauge", [name + labels + " " + value]);
+
+    const mem = process.memoryUsage();
+    const caps = ctx.capabilities;
+    const embeddingReady = ctx.embedding ? ctx.embedding.ready() : false;
+    const stats = await cachedStats();
+
+    out.push("# HELP navhub_build_info 构建与运行模式信息（值恒为 1）");
+    out.push("# TYPE navhub_build_info gauge");
+    out.push(`navhub_build_info{mode="${escLabel(ctx.config.mode)}",node="${escLabel(process.version)}"} 1`);
+
+    gauge("navhub_up", "进程存活（值恒为 1）", 1);
+    gauge("navhub_process_uptime_seconds", "进程运行时长（秒）", Math.round((Date.now() - metricsStartedAt) / 1000));
+    gauge("navhub_process_resident_memory_bytes", "常驻内存 RSS（字节）", mem.rss);
+    gauge("navhub_process_heap_used_bytes", "V8 堆已用（字节）", mem.heapUsed);
+    gauge("navhub_process_heap_total_bytes", "V8 堆总量（字节）", mem.heapTotal);
+
+    // 能力开关：0/1，便于告警「语义检索掉线」
+    metric("navhub_capability", "能力开关（1=可用）", "gauge", [
+      `navhub_capability{name="semantic"} ${caps.semantic ? 1 : 0}`,
+      `navhub_capability{name="fts"} ${caps.fts ? 1 : 0}`,
+      `navhub_capability{name="llm"} ${caps.llm ? 1 : 0}`,
+    ]);
+    gauge("navhub_embedding_ready", "embedding 模型是否已加载", embeddingReady ? 1 : 0);
+
+    // 数据规模
+    metric("navhub_sites", "站点数（按状态）", "gauge", [
+      `navhub_sites{status="active"} ${stats.sites}`,
+      `navhub_sites{status="broken"} ${stats.broken}`,
+      `navhub_sites{status="pending"} ${stats.pending}`,
+      `navhub_sites{status="trashed"} ${stats.trashed}`,
+    ]);
+    gauge("navhub_categories_total", "分类数", stats.categories);
+    gauge("navhub_tags_total", "标签数", stats.tags);
+
+    // HTTP：请求计数（method × 路由模板 × 状态码）
+    const countLines = [...httpCounts.entries()].map(([k, n]) => {
+      const [method, route, status] = splitKey(k);
+      return `navhub_http_requests_total{method="${escLabel(method)}",route="${escLabel(route)}",status="${escLabel(status)}"} ${n}`;
+    }).sort();
+    metric("navhub_http_requests_total", "HTTP 请求总数", "counter", countLines);
+
+    // HTTP：耗时（summary：_sum 秒 + _count）
+    const durLines: string[] = [];
+    for (const [k, d] of [...httpDurations.entries()].sort()) {
+      const [method, route] = splitKey(k);
+      const labels = `{method="${escLabel(method)}",route="${escLabel(route)}"}`;
+      durLines.push(`navhub_http_request_duration_seconds_sum${labels} ${(d.sumMs / 1000).toFixed(6)}`);
+      durLines.push(`navhub_http_request_duration_seconds_count${labels} ${d.count}`);
+    }
+    metric("navhub_http_request_duration_seconds", "HTTP 请求耗时（秒）", "summary", durLines);
+
+    return out.join("\n") + "\n";
+  }
+
+  // 全局错误兜底：统一 500 形态，避免 Fastify 默认 HTML 泄漏栈
+  app.setErrorHandler((err, _req, reply) => {
+    app.log.error(err);
+    const status = typeof (err as { statusCode?: unknown }).statusCode === "number"
+      ? (err as { statusCode: number }).statusCode : 500;
+    reply.code(status >= 400 && status < 600 ? status : 500).send({ error: status === 500 ? "内部错误" : (err as Error).message });
+  });
 
   /* ---------------------------- OpenAPI 路由收集 ---------------------------- */
 
@@ -265,6 +383,24 @@ export async function buildServer(ctx: AppContext) {
     embedding: ctx.embedding?.stats ? { cache: ctx.embedding.stats() } : undefined,
   }));
 
+  // 就绪探针：compose depends_on 应指 /ready（迁移水位+embedding 就绪），/health 仅表进程存活
+  app.get("/api/ready", async () => {
+    const embeddingReady = ctx.embedding ? ctx.embedding.ready() : false;
+    const semantic = Boolean(ctx.embedding && ctx.vectors && embeddingReady);
+    return { ok: true, mode: ctx.config.mode, semantic, embeddingReady, fts: Boolean(ctx.fts) };
+  });
+
+  /**
+   * Prometheus 指标（文本格式）。
+   * 权限位 read：开放模式（默认）与 /api/health 一样可匿名抓取；
+   * 一旦开启 NAVHUB_AUTH_REQUIRED，抓取方需带 read 及以上 scope 的 Bearer token。
+   * 刻意只暴露有界基数的维度与聚合计数，不含任何站点内容/身份信息。
+   */
+  app.get("/api/metrics", { config: { scope: "read" } }, async (_req, reply) => {
+    reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
+    return renderMetrics();
+  });
+
   /**
    * 显式预热 embedding 模型。
    * 默认惰性加载（不拖慢启动），需要时可主动调用（例如部署完成后预热）。
@@ -338,10 +474,13 @@ export async function buildServer(ctx: AppContext) {
     }
 
     const result = await ctx.search.search({ ...input, personalize });
-    // 批量取站点：一次 IN 查询代替逐条 getSite（与 MCP 同一 N+1 优化）
-    const sites = await ctx.repo.getSitesByIds(result.hits.map((h) => h.siteId));
-    const byId = new Map(sites.map((s) => [s.id, s]));
-    const hits = result.hits.map((h) => ({ ...h, site: byId.get(h.siteId) ?? null }));
+    // 批量取站点：旧实现 Promise.all(hits.map(getSite)) 是 N+1 查询，hits=100 时打 100 次 DB。
+    const siteIds = [...new Set(result.hits.map((h) => h.siteId))];
+    const siteMap = await ctx.repo.getSitesByIds(siteIds);
+    const hits = result.hits.map((h) => ({
+      ...h,
+      site: siteMap.get(h.siteId) ?? null,
+    }));
 
     const q = input.q.trim();
     const isFirstPage = (input.offset ?? 0) === 0;
@@ -382,12 +521,17 @@ export async function buildServer(ctx: AppContext) {
 
   /* ------------------------------ 站点 ------------------------------ */
 
+  // 注意：保持返回数组（不包 {items,hasMore}）：前端多处按数组消费，改结构会破坏兼容。
+  // 默认 limit 100、上限 1000 防全表扫；offset 分页支持。
   app.get("/api/sites", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 1000);
+    const offset = Math.max(0, Number(q.offset) || 0);
     return ctx.repo.listSites({
       categoryId: q.categoryId,
       status: q.status as never,
-      limit: q.limit && Number.isFinite(Number(q.limit)) ? Number(q.limit) : undefined,
+      limit,
+      offset,
     });
   });
 
@@ -504,11 +648,12 @@ export async function buildServer(ctx: AppContext) {
 
     // 逐个解析存在性：不存在的 id 计入 plan 的 skip，不整批失败——
     // 批量场景下部分目标已被人删掉是常态，报错会让操作方无法完成剩余部分
+    // 批量存在性检查一次 IN 查询（原逐个 getSite 是 N+1）
     const plan: Array<{ id: string; action: "apply" | "skip"; reason?: string }> = [];
     const targets: string[] = [];
+    const existMap = await ctx.repo.getSitesByIds(ids);
     for (const id of ids) {
-      const site = await ctx.repo.getSite(id);
-      if (!site) { plan.push({ id, action: "skip", reason: "站点不存在或已在回收站" }); continue; }
+      if (!existMap.has(id)) { plan.push({ id, action: "skip", reason: "站点不存在或已在回收站" }); continue; }
       plan.push({ id, action: "apply" });
       targets.push(id);
     }
@@ -517,6 +662,8 @@ export async function buildServer(ctx: AppContext) {
     }
 
     let applied = 0;
+    // 事务包裹批量写：中途失败整体回滚，避免半删半改；软删保留向量（恢复无需重建）。
+    await ctx.repo.withTransaction(async () => {
     for (const id of targets) {
       if (op === "delete") {
         await ctx.repo.deleteSite(id);
@@ -527,6 +674,7 @@ export async function buildServer(ctx: AppContext) {
       }
       applied++;
     }
+    });
     await ctx.repo.audit({
       ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
       action: "site.bulk", diff: { op, requested: ids.length, applied, skipped: ids.length - applied },
@@ -538,7 +686,7 @@ export async function buildServer(ctx: AppContext) {
    * 批量创建/导入站点（供书签导入器与批量脚本使用）。
    * 内部自动处理 URL 去重与分类回退，大幅降低并发 HTTP 往返与限流风险。
    */
-  app.post("/api/sites/batch", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post("/api/sites/batch", { config: { scope: "write", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
     const body = z.object({
       sites: z.array(z.object({
         url: z.string().url(),
@@ -556,8 +704,10 @@ export async function buildServer(ctx: AppContext) {
     const fallback = body.data.defaultCategoryId ?? cats[0]?.id ?? (await ctx.repo.createCategory({ title: "未分类" })).id;
     let created = 0;
     let duplicates = 0;
-    const createdSites = [];
+    const createdSites: Array<Awaited<ReturnType<typeof ctx.repo.createSite>>> = [];
 
+    // DB 写入包事务（去重检查 + 创建原子提交）；向量索引在提交后补做，避免长事务持有写锁。
+    await ctx.repo.withTransaction(async () => {
     for (const item of body.data.sites) {
       const cleanUrl = canonicalizeUrl(item.url);
       const dup = await ctx.repo.findSiteByUrl(cleanUrl);
@@ -573,9 +723,12 @@ export async function buildServer(ctx: AppContext) {
         tags: item.tags ?? [],
         source: item.source ?? "import",
       });
-      await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
       createdSites.push(site);
       created++;
+    }
+    });
+    for (const site of createdSites) {
+      await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
     }
 
     await ctx.repo.audit({
@@ -1211,11 +1364,26 @@ export async function buildServer(ctx: AppContext) {
     note: z.string().max(200).nullable().optional(),
   });
 
-  function identityOf(req: { query?: Record<string, unknown>; body?: unknown; headers?: Record<string, unknown> }): string | null {
+  function identityOf(req: { query: Record<string, unknown>; body: unknown; headers?: Record<string, string | undefined> }): string | null {
+    // 优先 header（避免 anonId 进 URL query 泄漏到日志/referer），query/body 仅兼容旧前端
+    const headers = (req as { headers?: Record<string, unknown> }).headers as Record<string, unknown> | undefined;
+    const pick = (...names: string[]): string | null => {
+      if (!headers) return null;
+      for (const n of names) {
+        const v = headers[n] ?? headers[n.toLowerCase()] ?? headers[n.toUpperCase()];
+        if (typeof v === "string" && v) return v.slice(0, 64);
+      }
+      return null;
+    };
+    // 前端实际发送 X-Navhub-Anon-Id（见 web-overlay lib/navhub-api.ts anonHeaders），短名保留兼容
+    const hUser = pick("x-navhub-user-id", "x-user-id");
+    if (hUser) return hUser;
+    const hAnon = pick("x-navhub-anon-id", "x-anon-id");
+    if (hAnon) return hAnon;
     const fromQuery = (req.query ?? {}) as Record<string, string>;
     const fromBody = (req.body ?? {}) as Record<string, string>;
-    const fromHeaders = (req.headers ?? {}) as Record<string, string>;
-    return fromQuery.userId ?? fromQuery.anonId ?? fromBody.userId ?? fromBody.anonId ?? fromHeaders["x-user-id"] ?? fromHeaders["x-anon-id"] ?? null;
+    const v = fromQuery.userId ?? fromQuery.anonId ?? fromBody.userId ?? fromBody.anonId ?? null;
+    return typeof v === "string" ? v.slice(0, 64) : v;
   }
 
   app.get("/api/favorites", async (req) => {
@@ -1223,7 +1391,9 @@ export async function buildServer(ctx: AppContext) {
     if (!identity) return { error: "缺少 userId 或 anonId" };
     const items = await ctx.repo.listFavorites(identity);
     const folders = await ctx.repo.listFavoriteFolders(identity);
-    const sites = await Promise.all(items.map((f) => ctx.repo.getSite(f.siteId)));
+    // 批量取站点（同 runSearch 的 N+1 优化）
+    const favSiteMap = await ctx.repo.getSitesByIds(items.map((f) => f.siteId));
+    const sites = items.map((f) => favSiteMap.get(f.siteId) ?? null);
     return {
       items: items.map((f, i) => ({ ...f, site: sites[i] })),
       folders,
@@ -1312,12 +1482,10 @@ export async function buildServer(ctx: AppContext) {
       const vec = await ctx.repo.getEmbedding(siteId);
       if (!vec) return { hits: [], semanticAvailable: true, reason: "该站点暂无向量" };
       const matches = await ctx.vectors.search(vec, limit + 1);
-      const hits = await Promise.all(
-        matches
-          .filter((m) => m.siteId !== siteId)
-          .slice(0, limit)
-          .map(async (m) => ({ site: await ctx.repo.getSite(m.siteId), distance: m.distance })),
-      );
+      // 批量取站点：matches 逐个 getSite 是 N+1，改为一次 IN 查询
+      const wanted = matches.filter((m) => m.siteId !== siteId).slice(0, limit);
+      const similarMap = await ctx.repo.getSitesByIds(wanted.map((m) => m.siteId));
+      const hits = wanted.map((m) => ({ site: similarMap.get(m.siteId) ?? null, distance: m.distance }));
       return { hits: hits.filter((h) => h.site), semanticAvailable: true };
     } catch {
       // 模型不可用不该让推荐端点 5xx
@@ -2008,6 +2176,7 @@ export async function buildServer(ctx: AppContext) {
     const wanted = Number(number);
     if (!Number.isFinite(wanted)) { reply.code(400); return { success: false, message: "无效的投稿编号" }; }
     // 精准按 source=submission 过滤查询反查 hash，不受全站常规站点数量影响
+    // 注意：djb2 截断风险——投稿超 1000 会被 limit 截断而 404；兼容旧前端，新前端请直传 siteId。
     const candidates = await ctx.repo.listSites({ source: "submission", limit: 1000 });
     const site = candidates.find((s) => submissionNumber(s.id) === wanted);
     if (!site) { reply.code(404); return { success: false, message: "投稿不存在" }; }

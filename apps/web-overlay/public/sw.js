@@ -60,8 +60,11 @@ if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.
       event.respondWith(
         fetch(req)
           .then((res) => {
-            const copy = res.clone()
-            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => undefined)
+            // 只缓存 200 成功页，避免把 dev 重建期的 404/500 钉进缓存
+            if (res && res.ok) {
+              const copy = res.clone()
+              caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => undefined)
+            }
             return res
           })
           .catch(() => caches.match(req).then((hit) => hit || caches.match('/')))

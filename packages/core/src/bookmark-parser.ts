@@ -65,6 +65,8 @@ export function normalizeBookmarkUrl(rawUrl: string): string {
 
   try {
     const url = new URL(trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`)
+    // 只允许 http/https，其他协议（javascript:/data:/file:/place:）直接拒收，避免 XSS/本地文件读取
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
     
     // 移除已知的跟踪参数
     const searchParams = new URLSearchParams(url.search)
@@ -106,6 +108,19 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ')
+}
+
+/**
+ * 书签 ADD_DATE 秒/毫秒/微秒自适应：
+ * Chrome 为秒（~1.7e9），部分导出为毫秒（1.7e12），Firefox 有微秒（1.7e15）。
+ */
+export function parseBookmarkDate(raw: string | undefined | null): number {
+  if (!raw) return Date.now();
+  const n = Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(n)) return Date.now();
+  if (n > 1e14) return Math.floor(n / 1000); // 微秒 -> 毫秒
+  if (n > 1e12) return n; // 已是毫秒
+  return n * 1000; // 秒 -> 毫秒
 }
 
 /**
@@ -182,15 +197,16 @@ export function parseNetscapeBookmarksHtml(htmlString: string): ParsedBookmarkFo
         title = decodeHtmlEntities(nextContent.replace(/<[^>]+>/g, '')).trim()
       }
 
-      if (href && !href.startsWith('place:') && !href.startsWith('javascript:')) {
+      if (href && !/^(place:|javascript:|data:|vbscript:|file:)/i.test(href)) {
         const currentFolder = folderStack[folderStack.length - 1]!
         const cleanHref = normalizeBookmarkUrl(href)
+        if (!cleanHref) continue
 
         const item: ParsedBookmarkItem = {
           title: title || cleanHref,
           href: cleanHref,
           icon: iconMatch ? iconMatch[1] : undefined,
-          addDate: addDateMatch && addDateMatch[1] ? parseInt(addDateMatch[1], 10) * 1000 : Date.now(),
+          addDate: parseBookmarkDate(addDateMatch?.[1]),
           categoryTitle: currentFolder.title,
         }
 
@@ -410,9 +426,18 @@ export interface DeduplicateResult<T extends { href: string; title: string }> {
 
 /**
  * 书签列表精准与模糊查重算法：
- * 1. 精准比对：规范化 URL（去除 utm 参、小写 host、尾斜杠对齐）
+ * 1. 精准比对：规范化 URL（去除 utm 参、小写 host、尾斜杠对齐、去 www. 前缀）
  * 2. 弱匹配比对：若标题与已有站点完全一致且域名相同
  */
+export function canonicalBookmarkKey(href: string): string {
+  const norm = normalizeBookmarkUrl(href);
+  if (!norm) return '';
+  try {
+    const u = new URL(norm.startsWith('http') ? norm : `https://${norm}`);
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    return `${u.protocol}//${host}${u.pathname}${u.search}${u.hash}`;
+  } catch { return norm.toLowerCase().replace(/^https?:\/\/(www\.)?/, 'https://'); }
+}
 export function deduplicateBookmarkItems<
   T extends { href: string; title: string },
   E extends { href: string; title: string } = { href: string; title: string }
@@ -424,7 +449,7 @@ export function deduplicateBookmarkItems<
   const existingTitleDomainSet = new Set<string>()
 
   for (const item of existingItems) {
-    const norm = normalizeBookmarkUrl(item.href)
+    const norm = canonicalBookmarkKey(item.href);
     if (norm) existingUrlSet.add(norm)
     try {
       const u = new URL(norm.startsWith('http') ? norm : `https://${norm}`)
@@ -437,7 +462,7 @@ export function deduplicateBookmarkItems<
   const seenInBatch = new Set<string>()
 
   for (const item of incomingItems) {
-    const norm = normalizeBookmarkUrl(item.href)
+    const norm = canonicalBookmarkKey(item.href);
     if (!norm) continue
 
     let isDuplicate = existingUrlSet.has(norm) || seenInBatch.has(norm)

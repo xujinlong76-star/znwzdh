@@ -81,6 +81,8 @@ import {
   sortCategoryItemsWithPinned,
   computeAdaptiveSiteRanking,
   suggestCategoryForSite,
+  isSafeWallpaperUrl,
+  isSafeSiteHref,
 } from '@/lib/modular/diy-presets'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -104,6 +106,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
   const [customSiteDesc, setCustomSiteDesc] = useState('')
 
   const {
+    mounted,
     viewMode,
     cardDisplayMode,
     canvasBackground,
@@ -275,9 +278,19 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
   const handleAddCustomSiteSubmit = () => {
     if (!addSiteTargetCatId || !customSiteTitle.trim() || !customSiteHref.trim()) return
 
-    let finalHref = customSiteHref.trim()
-    if (!/^https?:\/\//i.test(finalHref)) {
+    const rawHref = customSiteHref.trim()
+    // 拦截 javascript:/data:/vbscript: 等伪协议（纵深防御，防存储型 XSS）
+    if (/^(javascript|data|vbscript|file|blob):/i.test(rawHref)) {
+      toast({ title: '⚠️ 网址不安全', description: '仅允许 http/https 或站内相对路径。' })
+      return
+    }
+    let finalHref = rawHref
+    if (!/^https?:\/\//i.test(finalHref) && !finalHref.startsWith('/')) {
       finalHref = `https://${finalHref}`
+    }
+    if (!isSafeSiteHref(finalHref)) {
+      toast({ title: '⚠️ 网址不合法', description: '请输入合法的 http(s) 网址。' })
+      return
     }
 
     addSiteToCustomCategory(addSiteTargetCatId, {
@@ -335,7 +348,9 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
 
       <main
         className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-300", canvasBgClass)}
-        style={customWallpaperUrl ? {
+        // 水合安全：壁纸来自 localStorage（仅客户端），首帧与 SSR 保持一致（undefined），
+        // 挂载后再上壁纸，避免 style 分叉触发 hydration mismatch；URL 白名单防 CSS url() 注入
+        style={mounted && customWallpaperUrl && isSafeWallpaperUrl(customWallpaperUrl) ? {
           backgroundImage: `url(${customWallpaperUrl})`,
           backgroundSize: 'cover',
           backgroundAttachment: 'fixed',
@@ -600,6 +615,13 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                             if (raw) {
                               const card = JSON.parse(raw)
                               if (isCustom && card.title && card.href) {
+                                if (!isSafeSiteHref(card.href)) {
+                                  toast({
+                                    title: '⚠️ 拖拽收录已拦截',
+                                    description: '该卡片地址不安全，仅允许 http/https 或站内路径。',
+                                  })
+                                  return
+                                }
                                 const exists = (category.items as any[])?.some(
                                   (item: any) => item.href === card.href || item.title === card.title
                                 )

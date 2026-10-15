@@ -93,6 +93,214 @@ export function hammingDistance64(hashA: string, hashB: string): number {
 }
 
 
+/* ------------------------------------------------------------------ *
+ * 基于 Weibull 寿命分布的死链巡检调度
+ * ------------------------------------------------------------------ *
+ * 为什么需要它：按「所有站点一个固定周期轮流查」排巡检，等价于假设
+ * 每个站点的失效风险与年龄无关。但外链的真实形态是**失效率随年龄上升**
+ * （域名到期、站点关停、改版换路由），所以老链接该被查得更勤。
+ *
+ * Weibull 的 shape k 正好表达这一点：
+ *   k < 1  早期失效（新生儿死亡）——链接刚收录时最容易是错的
+ *   k = 1  指数分布，风险与年龄无关（等价于固定周期轮询）
+ *   k > 1  磨损失效，越老越危险 —— 外链的常态
+ *
+ * 存活函数  S(t) = exp(-(t/λ)^k)
+ * 风险函数  h(t) = (k/λ)(t/λ)^(k-1)
+ */
+
+export interface WeibullParams {
+  /** 形状参数 k */
+  shape: number;
+  /** 尺度参数 λ（特征寿命），单位：天 */
+  scale: number;
+}
+
+/** 默认参数：k=1.6 表示失效率随年龄上升；λ=900 天（约 2.5 年）为外链特征寿命 */
+export const DEFAULT_WEIBULL: WeibullParams = { shape: 1.6, scale: 900 };
+
+/** 巡检节奏的上下界：再急也不天天查，再稳也不能放任一两年 */
+export const PATROL_MIN_DAYS = 1;
+export const PATROL_MAX_DAYS = 180;
+
+const LANCZOS_G = 7;
+const LANCZOS_C = [
+  0.9999999999998099, 676.5203681218851, -1259.1392167224028, 771.3234287776531,
+  -176.6150291621406, 12.507343278686905, -0.13857109526572012, 9.984369578019572e-6,
+  1.5056327351493116e-7,
+];
+
+/** 对数 Gamma（Lanczos 近似），用于 Weibull 矩估计里的 Γ(1+1/k) */
+export function logGamma(x: number): number {
+  if (!Number.isFinite(x) || x <= 0) return Number.NaN;
+  if (x < 0.5) {
+    // 反射公式 Γ(x)Γ(1-x) = π / sin(πx)
+    return Math.log(Math.PI / Math.sin(Math.PI * x)) - logGamma(1 - x);
+  }
+  const z = x - 1;
+  let a = LANCZOS_C[0]!;
+  const t = z + LANCZOS_G + 0.5;
+  for (let i = 1; i < LANCZOS_C.length; i++) {
+    a += LANCZOS_C[i]! / (z + i);
+  }
+  return 0.5 * Math.log(2 * Math.PI) + (z + 0.5) * Math.log(t) - t + Math.log(a);
+}
+
+export function gamma(x: number): number {
+  const l = logGamma(x);
+  return Number.isFinite(l) ? Math.exp(l) : Number.NaN;
+}
+
+/** 存活概率 S(t)：活到 ageDays 天仍然健康的概率 */
+export function weibullSurvival(ageDays: number, params: WeibullParams = DEFAULT_WEIBULL): number {
+  if (!Number.isFinite(ageDays) || ageDays <= 0) return 1;
+  const k = params.shape > 0 ? params.shape : 1;
+  const lam = params.scale > 0 ? params.scale : DEFAULT_WEIBULL.scale;
+  const v = Math.exp(-Math.pow(ageDays / lam, k));
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+}
+
+/** 瞬时失效率 h(t) */
+export function weibullHazard(ageDays: number, params: WeibullParams = DEFAULT_WEIBULL): number {
+  if (!Number.isFinite(ageDays) || ageDays <= 0) return 0;
+  const k = params.shape > 0 ? params.shape : 1;
+  const lam = params.scale > 0 ? params.scale : DEFAULT_WEIBULL.scale;
+  const v = (k / lam) * Math.pow(ageDays / lam, k - 1);
+  return Number.isFinite(v) ? Math.max(0, v) : 0;
+}
+
+/**
+ * 由观测到的寿命样本（单位天）做矩估计拟合 Weibull。
+ *
+ * 用变异系数反解 shape：CV² = Γ(1+2/k)/Γ(1+1/k)² − 1，该式只依赖 k 且单调递减，
+ * 二分即可稳定求解；再由 mean = λΓ(1+1/k) 解出 λ。
+ *
+ * 样本不足或退化（均值非正、方差为 0）时退回默认参数——
+ * 宁可用先验，也不要拟合出一个把巡检周期压到 0 天的病态参数。
+ */
+export function fitWeibullByMoments(lifetimesDays: number[]): WeibullParams {
+  const xs = lifetimesDays.filter((v) => Number.isFinite(v) && v > 0);
+  if (xs.length < 2) return { ...DEFAULT_WEIBULL };
+
+  const n = xs.length;
+  const mean = xs.reduce((s, v) => s + v, 0) / n;
+  if (!(mean > 0)) return { ...DEFAULT_WEIBULL };
+  const variance = xs.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1);
+  if (!(variance > 0)) return { ...DEFAULT_WEIBULL };
+
+  const cv2 = variance / (mean * mean);
+
+  // f(k) = Γ(1+2/k)/Γ(1+1/k)² − 1 − cv2，单调递减，二分求根
+  const f = (k: number): number => {
+    const g1 = gamma(1 + 1 / k);
+    const g2 = gamma(1 + 2 / k);
+    if (!Number.isFinite(g1) || !Number.isFinite(g2) || g1 <= 0) return Number.NaN;
+    return g2 / (g1 * g1) - 1 - cv2;
+  };
+
+  let lo = 0.2;
+  let hi = 20;
+  let flo = f(lo);
+  let fhi = f(hi);
+  if (!Number.isFinite(flo) || !Number.isFinite(fhi) || flo * fhi > 0) {
+    return { ...DEFAULT_WEIBULL };
+  }
+  for (let i = 0; i < 80; i++) {
+    const mid = (lo + hi) / 2;
+    const fmid = f(mid);
+    if (!Number.isFinite(fmid)) break;
+    if (fmid > 0) lo = mid;
+    else hi = mid;
+    if (hi - lo < 1e-6) break;
+  }
+
+  const shape = (lo + hi) / 2;
+  const g1 = gamma(1 + 1 / shape);
+  const scale = Number.isFinite(g1) && g1 > 0 ? mean / g1 : mean;
+  if (!Number.isFinite(shape) || !Number.isFinite(scale) || shape <= 0 || scale <= 0) {
+    return { ...DEFAULT_WEIBULL };
+  }
+  return { shape, scale };
+}
+
+/**
+ * 已知活了 ageDays 天，再隔多久它的存活概率会跌到 (1 - riskBudget)。
+ *
+ * 解 S(t+Δ)/S(t) = 1 − riskBudget：
+ *   ((t+Δ)/λ)^k − (t/λ)^k = −ln(1 − riskBudget)
+ *   t+Δ = λ · ((t/λ)^k − ln(1 − riskBudget))^(1/k)
+ */
+export function nextPatrolDelayDays(
+  ageDays: number,
+  riskBudget = 0.15,
+  params: WeibullParams = DEFAULT_WEIBULL
+): number {
+  const k = params.shape > 0 ? params.shape : 1;
+  const lam = params.scale > 0 ? params.scale : DEFAULT_WEIBULL.scale;
+  const t = Number.isFinite(ageDays) && ageDays > 0 ? ageDays : 0;
+  const budget = Math.min(0.95, Math.max(0.01, riskBudget));
+
+  const target = Math.pow(t / lam, k) - Math.log(1 - budget);
+  if (!Number.isFinite(target) || target <= 0) return PATROL_MIN_DAYS;
+
+  const tNext = lam * Math.pow(target, 1 / k);
+  const delta = tNext - t;
+  if (!Number.isFinite(delta)) return PATROL_MAX_DAYS;
+  return Math.min(PATROL_MAX_DAYS, Math.max(PATROL_MIN_DAYS, Math.round(delta * 100) / 100));
+}
+
+export interface PatrolTarget {
+  siteId: string;
+  /** 上次巡检时间戳（ms）；没有就按创建时间算年龄 */
+  lastCheckedAt?: number | null;
+  createdAt?: number | null;
+}
+
+export interface PatrolPlanEntry {
+  siteId: string;
+  ageDays: number;
+  /** 当前估计的存活概率 [0,1] */
+  survival: number;
+  /** 距下次该查它的天数 */
+  nextCheckInDays: number;
+  /** 距下次巡检的绝对时间戳 */
+  nextCheckAt: number;
+}
+
+/**
+ * 生成巡检优先级队列：存活概率越低（越可能是死链）排越前。
+ *
+ * 这就是「按风险排巡检」相对「按 id 顺序取前 N 个」的全部价值：
+ * 同样的 limit 预算，优先覆盖真正可能已经挂掉的站点。
+ */
+export function planPatrol(
+  targets: PatrolTarget[],
+  now: number = Date.now(),
+  params: WeibullParams = DEFAULT_WEIBULL,
+  riskBudget = 0.15
+): PatrolPlanEntry[] {
+  const DAY = 86_400_000;
+  const out: PatrolPlanEntry[] = [];
+
+  for (const t of targets) {
+    const ref = t.lastCheckedAt ?? t.createdAt ?? null;
+    const ageDays = ref && ref > 0 ? Math.max(0, (now - ref) / DAY) : 0;
+    const survival = weibullSurvival(ageDays, params);
+    const delay = nextPatrolDelayDays(ageDays, riskBudget, params);
+    out.push({
+      siteId: t.siteId,
+      ageDays: Math.round(ageDays * 100) / 100,
+      survival: Math.round(survival * 1e4) / 1e4,
+      nextCheckInDays: delay,
+      nextCheckAt: Math.round(now + delay * DAY),
+    });
+  }
+
+  // 存活概率升序（最危险的先查）；相同则按 siteId 保证确定性
+  out.sort((a, b) => a.survival - b.survival || a.siteId.localeCompare(b.siteId));
+  return out;
+}
+
 export type HealthStatus = 'HEALTHY' | 'SUSPICIOUS_PARKED' | 'SOFT_404' | 'THIN_CONTENT';
 
 export interface HealthAuditResult {

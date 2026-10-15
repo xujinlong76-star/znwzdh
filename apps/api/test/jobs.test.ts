@@ -271,4 +271,33 @@ describe("个性化画像服务", () => {
       .get("site.heal", site.id) as { c: number };
     expect(Number(audit.c)).toBeGreaterThan(0);
   });
+
+  it("health_check 巡检按 Weibull 存活概率优先调度陈旧/高危站点", async () => {
+    const now = Date.now();
+    const DAY = 86_400_000;
+    const recent = await ctx.repo.createSite({
+      url: "https://recent.example.com",
+      title: "近期已查站点",
+      categoryId: "ai-cat",
+      status: "active",
+    });
+    const stale = await ctx.repo.createSite({
+      url: "https://stale.example.com",
+      title: "长期未巡检站点",
+      categoryId: "ai-cat",
+      status: "active",
+    });
+
+    ctx.db.sqlite!.prepare("UPDATE sites SET last_checked_at = ? WHERE id = ?").run(now - 500 * DAY, stale.id);
+    ctx.db.sqlite!.prepare("UPDATE sites SET last_checked_at = ? WHERE id = ?").run(now - 1 * DAY, recent.id);
+
+    const runner = new JobRunner(ctx, { intervalMs: 1000 });
+    const targets = await (runner as any).patrolTargets(50);
+    const staleIndex = targets.findIndex((t: any) => t.id === stale.id);
+    const recentIndex = targets.findIndex((t: any) => t.id === recent.id);
+    expect(staleIndex).toBeGreaterThanOrEqual(0);
+    expect(recentIndex).toBeGreaterThanOrEqual(0);
+    expect(staleIndex).toBeLessThan(recentIndex);
+  });
 });
+

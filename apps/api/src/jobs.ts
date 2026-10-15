@@ -15,7 +15,7 @@
  */
 
 import { enrichUrl } from "@navhub/ai";
-import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing } from "@navhub/core";
+import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol } from "@navhub/core";
 import type { AppContext } from "./context.ts";
 import { indexSite } from "./index-site.ts";
 
@@ -224,11 +224,46 @@ export class JobRunner {
     } catch { /* 回调失败不影响任务流 */ }
   }
 
+  /**
+   * 按 Weibull 寿命模型挑出本次该巡检的站点。
+   *
+   * 原先是 `listSites({ limit })` —— 等价于按 id 顺序取前 N 个，
+   * 也就是假设「失效风险与站点年龄无关」。外链的实际形态是越老越容易挂
+   * （域名到期、站点关停、改版换路由），所以这里改为：
+   *   1. 取一个更大的候选池（PATROL_POOL_FACTOR × limit）
+   *   2. 用 planPatrol 按存活概率升序排（最可能已失效的排最前）
+   *   3. 取前 limit 个
+   * 同样的抓取预算，覆盖到的才是真正可能已经挂掉的站点。
+   */
+  private async patrolTargets(limit: number) {
+    const poolLimit = Math.min(2000, Math.max(limit, limit * 4));
+    const pool = await this.ctx.repo.listSites({ limit: poolLimit });
+    const alive = pool.filter((s): s is NonNullable<typeof s> => Boolean(s));
+    if (alive.length <= limit) return alive;
+
+    const plan = planPatrol(
+      alive.map((s) => ({
+        siteId: s.id,
+        // 上次巡检时间戳在 health 子对象里（没查过就退回创建时间算年龄）
+        lastCheckedAt: s.health?.lastCheckedAt ?? null,
+        createdAt: s.createdAt ?? null,
+      })),
+    );
+    const idToSite = new Map(alive.map((s) => [s.id, s]));
+    const picked: typeof alive = [];
+    for (const entry of plan) {
+      const site = idToSite.get(entry.siteId);
+      if (site) picked.push(site);
+      if (picked.length >= limit) break;
+    }
+    return picked;
+  }
+
   /** 健康巡检：与 MCP health_check 同一套抓取逻辑，但走仓储（双方言） */
   private async runHealthCheck(payload: { siteId?: string; limit?: number }): Promise<void> {
     const { guardedFetch } = await import("@navhub/ai");
     const limit = payload.limit ?? 50;
-    const found = payload.siteId ? [await this.ctx.repo.getSite(payload.siteId)] : await this.ctx.repo.listSites({ limit });
+    const found = payload.siteId ? [await this.ctx.repo.getSite(payload.siteId)] : await this.patrolTargets(limit);
     const targets = found.filter((s): s is NonNullable<typeof s> => Boolean(s));
     let ok = 0;
     for (const site of targets) {

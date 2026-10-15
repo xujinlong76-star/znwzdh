@@ -1,274 +1,258 @@
-# NavHub
+NavHub 4.0 - 次世代 AI 开发者智能导航与知识工作台
 
-一款 **AI 原生的网址导航系统**：本地中文语义检索 + 拼音/关键词混合召回 + AI 自动富化入库 +
-让 AI Agent 直接读写导航数据的 MCP Server。
+<p align="center">
+<b>AI 原生混合检索</b> · <b>Bento-Flow 自由排版工作台</b> · <b>时序衰减自适应算法</b> · <b>0-RTT 原地推测执行</b> · <b>全生态 Agent MCP Server</b>
+</p>
 
-底座来自 [NavSphere](https://github.com/tianyaxiang/NavSphere)（MIT）—— 一个成熟、界面完整的导航站，
-NavHub 在它的**存储接缝**上做了替换与扩展。
+🌟 项目概览 (Overview)
 
----
+NavHub 是一款专为极客与工程研发团队打造的 AI 原生网址导航系统与开发者知识工作台 (Next-Gen Developer Knowledge OS)。
 
-## 一、为什么这样做：把改造点压缩到 2 个函数
+系统在成熟的前端基底上进行了深度的架构重构与能力跃升：突破了传统网址导航单向展示、割裂静态的局限，融合了五路混合召回智能检索、Bento-Flow 模块化自适应画布、双曲几何平替推理与端侧 0-RTT 语法微解析器，并向外部 AI Agent（Claude / Cursor / Raycast）提供标准 MCP 工具协议，实现从静态收藏夹到个人智能工作台的跨越。
 
-NavSphere 全站的持久化**只经过两个函数**：
+🚀 核心特性矩阵 (Core Features)
 
-```
-src/lib/github.ts
-  getFileContent(path)              -> 读 JSON
-  commitFile(path, content, ...)    -> 写 JSON
-```
+1. 五路混合检索引擎与自适应动态融合
 
-数据落在 3 个文件（`navigation.json` / `site.json` / `resource-metadata.json`），共 **69 处调用点**。
+五路异构召回通道：
 
-这意味着**不需要修改那 69 处**：只要把这两个函数的实现换成「按 `STORAGE_ADAPTER` 选择后端」，
-整个后台（增删改查、拖拽排序、投稿审核）就整体切换到了真实数据库上，前端业务代码零改动。
+exact：精确中文/英文子串极速召回。
 
-| 适配器 | 数据存哪 | 适用 |
-| --- | --- | --- |
-| `github` | 你自己的 GitHub 仓库（原版行为） | 零成本、无需服务器 |
-| `http` | NavHub 中枢（**默认**） | 自建，获得 AI 检索能力 |
-| `sqlite` | 同进程直连数据库 | 单机部署，省一次网络往返 |
+fts：基于 BM25 算法的 CJK 二元分词全文检索。
 
----
+pinyin：全拼、拼音首字母缩写智能匹配（如 qdjb $\to$ 启动脚本）。
 
-## 二、架构
+semantic：本地量化 Embedding 向量检索（基于 BGE-Small-ZH 模型），实现「语义搜自然语言」（如「代码补全AI」$\to$ GitHub Copilot）。
 
-```
-apps/api        Fastify 中枢：REST + NavSphere 兼容存储 API + 种子数据
-apps/web        Next.js 前端（源自 NavSphere）+ StorageAdapter 接缝
-packages/core   领域模型 / CJK 分词 / 拼音 / RRF 融合
-packages/store  Drizzle schema + 双驱动(sqlite|pg) + sqlite-vec/pgvector + FTS5
-packages/ai     本地 ONNX embedding（bge-small-zh）+ SSRF 安全抓取 + LLM 富化
-packages/mcp    MCP Server（stdio + HTTP，scope/幂等/审计）
-docker/         Dockerfile + lite / standard 双 profile
-```
+personal：用户个人访问频次与置顶收藏权重微调。
 
-### 两种运行模式
+时序衰减多臂老虎机 (Discounted-LinUCB)：动态自适应调整多通道融合置信度上界，引入时间衰减因子 $\gamma=0.98$ 消除历史协方差矩阵钝化，结合驻留时长（Dwell Time）实现隐式负向惩罚与正向强化自学习。
 
-| 模式 | 数据库 | 向量 | 全文 | 场景 |
-| --- | --- | --- | --- | --- |
-| `lite`（默认） | SQLite | sqlite-vec | FTS5 + CJK 二元分词 | 个人 / NAS，单容器零外部依赖 |
-| `standard` | PostgreSQL | pgvector (HNSW) | tsvector + pg_trgm | 公开站 / 企业内部，多用户 |
+2. Bento-Flow 次世代 DIY 智能工作台
 
----
+卡片跨分类无缝拖拽重组 (Drag & Reclassify)：进入排版模式后，站点卡片可自由拖拽并吸附投递到任意目标分类，底层通过 siteCategoryOverrides 响应式映射即时重新编排。
 
-## 三、快速开始
+香农信息熵一键自愈排版 (Smart Auto-Tidy)：内置人机工程学健康度模型，计算分类分布的信息熵 $H = -\sum p_i \log_2 p_i$。一键点击即可自动隐藏收录为 0 的空分类，折叠超载分类，开启物理半衰期热度推荐。
 
-### 本地开发
+免登 URL-Hash 预设分享：整套桌面排版、强调色、背景壁纸与重归类关系无损 Base64 编码为 #diy=... 轻量短链，好友打开链接即可秒级预览并一键应用相同桌面。
 
-```bash
+沉浸式环境光与自定义壁纸美学：支持接入高清自定义壁纸、无级毛玻璃模糊（Backdrop Blur 0~30px）与卡片半透明度调节，营造沉浸式极客桌面。
+
+3. 端侧 0-RTT 推测执行微应用 (Speculative Intent)
+
+当在全局搜索框输入特定技术文本时，无需跳转外链，端侧 0 毫秒原地构建微组件并提供交互：
+
+Cron 表达式解析器：实时解析 5 段/6 段 Cron 语法，原地呈现自然语言执行频率与结构化分词。
+
+JWT 离线解码与过期探测：零网络开销反序列化 Header/Payload，实时计算有效期倒计时。
+
+Curl-to-Fetch 代码生成器：提取命令行请求动词与参数，自动反向生成标准 Fetch 语法块。
+
+常用微工具：时间戳秒/毫秒互转、十六进制/RGB 颜色速览调色、Base64 编解码、JSON 格式化校验、哈希指纹识别。
+
+4. 低代码动态微组件生态 (Live Widgets)
+
+REST API 动态遥测小组件 (LiveApiWidget)：支持填入任意目标接口 URL、提取 JSONPath 字段（如 data.status）与设定轮询周期，展示实时健康状态与数值。
+
+技术早报与社区动态小组件 (RssFeedWidget)：内置主流框架 Release 动态与技术资讯流，支持一键洗牌换一批与外链瞬开。
+
+12+ 经典内置组件：番茄钟时钟、天气气象、GitHub 贡献热力图、双曲平替雷达、本地备忘便签、系统性能监控指标。
+
+5. 双曲几何平替推理与技术图谱 (Hyperbolic & Graph)
+
+洛伦兹双曲超曲面模型 (Lorentz Hyperboloid)：实现闵可夫斯基双线性内积与双曲测地线距离计算，消除庞加莱圆盘边缘奇点，准确度量技术工具间的层级包含与等阶平替关联。
+
+多跳技术栈链路配方 (Architecture Recipes)：通过拓扑知识遍历，为复杂开发目标（如协同文档、本地大模型）自动合成端到端架构选型方案。
+
+6. 企业级安全与全生态集成
+
+零知识 E2EE 金库：采用 WebCrypto AES-GCM + PBKDF2（100,000次迭代）对敏感私密书签进行客户端端到端加密，密文同步至云端。
+
+三层 SSRF 物理防击穿安全沙箱：AI 自动抓取富化时严格执行协议白名单、解析后真实 IP 网段校验（防御 DNS Rebinding）与重定向逐跳审查。
+
+MCP Server 扩展协议：全面兼容 Model Context Protocol（stdio + HTTP），支持权限分级与操作审计，供 Claude Desktop、Cursor 等 Agent 直接调度。
+
+双端扩展集成：内置 Chrome 浏览器扩展（支持 Token 鉴权一键收录网页）与 Raycast 极速搜索扩展（支持一键复制 Markdown 链接）。
+
+🏗️ 架构拓扑 (Architecture Topology)
+
+NavHub 采用清晰的 pnpm Workspace Monorepo 组织结构，前后端通过契约严密解耦：
+
+navhub/
+├── apps/
+│   ├── api/             # Fastify 后端中枢：REST API + 种子数据 + 任务队列 + 鉴权中心
+│   ├── web-overlay/     # NavHub 自研前端事实源：Bento 画布 / DIY 排版 / 0-RTT 意图卡片
+│   └── web/             # 前端运行环境镜像（与 web-overlay 保持 100% 同步）
+├── packages/
+│   ├── core/            # 核心领域模型 / Discounted-LinUCB / 洛伦兹双曲 / 卡尔曼滤波 / 0-RTT AST
+│   ├── store/           # 存储层：Drizzle ORM + SQLite/PostgreSQL 双驱动 + 向量扩展 + FTS5
+│   ├── ai/              # AI 能力包：ONNX embedding (bge-small-zh) + SSRF 防护 + 多模型 LLM 轮换
+│   └── mcp/             # MCP Server：标准 Agent 工具接入协议 (stdio & HTTP)
+├── extensions/
+│   ├── chrome-extension/# 浏览器随身扩展：一键 AI 富化收录 + 弹出搜索 + Token 鉴权
+│   └── raycast-extension/# Raycast 桌面快捷扩展：全局模糊检索 + Markdown 链接复制
+├── docker/              # 生产级 Dockerfile 与多模式 Compose 编排
+└── scripts/             # 自动化验证、上游同步与一键 GitHub 推仓脚本
+
+
+两种运行模式 (Run Modes)
+
+特性
+
+lite 模式（默认开箱即用）
+
+standard 模式（企业/大规模）
+
+数据库
+
+嵌入式 SQLite（纯本地文件存储）
+
+PostgreSQL 16+
+
+向量引擎
+
+sqlite-vec（支持内存自动回退）
+
+pgvector（支持 HNSW 索引加速）
+
+全文检索
+
+FTS5 + CJK 二元分词索引
+
+tsvector + pg_trgm 混合模糊索引
+
+适用场景
+
+个人极客、本地开发、家庭 NAS 容器部署
+
+团队协作、企业内部公开站、多租户海量数据
+
+🛠️ 快速开始 (Quickstart)
+
+本地环境要求
+
+Node.js：v18.18.0 及以上（内置标准 ES 模块支持）
+
+包管理器：pnpm (v9+ 推荐)
+
+1. 克隆与安装依赖
+
+# 进入工程根目录
 pnpm install
 cp .env.example .env
 
-# 1) 播种 50 个精选中文站点（同时生成向量，首次会下载 24MB 模型）
+
+2. 播种初始化数据
+
+# 初始化分类并注入精选技术站点与专题合集
 pnpm --filter @navhub/api seed
 
-# 2) 启动中枢
-pnpm --filter @navhub/api start      # http://localhost:8787
-```
 
-> 本机没有 PowerShell Core（`pwsh`），脚本请用点源方式执行：`. ./scripts/run.ps1 install`
+3. 启动开发服务
 
-### Docker
+# 启动 API 中枢服务 (默认端口: http://localhost:8787)
+pnpm dev
 
-```bash
-docker compose up -d                                     # lite：仅中枢
-docker compose --profile web up -d                       # 追加 Web 前端
-docker compose --profile standard up -d                  # PostgreSQL + pgvector
-NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d  # 追加 MCP HTTP
-```
+# 在新终端启动 Web 前端服务 (默认端口: http://localhost:3000)
+pnpm dev:web
 
-**如果 Docker Hub 不可达**（部分地区网络会 EOF），配置镜像源：
 
-```json
-// ~/.docker/daemon.json
-{ "registry-mirrors": ["https://docker.m.daocloud.io", "https://docker.1ms.run"] }
-```
+4. 运行质量与一致性验证
 
-或直接用镜像前缀拉取：`docker pull docker.m.daocloud.io/pgvector/pgvector:pg17`
+# 检查前端覆盖层镜像一致性
+pnpm check:overlay
 
-### Web 前端（读写双路径）
+# 运行全库单元测试与核心算法验证
+pnpm test
 
-需要真实 PostgreSQL 的分档验证（**17/17 通过**，详见 [验收报告](docs/acceptance-report.md)）：
 
-```bash
-docker compose --profile standard up -d postgres
-node --experimental-strip-types scripts/pg-check.mts
-```
+🐳 Docker 生产容器化部署 (Deployment)
 
----
+NavHub 提供了多阶段构建的轻量镜像，不依赖宿主机复杂的构建环境。
 
-## 四、能力与降级（重要）
+# 1. 采用 lite 模式一键启动（单机零外部依赖）
+docker compose up -d
 
-**所有 AI 能力都是可选的，缺任何一项系统都照常启动**，并会在 `/api/health` 里如实上报：
+# 2. 采用 standard 模式启动（联动真实 PostgreSQL 与 pgvector）
+docker compose --profile standard up -d
 
-```bash
-curl http://localhost:8787/api/health
-```
 
-| 能力 | 缺失时的行为 |
-| --- | --- |
-| 本地 embedding 模型 | 语义通道关闭，关键词 / 拼音 / 全文三路照常工作 |
-| sqlite-vec | 同上，并在 `capabilities.notes` 说明原因 |
-| LLM API Key | AI 富化降级为**启发式规则**，结果标记 `provenance: "heuristic"` |
+启动完成后：
 
-这套降级路径有测试覆盖（关闭 embedding 后搜索仍必须可用）。
+Web 前端访问地址：http://localhost:3000
 
----
+API 接口文档地址：http://localhost:8787/docs（OpenAPI Swagger 交互界面）
 
-## 五、检索能力
+探针健康检查地址：http://localhost:8787/api/health
 
-四路召回 + RRF 融合（k=60），并按「命中通道数」加权：
+⚙️ 核心环境变量指南 (Environment Variables)
 
-| 通道 | 解决什么 | 实测例子 |
-| --- | --- | --- |
-| `exact` | 中文子串 | 「天气」→ 中国天气网 |
-| `fts` | BM25 相关性排序 | 「设计」→ Dribbble > Figma |
-| `pinyin` | 全拼 / 首字母 | `zgtqw`、`tianqi` → 中国天气网 |
-| `semantic` | 自然语言意图 | 「写代码的AI」→ Cursor > GitHub Copilot |
-| `personal` | 个性化（独立通道，权重最低） | 见下方说明 |
+详细配置项见 .env.example。关键核心项说明如下：
 
-### 为什么个性化必须是「一路通道」而不是「事后加成」
+变量名
 
-RRF 的 k=60 会把靠前名次压得非常接近：
+默认值
 
-```
-rrf(1)  = 1/61 = 0.01639
-rrf(8)  = 1/68 = 0.01471   -> 仅差 11%
-```
+作用说明
 
-因此任何 ≥11% 的事后加成都能把排 8 顶到排 1 —— 「越用越懂你」会退化成「搜什么都搜不到」。
-把个性化做成一路权重 0.3 的通道（相关性通道为 0.9~1.4），翻转能力就被权重天然限界，
-而且能通过 `contributions` 解释「它为什么排这儿」。
+NAVHUB_MODE
 
----
+lite
 
-## 六、MCP 接入（让 AI Agent 管理导航站）
+运行模式：可选 lite（SQLite）或 standard（PostgreSQL）
 
-### stdio（本地客户端，如 Claude Desktop / Cursor）
+PORT
 
-```json
-{
-  "mcpServers": {
-    "navhub": {
-      "command": "node",
-      "args": ["--experimental-strip-types", "packages/mcp/src/stdio.ts"],
-      "env": { "NAVHUB_MODE": "lite", "NAVHUB_SQLITE_PATH": "./data/navhub.db" }
-    }
-  }
-}
-```
+8787
 
-### 工具清单
+API 中枢监听端口
 
-| 工具 | 权限 | 说明 |
-| --- | --- | --- |
-| `search_sites` | read | 混合检索，返回**每路召回的名次**作为可解释依据 |
-| `get_site` / `list_categories` / `get_stats` | read | 读取 |
-| `create_site` | write | 可自动抓取 + AI 富化；网址已存在时返回已存在站点而非报错 |
-| `update_site` / `set_status` | write | 修改 |
-| `batch_import` | write | **默认 `dryRun=true`**，先预览影响面 |
-| `health_check` | write | 可用性巡检 |
+STORAGE_ADAPTER
 
-### 安全边界（不是文档建议，是代码里的硬约束，有测试覆盖）
+http
 
-1. **读写分级**：只读 token 调用写工具会被拒绝。
-2. **危险操作默认 dryRun**：批量导入先返回计划，不落库。
-3. **幂等键**：Agent 重试是常态，重复调用不会产生重复站点。
-4. **审计**：所有写操作落 `audit_logs`，actor 标记为 `mcp:<身份>`。
-5. **输入上限**：批量导入单次最多 100 条。
-6. **HTTP 模式默认只监听 127.0.0.1 且强制 Bearer token**，并校验 `Origin`。
+Web 端存储适配器：http（指向中枢）、github（个人仓库）
 
----
+NAVHUB_AUTH_REQUIRED
 
-## 七、安全
+false
 
-### SSRF 防护（`packages/ai/src/ssrf.ts`）
+是否开启 API 鉴权。公开部署建议设为 true，保护写操作
 
-AI 富化需要抓取用户提交的 URL，这是本系统唯一的「用户可控输入 → 服务端出网」路径：
+NAVHUB_EMBEDDING_ENDPOINT
 
-1. **协议白名单**：只允许 http/https。
-2. **解析后校验**：先 DNS 解析，再检查**每个**结果 IP 是否落在环回/私网/链路本地/ULA/保留网段。
-   仅校验 URL 字符串是不够的 —— `127.0.0.1.nip.io` 这类域名会解析到内网。
-3. **重定向逐跳校验**：手动跟随重定向，每跳重新做 DNS + IP 校验，
-   否则 `https://evil.com -> 302 -> http://169.254.169.254/` 就绕过去了。
-4. 限制超时、响应体大小、重定向跳数；`169.254.169.254`（云元数据）被明确拦截。
+https://hf-mirror.com
 
-内网导航站（如 NAS 需要收录内网服务）可显式设置 `NAVHUB_ALLOW_PRIVATE_NETWORKS=true`。
+本地 Embedding 模型下载镜像源，保障国内稳定拉取
 
----
+NAVHUB_LLM_BASE_URL
 
-## 八、环境变量
+https://api.deepseek.com
 
-见 [`.env.example`](.env.example)。三个最容易踩的：
+大语言模型兼容接口地址（支持 DeepSeek / OpenAI / Ollama）
 
-- **`NAVHUB_EMBEDDING_ENDPOINT`**：默认 `https://hf-mirror.com`。
-  `transformers.js` v4 **不读取 `HF_ENDPOINT`**，必须走 `env.remoteHost`；
-  在 `huggingface.co` 不可达的网络里，这是「能跑」与「永远卡住」的分界。
-- **`NAVHUB_LLM_API_KEY`**：缺省时 AI 富化降级为启发式，系统照常可用。
-- **`STORAGE_ADAPTER`**：`http`（默认）/ `github` / `sqlite`。
+NAVHUB_LLM_API_KEY
 
----
+(可选)
 
-## 九、开发须知（环境坑）
+LLM 密钥。未配置时自动降级为纯规则启发式元数据提取
 
-1. **脚本请用点源执行**：本机没有 `pwsh`，用 `. ./scripts/run.ps1 <args>`。
-2. **`.ps1` 里不要写中文**：Windows PowerShell 5.1 按 ANSI 读取脚本文件，中文会导致解析失败。
-3. **不要用 TS 构造函数参数属性**（`constructor(private x: T)`）：
-   Node 的 `--experimental-strip-types` 只做类型擦除，遇到这类语法会报
-   `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`。
-4. **不要用 `import.meta.url === process.argv[1]` 判断主模块**：
-   Windows 上路径形式不一致会导致脚本**静默退出且无输出**。入口统一放 `main.ts` / `seed-main.ts`。
-5. **pnpm 11 的构建脚本白名单**在 `pnpm-workspace.yaml` 的 `allowBuilds`，不在 `package.json`。
-6. **原生依赖要做直接依赖**：`sqlite-vec` 必须在 `apps/api` 的 dependencies 里，
-   pnpm 的严格布局不会因为 `@packages/store` 依赖它就把它暴露给 API。
+📦 自动化 GitHub 仓库推仓脚本 (Repository Push)
 
----
+项目已内置跨平台的快速推仓脚本，支持自动绑定目标远端、建立 main 分支并完成代码同步：
 
-## 十、测试
+Windows 环境（CMD / PowerShell）：
 
-```bash
-pnpm test          # 216 个测试
-```
+scripts\push-to-github.bat xujinlong76-star/znwzdh <您的GitHub_PAT>
 
-| 套件 | 覆盖 |
-| --- | --- |
-| `packages/core` | CJK 分词、FTS5 MATCH 表达式、拼音、RRF 融合、个性化通道、热度公式、画像聚合 |
-| `packages/store` | 向量存储（内存/真实 sqlite-vec 双实现一致性）、真实 SQLite 集成、分类管理（移动/合并/删除归类）、收藏夹、画像、任务队列、schema 迁移幂等 |
-| `packages/ai` | SSRF 网段判定（含 IPv4 映射绕过）、元数据抽取、启发式降级 |
-| `apps/api` | **真实 HTTP 端到端**：检索、CRUD、去重、索引同步、降级、审计、收藏夹、榜单、D1 快照误删回归；JobRunner 四任务 + 单实例锁 |
-| `packages/mcp` | 权限硬边界、dryRun 默认行为、幂等、审计、admin 级工具 |
 
-### 导航增强能力（第二轮，2026-10-13）
+macOS / Linux 环境：
 
-- **前端接入混合检索**：SearchPalette（防抖 + AbortController + 通道徽标 + 降级提示），走 `/api/hub/*` 同源代理
-- **收藏夹**：localStorage 优先（未登录可用）+ 云端同步（登录后合并），JSON 导入导出
-- **标签系统**：标签云（真实计数）、标签结果页、重命名/合并
-- **推荐排序**：热度榜（近 7 天点击 + 收藏 − 年龄惩罚，`recompute_rank` 任务重算）、新品榜、相似站点（向量 KNN）
-- **个性化闭环**：点击/收藏事件 → 画像聚合（7 天半衰期）→ `personal` 通道（权重 0.3，不翻车）
-- **自动化**：JobRunner（health_check / refetch_metadata / recompute_rank / reindex，单实例锁 + TTL）
-- **管理端**：`/admin/jobs` 任务面板、`/admin/stats` 运营看板（热门搜索/零结果搜索/热度榜）
-- **schema 迁移**：`pnpm --filter @navhub/api migrate`，旧库自动补列（幂等）
-- **MCP 新工具**：`get_trending` / `list_tags` / `refresh_site`（write）/ `run_job`（admin）
+./scripts/push-to-github.sh xujinlong76-star/znwzdh <您的GitHub_PAT>
 
-### PWA 与投稿（第三轮，2026-10-13）
 
-- **PWA**：`app/manifest.ts`（standalone + 主题色 + 快捷方式）、`public/sw.js`
-  （导航 network-first 离线回退、API 不走缓存、静态资源 SWR）、
-  图标由 `node scripts/gen-pwa-icons.mjs` 从 SVG 栅格化生成（192/512/maskable/apple-touch-icon）
-- **投稿统一**：无 GitHub 配置时（NavHub 默认部署）投稿落库为 `status=pending, source=submission`
-  的站点（限流 5 次/小时/IP，重复 URL 409），审核队列 `GET /api/sites?status=pending`；
-  配置了 `GITHUB_OWNER/REPO/PAT` 时仍走上游的 Issue 流程
-- **检索通道注册表**：`registerChannel(name, weight)` 运行时追加召回通道，
-  fusion 自动纳入融合与 coverage 统计（内置五路权重不变）
+📜 许可证 (License)
 
-> ⚠️ **D1 缺陷已修**：`writeNavigationData` 的全量对齐删除增加了 source 过滤——
-> 经 API/MCP/AI 创建的站点不再被前端保存 navigation.json 时静默删除
-> （`{null, navsphere, seed}` 仍按快照管理，回归测试锁定）。
+NavHub 核心自研模块与算法库遵循 MIT License。
 
----
-
-## 十一、许可
-
-- 本项目自研部分：MIT
-- `apps/web` 派生自 NavSphere（MIT），保留其原始 LICENSE 与署名
+前端基底派生自开源项目 NavSphere（MIT），严格保留其原始版权声明。

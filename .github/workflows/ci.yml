@@ -35,7 +35,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: node scripts/check-web-overlay.mjs
+      # 覆盖层比对在 check-web-overlay 作业里单独跑（全新检出需先 vendor，见那里）
       - run: pnpm -r exec tsc --noEmit
       - run: pnpm test
 
@@ -85,6 +85,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # apps/web 是 gitignore 的生成物：全新检出只剩 12 个已跟踪文件，直接比对必然“缺失”
+      # （这正是 main 长期红灯的原因）。先用 vendor 重建 apps/web = 上游 + overlay，
+      # overlay 覆写优先，之后比对即为真；顺带也 smoke test 了 Docker/vendor 这条路径。
+      - run: node scripts/vendor-web.mjs
       # overlay 是 Docker 构建与 vendor 的事实源；apps/web 改了没同步回去会在这里失败
       - run: node scripts/check-web-overlay.mjs
 

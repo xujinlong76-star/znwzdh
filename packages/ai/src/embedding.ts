@@ -50,6 +50,73 @@ export interface EmbeddingService {
 type Extractor = (text: string, opts: { pooling: "cls" | "mean"; normalize: boolean }) => Promise<{ data: ArrayLike<number> }>;
 
 /**
+ * 查询词归一化：NFKC + 去首尾空白 + 压缩连续空白 + 小写。
+ *
+ * 没有这一步，"iPhone " 和 "iphone" 会各占一个缓存条目、各触发一次
+ * ONNX 推理 —— 缓存命中率白掉。注意归一化同时作用于**模型输入**而不只是
+ * 缓存键：否则同一个键可能对应不同向量（先存入的赢），检索结果会随
+ * 请求顺序漂移。
+ */
+export function normalizeEmbeddingKey(raw: string): string {
+  return raw.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export interface EmbeddingCache {
+  getOrCompute(key: string, compute: (normalizedKey: string) => Promise<Float32Array>): Promise<Float32Array>;
+  readonly size: number;
+  stats(): { size: number; hits: number; misses: number };
+}
+
+/**
+ * LRU + Singleflight 向量缓存。
+ *
+ * - 值固定为 Float32Array（512 维 = 2048 字节连续内存，无装箱开销）；
+ *   满载 2048 条 ≈ 4MB，且 GC 只需扫描少量外部对象。
+ * - Singleflight：同一时刻对同一个冷词的并发请求只触发一次 ONNX 推理，
+ *   其余调用共享同一个 Promise。批量富化（encodeBatch）与并发搜索打到
+ *   同一个词时收益最直接 —— 没有它，一次突发就是 N 次重复前向。
+ * - 推理失败不写缓存（下一次调用重新尝试），也不做负缓存。
+ */
+export function createEmbeddingCache(maxEntries = 2048): EmbeddingCache {
+  const cache = new Map<string, Float32Array>();
+  const inflight = new Map<string, Promise<Float32Array>>();
+  let hits = 0;
+  let misses = 0;
+
+  return {
+    get size() {
+      return cache.size;
+    },
+    stats: () => ({ size: cache.size, hits, misses }),
+    async getOrCompute(key, compute) {
+      const normalized = normalizeEmbeddingKey(key);
+      const hit = cache.get(normalized);
+      if (hit) {
+        hits++;
+        // 刷新 LRU 位置
+        cache.delete(normalized);
+        cache.set(normalized, hit);
+        return hit;
+      }
+      misses++;
+      const pending = inflight.get(normalized);
+      if (pending) return pending; // 合并并发推理，不等它完成就先让出来
+      const task = compute(normalized).finally(() => {
+        inflight.delete(normalized);
+      });
+      inflight.set(normalized, task);
+      const vec = await task;
+      if (cache.size >= maxEntries) {
+        const oldest = cache.keys().next().value;
+        if (oldest !== undefined) cache.delete(oldest);
+      }
+      cache.set(normalized, vec);
+      return vec;
+    },
+  };
+}
+
+/**
  * 创建一个"惰性加载"的 embedding 服务。
  * 构造时不加载模型，首次 encode 时才加载 —— 避免拖慢服务启动。
  */
@@ -86,39 +153,25 @@ export function createEmbeddingService(config: Partial<EmbeddingConfig> = {}): E
   }
 
   const cacheLimit = 2048;
-  const cache = new Map<string, Float32Array>();
-  let cacheHits = 0;
-  let cacheMisses = 0;
+  const vecCache = createEmbeddingCache(cacheLimit);
 
   async function encodeOne(text: string): Promise<Float32Array> {
-    const cached = cache.get(text);
-    if (cached) {
-      cacheHits++;
-      // 刷新 LRU 位置
-      cache.delete(text);
-      cache.set(text, cached);
-      return cached;
-    }
-    cacheMisses++;
-    const ext = await load();
-    if (!ext) throw new Error("embedding 模型不可用: " + (lastError ?? "未知原因"));
-    // cls 与 mean 池化实测都能通过中文语义用例；这里用 cls 并归一化，
-    // 归一化后余弦距离等价于点积，简化向量存储实现。
-    const out = await ext(text, { pooling: "cls", normalize: true });
-    const vec = Float32Array.from(out.data);
-    if (cache.size >= cacheLimit) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
-    }
-    cache.set(text, vec);
-    return vec;
+    // 键归一化 + 并发合并都收拢在缓存里；compute 只在真正未命中时跑一次
+    return vecCache.getOrCompute(text, async (normalized) => {
+      const ext = await load();
+      if (!ext) throw new Error("embedding 模型不可用: " + (lastError ?? "未知原因"));
+      // cls 与 mean 池化实测都能通过中文语义用例；这里用 cls 并归一化，
+      // 归一化后余弦距离等价于点积，简化向量存储实现。
+      const out = await ext(normalized, { pooling: "cls", normalize: true });
+      return Float32Array.from(out.data);
+    });
   }
 
   return {
     dim: cfg.dim,
     model: cfg.model,
     ready: () => loaded,
-    stats: () => ({ size: cache.size, hits: cacheHits, misses: cacheMisses }),
+    stats: () => vecCache.stats(),
     async warmup() {
       try { await load(); return loaded; } catch { return false; }
     },

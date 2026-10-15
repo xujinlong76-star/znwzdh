@@ -433,6 +433,13 @@ export async function openDb(config: {
     raw.pragma("synchronous = NORMAL");
     raw.pragma("journal_size_limit = 67108864");
     raw.pragma("foreign_keys = ON");
+    // 临时 b-tree 进内存：FTS5 的 bm25 排序与向量 KNN 都会产生临时表，
+    // 落盘临时文件在并发检索时是纯浪费（页缓存直读即可）
+    raw.pragma("temp_store = MEMORY");
+    // mmap 读扫描：向量 float[512] 顺序扫描与 FTS 索引走页缓存直读，
+    // 省掉 read 系统调用的用户态拷贝。这是上限不是预分配 ——
+    // SQLite 只映射实际访问到的页，小内存部署同样安全。
+    raw.pragma("mmap_size = 268435456"); // 256MB
     const { drizzle } = await import("drizzle-orm/better-sqlite3");
     const db: Db = {
       dialect: "sqlite",

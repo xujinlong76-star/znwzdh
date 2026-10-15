@@ -33,11 +33,21 @@ export class StorageError extends Error {
    * 会生成运行时代码的语法（报 ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX）。
    */
   readonly status?: number;
+  /**
+   * true = 连接级故障（中枢不可达 / 超时 / DNS 失败）。
+   *
+   * 与「中枢可达但返回了错误」（HTTP 4xx/5xx、响应体畸形）严格区分：
+   *   - 连接级故障是**预期内的降级路径** —— 回退构建期基线即可，
+   *     且熔断器已按冷静期窗口统一告警过，调用方不应再逐请求刷 error 日志；
+   *   - 后者是真正值得 error 级告警的异常（中枢活着但出问题）。
+   */
+  readonly unreachable: boolean;
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status?: number, unreachable = false) {
     super(message);
     this.name = "StorageError";
     this.status = status;
+    this.unreachable = unreachable;
   }
 }
 
@@ -57,12 +67,73 @@ export interface HttpAdapterOptions {
   token?: string | null;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /**
+   * 连接级故障后的冷静期（毫秒）。期间不再向中枢发起新连接，
+   * 读/写直接以连接级错误快速失败。可用 NAVHUB_STORAGE_COOLDOWN_MS 覆盖。
+   */
+  cooldownMs?: number;
 }
 
 export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
   const base = opts.baseUrl.replace(/\/$/, "");
   const doFetch = opts.fetchImpl ?? fetch;
   const timeout = opts.timeoutMs ?? 15_000;
+  const cooldownMs = opts.cooldownMs ?? 5_000;
+
+  /**
+   * 连接熔断器（进程内，按适配器实例；0 = 未跳闸）。
+   *
+   * 解决的问题：中枢没启动时，原来的实现对每个请求都老老实实去连一次
+   * localhost:8787，再在 getFileContent 的 catch 里刷一条 console.error。
+   * 一个 SSR 页面（layout 的 generateMetadata + page + 各数据模块）会打出
+   * 十几次连接尝试和十几条同样的错误，把真正的问题淹没在噪声里。
+   *
+   * 规则：
+   *   - 只有**连接级**故障（fetch 自身抛出：ECONNREFUSED / 超时 / DNS）才跳闸；
+   *     中枢返回 4xx/5xx 说明它活着，不属于这里。
+   *   - 跳闸后进入冷静期：期间读/写直接快速失败，不发连接。
+   *   - 任何一次成功响应立即复位（不等冷静期自然结束），并从故障态恢复时
+   *     输出一条 info，让「中枢回来了」在日志里可见。
+   *   - 跳闸告警按冷静期窗口去重：每个窗口最多一条 warn，不是每个请求一条。
+   */
+  let unreachableUntil = 0;
+
+  /** 连接级故障：跳闸并抛出（告警按窗口去重） */
+  function tripOnConnectionFailure(reason: string): never {
+    const now = Date.now();
+    if (now >= unreachableUntil) {
+      console.warn(
+        "[storage] NavHub 中枢不可达（" +
+          base +
+          "）：" +
+          reason +
+          "。已进入 " +
+          Math.round(cooldownMs / 1000) +
+          " 秒连接冷静期，期间读取回退构建期基线（未启动中枢时此为预期状态，不是故障）。",
+      );
+    }
+    unreachableUntil = now + cooldownMs;
+    throw new StorageError("NavHub 中枢不可达（" + base + "）：" + reason, undefined, true);
+  }
+
+  /** 冷静期内不发新连接，直接以连接级错误快速失败 */
+  function throwIfCoolingDown(): void {
+    if (Date.now() < unreachableUntil) {
+      throw new StorageError(
+        "NavHub 中枢不可达（" + base + "，连接冷静期内，跳过连接尝试）",
+        undefined,
+        true,
+      );
+    }
+  }
+
+  /** 成功响应：复位熔断器；若此前处于故障态，输出一条恢复日志 */
+  function noteSuccess(): void {
+    if (unreachableUntil !== 0) {
+      unreachableUntil = 0;
+      console.info("[storage] NavHub 中枢连接已恢复（" + base + "）");
+    }
+  }
 
   const headers = (): Record<string, string> => {
     const h: Record<string, string> = { "Content-Type": "application/json" };
@@ -73,29 +144,48 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
   async function call(url: string, init: RequestInit): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
+    let res: Response;
     try {
-      const res = await doFetch(url, { ...init, headers: headers(), signal: controller.signal });
-      const text = await res.text();
-      if (!res.ok) {
-        throw new StorageError("中枢返回 " + res.status + "：" + text.slice(0, 300), res.status);
-      }
-      return text ? JSON.parse(text) : {};
+      res = await doFetch(url, { ...init, headers: headers(), signal: controller.signal });
     } catch (err) {
-      if (err instanceof StorageError) throw err;
-      throw new StorageError("无法连接 NavHub 中枢（" + base + "）：" + (err instanceof Error ? err.message : String(err)));
+      // 只有 fetch 自身抛出才算连接级故障。必须与下面的「响应处理」分开
+      // catch：响应体畸形说明中枢活着，不能跳闸、也不能算 unreachable。
+      tripOnConnectionFailure(err instanceof Error ? err.message : String(err));
     } finally {
       clearTimeout(timer);
+    }
+
+    noteSuccess();
+
+    // ---- 以下均为「中枢可达但出了问题」：不触发熔断 ----
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (err) {
+      throw new StorageError(
+        "读取中枢响应体失败：" + (err instanceof Error ? err.message : String(err)),
+      );
+    }
+    if (!res.ok) {
+      throw new StorageError("中枢返回 " + res.status + "：" + text.slice(0, 300), res.status);
+    }
+    try {
+      return text ? JSON.parse(text) : {};
+    } catch {
+      throw new StorageError("中枢响应不是合法 JSON：" + text.slice(0, 200));
     }
   }
 
   return {
     kind: "http",
     async read(path: string) {
+      throwIfCoolingDown();
       return call(base + "/api/storage?path=" + encodeURIComponent(path), { method: "GET" });
     },
     async write(path: string, content: string, message: string) {
+      throwIfCoolingDown();
       const body = JSON.stringify({ path, content, message });
-      const res = await call(base + "/api/storage", { method: "PUT", body }) as { note?: string };
+      const res = (await call(base + "/api/storage", { method: "PUT", body })) as { note?: string };
       return { ok: true, note: res?.note };
     },
   };

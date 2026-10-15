@@ -20,9 +20,9 @@ import type { AppContext } from "./context.ts";
 import { indexSite } from "./index-site.ts";
 
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit"];
 
 const LOCK_KEY = "lock:job-runner";
 const LOCK_TTL_MS = 120_000;
@@ -192,6 +192,9 @@ export class JobRunner {
           break;
         case "site_self_healing":
           await this.runSiteSelfHealing((payload ?? {}) as { siteId?: string });
+          break;
+        case "token_audit":
+          await this.runTokenAudit((payload ?? {}) as { expiringDays?: number; dormantDays?: number });
           break;
         default:
           throw new Error("未知任务类型: " + kind);
@@ -406,6 +409,62 @@ export class JobRunner {
       siteId: site.id,
       meta: { action: report.recommendedAction, autoResolvable: report.autoResolvable },
     }).catch(() => undefined);
+  }
+
+  /**
+   * 凭据治理巡检：扫描临期、过期、长期闲置的凭据并落审计。
+   *
+   * 解决痛点：凭据过期与泄露往往是静默发生的，运维不可能天天盯列表。
+   * 定期运行 token_audit 可以在凭据失效前预警、在僵尸凭据存在时提醒吊销。
+   */
+  private async runTokenAudit(options: { expiringDays?: number; dormantDays?: number } = {}): Promise<void> {
+    const tokens = await this.ctx.repo.listApiTokens();
+    const now = Date.now();
+    const DAY = 86_400_000;
+    const expiringThresholdMs = (options.expiringDays ?? 14) * DAY;
+    const dormantThresholdMs = (options.dormantDays ?? 90) * DAY;
+
+    const expired: string[] = [];
+    const expiring: string[] = [];
+    const dormant: string[] = [];
+
+    for (const t of tokens) {
+      if (t.revokedAt != null) continue; // 已吊销的不重复告警
+      if (t.expiresAt != null) {
+        if (t.expiresAt <= now) {
+          expired.push(t.id);
+        } else if (t.expiresAt - now <= expiringThresholdMs) {
+          expiring.push(t.id);
+        }
+      }
+      const lastActive = t.lastUsedAt ?? t.createdAt;
+      if (now - lastActive >= dormantThresholdMs) {
+        dormant.push(t.id);
+      }
+    }
+
+    if (expired.length > 0 || expiring.length > 0 || dormant.length > 0) {
+      await this.ctx.repo.audit({
+        actor: "system:job-runner",
+        actorKind: "job",
+        action: "token.audit",
+        diff: {
+          totalChecked: tokens.length,
+          expiredCount: expired.length,
+          expiringCount: expiring.length,
+          dormantCount: dormant.length,
+          expiredIds: expired,
+          expiringIds: expiring,
+          dormantIds: dormant,
+        },
+      });
+      if (expiring.length > 0) {
+        console.warn(`[navhub-token-audit] 发现 ${expiring.length} 条凭据即将过期`);
+      }
+      if (expired.length > 0) {
+        console.warn(`[navhub-token-audit] 发现 ${expired.length} 条凭据已过期且尚未吊销`);
+      }
+    }
   }
 
   /* --------------------------- 底层执行 --------------------------- */

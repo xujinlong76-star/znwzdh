@@ -49,6 +49,7 @@ import {
   type CRDTOperation,
   type RetrievalChannel,
   SiteCreateBody,
+  RunJobInput,
 } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import type { AppContext } from "./context.ts";
@@ -2027,14 +2028,9 @@ export async function buildServer(ctx: AppContext) {
 
   /* ------------------------ 任务队列管理 ------------------------ */
 
-  const JOB_KIND_LIST = ["health_check", "refetch_metadata", "recompute_rank", "reindex"] as const;
-
   /** 入队（管理端 / 脚本用）。Runner 每 30s 自动消费。 */
   app.post("/api/jobs", { config: { rateLimit: { max: 30, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
-    const body = z.object({
-      kind: z.enum(JOB_KIND_LIST),
-      payload: z.record(z.unknown()).optional(),
-    }).safeParse(req.body ?? {});
+    const body = RunJobInput.safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const id = await ctx.repo.enqueueJob(body.data.kind, body.data.payload ?? {});
     await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.enqueue", target: id, diff: { kind: body.data.kind } });

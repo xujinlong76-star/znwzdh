@@ -299,5 +299,53 @@ describe("个性化画像服务", () => {
     expect(recentIndex).toBeGreaterThanOrEqual(0);
     expect(staleIndex).toBeLessThan(recentIndex);
   });
+
+  it("token_audit 任务巡检临期、过期与长期闲置凭据并落审计", async () => {
+    const now = Date.now();
+    const DAY = 86_400_000;
+    const normal = await ctx.repo.createApiToken({
+      name: "正常凭据",
+      tokenHash: "hash-token-audit-normal",
+      scopes: "read",
+      expiresAt: now + 60 * DAY,
+    });
+    const expiring = await ctx.repo.createApiToken({
+      name: "即将过期凭据",
+      tokenHash: "hash-token-audit-expiring",
+      scopes: "read",
+      expiresAt: now + 5 * DAY,
+    });
+    const expired = await ctx.repo.createApiToken({
+      name: "已过期凭据",
+      tokenHash: "hash-token-audit-expired",
+      scopes: "read",
+      expiresAt: now - 2 * DAY,
+    });
+    const dormant = await ctx.repo.createApiToken({
+      name: "闲置凭据",
+      tokenHash: "hash-token-audit-dormant",
+      scopes: "read",
+    });
+    ctx.db.sqlite!.prepare("UPDATE api_tokens SET created_at = ? WHERE id = ?").run(now - 120 * DAY, dormant.id);
+
+    const jobId = await ctx.repo.enqueueJob("token_audit", { expiringDays: 14, dormantDays: 90 });
+    const runner = new JobRunner(ctx, { intervalMs: 1000 });
+    await runner.tick();
+
+    const jobs = await ctx.repo.listJobs(undefined, 10);
+    const job = jobs.find((j) => j.id === jobId);
+    expect(job?.status).toBe("done");
+
+    const auditRow = ctx.db.sqlite!.prepare("SELECT diff FROM audit_logs WHERE action = 'token.audit' ORDER BY id DESC LIMIT 1").get() as { diff: string };
+    expect(auditRow).toBeTruthy();
+    const diff = JSON.parse(auditRow.diff);
+    expect(diff.expiringCount).toBeGreaterThanOrEqual(1);
+    expect(diff.expiredCount).toBeGreaterThanOrEqual(1);
+    expect(diff.dormantCount).toBeGreaterThanOrEqual(1);
+    expect(diff.expiringIds).toContain(expiring.id);
+    expect(diff.expiredIds).toContain(expired.id);
+    expect(diff.dormantIds).toContain(dormant.id);
+    expect(diff.expiringIds).not.toContain(normal.id);
+  });
 });
 

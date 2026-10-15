@@ -89,8 +89,15 @@ export const RefreshSiteInput = z.object({
 });
 
 export const RunJobInput = z.object({
-  kind: z.enum(["health_check", "refetch_metadata", "recompute_rank", "reindex"]).describe("任务类型"),
-  payload: z.record(z.unknown()).optional().describe("任务参数（如 refetch_metadata 需要 siteId）"),
+  kind: z.enum([
+    "health_check",
+    "refetch_metadata",
+    "recompute_rank",
+    "reindex",
+    "site_self_healing",
+    "token_audit",
+  ]).describe("任务类型：health_check (健康巡检), refetch_metadata (重抓元数据), recompute_rank (重排热度), reindex (重建检索索引), site_self_healing (死链自愈诊断), token_audit (API 凭据过期与闲置巡检)"),
+  payload: z.record(z.unknown()).optional().describe("任务参数（如 refetch_metadata/site_self_healing 需要 siteId，token_audit 可选 expiringDays/dormantDays）"),
 });
 
 export const DeleteSiteInput = z.object({
@@ -309,6 +316,7 @@ export const REST_SCHEMA_BINDINGS: Record<string, { schema: ZodSchemaLike; in: "
   "POST /api/recipes": { schema: GetArchitectureRecipeInput, in: "body" },
   "POST /api/tools/synthesize": { schema: SynthesizeAgentToolInput, in: "body" },
   "POST /api/p2p/signal": { schema: ExchangeP2pMeshInput, in: "body" },
+  "POST /api/jobs": { schema: RunJobInput, in: "body" },
   "GET /api/tags": { schema: ListTagsInput, in: "query" },
   "GET /api/rank/trending": { schema: GetTrendingInput, in: "query" },
 };

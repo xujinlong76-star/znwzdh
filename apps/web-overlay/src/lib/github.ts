@@ -30,6 +30,17 @@ import {
 /** 惰性单例：避免每个请求都重建适配器（会重复读环境变量与构造闭包） */
 let cached: StorageAdapter | null = null;
 
+/**
+ * 连接冷静期（毫秒）：中枢不可达时，多久内不再向它发起新连接。
+ * 默认 5 秒 —— 足够吸收一次 SSR 突发（十几个模块的并发读取），
+ * 又能在中枢启动后迅速恢复。置 0 表示关闭熔断（每次请求都尝试连接）。
+ */
+function cooldownFromEnv(env: Record<string, string | undefined>): number {
+  const raw = Number(env.NAVHUB_STORAGE_COOLDOWN_MS);
+  if (!Number.isFinite(raw) || raw <= 0) return 5_000;
+  return Math.floor(raw);
+}
+
 function getAdapter(): StorageAdapter {
   if (cached) return cached;
   const kind = resolveAdapterKind(process.env);
@@ -44,6 +55,7 @@ function getAdapter(): StorageAdapter {
           process.env.NEXT_PUBLIC_API_URL ??
           "http://localhost:8787",
         token: process.env.NAVHUB_STORAGE_TOKEN ?? null,
+        cooldownMs: cooldownFromEnv(process.env),
       },
     });
     return cached;
@@ -145,6 +157,15 @@ function baselineFor(name: string): unknown | undefined {
  */
 const contentCache = new Map<string, { data: unknown; expiresAt: number }>();
 const CACHE_TTL_MS = 2500; // 2.5 秒极速微缓存
+/**
+ * 失败回退的缓存 TTL：远短于成功路径。
+ *
+ * 失败也进缓存，是为了吸收同一轮渲染里的并发突发（layout 的
+ * generateMetadata 与 page 组件会并发读同一个 site.json）—— 否则每个
+ * 并发请求都会各自走一次适配器。TTTL 压到 1 秒，中枢恢复后最多多等这么久，
+ * 不会把一次临时故障放大成持续降级。
+ */
+const FAILURE_TTL_MS = 1_000;
 
 export function invalidateContentCache(path?: string) {
   if (path) {
@@ -162,7 +183,12 @@ export function invalidateContentCache(path?: string) {
  *      这是正常状态而非故障；若也告警，像 videos.json 这种从没存过的文件
  *      会在每个请求上刷一条日志（实测确实如此），把真正的问题淹没。
  *   2. 中枢返回了数据但内容为空      -> 告警后回退（可能是数据异常）。
- *   3. 读取失败（中枢不可达/报错）    -> 告警后回退。
+ *   3. 读取失败（中枢不可达/报错）    -> 分级告警后回退：
+ *       - 连接级故障（中枢不可达）：http 适配器的熔断器已在跳闸时按
+ *         冷静期窗口 warn 过一次，这里**不再逐请求重复**；否则中枢没起时
+ *         每个请求刷一条 console.error，控制台直接被噪声淹没。
+ *       - 其余（HTTP 错误、响应畸形、适配器配置错误）：console.error，
+ *         这些是"中枢活着但出问题"的真异常。
  * 没有基线的文件返回 {}（与原版一致的宽松语义）。
  */
 export async function getFileContent<T = any>(path: string): Promise<T> {
@@ -205,10 +231,19 @@ export async function getFileContent<T = any>(path: string): Promise<T> {
     contentCache.set(path, { data, expiresAt: now + CACHE_TTL_MS });
     return data as T;
   } catch (error) {
-    // 情况 3：真正的故障
-    console.error("[storage] 读取失败，回退到构建期基线:", path, error);
-    if (baseline !== undefined) return baseline as T;
-    return {} as T;
+    // 情况 3：真正的故障 —— 但按类型分级告警。
+    // 连接级故障（中枢不可达）由 http 适配器的熔断器在跳闸时统一 warn 过
+    // （每个冷静期窗口一条），这里再逐请求刷 error 只会淹没真正的问题。
+    // 只有「中枢活着但出问题」的异常才值得 error 级。
+    const hubUnreachable = error instanceof StorageError && error.unreachable;
+    if (!hubUnreachable) {
+      console.error("[storage] 读取失败，回退到构建期基线:", path, error);
+    }
+    // 失败也进微缓存（短 TTL）：吸收同一轮渲染的并发突发，
+    // 并让适配器的连接冷静期有足够覆盖面，避免每个请求各连一次中枢。
+    const res = (baseline ?? {}) as T;
+    contentCache.set(path, { data: res, expiresAt: Date.now() + FAILURE_TTL_MS });
+    return res;
   }
 }
 

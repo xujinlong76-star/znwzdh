@@ -87,7 +87,9 @@
 
 | 表 | 关键列 | 说明 |
 | --- | --- | --- |
-| `events` | `id`(自增 PK)、`kind`、`site_id`、`query`、`category_id`、`meta`、`created_at` | 索引 kind/site/created 三份 |
+| `events` | `id`(自增 PK)、`kind`、`site_id`、`query`、`category_id`、`meta`、`identity`、`created_at` | 索引 kind/site/created + **`identity`**（`events_identity_idx`） |
+
+> **`events.identity`（身份独立列）**：行为归属身份（`userId` / 匿名 `anonId`）原本只藏在 `meta` JSON 里（`{"identity":"..."}`），按 `behaviorEvents` / `deleteBehaviorEvents` 用 `meta LIKE '%"identity":"..."%'` 过滤——**走不了索引、随表增长变慢**。现迁为独立列 + 索引，两处查询改为**等值** `identity = ?`。老库由启动迁移补列（`COLUMN_ALTERS`）并**回填**历史行（`migrateEventIdentity`：SQLite 用 `json_extract` + `json_valid` 守护，PG 用子串提取避免 `::jsonb` 对坏 JSON 抛错）；`recordEvent` 显式收 `identity`，并兼容从 `meta.identity` 提取（既有调用点无需改）。索引不在 DDL 里建——旧库此时还没有 `identity` 列，放 DDL 会 `no such column` 炸整个 exec，故与 `sites_hot_idx` 同理放在 `migrateSiteIndexes()`（列迁移之后）。
 | `health_checks` | `id`(自增)、`site_id`、`checked_at`、`ok`、`http_status`、`latency_ms`、`redirect_to`、`error` | 巡检历史 |
 | `jobs` | `id`(PK)、`kind`、`payload`、`status`(默认 `pending`)、`attempts`、`error`、`created_at`、`updated_at` | 索引 `status` |
 | `idempotency` | `key`(PK)、`response`、`created_at` | **MCP/API 写操作去重** + lite 模式任务锁行 |

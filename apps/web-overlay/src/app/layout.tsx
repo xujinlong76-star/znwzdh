@@ -44,7 +44,8 @@ export async function generateMetadata(): Promise<Metadata> {
       title: 'NavHub',
     },
     icons: {
-      icon: site?.appearance?.favicon ?? '/favicon.ico',
+      // 默认指向真实存在的 PWA 图标：public/ 下没有 favicon.ico（曾 404 刷屏），用 icon-192 兜底
+      icon: site?.appearance?.favicon ?? '/icons/icon-192.png',
     },
   };
 }
@@ -59,7 +60,11 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  const gaId = process.env.GA_ID
+  // 安全：GA_ID 会内插进 dangerouslySetInnerHTML 与 script src，必须白名单。
+  // 非法值（如攻击者通过环境注入 `"'><script>`）直接不注入，避免存储型 XSS。
+  const rawGaId = process.env.GA_ID
+  const safeGaId = rawGaId && /^G-[A-Z0-9]+$/.test(rawGaId) ? rawGaId : null
+  const gaId = safeGaId
 
   return (
     <html lang="zh-CN" suppressHydrationWarning className={inter.variable}>

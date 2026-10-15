@@ -111,33 +111,55 @@ export function useHomeDIY() {
   // 1. 客户端挂载时加载配置并平滑兼容 v1/v2
   useEffect(() => {
     try {
-      // 优先检测 URL Hash 是否带有免登预设分享 #diy=...
+      // 优先检测 URL Hash 是否带有免登预设分享 #diy=...（不可信输入：统一走 validateAndCleanDIYConfig + 4KB 上限）
       if (typeof window !== 'undefined' && window.location.hash.startsWith('#diy=')) {
         const b64 = window.location.hash.replace(/^#diy=/, '');
-        const json = decodeURIComponent(atob(b64));
-        const parsed = JSON.parse(json);
-        if (parsed && typeof parsed === 'object') {
-          const imported: HomeDIYConfig = {
-            ...DEFAULT_CONFIG,
-            viewMode: parsed.vm || DEFAULT_CONFIG.viewMode,
-            cardDisplayMode: parsed.cdm || DEFAULT_CONFIG.cardDisplayMode,
-            canvasBackground: parsed.bg || DEFAULT_CONFIG.canvasBackground,
-            accentColor: parsed.ac || DEFAULT_CONFIG.accentColor,
-            categoryOrder: Array.isArray(parsed.co) ? parsed.co : [],
-            pinnedCategoryIds: Array.isArray(parsed.pco) ? parsed.pco : [],
-            hiddenCategoryIds: Array.isArray(parsed.hco) ? parsed.hco : [],
-            siteCategoryOverrides: parsed.sco && typeof parsed.sco === 'object' ? parsed.sco : {},
-            customWallpaperUrl: parsed.wp || '',
-            glassmorphismBlur: typeof parsed.gb === 'number' ? parsed.gb : 12,
-            cardOpacity: typeof parsed.co_op === 'number' ? parsed.co_op : 0.9,
-            updatedAt: Date.now(),
-          };
-          setConfig(imported);
-          setHistory(createLayoutHistory(imported));
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(imported));
+        // 长度上限 4KB：超限直接丢弃（防 hash 炸弹撑爆 JSON.parse / localStorage）
+        if (b64.length > 4096) {
+          console.warn('[diy] 分享 hash 超过 4KB 上限，已忽略')
           window.history.replaceState(null, '', window.location.pathname + window.location.search);
-          setMounted(true);
-          return;
+        } else {
+          try {
+            const json = decodeURIComponent(atob(b64));
+            if (json.length > 4096) throw new Error('decoded payload too large')
+            const parsed = JSON.parse(json);
+            // 兼容分享短字段 (vm/cdm/bg/...) → 全量字段，再统一清洗
+            const normalized = parsed && typeof parsed === 'object' ? {
+              viewMode: parsed.vm ?? parsed.viewMode,
+              cardDisplayMode: parsed.cdm ?? parsed.cardDisplayMode,
+              canvasBackground: parsed.bg ?? parsed.canvasBackground,
+              accentColor: parsed.ac ?? parsed.accentColor,
+              categoryOrder: parsed.co ?? parsed.categoryOrder,
+              pinnedCategoryIds: parsed.pco ?? parsed.pinnedCategoryIds,
+              hiddenCategoryIds: parsed.hco ?? parsed.hiddenCategoryIds,
+              siteCategoryOverrides: parsed.sco ?? parsed.siteCategoryOverrides,
+              customWallpaperUrl: parsed.wp ?? parsed.customWallpaperUrl,
+              glassmorphismBlur: parsed.gb ?? parsed.glassmorphismBlur,
+              cardOpacity: parsed.co_op ?? parsed.cardOpacity,
+            } : null;
+            const check = validateAndCleanDIYConfig(normalized);
+            if (check.valid && check.config) {
+              const imported: HomeDIYConfig = {
+                ...DEFAULT_CONFIG,
+                ...check.config,
+                collapsedCategoryIds: Array.isArray(check.config.collapsedCategoryIds) ? check.config.collapsedCategoryIds : [],
+                updatedAt: Date.now(),
+              };
+              setConfig(imported);
+              setHistory(createLayoutHistory(imported));
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(imported));
+              window.history.replaceState(null, '', window.location.pathname + window.location.search);
+              setMounted(true);
+              return;
+            } else {
+              console.warn('[diy] 分享 hash 校验失败，已忽略:', check.error)
+              window.history.replaceState(null, '', window.location.pathname + window.location.search);
+            }
+          } catch (e) {
+            // 失败 quiet：清除 hash 后回落默认配置，不抛错不 toast（避免打开链接即报错）
+            console.warn('[diy] 分享 hash 解析失败，已忽略', e)
+            try { window.history.replaceState(null, '', window.location.pathname + window.location.search) } catch {}
+          }
         }
       }
       let raw = localStorage.getItem(STORAGE_KEY)
@@ -667,9 +689,16 @@ export function useHomeDIY() {
   }, [persistConfig]);
 
   // 自定义壁纸与毛玻璃美学调节
+  // 安全：入口即校验，非法直接置空（由 diy-presets 的白名单口径决定，避免脏数据入库）
   const setCustomWallpaper = useCallback((url: string) => {
     persistConfig((prev) => {
-      return { ...prev, customWallpaperUrl: url.trim(), updatedAt: Date.now() };
+      const raw = (url || '').trim().slice(0, 2048)
+      let next = ''
+      try {
+        // 动态 import 会增加包体，直接用轻量正则（与 diy-presets 同口径）
+        if (/^(https?:\/\/[^'"()\s]+|\/[^'"()\s]*|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)$/i.test(raw)) next = raw
+      } catch { next = '' }
+      return { ...prev, customWallpaperUrl: next, updatedAt: Date.now() };
     });
   }, [persistConfig]);
 
@@ -713,24 +742,43 @@ export function useHomeDIY() {
     try {
       const hash = hashStr || (typeof window !== 'undefined' ? window.location.hash : '');
       if (!hash.includes('#diy=')) return false;
-      const b64 = hash.replace(/^#diy=/, '');
+      const idx = hash.indexOf('#diy=');
+      const b64 = hash.slice(idx + '#diy='.length);
+      // 长度上限 4KB，超限直接拒绝
+      if (b64.length > 4096) return false;
       const json = decodeURIComponent(atob(b64));
+      if (json.length > 4096) return false;
       const parsed = JSON.parse(json);
       if (!parsed || typeof parsed !== 'object') return false;
 
+      const normalized = {
+        viewMode: parsed.vm ?? parsed.viewMode,
+        cardDisplayMode: parsed.cdm ?? parsed.cardDisplayMode,
+        canvasBackground: parsed.bg ?? parsed.canvasBackground,
+        accentColor: parsed.ac ?? parsed.accentColor,
+        categoryOrder: parsed.co ?? parsed.categoryOrder,
+        pinnedCategoryIds: parsed.pco ?? parsed.pinnedCategoryIds,
+        hiddenCategoryIds: parsed.hco ?? parsed.hiddenCategoryIds,
+        siteCategoryOverrides: parsed.sco ?? parsed.siteCategoryOverrides,
+        customWallpaperUrl: parsed.wp ?? parsed.customWallpaperUrl,
+        glassmorphismBlur: parsed.gb ?? parsed.glassmorphismBlur,
+        cardOpacity: parsed.co_op ?? parsed.cardOpacity,
+      };
+      const check = validateAndCleanDIYConfig(normalized);
+      if (!check.valid || !check.config) return false;
       persistConfig((prev) => ({
         ...prev,
-        viewMode: parsed.vm || prev.viewMode,
-        cardDisplayMode: parsed.cdm || prev.cardDisplayMode,
-        canvasBackground: parsed.bg || prev.canvasBackground,
-        accentColor: parsed.ac || prev.accentColor,
-        categoryOrder: Array.isArray(parsed.co) ? parsed.co : prev.categoryOrder,
-        pinnedCategoryIds: Array.isArray(parsed.pco) ? parsed.pco : prev.pinnedCategoryIds,
-        hiddenCategoryIds: Array.isArray(parsed.hco) ? parsed.hco : prev.hiddenCategoryIds,
-        siteCategoryOverrides: parsed.sco && typeof parsed.sco === 'object' ? parsed.sco : prev.siteCategoryOverrides,
-        customWallpaperUrl: parsed.wp || prev.customWallpaperUrl,
-        glassmorphismBlur: typeof parsed.gb === 'number' ? parsed.gb : prev.glassmorphismBlur,
-        cardOpacity: typeof parsed.co_op === 'number' ? parsed.co_op : prev.cardOpacity,
+        viewMode: check.config.viewMode ?? prev.viewMode,
+        cardDisplayMode: check.config.cardDisplayMode ?? prev.cardDisplayMode,
+        canvasBackground: check.config.canvasBackground ?? prev.canvasBackground,
+        accentColor: check.config.accentColor ?? prev.accentColor,
+        categoryOrder: check.config.categoryOrder ?? prev.categoryOrder,
+        pinnedCategoryIds: check.config.pinnedCategoryIds ?? prev.pinnedCategoryIds,
+        hiddenCategoryIds: check.config.hiddenCategoryIds ?? prev.hiddenCategoryIds,
+        siteCategoryOverrides: check.config.siteCategoryOverrides ?? prev.siteCategoryOverrides,
+        customWallpaperUrl: check.config.customWallpaperUrl ?? prev.customWallpaperUrl,
+        glassmorphismBlur: check.config.glassmorphismBlur ?? prev.glassmorphismBlur,
+        cardOpacity: check.config.cardOpacity ?? prev.cardOpacity,
         updatedAt: Date.now(),
       }));
       return true;

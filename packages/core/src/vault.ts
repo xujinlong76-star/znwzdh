@@ -4,7 +4,7 @@
  * 核心设计目标：
  * 彻底消除企业与个人开发者对私密/内网书签（Jira、GitLab、内网 IP、未公开系统）泄露的担忧。
  * 基于通用 Web Crypto API（兼容 Node.js 20+ 与现代浏览器），
- * 采用 PBKDF2 (600,000 次哈希迭代) 派生主密钥 + AES-256-GCM 认证加密。
+ * 采用 PBKDF2 (100,000 次哈希迭代) 派生主密钥 + AES-256-GCM 认证加密。
  * 密文支持端侧零知识加解密与跨端便携导入导出，服务端仅触碰密文 Blob，永无明文落盘风险。
  */
 
@@ -32,6 +32,9 @@ const PBKDF2_ITERATIONS = 100_000; // 兼顾安全性与客户端毫秒级性能
 const KEY_LENGTH_BITS = 256;
 
 function hexToBytes(hex: string): Uint8Array {
+  if (typeof hex !== "string" || hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) {
+    throw new Error("非法 hex 字符串");
+  }
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
@@ -46,6 +49,7 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 function base64ToBytes(b64: string): Uint8Array {
+  if (typeof Buffer !== "undefined") return new Uint8Array(Buffer.from(b64, "base64"));
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -55,6 +59,7 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== "undefined") return Buffer.from(bytes).toString("base64");
   let binary = '';
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i] ?? 0);

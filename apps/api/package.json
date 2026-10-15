@@ -9,7 +9,7 @@
     "migrate": "node --experimental-strip-types src/migrate.ts",
     "seed": "node --experimental-strip-types src/seed-main.ts",
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@navhub/ai": "workspace:*",

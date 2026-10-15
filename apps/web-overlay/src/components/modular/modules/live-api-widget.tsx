@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Activity, RefreshCw, ExternalLink, Settings, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 
@@ -26,13 +26,21 @@ export function LiveApiWidget({ config }: LiveApiWidgetProps) {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [statusOk, setStatusOk] = useState<boolean | null>(null)
+  // 性能/资源：请求取消 + 失败指数退避（防后台页签空转与失败接口打爆服务端）
+  const abortRef = useRef<AbortController | null>(null)
+  const failuresRef = useRef(0)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!apiUrl) return
+    // 切配置时 abort 旧请求，避免竞态覆盖
+    abortRef.current?.abort()
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
     setLoading(true)
     setErrorMsg(null)
     try {
-      const res = await fetch(apiUrl, { cache: 'no-store' })
+      const res = await fetch(apiUrl, { cache: 'no-store', signal: ctrl.signal })
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`)
       }
@@ -60,7 +68,11 @@ export function LiveApiWidget({ config }: LiveApiWidgetProps) {
         setStatusOk(true)
       }
       setLastUpdated(new Date())
+      failuresRef.current = 0
     } catch (err: any) {
+      // 主动取消不计失败、不刷错误态
+      if (err?.name === 'AbortError') return
+      failuresRef.current += 1
       setErrorMsg(err.message || '抓取失败')
       setStatusOk(false)
     } finally {
@@ -69,11 +81,37 @@ export function LiveApiWidget({ config }: LiveApiWidgetProps) {
   }, [apiUrl, jsonKey])
 
   useEffect(() => {
+    let cancelled = false
+    const schedule = () => {
+      // 指数退避：连续失败时拉长间隔（上限 5 分钟），成功后 reset
+      const backoffMs = Math.min(300_000, intervalSec * 1000 * Math.pow(2, Math.min(5, failuresRef.current)))
+      timerRef.current = setTimeout(async () => {
+        if (cancelled) return
+        // 后台页签暂停轮询（visibilitychange 也会即时清理/恢复）
+        if (!document.hidden) {
+          await fetchData()
+        }
+        schedule()
+      }, backoffMs)
+    }
     void fetchData()
-    const timer = setInterval(() => {
-      void fetchData()
-    }, intervalSec * 1000)
-    return () => clearInterval(timer)
+    schedule()
+    const onVisibility = () => {
+      // 切回可见立即刷新一次；切后台时 abort 进行中的请求
+      if (document.hidden) {
+        abortRef.current?.abort()
+      } else {
+        void fetchData()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      cancelled = true
+      if (timerRef.current) clearTimeout(timerRef.current)
+      // unmount abort：防止 setState on unmounted + 释放连接
+      abortRef.current?.abort()
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [fetchData, intervalSec])
 
   return (

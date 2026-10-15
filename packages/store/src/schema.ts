@@ -162,11 +162,14 @@ export const events = sqliteTable("events", {
   query: text("query"),
   categoryId: text("category_id"),
   meta: text("meta"),
+  /** 行为归属身份（userId / anonId）：独立列供等值过滤（历史行由启动回填） */
+  identity: text("identity"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [
   index("events_kind_idx").on(t.kind),
   index("events_site_idx").on(t.siteId),
   index("events_created_idx").on(t.createdAt),
+  index("events_identity_idx").on(t.identity),
 ]);
 
 export const healthChecks = sqliteTable("health_checks", {

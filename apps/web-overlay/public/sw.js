@@ -9,7 +9,7 @@
  * 版本号：改 SW 行为时 bump CACHE 版本，activate 会清理旧缓存。
  */
 
-const CACHE = 'navhub-v2'
+const CACHE = 'navhub-v3'
 const SHELL = [
   '/',
   '/favorites',
@@ -46,13 +46,15 @@ self.addEventListener('fetch', (event) => {
   // 数据请求不走缓存
   if (url.pathname.startsWith('/api/')) return
 
-  // 导航请求：network-first + 离线回退首页
+  // 导航请求：network-first + 离线回退首页（只缓存 200 成功页，避免把 dev 重建期的 404/500 钉进缓存）
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone()
-          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => undefined)
+          if (res && res.ok) {
+            const copy = res.clone()
+            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => undefined)
+          }
           return res
         })
         .catch(() => caches.match(req).then((hit) => hit || caches.match('/')))

@@ -14,6 +14,7 @@ import { ExternalLink, Star, ShieldCheck, Sparkles, Zap, ArrowRight, Eye, Code, 
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { safeHref, safeSrc, isSafeHttpUrl } from '@/lib/safe-url'
 
 interface SitePeekDialogProps {
   item: NavigationSubItem | null
@@ -33,8 +34,13 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
     const targetUrl = action.urlTemplate.includes('{q}')
       ? action.urlTemplate.replace('{q}', encodeURIComponent(val))
       : action.urlTemplate
+    // 安全：仅允许 http/https 深链，非法模板直接拒绝打开（防 javascript: XSS）
+    if (!isSafeHttpUrl(targetUrl)) return
     window.open(targetUrl, '_blank', 'noopener,noreferrer')
   }
+
+  // iframe 预览源：非法 URL 直接不渲染（safeSrc 返回 undefined）
+  const previewSrc = safeSrc(item.href)
 
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setShowIframe(false) }}>
@@ -74,7 +80,11 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
               variant="default"
               size="sm"
               className="gap-1.5 shrink-0 h-8.5 px-3.5 shadow-xs font-medium"
-              onClick={() => window.open(item.href, '_blank', 'noopener,noreferrer')}
+              onClick={() => {
+                const u = safeHref(item.href, '')
+                if (!u || !isSafeHttpUrl(u)) return
+                window.open(u, '_blank', 'noopener,noreferrer')
+              }}
             >
               <span>访问主站</span>
               <ExternalLink className="w-3.5 h-3.5" />
@@ -165,7 +175,10 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                     variant="ghost"
                     size="icon"
                     className="h-6.5 w-6.5 shrink-0 rounded-lg hover:bg-muted"
-                    onClick={() => window.open(rel.targetUrl, '_blank', 'noopener,noreferrer')}
+                    onClick={() => {
+                      if (!isSafeHttpUrl(rel.targetUrl)) return
+                      window.open(rel.targetUrl, '_blank', 'noopener,noreferrer')
+                    }}
                   >
                     <ExternalLink className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
                   </Button>
@@ -193,15 +206,21 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
           </div>
 
           {showIframe ? (
+            previewSrc ? (
             <div className="relative w-full h-80 rounded-xl border border-border/70 overflow-hidden bg-muted/20 shadow-inner">
               <iframe
-                src={item.href}
+                src={previewSrc}
                 className="w-full h-full border-0"
                 sandbox="allow-scripts allow-same-origin allow-forms"
                 loading="lazy"
                 title={`Preview of ${item.title}`}
               />
             </div>
+            ) : (
+              <div className="p-4 rounded-xl border border-dashed border-rose-500/40 text-center text-xs text-muted-foreground bg-muted/10">
+                该站点地址不安全，已拦截预览（仅允许 http/https）。
+              </div>
+            )
           ) : (
             <div className="p-4 rounded-xl border border-dashed border-border/60 text-center text-xs text-muted-foreground bg-muted/10">
               点击上方“呼出即时沙箱”可在安全隔离环境中即刻体验该站点，无需新开标签页。

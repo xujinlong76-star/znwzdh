@@ -625,7 +625,57 @@ export const BUILTIN_DIY_PRESETS: DIYPreset[] = [
 
 /**
  * 10. 校验并清洗外部导入的 DIY JSON 配置
+ *
+ * 安全说明：该配置可来自 URL hash / 导入文件 / localStorage，属不可信输入。
+ * customWallpaperUrl 会直接进入 style={{ backgroundImage: `url(...)` }}，
+ * customCategories[].items[].href 会进入 <Link href>，必须白名单校验否则即 XSS/CSS 注入。
  */
+const SAFE_WALLPAPER_RE = /^(https?:\/\/[^'"()\s]+|\/[^'"()\s]*|data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+)$/i
+const SAFE_HREF_RE = /^(https?:\/\/[^'"()\s<>]+|\/[^'"()\s<>]*|#[^'"()\s<>]*|\.\/[^'"()\s<>]*|\.\.\/[^'"()\s<>]*)$/i
+const SAFE_ID_RE = /^[A-Za-z0-9_\-:.]{1,128}$/
+
+function cleanWallpaperUrl(v: unknown): string {
+  if (typeof v !== 'string') return ''
+  const s = v.trim().slice(0, 2048)
+  if (!s) return ''
+  return SAFE_WALLPAPER_RE.test(s) ? s : ''
+}
+
+/** 壁纸 URL 是否可安全用于 style backgroundImage（供渲染层复用） */
+export function isSafeWallpaperUrl(v: unknown): boolean {
+  if (typeof v !== 'string' || !v.trim()) return false
+  return SAFE_WALLPAPER_RE.test(v.trim().slice(0, 2048))
+}
+
+/** 站点 href 是否可安全渲染（供表单/拖拽入口复用） */
+export function isSafeSiteHref(v: unknown): boolean {
+  if (typeof v !== 'string' || !v.trim()) return false
+  return SAFE_HREF_RE.test(v.trim().slice(0, 2048))
+}
+
+function cleanSiteHref(v: unknown): string {
+  if (typeof v !== 'string') return ''
+  const s = v.trim().slice(0, 2048)
+  if (!s) return ''
+  return SAFE_HREF_RE.test(s) ? s : ''
+}
+
+function cleanIdList(v: unknown, max = 500): string[] {
+  if (!Array.isArray(v)) return []
+  return v.filter((x) => typeof x === 'string' && SAFE_ID_RE.test(x)).slice(0, max)
+}
+
+function cleanOverrides(v: unknown): Record<string, string> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  const out: Record<string, string> = {}
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (Object.keys(out).length >= 500) break
+    if (typeof val !== 'string') continue
+    if (SAFE_ID_RE.test(k) && SAFE_ID_RE.test(val)) out[k] = val
+  }
+  return out
+}
+
 export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: any; error?: string } {
   if (!raw || typeof raw !== 'object') {
     return { valid: false, error: '导入的配置文件不是合法的 JSON 对象' }
@@ -646,32 +696,53 @@ export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: 
     canvasBackground: validCanvasBgs.includes(raw.canvasBackground) ? raw.canvasBackground : 'mesh',
     accentColor: typeof raw.accentColor === 'string' ? raw.accentColor : 'default',
     heroDeckCollapsed: Boolean(raw.heroDeckCollapsed),
-    heroDeckWidgets: Array.isArray(raw.heroDeckWidgets) ? raw.heroDeckWidgets : ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'],
+    heroDeckWidgets: Array.isArray(raw.heroDeckWidgets) ? (raw.heroDeckWidgets as unknown[]).filter((w): w is string => typeof w === 'string' && SAFE_ID_RE.test(w)).slice(0, 32) : ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'],
     enableAdaptiveRanking: Boolean(raw.enableAdaptiveRanking),
     enableTemporalRanking: Boolean(raw.enableTemporalRanking),
     enableKeyboardNav: raw.enableKeyboardNav !== false,
-    categoryOrder: Array.isArray(raw.categoryOrder) ? raw.categoryOrder : [],
-    pinnedCategoryIds: Array.isArray(raw.pinnedCategoryIds) ? raw.pinnedCategoryIds : [],
-    hiddenCategoryIds: Array.isArray(raw.hiddenCategoryIds) ? raw.hiddenCategoryIds : [],
-    collapsedCategoryIds: Array.isArray(raw.collapsedCategoryIds) ? raw.collapsedCategoryIds : [],
-    pinnedSiteIdsByCategory: typeof raw.pinnedSiteIdsByCategory === 'object' && raw.pinnedSiteIdsByCategory !== null
-      ? raw.pinnedSiteIdsByCategory
-      : {},
+    categoryOrder: cleanIdList(raw.categoryOrder),
+    pinnedCategoryIds: cleanIdList(raw.pinnedCategoryIds),
+    hiddenCategoryIds: cleanIdList(raw.hiddenCategoryIds),
+    collapsedCategoryIds: cleanIdList(raw.collapsedCategoryIds),
+    pinnedSiteIdsByCategory: (() => {
+      if (typeof raw.pinnedSiteIdsByCategory !== 'object' || raw.pinnedSiteIdsByCategory === null || Array.isArray(raw.pinnedSiteIdsByCategory)) return {}
+      const out: Record<string, string[]> = {}
+      for (const [k, v] of Object.entries(raw.pinnedSiteIdsByCategory as Record<string, unknown>)) {
+        if (!SAFE_ID_RE.test(k) || !Array.isArray(v)) continue
+        out[k] = (v as unknown[]).filter((x): x is string => typeof x === 'string' && SAFE_ID_RE.test(x)).slice(0, 500)
+      }
+      return out
+    })(),
+    // 跨分类重映射：键值均为内部 id，白名单外直接丢弃（防原型污染与非法注入）
+    siteCategoryOverrides: cleanOverrides((raw as any).siteCategoryOverrides),
+    // 自定义壁纸：仅 http/https、/ 开头相对路径、data:image/(png|jpeg|webp);base64,，否则置空不渲染
+    customWallpaperUrl: cleanWallpaperUrl((raw as any).customWallpaperUrl ?? (raw as any).wp),
+    glassmorphismBlur: typeof raw.glassmorphismBlur === 'number' || typeof (raw as any).gb === 'number'
+      ? Math.min(30, Math.max(0, Number(typeof raw.glassmorphismBlur === 'number' ? raw.glassmorphismBlur : (raw as any).gb)))
+      : 12,
+    cardOpacity: typeof raw.cardOpacity === 'number' || typeof (raw as any).co_op === 'number'
+      ? Math.min(1, Math.max(0.2, Number(typeof raw.cardOpacity === 'number' ? raw.cardOpacity : (raw as any).co_op)))
+      : 0.9,
     customCategories: Array.isArray(raw.customCategories)
-      ? raw.customCategories.map((c: any) => ({
-          id: String(c.id || `custom_${Date.now()}`),
-          title: String(c.title || '自定义分类'),
-          icon: String(c.icon || 'FolderHeart'),
+      ? raw.customCategories.slice(0, 100).map((c: any) => ({
+          id: c && SAFE_ID_RE.test(String(c.id || '')) ? String(c.id) : `custom_${Date.now()}`,
+          title: String(c?.title || '自定义分类').slice(0, 64),
+          icon: String(c?.icon || 'FolderHeart').slice(0, 64),
           items: Array.isArray(c.items)
-            ? c.items.map((i: any) => ({
-                id: String(i.id || `item_${Date.now()}`),
-                title: String(i.title || ''),
-                href: String(i.href || ''),
-                icon: i.icon ? String(i.icon) : undefined,
-                description: i.description ? String(i.description) : undefined,
-              }))
+            ? c.items.slice(0, 500).map((i: any) => {
+                const href = cleanSiteHref(i?.href)
+                // 非法 href 直接丢弃该站点（不收录 javascript:/data:text/html 等）
+                if (!href) return null
+                return {
+                  id: i && SAFE_ID_RE.test(String(i.id || '')) ? String(i.id) : `item_${Date.now()}`,
+                  title: String(i.title || '').slice(0, 128),
+                  href,
+                  icon: i.icon ? String(i.icon).slice(0, 512) : undefined,
+                  description: i.description ? String(i.description).slice(0, 512) : undefined,
+                }
+              }).filter(Boolean)
             : [],
-          createdAt: Number(c.createdAt) || Date.now(),
+          createdAt: Number(c?.createdAt) || Date.now(),
         }))
       : [],
     updatedAt: Date.now(),

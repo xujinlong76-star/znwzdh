@@ -41,6 +41,7 @@ export interface AppConfig {
     userAgent: string;
   };
   corsOrigins: string[];
+  trustProxy: boolean;
   /**
    * 是否对管理面强制 Bearer token 鉴权。
    *
@@ -116,12 +117,24 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       userAgent: env("NAVHUB_USER_AGENT", "NavHubBot/0.1"),
     },
     corsOrigins: env("NAVHUB_CORS_ORIGINS", "*").split(",").map((s) => s.trim()).filter(Boolean),
+    // 公网直 exposed 时必须关（否则 XFF 伪造绕限流）；经自家代理透传真实 IP 时才开
+    trustProxy: process.env.NAVHUB_TRUST_PROXY !== "0",
     authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
   };
 
   if (mode === "standard" && !base.databaseUrl && !overrides.databaseUrl) {
     throw new Error("standard 模式必须提供 NAVHUB_DATABASE_URL");
+  }
+
+  // 生产守护：publicUrl 非本地且未开鉴权时给出明确警告（不直接 throw 以免拦住存量 NAS 用户）
+  const isLocalPublic = /localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])/.test(base.publicUrl);
+  if (!isLocalPublic && !base.authRequired && !overrides.authRequired) {
+    console.warn("[navhub] 警告：publicUrl 指向公网但 NAVHUB_AUTH_REQUIRED=false，管理面默认开放，建议设为 true");
+  }
+  // dtype 非法值早暴露（否则要到 pipeline 加载时才炸，且曾被永久缓存）
+  if (!new Set(["q8", "fp16", "fp32", "q4"]).has(base.embedding.dtype)) {
+    throw new Error("NAVHUB_EMBEDDING_DTYPE 非法: " + (base.embedding.dtype as string));
   }
 
   return { ...base, ...overrides };

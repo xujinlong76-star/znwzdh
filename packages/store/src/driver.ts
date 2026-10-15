@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { migrateColumns, migrateSiteIndexes } from "./migrate.ts";
+import { migrateColumns, migrateSiteIndexes, migrateEventIdentity } from "./migrate.ts";
 
 /**
  * 数据库驱动抽象。
@@ -27,6 +27,11 @@ export interface SqliteRunner {
 export interface PgRunner {
   query(sql: string, params?: unknown[]): Promise<{ rows: unknown[]; rowCount: number | null }>;
   end(): Promise<void>;
+  /** 可选：从池中拿独占连接（用于事务；pool.connect） */
+  connect?(): Promise<{
+    query(sql: string, params?: unknown[]): Promise<{ rows: unknown[]; rowCount: number | null }>;
+    release(): void;
+  }>;
 }
 
 export interface Db {
@@ -99,6 +104,10 @@ CREATE INDEX IF NOT EXISTS sites_category_idx ON sites(category_id);
 CREATE INDEX IF NOT EXISTS sites_status_idx ON sites(status);
 CREATE INDEX IF NOT EXISTS sites_pinyin_full_idx ON sites(pinyin_full);
 CREATE INDEX IF NOT EXISTS sites_pinyin_initials_idx ON sites(pinyin_initials);
+CREATE INDEX IF NOT EXISTS sites_source_status_idx ON sites(source, status);
+-- 注意：sites_hot_idx（含 trend_score）不在此处创建——旧库还没有 trend_score 列，
+-- DDL 先于 migrateColumns 执行会 "no such column" 导致整个 exec 失败。
+-- 由 migrateSiteIndexes 在列迁移后创建（与 url 部分索引同理）。
 
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL, created_at INTEGER NOT NULL
@@ -110,6 +119,7 @@ CREATE TABLE IF NOT EXISTS site_tags (
 );
 CREATE INDEX IF NOT EXISTS site_tags_site_idx ON site_tags(site_id);
 CREATE INDEX IF NOT EXISTS site_tags_tag_idx ON site_tags(tag_id);
+CREATE UNIQUE INDEX IF NOT EXISTS site_tags_unique_idx ON site_tags(site_id, tag_id);
 
 CREATE TABLE IF NOT EXISTS collections (
   id TEXT PRIMARY KEY, slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT,
@@ -122,6 +132,7 @@ CREATE TABLE IF NOT EXISTS collection_items (
   collection_id TEXT NOT NULL, site_id TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0, note TEXT
 );
 CREATE INDEX IF NOT EXISTS collection_items_col_idx ON collection_items(collection_id);
+CREATE INDEX IF NOT EXISTS collection_items_site_idx ON collection_items(site_id);
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, username TEXT NOT NULL, password_hash TEXT NOT NULL,
@@ -142,17 +153,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_idx ON api_tokens(token_hash);
 
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, site_id TEXT, query TEXT,
-  category_id TEXT, meta TEXT, created_at INTEGER NOT NULL
+  category_id TEXT, meta TEXT, identity TEXT, created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_kind_idx ON events(kind);
 CREATE INDEX IF NOT EXISTS events_site_idx ON events(site_id);
 CREATE INDEX IF NOT EXISTS events_created_idx ON events(created_at);
+CREATE INDEX IF NOT EXISTS events_search_idx ON events(kind, created_at, query);
+-- 注意：events_identity_idx 不在此处创建——旧库还没有 identity 列（由 migrateColumns 补齐），
+-- DDL 先于列迁移执行会 "no such column" 导致整个 exec 失败。由 migrateSiteIndexes 在列迁移后创建。
 
 CREATE TABLE IF NOT EXISTS health_checks (
   id INTEGER PRIMARY KEY AUTOINCREMENT, site_id TEXT NOT NULL, checked_at INTEGER NOT NULL,
   ok INTEGER NOT NULL, http_status INTEGER, latency_ms INTEGER, redirect_to TEXT, error TEXT
 );
 CREATE INDEX IF NOT EXISTS health_checks_site_idx ON health_checks(site_id);
+CREATE INDEX IF NOT EXISTS health_checks_checked_idx ON health_checks(checked_at);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, actor_kind TEXT NOT NULL DEFAULT 'user',
@@ -160,6 +175,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 CREATE INDEX IF NOT EXISTS audit_logs_created_idx ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS audit_logs_actor_idx ON audit_logs(actor);
+CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, id DESC);
 
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT, status TEXT NOT NULL DEFAULT 'pending',
@@ -218,6 +234,7 @@ CREATE TABLE IF NOT EXISTS search_history (
 );
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history(user_id);
 CREATE INDEX IF NOT EXISTS search_history_created_idx ON search_history(created_at);
+CREATE INDEX IF NOT EXISTS search_history_user_created_idx ON search_history(user_id, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS user_vault_sync (
   user_id TEXT PRIMARY KEY,
@@ -284,6 +301,10 @@ CREATE INDEX IF NOT EXISTS sites_category_idx ON sites(category_id);
 CREATE INDEX IF NOT EXISTS sites_status_idx ON sites(status);
 CREATE INDEX IF NOT EXISTS sites_pinyin_full_idx ON sites(pinyin_full);
 CREATE INDEX IF NOT EXISTS sites_pinyin_initials_idx ON sites(pinyin_initials);
+CREATE INDEX IF NOT EXISTS sites_source_status_idx ON sites(source, status);
+-- 注意：sites_hot_idx（含 trend_score）不在此处创建——旧库还没有 trend_score 列，
+-- DDL 先于 migrateColumns 执行会 "no such column" 导致整个 exec 失败。
+-- 由 migrateSiteIndexes 在列迁移后创建（与 url 部分索引同理）。
 
 -- pg_trgm 让 LIKE '%关键词%' 也能走索引（中文子串检索的关键）
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -298,6 +319,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS tags_slug_idx ON tags(slug);
 CREATE TABLE IF NOT EXISTS site_tags (site_id TEXT NOT NULL, tag_id TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS site_tags_site_idx ON site_tags(site_id);
 CREATE INDEX IF NOT EXISTS site_tags_tag_idx ON site_tags(tag_id);
+CREATE UNIQUE INDEX IF NOT EXISTS site_tags_unique_idx ON site_tags(site_id, tag_id);
 
 CREATE TABLE IF NOT EXISTS collections (
   id TEXT PRIMARY KEY, slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT,
@@ -310,6 +332,7 @@ CREATE TABLE IF NOT EXISTS collection_items (
   collection_id TEXT NOT NULL, site_id TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0, note TEXT
 );
 CREATE INDEX IF NOT EXISTS collection_items_col_idx ON collection_items(collection_id);
+CREATE INDEX IF NOT EXISTS collection_items_site_idx ON collection_items(site_id);
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY, username TEXT NOT NULL, password_hash TEXT NOT NULL,
@@ -330,17 +353,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_idx ON api_tokens(token_hash);
 
 CREATE TABLE IF NOT EXISTS events (
   id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL, site_id TEXT, query TEXT,
-  category_id TEXT, meta TEXT, created_at BIGINT NOT NULL
+  category_id TEXT, meta TEXT, identity TEXT, created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS events_kind_idx ON events(kind);
 CREATE INDEX IF NOT EXISTS events_site_idx ON events(site_id);
 CREATE INDEX IF NOT EXISTS events_created_idx ON events(created_at);
+CREATE INDEX IF NOT EXISTS events_search_idx ON events(kind, created_at, query);
+-- events_identity_idx 同 SQLite：列由 migrateColumns 补齐后，migrateSiteIndexes 建索引
 
 CREATE TABLE IF NOT EXISTS health_checks (
   id BIGSERIAL PRIMARY KEY, site_id TEXT NOT NULL, checked_at BIGINT NOT NULL,
   ok BOOLEAN NOT NULL, http_status INTEGER, latency_ms INTEGER, redirect_to TEXT, error TEXT
 );
 CREATE INDEX IF NOT EXISTS health_checks_site_idx ON health_checks(site_id);
+CREATE INDEX IF NOT EXISTS health_checks_checked_idx ON health_checks(checked_at);
 
 CREATE TABLE IF NOT EXISTS audit_logs (
   id BIGSERIAL PRIMARY KEY, actor TEXT NOT NULL, actor_kind TEXT NOT NULL DEFAULT 'user',
@@ -348,6 +374,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 CREATE INDEX IF NOT EXISTS audit_logs_created_idx ON audit_logs(created_at);
 CREATE INDEX IF NOT EXISTS audit_logs_actor_idx ON audit_logs(actor);
+CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, id DESC);
 
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT, status TEXT NOT NULL DEFAULT 'pending',
@@ -406,6 +433,7 @@ CREATE TABLE IF NOT EXISTS search_history (
 );
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history(user_id);
 CREATE INDEX IF NOT EXISTS search_history_created_idx ON search_history(created_at);
+CREATE INDEX IF NOT EXISTS search_history_user_created_idx ON search_history(user_id, created_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS user_vault_sync (
   user_id TEXT PRIMARY KEY,
@@ -439,6 +467,7 @@ export async function openDb(config: {
     };
     await migrateColumns(db);
     await migrateSiteIndexes(db);
+    await migrateEventIdentity(db);
     return db;
   }
 
@@ -454,6 +483,7 @@ export async function openDb(config: {
   };
   await migrateColumns(db);
   await migrateSiteIndexes(db);
+  await migrateEventIdentity(db);
   return db;
 }
 

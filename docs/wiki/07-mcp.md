@@ -10,11 +10,13 @@
 | --- | --- | --- |
 | [tools.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/tools.ts) | ~230 | **15 个工具定义** + zod 输入 schema + 权限模型（`requireScope` / `MAX_BATCH_ITEMS`） |
 | [handlers.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/handlers.ts) | ~360 | **工具实现**（`createHandlers(ctx)`）：权限校验 → 幂等去重 → 审计落库 |
-| [stdio.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/stdio.ts) | 98 | **stdio 传输**：MCP SDK `Server` + `StdioServerTransport` |
-| [http.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/http.ts) | 130 | **HTTP 传输**：`node:http` 裸服务，Bearer token + Origin 校验 |
+| [mcp-server.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/mcp-server.ts) | ~75 | **Server 工厂**：`createMcpServer(ctx, toolCtx)`——`ListToolsRequestSchema` / `CallToolRequestSchema` 装配，stdio 与 HTTP 共用 |
+| [stdio.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/stdio.ts) | ~45 | **stdio 传输**：`createMcpServer` + `StdioServerTransport` |
+| [http-server.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/http-server.ts) | ~270 | **HTTP 传输**：标准 MCP Streamable HTTP（`/mcp`）+ 兼容 REST + Bearer/Origin 鉴权；导出 `createMcpHttpServer(options)` 便于测试 |
+| [http.ts](file:///c:/Users/许进龙/Desktop/web/packages/mcp/src/http.ts) | ~55 | **HTTP 启动入口**：读环境变量 → 校验生产约束 → `listen` |
 
 依赖：`@modelcontextprotocol/sdk 1.32.1`、`@navhub/api`（复用 `createContext`/`loadConfig`）、`@navhub/core`、`@navhub/store`、`@navhub/ai`、`zod`、`zod-to-json-schema`。
-测试：`test/mcp.test.ts`——权限硬边界、dryRun 默认行为、幂等、审计、admin 级工具。
+测试：`test/mcp.test.ts`——权限硬边界、dryRun 默认行为、幂等、审计、admin 级工具；`test/mcp-http.test.ts`——标准 Streamable HTTP 全链路（真实端口 + fetch）、会话头规范行为、scope 收紧、Origin 白名单。
 
 ## 2. 权限模型
 
@@ -157,7 +159,7 @@ async function withIdempotency(key: string | undefined, compute: () => Promise<u
 | --- | --- |
 | 身份 | `NAVHUB_MCP_ACTOR`（默认 `mcp:stdio`） |
 | scope | `NAVHUB_MCP_SCOPES`（默认 `read,write`） |
-| 工具发现 | `ListToolsRequestSchema` → `TOOL_DEFS`，**写工具的 description 追加「（写操作，会修改数据）」** |
+| 工具发现 | `ListToolsRequestSchema` → `TOOL_DEFS`，**按当前 scope 过滤**（read 明明看不到写工具，也不必列出必然 403 的 admin 工具），**写工具的 description 追加「（写操作，会修改数据）」** |
 | 入参描述 | `zodToJsonSchema(schema, { $refStrategy: "none" })`——全仓 zod 固定 v3，v3 无内置 `toJSONSchema`，故用社区实现 `zod-to-json-schema`；**转换失败退回宽松描述** `{type:"object", additionalProperties:true}`，保证工具仍可被发现与调用 |
 | 错误 | 捕获后返回 `isError: true` + `调用失败：<message>` |
 
@@ -192,12 +194,23 @@ function auth(req): ToolContext | null {
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/health` | `{ ok, capabilities, tools }`——**无需鉴权** |
-| GET | `/tools` | 工具清单（**按 scope 过滤**：`toolCtx.has(t.scope) \|\| t.scope === "read"`） |
-| POST | `/tools/<name>` | 调用工具；请求体上限 **1MB**（超限 413） |
+| GET | `/health` | `{ ok: true }`——**无需鉴权**，且不泄露 capabilities / 工具数（防能力枚举） |
+| POST | `/mcp` | **标准 MCP Streamable HTTP**：JSON-RPC 2.0（`initialize` / `tools/list` / `tools/call`…）。请求需 `Accept: application/json, text/event-stream` 与 `Content-Type: application/json` |
+| GET | `/mcp` | **标准 MCP**：服务端 → 客户端 SSE 流，需携带有效 `Mcp-Session-Id` |
+| DELETE | `/mcp` | **标准 MCP**：结束会话 |
+| GET | `/tools` | 工具清单（**按 scope 过滤**：`toolCtx.has(t.scope)`），兼容旧脚本 |
+| POST | `/tools/<name>` | 调用工具；请求体上限 **1MB**（超限 413），兼容旧脚本 |
 | — | 其他 | 404 + hint |
 
-**错误映射**：消息含「权限」→ **403**，其他 → **400**；未知工具 → 404；未实现 → 501。
+**会话流程**（[MCP Streamable HTTP 规范](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http)）：
+
+1. `POST /mcp`（`initialize`，**无** `Mcp-Session-Id`）→ 响应头带 `Mcp-Session-Id`；
+2. 之后所有请求（含 `notifications/initialized`）都必须带该头；无头且非 `initialize` → **400**，头无效 → **404**；
+3. 会话建立后传输层独立处理 JSON-RPC，会话空闲 **30 分钟**自动回收（有活跃 SSE 流则不回收），`DELETE /mcp` 可主动结束。
+
+> 本服务用 `enableJsonResponse: true`：带 id 的请求直接返回 `application/json` 响应体（而非 SSE 流），对脚本与简单客户端更友好；规范允许服务端在两者间选择。
+
+**错误映射**：`/mcp` 一律返回 **JSON-RPC 2.0 错误体**（`{jsonrpc, error:{code,message}, id:null}`）——400 / 404 / 405 / 413；兼容端点 `/tools/<name>` 保持消息含「权限」→ **403**，其他 → **400**；未知工具 → 404；未实现 → 501。
 
 ## 6. 共用上下文：与 REST 行为完全一致
 

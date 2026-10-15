@@ -80,8 +80,8 @@ export interface HubTag {
   count: number
 }
 
-async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(hubUrl(path), { signal, headers: { Accept: 'application/json', ...authHeaders() } })
+async function getJson<T>(path: string, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
+  const res = await fetch(hubUrl(path), { signal, headers: { Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) } })
   if (!res.ok) throw hubError(res.status)
   return (await res.json()) as T
 }
@@ -96,11 +96,11 @@ function hubError(status: number): Error & { status: number } {
   return err
 }
 
-async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown, signal?: AbortSignal): Promise<T> {
+async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
   const res = await fetch(hubUrl(path), {
     method,
     signal,
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders() },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (!res.ok) throw hubError(res.status)
@@ -115,6 +115,11 @@ async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DEL
  * 时，收藏/金库/画像/历史强制绑定 "token:<id>" 身份并忽略自报 anonId；
  * 不带时回退匿名行为。token 存 localStorage 只存本机，永不进 URL。
  * 获取方式：管理员 POST /api/tokens 建只读 token，把明文填到「偏好设置」。
+ *
+ * 安全提示：
+ * - localStorage 无过期机制：token 长期有效，泄漏即长期失守；建议服务端定期轮换、
+ *   用户登出/换机时调用 setApiToken(null) 清除；隐私模式写失败时静默回退匿名。
+ * - 切勿把 token 拼进 URL query（会进浏览器历史/服务端访问日志/Referer）。
  */
 const API_TOKEN_KEY = 'navhub_api_token'
 
@@ -144,6 +149,17 @@ function authHeaders(): Record<string, string> {
   }
 }
 
+/**
+ * 匿名身份传递：header 优先、query 兼容。
+ *
+ * 风险说明：`?anonId=` 会残留在浏览器历史、代理/网关访问日志与 Referer 中，
+ * 且易被分享 URL 意外扩散。这里改为优先走 `X-Navhub-Anon-Id` header，
+ * query 仅为兼容旧版中枢保留（待中枢确认支持 header 后可移除 query 侧）。
+ */
+function anonHeaders(identity?: string): Record<string, string> {
+  return identity ? { 'X-Navhub-Anon-Id': identity } : {}
+}
+
 /** 通用 GET / 发送（管理端等自定义端点用；失败抛错，由调用方决定降级） */
 export { getJson as hubGet, sendJson as hubSend }
 
@@ -166,9 +182,10 @@ export async function searchSites(params: SearchParams, signal?: AbortSignal): P
   if (params.offset) query.set('offset', String(params.offset))
   if (params.categoryId) query.set('categoryId', params.categoryId)
   if (params.tag) query.set('tag', params.tag)
+  // 兼容旧中枢：query 保留 anonId；新中枢优先读 X-Navhub-Anon-Id header（防日志泄漏）
   if (params.identity) query.set('anonId', params.identity)
   try {
-    return await getJson<HubSearchResult>('/api/search?' + query.toString(), signal)
+    return await getJson<HubSearchResult>('/api/search?' + query.toString(), signal, anonHeaders(params.identity))
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') throw err
     return { hits: [], channelsUsed: [], semanticAvailable: false, tookMs: 0, degraded: true }
@@ -177,8 +194,9 @@ export async function searchSites(params: SearchParams, signal?: AbortSignal): P
 
 /** 点击上报（fire-and-forget，失败静默） */
 export function reportClick(siteId: string, identity?: string): void {
+  // header 优先 + query 兼容（见 anonHeaders 注释）
   const query = identity ? '?anonId=' + encodeURIComponent(identity) : ''
-  void sendJson('/api/events' + query, 'POST', { kind: 'click', siteId }).catch(() => undefined)
+  void sendJson('/api/events' + query, 'POST', { kind: 'click', siteId }, undefined, anonHeaders(identity)).catch(() => undefined)
 }
 
 /* ------------------------------ 标签 ------------------------------ */
@@ -277,7 +295,7 @@ export interface HubFavorite {
 
 export async function listFavorites(identity: string): Promise<{ items: HubFavorite[]; folders: Array<{ id: string; name: string }> }> {
   try {
-    return await getJson('/api/favorites?anonId=' + encodeURIComponent(identity))
+    return await getJson('/api/favorites?anonId=' + encodeURIComponent(identity), undefined, anonHeaders(identity))
   } catch {
     return { items: [], folders: [] }
   }
@@ -285,7 +303,7 @@ export async function listFavorites(identity: string): Promise<{ items: HubFavor
 
 export async function addFavorite(identity: string, siteId: string): Promise<boolean> {
   try {
-    await sendJson('/api/favorites?anonId=' + encodeURIComponent(identity), 'POST', { siteId })
+    await sendJson('/api/favorites?anonId=' + encodeURIComponent(identity), 'POST', { siteId }, undefined, anonHeaders(identity))
     return true
   } catch {
     return false
@@ -294,7 +312,7 @@ export async function addFavorite(identity: string, siteId: string): Promise<boo
 
 export async function removeFavorite(identity: string, siteId: string): Promise<boolean> {
   try {
-    await sendJson('/api/favorites/' + encodeURIComponent(siteId) + '?anonId=' + encodeURIComponent(identity), 'DELETE')
+    await sendJson('/api/favorites/' + encodeURIComponent(siteId) + '?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
     return true
   } catch {
     return false
@@ -307,6 +325,8 @@ export async function fetchSearchHistory(identity: string, limit = 8): Promise<s
   try {
     const data = await getJson<{ items: Array<{ query: string }> }>(
       '/api/search-history?anonId=' + encodeURIComponent(identity) + '&limit=' + limit,
+      undefined,
+      anonHeaders(identity),
     )
     return data.items.map((i) => i.query)
   } catch {
@@ -327,6 +347,8 @@ export async function fetchCloudVault(identity: string): Promise<CloudVaultData 
   try {
     const data = await getJson<{ ok: boolean; vault: CloudVaultData | null }>(
       '/api/vault/sync?anonId=' + encodeURIComponent(identity),
+      undefined,
+      anonHeaders(identity),
     )
     return data.vault ?? null
   } catch {
@@ -336,7 +358,7 @@ export async function fetchCloudVault(identity: string): Promise<CloudVaultData 
 
 export async function saveCloudVault(identity: string, payload: string): Promise<{ ok: boolean; version?: number; updatedAt?: number }> {
   try {
-    return await sendJson('/api/vault/sync?anonId=' + encodeURIComponent(identity), 'PUT', { payload })
+    return await sendJson('/api/vault/sync?anonId=' + encodeURIComponent(identity), 'PUT', { payload }, undefined, anonHeaders(identity))
   } catch {
     return { ok: false }
   }
@@ -344,7 +366,7 @@ export async function saveCloudVault(identity: string, payload: string): Promise
 
 export async function deleteCloudVault(identity: string): Promise<boolean> {
   try {
-    await sendJson('/api/vault/sync?anonId=' + encodeURIComponent(identity), 'DELETE')
+    await sendJson('/api/vault/sync?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
     return true
   } catch {
     return false

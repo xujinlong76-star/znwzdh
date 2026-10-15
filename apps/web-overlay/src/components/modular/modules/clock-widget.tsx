@@ -20,33 +20,31 @@ export function ClockWidget({ config }: { config?: Record<string, any> }) {
 
   useEffect(() => {
     setTime(new Date())
-    const timer = setInterval(() => setTime(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null
-    if (isRunning && pomodoroSeconds > 0) {
-      // 基于时间戳倒计时（而非 prev-1 累加）：setInterval 在后台标签页会被
-      // 浏览器节流到分钟级，累加法会累积漂移；每次启动/恢复时以真实
-      // Date.now() 锚定终点，节流恢复后自动追平，不丢秒。
-      if (endAtRef.current === null) {
-        endAtRef.current = Date.now() + pomodoroSeconds * 1000
-      }
-      interval = setInterval(() => {
-        if (!endAtRef.current) return
+    // 单 timer 驱动时钟显示 + 番茄倒计时（原双 interval：1s 时钟 + 500ms 番茄各跑各的）。
+    // 专注运行时 500ms 档（倒计时跟手），待机时 1000ms 档（省一半渲染）。
+    const intervalMs = isRunning ? 500 : 1000
+    const timer = setInterval(() => {
+      setTime(new Date())
+      if (isRunning && endAtRef.current) {
         const remaining = Math.max(0, Math.ceil((endAtRef.current - Date.now()) / 1000))
         setPomodoroSeconds(remaining)
         if (remaining <= 0) {
           setIsRunning(false)
           endAtRef.current = null
         }
-      }, 500)
+      }
+    }, intervalMs)
+    return () => clearInterval(timer)
+  }, [isRunning])
+
+  useEffect(() => {
+    // 基于时间戳倒计时（而非 prev-1 累加）：setInterval 在后台标签页会被
+    // 浏览器节流到分钟级，累加法会累积漂移；每次启动/恢复时以真实
+    // Date.now() 锚定终点，节流恢复后自动追平，不丢秒。
+    if (isRunning && pomodoroSeconds > 0 && endAtRef.current === null) {
+      endAtRef.current = Date.now() + pomodoroSeconds * 1000
     } else if (!isRunning) {
       endAtRef.current = null
-    }
-    return () => {
-      if (interval) clearInterval(interval)
     }
   }, [isRunning])
 

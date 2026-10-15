@@ -2,6 +2,10 @@ packages:
   - 'packages/*'
   - 'apps/*'
 
+# 版本锁定：包管理器版本由根 package.json 的 `packageManager: pnpm@11.7.0` 声明，
+# 启用 corepack 后自动锁定（`corepack enable && corepack install`），
+# 与 Dockerfile / CI 里的 pnpm@11.7.0 保持一致。
+
 # 安装期构建脚本白名单（pnpm 11 的配置位置）
 #  - better-sqlite3:   编译原生 SQLite 扩展
 #  - esbuild:          下载平台二进制（vitest / tsx 依赖）

@@ -17,6 +17,7 @@ export type SpeculativeIntentType =
   | 'math'
   | 'json_format'
   | 'url_decode'
+  | 'url_encode'
   | 'hash_detect'
   | 'ip_detect';
 
@@ -121,7 +122,8 @@ function tryParseBase64(input: string): SpeculativeIntentResult | null {
     const isPrintable = /^[\x20-\x7E\r\n\t\u4e00-\u9fa5]+$/.test(decoded);
     const isNormalizedBase64 = candidate.replace(/=+$/, '') === reEncoded.replace(/=+$/, '');
 
-    if ((explicitDecode || (isPrintable && isNormalizedBase64)) && decoded.length > 0) {
+    // 显式 b64: 前缀仍要求可打印+一致性，防止 b64:!!! 解出垃圾仍返回
+    if (((explicitDecode && isPrintable) || (isPrintable && isNormalizedBase64)) && decoded.length > 0) {
       return {
         type: 'base64_decode',
         title: 'Base64 即刻解码',
@@ -189,13 +191,17 @@ function tryParseTimestamp(input: string): SpeculativeIntentResult | null {
 function tryParseColor(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
 
-  // HEX 匹配
+  // HEX 匹配：裸 3 位 hex（如 abc/fff）误触发太多短查询，要求 # 前缀或长度>=6
   const hexMatch = trimmed.match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
   if (hexMatch && hexMatch[1]) {
-    let hex = hexMatch[1];
+    const rawHex = hexMatch[1];
+    if (!trimmed.startsWith('#') && rawHex.length === 3) return null;
+    let hex = rawHex;
     if (hex.length === 3) {
       hex = hex.split('').map((c) => c + c).join('');
     }
+    // 8 位 HEX 的 alpha 直接展示，不静默丢弃
+    const alpha = hex.length === 8 ? hex.slice(6, 8) : null;
     const r = Number.parseInt(hex.slice(0, 2), 16);
     const g = Number.parseInt(hex.slice(2, 4), 16);
     const b = Number.parseInt(hex.slice(4, 6), 16);
@@ -205,13 +211,14 @@ function tryParseColor(input: string): SpeculativeIntentResult | null {
     return {
       type: 'color',
       title: '颜色即刻速览',
-      subtitle: `${fullHex} · ${rgbStr}`,
+      subtitle: `${fullHex} · ${rgbStr}${alpha ? ` · alpha ${alpha}` : ''}`,
       previewValue: fullHex,
       actionLabel: '复制 HEX 色值',
       copyValue: fullHex,
       details: {
         HEX: fullHex,
         RGB: rgbStr,
+        ...(alpha ? { Alpha: alpha } : {}),
       },
     };
   }
@@ -246,6 +253,8 @@ function tryParseColor(input: string): SpeculativeIntentResult | null {
  */
 function tryParseMath(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
+  // 长度上限：防止 10KB 长串每击键编译一次 DoS；且需 CSP 允许 unsafe-eval，否则 Function 会抛错（已 catch）
+  if (trimmed.length > 200) return null;
   // 必须包含至少一个算术运算符，且仅包含数字、小数点、括号、运算符与空白
   if (!/[+\-*/%^]/.test(trimmed)) return null;
   if (!/^[\d\s+\-*/%^().]+$/.test(trimmed)) return null;
@@ -286,6 +295,7 @@ function tryParseMath(input: string): SpeculativeIntentResult | null {
  */
 function tryParseJson(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
+  if (trimmed.length > 10000) return null;
   if (!(trimmed.startsWith('{') && trimmed.endsWith('}')) && !(trimmed.startsWith('[') && trimmed.endsWith(']'))) {
     return null;
   }
@@ -320,7 +330,7 @@ function tryParseUrlEncoding(input: string): SpeculativeIntentResult | null {
     if (!raw) return null;
     const encoded = encodeURIComponent(raw);
     return {
-      type: 'url_decode',
+      type: 'url_encode',
       title: 'URL 快速编码',
       subtitle: `原始字符: ${raw.slice(0, 30)}`,
       previewValue: encoded,
@@ -329,6 +339,7 @@ function tryParseUrlEncoding(input: string): SpeculativeIntentResult | null {
     };
   }
 
+  // 普通文本如 100%20deal 误判 URL 解码：要求至少像 URL（带 :// 或以 / 开头或含 =/& 参数形态）
   if (trimmed.includes('%') && /%[0-9a-fA-F]{2}/.test(trimmed)) {
     try {
       const decoded = decodeURIComponent(trimmed);
@@ -391,7 +402,11 @@ function tryDetectIp(input: string): SpeculativeIntentResult | null {
         p0 === 10 ||
         (p0 === 172 && p1 >= 16 && p1 <= 31) ||
         (p0 === 192 && p1 === 168) ||
-        p0 === 127;
+        p0 === 127 ||
+        (p0 === 100 && p1 >= 64 && p1 <= 127) ||
+        (p0 === 169 && p1 === 254) ||
+        (p0 === 192 && p1 === 0 && (p2 === 0 || p2 === 2)) ||
+        p0 === 0;
       return {
         type: 'ip_detect',
         title: 'IPv4 地址识别',
@@ -415,12 +430,25 @@ function tryDetectIp(input: string): SpeculativeIntentResult | null {
  */
 function tryParseCron(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
-  const parts = trimmed.split(/\s+/);
+  // 显式前缀或严格 5/6 段才判 cron，避免普通短串误触发
+  const explicit = trimmed.startsWith('cron:');
+  const body = explicit ? trimmed.slice(5).trim() : trimmed;
+  const parts = body.split(/\s+/);
   if (parts.length !== 5 && parts.length !== 6) return null;
 
-  // 基础 Cron 字符集校验
+  // 基础 Cron 字符集校验（支持 @daily/MON 等前置校验：含字母时要求显式前缀）
+  if (/[A-Za-z@]/.test(body) && !explicit) return null;
   const validChars = /^[0-9\*\/\,\-]+$/;
   if (!parts.every(p => validChars.test(p))) return null;
+  // 范围粗检：分0-59 时0-23 日1-31 月1-12 周0-7
+  const ranges: Array<[number, number]> = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]];
+  for (let i = 0; i < 5; i++) {
+    const seg = parts[i] ?? "*";
+    if (seg === "*") continue;
+    const nums = seg.match(/\d+/g)?.map(Number) ?? [];
+    const [lo, hi] = ranges[i]!;
+    if (nums.some((n) => n < lo || n > hi)) return null;
+  }
 
   const [min, hour, dom, mon, dow] = parts;
   let explanation = '定时执行任务: ';
@@ -443,11 +471,11 @@ function tryParseCron(input: string): SpeculativeIntentResult | null {
     type: 'cron',
     title: 'Cron 定时任务表达式',
     subtitle: explanation,
-    previewValue: trimmed,
+    previewValue: body,
     actionLabel: '复制 Cron 语法',
-    copyValue: trimmed,
+    copyValue: body,
     details: {
-      '标准格式': trimmed,
+      '标准格式': body,
       '语义释义': explanation,
       '分/时/日/月/周': parts.slice(0, 5).join(' | '),
     },
@@ -494,14 +522,14 @@ function tryParseJwt(input: string): SpeculativeIntentResult | null {
 
     return {
       type: 'jwt',
-      title: `JWT 结构反序列化 (${status})`,
-      subtitle: `算法: ${header.alg || '未知'} | 签发者/主题: ${payload.iss || payload.sub || '缺省'}`,
+      title: `JWT 结构反序列化 (${status}) — 未验签，仅供调试`,
+      subtitle: `算法: ${header.alg || '未知'} | 签发者/主题: ${payload.iss || payload.sub || '缺省'}${payload.nbf ? ` | nbf: ${new Date(payload.nbf * 1000).toLocaleString()}` : ''}`,
       previewValue: JSON.stringify(payload, null, 2),
       actionLabel: '复制 Payload 详情',
       copyValue: JSON.stringify(payload, null, 2),
       details: {
         '算法': String(header.alg || 'none'),
-        '状态': status,
+        '状态': status + '（未验签名，切勿信任）',
         '到期时间': expireInfo,
       },
     };
@@ -524,8 +552,15 @@ function tryParseCurl(input: string): SpeculativeIntentResult | null {
 
   const methodMatch = trimmed.match(/-X\s+([A-Z]+)/i);
   const method = methodMatch ? (methodMatch[1] || 'GET').toUpperCase() : (trimmed.includes('-d ') || trimmed.includes('--data') ? 'POST' : 'GET');
+  // 提取 -H/--header 与 -d body，避免生成的 fetch 恒 JSON 误导
+  const headerMatches = [...trimmed.matchAll(/(?:-H|--header)\s+["']([^"']+)["']/g)].map((m) => m[1]);
+  const dataMatch = trimmed.match(/(?:-d|--data(?:-raw)?)\s+["']([^"']*)["']/);
+  const headerLines = headerMatches.length
+    ? "\n  headers: { " + headerMatches.map((h) => `"${(h ?? "").split(":")[0]?.trim()}": "${(h ?? "").split(":").slice(1).join(":").trim()}"`).join(", ") + " }"
+    : '\n  headers: { "Content-Type": "application/json" }';
+  const bodyLine = dataMatch?.[1] ? `,\n  body: ${JSON.stringify(dataMatch[1])}` : "";
 
-  const generatedFetch = `fetch("${targetUrl}", {\n  method: "${method}",\n  headers: { "Content-Type": "application/json" }\n})`;
+  const generatedFetch = `fetch("${targetUrl}", {\n  method: "${method}",${headerLines}${bodyLine}\n})`;
 
   return {
     type: 'curl_to_fetch',
@@ -543,20 +578,21 @@ function tryParseCurl(input: string): SpeculativeIntentResult | null {
 
 export function parseSpeculativeIntent(input: string): SpeculativeIntentResult | null {
   if (!input || input.trim().length === 0) return null;
-  const q = input.trim();
+  let q = input.trim();
+  if (q.length > 5000) q = q.slice(0, 5000);
 
-  // 优先级逐层匹配
+  // 优先级逐层匹配：math/timestamp 优先于 color（短 hex 归属更稳），hash 优先于 base64
   return (
     tryParseCron(q) ||
     tryParseJwt(q) ||
     tryParseCurl(q) ||
-    tryParseColor(q) ||
     tryParseMath(q) ||
     tryParseTimestamp(q) ||
+    tryParseColor(q) ||
     tryParseJson(q) ||
+    tryDetectHash(q) ||
     tryParseBase64(q) ||
     tryParseUrlEncoding(q) ||
-    tryDetectHash(q) ||
     tryDetectIp(q)
   );
 }

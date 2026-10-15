@@ -5,6 +5,7 @@ import { TrendingUp, Star, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 
 import { fetchTrending } from '@/lib/navhub-api'
+import { safeHref } from '@/lib/safe-url'
 
 interface HotSite {
   id: string
@@ -82,7 +83,7 @@ export function TrendingWidget() {
           sites.map((site, index) => (
             <a
               key={site.id}
-              href={site.url}
+              href={safeHref(site.url)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-between gap-2 p-1.5 rounded-lg hover:bg-muted/50 transition-colors group"

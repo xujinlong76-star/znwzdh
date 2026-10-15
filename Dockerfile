@@ -1,6 +1,11 @@
 # ==========================================
 # NavHub 生产级多阶段容器镜像
 # ==========================================
+#
+# DEPRECATED（已废弃）：根 Dockerfile / docker-compose.yml 为历史简版入口，
+# 新部署请使用 docker/Dockerfile.api + docker/Dockerfile.web 与
+# docker/docker-compose.yml（详见 docs/wiki/08-extensions-scripts-docker.md）。
+# 本文件仅保留兼容，不再演进；CI 不再引用它。
 
 FROM node:22-bookworm-slim AS base
 WORKDIR /app
@@ -21,12 +26,12 @@ COPY packages/mcp/package.json ./packages/mcp/
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
 
-RUN pnpm install --no-frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 # 构建阶段
 FROM dependencies AS builder
 COPY . .
-RUN pnpm -r --filter './packages/**' build || true
+RUN pnpm -r --filter './packages/**' build
 RUN node scripts/run.mjs --filter navsphere build
 
 # 生产运行阶段

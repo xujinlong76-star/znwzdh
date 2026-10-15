@@ -111,6 +111,35 @@ export function useHomeDIY() {
   // 1. 客户端挂载时加载配置并平滑兼容 v1/v2
   useEffect(() => {
     try {
+      // 优先检测 URL Hash 是否带有免登预设分享 #diy=...
+      if (typeof window !== 'undefined' && window.location.hash.startsWith('#diy=')) {
+        const b64 = window.location.hash.replace(/^#diy=/, '');
+        const json = decodeURIComponent(atob(b64));
+        const parsed = JSON.parse(json);
+        if (parsed && typeof parsed === 'object') {
+          const imported: HomeDIYConfig = {
+            ...DEFAULT_CONFIG,
+            viewMode: parsed.vm || DEFAULT_CONFIG.viewMode,
+            cardDisplayMode: parsed.cdm || DEFAULT_CONFIG.cardDisplayMode,
+            canvasBackground: parsed.bg || DEFAULT_CONFIG.canvasBackground,
+            accentColor: parsed.ac || DEFAULT_CONFIG.accentColor,
+            categoryOrder: Array.isArray(parsed.co) ? parsed.co : [],
+            pinnedCategoryIds: Array.isArray(parsed.pco) ? parsed.pco : [],
+            hiddenCategoryIds: Array.isArray(parsed.hco) ? parsed.hco : [],
+            siteCategoryOverrides: parsed.sco && typeof parsed.sco === 'object' ? parsed.sco : {},
+            customWallpaperUrl: parsed.wp || '',
+            glassmorphismBlur: typeof parsed.gb === 'number' ? parsed.gb : 12,
+            cardOpacity: typeof parsed.co_op === 'number' ? parsed.co_op : 0.9,
+            updatedAt: Date.now(),
+          };
+          setConfig(imported);
+          setHistory(createLayoutHistory(imported));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(imported));
+          window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          setMounted(true);
+          return;
+        }
+      }
       let raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) {
         // 尝试从 v2 迁移

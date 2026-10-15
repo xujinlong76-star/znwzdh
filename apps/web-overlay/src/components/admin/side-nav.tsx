@@ -11,7 +11,8 @@ import {
   ListChecks,
   BarChart3,
   Tag as TagIcon,
-  FolderTree
+  FolderTree,
+  Layers as LayersIcon
 } from "lucide-react"
 
 const sidebarNavItems = [
@@ -49,6 +50,11 @@ const sidebarNavItems = [
     title: "标签管理",
     href: "/admin/tags",
     icon: TagIcon,
+  },
+  {
+    title: "精选专题",
+    href: "/admin/collections",
+    icon: LayersIcon,
   },
   {
     title: "任务队列",

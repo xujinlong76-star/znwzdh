@@ -30,6 +30,8 @@ export function Footer({ siteInfo }: FooterProps) {
           <span className="text-border">·</span>
           <Link href="/tags" className="hover:text-foreground transition-colors">全景标签云</Link>
           <span className="text-border">·</span>
+          <Link href="/collections" className="hover:text-foreground transition-colors">精选专题</Link>
+          <span className="text-border">·</span>
           <Link href="/custom" className="hover:text-foreground transition-colors text-emerald-600 dark:text-emerald-400 font-medium">模块化工作台</Link>
         </div>
         <p className="text-center text-xs text-muted-foreground/80 font-mono">

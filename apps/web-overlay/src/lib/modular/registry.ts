@@ -228,6 +228,41 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     minRowSpan: 1,
     maxRowSpan: 2,
     badge: '低代码动态流',
+    configSchema: [
+      {
+        key: 'title',
+        label: '监控项名称',
+        type: 'text',
+        defaultValue: 'REST 接口动态遥测',
+      },
+      {
+        key: 'apiUrl',
+        label: '请求接口地址 (URL)',
+        type: 'text',
+        defaultValue: '/api/hub/health',
+        description: '支持同源接口或允许 CORS 的公开 JSON API',
+      },
+      {
+        key: 'jsonKey',
+        label: '提取字段路径 (JSONPath)',
+        type: 'text',
+        defaultValue: 'status',
+        description: '如 status 或 data.count',
+      },
+      {
+        key: 'unit',
+        label: '数值单位 (可选)',
+        type: 'text',
+        defaultValue: '',
+        description: '如 ms, %, 个',
+      },
+      {
+        key: 'refreshIntervalSeconds',
+        label: '轮询间隔 (秒)',
+        type: 'number',
+        defaultValue: 30,
+      },
+    ],
     component: LiveApiWidget,
   },
   'rss-feed': {
@@ -243,6 +278,20 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
     minRowSpan: 1,
     maxRowSpan: 3,
     badge: '技术动态',
+    configSchema: [
+      {
+        key: 'title',
+        label: '专栏标题',
+        type: 'text',
+        defaultValue: '技术动态与社区早报',
+      },
+      {
+        key: 'limit',
+        label: '显示条数上限',
+        type: 'number',
+        defaultValue: 5,
+      },
+    ],
     component: RssFeedWidget,
   },
 }

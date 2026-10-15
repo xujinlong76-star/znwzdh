@@ -81,7 +81,7 @@ export interface HubTag {
 }
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(hubUrl(path), { signal, headers: { Accept: 'application/json' } })
+  const res = await fetch(hubUrl(path), { signal, headers: { Accept: 'application/json', ...authHeaders() } })
   if (!res.ok) throw hubError(res.status)
   return (await res.json()) as T
 }
@@ -100,12 +100,48 @@ async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DEL
   const res = await fetch(hubUrl(path), {
     method,
     signal,
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders() },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (!res.ok) throw hubError(res.status)
   const text = await res.text()
   return (text ? JSON.parse(text) : {}) as T
+}
+
+/**
+ * 终端用户云端身份 token（多端/多用户场景）。
+ *
+ * 中枢侧规则（见 apps/api/src/server.ts resolveIdentity）：请求带有效 Bearer
+ * 时，收藏/金库/画像/历史强制绑定 "token:<id>" 身份并忽略自报 anonId；
+ * 不带时回退匿名行为。token 存 localStorage 只存本机，永不进 URL。
+ * 获取方式：管理员 POST /api/tokens 建只读 token，把明文填到「偏好设置」。
+ */
+const API_TOKEN_KEY = 'navhub_api_token'
+
+export function getApiToken(): string | null {
+  try {
+    return localStorage.getItem(API_TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setApiToken(token: string | null): void {
+  try {
+    if (!token || !token.trim()) localStorage.removeItem(API_TOKEN_KEY)
+    else localStorage.setItem(API_TOKEN_KEY, token.trim())
+  } catch {
+    // 隐私模式等不可写存储：静默保持匿名行为
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  try {
+    const t = typeof localStorage === 'undefined' ? null : localStorage.getItem(API_TOKEN_KEY)
+    return t && t.trim() ? { Authorization: 'Bearer ' + t.trim() } : {}
+  } catch {
+    return {}
+  }
 }
 
 /** 通用 GET / 发送（管理端等自定义端点用；失败抛错，由调用方决定降级） */
@@ -172,6 +208,36 @@ export async function fetchNewSites(limit = 20): Promise<HubSite[]> {
     return data.hits.map((h) => h.site).filter(Boolean)
   } catch {
     return []
+  }
+}
+
+/* ------------------------------ 精选专题 ------------------------------ */
+
+export interface HubCollection {
+  id: string
+  slug: string
+  title: string
+  description?: string | null
+  kind: 'topic' | 'geo' | 'roadmap'
+  icon?: string | null
+  sort: number
+  enabled: boolean
+}
+
+export async function fetchCollections(): Promise<HubCollection[]> {
+  try {
+    return await getJson<HubCollection[]>('/api/collections')
+  } catch {
+    return []
+  }
+}
+
+/** 专题详情（含站点列表；不存在时返回 null） */
+export async function fetchCollectionDetail(slug: string): Promise<{ collection: HubCollection; sites: HubSite[] } | null> {
+  try {
+    return await getJson<{ collection: HubCollection; sites: HubSite[] }>('/api/collections/' + encodeURIComponent(slug))
+  } catch {
+    return null
   }
 }
 

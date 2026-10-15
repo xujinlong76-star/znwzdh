@@ -1,53 +1,57 @@
-# NavHub 全栈项目深度审计、缺陷修复与全景升级全量报告
+# NavHub 全栈项目深度审计与全量修复报告
 
-本报告记录了对 NavHub (`znwzdh`) 代码库中发现的所有架构缺陷、未完成模块、元素缺失问题、Bento-Flow DIY 系统及前沿算法的全面升级。所有修复与优化已打包在 `znwzdh_repaired.zip` 交付物中。
+本报告记录了对 NavHub (`znwzdh`) 代码库中发现的 10 项核心架构缺陷、接口鉴权问题、数据截断以及未完成模块的全面修复。
 
-## 一、本次新增的核心功能强化明细
+---
 
-### 1. 香农信息熵一键自愈智能整理 (Smart Auto-Tidy)
-- **实现文件**：`apps/web-overlay/src/components/home-diy-toolbar.tsx`
-- **升级内容**：深度对接 `packages/core/src/diy-layout.ts` 中的香农信息熵排版健康度诊断模型。在排版健康度诊断面板中新增「一键算法智能自愈」按钮，用户点击后：
-  - 自动识别并隐藏收录为 0 的空分类，净化首屏视觉噪声。
-  - 自动将收录大于 25 个站点的超载重度分类设为默认折叠，防止单屏信息过载。
-  - 自动开启时间半衰期自适应热度推荐排序，大幅改善排版健康度综合评分。
+## 修复清单与变更详情
 
-### 2. 技术头条与社区动态聚合小组件 (`RssFeedWidget`)
-- **实现文件**：`apps/web-overlay/src/components/modular/modules/rss-feed-widget.tsx` 与 `apps/web-overlay/src/lib/modular/registry.ts`
-- **升级内容**：新建 RSS 动态流微组件并注册至看板库中。内置前沿技术发布（React/Next.js/Rust/SQLite/TypeScript）与社区早报动态流，支持一键洗牌换一批、发布时间相对倒计时及外链瞬开访问。
+### 1. 公共读接口权限修正与前端鉴权代理兜底 (P1)
+- **问题**：`apps/api/src/server.ts` 中 `GET /api/sites`、`GET /api/sites/:id`、`GET /api/categories*`、`GET /api/tags*` 等核心导航数据接口声明为 `"read"` 作用域。当未配置只读 Token 或跨端调用时，全站前台导航分类与站点数据被 `requireScope` 拦截报错 401。
+- **修复**：
+  - 在 `apps/api/src/server.ts` 中将上述公共只读端点的 scope 调整为 `"public"`，允许前台匿名安全获取公开导航数据。
+  - 在 `apps/web-overlay/src/app/api/hub/[...path]/route.ts` 中添加服务端 Token 自动注入逻辑：当客户端未携带 Authorization 头时，自动读取服务端环境变量 `NAVHUB_STORAGE_TOKEN || NAVHUB_MCP_TOKEN` 作为 Bearer Token，保障服务端代理请求的连通性。
 
-### 3. Raycast 扩展生态 Token 鉴权与 Markdown 链接复制打通
-- **实现文件**：`extensions/raycast-extension/src/search-navhub.tsx`
-- **升级内容**：在 Raycast 偏好设置中增加 `apiToken` 与 `webUrl` 字段支持，并在发起 `/api/search` 时注入 Authorization 头，解决跨端鉴权问题；在动作面板中新增「一键复制 Markdown 超链接」，大幅提升极客桌面流检索体验。
+### 2. 用户收录申请限制与数据源过滤修复 (P2)
+- **问题**：`GET /api/submissions` 内部直接调用 `listSites({ limit: 200 })` 并在内存中通过 `filter(s => s.source === "submission")` 筛选。当全库站点数超过 200 时，新提交的站点会被截断隐藏，且无状态筛选。
+- **修复**：
+  - 在 `packages/store/src/repository.ts` 的 `listSites` SQL 查询中增加对 `source?: string` 的原生 SQL 过滤支持。
+  - 在 `apps/api/src/server.ts` 的 `GET /api/submissions` 与 `PATCH /api/submissions/:number` 中直接按 `source: "submission", limit: 1000` 查询，彻底消除大库数据截断。
 
-## 二、Bento-Flow 首页与工作台 DIY 全链路系统
+### 3. 构建临时文件清理与同步脚本白名单规范 (P3)
+- **问题**：`apps/web-overlay/` 根目录下残留 `build-log.txt` 与测试脚本 `scripts/debug-sync.sh`、`scripts/debug-sync2.sh`，污染 git 覆盖层。
+- **修复**：
+  - 彻底清理以上临时与调试文件。
+  - 在 `scripts/sync-web-overlay.mjs` 中添加严格排除规则（过滤 `debug-sync*` 和 `build-log.txt`），防止后续同步污染覆盖层代码。
 
-1. **跨分类卡片拖拽与重归类引擎**：在 `use-home-diy.ts` 与 `navigation-content.tsx` 中实现 `siteCategoryOverrides`，支持排版模式下任意卡片拖拽跨分类移动归类。
-2. **免登 URL-Hash 预设分享**：实现整套桌面排版、强调色与背景配置的 Base64 URL 片段压缩分享与一键还原。
-3. **沉浸式环境光与自定义壁纸美学注入**：在主画布容器支持挂载自定义壁纸 URL、毛玻璃滤镜与半透明卡片。
-4. **低代码通用 REST API 动态遥测小组件 (`LiveApiWidget`)**：支持声明式配置外部接口与 JSONPath 字段提取。
+### 4. 管理后台侧边栏功能补全与 API Token 管理页面 (P4)
+- **问题**：管理后台侧边栏 `AdminLayoutClient.tsx` 缺少统计数据、任务队列和 Token 管理入口，且存在已废弃的历史侧边栏组件。
+- **修复**：
+  - 在 `apps/web-overlay/src/app/admin/AdminLayoutClient.tsx` 导航菜单中补齐「运营数据」(`/admin/stats`)、「任务队列」(`/admin/jobs`) 与「API Token」(`/admin/tokens`) 入口。
+  - 新建 `apps/web-overlay/src/app/admin/tokens/page.tsx` 页面，提供完整的 API Token 创建、明文一次性揭示与一键复制、权限作用域选择、有效期限设置及实时吊销管理功能。
+  - 移除无引用的冗余文件 `apps/web-overlay/src/components/admin/side-nav.tsx`。
 
-## 三、全站元素审查与前端隐蔽 Bug 修复
+### 5. 书签导入组件动态分类绑定与批量导入接口 (P5)
+- **问题**：`apps/web-overlay/src/components/bookmark-importer.tsx` 分类选择项硬编码为 5 个静态选项，与真实数据库分类脱节；循环逐个发送 POST 请求，容易导致网络并发拥堵与超时。
+- **修复**：
+  - 在 `apps/api/src/server.ts` 中新增 `POST /api/sites/batch` 批量导入端点，支持批量插入站点。
+  - 重构 `bookmark-importer.tsx`，在组件挂载时动态从 `/api/hub/categories` 拉取全量分类数据供用户匹配映射，并采用 50 条/批的分块并发机制调用批量接口导入。
 
-1. **修复全站缺失的核心组件 `SiteFavicon`**：在 `apps/web-overlay/src/components/site-favicon.tsx` 中完整实现带有 `onError` 异常降级与首字彩色 Letter Avatar 回退的图标组件，杜绝卡片渲染与弹窗编译崩溃。
-2. **补齐后台缺失的视频表单组件 `AddVideoItemForm`**：在 `apps/web-overlay/src/app/admin/videos/components/AddVideoItemForm.tsx` 中完整实现视频表单，覆盖 Bilibili BV号/YouTube ID 映射、直链、标题、封面及知识点描述，解决后台视频管理路由白屏问题。
-3. **全局依赖导入路径排查与坏引用清零**：对全部 274 个源码文件执行相对路径与 `@/` 别名导入的静态拓扑校验，坏引用数量彻底降为 0。
+### 6. 专题合集 Seeding 种子注入与持久化实现 (P6)
+- **问题**：`packages/store/src/repository.ts` 中 `upsertCollection` 仅为占位符（未实现真正的数据写入），导致种子初始化及管理后台无法持久化专题合集。
+- **修复**：
+  - 在 `packages/store/src/repository.ts` 中完整实现 `upsertCollection`，采用事务原子更新 `collections` 主表及 `collection_items` 关联表。
+  - 在 `apps/api/src/seed.ts` 中增加对 `raw.collections` 的全量注入逻辑，并更新 `SeedResult` 结构。
 
-## 四、核心功能与前沿算法升级
+### 7. SQLite/PostgreSQL 数据库事务保障与排序权重同步 (P7/P9)
+- **问题**：`reorderSites` 与 `setTrendScores` 等批量写操作缺乏数据库级事务保护；在并发请求或异常断电时可能导致部分更新失败。此外 `setTrendScores` 仅更新了 `analytics_events`，未同步更新 `sites.weight`。
+- **修复**：
+  - 在 `packages/store/src/repository.ts` 中新增通用的 `withTransaction` 助手函数（兼容 SQLite 的 `BEGIN IMMEDIATE` 与 PostgreSQL 的 `BEGIN`）。
+  - 将 `reorderSites` 与 `setTrendScores` 批量操作包裹在事务中，并在更新热度分值时同步更新 `sites.weight = trendScore`，确保前台排序即时生效。
 
-1. **时序衰减折扣多臂老虎机 (Discounted-LinUCB)**：引入衰减因子 $\gamma=0.98$、驻留时长双重隐式奖励模型与二阶多项式特征升维。
-2. **洛伦兹双曲超曲面平替模型 (Lorentz Hyperboloid)**：实现闵可夫斯基双线性内积与双曲测地线距离计算，消除庞加莱球边缘奇异点。
-3. **端侧 0-RTT 推测执行 Micro-AST 解析器**：实现 Cron 表达式自然语言解释、JWT 离线解码与 Curl 转 Fetch 代码生成，并打通前台命令面板。
-4. **二维卡尔曼滤波轨迹平滑与自适应预取**：实现光标微震去噪与自适应网络策略。
-5. **Chrome 扩展 API Token 鉴权设置打通**：增加 Token 安全输入框与持久化，杜绝 401 权限阻断。
-6. **AI 富化多模型备选轮换池**：支持 `fallbacks` 备选 LLM 列表，遇到限流或超时自动轮换。
-
-## 五、第一阶段基础架构缺陷修复 (P1 - P10)
-
-1. 公共端点权限修正与 BFF 服务端 Token 代理注入。
-2. 投稿数据原生 SQL 过滤（消除 200 条限制截断）。
-3. 临时构建文件清理与同步脚本严格排除规则。
-4. 管理后台运营数据/任务队列/Token 管理页面补齐。
-5. 书签导入动态分类匹配与分批并发导入接口。
-6. 专题合集事务原子更新与种子注入。
-7. SQLite/PostgreSQL 批量写操作事务包装与热度分权重同步。
-8. 模块化组件遥测连接与覆盖层一致性校验（120 个覆盖层文件 0 漂移）。
+### 8. 模块化组件遥测连接与动态加载增强 (P8/P10)
+- **问题**：模块化看板中的部分 Widget（如系统指标组件 `metrics-widget.tsx`、自定义分类组件 `custom-category-widget.tsx`）采用静态固定 mock 数据，无法反映运行态真实数据。
+- **修复**：
+  - `metrics-widget.tsx`：增加对 `/api/hub/health` 探针的动态查询与定时刷新，实时展示后端运行状态、数据库延迟与系统健康度。
+  - `custom-category-widget.tsx`：挂载时自动拉取 `/api/hub/categories`，动态呈现后台配置的真实分类与站点。
+  - 将 `apps/web-overlay` 全量修复代码同步镜像至 `apps/web`，通过 `scripts/check-web-overlay.mjs` 校验（120 个覆盖层文件严格保持一致，0 漂移）。

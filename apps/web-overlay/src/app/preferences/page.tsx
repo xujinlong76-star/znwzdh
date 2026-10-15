@@ -18,9 +18,9 @@ import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { hubGet, hubSend, type HubSite } from '@/lib/navhub-api'
+import { hubGet, hubSend, getApiToken, setApiToken, type HubSite } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
-import { Sparkles, RotateCcw, Tag, FolderOpen, History } from 'lucide-react'
+import { Sparkles, RotateCcw, Tag, FolderOpen, History, KeyRound } from 'lucide-react'
 
 interface Profile {
   userId: string
@@ -68,6 +68,10 @@ export default function PreferencesPage() {
   const [siteTitles, setSiteTitles] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [resetting, setResetting] = useState(false)
+  /** 多端身份 token（本机保存，服务端据此绑定云端数据归属） */
+  const [apiToken, setApiTokenState] = useState<string | null>(null)
+  const [tokenDraft, setTokenDraft] = useState('')
+  const [tokenSaved, setTokenSaved] = useState(false)
 
   const load = useCallback(async (id: string) => {
     if (!id) return
@@ -91,6 +95,7 @@ export default function PreferencesPage() {
   useEffect(() => {
     const id = getIdentity()
     setIdentity(id)
+    setApiTokenState(getApiToken())
     void load(id)
   }, [load])
 
@@ -148,11 +153,71 @@ export default function PreferencesPage() {
 
       {loading ? (
         <div className="text-sm text-muted-foreground">加载中…</div>
-      ) : !hasProfile ? (
+      ) : (
+        <section className="rounded-md border p-4 mb-6">
+          <h2 className="text-sm font-medium mb-2 flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-primary" />
+            多端身份 token（可选）
+          </h2>
+          <p className="text-xs text-muted-foreground mb-3">
+            默认匿名：云端数据按本机随机 ID 归属，多端不互通。填入管理员签发的 token 后，
+            收藏 / 金库 / 画像 / 历史改为绑定该 token——换设备填同一 token 即同步，
+            且别人猜到你的匿名 ID 也读不到你的数据。token 只存本机浏览器，不上传别处。
+          </p>
+          {apiToken ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-mono rounded bg-muted px-2 py-1">
+                已绑定（{apiToken.slice(0, 6)}…{apiToken.slice(-4)}）
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setApiToken(null)
+                  setApiTokenState(null)
+                  setTokenSaved(false)
+                  if (identity) void load(identity)
+                }}
+              >
+                解除绑定（回退匿名）
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="password"
+                value={tokenDraft}
+                onChange={(e) => { setTokenDraft(e.target.value); setTokenSaved(false) }}
+                placeholder="粘贴 token 明文（仅显示一次的那个）"
+                className="h-9 flex-1 min-w-52 rounded-md border bg-background px-3 text-sm font-mono"
+              />
+              <Button
+                size="sm"
+                disabled={!tokenDraft.trim()}
+                onClick={() => {
+                  setApiToken(tokenDraft)
+                  setApiTokenState(tokenDraft.trim())
+                  setTokenDraft('')
+                  setTokenSaved(true)
+                  if (identity) void load(identity)
+                }}
+              >
+                保存并绑定
+              </Button>
+            </div>
+          )}
+          {tokenSaved && (
+            <p className="text-xs text-green-600 mt-2">已绑定，云端数据现归属该 token。刷新页面后生效于全部请求。</p>
+          )}
+        </section>
+      )}
+
+      {!loading && !hasProfile && (
         <div className="rounded-md border p-6 text-center text-sm text-muted-foreground">
           暂无个性化画像。搜索并收藏几个站点后，这里会显示系统推断出的偏好。
         </div>
-      ) : (
+      )}
+      {!loading && hasProfile && (
         <div className="space-y-6">
           <section className="rounded-md border p-4">
             <h2 className="text-sm font-medium mb-3 flex items-center gap-2">

@@ -115,6 +115,11 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     expandAllCategories,
     exportPresetToUrlHash,
     importPresetFromUrlHash,
+    customWallpaperUrl,
+    glassmorphismBlur,
+    cardOpacity,
+    setCustomWallpaper,
+    setAestheticSliders,
   } = useHomeDIY()
 
   const { density, setDensity } = useDensity()
@@ -570,6 +575,38 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                         {accentColor === item.id && <Check className="w-3 h-3 text-white dark:text-black" />}
                       </button>
                     ))}
+                  </div>
+                  <DropdownMenuSeparator className="my-1.5" />
+
+                  <DropdownMenuLabel className="text-xs text-muted-foreground px-1">沉浸式壁纸与毛玻璃</DropdownMenuLabel>
+                  <div className="px-1.5 py-1 space-y-2" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="text"
+                      placeholder="粘贴自定义壁纸图片 URL..."
+                      value={customWallpaperUrl || ''}
+                      onChange={(e) => setCustomWallpaper(e.target.value)}
+                      className="w-full text-[11px] px-2 py-1 rounded border border-border bg-background/90 outline-none focus:border-primary"
+                    />
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>毛玻璃模糊: {glassmorphismBlur ?? 12}px</span>
+                      {customWallpaperUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setCustomWallpaper('')}
+                          className="text-rose-500 hover:underline"
+                        >
+                          清除壁纸
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={30}
+                      value={glassmorphismBlur ?? 12}
+                      onChange={(e) => setAestheticSliders(Number(e.target.value), cardOpacity ?? 0.9)}
+                      className="w-full h-1.5 accent-primary cursor-pointer"
+                    />
                   </div>
                 </DropdownMenuContent>
               </DropdownMenu>

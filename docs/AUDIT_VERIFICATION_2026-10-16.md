@@ -99,9 +99,38 @@ u vs u*(1+1e-16): -prod = 1      距离 = 0
 对应物是 `modular-canvas.tsx`、`use-home-diy.ts`、`diy-layout.ts`。
 后续若再按该审计定位模块，须先做存在性核验。
 
-## 建议执行顺序（待确认）
+## 执行结果（2026-10-16 已完成全部四条）
 
-1. **向量编解码有限值守卫**：`toPgVector` 与 `vectorToBlob` 前置 `Number.isFinite` 过滤并补单测（P0，约 30 行）
-2. **DIY 布局多标签同步**：BroadcastChannel + 按卡片 LWW，复用现有 `crdt-sync.ts`
-3. **zod → OpenAPI 同源生成**：以 `packages/mcp/src/tools.ts` 的 zod 为单一事实源反向生成 openapi 文档
-4. Weibull 死链巡检（可选，优先级最低）
+### 1. 向量编解码有限值守卫 ✅
+- 新增 `packages/store/src/vector/codec.ts`：`sanitizeFinite` / `fitDimension` / `toBlobParam` / `toPostgresParam` / `SeamVectorCodec`
+- `normalize`、`vectorToBlob`、`toPgVector`、三处 store 的 `search`、`repository.saveEmbedding` 全部收敛到 codec
+- 实现过程中被单测抓到一个真 bug：`toBlobParam` 原本对 `Float32Array` 走免拷贝分支，恰好跳过了清洗 —— 已修正为永远先 sanitize
+
+### 2. DIY 布局多标签同步 ✅
+- `packages/core/src/layout-sync.ts`：插槽级 LWW + Lamport 时钟；标量字段按字段，`customCategories` 按 id、`pinnedSiteIdsByCategory` 按类目 id 做元素级裁决；平局保留本地（防两标签页无限互推）；删除也推进时钟
+- `apps/web/src/lib/modular/layout-sync.ts`：core 的浏览器镜像 + BroadcastChannel（无 BC 时退回 storage 事件总线）
+- `use-home-diy.ts` 改为「diff 插槽 → 推进时钟 → 写盘 → 广播」，收到远端按插槽合并（不整表覆盖 / 不入撤销栈 / 不再回播）
+- 时钟独立存 `navhub_home_diy_clocks_v1`：塞进 config 会被 `validateAndCleanDIYConfig` 的白名单清洗剔除
+
+### 3. MCP zod → OpenAPI 同源 ✅
+- 关键约束：`@navhub/mcp` 依赖 `@navhub/api`，api 反向引用会成环 → zod 定义下沉到 `packages/core/src/mcp-schemas.ts`
+- 现持有：全部 MCP 输入 schema + `MCP_TOOL_DEFS` + `MCP_INPUT_SCHEMAS` + `REST_SCHEMA_BINDINGS` + 由 `CreateSiteInput`/`UpdateSiteInput` 派生的 `SiteCreateBody`/`SiteUpdateBody`
+- `packages/mcp/src/tools.ts` 只剩 import + re-export（保留 `TOOL_DEFS` 旧名）
+- `openapi.ts` 用 zod-to-json-schema 生成 `components.schemas` + `x-mcp-tools`；绑定端点走 `$ref`，query 端点展开为参数列表
+- `server.ts` 的 `siteInput` 改为 `SiteCreateBody`
+
+### 4. Weibull 死链巡检 ✅
+- `health-sentinel.ts` 新增 Lanczos `logGamma/gamma`、`weibullSurvival/Hazard`、`fitWeibullByMoments`（变异系数二分反解 shape）、`nextPatrolDelayDays`、`planPatrol`；默认 k=1.6 / λ=900 天，间隔夹在 [1,180] 天
+- `apps/api/src/jobs.ts` 的 `runHealthCheck` 接入 `patrolTargets()`：取 4× 候选池后按存活概率升序取前 N（原先是 `listSites({limit})` 按 id 顺序取）
+
+### 验证基线（执行后）
+- vitest：**556 passed / 11 skipped**（26 文件）
+- `pnpm -r exec tsc --noEmit`：全 workspace 零错误
+- `check-web-overlay.mjs`：180 个覆盖层文件一致
+
+### 5. GitHub Actions CI 双环境流水线 ✅
+- 用户明确要求生成一份完整的 GitHub Actions CI 工作流，确保 SQLite (`sqlite-vec`) 和 PostgreSQL (`pgvector`) 双环境测试稳定通过
+- `ci.yml` 架构为四作业流水线：`code-quality`、`test-sqlite`、`test-postgres`（基于 `pgvector/pgvector:pg17` 官方容器）、`ci-passed`（分支保护聚合闸门）
+- 注入 `NAVHUB_TEST_DATABASE_URL`，自动化运行 `packages/store/test/pg-dialect.e2e.test.ts` 与 `scripts/pg-check.mts` 双方言测试
+- 全量本地校验与 YAML 语法校验均已通过
+

@@ -281,3 +281,36 @@ describe("鉴权模式：last_used_at 更新", () => {
     expect(typeof after.lastUsedAt).toBe("number");
   });
 });
+
+describe("生产配置硬校验与批量查询回归", () => {
+  it("NODE_ENV=production 下缺失或默认 NAVHUB_SESSION_SECRET 拒绝启动", () => {
+    const prevNodeEnv = process.env.NODE_ENV;
+    const prevSecret = process.env.NAVHUB_SESSION_SECRET;
+    try {
+      process.env.NODE_ENV = "production";
+      delete process.env.NAVHUB_SESSION_SECRET;
+      expect(() => loadConfig()).toThrow(/NAVHUB_SESSION_SECRET/);
+
+      process.env.NAVHUB_SESSION_SECRET = "change-me-please-use-a-long-random-string";
+      expect(() => loadConfig()).toThrow(/NAVHUB_SESSION_SECRET/);
+
+      process.env.NAVHUB_SESSION_SECRET = "short-secret";
+      expect(() => loadConfig()).toThrow(/NAVHUB_SESSION_SECRET/);
+
+      process.env.NAVHUB_SESSION_SECRET = "a-very-strong-production-secret-with-at-least-32-chars!";
+      expect(loadConfig().sessionSecret).toBe("a-very-strong-production-secret-with-at-least-32-chars!");
+    } finally {
+      if (prevNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prevNodeEnv;
+      if (prevSecret === undefined) delete process.env.NAVHUB_SESSION_SECRET; else process.env.NAVHUB_SESSION_SECRET = prevSecret;
+    }
+  });
+
+  it("Repository.getSitesByIds 批量查询返回完整站点与标签且忽略空数组", async () => {
+    expect(await openCtx.repo.getSitesByIds([])).toEqual([]);
+    const s1 = await openCtx.repo.createSite({ url: "https://batch1.example.com", title: "Batch1", categoryId: "cat-ai", tags: ["t1"] });
+    const s2 = await openCtx.repo.createSite({ url: "https://batch2.example.com", title: "Batch2", categoryId: "cat-ai", tags: ["t2"] });
+    const list = await openCtx.repo.getSitesByIds([s1.id, s2.id, "non-existent"]);
+    expect(list.map((s) => s.id).sort()).toEqual([s1.id, s2.id].sort());
+    expect(list.find((s) => s.id === s1.id)?.tags).toContain("t1");
+  });
+});

@@ -44,7 +44,8 @@ export async function generateMetadata(): Promise<Metadata> {
       title: 'NavHub',
     },
     icons: {
-      icon: site?.appearance?.favicon ?? '/favicon.ico',
+      // 默认指向真实存在的 PWA 图标：public/ 下没有 favicon.ico（曾 404 刷屏），用 icon-192 兜底
+      icon: site?.appearance?.favicon ?? '/icons/icon-192.png',
     },
   };
 }
@@ -59,7 +60,11 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  const gaId = process.env.GA_ID
+  // 安全：GA_ID 会内插进 dangerouslySetInnerHTML 与 script src，必须白名单。
+  // 非法值（如攻击者通过环境注入 `"'><script>`）直接不注入，避免存储型 XSS。
+  const rawGaId = process.env.GA_ID
+  const safeGaId = rawGaId && /^G-[A-Z0-9]+$/.test(rawGaId) ? rawGaId : null
+  const gaId = safeGaId
 
   return (
     <html lang="zh-CN" suppressHydrationWarning data-scroll-behavior="smooth" className={inter.variable}>
@@ -91,6 +96,20 @@ export default function RootLayout({
                     return true;
                   }
                 }, true);
+
+                // 本地开发环境自动清理旧 SW 与 CacheStorage，杜绝历史缓存导致的水合与分包不一致
+                if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                  if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(function(regs) {
+                      for (var i = 0; i < regs.length; i++) regs[i].unregister();
+                    }).catch(function() {});
+                  }
+                  if ('caches' in window) {
+                    caches.keys().then(function(keys) {
+                      for (var j = 0; j < keys.length; j++) caches.delete(keys[j]);
+                    }).catch(function() {});
+                  }
+                }
               })();
             `,
           }}

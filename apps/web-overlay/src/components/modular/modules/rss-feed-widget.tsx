@@ -4,6 +4,11 @@ import React, { useState, useCallback } from 'react'
 import { Rss, ExternalLink, RefreshCw, Clock } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 
+/**
+ * 演示数据组件：当前展示为内置静态示例（未接实时 RSS 源），刷新仅做本地洗牌。
+ * 避免冒充实时：UI 已标注“演示数据”，接入真实 feed 后请移除该标注。
+ */
+
 interface FeedItem {
   id: string
   title: string
@@ -86,7 +91,7 @@ export function RssFeedWidget({ config }: RssFeedWidgetProps) {
           </div>
           <div>
             <h4 className="text-xs font-semibold text-foreground truncate max-w-[140px]">{title}</h4>
-            <span className="text-[10px] text-muted-foreground font-mono">聚合动态流</span>
+            <span className="text-[10px] text-muted-foreground font-mono">聚合动态流 · 演示数据</span>
           </div>
         </div>
 
@@ -129,7 +134,7 @@ export function RssFeedWidget({ config }: RssFeedWidgetProps) {
       </div>
 
       <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border/30">
-        <span>已聚合 {items.length} 篇最新动态</span>
+        <span>已聚合 {items.length} 篇最新动态（示例）</span>
         <span>更新于 {lastRefreshed.toLocaleTimeString()}</span>
       </div>
     </div>

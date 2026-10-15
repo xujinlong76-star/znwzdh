@@ -34,6 +34,9 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "users", column: "source", sqlite: "TEXT NOT NULL DEFAULT 'local'", pg: "TEXT NOT NULL DEFAULT 'local'" },
   // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
   { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
+  // 行为事件身份独立列（原藏在 meta JSON 里，LIKE 过滤走不了索引）。
+  // 补齐后由 migrateEventIdentity 从 meta 回填历史行。
+  { table: "events", column: "identity", sqlite: "TEXT", pg: "TEXT" },
 ];
 
 /**
@@ -50,6 +53,17 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "DROP INDEX IF EXISTS sites_url_idx",
     "CREATE UNIQUE INDEX IF NOT EXISTS sites_url_idx ON sites(url) WHERE deleted_at IS NULL",
     "CREATE INDEX IF NOT EXISTS sites_deleted_at_idx ON sites(deleted_at) WHERE deleted_at IS NOT NULL",
+    // 存储层补索引（旧库补齐；幂等 IF NOT EXISTS；与 driver.ts DDL 保持一致）
+    "CREATE INDEX IF NOT EXISTS sites_source_status_idx ON sites(source, status)",
+    "CREATE INDEX IF NOT EXISTS sites_hot_idx ON sites(enabled, trend_score DESC)",
+    "CREATE INDEX IF NOT EXISTS events_search_idx ON events(kind, created_at, query)",
+    "CREATE INDEX IF NOT EXISTS search_history_user_created_idx ON search_history(user_id, created_at DESC, id DESC)",
+    "CREATE INDEX IF NOT EXISTS health_checks_checked_idx ON health_checks(checked_at)",
+    "CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, id DESC)",
+    "CREATE INDEX IF NOT EXISTS collection_items_site_idx ON collection_items(site_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS site_tags_unique_idx ON site_tags(site_id, tag_id)",
+    // 行为事件身份等值过滤（behaviorEvents/deleteBehaviorEvents 从 meta LIKE 迁到 identity =）
+    "CREATE INDEX IF NOT EXISTS events_identity_idx ON events(identity)",
   ];
   for (const sqlText of statements) {
     try {
@@ -111,4 +125,34 @@ export async function migrateColumns(db: { dialect: string; sqlite?: any; pg?: a
     }
   }
   return added;
+}
+
+/**
+ * 回填 events.identity：历史行的身份藏在 meta JSON（{"identity":"..."}）里，
+ * behaviorEvents/deleteBehaviorEvents 已改为等值过滤（走 events_identity_idx），
+ * 不回填就等于丢历史个性化数据。
+ *
+ * - 必须在 migrateColumns 之后调用（依赖 identity 列存在）。
+ * - 只扫「有 identity 键且未回填」的行；回填过的行不再扫，重复启动近似零成本。
+ * - SQLite 用 json_valid 守护（meta 非法 JSON 时 json_extract 会抛错）；
+ *   PG 用子串提取而非 meta::jsonb 转型（转型对非法 JSON 抛错，会中断整条 UPDATE）。
+ * - best-effort：失败不阻断启动，下次启动兜底。
+ */
+export async function migrateEventIdentity(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
+  try {
+    if (db.dialect === "sqlite") {
+      const res = db.sqlite.prepare(
+        `UPDATE events SET identity = json_extract(meta, '$.identity')
+          WHERE identity IS NULL AND meta IS NOT NULL AND meta LIKE '%"identity"%' AND json_valid(meta)`,
+      ).run();
+      return Number(res.changes ?? 0);
+    }
+    const res = await db.pg.query(
+      `UPDATE events SET identity = substring(meta from '"identity":"([^"]*)"')
+        WHERE identity IS NULL AND meta LIKE '%"identity"%'`,
+    );
+    return res.rowCount ?? 0;
+  } catch {
+    return 0;
+  }
 }

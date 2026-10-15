@@ -409,6 +409,8 @@ export interface MergeResult {
  * 3-Way Diff & Merge 算法：无损合并本地修改与远程配置
  * 策略：
  * - 置顶与隐藏：采用并集策略，保证本地置顶不丢失；
+ *   注意这是“只增不减”语义：A 端取消置顶后，B 端旧置顶合回来会复活。
+ *   如需真正删除，需引入 tombstone 或 LWW（见 CRDT），调用方已知悉此取舍。
  * - 专属分类：按 ID 归一化合并，同 ID 保留最新 item 集合；
  * - 视觉形态：优先采用最后修改方 (LWW)；
  * - 分类排序：保序并集，未见项平滑追加。
@@ -664,6 +666,10 @@ export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: 
   if (!raw || typeof raw !== 'object') {
     return { valid: false, error: '导入的配置文件不是合法的 JSON 对象' }
   }
+  // 长度上限：#diy= hash 分享经 URL 传播，4KB 以上拒绝（防 URL 过长与指纹滥用）
+  try {
+    if (JSON.stringify(raw).length > 4096) return { valid: false, error: '配置过大（上限 4KB），请精简后再分享' };
+  } catch { return { valid: false, error: '配置序列化失败' }; }
 
   if (typeof raw.viewMode !== 'string' && typeof raw.version !== 'number') {
     return { valid: false, error: '缺失必要的 DIY 配置元数据 (viewMode/version)' }
@@ -672,38 +678,63 @@ export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: 
   const validViewModes = ['hybrid', 'classic', 'workbench']
   const validCardModes = ['compact', 'standard', 'rich']
   const validCanvasBgs = ['mesh', 'dots', 'grid', 'aurora', 'clean']
+  const isSafeWallpaper = (u: unknown): boolean => {
+    if (typeof u !== 'string' || !u) return false;
+    if (u.startsWith('/') && !u.startsWith('//')) return true;
+    if (/^data:image\/(png|jpeg|webp);base64,/.test(u)) return u.length <= 4096;
+    try {
+      const parsed = new URL(u);
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch { return false; }
+  };
+  const isSafeHref = (h: unknown): boolean => {
+    if (typeof h !== 'string' || !h) return false;
+    if (h.startsWith('/') && !h.startsWith('//')) return true;
+    try {
+      const parsed = new URL(h, 'https://navhub.local');
+      // 相对路径已在上分支返回；此处只放行 http/https 绝对地址
+      if (h.startsWith('http://') || h.startsWith('https://')) return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      return false;
+    } catch { return false; }
+  };
 
   const cleaned = {
     version: 3,
     viewMode: validViewModes.includes(raw.viewMode) ? raw.viewMode : 'hybrid',
     cardDisplayMode: validCardModes.includes(raw.cardDisplayMode) ? raw.cardDisplayMode : 'standard',
     canvasBackground: validCanvasBgs.includes(raw.canvasBackground) ? raw.canvasBackground : 'mesh',
-    accentColor: typeof raw.accentColor === 'string' ? raw.accentColor : 'default',
+    accentColor: typeof raw.accentColor === 'string' ? raw.accentColor.slice(0, 64) : 'default',
+    customWallpaperUrl: isSafeWallpaper(raw.customWallpaperUrl) ? String(raw.customWallpaperUrl).slice(0, 2048) : undefined,
+    glassmorphismBlur: Number.isFinite(Number(raw.glassmorphismBlur)) ? Math.max(0, Math.min(30, Number(raw.glassmorphismBlur))) : undefined,
+    cardOpacity: Number.isFinite(Number(raw.cardOpacity)) ? Math.max(0.2, Math.min(1, Number(raw.cardOpacity))) : undefined,
+    siteCategoryOverrides: typeof raw.siteCategoryOverrides === 'object' && raw.siteCategoryOverrides !== null
+      ? Object.fromEntries(Object.entries(raw.siteCategoryOverrides as Record<string, unknown>).filter(([k, v]) => typeof k === 'string' && typeof v === 'string').slice(0, 2000))
+      : undefined,
     heroDeckCollapsed: Boolean(raw.heroDeckCollapsed),
-    heroDeckWidgets: Array.isArray(raw.heroDeckWidgets) ? raw.heroDeckWidgets : ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'],
-    categoryOrder: Array.isArray(raw.categoryOrder) ? raw.categoryOrder : [],
-    pinnedCategoryIds: Array.isArray(raw.pinnedCategoryIds) ? raw.pinnedCategoryIds : [],
-    hiddenCategoryIds: Array.isArray(raw.hiddenCategoryIds) ? raw.hiddenCategoryIds : [],
-    collapsedCategoryIds: Array.isArray(raw.collapsedCategoryIds) ? raw.collapsedCategoryIds : [],
+    heroDeckWidgets: Array.isArray(raw.heroDeckWidgets) ? (raw.heroDeckWidgets as unknown[]).filter((w) => typeof w === 'string').map((w) => String(w).slice(0, 64)).slice(0, 32) : ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'],
+    categoryOrder: Array.isArray(raw.categoryOrder) ? (raw.categoryOrder as unknown[]).filter((x) => typeof x === 'string').map(String).slice(0, 500) : [],
+    pinnedCategoryIds: Array.isArray(raw.pinnedCategoryIds) ? (raw.pinnedCategoryIds as unknown[]).filter((x) => typeof x === 'string').map(String).slice(0, 500) : [],
+    hiddenCategoryIds: Array.isArray(raw.hiddenCategoryIds) ? (raw.hiddenCategoryIds as unknown[]).filter((x) => typeof x === 'string').map(String).slice(0, 500) : [],
+    collapsedCategoryIds: Array.isArray(raw.collapsedCategoryIds) ? (raw.collapsedCategoryIds as unknown[]).filter((x) => typeof x === 'string').map(String).slice(0, 500) : [],
     pinnedSiteIdsByCategory: typeof raw.pinnedSiteIdsByCategory === 'object' && raw.pinnedSiteIdsByCategory !== null
       ? raw.pinnedSiteIdsByCategory
       : {},
     customCategories: Array.isArray(raw.customCategories)
       ? raw.customCategories.map((c: any) => ({
-          id: String(c.id || `custom_${Date.now()}`),
-          title: String(c.title || '自定义分类'),
-          icon: String(c.icon || 'FolderHeart'),
+          id: String(c.id || `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+          title: String(c.title || '自定义分类').slice(0, 64),
+          icon: String(c.icon || 'FolderHeart').slice(0, 64),
           items: Array.isArray(c.items)
             ? c.items.map((i: any) => ({
-                id: String(i.id || `item_${Date.now()}`),
-                title: String(i.title || ''),
-                href: String(i.href || ''),
-                icon: i.icon ? String(i.icon) : undefined,
-                description: i.description ? String(i.description) : undefined,
-              }))
+                id: String(i.id || `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
+                title: String(i.title || '').slice(0, 200),
+                href: isSafeHref(i.href) ? String(i.href).slice(0, 2048) : '',
+                icon: i.icon ? String(i.icon).slice(0, 2048) : undefined,
+                description: i.description ? String(i.description).slice(0, 1000) : undefined,
+              })).filter((it: { href: string }) => Boolean(it.href)).slice(0, 500)
             : [],
           createdAt: Number(c.createdAt) || Date.now(),
-        }))
+        })).slice(0, 100)
       : [],
     updatedAt: Date.now(),
   }

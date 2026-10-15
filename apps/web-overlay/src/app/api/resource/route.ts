@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, getFileContent } from '@/lib/github'
 import type { ResourceMetadata } from '@/types/resource-metadata'
 import { uint8ArrayToBase64 } from '@/lib/buffer-utils'
@@ -23,17 +23,22 @@ export async function GET() {
 
 export async function POST(request: Request) {
     try {
-        const session = await auth();
-        if (!session?.user || !getServerGithubToken(session.user.id)) {
-            return new Response('Unauthorized', { status: 401 });
+        const authCheck = await verifyAdminSession();
+        if (!authCheck.ok) {
+            return new Response(authCheck.error, { status: authCheck.status });
         }
 
         const { image, folder = 'assets', prefix = 'img' } = await request.json(); // Get the Base64 image, folder and prefix
         const base64Data = image.split(",")[1]; // Extract the Base64 part
         const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)); // Convert Base64 to binary
 
+        const token = authCheck.githubToken || process.env.GITHUB_PAT || '';
+        if (!token) {
+            return NextResponse.json({ error: '未配置 GitHub 仓库访问 Token，无法上传资源' }, { status: 400 });
+        }
+
         // 获取上传结果，包含路径和 commit hash
-        const { path: imageUrl, commitHash } = await uploadImageToGitHub(binaryData, getServerGithubToken(session.user.id)!, folder, prefix);
+        const { path: imageUrl, commitHash } = await uploadImageToGitHub(binaryData, token, folder, prefix);
 
         // Handle metadata
         const metadata = await getFileContent('src/navsphere/content/resource-metadata.json') as ResourceMetadata;
@@ -47,7 +52,7 @@ export async function POST(request: Request) {
             'src/navsphere/content/resource-metadata.json',
             JSON.stringify(metadata, null, 2),
             'Update resource metadata',
-            getServerGithubToken(session.user.id)!
+            authCheck.githubToken || undefined
         );
 
         return NextResponse.json({ success: true, imageUrl });
@@ -101,9 +106,9 @@ async function uploadImageToGitHub(binaryData: Uint8Array, token: string, folder
 
 export async function DELETE(request: Request) {
     try {
-        const session = await auth();
-        if (!session?.user || !getServerGithubToken(session.user.id)) {
-            return new Response('Unauthorized', { status: 401 });
+        const authCheck = await verifyAdminSession();
+        if (!authCheck.ok) {
+            return new Response(authCheck.error, { status: authCheck.status });
         }
 
         const { resourceHashes } = await request.json();
@@ -125,7 +130,7 @@ export async function DELETE(request: Request) {
             'src/navsphere/content/resource-metadata.json',
             JSON.stringify(metadata, null, 2),
             `Delete ${deletedCount} resource(s)`,
-            getServerGithubToken(session.user.id)!
+            authCheck.githubToken || undefined
         );
 
         // 注意：这里只是从元数据中删除了引用，实际的图片文件仍然存在于GitHub仓库中

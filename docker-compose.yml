@@ -1,5 +1,6 @@
-# [DEPRECATED] 请优先使用 `cd docker && docker compose up -d`（完整支持 lite / web / standard / mcp profiles）。
-# 本文件仅作为根目录历史兼容简版保留。
+# DEPRECATED（已废弃）：根 docker-compose.yml 为历史简版（api + web 双服务）。
+# 新部署请使用 docker/docker-compose.yml（5 服务 / 4 profile）。
+# 本文件仅保留兼容，不再演进；CI 不再引用它。
 version: '3.8'
 
 services:

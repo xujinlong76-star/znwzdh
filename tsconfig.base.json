@@ -28,6 +28,8 @@
   //  - apps/web-overlay NavHub 自研前端覆盖层，由 vendor 脚本合并进 apps/web 后
   //                     由 Next 编译；它本身没有 package.json / React 类型，
   //                     放在根 tsconfig 里直接检查会因缺少 jsx 与 react 类型而报错
+  //  - extensions/      浏览器扩展与 Raycast 扩展：各有自己的构建链与宿主类型
+  //                     （@raycast/api、chrome 类型），不属于本仓根的编译范围
   //  - **/test/**       测试代码不受 noUncheckedIndexedAccess 的严格下标检查约束
   //                     （测试里大量 __proto__/字面量下标访问，收紧会产出噪音而非真问题）；
   //                     测试由 vitest 负责编译与运行
@@ -39,6 +41,7 @@
     "scripts",
     "apps/web",
     "apps/web-overlay",
+    "extensions",
     "packages/*/test",
     "apps/api/test"
   ]

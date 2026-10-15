@@ -74,6 +74,72 @@ describe("hashSiteId", () => {
   });
 });
 
+
+/* ------------------------------------------------------------------ *
+ * 回归：vec0 表存 site_id（2026-10 修复语义检索静默失效）
+ * ------------------------------------------------------------------ */
+
+describe("SqliteVecStore：site_id 列（跨进程语义检索不失效）", () => {
+  it("不依赖进程内映射，重新实例化后 search 仍返回正确 siteId", async () => {
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteVec = await import("sqlite-vec");
+    const raw = new Database(":memory:");
+    sqliteVec.load(raw as never);
+
+    const mk = () => new SqliteVecStore({ db: raw as never, dim: DIM });
+    const a = mk();
+    await a.upsert([
+      { key: hashSiteId("site-aaa"), siteId: "site-aaa", vector: rnd(1) },
+      { key: hashSiteId("site-bbb"), siteId: "site-bbb", vector: rnd(2) },
+    ]);
+
+    // 关键回归场景：模拟进程重启 —— 全新实例（空映射），不调用 rehydrate。
+    // 旧实现里 siteId 会退化成 String(key)（哈希数字），匹配不到任何站点。
+    const b = mk();
+    const hits = await b.search(rnd(1), 2);
+    expect(hits[0]!.siteId).toBe("site-aaa");
+    expect(hits.map((h) => h.siteId)).toContain("site-bbb");
+    // 确认返回的确实是站点 id，而不是哈希值字符串
+    expect(hits[0]!.siteId).toMatch(/^site-/);
+  });
+
+  it("旧 schema（无 site_id 列）会被迁移，且 rehydrate 后语义检索可用", async () => {
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteVec = await import("sqlite-vec");
+    const raw = new Database(":memory:");
+    sqliteVec.load(raw as never);
+
+    // 1) 先建"旧 schema"（与历史版本一致：只有 site_key + embedding）
+    raw.exec(`CREATE VIRTUAL TABLE sites_vec USING vec0(site_key INTEGER PRIMARY KEY, embedding float[${DIM}])`);
+    const insOld = raw.prepare("INSERT INTO sites_vec(site_key, embedding) VALUES (?, ?)");
+    const v1 = rnd(7);
+    insOld.run(BigInt(hashSiteId("legacy-1")), v1);
+
+    // 2) 用新版 store init（应触发迁移：DROP + 重建带 site_id 的表）
+    const store = new SqliteVecStore({ db: raw as never, dim: DIM });
+    store.init();
+
+    // 3) 迁移后表为空，rehydrate 用 embeddings 向量重灌
+    store.rehydrate([{ key: hashSiteId("legacy-1"), siteId: "legacy-1", vector: v1 }]);
+
+    // 4) 语义检索应命中且返回正确 siteId
+    const hits = await store.search(v1, 3);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0]!.siteId).toBe("legacy-1");
+  });
+
+  it("remove 按 site_id 直接删，不依赖映射", async () => {
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteVec = await import("sqlite-vec");
+    const raw = new Database(":memory:");
+    sqliteVec.load(raw as never);
+    const store = new SqliteVecStore({ db: raw as never, dim: DIM });
+    await store.upsert([{ key: hashSiteId("rm-me"), siteId: "rm-me", vector: rnd(3) }]);
+    await store.remove(["rm-me"]);
+    expect(await store.count()).toBe(0);
+  });
+});
+
 /* ------------------------------------------------------------------ *
  * 集成：真实 SQLite + FTS5 + sqlite-vec + 混合检索
  * ------------------------------------------------------------------ */
@@ -884,6 +950,33 @@ describe("SQLite 集成：导航增强能力", () => {
     expect(ucols).toContain("source");
     await db2.close();
     rmSync(oldDir, { recursive: true, force: true });
+  });
+
+  it("events.identity：新事件落独立列，历史行从 meta 回填，等值查询/删除生效", async () => {
+    // 1) 新写入：recordEvent 从 payload/meta 提取 identity 落列
+    await repo.recordEvent("click", { siteId: (await repo.listSites({ limit: 1 }))[0]?.id, meta: { identity: "user-roundtrip" } });
+    const row = db.sqlite!.prepare("SELECT identity FROM events WHERE meta LIKE '%user-roundtrip%'").get() as { identity: string | null };
+    expect(row.identity).toBe("user-roundtrip");
+
+    // 2) 历史行回填：模拟旧库——identity 列为 NULL、身份藏在 meta JSON 里
+    db.sqlite!.prepare("UPDATE events SET identity = NULL WHERE meta LIKE '%user-roundtrip%'").run();
+    const { migrateEventIdentity } = await import("../src/migrate.ts");
+    const backfilled = await migrateEventIdentity(db);
+    expect(backfilled).toBeGreaterThan(0);
+    const after = db.sqlite!.prepare("SELECT identity FROM events WHERE meta LIKE '%user-roundtrip%'").get() as { identity: string | null };
+    expect(after.identity).toBe("user-roundtrip");
+
+    // 3) 等值查询命中（不再依赖 meta LIKE）
+    const events = await repo.behaviorEvents("user-roundtrip", 0);
+    expect(events.length).toBeGreaterThan(0);
+
+    // 4) 等值删除只删该身份
+    db.sqlite!.prepare("UPDATE events SET identity = 'other-user' WHERE meta LIKE '%user-roundtrip%' AND id <> (SELECT MAX(id) FROM events WHERE meta LIKE '%user-roundtrip%')").run();
+    const removed = await repo.deleteBehaviorEvents("user-roundtrip");
+    expect(removed).toBe(1);
+    expect((await repo.behaviorEvents("user-roundtrip", 0)).length).toBe(0);
+    // 幂等：重复回填第二次不应再改行（identity 已非 NULL）
+    expect(await migrateEventIdentity(db)).toBe(0);
   });
 
   it("旧库 jobs 表缺 next_run_at 列时 openDb 不崩（索引先于迁移的启动阻断）", async () => {

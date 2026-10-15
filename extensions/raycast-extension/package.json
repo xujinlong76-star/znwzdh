@@ -23,6 +23,21 @@
       "type": "textfield",
       "required": false,
       "default": "http://127.0.0.1:8787"
+    },
+    {
+      "name": "apiToken",
+      "title": "NavHub API Token",
+      "description": "管理后台生成的 API Token（收录/写操作需要，只读搜索可留空）",
+      "type": "password",
+      "required": false
+    },
+    {
+      "name": "webUrl",
+      "title": "NavHub 完整站地址",
+      "description": "“打开 NavHub 完整站”动作的目标地址",
+      "type": "textfield",
+      "required": false,
+      "default": "http://localhost:3000"
     }
   ],
   "dependencies": {

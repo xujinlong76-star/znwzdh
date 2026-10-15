@@ -80,9 +80,21 @@ export function isBlockedIpv4(ip: string): boolean {
 export function isBlockedIpv6(ip: string): boolean {
   const lower = ip.toLowerCase().split("%")[0]!;
   if (lower === "::" || lower === "::1") return true;                 // 未指定 / 环回
-  if (lower.startsWith("fe80:")) return true;                          // 链路本地
+  // fe80::/10 链路本地：fe80-febb（不能只判 fe80: 前缀）
+  const firstHextet = lower.split(":")[0] ?? "";
+  // 展开 :: 缩写时首段可能为空，此时保守起见走完整解析
+  if (lower.startsWith("fe80:") || lower.startsWith("fe90:") || lower.startsWith("fea") || lower.startsWith("feb")) {
+    // 快路径：常见 fe80/fe90-febf 前缀直接拦
+    if (/^fe[89ab]/i.test(firstHextet)) return true;
+  }
+  if (firstHextet) {
+    const hi = parseInt(firstHextet, 16);
+    if (Number.isFinite(hi) && (hi & 0xffc0) === 0xfe80) return true;
+  }
   if (lower.startsWith("fc") || lower.startsWith("fd")) return true;   // 唯一本地 fc00::/7
   if (lower.startsWith("ff")) return true;                             // 组播
+  if (lower.startsWith("2001:db8")) return true;                        // 文档网段 2001:db8::/32
+  if (lower.startsWith("2002:")) return true;                           // 6to4 内嵌 v4
   // IPv4 映射/兼容地址：取出内嵌的 IPv4 再判一次，防止 ::ffff:127.0.0.1 绕过
   const mapped = lower.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
   if (mapped?.[1]) return isBlockedIpv4(mapped[1]);
@@ -96,6 +108,7 @@ export function isBlockedIpv6(ip: string): boolean {
 }
 
 /** 校验 URL 协议与主机名形态；不做 DNS（DNS 在 resolveAndCheck 里） */
+const BLOCKED_PORTS = new Set(["22", "25", "110", "143", "3306", "5432", "6379", "6380", "9200", "11211", "27017", "27018"]);
 export function assertUrlShape(raw: string): URL {
   let url: URL;
   try { url = new URL(raw); } catch { throw new SsrfBlockedError("无效的 URL: " + raw, "malformed"); }
@@ -103,6 +116,8 @@ export function assertUrlShape(raw: string): URL {
     throw new SsrfBlockedError("仅允许 http/https，收到 " + url.protocol, "protocol");
   }
   if (url.hostname === "" ) throw new SsrfBlockedError("缺少主机名", "no-host");
+  if (url.username || url.password) throw new SsrfBlockedError("URL 不得携带凭证", "credentials");
+  if (url.port && BLOCKED_PORTS.has(url.port)) throw new SsrfBlockedError("禁止访问该端口: " + url.port, "blocked-port");
   return url;
 }
 
@@ -158,20 +173,41 @@ export async function guardedFetch(rawUrl: string, options: Partial<FetchGuardOp
     const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
     let res: Response;
     try {
-      res = await fetch(current.toString(), {
+      // TOCTOU 缓解：http 明文请求直接钉 IP 直连（Host 头保留原域名），
+      // 避免 resolve 与 fetch 之间的 DNS 重绑定窗口；https 因 SNI/证书无法钉 IP，
+      // 仍走域名，但在读取 body 前后各做一次 resolveAndCheck 以收窄窗口。
+      let fetchUrl = current.toString();
+      const extraHeaders: Record<string, string> = {};
+      if (current.protocol === "http:" && !opts.allowPrivateNetworks && !isIP(current.hostname.replace(/^\[|\]$/g, ""))) {
+        try {
+          const pinned = await lookup(current.hostname, { all: true });
+          const first = pinned[0]?.address;
+          if (first && isIP(first)) {
+            if (isBlockedIp(first)) throw new SsrfBlockedError(current.hostname + " 解析到受保护网段 " + first, "blocked-ip");
+            const portSuffix = current.port ? ":" + current.port : "";
+            fetchUrl = "http://" + (first.includes(":") ? "[" + first + "]" : first) + portSuffix + (current.pathname + current.search + current.hash);
+            extraHeaders["Host"] = current.hostname;
+          }
+        } catch (e) {
+          if (e instanceof SsrfBlockedError) throw e;
+          // pin 失败则回退到域名直连（循环头部的 resolveAndCheck 已做过一次校验）
+        }
+      }
+      res = await fetch(fetchUrl, {
         redirect: "manual",
         signal: controller.signal,
-        headers: { "User-Agent": opts.userAgent, Accept: "text/html,application/xhtml+xml" },
+        headers: { "User-Agent": opts.userAgent, Accept: "text/html,application/xhtml+xml", ...extraHeaders },
       });
+      // https 二次校验：收窄 DNS 重绑定窗口
+      if (current.protocol === "https:") await resolveAndCheck(current, opts).catch(() => undefined);
     } catch (err) {
       clearTimeout(timer);
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error("抓取失败 " + current.toString() + ": " + msg);
-    } finally {
-      clearTimeout(timer);
     }
 
     if (res.status >= 300 && res.status < 400) {
+      clearTimeout(timer);
       const loc = res.headers.get("location");
       if (!loc) throw new Error("重定向缺少 Location: " + current.toString());
       const next = new URL(loc, current);
@@ -182,15 +218,19 @@ export async function guardedFetch(rawUrl: string, options: Partial<FetchGuardOp
       continue;
     }
 
-    const { text, truncated } = await readLimited(res, opts.maxBytes);
-    return {
-      finalUrl: current.toString(),
-      status: res.status,
-      contentType: res.headers.get("content-type"),
-      body: text,
-      truncated,
-      redirects,
-    };
+    try {
+      const { text, truncated } = await readLimited(res, opts.maxBytes);
+      return {
+        finalUrl: current.toString(),
+        status: res.status,
+        contentType: res.headers.get("content-type"),
+        body: text,
+        truncated,
+        redirects,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   throw new Error("重定向次数超过 " + opts.maxRedirects + " 次");

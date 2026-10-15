@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { NavigationCard } from '@/components/navigation-card'
@@ -9,13 +10,32 @@ import { SearchPalette } from '@/components/search-palette'
 import { ModeToggle } from '@/components/mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
 import { ViewModeToggle } from '@/components/view-mode-toggle'
-import { HomeHeroDeck } from '@/components/home-hero-deck'
-import { ModularCanvas } from '@/components/modular/modular-canvas'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { HomeDIYToolbar } from '@/components/home-diy-toolbar'
-import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { Footer } from '@/components/footer'
+
+// 性能优化：动态懒加载大型组件，大幅缩减首屏 JS 体积与主线程阻塞时间
+const ModularCanvas = dynamic(
+  () => import('@/components/modular/modular-canvas').then((m) => m.ModularCanvas),
+  { ssr: false }
+)
+const HomeHeroDeck = dynamic(
+  () => import('@/components/home-hero-deck').then((m) => m.HomeHeroDeck),
+  { ssr: false }
+)
+const KeyboardShortcutsDialog = dynamic(
+  () => import('@/components/keyboard-shortcuts-dialog').then((m) => m.KeyboardShortcutsDialog),
+  { ssr: false }
+)
+const SitePeekDialog = dynamic(
+  () => import('@/components/site-peek-dialog').then((m) => m.SitePeekDialog),
+  { ssr: false }
+)
+const QuickToolsDrawer = dynamic(
+  () => import('@/components/quick-tools-drawer').then((m) => m.QuickToolsDrawer),
+  { ssr: false }
+)
 import { Button } from '@/registry/new-york/ui/button'
 import {
   DropdownMenu,
@@ -57,12 +77,12 @@ import {
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
-import { SitePeekDialog } from '@/components/site-peek-dialog'
-import { QuickToolsDrawer } from '@/components/quick-tools-drawer'
 import {
   sortCategoryItemsWithPinned,
   computeAdaptiveSiteRanking,
   suggestCategoryForSite,
+  isSafeWallpaperUrl,
+  isSafeSiteHref,
 } from '@/lib/modular/diy-presets'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -86,6 +106,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
   const [customSiteDesc, setCustomSiteDesc] = useState('')
 
   const {
+    mounted,
     viewMode,
     cardDisplayMode,
     canvasBackground,
@@ -223,7 +244,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
       categoryTitleMap: titleMap,
       sortedCategories: sorted,
     }
-  }, [customAsCategories, filteredNavigationItems, hiddenCategoryIds, pinnedCategoryIds, categoryOrder])
+  }, [customAsCategories, filteredNavigationItems, hiddenCategoryIds, pinnedCategoryIds, categoryOrder, siteCategoryOverrides])
 
   // 4. 画布背景类名
   const canvasBgClass = useMemo(() => {
@@ -257,9 +278,19 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
   const handleAddCustomSiteSubmit = () => {
     if (!addSiteTargetCatId || !customSiteTitle.trim() || !customSiteHref.trim()) return
 
-    let finalHref = customSiteHref.trim()
-    if (!/^https?:\/\//i.test(finalHref)) {
+    const rawHref = customSiteHref.trim()
+    // 拦截 javascript:/data:/vbscript: 等伪协议（纵深防御，防存储型 XSS）
+    if (/^(javascript|data|vbscript|file|blob):/i.test(rawHref)) {
+      toast({ title: '⚠️ 网址不安全', description: '仅允许 http/https 或站内相对路径。' })
+      return
+    }
+    let finalHref = rawHref
+    if (!/^https?:\/\//i.test(finalHref) && !finalHref.startsWith('/')) {
       finalHref = `https://${finalHref}`
+    }
+    if (!isSafeSiteHref(finalHref)) {
+      toast({ title: '⚠️ 网址不合法', description: '请输入合法的 http(s) 网址。' })
+      return
     }
 
     addSiteToCustomCategory(addSiteTargetCatId, {
@@ -317,7 +348,9 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
 
       <main
         className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-300", canvasBgClass)}
-        style={customWallpaperUrl ? {
+        // 水合安全：壁纸来自 localStorage（仅客户端），首帧与 SSR 保持一致（undefined），
+        // 挂载后再上壁纸，避免 style 分叉触发 hydration mismatch；URL 白名单防 CSS url() 注入
+        style={mounted && customWallpaperUrl && isSafeWallpaperUrl(customWallpaperUrl) ? {
           backgroundImage: `url(${customWallpaperUrl})`,
           backgroundSize: 'cover',
           backgroundAttachment: 'fixed',
@@ -325,6 +358,11 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
           backdropFilter: `blur(${glassmorphismBlur || 0}px)`
         } : undefined}
       >
+        {/* SEO 与无障碍可访问性首要标题（通过 sr-only 视觉隐藏，供屏幕阅读器与搜索引擎建立层级大纲） */}
+        <h1 className="sr-only">
+          {siteData.basic.title} - {siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
+        </h1>
+
         <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-4 sm:px-6 border-b border-border/40 shadow-2xs">
           <div className="flex h-14 items-center justify-between gap-3">
             <div className="flex-1 max-w-xl">
@@ -577,6 +615,13 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                             if (raw) {
                               const card = JSON.parse(raw)
                               if (isCustom && card.title && card.href) {
+                                if (!isSafeSiteHref(card.href)) {
+                                  toast({
+                                    title: '⚠️ 拖拽收录已拦截',
+                                    description: '该卡片地址不安全，仅允许 http/https 或站内路径。',
+                                  })
+                                  return
+                                }
                                 const exists = (category.items as any[])?.some(
                                   (item: any) => item.href === card.href || item.title === card.title
                                 )

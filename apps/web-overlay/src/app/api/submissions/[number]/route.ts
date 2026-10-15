@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { auth, getServerGithubToken } from '@/lib/auth'
+import { requireAdmin } from '@/lib/admin-guard'
 import { SUBMISSION_LABELS, parseSubmissionFromIssueBody } from '@/types/submission'
 import { getFileContent, commitFile } from '@/lib/github'
 
@@ -99,10 +100,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         }
 
         if (action === 'approve') {
-            // 验证管理员有 accessToken
-            if (!session.user.accessToken) {
+            // 管理员校验：口径与 admin-guard 一致（未登录 401 / 非白名单 403）
+            const admin = await requireAdmin()
+            if (!admin.ok) {
                 return NextResponse.json(
-                    { success: false, message: '缺少访问令牌，请重新登录' },
+                    { success: false, message: admin.status === 403 ? '无管理员权限' : '请先登录' },
+                    { status: admin.status ?? 401 }
+                )
+            }
+            // 服务端 token 保管：accessToken 不再下发到 session（防 XSS 窃取 repo scope），
+            // 按用户 sub 从服务端内存取，取不到说明需要重新登录（JWT 回调未命中/进程重启）。
+            const serverToken = getServerGithubToken((session.user as unknown as { id?: string })?.id)
+            if (!serverToken) {
+                return NextResponse.json(
+                    { success: false, message: '缺少服务端访问令牌，请重新登录' },
                     { status: 401 }
                 )
             }
@@ -171,7 +182,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
                     filePath,
                     JSON.stringify(navigationData, null, 2),
                     `✅ Add submission: ${submissionData.title}`,
-                    session.user.accessToken
+                    serverToken
                 )
             } catch (commitError) {
                 console.error('GitHub file commit error:', commitError)

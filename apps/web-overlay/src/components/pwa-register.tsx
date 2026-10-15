@@ -26,7 +26,17 @@ export function PwaRegister() {
   const updatePromptedRef = useRef(false)
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') return
+    if (process.env.NODE_ENV !== 'production') {
+      // 开发环境下主动注销可能残留的 Service Worker，避免其拦截开发期动态模块与 HMR 导致 404
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          for (const registration of registrations) {
+            void registration.unregister()
+          }
+        }).catch(() => undefined)
+      }
+      return
+    }
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
 
     const markUpdate = () => {

@@ -163,3 +163,111 @@ export function generateDeterministicSvgDataUrl(
   const encoded = encodeURIComponent(svg).replace(/'/g, '%27').replace(/"/g, '%22')
   return `data:image/svg+xml;charset=utf-8,${encoded}`
 }
+
+/**
+ * 本地静态品牌 Logo 映射表 (基于 /assets/images/logos/ 资源库)
+ */
+export const LOCAL_LOGO_MAP: Record<string, string> = {
+  'chatgpt.com': '/assets/images/logos/chatgpt.webp',
+  'chat.openai.com': '/assets/images/logos/chatgpt.webp',
+  'openai.com': '/assets/images/logos/chatgpt.webp',
+  'claude.ai': '/assets/images/logos/claude.webp',
+  'anthropic.com': '/assets/images/logos/claude.webp',
+  'cloudflare.com': '/assets/images/logos/cloudflar.webp',
+  'figma.com': '/assets/images/logos/figma.webp',
+  'tinypng.com': '/assets/images/logos/tinypng.webp',
+  'unsplash.com': '/assets/images/logos/unsplash.webp',
+  'vercel.com': '/assets/images/logos/vercel.webp',
+  'fonts.google.com': '/assets/images/logos/Materialicons.webp',
+  'material.io': '/assets/images/logos/Materialicons.webp',
+  'colorhunt.co': '/assets/images/logos/colorhunt.webp',
+  'flinto.com': '/assets/images/logos/flinto.webp',
+  'flaticon.com': '/assets/images/logos/flaticon.webp',
+  'fontawesome.com': '/assets/images/logos/fontawesomeicon.webp',
+  'framer.com': '/assets/images/logos/framer.webp',
+  'freepik.com': '/assets/images/logos/freepik.webp',
+  'gemini.google.com': '/assets/images/logos/gemini.svg',
+  'iconarchive.com': '/assets/images/logos/iconarchive.webp',
+  'iconfinder.com': '/assets/images/logos/Iconfinder.webp',
+  'iconfont.cn': '/assets/images/logos/iconfont.webp',
+  'iconmonstr.com': '/assets/images/logos/iconmonstr.webp',
+  'ionicons.com': '/assets/images/logos/ionicons.webp',
+  'leonardo.ai': '/assets/images/logos/leonardo.webp',
+  'poe.com': '/assets/images/logos/poe.svg',
+  'producthunt.com': '/assets/images/logos/producthunt.webp',
+  'tensor.art': '/assets/images/logos/tensorart.webp',
+  'icomoon.io': '/assets/images/logos/IcoMoonApp.webp',
+  'findicons.com': '/assets/images/logos/FindIcons.webp',
+  'principleformac.com': '/assets/images/logos/principle.webp',
+  'worldvectorlogo.com': '/assets/images/logos/worldvectorlogo.webp',
+  'shots.so': '/assets/images/logos/shots.webp',
+  'simplelineicons.com': '/assets/images/logos/simplelineicons.webp',
+  'sqlformat.org': '/assets/images/logos/sqlformat.webp',
+  'tableconvert.com': '/assets/images/logos/tableconvert.webp',
+  'json.cn': '/assets/images/logos/json.webp',
+  'beautifier.io': '/assets/images/logos/beautifier.webp',
+  'ui-cloud.com': '/assets/images/logos/UICloud.webp',
+  'ads.google.com': '/assets/images/logos/gads.webp',
+  'analytics.google.com': '/assets/images/logos/analytics.webp',
+}
+
+/**
+ * 5. 智能解析站点高分辨率图标 (Smart Favicon / Logo Resolver)
+ *
+ * 优先级逻辑：
+ * 1. 若显式提供合法且有效的自定义图标 (customIcon)，直接采用
+ * 2. 匹配预置的高清本地品牌矢量/WebP Logo (例如 ChatGPT, Claude, Vercel, Cloudflare, Figma, TinyPNG, Unsplash)
+ * 3. 提取标准二级/主域名，路由至无防盗链阻碍的高速 CDN 图标服务 (icon.horse)
+ */
+export function resolveSiteIcon(
+  url: string,
+  title?: string,
+  customIcon?: string | null
+): string {
+  if (customIcon && typeof customIcon === 'string' && customIcon.trim().length > 0) {
+    return customIcon.trim()
+  }
+
+  if (!url || typeof url !== 'string') {
+    return ''
+  }
+
+  try {
+    const rawUrl = url.trim()
+    const parsed = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`)
+    let hostname = parsed.hostname.toLowerCase()
+
+    // 剥离 www. 前缀
+    if (hostname.startsWith('www.')) {
+      hostname = hostname.slice(4)
+    }
+
+    // 1. 精确匹配本地 Logo 库
+    if (LOCAL_LOGO_MAP[hostname]) {
+      return LOCAL_LOGO_MAP[hostname]!
+    }
+
+    // 2. 子域名或后半段匹配 (如 *.vercel.app -> vercel.webp, fonts.google.com 等)
+    for (const [domainKey, assetPath] of Object.entries(LOCAL_LOGO_MAP)) {
+      if (hostname === domainKey || hostname.endsWith(`.${domainKey}`)) {
+        return assetPath
+      }
+    }
+
+    // 3. 知名品牌标题关键词模糊回退
+    const lowerTitle = (title || '').toLowerCase()
+    if (lowerTitle.includes('chatgpt') || lowerTitle.includes('openai')) return '/assets/images/logos/chatgpt.webp'
+    if (lowerTitle.includes('claude')) return '/assets/images/logos/claude.webp'
+    if (lowerTitle.includes('cloudflare')) return '/assets/images/logos/cloudflar.webp'
+    if (lowerTitle.includes('figma')) return '/assets/images/logos/figma.webp'
+    if (lowerTitle.includes('tinypng')) return '/assets/images/logos/tinypng.webp'
+    if (lowerTitle.includes('unsplash')) return '/assets/images/logos/unsplash.webp'
+    if (lowerTitle.includes('vercel')) return '/assets/images/logos/vercel.webp'
+
+    // 4. 路由至无跨域限制的高清 CDN 图标服务
+    return `https://icon.horse/icon/${hostname}`
+  } catch {
+    return ''
+  }
+}
+

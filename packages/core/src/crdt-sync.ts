@@ -54,7 +54,10 @@ export function createCRDTOperation<T = any>(
   clientId: string,
   timestamp: number = Date.now()
 ): CRDTOperation<T> {
-  const rand = Math.random().toString(36).slice(2, 8)
+  const rand =
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID().slice(0, 8)
+      : Math.random().toString(36).slice(2, 8);
   const id = `op_${timestamp}_${clientId.slice(0, 8)}_${rand}`
   return {
     id,
@@ -221,6 +224,10 @@ export function reduceOperationsToState(
         if (!site || !site.id) break
         const key = `custom_site_${site.id}`
         if (isMoreRecent(key, op)) {
+          // 跨分类移动：先从所有其他分类移除，再写入目标（避免旧分类残留）
+          for (const cat of state.customCategories) {
+            if (cat.id !== targetCatId) cat.items = cat.items.filter((i) => i.id !== site.id);
+          }
           const targetCat = state.customCategories.find((c) => c.id === targetCatId)
           if (targetCat) {
             const itemIdx = targetCat.items.findIndex((i) => i.id === site.id)
@@ -264,7 +271,9 @@ export function compactOperationLog(
   // 先完整计算状态
   const reduced = reduceOperationsToState(operations)
   const compacted: CRDTOperation[] = []
-  const timestamp = Date.now()
+  // 保留原最大时间戳，避免压缩后因果序丢失（老 op 变“最新”与未压缩副本合并时 LWW 误胜）
+  const maxTs = operations.reduce((m, o) => Math.max(m, o.timestamp), 0) || Date.now();
+  const timestamp = maxTs;
   const clientId = 'compact_sys'
 
   // 1. 全局分类排序

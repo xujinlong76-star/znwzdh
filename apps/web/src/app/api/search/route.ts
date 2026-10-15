@@ -22,6 +22,8 @@ export async function GET(request: Request) {
     const data = await res.json();
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json({ error: 'Backend unreachable', details: String(error) }, { status: 502 });
+    // 安全：不把后端错误细节（堆栈/内网地址/ECONNREFUSED）回显给客户端，仅服务端日志留存
+    console.error('[api/search] backend unreachable:', error);
+    return NextResponse.json({ error: 'Backend unreachable' }, { status: 502 });
   }
 }

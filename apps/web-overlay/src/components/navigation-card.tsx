@@ -9,7 +9,6 @@ import type { SiteConfig } from '@/types/site'
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Eye, Star, Zap, Pin } from 'lucide-react'
@@ -18,6 +17,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { cn } from '@/lib/utils'
+import { safeHref } from '@/lib/safe-url'
 
 interface NavigationCardProps {
   item: NavigationSubItem
@@ -100,8 +100,7 @@ export function NavigationCard({
   // 1. 紧凑单行条形多态 (Compact Bar Mode)
   if (cardDisplayMode === 'compact') {
     return (
-      <TooltipProvider>
-        <Tooltip>
+      <Tooltip>
           <TooltipTrigger asChild>
             <div
               tabIndex={0}
@@ -115,7 +114,7 @@ export function NavigationCard({
               )}
             >
               <Link
-                href={item.href}
+                href={safeHref(item.href)}
                 target={linkTarget}
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
@@ -124,6 +123,7 @@ export function NavigationCard({
                 <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover:scale-105">
                   <SiteFavicon
                     title={item.title}
+                    url={item.href}
                     icon={item.icon}
                     useDefaultIcon={item.useDefaultIcon}
                     className="w-full h-full object-contain rounded-xs"
@@ -194,15 +194,13 @@ export function NavigationCard({
             <p className="text-[10px] text-muted-foreground pt-1 border-t mt-1">按 Space 空格键沙箱速览</p>
           </TooltipContent>
         </Tooltip>
-      </TooltipProvider>
     )
   }
 
   // 2. 深度丰富卡片多态 (Rich / Detailed Mode)
   if (cardDisplayMode === 'rich') {
     return (
-      <TooltipProvider>
-        <Tooltip>
+      <Tooltip>
           <TooltipTrigger asChild>
             <Card
               tabIndex={0}
@@ -223,7 +221,7 @@ export function NavigationCard({
               )}
 
               <Link
-                href={item.href}
+                href={safeHref(item.href)}
                 target={linkTarget}
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
@@ -234,6 +232,7 @@ export function NavigationCard({
                     <div className="flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                       <SiteFavicon
                         title={item.title}
+                        url={item.href}
                         icon={item.icon}
                         useDefaultIcon={item.useDefaultIcon}
                         className="w-full h-full object-contain rounded-sm"
@@ -341,14 +340,12 @@ export function NavigationCard({
             <p className="text-[10px] text-muted-foreground pt-1 border-t mt-1">💡 按 Space 空格键呼出沙箱速览与微动作</p>
           </TooltipContent>
         </Tooltip>
-      </TooltipProvider>
     )
   }
 
   // 3. 标准现代卡片 (Standard Mode - 默认)
   return (
-    <TooltipProvider>
-      <Tooltip>
+    <Tooltip>
         <TooltipTrigger asChild>
           <Card
             tabIndex={0}
@@ -369,7 +366,7 @@ export function NavigationCard({
             )}
 
             <Link
-              href={item.href}
+              href={safeHref(item.href)}
               target={linkTarget}
               rel="noopener noreferrer"
               data-prefetch-target="true"
@@ -380,6 +377,7 @@ export function NavigationCard({
                   <div className="flex-shrink-0 w-9 h-9 @[280px]:w-10 @[280px]:h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                     <SiteFavicon
                       title={item.title}
+                      url={item.href}
                       icon={item.icon}
                       useDefaultIcon={item.useDefaultIcon}
                       className="w-full h-full object-contain rounded-xs"
@@ -486,6 +484,5 @@ export function NavigationCard({
           <p className="text-xs text-muted-foreground pt-1 border-t mt-1">💡 聚焦时按 Space 空格键呼出沙箱速览与微动作</p>
         </TooltipContent>
       </Tooltip>
-    </TooltipProvider>
   )
 }

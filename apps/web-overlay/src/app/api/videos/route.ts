@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, getFileContent } from '@/lib/github'
 import type { NavigationItem, NavigationData } from '@/types/navigation'
 
@@ -19,17 +19,21 @@ export async function GET() {
     }
 }
 
-async function validateAndSaveVideosData(data: NavigationData, accessToken: string) {
+async function validateAndSaveVideosData(data: NavigationData, accessToken?: string) {
     if (!data || typeof data !== 'object') {
         throw new Error('Invalid videos data: not an object')
     }
 
-    if (!('navigationItems' in data)) {
-        throw new Error('Invalid videos data: missing navigationItems')
+    if (!('navigationItems' in data) || !Array.isArray(data.navigationItems)) {
+        throw new Error('Invalid videos data: missing navigationItems array')
     }
 
-    if (!Array.isArray(data.navigationItems)) {
-        throw new Error('Invalid videos data: navigationItems must be an array')
+    const invalidItems = data.navigationItems.filter((item: NavigationItem) =>
+        !item.id || !item.title
+    )
+
+    if (invalidItems.length > 0) {
+        throw new Error('Invalid videos data: some items are malformed')
     }
 
     await commitFile(
@@ -42,13 +46,13 @@ async function validateAndSaveVideosData(data: NavigationData, accessToken: stri
 
 export async function POST(request: Request) {
     try {
-        const session = await auth()
-        if (!session?.user || !getServerGithubToken(session.user.id)) {
-            return new Response('Unauthorized', { status: 401 })
+        const authCheck = await verifyAdminSession()
+        if (!authCheck.ok) {
+            return new Response(authCheck.error, { status: authCheck.status })
         }
 
         const data = await request.json()
-        await validateAndSaveVideosData(data, getServerGithubToken(session.user.id)!)
+        await validateAndSaveVideosData(data, authCheck.githubToken || undefined)
 
         return NextResponse.json({ success: true })
     } catch (error) {
@@ -65,13 +69,13 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
     try {
-        const session = await auth()
-        if (!session?.user || !getServerGithubToken(session.user.id)) {
-            return new Response('Unauthorized', { status: 401 })
+        const authCheck = await verifyAdminSession()
+        if (!authCheck.ok) {
+            return new Response(authCheck.error, { status: authCheck.status })
         }
 
         const data = await request.json()
-        await validateAndSaveVideosData(data, getServerGithubToken(session.user.id)!)
+        await validateAndSaveVideosData(data, authCheck.githubToken || undefined)
 
         return NextResponse.json({ success: true })
     } catch (error) {

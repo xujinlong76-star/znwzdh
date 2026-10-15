@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { uint8ArrayToBase64 } from '@/lib/buffer-utils'
 import { guardedFetch, isProbablySafeUrl, SsrfBlockedError } from '@/lib/ssrf-guard'
 
@@ -25,9 +25,9 @@ interface WebsiteMetadata {
 
 export async function POST(request: Request) {
     try {
-        const session = await auth()
-        if (!session?.user || !getServerGithubToken(session.user.id)) {
-            return new Response('Unauthorized', { status: 401 })
+        const authCheck = await verifyAdminSession()
+        if (!authCheck.ok) {
+            return new Response(authCheck.error, { status: authCheck.status })
         }
 
         const { url } = await request.json()
@@ -43,13 +43,15 @@ export async function POST(request: Request) {
             throw new Error('Failed to fetch valid metadata')
         }
 
-        // 处理封面/OG图片
-        if (metadata.image) {
+        const token = authCheck.githubToken
+
+        // 处理封面/OG图片（若有 GitHub Token 则上传，否则保留原始 URL）
+        if (metadata.image && token) {
             try {
                 // 使用页面 URL 作为 Referer，并将文件前缀设为 'cover'，存储到 assets/cover 目录
                 const imageUrl = await downloadAndUploadIcon(
                     metadata.image,
-                    getServerGithubToken(session.user.id)!,
+                    token,
                     url,
                     'cover',
                     'assets/cover'
@@ -61,15 +63,15 @@ export async function POST(request: Request) {
             }
         }
 
-        // 如果获取到了 favicon，下载并上传到 GitHub
+        // 如果获取到了 favicon，且有 GitHub Token 则下载并上传
         // 对于视频链接（如 Bilibili），如果已有封面图片，则不需要处理 favicon
         const isVideoUrl = extractBilibiliVideoId(url) !== null
         const skipFavicon = isVideoUrl && metadata.image
 
-        if (metadata.icon && !skipFavicon) {
+        if (metadata.icon && !skipFavicon && token) {
             try {
                 // 使用页面 URL 作为 Referer
-                const iconUrl = await downloadAndUploadIcon(metadata.icon, getServerGithubToken(session.user.id)!, url, 'favicon')
+                const iconUrl = await downloadAndUploadIcon(metadata.icon, token, url, 'favicon')
                 metadata.icon = iconUrl
 
             } catch (error) {
@@ -77,7 +79,7 @@ export async function POST(request: Request) {
                 // 如果图标下载失败，尝试使用 Google favicon 服务
                 try {
                     const domain = new URL(url).hostname
-                    const fallbackIconUrl = await downloadGoogleFavicon(domain, getServerGithubToken(session.user.id)!)
+                    const fallbackIconUrl = await downloadGoogleFavicon(domain, token)
                     metadata.icon = fallbackIconUrl
                 } catch (fallbackError) {
                     console.warn('Failed to download Google favicon:', fallbackError)
@@ -410,13 +412,19 @@ async function downloadAndUploadIcon(
     }
 
     // 通用策略: 完整浏览器模拟
+    // 注意：Referer 从 iconUrl 派生时做 try/catch，避免非法 URL 在策略构造期即抛错
+    let safeRefererFallback = ''
+    try {
+        const u = new URL(iconUrl)
+        safeRefererFallback = (u.protocol === 'http:' || u.protocol === 'https:') ? u.origin + '/' : ''
+    } catch { safeRefererFallback = '' }
     strategies.push({
         headers: {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
             'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Accept-Encoding': 'gzip, deflate, br, zstd',
-            'Referer': referer || new URL(iconUrl).origin + '/',
+            'Referer': referer || safeRefererFallback,
             'Sec-Ch-Ua': '"Not)A;Brand";v="8", "Chromium";v="138", "Google Chrome";v="138"',
             'Sec-Ch-Ua-Mobile': '?0',
             'Sec-Ch-Ua-Platform': '"macOS"',
@@ -429,13 +437,20 @@ async function downloadAndUploadIcon(
 
     let lastError: Error | null = null
 
+    // 安全：iconUrl 来自目标页面 HTML（攻击者可控），必须逐跳 SSRF 校验。
+    // 原先 fetch(..., { redirect: 'follow' }) 会自动跟随 302 到内网（169.254.169.254 等），
+    // 现改用 guardedFetch：每跳 DNS 解析 + 私网 IP 拦截 + 跳数/体积上限。
+    if (!isProbablySafeUrl(iconUrl)) {
+        throw new SsrfBlockedError(`图标 URL 协议不允许: ${iconUrl.slice(0, 128)}`)
+    }
+
     for (const strategy of strategies) {
         try {
-            const response = await fetch(iconUrl, {
-                headers: strategy.headers,
-                redirect: 'follow',
-                signal: AbortSignal.timeout(15000)
-            })
+            const { response } = await guardedFetch(
+                iconUrl,
+                { timeoutMs: 15_000, maxBytes: 5 * 1024 * 1024, maxRedirects: 3 },
+                { headers: strategy.headers }
+            )
 
             if (response.ok) {
                 const arrayBuffer = await response.arrayBuffer()
@@ -455,6 +470,8 @@ async function downloadAndUploadIcon(
                 console.warn(`Strategy failed with status ${response.status}, trying next strategy...`)
             }
         } catch (error) {
+            // SSRF 拦截直接透出，不再换策略重试（重试只会重复请求内网）
+            if (error instanceof SsrfBlockedError) throw error
             lastError = error instanceof Error ? error : new Error('Unknown error')
             console.warn(`Strategy failed with error:`, error)
         }

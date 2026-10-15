@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, getFileContent } from '@/lib/github'
 import type { NavigationData, NavigationItem } from '@/types/navigation'
 
@@ -18,7 +18,7 @@ export async function GET() {
   }
 }
 
-async function validateAndSaveNavigationData(data: NavigationData, accessToken: string) {
+async function validateAndSaveNavigationData(data: NavigationData, accessToken?: string) {
   // 详细的数据结构验证和日志
   console.log('Received navigation data:', JSON.stringify(data, null, 2))
 
@@ -61,13 +61,13 @@ async function validateAndSaveNavigationData(data: NavigationData, accessToken: 
 
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    if (!session?.user || !getServerGithubToken(session.user.id)) {
-      return new Response('Unauthorized', { status: 401 })
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
     }
 
     const data = await request.json()
-    await validateAndSaveNavigationData(data, getServerGithubToken(session.user.id)!)
+    await validateAndSaveNavigationData(data, authCheck.githubToken || undefined)
 
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -84,13 +84,13 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
-    const session = await auth()
-    if (!session?.user || !getServerGithubToken(session.user.id)) {
-      return new Response('Unauthorized', { status: 401 })
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
     }
 
     const data = await request.json()
-    await validateAndSaveNavigationData(data, getServerGithubToken(session.user.id)!)
+    await validateAndSaveNavigationData(data, authCheck.githubToken || undefined)
 
     return NextResponse.json({ success: true })
   } catch (error) {
@@ -103,4 +103,4 @@ export async function PUT(request: Request) {
       { status: 500 }
     )
   }
-} 
+}

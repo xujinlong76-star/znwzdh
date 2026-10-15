@@ -66,6 +66,7 @@ export function logMap0(y: number[]): number[] {
  * u ⊕ v = ((1 + 2<u, v> + ||v||^2) u + (1 - ||u||^2) v) / (1 + 2<u, v> + ||u||^2 ||v||^2)
  */
 export function mobiusAdd(u: number[], v: number[]): number[] {
+  assertSameDim(u, v, "mobiusAdd");
   const uClamped = clampToBall(u);
   const vClamped = clampToBall(v);
 
@@ -87,7 +88,12 @@ export function mobiusAdd(u: number[], v: number[]): number[] {
  * 庞加莱测地线距离 (Poincaré Geodesic Distance)
  * d_B(u, v) = arcosh(1 + 2 * ||u - v||^2 / ((1 - ||u||^2) * (1 - ||v||^2)))
  */
+function assertSameDim(u: number[], v: number[], fn: string): void {
+  if (u.length !== v.length) throw new Error(`${fn} 维度不一致: ${u.length} vs ${v.length}（检查 embedding 模型是否混用）`);
+}
+
 export function poincareDistance(u: number[], v: number[]): number {
+  assertSameDim(u, v, "poincareDistance");
   const uClamped = clampToBall(u);
   const vClamped = clampToBall(v);
 
@@ -162,11 +168,16 @@ export function findTopAlternativesInHyperbolicSpace(
   limit = 5
 ): HyperbolicAlternativeMatch[] {
   const results: HyperbolicAlternativeMatch[] = [];
+  const qNorm = euclideanNorm(clampToBall(queryNode.embedding));
 
   for (const cand of candidates) {
     if (cand.id === queryNode.id) continue;
     const dist = poincareDistance(queryNode.embedding, cand.embedding);
-    const score = computeHyperbolicAlternativeScore(queryNode.embedding, cand.embedding);
+    // 复用 dist，避免 computeHyperbolicAlternativeScore 内部重复计算一次距离
+    const cNorm = euclideanNorm(clampToBall(cand.embedding));
+    const sigma = 2.5, beta = 1.5;
+    const depthParity = Math.pow(Math.max(0, 1 - Math.abs(qNorm - cNorm)), beta);
+    const score = Number((Math.exp(-dist / sigma) * depthParity).toFixed(4));
 
     results.push({
       targetId: cand.id,
@@ -193,9 +204,10 @@ export function findTopAlternativesInHyperbolicSpace(
  * <u, v>_L = -u_0 * v_0 + sum_{i=1}^{d-1} (u_i * v_i)
  */
 export function lorentzInnerProduct(u: number[], v: number[]): number {
-  if (u.length === 0 || v.length === 0) return 0;
+  assertSameDim(u, v, "lorentzInnerProduct");
+  if (u.length === 0) throw new Error("lorentzInnerProduct 空向量");
   let spatialDot = 0;
-  const n = Math.min(u.length, v.length);
+  const n = u.length;
   for (let i = 1; i < n; i++) {
     spatialDot += (u[i] ?? 0) * (v[i] ?? 0);
   }
@@ -234,7 +246,7 @@ export function poincareToLorentz(p: number[]): number[] {
  * x_i = u_i / (1 + u_0)
  */
 export function lorentzToPoincare(l: number[]): number[] {
-  if (l.length <= 1) return [];
+  if (l.length <= 1) throw new Error("lorentzToPoincare 输入维度非法（至少需要 time+1 维）");
   const time0 = l[0] ?? 1.0;
   const denom = Math.max(EPSILON, 1.0 + time0);
   const spatial = l.slice(1);

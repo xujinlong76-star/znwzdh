@@ -56,8 +56,8 @@ export function extractContextFeatures(query: string): number[] {
 
   for (let i = 0; i < len; i++) {
     const code = q.charCodeAt(i);
-    // CJK Unified Ideographs 0x4E00 - 0x9FA5
-    if (code >= 0x4e00 && code <= 0x9fa5) {
+    // CJK 口径与 cjk.ts 的 HAN 范围对齐：3400-4DBF / 4E00-9FFF / F900-FAFF
+    if ((code >= 0x3400 && code <= 0x4dbf) || (code >= 0x4e00 && code <= 0x9fff) || (code >= 0xf900 && code <= 0xfaff)) {
       cjkCount++;
     } else if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) {
       alphaCount++;
@@ -190,11 +190,11 @@ export function predictArmWeights(
   model: LinUCBModel,
   query: string,
   basePriors: Record<RetrievalChannel, number> = {
-    exact: 1.2,
+    exact: 1.4,
     fts: 1.0,
-    pinyin: 1.1,
-    semantic: 0.95,
-    personal: 0.9,
+    pinyin: 0.9,
+    semantic: 1.15,
+    personal: 0.3,
   }
 ): Record<RetrievalChannel, number> {
   const x = extractContextFeatures(query);
@@ -266,7 +266,20 @@ export function serializeLinUCB(model: LinUCBModel): string {
 export function deserializeLinUCB(jsonStr: string): LinUCBModel {
   try {
     const parsed = JSON.parse(jsonStr);
-    if (parsed.dimension && parsed.arms) return parsed as LinUCBModel;
+    if (!parsed || typeof parsed !== "object" || !parsed.arms || typeof parsed.dimension !== "number") throw new Error("bad shape");
+    const dim = parsed.dimension;
+    if (!Number.isInteger(dim) || dim <= 0 || dim > 64) throw new Error("bad dimension");
+    for (const ch of CHANNELS) {
+      const arm = (parsed.arms as Record<string, LinUCBArmState>)[ch];
+      if (!arm || !Array.isArray(arm.A) || !Array.isArray(arm.b)) throw new Error("bad arm " + ch);
+      if (arm.A.length !== dim || arm.b.length !== dim) throw new Error("dim mismatch " + ch);
+      for (const row of arm.A) {
+        if (!Array.isArray(row) || row.length !== dim || row.some((v) => typeof v !== "number" || !Number.isFinite(v))) throw new Error("bad matrix " + ch);
+      }
+      if (arm.b.some((v) => typeof v !== "number" || !Number.isFinite(v))) throw new Error("bad vector " + ch);
+    }
+    if (typeof parsed.alpha !== "number" || !Number.isFinite(parsed.alpha)) parsed.alpha = 0.25;
+    return parsed as LinUCBModel;
   } catch {
     // fallback
   }
@@ -324,13 +337,13 @@ export function computeDwellTimeReward(
   dwellSeconds: number,
   interactionType: 'click' | 'copy' | 'bounce' = 'click'
 ): number {
+  if (interactionType === 'copy') {
+    // 触发有效复制或书签操作：极强正反馈（必须先判，否则短驻留 copy 被误判为 bounce）
+    return 2.0;
+  }
   if (interactionType === 'bounce' || dwellSeconds < 1.5) {
     // 快速回退跳出：给予负向惩罚
     return -0.5;
-  }
-  if (interactionType === 'copy') {
-    // 触发有效复制或书签操作：极强正反馈
-    return 2.0;
   }
   // 驻留 1.5s ~ 30s 按照饱和对数曲线平滑映射 [0.2, 1.5]
   const logScore = Math.log(dwellSeconds + 1) / Math.log(31);

@@ -128,8 +128,7 @@ export function createHandlers(ctx: AppContext) {
       requireScope(tc, "read");
       const input = SearchSitesInput.parse(args ?? {});
       const result = await ctx.search.search({ q: input.query, limit: input.limit, categoryId: input.categoryId, tag: input.tag });
-      const sites = await ctx.repo.getSitesByIds(result.hits.map((h) => h.siteId));
-      const byId = new Map(sites.map((s) => [s.id, s]));
+      const byId = await ctx.repo.getSitesByIds(result.hits.map((h) => h.siteId));
       const results = result.hits.map((h) => {
         const site = byId.get(h.siteId);
         return {

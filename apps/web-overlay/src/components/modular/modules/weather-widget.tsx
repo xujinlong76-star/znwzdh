@@ -1,5 +1,9 @@
 'use client'
 
+/**
+ * 演示数据组件：气温/预报为内置静态示例（未接实时气象 API），切换城市/单位仅做本地换算。
+ * 避免冒充实时：UI 已标注“演示数据”，接入真实数据源后请移除该标注。
+ */
 import React, { useState } from 'react'
 import { CloudSun, Sun, CloudRain, Wind, Droplets, MapPin } from 'lucide-react'
 
@@ -180,6 +184,7 @@ export function WeatherWidget({ config }: WeatherWidgetProps) {
           <MapPin className="w-3.5 h-3.5 text-primary" />
           <span>{city.name}</span>
           <span className="text-xs text-muted-foreground font-normal">({city.province})</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted/60 text-muted-foreground border border-border/40 font-normal">演示数据</span>
         </div>
 
         <button

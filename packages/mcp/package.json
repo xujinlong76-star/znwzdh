@@ -15,7 +15,8 @@
   "scripts": {
     "start": "node --experimental-strip-types src/stdio.ts",
     "http": "node --experimental-strip-types src/http.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",

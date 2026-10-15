@@ -1,16 +1,68 @@
+/**
+ * NavHub 随身导航 popup。
+ *
+ * 安全与配置约定（与 background.js 统一）：
+ *  - API 地址可配：chrome.storage.local["apiUrl"]，默认 http://127.0.0.1:8787，
+ *    background 的 omnibox 检索读的是同一个 key，改一处两处生效。
+ *  - Token 存 chrome.storage.local["navhub_api_token"]（不用 localStorage，
+ *    避免明文长期落在 Web 存储且与 SW 上下文不一致）。
+ *  - 搜索结果渲染不用 innerHTML 拼接：全部 createElement + textContent；
+ *    外链 href 只放行 http/https，其他协议降级为纯文本（防 javascript: 注入）。
+ */
 
-const tokenInput = document.getElementById("token-input");
-if (tokenInput) {
+const DEFAULT_API_BASE = "http://127.0.0.1:8787";
+
+async function getApiBase() {
   try {
-    const savedToken = localStorage.getItem("navhub_api_token") || "";
-    tokenInput.value = savedToken;
-    tokenInput.addEventListener("input", (e) => {
-      localStorage.setItem("navhub_api_token", e.target.value.trim());
-    });
-  } catch (err) {}
+    const store = await chrome.storage.local.get(["apiUrl"]);
+    return (store.apiUrl || DEFAULT_API_BASE).replace(/\/$/, "");
+  } catch {
+    return DEFAULT_API_BASE;
+  }
 }
 
-const API_BASE = "http://127.0.0.1:8787";
+async function getToken() {
+  try {
+    const store = await chrome.storage.local.get(["navhub_api_token"]);
+    return String(store.navhub_api_token || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+async function setStore(items) {
+  try {
+    await chrome.storage.local.set(items);
+  } catch (err) {
+    console.warn("[NavHub] 存储失败:", err);
+  }
+}
+
+/** 只放行 http/https 外链，其他一律返回 null（调用方降级为纯文本） */
+function safeHttpUrl(raw) {
+  try {
+    const u = new URL(String(raw || ""), "http://invalid.local");
+    if (u.protocol === "http:" || u.protocol === "https:") return u.toString();
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function clearResults() {
+  searchResults.replaceChildren();
+}
+
+function emptyHint(text) {
+  clearResults();
+  const div = document.createElement("div");
+  div.setAttribute("style", "color:#94a3b8;font-size:11px;padding:8px;text-align:center;");
+  div.textContent = text;
+  searchResults.appendChild(div);
+}
+
+const tokenInput = document.getElementById("token-input");
+const apiInput = document.getElementById("api-input");
 
 const searchInput = document.getElementById("search-input");
 const searchResults = document.getElementById("search-results");
@@ -20,10 +72,27 @@ const statusIndicator = document.getElementById("status-indicator");
 
 let currentTab = null;
 
+// 0. 设置项回填（token + API 地址）
+(async () => {
+  if (tokenInput) {
+    tokenInput.value = await getToken();
+    tokenInput.addEventListener("input", (e) => {
+      setStore({ navhub_api_token: e.target.value.trim() });
+    });
+  }
+  if (apiInput) {
+    apiInput.value = await getApiBase();
+    apiInput.addEventListener("input", (e) => {
+      setStore({ apiUrl: e.target.value.trim() });
+    });
+  }
+})();
+
 // 1. 检查 API 健康度
 async function checkHealth() {
+  const apiBase = await getApiBase();
   try {
-    const res = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`${apiBase}/api/health`, { signal: AbortSignal.timeout(2000) });
     if (res.status === 401) {
       saveBtn.textContent = "❌ 401 未授权：请在下方填入有效 API Token";
       saveBtn.style.background = "#ef4444";
@@ -43,7 +112,7 @@ async function checkHealth() {
   }
 }
 
-// 2. 获取当前活动标签页
+// 2. 获取当前活动标签页（需要 manifest 的 tabs 权限才能稳定拿到 url/title）
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
   if (tabs && tabs[0]) {
     currentTab = tabs[0];
@@ -60,13 +129,14 @@ searchInput.addEventListener("input", (e) => {
   clearTimeout(debounceTimer);
   const q = e.target.value.trim();
   if (!q) {
-    searchResults.innerHTML = "";
+    clearResults();
     return;
   }
 
   debounceTimer = setTimeout(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}&limit=5`);
+      const apiBase = await getApiBase();
+      const res = await fetch(`${apiBase}/api/search?q=${encodeURIComponent(q)}&limit=5`);
       if (!res.ok) return;
       const data = await res.json();
       renderResults(data.hits || data.items || []);
@@ -77,26 +147,52 @@ searchInput.addEventListener("input", (e) => {
 });
 
 function renderResults(items) {
+  clearResults();
   if (items.length === 0) {
-    searchResults.innerHTML = '<div style="color:#94a3b8;font-size:11px;padding:8px;text-align:center;">未找到相关站点</div>';
+    emptyHint("未找到相关站点");
     return;
   }
 
-  searchResults.innerHTML = items
-    .map((item) => {
-      const site = item.site;
-      const channels = (item.channels || []).slice(0, 2).join("+");
-      return `
-        <a class="result-item" href="${site.url}" target="_blank">
-          <div class="result-title">
-            <span>${escapeHtml(site.title)}</span>
-            ${channels ? `<span class="channel-tag">${channels}</span>` : ""}
-          </div>
-          <div class="result-desc">${escapeHtml(site.description || site.url)}</div>
-        </a>
-      `;
-    })
-    .join("");
+  for (const item of items) {
+    const site = item.site || {};
+    const title = String(site.title || site.url || "未命名");
+    const desc = String(site.description || site.url || "");
+    const channels = (item.channels || []).slice(0, 2).join("+");
+    const href = safeHttpUrl(site.url);
+
+    let row;
+    if (href) {
+      row = document.createElement("a");
+      row.className = "result-item";
+      row.href = href;
+      row.target = "_blank";
+      row.rel = "noopener noreferrer";
+    } else {
+      // 非 http(s) 链接不渲染为可点击外链，降级纯文本展示
+      row = document.createElement("div");
+      row.className = "result-item";
+    }
+
+    const titleDiv = document.createElement("div");
+    titleDiv.className = "result-title";
+    const titleSpan = document.createElement("span");
+    titleSpan.textContent = title;
+    titleDiv.appendChild(titleSpan);
+    if (channels) {
+      const tag = document.createElement("span");
+      tag.className = "channel-tag";
+      tag.textContent = channels;
+      titleDiv.appendChild(tag);
+    }
+
+    const descDiv = document.createElement("div");
+    descDiv.className = "result-desc";
+    descDiv.textContent = desc;
+
+    row.appendChild(titleDiv);
+    row.appendChild(descDiv);
+    searchResults.appendChild(row);
+  }
 }
 
 // 4. 一键收录当前网页
@@ -107,12 +203,13 @@ saveBtn.addEventListener("click", async () => {
   saveBtn.textContent = "正在调用 AI 抓取并富化...";
 
   try {
+    const apiBase = await getApiBase();
     const headers = { "Content-Type": "application/json" };
-    const savedToken = tokenInput ? tokenInput.value.trim() : (localStorage.getItem("navhub_api_token") || "");
+    const savedToken = tokenInput ? tokenInput.value.trim() : await getToken();
     if (savedToken) {
       headers["Authorization"] = `Bearer ${savedToken}`;
     }
-    const res = await fetch(`${API_BASE}/api/sites/auto`, {
+    const res = await fetch(`${apiBase}/api/sites/auto`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -155,12 +252,5 @@ saveBtn.addEventListener("click", async () => {
     }, 2000);
   }
 });
-
-function escapeHtml(str) {
-  return String(str || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
 
 checkHealth();

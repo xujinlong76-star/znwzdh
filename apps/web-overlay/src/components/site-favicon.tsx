@@ -40,6 +40,9 @@ export function SiteFavicon({
       alt={title ? `${title} 图标` : '站点图标'}
       className={className}
       loading="lazy"
+      decoding="async"
+      width={24}
+      height={24}
       onError={() => setLoadFailed(true)}
     />
   )

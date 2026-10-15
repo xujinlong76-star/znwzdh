@@ -241,7 +241,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
       categoryTitleMap: titleMap,
       sortedCategories: sorted,
     }
-  }, [customAsCategories, filteredNavigationItems, hiddenCategoryIds, pinnedCategoryIds, categoryOrder])
+  }, [customAsCategories, filteredNavigationItems, hiddenCategoryIds, pinnedCategoryIds, categoryOrder, siteCategoryOverrides])
 
   // 4. 画布背景类名
   const canvasBgClass = useMemo(() => {
@@ -343,6 +343,11 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
           backdropFilter: `blur(${glassmorphismBlur || 0}px)`
         } : undefined}
       >
+        {/* SEO 与无障碍可访问性首要标题（通过 sr-only 视觉隐藏，供屏幕阅读器与搜索引擎建立层级大纲） */}
+        <h1 className="sr-only">
+          {siteData.basic.title} - {siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
+        </h1>
+
         <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-4 sm:px-6 border-b border-border/40 shadow-2xs">
           <div className="flex h-14 items-center justify-between gap-3">
             <div className="flex-1 max-w-xl">

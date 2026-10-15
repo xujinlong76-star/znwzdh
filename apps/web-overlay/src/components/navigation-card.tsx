@@ -9,7 +9,6 @@ import type { SiteConfig } from '@/types/site'
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Eye, Star, Zap, Pin } from 'lucide-react'
@@ -100,8 +99,7 @@ export function NavigationCard({
   // 1. 紧凑单行条形多态 (Compact Bar Mode)
   if (cardDisplayMode === 'compact') {
     return (
-      <TooltipProvider>
-        <Tooltip>
+      <Tooltip>
           <TooltipTrigger asChild>
             <div
               tabIndex={0}
@@ -194,15 +192,13 @@ export function NavigationCard({
             <p className="text-[10px] text-muted-foreground pt-1 border-t mt-1">按 Space 空格键沙箱速览</p>
           </TooltipContent>
         </Tooltip>
-      </TooltipProvider>
     )
   }
 
   // 2. 深度丰富卡片多态 (Rich / Detailed Mode)
   if (cardDisplayMode === 'rich') {
     return (
-      <TooltipProvider>
-        <Tooltip>
+      <Tooltip>
           <TooltipTrigger asChild>
             <Card
               tabIndex={0}
@@ -341,14 +337,12 @@ export function NavigationCard({
             <p className="text-[10px] text-muted-foreground pt-1 border-t mt-1">💡 按 Space 空格键呼出沙箱速览与微动作</p>
           </TooltipContent>
         </Tooltip>
-      </TooltipProvider>
     )
   }
 
   // 3. 标准现代卡片 (Standard Mode - 默认)
   return (
-    <TooltipProvider>
-      <Tooltip>
+    <Tooltip>
         <TooltipTrigger asChild>
           <Card
             tabIndex={0}
@@ -486,6 +480,5 @@ export function NavigationCard({
           <p className="text-xs text-muted-foreground pt-1 border-t mt-1">💡 聚焦时按 Space 空格键呼出沙箱速览与微动作</p>
         </TooltipContent>
       </Tooltip>
-    </TooltipProvider>
   )
 }

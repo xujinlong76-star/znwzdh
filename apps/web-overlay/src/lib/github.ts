@@ -136,6 +136,25 @@ function baselineFor(name: string): unknown | undefined {
 }
 
 /**
+ * 内存微缓存：
+ * 同一页面渲染中各模块（如 layout.tsx、page.tsx 的 generateMetadata 与 Page 组件）
+ * 以及极短时间内的突发并发请求共享读取结果，大幅减少对中枢 HTTP 往返，
+ * 将 SSR 页面渲染 TTFB 压至毫秒级。
+ *
+ * 当发生任何写操作（commitFile）时立即精准失效，保证后台修改后页面秒级最新。
+ */
+const contentCache = new Map<string, { data: unknown; expiresAt: number }>();
+const CACHE_TTL_MS = 2500; // 2.5 秒极速微缓存
+
+export function invalidateContentCache(path?: string) {
+  if (path) {
+    contentCache.delete(path);
+  } else {
+    contentCache.clear();
+  }
+}
+
+/**
  * 读取一个"文件"。签名与原版完全一致，因此 69 处调用点无需修改。
  *
  * 兜底策略（三级，按"是否值得告警"区分）：
@@ -147,6 +166,12 @@ function baselineFor(name: string): unknown | undefined {
  * 没有基线的文件返回 {}（与原版一致的宽松语义）。
  */
 export async function getFileContent<T = any>(path: string): Promise<T> {
+  const now = Date.now();
+  const cachedItem = contentCache.get(path);
+  if (cachedItem && cachedItem.expiresAt > now) {
+    return cachedItem.data as T;
+  }
+
   const name = basename(path);
   const baseline = baselineFor(name);
 
@@ -155,7 +180,9 @@ export async function getFileContent<T = any>(path: string): Promise<T> {
 
     // 情况 1：从未写入过 —— 静默回退，不告警
     if (data === null || data === undefined) {
-      return (baseline ?? {}) as T;
+      const res = (baseline ?? {}) as T;
+      contentCache.set(path, { data: res, expiresAt: now + CACHE_TTL_MS });
+      return res;
     }
 
     // 情况 2：有数据但为空 —— 告警后回退
@@ -172,8 +199,10 @@ export async function getFileContent<T = any>(path: string): Promise<T> {
 
     if (baseline !== undefined && looksEmpty) {
       console.warn("[storage] 中枢返回了数据但内容为空，回退到构建期基线:", path);
+      contentCache.set(path, { data: baseline, expiresAt: now + CACHE_TTL_MS });
       return baseline as T;
     }
+    contentCache.set(path, { data, expiresAt: now + CACHE_TTL_MS });
     return data as T;
   } catch (error) {
     // 情况 3：真正的故障
@@ -198,6 +227,7 @@ export async function commitFile(
   for (let attempt = 1; attempt <= retryCount; attempt++) {
     try {
       const result = await getAdapter().write(path, content, message);
+      invalidateContentCache(path);
       return { ok: true, note: result.note, attempts: attempt };
     } catch (error) {
       lastError = error;

@@ -60,9 +60,10 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       sqliteVec.load(db.sqlite as never);
       const store = new SqliteVecStore({ db: db.sqlite as never, dim: config.embedding.dim });
       store.init();
-      // 进程重启后重建 key -> siteId 映射（vec0 表里只有整数键）
+      // 进程重启后重建 key -> siteId 映射，并在 vec0 表为空（如刚迁移）时用向量重灌。
+      // savedEmbeddings() 返回 { key, siteId, vector }，正好是 VectorRecord[]。
       const saved = await repo.savedEmbeddings();
-      store.rehydrate(saved.map((s) => ({ key: s.key, siteId: s.siteId })));
+      store.rehydrate(saved);
       vectors = store;
       notes.push("sqlite-vec 已加载，向量维度 " + config.embedding.dim);
     } catch (err) {

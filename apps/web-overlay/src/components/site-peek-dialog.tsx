@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { NavigationSubItem, SiteAction, SiteRelation } from '@/types/navigation'
 import {
   Dialog,
@@ -10,10 +10,11 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { SiteFavicon } from '@/components/site-favicon'
-import { ExternalLink, Star, ShieldCheck, Sparkles, Zap, ArrowRight, Eye, Code, Search } from 'lucide-react'
+import { ExternalLink, Star, ShieldCheck, Sparkles, Zap, ArrowRight, Eye, Code, Search, Network } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { fetchSiteAlternatives, reportInteractionFeedback, type HubSiteAlternative } from '@/lib/navhub-api'
 
 interface SitePeekDialogProps {
   item: NavigationSubItem | null
@@ -24,6 +25,42 @@ interface SitePeekDialogProps {
 export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps) {
   const [actionInputs, setActionInputs] = useState<Record<string, string>>({})
   const [showIframe, setShowIframe] = useState(false)
+  const [hyperbolicAlts, setHyperbolicAlts] = useState<HubSiteAlternative[]>([])
+  const [loadingAlts, setLoadingAlts] = useState(false)
+  const openTimeRef = useRef<number>(0)
+
+  useEffect(() => {
+    if (open && item?.id) {
+      openTimeRef.current = Date.now()
+      // 当无静态 relations 时，自动通过双曲推理引擎拉取 Top-K 最佳平替
+      if (!item.relations || item.relations.length === 0) {
+        setLoadingAlts(true)
+        fetchSiteAlternatives(item.id, 4)
+          .then((res) => {
+            setHyperbolicAlts(res.alternatives)
+          })
+          .catch(() => setHyperbolicAlts([]))
+          .finally(() => setLoadingAlts(false))
+      }
+    } else {
+      setHyperbolicAlts([])
+    }
+  }, [open, item?.id, item?.relations])
+
+  const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen && openTimeRef.current > 0 && item?.id) {
+      const dwellMs = Date.now() - openTimeRef.current
+      if (dwellMs >= 1000) {
+        reportInteractionFeedback({
+          siteId: item.id,
+          dwellMs,
+          interactionType: 'click',
+        })
+      }
+    }
+    onOpenChange(isOpen)
+    if (!isOpen) setShowIframe(false)
+  }
 
   if (!item) return null
 
@@ -37,7 +74,7 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setShowIframe(false) }}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto p-5 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
         <DialogHeader className="space-y-3 pb-3 border-b border-border/50">
           <div className="flex items-start sm:items-center justify-between gap-3">
@@ -132,7 +169,7 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
         )}
 
         {/* 平替雷达与技术栈生态 (AlternativeTo & Ecosystem) */}
-        {item.relations && item.relations.length > 0 && (
+        {item.relations && item.relations.length > 0 ? (
           <div className="mt-4 space-y-2.5">
             <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
               <span className="flex items-center gap-1.5">
@@ -173,7 +210,43 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
               ))}
             </div>
           </div>
-        )}
+        ) : hyperbolicAlts.length > 0 ? (
+          <div className="mt-4 space-y-2.5">
+            <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <Network className="w-4 h-4 text-indigo-500" />
+                <span>庞加莱双曲空间智能平替 (Poincaré Alternatives)</span>
+              </span>
+              <span className="text-xs font-mono text-muted-foreground/80">{hyperbolicAlts.length} 个发现</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {hyperbolicAlts.map((alt, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-start justify-between p-3 rounded-xl border border-border/60 bg-card hover:border-primary/40 transition-all shadow-2xs group"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-semibold group-hover:text-primary transition-colors">{alt.site.title}</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium font-mono">
+                        置信度: {(alt.alternativeScore * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    {alt.site.description && <p className="text-xs text-muted-foreground leading-normal line-clamp-1">{alt.site.description}</p>}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6.5 w-6.5 shrink-0 rounded-lg hover:bg-muted"
+                    onClick={() => window.open(alt.site.url, '_blank', 'noopener,noreferrer')}
+                  >
+                    <ExternalLink className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {/* 实时沙箱速览切换 */}
         <div className="mt-4 pt-3.5 border-t border-border/50">

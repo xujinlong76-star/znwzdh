@@ -12,6 +12,16 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import {
+  CHANNELS,
+  computeDwellTimeReward,
+  expMap0,
+  findTopAlternativesInHyperbolicSpace,
+  serializeLinUCB,
+  updateDiscountedArmReward,
+  type HyperbolicNode,
+  type RetrievalChannel,
+} from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import type { AppContext } from "./context.ts";
 import { createContext } from "./context.ts";
@@ -846,6 +856,82 @@ export async function buildServer(ctx: AppContext) {
     }
   });
 
+  /**
+   * 庞加莱/洛伦兹双曲平替推理推荐
+   * 利用庞加莱双曲空间度量与抽象层级一致性，推导出高置信度平替竞品与上下游工具
+   */
+  async function computeSiteAlternatives(siteId: string, limit: number) {
+    const targetSite = await ctx.repo.getSite(siteId);
+    if (!targetSite) return null;
+
+    const candidateSites = await ctx.repo.listSites({
+      categoryId: targetSite.categoryId,
+      status: "active",
+      limit: 100,
+    });
+
+    if (candidateSites.length <= 1) {
+      return { target: targetSite, alternatives: [], count: 0, fallback: false };
+    }
+
+    const nodes: HyperbolicNode[] = [];
+    for (const s of candidateSites) {
+      const rawVec = await ctx.repo.getEmbedding(s.id).catch(() => null);
+      if (rawVec) {
+        const inBall = expMap0(Array.from(rawVec));
+        nodes.push({ id: s.id, name: s.title, category: s.categoryId, embedding: inBall });
+      }
+    }
+
+    const queryNode = nodes.find((n) => n.id === targetSite.id);
+    if (!queryNode || nodes.length < 2) {
+      // 向量未就绪或未计算时，降级为同类目其它活跃站点
+      const fallbackList = candidateSites
+        .filter((s) => s.id !== targetSite.id)
+        .slice(0, limit)
+        .map((s) => ({
+          site: s,
+          alternativeScore: 0.5,
+          geodesicDistance: 1.0,
+        }));
+      return { target: targetSite, alternatives: fallbackList, count: fallbackList.length, fallback: true };
+    }
+
+    const matches = findTopAlternativesInHyperbolicSpace(queryNode, nodes, limit);
+    const alternatives = await Promise.all(
+      matches.map(async (m) => ({
+        site: (await ctx.repo.getSite(m.targetId)) ?? candidateSites.find((s) => s.id === m.targetId)!,
+        alternativeScore: m.alternativeScore,
+        geodesicDistance: m.geodesicDistance,
+      })),
+    );
+
+    return {
+      target: targetSite,
+      alternatives: alternatives.filter((a) => a.site),
+      count: alternatives.length,
+      fallback: false,
+    };
+  }
+
+  app.get("/api/sites/:id/alternatives", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Number(q.limit) || 6, 20);
+    const res = await computeSiteAlternatives(id, limit);
+    if (!res) { reply.code(404); return { error: "站点不存在" }; }
+    return res;
+  });
+
+  app.get("/api/rank/alternatives/:siteId", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
+    const { siteId } = req.params as { siteId: string };
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Number(q.limit) || 6, 20);
+    const res = await computeSiteAlternatives(siteId, limit);
+    if (!res) { reply.code(404); return { error: "站点不存在" }; }
+    return res;
+  });
+
   /* ------------------------ 搜索历史 ------------------------ */
 
   app.get("/api/search-history", async (req) => {
@@ -1236,7 +1322,7 @@ export async function buildServer(ctx: AppContext) {
    * kind 白名单：防止脏 kind 污染画像聚合与统计。
    * click 事件联动 visit_count（热度排序的原始信号）。
    */
-  const EVENT_KINDS = ["click", "favorite", "unfavorite", "impression", "dismiss"] as const;
+  const EVENT_KINDS = ["click", "favorite", "unfavorite", "impression", "dismiss", "interaction_feedback"] as const;
 
   app.post("/api/events", async (req, reply) => {
     const body = z.object({
@@ -1244,6 +1330,9 @@ export async function buildServer(ctx: AppContext) {
       siteId: z.string().optional(),
       query: z.string().optional(),
       categoryId: z.string().optional(),
+      channel: z.enum(["exact", "fts", "pinyin", "semantic", "personal"]).optional(),
+      dwellMs: z.number().nonnegative().optional(),
+      interactionType: z.enum(["click", "copy", "bounce"]).optional(),
       /** 身份标识（登录 userId 或匿名 anonId），用于归属画像聚合 */
       userId: z.string().max(64).optional(),
       anonId: z.string().max(64).optional(),
@@ -1254,16 +1343,49 @@ export async function buildServer(ctx: AppContext) {
       siteId: body.data.siteId,
       query: body.data.query,
       categoryId: body.data.categoryId,
-      meta: identity ? { identity } : undefined,
+      meta: {
+        ...(identity ? { identity } : {}),
+        ...(body.data.dwellMs !== undefined ? { dwellMs: body.data.dwellMs, channel: body.data.channel } : {}),
+      },
     });
     if (body.data.kind === "click" && body.data.siteId) {
       await ctx.repo.bumpVisit(body.data.siteId).catch(() => undefined);
     }
+    // LinUCB 在线强化学习反馈（Dwell-time 连续收益闭环更新）
+    if (body.data.channel && body.data.query && body.data.dwellMs !== undefined) {
+      const dwellSeconds = body.data.dwellMs / 1000.0;
+      const reward = computeDwellTimeReward(dwellSeconds, body.data.interactionType ?? "click");
+      updateDiscountedArmReward(ctx.bandit, body.data.channel, body.data.query, reward);
+      void ctx.repo.setSetting("linucb_bandit_model", serializeLinUCB(ctx.bandit)).catch(() => undefined);
+    }
     // 行为变化 -> 刷新个性化画像（节流 60s，失败静默）
-    if (identity && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "unfavorite")) {
+    if (identity && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "unfavorite" || body.data.kind === "interaction_feedback")) {
       void refreshUserProfile(ctx, identity);
     }
     return { ok: true };
+  });
+
+  /**
+   * 生产级运维与算法自回归可观测指标端点
+   */
+  app.get("/api/metrics", { config: { scope: "public" } }, async () => {
+    return {
+      ok: true,
+      timestamp: Date.now(),
+      capabilities: ctx.capabilities,
+      bandit: {
+        alpha: ctx.bandit.alpha,
+        dimension: ctx.bandit.dimension,
+        arms: Object.fromEntries(
+          CHANNELS.map((ch) => [
+            ch,
+            {
+              biasNorm: Number(Math.hypot(...ctx.bandit.arms[ch].b).toFixed(4)),
+            },
+          ]),
+        ),
+      },
+    };
   });
 
   /* ------------------- NavSphere 兼容存储 API ------------------- */

@@ -19,7 +19,7 @@ import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList, CommandGroup, CommandItem } from '@/registry/new-york/ui/command'
 import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
-import { searchSites, reportClick, fetchSearchHistory, type HubSearchHit } from '@/lib/navhub-api'
+import { searchSites, reportClick, reportInteractionFeedback, fetchSearchHistory, type HubSearchHit } from '@/lib/navhub-api'
 import { highlightParts } from '@/lib/highlight'
 import { getIdentity } from '@/lib/identity'
 import { useFavorites } from '@/hooks/useFavorites'
@@ -194,12 +194,27 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     const site = hit.site
     if (!site) return
     reportClick(site.id, identity)
+
+    // 反馈采纳通道至 LinUCB 在线强化学习闭环
+    const contributions = Object.entries(hit.contributions || {})
+    const dominant = contributions.sort((a, b) => b[1].value - a[1].value)[0]?.[0] as any
+    if (dominant && query.trim()) {
+      reportInteractionFeedback({
+        siteId: site.id,
+        query: query.trim(),
+        channel: dominant,
+        dwellMs: 2500,
+        interactionType: 'click',
+        identity,
+      })
+    }
+
     const target = siteConfig?.navigation?.linkTarget || '_blank'
     if (target === '_self') window.location.href = site.url
     else window.open(site.url, target)
     setQuery('')
     setIsFocused(false)
-  }, [identity, siteConfig])
+  }, [identity, siteConfig, query])
 
   const showResults = isFocused && query.trim().length > 0
 

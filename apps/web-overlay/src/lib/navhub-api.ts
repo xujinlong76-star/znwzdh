@@ -181,6 +181,26 @@ export function reportClick(siteId: string, identity?: string): void {
   void sendJson('/api/events' + query, 'POST', { kind: 'click', siteId }).catch(() => undefined)
 }
 
+/** 驻留时长与交互行为在线强化学习反馈上报（fire-and-forget，失败静默） */
+export function reportInteractionFeedback(params: {
+  siteId?: string
+  query?: string
+  channel?: 'exact' | 'fts' | 'pinyin' | 'semantic' | 'personal'
+  dwellMs: number
+  interactionType?: 'click' | 'copy' | 'bounce'
+  identity?: string
+}): void {
+  const query = params.identity ? '?anonId=' + encodeURIComponent(params.identity) : ''
+  void sendJson('/api/events' + query, 'POST', {
+    kind: 'interaction_feedback',
+    siteId: params.siteId,
+    query: params.query,
+    channel: params.channel,
+    dwellMs: params.dwellMs,
+    interactionType: params.interactionType ?? 'click',
+  }).catch(() => undefined)
+}
+
 /* ------------------------------ 标签 ------------------------------ */
 
 export async function fetchTags(): Promise<HubTag[]> {
@@ -261,6 +281,33 @@ export async function fetchSimilar(siteId: string, limit = 6): Promise<HubSite[]
     return data.hits.map((h) => h.site).filter(Boolean)
   } catch {
     return []
+  }
+}
+
+export interface HubSiteAlternative {
+  site: HubSite
+  alternativeScore: number
+  geodesicDistance: number
+}
+
+/** 庞加莱/洛伦兹双曲平替推理与开源替代品发现 */
+export async function fetchSiteAlternatives(
+  siteId: string,
+  limit = 4,
+): Promise<{ alternatives: HubSiteAlternative[]; fallback: boolean }> {
+  try {
+    const data = await getJson<{
+      target?: HubSite
+      alternatives: HubSiteAlternative[]
+      count: number
+      fallback: boolean
+    }>('/api/sites/' + encodeURIComponent(siteId) + '/alternatives?limit=' + limit)
+    return {
+      alternatives: data.alternatives ?? [],
+      fallback: Boolean(data.fallback),
+    }
+  } catch {
+    return { alternatives: [], fallback: true }
   }
 }
 

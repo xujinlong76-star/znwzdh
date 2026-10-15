@@ -1354,6 +1354,26 @@ export class Repository {
     });
   }
 
+  async getSetting(key: string): Promise<string | null> {
+    const rows = await this.raw("SELECT value FROM app_settings WHERE key = ?", [key]);
+    return rows[0]?.value ? String(rows[0].value) : null;
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    const now = Date.now();
+    if (this.db.dialect === "sqlite") {
+      await this.run(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        [key, value, now],
+      );
+    } else {
+      await this.run(
+        "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+        [key, value, now],
+      );
+    }
+  }
+
   private async run(sqlText: string, params: unknown[]): Promise<void> {
     if (this.db.dialect === "sqlite") {
       this.db.sqlite!.prepare(sqlText).run(...bindSqlite(params));

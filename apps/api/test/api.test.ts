@@ -1240,3 +1240,51 @@ describe("响应缓存头", () => {
     expect(search.headers["cache-control"]).toMatch(/^private, max-age=20$/);
   });
 });
+
+describe("双曲平替推理推荐与可观测指标 (/api/sites/:id/alternatives & /api/metrics)", () => {
+  it("GET /api/sites/:id/alternatives 与 /api/rank/alternatives/:siteId 返回同类目平替站点", async () => {
+    const s1 = (await app.inject({
+      method: "POST", url: "/api/sites",
+      payload: { url: "https://hyper-test-1.org", title: "React 工具箱", categoryId: "cat-ai" },
+    })).json();
+    const s2 = (await app.inject({
+      method: "POST", url: "/api/sites",
+      payload: { url: "https://hyper-test-2.org", title: "Vue 全家桶", categoryId: "cat-ai" },
+    })).json();
+
+    const res1 = await app.inject({ method: "GET", url: `/api/sites/${s1.id}/alternatives?limit=5` });
+    expect(res1.statusCode).toBe(200);
+    const data1 = res1.json();
+    expect(data1.target.id).toBe(s1.id);
+    expect(Array.isArray(data1.alternatives)).toBe(true);
+
+    const res2 = await app.inject({ method: "GET", url: `/api/rank/alternatives/${s1.id}` });
+    expect(res2.statusCode).toBe(200);
+    expect(res2.json().target.id).toBe(s1.id);
+  });
+
+  it("POST /api/events 支持 interaction_feedback 与 dwellMs 强化学习反馈", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/events",
+      payload: {
+        kind: "interaction_feedback",
+        query: "qidong",
+        channel: "pinyin",
+        dwellMs: 4500,
+        interactionType: "click",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+  });
+
+  it("GET /api/metrics 正常输出系统能力与 LinUCB 动态权重指标", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/metrics" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.bandit).toBeDefined();
+    expect(body.bandit.arms.pinyin).toBeDefined();
+  });
+});

@@ -4,7 +4,9 @@ import {
   looksLikeLatinQuery,
   normalizeQueryPinyin,
   personalCandidates,
+  predictFusionWeights,
   type FusionWeights,
+  type LinUCBModel,
   type PersonalizableSite,
   type SearchCandidate,
   type SearchChannel,
@@ -37,6 +39,7 @@ export interface SearchEngineDeps {
   vectors: VectorStore | null;
   embed?: ((text: string) => Promise<Float32Array>) | null;
   weights?: FusionWeights;
+  bandit?: LinUCBModel | null;
 }
 
 export interface SearchEngineOptions {
@@ -89,12 +92,22 @@ export class SearchEngine {
     return enabledValue(this.deps.db.dialect);
   }
 
+  get bandit(): LinUCBModel | null {
+    return this.deps.bandit ?? null;
+  }
+
+  setBandit(bandit: LinUCBModel | null): void {
+    this.deps.bandit = bandit;
+  }
+
   async search(q: SearchQuery): Promise<SearchResult> {
     const started = Date.now();
     const limit = q.limit ?? 20;
     const offset = Math.max(0, q.offset ?? 0);
     const raw = (q.q ?? "").trim();
-    const weights = this.deps.weights ?? DEFAULT_WEIGHTS;
+    const weights = this.deps.bandit
+      ? predictFusionWeights(this.deps.bandit, raw, this.deps.weights)
+      : (this.deps.weights ?? DEFAULT_WEIGHTS);
     // 召回池必须覆盖「已取走的 + 本页要展示的」，否则翻到第 2 页就空了
     const pool = Math.max((offset + limit) * 3, 60);
 

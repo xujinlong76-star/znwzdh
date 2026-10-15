@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createLinUCBModel } from "@navhub/core";
 import { MemoryVectorStore, SqliteVecStore, hashSiteId, normalize } from "../src/vector/index.ts";
 
 import { SqliteFtsStore } from "../src/fts.ts";
@@ -884,5 +885,29 @@ describe("SQLite 集成：导航增强能力", () => {
     expect(ucols).toContain("source");
     await db2.close();
     rmSync(oldDir, { recursive: true, force: true });
+  });
+
+  it("app_settings: 支持全局键值对持久化与更新", async () => {
+    expect(await repo.getSetting("non_existent")).toBeNull();
+    await repo.setSetting("test_key", "value_1");
+    expect(await repo.getSetting("test_key")).toBe("value_1");
+
+    await repo.setSetting("test_key", "value_2");
+    expect(await repo.getSetting("test_key")).toBe("value_2");
+  });
+
+  it("SearchEngine 能够装配 LinUCB 多臂机并执行自适应动态权重融合检索", async () => {
+    const bandit = createLinUCBModel(0.25);
+    const searchEngine = new SearchEngine({
+      db,
+      fts: null,
+      vectors: null,
+      bandit,
+    });
+    expect(searchEngine.bandit).toBe(bandit);
+
+    const res = await searchEngine.search({ q: "开发" });
+    expect(res).toBeDefined();
+    expect(Array.isArray(res.hits)).toBe(true);
   });
 });

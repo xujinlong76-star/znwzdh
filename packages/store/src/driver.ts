@@ -225,6 +225,12 @@ CREATE TABLE IF NOT EXISTS user_vault_sync (
   version INTEGER NOT NULL DEFAULT 1,
   updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 const DDL_PG = `
@@ -413,6 +419,12 @@ CREATE TABLE IF NOT EXISTS user_vault_sync (
   version INTEGER NOT NULL DEFAULT 1,
   updated_at BIGINT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;
@@ -428,6 +440,8 @@ export async function openDb(config: {
     const raw = new Database(config.sqlitePath ?? "./data/navhub.db");
     // WAL 提升并发读性能；foreign_keys 打开以便后续加约束
     raw.pragma("journal_mode = WAL");
+    raw.pragma("synchronous = NORMAL");
+    raw.pragma("journal_size_limit = 67108864");
     raw.pragma("foreign_keys = ON");
     raw.exec(DDL_SQLITE);
     const { drizzle } = await import("drizzle-orm/better-sqlite3");

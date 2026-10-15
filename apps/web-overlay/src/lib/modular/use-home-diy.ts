@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   togglePinnedSiteInCategory,
   reorderCategoryToTarget,
@@ -22,6 +22,17 @@ import {
 } from '@/lib/vault'
 import { getIdentity } from '@/lib/identity'
 import { fetchCloudVault, saveCloudVault, deleteCloudVault } from '@/lib/navhub-api'
+import {
+  bumpClocks,
+  createLayoutSyncChannel,
+  diffChangedSlots,
+  getLayoutClientId,
+  mergeLayoutSlots,
+  readSlotClocks,
+  writeSlotClocks,
+  type LayoutSyncChannel,
+  type LayoutSlotClocks,
+} from '@/lib/modular/layout-sync'
 
 export type HomeViewMode = 'hybrid' | 'classic' | 'workbench'
 export type CardDisplayMode = 'compact' | 'standard' | 'rich'
@@ -70,6 +81,12 @@ export interface HomeDIYConfig {
 const STORAGE_KEY = 'navhub_home_diy_config_v3'
 const LEGACY_STORAGE_KEY_V2 = 'navhub_home_diy_config_v2'
 const LEGACY_STORAGE_KEY_V1 = 'navhub_home_diy_config_v1'
+/**
+ * 插槽时钟独立存储，不塞进 config。
+ * 原因：validateAndCleanDIYConfig 是白名单清洗，任何加进 config 的
+ * 额外字段都会在每次加载时被静默剔除，时钟根本活不过一次刷新。
+ */
+const STORAGE_CLOCKS_KEY = 'navhub_home_diy_clocks_v1'
 
 const DEFAULT_HERO_WIDGETS = [
   'quick-search',
@@ -105,6 +122,8 @@ export function useHomeDIY() {
   const [history, setHistory] = useState<LayoutHistoryState<HomeDIYConfig>>(() => createLayoutHistory(DEFAULT_CONFIG))
   const [mounted, setMounted] = useState(false)
   const [isEditingLayout, setIsEditingLayout] = useState(false)
+  // 跨标签页通道（挂载后才建立，SSR 阶段为 null）
+  const syncChannelRef = useRef<LayoutSyncChannel<HomeDIYConfig> | null>(null)
 
   // 1. 客户端挂载时加载配置并平滑兼容 v1/v2
   useEffect(() => {
@@ -218,18 +237,63 @@ export function useHomeDIY() {
     }
   }, [config.accentColor])
 
-  // 3. 持久化存储与事件广播 (同时压入撤销历史栈)
+  // 3. 持久化存储与事件广播 (同时压入撤销历史栈 + 跨标签页同步)
   const persistConfig = useCallback((updater: (prev: HomeDIYConfig) => HomeDIYConfig) => {
     setConfig((prev) => {
       const next = updater(prev)
       try {
+        // 只推进「本次真正改动过的插槽」的时钟，其它插槽保持原值——
+        // 这样对端在同一时刻改的别的字段才不会被这份回写覆盖掉
+        const slots = diffChangedSlots(prev, next)
+        const clocks = bumpClocks(readSlotClocks(STORAGE_CLOCKS_KEY), slots)
+        writeSlotClocks(STORAGE_CLOCKS_KEY, clocks)
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
         window.dispatchEvent(new Event('navhub_home_diy_updated'))
+        syncChannelRef.current?.publish({
+          clientId: getLayoutClientId(),
+          config: next,
+          clocks,
+        })
       } catch {}
       setHistory((curr) => pushLayoutHistory(curr, next))
       return next
     })
   }, [])
+
+  // 3.1 接收远端标签页的改动：按插槽 LWW 合并，绝不整表覆盖
+  const applyRemoteConfig = useCallback(
+    (payload: { config: HomeDIYConfig; clocks: LayoutSlotClocks }) => {
+      if (!payload?.config) return
+      setConfig((prev) => {
+        const localClocks = readSlotClocks(STORAGE_CLOCKS_KEY)
+        const merged = mergeLayoutSlots(
+          { config: prev, clocks: localClocks },
+          { config: payload.config, clocks: payload.clocks || {} },
+        )
+        if (!merged.changed) return prev
+        try {
+          writeSlotClocks(STORAGE_CLOCKS_KEY, merged.clocks)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(merged.config))
+          window.dispatchEvent(new Event('navhub_home_diy_updated'))
+        } catch {}
+        // 不压入撤销历史：远端改动不是本标签页的操作，进栈会让 Ctrl+Z 行为不可预测
+        // 也不再广播：否则两个标签页会互相把对方的回声再推一遍
+        return merged.config
+      })
+    },
+    [],
+  )
+
+  // 3.2 建立 / 拆除跨标签页通道
+  useEffect(() => {
+    if (!mounted) return
+    const channel = createLayoutSyncChannel<HomeDIYConfig>(applyRemoteConfig)
+    syncChannelRef.current = channel
+    return () => {
+      channel.close()
+      syncChannelRef.current = null
+    }
+  }, [mounted, applyRemoteConfig])
 
   // 4. 视图模态切换
   const setViewMode = useCallback((mode: HomeViewMode) => {
@@ -568,11 +632,21 @@ export function useHomeDIY() {
     setHistory((currHistory) => {
       if (currHistory.past.length === 0) return currHistory
       const nextHistory = undoLayoutHistory(currHistory)
-      setConfig(nextHistory.present)
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory.present))
-        window.dispatchEvent(new Event('navhub_home_diy_updated'))
-      } catch {}
+      setConfig((prev) => {
+        try {
+          const slots = diffChangedSlots(prev, nextHistory.present)
+          const clocks = bumpClocks(readSlotClocks(STORAGE_CLOCKS_KEY), slots)
+          writeSlotClocks(STORAGE_CLOCKS_KEY, clocks)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory.present))
+          window.dispatchEvent(new Event('navhub_home_diy_updated'))
+          syncChannelRef.current?.publish({
+            clientId: getLayoutClientId(),
+            config: nextHistory.present,
+            clocks,
+          })
+        } catch {}
+        return nextHistory.present
+      })
       return nextHistory
     })
   }, [])
@@ -582,11 +656,21 @@ export function useHomeDIY() {
     setHistory((currHistory) => {
       if (currHistory.future.length === 0) return currHistory
       const nextHistory = redoLayoutHistory(currHistory)
-      setConfig(nextHistory.present)
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory.present))
-        window.dispatchEvent(new Event('navhub_home_diy_updated'))
-      } catch {}
+      setConfig((prev) => {
+        try {
+          const slots = diffChangedSlots(prev, nextHistory.present)
+          const clocks = bumpClocks(readSlotClocks(STORAGE_CLOCKS_KEY), slots)
+          writeSlotClocks(STORAGE_CLOCKS_KEY, clocks)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory.present))
+          window.dispatchEvent(new Event('navhub_home_diy_updated'))
+          syncChannelRef.current?.publish({
+            clientId: getLayoutClientId(),
+            config: nextHistory.present,
+            clocks,
+          })
+        } catch {}
+        return nextHistory.present
+      })
       return nextHistory
     })
   }, [])

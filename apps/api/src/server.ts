@@ -2169,6 +2169,13 @@ export async function buildServer(ctx: AppContext) {
    *   → 用该串作为 Bearer 调 POST /api/tokens 建正式 token
    *   → 删除 NAVHUB_BOOTSTRAP_TOKEN 重启
    */
+  /**
+   * 校验 expiresAt：必须是未来的毫秒时间戳。
+   * 过去时间会导致"刚创建就已过期"，属于无效输入。
+   */
+  const validFutureExpiry = (v: number | null | undefined): v is number | null =>
+    v === null || v === undefined || v > Date.now();
+
   app.post("/api/tokens", { config: { scope: "admin" } }, async (req, reply) => {
     const body = z.object({
       name: z.string().min(1).max(64),
@@ -2181,6 +2188,7 @@ export async function buildServer(ctx: AppContext) {
 
     const scopes = parseScopes(body.data.scopes);
     if (scopes.length === 0) { reply.code(400); return { error: "scopes 至少要有一个有效值（read / write / admin）" }; }
+    if (!validFutureExpiry(body.data.expiresAt)) { reply.code(400); return { error: "expiresAt 必须是未来的时间戳" }; }
 
     const raw = generateToken();
     const record = await ctx.repo.createApiToken({
@@ -2197,9 +2205,62 @@ export async function buildServer(ctx: AppContext) {
 
   app.get("/api/tokens", { config: { scope: "admin" } }, async () => ctx.repo.listApiTokens());
 
+  /**
+   * 更新 token 的 name / scopes / expiresAt（不改明文）。
+   * 这是"凭据管理"缺失的一环：以前只能增删查，改个名字都得删了重建。
+   */
+  app.patch("/api/tokens/:id", { config: { scope: "admin" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({
+      name: z.string().min(1).max(64).optional(),
+      scopes: z.string().optional(),
+      expiresAt: z.number().int().positive().nullable().optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    if (body.data.scopes !== undefined && parseScopes(body.data.scopes).length === 0) {
+      reply.code(400); return { error: "scopes 至少要有一个有效值（read / write / admin）" };
+    }
+    if (body.data.expiresAt !== undefined && !validFutureExpiry(body.data.expiresAt)) {
+      reply.code(400); return { error: "expiresAt 必须是未来的时间戳" };
+    }
+
+    const record = await ctx.repo.updateApiToken(id, {
+      name: body.data.name,
+      scopes: body.data.scopes,
+      expiresAt: body.data.expiresAt,
+    });
+    if (!record) { reply.code(404); return { error: "token 不存在" }; }
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.update", target: id, diff: { name: record.name, scopes: record.scopes } });
+    return record;
+  });
+
+  /**
+   * 轮换：为同一 token 换新明文（旧明文立即失效），保留 name 与 scopes。
+   * 用于密钥泄露后的紧急轮换，或定期轮换。
+   */
+  app.post("/api/tokens/:id/rotate", { config: { scope: "admin" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({
+      /** 可选：轮换时顺带更新有效期 */
+      expiresAt: z.number().int().positive().nullable().optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    if (body.data.expiresAt !== undefined && !validFutureExpiry(body.data.expiresAt)) {
+      reply.code(400); return { error: "expiresAt 必须是未来的时间戳" };
+    }
+
+    const raw = generateToken();
+    const record = await ctx.repo.rotateApiToken(id, hashToken(raw), body.data.expiresAt);
+    if (!record) { reply.code(404); return { error: "token 不存在" }; }
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.rotate", target: id, diff: { name: record.name, scopes: record.scopes } });
+    // 明文只在这里出现一次
+    return { token: raw, ...record, note: "轮换成功：旧明文已立即失效，请保存新明文。" };
+  });
+
   app.delete("/api/tokens/:id", { config: { scope: "admin" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    await ctx.repo.deleteApiToken(id);
+    const deleted = await ctx.repo.deleteApiToken(id);
+    if (!deleted) { reply.code(404); return { error: "token 不存在" }; }
     await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.delete", target: id });
     reply.code(204);
     return null;

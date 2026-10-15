@@ -13,15 +13,19 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
-import { createContext, loadConfig } from "@navhub/api";
+import { createContext, loadConfig, hashToken, parseScopes } from "@navhub/api";
+import type { AppContext } from "@navhub/api";
 import { createHandlers } from "./handlers.ts";
 import { TOOL_DEFS, type McpScope, type ToolContext } from "./tools.ts";
 
 const HOST = process.env.NAVHUB_MCP_HTTP_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.NAVHUB_MCP_HTTP_PORT ?? 8790);
+/** 静态引导 token：视同 admin，用于首次配置；与 REST 的 NAVHUB_BOOTSTRAP_TOKEN 同性质 */
 const TOKEN = process.env.NAVHUB_MCP_TOKEN ?? "";
 const ALLOW_INSECURE = process.env.NAVHUB_MCP_ALLOW_INSECURE === "true";
 const ALLOWED_ORIGINS = (process.env.NAVHUB_MCP_ALLOWED_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+/** 静态 token 命中时赋予的 scope（缺省全权，便于 bootstrap） */
+const STATIC_SCOPES = (process.env.NAVHUB_MCP_SCOPES ?? "read,write,admin").split(",").map((s) => s.trim()).filter(Boolean) as McpScope[];
 
 function secureEqual(a: string, b: string): boolean {
   const ba = Buffer.from(a);
@@ -30,7 +34,16 @@ function secureEqual(a: string, b: string): boolean {
   return timingSafeEqual(ba, bb);
 }
 
-function auth(req: IncomingMessage): ToolContext | null {
+/**
+ * MCP HTTP 鉴权。
+ *
+ * 与 REST 共用同一套凭据体系（api_tokens 表）：
+ *   1. 静态 NAVHUB_MCP_TOKEN（若设置）命中 → 视同 admin（bootstrap，与 REST 一致）。
+ *   2. 否则把 Bearer 值做 sha256 后查 api_tokens 表，命中且未过期 → 用其 scope 与名称。
+ * 这样在管理页（/admin/tokens）签发的 token，即可同时用于 REST 与 MCP HTTP——
+ * 修复此前「凭据管理页声称 token 供 MCP 使用，但 MCP 实际只看环境变量」的脱节。
+ */
+async function auth(req: IncomingMessage, ctx: AppContext): Promise<ToolContext | null> {
   // Origin 校验：只有在显式配置了允许来源时才接受浏览器请求
   const origin = req.headers.origin;
   if (origin && !ALLOWED_ORIGINS.includes(origin)) return null;
@@ -38,26 +51,47 @@ function auth(req: IncomingMessage): ToolContext | null {
   if (ALLOW_INSECURE && TOKEN === "") {
     return { actor: "mcp:insecure", scopes: ["read"], has: (s) => s === "read" };
   }
-  if (TOKEN === "") return null;
 
   const header = req.headers.authorization ?? "";
   const match = header.match(/^Bearer\s+(.+)$/i);
-  if (!match?.[1] || !secureEqual(match[1], TOKEN)) return null;
+  const bearer = match?.[1]?.trim();
+  if (!bearer) return null;
 
-  const scopes = (process.env.NAVHUB_MCP_SCOPES ?? "read,write").split(",").map((s) => s.trim()) as McpScope[];
-  const set = new Set<McpScope>(scopes);
-  return { actor: process.env.NAVHUB_MCP_ACTOR ?? "mcp:http", scopes: [...set], has: (s) => set.has(s) };
+  // 1) 静态引导 token（内存比对，视同 admin）
+  if (TOKEN !== "" && secureEqual(bearer, TOKEN)) {
+    const set = new Set<McpScope>(STATIC_SCOPES.length ? STATIC_SCOPES : ["read", "write", "admin"]);
+    return { actor: process.env.NAVHUB_MCP_ACTOR ?? "mcp:static", scopes: [...set], has: (s) => set.has(s) };
+  }
+
+  // 2) 查 api_tokens 表（与 REST 同源同逻辑）
+  try {
+    const record = await ctx.repo.findApiTokenByHash(hashToken(bearer));
+    if (!record) return null;
+    const scopes = parseScopes(record.scopes.join(","));
+    if (scopes.length === 0) return null;
+    const set = new Set<McpScope>(scopes as McpScope[]);
+    return { actor: "mcp:" + record.name, scopes: [...set], has: (s) => set.has(s) };
+  } catch {
+    // DB 查询失败（如只读打开）——不让整条 MCP 链路崩掉，退回静态路径
+    return null;
+  }
 }
 
 async function main() {
-  if (TOKEN === "" && !ALLOW_INSECURE) {
-    console.error("[navhub-mcp] 拒绝启动：HTTP 模式必须设置 NAVHUB_MCP_TOKEN。");
-    console.error("[navhub-mcp] 仅本地调试可设 NAVHUB_MCP_ALLOW_INSECURE=true。");
-    process.exit(2);
-  }
-
   const ctx = await createContext(loadConfig());
   const handlers = createHandlers(ctx) as Record<string, (a: unknown, t: ToolContext) => Promise<unknown>>;
+
+  // 无静态 token 且未显式允许 insecure 时，校验库里是否有表内 token。
+  // 若两边都没有，HTTP MCP 将完全无鉴权 —— 拒绝启动（安全底线），并给出 bootstrap 指引。
+  if (TOKEN === "" && !ALLOW_INSECURE) {
+    const tableTokens = await ctx.repo.listApiTokens();
+    if (tableTokens.length === 0) {
+      console.error("[navhub-mcp] 拒绝启动：既无 NAVHUB_MCP_TOKEN，api_tokens 表也为空 —— HTTP MCP 将无鉴权暴露。");
+      console.error("[navhub-mcp] 引导：在管理页 /admin/tokens 签发表内 token，或设 NAVHUB_MCP_TOKEN，或仅本地调试设 NAVHUB_MCP_ALLOW_INSECURE=true。");
+      await ctx.close();
+      process.exit(2);
+    }
+  }
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const send = (code: number, body: unknown) => {
@@ -72,7 +106,7 @@ async function main() {
       return send(200, { ok: true, capabilities: ctx.capabilities, tools: TOOL_DEFS.length });
     }
 
-    const toolCtx = auth(req);
+    const toolCtx = await auth(req, ctx);
     if (!toolCtx) {
       res.setHeader("WWW-Authenticate", "Bearer");
       return send(401, { error: "未授权：需要有效的 Bearer token，且来源必须被允许" });
@@ -119,7 +153,7 @@ async function main() {
 
   server.listen(PORT, HOST, () => {
     console.error("[navhub-mcp] HTTP 传输监听 http://" + HOST + ":" + PORT);
-    console.error("[navhub-mcp] 鉴权：" + (TOKEN ? "Bearer token 已启用" : "未启用（insecure 模式）"));
+    console.error("[navhub-mcp] 鉴权：" + (TOKEN ? "静态 token + 表内 token" : ALLOW_INSECURE ? "insecure 模式" : "表内 token（api_tokens）"));
     console.error("[navhub-mcp] 工具数：" + TOOL_DEFS.length + "；能力：" + JSON.stringify(ctx.capabilities));
   });
 }

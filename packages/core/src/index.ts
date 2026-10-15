@@ -16,6 +16,7 @@ export * from "./vault.ts";
 export * from "./prefetch.ts";
 export * from "./modular.ts";
 export * from "./diy-layout.ts";
+export * from "./layout-sync.ts";
 export * from "./deterministic-favicon.ts";
 export * from "./wayback-resolver.ts";
 export * from "./crdt-sync.ts";

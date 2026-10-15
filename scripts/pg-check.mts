@@ -3,7 +3,7 @@ import { loadConfig, createContext } from "../apps/api/src/index.ts";
 
 const config = loadConfig({
   mode: "standard",
-  databaseUrl: "postgres://navhub:navhub@127.0.0.1:5432/navhub",
+  databaseUrl: process.env.NAVHUB_TEST_DATABASE_URL || process.env.NAVHUB_DATABASE_URL || "postgres://navhub:navhub@127.0.0.1:5432/navhub",
   embedding: { model: "x", endpoint: "https://hf-mirror.com", dtype: "q8", cacheDir: "./data/models", dim: 512, enabled: false },
   llm: { baseUrl: "https://api.deepseek.com", apiKey: null, model: "deepseek-chat", timeoutMs: 5000 },
   fetch: { timeoutMs: 5000, maxBytes: 1048576, maxRedirects: 2, allowPrivateNetworks: false, userAgent: "t" },

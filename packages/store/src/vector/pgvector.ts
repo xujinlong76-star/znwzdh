@@ -1,5 +1,6 @@
 import type { VectorMatch, VectorRecord, VectorStore } from "./types.ts";
 import { normalize } from "./types.ts";
+import { fitDimension, toPostgresParam } from "./codec.ts";
 
 /**
  * pgvector 实现（standard 模式）。
@@ -68,7 +69,7 @@ export class PgVectorStore implements VectorStore {
       await this.db.query(
         `INSERT INTO ${this.table}(site_key, site_id, embedding) VALUES ($1, $2, $3::vector)
          ON CONFLICT (site_key) DO UPDATE SET site_id = EXCLUDED.site_id, embedding = EXCLUDED.embedding`,
-        [r.key, r.siteId, toPgVector(v)],
+        [r.key, r.siteId, toPostgresParam(v)],
       );
     }
   }
@@ -87,7 +88,7 @@ export class PgVectorStore implements VectorStore {
          FROM ${this.table}
         ORDER BY embedding <=> $1::vector
         LIMIT $2`,
-      [toPgVector(normalize(query)), limit],
+      [toPostgresParam(normalize(fitDimension(query, this.dim))), limit],
     );
     return (res.rows as Array<{ siteId: string; distance: number | string }>).map((r) => ({
       siteId: r.siteId,
@@ -107,7 +108,13 @@ export class PgVectorStore implements VectorStore {
   }
 }
 
-/** pgvector 的文本表示：[1,2,3] */
+/**
+ * pgvector 的文本表示：[1,2,3]。
+ *
+ * 委托给 codec：非有限值必须被替换掉。PG 侧虽然会显式报
+ * malformed array literal，但那是在 SQL 执行期才炸，堆栈里看不出
+ * 是哪个站点的 embedding 出了问题。
+ */
 export function toPgVector(v: Float32Array): string {
-  return "[" + Array.from(v).join(",") + "]";
+  return toPostgresParam(v);
 }

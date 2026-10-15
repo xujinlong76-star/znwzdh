@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
+import { hashToken } from "../src/auth.ts";
 
 const BOOTSTRAP = "boot-secret-please-rotate";
 
@@ -202,8 +203,16 @@ describe("鉴权模式：token 生命周期", () => {
   });
 
   it("过期 token 立即失效", async () => {
-    const expired = await mintToken("已过期", "read", Date.now() - 1000);
-    expect((await as(expired, "GET", "/api/sites")).statusCode).toBe(401);
+    // 直接通过 repo 写入一个已过期 token（绕过路由的"未来时间"校验），
+    // 验证鉴权层的 findApiTokenByHash 会因 expires_at < now 而拒绝。
+    const raw = "nh_test_expired_token";
+    await authCtx.repo.createApiToken({ name: "已过期", tokenHash: hashToken(raw), scopes: "read", expiresAt: Date.now() - 1000 });
+    expect((await as(raw, "GET", "/api/sites")).statusCode).toBe(401);
+  });
+
+  it("创建时拒绝过去时间（避免一签发就已失效）", async () => {
+    const res = await as(BOOTSTRAP, "POST", "/api/tokens", { name: "过去时间", scopes: "read", expiresAt: Date.now() - 1000 });
+    expect(res.statusCode).toBe(400);
   });
 
   it("scopes 里的非法值被丢弃（不放大权限）", async () => {

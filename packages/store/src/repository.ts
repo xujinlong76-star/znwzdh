@@ -10,6 +10,7 @@ import {
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
 import { hashSiteId } from "./vector/types.ts";
+import { vectorToBlob } from "./vector/types.ts";
 
 /**
  * 数据仓储。
@@ -570,7 +571,9 @@ export class Repository {
   /* ------------------------- 向量 ------------------------- */
 
   async saveEmbedding(siteId: string, model: string, vector: Float32Array): Promise<void> {
-    const buf = Buffer.from(vector.buffer, vector.byteOffset, vector.byteLength);
+    // 过 vectorToBlob：非有限值会在 BLOB 里静默存活，之后 rehydrate
+    // 把它灌回 vec0，整个 KNN 索引的距离都变成 NaN 且不报错
+    const buf = vectorToBlob(vector);
     await this.run(
       `INSERT INTO embeddings (site_id, model, dim, vector, updated_at) VALUES (?,?,?,?,?)
        ON CONFLICT (site_id) DO UPDATE SET model = excluded.model, dim = excluded.dim, vector = excluded.vector, updated_at = excluded.updated_at`,
@@ -1108,11 +1111,46 @@ export class Repository {
   }): Promise<ApiTokenRecord> {
     const id = randomUUID();
     const now = Date.now();
+    // 归一化：小写 + 去重 + 丢弃非法值。即使调用方绕过路由层直接传大写/非法 scope，
+    // 落库也始终是干净的 "read,write,admin" 集合。
+    const scopes = normalizeTokenScopes(input.scopes);
     await this.run(
       "INSERT INTO api_tokens (id, name, token_hash, scopes, expires_at, created_at) VALUES (?,?,?,?,?,?)",
-      [id, input.name, input.tokenHash, input.scopes ?? "read", input.expiresAt ?? null, now],
+      [id, input.name, input.tokenHash, scopes, input.expiresAt ?? null, now],
     );
-    return { id, name: input.name, scopes: (input.scopes ?? "read").split(",").map((s) => s.trim()).filter(Boolean), expiresAt: input.expiresAt ?? null, lastUsedAt: null, createdAt: now };
+    return { id, name: input.name, scopes: scopes.split(","), expiresAt: input.expiresAt ?? null, lastUsedAt: null, createdAt: now };
+  }
+
+  /**
+   * 更新 token 名称 / scope / 有效期（不改明文与哈希）。
+   * 返回 null 表示 id 不存在。
+   */
+  async updateApiToken(id: string, patch: { name?: string; scopes?: string; expiresAt?: number | null }): Promise<ApiTokenRecord | null> {
+    const existing = (await this.raw("SELECT * FROM api_tokens WHERE id = ? LIMIT 1", [id]))[0];
+    if (!existing) return null;
+    const name = patch.name ?? String(existing.name);
+    const scopes = patch.scopes !== undefined ? normalizeTokenScopes(patch.scopes) : String(existing.scopes ?? "read");
+    const expiresAt = patch.expiresAt !== undefined ? patch.expiresAt : (existing.expires_at == null ? null : Number(existing.expires_at));
+    await this.run("UPDATE api_tokens SET name = ?, scopes = ?, expires_at = ? WHERE id = ?", [name, scopes, expiresAt, id]);
+    const row = (await this.raw("SELECT * FROM api_tokens WHERE id = ? LIMIT 1", [id]))[0]!;
+    return rowToApiToken(row);
+  }
+
+  /**
+   * 轮换：为同一记录换新哈希（对应新明文），并重置最近使用时间。
+   * 调用方生成新明文并算好 sha256 后传入；本方法只更新记录，不产明文。
+   * 返回 null 表示 id 不存在。
+   */
+  async rotateApiToken(id: string, tokenHash: string, expiresAt?: number | null): Promise<ApiTokenRecord | null> {
+    const existing = (await this.raw("SELECT * FROM api_tokens WHERE id = ? LIMIT 1", [id]))[0];
+    if (!existing) return null;
+    const finalExpiresAt = expiresAt !== undefined ? expiresAt : (existing.expires_at == null ? null : Number(existing.expires_at));
+    await this.run(
+      "UPDATE api_tokens SET token_hash = ?, expires_at = ?, last_used_at = NULL, created_at = ? WHERE id = ?",
+      [tokenHash, finalExpiresAt, Date.now(), id],
+    );
+    const row = (await this.raw("SELECT * FROM api_tokens WHERE id = ? LIMIT 1", [id]))[0]!;
+    return rowToApiToken(row);
   }
 
   /**
@@ -1139,9 +1177,11 @@ export class Repository {
     return rows.map(rowToApiToken);
   }
 
+  /** 删除 token；返回是否真的删掉（此前恒返回 true，调用方无法得知 id 是否存在） */
   async deleteApiToken(id: string): Promise<boolean> {
+    const existed = (await this.raw("SELECT id FROM api_tokens WHERE id = ? LIMIT 1", [id]))[0];
     await this.run("DELETE FROM api_tokens WHERE id = ?", [id]);
-    return true;
+    return Boolean(existed);
   }
 
   /* ------------------------- 精选专题 ------------------------- */
@@ -1406,6 +1446,22 @@ export function slugify(input: string): string {
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9\u4e00-\u9fff-]/g, "");
   return s.length > 0 ? s : "tag";
+}
+
+/**
+ * 归一化 API token 的 scope 串：
+ * 小写 + 去重 + 丢弃非法值，输出逗号分隔的合法集合（保底 "read"）。
+ *
+ * 与 apps/api/src/auth.ts 的 parseScopes 语义一致，但这里**不依赖 API 层**——
+ * store 是更底层的模块，任何调用方（REST / MCP / 脚本）写入都走这一道，防大写/非法 scope 落库。
+ */
+export function normalizeTokenScopes(raw: string | null | undefined): string {
+  const valid = new Set(["read", "write", "admin"]);
+  const out: string[] = [];
+  for (const s of (raw ?? "").split(",").map((x) => x.trim().toLowerCase())) {
+    if (valid.has(s) && !out.includes(s)) out.push(s);
+  }
+  return out.length > 0 ? out.join(",") : "read";
 }
 
 function rowToSite(row: Record<string, any>): Site {

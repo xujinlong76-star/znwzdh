@@ -13,6 +13,8 @@
  * 这些约束被封装在实现内部，调用方只看到 `search(query, limit)`。
  */
 
+import { sanitizeFinite, toBlobParam } from "./codec.ts";
+
 export interface VectorRecord {
   /** 稳定整数主键（vec0 要求）；由 idToInt 映射得到 */
   key: number;
@@ -56,21 +58,33 @@ export function hashSiteId(siteId: string): number {
   return v + 1;
 }
 
-/** Float32Array <-> Buffer（SQLite BLOB 存储用） */
+/**
+ * Float32Array <-> Buffer（SQLite BLOB 存储用）。
+ *
+ * 写侧强制过 sanitizeFinite：否则 NaN 会被静默写进 BLOB，
+ * 之后 KNN 距离全是 NaN，排序退化成插入序且不报任何错。
+ */
 export function vectorToBlob(v: Float32Array): Buffer {
-  return Buffer.from(v.buffer, v.byteOffset, v.byteLength);
+  return toBlobParam(v);
 }
 export function blobToVector(b: Buffer): Float32Array {
   return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
 }
 
-/** L2 归一化：语义检索要求向量归一化，使余弦距离等价于点积 */
+/**
+ * L2 归一化：语义检索要求向量归一化，使余弦距离等价于点积。
+ *
+ * 零向量与含非有限值的向量都返回**零向量**：
+ * 早期实现里 `n === 0` 时才提前返回，一旦 n 是 NaN（输入含 NaN）就会
+ * 走到底把整条向量除成 NaN，污染整个 KNN 索引。
+ */
 export function normalize(v: Float32Array): Float32Array {
+  const safe = sanitizeFinite(v);
   let n = 0;
-  for (let i = 0; i < v.length; i++) n += v[i]! * v[i]!;
+  for (let i = 0; i < safe.length; i++) n += safe[i]! * safe[i]!;
   n = Math.sqrt(n);
-  if (n === 0) return v;
-  const out = new Float32Array(v.length);
-  for (let i = 0; i < v.length; i++) out[i] = v[i]! / n;
+  if (!Number.isFinite(n) || n === 0) return new Float32Array(safe.length);
+  const out = new Float32Array(safe.length);
+  for (let i = 0; i < safe.length; i++) out[i] = safe[i]! / n;
   return out;
 }

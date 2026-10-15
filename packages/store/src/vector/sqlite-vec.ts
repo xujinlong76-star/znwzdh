@@ -1,5 +1,6 @@
 import type { VectorMatch, VectorRecord, VectorStore } from "./types.ts";
 import { normalize } from "./types.ts";
+import { fitDimension } from "./codec.ts";
 
 /**
  * sqlite-vec (vec0) 实现。
@@ -127,7 +128,7 @@ export class SqliteVecStore implements VectorStore {
       .prepare(
         `SELECT site_id AS siteId, site_key AS siteKey, distance FROM ${this.table} WHERE embedding MATCH ? ORDER BY distance LIMIT ?`,
       )
-      .all(normalize(query), limit) as Array<{ siteId: string | null; siteKey: number | bigint; distance: number }>;
+      .all(normalize(fitDimension(query, this.dim)), limit) as Array<{ siteId: string | null; siteKey: number | bigint; distance: number }>;
 
     const out: VectorMatch[] = [];
     for (const row of rows) {

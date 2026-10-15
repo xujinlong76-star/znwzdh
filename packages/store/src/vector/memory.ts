@@ -1,5 +1,6 @@
 import type { VectorMatch, VectorRecord, VectorStore } from "./types.ts";
 import { normalize } from "./types.ts";
+import { fitDimension } from "./codec.ts";
 
 /** 内存实现：无 sqlite-vec / 无 pgvector 时的降级与单元测试基准 */
 export class MemoryVectorStore implements VectorStore {
@@ -26,7 +27,8 @@ export class MemoryVectorStore implements VectorStore {
 
   async search(query: Float32Array, limit: number): Promise<VectorMatch[]> {
     if (limit <= 0) return [];
-    const q = normalize(query);
+    // 维度对齐放在最前：短向量会让 q[i] 取到 undefined，进而把距离算成 NaN
+    const q = normalize(fitDimension(query, this.dim));
     const scored: VectorMatch[] = [];
     for (const [siteId, row] of this.rows) {
       let dot = 0;

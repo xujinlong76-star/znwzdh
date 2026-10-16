@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | [main.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/main.ts) | 46 | **服务入口**：装配 config → context → server → JobRunner → listen + 优雅关闭 + 启动横幅 |
 | [auth.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/auth.ts) | ~110 | **REST 鉴权**：Bearer token 解析、sha256 哈希、scope 校验（admin ⊇ write ⊇ read）、timingSafeEqual |
-| [server.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/server.ts) | ~1400 | **61 条 REST 路由** + 鉴权 hook + Fastify 全局配置（CORS / 限流 / bodyLimit / trustProxy） |
+| [server.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/server.ts) | ~285 | **装配与横切关注点**（CORS / 限流 / bodyLimit / trustProxy / 指标 / 错误兜底 / OpenAPI 收集 / 缓存 / 鉴权）；业务路由按域拆至 [routes/](file:///c:/Users/许进龙/Desktop/web/apps/api/src/routes) 24 个插件，共 **85 条 REST 路由** |
 | [openapi.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/openapi.ts) | ~230 | **OpenAPI 3.1 文档生成**：从 Fastify `onRoute` 收集的路由表自动生成 `/api/openapi.json` + `/api/docs` HTML 视图 |
 | [storage.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts) | ~410 | **存储适配层**：NavSphere 的「JSON 文件」语义 → 数据库语义 |
 | [context.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/context.ts) | 144 | **应用上下文装配**：双模式差异的唯一消化点，能力可选、失败不致命 |
@@ -31,7 +31,7 @@
 ```ts
 const config = loadConfig();            // 1. 环境变量 → AppConfig
 const ctx    = await createContext(config);  // 2. 装配 DB / 向量 / 全文 / embedding / 检索
-const app    = await buildServer(ctx);       // 3. Fastify + 61 条路由
+const app    = await buildServer(ctx);       // 3. Fastify + 85 条路由（按域 register）
 
 const jobsEnabled = process.env.NAVHUB_JOBS_ENABLED !== "0" && ... ;
 const runner = jobsEnabled ? new JobRunner(ctx) : null;
@@ -98,6 +98,16 @@ export interface AppContext {
 | 全局限流 | 300 次/分钟 | 路由级可覆盖 |
 
 > **安全提示**：若中枢**直接**暴露公网（不经自家代理），必须设 `NAVHUB_TRUST_PROXY=0`，否则客户端可伪造 XFF 绕过限流。
+
+> **多实例部署注意（限流存储）**：`@fastify/rate-limit` 默认把计数放在**进程内存**里。
+> 单实例（Docker / 个人 NAS）行为正确；一旦水平扩展多个 api 实例（每个实例独立计数），
+> 全局限流会放大为 `300 × 实例数`，按 IP 的严格策略（如投稿 5 次/小时）同样失效。
+> 多实例场景需要改用共享存储（Redis）的限流实现——这是已知限制，**未引入 Redis 依赖**
+> （单实例部署不受影响；引外部依赖前须单独立项评估）。
+>
+> **可观测性**：`GET /api/metrics`（Prometheus 文本格式，scope: read）暴露请求计数、
+> 耗时、能力开关与数据规模——限流是否被打满可从 `navhub_http_requests_total` 观测。
+> 注意指标采集同样是进程内状态，多实例下各抓各的。
 
 ### 2.3 REST 鉴权（auth.ts + onRequest hook）
 

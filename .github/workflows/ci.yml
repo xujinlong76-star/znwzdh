@@ -189,7 +189,11 @@ jobs:
       # 待修复版发布后去掉 --ignore 并改用 overrides 钉版本。
       # 注意：必须用 --registry 显式指向 npmjs；仓库 .npmrc 固定了 npmmirror，
       # 其实测 NPM_CONFIG_REGISTRY 环境变量覆盖对 audit 不生效，会报 endpoint 不存在。
+      # 全量审计：含 dev 依赖（构建链漏洞同样能打进产物）
       - run: pnpm --registry=https://registry.npmjs.org audit --audit-level high --ignore GHSA-vfj7-8cjw-p6xm
+      # 生产面审计：只看法务/线上真正可触达的依赖，dev-only 告警不阻断交付
+      # （--prod 会忽略 devDependencies 树，因此不需要 --ignore）
+      - run: pnpm --registry=https://registry.npmjs.org audit --prod --audit-level high
 
   ci-passed:
     name: CI 整体通过 (All Checks Passed)

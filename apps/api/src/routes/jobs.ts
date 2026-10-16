@@ -1,7 +1,7 @@
 /**
- * 任务队列管理
+ * 任务队列管理路由 (Task Queue Management Routes)
  *
- * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
+ * 负责后台任务的入队、明细查询、状态取消、重试、历史修剪以及 SSE 实时事件推流。
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
@@ -9,41 +9,82 @@ import { RunJobInput } from "@navhub/core";
 
 import type { AppContext } from "../context.ts";
 import { jobEventBus, type JobEventPayload } from "../jobs.ts";
+import {
+  badRequest,
+  created,
+  notFound,
+  parsePagination,
+  setupSseStream,
+} from "./shared.ts";
 
 export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
-  /* ------------------------ 任务队列管理 ------------------------ */
+  /* ------------------------------------------------------------------ *
+   * 任务队列查询与入队
+   * ------------------------------------------------------------------ */
 
-  /** 入队（管理端 / 脚本用）。Runner 每 30s 自动消费。 */
-  app.post("/api/jobs", { config: { rateLimit: { max: 30, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
-    const body = RunJobInput.safeParse(req.body ?? {});
-    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    const id = await ctx.repo.enqueueJob(body.data.kind, body.data.payload ?? {});
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.enqueue", target: id, diff: { kind: body.data.kind } });
-    reply.code(201);
-    return { id, kind: body.data.kind };
-  });
+  /**
+   * 手动派发任务入队（管理端 / 运维脚本使用）。后台 Runner 轮询消费。
+   */
+  app.post(
+    "/api/jobs",
+    { config: { rateLimit: { max: 30, timeWindow: "1 minute" }, scope: "write" } },
+    async (req, reply) => {
+      const parsed = RunJobInput.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return badRequest(reply, "参数无效", parsed.error.issues);
+      }
 
+      const id = await ctx.repo.enqueueJob(parsed.data.kind, parsed.data.payload ?? {});
+      await ctx.repo.audit({
+        ip: req.ip,
+        actor: req.auth.actor,
+        actorKind: req.auth.kind,
+        action: "job.enqueue",
+        target: id,
+        diff: { kind: parsed.data.kind },
+      });
+
+      return created(reply, { id, kind: parsed.data.kind });
+    }
+  );
+
+  /**
+   * 分页筛选获取任务列表
+   */
   app.get("/api/jobs", { config: { scope: "read" } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
-    const limit = Math.min(Number(q.limit) || 50, 200);
+    const { limit } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
     return ctx.repo.listJobs(q.status, limit);
   });
 
-  /** 获取单个任务明细 */
+  /**
+   * 获取单个任务详情
+   */
   app.get("/api/jobs/:id", { config: { scope: "read" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const job = await ctx.repo.getJob(id);
-    if (!job) { reply.code(404); return { error: "任务不存在" }; }
+    if (!job) {
+      return notFound(reply, "任务不存在");
+    }
     return job;
   });
 
-  /** 取消任务（仅处于 pending 或 running 状态的任务可被取消） */
+  /* ------------------------------------------------------------------ *
+   * 任务生命周期控制（取消 / 重试 / 清理）
+   * ------------------------------------------------------------------ */
+
+  /**
+   * 取消任务（仅处于 pending 或 running 状态的任务可被取消）
+   */
   app.post("/api/jobs/:id/cancel", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const job = await ctx.repo.getJob(id);
-    if (!job) { reply.code(404); return { error: "任务不存在" }; }
+    if (!job) {
+      return notFound(reply, "任务不存在");
+    }
+
     await ctx.repo.cancelJob(id);
     jobEventBus.emitJobUpdate({
       jobId: id,
@@ -52,15 +93,29 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       attempts: job.attempts,
       timestamp: Date.now(),
     });
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.cancel", target: id, diff: { kind: job.kind } });
+
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "job.cancel",
+      target: id,
+      diff: { kind: job.kind },
+    });
+
     return { ok: true, id, status: "cancelled" };
   });
 
-  /** 重试任务（针对失败或被取消的任务重置为 pending 并立即可认领） */
+  /**
+   * 重试任务（针对失败或已取消的任务，重置状态为 pending 并允许立即重新认领）
+   */
   app.post("/api/jobs/:id/retry", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const job = await ctx.repo.getJob(id);
-    if (!job) { reply.code(404); return { error: "任务不存在" }; }
+    if (!job) {
+      return notFound(reply, "任务不存在");
+    }
+
     const retried = await ctx.repo.retryJob(id);
     jobEventBus.emitJobUpdate({
       jobId: id,
@@ -69,40 +124,64 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       attempts: 0,
       timestamp: Date.now(),
     });
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.retry", target: id, diff: { kind: job.kind } });
+
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "job.retry",
+      target: id,
+      diff: { kind: job.kind },
+    });
+
     return { ok: true, job: retried };
   });
 
-  /** 清理历史终态任务记录（默认清除 7 天前已完成、已失败或已取消的任务） */
+  /**
+   * 批量修剪历史终态任务（清除已完成、已失败或已取消的任务）
+   */
   app.post("/api/jobs/prune", { config: { scope: "admin" } }, async (req, reply) => {
-    const body = z.object({
-      olderThanDays: z.number().int().min(0).max(365).default(7),
-      statuses: z.array(z.string()).default(["done", "failed", "cancelled"]),
-    }).safeParse(req.body ?? {});
-    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    const result = await ctx.repo.pruneJobs(body.data.olderThanDays, body.data.statuses);
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.prune", diff: { ...body.data, ...result } });
-    return { ok: true, pruned: result.pruned, olderThanDays: body.data.olderThanDays };
+    const parsed = z
+      .object({
+        olderThanDays: z.number().int().min(0).max(365).default(7),
+        statuses: z.array(z.string()).default(["done", "failed", "cancelled"]),
+      })
+      .safeParse(req.body ?? {});
+
+    if (!parsed.success) {
+      return badRequest(reply, "参数无效", parsed.error.issues);
+    }
+
+    const { olderThanDays, statuses } = parsed.data;
+    const result = await ctx.repo.pruneJobs(olderThanDays, statuses);
+
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "job.prune",
+      diff: { olderThanDays, statuses, ...result },
+    });
+
+    return { ok: true, pruned: result.pruned, olderThanDays };
   });
 
+  /* ------------------------------------------------------------------ *
+   * SSE 实时事件推流通道
+   * ------------------------------------------------------------------ */
+
   /**
-   * 全量任务实时 SSE 事件流（控制台与运维仪表盘用）
+   * 全量任务实时 SSE 事件流（控制台与运维仪表盘使用）
    */
   app.get("/api/jobs/stream", { config: { scope: "read" } }, async (req, reply) => {
-    reply.hijack();
-    reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
-    reply.raw.setHeader("Connection", "keep-alive");
-    reply.raw.setHeader("X-Accel-Buffering", "no");
-    reply.raw.flushHeaders?.();
-
+    setupSseStream(reply);
     reply.raw.write(": connected\n\n");
 
     const onJob = (payload: JobEventPayload) => {
       try {
         reply.raw.write(`event: job\ndata: ${JSON.stringify(payload)}\n\n`);
       } catch {
-        // 连接可能已关闭
+        // 客户端连接中断容错
       }
     };
 
@@ -112,7 +191,7 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       try {
         reply.raw.write(": ping\n\n");
       } catch {
-        // ignore
+        // 心跳容错
       }
     }, 15_000);
 
@@ -123,17 +202,11 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
   });
 
   /**
-   * 单任务实时 SSE 事件流（客户端追踪特定任务生命周期用）
+   * 单任务实时 SSE 事件流（用于客户端追踪特定任务的完成状态）
    */
   app.get("/api/jobs/:id/events", { config: { scope: "read" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    reply.hijack();
-    reply.raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
-    reply.raw.setHeader("Connection", "keep-alive");
-    reply.raw.setHeader("X-Accel-Buffering", "no");
-    reply.raw.flushHeaders?.();
-
+    setupSseStream(reply);
     reply.raw.write(": connected\n\n");
 
     const onJobUpdate = (payload: JobEventPayload) => {
@@ -143,7 +216,7 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
           reply.raw.end();
         }
       } catch {
-        // 连接可能已关闭
+        // 连接关闭容错
       }
     };
 
@@ -153,7 +226,7 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       try {
         reply.raw.write(": ping\n\n");
       } catch {
-        // ignore
+        // 心跳容错
       }
     }, 15_000);
 

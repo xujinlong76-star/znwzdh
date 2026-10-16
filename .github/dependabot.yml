@@ -1,0 +1,49 @@
+# 依赖自动更新（升级建议 P0-5）
+#
+# 策略：
+#  - 每周一早 8 点（Asia/Shanghai）开 PR，分组聚合避免 PR 风暴；
+#  - 安全更新单独一组且优先级最高（配合 ci.yml 的 audit 硬门禁）；
+#  - pnpm 锁文件与 workspace overrides 由 dependabot 一并处理（package-ecosystem: npm 覆盖 pnpm-workspace.yaml）；
+#  - next / react 属于破坏性高风险，单独成组并限制并发，便于逐个验证。
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      framework-risky:
+        patterns: ["next", "react", "react-dom", "next-auth"]
+      tooling:
+        patterns: ["typescript", "vitest", "@playwright/test", "eslint*"]
+      everything-else:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(ci)"
+
+  - package-ecosystem: docker
+    directory: "/docker"
+    schedule:
+      interval: monthly
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(docker)"

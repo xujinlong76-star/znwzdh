@@ -19,7 +19,50 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
 
   images: {
-    remotePatterns: [{ protocol: "https", hostname: "**" }],
+    // 导航站要展示任意站点的 favicon / 截图，域名天然不可枚举，
+    // 因此默认保持 https 通配；需要收紧的部署可用 NAVHUB_IMAGE_HOSTS
+    // 指定白名单（逗号分隔，如 "cdn.example.com,img.example.com"）。
+    remotePatterns: (process.env.NAVHUB_IMAGE_HOSTS || "")
+      .split(",")
+      .map((h) => h.trim())
+      .filter(Boolean)
+      .map((hostname) => ({ protocol: "https", hostname }))
+      .concat([{ protocol: "https", hostname: "**" }].filter(() => !process.env.NAVHUB_IMAGE_HOSTS)),
+  },
+  // 安全响应头：Docker 自托管走 `next start`，vercel.json 里的头在那种形态下不生效，
+  // 因此把头下沉到应用本身，任何部署形态都一致。
+  // 破坏性较强的两项（HSTS / CSP）默认关闭或按需开启，避免一上线就把站点打挂。
+  async headers() {
+    const hosts = [
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      { key: "X-Frame-Options", value: "SAMEORIGIN" },
+      { key: "Permissions-Policy", value: "geolocation=(), microphone=(), camera=()" },
+    ];
+    // HSTS：http-only 的自托管一旦下发就会被浏览器强制升级，因此只在明确 https 时开启。
+    const hsts = process.env.NAVHUB_HSTS === "1" || (process.env.NAVHUB_PUBLIC_URL || "").startsWith("https://");
+    if (hsts) {
+      hosts.push({ key: "Strict-Transport-Security", value: "max-age=15552000" });
+    }
+    // CSP：Next 依赖内联脚本/样式，收紧需要逐页验证，故默认关闭，用 NAVHUB_CSP=1 开启。
+    if (process.env.NAVHUB_CSP === "1") {
+      hosts.push({
+        key: "Content-Security-Policy",
+        value: [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: https:",
+          "font-src 'self' data:",
+          "connect-src 'self' https: wss:",
+          "frame-src https:",
+          "object-src 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+        ].join("; "),
+      });
+    }
+    return [{ source: "/:path*", headers: hosts }];
   },
   async rewrites() {
     // /api/hub/* 不走 rewrite：改用 src/app/api/hub/[...path]/route.ts 运行时转发

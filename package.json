@@ -4,6 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
+  "//engines": "实际强依赖 Node 22：docker/entrypoint.sh 与多个脚本使用 --experimental-strip-types（22.6+），CI/Docker 镜像也是 node:22。pnpm 由 packageManager 锁定，这里再声明下限防止 corepack 缺失时被旧版安装。",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=11.7.0"
+  },
   "scripts": {
     "build": "pnpm -r --filter \"@navhub/*\" build",
     "dev": "pnpm --filter @navhub/api dev",

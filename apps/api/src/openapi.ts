@@ -58,6 +58,17 @@ const DESCRIPTIONS: Record<string, string> = {
   "GET /api/admin/audit": "审计日志（分页 + action/actor 过滤 + actions 全集）",
   "GET /api/admin/health/trend": "健康巡检趋势（按天分桶：checked/failed/rate/avgLatencyMs）",
   "GET /api/admin/stats/trends": "运营看板（热门搜索/零结果/热度榜）",
+  "GET /api/jobs/stream": "全量任务实时 SSE 事件流（控制台与运维仪表盘）",
+  "GET /api/jobs/{id}/events": "单任务实时 SSE 事件流（等待任务执行完成）",
+  "POST /api/tokens": "创建/签发 API 凭据（明文仅返回一次）",
+  "GET /api/tokens": "列出所有 API 凭据（不含敏感明文与哈希）",
+  "PATCH /api/tokens/{id}": "更新 API 凭据元数据与权限范围",
+  "POST /api/tokens/{id}/rotate": "紧急轮换 API 凭据（立即换发新明文并废弃旧明文）",
+  "POST /api/tokens/{id}/revoke": "软吊销 API 凭据（立刻失效保留审计痕迹）",
+  "DELETE /api/tokens/{id}": "彻底硬删除 API 凭据记录",
+  "POST /api/sites/heal": "死链故障自愈诊断与替代推荐",
+  "POST /api/sites/alternatives": "双曲空间最佳平替与同生态推荐",
+  "POST /api/wayback": "Internet Archive Wayback 快照时间机器解析",
   "GET /api/openapi.json": "本 OpenAPI 文档",
   "GET /api/docs": "API 文档（HTML 视图）",
 };
@@ -113,6 +124,17 @@ function buildComponentSchemas(): {
     const key = MCP_COMPONENT_PREFIX + def.name;
     schemas[key] = jsonSchemaOf(def.inputSchema);
     refOf.set(def.inputSchema, key);
+  }
+
+  for (const [bindingKey, item] of Object.entries(REST_SCHEMA_BINDINGS)) {
+    if (item.in === "body" && !refOf.has(item.schema)) {
+      const parts = bindingKey.split(" ");
+      const method = (parts[0] ?? "").toLowerCase();
+      const pathPart = (parts[1] ?? "").replace(/^\/api\//, "").replace(/[^\w]+/g, "_").replace(/^_+|_+$/g, "");
+      const key = "REST_" + method + "_" + pathPart + "_Body";
+      schemas[key] = jsonSchemaOf(item.schema);
+      refOf.set(item.schema, key);
+    }
   }
 
   return { schemas, refOf };

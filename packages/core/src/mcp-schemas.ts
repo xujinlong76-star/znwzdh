@@ -96,8 +96,9 @@ export const RunJobInput = z.object({
     "reindex",
     "site_self_healing",
     "token_audit",
-  ]).describe("任务类型：health_check (健康巡检), refetch_metadata (重抓元数据), recompute_rank (重排热度), reindex (重建检索索引), site_self_healing (死链自愈诊断), token_audit (API 凭据过期与闲置巡检)"),
-  payload: z.record(z.unknown()).optional().describe("任务参数（如 refetch_metadata/site_self_healing 需要 siteId，token_audit 可选 expiringDays/dormantDays）"),
+    "purge_trash",
+  ]).describe("任务类型：health_check (健康巡检), refetch_metadata (重抓元数据), recompute_rank (重排热度), reindex (重建检索索引), site_self_healing (死链自愈诊断), token_audit (API 凭据过期与闲置巡检), purge_trash (过期回收站物理清理)"),
+  payload: z.record(z.unknown()).optional().describe("任务参数（如 refetch_metadata/site_self_healing 需要 siteId，token_audit 可选 expiringDays/dormantDays，purge_trash 可选 olderThanDays）"),
 });
 
 export const DeleteSiteInput = z.object({
@@ -293,6 +294,30 @@ export const MCP_INPUT_SCHEMAS: Record<string, ZodSchemaLike> = {
  */
 export const SiteStatusSchema = z.enum(["active", "pending", "broken", "archived"]);
 
+export const SiteActionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  urlTemplate: z.string(),
+  placeholder: z.string().optional(),
+  icon: z.string().optional(),
+});
+
+export const SiteRelationSchema = z.object({
+  targetTitle: z.string(),
+  targetUrl: z.string(),
+  relationType: z.enum(["alternative", "ecosystem", "upstream", "mirror"]),
+  isFreeOrOpenSource: z.boolean().optional(),
+  note: z.string().optional(),
+});
+
+export const SiteLiveMetricsSchema = z.object({
+  githubStars: z.number().optional(),
+  latestVersion: z.string().optional(),
+  openSource: z.boolean().optional(),
+  license: z.string().optional(),
+  latencyMs: z.number().optional(),
+});
+
 export const SiteCreateBody = CreateSiteInput.omit({ enrich: true, idempotencyKey: true }).extend({
   description: z.string().nullable().optional().describe("描述；null 表示清空"),
   categoryId: z.string().min(1).describe("类目 id（REST 侧必填）"),
@@ -301,12 +326,34 @@ export const SiteCreateBody = CreateSiteInput.omit({ enrich: true, idempotencyKe
   source: z.string().nullable().optional(),
   status: SiteStatusSchema.optional(),
   featured: z.boolean().optional(),
+  actions: z.array(SiteActionSchema).optional().describe("快捷动作列表"),
+  relations: z.array(SiteRelationSchema).optional().describe("技术关联图谱"),
+  liveMetrics: SiteLiveMetricsSchema.optional().describe("实时指标/星数"),
+  workspaces: z.array(z.string()).optional().describe("关联工作区 ID 列表"),
+  metadata: z.record(z.unknown()).optional().describe("动态扩展元数据"),
 });
 
 export const SiteUpdateBody = UpdateSiteInput.omit({ id: true }).extend({
   description: z.string().nullable().optional().describe("描述；null 表示清空"),
   categoryId: z.string().min(1).optional(),
   status: SiteStatusSchema.optional(),
+  actions: z.array(SiteActionSchema).optional().describe("快捷动作列表"),
+  relations: z.array(SiteRelationSchema).optional().describe("技术关联图谱"),
+  liveMetrics: SiteLiveMetricsSchema.optional().describe("实时指标/星数"),
+  workspaces: z.array(z.string()).optional().describe("关联工作区 ID 列表"),
+  metadata: z.record(z.unknown()).optional().describe("动态扩展元数据"),
+});
+
+export const CreateApiTokenInput = z.object({
+  name: z.string().min(1).max(64).describe("凭据名称标识"),
+  scopes: z.string().default("read").describe("权限范围，英文逗号分隔（如 'read,write' 或 'admin'）"),
+  expiresAt: z.number().int().positive().nullable().optional().describe("过期时间戳（毫秒）；省略落策略上限，显式 null 请求永久"),
+});
+
+export const UpdateApiTokenInput = z.object({
+  name: z.string().min(1).max(64).optional().describe("凭据名称"),
+  scopes: z.string().optional().describe("权限范围"),
+  expiresAt: z.number().int().positive().nullable().optional().describe("过期时间戳（毫秒）"),
 });
 
 /**
@@ -317,6 +364,10 @@ export const SiteUpdateBody = UpdateSiteInput.omit({ id: true }).extend({
 export const REST_SCHEMA_BINDINGS: Record<string, { schema: ZodSchemaLike; in: "body" | "query" }> = {
   "POST /api/sites": { schema: SiteCreateBody, in: "body" },
   "PATCH /api/sites/{id}": { schema: SiteUpdateBody, in: "body" },
+  "POST /api/tokens": { schema: CreateApiTokenInput, in: "body" },
+  "PATCH /api/tokens/{id}": { schema: UpdateApiTokenInput, in: "body" },
+  "POST /api/search": { schema: SearchSitesInput, in: "body" },
+  "GET /api/search": { schema: SearchSitesInput, in: "query" },
   "POST /api/crdt/sync": { schema: SyncCrdtOperationsInput, in: "body" },
   "POST /api/design/harmony": { schema: AnalyzeColorHarmonyInput, in: "body" },
   "POST /api/speculation/rules": { schema: CompileSpeculationRulesInput, in: "body" },
@@ -329,6 +380,9 @@ export const REST_SCHEMA_BINDINGS: Record<string, { schema: ZodSchemaLike; in: "
   "POST /api/tools/synthesize": { schema: SynthesizeAgentToolInput, in: "body" },
   "POST /api/p2p/signal": { schema: ExchangeP2pMeshInput, in: "body" },
   "POST /api/jobs": { schema: RunJobInput, in: "body" },
+  "POST /api/sites/heal": { schema: HealBrokenSiteInput, in: "body" },
+  "POST /api/sites/alternatives": { schema: GetAlternativesInput, in: "body" },
+  "POST /api/wayback": { schema: ResolveWaybackInput, in: "body" },
   "GET /api/tags": { schema: ListTagsInput, in: "query" },
   "GET /api/rank/trending": { schema: GetTrendingInput, in: "query" },
 };

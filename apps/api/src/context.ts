@@ -131,10 +131,17 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
 
   const search = new SearchEngine({
     db,
+    repo,
     fts,
     vectors,
     embed: embedding ? (text: string) => embedding!.encode(text) : null,
   });
+
+  try {
+    await search.initLinUCB();
+  } catch (err) {
+    notes.push("LinUCB 初始化异常（使用默认权重）：" + msg(err));
+  }
 
   const capabilities: Capabilities = {
     // embedding 为惰性加载：装配时 ready() 必为 false，此处如实上报 false，
@@ -148,6 +155,11 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
   return {
     config, db, repo, search, vectors, fts, embedding, capabilities,
     async close() {
+      try {
+        await search.flushLinUCB();
+      } catch {
+        // ignore during shutdown
+      }
       await db.close();
       if (embedding?.close) await embedding.close();
     },

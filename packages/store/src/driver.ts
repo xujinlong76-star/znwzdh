@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS sites (
   health_error TEXT,
   last_checked_at INTEGER,
   deleted_at INTEGER,
+  metadata TEXT,
   visit_count INTEGER NOT NULL DEFAULT 0,
   last_visited_at INTEGER,
   trend_score REAL NOT NULL DEFAULT 0,
@@ -243,6 +244,12 @@ CREATE TABLE IF NOT EXISTS user_vault_sync (
   version INTEGER NOT NULL DEFAULT 1,
   updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS system_states (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 const DDL_PG = `
@@ -290,6 +297,7 @@ CREATE TABLE IF NOT EXISTS sites (
   health_error TEXT,
   last_checked_at BIGINT,
   deleted_at BIGINT,
+  metadata TEXT,
   visit_count INTEGER NOT NULL DEFAULT 0,
   last_visited_at BIGINT,
   trend_score DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -441,6 +449,12 @@ CREATE TABLE IF NOT EXISTS user_vault_sync (
   user_id TEXT PRIMARY KEY,
   payload TEXT NOT NULL,
   version INTEGER NOT NULL DEFAULT 1,
+  updated_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS system_states (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
   updated_at BIGINT NOT NULL
 );
 `;

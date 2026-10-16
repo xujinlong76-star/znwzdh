@@ -2,10 +2,14 @@ import { randomUUID } from "node:crypto";
 import {
   buildFtsTokens,
   canonicalizeUrl,
+  getEnhancedSiteData,
   pinyinTraits,
   type Category,
   type Collection,
   type Site,
+  type SiteAction,
+  type SiteLiveMetrics,
+  type SiteRelation,
   type SiteStatus,
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
@@ -36,6 +40,11 @@ export interface SiteInput {
   sort?: number;
   featured?: boolean;
   source?: string | null;
+  actions?: SiteAction[];
+  relations?: SiteRelation[];
+  liveMetrics?: SiteLiveMetrics;
+  workspaces?: string[];
+  metadata?: Record<string, unknown>;
 }
 
 /* ------------------------- 新领域记录类型 ------------------------- */
@@ -319,6 +328,15 @@ export class Repository {
     return row ? rowToSite(row) : null;
   }
 
+  private packMetadata(input: Partial<SiteInput>): string | null {
+    const metaObj: Record<string, any> = { ...(input.metadata ?? {}) };
+    if (input.actions !== undefined) metaObj.actions = input.actions;
+    if (input.relations !== undefined) metaObj.relations = input.relations;
+    if (input.liveMetrics !== undefined) metaObj.liveMetrics = input.liveMetrics;
+    if (input.workspaces !== undefined) metaObj.workspaces = input.workspaces;
+    return Object.keys(metaObj).length > 0 ? JSON.stringify(metaObj) : null;
+  }
+
   async createSite(input: SiteInput): Promise<Site> {
     return this.createSiteWithId({ ...input, id: randomUUID() });
   }
@@ -335,6 +353,7 @@ export class Repository {
     const id = input.id;
     const now = Date.now();
     const index = buildIndexFields({ title: input.title ?? input.url, description: input.description, url: input.url, tags: input.tags });
+    const metaStr = this.packMetadata(input);
     // 同 id 的软删行会让主键冲突（快照写回会用原 id 复活站点）——
     // 这里直接"复活"该行：清 deleted_at 并覆盖内容，语义等价于重建。
     const deleted = await this.getDeletedSite(id);
@@ -342,13 +361,14 @@ export class Repository {
       await this.run(
         `UPDATE sites SET url = ?, title = ?, description = ?, category_id = ?, sub_category_id = ?,
            icon_key = ?, status = ?, enabled = ?, sort = ?, featured = ?, source = ?,
-           fts_tokens = ?, pinyin_full = ?, pinyin_initials = ?, deleted_at = NULL, updated_at = ?
+           fts_tokens = ?, pinyin_full = ?, pinyin_initials = ?, metadata = ?, deleted_at = NULL, updated_at = ?
          WHERE id = ?`,
         [
           input.url, input.title ?? input.url, input.description ?? null, input.categoryId,
           input.subCategoryId ?? null, input.iconKey ?? null, input.status ?? "active",
           input.enabled === false ? 0 : 1, input.sort ?? 0, input.featured ? 1 : 0,
-          input.source ?? "manual", index.ftsTokens, index.pinyinFull, index.pinyinInitials, now, id,
+          input.source ?? "manual", index.ftsTokens, index.pinyinFull, index.pinyinInitials,
+          metaStr, now, id,
         ],
       );
       if (input.tags?.length) await this.setSiteTags(id, input.tags);
@@ -359,13 +379,14 @@ export class Repository {
     await this.run(
       `INSERT INTO sites (
          id, url, title, description, category_id, sub_category_id, icon_key, status, enabled, sort,
-         weight, featured, source, fts_tokens, pinyin_full, pinyin_initials, created_at, updated_at
-       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         weight, featured, source, fts_tokens, pinyin_full, pinyin_initials, metadata, created_at, updated_at
+       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id, input.url, input.title ?? input.url, input.description ?? null, input.categoryId,
         input.subCategoryId ?? null, input.iconKey ?? null, input.status ?? "active",
         input.enabled === false ? 0 : 1, input.sort ?? 0, 0, input.featured ? 1 : 0,
-        input.source ?? "manual", index.ftsTokens, index.pinyinFull, index.pinyinInitials, now, now,
+        input.source ?? "manual", index.ftsTokens, index.pinyinFull, index.pinyinInitials,
+        metaStr, now, now,
       ],
     );
     if (input.tags?.length) await this.setSiteTags(id, input.tags);
@@ -400,6 +421,16 @@ export class Repository {
     if (patch.sort !== undefined) assign("sort", patch.sort);
     if (patch.featured !== undefined) assign("featured", patch.featured ? 1 : 0);
     if (patch.source !== undefined) assign("source", patch.source);
+    if (patch.metadata !== undefined || patch.actions !== undefined || patch.relations !== undefined || patch.liveMetrics !== undefined || patch.workspaces !== undefined) {
+      const mergedMeta: Record<string, any> = {
+        actions: patch.actions !== undefined ? patch.actions : existing.actions,
+        relations: patch.relations !== undefined ? patch.relations : existing.relations,
+        liveMetrics: patch.liveMetrics !== undefined ? patch.liveMetrics : existing.liveMetrics,
+        workspaces: patch.workspaces !== undefined ? patch.workspaces : existing.workspaces,
+        ...(patch.metadata ?? {}),
+      };
+      assign("metadata", JSON.stringify(mergedMeta));
+    }
 
     params.push(id);
     await this.run(`UPDATE sites SET ${sets.join(", ")} WHERE id = ?`, params);
@@ -1576,6 +1607,57 @@ export class Repository {
     return rows.map(rowToJob);
   }
 
+  /* ------------------------- 系统全局状态 & 定时任务辅助 ------------------------- */
+
+  /**
+   * 读取系统全局持久化状态（模型参数、Cron 水位等）。
+   */
+  async getSystemState<T = unknown>(key: string): Promise<T | null> {
+    const rows = await this.raw("SELECT value FROM system_states WHERE key = ? LIMIT 1", [key]);
+    const val = rows[0]?.value;
+    if (val === undefined || val === null) return null;
+    try {
+      return JSON.parse(String(val)) as T;
+    } catch {
+      return val as T;
+    }
+  }
+
+  /**
+   * 写入系统全局持久化状态（双方言幂等 Upsert）。
+   */
+  async setSystemState(key: string, value: unknown): Promise<void> {
+    const now = Date.now();
+    const serialized = typeof value === "string" ? value : JSON.stringify(value);
+    if (this.db.dialect === "pg") {
+      await this.run(
+        "INSERT INTO system_states (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+        [key, serialized, now],
+      );
+    } else {
+      await this.run(
+        "INSERT INTO system_states (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        [key, serialized, now],
+      );
+    }
+  }
+
+  /**
+   * 定期清理超过指定保留期（如 30 天）的软删除站点。
+   */
+  async purgeExpiredDeletedSites(olderThanMs: number): Promise<number> {
+    const threshold = Date.now() - olderThanMs;
+    const rows = await this.raw("SELECT id FROM sites WHERE deleted_at IS NOT NULL AND deleted_at < ?", [threshold]);
+    let count = 0;
+    for (const r of rows) {
+      if (r.id) {
+        await this.purgeSite(String(r.id));
+        count++;
+      }
+    }
+    return count;
+  }
+
   /* ------------------------- 底层执行 ------------------------- */
 
   /** SQLite 的 "启用中" 字面量；PG 必须是 TRUE（布尔 = 整数会直接报错） */
@@ -1650,6 +1732,15 @@ export function normalizeTokenScopes(raw: string | null | undefined): string {
 }
 
 function rowToSite(row: Record<string, any>): Site {
+  let metaParsed: Record<string, any> = {};
+  if (row.metadata) {
+    try {
+      metaParsed = typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata;
+    } catch {
+      // 容错降级
+    }
+  }
+  const enhanced = getEnhancedSiteData(String(row.url));
   return {
     id: String(row.id),
     url: String(row.url),
@@ -1681,6 +1772,10 @@ function rowToSite(row: Record<string, any>): Site {
       error: row.health_error ?? null,
       lastCheckedAt: row.last_checked_at ?? null,
     },
+    actions: metaParsed.actions ?? enhanced.actions,
+    relations: metaParsed.relations ?? enhanced.relations,
+    liveMetrics: metaParsed.liveMetrics ?? enhanced.liveMetrics,
+    workspaces: metaParsed.workspaces ?? enhanced.workspaces,
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
   };

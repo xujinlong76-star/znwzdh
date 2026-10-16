@@ -43,6 +43,10 @@ export interface SearchEngineDeps {
   vectors: VectorStore | null;
   embed?: ((text: string) => Promise<Float32Array>) | null;
   weights?: FusionWeights;
+  repo?: {
+    getSystemState<T = unknown>(key: string): Promise<T | null>;
+    setSystemState(key: string, value: unknown): Promise<void>;
+  };
 }
 
 export interface SearchEngineOptions {
@@ -82,11 +86,48 @@ export class SearchEngine {
   private perChannel: number;
   private linucbModel: LinUCBModel;
   private feedbackCount = 0;
+  private savingPromise: Promise<void> | null = null;
+  private readonly MODEL_STATE_KEY = "model:linucb:search";
 
   constructor(deps: SearchEngineDeps, opts: SearchEngineOptions = {}) {
     this.deps = deps;
     this.perChannel = opts.perChannel ?? 50;
     this.linucbModel = createLinUCBModel(0.15);
+  }
+
+  /**
+   * 从持久化存储还原 LinUCB 在线学习模型参数
+   */
+  async initLinUCB(): Promise<void> {
+    if (!this.deps.repo) return;
+    try {
+      const saved = await this.deps.repo.getSystemState<{
+        model: LinUCBModel;
+        feedbackCount: number;
+      }>(this.MODEL_STATE_KEY);
+      if (saved?.model?.arms && saved.model.dimension === this.linucbModel.dimension) {
+        this.linucbModel = saved.model;
+        this.feedbackCount = saved.feedbackCount ?? 0;
+      }
+    } catch {
+      // 容错降级
+    }
+  }
+
+  /**
+   * 将当前 LinUCB 模型参数异步快照刷入持久化存储
+   */
+  async flushLinUCB(): Promise<void> {
+    if (!this.deps.repo) return;
+    try {
+      await this.deps.repo.setSystemState(this.MODEL_STATE_KEY, {
+        model: this.linucbModel,
+        feedbackCount: this.feedbackCount,
+        updatedAt: Date.now(),
+      });
+    } catch {
+      // 容错
+    }
   }
 
   /**
@@ -107,6 +148,12 @@ export class SearchEngine {
           : 1.0;
     updateDiscountedArmReward(this.linucbModel, channel, q, reward, 0.98);
     this.feedbackCount++;
+    // 每 10 次交互反馈自动进行一次轻量后台落库
+    if (this.feedbackCount % 10 === 0 && this.deps.repo && !this.savingPromise) {
+      this.savingPromise = this.flushLinUCB().finally(() => {
+        this.savingPromise = null;
+      });
+    }
   }
 
   /**

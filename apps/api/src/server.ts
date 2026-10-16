@@ -2425,6 +2425,32 @@ export async function buildServer(ctx: AppContext) {
     : 0;
   const allowPermanent = ctx.config.tokenPolicy.allowPermanentTokens;
 
+  /**
+   * 审计容错写入：审计失败绝不能吞掉主操作的结果。
+   *
+   * 轮换场景最致命：rotateApiToken 已让旧明文失效，若此时 audit 抛错把
+   * 响应变成 500，客户端既拿不到新明文、旧明文又已失效——凭据彻底报废。
+   * 创建同理：明文已随响应发出，不能因审计失败把 201 吞成 500。
+   * 因此审计只降级为错误日志，主流程照常返回。
+   */
+  const auditSafely = async (entry: Parameters<typeof ctx.repo.audit>[0]): Promise<void> => {
+    try {
+      await ctx.repo.audit(entry);
+    } catch (err) {
+      console.error("[navhub] 审计写入失败（主操作结果不受影响）:", err);
+    }
+  };
+
+  /**
+   * 同名冲突检测：未吊销凭据中名称精确匹配即拒绝。
+   *
+   * 精确匹配（不做大小写折叠）——名称是给人看的标识，大小写不同即不同凭据，
+   * 避免"以为撞名其实没有"的困惑；已吊销 / 已删除的不占用名称
+   * （吊销是留痕，名字理应可复用；彻底 DELETE 后名字自然释放）。
+   */
+  const findActiveNameClash = async (name: string, exceptId?: string) =>
+    (await ctx.repo.listApiTokens()).find((t) => t.revokedAt === null && t.name === name && t.id !== exceptId);
+
   const resolveExpiry = (v: number | null | undefined): { expiresAt: number | null; error: string | null } => {
     if (v === undefined) {
       return { expiresAt: maxLifetimeMs === 0 ? null : Date.now() + maxLifetimeMs, error: null };
@@ -2466,6 +2492,14 @@ export async function buildServer(ctx: AppContext) {
       }
     }
 
+    // 同名冲突：精确匹配未吊销凭据。没有这层拦截时，重复创建同名 token 会
+    // 全部成功，列表里多条同名记录无法区分是谁，吊销时也难以定位。
+    const clash = await findActiveNameClash(body.data.name);
+    if (clash) {
+      reply.code(409);
+      return { error: "已存在同名凭据「" + body.data.name + "」；请换个名称，或先吊销 / 删除旧凭据" };
+    }
+
     const raw = generateToken();
     const record = await ctx.repo.createApiToken({
       name: body.data.name,
@@ -2474,7 +2508,7 @@ export async function buildServer(ctx: AppContext) {
       expiresAt: expiry.expiresAt,
       tokenPrefix: tokenPrefixOf(raw),
     });
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.create", target: record.id, diff: { name: record.name, scopes, expiresAt: expiry.expiresAt } });
+    await auditSafely({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.create", target: record.id, diff: { name: record.name, scopes, expiresAt: expiry.expiresAt } });
     reply.code(201);
     // 明文只在这里出现一次
     return { token: raw, ...record, note: "请立即保存：明文只显示这一次，库里只存 sha256。" };
@@ -2506,13 +2540,22 @@ export async function buildServer(ctx: AppContext) {
       patchedExpiry = expiry.expiresAt;
     }
 
+    // 改名撞名检测（排除自身）：与创建一致，未吊销凭据间名称必须唯一
+    if (body.data.name !== undefined) {
+      const clash = await findActiveNameClash(body.data.name, id);
+      if (clash) {
+        reply.code(409);
+        return { error: "已存在同名凭据「" + body.data.name + "」；请换个名称，或先吊销 / 删除旧凭据" };
+      }
+    }
+
     const record = await ctx.repo.updateApiToken(id, {
       name: body.data.name,
       scopes: body.data.scopes,
       expiresAt: patchedExpiry,
     });
     if (!record) { reply.code(404); return { error: "token 不存在" }; }
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.update", target: id, diff: { name: record.name, scopes: record.scopes } });
+    await auditSafely({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.update", target: id, diff: { name: record.name, scopes: record.scopes } });
     return record;
   });
 
@@ -2538,7 +2581,8 @@ export async function buildServer(ctx: AppContext) {
     const raw = generateToken();
     const record = await ctx.repo.rotateApiToken(id, hashToken(raw), rotatedExpiry, tokenPrefixOf(raw));
     if (!record) { reply.code(404); return { error: "token 不存在" }; }
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.rotate", target: id, diff: { name: record.name, scopes: record.scopes } });
+    // 审计容错：此刻旧明文已失效，若 audit 抛错吞掉响应，新明文也随之丢失
+    await auditSafely({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.rotate", target: id, diff: { name: record.name, scopes: record.scopes } });
     // 明文只在这里出现一次
     return { token: raw, ...record, note: "轮换成功：旧明文已立即失效，请保存新明文。" };
   });
@@ -2555,7 +2599,7 @@ export async function buildServer(ctx: AppContext) {
     const { id } = req.params as { id: string };
     const record = await ctx.repo.revokeApiToken(id);
     if (!record) { reply.code(404); return { error: "token 不存在" }; }
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.revoke", target: id, diff: { name: record.name } });
+    await auditSafely({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.revoke", target: id, diff: { name: record.name } });
     return record;
   });
 
@@ -2563,7 +2607,7 @@ export async function buildServer(ctx: AppContext) {
     const { id } = req.params as { id: string };
     const deleted = await ctx.repo.deleteApiToken(id);
     if (!deleted) { reply.code(404); return { error: "token 不存在" }; }
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.delete", target: id });
+    await auditSafely({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.delete", target: id });
     reply.code(204);
     return null;
   });

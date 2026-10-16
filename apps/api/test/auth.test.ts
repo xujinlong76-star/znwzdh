@@ -329,6 +329,67 @@ describe("鉴权模式：token 生命周期", () => {
   });
 });
 
+describe("token 创建：输入校验与冲突拦截", () => {
+  it("同名凭据创建被拒（409）且错误信息点名冲突项", async () => {
+    await mintToken("重名凭据", "read");
+    const res = await as(BOOTSTRAP, "POST", "/api/tokens", { name: "重名凭据", scopes: "write" });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toContain("重名凭据");
+    // 列表里仍然只有一条，没有重复落库
+    const list = (await as(BOOTSTRAP, "GET", "/api/tokens")).json();
+    expect(list.filter((t: any) => t.name === "重名凭据").length).toBe(1);
+  });
+
+  it("吊销后同名可以重新创建（软吊销不占用名称）", async () => {
+    const raw = await mintToken("可复用名", "read");
+    const list = (await as(BOOTSTRAP, "GET", "/api/tokens")).json();
+    const id = list.find((t: any) => t.name === "可复用名").id;
+    expect((await as(BOOTSTRAP, "POST", "/api/tokens/" + id + "/revoke")).statusCode).toBe(200);
+
+    const again = await as(BOOTSTRAP, "POST", "/api/tokens", { name: "可复用名", scopes: "read" });
+    expect(again.statusCode).toBe(201);
+    // 旧明文仍失效（吊销记录在案，新凭据是另一条）
+    expect((await as(raw, "GET", "/api/sites")).statusCode).toBe(401);
+  });
+
+  it("PATCH 改名撞名被拒（409）；改成不撞名的成功", async () => {
+    await mintToken("占位名", "read");
+    await mintToken("被改名", "read");
+    const list = (await as(BOOTSTRAP, "GET", "/api/tokens")).json();
+    const tok = list.find((t: any) => t.name === "被改名");
+
+    const denied = await as(BOOTSTRAP, "PATCH", "/api/tokens/" + tok.id, { name: "占位名" });
+    expect(denied.statusCode).toBe(409);
+    expect(denied.json().error).toContain("占位名");
+
+    const ok = await as(BOOTSTRAP, "PATCH", "/api/tokens/" + tok.id, { name: "全新名" });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().name).toBe("全新名");
+  });
+
+  it("名称超长（>64 字符）被拒（400）", async () => {
+    const res = await as(BOOTSTRAP, "POST", "/api/tokens", { name: "x".repeat(65), scopes: "read" });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("审计写入失败不阻断创建：明文照常返回且立即可用", async () => {
+    // 模拟 audit_logs 写库故障：主操作（INSERT api_tokens）已成功，
+    // 若 audit 抛错把响应吞成 500，明文就随响应一起丢了——凭据变成孤儿。
+    const original = authCtx.repo.audit.bind(authCtx.repo);
+    authCtx.repo.audit = async () => { throw new Error("simulated audit failure"); };
+    try {
+      const res = await as(BOOTSTRAP, "POST", "/api/tokens", { name: "审计故障时", scopes: "read" });
+      expect(res.statusCode).toBe(201);
+      const raw = res.json().token as string;
+      expect(raw.startsWith("nh_")).toBe(true);
+      // 明文立即可用于鉴权（凭据没有变成孤儿）
+      expect((await as(raw, "GET", "/api/sites")).statusCode).toBe(200);
+    } finally {
+      authCtx.repo.audit = original;
+    }
+  });
+});
+
 describe("tokenPolicy.allowPermanentTokens=true：显式放行长期凭据", () => {
   let permDir: string;
   let permCtx: AppContext;

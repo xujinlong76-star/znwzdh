@@ -23,6 +23,8 @@ export default defineConfig({
       "apps/api/test/**/*.test.ts",
       "apps/web/test/**/*.test.ts",
       "apps/web-overlay/scripts/**/*.test.ts",
+      // 仓库根 scripts/ 下的本地脚手架（vendor-web 的搬运逻辑等）也要有回归测试
+      "scripts/**/*.test.ts",
     ],
     environment: "node",
     testTimeout: 30_000,

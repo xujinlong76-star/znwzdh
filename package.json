@@ -18,9 +18,12 @@
     "vendor:web": "node scripts/vendor-web.mjs",
     "test:pg": "node --experimental-strip-types scripts/pg-check.mts",
     "check:overlay": "node scripts/check-web-overlay.mjs",
+    "check:extensions": "node scripts/check-extensions.mjs",
+    "lint": "pnpm --filter navsphere lint",
     "backup": "node scripts/backup.mjs",
-    "verify": "node scripts/check-web-overlay.mjs && pnpm -r --filter \"@navhub/*\" exec tsc --noEmit && vitest run",
-    "verify:all": "node scripts/check-web-overlay.mjs && pnpm -r --filter \"@navhub/*\" exec tsc --noEmit && vitest run && playwright test"
+    "prepare": "node scripts/install-git-hooks.mjs",
+    "verify": "node scripts/check-web-overlay.mjs && node scripts/check-extensions.mjs && pnpm -r --filter \"@navhub/*\" exec tsc --noEmit && vitest run",
+    "verify:all": "node scripts/check-web-overlay.mjs && node scripts/check-extensions.mjs && pnpm -r --filter \"@navhub/*\" exec tsc --noEmit && vitest run && playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

@@ -77,11 +77,24 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
       body: body || undefined,
       cache: 'no-store',
     })
+    const contentType = upstream.headers.get('content-type') ?? 'application/json'
+    // 流式响应透传（如 SSE 实时推流）：不可调用 .text() 阻塞缓冲，直接透传 body 流
+    if (contentType.includes('text/event-stream')) {
+      return new Response(upstream.body, {
+        status: upstream.status,
+        headers: {
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache, no-transform',
+          'connection': 'keep-alive',
+          'x-accel-buffering': 'no',
+        },
+      })
+    }
     const text = await upstream.text()
     // 透传状态码与内容类型；中枢返回空体时给 {}，避免前端 JSON.parse 炸裂
     return new NextResponse(text || '{}', {
       status: upstream.status,
-      headers: { 'content-type': upstream.headers.get('content-type') ?? 'application/json' },
+      headers: { 'content-type': contentType },
     })
   } catch (error) {
     console.error('[hub proxy] upstream unavailable:', error)

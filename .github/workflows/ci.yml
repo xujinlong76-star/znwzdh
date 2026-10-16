@@ -128,7 +128,7 @@ jobs:
 
   check-web-overlay:
     timeout-minutes: 15
-    name: 覆盖层一致性检查
+    name: 覆盖层与扩展规范性检查
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -144,6 +144,8 @@ jobs:
       - run: node scripts/vendor-web.mjs
       # overlay 是 Docker 构建与 vendor 的事实源；apps/web 改了没同步回去会在这里失败
       - run: node scripts/check-web-overlay.mjs
+      # 验证浏览器扩展 (Chrome Manifest V3) 与桌面扩展 (Raycast) 的规范与文件完整性
+      - run: node scripts/check-extensions.mjs
 
   test-e2e:
     timeout-minutes: 30

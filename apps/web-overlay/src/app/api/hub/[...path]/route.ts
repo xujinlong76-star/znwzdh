@@ -1,5 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
+import {
+  FORWARD_REQUEST_HEADERS,
+  createDeadline,
+  isNullBodyStatus,
+  isStreamingContentType,
+  isTextContentType,
+  pickResponseHeaders,
+  upstreamTimeoutMs,
+} from '@/lib/hub-proxy'
 
 /**
  * /api/hub/* 代理：把请求转发到 NavHub 中枢。
@@ -11,6 +20,8 @@ import { verifyAdminSession } from '@/lib/auth'
  *
  * 与浏览器通信走同源相对路径，因此没有 CORS 问题，
  * 也兼容 docker 内部主机名（api:8787 浏览器解析不了，但服务端能）。
+ *
+ * HTTP 语义（超时 / 缓存头 / 空体状态码）的判定在 @/lib/hub-proxy，那里有单测。
  */
 
 const HUB_BASE = (
@@ -19,7 +30,8 @@ const HUB_BASE = (
   'http://localhost:8787'
 ).replace(/\/$/, '')
 
-const FORWARD_HEADERS = ['content-type', 'accept', 'authorization'] as const
+/** body 上限 ~1MB，防止代理被大体拖死 */
+const MAX_BODY_BYTES = 1024 * 1024
 
 async function forward(request: NextRequest, path: string[]): Promise<Response> {
   const url = new URL(request.url)
@@ -28,7 +40,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const target = normalizedBase + '/api/' + cleanPath.join('/') + url.search
 
   const headers: Record<string, string> = { Accept: 'application/json' }
-  for (const h of FORWARD_HEADERS) {
+  for (const h of FORWARD_REQUEST_HEADERS) {
     const v = request.headers.get(h)
     if (v) headers[h] = v
   }
@@ -73,10 +85,15 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     delete headers['content-type']
   }
 
-  // body 上限 ~1MB，防止代理被大体拖死
-  if (body && body.length > 1024 * 1024) {
-    return NextResponse.json({ error: '请求体过大（上限 1MB）' }, { status: 413 })
+  if (body && body.length > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      { error: '请求体过大（上限 1MB）' },
+      { status: 413, headers: { 'cache-control': 'no-store' } },
+    )
   }
+
+  // 上游必须有上限：卡死的中枢不能把前端请求无限期挂住（SSE 在拿到响应头后解除，见下）
+  const deadline = createDeadline(upstreamTimeoutMs())
 
   try {
     const upstream = await fetch(target, {
@@ -84,13 +101,17 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
       headers,
       body,
       cache: 'no-store',
+      signal: deadline.signal,
     })
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
     // 流式响应透传（如 SSE 实时推流）：不可调用 .text() 阻塞缓冲，直接透传 body 流
-    if (contentType.includes('text/event-stream')) {
+    if (isStreamingContentType(contentType)) {
+      // 长连接：立刻解除定时器，否则推流会在超时后被 abort 掐断
+      deadline.clear()
       return new Response(upstream.body, {
         status: upstream.status,
         headers: {
+          ...pickResponseHeaders(upstream.headers),
           'content-type': 'text/event-stream; charset=utf-8',
           'cache-control': 'no-cache, no-transform',
           'connection': 'keep-alive',
@@ -98,15 +119,32 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
         },
       })
     }
+
+    const responseHeaders = pickResponseHeaders(upstream.headers)
+
+    // 304/204/205 按 HTTP 规定不能带 body：给 '{}' 会直接抛 TypeError
+    if (isNullBodyStatus(upstream.status)) {
+      return new NextResponse(null, { status: upstream.status, headers: responseHeaders })
+    }
+
+    // 二进制响应按字节透传：走 .text() 会按 UTF-8 解码把内容解码坏
+    if (!isTextContentType(contentType)) {
+      return new NextResponse(await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders })
+    }
+
     const text = await upstream.text()
-    // 透传状态码与内容类型；中枢返回空体时给 {}，避免前端 JSON.parse 炸裂
-    return new NextResponse(text || '{}', {
-      status: upstream.status,
-      headers: { 'content-type': contentType },
-    })
+    // 中枢返回空体时给 {}，避免前端 JSON.parse 炸裂
+    return new NextResponse(text || '{}', { status: upstream.status, headers: responseHeaders })
   } catch (error) {
-    console.error('[hub proxy] upstream unavailable:', error)
-    return NextResponse.json({ error: 'NavHub 中枢不可用' }, { status: 502 })
+    // 超时与"中枢没起来"要能分辨：前者是 504（外部依赖慢），后者是 502（连不上）
+    const timedOut = deadline.signal.aborted
+    console.error('[hub proxy] upstream ' + (timedOut ? 'timeout' : 'unavailable') + ':', error)
+    return NextResponse.json(
+      { error: timedOut ? 'NavHub 中枢响应超时' : 'NavHub 中枢不可用' },
+      { status: timedOut ? 504 : 502, headers: { 'cache-control': 'no-store' } },
+    )
+  } finally {
+    deadline.clear()
   }
 }
 

@@ -168,3 +168,22 @@ export async function purgeExpiredDeletedSites(repo: Repository, olderThanMs: nu
   }
   return count;
 }
+
+export async function reapStaleJobs(repo: Repository, timeoutMs = 15 * 60 * 1000): Promise<number> {
+  const cutoff = Date.now() - timeoutMs;
+  const now = Date.now();
+  const rows = await repo.raw(
+    "SELECT id FROM jobs WHERE status = 'running' AND updated_at < ?",
+    [cutoff]
+  );
+  if (rows.length === 0) return 0;
+  for (const row of rows) {
+    if (row.id) {
+      await repo.run(
+        "UPDATE jobs SET status = 'failed', error = '任务执行超时或 Worker 异常中断', updated_at = ? WHERE id = ? AND status = 'running'",
+        [now, String(row.id)]
+      );
+    }
+  }
+  return rows.length;
+}

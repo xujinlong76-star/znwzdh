@@ -161,6 +161,9 @@ export class JobRunner {
         if (this.enableCron) {
           await this.checkRecurringSchedules().catch(() => undefined);
         }
+        if (typeof this.ctx.repo.reapStaleJobs === "function") {
+          await this.ctx.repo.reapStaleJobs().catch(() => undefined);
+        }
         for (let i = 0; i < this.maxPerTick; i++) {
           const job = await this.ctx.repo.claimNextJob();
           if (!job) break;

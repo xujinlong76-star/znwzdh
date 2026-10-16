@@ -162,4 +162,24 @@ describe("Dashboard Repository & Search Extensions", () => {
     const checkpoint = await repo.checkpointWal("passive");
     expect(checkpoint.ok).toBe(true);
   });
+
+  it("reapStaleJobs 自动回收超时处于 running 状态的僵尸任务", async () => {
+    await repo.run("DELETE FROM jobs");
+    const id = await repo.enqueueJob("zombie_test", { test: true });
+    const claimed = await repo.claimNextJob();
+    expect(claimed?.id).toBe(id);
+    expect(claimed?.status).toBe("running");
+
+    // 伪造更新时间为 20 分钟前
+    const twentyMinsAgo = Date.now() - 20 * 60 * 1000;
+    await repo.run("UPDATE jobs SET updated_at = ? WHERE id = ?", [twentyMinsAgo, id]);
+
+    // 执行超时回收
+    const reaped = await repo.reapStaleJobs(15 * 60 * 1000);
+    expect(reaped).toBe(1);
+
+    const reapedJob = await repo.getJob(id);
+    expect(reapedJob?.status).toBe("failed");
+    expect(reapedJob?.error).toContain("超时");
+  });
 });

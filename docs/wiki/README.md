@@ -1,7 +1,7 @@
 # NavHub Code Wiki
 
 > 结构化代码维基，覆盖项目整体架构、模块职责、关键类与函数、依赖关系与运行方式。
-> 包含 10 个系统性核心章节，全面记录系统架构、核心算法、Bento-Flow DIY 与工程落地。
+> 包含 11 个系统性核心章节，全面记录系统架构、核心算法、Bento-Flow DIY、工程落地与运维手册。
 
 ## 阅读顺序
 
@@ -17,6 +17,7 @@
 | 8 | [08-extensions-scripts-docker.md](./08-extensions-scripts-docker.md) | 浏览器/Raycast 扩展、scripts 工具集、Docker 多 profile 部署、一键推仓脚本 | 运维/集成 |
 | 9 | [09-run-and-test.md](./09-run-and-test.md) | 运行方式：本地开发、Docker、环境变量全表、测试套件、环境坑与排障 | 所有人 |
 | 10 | [10-bento-diy-and-advanced-algorithms.md](./10-bento-diy-and-advanced-algorithms.md) | **Bento-Flow 智能工作台与前沿算法升级**：跨分类拖拽重排、免登 URL-Hash 分享、Discounted-LinUCB、洛伦兹超曲面、0-RTT AST、卡尔曼滤波与元素审查 | 架构/全栈/算法 |
+| 11 | [11-operations.md](./11-operations.md) | 运维手册：发布与回滚流程、on-call runbook、SLO/SLI、SQLite 与 PostgreSQL 备份恢复、数据治理 | 运维/on-call |
 
 ## 一页速览
 

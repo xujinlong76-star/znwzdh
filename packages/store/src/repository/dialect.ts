@@ -270,8 +270,8 @@ export function rowToCollection(row: Record<string, any>): Collection {
  * `operator does not exist: boolean = integer`。
  * 因此布尔值必须**按方言**转换，不能统一转成 0/1。
  */
-export function bindSqlite(params: unknown[]): unknown[] {
-  return params.map((p) => {
+export function bindSqlite(params: unknown[] = []): unknown[] {
+  return (params ?? []).map((p) => {
     if (typeof p === "boolean") return p ? 1 : 0;
     if (p instanceof Float32Array) return Buffer.from(p.buffer, p.byteOffset, p.byteLength);
     return p;

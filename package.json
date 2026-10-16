@@ -27,8 +27,8 @@
     "lint": "pnpm --filter navsphere lint",
     "backup": "node scripts/backup.mjs",
     "prepare": "node scripts/install-git-hooks.mjs",
-    "verify": "node scripts/check-web-overlay.mjs && node scripts/check-extensions.mjs && pnpm -r --filter \"@navhub/*\" exec tsc --noEmit && vitest run",
-    "verify:all": "node scripts/check-web-overlay.mjs && node scripts/check-extensions.mjs && pnpm -r --filter \"@navhub/*\" exec tsc --noEmit && vitest run && pnpm lint && playwright test"
+    "verify": "node scripts/verify.mjs",
+    "verify:all": "node scripts/verify.mjs && pnpm lint && playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

@@ -75,7 +75,7 @@ export async function raw(repo: Repository, sqlText: string, params: unknown[]):
   });
 }
 
-export async function run(repo: Repository, sqlText: string, params: unknown[]): Promise<void> {
+export async function run(repo: Repository, sqlText: string, params: unknown[] = []): Promise<void> {
   if (repo.db.dialect === "sqlite") {
     repo.db.sqlite!.prepare(sqlText).run(...bindSqlite(params));
     return;

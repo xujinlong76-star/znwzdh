@@ -628,6 +628,10 @@ export class Repository {
     return jobsRepo.pruneJobs(this, olderThanDays, statuses);
   }
 
+  async reapStaleJobs(timeoutMs = 15 * 60 * 1000): Promise<number> {
+    return jobsRepo.reapStaleJobs(this, timeoutMs);
+  }
+
 
   /* ------------------------- 系统状态 ------------------------- */
 

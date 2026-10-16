@@ -101,6 +101,14 @@
       "brace-expansion@<2": "1.1.18",
       "brace-expansion@>=2": "2.1.4",
       "nanoid@<4": "3.3.16"
+    },
+    "//allowBuilds": "Docker 里 apps/web 是独立项目（读不到仓库根的 pnpm-workspace.yaml），pnpm 11 默认忽略全部安装脚本并直接报错退出，因此这里显式声明。esbuild/sharp 需要平台二进制，msw/workerd 是测试与边缘运行时依赖、不需要。",
+    "allowBuilds": {
+      "esbuild": true,
+      "sharp": true,
+      "unrs-resolver": true,
+      "msw": false,
+      "workerd": false
     }
   },
   "browser": {

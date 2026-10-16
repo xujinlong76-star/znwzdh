@@ -130,10 +130,20 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `NAVHUB_AUTH_REQUIRED` | `false` | **公开部署时开启**；开启后管理面必须带 Bearer token，终端功能（搜索/事件/收藏/投稿）仍匿名可用 |
+| `NAVHUB_AUTH_REQUIRED` | `false` | **公开部署时开启**；开启后管理面必须带 Bearer token，终端功能（搜索/事件/收藏/投稿）仍匿名可用。**生产 + 公网 `NAVHUB_PUBLIC_URL` + 本项为 false → 启动即失败**（fail-closed） |
 | `NAVHUB_BOOTSTRAP_TOKEN` | 空 | **一次性引导 token**：启用鉴权后用它创建第一个库内 token，用完删除并重启 |
+| `NAVHUB_ALLOW_INSECURE_PUBLIC` | `0` | 逃生阀：确认公网不可达（内网/NAS）时设 `1` 退回"只警告"，生产公网部署不建议使用 |
 
 引导流程与路由分级详见 [02-api.md §2.3](./02-api.md)。
+
+### 5.2.1 后台任务告警
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `NAVHUB_ALERT_WEBHOOK` | 空 | 任务重试耗尽时 POST 一条 JSON（飞书/钉钉/自建机器人可直连）；留空只落 `console.error` |
+| `NAVHUB_ALERT_TIMEOUT_MS` | `5000` | 单次投递超时，内部钳到 1s~30s；投递失败不影响任务流 |
+
+告警**只在重试耗尽时触发一次**（`MAX_JOB_ATTEMPTS=3`），不会每次失败都喊。
 
 ### 5.3 数据库
 

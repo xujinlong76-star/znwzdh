@@ -66,6 +66,10 @@ export interface AppConfig {
     /** 是否允许"永不过期"凭据；false 时显式 expiresAt=null 被拒绝 */
     allowPermanentTokens: boolean;
   };
+  /** 任务失败告警 webhook URL；null = 不投递（只打日志） */
+  alertWebhook: string | null;
+  /** 告警 webhook 投递超时（毫秒，内部会钳到 1s~30s） */
+  alertTimeoutMs: number;
 }
 
 function env(key: string, fallback?: string): string {
@@ -161,6 +165,16 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
        */
       maxActiveTokens: num("NAVHUB_TOKEN_MAX_ACTIVE", 50),
     },
+    /**
+     * 任务告警 webhook（可选）。
+     *
+     * 后台任务重试耗尽时会把「哪类任务 / 重试几次 / 最后错误」POST 到这里
+     * （飞书、钉钉、自建机器人都能接）。留空则只落 console.error，行为与历史一致。
+     * 投递是 fire-and-forget 且永不抛错——告警失败绝不拖垮任务流。
+     */
+    alertWebhook: process.env.NAVHUB_ALERT_WEBHOOK?.trim() || null,
+    /** 单次 webhook 投递超时；clampWebhookTimeout 会钳到 1s~30s */
+    alertTimeoutMs: num("NAVHUB_ALERT_TIMEOUT_MS", 5_000),
   };
 
   if (mode === "standard" && !base.databaseUrl && !overrides.databaseUrl) {

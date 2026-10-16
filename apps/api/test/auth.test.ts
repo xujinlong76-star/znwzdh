@@ -553,6 +553,26 @@ describe("生产配置硬校验与批量查询回归", () => {
     }
   });
 
+  it("NAVHUB_ALERT_WEBHOOK 缺省不投递，配置后去空格透传且超时可配", () => {
+    const prevWebhook = process.env.NAVHUB_ALERT_WEBHOOK;
+    const prevTimeout = process.env.NAVHUB_ALERT_TIMEOUT_MS;
+    try {
+      delete process.env.NAVHUB_ALERT_WEBHOOK;
+      delete process.env.NAVHUB_ALERT_TIMEOUT_MS;
+      expect(loadConfig().alertWebhook).toBeNull();
+      expect(loadConfig().alertTimeoutMs).toBe(5000);
+
+      process.env.NAVHUB_ALERT_WEBHOOK = "  https://hooks.example.com/abc  ";
+      process.env.NAVHUB_ALERT_TIMEOUT_MS = "1500";
+      const cfg = loadConfig();
+      expect(cfg.alertWebhook).toBe("https://hooks.example.com/abc");
+      expect(cfg.alertTimeoutMs).toBe(1500);
+    } finally {
+      if (prevWebhook === undefined) delete process.env.NAVHUB_ALERT_WEBHOOK; else process.env.NAVHUB_ALERT_WEBHOOK = prevWebhook;
+      if (prevTimeout === undefined) delete process.env.NAVHUB_ALERT_TIMEOUT_MS; else process.env.NAVHUB_ALERT_TIMEOUT_MS = prevTimeout;
+    }
+  });
+
   it("Repository.getSitesByIds 批量查询返回完整站点与标签且忽略空数组", async () => {
     expect((await openCtx.repo.getSitesByIds([])).size).toBe(0);
     const s1 = await openCtx.repo.createSite({ url: "https://batch1.example.com", title: "Batch1", categoryId: "cat-ai", tags: ["t1"] });

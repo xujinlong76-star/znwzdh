@@ -4,6 +4,7 @@
 import {
   GetTrendingInput,
   ListCategoriesInput,
+  ListCollectionsInput,
   ListTagsInput,
   requireScope,
   type ToolContext,
@@ -55,5 +56,17 @@ export const catalogHandlers = {
     const input = ListTagsInput.parse(args ?? {});
     const all = await ctx.repo.listTagsWithCounts(input.minCount);
     return ok({ count: Math.min(all.length, input.limit), tags: all.slice(0, input.limit) });
+  },
+
+  /**
+   * 精选专题（合集）。管理端能 CRUD，但此前没有任何 Agent 侧的读入口 ——
+   * 「有哪些专题推荐」只能靠人去看网页。默认只返回启用中的专题。
+   */
+  async list_collections(deps: HandlerDeps, args: unknown, tc: ToolContext) {
+    const { ctx } = deps;
+    requireScope(tc, "read");
+    const input = ListCollectionsInput.parse(args ?? {});
+    const collections = await ctx.repo.listCollections(!input.all);
+    return ok({ count: collections.length, collections });
   },
 } satisfies Record<string, Handler>;

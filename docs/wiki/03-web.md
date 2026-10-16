@@ -264,6 +264,6 @@ apps/web-overlay    ← NavHub 自有文件的唯一事实源（自研部分）
 
 ## 7. 依赖概览
 
-**运行时**：`next 15.5.21`、`react 18.2.0`、Radix UI 全家桶（25+ 包）、`@tanstack/react-query` + `react-table`、`@hello-pangea/dnd`、`next-auth 5.0.0-beta.32` + `iron-session`、`swr`、`react-hook-form` + `@hookform/resolvers`、`zod 3.25.76`、`recharts`、`lucide-react`、`cmdk`、`monaco-editor`、`@octokit/rest`、`tailwindcss 4.1.12`。
+**运行时**：`next 15.5.28`、`react 18.2.0`、Radix UI 全家桶（25+ 包）、`@tanstack/react-query` + `react-table`、`@hello-pangea/dnd`、`next-auth 5.0.0-beta.32` + `iron-session`、`swr`、`react-hook-form` + `@hookform/resolvers`、`zod 3.25.76`、`recharts`、`lucide-react`、`cmdk`、`monaco-editor`、`@octokit/rest`、`tailwindcss 4.1.12`。
 
 **不依赖** `@navhub/*` —— 通过 HTTP 解耦（唯一例外是 sqlite 直连模式，已被显式拒绝，见 §1.2）。

@@ -233,7 +233,7 @@ MCP create_site (scope=write)
 | 运行时 | Node.js | ≥ 20（Docker 用 22） | `--experimental-strip-types` 直跑 TS |
 | 包管理 | pnpm workspace | — | `allowBuilds` 白名单 + zod v3 统一 override |
 | 后端框架 | Fastify | 5.12.5 | + `@fastify/cors` + `@fastify/rate-limit` |
-| 前端框架 | Next.js (App Router) | 15.5.21 | React 18.2，vendored NavSphere |
+| 前端框架 | Next.js (App Router) | 15.5.28 | React 18.2，vendored NavSphere |
 | 前端 UI | Radix UI + Tailwind CSS 4 | — | shadcn 风格组件集 |
 | ORM | Drizzle ORM | 0.45.4 | schema 双驱动共享（`drizzle-kit` 生成） |
 | 数据库 | better-sqlite3 / pg | 13.0.3 / 8.23.1 | lite / standard |
@@ -242,11 +242,11 @@ MCP create_site (scope=write)
 | 拼音 | pinyin-pro | 3.29.5 | 全拼 + 首字母 |
 | 校验 | zod | ^3.25.76 | 全仓统一 v3 |
 | Agent 协议 | @modelcontextprotocol/sdk | 1.32.1 | stdio + HTTP 双传输 |
-| 测试 | vitest | 3.2.4 | `pool: "forks"`，超时 30s/60s |
+| 测试 | vitest | 4.1.11 | `pool: "forks"`，超时 30s/60s |
 
 ## 9. 质量保障
 
-- **测试**：381 个测试（+ 10 个 PostgreSQL 跨方言用例，设 `NAVHUB_TEST_DATABASE_URL` 时运行，否则 skip），`pnpm test`（套件清单见 [09-run-and-test.md](./09-run-and-test.md)）
+- **测试**：653 个测试（+ 10 个 PostgreSQL 跨方言用例，设 `NAVHUB_TEST_DATABASE_URL` 时运行，否则 skip），`pnpm test`（套件清单见 [09-run-and-test.md](./09-run-and-test.md)）
 - **类型检查**：`pnpm typecheck`（`packages/*` + `apps/api` 严格 tsc；`apps/web` 因上游依赖组合问题在 next.config 中忽略）
 - **验收**：PostgreSQL 分档验证 17/17 通过，见 [docs/acceptance-report.md](../acceptance-report.md)
 - **回归**：D1 缺陷（navigation.json 全量对齐误删）有专门回归测试与脚本 `scripts/d1-regression.mjs`

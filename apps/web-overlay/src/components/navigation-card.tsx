@@ -11,7 +11,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Eye, Star, Zap, Pin } from 'lucide-react'
+import { Eye, Star, Zap, Pin, Clock } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { useToast } from "@/components/ui/use-toast"
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
@@ -142,6 +142,20 @@ export function NavigationCard({
                       {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
                     </span>
                   )}
+                  {item.health?.ok === false && (
+                    <span
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        onPeek?.(item)
+                      }}
+                      className="inline-flex items-center gap-0.5 text-[9px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
+                      title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
+                    >
+                      <Clock className="w-2.5 h-2.5 text-amber-500" />
+                      <span>快照自愈</span>
+                    </span>
+                  )}
                 </div>
               </Link>
 
@@ -247,6 +261,20 @@ export function NavigationCard({
                           <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
                             <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                             {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
+                          </span>
+                        )}
+                        {item.health?.ok === false && (
+                          <span
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              onPeek?.(item)
+                            }}
+                            className="inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
+                            title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
+                          >
+                            <Clock className="w-2.5 h-2.5 text-amber-500" />
+                            <span>快照自愈</span>
                           </span>
                         )}
                       </div>
@@ -392,6 +420,20 @@ export function NavigationCard({
                         <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
                           <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500" />
                           {(item.liveMetrics.githubStars / 1000).toFixed(0)}k
+                        </span>
+                      )}
+                      {item.health?.ok === false && (
+                        <span
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            onPeek?.(item)
+                          }}
+                          className="inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
+                          title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
+                        >
+                          <Clock className="w-2.5 h-2.5 text-amber-500" />
+                          <span>快照自愈</span>
                         </span>
                       )}
                     </div>

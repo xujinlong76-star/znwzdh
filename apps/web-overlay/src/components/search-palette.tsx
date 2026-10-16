@@ -306,6 +306,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 <div className="flex flex-wrap gap-1.5">
                   {[
                     { label: '2^10 * 8 (计算器)', q: '2^10 * 8' },
+                    { label: '/^[a-z0-9]+$/i (正则)', q: '/^[a-z0-9_-]+$/i' },
+                    { label: '^1.2.0 vs 1.4.0 (版本)', q: 'semver: ^1.2.0 vs 1.4.0' },
+                    { label: '418 / 502 (状态码)', q: '418' },
                     { label: '#3b82f6 (色彩空间)', q: '#3b82f6' },
                     { label: 'now (时间戳)', q: 'now' },
                     { label: '@b64 Hello (编解码)', q: '@b64 Hello' },
@@ -437,6 +440,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           </span>
                         )}
                         <div className="flex items-center gap-1 flex-wrap">
+                          {(site.status === 'broken' || site.health?.ok === false) && (
+                            <span
+                              className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium border border-amber-500/20 inline-flex items-center gap-1"
+                              title="检测到站点当前可能无法直接访问，已就绪 Wayback 时光机自愈镜像"
+                            >
+                              <Clock className="w-2.5 h-2.5 text-amber-500" />
+                              <span>快照自愈</span>
+                            </span>
+                          )}
                           {channels.map((c) => (
                             <span key={c} className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
                               {CHANNEL_LABELS[c] ?? c}

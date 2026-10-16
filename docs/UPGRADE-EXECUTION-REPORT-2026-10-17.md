@@ -48,7 +48,7 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 | 12 | 死依赖清理 + 版本对齐 | ✅ | 删 `cf:build` / `cf:deploy` 脚本与 `wrangler` 依赖（部署形态收敛为 Docker）；`next 15.5.21 → 15.5.28`、`@types/node → 22.18.13`；`iron-session` / `@tanstack/react-query` 由并行会话移除；`drizzle-orm` / `drizzle-kit` **保留**（见 §5） |
 | 13 | Docker 瘦身 | ✅（api） | `Dockerfile.api` 改多阶段：编译链（python3/make/g++）只留在 deps 阶段，运行镜像仅 ca-certificates + curl；`--filter "@navhub/api..."` 不装前端依赖 |
 | 14 | 部署形态收敛 | ✅ | Cloudflare 残留（cf 脚本 / wrangler）已删；`Dockerfile.api` 注释说明容器内 overrides 校验冲突 |
-| 15 | Dockerfile.web 依赖层缓存 | ⏸ | 未做：web 镜像的清单来自上游 tarball + overlay 覆盖，先拷清单再拷源码会破坏 frozen 安装（见 §5 已知问题），需要单独设计 |
+| 15 | Dockerfile.web 依赖层缓存 | ✅（后续修订） | 原判断（"web 镜像的清单来自上游 tarball + overlay 覆盖，先拷清单再拷源码会破坏 frozen 安装"）已被推翻：根因是镜像布局，不是 pnpm。前端在镜像里改成 workspace 成员 `apps/web` 后，依赖层只拷清单就能做 frozen 安装，改自研源码也不会让该层失效（详见 §5.2 修订说明） |
 | 16 | 前端拆分 / loading / 组件测试 | ⏸ | 属中期（建议 22），见 §4 |
 
 ## 四、中期项 —— 已落地与待立项
@@ -74,7 +74,7 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 
 1. **本机 pnpm 链接层损坏（未根治）**：`pnpm install` 会判定 "Already up to date" 但 importer 链接大量缺失（本次曾只剩 8 个）。删除 state 文件、`.modules.yaml`、importer `node_modules`、`--force` 均无效；最终用脚本按 `package.json` 索引重建约 3100 条 junction 恢复。
    **再跑 `pnpm install` 会清掉这些手工链接**——建议在停机窗口做一次干净重装（并确认 better-sqlite3 / onnxruntime 的原生产物可用）。
-2. **web 镜像在容器里不能用 `--frozen-lockfile`**：只拷后端清单时 pnpm 重算的 overrides 与仓库 lockfile 不一致（`ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`）。`Dockerfile.api` 因此临时改用 `--no-frozen-lockfile`（注释已记录），可复现性下降，需专项修复（前端移出 workspace 或改用单项目 lockfile）。
+2. **【已修复·后续修订】web 镜像现在也用 `--frozen-lockfile`**：原文描述的"只拷后端清单时 pnpm 重算的 overrides 与仓库 lockfile 不一致（`ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`）"是 `Dockerfile.api` 历史上的临时方案——该镜像随后已恢复 frozen 安装（overrides 收敛进根 `pnpm-workspace.yaml`，无需在镜像里重算）。web 镜像的根因则是**布局**：当时 `/app/web` 在镜像里是独立项目，既读不到仓库 workspace 配置、也读不到仓库 lockfile，只能退回上游 tarball 自带的那份（与覆盖层清单永不匹配）。现在两个镜像都以仓库 `pnpm-lock.yaml` 为准做 frozen 安装：前端在镜像里是 workspace 成员 `/app/apps/web`，依赖层只拷清单后跑 `pnpm install --frozen-lockfile --filter "./apps/web"`（可复现、可缓存），上游 tarball 在其后解包、覆盖层再覆盖其上，保证"清单先、源码后"。原"需专项修复"的两种备选（前端移出 workspace / 单项目 lockfile）都不需要。
 3. **Docker 镜像本机未能完整导出**：web 镜像的依赖安装与 `next build` 全部通过、api 镜像的依赖安装与多阶段拷贝通过，但两次都在最后的镜像导出阶段遇到 Docker Desktop 的 `rpc error: Unavailable`（本机 daemon 问题，非 Dockerfile）。CI 的 `docker-smoke` job 会完整验证。
 4. **`apps/web/src/lib/session.ts` 被覆盖为空模块**：上游该文件 import 已移除的 `iron-session` 且全仓无引用，vendor 后会让 tsc 失败；覆盖层置空是唯一能在 vendor 后生效的手段，已在文件头注释说明。
 5. **`drizzle-orm` / `drizzle-kit` 仍在 `packages/store`**：零调用但 `db:generate` 脚本引用，按建议书"先减法后加法"，本轮只做已确认无引用的部分。

@@ -41,9 +41,25 @@ const providers: NextAuthConfig['providers'] = [
       const authRequired =
         process.env.NAVHUB_AUTH_REQUIRED === 'true' || process.env.NAVHUB_AUTH_REQUIRED === '1'
 
+      // 不安全登录通道（快捷 bypass / 默认口令）的生产总闸。
+      // 历史行为：这两条通道只判 isDev 或 !authRequired——公开部署
+      // （NAVHUB_AUTH_REQUIRED 默认 false）时任何人可登录后台（方案 P0-2）。
+      // 现在：生产环境一律关闭，除非运维显式设置
+      // NAVHUB_ALLOW_DEFAULT_PASSWORD=1（启动日志会打印醒目警告，责任自负）。
+      const allowInsecureLogin =
+        isDev ||
+        process.env.NAVHUB_ALLOW_DEFAULT_PASSWORD === '1' ||
+        process.env.NAVHUB_ALLOW_DEFAULT_PASSWORD === 'true'
+      if (!isDev && allowInsecureLogin) {
+        console.warn(
+          '[navhub][安全警告] 生产环境开启了不安全登录通道（NAVHUB_ALLOW_DEFAULT_PASSWORD）：' +
+            '快捷登录与默认口令可用。请尽快配置 NAVHUB_ADMIN_PASSWORD 并移除该开关。'
+        )
+      }
+
       // 1. 本地单机 / 开发调试快速登录通道
       if (credentials?.bypass === 'true') {
-        if (isDev || !authRequired) {
+        if (allowInsecureLogin) {
           return {
             id: 'admin',
             name: '本地管理员',
@@ -87,17 +103,21 @@ const providers: NextAuthConfig['providers'] = [
         }
       }
 
-      // 4. 未显式配置生产密码时的开箱即用支持：
-      //    在本地开发或非强制鉴权模式下，支持默认口令 (admin / admin123 / navhub / 123456)
+      // 4. 默认口令开箱即用支持——同样受 allowInsecureLogin 总闸管辖：
+      //    未显式配置生产密码时接受 (admin / admin123 / navhub / 123456)。
+      //    生产环境默认拒绝（见上方总闸注释）；空口令快捷登录仍只限
+      //    isDev 或未开启鉴权时（原语义保留）。
       if (!envAdminPassword && validTokens.length === 0) {
-        const allowedDefaults = ['admin', 'admin123', 'navhub', '123456']
-        if (allowedDefaults.includes(rawPassword) || (!rawPassword && (isDev || !authRequired))) {
-          return {
-            id: 'admin',
-            name: username || 'NavHub 管理员',
-            email: 'admin@navhub.local',
-            image: '/assets/images/alogo.webp',
-            role: 'admin',
+        if (allowInsecureLogin) {
+          const allowedDefaults = ['admin', 'admin123', 'navhub', '123456']
+          if (allowedDefaults.includes(rawPassword) || (!rawPassword && (isDev || !authRequired))) {
+            return {
+              id: 'admin',
+              name: username || 'NavHub 管理员',
+              email: 'admin@navhub.local',
+              image: '/assets/images/alogo.webp',
+              role: 'admin',
+            }
           }
         }
       }

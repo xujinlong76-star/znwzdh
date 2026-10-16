@@ -149,7 +149,8 @@ export async function categorySiteDistribution(repo: Repository, limit = 10): Pr
   const total = Number(totalRow?.c ?? 0);
 
   const rows = await repo.raw(
-    "SELECT c.id, c.title, c.icon, COUNT(s.id) AS site_count " +
+    "SELECT c.id, c.title, c.icon, COUNT(s.id) AS site_count, " +
+    "SUM(CASE WHEN s.status = 'broken' THEN 1 ELSE 0 END) AS broken_count " +
     "FROM categories c " +
     "LEFT JOIN sites s ON (s.category_id = c.id OR s.sub_category_id = c.id) AND s.deleted_at IS NULL " +
     "WHERE c.parent_id IS NULL " +
@@ -159,6 +160,7 @@ export async function categorySiteDistribution(repo: Repository, limit = 10): Pr
 
   return rows.map((r) => {
     const siteCount = Number(r.site_count ?? 0);
+    const brokenCount = Number(r.broken_count ?? 0);
     const percentage = total > 0 ? Math.round((siteCount / total) * 1000) / 10 : 0;
     return {
       id: String(r.id),
@@ -166,6 +168,7 @@ export async function categorySiteDistribution(repo: Repository, limit = 10): Pr
       icon: r.icon ? String(r.icon) : null,
       siteCount,
       percentage,
+      brokenCount,
     };
   });
 }

@@ -160,98 +160,106 @@ function isSnapshotManaged(source: string | null | undefined): boolean {
  * 全量对齐的删除语义有**来源过滤**（D1 缺陷的修复），见 isSnapshotManaged。
  */
 export async function writeNavigationData(ctx: AppContext, data: NsNavigationData): Promise<{ categories: number; sites: number }> {
-  const input = Array.isArray(data?.navigationItems) ? data.navigationItems : [];
-  let categoryCount = 0;
-  let siteCount = 0;
+  return await ctx.repo.withTransaction(async () => {
+    const input = Array.isArray(data?.navigationItems) ? data.navigationItems : [];
+    let categoryCount = 0;
+    let siteCount = 0;
 
-  const existingCats = await ctx.repo.listCategories();
-  const existingSites = await ctx.repo.listSites();
-  const seenCategoryIds = new Set<string>();
-  const seenSiteIds = new Set<string>();
+    const existingCats = await ctx.repo.listCategories();
+    const existingSites = await ctx.repo.listSites();
+    // O(1) 索引代替线性 find：原来是"每个快照条目扫一遍全表"= O(n²)，
+    // 数千站点的大库保存一次要做上百万次比较（实测是最主要的保存耗时来源）。
+    const catIndex = new Map(existingCats.map((c) => [c.id, c]));
+    const siteIndex = new Map(existingSites.map((s) => [s.id, s]));
+    const seenCategoryIds = new Set<string>();
+    const seenSiteIds = new Set<string>();
 
-  let catSort = 0;
-  for (const top of input) {
-    seenCategoryIds.add(top.id);
-    const existing = existingCats.find((c) => c.id === top.id);
-    if (existing) {
-      await ctx.repo.updateCategory(top.id, {
-        title: top.title,
-        icon: top.icon ?? null,
-        description: top.description ?? null,
-        enabled: top.enabled !== false,
-        sort: catSort,
-      });
-    } else {
-      await ctx.repo.createCategory({
-        id: top.id, title: top.title, icon: top.icon ?? null,
-        description: top.description ?? null, sort: catSort, source: "navsphere",
-      });
-    }
-    categoryCount++;
-    catSort++;
-
-    let itemSort = 0;
-    for (const item of top.items ?? []) {
-      seenSiteIds.add(item.id);
-      await upsertSite(ctx, item, top.id, itemSort++, existingSites);
-      siteCount++;
-    }
-
-    for (const sub of top.subCategories ?? []) {
-      seenCategoryIds.add(sub.id);
-      const subExisting = existingCats.find((c) => c.id === sub.id);
-      if (subExisting) {
-        await ctx.repo.updateCategory(sub.id, {
-          title: sub.title, icon: sub.icon ?? null,
-          description: sub.description ?? null, enabled: sub.enabled !== false, sort: catSort,
+    let catSort = 0;
+    for (const top of input) {
+      seenCategoryIds.add(top.id);
+      const existing = catIndex.get(top.id);
+      if (existing) {
+        await ctx.repo.updateCategory(top.id, {
+          title: top.title,
+          icon: top.icon ?? null,
+          description: top.description ?? null,
+          enabled: top.enabled !== false,
+          sort: catSort,
         });
       } else {
         await ctx.repo.createCategory({
-          id: sub.id, title: sub.title, icon: sub.icon ?? null,
-          description: sub.description ?? null, parentId: top.id, sort: catSort, source: "navsphere",
+          id: top.id, title: top.title, icon: top.icon ?? null,
+          description: top.description ?? null, sort: catSort, source: "navsphere",
         });
       }
       categoryCount++;
       catSort++;
 
-      itemSort = 0;
-      for (const item of sub.items ?? []) {
+      let itemSort = 0;
+      for (const item of top.items ?? []) {
         seenSiteIds.add(item.id);
-        await upsertSite(ctx, item, sub.id, itemSort++, existingSites);
+        await upsertSite(ctx, item, top.id, itemSort++, siteIndex);
         siteCount++;
       }
+
+      for (const sub of top.subCategories ?? []) {
+        seenCategoryIds.add(sub.id);
+        const subExisting = catIndex.get(sub.id);
+        if (subExisting) {
+          await ctx.repo.updateCategory(sub.id, {
+            title: sub.title, icon: sub.icon ?? null,
+            description: sub.description ?? null, enabled: sub.enabled !== false, sort: catSort,
+          });
+        } else {
+          await ctx.repo.createCategory({
+            id: sub.id, title: sub.title, icon: sub.icon ?? null,
+            description: sub.description ?? null, parentId: top.id, sort: catSort, source: "navsphere",
+          });
+        }
+        categoryCount++;
+        catSort++;
+
+        itemSort = 0;
+        for (const item of sub.items ?? []) {
+          seenSiteIds.add(item.id);
+          await upsertSite(ctx, item, sub.id, itemSort++, siteIndex);
+          siteCount++;
+        }
+      }
     }
-  }
 
-  // 快照语义：本次未出现的「前端托管」站点/类目视为被删除。
-  // 这是"全量对齐"必须付的代价，也是它比 diff 更可靠的原因。
-  // 但删除范围被 source 严格限界（D1 缺陷修复）：经 API/MCP/AI/投稿创建的
-  // 记录即使不在快照里也保留——否则用 MCP 加一个站点、前端后台再保存一次
-  // 导航，那个站点就被静默删除了（真实的数据丢失）。
-  const removedSiteIds = existingSites
-    .filter((s) => isSnapshotManaged(s.source) && !seenSiteIds.has(s.id))
-    .map((s) => s.id);
-  for (const id of removedSiteIds) {
-    await ctx.repo.deleteSite(id);
-  }
-  if (removedSiteIds.length > 0) {
-    await ctx.vectors.remove(removedSiteIds).catch(() => undefined);
-  }
-  for (const c of existingCats) {
-    if (isSnapshotManaged(c.source) && !seenCategoryIds.has(c.id)) await ctx.repo.deleteCategory(c.id);
-  }
+    // 快照语义：本次未出现的「前端托管」站点/类目视为被删除。
+    // 这是"全量对齐"必须付的代价，也是它比 diff 更可靠的原因。
+    // 但删除范围被 source 严格限界（D1 缺陷修复）：经 API/MCP/AI/投稿创建的
+    // 记录即使不在快照里也保留——否则用 MCP 加一个站点、前端后台再保存一次
+    // 导航，那个站点就被静默删除了（真实的数据丢失）。
+    const removedSiteIds = existingSites
+      .filter((s) => isSnapshotManaged(s.source) && !seenSiteIds.has(s.id))
+      .map((s) => s.id);
+    for (const id of removedSiteIds) {
+      await ctx.repo.deleteSite(id);
+    }
+    if (removedSiteIds.length > 0) {
+      await ctx.vectors.remove(removedSiteIds).catch(() => undefined);
+    }
+    for (const c of existingCats) {
+      if (isSnapshotManaged(c.source) && !seenCategoryIds.has(c.id)) await ctx.repo.deleteCategory(c.id);
+    }
 
-  return { categories: categoryCount, sites: siteCount };
+    return { categories: categoryCount, sites: siteCount };
+  });
 }
+
+type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
 
 async function upsertSite(
   ctx: AppContext,
   item: NsItem,
   categoryId: string,
   sort: number,
-  existing: Awaited<ReturnType<AppContext["repo"]["listSites"]>>,
+  existing: Map<string, SiteRow>,
 ): Promise<void> {
-  const found = existing.find((s) => s.id === item.id);
+  const found = existing.get(item.id);
   const title = item.title ?? item.href;
   const description = item.description ?? null;
   const resolvedIcon = item.icon || resolveSiteIcon(item.href, item.title);
@@ -260,7 +268,10 @@ async function upsertSite(
       url: item.href, title, description, categoryId,
       iconKey: resolvedIcon || null, enabled: item.enabled !== false, sort,
     });
-    await ctx.repo.setSiteTags(item.id, found.tags);
+    // 这里原本还会 setSiteTags(item.id, found.tags)：把刚刚读出来的标签原样写回，
+    // 即 DELETE 全部再逐条 INSERT 同一个集合——语义上是 no-op，却是每站点 1+2n 次 SQL
+    // 的纯浪费（setSiteTags 内部还逐标签往返 upsertTag）。快照语义只托管
+    // 站点主字段，标签由其它通道（后台/MCP）维护，故直接跳过；行为等价且快一个量级。
   } else {
     // 保持 NavSphere 传下来的 id，避免前端接下来的更新请求丢失目标
     await ctx.repo.createSiteWithId({

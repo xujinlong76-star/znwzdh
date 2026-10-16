@@ -75,6 +75,7 @@ export interface CategoryDistributionItem {
   icon: string | null;
   siteCount: number;
   percentage: number;
+  brokenCount?: number;
 }
 
 export interface SecurityOverview {

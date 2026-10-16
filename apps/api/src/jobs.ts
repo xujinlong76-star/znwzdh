@@ -18,7 +18,10 @@ import { EventEmitter } from "node:events";
 import { enrichUrl } from "@navhub/ai";
 import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol } from "@navhub/core";
 import type { AppContext } from "./context.ts";
-import { indexSite } from "./index-site.ts";
+import { indexSite, indexSitesBatch } from "./index-site.ts";
+
+/** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
+type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
 
 export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash";
 
@@ -374,7 +377,7 @@ export class JobRunner {
   private async patrolTargets(limit: number) {
     const poolLimit = Math.min(2000, Math.max(limit, limit * 4));
     const pool = await this.ctx.repo.listSites({ limit: poolLimit });
-    const alive = pool.filter((s): s is NonNullable<typeof s> => Boolean(s));
+    const alive: SiteRow[] = pool.filter((s): s is SiteRow => Boolean(s));
     if (alive.length === 0) return [];
 
     const plan = planPatrol(
@@ -399,8 +402,10 @@ export class JobRunner {
   private async runHealthCheck(payload: { siteId?: string; limit?: number }): Promise<void> {
     const { guardedFetch } = await import("@navhub/ai");
     const limit = payload.limit ?? 50;
-    const found = payload.siteId ? [await this.ctx.repo.getSite(payload.siteId)] : await this.patrolTargets(limit);
-    const targets = found.filter((s): s is NonNullable<typeof s> => Boolean(s));
+    const found: Array<SiteRow | null> = payload.siteId
+      ? [await this.ctx.repo.getSite(payload.siteId)]
+      : await this.patrolTargets(limit);
+    const targets = found.filter((s): s is SiteRow => Boolean(s));
     let ok = 0;
     for (const site of targets) {
       const t0 = Date.now();
@@ -473,10 +478,10 @@ export class JobRunner {
   private async runRecomputeRank(): Promise<void> {
     const now = Date.now();
     const since7d = now - 7 * 86_400_000;
-    const [clicks, favorites, sites] = await Promise.all([
+    const sites: SiteRow[] = await this.ctx.repo.listSites();
+    const [clicks, favorites] = await Promise.all([
       this.ctx.repo.clickCountsSince(since7d),
       this.ctx.repo.favoriteCountsSince(since7d),
-      this.ctx.repo.listSites(),
     ]);
     const scores = sites.map((s) => ({
       id: s.id,
@@ -492,21 +497,39 @@ export class JobRunner {
 
   /** 重建索引：siteId 指定单个；否则全站。vectors=false 只重建拼音/FTS（快） */
   private async runReindex(payload: { siteId?: string; vectors?: boolean }): Promise<void> {
-    const found = payload.siteId ? [await this.ctx.repo.getSite(payload.siteId)] : await this.ctx.repo.listSites();
-    const sites = found.filter((s): s is NonNullable<typeof s> => Boolean(s));
-    let count = 0;
-    for (const site of sites) {
-      // updateSite 会用当前标题/描述/标签重算 fts_tokens 与拼音（写入期预计算）
-      await this.ctx.repo.updateSite(site.id, {
-        title: site.title,
-        description: site.description ?? null,
+    // 显式标注：getSite/listSites 的返回在重构期间可能退化为 any，
+    // 不标注会让后面的 filter/map 参数变成隐式 any（strict 下直接报错）。
+    type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
+    const found: Array<SiteRow | null> = payload.siteId
+      ? [await this.ctx.repo.getSite(payload.siteId)]
+      : await this.ctx.repo.listSites();
+    const sites: SiteRow[] = found.filter((s): s is SiteRow => Boolean(s));
+
+    const BATCH_SIZE = 32;
+    for (let i = 0; i < sites.length; i += BATCH_SIZE) {
+      const chunk = sites.slice(i, i + BATCH_SIZE);
+      await this.ctx.repo.withTransaction(async () => {
+        for (const site of chunk) {
+          // updateSite 会用当前标题/描述/标签重算 fts_tokens 与拼音（写入期预计算）
+          await this.ctx.repo.updateSite(site.id, {
+            title: site.title,
+            description: site.description ?? null,
+          });
+        }
       });
       if (payload.vectors !== false) {
-        await indexSite(this.ctx, site.id, site.title, site.description ?? null, site.url);
+        await indexSitesBatch(
+          this.ctx,
+          chunk.map((s) => ({
+            id: s.id,
+            title: s.title,
+            description: s.description ?? null,
+            url: s.url,
+          }))
+        );
       }
-      count++;
     }
-    await this.ctx.repo.recordEvent("reindex", { meta: { sites: count, vectors: payload.vectors !== false } }).catch(() => undefined);
+    await this.ctx.repo.recordEvent("reindex", { meta: { sites: sites.length, vectors: payload.vectors !== false } }).catch(() => undefined);
   }
 
   /** AI 自动自愈：对 broken/失效站点执行 Wayback 归档解析与同图谱健康替代推荐 */

@@ -182,17 +182,38 @@ export default function AdminTokensPage() {
 
   const handleCreateToken = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newName.trim()) {
+    // 前置校验与 API 的 zod schema（min(1).max(64)）对齐：
+    // 名称问题在本地就拦掉，不必绕一趟网络才收到 400
+    const name = newName.trim()
+    if (!name) {
       toast({ title: '请输入 Token 名称', variant: 'destructive' })
       return
     }
+    if (name.length > 64) {
+      toast({ title: '名称过长', description: 'Token 名称不能超过 64 个字符。', variant: 'destructive' })
+      return
+    }
+    const days = Number(expiresDays)
+    if (!Number.isFinite(days) || days <= 0) {
+      toast({ title: '有效期无效', description: '请选择有效的有效期（本实例禁止签发长期凭据）。', variant: 'destructive' })
+      return
+    }
+    // 同名预检（服务端仍是权威）：利用已加载列表即时反馈，省一趟往返。
+    // 已吊销 / 已删除的凭据不占用名称，与服务端 findActiveNameClash 语义一致。
+    if (tokens.some((t) => t.revokedAt === null && t.name === name)) {
+      toast({
+        title: '名称已存在',
+        description: `已存在未吊销的同名凭据「${name}」，请换个名称，或先吊销旧凭据。`,
+        variant: 'destructive',
+      })
+      return
+    }
     try {
-      const days = Number(expiresDays)
       const res = await hubSend<TokenWithPlaintext>('/api/tokens', 'POST', {
-        name: newName.trim(),
+        name,
         // 只发最高那级：API 侧 admin 已隐含 write/read，不需要重复列举
         scopes: newScope,
-        expiresAt: days > 0 ? Date.now() + days * 86_400_000 : null,
+        expiresAt: Date.now() + days * 86_400_000,
       })
       setPlainResult(res)
       setCopied(false)
@@ -222,19 +243,25 @@ export default function AdminTokensPage() {
 
   const handleSaveEdit = async () => {
     if (!editing) return
-    if (!editName.trim()) {
+    // 与创建表单同一套长度规则（API zod: min(1).max(64)）
+    const name = editName.trim()
+    if (!name) {
       toast({ title: '名称不能为空', variant: 'destructive' })
+      return
+    }
+    if (name.length > 64) {
+      toast({ title: '名称过长', description: 'Token 名称不能超过 64 个字符。', variant: 'destructive' })
       return
     }
     setBusyId(editing.id)
     try {
       const days = Number(editExpiresDays)
       await hubSend(`/api/tokens/${encodeURIComponent(editing.id)}`, 'PATCH', {
-        name: editName.trim(),
+        name,
         scopes: editScope,
         expiresAt: days > 0 ? Date.now() + days * 86_400_000 : null,
       })
-      toast({ title: '已更新凭据', description: `Token「${editName.trim()}」的权限与有效期已保存。` })
+      toast({ title: '已更新凭据', description: `Token「${name}」的权限与有效期已保存。` })
       setEditing(null)
       void loadTokens()
     } catch (err) {

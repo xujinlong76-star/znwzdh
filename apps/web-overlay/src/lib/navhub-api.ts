@@ -82,19 +82,64 @@ export interface HubTag {
 
 async function getJson<T>(path: string, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
   const res = await fetch(hubUrl(path), { signal, headers: { Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) } })
-  if (!res.ok) throw hubError(res.status)
+  if (!res.ok) throw hubError(res.status, await hubServerMessage(res))
   const text = await res.text()
   return (text.trim() ? JSON.parse(text) : {}) as T
 }
 
 /**
- * 带状态码的错误：调用方需要按状态分支（如恢复回收站遇 409 = URL 冲突），
- * 只有 message 的 Error 无法判断。
+ * 状态码 → 可读中文信息。
+ *
+ * 曾经这里只有 'hub ' + status（如 "hub 502"）——用户看到这串代号完全
+ * 无法行动（502 是中枢没起、被防火墙挡了、还是崩了？）。现在的策略：
+ *   1. 优先透出服务端的 error 字段——中枢的 400/409 都带中文可读原因；
+ *   2. 服务端没给消息时，按状态码给出下一步行动指引。
  */
-function hubError(status: number): Error & { status: number } {
-  const err = new Error('hub ' + status) as Error & { status: number }
+const HUB_STATUS_HINT: Record<number, string> = {
+  400: '请求被中枢拒绝（参数或有效期策略不符）',
+  401: '未授权：请先在「偏好设置」填入有效的 API Token',
+  403: '权限不足：当前 Token 的 scope 不足以执行该操作',
+  404: '中枢不存在该接口',
+  409: '冲突：同名凭据已存在，或未吊销凭据已达上限',
+  413: '请求体过大',
+  429: '请求过于频繁，请稍后再试',
+  502: 'NavHub 中枢不可用（连接失败）：请确认 API 服务已启动（默认 :8787）',
+  503: 'NavHub 中枢暂时不可用，请稍后再试',
+}
+
+function hubError(status: number, serverMessage?: string): Error & { status: number } {
+  const msg = serverMessage && serverMessage.trim()
+    ? serverMessage.trim()
+    : HUB_STATUS_HINT[status] ?? ('NavHub 中枢返回 HTTP ' + status)
+  const err = new Error(msg) as Error & { status: number }
   err.status = status
   return err
+}
+
+/**
+ * 从错误响应体提取服务端的可读消息。
+ *
+ * 中枢错误体统一为 { error: string, detail?: unknown }。提取顺序有意为之：
+ *   1. 先看 zod detail——中枢 400 时 error 是笼统的「参数无效」，detail 首条
+ *      才能拼出「参数无效（字段 name）：Required」这种可定位到字段的描述；
+ *   2. detail 不存在或不可用时回退 error——409 撞名 / scopes 非法等自定义
+ *      校验只带 error（中文可读原因），没有 detail，不受本顺序影响。
+ */
+async function hubServerMessage(res: Response): Promise<string | undefined> {
+  try {
+    const text = await res.text()
+    if (!text.trim()) return undefined
+    const parsed = JSON.parse(text) as { error?: unknown; detail?: unknown }
+    if (Array.isArray(parsed.detail) && parsed.detail.length > 0) {
+      const first = parsed.detail[0] as { path?: unknown; message?: unknown }
+      const where = Array.isArray(first.path) && first.path.length > 0 ? '（字段 ' + first.path.join('.') + '）' : ''
+      if (typeof first.message === 'string') return '参数无效' + where + '：' + first.message
+    }
+    if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error
+    return undefined
+  } catch {
+    return undefined
+  }
 }
 
 async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
@@ -104,7 +149,7 @@ async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DEL
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  if (!res.ok) throw hubError(res.status)
+  if (!res.ok) throw hubError(res.status, await hubServerMessage(res))
   const text = await res.text()
   return (text ? JSON.parse(text) : {}) as T
 }

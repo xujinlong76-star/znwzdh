@@ -29,13 +29,14 @@ pnpm --filter @navhub/api start
 | `pnpm dev` | `pnpm --filter @navhub/api dev` | 中枢开发模式 |
 | `pnpm dev:web` | `node scripts/run.mjs --filter navsphere dev` | 前端（:3000） |
 | `pnpm build` | `pnpm -r --filter "@navhub/*" build` | 全部包构建 |
-| `pnpm test` | `vitest run` | 381 个测试（另含 10 个 PG 跨方言用例，未配 `NAVHUB_TEST_DATABASE_URL` 时 skip） |
+| `pnpm test` | `vitest run` | 653 个测试（另含 10 个 PG 跨方言用例，未配 `NAVHUB_TEST_DATABASE_URL` 时 skip） |
 | `pnpm test:watch` | `vitest` | 监听模式 |
 | `pnpm typecheck` | `pnpm -r exec tsc --noEmit` | 全仓类型检查 |
 | `pnpm seed` | `pnpm --filter @navhub/api seed` | 播种 |
 | `pnpm mcp:stdio` | `pnpm --filter @navhub/mcp start` | 启动 MCP stdio |
 | `pnpm vendor:web` | `node scripts/vendor-web.mjs` | 拉取上游底座 |
 | `pnpm test:pg` | `node --experimental-strip-types scripts/pg-check.mts` | PostgreSQL 分档验收 |
+| `pnpm backup` | `node scripts/backup.mjs` | SQLite 在线热备（见 §8） |
 
 ### 2.2 `@navhub/api` 子脚本
 
@@ -204,7 +205,7 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 ### 6.1 运行
 
 ```bash
-pnpm test          # 全部 381 个测试
+pnpm test          # 全部 653 个测试
 pnpm test:watch    # 监听
 pnpm test:pg       # PostgreSQL 手工验收（scripts/pg-check.mts，需先起 postgres）
 ```
@@ -317,7 +318,56 @@ curl http://localhost:8787/api/health
 
 **所有 AI 能力都是可选的，缺任何一项系统都照常启动**，并在此如实上报——这是全仓的硬性要求，有测试覆盖。
 
-## 8. 相关文档
+## 8. 备份与恢复
+
+### 8.1 在线热备（推荐，不需要停服务）
+
+```bash
+# 默认备份 ./data/navhub.db 到 ./data/backups/，保留最近 7 份
+node scripts/backup.mjs
+
+# 自定义路径 / 输出目录 / 保留份数
+node scripts/backup.mjs --db /data/navhub.db --out /backups --keep 14
+```
+
+脚本走 better-sqlite3 的 `backup()`（sqlite3 在线备份 API）：
+
+- **不要直接 `cp` 数据库文件**——SQLite 处于 WAL 模式，主库文件不含尚未
+  checkpoint 的事务，cp 到的是旧快照甚至损坏文件；
+- 备份与正常读写并发安全，读取期间服务不中断；
+- 备份完成后自动执行 `integrity_check` 校验，不过则退出码 1（供 cron 告警）；
+- 产物是自包含单文件（自动清理 -wal/-shm 附属），可直接拷贝传输。
+
+### 8.2 定时备份（cron 示例）
+
+```cron
+# 每天凌晨 3 点热备，保留最近 14 份
+0 3 * * * cd /opt/navhub && /usr/bin/node scripts/backup.mjs --keep 14 >> /var/log/navhub-backup.log 2>&1
+```
+
+### 8.3 Docker 场景
+
+```bash
+# 在 api 容器内执行（数据卷已挂载）
+docker compose exec api node scripts/backup.mjs --out /data/backups
+```
+
+### 8.4 恢复步骤
+
+```bash
+# 1. 停服务（或 docker compose stop api）——恢复必须独占文件
+# 2. 用备份替换数据文件（先留一份现状，万一恢复错文件）
+cp data/navhub.db data/navhub.db.before-restore
+cp data/backups/navhub-2026-10-16_03-00-00.db data/navhub.db
+# 3. 清掉可能残留的 WAL 附属文件（旧 WAL 与新主库不匹配会损坏数据）
+rm -f data/navhub.db-wal data/navhub.db-shm
+# 4. 启动服务并验证
+pnpm --filter @navhub/api start && curl http://localhost:8787/api/health
+```
+
+`standard` 模式（PostgreSQL）的备份不适用本脚本，请使用 `pg_dump`。
+
+## 9. 相关文档
 
 - [README.md](../../README.md) —— 项目背景与设计理念
 - [docs/acceptance-report.md](../acceptance-report.md) —— PostgreSQL 分档验收报告

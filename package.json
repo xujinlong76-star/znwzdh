@@ -18,6 +18,7 @@
     "vendor:web": "node scripts/vendor-web.mjs",
     "test:pg": "node --experimental-strip-types scripts/pg-check.mts",
     "check:overlay": "node scripts/check-web-overlay.mjs",
+    "backup": "node scripts/backup.mjs",
     "verify": "node scripts/check-web-overlay.mjs && pnpm -r --filter \"@navhub/*\" exec tsc --noEmit && vitest run",
     "verify:all": "node scripts/check-web-overlay.mjs && pnpm -r --filter \"@navhub/*\" exec tsc --noEmit && vitest run && playwright test"
   },

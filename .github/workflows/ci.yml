@@ -185,7 +185,9 @@ jobs:
       # 例外 GHSA-vfj7-8cjw-p6xm（braces，经 vendored eslint toolchain 间接引入，
       # dev-only 且上游尚未发布修复版——npm 最新仍是 3.0.3，override 无版本可钉）：
       # 待修复版发布后去掉 --ignore 并改用 overrides 钉版本。
-      - run: pnpm audit --audit-level high --ignore GHSA-vfj7-8cjw-p6xm
+      # 注意：必须用 --registry 显式指向 npmjs；仓库 .npmrc 固定了 npmmirror，
+      # 其实测 NPM_CONFIG_REGISTRY 环境变量覆盖对 audit 不生效，会报 endpoint 不存在。
+      - run: pnpm --registry=https://registry.npmjs.org audit --audit-level high --ignore GHSA-vfj7-8cjw-p6xm
 
   ci-passed:
     name: CI 整体通过 (All Checks Passed)

@@ -144,6 +144,8 @@ jobs:
       - run: node scripts/vendor-web.mjs
       # overlay 是 Docker 构建与 vendor 的事实源；apps/web 改了没同步回去会在这里失败
       - run: node scripts/check-web-overlay.mjs
+      # 上游底座 ref 三处声明（vendor 脚本 / Dockerfile / UPSTREAM.md）同源，且产物未漂移
+      - run: node scripts/check-upstream-ref.mjs
       # 验证浏览器扩展 (Chrome Manifest V3) 与桌面扩展 (Raycast) 的规范与文件完整性
       - run: node scripts/check-extensions.mjs
 
@@ -170,6 +172,19 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 14
+
+  docker-smoke:
+    timeout-minutes: 30
+    name: 镜像冒烟构建（api / web）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # CI 此前从不构建镜像：Dockerfile 坏了只有用户拉镜像时才发现。
+      # 这里只验证"能构建出镜像"，不推送；Web 镜像的上游底座在 Dockerfile 内自取。
+      - name: 构建 API 镜像
+        run: docker build -f docker/Dockerfile.api -t navhub/api:ci .
+      - name: 构建 Web 镜像
+        run: docker build -f docker/Dockerfile.web -t navhub/web:ci .
 
   audit:
     timeout-minutes: 10
@@ -198,7 +213,7 @@ jobs:
   ci-passed:
     name: CI 整体通过 (All Checks Passed)
     runs-on: ubuntu-latest
-    needs: [test-sqlite, test-postgres, test-web, check-web-overlay, test-e2e, audit]
+    needs: [test-sqlite, test-postgres, test-web, check-web-overlay, test-e2e, docker-smoke, audit]
     if: always()
     steps:
       - name: 评估检查结果
@@ -208,6 +223,7 @@ jobs:
              [ "${{ needs.test-web.result }}" != "success" ] || \
              [ "${{ needs.check-web-overlay.result }}" != "success" ] || \
              [ "${{ needs.test-e2e.result }}" != "success" ] || \
+             [ "${{ needs.docker-smoke.result }}" != "success" ] || \
              [ "${{ needs.audit.result }}" != "success" ]; then
             echo "CI 检查未全部通过！"
             echo "SQLite:  ${{ needs.test-sqlite.result }}"
@@ -215,6 +231,7 @@ jobs:
             echo "Web:     ${{ needs.test-web.result }}"
             echo "Overlay: ${{ needs.check-web-overlay.result }}"
             echo "E2E:     ${{ needs.test-e2e.result }}"
+            echo "Docker:  ${{ needs.docker-smoke.result }}"
             echo "Audit:   ${{ needs.audit.result }}"
             exit 1
           fi

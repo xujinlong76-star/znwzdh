@@ -15,8 +15,11 @@ RUN npm install -g pnpm@11.7.0 --registry=https://registry.npmmirror.com
 WORKDIR /app
 
 # 1) 拉取 NavSphere 底座（MIT），并用 NavHub 自己的适配器覆盖存储层
-ARG NAVSPHERE_REF=main
-RUN curl -fsSL "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/refs/heads/${NAVSPHERE_REF}" -o /tmp/ns.tgz \
+# 默认固定到具体 commit（与 scripts/vendor-web.mjs 的 DEFAULT_REF、UPSTREAM.md 同源），
+# 保证同一个仓库标签构建的镜像可复现；升级底座时显式传 --build-arg NAVSPHERE_REF=<新 sha>。
+# codeload 的 /tar.gz/<ref> 对 branch / tag / sha 都有效，故不再拼 refs/heads/。
+ARG NAVSPHERE_REF=6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a
+RUN curl -fsSL "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/${NAVSPHERE_REF}" -o /tmp/ns.tgz \
     && mkdir -p /tmp/ns && tar -xzf /tmp/ns.tgz -C /tmp/ns --strip-components=1 \
     && mkdir -p /app/web && cp -a /tmp/ns/. /app/web/ \
     && rm -rf /tmp/ns /tmp/ns.tgz

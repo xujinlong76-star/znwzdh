@@ -5,7 +5,18 @@ import { join, resolve, relative } from "node:path";
 
 const ROOT = resolve(".");
 const TARGET = join(ROOT, "apps", "web");
-const REF = process.argv[2] || "main";
+/**
+ * 上游底座默认固定到具体 commit（升级建议 P0/近期项：构建可复现）。
+ *
+ * 以前默认 `main`：上游一push，同一个仓库标签就会产出不同的 apps/web，
+ * Docker 与 CI 的产物不可复现，且上游坏提交会直接打挂我们的门禁。
+ * 现在默认取 apps/web-overlay/UPSTREAM.md 记录的 commit；需要升级底座时：
+ *   1. 显式传 ref 跑一次：node scripts/vendor-web.mjs <新 sha>
+ *   2. 回归通过后把新 sha 写回 UPSTREAM.md（与 check-upstream-ref.mjs 的校验同源）
+ * codeload 的 /tar.gz/<ref> 对 branch / tag / sha 都有效，因此下面的 URL 不再拼 refs/heads/。
+ */
+const DEFAULT_REF = "6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a";
+const REF = process.argv[2] || process.env.NAVSPHERE_REF || DEFAULT_REF;
 const API = { "User-Agent": "navhub" };
 
 console.log("[vendor] ref=" + REF);
@@ -19,7 +30,7 @@ try {
 console.log("[vendor] upstream sha=" + sha);
 
 // 2) download tarball
-const url = "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/refs/heads/" + REF;
+const url = "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/" + REF;
 console.log("[vendor] downloading " + url);
 let res;
 for (let i = 0; i < 3; i++) {

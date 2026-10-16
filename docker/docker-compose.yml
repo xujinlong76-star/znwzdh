@@ -46,6 +46,7 @@ services:
       # entrypoint.sh 生成随机值并持久化到 /data/.session-secret，
       # api 与 web 共享同一份；显式设置则优先生效。
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
+      # 生产若直接暴露公网（无可信反向代理），请显式设为 0，并收紧 CORS（不要用 *）。
       NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-1}
       NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
       NAVHUB_SEED_ON_START: ${NAVHUB_SEED_ON_START:-1}
@@ -83,6 +84,12 @@ services:
         condition: service_healthy
     ports:
       - "${NAVHUB_WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     # 与 api 共享数据卷：读取 api 入口生成的 /data/.session-secret，
     # 保证两容器 session 签名密钥一致且重启不失效（方案 P0-1）
     volumes:

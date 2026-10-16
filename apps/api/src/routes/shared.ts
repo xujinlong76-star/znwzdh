@@ -1,3 +1,4 @@
+import type { AppContext } from "../context.ts";
 /**
  * 跨域共享的小工具。
  *
@@ -40,4 +41,16 @@ export function identityOf(req: { query: Record<string, unknown>; body: unknown;
   const fromBody = (req.body ?? {}) as Record<string, string>;
   const v = fromQuery.userId ?? fromQuery.anonId ?? fromBody.userId ?? fromBody.anonId ?? null;
   return typeof v === "string" ? v.slice(0, 64) : v;
+}
+
+
+/**
+ * identity 路由的最小鉴权收紧（防 IDOR 扩大）。
+ * 开放模式（默认）行为完全不变；开启 NAVHUB_AUTH_REQUIRED 后，
+ * 纯匿名调用（无有效 Bearer token）会被 401 拒绝：调用方身份不再只由
+ * 客户端自报的 userId/anonId 决定。
+ */
+export function identityAllowed(ctx: AppContext, req: { auth?: { kind?: string } }): boolean {
+  if (!ctx.config.authRequired) return true;
+  return (req as { auth?: { kind?: string } }).auth?.kind !== "anonymous";
 }

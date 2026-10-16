@@ -123,6 +123,30 @@ for (const rel of overlayFiles) {
   }
 }
 
+// ---------- 硬化：git 跟踪的 apps/web 文件 = 自研，必须进 overlay（失败） ----------
+// apps/web 是 gitignore 的 vendored 底座，能被 git 看到的文件（git add -f 过）就是自研。
+// 这类文件若不在 overlay，重新 vendor / 构建 Docker 镜像时会被上游 tarball 覆盖丢失
+// （真实事故：apps/web/package.json 的 React 19 / TS 5.9 手改被打回上游版本，
+//  导致 CI frozen-lockfile 全红）。因此这里按硬失败处理，不依赖联网比对上游。
+try {
+  const { execFileSync } = await import("node:child_process");
+  const tracked = execFileSync("git", ["ls-files", "--", "apps/web"], { cwd: ROOT, encoding: "utf8" })
+    .split("\n").map((s) => s.trim()).filter(Boolean)
+    .map((f) => f.replace(/^apps\/web\//, "").replaceAll("\\", "/"))
+    .filter((rel) => rel && rel !== "UPSTREAM.md" && !isExcluded(rel));
+  const known = new Set(overlayFiles);
+  const orphan = tracked.filter((rel) => !known.has(rel));
+  if (orphan.length > 0) {
+    console.error(`[check] ${orphan.length} 个被 git 跟踪的 apps/web 自研文件不在 overlay 中（vendor/Docker 会丢失）：`);
+    for (const rel of orphan) console.error("  - " + rel);
+    console.error("[check] 修复：复制到 apps/web-overlay/ 同路径，或跑 node scripts/sync-web-overlay.mjs（需联网）");
+    process.exit(1);
+  }
+  console.log(`[check] OK：${tracked.length} 个 git 跟踪的自研文件全部在 overlay 中`);
+} catch {
+  // 无 git 环境（Docker 构建上下文）时跳过该项；失败分支在上面已直接 exit(1)
+}
+
 // ---------- 反向：web -> overlay（告警，不判失败） ----------
 const overlaySet = new Set(overlayFiles);
 const webFiles = existsSync(TARGET) ? walk(TARGET, TARGET) : [];

@@ -16,7 +16,7 @@ data/
 coverage/
 test-results/
 playwright-report/
-.turbo/
+*.tsbuildinfo
 .DS_Store
 Thumbs.db
 

@@ -1,6 +1,11 @@
 packages:
   - 'packages/*'
   - 'apps/*'
+  # apps/web-overlay 是「覆盖层镜像」而不是独立包：它的 package.json 只是
+  # apps/web 清单的一份副本（Docker/vendor 用来保证前端依赖与自研改动同步）。
+  # 不排除的话，pnpm 会把它当成第二个名为 navsphere 的 workspace 项目，
+  # `pnpm --filter navsphere` 会同时命中两个目录，tsc/build 在 overlay 里跑并失败。
+  - '!apps/web-overlay'
 
 # 版本锁定：包管理器版本由根 package.json 的 `packageManager: pnpm@11.7.0` 声明，
 # 启用 corepack 后自动锁定（`corepack enable && corepack install`），
@@ -50,6 +55,13 @@ minimumReleaseAgeExclude:
   - next@15.5.28
 
 overrides:
+  # 安全钉版本：原写在 apps/web/package.json 的 pnpm 字段里，但 pnpm 11 起不再读
+  # package.json 的 pnpm 字段（overrides 迁到 pnpm-workspace.yaml），那里实际已失效。
+  # 统一搬到 workspace 配置，顺带消除 Docker 只拷部分清单时的
+  # ERR_PNPM_LOCKFILE_CONFIG_MISMATCH（见 docker/Dockerfile.api 注释）。
+  brace-expansion@<2: 1.1.18
+  brace-expansion@>=2: 2.1.4
+  nanoid@<4: 3.3.16
   zod: ^3.25.76
   sharp: '>=0.35.5'
   undici: '>=7.29.1'

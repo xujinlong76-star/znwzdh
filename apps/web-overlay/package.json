@@ -16,10 +16,9 @@
     "docker:prod": "docker-compose -f docker/docker-compose.prod.yml up -d",
     "docker:stop": "docker-compose -f docker/docker-compose.yml down",
     "docker:logs": "docker-compose -f docker/docker-compose.yml logs -f",
-    "docker:deploy": "./scripts/docker-deploy.sh",
-    "cf:build": "next build",
-    "cf:deploy": "wrangler pages deploy .next --project-name navsphere"
+    "docker:deploy": "./scripts/docker-deploy.sh"
   },
+  "//deployment": "部署形态已收敛到 Docker（docker/docker-compose.yml + Dockerfile.{api,web}）。Cloudflare Pages 相关的 cf:build / cf:deploy 与 wrangler 依赖已删除：仓库里没有可用的 wrangler.toml，脚本输出目录也与 next 产物互相矛盾，留着只会误导。",
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "^3.9.1",
@@ -64,7 +63,7 @@
     "input-otp": "^1.4.1",
     "lucide-react": "^0.462.0",
     "monaco-editor": "^0.52.2",
-    "next": "15.5.21",
+    "next": "15.5.28",
     "next-auth": "5.0.0-beta.32",
     "next-themes": "^0.2.1",
     "react": "19.3.1",
@@ -83,7 +82,7 @@
   },
   "devDependencies": {
     "@radix-ui/react-icons": "^1.3.2",
-    "@types/node": "20.4.5",
+    "@types/node": "22.18.13",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "autoprefixer": "10.4.14",
@@ -93,24 +92,9 @@
     "shadcn": "^2.10.0",
     "sharp": "^0.34.5",
     "tailwindcss": "4.1.12",
-    "typescript": "5.9.3",
-    "wrangler": "~4.99.0"
+    "typescript": "5.9.3"
   },
-  "pnpm": {
-    "overrides": {
-      "brace-expansion@<2": "1.1.18",
-      "brace-expansion@>=2": "2.1.4",
-      "nanoid@<4": "3.3.16"
-    },
-    "//allowBuilds": "Docker 里 apps/web 是独立项目（读不到仓库根的 pnpm-workspace.yaml），pnpm 11 默认忽略全部安装脚本并直接报错退出，因此这里显式声明。esbuild/sharp 需要平台二进制，msw/workerd 是测试与边缘运行时依赖、不需要。",
-    "allowBuilds": {
-      "esbuild": true,
-      "sharp": true,
-      "unrs-resolver": true,
-      "msw": false,
-      "workerd": false
-    }
-  },
+  "//pnpm": "pnpm 11 起不再读 package.json 的 pnpm 字段（会打印 ignored 警告）。本项目的 overrides 与 allowBuilds 已迁到同目录 pnpm-workspace.yaml——Docker 里 apps/web 是独立安装的，读不到仓库根的配置。",
   "browser": {
     "crypto": false
   }

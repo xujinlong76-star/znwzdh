@@ -143,10 +143,14 @@ async function hubServerMessage(res: Response): Promise<string | undefined> {
 }
 
 async function sendJson<T>(path: string, method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', body?: unknown, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) }
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json'
+  }
   const res = await fetch(hubUrl(path), {
     method,
     signal,
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (!res.ok) throw hubError(res.status, await hubServerMessage(res))

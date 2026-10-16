@@ -78,6 +78,26 @@ export async function buildServer(ctx: AppContext) {
     trustProxy: ctx.config.trustProxy,
   });
 
+  // 容错 JSON 解析：当客户端或代理携带 Content-Type: application/json 却发了空体时，
+  // 默认 Fastify 会抛出 FST_ERR_CTP_EMPTY_JSON_BODY。这里优雅降级为 {}，增强系统健壮性。
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (_req, body, done) => {
+      if (!body || typeof body !== "string" || body.trim() === "") {
+        done(null, {});
+        return;
+      }
+      try {
+        done(null, JSON.parse(body));
+      } catch (err) {
+        const error = err as Error & { statusCode?: number };
+        error.statusCode = 400;
+        done(error, undefined);
+      }
+    }
+  );
+
   // CORS：credentials:true 不能配 origin:*（浏览器会拒绝），* 时退为不带凭据
   const allowAll = ctx.config.corsOrigins.includes("*");
   await app.register(cors, {

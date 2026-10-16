@@ -63,8 +63,16 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
 
   const method = request.method.toUpperCase()
   const hasBody = method !== 'GET' && method !== 'HEAD'
-  const body = hasBody ? await request.text() : undefined
-  if (hasBody && body && !headers['content-type']) headers['content-type'] = 'application/json'
+  const rawBody = hasBody ? await request.text() : undefined
+  const hasValidBody = hasBody && typeof rawBody === 'string' && rawBody.trim().length > 0
+  const body = hasValidBody ? rawBody : undefined
+
+  if (hasValidBody) {
+    if (!headers['content-type']) headers['content-type'] = 'application/json'
+  } else {
+    delete headers['content-type']
+  }
+
   // body 上限 ~1MB，防止代理被大体拖死
   if (body && body.length > 1024 * 1024) {
     return NextResponse.json({ error: '请求体过大（上限 1MB）' }, { status: 413 })
@@ -74,7 +82,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     const upstream = await fetch(target, {
       method,
       headers,
-      body: body || undefined,
+      body,
       cache: 'no-store',
     })
     const contentType = upstream.headers.get('content-type') ?? 'application/json'

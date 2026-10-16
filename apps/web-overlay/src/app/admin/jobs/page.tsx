@@ -198,7 +198,7 @@ export default function AdminJobsPage() {
   const handleCancel = async (jobId: string) => {
     setActingJobId(jobId)
     try {
-      await hubSend(`/api/jobs/${jobId}/cancel`, 'POST')
+      await hubSend(`/api/jobs/${jobId}/cancel`, 'POST', {})
       setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: 'cancelled' } : j)))
     } catch (err) {
       console.error('[jobs] 取消任务失败:', err)
@@ -211,7 +211,7 @@ export default function AdminJobsPage() {
   const handleRetry = async (jobId: string) => {
     setActingJobId(jobId)
     try {
-      const res = await hubSend<{ ok: boolean; job: Job }>(`/api/jobs/${jobId}/retry`, 'POST')
+      const res = await hubSend<{ ok: boolean; job: Job }>(`/api/jobs/${jobId}/retry`, 'POST', {})
       if (res?.job) {
         setJobs((prev) => prev.map((j) => (j.id === jobId ? res.job : j)))
       } else {

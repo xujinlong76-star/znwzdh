@@ -1,0 +1,100 @@
+import type { Repository } from "../repository.ts";
+import { randomUUID } from "node:crypto";
+import {
+  buildFtsTokens,
+  canonicalizeUrl,
+  pinyinTraits,
+  type Category,
+  type Collection,
+  type Site,
+  type SiteStatus,
+} from "@navhub/core";
+import type {
+  ApiTokenRecord,
+  AuditLogRecord,
+  FavoriteFolderRecord,
+  FavoriteRecord,
+  JobRecord,
+  SiteInput,
+  TagWithCount,
+  UserProfileRecord,
+  UserRecord,
+  UserVaultRecord,
+} from "./records.ts";
+import {
+  bindSqlite,
+  buildIndexFields,
+  rowToApiToken,
+  rowToAuditLog,
+  rowToCategory,
+  rowToCollection,
+  rowToFavorite,
+  rowToFolder,
+  rowToJob,
+  rowToProfile,
+  rowToSite,
+  rowToUser,
+  slugify,
+  toPgSql,
+} from "./dialect.ts";
+import type { Db } from "../driver.ts";
+
+export async function listFavorites(repo: Repository, userId: string): Promise<FavoriteRecord[]> {
+  const rows = await repo.raw(
+    "SELECT * FROM favorites WHERE user_id = ? ORDER BY created_at DESC",
+    [userId],
+  );
+  return rows.map(rowToFavorite);
+}
+
+export async function addFavorite(repo: Repository, input: { userId: string; siteId: string; folderId?: string | null; note?: string | null }): Promise<{ favorite: FavoriteRecord; existed: boolean }> {
+  const existing = await repo.raw(
+    "SELECT * FROM favorites WHERE user_id = ? AND site_id = ? LIMIT 1",
+    [input.userId, input.siteId],
+  );
+  const existingRow = existing[0];
+  if (existingRow) return { favorite: rowToFavorite(existingRow), existed: true };
+  const id = randomUUID();
+  const now = Date.now();
+  await repo.run(
+    "INSERT INTO favorites (id, user_id, site_id, folder_id, note, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+    [id, input.userId, input.siteId, input.folderId ?? null, input.note ?? null, now, now],
+  );
+  const row = (await repo.raw("SELECT * FROM favorites WHERE id = ?", [id]))[0];
+  if (!row) throw new Error("创建收藏后无法读回");
+  return { favorite: rowToFavorite(row), existed: false };
+}
+
+export async function removeFavorite(repo: Repository, userId: string, siteId: string): Promise<boolean> {
+  const changes = await repo.runCount("DELETE FROM favorites WHERE user_id = ? AND site_id = ?", [userId, siteId]);
+  return changes > 0;
+}
+
+export async function listFavoriteFolders(repo: Repository, userId: string): Promise<FavoriteFolderRecord[]> {
+  const rows = await repo.raw(
+    "SELECT * FROM favorite_folders WHERE user_id = ? ORDER BY sort ASC, created_at ASC",
+    [userId],
+  );
+  return rows.map(rowToFolder);
+}
+
+export async function createFavoriteFolder(repo: Repository, userId: string, name: string): Promise<FavoriteFolderRecord> {
+  const id = randomUUID();
+  const now = Date.now();
+  await repo.run(
+    "INSERT INTO favorite_folders (id, user_id, name, sort, created_at) VALUES (?,?,?,?,?)",
+    [id, userId, name.trim(), 0, now],
+  );
+  const row = (await repo.raw("SELECT * FROM favorite_folders WHERE id = ?", [id]))[0];
+  if (!row) throw new Error("创建收藏夹后无法读回");
+  return rowToFolder(row);
+}
+
+export async function deleteFavoriteFolder(repo: Repository, userId: string, folderId: string): Promise<void> {
+  const now = Date.now();
+  await repo.run(
+    "UPDATE favorites SET folder_id = NULL, updated_at = ? WHERE user_id = ? AND folder_id = ?",
+    [now, userId, folderId],
+  );
+  await repo.run("DELETE FROM favorite_folders WHERE id = ? AND user_id = ?", [folderId, userId]);
+}

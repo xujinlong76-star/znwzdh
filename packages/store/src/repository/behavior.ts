@@ -1,0 +1,89 @@
+import type { Repository } from "../repository.ts";
+import { randomUUID } from "node:crypto";
+import {
+  buildFtsTokens,
+  canonicalizeUrl,
+  pinyinTraits,
+  type Category,
+  type Collection,
+  type Site,
+  type SiteStatus,
+} from "@navhub/core";
+import type {
+  ApiTokenRecord,
+  AuditLogRecord,
+  FavoriteFolderRecord,
+  FavoriteRecord,
+  JobRecord,
+  SiteInput,
+  TagWithCount,
+  UserProfileRecord,
+  UserRecord,
+  UserVaultRecord,
+} from "./records.ts";
+import {
+  bindSqlite,
+  buildIndexFields,
+  rowToApiToken,
+  rowToAuditLog,
+  rowToCategory,
+  rowToCollection,
+  rowToFavorite,
+  rowToFolder,
+  rowToJob,
+  rowToProfile,
+  rowToSite,
+  rowToUser,
+  slugify,
+  toPgSql,
+} from "./dialect.ts";
+import type { Db } from "../driver.ts";
+
+export async function behaviorEvents(repo: Repository, identity: string, since: number, limit = 500): Promise<Array<{ kind: string; siteId: string; categoryId: string | null; tags: string[]; createdAt: number }>> {
+  const tagExpr = repo.db.dialect === "sqlite"
+    ? "(SELECT group_concat(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = e.site_id)"
+    : "(SELECT string_agg(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = e.site_id)";
+  const rows = await repo.raw(
+    `SELECT e.kind AS kind, e.site_id AS siteid, s.category_id AS categoryid,
+            ${tagExpr} AS tagslugs, e.created_at AS createdat
+       FROM events e LEFT JOIN sites s ON s.id = e.site_id
+      WHERE e.kind IN ('click', 'favorite') AND e.created_at >= ?
+        AND e.identity = ?
+      ORDER BY e.created_at DESC LIMIT ?`,
+    [since, identity, limit],
+  );
+  return rows
+    .filter((r) => r.siteid)
+    .map((r) => ({
+      kind: String(r.kind),
+      siteId: String(r.siteid),
+      categoryId: r.categoryid ?? null,
+      tags: r.tagslugs ? String(r.tagslugs).split(",").filter(Boolean) : [],
+      createdAt: Number(r.createdat ?? 0),
+    }));
+}
+
+export async function countSearches(repo: Repository, userId: string): Promise<number> {
+  const rows = await repo.raw("SELECT COUNT(*) AS c FROM search_history WHERE user_id = ?", [userId]);
+  return Number(rows[0]?.c ?? 0);
+}
+
+export async function clickCountsSince(repo: Repository, since: number): Promise<Map<string, number>> {
+  const rows = await repo.raw(
+    "SELECT site_id AS siteid, COUNT(*) AS c FROM events WHERE kind = 'click' AND site_id IS NOT NULL AND created_at >= ? GROUP BY site_id",
+    [since],
+  );
+  const out = new Map<string, number>();
+  for (const r of rows) out.set(String(r.siteid), Number(r.c ?? 0));
+  return out;
+}
+
+export async function favoriteCountsSince(repo: Repository, since: number): Promise<Map<string, number>> {
+  const rows = await repo.raw(
+    "SELECT site_id AS siteid, COUNT(*) AS c FROM favorites WHERE created_at >= ? GROUP BY site_id",
+    [since],
+  );
+  const out = new Map<string, number>();
+  for (const r of rows) out.set(String(r.siteid), Number(r.c ?? 0));
+  return out;
+}

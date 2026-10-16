@@ -121,6 +121,32 @@ export function assertUrlShape(raw: string): URL {
   return url;
 }
 
+/**
+ * 带超时的 DNS 解析。
+ *
+ * `resolveAndCheck` 必须先解析域名才能校验解析后的 IP，但 `lookup()` 本身没有超时：
+ * 弱网 / CI 环境下某些域名会长时间无响应，直接挂死调用方（`health_check` 顺序巡检
+ * 多个站点时尤其致命——一个卡住的域名就能把整次调用拖过调用方的超时）。
+ * 这里给解析加上硬上限；**超时即 fail-closed**：解析不出的目标一律按受保护处理，
+ * 绝不因为「还没解析完」就放行请求。
+ *
+ * 说明：被超时放弃的底层查询不会真正中断（node:dns/promises 的 lookup 不支持
+ * AbortSignal），但它不持有需要清理的句柄；我们只保证调用方不再等待它。
+ */
+async function lookupWithTimeout(host: string, timeoutMs: number): Promise<Array<{ address: string }>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      lookup(host, { all: true }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new SsrfBlockedError("DNS 解析超时: " + host, "dns-timeout")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** DNS 解析并校验全部解析结果 */
 export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promise<void> {
   if (opts.allowPrivateNetworks) return;
@@ -134,8 +160,9 @@ export async function resolveAndCheck(url: URL, opts: FetchGuardOptions): Promis
 
   let addrs: Array<{ address: string }>;
   try {
-    addrs = await lookup(host, { all: true });
+    addrs = await lookupWithTimeout(host, opts.timeoutMs);
   } catch (err) {
+    if (err instanceof SsrfBlockedError) throw err; // 解析超时：fail-closed
     throw new SsrfBlockedError("DNS 解析失败: " + host, "dns-failure");
   }
   if (addrs.length === 0) throw new SsrfBlockedError("DNS 无结果: " + host, "dns-empty");
@@ -179,18 +206,18 @@ export async function guardedFetch(rawUrl: string, options: Partial<FetchGuardOp
       let fetchUrl = current.toString();
       const extraHeaders: Record<string, string> = {};
       if (current.protocol === "http:" && !opts.allowPrivateNetworks && !isIP(current.hostname.replace(/^\[|\]$/g, ""))) {
+        let pinned: Array<{ address: string }> = [];
         try {
-          const pinned = await lookup(current.hostname, { all: true });
-          const first = pinned[0]?.address;
-          if (first && isIP(first)) {
-            if (isBlockedIp(first)) throw new SsrfBlockedError(current.hostname + " 解析到受保护网段 " + first, "blocked-ip");
-            const portSuffix = current.port ? ":" + current.port : "";
-            fetchUrl = "http://" + (first.includes(":") ? "[" + first + "]" : first) + portSuffix + (current.pathname + current.search + current.hash);
-            extraHeaders["Host"] = current.hostname;
-          }
-        } catch (e) {
-          if (e instanceof SsrfBlockedError) throw e;
-          // pin 失败则回退到域名直连（循环头部的 resolveAndCheck 已做过一次校验）
+          pinned = await lookupWithTimeout(current.hostname, opts.timeoutMs);
+        } catch {
+          // pin 超时或解析失败：回退到域名直连（循环头部的 resolveAndCheck 已校验过一次）
+        }
+        const first = pinned[0]?.address;
+        if (first && isIP(first)) {
+          if (isBlockedIp(first)) throw new SsrfBlockedError(current.hostname + " 解析到受保护网段 " + first, "blocked-ip");
+          const portSuffix = current.port ? ":" + current.port : "";
+          fetchUrl = "http://" + (first.includes(":") ? "[" + first + "]" : first) + portSuffix + (current.pathname + current.search + current.hash);
+          extraHeaders["Host"] = current.hostname;
         }
       }
       res = await fetch(fetchUrl, {

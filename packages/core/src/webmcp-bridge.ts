@@ -39,17 +39,32 @@ export type WebMcpToolHandler = (params: Record<string, unknown>) => Promise<unk
 export class WebMcpBridge {
   private tools: Map<string, { def: WebMcpToolDefinition; handler: WebMcpToolHandler }> = new Map();
   private allowedOrigins: Set<string>;
+  /** 动态注册表上限：防止 /api/tools/synthesize 被滥用导致内存无限增长 */
+  private readonly maxTools: number;
 
-  constructor(options?: { allowedOrigins?: string[] }) {
+  constructor(options?: { allowedOrigins?: string[]; maxTools?: number }) {
     this.allowedOrigins = new Set(options?.allowedOrigins || ['*']);
+    // 下限 16（覆盖内置工具），上限 4096（防误配）；默认 512
+    this.maxTools = Math.max(16, Math.min(options?.maxTools ?? 512, 4096));
     this.registerBuiltInTools();
   }
 
   /**
-   * 注册自定义 MCP 工具
+   * 注册自定义 MCP 工具。
+   * @returns 注册成功返回 true；同名覆盖返回 true；达到 maxTools 上限且为新工具时返回 false（调用方应回 429）
    */
-  public registerTool(def: WebMcpToolDefinition, handler: WebMcpToolHandler): void {
+  public registerTool(def: WebMcpToolDefinition, handler: WebMcpToolHandler): boolean {
+    if (!this.tools.has(def.name) && this.tools.size >= this.maxTools) return false;
     this.tools.set(def.name, { def, handler });
+    return true;
+  }
+
+  public get toolCount(): number {
+    return this.tools.size;
+  }
+
+  public get maxToolCount(): number {
+    return this.maxTools;
   }
 
   /**

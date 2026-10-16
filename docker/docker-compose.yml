@@ -42,7 +42,10 @@ services:
       NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.deepseek.com}
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
       NAVHUB_LLM_MODEL: ${NAVHUB_LLM_MODEL:-deepseek-chat}
+      # 生产部署必须用环境变量覆盖下面的占位 secret（与 entrypoint 的启动告警配合）；
+      # 占位值满足长度检查，仅为保证开箱可运行，绝不可暴露到公网。
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-change-me-in-production-min-32-chars-secret-key}
+      # 生产若直接暴露公网（无可信反向代理），请显式设为 0，并收紧 CORS（不要用 *）。
       NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-1}
       NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
       NAVHUB_SEED_ON_START: ${NAVHUB_SEED_ON_START:-1}
@@ -84,6 +87,12 @@ services:
       STORAGE_ADAPTER: http
       NEXT_PUBLIC_API_URL: http://api:8787
       NAVHUB_STORAGE_BASE_URL: http://api:8787
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   postgres:
     image: pgvector/pgvector:pg17
@@ -133,6 +142,8 @@ services:
       NAVHUB_EMBEDDING_ENDPOINT: ${NAVHUB_EMBEDDING_ENDPOINT:-https://hf-mirror.com}
       NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.deepseek.com}
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
+      # 生产部署必须用环境变量覆盖下面的占位 secret（与 entrypoint 的启动告警配合）；
+      # 占位值满足长度检查，仅为保证开箱可运行，绝不可暴露到公网。
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-change-me-in-production-min-32-chars-secret-key}
       NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-1}
 

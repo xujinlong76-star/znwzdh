@@ -300,10 +300,12 @@ export async function buildServer(ctx: AppContext) {
     const auth: AuthIdentity = { ...ANONYMOUS_IDENTITY };
     req.auth = auth;
 
-    if (!ctx.config.authRequired || required === "public") return;
+    if (!ctx.config.authRequired) return;
 
     const token = bearerOf(req);
     if (!token) {
+      // 无 token：public 路由匿名放行，管理面 401
+      if (required === "public") return;
       return reply.code(401).send({ error: "缺少 Bearer token（该路由要求 " + required + " 权限）" });
     }
 
@@ -320,7 +322,9 @@ export async function buildServer(ctx: AppContext) {
       return reply.code(401).send({ error: "token 无效或已过期" });
     }
     const tokenScopes = parseScopes(Array.isArray(record.scopes) ? record.scopes.join(",") : String(record.scopes ?? ""));
-    if (!scopeSatisfies(tokenScopes, required)) {
+    // public 路由不做 scope 门槛（任意有效 token 即可挂载身份，供 identityAllowed 区分匿名与持票用户）；
+    // 管理面仍要求 scope 不低于路由要求（admin ⊇ write ⊇ read）。
+    if (required !== "public" && !scopeSatisfies(tokenScopes, required)) {
       return reply.code(403).send({ error: "token 的 scope 不足以执行该操作（需要 " + required + "，当前 " + tokenScopes.join(",") + "）" });
     }
 
@@ -1023,7 +1027,7 @@ export async function buildServer(ctx: AppContext) {
    */
   app.post("/api/sites/cluster", { config: { scope: "public" } }, async (req, reply) => {
     const body = z.object({
-      siteIds: z.array(z.string()).optional(),
+      siteIds: z.array(z.string()).max(100).optional(),
       categoryId: z.string().optional(),
       targetK: z.number().int().min(1).max(20).optional().default(4),
     }).safeParse(req.body ?? {});
@@ -1351,9 +1355,21 @@ export async function buildServer(ctx: AppContext) {
     return typeof v === "string" ? v.slice(0, 64) : v;
   }
 
-  app.get("/api/favorites", async (req) => {
+  /**
+   * identity 路由的最小鉴权收紧（防 IDOR 扩大）。
+   * 开放模式（默认）行为完全不变；开启 NAVHUB_AUTH_REQUIRED 后，
+   * 纯匿名调用（无有效 Bearer token）会被 401 拒绝——调用方身份不再只由
+   * 客户端自报的 userId/anonId 决定。
+   */
+  function identityAllowed(req: { auth?: { kind?: string } }): boolean {
+    if (!ctx.config.authRequired) return true;
+    return (req as { auth?: AuthIdentity }).auth?.kind !== "anonymous";
+  }
+
+  app.get("/api/favorites", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) return { error: "缺少 userId 或 anonId" };
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const items = await ctx.repo.listFavorites(identity);
     const folders = await ctx.repo.listFavoriteFolders(identity);
     // 批量取站点（同 runSearch 的 N+1 优化）
@@ -1368,6 +1384,7 @@ export async function buildServer(ctx: AppContext) {
   app.post("/api/favorites", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = favoriteInput.safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const site = await ctx.repo.getSite(body.data.siteId);
@@ -1383,10 +1400,11 @@ export async function buildServer(ctx: AppContext) {
     return { favorite, existed };
   });
 
-  app.delete("/api/favorites/:siteId", async (req) => {
+  app.delete("/api/favorites/:siteId", async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
     const identity = identityOf(req as never);
     if (!identity) return { error: "缺少 userId 或 anonId" };
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const removed = await ctx.repo.removeFavorite(identity, siteId);
     if (removed) {
       await ctx.repo.recordEvent("unfavorite", { siteId, meta: { identity } }).catch(() => undefined);
@@ -1397,6 +1415,7 @@ export async function buildServer(ctx: AppContext) {
   app.post("/api/favorites/folders", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({ name: z.string().min(1).max(30) }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const folder = await ctx.repo.createFavoriteFolder(identity, body.data.name);
@@ -1404,10 +1423,11 @@ export async function buildServer(ctx: AppContext) {
     return folder;
   });
 
-  app.delete("/api/favorites/folders/:id", async (req) => {
+  app.delete("/api/favorites/folders/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const identity = identityOf(req as never);
     if (!identity) return { error: "缺少 userId 或 anonId" };
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     await ctx.repo.deleteFavoriteFolder(identity, id);
     return { ok: true };
   });
@@ -1648,6 +1668,8 @@ export async function buildServer(ctx: AppContext) {
    * 动态 WebMCP 智能体工具合成器端点 (支持 REST 单端点、站点检索动作与 OpenAPI 规格合成)
    */
   app.post("/api/tools/synthesize", { config: { scope: "public" } }, async (req, reply) => {
+    // 公共写入面：开放模式保持可用；开启鉴权后必须带有效 token（防注册表被匿名滥用）。
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({
       kind: z.enum(["rest", "site_search", "openapi"]).default("rest"),
       restSpec: z.object({
@@ -1683,7 +1705,10 @@ export async function buildServer(ctx: AppContext) {
 
     if (body.data.kind === "site_search" && body.data.siteSearchSpec) {
       const syn = synthesizeSiteSearchTool(body.data.siteSearchSpec);
-      webMcp.registerTool(syn.definition, (p) => syn.handler(p));
+      if (!webMcp.registerTool(syn.definition, (p) => syn.handler(p))) {
+        reply.code(429);
+        return { error: "工具注册表已满（上限 " + webMcp.maxToolCount + "），请联系管理员清理" };
+      }
       return {
         ok: true,
         kind: "site_search",
@@ -1694,23 +1719,28 @@ export async function buildServer(ctx: AppContext) {
 
     if (body.data.kind === "openapi" && body.data.openApiSpec) {
       const specs = parseOpenApiToSpecs(body.data.openApiSpec as MinimalOpenApiSpec);
-      const tools = specs.map((s) => {
+      const tools = [];
+      for (const s of specs) {
         const syn = synthesizeRestTool(s);
-        webMcp.registerTool(syn.definition, (p) => syn.handler(p));
-        return syn.definition;
-      });
+        if (!webMcp.registerTool(syn.definition, (p) => syn.handler(p))) break;
+        tools.push(syn.definition);
+      }
       return {
         ok: true,
         kind: "openapi",
         count: tools.length,
         tools,
-        registered: true,
+        registered: tools.length > 0,
+        capped: tools.length < specs.length,
       };
     }
 
     if (body.data.restSpec) {
       const syn = synthesizeRestTool(body.data.restSpec);
-      webMcp.registerTool(syn.definition, (p) => syn.handler(p));
+      if (!webMcp.registerTool(syn.definition, (p) => syn.handler(p))) {
+        reply.code(429);
+        return { error: "工具注册表已满（上限 " + webMcp.maxToolCount + "），请联系管理员清理" };
+      }
       return {
         ok: true,
         kind: "rest",
@@ -1727,10 +1757,19 @@ export async function buildServer(ctx: AppContext) {
    * P2P 网格信令与去中心化 WebRTC 状态协商端点 (P2P Mesh Signaling & Consensus Broker)
    */
   const p2pBrokerNodes = new Map<string, P2PMeshNode>();
+  // 信令 broker 容量与空闲驱逐：Map 无上限增长 = 内存耗尽风险。
+  // 驱逐是惰性的（每次请求顺带检查，避免在 buildServer 里挂 setInterval 导致测试多实例泄漏 timer）。
+  const MAX_P2P_NODES = 1000;
+  const P2P_NODE_IDLE_MS = 30 * 60 * 1000;
+  const P2P_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+  const p2pLastSeen = new Map<string, number>();
+  let p2pLastSweep = 0;
 
   app.post("/api/p2p/signal", { config: { scope: "public" } }, async (req, reply) => {
+    // 公共写入面：开放模式保持可用；开启鉴权后必须带有效 token。
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({
-      nodeId: z.string().min(1),
+      nodeId: z.string().min(1).max(128),
       message: z.object({
         type: z.enum(["HELLO", "SYNC_REQUEST", "DELTA_BATCH", "ACK", "HEARTBEAT"]),
         senderId: z.string().min(1),
@@ -1748,9 +1787,25 @@ export async function buildServer(ctx: AppContext) {
 
     let node = p2pBrokerNodes.get(body.data.nodeId);
     if (!node) {
+      const now = Date.now();
+      // 惰性驱逐：超过清扫间隔时，删掉空闲超时的节点
+      if (now - p2pLastSweep > P2P_SWEEP_INTERVAL_MS) {
+        p2pLastSweep = now;
+        for (const [id, seen] of p2pLastSeen) {
+          if (now - seen > P2P_NODE_IDLE_MS) {
+            p2pLastSeen.delete(id);
+            p2pBrokerNodes.delete(id);
+          }
+        }
+      }
+      if (p2pBrokerNodes.size >= MAX_P2P_NODES) {
+        reply.code(429);
+        return { error: "信令节点已满（上限 " + MAX_P2P_NODES + "），请稍后重试" };
+      }
       node = new P2PMeshNode(body.data.nodeId);
       p2pBrokerNodes.set(body.data.nodeId, node);
     }
+    p2pLastSeen.set(body.data.nodeId, Date.now());
 
     const outgoing = node.handleIncomingMessage(body.data.message as P2PMessage<any>);
     const peer = node.getPeer(body.data.message.senderId);
@@ -1768,17 +1823,19 @@ export async function buildServer(ctx: AppContext) {
 
   /* ------------------------ 搜索历史 ------------------------ */
 
-  app.get("/api/search-history", async (req) => {
+  app.get("/api/search-history", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) return { items: [] };
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const q = (req.query ?? {}) as Record<string, string>;
     const limit = Math.min(Number(q.limit) || 10, 50);
     return { items: await ctx.repo.listSearchHistory(identity, limit) };
   });
 
-  app.delete("/api/search-history", async (req) => {
+  app.delete("/api/search-history", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) return { ok: false, error: "缺少 userId 或 anonId" };
+    if (!identityAllowed(req as never)) { reply.code(401); return { ok: false, error: "需要 Bearer token" }; }
     await ctx.repo.clearSearchHistory(identity);
     return { ok: true };
   });
@@ -1786,9 +1843,10 @@ export async function buildServer(ctx: AppContext) {
   /* --------------------- 个性化画像（「我的偏好」） --------------------- */
 
   /** 读画像：让终端用户看到「系统据我的行为推断出了什么」——可解释性即信任 */
-  app.get("/api/profile", async (req) => {
+  app.get("/api/profile", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) return { error: "缺少 userId 或 anonId" };
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     return { profile: await ctx.repo.getUserProfile(identity) };
   });
 
@@ -1796,9 +1854,10 @@ export async function buildServer(ctx: AppContext) {
    * 重置画像：清 user_profiles + 该身份的行为事件（画像是从中聚合的）。
    * 收藏夹与搜索历史保留——那是用户自己的数据，不是被推断的偏好。
    */
-  app.delete("/api/profile", async (req) => {
+  app.delete("/api/profile", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) return { ok: false, error: "缺少 userId 或 anonId" };
+    if (!identityAllowed(req as never)) { reply.code(401); return { ok: false, error: "需要 Bearer token" }; }
     const result = await resetUserProfile(ctx, identity);
     return { ok: true, ...result };
   });
@@ -1811,6 +1870,7 @@ export async function buildServer(ctx: AppContext) {
   app.get("/api/vault/sync", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const vault = await ctx.repo.getUserVault(identity);
     return { ok: true, vault };
   });
@@ -1821,6 +1881,7 @@ export async function buildServer(ctx: AppContext) {
   app.put("/api/vault/sync", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({
       payload: z.string().min(1).max(512 * 1024),
     }).safeParse(req.body ?? {});
@@ -1835,6 +1896,7 @@ export async function buildServer(ctx: AppContext) {
   app.delete("/api/vault/sync", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     await ctx.repo.deleteUserVault(identity);
     return { ok: true };
   });
@@ -1847,6 +1909,7 @@ export async function buildServer(ctx: AppContext) {
   app.get("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const crdtRecord = await ctx.repo.getUserVault("crdt:" + identity);
     let serverOps: CRDTOperation[] = [];
     if (crdtRecord?.payload) {
@@ -1867,6 +1930,7 @@ export async function buildServer(ctx: AppContext) {
   app.post("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({
       operations: z.array(z.object({
         id: z.string(),
@@ -1930,6 +1994,7 @@ export async function buildServer(ctx: AppContext) {
   app.delete("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     await ctx.repo.deleteUserVault("crdt:" + identity);
     return { ok: true };
   });
@@ -1941,6 +2006,9 @@ export async function buildServer(ctx: AppContext) {
    * 返回 canonical userId（后续收藏夹 / 画像都用它，保证多端一致）。
    */
   app.post("/api/users/sync", async (req, reply) => {
+    // 身份伪造面：开放模式保持历史行为；开启鉴权后必须带有效 token，
+    // 否则任意调用方可冒用任意 provider:providerId 写入 users 表。
+    if (!identityAllowed(req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({
       provider: z.string().min(1).default("github"),
       providerId: z.string().min(1),
@@ -2162,6 +2230,8 @@ export async function buildServer(ctx: AppContext) {
 
   /* ------------------------ 任务队列管理 ------------------------ */
 
+  // 注意：JobRunner 还支持 "site_self_healing"（见 jobs.ts），但不经 HTTP 暴露——
+  // 自愈任务会触发网络抓取与站点改写，只允许由服务端内部调度，避免开放模式被滥用。
   const JOB_KIND_LIST = ["health_check", "refetch_metadata", "recompute_rank", "reindex"] as const;
 
   /** 入队（管理端 / 脚本用）。Runner 每 30s 自动消费。 */

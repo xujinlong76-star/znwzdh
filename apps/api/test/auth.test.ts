@@ -314,3 +314,89 @@ describe("生产配置硬校验与批量查询回归", () => {
     expect(map.get(s1.id)?.tags).toContain("t1");
   });
 });
+
+describe("identity 路由收紧（鉴权开启后拒绝纯匿名调用）", () => {
+  const anon = { "x-navhub-anon-id": "auth-test-anon" };
+
+  it("开放模式：identity 路由与公共写入面行为不变", async () => {
+    const fav = await openApp.inject({ method: "GET", url: "/api/favorites", headers: anon });
+    expect(fav.statusCode).toBe(200);
+    const syn = await openApp.inject({
+      method: "POST", url: "/api/tools/synthesize",
+      payload: {
+        kind: "site_search",
+        siteSearchSpec: {
+          siteId: "auth-open", siteName: "开放模式",
+          searchUrlTemplate: "https://example.com/search?q={query}",
+        },
+      },
+    });
+    expect(syn.statusCode).toBe(200);
+    expect(syn.json().registered).toBe(true);
+    const sig = await openApp.inject({
+      method: "POST", url: "/api/p2p/signal",
+      payload: { nodeId: "n-open", message: { type: "HELLO", senderId: "client-peer-open", seq: 1, timestamp: Date.now(), payload: { clock: { "client-peer-open": 2 }, siteCount: 8 } } },
+    });
+    expect(sig.statusCode).toBe(200);
+  });
+
+  it("鉴权模式：identity 数据面匿名调用返回 401", async () => {
+    for (const [method, url] of [
+      ["GET", "/api/favorites"], ["GET", "/api/search-history"], ["GET", "/api/profile"],
+      ["GET", "/api/vault/sync"], ["GET", "/api/crdt/sync"],
+    ] as const) {
+      const res = await authApp.inject({ method, url, headers: anon });
+      expect(res.statusCode).toBe(401);
+    }
+    const del = await authApp.inject({ method: "DELETE", url: "/api/search-history", headers: anon });
+    expect(del.statusCode).toBe(401);
+  });
+
+  it("鉴权模式：公共写入面（users/sync、synthesize、p2p/signal）匿名调用返回 401", async () => {
+    const u = await authApp.inject({
+      method: "POST", url: "/api/users/sync",
+      payload: { provider: "github", providerId: "spoof-1", username: "spoof" },
+    });
+    expect(u.statusCode).toBe(401);
+    const syn = await authApp.inject({
+      method: "POST", url: "/api/tools/synthesize",
+      payload: {
+        kind: "site_search",
+        siteSearchSpec: {
+          siteId: "auth-spoof", siteName: "冒用",
+          searchUrlTemplate: "https://example.com/search?q={query}",
+        },
+      },
+    });
+    expect(syn.statusCode).toBe(401);
+    const sig = await authApp.inject({
+      method: "POST", url: "/api/p2p/signal",
+      payload: { nodeId: "n-auth", message: { type: "HELLO", senderId: "client-peer-auth", seq: 1, timestamp: Date.now(), payload: {} } },
+    });
+    expect(sig.statusCode).toBe(401);
+  });
+
+  it("鉴权模式：带有效 token 时 identity 路由与写入面可用", async () => {
+    const raw = await mintToken("身份面", "read");
+    const withToken = { ...anon, authorization: "Bearer " + raw };
+    expect((await authApp.inject({ method: "GET", url: "/api/favorites", headers: withToken })).statusCode).toBe(200);
+    expect((await authApp.inject({ method: "GET", url: "/api/vault/sync", headers: withToken })).statusCode).toBe(200);
+    const u = await authApp.inject({
+      method: "POST", url: "/api/users/sync", headers: { authorization: "Bearer " + raw },
+      payload: { provider: "github", providerId: "real-1", username: "real" },
+    });
+    expect(u.statusCode).toBe(200);
+    const syn = await authApp.inject({
+      method: "POST", url: "/api/tools/synthesize", headers: { authorization: "Bearer " + raw },
+      payload: {
+        kind: "site_search",
+        siteSearchSpec: {
+          siteId: "auth-real", siteName: "持票",
+          searchUrlTemplate: "https://example.com/search?q={query}",
+        },
+      },
+    });
+    expect(syn.statusCode).toBe(200);
+    expect(syn.json().registered).toBe(true);
+  });
+});

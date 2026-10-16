@@ -8,6 +8,11 @@
 #   也让 `docker run` 与 compose 行为一致。
 set -e
 
+if [ "${NAVHUB_SESSION_SECRET:-}" = "change-me-in-production-min-32-chars-secret-key" ]; then
+  echo "[navhub] 警告：正在使用默认占位 NAVHUB_SESSION_SECRET，仅适合本地试用；" >&2
+  echo "[navhub] 警告：生产部署请务必通过环境变量设置一个随机长 secret。" >&2
+fi
+
 if [ "${NAVHUB_SEED_ON_START:-1}" = "1" ]; then
   echo "[navhub] 检查种子数据..."
   # runSeed 按 url 幂等去重，重复执行不会产生副本；

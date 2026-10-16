@@ -42,7 +42,10 @@ services:
       NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.deepseek.com}
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
       NAVHUB_LLM_MODEL: ${NAVHUB_LLM_MODEL:-deepseek-chat}
-      NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-change-me-in-production-min-32-chars-secret-key}
+      # 不设公开可查的默认值（升级改造方案 P0-1）：未显式提供时由
+      # entrypoint.sh 生成随机值并持久化到 /data/.session-secret，
+      # api 与 web 共享同一份；显式设置则优先生效。
+      NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
       NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-1}
       NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
       NAVHUB_SEED_ON_START: ${NAVHUB_SEED_ON_START:-1}
@@ -80,10 +83,15 @@ services:
         condition: service_healthy
     ports:
       - "${NAVHUB_WEB_PORT:-3000}:3000"
+    # 与 api 共享数据卷：读取 api 入口生成的 /data/.session-secret，
+    # 保证两容器 session 签名密钥一致且重启不失效（方案 P0-1）
+    volumes:
+      - navhub-data:/data
     environment:
       STORAGE_ADAPTER: http
       NEXT_PUBLIC_API_URL: http://api:8787
       NAVHUB_STORAGE_BASE_URL: http://api:8787
+      NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
 
   postgres:
     image: pgvector/pgvector:pg17
@@ -133,7 +141,10 @@ services:
       NAVHUB_EMBEDDING_ENDPOINT: ${NAVHUB_EMBEDDING_ENDPOINT:-https://hf-mirror.com}
       NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.deepseek.com}
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
-      NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-change-me-in-production-min-32-chars-secret-key}
+      # 不设公开可查的默认值（升级改造方案 P0-1）：未显式提供时由
+      # entrypoint.sh 生成随机值并持久化到 /data/.session-secret，
+      # api 与 web 共享同一份；显式设置则优先生效。
+      NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
       NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-1}
 
   mcp:

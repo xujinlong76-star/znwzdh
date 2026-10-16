@@ -98,8 +98,9 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 
   const isProd = (process.env.NODE_ENV ?? "") === "production";
   const rawSecret = process.env.NAVHUB_SESSION_SECRET;
-  // 生产必须显式配长密钥：默认占位密钥只能跑 dev/test，避免公开部署裸奔
-  if (isProd && (!rawSecret || rawSecret.length < 32 || rawSecret === "change-me-please-use-a-long-random-string" || rawSecret === "insecure-dev-secret-change-me" || rawSecret === "change-me-in-production")) {
+  // 生产必须显式配长密钥：默认占位密钥只能跑 dev/test，避免公开部署裸奔。
+  // 屏蔽名单包含 docker-compose 历史默认值（长度够但公开可查，同样 reject）。
+  if (isProd && (!rawSecret || rawSecret.length < 32 || rawSecret === "change-me-please-use-a-long-random-string" || rawSecret === "insecure-dev-secret-change-me" || rawSecret === "change-me-in-production" || rawSecret === "change-me-in-production-min-32-chars-secret-key")) {
     throw new Error("生产环境必须设置 NAVHUB_SESSION_SECRET（>=32 字符随机串），当前为默认值/过短");
   }
 

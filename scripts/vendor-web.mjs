@@ -1,7 +1,8 @@
 
-import { mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, cpSync, copyFileSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, relative } from "node:path";
+import { walkAndCopy } from "./lib/walk-copy.mjs";
 
 const ROOT = resolve(".");
 const TARGET = join(ROOT, "apps", "web");
@@ -111,68 +112,13 @@ for (const generated of ["node_modules", ".next"]) {
     rmSync(p, { recursive: true, force: true });
   }
 }
-function walkAndCopy(srcDir, dstDir, counter, skipRel) {
-  mkdirSync(dstDir, { recursive: true });
-  for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
-    // 绝不搬移安装产物：apps/web-overlay 是 workspace 成员（pnpm-workspace.yaml 的
-    // apps/*），pnpm install 会在其下生成 node_modules（含指向 .pnpm 的目录符号链接）。
-    // 若照搬，非递归 cpSync 会在目录符号链接上抛 "Recursive option not enabled"，
-    // CI 的 vendor 步骤直接红（曾导致 SQLite / Web / 覆盖层 / E2E / Docker 全挂）。
-    if (entry.name === "node_modules" || entry.name === ".next") continue;
-    const s = join(srcDir, entry.name);
-    const d = join(dstDir, entry.name);
-    const rel = d.slice(TARGET.length + 1).split("\\").join("/");
-    if (skipRel && skipRel.has(rel) && existsSync(d)) {
-      // NavHub-owned tracked file: keep the repo version, do not overwrite with upstream.
-      continue;
-    }
-    if (entry.isDirectory()) {
-      // 目标同名路径若已是文件（上游 / overlay 目录结构变化），先移除，避免 EISDIR。
-      try {
-        if (!statSync(d).isDirectory()) rmSync(d, { force: true, recursive: true });
-      } catch { /* 目标不存在：无需处理 */ }
-      walkAndCopy(s, d, counter, skipRel);
-    } else if (entry.isSymbolicLink()) {
-      // 上游 tarball 理论上不含符号链接；真遇到目录符号链接时非递归 cpSync 会抛错。
-      cpSync(s, d, { force: true, recursive: true });
-      if (counter) counter.count++;
-    } else {
-      // 覆盖写优先用 copyFileSync（截断写入，不走 unlink）。
-      // Windows 上 cpSync({ force: true }) 的 unlink 路径会被 Defender/OneDrive
-      //  filter 驱动干扰，报 errno 0 的怪异错误；copyFileSync 无此问题。
-      // 仍失败（如目标是目录等极端情况）再回退到删后拷。
-      const deadline = Date.now() + 20_000;
-      let attempt = 0;
-      for (;;) {
-        try {
-          if (attempt > 0) console.log("[vendor] retry copy " + entry.name + " (attempt " + (attempt + 1) + ")");
-          copyFileSync(s, d);
-          break;
-        } catch (e) {
-          attempt++;
-          const fallbackOk = (() => {
-            try {
-              rmSync(d, { force: true, recursive: true });
-              cpSync(s, d, { force: true });
-              return true;
-            } catch { return false; }
-          })();
-          if (fallbackOk) break;
-          if (Date.now() >= deadline) throw e;
-          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.min(2000, 200 * attempt));
-        }
-      }
-      if (counter) counter.count++;
-    }
-  }
-}
 const upstreamCounter = { count: 0 };
-walkAndCopy(inner, TARGET, upstreamCounter, ownedRelPaths);
+walkAndCopy(inner, TARGET, { targetRoot: TARGET, skipRel: ownedRelPaths, counter: upstreamCounter, log: console.log });
 console.log("[vendor] copied upstream: " + upstreamCounter.count + " files");
 
 // 6) apply NavHub overlay (storage seam + all self-built pages/components)
 const overlayCounter = { count: 0 };
-walkAndCopy(OVERLAY, TARGET, overlayCounter);
+walkAndCopy(OVERLAY, TARGET, { targetRoot: TARGET, counter: overlayCounter, log: console.log });
 console.log("[vendor] applied overlay: " + overlayCounter.count + " files");
 
 // 7) write UPSTREAM.md

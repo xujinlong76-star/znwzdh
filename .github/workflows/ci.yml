@@ -171,6 +171,9 @@ jobs:
         with:
           name: playwright-report
           path: playwright-report/
+          # 通过时 html reporter 不产出报告目录，默认的 warn 会在绿灯 job 上挂一条
+          # "No files were found" 注解，掩盖真正的告警；失败时报告仍会被上传。
+          if-no-files-found: ignore
           retention-days: 14
 
   docker-smoke:

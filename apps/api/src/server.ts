@@ -351,9 +351,12 @@ export async function buildServer(ctx: AppContext) {
       return reply.code(401).send({ error: "缺少 Bearer token（该路由要求 " + required + " 权限）" });
     }
 
-    // 引导 token：内存比对，视同 admin。用于首次创建库内 token 的一次性 bootstrap
-    if (ctx.config.bootstrapToken && secureEqual(token, ctx.config.bootstrapToken)) {
-      auth.actor = "bootstrap";
+    // 引导 token / 会话特权：内存比对，视同 admin。用于首次创建库内 token 的 bootstrap 或 Web 管理端会话委托
+    if (
+      (ctx.config.bootstrapToken && secureEqual(token, ctx.config.bootstrapToken)) ||
+      (ctx.config.sessionSecret && secureEqual(token, ctx.config.sessionSecret))
+    ) {
+      auth.actor = ctx.config.bootstrapToken && secureEqual(token, ctx.config.bootstrapToken) ? "bootstrap" : "admin_session";
       auth.kind = "static";
       auth.scopes = ["read", "write", "admin"];
       return;
@@ -2461,7 +2464,8 @@ export async function buildServer(ctx: AppContext) {
         : { expiresAt: null, error: "本实例禁止签发长期（永不过期）凭据：请传 expiresAt，或设置 NAVHUB_TOKEN_ALLOW_PERMANENT=true 放行" };
     }
     if (v <= Date.now()) return { expiresAt: null, error: "expiresAt 必须是未来的时间戳" };
-    if (maxLifetimeMs > 0 && v - Date.now() > maxLifetimeMs) {
+    // 增加 60 秒容差缓冲，防止前后端微小网络时延或时钟偏差导致 365 天等边界值被误判超限
+    if (maxLifetimeMs > 0 && v - Date.now() > maxLifetimeMs + 60_000) {
       return { expiresAt: null, error: "expiresAt 超出最长有效期（" + ctx.config.tokenPolicy.maxLifetimeDays + " 天）；确需更长请调 NAVHUB_TOKEN_MAX_LIFETIME_DAYS" };
     }
     return { expiresAt: v, error: null };

@@ -243,6 +243,16 @@ describe("鉴权模式：token 生命周期", () => {
     expect(list.find((t: any) => t.name === "bootstrap")).toBeUndefined();
   });
 
+  it("sessionSecret 会话特权密钥具备 admin 权限，支持管理端透明代理创建 Token", async () => {
+    expect((await as(authCtx.config.sessionSecret, "GET", "/api/tokens")).statusCode).toBe(200);
+    const postRes = await as(authCtx.config.sessionSecret, "POST", "/api/tokens", {
+      name: "通过会话特权创建",
+      scopes: "write",
+    });
+    expect(postRes.statusCode).toBe(201);
+    expect(postRes.json().name).toBe("通过会话特权创建");
+  });
+
   it("bootstrap token 用错（长度不同）同样 401", async () => {
     expect((await as(BOOTSTRAP + "x", "GET", "/api/sites")).statusCode).toBe(401);
   });

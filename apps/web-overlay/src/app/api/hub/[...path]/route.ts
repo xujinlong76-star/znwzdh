@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { verifyAdminSession } from '@/lib/auth'
 
 /**
  * /api/hub/* 代理：把请求转发到 NavHub 中枢。
@@ -31,9 +32,26 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     const v = request.headers.get(h)
     if (v) headers[h] = v
   }
-  // 安全说明：不再做服务端 Token 自动注入。
-  // 曾在此处当客户端无 Authorization 时注入 NAVHUB_STORAGE_TOKEN，
-  // 导致任意匿名访客经同源代理即获得服务端特权。管理路由必须由客户端显式携带 Bearer。
+
+  // 会话信任委托：客户端未显式携带 Authorization 时，检查是否存在已通过 NextAuth 登录的合法管理员。
+  // 若身份校验通过，自动注入服务端管理凭据转发至中枢，避免管理后台因无本地 Token 而遭遇鉴权死锁。
+  if (!headers['authorization']) {
+    try {
+      const adminCheck = await verifyAdminSession()
+      if (adminCheck.ok) {
+        const delegated =
+          process.env.NAVHUB_BOOTSTRAP_TOKEN ||
+          process.env.NAVHUB_STORAGE_TOKEN ||
+          process.env.NAVHUB_SESSION_SECRET ||
+          process.env.AUTH_SECRET
+        if (delegated) {
+          headers['authorization'] = 'Bearer ' + delegated
+        }
+      }
+    } catch {
+      // 匿名访客或校验异常时不注入任何凭据，保持严格安全边界
+    }
+  }
   // 透传客户端 IP：中枢的限流按 req.ip 分桶，若不传，所有访客共享同一个桶
   // （投稿 5 次/小时后，第 6 位访客就被 429 挡住）。
   // 前提：前端前面有反向代理（nginx/caddy/traefik）写入 X-Forwarded-For；

@@ -21,8 +21,17 @@ console.log("[vendor] upstream sha=" + sha);
 // 2) download tarball
 const url = "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/refs/heads/" + REF;
 console.log("[vendor] downloading " + url);
-const res = await fetch(url, { headers: API });
-if (!res.ok) { console.error("[vendor] download failed HTTP " + res.status); process.exit(1); }
+let res;
+for (let i = 0; i < 3; i++) {
+  try {
+    res = await fetch(url, { headers: API, signal: AbortSignal.timeout(60000) });
+    if (res.ok) break;
+  } catch (e) {
+    if (i === 2) { console.error("[vendor] download failed", e); process.exit(1); }
+  }
+  await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+}
+if (!res || !res.ok) { console.error("[vendor] download failed HTTP " + (res?.status || "error")); process.exit(1); }
 const buf = Buffer.from(await res.arrayBuffer());
 const tgz = join(ROOT, ".vendor-ns.tgz");
 writeFileSync(tgz, buf);

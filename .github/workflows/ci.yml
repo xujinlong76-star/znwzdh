@@ -16,7 +16,7 @@
 #    - 覆盖 NavHub 自研的 166 个 overlay 文件（此前零门禁）
 # 4. check-web-overlay:
 #    - vendor 重建 apps/web 后与 overlay 字节级比对（全新检出的前提，见作业内注释）
-# 5. audit: 依赖审计（continue-on-error，先告警不卡门）
+# 5. audit: 依赖审计（硬门禁：高危漏洞直接红灯）
 # 6. ci-passed:
 #    - 聚合闸门作业，供 GitHub 分支保护规则 (Branch Protection Rules) 设置单一必经项
 # ==============================================================================
@@ -44,6 +44,7 @@ env:
 
 jobs:
   test-sqlite:
+    timeout-minutes: 20
     name: 测试（SQLite 默认方言）
     runs-on: ubuntu-latest
     steps:
@@ -67,6 +68,7 @@ jobs:
       - run: pnpm build
 
   test-postgres:
+    timeout-minutes: 20
     name: 跨方言测试（PostgreSQL）
     runs-on: ubuntu-latest
     env:
@@ -101,6 +103,7 @@ jobs:
       - run: pnpm test:pg
 
   test-web:
+    timeout-minutes: 25
     name: 前端门禁（Web typecheck / lint / build）
     runs-on: ubuntu-latest
     steps:
@@ -124,6 +127,7 @@ jobs:
       - run: pnpm --filter navsphere build
 
   check-web-overlay:
+    timeout-minutes: 15
     name: 覆盖层一致性检查
     runs-on: ubuntu-latest
     steps:
@@ -142,6 +146,7 @@ jobs:
       - run: node scripts/check-web-overlay.mjs
 
   test-e2e:
+    timeout-minutes: 30
     name: 浏览器 E2E 自动化测试（Playwright）
     runs-on: ubuntu-latest
     steps:
@@ -165,6 +170,7 @@ jobs:
           retention-days: 14
 
   audit:
+    timeout-minutes: 10
     name: 依赖审计（允许失败）
     runs-on: ubuntu-latest
     steps:
@@ -175,9 +181,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # 先只告警不卡门：历史漏洞清零后再去掉 continue-on-error 转为硬门禁
+      # 依赖高危漏洞阻断（此前为 continue-on-error 软门禁，已收紧）
       - run: pnpm audit --audit-level high
-        continue-on-error: true
 
   ci-passed:
     name: CI 整体通过 (All Checks Passed)

@@ -178,7 +178,7 @@ export async function buildServer(ctx: AppContext) {
    *   write   管理面写入（站点与类目 CRUD / 任务入队 / 存储写入 / 富化）
    *   admin   高危（token 管理 / 删除站点）
    *
-   * 开放模式（默认）下 hook 只挂载身份、不做拦截，行为与历史版本完全一致；
+   * 开放模式（默认）下 hook 直接返回，行为与历史版本完全一致；
    * 开启 NAVHUB_AUTH_REQUIRED 后，read/write/admin 路由必须带 Bearer token，
    * 且 token 的 scope 不低于路由要求（admin ⊇ write ⊇ read）。
    */
@@ -187,7 +187,7 @@ export async function buildServer(ctx: AppContext) {
     const auth: AuthIdentity = { ...ANONYMOUS_IDENTITY };
     req.auth = auth;
 
-    if (!ctx.config.authRequired || required === "public") return;
+    if (!ctx.config.authRequired) return;
 
     /**
      * 鉴权失败落审计。
@@ -219,6 +219,8 @@ export async function buildServer(ctx: AppContext) {
 
     const token = bearerOf(req);
     if (!token) {
+      // public 路由匿名放行（开放模式行为不变；鉴权模式下持票挂载见下）
+      if (required === "public") return;
       void auditAuthFailure("auth.missing_token", "缺少 Bearer token，要求 " + required);
       return reply.code(401).send({ error: "缺少 Bearer token（该路由要求 " + required + " 权限）" });
     }
@@ -236,11 +238,15 @@ export async function buildServer(ctx: AppContext) {
 
     const record = await ctx.repo.findApiTokenByHash(hashToken(token));
     if (!record) {
+      // 鉴权模式下 public 路由带了无效 token：视为匿名（与不带 token 一致，
+      // 身份路由仍会被 identityAllowed 拦下）；管理面保持 401 + 审计。
+      if (required === "public") return;
       void auditAuthFailure("auth.invalid_token", "token 无效 / 已过期 / 已吊销");
       return reply.code(401).send({ error: "token 无效或已过期" });
     }
     const tokenScopes = parseScopes(Array.isArray(record.scopes) ? record.scopes.join(",") : String(record.scopes ?? ""));
-    if (!scopeSatisfies(tokenScopes, required)) {
+    // public 路由不做 scope 门槛：任意有效 token 挂载身份（供 identityAllowed 区分匿名与持票用户）
+    if (required !== "public" && !scopeSatisfies(tokenScopes, required)) {
       void auditAuthFailure("auth.scope_denied", "需要 " + required + "，当前 " + tokenScopes.join(","), record.id);
       return reply.code(403).send({ error: "token 的 scope 不足以执行该操作（需要 " + required + "，当前 " + tokenScopes.join(",") + "）" });
     }

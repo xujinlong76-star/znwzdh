@@ -171,7 +171,7 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   app.post("/api/sites/cluster", { config: { scope: "public" } }, async (req, reply) => {
     const body = z.object({
-      siteIds: z.array(z.string()).optional(),
+      siteIds: z.array(z.string()).max(100).optional(),
       categoryId: z.string().optional(),
       targetK: z.number().int().min(1).max(20).optional().default(4),
     }).safeParse(req.body ?? {});

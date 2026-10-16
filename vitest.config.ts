@@ -22,6 +22,7 @@ export default defineConfig({
       "packages/**/test/**/*.test.ts",
       "apps/api/test/**/*.test.ts",
       "apps/web/test/**/*.test.ts",
+      "apps/web-overlay/scripts/**/*.test.ts",
     ],
     environment: "node",
     testTimeout: 30_000,

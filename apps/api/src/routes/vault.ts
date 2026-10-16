@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { identityOf } from "./shared.ts";
+import { identityAllowed, identityOf } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
 
@@ -20,6 +20,7 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   app.get("/api/vault/sync", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const vault = await ctx.repo.getUserVault(identity);
     return { ok: true, vault };
   });
@@ -30,6 +31,7 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   app.put("/api/vault/sync", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({
       payload: z.string().min(1).max(512 * 1024),
     }).safeParse(req.body ?? {});
@@ -44,6 +46,7 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   app.delete("/api/vault/sync", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     await ctx.repo.deleteUserVault(identity);
     return { ok: true };
   });

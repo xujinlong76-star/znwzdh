@@ -59,13 +59,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
 COPY docker/entrypoint.sh /usr/local/bin/navhub-entrypoint
 RUN chmod +x /usr/local/bin/navhub-entrypoint
 
-# ---- 安全加固提示（默认关闭，保持现有可运行性） ----
-# 以非 root 运行 + 只读根文件系统示例：
-#   1. 取消下面两行的注释前，先确保 /data 已 chown 给 node（否则 SQLite 写不进）：
-#        RUN mkdir -p /data && chown -R node:node /data /app
-#        USER node
-#   2. 只读运行（compose 中加 `read_only: true`，并把 /data、/tmp 挂为可写卷，
-#      embedding 缓存 NAVHUB_EMBEDDING_CACHE 指向 /data/models）。
-# USER node
+# ---- 最小权限运行 ----
+# /data 预先 chown 给 node（SQLite/embedding 缓存要写这里），
+# /app 只读即可（node_modules 与源码运行时不需要写）。
+RUN mkdir -p /data && chown -R node:node /data /app
+USER node
 
 ENTRYPOINT ["/usr/local/bin/navhub-entrypoint"]

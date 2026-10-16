@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
 import {
   DEFAULT_GUARD,
   SsrfBlockedError,
@@ -217,5 +218,46 @@ describe("SSRF: DNS 解析超时（fail-closed）", () => {
     expect((err as SsrfBlockedError).reason).toBe("dns-timeout");
     // 必须在超时预算附近返回，而不是挂到默认防护值（10s）或更久
     expect(elapsed).toBeLessThan(2000);
+  });
+});
+
+describe("SSRF: 敏感端口与重定向链", () => {
+  it("敏感端口在形状校验阶段即拒绝（不发起 DNS/连接）", () => {
+    for (const target of ["http://example.com:22/", "http://example.com:3306/x", "http://example.com:5432/"]) {
+      try {
+        assertUrlShape(target);
+        expect.unreachable("应当拒绝 " + target);
+      } catch (e) {
+        expect(e).toBeInstanceOf(SsrfBlockedError);
+        expect((e as SsrfBlockedError).reason).toBe("blocked-port");
+      }
+    }
+  });
+
+  it("非 http(s) 协议经 guardedFetch 同样拒绝", async () => {
+    await expect(guardedFetch("gopher://x/1")).rejects.toThrow(SsrfBlockedError);
+    await expect(guardedFetch("ftp://x/y")).rejects.toThrow(SsrfBlockedError);
+  });
+
+  it("重定向链：正常跳转跟随并记录；自循环超限后抛错", async () => {
+    const server = createServer((req, res) => {
+      if (req.url === "/loop") { res.writeHead(302, { location: "/loop" }); res.end(); }
+      else if (req.url === "/a") { res.writeHead(302, { location: "/b" }); res.end(); }
+      else if (req.url === "/b") { res.writeHead(200, { "content-type": "text/plain" }); res.end("hello"); }
+      else { res.writeHead(404); res.end(); }
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const ok = await guardedFetch("http://127.0.0.1:" + port + "/a", { allowPrivateNetworks: true, timeoutMs: 2000 });
+      expect(ok.status).toBe(200);
+      expect(ok.body).toContain("hello");
+      expect(ok.redirects.length).toBe(1);
+      await expect(
+        guardedFetch("http://127.0.0.1:" + port + "/loop", { allowPrivateNetworks: true, timeoutMs: 2000, maxRedirects: 2 }),
+      ).rejects.toThrow(/重定向/);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
   });
 });

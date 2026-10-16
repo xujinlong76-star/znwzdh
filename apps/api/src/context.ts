@@ -122,6 +122,7 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       dtype: config.embedding.dtype,
       cacheDir: config.embedding.cacheDir,
       dim: config.embedding.dim,
+      useWorker: config.embedding.useWorker,
     });
     notes.push("embedding 服务已装配（惰性加载：" + config.embedding.model + " via " + config.embedding.endpoint + "，health 在 ready() 前如实报 semantic=false）");
   } else {
@@ -146,7 +147,10 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
 
   return {
     config, db, repo, search, vectors, fts, embedding, capabilities,
-    async close() { await db.close(); },
+    async close() {
+      await db.close();
+      if (embedding?.close) await embedding.close();
+    },
   };
 }
 

@@ -26,6 +26,7 @@ export interface AppConfig {
     cacheDir: string;
     dim: number;
     enabled: boolean;
+    useWorker: boolean;
   };
   llm: {
     baseUrl: string;
@@ -118,6 +119,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       cacheDir: env("NAVHUB_EMBEDDING_CACHE", "./data/models"),
       dim: num("NAVHUB_EMBEDDING_DIM", 512),
       enabled: bool("NAVHUB_EMBEDDING_ENABLED", true),
+      useWorker: bool("NAVHUB_WORKER_EMBEDDING", true),
     },
     llm: {
       baseUrl: env("NAVHUB_LLM_BASE_URL", "https://api.deepseek.com"),

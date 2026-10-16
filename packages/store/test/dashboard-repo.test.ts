@@ -107,4 +107,59 @@ describe("Dashboard Repository & Search Extensions", () => {
     const after = search.getLinUCBTelemetry();
     expect(after.feedbackCount).toBe(1);
   });
+
+  it("任务生命周期：getJob / cancelJob / retryJob / pruneJobs 完整运转", async () => {
+    const jobId = await repo.enqueueJob("refetch_metadata", { siteId: "s1" });
+    const job = await repo.getJob(jobId);
+    expect(job).not.toBeNull();
+    expect(job?.status).toBe("pending");
+    expect(job?.attempts).toBe(0);
+
+    // 取消任务
+    const cancelled = await repo.cancelJob(jobId);
+    expect(cancelled).toBe(true);
+    const afterCancel = await repo.getJob(jobId);
+    expect(afterCancel?.status).toBe("cancelled");
+
+    // 重试已取消的任务
+    const retried = await repo.retryJob(jobId);
+    expect(retried?.status).toBe("pending");
+    expect(retried?.attempts).toBe(0);
+
+    // 模拟任务失败
+    await repo.completeJob(jobId, "simulated error", { retryAt: null, exhausted: true });
+    const failedJob = await repo.getJob(jobId);
+    expect(failedJob?.status).toBe("failed");
+    expect(failedJob?.error).toBe("simulated error");
+
+    // 再次重试失败任务
+    const retriedAgain = await repo.retryJob(jobId);
+    expect(retriedAgain?.status).toBe("pending");
+    expect(retriedAgain?.error).toBeNull();
+
+    // 标记完成并测试 prune
+    await repo.completeJob(jobId, null);
+    const pruneResult = await repo.pruneJobs(0, ["done"]);
+    expect(pruneResult.pruned).toBeGreaterThanOrEqual(1);
+    const prunedJob = await repo.getJob(jobId);
+    expect(prunedJob).toBeNull();
+  });
+
+  it("数据库自检与维护：maintenanceCheck / vacuumDatabase / optimizeFts / checkpointWal", async () => {
+    const check = await repo.maintenanceCheck();
+    expect(check.ok).toBe(true);
+    expect(check.dialect).toBe("sqlite");
+    expect(check.integrity).toBe("ok");
+    expect(check.tableCounts.sites).toBeGreaterThanOrEqual(1);
+
+    const vacuum = await repo.vacuumDatabase();
+    expect(vacuum.ok).toBe(true);
+    expect(vacuum.tookMs).toBeGreaterThanOrEqual(0);
+
+    const optimize = await repo.optimizeFts();
+    expect(optimize.ok).toBe(true);
+
+    const checkpoint = await repo.checkpointWal("passive");
+    expect(checkpoint.ok).toBe(true);
+  });
 });

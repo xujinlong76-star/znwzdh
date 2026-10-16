@@ -31,6 +31,60 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     return ctx.repo.listJobs(q.status, limit);
   });
 
+  /** 获取单个任务明细 */
+  app.get("/api/jobs/:id", { config: { scope: "read" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const job = await ctx.repo.getJob(id);
+    if (!job) { reply.code(404); return { error: "任务不存在" }; }
+    return job;
+  });
+
+  /** 取消任务（仅处于 pending 或 running 状态的任务可被取消） */
+  app.post("/api/jobs/:id/cancel", { config: { scope: "write" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const job = await ctx.repo.getJob(id);
+    if (!job) { reply.code(404); return { error: "任务不存在" }; }
+    await ctx.repo.cancelJob(id);
+    jobEventBus.emitJobUpdate({
+      jobId: id,
+      kind: job.kind,
+      status: "cancelled",
+      attempts: job.attempts,
+      timestamp: Date.now(),
+    });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.cancel", target: id, diff: { kind: job.kind } });
+    return { ok: true, id, status: "cancelled" };
+  });
+
+  /** 重试任务（针对失败或被取消的任务重置为 pending 并立即可认领） */
+  app.post("/api/jobs/:id/retry", { config: { scope: "write" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const job = await ctx.repo.getJob(id);
+    if (!job) { reply.code(404); return { error: "任务不存在" }; }
+    const retried = await ctx.repo.retryJob(id);
+    jobEventBus.emitJobUpdate({
+      jobId: id,
+      kind: job.kind,
+      status: "pending",
+      attempts: 0,
+      timestamp: Date.now(),
+    });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.retry", target: id, diff: { kind: job.kind } });
+    return { ok: true, job: retried };
+  });
+
+  /** 清理历史终态任务记录（默认清除 7 天前已完成、已失败或已取消的任务） */
+  app.post("/api/jobs/prune", { config: { scope: "admin" } }, async (req, reply) => {
+    const body = z.object({
+      olderThanDays: z.number().int().min(0).max(365).default(7),
+      statuses: z.array(z.string()).default(["done", "failed", "cancelled"]),
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    const result = await ctx.repo.pruneJobs(body.data.olderThanDays, body.data.statuses);
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.prune", diff: { ...body.data, ...result } });
+    return { ok: true, pruned: result.pruned, olderThanDays: body.data.olderThanDays };
+  });
+
   /**
    * 全量任务实时 SSE 事件流（控制台与运维仪表盘用）
    */

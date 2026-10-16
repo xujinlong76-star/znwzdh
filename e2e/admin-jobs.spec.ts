@@ -33,5 +33,9 @@ test.describe('核心旅程 5：管理端任务调度与 SSE 实时推流', () =
 
     // 验证列表中出现热度重算记录
     await expect(page.locator('tr').filter({ hasText: '热度重算' }).first()).toBeVisible({ timeout: 10_000 });
+
+    // 验证清理历史按钮与操作列表头
+    await expect(page.getByRole('button', { name: /清理 7d 历史/ })).toBeVisible();
+    await expect(page.locator('th').filter({ hasText: '操作' })).toBeVisible();
   });
 });

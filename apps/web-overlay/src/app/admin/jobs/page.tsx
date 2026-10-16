@@ -35,7 +35,7 @@ interface Job {
   id: string
   kind: string
   payload?: Record<string, unknown> | null
-  status: 'pending' | 'running' | 'done' | 'failed' | 'retrying'
+  status: 'pending' | 'running' | 'done' | 'failed' | 'retrying' | 'cancelled'
   attempts: number
   error: string | null
   createdAt: number
@@ -92,6 +92,7 @@ const STATUS_MAP: Record<
   done: { label: '已完成', color: 'text-emerald-500', badgeVariant: 'outline' },
   retrying: { label: '退避重试', color: 'text-orange-500', badgeVariant: 'secondary' },
   failed: { label: '失败终止', color: 'text-rose-500', badgeVariant: 'destructive' },
+  cancelled: { label: '已取消', color: 'text-zinc-500', badgeVariant: 'outline' },
 }
 
 export default function AdminJobsPage() {
@@ -100,6 +101,8 @@ export default function AdminJobsPage() {
   const [enqueuing, setEnqueuing] = useState<string | null>(null)
   const [sseConnected, setSseConnected] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [actingJobId, setActingJobId] = useState<string | null>(null)
+  const [pruning, setPruning] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -189,6 +192,54 @@ export default function AdminJobsPage() {
       console.error('[jobs] 入队失败:', err)
     } finally {
       setEnqueuing(null)
+    }
+  }
+
+  const handleCancel = async (jobId: string) => {
+    setActingJobId(jobId)
+    try {
+      await hubSend(`/api/jobs/${jobId}/cancel`, 'POST')
+      setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: 'cancelled' } : j)))
+    } catch (err) {
+      console.error('[jobs] 取消任务失败:', err)
+      alert('取消任务失败: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setActingJobId(null)
+    }
+  }
+
+  const handleRetry = async (jobId: string) => {
+    setActingJobId(jobId)
+    try {
+      const res = await hubSend<{ ok: boolean; job: Job }>(`/api/jobs/${jobId}/retry`, 'POST')
+      if (res?.job) {
+        setJobs((prev) => prev.map((j) => (j.id === jobId ? res.job : j)))
+      } else {
+        await load()
+      }
+    } catch (err) {
+      console.error('[jobs] 重试任务失败:', err)
+      alert('重试任务失败: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setActingJobId(null)
+    }
+  }
+
+  const handlePrune = async () => {
+    if (!confirm('确定清理 7 天前已完成、已失败或已取消的历史任务吗？')) return
+    setPruning(true)
+    try {
+      const res = await hubSend<{ ok: boolean; pruned: number }>('/api/jobs/prune', 'POST', {
+        olderThanDays: 7,
+        statuses: ['done', 'failed', 'cancelled'],
+      })
+      alert('已成功清理 ' + res.pruned + ' 条历史任务记录')
+      await load()
+    } catch (err) {
+      console.error('[jobs] 清理历史任务失败:', err)
+      alert('清理失败: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setPruning(false)
     }
   }
 
@@ -361,11 +412,23 @@ export default function AdminJobsPage() {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-medium text-muted-foreground">任务运行日志与状态队列</h2>
-          {statusFilter !== 'all' && (
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setStatusFilter('all')}>
-              清除过滤 (当前: {STATUS_MAP[statusFilter]?.label ?? statusFilter})
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs text-muted-foreground hover:text-foreground"
+              disabled={pruning}
+              onClick={() => void handlePrune()}
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1 text-muted-foreground" />
+              {pruning ? '清理中…' : '清理 7d 历史'}
             </Button>
-          )}
+            {statusFilter !== 'all' && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setStatusFilter('all')}>
+                清除过滤 (当前: {STATUS_MAP[statusFilter]?.label ?? statusFilter})
+              </Button>
+            )}
+          </div>
         </div>
 
         {loading ? (
@@ -387,6 +450,7 @@ export default function AdminJobsPage() {
                   <th className="text-left px-4 py-2.5 font-medium">尝试次数</th>
                   <th className="text-left px-4 py-2.5 font-medium">详情 / 异常</th>
                   <th className="text-left px-4 py-2.5 font-medium">创建时间</th>
+                  <th className="text-right px-4 py-2.5 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -437,6 +501,33 @@ export default function AdminJobsPage() {
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                         {new Date(j.createdAt).toLocaleString('zh-CN')}
+                      </td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        {(j.status === 'pending' || j.status === 'running') && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                            disabled={actingJobId === j.id}
+                            onClick={() => void handleCancel(j.id)}
+                          >
+                            {actingJobId === j.id ? '取消中…' : '取消'}
+                          </Button>
+                        )}
+                        {(j.status === 'failed' || j.status === 'cancelled') && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-primary hover:bg-primary/10"
+                            disabled={actingJobId === j.id}
+                            onClick={() => void handleRetry(j.id)}
+                          >
+                            {actingJobId === j.id ? '重试中…' : '重试'}
+                          </Button>
+                        )}
+                        {j.status === 'done' && (
+                          <span className="text-xs text-muted-foreground/40">—</span>
+                        )}
                       </td>
                     </tr>
                   )

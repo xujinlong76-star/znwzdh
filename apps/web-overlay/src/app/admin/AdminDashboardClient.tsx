@@ -25,6 +25,7 @@ import {
   Sparkles,
   Trash2,
   Workflow,
+  Wrench,
   Zap,
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -226,6 +227,34 @@ export function AdminDashboardClient() {
     } catch (err) {
       setActionNotice(`派发失败: ${String(err)}`)
       setTimeout(() => setActionNotice(null), 4000)
+    }
+  }
+
+  const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null)
+  const [isMaintaining, setIsMaintaining] = useState(false)
+
+  const runMaintenance = async (action: 'status' | 'checkpoint' | 'optimize' | 'vacuum') => {
+    setIsMaintaining(true)
+    setMaintenanceMsg(null)
+    try {
+      if (action === 'status') {
+        const res = await hubGet<{ ok: boolean; integrity: string; freePages?: number }>('/api/admin/maintenance/status')
+        setMaintenanceMsg(`数据库自检: ${res.ok ? '✅ 健康 (Integrity: ' + res.integrity + ')' : '❌ 异常'}${res.freePages !== undefined ? ` · 空闲页: ${res.freePages}` : ''}`)
+      } else if (action === 'checkpoint') {
+        const res = await hubSend<{ ok: boolean; tookMs: number; logSize?: number }>('/api/admin/maintenance/checkpoint', 'POST', { mode: 'passive' })
+        setMaintenanceMsg(`WAL 刷盘完成: 耗时 ${res.tookMs}ms${res.logSize !== undefined ? ` · 写入帧: ${res.logSize}` : ''}`)
+      } else if (action === 'optimize') {
+        const res = await hubSend<{ ok: boolean; tookMs: number }>('/api/admin/maintenance/optimize', 'POST')
+        setMaintenanceMsg(`FTS5 检索索引优化完毕: 耗时 ${res.tookMs}ms`)
+      } else if (action === 'vacuum') {
+        const res = await hubSend<{ ok: boolean; tookMs: number; message: string }>('/api/admin/maintenance/vacuum', 'POST')
+        setMaintenanceMsg(`碎片回收: ${res.message} (${res.tookMs}ms)`)
+        await fetchFullDashboard(true)
+      }
+    } catch (err) {
+      setMaintenanceMsg(`维护执行失败: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setIsMaintaining(false)
     }
   }
 
@@ -724,6 +753,60 @@ export function AdminDashboardClient() {
                     <div className="text-sm font-semibold mt-0.5">{count}</div>
                   </div>
                 ))}
+            </div>
+
+            {/* 在线自检与数据库维护动作 */}
+            <div className="mt-4 pt-3 border-t space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
+                <span className="flex items-center gap-1">
+                  <Wrench className="w-3.5 h-3.5 text-primary" />
+                  在线存储引擎自检与维护
+                </span>
+                {isMaintaining && <span className="text-primary animate-pulse">执行中…</span>}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  disabled={isMaintaining}
+                  onClick={() => runMaintenance('status')}
+                >
+                  完整性自检
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  disabled={isMaintaining}
+                  onClick={() => runMaintenance('checkpoint')}
+                >
+                  WAL 刷盘
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  disabled={isMaintaining}
+                  onClick={() => runMaintenance('optimize')}
+                >
+                  FTS5 段合并
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  disabled={isMaintaining}
+                  onClick={() => runMaintenance('vacuum')}
+                >
+                  碎片回收
+                </Button>
+              </div>
+              {maintenanceMsg && (
+                <div className="text-[11px] bg-muted/60 text-foreground p-2 rounded border border-border/80">
+                  {maintenanceMsg}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>

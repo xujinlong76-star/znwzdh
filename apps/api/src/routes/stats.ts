@@ -4,6 +4,7 @@
  * 提供全景运营指标、性能遥测、安全态势、LinUCB 模型权重演进与 SSE 实时流。
  */
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import type { AppContext } from "../context.ts";
 import { getHttpMetricsSummary } from "../metrics.ts";
 
@@ -168,5 +169,37 @@ export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       ctx.repo.hotSites(20),
     ]);
     return { days, topQueries: top, zeroResultQueries: zero, hotSites: hot };
+  });
+
+  /* ---------------------------- 数据库健康自检与维护 ---------------------------- */
+
+  /** 数据库健康自检与完整性验证 */
+  app.get("/api/admin/maintenance/status", { config: { scope: "admin" } }, async () => {
+    return ctx.repo.maintenanceCheck();
+  });
+
+  /** 强制执行 SQLite WAL 预写日志同步刷盘（PASSIVE / FULL / RESTART / TRUNCATE） */
+  app.post("/api/admin/maintenance/checkpoint", { config: { scope: "admin" } }, async (req) => {
+    const body = z.object({
+      mode: z.enum(["passive", "full", "restart", "truncate"]).default("passive"),
+    }).safeParse(req.body ?? {});
+    const mode = body.success ? body.data.mode : "passive";
+    const res = await ctx.repo.checkpointWal(mode);
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "db.checkpoint", diff: { mode, ...res } });
+    return res;
+  });
+
+  /** 触发全文检索 B-Tree 段合并优化（optimize） */
+  app.post("/api/admin/maintenance/optimize", { config: { scope: "admin" } }, async (req) => {
+    const res = await ctx.repo.optimizeFts();
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "db.optimize_fts", diff: res });
+    return res;
+  });
+
+  /** 整理数据库物理文件并回收未利用空闲碎片（VACUUM） */
+  app.post("/api/admin/maintenance/vacuum", { config: { scope: "admin" } }, async (req) => {
+    const res = await ctx.repo.vacuumDatabase();
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "db.vacuum", diff: res });
+    return res;
   });
 };

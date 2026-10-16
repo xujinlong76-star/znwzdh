@@ -39,13 +39,14 @@ async function start() {
   }
 
   // 启动 Next.js Web 前端
+  const nextBin = resolve(rootDir, "apps/web/node_modules/next/dist/bin/next");
   webProc = spawn(
     process.execPath,
-    ["scripts/run.mjs", "--filter", "navsphere", "dev"],
+    [nextBin, "dev", "-p", "3000"],
     {
-      cwd: rootDir,
+      cwd: resolve(rootDir, "apps/web"),
       stdio: "inherit",
-      env: { ...process.env },
+      env: { ...process.env, PORT: "3000" },
     }
   );
 

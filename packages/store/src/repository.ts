@@ -12,7 +12,7 @@ import {
   type SiteRelation,
   type SiteStatus,
 } from "@navhub/core";
-import type { Db } from "./driver.ts";
+import type { Db, Dialect } from "./driver.ts";
 import { hashSiteId } from "./vector/types.ts";
 import { vectorToBlob } from "./vector/types.ts";
 
@@ -202,6 +202,17 @@ export interface TagWithCount {
   name: string;
   slug: string;
   count: number;
+}
+
+export interface MaintenanceStatus {
+  ok: boolean;
+  dialect: Dialect;
+  integrity: string;
+  dbSizeBytes: number | null;
+  pageCount?: number;
+  pageSize?: number;
+  freePages?: number;
+  tableCounts: Record<string, number>;
 }
 
 /** 把站点转成可索引形态：标题+描述+标签一起进语料 */
@@ -941,6 +952,100 @@ export class Repository {
     }
 
     return { dbSizeBytes, walSizeBytes, tableCounts };
+  }
+
+  /** 数据库全量健康与完整性自检 */
+  async maintenanceCheck(): Promise<MaintenanceStatus> {
+    let integrity = "ok";
+    let pageCount: number | undefined;
+    let pageSize: number | undefined;
+    let freePages: number | undefined;
+
+    if (this.db.dialect === "sqlite" && this.db.sqlite) {
+      try {
+        const check = this.db.sqlite.prepare("PRAGMA integrity_check(1)").get() as any;
+        integrity = String(check?.["integrity_check"] ?? "ok");
+        pageCount = Number((this.db.sqlite.prepare("PRAGMA page_count").get() as any)?.["page_count"] ?? 0);
+        pageSize = Number((this.db.sqlite.prepare("PRAGMA page_size").get() as any)?.["page_size"] ?? 4096);
+        freePages = Number((this.db.sqlite.prepare("PRAGMA freelist_count").get() as any)?.["freelist_count"] ?? 0);
+      } catch (err) {
+        integrity = "error: " + (err instanceof Error ? err.message : String(err));
+      }
+    } else if (this.db.dialect === "pg" && this.db.pg) {
+      try {
+        const res = await this.raw("SELECT 1 AS ok", []);
+        integrity = res[0]?.ok === 1 ? "ok" : "unknown";
+      } catch (err) {
+        integrity = "error: " + (err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    const storage = await this.dbStorageMetrics();
+
+    return {
+      ok: integrity === "ok",
+      dialect: this.db.dialect,
+      integrity,
+      dbSizeBytes: storage.dbSizeBytes,
+      pageCount,
+      pageSize,
+      freePages,
+      tableCounts: storage.tableCounts,
+    };
+  }
+
+  /** 执行数据库磁盘空间整理与空闲碎片回收（VACUUM） */
+  async vacuumDatabase(): Promise<{ ok: boolean; tookMs: number; message: string }> {
+    const t0 = Date.now();
+    try {
+      if (this.db.dialect === "sqlite" && this.db.sqlite) {
+        this.db.sqlite.exec("VACUUM");
+        return { ok: true, tookMs: Date.now() - t0, message: "SQLite VACUUM 整理完毕，已回收物理碎片" };
+      } else if (this.db.dialect === "pg" && this.db.pg) {
+        await this.db.pg.query("ANALYZE");
+        return { ok: true, tookMs: Date.now() - t0, message: "PostgreSQL ANALYZE 完成" };
+      }
+      return { ok: true, tookMs: Date.now() - t0, message: "无需整理" };
+    } catch (err) {
+      return { ok: false, tookMs: Date.now() - t0, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** 触发 SQLite FTS5 全文检索引擎段合并与碎片整理（optimize） */
+  async optimizeFts(): Promise<{ ok: boolean; tookMs: number; skipped?: boolean }> {
+    const t0 = Date.now();
+    if (this.db.dialect === "sqlite" && this.db.sqlite) {
+      try {
+        const hasFts = this.db.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sites_fts'").get();
+        if (!hasFts) {
+          return { ok: true, tookMs: Date.now() - t0, skipped: true };
+        }
+        this.db.sqlite.exec("INSERT INTO sites_fts(sites_fts) VALUES('optimize')");
+        return { ok: true, tookMs: Date.now() - t0 };
+      } catch {
+        return { ok: false, tookMs: Date.now() - t0 };
+      }
+    }
+    return { ok: true, tookMs: Date.now() - t0 };
+  }
+
+  /** 强制将 WAL 预写日志刷盘同步至主数据库文件（PRAGMA wal_checkpoint） */
+  async checkpointWal(mode: "passive" | "full" | "restart" | "truncate" = "passive"): Promise<{ ok: boolean; tookMs: number; logSize?: number }> {
+    const t0 = Date.now();
+    if (this.db.dialect === "sqlite" && this.db.sqlite) {
+      try {
+        const upper = mode.toUpperCase();
+        const res = this.db.sqlite.prepare("PRAGMA wal_checkpoint(" + upper + ")").get() as any;
+        return {
+          ok: true,
+          tookMs: Date.now() - t0,
+          logSize: Number(res?.["log"] ?? 0),
+        };
+      } catch {
+        return { ok: false, tookMs: Date.now() - t0 };
+      }
+    }
+    return { ok: true, tookMs: Date.now() - t0 };
   }
 
   /** 安全态势概览（拦截未授权请求分布、高危操作审计明细、令牌统计） */
@@ -1897,6 +2002,53 @@ export class Repository {
       ? await this.raw("SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC LIMIT ?", [status, limit])
       : await this.raw("SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", [limit]);
     return rows.map(rowToJob);
+  }
+
+  /** 获取单个任务详情 */
+  async getJob(id: string): Promise<JobRecord | null> {
+    const rows = await this.raw("SELECT * FROM jobs WHERE id = ? LIMIT 1", [id]);
+    return rows[0] ? rowToJob(rows[0]) : null;
+  }
+
+  /** 取消任务（仅处于 pending 或 running 状态的任务可被取消） */
+  async cancelJob(id: string): Promise<boolean> {
+    const now = Date.now();
+    await this.run(
+      "UPDATE jobs SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('pending', 'running')",
+      [now, id],
+    );
+    return true;
+  }
+
+  /** 重试任务（针对失败或已取消的任务重置为 pending 并立即可认领） */
+  async retryJob(id: string): Promise<JobRecord | null> {
+    const job = await this.getJob(id);
+    if (!job) return null;
+    const now = Date.now();
+    await this.run(
+      "UPDATE jobs SET status = 'pending', attempts = 0, error = NULL, next_run_at = NULL, updated_at = ? WHERE id = ?",
+      [now, id],
+    );
+    return this.getJob(id);
+  }
+
+  /** 清理历史终态任务记录（默认清除 7 天前已完成、已失败或已取消的任务） */
+  async pruneJobs(olderThanDays = 7, statuses: string[] = ["done", "failed", "cancelled"]): Promise<{ pruned: number }> {
+    const cutoff = Date.now() - olderThanDays * 86400_000;
+    if (statuses.length === 0) return { pruned: 0 };
+    const placeholders = statuses.map(() => "?").join(",");
+    const countRow = (await this.raw(
+      "SELECT COUNT(*) AS c FROM jobs WHERE status IN (" + placeholders + ") AND updated_at <= ?",
+      [...statuses, cutoff],
+    ))[0];
+    const pruned = Number(countRow?.c ?? 0);
+    if (pruned > 0) {
+      await this.run(
+        "DELETE FROM jobs WHERE status IN (" + placeholders + ") AND updated_at <= ?",
+        [...statuses, cutoff],
+      );
+    }
+    return { pruned };
   }
 
   /* ------------------------- 系统全局状态 & 定时任务辅助 ------------------------- */

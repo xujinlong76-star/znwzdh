@@ -26,8 +26,8 @@ export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recomp
 
 export interface JobEventPayload {
   jobId: string;
-  kind: JobKind;
-  status: "running" | "completed" | "failed" | "retrying";
+  kind: JobKind | string;
+  status: "pending" | "running" | "completed" | "failed" | "retrying" | "cancelled";
   attempts?: number;
   error?: string | null;
   timestamp: number;

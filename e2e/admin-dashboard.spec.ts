@@ -14,8 +14,8 @@ test.describe('管理端控制台与运营洞察看板 E2E 测试', () => {
   });
 
   test('控制台首页展示 6 大核心 KPI、系统轻量态势与 SSE 状态', async ({ page }) => {
-    // 验证 SSE 状态徽章存在
-    await expect(page.locator('text=SSE 遥测就绪').or(page.locator('text=连接中'))).toBeVisible();
+    // 验证 SSE 状态徽章存在并等待客户端 React 水合就绪
+    await expect(page.locator('text=SSE 遥测就绪')).toBeVisible({ timeout: 20_000 });
 
     // 验证 6 大核心卡片标题
     await expect(page.locator('text=站点资产规模')).toBeVisible();
@@ -30,6 +30,12 @@ test.describe('管理端控制台与运营洞察看板 E2E 测试', () => {
     await expect(page.locator('text=LinUCB 多通道自适应权重')).toBeVisible();
     await expect(page.locator('text=顶级分类收录分布')).toBeVisible();
     await expect(page.locator('text=存储引擎与数据表容量')).toBeVisible();
+
+    // 验证数据库在线维护按钮与自检反馈（水合完成后触发点击）
+    const integrityBtn = page.getByRole('button', { name: '完整性自检' });
+    await expect(integrityBtn).toBeVisible();
+    await integrityBtn.click();
+    await expect(page.getByText(/数据库自检.*健康/)).toBeVisible({ timeout: 15_000 });
 
     // 验证快捷管理导航卡片
     await expect(page.locator('text=导航架构管理')).toBeVisible();

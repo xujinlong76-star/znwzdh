@@ -1,5 +1,5 @@
 /**
- * 审计日志查询
+ * 审计日志查询与合规导出
  *
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
@@ -27,4 +27,17 @@ export const auditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     return { ...page, limit, offset, actions };
   });
 
+  /** 导出审计日志为 JSON 格式（供安全归档或合规审查） */
+  app.get("/api/admin/audit/export", { config: { scope: "admin" } }, async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const limit = Math.min(Math.max(Number(q.limit) || 1000, 1), 5000);
+    const data = await ctx.repo.listAuditLogs({ limit, offset: 0, action: q.action || undefined, actor: q.actor || undefined });
+    reply.header("content-disposition", `attachment; filename="navhub-audit-${Date.now()}.json"`);
+    return {
+      exportedAt: Date.now(),
+      hasMore: data.hasMore,
+      count: data.items.length,
+      items: data.items,
+    };
+  });
 };

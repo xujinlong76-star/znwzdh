@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_GUARD,
   SsrfBlockedError,
@@ -16,6 +16,14 @@ import {
   heuristicTags,
   stripCodeFence,
 } from "../src/enrich.ts";
+
+// 让 DNS 查询永不返回，用于验证 guardedFetch 的 DNS 超时（fail-closed）。
+// 本文件其余用例只走字面 IP / 协议校验，不依赖真实 DNS，因此整体替换 lookup 是安全的；
+// 通过 importOriginal 展开其余导出，避免影响潜在的其他消费者。
+vi.mock("node:dns/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:dns/promises")>();
+  return { ...actual, lookup: vi.fn(() => new Promise(() => {})) };
+});
 
 const BT = String.fromCharCode(96);
 const FENCE = BT.repeat(3);
@@ -197,5 +205,17 @@ describe("AI 富化：启发式降级路径", () => {
     expect(stripCodeFence('{"a":1}')).toBe('{"a":1}');
     expect(stripCodeFence('这里是结果：\n' + wrapped + '\n祝使用愉快！')).toBe('{"a":1}');
     expect(stripCodeFence('请看：{"a":1} 已经生成完成')).toBe('{"a":1}');
+  });
+});
+
+describe("SSRF: DNS 解析超时（fail-closed）", () => {
+  it("DNS 长时间无响应时，guardedFetch 在 timeoutMs 内拒绝，而不是无限挂起", async () => {
+    const started = Date.now();
+    const err = await guardedFetch("http://slow-dns.invalid/", { timeoutMs: 300 }).catch((e) => e);
+    const elapsed = Date.now() - started;
+    expect(err).toBeInstanceOf(SsrfBlockedError);
+    expect((err as SsrfBlockedError).reason).toBe("dns-timeout");
+    // 必须在超时预算附近返回，而不是挂到默认防护值（10s）或更久
+    expect(elapsed).toBeLessThan(2000);
   });
 });

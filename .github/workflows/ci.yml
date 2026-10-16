@@ -164,7 +164,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - name: 执行 Playwright E2E 测试
         run: pnpm test:e2e
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
         with:
           name: playwright-report

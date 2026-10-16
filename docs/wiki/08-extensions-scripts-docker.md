@@ -119,7 +119,7 @@ exec node --experimental-strip-types apps/api/src/main.ts
 | 文件 | 用途 | 要点 |
 | --- | --- | --- |
 | [docker/Dockerfile.api](file:///c:/Users/许进龙/Desktop/web/docker/Dockerfile.api) | 中枢镜像 | 先装 `python3 make g++`（better-sqlite3 原生编译）+ `curl`（HEALTHCHECK）；**不依赖 corepack**（会联网拉版本，构建环境常不可用）→ `npm install -g pnpm@11.7.0 --registry=https://registry.npmmirror.com`；**先只拷贝清单**最大化层缓存 |
-| [docker/Dockerfile.web](file:///c:/Users/许进龙/Desktop/web/docker/Dockerfile.web) | 前端镜像 | **构建期拉 NavSphere 底座** → `COPY apps/web-overlay/ /app/web/` 注入覆盖层 → **开箱可用，无需宿主机跑 vendor**；`ENV STORAGE_ADAPTER=http NEXT_PUBLIC_API_URL=http://api:8787`；`pnpm build`（**不用 standalone**——避免受限环境创建符号链接失败） |
+| [docker/Dockerfile.web](file:///c:/Users/许进龙/Desktop/web/docker/Dockerfile.web) | 前端镜像 | 依赖层先只拷清单（根 `package.json` + `pnpm-lock.yaml` + `pnpm-workspace.yaml` + 覆盖层 `package.json`）→ **`pnpm install --frozen-lockfile --filter "./apps/web"`**（镜像里前端就是 workspace 成员，装的就是仓库锁定的那一套版本，可复现；改自研源码不会让这层失效）→ 再拉 NavSphere 底座到 `/app/apps/web` 并 `COPY apps/web-overlay/ /app/apps/web/` 注入覆盖层 → **开箱可用，无需宿主机跑 vendor**；`ENV STORAGE_ADAPTER=http NEXT_PUBLIC_API_URL=http://api:8787`；`pnpm build`（**不用 standalone**——避免受限环境创建符号链接失败） |
 | [Dockerfile](file:///c:/Users/许进龙/Desktop/web/Dockerfile)（根） | 简版多阶段 | `base → dependencies → builder → runner`；`EXPOSE 3000 8787`；`CMD node scripts/run.mjs dev` |
 
 **overlay 注入的关键文件**（Dockerfile.web 注释）：

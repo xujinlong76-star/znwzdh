@@ -14,17 +14,31 @@ RUN npm install -g pnpm@11.7.0 --registry=https://registry.npmmirror.com
 
 WORKDIR /app
 
-# 1) 拉取 NavSphere 底座（MIT），并用 NavHub 自己的适配器覆盖存储层
-# 默认固定到具体 commit（与 scripts/vendor-web.mjs 的 DEFAULT_REF、UPSTREAM.md 同源），
-# 保证同一个仓库标签构建的镜像可复现；升级底座时显式传 --build-arg NAVSPHERE_REF=<新 sha>。
-# codeload 的 /tar.gz/<ref> 对 branch / tag / sha 都有效，故不再拼 refs/heads/。
+# 1) 依赖层：镜像里前端就是 workspace 成员 apps/web（与仓库同构），直接吃仓库根的
+#    pnpm-lock.yaml。先只放清单再装依赖 —— 这一层只随清单/锁文件变化，改自研源码不必重装依赖。
+#    frozen 安装 = 镜像里装的就是 CI/仓库锁定的那一套版本（此前 lockfile 没进镜像、只能
+#    --no-frozen-lockfile，等于每次构建重新解一遍版本范围，镜像不可复现）。
+#    根 workspace 配置同时是 overrides / allowBuilds 的唯一事实源，不需要复制副本或改写。
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# 根 package.json 的 prepare 钩子会执行它（镜像里没有 .git，脚本只打印一行跳过）
+COPY scripts/install-git-hooks.mjs ./scripts/
+# 覆盖层的清单（vendor 之后它才是最终清单；这里先只放清单供解析）
+COPY apps/web-overlay/package.json ./apps/web/package.json
+RUN pnpm install --frozen-lockfile --filter "./apps/web"
+
+# 2) 上游底座（NavSphere，MIT）拉进 apps/web，再用 NavHub 覆盖层覆盖存储层
+#    默认固定到具体 commit（与 scripts/vendor-web.mjs 的 DEFAULT_REF、UPSTREAM.md 同源），
+#    保证同一个仓库标签构建的镜像可复现；升级底座时显式传 --build-arg NAVSPHERE_REF=<新 sha>。
+#    codeload 的 /tar.gz/<ref> 对 branch / tag / sha 都有效，故不再拼 refs/heads/。
+#    注意：底座 tarball 自带的上游 package.json / pnpm-lock.yaml 会被覆盖层覆盖，
+#    镜像里的依赖解析与已装依赖始终以仓库根的清单 + 锁文件为准（见上面第 1 步）。
 ARG NAVSPHERE_REF=6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a
 RUN curl -fsSL "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/${NAVSPHERE_REF}" -o /tmp/ns.tgz \
     && mkdir -p /tmp/ns && tar -xzf /tmp/ns.tgz -C /tmp/ns --strip-components=1 \
-    && mkdir -p /app/web && cp -a /tmp/ns/. /app/web/ \
+    && mkdir -p /app/apps/web && cp -a /tmp/ns/. /app/apps/web/ \
     && rm -rf /tmp/ns /tmp/ns.tgz
 
-# 2) 注入 NavHub 的前端覆盖层（唯一事实源：apps/web-overlay/）
+# 注入 NavHub 的前端覆盖层（唯一事实源：apps/web-overlay/）
 #    - src/lib/storage-adapter.ts: 三种后端（http | github | sqlite）的实现
 #    - src/lib/github.ts:          保持原函数签名的门面，内部改走适配器。
 #                                  因此 NavSphere 那 16 个 route / 约 69 处调用点一行都不用改。
@@ -33,25 +47,9 @@ RUN curl -fsSL "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/${NAVSP
 #    - next.config.js:             构建输出目录可覆盖（NEXT_DIST_DIR）
 #    注意：/api/hub/* 代理是 src/app/api/hub/[...path]/route.ts 路由（运行时读
 #    NAVHUB_STORAGE_BASE_URL），已包含在覆盖层里，无需在 Dockerfile 额外配置。
-COPY apps/web-overlay/ /app/web/
+COPY apps/web-overlay/ /app/apps/web/
 
-# apps/web 在镜像里是独立项目：读不到仓库根的 pnpm-workspace.yaml，而 pnpm 11 的
-# overrides / allowBuilds 只认 pnpm-workspace.yaml（package.json 里的 pnpm 字段会被忽略并告警）。
-# 另外上游 tarball 自带的 pnpm-lock.yaml 对应的是**上游** package.json，与 NavHub 覆盖层的
-# package.json 永远不可能匹配 —— `--frozen-lockfile` 会直接 ERR_PNPM_LOCKFILE_CONFIG_MISMATCH
-# 把镜像构建打挂。因此：把根配置作为唯一事实源搬进来，并做一次非 frozen 安装。
-COPY pnpm-workspace.yaml /app/web/
-
-# pnpm 11 的构建脚本门禁：非 frozen 安装遇到「未声明的构建脚本」会直接
-# ERR_PNPM_IGNORED_BUILDS 退出（frozen 安装会跳过该校验，所以根安装看不到这个问题）。
-# 根配置的 allowBuilds 只覆盖后端/共享依赖，前端依赖图里的 @tailwindcss/oxide 与
-# unrs-resolver 没有被声明。这里在既有 allowBuilds 映射里补两条 false —— 与根安装的
-# 既有效果一致（两者都自带平台二进制，且 unrs-resolver 只在 lint 里用、镜像不跑 lint），
-# 既消除门禁报错，也不改变依赖产物。用 node 改文本（不用 sed）以保证在任意基础镜像上行为一致。
-RUN node -e "const fs=require('fs'),p='/app/web/pnpm-workspace.yaml',s=fs.readFileSync(p,'utf8');fs.writeFileSync(p,s.replace(/^allowBuilds:/m,'allowBuilds:\n  \"@tailwindcss/oxide\": false\n  unrs-resolver: false'))"
-
-WORKDIR /app/web
-RUN pnpm install --no-frozen-lockfile
+WORKDIR /app/apps/web
 
 ENV NODE_ENV=production \
     STORAGE_ADAPTER=http \

@@ -7,14 +7,13 @@ test.describe('核心旅程 2：模块化自定义工作台与看板持久化', 
 
   test('工作台画布正常装载并呈现默认看板与栅格卡片', async ({ page }) => {
     // 验证页面主标题
-    await expect(page.locator('text=模块化自定义工作台')).toBeVisible();
+    await expect(page.getByText('模块化自定义工作台', { exact: true })).toBeVisible();
 
     // 验证多看板切换标签与 12 栅格自适应指示
-    await expect(page.locator('text=12 栅格自适应')).toBeVisible();
+    await expect(page.getByText('12 栅格自适应', { exact: true })).toBeVisible();
 
-    // 默认应包含工作台模块卡片
-    const cards = page.locator('.modular-card').or(page.locator('[data-widget-id]')).or(page.locator('article'));
-    await expect(page.locator('text=自定义排版')).toBeVisible();
+    // 默认应包含工作台模块卡片与操作按钮
+    await expect(page.getByRole('button', { name: /自定义排版/ })).toBeVisible();
   });
 
   test('支持开启自定义排版模式并展示模块编辑工具栏', async ({ page }) => {

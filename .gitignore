@@ -14,6 +14,8 @@ data/
 .spike/
 .cache/
 coverage/
+test-results/
+playwright-report/
 .turbo/
 .DS_Store
 Thumbs.db

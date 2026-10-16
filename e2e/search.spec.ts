@@ -16,11 +16,10 @@ test.describe('核心旅程 1：首页检索与 0-RTT 意图微部件', () => {
     const searchInput = page.getByPlaceholder(/搜索导航/);
     await searchInput.click();
 
-    // 输入 "json" 触发 0-RTT 格式化 / 验证意图微部件
-    await searchInput.fill('json');
-    // 等待意图解析渲染
-    const intentCard = page.locator('text=JSON').first();
-    await expect(intentCard).toBeVisible();
+    // 输入 JSON 串触发 0-RTT 格式化 / 验证意图微部件
+    await searchInput.fill('{"name":"navhub"}');
+    // 等待 0-RTT 意图卡片渲染
+    await expect(page.locator('text=0-RTT 推测执行').first()).toBeVisible();
   });
 
   test('输入对比类查询触发技术选型对比矩阵 (Tech Comparison)', async ({ page }) => {

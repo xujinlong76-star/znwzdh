@@ -29,6 +29,14 @@ const nextConfig = {
       { source: "/auth/:path*", destination: "/auth/:path*" },
     ];
   },
+  devIndicators: false,
+  webpack: (config, { dev }) => {
+    if (dev) {
+      // 避免 Windows 环境下 webpack filesystem cache 发生 pack.gz 重命名锁竞争与 ENOENT 损坏
+      config.cache = { type: "memory" };
+    }
+    return config;
+  },
   experimental: {
     serverActions: {
       allowedOrigins: ["localhost", "newkit.site"],

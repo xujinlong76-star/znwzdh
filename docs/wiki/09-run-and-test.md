@@ -29,7 +29,7 @@ pnpm --filter @navhub/api start
 | `pnpm dev` | `pnpm --filter @navhub/api dev` | 中枢开发模式 |
 | `pnpm dev:web` | `node scripts/run.mjs --filter navsphere dev` | 前端（:3000） |
 | `pnpm build` | `pnpm -r --filter "@navhub/*" build` | 全部包构建 |
-| `pnpm test` | `vitest run` | 381 个测试（另含 10 个 PG 跨方言用例，未配 `NAVHUB_TEST_DATABASE_URL` 时 skip） |
+| `pnpm test` | `vitest run` | 27 个文件、554 个测试（543 通过 + 11 跳过；跳过的是 PG 跨方言用例，未配 `NAVHUB_TEST_DATABASE_URL` 时 skip） |
 | `pnpm test:watch` | `vitest` | 监听模式 |
 | `pnpm typecheck` | `pnpm -r exec tsc --noEmit` | 全仓类型检查 |
 | `pnpm seed` | `pnpm --filter @navhub/api seed` | 播种 |
@@ -204,7 +204,7 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 ### 6.1 运行
 
 ```bash
-pnpm test          # 全部 381 个测试
+pnpm test          # 全部 554 个测试（27 文件；PG 跨方言用例默认 skip）
 pnpm test:watch    # 监听
 pnpm test:pg       # PostgreSQL 手工验收（scripts/pg-check.mts，需先起 postgres）
 ```
@@ -218,14 +218,14 @@ pnpm test:pg       # PostgreSQL 手工验收（scripts/pg-check.mts，需先起 
 | --- | --- |
 | **连不上不红** | 未设 `NAVHUB_TEST_DATABASE_URL` → 整套件 skip（并 console.warn 说明原因）；设了但连不上 → **失败**（不能悄悄跳过） |
 | 覆盖的方言坑 | `group_concat` vs `string_agg`、`?` → `$n` 占位符、`BOOLEAN` vs `INTEGER`、PG 别名小写折叠、`WHERE deleted_at IS NULL` 部分唯一索引 |
-| CI | [.github/workflows/ci.yml](file:///c:/Users/许进龙/Desktop/web/.github/workflows/ci.yml)：`test-sqlite`（typecheck + 全量测试）与 `test-postgres`（**pgvector/pgvector:pg16 service** + 只跑本套件）两个 job，PG 连接串经 `NAVHUB_TEST_DATABASE_URL` 注入 |
+| CI | [.github/workflows/ci.yml](file:///c:/Users/许进龙/Desktop/web/.github/workflows/ci.yml)：`test-sqlite`（typecheck + 全量测试）与 `test-postgres`（**pgvector/pgvector:pg17 service** + 只跑本套件）两个 job，PG 连接串经 `NAVHUB_TEST_DATABASE_URL` 注入 |
 
 本地跑：起 postgres 后 `set NAVHUB_TEST_DATABASE_URL=postgres://... && pnpm exec vitest run packages/store/test/pg-dialect.e2e.test.ts`。
 
 [vitest.config.ts](file:///c:/Users/许进龙/Desktop/web/vitest.config.ts)：
 
 ```ts
-include: ["packages/**/test/**/*.test.ts", "apps/api/test/**/*.test.ts"],
+include: ["packages/**/test/**/*.test.ts", "apps/api/test/**/*.test.ts", "apps/web-overlay/scripts/**/*.test.ts"],
 environment: "node",
 testTimeout: 30_000,
 hookTimeout: 60_000,
@@ -237,11 +237,11 @@ pool: "forks",
 
 | 套件 | 覆盖 |
 | --- | --- |
-| `packages/core`（6 文件） | CJK 分词、FTS5 MATCH 表达式、拼音、RRF 融合、个性化通道、热度公式、画像聚合、模块化布局、金库与预取、配方与对比、未来算法（LinUCB/双曲） |
+| `packages/core`（16 文件） | CJK 分词、FTS5 MATCH 表达式、拼音、RRF 融合、个性化通道、热度公式、画像聚合、模块化布局、金库与预取、配方与对比、未来算法（LinUCB/双曲）、WebMCP 注册表容量、领域覆盖（自愈诊断/知识图谱/语义聚类/LinUCB/工具合成/意图推测/CRDT） |
 | `packages/store`（2 文件） | 向量存储（**内存/真实 sqlite-vec 双实现一致性**）、真实 SQLite 集成、分类管理（移动/合并/删除归类）、收藏夹、画像、任务队列、**schema 迁移幂等**、方言差异、**零结果两级兜底**（放宽过滤/模糊匹配）、**offset 分页**（拼接一致性 + browse 探针）、**软删除回收站**（软删/恢复/永久删/同 id 复活/部分唯一索引） |
-| `packages/ai` | SSRF 网段判定（**含 IPv4 映射绕过**）、元数据抽取、启发式降级 |
+| `packages/ai` | SSRF 网段判定（**含 IPv4 映射绕过**）、**DNS 解析超时 fail-closed**、敏感端口拦截、重定向链（跟随记录/超限拒绝）、元数据抽取、启发式降级 |
 | `packages/mcp` | 权限硬边界、**dryRun 默认行为**、幂等、审计、admin 级工具 |
-| `apps/api`（3 文件） | **真实 HTTP 端到端**：检索、CRUD、去重、索引同步、降级、审计、收藏夹、榜单、**D1 快照误删回归**；JobRunner 四任务 + 单实例锁；**REST 鉴权**（开放模式回归、逐级拦截、scope 含义、token 生命周期、审计身份）；**零结果建议**与**分页防灌水**（offset>0 不记事件）；**审计日志查询**（过滤/分页/损坏 diff 容错）；**回收站**（删除→回收站→恢复 409 冲突→永久删除→快照复活） |
+| `apps/api`（3 文件 + routes/） | **真实 HTTP 端到端**：检索、CRUD、去重、索引同步、降级、审计、收藏夹、榜单、**D1 快照误删回归**；JobRunner 四任务 + 单实例锁（**PG 同连接 advisory lock + SQLite 心跳续期**）；**REST 鉴权**（开放模式回归、逐级拦截、scope 含义、token 生命周期、审计身份、**identity 路由鉴权收紧**、**公共写入面 401**）；**零结果建议**与**分页防灌水**（offset>0 不记事件）；**审计日志查询**（过滤/分页/损坏 diff 容错）；**回收站**（删除→回收站→恢复 409 冲突→永久删除→快照复活）；身份路由已拆至 `routes/identity.ts` |
 
 ### 6.3 类型检查
 

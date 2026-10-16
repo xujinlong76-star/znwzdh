@@ -16,7 +16,7 @@
   "dependencies": {
     "@huggingface/transformers": "4.3.1",
     "@navhub/core": "workspace:*",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "typescript": "5.9.3"

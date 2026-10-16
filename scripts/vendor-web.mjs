@@ -1,5 +1,5 @@
 
-import { mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, cpSync, readdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, readFileSync, rmSync, cpSync, copyFileSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, relative } from "node:path";
 
@@ -56,24 +56,67 @@ if (!existsSync(OVERLAY)) {
 }
 
 // 5) copy upstream over the target
-cpSync(inner, TARGET, { recursive: true, force: true });
-
-// 6) apply NavHub overlay (storage seam + all self-built pages/components)
-const overlayFiles = [];
-(function walkAndCopy(srcDir, dstDir) {
+// 注意：不用 cpSync(src, dst, { recursive: true }) 一次性拷目录——
+// 在部分 Windows 环境下递归 cpSync 会 EIO（Access is denied），而单文件
+// cpSync 正常；这里复用与 overlay 相同的逐文件 walkAndCopy，可靠且跨平台。
+// 另：先删掉本地生成的 node_modules/.next（pnpm 的 junction 会让任何
+// 覆盖式拷贝失败；上游 tarball 本来就没有这两个目录）。
+for (const generated of ["node_modules", ".next"]) {
+  const p = join(TARGET, generated);
+  if (existsSync(p)) {
+    console.log("[vendor] removing stale " + generated);
+    rmSync(p, { recursive: true, force: true });
+  }
+}
+function walkAndCopy(srcDir, dstDir, counter) {
   mkdirSync(dstDir, { recursive: true });
   for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
     const s = join(srcDir, entry.name);
     const d = join(dstDir, entry.name);
     if (entry.isDirectory()) {
-      walkAndCopy(s, d);
-    } else {
+      walkAndCopy(s, d, counter);
+    } else if (entry.isSymbolicLink()) {
+      // 上游 tarball 理论上不含符号链接；真遇到时走 cpSync 原样复制链接本身
       cpSync(s, d, { force: true });
-      overlayFiles.push(entry.name);
+      if (counter) counter.count++;
+    } else {
+      // 覆盖写优先用 copyFileSync（截断写入，不走 unlink）。
+      // Windows 上 cpSync({ force: true }) 的 unlink 路径会被 Defender/OneDrive
+      //  filter 驱动干扰，报 errno 0 的怪异错误；copyFileSync 无此问题。
+      // 仍失败（如目标是目录等极端情况）再回退到删后拷。
+      const deadline = Date.now() + 20_000;
+      let attempt = 0;
+      for (;;) {
+        try {
+          if (attempt > 0) console.log("[vendor] retry copy " + entry.name + " (attempt " + (attempt + 1) + ")");
+          copyFileSync(s, d);
+          break;
+        } catch (e) {
+          attempt++;
+          const fallbackOk = (() => {
+            try {
+              rmSync(d, { force: true, recursive: true });
+              cpSync(s, d, { force: true });
+              return true;
+            } catch { return false; }
+          })();
+          if (fallbackOk) break;
+          if (Date.now() >= deadline) throw e;
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.min(2000, 200 * attempt));
+        }
+      }
+      if (counter) counter.count++;
     }
   }
-})(OVERLAY, TARGET);
-console.log("[vendor] applied overlay: " + overlayFiles.length + " files");
+}
+const upstreamCounter = { count: 0 };
+walkAndCopy(inner, TARGET, upstreamCounter);
+console.log("[vendor] copied upstream: " + upstreamCounter.count + " files");
+
+// 6) apply NavHub overlay (storage seam + all self-built pages/components)
+const overlayCounter = { count: 0 };
+walkAndCopy(OVERLAY, TARGET, overlayCounter);
+console.log("[vendor] applied overlay: " + overlayCounter.count + " files");
 
 // 7) write UPSTREAM.md
 writeFileSync(join(TARGET, "UPSTREAM.md"), [

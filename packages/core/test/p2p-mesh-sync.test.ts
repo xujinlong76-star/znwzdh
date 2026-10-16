@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { P2PMeshNode } from "../src/p2p-mesh-sync.ts";
+import { P2PMeshNode, P2PSyncSession } from "../src/p2p-mesh-sync.ts";
 import { CrdtStore } from "../src/crdt-sync.ts";
 
 describe("WebRTC P2P 全网拓扑漫游网络与状态向量共识 (P2P Mesh Sync Protocol)", () => {
@@ -104,5 +104,45 @@ describe("WebRTC P2P 全网拓扑漫游网络与状态向量共识 (P2P Mesh Syn
 
     nodeA.disconnectPeer("node-C");
     expect(nodeA.getPeer("node-C")?.state).toBe("DISCONNECTED");
+  });
+
+  it("P2PSyncSession 通过 Transport 自动驱动全自动双向同步与收敛", () => {
+    const storeA = new CrdtStore("node-A");
+    const storeB = new CrdtStore("node-B");
+
+    storeA.addSite({ id: "site-a", title: "Site A", url: "https://a.com", categoryId: "dev" });
+    storeB.addSite({ id: "site-b", title: "Site B", url: "https://b.com", categoryId: "dev" });
+
+    const nodeA = new P2PMeshNode("node-A", storeA);
+    const nodeB = new P2PMeshNode("node-B", storeB);
+
+    let handlerA: ((msg: any) => void) | null = null;
+    let handlerB: ((msg: any) => void) | null = null;
+
+    const transportA = {
+      send: (msg: any) => handlerB?.(msg),
+      onMessage: (h: any) => { handlerA = h; },
+      close: () => {},
+    };
+    const transportB = {
+      send: (msg: any) => handlerA?.(msg),
+      onMessage: (h: any) => { handlerB = h; },
+      close: () => {},
+    };
+
+    const sessionA = new P2PSyncSession(nodeA, "node-B", transportA);
+    const sessionB = new P2PSyncSession(nodeB, "node-A", transportB);
+
+    // A 发起握手 -> 自动完成全流程报文握手
+    sessionA.startHandshake();
+
+    // 验证两端状态向量与站点完全收敛
+    expect(storeA.getActiveSites().map((s) => s.id).sort()).toEqual(["site-a", "site-b"]);
+    expect(storeB.getActiveSites().map((s) => s.id).sort()).toEqual(["site-a", "site-b"]);
+    expect(nodeA.getPeer("node-B")?.state).toBe("READY");
+    expect(nodeB.getPeer("node-A")?.state).toBe("READY");
+
+    sessionA.close();
+    sessionB.close();
   });
 });

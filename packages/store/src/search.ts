@@ -18,7 +18,7 @@ import {
   type SearchQuery,
   type SearchResult,
 } from "@navhub/core";
-import type { Db } from "./driver.ts";
+import type { Db, Dialect } from "./driver.ts";
 import type { FullTextStore } from "./fts.ts";
 import { bindSqlite, toPgSql } from "./repository.ts";
 import type { VectorStore } from "./vector/types.ts";
@@ -55,8 +55,8 @@ export interface SearchEngineOptions {
  * SQLite 里 enabled 是 INTEGER(0/1)，PostgreSQL 里是 BOOLEAN；
  * 直接写 `enabled = 1` 在 PG 上会报 "operator does not exist: boolean = integer"。
  */
-function enabledValue(dialect: "sqlite" | "pg"): string {
-  return dialect === "sqlite" ? "1" : "TRUE";
+function enabledValue(dialect: Dialect): string {
+  return dialect === "pg" ? "TRUE" : "1";
 }
 
 /**
@@ -475,7 +475,7 @@ export class SearchEngine {
 
   /** 方言无关的原始查询：sqlite 同步、pg 异步，这里统一成 Promise */
   private async rawRows(sqlText: string, params: unknown[]): Promise<SiteRow[]> {
-    if (this.deps.db.dialect === "sqlite") {
+    if (this.deps.db.dialect === "sqlite" || this.deps.db.dialect === "libsql") {
       return this.deps.db.sqlite!.prepare(sqlText).all(...bindSqlite(params)) as SiteRow[];
     }
     // PostgreSQL 用 $1..$n 占位符，且布尔必须是 true/false（不能传 0/1）

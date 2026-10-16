@@ -35,6 +35,8 @@ describe("openDb(sqlite) pragma 生效", () => {
     expect(db.sqlite!.pragma("journal_mode")).toEqual([{ journal_mode: "wal" }]);
     expect(db.sqlite!.pragma("synchronous")).toEqual([{ synchronous: 1 }]); // 1 = NORMAL
     expect(db.sqlite!.pragma("foreign_keys")).toEqual([{ foreign_keys: 1 }]);
+    expect(db.sqlite!.pragma("busy_timeout")).toEqual([{ timeout: 10000 }]);
+    expect(db.sqlite!.pragma("wal_autocheckpoint")).toEqual([{ wal_autocheckpoint: 1000 }]);
   });
 
   it("temp_store=memory：临时 b-tree 不落盘", async () => {

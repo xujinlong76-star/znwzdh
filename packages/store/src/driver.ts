@@ -12,7 +12,7 @@ import { migrateColumns, migrateSiteIndexes, migrateEventIdentity } from "./migr
  * 避免维护两套迁移文件的漂移风险。drizzle-kit 仅用于类型生成与离线校验。
  */
 
-export type Dialect = "sqlite" | "pg";
+export type Dialect = "sqlite" | "pg" | "libsql";
 
 export interface SqliteRunner {
   exec(sql: string): unknown;
@@ -461,6 +461,9 @@ export async function openDb(config: {
     raw.pragma("synchronous = NORMAL");
     raw.pragma("journal_size_limit = 67108864");
     raw.pragma("foreign_keys = ON");
+    // 并发防争用：设置 10 秒繁忙等待重试，配合 1000 页自动 checkpoint 避免 WAL 无界膨胀
+    raw.pragma("busy_timeout = 10000");
+    raw.pragma("wal_autocheckpoint = 1000");
     // 临时 b-tree 进内存：FTS5 的 bm25 排序与向量 KNN 都会产生临时表，
     // 落盘临时文件在并发检索时是纯浪费（页缓存直读即可）
     raw.pragma("temp_store = MEMORY");
@@ -484,6 +487,58 @@ export async function openDb(config: {
       // 先补列再重放 DDL（全是 IF NOT EXISTS，重放安全）；仍失败则原样抛出。
       await migrateColumns(db);
       raw.exec(DDL_SQLITE);
+    }
+    await migrateColumns(db);
+    await migrateSiteIndexes(db);
+    await migrateEventIdentity(db);
+    return db;
+  }
+
+  if (config.dialect === "libsql") {
+    let libsql: any;
+    try {
+      const moduleName = "@libsql/client";
+      libsql = await (Function("m", "return import(m)")(moduleName) as Promise<any>);
+    } catch {
+      throw new Error("使用 libsql 方言前请先安装 @libsql/client: pnpm add @libsql/client");
+    }
+    const createClient = libsql.createClient || libsql.default?.createClient;
+    const client = createClient({
+      url: config.databaseUrl || "file:" + (config.sqlitePath ?? "./data/navhub.db"),
+    });
+    const runner: SqliteRunner = {
+      exec(sqlStr: string) {
+        return client.executeMultiple(sqlStr);
+      },
+      prepare(sqlStr: string) {
+        return {
+          run(...params: unknown[]) {
+            return client.execute({ sql: sqlStr, args: params });
+          },
+          all(...params: unknown[]) {
+            return client.execute({ sql: sqlStr, args: params });
+          },
+          get(...params: unknown[]) {
+            return client.execute({ sql: sqlStr, args: params });
+          },
+        };
+      },
+      close() {
+        client.close();
+      },
+    };
+    const db: Db = {
+      dialect: "libsql",
+      orm: null,
+      sqlite: runner,
+      async close() { runner.close(); },
+    };
+    try {
+      await client.executeMultiple(DDL_SQLITE);
+    } catch {
+      // 容错重试
+      await migrateColumns(db);
+      await client.executeMultiple(DDL_SQLITE);
     }
     await migrateColumns(db);
     await migrateSiteIndexes(db);

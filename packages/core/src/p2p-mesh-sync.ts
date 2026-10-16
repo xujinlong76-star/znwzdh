@@ -240,3 +240,91 @@ export class P2PMeshNode {
     return messages;
   }
 }
+
+export interface P2PTransport {
+  send(message: P2PMessage): void | Promise<void>;
+  onMessage(handler: (message: P2PMessage) => void): void;
+  close(): void;
+}
+
+/**
+ * P2P 会话管理器，连接底层 Transport（如 WebRTC DataChannel、BroadcastChannel 或 WebSocket）
+ * 并驱动 P2PMeshNode 状态机自动响应
+ */
+export class P2PSyncSession {
+  readonly node: P2PMeshNode;
+  readonly peerId: string;
+  readonly transport: P2PTransport;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(node: P2PMeshNode, peerId: string, transport: P2PTransport) {
+    this.node = node;
+    this.peerId = peerId;
+    this.transport = transport;
+
+    this.transport.onMessage((msg) => {
+      const reply = this.node.handleIncomingMessage(msg);
+      if (reply) {
+        void this.transport.send(reply);
+      }
+    });
+
+    this.heartbeatTimer = setInterval(() => {
+      void this.transport.send({
+        type: "HEARTBEAT",
+        senderId: this.node.nodeId,
+        targetId: this.peerId,
+        seq: Date.now(),
+        timestamp: Date.now(),
+        payload: null,
+      });
+    }, 15_000);
+  }
+
+  startHandshake(): void {
+    const hello = this.node.connectPeer(this.peerId);
+    void this.transport.send(hello);
+  }
+
+  broadcastLocal(): void {
+    const msgs = this.node.broadcastLocalUpdate();
+    for (const msg of msgs) {
+      if (!msg.targetId || msg.targetId === this.peerId) {
+        void this.transport.send(msg);
+      }
+    }
+  }
+
+  close(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.node.disconnectPeer(this.peerId);
+    this.transport.close();
+  }
+}
+
+/**
+ * 浏览器多 Tab / 多窗口本地无后台漫游 Transport（基于 BroadcastChannel）
+ */
+export function createBroadcastChannelTransport(channelName = "navhub-crdt-mesh"): P2PTransport | null {
+  if (typeof globalThis.BroadcastChannel === "undefined") return null;
+  const channel = new globalThis.BroadcastChannel(channelName);
+  let listener: ((msg: P2PMessage) => void) | null = null;
+
+  channel.onmessage = (event) => {
+    if (listener && event.data) {
+      listener(event.data as P2PMessage);
+    }
+  };
+
+  return {
+    send(msg: P2PMessage) {
+      channel.postMessage(msg);
+    },
+    onMessage(handler: (msg: P2PMessage) => void) {
+      listener = handler;
+    },
+    close() {
+      channel.close();
+    },
+  };
+}

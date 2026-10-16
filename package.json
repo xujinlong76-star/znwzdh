@@ -11,6 +11,7 @@
     "dev:web": "node scripts/run.mjs --filter navsphere dev",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "typecheck": "pnpm -r --filter \"@navhub/*\" exec tsc --noEmit",
     "seed": "pnpm --filter @navhub/api seed",
     "mcp:stdio": "pnpm --filter @navhub/mcp start",
@@ -20,8 +21,9 @@
     "verify": "node scripts/check-web-overlay.mjs && pnpm -r --filter \"@navhub/*\" exec tsc --noEmit && vitest run"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "22.18.13",
     "typescript": "5.9.3",
-    "vitest": "4.1.11",
-    "@types/node": "22.18.13"
+    "vitest": "4.1.11"
   }
 }

@@ -21,26 +21,52 @@ const apiProc = spawn(
   }
 );
 
-// 启动 Next.js Web 前端
-const webProc = spawn(
-  process.execPath,
-  ["scripts/run.mjs", "--filter", "navsphere", "dev"],
-  {
-    cwd: rootDir,
-    stdio: "inherit",
-    env: { ...process.env },
+let webProc = null;
+
+async function start() {
+  const startWait = Date.now();
+  while (Date.now() - startWait < 30_000) {
+    try {
+      const res = await fetch("http://127.0.0.1:8787/api/health");
+      if (res.ok) {
+        console.log("\x1b[32m%s\x1b[0m", "✓ NavHub 中枢 API (:8787) 已就绪，启动 Web 前端...");
+        break;
+      }
+    } catch {
+      // 中枢 API 尚未就绪，等待下一次探测
+    }
+    await new Promise((r) => setTimeout(r, 200));
   }
-);
+
+  // 启动 Next.js Web 前端
+  webProc = spawn(
+    process.execPath,
+    ["scripts/run.mjs", "--filter", "navsphere", "dev"],
+    {
+      cwd: rootDir,
+      stdio: "inherit",
+      env: { ...process.env },
+    }
+  );
+
+  webProc.on("exit", (code) => {
+    if (code && code !== 0) {
+      console.error(`\x1b[31m[web] Web 前端异常退出，退出码: ${code}\x1b[0m`);
+    }
+  });
+}
+
+start();
 
 function killAll() {
   console.log("\n\x1b[33m%s\x1b[0m", "正在停止 NavHub 全栈服务...");
   try {
     if (isWin) {
-      if (apiProc.pid) spawn("taskkill", ["/pid", String(apiProc.pid), "/T", "/F"]);
-      if (webProc.pid) spawn("taskkill", ["/pid", String(webProc.pid), "/T", "/F"]);
+      if (apiProc?.pid) spawn("taskkill", ["/pid", String(apiProc.pid), "/T", "/F"]);
+      if (webProc?.pid) spawn("taskkill", ["/pid", String(webProc.pid), "/T", "/F"]);
     } else {
-      if (apiProc.pid) apiProc.kill("SIGTERM");
-      if (webProc.pid) webProc.kill("SIGTERM");
+      if (apiProc?.pid) apiProc.kill("SIGTERM");
+      if (webProc?.pid) webProc.kill("SIGTERM");
     }
   } catch {
     // 忽略清理异常
@@ -60,11 +86,5 @@ process.on("SIGTERM", () => {
 apiProc.on("exit", (code) => {
   if (code && code !== 0) {
     console.error(`\x1b[31m[api] 中枢服务异常退出，退出码: ${code}\x1b[0m`);
-  }
-});
-
-webProc.on("exit", (code) => {
-  if (code && code !== 0) {
-    console.error(`\x1b[31m[web] Web 前端异常退出，退出码: ${code}\x1b[0m`);
   }
 });

@@ -9,10 +9,10 @@ test.describe('核心旅程 3：管理端 API Token 签发与生命周期管理'
       await expect(bypassBtn).toBeVisible({ timeout: 10_000 });
       await bypassBtn.click();
     }
-    // 等待已成功进入管理页且页面主标题呈现
-    await expect(page.locator('h1').filter({ hasText: 'API Token 访问凭据管理' })).toBeVisible({ timeout: 20_000 });
+    // 等待已成功进入管理页且页面主标题呈现（留足 Next.js 首次编译路由裕量）
+    await expect(page.locator('h1').filter({ hasText: 'API Token 访问凭据管理' })).toBeVisible({ timeout: 45_000 });
     // 等待 React 水合就绪且 Token 列表加载完成
-    await expect(page.locator('text=正在加载 Token 列表…')).not.toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('text=正在加载 Token 列表…')).not.toBeVisible({ timeout: 25_000 });
   });
 
   test('管理端凭据页面正常加载并展示标题与新建按钮', async ({ page }) => {

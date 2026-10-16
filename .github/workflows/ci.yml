@@ -141,6 +141,29 @@ jobs:
       # overlay 是 Docker 构建与 vendor 的事实源；apps/web 改了没同步回去会在这里失败
       - run: node scripts/check-web-overlay.mjs
 
+  test-e2e:
+    name: 浏览器 E2E 自动化测试（Playwright）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/vendor-web.mjs
+      - name: 安装 Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: 执行 Playwright E2E 测试
+        run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
   audit:
     name: 依赖审计（允许失败）
     runs-on: ubuntu-latest
@@ -159,7 +182,7 @@ jobs:
   ci-passed:
     name: CI 整体通过 (All Checks Passed)
     runs-on: ubuntu-latest
-    needs: [test-sqlite, test-postgres, test-web, check-web-overlay, audit]
+    needs: [test-sqlite, test-postgres, test-web, check-web-overlay, test-e2e, audit]
     if: always()
     steps:
       - name: 评估检查结果
@@ -168,12 +191,14 @@ jobs:
              [ "${{ needs.test-postgres.result }}" != "success" ] || \
              [ "${{ needs.test-web.result }}" != "success" ] || \
              [ "${{ needs.check-web-overlay.result }}" != "success" ] || \
+             [ "${{ needs.test-e2e.result }}" != "success" ] || \
              [ "${{ needs.audit.result }}" != "success" ]; then
             echo "CI 检查未全部通过！"
             echo "SQLite:  ${{ needs.test-sqlite.result }}"
             echo "PG:      ${{ needs.test-postgres.result }}"
             echo "Web:     ${{ needs.test-web.result }}"
             echo "Overlay: ${{ needs.check-web-overlay.result }}"
+            echo "E2E:     ${{ needs.test-e2e.result }}"
             echo "Audit:   ${{ needs.audit.result }}"
             exit 1
           fi

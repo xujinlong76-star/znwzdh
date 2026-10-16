@@ -1,5 +1,6 @@
 import {
   DEFAULT_WEIGHTS,
+  CHANNELS,
   createLinUCBModel,
   predictArmWeights,
   updateDiscountedArmReward,
@@ -128,6 +129,39 @@ export class SearchEngine {
     } catch {
       // 容错
     }
+  }
+
+  /**
+   * 导出 LinUCB 在线多臂老虎机模型遥测指标（供管理端仪表盘展现各检索通道权重演进）
+   */
+  getLinUCBTelemetry(): {
+    dimension: number;
+    alpha: number;
+    feedbackCount: number;
+    arms: Record<RetrievalChannel, { bNorm: number; bSum: number; weightEstimate: number }>;
+  } {
+    const armsTelemetry = {} as Record<RetrievalChannel, { bNorm: number; bSum: number; weightEstimate: number }>;
+    for (const ch of CHANNELS) {
+      const arm = this.linucbModel.arms[ch];
+      if (!arm) continue;
+      const b = arm.b || [];
+      const bSum = b.reduce((s, v) => s + v, 0);
+      const bNorm = Math.sqrt(b.reduce((s, v) => s + v * v, 0));
+      // 权重估值：以基准权重 1.0 + 累加奖励反馈偏移
+      const weightEstimate = Math.round((1.0 + bSum) * 100) / 100;
+      armsTelemetry[ch] = {
+        bNorm: Math.round(bNorm * 1000) / 1000,
+        bSum: Math.round(bSum * 1000) / 1000,
+        weightEstimate,
+      };
+    }
+
+    return {
+      dimension: this.linucbModel.dimension,
+      alpha: this.linucbModel.alpha,
+      feedbackCount: this.feedbackCount,
+      arms: armsTelemetry,
+    };
   }
 
   /**

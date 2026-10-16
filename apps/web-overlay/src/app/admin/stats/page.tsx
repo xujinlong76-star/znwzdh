@@ -1,12 +1,27 @@
 'use client'
 
 /**
- * 管理端：运营数据看板。
- * 热门搜索（指导补录）、零结果搜索（用户找了但库里没有）、热度榜。
+ * 管理端：运营数据与搜索智能看板。
+ * 包含健康巡检与响应延迟趋势曲线、热门搜索、零结果补录线索、热度总榜与时间窗口切换。
  */
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
+import {
+  Activity,
+  ArrowRight,
+  Clock,
+  ExternalLink,
+  Flame,
+  PlusCircle,
+  RefreshCw,
+  Search,
+  Sparkles,
+  TrendingUp,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { hubGet } from '@/lib/navhub-api'
 
 interface Trends {
@@ -20,175 +35,405 @@ interface HealthTrendPoint {
   date: string
   checked: number
   failed: number
-  /** 成功率百分比（0-100）；当天没有巡检为 null（不是 100%） */
+  /** 成功率百分比（0-100）；当天没有巡检为 null */
   rate: number | null
   avgLatencyMs: number | null
 }
 
 /**
- * 成功率曲线：SVG 折线（每天一个点，断点用 null 跳过）。
- * 不引入图表库——14/30 个点的折线用几行 SVG 就够，且避免给 admin 页加 bundle 负担。
+ * 成功率与响应延迟趋势图：双轴 SVG 折线
  */
 function HealthTrendChart({ points }: { points: HealthTrendPoint[] }) {
-  const w = 560
-  const h = 140
-  const padX = 28
-  const padY = 16
+  const w = 680
+  const h = 180
+  const padX = 36
+  const padY = 24
+
   const withData = points.filter((p) => p.rate !== null)
   if (withData.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        暂无巡检记录（health_check 任务或 MCP health_check 运行后生成）。
-      </p>
+      <div className="py-12 text-center text-sm text-muted-foreground border rounded-lg bg-card">
+        暂无巡检记录（可在后台任务面板触发「健康巡检」或等待定时任务巡检）。
+      </div>
     )
   }
+
   const step = points.length > 1 ? (w - padX * 2) / (points.length - 1) : 0
   const xOf = (i: number) => padX + step * i
-  const yOf = (rate: number) => h - padY - (rate / 100) * (h - padY * 2)
+  const yOfRate = (rate: number) => h - padY - (rate / 100) * (h - padY * 2)
 
-  // 连续有数据的点连成一段段折线（null 断开，避免用直线「补」出不存在的数据）
-  const segments: string[] = []
-  let cur: string[] = []
+  // 计算延迟的最大上限，用于自适应归一化延迟坐标
+  const maxLat = Math.max(100, ...points.map((p) => p.avgLatencyMs ?? 0))
+  const yOfLat = (lat: number) => h - padY - (Math.min(maxLat, lat) / maxLat) * (h - padY * 2)
+
+  // 成功率折线段
+  const rateSegments: string[] = []
+  let curRate: string[] = []
   points.forEach((p, i) => {
     if (p.rate === null) {
-      if (cur.length > 1) segments.push(cur.join(' '))
-      cur = []
+      if (curRate.length > 1) rateSegments.push(curRate.join(' '))
+      curRate = []
       return
     }
-    cur.push(xOf(i).toFixed(1) + ',' + yOf(p.rate).toFixed(1))
+    curRate.push(xOf(i).toFixed(1) + ',' + yOfRate(p.rate).toFixed(1))
   })
-  if (cur.length > 1) segments.push(cur.join(' '))
+  if (curRate.length > 1) rateSegments.push(curRate.join(' '))
+
+  // 延迟折线段
+  const latSegments: string[] = []
+  let curLat: string[] = []
+  points.forEach((p, i) => {
+    if (p.avgLatencyMs === null) {
+      if (curLat.length > 1) latSegments.push(curLat.join(' '))
+      curLat = []
+      return
+    }
+    curLat.push(xOf(i).toFixed(1) + ',' + yOfLat(p.avgLatencyMs).toFixed(1))
+  })
+  if (curLat.length > 1) latSegments.push(curLat.join(' '))
 
   const totalChecked = points.reduce((s, p) => s + p.checked, 0)
   const totalFailed = points.reduce((s, p) => s + p.failed, 0)
+  const avgOverallRate =
+    totalChecked > 0 ? Math.round(((totalChecked - totalFailed) / totalChecked) * 100) : 100
 
   return (
-    <div>
-      <div className="text-xs text-muted-foreground mb-2">
-        近 {points.length} 天：巡检 {totalChecked} 次 · 失败 {totalFailed} 次
-        {totalChecked > 0 && ` · 总体成功率 ${Math.round(((totalChecked - totalFailed) / totalChecked) * 100)}%`}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between text-xs text-muted-foreground gap-2">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-0.5 bg-primary inline-block rounded" />
+            成功率曲线 (可用率: <strong className="text-foreground">{avgOverallRate}%</strong>)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-0.5 bg-amber-500 inline-block rounded stroke-dash" />
+            平均响应延迟 (峰值: <strong className="text-foreground">{maxLat}ms</strong>)
+          </span>
+        </div>
+        <div>
+          巡检 {totalChecked} 次 · 故障 {totalFailed} 次
+        </div>
       </div>
-      <div className="rounded-md border overflow-x-auto">
-        <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto min-w-[480px]" role="img" aria-label="健康巡检成功率趋势">
-          {/* 横向刻度 0/50/100% */}
+
+      <div className="rounded-lg border bg-card p-2 overflow-x-auto">
+        <svg
+          viewBox={`0 0 ${w} ${h}`}
+          className="w-full h-auto min-w-[560px]"
+          role="img"
+          aria-label="健康巡检与响应延迟趋势图"
+        >
+          {/* 背景刻度 0% / 50% / 100% */}
           {[0, 50, 100].map((r) => (
             <g key={r}>
-              <line x1={padX} x2={w - padX} y1={yOf(r)} y2={yOf(r)} className="stroke-border" strokeDasharray="3 3" strokeWidth="1" />
-              <text x={4} y={yOf(r) + 3} className="fill-muted-foreground" fontSize="9">{r}%</text>
+              <line
+                x1={padX}
+                x2={w - padX}
+                y1={yOfRate(r)}
+                y2={yOfRate(r)}
+                className="stroke-border"
+                strokeDasharray="3 3"
+                strokeWidth="1"
+              />
+              <text x={6} y={yOfRate(r) + 3} className="fill-muted-foreground text-[10px]">
+                {r}%
+              </text>
             </g>
           ))}
-          {segments.map((s, i) => (
-            <polyline key={i} points={s} fill="none" className="stroke-primary" strokeWidth="2" strokeLinejoin="round" />
+
+          {/* 延迟折线（虚线，琥珀色） */}
+          {latSegments.map((s, i) => (
+            <polyline
+              key={'lat-' + i}
+              points={s}
+              fill="none"
+              stroke="#f59e0b"
+              strokeWidth="1.5"
+              strokeDasharray="4 2"
+              strokeLinejoin="round"
+            />
           ))}
+
+          {/* 成功率折线（主色，实线） */}
+          {rateSegments.map((s, i) => (
+            <polyline
+              key={'rate-' + i}
+              points={s}
+              fill="none"
+              className="stroke-primary"
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+            />
+          ))}
+
+          {/* 数据圆点 */}
           {points.map((p, i) =>
             p.rate === null ? null : (
-              <circle key={p.date} cx={xOf(i)} cy={yOf(p.rate)} r="2.5" className="fill-primary">
-                <title>{`${p.date}：成功率 ${p.rate}%（${p.checked} 次，失败 ${p.failed} 次）`}</title>
-              </circle>
+              <g key={p.date}>
+                <circle
+                  cx={xOf(i)}
+                  cy={yOfRate(p.rate)}
+                  r="3"
+                  className="fill-primary cursor-pointer hover:r-4 transition-all"
+                >
+                  <title>{`${p.date}\n成功率: ${p.rate}%\n巡检: ${p.checked} 次\n失败: ${p.failed} 次\n平均延迟: ${p.avgLatencyMs ?? '--'}ms`}</title>
+                </circle>
+              </g>
             ),
           )}
-          {/* x 轴标签：首/中/尾，避免挤 */}
-          {[0, Math.floor(points.length / 2), points.length - 1].map((i) =>
+
+          {/* x 轴日期刻度（首、1/4、1/2、3/4、尾） */}
+          {[
+            0,
+            Math.floor(points.length * 0.25),
+            Math.floor(points.length * 0.5),
+            Math.floor(points.length * 0.75),
+            points.length - 1,
+          ].map((i) =>
             points[i] ? (
-              <text key={i} x={xOf(i)} y={h - 3} textAnchor="middle" className="fill-muted-foreground" fontSize="9">
+              <text
+                key={i}
+                x={xOf(i)}
+                y={h - 6}
+                textAnchor="middle"
+                className="fill-muted-foreground text-[10px]"
+              >
                 {points[i].date.slice(5)}
               </text>
             ) : null,
           )}
         </svg>
       </div>
-      <div className="text-xs text-muted-foreground mt-1.5">
-        断点 = 当天没有巡检记录（不是 0% 失败）。悬停圆点查看当日明细。
+      <div className="text-[11px] text-muted-foreground">
+        * 断点表示当天无巡检记录；悬停圆点可查看当日详细可用率与毫秒耗时。
       </div>
     </div>
   )
 }
 
 export default function AdminStatsPage() {
+  const [days, setDays] = useState<number>(30)
   const [data, setData] = useState<Trends | null>(null)
   const [health, setHealth] = useState<HealthTrendPoint[] | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const load = useCallback(() => {
-    void hubGet<Trends>('/api/hub/admin/stats/trends?days=30').then((d: Trends) => { setData(d); setLoading(false) })
-    // 健康趋势独立加载：失败只显示「暂无数据」，不阻塞整个看板
-    void hubGet<{ points: HealthTrendPoint[] }>('/api/hub/admin/health/trend?days=14')
-      .then((d) => setHealth(d.points))
-      .catch(() => setHealth([]))
+  const load = useCallback((selectedDays: number) => {
+    setLoading(true)
+    Promise.all([
+      hubGet<Trends>(`/api/hub/admin/stats/trends?days=${selectedDays}`),
+      hubGet<{ points: HealthTrendPoint[] }>(`/api/hub/admin/health/trend?days=${selectedDays}`),
+    ])
+      .then(([trendsData, healthData]) => {
+        setData(trendsData)
+        setHealth(healthData?.points || [])
+      })
+      .catch((err) => {
+        console.error('Failed to load stats trends:', err)
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [])
 
-  useEffect(() => { load() }, [load])
-
-  if (loading) return <div className="p-6 text-muted-foreground text-sm">加载中…</div>
-  if (!data) return <div className="p-6 text-muted-foreground text-sm">加载失败</div>
+  useEffect(() => {
+    load(days)
+  }, [load, days])
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <h1 className="text-xl font-bold mb-6">运营数据（近 {data.days} 天）</h1>
+    <div className="space-y-6 max-w-6xl mx-auto">
+      {/* 头部与时间窗口控制器 */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">运营与搜索洞察看板</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            近 {days} 天系统巡检可用率、高频检索词与热度总榜
+          </p>
+        </div>
 
+        <div className="flex items-center gap-2">
+          {/* 时间跨度 Pills */}
+          <div className="flex rounded-lg border bg-muted/30 p-1 text-xs">
+            {[7, 14, 30, 90].map((d) => (
+              <button
+                key={d}
+                onClick={() => setDays(d)}
+                className={`px-3 py-1 rounded-md font-medium transition-colors ${
+                  days === d
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                近 {d} 天
+              </button>
+            ))}
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => load(days)}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </Button>
+        </div>
+      </div>
+
+      {/* 健康巡检趋势曲线 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="h-4 w-4 text-blue-500" />
+            站点健康巡检与响应延迟趋势
+          </CardTitle>
+          <CardDescription>
+            全站已收录站点近 {days} 天巡检通过率与平均网络往返耗时（毫秒）
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading && !health ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">正在加载趋势数据...</div>
+          ) : (
+            <HealthTrendChart points={health || []} />
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 核心洞察两列网格 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <section className="lg:col-span-2">
-          <h2 className="text-base font-medium mb-3">健康巡检趋势（近 14 天成功率）</h2>
-          {health === null ? (
-            <p className="text-sm text-muted-foreground">加载中…</p>
-          ) : (
-            <HealthTrendChart points={health} />
-          )}
-        </section>
-        <section>
-          <h2 className="text-base font-medium mb-3">热门搜索 Top 20</h2>
-          {data.topQueries.length === 0 ? (
-            <p className="text-sm text-muted-foreground">暂无数据</p>
-          ) : (
-            <div className="rounded-md border divide-y">
-              {data.topQueries.map((q) => (
-                <div key={q.query} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="truncate">{q.query}</span>
-                  <span className="text-muted-foreground text-xs">{q.count} 次</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+        {/* 热门搜索词 Top 20 */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Search className="h-4 w-4 text-primary" />
+              热门搜索词 Top 20
+            </CardTitle>
+            <CardDescription>反映当前用户最迫切的需求与高频热搜意图</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data?.topQueries && data.topQueries.length > 0 ? (
+              <div className="rounded-lg border divide-y text-sm">
+                {data.topQueries.map((q, idx) => (
+                  <div key={q.query} className="flex items-center justify-between px-3 py-2.5">
+                    <span className="flex items-center gap-2 truncate">
+                      <span className="text-xs font-mono text-muted-foreground w-5 text-right">
+                        {idx + 1}
+                      </span>
+                      <span className="font-medium truncate">{q.query}</span>
+                    </span>
+                    <Badge variant="secondary" className="text-xs">
+                      {q.count} 次
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-6 text-center">暂无搜索统计记录</p>
+            )}
+          </CardContent>
+        </Card>
 
-        <section>
-          <h2 className="text-base font-medium mb-3">零结果搜索（补录线索）</h2>
-          {data.zeroResultQueries.length === 0 ? (
-            <p className="text-sm text-muted-foreground">暂无数据</p>
-          ) : (
-            <div className="rounded-md border divide-y">
-              {data.zeroResultQueries.map((q) => (
-                <div key={q.query} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="truncate">{q.query}</span>
-                  <span className="text-muted-foreground text-xs">
-                    {q.count} 次 · {new Date(q.lastAt).toLocaleDateString('zh-CN')}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+        {/* 零结果搜索（补录线索） */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2 text-amber-600 dark:text-amber-500">
+              <Sparkles className="h-4 w-4" />
+              零结果搜索（补录线索）
+            </CardTitle>
+            <CardDescription>
+              用户主动搜索但库内未收录的关键词，可一键直达录入
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data?.zeroResultQueries && data.zeroResultQueries.length > 0 ? (
+              <div className="rounded-lg border divide-y text-sm">
+                {data.zeroResultQueries.map((q) => (
+                  <div key={q.query} className="flex items-center justify-between px-3 py-2.5">
+                    <div className="truncate mr-2">
+                      <div className="font-medium truncate">{q.query}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {q.count} 次无结果 · 最近于{' '}
+                        {new Date(q.lastAt).toLocaleDateString('zh-CN')}
+                      </div>
+                    </div>
+                    <Link
+                      href={`/admin/sitelist?action=add&keyword=${encodeURIComponent(q.query)}`}
+                    >
+                      <Button variant="ghost" size="sm" className="h-8 text-xs text-primary">
+                        <PlusCircle className="h-3.5 w-3.5 mr-1" />
+                        补录
+                      </Button>
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-6 text-center">
+                太棒了！近期没有任何未命中的零结果搜索。
+              </p>
+            )}
+          </CardContent>
+        </Card>
 
-        <section className="lg:col-span-2">
-          <h2 className="text-base font-medium mb-3">热度榜 Top 20</h2>
-          {data.hotSites.length === 0 ? (
-            <p className="text-sm text-muted-foreground">暂无数据（recompute_rank 任务运行后生成）</p>
-          ) : (
-            <div className="rounded-md border divide-y">
-              {data.hotSites.map((s, i) => (
-                <div key={s.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="truncate">
-                    <span className="text-muted-foreground mr-2">{i + 1}</span>
-                    <Link href={'/site/' + s.id} className="hover:text-primary">{s.title}</Link>
-                  </span>
-                  <span className="text-muted-foreground text-xs">
-                    {s.visitCount} 次点击 · 热度 {s.trendScore.toFixed(2)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+        {/* 热度榜 Top 20 */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Flame className="h-4 w-4 text-orange-500" />
+              站点综合热度榜 Top 20
+            </CardTitle>
+            <CardDescription>
+              基于浏览点击、驻留时长与时间衰减算法（Trend Score）加权排序
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data?.hotSites && data.hotSites.length > 0 ? (
+              <div className="rounded-lg border divide-y text-sm">
+                {data.hotSites.map((s, idx) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between px-3.5 py-2.5 hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 truncate mr-4">
+                      <span
+                        className={`text-xs font-bold w-5 text-right ${
+                          idx === 0
+                            ? 'text-amber-500'
+                            : idx === 1
+                            ? 'text-slate-400'
+                            : idx === 2
+                            ? 'text-amber-700'
+                            : 'text-muted-foreground'
+                        }`}
+                      >
+                        {idx + 1}
+                      </span>
+                      <Link
+                        href={`/site/${s.id}`}
+                        target="_blank"
+                        className="font-medium hover:text-primary transition-colors flex items-center gap-1 truncate"
+                      >
+                        {s.title}
+                        <ExternalLink className="h-3 w-3 text-muted-foreground shrink-0" />
+                      </Link>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                      <span>{s.visitCount} 次点击</span>
+                      <Badge variant="outline" className="text-[11px] font-mono">
+                        热度 {s.trendScore.toFixed(2)}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                暂无热度数据（可运行 recompute_rank 任务生成）
+              </p>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

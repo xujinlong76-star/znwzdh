@@ -14,6 +14,14 @@ const httpCounts = new Map<string, number>();
 /** key: method\u0000route -> 累计耗时 */
 const httpDurations = new Map<string, { count: number; sumMs: number }>();
 
+const MAX_LATENCY_SAMPLES = 500;
+const recentLatencies: number[] = [];
+let latencySampleIdx = 0;
+
+const SECOND_BUCKETS = 60;
+const secondCounts = new Array(SECOND_BUCKETS).fill(0);
+const secondTimestamps = new Array(SECOND_BUCKETS).fill(0);
+
 /** onResponse hook 调用：记录一次请求（server.ts 负责挂 hook，这里只存数据） */
 export function recordHttpMetric(route: string, method: string, status: number, elapsedMs: number): void {
   const ckey = method + "\u0000" + route + "\u0000" + String(status);
@@ -23,6 +31,143 @@ export function recordHttpMetric(route: string, method: string, status: number, 
   d.count += 1;
   d.sumMs += elapsedMs;
   httpDurations.set(dkey, d);
+
+  // 记录环形延迟采样
+  if (recentLatencies.length < MAX_LATENCY_SAMPLES) {
+    recentLatencies.push(elapsedMs);
+  } else {
+    recentLatencies[latencySampleIdx] = elapsedMs;
+    latencySampleIdx = (latencySampleIdx + 1) % MAX_LATENCY_SAMPLES;
+  }
+
+  // 秒级计数滑动桶（用于毫秒级平滑 QPS 估算）
+  const sec = Math.floor(Date.now() / 1000);
+  const slot = sec % SECOND_BUCKETS;
+  if (secondTimestamps[slot] === sec) {
+    secondCounts[slot]++;
+  } else {
+    secondTimestamps[slot] = sec;
+    secondCounts[slot] = 1;
+  }
+}
+
+export interface HttpMetricsSummary {
+  uptimeSeconds: number;
+  totalRequests: number;
+  qps: number;
+  avgLatencyMs: number;
+  p50LatencyMs: number;
+  p95LatencyMs: number;
+  p99LatencyMs: number;
+  statusCodes: {
+    s2xx: number;
+    s3xx: number;
+    s4xx: number;
+    s5xx: number;
+    errorRate: number;
+  };
+  topSlowRoutes: Array<{ route: string; method: string; avgLatencyMs: number; count: number }>;
+  topHotRoutes: Array<{ route: string; method: string; count: number }>;
+  memory: {
+    rssMb: number;
+    heapUsedMb: number;
+    heapTotalMb: number;
+  };
+}
+
+export function getHttpMetricsSummary(): HttpMetricsSummary {
+  const now = Date.now();
+  const uptimeSeconds = Math.max(1, Math.round((now - metricsStartedAt) / 1000));
+
+  // 计算滑动窗口 QPS
+  const curSec = Math.floor(now / 1000);
+  let recentReqSum = 0;
+  let activeSecs = 0;
+  for (let i = 0; i < SECOND_BUCKETS; i++) {
+    const t = secondTimestamps[i];
+    if (t && curSec - t < 60) {
+      recentReqSum += secondCounts[i];
+      activeSecs++;
+    }
+  }
+  const qps = activeSecs > 0 ? Math.round((recentReqSum / activeSecs) * 10) / 10 : 0;
+
+  // 状态码聚合与总请求
+  let totalRequests = 0;
+  let s2xx = 0;
+  let s3xx = 0;
+  let s4xx = 0;
+  let s5xx = 0;
+
+  for (const [k, count] of httpCounts.entries()) {
+    const [, , statusStr] = splitKey(k);
+    totalRequests += count;
+    if (statusStr.startsWith("2")) s2xx += count;
+    else if (statusStr.startsWith("3")) s3xx += count;
+    else if (statusStr.startsWith("4")) s4xx += count;
+    else if (statusStr.startsWith("5")) s5xx += count;
+  }
+  const errorRate = totalRequests > 0 ? Math.round(((s4xx + s5xx) / totalRequests) * 1000) / 10 : 0;
+
+  // 延迟分位数
+  let avgLatencyMs = 0;
+  let p50LatencyMs = 0;
+  let p95LatencyMs = 0;
+  let p99LatencyMs = 0;
+
+  if (recentLatencies.length > 0) {
+    const sorted = [...recentLatencies].sort((a, b) => a - b);
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    avgLatencyMs = Math.round((sum / sorted.length) * 10) / 10;
+    p50LatencyMs = Math.round(sorted[Math.floor(sorted.length * 0.5)]! * 10) / 10;
+    p95LatencyMs = Math.round(sorted[Math.floor(sorted.length * 0.95)]! * 10) / 10;
+    p99LatencyMs = Math.round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.99))]! * 10) / 10;
+  }
+
+  // 慢路由 Top 5 (avgLatencyMs >= 5ms, sorted by avgLatency desc)
+  const routeStats: Array<{ route: string; method: string; avgLatencyMs: number; count: number }> = [];
+  for (const [k, d] of httpDurations.entries()) {
+    const [method, route] = splitKey(k);
+    routeStats.push({
+      route,
+      method,
+      count: d.count,
+      avgLatencyMs: Math.round((d.sumMs / d.count) * 10) / 10,
+    });
+  }
+  const topSlowRoutes = [...routeStats]
+    .sort((a, b) => b.avgLatencyMs - a.avgLatencyMs)
+    .slice(0, 5);
+
+  const topHotRoutes = [...routeStats]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+    .map((r) => ({ route: r.route, method: r.method, count: r.count }));
+
+  const mem = process.memoryUsage();
+  return {
+    uptimeSeconds,
+    totalRequests,
+    qps,
+    avgLatencyMs,
+    p50LatencyMs,
+    p95LatencyMs,
+    p99LatencyMs,
+    statusCodes: {
+      s2xx,
+      s3xx,
+      s4xx,
+      s5xx,
+      errorRate,
+    },
+    topSlowRoutes,
+    topHotRoutes,
+    memory: {
+      rssMb: Math.round((mem.rss / 1024 / 1024) * 10) / 10,
+      heapUsedMb: Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10,
+      heapTotalMb: Math.round((mem.heapTotal / 1024 / 1024) * 10) / 10,
+    },
+  };
 }
 
 /** 转义 Prometheus 文本格式的标签值（反斜杠 / 引号 / 换行） */

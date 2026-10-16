@@ -104,7 +104,9 @@ const ChartTooltip = RechartsPrimitive.Tooltip
 
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
+  // recharts 3: Tooltip 组件自身不再暴露 payload/label/active（改由 context 注入），
+  // 自定义 content 组件的入参类型改用根导出的 TooltipContentProps
+  RechartsPrimitive.TooltipContentProps &
     React.ComponentProps<"div"> & {
       hideLabel?: boolean
       hideIndicator?: boolean
@@ -261,7 +263,9 @@ const ChartLegend = RechartsPrimitive.Legend
 const ChartLegendContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> &
-    Pick<RechartsPrimitive.LegendProps, "payload" | "verticalAlign"> & {
+    // recharts 3: LegendProps 已 Omit 掉 payload/verticalAlign，
+    // 自定义 content 入参改用 DefaultLegendContentProps
+    Pick<RechartsPrimitive.DefaultLegendContentProps, "payload" | "verticalAlign"> & {
       hideIcon?: boolean
       nameKey?: string
     }

@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
-import { JobRunner, backoffMs } from "../src/jobs.ts";
+import { JobRunner, backoffMs, jobEventBus, type JobEventPayload } from "../src/jobs.ts";
 import { refreshUserProfile } from "../src/profile-service.ts";
 
 let dir: string;
@@ -347,5 +347,57 @@ describe("个性化画像服务", () => {
     expect(diff.dormantIds).toContain(dormant.id);
     expect(diff.expiringIds).not.toContain(normal.id);
   });
+
+  it("purge_trash 任务物理清理超期软删除站点", async () => {
+    const site = await ctx.repo.createSite({ url: "https://example.com/expired-trash", title: "超期软删站", categoryId: "rc" });
+    await ctx.repo.deleteSite(site.id);
+
+    // 修改 deleted_at 为 40 天前
+    const fortyDaysAgo = Date.now() - 40 * 86_400_000;
+    ctx.db.sqlite!.prepare("UPDATE sites SET deleted_at = ? WHERE id = ?").run(fortyDaysAgo, site.id);
+
+    const jobId = await ctx.repo.enqueueJob("purge_trash", { olderThanDays: 30 });
+    const runner = new JobRunner(ctx);
+    await runner.tick();
+
+    const jobs = await ctx.repo.listJobs(undefined, 10);
+    const job = jobs.find((j) => j.id === jobId);
+    expect(job?.status).toBe("done");
+
+    // 确认已彻底物理抹除
+    const checkRow = ctx.db.sqlite!.prepare("SELECT id FROM sites WHERE id = ?").get(site.id);
+    expect(checkRow).toBeUndefined();
+  });
+
+  it("enableCron 模式在 tick 时自动调度内置周期任务", async () => {
+    const runner = new JobRunner(ctx, { enableCron: true });
+    const tickRes = await runner.tick();
+    expect(tickRes.processed).toBeGreaterThan(0);
+
+    // 再次 tick 时，由于 cron 水位已更新且未到间隔，不会重复入队大量任务
+    const secondTick = await runner.tick();
+    expect(secondTick.processed).toBe(0);
+  });
+
+  it("jobEventBus 在任务执行生命周期中派发实时状态事件", async () => {
+    const events: JobEventPayload[] = [];
+    const unsubscribe = (payload: JobEventPayload) => {
+      events.push(payload);
+    };
+    jobEventBus.on("job", unsubscribe);
+
+    try {
+      const jobId = await ctx.repo.enqueueJob("recompute_rank", {});
+      const runner = new JobRunner(ctx);
+      await runner.tick();
+
+      const related = events.filter((e) => e.jobId === jobId);
+      expect(related.some((e) => e.status === "running")).toBe(true);
+      expect(related.some((e) => e.status === "completed")).toBe(true);
+    } finally {
+      jobEventBus.off("job", unsubscribe);
+    }
+  });
 });
+
 

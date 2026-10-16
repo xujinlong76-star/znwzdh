@@ -14,15 +14,47 @@
  * 防重入：tick 串行执行，上一次没跑完这次直接跳过（任务错过就等下一轮）。
  */
 
+import { EventEmitter } from "node:events";
 import { enrichUrl } from "@navhub/ai";
 import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol } from "@navhub/core";
 import type { AppContext } from "./context.ts";
 import { indexSite } from "./index-site.ts";
 
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash";
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit";
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash"];
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit"];
+export interface JobEventPayload {
+  jobId: string;
+  kind: JobKind;
+  status: "running" | "completed" | "failed" | "retrying";
+  attempts?: number;
+  error?: string | null;
+  timestamp: number;
+}
+
+export class JobEventBus extends EventEmitter {
+  emitJobUpdate(payload: JobEventPayload): void {
+    this.emit("job", payload);
+    this.emit(`job:${payload.jobId}`, payload);
+  }
+}
+
+export const jobEventBus = new JobEventBus();
+jobEventBus.setMaxListeners(200);
+
+export interface CronScheduleConfig {
+  kind: JobKind;
+  intervalMs: number;
+  payload?: Record<string, unknown>;
+}
+
+export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
+  { kind: "recompute_rank", intervalMs: 3600_000 },
+  { kind: "health_check", intervalMs: 86_400_000, payload: { limit: 100 } },
+  { kind: "purge_trash", intervalMs: 86_400_000, payload: { olderThanDays: 30 } },
+  { kind: "token_audit", intervalMs: 7 * 86_400_000 },
+];
 
 const LOCK_KEY = "lock:job-runner";
 const LOCK_TTL_MS = 120_000;
@@ -60,6 +92,8 @@ export interface JobRunnerOptions {
   maxPerTick?: number;
   /** 持有者标识（多实例部署时可区分） */
   holder?: string;
+  /** 是否在 tick 时检查并自动调度 Cron 周期任务（start() 启动后台时自动置为 true） */
+  enableCron?: boolean;
   /** 连续失败告警阈值（达到后 log.error 一次；测试可注入回调收集） */
   onAlert?: (message: string, detail: { kind: string; attempts: number; error: string }) => void;
 }
@@ -69,6 +103,7 @@ export class JobRunner {
   private intervalMs: number;
   private maxPerTick: number;
   private holder: string;
+  private enableCron: boolean;
   private onAlert: JobRunnerOptions["onAlert"];
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
@@ -79,6 +114,7 @@ export class JobRunner {
     this.intervalMs = opts.intervalMs ?? envInterval();
     this.maxPerTick = opts.maxPerTick ?? 10;
     this.holder = opts.holder ?? "pid-" + process.pid;
+    this.enableCron = opts.enableCron ?? false;
     this.onAlert = opts.onAlert;
   }
 
@@ -89,6 +125,7 @@ export class JobRunner {
 
   start(): void {
     if (this.timer) return;
+    this.enableCron = true;
     // 引入 ±20% 抖动（jitter）：多实例部署时错开唤醒峰值，避免同时抢锁打满 DB
     const jitterMs = Math.max(200, Math.round(this.intervalMs * (0.8 + Math.random() * 0.4)));
     this.timer = setInterval(() => void this.tick(), jitterMs);
@@ -110,6 +147,9 @@ export class JobRunner {
       if (!locked) return { processed: 0, skipped: true };
       let processed = 0;
       try {
+        if (this.enableCron) {
+          await this.checkRecurringSchedules().catch(() => undefined);
+        }
         for (let i = 0; i < this.maxPerTick; i++) {
           const job = await this.ctx.repo.claimNextJob();
           if (!job) break;
@@ -122,6 +162,23 @@ export class JobRunner {
       return { processed, skipped: false };
     } finally {
       this.ticking = false;
+    }
+  }
+
+  /** 检查内置 Cron 定时计划并在到期时入队任务 */
+  private async checkRecurringSchedules(): Promise<void> {
+    const now = Date.now();
+    for (const schedule of DEFAULT_CRON_SCHEDULES) {
+      const stateKey = `cron:last_run:${schedule.kind}`;
+      const lastRun = await this.ctx.repo.getSystemState<number>(stateKey);
+      if (!lastRun || now - lastRun >= schedule.intervalMs) {
+        try {
+          await this.ctx.repo.enqueueJob(schedule.kind, schedule.payload ?? {});
+          await this.ctx.repo.setSystemState(stateKey, now);
+        } catch {
+          // 忽略入队冲突或瞬时错误
+        }
+      }
     }
   }
 
@@ -176,6 +233,13 @@ export class JobRunner {
   /* --------------------------- 任务执行 --------------------------- */
 
   private async process(kind: JobKind, payload: unknown, jobId: string, attempts: number): Promise<void> {
+    jobEventBus.emitJobUpdate({
+      jobId,
+      kind,
+      status: "running",
+      attempts,
+      timestamp: Date.now(),
+    });
     try {
       switch (kind) {
         case "health_check":
@@ -196,10 +260,20 @@ export class JobRunner {
         case "token_audit":
           await this.runTokenAudit((payload ?? {}) as { expiringDays?: number; dormantDays?: number });
           break;
+        case "purge_trash":
+          await this.runPurgeTrash((payload ?? {}) as { olderThanDays?: number });
+          break;
         default:
           throw new Error("未知任务类型: " + kind);
       }
       await this.ctx.repo.completeJob(jobId, null);
+      jobEventBus.emitJobUpdate({
+        jobId,
+        kind,
+        status: "completed",
+        attempts,
+        timestamp: Date.now(),
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // 指数退避重试：瞬时抖动（网络/磁盘）不再一击毙命。
@@ -207,6 +281,14 @@ export class JobRunner {
       const exhausted = attempts >= MAX_JOB_ATTEMPTS;
       const retryAt = exhausted ? null : Date.now() + backoffMs(attempts);
       await this.ctx.repo.completeJob(jobId, message, { retryAt, exhausted }).catch(() => undefined);
+      jobEventBus.emitJobUpdate({
+        jobId,
+        kind,
+        status: exhausted ? "failed" : "retrying",
+        attempts,
+        error: message,
+        timestamp: Date.now(),
+      });
       if (exhausted) {
         const detail = { kind, attempts, error: message };
         this.alert("任务 " + kind + " 连续失败 " + attempts + " 次，已停止重试：" + message, detail);
@@ -465,6 +547,14 @@ export class JobRunner {
         console.warn(`[navhub-token-audit] 发现 ${expired.length} 条凭据已过期且尚未吊销`);
       }
     }
+  }
+
+  /** 回收站定时清除：彻底物理清理超过指定天数（默认 30 天）的软删除站点及关联索引 */
+  private async runPurgeTrash(payload: { olderThanDays?: number } = {}): Promise<void> {
+    const days = Math.max(1, payload.olderThanDays ?? 30);
+    const ms = days * 86_400_000;
+    const purged = await this.ctx.repo.purgeExpiredDeletedSites(ms);
+    await this.ctx.repo.recordEvent("purge_trash", { meta: { days, purged } }).catch(() => undefined);
   }
 
   /* --------------------------- 底层执行 --------------------------- */

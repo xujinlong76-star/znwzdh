@@ -78,6 +78,9 @@ export const sites = sqliteTable("sites", {
   /* ---- 软删除（回收站）：NULL=正常，非 NULL=删除时刻，可恢复 ---- */
   deletedAt: integer("deleted_at"),
 
+  /* ---- 扩展元数据（4.0 生态微动作、平替雷达、LiveMetrics 与场景工作台 JSON） ---- */
+  metadata: text("metadata"),
+
   createdAt: integer("created_at").notNull().$defaultFn(now),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 }, (t) => [
@@ -299,9 +302,18 @@ export const userVaultSync = sqliteTable("user_vault_sync", {
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 });
 
+/**
+ * 系统全局状态表：用于存储模型检查点（LinUCB 等）与自动化任务调度运行水位。
+ */
+export const systemStates = sqliteTable("system_states", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+});
+
 export const schema = {
   categories, sites, tags, siteTags, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings,
-  favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync,
+  favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates,
 };
 

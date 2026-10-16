@@ -29,6 +29,7 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "sites", column: "last_visited_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "sites", column: "trend_score", sqlite: "REAL NOT NULL DEFAULT 0", pg: "DOUBLE PRECISION NOT NULL DEFAULT 0" },
   { table: "sites", column: "deleted_at", sqlite: "INTEGER", pg: "BIGINT" },
+  { table: "sites", column: "metadata", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "email", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "avatar", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "source", sqlite: "TEXT NOT NULL DEFAULT 'local'", pg: "TEXT NOT NULL DEFAULT 'local'" },

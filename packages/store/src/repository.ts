@@ -709,12 +709,25 @@ export class Repository {
     );
   }
 
+  /**
+   * 审计写入。
+   *
+   * 容错语义（升级改造方案 P1-1）：审计是「先改状态后写日志」里的日志——
+   * 磁盘满 / 锁竞争 / schema 漂移都可能让这条 INSERT 失败，但它**绝不能**
+   * 把已成功的主操作变成 500。server.ts 24 处调用点逐一 try/catch 不现实，
+   * 在仓储层统一兜底：失败仅 console.error 留痕，调用方无感。
+   * （token 侧另有 auditSafely 双保险，语义一致。）
+   */
   async audit(entry: { actor: string; actorKind?: string; action: string; target?: string; diff?: unknown; ip?: string }): Promise<void> {
-    await this.run(
-      "INSERT INTO audit_logs (actor, actor_kind, action, target, diff, ip, created_at) VALUES (?,?,?,?,?,?,?)",
-      [entry.actor, entry.actorKind ?? "user", entry.action, entry.target ?? null,
-       entry.diff === undefined ? null : JSON.stringify(entry.diff), entry.ip ?? null, Date.now()],
-    );
+    try {
+      await this.run(
+        "INSERT INTO audit_logs (actor, actor_kind, action, target, diff, ip, created_at) VALUES (?,?,?,?,?,?,?)",
+        [entry.actor, entry.actorKind ?? "user", entry.action, entry.target ?? null,
+         entry.diff === undefined ? null : JSON.stringify(entry.diff), entry.ip ?? null, Date.now()],
+      );
+    } catch (err) {
+      console.error("[navhub] 审计写入失败（主操作结果不受影响）:", err);
+    }
   }
 
   /**

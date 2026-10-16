@@ -2266,7 +2266,8 @@ export async function buildServer(ctx: AppContext) {
       guard: ctx.config.fetch,
       knownCategories: categories.map((c) => c.title),
     });
-    await ctx.repo.recordEvent("enrich", { meta: { url: body.data.url, provenance: result.provenance } });
+    // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
+    await ctx.repo.recordEvent("enrich", { meta: { url: body.data.url, provenance: result.provenance } }).catch(() => undefined);
     return result;
   });
 
@@ -2340,12 +2341,13 @@ export async function buildServer(ctx: AppContext) {
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const identity = body.data.userId ?? body.data.anonId ?? null;
+    // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
     await ctx.repo.recordEvent(body.data.kind, {
       siteId: body.data.siteId,
       query: body.data.query,
       categoryId: body.data.categoryId,
       meta: identity ? { identity } : undefined,
-    });
+    }).catch(() => undefined);
     if (body.data.kind === "click" && body.data.siteId) {
       await ctx.repo.bumpVisit(body.data.siteId).catch(() => undefined);
     }

@@ -574,7 +574,7 @@ export default function AdminTokensPage() {
                 <option value="365">1 年后过期</option>
               </select>
               <p className="text-[11px] text-muted-foreground">
-                本实例禁止签发长期（永不过期）凭据——泄露的永久凭据等于永久后门，且无法通过"等它过期"止血。
+                本实例禁止签发长期（永不过期）凭据——泄露的永久凭据等于永久后门，且无法通过&ldquo;等它过期&rdquo;止血。
               </p>
             </div>
 

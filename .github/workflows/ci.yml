@@ -11,10 +11,13 @@
 #      （pg-dialect.e2e.test.ts 与 scripts/pg-check.mts 都只认这个变量名，
 #       设成 DATABASE_URL 是没人读的死变量——PG 测试会整套静默 skip，假绿灯）
 #    - pg-dialect 跨方言 E2E（12 项断言）+ pg-check.mts 标准模式 12 项基准检验
-# 3. check-web-overlay:
+# 3. test-web（前端门禁，升级改造方案 P1-2）:
+#    - vendor 重建 apps/web 后：tsc --noEmit + next lint + next build
+#    - 覆盖 NavHub 自研的 166 个 overlay 文件（此前零门禁）
+# 4. check-web-overlay:
 #    - vendor 重建 apps/web 后与 overlay 字节级比对（全新检出的前提，见作业内注释）
-# 4. audit: 依赖审计（continue-on-error，先告警不卡门）
-# 5. ci-passed:
+# 5. audit: 依赖审计（continue-on-error，先告警不卡门）
+# 6. ci-passed:
 #    - 聚合闸门作业，供 GitHub 分支保护规则 (Branch Protection Rules) 设置单一必经项
 # ==============================================================================
 
@@ -97,6 +100,29 @@ jobs:
       # 标准模式 12 项真实数据库方言基准检验（同样只认 NAVHUB_TEST_DATABASE_URL）
       - run: pnpm test:pg
 
+  test-web:
+    name: 前端门禁（Web typecheck / lint / build）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # apps/web 是 gitignore 的 vendored 底座：先重建（上游 + overlay 覆写），
+      # 否则 tsc/lint/build 面对的是不存在的目录（与 check-web-overlay 同款前置）
+      - run: node scripts/vendor-web.mjs
+      # 三门禁。背景：NavHub 自研的 166 个 overlay 文件（/admin 全部页面、
+      # /api/hub 代理、navhub-api 等）此前零门禁——根 typecheck 只覆盖
+      # @navhub/*，next.config 也 ignoreBuildErrors/ignoreDuringBuilds。
+      # 现状基线（2026-10-16 本地实测）：tsc 0 错误、lint 0 错误 259 警告
+      # （警告不卡门禁）、next build 通过——故直接按硬门禁启用。
+      - run: pnpm --filter navsphere exec tsc --noEmit
+      - run: pnpm --filter navsphere exec next lint
+      - run: pnpm --filter navsphere build
+
   check-web-overlay:
     name: 覆盖层一致性检查
     runs-on: ubuntu-latest
@@ -133,18 +159,20 @@ jobs:
   ci-passed:
     name: CI 整体通过 (All Checks Passed)
     runs-on: ubuntu-latest
-    needs: [test-sqlite, test-postgres, check-web-overlay, audit]
+    needs: [test-sqlite, test-postgres, test-web, check-web-overlay, audit]
     if: always()
     steps:
       - name: 评估检查结果
         run: |
           if [ "${{ needs.test-sqlite.result }}" != "success" ] || \
              [ "${{ needs.test-postgres.result }}" != "success" ] || \
+             [ "${{ needs.test-web.result }}" != "success" ] || \
              [ "${{ needs.check-web-overlay.result }}" != "success" ] || \
              [ "${{ needs.audit.result }}" != "success" ]; then
             echo "CI 检查未全部通过！"
             echo "SQLite:  ${{ needs.test-sqlite.result }}"
             echo "PG:      ${{ needs.test-postgres.result }}"
+            echo "Web:     ${{ needs.test-web.result }}"
             echo "Overlay: ${{ needs.check-web-overlay.result }}"
             echo "Audit:   ${{ needs.audit.result }}"
             exit 1

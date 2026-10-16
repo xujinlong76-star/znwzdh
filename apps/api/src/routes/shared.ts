@@ -1,0 +1,43 @@
+/**
+ * 跨域共享的小工具。
+ *
+ * 原 server.ts 单体顶层的函数声明（提升作用域使任意路由可用），
+ * 按域拆分后集中到此，由各域插件 import。
+ */
+
+/**
+ * site.id -> 数值投稿编号，与前端（Next 侧）的 hashNumericId 规则必须一致。
+ * 算法：djb2 变体（((hash<<5)-hash)+ch），与 apps/web 的 hashNumericId 相同。
+ * 注意：djb2 32bit 易碰撞且反查靠 listSites(limit 1000) 截断匹配（见 PATCH /api/submissions/:number）；
+ * 超 1000 投稿会被截断漏掉。保留兼容旧前端，新前端逐步切 siteId 直传。
+ */
+export function submissionNumber(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) || 1;
+}
+
+export function identityOf(req: { query: Record<string, unknown>; body: unknown; headers?: Record<string, string | undefined> }): string | null {
+  // 优先 header（避免 anonId 进 URL query 泄漏到日志/referer），query/body 仅兼容旧前端
+  const headers = (req as { headers?: Record<string, unknown> }).headers as Record<string, unknown> | undefined;
+  const pick = (...names: string[]): string | null => {
+    if (!headers) return null;
+    for (const n of names) {
+      const v = headers[n] ?? headers[n.toLowerCase()] ?? headers[n.toUpperCase()];
+      if (typeof v === "string" && v) return v.slice(0, 64);
+    }
+    return null;
+  };
+  // 前端实际发送 X-Navhub-Anon-Id（见 web-overlay lib/navhub-api.ts anonHeaders），短名保留兼容
+  const hUser = pick("x-navhub-user-id", "x-user-id");
+  if (hUser) return hUser;
+  const hAnon = pick("x-navhub-anon-id", "x-anon-id");
+  if (hAnon) return hAnon;
+  const fromQuery = (req.query ?? {}) as Record<string, string>;
+  const fromBody = (req.body ?? {}) as Record<string, string>;
+  const v = fromQuery.userId ?? fromQuery.anonId ?? fromBody.userId ?? fromBody.anonId ?? null;
+  return typeof v === "string" ? v.slice(0, 64) : v;
+}

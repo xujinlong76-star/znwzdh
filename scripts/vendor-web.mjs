@@ -55,6 +55,38 @@ if (!existsSync(OVERLAY)) {
   process.exit(1);
 }
 
+// 4b) NavHub 自有文件清单：git 跟踪的 apps/web/*（即 overlay + package.json /
+// next.config.js 等手改文件）。上游 tarball 会覆盖这些同名文件——历史上曾把
+// React 19 的 package.json 打回上游的 React 18，导致 CI frozen-lockfile 全红。
+// 因此上游拷贝时跳过它们（overlay 步骤随后仍会覆盖 overlay 拥有的文件）。
+// UPSTREAM.md 除外：它是本脚本每次生成的来源记录，必须重写。
+// 注意：如果目标位置不存在该文件则仍正常拷贝（全新目录 / Docker 构建不受影响）。
+let ownedRelPaths = new Set();
+try {
+  const tracked = execFileSync("git", ["ls-files", "--", "apps/web"], { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+    .split("\n").map((s) => s.trim()).filter(Boolean);
+  for (const t of tracked) {
+    if (t === "apps/web/UPSTREAM.md") continue;
+    if (t.startsWith("apps/web/")) ownedRelPaths.add(t.slice("apps/web/".length));
+  }
+  console.log("[vendor] preserving " + ownedRelPaths.size + " NavHub-owned tracked files");
+} catch {
+  // 无 .git 时回退（Docker 构建上下文默认排除 .git）：用 overlay 文件列表 +
+  // 已知的根级手改文件推导。目标目录初始为空时跳过逻辑自然不生效。
+  console.log("[vendor] no git history; deriving owned-file list from overlay");
+  const walk = (dir, base) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, entry.name);
+      if (entry.isDirectory()) walk(p, base);
+      else ownedRelPaths.add(relative(base, p).split("\\").join("/"));
+    }
+  };
+  walk(OVERLAY, TARGET);
+  ownedRelPaths.add("package.json");
+  ownedRelPaths.add("next.config.js");
+  ownedRelPaths.delete("UPSTREAM.md");
+}
+
 // 5) copy upstream over the target
 // 注意：不用 cpSync(src, dst, { recursive: true }) 一次性拷目录——
 // 在部分 Windows 环境下递归 cpSync 会 EIO（Access is denied），而单文件
@@ -68,13 +100,18 @@ for (const generated of ["node_modules", ".next"]) {
     rmSync(p, { recursive: true, force: true });
   }
 }
-function walkAndCopy(srcDir, dstDir, counter) {
+function walkAndCopy(srcDir, dstDir, counter, skipRel) {
   mkdirSync(dstDir, { recursive: true });
   for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
     const s = join(srcDir, entry.name);
     const d = join(dstDir, entry.name);
+    const rel = d.slice(TARGET.length + 1).split("\\").join("/");
+    if (skipRel && skipRel.has(rel) && existsSync(d)) {
+      // NavHub-owned tracked file: keep the repo version, do not overwrite with upstream.
+      continue;
+    }
     if (entry.isDirectory()) {
-      walkAndCopy(s, d, counter);
+      walkAndCopy(s, d, counter, skipRel);
     } else if (entry.isSymbolicLink()) {
       // 上游 tarball 理论上不含符号链接；真遇到时走 cpSync 原样复制链接本身
       cpSync(s, d, { force: true });
@@ -110,7 +147,7 @@ function walkAndCopy(srcDir, dstDir, counter) {
   }
 }
 const upstreamCounter = { count: 0 };
-walkAndCopy(inner, TARGET, upstreamCounter);
+walkAndCopy(inner, TARGET, upstreamCounter, ownedRelPaths);
 console.log("[vendor] copied upstream: " + upstreamCounter.count + " files");
 
 // 6) apply NavHub overlay (storage seam + all self-built pages/components)

@@ -33,7 +33,12 @@ RUN pnpm install --frozen-lockfile --filter "./apps/web"
 #    注意：底座 tarball 自带的上游 package.json / pnpm-lock.yaml 会被覆盖层覆盖，
 #    镜像里的依赖解析与已装依赖始终以仓库根的清单 + 锁文件为准（见上面第 1 步）。
 ARG NAVSPHERE_REF=6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a
-RUN curl -fsSL "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/${NAVSPHERE_REF}" -o /tmp/ns.tgz \
+# codeload 在 CI 上偶发 TLS 超时 / 连接重置（scripts/vendor-web.mjs 也遇到过，那边已有
+# 60s 超时 + 3 次重试）。没有超时/重试的 curl 会一直挂着，直到撞上 job 的 30 分钟超时，
+# 日志里只剩一句超时、看不出真正原因。这里补齐同样的语义：连接超时 10s、单次总计 300s、
+# 瞬时错误重试 3 次；坏 ref（404）等确定性错误不重试，直接快速失败。
+RUN curl -fsSL --connect-timeout 10 --max-time 300 --retry 3 --retry-delay 2 --retry-connrefused \
+      "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/${NAVSPHERE_REF}" -o /tmp/ns.tgz \
     && mkdir -p /tmp/ns && tar -xzf /tmp/ns.tgz -C /tmp/ns --strip-components=1 \
     && mkdir -p /app/apps/web && cp -a /tmp/ns/. /app/apps/web/ \
     && rm -rf /tmp/ns /tmp/ns.tgz

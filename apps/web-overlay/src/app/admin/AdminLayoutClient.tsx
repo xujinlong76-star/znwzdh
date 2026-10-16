@@ -26,6 +26,8 @@ import {
   BarChart3,
   ListChecks,
   KeyRound,
+  Tags,
+  Star,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
 import {
@@ -71,13 +73,23 @@ const menuItems = [
     subItems: [
       {
         title: "分类管理",
-        href: "/admin/navigation"
+        href: "/admin/categories"
       },
       {
         title: "站点管理",
         href: "/admin/sitelist"
       }
     ]
+  },
+  {
+    title: "标签管理",
+    href: "/admin/tags",
+    icon: Tags
+  },
+  {
+    title: "精选专题",
+    href: "/admin/collections",
+    icon: Star
   },
   {
     title: "视频管理",

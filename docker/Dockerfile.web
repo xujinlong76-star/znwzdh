@@ -35,8 +35,23 @@ RUN curl -fsSL "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/${NAVSP
 #    NAVHUB_STORAGE_BASE_URL），已包含在覆盖层里，无需在 Dockerfile 额外配置。
 COPY apps/web-overlay/ /app/web/
 
+# apps/web 在镜像里是独立项目：读不到仓库根的 pnpm-workspace.yaml，而 pnpm 11 的
+# overrides / allowBuilds 只认 pnpm-workspace.yaml（package.json 里的 pnpm 字段会被忽略并告警）。
+# 另外上游 tarball 自带的 pnpm-lock.yaml 对应的是**上游** package.json，与 NavHub 覆盖层的
+# package.json 永远不可能匹配 —— `--frozen-lockfile` 会直接 ERR_PNPM_LOCKFILE_CONFIG_MISMATCH
+# 把镜像构建打挂。因此：把根配置作为唯一事实源搬进来，并做一次非 frozen 安装。
+COPY pnpm-workspace.yaml /app/web/
+
+# pnpm 11 的构建脚本门禁：非 frozen 安装遇到「未声明的构建脚本」会直接
+# ERR_PNPM_IGNORED_BUILDS 退出（frozen 安装会跳过该校验，所以根安装看不到这个问题）。
+# 根配置的 allowBuilds 只覆盖后端/共享依赖，前端依赖图里的 @tailwindcss/oxide 与
+# unrs-resolver 没有被声明。这里在既有 allowBuilds 映射里补两条 false —— 与根安装的
+# 既有效果一致（两者都自带平台二进制，且 unrs-resolver 只在 lint 里用、镜像不跑 lint），
+# 既消除门禁报错，也不改变依赖产物。用 node 改文本（不用 sed）以保证在任意基础镜像上行为一致。
+RUN node -e "const fs=require('fs'),p='/app/web/pnpm-workspace.yaml',s=fs.readFileSync(p,'utf8');fs.writeFileSync(p,s.replace(/^allowBuilds:/m,'allowBuilds:\n  \"@tailwindcss/oxide\": false\n  unrs-resolver: false'))"
+
 WORKDIR /app/web
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 ENV NODE_ENV=production \
     STORAGE_ADAPTER=http \

@@ -61,7 +61,10 @@ overrides:
   # ERR_PNPM_LOCKFILE_CONFIG_MISMATCH（见 docker/Dockerfile.api 注释）。
   brace-expansion@<2: 1.1.18
   brace-expansion@>=2: 2.1.4
-  nanoid@<4: 3.3.16
+  # nanoid v3 的 ReDoS/无限循环：GHSA-2v37-7h3g-55p8，修复版 >=3.3.18。
+  # 原钉 3.3.16 本身就在受影响区间（这条 overrides 从 apps/web/package.json 的
+  # pnpm 字段搬进 workspace 配置、真正生效后，生产面 audit 立刻红灯）。
+  nanoid@<4: 3.3.18
   zod: ^3.25.76
   sharp: '>=0.35.5'
   undici: '>=7.29.1'

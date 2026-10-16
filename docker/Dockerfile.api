@@ -45,6 +45,11 @@ COPY apps/api/package.json ./apps/api/
 # （本仓是 8 个项目，只拷后端清单时 pnpm 只认到 6 个）。
 COPY apps/web/package.json ./apps/web/
 COPY apps/web-overlay/package.json ./apps/web-overlay/
+# 根 package.json 的 prepare 钩子会在 install 期间执行 `node scripts/install-git-hooks.mjs`。
+# 只拷清单的话这个文件不在镜像里，install 会以
+# `prepare: Error: Cannot find module '/app/scripts/install-git-hooks.mjs'` 直接失败。
+# 脚本本身无副作用（仓库里没有 .git 时只打印一行跳过）。
+COPY scripts/install-git-hooks.mjs ./scripts/
 
 # 只装中枢及其依赖：前端的 next/react 等不进这个镜像。
 #

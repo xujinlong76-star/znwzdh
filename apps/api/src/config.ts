@@ -167,9 +167,20 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     throw new Error("standard 模式必须提供 NAVHUB_DATABASE_URL");
   }
 
-  // 生产守护：publicUrl 非本地且未开鉴权时给出明确警告（不直接 throw 以免拦住存量 NAS 用户）
+  // 生产守护（fail-closed）：publicUrl 指向公网 + 未开鉴权 = 管理面可被任意改写，
+  // 历史上只 console.warn，等于把"默认不安全"当成可接受的默认配置；
+  // 公网扫描器发现即可直接写站/改配置，因此生产下改为启动即失败。
+  // 内网 / NAS 场景（publicUrl 非本地但确实不可公网访问）可显式设
+  // NAVHUB_ALLOW_INSECURE_PUBLIC=1 退回警告——必须显式声明，不能是默认值。
   const isLocalPublic = /localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])/.test(base.publicUrl);
+  const allowInsecurePublic = bool("NAVHUB_ALLOW_INSECURE_PUBLIC", false);
   if (!isLocalPublic && !base.authRequired && !overrides.authRequired) {
+    if (isProd && !allowInsecurePublic) {
+      throw new Error(
+        "生产环境公网部署必须开启鉴权：请设置 NAVHUB_AUTH_REQUIRED=true（并配 NAVHUB_BOOTSTRAP_TOKEN 引导首个 token）；" +
+        "若确为不可公网访问的内网部署，显式设置 NAVHUB_ALLOW_INSECURE_PUBLIC=1 可退回警告模式",
+      );
+    }
     console.warn("[navhub] 警告：publicUrl 指向公网但 NAVHUB_AUTH_REQUIRED=false，管理面默认开放，建议设为 true");
   }
   // dtype 非法值早暴露（否则要到 pipeline 加载时才炸，且曾被永久缓存）

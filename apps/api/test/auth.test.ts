@@ -508,6 +508,51 @@ describe("生产配置硬校验与批量查询回归", () => {
     }
   });
 
+  it("生产 + 公网 publicUrl + 未开鉴权 拒绝启动；逃生阀与内网地址放行", () => {
+    const prev = {
+      NODE_ENV: process.env.NODE_ENV,
+      SECRET: process.env.NAVHUB_SESSION_SECRET,
+      URL: process.env.NAVHUB_PUBLIC_URL,
+      AUTH: process.env.NAVHUB_AUTH_REQUIRED,
+      ALLOW: process.env.NAVHUB_ALLOW_INSECURE_PUBLIC,
+    };
+    const restore = () => {
+      for (const [k, v] of Object.entries({
+        NODE_ENV: prev.NODE_ENV,
+        NAVHUB_SESSION_SECRET: prev.SECRET,
+        NAVHUB_PUBLIC_URL: prev.URL,
+        NAVHUB_AUTH_REQUIRED: prev.AUTH,
+        NAVHUB_ALLOW_INSECURE_PUBLIC: prev.ALLOW,
+      })) {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      }
+    };
+    try {
+      process.env.NODE_ENV = "production";
+      process.env.NAVHUB_SESSION_SECRET = "a-very-strong-production-secret-with-at-least-32-chars!";
+      process.env.NAVHUB_PUBLIC_URL = "https://nav.example.com";
+      delete process.env.NAVHUB_AUTH_REQUIRED;
+      delete process.env.NAVHUB_ALLOW_INSECURE_PUBLIC;
+      expect(() => loadConfig()).toThrow(/NAVHUB_AUTH_REQUIRED/);
+
+      // 显式逃生阀：退回警告，不阻断启动
+      process.env.NAVHUB_ALLOW_INSECURE_PUBLIC = "1";
+      expect(loadConfig().authRequired).toBe(false);
+      delete process.env.NAVHUB_ALLOW_INSECURE_PUBLIC;
+
+      // 内网地址原本就不拦截
+      process.env.NAVHUB_PUBLIC_URL = "http://192.168.1.10:8787";
+      expect(() => loadConfig()).not.toThrow();
+
+      // 开启鉴权后公网部署放行
+      process.env.NAVHUB_PUBLIC_URL = "https://nav.example.com";
+      process.env.NAVHUB_AUTH_REQUIRED = "true";
+      expect(loadConfig().authRequired).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
   it("Repository.getSitesByIds 批量查询返回完整站点与标签且忽略空数组", async () => {
     expect((await openCtx.repo.getSitesByIds([])).size).toBe(0);
     const s1 = await openCtx.repo.createSite({ url: "https://batch1.example.com", title: "Batch1", categoryId: "cat-ai", tags: ["t1"] });

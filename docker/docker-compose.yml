@@ -50,6 +50,11 @@ services:
       NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-1}
       NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
       NAVHUB_SEED_ON_START: ${NAVHUB_SEED_ON_START:-1}
+      # 公网部署必须设为 1：生产 + NAVHUB_PUBLIC_URL 指向公网 + 未开鉴权 → 服务拒绝启动（fail-closed）。
+      # 开启后先用 NAVHUB_BOOTSTRAP_TOKEN 创建正式 token，再删除该变量重启。
+      NAVHUB_AUTH_REQUIRED: ${NAVHUB_AUTH_REQUIRED:-0}
+      # NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
+      # NAVHUB_ALLOW_INSECURE_PUBLIC: ${NAVHUB_ALLOW_INSECURE_PUBLIC:-0}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/api/health"]
       interval: 30s

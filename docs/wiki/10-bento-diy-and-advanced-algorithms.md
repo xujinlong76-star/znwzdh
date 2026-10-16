@@ -148,7 +148,7 @@ NavHub 采用自研 `apps/web-overlay` 作为前端事实源，通过 `node scri
 ## 7. MCP Server 智能体协议 (`packages/mcp`)
 
 标准 Model Context Protocol 实现，支持 stdio 与 HTTP 两种传输协议：
-* **15 个标准工具**：`search_sites`、`get_site`、`list_categories`、`create_site`、`update_site`、`delete_site`、`batch_import`、`get_trending`、`run_job`、`health_check` 等。
+* **17 个标准工具**：`search_sites`、`get_site`、`list_categories`、`create_site`、`update_site`、`delete_site`、`batch_import`、`get_trending`、`run_job`、`health_check` 等。
 * **安全护栏**：严格执行 Scope 读写分离（`read` / `write` / `admin`）、写操作幂等去重与 `audit_logs` 全流程审计。
 
 ---

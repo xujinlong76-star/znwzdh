@@ -58,7 +58,7 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 20 个只读工具与 10 个写工具", () => {
+  it("包含 22 个只读工具与 10 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
@@ -78,6 +78,8 @@ describe("工具清单", () => {
       "get_stats",
       "get_trending",
       "list_categories",
+      "list_collections",
+      "list_jobs",
       "list_tags",
       "resolve_wayback",
       "search_sites",
@@ -260,6 +262,19 @@ describe("Phase 4 新工具", () => {
     expect(body.tags[0].count).toBeGreaterThanOrEqual(1);
   });
 
+  it("list_collections 默认只看启用中的专题，all=true 才带停用的", async () => {
+    await ctx.repo.upsertCollection({ slug: "ai-tools", title: "AI 工具箱", enabled: true });
+    await ctx.repo.upsertCollection({ slug: "legacy-topic", title: "已下线专题", enabled: false });
+
+    const slugs = (body: any) => body.collections.map((c: { slug: string }) => c.slug);
+    const enabled = payload(await handlers.list_collections({}, READONLY));
+    expect(slugs(enabled)).toContain("ai-tools");
+    expect(slugs(enabled)).not.toContain("legacy-topic");
+
+    const all = payload(await handlers.list_collections({ all: true }, READONLY));
+    expect(slugs(all)).toContain("legacy-topic");
+  });
+
   it("refresh_site 入队任务并落审计", async () => {
     const res = await handlers.refresh_site({ idOrUrl: "https://weather.com.cn" }, FULL);
     const body = payload(res);
@@ -269,6 +284,22 @@ describe("Phase 4 新工具", () => {
     expect(jobs.some((j) => j.kind === "refetch_metadata")).toBe(true);
     const audit = ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE action = ?").get("job.enqueue") as { c: number };
     expect(Number(audit.c)).toBeGreaterThan(0);
+  });
+
+  it("list_jobs 让 Agent 查得到任务结果（只读权限即可调用，最近在前）", async () => {
+    const res = await handlers.list_jobs({ limit: 10 }, READONLY);
+    const body = payload(res);
+    expect(body.count).toBeGreaterThan(0);
+    expect(body.jobs.some((j: { kind: string }) => j.kind === "refetch_metadata")).toBe(true);
+    // 列表必须按创建时间倒序：Agent 依赖「最近在前」判断刚入队的任务
+    const times = body.jobs.map((j: { createdAt: number }) => j.createdAt);
+    expect([...times].sort((a: number, b: number) => b - a)).toEqual(times);
+  });
+
+  it("list_jobs 支持按状态过滤", async () => {
+    const res = await handlers.list_jobs({ status: "pending", limit: 10 }, READONLY);
+    const body = payload(res);
+    for (const job of body.jobs) expect(job.status).toBe("pending");
   });
 
   it("refresh_site 找不到站点时返回 isError", async () => {

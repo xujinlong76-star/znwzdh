@@ -101,6 +101,15 @@ export const RunJobInput = z.object({
   payload: z.record(z.unknown()).optional().describe("任务参数（如 refetch_metadata/site_self_healing 需要 siteId，token_audit 可选 expiringDays/dormantDays，purge_trash 可选 olderThanDays）"),
 });
 
+export const ListJobsInput = z.object({
+  status: z.enum(["pending", "running", "done", "failed", "cancelled"]).optional().describe("按状态过滤；缺省返回最近的全部任务"),
+  limit: z.number().int().min(1).max(100).default(20).describe("返回条数上限"),
+});
+
+export const ListCollectionsInput = z.object({
+  all: z.boolean().default(false).describe("true 时包含已停用专题（默认只看启用中的）"),
+});
+
 export const DeleteSiteInput = z.object({
   idOrUrl: z.string().describe("站点 id 或完整网址"),
   idempotencyKey: z.string().optional().describe("幂等键；重复调用不会重复处理"),
@@ -268,6 +277,8 @@ export const MCP_INPUT_SCHEMAS: Record<string, ZodSchemaLike> = {
   list_tags: ListTagsInput,
   refresh_site: RefreshSiteInput,
   run_job: RunJobInput,
+  list_jobs: ListJobsInput,
+  list_collections: ListCollectionsInput,
   get_architecture_recipe: GetArchitectureRecipeInput,
   compare_technologies: CompareTechnologiesInput,
   heal_broken_site: HealBrokenSiteInput,
@@ -476,6 +487,16 @@ export const MCP_TOOL_DEFS: ToolDefinition[] = [
     name: "run_job",
     description: "入队一个后台任务（health_check / refetch_metadata / recompute_rank / reindex）。任务由 Runner 异步执行，不会立即返回结果。",
     scope: "admin", inputSchema: RunJobInput, mutating: true,
+  },
+  {
+    name: "list_jobs",
+    description: "查询后台任务队列（可按状态过滤，按创建时间倒序）。run_job 只负责入队、执行是异步的：用本工具确认任务是否已执行、失败原因是什么。",
+    scope: "read", inputSchema: ListJobsInput, mutating: false,
+  },
+  {
+    name: "list_collections",
+    description: "列出精选专题（合集）及其条目数与排序，默认只返回启用中的专题。适合回答「有哪些专题推荐」。",
+    scope: "read", inputSchema: ListCollectionsInput, mutating: false,
   },
   {
     name: "get_architecture_recipe",

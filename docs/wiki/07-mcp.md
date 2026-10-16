@@ -50,7 +50,7 @@ export const MAX_BATCH_ITEMS = 100;   // 批量写入硬上限
 
 > **设计细节**：`McpAuthError` 用**显式字段声明**而非构造函数参数属性——Node 的 `--experimental-strip-types` 只做类型擦除，参数属性会生成运行时代码导致 `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`。
 
-## 3. 工具清单（15 个）
+## 3. 工具清单（17 个）
 
 | 工具 | scope | mutating | 输入参数 | 行为 |
 | --- | --- | --- | --- | --- |
@@ -60,6 +60,7 @@ export const MAX_BATCH_ITEMS = 100;   // 批量写入硬上限
 | `get_stats` | read | ✗ | — | 统计 + `capabilities` |
 | `get_trending` | read | ✗ | `limit`(1-50, 默认10) | 热度榜，带 `visits7d` / `trendScore` 分量 |
 | `list_tags` | read | ✗ | `minCount`(默认1)、`limit`(1-200, 默认50) | 标签 + 关联站点数（热度降序） |
+| `list_collections` | read | ✗ | `all`(默认 false) | 精选专题（合集）列表；默认只含启用中的专题 |
 | `create_site` | **write** | ✓ | `url`(必)、`title`、`description`、`categoryId`、`tags`(≤8)、`enrich`(默认 true)、`idempotencyKey` | 自动抓取 + AI 富化；**网址已存在返回已存在站点而非报错** |
 | `update_site` | **write** | ✓ | `id`(必)、`title`、`description`、`categoryId`、`tags`、`featured` | 更新并重建索引 |
 | `set_status` | **write** | ✓ | `id`(必)、`status` | 审核投稿 / 标记失效 |
@@ -68,9 +69,10 @@ export const MAX_BATCH_ITEMS = 100;   // 批量写入硬上限
 | `delete_site` | **write** | ✓ | `idOrUrl`(必)、`idempotencyKey` | **软删除**（进回收站，可经 `/api/trash/:id/restore` 恢复）；站点不存在返回 `reason:"not_found"` 而非报错（幂等重试） |
 | `export_sites` | read | ✗ | `categoryId`、`status`、`format`(json/csv，默认 json)、`limit`(1-1000, 默认200) | 导出站点清单；**CSV 对 `=+-@` 开头的值加前导单引号转义**（防 Excel 公式注入） |
 | `refresh_site` | **write** | ✓ | `idOrUrl`、`llm`(默认 false) | **入队** `refetch_metadata`，异步执行（不立即返回新元数据） |
-| `run_job` | **admin** | ✓ | `kind`(4选1)、`payload` | 入队后台任务；需 admin——会触发全站扫描 |
+| `run_job` | **admin** | ✓ | `kind`(7选1)、`payload` | 入队后台任务；需 admin——会触发全站扫描 |
+| `list_jobs` | read | ✗ | `status`(5 选 1)、`limit`(1-100, 默认20) | 任务队列（最近在前）。补上「`run_job` 只负责入队、Agent 却查不到执行结果」的口子 |
 
-> **只读 7 个 / 写 8 个**（`mutating` 字段划分），测试 `工具清单 > 包含 7 个只读工具与 8 个写工具` 锁死该名单。
+> **全部 33 个工具：只读 22 / 写 10 / admin 1**（由 `scope` + `mutating` 字段划分；上表只列核心 17 个，算法 / 发现 / 开发者类工具见 wiki 10）。测试 `工具清单 > 包含 22 个只读工具与 10 个写工具` 锁死只读名单。
 
 `ToolDefinition` 还带 `mutating: boolean`——**用于让宿主（MCP 客户端）决定是否需要人工确认**。
 

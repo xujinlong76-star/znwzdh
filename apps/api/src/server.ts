@@ -58,6 +58,9 @@ import { indexSite } from "./index-site.ts";
 import { refreshUserProfile, resetUserProfile } from "./profile-service.ts";
 import { buildOpenApiDoc, renderDocsHtml, type RouteEntry } from "./openapi.ts";
 import { registerIdentityRoutes } from "./routes/identity.ts";
+import { registerSubmissionRoutes } from "./routes/submissions.ts";
+import { registerJobRoutes } from "./routes/jobs.ts";
+import { registerTokenRoutes } from "./routes/tokens.ts";
 import { identityAllowed } from "./routes/shared.ts";
 import {
   ANONYMOUS_IDENTITY,
@@ -71,21 +74,6 @@ import {
   type AuthIdentity,
   type RouteScope,
 } from "./auth.ts";
-
-/**
- * site.id → 数值投稿编号，与前端（Next 侧）的 hashNumericId 规则必须一致。
- * 算法：djb2 变体（((hash<<5)-hash)+ch），与 apps/web 的 hashNumericId 相同。
- * 注意：djb2 32bit 易碰撞且反查靠 listSites(limit 1000) 截断匹配（见 PATCH /api/submissions/:number）；
- * 超 1000 投稿会被截断漏掉。保留兼容旧前端，新前端逐步切 siteId 直传。
- */
-export function submissionNumber(id: string): number {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = ((hash << 5) - hash) + id.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash) || 1;
-}
 
 export async function buildServer(ctx: AppContext) {
   // 测试里默认静音，避免日志淹没断言输出；生产用 NAVHUB_LOG_LEVEL 控制
@@ -1782,163 +1770,9 @@ export async function buildServer(ctx: AppContext) {
     return { days, topQueries: top, zeroResultQueries: zero, hotSites: hot };
   });
 
-  /* -------------------------- 投稿 -------------------------- */
+  registerSubmissionRoutes(app, ctx);
 
-  /**
-   * 匿名投稿：创建 status=pending、source=submission 的站点，进入审核队列。
-   * 比全局限流（300/min）严格得多：5 次/小时/IP，防垃圾提交。
-   * 重复 URL 返回 409（与 create_site 一致的去重语义）。
-   */
-  app.post("/api/submissions", { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } }, async (req, reply) => {
-    const body = z.object({
-      title: z.string().min(1).max(120),
-      url: z.string().url(),
-      description: z.string().max(500).default(""),
-      categoryId: z.string().min(1),
-      subCategoryId: z.string().nullable().optional(),
-      submitterNote: z.string().max(500).nullable().optional(),
-    }).safeParse(req.body ?? {});
-    if (!body.success) { reply.code(400); return { success: false, message: "请填写完整的投稿信息" }; }
-
-    const dup = await ctx.repo.findSiteByUrl(body.data.url);
-    if (dup) {
-      reply.code(409);
-      return { success: false, message: "该网址已存在", siteId: dup.id };
-    }
-
-    const category = await ctx.repo.getCategory(body.data.categoryId);
-    if (!category) { reply.code(400); return { success: false, message: "投稿类目不存在" }; }
-
-    const site = await ctx.repo.createSite({
-      url: body.data.url,
-      title: body.data.title,
-      description: body.data.description || null,
-      categoryId: body.data.categoryId,
-      subCategoryId: body.data.subCategoryId ?? null,
-      status: "pending",
-      source: "submission",
-    });
-    await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
-    await ctx.repo.recordEvent("submission", { siteId: site.id, categoryId: category.id }).catch(() => undefined);
-    await ctx.repo.audit({ ip: req.ip, actor: "anonymous", actorKind: "user", action: "site.submit", target: site.id, diff: { url: site.url, title: site.title } });
-    reply.code(201);
-    return { success: true, message: "投稿已提交，等待审核", siteId: site.id };
-  });
-
-  /* --------------------- 投稿审核（收编中枢） --------------------- */
-
-  /**
-   * 投稿列表（审核队列数据源）。
-   *
-   * 与 Next 端 /api/submissions 的 GitHub 通道**同形状**（success + submissions），
-   * 前端审核队列无论走哪条通道都拿到同样的数据结构。
-   * number 是 site.id 的稳定数值 hash（见 submissionNumber），
-   * 让沿用 GitHub Issue 语义的前端拿到的 id 仍是 GitHub 路径可用的形态。
-   */
-  app.get("/api/submissions", { config: { scope: "read", cache: { maxAge: 0 } } }, async (req, reply) => {
-    const q = (req.query ?? {}) as Record<string, string>;
-    const requested = q.status ?? "pending";
-    const statusMap: Record<string, string | undefined> = {
-      pending: "pending", approved: "active", rejected: "archived", all: undefined,
-    };
-    if (!(requested in statusMap)) { reply.code(400); return { success: false, message: "无效的状态筛选" }; }
-    const siteStatus = statusMap[requested];
-    // 精准按 source=submission 过滤，避免全站站点 >200 时投稿被截断
-    const sites = await ctx.repo.listSites({
-      source: "submission",
-      status: siteStatus as never,
-      limit: 1000,
-    });
-    const submissions = sites
-      .map((site) => {
-        const isPending = site.status === "pending";
-        const label = isPending ? "pending" : (site.status === "active" ? "approved" : "rejected");
-        return {
-          id: submissionNumber(site.id),
-          number: submissionNumber(site.id),
-          title: site.title,
-          body: site.description ?? "",
-          state: isPending ? "open" : "closed",
-          created_at: new Date(site.createdAt).toISOString(),
-          updated_at: new Date(site.updatedAt).toISOString(),
-          html_url: site.url,
-          submissionData: {
-            title: site.title,
-            url: site.url,
-            description: site.description ?? "",
-            category: site.categoryId,
-            subcategory: site.subCategoryId ?? undefined,
-          },
-          _status: site.status,
-          _label: label,
-          siteId: site.id,
-        };
-      });
-    return { success: true, submissions };
-  });
-
-  /**
-   * 审核投稿（approve → active / reject → archived）。
-   *
-   * :number 是前端沿用的 GitHub Issue number（site.id 的 hash），这里反查回
-   * 真实 site id——此前 Next 的 hub 回退直接拿 hash number 调 /api/sites/:id，
-   * 必然 404，审核按钮在 NavHub 模式下是**静默失效**的（本次收编修复）。
-   * 审核动作落 submission.approve / submission.reject 审计（此前只有 POST 有审计）。
-   */
-  app.patch("/api/submissions/:number", { config: { scope: "write" } }, async (req, reply) => {
-    const { number } = req.params as { number: string };
-    const body = z.object({
-      action: z.enum(["approve", "reject"]),
-      reason: z.string().max(500).optional(),
-    }).safeParse(req.body ?? {});
-    if (!body.success) { reply.code(400); return { success: false, message: "无效的操作" }; }
-
-    const wanted = Number(number);
-    if (!Number.isFinite(wanted)) { reply.code(400); return { success: false, message: "无效的投稿编号" }; }
-    // 精准按 source=submission 过滤查询反查 hash，不受全站常规站点数量影响
-    // 注意：djb2 截断风险——投稿超 1000 会被 limit 截断而 404；兼容旧前端，新前端请直传 siteId。
-    const candidates = await ctx.repo.listSites({ source: "submission", limit: 1000 });
-    const site = candidates.find((s) => submissionNumber(s.id) === wanted);
-    if (!site) { reply.code(404); return { success: false, message: "投稿不存在" }; }
-
-    const nextStatus = body.data.action === "approve" ? "active" : "archived";
-    await ctx.repo.updateSite(site.id, { status: nextStatus as never });
-    await ctx.repo.audit({
-      ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
-      action: body.data.action === "approve" ? "submission.approve" : "submission.reject",
-      target: site.id, diff: { url: site.url, title: site.title, reason: body.data.reason ?? null },
-    });
-    return {
-      success: true,
-      message: body.data.action === "approve" ? "投稿已通过并已上架" : "投稿已拒绝",
-      siteId: site.id,
-    };
-  });
-
-  /* ------------------------ 任务队列管理 ------------------------ */
-
-  // 注意：JobRunner 还支持 "site_self_healing"（见 jobs.ts），但不经 HTTP 暴露——
-  // 自愈任务会触发网络抓取与站点改写，只允许由服务端内部调度，避免开放模式被滥用。
-  const JOB_KIND_LIST = ["health_check", "refetch_metadata", "recompute_rank", "reindex"] as const;
-
-  /** 入队（管理端 / 脚本用）。Runner 每 30s 自动消费。 */
-  app.post("/api/jobs", { config: { rateLimit: { max: 30, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
-    const body = z.object({
-      kind: z.enum(JOB_KIND_LIST),
-      payload: z.record(z.unknown()).optional(),
-    }).safeParse(req.body ?? {});
-    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    const id = await ctx.repo.enqueueJob(body.data.kind, body.data.payload ?? {});
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "job.enqueue", target: id, diff: { kind: body.data.kind } });
-    reply.code(201);
-    return { id, kind: body.data.kind };
-  });
-
-  app.get("/api/jobs", { config: { scope: "read" } }, async (req) => {
-    const q = (req.query ?? {}) as Record<string, string>;
-    const limit = Math.min(Number(q.limit) || 50, 200);
-    return ctx.repo.listJobs(q.status, limit);
-  });
+  registerJobRoutes(app, ctx);
 
   /* ---------------------------- AI 富化 ---------------------------- */
 
@@ -2085,51 +1919,7 @@ export async function buildServer(ctx: AppContext) {
     }
   });
 
-  /* ------------------------ API Token 管理 ------------------------ */
-  /**
-   * token 是鉴权体系的入口，因此创建/列出/删除全部要求 admin。
-   * 明文只在创建响应里返回一次，库里只有 sha256 —— 之后无法再取回。
-   *
-   * 首次启用鉴权的引导路径：
-   *   NAVHUB_AUTH_REQUIRED=true NAVHUB_BOOTSTRAP_TOKEN=<自定义串> 启动
-   *   → 用该串作为 Bearer 调 POST /api/tokens 建正式 token
-   *   → 删除 NAVHUB_BOOTSTRAP_TOKEN 重启
-   */
-  app.post("/api/tokens", { config: { scope: "admin" } }, async (req, reply) => {
-    const body = z.object({
-      name: z.string().min(1).max(64),
-      /** 逗号分隔：read / write / admin；默认只读 */
-      scopes: z.string().default("read"),
-      /** 过期时间（毫秒时间戳）；不传则长期有效 */
-      expiresAt: z.number().int().positive().nullable().optional(),
-    }).safeParse(req.body ?? {});
-    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-
-    const scopes = parseScopes(body.data.scopes);
-    if (scopes.length === 0) { reply.code(400); return { error: "scopes 至少要有一个有效值（read / write / admin）" }; }
-
-    const raw = generateToken();
-    const record = await ctx.repo.createApiToken({
-      name: body.data.name,
-      tokenHash: hashToken(raw),
-      scopes: scopes.join(","),
-      expiresAt: body.data.expiresAt ?? null,
-    });
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.create", target: record.id, diff: { name: record.name, scopes } });
-    reply.code(201);
-    // 明文只在这里出现一次
-    return { token: raw, ...record, note: "请立即保存：明文只显示这一次，库里只存 sha256。" };
-  });
-
-  app.get("/api/tokens", { config: { scope: "admin" } }, async () => ctx.repo.listApiTokens());
-
-  app.delete("/api/tokens/:id", { config: { scope: "admin" } }, async (req, reply) => {
-    const { id } = req.params as { id: string };
-    await ctx.repo.deleteApiToken(id);
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "token.delete", target: id });
-    reply.code(204);
-    return null;
-  });
+  registerTokenRoutes(app, ctx);
 
   /* --------------------------- 内部工具 --------------------------- */
 

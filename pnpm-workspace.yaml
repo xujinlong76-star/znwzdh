@@ -52,3 +52,23 @@ overrides:
   postcss: '>=8.4.31'
   ws: '>=8.21.0'
   esbuild: '>=0.28.1'
+
+# 类型解析修复：以下包的 d.ts 会导入 'react' 但未把 @types/react 声明为 peer，
+# pnpm 隔离安装下其实例目录内没有 @types/react，classic node10 解析使这些 d.ts
+# 的 'react' 导入落到无类型运行时包（next 的 import type { ScriptHTMLAttributes }
+# from 'react' 静默变 any），导致 next/script 的 ScriptProps 丢 src、cmdk 的
+# CommandItem onSelect 参数丢类型、input-otp 的 context 变 unknown 等 9 处存量
+# tsc 错误（此前被 incremental 缓存掩盖）。经 packageExtensions 声明 peer 后，
+# pnpm 会将 @types/react 链入各自实例目录，与 recharts/radix 等天然声明
+# @types/react peer 的包行为一致。纯类型依赖，零运行时影响。
+packageExtensions:
+  next:
+    peerDependencies:
+      "@types/react": "*"
+      "@types/react-dom": "*"
+  cmdk:
+    peerDependencies:
+      "@types/react": "*"
+  input-otp:
+    peerDependencies:
+      "@types/react": "*"

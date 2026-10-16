@@ -386,11 +386,12 @@ export class CrdtStore {
 
   addSite(site: { url: string; title: string; categoryId: string; id?: string }): string {
     const id = site.id || `site_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-    this.clock[this.clientId] = (this.clock[this.clientId] ?? 0) + 1
+    const nextSeq = (this.clock[this.clientId] ?? 0) + 1
+    this.clock[this.clientId] = nextSeq
     const op = createCRDTOperation(
       'UPSERT_CUSTOM_SITE',
       id,
-      { categoryId: site.categoryId, site: { id, title: site.title, href: site.url } },
+      { categoryId: site.categoryId, site: { id, title: site.title, href: site.url }, seq: nextSeq },
       this.clientId,
       Date.now()
     )
@@ -418,7 +419,12 @@ export class CrdtStore {
   getDeltaSince(remoteClock: VectorClock): CRDTOperation[] {
     return this.operations.filter((op) => {
       const remoteCount = remoteClock[op.clientId] ?? 0
-      return remoteCount === 0 || op.timestamp > 0
+      const opSeq = (op.payload as any)?.seq
+      if (typeof opSeq === 'number') {
+        return opSeq > remoteCount
+      }
+      const myCount = this.clock[op.clientId] ?? 0
+      return myCount > remoteCount
     })
   }
 
@@ -427,7 +433,8 @@ export class CrdtStore {
     for (const op of ops) {
       if (this.operations.some((existing) => existing.id === op.id)) continue
       this.operations.push(op)
-      this.clock[op.clientId] = Math.max(this.clock[op.clientId] ?? 0, (this.clock[op.clientId] ?? 0) + 1)
+      const opSeq = (op.payload as any)?.seq ?? ((this.clock[op.clientId] ?? 0) + 1)
+      this.clock[op.clientId] = Math.max(this.clock[op.clientId] ?? 0, opSeq)
       if (op.type === 'UPSERT_CUSTOM_SITE' && op.payload?.site) {
         const s = op.payload.site
         this.sites.set(s.href, {

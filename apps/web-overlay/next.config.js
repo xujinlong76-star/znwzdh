@@ -15,7 +15,11 @@ const nextConfig = {
   // 自研的 packages/* 与 apps/api 仍由 tsc --noEmit 严格检查。
   typescript: { ignoreBuildErrors: true },
 
-  // Dont fail build on ESLint warnings (upstream 设定)
+  // 不在构建期跑 ESLint（upstream 设定，保留）。
+  // 门禁没有因此缺失：CI 的 test-web job 会单独执行 `next lint`，本地 `pnpm lint` 同样可用。
+  // 历史故障：本机 pnpm 链接层断裂导致 eslint-config-next 及其依赖未链入 apps/web，
+  // `next lint` 直接报 couldn't find the config "next/core-web-vitals"（2026-10-17 修复：
+  // 重建 .pnpm 实例内的包链接）。若再次出现，先跑一次干净的 `pnpm install` 再重试。
   eslint: { ignoreDuringBuilds: true },
 
   images: {

@@ -23,6 +23,12 @@ allowBuilds:
   workerd: false
 
 auditConfig:
+  # GHSA-vfj7-8cjw-p6xm（braces ReDoS，CVSS 高危）
+  #   - 来源：vendored 前端的 eslint 工具链间接引入（eslint-plugin-* → braces），
+  #     dev-only，不进生产产物，因此生产面 audit（ci.yml 的 --prod）不受影响。
+  #   - 不可 override 的原因：npm 上 braces 最新仍是 3.0.3（未发布修复版），无版本可钉。
+  #   - 复审/到期：braces 发布 >=3.0.3 或上游 eslint 链移除该依赖时，删除本条恢复硬门禁；
+  #     无论如何每季度（下次 2026-12-31）复核一次，避免例外永久化。
   ignoreGhsas:
     - GHSA-vfj7-8cjw-p6xm
 

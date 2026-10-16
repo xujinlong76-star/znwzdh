@@ -22,6 +22,10 @@ allowBuilds:
   msw: false
   workerd: false
 
+auditConfig:
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm
+
 # zod 统一固定在 v3。
 # 原因：vendored 前端用 @hookform/resolvers@3 + react-hook-form，它只支持 zod v3；
 # 若让前端解析到 zod v4，类型检查会直接失败

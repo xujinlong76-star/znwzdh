@@ -171,7 +171,7 @@ jobs:
 
   audit:
     timeout-minutes: 10
-    name: 依赖审计（允许失败）
+    name: 依赖审计
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -181,8 +181,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # 依赖高危漏洞阻断（此前为 continue-on-error 软门禁，已收紧）
-      - run: pnpm audit --audit-level high
+      # 依赖高危漏洞阻断（此前为 continue-on-error 软门禁，已收紧）。
+      # 例外 GHSA-vfj7-8cjw-p6xm（braces，经 vendored eslint toolchain 间接引入，
+      # dev-only 且上游尚未发布修复版——npm 最新仍是 3.0.3，override 无版本可钉）：
+      # 待修复版发布后去掉 --ignore 并改用 overrides 钉版本。
+      - run: pnpm audit --audit-level high --ignore GHSA-vfj7-8cjw-p6xm
 
   ci-passed:
     name: CI 整体通过 (All Checks Passed)

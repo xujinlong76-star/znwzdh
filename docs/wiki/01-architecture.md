@@ -233,7 +233,7 @@ MCP create_site (scope=write)
 | 运行时 | Node.js | ≥ 20（Docker 用 22） | `--experimental-strip-types` 直跑 TS |
 | 包管理 | pnpm workspace | — | `allowBuilds` 白名单 + zod v3 统一 override |
 | 后端框架 | Fastify | 5.12.5 | + `@fastify/cors` + `@fastify/rate-limit` |
-| 前端框架 | Next.js (App Router) | 15.5.28 | React 18.2，vendored NavSphere |
+| 前端框架 | Next.js (App Router) | 15.5.28 | React 19.3.1（2026-10-16 由 18.2 升级，recharts 同步到 3.x），vendored NavSphere |
 | 前端 UI | Radix UI + Tailwind CSS 4 | — | shadcn 风格组件集 |
 | ORM | Drizzle ORM | 0.45.4 | schema 双驱动共享（`drizzle-kit` 生成） |
 | 数据库 | better-sqlite3 / pg | 13.0.3 / 8.23.1 | lite / standard |

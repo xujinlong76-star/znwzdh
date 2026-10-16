@@ -29,7 +29,7 @@ pnpm --filter @navhub/api start
 | `pnpm dev` | `pnpm --filter @navhub/api dev` | 中枢开发模式 |
 | `pnpm dev:web` | `node scripts/run.mjs --filter navsphere dev` | 前端（:3000） |
 | `pnpm build` | `pnpm -r --filter "@navhub/*" build` | 全部包构建 |
-| `pnpm test` | `vitest run` | 653 个测试（另含 10 个 PG 跨方言用例，未配 `NAVHUB_TEST_DATABASE_URL` 时 skip） |
+| `pnpm test` | `vitest run` | 711 通过 / 11 跳过（42 个测试文件；其中 PG 跨方言 12 项未配 `NAVHUB_TEST_DATABASE_URL` 时 skip） |
 | `pnpm test:watch` | `vitest` | 监听模式 |
 | `pnpm typecheck` | `pnpm -r exec tsc --noEmit` | 全仓类型检查 |
 | `pnpm seed` | `pnpm --filter @navhub/api seed` | 播种 |

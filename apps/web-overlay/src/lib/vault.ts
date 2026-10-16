@@ -25,7 +25,9 @@ export interface EncryptedVaultPayload {
 const PBKDF2_ITERATIONS = 100_000;
 const KEY_LENGTH_BITS = 256;
 
-function hexToBytes(hex: string): Uint8Array {
+// TS 5.7+ 的 TypedArray 泛型化：注解裸 Uint8Array 会退化为 Uint8Array<ArrayBufferLike>，
+// 不再满足 WebCrypto 的 BufferSource（= ArrayBufferView<ArrayBuffer>），故显式标注。
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
@@ -39,7 +41,7 @@ function bytesToHex(bytes: Uint8Array): string {
     .join('');
 }
 
-function base64ToBytes(b64: string): Uint8Array {
+function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
@@ -66,7 +68,7 @@ function getCrypto(): Crypto {
   throw new Error('当前运行环境不支持 Web Cryptography API');
 }
 
-export async function deriveVaultKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+export async function deriveVaultKey(password: string, salt: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
   const crypto = getCrypto();
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(

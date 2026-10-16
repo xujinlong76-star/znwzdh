@@ -198,6 +198,54 @@ describe("单实例锁与防重入", () => {
   });
 });
 
+describe("PG advisory lock 同连接语义（fake 池，无需真实 PG）", () => {
+  it("加锁与解锁在同一连接上执行，结束后归还", async () => {
+    const queries: Array<{ client: object; sql: string }> = [];
+    const released: object[] = [];
+    const client = {
+      query: async (sql: string) => {
+        queries.push({ client, sql });
+        return { rows: [{ ok: true }], rowCount: 1 };
+      },
+      release: () => { released.push(client); },
+    };
+    const pool = {
+      query: async (): Promise<never> => { throw new Error("锁必须走独占连接"); },
+      connect: async () => client,
+      end: async () => {},
+    };
+    const fakeCtx = {
+      db: { dialect: "pg", pg: pool },
+      repo: { claimNextJob: async () => null },
+    } as unknown as AppContext;
+    const runner = new JobRunner(fakeCtx);
+    const r = await runner.tick();
+    expect(r.skipped).toBe(false);
+    const lockQ = queries.filter((q) => q.sql.includes("pg_try_advisory_lock"));
+    const unlockQ = queries.filter((q) => q.sql.includes("pg_advisory_unlock"));
+    expect(lockQ.length).toBe(1);
+    expect(unlockQ.length).toBe(1);
+    // 关键断言：unlock 必须发生在加锁的同一会话上，否则锁残留
+    expect(unlockQ[0]!.client).toBe(lockQ[0]!.client);
+    expect(released).toContain(client);
+  });
+
+  it("拿不到独占连接时放弃本轮（fail-closed，不发病）", async () => {
+    const pool = {
+      query: async () => ({ rows: [], rowCount: 0 }),
+      end: async () => {},
+    };
+    const fakeCtx = {
+      db: { dialect: "pg", pg: pool },
+      repo: { claimNextJob: async () => null },
+    } as unknown as AppContext;
+    const runner = new JobRunner(fakeCtx);
+    const r = await runner.tick();
+    expect(r.skipped).toBe(true);
+    expect(r.processed).toBe(0);
+  });
+});
+
 describe("个性化画像服务", () => {
   it("click 事件聚合出画像，并可注入检索的 personal 通道", async () => {
     await ctx.repo.createCategory({ id: "ai-cat", title: "AI 工具" });

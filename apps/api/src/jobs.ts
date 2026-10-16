@@ -28,6 +28,12 @@ const LOCK_KEY = "lock:job-runner";
 const LOCK_TTL_MS = 120_000;
 const PG_LOCK_KEY = 728_501_001;
 
+/** PG 独占连接（advisory lock 是会话级的：加锁与解锁必须在同一连接上） */
+interface PgLockClient {
+  query(sql: string, params?: unknown[]): Promise<{ rows: unknown[]; rowCount: number | null }>;
+  release(): void;
+}
+
 /** 失败重试的次数上限（含首次执行共 attempts 次机会后耗尽 → failed） */
 export const MAX_JOB_ATTEMPTS = 3;
 /** 指数退避基数：第 n 次失败后延迟 base * 2^(n-1)（1min, 2min, 4min…） */
@@ -73,6 +79,8 @@ export class JobRunner {
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
   private lockHeld = false;
+  /** PG advisory lock 持有期间独占的连接（解锁前不归还给池） */
+  private pgClient: PgLockClient | null = null;
 
   constructor(ctx: AppContext, opts: JobRunnerOptions = {}) {
     this.ctx = ctx;
@@ -115,6 +123,9 @@ export class JobRunner {
           if (!job) break;
           await this.process(job.kind as JobKind, job.payload, job.id, job.attempts);
           processed++;
+          // 长任务续期：SQLite 锁靠 TTL，逐个任务刷新持有时间，
+          // 避免一轮跑太久（慢网络 health_check）被其它实例判定过期夺走。
+          await this.renewLock();
         }
       } finally {
         await this.releaseLock();
@@ -131,10 +142,27 @@ export class JobRunner {
     const db = this.ctx.db;
     const now = Date.now();
     if (db.dialect === "pg") {
+      // 关键：advisory lock 是会话级的。必须在独占连接上加锁并一直持有到解锁，
+      // 否则 unlock 落到池里另一个连接上会静默失败（返回 false），锁残留到连接关闭，
+      // 造成其它实例永久抢不到锁。拿不到独占连接时直接放弃本轮。
       try {
-        const res = await db.pg!.query("SELECT pg_try_advisory_lock($1) AS ok", [PG_LOCK_KEY]);
-        this.lockHeld = Boolean((res.rows[0] as { ok: boolean } | undefined)?.ok);
-        return this.lockHeld;
+        const connect = db.pg?.connect;
+        if (typeof connect !== "function") return false;
+        const client: PgLockClient = await connect.call(db.pg);
+        let ok = false;
+        try {
+          const res = await client.query("SELECT pg_try_advisory_lock($1) AS ok", [PG_LOCK_KEY]);
+          ok = Boolean((res.rows[0] as { ok: boolean } | undefined)?.ok);
+        } catch {
+          ok = false;
+        }
+        if (!ok) {
+          client.release();
+          return false;
+        }
+        this.pgClient = client;
+        this.lockHeld = true;
+        return true;
       } catch {
         return false;
       }
@@ -163,7 +191,17 @@ export class JobRunner {
     const db = this.ctx.db;
     try {
       if (db.dialect === "pg") {
-        await db.pg!.query("SELECT pg_advisory_unlock($1)", [PG_LOCK_KEY]);
+        // 在加锁的同一连接上解锁，再归还给池
+        const client = this.pgClient;
+        this.pgClient = null;
+        if (client) {
+          try {
+            await client.query("SELECT pg_advisory_unlock($1)", [PG_LOCK_KEY]);
+          } catch {
+            // 解锁失败由会话结束兜底（连接归还后最终关闭时锁自动释放）
+          }
+          client.release();
+        }
       } else {
         await this.run("DELETE FROM idempotency WHERE key = ? AND response = ?", [LOCK_KEY, this.holder]);
       }
@@ -171,6 +209,19 @@ export class JobRunner {
       // 释放失败等 TTL 自然过期
     }
     this.lockHeld = false;
+  }
+
+  /** SQLite 锁续期：刷新持有时间，防止长任务被判过期夺走；PG advisory 无需续期 */
+  private async renewLock(): Promise<void> {
+    if (!this.lockHeld || this.ctx.db.dialect !== "sqlite") return;
+    try {
+      await this.run(
+        "UPDATE idempotency SET created_at = ? WHERE key = ? AND response = ?",
+        [Date.now(), LOCK_KEY, this.holder],
+      );
+    } catch {
+      // 续期失败不影响本轮（下一轮重新抢锁）
+    }
   }
 
   /* --------------------------- 任务执行 --------------------------- */

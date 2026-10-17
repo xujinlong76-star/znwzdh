@@ -16,15 +16,36 @@ interface HotSite {
   icon?: string
 }
 
+/**
+ * 兜底演示数据。
+ *
+ * 必须显式标注「演示数据」：以前中枢不可用时，这 4 条硬编码站点会以
+ * 和真实榜单完全相同的样式渲染在「今日技术飙升热度榜」标题下，
+ * 用户会把编造的分数当成全网事实（对比：天气 / RSS 小卡早就标了演示数据）。
+ */
+const DEMO_SITES: HotSite[] = [
+  { id: '1', title: 'Next.js 15', url: 'https://nextjs.org', score: 124000, description: '全栈 React 框架' },
+  { id: '2', title: 'Tailwind CSS v4', url: 'https://tailwindcss.com', score: 82000, description: '实用类优先 CSS' },
+  { id: '3', title: 'Vitest 3', url: 'https://vitest.dev', score: 45000, description: '极速下一代测试框架' },
+  { id: '4', title: 'Hono', url: 'https://hono.dev', score: 23000, description: '终极轻量边缘 Web 框架' },
+]
+
 export function TrendingWidget() {
   const [sites, setSites] = useState<HotSite[]>([])
   const [loading, setLoading] = useState(true)
+  const [demo, setDemo] = useState(false)
 
   useEffect(() => {
     let unmounted = false
+    const showDemo = () => {
+      if (unmounted) return
+      setSites(DEMO_SITES)
+      setDemo(true)
+    }
     fetchTrending(5)
       .then((items) => {
-        if (!unmounted && items && items.length > 0) {
+        if (unmounted) return
+        if (items && items.length > 0) {
           setSites(
             items.map((s) => ({
               id: s.id,
@@ -34,24 +55,13 @@ export function TrendingWidget() {
               description: s.description ?? undefined,
             }))
           )
-        } else if (!unmounted) {
-          setSites([
-            { id: '1', title: 'Next.js 15', url: 'https://nextjs.org', score: 124000, description: '全栈 React 框架' },
-            { id: '2', title: 'Tailwind CSS v4', url: 'https://tailwindcss.com', score: 82000, description: '实用类优先 CSS' },
-            { id: '3', title: 'Vitest 3', url: 'https://vitest.dev', score: 45000, description: '极速下一代测试框架' },
-            { id: '4', title: 'Hono', url: 'https://hono.dev', score: 23000, description: '终极轻量边缘 Web 框架' },
-          ])
+          setDemo(false)
+        } else {
+          showDemo()
         }
       })
       .catch(() => {
-        if (!unmounted) {
-          setSites([
-            { id: '1', title: 'Next.js 15', url: 'https://nextjs.org', score: 124000, description: '全栈 React 框架' },
-            { id: '2', title: 'Tailwind CSS v4', url: 'https://tailwindcss.com', score: 82000, description: '实用类优先 CSS' },
-            { id: '3', title: 'Vitest 3', url: 'https://vitest.dev', score: 45000, description: '极速下一代测试框架' },
-            { id: '4', title: 'Hono', url: 'https://hono.dev', score: 23000, description: '终极轻量边缘 Web 框架' },
-          ])
-        }
+        showDemo()
       })
       .finally(() => {
         if (!unmounted) setLoading(false)
@@ -67,6 +77,11 @@ export function TrendingWidget() {
         <div className="flex items-center gap-1.5 font-medium">
           <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
           <span>今日技术飙升热度榜</span>
+          {demo && !loading && (
+            <span className="px-1.5 py-0.5 rounded-full border border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-normal leading-none">
+              演示数据
+            </span>
+          )}
         </div>
         <Link href="/hot" className="text-xs text-primary hover:underline flex items-center gap-0.5">
           <span>完整榜单</span>
@@ -123,7 +138,7 @@ export function TrendingWidget() {
       </div>
 
       <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono">
-        全网开发者实时协同偏好
+        {demo ? '演示数据 · 中枢趋势暂不可用' : '全网开发者实时协同偏好'}
       </div>
     </div>
   )

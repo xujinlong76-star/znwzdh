@@ -9,6 +9,8 @@ import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { fetchTags, type HubTag } from '@/lib/navhub-api'
+import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
+import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { Footer } from '@/components/footer'
 import { Tags, ArrowLeft, Search, Hash } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -18,10 +20,27 @@ export default function TagsPage() {
   const [tags, setTags] = useState<HubTag[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  /** 中枢挂了时「共聚合 0 个标签」是假事实，要说清是取不到而不是没有 */
+  const [notice, setNotice] = useState<DegradeNotice | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  const reload = () => setReloadToken((n) => n + 1)
 
   useEffect(() => {
-    void fetchTags().then((t) => { setTags(t); setLoading(false) })
-  }, [])
+    let cancelled = false
+    setLoading(true)
+    setNotice(null)
+    void fetchTags((error) => {
+      if (!cancelled) setNotice(describeDegrade(error, '标签数据'))
+    }).then((t) => {
+      if (cancelled) return
+      setTags(t)
+      setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [reloadToken])
 
   const filteredTags = useMemo(() => {
     if (!searchQuery.trim()) return tags
@@ -60,7 +79,9 @@ export default function TagsPage() {
                   <span>全景技术标签索引云</span>
                 </h1>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                  共聚合 {tags.length} 个技术与生态领域标签。点击任意标签下钻查看归类工具，或在右侧实时过滤搜索。
+                  {notice
+                    ? '标签统计暂时取不回来，下方数量不代表真实收录情况。'
+                    : `共聚合 ${tags.length} 个技术与生态领域标签。点击任意标签下钻查看归类工具，或在右侧实时过滤搜索。`}
                 </p>
               </div>
 
@@ -78,8 +99,14 @@ export default function TagsPage() {
           </div>
         </div>
 
+        {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
+
         {loading ? (
           <div className="text-muted-foreground text-sm py-16 text-center">正在加载全景技术标签…</div>
+        ) : tags.length === 0 ? (
+          <div className="text-muted-foreground text-sm py-12 text-center border border-dashed rounded-xl bg-muted/10">
+            {notice ? '本次未能取回标签数据' : '暂无标签数据'}
+          </div>
         ) : filteredTags.length === 0 ? (
           <div className="text-muted-foreground text-sm py-12 text-center border border-dashed rounded-xl bg-muted/10">
             暂未找到与 “{searchQuery}” 匹配的技术标签

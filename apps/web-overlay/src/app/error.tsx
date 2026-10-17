@@ -51,7 +51,7 @@ export default function Error({
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh] p-4 text-center">
+    <main id="main-content" className="flex flex-col items-center justify-center min-h-[80vh] p-4 text-center">
       <div className="max-w-md w-full p-8 rounded-3xl border border-destructive/30 bg-destructive/5 glass-surface shadow-xl space-y-6 animate-in fade-in zoom-in-95 duration-200">
         <div className="w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/20 text-destructive flex items-center justify-center mx-auto shadow-xs">
           <Icon className="w-8 h-8" />
@@ -115,6 +115,6 @@ export default function Error({
           )}
         </div>
       </div>
-    </div>
+    </main>
   )
 }

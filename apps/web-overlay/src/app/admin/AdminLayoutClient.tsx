@@ -455,7 +455,7 @@ export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
         </aside>
 
         {/* 主内容区域 */}
-        <main className="flex-1 min-w-0 overflow-y-auto">
+        <main id="main-content" className="flex-1 min-w-0 overflow-y-auto">
           <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
             {children}
           </div>

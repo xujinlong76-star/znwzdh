@@ -47,7 +47,7 @@ export default function CollectionsPage() {
   }, [reloadToken])
 
   return (
-    <Container>
+    <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
         <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-8 shadow-xs">
           <div className="absolute -right-12 -top-12 w-64 h-64 bg-violet-500/10 rounded-full blur-3xl pointer-events-none" />

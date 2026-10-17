@@ -42,6 +42,7 @@ export default function GlobalError({
         }}
       >
         <main
+          id="main-content"
           style={{
             width: '100%',
             maxWidth: '30rem',

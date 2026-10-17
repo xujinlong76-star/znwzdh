@@ -34,7 +34,7 @@ export default async function SubmitPage() {
     const { navigationData } = await getData()
 
     return (
-        <Container>
+        <Container as="main" id="main-content">
             <div className="py-6 sm:py-10 space-y-6 max-w-3xl mx-auto">
                 {/* 顶部面包屑与标题展板 */}
                 <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-7 shadow-xs">

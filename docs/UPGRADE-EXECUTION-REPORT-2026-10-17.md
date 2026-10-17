@@ -9,7 +9,7 @@
 | --- | --- | --- | --- |
 | 立刻做（P0，建议 1–6） | 6 | **6** | — |
 | 近期（建议 7–16） | 10 | **8** | 2（Docker 层缓存、前端拆分前置） |
-| 中期（建议 11–17，独立立项） | 7 | **1.5**（运维文档 + PG 备份 + 数据治理方案） | 5.5（需立项，见 §4） |
+| 中期（建议 11–17，独立立项） | 7 | **2.5**（运维文档 + PG 备份 + 数据保留脚本 + 数据治理方案） | 4.5（需立项，见 §4） |
 
 提交链（本轮，含并行会话合并进来的改动）：
 
@@ -57,6 +57,8 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 
 - **运维文档三件套**（建议 24）：新增 `docs/wiki/11-operations.md` —— 发布/回滚流程（含"只回代码不回数据"约束）、on-call runbook（8 类症状 → 检查 → 处置）、SLO/SLI 与告警分级、备份恢复与演练清单、数据治理建议。
 - **PG 备份脚本**（建议 24 的一半）：新增 `scripts/backup-pg.mjs`（`pg_dump -Fc`、轮换、产物校验、`--docker <container>` 模式），补上 standard 模式此前"有 SQLite 备份、无 PG 备份"的缺口。
+- **数据保留自动化**（建议 25 的一半）：新增 `packages/store/src/retention.ts` + `scripts/data-retention.mjs` —— `events` / `audit_logs` 两张只增不删的表终于不用靠人工归档了。默认 dry-run、先归档后删除、小批量 `id IN (...)` 避免长事务、SQLite/PG 同一套逻辑（注入占位符风格适配）。10 个单测覆盖分批/扫描上限/归档优先/参数白名单，并在临时 SQLite 上做了真实删除与幂等验证。
+  仍未做的部分：把过期明细聚合成日/月统计行（删明细留聚合）——脚本目前只做原样归档。
 
 **需独立立项（本次未动，避免一次性大改）**
 
@@ -68,7 +70,7 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 | 21 | 多实例语义（SSE 总线、限流、token touch 共享化） | 需引入外部总线（PG LISTEN/NOTIFY 或 Redis），属架构变更 |
 | 22 | 前端拆分（8 个 >800 行组件、loading/error 边界、组件测试） | 机械拆分收益有限，应按模块逐个重构并补测试 |
 | 23 | tsconfig 现代化（`moduleResolution: bundler`） | 会一次性改变全前端类型解析结果，需要专门回归 |
-| 25 | 数据治理自动化（events/audit_logs TTL） | 方案已写入 wiki 11 §6，实施需要新增定时任务与归档存储 |
+| ~~25~~ | ~~数据治理自动化~~ | **已部分落地**：TTL 脚本 `scripts/data-retention.mjs` 上线（详见 §4 已落地）；剩下"过期明细 → 聚合行"未做 |
 
 ## 五、已知问题与遗留（重要）
 

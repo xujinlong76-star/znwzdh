@@ -79,11 +79,16 @@ const HUB_BASE = (process.env.NAVHUB_STORAGE_BASE_URL
 | --- | --- |
 | CORS | 与浏览器同源相对路径通信，**无 CORS 问题** |
 | Docker 内部主机名 | `api:8787` 浏览器解析不了，但服务端能 |
-| 透传头 | `content-type` / `accept` / `authorization` |
+| 透传头 | 请求：`content-type` / `accept` / `authorization` / **`if-none-match`**——不透传它，条件请求发不出去，中枢精心实现的服务端 304 永远不会发生 |
 | **透传 `X-Forwarded-For`** | 中枢限流按 `req.ip` 分桶；不传则所有访客共享一个桶（投稿第 6 位就被 429）。Next 15 已移除 `NextRequest.ip`，无 XFF 时只能退回对端地址 |
+| **缓存语义** | 响应侧白名单透传 `content-type` / `cache-control` / `etag` / `vary`；中枢没给 `cache-control` 时兜底 **`no-store`**（代理层不赌启发式缓存）。`set-cookie` 之类不在白名单，不会被顺手转发 |
 | 空响应体 | 给 `{}`，避免前端 `JSON.parse` 炸裂 |
-| 中枢不可达 | 返回 **502** `{error: "NavHub 中枢不可用"}` |
+| **空体状态码** | `304 / 204 / 205` 按 RFC **返回 null body**——带 body 构造 Response 会直接抛 `TypeError` |
+| **二进制响应** | 非文本 `content-type` 走 `arrayBuffer` 字节透传（`.text()` 会按 UTF-8 解码把内容解码坏） |
+| **上游超时** | `NAVHUB_HUB_TIMEOUT_MS`（默认 30000，毫秒）到点中止 → **504**；连不上 → **502** `{error: "NavHub 中枢不可用"}`。**SSE 例外**：拿到事件流响应头即解除定时器，否则看板推流会被掐断 |
 | 方法 | GET / POST / PUT / PATCH / DELETE 全转发 |
+
+> 判定逻辑（超时、响应头白名单、空体状态码、文本/二进制）抽在 `@/lib/hub-proxy` 里并有 14 条单测，路由只留 I/O —— 因为路由 import 了 next-auth，在单测里拉起整套鉴权栈既慢又脆。
 
 > `next.config.js` 的 `rewrites()` 只保留 `/api/auth/*` 与 `/auth/*` 两条。
 

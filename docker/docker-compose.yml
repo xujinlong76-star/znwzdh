@@ -103,6 +103,8 @@ services:
       STORAGE_ADAPTER: http
       NEXT_PUBLIC_API_URL: http://api:8787
       NAVHUB_STORAGE_BASE_URL: http://api:8787
+      # 代理上游超时（毫秒）：卡死的中枢不能把前端请求无限期挂住；SSE 长连接不受影响
+      NAVHUB_HUB_TIMEOUT_MS: ${NAVHUB_HUB_TIMEOUT_MS:-30000}
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
 
   postgres:

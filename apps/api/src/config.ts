@@ -53,6 +53,15 @@ export interface AppConfig {
    * 引导 token（内存明文比对）：解决「开启鉴权后库内尚无 token」的初始引导问题
    */
   bootstrapToken: string | null;
+  /**
+   * 终端用户身份的 HMAC 签名密钥（可选）。
+   *
+   * 身份（userId/anonId）是纯字符串，任何持票人都能自称任何身份（IDOR）。
+   * 配置本项后，带身份的请求必须携带 x-navhub-identity-signature =
+   * HMAC-SHA256(secret, identity)，由前端 /api/hub/* 代理附带。
+   * 不配置时行为与历史版本完全一致（零回归，可灰度）。
+   */
+  identitySecret: string | null;
   /** 凭据签发与生命周期保护策略 */
   tokenPolicy: {
     maxLifetimeDays: number;
@@ -209,6 +218,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 
     authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
+    identitySecret: process.env.NAVHUB_IDENTITY_SECRET || null,
 
     tokenPolicy: {
       maxLifetimeDays: num("NAVHUB_TOKEN_MAX_LIFETIME_DAYS", 365),

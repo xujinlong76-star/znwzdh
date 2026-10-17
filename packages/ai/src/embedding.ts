@@ -17,6 +17,7 @@
  * 上层搜索自动降级为「关键词 + 拼音 + 全文」三路，功能不崩、只是少一路。
  */
 import { Worker } from "node:worker_threads";
+import { withTimeout } from "./with-timeout.ts";
 
 export interface EmbeddingConfig {
   model: string;
@@ -196,12 +197,12 @@ export function createEmbeddingService(
       );
     }
     const timeoutMs = 30_000;
-    const out = await Promise.race([
+    // 用 withTimeout 而不是就地 Promise.race：成功路径也要清掉定时器
+    const out = await withTimeout(
       ext(sliced, { pooling: "cls", normalize: true }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("embedding 编码超时")), timeoutMs)
-      ),
-    ]);
+      timeoutMs,
+      "embedding 编码超时"
+    );
     const vec = Float32Array.from(out.data);
     if (vec.length !== cfg.dim) {
       throw new Error(
@@ -286,15 +287,12 @@ export function createEmbeddingService(
             pendingRequests.set(id, { resolve, reject });
           });
           w.postMessage({ id, type: "encode", text: sliced, config: cfg });
-          const res = await Promise.race([
+          const res = await withTimeout(
             task,
-            new Promise<never>((_, reject) =>
-              setTimeout(() => {
-                pendingRequests.delete(id);
-                reject(new Error("embedding 编码超时"));
-              }, timeoutMs)
-            ),
-          ]);
+            timeoutMs,
+            "embedding 编码超时",
+            () => pendingRequests.delete(id)
+          );
           workerReady = true;
           const vec = new Float32Array(res.buffer);
           if (vec.length !== cfg.dim) {

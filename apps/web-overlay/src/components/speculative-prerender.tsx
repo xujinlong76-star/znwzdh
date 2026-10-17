@@ -109,6 +109,9 @@ export function SpeculativePrerenderManager() {
             const link = document.createElement('link')
             link.rel = prerenders.includes(url) ? 'prerender' : 'prefetch'
             link.href = url
+            // 打标记：卸载时只摘掉本组件注入的链接。
+            // 不能按 link[rel=prefetch] 全删 —— Next App Router 自己也用 prefetch 链接。
+            link.dataset.navhubSpeculation = '1'
             document.head.appendChild(link)
           }
         }
@@ -147,6 +150,11 @@ export function SpeculativePrerenderManager() {
       document.removeEventListener('mouseover', handlePointerOver)
       const script = document.getElementById(SCRIPT_ID)
       if (script) script.remove()
+      // 兜底注入的 <link> 也要摘掉：此前只删了 script，
+      // 低版本浏览器下这些链接会留在 document.head 里跨路由累积。
+      document
+        .querySelectorAll('link[data-navhub-speculation="1"]')
+        .forEach((el) => el.remove())
     }
   }, [])
 

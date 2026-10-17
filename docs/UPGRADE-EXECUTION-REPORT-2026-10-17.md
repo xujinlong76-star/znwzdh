@@ -61,9 +61,15 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 - **明细聚合 rollup**（建议 25 的后半，`--rollup`）：新增 `packages/store/src/rollup.ts` —— 把到期的**整天**压成 `events_daily`（日 × 类型 × 站点，含 `total` / 去重 `identities`）与 `audit_daily`（日 × 动作 × 操作者类型，含 `total` / 去重 `actors`），写完后才删这一天的明细，于是"保留趋势、不堆积归档"这条路也通了。
   几个刻意的取舍：**只推进整天**（某天里还有未到期行时那天整轮不动，否则重跑会把半天的聚合值越算越小）、**upsert 覆盖而非累加**（累加语义重跑会翻倍）、**单天分组超限则整天跳过**（宁留明细不写半份聚合）、**dry-run 不建表**。另有三重刹车：单表单轮最多 30 天（`--max-days`）、单天最多 5000 分组（`--max-groups`）、dry-run 因为不删行所以只推进一趟（否则重复查询会一直拿到同一批日期）。
   13 个单测 + 临时 SQLite 端到端：dry-run 零改动 → apply 写入正确聚合值 → 半天过期的那天原样保留 → 二次运行全 0（幂等）。
+- **接进 JobRunner（`data_retention`，第 9 种任务）**：`runDataRetention` 复用 `@navhub/store` 导出的 `runRetention` / `runRollup`，与 CLI 同一份实现。权限上是刻意的 fail-closed：
+  - 定时调度（每天 04:00）只发 `{ mode: "rollup", apply: false }` —— 自动化先"看见"，不先"动手"；
+  - `cleanup + apply` **直接抛错拒绝**（原样明细的唯一留底是归档文件，任务进程没有可靠归档落点），错误信息里指明改用 CLI；
+  - 管理端触发按钮发不出 payload，因此点按钮只会预演；真要删必须显式带 `apply: true` 调 API；
+  - 每轮写一条 `data_retention` 行为事件（days/groups/rows/deleted），可回看、可告警。
+  配套把 `@navhub/store` 的 `retention.ts` / `rollup.ts` 加进包导出（此前 CLI 是深路径 import，任务侧复用不了），并把新 kind 加进 `RunJobInput` 枚举（否则手动入队被 zod 挡掉）。
 - **30 万行压测 + 空间回收（`--vacuum`）**：压测暴露了一个此前没说破的真相 —— **删了行不等于腾了空间**。SQLite 与 PG 都只是把页标记为空闲等复用，文件不整理就不会变小，实测差 4.5 倍（29.22 MB → VACUUM 后 6.53 MB）。此前脚本删完就退，运维会发现"清理执行了但磁盘没降"，容易误判成没删掉。于是加了 `--vacuum`（SQLite 跑 VACUUM，PG 只给提示——`VACUUM FULL` 要锁表，属于运维决策不该由脚本替判），两条路径执行完都会打印下一步该做什么。
   压测数据：30 万行 events（400 天 × 750 行/天）→ rollup 追平 220 天耗时 **9 轮 / 2.1s**，聚合 164,250 行明细成 2,628 行日统计；完整性校验 **聚合行数 + 剩余明细 = 原始 300,000**（不重不漏）；清理模式对照：60,700 行归档 + 删除 4.3s。数字已写入 wiki §6.4。
-  仍未做的部分：`events_daily` / `audit_daily` **还没有消费方**（后台趋势与看板暂未读它），也没有接进定时任务框架 —— 都写进 `docs/wiki/11-operations.md` §6.5 待办。
+  仍未做的部分：`events_daily` / `audit_daily` **还没有消费方**（后台趋势与看板暂未读它）—— 写进 `docs/wiki/11-operations.md` §6.6 待办。
 
 **需独立立项（本次未动，避免一次性大改）**
 
@@ -75,7 +81,7 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 | 21 | 多实例语义（SSE 总线、限流、token touch 共享化） | 需引入外部总线（PG LISTEN/NOTIFY 或 Redis），属架构变更 |
 | 22 | 前端拆分（8 个 >800 行组件、loading/error 边界、组件测试） | 机械拆分收益有限，应按模块逐个重构并补测试 |
 | 23 | tsconfig 现代化（`moduleResolution: bundler`） | 会一次性改变全前端类型解析结果，需要专门回归 |
-| ~~25~~ | ~~数据治理自动化~~ | **已全部落地**：TTL 清理（原样归档 + 删除）与 rollup（聚合后删明细）两条路都在 `scripts/data-retention.mjs`，详见 §4 已落地；剩"聚合表接入消费方 / 接定时任务"见 wiki §6.5 |
+| ~~25~~ | ~~数据治理自动化~~ | **已全部落地**：CLI（`scripts/data-retention.mjs` 的清理 / rollup 两种模式）+ 内置任务（JobRunner 第 9 种 `data_retention`，定时预演、手动才动手）+ 双方言测试，详见 §4 已落地；剩"聚合表接入消费方"见 wiki §6.6 |
 
 ## 五、已知问题与遗留（重要）
 
@@ -105,6 +111,7 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 | 单测 | `npx vitest run` | 66 文件 / **969 通过** / 11 跳过（其中数据治理 23 例；其余增量来自并行推进的 SKOS / 关系表工作） |
 | 数据保留 | `packages/store/test/retention.test.ts`（10 例）+ 临时 SQLite 端到端 | dry-run 一行不删、`--apply` 只删到期行且边界正确、归档内容逐行可读、二次运行幂等且不留空归档、缺表时报可读错误 |
 | 明细聚合 | `packages/store/test/rollup.test.ts`（13 例）+ 临时 SQLite 端到端 + CLI `--rollup` 实跑 | dry-run 不建表不写行；apply 后 `events_daily` 的 total/identities 与明细一致；半天过期的那天原样保留；二次运行 0 天且聚合值不翻倍；分组超限时整天跳过且明细未动 |
+| 内置任务接线 | `apps/api/test/jobs.test.ts` 的 data_retention 四个用例（真实 SQLite + 真实 tick） | 默认 dry-run 不建表不删行；rollup apply 写对聚合值并删明细、留一条 data_retention 事件；`cleanup + apply` 被 fail-closed 拒绝（错误信息指明改用 CLI）且一行未删；cleanup dry-run 正常完成 |
 | PG 方言 rollup | `packages/store/test/rollup-pg.e2e.test.ts`（4 例，已接进 CI `test-postgres` job） | 无 PG 时整套 skip（本地验证：4 skipped）；连真 PG 时复跑同一套断言 —— 覆盖 `$n` 占位符、`GROUP BY` 序号、`LIMIT $2`、`ON CONFLICT` 目标列、`COUNT(DISTINCT)` 忽略 NULL、PG 把计数回传成字符串这六类方言差异。套件独占 `rollup_e2e` schema，与同库其他 PG 套件并行不冲突 |
 | 量级压测 | 30 万行 events 的临时 SQLite | rollup 追平 220 天：9 轮 / 2.1s；**聚合行数 + 剩余明细 = 原始 300,000**（完整性）；清理模式 60,700 行 4.3s；`--vacuum` 后文件 29.22 MB → 6.53 MB |
 | 覆盖层 | `node scripts/check-web-overlay.mjs` | 216 文件一致 + 29 个 git 跟踪自研文件全部在 overlay |

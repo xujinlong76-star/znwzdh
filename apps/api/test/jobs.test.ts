@@ -173,6 +173,110 @@ describe("reindex 任务", () => {
   });
 });
 
+describe("data_retention 任务", () => {
+  /** 造几天前的 events：直接改 created_at，避免测试等真实时间 */
+  async function seedOldEvents(days: number[], perDay = 3) {
+    for (const d of days) {
+      const at = Date.now() - d * 86_400_000;
+      for (let i = 0; i < perDay; i++) {
+        await ctx.repo.recordEvent("click", { siteId: null, meta: { identity: `u${i}` } });
+        await ctx.db.sqlite!.prepare("UPDATE events SET created_at = ? WHERE rowid = last_insert_rowid()").run(at);
+      }
+    }
+  }
+
+  /** 只数 click 明细：data_retention 自己也会写一条 events 留痕，不能混进来 */
+  const countClicks = async () =>
+    Number(
+      (await ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM events WHERE kind = 'click'").get())?.c ?? 0,
+    );
+  /** 用例之间共享同一个库：先清掉上一个用例留下的过期 click，断言才站得住 */
+  const clearOldClicks = async () => {
+    await ctx.db.sqlite!
+      .prepare("DELETE FROM events WHERE kind = 'click' AND created_at < ?")
+      .run(Date.now() - 365 * 86_400_000);
+  };
+  const tableExists = async (table: string) =>
+    Boolean(
+      (await ctx.db.sqlite!.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table))?.name,
+    );
+
+  it("默认（rollup + dry-run）只统计：不建聚合表、不删明细", async () => {
+    await clearOldClicks();
+    await seedOldEvents([400, 399], 2);
+    await ctx.repo.enqueueJob("data_retention", {});
+    const result = await new JobRunner(ctx).tick();
+
+    expect(result.processed).toBe(1);
+    expect(await tableExists("events_daily")).toBe(false); // dry-run 不建表
+    const before = await countClicks();
+    await ctx.repo.enqueueJob("data_retention", { mode: "rollup", apply: false, maxDays: 30 });
+    await new JobRunner(ctx).tick();
+    expect(await countClicks()).toBe(before); // 一行没删
+    const failed = await ctx.repo.listJobs("failed", 10);
+    expect(failed.some((j) => j.kind === "data_retention")).toBe(false);
+  });
+
+  it("rollup + apply：写 events_daily、删已聚合的明细，并留一条 data_retention 事件", async () => {
+    await ctx.db.sqlite!.prepare("DELETE FROM events WHERE site_id IS NULL").run();
+    await seedOldEvents([400, 399], 2); // 两天、每天 2 行
+    const before = await countClicks();
+
+    await ctx.repo.enqueueJob("data_retention", { mode: "rollup", apply: true, maxDays: 30 });
+    const result = await new JobRunner(ctx).tick();
+    expect(result.processed).toBe(1);
+
+    // 两天各自一个分组（每天 2 行 click，site_id 为空 → site_key = ''）
+    const rows = await ctx.db.sqlite!
+      .prepare("SELECT day_start, kind, site_key, total, identities FROM events_daily ORDER BY day_start")
+      .all();
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.kind).toBe("click");
+      expect(row.site_key).toBe("");
+      expect(Number(row.total)).toBe(2);
+      expect(Number(row.identities)).toBe(2); // u0 / u1 两个身份
+    }
+    expect(await countClicks()).toBe(before - 4);
+
+    // 行为事件留痕：运维能在事件流里看到这轮动了什么
+    const trail = await ctx.db.sqlite!
+      .prepare("SELECT COUNT(*) AS c FROM events WHERE kind = 'data_retention'")
+      .get();
+    expect(Number(trail?.c)).toBe(1);
+  });
+
+  it("cleanup + apply 被拒绝（fail-closed）：任务报错且明细一行未删", async () => {
+    await clearOldClicks();
+    await seedOldEvents([500], 3);
+    const before = await countClicks();
+
+    await ctx.repo.enqueueJob("data_retention", { mode: "cleanup", apply: true });
+    await new JobRunner(ctx).tick();
+
+    // 首次失败会进 retrying（还有重试额度），错误信息已经落在 job 行上
+    const jobs = await ctx.repo.listJobs(undefined, 50);
+    const job = jobs.find((j) => j.kind === "data_retention");
+    expect(job?.error).toContain("只允许 dry-run");
+    expect(job?.error).toContain("scripts/data-retention.mjs");
+    expect(await countClicks()).toBe(before); // 一行没删
+  });
+
+  it("cleanup dry-run 正常完成并给出命中量（不删任何行）", async () => {
+    await clearOldClicks();
+    await seedOldEvents([500, 400], 2);
+    const before = await countClicks();
+
+    await ctx.repo.enqueueJob("data_retention", { mode: "cleanup" });
+    const result = await new JobRunner(ctx).tick();
+
+    expect(result.processed).toBe(1);
+    expect(await countClicks()).toBe(before);
+    const failed = await ctx.repo.listJobs("failed", 10);
+    expect(failed.some((j) => j.kind === "data_retention" && j.status === "failed")).toBe(false);
+  });
+});
+
 describe("单实例锁与防重入", () => {
   it("并发 tick 只有一个真正执行（防重入）", async () => {
     await ctx.repo.enqueueJob("recompute_rank", {});

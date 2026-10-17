@@ -17,15 +17,38 @@
 import { EventEmitter } from "node:events";
 import { enrichUrl } from "@navhub/ai";
 import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol } from "@navhub/core";
+import {
+  bindSqlite,
+  toPgSql,
+  DEFAULT_RETENTION_TARGETS,
+  DEFAULT_ROLLUP_TARGETS,
+  runRetention,
+  runRollup,
+  type RetentionAdapter,
+} from "@navhub/store";
 import type { AppContext } from "./context.ts";
 import { indexSite, indexSitesBatch } from "./index-site.ts";
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention"];
+
+/** data_retention 任务的参数：mode 决定走哪条路，apply 决定是否真的动手 */
+export interface DataRetentionPayload {
+  /** rollup = 过期明细压成日统计再删（默认）；cleanup = 原样归档后删（任务里只允许 dry-run） */
+  mode?: "cleanup" | "rollup";
+  /** 默认 false。定时调度刻意不自动删除 —— 先看见，再决定。 */
+  apply?: boolean;
+  /** rollup：单表单轮最多处理多少天，默认 30 */
+  maxDays?: number;
+  /** rollup：单天分组数上限，默认 5000（超限的整天跳过） */
+  maxGroups?: number;
+  /** cleanup：单表最多扫描多少行后收尾，默认 200000（别一次扫全表） */
+  maxScan?: number;
+}
 
 export interface JobEventPayload {
   jobId: string;
@@ -58,6 +81,9 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "purge_trash", intervalMs: 86_400_000, payload: { olderThanDays: 30 } },
   { kind: "token_audit", intervalMs: 7 * 86_400_000 },
   { kind: "taxonomy_audit", intervalMs: 86_400_000 },
+  // 数据治理默认只做 rollup 的 dry-run：自动化可以先"看见"，不该先"动手"。
+  // 确认过输出后再把 payload 改成 { mode: "rollup", apply: true }（或手动触发一次）。
+  { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30 } },
 ];
 
 const LOCK_KEY = "lock:job-runner";
@@ -113,6 +139,7 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   token_audit: { cron: "HOURLY", timeoutMs: 60_000, maxConcurrency: 1 },
   purge_trash: { cron: "DAILY3AM", timeoutMs: 120_000, maxConcurrency: 1 },
   taxonomy_audit: { cron: "DAILY3AM", timeoutMs: 300_000, maxConcurrency: 1 },
+  data_retention: { cron: "DAILY4AM", timeoutMs: 600_000, maxConcurrency: 1 },
 };
 
 /** 标准 5 段 cron 字面量（与 DEFAULT_SCHEDULES 别名一一对应，集中存放避免块注释提前闭合） */
@@ -411,6 +438,9 @@ export class JobRunner {
           break;
         case "taxonomy_audit":
           await this.runTaxonomyAudit((payload ?? {}) as { dryRun?: boolean; siteLimit?: number });
+          break;
+        case "data_retention":
+          await this.runDataRetention((payload ?? {}) as DataRetentionPayload);
           break;
         default:
           throw new Error("未知任务类型: " + kind);
@@ -724,6 +754,88 @@ export class JobRunner {
     const ms = days * 86_400_000;
     const purged = await this.ctx.repo.purgeExpiredDeletedSites(ms);
     await this.ctx.repo.recordEvent("purge_trash", { meta: { days, purged } }).catch(() => undefined);
+  }
+
+  /**
+   * 数据保留 / 明细聚合（`events` 与 `audit_logs` 两张只增不删的表）。
+   *
+   * 与 `scripts/data-retention.mjs` 的分工：脚本是给人跑的（能写 gzip 冷归档、能
+   * `--vacuum` 整理空间、有人盯着确认）；任务是给调度器跑的（拿不到可靠的归档落点，
+   * 也没人当场确认）。因此任务里两条路的权限不同：
+   *   - `rollup`：聚合先写进 `events_daily` / `audit_daily` 再删明细 —— 统计在库内兜底，
+   *     不依赖任何外部文件，允许 `apply`（但定时调度默认 dry-run，见 DEFAULT_CRON_SCHEDULES）；
+   *   - `cleanup`：删的是"唯一留底在归档文件里"的原样明细，任务里没有可靠的归档目标，
+   *     **一律拒绝 apply** —— 要真删请用 CLI，别让调度器替人做这个决定。
+   */
+  private async runDataRetention(payload: DataRetentionPayload = {}): Promise<void> {
+    const mode = payload.mode === "cleanup" ? "cleanup" : "rollup";
+    if (mode === "cleanup" && payload.apply === true) {
+      throw new Error(
+        "cleanup 模式在任务里只允许 dry-run：原样明细的唯一留底是归档文件，而任务没有可靠的归档落点。" +
+          "要真正删除请用 CLI：node scripts/data-retention.mjs --apply（先 gzip 归档再删，删完可 --vacuum）。",
+      );
+    }
+    const apply = payload.apply === true;
+    const adapter = this.dataRetentionAdapter();
+    let summary: Record<string, unknown>;
+
+    if (mode === "rollup") {
+      const res = await runRollup(adapter, {
+        targets: DEFAULT_ROLLUP_TARGETS.map((t) => ({ spec: t.spec, keepDays: t.keepDays })),
+        maxDaysPerRun: payload.maxDays ?? 30,
+        maxGroupsPerDay: payload.maxGroups ?? 5000,
+        dryRun: !apply,
+      });
+      summary = {
+        mode,
+        apply,
+        days: res.tables.map((t) => t.days),
+        groups: res.tables.reduce((s, t) => s + t.groups, 0),
+        rows: res.tables.reduce((s, t) => s + t.rows, 0),
+        deleted: res.tables.reduce((s, t) => s + t.deleted, 0),
+        skippedDays: res.tables.reduce((s, t) => s + t.skippedDays, 0),
+        truncated: res.tables.map((t) => t.truncated),
+      };
+    } else {
+      const res = await runRetention(adapter, {
+        targets: DEFAULT_RETENTION_TARGETS,
+        // 任务里限量扫描：dry-run 一次扫全表会把连接占住，也看不出趋势
+        maxScan: payload.maxScan ?? 200_000,
+        dryRun: true,
+      });
+      summary = {
+        mode,
+        apply: false,
+        reason: "cleanup 在任务里只做 dry-run，真正删除请用 CLI",
+        scanned: res.tables.reduce((s, t) => s + t.scanned, 0),
+      };
+    }
+
+    // 留一条行为事件：运维在事件流里能看到"这轮会动多少行 / 动了多少行"
+    await this.ctx.repo.recordEvent("data_retention", { meta: summary }).catch(() => undefined);
+  }
+
+  /**
+   * 用仓储层现有通道拼一个 {@link RetentionAdapter}：
+   * 占位符统一 `?`（PG 侧由 `toPgSql` 转换），写操作走 `runCount` 的同等实现，
+   * 两种方言都能拿到受影响行数 —— 不为它在 Repository 上加新方法。
+   */
+  private dataRetentionAdapter(): RetentionAdapter {
+    const { db, repo } = this.ctx;
+    return {
+      placeholder: () => "?",
+      select: (sql, params) => repo.raw(sql, [...params]),
+      execute: (sql, params) => {
+        if (db.dialect === "sqlite" && db.sqlite) {
+          const info = db.sqlite.prepare(sql).run(...bindSqlite([...params])) as { changes?: number };
+          return Promise.resolve(Number(info?.changes ?? 0));
+        }
+        if (db.pg) {
+          return db.pg.query(toPgSql(sql), [...params]).then((r) => Number(r.rowCount ?? 0));
+        }
+        return Promise.reject(new Error(`数据保留任务不支持的存储方言: ${db.dialect}`));
+      },
+    };
   }
 
   /** 分类与标签体系智能治理审计 */

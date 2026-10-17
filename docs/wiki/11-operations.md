@@ -200,7 +200,35 @@ node scripts/data-retention.mjs --url "$NAVHUB_DATABASE_URL" --apply
 - **跑之前先备份**：清理是不可逆的，但归档文件是保底手段；推荐顺序是 §5 备份 → dry-run 看量 → `--apply`。
 - **归档产物本身也要有去留策略**：`data/archive/*.ndjson.gz` 不会被本脚本清理，按冷存储的保留要求单独归档或删除。
 
-### 6.3 聚合模式：删明细、留日统计（`--rollup`）
+### 6.3 内置任务：`data_retention`（定时预演，手动才动手）
+
+同一个逻辑也接进了 JobRunner，成为第 9 种任务类型（`apps/api/src/jobs.ts` 的 `runDataRetention`，复用 `packages/store` 导出的 `runRetention` / `runRollup`，与 CLI 同一份实现）。**默认是预演，不是执行**：
+
+| 触发方式 | payload | 行为 |
+| --- | --- | --- |
+| 定时调度（每天 04:00） | `{ mode: "rollup", apply: false, maxDays: 30 }` | rollup dry-run：只统计会汇总多少天/行，不建表不删 |
+| 管理端点触发按钮 | `{}`（无 payload） | 同上 —— 前端按钮发不出 `apply`，想真删必须显式带 payload |
+| 手动 API 调用 | `{ mode: "rollup", apply: true }` | 写 `events_daily` / `audit_daily` 并删除已聚合天的明细 |
+| 手动 API 调用 | `{ mode: "cleanup" }` | cleanup dry-run（限量扫描 20 万行/表） |
+| 手动 API 调用 | `{ mode: "cleanup", apply: true }` | **直接报错拒绝** |
+
+权限设计（刻意的 fail-closed）：
+
+- **`cleanup` 在任务里永远不删**。它删的是"唯一留底在归档文件里"的原样明细，而任务进程没有可靠的归档落点（容器文件系统随时可能丢），所以传 `apply: true` 会直接抛错，让人改用 CLI。
+- **`rollup` 允许 apply**，因为聚合先落表、统计在库内兜底，不依赖任何外部文件；但定时调度和前端按钮都只发 dry-run，真要执行必须显式带 payload —— 自动化可以先"看见"，不该先"动手"。
+- 每一轮都会往 `events` 里写一条 `data_retention` 行为事件（`meta` 带 days/groups/rows/deleted），事件流里能回看每轮动了什么；Runner 的重试与告警机制对它同样生效。
+
+```bash
+# 手动预演一次（等价于定时任务每天做的事）
+curl -X POST "$NAVHUB_API/api/hub/jobs" -H 'content-type: application/json' \
+  -d '{"kind":"data_retention","payload":{"mode":"rollup","maxDays":30}}'
+
+# 看过预演输出后再真正执行
+curl -X POST "$NAVHUB_API/api/hub/jobs" -H 'content-type: application/json' \
+  -d '{"kind":"data_retention","payload":{"mode":"rollup","apply":true,"maxDays":30}}'
+```
+
+### 6.4 聚合模式：删明细、留日统计（`--rollup`）
 
 清理模式能回溯单行，代价是归档体积随时间线性增长。聚合模式走另一条路：先把到期的**整天**压成统计行写进聚合表，再删掉那一天的所有明细。
 
@@ -245,7 +273,7 @@ node scripts/data-retention.mjs --rollup --apply --max-days 90 --max-groups 2000
 
 PostgreSQL 侧的 SQL（`$n` 占位符、`GROUP BY 1,2` 序号、`LIMIT $2`、`ON CONFLICT(目标列)`、`COUNT(DISTINCT)` 忽略 NULL、以及 PG 把 COUNT/BIGINT 回传成**字符串**）由 `packages/store/test/rollup-pg.e2e.test.ts` 在真实 PG 上复跑：未设置 `NAVHUB_TEST_DATABASE_URL` 时整套 skip（本地无 PG 的开发机不该被弄红），CI 的 `test-postgres` job 会连上 `pgvector/pgvector:pg17` 跑完。该套件独占 `rollup_e2e` schema 并 `SET search_path`，与同一库里其他 PG 套件并行也互不干扰，结束即 `DROP SCHEMA CASCADE`。
 
-### 6.4 实测数据（SQLite，本机）
+### 6.5 实测数据（SQLite，本机）
 
 30 万行 `events`（400 天 × 750 行/天）+ 400 行 `audit_logs` 的临时库：
 
@@ -264,8 +292,8 @@ PostgreSQL 侧的 SQL（`$n` 占位符、`GROUP BY 1,2` 序号、`LIMIT $2`、`O
 2. **`--max-days` 调大能少跑几轮，但别无脑拉到 365**。默认是 30 天/表/轮，是为了单轮事务链可控；真正的大库建议先按 §6.2 每月一次、每次自然消化 30 天，避免首次运行时一次吃掉几个月的量。
 3. **PG 侧不能只看 SQLite 绿灯**。PG 把 `COUNT(*)` / BIGINT 回传成字符串、`$n` 占位符、`ON CONFLICT` 目标列写错都会静默出错，`rollup-pg.e2e.test.ts` 就是为这些差异存在的 —— 改了 rollup 的 SQL 必须保证 CI 的 `test-postgres` job 是绿的。
 
-### 6.5 还没做的部分
+### 6.6 还没做的部分
 
-- **入库调度尚未接线**：聚合模式目前仍是手动/cron 调用，没有接进 §2 的发布流程或任务框架；推荐先按 §6.2 的方式挂 cron 观察一个周期。
-- **聚合结果没有消费方**：`events_daily` / `audit_daily` 目前只是被写入，后台趋势与运营看板还没读它。接入前建议先在只读副本上核对与新明细口径一致。
+- **聚合结果没有消费方**：`events_daily` / `audit_daily` 目前只是被写入（CLI 与 `data_retention` 任务各写各的），后台趋势与运营看板还没读它。接入前建议先在只读副本上核对与新明细口径一致。
+- **任务的 `apply` 没有二次确认**：目前"手动 API 带 `apply: true`"就是全部闸门，没有"预演后 N 分钟内才允许执行"这类短期令牌机制。若以后要开放给非核心运维，建议加一次性确认码。
 - **查询预算**：热点列表查询必须带 `limit`，新增聚合查询要在测试里断言扫描行数不随数据量线性爆炸。

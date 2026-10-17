@@ -191,22 +191,25 @@ export default function AdminFacetsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {filteredOptions.map((opt) => {
           const isSelected = selectedOption === opt.value
+          // 原来是 <div onClick>：键盘用户既无法聚焦，也读不到「已选中」
           return (
-            <div
+            <button
               key={opt.value}
+              type="button"
+              aria-pressed={isSelected}
               onClick={() => setSelectedOption(isSelected ? null : opt.value)}
-              className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
+              className={`w-full p-3.5 rounded-xl border text-left cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 isSelected
                   ? 'border-primary ring-2 ring-primary/20 bg-primary/5 shadow-sm'
                   : 'border-border/60 hover:border-primary/50 bg-card hover:shadow-sm'
               }`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-sm font-medium text-foreground">{opt.label}</div>
-                  <div className="text-[11px] text-muted-foreground font-mono">{opt.value}</div>
-                </div>
-                <div
+              <span className="flex items-start justify-between gap-2">
+                <span className="block">
+                  <span className="block text-sm font-medium text-foreground">{opt.label}</span>
+                  <span className="block text-[11px] text-muted-foreground font-mono">{opt.value}</span>
+                </span>
+                <span
                   className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                     opt.count > 0
                       ? 'bg-primary/10 text-primary'
@@ -214,14 +217,14 @@ export default function AdminFacetsPage() {
                   }`}
                 >
                   {opt.count}
-                </div>
-              </div>
+                </span>
+              </span>
               {opt.labelEn && (
-                <div className="text-[11px] text-muted-foreground/80 mt-2 truncate">
+                <span className="block text-[11px] text-muted-foreground/80 mt-2 truncate">
                   {opt.labelEn}
-                </div>
+                </span>
               )}
-            </div>
+            </button>
           )
         })}
       </div>

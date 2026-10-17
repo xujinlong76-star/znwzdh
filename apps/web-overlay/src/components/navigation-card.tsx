@@ -193,7 +193,7 @@ export function NavigationCard({
               </Link>
 
               {/* 紧凑操作按钮 */}
-              <div className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                 {onTogglePinInCategory && (
                   <Button
                     variant="ghost"

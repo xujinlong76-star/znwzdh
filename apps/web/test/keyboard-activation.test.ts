@@ -13,9 +13,10 @@
  *    （reverse tabnabbing）。代码里多数调用点已经写了 `'noopener,noreferrer'`，
  *    这里把剩下的补齐并**全仓扫描**防止回归。
  *
- * 已知未覆盖（见 PR 说明，不是无声忽略）：导航卡片的健康徽标
- * （位于卡片链接内部，嵌套 button 属于非法 HTML）、拓扑图节点、
- * 算法实验台画布节点、管理端表格行与选项行。
+ * 后续：#53 让拓扑图节点变成可聚焦的 role="button"（见 graph-keyboard.test.ts），
+ * 这一版把「管理端表格行与选项行」也补齐。补完之后全仓只剩两处「只有鼠标」的写法，
+ * 都不是哑口，而是有键盘等价入口 —— 文末的全仓扫描会连着证据一起断言，
+ * 免得这两条白名单变成一纸空文。
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -131,5 +132,212 @@ describe("点击即操作的元素必须是真按钮", () => {
   it("视频卡片打开外链时也走 noopener（不是只改 window.open 的其它调用点）", () => {
     const text = overlaySource("src/components/video-card.tsx");
     expect(text).toContain("window.open(item.href, '_blank', 'noopener,noreferrer')");
+  });
+});
+
+/** 非交互标签：挂上 onClick 就等于「只有鼠标能用」，除非另有键盘入口 */
+const NON_CONTROL_TAGS = [
+  "div", "span", "li", "tr", "td", "section", "article", "header", "footer",
+  "p", "pre", "h3", "h4", "svg", "g", "rect", "circle", "path",
+];
+
+/** 剥注释但保留行列位置：块注释里的反面示例不能算数，行号还得报得准 */
+function stripComments(source: string): string {
+  const noBlock = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+  return noBlock
+    .split(/\r?\n/)
+    .map((line) => (line.trim().startsWith("//") ? " ".repeat(line.length) : line))
+    .join("\n");
+}
+
+/**
+ * 取出一整个 JSX 开始标签（按括号/引号配平）。
+ * 不能用 `/<div[^>]*>/` 那种写法：属性里既有 `=>` 也有字符串里的 `>`。
+ */
+function openingTags(source: string, name: string): Array<{ text: string; index: number }> {
+  const out: Array<{ text: string; index: number }> = [];
+  const needle = "<" + name;
+  let i = source.indexOf(needle);
+  while (i !== -1) {
+    const after = source[i + needle.length];
+    if (after === undefined || /[\s>/]/.test(after)) {
+      let depth = 0;
+      let quote: string | null = null;
+      let j = i;
+      for (; j < source.length; j++) {
+        const ch = source[j];
+        if (quote) {
+          if (ch === quote) quote = null;
+          continue;
+        }
+        if (ch === '"' || ch === "'" || ch === "`") {
+          quote = ch;
+          continue;
+        }
+        if (ch === "{") {
+          depth++;
+          continue;
+        }
+        if (ch === "}") {
+          depth--;
+          continue;
+        }
+        if (ch === ">" && depth === 0) {
+          j++;
+          break;
+        }
+      }
+      out.push({ text: source.slice(i, j), index: i });
+      i = source.indexOf(needle, j);
+    } else {
+      i = source.indexOf(needle, i + needle.length);
+    }
+  }
+  return out;
+}
+
+/** 纯 stopPropagation：不是「点击即操作」，只是挡住外层容器的点击 */
+function isPropagationGuard(tag: string): boolean {
+  return /onClick=\{\(?\s*\w+\s*\)?\s*=>\s*\{?\s*\w+\.stopPropagation\(\)\s*;?\s*\}?\s*\}/.test(tag);
+}
+
+/** 标签自带键盘支持（可聚焦 / 有按键处理 / 有语义角色） */
+function hasKeyboardSupport(tag: string): boolean {
+  return /\btabIndex=|\bonKeyDown=|\bonKeyPress=|\bonKeyUp=|\brole=/.test(tag);
+}
+
+interface MouseOnlyAllowlistEntry {
+  file: string;
+  /** 这条白名单要挡住的写法。用它反向确认「白名单没过期」 */
+  marker: RegExp;
+  /** 键盘等价入口必须真的还在，否则白名单就成了一纸空文 */
+  evidence: string[];
+  why: string;
+}
+
+/**
+ * 仍然只用鼠标的写法。每一条都得说清「键盘用户怎么做到同一件事」，
+ * 并把那份证据写成断言 —— 证据消失时测试必须失败，而不是继续放行。
+ */
+const MOUSE_ONLY_ALLOWLIST: MouseOnlyAllowlistEntry[] = [
+  {
+    file: "src/app/admin/audit/page.tsx",
+    marker: /<tr[\s\S]*?cursor-pointer/,
+    evidence: ["aria-expanded={expanded === it.id}", 'type="button"', "toggleExpanded(it.id)"],
+    why:
+      "整行的 onClick 只方便鼠标；展开/收起的键盘入口是「详情」单元格里的 " +
+      '真按钮（<button type="button" aria-expanded>）。',
+  },
+  {
+    file: "src/components/algorithm-lab.tsx",
+    marker: /setSelectedTech\(/,
+    evidence: ["TECH_NODES.map((node) => (", "onClick={() => setSelectedTech(node.id)}"],
+    why:
+      "庞加莱圆盘上的投影点（TECH_NODES.map((n) => … setSelectedTech(n.id))）重复了" +
+      "同一块区域上方那一排 <Button>（TECH_NODES.map((node) => … setSelectedTech(node.id))），" +
+      "键盘用户走那排按钮即可切换节点。",
+  },
+  {
+    file: "src/components/navigation-card.tsx",
+    marker: /onPeek\?\.\(item\)/,
+    evidence: ["tabIndex={0}", "e.code === 'Space'", "onPeek?.(item)", 'title="速览与行动"'],
+    why:
+      "「快照自愈」徽标在卡片链接内部（<a> 里嵌 <button> 属于非法 HTML）；" +
+      "它的动作有键盘入口：卡片根节点 tabIndex={0} + handleKeyDown 的 Space→onPeek，" +
+      "以及同卡片里的 <Button title=\"速览与行动\">。",
+  },
+];
+
+describe("全仓扫描：能点的地方键盘也要能到", () => {
+  const sources = listSources(join(ROOT, "src"));
+
+  interface Hit {
+    file: string;
+    line: number;
+    tag: string;
+    /** 完整开始标签：白名单的 marker 要在这里匹配（摘要会被截断） */
+    full: string;
+    snippet: string;
+  }
+
+  const hits: Hit[] = [];
+  for (const rel of sources) {
+    const text = stripComments(overlaySource(rel));
+    for (const name of NON_CONTROL_TAGS) {
+      for (const tag of openingTags(text, name)) {
+        if (!/\bonClick\b/.test(tag.text)) continue;
+        if (hasKeyboardSupport(tag.text) || isPropagationGuard(tag.text)) continue;
+        hits.push({
+          file: rel,
+          line: lineOf(text, tag.index),
+          tag: name,
+          full: tag.text,
+          snippet: tag.text.replace(/\s+/g, " ").slice(0, 120),
+        });
+      }
+    }
+  }
+
+  it("扫描确实扫到了东西（正则写错导致空跑时要立刻发现）", () => {
+    expect(sources.length).toBeGreaterThan(60);
+    expect(hits.length).toBeGreaterThan(5);
+  });
+
+  it("每一处都必须在白名单里说明「键盘怎么做同一件事」", () => {
+    const unexplained = hits.filter(
+      (hit) => !MOUSE_ONLY_ALLOWLIST.some((entry) => entry.file === hit.file && entry.marker.test(hit.full)),
+    );
+    const report = unexplained.map((hit) => `${hit.file}:${hit.line} <${hit.tag}> ${hit.snippet}`);
+    expect(report, "这些地方只有鼠标能点，且没有登记原因：\n" + report.join("\n")).toEqual([]);
+  });
+
+  it("白名单没有过期（每条都还对应一处真实命中）", () => {
+    const stale = MOUSE_ONLY_ALLOWLIST.filter(
+      (entry) => !hits.some((hit) => hit.file === entry.file && entry.marker.test(hit.full)),
+    ).map((entry) => entry.file);
+    expect(stale, `这些文件已经不再需要白名单了：${stale.join(", ")}`).toEqual([]);
+  });
+
+  it("白名单里的键盘等价入口必须真的还在（否则就是空头支票）", () => {
+    const broken: string[] = [];
+    for (const entry of MOUSE_ONLY_ALLOWLIST) {
+      const text = stripComments(overlaySource(entry.file));
+      for (const snippet of entry.evidence) {
+        if (!text.includes(snippet)) broken.push(`${entry.file} 缺少证据：${snippet}`);
+      }
+    }
+    expect(broken, broken.join("\n")).toEqual([]);
+  });
+});
+
+describe("这一版补齐的管理端两处", () => {
+  it("审计行：详情单元格是真按钮，行点击不再是唯一入口", () => {
+    const text = overlaySource("src/app/admin/audit/page.tsx");
+    expect(text).toMatch(/<button\s+type="button"\s+aria-expanded=\{expanded === it\.id\}/);
+    expect(text).toContain("toggleExpanded(it.id)");
+    expect(text).toContain("sr-only");
+    // 行点击与按钮共用同一份逻辑（不是各自内联一份）
+    expect(text).toMatch(/const toggleExpanded = \(id: number\) =>/);
+    expect(text).toContain("setExpanded((prev) => (prev === id ? null : id))");
+    // 回归保护：不能再退回「整行只有 onClick」
+    expect(/onClick=\{\(\) => setExpanded\(expanded === it\.id/.test(text)).toBe(false);
+  });
+
+  it("分面选项：真按钮 + aria-pressed，键盘也能选中且能读出选中态", () => {
+    const text = overlaySource("src/app/admin/facets/page.tsx");
+    expect(text).toMatch(/<button[\s\S]{0,200}?aria-pressed=\{isSelected\}/);
+    expect(text).toContain('type="button"');
+    // 回归保护：不能再退回不可聚焦的 <div onClick>
+    expect(/<div\s+key=\{opt\.value\}\s+onClick=/.test(text)).toBe(false);
+    expect(text).toContain("focus-visible:ring-2");
+  });
+
+  it("导航卡片紧凑模式的操作行：键盘聚焦时可见（否则聚焦到看不见的按钮）", () => {
+    const text = overlaySource("src/components/navigation-card.tsx");
+    const rows = text.match(/sm:group-hover:opacity-100/g) || [];
+    const focused = text.match(/focus-within:opacity-100/g) || [];
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    // 每一处 hover 才显形的地方，都必须同时支持 focus-within
+    expect(focused.length).toBe(rows.length);
   });
 });

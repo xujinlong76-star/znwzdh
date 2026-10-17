@@ -12,8 +12,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { addFavorite, listFavorites, removeFavorite, type HubFavorite } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
 import { getIdentity } from '@/lib/identity'
+import {
+  FAVORITES_STORAGE_KEY,
+  corruptBackupKey,
+  describeCorruptFavorites,
+  parseFavorites,
+} from '@/lib/favorites-storage'
 
-const KEY = 'navhub.favorites.v1'
+const KEY = FAVORITES_STORAGE_KEY
 
 export interface LocalFavorite {
   siteId: string
@@ -25,16 +31,26 @@ export interface LocalFavorite {
   createdAt: number
 }
 
-function loadLocal(): LocalFavorite[] {
-  if (typeof window === 'undefined') return []
+/**
+ * 读本地收藏。**必须把「读不出来」和「没有数据」分开**：
+ * 以前的 `catch { return [] }` 让「存储坏了」和「还没收藏过」看起来一模一样，
+ * 紧接着任何一次写入就会把用户的收藏覆盖成一条新记录。
+ */
+function loadLocal(): { items: LocalFavorite[]; blocked: string | null } {
+  if (typeof window === 'undefined') return { items: [], blocked: null }
+  let raw: string | null
   try {
-    const raw = window.localStorage.getItem(KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    raw = window.localStorage.getItem(KEY)
   } catch {
-    return []
+    // 连读都不让读（隐私模式 / 权限被拒）：同样不能拿空列表去覆盖，
+    // 但要说清楚是「存储不可用」，而不是「数据损坏」
+    return {
+      items: [],
+      blocked: '浏览器不允许读写本地存储（隐私模式或权限被拒），本次收藏改动无法保存。',
+    }
   }
+  const { items, corrupt } = parseFavorites<LocalFavorite>(raw)
+  return { items, blocked: corrupt ? describeCorruptFavorites() : null }
 }
 
 function saveLocal(items: LocalFavorite[]): void {
@@ -48,10 +64,18 @@ function saveLocal(items: LocalFavorite[]): void {
 export interface FavoritesApi {
   items: LocalFavorite[]
   ready: boolean
+  /**
+   * 非 null 时表示**存储读不出来**：此时所有写入都会被拒绝（原样保留坏数据，
+   * 等着用户决定是备份重置还是另作处理）。界面必须把这句话显示出来，
+   * 否则用户点收藏会「没反应」—— 那比原来的静默覆盖更让人困惑。
+   */
+  storageBlocked: string | null
   isFavorite: (siteId: string) => boolean
   toggle: (site: Omit<LocalFavorite, 'createdAt'>) => Promise<boolean>
   remove: (siteId: string) => void
   clear: () => void
+  /** 用户显式重置：先把读不出来的原数据备份到旁边，再写空列表 */
+  resetLocal: () => void
   exportJson: () => string
   importJson: (json: string) => { ok: boolean; imported: number; error?: string }
 }
@@ -59,9 +83,14 @@ export interface FavoritesApi {
 export function useFavorites(): FavoritesApi {
   const [items, setItems] = useState<LocalFavorite[]>([])
   const [ready, setReady] = useState(false)
+  const [storageBlocked, setStorageBlocked] = useState<string | null>(null)
 
   useEffect(() => {
-    const refresh = () => setItems(loadLocal())
+    const refresh = () => {
+      const loaded = loadLocal()
+      setItems(loaded.items)
+      setStorageBlocked(loaded.blocked)
+    }
     refresh()
     setReady(true)
 
@@ -73,9 +102,29 @@ export function useFavorites(): FavoritesApi {
     }
   }, [])
 
-  const persist = useCallback((next: LocalFavorite[]) => {
-    setItems(next)
-    saveLocal(next)
+  const persist = useCallback(
+    (next: LocalFavorite[]) => {
+      // 读不出来就不写：宁可这次改动不生效，也不能覆盖掉用户原有的收藏
+      if (storageBlocked) return false
+      setItems(next)
+      saveLocal(next)
+      return true
+    },
+    [storageBlocked],
+  )
+
+  /** 用户显式重置：原数据先备份到 `.corrupt.<时间戳>`，再落到空列表 */
+  const resetLocal = useCallback(() => {
+    try {
+      const raw = window.localStorage.getItem(KEY)
+      if (raw) window.localStorage.setItem(corruptBackupKey(Date.now()), raw)
+    } catch (err) {
+      // 备份写不进去（配额满）也要继续重置，但把这件事说出来，别让它静默
+      console.warn('收藏原数据备份失败；重置后原数据可能无法找回', err)
+    }
+    setItems([])
+    setStorageBlocked(null)
+    saveLocal([])
   }, [])
 
   const isFavorite = useCallback((siteId: string) => items.some((i) => i.siteId === siteId), [items])
@@ -86,7 +135,8 @@ export function useFavorites(): FavoritesApi {
     const next = existed
       ? items.filter((i) => i.siteId !== site.siteId)
       : [{ ...site, createdAt: Date.now() }, ...items]
-    persist(next)
+    // 写不进去就返回未改变的状态：调用方据此提示，界面不会出现「点了但没变化」
+    if (!persist(next)) return existed
 
     // 异步尝试同步到云端（失败不影响本地态——离线优先）
     const identity = getIdentity()
@@ -98,16 +148,20 @@ export function useFavorites(): FavoritesApi {
   }, [items, persist])
 
   const remove = useCallback((siteId: string) => {
-    persist(items.filter((i) => i.siteId !== siteId))
+    if (!persist(items.filter((i) => i.siteId !== siteId))) return
     const identity = getIdentity()
     if (identity) void removeFavorite(identity, siteId)
   }, [items, persist])
 
-  const clear = useCallback(() => persist([]), [persist])
+  const clear = useCallback(() => {
+    persist([])
+  }, [persist])
 
   const exportJson = useCallback(() => JSON.stringify({ version: 1, items }, null, 2), [items])
 
   const importJson = useCallback((json: string) => {
+    // 存储读不出来时导入同样是写入：先拦住，并把原因作为错误返回（页面会显示）
+    if (storageBlocked) return { ok: false, imported: 0, error: storageBlocked }
     try {
       const parsed = JSON.parse(json)
       const incoming: LocalFavorite[] = Array.isArray(parsed) ? parsed : parsed?.items
@@ -122,9 +176,9 @@ export function useFavorites(): FavoritesApi {
     } catch (err) {
       return { ok: false, imported: 0, error: err instanceof Error ? err.message : '解析失败' }
     }
-  }, [items, persist])
+  }, [items, persist, storageBlocked])
 
-  return { items, ready, isFavorite, toggle, remove, clear, exportJson, importJson }
+  return { items, ready, storageBlocked, isFavorite, toggle, remove, clear, resetLocal, exportJson, importJson }
 }
 
 /**
@@ -157,8 +211,19 @@ export interface CloudSyncResult {
 }
 
 export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
-  const local = loadLocal()
+  const { items: local, blocked } = loadLocal()
   const identity = getIdentity()
+  if (blocked) {
+    // 读不出来时**不要**上报「本地 0 条」：那会让用户以为收藏本来就没有
+    return {
+      ok: false,
+      localCount: 0,
+      pushed: 0,
+      cloud: null,
+      error: blocked,
+      retryable: false,
+    }
+  }
   if (!identity) {
     return {
       ok: false,

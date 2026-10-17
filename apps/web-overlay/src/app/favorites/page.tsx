@@ -343,6 +343,31 @@ export default function FavoritesPage() {
           </div>
         )}
 
+        {/* 本地收藏读不出来：写入会被拒绝（为了不覆盖原数据），必须把话说清楚并给出出口 */}
+        {favorites.storageBlocked && (
+          <div
+            role="alert"
+            className="mb-6 p-3 rounded-lg border border-rose-500/30 bg-rose-500/10 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2"
+          >
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="space-y-2">
+              <p>{favorites.storageBlocked}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs rounded-lg"
+                onClick={() => {
+                  favorites.resetLocal()
+                  setSyncNote('已先把原数据备份到浏览器存储，并以空列表重置本地收藏')
+                  setSyncStatus('info')
+                }}
+              >
+                先备份原数据，再重置本地收藏
+              </Button>
+            </div>
+          </div>
+        )}
+
         {syncNote && (
           <div
             className={`mb-6 p-3 rounded-lg border text-xs flex items-center gap-2 ${

@@ -41,6 +41,10 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         }
       }),
     ]).optional(),
+    excludedTerms: z.union([
+      z.array(z.string()),
+      z.string().transform((str) => str.split(",").map((s) => s.trim()).filter(Boolean)),
+    ]).optional(),
     disableSemantic: queryBool.optional(),
     disablePersonal: queryBool.optional(),
     /** 身份标识：登录用户传 canonical userId，匿名传 anonId（前端 localStorage 生成）。

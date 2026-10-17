@@ -85,6 +85,18 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [recent, setRecent] = useState<string[]>([])
   /** 知识图谱对标与实体关联方案命中 */
   const [relationHits, setRelationHits] = useState<HubSiteRelation[]>([])
+  /** 智能析取到的分面筛选意图 */
+  const [inferredFacets, setInferredFacets] = useState<Record<string, string[]>>({})
+  /** 识别到的标签算子 (#tag) */
+  const [inferredTag, setInferredTag] = useState<string | undefined>(undefined)
+  /** 识别到的类目算子 (@category) */
+  const [inferredCategory, setInferredCategory] = useState<string | undefined>(undefined)
+  /** 识别到的负向排除词 (-keyword) */
+  const [excludedTerms, setExcludedTerms] = useState<string[]>([])
+  /** 零结果编辑距离拼写建议 */
+  const [didYouMean, setDidYouMean] = useState<string | undefined>(undefined)
+  /** 同义词/标签别名扩展 */
+  const [queryExpansion, setQueryExpansion] = useState<string[]>([])
   /** 重试计数：增长即重新发起同一查询（降级时的出口） */
   const [retryToken, setRetryToken] = useState(0)
   const searchRef = useRef<HTMLDivElement>(null)
@@ -153,6 +165,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     setSuggestions([])
     setPopular([])
     setRelationHits([])
+    setInferredFacets({})
+    setInferredTag(undefined)
+    setInferredCategory(undefined)
+    setExcludedTerms([])
+    setDidYouMean(undefined)
+    setQueryExpansion([])
     setFallbackHint(undefined)
     setDegraded(false)
     setLoadingMore(false)
@@ -177,6 +195,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           setSuggestions(res.suggestions ?? [])
           setPopular(res.popular ?? [])
           setRelationHits(res.relationHits ?? [])
+          setInferredFacets(res.inferredFacets ?? {})
+          setInferredTag(res.inferredTag)
+          setInferredCategory(res.inferredCategory)
+          setExcludedTerms(res.excludedTerms ?? [])
+          setDidYouMean(res.didYouMean)
+          setQueryExpansion(res.queryExpansion ?? [])
           setFallbackHint(res.fallback)
           offsetRef.current = res.hits.length
           setLoading(false)
@@ -254,7 +278,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     degraded,
     hitCount: hits.length,
     query,
-    hasWidgetResult: Boolean(speculativeResult || comparisonMatrix || architectureRecipe || relationHits.length > 0),
+    hasWidgetResult: Boolean(
+      speculativeResult ||
+      comparisonMatrix ||
+      architectureRecipe ||
+      relationHits.length > 0 ||
+      didYouMean ||
+      inferredTag ||
+      inferredCategory ||
+      excludedTerms.length > 0 ||
+      Object.keys(inferredFacets).length > 0
+    ),
   })
 
   return (
@@ -423,6 +457,42 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   <ArchitectureRecipeCard recipe={architectureRecipe} />
                 </div>
               )}
+              {/* 自动识别的分面筛选与检索算子胶囊 */}
+              {(Object.keys(inferredFacets).length > 0 || inferredTag || inferredCategory || excludedTerms.length > 0) && (
+                <div className="px-3 py-1.5 bg-primary/5 border-b border-border/50 flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
+                  <span className="flex items-center gap-1 text-primary font-medium text-[11px]">
+                    <Sparkles className="w-3 h-3" />
+                    <span>意图解析：</span>
+                  </span>
+                  {inferredTag && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-primary/10 text-primary border border-primary/20">
+                      <span>#{inferredTag}</span>
+                    </span>
+                  )}
+                  {inferredCategory && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      <span>@{inferredCategory}</span>
+                    </span>
+                  )}
+                  {excludedTerms.map((ex) => (
+                    <span
+                      key={ex}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                    >
+                      <span>-{ex}</span>
+                    </span>
+                  ))}
+                  {Object.entries(inferredFacets).map(([fKey, vals]) => (
+                    <span
+                      key={fKey}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground border border-border/60"
+                    >
+                      <span className="text-muted-foreground">{fKey}:</span>
+                      <span className="font-semibold text-foreground">{vals.join(', ')}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
               {/* 知识图谱对标与实体方案推荐 (Phase 3 知识图谱联动) */}
               {relationHits.length > 0 && (
                 <div className="p-3 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-500/20">
@@ -481,6 +551,19 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 <div className="py-6 px-3 text-center">
                   <div className="text-muted-foreground text-sm">{panel.title}</div>
                   <div className="text-xs text-muted-foreground/70 mt-1">{panel.hint}</div>
+                  {didYouMean && (
+                    <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-foreground">
+                      <span>💡 您是不是想搜：</span>
+                      <button
+                        type="button"
+                        className="font-bold underline text-primary hover:text-primary/80 cursor-pointer"
+                        onClick={() => setQuery(didYouMean)}
+                      >
+                        {didYouMean}
+                      </button>
+                      <span>？</span>
+                    </div>
+                  )}
                   {suggestions.length > 0 && (
                     <div className="mt-4">
                       <div className="text-xs text-muted-foreground mb-2">试试这些搜索</div>

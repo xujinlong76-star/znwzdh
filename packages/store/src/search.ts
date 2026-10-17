@@ -18,6 +18,8 @@ import {
   type SearchHit,
   type SearchQuery,
   type SearchResult,
+  findDidYouMeanSuggestion,
+  parseFacetedQuery,
 } from "@navhub/core";
 import type { Db, Dialect } from "./driver.ts";
 import type { FullTextStore } from "./fts.ts";
@@ -245,18 +247,76 @@ export class SearchEngine {
     return enabledValue(this.deps.db.dialect);
   }
 
+  /**
+   * 基于 tag_aliases 与 categories.alt_labels 的同义词/知识图谱查询扩展
+   */
+  private async expandQueryTerms(raw: string): Promise<string[]> {
+    const norm = raw.trim().toLowerCase();
+    if (!norm) return [];
+    const terms = [norm];
+    try {
+      // 1. 查 tag_aliases 别名表与主标签
+      const aliasRows = (await this.rawRows(
+        `SELECT t.name, t.slug, ta.alias
+           FROM tag_aliases ta
+           JOIN tags t ON t.id = ta.tag_id
+          WHERE lower(ta.alias) = ? OR lower(t.slug) = ? OR lower(t.name) = ?
+          LIMIT 3`,
+        [norm, norm, norm]
+      )) as unknown as Array<{ name?: string; slug?: string; alias?: string }>;
+
+      for (const r of aliasRows) {
+        if (r.name) terms.push(r.name.toLowerCase());
+        if (r.slug) terms.push(r.slug.toLowerCase());
+        if (r.alias) terms.push(r.alias.toLowerCase());
+      }
+
+      // 2. 查 categories.alt_labels (JSON 数组)
+      const catRows = (await this.rawRows(
+        `SELECT title, alt_labels FROM categories WHERE alt_labels LIKE ? LIMIT 2`,
+        [`%"${norm}"%`]
+      )) as unknown as Array<{ title?: string; alt_labels?: string }>;
+
+      for (const c of catRows) {
+        if (c.title) terms.push(c.title.toLowerCase());
+      }
+    } catch {
+      // 容错降级
+    }
+    return [...new Set(terms.filter(Boolean))];
+  }
+
   async search(q: SearchQuery): Promise<SearchResult> {
     const started = Date.now();
     const limit = q.limit ?? 20;
     const offset = Math.max(0, q.offset ?? 0);
     const raw = (q.q ?? "").trim();
+
+    // 智能分面修饰符与高级检索算子解析（如 "开源 矢量设计" 或 "cat:tools #design -adobe"）
+    const parsedIntent = parseFacetedQuery(raw);
+    const hasInferredFacets = Object.keys(parsedIntent.inferredFacets).length > 0;
+    const effectiveFacets = hasInferredFacets
+      ? { ...parsedIntent.inferredFacets, ...(q.facets ?? {}) }
+      : q.facets;
+    const effectiveTag = q.tag ?? parsedIntent.inferredTag;
+    const effectiveCategory = q.categoryId ?? parsedIntent.inferredCategory;
+    const effectiveExcluded = [...(q.excludedTerms ?? []), ...(parsedIntent.excludedTerms ?? [])];
+    const effectiveQuery = parsedIntent.cleanedQuery;
+    const effectiveOpt: SearchQuery = {
+      ...q,
+      tag: effectiveTag,
+      categoryId: effectiveCategory,
+      facets: effectiveFacets,
+      excludedTerms: effectiveExcluded.length > 0 ? effectiveExcluded : undefined,
+    };
+
     // 若已累积在线强化学习反馈且未硬性锁死静态权重，启用 Discounted-LinUCB 动态情境权重
     const weights: FusionWeights =
       this.deps.weights ??
-      (this.feedbackCount > 0 && raw.length > 0
+      (this.feedbackCount > 0 && effectiveQuery.length > 0
         ? {
             ...DEFAULT_WEIGHTS,
-            ...predictArmWeights(this.linucbModel, raw, {
+            ...predictArmWeights(this.linucbModel, effectiveQuery, {
               exact: DEFAULT_WEIGHTS.exact ?? 1.4,
               fts: DEFAULT_WEIGHTS.fts ?? 1.0,
               pinyin: DEFAULT_WEIGHTS.pinyin ?? 0.9,
@@ -269,8 +329,8 @@ export class SearchEngine {
     const pool = Math.max((offset + limit) * 3, 60);
 
     // 空查询 = 浏览模式：按 featured/weight/sort 出列表，不经过 RRF
-    if (raw.length === 0) {
-      const browse = await this.browse(q, limit, offset);
+    if (effectiveQuery.length === 0) {
+      const browse = await this.browse(effectiveOpt, limit, offset);
       return {
         hits: browse.hits,
         channelsUsed: [],
@@ -278,47 +338,81 @@ export class SearchEngine {
         tookMs: Date.now() - started,
         offset,
         hasMore: browse.hasMore,
+        ...(hasInferredFacets ? { inferredFacets: parsedIntent.inferredFacets } : {}),
+        ...(parsedIntent.inferredTag ? { inferredTag: parsedIntent.inferredTag } : {}),
+        ...(parsedIntent.inferredCategory ? { inferredCategory: parsedIntent.inferredCategory } : {}),
+        ...(effectiveExcluded.length > 0 ? { excludedTerms: effectiveExcluded } : {}),
       };
     }
 
-    const hasFilter = Boolean(q.categoryId || q.tag);
+    // 语义与知识图谱同义词扩展
+    const expandedTerms = await this.expandQueryTerms(effectiveQuery);
+
+    const hasFilter = Boolean(
+      effectiveOpt.categoryId ||
+      effectiveOpt.tag ||
+      (effectiveOpt.facets && Object.keys(effectiveOpt.facets).length > 0)
+    );
     let fallback: SearchResult["fallback"];
-    let candidates = await this.runChannels(raw, q, false);
+    let candidates = await this.runChannels(effectiveQuery, effectiveOpt, false, expandedTerms);
 
     // ---- 零结果兜底（两级放宽） ----
-    // 第 1 级：原查询带类目/标签过滤 → 先怀疑是过滤器太窄（用户常在类目内搜索后
-    //          换了想搜的词），去掉过滤重试。这是最常见的「明明有却不显示」。
+    // 第 1 级：原查询带类目/标签/分面正向过滤 → 先怀疑是过滤器太窄，去掉正向过滤重试（负向排除关键词仍坚决保留）
     if (candidates.length === 0 && hasFilter) {
-      const widened = await this.runChannels(raw, { ...q, categoryId: undefined, tag: undefined }, false);
+      const widened = await this.runChannels(
+        effectiveQuery,
+        { ...effectiveOpt, categoryId: undefined, tag: undefined, facets: undefined },
+        false,
+        expandedTerms
+      );
       if (widened.length > 0) {
         candidates = widened;
         fallback = "filter";
       }
     }
     // 第 2 级：拼音从「前缀」放宽为「包含」、英文多词改逐词 OR。
-    //   覆盖：搜 "code editor"（整串子串匹配不中，但 code 单词能中）
-    //         搜 "tianq"（不在全拼/首字母开头，但包含能中）
     if (candidates.length === 0) {
-      const widened = await this.runChannels(raw, q, true);
+      const widened = await this.runChannels(effectiveQuery, effectiveOpt, true, expandedTerms);
       if (widened.length > 0) {
         candidates = widened;
         fallback = "fuzzy";
       }
     }
 
-    // 个性化作为独立通道参与融合（而不是事后加成），见 fusion.ts 的说明。
-    // 只对"已经被相关性通道召回"的站点施加偏好，避免偏好把无关站点带进结果。
-    if (q.personalize && !q.disablePersonal && candidates.length > 0) {
+    // 零结果时的编辑距离智能拼写建议 (Did You Mean)
+    let didYouMean: string | undefined;
+    if (candidates.length === 0 && effectiveQuery.length >= 3) {
+      try {
+        const siteRows = (await this.rawRows(
+          `SELECT title FROM sites WHERE deleted_at IS NULL AND enabled = ${this.enabled} LIMIT 100`,
+          []
+        )) as unknown as Array<{ title?: string }>;
+        const tagRows = (await this.rawRows(
+          `SELECT name FROM tags LIMIT 100`,
+          []
+        )) as unknown as Array<{ name?: string }>;
+        const dict = [
+          ...siteRows.map((r) => r.title || ""),
+          ...tagRows.map((r) => r.name || ""),
+        ].filter(Boolean);
+        const suggestion = findDidYouMeanSuggestion(effectiveQuery, dict, 2);
+        if (suggestion) didYouMean = suggestion;
+      } catch {
+        // 容错降级
+      }
+    }
+
+    // 个性化作为独立通道参与融合
+    if (effectiveOpt.personalize && !effectiveOpt.disablePersonal && candidates.length > 0) {
       const recalled = [...new Set(candidates.map((c) => c.siteId))];
       const sites = await this.loadPersonalizable(recalled);
-      candidates.push(...personalCandidates(sites, q.personalize));
+      candidates.push(...personalCandidates(sites, effectiveOpt.personalize));
     }
 
     const hits: SearchHit[] = fuse(candidates, weights, pool);
 
     const used = new Set(candidates.map((c) => c.channel));
     return {
-      // RRF 是纯函数 → 融合结果稳定，按 offset 切片即可（漂移说明见 types.ts）
       hits: hits.slice(offset, offset + limit),
       channelsUsed: [...used] as SearchChannel[],
       semanticAvailable: this.semanticAvailable,
@@ -326,10 +420,14 @@ export class SearchEngine {
       offset,
       hasMore: offset + limit < hits.length,
       ...(fallback ? { fallback } : {}),
-      // Query Planner 遥测：只有 planner 主动剪枝才打标；
-      // 用户显式 disableSemantic 不算 early-exit（那是调用方决策，不是剪枝收益）
-      ...(this.lastTimings?.skippedSemantic && !q.disableSemantic ? { planner: "early-exit" as const } : {}),
+      ...(this.lastTimings?.skippedSemantic && !effectiveOpt.disableSemantic ? { planner: "early-exit" as const } : {}),
       ...(this.lastTimings ? { channelTimings: this.lastTimings } : {}),
+      ...(hasInferredFacets ? { inferredFacets: parsedIntent.inferredFacets } : {}),
+      ...(parsedIntent.inferredTag ? { inferredTag: parsedIntent.inferredTag } : {}),
+      ...(parsedIntent.inferredCategory ? { inferredCategory: parsedIntent.inferredCategory } : {}),
+      ...(effectiveExcluded.length > 0 ? { excludedTerms: effectiveExcluded } : {}),
+      ...(didYouMean ? { didYouMean } : {}),
+      ...(expandedTerms.length > 1 ? { queryExpansion: expandedTerms } : {}),
     };
   }
 
@@ -337,26 +435,24 @@ export class SearchEngine {
    * Query Planner：先跑 exact（~1ms），强命中直接跳过 semantic。
    * fuzzy=true（零结果兜底）时恒跑全通道，保证召回最大化。
    */
-  private async runChannels(raw: string, opt: SearchQuery, fuzzy: boolean): Promise<SearchCandidate[]> {
+  private async runChannels(raw: string, opt: SearchQuery, fuzzy: boolean, extraTerms: string[] = []): Promise<SearchCandidate[]> {
     const t0 = Date.now();
-    const exact = await this.channelExact(raw, opt, fuzzy);
+    const exact = await this.channelExact(raw, opt, fuzzy, extraTerms);
     const exactMs = Date.now() - t0;
     // early-exit：精确命中足够强时，语义通道的 embedding 推理是纯浪费（首次 300ms+）。
-    // 不拦截 fuzzy 兜底与 disableSemantic=false 以外的显式语义需求。
     if (!fuzzy && !opt.disableSemantic && this.earlyExitExactHits > 0 && exact.length >= this.earlyExitExactHits) {
       const t1 = Date.now();
       const [ftsHits, pinyin] = await Promise.all([
-        this.channelFts(raw, opt),
+        this.channelFts(raw, opt, extraTerms),
         this.channelPinyin(raw, opt),
       ]);
-      // fts/pinyin 同批计时（近似即可，planner 只看量级）
       const rest = Date.now() - t1;
       this.lastTimings = { exactMs, ftsMs: rest, pinyinMs: rest, semanticMs: 0, skippedSemantic: true };
       return [...exact, ...ftsHits, ...pinyin];
     }
     const t2 = Date.now();
     const [ftsHits, pinyin, semantic] = await Promise.all([
-      this.channelFts(raw, opt),
+      this.channelFts(raw, opt, extraTerms),
       this.channelPinyin(raw, opt, fuzzy),
       opt.disableSemantic ? Promise.resolve([]) : this.channelSemantic(raw, opt),
     ]);
@@ -372,31 +468,57 @@ export class SearchEngine {
   }
 
   /**
-   * 通道 1：子串精确匹配（中文最可靠的一路）。
-   *
-   * fuzzy 模式下英文长查询按空白/标点拆词，改为逐词 OR——
-   * "ai code editor" 作为整串子串匹配不到任何标题，但其中任一词能匹配。
-   * 中文不拆（CJK 拆词无意义，语义靠 semantic、相关性靠 fts）。
+   * 通道 1：子串精确匹配（支持站点标签、多词交叉检索与同义词扩展）。
    */
-  private async channelExact(q: string, opt: SearchQuery, fuzzy = false): Promise<SearchCandidate[]> {
+  private async channelExact(q: string, opt: SearchQuery, fuzzy = false, extraTerms: string[] = []): Promise<SearchCandidate[]> {
     const lowered = q.toLowerCase();
-    const terms: string[] = [lowered];
-    if (fuzzy && !/[一-鿿]/.test(q)) {
-      const parts = q.split(/[\s,;|/]+/).map((t) => t.trim().toLowerCase()).filter((t) => t.length >= 2);
+    const tokens = q.split(/[\s,;|/]+/).map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const terms: string[] = [lowered, ...extraTerms.map((t) => t.toLowerCase())];
+    if (fuzzy) {
+      const parts = tokens.filter((t) => t.length >= 2);
       if (parts.length > 1) terms.push(...parts);
     }
+    const uniqueTerms = [...new Set(terms.filter(Boolean))];
 
     const conditions = [
-      "lower(title) LIKE ?", "lower(url) LIKE ?", "lower(coalesce(description,'')) LIKE ?",
-      "pinyin_full LIKE ?", "pinyin_initials LIKE ?",
+      "lower(title) LIKE ?",
+      "lower(url) LIKE ?",
+      "lower(coalesce(description,'')) LIKE ?",
+      "pinyin_full LIKE ?",
+      "pinyin_initials LIKE ?",
+      "id IN (SELECT st.site_id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE lower(t.name) LIKE ? OR lower(t.slug) LIKE ?)",
     ];
-    // 每个 term 一组 5 个 LIKE；组内 OR、组间 OR
+    const singleCondClause = "(" + conditions.join(" OR ") + ")";
+
+    // 每个 term 一组 6 个条件（7 个 LIKE 占位符）
     const orGroups: string[] = [];
     const likeParams: unknown[] = [];
-    for (const t of terms) {
+    for (const t of uniqueTerms) {
       const like = "%" + t + "%";
-      orGroups.push("(" + conditions.join(" OR ") + ")");
-      likeParams.push(like, like, like, like, like);
+      orGroups.push(singleCondClause);
+      likeParams.push(like, like, like, like, like, like, like);
+    }
+
+    const textConditions = [
+      "lower(title) LIKE ?",
+      "lower(url) LIKE ?",
+      "lower(coalesce(description,'')) LIKE ?",
+      "id IN (SELECT st.site_id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE lower(t.name) LIKE ? OR lower(t.slug) LIKE ?)",
+    ];
+    const textCondClause = "(" + textConditions.join(" OR ") + ")";
+
+    // 多词且非 fuzzy 模式下，增加所有 token 的文本交叉与 (AND) 条件
+    // 使得 "react 状态" 能成功召回 Title="React..." 且 Description="...状态管理..." 的多词交叉站点
+    let multiTokenClause = "";
+    const multiTokenParams: unknown[] = [];
+    if (!fuzzy && tokens.length > 1) {
+      const tokenClauses: string[] = [];
+      for (const tok of tokens) {
+        tokenClauses.push(textCondClause);
+        const lk = "%" + tok + "%";
+        multiTokenParams.push(lk, lk, lk, lk, lk);
+      }
+      multiTokenClause = `(${tokenClauses.join(" AND ")}) OR `;
     }
 
     const rows = await this.rawRows(
@@ -405,34 +527,51 @@ export class SearchEngine {
          FROM sites
         WHERE enabled = ${this.enabled}
           AND deleted_at IS NULL
-          AND (${orGroups.join(" OR ")})
-        ORDER BY weight DESC, sort ASC
+          AND (${multiTokenClause}${orGroups.join(" OR ")})
+        ORDER BY
+          CASE WHEN lower(title) LIKE ? THEN 0
+               WHEN lower(title) LIKE ? THEN 1
+               ELSE 2 END,
+          weight DESC, sort ASC
         LIMIT ?`,
-      [...likeParams, this.perChannel],
+      [...multiTokenParams, ...likeParams, "%" + lowered + "%", "%" + (tokens[0] || lowered) + "%", this.perChannel],
     );
     const filtered = await this.postFilter(rows, opt);
     return filtered.map((r, i) => ({ siteId: r.id, channel: "exact" as const, rank: i + 1 }));
   }
 
-  /** 通道 2：BM25 全文 */
-  private async channelFts(q: string, opt: SearchQuery): Promise<SearchCandidate[]> {
+  /** 通道 2：BM25 全文（支持同义词多词检索） */
+  private async channelFts(q: string, opt: SearchQuery, extraTerms: string[] = []): Promise<SearchCandidate[]> {
     if (!this.deps.fts) return [];
     try {
-      const hits = await this.deps.fts.search(q, this.perChannel);
-      if (hits.length === 0) return [];
+      const searchQueries = [q, ...extraTerms.filter((t) => t !== q.toLowerCase())];
+      const allHits: Array<{ siteId: string; rank: number }> = [];
+      const seen = new Set<string>();
+
+      for (const query of searchQueries) {
+        const hits = await this.deps.fts.search(query, this.perChannel);
+        for (const h of hits) {
+          if (!seen.has(h.siteId)) {
+            seen.add(h.siteId);
+            allHits.push(h);
+          }
+        }
+        if (allHits.length >= this.perChannel) break;
+      }
+
+      if (allHits.length === 0) return [];
       const rows = await this.rawRows(
         `SELECT id, url, title, description, category_id AS categoryid,
                 pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
-           FROM sites WHERE id IN (${hits.map(() => "?").join(",")}) AND deleted_at IS NULL`,
-        hits.map((h) => h.siteId),
+           FROM sites WHERE id IN (${allHits.map(() => "?").join(",")}) AND deleted_at IS NULL`,
+        allHits.map((h) => h.siteId),
       );
       const allowed = await this.postFilter(rows, opt);
       const allowedIds = new Set(allowed.map((r) => r.id));
-      return hits
+      return allHits
         .filter((h) => allowedIds.has(h.siteId))
         .map((h, i) => ({ siteId: h.siteId, channel: "fts" as const, rank: i + 1 }));
     } catch {
-      // FTS 不可用（例如索引损坏）不应让整次搜索失败
       return [];
     }
   }
@@ -511,6 +650,13 @@ export class SearchEngine {
     if (opt.facets && Object.keys(opt.facets).length > 0) {
       const ids = await this.siteIdsWithFacets(opt.facets);
       out = out.filter((r) => ids.has(r.id));
+    }
+    if (opt.excludedTerms && opt.excludedTerms.length > 0) {
+      const lowerEx = opt.excludedTerms.map((t) => t.toLowerCase());
+      out = out.filter((r) => {
+        const hay = `${r.title} ${r.description ?? ""} ${r.url}`.toLowerCase();
+        return !lowerEx.some((ex) => hay.includes(ex));
+      });
     }
     return out;
   }

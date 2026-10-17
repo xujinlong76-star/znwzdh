@@ -106,6 +106,18 @@ export interface HubSearchResult {
   popular?: string[]
   /** 知识图谱对标方案与实体关联命中（如搜 "figma" 命中其开源平替 "Penpot"） */
   relationHits?: HubSiteRelation[]
+  /** 智能析取到的分面意图（如搜 "开源 设计" 自动推导 pricing: ["open_source"]） */
+  inferredFacets?: Record<string, string[]>
+  /** 识别到的标签算子修饰符 (#tag) */
+  inferredTag?: string
+  /** 识别到的类目算子修饰符 (@category) */
+  inferredCategory?: string
+  /** 识别到的负向排除关键词 (-keyword) */
+  excludedTerms?: string[]
+  /** 零结果时的智能拼写纠错建议 */
+  didYouMean?: string
+  /** 知识图谱/标签同义词扩展词条 */
+  queryExpansion?: string[]
 }
 
 export interface HubTag {

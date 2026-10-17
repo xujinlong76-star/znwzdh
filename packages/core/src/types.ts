@@ -301,6 +301,8 @@ export interface SearchQuery {
   disablePersonal?: boolean;
   /** 个性化：用户近来偏好 */
   personalize?: PersonalizationSignals;
+  /** 排除的关键词（负向关键词，排除包含任一词的站点） */
+  excludedTerms?: string[];
 }
 
 export interface SearchResult {
@@ -342,6 +344,18 @@ export interface SearchResult {
     semanticMs: number;
     skippedSemantic: boolean;
   };
+  /** 自动从查询中提取到的分面修饰符意图 */
+  inferredFacets?: Record<string, string[]>;
+  /** 自动识别的标签修饰符 (#tag 或 tag:tag) */
+  inferredTag?: string;
+  /** 自动识别的类目修饰符 (@category 或 cat:category) */
+  inferredCategory?: string;
+  /** 识别到的负向关键词 (-keyword) */
+  excludedTerms?: string[];
+  /** 零结果时的编辑距离拼写纠错建议 ("您是不是想搜...") */
+  didYouMean?: string;
+  /** 触发同义词/标签别名/SKOS 扩展词 */
+  queryExpansion?: string[];
 }
 
 /* ------------------------------------------------------------------ *

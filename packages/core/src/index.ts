@@ -36,3 +36,4 @@ export * from "./dynamic-tool-synthesizer.ts";
 export * from "./facets.ts";
 export * from "./relations.ts";
 export * from "./taxonomy-governance.ts";
+export * from "./query-intent.ts";

@@ -577,11 +577,11 @@ export default function FavoritesPage() {
               在主页站点卡片或搜索结果里点击星标即可一键收藏（本地离线存储，无需登录，可随时导出为 E2EE 加密金库）。
             </p>
             <div className="pt-2">
-              <Link href="/">
-                <Button size="sm" variant="outline" className="text-xs">
+              <Button asChild size="sm" variant="outline" className="text-xs">
+                <Link href="/">
                   去主页探索发现
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </div>
         ) : filteredFavorites.length === 0 ? (

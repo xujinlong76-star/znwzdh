@@ -369,12 +369,14 @@ export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <Link href="/" target="_blank" rel="noopener noreferrer">
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1">
+          {/* 链接要当按钮用时：Button asChild 把样式/语义交给 <Link>，
+              而不是 <Link> 里套一个 <Button>（嵌套可交互元素，读屏会念两遍） */}
+          <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1">
+            <Link href="/" target="_blank" rel="noopener noreferrer">
               <Home className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">前台</span>
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div className="w-7 h-7">
             <Avatar className="h-7 w-7">
               <AvatarImage src={user.image || ''} alt={user.name || ''} />

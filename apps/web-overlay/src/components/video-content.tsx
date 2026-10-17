@@ -127,31 +127,33 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                             />
                         </div>
                         <div className="flex items-center gap-1 ml-auto">
-                            <Link
-                                href="/videos/player"
-                                aria-label="Player Mode"
+                            <Button
+                                asChild
+                                variant="ghost"
+                                size="icon"
+                                className="hover:bg-accent hover:text-accent-foreground"
+                                title="播放器模式"
                             >
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="hover:bg-accent hover:text-accent-foreground"
-                                    title="播放器模式"
+                                <Link
+                                    href="/videos/player"
+                                    aria-label="Player Mode"
                                 >
                                     <MonitorPlay className="h-5 w-5" />
-                                </Button>
-                            </Link>
-                            <Link
-                                href="/"
-                                aria-label="返回主页"
+                                </Link>
+                            </Button>
+                            <Button
+                                asChild
+                                variant="ghost"
+                                size="icon"
+                                className="hover:bg-accent hover:text-accent-foreground"
                             >
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="hover:bg-accent hover:text-accent-foreground"
+                                <Link
+                                    href="/"
+                                    aria-label="返回主页"
                                 >
                                     <Home className="h-5 w-5" />
-                                </Button>
-                            </Link>
+                                </Link>
+                            </Button>
                             <DensityToggle />
                             <ModeToggle />
                             <Button

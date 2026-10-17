@@ -77,11 +77,11 @@ export default function AdminTagsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/admin/facets">
-            <Button size="sm" variant="ghost" className="text-xs">
+          <Button asChild size="sm" variant="ghost" className="text-xs">
+            <Link href="/admin/facets">
               分面属性治理 →
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <Button size="sm" variant="outline" onClick={load} disabled={loading}>
             {loading ? '刷新中…' : '刷新'}
           </Button>

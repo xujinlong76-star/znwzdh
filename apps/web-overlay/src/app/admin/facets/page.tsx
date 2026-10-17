@@ -150,11 +150,11 @@ export default function AdminFacetsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/admin/tags">
-            <Button size="sm" variant="ghost" className="text-xs">
+          <Button asChild size="sm" variant="ghost" className="text-xs">
+            <Link href="/admin/tags">
               ← 标签与概念别名
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <Button size="sm" variant="outline" onClick={loadFacets} disabled={loading}>
             {loading ? '刷新中…' : '刷新分布'}
           </Button>

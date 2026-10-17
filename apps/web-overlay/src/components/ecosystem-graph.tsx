@@ -370,12 +370,12 @@ export function EcosystemGraph() {
       {/* 顶部控制栏 */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 sm:px-6 border-b border-border/60 glass-surface subtle-mesh z-20 shadow-xs">
         <div className="flex items-center gap-3">
-          <Link href="/">
-            <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-8 border border-border/50 hover:bg-background/80">
+          <Button asChild variant="ghost" size="sm" className="gap-1.5 text-xs h-8 border border-border/50 hover:bg-background/80">
+            <Link href="/">
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>返回导航</span>
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
               <Sparkles className="w-4 h-4" />

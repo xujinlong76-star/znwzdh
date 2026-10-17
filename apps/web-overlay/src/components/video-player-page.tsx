@@ -231,16 +231,16 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                     </Link>
                     <div className="flex-1" />
                     <div className="flex items-center gap-2">
-                        <Link href="/" aria-label="返回主页" title="返回主页">
-                            <Button variant="ghost" size="icon">
+                        <Button asChild variant="ghost" size="icon">
+                            <Link href="/" aria-label="返回主页" title="返回主页">
                                 <Home className="w-5 h-5" />
-                            </Button>
-                        </Link>
-                        <Link href="/videos" aria-label="返回视频中心" title="返回视频中心">
-                            <Button variant="ghost" size="icon">
+                            </Link>
+                        </Button>
+                        <Button asChild variant="ghost" size="icon">
+                            <Link href="/videos" aria-label="返回视频中心" title="返回视频中心">
                                 <LayoutGrid className="w-5 h-5" />
-                            </Button>
-                        </Link>
+                            </Link>
+                        </Button>
                         <ModeToggle />
                     </div>
                 </div>

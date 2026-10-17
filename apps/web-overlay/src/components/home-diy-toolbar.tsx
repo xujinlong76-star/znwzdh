@@ -57,6 +57,7 @@ import { useHomeDIY, type CardDisplayMode, type CanvasBackground, type AccentCol
 import { useDensity } from '@/components/density-provider'
 import { BUILTIN_DIY_PRESETS, evaluateLayoutErgonomics, type DIYPreset } from '@/lib/modular/diy-presets'
 import { useToast } from '@/components/ui/use-toast'
+import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 
 interface HomeDIYToolbarProps {
@@ -281,20 +282,28 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     });
   };
 
-  const handleShareUrlHash = () => {
+  const handleShareUrlHash = async () => {
     const url = exportPresetToUrlHash();
-    if (url) {
-      void navigator.clipboard.writeText(url);
-      toast({
-        title: '🔗 已复制免登专属分享链接！',
-        description: '好友直接在浏览器打开该链接，即可一键预览并应用您的专属排版与壁纸。',
-      });
+    if (!url) return;
+    // 分享链接全靠剪贴板；写不进去就必须说，不能宣告「已复制」
+    const result = await copyText(url);
+    if (!result.ok) {
+      toast({ ...copyFailureToast(result), variant: 'destructive' });
+      return;
     }
+    toast({
+      title: '🔗 已复制免登专属分享链接！',
+      description: '好友直接在浏览器打开该链接，即可一键预览并应用您的专属排版与壁纸。',
+    });
   };
 
-  const handleCopyConfig = () => {
+  const handleCopyConfig = async () => {
     const json = exportDIYConfig()
-    navigator.clipboard.writeText(json)
+    const result = await copyText(json)
+    if (!result.ok) {
+      toast({ ...copyFailureToast(result), variant: 'destructive' })
+      return
+    }
     toast({
       title: '📋 配置已复制到剪贴板',
       description: '您可以将配置妥善保管或分享给其他设备。',
@@ -325,7 +334,11 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     }
     try {
       const encryptedJson = await exportEncryptedDIYConfig(vaultPassphrase.trim())
-      navigator.clipboard.writeText(encryptedJson)
+      const result = await copyText(encryptedJson)
+      if (!result.ok) {
+        toast({ ...copyFailureToast(result), variant: 'destructive' })
+        return
+      }
       toast({
         title: '🔐 已复制零知识加密密文',
         description: '配置数据已通过 AES-256-GCM 高度认证加密。',

@@ -37,6 +37,7 @@ export interface EnrichmentResult {
   tags: string[];
   keywords: string[];
   suggestedCategory: string | null;
+  suggestedFacets?: Record<string, string[]>;
   iconUrl: string | null;
   imageUrl: string | null;
   lang: string | null;
@@ -215,6 +216,7 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
           tags: payload.tags,
           keywords: payload.keywords,
           suggestedCategory: payload.category,
+          suggestedFacets: heuristicFacets(finalUrl, fallbackText, lang),
           iconUrl, imageUrl, lang,
           provenance: "llm",
           warnings,
@@ -235,6 +237,7 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
     tags: heuristicTags(fallbackText),
     keywords: heuristicTags(fallbackText).slice(0, 6),
     suggestedCategory: heuristicCategory(fallbackText, metaTitle ?? undefined),
+    suggestedFacets: heuristicFacets(finalUrl, fallbackText, lang),
     iconUrl, imageUrl, lang,
     provenance: "heuristic",
     warnings,
@@ -331,4 +334,129 @@ export function stripCodeFence(s: string): string {
   }
   return t;
 }
+
+/**
+ * 启发式分面属性推断规则 (Heuristic Facet Extraction)
+ */
+export function heuristicFacets(url: string, text: string, lang?: string | null): Record<string, string[]> {
+  const facets: Record<string, string[]> = {};
+  const lowerUrl = url.toLowerCase();
+  const lowerText = text.toLowerCase();
+
+  // 1. 付费模式 (Pricing)
+  if (
+    lowerUrl.includes("github.com") ||
+    lowerUrl.includes("gitee.com") ||
+    lowerText.includes("开源") ||
+    lowerText.includes("open source") ||
+    lowerText.includes("mit license") ||
+    lowerText.includes("apache 2.0")
+  ) {
+    facets.pricing = ["open_source"];
+  } else if (
+    lowerText.includes("免费增值") ||
+    lowerText.includes("freemium") ||
+    lowerText.includes("按量付费") ||
+    lowerText.includes("订阅")
+  ) {
+    facets.pricing = ["freemium"];
+  } else if (
+    lowerText.includes("100% 免费") ||
+    lowerText.includes("完全免费") ||
+    lowerText.includes("免费使用") ||
+    lowerText.includes("永久免费")
+  ) {
+    facets.pricing = ["free"];
+  }
+
+  // 2. 运行平台 (Platform)
+  const platforms: string[] = [];
+  if (
+    lowerText.includes("chrome") ||
+    lowerText.includes("firefox") ||
+    lowerText.includes("插件") ||
+    lowerText.includes("扩展") ||
+    lowerText.includes("extension")
+  ) {
+    platforms.push("extension");
+  }
+  if (lowerText.includes("ios") || lowerText.includes("iphone") || lowerText.includes("ipad") || lowerText.includes("app store")) {
+    platforms.push("ios");
+  }
+  if (lowerText.includes("android") || lowerText.includes("安卓") || lowerText.includes("google play")) {
+    platforms.push("android");
+  }
+  if (lowerText.includes("macos") || lowerText.includes("mac app")) {
+    platforms.push("macos");
+  }
+  if (lowerText.includes("windows") || lowerText.includes("win10") || lowerText.includes("win11")) {
+    platforms.push("windows");
+  }
+  if (lowerText.includes("linux")) {
+    platforms.push("linux");
+  }
+  if (platforms.length === 0 || lowerText.includes("web") || lowerText.includes("在线") || lowerText.includes("网页") || lowerUrl.startsWith("http")) {
+    platforms.push("web");
+  }
+  facets.platform = [...new Set(platforms)];
+
+  // 3. 产品形态 (Form)
+  const forms: string[] = [];
+  if (
+    lowerUrl.includes("github.com") ||
+    lowerUrl.includes("gitee.com") ||
+    lowerText.includes("npm") ||
+    lowerText.includes("pypi") ||
+    lowerText.includes("crate")
+  ) {
+    forms.push("library");
+  }
+  if (lowerText.includes("api") || lowerText.includes("sdk") || lowerText.includes("接口") || lowerText.includes("开发者")) {
+    forms.push("api");
+  }
+  if (lowerText.includes("cli") || lowerText.includes("命令行") || lowerText.includes("终端")) {
+    forms.push("cli");
+  }
+  if (lowerText.includes("docker") || lowerText.includes("self-hosted") || lowerText.includes("自托管") || lowerText.includes("私有化部署")) {
+    forms.push("self_hosted");
+  }
+  if (lowerText.includes("saas") || lowerText.includes("在线服务") || forms.length === 0) {
+    forms.push("saas");
+  }
+  facets.form = [...new Set(forms)];
+
+  // 4. 语言支持 (Language)
+  if (lang?.toLowerCase().startsWith("zh") || /[\u4e00-\u9fff]/.test(text)) {
+    facets.language = ["zh"];
+  } else {
+    facets.language = ["en"];
+  }
+
+  // 5. 应用场景 (Scene)
+  const scenes: string[] = [];
+  if (lowerText.includes("代码") || lowerText.includes("编程") || lowerText.includes("开发") || lowerText.includes("git") || lowerText.includes("developer")) {
+    scenes.push("dev");
+  }
+  if (lowerText.includes("设计") || lowerText.includes("ui") || lowerText.includes("ux") || lowerText.includes("figma") || lowerText.includes("图标")) {
+    scenes.push("design");
+  }
+  if (lowerText.includes("ai") || lowerText.includes("人工智能") || lowerText.includes("gpt") || lowerText.includes("大模型") || lowerText.includes("prompt")) {
+    scenes.push("ai");
+  }
+  if (lowerText.includes("写作") || lowerText.includes("博客") || lowerText.includes("自媒体") || lowerText.includes("文章") || lowerText.includes("排版")) {
+    scenes.push("content");
+  }
+  if (lowerText.includes("协同") || lowerText.includes("表格") || lowerText.includes("文档") || lowerText.includes("效率") || lowerText.includes("日程")) {
+    scenes.push("productivity");
+  }
+  if (lowerText.includes("运维") || lowerText.includes("监控") || lowerText.includes("云原生") || lowerText.includes("kubernetes") || lowerText.includes("k8s")) {
+    scenes.push("ops");
+  }
+  if (scenes.length > 0) {
+    facets.scene = [...new Set(scenes)];
+  }
+
+  return facets;
+}
+
 

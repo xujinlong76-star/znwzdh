@@ -508,6 +508,10 @@ export class SearchEngine {
       const ids = await this.siteIdsWithTag(opt.tag);
       out = out.filter((r) => ids.has(r.id));
     }
+    if (opt.facets && Object.keys(opt.facets).length > 0) {
+      const ids = await this.siteIdsWithFacets(opt.facets);
+      out = out.filter((r) => ids.has(r.id));
+    }
     return out;
   }
 
@@ -538,6 +542,16 @@ export class SearchEngine {
 
     if (q.tag) {
       const ids = await this.siteIdsWithTag(q.tag);
+      if (ids.size > 0) {
+        wheres.push(`id IN (${[...ids].map(() => "?").join(",")})`);
+        params.push(...ids);
+      } else {
+        return { hits: [], hasMore: false };
+      }
+    }
+
+    if (q.facets && Object.keys(q.facets).length > 0) {
+      const ids = await this.siteIdsWithFacets(q.facets);
       if (ids.size > 0) {
         wheres.push(`id IN (${[...ids].map(() => "?").join(",")})`);
         params.push(...ids);
@@ -612,6 +626,46 @@ export class SearchEngine {
       [norm, norm, norm],
     );
     return new Set(rows.map((r) => r.id));
+  }
+
+  /**
+   * 按分面属性过滤。
+   * 支持多分面正交组合：
+   * - 分面键之间（例如 pricing 与 platform）为 AND（交集）
+   * - 单个分面键内的多个取值（例如 platform = web OR platform = ios）为 OR（并集）
+   */
+  private async siteIdsWithFacets(facets: Record<string, string[]>): Promise<Set<string>> {
+    const keys = Object.keys(facets).filter((k) => Array.isArray(facets[k]) && facets[k].length > 0);
+    if (keys.length === 0) return new Set();
+
+    let candidateSet: Set<string> | null = null;
+
+    for (const key of keys) {
+      const rawVals = facets[key] ?? [];
+      const vals = [...new Set(rawVals.map((v) => String(v).trim().toLowerCase()).filter(Boolean))];
+      if (vals.length === 0) continue;
+
+      const placeholders = vals.map(() => "?").join(", ");
+      const rows = await this.rawRows(
+        `SELECT DISTINCT site_id AS id FROM site_facets WHERE facet_key = ? AND facet_value IN (${placeholders})`,
+        [key.toLowerCase(), ...vals],
+      );
+      const currentKeySites = new Set(rows.map((r) => r.id));
+
+      if (candidateSet === null) {
+        candidateSet = currentKeySites;
+      } else {
+        const nextSet = new Set<string>();
+        for (const id of candidateSet) {
+          if (currentKeySites.has(id)) nextSet.add(id);
+        }
+        candidateSet = nextSet;
+      }
+
+      if (candidateSet.size === 0) return new Set();
+    }
+
+    return candidateSet ?? new Set();
   }
 
   /** 方言无关的原始查询：sqlite 同步、pg 异步，这里统一成 Promise */

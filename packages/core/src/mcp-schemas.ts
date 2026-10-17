@@ -20,6 +20,7 @@ export const SearchSitesInput = z.object({
   limit: z.number().int().min(1).max(50).default(10).describe("返回条数上限"),
   categoryId: z.string().optional().describe("限定类目（含其子类目）"),
   tag: z.string().optional().describe("限定标签"),
+  facets: z.record(z.array(z.string())).optional().describe("限定分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
 });
 
 export const GetSiteInput = z.object({
@@ -36,6 +37,7 @@ export const CreateSiteInput = z.object({
   description: z.string().optional().describe("描述；留空则自动抓取"),
   categoryId: z.string().optional().describe("类目 id；留空则按 AI 建议自动归类"),
   tags: z.array(z.string()).max(8).optional().describe("标签"),
+  facets: z.record(z.array(z.string())).optional().describe("分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
   enrich: z.boolean().default(true).describe("是否自动抓取元数据并用 AI 富化"),
   idempotencyKey: z.string().optional().describe("幂等键；重复调用不会重复创建"),
 });
@@ -46,6 +48,7 @@ export const UpdateSiteInput = z.object({
   description: z.string().optional(),
   categoryId: z.string().optional(),
   tags: z.array(z.string()).max(8).optional(),
+  facets: z.record(z.array(z.string())).optional().describe("分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
   featured: z.boolean().optional(),
 });
 

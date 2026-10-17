@@ -151,6 +151,8 @@ export interface Site {
   liveMetrics?: SiteLiveMetrics;
   /** 适用的场景工作台（dev | design | ai | content） */
   workspaces?: string[];
+  /** 分面正交属性（付费模式/平台/形态/语言/场景等） */
+  facets?: Record<string, string[]>;
   createdAt: number;
   updatedAt: number;
 }
@@ -271,6 +273,8 @@ export interface SearchQuery {
   offset?: number;
   categoryId?: Id;
   tag?: string;
+  /** 多维分面正交过滤（例如 { pricing: ['free'], platform: ['web', 'ios'] }） */
+  facets?: Record<string, string[]>;
   statuses?: SiteStatus[];
   /** 关闭语义通道（无模型或追求极低延迟时） */
   disableSemantic?: boolean;

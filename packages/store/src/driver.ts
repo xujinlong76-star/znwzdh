@@ -129,6 +129,13 @@ CREATE INDEX IF NOT EXISTS site_tags_site_idx ON site_tags(site_id);
 CREATE INDEX IF NOT EXISTS site_tags_tag_idx ON site_tags(tag_id);
 CREATE UNIQUE INDEX IF NOT EXISTS site_tags_unique_idx ON site_tags(site_id, tag_id);
 
+CREATE TABLE IF NOT EXISTS site_facets (
+  site_id TEXT NOT NULL, facet_key TEXT NOT NULL, facet_value TEXT NOT NULL,
+  PRIMARY KEY (site_id, facet_key, facet_value)
+);
+CREATE INDEX IF NOT EXISTS site_facets_key_val_idx ON site_facets(facet_key, facet_value);
+CREATE INDEX IF NOT EXISTS site_facets_site_idx ON site_facets(site_id);
+
 CREATE TABLE IF NOT EXISTS collections (
   id TEXT PRIMARY KEY, slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT,
   kind TEXT NOT NULL DEFAULT 'topic', icon TEXT, sort INTEGER NOT NULL DEFAULT 0,
@@ -343,6 +350,13 @@ CREATE TABLE IF NOT EXISTS site_tags (site_id TEXT NOT NULL, tag_id TEXT NOT NUL
 CREATE INDEX IF NOT EXISTS site_tags_site_idx ON site_tags(site_id);
 CREATE INDEX IF NOT EXISTS site_tags_tag_idx ON site_tags(tag_id);
 CREATE UNIQUE INDEX IF NOT EXISTS site_tags_unique_idx ON site_tags(site_id, tag_id);
+
+CREATE TABLE IF NOT EXISTS site_facets (
+  site_id TEXT NOT NULL, facet_key TEXT NOT NULL, facet_value TEXT NOT NULL,
+  PRIMARY KEY (site_id, facet_key, facet_value)
+);
+CREATE INDEX IF NOT EXISTS site_facets_key_val_idx ON site_facets(facet_key, facet_value);
+CREATE INDEX IF NOT EXISTS site_facets_site_idx ON site_facets(site_id);
 
 CREATE TABLE IF NOT EXISTS collections (
   id TEXT PRIMARY KEY, slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT,

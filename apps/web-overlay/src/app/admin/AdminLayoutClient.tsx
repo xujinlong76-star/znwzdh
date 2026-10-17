@@ -27,6 +27,7 @@ import {
   ListChecks,
   KeyRound,
   Tags,
+  SlidersHorizontal,
   Star,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
@@ -85,6 +86,11 @@ const menuItems = [
     title: "标签管理",
     href: "/admin/tags",
     icon: Tags
+  },
+  {
+    title: "分面属性",
+    href: "/admin/facets",
+    icon: SlidersHorizontal
   },
   {
     title: "精选专题",

@@ -33,3 +33,4 @@ export * from "./webmcp-bridge.ts";
 export * from "./federated-recommendation.ts";
 export * from "./semantic-clustering.ts";
 export * from "./dynamic-tool-synthesizer.ts";
+export * from "./facets.ts";

@@ -8,7 +8,7 @@
  * 这样做的代价是向量列在 schema 里"看不见"，收益是同一份表定义能同时跑两种数据库，
  * 方言差异被收敛到 `driver.ts` 与 `vec.ts` 两个文件里。
  */
-import { sqliteTable, text, integer, real, blob, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey } from "drizzle-orm/sqlite-core";
 
 const now = () => Date.now();
 
@@ -115,6 +115,16 @@ export const siteTags = sqliteTable("site_tags", {
 }, (t) => [
   index("site_tags_site_idx").on(t.siteId),
   index("site_tags_tag_idx").on(t.tagId),
+]);
+
+export const siteFacets = sqliteTable("site_facets", {
+  siteId: text("site_id").notNull(),
+  facetKey: text("facet_key").notNull(),
+  facetValue: text("facet_value").notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.siteId, t.facetKey, t.facetValue] }),
+  index("site_facets_key_val_idx").on(t.facetKey, t.facetValue),
+  index("site_facets_site_idx").on(t.siteId),
 ]);
 
 export const collections = sqliteTable("collections", {
@@ -323,7 +333,7 @@ export const systemStates = sqliteTable("system_states", {
 });
 
 export const schema = {
-  categories, sites, tags, tagAliases, siteTags, collections, collectionItems,
+  categories, sites, tags, tagAliases, siteTags, siteFacets, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates,
 };

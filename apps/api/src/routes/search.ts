@@ -30,6 +30,17 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     offset: z.coerce.number().int().min(0).max(1000).optional(),
     categoryId: z.string().optional(),
     tag: z.string().optional(),
+    facets: z.union([
+      z.record(z.array(z.string())),
+      z.string().transform((str) => {
+        try {
+          const parsed = JSON.parse(str);
+          return typeof parsed === "object" && parsed !== null ? parsed : undefined;
+        } catch {
+          return undefined;
+        }
+      }),
+    ]).optional(),
     disableSemantic: queryBool.optional(),
     disablePersonal: queryBool.optional(),
     /** 身份标识：登录用户传 canonical userId，匿名传 anonId（前端 localStorage 生成）。

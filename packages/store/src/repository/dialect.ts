@@ -116,7 +116,38 @@ export function rowToSite(row: Record<string, any>): Site {
     actions: metaParsed.actions ?? enhanced.actions,
     relations: metaParsed.relations ?? enhanced.relations,
     liveMetrics: metaParsed.liveMetrics ?? enhanced.liveMetrics,
-    workspaces: metaParsed.workspaces ?? enhanced.workspaces,
+    workspaces: (() => {
+      const ws = metaParsed.workspaces ?? enhanced.workspaces;
+      return ws;
+    })(),
+    facets: (() => {
+      const f: Record<string, string[]> = {};
+      if (row.facet_pairs) {
+        for (const pair of String(row.facet_pairs).split(",")) {
+          const idx = pair.indexOf(":");
+          if (idx > 0) {
+            const k = pair.slice(0, idx).trim().toLowerCase();
+            const v = pair.slice(idx + 1).trim().toLowerCase();
+            if (k && v) {
+              if (!f[k]) f[k] = [];
+              if (!f[k].includes(v)) f[k].push(v);
+            }
+          }
+        }
+      } else if (metaParsed.facets && typeof metaParsed.facets === "object") {
+        for (const [k, v] of Object.entries(metaParsed.facets)) {
+          const key = k.trim().toLowerCase();
+          if (Array.isArray(v)) {
+            f[key] = [...new Set(v.map(String).map((x) => x.trim().toLowerCase()).filter(Boolean))];
+          }
+        }
+      }
+      const ws = metaParsed.workspaces ?? enhanced.workspaces;
+      if ((!f.scene || f.scene.length === 0) && Array.isArray(ws) && ws.length > 0) {
+        f.scene = [...ws];
+      }
+      return f;
+    })(),
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
   };

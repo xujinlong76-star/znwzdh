@@ -19,12 +19,22 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   // 注意：保持返回数组（不包 {items,hasMore}）：前端多处按数组消费，改结构会破坏兼容。
   // 默认 limit 100、上限 1000 防全表扫；offset 分页支持。
   app.get("/api/sites", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req) => {
-    const q = (req.query ?? {}) as Record<string, string>;
+    const q = (req.query ?? {}) as Record<string, any>;
     const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 1000);
     const offset = Math.max(0, Number(q.offset) || 0);
+    let facets: Record<string, string[]> | undefined = undefined;
+    if (q.facets) {
+      try {
+        facets = typeof q.facets === "string" ? JSON.parse(q.facets) : q.facets;
+      } catch {
+        // ignore
+      }
+    }
     return ctx.repo.listSites({
       categoryId: q.categoryId,
       status: q.status as never,
+      source: q.source,
+      facets,
       limit,
       offset,
     });

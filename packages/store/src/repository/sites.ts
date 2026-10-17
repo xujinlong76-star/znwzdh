@@ -12,6 +12,9 @@ import {
   type SiteLiveMetrics,
   type SiteRelation,
   type SiteStatus,
+  CONTROLLED_FACETS,
+  type FacetGroupSummary,
+  type FacetOptionCount,
 } from "@navhub/core";
 import type {
   ApiTokenRecord,
@@ -49,12 +52,18 @@ import {
 } from "./dialect.ts";
 import type { Db } from "../driver.ts";
 
-export async function listSites(repo: Repository, filter: { categoryId?: string; status?: SiteStatus; limit?: number; offset?: number; source?: string } = {}): Promise<Site[]> {
+export async function listSites(repo: Repository, filter: { categoryId?: string; status?: SiteStatus; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {
   const where: string[] = ["s.deleted_at IS NULL"];
   const params: unknown[] = [];
   if (filter.categoryId) { where.push("s.category_id = ?"); params.push(filter.categoryId); }
   if (filter.status) { where.push("s.status = ?"); params.push(filter.status); }
   if (filter.source) { where.push("s.source = ?"); params.push(filter.source); }
+  if (filter.facets && Object.keys(filter.facets).length > 0) {
+    const ids = await repo.filterSiteIdsByFacets(filter.facets);
+    if (ids.length === 0) return [];
+    where.push("s.id IN (" + ids.map(() => "?").join(",") + ")");
+    params.push(...ids);
+  }
   // 默认 limit 100、上限 1000：无限制的全表扫是慢查询主因；调用方需显式传 limit 覆盖。
   const limit = Math.min(Math.max(filter.limit ?? 100, 1), 1000);
   const offset = Math.max(0, filter.offset ?? 0);
@@ -88,7 +97,10 @@ export function selectSitesSql(repo: Repository): string {
   const tagExpr = repo.db.dialect === "sqlite"
     ? "(SELECT group_concat(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id)"
     : "(SELECT string_agg(t.slug, ',') FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE st.site_id = s.id)";
-  return "SELECT s.*, " + tagExpr + " AS tag_slugs FROM sites s";
+  const facetExpr = repo.db.dialect === "sqlite"
+    ? "(SELECT group_concat(sf.facet_key || ':' || sf.facet_value, ',') FROM site_facets sf WHERE sf.site_id = s.id)"
+    : "(SELECT string_agg(sf.facet_key || ':' || sf.facet_value, ',') FROM site_facets sf WHERE sf.site_id = s.id)";
+  return "SELECT s.*, " + tagExpr + " AS tag_slugs, " + facetExpr + " AS facet_pairs FROM sites s";
 }
 
 export async function getSite(repo: Repository, idOrUrl: string): Promise<Site | null> {
@@ -147,6 +159,11 @@ export async function createSiteWithId(repo: Repository, input: SiteInput & { id
       ],
     );
     if (input.tags?.length) await repo.setSiteTags(id, input.tags);
+    if (input.facets !== undefined) {
+      await repo.setSiteFacets(id, input.facets);
+    } else if (input.workspaces?.length) {
+      await repo.setSiteFacets(id, { scene: input.workspaces });
+    }
     const revived = await repo.getSite(id);
     if (!revived) throw new Error("复活站点后无法读回");
     return revived;
@@ -165,6 +182,11 @@ export async function createSiteWithId(repo: Repository, input: SiteInput & { id
     ],
   );
   if (input.tags?.length) await repo.setSiteTags(id, input.tags);
+  if (input.facets !== undefined) {
+    await repo.setSiteFacets(id, input.facets);
+  } else if (input.workspaces?.length) {
+    await repo.setSiteFacets(id, { scene: input.workspaces });
+  }
   const created = await repo.getSite(id);
   if (!created) throw new Error("创建站点后无法读回");
   return created;
@@ -210,6 +232,7 @@ export async function updateSite(repo: Repository, id: string, patch: Partial<Si
   params.push(id);
   await repo.run(`UPDATE sites SET ${sets.join(", ")} WHERE id = ?`, params);
   if (patch.tags !== undefined) await repo.setSiteTags(id, patch.tags);
+  if (patch.facets !== undefined) await repo.setSiteFacets(id, patch.facets);
   return repo.getSite(id);
   });
 }
@@ -227,6 +250,7 @@ export async function restoreSite(repo: Repository, id: string): Promise<Site | 
 export async function purgeSite(repo: Repository, id: string): Promise<boolean> {
   await repo.withTransaction(async () => {
   await repo.run("DELETE FROM site_tags WHERE site_id = ?", [id]);
+  await repo.run("DELETE FROM site_facets WHERE site_id = ?", [id]);
   await repo.run("DELETE FROM embeddings WHERE site_id = ?", [id]);
   await repo.run("DELETE FROM sites WHERE id = ?", [id]);
   });
@@ -277,3 +301,179 @@ export async function upsertTag(repo: Repository, name: string, slug: string, gr
   );
   return id;
 }
+
+/* ------------------------------------------------------------------ *
+ * 分面属性维护与检索 (Faceted Taxonomy Operations)
+ * ------------------------------------------------------------------ */
+
+export async function setSiteFacets(
+  repo: Repository,
+  siteId: string,
+  rawFacets: Record<string, string[] | string | null | undefined>,
+): Promise<void> {
+  await repo.run("DELETE FROM site_facets WHERE site_id = ?", [siteId]);
+  for (const [rawKey, rawVals] of Object.entries(rawFacets)) {
+    const key = rawKey.trim().toLowerCase();
+    if (!key) continue;
+    const values = Array.isArray(rawVals)
+      ? rawVals.map((v) => String(v).trim().toLowerCase()).filter(Boolean)
+      : typeof rawVals === "string" && rawVals.trim()
+        ? [rawVals.trim().toLowerCase()]
+        : [];
+    const deduped = [...new Set(values)];
+    for (const val of deduped) {
+      await repo.run(
+        "INSERT INTO site_facets (site_id, facet_key, facet_value) VALUES (?, ?, ?)",
+        [siteId, key, val],
+      );
+    }
+  }
+}
+
+export async function getSiteFacets(repo: Repository, siteId: string): Promise<Record<string, string[]>> {
+  const rows = await repo.raw(
+    "SELECT facet_key, facet_value FROM site_facets WHERE site_id = ? ORDER BY facet_key ASC, facet_value ASC",
+    [siteId],
+  );
+  const out: Record<string, string[]> = {};
+  for (const r of rows as Array<{ facet_key: string; facet_value: string }>) {
+    const k = String(r.facet_key);
+    const v = String(r.facet_value);
+    if (!out[k]) out[k] = [];
+    out[k].push(v);
+  }
+  return out;
+}
+
+export async function filterSiteIdsByFacets(
+  repo: Repository,
+  facets: Record<string, string[] | string | null | undefined>,
+): Promise<string[]> {
+  const keys = Object.keys(facets).filter((k) => {
+    const v = facets[k];
+    return Array.isArray(v) ? v.length > 0 : Boolean(v);
+  });
+  if (keys.length === 0) return [];
+
+  let candidateSet: Set<string> | null = null;
+
+  for (const rawKey of keys) {
+    const key = rawKey.trim().toLowerCase();
+    const rawVal = facets[rawKey];
+    const vals = (Array.isArray(rawVal) ? rawVal : [rawVal])
+      .map((v) => String(v).trim().toLowerCase())
+      .filter(Boolean);
+    if (vals.length === 0) continue;
+
+    const placeholders = vals.map(() => "?").join(", ");
+    const rows = await repo.raw(
+      `SELECT DISTINCT site_id FROM site_facets WHERE facet_key = ? AND facet_value IN (${placeholders})`,
+      [key, ...vals],
+    );
+    const currentKeySites = new Set(rows.map((r: any) => String(r.site_id)));
+
+    if (candidateSet === null) {
+      candidateSet = currentKeySites;
+    } else {
+      const next = new Set<string>();
+      for (const id of candidateSet) {
+        if (currentKeySites.has(id)) next.add(id);
+      }
+      candidateSet = next;
+    }
+
+    if (candidateSet.size === 0) return [];
+  }
+
+  return candidateSet ? [...candidateSet] : [];
+}
+
+export async function listFacetsSummary(
+  repo: Repository,
+  filter: { categoryId?: string; tag?: string } = {},
+): Promise<FacetGroupSummary[]> {
+  const wheres = ["s.deleted_at IS NULL"];
+  const params: unknown[] = [];
+  if (repo.db.dialect === "sqlite") {
+    wheres.push("s.enabled = 1");
+  } else {
+    wheres.push("s.enabled = TRUE");
+  }
+
+  if (filter.categoryId) {
+    wheres.push("s.category_id = ?");
+    params.push(filter.categoryId);
+  }
+
+  let tagJoin = "";
+  if (filter.tag) {
+    tagJoin = "JOIN site_tags st ON st.site_id = s.id JOIN tags t ON t.id = st.tag_id LEFT JOIN tag_aliases ta ON ta.tag_id = t.id";
+    wheres.push("(t.slug = ? OR t.name = ? OR ta.alias = ?)");
+    params.push(filter.tag, filter.tag, filter.tag);
+  }
+
+  const sqlText = `
+    SELECT sf.facet_key, sf.facet_value, COUNT(DISTINCT s.id) AS cnt
+      FROM site_facets sf
+      JOIN sites s ON s.id = sf.site_id
+      ${tagJoin}
+     WHERE ${wheres.join(" AND ")}
+     GROUP BY sf.facet_key, sf.facet_value
+     ORDER BY sf.facet_key ASC, cnt DESC
+  `;
+
+  const rows = await repo.raw(sqlText, params) as Array<{ facet_key: string; facet_value: string; cnt: number | string }>;
+  const countMap = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    const k = String(r.facet_key).toLowerCase();
+    const v = String(r.facet_value).toLowerCase();
+    const c = Number(r.cnt ?? 0);
+    if (!countMap.has(k)) countMap.set(k, new Map());
+    countMap.get(k)!.set(v, c);
+  }
+
+  const result: FacetGroupSummary[] = [];
+
+  // 1. 遍历标准受控分面
+  for (const def of CONTROLLED_FACETS) {
+    const counts = countMap.get(def.key) ?? new Map();
+    const options: FacetOptionCount[] = def.options.map((opt) => ({
+      value: opt.value,
+      label: opt.label,
+      labelEn: opt.labelEn,
+      count: counts.get(opt.value) ?? 0,
+    }));
+
+    // 收集非受控自定候选值（如有）
+    for (const [val, cnt] of counts.entries()) {
+      if (!def.options.some((o) => o.value === val)) {
+        options.push({ value: val, label: val, count: cnt });
+      }
+    }
+
+    result.push({
+      key: def.key,
+      label: def.label,
+      labelEn: def.labelEn,
+      description: def.description,
+      options,
+    });
+  }
+
+  // 2. 遍历动态新增的扩展分面
+  for (const [k, counts] of countMap.entries()) {
+    if (CONTROLLED_FACETS.some((def) => def.key === k)) continue;
+    const options: FacetOptionCount[] = [];
+    for (const [val, cnt] of counts.entries()) {
+      options.push({ value: val, label: val, count: cnt });
+    }
+    result.push({
+      key: k,
+      label: k,
+      options,
+    });
+  }
+
+  return result;
+}
+

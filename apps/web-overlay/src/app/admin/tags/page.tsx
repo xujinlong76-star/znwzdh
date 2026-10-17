@@ -13,6 +13,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { hubGet, hubSend } from '@/lib/navhub-api'
@@ -75,9 +76,16 @@ export default function AdminTagsPage() {
             支持正交维度分组（Topic / Platform / Pricing / Scene）与 SKOS 规范别名归一化（altLabels）。
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-          {loading ? '刷新中…' : '刷新'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Link href="/admin/facets">
+            <Button size="sm" variant="ghost" className="text-xs">
+              分面属性治理 →
+            </Button>
+          </Link>
+          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
+            {loading ? '刷新中…' : '刷新'}
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">

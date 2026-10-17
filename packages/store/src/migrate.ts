@@ -79,6 +79,10 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS events_identity_idx ON events(identity)",
     // 标签概念别名索引
     "CREATE INDEX IF NOT EXISTS tag_aliases_tag_idx ON tag_aliases(tag_id)",
+    // 分面属性表与索引 (Taxonomy Phase 2)
+    "CREATE TABLE IF NOT EXISTS site_facets (site_id TEXT NOT NULL, facet_key TEXT NOT NULL, facet_value TEXT NOT NULL, PRIMARY KEY (site_id, facet_key, facet_value))",
+    "CREATE INDEX IF NOT EXISTS site_facets_key_val_idx ON site_facets(facet_key, facet_value)",
+    "CREATE INDEX IF NOT EXISTS site_facets_site_idx ON site_facets(site_id)",
   ];
   for (const sqlText of statements) {
     try {

@@ -10,6 +10,7 @@ import {
   type SiteLiveMetrics,
   type SiteRelation,
   type SiteStatus,
+  type FacetGroupSummary,
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
 import type {
@@ -149,7 +150,7 @@ export class Repository {
 
   /* ------------------------- 站点 ------------------------- */
 
-  async listSites(filter: { categoryId?: string; status?: SiteStatus; limit?: number; offset?: number; source?: string } = {}): Promise<Site[]> {
+  async listSites(filter: { categoryId?: string; status?: SiteStatus; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {
     return sitesRepo.listSites(this, filter);
   }
 
@@ -208,6 +209,22 @@ export class Repository {
 
   async setSiteTags(siteId: string, tagNames: string[]): Promise<void> {
     return sitesRepo.setSiteTags(this, siteId, tagNames);
+  }
+
+  async setSiteFacets(siteId: string, facets: Record<string, string[] | string | null | undefined>): Promise<void> {
+    return sitesRepo.setSiteFacets(this, siteId, facets);
+  }
+
+  async getSiteFacets(siteId: string): Promise<Record<string, string[]>> {
+    return sitesRepo.getSiteFacets(this, siteId);
+  }
+
+  async filterSiteIdsByFacets(facets: Record<string, string[] | string | null | undefined>): Promise<string[]> {
+    return sitesRepo.filterSiteIdsByFacets(this, facets);
+  }
+
+  async listFacetsSummary(filter?: { categoryId?: string; tag?: string }): Promise<FacetGroupSummary[]> {
+    return sitesRepo.listFacetsSummary(this, filter);
   }
 
   /** @internal repository/* 域函数使用 */

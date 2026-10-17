@@ -26,6 +26,7 @@ export interface SiteInput {
   relations?: SiteRelation[];
   liveMetrics?: SiteLiveMetrics;
   workspaces?: string[];
+  facets?: Record<string, string[]>;
   metadata?: Record<string, unknown>;
 }
 
@@ -195,6 +196,18 @@ export interface TagAliasRecord {
   alias: string;
   tagId: string;
   createdAt: number;
+}
+
+export interface SiteFacetRecord {
+  siteId: string;
+  facetKey: string;
+  facetValue: string;
+}
+
+export interface FacetCountRecord {
+  facetKey: string;
+  facetValue: string;
+  count: number;
 }
 
 export interface MaintenanceStatus {

@@ -162,7 +162,10 @@ function SignInContent() {
           </p>
         </div>
         <div className="relative z-20 mt-auto pt-6 border-t border-white/10 flex items-center justify-between text-xs text-zinc-400">
-          <span>&copy; {new Date().getFullYear()} NavSphere Team</span>
+          {/* 年份由客户端时钟计算：客户端组件在 SSR 与 hydrate 各算一次，
+              跨年边界（或时区差）会得到不同文本 → 水合文本不一致告警。
+              年份是装饰性内容，单点抑制即可（改为挂载后计算会闪一下）。 */}
+          <span suppressHydrationWarning>&copy; {new Date().getFullYear()} NavSphere Team</span>
           <Link href="/" className="inline-flex items-center gap-1 hover:text-white transition-colors">
             <ArrowLeft className="w-3 h-3" />
             返回前台首页

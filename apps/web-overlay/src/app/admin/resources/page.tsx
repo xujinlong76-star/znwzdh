@@ -41,6 +41,7 @@ import {
   FormMessage,
 } from "@/registry/new-york/ui/form"
 import { Toaster } from "@/registry/new-york/ui/toaster"
+import { copyFailureToast, copyText } from "@/lib/clipboard"
 
 const Icons = {
   loader2: Loader2,
@@ -348,18 +349,21 @@ export default function ResourceManagement() {
     });
   };
 
-  const copyToClipboard = (url: string) => {
-    navigator.clipboard.writeText(url).then(() => {
+  // 走统一的 copyText：原来直接 `navigator.clipboard.writeText(url).then(...)`，
+  // 非安全上下文（http:// 局域网 IP）下 `navigator.clipboard` 根本不存在，
+  // 取 `.writeText` 会先抛一个同步 TypeError —— `.catch` 接不到，页面一声不吭。
+  const copyToClipboard = async (url: string) => {
+    const result = await copyText(url);
+    if (result.ok) {
       toast({
         title: "成功",
         description: "链接已复制到剪贴板",
       });
-    }).catch((error) => {
-      toast({
-        title: "错误",
-        description: "复制链接失败",
-        variant: "destructive",
-      });
+      return;
+    }
+    toast({
+      ...copyFailureToast(result),
+      variant: "destructive",
     });
   };
 

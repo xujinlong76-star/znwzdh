@@ -2,12 +2,14 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { FileText, Eye, Edit3, Copy, Check } from 'lucide-react'
+import { copyText } from '@/lib/clipboard'
 
 export function NotesWidget() {
   const [content, setContent] = useState('')
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved')
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
@@ -42,17 +44,20 @@ export function NotesWidget() {
     }, 600)
   }
 
-  const handleCopy = () => {
-    if (!content) return
-    // clipboard API 在非安全上下文（http:// 局域网 IP）或权限被拒时会 reject，
-    // 不接 catch 会变成未处理的 Promise 拒绝，污染控制台
-    navigator.clipboard?.writeText(content).then(
-      () => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      },
-      () => setSaveStatus('saved') // 复制失败时静默保持现状，不抛错
-    )
+  // 复制必须**先确认真写进去了**。原来写的是
+  //   navigator.clipboard?.writeText(content).then(成功, () => setSaveStatus('saved'))
+  // —— 环境不支持时 `?.` 让整条链短路，写入被拒时失败分支只是把「自动已存」重设一遍：
+  // 两种情况下用户点了复制都毫无反应，也得不到任何原因。
+  const handleCopy = async () => {
+    const result = await copyText(content)
+    if (!result.ok) {
+      setCopied(false)
+      setCopyError(result.reason)
+      return
+    }
+    setCopyError(null)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   // 极简轻量 Markdown 渲染器
@@ -199,6 +204,11 @@ export function NotesWidget() {
           />
           <span className="font-mono">{saveStatus === 'saved' ? '自动已存' : '正在保存...'}</span>
         </div>
+        {copyError && (
+          <span role="status" title={copyError} className="text-destructive">
+            复制失败
+          </span>
+        )}
         <div className="font-mono text-muted-foreground/70">
           {content.length} 字符 · {content.split('\n').filter(Boolean).length} 行
         </div>

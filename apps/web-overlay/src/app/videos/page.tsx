@@ -28,8 +28,8 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     // 只写页面名：根 layout 的 title.template 会统一追加站点名
-    title: 'Videos',
-    description: 'Video Navigation',
+    title: '视频中心',
+    description: '按分类浏览视频内容，选择后进入站内播放页',
     keywords: 'Bilibili, YouTube, Videos',
     icons: {
       icon: siteData.appearance.favicon,

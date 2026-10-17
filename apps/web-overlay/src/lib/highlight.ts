@@ -30,12 +30,18 @@ export function highlightParts(text: string, query: string): HighlightSegment[] 
     .sort((a, b) => b.length - a.length)
     .join("|")
 
+  // `u` 让代理对（emoji 等增补平面字符）作为一个整体匹配，避免把一对代理项劈成两半
+  // 渲染出 U+FFFD。但查询里若混入孤立代理项，`u` 模式构造时就会抛异常 —— 那就退回不带 `u`。
   let re: RegExp
   try {
-    re = new RegExp("(" + pattern + ")", "gi")
+    re = new RegExp("(" + pattern + ")", "giu")
   } catch {
-    // 转义后理应不可能失败；高亮是锦上添花，失败时原样返回不阻断展示
-    return [{ text, hit: false }]
+    try {
+      re = new RegExp("(" + pattern + ")", "gi")
+    } catch {
+      // 转义后理应不可能失败；高亮是锦上添花，失败时原样返回不阻断展示
+      return [{ text, hit: false }]
+    }
   }
 
   const out: HighlightSegment[] = []

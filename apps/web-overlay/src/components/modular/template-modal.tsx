@@ -27,7 +27,7 @@ export function TemplateModal({ isOpen, onClose, onApplyTemplate }: TemplateModa
               <p className="text-xs text-muted-foreground">根据你的角色偏好快速切换最佳模块组合</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" aria-label="关闭" title="关闭" onClick={onClose}>
             <X className="w-4 h-4" />
           </Button>
         </div>

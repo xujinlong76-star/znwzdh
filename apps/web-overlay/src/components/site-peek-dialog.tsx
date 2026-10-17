@@ -215,6 +215,8 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                   <Button
                     variant="ghost"
                     size="icon"
+                    aria-label="访问该站点"
+                    title="访问该站点"
                     className="h-6.5 w-6.5 shrink-0 rounded-lg hover:bg-muted"
                     onClick={() => {
                       if (!isSafeHttpUrl(rel.targetUrl)) return

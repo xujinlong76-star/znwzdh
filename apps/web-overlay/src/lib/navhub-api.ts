@@ -355,30 +355,45 @@ export interface HubFavorite {
   site: HubSite | null
 }
 
-export async function listFavorites(identity: string): Promise<{ items: HubFavorite[]; folders: Array<{ id: string; name: string }> }> {
-  try {
-    return await getJson('/api/favorites?anonId=' + encodeURIComponent(identity), undefined, anonHeaders(identity))
-  } catch {
-    return { items: [], folders: [] }
-  }
+/** 云端收藏接口的返回形状（listFavorites / 同步结果共用） */
+export interface HubFavoritesPayload {
+  items: HubFavorite[]
+  folders: Array<{ id: string; name: string }>
 }
 
-export async function addFavorite(identity: string, siteId: string): Promise<boolean> {
-  try {
-    await sendJson('/api/favorites?anonId=' + encodeURIComponent(identity), 'POST', { siteId }, undefined, anonHeaders(identity))
-    return true
-  } catch {
-    return false
-  }
+export async function listFavorites(identity: string, onDegraded?: DegradedHandler): Promise<HubFavoritesPayload> {
+  return degrade<HubFavoritesPayload>(
+    { items: [], folders: [] },
+    () =>
+      getJson<HubFavoritesPayload>(
+        '/api/favorites?anonId=' + encodeURIComponent(identity),
+        undefined,
+        anonHeaders(identity),
+      ),
+    onDegraded,
+  )
 }
 
-export async function removeFavorite(identity: string, siteId: string): Promise<boolean> {
-  try {
-    await sendJson('/api/favorites/' + encodeURIComponent(siteId) + '?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
-    return true
-  } catch {
-    return false
-  }
+export async function addFavorite(identity: string, siteId: string, onDegraded?: DegradedHandler): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson('/api/favorites?anonId=' + encodeURIComponent(identity), 'POST', { siteId }, undefined, anonHeaders(identity))
+      return true
+    },
+    onDegraded,
+  )
+}
+
+export async function removeFavorite(identity: string, siteId: string, onDegraded?: DegradedHandler): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson('/api/favorites/' + encodeURIComponent(siteId) + '?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
+      return true
+    },
+    onDegraded,
+  )
 }
 
 /* ------------------------------ 搜索历史 ------------------------------ */

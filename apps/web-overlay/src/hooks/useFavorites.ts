@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { addFavorite, listFavorites, removeFavorite, type HubFavorite } from '@/lib/navhub-api'
+import { describeDegrade } from '@/lib/degrade'
 import { getIdentity } from '@/lib/identity'
 
 const KEY = 'navhub.favorites.v1'
@@ -127,16 +128,86 @@ export function useFavorites(): FavoritesApi {
 }
 
 /**
- * 登录后调用一次：把本地收藏合并到云端（并集，createdAt 新者胜），
- * 返回合并后的云端收藏列表。未登录 / 中枢不可用时返回 null。
+ * 登录后调用一次：把本地收藏合并到云端（并集，createdAt 新者胜）。
+ *
+ * 返回值刻意不是「数组或 null」——那让调用方无法区分两件事：
+ *   - 云端**确实**没有收藏（空数组，正常）
+ *   - 根本没同步成功（浏览器里的收藏还没上去，用户以为已经在云端了）
+ * 旧实现两者都返回 `[]`/`null` 且**完全静默**，于是：
+ *   1. 中枢不可达时仍会为**每一条**本地收藏各发一次请求，每次都要等满超时
+ *      （收藏 30 个站 + 中枢已停 = 页面卡在「同步」状态十几分钟，毫无提示）；
+ *   2. 用户换设备登录发现收藏全没了 —— 才意识到从没同步成功过。
+ *
+ * 因此这里：首条推送失败即中止（同一时刻的中枢故障是共因，继续推只是重复等待），
+ * 并把「同步了几条 / 失败原因 / 值不值得重试」如实交回调用方。
  */
-export async function syncFavoritesToCloud(): Promise<HubFavorite[] | null> {
-  const identity = getIdentity()
-  if (!identity) return null
+export interface CloudSyncResult {
+  /** 整条链路没有出错 */
+  ok: boolean
+  /** 本机收藏条数 */
+  localCount: number
+  /** 本次成功推到云端的条数 */
+  pushed: number
+  /** 合并后的云端收藏；**失败时为 null**（空数组表示云端确实没有收藏） */
+  cloud: HubFavorite[] | null
+  /** 失败原因（可直接渲染）；ok 时为 undefined */
+  error?: string
+  /** 是否值得给用户一个「重试」 */
+  retryable: boolean
+}
+
+export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
   const local = loadLocal()
-  for (const f of local) {
-    await addFavorite(identity, f.siteId)
+  const identity = getIdentity()
+  if (!identity) {
+    return {
+      ok: false,
+      localCount: local.length,
+      pushed: 0,
+      cloud: null,
+      error: '未登录：收藏只保存在本机浏览器',
+      retryable: false,
+    }
   }
-  const cloud = await listFavorites(identity)
-  return cloud.items
+
+  const failure: { message?: string; retryable: boolean } = { retryable: true }
+  const onFail = (error: unknown) => {
+    const notice = describeDegrade(error, '云端收藏')
+    failure.message = notice.message
+    failure.retryable = notice.retryable
+  }
+
+  let pushed = 0
+  for (const f of local) {
+    const ok = await addFavorite(identity, f.siteId, onFail)
+    // 首条就失败时继续推没有意义：同一次中枢故障会让每条都等满超时
+    if (!ok) break
+    pushed++
+  }
+
+  if (failure.message) {
+    return {
+      ok: false,
+      localCount: local.length,
+      pushed,
+      cloud: null,
+      error: failure.message,
+      retryable: failure.retryable,
+    }
+  }
+
+  let cloudFailed = false
+  const list = await listFavorites(identity, (error) => {
+    cloudFailed = true
+    onFail(error)
+  })
+
+  return {
+    ok: !cloudFailed,
+    localCount: local.length,
+    pushed,
+    cloud: cloudFailed ? null : list.items,
+    error: failure.message,
+    retryable: failure.retryable,
+  }
 }

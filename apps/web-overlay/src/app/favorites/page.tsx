@@ -6,13 +6,13 @@
  * （同步失败只提示，不影响本地数据）。
  */
 
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { FavoriteButton } from '@/components/favorite-button'
-import { useFavorites, syncFavoritesToCloud } from '@/hooks/useFavorites'
+import { useFavorites, syncFavoritesToCloud, type CloudSyncResult } from '@/hooks/useFavorites'
 import { getIdentity } from '@/lib/identity'
 import {
   encryptVault,
@@ -20,12 +20,16 @@ import {
   type VaultItem,
   type EncryptedVaultPayload,
 } from '@/lib/vault'
-import { Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff } from 'lucide-react'
+import { Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff, RefreshCw, CloudOff } from 'lucide-react'
 
 export default function FavoritesPage() {
   const favorites = useFavorites()
   const [syncNote, setSyncNote] = useState<string | null>(null)
   const [syncStatus, setSyncStatus] = useState<'success' | 'error' | 'info'>('info')
+  // 云端同步是一条会失败的链路，必须有独立状态：同步失败时用户最需要的
+  // 是「收藏还在本机，换设备看不到」这个事实，而不是一片沉默。
+  const [cloudResult, setCloudResult] = useState<CloudSyncResult | null>(null)
+  const [syncingCloud, setSyncingCloud] = useState(false)
   const [importText, setImportText] = useState('')
   const [showImport, setShowImport] = useState(false)
 
@@ -41,16 +45,18 @@ export default function FavoritesPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 登录用户：进页面时尝试把本地收藏合并到云端
+  const runCloudSync = useCallback(async () => {
+    setSyncingCloud(true)
+    const result = await syncFavoritesToCloud()
+    setCloudResult(result)
+    setSyncingCloud(false)
+  }, [])
+
   useEffect(() => {
     const identity = getIdentity()
     if (!identity || identity.startsWith('anon-')) return
-    void syncFavoritesToCloud().then((cloud) => {
-      if (cloud && cloud.length > 0) {
-        setSyncNote('已与云端同步 ' + cloud.length + ' 条收藏')
-        setSyncStatus('success')
-      }
-    })
-  }, [])
+    void runCloudSync()
+  }, [runCloudSync])
 
   const handleExportPlain = () => {
     const blob = new Blob([favorites.exportJson()], { type: 'application/json' })
@@ -275,6 +281,48 @@ export default function FavoritesPage() {
             </div>
           </div>
         </div>
+
+        {/* 云端同步状态：失败必须说出来，否则用户以为换设备也能看到 */}
+        {(syncingCloud || cloudResult) && (
+          <div
+            className={`mb-6 p-3 rounded-lg border text-xs flex flex-wrap items-center gap-2 ${
+              syncingCloud
+                ? 'bg-muted border-border text-muted-foreground'
+                : cloudResult?.ok
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                : 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400'
+            }`}
+          >
+            {syncingCloud ? (
+              <RefreshCw className="w-4 h-4 flex-shrink-0 animate-spin" />
+            ) : cloudResult?.ok ? (
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+            ) : (
+              <CloudOff className="w-4 h-4 flex-shrink-0" />
+            )}
+            <span className="flex-1 min-w-0">
+              {syncingCloud
+                ? '正在与云端同步收藏…'
+                : cloudResult?.ok
+                ? cloudResult.pushed > 0
+                  ? `已把本机 ${cloudResult.pushed} 条收藏合并到云端` +
+                    (cloudResult.cloud ? `（云端共 ${cloudResult.cloud.length} 条）` : '')
+                  : `云端同步正常` + (cloudResult.cloud ? `（云端 ${cloudResult.cloud.length} 条）` : '')
+                : `云端同步失败：${cloudResult?.error ?? '未知原因'}。收藏已保存在本机浏览器，换设备登录可能看不到。`}
+            </span>
+            {!syncingCloud && cloudResult && !cloudResult.ok && cloudResult.retryable && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs rounded-lg gap-1.5"
+                onClick={() => void runCloudSync()}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                重试同步
+              </Button>
+            )}
+          </div>
+        )}
 
         {syncNote && (
           <div

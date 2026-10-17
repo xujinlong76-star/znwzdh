@@ -14,6 +14,7 @@ import {
 import { identityOf } from "./shared.ts";
 
 import { privatizeVector, rankItemsWithPrivacy } from "@navhub/core";
+import { parsePagination } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -24,7 +25,7 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   /** 热度榜（trend_score 由 recompute_rank 任务重算） */
   app.get("/api/rank/trending", { config: { cache: { maxAge: 60, etag: true } } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
-    const limit = Math.min(Number(q.limit) || 20, 100);
+    const { limit } = parsePagination(q, { defaultLimit: 20, maxLimit: 100 });
     const sites = await ctx.repo.hotSites(limit);
     return {
       hits: sites.map((s) => ({
@@ -38,7 +39,7 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   /** 新品榜 */
   app.get("/api/rank/new", { config: { cache: { maxAge: 60, etag: true } } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
-    const limit = Math.min(Number(q.limit) || 20, 100);
+    const { limit } = parsePagination(q, { defaultLimit: 20, maxLimit: 100 });
     return { hits: (await ctx.repo.newestSites(limit)).map((s) => ({ site: s })) };
   });
 
@@ -46,7 +47,7 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   app.get("/api/rank/similar/:siteId", async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
     const q = (req.query ?? {}) as Record<string, string>;
-    const limit = Math.min(Number(q.limit) || 6, 20);
+    const { limit } = parsePagination(q, { defaultLimit: 6, maxLimit: 20 });
     if (!ctx.embedding || !ctx.vectors) {
       return { hits: [], semanticAvailable: false, reason: "语义检索不可用" };
     }
@@ -72,7 +73,7 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   app.get("/api/rank/alternatives/:siteId", { config: { scope: "public" } }, async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
     const q = (req.query ?? {}) as Record<string, string>;
-    const limit = Math.min(Number(q.limit) || 6, 20);
+    const { limit } = parsePagination(q, { defaultLimit: 6, maxLimit: 20 });
 
     const targetSite = await ctx.repo.getSite(siteId);
     if (!targetSite) {
@@ -169,13 +170,13 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    */
   app.post("/api/rank/federated", { config: { scope: "public" } }, async (req, reply) => {
     const body = z.object({
-      localVector: z.array(z.number()),
-      globalVector: z.array(z.number()).optional(),
+      localVector: z.array(z.number()).max(1024),
+      globalVector: z.array(z.number()).max(1024).optional(),
       candidates: z.array(z.object({
         id: z.string(),
         name: z.string(),
-        featureVector: z.array(z.number()),
-      })).optional(),
+        featureVector: z.array(z.number()).max(1024),
+      })).max(200).optional(),
       personalWeight: z.number().min(0).max(1).default(0.6),
       privatize: z.boolean().default(false),
       epsilon: z.number().positive().default(1.0),

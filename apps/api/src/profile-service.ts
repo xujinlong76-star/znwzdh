@@ -19,6 +19,32 @@ const THROTTLE_MS = 60_000;
 
 const lastRefresh = new Map<string, number>();
 
+/**
+ * 节流表容量上限。
+ *
+ * 身份多为匿名 id（每次清空 localStorage 就是新身份），逐条 reset 不现实，
+ * 所以只能在写入路径上惰性淘汰：满了先清过期的，仍满再按插入顺序丢最旧的一批
+ * （Map 保持插入顺序 ≈ 最久未被刷新的身份）。没有这一步，长期运行的表会一直涨。
+ */
+export const THROTTLE_MAX_ENTRIES = 10_000;
+
+/** 测试用：当前节流表条目数 */
+export function profileThrottleSize(): number {
+  return lastRefresh.size;
+}
+
+function evictThrottle(now: number): void {
+  if (lastRefresh.size < THROTTLE_MAX_ENTRIES) return;
+  for (const [key, at] of lastRefresh) {
+    if (now - at >= THROTTLE_MS) lastRefresh.delete(key);
+  }
+  let overflow = lastRefresh.size - THROTTLE_MAX_ENTRIES + 1;
+  for (const key of lastRefresh.keys()) {
+    if (overflow-- <= 0) break;
+    lastRefresh.delete(key);
+  }
+}
+
 export function isProfileStale(identity: string, now: number = Date.now()): boolean {
   const last = lastRefresh.get(identity) ?? 0;
   return now - last >= THROTTLE_MS;
@@ -32,6 +58,7 @@ export async function refreshUserProfile(ctx: AppContext, identity: string): Pro
   if (!identity) return false;
   const now = Date.now();
   if (!isProfileStale(identity, now)) return false;
+  evictThrottle(now);
   lastRefresh.set(identity, now);
 
   try {

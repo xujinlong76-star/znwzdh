@@ -80,7 +80,9 @@ export function extractFaviconMonogram(title: string, url?: string): string {
       if (host.length > 0 && /[a-zA-Z0-9]/.test(host[0]!)) {
         return host[0]!.toUpperCase()
       }
-    } catch {}
+    } catch {
+      // 地址解析不出来就落到下面的默认首字母：这个函数承诺「永远返回一个字母」
+    }
   }
 
   return 'N'

@@ -45,7 +45,9 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
           setHyperbolicAlts(data.hits)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        // 「相似站点推荐」是 peek 弹窗里的加料：拉不到就只显示站点本身，不报错也不留空提示
+      })
     return () => {
       cancelled = true
     }

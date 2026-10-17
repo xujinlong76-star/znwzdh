@@ -42,16 +42,23 @@ export function pinSiteToWorkbench(site: PinSitePayload): { ok: boolean; message
   try {
     // 1. 同步加入到 favorites 存储
     let favoritesList: any[] = []
+    let favoritesReadable = true
     const favRaw = localStorage.getItem(FAVORITES_STORAGE_KEY)
     if (favRaw) {
       try {
         const parsed = JSON.parse(favRaw)
         if (Array.isArray(parsed)) favoritesList = parsed
-      } catch {}
+        else favoritesReadable = false
+      } catch (err) {
+        // 读不出来**绝不**当作「空收藏」继续写：下面那个 unshift 会把「只有这一条」的
+        // 列表整个存回去，用户原有的收藏就被无声清空了。宁可这次不写，也不能覆盖掉。
+        favoritesReadable = false
+        console.warn('本地收藏读取失败，为免覆盖既有数据已跳过本次收藏写入', err)
+      }
     }
 
-    const alreadyInFav = favoritesList.some((item) => item.siteId === site.siteId)
-    if (!alreadyInFav) {
+    const alreadyInFav = favoritesReadable && favoritesList.some((item) => item.siteId === site.siteId)
+    if (favoritesReadable && !alreadyInFav) {
       favoritesList.unshift({
         siteId: site.siteId,
         title: site.title,
@@ -96,8 +103,10 @@ export function pinSiteToWorkbench(site: PinSitePayload): { ok: boolean; message
 
     return {
       ok: true,
-      message: `已将「${site.title}」固定到模块化工作台快捷启动坞`,
-      addedToFavorites: !alreadyInFav,
+      message: favoritesReadable
+        ? `已将「${site.title}」固定到模块化工作台快捷启动坞`
+        : `已将「${site.title}」固定到启动坞；本地收藏数据无法读取，为避免覆盖已跳过收藏`,
+      addedToFavorites: favoritesReadable && !alreadyInFav,
     }
   } catch (error) {
     console.error('固定站点到工作台失败', error)

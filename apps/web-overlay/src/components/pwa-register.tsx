@@ -33,7 +33,9 @@ export function PwaRegister() {
           for (const registration of registrations) {
             void registration.unregister()
           }
-        }).catch(() => undefined)
+        }).catch(() => {
+          // 开发环境注销残留 SW 的顺手操作：失败无需处理，也不影响生产逻辑
+        })
       }
       return
     }

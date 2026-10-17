@@ -471,7 +471,10 @@ export function useModularLayout() {
         setBoards(nextBoards)
         return true
       }
-    } catch {}
+    } catch {
+      // 导入文本不是合法 JSON（或结构认不出来）：返回 false，
+      // 调用方据此提示「格式不正确」—— 这不是静默吞掉，而是失败经由返回值上报
+    }
     return false
   }, [])
 

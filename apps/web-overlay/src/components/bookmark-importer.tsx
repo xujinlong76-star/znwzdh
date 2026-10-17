@@ -40,7 +40,10 @@ export function BookmarkImporter() {
           setCategories(data.map((c: any) => ({ id: c.id, label: (c.icon ? c.icon + " " : "") + c.title })))
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        // 分类下拉只是「选填」数据源：拉不到就保持空列表（仍可留空或手输），
+        // 导入流程本身不依赖它，所以不打断也不打扰
+      })
   }, [])
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {

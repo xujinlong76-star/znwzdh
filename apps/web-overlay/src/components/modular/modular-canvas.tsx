@@ -81,7 +81,9 @@ export function ModularCanvas() {
       if (savedBg && ['dots', 'grid', 'aurora', 'clean'].includes(savedBg)) {
         setCanvasBg(savedBg as any)
       }
-    } catch {}
+    } catch {
+      // 读不到就沿用默认画布背景：纯外观偏好，不值得打扰用户
+    }
   }, [])
 
   // 画布背景风格切换
@@ -89,7 +91,9 @@ export function ModularCanvas() {
     setCanvasBg(bg)
     try {
       localStorage.setItem('navhub_modular_bg_style', bg)
-    } catch {}
+    } catch {
+      // 写盘失败只影响「下次打开还记得」：本次切换已经生效
+    }
   }
 
   // 打开模块配置弹窗（useCallback：传给 memo 化的 ModularItem）

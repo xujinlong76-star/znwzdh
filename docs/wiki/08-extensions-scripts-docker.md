@@ -143,7 +143,7 @@ extensions/
 
 scripts/
 ├── run.mjs  run.ps1                  pnpm 定位器（node / powershell）
-├── vendor-web.mjs  vendor-web.ps1    拉取上游底座
+├── vendor-web.mjs                     拉取上游底座
 ├── sync-web-overlay.mjs              反向同步 overlay（唯一事实源）
 ├── check-web-overlay.mjs             一致性漂移检查（CI 可加）
 ├── gen-pwa-icons.mjs                 PWA 图标栅格化

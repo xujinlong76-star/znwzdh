@@ -10,6 +10,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { hubGet } from '@/lib/navhub-api'
+import { describeDegrade } from '@/lib/degrade'
 
 interface AuditItem {
   id: number
@@ -57,19 +58,36 @@ export default function AdminAuditPage() {
   const [action, setAction] = useState('')
   const [actor, setActor] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
+  const [loadError, setLoadError] = useState<unknown>(null)
 
   const load = useCallback((offset: number) => {
     const params = new URLSearchParams({ limit: '50' })
     if (offset > 0) params.set('offset', String(offset))
     if (action) params.set('action', action)
     if (actor) params.set('actor', actor)
-    void hubGet<AuditResponse>('/api/hub/admin/audit?' + params.toString()).then((d) => {
-      setItems((prev) => (offset === 0 ? d.items : [...prev, ...d.items]))
-      setHasMore(d.hasMore)
-      setActions(d.actions)
-      setLoading(false)
-    })
+    // 必须自己兜住失败：原来这里是裸的 .then()，中枢挂掉时
+    // setLoading(false) 永远不会执行 —— 页面就永远停在「加载中…」，
+    // 用户既看不到原因，也没有重试入口。
+    void (async () => {
+      try {
+        const d = await hubGet<AuditResponse>('/api/hub/admin/audit?' + params.toString())
+        setItems((prev) => (offset === 0 ? d.items : [...prev, ...d.items]))
+        setHasMore(d.hasMore)
+        setActions(d.actions)
+        setLoadError(null)
+      } catch (error) {
+        setLoadError(error)
+      } finally {
+        setLoading(false)
+      }
+    })()
   }, [action, actor])
+
+  const retry = () => {
+    setLoading(true)
+    setItems([])
+    load(0)
+  }
 
   // 换筛选条件 = 回到第一页
   useEffect(() => {
@@ -77,6 +95,8 @@ export default function AdminAuditPage() {
     setItems([])
     load(0)
   }, [load])
+
+  const notice = loadError === null ? null : describeDegrade(loadError)
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -111,10 +131,25 @@ export default function AdminAuditPage() {
 
       {loading ? (
         <div className="text-muted-foreground text-sm">加载中…</div>
+      ) : notice && items.length === 0 ? (
+        <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+          <p>{notice.message}</p>
+          <p className="mt-1 text-xs">审计记录并未被删除，只是这次没取到。</p>
+          {notice.retryable && (
+            <Button size="sm" variant="outline" className="mt-3" onClick={retry}>
+              重试
+            </Button>
+          )}
+        </div>
       ) : items.length === 0 ? (
         <div className="text-muted-foreground text-sm">暂无审计记录</div>
       ) : (
         <>
+          {notice && (
+            <div className="mb-3 rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              {notice.message} 已加载的记录仍然可用，可点「加载更多」重试。
+            </div>
+          )}
           <div className="rounded-md border">
             <table className="w-full text-sm">
               <thead>

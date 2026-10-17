@@ -15,6 +15,8 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { ExternalLink, ArrowLeft, Copy, Check, Sparkles, Activity } from 'lucide-react'
 import { fetchSite, fetchSimilar, type HubSite } from '@/lib/navhub-api'
+import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
+import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
 
 export default function SiteDetailPage() {
@@ -25,6 +27,15 @@ export default function SiteDetailPage() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [copied, setCopied] = useState(false)
+  /**
+   * 中枢故障 ≠ 站点不存在。
+   * 以前 fetchSite 把失败吞成 null，页面就把「中枢连不上」说成
+   * 「站点不存在或已被收录源清理」—— 用户以为是数据问题，其实是服务挂了。
+   */
+  const [notice, setNotice] = useState<DegradeNotice | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  const reload = () => setReloadToken((n) => n + 1)
 
   const handleCopyUrl = () => {
     if (!site?.url) return
@@ -35,24 +46,58 @@ export default function SiteDetailPage() {
 
   useEffect(() => {
     if (!id) return
+    let cancelled = false
+    let failed = false
     setLoading(true)
-    void fetchSite(id).then((s) => {
+    setNotFound(false)
+    setNotice(null)
+    void fetchSite(id, (error) => {
+      failed = true
+      if (!cancelled) setNotice(describeDegrade(error, '站点数据'))
+    }).then((s) => {
+      if (cancelled) return
       setSite(s)
-      if (!s) setNotFound(true)
+      // 只有「请求成功但没有这条记录」才是真不存在
+      if (!s && !failed) setNotFound(true)
       setLoading(false)
     })
-  }, [id])
+    return () => {
+      cancelled = true
+    }
+  }, [id, reloadToken])
 
   useEffect(() => {
     if (!id || !site) return
-    void fetchSimilar(id, 6).then(setSimilar)
-  }, [id, site])
+    let cancelled = false
+    void fetchSimilar(id, 6, (error) => {
+      if (!cancelled) setNotice(describeDegrade(error, '相似推荐'))
+    }).then((s) => {
+      if (!cancelled) setSimilar(s)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [id, site, reloadToken])
 
   if (loading) {
     return (
       <Container>
         <div className="py-24 text-center text-muted-foreground text-sm flex items-center justify-center gap-2">
           <span>加载站点详情中…</span>
+        </div>
+      </Container>
+    )
+  }
+
+  if (!site && notice) {
+    return (
+      <Container>
+        <div className="py-20 text-center space-y-5 max-w-md mx-auto">
+          <p className="text-muted-foreground text-sm">暂时无法加载该站点详情</p>
+          <HubDegradedNotice notice={notice} onRetry={reload} incompleteHint={false} />
+          <Button asChild variant="outline" size="sm" className="text-xs">
+            <Link href="/">返回主站首页</Link>
+          </Button>
         </div>
       </Container>
     )
@@ -86,6 +131,9 @@ export default function SiteDetailPage() {
           <span className="text-border">/</span>
           <span className="text-xs text-foreground font-medium truncate max-w-[200px]">{site.title}</span>
         </div>
+
+        {/* 部分数据降级（如相似推荐拉取失败）也要说出来，别静默吞掉 */}
+        {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
 
         {/* 核心站点展板 */}
         <div className="rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-8 shadow-xs space-y-6">

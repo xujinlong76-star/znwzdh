@@ -13,6 +13,8 @@
  * 绝不把异常抛给 UI——导航站的首屏体验不能依赖中枢可用性。
  */
 
+import { isNotFound, type DegradedHandler } from './degrade'
+
 const BASE = '/api/hub'
 
 /**
@@ -213,6 +215,37 @@ function anonHeaders(identity?: string): Record<string, string> {
 /** 通用 GET / 发送（管理端等自定义端点用；失败抛错，由调用方决定降级） */
 export { getJson as hubGet, sendJson as hubSend }
 
+/**
+ * 触发降级回调。
+ *
+ * 回调是 UI 层代码，可能自己抛错；但「已降级」这个事实不该因此改变，
+ * 降级路径也绝不能把异常抛回调用方（见文件顶部降级原则）。
+ */
+function notifyDegraded(onDegraded: DegradedHandler | undefined, error: unknown): void {
+  try {
+    onDegraded?.(error)
+  } catch {
+    // 忽略：UI 回调的异常不该影响数据兜底
+  }
+}
+
+/**
+ * 降级包装：失败时回调 onDegraded 再返回兜底值。
+ *
+ * 为什么需要回调：`catch { return [] }` 让页面完全看不出「空」是真空还是中枢挂了。
+ * 页面因此把故障渲染成「暂无数据／站点不存在」，用户被误导且没有重试入口
+ * （真实缺陷，见 lib/degrade.ts 顶部注释）。回调把失败事实交回给调用方，
+ * 由调用方决定展示降级提示；不传回调时行为与以前完全一致。
+ */
+async function degrade<T>(fallback: T, run: () => Promise<T>, onDegraded?: DegradedHandler): Promise<T> {
+  try {
+    return await run()
+  } catch (error) {
+    notifyDegraded(onDegraded, error)
+    return fallback
+  }
+}
+
 /* ------------------------------ 检索 ------------------------------ */
 
 export interface SearchParams {
@@ -251,55 +284,64 @@ export function reportClick(siteId: string, identity?: string): void {
 
 /* ------------------------------ 标签 ------------------------------ */
 
-export async function fetchTags(): Promise<HubTag[]> {
-  try {
-    return await getJson<HubTag[]>('/api/tags?minCount=1&limit=100')
-  } catch {
-    return []
-  }
+export async function fetchTags(onDegraded?: DegradedHandler): Promise<HubTag[]> {
+  return degrade([], () => getJson<HubTag[]>('/api/tags?minCount=1&limit=100'), onDegraded)
 }
 
 /* ------------------------------ 榜单 ------------------------------ */
 
-export async function fetchTrending(limit = 20): Promise<HubSite[]> {
-  try {
-    const data = await getJson<{ hits: Array<{ site: HubSite }> }>('/api/rank/trending?limit=' + limit)
-    return data.hits.map((h) => h.site).filter(Boolean)
-  } catch {
-    return []
-  }
+export async function fetchTrending(limit = 20, onDegraded?: DegradedHandler): Promise<HubSite[]> {
+  return degrade(
+    [],
+    async () => {
+      const data = await getJson<{ hits: Array<{ site: HubSite }> }>('/api/rank/trending?limit=' + limit)
+      return data.hits.map((h) => h.site).filter(Boolean)
+    },
+    onDegraded,
+  )
 }
 
-export async function fetchNewSites(limit = 20): Promise<HubSite[]> {
-  try {
-    const data = await getJson<{ hits: Array<{ site: HubSite }> }>('/api/rank/new?limit=' + limit)
-    return data.hits.map((h) => h.site).filter(Boolean)
-  } catch {
-    return []
-  }
+export async function fetchNewSites(limit = 20, onDegraded?: DegradedHandler): Promise<HubSite[]> {
+  return degrade(
+    [],
+    async () => {
+      const data = await getJson<{ hits: Array<{ site: HubSite }> }>('/api/rank/new?limit=' + limit)
+      return data.hits.map((h) => h.site).filter(Boolean)
+    },
+    onDegraded,
+  )
 }
 
-/** 单个站点详情（找不到时返回 null） */
-export async function fetchSite(idOrUrl: string): Promise<HubSite | null> {
+/**
+ * 单个站点详情（找不到时返回 null）。
+ *
+ * 404 是**正常业务结果**（站点确实被清理了），不触发 onDegraded ——
+ * 页面据此显示「站点不存在」；而 5xx / 网络失败会触发回调，
+ * 页面必须改口说「中枢不可用」，绝不能说「站点不存在」。
+ */
+export async function fetchSite(idOrUrl: string, onDegraded?: DegradedHandler): Promise<HubSite | null> {
   try {
     // id 或 URL 都走 /api/sites/:id —— URL 必须先 encodeURIComponent，
     // 否则斜杠会被切成多段导致 404（实测：编码后 200，不编码 404）
     return await getJson<HubSite>('/api/sites/' + encodeURIComponent(idOrUrl))
-  } catch {
+  } catch (error) {
+    if (!isNotFound(error)) notifyDegraded(onDegraded, error)
     return null
   }
 }
 
 /** 相似站点（语义不可用时返回空数组） */
-export async function fetchSimilar(siteId: string, limit = 6): Promise<HubSite[]> {
-  try {
-    const data = await getJson<{ hits: Array<{ site: HubSite }> }>(
-      '/api/rank/similar/' + encodeURIComponent(siteId) + '?limit=' + limit,
-    )
-    return data.hits.map((h) => h.site).filter(Boolean)
-  } catch {
-    return []
-  }
+export async function fetchSimilar(siteId: string, limit = 6, onDegraded?: DegradedHandler): Promise<HubSite[]> {
+  return degrade(
+    [],
+    async () => {
+      const data = await getJson<{ hits: Array<{ site: HubSite }> }>(
+        '/api/rank/similar/' + encodeURIComponent(siteId) + '?limit=' + limit,
+      )
+      return data.hits.map((h) => h.site).filter(Boolean)
+    },
+    onDegraded,
+  )
 }
 
 /* ------------------------------ 收藏夹 ------------------------------ */
@@ -410,18 +452,19 @@ export interface HubCollection {
   updatedAt?: number
 }
 
-export async function fetchCollections(): Promise<HubCollection[]> {
-  try {
-    return await getJson<HubCollection[]>('/api/collections')
-  } catch {
-    return []
-  }
+export async function fetchCollections(onDegraded?: DegradedHandler): Promise<HubCollection[]> {
+  return degrade([], () => getJson<HubCollection[]>('/api/collections'), onDegraded)
 }
 
-export async function fetchCollectionDetail(slug: string): Promise<{ collection: HubCollection; sites: HubSite[] } | null> {
+/** 专题详情：404 = 专题确实不存在（不触发降级回调）；5xx / 网络失败触发 */
+export async function fetchCollectionDetail(
+  slug: string,
+  onDegraded?: DegradedHandler,
+): Promise<{ collection: HubCollection; sites: HubSite[] } | null> {
   try {
     return await getJson<{ collection: HubCollection; sites: HubSite[] }>('/api/collections/' + encodeURIComponent(slug))
-  } catch {
+  } catch (error) {
+    if (!isNotFound(error)) notifyDegraded(onDegraded, error)
     return null
   }
 }

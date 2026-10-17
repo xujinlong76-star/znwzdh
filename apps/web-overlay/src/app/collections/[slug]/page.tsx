@@ -12,6 +12,8 @@ import { Container } from '@/components/ui/container'
 import { FavoriteButton } from '@/components/favorite-button'
 import { Footer } from '@/components/footer'
 import { fetchCollectionDetail, type HubCollection, type HubSite } from '@/lib/navhub-api'
+import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
+import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { ArrowLeft, Layers, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -23,18 +25,38 @@ export default function CollectionDetailPage() {
   const [sites, setSites] = useState<HubSite[]>([])
   const [loading, setLoading] = useState(true)
   const [missing, setMissing] = useState(false)
+  /**
+   * 区分「专题确实下架」（404）与「中枢挂了」（5xx / 网络失败）。
+   * 以前两者都渲染成「专题不存在或已下架」，一次机房抖动就让用户以为专题没了。
+   */
+  const [notice, setNotice] = useState<DegradeNotice | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  const reload = () => setReloadToken((n) => n + 1)
 
   useEffect(() => {
     if (!slug) return
-    void fetchCollectionDetail(slug).then((d: { collection: HubCollection; sites: HubSite[] } | null) => {
-      if (!d) setMissing(true)
-      else {
+    let cancelled = false
+    let failed = false
+    setLoading(true)
+    setMissing(false)
+    setNotice(null)
+    void fetchCollectionDetail(slug, (error) => {
+      failed = true
+      if (!cancelled) setNotice(describeDegrade(error, '专题数据'))
+    }).then((d: { collection: HubCollection; sites: HubSite[] } | null) => {
+      if (cancelled) return
+      if (!d && !failed) setMissing(true)
+      else if (d) {
         setCollection(d.collection)
         setSites(d.sites ?? [])
       }
       setLoading(false)
     })
-  }, [slug])
+    return () => {
+      cancelled = true
+    }
+  }, [slug, reloadToken])
 
   return (
     <Container>
@@ -51,6 +73,11 @@ export default function CollectionDetailPage() {
 
         {loading ? (
           <div className="text-muted-foreground text-sm py-16 text-center">正在加载专题…</div>
+        ) : notice && !collection ? (
+          <div className="py-12 space-y-4 max-w-md mx-auto text-center">
+            <p className="text-muted-foreground text-sm">暂时无法加载该专题</p>
+            <HubDegradedNotice notice={notice} onRetry={reload} incompleteHint={false} />
+          </div>
         ) : missing || !collection ? (
           <div className="text-muted-foreground text-sm py-12 text-center border border-dashed rounded-xl bg-muted/10">
             专题不存在或已下架

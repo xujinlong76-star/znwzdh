@@ -6,6 +6,14 @@
    globals.css 位于 src/styles，../ 即覆盖整个 src 树。 */
 @source '../**/*.{js,ts,jsx,tsx,mdx}';
 
+/* registry = 上游 shadcn 组件副本（dialog / dropdown-menu / sheet …），
+   被根 .gitignore 的 apps/web/src 通配忽略掉；而 v4 的 @source 通配
+   **同样不会**去碰被忽略的路径，于是这些组件独占的工具类不生成。
+   实测（next build 后的 CSS）：少了这条声明时 ring-offset-background、
+   sm:rounded-lg 都没有产物 —— 焦点环外圈没有底色、小屏圆角丢失。
+   单独再声明一条，把 registry 子树纳入扫描。 */
+@source '../registry/**/*.{js,ts,jsx,tsx,mdx}';
+
 @custom-variant dark (&:is(.dark *));
 
 @theme {

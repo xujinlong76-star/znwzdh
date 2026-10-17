@@ -22,6 +22,7 @@ import { AddVideoItemForm } from '../../components/AddVideoItemForm'
 import { Skeleton } from "@/registry/new-york/ui/skeleton"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/registry/new-york/ui/select"
 import { Badge } from "@/registry/new-york/ui/badge"
+import { describeDegrade } from '@/lib/degrade'
 
 interface EditingItem {
     index: number
@@ -73,6 +74,9 @@ export default function VideoItemsPage() {
     const [editingItem, setEditingItem] = useState<EditingItem | null>(null)
     const [deletingItem, setDeletingItem] = useState<EditingItem | null>(null)
     const [isLoading, setIsLoading] = useState(true)
+    // 拉取失败必须能持续显示：失败时 navigation 停在 null，
+    // 页面会渲染成「视频分类不存在」—— 把故障说成「这个分类真的没有」
+    const [loadError, setLoadError] = useState<unknown>(null)
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
 
     useEffect(() => {
@@ -106,13 +110,17 @@ export default function VideoItemsPage() {
 
             const data = await response.json()
             setNavigation(data)
+            setLoadError(null)
         } catch (error) {
             console.error(error)
+            // 原来只弹一个 5 秒的 toast：「获取数据失败」消失之后，
+            // 页面就停在「视频分类不存在」—— 请求失败被说成了「分类真的没有」。
             toast({
                 title: "错误",
-                description: "获取数据失败",
+                description: describeDegrade(error).message,
                 variant: "destructive"
             })
+            setLoadError(error)
         } finally {
             setIsLoading(false)
         }
@@ -219,6 +227,17 @@ export default function VideoItemsPage() {
 
     if (isLoading) {
         return <LoadingSkeleton />
+    }
+
+    if (loadError && !navigation) {
+        const notice = describeDegrade(loadError)
+        return (
+            <div role="status" className="mx-auto max-w-xl rounded-md border border-red-200 bg-red-50 px-6 py-16 text-center dark:border-red-900 dark:bg-red-950/20">
+                <h2 className="mb-2 text-lg font-medium text-red-700 dark:text-red-300">视频分类数据没能加载出来</h2>
+                <p className="mb-6 text-sm text-red-600 dark:text-red-400">{notice.message}</p>
+                <Button variant="outline" onClick={() => void fetchNavigation()}>重试</Button>
+            </div>
+        )
     }
 
     if (!navigation) {

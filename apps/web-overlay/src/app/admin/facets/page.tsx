@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { hubGet, hubSend } from '@/lib/navhub-api'
+import { describeDegrade } from '@/lib/degrade'
 import Link from 'next/link'
 
 interface FacetOptionCount {
@@ -52,6 +53,10 @@ interface SiteSample {
 export default function AdminFacetsPage() {
   const [data, setData] = useState<FacetsResponse | null>(null)
   const [loading, setLoading] = useState(true)
+  // 拉取失败必须能持续显示：失败时页面本来会只剩一个「什么都不画」的空网格
+  const [loadError, setLoadError] = useState<unknown>(null)
+  // 样例站点是第二个请求：它失败时不能把「没查到」说成「这些分面没有站点」
+  const [samplesError, setSamplesError] = useState<unknown>(null)
   const [activeTab, setActiveTab] = useState<string>('pricing')
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [siteSamples, setSiteSamples] = useState<SiteSample[]>([])
@@ -63,11 +68,18 @@ export default function AdminFacetsPage() {
     void hubGet<FacetsResponse>('/api/facets')
       .then((res) => {
         setData(res)
+        setLoadError(null)
         if (res.facets.length > 0 && !res.facets.some((f) => f.key === activeTab)) {
           setActiveTab(res.facets[0].key)
         }
       })
-      .catch(() => setData(null))
+      .catch((err) => {
+        // 原来只 setData(null)：失败后分面 Tabs 与选项矩阵都是空的，
+        // 页面看上去只是「这里本来就没有分面」，连一句解释都没有。
+        console.error('[facets] 加载分面失败:', err)
+        setData(null)
+        setLoadError(err)
+      })
       .finally(() => setLoading(false))
   }, [activeTab])
 
@@ -75,19 +87,34 @@ export default function AdminFacetsPage() {
     loadFacets()
   }, [loadFacets])
 
+  // 抓取某个分面项的样例站点（抽成 useCallback：失败时可以原地重试）
+  const loadSamples = useCallback((facetKey: string, option: string) => {
+    setLoadingSites(true)
+    const facetParam = encodeURIComponent(JSON.stringify({ [facetKey]: [option] }))
+    void hubGet<SiteSample[]>(`/api/sites?facets=${facetParam}&limit=12`)
+      .then((sites) => {
+        setSiteSamples(Array.isArray(sites) ? sites : [])
+        setSamplesError(null)
+      })
+      .catch((err) => {
+        // 原来只 setSiteSamples([])：请求失败会渲染成
+        // 「暂无匹配站点（可使用 AI 富化或在站点编辑页手动标注）」——
+        // 拿一次失败去建议管理员重做分类。
+        console.error('[facets] 加载样例站点失败:', err)
+        setSiteSamples([])
+        setSamplesError(err)
+      })
+      .finally(() => setLoadingSites(false))
+  }, [])
+
   // 当选中某个分面项时，抓取样例站点
   useEffect(() => {
     if (!selectedOption) {
       setSiteSamples([])
       return
     }
-    setLoadingSites(true)
-    const facetParam = encodeURIComponent(JSON.stringify({ [activeTab]: [selectedOption] }))
-    void hubGet<SiteSample[]>(`/api/sites?facets=${facetParam}&limit=12`)
-      .then((sites) => setSiteSamples(Array.isArray(sites) ? sites : []))
-      .catch(() => setSiteSamples([]))
-      .finally(() => setLoadingSites(false))
-  }, [activeTab, selectedOption])
+    loadSamples(activeTab, selectedOption)
+  }, [activeTab, selectedOption, loadSamples])
 
   const currentFacet = data?.facets.find((f) => f.key === activeTab)
 
@@ -103,6 +130,9 @@ export default function AdminFacetsPage() {
 
   // 计算全站分面覆盖度指标
   const totalTaggedCount = currentFacet?.options.reduce((sum, o) => sum + o.count, 0) ?? 0
+
+  const degradeNotice = loadError ? describeDegrade(loadError) : null
+  const samplesNotice = samplesError ? describeDegrade(samplesError) : null
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -130,6 +160,31 @@ export default function AdminFacetsPage() {
           </Button>
         </div>
       </div>
+
+      {/* 拉取失败必须说出来：以前失败只剩一个什么也不画的空网格 */}
+      {degradeNotice && (
+        <div
+          role="status"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+        >
+          <span>
+            {data
+              ? `本次刷新失败，下面是上一次成功获取的分面数据。${degradeNotice.message}`
+              : `分面数据没能加载出来。${degradeNotice.message}`}
+          </span>
+          {degradeNotice.retryable && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 text-xs"
+              onClick={loadFacets}
+              disabled={loading}
+            >
+              重试
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* 分面维度 Tabs */}
       <div className="flex items-center gap-2 border-b pb-3 overflow-x-auto">
@@ -246,6 +301,17 @@ export default function AdminFacetsPage() {
 
           {loadingSites ? (
             <div className="text-xs text-muted-foreground py-8 text-center">正在加载归属站点…</div>
+          ) : samplesNotice ? (
+            <div role="status" className="text-xs text-destructive py-8 text-center">
+              样例站点没能加载出来。{samplesNotice.message}
+              <button
+                type="button"
+                className="ml-2 underline underline-offset-2"
+                onClick={() => loadSamples(activeTab, selectedOption)}
+              >
+                重试
+              </button>
+            </div>
           ) : siteSamples.length === 0 ? (
             <div className="text-xs text-muted-foreground py-8 text-center">
               暂无匹配站点（可使用 AI 富化或在站点编辑页手动标注该分面）

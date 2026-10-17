@@ -90,19 +90,23 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
    - 但**业务查询全是 raw SQL**（`Db.orm` 声明为 `any`，除创建处外全仓无第二个调用点），实际 DDL 也是手写的 `DDL_SQLITE` / `DDL_PG`。
 
    所以现状是"**已引入、用于连接实例与 schema 类型；查询未迁移**"。讨论建议 20 时按这个前提来，别误判成"删依赖即可"。
+6. **门禁会与并行会话抢文件，失败先看是不是巧合**：本轮有一次 `verify.mjs` 在 `check-web-overlay` 报"8 个漂移、3 个缺失"，但紧接着单独复跑就 OK —— 原因是并行会话正在同一分钟落它的提交，检查脚本读到了写了一半的树。**结论：多人协作时遇到覆盖层/类型这类瞬时失败，先重跑一次再排查**，别急着改代码。
 
 ## 六、验证矩阵（本轮结束状态）
 
+最后统一跑过一遍 `node scripts/verify.mjs`（覆盖层 → 扩展 → 类型 → 单测 四连），**全部通过**。
+
 | 检查 | 命令 | 结果 |
 | --- | --- | --- |
+| 整仓门禁 | `node scripts/verify.mjs` | ✅ 四项全过（覆盖层 / 扩展 / `tsc --noEmit` / 单测） |
 | 后端/包类型 | `pnpm typecheck` | 0 错误 |
 | 前端类型 | `pnpm --filter navsphere exec tsc --noEmit` | 0 错误 |
 | 前端 lint | `pnpm lint` | 0 error / 269 warning（退出 0） |
-| 单测 | `npx vitest run` | 61 文件 / **919 通过** / 11 跳过（其中 rollup 13 例；其余增量来自并行推进的分类体系工作） |
+| 单测 | `npx vitest run` | 66 文件 / **969 通过** / 11 跳过（其中数据治理 23 例；其余增量来自并行推进的 SKOS / 关系表工作） |
 | 数据保留 | `packages/store/test/retention.test.ts`（10 例）+ 临时 SQLite 端到端 | dry-run 一行不删、`--apply` 只删到期行且边界正确、归档内容逐行可读、二次运行幂等且不留空归档、缺表时报可读错误 |
 | 明细聚合 | `packages/store/test/rollup.test.ts`（13 例）+ 临时 SQLite 端到端 + CLI `--rollup` 实跑 | dry-run 不建表不写行；apply 后 `events_daily` 的 total/identities 与明细一致；半天过期的那天原样保留；二次运行 0 天且聚合值不翻倍；分组超限时整天跳过且明细未动 |
 | 量级压测 | 30 万行 events 的临时 SQLite | rollup 追平 220 天：9 轮 / 2.1s；**聚合行数 + 剩余明细 = 原始 300,000**（完整性）；清理模式 60,700 行 4.3s；`--vacuum` 后文件 29.22 MB → 6.53 MB |
-| 覆盖层 | `node scripts/check-web-overlay.mjs` | 187 文件一致 + 15 个 git 跟踪自研文件全部在 overlay |
+| 覆盖层 | `node scripts/check-web-overlay.mjs` | 216 文件一致 + 29 个 git 跟踪自研文件全部在 overlay |
 | 上游 ref | `node scripts/check-upstream-ref.mjs` | 三处声明一致 `6ba74fa…`，产物未漂移 |
 | 扩展 | `node scripts/check-extensions.mjs` | 100% 通过 |
 | 镜像 | `docker build -f docker/Dockerfile.{api,web}` | 构建步骤通过（导出阶段受本机 daemon 影响，CI 复验） |

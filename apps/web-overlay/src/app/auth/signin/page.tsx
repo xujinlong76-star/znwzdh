@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { ShieldCheck, KeyRound, ArrowLeft, AlertCircle, Sparkles, Lock, User } from 'lucide-react'
+import { NETWORK_FAILURE_STATUS, describeSignInFailure } from '@/lib/signin-failure'
 
 function SignInContent() {
   const searchParams = useSearchParams()
@@ -44,18 +45,10 @@ function SignInContent() {
       })
   }, [])
 
-  // 映射 URL 传来的 NextAuth 错误代码
+  // 映射 URL 传来的 NextAuth 错误代码（与表单提交共用同一套文案，见 lib/signin-failure.ts）
   useEffect(() => {
     if (!urlError) return
-    if (urlError === 'CredentialsSignin') {
-      setErrorMessage('管理员账号密码或 Token 不匹配，请重试')
-    } else if (urlError === 'AccessDenied') {
-      setErrorMessage('该账号不在管理员白名单 (NAVHUB_ADMIN_IDS) 中，无法访问后台')
-    } else if (urlError === 'OAuthSignin' || urlError === 'OAuthCallbackError') {
-      setErrorMessage('GitHub OAuth 登录遇到错误，请检查应用配置或改用管理密码登录')
-    } else {
-      setErrorMessage('登录失败，请重试或检查后台配置')
-    }
+    setErrorMessage(describeSignInFailure({ error: urlError }).message)
   }, [urlError])
 
   // 1. 凭证登录（密码 / Token）
@@ -71,17 +64,17 @@ function SignInContent() {
         redirect: false,
       })
 
-      if (res?.error) {
-        setErrorMessage('密码或 Token 凭证错误，请重新输入（默认口令为 admin123 或留空快捷进入）')
-        setIsLoading(false)
-      } else if (res?.ok) {
+      if (res?.ok) {
         window.location.href = callbackUrl
-      } else {
-        setIsLoading(false)
+        return
       }
+      // 失败（含「什么都没返回」）一律给出一句可行动的说明 —— 绝不静默收场：
+      // 原来的兜底分支只把加载状态关掉，用户点下去什么都看不到。
+      setIsLoading(false)
+      setErrorMessage(describeSignInFailure(res).message)
     } catch (err) {
       setIsLoading(false)
-      setErrorMessage('登录服务连接失败，请稍后重试')
+      setErrorMessage(describeSignInFailure({ status: NETWORK_FAILURE_STATUS }).message)
       console.error('Credentials signin error:', err)
     }
   }
@@ -103,11 +96,13 @@ function SignInContent() {
         window.location.href = callbackUrl
       } else {
         setIsBypassLoading(false)
-        setErrorMessage(res?.error || '本地快捷登录未启用，请输入管理密码')
+        const notice = describeSignInFailure(res)
+        // 快捷登录被拒 = 本机没开免密；其它原因（服务端配置/网络）照原样说清楚
+        setErrorMessage(notice.userInput ? '本地快捷登录未启用，请输入管理密码' : notice.message)
       }
     } catch (err) {
       setIsBypassLoading(false)
-      setErrorMessage('快捷登录失败，请尝试密码登录')
+      setErrorMessage(describeSignInFailure({ status: NETWORK_FAILURE_STATUS }).message)
       console.error('Bypass login error:', err)
     }
   }

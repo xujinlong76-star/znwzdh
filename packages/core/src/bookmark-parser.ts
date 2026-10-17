@@ -63,10 +63,19 @@ export function normalizeBookmarkUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim()
   if (!trimmed) return ''
 
+  // 严禁非 http/https 协议头（如 javascript:, data:, file:, vbscript:, blob:）
+  const schemeMatch = trimmed.match(/^([a-zA-Z0-9+.-]+):/)
+  if (schemeMatch && schemeMatch[1]) {
+    const scheme = schemeMatch[1].toLowerCase()
+    if (scheme !== 'http' && scheme !== 'https') {
+      return ''
+    }
+  }
+
   try {
     const url = new URL(trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`)
-    // 只允许 http/https，其他协议（javascript:/data:/file:/place:）直接拒收，避免 XSS/本地文件读取
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    // 只允许 http/https，其他协议直接拒收，避免 XSS/本地文件读取
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
     
     // 移除已知的跟踪参数
     const searchParams = new URLSearchParams(url.search)
@@ -91,8 +100,8 @@ export function normalizeBookmarkUrl(rawUrl: string): string {
 
     return `${url.protocol}//${url.host.toLowerCase()}${pathname}${newSearch ? `?${newSearch}` : ''}${url.hash}`
   } catch {
-    // 若不符合 URL 规范则返回去首尾空格的原串
-    return trimmed.replace(/\/+$/, '')
+    // 若无法解析为合法 HTTP URL，安全拒绝
+    return ''
   }
 }
 

@@ -852,19 +852,19 @@ export class JobRunner {
   private async run(sqlText: string, params: unknown[]): Promise<void> {
     const db = this.ctx.db;
     if (db.dialect === "sqlite") {
-      db.sqlite!.prepare(sqlText).run(...params);
+      db.sqlite!.prepare(sqlText).run(...bindSqlite([...params]));
       return;
     }
-    await db.pg!.query(sqlText, params);
+    await db.pg!.query(toPgSql(sqlText), params);
   }
 
   private async runCount(sqlText: string, params: unknown[]): Promise<number> {
     const db = this.ctx.db;
     if (db.dialect === "sqlite") {
-      const info = db.sqlite!.prepare(sqlText).run(...params) as { changes?: number };
+      const info = db.sqlite!.prepare(sqlText).run(...bindSqlite([...params])) as { changes?: number };
       return Number(info?.changes ?? 0);
     }
-    const res = await db.pg!.query(sqlText, params);
+    const res = await db.pg!.query(toPgSql(sqlText), params);
     return Number(res.rowCount ?? 0);
   }
 }

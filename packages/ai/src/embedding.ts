@@ -286,15 +286,19 @@ export function createEmbeddingService(
             pendingRequests.set(id, { resolve, reject });
           });
           w.postMessage({ id, type: "encode", text: sliced, config: cfg });
-          const res = await Promise.race([
-            task,
-            new Promise<never>((_, reject) =>
-              setTimeout(() => {
-                pendingRequests.delete(id);
-                reject(new Error("embedding 编码超时"));
-              }, timeoutMs)
-            ),
-          ]);
+          let timer: NodeJS.Timeout | undefined;
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              pendingRequests.delete(id);
+              reject(new Error("embedding 编码超时"));
+            }, timeoutMs);
+          });
+          let res: any;
+          try {
+            res = await Promise.race([task, timeoutPromise]);
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
           workerReady = true;
           const vec = new Float32Array(res.buffer);
           if (vec.length !== cfg.dim) {
@@ -327,11 +331,24 @@ export function createEmbeddingService(
         try {
           const w = getWorker();
           const id = reqId++;
+          const timeoutMs = 30_000;
+          let timer: NodeJS.Timeout | undefined;
           const task = new Promise<any>((resolve, reject) => {
             pendingRequests.set(id, { resolve, reject });
           });
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              pendingRequests.delete(id);
+              reject(new Error("embedding 预热超时"));
+            }, timeoutMs);
+          });
           w.postMessage({ id, type: "warmup", config: cfg });
-          const res = await task;
+          let res: any;
+          try {
+            res = await Promise.race([task, timeoutPromise]);
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
           workerReady = Boolean(res.ok);
           if (!workerReady && res.error) workerLastError = res.error;
           return workerReady;

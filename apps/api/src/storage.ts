@@ -353,13 +353,21 @@ export async function writeVideosData(ctx: AppContext, data: unknown): Promise<v
  */
 export async function readKv(ctx: AppContext, key: string): Promise<unknown> {
   const db = ctx.db;
+  let payloadStr: string | undefined;
   if (db.dialect === "sqlite") {
     const row = db.sqlite!.prepare("SELECT payload FROM jobs WHERE id = ?").get("kv:" + key) as { payload: string } | undefined;
-    return row?.payload ? JSON.parse(row.payload) : null;
+    payloadStr = row?.payload;
+  } else {
+    const res = await db.pg!.query("SELECT payload FROM jobs WHERE id = $1", ["kv:" + key]);
+    const row = res.rows[0] as { payload: string } | undefined;
+    payloadStr = row?.payload;
   }
-  const res = await db.pg!.query("SELECT payload FROM jobs WHERE id = $1", ["kv:" + key]);
-  const row = res.rows[0] as { payload: string } | undefined;
-  return row?.payload ? JSON.parse(row.payload) : null;
+  if (!payloadStr) return null;
+  try {
+    return JSON.parse(payloadStr);
+  } catch {
+    return null;
+  }
 }
 
 async function writeKv(ctx: AppContext, key: string, value: unknown): Promise<void> {

@@ -106,15 +106,18 @@ export function PredictivePrefetchProvider({ children }: { children: React.React
     window.addEventListener('pointermove', onPointerMove, { passive: true })
     window.addEventListener('pointerdown', onPointerDown, { passive: true })
 
+    const injectedLinks = injectedLinksRef.current
+    const connectedOrigins = connectedOriginsRef.current
+
     return () => {
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerdown', onPointerDown)
       // 卸载清理：移除本 provider 注入的 link，释放 Set/point 引用（防 SPA 切页泄漏）
-      for (const el of injectedLinksRef.current) {
+      for (const el of injectedLinks) {
         el.remove()
       }
-      injectedLinksRef.current = []
-      connectedOriginsRef.current.clear()
+      injectedLinks.length = 0
+      connectedOrigins.clear()
       lastPointRef.current = null
     }
   }, [])

@@ -279,6 +279,9 @@ export class P2PSyncSession {
         payload: null,
       });
     }, 15_000);
+    if (typeof this.heartbeatTimer?.unref === "function") {
+      this.heartbeatTimer.unref();
+    }
   }
 
   startHandshake(): void {
@@ -296,7 +299,10 @@ export class P2PSyncSession {
   }
 
   close(): void {
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
     this.node.disconnectPeer(this.peerId);
     this.transport.close();
   }

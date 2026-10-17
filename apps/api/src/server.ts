@@ -263,6 +263,15 @@ export async function buildServer(ctx: AppContext) {
       const key = action + "|" + (req.ip ?? "-");
       const last = AUTH_FAIL_AUDIT_AT.get(key) ?? 0;
       if (now - last < AUTH_FAIL_AUDIT_THROTTLE_MS) return;
+
+      // 防范大规模 IP 轮换扫描导致的 Map 内存无限膨胀：超限时淘汰过期记录
+      if (AUTH_FAIL_AUDIT_AT.size > 5_000) {
+        const cutoff = now - AUTH_FAIL_AUDIT_THROTTLE_MS;
+        for (const [k, v] of AUTH_FAIL_AUDIT_AT) {
+          if (v < cutoff) AUTH_FAIL_AUDIT_AT.delete(k);
+        }
+      }
+
       AUTH_FAIL_AUDIT_AT.set(key, now);
       void ctx.repo.audit({
         ip: req.ip,

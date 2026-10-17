@@ -236,6 +236,13 @@ export function reduceOperationsToState(
             } else {
               targetCat.items.push({ ...site })
             }
+          } else {
+            // 目标分类尚未存在时自动初始化，防止站点操作日志在合流时静默丢失
+            state.customCategories.push({
+              id: targetCatId,
+              title: "自定义分类",
+              items: [{ ...site }],
+            })
           }
         }
         break

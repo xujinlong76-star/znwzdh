@@ -35,7 +35,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       z.string().transform((str) => {
         try {
           const parsed = JSON.parse(str);
-          return typeof parsed === "object" && parsed !== null ? parsed : undefined;
+          return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : undefined;
         } catch {
           return undefined;
         }

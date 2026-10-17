@@ -206,7 +206,13 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
     const cats = await ctx.repo.listCategories();
-    const fallback = body.data.defaultCategoryId ?? cats[0]?.id ?? (await ctx.repo.createCategory({ title: "未分类" })).id;
+    const catIdSet = new Set(cats.map((c) => c.id));
+    let fallback = (body.data.defaultCategoryId && catIdSet.has(body.data.defaultCategoryId))
+      ? body.data.defaultCategoryId
+      : (cats[0]?.id ?? (await ctx.repo.createCategory({ title: "未分类" })).id);
+    // 若新建了“未分类”，把新分类 id 加入集合
+    catIdSet.add(fallback);
+
     let created = 0;
     let duplicates = 0;
     const createdSites: Array<Awaited<ReturnType<typeof ctx.repo.createSite>>> = [];
@@ -220,11 +226,12 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         duplicates++;
         continue;
       }
+      const categoryId = (item.categoryId && catIdSet.has(item.categoryId)) ? item.categoryId : fallback;
       const site = await ctx.repo.createSite({
         url: cleanUrl,
         title: item.title ?? item.url,
         description: item.description ?? null,
-        categoryId: item.categoryId ?? fallback,
+        categoryId,
         tags: item.tags ?? [],
         source: item.source ?? "import",
       });

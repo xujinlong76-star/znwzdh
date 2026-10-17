@@ -118,10 +118,11 @@ export function getHttpMetricsSummary(): HttpMetricsSummary {
   if (recentLatencies.length > 0) {
     const sorted = [...recentLatencies].sort((a, b) => a - b);
     const sum = sorted.reduce((a, b) => a + b, 0);
-    avgLatencyMs = Math.round((sum / sorted.length) * 10) / 10;
-    p50LatencyMs = Math.round(sorted[Math.floor(sorted.length * 0.5)]! * 10) / 10;
-    p95LatencyMs = Math.round(sorted[Math.floor(sorted.length * 0.95)]! * 10) / 10;
-    p99LatencyMs = Math.round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.99))]! * 10) / 10;
+    const n = sorted.length;
+    avgLatencyMs = Math.round((sum / n) * 10) / 10;
+    p50LatencyMs = Math.round(sorted[Math.min(n - 1, Math.floor(n * 0.5))]! * 10) / 10;
+    p95LatencyMs = Math.round(sorted[Math.min(n - 1, Math.floor(n * 0.95))]! * 10) / 10;
+    p99LatencyMs = Math.round(sorted[Math.min(n - 1, Math.floor(n * 0.99))]! * 10) / 10;
   }
 
   // 慢路由 Top 5 (avgLatencyMs >= 5ms, sorted by avgLatency desc)
@@ -132,7 +133,7 @@ export function getHttpMetricsSummary(): HttpMetricsSummary {
       route,
       method,
       count: d.count,
-      avgLatencyMs: Math.round((d.sumMs / d.count) * 10) / 10,
+      avgLatencyMs: d.count > 0 ? Math.round((d.sumMs / d.count) * 10) / 10 : 0,
     });
   }
   const topSlowRoutes = [...routeStats]

@@ -18,6 +18,12 @@ describe('全格式书签智能解析与语义去重清洗引擎 (Universal Book
 
     // 纯根路径保留
     expect(normalizeBookmarkUrl('https://Vercel.com/')).toBe('https://vercel.com/')
+
+    // 严禁非 http/https 协议（防止 Stored XSS 与本地路径泄露）
+    expect(normalizeBookmarkUrl('javascript:alert(1)')).toBe('')
+    expect(normalizeBookmarkUrl('data:text/html,<script>alert(1)</script>')).toBe('')
+    expect(normalizeBookmarkUrl('file:///etc/passwd')).toBe('')
+    expect(normalizeBookmarkUrl('vbscript:msgbox(1)')).toBe('')
   })
 
   it('Netscape Bookmarks HTML：精准解析 Chrome / Edge 导出的层级结构与元数据', () => {

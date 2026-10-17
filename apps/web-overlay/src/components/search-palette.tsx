@@ -463,7 +463,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 </div>
               )}
               {/* 自动识别的分面筛选与检索算子胶囊 */}
-              {(Object.keys(inferredFacets).length > 0 || inferredTag || inferredCategory || excludedTerms.length > 0) && (
+              {(Object.keys(inferredFacets).length > 0 || inferredTag || inferredCategory || excludedTerms.length > 0 || queryExpansion.length > 0) && (
                 <div className="px-3 py-1.5 bg-primary/5 border-b border-border/50 flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
                   <span className="flex items-center gap-1 text-primary font-medium text-[11px]">
                     <Sparkles className="w-3 h-3" />
@@ -485,6 +485,14 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
                     >
                       <span>-{ex}</span>
+                    </span>
+                  ))}
+                  {queryExpansion.map((exp) => (
+                    <span
+                      key={exp}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+                    >
+                      <span>~{exp}</span>
                     </span>
                   ))}
                   {Object.entries(inferredFacets).map(([fKey, vals]) => (

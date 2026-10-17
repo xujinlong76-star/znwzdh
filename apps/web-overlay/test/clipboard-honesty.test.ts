@@ -10,10 +10,20 @@
  * 根本不存在（取 `.writeText` 直接抛 TypeError），页面失去焦点或权限被拒时 Promise
  * 会 reject。用户看到「已复制」，粘出来是空的。
  *
- * 这里守三件事：
+ * 这里守四件事：
  *   1. `copyText()` 把每种失败都如实回报（不抛异常、不假装成功）；
  *   2. 全仓不允许再出现「没人接住的 clipboard 写入」；
- *   3. 各个复制入口只有在 `result.ok` 时才显示成功。
+ *   3. 各个复制入口只有在 `result.ok` 时才显示成功；
+ *   4. 只有白名单里的文件可以直接碰 `navigator.clipboard`（见文末
+ *      RAW_CLIPBOARD_ALLOWLIST），其余一律走 `copyText`。
+ *
+ * 第 4 条是补上的：第 2 条只要求「有人接住」，于是下面几种写法都能溜过去，
+ * 而它们在失败时对用户**毫无表示**：
+ *   - 微工具卡片：失败分支是 `() => {}`；便签：失败分支只是重设了一遍保存状态；
+ *   - 工具箱抽屉：`await` 了但**没有 catch**，8 个复制按钮失败即静默（外加未处理的拒绝）；
+ *   - 管理端资源页：`navigator.clipboard.writeText(url).then(...).catch(...)` ——
+ *     API 缺失时取 `.writeText` 抛的是**同步** TypeError，`.catch` 根本接不到。
+ * 这三类现在都走 `copyText`，并把失败原因显示给用户。
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -54,6 +64,18 @@ function listSources(dir: string, out: string[] = []): string[] {
     else if (/\.(ts|tsx)$/.test(entry.name)) out.push(relative(ROOT, full).replace(/\\/g, "/"));
   }
   return out;
+}
+
+/**
+ * 剥掉注释但保留行列位置。文档注释里会正当地提到 `navigator.clipboard`
+ * （比如说明为什么要封装它），那些不该被当成「直接使用了 API」。
+ */
+function stripComments(source: string): string {
+  const noBlock = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
+  return noBlock
+    .split(/\r?\n/)
+    .map((line) => (line.trim().startsWith("//") ? " ".repeat(line.length) : line))
+    .join("\n");
 }
 
 afterEach(() => {
@@ -192,5 +214,110 @@ describe("各复制入口只在真的成功后才显示成功", () => {
     expect(guardAt).toBeGreaterThan(-1);
     expect(successAt).toBeGreaterThan(guardAt);
     expect(src.slice(guardAt, successAt)).toContain("if (!result.ok)");
+  });
+});
+
+/**
+ * 允许直接触碰 `navigator.clipboard` 的文件。其余地方一律走 `copyText`。
+ * 每条都要给出「为什么这里可以直接用」的证据：证据消失时测试必须失败，
+ * 而不是继续放行。
+ */
+const RAW_CLIPBOARD_ALLOWLIST: Array<{ file: string; evidence: string[]; why: string }> = [
+  {
+    file: "src/lib/clipboard.ts",
+    evidence: ["export async function copyText(", "export function clipboardSupported()"],
+    why: "封装层本身：把「环境不支持 / 空内容 / 被拒」翻译成 CopyResult 的唯一地方。",
+  },
+  {
+    file: "src/app/admin/tokens/page.tsx",
+    evidence: ["window.isSecureContext", "document.execCommand('copy')", "Promise<boolean>"],
+    why:
+      "token 明文只在这一个页面出现。它自带 execCommand 降级（非安全上下文下仍能复制），" +
+      "并把「是否真的成功」返回给调用方决定要不要关弹窗 —— 比统一封装多一层真实能力，保留。",
+  },
+  {
+    file: "src/components/batch-operation-dock.tsx",
+    evidence: ["await navigator.clipboard.writeText(md)", "catch", "复制失败"],
+    why: "await 写在 try 里、失败会弹 destructive toast：已确认诚实，本 PR 不扩大改动面。",
+  },
+  {
+    file: "src/app/error.tsx",
+    evidence: ["await navigator.clipboard.writeText(", "catch", "setCopied(false)"],
+    why:
+      "错误页本身就是最后的兜底 UI：await 写在 try 里，失败时只把状态置为未复制，" +
+      "下方详情块可手动选中复制。",
+  },
+];
+
+describe("全仓：只有白名单里的文件可以直接碰 navigator.clipboard", () => {
+  const files = listSources(join(ROOT, "src"));
+  const rawUsers = files.filter((rel) => /navigator\.clipboard/.test(stripComments(overlaySource(rel))));
+
+  it("扫描确实覆盖了整仓源码，且确实看到有文件在用（否则空集合会假装通过）", () => {
+    expect(files.length).toBeGreaterThan(60);
+    expect(rawUsers.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("不在白名单里的文件一律走 copyText（新写的复制入口不许再自己摸剪贴板）", () => {
+    const unexplained = rawUsers.filter((rel) => !RAW_CLIPBOARD_ALLOWLIST.some((e) => e.file === rel));
+    expect(
+      unexplained,
+      "这些文件在直接用 navigator.clipboard，请改用 lib/clipboard.ts 的 copyText：\n" + unexplained.join("\n"),
+    ).toEqual([]);
+  });
+
+  it("白名单没有过期（每条仍对应一个真实在用 navigator.clipboard 的文件）", () => {
+    const stale = RAW_CLIPBOARD_ALLOWLIST.filter((e) => !rawUsers.includes(e.file)).map((e) => e.file);
+    expect(stale, "这些文件已经不再需要白名单了：" + stale.join(", ")).toEqual([]);
+  });
+
+  it("白名单里的理由必须有证据（否则就是一纸空文）", () => {
+    const broken: string[] = [];
+    for (const entry of RAW_CLIPBOARD_ALLOWLIST) {
+      const text = overlaySource(entry.file);
+      for (const snippet of entry.evidence) {
+        if (!text.includes(snippet)) broken.push(`${entry.file} 缺少证据：${snippet}`);
+      }
+    }
+    expect(broken, broken.join("\n")).toEqual([]);
+  });
+});
+
+describe("这次补上的三处静默失败", () => {
+  const widgets = [
+    { file: "src/components/quick-tools-drawer.tsx", label: "开发者工具箱抽屉（8 个按钮，原来没有 catch）" },
+    { file: "src/components/modular/modules/notes-widget.tsx", label: "便签微件（原来失败分支只重设保存状态）" },
+    { file: "src/components/modular/modules/quick-tools-widget.tsx", label: "极速工具卡片（原来失败分支是空函数）" },
+  ];
+
+  it.each(widgets)("$label：改走 copyText，且失败会说清原因", ({ file }) => {
+    const code = stripComments(overlaySource(file));
+    expect(code).toContain("await copyText(");
+    expect(code).not.toContain("navigator.clipboard");
+    expect(code).toContain("setCopyError(result.reason)");
+    // 失败必须显示出来，而不只是存进 state
+    const src = overlaySource(file);
+    expect(src).toContain("复制失败");
+    expect(src).toContain('role="status"');
+    // 回归保护：不许再出现「空失败处理器」或纯 `.then(成功)` 的单参写法
+    expect(src).not.toMatch(/\.then\(\s*\(\s*\)\s*=>\s*\{\s*\}/);
+    expect(src).not.toMatch(/=>\s*\{\s*\}\s*,?\s*\)/);
+  });
+
+  it("失败态一旦显示，就不能同时显示「已复制」", () => {
+    for (const { file } of widgets) {
+      const code = stripComments(overlaySource(file));
+      const failure = code.indexOf("setCopyError(result.reason)");
+      expect(failure, file).toBeGreaterThan(-1);
+      // 失败分支里必须先把 copied 清掉
+      expect(code.slice(Math.max(0, failure - 200), failure), file).toContain("setCopied(");
+    }
+  });
+
+  it("管理端资源复制：不再直接摸 API（缺 API 时那个 TypeError 连 .catch 都接不到）", () => {
+    const code = stripComments(overlaySource("src/app/admin/resources/page.tsx"));
+    expect(code).toContain("await copyText(url)");
+    expect(code).not.toContain("navigator.clipboard");
+    expect(code).toContain("copyFailureToast(result)");
   });
 });

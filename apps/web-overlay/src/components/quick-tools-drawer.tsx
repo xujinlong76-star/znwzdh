@@ -12,6 +12,7 @@ import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
 import { Wrench, Copy, Check, RefreshCw, Braces, Binary, Clock, Link2, KeyRound, Timer, Terminal } from 'lucide-react'
 import { parseSpeculativeIntent } from '@/lib/speculative'
+import { copyText } from '@/lib/clipboard'
 
 interface QuickToolsDrawerProps {
   open: boolean
@@ -23,6 +24,7 @@ type ToolTab = 'json' | 'base64' | 'uuid-time' | 'url' | 'jwt' | 'cron' | 'curl'
 export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) {
   const [activeTab, setActiveTab] = useState<ToolTab>('json')
   const [copied, setCopied] = useState<string | null>(null)
+  const [copyError, setCopyError] = useState<string | null>(null)
 
   // JSON 工具状态
   const [jsonInput, setJsonInput] = useState('')
@@ -50,9 +52,22 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
   const [cronInput, setCronInput] = useState('*/5 * * * *')
   const [curlInput, setCurlInput] = useState('curl -X POST https://api.navhub.local/v1/search -d "{\"q\":\"ai\"}"')
 
+  /**
+   * 复制：**先确认真的写进去了，再说「已复制」**。
+   *
+   * 原来是 `await navigator.clipboard.writeText(text)` 且**没有 catch**：
+   * 非安全上下文（http:// 局域网 IP）下 `navigator.clipboard` 根本不存在，
+   * 权限被拒 / 页面失焦时写入的 Promise 也会 reject —— 两种情况都只会静默失败
+   * （外加一条未处理的 Promise 拒绝），8 个复制按钮看起来就是「点了没反应」。
+   */
   const copyToClipboard = async (text: string, id: string) => {
-    if (!text) return
-    await navigator.clipboard.writeText(text)
+    const result = await copyText(text)
+    if (!result.ok) {
+      setCopied(null)
+      setCopyError(result.reason)
+      return
+    }
+    setCopyError(null)
     setCopied(id)
     setTimeout(() => setCopied(null), 1500)
   }
@@ -150,6 +165,16 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             端侧零延迟运行高频微工具，无需离开导航站即可极速格式化与编解码。
           </DialogDescription>
         </DialogHeader>
+
+        {/* 复制失败必须说出来（以前写入被拒 / 非安全上下文时，按钮点了毫无反应） */}
+        {copyError && (
+          <div
+            role="status"
+            className="mt-1 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          >
+            复制失败：{copyError}
+          </div>
+        )}
 
         {/* 顶部 Tab 栏 */}
         <div className="flex items-center gap-1.5 p-1 rounded-xl bg-muted/40 border border-border/50 mt-1 overflow-x-auto">

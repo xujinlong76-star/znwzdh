@@ -8,6 +8,7 @@ import {
   type SiteRelation,
   type SiteRelationType,
   type SiteStatus,
+  type TaxonomyProposal,
 } from "@navhub/core";
 import type {
   ApiTokenRecord,
@@ -320,6 +321,28 @@ export function rowToCollection(row: Record<string, any>): Collection {
     updatedAt: Number(row.updated_at ?? 0),
   };
 }
+
+export function rowToTaxonomyProposal(row: Record<string, any>): TaxonomyProposal {
+  let meta: Record<string, unknown> | undefined = undefined;
+  if (typeof row.meta === "string" && row.meta) {
+    try { meta = JSON.parse(row.meta); } catch { /* ignore */ }
+  }
+  return {
+    id: String(row.id),
+    kind: row.kind as any,
+    targetId: String(row.target_id),
+    targetTitle: row.target_title == null ? undefined : String(row.target_title),
+    currentValue: row.current_value == null ? undefined : String(row.current_value),
+    suggestedValue: String(row.suggested_value),
+    confidence: Number(row.confidence ?? 0.8),
+    reason: String(row.reason),
+    status: (row.status ?? "pending") as any,
+    meta,
+    createdAt: Number(row.created_at ?? 0),
+    appliedAt: row.applied_at == null ? null : Number(row.applied_at),
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * 方言适配辅助
  * ------------------------------------------------------------------ */

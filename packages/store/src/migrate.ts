@@ -93,6 +93,13 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS site_relations_source_idx ON site_relations(source_site_id)",
     "CREATE INDEX IF NOT EXISTS site_relations_target_idx ON site_relations(target_site_id)",
     "CREATE INDEX IF NOT EXISTS site_relations_type_idx ON site_relations(relation_type)",
+    // 治理提案表与索引 (Taxonomy Phase 4)
+    db.dialect === "postgres"
+      ? "CREATE TABLE IF NOT EXISTS taxonomy_proposals (id TEXT PRIMARY KEY, kind TEXT NOT NULL, target_id TEXT NOT NULL, target_title TEXT, current_value TEXT, suggested_value TEXT NOT NULL, confidence DOUBLE PRECISION NOT NULL DEFAULT 0.8, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', meta TEXT, created_at BIGINT NOT NULL, applied_at BIGINT)"
+      : "CREATE TABLE IF NOT EXISTS taxonomy_proposals (id TEXT PRIMARY KEY, kind TEXT NOT NULL, target_id TEXT NOT NULL, target_title TEXT, current_value TEXT, suggested_value TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 0.8, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', meta TEXT, created_at INTEGER NOT NULL, applied_at INTEGER)",
+    "CREATE INDEX IF NOT EXISTS taxonomy_proposals_status_idx ON taxonomy_proposals(status)",
+    "CREATE INDEX IF NOT EXISTS taxonomy_proposals_kind_idx ON taxonomy_proposals(kind)",
+    "CREATE INDEX IF NOT EXISTS taxonomy_proposals_target_idx ON taxonomy_proposals(target_id)",
   ];
   for (const sqlText of statements) {
     try {

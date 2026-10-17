@@ -41,6 +41,7 @@ import { categoryRoutes } from "./routes/categories.ts";
 import { tagRoutes } from "./routes/tags.ts";
 import { facetRoutes } from "./routes/facets.ts";
 import { relationRoutes } from "./routes/relations.ts";
+import { taxonomyRoutes } from "./routes/taxonomy.ts";
 import { collectionRoutes } from "./routes/collections.ts";
 import { recipeRoutes } from "./routes/recipes.ts";
 import { visualRoutes } from "./routes/visual.ts";
@@ -325,6 +326,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(tagRoutes, { ctx });
   await app.register(facetRoutes, { ctx });
   await app.register(relationRoutes, { ctx });
+  await app.register(taxonomyRoutes, { ctx });
   await app.register(collectionRoutes, { ctx });
   await app.register(recipeRoutes, { ctx });
   await app.register(visualRoutes, { ctx });

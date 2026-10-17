@@ -23,9 +23,9 @@ import { indexSite, indexSitesBatch } from "./index-site.ts";
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit"];
 
 export interface JobEventPayload {
   jobId: string;
@@ -57,6 +57,7 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "health_check", intervalMs: 86_400_000, payload: { limit: 100 } },
   { kind: "purge_trash", intervalMs: 86_400_000, payload: { olderThanDays: 30 } },
   { kind: "token_audit", intervalMs: 7 * 86_400_000 },
+  { kind: "taxonomy_audit", intervalMs: 86_400_000 },
 ];
 
 const LOCK_KEY = "lock:job-runner";
@@ -111,6 +112,7 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   site_self_healing: { cron: "X30MIN", timeoutMs: 300_000, maxConcurrency: 1 },
   token_audit: { cron: "HOURLY", timeoutMs: 60_000, maxConcurrency: 1 },
   purge_trash: { cron: "DAILY3AM", timeoutMs: 120_000, maxConcurrency: 1 },
+  taxonomy_audit: { cron: "DAILY3AM", timeoutMs: 300_000, maxConcurrency: 1 },
 };
 
 /** 标准 5 段 cron 字面量（与 DEFAULT_SCHEDULES 别名一一对应，集中存放避免块注释提前闭合） */
@@ -406,6 +408,9 @@ export class JobRunner {
           break;
         case "purge_trash":
           await this.runPurgeTrash((payload ?? {}) as { olderThanDays?: number });
+          break;
+        case "taxonomy_audit":
+          await this.runTaxonomyAudit((payload ?? {}) as { dryRun?: boolean; siteLimit?: number });
           break;
         default:
           throw new Error("未知任务类型: " + kind);
@@ -719,6 +724,15 @@ export class JobRunner {
     const ms = days * 86_400_000;
     const purged = await this.ctx.repo.purgeExpiredDeletedSites(ms);
     await this.ctx.repo.recordEvent("purge_trash", { meta: { days, purged } }).catch(() => undefined);
+  }
+
+  /** 分类与标签体系智能治理审计 */
+  private async runTaxonomyAudit(payload: { dryRun?: boolean; siteLimit?: number } = {}): Promise<void> {
+    const res = await this.ctx.repo.runTaxonomyAudit({
+      dryRun: payload.dryRun ?? false,
+      siteLimit: payload.siteLimit ?? 500,
+    });
+    console.log(`[navhub-taxonomy-audit] 审计完成，共发现 ${res.proposalsCount} 条治理提案`);
   }
 
   /* --------------------------- 底层执行 --------------------------- */

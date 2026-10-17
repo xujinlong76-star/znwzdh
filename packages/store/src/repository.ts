@@ -12,6 +12,7 @@ import {
   type SiteStatus,
   type FacetGroupSummary,
   type SkosConcept,
+  type TaxonomyProposal,
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
 import type {
@@ -54,6 +55,7 @@ import * as analyticsRepo from "./repository/analytics.ts";
 import * as jobsRepo from "./repository/jobs.ts";
 import * as systemRepo from "./repository/system.ts";
 import * as maintenanceRepo from "./repository/maintenance.ts";
+import * as taxonomyRepo from "./repository/taxonomy-governance.ts";
 import * as ioRepo from "./repository/io.ts";
 export * from "./repository/records.ts";
 export { bindSqlite, normalizeTokenScopes, slugify, toPgSql } from "./repository/dialect.ts";
@@ -730,6 +732,33 @@ export class Repository {
 
   async purgeExpiredDeletedSites(olderThanMs: number): Promise<number> {
     return jobsRepo.purgeExpiredDeletedSites(this, olderThanMs);
+  }
+
+
+  /* ------------------------- 分类与标签体系治理 (Taxonomy Governance) ------------------------- */
+
+  async saveTaxonomyProposals(proposals: TaxonomyProposal[]): Promise<number> {
+    return taxonomyRepo.saveTaxonomyProposals(this, proposals);
+  }
+
+  async listTaxonomyProposals(filter: { status?: string; kind?: string; limit?: number; offset?: number } = {}): Promise<{ items: TaxonomyProposal[]; total: number }> {
+    return taxonomyRepo.listTaxonomyProposals(this, filter);
+  }
+
+  async getTaxonomyProposal(id: string): Promise<TaxonomyProposal | null> {
+    return taxonomyRepo.getTaxonomyProposal(this, id);
+  }
+
+  async applyTaxonomyProposal(id: string, actor = "admin"): Promise<{ ok: boolean; message: string; proposal: TaxonomyProposal }> {
+    return taxonomyRepo.applyTaxonomyProposal(this, id, actor);
+  }
+
+  async dismissTaxonomyProposal(id: string, actor = "admin"): Promise<{ ok: boolean; proposal: TaxonomyProposal }> {
+    return taxonomyRepo.dismissTaxonomyProposal(this, id, actor);
+  }
+
+  async runTaxonomyAudit(options: { dryRun?: boolean; siteLimit?: number } = {}): Promise<{ proposalsCount: number; proposals: TaxonomyProposal[] }> {
+    return taxonomyRepo.runTaxonomyAudit(this, options);
   }
 
 

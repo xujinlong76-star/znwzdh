@@ -77,6 +77,10 @@ const menuItems = [
         href: "/admin/categories"
       },
       {
+        title: "分类治理",
+        href: "/admin/taxonomy"
+      },
+      {
         title: "站点管理",
         href: "/admin/sitelist"
       }

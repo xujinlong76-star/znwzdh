@@ -354,9 +354,32 @@ export const systemStates = sqliteTable("system_states", {
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 });
 
+/**
+ * 分类与标签治理提案表（Taxonomy Proposals）
+ * 存储 AI / 启发式规则生成的待审提案（分类契合迁移、冗余标签合并、零结果缺口等）
+ */
+export const taxonomyProposals = sqliteTable("taxonomy_proposals", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),
+  targetId: text("target_id").notNull(),
+  targetTitle: text("target_title"),
+  currentValue: text("current_value"),
+  suggestedValue: text("suggested_value").notNull(),
+  confidence: real("confidence").notNull().default(0.8),
+  reason: text("reason").notNull(),
+  status: text("status").notNull().default("pending"),
+  meta: text("meta"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  appliedAt: integer("applied_at"),
+}, (t) => [
+  index("taxonomy_proposals_status_idx").on(t.status),
+  index("taxonomy_proposals_kind_idx").on(t.kind),
+  index("taxonomy_proposals_target_idx").on(t.targetId),
+]);
+
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings,
-  favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates,
+  favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates, taxonomyProposals,
 };
 

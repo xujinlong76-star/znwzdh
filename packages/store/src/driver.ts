@@ -283,6 +283,24 @@ CREATE TABLE IF NOT EXISTS system_states (
   value TEXT NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS taxonomy_proposals (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  target_title TEXT,
+  current_value TEXT,
+  suggested_value TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0.8,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  meta TEXT,
+  created_at INTEGER NOT NULL,
+  applied_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS taxonomy_proposals_status_idx ON taxonomy_proposals(status);
+CREATE INDEX IF NOT EXISTS taxonomy_proposals_kind_idx ON taxonomy_proposals(kind);
+CREATE INDEX IF NOT EXISTS taxonomy_proposals_target_idx ON taxonomy_proposals(target_id);
 `;
 
 const DDL_PG = `
@@ -523,6 +541,24 @@ CREATE TABLE IF NOT EXISTS system_states (
   value TEXT NOT NULL,
   updated_at BIGINT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS taxonomy_proposals (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  target_title TEXT,
+  current_value TEXT,
+  suggested_value TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0.8,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  meta TEXT,
+  created_at BIGINT NOT NULL,
+  applied_at BIGINT
+);
+CREATE INDEX IF NOT EXISTS taxonomy_proposals_status_idx ON taxonomy_proposals(status);
+CREATE INDEX IF NOT EXISTS taxonomy_proposals_kind_idx ON taxonomy_proposals(kind);
+CREATE INDEX IF NOT EXISTS taxonomy_proposals_target_idx ON taxonomy_proposals(target_id);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;

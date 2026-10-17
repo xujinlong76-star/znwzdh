@@ -6,7 +6,11 @@ import type {
   SiteLiveMetrics,
   SiteRelation,
   SiteStatus,
+  TaxonomyProposal,
+  TaxonomyProposalKind,
+  TaxonomyProposalStatus,
 } from "@navhub/core";
+export type { TaxonomyProposal, TaxonomyProposalKind, TaxonomyProposalStatus };
 import type { Db, Dialect } from "../driver.ts";
 
 export interface SiteInput {

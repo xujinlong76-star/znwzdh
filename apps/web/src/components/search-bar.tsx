@@ -5,6 +5,7 @@ import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList, CommandGroup, CommandItem } from '@/registry/new-york/ui/command'
 import { Search, X } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import { highlightParts } from '@/lib/highlight'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 
@@ -46,7 +47,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
         inputRef.current?.blur()
       }
       
-      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         inputRef.current?.focus()
         setIsFocused(true)
@@ -79,10 +80,19 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
 
   const highlightText = (text: string) => {
     if (!searchQuery) return text
-    const parts = text.split(new RegExp(`(${searchQuery})`, 'gi'))
-    return parts.map((part, i) => 
-      part.toLowerCase() === searchQuery.toLowerCase() ? 
-        <span key={i} className="text-primary font-semibold underline decoration-primary/40 underline-offset-2 bg-primary/10 px-0.5 rounded-xs">{part}</span> : part
+    // 用 @/lib/highlight 的安全实现，替换上游的 `new RegExp(query)`：
+    //  1) 原实现把查询原样塞进正则，输入 `(` `[` `\` `+` 等元字符会在**渲染期**
+    //     抛 SyntaxError，整页白屏（/videos 没有错误边界兜底）。
+    //  2) 原实现把整串查询当一个 token，输入 "react vue" 就不会高亮任何单词。
+    // highlightParts 逐 token 转义、按空白切分，且失败时降级为不高亮，不阻断渲染。
+    return highlightParts(text, searchQuery).map((seg, i) =>
+      seg.hit ? (
+        <span key={i} className="text-primary font-semibold underline decoration-primary/40 underline-offset-2 bg-primary/10 px-0.5 rounded-xs">
+          {seg.text}
+        </span>
+      ) : (
+        seg.text
+      ),
     )
   }
 
@@ -119,6 +129,8 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
         <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground/80" />
         <Input
           ref={inputRef}
+          type="search"
+          aria-label="搜索导航"
           placeholder="搜索导航 (按 ⌘K 或 Ctrl+K 快速定位)..."
           value={searchQuery}
           onChange={(e) => handleInputChange(e.target.value)}
@@ -131,6 +143,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
               variant="ghost"
               size="sm"
               onClick={clearSearch}
+              aria-label="清空搜索"
               className="h-6 w-6 p-0 hover:bg-muted rounded-full"
             >
               <X className="h-3 w-3" />
@@ -154,6 +167,15 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                   <div className="text-xs text-muted-foreground/70 mt-1">
                     尝试使用不同的关键词搜索
                   </div>
+                  {/* 空结果不能是死路：给一个明确的「回到完整列表」出口 */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={clearSearch}
+                  >
+                    清空搜索，查看全部导航
+                  </Button>
                 </div>
               ) : (
                 searchResults.map((result) => (

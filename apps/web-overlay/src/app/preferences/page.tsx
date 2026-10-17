@@ -20,6 +20,11 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { hubGet, hubSend, type HubSite } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
+import {
+  PROFILE_EMPTY_MESSAGE,
+  profileDegradeNotice,
+  profileViewState,
+} from '@/lib/profile-view'
 import { Sparkles, RotateCcw, Tag, FolderOpen, History } from 'lucide-react'
 
 interface Profile {
@@ -67,6 +72,7 @@ export default function PreferencesPage() {
   const [catTitles, setCatTitles] = useState<Record<string, string>>({})
   const [siteTitles, setSiteTitles] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<unknown>(null)
   const [resetting, setResetting] = useState(false)
 
   const load = useCallback(async (id: string) => {
@@ -75,14 +81,17 @@ export default function PreferencesPage() {
       const data = await hubGet<{ profile: Profile | null }>(
         '/api/profile?anonId=' + encodeURIComponent(id),
       )
+      setLoadError(null)
       setProfile(data.profile)
       if (data.profile) {
         setCatTitles(await loadCategoryTitles(data.profile.topCategories))
         setSiteTitles(await loadSiteTitles(data.profile.visitedSiteIds))
       }
-    } catch {
-      // 中枢不可用时降级为「无画像」，不抛给 UI
+    } catch (error) {
+      // 中枢不可用时降级为「无画像」，但**必须记下错误**：
+      // 否则界面会把「没取到」说成「你没有画像」（见 lib/profile-view.ts）
       setProfile(null)
+      setLoadError(error)
     } finally {
       setLoading(false)
     }
@@ -93,6 +102,13 @@ export default function PreferencesPage() {
     setIdentity(id)
     void load(id)
   }, [load])
+
+  const handleRetry = () => {
+    if (!identity) return
+    setLoading(true)
+    setLoadError(null)
+    void load(identity)
+  }
 
   const handleReset = async () => {
     if (!identity) return
@@ -125,6 +141,9 @@ export default function PreferencesPage() {
         profile.visitedSiteIds.length > 0),
   )
 
+  const view = profileViewState({ loading, failed: loadError !== null, hasProfile })
+  const degrade = loadError === null ? null : profileDegradeNotice(loadError)
+
   return (
     <Container as="main" id="main-content" className="py-8">
       <div className="flex items-start justify-between gap-4 mb-6">
@@ -146,11 +165,22 @@ export default function PreferencesPage() {
         </Button>
       </div>
 
-      {loading ? (
+      {view === 'loading' ? (
         <div className="text-sm text-muted-foreground">加载中…</div>
-      ) : !hasProfile ? (
+      ) : view === 'degraded' && degrade ? (
+        <div className="rounded-md border border-dashed p-6 text-center">
+          <p className="text-sm text-muted-foreground">{degrade.message}</p>
+          <p className="text-xs text-muted-foreground mt-2">{degrade.hint}</p>
+          {degrade.retryable && (
+            <Button size="sm" variant="outline" className="mt-4" onClick={handleRetry}>
+              <RotateCcw className="mr-2 h-4 w-4" />
+              重试
+            </Button>
+          )}
+        </div>
+      ) : view === 'empty' ? (
         <div className="rounded-md border p-6 text-center text-sm text-muted-foreground">
-          暂无个性化画像。搜索并收藏几个站点后，这里会显示系统推断出的偏好。
+          {PROFILE_EMPTY_MESSAGE}
         </div>
       ) : (
         <div className="space-y-6">

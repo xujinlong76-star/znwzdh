@@ -15,12 +15,14 @@
  */
 
 import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
+import Link from 'next/link'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList, CommandItem } from '@/registry/new-york/ui/command'
 import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { searchSites, reportClick, fetchSearchHistory, type HubSearchHit } from '@/lib/navhub-api'
 import { highlightParts } from '@/lib/highlight'
+import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { getIdentity } from '@/lib/identity'
 import { useFavorites } from '@/hooks/useFavorites'
 import type { SiteConfig } from '@/types/site'
@@ -81,9 +83,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [popular, setPopular] = useState<string[]>([])
   const [fallbackHint, setFallbackHint] = useState<'filter' | 'fuzzy' | undefined>(undefined)
   const [recent, setRecent] = useState<string[]>([])
+  /** 重试计数：增长即重新发起同一查询（降级时的出口） */
+  const [retryToken, setRetryToken] = useState(0)
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  /** 当前查询的权威值：用来丢弃「已经过期的追加页」响应 */
+  const activeQueryRef = useRef('')
+  /** 「加载更多」在途请求的取消句柄 */
+  const moreAbortRef = useRef<AbortController | null>(null)
   /** 已加载到的偏移（不进 React state，避免其变化误触发第一页重查） */
   const offsetRef = useRef(0)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -131,16 +139,22 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   /* 防抖检索 + 取消在途请求 */
   useEffect(() => {
     const q = query.trim()
+    activeQueryRef.current = q
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (abortRef.current) abortRef.current.abort()
+    // 查询变了，在途的「加载更多」也属于上一个查询，必须一起取消
+    if (moreAbortRef.current) moreAbortRef.current.abort()
+    // 新查询必须清空旧结果与旧提示：否则防抖 + 网络窗口里会拿上一个查询的结果
+    // 冒充新查询的答案（还会带着上一个查询的「已放宽」横幅）
+    setHits([])
+    setHasMore(false)
+    setSuggestions([])
+    setPopular([])
+    setFallbackHint(undefined)
+    setDegraded(false)
+    setLoadingMore(false)
     if (!q) {
-      setHits([])
       setLoading(false)
-      setDegraded(false)
-      setHasMore(false)
-      setSuggestions([])
-      setPopular([])
-      setFallbackHint(undefined)
       offsetRef.current = 0
       return
     }
@@ -152,7 +166,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       abortRef.current = controller
       void searchSites({ q, limit: 12, categoryId, identity }, controller.signal)
         .then((res) => {
-          if (controller.signal.aborted) return
+          if (controller.signal.aborted || activeQueryRef.current !== q) return
           setHits(res.hits)
           setDegraded(Boolean(res.degraded))
           setSemanticAvailable(res.semanticAvailable)
@@ -164,7 +178,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           setLoading(false)
         })
         .catch(() => {
-          if (controller.signal.aborted) return
+          if (controller.signal.aborted || activeQueryRef.current !== q) return
           setLoading(false)
           setDegraded(true)
         })
@@ -172,24 +186,47 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, categoryId, identity])
+  }, [query, categoryId, identity, retryToken])
 
   /** 加载下一页并追加（同一查询的延续——服务端因此不重复记事件） */
   const loadMore = useCallback(() => {
     const q = query.trim()
     if (!q || loadingMore) return
     setLoadingMore(true)
-    void searchSites({ q, limit: 12, offset: offsetRef.current, categoryId, identity })
+    const controller = new AbortController()
+    moreAbortRef.current = controller
+    void searchSites({ q, limit: 12, offset: offsetRef.current, categoryId, identity }, controller.signal)
       .then((res) => {
+        // 查询已经变了：这一页属于上一个查询。放进去会把旧结果混进新列表，
+        // offsetRef 也会被污染，后续分页永远错位。
+        if (controller.signal.aborted || activeQueryRef.current !== q) return
         setHits((prev) => [...prev, ...res.hits])
         offsetRef.current += res.hits.length
         setHasMore(Boolean(res.hasMore))
         // 追加页为空 = 池子到底（防御：服务端说有但实际没有）
         if (res.hits.length === 0) setHasMore(false)
       })
-      .catch(() => { /* 追加失败保持现有结果，按到底处理 */ setHasMore(false) })
-      .finally(() => setLoadingMore(false))
+      .catch(() => {
+        if (!controller.signal.aborted) setHasMore(false)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingMore(false)
+      })
   }, [query, categoryId, identity, loadingMore])
+
+  /** 提示块里的出口动作 */
+  const runPanelAction = useCallback((action: SearchPanelAction) => {
+    if (action.kind === 'retry') {
+      setRetryToken((n) => n + 1)
+      return
+    }
+    if (action.kind === 'clear') {
+      setQuery('')
+      setIsFocused(false)
+      return
+    }
+    // browse-* 由 <Link> 渲染，走客户端路由，不发生整页刷新
+  }, [])
 
   const openSite = useCallback((hit: HubSearchHit) => {
     const site = hit.site
@@ -203,6 +240,18 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   }, [identity, siteConfig])
 
   const showResults = isFocused && query.trim().length > 0
+  /**
+   * 「什么都没有」时到底说什么：单一判定点。
+   * 避免「检索服务暂时不可用」和「未找到…」同时出现（自相矛盾），
+   * 也保证零结果一定给出出口，并且不因命中微组件就隐瞒「导航检索为空」。
+   */
+  const panel = planSearchPanel({
+    loading,
+    degraded,
+    hitCount: hits.length,
+    query,
+    hasWidgetResult: Boolean(speculativeResult || comparisonMatrix || architectureRecipe),
+  })
 
   return (
     <div ref={searchRef} className="relative w-full max-w-lg mx-auto">
@@ -332,9 +381,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         <div className="absolute top-full left-0 right-0 mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[70vh] overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
           <Command className="border-0 shadow-none" shouldFilter={false}>
             <CommandList className="max-h-[70vh] overflow-y-auto">
-              {degraded && (
-                <div className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 border-b">
-                  检索服务暂时不可用，已降级。请稍后重试。
+              {degraded && hits.length > 0 && (
+                <div className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 border-b flex items-center justify-between gap-2">
+                  <span>检索服务暂时不可用，已降级；下面结果可能不完整。</span>
+                  <button
+                    className="underline underline-offset-2 hover:no-underline shrink-0"
+                    onClick={() => setRetryToken((n) => n + 1)}
+                  >
+                    重试
+                  </button>
                 </div>
               )}
               {!degraded && !semanticAvailable && (
@@ -364,49 +419,67 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   <ArchitectureRecipeCard recipe={architectureRecipe} />
                 </div>
               )}
-              {hits.length === 0 && !loading ? (
-                !speculativeResult && !comparisonMatrix && !architectureRecipe && (
-                  <div className="py-6 px-3 text-center">
-                    <div className="text-muted-foreground text-sm">
-                      未找到与 “<span className="font-medium">{query}</span>” 相关的导航
-                    </div>
-                    <div className="text-xs text-muted-foreground/70 mt-1">
-                      试试拼音首字母（如 zgtqw）或描述你的需求
-                    </div>
-                    {suggestions.length > 0 && (
-                      <div className="mt-4">
-                        <div className="text-xs text-muted-foreground mb-2">试试这些搜索</div>
-                        <div className="flex flex-wrap justify-center gap-1.5">
-                          {suggestions.map((s) => (
-                            <button
-                              key={s}
-                              className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                              onClick={() => setQuery(s)}
-                            >
-                              {s}
-                            </button>
-                          ))}
-                        </div>
+              {panel.mode !== 'hidden' ? (
+                <div className="py-6 px-3 text-center">
+                  <div className="text-muted-foreground text-sm">{panel.title}</div>
+                  <div className="text-xs text-muted-foreground/70 mt-1">{panel.hint}</div>
+                  {suggestions.length > 0 && (
+                    <div className="mt-4">
+                      <div className="text-xs text-muted-foreground mb-2">试试这些搜索</div>
+                      <div className="flex flex-wrap justify-center gap-1.5">
+                        {suggestions.map((s) => (
+                          <button
+                            key={s}
+                            className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            onClick={() => setQuery(s)}
+                          >
+                            {s}
+                          </button>
+                        ))}
                       </div>
-                    )}
-                    {popular.length > 0 && (
-                      <div className="mt-4">
-                        <div className="text-xs text-muted-foreground mb-2">热门搜索</div>
-                        <div className="flex flex-wrap justify-center gap-1.5">
-                          {popular.map((s) => (
-                            <button
-                              key={s}
-                              className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:bg-accent transition-colors"
-                              onClick={() => setQuery(s)}
-                            >
-                              {s}
-                            </button>
-                          ))}
-                        </div>
+                    </div>
+                  )}
+                  {popular.length > 0 && (
+                    <div className="mt-4">
+                      <div className="text-xs text-muted-foreground mb-2">热门搜索</div>
+                      <div className="flex flex-wrap justify-center gap-1.5">
+                        {popular.map((s) => (
+                          <button
+                            key={s}
+                            className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:bg-accent transition-colors"
+                            onClick={() => setQuery(s)}
+                          >
+                            {s}
+                          </button>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                )
+                    </div>
+                  )}
+                  {panel.actions.length > 0 && (
+                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                      {panel.actions.map((action) =>
+                        action.href ? (
+                          <Link
+                            key={action.kind}
+                            href={action.href}
+                            onClick={() => setIsFocused(false)}
+                            className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:bg-accent transition-colors"
+                          >
+                            {action.label}
+                          </Link>
+                        ) : (
+                          <button
+                            key={action.kind}
+                            className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            onClick={() => runPanelAction(action)}
+                          >
+                            {action.label}
+                          </button>
+                        ),
+                      )}
+                    </div>
+                  )}
+                </div>
               ) : (
 
 

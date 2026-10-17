@@ -7,7 +7,7 @@ import { ArrowLeft, LayoutGrid, Sparkles, Move, Maximize2, ShieldCheck } from 'l
 import { Button } from '@/registry/new-york/ui/button'
 
 export const metadata: Metadata = {
-  title: '模块化自定义工作台 - NavHub 4.0+',
+  title: '模块化自定义工作台',
   description: '全响应式 12 栅格模块化页面系统，支持鼠标自由拖拽换位、双轴尺寸缩放、独立小组件即插即用与本地静止持久化。',
 }
 

@@ -17,6 +17,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { LoadErrorNotice } from '@/components/admin/load-error-notice'
+import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface CategoryRow {
@@ -66,6 +68,8 @@ export default function AdminCategoriesPage() {
   const [cats, setCats] = useState<CategoryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // 「没拉到」和「真的没有」必须分开（见 lib/admin-load-failure.ts）
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [newParent, setNewParent] = useState('')
   const [newAltLabels, setNewAltLabels] = useState('')
@@ -74,9 +78,14 @@ export default function AdminCategoriesPage() {
 
   const load = useCallback(() => {
     setLoading(true)
+    setLoadError(null)
     void hubGet<CategoryRow[]>('/api/categories')
       .then((data) => setCats(Array.isArray(data) ? data : []))
-      .catch(() => setCats([]))
+      .catch((err) => {
+        // 失败仍然回落到空列表，但必须留下错误态（见 lib/admin-load-failure.ts）
+        setCats([])
+        setLoadError(describeLoadFailure(err, '类目列表'))
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -188,10 +197,12 @@ export default function AdminCategoriesPage() {
         </Button>
       </div>
 
+      {loadError && <LoadErrorNotice message={loadError} onRetry={() => load()} retrying={loading} />}
+
       {loading ? (
         <div className="text-muted-foreground text-sm">加载中…</div>
       ) : tree.length === 0 ? (
-        <div className="text-muted-foreground text-sm">暂无类目</div>
+        <div className="text-muted-foreground text-sm">{emptyStateText(loadError, '暂无类目')}</div>
       ) : (
         <div className="rounded-md border overflow-x-auto">
           <table className="w-full text-sm">

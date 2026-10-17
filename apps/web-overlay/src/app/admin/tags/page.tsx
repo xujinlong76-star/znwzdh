@@ -16,6 +16,8 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { LoadErrorNotice } from '@/components/admin/load-error-notice'
+import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface TagRow {
@@ -44,13 +46,20 @@ export default function AdminTagsPage() {
   const [filter, setFilter] = useState('')
   const [selectedGroup, setSelectedGroup] = useState('all')
   const [busyId, setBusyId] = useState<string | null>(null)
+  // 「没拉到」和「真的没有」必须分开（见 lib/admin-load-failure.ts）
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
+    setLoadError(null)
     const url = selectedGroup === 'all' ? '/api/tags?minCount=1' : `/api/tags?minCount=1&group=${selectedGroup}`
     void hubGet<TagRow[]>(url)
       .then((t) => setTags(Array.isArray(t) ? t : []))
-      .catch(() => setTags([]))
+      .catch((err) => {
+        // 失败仍然回落到空列表，但必须留下错误态（见 lib/admin-load-failure.ts）
+        setTags([])
+        setLoadError(describeLoadFailure(err, '标签列表'))
+      })
       .finally(() => setLoading(false))
   }, [selectedGroup])
 
@@ -112,10 +121,12 @@ export default function AdminTagsPage() {
         </div>
       </div>
 
+      {loadError && <LoadErrorNotice message={loadError} onRetry={() => load()} retrying={loading} />}
+
       {loading ? (
         <div className="text-muted-foreground text-sm py-8 text-center">加载中…</div>
       ) : filtered.length === 0 ? (
-        <div className="text-muted-foreground text-sm py-8 text-center">暂无匹配标签</div>
+        <div className="text-muted-foreground text-sm py-8 text-center">{emptyStateText(loadError, '暂无匹配标签')}</div>
       ) : (
         <div className="rounded-md border bg-card">
           <table className="w-full text-sm">

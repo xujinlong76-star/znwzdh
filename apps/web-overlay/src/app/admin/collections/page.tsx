@@ -16,6 +16,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { LoadErrorNotice } from '@/components/admin/load-error-notice'
+import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface CollectionRow {
@@ -47,6 +49,9 @@ export default function AdminCollectionsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [items, setItems] = useState<CollectionItem[]>([])
   const [busy, setBusy] = useState(false)
+  // 「没拉到」和「真的没有」必须分开，否则失败会被渲染成「暂无专题」（见 lib/admin-load-failure.ts）
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
 
   // 新建表单
   const [newSlug, setNewSlug] = useState('')
@@ -59,17 +64,30 @@ export default function AdminCollectionsPage() {
 
   const load = useCallback(() => {
     setLoading(true)
+    setLoadError(null)
     void hubGet<CollectionRow[]>('/api/collections?all=1')
       .then((data) => setCols(Array.isArray(data) ? data : []))
-      .catch(() => setCols([]))
+      .catch((err) => {
+        // 失败仍然回落到空列表，但必须留下错误态：显示成「暂无专题」会让管理员
+        // 以为数据被删了
+        setCols([])
+        setLoadError(describeLoadFailure(err, '专题列表'))
+      })
       .finally(() => setLoading(false))
   }, [])
 
   const loadDetail = useCallback((id: string) => {
     setSelectedId(id)
+    setDetailError(null)
+    // 先清空：否则切换专题时，上一份条目会挂在新专题下面
+    setItems([])
     void hubGet<{ collection: CollectionRow; items: CollectionItem[] }>('/api/collections/by-id/' + id)
       .then((d) => setItems(d.items ?? []))
-      .catch(() => setItems([]))
+      .catch((err) => {
+        // 同 load()：条目加载失败不能显示成「暂无条目」
+        setItems([])
+        setDetailError(describeLoadFailure(err, '专题条目'))
+      })
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -194,13 +212,15 @@ export default function AdminCollectionsPage() {
         </Button>
       </div>
 
+      {loadError && <LoadErrorNotice message={loadError} onRetry={() => load()} retrying={loading} />}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section>
           <h2 className="text-base font-medium mb-3">全部专题（{cols.length}）</h2>
           {loading ? (
             <div className="text-muted-foreground text-sm">加载中…</div>
           ) : cols.length === 0 ? (
-            <div className="text-muted-foreground text-sm">暂无专题</div>
+            <div className="text-muted-foreground text-sm">{emptyStateText(loadError, '暂无专题')}</div>
           ) : (
             <div className="rounded-md border divide-y">
               {cols.map((c) => (
@@ -273,8 +293,11 @@ export default function AdminCollectionsPage() {
                   />
                   <Button size="sm" disabled={busy || !newSiteRef.trim()} onClick={() => void addItem()}>添加</Button>
                 </div>
+                {detailError && (
+                  <LoadErrorNotice message={detailError} onRetry={() => selected && loadDetail(selected.id)} />
+                )}
                 {items.length === 0 ? (
-                  <div className="text-muted-foreground text-sm">暂无条目</div>
+                  <div className="text-muted-foreground text-sm">{emptyStateText(detailError, '暂无条目')}</div>
                 ) : (
                   <div className="rounded-md border divide-y">
                     {items.map((it) => (

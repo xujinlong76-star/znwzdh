@@ -14,6 +14,7 @@ import { Footer } from '@/components/footer'
 import { fetchNewSites, fetchTrending, type HubSite } from '@/lib/navhub-api'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
+import { SearchPalette } from '@/components/search-palette'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Flame, Sparkles, ArrowLeft, Trophy, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -183,6 +184,9 @@ export default function HotPage() {
             </div>
           </div>
         </div>
+
+        {/* 站内搜索：此前只有首页有搜索入口（⌘K 也只绑在首页），到了榜单页就只能一路点下去 */}
+        <SearchPalette placeholder="没找到想要的？直接搜索全部站点（中文 / 拼音 / 语义）" />
 
         {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
 

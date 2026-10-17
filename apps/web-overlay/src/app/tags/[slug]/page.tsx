@@ -16,6 +16,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react'
 import { searchSites, type HubSite } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
+import { SearchPalette } from '@/components/search-palette'
 import { SiteFavicon } from '@/components/site-favicon'
 
 export default function TagDetailPage() {
@@ -71,6 +72,9 @@ export default function TagDetailPage() {
             基于中枢多通道检索与向量图谱，为您汇总所有归属于「{slug}」分类的优质技术资产与工具。
           </p>
         </div>
+
+        {/* 站内搜索：标签页只能看这一类站点，想找别的就得回首页 —— 这里直接给出口 */}
+        <SearchPalette placeholder="不限于本标签：搜索全部站点（中文 / 拼音 / 语义）" />
 
         {degraded && (
           <HubDegradedNotice

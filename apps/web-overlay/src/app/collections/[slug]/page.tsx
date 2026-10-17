@@ -14,6 +14,7 @@ import { Footer } from '@/components/footer'
 import { fetchCollectionDetail, type HubCollection, type HubSite } from '@/lib/navhub-api'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
+import { SearchPalette } from '@/components/search-palette'
 import { ArrowLeft, Layers, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -101,6 +102,9 @@ export default function CollectionDetailPage() {
                 <p className="text-xs text-muted-foreground">共收录 {sites.length} 个站点</p>
               </div>
             </div>
+
+            {/* 站内搜索：专题只覆盖其中一部分站点，给出「直接搜全部」的出口 */}
+            <SearchPalette placeholder="不限于本专题：搜索全部站点（中文 / 拼音 / 语义）" />
 
             {sites.length === 0 ? (
               <div className="text-muted-foreground text-sm py-12 text-center border border-dashed rounded-xl bg-muted/10">

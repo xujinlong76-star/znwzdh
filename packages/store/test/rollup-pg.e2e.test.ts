@@ -138,8 +138,10 @@ describe.skipIf(!client)("跨方言：rollup 在 PostgreSQL 上与 SQLite 行为
       `SELECT day_start, kind, site_key, total, identities FROM ${SCHEMA}.events_daily ORDER BY day_start, kind, site_key`,
       [],
     );
-    // 每天 4 行：visit/s1×2、search/''×1、visit/s2×1 —— 跨 3 天共 6 个分组
-    expect(events).toHaveLength(6);
+    // 每天 4 行落在 **3 个分组**上：visit/s1（两行合并，total=2）、search/''（NULL 归一化）、
+    // visit/s2。3 天 × 3 组 = 9 行。**原断言写 6，漏算了 visit/s2 这一组**，
+    // 于是 CI 的 test-postgres 一直红 —— 断言本身就是错的，不是 PG 与 SQLite 行为不同。
+    expect(events).toHaveLength(9);
     const visit = events.filter((r: Record<string, unknown>) => r.kind === "visit" && r.site_key === "s1");
     expect(visit).toHaveLength(3); // 3 天各一条
     for (const row of visit) {
@@ -151,6 +153,13 @@ describe.skipIf(!client)("跨方言：rollup 在 PostgreSQL 上与 SQLite 行为
     for (const row of search) {
       expect(row.site_key).toBe(""); // NULL 归一化成空串
       expect(Number(row.total)).toBe(1);
+    }
+    // 第三组：visit/s2 每天 1 行（上面两条 filter 都盖不到它，所以这里必须单独钉住）
+    const s2 = events.filter((r: Record<string, unknown>) => r.kind === "visit" && r.site_key === "s2");
+    expect(s2).toHaveLength(3);
+    for (const row of s2) {
+      expect(Number(row.total)).toBe(1);
+      expect(Number(row.identities)).toBe(1);
     }
 
     const audit = await adapter.select(
@@ -178,7 +187,7 @@ describe.skipIf(!client)("跨方言：rollup 在 PostgreSQL 上与 SQLite 行为
     expect(tableAt(again, 0).days).toBe(0);
     expect(tableAt(again, 1).days).toBe(0);
     const rows = await adapter.select(`SELECT COUNT(*) AS c FROM ${SCHEMA}.events_daily`, []);
-    expect(Number(rows[0]?.c)).toBe(6); // 没有被 upsert 追加
+    expect(Number(rows[0]?.c)).toBe(9); // 3 天 × 3 组，没有被 upsert 追加
   });
 
   /** PG 适配器：`$n` 占位符 + rowCount 语义（与生产 openPg 一致）。 */

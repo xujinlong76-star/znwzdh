@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
@@ -37,6 +37,7 @@ const QuickToolsDrawer = dynamic(
   { ssr: false }
 )
 import { Button } from '@/registry/new-york/ui/button'
+import { BatchOperationDock } from '@/components/batch-operation-dock'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,10 +73,21 @@ import {
   Sparkles,
   Plus,
   ChevronDown,
+  CheckSquare,
+  ListChecks,
 } from 'lucide-react'
 
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import {
+  clearSelected,
+  pickSelectedSites,
+  pruneSelected,
+  selectAllIds,
+  summarizeSelection,
+  toggleSelected,
+} from '@/lib/selection'
+import type { BatchSiteItem } from '@/lib/batch-operations'
 import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
 import {
   sortCategoryItemsWithPinned,
@@ -85,6 +97,7 @@ import {
   isSafeSiteHref,
 } from '@/lib/modular/diy-presets'
 import { useToast } from '@/components/ui/use-toast'
+import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 
 interface NavigationContentProps {
   navigationData: NavigationData
@@ -245,6 +258,68 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
       sortedCategories: sorted,
     }
   }, [customAsCategories, filteredNavigationItems, hiddenCategoryIds, pinnedCategoryIds, categoryOrder, siteCategoryOverrides])
+
+  /* ------------------------- 多选批量操作 -------------------------
+   *
+   * 组件 `batch-operation-dock.tsx` 与 `lib/batch-operations.ts`（批量导出 /
+   * 复制成 Markdown / 置顶 / 移动 / 删除）早就写好了，但**从未被挂载**：
+   * 没有任何选中状态，也没有任何入口，用户「一次处理多个站点」的需求没有出口。
+   * 这里补上入口：工具栏的「多选」开关 + 卡片选中态 + 底部操作坞。
+   */
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+
+  /** 当前**真实可见**的站点（跳过已折叠分类、按 id 去重）：全选与选中剪枝都以它为准 */
+  const visibleSites = useMemo(() => {
+    const seen = new Set<string>()
+    const out: BatchSiteItem[] = []
+    const push = (raw: any) => {
+      if (!raw?.id || seen.has(raw.id) || !raw.href) return
+      seen.add(raw.id)
+      out.push({
+        id: raw.id,
+        title: raw.title,
+        href: raw.href,
+        description: raw.description,
+        icon: raw.icon,
+      })
+    }
+    for (const category of sortedCategories as any[]) {
+      if (collapsedCategoryIds.includes(category.id)) continue
+      for (const item of (category.items as any[]) || []) push(item)
+      for (const sub of (category.subCategories as any[]) || []) {
+        for (const item of (sub.items as any[]) || []) push(item)
+      }
+    }
+    return out
+  }, [sortedCategories, collapsedCategoryIds])
+
+  /** 选中的站点数据（顺序 = 用户选择的先后），交给批量操作坞 */
+  const selectedSites = useMemo(
+    () => pickSelectedSites(selectedIds, visibleSites),
+    [selectedIds, visibleSites],
+  )
+
+  /** 列表变化（切换工作台 / 折叠分类 / 隐藏分类）后，丢掉已经看不见的选中项 */
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = pruneSelected(prev, visibleSites.map((s) => s.id))
+      return next.length === prev.length ? prev : next
+    })
+  }, [visibleSites])
+
+  const toggleSelectMode = () => {
+    if (selectionMode) setSelectedIds(clearSelected())
+    setSelectionMode(!selectionMode)
+  }
+
+  const toggleSelectOne = (siteId: string) => {
+    setSelectedIds((prev) => toggleSelected(prev, siteId))
+  }
+
+  const selectAllVisible = () => {
+    setSelectedIds(selectAllIds(visibleSites.map((s) => s.id)))
+  }
 
   // 4. 画布背景类名
   const canvasBgClass = useMemo(() => {
@@ -492,6 +567,42 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
               >
                 <HelpCircle className="h-4 w-4" />
               </Button>
+
+              {/* 多选：批量导出 / 复制 / 置顶的唯一入口（此前只有孤立的操作坞，没有任何入口） */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "relative h-8.5 w-8.5 rounded-lg transition-colors",
+                  selectionMode
+                    ? "text-primary bg-primary/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                )}
+                onClick={toggleSelectMode}
+                aria-pressed={selectionMode}
+                title={selectionMode ? '退出多选模式' : '多选模式：批量导出 / 复制 / 置顶'}
+                aria-label="多选模式"
+              >
+                <CheckSquare className="h-4 w-4" />
+                {selectionMode && selectedIds.length > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] leading-4 font-mono">
+                    {selectedIds.length}
+                  </span>
+                )}
+              </Button>
+
+              {selectionMode && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8.5 rounded-lg gap-1.5 px-2 text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  onClick={selectAllVisible}
+                  title={summarizeSelection(selectedIds, visibleSites.length) + '（点击全选当前可见站点）'}
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{summarizeSelection(selectedIds, visibleSites.length)}</span>
+                </Button>
+              )}
 
               <ViewModeToggle />
               <DensityToggle />
@@ -826,6 +937,9 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                                     onTogglePinInCategory={(siteId) => togglePinSiteInCategory(category.id, siteId)}
                                     isDraggable={isEditingLayout}
                                     sourceCategoryId={category.id}
+                                    selectable={selectionMode}
+                                    selected={selectedIds.includes(item.id)}
+                                    onToggleSelect={toggleSelectOne}
                                   />
                                 ))}
 
@@ -886,6 +1000,9 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                                           onTogglePinInCategory={(siteId) => togglePinSiteInCategory(subCategory.id, siteId)}
                                           isDraggable={isEditingLayout}
                                           sourceCategoryId={subCategory.id}
+                                          selectable={selectionMode}
+                                          selected={selectedIds.includes(item.id)}
+                                          onToggleSelect={toggleSelectOne}
                                         />
                                       ))}
                                     </div>
@@ -937,6 +1054,60 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
 
         {/* 4.0 弹窗：快捷键指南与 Maestro 监听 */}
         <KeyboardShortcutsDialog open={isShortcutsOpen} onOpenChange={setIsShortcutsOpen} />
+
+        {/* 多选批量操作坞：选中任意卡片后自底部升起（批量导出 / 复制 / 置顶） */}
+        {selectionMode && (
+          <BatchOperationDock
+            selectedSites={selectedSites}
+            customCategories={customAsCategories.map((c: any) => ({
+              id: c.id,
+              title: c.title,
+              items: (c.items as any[]) || [],
+            }))}
+            onClearSelection={() => setSelectedIds(clearSelected())}
+            onSelectAll={selectAllVisible}
+            totalCount={visibleSites.length}
+            onBatchAddToCustomCategory={(categoryId) => {
+              const usable = selectedSites.filter((site) => isSafeSiteHref(site.href))
+              if (usable.length === 0) {
+                toast({ title: '⚠️ 没有可收录的站点', description: '选中的站点网址不合法。' })
+                return
+              }
+              for (const site of usable) {
+                addSiteToCustomCategory(categoryId, {
+                  id: `custom_site_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                  title: site.title,
+                  href: site.href,
+                  description: site.description,
+                })
+              }
+              toast({
+                title: '✨ 已收录 ' + usable.length + ' 个站点',
+                description: '已批量加入所选专属分类。',
+              })
+              setSelectedIds(clearSelected())
+            }}
+            onBatchPinToWorkbench={() => {
+              let pinned = 0
+              for (const site of selectedSites) {
+                if (!isSafeSiteHref(site.href)) continue
+                const res = pinSiteToWorkbench({
+                  siteId: site.id,
+                  title: site.title,
+                  href: site.href,
+                  icon: site.icon,
+                  description: site.description,
+                })
+                if (res.ok) pinned++
+              }
+              toast(
+                pinned > 0
+                  ? { title: '📌 已固定 ' + pinned + ' 个站点', description: '已加入收藏与工作台启动坞。' }
+                  : { title: '⚠️ 固定失败', description: '浏览器本地存储不可用，或网址不合法。' },
+              )
+            }}
+          />
+        )}
 
         {/* 自定义站点录入弹窗 */}
         <Dialog open={!!addSiteTargetCatId} onOpenChange={(open) => !open && setAddSiteTargetCatId(null)}>

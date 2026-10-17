@@ -28,6 +28,10 @@ interface NavigationCardProps {
   onTogglePinInCategory?: (siteId: string) => void
   isDraggable?: boolean
   sourceCategoryId?: string
+  /** 多选模式：点击卡片 = 切换选中，而不是打开站点 */
+  selectable?: boolean
+  selected?: boolean
+  onToggleSelect?: (siteId: string) => void
 }
 
 export function NavigationCard({
@@ -39,9 +43,23 @@ export function NavigationCard({
   onTogglePinInCategory,
   isDraggable = false,
   sourceCategoryId,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
 }: NavigationCardProps) {
   const { toast } = useToast()
   const linkTarget = siteConfig?.navigation?.linkTarget || '_blank'
+
+  /**
+   * 多选模式下卡片点击**不导航**，只切换选中。
+   * 这是「批量操作」的入口：没有它，底部的批量操作坞永远不会出现。
+   */
+  const handleLinkClick = (e: React.MouseEvent) => {
+    if (!selectable) return
+    e.preventDefault()
+    e.stopPropagation()
+    onToggleSelect?.(item.id)
+  }
 
   const handleDragStart = (e: React.DragEvent) => {
     if (!isDraggable) return
@@ -97,6 +115,17 @@ export function NavigationCard({
     }
   }
 
+  /**
+   * 多选模式的视觉态：整卡可点（不再是链接）+ 主色描边；已选中再叠一层底色。
+   * 放在这里而不是每处 markup，是为了三个显示模式（紧凑 / 标准 / 丰富）完全一致。
+   */
+  const selectionClass = !selectable
+    ? ''
+    : cn(
+        'cursor-pointer ring-2 ring-primary/25 hover:ring-primary/45',
+        selected && 'ring-primary/70 border-primary/60 bg-primary/5',
+      )
+
   // 1. 紧凑单行条形多态 (Compact Bar Mode)
   if (cardDisplayMode === 'compact') {
     return (
@@ -104,13 +133,16 @@ export function NavigationCard({
           <TooltipTrigger asChild>
             <div
               tabIndex={0}
+              data-navhub-site-id={item.id}
+              data-navhub-selected={selected ? 'true' : undefined}
               onKeyDown={handleKeyDown}
               draggable={isDraggable}
               onDragStart={handleDragStart}
               className={cn(
                 "group relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
-                isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30"
+                isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
+                selectionClass
               )}
             >
               <Link
@@ -118,6 +150,7 @@ export function NavigationCard({
                 target={linkTarget}
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
+                onClick={handleLinkClick}
                 className="flex items-center gap-2 min-w-0 flex-1"
               >
                 <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover:scale-105">
@@ -218,13 +251,16 @@ export function NavigationCard({
           <TooltipTrigger asChild>
             <Card
               tabIndex={0}
+              data-navhub-site-id={item.id}
+              data-navhub-selected={selected ? 'true' : undefined}
               onKeyDown={handleKeyDown}
               draggable={isDraggable}
               onDragStart={handleDragStart}
               className={cn(
                 "group @container relative overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
-                isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/70 hover:ring-1 hover:ring-primary/40"
+                isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/70 hover:ring-1 hover:ring-primary/40",
+                selectionClass
               )}
             >
               {isPinnedInCategory && (
@@ -239,6 +275,7 @@ export function NavigationCard({
                 target={linkTarget}
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
+                onClick={handleLinkClick}
                 className="block h-full"
               >
                 <CardHeader className="p-4 sm:p-5">
@@ -377,13 +414,16 @@ export function NavigationCard({
         <TooltipTrigger asChild>
           <Card
             tabIndex={0}
+            data-navhub-site-id={item.id}
+            data-navhub-selected={selected ? 'true' : undefined}
             onKeyDown={handleKeyDown}
             draggable={isDraggable}
             onDragStart={handleDragStart}
             className={cn(
               "group @container relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
               isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
-              isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30"
+              isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
+              selectionClass
             )}
           >
             {isPinnedInCategory && (
@@ -398,6 +438,7 @@ export function NavigationCard({
               target={linkTarget}
               rel="noopener noreferrer"
               data-prefetch-target="true"
+              onClick={handleLinkClick}
               className="block h-full"
             >
               <CardHeader className="p-[var(--density-card-padding,0.875rem)]">

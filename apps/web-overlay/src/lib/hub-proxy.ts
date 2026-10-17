@@ -81,6 +81,55 @@ export function isNullBodyStatus(status: number): boolean {
   return status === 204 || status === 205 || status === 304
 }
 
+/** 转发给中枢的 X-Forwarded-For 最多保留几个条目（防头部膨胀） */
+export const MAX_FORWARDED_FOR_ENTRIES = 8
+
+const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/
+const IPV6_RE = /^[0-9a-fA-F:]+$/
+
+/**
+ * 规范化客户端传来的 `X-Forwarded-For` 之后再转给中枢。
+ *
+ * 为什么不能原样透传（此前就是原样透传）：该头由客户端可控。
+ *  1. 可以塞任意字符串/超长内容进中枢的日志与限流键；
+ *  2. 「按 IP 分桶」的限流可被伪造值直接绕过（换个假 IP 就换一个桶）。
+ *
+ * 这里只做**规范与瘦身**：逐个校验形状（IPv4 / IPv4:port / 裸 IPv6 / unknown），
+ * 上限 8 个条目，其余一律丢弃。
+ *
+ * ⚠️ 诚实边界：这**不能**阻止伪造 —— 没有可信边缘时无法区分来源真假。
+ * 要真正防伪造必须同时满足：前置反向代理**覆写**该头，且中枢按跳数正确配置
+ * `NAVHUB_TRUST_PROXY`（见 docs/security-notes.md）。
+ */
+export function sanitizeForwardedFor(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const out: string[] = []
+  for (const part of raw.split(',')) {
+    const value = part.trim()
+    if (!value) continue
+
+    let host: string | null = null
+    if (value === 'unknown') {
+      host = 'unknown'
+    } else if (IPV4_RE.test(value)) {
+      host = value
+    } else if (value.includes('.')) {
+      // 带端口/杂质的 IPv4：仅当去掉 `:port` 后是合法 IPv4 才接受
+      const stripped = value.replace(/:\d+$/, '')
+      if (IPV4_RE.test(stripped)) host = stripped
+    } else if (value.includes(':') && IPV6_RE.test(value)) {
+      // 裸 IPv6 原样保留；`[v6]:port` 这类形式无法与内容区分，保守丢弃
+      host = value
+    }
+
+    if (host) {
+      out.push(host)
+      if (out.length >= MAX_FORWARDED_FOR_ENTRIES) break
+    }
+  }
+  return out.length > 0 ? out.join(', ') : null
+}
+
 /**
  * 挑出要回传给浏览器的响应头。
  * 缺 `cache-control` 时补 `no-store`：代理层不做启发式缓存的赌注。

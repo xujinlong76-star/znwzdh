@@ -7,6 +7,7 @@ import {
   isStreamingContentType,
   isTextContentType,
   pickResponseHeaders,
+  sanitizeForwardedFor,
   upstreamTimeoutMs,
 } from '@/lib/hub-proxy'
 import { hubIdentitySecret, identityFromRequest, signIdentity } from '@/lib/identity-signature'
@@ -71,7 +72,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   // Next 15 已移除 NextRequest.ip，路由处理器拿不到 socket IP，
   // 因此无 XFF 时只能退回"中枢看到的对端地址"（= 前端进程，仍是共享桶）。
   // 中枢需 trustProxy 才会读取该头（默认关，经代理部署时设 NAVHUB_TRUST_PROXY=1 开启）。
-  const xff = request.headers.get('x-forwarded-for')
+  const xff = sanitizeForwardedFor(request.headers.get('x-forwarded-for'))
   if (xff) headers['x-forwarded-for'] = xff
 
   const method = request.method.toUpperCase()

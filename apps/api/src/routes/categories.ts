@@ -73,8 +73,8 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         icon: z.string().nullable().optional(),
         description: z.string().nullable().optional(),
         sort: z.number().optional(),
-        altLabels: z.array(z.string()).optional(),
-        relatedCategories: z.array(z.string()).optional(),
+        altLabels: z.array(z.string()).max(50).optional(),
+        relatedCategories: z.array(z.string()).max(50).optional(),
       })
       .safeParse(req.body ?? {});
 
@@ -105,8 +105,8 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     description: z.string().nullable().optional(),
     enabled: z.boolean().optional(),
     sort: z.number().optional(),
-    altLabels: z.array(z.string()).optional(),
-    relatedCategories: z.array(z.string()).optional(),
+    altLabels: z.array(z.string()).max(50).optional(),
+    relatedCategories: z.array(z.string()).max(50).optional(),
   });
 
   /**

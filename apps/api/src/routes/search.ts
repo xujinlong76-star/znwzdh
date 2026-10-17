@@ -32,7 +32,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     categoryId: z.string().optional(),
     tag: z.string().optional(),
     facets: z.union([
-      z.record(z.array(z.string())),
+      z.record(z.array(z.string()).max(200)),
       z.string().transform((str) => {
         try {
           const parsed = JSON.parse(str);
@@ -49,9 +49,9 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     userId: z.string().max(64).optional(),
     anonId: z.string().max(64).optional(),
     personalize: z.object({
-      topCategories: z.array(z.string()).optional(),
-      topTags: z.array(z.string()).optional(),
-      visitedSiteIds: z.array(z.string()).optional(),
+      topCategories: z.array(z.string()).max(200).optional(),
+      topTags: z.array(z.string()).max(200).optional(),
+      visitedSiteIds: z.array(z.string()).max(200).optional(),
     }).optional(),
   });
 

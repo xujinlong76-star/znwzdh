@@ -56,7 +56,10 @@ function code(): string {
 describe("拉取失败：必须有持续可见的失败态", () => {
   it("失败被记录（既有错误、也有清除）", () => {
     const src = code();
-    expect(src).toContain("setLoadError(err)");
+    // 统计趋势请求现在过闸门，错误对象叫 out.error；两种写法都算「失败被记录」
+    expect(
+      src.includes("setLoadError(err)") || src.includes("setLoadError(out.error)"),
+    ).toBe(true);
     expect(src).toContain("setLoadError(null)");
     expect(src).toContain("const degradeNotice = loadError ? describeDegrade(loadError) : null");
   });

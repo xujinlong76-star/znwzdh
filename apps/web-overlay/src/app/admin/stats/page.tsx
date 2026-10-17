@@ -5,7 +5,7 @@
  * 包含健康巡检与响应延迟趋势曲线、热门搜索、零结果补录线索、热度总榜与时间窗口切换。
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Activity,
@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { hubGet } from '@/lib/navhub-api'
+import { newRequestGate, settleLatest, type RequestGate } from '@/lib/latest-request'
 import { describeDegrade } from '@/lib/degrade'
 
 interface Trends {
@@ -219,25 +220,34 @@ export default function AdminStatsPage() {
   // 拉取失败必须能持续显示：只写控制台的话，下面那些「暂无…」就会把故障说成「没数据」
   const [loadError, setLoadError] = useState<unknown>(null)
 
+  // 区间切换的闸门：连点「近 7 天 / 近 30 天」时，先发那次的后到不许把图换成旧区间
+  const trendGateRef = useRef<RequestGate | null>(null)
+  if (trendGateRef.current === null) trendGateRef.current = newRequestGate()
+  const trendGate = trendGateRef.current
+
   const load = useCallback((selectedDays: number) => {
     setLoading(true)
-    Promise.all([
-      hubGet<Trends>(`/api/hub/admin/stats/trends?days=${selectedDays}`),
-      hubGet<{ points: HealthTrendPoint[] }>(`/api/hub/admin/health/trend?days=${selectedDays}`),
-    ])
-      .then(([trendsData, healthData]) => {
+    void (async () => {
+      const out = await settleLatest(trendGate, () =>
+        Promise.all([
+          hubGet<Trends>(`/api/hub/admin/stats/trends?days=${selectedDays}`),
+          hubGet<{ points: HealthTrendPoint[] }>(`/api/hub/admin/health/trend?days=${selectedDays}`),
+        ]),
+      )
+      // 过期（用户已经切了别的区间）：一个字都不要写
+      if (out.status === 'stale') return
+      if (out.status === 'value') {
+        const [trendsData, healthData] = out.value
         setData(trendsData)
         setHealth(healthData?.points || [])
         setLoadError(null)
-      })
-      .catch((err) => {
-        console.error('Failed to load stats trends:', err)
-        setLoadError(err)
-      })
-      .finally(() => {
-        setLoading(false)
-      })
-  }, [])
+      } else {
+        console.error('Failed to load stats trends:', out.error)
+        setLoadError(out.error)
+      }
+      setLoading(false)
+    })()
+  }, [trendGate])
 
   useEffect(() => {
     load(days)

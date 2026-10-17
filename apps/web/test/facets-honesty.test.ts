@@ -61,7 +61,10 @@ describe("分面请求失败：不再是一个「什么也不画」的空页面"
     const src = code();
     expect(src).toContain("setLoadError(err)");
     expect(src).toContain("setLoadError(null)");
-    expect(src).toContain("setSamplesError(err)");
+    // 样例站点请求现在过闸门，错误对象叫 out.error；两种写法都算「失败被记录」
+    expect(
+      src.includes("setSamplesError(err)") || src.includes("setSamplesError(out.error)"),
+    ).toBe(true);
     expect(src).toContain("setSamplesError(null)");
     expect(src).toContain("const degradeNotice = loadError ? describeDegrade(loadError) : null");
     expect(src).toContain("const samplesNotice = samplesError ? describeDegrade(samplesError) : null");

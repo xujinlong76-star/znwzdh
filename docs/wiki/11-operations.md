@@ -149,4 +149,50 @@ pg_restore -d navhub_restore --no-owner navhub-pg-<时间戳>.dump
 - **中期**：加 TTL 任务（复用现有 job 框架，新增一个 `purge_events` 类型的定时任务）；
 - **查询预算**：热点列表查询必须带 `limit`，新增聚合查询要在测试里断言扫描行数不随数据量线性爆炸。
 
-当前没有自动清理，靠 §5 的备份 + 人工归档；数据量到百万级前完成自动化即可。
+### 6.1 现状：已有自动化脚本
+
+`scripts/data-retention.mjs` 负责这两张表的 TTL 清理，**默认 dry-run**（先看清要删多少），显式加 `--apply` 才动手：
+
+```bash
+# 1) 先看一眼会命中多少行（默认 dry-run，一行都不删）
+node scripts/data-retention.mjs
+
+# 2) 确认无误后执行清理，同时把被删的行 gzip 归档到 data/archive
+node scripts/data-retention.mjs --apply
+
+# 自定义保留期（默认 events 180 天 / audit_logs 365 天）
+node scripts/data-retention.mjs --events-days 90 --audit-days 365 --apply
+
+# standard 模式：显式给 PG 连接串（默认读 NAVHUB_DATABASE_URL）
+node scripts/data-retention.mjs --url "$NAVHUB_DATABASE_URL" --apply
+```
+
+行为要点：
+
+| 项 | 说明 |
+| --- | --- |
+| 默认 dry-run | 不加 `--apply` 只统计；命中量会连同截止时间一起打印 |
+| 先归档后删除 | 每行在 DELETE 之前写入 `<table>-<时间戳>.ndjson.gz`；归档写失败直接中断，不会出现"删了没留底" |
+| 小批量删除 | 每批 SELECT 若干行再按主键 `id IN (...)` 删除（默认 1000/批，`--batch` 可调），避免百万行表上一个长事务锁库 |
+| 方言无关 | SQLite 与 PostgreSQL 同一套逻辑，靠注入占位符风格（`?` / `$n`）适配 |
+| 0 行不留垃圾 | 表内没有过期数据时不产生空归档文件，也不建空目录 |
+| 边界 | `created_at < now - keepDays` 才算过期，恰好等于截止时刻的行保留 |
+
+核心逻辑在 `packages/store/src/retention.ts`（`runRetention`），由 `packages/store/test/retention.test.ts` 覆盖分批、扫描上限、归档优先于删除、参数白名单等分支；CLI 只是它的包装。
+
+### 6.2 什么时候跑
+
+数据量到百万级之前不必频繁执行。建议：
+
+- **定期**：每月一次即可，`cron`/systemd timer 均可。例：
+  ```
+  # 每月 3 号 04:00 清理并归档（standard 模式）
+  0 4 3 * * cd /srv/navhub && node scripts/data-retention.mjs --apply >> /var/log/navhub-retention.log 2>&1
+  ```
+- **跑之前先备份**：清理是不可逆的，但归档文件是保底手段；推荐顺序是 §5 备份 → dry-run 看量 → `--apply`。
+- **归档产物本身也要有去留策略**：`data/archive/*.ndjson.gz` 不会被本脚本清理，按冷存储的保留要求单独归档或删除。
+
+### 6.3 还没做的部分
+
+- **聚合替代明细**：真正的长期方案是把过期明细聚合成日/月维度的统计行，删明细留聚合。脚本目前只做"原样归档 + 删除明细"，没有写入聚合表。
+- **查询预算**：热点列表查询必须带 `limit`，新增聚合查询要在测试里断言扫描行数不随数据量线性爆炸。

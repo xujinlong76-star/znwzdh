@@ -422,6 +422,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
       </div>
 
       <main
+        id="main-content"
         className={cn("flex-1 min-h-screen flex flex-col min-w-0 transition-colors duration-300", canvasBgClass)}
         // 水合安全：壁纸来自 localStorage（仅客户端），首帧与 SSR 保持一致（undefined），
         // 挂载后再上壁纸，避免 style 分叉触发 hydration mismatch；URL 白名单防 CSS url() 注入

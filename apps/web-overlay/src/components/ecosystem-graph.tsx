@@ -238,7 +238,10 @@ export function EcosystemGraph() {
         setEdges([...DEFAULT_EDGES, ...extraEdges])
         setLiveCount(dynamicNodes.length)
       })
-      .catch(() => {})
+      .catch(() => {
+        // 实时节点拉不到就保留内置静态图谱（可视化不会因此空白），
+        // liveCount 保持 0 —— 页面上「实时 N 个」就是「没有实时数据」的诚实信号
+      })
     return () => {
       cancelled = true
     }

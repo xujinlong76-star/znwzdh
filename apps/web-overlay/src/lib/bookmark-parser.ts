@@ -371,7 +371,9 @@ export function parseUniversalBookmarks(content: string): {
         const total = folders.reduce((acc: number, f: any) => acc + f.items.length, 0)
         return { format: 'json', folders, totalItems: total }
       }
-    } catch {}
+    } catch {
+      // 不是合法 JSON 而已 —— 下面还有 Netscape HTML / 纯文本等格式判定，交给它们继续识别
+    }
   }
 
   // 2. 检查是否为 Netscape HTML
@@ -429,7 +431,10 @@ export function deduplicateBookmarkItems<
     try {
       const u = new URL(norm.startsWith('http') ? norm : `https://${norm}`)
       existingTitleDomainSet.add(`${u.hostname}::${item.title.trim().toLowerCase()}`)
-    } catch {}
+    } catch {
+      // URL 解析不出来就取不到 hostname：跳过这条更弱的「同域名 + 同标题」辅助判据，
+      // 主判据（规范化 URL 集合）不受影响
+    }
   }
 
   const unique: T[] = []
@@ -451,7 +456,9 @@ export function deduplicateBookmarkItems<
         } else {
           existingTitleDomainSet.add(titleKey)
         }
-      } catch {}
+      } catch {
+        // 同上：解析失败就取不到 hostname，这条辅助判据跳过即可
+      }
     }
 
     if (isDuplicate) {

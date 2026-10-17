@@ -175,7 +175,11 @@ export function useHomeDIY() {
           } catch (e) {
             // 失败 quiet：清除 hash 后回落默认配置，不抛错不 toast（避免打开链接即报错）
             console.warn('[diy] 分享 hash 解析失败，已忽略', e)
-            try { window.history.replaceState(null, '', window.location.pathname + window.location.search) } catch {}
+            try {
+              window.history.replaceState(null, '', window.location.pathname + window.location.search)
+            } catch {
+              // 清 hash 只是顺手收拾现场；上面已经 warn 过，这里再失败也没有可做的事
+            }
           }
         }
       }
@@ -276,7 +280,11 @@ export function useHomeDIY() {
           config: next,
           clocks,
         })
-      } catch {}
+      } catch {
+        // 持久化与跨标签广播都是尽力而为：这次改动已经在内存里生效，
+        // 不能因为写盘失败（配额满 / 隐私模式）就把用户刚做的编辑整个丢掉。
+        // 代价是它刷新后不再保留 —— 这是有意选的取舍（见 PR 说明）。
+      }
       setHistory((curr) => pushLayoutHistory(curr, next))
       return next
     })
@@ -297,7 +305,9 @@ export function useHomeDIY() {
           writeSlotClocks(STORAGE_CLOCKS_KEY, merged.clocks)
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged.config))
           window.dispatchEvent(new Event('navhub_home_diy_updated'))
-        } catch {}
+        } catch {
+          // 同 updateConfig：远端合并结果已在内存生效，落盘失败不阻断（刷新后可能重来一次合并）
+        }
         // 不压入撤销历史：远端改动不是本标签页的操作，进栈会让 Ctrl+Z 行为不可预测
         // 也不再广播：否则两个标签页会互相把对方的回声再推一遍
         return merged.config
@@ -666,7 +676,9 @@ export function useHomeDIY() {
             config: nextHistory.present,
             clocks,
           })
-        } catch {}
+        } catch {
+          // 撤销本身已经在内存里生效：落盘/广播失败不该让 Ctrl+Z 看起来没反应
+        }
         return nextHistory.present
       })
       return nextHistory
@@ -690,7 +702,9 @@ export function useHomeDIY() {
             config: nextHistory.present,
             clocks,
           })
-        } catch {}
+        } catch {
+          // 同撤销：重做已在内存生效，落盘失败只影响下次刷新
+        }
         return nextHistory.present
       })
       return nextHistory

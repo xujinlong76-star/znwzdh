@@ -312,7 +312,9 @@ export async function searchSites(params: SearchParams, signal?: AbortSignal): P
 export function reportClick(siteId: string, identity?: string): void {
   // header 优先 + query 兼容（见 anonHeaders 注释）
   const query = identity ? '?anonId=' + encodeURIComponent(identity) : ''
-  void sendJson('/api/events' + query, 'POST', { kind: 'click', siteId }, undefined, anonHeaders(identity)).catch(() => undefined)
+  void sendJson('/api/events' + query, 'POST', { kind: 'click', siteId }, undefined, anonHeaders(identity)).catch(() => {
+    // 点击上报是 fire-and-forget：离线、被拦截、匿名模式都算正常，不该冒泡到页面逻辑
+  })
 }
 
 /* ------------------------------ 标签 ------------------------------ */

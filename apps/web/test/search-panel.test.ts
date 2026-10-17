@@ -134,4 +134,10 @@ describe("search-palette 源码：竞态与矛盾文案的回归守卫", () => {
     expect(src).toContain("setRetryToken((n) => n + 1)");
     expect(src).toContain("retryToken");
   });
+
+  it("检索面板接入知识图谱对标方案推荐 (relationHits)", () => {
+    expect(src).toContain("relationHits.length > 0");
+    expect(src).toContain("setRelationHits(res.relationHits ?? [])");
+  });
 });
+

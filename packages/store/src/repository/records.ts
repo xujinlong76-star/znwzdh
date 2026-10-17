@@ -115,6 +115,11 @@ export interface SiteKnowledgeGraph {
   }>;
 }
 
+export interface MatchedSiteRelation extends SiteRelation {
+  sourceSite: Site | null;
+}
+
+
 export interface SecurityOverview {
   recentFailures: Array<{ action: string; ip: string | null; count: number; lastAt: number }>;
   totalAuthFailures24h: number;

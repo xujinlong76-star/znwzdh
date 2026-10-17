@@ -21,6 +21,7 @@ import type {
     CategoryDistributionItem,
     CategorySemanticDetail,
     SiteKnowledgeGraph,
+    MatchedSiteRelation,
     DashboardOverview,
     FavoriteFolderRecord,
     FavoriteRecord,
@@ -246,6 +247,10 @@ export class Repository {
 
   async getSiteKnowledgeGraph(siteId: string, maxNeighbors?: number): Promise<SiteKnowledgeGraph | null> {
     return sitesRepo.getSiteKnowledgeGraph(this, siteId, maxNeighbors);
+  }
+
+  async findRelationsByQuery(query: string, limit = 5): Promise<MatchedSiteRelation[]> {
+    return sitesRepo.findRelationsByQuery(this, query, limit);
   }
 
   /** @internal repository/* 域函数使用 */

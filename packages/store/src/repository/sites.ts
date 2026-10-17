@@ -23,6 +23,7 @@ import type {
   AuditLogRecord,
   CategoryDistributionItem,
   SiteKnowledgeGraph,
+  MatchedSiteRelation,
   DashboardOverview,
   FavoriteFolderRecord,
   FavoriteRecord,
@@ -689,6 +690,47 @@ export async function getSiteKnowledgeGraph(
     nodes: [...nodesMap.values()],
     edges,
   };
+}
+
+/**
+ * 根据查询词智能匹配实体关系（如用户搜索 "figma"，召回作为其对标开源平替的站点 "Penpot"）
+ */
+export async function findRelationsByQuery(
+  repo: Repository,
+  query: string,
+  limit = 5
+): Promise<MatchedSiteRelation[]> {
+  const norm = query.trim().toLowerCase();
+  if (!norm || norm.length < 2) return [];
+  const pattern = `%${norm}%`;
+
+  const rows = await repo.raw(
+    `SELECT sr.*
+       FROM site_relations sr
+       JOIN sites s ON s.id = sr.source_site_id
+      WHERE (lower(sr.target_title) LIKE ? OR lower(sr.target_url) LIKE ?)
+        AND s.deleted_at IS NULL
+      ORDER BY (CASE WHEN sr.relation_type = 'alternative' THEN 1 ELSE 2 END) ASC,
+               sr.confidence DESC
+      LIMIT ?`,
+    [pattern, pattern, limit]
+  );
+
+  const out: MatchedSiteRelation[] = [];
+  const siteIds = [...new Set(rows.map((r) => String(r.source_site_id)))];
+  const sitesMap = await repo.getSitesByIds(siteIds);
+
+  for (const r of rows) {
+    const rel = rowToSiteRelation(r);
+    if (!rel.sourceSiteId) continue;
+    const sourceSite = sitesMap.get(rel.sourceSiteId) ?? null;
+    if (!sourceSite || !sourceSite.enabled) continue;
+    out.push({
+      ...rel,
+      sourceSite,
+    });
+  }
+  return out;
 }
 
 

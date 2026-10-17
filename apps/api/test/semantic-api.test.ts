@@ -173,4 +173,22 @@ describe("Taxonomy Phase 3: Semantic API & Site Relations", () => {
     expect(body.nodes.some((n: any) => n.id === site2Id)).toBe(true);
     expect(body.edges.some((e: any) => e.relationType === "alternative")).toBe(true);
   });
+
+  it("GET /api/search 携带知识图谱对标方案 (relationHits)", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/search?q=continue",
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.relationHits).toBeDefined();
+    expect(Array.isArray(body.relationHits)).toBe(true);
+    expect(body.relationHits.length).toBeGreaterThan(0);
+    expect(body.relationHits[0].targetTitle).toBe("Continue.dev");
+    expect(body.relationHits[0].sourceSiteId).toBe(site1Id);
+    expect(body.relationHits[0].sourceSite).toBeDefined();
+    expect(body.relationHits[0].sourceSite.title).toBe("Cursor");
+  });
 });
+

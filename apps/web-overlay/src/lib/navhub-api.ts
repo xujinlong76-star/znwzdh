@@ -45,6 +45,7 @@ export interface HubSiteRelation {
   confidence?: number
   bidirectional?: boolean
   site?: HubSite | null
+  sourceSite?: HubSite | null
 }
 
 export interface HubSiteRelationsPayload {
@@ -103,6 +104,8 @@ export interface HubSearchResult {
   suggestions?: string[]
   /** 零结果时的热门搜索词（有结果时缺席） */
   popular?: string[]
+  /** 知识图谱对标方案与实体关联命中（如搜 "figma" 命中其开源平替 "Penpot"） */
+  relationHits?: HubSiteRelation[]
 }
 
 export interface HubTag {

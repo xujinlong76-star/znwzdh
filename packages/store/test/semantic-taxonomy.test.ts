@@ -176,10 +176,16 @@ describe("Taxonomy Phase 3: SKOS Categories & Typed Site Relations", () => {
     expect(graph?.edges.length).toBe(1);
     expect(graph?.edges[0].relationType).toBe("alternative");
 
-    // 6. 硬删除 Figma，级联清理 site_relations
+    // 6. 测试按外部目标对标词检索实体关系
+    const matchesBeforePurge = await repo.findRelationsByQuery("Penpot", 5);
+    expect(matchesBeforePurge.length).toBeGreaterThan(0);
+    expect(matchesBeforePurge[0].targetTitle).toBe("Penpot Tool");
+
+    // 7. 硬删除 Figma，级联清理 site_relations
     await repo.purgeSite(figma.id);
     const penpotAfterPurge = await repo.getDetailedSiteRelations(penpot.id);
     expect(penpotAfterPurge.incoming.length).toBe(0);
     expect(penpotAfterPurge.all.length).toBe(0);
   });
 });
+

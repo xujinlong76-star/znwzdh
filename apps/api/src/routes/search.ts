@@ -103,11 +103,16 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     const isFirstPage = (input.offset ?? 0) === 0;
     let suggestions: string[] = [];
     let popular: string[] = [];
+    let relationHits: unknown[] = [];
     if (q) {
       // 事件只记第一页：翻页（offset>0）是同一次查询的延续，
       // 若不区分，加载更多 3 次就把 search/topQueries 计数灌水 3 倍。
       if (isFirstPage) {
         await ctx.repo.recordEvent("search", { query: q }).catch(() => undefined);
+      }
+      // 知识图谱对标与实体方案召回（如搜 "figma" 召回其开源平替 "Penpot"）
+      if (q.length >= 2) {
+        relationHits = await ctx.repo.findRelationsByQuery(q, 3).catch(() => []);
       }
       // 零结果建议只对第一页有意义（翻到头的空页不是「没搜到」）
       if (result.hits.length === 0 && isFirstPage) {
@@ -133,6 +138,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       items: hits,
       // 仅零结果时携带（字段缺席 = 正常结果，前端无需判断）
       ...(result.hits.length === 0 && q && isFirstPage ? { suggestions, popular } : {}),
+      ...(relationHits.length > 0 ? { relationHits } : {}),
     };
   }
 

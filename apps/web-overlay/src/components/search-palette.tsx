@@ -18,9 +18,9 @@ import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'rea
 import Link from 'next/link'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList, CommandItem } from '@/registry/new-york/ui/command'
-import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight } from 'lucide-react'
+import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
-import { searchSites, reportClick, fetchSearchHistory, type HubSearchHit } from '@/lib/navhub-api'
+import { searchSites, reportClick, fetchSearchHistory, type HubSearchHit, type HubSiteRelation } from '@/lib/navhub-api'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { getIdentity } from '@/lib/identity'
@@ -83,6 +83,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [popular, setPopular] = useState<string[]>([])
   const [fallbackHint, setFallbackHint] = useState<'filter' | 'fuzzy' | undefined>(undefined)
   const [recent, setRecent] = useState<string[]>([])
+  /** 知识图谱对标与实体关联方案命中 */
+  const [relationHits, setRelationHits] = useState<HubSiteRelation[]>([])
   /** 重试计数：增长即重新发起同一查询（降级时的出口） */
   const [retryToken, setRetryToken] = useState(0)
   const searchRef = useRef<HTMLDivElement>(null)
@@ -150,6 +152,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     setHasMore(false)
     setSuggestions([])
     setPopular([])
+    setRelationHits([])
     setFallbackHint(undefined)
     setDegraded(false)
     setLoadingMore(false)
@@ -173,6 +176,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           setHasMore(Boolean(res.hasMore))
           setSuggestions(res.suggestions ?? [])
           setPopular(res.popular ?? [])
+          setRelationHits(res.relationHits ?? [])
           setFallbackHint(res.fallback)
           offsetRef.current = res.hits.length
           setLoading(false)
@@ -250,7 +254,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     degraded,
     hitCount: hits.length,
     query,
-    hasWidgetResult: Boolean(speculativeResult || comparisonMatrix || architectureRecipe),
+    hasWidgetResult: Boolean(speculativeResult || comparisonMatrix || architectureRecipe || relationHits.length > 0),
   })
 
   return (
@@ -417,6 +421,60 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               {architectureRecipe && (
                 <div className="p-2 border-b">
                   <ArchitectureRecipeCard recipe={architectureRecipe} />
+                </div>
+              )}
+              {/* 知识图谱对标与实体方案推荐 (Phase 3 知识图谱联动) */}
+              {relationHits.length > 0 && (
+                <div className="p-3 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-500/20">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 mb-2">
+                    <GitFork className="w-3.5 h-3.5 text-amber-500" />
+                    <span>知识图谱对标方案推荐：为您找到 “{query}” 的开源/平替选项</span>
+                  </div>
+                  <div className="space-y-2">
+                    {relationHits.map((rel) => (
+                      <div
+                        key={rel.id}
+                        className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-card/90 border border-border/70 hover:border-amber-500/40 transition-colors shadow-2xs"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-xs sm:text-sm text-foreground truncate">
+                              {rel.sourceSite?.title || '推荐站点'}
+                            </span>
+                            {rel.isFreeOrOpenSource && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/20 flex-shrink-0">
+                                开源/免费
+                              </span>
+                            )}
+                            <span className="text-[11px] text-muted-foreground truncate">
+                              对标 {rel.targetTitle}
+                            </span>
+                          </div>
+                          {rel.note && (
+                            <p className="text-xs text-muted-foreground/90 line-clamp-1 mt-0.5">
+                              💡 {rel.note}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {rel.sourceSite && (
+                            <Button asChild size="sm" variant="outline" className="h-7 text-xs px-2.5">
+                              <Link href={`/site/${rel.sourceSite.id}`} onClick={() => setIsFocused(false)}>
+                                详情
+                              </Link>
+                            </Button>
+                          )}
+                          {rel.sourceSite && (
+                            <Button asChild size="sm" variant="default" className="h-7 text-xs px-2.5">
+                              <a href={rel.sourceSite.url} target="_blank" rel="noopener noreferrer">
+                                直达
+                              </a>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               {panel.mode !== 'hidden' ? (

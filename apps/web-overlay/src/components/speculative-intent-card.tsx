@@ -1,25 +1,26 @@
 'use client'
 
 import { useState } from 'react'
-import { Check, Copy, Sparkles, Calculator, Clock, Palette, FileCode, Hash, Timer, KeyRound, Terminal, Code2, GitCompare, Globe } from 'lucide-react'
+import { Check, Copy, Sparkles, Calculator, Clock, Palette, FileCode, Hash, Timer, KeyRound, Terminal, Code2, GitCompare, Globe, X } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import type { SpeculativeIntentResult } from '@/lib/speculative'
+import { copyText } from '@/lib/clipboard'
 
 interface SpeculativeIntentCardProps {
   result: SpeculativeIntentResult
 }
 
 export function SpeculativeIntentCard({ result }: SpeculativeIntentCardProps) {
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
-  const handleCopy = (e: React.MouseEvent) => {
+  const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation()
     const textToCopy = result.copyValue || result.previewValue
-    if (textToCopy) {
-      void navigator.clipboard.writeText(textToCopy)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
+    if (!textToCopy) return
+    // 与其它复制入口一致：先确认写入成功，再显示「已复制」
+    const outcome = await copyText(textToCopy)
+    setCopyState(outcome.ok ? 'copied' : 'failed')
+    setTimeout(() => setCopyState('idle'), 2000)
   }
 
   const getIcon = () => {
@@ -75,8 +76,14 @@ export function SpeculativeIntentCard({ result }: SpeculativeIntentCardProps) {
           onClick={handleCopy}
           className="h-7.5 px-3 text-xs flex items-center gap-1.5 font-mono flex-shrink-0 border border-border/60 hover:bg-background shadow-2xs"
         >
-          {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-          <span>{copied ? '已复制' : result.actionLabel}</span>
+          {copyState === 'copied' ? (
+            <Check className="w-3.5 h-3.5 text-emerald-500" />
+          ) : copyState === 'failed' ? (
+            <X className="w-3.5 h-3.5 text-destructive" />
+          ) : (
+            <Copy className="w-3.5 h-3.5" />
+          )}
+          <span>{copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : result.actionLabel}</span>
         </Button>
       </div>
 

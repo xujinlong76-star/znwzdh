@@ -34,6 +34,7 @@ import {
   Laptop,
   Box,
   Globe,
+  X,
 } from 'lucide-react'
 import {
   fetchSite,
@@ -43,6 +44,7 @@ import {
   type HubSiteRelation,
 } from '@/lib/navhub-api'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
+import { copyText } from '@/lib/clipboard'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
 
@@ -99,17 +101,18 @@ export default function SiteDetailPage() {
   const [relations, setRelations] = useState<HubSiteRelation[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
 
   const reload = () => setReloadToken((n) => n + 1)
 
-  const handleCopyUrl = () => {
+  const handleCopyUrl = async () => {
     if (!site?.url) return
-    navigator.clipboard.writeText(site.url)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    // 只有真的写入成功才显示「已复制」；失败要看得见（见 lib/clipboard.ts）
+    const result = await copyText(site.url)
+    setCopyState(result.ok ? 'copied' : 'failed')
+    setTimeout(() => setCopyState('idle'), 2000)
   }
 
   // 加载站点主数据
@@ -268,10 +271,29 @@ export default function SiteDetailPage() {
                 </a>
                 <button
                   onClick={handleCopyUrl}
-                  title="复制链接"
+                  aria-label={
+                    copyState === 'copied'
+                      ? '已复制链接'
+                      : copyState === 'failed'
+                        ? '复制失败，请手动选中链接复制'
+                        : '复制链接'
+                  }
+                  title={
+                    copyState === 'copied'
+                      ? '已复制'
+                      : copyState === 'failed'
+                        ? '复制失败，请手动选中链接复制'
+                        : '复制链接'
+                  }
                   className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted transition-colors"
                 >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copyState === 'copied' ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  ) : copyState === 'failed' ? (
+                    <X className="w-3.5 h-3.5 text-destructive" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
                 </button>
               </div>
 

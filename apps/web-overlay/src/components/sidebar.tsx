@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
+import { preferredScrollBehavior } from '@/lib/motion'
 import { Button } from '@/registry/new-york/ui/button'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import type { NavigationData } from '@/types/navigation'
@@ -24,7 +25,8 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id)
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth' })
+      // JS 显式传的 behavior 会压过样式表，所以这里必须自己问一次系统偏好
+      element.scrollIntoView({ behavior: preferredScrollBehavior() })
       onClose?.()
     }
   }

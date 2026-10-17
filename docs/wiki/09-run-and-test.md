@@ -201,6 +201,7 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 | **`STORAGE_ADAPTER`** | `http` | `http` \| `github` \| `sqlite`（**Web 端拒绝 sqlite**） |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:8787` | 中枢地址 |
 | `NAVHUB_STORAGE_BASE_URL` | 同上 | `/api/hub/*` 路由**运行时**读取，换地址只需重启前端 |
+| `NAVHUB_HUB_TIMEOUT_MS` | `30000` | `/api/hub/*` 代理的**上游超时**（毫秒）；到点回 504，SSE 长连接不受影响 |
 | `NAVHUB_STORAGE_TOKEN` | 空 | 中枢开启鉴权时的 Bearer |
 | `GITHUB_OWNER` / `GITHUB_REPO` / `GITHUB_BRANCH` / `GITHUB_PAT` | — | `STORAGE_ADAPTER=github` 时必需 |
 | `NEXT_DIST_DIR` | `.next` | 构建输出目录 |

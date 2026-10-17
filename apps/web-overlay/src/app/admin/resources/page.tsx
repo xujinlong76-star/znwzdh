@@ -392,7 +392,10 @@ export default function ResourceManagement() {
   };
 
   // 检查资源引用
-  const checkResourceReferences = async (resourcePaths: string[]) => {
+  // 返回 `null` 表示**没查成** —— 与「查过了，没有任何引用」（`{}`）是两回事。
+  const checkResourceReferences = async (
+    resourcePaths: string[]
+  ): Promise<Record<string, Array<{ type: string; location: string; title?: string }>> | null> => {
     try {
       const response = await fetch('/api/resource/check-references', {
         method: 'POST',
@@ -407,10 +410,12 @@ export default function ResourceManagement() {
       }
 
       const data = await response.json();
-      return data.references;
+      return data.references ?? null;
     } catch (error) {
+      // 以前这里 return {}：检查失败被当成了「没有任何引用」，
+      // 于是删除确认框里连警告都不显示 —— 一次失败的检查变成了误删的通行证。
       console.error('Error checking references:', error);
-      return {};
+      return null;
     }
   };
 
@@ -425,6 +430,17 @@ export default function ResourceManagement() {
 
     // 检查引用
     const references = await checkResourceReferences(resourcePaths);
+    if (!references) {
+      // 查不到引用关系是「未知」，不是「没有引用」。删除不可撤销，
+      // 所以这里**不开确认框**：宁可让管理员重试，也不拿一次失败的检查
+      // 当「可以安全删除」的凭证。
+      toast({
+        title: "引用检查失败",
+        description: "没能确认这些资源是否正在被使用，为避免误删已取消删除。请稍后重试。",
+        variant: "destructive",
+      });
+      return;
+    }
     setResourceReferences(references);
 
     setIsDeleteDialogOpen(true);
@@ -804,7 +820,7 @@ export default function ResourceManagement() {
 
           <div className="flex-1 overflow-hidden flex flex-col space-y-4">
             {/* 显示有引用的资源警告 */}
-            {Object.entries(resourceReferences).some(([_, refs]) => refs.length > 0) && (
+            {Object.entries(resourceReferences).some(([_, refs]) => refs.length > 0) ? (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex-shrink-0">
                 <div className="flex items-start gap-2">
                   <Icons.alertCircle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
@@ -839,6 +855,15 @@ export default function ResourceManagement() {
                       删除这些资源可能会导致相关功能异常，请确认是否继续。
                     </p>
                   </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex-shrink-0">
+                <div className="flex items-start gap-2">
+                  <Icons.checkSquare className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
+                  <p className="text-sm text-green-800">
+                    已检查引用关系：没有内容引用这些资源。
+                  </p>
                 </div>
               </div>
             )}

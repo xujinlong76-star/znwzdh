@@ -30,6 +30,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { hubGet, hubSend } from '@/lib/navhub-api'
+import { describeDegrade } from '@/lib/degrade'
+import { telemetryState } from '@/lib/telemetry-status'
 
 interface Job {
   id: string
@@ -98,6 +100,9 @@ const STATUS_MAP: Record<
 export default function AdminJobsPage() {
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<unknown>(null)
+  // 连着 SSE 但消息解析失败时，列表会悄悄停止更新 —— 必须能说出来
+  const [sseParseFailures, setSseParseFailures] = useState(0)
   const [enqueuing, setEnqueuing] = useState<string | null>(null)
   const [sseConnected, setSseConnected] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>('all')
@@ -108,8 +113,12 @@ export default function AdminJobsPage() {
     try {
       const data = await hubGet<Job[]>('/api/hub/jobs?limit=100')
       setJobs(Array.isArray(data) ? data : [])
+      setLoadError(null)
     } catch (err) {
+      // 以前只 console.error：拉取失败时 jobs 保持为空，页面把它渲染成
+      // 「暂无匹配任务记录」—— 把故障说成「没有任务」。这里记下来交给 UI。
       console.error('[jobs] 加载任务失败:', err)
+      setLoadError(err)
     } finally {
       setLoading(false)
     }
@@ -156,8 +165,11 @@ export default function AdminJobsPage() {
               load()
               return prev
             })
+            setSseParseFailures(0)
           } catch {
-            // 忽略格式解析抖动
+            // 解析不了就不能再宣称「实时推流已就绪」：计数，让徽标如实说话。
+            // （还有 20 秒轮询兜底，所以这是降级，不是断流。）
+            setSseParseFailures((n) => n + 1)
           }
         })
         es.onerror = () => {
@@ -189,7 +201,9 @@ export default function AdminJobsPage() {
       await hubSend('/api/hub/jobs', 'POST', { kind })
       await load()
     } catch (err) {
+      // 以前只 console.error：点「触发」后列表毫无变化，用户会以为按钮坏了
       console.error('[jobs] 入队失败:', err)
+      alert('触发任务失败: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setEnqueuing(null)
     }
@@ -259,6 +273,9 @@ export default function AdminJobsPage() {
     return jobs.filter((j) => j.status === statusFilter)
   }, [jobs, statusFilter])
 
+  const jobTelemetry = telemetryState(sseConnected ? 'connected' : 'connecting', sseParseFailures)
+  const degradeNotice = loadError ? describeDegrade(loadError) : null
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       {/* 顶栏与 SSE 状态 */}
@@ -268,14 +285,23 @@ export default function AdminJobsPage() {
             <h1 className="text-2xl font-bold tracking-tight">任务调度与自动化中心</h1>
             <Badge
               variant="outline"
+              title={
+                jobTelemetry === 'stale'
+                  ? `最近 ${sseParseFailures} 条推流消息无法解析，列表可能停在旧状态；20 秒轮询仍在兜底。`
+                  : undefined
+              }
               className={
-                sseConnected
+                jobTelemetry === 'live'
                   ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
                   : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-300'
               }
             >
-              <Radio className={`w-3 h-3 mr-1.5 ${sseConnected ? 'animate-pulse text-emerald-500' : 'text-amber-500'}`} />
-              {sseConnected ? 'SSE 实时推流已就绪' : '轮询监测中'}
+              <Radio className={`w-3 h-3 mr-1.5 ${jobTelemetry === 'live' ? 'animate-pulse text-emerald-500' : 'text-amber-500'}`} />
+              {jobTelemetry === 'live'
+                ? 'SSE 实时推流已就绪'
+                : jobTelemetry === 'stale'
+                ? `SSE 消息解析失败（${sseParseFailures} 条）· 轮询兜底`
+                : '轮询监测中'}
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
@@ -431,10 +457,34 @@ export default function AdminJobsPage() {
           </div>
         </div>
 
+        {/* 刷新失败但列表还有内容：明说这是旧数据，而不是静静显示过时任务 */}
+        {degradeNotice && jobs.length > 0 && (
+          <div
+            role="status"
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          >
+            <span>本次刷新失败，下面是上一次成功获取的任务列表。{degradeNotice.message}</span>
+            <Button variant="outline" size="sm" className="h-7 shrink-0 text-xs" onClick={() => void load()}>
+              重试
+            </Button>
+          </div>
+        )}
+
         {loading ? (
           <div className="rounded-md border p-8 text-center text-muted-foreground text-sm flex items-center justify-center gap-2">
             <RefreshCw className="w-4 h-4 animate-spin text-primary" />
             正在装载任务队列…
+          </div>
+        ) : filteredJobs.length === 0 && degradeNotice ? (
+          <div
+            role="status"
+            className="rounded-md border border-destructive/30 bg-destructive/5 p-8 text-center text-sm text-destructive space-y-3"
+          >
+            <p>没能取到任务列表。{degradeNotice.message}</p>
+            <Button variant="outline" size="sm" onClick={() => void load()}>
+              <RefreshCw className="w-4 h-4 mr-1.5" />
+              重试
+            </Button>
           </div>
         ) : filteredJobs.length === 0 ? (
           <div className="rounded-md border p-8 text-center text-muted-foreground text-sm">

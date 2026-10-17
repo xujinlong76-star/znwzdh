@@ -33,6 +33,7 @@ import { findMatchingArchitectureRecipe } from '@/lib/architecture-recipe'
 import { TechComparisonCard } from '@/components/tech-comparison-card'
 import { ArchitectureRecipeCard } from '@/components/architecture-recipe-card'
 import { SiteFavicon } from '@/components/site-favicon'
+import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
 
 
 
@@ -261,8 +262,12 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     if (!site) return
     reportClick(site.id, identity)
     const target = siteConfig?.navigation?.linkTarget || '_blank'
-    if (target === '_self') window.location.href = site.url
-    else window.open(site.url, target, 'noopener,noreferrer')
+    // site.url 来自后端检索结果（源头是站点库），同样过安全闸：
+    // 非 http(s) 一律不跳，避免 javascript: 之类的脏数据直达执行
+    const url = safeHref(site.url, '')
+    if (!url || !isSafeHttpUrl(url)) return
+    if (target === '_self') window.location.href = url
+    else window.open(url, target, 'noopener,noreferrer')
     setQuery('')
     setIsFocused(false)
   }, [identity, siteConfig])
@@ -306,7 +311,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1.5">
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           {query && (
-            <Button variant="ghost" size="sm" onClick={() => { setQuery(''); inputRef.current?.focus() }} className="h-6 w-6 p-0 rounded-full hover:bg-muted">
+            <Button variant="ghost" size="sm" onClick={() => { setQuery(''); inputRef.current?.focus() }} className="h-6 w-6 p-0 rounded-full hover:bg-muted" aria-label="清空搜索词" title="清空搜索词">
               <X className="h-3 w-3" />
             </Button>
           )}
@@ -317,7 +322,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       </div>
 
       {isFocused && !query.trim() && (
-        <div className="absolute top-full left-0 right-0 mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
+        <div className="absolute top-full left-0 right-0 mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
           {recent.length > 0 && (
             <div>
               <div className="px-3.5 py-2 text-xs font-medium text-muted-foreground flex items-center gap-1.5 bg-muted/40">
@@ -416,9 +421,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       )}
 
       {showResults && (
-        <div className="absolute top-full left-0 right-0 mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[70vh] overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
-          <Command className="border-0 shadow-none" shouldFilter={false}>
-            <CommandList className="max-h-[70vh] overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+          <Command className="border-0 shadow-none flex-1 overflow-hidden" shouldFilter={false}>
+            <CommandList className="max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto">
               {degraded && hits.length > 0 && (
                 <div className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 border-b flex items-center justify-between gap-2">
                   <span>检索服务暂时不可用，已降级；下面结果可能不完整。</span>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Copy, Check, Wrench, RefreshCw } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import { copyText } from '@/lib/clipboard'
 
 export function QuickToolsWidget() {
   const [activeTab, setActiveTab] = useState<'uuid' | 'timestamp' | 'b64'>('uuid')
@@ -21,7 +22,7 @@ export function QuickToolsWidget() {
   const handleCopy = (text: string) => {
     if (!text) return
     // 同 notes-widget：非安全上下文下 clipboard 会 reject，需接 catch
-    navigator.clipboard?.writeText(text).then(
+    copyText(text).then(
       () => {
         setCopied(true)
         setTimeout(() => setCopied(false), 1500)

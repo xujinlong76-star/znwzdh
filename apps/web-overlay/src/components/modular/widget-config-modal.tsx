@@ -1,10 +1,11 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import type { WidgetInstance } from '@/types/modular'
 import { WIDGET_REGISTRY } from '@/lib/modular/registry'
 import { X, Sliders, Check, RotateCcw } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 
 interface WidgetConfigModalProps {
   widget: WidgetInstance | null
@@ -21,6 +22,8 @@ export function WidgetConfigModal({
 }: WidgetConfigModalProps) {
   const [configValues, setConfigValues] = useState<Record<string, unknown>>({})
   const [customTitle, setCustomTitle] = useState('')
+  const titleInputRef = useRef<HTMLInputElement | null>(null)
+  const { containerProps, scrim } = useOverlayBehavior({ open: isOpen, onClose })
 
   useEffect(() => {
     if (widget) {
@@ -28,6 +31,11 @@ export function WidgetConfigModal({
       setCustomTitle(widget.customTitle || '')
     }
   }, [widget])
+
+  // 打开即聚焦标题输入框：改标题是这个弹窗最高频的操作
+  useEffect(() => {
+    if (isOpen) titleInputRef.current?.focus()
+  }, [isOpen])
 
   if (!isOpen || !widget) return null
 
@@ -59,8 +67,12 @@ export function WidgetConfigModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="relative w-full max-w-md bg-background border border-border/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {scrim}
+      <div
+        {...containerProps}
+        className="relative w-full max-w-md bg-background border border-border/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85dvh] outline-none"
+      >
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 bg-muted/20">
           <div className="flex items-center gap-2.5">
@@ -77,12 +89,13 @@ export function WidgetConfigModal({
           </Button>
         </div>
 
-        {/* 配置表单 */}
-        <form onSubmit={handleSave} className="p-6 space-y-4">
+        {/* 配置表单：字段多时内部滚动，底部按钮栏固定可达 */}
+        <form onSubmit={handleSave} className="p-6 space-y-4 overflow-y-auto">
           {/* 自定义模块标题 */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground">模块显示标题</label>
             <input
+              ref={titleInputRef}
               type="text"
               placeholder={def.title}
               value={customTitle}

@@ -69,7 +69,8 @@ export function RssFeedWidget({ config }: RssFeedWidgetProps) {
 
   const [items, setItems] = useState<FeedItem[]>(PRESET_FEEDS.slice(0, limit))
   const [loading, setLoading] = useState(false)
-  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date())
+  // 刷新时间戳挂载后才落：初始值用 null，避免 SSR/客户端时刻不一致导致水合不匹配
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
 
   const handleRefresh = useCallback(() => {
     setLoading(true)
@@ -135,7 +136,7 @@ export function RssFeedWidget({ config }: RssFeedWidgetProps) {
 
       <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-1 border-t border-border/30">
         <span>已聚合 {items.length} 篇最新动态（示例）</span>
-        <span>更新于 {lastRefreshed.toLocaleTimeString()}</span>
+        <span>更新于 {lastRefreshed ? lastRefreshed.toLocaleTimeString() : '--:--:--'}</span>
       </div>
     </div>
   )

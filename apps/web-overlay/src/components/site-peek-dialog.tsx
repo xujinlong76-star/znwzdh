@@ -69,9 +69,9 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
 
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setShowIframe(false) }}>
-      <DialogContent className="max-w-2xl max-h-[88vh] overflow-y-auto p-5 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
-        <DialogHeader className="space-y-3 pb-3 border-b border-border/50">
-          <div className="flex items-start sm:items-center justify-between gap-3">
+      <DialogContent className="w-[calc(100%-2rem)] max-w-2xl max-h-[calc(100dvh-2.5rem)] overflow-y-auto p-4 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
+        <DialogHeader className="space-y-3 pb-3 border-b border-border/50 pr-8 sm:pr-10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3.5">
               <div className="w-11 h-11 p-2 rounded-xl bg-muted/60 border border-border/60 shadow-xs flex-shrink-0 flex items-center justify-center">
                 <SiteFavicon
@@ -102,7 +102,7 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                 </DialogDescription>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
               <Button
                 variant="outline"
                 size="sm"
@@ -216,6 +216,8 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                     variant="ghost"
                     size="icon"
                     className="h-6.5 w-6.5 shrink-0 rounded-lg hover:bg-muted"
+                    aria-label={`在新标签页打开 ${rel.targetTitle}`}
+                    title={`在新标签页打开 ${rel.targetTitle}`}
                     onClick={() => {
                       if (!isSafeHttpUrl(rel.targetUrl)) return
                       window.open(rel.targetUrl, '_blank', 'noopener,noreferrer')
@@ -322,10 +324,13 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
           {showIframe ? (
             previewSrc ? (
             <div className="relative w-full h-80 rounded-xl border border-border/70 overflow-hidden bg-muted/20 shadow-inner">
+              {/* 安全说明：故意不给 allow-same-origin —— 它和 allow-scripts 同时出现时，
+                  被嵌入页面可以自我解除沙箱并顺着同源访问本站（XSS）。代价是少数
+                  依赖同源存储的站点预览不完整，但预览本就不该有这种权限。 */}
               <iframe
                 src={previewSrc}
                 className="w-full h-full border-0"
-                sandbox="allow-scripts allow-same-origin allow-forms"
+                sandbox="allow-scripts allow-forms allow-popups"
                 loading="lazy"
                 title={`Preview of ${item.title}`}
               />

@@ -115,7 +115,7 @@ export default function AdminAuditPage() {
         <div className="text-muted-foreground text-sm">暂无审计记录</div>
       ) : (
         <>
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/40">

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import { FileText, Eye, Edit3, Copy, Check } from 'lucide-react'
+import { copyText } from '@/lib/clipboard'
 
 export function NotesWidget() {
   const [content, setContent] = useState('')
@@ -46,7 +47,7 @@ export function NotesWidget() {
     if (!content) return
     // clipboard API 在非安全上下文（http:// 局域网 IP）或权限被拒时会 reject，
     // 不接 catch 会变成未处理的 Promise 拒绝，污染控制台
-    navigator.clipboard?.writeText(content).then(
+    copyText(content).then(
       () => {
         setCopied(true)
         setTimeout(() => setCopied(false), 1500)

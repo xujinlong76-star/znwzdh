@@ -115,7 +115,7 @@ export default function AdminTrashPage() {
           回收站是空的。
         </div>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">

@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
 import { Layers, ExternalLink, Copy, Check, ArrowRight, Terminal } from 'lucide-react'
 import type { ArchitectureRecipe } from '@/lib/architecture-recipe'
+import { copyText } from '@/lib/clipboard'
 
 interface ArchitectureRecipeCardProps {
   recipe: ArchitectureRecipe
@@ -13,12 +14,13 @@ interface ArchitectureRecipeCardProps {
 export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) {
   const [copied, setCopied] = useState(false)
 
-  const handleCopy = () => {
-    if (recipe.quickStartSnippet) {
-      void navigator.clipboard.writeText(recipe.quickStartSnippet)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
+  const handleCopy = async () => {
+    if (!recipe.quickStartSnippet) return
+    // 以真实结果为准：以前 void 掉 Promise，失败时静默 + 图标照样变成"已复制"
+    const ok = await copyText(recipe.quickStartSnippet)
+    if (!ok) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   return (

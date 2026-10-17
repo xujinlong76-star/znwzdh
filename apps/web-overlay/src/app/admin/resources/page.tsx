@@ -41,6 +41,7 @@ import {
   FormMessage,
 } from "@/registry/new-york/ui/form"
 import { Toaster } from "@/registry/new-york/ui/toaster"
+import { copyText } from '@/lib/clipboard'
 
 const Icons = {
   loader2: Loader2,
@@ -348,19 +349,14 @@ export default function ResourceManagement() {
     });
   };
 
-  const copyToClipboard = (url: string) => {
-    navigator.clipboard.writeText(url).then(() => {
-      toast({
-        title: "成功",
-        description: "链接已复制到剪贴板",
-      });
-    }).catch((error) => {
-      toast({
-        title: "错误",
-        description: "复制链接失败",
-        variant: "destructive",
-      });
-    });
+  const copyToClipboard = async (url: string) => {
+    // copyText 带 execCommand 兜底且永不 reject；http 部署下也能复制
+    const ok = await copyText(url)
+    toast({
+      title: ok ? "成功" : "错误",
+      description: ok ? "链接已复制到剪贴板" : "复制链接失败",
+      variant: ok ? undefined : "destructive",
+    })
   };
 
   // 添加搜索过滤函数

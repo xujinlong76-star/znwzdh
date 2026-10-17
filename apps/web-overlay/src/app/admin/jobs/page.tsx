@@ -446,7 +446,7 @@ export default function AdminJobsPage() {
             暂无匹配任务记录
           </div>
         ) : (
-          <div className="rounded-md border overflow-hidden">
+          <div className="rounded-md border overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/40 text-xs text-muted-foreground">

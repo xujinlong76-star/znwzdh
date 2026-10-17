@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { WidgetInstance } from '@/types/modular'
 import { WIDGET_REGISTRY } from '@/lib/modular/registry'
 import { ModuleErrorBoundary } from './module-error-boundary'
@@ -62,16 +63,54 @@ function ModularItemImpl({
   const def = WIDGET_REGISTRY[widget.type]
   const [showSizeMenu, setShowSizeMenu] = useState(false)
   const itemRef = useRef<HTMLDivElement>(null)
+  const sizeBtnRef = useRef<HTMLButtonElement | null>(null)
+  const sizeMenuRef = useRef<HTMLDivElement | null>(null)
+  const [sizeMenuPos, setSizeMenuPos] = useState<{ top: number; left: number } | null>(null)
+
+  /**
+   * 尺寸菜单用 portal 挂到 body 上，位置按触发器实测。
+   *
+   * 为什么不能像以前那样 `absolute top-full`：卡片自带 `overflow-hidden`（内圆角裁切
+   * 内容需要），下拉会被卡片下边缘直接切掉 —— rowSpan=1 的矮卡片上「高度跨度 1x/2x/3x」
+   * 整行点不到，缩放功能废一半。portal + fixed 既躲开裁剪，也不受画布 transform 影响。
+   */
+  useLayoutEffect(() => {
+    if (!showSizeMenu) {
+      setSizeMenuPos(null)
+      return
+    }
+    const MENU_H = 214 // 5 个宽度预设 + 3 个高度预设 + 两个分组标题的实测高度
+    const MENU_W = 112
+    const place = () => {
+      const btn = sizeBtnRef.current
+      if (!btn) return
+      const r = btn.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - r.bottom
+      // 下方放不下就翻到上方；左右都往视口内夹，避免贴边被裁
+      const top = spaceBelow < MENU_H + 12 && r.top > MENU_H + 12 ? r.top - MENU_H - 6 : r.bottom + 6
+      const left = Math.max(8, Math.min(r.right - MENU_W, window.innerWidth - MENU_W - 8))
+      setSizeMenuPos({ top, left })
+    }
+    place()
+    // 滚动/缩放时跟着重新定位（捕获阶段：画布内部容器滚动也要能收到）
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [showSizeMenu])
 
   // 尺寸菜单打开后，点击菜单外部区域自动收起（挂载延迟一帧，
-  // 避免触发菜单的那一次 pointerdown 被自己立刻关掉）
+  // 避免触发菜单的那一次 pointerdown 被自己立刻关掉）。
+  // 菜单已 portal 到 body，"外部"要同时排除触发按钮和菜单本身。
   useEffect(() => {
     if (!showSizeMenu) return
     const handleOutsidePointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null
-      if (target && !itemRef.current?.contains(target)) {
-        setShowSizeMenu(false)
-      }
+      if (!target) return
+      if (sizeBtnRef.current?.contains(target) || sizeMenuRef.current?.contains(target)) return
+      setShowSizeMenu(false)
     }
     const timer = setTimeout(() => {
       document.addEventListener('pointerdown', handleOutsidePointerDown)
@@ -80,6 +119,19 @@ function ModularItemImpl({
       clearTimeout(timer)
       document.removeEventListener('pointerdown', handleOutsidePointerDown)
     }
+  }, [showSizeMenu])
+
+  // Esc 关菜单：捕获阶段拦截，避免同时触发全局快捷键
+  useEffect(() => {
+    if (!showSizeMenu) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setShowSizeMenu(false)
+      }
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [showSizeMenu])
 
   // 缩放手柄拖拽状态（必须在任何提前 return 之前声明，保证 hook 顺序稳定）
@@ -289,6 +341,7 @@ function ModularItemImpl({
             {/* 快速修改宽度 */}
             <div className="relative">
               <button
+                ref={sizeBtnRef}
                 onClick={() => setShowSizeMenu(!showSizeMenu)}
                 className="px-1.5 py-0.5 rounded text-xs bg-background/80 hover:bg-background border border-border/60 text-muted-foreground flex items-center gap-1"
                 title="调整网格尺寸"
@@ -297,45 +350,55 @@ function ModularItemImpl({
                 <span>{colSpan}列</span>
               </button>
 
-              {showSizeMenu && (
-                <div className="absolute right-0 top-full mt-1 z-30 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-xl p-1.5 flex flex-col gap-1 w-28 animate-in fade-in zoom-in-95">
-                  <div className="text-xs text-muted-foreground px-1 pb-1 border-b">选择宽度跨度</div>
-                  {COL_PRESETS.map((preset) => (
-                    <button
-                      key={preset.value}
-                      onClick={() => {
-                        onResize(widget.id, preset.value)
-                        setShowSizeMenu(false)
-                      }}
-                      className={`text-left text-xs px-2 py-1 rounded-md transition-colors flex items-center justify-between ${
-                        colSpan === preset.value
-                          ? 'bg-primary/15 text-primary font-semibold'
-                          : 'hover:bg-muted text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      <span>{preset.label}</span>
-                      <span className="text-xs font-mono opacity-60">{preset.value}格</span>
-                    </button>
-                  ))}
-                  <div className="text-xs text-muted-foreground px-1 pt-1 border-t">高度跨度</div>
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3].map((r) => (
+              {/* portal 到 body：卡片 overflow-hidden 会把 absolute 下拉切掉 */}
+              {showSizeMenu && sizeMenuPos && typeof document !== 'undefined' &&
+                createPortal(
+                  <div
+                    ref={sizeMenuRef}
+                    role="menu"
+                    aria-label="调整模块尺寸"
+                    style={{ position: 'fixed', top: sizeMenuPos.top, left: sizeMenuPos.left }}
+                    className="z-[120] w-28 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-xl p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95"
+                  >
+                    <div className="text-xs text-muted-foreground px-1 pb-1 border-b">选择宽度跨度</div>
+                    {COL_PRESETS.map((preset) => (
                       <button
-                        key={r}
+                        key={preset.value}
                         onClick={() => {
-                          onResize(widget.id, colSpan, r)
+                          onResize(widget.id, preset.value)
                           setShowSizeMenu(false)
                         }}
-                        className={`flex-1 text-xs py-0.5 rounded font-mono ${
-                          rowSpan === r ? 'bg-primary text-primary-foreground font-bold' : 'bg-muted/60 hover:bg-muted'
+                        className={`text-left text-xs px-2 py-1 rounded-md transition-colors flex items-center justify-between ${
+                          colSpan === preset.value
+                            ? 'bg-primary/15 text-primary font-semibold'
+                            : 'hover:bg-muted text-muted-foreground hover:text-foreground'
                         }`}
                       >
-                        {r}x
+                        <span>{preset.label}</span>
+                        <span className="text-xs font-mono opacity-60">{preset.value}格</span>
                       </button>
                     ))}
-                  </div>
-                </div>
-              )}
+                    <div className="text-xs text-muted-foreground px-1 pt-1 border-t">高度跨度</div>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3].map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => {
+                            onResize(widget.id, colSpan, r)
+                            setShowSizeMenu(false)
+                          }}
+                          className={`flex-1 text-xs py-0.5 rounded font-mono ${
+                            rowSpan === r ? 'bg-primary text-primary-foreground font-bold' : 'bg-muted/60 hover:bg-muted'
+                          }`}
+                        >
+                          {r}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>,
+                  document.body,
+                )}
+
             </div>
 
             {/* 独立配置参数按钮 */}

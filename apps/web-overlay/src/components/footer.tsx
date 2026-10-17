@@ -7,6 +7,9 @@ interface FooterProps {
 }
 
 export function Footer({ siteInfo }: FooterProps) {
+  // 服务端组件里渲染期取年份：跨年瞬间（12/31 23:59:59.999）服务端与客户端
+  // 可能算出不同年份 → 水合不匹配。加 suppressHydrationWarning 让 React 以
+  // 客户端值为准，不必把整个页脚改成客户端组件。
   const currentYear = new Date().getFullYear()
   // 新增页面（/tags /hot /favorites）不传 siteInfo 时用默认品牌名，
   // 避免为了一个页脚把整站配置异步加载进每个新页面。
@@ -33,7 +36,7 @@ export function Footer({ siteInfo }: FooterProps) {
           <Link href="/custom" className="hover:text-foreground transition-colors text-emerald-600 dark:text-emerald-400 font-medium">模块化工作台</Link>
         </div>
         <p className="text-center text-xs text-muted-foreground/80 font-mono">
-          &copy; {currentYear} {title} · AI-Native Cognitive Navigation
+          &copy; <span suppressHydrationWarning>{currentYear}</span> {title} · AI-Native Cognitive Navigation
         </p>
       </div>
     </footer>

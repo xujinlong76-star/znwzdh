@@ -78,6 +78,16 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcut
 
       if (isInput) return
 
+      // 模态打开期间只保留「?」呼出本身：此时用户正在对话框里操作，
+      // 1/2/3 切视图、E 开工坊、D 切密度、B 换背景这些全局键必须让位，
+      // 否则在速览窗里按个 e 就把首页排版改了，属于按键劫持。
+      // 判定用 role=dialog（Radix 与我们自己的浮层都会带），不用组件状态：
+      // 快捷键是全局的，得能感知别的组件打开的浮层。
+      const inDialog = typeof document !== 'undefined' && Boolean(
+        document.querySelector('[role="dialog"], [role="alertdialog"]'),
+      )
+      if (inDialog && e.key !== '?') return
+
       // 按 ? 或 Shift + / 呼出快捷键帮助
       if (e.key === '?' || (e.key === '/' && e.shiftKey)) {
         e.preventDefault()
@@ -137,8 +147,8 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcut
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-lg p-6">
-        <DialogHeader className="pb-3 border-b border-border/50">
+      <DialogContent className="w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-3rem)] overflow-y-auto sm:w-full p-4 sm:p-6">
+        <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
           <DialogTitle className="flex items-center gap-2 text-base font-bold">
             <Keyboard className="w-5 h-5 text-primary" />
             <span>NavSphere 快捷键全景指南</span>

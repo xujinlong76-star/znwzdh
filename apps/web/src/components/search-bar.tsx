@@ -8,6 +8,7 @@ import { Button } from '@/registry/new-york/ui/button'
 import { highlightParts } from '@/lib/highlight'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
+import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
 
 interface SearchBarProps {
   navigationData: NavigationData
@@ -103,12 +104,16 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
 
   const handleItemSelect = (item: NavigationItem | NavigationSubItem) => {
     const itemWithHref = item as NavigationSubItem
-    if (itemWithHref.href) {
+    // href 来自可编辑的导航配置（后台能写），必须过安全闸：
+    // 直接 window.location.href 赋值会让 javascript: 这种脏数据原样执行。
+    // 与 navigation-card 的处理保持一致（那里早就用了 safeHref）。
+    const href = safeHref(itemWithHref.href, '')
+    if (href && isSafeHttpUrl(href)) {
       const linkTarget = siteConfig?.navigation?.linkTarget || '_blank'
       if (linkTarget === '_self') {
-        window.location.href = itemWithHref.href
+        window.location.href = href
       } else {
-        window.open(itemWithHref.href, linkTarget, 'noopener,noreferrer')
+        window.open(href, linkTarget, 'noopener,noreferrer')
       }
     }
     onSearch('')

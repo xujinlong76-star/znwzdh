@@ -13,6 +13,7 @@ import { MonitorPlay, Menu, Home } from 'lucide-react'
 import { Button } from "@/registry/new-york/ui/button"
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 
 interface VideoContentProps {
     navigationData: NavigationData
@@ -21,6 +22,11 @@ interface VideoContentProps {
 
 export function VideoContent({ navigationData, siteData }: VideoContentProps) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+    // 抽屉的公共行为：Esc 关、点遮罩关、锁背景滚动、焦点圈养与还原、role=dialog
+    const { containerProps, scrimProps } = useOverlayBehavior({
+      open: isSidebarOpen,
+      onClose: () => setIsSidebarOpen(false),
+    })
     const [searchQuery, setSearchQuery] = useState('')
 
     // 修复类型检查和搜索逻辑
@@ -99,13 +105,21 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
             </div>
 
             <div className={cn(
-                "fixed inset-0 z-50 bg-background/80 backdrop-blur-sm transition-all md:hidden",
+                "fixed inset-0 z-50 md:hidden",
                 isSidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
             )}>
-                <div className={cn(
-                    "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background shadow-2xl transform transition-transform duration-200 ease-in-out",
-                    isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-                )}>
+                <div
+                    {...scrimProps}
+                    className="absolute inset-0 bg-background/80 backdrop-blur-sm transition-opacity"
+                />
+                <div
+                    {...containerProps}
+                    aria-label="视频站导航"
+                    className={cn(
+                        "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background shadow-2xl transform transition-transform duration-200 ease-in-out outline-none",
+                        isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+                    )}
+                >
                     <Sidebar
                         navigationData={navigationData}
                         siteInfo={siteData}

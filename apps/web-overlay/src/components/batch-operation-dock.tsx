@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from '@/registry/new-york/ui/dropdown-menu'
 import { useToast } from '@/components/ui/use-toast'
+import { copyText } from '@/lib/clipboard'
 import {
   batchExportSitesToMarkdown,
   batchExportSitesToOneTab,
@@ -68,7 +69,8 @@ export function BatchOperationDock({
       const md = batchExportSitesToMarkdown(selectedSites, {
         categoryTitle: `NavHub 批量导读书签 (${count}项)`,
       })
-      await navigator.clipboard.writeText(md)
+      const ok = await copyText(md)
+      if (!ok) throw new Error('clipboard unavailable')
       toast({
         title: '📋 Markdown 已复制',
         description: `已成功将 ${count} 个站点的 Markdown 清单写入系统剪贴板。`,
@@ -104,7 +106,8 @@ export function BatchOperationDock({
   const handleCopyOneTab = async () => {
     try {
       const txt = batchExportSitesToOneTab(selectedSites)
-      await navigator.clipboard.writeText(txt)
+      const ok = await copyText(txt)
+      if (!ok) throw new Error('clipboard unavailable')
       toast({
         title: '📋 OneTab 格式已复制',
         description: `已生成 ${count} 行 OneTab 标准导入文本。`,

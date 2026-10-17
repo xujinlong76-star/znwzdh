@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Check, Copy, Sparkles, Calculator, Clock, Palette, FileCode, Hash, Timer, KeyRound, Terminal, Code2, GitCompare, Globe } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import type { SpeculativeIntentResult } from '@/lib/speculative'
+import { copyText } from '@/lib/clipboard'
 
 interface SpeculativeIntentCardProps {
   result: SpeculativeIntentResult
@@ -12,14 +13,15 @@ interface SpeculativeIntentCardProps {
 export function SpeculativeIntentCard({ result }: SpeculativeIntentCardProps) {
   const [copied, setCopied] = useState(false)
 
-  const handleCopy = (e: React.MouseEvent) => {
+  const handleCopy = async (e: React.MouseEvent) => {
     e.stopPropagation()
     const textToCopy = result.copyValue || result.previewValue
-    if (textToCopy) {
-      void navigator.clipboard.writeText(textToCopy)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
+    if (!textToCopy) return
+    // 复制失败时不置 copied：图标不该在没成功时打勾
+    const ok = await copyText(textToCopy)
+    if (!ok) return
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
   const getIcon = () => {

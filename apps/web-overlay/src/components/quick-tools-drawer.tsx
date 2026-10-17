@@ -10,8 +10,10 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
+import { useToast } from '@/components/ui/use-toast'
 import { Wrench, Copy, Check, RefreshCw, Braces, Binary, Clock, Link2, KeyRound, Timer, Terminal } from 'lucide-react'
 import { parseSpeculativeIntent } from '@/lib/speculative'
+import { copyText } from '@/lib/clipboard'
 
 interface QuickToolsDrawerProps {
   open: boolean
@@ -23,6 +25,7 @@ type ToolTab = 'json' | 'base64' | 'uuid-time' | 'url' | 'jwt' | 'cron' | 'curl'
 export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) {
   const [activeTab, setActiveTab] = useState<ToolTab>('json')
   const [copied, setCopied] = useState<string | null>(null)
+  const { toast } = useToast()
 
   // JSON 工具状态
   const [jsonInput, setJsonInput] = useState('')
@@ -52,9 +55,16 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
 
   const copyToClipboard = async (text: string, id: string) => {
     if (!text) return
-    await navigator.clipboard.writeText(text)
-    setCopied(id)
-    setTimeout(() => setCopied(null), 1500)
+    try {
+      await copyText(text)
+      setCopied(id)
+      setTimeout(() => setCopied(null), 1500)
+    } catch {
+      // 非 HTTPS / 用户拒授权 / 文档失焦时 clipboard API 会抛。
+      // 以前这里裸 await：既冒出 unhandled rejection，按钮还照样显示"已复制"——
+      // 用户以为复制成功，粘贴才发现是空的。现在明确告诉用户没成功。
+      toast({ title: '复制失败', description: '浏览器拒绝了剪贴板访问（需 HTTPS 且页面处于聚焦状态）', variant: 'destructive' })
+    }
   }
 
   // JSON 操作
@@ -138,8 +148,8 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-5 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
-        <DialogHeader className="pb-3 border-b border-border/50">
+      <DialogContent className="w-[calc(100%-2rem)] max-w-3xl max-h-[calc(100dvh-2.5rem)] overflow-y-auto p-4 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
+        <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
           <DialogTitle className="flex items-center gap-2.5 text-lg sm:text-xl font-bold">
             <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
               <Wrench className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -156,7 +166,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           <Button
             size="sm"
             variant={activeTab === 'json' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
             onClick={() => setActiveTab('json')}
           >
             <Braces className="w-3.5 h-3.5" />
@@ -165,7 +175,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           <Button
             size="sm"
             variant={activeTab === 'base64' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
             onClick={() => setActiveTab('base64')}
           >
             <Binary className="w-3.5 h-3.5" />
@@ -174,7 +184,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           <Button
             size="sm"
             variant={activeTab === 'uuid-time' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
             onClick={() => setActiveTab('uuid-time')}
           >
             <Clock className="w-3.5 h-3.5" />
@@ -183,7 +193,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           <Button
             size="sm"
             variant={activeTab === 'url' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
             onClick={() => setActiveTab('url')}
           >
             <Link2 className="w-3.5 h-3.5" />
@@ -192,7 +202,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           <Button
             size="sm"
             variant={activeTab === 'jwt' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
             onClick={() => setActiveTab('jwt')}
           >
             <KeyRound className="w-3.5 h-3.5" />
@@ -201,7 +211,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           <Button
             size="sm"
             variant={activeTab === 'cron' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
             onClick={() => setActiveTab('cron')}
           >
             <Timer className="w-3.5 h-3.5" />
@@ -210,7 +220,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
           <Button
             size="sm"
             variant={activeTab === 'curl' ? 'default' : 'ghost'}
-            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all"
+            className="h-8 text-xs gap-1.5 rounded-lg font-medium transition-all shrink-0 whitespace-nowrap"
             onClick={() => setActiveTab('curl')}
           >
             <Terminal className="w-3.5 h-3.5" />
@@ -251,7 +261,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   placeholder="在此粘贴原始 JSON 文本..."
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
-                  className="w-full h-64 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none focus:outline-hidden focus:ring-1 focus:ring-primary/50 shadow-2xs"
+                  className="w-full h-44 sm:h-60 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none focus:outline-hidden focus:ring-1 focus:ring-primary/50 shadow-2xs"
                 />
               </div>
               <div className="space-y-1.5">
@@ -260,7 +270,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   readOnly
                   placeholder="格式化结果输出..."
                   value={jsonOutput}
-                  className="w-full h-64 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none focus:outline-hidden shadow-2xs select-all"
+                  className="w-full h-44 sm:h-60 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none focus:outline-hidden shadow-2xs select-all"
                 />
               </div>
             </div>
@@ -295,7 +305,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   placeholder="在此输入待编码或解码的文本..."
                   value={b64Input}
                   onChange={(e) => setB64Input(e.target.value)}
-                  className="w-full h-56 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none focus:outline-hidden focus:ring-1 focus:ring-primary/50 shadow-2xs"
+                  className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none focus:outline-hidden focus:ring-1 focus:ring-primary/50 shadow-2xs"
                 />
               </div>
               <div className="space-y-1.5">
@@ -304,7 +314,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   readOnly
                   placeholder="结果输出..."
                   value={b64Output}
-                  className="w-full h-56 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none focus:outline-hidden shadow-2xs select-all"
+                  className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none focus:outline-hidden shadow-2xs select-all"
                 />
               </div>
             </div>
@@ -334,6 +344,8 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   className="h-9 text-xs shrink-0 border border-border/60"
                   onClick={() => copyToClipboard(uuid, 'uuid')}
                   disabled={!uuid}
+                  aria-label="复制生成的 UUID"
+                  title="复制生成的 UUID"
                 >
                   {copied === 'uuid' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                 </Button>
@@ -347,20 +359,20 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   <Clock className="w-3.5 h-3.5 text-blue-500" />
                   <span>当前本地与网络时间戳</span>
                 </span>
-                <Button size="sm" variant="ghost" className="h-7 text-xs hover:bg-muted" onClick={() => setCurrentTs(Date.now())}>
+                <Button size="sm" variant="ghost" className="h-7 text-xs hover:bg-muted" onClick={() => setCurrentTs(Date.now())} aria-label="刷新当前时间戳" title="刷新当前时间戳">
                   <RefreshCw className="w-3 h-3" />
                 </Button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs font-mono">
                 <div className="p-2.5 rounded-lg bg-muted/40 border border-border/50 flex items-center justify-between">
                   <span className="text-muted-foreground">秒级 (10位): <strong className="text-foreground">{Math.floor(currentTs / 1000)}</strong></span>
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-background" onClick={() => copyToClipboard(String(Math.floor(currentTs / 1000)), 'ts10')}>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-background" onClick={() => copyToClipboard(String(Math.floor(currentTs / 1000)), 'ts10')} aria-label="复制秒级时间戳" title="复制秒级时间戳">
                     <Copy className="w-3 h-3" />
                   </Button>
                 </div>
                 <div className="p-2.5 rounded-lg bg-muted/40 border border-border/50 flex items-center justify-between">
                   <span className="text-muted-foreground">毫秒级 (13位): <strong className="text-foreground">{currentTs}</strong></span>
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-background" onClick={() => copyToClipboard(String(currentTs), 'ts13')}>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 hover:bg-background" onClick={() => copyToClipboard(String(currentTs), 'ts13')} aria-label="复制毫秒时间戳" title="复制毫秒时间戳">
                     <Copy className="w-3 h-3" />
                   </Button>
                 </div>
@@ -455,7 +467,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                     value={jwtInput}
                     onChange={(e) => setJwtInput(e.target.value)}
                     placeholder="粘贴 eyJ... 格式的 JWT..."
-                    className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
+                    className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -463,7 +475,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   <textarea
                     readOnly
                     value={preview}
-                    className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
+                    className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
                   />
                 </div>
               </div>
@@ -528,7 +540,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   <textarea
                     value={curlInput}
                     onChange={(e) => setCurlInput(e.target.value)}
-                    className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
+                    className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -536,7 +548,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   <textarea
                     readOnly
                     value={codeOut}
-                    className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
+                    className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
                   />
                 </div>
               </div>

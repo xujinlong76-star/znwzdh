@@ -1183,8 +1183,8 @@ export default function SiteListPage() {
                   添加站点
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px] max-h-[85vh] flex flex-col">
-                <DialogHeader>
+              <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[460px] max-h-[85dvh] flex flex-col p-4 sm:p-6">
+                <DialogHeader className="pr-8 sm:pr-6">
                   <DialogTitle>添加站点</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-1">
@@ -1397,8 +1397,8 @@ export default function SiteListPage() {
                 setShowEditDialog(false)
               }
             }}>
-              <DialogContent className="sm:max-w-[425px] max-h-[85vh] flex flex-col">
-                <DialogHeader>
+              <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[460px] max-h-[85dvh] flex flex-col p-4 sm:p-6">
+                <DialogHeader className="pr-8 sm:pr-6">
                   <DialogTitle>编辑站点</DialogTitle>
                 </DialogHeader>
                 <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-1">
@@ -1611,8 +1611,8 @@ export default function SiteListPage() {
                 setShowMoveDialog(false)
               }
             }}>
-              <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
+              <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[460px] max-h-[85dvh] overflow-y-auto p-4 sm:p-6">
+                <DialogHeader className="pr-8 sm:pr-6">
                   <DialogTitle>批量移动站点</DialogTitle>
                   <DialogDescription>
                     将选中的 {selectedSites.length} 个站点移动到指定分类

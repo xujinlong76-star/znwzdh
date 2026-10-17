@@ -117,7 +117,7 @@ export default function AdminTagsPage() {
       ) : filtered.length === 0 ? (
         <div className="text-muted-foreground text-sm py-8 text-center">暂无匹配标签</div>
       ) : (
-        <div className="rounded-md border bg-card">
+        <div className="rounded-md border bg-card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">

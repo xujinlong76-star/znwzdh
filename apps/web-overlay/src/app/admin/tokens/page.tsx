@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { copyText } from '@/lib/clipboard'
 
 type MaxScope = 'read' | 'write' | 'admin'
 
@@ -90,35 +91,6 @@ const STATE_META: Record<TokenState, { label: string; className: string }> = {
   expiring: { label: '即将过期', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' },
   permanent: { label: '长期有效', className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20' },
   active: { label: '正常', className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' },
-}
-
-/**
- * 复制明文：先试 Clipboard API，不可用再退回 execCommand。
- * 返回是否真的成功——调用方据此决定要不要把弹窗关掉。
- */
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    // 无权限 / 非安全上下文 -> 走下面的降级分支
-  }
-  try {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    ta.style.position = 'fixed'
-    ta.style.top = '-1000px'
-    ta.style.opacity = '0'
-    document.body.appendChild(ta)
-    ta.select()
-    const ok = document.execCommand('copy')
-    document.body.removeChild(ta)
-    return ok
-  } catch {
-    return false
-  }
 }
 
 export default function AdminTokensPage() {
@@ -402,7 +374,7 @@ export default function AdminTokensPage() {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-border/70 overflow-hidden shadow-xs bg-card/60">
+        <div className="rounded-xl border border-border/70 overflow-x-auto shadow-xs bg-card/60">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40 text-xs font-medium text-muted-foreground">
@@ -502,8 +474,8 @@ export default function AdminTokensPage() {
 
       {/* 创建弹窗 */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="max-w-md p-6 rounded-2xl glass-surface depth-modal">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-md max-h-[85dvh] overflow-y-auto p-4 sm:p-6 rounded-2xl glass-surface depth-modal">
+          <DialogHeader className="pr-8 sm:pr-6">
             <DialogTitle className="text-base font-bold flex items-center gap-2">
               <KeyRound className="w-4 h-4 text-primary" />
               <span>生成新的 API 访问凭据</span>
@@ -578,7 +550,7 @@ export default function AdminTokensPage() {
               </p>
             </div>
 
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-2 gap-2 sm:gap-0">
               <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateOpen(false)} className="text-xs">
                 取消
               </Button>
@@ -592,8 +564,8 @@ export default function AdminTokensPage() {
 
       {/* 编辑弹窗 */}
       <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null) }}>
-        <DialogContent className="max-w-md p-6 rounded-2xl glass-surface depth-modal">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-md max-h-[85dvh] overflow-y-auto p-4 sm:p-6 rounded-2xl glass-surface depth-modal">
+          <DialogHeader className="pr-8 sm:pr-6">
             <DialogTitle className="text-base font-bold flex items-center gap-2">
               <Pencil className="w-4 h-4 text-primary" />
               <span>编辑凭据</span>
@@ -658,7 +630,7 @@ export default function AdminTokensPage() {
             </div>
           </div>
 
-          <DialogFooter className="pt-2">
+          <DialogFooter className="pt-2 gap-2 sm:gap-0">
             <Button type="button" variant="outline" size="sm" onClick={() => setEditing(null)} className="text-xs">
               取消
             </Button>
@@ -671,8 +643,8 @@ export default function AdminTokensPage() {
 
       {/* 明文展示弹窗（创建 / 轮换共用） */}
       <Dialog open={plainResult !== null} onOpenChange={(open) => { if (!open) setPlainResult(null) }}>
-        <DialogContent className="max-w-md p-6 rounded-2xl glass-surface depth-modal space-y-4">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-md max-h-[85dvh] overflow-y-auto p-4 sm:p-6 rounded-2xl glass-surface depth-modal space-y-4">
+          <DialogHeader className="pr-8 sm:pr-6">
             <DialogTitle className="text-base font-bold flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
               <ShieldCheck className="w-5 h-5" />
               <span>Token 明文（仅此一次）</span>

@@ -58,6 +58,7 @@ import { useDensity } from '@/components/density-provider'
 import { BUILTIN_DIY_PRESETS, evaluateLayoutErgonomics, type DIYPreset } from '@/lib/modular/diy-presets'
 import { useToast } from '@/components/ui/use-toast'
 import { cn } from '@/lib/utils'
+import { copyText } from '@/lib/clipboard'
 
 interface HomeDIYToolbarProps {
   allCategoryIds: string[]
@@ -281,10 +282,14 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     });
   };
 
-  const handleShareUrlHash = () => {
+  const handleShareUrlHash = async () => {
     const url = exportPresetToUrlHash();
     if (url) {
-      void navigator.clipboard.writeText(url);
+      const ok = await copyText(url)
+      if (!ok) {
+        toast({ title: '复制失败', description: '浏览器拒绝了剪贴板访问（需 HTTPS 且页面处于聚焦状态）', variant: 'destructive' })
+        return
+      }
       toast({
         title: '🔗 已复制免登专属分享链接！',
         description: '好友直接在浏览器打开该链接，即可一键预览并应用您的专属排版与壁纸。',
@@ -292,9 +297,13 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     }
   };
 
-  const handleCopyConfig = () => {
+  const handleCopyConfig = async () => {
     const json = exportDIYConfig()
-    navigator.clipboard.writeText(json)
+    const ok = await copyText(json)
+    if (!ok) {
+      toast({ title: '复制失败', description: '浏览器拒绝了剪贴板访问（需 HTTPS 且页面处于聚焦状态）', variant: 'destructive' })
+      return
+    }
     toast({
       title: '📋 配置已复制到剪贴板',
       description: '您可以将配置妥善保管或分享给其他设备。',
@@ -325,7 +334,11 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     }
     try {
       const encryptedJson = await exportEncryptedDIYConfig(vaultPassphrase.trim())
-      navigator.clipboard.writeText(encryptedJson)
+      const ok = await copyText(encryptedJson)
+      if (!ok) {
+        toast({ title: '复制失败', description: '浏览器拒绝了剪贴板访问（需 HTTPS 且页面处于聚焦状态）', variant: 'destructive' })
+        return
+      }
       toast({
         title: '🔐 已复制零知识加密密文',
         description: '配置数据已通过 AES-256-GCM 高度认证加密。',
@@ -755,8 +768,8 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
 
       {/* 分类全景大纲管理抽屉/弹窗 */}
       <Dialog open={isManagerOpen} onOpenChange={setIsManagerOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[82vh] flex flex-col p-6">
-          <DialogHeader className="pb-3 border-b border-border/50">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-xl max-h-[85dvh] flex flex-col p-4 sm:p-6">
+          <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
             <DialogTitle className="flex items-center gap-2 text-base font-bold">
               <Layers className="w-5 h-5 text-indigo-500" />
               <span>分类全景管理大纲</span>
@@ -986,8 +999,8 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
 
       {/* 备份与分享模态框 */}
       <Dialog open={isBackupOpen} onOpenChange={setIsBackupOpen}>
-        <DialogContent className="sm:max-w-xl p-6">
-          <DialogHeader className="pb-3 border-b border-border/50">
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-xl max-h-[85dvh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
             <DialogTitle className="flex items-center gap-2 text-base font-bold">
               <Download className="w-5 h-5 text-primary" />
               <span>DIY 配置漫游与备份分享</span>
@@ -1030,38 +1043,38 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
           {backupTab === 'plain' ? (
             /* 明文 JSON 模式 */
             <div className="py-2 space-y-3.5">
-              <div className="flex items-center gap-2">
-                              <div className="pt-1">
+              <div className="space-y-2">
                 <Button size="sm" onClick={handleShareUrlHash} className="w-full text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white shadow-xs">
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                   <span>复制免登专属分享链接 (URL-Hash)</span>
                 </Button>
-              </div>
 
-              <Button size="sm" variant="outline" onClick={handleCopyConfig} className="text-xs gap-1.5 flex-1">
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>复制配置 JSON</span>
-                </Button>
-                <Button size="sm" variant="outline" onClick={handleDownloadConfig} className="text-xs gap-1.5 flex-1">
-                  <Download className="w-3.5 h-3.5" />
-                  <span>下载备份文件</span>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="text-xs gap-1.5 flex-1"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>选择文件导入</span>
-                </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".json,application/json"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <Button size="sm" variant="outline" onClick={handleCopyConfig} className="text-xs gap-1.5">
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>复制配置 JSON</span>
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleDownloadConfig} className="text-xs gap-1.5">
+                    <Download className="w-3.5 h-3.5" />
+                    <span>下载备份文件</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-xs gap-1.5"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>选择文件导入</span>
+                  </Button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                </div>
               </div>
 
               <div>
@@ -1144,35 +1157,35 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={handleCopyEncryptedConfig}
                   disabled={!vaultPassphrase.trim()}
-                  className="text-xs gap-1.5 flex-1 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
+                  className="text-xs gap-1.5 flex-1 min-w-[calc(50%-0.25rem)] sm:min-w-0 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
                 >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>复制加密密文</span>
+                  <Lock className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">复制加密密文</span>
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={handleDownloadEncryptedConfig}
                   disabled={!vaultPassphrase.trim()}
-                  className="text-xs gap-1.5 flex-1 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
+                  className="text-xs gap-1.5 flex-1 min-w-[calc(50%-0.25rem)] sm:min-w-0 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>下载 .enc.json</span>
+                  <Download className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">下载 .enc.json</span>
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-xs gap-1.5 flex-1"
+                  className="text-xs gap-1.5 flex-1 min-w-[calc(50%-0.25rem)] sm:min-w-0"
                 >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>选择密文文件</span>
+                  <Upload className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">选择密文文件</span>
                 </Button>
               </div>
 
@@ -1215,8 +1228,8 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
 
       {/* 新建专属分类对话框 */}
       <Dialog open={isAddCatOpen} onOpenChange={setIsAddCatOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md p-4 sm:p-6">
+          <DialogHeader className="pr-8 sm:pr-6">
             <DialogTitle className="flex items-center gap-2">
               <FolderPlus className="w-5 h-5 text-emerald-500" />
               <span>创建首页专属私人分类</span>

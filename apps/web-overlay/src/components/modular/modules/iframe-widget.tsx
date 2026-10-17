@@ -111,14 +111,16 @@ export function IframeWidget({ config }: IframeWidgetProps) {
           title="嵌入外部应用沙箱"
           onLoad={() => setIsLoading(false)}
           className="w-full h-full border-0 rounded-xl"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+          sandbox="allow-scripts allow-forms allow-popups"
           referrerPolicy="no-referrer"
           loading="lazy"
         />
       </div>
 
-      {/* 底部安全提示：sandbox 属性已启用；注意 allow-scripts + allow-same-origin
-          组合下嵌入页可访问本站存储（W3C 警告该组合弱化沙箱），仅嵌入可信来源 */}
+      {/* 底部安全提示：sandbox 已启用。注意**不能**再加 allow-same-origin ——
+          它与 allow-scripts 同时出现时，嵌入页可自我解除沙箱并访问本站存储
+          （W3C 明确警告该组合弱化沙箱）。代价是依赖同源存储的站点在沙箱里
+          功能受限，这是有意的取舍：预览不该有这种权限。 */}
       <div className="flex items-center justify-between text-xs text-muted-foreground px-1 pt-0.5">
         <div className="flex items-center gap-1 text-muted-foreground/70">
           <ShieldCheck className="w-3 h-3 text-emerald-500" />

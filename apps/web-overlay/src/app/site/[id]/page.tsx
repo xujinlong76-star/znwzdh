@@ -45,6 +45,8 @@ import {
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
+import { copyText } from '@/lib/clipboard'
+import { cn } from '@/lib/utils'
 
 const RELATION_TYPE_LABEL: Record<string, { label: string; color: string; bg: string }> = {
   alternative: {
@@ -100,16 +102,24 @@ export default function SiteDetailPage() {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copyFailed, setCopyFailed] = useState(false)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
 
   const reload = () => setReloadToken((n) => n + 1)
 
-  const handleCopyUrl = () => {
+  const handleCopyUrl = async () => {
     if (!site?.url) return
-    navigator.clipboard.writeText(site.url)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    // 以前这里裸调用后就无条件显示"已复制"：http 部署或权限被拒时
+    // 用户看到成功提示，粘贴却是空的。现在以真实结果为准。
+    // 该页面没有 Toaster，失败时复用 copied 状态做 2 秒的"复制失败"提示。
+    const ok = await copyText(site.url)
+    setCopied(ok ? true : false)
+    setCopyFailed(!ok)
+    setTimeout(() => {
+      setCopied(false)
+      setCopyFailed(false)
+    }, 2000)
   }
 
   // 加载站点主数据
@@ -268,8 +278,12 @@ export default function SiteDetailPage() {
                 </a>
                 <button
                   onClick={handleCopyUrl}
-                  title="复制链接"
-                  className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted transition-colors"
+                  title={copyFailed ? '复制失败：浏览器拒绝了剪贴板访问' : '复制链接'}
+                  aria-label={copyFailed ? '复制失败' : '复制链接'}
+                  className={cn(
+                    'text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted transition-colors',
+                    copyFailed && 'text-destructive hover:text-destructive',
+                  )}
                 >
                   {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>

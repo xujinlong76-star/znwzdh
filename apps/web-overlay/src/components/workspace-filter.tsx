@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Sparkles, Code2, Palette, Bot, Compass, Coffee } from 'lucide-react'
 
 export type WorkspaceId = 'all' | 'dev' | 'design' | 'ai' | 'efficiency'
@@ -26,14 +27,17 @@ interface WorkspaceFilterProps {
 }
 
 export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterProps) {
-  // 根据当前时间提供情境提示
-  const hour = new Date().getHours()
-  const timeHint =
-    hour >= 6 && hour < 12
-      ? '☀️ 早间专注'
-      : hour >= 12 && hour < 18
-      ? '⚡ 敏捷高效'
-      : '🌙 深度探索'
+  // 根据当前时间提供情境提示。
+  // 必须挂载后再算：这个组件会参与 SSR，服务端与客户端时刻/时区不同，
+  // 渲染期直接 new Date().getHours() 会让首帧文本两边不一致 → 水合不匹配。
+  // 首帧用中性占位（与 SSR 一致），挂载后立刻替换。
+  const [timeHint, setTimeHint] = useState('🧭 全速探索')
+  useEffect(() => {
+    const hour = new Date().getHours()
+    setTimeHint(
+      hour >= 6 && hour < 12 ? '☀️ 早间专注' : hour >= 12 && hour < 18 ? '⚡ 敏捷高效' : '🌙 深度探索',
+    )
+  }, [])
 
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 py-2.5 border-b border-border/40">

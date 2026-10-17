@@ -1,12 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { WIDGET_REGISTRY } from '@/lib/modular/registry'
-import { 
-  X, 
-  Search, 
-  Plus, 
-  LayoutGrid, 
+import {
+  X,
+  Search,
+  Plus,
+  LayoutGrid,
   Sparkles,
   Clock,
   Wrench,
@@ -22,6 +22,7 @@ import {
   ExternalLink
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 
 interface ModuleLibraryModalProps {
   isOpen: boolean
@@ -57,6 +58,13 @@ const CATEGORIES = [
 export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibraryModalProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCat, setSelectedCat] = useState('all')
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const { containerProps, scrim } = useOverlayBehavior({ open: isOpen, onClose })
+
+  // 打开即聚焦搜索框：这个弹窗的主任务就是搜索
+  useEffect(() => {
+    if (isOpen) searchInputRef.current?.focus()
+  }, [isOpen])
 
   if (!isOpen) return null
 
@@ -69,8 +77,12 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="relative w-full max-w-2xl bg-background border border-border/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {scrim}
+      <div
+        {...containerProps}
+        className="relative w-full max-w-2xl bg-background border border-border/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85dvh] outline-none"
+      >
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 bg-muted/20">
           <div className="flex items-center gap-2.5">
@@ -92,6 +104,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
           <div className="relative">
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <input
+              ref={searchInputRef}
               type="text"
               placeholder="搜索模块名称或核心功能描述..."
               value={searchTerm}

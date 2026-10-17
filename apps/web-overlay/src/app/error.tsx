@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, RotateCcw, Home, Copy, Check, RefreshCw, WifiOff, Database, Clock } from 'lucide-react'
 import Link from 'next/link'
 import { crashReportText, describeCrash, type CrashKind } from '@/lib/error-report'
+import { copyText } from '@/lib/clipboard'
 
 const ICONS: Record<CrashKind, typeof AlertTriangle> = {
   chunk: Clock,
@@ -41,13 +42,10 @@ export default function Error({
   }, [error])
 
   const copyDiagnostics = async () => {
-    try {
-      await navigator.clipboard.writeText(crashReportText(crash))
-      setCopied(true)
-    } catch {
-      // 剪贴板不可用（非 HTTPS / 无权限）：下面的详情块本身可手动选择复制
-      setCopied(false)
-    }
+    // copyText 永不 reject，返回值即真实结果：失败时把按钮状态还原成"未复制"，
+    // 并保留下方可手动选中的详情块作为兜底
+    const ok = await copyText(crashReportText(crash))
+    setCopied(ok)
   }
 
   return (

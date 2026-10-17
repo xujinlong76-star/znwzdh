@@ -14,6 +14,7 @@ import { useHomeDIY } from '@/lib/modular/use-home-diy'
 import { HomeDIYToolbar } from '@/components/home-diy-toolbar'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { Footer } from '@/components/footer'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 
 // 性能优化：动态懒加载大型组件，大幅缩减首屏 JS 体积与主线程阻塞时间
 const ModularCanvas = dynamic(
@@ -107,6 +108,11 @@ interface NavigationContentProps {
 export function NavigationContent({ navigationData, siteData }: NavigationContentProps) {
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  // 抽屉的公共行为：Esc 关、点遮罩关、锁背景滚动、焦点圈养与还原、role=dialog
+  const { containerProps, scrimProps } = useOverlayBehavior({
+    open: isSidebarOpen,
+    onClose: () => setIsSidebarOpen(false),
+  })
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>('all')
   const [isToolsOpen, setIsToolsOpen] = useState(false)
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false)
@@ -406,13 +412,21 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
       </div>
 
       <div className={cn(
-        "fixed inset-0 z-50 bg-background/80 backdrop-blur-sm transition-all md:hidden",
+        "fixed inset-0 z-50 md:hidden",
         isSidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none"
       )}>
-        <div className={cn(
-          "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background shadow-lg transform transition-transform duration-200 ease-in-out",
-          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-        )}>
+        <div
+          {...scrimProps}
+          className="absolute inset-0 bg-background/80 backdrop-blur-sm transition-opacity"
+        />
+        <div
+          {...containerProps}
+          aria-label="站点导航"
+          className={cn(
+            "fixed inset-y-0 left-0 w-3/4 max-w-xs bg-background shadow-lg transform transition-transform duration-200 ease-in-out outline-none",
+            isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+          )}
+        >
           <Sidebar
             navigationData={{ navigationItems: sortedCategories as any }}
             siteInfo={siteData}
@@ -1112,8 +1126,8 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
 
         {/* 自定义站点录入弹窗 */}
         <Dialog open={!!addSiteTargetCatId} onOpenChange={(open) => !open && setAddSiteTargetCatId(null)}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
+          <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md max-h-[85dvh] overflow-y-auto p-4 sm:p-6">
+            <DialogHeader className="pr-8 sm:pr-6">
               <DialogTitle className="flex items-center gap-2 text-base">
                 <Plus className="w-5 h-5 text-emerald-500" />
                 <span>添加网址到专属分类</span>

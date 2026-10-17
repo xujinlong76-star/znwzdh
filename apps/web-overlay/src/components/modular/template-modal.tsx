@@ -3,6 +3,7 @@
 import { PRESET_TEMPLATES } from '@/lib/modular/registry'
 import { X, LayoutTemplate, Check, Sparkles } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 
 interface TemplateModalProps {
   isOpen: boolean
@@ -11,11 +12,17 @@ interface TemplateModalProps {
 }
 
 export function TemplateModal({ isOpen, onClose, onApplyTemplate }: TemplateModalProps) {
+  const { containerProps, scrim } = useOverlayBehavior({ open: isOpen, onClose })
+
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="relative w-full max-w-xl bg-background border border-border/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {scrim}
+      <div
+        {...containerProps}
+        className="relative w-full max-w-xl bg-background border border-border/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85dvh] outline-none"
+      >
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 bg-muted/20">
           <div className="flex items-center gap-2.5">
@@ -32,8 +39,8 @@ export function TemplateModal({ isOpen, onClose, onApplyTemplate }: TemplateModa
           </Button>
         </div>
 
-        {/* 模版卡片流 */}
-        <div className="p-6 space-y-3.5">
+        {/* 模版卡片流：内容超高时内部滚动，底部操作栏固定不动 */}
+        <div className="p-6 space-y-3.5 overflow-y-auto">
           {PRESET_TEMPLATES.map((tpl) => (
             <div
               key={tpl.id}

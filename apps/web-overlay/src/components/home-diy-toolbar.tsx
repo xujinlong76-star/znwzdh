@@ -119,7 +119,6 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     collapseAllCategories,
     expandAllCategories,
     exportPresetToUrlHash,
-    importPresetFromUrlHash,
     customWallpaperUrl,
     glassmorphismBlur,
     cardOpacity,
@@ -287,10 +286,15 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
   };
 
   const handleShareUrlHash = async () => {
-    const url = exportPresetToUrlHash();
-    if (!url) return;
+    const out = exportPresetToUrlHash();
+    // 生成失败以前是 `if (!url) return`：点了分享按钮毫无反应，
+    // 用户只会以为按钮坏了。现在把原因说出来（编码见 lib/diy-share-link.ts）。
+    if (!out.ok) {
+      toast({ title: '❌ 分享链接生成失败', description: out.reason, variant: 'destructive' });
+      return;
+    }
     // 分享链接全靠剪贴板；写不进去就必须说，不能宣告「已复制」
-    const result = await copyText(url);
+    const result = await copyText(out.url);
     if (!result.ok) {
       toast({ ...copyFailureToast(result), variant: 'destructive' });
       return;

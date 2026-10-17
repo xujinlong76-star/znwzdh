@@ -209,7 +209,9 @@ describe("各复制入口只在真的成功后才显示成功", () => {
     expect((src.match(/if \(!result\.ok\)/g) || []).length).toBeGreaterThanOrEqual(3);
     expect((src.match(/await copyText\(/g) || []).length).toBeGreaterThanOrEqual(3);
     // 成功文案必须排在失败处理之后（先判断、再报喜）
-    const guardAt = src.indexOf("const result = await copyText(url)");
+    // 生成分享链接现在返回 { ok, url | reason }，所以拷的是 out.url；
+    // 「先判断失败、再报喜」这条顺序不变
+    const guardAt = src.indexOf("const result = await copyText(out.url)");
     const successAt = src.indexOf("已复制免登专属分享链接");
     expect(guardAt).toBeGreaterThan(-1);
     expect(successAt).toBeGreaterThan(guardAt);

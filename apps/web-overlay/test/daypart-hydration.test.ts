@@ -144,3 +144,32 @@ describe('组件守卫：时段提示必须挂载之后再算', () => {
     expect(stripComments('const c = new Date()')).toContain('new Date(')
   })
 })
+
+/**
+ * signin 页脚年份的水合差异（与时段提示同类，但更轻）。
+ *
+ * `signin/page.tsx` 是**客户端组件**（首行 'use client'）：`new Date().getFullYear()`
+ * 会在 SSR 与 hydrate 各算一次，跨年边界（或时区差）得到不同文本 → React 报水合
+ * 文本不一致。年份是装饰性内容，用 `suppressHydrationWarning` 单点抑制最省事
+ * （改成挂载后再算会让首帧空一下，反而更差）。
+ *
+ * 断言「抑制只加在这一处」：给整页开豁免会把真实的水合问题一起盖掉。
+ */
+describe('signin 年份：跨年边界的水合差异被单点抑制', () => {
+  const src = readFileSync(resolve(ROOT, 'src', 'app', 'auth', 'signin', 'page.tsx'), 'utf8')
+  const code = stripComments(src)
+
+  it('前提成立：它是客户端组件（不抑制才会水合不一致）', () => {
+    expect(src.startsWith("'use client'")).toBe(true)
+  })
+
+  it('年份 span 带 suppressHydrationWarning', () => {
+    expect(code).toMatch(
+      /<span suppressHydrationWarning>&copy; \{new Date\(\)\.getFullYear\(\)\}/,
+    )
+  })
+
+  it('抑制只有一处（不许顺手给整页开豁免）', () => {
+    expect((code.match(/suppressHydrationWarning/g) ?? []).length).toBe(1)
+  })
+})

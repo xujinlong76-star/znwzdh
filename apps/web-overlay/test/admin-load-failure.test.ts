@@ -167,7 +167,12 @@ describe('接线守则：加载失败必须有错误态、能重试、能看出�
       const src = readSrc(rel)
       expect(src, rel).toContain("useState<string | null>(null)")
       expect(src, rel).toContain('setLoadError(null)')
-      expect(src, rel).toContain(`describeLoadFailure(err, '${what}')`)
+      // 过了「只认最后一次」闸门的页面，错误对象是 out.error；没过的还叫 err。
+      // 名字不重要，重要的是失败时确实分类了、且带上了列表名。
+      const classified =
+        src.includes(`describeLoadFailure(err, '${what}')`) ||
+        src.includes(`describeLoadFailure(out.error, '${what}')`)
+      expect(classified, rel).toBe(true)
       expect(src, rel).toContain('<LoadErrorNotice')
       expect(src, rel).toContain('onRetry={() => load()}')
       expect(src, rel).toContain('emptyStateText(loadError,')
@@ -185,7 +190,10 @@ describe('接线守则：加载失败必须有错误态、能重试、能看出�
 
   it('专题条目（详情）失败也要说：collections 的 loadDetail 不能静默清空', () => {
     const src = readSrc('src/app/admin/collections/page.tsx')
-    expect(src).toContain("describeLoadFailure(err, '专题条目')")
+    const classified =
+      src.includes("describeLoadFailure(err, '专题条目')") ||
+      src.includes("describeLoadFailure(out.error, '专题条目')")
+    expect(classified, 'loadDetail 失败必须留下分类文案，不能静默清空').toBe(true)
     expect(src).toContain('detailError &&')
     expect(src).toContain('emptyStateText(detailError,')
   })

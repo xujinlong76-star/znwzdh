@@ -12,12 +12,13 @@
  *   - DELETE /api/tags/:id/aliases/:a 解除别名绑定
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { LoadErrorNotice } from '@/components/admin/load-error-notice'
 import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
+import { newRequestGate, settleLatest, type RequestGate } from '@/lib/latest-request'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface TagRow {
@@ -49,19 +50,29 @@ export default function AdminTagsPage() {
   // 「没拉到」和「真的没有」必须分开（见 lib/admin-load-failure.ts）
   const [loadError, setLoadError] = useState<string | null>(null)
 
+  // 分组切换也要过闸：连点「领域」「平台」时，先发那次就算后到也不许覆盖后发那次
+  const groupGateRef = useRef<RequestGate | null>(null)
+  if (groupGateRef.current === null) groupGateRef.current = newRequestGate()
+  const groupGate = groupGateRef.current
+
   const load = useCallback(() => {
     setLoading(true)
     setLoadError(null)
     const url = selectedGroup === 'all' ? '/api/tags?minCount=1' : `/api/tags?minCount=1&group=${selectedGroup}`
-    void hubGet<TagRow[]>(url)
-      .then((t) => setTags(Array.isArray(t) ? t : []))
-      .catch((err) => {
+    void (async () => {
+      const out = await settleLatest(groupGate, () => hubGet<TagRow[]>(url))
+      // 过期（用户已经点了别的分组）：一个字都不要写，连 loading 都别动
+      if (out.status === 'stale') return
+      if (out.status === 'value') {
+        setTags(Array.isArray(out.value) ? out.value : [])
+      } else {
         // 失败仍然回落到空列表，但必须留下错误态（见 lib/admin-load-failure.ts）
         setTags([])
-        setLoadError(describeLoadFailure(err, '标签列表'))
-      })
-      .finally(() => setLoading(false))
-  }, [selectedGroup])
+        setLoadError(describeLoadFailure(out.error, '标签列表'))
+      }
+      setLoading(false)
+    })()
+  }, [groupGate, selectedGroup])
 
   useEffect(() => { load() }, [load])
 

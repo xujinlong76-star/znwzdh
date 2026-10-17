@@ -9,10 +9,11 @@
  *   - PUT  /api/sites/:id/facets   单站点分面更新
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { hubGet, hubSend } from '@/lib/navhub-api'
+import { newRequestGate, settleLatest, type RequestGate } from '@/lib/latest-request'
 import { describeDegrade } from '@/lib/degrade'
 import Link from 'next/link'
 
@@ -61,6 +62,11 @@ export default function AdminFacetsPage() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null)
   const [siteSamples, setSiteSamples] = useState<SiteSample[]>([])
   const [loadingSites, setLoadingSites] = useState(false)
+
+  // 样例站点请求的闸门：连点不同分面项时，先发那次的后到不许覆盖后发那次
+  const samplesGateRef = useRef<RequestGate | null>(null)
+  if (samplesGateRef.current === null) samplesGateRef.current = newRequestGate()
+  const samplesGate = samplesGateRef.current
   const [searchTerm, setSearchTerm] = useState('')
 
   const loadFacets = useCallback(() => {
@@ -91,21 +97,26 @@ export default function AdminFacetsPage() {
   const loadSamples = useCallback((facetKey: string, option: string) => {
     setLoadingSites(true)
     const facetParam = encodeURIComponent(JSON.stringify({ [facetKey]: [option] }))
-    void hubGet<SiteSample[]>(`/api/sites?facets=${facetParam}&limit=12`)
-      .then((sites) => {
-        setSiteSamples(Array.isArray(sites) ? sites : [])
+    void (async () => {
+      const out = await settleLatest(samplesGate, () =>
+        hubGet<SiteSample[]>(`/api/sites?facets=${facetParam}&limit=12`),
+      )
+      // 过期（用户已经点了别的分面项）：一个字都不要写
+      if (out.status === 'stale') return
+      if (out.status === 'value') {
+        setSiteSamples(Array.isArray(out.value) ? out.value : [])
         setSamplesError(null)
-      })
-      .catch((err) => {
+      } else {
         // 原来只 setSiteSamples([])：请求失败会渲染成
         // 「暂无匹配站点（可使用 AI 富化或在站点编辑页手动标注）」——
         // 拿一次失败去建议管理员重做分类。
-        console.error('[facets] 加载样例站点失败:', err)
+        console.error('[facets] 加载样例站点失败:', out.error)
         setSiteSamples([])
-        setSamplesError(err)
-      })
-      .finally(() => setLoadingSites(false))
-  }, [])
+        setSamplesError(out.error)
+      }
+      setLoadingSites(false)
+    })()
+  }, [samplesGate])
 
   // 当选中某个分面项时，抓取样例站点
   useEffect(() => {

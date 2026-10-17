@@ -13,11 +13,12 @@
  *   - DELETE /api/collections/:id/items/:siteId 移除站点
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { LoadErrorNotice } from '@/components/admin/load-error-notice'
 import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
+import { newRequestGate, settleLatest, type RequestGate } from '@/lib/latest-request'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface CollectionRow {
@@ -53,6 +54,11 @@ export default function AdminCollectionsPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
 
+  // 详情请求的闸门：连点两个专题时，先发的那次就算后到，也不许覆盖后发那次的结果
+  const detailGateRef = useRef<RequestGate | null>(null)
+  if (detailGateRef.current === null) detailGateRef.current = newRequestGate()
+  const detailGate = detailGateRef.current
+
   // 新建表单
   const [newSlug, setNewSlug] = useState('')
   const [newTitle, setNewTitle] = useState('')
@@ -81,14 +87,21 @@ export default function AdminCollectionsPage() {
     setDetailError(null)
     // 先清空：否则切换专题时，上一份条目会挂在新专题下面
     setItems([])
-    void hubGet<{ collection: CollectionRow; items: CollectionItem[] }>('/api/collections/by-id/' + id)
-      .then((d) => setItems(d.items ?? []))
-      .catch((err) => {
-        // 同 load()：条目加载失败不能显示成「暂无条目」
-        setItems([])
-        setDetailError(describeLoadFailure(err, '专题条目'))
-      })
-  }, [])
+    void (async () => {
+      const out = await settleLatest(detailGate, () =>
+        hubGet<{ collection: CollectionRow; items: CollectionItem[] }>('/api/collections/by-id/' + id),
+      )
+      // 过期（用户已经点了别的专题 / 已经删掉这个专题）：一个字都不要写
+      if (out.status === 'stale') return
+      if (out.status === 'value') {
+        setItems(out.value.items ?? [])
+        return
+      }
+      // 同 load()：条目加载失败不能显示成「暂无条目」
+      setItems([])
+      setDetailError(describeLoadFailure(out.error, '专题条目'))
+    })()
+  }, [detailGate])
 
   useEffect(() => { load() }, [load])
 
@@ -134,6 +147,7 @@ export default function AdminCollectionsPage() {
     setBusy(true)
     try {
       await hubSend('/api/collections/' + selected.id, 'DELETE')
+      detailGate.invalidate()
       setSelectedId(null)
       setItems([])
       load()

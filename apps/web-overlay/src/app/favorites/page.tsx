@@ -6,21 +6,27 @@
  * （同步失败只提示，不影响本地数据）。
  */
 
-import { useCallback, useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { FavoriteButton } from '@/components/favorite-button'
 import { useFavorites, syncFavoritesToCloud, type CloudSyncResult } from '@/hooks/useFavorites'
 import { getIdentity } from '@/lib/identity'
+import {
+  filterFavorites,
+  describeFavoritesFilter,
+  favoriteFilterEmptyMessage,
+} from '@/lib/favorites-filter'
 import {
   encryptVault,
   decryptVault,
   type VaultItem,
   type EncryptedVaultPayload,
 } from '@/lib/vault'
-import { Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff, RefreshCw, CloudOff } from 'lucide-react'
+import { Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff, RefreshCw, CloudOff, Search, X } from 'lucide-react'
 
 export default function FavoritesPage() {
   const favorites = useFavorites()
@@ -32,6 +38,19 @@ export default function FavoritesPage() {
   const [syncingCloud, setSyncingCloud] = useState(false)
   const [importText, setImportText] = useState('')
   const [showImport, setShowImport] = useState(false)
+  // 本页收藏的本地筛选（不联网）：收藏攒到几十个以后，「用眼睛扫网格」不是一种检索方式
+  const [favoriteQuery, setFavoriteQuery] = useState('')
+
+  /** 只过滤本页已加载的收藏；空关键词原样返回，不做无谓的重渲染 */
+  const filteredFavorites = useMemo(
+    () => filterFavorites(favorites.items, favoriteQuery),
+    [favorites.items, favoriteQuery],
+  )
+  const filterSummary = describeFavoritesFilter(
+    filteredFavorites.length,
+    favorites.items.length,
+    favoriteQuery,
+  )
 
   // 零知识 E2EE 金库状态
   const [showVaultExport, setShowVaultExport] = useState(false)
@@ -514,6 +533,38 @@ export default function FavoritesPage() {
           </div>
         )}
 
+        {/* 本地筛选条：只在确实有收藏时出现（没有收藏时不需要筛选控件） */}
+        {favorites.ready && favorites.items.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <div className="relative flex-1 min-w-[13rem] max-w-sm">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                value={favoriteQuery}
+                onChange={(e) => setFavoriteQuery(e.target.value)}
+                placeholder="在收藏里筛选：标题 / 链接 / 描述"
+                aria-label="筛选收藏"
+                className="pl-8 h-9 text-sm"
+              />
+            </div>
+            {filterSummary && (
+              <span className="text-xs text-muted-foreground font-mono" role="status" aria-live="polite">
+                {filterSummary}
+              </span>
+            )}
+            {favoriteQuery && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-9 px-2 text-xs"
+                onClick={() => setFavoriteQuery('')}
+              >
+                <X className="w-3.5 h-3.5 mr-1" />
+                清除
+              </Button>
+            )}
+          </div>
+        )}
+
         {!favorites.ready ? (
           <div className="text-muted-foreground text-sm py-12 text-center">加载中…</div>
         ) : favorites.items.length === 0 ? (
@@ -533,9 +584,24 @@ export default function FavoritesPage() {
               </Link>
             </div>
           </div>
+        ) : filteredFavorites.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border/80 p-10 text-center max-w-lg mx-auto space-y-3 bg-card/40 my-6">
+            <div className="w-12 h-12 rounded-xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground border border-border/40">
+              <Search className="w-6 h-6" />
+            </div>
+            <h3 className="text-sm font-semibold text-foreground">{favoriteFilterEmptyMessage(favoriteQuery)}</h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              收藏并没有丢：共 {favorites.items.length} 个都还在本机，只是当前关键词没匹配到。
+            </p>
+            <div className="pt-2">
+              <Button size="sm" variant="outline" className="text-xs" onClick={() => setFavoriteQuery('')}>
+                清除筛选
+              </Button>
+            </div>
+          </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5 sm:gap-4">
-            {favorites.items.map((f) => (
+            {filteredFavorites.map((f) => (
               <div
                 key={f.siteId}
                 className="group relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-3.5 flex flex-col justify-between"

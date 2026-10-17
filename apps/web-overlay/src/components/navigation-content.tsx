@@ -1127,8 +1127,8 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
 
             <div className="py-3 space-y-3">
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">网站标题 *</label>
-                <Input aria-label="站点标题"
+                <label htmlFor="custom-site-title" className="text-xs font-medium text-foreground block mb-1">网站标题 *</label>
+                <Input id="custom-site-title"
                   placeholder="例如：My Internal Dashboard"
                   value={customSiteTitle}
                   onChange={(e) => setCustomSiteTitle(e.target.value)}
@@ -1136,16 +1136,16 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">网站网址 (URL) *</label>
-                <Input aria-label="站点地址"
+                <label htmlFor="custom-site-href" className="text-xs font-medium text-foreground block mb-1">网站网址 (URL) *</label>
+                <Input id="custom-site-href"
                   placeholder="例如：https://internal.company.io 或 192.168.1.100:8080"
                   value={customSiteHref}
                   onChange={(e) => setCustomSiteHref(e.target.value)}
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">简要描述 (可选)</label>
-                <Input aria-label="站点描述"
+                <label htmlFor="custom-site-desc" className="text-xs font-medium text-foreground block mb-1">简要描述 (可选)</label>
+                <Input id="custom-site-desc"
                   placeholder="例如：公司内部指标监控看板"
                   value={customSiteDesc}
                   onChange={(e) => setCustomSiteDesc(e.target.value)}

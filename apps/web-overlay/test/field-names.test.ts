@@ -193,14 +193,11 @@ describe("全仓库的表单控件都得有可访问名", () => {
       const src = readFileSync(f, "utf8");
       const re = new RegExp(CONTROL_RE.source, "g");
       let m: RegExpExecArray | null;
-      while ((m = re.exec(src))) {
-        const tagEnd = endOfTag(src, m.index + m[1].length + 1);
-        if (tagEnd === -1) continue;
-        const attrs = src.slice(m.index, tagEnd);
-        if (/aria-label=|aria-labelledby=/.test(attrs)) named++;
-      }
+      let total = 0;
+      while ((m = re.exec(src))) total++;
+      named += total - unnamedControls(src).length;
     }
-    expect(named).toBeGreaterThanOrEqual(80);
+    expect(named).toBeGreaterThanOrEqual(85);
   });
 
   it("0 处没有可访问名的控件", () => {

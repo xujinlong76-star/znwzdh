@@ -170,16 +170,16 @@ export default function AdminCollectionsPage() {
 
       <div className="flex flex-wrap items-end gap-2 mb-6 p-3 rounded-md border bg-muted/20">
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Slug（唯一）</label>
-          <Input aria-label="Slug（唯一）" value={newSlug} onChange={(e) => setNewSlug(e.target.value)} placeholder="ai-starter" className="w-44" />
+          <label htmlFor="collection-new-slug" className="text-xs text-muted-foreground">Slug（唯一）</label>
+          <Input id="collection-new-slug" value={newSlug} onChange={(e) => setNewSlug(e.target.value)} placeholder="ai-starter" className="w-44" />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">标题</label>
-          <Input aria-label="标题" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="AI 入门必备" className="w-56" />
+          <label htmlFor="collection-new-title" className="text-xs text-muted-foreground">标题</label>
+          <Input id="collection-new-title" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="AI 入门必备" className="w-56" />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">类型</label>
-          <select aria-label="集合类型"
+          <label htmlFor="collection-new-kind" className="text-xs text-muted-foreground">类型</label>
+          <select id="collection-new-kind"
             value={newKind}
             onChange={(e) => setNewKind(e.target.value)}
             className="h-9 rounded-md border bg-background px-3 text-sm w-32"

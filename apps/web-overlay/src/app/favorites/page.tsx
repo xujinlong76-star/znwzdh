@@ -404,10 +404,10 @@ export default function FavoritesPage() {
                 </div>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                <label htmlFor="vault-password-confirm" className="text-xs font-medium text-muted-foreground mb-1 block">
                   确认金库主密码
                 </label>
-                <input aria-label="再次输入相同密码"
+                <input id="vault-password-confirm"
                   type={showPasswordText ? 'text' : 'password'}
                   value={vaultPasswordConfirm}
                   onChange={(e) => setVaultPasswordConfirm(e.target.value)}
@@ -482,10 +482,10 @@ export default function FavoritesPage() {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                <label htmlFor="vault-import-passphrase" className="text-xs font-medium text-muted-foreground mb-1 block">
                   输入此金库的主密码
                 </label>
-                <input aria-label="输入解密密码"
+                <input id="vault-import-passphrase"
                   type="password"
                   value={importPassphrase}
                   onChange={(e) => setImportPassphrase(e.target.value)}

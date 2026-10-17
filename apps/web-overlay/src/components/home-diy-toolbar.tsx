@@ -1078,10 +1078,10 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
               </div>
 
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">
+                <label htmlFor="diy-import-plain" className="text-xs font-medium text-foreground block mb-1">
                   导入明文 JSON 配置文本：
                 </label>
-                <Textarea aria-label="粘贴已备份的 NavHub DIY JSON 配置代码"
+                <Textarea id="diy-import-plain"
                   placeholder="粘贴已备份的 NavHub DIY JSON 配置代码..."
                   value={importJsonText}
                   onChange={(e) => setImportJsonText(e.target.value)}
@@ -1103,10 +1103,10 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
               </div>
 
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">
+                <label htmlFor="diy-vault-passphrase" className="text-xs font-medium text-foreground block mb-1">
                   金库主密码 (Passphrase) *
                 </label>
-                <Input aria-label="加密主密码"
+                <Input id="diy-vault-passphrase"
                   type="password"
                   placeholder="输入加密主密码 (加解密需保持一致)..."
                   value={vaultPassphrase}
@@ -1190,10 +1190,10 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
               </div>
 
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">
+                <label htmlFor="diy-import-encrypted" className="text-xs font-medium text-foreground block mb-1">
                   密文数据载荷 (Payload)：
                 </label>
-                <Textarea aria-label="粘贴或上传导出的 .enc.json 密文数据"
+                <Textarea id="diy-import-encrypted"
                   placeholder="粘贴或上传导出的 .enc.json 密文数据..."
                   value={importJsonText}
                   onChange={(e) => setImportJsonText(e.target.value)}
@@ -1241,8 +1241,8 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
 
           <div className="py-3 space-y-3">
             <div>
-              <label className="text-xs font-medium text-foreground block mb-1.5">分类名称</label>
-              <Input aria-label="新分类名称"
+              <label htmlFor="diy-new-category-title" className="text-xs font-medium text-foreground block mb-1.5">分类名称</label>
+              <Input id="diy-new-category-title"
                 placeholder="例如：极客日常 / 深度学习速查 / 监控大盘"
                 value={newCatTitle}
                 onChange={(e) => setNewCatTitle(e.target.value)}

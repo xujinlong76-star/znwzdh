@@ -81,8 +81,8 @@ export function WidgetConfigModal({
         <form onSubmit={handleSave} className="p-6 space-y-4">
           {/* 自定义模块标题 */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">模块显示标题</label>
-            <input aria-label="模块显示标题"
+            <label htmlFor="widget-custom-title" className="text-xs font-semibold text-foreground">模块显示标题</label>
+            <input id="widget-custom-title"
               type="text"
               placeholder={def.title}
               value={customTitle}

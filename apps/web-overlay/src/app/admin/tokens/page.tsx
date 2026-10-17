@@ -515,8 +515,8 @@ export default function AdminTokensPage() {
 
           <form onSubmit={handleCreateToken} className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Token 标识名称</label>
-              <Input aria-label="令牌名称"
+              <label htmlFor="token-new-name" className="text-xs font-semibold text-foreground">Token 标识名称</label>
+              <Input id="token-new-name"
                 placeholder="例如: claude-desktop-agent / chrome-ext"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
@@ -562,8 +562,8 @@ export default function AdminTokensPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">有效期</label>
-              <select aria-label="有效期"
+              <label htmlFor="token-new-expires" className="text-xs font-semibold text-foreground">有效期</label>
+              <select id="token-new-expires"
                 value={expiresDays}
                 onChange={(e) => setExpiresDays(e.target.value)}
                 className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-xs"
@@ -605,8 +605,8 @@ export default function AdminTokensPage() {
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">标识名称</label>
-              <Input aria-label="令牌名称"
+              <label htmlFor="token-edit-name" className="text-xs font-semibold text-foreground">标识名称</label>
+              <Input id="token-edit-name"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 className="h-8.5 text-xs"
@@ -641,8 +641,8 @@ export default function AdminTokensPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">有效期（自今天起）</label>
-              <select aria-label="有效期"
+              <label htmlFor="token-edit-expires" className="text-xs font-semibold text-foreground">有效期（自今天起）</label>
+              <select id="token-edit-expires"
                 value={editExpiresDays}
                 onChange={(e) => setEditExpiresDays(e.target.value)}
                 className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-xs"

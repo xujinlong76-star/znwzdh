@@ -41,7 +41,7 @@
         "代码补全",
         "编程助手"
       ],
-      "icon": "https://icon.horse/icon/github.com"
+      "icon": "https://github.com/favicon.ico"
     },
     {
       "url": "https://cursor.com",
@@ -52,7 +52,7 @@
         "代码编辑器",
         "AI 编程"
       ],
-      "icon": "https://icon.horse/icon/cursor.com"
+      "icon": "https://cursor.com/favicon.ico"
     },
     {
       "url": "https://claude.ai",
@@ -74,7 +74,7 @@
         "大模型",
         "中文"
       ],
-      "icon": "https://icon.horse/icon/chat.deepseek.com"
+      "icon": "https://chat.deepseek.com/favicon.ico"
     },
     {
       "url": "https://chatgpt.com",
@@ -96,7 +96,7 @@
         "模型库",
         "数据集"
       ],
-      "icon": "https://icon.horse/icon/huggingface.co"
+      "icon": "https://huggingface.co/favicon.ico"
     },
     {
       "url": "https://ollama.com",
@@ -107,7 +107,7 @@
         "本地部署",
         "大模型"
       ],
-      "icon": "https://icon.horse/icon/ollama.com"
+      "icon": "https://ollama.com/favicon.ico"
     },
     {
       "url": "https://midjourney.com",
@@ -118,7 +118,7 @@
         "AI 绘图",
         "生成"
       ],
-      "icon": "https://icon.horse/icon/midjourney.com"
+      "icon": "https://midjourney.com/favicon.ico"
     },
     {
       "url": "https://suno.com",
@@ -129,7 +129,7 @@
         "AI 音乐",
         "生成"
       ],
-      "icon": "https://icon.horse/icon/suno.com"
+      "icon": "https://suno.com/favicon.ico"
     },
     {
       "url": "https://modelscope.cn",
@@ -140,7 +140,7 @@
         "模型库",
         "国内"
       ],
-      "icon": "https://icon.horse/icon/modelscope.cn"
+      "icon": "https://modelscope.cn/favicon.ico"
     },
     {
       "url": "https://github.com/cline/cline",
@@ -152,7 +152,7 @@
         "AI 编程",
         "自主"
       ],
-      "icon": "https://icon.horse/icon/github.com"
+      "icon": "https://github.com/favicon.ico"
     },
     {
       "url": "https://windsurf.ai",
@@ -163,7 +163,7 @@
         "Agentic IDE",
         "AI 编程"
       ],
-      "icon": "https://icon.horse/icon/windsurf.ai"
+      "icon": "https://windsurf.ai/favicon.ico"
     },
     {
       "url": "https://github.com/vllm-project/vllm",
@@ -174,7 +174,7 @@
         "模型推理",
         "高吞吐"
       ],
-      "icon": "https://icon.horse/icon/github.com"
+      "icon": "https://github.com/favicon.ico"
     },
     {
       "url": "https://github.com/QwenLM/Qwen2.5",
@@ -185,7 +185,7 @@
         "大模型",
         "开源"
       ],
-      "icon": "https://icon.horse/icon/github.com"
+      "icon": "https://github.com/favicon.ico"
     },
     {
       "url": "https://github.com/langchain-ai/langgraph",
@@ -196,7 +196,7 @@
         "多智能体",
         "编排"
       ],
-      "icon": "https://icon.horse/icon/github.com"
+      "icon": "https://github.com/favicon.ico"
     },
     {
       "url": "https://orm.drizzle.team",
@@ -208,7 +208,7 @@
         "TypeScript",
         "数据库"
       ],
-      "icon": "https://icon.horse/icon/orm.drizzle.team"
+      "icon": "https://orm.drizzle.team/favicon.ico"
     },
     {
       "url": "https://bun.sh",
@@ -219,7 +219,7 @@
         "运行时",
         "极速"
       ],
-      "icon": "https://icon.horse/icon/bun.sh"
+      "icon": "https://bun.sh/favicon.ico"
     },
     {
       "url": "https://fastify.dev",
@@ -230,7 +230,7 @@
         "后端框架",
         "高性能"
       ],
-      "icon": "https://icon.horse/icon/fastify.dev"
+      "icon": "https://fastify.dev/favicon.ico"
     },
     {
       "url": "https://gitee.com",
@@ -241,7 +241,7 @@
         "代码托管",
         "国内"
       ],
-      "icon": "https://icon.horse/icon/gitee.com"
+      "icon": "https://gitee.com/favicon.ico"
     },
     {
       "url": "https://npmjs.com",
@@ -252,7 +252,7 @@
         "包管理",
         "JavaScript"
       ],
-      "icon": "https://icon.horse/icon/npmjs.com"
+      "icon": "https://npmjs.com/favicon.ico"
     },
     {
       "url": "https://registry.npmmirror.com",
@@ -263,7 +263,7 @@
         "镜像",
         "包管理"
       ],
-      "icon": "https://icon.horse/icon/registry.npmmirror.com"
+      "icon": "https://registry.npmmirror.com/favicon.ico"
     },
     {
       "url": "https://hub.docker.com",
@@ -274,7 +274,7 @@
         "容器",
         "部署"
       ],
-      "icon": "https://icon.horse/icon/hub.docker.com"
+      "icon": "https://hub.docker.com/favicon.ico"
     },
     {
       "url": "https://kubernetes.io",
@@ -285,7 +285,7 @@
         "容器",
         "编排"
       ],
-      "icon": "https://icon.horse/icon/kubernetes.io"
+      "icon": "https://kubernetes.io/favicon.ico"
     },
     {
       "url": "https://developer.mozilla.org",
@@ -296,7 +296,7 @@
         "文档",
         "Web"
       ],
-      "icon": "https://icon.horse/icon/developer.mozilla.org"
+      "icon": "https://developer.mozilla.org/favicon.ico"
     },
     {
       "url": "https://stackoverflow.com",
@@ -307,7 +307,7 @@
         "问答",
         "社区"
       ],
-      "icon": "https://icon.horse/icon/stackoverflow.com"
+      "icon": "https://stackoverflow.com/favicon.ico"
     },
     {
       "url": "https://vercel.com",
@@ -362,7 +362,7 @@
         "图标",
         "素材"
       ],
-      "icon": "https://icon.horse/icon/iconify.design"
+      "icon": "https://iconify.design/favicon.ico"
     },
     {
       "url": "https://coolors.co",
@@ -373,7 +373,7 @@
         "配色",
         "工具"
       ],
-      "icon": "https://icon.horse/icon/coolors.co"
+      "icon": "https://coolors.co/favicon.ico"
     },
     {
       "url": "https://excalidraw.com",
@@ -384,7 +384,7 @@
         "白板",
         "流程图"
       ],
-      "icon": "https://icon.horse/icon/excalidraw.com"
+      "icon": "https://excalidraw.com/favicon.ico"
     },
     {
       "url": "https://fonts.google.com",
@@ -417,7 +417,7 @@
         "组件",
         "CSS"
       ],
-      "icon": "https://icon.horse/icon/uiverse.io"
+      "icon": "https://uiverse.io/favicon.ico"
     },
     {
       "url": "https://dribbble.com",
@@ -428,7 +428,7 @@
         "灵感",
         "社区"
       ],
-      "icon": "https://icon.horse/icon/dribbble.com"
+      "icon": "https://dribbble.com/favicon.ico"
     },
     {
       "url": "https://www.remove.bg",
@@ -439,7 +439,7 @@
         "抠图",
         "AI"
       ],
-      "icon": "https://icon.horse/icon/remove.bg"
+      "icon": "https://remove.bg/favicon.ico"
     },
     {
       "url": "https://developer.mozilla.org/zh-CN",
@@ -450,7 +450,7 @@
         "文档",
         "前端"
       ],
-      "icon": "https://icon.horse/icon/developer.mozilla.org"
+      "icon": "https://developer.mozilla.org/favicon.ico"
     },
     {
       "url": "https://zh.wikipedia.org",
@@ -461,7 +461,7 @@
         "百科",
         "知识"
       ],
-      "icon": "https://icon.horse/icon/zh.wikipedia.org"
+      "icon": "https://zh.wikipedia.org/favicon.ico"
     },
     {
       "url": "https://www.runoob.com",
@@ -472,7 +472,7 @@
         "教程",
         "入门"
       ],
-      "icon": "https://icon.horse/icon/runoob.com"
+      "icon": "https://runoob.com/favicon.ico"
     },
     {
       "url": "https://www.bilibili.com",
@@ -483,7 +483,7 @@
         "视频",
         "课程"
       ],
-      "icon": "https://icon.horse/icon/bilibili.com"
+      "icon": "https://bilibili.com/favicon.ico"
     },
     {
       "url": "https://leetcode.cn",
@@ -494,7 +494,7 @@
         "算法",
         "练习"
       ],
-      "icon": "https://icon.horse/icon/leetcode.cn"
+      "icon": "https://leetcode.cn/favicon.ico"
     },
     {
       "url": "https://www.coursera.org",
@@ -505,7 +505,7 @@
         "课程",
         "国际"
       ],
-      "icon": "https://icon.horse/icon/coursera.org"
+      "icon": "https://coursera.org/favicon.ico"
     },
     {
       "url": "https://arxiv.org",
@@ -516,7 +516,7 @@
         "论文",
         "科研"
       ],
-      "icon": "https://icon.horse/icon/arxiv.org"
+      "icon": "https://arxiv.org/favicon.ico"
     },
     {
       "url": "https://github.com/trending",
@@ -527,7 +527,7 @@
         "趋势",
         "开源"
       ],
-      "icon": "https://icon.horse/icon/github.com"
+      "icon": "https://github.com/favicon.ico"
     },
     {
       "url": "https://paperswithcode.com",
@@ -538,7 +538,7 @@
         "论文",
         "代码"
       ],
-      "icon": "https://icon.horse/icon/paperswithcode.com"
+      "icon": "https://paperswithcode.com/favicon.ico"
     },
     {
       "url": "https://roadmap.sh",
@@ -549,7 +549,7 @@
         "路线图",
         "规划"
       ],
-      "icon": "https://icon.horse/icon/roadmap.sh"
+      "icon": "https://roadmap.sh/favicon.ico"
     },
     {
       "url": "https://weather.com.cn",
@@ -560,7 +560,7 @@
         "天气",
         "查询"
       ],
-      "icon": "https://icon.horse/icon/weather.com.cn"
+      "icon": "https://weather.com.cn/favicon.ico"
     },
     {
       "url": "https://map.baidu.com",
@@ -571,7 +571,7 @@
         "地图",
         "导航"
       ],
-      "icon": "https://icon.horse/icon/map.baidu.com"
+      "icon": "https://map.baidu.com/favicon.ico"
     },
     {
       "url": "https://www.amap.com",
@@ -582,7 +582,7 @@
         "地图",
         "路况"
       ],
-      "icon": "https://icon.horse/icon/amap.com"
+      "icon": "https://amap.com/favicon.ico"
     },
     {
       "url": "https://www.12306.cn",
@@ -593,7 +593,7 @@
         "出行",
         "购票"
       ],
-      "icon": "https://icon.horse/icon/12306.cn"
+      "icon": "https://12306.cn/favicon.ico"
     },
     {
       "url": "https://www.taobao.com",
@@ -604,7 +604,7 @@
         "购物",
         "电商"
       ],
-      "icon": "https://icon.horse/icon/taobao.com"
+      "icon": "https://taobao.com/favicon.ico"
     },
     {
       "url": "https://www.jd.com",
@@ -615,7 +615,7 @@
         "购物",
         "电商"
       ],
-      "icon": "https://icon.horse/icon/jd.com"
+      "icon": "https://jd.com/favicon.ico"
     },
     {
       "url": "https://www.xiaohongshu.com",
@@ -626,7 +626,7 @@
         "社区",
         "生活"
       ],
-      "icon": "https://icon.horse/icon/xiaohongshu.com"
+      "icon": "https://xiaohongshu.com/favicon.ico"
     },
     {
       "url": "https://www.zhihu.com",
@@ -637,7 +637,7 @@
         "问答",
         "社区"
       ],
-      "icon": "https://icon.horse/icon/zhihu.com"
+      "icon": "https://zhihu.com/favicon.ico"
     },
     {
       "url": "https://www.douban.com",
@@ -648,7 +648,7 @@
         "书影音",
         "评分"
       ],
-      "icon": "https://icon.horse/icon/douban.com"
+      "icon": "https://douban.com/favicon.ico"
     },
     {
       "url": "https://www.12377.cn",
@@ -659,7 +659,7 @@
         "政务",
         "举报"
       ],
-      "icon": "https://icon.horse/icon/12377.cn"
+      "icon": "https://12377.cn/favicon.ico"
     }
   ],
   "collections": [

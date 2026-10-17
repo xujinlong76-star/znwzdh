@@ -217,14 +217,34 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
  * 优先级逻辑：
  * 1. 若显式提供合法且有效的自定义图标 (customIcon)，直接采用
  * 2. 匹配预置的高清本地品牌矢量/WebP Logo (例如 ChatGPT, Claude, Vercel, Cloudflare, Figma, TinyPNG, Unsplash)
- * 3. 提取标准二级/主域名，路由至无防盗链阻碍的高速 CDN 图标服务 (icon.horse)
+ * 3. 直取目标站点自己的 /favicon.ico，失败由前端渐变字母徽标兜底
  */
+/**
+ * 第三方图标服务黑名单：这些服务把用户「渲染过哪些域名」实时送到第三方。
+ * 自定义 icon 若指向它们，一律视同没有自定义图标，回落到本地解析链。
+ * （seed-data.json 历史数据里存了一批这类链接，光改回退逻辑不够。）
+ */
+const THIRD_PARTY_ICON_HOSTS = ['icon.horse', 'favicon.cc', 'yandex.st', 'favicon.yandex.net']
+/** 路径型图标服务（整站不是图标服务，只有这个路径是），按 URL 前缀拦 */
+const THIRD_PARTY_ICON_PATHS = ['https://www.google.com/s2/favicons', 'https://icons.duckduckgo.com/ip3/']
+
+function isThirdPartyIcon(value: string): boolean {
+  try {
+    const u = new URL(value)
+    const host = u.hostname.toLowerCase()
+    if (THIRD_PARTY_ICON_HOSTS.some((bad) => host === bad || host.endsWith(`.${bad}`))) return true
+    return THIRD_PARTY_ICON_PATHS.some((p) => u.href.startsWith(p))
+  } catch {
+    return false
+  }
+}
+
 export function resolveSiteIcon(
   url: string,
   title?: string,
   customIcon?: string | null
 ): string {
-  if (customIcon && typeof customIcon === 'string' && customIcon.trim().length > 0) {
+  if (customIcon && typeof customIcon === 'string' && customIcon.trim().length > 0 && !isThirdPartyIcon(customIcon.trim())) {
     return customIcon.trim()
   }
 
@@ -264,8 +284,11 @@ export function resolveSiteIcon(
     if (lowerTitle.includes('unsplash')) return '/assets/images/logos/unsplash.webp'
     if (lowerTitle.includes('vercel')) return '/assets/images/logos/vercel.webp'
 
-    // 4. 路由至无跨域限制的高清 CDN 图标服务
-    return `https://icon.horse/icon/${hostname}`
+    // 4. 直取目标站点自己的 favicon —— 不经任何第三方图标服务。
+    //    历史上这里用 icon.horse（"无防盗链阻碍的高速 CDN"），但代价是把
+    //    用户的完整浏览记录实时送到第三方。前端还有渐变字母徽标兜底，
+    //    个别不在根目录提供 favicon 的站点会退化成徽标，可接受。
+    return `https://${hostname}/favicon.ico`
   } catch {
     return ''
   }

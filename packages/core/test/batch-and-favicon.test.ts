@@ -72,9 +72,12 @@ describe('确定性渐变徽标与自适应 Favicon 生成管线 (Deterministic 
     expect(resolveSiteIcon('https://fonts.google.com', 'Google Fonts')).toBe('/assets/images/logos/Materialicons.webp')
 
     // 3. 通用域名路由至无跨域限制的高清 CDN (icon.horse)
-    expect(resolveSiteIcon('https://github.com/features/copilot', 'GitHub Copilot')).toBe('https://icon.horse/icon/github.com')
-    expect(resolveSiteIcon('https://bilibili.com', '哔哩哔哩')).toBe('https://icon.horse/icon/bilibili.com')
-    expect(resolveSiteIcon('https://taobao.com', '淘宝')).toBe('https://icon.horse/icon/taobao.com')
+    expect(resolveSiteIcon('https://github.com/features/copilot', 'GitHub Copilot')).toBe('https://github.com/favicon.ico')
+    expect(resolveSiteIcon('https://bilibili.com', '哔哩哔哩')).toBe('https://bilibili.com/favicon.ico')
+    expect(resolveSiteIcon('https://taobao.com', '淘宝')).toBe('https://taobao.com/favicon.ico')
+
+    // 4. 显式传入第三方图标服务 (如 icon.horse) 时被拦截阻断，回退到站点自身 favicon.ico
+    expect(resolveSiteIcon('https://v2ex.com', 'V2EX', 'https://icon.horse/icon/v2ex.com')).toBe('https://v2ex.com/favicon.ico')
   })
 })
 

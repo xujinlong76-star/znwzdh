@@ -130,12 +130,36 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'analytics.google.com': '/assets/images/logos/analytics.webp',
 }
 
+/**
+ * 第三方图标服务域名黑名单。
+ *
+ * 这些服务把用户「渲染过哪些域名」实时送到第三方服务器上——对一个导航站来说，
+ * 这就是把完整浏览记录交出去。种子数据（seed-data.json）里存了一大批
+ * icon.horse 链接，只改代码不够：自定义 icon 优先级最高，脏数据会一直被用。
+ * 所以在这里按域名拦掉，让它们回落到下方「目标站自己的 favicon → 渐变徽标」链路。
+ */
+const THIRD_PARTY_ICON_HOSTS = ['icon.horse', 'favicon.cc', 'yandex.st', 'favicon.yandex.net']
+/** 路径型图标服务（整站不是图标服务，只有这个路径是），按 URL 前缀拦 */
+const THIRD_PARTY_ICON_PATHS = ['https://www.google.com/s2/favicons', 'https://icons.duckduckgo.com/ip3/']
+
+function isThirdPartyIcon(value: string): boolean {
+  try {
+    const u = new URL(value)
+    const host = u.hostname.toLowerCase()
+    if (THIRD_PARTY_ICON_HOSTS.some((bad) => host === bad || host.endsWith(`.${bad}`))) return true
+    return THIRD_PARTY_ICON_PATHS.some((p) => u.href.startsWith(p))
+  } catch {
+    return false
+  }
+}
+
 export function resolveSiteIcon(
   url?: string,
   title?: string,
   customIcon?: string | null
 ): string {
-  if (customIcon && typeof customIcon === 'string' && customIcon.trim().length > 0) {
+  // 自定义 icon 优先，但第三方图标服务除外（见 THIRD_PARTY_ICON_HOSTS 说明）
+  if (customIcon && typeof customIcon === 'string' && customIcon.trim().length > 0 && !isThirdPartyIcon(customIcon.trim())) {
     return customIcon.trim()
   }
 
@@ -191,8 +215,8 @@ export function SiteFavicon({
 }: SiteFaviconProps) {
   const [loadFailed, setLoadFailed] = useState(false)
 
-  // 综合计算有效图标地址：自定义 icon 优先；若未提供则通过 url 智能解析
-  const effectiveIcon = icon || (url ? resolveSiteIcon(url, title) : '')
+  // 综合计算有效图标地址：自定义 icon 优先（但屏蔽第三方隐私泄漏服务）；若未提供或被拦截则通过 url 智能解析
+  const effectiveIcon = resolveSiteIcon(url, title, icon)
 
   // 若明确指定使用默认图标，或无有效图标，或图片加载失败，展示高质量确定性渐变徽标
   if (useDefaultIcon || !effectiveIcon || loadFailed) {

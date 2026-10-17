@@ -97,9 +97,18 @@ export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
         timestamp: Date.now(),
         runtime: getHttpMetricsSummary(),
         stats,
+        linucb: ctx.search.getLinUCBTelemetry(),
       });
     } catch {
       // 容错降级
+    }
+
+    const isOnce =
+      (req.query as Record<string, unknown>)?.once === "1" ||
+      (req.query as Record<string, unknown>)?.once === "true";
+    if (isOnce) {
+      reply.raw.end();
+      return;
     }
 
     // 3s 心跳周期遥测推送
@@ -118,6 +127,7 @@ export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
           runtime: getHttpMetricsSummary(),
           stats,
           queue,
+          linucb: ctx.search.getLinUCBTelemetry(),
         });
       } catch {
         // 心跳容错

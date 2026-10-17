@@ -5,17 +5,24 @@ import Link from 'next/link'
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   Bot,
   CheckCircle2,
+  Clock,
   Database,
+  ExternalLink,
+  Flame,
   Folders,
   FolderTree,
   Gauge,
   Globe,
   HardDrive,
+  History,
+  KeyRound,
   Layers,
   Lock,
   Menu,
+  Plus,
   Radio,
   RefreshCw,
   Search,
@@ -24,6 +31,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  TrendingUp,
   Workflow,
   Wrench,
   Zap,
@@ -114,6 +122,33 @@ interface LinUCBInfo {
   arms: Record<string, { bNorm: number; bSum: number; weightEstimate: number }>
 }
 
+interface SecurityOverviewData {
+  totalAuthFailures24h: number
+  recentFailures: Array<{ ip: string; path: string; count: number; lastAt: number }>
+  recentAudits: Array<{
+    id: number
+    actor: string
+    actorKind: string
+    action: string
+    target?: string | null
+    createdAt: number
+  }>
+  tokenStats: {
+    total: number
+    active: number
+    expired: number
+    revoked: number
+  }
+}
+
+interface SearchAiOverviewData {
+  days: number
+  linucb: LinUCBInfo
+  topQueries: Array<{ query: string; count: number }>
+  zeroResultQueries: Array<{ query: string; count: number }>
+  hotSites: Array<{ id: string; url: string; title: string; visitCount: number; trendScore: number }>
+}
+
 function formatBytes(bytes: number | null): string {
   if (bytes === null || bytes === undefined || bytes === 0) return '未知'
   const k = 1024
@@ -130,6 +165,14 @@ function formatUptime(sec: number): string {
   return `${h}h ${m}m`
 }
 
+function formatRelativeTime(ts: number): string {
+  const diffSec = Math.max(1, Math.floor((Date.now() - ts) / 1000))
+  if (diffSec < 60) return `${diffSec}秒前`
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}分钟前`
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}小时前`
+  return `${Math.floor(diffSec / 86400)}天前`
+}
+
 const CHANNEL_LABELS: Record<string, string> = {
   exact: '精准匹配 (exact)',
   fts: '全文分词 (fts)',
@@ -141,6 +184,9 @@ const CHANNEL_LABELS: Record<string, string> = {
 export function AdminDashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [linucb, setLinucb] = useState<LinUCBInfo | null>(null)
+  const [searchAi, setSearchAi] = useState<SearchAiOverviewData | null>(null)
+  const [security, setSecurity] = useState<SecurityOverviewData | null>(null)
+  const [lastHeartbeatAt, setLastHeartbeatAt] = useState<number | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const [actionNotice, setActionNotice] = useState<string | null>(null)
@@ -149,12 +195,17 @@ export function AdminDashboardClient() {
   const fetchFullDashboard = useCallback(async (showLoading = false) => {
     try {
       if (showLoading) setIsRefreshing(true)
-      const [overviewData, searchAiData] = await Promise.all([
+      const [overviewData, searchAiData, securityData] = await Promise.all([
         hubGet<DashboardData>('/api/admin/dashboard/overview'),
-        hubGet<{ linucb: LinUCBInfo }>('/api/admin/dashboard/search-ai?days=1'),
+        hubGet<SearchAiOverviewData>('/api/admin/dashboard/search-ai?days=7'),
+        hubGet<SecurityOverviewData>('/api/admin/dashboard/security?hours=24'),
       ])
       if (overviewData) setData(overviewData)
-      if (searchAiData?.linucb) setLinucb(searchAiData.linucb)
+      if (searchAiData) {
+        setSearchAi(searchAiData)
+        if (searchAiData.linucb) setLinucb(searchAiData.linucb)
+      }
+      if (securityData) setSecurity(securityData)
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err)
     } finally {
@@ -176,13 +227,22 @@ export function AdminDashboardClient() {
     sse.addEventListener('init', (e) => {
       try {
         const payload = JSON.parse(e.data)
-        setData((prev) => (prev ? { ...prev, runtime: payload.runtime } : prev))
+        if (payload.runtime) {
+          setData((prev) => (prev ? { ...prev, runtime: payload.runtime } : prev))
+        }
+        if (payload.linucb) {
+          setLinucb(payload.linucb)
+        }
       } catch {}
     })
 
     sse.addEventListener('tick', (e) => {
       try {
         const payload = JSON.parse(e.data)
+        setLastHeartbeatAt(payload.timestamp ?? Date.now())
+        if (payload.linucb) {
+          setLinucb(payload.linucb)
+        }
         setData((prev) => {
           if (!prev) return prev
           return {
@@ -190,10 +250,10 @@ export function AdminDashboardClient() {
             runtime: payload.runtime,
             overview: {
               ...prev.overview,
-              totalSites: payload.stats.sites,
-              brokenSites: payload.stats.broken,
-              pendingSites: payload.stats.pending,
-              trashedSites: payload.stats.trashed,
+              totalSites: payload.stats?.sites ?? prev.overview.totalSites,
+              brokenSites: payload.stats?.broken ?? prev.overview.brokenSites,
+              pendingSites: payload.stats?.pending ?? prev.overview.pendingSites,
+              trashedSites: payload.stats?.trashed ?? prev.overview.trashedSites,
             },
             metrics24h: {
               ...prev.metrics24h,
@@ -349,7 +409,7 @@ export function AdminDashboardClient() {
                 }`}
               />
               {sseStatus === 'connected'
-                ? 'SSE 遥测就绪'
+                ? `SSE 遥测就绪${lastHeartbeatAt ? ' (3s 心跳)' : ''}`
                 : sseStatus === 'connecting'
                 ? '连接中'
                 : '离线'}
@@ -548,11 +608,13 @@ export function AdminDashboardClient() {
               <span className="text-sm font-normal text-muted-foreground">近24h 日志</span>
             </div>
             <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
-              <span className="text-amber-600 font-medium">
-                拦截未授权: {metrics24h?.authFailures ?? 0} 次
+              <span className="text-emerald-600 font-medium">
+                Token: {security?.tokenStats.active ?? 0}/{security?.tokenStats.total ?? 0} 有效
               </span>
               <span>·</span>
-              <span>收藏记录: {overview?.favorites ?? 0}</span>
+              <span className="text-amber-600 font-medium">
+                拦截: {security?.totalAuthFailures24h ?? metrics24h?.authFailures ?? 0} 次
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -564,9 +626,14 @@ export function AdminDashboardClient() {
             <Sparkles className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
+            <div className="text-2xl font-bold flex items-center gap-2">
               {linucb?.feedbackCount ?? 0}{' '}
               <span className="text-sm font-normal text-muted-foreground">反馈样本</span>
+              {sseStatus === 'connected' && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                  动态调优
+                </span>
+              )}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
               5 通道自适应置信度动态重排 · 探索系数 α={linucb?.alpha ?? 0.15}
@@ -806,6 +873,195 @@ export function AdminDashboardClient() {
                 <div className="text-[11px] bg-muted/60 text-foreground p-2 rounded border border-border/80">
                   {maintenanceMsg}
                 </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 搜索情报与安全审计动态 */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* 搜索情报与零结果雷达 */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Search className="h-4 w-4 text-primary" />
+                  高频搜索与零结果雷达
+                </CardTitle>
+                <CardDescription>
+                  近 7 天用户搜索需求与未收录关键词补录线索
+                </CardDescription>
+              </div>
+              <Link href="/admin/stats">
+                <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground">
+                  完整大盘 <ArrowRight className="w-3 h-3 ml-1" />
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* 热门搜索 Top 5 */}
+            <div>
+              <div className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                <Flame className="w-3.5 h-3.5 text-orange-500" />
+                高频热搜 Top 5
+              </div>
+              {searchAi?.topQueries && searchAi.topQueries.length > 0 ? (
+                <div className="space-y-1.5">
+                  {searchAi.topQueries.slice(0, 5).map((q, idx) => (
+                    <div
+                      key={q.query}
+                      className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-md bg-muted/30 hover:bg-muted/60 transition-colors"
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <span className="font-mono text-muted-foreground w-4 text-right">
+                          {idx + 1}
+                        </span>
+                        <span className="font-medium truncate">{q.query}</span>
+                      </span>
+                      <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+                        {q.count} 次检索
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground py-2 text-center">暂无搜索统计数据</div>
+              )}
+            </div>
+
+            {/* 零结果补录线索 */}
+            <div className="pt-2 border-t">
+              <div className="text-xs font-semibold text-muted-foreground mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  零结果补录线索 (用户搜但库内缺失)
+                </span>
+                {searchAi?.zeroResultQueries && searchAi.zeroResultQueries.length > 0 && (
+                  <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-600">
+                    {searchAi.zeroResultQueries.length} 条线索
+                  </Badge>
+                )}
+              </div>
+              {searchAi?.zeroResultQueries && searchAi.zeroResultQueries.length > 0 ? (
+                <div className="space-y-1.5">
+                  {searchAi.zeroResultQueries.slice(0, 4).map((q) => (
+                    <div
+                      key={q.query}
+                      className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-md border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 transition-colors"
+                    >
+                      <span className="font-medium text-foreground truncate max-w-[180px]">
+                        {q.query}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground">{q.count} 次未命中</span>
+                        <Link href={`/admin/sitelist?action=new&title=${encodeURIComponent(q.query)}`}>
+                          <Button variant="outline" size="sm" className="h-6 text-[10px] px-2 text-primary">
+                            <Plus className="w-2.5 h-2.5 mr-1" />
+                            录入新站
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground py-2 text-center">
+                  暂无零结果关键词，内容覆盖良好
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 安全防护与审计时间线 */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-primary" />
+                  安全防线与最新审计流
+                </CardTitle>
+                <CardDescription>
+                  Token 签发管控与管理员操作可追溯流水
+                </CardDescription>
+              </div>
+              <Link href="/admin/audit">
+                <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground">
+                  全部审计 <ArrowRight className="w-3 h-3 ml-1" />
+                </Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Token 状态概况 */}
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="p-2 rounded bg-muted/40 border">
+                <div className="text-muted-foreground">有效 Token</div>
+                <div className="text-base font-semibold mt-0.5 text-emerald-600">
+                  {security?.tokenStats.active ?? 0}
+                </div>
+              </div>
+              <div className="p-2 rounded bg-muted/40 border">
+                <div className="text-muted-foreground">已过期 / 吊销</div>
+                <div className="text-base font-semibold mt-0.5 text-muted-foreground">
+                  {(security?.tokenStats.expired ?? 0) + (security?.tokenStats.revoked ?? 0)}
+                </div>
+              </div>
+              <div className="p-2 rounded bg-muted/40 border">
+                <div className="text-muted-foreground">24h 拦截未授权</div>
+                <div className="text-base font-semibold mt-0.5 text-amber-600">
+                  {security?.totalAuthFailures24h ?? 0}
+                </div>
+              </div>
+            </div>
+
+            {/* 最新审计动作流 */}
+            <div>
+              <div className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5 text-blue-500" />
+                最新管理员行为时间线 (Top 5)
+              </div>
+              {security?.recentAudits && security.recentAudits.length > 0 ? (
+                <div className="space-y-2">
+                  {security.recentAudits.slice(0, 5).map((log) => {
+                    const isToken = log.action.startsWith('token.')
+                    const isJob = log.action.startsWith('job.')
+                    const isDb = log.action.startsWith('db.')
+                    const badgeClass = isToken
+                      ? 'border-purple-500/40 text-purple-600 bg-purple-50/50 dark:bg-purple-950/20'
+                      : isJob
+                      ? 'border-blue-500/40 text-blue-600 bg-blue-50/50 dark:bg-blue-950/20'
+                      : isDb
+                      ? 'border-amber-500/40 text-amber-600 bg-amber-50/50 dark:bg-amber-950/20'
+                      : 'border-emerald-500/40 text-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20'
+
+                    return (
+                      <div
+                        key={log.id}
+                        className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-md border bg-card/60"
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <Badge variant="outline" className={`text-[10px] h-5 px-1.5 font-mono ${badgeClass}`}>
+                            {log.action}
+                          </Badge>
+                          <span className="text-muted-foreground truncate max-w-[150px]">
+                            {log.actor} ({log.actorKind})
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground flex items-center gap-1 shrink-0">
+                          <Clock className="w-3 h-3" />
+                          {formatRelativeTime(log.createdAt)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground py-2 text-center">暂无审计日志记录</div>
               )}
             </div>
           </CardContent>

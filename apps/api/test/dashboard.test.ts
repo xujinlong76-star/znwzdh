@@ -167,4 +167,16 @@ describe("Dashboard & Telemetry Routes", () => {
     expect(Array.isArray(body.items)).toBe(true);
     expect(exportRes.headers["content-disposition"]).toContain("attachment");
   });
+
+  it("GET /api/admin/dashboard/stream 连接 SSE 实时推送通道并接收快照", async () => {
+    const streamRes = await app.inject({
+      method: "GET",
+      url: "/api/admin/dashboard/stream?once=1",
+    });
+    expect(streamRes.statusCode).toBe(200);
+    expect(streamRes.headers["content-type"]).toContain("text/event-stream");
+    expect(streamRes.body).toContain("event: init");
+    expect(streamRes.body).toContain("linucb");
+    expect(streamRes.body).toContain("runtime");
+  });
 });

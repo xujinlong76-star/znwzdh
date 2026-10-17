@@ -38,6 +38,8 @@ export default async function VideoPlayerRoute() {
     const { navigationData, siteData } = await getData()
 
     return (
-        <VideoPlayerPage navigationData={navigationData} siteData={siteData} />
+        <main id="main-content">
+            <VideoPlayerPage navigationData={navigationData} siteData={siteData} />
+        </main>
     )
 }

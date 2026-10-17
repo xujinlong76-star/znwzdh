@@ -175,8 +175,8 @@ function SignInContent() {
         </div>
       </div>
 
-      {/* 右侧登录表单 */}
-      <div className="flex flex-col justify-center items-center p-4 sm:p-8">
+      {/* 右侧登录表单 —— 这一列才是页面主体，地标落在这里 */}
+      <main id="main-content" className="flex flex-col justify-center items-center p-4 sm:p-8">
         <div className="mx-auto flex w-full max-w-[390px] flex-col justify-center space-y-6">
           {/* 移动端展示 Logo */}
           <div className="flex lg:hidden flex-col items-center gap-2 mb-2 text-center">
@@ -372,7 +372,7 @@ function SignInContent() {
             </CardFooter>
           </Card>
         </div>
-      </div>
+      </main>
     </div>
   )
 }

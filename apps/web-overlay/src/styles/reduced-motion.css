@@ -1,0 +1,36 @@
+/**
+ * 尊重系统的「减弱动态效果」偏好（prefers-reduced-motion）。
+ *
+ * 站点里有大量动效：卡片悬停的位移 / 缩放 transform、depth-card 与 nav-card-glow 的
+ * 阴影过渡、骨架屏与状态点的 animate-pulse、抽屉与弹窗的滑入滑出。对前庭功能敏感的
+ * 用户，这些动效会带来不适甚至眩晕 —— 这不是审美偏好，而是一条可访问性要求
+ * （WCAG 2.3.3 Animation from Interactions）。
+ *
+ * 偏好早已由系统交给网页（iOS 辅助功能 → 动态效果 / macOS → 减少动态效果 /
+ * Windows → 辅助功能 → 动画效果）。这里要做的只是照着用户的设置执行：
+ * **保留状态变化，去掉过渡过程**。
+ *
+ * 为什么用 0.01ms 而不是 0：duration 为 0 时浏览器可能不再派发
+ * transitionend / animationend，依赖这些事件做「动画结束再卸载 / 再回调」的逻辑
+ * （抽屉、弹窗、Toast 都有）会永远等不到事件，界面反而卡死。
+ * 0.01ms 依然是"瞬间完成"，但事件照常触发。
+ *
+ * 为什么在 layout 里排在 globals.css 之后：同优先级的规则按声明顺序取胜，
+ * 这个文件必须在所有动效定义之后加载，才能稳定覆盖。
+ */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    /* 平滑滚动本身也是一种动态效果：导航跳转时直接落位，不要滚一段 */
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+}

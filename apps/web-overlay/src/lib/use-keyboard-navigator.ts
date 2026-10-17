@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { preferredScrollBehavior } from '@/lib/motion'
 
 export interface NavigableCardItem {
   id: string
@@ -121,7 +122,7 @@ export function useKeyboardNavigator({
     if (!focusedId) return
     const el = document.getElementById(`nav-card-${focusedId}`)
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      el.scrollIntoView({ behavior: preferredScrollBehavior(), block: 'nearest' })
     }
   }, [focusedId])
 

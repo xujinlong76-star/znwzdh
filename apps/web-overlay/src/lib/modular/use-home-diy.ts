@@ -33,6 +33,7 @@ import {
   type LayoutSyncChannel,
   type LayoutSlotClocks,
 } from '@/lib/modular/layout-sync'
+import { encodeShareLink, type ShareLinkOutcome } from '@/lib/diy-share-link'
 
 export type HomeViewMode = 'hybrid' | 'classic' | 'workbench'
 export type CardDisplayMode = 'compact' | 'standard' | 'rich'
@@ -1108,10 +1109,14 @@ export function useHomeDIY() {
     }))
   }, [persistConfig])
 
-  // URL Hash 免登预设分享与即时加载
-  const exportPresetToUrlHash = useCallback((): string => {
-    try {
-      const payload = {
+  // URL Hash 免登预设分享。编码逻辑在 lib/diy-share-link.ts：失败会带上原因，
+  // 不再像以前那样返回空串让调用方静默吞掉。
+  const exportPresetToUrlHash = useCallback((): ShareLinkOutcome => {
+    if (typeof window === 'undefined') {
+      return { ok: false, reason: '当前页面还没有准备好，稍后再试' }
+    }
+    return encodeShareLink(
+      {
         v: config.version,
         vm: config.viewMode,
         cdm: config.cardDisplayMode,
@@ -1124,63 +1129,15 @@ export function useHomeDIY() {
         wp: config.customWallpaperUrl,
         gb: config.glassmorphismBlur,
         co_op: config.cardOpacity,
-      };
-      const json = JSON.stringify(payload);
-      const b64 = typeof window !== 'undefined' ? btoa(encodeURIComponent(json)) : '';
-      return `${window.location.origin}${window.location.pathname}#diy=${b64}`;
-    } catch {
-      return '';
-    }
+      },
+      { origin: window.location.origin, pathname: window.location.pathname },
+    )
   }, [config]);
 
-  const importPresetFromUrlHash = useCallback((hashStr?: string): boolean => {
-    try {
-      const hash = hashStr || (typeof window !== 'undefined' ? window.location.hash : '');
-      if (!hash.includes('#diy=')) return false;
-      const idx = hash.indexOf('#diy=');
-      const b64 = hash.slice(idx + '#diy='.length);
-      // 长度上限 4KB，超限直接拒绝
-      if (b64.length > 4096) return false;
-      const json = decodeURIComponent(atob(b64));
-      if (json.length > 4096) return false;
-      const parsed = JSON.parse(json);
-      if (!parsed || typeof parsed !== 'object') return false;
-
-      const normalized = {
-        viewMode: parsed.vm ?? parsed.viewMode,
-        cardDisplayMode: parsed.cdm ?? parsed.cardDisplayMode,
-        canvasBackground: parsed.bg ?? parsed.canvasBackground,
-        accentColor: parsed.ac ?? parsed.accentColor,
-        categoryOrder: parsed.co ?? parsed.categoryOrder,
-        pinnedCategoryIds: parsed.pco ?? parsed.pinnedCategoryIds,
-        hiddenCategoryIds: parsed.hco ?? parsed.hiddenCategoryIds,
-        siteCategoryOverrides: parsed.sco ?? parsed.siteCategoryOverrides,
-        customWallpaperUrl: parsed.wp ?? parsed.customWallpaperUrl,
-        glassmorphismBlur: parsed.gb ?? parsed.glassmorphismBlur,
-        cardOpacity: parsed.co_op ?? parsed.cardOpacity,
-      };
-      const check = validateAndCleanDIYConfig(normalized);
-      if (!check.valid || !check.config) return false;
-      persistConfig((prev) => ({
-        ...prev,
-        viewMode: check.config.viewMode ?? prev.viewMode,
-        cardDisplayMode: check.config.cardDisplayMode ?? prev.cardDisplayMode,
-        canvasBackground: check.config.canvasBackground ?? prev.canvasBackground,
-        accentColor: check.config.accentColor ?? prev.accentColor,
-        categoryOrder: check.config.categoryOrder ?? prev.categoryOrder,
-        pinnedCategoryIds: check.config.pinnedCategoryIds ?? prev.pinnedCategoryIds,
-        hiddenCategoryIds: check.config.hiddenCategoryIds ?? prev.hiddenCategoryIds,
-        siteCategoryOverrides: check.config.siteCategoryOverrides ?? prev.siteCategoryOverrides,
-        customWallpaperUrl: check.config.customWallpaperUrl ?? prev.customWallpaperUrl,
-        glassmorphismBlur: check.config.glassmorphismBlur ?? prev.glassmorphismBlur,
-        cardOpacity: check.config.cardOpacity ?? prev.cardOpacity,
-        updatedAt: Date.now(),
-      }))
-      return true;
-    } catch {
-      return false;
-    }
-  }, [persistConfig]);
+  // 注：以前这里还有一个 importPresetFromUrlHash，从没被调用过
+  // （唯一来源是 home-diy-toolbar 的解构，那边只用 exportPresetToUrlHash），
+  // 而且匹配条件比真正生效的 applyHomeDiyShareHash() 更宽（includes vs startsWith），
+  // 已删除：免登导入只保留上面那一条实现。
 
   return {
     config,
@@ -1189,7 +1146,6 @@ export function useHomeDIY() {
     setCustomWallpaper,
     setAestheticSliders,
     exportPresetToUrlHash,
-    importPresetFromUrlHash,
     siteCategoryOverrides: config.siteCategoryOverrides || {},
     customWallpaperUrl: config.customWallpaperUrl || '',
     glassmorphismBlur: config.glassmorphismBlur ?? 12,

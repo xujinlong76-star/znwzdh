@@ -143,9 +143,7 @@ pg_restore -d navhub_restore --no-owner navhub-pg-<时间戳>.dump
 
 ## 6. 数据治理（events / audit_logs）
 
-`events`（点击、搜索、曝光）与 `audit_logs`（管理操作）是持续增长的两张表：
-
-两个脚本覆盖两种诉求（`scripts/data-retention.mjs`，默认 dry-run）：
+`events`（点击、搜索、曝光）与 `audit_logs`（管理操作）是持续增长的两张表。同一个脚本提供两种处理模式，`scripts/data-retention.mjs`，一律默认 dry-run：
 
 | 模式 | 命令 | 适合什么 |
 | --- | --- | --- |

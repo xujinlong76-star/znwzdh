@@ -90,7 +90,7 @@ export const DEFAULT_ROLLUP_TARGETS: RollupTarget[] = [
 
 export interface RollupOptions {
   /** 要聚合的表与保留天数，默认 {@link DEFAULT_ROLLUP_TARGETS}。 */
-  targets?: RollupTarget[];
+  targets?: readonly RollupTarget[];
   /** 基准时间（毫秒），默认 Date.now()。测试里注入固定值。 */
   now?: number;
   /** 单表单轮最多处理多少天，默认 30。超出即收尾并标记 truncated，下一轮继续。 */

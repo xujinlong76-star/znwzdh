@@ -9,7 +9,7 @@
 | --- | --- | --- | --- |
 | 立刻做（P0，建议 1–6） | 6 | **6** | — |
 | 近期（建议 7–16） | 10 | **8** | 2（Docker 层缓存、前端拆分前置） |
-| 中期（建议 11–17，独立立项） | 7 | **2.5**（运维文档 + PG 备份 + 数据保留脚本 + 数据治理方案） | 4.5（需立项，见 §4） |
+| 中期（建议 11–17，独立立项） | 7 | **3**（运维文档、PG 备份、数据治理：TTL 清理 + rollup 聚合） | 4（需立项，见 §4） |
 
 提交链（本轮，含并行会话合并进来的改动）：
 
@@ -57,8 +57,11 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 
 - **运维文档三件套**（建议 24）：新增 `docs/wiki/11-operations.md` —— 发布/回滚流程（含"只回代码不回数据"约束）、on-call runbook（8 类症状 → 检查 → 处置）、SLO/SLI 与告警分级、备份恢复与演练清单、数据治理建议。
 - **PG 备份脚本**（建议 24 的一半）：新增 `scripts/backup-pg.mjs`（`pg_dump -Fc`、轮换、产物校验、`--docker <container>` 模式），补上 standard 模式此前"有 SQLite 备份、无 PG 备份"的缺口。
-- **数据保留自动化**（建议 25 的一半）：新增 `packages/store/src/retention.ts` + `scripts/data-retention.mjs` —— `events` / `audit_logs` 两张只增不删的表终于不用靠人工归档了。默认 dry-run、先归档后删除、小批量 `id IN (...)` 避免长事务、SQLite/PG 同一套逻辑（注入占位符风格适配）。10 个单测覆盖分批/扫描上限/归档优先/参数白名单，并在临时 SQLite 上做了真实删除与幂等验证。
-  仍未做的部分：把过期明细聚合成日/月统计行（删明细留聚合）——脚本目前只做原样归档。
+- **数据保留自动化**（建议 25 的前半）：新增 `packages/store/src/retention.ts` + `scripts/data-retention.mjs` —— `events` / `audit_logs` 两张只增不删的表终于不用靠人工归档了。默认 dry-run、先归档后删除、小批量 `id IN (...)` 避免长事务、SQLite/PG 同一套逻辑（注入占位符风格适配）。10 个单测覆盖分批/扫描上限/归档优先/参数白名单，并在临时 SQLite 上做了真实删除与幂等验证。
+- **明细聚合 rollup**（建议 25 的后半，`--rollup`）：新增 `packages/store/src/rollup.ts` —— 把到期的**整天**压成 `events_daily`（日 × 类型 × 站点，含 `total` / 去重 `identities`）与 `audit_daily`（日 × 动作 × 操作者类型，含 `total` / 去重 `actors`），写完后才删这一天的明细，于是"保留趋势、不堆积归档"这条路也通了。
+  几个刻意的取舍：**只推进整天**（某天里还有未到期行时那天整轮不动，否则重跑会把半天的聚合值越算越小）、**upsert 覆盖而非累加**（累加语义重跑会翻倍）、**单天分组超限则整天跳过**（宁留明细不写半份聚合）、**dry-run 不建表**。另有三重刹车：单表单轮最多 30 天（`--max-days`）、单天最多 5000 分组（`--max-groups`）、dry-run 因为不删行所以只推进一趟（否则重复查询会一直拿到同一批日期）。
+  13 个单测 + 临时 SQLite 端到端：dry-run 零改动 → apply 写入正确聚合值 → 半天过期的那天原样保留 → 二次运行全 0（幂等）。
+  仍未做的部分：`events_daily` / `audit_daily` **还没有消费方**（后台趋势与看板暂未读它），也没有接进定时任务框架 —— 都写进 `docs/wiki/11-operations.md` §6.4 待办。
 
 **需独立立项（本次未动，避免一次性大改）**
 
@@ -70,7 +73,7 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 | 21 | 多实例语义（SSE 总线、限流、token touch 共享化） | 需引入外部总线（PG LISTEN/NOTIFY 或 Redis），属架构变更 |
 | 22 | 前端拆分（8 个 >800 行组件、loading/error 边界、组件测试） | 机械拆分收益有限，应按模块逐个重构并补测试 |
 | 23 | tsconfig 现代化（`moduleResolution: bundler`） | 会一次性改变全前端类型解析结果，需要专门回归 |
-| ~~25~~ | ~~数据治理自动化~~ | **已部分落地**：TTL 脚本 `scripts/data-retention.mjs` 上线（详见 §4 已落地）；剩下"过期明细 → 聚合行"未做 |
+| ~~25~~ | ~~数据治理自动化~~ | **已全部落地**：TTL 清理（原样归档 + 删除）与 rollup（聚合后删明细）两条路都在 `scripts/data-retention.mjs`，详见 §4 已落地；剩"聚合表接入消费方 / 接定时任务"见 wiki §6.4 |
 
 ## 五、已知问题与遗留（重要）
 
@@ -93,8 +96,9 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 | 后端/包类型 | `pnpm typecheck` | 0 错误 |
 | 前端类型 | `pnpm --filter navsphere exec tsc --noEmit` | 0 错误 |
 | 前端 lint | `pnpm lint` | 0 error / 269 warning（退出 0） |
-| 单测 | `npx vitest run` | 51 文件 / **828 通过** / 11 跳过 |
+| 单测 | `npx vitest run` | 61 文件 / **919 通过** / 11 跳过（其中 rollup 13 例；其余增量来自并行推进的分类体系工作） |
 | 数据保留 | `packages/store/test/retention.test.ts`（10 例）+ 临时 SQLite 端到端 | dry-run 一行不删、`--apply` 只删到期行且边界正确、归档内容逐行可读、二次运行幂等且不留空归档、缺表时报可读错误 |
+| 明细聚合 | `packages/store/test/rollup.test.ts`（13 例）+ 临时 SQLite 端到端 + CLI `--rollup` 实跑 | dry-run 不建表不写行；apply 后 `events_daily` 的 total/identities 与明细一致；半天过期的那天原样保留；二次运行 0 天且聚合值不翻倍；分组超限时整天跳过且明细未动 |
 | 覆盖层 | `node scripts/check-web-overlay.mjs` | 187 文件一致 + 15 个 git 跟踪自研文件全部在 overlay |
 | 上游 ref | `node scripts/check-upstream-ref.mjs` | 三处声明一致 `6ba74fa…`，产物未漂移 |
 | 扩展 | `node scripts/check-extensions.mjs` | 100% 通过 |

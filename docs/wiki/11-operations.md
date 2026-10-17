@@ -145,9 +145,15 @@ pg_restore -d navhub_restore --no-owner navhub-pg-<时间戳>.dump
 
 `events`（点击、搜索、曝光）与 `audit_logs`（管理操作）是持续增长的两张表：
 
-- **短期**：按月归档——把 N 个月前的行导出到冷存储后删除（保留统计聚合结果即可）；
-- **中期**：加 TTL 任务（复用现有 job 框架，新增一个 `purge_events` 类型的定时任务）；
+两个脚本覆盖两种诉求（`scripts/data-retention.mjs`，默认 dry-run）：
+
+| 模式 | 命令 | 适合什么 |
+| --- | --- | --- |
+| 清理（默认） | `node scripts/data-retention.mjs --apply` | 要能回溯到单行：过期行 gzip 归档后删除 |
+| 聚合（`--rollup`） | `node scripts/data-retention.mjs --rollup --apply` | 只关心趋势：过期明细压成日统计后删除明细，不产生归档体积 |
+
 - **查询预算**：热点列表查询必须带 `limit`，新增聚合查询要在测试里断言扫描行数不随数据量线性爆炸。
+- **为什么不默认聚合**：热度/趋势要的是"某天某类多少次"，但排查问题时偶尔需要原文（例如某次搜索为何没命中）。两者按需选择，不强制单一路线。
 
 ### 6.1 现状：已有自动化脚本
 
@@ -188,11 +194,54 @@ node scripts/data-retention.mjs --url "$NAVHUB_DATABASE_URL" --apply
   ```
   # 每月 3 号 04:00 清理并归档（standard 模式）
   0 4 3 * * cd /srv/navhub && node scripts/data-retention.mjs --apply >> /var/log/navhub-retention.log 2>&1
+
+  # 只想保留统计、不想堆积归档文件时改用聚合模式
+  0 4 3 * * cd /srv/navhub && node scripts/data-retention.mjs --rollup --apply >> /var/log/navhub-retention.log 2>&1
   ```
 - **跑之前先备份**：清理是不可逆的，但归档文件是保底手段；推荐顺序是 §5 备份 → dry-run 看量 → `--apply`。
 - **归档产物本身也要有去留策略**：`data/archive/*.ndjson.gz` 不会被本脚本清理，按冷存储的保留要求单独归档或删除。
 
-### 6.3 还没做的部分
+### 6.3 聚合模式：删明细、留日统计（`--rollup`）
 
-- **聚合替代明细**：真正的长期方案是把过期明细聚合成日/月维度的统计行，删明细留聚合。脚本目前只做"原样归档 + 删除明细"，没有写入聚合表。
+清理模式能回溯单行，代价是归档体积随时间线性增长。聚合模式走另一条路：先把到期的**整天**压成统计行写进聚合表，再删掉那一天的所有明细。
+
+```bash
+# 先看会汇总哪些天、多少行（默认 dry-run，不建表不删行）
+node scripts/data-retention.mjs --rollup
+
+# 确认后执行：写 events_daily / audit_daily，并删除已聚合天的明细
+node scripts/data-retention.mjs --rollup --apply
+
+# 限量跑（单表单轮最多 90 天、单天分组上限 2000）
+node scripts/data-retention.mjs --rollup --apply --max-days 90 --max-groups 2000
+```
+
+产出表（首次 `--apply` 时 `CREATE TABLE IF NOT EXISTS` 自动建立，不需要改迁移）：
+
+| 表 | 唯一键 | 指标 | 分组含义 |
+| --- | --- | --- | --- |
+| `events_daily` | `day_start, kind, site_key` | `total`、`identities` | 每天 × 事件类型 × 站点（无站点的行为归一到 `site_key = ''`） |
+| `audit_daily` | `day_start, action, actor_kind` | `total`、`actors` | 每天 × 动作 × 操作者类型 |
+
+行为要点：
+
+| 项 | 说明 |
+| --- | --- |
+| 只推进整天 | 只有当某一整天都已过期才聚合它。某天里还剩未到期数据时那一天**整轮不动**，留给下次 —— 否则重复运行会把同一个半天的聚合值越算越小 |
+| 先写聚合后删明细 | 一天的所有分组 upsert 完之后才删这一天的行；中途崩溃最多是"明细还在、聚合已写好"，重跑幂等 |
+| upsert 覆盖而非累加 | `ON CONFLICT DO UPDATE SET total = excluded.total`。累加语义下一次重跑就会翻倍 |
+| 单天分组上限 | 默认 5000 组/天。超出的那一天**整天跳过**（不聚合也不删），宁留明细不写半份聚合 |
+| 单轮天数上限 | 默认 30 天/表/轮，`--max-days` 调；触顶会打印"下一轮继续"，反复几轮追平即可 |
+| dry-run 不建表 | 干燥跑不产生 `CREATE TABLE`，也不写任何行 |
+
+`sites.visit_count` 是写入期自增的累计值、`trend_score` 由 `recompute_rank` 按近期窗口重算，两者都不依赖 `events` 全量历史，**删除过期明细不会影响浏览热度与排序**。
+
+月度口径不必再建物理表：日聚合已有约 30 倍压缩，需要月报时从 `events_daily` 再 `GROUP BY` 一次即可（月长度不固定，用 `created_at - created_at % 86400000` 这种单一表达式无法算出月桶，因此不提供主打 uptake 的月表）。
+
+核心逻辑在 `packages/store/src/rollup.ts`（`runRollup` / `rollupDdl`），由 `packages/store/test/rollup.test.ts` 覆盖整天边界、幂等、跳过、方言占位符、标识符白名单等分支。
+
+### 6.4 还没做的部分
+
+- **入库调度尚未接线**：聚合模式目前仍是手动/cron 调用，没有接进 §2 的发布流程或任务框架；推荐先按 §6.2 的方式挂 cron 观察一个周期。
+- **聚合结果没有消费方**：`events_daily` / `audit_daily` 目前只是被写入，后台趋势与运营看板还没读它。接入前建议先在只读副本上核对与新明细口径一致。
 - **查询预算**：热点列表查询必须带 `limit`，新增聚合查询要在测试里断言扫描行数不随数据量线性爆炸。

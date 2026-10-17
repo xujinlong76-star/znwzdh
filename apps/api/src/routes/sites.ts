@@ -186,7 +186,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       } else if (op === "setCategory") {
         await ctx.repo.updateSite(id, { categoryId: body.data.categoryId });
       } else {
-        await ctx.repo.updateSite(id, { status: body.data.status as never });
+        await ctx.repo.updateSite(id, { status: body.data.status });
       }
       applied++;
     }
@@ -209,7 +209,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         title: z.string().min(1).optional(),
         description: z.string().nullable().optional(),
         categoryId: z.string().optional(),
-        tags: z.array(z.string()).optional(),
+        tags: z.array(z.string()).max(50).optional(),
         source: z.string().optional(),
       })).min(1).max(200),
       defaultCategoryId: z.string().optional(),

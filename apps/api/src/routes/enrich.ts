@@ -35,7 +35,7 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     const body = z.object({
       url: z.string().url(),
       categoryId: z.string().optional(),
-      tags: z.array(z.string()).optional(),
+      tags: z.array(z.string()).max(50).optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 

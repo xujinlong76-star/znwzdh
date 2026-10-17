@@ -55,7 +55,7 @@ export const relationRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     }
 
     const body = z.object({
-      relations: z.array(SiteRelationSchema),
+      relations: z.array(SiteRelationSchema).max(200),
     }).safeParse(req.body ?? {});
 
     if (!body.success) {

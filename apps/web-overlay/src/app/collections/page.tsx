@@ -10,6 +10,8 @@ import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { fetchCollections, type HubCollection } from '@/lib/navhub-api'
+import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
+import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { ArrowLeft, Layers, Compass, MapPin, Route } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
@@ -22,10 +24,27 @@ const KIND_META: Record<string, { label: string; icon: typeof Compass }> = {
 export default function CollectionsPage() {
   const [cols, setCols] = useState<HubCollection[]>([])
   const [loading, setLoading] = useState(true)
+  /** 「站长正在策划中」和「中枢挂了」必须分开说，否则用户会以为站长没做事 */
+  const [notice, setNotice] = useState<DegradeNotice | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  const reload = () => setReloadToken((n) => n + 1)
 
   useEffect(() => {
-    void fetchCollections().then((c: HubCollection[]) => { setCols(c); setLoading(false) })
-  }, [])
+    let cancelled = false
+    setLoading(true)
+    setNotice(null)
+    void fetchCollections((error) => {
+      if (!cancelled) setNotice(describeDegrade(error, '专题数据'))
+    }).then((c: HubCollection[]) => {
+      if (cancelled) return
+      setCols(c)
+      setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [reloadToken])
 
   return (
     <Container>
@@ -60,11 +79,13 @@ export default function CollectionsPage() {
           </div>
         </div>
 
+        {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
+
         {loading ? (
           <div className="text-muted-foreground text-sm py-16 text-center">正在加载精选专题…</div>
         ) : cols.length === 0 ? (
           <div className="text-muted-foreground text-sm py-12 text-center border border-dashed rounded-xl bg-muted/10">
-            暂无精选专题，站长正在策划中
+            {notice ? '本次未能取回专题列表' : '暂无精选专题，站长正在策划中'}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

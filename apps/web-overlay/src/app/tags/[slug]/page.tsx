@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { searchSites, type HubSite } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
+import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
 
 export default function TagDetailPage() {
@@ -24,16 +25,24 @@ export default function TagDetailPage() {
   const [loading, setLoading] = useState(true)
   const [degraded, setDegraded] = useState(false)
   const identity = useMemo(() => getIdentity(), [])
+  const [reloadToken, setReloadToken] = useState(0)
+
+  const reload = () => setReloadToken((n) => n + 1)
 
   useEffect(() => {
     if (!slug) return
+    let cancelled = false
     setLoading(true)
     void searchSites({ q: '', tag: slug, limit: 100, identity }).then((res) => {
+      if (cancelled) return
       setSites(res.hits.map((h) => h.site).filter((s): s is HubSite => Boolean(s)))
       setDegraded(Boolean(res.degraded))
       setLoading(false)
     })
-  }, [slug, identity])
+    return () => {
+      cancelled = true
+    }
+  }, [slug, identity, reloadToken])
 
   return (
     <Container>
@@ -64,9 +73,11 @@ export default function TagDetailPage() {
         </div>
 
         {degraded && (
-          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
-            <span>⚠️ 检索服务暂时不可用，已自动启用本地离线降级索引。</span>
-          </div>
+          <HubDegradedNotice
+            notice={{ message: '检索服务暂时不可用，已切到本地离线降级索引。', retryable: true }}
+            onRetry={reload}
+            subject="标签检索"
+          />
         )}
 
         {loading ? (

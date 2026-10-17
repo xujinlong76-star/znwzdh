@@ -12,6 +12,8 @@ import { Container } from '@/components/ui/container'
 import { FavoriteButton } from '@/components/favorite-button'
 import { Footer } from '@/components/footer'
 import { fetchNewSites, fetchTrending, type HubSite } from '@/lib/navhub-api'
+import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
+import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Flame, Sparkles, ArrowLeft, Trophy, ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -23,14 +25,33 @@ export default function HotPage() {
   const [trending, setTrending] = useState<HubSite[]>([])
   const [fresh, setFresh] = useState<HubSite[]>([])
   const [loading, setLoading] = useState(true)
+  /**
+   * 中枢不可用时，「暂无热度数据」和「中枢挂了」看起来一模一样。
+   * 榜单页的全部内容就是数据，静默降级等于告诉用户「本站没数据」，
+   * 所以这里记下降级原因并给重试入口。
+   */
+  const [notice, setNotice] = useState<DegradeNotice | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+
+  const reload = () => setReloadToken((n) => n + 1)
 
   useEffect(() => {
-    void Promise.all([fetchTrending(30), fetchNewSites(30)]).then(([t, f]) => {
+    let cancelled = false
+    setLoading(true)
+    setNotice(null)
+    const onDegraded = (error: unknown) => {
+      if (!cancelled) setNotice(describeDegrade(error, '榜单数据'))
+    }
+    void Promise.all([fetchTrending(30, onDegraded), fetchNewSites(30, onDegraded)]).then(([t, f]) => {
+      if (cancelled) return
       setTrending(t)
       setFresh(f)
       setLoading(false)
     })
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [reloadToken])
 
   const getRankBadge = (index: number) => {
     const rank = index + 1
@@ -163,6 +184,8 @@ export default function HotPage() {
           </div>
         </div>
 
+        {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
+
         {loading ? (
           <div className="text-muted-foreground text-sm py-16 text-center">正在计算最新榜单排行…</div>
         ) : (
@@ -183,10 +206,22 @@ export default function HotPage() {
               </div>
             </div>
             <TabsContent value="trending" className="pt-2">
-              {trending.length === 0 ? <div className="text-muted-foreground text-sm py-12 text-center">暂无热度数据</div> : renderList(trending)}
+              {trending.length === 0 ? (
+                <div className="text-muted-foreground text-sm py-12 text-center">
+                  {notice ? '本次未能取回热度数据' : '暂无热度数据'}
+                </div>
+              ) : (
+                renderList(trending)
+              )}
             </TabsContent>
             <TabsContent value="new" className="pt-2">
-              {fresh.length === 0 ? <div className="text-muted-foreground text-sm py-12 text-center">暂无新入库数据</div> : renderList(fresh)}
+              {fresh.length === 0 ? (
+                <div className="text-muted-foreground text-sm py-12 text-center">
+                  {notice ? '本次未能取回新入库数据' : '暂无新入库数据'}
+                </div>
+              ) : (
+                renderList(fresh)
+              )}
             </TabsContent>
           </Tabs>
         )}

@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Providers } from '@/components/providers'
 import { PwaRegister } from '@/components/pwa-register'
+import { OfflineBanner } from '@/components/offline-banner'
 import { getFileContent } from '@/lib/github'
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
@@ -151,6 +152,8 @@ export default function RootLayout({
           <Providers>
             {children}
           </Providers>
+          {/* 网络状态提示：全站可见。离线时告诉用户「是你的网络断了，不是站点没数据」 */}
+          <OfflineBanner />
           <Toaster />
         </ThemeProvider>
       </body>

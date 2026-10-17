@@ -32,12 +32,15 @@ export function VideoCard({ item }: VideoCardProps) {
         ? `https:${coverPath}`
         : coverPath
 
-    const handleCardClick = (e: React.MouseEvent) => {
+    // 卡片本身就是按钮（见下方根元素）：键盘 Enter / 空格会走同一条路径，
+    // 不再依赖鼠标点击 —— 视频卡片此前是一个纯 <div onClick>，没有任何可聚焦元素，
+    // 键盘与读屏用户根本没法打开视频。
+    const handleCardClick = () => {
         if (videoConfig) {
-            e.preventDefault()
             setIsOpen(true)
         } else if (item.href) {
-            window.open(item.href, '_blank')
+            // noopener：外站拿到 window.opener 就能反向跳转我们的标签页（reverse tabnabbing）
+            window.open(item.href, '_blank', 'noopener,noreferrer')
         }
     }
 
@@ -101,8 +104,9 @@ export function VideoCard({ item }: VideoCardProps) {
 
     return (
         <>
-            <div
-                className="group @container cursor-pointer overflow-hidden rounded-xl bg-card border border-border/50 
+            <button
+                type="button"
+                className="group @container cursor-pointer text-left w-full overflow-hidden rounded-xl bg-card border border-border/50 
                            transition-all duration-300 ease-out depth-card hover:shadow-xl hover:shadow-primary/5 
                            hover:border-primary/20 hover:-translate-y-1"
                 onClick={handleCardClick}
@@ -165,7 +169,7 @@ export function VideoCard({ item }: VideoCardProps) {
                         </p>
                     )}
                 </div>
-            </div>
+            </button>
 
             {/* 视频播放弹窗 */}
             {videoConfig && (
@@ -174,7 +178,7 @@ export function VideoCard({ item }: VideoCardProps) {
                         {/* 无障碍访问 */}
                         <div className='sr-only'>
                             <DialogTitle>{item.title}</DialogTitle>
-                            <DialogDescription>Playing video: {item.title}</DialogDescription>
+                            <DialogDescription>正在播放：{item.title}</DialogDescription>
                         </div>
 
                         {/* 视频播放器 */}

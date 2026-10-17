@@ -350,7 +350,7 @@ export default function VideoItemsPage() {
                                     variant="ghost"
                                     size="icon"
                                     className="h-8 w-8"
-                                    onClick={() => window.open(item.href, '_blank')}
+                                    onClick={() => window.open(item.href, '_blank', 'noopener,noreferrer')}
                                     title="访问链接"
                                 >
                                     <Icons.globe className="h-4 w-4" />

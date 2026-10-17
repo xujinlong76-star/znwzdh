@@ -208,10 +208,11 @@ export function HomeHeroDeck() {
 
       {/* 展板内容区域 */}
       {isHeroDeckCollapsed ? (
-        /* 折叠后的轻量微胶囊栏 */
-        <div
+        /* 折叠后的轻量微胶囊栏 —— 本身就是一个按钮，键盘也能展开 */
+        <button
+          type="button"
           onClick={toggleHeroDeckCollapsed}
-          className="flex items-center justify-between p-2.5 px-4 rounded-xl border border-dashed border-border/70 hover:border-primary/40 bg-card/50 hover:bg-card/80 backdrop-blur-xs cursor-pointer transition-all text-xs text-muted-foreground group"
+          className="w-full text-left flex items-center justify-between p-2.5 px-4 rounded-xl border border-dashed border-border/70 hover:border-primary/40 bg-card/50 hover:bg-card/80 backdrop-blur-xs cursor-pointer transition-all text-xs text-muted-foreground group"
         >
           <div className="flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -224,7 +225,7 @@ export function HomeHeroDeck() {
             <span>点击展开</span>
             <ChevronDown className="w-3 h-3" />
           </span>
-        </div>
+        </button>
       ) : (
         /* 展开后的 12 栅格自适应容器 */
         <div

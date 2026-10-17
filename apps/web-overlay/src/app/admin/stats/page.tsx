@@ -397,14 +397,14 @@ export default function AdminStatsPage() {
                         {new Date(q.lastAt).toLocaleDateString('zh-CN')}
                       </div>
                     </div>
-                    <Link
-                      href={`/admin/sitelist?action=add&keyword=${encodeURIComponent(q.query)}`}
-                    >
-                      <Button variant="ghost" size="sm" className="h-8 text-xs text-primary">
+                    <Button asChild variant="ghost" size="sm" className="h-8 text-xs text-primary">
+                      <Link
+                        href={`/admin/sitelist?action=add&keyword=${encodeURIComponent(q.query)}`}
+                      >
                         <PlusCircle className="h-3.5 w-3.5 mr-1" />
                         补录
-                      </Button>
-                    </Link>
+                      </Link>
+                    </Button>
                   </div>
                 ))}
               </div>

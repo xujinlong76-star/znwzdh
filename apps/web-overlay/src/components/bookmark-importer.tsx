@@ -133,12 +133,12 @@ export function BookmarkImporter() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Link href="/">
-                <Button variant="ghost" size="sm" className="h-7 px-2.5 rounded-full text-xs text-muted-foreground hover:text-foreground hover:bg-background/80 border border-border/50 gap-1.5 transition-all">
+              <Button asChild variant="ghost" size="sm" className="h-7 px-2.5 rounded-full text-xs text-muted-foreground hover:text-foreground hover:bg-background/80 border border-border/50 gap-1.5 transition-all">
+                <Link href="/">
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>返回主页</span>
-                </Button>
-              </Link>
+                </Link>
+              </Button>
               <span className="text-xs text-muted-foreground">/ 智能书签导入</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground via-foreground/90 to-muted-foreground flex items-center gap-2.5">

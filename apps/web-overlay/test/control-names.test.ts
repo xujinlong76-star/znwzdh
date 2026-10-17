@@ -17,8 +17,15 @@
  * 判定规则（这也是本测试要永久守住的东西）：`size="icon"` 的按钮必须满足其一 ——
  *   1. 标签上直接写了 `aria-label` / `aria-labelledby` / `title`；
  *   2. 按钮体内有 `sr-only` 文本；
- *   3. 它被一个**自带名字的** `<Link>` / `<a>` 包着（链接才是被聚焦与播报的元素，
- *      这也是本仓库既有的写法：`<Link aria-label="热度榜"><Button size="icon">…`）。
+ *   3. 它被一个**自带名字的** `<Link>` / `<a>` 包着（链接才是被聚焦与播报的元素）；
+ *   4. 它是 `asChild` 按钮，名字写在它内部那个 `<Link>` / `<a>` 上
+ *      （推荐的链接按钮写法：`<Button asChild size="icon"><Link aria-label="热度榜">…`）。
+ *
+ * 第 3 与第 4 条是同一件事的两种排布：**可访问名必须来自某个真实承载交互的元素**。
+ * 曾经只有第 3 条，因为过去的写法就是 `<Link><Button/></Link>`；那种写法属于
+ * 「嵌套可交互元素」（`nested-interactive.test.ts` 现在禁止），改成 `asChild` 之后
+ * 名字从「外层链接」变成了「内层链接」，规则 4 就是为它补的 —— 不能因为搬家
+ * 就把这条守卫绕过去。
  *
  * 扫描用的 `>>` 判定是**按花括号配平**找标签结尾的：`onClick={() => …}` 里那个 `>`
  * 属于箭头函数，简单正则会在那里截断，把「有 title」的按钮误判成没名字。
@@ -103,6 +110,8 @@ function unnamedIconButtons(): string[] {
         body = close === -1 ? "" : src.slice(tagEnd + 1, close);
       }
       if (/sr-only/.test(body)) continue;
+      // asChild：可访问名写在内层 <Link> / <a> 上（推荐写法）
+      if (/\basChild\b/.test(attrs) && /<(Link|a)\b[^>]*(aria-label=|aria-labelledby=|title=)/.test(body)) continue;
       if (insideNamedLink(src, m.index)) continue;
       offenders.push(`${rel}:${src.slice(0, m.index).split(/\r?\n/).length}`);
     }
@@ -120,6 +129,28 @@ describe("只有图标的控件必须带着名字", () => {
 
   it("每个 size=\"icon\" 按钮都有 aria-label / title / sr-only / 带名字的外层链接", () => {
     expect(unnamedIconButtons()).toEqual([]);
+  });
+
+  it("规则 4（asChild + 内层具名链接）确实在被使用 —— 否则它只是纸面条文", () => {
+    let count = 0;
+    for (const rel of listSources(join(ROOT, "src"))) {
+      const src = overlaySource(rel);
+      const re = /<Button\b/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(src))) {
+        const tagEnd = endOfTag(src, m.index + "<Button".length);
+        if (tagEnd === -1) continue;
+        const attrs = src.slice(m.index, tagEnd);
+        if (!/\basChild\b/.test(attrs)) continue;
+        if (!/size=["']icon["']/.test(attrs)) continue;
+        const close = src.indexOf("</Button>", tagEnd);
+        const body = close === -1 ? "" : src.slice(tagEnd + 1, close);
+        if (/<(Link|a)\b[^>]*(aria-label=|aria-labelledby=|title=)/.test(body)) count++;
+      }
+    }
+    // 至少这 6 处图标按钮（导航栏的热度榜 / GitHub 仓库、视频页与播放器页各 2 处）
+    // 靠规则 4 才算「有名字」；如果规则 4 被删掉，它们会立刻被规则 1-3 判为无名。
+    expect(count).toBeGreaterThanOrEqual(6);
   });
 });
 

@@ -458,15 +458,16 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                 <Wrench className="h-4 w-4" />
               </Button>
 
-              <Link href="/hot" aria-label="热度榜" title="热度趋势与新品榜">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
-                >
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
+              >
+                <Link href="/hot" aria-label="热度榜" title="热度趋势与新品榜">
                   <Flame className="h-4 w-4" />
-                </Button>
-              </Link>
+                </Link>
+              </Button>
 
               {/* 探索功能矩阵下拉菜单 */}
               <DropdownMenu>
@@ -608,22 +609,23 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
               <ViewModeToggle />
               <DensityToggle />
               <ModeToggle />
-              <Link
-                href="https://github.com/tianyaxiang/NavSphere"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="访问 GitHub 仓库"
-                title="GitHub 仓库"
-                className="hidden sm:inline-flex"
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
               >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                <Link
+                  href="https://github.com/tianyaxiang/NavSphere"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="访问 GitHub 仓库"
+                  title="GitHub 仓库"
+                  className="hidden sm:inline-flex"
                 >
                   <Github className="h-4 w-4" />
-                </Button>
-              </Link>
+                </Link>
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"

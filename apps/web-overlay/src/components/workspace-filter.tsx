@@ -1,6 +1,13 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Sparkles, Code2, Palette, Bot, Compass, Coffee } from 'lucide-react'
+import {
+  DAYPART_PLACEHOLDER,
+  daypartText,
+  describeDaypart,
+  type DaypartHint,
+} from '@/lib/daypart'
 
 export type WorkspaceId = 'all' | 'dev' | 'design' | 'ai' | 'efficiency'
 
@@ -26,14 +33,16 @@ interface WorkspaceFilterProps {
 }
 
 export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterProps) {
-  // 根据当前时间提供情境提示
-  const hour = new Date().getHours()
-  const timeHint =
-    hour >= 6 && hour < 12
-      ? '☀️ 早间专注'
-      : hour >= 12 && hour < 18
-      ? '⚡ 敏捷高效'
-      : '🌙 深度探索'
+  // 时段提示只能等挂载之后再算。
+  // 首页是服务端渲染的，服务端时区（CI / 容器通常是 UTC）与用户时区不一样，
+  // 在渲染体里直接取 new Date().getHours() 会让「服务端写进 HTML 的那句话」
+  // 与「客户端首帧算出来的那句话」对不上 —— React 判定水合不匹配，
+  // 丢掉服务端 HTML 重渲染并在控制台报错。
+  // 首帧两边都渲染 DAYPART_PLACEHOLDER（不含时间信息，因此不会说错话）。
+  const [timeHint, setTimeHint] = useState<DaypartHint | null>(null)
+  useEffect(() => {
+    setTimeHint(describeDaypart(new Date().getHours()))
+  }, [])
 
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 py-2.5 border-b border-border/40">
@@ -66,7 +75,9 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
       <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
         <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/40">
           <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span className="font-semibold text-foreground text-xs">{timeHint}</span>
+          <span className="font-semibold text-foreground text-xs">
+            {daypartText(timeHint ?? DAYPART_PLACEHOLDER)}
+          </span>
         </div>
         <span className="text-xs text-muted-foreground/80">自适应工作区</span>
       </div>

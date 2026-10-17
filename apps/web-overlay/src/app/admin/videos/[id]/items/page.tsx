@@ -268,7 +268,7 @@ export default function VideoItemsPage() {
                     </div>
                     <div className="relative flex-1 max-w-sm">
                         <Icons.search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
+                        <Input aria-label="搜索视频"
                             placeholder="搜索视频..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -289,7 +289,7 @@ export default function VideoItemsPage() {
                         value={enabledFilter}
                         onValueChange={(value: 'all' | 'enabled' | 'disabled') => setEnabledFilter(value)}
                     >
-                        <SelectTrigger className="w-[140px]">
+                        <SelectTrigger aria-label="按状态筛选" className="w-[140px]">
                             <SelectValue placeholder="按状态筛选" />
                         </SelectTrigger>
                         <SelectContent>

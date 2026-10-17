@@ -111,7 +111,7 @@ export default function AdminAuditPage() {
       </p>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <select
+        <select aria-label="按操作类型过滤"
           className="h-8 rounded-md border border-input bg-background px-2 text-sm"
           value={action}
           onChange={(e) => setAction(e.target.value)}
@@ -121,7 +121,7 @@ export default function AdminAuditPage() {
             <option key={a} value={a}>{a}</option>
           ))}
         </select>
-        <input
+        <input aria-label="按执行者过滤"
           className="h-8 rounded-md border border-input bg-background px-2 text-sm w-44"
           placeholder="按执行者过滤"
           value={actor}

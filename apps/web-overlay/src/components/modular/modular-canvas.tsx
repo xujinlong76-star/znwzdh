@@ -242,7 +242,7 @@ export function ModularCanvas() {
           {isEditing && (
             isCreatingBoard ? (
               <form onSubmit={handleCreateBoardSubmit} className="flex items-center gap-1">
-                <input
+                <input aria-label="看板名称"
                   type="text"
                   autoFocus
                   placeholder="看板名称..."

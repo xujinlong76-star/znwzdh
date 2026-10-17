@@ -202,7 +202,7 @@ export default function NavigationPage() {
     <div className="h-full flex-1 flex-col space-y-8 p-8 md:flex">
       <div className="flex items-center justify-between space-x-4">
         <div className="flex items-center gap-4 flex-1">
-          <Input
+          <Input aria-label="搜索分类"
             placeholder="搜索分类..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -218,7 +218,7 @@ export default function NavigationPage() {
               }
             }}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger aria-label="状态筛选" className="w-[180px]">
               <SelectValue placeholder="状态筛选" />
             </SelectTrigger>
             <SelectContent>

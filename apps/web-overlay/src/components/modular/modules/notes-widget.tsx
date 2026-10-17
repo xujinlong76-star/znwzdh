@@ -95,7 +95,7 @@ export function NotesWidget() {
           if (trimmed.startsWith('- [x] ') || trimmed.startsWith('- [X] ')) {
             return (
               <div key={index} className="flex items-center gap-2 text-muted-foreground line-through">
-                <input type="checkbox" checked readOnly className="rounded text-primary h-3 w-3 pointer-events-none" />
+                <input aria-hidden="true" type="checkbox" checked readOnly className="rounded text-primary h-3 w-3 pointer-events-none" />
                 <span>{trimmed.slice(6)}</span>
               </div>
             )
@@ -103,7 +103,7 @@ export function NotesWidget() {
           if (trimmed.startsWith('- [ ] ')) {
             return (
               <div key={index} className="flex items-center gap-2 text-foreground">
-                <input type="checkbox" checked={false} readOnly className="rounded text-primary h-3 w-3 pointer-events-none" />
+                <input aria-hidden="true" type="checkbox" checked={false} readOnly className="rounded text-primary h-3 w-3 pointer-events-none" />
                 <span>{trimmed.slice(6)}</span>
               </div>
             )
@@ -181,7 +181,7 @@ export function NotesWidget() {
       {/* 便签主体内容 */}
       <div className="flex-1 min-h-[90px] overflow-y-auto">
         {mode === 'edit' ? (
-          <textarea
+          <textarea aria-label="笔记内容（支持 Markdown）"
             value={content}
             onChange={(e) => handleChange(e.target.value)}
             placeholder="支持 Markdown 待办 (- [ ] 事项)、标题 (# )、列表 (- )..."

@@ -91,7 +91,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
         <div className="p-4 border-b border-border/40 space-y-3 bg-card/40">
           <div className="relative">
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
+            <input aria-label="搜索模块名称或核心功能描述"
               type="text"
               placeholder="搜索模块名称或核心功能描述..."
               value={searchTerm}

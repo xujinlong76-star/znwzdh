@@ -387,7 +387,7 @@ export default function FavoritesPage() {
                   设置金库主密码 (至少 6 位)
                 </label>
                 <div className="relative">
-                  <input
+                  <input aria-label="输入强主密码"
                     type={showPasswordText ? 'text' : 'password'}
                     value={vaultPassword}
                     onChange={(e) => setVaultPassword(e.target.value)}
@@ -407,7 +407,7 @@ export default function FavoritesPage() {
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">
                   确认金库主密码
                 </label>
-                <input
+                <input aria-label="再次输入相同密码"
                   type={showPasswordText ? 'text' : 'password'}
                   value={vaultPasswordConfirm}
                   onChange={(e) => setVaultPasswordConfirm(e.target.value)}
@@ -465,7 +465,7 @@ export default function FavoritesPage() {
                   >
                     <Upload className="w-3 h-3 mr-1" /> 选择本地金库文件
                   </Button>
-                  <input
+                  <input aria-label="选择金库文件"
                     type="file"
                     ref={fileInputRef}
                     onChange={handleFileChange}
@@ -473,7 +473,7 @@ export default function FavoritesPage() {
                     className="hidden"
                   />
                 </div>
-                <textarea
+                <textarea aria-label="可直接点击上方按钮选择文件，或在此粘贴密文 JSON"
                   value={importVaultPayload}
                   onChange={(e) => setImportVaultPayload(e.target.value)}
                   placeholder="可直接点击上方按钮选择文件，或在此粘贴密文 JSON..."
@@ -485,7 +485,7 @@ export default function FavoritesPage() {
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">
                   输入此金库的主密码
                 </label>
-                <input
+                <input aria-label="输入解密密码"
                   type="password"
                   value={importPassphrase}
                   onChange={(e) => setImportPassphrase(e.target.value)}
@@ -516,7 +516,7 @@ export default function FavoritesPage() {
         {showImport && (
           <div className="mb-6 space-y-2 p-4 rounded-lg border bg-muted/20">
             <div className="text-xs font-medium text-muted-foreground">导入传统未加密 JSON</div>
-            <textarea
+            <textarea aria-label="粘贴导出的 JSON 文本"
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
               placeholder='粘贴导出的 JSON，如 {"version":1,"items":[...]}'

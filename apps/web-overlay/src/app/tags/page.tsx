@@ -88,7 +88,7 @@ export default function TagsPage() {
               {/* 即时搜索框 */}
               <div className="relative w-full sm:w-64 shrink-0">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
-                <Input
+                <Input aria-label="搜索标签名称或技术栈"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="搜索标签名称或技术栈..."

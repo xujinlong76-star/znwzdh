@@ -89,7 +89,7 @@ export default function AdminTagsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Input
+        <Input aria-label="按名称 / slug / 别名 / 分组过滤"
           placeholder="按名称 / slug / 别名 / 分组过滤"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}

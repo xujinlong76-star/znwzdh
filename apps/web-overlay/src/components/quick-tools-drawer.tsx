@@ -272,7 +272,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输入原始 JSON:</span>
-                <textarea
+                <textarea aria-label="粘贴原始 JSON 文本"
                   placeholder="在此粘贴原始 JSON 文本..."
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
@@ -281,7 +281,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               </div>
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">格式化结果输出:</span>
-                <textarea
+                <textarea aria-label="格式化结果输出"
                   readOnly
                   placeholder="格式化结果输出..."
                   value={jsonOutput}
@@ -316,7 +316,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输入待转换文本:</span>
-                <textarea
+                <textarea aria-label="输入待编码或解码的文本"
                   placeholder="在此输入待编码或解码的文本..."
                   value={b64Input}
                   onChange={(e) => setB64Input(e.target.value)}
@@ -325,7 +325,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               </div>
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输出结果:</span>
-                <textarea
+                <textarea aria-label="结果输出"
                   readOnly
                   placeholder="结果输出..."
                   value={b64Output}
@@ -352,7 +352,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                 </Button>
               </div>
               <div className="flex items-center gap-2">
-                <Input readOnly value={uuid || '点击生成按钮创建 UUID'} className="font-mono text-xs h-9 bg-background/90 border-border/70" />
+                <Input readOnly aria-label="生成的 UUID" value={uuid || '点击生成按钮创建 UUID'} className="font-mono text-xs h-9 bg-background/90 border-border/70" />
                 <Button
                   size="sm"
                   variant="secondary"
@@ -396,7 +396,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             <div className="p-4 rounded-xl border border-border/60 bg-card space-y-2.5 shadow-2xs">
               <span className="text-xs font-bold">时间戳转可读时间字符串</span>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <Input
+                <Input aria-label="输入 10 位或 13 位时间戳"
                   placeholder="输入 10 位或 13 位时间戳..."
                   value={tsInput}
                   onChange={(e) => handleConvertTimestamp(e.target.value)}
@@ -434,7 +434,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输入 URL 串:</span>
-                <textarea
+                <textarea aria-label="输入待编码或解码的 URL 或参数"
                   placeholder="在此输入待编码或解码的 URL 或参数..."
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
@@ -443,7 +443,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               </div>
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输出转换结果:</span>
-                <textarea
+                <textarea aria-label="结果输出"
                   readOnly
                   placeholder="结果输出..."
                   value={urlOutput}
@@ -476,7 +476,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1.5">
                   <span className="text-xs font-semibold text-muted-foreground font-mono">输入 JWT Token:</span>
-                  <textarea
+                  <textarea aria-label="粘贴 eyJ... 格式的 JWT"
                     value={jwtInput}
                     onChange={(e) => setJwtInput(e.target.value)}
                     placeholder="粘贴 eyJ... 格式的 JWT..."
@@ -487,6 +487,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   <span className="text-xs font-semibold text-muted-foreground font-mono">解码 Payload 与状态:</span>
                   <textarea
                     readOnly
+                    aria-label="解码后的 Payload 与状态"
                     value={preview}
                     className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
                   />
@@ -504,6 +505,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输入 5 段或 6 段 Cron 表达式:</span>
                 <Input
+                  aria-label="Cron 表达式"
                   value={cronInput}
                   onChange={(e) => setCronInput(e.target.value)}
                   placeholder="例如: */5 * * * * 或 0 0 * * *"
@@ -551,6 +553,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                 <div className="space-y-1.5">
                   <span className="text-xs font-semibold text-muted-foreground font-mono">输入 Curl 命令:</span>
                   <textarea
+                    aria-label="Curl 命令"
                     value={curlInput}
                     onChange={(e) => setCurlInput(e.target.value)}
                     className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
@@ -560,6 +563,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   <span className="text-xs font-semibold text-muted-foreground font-mono">生成 Fetch 代码:</span>
                   <textarea
                     readOnly
+                    aria-label="生成的 Fetch 代码"
                     value={codeOut}
                     className="w-full h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
                   />

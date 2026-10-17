@@ -701,7 +701,7 @@ export function AlgorithmLab() {
                     <span className="text-xs font-normal text-muted-foreground/75">(实时动态提取上下文特征向量 x)</span>
                   </label>
                   <div className="flex flex-col sm:flex-row gap-2">
-                    <Input
+                    <Input aria-label="搜索关键词（拼音 / 中文 / 长句）"
                       value={banditQuery}
                       onChange={(e) => setBanditQuery(e.target.value)}
                       placeholder="试着输入拼音 (vsc)、长句 (构建高可用架构) 或纯中文..."
@@ -961,7 +961,7 @@ export function AlgorithmLab() {
                     ))}
                   </div>
                 </div>
-                <textarea
+                <textarea aria-label="输入或粘贴待检测的 HTML 文本"
                   className="w-full h-32 p-3.5 rounded-xl border border-border/70 font-mono text-xs bg-muted/20 focus:outline-hidden focus:ring-1 focus:ring-emerald-500/50 shadow-inner resize-y"
                   value={healthSnippet}
                   onChange={(e) => setHealthSnippet(e.target.value)}
@@ -1070,7 +1070,7 @@ export function AlgorithmLab() {
                     MD5 哈希
                   </Button>
                 </div>
-                <Input
+                <Input aria-label="键入 Base64、时间戳、RGB/HEX、算术公式"
                   className="mt-2 font-mono text-sm h-10 border-border/70 focus-visible:ring-amber-500/40"
                   value={intentInput}
                   onChange={(e) => setIntentInput(e.target.value)}
@@ -1164,7 +1164,7 @@ export function AlgorithmLab() {
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground">设置主加密密码 (Passphrase)：</label>
-                    <Input
+                    <Input aria-label="设置用于派生 AES 密钥的强密码"
                       type="password"
                       value={vaultPassword}
                       onChange={(e) => setVaultPassword(e.target.value)}
@@ -1211,7 +1211,7 @@ export function AlgorithmLab() {
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-muted-foreground">输入解密密码：</label>
-                    <Input
+                    <Input aria-label="输入正确或错误密码进行测试"
                       type="text"
                       value={decryptInputPassword}
                       onChange={(e) => setDecryptInputPassword(e.target.value)}
@@ -1626,7 +1626,7 @@ export function AlgorithmLab() {
 
               {mcpToolName === 'navhub_echo' && (
                 <div className="flex gap-2 items-center">
-                  <Input
+                  <Input aria-label="输入要发送给 WebMCP 的 Echo 消息"
                     value={mcpArgMsg}
                     onChange={(e) => setMcpArgMsg(e.target.value)}
                     placeholder="输入要发送给 WebMCP 的 Echo 消息..."
@@ -2030,7 +2030,7 @@ export function AlgorithmLab() {
                 </div>
 
                 <div className="flex gap-2">
-                  <Input
+                  <Input aria-label="输入待探测的目标 URL"
                     value={ssrfTestUrl}
                     onChange={(e) => setSsrfTestUrl(e.target.value)}
                     placeholder="输入待探测的目标 URL..."

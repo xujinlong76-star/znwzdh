@@ -154,7 +154,7 @@ export default function AdminCategoriesPage() {
       <div className="flex flex-wrap items-end gap-2 mb-6 p-3 rounded-md border bg-muted/20">
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">新类目名称</label>
-          <Input
+          <Input aria-label="分类名称"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="例如：设计资源"
@@ -163,7 +163,7 @@ export default function AdminCategoriesPage() {
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">父类目（可选）</label>
-          <select
+          <select aria-label="父分类"
             value={newParent}
             onChange={(e) => setNewParent(e.target.value)}
             className="h-9 rounded-md border bg-background px-3 text-sm w-48"
@@ -176,7 +176,7 @@ export default function AdminCategoriesPage() {
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">同义别名（逗号分隔）</label>
-          <Input
+          <Input aria-label="别名（逗号分隔）"
             value={newAltLabels}
             onChange={(e) => setNewAltLabels(e.target.value)}
             placeholder="如: UI, 素材, 灵感"

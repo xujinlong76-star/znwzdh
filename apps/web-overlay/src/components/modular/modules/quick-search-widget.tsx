@@ -79,7 +79,7 @@ export function QuickSearchWidget({ config }: { config?: Record<string, unknown>
       {/* 搜索输入框 */}
       <form onSubmit={handleSearch} className="flex-1 flex flex-col justify-center py-2">
         <div className="relative">
-          <input
+          <input aria-label="搜索关键词"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

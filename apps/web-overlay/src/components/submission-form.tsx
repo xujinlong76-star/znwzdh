@@ -207,7 +207,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                                 onValueChange={(value) => setFormData({ ...formData, category: value, subcategory: '' })}
                                 required
                             >
-                                <SelectTrigger className="h-10 text-xs sm:text-sm rounded-xl border-border/70 bg-background/80">
+                                <SelectTrigger aria-label="选择主分类" className="h-10 text-xs sm:text-sm rounded-xl border-border/70 bg-background/80">
                                     <SelectValue placeholder="选择所属分类" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border-border/70 shadow-lg">
@@ -231,7 +231,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                                     value={formData.subcategory}
                                     onValueChange={(value) => setFormData({ ...formData, subcategory: value })}
                                 >
-                                    <SelectTrigger className="h-10 text-xs sm:text-sm rounded-xl border-border/70 bg-background/80">
+                                    <SelectTrigger aria-label="选择二级子类目" className="h-10 text-xs sm:text-sm rounded-xl border-border/70 bg-background/80">
                                         <SelectValue placeholder="选择子分类（可选）" />
                                     </SelectTrigger>
                                     <SelectContent className="rounded-xl border-border/70 shadow-lg">

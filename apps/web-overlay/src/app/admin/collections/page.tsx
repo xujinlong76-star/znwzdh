@@ -171,15 +171,15 @@ export default function AdminCollectionsPage() {
       <div className="flex flex-wrap items-end gap-2 mb-6 p-3 rounded-md border bg-muted/20">
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Slug（唯一）</label>
-          <Input value={newSlug} onChange={(e) => setNewSlug(e.target.value)} placeholder="ai-starter" className="w-44" />
+          <Input aria-label="Slug（唯一）" value={newSlug} onChange={(e) => setNewSlug(e.target.value)} placeholder="ai-starter" className="w-44" />
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">标题</label>
-          <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="AI 入门必备" className="w-56" />
+          <Input aria-label="标题" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="AI 入门必备" className="w-56" />
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">类型</label>
-          <select
+          <select aria-label="集合类型"
             value={newKind}
             onChange={(e) => setNewKind(e.target.value)}
             className="h-9 rounded-md border bg-background px-3 text-sm w-32"
@@ -265,7 +265,7 @@ export default function AdminCollectionsPage() {
               <div>
                 <div className="text-sm font-medium mb-2">站点条目（{items.length}）</div>
                 <div className="flex gap-2 mb-3">
-                  <Input
+                  <Input aria-label="站点 id 或完整 URL"
                     value={newSiteRef}
                     onChange={(e) => setNewSiteRef(e.target.value)}
                     placeholder="站点 id 或完整 URL"

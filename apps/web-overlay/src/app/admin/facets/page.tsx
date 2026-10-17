@@ -232,7 +232,7 @@ export default function AdminFacetsPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Input
+            <Input aria-label="过滤当前分面选项"
               placeholder="过滤当前分面选项…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

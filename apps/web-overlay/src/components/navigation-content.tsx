@@ -1128,7 +1128,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
             <div className="py-3 space-y-3">
               <div>
                 <label className="text-xs font-medium text-foreground block mb-1">网站标题 *</label>
-                <Input
+                <Input aria-label="站点标题"
                   placeholder="例如：My Internal Dashboard"
                   value={customSiteTitle}
                   onChange={(e) => setCustomSiteTitle(e.target.value)}
@@ -1137,7 +1137,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
               </div>
               <div>
                 <label className="text-xs font-medium text-foreground block mb-1">网站网址 (URL) *</label>
-                <Input
+                <Input aria-label="站点地址"
                   placeholder="例如：https://internal.company.io 或 192.168.1.100:8080"
                   value={customSiteHref}
                   onChange={(e) => setCustomSiteHref(e.target.value)}
@@ -1145,7 +1145,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
               </div>
               <div>
                 <label className="text-xs font-medium text-foreground block mb-1">简要描述 (可选)</label>
-                <Input
+                <Input aria-label="站点描述"
                   placeholder="例如：公司内部指标监控看板"
                   value={customSiteDesc}
                   onChange={(e) => setCustomSiteDesc(e.target.value)}

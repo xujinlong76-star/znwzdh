@@ -169,7 +169,7 @@ export function BookmarkImporter() {
         <CardContent className="p-6 space-y-5">
           {/* 上传拖拽区 */}
           <div className="relative group border-2 border-dashed border-border/80 hover:border-primary/60 rounded-2xl p-8 sm:p-10 text-center transition-all duration-300 bg-muted/20 hover:bg-primary/5 cursor-pointer">
-            <input
+            <input aria-label="选择书签 HTML 文件"
               type="file"
               accept=".html,.htm"
               onChange={handleFileUpload}
@@ -249,7 +249,7 @@ export function BookmarkImporter() {
               <div className="max-h-96 overflow-y-auto rounded-xl border border-border/80 divide-y divide-border/50 text-xs bg-background/50">
                 {bookmarks.map((b) => (
                   <div key={b.id} className="flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors">
-                    <input
+                    <input aria-label={`选择 ${b.title}`}
                       type="checkbox"
                       checked={b.selected}
                       onChange={() => toggleSelect(b.id)}
@@ -267,6 +267,7 @@ export function BookmarkImporter() {
                       <p className="text-xs text-muted-foreground/80 truncate font-mono">{b.url}</p>
                     </div>
                     <select
+                      aria-label={`为「${b.title}」选择建议分类`}
                       value={b.suggestedCategory}
                       onChange={(e) => {
                         const val = e.target.value

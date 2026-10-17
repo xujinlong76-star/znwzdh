@@ -423,7 +423,7 @@ export function EcosystemGraph() {
 
           <div className="relative w-36 sm:w-48">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-muted-foreground" />
-            <Input
+            <Input aria-label="搜索图谱节点"
               placeholder="搜索图谱节点..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}

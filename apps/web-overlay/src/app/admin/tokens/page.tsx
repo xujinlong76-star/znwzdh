@@ -516,7 +516,7 @@ export default function AdminTokensPage() {
           <form onSubmit={handleCreateToken} className="space-y-4 py-2">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground">Token 标识名称</label>
-              <Input
+              <Input aria-label="令牌名称"
                 placeholder="例如: claude-desktop-agent / chrome-ext"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
@@ -563,7 +563,7 @@ export default function AdminTokensPage() {
 
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground">有效期</label>
-              <select
+              <select aria-label="有效期"
                 value={expiresDays}
                 onChange={(e) => setExpiresDays(e.target.value)}
                 className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-xs"
@@ -606,7 +606,7 @@ export default function AdminTokensPage() {
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground">标识名称</label>
-              <Input
+              <Input aria-label="令牌名称"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 className="h-8.5 text-xs"
@@ -642,7 +642,7 @@ export default function AdminTokensPage() {
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground">有效期（自今天起）</label>
-              <select
+              <select aria-label="有效期"
                 value={editExpiresDays}
                 onChange={(e) => setEditExpiresDays(e.target.value)}
                 className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-xs"

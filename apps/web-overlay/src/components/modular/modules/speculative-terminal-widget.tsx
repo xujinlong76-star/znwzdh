@@ -48,7 +48,7 @@ export function SpeculativeTerminalWidget() {
 
       <div className="flex-1 flex flex-col justify-center py-2 space-y-2">
         <div className="relative">
-          <input
+          <input aria-label="输入算式或 HEX 色值"
             type="text"
             value={expr}
             onChange={(e) => evaluateExpr(e.target.value)}

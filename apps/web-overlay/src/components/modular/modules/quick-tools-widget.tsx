@@ -175,7 +175,7 @@ export function QuickToolsWidget() {
 
         {activeTab === 'b64' && (
           <div className="space-y-1.5">
-            <input
+            <input aria-label="输入待编/解码文本"
               type="text"
               placeholder="输入待编/解码文本..."
               value={b64Input}

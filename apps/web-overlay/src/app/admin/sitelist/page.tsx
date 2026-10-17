@@ -1071,7 +1071,7 @@ export default function SiteListPage() {
             </div>
             <div className="flex gap-4">
               <div className="relative max-w-sm">
-                <Input
+                <Input aria-label="搜索站点"
                   placeholder="搜索站点..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -1095,7 +1095,7 @@ export default function SiteListPage() {
                   setSubCategoryFilter('all') // 重置子分类筛选
                 }}
               >
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-[200px]" aria-label="按分类筛选">
                   <SelectValue placeholder="按分类筛选" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1112,7 +1112,7 @@ export default function SiteListPage() {
                 value={subCategoryFilter}
                 onValueChange={setSubCategoryFilter}
               >
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-[200px]" aria-label="按子分类筛选">
                   <SelectValue placeholder="按子分类筛选" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1284,6 +1284,7 @@ export default function SiteListPage() {
                         )}
                         <input
                           id="add-icon-upload"
+                          aria-label="上传图标文件"
                           type="file"
                           accept="image/*"
                           onChange={async (e) => {
@@ -1327,7 +1328,7 @@ export default function SiteListPage() {
                       }}
                       disabled={isAddingSubmitting}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger aria-label="选择分类">
                         <SelectValue placeholder="选择分类" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1347,7 +1348,7 @@ export default function SiteListPage() {
                         onValueChange={(value) => setNewSite({ ...newSite, subCategoryId: value === "none" ? "" : value })}
                         disabled={isAddingSubmitting}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-label="选择子分类（可选）">
                           <SelectValue placeholder="选择子分类（可选）" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1498,6 +1499,7 @@ export default function SiteListPage() {
                         )}
                         <input
                           id="edit-icon-upload"
+                          aria-label="替换图标文件"
                           type="file"
                           accept="image/*"
                           onChange={async (e) => {
@@ -1541,7 +1543,7 @@ export default function SiteListPage() {
                       }}
                       disabled={isEditingSubmitting}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger aria-label="选择分类">
                         <SelectValue placeholder="选择分类" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1561,7 +1563,7 @@ export default function SiteListPage() {
                         onValueChange={(value) => setEditSite({ ...editSite, subCategoryId: value === "none" ? "" : value })}
                         disabled={isEditingSubmitting}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-label="选择子分类（可选）">
                           <SelectValue placeholder="选择子分类（可选）" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1632,7 +1634,7 @@ export default function SiteListPage() {
                       }}
                       disabled={isBatchMoving}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger aria-label="选择分类">
                         <SelectValue placeholder="选择分类" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1652,7 +1654,7 @@ export default function SiteListPage() {
                         onValueChange={(value) => setMoveTargetSubCategoryId(value === "none" ? "" : value)}
                         disabled={isBatchMoving}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-label="选择子分类（可选）">
                           <SelectValue placeholder="选择子分类（可选）" />
                         </SelectTrigger>
                         <SelectContent>

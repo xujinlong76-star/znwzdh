@@ -152,7 +152,7 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                       >
                         <div className="relative flex-1">
                           <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
-                          <Input
+                          <Input aria-label={act.placeholder || `快速执行 ${act.label}`}
                             placeholder={act.placeholder || `快速执行 ${act.label}...`}
                             value={actionInputs[act.id] || ''}
                             onChange={(e) => setActionInputs({ ...actionInputs, [act.id]: e.target.value })}

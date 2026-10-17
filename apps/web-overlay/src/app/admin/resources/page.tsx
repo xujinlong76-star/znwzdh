@@ -547,7 +547,7 @@ export default function ResourceManagement() {
             <div className="flex items-center gap-4">
               <div className="relative">
                 <Icons.search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <Input
+                <Input aria-label="搜索资源"
                   placeholder="搜索资源..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}

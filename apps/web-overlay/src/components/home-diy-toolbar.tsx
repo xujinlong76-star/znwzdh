@@ -593,7 +593,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
 
                   <DropdownMenuLabel className="text-xs text-muted-foreground px-1">沉浸式壁纸与毛玻璃</DropdownMenuLabel>
                   <div className="px-1.5 py-1 space-y-2" onClick={(e) => e.stopPropagation()}>
-                    <input
+                    <input aria-label="粘贴自定义壁纸图片 URL"
                       type="text"
                       placeholder="粘贴自定义壁纸图片 URL..."
                       value={customWallpaperUrl || ''}
@@ -612,7 +612,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                         </button>
                       )}
                     </div>
-                    <input
+                    <input aria-label="毛玻璃模糊强度"
                       type="range"
                       min={0}
                       max={30}
@@ -1068,7 +1068,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                   <Upload className="w-3.5 h-3.5" />
                   <span>选择文件导入</span>
                 </Button>
-                <input
+                <input aria-label="导入自定义配置 JSON 文件"
                   ref={fileInputRef}
                   type="file"
                   accept=".json,application/json"
@@ -1081,7 +1081,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                 <label className="text-xs font-medium text-foreground block mb-1">
                   导入明文 JSON 配置文本：
                 </label>
-                <Textarea
+                <Textarea aria-label="粘贴已备份的 NavHub DIY JSON 配置代码"
                   placeholder="粘贴已备份的 NavHub DIY JSON 配置代码..."
                   value={importJsonText}
                   onChange={(e) => setImportJsonText(e.target.value)}
@@ -1106,7 +1106,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                 <label className="text-xs font-medium text-foreground block mb-1">
                   金库主密码 (Passphrase) *
                 </label>
-                <Input
+                <Input aria-label="加密主密码"
                   type="password"
                   placeholder="输入加密主密码 (加解密需保持一致)..."
                   value={vaultPassphrase}
@@ -1193,7 +1193,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                 <label className="text-xs font-medium text-foreground block mb-1">
                   密文数据载荷 (Payload)：
                 </label>
-                <Textarea
+                <Textarea aria-label="粘贴或上传导出的 .enc.json 密文数据"
                   placeholder="粘贴或上传导出的 .enc.json 密文数据..."
                   value={importJsonText}
                   onChange={(e) => setImportJsonText(e.target.value)}
@@ -1242,7 +1242,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
           <div className="py-3 space-y-3">
             <div>
               <label className="text-xs font-medium text-foreground block mb-1.5">分类名称</label>
-              <Input
+              <Input aria-label="新分类名称"
                 placeholder="例如：极客日常 / 深度学习速查 / 监控大盘"
                 value={newCatTitle}
                 onChange={(e) => setNewCatTitle(e.target.value)}

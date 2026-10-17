@@ -82,7 +82,7 @@ export function WidgetConfigModal({
           {/* 自定义模块标题 */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-foreground">模块显示标题</label>
-            <input
+            <input aria-label="模块显示标题"
               type="text"
               placeholder={def.title}
               value={customTitle}
@@ -104,7 +104,7 @@ export function WidgetConfigModal({
                 </label>
 
                 {schema.type === 'select' && (
-                  <select
+                  <select aria-label={schema.label}
                     value={String(configValues[schema.key] ?? schema.defaultValue ?? '')}
                     onChange={(e) => handleFieldChange(schema.key, e.target.value)}
                     className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60"
@@ -130,7 +130,7 @@ export function WidgetConfigModal({
                 )}
 
                 {schema.type === 'number' && (
-                  <input
+                  <input aria-label={schema.label}
                     type="number"
                     value={Number(configValues[schema.key] ?? schema.defaultValue ?? 0)}
                     onChange={(e) => handleFieldChange(schema.key, Number(e.target.value))}
@@ -139,7 +139,7 @@ export function WidgetConfigModal({
                 )}
 
                 {schema.type === 'text' && (
-                  <input
+                  <input aria-label={schema.label}
                     type="text"
                     value={String(configValues[schema.key] ?? schema.defaultValue ?? '')}
                     onChange={(e) => handleFieldChange(schema.key, e.target.value)}

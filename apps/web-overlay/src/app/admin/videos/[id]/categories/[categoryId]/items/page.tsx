@@ -177,7 +177,7 @@ export default function SubCategoryVideoItemsPage() {
                     </div>
                     <div className="relative flex-1 max-w-sm">
                         <Icons.search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
+                        <Input aria-label="搜索视频"
                             placeholder="搜索视频..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}

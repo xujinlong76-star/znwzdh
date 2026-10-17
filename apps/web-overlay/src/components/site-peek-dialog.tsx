@@ -295,7 +295,10 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                     size="icon"
                     variant="ghost"
                     className="h-7 w-7 rounded-lg shrink-0"
-                    onClick={() => window.open(alt.site.url, '_blank', 'noopener,noreferrer')}
+                    onClick={() => {
+                      if (!isSafeHttpUrl(alt.site.url)) return
+                      window.open(alt.site.url, '_blank', 'noopener,noreferrer')
+                    }}
                     title="访问双曲平替站点"
                   >
                     <ExternalLink className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />

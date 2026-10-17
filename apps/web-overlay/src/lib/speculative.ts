@@ -264,6 +264,9 @@ function tryParseMath(input: string): SpeculativeIntentResult | null {
     // 严密 Token 校验，避免任意代码执行
     if (/[a-zA-Z_$]/.test(sanitized)) return null;
 
+    // 表达式长度上限：极长表达式会让 new Function 的编译/求值阻塞主线程（DoS 面）
+    if (sanitized.length > 256) return null;
+
     // 安全求值 (Function 严格只接受返回值表达式)
     const fn = new Function(`"use strict"; return (${sanitized});`);
     const result = fn();

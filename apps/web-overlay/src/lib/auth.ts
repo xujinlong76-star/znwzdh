@@ -152,7 +152,11 @@ const config = {
         if (token.sub) serverTokenStore.set(token.sub, account.access_token)
       }
       if (user) {
-        token.role = (user as { role?: string }).role || 'admin'
+        // 这里**不能**默认成 'admin'：GitHub OAuth 用户的 profile 没有 role 字段，
+        // 一旦默认成 admin，verifyAdminSession 里的 `user.role === 'admin'` 就会对
+        // 任何登录用户放行，把 NAVHUB_ADMIN_IDS 白名单整个绕过（页面中间件拦住了，
+        // 但 API 路由全部失守）。只有 Credentials 管理员登录会显式带 role='admin'。
+        token.role = (user as { role?: string }).role
         token.sub = user.id || token.sub || 'admin'
       }
       return token
@@ -160,7 +164,9 @@ const config = {
     async session({ session, token }) {
       if (session?.user && token.sub) {
         ;(session.user as { id?: string }).id = token.sub
-        ;(session.user as { role?: string }).role = (token.role as string) || 'admin'
+        if (typeof token.role === 'string') {
+          ;(session.user as { role?: string }).role = token.role
+        }
       }
       return session
     },
@@ -185,8 +191,10 @@ export async function verifyAdminSession() {
   const user = session.user as { id?: string; email?: string; name?: string; role?: string }
   const githubToken = getServerGithubToken(user.id) || process.env.GITHUB_PAT || ''
 
-  // 1. 管理员凭证登录
-  if (user.role === 'admin' || user.id === 'admin' || user.email === 'admin@navhub.local') {
+  // 1. 管理员凭证登录：只有 Credentials 通道会返回固定 id='admin'（email 亦为固定值）。
+  //    刻意**不看 role**：role 曾经对所有登录用户默认成 'admin'，导致白名单形同虚设；
+  //    即使有历史签发的旧 session 携带 role='admin'，这里也不会再据此放行。
+  if (user.id === 'admin' || user.email === 'admin@navhub.local') {
     return { ok: true as const, session, user, githubToken }
   }
 

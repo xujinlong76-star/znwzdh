@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin } from '@/lib/admin-guard'
 import {
     SubmissionData,
     SubmissionIssue,
@@ -161,6 +162,14 @@ export async function POST(request: NextRequest) {
 // 获取投稿列表 (GET) - 仅管理员使用
 export async function GET(request: NextRequest) {
     try {
+        // 后台投稿队列属管理面数据（含投稿人 URL 与说明）：此前完全没有鉴权
+        const admin = await requireAdmin()
+        if (!admin.ok) {
+            return NextResponse.json(
+                { success: false, message: admin.reason || 'Forbidden' },
+                { status: admin.status ?? 403 }
+            )
+        }
         const { searchParams } = new URL(request.url)
         const status = searchParams.get('status') || 'pending' // pending, approved, rejected, all
 

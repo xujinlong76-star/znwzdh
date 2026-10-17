@@ -91,14 +91,28 @@ export function parsePagination(
 
   const rawLimit = Number(q.limit);
   const limit = Math.min(
-    Math.max(Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : defaultLimit, minLimit),
+    Math.max(Number.isFinite(rawLimit) && rawLimit > 0 ? Math.trunc(rawLimit) : defaultLimit, minLimit),
     maxLimit
   );
 
   const rawOffset = Number(q.offset);
-  const offset = Math.max(0, Number.isFinite(rawOffset) ? rawOffset : 0);
+  const offset = Math.max(0, Number.isFinite(rawOffset) ? Math.trunc(rawOffset) : 0);
 
   return { limit, offset };
+}
+
+/**
+ * 安全解析单个整数参数（有限性 + 取整 + 上下限钳位）。
+ *
+ * 专治 `Math.min(Number(x) || d, max)` 这一族写法的两个漏网之鱼：
+ *  - 负数：`Number("-5") || 20 === -5`（真值不触发回退），负数进 SQL 的
+ *    `LIMIT ?` 在 SQLite 里表示「不限制」→ 全表扫描；
+ *  - NaN：`Math.max(1, NaN)` 仍是 NaN，绑定进 SQL 同样不受限。
+ */
+export function parseIntParam(value: unknown, fallback: number, min: number, max: number): number {
+  const n = Number(value);
+  const base = Number.isFinite(n) ? Math.trunc(n) : fallback;
+  return Math.min(Math.max(base, min), max);
 }
 
 /**

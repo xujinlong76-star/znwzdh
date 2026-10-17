@@ -7,6 +7,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { recordSearchChannels } from "../metrics.ts";
 
+import { badRequest } from "./shared.ts";
 import { refreshUserProfile } from "../profile-service.ts";
 import type { AppContext } from "../context.ts";
 
@@ -54,15 +55,15 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }).optional(),
   });
 
-  app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true } } }, async (req) => {
+  app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true } } }, async (req, reply) => {
     const parsed = searchBody.safeParse(req.query ?? {});
-    if (!parsed.success) return { error: "参数无效", detail: parsed.error.issues };
+    if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
     return runSearch(parsed.data);
   });
 
-  app.post("/api/search", async (req) => {
+  app.post("/api/search", async (req, reply) => {
     const parsed = searchBody.safeParse(req.body ?? {});
-    if (!parsed.success) return { error: "参数无效", detail: parsed.error.issues };
+    if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
     return runSearch(parsed.data);
   });
 

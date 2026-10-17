@@ -120,7 +120,14 @@ export function tryParseUrlEncoding(input: string): SpeculativeIntentResult | nu
   if (trimmed.startsWith('urle:')) {
     const raw = trimmed.slice(5).trim();
     if (!raw) return null;
-    const encoded = encodeURIComponent(raw);
+    // 孤立代理项（粘贴/截断文本可能产生）会让 encodeURIComponent 抛 URIError。
+    // 与同文件其它编解码分支保持一致：失败返回 null，不把异常抛给调用方。
+    let encoded: string;
+    try {
+      encoded = encodeURIComponent(raw);
+    } catch {
+      return null;
+    }
     return {
       type: 'url_encode',
       title: 'URL 快速编码',

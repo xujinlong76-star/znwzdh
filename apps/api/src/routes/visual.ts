@@ -267,7 +267,7 @@ export const visualRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   app.post("/api/design/harmony", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
     const body = z.object({
-      palette: z.array(z.string()).min(1),
+      palette: z.array(z.string()).min(1).max(64),
       foreground: z.string().optional().default("#ffffff"),
       background: z.string().optional().default("#0f172a"),
     }).safeParse(req.body ?? {});

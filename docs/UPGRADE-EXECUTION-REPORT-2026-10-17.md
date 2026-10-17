@@ -66,7 +66,7 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 | --- | --- | --- |
 | 18 | 鉴权架构演进（next-auth v5 beta → Better Auth / 4.x + token 出内存） | 影响登录与会话全链路，必须配套迁移测试与灰度方案 |
 | 19 | zod 3 → 4 | 阻塞点明确：`@hookform/resolvers@3` 只支持 zod v3，需先替换 resolver |
-| 20 | drizzle 路线二选一 | 本轮选择"暂不引入"：零调用但 `packages/store` 的 `db:generate` 脚本仍引用，建议先决定再动 |
+| 20 | drizzle 路线二选一 | **前提需修正（见 §5.5）**：drizzle 不是"零调用"，而是已在用——`driver.ts` 两种方言都创建 `drizzle()` 实例、`schema.ts` 用它定义表，只是**所有查询仍走 raw SQL**。真正待决的是要不要把查询也迁过去，属架构决策，本轮不动 |
 | 21 | 多实例语义（SSE 总线、限流、token touch 共享化） | 需引入外部总线（PG LISTEN/NOTIFY 或 Redis），属架构变更 |
 | 22 | 前端拆分（8 个 >800 行组件、loading/error 边界、组件测试） | 机械拆分收益有限，应按模块逐个重构并补测试 |
 | 23 | tsconfig 现代化（`moduleResolution: bundler`） | 会一次性改变全前端类型解析结果，需要专门回归 |
@@ -79,7 +79,12 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 2. **【已修复·后续修订】web 镜像现在也用 `--frozen-lockfile`**：原文描述的"只拷后端清单时 pnpm 重算的 overrides 与仓库 lockfile 不一致（`ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`）"是 `Dockerfile.api` 历史上的临时方案——该镜像随后已恢复 frozen 安装（overrides 收敛进根 `pnpm-workspace.yaml`，无需在镜像里重算）。web 镜像的根因则是**布局**：当时 `/app/web` 在镜像里是独立项目，既读不到仓库 workspace 配置、也读不到仓库 lockfile，只能退回上游 tarball 自带的那份（与覆盖层清单永不匹配）。现在两个镜像都以仓库 `pnpm-lock.yaml` 为准做 frozen 安装：前端在镜像里是 workspace 成员 `/app/apps/web`，依赖层只拷清单后跑 `pnpm install --frozen-lockfile --filter "./apps/web"`（可复现、可缓存），上游 tarball 在其后解包、覆盖层再覆盖其上，保证"清单先、源码后"。原"需专项修复"的两种备选（前端移出 workspace / 单项目 lockfile）都不需要。
 3. **Docker 镜像本机未能完整导出**：web 镜像的依赖安装与 `next build` 全部通过、api 镜像的依赖安装与多阶段拷贝通过，但两次都在最后的镜像导出阶段遇到 Docker Desktop 的 `rpc error: Unavailable`（本机 daemon 问题，非 Dockerfile）。CI 的 `docker-smoke` job 会完整验证。
 4. **`apps/web/src/lib/session.ts` 被覆盖为空模块**：上游该文件 import 已移除的 `iron-session` 且全仓无引用，vendor 后会让 tsc 失败；覆盖层置空是唯一能在 vendor 后生效的手段，已在文件头注释说明。
-5. **`drizzle-orm` / `drizzle-kit` 仍在 `packages/store`**：零调用但 `db:generate` 脚本引用，按建议书"先减法后加法"，本轮只做已确认无引用的部分。
+5. **`drizzle-orm` / `drizzle-kit` 在 `packages/store` 的实际状态（结论已纠偏）**：一度被写成"零调用、仅 `db:generate` 引用"，**不准确**。真实用法是：
+   - `driver.ts:502/579` —— SQLite 与 PG 两条分支都 `await import(...)` 后 `drizzle(...)`，实例挂在 `Db.orm` 上；第 1 行 `import { sql }` 并在文件末 `export { sql }`；
+   - `schema.ts:11` —— 表定义走 `drizzle-orm/sqlite-core`（`sqliteTable` / `index` / `uniqueIndex`）；
+   - 但**业务查询全是 raw SQL**（`Db.orm` 声明为 `any`，除创建处外全仓无第二个调用点），实际 DDL 也是手写的 `DDL_SQLITE` / `DDL_PG`。
+
+   所以现状是"**已引入、用于连接实例与 schema 类型；查询未迁移**"。讨论建议 20 时按这个前提来，别误判成"删依赖即可"。
 
 ## 六、验证矩阵（本轮结束状态）
 
@@ -88,7 +93,8 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 | 后端/包类型 | `pnpm typecheck` | 0 错误 |
 | 前端类型 | `pnpm --filter navsphere exec tsc --noEmit` | 0 错误 |
 | 前端 lint | `pnpm lint` | 0 error / 269 warning（退出 0） |
-| 单测 | `npx vitest run` | 42 文件 / 711 通过 / 11 跳过 |
+| 单测 | `npx vitest run` | 51 文件 / **828 通过** / 11 跳过 |
+| 数据保留 | `packages/store/test/retention.test.ts`（10 例）+ 临时 SQLite 端到端 | dry-run 一行不删、`--apply` 只删到期行且边界正确、归档内容逐行可读、二次运行幂等且不留空归档、缺表时报可读错误 |
 | 覆盖层 | `node scripts/check-web-overlay.mjs` | 187 文件一致 + 15 个 git 跟踪自研文件全部在 overlay |
 | 上游 ref | `node scripts/check-upstream-ref.mjs` | 三处声明一致 `6ba74fa…`，产物未漂移 |
 | 扩展 | `node scripts/check-extensions.mjs` | 100% 通过 |

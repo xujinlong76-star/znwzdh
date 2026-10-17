@@ -71,8 +71,8 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setShowIframe(false) }}>
       <DialogContent className="w-[calc(100%-2rem)] max-w-2xl max-h-[calc(100dvh-2.5rem)] overflow-y-auto p-4 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
         <DialogHeader className="space-y-3 pb-3 border-b border-border/50 pr-8 sm:pr-10">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+            <div className="flex items-center gap-3.5 min-w-0">
               <div className="w-11 h-11 p-2 rounded-xl bg-muted/60 border border-border/60 shadow-xs flex-shrink-0 flex items-center justify-center">
                 <SiteFavicon
                   title={item.title}
@@ -82,8 +82,8 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                   className="w-full h-full object-contain"
                 />
               </div>
-              <div>
-                <DialogTitle className="text-lg sm:text-xl font-bold flex flex-wrap items-center gap-2">
+              <div className="min-w-0">
+                <DialogTitle className="text-lg sm:text-xl font-bold flex flex-wrap items-center gap-2 break-words">
                   <span>{item.title}</span>
                   {item.liveMetrics?.openSource && (
                     <Badge variant="secondary" className="text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-medium">

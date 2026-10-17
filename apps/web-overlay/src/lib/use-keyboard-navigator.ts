@@ -49,8 +49,10 @@ export function useKeyboardNavigator({
 
       if (isInput) return
 
-      // 若有打开的顶层模态框 (如 role="dialog")，且当前不是该卡片，也不拦截
-      const hasModal = document.querySelector('[role="dialog"]')
+      // 若有打开的顶层模态框 (如 role="dialog")，且当前不是该卡片，也不拦截。
+      // 必须排除 aria-hidden：抽屉是常驻 DOM 的，关闭态只靠 transform 移出屏外，
+      // 不排除的话键盘导航会被永久关掉。
+      const hasModal = document.querySelector('[role="dialog"]:not([aria-hidden="true"])')
       if (hasModal) return
 
       // 1. 下一个 (j / ArrowDown)

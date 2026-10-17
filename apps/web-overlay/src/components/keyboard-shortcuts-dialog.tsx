@@ -84,7 +84,9 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcut
       // 判定用 role=dialog（Radix 与我们自己的浮层都会带），不用组件状态：
       // 快捷键是全局的，得能感知别的组件打开的浮层。
       const inDialog = typeof document !== 'undefined' && Boolean(
-        document.querySelector('[role="dialog"], [role="alertdialog"]'),
+        // 排除 aria-hidden：常驻 DOM 的抽屉关闭态也带 role=dialog，
+        // 不排除会让全局快捷键在移动端永久失效
+        document.querySelector('[role="dialog"]:not([aria-hidden="true"]), [role="alertdialog"]:not([aria-hidden="true"])'),
       )
       if (inDialog && e.key !== '?') return
 

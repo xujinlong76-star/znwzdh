@@ -171,7 +171,12 @@ export function resolveSiteIcon(
     if (lowerTitle.includes('unsplash')) return '/assets/images/logos/unsplash.webp'
     if (lowerTitle.includes('vercel')) return '/assets/images/logos/vercel.webp'
 
-    return `https://icon.horse/icon/${hostname}`
+    // 直接取目标站点自己的 favicon，**不走第三方图标服务**。
+    // 历史上这里用 icon.horse：用户体验好一点，但等于把用户的完整浏览记录
+    // （每一个渲染过的域名）实时泄露给一个第三方。图标加载失败时下方还有
+    // 确定性渐变字母徽标兜底，所以这里选择不外泄。
+    // 代价：少数不在根目录提供 favicon 的站点会退化成徽标——可接受。
+    return `https://${hostname}/favicon.ico`
   } catch {
     return ''
   }

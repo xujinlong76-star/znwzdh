@@ -1056,6 +1056,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
           allCategoryIds={allCategoryIds}
           categoryTitleMap={categoryTitleMap}
           categories={sortedCategories}
+          raised={selectionMode}
         />
 
         {/* 页脚 */}

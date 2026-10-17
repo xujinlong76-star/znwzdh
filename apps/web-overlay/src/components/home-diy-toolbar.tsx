@@ -64,6 +64,12 @@ interface HomeDIYToolbarProps {
   allCategoryIds: string[]
   categoryTitleMap: Record<string, string>
   categories?: any[]
+  /**
+   * 底部被别的固定浮层占用时抬高自己。
+   * 批量操作坞（fixed bottom-6 居中、max-w-[95vw]）与本坞同钉在底部，
+   * 窄屏下必然重叠；由使用方在多选模式打开时置 true。
+   */
+  raised?: boolean
 }
 
 const ACCENT_COLORS: { id: AccentColor; name: string; class: string }[] = [
@@ -74,7 +80,7 @@ const ACCENT_COLORS: { id: AccentColor; name: string; class: string }[] = [
   { id: 'rose', name: '玫瑰红', class: 'bg-rose-500' },
 ]
 
-export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = [] }: HomeDIYToolbarProps) {
+export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = [], raised = false }: HomeDIYToolbarProps) {
   const {
     isEditingLayout,
     toggleEditingLayout,
@@ -432,7 +438,13 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
   return (
     <>
       {/* 悬浮微胶囊：首页 DIY 工坊坞 */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2 pointer-events-none">
+      <div
+        className={cn(
+          'fixed right-6 z-40 flex flex-col items-end gap-2 pointer-events-none transition-[bottom] duration-200',
+          // 多选批量坞在场时抬高，避免两个底部固定浮层在窄屏上重叠
+          raised ? 'bottom-[5.5rem]' : 'bottom-6',
+        )}
+      >
         <div className="pointer-events-auto flex items-center gap-1.5 p-1.5 rounded-full bg-background/90 dark:bg-card/90 backdrop-blur-md border border-border/80 shadow-lg hover:shadow-xl transition-all duration-200">
           <Button
             variant={isEditingLayout ? 'default' : 'ghost'}

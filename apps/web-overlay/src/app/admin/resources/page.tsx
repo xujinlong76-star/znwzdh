@@ -469,31 +469,31 @@ export default function ResourceManagement() {
       {/* 顶部进度条 - 优化样式 */}
       {isUploading && (
         <div className="fixed top-0 left-0 right-0 z-[100]">
-          <div className="bg-white/80 backdrop-blur-sm shadow-lg border-b px-4 py-3">
+          <div className="bg-background/90 backdrop-blur-sm shadow-lg border-b border-border px-4 py-3">
             <div className="max-w-7xl mx-auto">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <Icons.upload className="h-4 w-4 animate-pulse text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700">正在上传...</span>
+                  <Icons.upload className="h-4 w-4 animate-pulse text-blue-600 dark:text-blue-400" />
+                  <span className="text-sm font-medium text-foreground">正在上传...</span>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <span className="font-medium">{uploadProgress}%</span>
-                    <span className="text-gray-400">•</span>
+                    <span className="text-muted-foreground/60">•</span>
                     <span>{(uploadSpeed / (1024 * 1024)).toFixed(2)} MB/s</span>
                   </div>
                   <Button
                     variant="ghost"
                     onClick={cancelUpload}
                     size="sm"
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    className="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40"
                   >
                     <Icons.x className="h-4 w-4 mr-1" />
                     取消
                   </Button>
                 </div>
               </div>
-              <div className="relative w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="relative w-full h-1.5 bg-muted rounded-full overflow-hidden">
                 {/* 背景动画效果 */}
                 <div
                   className="absolute inset-0 bg-gradient-to-r from-blue-500 to-blue-600 animate-pulse opacity-20"
@@ -508,7 +508,7 @@ export default function ResourceManagement() {
                 >
                   {/* 光晕效果 */}
                   <div
-                    className="absolute right-0 top-0 h-full w-4 bg-white opacity-30 transform -skew-x-12 animate-[shimmer_1s_infinite]"
+                    className="absolute right-0 top-0 h-full w-4 bg-foreground/25 transform -skew-x-12 animate-[shimmer_1s_infinite]"
                   />
                 </div>
               </div>

@@ -69,11 +69,21 @@ export interface OverlayBehaviorOptions {
 }
 
 export interface OverlayBehavior {
-  /** 摊到浮层根节点：ref + role=dialog + aria-modal + tabIndex */
+  /**
+   * 摊到浮层根节点：ref + role + tabIndex。
+   *
+   * 注意 `open` 为假时这里会给 `aria-hidden` + `inert`：抽屉是常驻 DOM 的
+   * （靠 transform 移出屏外），如果关闭态还带着 role="dialog"，那么
+   * `document.querySelector('[role="dialog"]')` 这类"有没有开着的模态"判定
+   * 会永久为真 —— 键盘导航与全局快捷键会被一起关掉。aria-hidden + inert
+   * 同时解决三件事：读屏跳过、焦点进不去、模态判定不再误报。
+   */
   containerProps: {
     ref: React.RefObject<HTMLDivElement | null>
     role: 'dialog'
-    'aria-modal': boolean
+    'aria-modal': 'true' | 'false'
+    'aria-hidden'?: 'true'
+    inert?: boolean
     tabIndex: -1
   }
   /** 遮罩层：点它即关闭。放在浮层面板的兄弟节点，点击不会冒泡到面板 */
@@ -164,7 +174,9 @@ export function useOverlayBehavior({
     containerProps: {
       ref: containerRef,
       role: 'dialog',
-      'aria-modal': true,
+      'aria-modal': open ? 'true' : 'false',
+      // 关闭态从辅助树与焦点顺序里摘掉（见 interface 注释：这是模态判定的防误报关键）
+      ...(open ? {} : { 'aria-hidden': 'true' as const, inert: true }),
       tabIndex: -1,
     },
     scrim: (

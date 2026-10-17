@@ -25,6 +25,7 @@ import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { getIdentity } from '@/lib/identity'
 import { useFavorites } from '@/hooks/useFavorites'
+import { useToast } from '@/components/ui/use-toast'
 import type { SiteConfig } from '@/types/site'
 import { parseSpeculativeIntent } from '@/lib/speculative'
 import { SpeculativeIntentCard } from '@/components/speculative-intent-card'
@@ -99,6 +100,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const identity = useMemo(() => getIdentity(), [])
   const favorites = useFavorites()
+  const { toast } = useToast()
   const speculativeResult = useMemo(() => parseSpeculativeIntent(query), [query])
   const comparisonMatrix = useMemo(() => parseTechComparisonQuery(query), [query])
   const architectureRecipe = useMemo(() => findMatchingArchitectureRecipe(query), [query])
@@ -595,6 +597,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         title={faved ? '取消收藏' : '收藏'}
                         onClick={(e) => {
                           e.stopPropagation()
+                          // 存储读不出来时写入会被拒绝（为了不覆盖原数据）：必须说出来
+                          if (favorites.storageBlocked) {
+                            toast({ title: '这一下没能保存', description: favorites.storageBlocked, variant: 'destructive' })
+                            return
+                          }
                           void favorites.toggle({
                             siteId: site.id, title: site.title, href: site.url,
                             icon: site.iconKey ?? undefined, description: site.description ?? undefined,

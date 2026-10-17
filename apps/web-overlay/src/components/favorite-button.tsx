@@ -2,6 +2,7 @@
 
 import { Star } from 'lucide-react'
 import { useFavorites } from '@/hooks/useFavorites'
+import { useToast } from '@/components/ui/use-toast'
 
 interface FavoriteButtonProps {
   site: { siteId: string; title: string; href: string; icon?: string; description?: string }
@@ -11,6 +12,7 @@ interface FavoriteButtonProps {
 /** 站点卡片上的收藏星标。点击不冒泡（不触发卡片的链接跳转）。 */
 export function FavoriteButton({ site, className }: FavoriteButtonProps) {
   const favorites = useFavorites()
+  const { toast } = useToast()
   const faved = favorites.isFavorite(site.siteId)
 
   return (
@@ -21,6 +23,12 @@ export function FavoriteButton({ site, className }: FavoriteButtonProps) {
       onClick={(e) => {
         e.preventDefault()
         e.stopPropagation()
+        // 存储读不出来时收藏会被拒绝（为了不覆盖原数据）：必须说出来，
+        // 否则用户看到的是「点了星星没反应」
+        if (favorites.storageBlocked) {
+          toast({ title: '这一下没能保存', description: favorites.storageBlocked, variant: 'destructive' })
+          return
+        }
         void favorites.toggle(site)
       }}
     >

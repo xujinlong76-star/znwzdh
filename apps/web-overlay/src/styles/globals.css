@@ -1,5 +1,14 @@
 @import 'tailwindcss';
 
+/* 装上 tailwindcss-animate 插件（修复：本仓库没有自己的 tailwind.config.js，
+   v4 也不会去读 apps/web/tailwind.config.js，于是这个插件从来没被加载过，
+   11 处 animate-in / zoom-in-95 / slide-in-from-* / fade-in-0 全都没有产物
+   —— 搜索面板、弹窗、离线提示条、批量操作坞都是「啪」地出现，没有入场动画。
+   实测（next build 产物 CSS）：加这行之前 .animate-in 与 .zoom-in-95 一条都没有
+   （同一次产物里 ring-offset-background 在，说明检索方式本身有效）；
+   加之后两者都出现。 */
+@plugin "tailwindcss-animate";
+
 /* 显式声明扫描源（修复：v4 自动源检测在这个仓库里漏扫大部分 src 文件，
    导致 flex-wrap / space-y-* / rounded-2xl 等工具类未生成，
    /tags 在移动端横向溢出 4369px、页脚文字竖排等渲染破坏）。

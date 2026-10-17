@@ -19,8 +19,7 @@
     "drizzle-orm": "0.45.4",
     "better-sqlite3": "13.0.3",
     "sqlite-vec": "0.1.9",
-    "pg": "8.23.1",
-    "pinyin-pro": "3.29.5"
+    "pg": "8.23.1"
   },
   "devDependencies": {
     "drizzle-kit": "0.31.11",

@@ -186,13 +186,14 @@ export function QuickToolsWidget() {
               </Button>
             </div>
             {b64Output && (
-              <div
+              <button
+                type="button"
                 onClick={() => handleCopy(b64Output)}
-                className="bg-muted/50 p-1.5 rounded text-xs font-mono break-all cursor-pointer hover:bg-muted/80 text-foreground"
+                className="w-full text-left bg-muted/50 p-1.5 rounded text-xs font-mono break-all cursor-pointer hover:bg-muted/80 text-foreground"
                 title="点击复制"
               >
                 {b64Output}
-              </div>
+              </button>
             )}
           </div>
         )}

@@ -234,7 +234,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     reportClick(site.id, identity)
     const target = siteConfig?.navigation?.linkTarget || '_blank'
     if (target === '_self') window.location.href = site.url
-    else window.open(site.url, target)
+    else window.open(site.url, target, 'noopener,noreferrer')
     setQuery('')
     setIsFocused(false)
   }, [identity, siteConfig])

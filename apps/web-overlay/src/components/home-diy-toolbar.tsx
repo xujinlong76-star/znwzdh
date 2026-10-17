@@ -33,6 +33,8 @@ import {
   Undo2,
   Redo2,
   ChevronsUpDown,
+  AlertTriangle,
+  X,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -78,6 +80,8 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
   const {
     isEditingLayout,
     toggleEditingLayout,
+    storageWarning,
+    dismissStorageWarning,
     cardDisplayMode,
     setCardDisplayMode,
     canvasBackground,
@@ -433,6 +437,25 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     <>
       {/* 悬浮微胶囊：首页 DIY 工坊坞 */}
       <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2 pointer-events-none">
+        {/* 落盘失败必须说出来：改动还在屏幕上，但刷新就没了 ——
+            不说清楚，用户会以为「已经保存好了」 */}
+        {storageWarning && (
+          <div
+            role="alert"
+            className="pointer-events-auto max-w-[19rem] flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-50/95 dark:bg-amber-950/90 backdrop-blur-md px-3 py-2 text-[11px] leading-snug text-amber-900 dark:text-amber-100 shadow-lg"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span className="flex-1">{storageWarning}</span>
+            <button
+              type="button"
+              onClick={dismissStorageWarning}
+              aria-label="关闭提示"
+              className="shrink-0 rounded p-0.5 hover:bg-amber-500/20 transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
         <div className="pointer-events-auto flex items-center gap-1.5 p-1.5 rounded-full bg-background/90 dark:bg-card/90 backdrop-blur-md border border-border/80 shadow-lg hover:shadow-xl transition-all duration-200">
           <Button
             variant={isEditingLayout ? 'default' : 'ghost'}

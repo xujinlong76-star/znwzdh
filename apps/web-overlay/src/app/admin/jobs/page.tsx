@@ -148,6 +148,7 @@ export default function AdminJobsPage() {
               error?: string | null
               timestamp: number
             }
+            const appeared = { current: false }
             setJobs((prev) => {
               const idx = prev.findIndex((j) => j.id === update.jobId)
               if (idx >= 0) {
@@ -161,10 +162,13 @@ export default function AdminJobsPage() {
                 }
                 return next
               }
-              // 新出现的任务异步增量刷新
-              load()
+              appeared.current = true
               return prev
             })
+            // 新出现的任务异步增量刷新。
+            // 注意：副作用必须放在 updater 之外——React 要求 updater 纯函数，
+            // StrictMode 下会被双跑，此前在 updater 内直接 load() 会重复发请求。
+            if (appeared.current) load()
             setSseParseFailures(0)
           } catch {
             // 解析不了就不能再宣称「实时推流已就绪」：计数，让徽标如实说话。

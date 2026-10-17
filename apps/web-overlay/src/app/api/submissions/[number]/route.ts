@@ -39,6 +39,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             )
         }
 
+        // 审核动作（通过 / 拒绝）一律要求管理员：此前只有「通过」分支调了 requireAdmin，
+        // 「拒绝」分支只校验登录 → 任何登录用户都能拒绝他人投稿并以机器人身份留言。
+        const adminCheck = await requireAdmin()
+        if (!adminCheck.ok) {
+            return NextResponse.json(
+                { success: false, message: adminCheck.status === 403 ? '无管理员权限' : '请先登录' },
+                { status: adminCheck.status ?? 401 }
+            )
+        }
+
         const { number } = await params
         const issueNumber = number
         const { action, reason } = await request.json()

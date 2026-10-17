@@ -84,6 +84,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [popular, setPopular] = useState<string[]>([])
   const [fallbackHint, setFallbackHint] = useState<'filter' | 'fuzzy' | undefined>(undefined)
   const [recent, setRecent] = useState<string[]>([])
+  /** 中枢不可用（历史拉取降级）：与「真的没有历史」区分，避免把故障渲染成「暂无数据」 */
+  const [recentDegraded, setRecentDegraded] = useState(false)
   /** 知识图谱对标与实体关联方案命中 */
   const [relationHits, setRelationHits] = useState<HubSiteRelation[]>([])
   /** 重试计数：增长即重新发起同一查询（降级时的出口） */
@@ -110,7 +112,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   /* 最近搜索：聚焦且空查询时加载 */
   useEffect(() => {
     if (isFocused && !query.trim() && identity) {
-      void fetchSearchHistory(identity).then(setRecent)
+      // 中枢不可用时 fetchSearchHistory 返回兜底 []，与「真的没有历史」无法区分；
+      // 用局部标记把「已降级」带出 then（onDegraded 在 resolve 之前同步触发）。
+      let failed = false
+      void fetchSearchHistory(identity, 8, () => {
+        failed = true
+      }).then((items) => {
+        setRecentDegraded(failed)
+        setRecent(items)
+      })
     }
   }, [isFocused, query, identity])
 
@@ -286,6 +296,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
       {isFocused && !query.trim() && (
         <div className="absolute top-full left-0 right-0 mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
+          {recentDegraded && recent.length === 0 && (
+            <div className="px-3.5 py-2 text-xs text-muted-foreground flex items-center gap-1.5 bg-muted/40">
+              <Clock className="h-3 w-3" /> 最近搜索暂时不可用（服务未响应）
+            </div>
+          )}
           {recent.length > 0 && (
             <div>
               <div className="px-3.5 py-2 text-xs font-medium text-muted-foreground flex items-center gap-1.5 bg-muted/40">

@@ -98,9 +98,13 @@ const ResourceGridSkeleton = () => (
 
 
 
-// Add style tag to the document
-if (typeof document !== 'undefined') {
+// 注入 shimmer 关键帧样式。
+// 用固定 id 去重：模块级注入在 HMR / 多次导入时会把同一条 <style> 反复 append，
+// document.head 里会堆出一串重复节点。
+const SHIMMER_STYLE_ID = 'navhub-shimmer-keyframes';
+if (typeof document !== 'undefined' && !document.getElementById(SHIMMER_STYLE_ID)) {
   const styleSheet = document.createElement('style');
+  styleSheet.id = SHIMMER_STYLE_ID;
   styleSheet.textContent = `
     @keyframes shimmer {
       0% {

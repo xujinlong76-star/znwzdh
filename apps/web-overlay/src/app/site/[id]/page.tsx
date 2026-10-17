@@ -99,6 +99,8 @@ export default function SiteDetailPage() {
   const [site, setSite] = useState<HubSite | null>(null)
   const [similar, setSimilar] = useState<HubSite[]>([])
   const [relations, setRelations] = useState<HubSiteRelation[]>([])
+  /** 关系网络降级：中枢不可用时 relations 静默为空，需与「确实没有关系」区分 */
+  const [relationsDegraded, setRelationsDegraded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
@@ -155,8 +157,13 @@ export default function SiteDetailPage() {
   useEffect(() => {
     if (!id || !site) return
     let cancelled = false
-    void fetchSiteRelations(id).then((res) => {
-      if (!cancelled && res?.all) setRelations(res.all)
+    let failed = false
+    void fetchSiteRelations(id, () => {
+      failed = true
+    }).then((res) => {
+      if (cancelled) return
+      setRelationsDegraded(failed)
+      if (res?.all) setRelations(res.all)
     })
     return () => {
       cancelled = true
@@ -368,6 +375,14 @@ export default function SiteDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* 关系网络降级提示：此前中枢不可用时 relations 静默为空，
+            与「该站点确实没有平替/生态关系」无法区分 */}
+        {relationsDegraded && relations.length === 0 && (
+          <div className="rounded-lg border border-border/60 bg-muted/30 px-3.5 py-2.5 text-xs text-muted-foreground">
+            关系网络暂时不可用（服务未响应），已跳过平替与生态推荐。
+          </div>
+        )}
 
         {/* 强类型平替与竞品雷达 (Alternative Relations - Phase 3) */}
         {alternatives.length > 0 && (

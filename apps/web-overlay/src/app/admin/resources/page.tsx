@@ -730,6 +730,8 @@ export default function ResourceManagement() {
                                 type="button"
                                 variant="destructive"
                                 size="icon"
+                                aria-label="清除已选图片"
+                                title="清除已选图片"
                                 className="absolute top-2 right-2"
                                 onClick={(e) => {
                                   e.stopPropagation();

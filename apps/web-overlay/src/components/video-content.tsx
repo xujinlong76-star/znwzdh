@@ -142,7 +142,7 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                             </Link>
                             <Link
                                 href="/"
-                                aria-label="Back to Home"
+                                aria-label="返回主页"
                             >
                                 <Button
                                     variant="ghost"
@@ -157,6 +157,8 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                             <Button
                                 variant="ghost"
                                 size="icon"
+                                aria-label="打开菜单"
+                                title="打开菜单"
                                 className="md:hidden"
                                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                             >

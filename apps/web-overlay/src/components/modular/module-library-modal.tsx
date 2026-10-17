@@ -82,7 +82,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
               <p className="text-xs text-muted-foreground">从模块库选择并添加至你的自定义排版工作台</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" aria-label="关闭" title="关闭" onClick={onClose}>
             <X className="w-4 h-4" />
           </Button>
         </div>

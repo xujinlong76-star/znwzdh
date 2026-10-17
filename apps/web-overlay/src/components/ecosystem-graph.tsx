@@ -392,13 +392,13 @@ export function EcosystemGraph() {
             />
           </div>
           <div className="flex items-center gap-1 bg-muted/30 p-0.5 rounded-lg border border-border/50">
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setZoom((z) => Math.min(z + 0.15, 2))}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="放大" title="放大" onClick={() => setZoom((z) => Math.min(z + 0.15, 2))}>
               <ZoomIn className="w-3.5 h-3.5" />
             </Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setZoom((z) => Math.max(z - 0.15, 0.5))}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="缩小" title="缩小" onClick={() => setZoom((z) => Math.max(z - 0.15, 0.5))}>
               <ZoomOut className="w-3.5 h-3.5" />
             </Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="重置视图" title="重置视图" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
               <RefreshCw className="w-3.5 h-3.5" />
             </Button>
           </div>

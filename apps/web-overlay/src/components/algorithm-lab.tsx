@@ -1163,8 +1163,8 @@ export function AlgorithmLab() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground">设置主加密密码 (Passphrase)：</label>
-                    <Input aria-label="设置用于派生 AES 密钥的强密码"
+                    <label htmlFor="vault-encrypt-passphrase" className="text-xs font-semibold text-muted-foreground">设置主加密密码 (Passphrase)：</label>
+                    <Input id="vault-encrypt-passphrase"
                       type="password"
                       value={vaultPassword}
                       onChange={(e) => setVaultPassword(e.target.value)}
@@ -1210,8 +1210,8 @@ export function AlgorithmLab() {
                   </p>
 
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-muted-foreground">输入解密密码：</label>
-                    <Input aria-label="输入正确或错误密码进行测试"
+                    <label htmlFor="vault-decrypt-passphrase" className="text-xs font-semibold text-muted-foreground">输入解密密码：</label>
+                    <Input id="vault-decrypt-passphrase"
                       type="text"
                       value={decryptInputPassword}
                       onChange={(e) => setDecryptInputPassword(e.target.value)}

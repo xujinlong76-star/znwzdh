@@ -181,6 +181,7 @@ node scripts/data-retention.mjs --url "$NAVHUB_DATABASE_URL" --apply
 | 方言无关 | SQLite 与 PostgreSQL 同一套逻辑，靠注入占位符风格（`?` / `$n`）适配 |
 | 0 行不留垃圾 | 表内没有过期数据时不产生空归档文件，也不建空目录 |
 | 边界 | `created_at < now - keepDays` 才算过期，恰好等于截止时刻的行保留 |
+| **删了不等于瘦了** | SQLite 与 PG 都只是把页标记为空闲等着复用，文件不会自动变小。要归还磁盘：SQLite 加 `--vacuum`（脚本跑 `VACUUM`，会锁库）；PG 需自行 `VACUUM FULL`（会锁表，维护窗口做）。不整理的话脚本会在末尾打印提示 |
 
 核心逻辑在 `packages/store/src/retention.ts`（`runRetention`），由 `packages/store/test/retention.test.ts` 覆盖分批、扫描上限、归档优先于删除、参数白名单等分支；CLI 只是它的包装。
 
@@ -238,7 +239,25 @@ node scripts/data-retention.mjs --rollup --apply --max-days 90 --max-groups 2000
 
 核心逻辑在 `packages/store/src/rollup.ts`（`runRollup` / `rollupDdl`），由 `packages/store/test/rollup.test.ts` 覆盖整天边界、幂等、跳过、方言占位符、标识符白名单等分支。
 
-### 6.4 还没做的部分
+### 6.4 实测数据（SQLite，本机）
+
+30 万行 `events`（400 天 × 750 行/天）+ 400 行 `audit_logs` 的临时库：
+
+| 环节 | 结果 |
+| --- | --- |
+| rollup dry-run 全量探测 | 0.1s（只取 30 天就收尾，标记 truncated） |
+| rollup apply 追平 220 天 | **9 轮 / 2.1s**，聚合 164,250 行明细 → 2,628 行日统计 |
+| 完整性校验 | 聚合行数 164,250 + 剩余明细 135,750 = 原始 300,000（不重不漏） |
+| 幂等重跑 | 0 天 / 0 行 |
+| 空间回收 | VACUUM 0.2s，文件 **29.22 MB → 6.53 MB** |
+| 清理模式（对照） | 60,700 行在 4.3s 内归档 + 删除，随后 `--vacuum` 使文件从 3.9 MB 降到 0.95 MB |
+
+两个由此得出的运维要点：
+
+1. **空间要显式回收**。删完行发现磁盘没降是正常的（压测里整整差 4.5 倍），别误判成"没删掉"。
+2. **`--max-days` 调大能少跑几轮，但别无脑拉到 365**。默认是 30 天/表/轮，是为了单轮事务链可控；真正的大库建议先按 §6.2 每月一次、每次自然消化 30 天，避免首次运行时一次吃掉几个月的量。
+
+### 6.5 还没做的部分
 
 - **入库调度尚未接线**：聚合模式目前仍是手动/cron 调用，没有接进 §2 的发布流程或任务框架；推荐先按 §6.2 的方式挂 cron 观察一个周期。
 - **聚合结果没有消费方**：`events_daily` / `audit_daily` 目前只是被写入，后台趋势与运营看板还没读它。接入前建议先在只读副本上核对与新明细口径一致。

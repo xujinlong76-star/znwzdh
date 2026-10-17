@@ -94,12 +94,27 @@ export interface SiteAction {
   icon?: string;
 }
 
+export type SiteRelationType =
+  | "alternative"
+  | "ecosystem"
+  | "complementary"
+  | "part_of"
+  | "upstream"
+  | "mirror"
+  | "related";
+
 export interface SiteRelation {
+  id?: string;
+  sourceSiteId?: string;
+  targetSiteId?: string | null;
   targetTitle: string;
   targetUrl: string;
-  relationType: "alternative" | "ecosystem" | "upstream" | "mirror";
+  relationType: SiteRelationType;
   isFreeOrOpenSource?: boolean;
   note?: string;
+  confidence?: number;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
 export interface SiteLiveMetrics {
@@ -170,6 +185,10 @@ export interface Category {
   sort: number;
   /** 来源：navsphere（前端快照托管）| api | ai | seed；null 视为前端托管（兼容旧数据） */
   source?: string | null;
+  /** SKOS:altLabel - 分类同义词/备选标签 (e.g. ["AI", "大模型", "人工智能"]) */
+  altLabels?: string[];
+  /** SKOS:related - 相关概念分类 ID (打破单树隔离，横向关联) */
+  relatedCategories?: string[];
   createdAt: number;
   updatedAt: number;
 }

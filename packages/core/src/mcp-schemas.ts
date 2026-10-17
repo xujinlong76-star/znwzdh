@@ -317,11 +317,23 @@ export const SiteActionSchema = z.object({
 });
 
 export const SiteRelationSchema = z.object({
+  id: z.string().optional(),
+  sourceSiteId: z.string().optional(),
+  targetSiteId: z.string().nullable().optional(),
   targetTitle: z.string(),
   targetUrl: z.string(),
-  relationType: z.enum(["alternative", "ecosystem", "upstream", "mirror"]),
+  relationType: z.enum([
+    "alternative",
+    "ecosystem",
+    "complementary",
+    "part_of",
+    "upstream",
+    "mirror",
+    "related",
+  ]),
   isFreeOrOpenSource: z.boolean().optional(),
   note: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional(),
 });
 
 export const SiteLiveMetricsSchema = z.object({

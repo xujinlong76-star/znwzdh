@@ -11,6 +11,7 @@
  *  3. **抓取必须过 SSRF 防护。** 见 ssrf.ts。
  */
 import { z } from "zod";
+import { getEnhancedSiteData, type SiteRelation } from "@navhub/core";
 import { guardedFetch, type FetchGuardOptions } from "./ssrf.ts";
 import { extractMetadata } from "./metadata.ts";
 
@@ -38,6 +39,7 @@ export interface EnrichmentResult {
   keywords: string[];
   suggestedCategory: string | null;
   suggestedFacets?: Record<string, string[]>;
+  suggestedRelations?: SiteRelation[];
   iconUrl: string | null;
   imageUrl: string | null;
   lang: string | null;
@@ -217,6 +219,7 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
           keywords: payload.keywords,
           suggestedCategory: payload.category,
           suggestedFacets: heuristicFacets(finalUrl, fallbackText, lang),
+          suggestedRelations: getEnhancedSiteData(finalUrl).relations ?? [],
           iconUrl, imageUrl, lang,
           provenance: "llm",
           warnings,
@@ -238,6 +241,7 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
     keywords: heuristicTags(fallbackText).slice(0, 6),
     suggestedCategory: heuristicCategory(fallbackText, metaTitle ?? undefined),
     suggestedFacets: heuristicFacets(finalUrl, fallbackText, lang),
+    suggestedRelations: getEnhancedSiteData(finalUrl).relations ?? [],
     iconUrl, imageUrl, lang,
     provenance: "heuristic",
     warnings,

@@ -5,6 +5,8 @@ import {
   type Category,
   type Collection,
   type Site,
+  type SiteRelation,
+  type SiteRelationType,
   type SiteStatus,
 } from "@navhub/core";
 import type {
@@ -154,6 +156,17 @@ export function rowToSite(row: Record<string, any>): Site {
 }
 
 export function rowToCategory(row: Record<string, any>): Category {
+  const parseJsonList = (val: unknown): string[] => {
+    if (Array.isArray(val)) return val.map(String).filter(Boolean);
+    if (typeof val === "string" && val.trim()) {
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+      } catch {}
+    }
+    return [];
+  };
+
   return {
     id: String(row.id),
     anchor: String(row.anchor),
@@ -165,6 +178,24 @@ export function rowToCategory(row: Record<string, any>): Category {
     enabled: Boolean(row.enabled),
     sort: Number(row.sort ?? 0),
     source: row.source ?? null,
+    altLabels: parseJsonList(row.alt_labels),
+    relatedCategories: parseJsonList(row.related_categories),
+    createdAt: Number(row.created_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
+  };
+}
+
+export function rowToSiteRelation(row: Record<string, any>): SiteRelation {
+  return {
+    id: String(row.id),
+    sourceSiteId: String(row.source_site_id),
+    targetSiteId: row.target_site_id ? String(row.target_site_id) : null,
+    targetTitle: String(row.target_title),
+    targetUrl: String(row.target_url),
+    relationType: (row.relation_type ?? "related") as SiteRelationType,
+    isFreeOrOpenSource: Boolean(row.is_free_or_open_source),
+    note: row.note ?? undefined,
+    confidence: Number(row.confidence ?? 1.0),
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
   };

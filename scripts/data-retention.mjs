@@ -19,6 +19,8 @@
  *   --apply                真正删除（默认 dry-run，只统计）
  *   --archive <dir>        删除前把行写成 gzip NDJSON 冷归档，默认 data/archive
  *   --rollup               聚合模式（见上）；--archive 对它无意义
+ *   --vacuum               删除后整理空间（SQLite 跑 `VACUUM`；PG 只打印提示——
+ *                          在线 `VACUUM` 不归还磁盘、`VACUUM FULL` 会锁表，属于运维决策）
  *   --max-days <n>         聚合模式单表单轮最多处理多少天，默认 30
  *   --max-groups <n>       聚合模式单天分组数上限，默认 5000（超限的整天跳过，明细保留）
  *   --events-days <n>      events 保留天数，默认 180
@@ -34,7 +36,7 @@
  * 退出码：0 成功；1 失败。
  */
 import { createRequire } from "node:module";
-import { mkdirSync, existsSync } from "node:fs";
+import { mkdirSync, existsSync, statSync, unlinkSync } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { createGzip } from "node:zlib";
@@ -67,6 +69,7 @@ function usage() {
   --apply                真正删除（默认 dry-run，只统计）
   --archive <dir>        删除前 gzip NDJSON 冷归档（默认 data/archive）
   --rollup               聚合模式：把到期的整天压成日统计再删明细（events_daily / audit_daily）
+  --vacuum               删除后整理空间（SQLite 跑 VACUUM；PG 只提示，因为它要锁表）
   --events-days <n>      events 保留天数（默认 180）
   --audit-days <n>       audit_logs 保留天数（默认 365）
   --batch <n>            每批行数（默认 1000，仅清理模式）
@@ -82,6 +85,7 @@ function parseArgs(argv) {
     apply: false,
     archive: null,
     rollup: false,
+    vacuum: false,
     eventsDays: null,
     auditDays: null,
     batch: 1000,
@@ -96,6 +100,7 @@ function parseArgs(argv) {
     if (a === "--apply") args.apply = true;
     else if (a === "--archive") args.archive = argv[++i];
     else if (a === "--rollup") args.rollup = true;
+    else if (a === "--vacuum") args.vacuum = true;
     else if (a === "--events-days") args.eventsDays = Number(argv[++i]);
     else if (a === "--audit-days") args.auditDays = Number(argv[++i]);
     else if (a === "--batch") args.batch = Number(argv[++i]) || 1000;
@@ -141,6 +146,8 @@ function openSqlite() {
   raw.pragma("busy_timeout = 5000");
   return {
     kind: "sqlite",
+    file: sqlitePath,
+    raw,
     close: () => raw.close(),
     adapter: {
       placeholder: () => "?",
@@ -166,7 +173,63 @@ function openPg() {
   };
 }
 
+/**
+ * 删了行不等于腾了空间：SQLite 把空闲页留在文件里等着复用，PG 也一样（堆文件只会变胖不会变瘦）。
+ * 两者都要显式整理才会把空间还给文件系统，这一点在压测里差了 4.5 倍（29.2 MB → 6.5 MB），
+ * 所以脚本必须主动提醒，而不是让人跑完清理却发现磁盘没降。
+ */
+function spaceHint(conn, vacuumed) {
+  if (vacuumed) return;
+  if (conn.kind === "sqlite") {
+    console.log(`提示: SQLite 删行后只是把页标记为空闲，文件不会变小 —— 加 --vacuum 整理（会锁库，务必先停服务）`);
+  } else {
+    console.log(`提示: PG 删行后堆文件不会缩小 —— 常规 ` + "`VACUUM`" + `（在线可用）只回收页内空间，` +
+      "想把空间还给磁盘要 `VACUUM FULL`（会锁表，请在维护窗口执行）");
+  }
+}
+
+/** 整理 SQLite 空间（PG 不代劳：VACUUM FULL 锁表，属于运维决策，不是脚本能替判的）。 */
+function maybeVacuum(conn) {
+  if (!args.vacuum) return false;
+  if (conn.kind !== "postgres") {
+    const before = fileSize(conn.file);
+    const t = Date.now();
+    conn.raw.exec("VACUUM");
+    console.log(
+      `整理: VACUUM 完成（${((Date.now() - t) / 1000).toFixed(1)}s）｜文件 ` +
+        `${(before / 1024 / 1024).toFixed(2)} MB → ${(fileSize(conn.file) / 1024 / 1024).toFixed(2)} MB`,
+    );
+    return true;
+  }
+  console.log("[info] PG 不做自动整理：`VACUUM`（在线，回收页内空间）或 `VACUUM FULL`（锁表，归还磁盘）—— 请在维护窗口自行执行");
+  return true;
+}
+
+/** 文件大小；文件不在（或读不到）时按 0 处理，不打断主线。 */
+function fileSize(file) {
+  try {
+    return statSync(file).size;
+  } catch {
+    return 0;
+  }
+}
+
 const conn = isPg ? openPg() : openSqlite();
+
+/** 收尾归档 writer：flush 全部行，0 行的文件直接删掉（不留空归档）。 */
+async function closeWriters() {
+  for (const w of writers.values()) {
+    if (!w.dest) continue;
+    await w.finish();
+    if (w.rows === 0) {
+      try {
+        unlinkSync(w.dest);
+      } catch {
+        /* 删不掉不影响主流程 */
+      }
+    }
+  }
+}
 
 // ---------- 目标表 ----------
 const targets = DEFAULT_RETENTION_TARGETS.map((t) => {
@@ -199,9 +262,8 @@ if (args.rollup) {
       },
     });
   } catch (e) {
-    fail(`聚合失败: ${e?.message ?? e}`);
-  } finally {
     await conn.close();
+    fail(`聚合失败: ${e?.message ?? e}`);
   }
 
   console.log("");
@@ -213,11 +275,16 @@ if (args.rollup) {
     );
   }
   const totalRows = rollupResult.tables.reduce((s, t) => s + t.rows, 0);
+  const vacuumed = maybeVacuum(conn);
+  await conn.close();
+
   console.log(
     `\n完成: ${rollupResult.dryRun ? `未改动（dry-run），若执行将汇总 ${totalRows} 行明细` : `已汇总 ${totalRows} 行明细为日统计`}，耗时 ${Date.now() - t1} ms`,
   );
   if (rollupResult.dryRun && totalRows > 0) {
     console.log("下一步: 确认无误后加 --apply（会写 events_daily / audit_daily，并删除已聚合天的明细）");
+  } else if (!rollupResult.dryRun) {
+    spaceHint(conn, vacuumed);
   }
   process.exit(0);
 }
@@ -268,28 +335,19 @@ try {
     archive: (table, row) => getWriter(table).write(row),
   });
 } catch (e) {
-  // 注意措辞要准确：每批 DELETE 各自落盘，所以排在前面的表可能已经删掉了数据。
-  // 出错表在"当前批次"内不会有部分删除（先整批 SELECT + 归档，再一条 DELETE 语句删该批 id）。
-  fail(
-    `清理失败: ${e?.message ?? e}\n` +
-      `  出错发生在当前表这一批上；排在它前面的表（若已输出统计）可能已经删过数据，可用归档文件核对。`,
-  );
-} finally {
-  // dry-run 且没写任何行时不留空归档文件
-  for (const w of writers.values()) {
-    if (w.dest) {
-      await w.finish();
-      if (w.rows === 0) {
-        try {
-          (await import("node:fs")).unlinkSync(w.dest);
-        } catch {
-          /* 删不掉不影响主流程 */
-        }
-      }
-    }
+    // 注意措辞要准确：每批 DELETE 各自落盘，所以排在前面的表可能已经删掉了数据。
+    // 出错表在"当前批次"内不会有部分删除（先整批 SELECT + 归档，再一条 DELETE 语句删该批 id）。
+    await closeWriters();
+    await conn.close();
+    fail(
+      `清理失败: ${e?.message ?? e}\n` +
+        `  出错发生在当前表这一批上；排在它前面的表可能已经删掉部分数据，可用归档文件核对。`,
+    );
   }
+
+  await closeWriters();
+  const vacuumed = maybeVacuum(conn);
   await conn.close();
-}
 
 console.log("");
 for (const t of result.tables) {
@@ -307,4 +365,6 @@ if (written.length) {
 console.log(`\n完成: 命中 ${totalHit} 行，${result.dryRun ? "未删除（dry-run）" : `已删除 ${result.tables.reduce((s, t) => s + t.deleted, 0)} 行`}，耗时 ${Date.now() - t0} ms`);
 if (result.dryRun && totalHit > 0) {
   console.log("下一步: 确认无误后加 --apply 执行清理");
+} else if (!result.dryRun) {
+  spaceHint(conn, vacuumed);
 }

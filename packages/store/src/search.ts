@@ -592,16 +592,20 @@ export class SearchEngine {
     return map;
   }
 
-  /** 类目含后代（anchor 物化路径前缀） */
+  /** 类目含后代（支持 ID、标题或 SKOS altLabel 同义词解析，及 anchor 物化路径前缀） */
   private async categoryWithDescendants(categoryId: string): Promise<Set<string>> {
-    // rawRows 统一返回 SiteRow 形态（复用同一条行读取路径），因此这里需要显式取值
-    const rows = await this.rawRows(`SELECT anchor FROM categories WHERE id = ?`, [categoryId]) as unknown as Array<{ anchor?: string }>;
+    const norm = categoryId.trim();
+    // 匹配真实 ID、类目标题，或 alt_labels JSON 别名
+    const rows = await this.rawRows(
+      `SELECT id, anchor FROM categories WHERE id = ? OR title = ? OR alt_labels LIKE ? LIMIT 1`,
+      [norm, norm, `%"${norm}"%`]
+    ) as unknown as Array<{ id?: string; anchor?: string }>;
+
+    const targetId = rows[0]?.id ? String(rows[0].id) : norm;
     const anchor = rows[0]?.anchor;
-    const ids = new Set<string>([categoryId]);
+    const ids = new Set<string>([targetId]);
     if (!anchor) return ids;
-    // 必须显式取别名：rawRows 的返回值是按列名取值的，写 `SELECT id` 会得到 { id }，
-    // 而下面读的是 d.categoryid —— 之前正是漏了别名导致子类目 id 全是 undefined，
-    // 于是「父类目包含子类目」在子类目没有直属站点时返回空结果。
+
     const descendants = await this.rawRows(
       `SELECT id AS categoryid FROM categories WHERE anchor LIKE ?`,
       [anchor + "/%"],

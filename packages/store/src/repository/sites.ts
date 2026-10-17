@@ -13,6 +13,8 @@ import {
   type SiteRelation,
   type SiteStatus,
   CONTROLLED_FACETS,
+  CONTROLLED_RELATION_TYPES,
+  normalizeSiteRelation,
   type FacetGroupSummary,
   type FacetOptionCount,
 } from "@navhub/core";
@@ -20,6 +22,7 @@ import type {
   ApiTokenRecord,
   AuditLogRecord,
   CategoryDistributionItem,
+  SiteKnowledgeGraph,
   DashboardOverview,
   FavoriteFolderRecord,
   FavoriteRecord,
@@ -46,6 +49,7 @@ import {
   rowToJob,
   rowToProfile,
   rowToSite,
+  rowToSiteRelation,
   rowToUser,
   slugify,
   toPgSql,
@@ -164,6 +168,9 @@ export async function createSiteWithId(repo: Repository, input: SiteInput & { id
     } else if (input.workspaces?.length) {
       await repo.setSiteFacets(id, { scene: input.workspaces });
     }
+    if (input.relations !== undefined) {
+      await repo.setSiteRelations(id, input.relations);
+    }
     const revived = await repo.getSite(id);
     if (!revived) throw new Error("复活站点后无法读回");
     return revived;
@@ -186,6 +193,9 @@ export async function createSiteWithId(repo: Repository, input: SiteInput & { id
     await repo.setSiteFacets(id, input.facets);
   } else if (input.workspaces?.length) {
     await repo.setSiteFacets(id, { scene: input.workspaces });
+  }
+  if (input.relations !== undefined) {
+    await repo.setSiteRelations(id, input.relations);
   }
   const created = await repo.getSite(id);
   if (!created) throw new Error("创建站点后无法读回");
@@ -233,6 +243,7 @@ export async function updateSite(repo: Repository, id: string, patch: Partial<Si
   await repo.run(`UPDATE sites SET ${sets.join(", ")} WHERE id = ?`, params);
   if (patch.tags !== undefined) await repo.setSiteTags(id, patch.tags);
   if (patch.facets !== undefined) await repo.setSiteFacets(id, patch.facets);
+  if (patch.relations !== undefined) await repo.setSiteRelations(id, patch.relations);
   return repo.getSite(id);
   });
 }
@@ -251,6 +262,7 @@ export async function purgeSite(repo: Repository, id: string): Promise<boolean> 
   await repo.withTransaction(async () => {
   await repo.run("DELETE FROM site_tags WHERE site_id = ?", [id]);
   await repo.run("DELETE FROM site_facets WHERE site_id = ?", [id]);
+  await repo.run("DELETE FROM site_relations WHERE source_site_id = ? OR target_site_id = ?", [id, id]);
   await repo.run("DELETE FROM embeddings WHERE site_id = ?", [id]);
   await repo.run("DELETE FROM sites WHERE id = ?", [id]);
   });
@@ -476,4 +488,207 @@ export async function listFacetsSummary(
 
   return result;
 }
+
+/**
+ * 覆盖保存站点的实体关系边（Site Relations），自动解析 targetSiteId
+ */
+export async function setSiteRelations(
+  repo: Repository,
+  siteId: string,
+  relations: SiteRelation[]
+): Promise<void> {
+  await repo.run("DELETE FROM site_relations WHERE source_site_id = ?", [siteId]);
+  const now = Date.now();
+  for (const raw of relations) {
+    const norm = normalizeSiteRelation(raw);
+    if (!norm) continue;
+    const id = norm.id ?? randomUUID();
+    let targetSiteId = norm.targetSiteId ?? null;
+    if (!targetSiteId) {
+      const targetRows = await repo.raw(
+        "SELECT id FROM sites WHERE url = ? AND deleted_at IS NULL LIMIT 1",
+        [norm.targetUrl]
+      );
+      if (targetRows[0]) targetSiteId = String(targetRows[0].id);
+    }
+    await repo.run(
+      `INSERT INTO site_relations (
+         id, source_site_id, target_site_id, target_title, target_url, relation_type,
+         is_free_or_open_source, note, confidence, created_at, updated_at
+       ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        id,
+        siteId,
+        targetSiteId,
+        norm.targetTitle,
+        norm.targetUrl,
+        norm.relationType,
+        norm.isFreeOrOpenSource ? 1 : 0,
+        norm.note ?? null,
+        norm.confidence ?? 1.0,
+        norm.createdAt ?? now,
+        now,
+      ]
+    );
+  }
+}
+
+/**
+ * 获取站点的完整关联详情（含出边、入边及对称反向推导）
+ */
+export async function getDetailedSiteRelations(
+  repo: Repository,
+  siteId: string
+): Promise<{ outgoing: SiteRelation[]; incoming: SiteRelation[]; all: SiteRelation[] }> {
+  const outRows = await repo.raw(
+    "SELECT * FROM site_relations WHERE source_site_id = ? ORDER BY relation_type ASC, confidence DESC",
+    [siteId]
+  );
+  const inRows = await repo.raw(
+    "SELECT * FROM site_relations WHERE target_site_id = ? ORDER BY relation_type ASC, confidence DESC",
+    [siteId]
+  );
+
+  let outgoing = outRows.map(rowToSiteRelation);
+  const incoming = inRows.map(rowToSiteRelation);
+
+  // 如果关系表尚无数据，兜底从现有 site.relations 补齐
+  if (outgoing.length === 0) {
+    const site = await repo.getSite(siteId);
+    if (site?.relations?.length) {
+      outgoing = site.relations.map((r) => ({
+        ...r,
+        sourceSiteId: siteId,
+      }));
+    }
+  }
+
+  const seen = new Set<string>();
+  const all: SiteRelation[] = [];
+
+  for (const r of outgoing) {
+    const key = `${r.relationType}:${r.targetUrl.toLowerCase()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      all.push(r);
+    }
+  }
+
+  for (const r of incoming) {
+    const meta = CONTROLLED_RELATION_TYPES[r.relationType];
+    // 对称关系（alternative, complementary, mirror, related），自然可作为反向关联呈现
+    if (meta?.symmetric && r.sourceSiteId) {
+      const sourceSite = await repo.getSite(r.sourceSiteId);
+      if (sourceSite) {
+        const key = `${r.relationType}:${sourceSite.url.toLowerCase()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          all.push({
+            id: r.id ? `inv-${r.id}` : undefined,
+            sourceSiteId: siteId,
+            targetSiteId: sourceSite.id,
+            targetTitle: sourceSite.title,
+            targetUrl: sourceSite.url,
+            relationType: r.relationType,
+            isFreeOrOpenSource: false,
+            note: r.note ? `[反向引用] ${r.note}` : undefined,
+            confidence: r.confidence,
+            createdAt: r.createdAt,
+            updatedAt: r.updatedAt,
+          });
+        }
+      }
+    }
+  }
+
+  return { outgoing, incoming, all };
+}
+
+/**
+ * 获取站点的全部关联集合（平铺，兼容原有 Site.relations 消费者）
+ */
+export async function getSiteRelations(
+  repo: Repository,
+  siteId: string
+): Promise<SiteRelation[]> {
+  const detailed = await getDetailedSiteRelations(repo, siteId);
+  return detailed.all;
+}
+
+/**
+ * 获取以目标站点为中心的局部知识图谱（Ego-Graph，供 /graph 与可视化组件渲染）
+ */
+export async function getSiteKnowledgeGraph(
+  repo: Repository,
+  siteId: string,
+  maxNeighbors = 15
+): Promise<SiteKnowledgeGraph | null> {
+  const center = await repo.getSite(siteId);
+  if (!center) return null;
+
+  const centerCat = center.categoryId ? await repo.getCategory(center.categoryId) : null;
+  const detailed = await getDetailedSiteRelations(repo, siteId);
+
+  const nodesMap = new Map<string, SiteKnowledgeGraph["nodes"][number]>();
+  nodesMap.set(center.id, {
+    id: center.id,
+    title: center.title,
+    url: center.url,
+    iconKey: center.iconKey ?? null,
+    categoryId: center.categoryId,
+    categoryTitle: centerCat?.title,
+    isCenter: true,
+  });
+
+  const edges: SiteKnowledgeGraph["edges"] = [];
+  const seenEdges = new Set<string>();
+
+  const slice = detailed.all.slice(0, maxNeighbors);
+  for (const rel of slice) {
+    const meta = CONTROLLED_RELATION_TYPES[rel.relationType] ?? CONTROLLED_RELATION_TYPES.related;
+    const targetId = rel.targetSiteId ?? `ext-${Buffer.from(rel.targetUrl).toString("base64url").slice(0, 12)}`;
+    if (!nodesMap.has(targetId)) {
+      let catTitle: string | undefined;
+      let iconKey: string | null = null;
+      if (rel.targetSiteId) {
+        const targetSite = await repo.getSite(rel.targetSiteId);
+        if (targetSite) {
+          iconKey = targetSite.iconKey ?? null;
+          if (targetSite.categoryId) {
+            const cat = await repo.getCategory(targetSite.categoryId);
+            catTitle = cat?.title;
+          }
+        }
+      }
+      nodesMap.set(targetId, {
+        id: targetId,
+        title: rel.targetTitle,
+        url: rel.targetUrl,
+        iconKey,
+        categoryTitle: catTitle,
+        isCenter: false,
+      });
+    }
+
+    const edgeKey = `${center.id}->${targetId}:${rel.relationType}`;
+    if (!seenEdges.has(edgeKey)) {
+      seenEdges.add(edgeKey);
+      edges.push({
+        source: center.id,
+        target: targetId,
+        relationType: rel.relationType,
+        labelZh: meta.labelZh,
+        symmetric: meta.symmetric,
+        note: rel.note,
+      });
+    }
+  }
+
+  return {
+    centerSiteId: center.id,
+    nodes: [...nodesMap.values()],
+    edges,
+  };
+}
+
 

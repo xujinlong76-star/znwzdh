@@ -50,6 +50,9 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "tags", column: "group_name", sqlite: "TEXT NOT NULL DEFAULT 'topic'", pg: "TEXT NOT NULL DEFAULT 'topic'" },
   { table: "tags", column: "color", sqlite: "TEXT", pg: "TEXT" },
   { table: "tags", column: "description", sqlite: "TEXT", pg: "TEXT" },
+  // 类目 SKOS 概念模型演进（Taxonomy Phase 3）
+  { table: "categories", column: "alt_labels", sqlite: "TEXT NOT NULL DEFAULT '[]'", pg: "TEXT NOT NULL DEFAULT '[]'" },
+  { table: "categories", column: "related_categories", sqlite: "TEXT NOT NULL DEFAULT '[]'", pg: "TEXT NOT NULL DEFAULT '[]'" },
 ];
 
 /**
@@ -83,6 +86,13 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE TABLE IF NOT EXISTS site_facets (site_id TEXT NOT NULL, facet_key TEXT NOT NULL, facet_value TEXT NOT NULL, PRIMARY KEY (site_id, facet_key, facet_value))",
     "CREATE INDEX IF NOT EXISTS site_facets_key_val_idx ON site_facets(facet_key, facet_value)",
     "CREATE INDEX IF NOT EXISTS site_facets_site_idx ON site_facets(site_id)",
+    // 实体关系表与索引 (Taxonomy Phase 3)
+    db.dialect === "postgres"
+      ? "CREATE TABLE IF NOT EXISTS site_relations (id TEXT PRIMARY KEY, source_site_id TEXT NOT NULL, target_site_id TEXT, target_title TEXT NOT NULL, target_url TEXT NOT NULL, relation_type TEXT NOT NULL DEFAULT 'related', is_free_or_open_source BOOLEAN NOT NULL DEFAULT FALSE, note TEXT, confidence DOUBLE PRECISION NOT NULL DEFAULT 1.0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS site_relations (id TEXT PRIMARY KEY, source_site_id TEXT NOT NULL, target_site_id TEXT, target_title TEXT NOT NULL, target_url TEXT NOT NULL, relation_type TEXT NOT NULL DEFAULT 'related', is_free_or_open_source INTEGER NOT NULL DEFAULT 0, note TEXT, confidence REAL NOT NULL DEFAULT 1.0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS site_relations_source_idx ON site_relations(source_site_id)",
+    "CREATE INDEX IF NOT EXISTS site_relations_target_idx ON site_relations(target_site_id)",
+    "CREATE INDEX IF NOT EXISTS site_relations_type_idx ON site_relations(relation_type)",
   ];
   for (const sqlText of statements) {
     try {

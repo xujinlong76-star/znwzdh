@@ -11,12 +11,15 @@ import {
   type SiteRelation,
   type SiteStatus,
   type FacetGroupSummary,
+  type SkosConcept,
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
 import type {
     ApiTokenRecord,
     AuditLogRecord,
     CategoryDistributionItem,
+    CategorySemanticDetail,
+    SiteKnowledgeGraph,
     DashboardOverview,
     FavoriteFolderRecord,
     FavoriteRecord,
@@ -227,6 +230,22 @@ export class Repository {
     return sitesRepo.listFacetsSummary(this, filter);
   }
 
+  async setSiteRelations(siteId: string, relations: SiteRelation[]): Promise<void> {
+    return sitesRepo.setSiteRelations(this, siteId, relations);
+  }
+
+  async getSiteRelations(siteId: string): Promise<SiteRelation[]> {
+    return sitesRepo.getSiteRelations(this, siteId);
+  }
+
+  async getDetailedSiteRelations(siteId: string): Promise<{ outgoing: SiteRelation[]; incoming: SiteRelation[]; all: SiteRelation[] }> {
+    return sitesRepo.getDetailedSiteRelations(this, siteId);
+  }
+
+  async getSiteKnowledgeGraph(siteId: string, maxNeighbors?: number): Promise<SiteKnowledgeGraph | null> {
+    return sitesRepo.getSiteKnowledgeGraph(this, siteId, maxNeighbors);
+  }
+
   /** @internal repository/* 域函数使用 */
   async upsertTag(name: string, slug: string, group = "topic"): Promise<string> {
     return sitesRepo.upsertTag(this, name, slug, group);
@@ -243,7 +262,26 @@ export class Repository {
     return categoriesRepo.getCategory(this, id);
   }
 
-  async createCategory(input: { id?: string; title: string; parentId?: string | null; icon?: string | null; description?: string | null; sort?: number; source?: string | null }): Promise<Category> {
+  async getCategoryWithSemantic(id: string): Promise<CategorySemanticDetail | null> {
+    return categoriesRepo.getCategoryWithSemantic(this, id);
+  }
+
+  async exportSkosConcepts(baseUri?: string): Promise<SkosConcept[]> {
+    return categoriesRepo.exportSkosConcepts(this, baseUri);
+  }
+
+  async createCategory(input: {
+    id?: string;
+    title: string;
+    titleEn?: string | null;
+    parentId?: string | null;
+    icon?: string | null;
+    description?: string | null;
+    sort?: number;
+    source?: string | null;
+    altLabels?: string[];
+    relatedCategories?: string[];
+  }): Promise<Category> {
     return categoriesRepo.createCategory(this, input);
   }
 
@@ -264,7 +302,10 @@ export class Repository {
     return categoriesRepo.mergeCategories(this, sourceId, targetId);
   }
 
-  async updateCategory(id: string, patch: Partial<Pick<Category, "title" | "titleEn" | "icon" | "description" | "enabled" | "sort">>): Promise<Category | null> {
+  async updateCategory(
+    id: string,
+    patch: Partial<Pick<Category, "title" | "titleEn" | "icon" | "description" | "enabled" | "sort" | "altLabels" | "relatedCategories">>
+  ): Promise<Category | null> {
     return categoriesRepo.updateCategory(this, id, patch);
   }
 

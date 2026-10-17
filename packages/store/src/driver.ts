@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS categories (
   enabled INTEGER NOT NULL DEFAULT 1,
   sort INTEGER NOT NULL DEFAULT 0,
   source TEXT,
+  alt_labels TEXT NOT NULL DEFAULT '[]',
+  related_categories TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -135,6 +137,23 @@ CREATE TABLE IF NOT EXISTS site_facets (
 );
 CREATE INDEX IF NOT EXISTS site_facets_key_val_idx ON site_facets(facet_key, facet_value);
 CREATE INDEX IF NOT EXISTS site_facets_site_idx ON site_facets(site_id);
+
+CREATE TABLE IF NOT EXISTS site_relations (
+  id TEXT PRIMARY KEY,
+  source_site_id TEXT NOT NULL,
+  target_site_id TEXT,
+  target_title TEXT NOT NULL,
+  target_url TEXT NOT NULL,
+  relation_type TEXT NOT NULL DEFAULT 'related',
+  is_free_or_open_source INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  confidence REAL NOT NULL DEFAULT 1.0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_relations_source_idx ON site_relations(source_site_id);
+CREATE INDEX IF NOT EXISTS site_relations_target_idx ON site_relations(target_site_id);
+CREATE INDEX IF NOT EXISTS site_relations_type_idx ON site_relations(relation_type);
 
 CREATE TABLE IF NOT EXISTS collections (
   id TEXT PRIMARY KEY, slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT,
@@ -278,6 +297,8 @@ CREATE TABLE IF NOT EXISTS categories (
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   sort INTEGER NOT NULL DEFAULT 0,
   source TEXT,
+  alt_labels TEXT NOT NULL DEFAULT '[]',
+  related_categories TEXT NOT NULL DEFAULT '[]',
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
@@ -357,6 +378,23 @@ CREATE TABLE IF NOT EXISTS site_facets (
 );
 CREATE INDEX IF NOT EXISTS site_facets_key_val_idx ON site_facets(facet_key, facet_value);
 CREATE INDEX IF NOT EXISTS site_facets_site_idx ON site_facets(site_id);
+
+CREATE TABLE IF NOT EXISTS site_relations (
+  id TEXT PRIMARY KEY,
+  source_site_id TEXT NOT NULL,
+  target_site_id TEXT,
+  target_title TEXT NOT NULL,
+  target_url TEXT NOT NULL,
+  relation_type TEXT NOT NULL DEFAULT 'related',
+  is_free_or_open_source BOOLEAN NOT NULL DEFAULT FALSE,
+  note TEXT,
+  confidence DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_relations_source_idx ON site_relations(source_site_id);
+CREATE INDEX IF NOT EXISTS site_relations_target_idx ON site_relations(target_site_id);
+CREATE INDEX IF NOT EXISTS site_relations_type_idx ON site_relations(relation_type);
 
 CREATE TABLE IF NOT EXISTS collections (
   id TEXT PRIMARY KEY, slug TEXT NOT NULL, title TEXT NOT NULL, description TEXT,

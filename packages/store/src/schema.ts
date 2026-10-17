@@ -25,6 +25,10 @@ export const categories = sqliteTable("categories", {
   sort: integer("sort").notNull().default(0),
   /** 来源：navsphere（前端快照托管）| api | ai | seed；null 视为前端托管（兼容旧数据） */
   source: text("source"),
+  /** SKOS:altLabel - 分类同义词/备选标签 (JSON 字符串数组) */
+  altLabels: text("alt_labels").notNull().default("[]"),
+  /** SKOS:related - 跨分类概念关联 ID 列表 (JSON 字符串数组) */
+  relatedCategories: text("related_categories").notNull().default("[]"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 }, (t) => [
@@ -125,6 +129,24 @@ export const siteFacets = sqliteTable("site_facets", {
   primaryKey({ columns: [t.siteId, t.facetKey, t.facetValue] }),
   index("site_facets_key_val_idx").on(t.facetKey, t.facetValue),
   index("site_facets_site_idx").on(t.siteId),
+]);
+
+export const siteRelations = sqliteTable("site_relations", {
+  id: text("id").primaryKey(),
+  sourceSiteId: text("source_site_id").notNull(),
+  targetSiteId: text("target_site_id"),
+  targetTitle: text("target_title").notNull(),
+  targetUrl: text("target_url").notNull(),
+  relationType: text("relation_type").notNull().default("related"),
+  isFreeOrOpenSource: integer("is_free_or_open_source", { mode: "boolean" }).notNull().default(false),
+  note: text("note"),
+  confidence: real("confidence").notNull().default(1.0),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+}, (t) => [
+  index("site_relations_source_idx").on(t.sourceSiteId),
+  index("site_relations_target_idx").on(t.targetSiteId),
+  index("site_relations_type_idx").on(t.relationType),
 ]);
 
 export const collections = sqliteTable("collections", {
@@ -333,7 +355,7 @@ export const systemStates = sqliteTable("system_states", {
 });
 
 export const schema = {
-  categories, sites, tags, tagAliases, siteTags, siteFacets, collections, collectionItems,
+  categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates,
 };

@@ -79,6 +79,38 @@ export interface CategoryDistributionItem {
   brokenCount?: number;
 }
 
+export interface CategorySemanticDetail {
+  category: Category;
+  related: Array<{
+    id: string;
+    title: string;
+    titleEn?: string | null;
+    icon?: string | null;
+    siteCount: number;
+  }>;
+}
+
+export interface SiteKnowledgeGraph {
+  centerSiteId: string;
+  nodes: Array<{
+    id: string;
+    title: string;
+    url: string;
+    iconKey?: string | null;
+    categoryId?: string;
+    categoryTitle?: string;
+    isCenter?: boolean;
+  }>;
+  edges: Array<{
+    source: string;
+    target: string;
+    relationType: string;
+    labelZh: string;
+    symmetric: boolean;
+    note?: string;
+  }>;
+}
+
 export interface SecurityOverview {
   recentFailures: Array<{ action: string; ip: string | null; count: number; lastAt: number }>;
   totalAuthFailures24h: number;

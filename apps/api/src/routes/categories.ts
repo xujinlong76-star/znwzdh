@@ -26,6 +26,18 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   );
 
   /**
+   * 导出符合 W3C SKOS 规范的概念模型集合（供语义网与跨平台知识交换）
+   */
+  app.get(
+    "/api/categories/skos",
+    { config: { scope: "public", cache: { maxAge: 300, etag: true } } },
+    async (req) => {
+      const origin = `${req.protocol}://${req.hostname}/categories/`;
+      return ctx.repo.exportSkosConcepts(origin);
+    }
+  );
+
+  /**
    * 获取单个类目详情
    */
   app.get("/api/categories/:id", { config: { scope: "public" } }, async (req, reply) => {
@@ -38,16 +50,31 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   });
 
   /**
+   * 获取类目的语义关联概念（打破单一树形孤岛）
+   */
+  app.get("/api/categories/:id/related", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const semantic = await ctx.repo.getCategoryWithSemantic(id);
+    if (!semantic) {
+      return notFound(reply, "类目不存在");
+    }
+    return semantic;
+  });
+
+  /**
    * 创建类目
    */
   app.post("/api/categories", { config: { scope: "write" } }, async (req, reply) => {
     const body = z
       .object({
         title: z.string().min(1),
+        titleEn: z.string().nullable().optional(),
         parentId: z.string().nullable().optional(),
         icon: z.string().nullable().optional(),
         description: z.string().nullable().optional(),
         sort: z.number().optional(),
+        altLabels: z.array(z.string()).optional(),
+        relatedCategories: z.array(z.string()).optional(),
       })
       .safeParse(req.body ?? {});
 
@@ -78,6 +105,8 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     description: z.string().nullable().optional(),
     enabled: z.boolean().optional(),
     sort: z.number().optional(),
+    altLabels: z.array(z.string()).optional(),
+    relatedCategories: z.array(z.string()).optional(),
   });
 
   /**

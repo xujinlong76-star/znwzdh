@@ -1,16 +1,17 @@
 'use client'
 
 /**
- * 管理端：分类树管理。
+ * 管理端：分类树与 SKOS 语义知识图谱治理 (Category & Semantic Taxonomy Governance)
  *
- * 中枢已提供完整 endpoints（此前只有 API，没有界面）：
- *   - POST   /api/categories                新建（title/parentId/icon/description/sort）
- *   - PATCH  /api/categories/:id            改名/图标/描述/启用/排序
- *   - DELETE /api/categories/:id            删除（站点移入未分类，子类提升到父级）
+ * 端点支持：
+ *   - GET    /api/categories                全量类目
+ *   - GET    /api/categories/skos           W3C SKOS 概念模型导出
+ *   - GET    /api/categories/:id/related    获取语义关联类目与站点统计
+ *   - POST   /api/categories                新建（含 altLabels/relatedCategories）
+ *   - PATCH  /api/categories/:id            改名/状态/排序/同义别名/跨类关联
+ *   - DELETE /api/categories/:id            安全级联删除（站点移入未分类，子类提升）
  *   - POST   /api/categories/:id/move       换父级（anchor 级联）
- *   - POST   /api/categories/merge          源（含后代）并入目标后删源子树
- *
- * 本页只做视图与调用，不复制任何业务规则（anchor 级联、成环检测都在中枢）。
+ *   - POST   /api/categories/merge          源合并至目标
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -28,6 +29,8 @@ interface CategoryRow {
   icon?: string | null
   enabled: boolean
   sort: number
+  altLabels?: string[]
+  relatedCategories?: string[]
 }
 
 interface TreeItem {
@@ -35,7 +38,7 @@ interface TreeItem {
   depth: number
 }
 
-/** 把扁平类目按 parentId 展开成带缩进的前序列表（未知父级按根处理，避免丢行） */
+/** 把扁平类目按 parentId 展开成带缩进的前序列表 */
 function buildTree(cats: CategoryRow[]): TreeItem[] {
   const byParent = new Map<string | null, CategoryRow[]>()
   const ids = new Set(cats.map((c) => c.id))
@@ -45,7 +48,9 @@ function buildTree(cats: CategoryRow[]): TreeItem[] {
     list.push(c)
     byParent.set(key, list)
   }
-  for (const list of byParent.values()) list.sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title, 'zh'))
+  for (const list of byParent.values()) {
+    list.sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title, 'zh'))
+  }
   const out: TreeItem[] = []
   const walk = (parent: string | null, depth: number) => {
     for (const c of byParent.get(parent) ?? []) {
@@ -63,7 +68,9 @@ export default function AdminCategoriesPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [newParent, setNewParent] = useState('')
+  const [newAltLabels, setNewAltLabels] = useState('')
   const [creating, setCreating] = useState(false)
+  const [exportingSkos, setExportingSkos] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -76,18 +83,29 @@ export default function AdminCategoriesPage() {
   useEffect(() => { load() }, [load])
 
   const tree = useMemo(() => buildTree(cats), [cats])
-  const options = useMemo(() => tree.map(({ cat, depth }) => ({ id: cat.id, label: '　'.repeat(depth) + cat.title })), [tree])
+  const catMap = useMemo(() => new Map(cats.map((c) => [c.id, c])), [cats])
+  const options = useMemo(
+    () => tree.map(({ cat, depth }) => ({ id: cat.id, label: '　'.repeat(depth) + cat.title })),
+    [tree]
+  )
 
   const create = async () => {
     const title = newTitle.trim()
     if (!title) return
     setCreating(true)
     try {
+      const altLabels = newAltLabels
+        .split(/[,，、]/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+
       await hubSend('/api/categories', 'POST', {
         title,
         parentId: newParent || null,
+        altLabels: altLabels.length > 0 ? altLabels : undefined,
       })
       setNewTitle('')
+      setNewAltLabels('')
       load()
     } catch (e) {
       window.alert('创建失败：' + String(e))
@@ -96,32 +114,74 @@ export default function AdminCategoriesPage() {
     }
   }
 
+  const exportSkos = async () => {
+    setExportingSkos(true)
+    try {
+      const concepts = await hubGet('/api/categories/skos')
+      const blob = new Blob([JSON.stringify(concepts, null, 2)], { type: 'application/ld+json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `navhub-categories-skos-${new Date().toISOString().slice(0, 10)}.jsonld`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      window.alert('导出 SKOS 失败：' + String(e))
+    } finally {
+      setExportingSkos(false)
+    }
+  }
+
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold">分类管理</h1>
-        <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-          {loading ? '刷新中…' : '刷新'}
-        </Button>
+    <div className="p-6 max-w-5xl mx-auto">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-xl font-bold">分类与 SKOS 概念治理</h1>
+          <p className="text-xs text-muted-foreground mt-1">
+            支持主树物化路径（Anchor）、SKOS 概念同义别名（altLabel）与跨树相关分类（skos:related）关联。
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => void exportSkos()} disabled={exportingSkos || loading}>
+            {exportingSkos ? '导出中…' : '导出 SKOS 概念'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
+            {loading ? '刷新中…' : '刷新'}
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-2 mb-6 p-3 rounded-md border bg-muted/20">
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">新类目名称</label>
-          <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="例如：设计资源" className="w-56" />
+          <Input
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="例如：设计资源"
+            className="w-48"
+          />
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">父类目（可选）</label>
           <select
             value={newParent}
             onChange={(e) => setNewParent(e.target.value)}
-            className="h-9 rounded-md border bg-background px-3 text-sm w-56"
+            className="h-9 rounded-md border bg-background px-3 text-sm w-48"
           >
             <option value="">（根类目）</option>
             {options.map((o) => (
               <option key={o.id} value={o.id}>{o.label}</option>
             ))}
           </select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">同义别名（逗号分隔）</label>
+          <Input
+            value={newAltLabels}
+            onChange={(e) => setNewAltLabels(e.target.value)}
+            placeholder="如: UI, 素材, 灵感"
+            className="w-48"
+          />
         </div>
         <Button onClick={() => void create()} disabled={creating || !newTitle.trim()}>
           {creating ? '创建中…' : '新建类目'}
@@ -133,11 +193,12 @@ export default function AdminCategoriesPage() {
       ) : tree.length === 0 ? (
         <div className="text-muted-foreground text-sm">暂无类目</div>
       ) : (
-        <div className="rounded-md border">
+        <div className="rounded-md border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
-                <th className="text-left px-3 py-2 font-medium">名称</th>
+                <th className="text-left px-3 py-2 font-medium">类目名称与描述</th>
+                <th className="text-left px-3 py-2 font-medium">SKOS 概念模型 (别名/关联)</th>
                 <th className="text-left px-3 py-2 font-medium">Anchor</th>
                 <th className="text-left px-3 py-2 font-medium">排序</th>
                 <th className="text-left px-3 py-2 font-medium">状态</th>
@@ -145,32 +206,82 @@ export default function AdminCategoriesPage() {
               </tr>
             </thead>
             <tbody>
-              {tree.map(({ cat, depth }) => (
-                <tr key={cat.id} className="border-b last:border-0">
-                  <td className="px-3 py-2 font-medium" style={{ paddingLeft: 12 + depth * 20 }}>
-                    {cat.title}
-                    {typeof cat.description === 'string' && cat.description ? (
-                      <span className="ml-2 text-xs text-muted-foreground">{cat.description}</span>
-                    ) : null}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">{cat.anchor}</td>
-                  <td className="px-3 py-2">{cat.sort}</td>
-                  <td className="px-3 py-2">
-                    <span className={cat.enabled ? 'text-green-600' : 'text-muted-foreground'}>
-                      {cat.enabled ? '启用' : '停用'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap space-x-1">
-                    <Button size="sm" variant="ghost" disabled={busyId === cat.id} onClick={() => void renameCat(cat, setBusyId, load)}>重命名</Button>
-                    <Button size="sm" variant="ghost" disabled={busyId === cat.id} onClick={() => void moveCat(cat, options, setBusyId, load)}>移动</Button>
-                    <Button size="sm" variant="ghost" disabled={busyId === cat.id} onClick={() => void mergeCat(cat, options, setBusyId, load)}>合并</Button>
-                    <Button size="sm" variant="ghost" disabled={busyId === cat.id} onClick={() => void toggleEnabled(cat, setBusyId, load)}>
-                      {cat.enabled ? '停用' : '启用'}
-                    </Button>
-                    <Button size="sm" variant="ghost" className="text-destructive" disabled={busyId === cat.id} onClick={() => void deleteCat(cat, setBusyId, load)}>删除</Button>
-                  </td>
-                </tr>
-              ))}
+              {tree.map(({ cat, depth }) => {
+                const hasAlt = Array.isArray(cat.altLabels) && cat.altLabels.length > 0
+                const hasRel = Array.isArray(cat.relatedCategories) && cat.relatedCategories.length > 0
+                return (
+                  <tr key={cat.id} className="border-b last:border-0 hover:bg-muted/10">
+                    <td className="px-3 py-2 font-medium" style={{ paddingLeft: 12 + depth * 20 }}>
+                      <div className="flex items-center gap-1.5">
+                        <span>{cat.title}</span>
+                        {cat.titleEn ? (
+                          <span className="text-xs text-muted-foreground">({cat.titleEn})</span>
+                        ) : null}
+                      </div>
+                      {typeof cat.description === 'string' && cat.description ? (
+                        <p className="text-xs text-muted-foreground line-clamp-1">{cat.description}</p>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2 text-xs">
+                      <div className="flex flex-col gap-1 max-w-xs">
+                        {hasAlt ? (
+                          <div className="flex flex-wrap gap-1 items-center">
+                            <span className="text-muted-foreground text-[10px]">别名:</span>
+                            {cat.altLabels!.map((tag) => (
+                              <span key={tag} className="px-1.5 py-0.2 bg-muted rounded text-[11px]">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {hasRel ? (
+                          <div className="flex flex-wrap gap-1 items-center">
+                            <span className="text-muted-foreground text-[10px]">关联:</span>
+                            {cat.relatedCategories!.map((relId) => {
+                              const relCat = catMap.get(relId)
+                              return (
+                                <span key={relId} className="px-1.5 py-0.2 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300 rounded text-[11px]">
+                                  {relCat ? relCat.title : relId}
+                                </span>
+                              )
+                            })}
+                          </div>
+                        ) : null}
+                        {!hasAlt && !hasRel ? (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground font-mono">{cat.anchor}</td>
+                    <td className="px-3 py-2 text-xs">{cat.sort}</td>
+                    <td className="px-3 py-2 text-xs">
+                      <span className={cat.enabled ? 'text-green-600 font-medium' : 'text-muted-foreground'}>
+                        {cat.enabled ? '启用' : '停用'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap space-x-1">
+                      <Button size="sm" variant="ghost" disabled={busyId === cat.id} onClick={() => void editSemantic(cat, setBusyId, load, cats)}>
+                        语义配置
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={busyId === cat.id} onClick={() => void renameCat(cat, setBusyId, load)}>
+                        重命名
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={busyId === cat.id} onClick={() => void moveCat(cat, options, setBusyId, load)}>
+                        移动
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={busyId === cat.id} onClick={() => void mergeCat(cat, options, setBusyId, load)}>
+                        合并
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={busyId === cat.id} onClick={() => void toggleEnabled(cat, setBusyId, load)}>
+                        {cat.enabled ? '停用' : '启用'}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-destructive" disabled={busyId === cat.id} onClick={() => void deleteCat(cat, setBusyId, load)}>
+                        删除
+                      </Button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -180,6 +291,51 @@ export default function AdminCategoriesPage() {
 }
 
 /* ----------------------------- helpers ----------------------------- */
+
+async function editSemantic(
+  cat: CategoryRow,
+  setBusyId: (id: string | null) => void,
+  load: () => void,
+  allCats: CategoryRow[]
+) {
+  const currentAlts = (cat.altLabels ?? []).join(', ')
+  const altPrompt = window.prompt(
+    `配置「${cat.title}」的 SKOS 同义词/备选标签（逗号分隔）：`,
+    currentAlts
+  )
+  if (altPrompt === null) return
+
+  const newAlts = altPrompt
+    .split(/[,，、]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  const otherCats = allCats.filter((c) => c.id !== cat.id)
+  const relPrompt = window.prompt(
+    `配置「${cat.title}」的相关概念分类 ID（逗号分隔）：\n候选类目：\n` +
+      otherCats.map((c) => `${c.id} (${c.title})`).join('\n'),
+    (cat.relatedCategories ?? []).join(', ')
+  )
+  if (relPrompt === null) return
+
+  const newRels = relPrompt
+    .split(/[,，]/)
+    .map((s) => s.trim())
+    .filter((id) => otherCats.some((c) => c.id === id))
+
+  setBusyId(cat.id)
+  try {
+    await hubSend('/api/categories/' + cat.id, 'PATCH', {
+      altLabels: newAlts,
+      relatedCategories: newRels,
+    })
+  } catch (e) {
+    window.alert('配置失败：' + String(e))
+  } finally {
+    setBusyId(null)
+    load()
+  }
+}
 
 async function renameCat(cat: CategoryRow, setBusyId: (id: string | null) => void, load: () => void) {
   const next = window.prompt('重命名类目', cat.title)
@@ -219,7 +375,6 @@ async function moveCat(cat: CategoryRow, options: { id: string; label: string }[
   try {
     await hubSend('/api/categories/' + cat.id + '/move', 'POST', { parentId })
   } catch (e) {
-    // 中枢会拒绝移动到自身后代（成环）
     window.alert('移动失败：' + String(e))
   } finally {
     setBusyId(null)

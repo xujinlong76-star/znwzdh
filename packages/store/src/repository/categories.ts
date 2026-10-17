@@ -12,11 +12,14 @@ import {
   type SiteLiveMetrics,
   type SiteRelation,
   type SiteStatus,
+  type SkosConcept,
+  categoryToSkosConcept,
 } from "@navhub/core";
 import type {
   ApiTokenRecord,
   AuditLogRecord,
   CategoryDistributionItem,
+  CategorySemanticDetail,
   DashboardOverview,
   FavoriteFolderRecord,
   FavoriteRecord,
@@ -60,7 +63,21 @@ export async function getCategory(repo: Repository, id: string): Promise<Categor
   return row ? rowToCategory(row) : null;
 }
 
-export async function createCategory(repo: Repository, input: { id?: string; title: string; parentId?: string | null; icon?: string | null; description?: string | null; sort?: number; source?: string | null }): Promise<Category> {
+export async function createCategory(
+  repo: Repository,
+  input: {
+    id?: string;
+    title: string;
+    titleEn?: string | null;
+    parentId?: string | null;
+    icon?: string | null;
+    description?: string | null;
+    sort?: number;
+    source?: string | null;
+    altLabels?: string[];
+    relatedCategories?: string[];
+  }
+): Promise<Category> {
   const id = input.id ?? randomUUID();
   let anchor = id;
   if (input.parentId) {
@@ -69,9 +86,26 @@ export async function createCategory(repo: Repository, input: { id?: string; tit
     anchor = parent.anchor + "/" + id;
   }
   const now = Date.now();
+  const altLabels = JSON.stringify(input.altLabels ?? []);
+  const relatedCategories = JSON.stringify(input.relatedCategories ?? []);
   await repo.run(
-    "INSERT INTO categories (id, anchor, parent_id, title, description, icon, enabled, sort, source, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-    [id, anchor, input.parentId ?? null, input.title, input.description ?? null, input.icon ?? null, 1, input.sort ?? 0, input.source ?? null, now, now],
+    "INSERT INTO categories (id, anchor, parent_id, title, title_en, description, icon, enabled, sort, source, alt_labels, related_categories, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    [
+      id,
+      anchor,
+      input.parentId ?? null,
+      input.title,
+      input.titleEn ?? null,
+      input.description ?? null,
+      input.icon ?? null,
+      1,
+      input.sort ?? 0,
+      input.source ?? null,
+      altLabels,
+      relatedCategories,
+      now,
+      now,
+    ],
   );
   const created = await repo.getCategory(id);
   if (!created) throw new Error("创建类目后无法读回");
@@ -147,7 +181,11 @@ export async function mergeCategories(repo: Repository, sourceId: string, target
   });
 }
 
-export async function updateCategory(repo: Repository, id: string, patch: Partial<Pick<Category, "title" | "titleEn" | "icon" | "description" | "enabled" | "sort">>): Promise<Category | null> {
+export async function updateCategory(
+  repo: Repository,
+  id: string,
+  patch: Partial<Pick<Category, "title" | "titleEn" | "icon" | "description" | "enabled" | "sort" | "altLabels" | "relatedCategories">>
+): Promise<Category | null> {
   const existing = await repo.getCategory(id);
   if (!existing) return null;
   const sets: string[] = ["updated_at = ?"];
@@ -159,6 +197,8 @@ export async function updateCategory(repo: Repository, id: string, patch: Partia
   if (patch.description !== undefined) assign("description", patch.description);
   if (patch.enabled !== undefined) assign("enabled", patch.enabled ? 1 : 0);
   if (patch.sort !== undefined) assign("sort", patch.sort);
+  if (patch.altLabels !== undefined) assign("alt_labels", JSON.stringify(patch.altLabels));
+  if (patch.relatedCategories !== undefined) assign("related_categories", JSON.stringify(patch.relatedCategories));
   params.push(id);
   await repo.run(`UPDATE categories SET ${sets.join(", ")} WHERE id = ?`, params);
   return repo.getCategory(id);
@@ -193,4 +233,52 @@ export async function deleteCategory(repo: Repository, id: string): Promise<void
   // 4. 最后删除类目自身
   await repo.run("DELETE FROM categories WHERE id = ?", [id]);
   });
+}
+
+/**
+ * 获取类目详情及基于 SKOS:related 解析的相关概念分类列表（含站点数）
+ */
+export async function getCategoryWithSemantic(
+  repo: Repository,
+  id: string
+): Promise<CategorySemanticDetail | null> {
+  const cat = await repo.getCategory(id);
+  if (!cat) return null;
+
+  const relatedList: CategorySemanticDetail["related"] = [];
+  if (Array.isArray(cat.relatedCategories) && cat.relatedCategories.length > 0) {
+    for (const relId of cat.relatedCategories) {
+      const relCat = await repo.getCategory(relId);
+      if (relCat) {
+        const countRows = await repo.raw(
+          "SELECT COUNT(*) AS c FROM sites WHERE category_id = ? AND deleted_at IS NULL",
+          [relId]
+        );
+        const siteCount = Number(countRows[0]?.c ?? 0);
+        relatedList.push({
+          id: relCat.id,
+          title: relCat.title,
+          titleEn: relCat.titleEn,
+          icon: relCat.icon,
+          siteCount,
+        });
+      }
+    }
+  }
+
+  return {
+    category: cat,
+    related: relatedList,
+  };
+}
+
+/**
+ * 导出全站类目的 SKOS Concept 集合（W3C 标准格式，供互操作与语义交换）
+ */
+export async function exportSkosConcepts(
+  repo: Repository,
+  baseUri?: string
+): Promise<SkosConcept[]> {
+  const all = await repo.listCategories();
+  return all.map((c) => categoryToSkosConcept(c, all, baseUri));
 }

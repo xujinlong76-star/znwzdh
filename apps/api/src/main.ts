@@ -34,7 +34,11 @@ if (runner) runner.start();
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, "正在关闭");
-  try { runner?.stop(); } catch { /* 尽力而为 */ }
+  try {
+    runner?.stop();
+    // 优雅停机：等 in-flight 任务轮次完成再关连接（最多 30s）
+    await runner?.drain(30_000);
+  } catch { /* 尽力而为 */ }
   try { await app.close(); await ctx.close(); } catch { /* 尽力而为 */ }
   process.exit(0);
 };

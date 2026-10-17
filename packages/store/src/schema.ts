@@ -95,8 +95,19 @@ export const tags = sqliteTable("tags", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   slug: text("slug").notNull(),
+  group: text("group_name").notNull().default("topic"),
+  color: text("color"),
+  description: text("description"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [uniqueIndex("tags_slug_idx").on(t.slug)]);
+
+export const tagAliases = sqliteTable("tag_aliases", {
+  alias: text("alias").primaryKey(),
+  tagId: text("tag_id").notNull(),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [
+  index("tag_aliases_tag_idx").on(t.tagId),
+]);
 
 export const siteTags = sqliteTable("site_tags", {
   siteId: text("site_id").notNull(),
@@ -312,7 +323,7 @@ export const systemStates = sqliteTable("system_states", {
 });
 
 export const schema = {
-  categories, sites, tags, siteTags, collections, collectionItems,
+  categories, sites, tags, tagAliases, siteTags, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates,
 };

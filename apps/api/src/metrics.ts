@@ -178,6 +178,56 @@ const splitKey = (k: string): [string, string, string] => {
   return [p[0] ?? "", p[1] ?? "", p[2] ?? ""];
 };
 
+/* ---------------- 检索通道观测（升级 #6：Query Planner 效果量化） ---------------- */
+
+/** planner 决策计数：early-exit（剪掉语义） vs full（全通道） */
+let plannerEarlyExit = 0;
+let plannerFull = 0;
+/** 语义通道被剪掉时省下的 embedding 推理次数（≈ 省下的模型调用） */
+let semanticSkipped = 0;
+/** 各通道累计耗时（毫秒） */
+const channelSums = { exact: 0, fts: 0, pinyin: 0, semantic: 0 };
+let channelSamples = 0;
+
+/** routes/search.ts 在每次检索后调用：记录 planner 决策与通道耗时 */
+export function recordSearchChannels(t: {
+  exactMs: number;
+  ftsMs: number;
+  pinyinMs: number;
+  semanticMs: number;
+  skippedSemantic: boolean;
+}): void {
+  if (t.skippedSemantic) {
+    plannerEarlyExit++;
+    semanticSkipped++;
+  } else {
+    plannerFull++;
+  }
+  channelSums.exact += t.exactMs;
+  channelSums.fts += t.ftsMs;
+  channelSums.pinyin += t.pinyinMs;
+  channelSums.semantic += t.semanticMs;
+  channelSamples++;
+}
+
+export function getSearchPlannerStats(): {
+  earlyExit: number;
+  full: number;
+  semanticSkipped: number;
+  samples: number;
+  avgMs: { exact: number; fts: number; pinyin: number; semantic: number };
+} {
+  const avg = (s: number) => (channelSamples > 0 ? Math.round((s / channelSamples) * 10) / 10 : 0);
+  return {
+    earlyExit: plannerEarlyExit,
+    full: plannerFull,
+    semanticSkipped,
+    samples: channelSamples,
+    avgMs: { exact: avg(channelSums.exact), fts: avg(channelSums.fts), pinyin: avg(channelSums.pinyin), semantic: avg(channelSums.semantic) },
+  };
+}
+
+
 /** DB 统计加重询，避免 Prometheus 高频抓取把 COUNT 打满（5s 内复用；缓存为模块级，跨请求生效） */
 let statsCache: { at: number; value: Awaited<ReturnType<AppContext["repo"]["stats"]>> } | null = null;
 async function cachedStats(ctx: AppContext) {
@@ -202,6 +252,7 @@ export async function renderMetrics(ctx: AppContext): Promise<string> {
   const caps = ctx.capabilities;
   const embeddingReady = ctx.embedding ? ctx.embedding.ready() : false;
   const stats = await cachedStats(ctx);
+  const planner = getSearchPlannerStats();
 
   out.push("# HELP navhub_build_info 构建与运行模式信息（值恒为 1）");
   out.push("# TYPE navhub_build_info gauge");
@@ -247,6 +298,19 @@ export async function renderMetrics(ctx: AppContext): Promise<string> {
     durLines.push(`navhub_http_request_duration_seconds_count${labels} ${d.count}`);
   }
   metric("navhub_http_request_duration_seconds", "HTTP 请求耗时（秒）", "summary", durLines);
+
+  // 检索 planner：early-exit 剪枝计数 + 各通道平均耗时（毫秒）
+  metric("navhub_search_planner_total", "Query Planner 决策总数", "counter", [
+    `navhub_search_planner_total{decision="early_exit"} ${planner.earlyExit}`,
+    `navhub_search_planner_total{decision="full"} ${planner.full}`,
+  ]);
+  gauge("navhub_search_semantic_skipped_total", "语义通道被剪掉的次数（≈省下的 embedding 推理）", planner.semanticSkipped);
+  metric("navhub_search_channel_avg_ms", "检索各通道平均耗时（毫秒）", "gauge", [
+    `navhub_search_channel_avg_ms{channel="exact"} ${planner.avgMs.exact}`,
+    `navhub_search_channel_avg_ms{channel="fts"} ${planner.avgMs.fts}`,
+    `navhub_search_channel_avg_ms{channel="pinyin"} ${planner.avgMs.pinyin}`,
+    `navhub_search_channel_avg_ms{channel="semantic"} ${planner.avgMs.semantic}`,
+  ]);
 
   return out.join("\n") + "\n";
 }

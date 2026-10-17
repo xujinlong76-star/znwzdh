@@ -261,10 +261,19 @@ export async function setSiteTags(repo: Repository, siteId: string, tagNames: st
   }
 }
 
-export async function upsertTag(repo: Repository, name: string, slug: string): Promise<string> {
+export async function upsertTag(repo: Repository, name: string, slug: string, group = "topic"): Promise<string> {
+  // 1. 尝试别名或已存在规范标签解析 (SKOS altLabel 归一化)
+  const resolved = await repo.resolveTag(name);
+  if (resolved) return resolved.id;
+  const resolvedBySlug = await repo.resolveTag(slug);
+  if (resolvedBySlug) return resolvedBySlug.id;
+
   const found = await repo.raw("SELECT id FROM tags WHERE slug = ? LIMIT 1", [slug]);
   if (found[0]) return String(found[0].id);
   const id = randomUUID();
-  await repo.run("INSERT INTO tags (id, name, slug, created_at) VALUES (?,?,?,?)", [id, name, slug, Date.now()]);
+  await repo.run(
+    "INSERT INTO tags (id, name, slug, group_name, created_at) VALUES (?,?,?,?,?)",
+    [id, name, slug, group, Date.now()],
+  );
   return id;
 }

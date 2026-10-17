@@ -5,6 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { recordSearchChannels } from "../metrics.ts";
 
 import { refreshUserProfile } from "../profile-service.ts";
 import type { AppContext } from "../context.ts";
@@ -74,6 +75,11 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }
 
     const result = await ctx.search.search({ ...input, personalize });
+    // Query Planner 观测：每次检索后记一次决策与通道耗时（/metrics 透出）
+    const timings = ctx.search.getLastTimings();
+    if (timings) {
+      try { recordSearchChannels(timings); } catch { /* 观测不影响主链路 */ }
+    }
     // 批量取站点：旧实现 Promise.all(hits.map(getSite)) 是 N+1 查询，hits=100 时打 100 次 DB。
     const siteIds = [...new Set(result.hits.map((h) => h.siteId))];
     const siteMap = await ctx.repo.getSitesByIds(siteIds);

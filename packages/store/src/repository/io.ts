@@ -62,7 +62,7 @@ export async function runCount(repo: Repository, sqlText: string, params: unknow
   return Number(res.rowCount ?? 0);
 }
 
-export async function raw(repo: Repository, sqlText: string, params: unknown[]): Promise<Record<string, any>[]> {
+export async function raw(repo: Repository, sqlText: string, params: unknown[] = []): Promise<Record<string, any>[]> {
   if (repo.db.dialect === "sqlite") {
     return repo.db.sqlite!.prepare(sqlText).all(...bindSqlite(params)) as Record<string, any>[];
   }

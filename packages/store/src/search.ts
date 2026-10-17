@@ -53,6 +53,21 @@ export interface SearchEngineDeps {
 export interface SearchEngineOptions {
   /** 每路召回条数（越大越准但越慢）。RRF 需要足够的候选池 */
   perChannel?: number;
+  /**
+   * Query Planner 强精确命中 early-exit 阈值。
+   * exact 通道命中数 >= 该值时直接跳过 semantic（省一次 embedding 推理），默认 5。
+   * 设为 0 关闭 early-exit（全通道恒跑，便于离线评估与回归对比）。
+   */
+  earlyExitExactHits?: number;
+}
+
+/** 单次检索各通道耗时明细（供 Query Planner 调参与 OTel/Prometheus 透出） */
+export interface ChannelTimings {
+  exactMs: number;
+  ftsMs: number;
+  pinyinMs: number;
+  semanticMs: number;
+  skippedSemantic: boolean;
 }
 
 /**
@@ -85,15 +100,24 @@ interface SiteRow {
 export class SearchEngine {
   private deps: SearchEngineDeps;
   private perChannel: number;
+  private earlyExitExactHits: number;
   private linucbModel: LinUCBModel;
   private feedbackCount = 0;
   private savingPromise: Promise<void> | null = null;
   private readonly MODEL_STATE_KEY = "model:linucb:search";
+  /** 最近一次检索的通道耗时（供 /api/search 透出与 Prometheus 采集） */
+  private lastTimings: ChannelTimings | null = null;
 
   constructor(deps: SearchEngineDeps, opts: SearchEngineOptions = {}) {
     this.deps = deps;
     this.perChannel = opts.perChannel ?? 50;
+    this.earlyExitExactHits = opts.earlyExitExactHits ?? 5;
     this.linucbModel = createLinUCBModel(0.15);
+  }
+
+  /** 最近一次 search() 的通道耗时明细；search 前为 null */
+  getLastTimings(): ChannelTimings | null {
+    return this.lastTimings;
   }
 
   /**
@@ -302,17 +326,48 @@ export class SearchEngine {
       offset,
       hasMore: offset + limit < hits.length,
       ...(fallback ? { fallback } : {}),
+      // Query Planner 遥测：只有 planner 主动剪枝才打标；
+      // 用户显式 disableSemantic 不算 early-exit（那是调用方决策，不是剪枝收益）
+      ...(this.lastTimings?.skippedSemantic && !q.disableSemantic ? { planner: "early-exit" as const } : {}),
+      ...(this.lastTimings ? { channelTimings: this.lastTimings } : {}),
     };
   }
 
-  /** 并行跑四路召回。fuzzy=true 时放宽拼音与英文匹配（供零结果兜底用）。 */
+  /**
+   * Query Planner：先跑 exact（~1ms），强命中直接跳过 semantic。
+   * fuzzy=true（零结果兜底）时恒跑全通道，保证召回最大化。
+   */
   private async runChannels(raw: string, opt: SearchQuery, fuzzy: boolean): Promise<SearchCandidate[]> {
-    const [exact, ftsHits, pinyin, semantic] = await Promise.all([
-      this.channelExact(raw, opt, fuzzy),
+    const t0 = Date.now();
+    const exact = await this.channelExact(raw, opt, fuzzy);
+    const exactMs = Date.now() - t0;
+    // early-exit：精确命中足够强时，语义通道的 embedding 推理是纯浪费（首次 300ms+）。
+    // 不拦截 fuzzy 兜底与 disableSemantic=false 以外的显式语义需求。
+    if (!fuzzy && !opt.disableSemantic && this.earlyExitExactHits > 0 && exact.length >= this.earlyExitExactHits) {
+      const t1 = Date.now();
+      const [ftsHits, pinyin] = await Promise.all([
+        this.channelFts(raw, opt),
+        this.channelPinyin(raw, opt),
+      ]);
+      // fts/pinyin 同批计时（近似即可，planner 只看量级）
+      const rest = Date.now() - t1;
+      this.lastTimings = { exactMs, ftsMs: rest, pinyinMs: rest, semanticMs: 0, skippedSemantic: true };
+      return [...exact, ...ftsHits, ...pinyin];
+    }
+    const t2 = Date.now();
+    const [ftsHits, pinyin, semantic] = await Promise.all([
       this.channelFts(raw, opt),
       this.channelPinyin(raw, opt, fuzzy),
       opt.disableSemantic ? Promise.resolve([]) : this.channelSemantic(raw, opt),
     ]);
+    const rest2 = Date.now() - t2;
+    this.lastTimings = {
+      exactMs,
+      ftsMs: rest2,
+      pinyinMs: rest2,
+      semanticMs: opt.disableSemantic ? 0 : rest2,
+      skippedSemantic: Boolean(opt.disableSemantic),
+    };
     return [...exact, ...ftsHits, ...pinyin, ...semantic];
   }
 
@@ -543,13 +598,18 @@ export class SearchEngine {
 
   /**
    * 按标签过滤。
-   * 同时匹配 slug 与 name：调用方（前端、MCP）可能传「天气」这种展示名，
-   * 只匹配 slug 会让中文标签查不到东西。
+   * 同时匹配 slug、name 与 tag_aliases 别名（SKOS altLabel 归一化）：
+   * 调用方可能传「天气」展示名，或者「AIGC」「AI」等别名。
    */
   private async siteIdsWithTag(tag: string): Promise<Set<string>> {
+    const norm = tag.trim();
     const rows = await this.rawRows(
-      `SELECT st.site_id AS id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE t.slug = ? OR t.name = ?`,
-      [tag, tag],
+      `SELECT DISTINCT st.site_id AS id
+         FROM site_tags st
+         JOIN tags t ON t.id = st.tag_id
+         LEFT JOIN tag_aliases ta ON ta.tag_id = t.id
+        WHERE t.slug = ? OR t.name = ? OR ta.alias = ?`,
+      [norm, norm, norm],
     );
     return new Set(rows.map((r) => r.id));
   }

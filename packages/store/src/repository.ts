@@ -23,6 +23,7 @@ import type {
     MaintenanceStatus,
     SecurityOverview,
     SiteInput,
+    TagAliasRecord,
     TagWithCount,
     UserProfileRecord,
     UserRecord,
@@ -210,8 +211,8 @@ export class Repository {
   }
 
   /** @internal repository/* 域函数使用 */
-  async upsertTag(name: string, slug: string): Promise<string> {
-    return sitesRepo.upsertTag(this, name, slug);
+  async upsertTag(name: string, slug: string, group = "topic"): Promise<string> {
+    return sitesRepo.upsertTag(this, name, slug, group);
   }
 
 
@@ -372,12 +373,19 @@ export class Repository {
 
   /* ------------------------- 标签 ------------------------- */
 
-  async listTagsWithCounts(minCount = 1): Promise<TagWithCount[]> {
-    return tagsRepo.listTagsWithCounts(this, minCount);
+  async listTagsWithCounts(minCount = 1, group?: string): Promise<TagWithCount[]> {
+    return tagsRepo.listTagsWithCounts(this, minCount, group);
   }
 
   async renameTag(id: string, newName: string): Promise<void> {
     return tagsRepo.renameTag(this, id, newName);
+  }
+
+  async updateTag(
+    id: string,
+    patch: { name?: string; group?: string; color?: string | null; description?: string | null },
+  ): Promise<void> {
+    return tagsRepo.updateTag(this, id, patch);
   }
 
   async deleteTag(id: string): Promise<{ unbound: number }> {
@@ -386,6 +394,22 @@ export class Repository {
 
   async mergeTags(sourceId: string, targetId: string): Promise<{ moved: number }> {
     return tagsRepo.mergeTags(this, sourceId, targetId);
+  }
+
+  async addTagAlias(tagId: string, alias: string): Promise<{ alias: string }> {
+    return tagsRepo.addTagAlias(this, tagId, alias);
+  }
+
+  async removeTagAlias(alias: string): Promise<void> {
+    return tagsRepo.removeTagAlias(this, alias);
+  }
+
+  async listTagAliases(tagId?: string): Promise<TagAliasRecord[]> {
+    return tagsRepo.listTagAliases(this, tagId);
+  }
+
+  async resolveTag(nameOrAlias: string): Promise<{ id: string; name: string; slug: string; group: string } | null> {
+    return tagsRepo.resolveTag(this, nameOrAlias);
   }
 
 
@@ -664,12 +688,12 @@ export class Repository {
   }
 
   /** @internal repository/* 域函数使用 */
-  async raw(sqlText: string, params: unknown[]): Promise<Record<string, any>[]> {
+  async raw(sqlText: string, params: unknown[] = []): Promise<Record<string, any>[]> {
     return ioRepo.raw(this, sqlText, params);
   }
 
   /** @internal repository/* 域函数使用 */
-  async run(sqlText: string, params: unknown[]): Promise<void> {
+  async run(sqlText: string, params: unknown[] = []): Promise<void> {
     return ioRepo.run(this, sqlText, params);
   }
 

@@ -106,6 +106,40 @@ export async function buildServer(ctx: AppContext) {
   });
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
 
+  /* ---------------------------- 安全响应头（升级 #7 纵深，不引入 helmet 依赖） ---------------------------- */
+
+  /**
+   * 最小安全头集合（等价 helmet 核心子集，手写零依赖）：
+   *  - nosniff：防 MIME 嗅探把 JSON 当脚本执行
+   *  - SAMEORIGIN：管理后台默认不允许被 iframe 嵌（防点击劫持）
+   *  - PERMISSIONS-POLICY：关掉不需要的浏览器能力面
+   *  - HSTS：仅当 publicUrl 为 https 时下发（http 下发反而锁死本地调试）
+   */
+  app.addHook("onSend", async (_req, reply, payload) => {
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("x-frame-options", "SAMEORIGIN");
+    reply.header("referrer-policy", "no-referrer");
+    reply.header("permissions-policy", "camera=(), microphone=(), geolocation=()");
+    if (ctx.config.publicUrl.startsWith("https://")) {
+      reply.header("strict-transport-security", "max-age=31536000; includeSubDomains");
+    }
+    return payload;
+  });
+
+  /* ---------------------------- 请求 ID 透传（升级 #6 可观测性地基） ---------------------------- */
+
+  /**
+   * x-request-id 透传：客户端可自带（链路追踪/压测关联），缺失则服务端生成。
+   * 响应头原样回传，便于日志 ↔ 指标 ↔ 错误上报三方对账。
+   * Fastify 原生 req.id 即随机 id，此处只做「外部可关联」的别名，不替换内部调度。
+   */
+  app.addHook("onRequest", async (req, reply) => {
+    const incoming = String(req.headers["x-request-id"] ?? "").trim();
+    const rid = incoming.length > 0 ? incoming.slice(0, 128) : req.id;
+    (req as unknown as { requestId: string }).requestId = rid;
+    reply.header("x-request-id", rid);
+  });
+
   /* ---------------------------- 指标采集（Prometheus） ---------------------------- */
 
   /**

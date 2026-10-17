@@ -111,9 +111,16 @@ CREATE INDEX IF NOT EXISTS sites_source_status_idx ON sites(source, status);
 -- 由 migrateSiteIndexes 在列迁移后创建（与 url 部分索引同理）。
 
 CREATE TABLE IF NOT EXISTS tags (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL, created_at INTEGER NOT NULL
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL,
+  group_name TEXT NOT NULL DEFAULT 'topic', color TEXT, description TEXT,
+  created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS tags_slug_idx ON tags(slug);
+
+CREATE TABLE IF NOT EXISTS tag_aliases (
+  alias TEXT PRIMARY KEY, tag_id TEXT NOT NULL, created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tag_aliases_tag_idx ON tag_aliases(tag_id);
 
 CREATE TABLE IF NOT EXISTS site_tags (
   site_id TEXT NOT NULL, tag_id TEXT NOT NULL
@@ -321,9 +328,16 @@ CREATE INDEX IF NOT EXISTS sites_title_trgm_idx ON sites USING gin (title gin_tr
 CREATE INDEX IF NOT EXISTS sites_desc_trgm_idx ON sites USING gin (description gin_trgm_ops);
 
 CREATE TABLE IF NOT EXISTS tags (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL, created_at BIGINT NOT NULL
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL,
+  group_name TEXT NOT NULL DEFAULT 'topic', color TEXT, description TEXT,
+  created_at BIGINT NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS tags_slug_idx ON tags(slug);
+
+CREATE TABLE IF NOT EXISTS tag_aliases (
+  alias TEXT PRIMARY KEY, tag_id TEXT NOT NULL, created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tag_aliases_tag_idx ON tag_aliases(tag_id);
 
 CREATE TABLE IF NOT EXISTS site_tags (site_id TEXT NOT NULL, tag_id TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS site_tags_site_idx ON site_tags(site_id);

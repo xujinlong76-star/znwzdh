@@ -59,6 +59,12 @@ export interface AppConfig {
     maxActiveTokens: number;
     allowPermanentTokens: boolean;
   };
+  /**
+   * 会话密钥轮换环（升级 #7）。
+   * previousSecret 为上一代密钥：轮换窗口期内同时接受新旧签名，
+   * 新签发一律用 sessionSecret。两者都未设时 previousSecret 为 null。
+   */
+  previousSecret: string | null;
   /** 任务失败告警 Webhook URL；null 代表不推送（仅终端输出） */
   alertWebhook: string | null;
   /** Webhook 投递超时（毫秒，内部限制于 1s~30s 范围） */
@@ -209,6 +215,9 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       allowPermanentTokens: bool("NAVHUB_TOKEN_ALLOW_PERMANENT", false),
       maxActiveTokens: num("NAVHUB_TOKEN_MAX_ACTIVE", 50),
     },
+
+    // 密钥轮换：上一代密钥仍接受校验（不断签），新签发只用新密钥
+    previousSecret: process.env.NAVHUB_SESSION_SECRET_PREV || null,
 
     alertWebhook: process.env.NAVHUB_ALERT_WEBHOOK?.trim() || null,
     alertTimeoutMs: num("NAVHUB_ALERT_TIMEOUT_MS", 5_000),

@@ -25,33 +25,57 @@ export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     async (req) => {
       const q = (req.query ?? {}) as Record<string, string>;
       const minCount = Number(q.minCount);
-      return ctx.repo.listTagsWithCounts(Number.isFinite(minCount) && minCount > 0 ? minCount : 1);
+      const group = typeof q.group === "string" && q.group.trim() ? q.group.trim() : undefined;
+      return ctx.repo.listTagsWithCounts(
+        Number.isFinite(minCount) && minCount > 0 ? minCount : 1,
+        group,
+      );
     }
   );
+
+  /**
+   * 标签别名归一化解析 (SKOS Concept Resolver)
+   */
+  app.get("/api/tags/resolve", { config: { scope: "public" } }, async (req, reply) => {
+    const q = (req.query ?? {}) as Record<string, string>;
+    const query = q.q?.trim();
+    if (!query) return badRequest(reply, "缺少查询参数 q");
+    const resolved = await ctx.repo.resolveTag(query);
+    if (!resolved) return notFound(reply, `未找到与 "${query}" 匹配的规范标签`);
+    return { ok: true, tag: resolved };
+  });
 
   /* ------------------------------------------------------------------ *
    * 标签修改与维护 (Tag Mutation & Lifecycle)
    * ------------------------------------------------------------------ */
 
   /**
-   * 重命名标签
+   * 重命名或更新标签属性（维度分组、颜色、描述）
    */
   app.patch("/api/tags/:id", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = z.object({ name: z.string().min(1).max(24) }).safeParse(req.body ?? {});
+    const body = z
+      .object({
+        name: z.string().min(1).max(24).optional(),
+        group: z.string().min(1).max(32).optional(),
+        color: z.string().max(32).nullable().optional(),
+        description: z.string().max(200).nullable().optional(),
+      })
+      .safeParse(req.body ?? {});
+
     if (!body.success) {
       return badRequest(reply, "参数无效", body.error.issues);
     }
 
     try {
-      await ctx.repo.renameTag(id, body.data.name);
+      await ctx.repo.updateTag(id, body.data);
       await ctx.repo.audit({
         ip: req.ip,
         actor: req.auth.actor,
         actorKind: req.auth.kind,
-        action: "tag.rename",
+        action: "tag.update",
         target: id,
-        diff: { name: body.data.name },
+        diff: body.data,
       });
       return { ok: true };
     } catch (err) {
@@ -106,6 +130,58 @@ export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
         diff: { into: body.data.targetId, ...result },
       });
       return { ok: true, ...result };
+    } catch (err) {
+      return badRequest(reply, err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  /* ------------------------------------------------------------------ *
+   * 标签别名管理 (Tag Aliases / SKOS altLabels)
+   * ------------------------------------------------------------------ */
+
+  /**
+   * 为指定标签绑定别名（同义词/中英文变体/缩写）
+   */
+  app.post("/api/tags/:id/aliases", { config: { scope: "write" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({ alias: z.string().min(1).max(40) }).safeParse(req.body ?? {});
+    if (!body.success) {
+      return badRequest(reply, "参数无效", body.error.issues);
+    }
+
+    try {
+      const result = await ctx.repo.addTagAlias(id, body.data.alias);
+      await ctx.repo.audit({
+        ip: req.ip,
+        actor: req.auth.actor,
+        actorKind: req.auth.kind,
+        action: "tag.alias.add",
+        target: id,
+        diff: { alias: result.alias },
+      });
+      return { ok: true, ...result };
+    } catch (err) {
+      return badRequest(reply, err instanceof Error ? err.message : String(err));
+    }
+  });
+
+  /**
+   * 解绑或删除指定标签别名
+   */
+  app.delete("/api/tags/:id/aliases/:alias", { config: { scope: "write" } }, async (req, reply) => {
+    const { id, alias } = req.params as { id: string; alias: string };
+    try {
+      const decodedAlias = decodeURIComponent(alias);
+      await ctx.repo.removeTagAlias(decodedAlias);
+      await ctx.repo.audit({
+        ip: req.ip,
+        actor: req.auth.actor,
+        actorKind: req.auth.kind,
+        action: "tag.alias.remove",
+        target: id,
+        diff: { alias: decodedAlias },
+      });
+      return { ok: true };
     } catch (err) {
       return badRequest(reply, err instanceof Error ? err.message : String(err));
     }

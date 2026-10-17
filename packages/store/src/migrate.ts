@@ -46,6 +46,10 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 行为事件身份独立列（原藏在 meta JSON 里，LIKE 过滤走不了索引）。
   // 补齐后由 migrateEventIdentity 从 meta 回填历史行。
   { table: "events", column: "identity", sqlite: "TEXT", pg: "TEXT" },
+  // 标签多维分组与概念别名（Taxonomy Phase 1）
+  { table: "tags", column: "group_name", sqlite: "TEXT NOT NULL DEFAULT 'topic'", pg: "TEXT NOT NULL DEFAULT 'topic'" },
+  { table: "tags", column: "color", sqlite: "TEXT", pg: "TEXT" },
+  { table: "tags", column: "description", sqlite: "TEXT", pg: "TEXT" },
 ];
 
 /**
@@ -73,6 +77,8 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE UNIQUE INDEX IF NOT EXISTS site_tags_unique_idx ON site_tags(site_id, tag_id)",
     // 行为事件身份等值过滤（behaviorEvents/deleteBehaviorEvents 从 meta LIKE 迁到 identity =）
     "CREATE INDEX IF NOT EXISTS events_identity_idx ON events(identity)",
+    // 标签概念别名索引
+    "CREATE INDEX IF NOT EXISTS tag_aliases_tag_idx ON tag_aliases(tag_id)",
   ];
   for (const sqlText of statements) {
     try {

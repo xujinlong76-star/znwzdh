@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "node --experimental-strip-types src/main.ts",
-    "start": "node --experimental-strip-types src/main.ts",
+    "start": "node dist/main.mjs",
+    "start:ts": "node --experimental-strip-types src/main.ts",
     "migrate": "node --experimental-strip-types src/migrate.ts",
     "seed": "node --experimental-strip-types src/seed-main.ts",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit -p tsconfig.json"
+    "build": "tsc -p tsconfig.json",
+    "bundle": "pnpm exec esbuild src/main.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/main.mjs --external:better-sqlite3 --external:sqlite-vec --external:@libsql/client --external:pg --external:onnxruntime-node --external:@huggingface/transformers --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --sourcemap --log-level=info",
+    "prepublishOnly": "pnpm bundle"
   },
   "dependencies": {
     "@navhub/ai": "workspace:*",

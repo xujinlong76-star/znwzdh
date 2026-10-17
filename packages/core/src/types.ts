@@ -192,6 +192,23 @@ export interface CollectionItem {
   note?: string | null;
 }
 
+export interface TagDimension {
+  id: Id;
+  name: string;
+  slug: string;
+  group: string;
+  color?: string | null;
+  description?: string | null;
+  count?: number;
+  aliases?: string[];
+}
+
+export interface TagAlias {
+  alias: string;
+  tagId: Id;
+  createdAt: number;
+}
+
 /* ------------------------------------------------------------------ *
  * 检索
  * ------------------------------------------------------------------ */
@@ -288,6 +305,20 @@ export interface SearchResult {
    * 降级要诚实，但不能什么都不给。
    */
   fallback?: "filter" | "fuzzy";
+  /**
+   * Query Planner 决策（v2 新增）。
+   *   "early-exit"  exact 强命中，语义通道被剪枝（省一次 embedding 推理）
+   *   缺席        全通道正常跑（或 fuzzy 兜底）
+   */
+  planner?: "early-exit";
+  /** 各通道耗时明细（供调参 / OTel / Prometheus 透出） */
+  channelTimings?: {
+    exactMs: number;
+    ftsMs: number;
+    pinyinMs: number;
+    semanticMs: number;
+    skippedSemantic: boolean;
+  };
 }
 
 /* ------------------------------------------------------------------ *

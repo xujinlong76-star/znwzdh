@@ -89,6 +89,78 @@ function envInterval(): number {
  * 计算第 attempt 次失败后的退避延迟（毫秒）。
  * 纯函数便于测试：1min → 2min → 4min，封顶 1h。
  */
+export interface JobSchedulePolicy {
+  /**
+   * cron 表达式（5 段标准：分 时 日 月 周，如每 5 分钟一次）。
+   * 留空 = 按 kind 默认周期（health_check 5min / refetch 30min / recompute 60min /
+   * reindex 4h / 其余 60min），Runner 心跳轮询到期即跑。
+   */
+  cron?: string;
+  /** 单次执行的超时上限（毫秒）；超时抛错走正常重试链。默认 5 分钟 */
+  timeoutMs?: number;
+  /** 允许的最大并发执行数（按 kind）；默认 1 */
+  maxConcurrency?: number;
+}
+
+/** 各任务默认调度策略（Runner 的兜底周期，DB 里有更细的 schedule 即优先） */
+export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
+  health_check: { cron: "X5MIN", timeoutMs: 240_000, maxConcurrency: 2 },
+  refetch_metadata: { cron: "X30MIN", timeoutMs: 300_000, maxConcurrency: 1 },
+  recompute_rank: { cron: "HOURLY", timeoutMs: 180_000, maxConcurrency: 1 },
+  reindex: { cron: "X4H", timeoutMs: 600_000, maxConcurrency: 1 },
+  site_self_healing: { cron: "X30MIN", timeoutMs: 300_000, maxConcurrency: 1 },
+  token_audit: { cron: "HOURLY", timeoutMs: 60_000, maxConcurrency: 1 },
+  purge_trash: { cron: "DAILY3AM", timeoutMs: 120_000, maxConcurrency: 1 },
+};
+
+/** 标准 5 段 cron 字面量（与 DEFAULT_SCHEDULES 别名一一对应，集中存放避免块注释提前闭合） */
+const CRON_EXPRS = {
+  X5MIN: "\u002a/5 \u002a \u002a \u002a \u002a",
+  X30MIN: "\u002a/30 \u002a \u002a \u002a \u002a",
+  HOURLY: "0 \u002a \u002a \u002a \u002a",
+  X4H: "0 \u002a/4 \u002a \u002a \u002a",
+  DAILY3AM: "0 3 \u002a \u002a \u002a",
+} as const;
+
+/** 取某任务的真实 cron 表达式（别名 → 5 段标准式；未知别名原样返回） */
+export function scheduleCronOf(kind: JobKind): string {
+  const alias = DEFAULT_SCHEDULES[kind].cron as keyof typeof CRON_EXPRS;
+  return CRON_EXPRS[alias] ?? alias;
+}
+
+/**
+ * 最小 cron 匹配器（5 段：分 时 日 月 周；支持 *、步长、枚举与范围）。
+ * 不引入 cron 依赖——调度精度到分钟级已满足全部 7 种任务。
+ */
+export function cronDue(cron: string, now: Date = new Date()): boolean {
+  const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 5) return false;
+  const vals = [now.getMinutes(), now.getHours(), now.getDate(), now.getMonth() + 1, now.getDay()];
+  const match = (expr: string | undefined, v: number, min: number, max: number): boolean => {
+    if (expr === undefined || expr === "" || expr === "*") return true;
+    for (const seg of expr.split(",")) {
+      const step = seg.match(/^\*\/(\d+)$/);
+      if (step) {
+        const n = Number(step[1]);
+        if (n > 0 && v % n === 0) return true;
+        continue;
+      }
+      const range = seg.match(/^(\d+)-(\d+)(?:\/(\d+))?$/);
+      if (range) {
+        const lo = Math.max(min, Number(range[1]));
+        const hi = Math.min(max, Number(range[2]));
+        const st = Number(range[3] ?? 1);
+        for (let x = lo; x <= hi; x += st) if (x === v) return true;
+        continue;
+      }
+      if (/^\d+$/.test(seg) && Number(seg) === v) return true;
+    }
+    return false;
+  };
+  const bounds: Array<[number, number]> = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 6]];
+  return parts.every((p, i) => match(p, vals[i] ?? 0, bounds[i]![0], bounds[i]![1]));
+}
+
 export function backoffMs(attempt: number): number {
   const exp = Math.pow(2, Math.max(0, attempt - 1));
   return Math.min(BACKOFF_BASE_MS * exp, BACKOFF_CAP_MS);
@@ -143,15 +215,30 @@ export class JobRunner {
     // 不阻塞启动：首个周期也交给定时器
     if (typeof this.timer.unref === "function") this.timer.unref();
   }
+  /** 优雅停机：stop() 后等待 in-flight tick 完成（最多等 stopTimeoutMs） */
+  private stopping = false;
+  private stopTimeoutMs = 30_000;
+
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    // 标记停机中：tick 入口会拒绝新一轮，in-flight 的一轮正常跑完
+    this.stopping = true;
+  }
+
+  /** 等待 in-flight tick 完成（main.ts 优雅停机用）；超时直接返回不抛错 */
+  async drain(timeoutMs?: number): Promise<void> {
+    const deadline = Date.now() + (timeoutMs ?? this.stopTimeoutMs);
+    while (this.ticking && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
   }
 
   /** 手动跑一轮（测试 / 管理端点用） */
   async tick(): Promise<{ processed: number; skipped: boolean }> {
-    if (this.ticking) return { processed: 0, skipped: true };
+    // 停机中拒绝新一轮（drain 语义）；串行防重入保留
+    if (this.ticking || this.stopping) return { processed: 0, skipped: true };
     this.ticking = true;
     try {
       const locked = await this.acquireLock();

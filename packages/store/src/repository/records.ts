@@ -185,6 +185,16 @@ export interface TagWithCount {
   name: string;
   slug: string;
   count: number;
+  group: string;
+  color?: string | null;
+  description?: string | null;
+  aliases: string[];
+}
+
+export interface TagAliasRecord {
+  alias: string;
+  tagId: string;
+  createdAt: number;
 }
 
 export interface MaintenanceStatus {

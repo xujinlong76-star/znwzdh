@@ -759,6 +759,58 @@ describe("标签与专题", () => {
     expect(again.statusCode).toBe(404);
   });
 
+  it("标签多维分组与概念别名 (SKOS) API 全流程", async () => {
+    // 1. 获取既有标签
+    const tags = (await app.inject({ method: "GET", url: "/api/tags" })).json();
+    const tag = tags[0];
+    expect(tag).toBeTruthy();
+
+    // 2. PATCH /api/tags/:id 更新 group 与 color
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/api/tags/${tag.id}`,
+      payload: { group: "platform", color: "#6366f1", description: "主流跨端平台" },
+    });
+    expect(patchRes.statusCode).toBe(200);
+
+    // 3. GET /api/tags?group=platform 过滤
+    const filteredRes = await app.inject({ method: "GET", url: "/api/tags?group=platform" });
+    expect(filteredRes.statusCode).toBe(200);
+    const filteredTags = filteredRes.json();
+    expect(filteredTags.some((t: { id: string }) => t.id === tag.id)).toBe(true);
+
+    // 4. POST /api/tags/:id/aliases 绑定概念别名
+    const addAliasRes = await app.inject({
+      method: "POST",
+      url: `/api/tags/${tag.id}/aliases`,
+      payload: { alias: "test-alias-skos" },
+    });
+    expect(addAliasRes.statusCode).toBe(200);
+    expect(addAliasRes.json().alias).toBe("test-alias-skos");
+
+    // 5. GET /api/tags/resolve 解析别名
+    const resolveRes = await app.inject({
+      method: "GET",
+      url: "/api/tags/resolve?q=test-alias-skos",
+    });
+    expect(resolveRes.statusCode).toBe(200);
+    expect(resolveRes.json().tag.id).toBe(tag.id);
+
+    // 6. DELETE /api/tags/:id/aliases/:alias 解除别名
+    const delAliasRes = await app.inject({
+      method: "DELETE",
+      url: `/api/tags/${tag.id}/aliases/test-alias-skos`,
+    });
+    expect(delAliasRes.statusCode).toBe(200);
+
+    // 解除后 resolve 报 404
+    const resolveAfter = await app.inject({
+      method: "GET",
+      url: "/api/tags/resolve?q=test-alias-skos",
+    });
+    expect(resolveAfter.statusCode).toBe(404);
+  });
+
   it("专题列表与详情（空库时是空数组/404，不 5xx）", async () => {
     const list = await app.inject({ method: "GET", url: "/api/collections" });
     expect(list.statusCode).toBe(200);

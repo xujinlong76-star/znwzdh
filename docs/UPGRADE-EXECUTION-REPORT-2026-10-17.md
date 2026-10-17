@@ -105,6 +105,7 @@ e235970 chore(deps+docker): Cloudflare leftovers, overrides unified, api image m
 | 单测 | `npx vitest run` | 66 文件 / **969 通过** / 11 跳过（其中数据治理 23 例；其余增量来自并行推进的 SKOS / 关系表工作） |
 | 数据保留 | `packages/store/test/retention.test.ts`（10 例）+ 临时 SQLite 端到端 | dry-run 一行不删、`--apply` 只删到期行且边界正确、归档内容逐行可读、二次运行幂等且不留空归档、缺表时报可读错误 |
 | 明细聚合 | `packages/store/test/rollup.test.ts`（13 例）+ 临时 SQLite 端到端 + CLI `--rollup` 实跑 | dry-run 不建表不写行；apply 后 `events_daily` 的 total/identities 与明细一致；半天过期的那天原样保留；二次运行 0 天且聚合值不翻倍；分组超限时整天跳过且明细未动 |
+| PG 方言 rollup | `packages/store/test/rollup-pg.e2e.test.ts`（4 例，已接进 CI `test-postgres` job） | 无 PG 时整套 skip（本地验证：4 skipped）；连真 PG 时复跑同一套断言 —— 覆盖 `$n` 占位符、`GROUP BY` 序号、`LIMIT $2`、`ON CONFLICT` 目标列、`COUNT(DISTINCT)` 忽略 NULL、PG 把计数回传成字符串这六类方言差异。套件独占 `rollup_e2e` schema，与同库其他 PG 套件并行不冲突 |
 | 量级压测 | 30 万行 events 的临时 SQLite | rollup 追平 220 天：9 轮 / 2.1s；**聚合行数 + 剩余明细 = 原始 300,000**（完整性）；清理模式 60,700 行 4.3s；`--vacuum` 后文件 29.22 MB → 6.53 MB |
 | 覆盖层 | `node scripts/check-web-overlay.mjs` | 216 文件一致 + 29 个 git 跟踪自研文件全部在 overlay |
 | 上游 ref | `node scripts/check-upstream-ref.mjs` | 三处声明一致 `6ba74fa…`，产物未漂移 |

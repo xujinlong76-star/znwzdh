@@ -233,11 +233,17 @@ node scripts/data-retention.mjs --rollup --apply --max-days 90 --max-groups 2000
 | 单轮天数上限 | 默认 30 天/表/轮，`--max-days` 调；触顶会打印"下一轮继续"，反复几轮追平即可 |
 | dry-run 不建表 | 干燥跑不产生 `CREATE TABLE`，也不写任何行 |
 
-`sites.visit_count` 是写入期自增的累计值、`trend_score` 由 `recompute_rank` 按近期窗口重算，两者都不依赖 `events` 全量历史，**删除过期明细不会影响浏览热度与排序**。
+`sites.visit_count` 是写入期自增的累计值、`trend_score` 由 `recompute_rank` 按近期窗口重算，两者都不依赖 `events` 全量历史，**删除过期明细不会影响浏览热度与排序**。依据（不是推测）：
+
+- `apps/api/src/jobs.ts` 的 `runRecomputeRank` 只取 `now - 7 天` 的窗口（`since7d`），而聚合动的是 180 天前的整天 —— 窗口比保留期短一个数量级；
+- `packages/store/src/repository/behavior.ts` 的 `clickCountsSince` / `favoriteCountsSince` 分别只查 `events` 与 `favorites`，`favorites` 不在保留策略内，永不受影响；
+- `sites.visit_count` 由 `bumpVisit` 在点击时 `visit_count + 1`，与 `events` 明细无关（删明细不会回扣计数）。
 
 月度口径不必再建物理表：日聚合已有约 30 倍压缩，需要月报时从 `events_daily` 再 `GROUP BY` 一次即可（月长度不固定，用 `created_at - created_at % 86400000` 这种单一表达式无法算出月桶，因此不提供主打 uptake 的月表）。
 
 核心逻辑在 `packages/store/src/rollup.ts`（`runRollup` / `rollupDdl`），由 `packages/store/test/rollup.test.ts` 覆盖整天边界、幂等、跳过、方言占位符、标识符白名单等分支。
+
+PostgreSQL 侧的 SQL（`$n` 占位符、`GROUP BY 1,2` 序号、`LIMIT $2`、`ON CONFLICT(目标列)`、`COUNT(DISTINCT)` 忽略 NULL、以及 PG 把 COUNT/BIGINT 回传成**字符串**）由 `packages/store/test/rollup-pg.e2e.test.ts` 在真实 PG 上复跑：未设置 `NAVHUB_TEST_DATABASE_URL` 时整套 skip（本地无 PG 的开发机不该被弄红），CI 的 `test-postgres` job 会连上 `pgvector/pgvector:pg17` 跑完。该套件独占 `rollup_e2e` schema 并 `SET search_path`，与同一库里其他 PG 套件并行也互不干扰，结束即 `DROP SCHEMA CASCADE`。
 
 ### 6.4 实测数据（SQLite，本机）
 
@@ -256,6 +262,7 @@ node scripts/data-retention.mjs --rollup --apply --max-days 90 --max-groups 2000
 
 1. **空间要显式回收**。删完行发现磁盘没降是正常的（压测里整整差 4.5 倍），别误判成"没删掉"。
 2. **`--max-days` 调大能少跑几轮，但别无脑拉到 365**。默认是 30 天/表/轮，是为了单轮事务链可控；真正的大库建议先按 §6.2 每月一次、每次自然消化 30 天，避免首次运行时一次吃掉几个月的量。
+3. **PG 侧不能只看 SQLite 绿灯**。PG 把 `COUNT(*)` / BIGINT 回传成字符串、`$n` 占位符、`ON CONFLICT` 目标列写错都会静默出错，`rollup-pg.e2e.test.ts` 就是为这些差异存在的 —— 改了 rollup 的 SQL 必须保证 CI 的 `test-postgres` job 是绿的。
 
 ### 6.5 还没做的部分
 

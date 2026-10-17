@@ -81,7 +81,7 @@ export default function SiteDetailPage() {
 
   if (loading) {
     return (
-      <Container>
+      <Container as="main" id="main-content">
         <div className="py-24 text-center text-muted-foreground text-sm flex items-center justify-center gap-2">
           <span>加载站点详情中…</span>
         </div>
@@ -91,7 +91,7 @@ export default function SiteDetailPage() {
 
   if (!site && notice) {
     return (
-      <Container>
+      <Container as="main" id="main-content">
         <div className="py-20 text-center space-y-5 max-w-md mx-auto">
           <p className="text-muted-foreground text-sm">暂时无法加载该站点详情</p>
           <HubDegradedNotice notice={notice} onRetry={reload} incompleteHint={false} />
@@ -105,7 +105,7 @@ export default function SiteDetailPage() {
 
   if (notFound || !site) {
     return (
-      <Container>
+      <Container as="main" id="main-content">
         <div className="py-24 text-center space-y-4 max-w-md mx-auto">
           <p className="text-muted-foreground text-sm">站点不存在或已被收录源清理</p>
           <Button asChild variant="outline" size="sm" className="text-xs">
@@ -117,7 +117,7 @@ export default function SiteDetailPage() {
   }
 
   return (
-    <Container>
+    <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 max-w-4xl mx-auto space-y-6">
         {/* 面包屑 */}
         <div className="flex items-center gap-2">

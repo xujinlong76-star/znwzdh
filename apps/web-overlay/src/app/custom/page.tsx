@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default function CustomPage() {
   return (
     <div className="min-h-screen flex flex-col bg-background selection:bg-primary/20">
-      <main className="flex-1 py-6 sm:py-8">
+      <main id="main-content" className="flex-1 py-6 sm:py-8">
         <Container className="space-y-6">
           {/* 顶部 Hero 展板 */}
           <div className="relative overflow-hidden rounded-2xl border border-border/80 p-6 sm:p-8 glass-surface subtle-mesh shadow-sm">

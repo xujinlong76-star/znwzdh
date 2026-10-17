@@ -126,7 +126,7 @@ export default function PreferencesPage() {
   )
 
   return (
-    <Container className="py-8">
+    <Container as="main" id="main-content" className="py-8">
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">

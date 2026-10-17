@@ -114,7 +114,7 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                 </div>
             </div>
 
-            <main className="flex-1">
+            <main id="main-content" className="flex-1">
                 <div className="sticky top-0 bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 h-14 border-b border-border/50 flex items-center">
                     <div className="flex items-center gap-3 w-full">
                         <div className="flex-1 max-w-xl">

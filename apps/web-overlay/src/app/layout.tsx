@@ -1,6 +1,7 @@
 import "@/styles/globals.css"
 // 必须排在 globals.css 之后：同优先级下按加载顺序取胜，这样减弱动态效果的规则才能覆盖动效定义
 import "@/styles/reduced-motion.css"
+import "@/styles/skip-link.css"
 import { cn } from "@/lib/utils"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
@@ -144,6 +145,12 @@ export default function RootLayout({
         )}
       </head>
       <body suppressHydrationWarning>
+        {/* WCAG 2.4.1 Bypass Blocks：键盘与读屏用户不必逐个 Tab 穿过整条导航才能到主体内容。
+            锚点 #main-content 由各页面的主内容地标提供（Container as="main" 或页面自带的 <main>），
+            样式在 styles/skip-link.css —— 默认不可见，聚焦后出现在左上角。 */}
+        <a href="#main-content" className="skip-to-content">
+          跳到主要内容
+        </a>
         <PwaRegister />
         <ThemeProvider
           attribute="class"

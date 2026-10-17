@@ -324,7 +324,10 @@ export function EcosystemGraph() {
   }
 
   return (
-    <div className="relative w-full h-[calc(100vh-64px)] overflow-hidden bg-background select-none flex flex-col">
+    <main
+      id="main-content"
+      className="relative w-full h-[calc(100vh-64px)] overflow-hidden bg-background select-none flex flex-col"
+    >
       {/* 顶部控制栏 */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 sm:px-6 border-b border-border/60 glass-surface subtle-mesh z-20 shadow-xs">
         <div className="flex items-center gap-3">
@@ -582,6 +585,6 @@ export function EcosystemGraph() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   )
 }

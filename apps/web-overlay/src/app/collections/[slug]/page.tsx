@@ -60,7 +60,7 @@ export default function CollectionDetailPage() {
   }, [slug, reloadToken])
 
   return (
-    <Container>
+    <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
         <div className="flex items-center gap-2">
           <Link

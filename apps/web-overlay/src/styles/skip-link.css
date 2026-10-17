@@ -1,0 +1,45 @@
+/**
+ * 「跳到主要内容」（skip link）的样式。
+ *
+ * 为什么需要它：键盘与读屏用户进入页面后，必须**逐个 Tab 穿过整条导航**
+ * （首页的工具栏、侧栏分类列表加起来是几十个可聚焦元素）才能碰到真正的站点卡片。
+ * 这是 WCAG 2.4.1 Bypass Blocks 明确要求提供的能力。
+ *
+ * 为什么不直接用 Tailwind 的 `sr-only focus:not-sr-only`：
+ * `not-sr-only` 会把 `position` 重置回 `static`，与同时生效的 `focus:fixed` 属于
+ * 同一优先级、谁赢取决于生成顺序 —— 一旦 `static` 赢，链接会以「文档流内的一块」
+ * 出现在页面顶部，反而破坏布局。这里用独立类把「隐藏态」和「聚焦态」写死，
+ * 不依赖工具类的产出顺序。
+ *
+ * 颜色用 globals.css 里已有的设计令牌（--background / --foreground / --border /
+ * --primary），所以明暗主题都会自动跟随，不需要额外维护一套配色。
+ */
+.skip-to-content {
+  position: absolute;
+  left: -9999px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.skip-to-content:focus {
+  position: fixed;
+  left: 0.75rem;
+  top: 0.75rem;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  z-index: 100;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.12), 0 4px 6px -4px rgb(0 0 0 / 0.12);
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}

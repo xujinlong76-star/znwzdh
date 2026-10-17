@@ -36,7 +36,7 @@ export default function NotFound() {
   const rest = RECOVERY_LINKS.slice(1)
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh] p-4 text-center">
+    <main id="main-content" className="flex flex-col items-center justify-center min-h-[80vh] p-4 text-center">
       <div className="max-w-2xl w-full p-6 sm:p-8 rounded-3xl border border-border/80 glass-surface shadow-xl space-y-6 animate-in fade-in zoom-in-95 duration-200">
         <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center mx-auto shadow-xs">
           <Compass className="w-8 h-8 animate-pulse" />
@@ -97,6 +97,6 @@ export default function NotFound() {
           </Button>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

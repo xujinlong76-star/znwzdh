@@ -32,4 +32,9 @@ describe("hubUrl", () => {
   it("恰好 '/api/hub/' 不误伤", () => {
     expect(hubUrl("/api/hub/")).toBe("/api/hub/");
   });
+
+  it("实体关系路径正确指向 /api/hub/sites/:id/relations", () => {
+    expect(hubUrl("/api/sites/site-123/relations")).toBe("/api/hub/sites/site-123/relations");
+  });
 });
+

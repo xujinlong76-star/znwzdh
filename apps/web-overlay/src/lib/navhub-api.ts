@@ -33,11 +33,36 @@ function hubUrl(path: string): string {
 /** 供测试与调试使用：暴露归一化规则 */
 export { hubUrl }
 
+export interface HubSiteRelation {
+  id: string
+  sourceSiteId: string
+  targetSiteId?: string | null
+  targetTitle: string
+  targetUrl: string
+  relationType: 'alternative' | 'complementary' | 'ecosystem' | 'part_of' | 'upstream' | 'mirror' | 'related'
+  isFreeOrOpenSource?: boolean
+  note?: string | null
+  confidence?: number
+  bidirectional?: boolean
+  site?: HubSite | null
+}
+
+export interface HubSiteRelationsPayload {
+  siteId: string
+  siteTitle: string
+  outgoing: HubSiteRelation[]
+  incoming: HubSiteRelation[]
+  all: HubSiteRelation[]
+  total: number
+}
+
 export interface HubSite {
   id: string
   url: string
   title: string
+  titleEn?: string | null
   description: string | null
+  descriptionEn?: string | null
   iconKey: string | null
   tags: string[]
   categoryId: string
@@ -46,7 +71,12 @@ export interface HubSite {
   trendScore?: number
   health?: { ok: boolean; httpStatus: number | null; latencyMs: number | null; lastCheckedAt: number | null } | null
   source?: string | null
+  facets?: Record<string, string[]>
+  relations?: HubSiteRelation[]
+  actions?: Array<{ id: string; label: string; urlTemplate: string; placeholder?: string; icon?: string }>
+  liveMetrics?: { githubStars?: number; latestVersion?: string; openSource?: boolean; license?: string; latencyMs?: number }
   createdAt?: number
+  updatedAt?: number
 }
 
 export interface HubSearchHit {
@@ -480,6 +510,16 @@ export async function fetchCollectionDetail(
     return await getJson<{ collection: HubCollection; sites: HubSite[] }>('/api/collections/' + encodeURIComponent(slug))
   } catch (error) {
     if (!isNotFound(error)) notifyDegraded(onDegraded, error)
+    return null
+  }
+}
+
+/* ------------------------------ 实体关系与知识图谱 ------------------------------ */
+
+export async function fetchSiteRelations(siteId: string): Promise<HubSiteRelationsPayload | null> {
+  try {
+    return await getJson<HubSiteRelationsPayload>('/api/sites/' + encodeURIComponent(siteId) + '/relations')
+  } catch {
     return null
   }
 }

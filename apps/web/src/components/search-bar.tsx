@@ -108,7 +108,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
       if (linkTarget === '_self') {
         window.location.href = itemWithHref.href
       } else {
-        window.open(itemWithHref.href, linkTarget)
+        window.open(itemWithHref.href, linkTarget, 'noopener,noreferrer')
       }
     }
     onSearch('')

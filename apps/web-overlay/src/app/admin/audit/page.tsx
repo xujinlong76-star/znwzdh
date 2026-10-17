@@ -9,6 +9,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { ChevronDown } from 'lucide-react'
 import { hubGet } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
 
@@ -89,6 +90,10 @@ export default function AdminAuditPage() {
     load(0)
   }
 
+  /** 展开/收起某条记录的 diff：整行点击与「详情」按钮共用同一份逻辑 */
+  const toggleExpanded = (id: number) =>
+    setExpanded((prev) => (prev === id ? null : id))
+
   // 换筛选条件 = 回到第一页
   useEffect(() => {
     setLoading(true)
@@ -166,7 +171,7 @@ export default function AdminAuditPage() {
                   <Fragment key={it.id}>
                     <tr
                       className="border-b last:border-0 cursor-pointer hover:bg-accent/40"
-                      onClick={() => setExpanded(expanded === it.id ? null : it.id)}
+                      onClick={() => toggleExpanded(it.id)}
                     >
                       <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">
                         {new Date(it.createdAt).toLocaleString('zh-CN')}
@@ -181,8 +186,26 @@ export default function AdminAuditPage() {
                       <td className="px-3 py-2 text-xs text-muted-foreground max-w-[180px] truncate" title={it.target ?? ''}>
                         {it.target ?? '—'}
                       </td>
-                      <td className="px-3 py-2 text-xs text-muted-foreground max-w-[260px] truncate" title={summarize(it.diff)}>
-                        {summarize(it.diff)}
+                      <td className="px-3 py-2 text-xs text-muted-foreground max-w-[260px]">
+                        {/* 整行的 onClick 只方便鼠标：键盘用户原先完全没办法展开 diff。
+                            这里补一个真按钮（占满单元格、点了不再冒泡，一次点击只切换一次）。 */}
+                        <button
+                          type="button"
+                          aria-expanded={expanded === it.id}
+                          title={summarize(it.diff)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            toggleExpanded(it.id)
+                          }}
+                          className="flex w-full items-center gap-1.5 rounded text-left hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <ChevronDown
+                            className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded === it.id ? 'rotate-180' : ''}`}
+                            aria-hidden="true"
+                          />
+                          <span className="truncate">{summarize(it.diff)}</span>
+                          <span className="sr-only">{expanded === it.id ? '收起详情' : '展开详情'}</span>
+                        </button>
                       </td>
                     </tr>
                     {expanded === it.id && (

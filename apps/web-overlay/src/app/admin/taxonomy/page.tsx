@@ -278,7 +278,7 @@ export default function AdminTaxonomyPage() {
         </div>
 
         <div className="w-full md:w-64">
-          <Input
+          <Input aria-label="搜索提案关键词 / 站点"
             placeholder="搜索提案关键词 / 站点..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}

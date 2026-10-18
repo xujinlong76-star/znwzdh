@@ -7,8 +7,10 @@ import {
   isStreamingContentType,
   isTextContentType,
   pickResponseHeaders,
+  sanitizeForwardedFor,
   upstreamTimeoutMs,
 } from '@/lib/hub-proxy'
+import { hubIdentitySecret, identityFromRequest, signIdentity } from '@/lib/identity-signature'
 
 /**
  * /api/hub/* 代理：把请求转发到 NavHub 中枢。
@@ -70,7 +72,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   // Next 15 已移除 NextRequest.ip，路由处理器拿不到 socket IP，
   // 因此无 XFF 时只能退回"中枢看到的对端地址"（= 前端进程，仍是共享桶）。
   // 中枢需 trustProxy 才会读取该头（默认关，经代理部署时设 NAVHUB_TRUST_PROXY=1 开启）。
-  const xff = request.headers.get('x-forwarded-for')
+  const xff = sanitizeForwardedFor(request.headers.get('x-forwarded-for'))
   if (xff) headers['x-forwarded-for'] = xff
 
   const method = request.method.toUpperCase()
@@ -83,6 +85,15 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     if (!headers['content-type']) headers['content-type'] = 'application/json'
   } else {
     delete headers['content-type']
+  }
+
+  // 身份签名：中枢配置 NAVHUB_IDENTITY_SECRET 后，带身份的请求必须带对签名，
+  // 否则任何持票人（开放模式下甚至匿名）都能自称任意 userId 读写他人数据。
+  // 未配置密钥时不加任何头，中枢也不校验（行为与历史版本一致）。
+  const identitySecret = hubIdentitySecret()
+  if (identitySecret) {
+    const identity = identityFromRequest(url, hasValidBody ? rawBody : undefined)
+    if (identity) headers['x-navhub-identity-signature'] = await signIdentity(identitySecret, identity)
   }
 
   if (body && body.length > MAX_BODY_BYTES) {

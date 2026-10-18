@@ -1,10 +1,27 @@
 @import 'tailwindcss';
 
+/* 装上 tailwindcss-animate 插件（修复：本仓库没有自己的 tailwind.config.js，
+   v4 也不会去读 apps/web/tailwind.config.js，于是这个插件从来没被加载过，
+   11 处 animate-in / zoom-in-95 / slide-in-from-* / fade-in-0 全都没有产物
+   —— 搜索面板、弹窗、离线提示条、批量操作坞都是「啪」地出现，没有入场动画。
+   实测（next build 产物 CSS）：加这行之前 .animate-in 与 .zoom-in-95 一条都没有
+   （同一次产物里 ring-offset-background 在，说明检索方式本身有效）；
+   加之后两者都出现。 */
+@plugin "tailwindcss-animate";
+
 /* 显式声明扫描源（修复：v4 自动源检测在这个仓库里漏扫大部分 src 文件，
    导致 flex-wrap / space-y-* / rounded-2xl 等工具类未生成，
    /tags 在移动端横向溢出 4369px、页脚文字竖排等渲染破坏）。
    globals.css 位于 src/styles，../ 即覆盖整个 src 树。 */
 @source '../**/*.{js,ts,jsx,tsx,mdx}';
+
+/* registry = 上游 shadcn 组件副本（dialog / dropdown-menu / sheet …），
+   被根 .gitignore 的 apps/web/src 通配忽略掉；而 v4 的 @source 通配
+   **同样不会**去碰被忽略的路径，于是这些组件独占的工具类不生成。
+   实测（next build 后的 CSS）：少了这条声明时 ring-offset-background、
+   sm:rounded-lg 都没有产物 —— 焦点环外圈没有底色、小屏圆角丢失。
+   单独再声明一条，把 registry 子树纳入扫描。 */
+@source '../registry/**/*.{js,ts,jsx,tsx,mdx}';
 
 @custom-variant dark (&:is(.dark *));
 

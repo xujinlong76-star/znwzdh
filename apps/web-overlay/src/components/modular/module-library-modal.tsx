@@ -94,7 +94,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
               <p className="text-xs text-muted-foreground">从模块库选择并添加至你的自定义排版工作台</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" aria-label="关闭" title="关闭" onClick={onClose}>
             <X className="w-4 h-4" />
           </Button>
         </div>
@@ -105,6 +105,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               ref={searchInputRef}
+              aria-label="搜索模块名称或核心功能描述"
               type="text"
               placeholder="搜索模块名称或核心功能描述..."
               value={searchTerm}

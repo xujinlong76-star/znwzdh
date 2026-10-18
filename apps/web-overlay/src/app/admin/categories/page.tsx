@@ -17,6 +17,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { LoadErrorNotice } from '@/components/admin/load-error-notice'
+import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface CategoryRow {
@@ -66,6 +68,8 @@ export default function AdminCategoriesPage() {
   const [cats, setCats] = useState<CategoryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // 「没拉到」和「真的没有」必须分开（见 lib/admin-load-failure.ts）
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [newTitle, setNewTitle] = useState('')
   const [newParent, setNewParent] = useState('')
   const [newAltLabels, setNewAltLabels] = useState('')
@@ -74,9 +78,14 @@ export default function AdminCategoriesPage() {
 
   const load = useCallback(() => {
     setLoading(true)
+    setLoadError(null)
     void hubGet<CategoryRow[]>('/api/categories')
       .then((data) => setCats(Array.isArray(data) ? data : []))
-      .catch(() => setCats([]))
+      .catch((err) => {
+        // 失败仍然回落到空列表，但必须留下错误态（见 lib/admin-load-failure.ts）
+        setCats([])
+        setLoadError(describeLoadFailure(err, '类目列表'))
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -153,8 +162,8 @@ export default function AdminCategoriesPage() {
 
       <div className="flex flex-wrap items-end gap-2 mb-6 p-3 rounded-md border bg-muted/20">
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">新类目名称</label>
-          <Input
+          <label htmlFor="category-new-title" className="text-xs text-muted-foreground">新类目名称</label>
+          <Input id="category-new-title"
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="例如：设计资源"
@@ -162,8 +171,8 @@ export default function AdminCategoriesPage() {
           />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">父类目（可选）</label>
-          <select
+          <label htmlFor="category-new-parent" className="text-xs text-muted-foreground">父类目（可选）</label>
+          <select id="category-new-parent"
             value={newParent}
             onChange={(e) => setNewParent(e.target.value)}
             className="h-9 rounded-md border bg-background px-3 text-sm w-48"
@@ -175,8 +184,8 @@ export default function AdminCategoriesPage() {
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">同义别名（逗号分隔）</label>
-          <Input
+          <label htmlFor="category-new-alt-labels" className="text-xs text-muted-foreground">同义别名（逗号分隔）</label>
+          <Input id="category-new-alt-labels"
             value={newAltLabels}
             onChange={(e) => setNewAltLabels(e.target.value)}
             placeholder="如: UI, 素材, 灵感"
@@ -188,10 +197,12 @@ export default function AdminCategoriesPage() {
         </Button>
       </div>
 
+      {loadError && <LoadErrorNotice message={loadError} onRetry={() => load()} retrying={loading} />}
+
       {loading ? (
         <div className="text-muted-foreground text-sm">加载中…</div>
       ) : tree.length === 0 ? (
-        <div className="text-muted-foreground text-sm">暂无类目</div>
+        <div className="text-muted-foreground text-sm">{emptyStateText(loadError, '暂无类目')}</div>
       ) : (
         <div className="rounded-md border overflow-x-auto">
           <table className="w-full text-sm">

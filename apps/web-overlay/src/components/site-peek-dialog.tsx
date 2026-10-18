@@ -45,7 +45,9 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
           setHyperbolicAlts(data.hits)
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        // 「相似站点推荐」是 peek 弹窗里的加料：拉不到就只显示站点本身，不报错也不留空提示
+      })
     return () => {
       cancelled = true
     }
@@ -152,7 +154,7 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                       >
                         <div className="relative flex-1">
                           <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
-                          <Input
+                          <Input aria-label={act.placeholder || `快速执行 ${act.label}`}
                             placeholder={act.placeholder || `快速执行 ${act.label}...`}
                             value={actionInputs[act.id] || ''}
                             onChange={(e) => setActionInputs({ ...actionInputs, [act.id]: e.target.value })}
@@ -215,9 +217,9 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6.5 w-6.5 shrink-0 rounded-lg hover:bg-muted"
-                    aria-label={`在新标签页打开 ${rel.targetTitle}`}
+                    aria-label="访问该站点"
                     title={`在新标签页打开 ${rel.targetTitle}`}
+                    className="h-6.5 w-6.5 shrink-0 rounded-lg hover:bg-muted"
                     onClick={() => {
                       if (!isSafeHttpUrl(rel.targetUrl)) return
                       window.open(rel.targetUrl, '_blank', 'noopener,noreferrer')
@@ -293,7 +295,10 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                     size="icon"
                     variant="ghost"
                     className="h-7 w-7 rounded-lg shrink-0"
-                    onClick={() => window.open(alt.site.url, '_blank', 'noopener,noreferrer')}
+                    onClick={() => {
+                      if (!isSafeHttpUrl(alt.site.url)) return
+                      window.open(alt.site.url, '_blank', 'noopener,noreferrer')
+                    }}
                     title="访问双曲平替站点"
                   >
                     <ExternalLink className="w-3 h-3 text-muted-foreground group-hover:text-foreground" />

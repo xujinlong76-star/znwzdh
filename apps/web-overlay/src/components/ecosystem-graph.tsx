@@ -6,6 +6,14 @@ import { Badge } from '@/components/ui/badge'
 import { ExternalLink, Sparkles, Zap, ArrowLeft, Search, ZoomIn, ZoomOut, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 import { Input } from '@/components/ui/input'
+import {
+  directionFromKey,
+  isActivationKey,
+  nextNodeInDirection,
+  nodeAccessibleName,
+  rovingNodeId,
+  type GraphDirection,
+} from '@/lib/graph-nav'
 
 export interface GraphNode {
   id: string
@@ -107,6 +115,10 @@ export function EcosystemGraph() {
 
   const [edges, setEdges] = useState<GraphEdge[]>(DEFAULT_EDGES)
   const [liveCount, setLiveCount] = useState(0)
+
+  // 键盘漫游：只有「当前节点」在 Tab 序列里，方向键按几何方向移动（见 lib/graph-nav.ts）
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
+  const nodeRefs = useRef(new Map<string, SVGGElement>())
 
   // 初始化带有圆周布局的节点坐标
   const [nodes, setNodes] = useState<GraphNode[]>(() => {
@@ -226,7 +238,10 @@ export function EcosystemGraph() {
         setEdges([...DEFAULT_EDGES, ...extraEdges])
         setLiveCount(dynamicNodes.length)
       })
-      .catch(() => {})
+      .catch(() => {
+        // 实时节点拉不到就保留内置静态图谱（可视化不会因此空白），
+        // liveCount 保持 0 —— 页面上「实时 N 个」就是「没有实时数据」的诚实信号
+      })
     return () => {
       cancelled = true
     }
@@ -293,6 +308,33 @@ export function EcosystemGraph() {
   const nodeMap = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
   const filteredNodeIds = useMemo(() => new Set(filteredNodes.map((n) => n.id)), [filteredNodes])
 
+  // 键盘导航用的几何点集；以及「漫游 tabindex」当前的落点（被筛掉的节点会自动回落）
+  const navPoints = useMemo(
+    () => filteredNodes.map((n) => ({ id: n.id, x: n.x ?? 0, y: n.y ?? 0 })),
+    [filteredNodes],
+  )
+  const rovingId = useMemo(() => rovingNodeId(filteredNodes, focusedNodeId), [filteredNodes, focusedNodeId])
+
+  /** 方向键：把焦点搬到该方向上最接近的可见节点 */
+  const moveNodeFocus = (fromId: string, direction: GraphDirection) => {
+    const next = nextNodeInDirection(navPoints, fromId, direction)
+    if (!next) return
+    setFocusedNodeId(next.id)
+    nodeRefs.current.get(next.id)?.focus()
+  }
+
+  const handleNodeKeyDown = (event: React.KeyboardEvent<SVGGElement>, node: GraphNode) => {
+    if (isActivationKey(event.key)) {
+      event.preventDefault()
+      setSelectedNode(node)
+      return
+    }
+    const direction = directionFromKey(event.key)
+    if (!direction) return
+    event.preventDefault()
+    moveNodeFocus(node.id, direction)
+  }
+
   const visibleEdges = useMemo(() => {
     return edges.filter((e) => filteredNodeIds.has(e.source) && filteredNodeIds.has(e.target))
   }, [edges, filteredNodeIds])
@@ -331,12 +373,12 @@ export function EcosystemGraph() {
       {/* 顶部控制栏 */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 sm:px-6 border-b border-border/60 glass-surface subtle-mesh z-20 shadow-xs">
         <div className="flex items-center gap-3">
-          <Link href="/">
-            <Button variant="ghost" size="sm" className="gap-1.5 text-xs h-8 border border-border/50 hover:bg-background/80">
+          <Button asChild variant="ghost" size="sm" className="gap-1.5 text-xs h-8 border border-border/50 hover:bg-background/80">
+            <Link href="/">
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>返回导航</span>
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
               <Sparkles className="w-4 h-4" />
@@ -384,7 +426,7 @@ export function EcosystemGraph() {
 
           <div className="relative w-36 sm:w-48">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-muted-foreground" />
-            <Input
+            <Input aria-label="搜索图谱节点"
               placeholder="搜索图谱节点..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -392,13 +434,13 @@ export function EcosystemGraph() {
             />
           </div>
           <div className="flex items-center gap-1 bg-muted/30 p-0.5 rounded-lg border border-border/50">
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setZoom((z) => Math.min(z + 0.15, 2))}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="放大" title="放大" onClick={() => setZoom((z) => Math.min(z + 0.15, 2))}>
               <ZoomIn className="w-3.5 h-3.5" />
             </Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setZoom((z) => Math.max(z - 0.15, 0.5))}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="缩小" title="缩小" onClick={() => setZoom((z) => Math.max(z - 0.15, 0.5))}>
               <ZoomOut className="w-3.5 h-3.5" />
             </Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
+            <Button size="icon" variant="ghost" className="h-7 w-7" aria-label="重置视图" title="重置视图" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>
               <RefreshCw className="w-3.5 h-3.5" />
             </Button>
           </div>
@@ -472,10 +514,29 @@ export function EcosystemGraph() {
               return (
                 <g
                   key={n.id}
+                  ref={(el) => {
+                    if (el) nodeRefs.current.set(n.id, el)
+                    else nodeRefs.current.delete(n.id)
+                  }}
                   transform={`translate(${n.x}, ${n.y})`}
-                  className="cursor-pointer transition-transform"
+                  className="group cursor-pointer transition-transform focus:outline-none"
+                  role="button"
+                  tabIndex={rovingId === n.id ? 0 : -1}
+                  aria-label={nodeAccessibleName(n.title, CATEGORY_COLORS[n.category].name)}
+                  aria-pressed={isSelected}
                   onClick={() => setSelectedNode(n)}
+                  onFocus={() => setFocusedNodeId(n.id)}
+                  onKeyDown={(event) => handleNodeKeyDown(event, n)}
                 >
+                  {/* 键盘焦点环：只有真正聚焦（Tab / 方向键）时才出现 */}
+                  <circle
+                    r={26}
+                    fill="none"
+                    stroke="#60a5fa"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                    className="pointer-events-none opacity-0 group-focus:opacity-100 transition-opacity"
+                  />
                   <circle
                     r={isSelected ? 23 : 16}
                     fill={catColor.fill}
@@ -524,7 +585,14 @@ export function EcosystemGraph() {
                   {selectedNode.description}
                 </p>
               </div>
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-lg hover:bg-muted" onClick={() => setSelectedNode(null)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 rounded-lg hover:bg-muted"
+                aria-label="关闭节点详情"
+                title="关闭节点详情"
+                onClick={() => setSelectedNode(null)}
+              >
                 ✕
               </Button>
             </div>
@@ -553,7 +621,7 @@ export function EcosystemGraph() {
                   <Zap className="w-3.5 h-3.5 text-amber-500" />
                   <span>图谱关联拓扑 ({relatedEdges.length})</span>
                 </span>
-                <span className="text-xs text-muted-foreground/80 font-mono">点击任意关联节点跳转</span>
+                <span className="text-xs text-muted-foreground/80 font-mono">点选或回车切换</span>
               </h4>
 
               <div className="space-y-2">
@@ -563,21 +631,22 @@ export function EcosystemGraph() {
                   if (!otherNode) return null
 
                   return (
-                    <div
+                    <button
                       key={idx}
+                      type="button"
                       onClick={() => setSelectedNode(otherNode)}
-                      className="p-2.5 rounded-xl border border-border/60 bg-background/70 hover:bg-background/95 hover:border-primary/40 cursor-pointer transition-all flex items-center justify-between text-xs shadow-2xs group"
+                      className="w-full text-left p-2.5 rounded-xl border border-border/60 bg-background/70 hover:bg-background/95 hover:border-primary/40 cursor-pointer transition-all flex items-center justify-between text-xs shadow-2xs group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <div>
+                      <span className="flex items-center">
                         <span className="font-semibold group-hover:text-primary transition-colors">{otherNode.title}</span>
                         <span className="text-xs text-muted-foreground ml-1.5 font-mono">
                           ({e.label || (e.type === 'alternative' ? '平替' : '生态')})
                         </span>
-                      </div>
+                      </span>
                       <Badge variant="secondary" className="text-xs">
                         {CATEGORY_COLORS[otherNode.category].name}
                       </Badge>
-                    </div>
+                    </button>
                   )
                 })}
               </div>

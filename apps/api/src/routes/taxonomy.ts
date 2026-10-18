@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
-import { badRequest, notFound } from "./shared.ts";
+import { badRequest, notFound, parsePagination } from "./shared.ts";
 
 export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -18,8 +18,7 @@ export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     const query = req.query as Record<string, string | undefined>;
     const status = query.status;
     const kind = query.kind;
-    const limit = Math.min(200, Math.max(1, Number(query.limit ?? 50)));
-    const offset = Math.max(0, Number(query.offset ?? 0));
+    const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });
 
     return ctx.repo.listTaxonomyProposals({ status, kind, limit, offset });
   });

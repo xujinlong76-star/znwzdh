@@ -55,19 +55,27 @@ export function DensityProvider({ children }: { children: React.ReactNode }) {
 
   const setDensity = useCallback((newDensity: ContentDensity) => {
     setDensityState(newDensity)
+    // 先把外观应用上（不依赖存储），再尽力持久化：
+    // 原来 setAttribute 写在 try 里，setItem 一旦抛错（隐私模式 / 配额满）
+    // 属性就设不进去 —— 用户点了切换却毫无变化。顺序反过来就不会了。
+    document.documentElement.setAttribute('data-density', newDensity)
     try {
       localStorage.setItem(DENSITY_STORAGE_KEY, newDensity)
-      document.documentElement.setAttribute('data-density', newDensity)
-    } catch {}
+    } catch {
+      // 写盘失败只影响「下次打开还记得」：本次切换已经生效
+    }
   }, [])
 
   const cycleDensity = useCallback(() => {
     setDensityState((prev) => {
       const next = DENSITY_META[prev]?.next || 'comfortable'
+      // 同上：外观先落地，写盘失败只影响下次刷新
+      document.documentElement.setAttribute('data-density', next)
       try {
         localStorage.setItem(DENSITY_STORAGE_KEY, next)
-        document.documentElement.setAttribute('data-density', next)
-      } catch {}
+      } catch {
+        // 写盘失败只影响「下次打开还记得」：本次切换已经生效
+      }
       return next
     })
   }, [])

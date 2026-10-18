@@ -11,7 +11,7 @@ import {
   SiteRelationSchema,
 } from "@navhub/core";
 import type { AppContext } from "../context.ts";
-import { badRequest, notFound } from "./shared.ts";
+import { badRequest, notFound, parseIntParam } from "./shared.ts";
 
 export const relationRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -55,7 +55,7 @@ export const relationRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     }
 
     const body = z.object({
-      relations: z.array(SiteRelationSchema),
+      relations: z.array(SiteRelationSchema).max(200),
     }).safeParse(req.body ?? {});
 
     if (!body.success) {
@@ -87,7 +87,7 @@ export const relationRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    */
   app.get("/api/sites/:id/graph", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const maxNeighbors = Math.min(50, Math.max(1, Number((req.query as Record<string, string>)?.maxNeighbors ?? 15)));
+    const maxNeighbors = parseIntParam((req.query as Record<string, unknown>)?.maxNeighbors, 15, 1, 50);
 
     const graph = await ctx.repo.getSiteKnowledgeGraph(id, maxNeighbors);
     if (!graph) {

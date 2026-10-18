@@ -148,7 +148,7 @@ export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
    */
   app.get(
     "/api/admin/health/trend",
-    { config: { scope: "read", cache: { maxAge: 30 } } },
+    { config: { scope: "admin", cache: { maxAge: 30 } } },
     async (req) => {
       const days = parseTimeWindow(req.query as Record<string, unknown>, "days", 14, 1, 90);
       const since = Date.now() - days * 86_400_000;

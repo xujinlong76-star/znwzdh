@@ -228,6 +228,16 @@ describe("鉴权模式：token 生命周期", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it("审计与健康趋势属于 admin 作用域：read 令牌被拒", async () => {
+    const read = await mintToken("只读审计", "read");
+    // 此前这两条是 scope:"read"——任何只读令牌都能读走审计日志（操作者 / IP / 变更 diff）
+    expect((await as(read, "GET", "/api/admin/audit")).statusCode).toBe(403);
+    expect((await as(read, "GET", "/api/admin/health/trend")).statusCode).toBe(403);
+    // admin 令牌照常可读
+    const admin = await mintToken("管理员审计", "admin");
+    expect((await as(admin, "GET", "/api/admin/audit")).statusCode).toBe(200);
+  });
+
   it("删除 token 后立即失效", async () => {
     const raw = await mintToken("待删除", "read");
     expect((await as(raw, "GET", "/api/sites")).statusCode).toBe(200);

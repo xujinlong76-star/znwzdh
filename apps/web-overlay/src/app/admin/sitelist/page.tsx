@@ -54,6 +54,7 @@ import {
 
 import { NavigationSubItem, NavigationItem } from '@/types/navigation'
 import { moveItem } from '@/lib/navigation-tree'
+import { describeDegrade } from '@/lib/degrade'
 
 interface SubCategory {
   id: string
@@ -80,13 +81,12 @@ interface Site {
 }
 
 export default function SiteListPage() {
-  console.log('Component rendering')
-
-
   const { toast } = useToast()
   const [sites, setSites] = useState<Site[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [isLoading, setIsLoading] = useState(true)
+  // 拉取失败必须能持续显示：不能只靠一个 5 秒后就消失的 toast
+  const [loadError, setLoadError] = useState<unknown>(null)
   const [selectedSites, setSelectedSites] = useState<string[]>([])
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [isInitialLoading, setIsInitialLoading] = useState(true)
@@ -132,7 +132,6 @@ export default function SiteListPage() {
 
 
   useEffect(() => {
-    console.log('useEffect triggered')
     fetchSites()
   }, [])
 
@@ -215,28 +214,30 @@ export default function SiteListPage() {
   const fetchSites = async () => {
     if (!isInitialLoading) setIsLoading(true);
     try {
-      console.log('Making API request');
       const response = await fetch('/api/navigation');
-      console.log('API response received:', response.status);
       if (!response.ok) throw new Error('Failed to fetch');
       const data = await response.json();
-      console.log('Received data:', data);
 
       // Store navigation data for category selection
       setNavigationData(data.navigationItems);
 
       // Extract all sites from the navigation structure
       const allSites = extractSites(data.navigationItems);
-      console.log('Extracted sites:', allSites);
       setSites(allSites);
+      setLoadError(null);
     } catch (error) {
       console.error('Fetch error:', error);
+      // 以前这里会 setSites([]) 并只弹一个 5 秒的 toast：toast 一过，页面就停在
+      // 「暂无站点 · 开始添加您的第一个站点吧」—— 拉取失败被渲染成「一个站点都没有」，
+      // 管理员甚至会以为数据被清空了。现在：保留上一次拿到的列表（刷新失败不该
+      // 清空已有数据），并把失败原因交给界面**持续**显示。
+      const notice = describeDegrade(error);
       toast({
         title: "错误",
-        description: "获取数据失败",
+        description: notice.message,
         variant: "destructive"
       });
-      setSites([]);
+      setLoadError(error);
     } finally {
       setIsLoading(false);
       setIsInitialLoading(false);
@@ -1053,6 +1054,8 @@ export default function SiteListPage() {
     }
   }
 
+  const degradeNotice = loadError ? describeDegrade(loadError) : null
+
   return (
     <TooltipProvider>
       <div className="space-y-4">
@@ -1068,7 +1071,7 @@ export default function SiteListPage() {
             </div>
             <div className="flex gap-4">
               <div className="relative max-w-sm">
-                <Input
+                <Input aria-label="搜索站点"
                   placeholder="搜索站点..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -1092,7 +1095,7 @@ export default function SiteListPage() {
                   setSubCategoryFilter('all') // 重置子分类筛选
                 }}
               >
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-[200px]" aria-label="按分类筛选">
                   <SelectValue placeholder="按分类筛选" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1109,7 +1112,7 @@ export default function SiteListPage() {
                 value={subCategoryFilter}
                 onValueChange={setSubCategoryFilter}
               >
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-[200px]" aria-label="按子分类筛选">
                   <SelectValue placeholder="按子分类筛选" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1281,6 +1284,7 @@ export default function SiteListPage() {
                         )}
                         <input
                           id="add-icon-upload"
+                          aria-label="上传图标文件"
                           type="file"
                           accept="image/*"
                           onChange={async (e) => {
@@ -1324,7 +1328,7 @@ export default function SiteListPage() {
                       }}
                       disabled={isAddingSubmitting}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger aria-label="选择分类">
                         <SelectValue placeholder="选择分类" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1344,7 +1348,7 @@ export default function SiteListPage() {
                         onValueChange={(value) => setNewSite({ ...newSite, subCategoryId: value === "none" ? "" : value })}
                         disabled={isAddingSubmitting}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-label="选择子分类（可选）">
                           <SelectValue placeholder="选择子分类（可选）" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1495,6 +1499,7 @@ export default function SiteListPage() {
                         )}
                         <input
                           id="edit-icon-upload"
+                          aria-label="替换图标文件"
                           type="file"
                           accept="image/*"
                           onChange={async (e) => {
@@ -1538,7 +1543,7 @@ export default function SiteListPage() {
                       }}
                       disabled={isEditingSubmitting}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger aria-label="选择分类">
                         <SelectValue placeholder="选择分类" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1558,7 +1563,7 @@ export default function SiteListPage() {
                         onValueChange={(value) => setEditSite({ ...editSite, subCategoryId: value === "none" ? "" : value })}
                         disabled={isEditingSubmitting}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-label="选择子分类（可选）">
                           <SelectValue placeholder="选择子分类（可选）" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1629,7 +1634,7 @@ export default function SiteListPage() {
                       }}
                       disabled={isBatchMoving}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger aria-label="选择分类">
                         <SelectValue placeholder="选择分类" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1649,7 +1654,7 @@ export default function SiteListPage() {
                         onValueChange={(value) => setMoveTargetSubCategoryId(value === "none" ? "" : value)}
                         disabled={isBatchMoving}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger aria-label="选择子分类（可选）">
                           <SelectValue placeholder="选择子分类（可选）" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1736,6 +1741,19 @@ export default function SiteListPage() {
                 )}
               </Button>
             </div>
+          </div>
+        )}
+
+        {/* 刷新失败但列表还有内容：明说这是旧数据，而不是静静显示过时列表 */}
+        {degradeNotice && sites.length > 0 && (
+          <div
+            role="status"
+            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/20 dark:text-red-300"
+          >
+            <span>本次刷新失败，下面是上一次成功获取的站点列表。{degradeNotice.message}</span>
+            <Button variant="outline" size="sm" className="h-7 shrink-0 text-xs" onClick={() => void fetchSites()}>
+              重试
+            </Button>
           </div>
         )}
 
@@ -1936,6 +1954,19 @@ export default function SiteListPage() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        ) : degradeNotice && sites.length === 0 ? (
+          <div
+            role="status"
+            className="rounded-md border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20 px-6 py-16 text-center"
+          >
+            <h3 className="text-lg font-medium text-red-700 dark:text-red-300 mb-2">
+              站点列表没能加载出来
+            </h3>
+            <p className="text-sm text-red-600 dark:text-red-400 mb-6">{degradeNotice.message}</p>
+            <Button variant="outline" onClick={() => void fetchSites()}>
+              重试
+            </Button>
           </div>
         ) : (
           <div className="text-center py-16">

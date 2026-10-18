@@ -14,6 +14,17 @@ import type { AppContext } from "../context.ts";
 export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
+  /**
+   * status 查询白名单：与 core 的 SiteStatus 取值保持一致。
+   * 此前 `status: q.status as never` 把任意字符串直接透进仓储过滤条件——既无意义
+   * 也绕过了类型约束，这里收敛为「命中白名单才生效，否则视为不过滤」。
+   */
+  const SITE_STATUS_FILTERS = ["active", "pending", "broken", "archived"] as const;
+  const parseStatusFilter = (v: unknown): (typeof SITE_STATUS_FILTERS)[number] | undefined =>
+    typeof v === "string" && (SITE_STATUS_FILTERS as readonly string[]).includes(v)
+      ? (v as (typeof SITE_STATUS_FILTERS)[number])
+      : undefined;
+
   /* ------------------------------ 站点 ------------------------------ */
 
   // 注意：保持返回数组（不包 {items,hasMore}）：前端多处按数组消费，改结构会破坏兼容。
@@ -32,7 +43,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     }
     return ctx.repo.listSites({
       categoryId: q.categoryId,
-      status: q.status as never,
+      status: parseStatusFilter(q.status),
       source: q.source,
       facets,
       limit,
@@ -176,7 +187,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       } else if (op === "setCategory") {
         await ctx.repo.updateSite(id, { categoryId: body.data.categoryId });
       } else {
-        await ctx.repo.updateSite(id, { status: body.data.status as never });
+        await ctx.repo.updateSite(id, { status: body.data.status });
       }
       applied++;
     }
@@ -199,7 +210,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         title: z.string().min(1).optional(),
         description: z.string().nullable().optional(),
         categoryId: z.string().optional(),
-        tags: z.array(z.string()).optional(),
+        tags: z.array(z.string()).max(50).optional(),
         source: z.string().optional(),
       })).min(1).max(200),
       defaultCategoryId: z.string().optional(),

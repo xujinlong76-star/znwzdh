@@ -1237,7 +1237,9 @@ describe("按 id 或 URL 查站点", () => {
 describe("个性化画像：查看与重置", () => {
   it("缺身份返回错误；有身份时可读到画像并在重置后清空", async () => {
     const noId = await app.inject({ method: "GET", url: "/api/profile" });
-    expect(noId.statusCode).toBe(200);
+    // 400 而不是 200：缺身份与同族 POST/DELETE 分支保持一致（此前 200 + error 体
+    // 会让客户端把「请求不合法」当成「画像为空」，与全站状态码约定相悖）
+    expect(noId.statusCode).toBe(400);
     expect(noId.json().error).toBeTruthy();
 
     // 制造行为：收藏一个站点（favorite 事件带 identity，是画像的聚合素材）

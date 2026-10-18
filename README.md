@@ -158,6 +158,7 @@ docker compose --profile standard up -d
 | `PORT` | `8787` | API 中枢监听端口 |
 | `STORAGE_ADAPTER` | `http` | Web 端存储适配器：`http`（指向中枢）、`github`（个人仓库） |
 | `NAVHUB_AUTH_REQUIRED` | `false` | 是否开启 API 鉴权。公开部署建议设为 `true`，保护写操作 |
+| `NAVHUB_IDENTITY_SECRET` | `(可选)` | 终端用户身份的 HMAC 签名密钥。配置后带身份的请求必须携带 `x-navhub-identity-signature`（由 Web 的 `/api/hub/*` 代理自动附带），否则 401；不配置则行为不变 |
 | `NAVHUB_EMBEDDING_ENDPOINT`| `https://hf-mirror.com` | 本地 Embedding 模型下载镜像源，保障国内稳定拉取 |
 | `NAVHUB_LLM_BASE_URL` | `https://api.deepseek.com` | 大语言模型兼容接口地址（支持 DeepSeek / OpenAI / Ollama） |
 | `NAVHUB_LLM_API_KEY` | `(可选)` | LLM 密钥。未配置时自动降级为纯规则启发式元数据提取 |

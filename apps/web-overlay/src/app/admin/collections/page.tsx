@@ -13,9 +13,12 @@
  *   - DELETE /api/collections/:id/items/:siteId 移除站点
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { LoadErrorNotice } from '@/components/admin/load-error-notice'
+import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
+import { newRequestGate, settleLatest, type RequestGate } from '@/lib/latest-request'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface CollectionRow {
@@ -47,6 +50,14 @@ export default function AdminCollectionsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [items, setItems] = useState<CollectionItem[]>([])
   const [busy, setBusy] = useState(false)
+  // 「没拉到」和「真的没有」必须分开，否则失败会被渲染成「暂无专题」（见 lib/admin-load-failure.ts）
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
+
+  // 详情请求的闸门：连点两个专题时，先发的那次就算后到，也不许覆盖后发那次的结果
+  const detailGateRef = useRef<RequestGate | null>(null)
+  if (detailGateRef.current === null) detailGateRef.current = newRequestGate()
+  const detailGate = detailGateRef.current
 
   // 新建表单
   const [newSlug, setNewSlug] = useState('')
@@ -59,18 +70,38 @@ export default function AdminCollectionsPage() {
 
   const load = useCallback(() => {
     setLoading(true)
+    setLoadError(null)
     void hubGet<CollectionRow[]>('/api/collections?all=1')
       .then((data) => setCols(Array.isArray(data) ? data : []))
-      .catch(() => setCols([]))
+      .catch((err) => {
+        // 失败仍然回落到空列表，但必须留下错误态：显示成「暂无专题」会让管理员
+        // 以为数据被删了
+        setCols([])
+        setLoadError(describeLoadFailure(err, '专题列表'))
+      })
       .finally(() => setLoading(false))
   }, [])
 
   const loadDetail = useCallback((id: string) => {
     setSelectedId(id)
-    void hubGet<{ collection: CollectionRow; items: CollectionItem[] }>('/api/collections/by-id/' + id)
-      .then((d) => setItems(d.items ?? []))
-      .catch(() => setItems([]))
-  }, [])
+    setDetailError(null)
+    // 先清空：否则切换专题时，上一份条目会挂在新专题下面
+    setItems([])
+    void (async () => {
+      const out = await settleLatest(detailGate, () =>
+        hubGet<{ collection: CollectionRow; items: CollectionItem[] }>('/api/collections/by-id/' + id),
+      )
+      // 过期（用户已经点了别的专题 / 已经删掉这个专题）：一个字都不要写
+      if (out.status === 'stale') return
+      if (out.status === 'value') {
+        setItems(out.value.items ?? [])
+        return
+      }
+      // 同 load()：条目加载失败不能显示成「暂无条目」
+      setItems([])
+      setDetailError(describeLoadFailure(out.error, '专题条目'))
+    })()
+  }, [detailGate])
 
   useEffect(() => { load() }, [load])
 
@@ -116,6 +147,7 @@ export default function AdminCollectionsPage() {
     setBusy(true)
     try {
       await hubSend('/api/collections/' + selected.id, 'DELETE')
+      detailGate.invalidate()
       setSelectedId(null)
       setItems([])
       load()
@@ -170,16 +202,16 @@ export default function AdminCollectionsPage() {
 
       <div className="flex flex-wrap items-end gap-2 mb-6 p-3 rounded-md border bg-muted/20">
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">Slug（唯一）</label>
-          <Input value={newSlug} onChange={(e) => setNewSlug(e.target.value)} placeholder="ai-starter" className="w-44" />
+          <label htmlFor="collection-new-slug" className="text-xs text-muted-foreground">Slug（唯一）</label>
+          <Input id="collection-new-slug" value={newSlug} onChange={(e) => setNewSlug(e.target.value)} placeholder="ai-starter" className="w-44" />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">标题</label>
-          <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="AI 入门必备" className="w-56" />
+          <label htmlFor="collection-new-title" className="text-xs text-muted-foreground">标题</label>
+          <Input id="collection-new-title" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="AI 入门必备" className="w-56" />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-muted-foreground">类型</label>
-          <select
+          <label htmlFor="collection-new-kind" className="text-xs text-muted-foreground">类型</label>
+          <select id="collection-new-kind"
             value={newKind}
             onChange={(e) => setNewKind(e.target.value)}
             className="h-9 rounded-md border bg-background px-3 text-sm w-32"
@@ -194,13 +226,15 @@ export default function AdminCollectionsPage() {
         </Button>
       </div>
 
+      {loadError && <LoadErrorNotice message={loadError} onRetry={() => load()} retrying={loading} />}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <section>
           <h2 className="text-base font-medium mb-3">全部专题（{cols.length}）</h2>
           {loading ? (
             <div className="text-muted-foreground text-sm">加载中…</div>
           ) : cols.length === 0 ? (
-            <div className="text-muted-foreground text-sm">暂无专题</div>
+            <div className="text-muted-foreground text-sm">{emptyStateText(loadError, '暂无专题')}</div>
           ) : (
             <div className="rounded-md border divide-y">
               {cols.map((c) => (
@@ -265,7 +299,7 @@ export default function AdminCollectionsPage() {
               <div>
                 <div className="text-sm font-medium mb-2">站点条目（{items.length}）</div>
                 <div className="flex gap-2 mb-3">
-                  <Input
+                  <Input aria-label="站点 id 或完整 URL"
                     value={newSiteRef}
                     onChange={(e) => setNewSiteRef(e.target.value)}
                     placeholder="站点 id 或完整 URL"
@@ -273,8 +307,11 @@ export default function AdminCollectionsPage() {
                   />
                   <Button size="sm" disabled={busy || !newSiteRef.trim()} onClick={() => void addItem()}>添加</Button>
                 </div>
+                {detailError && (
+                  <LoadErrorNotice message={detailError} onRetry={() => selected && loadDetail(selected.id)} />
+                )}
                 {items.length === 0 ? (
-                  <div className="text-muted-foreground text-sm">暂无条目</div>
+                  <div className="text-muted-foreground text-sm">{emptyStateText(detailError, '暂无条目')}</div>
                 ) : (
                   <div className="rounded-md border divide-y">
                     {items.map((it) => (

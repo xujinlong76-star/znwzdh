@@ -5,7 +5,7 @@
  * 包含健康巡检与响应延迟趋势曲线、热门搜索、零结果补录线索、热度总榜与时间窗口切换。
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Activity,
@@ -23,6 +23,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { hubGet } from '@/lib/navhub-api'
+import { newRequestGate, settleLatest, type RequestGate } from '@/lib/latest-request'
+import { describeDegrade } from '@/lib/degrade'
 
 interface Trends {
   days: number
@@ -215,28 +217,47 @@ export default function AdminStatsPage() {
   const [data, setData] = useState<Trends | null>(null)
   const [health, setHealth] = useState<HealthTrendPoint[] | null>(null)
   const [loading, setLoading] = useState(true)
+  // 拉取失败必须能持续显示：只写控制台的话，下面那些「暂无…」就会把故障说成「没数据」
+  const [loadError, setLoadError] = useState<unknown>(null)
+
+  // 区间切换的闸门：连点「近 7 天 / 近 30 天」时，先发那次的后到不许把图换成旧区间
+  const trendGateRef = useRef<RequestGate | null>(null)
+  if (trendGateRef.current === null) trendGateRef.current = newRequestGate()
+  const trendGate = trendGateRef.current
 
   const load = useCallback((selectedDays: number) => {
     setLoading(true)
-    Promise.all([
-      hubGet<Trends>(`/api/hub/admin/stats/trends?days=${selectedDays}`),
-      hubGet<{ points: HealthTrendPoint[] }>(`/api/hub/admin/health/trend?days=${selectedDays}`),
-    ])
-      .then(([trendsData, healthData]) => {
+    void (async () => {
+      const out = await settleLatest(trendGate, () =>
+        Promise.all([
+          hubGet<Trends>(`/api/hub/admin/stats/trends?days=${selectedDays}`),
+          hubGet<{ points: HealthTrendPoint[] }>(`/api/hub/admin/health/trend?days=${selectedDays}`),
+        ]),
+      )
+      // 过期（用户已经切了别的区间）：一个字都不要写
+      if (out.status === 'stale') return
+      if (out.status === 'value') {
+        const [trendsData, healthData] = out.value
         setData(trendsData)
         setHealth(healthData?.points || [])
-      })
-      .catch((err) => {
-        console.error('Failed to load stats trends:', err)
-      })
-      .finally(() => {
-        setLoading(false)
-      })
-  }, [])
+        setLoadError(null)
+      } else {
+        console.error('Failed to load stats trends:', out.error)
+        setLoadError(out.error)
+      }
+      setLoading(false)
+    })()
+  }, [trendGate])
 
   useEffect(() => {
     load(days)
   }, [load, days])
+
+  const degradeNotice = loadError ? describeDegrade(loadError) : null
+  // 加载失败时，所有「暂无…」都必须换成「没加载出来」——
+  // 否则等于把故障说成「确实没有数据」（其中一句还会「太棒了！」地恭喜你）。
+  const emptyHint = (normal: string) =>
+    loadError && !data ? '统计趋势没能加载出来（见上方说明）' : normal
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -279,6 +300,32 @@ export default function AdminStatsPage() {
         </div>
       </div>
 
+      {/* 拉取失败必须说出来：以前这里只 console.error，下面的「暂无…」就把故障说成了没数据 */}
+      {degradeNotice && (
+        <div
+          role="status"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+        >
+          <span>
+            {data
+              ? `本次刷新失败，下面是上一次成功获取的统计趋势。${degradeNotice.message}`
+              : `没能取回统计趋势。${degradeNotice.message}`}
+          </span>
+          {degradeNotice.retryable && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 text-xs"
+              onClick={() => load(days)}
+              disabled={loading}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+              重试
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* 健康巡检趋势曲线 */}
       <Card>
         <CardHeader>
@@ -293,6 +340,10 @@ export default function AdminStatsPage() {
         <CardContent>
           {loading && !health ? (
             <div className="py-12 text-center text-sm text-muted-foreground">正在加载趋势数据...</div>
+          ) : loadError && !data ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              巡检趋势没能加载出来（见上方说明）。
+            </div>
           ) : (
             <HealthTrendChart points={health || []} />
           )}
@@ -328,7 +379,7 @@ export default function AdminStatsPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground py-6 text-center">暂无搜索统计记录</p>
+              <p className="text-sm text-muted-foreground py-6 text-center">{emptyHint('暂无搜索统计记录')}</p>
             )}
           </CardContent>
         </Card>
@@ -356,20 +407,20 @@ export default function AdminStatsPage() {
                         {new Date(q.lastAt).toLocaleDateString('zh-CN')}
                       </div>
                     </div>
-                    <Link
-                      href={`/admin/sitelist?action=add&keyword=${encodeURIComponent(q.query)}`}
-                    >
-                      <Button variant="ghost" size="sm" className="h-8 text-xs text-primary">
+                    <Button asChild variant="ghost" size="sm" className="h-8 text-xs text-primary">
+                      <Link
+                        href={`/admin/sitelist?action=add&keyword=${encodeURIComponent(q.query)}`}
+                      >
                         <PlusCircle className="h-3.5 w-3.5 mr-1" />
                         补录
-                      </Button>
-                    </Link>
+                      </Link>
+                    </Button>
                   </div>
                 ))}
               </div>
             ) : (
               <p className="text-sm text-muted-foreground py-6 text-center">
-                太棒了！近期没有任何未命中的零结果搜索。
+                {emptyHint('太棒了！近期没有任何未命中的零结果搜索。')}
               </p>
             )}
           </CardContent>
@@ -429,7 +480,7 @@ export default function AdminStatsPage() {
               </div>
             ) : (
               <p className="text-sm text-muted-foreground py-8 text-center">
-                暂无热度数据（可运行 recompute_rank 任务生成）
+                {emptyHint('暂无热度数据（可运行 recompute_rank 任务生成）')}
               </p>
             )}
           </CardContent>

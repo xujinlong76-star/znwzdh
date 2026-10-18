@@ -324,7 +324,9 @@ export async function searchSites(params: SearchParams, signal?: AbortSignal): P
 export function reportClick(siteId: string, identity?: string): void {
   // header 优先 + query 兼容（见 anonHeaders 注释）
   const query = identity ? '?anonId=' + encodeURIComponent(identity) : ''
-  void sendJson('/api/events' + query, 'POST', { kind: 'click', siteId }, undefined, anonHeaders(identity)).catch(() => undefined)
+  void sendJson('/api/events' + query, 'POST', { kind: 'click', siteId }, undefined, anonHeaders(identity)).catch(() => {
+    // 点击上报是 fire-and-forget：离线、被拦截、匿名模式都算正常，不该冒泡到页面逻辑
+  })
 }
 
 /* ------------------------------ 标签 ------------------------------ */
@@ -443,17 +445,15 @@ export async function removeFavorite(identity: string, siteId: string, onDegrade
 
 /* ------------------------------ 搜索历史 ------------------------------ */
 
-export async function fetchSearchHistory(identity: string, limit = 8): Promise<string[]> {
-  try {
+export async function fetchSearchHistory(identity: string, limit = 8, onDegraded?: DegradedHandler): Promise<string[]> {
+  return degrade([], async () => {
     const data = await getJson<{ items: Array<{ query: string }> }>(
       '/api/search-history?anonId=' + encodeURIComponent(identity) + '&limit=' + limit,
       undefined,
       anonHeaders(identity),
     )
     return data.items.map((i) => i.query)
-  } catch {
-    return []
-  }
+  }, onDegraded)
 }
 
 /* ------------------------ E2EE 零知识云端金库 ------------------------ */
@@ -465,32 +465,32 @@ export interface CloudVaultData {
   updatedAt: number
 }
 
-export async function fetchCloudVault(identity: string): Promise<CloudVaultData | null> {
-  try {
+export async function fetchCloudVault(identity: string, onDegraded?: DegradedHandler): Promise<CloudVaultData | null> {
+  return degrade<CloudVaultData | null>(null, async () => {
     const data = await getJson<{ ok: boolean; vault: CloudVaultData | null }>(
       '/api/vault/sync?anonId=' + encodeURIComponent(identity),
       undefined,
       anonHeaders(identity),
     )
     return data.vault ?? null
-  } catch {
-    return null
-  }
+  }, onDegraded)
 }
 
-export async function saveCloudVault(identity: string, payload: string): Promise<{ ok: boolean; version?: number; updatedAt?: number }> {
+export async function saveCloudVault(identity: string, payload: string, onDegraded?: DegradedHandler): Promise<{ ok: boolean; version?: number; updatedAt?: number }> {
   try {
     return await sendJson('/api/vault/sync?anonId=' + encodeURIComponent(identity), 'PUT', { payload }, undefined, anonHeaders(identity))
-  } catch {
+  } catch (error) {
+    notifyDegraded(onDegraded, error)
     return { ok: false }
   }
 }
 
-export async function deleteCloudVault(identity: string): Promise<boolean> {
+export async function deleteCloudVault(identity: string, onDegraded?: DegradedHandler): Promise<boolean> {
   try {
     await sendJson('/api/vault/sync?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
     return true
-  } catch {
+  } catch (error) {
+    notifyDegraded(onDegraded, error)
     return false
   }
 }
@@ -531,11 +531,11 @@ export async function fetchCollectionDetail(
 
 /* ------------------------------ 实体关系与知识图谱 ------------------------------ */
 
-export async function fetchSiteRelations(siteId: string): Promise<HubSiteRelationsPayload | null> {
-  try {
-    return await getJson<HubSiteRelationsPayload>('/api/sites/' + encodeURIComponent(siteId) + '/relations')
-  } catch {
-    return null
-  }
+export async function fetchSiteRelations(siteId: string, onDegraded?: DegradedHandler): Promise<HubSiteRelationsPayload | null> {
+  return degrade<HubSiteRelationsPayload | null>(
+    null,
+    () => getJson<HubSiteRelationsPayload>('/api/sites/' + encodeURIComponent(siteId) + '/relations'),
+    onDegraded,
+  )
 }
 

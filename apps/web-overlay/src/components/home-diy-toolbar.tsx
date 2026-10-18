@@ -33,6 +33,8 @@ import {
   Undo2,
   Redo2,
   ChevronsUpDown,
+  AlertTriangle,
+  X,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -57,8 +59,8 @@ import { useHomeDIY, type CardDisplayMode, type CanvasBackground, type AccentCol
 import { useDensity } from '@/components/density-provider'
 import { BUILTIN_DIY_PRESETS, evaluateLayoutErgonomics, type DIYPreset } from '@/lib/modular/diy-presets'
 import { useToast } from '@/components/ui/use-toast'
+import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
-import { copyText } from '@/lib/clipboard'
 
 interface HomeDIYToolbarProps {
   allCategoryIds: string[]
@@ -84,6 +86,8 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
   const {
     isEditingLayout,
     toggleEditingLayout,
+    storageWarning,
+    dismissStorageWarning,
     cardDisplayMode,
     setCardDisplayMode,
     canvasBackground,
@@ -121,7 +125,6 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     collapseAllCategories,
     expandAllCategories,
     exportPresetToUrlHash,
-    importPresetFromUrlHash,
     customWallpaperUrl,
     glassmorphismBlur,
     cardOpacity,
@@ -289,25 +292,30 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
   };
 
   const handleShareUrlHash = async () => {
-    const url = exportPresetToUrlHash();
-    if (url) {
-      const ok = await copyText(url)
-      if (!ok) {
-        toast({ title: '复制失败', description: '浏览器拒绝了剪贴板访问（需 HTTPS 且页面处于聚焦状态）', variant: 'destructive' })
-        return
-      }
-      toast({
-        title: '🔗 已复制免登专属分享链接！',
-        description: '好友直接在浏览器打开该链接，即可一键预览并应用您的专属排版与壁纸。',
-      });
+    const out = exportPresetToUrlHash();
+    // 生成失败以前是 `if (!url) return`：点了分享按钮毫无反应，
+    // 用户只会以为按钮坏了。现在把原因说出来（编码见 lib/diy-share-link.ts）。
+    if (!out.ok) {
+      toast({ title: '❌ 分享链接生成失败', description: out.reason, variant: 'destructive' });
+      return;
     }
+    // 分享链接全靠剪贴板；写不进去就必须说，不能宣告「已复制」
+    const result = await copyText(out.url);
+    if (!result.ok) {
+      toast({ ...copyFailureToast(result), variant: 'destructive' });
+      return;
+    }
+    toast({
+      title: '🔗 已复制免登专属分享链接！',
+      description: '好友直接在浏览器打开该链接，即可一键预览并应用您的专属排版与壁纸。',
+    });
   };
 
   const handleCopyConfig = async () => {
     const json = exportDIYConfig()
-    const ok = await copyText(json)
-    if (!ok) {
-      toast({ title: '复制失败', description: '浏览器拒绝了剪贴板访问（需 HTTPS 且页面处于聚焦状态）', variant: 'destructive' })
+    const result = await copyText(json)
+    if (!result.ok) {
+      toast({ ...copyFailureToast(result), variant: 'destructive' })
       return
     }
     toast({
@@ -340,9 +348,9 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     }
     try {
       const encryptedJson = await exportEncryptedDIYConfig(vaultPassphrase.trim())
-      const ok = await copyText(encryptedJson)
-      if (!ok) {
-        toast({ title: '复制失败', description: '浏览器拒绝了剪贴板访问（需 HTTPS 且页面处于聚焦状态）', variant: 'destructive' })
+      const result = await copyText(encryptedJson)
+      if (!result.ok) {
+        toast({ ...copyFailureToast(result), variant: 'destructive' })
         return
       }
       toast({
@@ -445,6 +453,25 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
           raised ? 'bottom-[5.5rem]' : 'bottom-6',
         )}
       >
+        {/* 落盘失败必须说出来：改动还在屏幕上，但刷新就没了 ——
+            不说清楚，用户会以为「已经保存好了」 */}
+        {storageWarning && (
+          <div
+            role="alert"
+            className="pointer-events-auto max-w-[19rem] flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-50/95 dark:bg-amber-950/90 backdrop-blur-md px-3 py-2 text-[11px] leading-snug text-amber-900 dark:text-amber-100 shadow-lg"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span className="flex-1">{storageWarning}</span>
+            <button
+              type="button"
+              onClick={dismissStorageWarning}
+              aria-label="关闭提示"
+              className="shrink-0 rounded p-0.5 hover:bg-amber-500/20 transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
         <div className="pointer-events-auto flex items-center gap-1.5 p-1.5 rounded-full bg-background/90 dark:bg-card/90 backdrop-blur-md border border-border/80 shadow-lg hover:shadow-xl transition-all duration-200">
           <Button
             variant={isEditingLayout ? 'default' : 'ghost'}
@@ -605,7 +632,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
 
                   <DropdownMenuLabel className="text-xs text-muted-foreground px-1">沉浸式壁纸与毛玻璃</DropdownMenuLabel>
                   <div className="px-1.5 py-1 space-y-2" onClick={(e) => e.stopPropagation()}>
-                    <input
+                    <input aria-label="粘贴自定义壁纸图片 URL"
                       type="text"
                       placeholder="粘贴自定义壁纸图片 URL..."
                       value={customWallpaperUrl || ''}
@@ -624,7 +651,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                         </button>
                       )}
                     </div>
-                    <input
+                    <input aria-label="毛玻璃模糊强度"
                       type="range"
                       min={0}
                       max={30}
@@ -1080,6 +1107,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                     <span>选择文件导入</span>
                   </Button>
                   <input
+                    aria-label="导入自定义配置 JSON 文件"
                     ref={fileInputRef}
                     type="file"
                     accept=".json,application/json"
@@ -1090,10 +1118,10 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
               </div>
 
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">
+                <label htmlFor="diy-import-plain" className="text-xs font-medium text-foreground block mb-1">
                   导入明文 JSON 配置文本：
                 </label>
-                <Textarea
+                <Textarea id="diy-import-plain"
                   placeholder="粘贴已备份的 NavHub DIY JSON 配置代码..."
                   value={importJsonText}
                   onChange={(e) => setImportJsonText(e.target.value)}
@@ -1115,10 +1143,10 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
               </div>
 
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">
+                <label htmlFor="diy-vault-passphrase" className="text-xs font-medium text-foreground block mb-1">
                   金库主密码 (Passphrase) *
                 </label>
-                <Input
+                <Input id="diy-vault-passphrase"
                   type="password"
                   placeholder="输入加密主密码 (加解密需保持一致)..."
                   value={vaultPassphrase}
@@ -1202,10 +1230,10 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
               </div>
 
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">
+                <label htmlFor="diy-import-encrypted" className="text-xs font-medium text-foreground block mb-1">
                   密文数据载荷 (Payload)：
                 </label>
-                <Textarea
+                <Textarea id="diy-import-encrypted"
                   placeholder="粘贴或上传导出的 .enc.json 密文数据..."
                   value={importJsonText}
                   onChange={(e) => setImportJsonText(e.target.value)}
@@ -1253,8 +1281,8 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
 
           <div className="py-3 space-y-3">
             <div>
-              <label className="text-xs font-medium text-foreground block mb-1.5">分类名称</label>
-              <Input
+              <label htmlFor="diy-new-category-title" className="text-xs font-medium text-foreground block mb-1.5">分类名称</label>
+              <Input id="diy-new-category-title"
                 placeholder="例如：极客日常 / 深度学习速查 / 监控大盘"
                 value={newCatTitle}
                 onChange={(e) => setNewCatTitle(e.target.value)}

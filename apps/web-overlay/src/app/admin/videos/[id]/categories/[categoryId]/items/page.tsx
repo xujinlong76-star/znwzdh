@@ -21,6 +21,7 @@ import {
 import { AddVideoItemForm } from '../../../../components/AddVideoItemForm'
 import { Skeleton } from "@/registry/new-york/ui/skeleton"
 import { Badge } from "@/registry/new-york/ui/badge"
+import { describeDegrade } from '@/lib/degrade'
 
 // Basically the same as VideoItemsPage but logic differs for fetching/saving
 
@@ -35,6 +36,9 @@ export default function SubCategoryVideoItemsPage() {
     const [editingItem, setEditingItem] = useState<{ index: number; item: NavigationSubItem } | null>(null)
     const [deletingItem, setDeletingItem] = useState<{ index: number; item: NavigationSubItem } | null>(null)
     const [isLoading, setIsLoading] = useState(true)
+    // 拉取失败必须能持续显示：失败时 navigation/subCategory 都停在 null，
+    // 页面会用 subCategory?.items 渲染成「这个子分类下面没有条目」
+    const [loadError, setLoadError] = useState<unknown>(null)
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
 
     useEffect(() => {
@@ -53,6 +57,7 @@ export default function SubCategoryVideoItemsPage() {
             if (!response.ok) throw new Error('Failed to fetch')
             const data = await response.json() as NavigationItem
             setNavigation(data)
+            setLoadError(null)
 
             const foundSub = data.subCategories?.find((cat) => cat.id === params.categoryId)
             if (foundSub) {
@@ -64,11 +69,14 @@ export default function SubCategoryVideoItemsPage() {
             }
         } catch (error) {
             console.error(error)
+            // 原来只弹一个 toast：「获取数据失败」之后，页面用 subCategory?.items
+            // 渲染成「这个子分类下面没有条目」—— 请求失败被说成了「这里确实是空的」。
             toast({
                 title: "错误",
-                description: "获取数据失败",
+                description: describeDegrade(error).message,
                 variant: "destructive"
             })
+            setLoadError(error)
         } finally {
             setIsLoading(false)
         }
@@ -138,6 +146,17 @@ export default function SubCategoryVideoItemsPage() {
 
     if (isLoading) return <div className="p-8">Loading...</div>
 
+    if (loadError && !subCategory) {
+        const notice = describeDegrade(loadError)
+        return (
+            <div role="status" className="mx-auto max-w-xl rounded-md border border-red-200 bg-red-50 px-6 py-16 text-center dark:border-red-900 dark:bg-red-950/20">
+                <h2 className="mb-2 text-lg font-medium text-red-700 dark:text-red-300">子分类条目没能加载出来</h2>
+                <p className="mb-6 text-sm text-red-600 dark:text-red-400">{notice.message}</p>
+                <Button variant="outline" onClick={() => void fetchNavigation()}>重试</Button>
+            </div>
+        )
+    }
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -158,7 +177,7 @@ export default function SubCategoryVideoItemsPage() {
                     </div>
                     <div className="relative flex-1 max-w-sm">
                         <Icons.search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
+                        <Input aria-label="搜索视频"
                             placeholder="搜索视频..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}

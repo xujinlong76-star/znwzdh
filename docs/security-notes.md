@@ -53,3 +53,29 @@
 - [ ] `NAVHUB_AUTH_REQUIRED=true` + 引导 token 流程创建正式凭据
 - [ ] `NAVHUB_MCP_TOKEN` / `NAVHUB_STORAGE_TOKEN` 生产必改（http 适配器写接口）
 - [ ] 定期 `pnpm audit --audit-level high`（CI audit job 转硬门禁的进度见 ci.yml）
+
+---
+
+## 四、2026-10-17 全库审查：身份信任模型与 SSRF 加固
+
+| 级别 | 问题 | 处置 | 验证 |
+| --- | --- | --- | --- |
+| P0 | Web 后台：jwt/session 回调把 `role` 默认成 `admin`，`verifyAdminSession` 又凭 `role === 'admin'` 放行 → 任何 GitHub 登录用户即管理员（API 路由全部失守） | 去掉 role 默认值；只认 Credentials 固定身份（id/email），历史旧 session 一并失效 | `admin-auth-source-guard.test.ts` |
+| P0 | 中枢身份（`userId`/`anonId`）是纯字符串，任何持票人都能自称任意身份读写他人数据（IDOR） | 新增可选 `NAVHUB_IDENTITY_SECRET`（见下节） | `identity-signature.test.ts` 9 例 + 两侧共用同一 HMAC 向量 |
+| P1 | 投稿审核「拒绝」分支只校验登录；`GET /api/submissions` 完全无鉴权 | PATCH 入口统一 `requireAdmin`；GET 补门禁 | 源码守卫 |
+| P1 | `createGuardedApiExecutor` 用默认 fetch 自动跟随重定向，`isSafeUrl` 只看首跳 → 公网 URL 302 到云元数据即可读凭证；`localhost.`、`[::ffff:127.0.0.1]` 亦绕过 | `redirect: 'manual'` + 逐跳重校验（上限 3 跳）；hostname 归一化与等价写法封堵 | `packages/core/test/ssrf-guard.test.ts` 13 例 |
+| P2 | 工作台布局 JSON 损坏时回退默认模板并立即写回同一 key → 现场静默丢失 | 备份为 `<key>.corrupt.<ts>` + 抑制首次回写 | `workspace-storage.test.ts` |
+| P2 | `Promise.race` + `setTimeout` 超时写法在任务先完成时不清定时器（持闭包、拖住事件循环） | `packages/ai/src/with-timeout.ts` 统一封装 | `with-timeout.test.ts`（假定时器断言 timer 数归零） |
+| P2 | 兜底注入的 `<link rel=prefetch/prerender>` 卸载时不清理，跨路由累积 | 打 `data-navhub-speculation` 标记后按标记清理（**不按** `rel=prefetch` 全删，Next 自己也在用） | `prerender-cleanup-guard.test.ts` |
+
+### 身份签名（`NAVHUB_IDENTITY_SECRET`）的边界
+
+- **开启条件**：中枢与 Web 端配同名密钥；不配置时行为与历史版本完全一致（零回归）。
+- **保护范围**：凡是中枢能解析出身份的请求（Header / Query / Body），都必须携带
+  `x-navhub-identity-signature = HMAC-SHA256(secret, identity)`，由 Web 的 `/api/hub/*`
+  代理自动附带；缺失或错误一律 401，且签名与身份强绑定（拿 A 的签名不能冒充 B）。
+- **仍未覆盖**：绕过 Web 代理、直接以「无身份」调用的路径不受本机制约束（与历史一致）；
+  密钥轮换需要中枢与 Web 同时改并重启。
+- **部署前提**：代理与中枢之间的链路必须可信（同机 / 内网）；密钥泄露等于身份可伪造。
+- **其余基线**：`NAVHUB_TRUST_PROXY` 只应在前置反向代理**会覆写** `X-Forwarded-For` 时开启，
+  否则客户端可伪造 XFF 绕过中枢限流（Web 代理会显式转发 XFF，见 `hub-proxy` 注释）。

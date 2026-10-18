@@ -84,7 +84,7 @@ export function WidgetConfigModal({
               <p className="text-xs text-muted-foreground">{def.title}</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" aria-label="关闭" title="关闭" onClick={onClose}>
             <X className="w-4 h-4" />
           </Button>
         </div>
@@ -93,8 +93,8 @@ export function WidgetConfigModal({
         <form onSubmit={handleSave} className="p-6 space-y-4 overflow-y-auto">
           {/* 自定义模块标题 */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-foreground">模块显示标题</label>
-            <input
+            <label htmlFor="widget-custom-title" className="text-xs font-semibold text-foreground">模块显示标题</label>
+            <input id="widget-custom-title"
               ref={titleInputRef}
               type="text"
               placeholder={def.title}
@@ -117,7 +117,7 @@ export function WidgetConfigModal({
                 </label>
 
                 {schema.type === 'select' && (
-                  <select
+                  <select aria-label={schema.label}
                     value={String(configValues[schema.key] ?? schema.defaultValue ?? '')}
                     onChange={(e) => handleFieldChange(schema.key, e.target.value)}
                     className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60"
@@ -143,7 +143,7 @@ export function WidgetConfigModal({
                 )}
 
                 {schema.type === 'number' && (
-                  <input
+                  <input aria-label={schema.label}
                     type="number"
                     value={Number(configValues[schema.key] ?? schema.defaultValue ?? 0)}
                     onChange={(e) => handleFieldChange(schema.key, Number(e.target.value))}
@@ -152,7 +152,7 @@ export function WidgetConfigModal({
                 )}
 
                 {schema.type === 'text' && (
-                  <input
+                  <input aria-label={schema.label}
                     type="text"
                     value={String(configValues[schema.key] ?? schema.defaultValue ?? '')}
                     onChange={(e) => handleFieldChange(schema.key, e.target.value)}

@@ -472,15 +472,16 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                 <Wrench className="h-4 w-4" />
               </Button>
 
-              <Link href="/hot" aria-label="热度榜" title="热度趋势与新品榜">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
-                >
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
+              >
+                <Link href="/hot" aria-label="热度榜" title="热度趋势与新品榜">
                   <Flame className="h-4 w-4" />
-                </Button>
-              </Link>
+                </Link>
+              </Button>
 
               {/* 探索功能矩阵下拉菜单 */}
               <DropdownMenu>
@@ -622,22 +623,23 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
               <ViewModeToggle />
               <DensityToggle />
               <ModeToggle />
-              <Link
-                href="https://github.com/tianyaxiang/NavSphere"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="访问 GitHub 仓库"
-                title="GitHub 仓库"
-                className="hidden sm:inline-flex"
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
               >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                <Link
+                  href="https://github.com/tianyaxiang/NavSphere"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="访问 GitHub 仓库"
+                  title="GitHub 仓库"
+                  className="hidden sm:inline-flex"
                 >
                   <Github className="h-4 w-4" />
-                </Button>
-              </Link>
+                </Link>
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -1140,8 +1142,8 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
 
             <div className="py-3 space-y-3">
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">网站标题 *</label>
-                <Input
+                <label htmlFor="custom-site-title" className="text-xs font-medium text-foreground block mb-1">网站标题 *</label>
+                <Input id="custom-site-title"
                   placeholder="例如：My Internal Dashboard"
                   value={customSiteTitle}
                   onChange={(e) => setCustomSiteTitle(e.target.value)}
@@ -1149,16 +1151,16 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">网站网址 (URL) *</label>
-                <Input
+                <label htmlFor="custom-site-href" className="text-xs font-medium text-foreground block mb-1">网站网址 (URL) *</label>
+                <Input id="custom-site-href"
                   placeholder="例如：https://internal.company.io 或 192.168.1.100:8080"
                   value={customSiteHref}
                   onChange={(e) => setCustomSiteHref(e.target.value)}
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-foreground block mb-1">简要描述 (可选)</label>
-                <Input
+                <label htmlFor="custom-site-desc" className="text-xs font-medium text-foreground block mb-1">简要描述 (可选)</label>
+                <Input id="custom-site-desc"
                   placeholder="例如：公司内部指标监控看板"
                   value={customSiteDesc}
                   onChange={(e) => setCustomSiteDesc(e.target.value)}

@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { ShieldCheck, KeyRound, ArrowLeft, AlertCircle, Sparkles, Lock, User } from 'lucide-react'
+import { NETWORK_FAILURE_STATUS, describeSignInFailure } from '@/lib/signin-failure'
 
 function SignInContent() {
   const searchParams = useSearchParams()
@@ -44,18 +45,10 @@ function SignInContent() {
       })
   }, [])
 
-  // 映射 URL 传来的 NextAuth 错误代码
+  // 映射 URL 传来的 NextAuth 错误代码（与表单提交共用同一套文案，见 lib/signin-failure.ts）
   useEffect(() => {
     if (!urlError) return
-    if (urlError === 'CredentialsSignin') {
-      setErrorMessage('管理员账号密码或 Token 不匹配，请重试')
-    } else if (urlError === 'AccessDenied') {
-      setErrorMessage('该账号不在管理员白名单 (NAVHUB_ADMIN_IDS) 中，无法访问后台')
-    } else if (urlError === 'OAuthSignin' || urlError === 'OAuthCallbackError') {
-      setErrorMessage('GitHub OAuth 登录遇到错误，请检查应用配置或改用管理密码登录')
-    } else {
-      setErrorMessage('登录失败，请重试或检查后台配置')
-    }
+    setErrorMessage(describeSignInFailure({ error: urlError }).message)
   }, [urlError])
 
   // 1. 凭证登录（密码 / Token）
@@ -71,17 +64,17 @@ function SignInContent() {
         redirect: false,
       })
 
-      if (res?.error) {
-        setErrorMessage('密码或 Token 凭证错误，请重新输入（默认口令为 admin123 或留空快捷进入）')
-        setIsLoading(false)
-      } else if (res?.ok) {
+      if (res?.ok) {
         window.location.href = callbackUrl
-      } else {
-        setIsLoading(false)
+        return
       }
+      // 失败（含「什么都没返回」）一律给出一句可行动的说明 —— 绝不静默收场：
+      // 原来的兜底分支只把加载状态关掉，用户点下去什么都看不到。
+      setIsLoading(false)
+      setErrorMessage(describeSignInFailure(res).message)
     } catch (err) {
       setIsLoading(false)
-      setErrorMessage('登录服务连接失败，请稍后重试')
+      setErrorMessage(describeSignInFailure({ status: NETWORK_FAILURE_STATUS }).message)
       console.error('Credentials signin error:', err)
     }
   }
@@ -103,11 +96,13 @@ function SignInContent() {
         window.location.href = callbackUrl
       } else {
         setIsBypassLoading(false)
-        setErrorMessage(res?.error || '本地快捷登录未启用，请输入管理密码')
+        const notice = describeSignInFailure(res)
+        // 快捷登录被拒 = 本机没开免密；其它原因（服务端配置/网络）照原样说清楚
+        setErrorMessage(notice.userInput ? '本地快捷登录未启用，请输入管理密码' : notice.message)
       }
     } catch (err) {
       setIsBypassLoading(false)
-      setErrorMessage('快捷登录失败，请尝试密码登录')
+      setErrorMessage(describeSignInFailure({ status: NETWORK_FAILURE_STATUS }).message)
       console.error('Bypass login error:', err)
     }
   }
@@ -167,7 +162,10 @@ function SignInContent() {
           </p>
         </div>
         <div className="relative z-20 mt-auto pt-6 border-t border-white/10 flex items-center justify-between text-xs text-zinc-400">
-          <span>&copy; {new Date().getFullYear()} NavSphere Team</span>
+          {/* 年份由客户端时钟计算：客户端组件在 SSR 与 hydrate 各算一次，
+              跨年边界（或时区差）会得到不同文本 → 水合文本不一致告警。
+              年份是装饰性内容，单点抑制即可（改为挂载后计算会闪一下）。 */}
+          <span suppressHydrationWarning>&copy; {new Date().getFullYear()} NavSphere Team</span>
           <Link href="/" className="inline-flex items-center gap-1 hover:text-white transition-colors">
             <ArrowLeft className="w-3 h-3" />
             返回前台首页
@@ -175,8 +173,8 @@ function SignInContent() {
         </div>
       </div>
 
-      {/* 右侧登录表单 */}
-      <div className="flex flex-col justify-center items-center p-4 sm:p-8">
+      {/* 右侧登录表单 —— 这一列才是页面主体，地标落在这里 */}
+      <main id="main-content" className="flex flex-col justify-center items-center p-4 sm:p-8">
         <div className="mx-auto flex w-full max-w-[390px] flex-col justify-center space-y-6">
           {/* 移动端展示 Logo */}
           <div className="flex lg:hidden flex-col items-center gap-2 mb-2 text-center">
@@ -372,7 +370,7 @@ function SignInContent() {
             </CardFooter>
           </Card>
         </div>
-      </div>
+      </main>
     </div>
   )
 }

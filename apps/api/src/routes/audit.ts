@@ -19,7 +19,7 @@ export const auditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
    */
   app.get(
     "/api/admin/audit",
-    { config: { scope: "read", cache: { maxAge: 0 } } },
+    { config: { scope: "admin", cache: { maxAge: 0 } } },
     async (req) => {
       const q = (req.query ?? {}) as Record<string, string>;
       const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 });

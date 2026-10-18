@@ -59,8 +59,6 @@ const LANDMARK_ELSEWHERE: Record<string, string> = {
   "src/app/page.tsx": "首页主体在 components/navigation-content.tsx",
   "src/app/videos/page.tsx": "视频页主体在 components/video-content.tsx",
   "src/app/graph/page.tsx": "图谱页主体在 components/ecosystem-graph.tsx",
-  "src/app/videos/player/page.tsx": "播放器页由 video-player-page.tsx 的多分支客户端组件渲染，暂无地标",
-  "src/app/auth/signin/page.tsx": "登录页是全屏分栏表单，主体在客户端组件 SignInContent 里，暂无地标",
 };
 
 /** 这些文件必须真的带地标（承载了委托页面的主体） */
@@ -95,6 +93,23 @@ describe("每个内容页都要有主内容地标", () => {
 
   it("登记为「地标在别处」的页面，其宿主组件确实带地标", () => {
     expect(Object.keys(LANDMARK_ELSEWHERE).length).toBeGreaterThan(0);
+  });
+
+  it("例外必须写明原因（不许用空字符串绕过检查）", () => {
+    for (const [page, reason] of Object.entries(LANDMARK_ELSEWHERE)) {
+      expect(reason.trim().length, `${page} 的例外原因太短：${reason}`).toBeGreaterThan(8);
+    }
+  });
+
+  it("已经补上地标的页面不许再回到例外名单里", () => {
+    // /videos/player 与 /auth/signin 曾经在这里，现在页面自己就是地标
+    for (const rel of ["src/app/videos/player/page.tsx", "src/app/auth/signin/page.tsx"]) {
+      expect(LANDMARK_ELSEWHERE, `${rel} 不应再被登记为例外`).not.toHaveProperty(rel);
+      const src = overlaySource(rel);
+      expect(src, `${rel} 缺少 <main id="main-content">`).toContain('<main id="main-content"');
+      // 分享按钮/播放器都不是主体，例外被删掉说明页面真的自己带地标了
+      expect(src.split('id="main-content"').length - 1, `${rel} 的地标应唯一`).toBe(1);
+    }
   });
 
   it.each(COMPONENTS_WITH_LANDMARK)("%s 带 id=main-content", (rel) => {

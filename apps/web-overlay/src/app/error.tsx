@@ -44,8 +44,8 @@ export default function Error({
   const copyDiagnostics = async () => {
     // copyText 永不 reject，返回值即真实结果：失败时把按钮状态还原成"未复制"，
     // 并保留下方可手动选中的详情块作为兜底
-    const ok = await copyText(crashReportText(crash))
-    setCopied(ok)
+    const result = await copyText(crashReportText(crash))
+    setCopied(result.ok)
   }
 
   return (

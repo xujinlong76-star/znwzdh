@@ -34,6 +34,7 @@ import {
   Laptop,
   Box,
   Globe,
+  X,
 } from 'lucide-react'
 import {
   fetchSite,
@@ -43,9 +44,9 @@ import {
   type HubSiteRelation,
 } from '@/lib/navhub-api'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
+import { copyText } from '@/lib/clipboard'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
-import { copyText } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
 
 const RELATION_TYPE_LABEL: Record<string, { label: string; color: string; bg: string }> = {
@@ -99,10 +100,11 @@ export default function SiteDetailPage() {
   const [site, setSite] = useState<HubSite | null>(null)
   const [similar, setSimilar] = useState<HubSite[]>([])
   const [relations, setRelations] = useState<HubSiteRelation[]>([])
+  /** 关系网络降级：中枢不可用时 relations 静默为空，需与「确实没有关系」区分 */
+  const [relationsDegraded, setRelationsDegraded] = useState(false)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [copyFailed, setCopyFailed] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
 
@@ -110,16 +112,10 @@ export default function SiteDetailPage() {
 
   const handleCopyUrl = async () => {
     if (!site?.url) return
-    // 以前这里裸调用后就无条件显示"已复制"：http 部署或权限被拒时
-    // 用户看到成功提示，粘贴却是空的。现在以真实结果为准。
-    // 该页面没有 Toaster，失败时复用 copied 状态做 2 秒的"复制失败"提示。
-    const ok = await copyText(site.url)
-    setCopied(ok ? true : false)
-    setCopyFailed(!ok)
-    setTimeout(() => {
-      setCopied(false)
-      setCopyFailed(false)
-    }, 2000)
+    // 只有真的写入成功才显示「已复制」；失败要看得见（见 lib/clipboard.ts）
+    const result = await copyText(site.url)
+    setCopyState(result.ok ? 'copied' : 'failed')
+    setTimeout(() => setCopyState('idle'), 2000)
   }
 
   // 加载站点主数据
@@ -162,8 +158,13 @@ export default function SiteDetailPage() {
   useEffect(() => {
     if (!id || !site) return
     let cancelled = false
-    void fetchSiteRelations(id).then((res) => {
-      if (!cancelled && res?.all) setRelations(res.all)
+    let failed = false
+    void fetchSiteRelations(id, () => {
+      failed = true
+    }).then((res) => {
+      if (cancelled) return
+      setRelationsDegraded(failed)
+      if (res?.all) setRelations(res.all)
     })
     return () => {
       cancelled = true
@@ -278,14 +279,32 @@ export default function SiteDetailPage() {
                 </a>
                 <button
                   onClick={handleCopyUrl}
-                  title={copyFailed ? '复制失败：浏览器拒绝了剪贴板访问' : '复制链接'}
-                  aria-label={copyFailed ? '复制失败' : '复制链接'}
+                  aria-label={
+                    copyState === 'copied'
+                      ? '已复制链接'
+                      : copyState === 'failed'
+                        ? '复制失败，请手动选中链接复制'
+                        : '复制链接'
+                  }
+                  title={
+                    copyState === 'copied'
+                      ? '已复制'
+                      : copyState === 'failed'
+                        ? '复制失败，请手动选中链接复制'
+                        : '复制链接'
+                  }
                   className={cn(
                     'text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted transition-colors',
-                    copyFailed && 'text-destructive hover:text-destructive',
+                    copyState === 'failed' && 'text-destructive hover:text-destructive',
                   )}
                 >
-                  {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copyState === 'copied' ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  ) : copyState === 'failed' ? (
+                    <X className="w-3.5 h-3.5 text-destructive" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
                 </button>
               </div>
 
@@ -360,6 +379,14 @@ export default function SiteDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* 关系网络降级提示：此前中枢不可用时 relations 静默为空，
+            与「该站点确实没有平替/生态关系」无法区分 */}
+        {relationsDegraded && relations.length === 0 && (
+          <div className="rounded-lg border border-border/60 bg-muted/30 px-3.5 py-2.5 text-xs text-muted-foreground">
+            关系网络暂时不可用（服务未响应），已跳过平替与生态推荐。
+          </div>
+        )}
 
         {/* 强类型平替与竞品雷达 (Alternative Relations - Phase 3) */}
         {alternatives.length > 0 && (

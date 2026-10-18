@@ -25,6 +25,7 @@ import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { getIdentity } from '@/lib/identity'
 import { useFavorites } from '@/hooks/useFavorites'
+import { useToast } from '@/components/ui/use-toast'
 import type { SiteConfig } from '@/types/site'
 import { parseSpeculativeIntent } from '@/lib/speculative'
 import { SpeculativeIntentCard } from '@/components/speculative-intent-card'
@@ -84,6 +85,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [popular, setPopular] = useState<string[]>([])
   const [fallbackHint, setFallbackHint] = useState<'filter' | 'fuzzy' | undefined>(undefined)
   const [recent, setRecent] = useState<string[]>([])
+  /** 中枢不可用（历史拉取降级）：与「真的没有历史」区分，避免把故障渲染成「暂无数据」 */
+  const [recentDegraded, setRecentDegraded] = useState(false)
   /** 知识图谱对标与实体关联方案命中 */
   const [relationHits, setRelationHits] = useState<HubSiteRelation[]>([])
   /** 智能析取到的分面筛选意图 */
@@ -112,6 +115,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const identity = useMemo(() => getIdentity(), [])
   const favorites = useFavorites()
+  const { toast } = useToast()
   const speculativeResult = useMemo(() => parseSpeculativeIntent(query), [query])
   const comparisonMatrix = useMemo(() => parseTechComparisonQuery(query), [query])
   const architectureRecipe = useMemo(() => findMatchingArchitectureRecipe(query), [query])
@@ -121,7 +125,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   /* 最近搜索：聚焦且空查询时加载 */
   useEffect(() => {
     if (isFocused && !query.trim() && identity) {
-      void fetchSearchHistory(identity).then(setRecent)
+      // 中枢不可用时 fetchSearchHistory 返回兜底 []，与「真的没有历史」无法区分；
+      // 用局部标记把「已降级」带出 then（onDegraded 在 resolve 之前同步触发）。
+      let failed = false
+      void fetchSearchHistory(identity, 8, () => {
+        failed = true
+      }).then((items) => {
+        setRecentDegraded(failed)
+        setRecent(items)
+      })
     }
   }, [isFocused, query, identity])
 
@@ -300,7 +312,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     <div ref={searchRef} className="relative w-full max-w-lg mx-auto">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
+        <Input aria-label={placeholder}
           ref={inputRef}
           placeholder={placeholder}
           value={query}
@@ -323,6 +335,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
 
       {isFocused && !query.trim() && (
         <div className="absolute top-full left-0 right-0 mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
+          {recentDegraded && recent.length === 0 && (
+            <div className="px-3.5 py-2 text-xs text-muted-foreground flex items-center gap-1.5 bg-muted/40">
+              <Clock className="h-3 w-3" /> 最近搜索暂时不可用（服务未响应）
+            </div>
+          )}
           {recent.length > 0 && (
             <div>
               <div className="px-3.5 py-2 text-xs font-medium text-muted-foreground flex items-center gap-1.5 bg-muted/40">
@@ -691,6 +708,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                         title={faved ? '取消收藏' : '收藏'}
                         onClick={(e) => {
                           e.stopPropagation()
+                          // 存储读不出来时写入会被拒绝（为了不覆盖原数据）：必须说出来
+                          if (favorites.storageBlocked) {
+                            toast({ title: '这一下没能保存', description: favorites.storageBlocked, variant: 'destructive' })
+                            return
+                          }
                           void favorites.toggle({
                             siteId: site.id, title: site.title, href: site.url,
                             icon: site.iconKey ?? undefined, description: site.description ?? undefined,

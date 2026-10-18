@@ -29,7 +29,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
 
   app.get("/api/favorites", async (req, reply) => {
     const identity = identityOf(req as never);
-    if (!identity) return { error: "缺少 userId 或 anonId" };
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const items = await ctx.repo.listFavorites(identity);
     const folders = await ctx.repo.listFavoriteFolders(identity);
@@ -64,7 +64,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.delete("/api/favorites/:siteId", async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
     const identity = identityOf(req as never);
-    if (!identity) return { error: "缺少 userId 或 anonId" };
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const removed = await ctx.repo.removeFavorite(identity, siteId);
     if (removed) {
@@ -87,7 +87,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.delete("/api/favorites/folders/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const identity = identityOf(req as never);
-    if (!identity) return { error: "缺少 userId 或 anonId" };
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     await ctx.repo.deleteFavoriteFolder(identity, id);
     return { ok: true };

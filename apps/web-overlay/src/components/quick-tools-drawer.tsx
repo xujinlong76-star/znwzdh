@@ -10,7 +10,6 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
-import { useToast } from '@/components/ui/use-toast'
 import { Wrench, Copy, Check, RefreshCw, Braces, Binary, Clock, Link2, KeyRound, Timer, Terminal } from 'lucide-react'
 import { parseSpeculativeIntent } from '@/lib/speculative'
 import { copyText } from '@/lib/clipboard'
@@ -25,7 +24,7 @@ type ToolTab = 'json' | 'base64' | 'uuid-time' | 'url' | 'jwt' | 'cron' | 'curl'
 export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) {
   const [activeTab, setActiveTab] = useState<ToolTab>('json')
   const [copied, setCopied] = useState<string | null>(null)
-  const { toast } = useToast()
+  const [copyError, setCopyError] = useState<string | null>(null)
 
   // JSON 工具状态
   const [jsonInput, setJsonInput] = useState('')
@@ -53,18 +52,24 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
   const [cronInput, setCronInput] = useState('*/5 * * * *')
   const [curlInput, setCurlInput] = useState('curl -X POST https://api.navhub.local/v1/search -d "{\"q\":\"ai\"}"')
 
+  /**
+   * 复制：**先确认真的写进去了，再说「已复制」**。
+   *
+   * 原来是 `await navigator.clipboard.writeText(text)` 且**没有 catch**：
+   * 非安全上下文（http:// 局域网 IP）下 `navigator.clipboard` 根本不存在，
+   * 权限被拒 / 页面失焦时写入的 Promise 也会 reject —— 两种情况都只会静默失败
+   * （外加一条未处理的 Promise 拒绝），8 个复制按钮看起来就是「点了没反应」。
+   */
   const copyToClipboard = async (text: string, id: string) => {
-    if (!text) return
-    try {
-      await copyText(text)
-      setCopied(id)
-      setTimeout(() => setCopied(null), 1500)
-    } catch {
-      // 非 HTTPS / 用户拒授权 / 文档失焦时 clipboard API 会抛。
-      // 以前这里裸 await：既冒出 unhandled rejection，按钮还照样显示"已复制"——
-      // 用户以为复制成功，粘贴才发现是空的。现在明确告诉用户没成功。
-      toast({ title: '复制失败', description: '浏览器拒绝了剪贴板访问（需 HTTPS 且页面处于聚焦状态）', variant: 'destructive' })
+    const result = await copyText(text)
+    if (!result.ok) {
+      setCopied(null)
+      setCopyError(result.reason)
+      return
     }
+    setCopyError(null)
+    setCopied(id)
+    setTimeout(() => setCopied(null), 1500)
   }
 
   // JSON 操作
@@ -160,6 +165,16 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             端侧零延迟运行高频微工具，无需离开导航站即可极速格式化与编解码。
           </DialogDescription>
         </DialogHeader>
+
+        {/* 复制失败必须说出来（以前写入被拒 / 非安全上下文时，按钮点了毫无反应） */}
+        {copyError && (
+          <div
+            role="status"
+            className="mt-1 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          >
+            复制失败：{copyError}
+          </div>
+        )}
 
         {/* 顶部 Tab 栏 */}
         <div className="flex items-center gap-1.5 p-1 rounded-xl bg-muted/40 border border-border/50 mt-1 overflow-x-auto">
@@ -257,7 +272,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输入原始 JSON:</span>
-                <textarea
+                <textarea aria-label="粘贴原始 JSON 文本"
                   placeholder="在此粘贴原始 JSON 文本..."
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
@@ -266,7 +281,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               </div>
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">格式化结果输出:</span>
-                <textarea
+                <textarea aria-label="格式化结果输出"
                   readOnly
                   placeholder="格式化结果输出..."
                   value={jsonOutput}
@@ -301,7 +316,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输入待转换文本:</span>
-                <textarea
+                <textarea aria-label="输入待编码或解码的文本"
                   placeholder="在此输入待编码或解码的文本..."
                   value={b64Input}
                   onChange={(e) => setB64Input(e.target.value)}
@@ -310,7 +325,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               </div>
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输出结果:</span>
-                <textarea
+                <textarea aria-label="结果输出"
                   readOnly
                   placeholder="结果输出..."
                   value={b64Output}
@@ -337,7 +352,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                 </Button>
               </div>
               <div className="flex items-center gap-2">
-                <Input readOnly value={uuid || '点击生成按钮创建 UUID'} className="font-mono text-xs h-9 bg-background/90 border-border/70" />
+                <Input readOnly aria-label="生成的 UUID" value={uuid || '点击生成按钮创建 UUID'} className="font-mono text-xs h-9 bg-background/90 border-border/70" />
                 <Button
                   size="sm"
                   variant="secondary"
@@ -383,7 +398,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             <div className="p-4 rounded-xl border border-border/60 bg-card space-y-2.5 shadow-2xs">
               <span className="text-xs font-bold">时间戳转可读时间字符串</span>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <Input
+                <Input aria-label="输入 10 位或 13 位时间戳"
                   placeholder="输入 10 位或 13 位时间戳..."
                   value={tsInput}
                   onChange={(e) => handleConvertTimestamp(e.target.value)}
@@ -421,7 +436,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输入 URL 串:</span>
-                <textarea
+                <textarea aria-label="输入待编码或解码的 URL 或参数"
                   placeholder="在此输入待编码或解码的 URL 或参数..."
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
@@ -430,7 +445,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               </div>
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输出转换结果:</span>
-                <textarea
+                <textarea aria-label="结果输出"
                   readOnly
                   placeholder="结果输出..."
                   value={urlOutput}
@@ -463,7 +478,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div className="space-y-1.5">
                   <span className="text-xs font-semibold text-muted-foreground font-mono">输入 JWT Token:</span>
-                  <textarea
+                  <textarea aria-label="粘贴 eyJ... 格式的 JWT"
                     value={jwtInput}
                     onChange={(e) => setJwtInput(e.target.value)}
                     placeholder="粘贴 eyJ... 格式的 JWT..."
@@ -474,6 +489,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   <span className="text-xs font-semibold text-muted-foreground font-mono">解码 Payload 与状态:</span>
                   <textarea
                     readOnly
+                    aria-label="解码后的 Payload 与状态"
                     value={preview}
                     className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
                   />
@@ -491,6 +507,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
               <div className="space-y-1.5">
                 <span className="text-xs font-semibold text-muted-foreground font-mono">输入 5 段或 6 段 Cron 表达式:</span>
                 <Input
+                  aria-label="Cron 表达式"
                   value={cronInput}
                   onChange={(e) => setCronInput(e.target.value)}
                   placeholder="例如: */5 * * * * 或 0 0 * * *"
@@ -538,6 +555,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                 <div className="space-y-1.5">
                   <span className="text-xs font-semibold text-muted-foreground font-mono">输入 Curl 命令:</span>
                   <textarea
+                    aria-label="Curl 命令"
                     value={curlInput}
                     onChange={(e) => setCurlInput(e.target.value)}
                     className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
@@ -547,6 +565,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   <span className="text-xs font-semibold text-muted-foreground font-mono">生成 Fetch 代码:</span>
                   <textarea
                     readOnly
+                    aria-label="生成的 Fetch 代码"
                     value={codeOut}
                     className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
                   />

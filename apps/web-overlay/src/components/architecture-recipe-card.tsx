@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
-import { Layers, ExternalLink, Copy, Check, ArrowRight, Terminal } from 'lucide-react'
+import { Layers, ExternalLink, Copy, Check, ArrowRight, Terminal, X } from 'lucide-react'
 import type { ArchitectureRecipe } from '@/lib/architecture-recipe'
 import { copyText } from '@/lib/clipboard'
 
@@ -12,15 +12,14 @@ interface ArchitectureRecipeCardProps {
 }
 
 export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) {
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   const handleCopy = async () => {
     if (!recipe.quickStartSnippet) return
-    // 以真实结果为准：以前 void 掉 Promise，失败时静默 + 图标照样变成"已复制"
-    const ok = await copyText(recipe.quickStartSnippet)
-    if (!ok) return
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    // 写入失败时不能显示「已复制」—— 用户会粘出空内容
+    const result = await copyText(recipe.quickStartSnippet)
+    setCopyState(result.ok ? 'copied' : 'failed')
+    setTimeout(() => setCopyState('idle'), 2000)
   }
 
   return (
@@ -102,8 +101,16 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
             onClick={handleCopy}
             className="h-6.5 px-2 text-xs flex items-center gap-1 flex-shrink-0"
           >
-            {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-            <span>{copied ? '已复制' : '复制命令'}</span>
+            {copyState === 'copied' ? (
+              <Check className="w-3 h-3 text-emerald-500" />
+            ) : copyState === 'failed' ? (
+              <X className="w-3 h-3 text-destructive" />
+            ) : (
+              <Copy className="w-3 h-3" />
+            )}
+            <span>
+              {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制命令'}
+            </span>
           </Button>
         </div>
       )}

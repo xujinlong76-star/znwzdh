@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react'
 import {
   togglePinnedSiteInCategory,
   reorderCategoryToTarget,
@@ -33,6 +33,7 @@ import {
   type LayoutSyncChannel,
   type LayoutSlotClocks,
 } from '@/lib/modular/layout-sync'
+import { encodeShareLink, type ShareLinkOutcome } from '@/lib/diy-share-link'
 
 export type HomeViewMode = 'hybrid' | 'classic' | 'workbench'
 export type CardDisplayMode = 'compact' | 'standard' | 'rich'
@@ -78,7 +79,7 @@ export interface HomeDIYConfig {
   updatedAt: number
 }
 
-const STORAGE_KEY = 'navhub_home_diy_config_v3'
+export const STORAGE_KEY = 'navhub_home_diy_config_v3'
 const LEGACY_STORAGE_KEY_V2 = 'navhub_home_diy_config_v2'
 const LEGACY_STORAGE_KEY_V1 = 'navhub_home_diy_config_v1'
 /**
@@ -87,6 +88,11 @@ const LEGACY_STORAGE_KEY_V1 = 'navhub_home_diy_config_v1'
  * 额外字段都会在每次加载时被静默剔除，时钟根本活不过一次刷新。
  */
 const STORAGE_CLOCKS_KEY = 'navhub_home_diy_clocks_v1'
+/**
+ * 本地改动广播事件。组件之间现在走共享状态（useSyncExternalStore），
+ * 不再依赖这个事件；保留它是因为它是对外既有约定（外部脚本/旧监听方可能靠它刷新）。
+ */
+export const HOME_DIY_UPDATED_EVENT = 'navhub_home_diy_updated'
 
 const DEFAULT_HERO_WIDGETS = [
   'quick-search',
@@ -95,7 +101,7 @@ const DEFAULT_HERO_WIDGETS = [
   'quick-tools',
 ]
 
-const DEFAULT_CONFIG: HomeDIYConfig = {
+export const DEFAULT_CONFIG: HomeDIYConfig = {
   version: 3,
   viewMode: 'hybrid',
   cardDisplayMode: 'standard',
@@ -117,134 +123,497 @@ const DEFAULT_CONFIG: HomeDIYConfig = {
   updatedAt: Date.now(),
 }
 
+/* ------------------------------------------------------------------ *
+ * 共享状态：整个页面只保留一份 DIY 配置
+ * ------------------------------------------------------------------ */
+
+/**
+ * 为什么不是 useState（这是修一个真实缺陷，不是洁癖）：
+ *
+ * 首页有 6 个组件各自调用 useHomeDIY()（navigation-content / home-diy-toolbar /
+ * home-hero-deck / view-mode-toggle / category-in-situ-controls /
+ * keyboard-shortcuts-dialog），而 useState 在**每个组件里各存一份**。于是：
+ *
+ *   - view-mode-toggle 里 setViewMode('classic') 只改了它自己那份，
+ *     navigation-content 渲染用的 viewMode 纹丝不动 —— 用户点「经典全景流」
+ *     页面毫无变化，刷新后才生效；
+ *   - 工具栏点「DIY 排版工坊」只改了工具栏那份 isEditingLayout，
+ *     navigation-content 里靠 isEditingLayout 显示的拖拽手柄永远不会出现，
+ *     整个拖拽编排形同虚设；
+ *   - 撤销栈各存一份：在 A 处按 Ctrl+Z 撤销的是 A 的最后一次改动，
+ *     而不是用户刚刚做的那次。
+ *
+ * 代码里其实已经在四处 dispatch 了 'navhub_home_diy_updated'，但从来没有人监听它
+ * —— 跨标签页同步（BroadcastChannel）反而是通的，于是这个缺陷很容易被当成「偶发」。
+ *
+ * 正确做法：状态挪到模块级单例，组件用 useSyncExternalStore 订阅。两点必须注意：
+ *   1. 首帧要和 SSR 一致，所以 sharedState 的初始值就是 DEFAULT_CONFIG，
+ *      读本地存储放在挂载后的 effect 里（hydrateHomeDiy），且**只读一次**；
+ *   2. getHomeDiySnapshot 必须「没变就返回同一个引用」，否则
+ *      useSyncExternalStore 会认为状态在无限变化。
+ */
+
+/** 只用到读写的存储接口：测试里塞个假实现即可，不必把 DOM 拖进来 */
+export interface HomeDiyStorage {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+}
+
+export interface HomeDiySharedState {
+  config: HomeDIYConfig
+  history: LayoutHistoryState<HomeDIYConfig>
+  /** 编排模式：工具栏与导航区共享同一份，否则拖拽手柄不会出现 */
+  isEditingLayout: boolean
+  /** 非 null = 上次落盘失败；改动已在内存生效，但刷新会丢 */
+  storageWarning: string | null
+}
+
+const HASH_SHARE_MAX_BYTES = 4096
+
+const INITIAL_SHARED_STATE: HomeDiySharedState = {
+  config: DEFAULT_CONFIG,
+  history: createLayoutHistory(DEFAULT_CONFIG),
+  isEditingLayout: false,
+  storageWarning: null,
+}
+
+let sharedState: HomeDiySharedState = INITIAL_SHARED_STATE
+const sharedListeners = new Set<() => void>()
+/** 本地存储只读一次（见下方 hydrateHomeDiy 的说明） */
+let sharedHydrated = false
+
+export function subscribeHomeDiy(listener: () => void): () => void {
+  sharedListeners.add(listener)
+  return () => {
+    sharedListeners.delete(listener)
+  }
+}
+
+export function getHomeDiySnapshot(): HomeDiySharedState {
+  return sharedState
+}
+
+/** 仅供测试隔离：把共享状态退回初始值（生产代码不要调用） */
+export function resetHomeDiySharedState(): void {
+  sharedState = INITIAL_SHARED_STATE
+  sharedHydrated = false
+  for (const listener of sharedListeners) listener()
+}
+
+function commitSharedState(patch: Partial<HomeDiySharedState>): void {
+  sharedState = { ...sharedState, ...patch }
+  for (const listener of sharedListeners) listener()
+}
+
+/** localStorage 取不到时返回 null（SSR / 隐私模式），调用方据此降级并如实提示 */
+export function safeLocalStorage(): HomeDiyStorage | null {
+  try {
+    if (typeof window === 'undefined') return null
+    return window.localStorage
+  } catch {
+    // 隐私模式 / 站点权限被拒：连读 window.localStorage 本身就会抛
+    return null
+  }
+}
+
+export type HomeDiyStorageFailureKind = 'quota' | 'unavailable' | 'unknown'
+
+export function classifyHomeDiyStorageFailure(err: unknown): HomeDiyStorageFailureKind {
+  if (err === null || err === undefined) {
+    // 拿不到 localStorage（隐私模式 / SSR）：归入「不可用」，而不是「未知」
+    return 'unavailable'
+  }
+  const name =
+    typeof err === 'object' && 'name' in err ? String((err as { name?: unknown }).name ?? '') : ''
+  const message = err instanceof Error ? err.message : typeof err === 'string' ? err : ''
+  if (name === 'QuotaExceededError' || name === 'NS_ERROR_DOM_QUOTA_REACHED' || /quota|exceeded|full/i.test(message)) {
+    return 'quota'
+  }
+  if (name === 'SecurityError' || /denied|disabled|blocked|security/i.test(message)) {
+    return 'unavailable'
+  }
+  return 'unknown'
+}
+
+/** 落盘失败必须能说清楚：为什么失败、这次改动还在不在、接下来怎么办 */
+export function describeHomeDiyStorageFailure(err: unknown): string {
+  const base = '这次排版改动没能写入浏览器本地存储：改动已经生效，但刷新后会丢失。'
+  switch (classifyHomeDiyStorageFailure(err)) {
+    case 'quota':
+      return base + '本地存储已满，可以先删掉一些自定义分类或自定义壁纸，再重做这次调整。'
+    case 'unavailable':
+      return base + '浏览器不允许本站读写本地存储（隐私模式或站点权限被拒）。'
+    default:
+      return base + '建议用「导出配置」留一份备份，避免刷新后重做。'
+  }
+}
+
+export interface HomeDiyWriteResult {
+  config: HomeDIYConfig
+  clocks: LayoutSlotClocks
+  /** false = 没能落盘（改动仍已在内存生效，storageWarning 已写入共享状态） */
+  ok: boolean
+  error?: unknown
+}
+
+/**
+ * 把一份配置写进共享状态并落盘。
+ * 内存里的改动**永远**生效：不能因为写盘失败（配额满 / 隐私模式）就把用户刚做的
+ * 编辑整个丢掉；失败只降级为界面提示。
+ */
+function writeHomeDiyState(
+  next: HomeDIYConfig,
+  history: LayoutHistoryState<HomeDIYConfig>,
+  clocksOverride?: LayoutSlotClocks,
+): HomeDiyWriteResult {
+  const prev = sharedState.config
+  const clocks =
+    clocksOverride ?? bumpClocks(readSlotClocks(STORAGE_CLOCKS_KEY), diffChangedSlots(prev, next))
+  const storage = safeLocalStorage()
+  let ok = true
+  let error: unknown
+  if (!storage) {
+    ok = false
+  } else {
+    try {
+      writeSlotClocks(STORAGE_CLOCKS_KEY, clocks)
+      storage.setItem(STORAGE_KEY, JSON.stringify(next))
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new Event(HOME_DIY_UPDATED_EVENT))
+      }
+    } catch (err) {
+      // 写盘失败要留痕：改动已在内存生效，但用户有权知道「刷新就没了」
+      ok = false
+      error = err
+    }
+  }
+  commitSharedState({
+    config: next,
+    history,
+    // 成功即清空提示：每次都是整份写回，上一次失败的那份改动也一并落盘了
+    storageWarning: ok ? null : describeHomeDiyStorageFailure(error),
+  })
+  return { config: next, clocks, ok, error }
+}
+
+/** 提交一次用户编辑（会压入撤销历史） */
+export function commitHomeDiyConfig(
+  updater: (prev: HomeDIYConfig) => HomeDIYConfig,
+  options: { pushHistory?: boolean } = {},
+): HomeDiyWriteResult {
+  const prev = sharedState.config
+  const next = updater(prev)
+  if (next === prev) {
+    // 空操作（例如把分类移到列表边界外）：不写盘、不推历史，也不弹「保存失败」
+    return { config: prev, clocks: readSlotClocks(STORAGE_CLOCKS_KEY), ok: true }
+  }
+  const history =
+    options.pushHistory === false ? sharedState.history : pushLayoutHistory(sharedState.history, next)
+  return writeHomeDiyState(next, history)
+}
+
+/** 撤销 / 重做：栈在共享状态里，谁按 Ctrl+Z 撤的都是同一条历史 */
+export function undoHomeDiy(): HomeDiyWriteResult | null {
+  const history = sharedState.history
+  if (history.past.length === 0) return null
+  const next = undoLayoutHistory(history)
+  return writeHomeDiyState(next.present, next)
+}
+
+export function redoHomeDiy(): HomeDiyWriteResult | null {
+  const history = sharedState.history
+  if (history.future.length === 0) return null
+  const next = redoLayoutHistory(history)
+  return writeHomeDiyState(next.present, next)
+}
+
+/**
+ * 接收其它标签页的改动：按插槽 LWW 合并，绝不整表覆盖。
+ * 不压撤销历史（远端改动不是本标签页的操作），也用合并后的 clocks 落盘。
+ */
+export function applyRemoteHomeDiyConfig(payload: {
+  config: HomeDIYConfig
+  clocks: LayoutSlotClocks
+}): HomeDiyWriteResult | null {
+  if (!payload?.config) return null
+  const merged = mergeLayoutSlots(
+    { config: sharedState.config, clocks: readSlotClocks(STORAGE_CLOCKS_KEY) },
+    { config: payload.config, clocks: payload.clocks || {} },
+  )
+  if (!merged.changed) return null
+  return writeHomeDiyState(merged.config, sharedState.history, merged.clocks)
+}
+
+export function setHomeDiyEditingLayout(next: boolean): void {
+  if (sharedState.isEditingLayout === next) return
+  commitSharedState({ isEditingLayout: next })
+}
+
+export function dismissHomeDiyStorageWarning(): void {
+  if (sharedState.storageWarning === null) return
+  commitSharedState({ storageWarning: null })
+}
+
+/**
+ * 读 v3 配置。**「读不出来」和「没有配置」必须分开**：
+ * 以前是 `const parsed = JSON.parse(raw)` 抛错就整段跳过、配置回落默认值，
+ * 紧接着第一次编辑就把用户原布局覆盖掉（和收藏夹那个坑同源）。
+ * 现在读不出来会先把原始字节备份到 `....corrupt.<时间戳>`，并带一条提示。
+ */
+export function readStoredHomeDiyConfig(raw: string | null): {
+  status: 'ok' | 'absent' | 'corrupt'
+  config: HomeDIYConfig
+  /** 需要备份的原始串（status === 'corrupt' 时非空） */
+  corruptRaw: string | null
+} {
+  if (!raw) return { status: 'absent', config: DEFAULT_CONFIG, corruptRaw: null }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    // 半截写入 / 被外部脚本改写：读不出来就是读不出来，不能当成「没有配置」
+    return { status: 'corrupt', config: DEFAULT_CONFIG, corruptRaw: raw }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { status: 'corrupt', config: DEFAULT_CONFIG, corruptRaw: raw }
+  }
+  const check = validateAndCleanDIYConfig(parsed)
+  if (!check.valid || !check.config) {
+    // 结构不合法（旧格式 / 被改写）同样不能静默当成「没有配置」
+    return { status: 'corrupt', config: DEFAULT_CONFIG, corruptRaw: raw }
+  }
+  const source = parsed as Record<string, unknown>
+  const config: HomeDIYConfig = {
+    ...check.config,
+    collapsedCategoryIds: Array.isArray(check.config.collapsedCategoryIds)
+      ? check.config.collapsedCategoryIds
+      : [],
+    accentColor: ['default', 'violet', 'emerald', 'amber', 'rose'].includes(
+      String(source.accentColor),
+    )
+      ? (source.accentColor as AccentColor)
+      : 'default',
+  }
+  return { status: 'ok', config, corruptRaw: null }
+}
+
+/** 备份键带时间戳：连续损坏时不会互相覆盖掉更早的那份 */
+export function homeDiyCorruptBackupKey(now: number): string {
+  return `${STORAGE_KEY}.corrupt.${now}`
+}
+
+/**
+ * 把读不出来的原始数据挪到备份键，返回备份键名（失败返回 null）。
+ * 这里刻意**不**选「拒绝一切写入」：DIY 是整页交互，一旦停摆用户什么都改不了；
+ * 而备份已经保证原数据不丢，提示里会写出备份键名，可人工找回。
+ */
+export function backupCorruptHomeDiyConfig(storage: HomeDiyStorage, raw: string): string | null {
+  const key = homeDiyCorruptBackupKey(Date.now())
+  try {
+    storage.setItem(key, raw)
+    return key
+  } catch {
+    // 备份都写不进去（配额满）：返回 null，由提示文案说明「备份失败」
+    return null
+  }
+}
+
+export function describeCorruptHomeDiyConfig(backupKey: string | null): string {
+  if (backupKey) {
+    return `本地排版配置读不出来（可能写入中断，或被其它程序改写），已把原数据备份到 ${backupKey}，本次以默认排版启动。之后的改动会正常保存。`
+  }
+  return '本地排版配置读不出来，原始数据也没能备份（本地存储写入失败），本次以默认排版启动。'
+}
+
+/**
+ * 读本地存储（v3 → v2 → v1 迁移 + `#diy=` 免登分享链接）。**只执行一次**：
+ * 共享状态只有一份，6 个组件各自挂载时都读一遍会互相覆盖；后挂载的组件
+ * （例如切到 hybrid 才动态加载的 HomeHeroDeck）还会把撤销栈一起冲掉。
+ */
+export function hydrateHomeDiy(): void {
+  if (sharedHydrated) return
+  sharedHydrated = true
+  const storage = safeLocalStorage()
+  if (!storage) return
+  if (applyHomeDiyShareHash()) return
+  let raw: string | null = null
+  try {
+    raw = storage.getItem(STORAGE_KEY)
+  } catch (err) {
+    // 连读都不让读：说清楚是「存储不可用」，而不是「没有配置」
+    commitSharedState({ storageWarning: describeHomeDiyStorageFailure(err) })
+    return
+  }
+  const stored = readStoredHomeDiyConfig(raw)
+  if (stored.status === 'ok') {
+    commitSharedState({ config: stored.config, history: createLayoutHistory(stored.config) })
+    return
+  }
+  if (stored.status === 'corrupt') {
+    const backupKey = stored.corruptRaw ? backupCorruptHomeDiyConfig(storage, stored.corruptRaw) : null
+    commitSharedState({
+      config: stored.config,
+      history: createLayoutHistory(stored.config),
+      storageWarning: describeCorruptHomeDiyConfig(backupKey),
+    })
+    return
+  }
+  const migrated = migrateLegacyHomeDiyConfig(storage)
+  if (migrated) {
+    commitSharedState({ config: migrated, history: createLayoutHistory(migrated) })
+  }
+}
+
+/** v2 → v1 迁移（老的键名仍然留着，迁移成功后写回 v3 键） */
+export function migrateLegacyHomeDiyConfig(storage: HomeDiyStorage): HomeDIYConfig | null {
+  for (const legacy of [
+    { key: LEGACY_STORAGE_KEY_V2, from: 2 },
+    { key: LEGACY_STORAGE_KEY_V1, from: 1 },
+  ]) {
+    let raw: string | null = null
+    try {
+      raw = storage.getItem(legacy.key)
+    } catch {
+      // 读不了这个老键：跳过即可，它还在浏览器里，不会被我们动到
+      continue
+    }
+    if (!raw) continue
+    let parsed: Record<string, unknown>
+    try {
+      const value = JSON.parse(raw)
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+      parsed = value as Record<string, unknown>
+    } catch {
+      // 老键本身是坏的：不动它（用户数据留在原处），也不做迁移
+      continue
+    }
+    const migrated: HomeDIYConfig =
+      legacy.from === 2
+        ? {
+            ...DEFAULT_CONFIG,
+            viewMode: (['hybrid', 'classic', 'workbench'] as const).includes(parsed.viewMode as HomeViewMode)
+              ? (parsed.viewMode as HomeViewMode)
+              : 'hybrid',
+            cardDisplayMode: (['compact', 'standard', 'rich'] as const).includes(parsed.cardDisplayMode as CardDisplayMode)
+              ? (parsed.cardDisplayMode as CardDisplayMode)
+              : 'standard',
+            canvasBackground: (['mesh', 'dots', 'grid', 'aurora', 'clean'] as const).includes(parsed.canvasBackground as CanvasBackground)
+              ? (parsed.canvasBackground as CanvasBackground)
+              : 'mesh',
+            heroDeckCollapsed: Boolean(parsed.heroDeckCollapsed),
+            heroDeckWidgets: Array.isArray(parsed.heroDeckWidgets) ? (parsed.heroDeckWidgets as string[]) : DEFAULT_HERO_WIDGETS,
+            categoryOrder: Array.isArray(parsed.categoryOrder) ? (parsed.categoryOrder as string[]) : [],
+            pinnedCategoryIds: Array.isArray(parsed.pinnedCategoryIds) ? (parsed.pinnedCategoryIds as string[]) : [],
+            hiddenCategoryIds: Array.isArray(parsed.hiddenCategoryIds) ? (parsed.hiddenCategoryIds as string[]) : [],
+            collapsedCategoryIds: Array.isArray(parsed.collapsedCategoryIds) ? (parsed.collapsedCategoryIds as string[]) : [],
+            customCategories: Array.isArray(parsed.customCategories) ? (parsed.customCategories as CustomCategory[]) : [],
+            updatedAt: Date.now(),
+          }
+        : {
+            ...DEFAULT_CONFIG,
+            viewMode: (['hybrid', 'classic', 'workbench'] as const).includes(parsed.viewMode as HomeViewMode)
+              ? (parsed.viewMode as HomeViewMode)
+              : 'hybrid',
+            heroDeckCollapsed: Boolean(parsed.heroDeckCollapsed),
+            heroDeckWidgets: Array.isArray(parsed.heroDeckWidgets) ? (parsed.heroDeckWidgets as string[]) : DEFAULT_HERO_WIDGETS,
+            updatedAt: Date.now(),
+          }
+    try {
+      storage.setItem(STORAGE_KEY, JSON.stringify(migrated))
+    } catch (err) {
+      // 迁移结果写不进去：仍然返回它（内存里先按迁移后的配置用），
+      // 只是提醒用户刷新后会退回默认值
+      commitSharedState({ storageWarning: describeHomeDiyStorageFailure(err) })
+    }
+    return migrated
+  }
+  return null
+}
+
+/**
+ * 处理 `#diy=` 免登分享链接（不可信输入：统一走 validateAndCleanDIYConfig + 4KB 上限）。
+ * 成功即落盘生效并返回 true。
+ */
+export function applyHomeDiyShareHash(): boolean {
+  if (typeof window === 'undefined') return false
+  const hash = window.location.hash || ''
+  if (!hash.startsWith('#diy=')) return false
+  const clearHash = () => {
+    try {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    } catch {
+      // 清 hash 只是顺手收拾现场；清不掉也没有别的可做
+    }
+  }
+  try {
+    const b64 = hash.replace(/^#diy=/, '')
+    // 长度上限 4KB：超限直接丢弃（防 hash 炸弹撑爆 JSON.parse / localStorage）
+    if (b64.length > HASH_SHARE_MAX_BYTES) {
+      console.warn('[diy] 分享 hash 超过 4KB 上限，已忽略')
+      clearHash()
+      return false
+    }
+    const json = decodeURIComponent(atob(b64))
+    if (json.length > HASH_SHARE_MAX_BYTES) throw new Error('decoded payload too large')
+    const parsed = JSON.parse(json)
+    // 兼容分享短字段 (vm/cdm/bg/...) → 全量字段，再统一清洗
+    const normalized =
+      parsed && typeof parsed === 'object'
+        ? {
+            viewMode: parsed.vm ?? parsed.viewMode,
+            cardDisplayMode: parsed.cdm ?? parsed.cardDisplayMode,
+            canvasBackground: parsed.bg ?? parsed.canvasBackground,
+            accentColor: parsed.ac ?? parsed.accentColor,
+            categoryOrder: parsed.co ?? parsed.categoryOrder,
+            pinnedCategoryIds: parsed.pco ?? parsed.pinnedCategoryIds,
+            hiddenCategoryIds: parsed.hco ?? parsed.hiddenCategoryIds,
+            siteCategoryOverrides: parsed.sco ?? parsed.siteCategoryOverrides,
+            customWallpaperUrl: parsed.wp ?? parsed.customWallpaperUrl,
+            glassmorphismBlur: parsed.gb ?? parsed.glassmorphismBlur,
+            cardOpacity: parsed.co_op ?? parsed.cardOpacity,
+          }
+        : null
+    const check = validateAndCleanDIYConfig(normalized)
+    if (!check.valid || !check.config) {
+      console.warn('[diy] 分享 hash 校验失败，已忽略:', check.error)
+      clearHash()
+      return false
+    }
+    const imported: HomeDIYConfig = {
+      ...DEFAULT_CONFIG,
+      ...check.config,
+      collapsedCategoryIds: Array.isArray(check.config.collapsedCategoryIds)
+        ? check.config.collapsedCategoryIds
+        : [],
+      updatedAt: Date.now(),
+    }
+    // 导入即生效并落盘（与旧行为一致）；撤销历史重置为导入后的状态
+    writeHomeDiyState(imported, createLayoutHistory(imported))
+    clearHash()
+    return true
+  } catch (e) {
+    // 失败 quiet：清掉 hash 后回落默认配置，不抛错不 toast（避免「打开链接即报错」）
+    console.warn('[diy] 分享 hash 解析失败，已忽略', e)
+    clearHash()
+    return false
+  }
+}
+
 export function useHomeDIY() {
-  const [config, setConfig] = useState<HomeDIYConfig>(DEFAULT_CONFIG)
-  const [history, setHistory] = useState<LayoutHistoryState<HomeDIYConfig>>(() => createLayoutHistory(DEFAULT_CONFIG))
+  const { config, history, isEditingLayout, storageWarning } = useSyncExternalStore(
+    subscribeHomeDiy,
+    getHomeDiySnapshot,
+    getHomeDiySnapshot,
+  )
   const [mounted, setMounted] = useState(false)
-  const [isEditingLayout, setIsEditingLayout] = useState(false)
   // 跨标签页通道（挂载后才建立，SSR 阶段为 null）
   const syncChannelRef = useRef<LayoutSyncChannel<HomeDIYConfig> | null>(null)
 
-  // 1. 客户端挂载时加载配置并平滑兼容 v1/v2
+  // 1. 客户端挂载时读本地存储（v3 / v2 / v1 迁移 + #diy 分享链接）并填充共享状态。
+  //    只让第一个挂载的组件去读：共享状态只有一份，后挂载的组件
+  //    （例如切到 hybrid 才动态加载的 HomeHeroDeck）再读一遍会把撤销栈冲掉。
   useEffect(() => {
-    try {
-      // 优先检测 URL Hash 是否带有免登预设分享 #diy=...（不可信输入：统一走 validateAndCleanDIYConfig + 4KB 上限）
-      if (typeof window !== 'undefined' && window.location.hash.startsWith('#diy=')) {
-        const b64 = window.location.hash.replace(/^#diy=/, '');
-        // 长度上限 4KB：超限直接丢弃（防 hash 炸弹撑爆 JSON.parse / localStorage）
-        if (b64.length > 4096) {
-          console.warn('[diy] 分享 hash 超过 4KB 上限，已忽略')
-          window.history.replaceState(null, '', window.location.pathname + window.location.search);
-        } else {
-          try {
-            const json = decodeURIComponent(atob(b64));
-            if (json.length > 4096) throw new Error('decoded payload too large')
-            const parsed = JSON.parse(json);
-            // 兼容分享短字段 (vm/cdm/bg/...) → 全量字段，再统一清洗
-            const normalized = parsed && typeof parsed === 'object' ? {
-              viewMode: parsed.vm ?? parsed.viewMode,
-              cardDisplayMode: parsed.cdm ?? parsed.cardDisplayMode,
-              canvasBackground: parsed.bg ?? parsed.canvasBackground,
-              accentColor: parsed.ac ?? parsed.accentColor,
-              categoryOrder: parsed.co ?? parsed.categoryOrder,
-              pinnedCategoryIds: parsed.pco ?? parsed.pinnedCategoryIds,
-              hiddenCategoryIds: parsed.hco ?? parsed.hiddenCategoryIds,
-              siteCategoryOverrides: parsed.sco ?? parsed.siteCategoryOverrides,
-              customWallpaperUrl: parsed.wp ?? parsed.customWallpaperUrl,
-              glassmorphismBlur: parsed.gb ?? parsed.glassmorphismBlur,
-              cardOpacity: parsed.co_op ?? parsed.cardOpacity,
-            } : null;
-            const check = validateAndCleanDIYConfig(normalized);
-            if (check.valid && check.config) {
-              const imported: HomeDIYConfig = {
-                ...DEFAULT_CONFIG,
-                ...check.config,
-                collapsedCategoryIds: Array.isArray(check.config.collapsedCategoryIds) ? check.config.collapsedCategoryIds : [],
-                updatedAt: Date.now(),
-              };
-              setConfig(imported);
-              setHistory(createLayoutHistory(imported));
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(imported));
-              window.history.replaceState(null, '', window.location.pathname + window.location.search);
-              setMounted(true);
-              return;
-            } else {
-              console.warn('[diy] 分享 hash 校验失败，已忽略:', check.error)
-              window.history.replaceState(null, '', window.location.pathname + window.location.search);
-            }
-          } catch (e) {
-            // 失败 quiet：清除 hash 后回落默认配置，不抛错不 toast（避免打开链接即报错）
-            console.warn('[diy] 分享 hash 解析失败，已忽略', e)
-            try { window.history.replaceState(null, '', window.location.pathname + window.location.search) } catch {}
-          }
-        }
-      }
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (!raw) {
-        // 尝试从 v2 迁移
-        const v2Raw = localStorage.getItem(LEGACY_STORAGE_KEY_V2)
-        if (v2Raw) {
-          const parsedV2 = JSON.parse(v2Raw)
-          if (parsedV2 && typeof parsedV2 === 'object') {
-            const migrated: HomeDIYConfig = {
-              ...DEFAULT_CONFIG,
-              viewMode: ['hybrid', 'classic', 'workbench'].includes(parsedV2.viewMode) ? parsedV2.viewMode : 'hybrid',
-              cardDisplayMode: ['compact', 'standard', 'rich'].includes(parsedV2.cardDisplayMode) ? parsedV2.cardDisplayMode : 'standard',
-              canvasBackground: ['mesh', 'dots', 'grid', 'aurora', 'clean'].includes(parsedV2.canvasBackground) ? parsedV2.canvasBackground : 'mesh',
-              heroDeckCollapsed: Boolean(parsedV2.heroDeckCollapsed),
-              heroDeckWidgets: Array.isArray(parsedV2.heroDeckWidgets) ? parsedV2.heroDeckWidgets : DEFAULT_HERO_WIDGETS,
-              categoryOrder: Array.isArray(parsedV2.categoryOrder) ? parsedV2.categoryOrder : [],
-              pinnedCategoryIds: Array.isArray(parsedV2.pinnedCategoryIds) ? parsedV2.pinnedCategoryIds : [],
-              hiddenCategoryIds: Array.isArray(parsedV2.hiddenCategoryIds) ? parsedV2.hiddenCategoryIds : [],
-              collapsedCategoryIds: Array.isArray(parsedV2.collapsedCategoryIds) ? parsedV2.collapsedCategoryIds : [],
-              customCategories: Array.isArray(parsedV2.customCategories) ? parsedV2.customCategories : [],
-              updatedAt: Date.now(),
-            }
-            setConfig(migrated)
-            setHistory(createLayoutHistory(migrated))
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
-            setMounted(true)
-            return
-          }
-        }
-
-        // 尝试从 v1 迁移
-        const v1Raw = localStorage.getItem(LEGACY_STORAGE_KEY_V1)
-        if (v1Raw) {
-          const parsedV1 = JSON.parse(v1Raw)
-          if (parsedV1 && typeof parsedV1 === 'object') {
-            const migrated: HomeDIYConfig = {
-              ...DEFAULT_CONFIG,
-              viewMode: ['hybrid', 'classic', 'workbench'].includes(parsedV1.viewMode) ? parsedV1.viewMode : 'hybrid',
-              heroDeckCollapsed: Boolean(parsedV1.heroDeckCollapsed),
-              heroDeckWidgets: Array.isArray(parsedV1.heroDeckWidgets) ? parsedV1.heroDeckWidgets : DEFAULT_HERO_WIDGETS,
-              updatedAt: Date.now(),
-            }
-            setConfig(migrated)
-            setHistory(createLayoutHistory(migrated))
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
-            setMounted(true)
-            return
-          }
-        }
-      }
-
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        const check = validateAndCleanDIYConfig(parsed)
-        if (check.valid && check.config) {
-          const initialLoaded: HomeDIYConfig = {
-            ...check.config,
-            collapsedCategoryIds: Array.isArray(check.config.collapsedCategoryIds) ? check.config.collapsedCategoryIds : [],
-            accentColor: ['default', 'violet', 'emerald', 'amber', 'rose'].includes(parsed.accentColor) ? parsed.accentColor : 'default',
-          }
-          setConfig(initialLoaded)
-          setHistory(createLayoutHistory(initialLoaded))
-        }
-      }
-    } catch (e) {
-      console.warn('加载首页 DIY 配置失败，使用默认配置', e)
-    }
+    hydrateHomeDiy()
     setMounted(true)
   }, [])
 
@@ -259,52 +628,28 @@ export function useHomeDIY() {
     }
   }, [config.accentColor])
 
-  // 3. 持久化存储与事件广播 (同时压入撤销历史栈 + 跨标签页同步)
-  const persistConfig = useCallback((updater: (prev: HomeDIYConfig) => HomeDIYConfig) => {
-    setConfig((prev) => {
-      const next = updater(prev)
-      try {
-        // 只推进「本次真正改动过的插槽」的时钟，其它插槽保持原值——
-        // 这样对端在同一时刻改的别的字段才不会被这份回写覆盖掉
-        const slots = diffChangedSlots(prev, next)
-        const clocks = bumpClocks(readSlotClocks(STORAGE_CLOCKS_KEY), slots)
-        writeSlotClocks(STORAGE_CLOCKS_KEY, clocks)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-        window.dispatchEvent(new Event('navhub_home_diy_updated'))
-        syncChannelRef.current?.publish({
-          clientId: getLayoutClientId(),
-          config: next,
-          clocks,
-        })
-      } catch {}
-      setHistory((curr) => pushLayoutHistory(curr, next))
-      return next
+  // 3. 持久化 + 跨标签广播（撤销历史已挪进共享状态，见本文件顶部说明）
+  const publishToOtherTabs = useCallback((result: HomeDiyWriteResult) => {
+    // 落盘成功才广播：本地都没存住，广播出去只会让别的标签页拿到一份
+    // 本标签页刷新后就消失的布局
+    if (!result.ok) return
+    syncChannelRef.current?.publish({
+      clientId: getLayoutClientId(),
+      config: result.config,
+      clocks: result.clocks,
     })
   }, [])
 
+  const persistConfig = useCallback((updater: (prev: HomeDIYConfig) => HomeDIYConfig) => {
+    publishToOtherTabs(commitHomeDiyConfig(updater))
+  }, [publishToOtherTabs])
+
   // 3.1 接收远端标签页的改动：按插槽 LWW 合并，绝不整表覆盖
-  const applyRemoteConfig = useCallback(
-    (payload: { config: HomeDIYConfig; clocks: LayoutSlotClocks }) => {
-      if (!payload?.config) return
-      setConfig((prev) => {
-        const localClocks = readSlotClocks(STORAGE_CLOCKS_KEY)
-        const merged = mergeLayoutSlots(
-          { config: prev, clocks: localClocks },
-          { config: payload.config, clocks: payload.clocks || {} },
-        )
-        if (!merged.changed) return prev
-        try {
-          writeSlotClocks(STORAGE_CLOCKS_KEY, merged.clocks)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(merged.config))
-          window.dispatchEvent(new Event('navhub_home_diy_updated'))
-        } catch {}
-        // 不压入撤销历史：远端改动不是本标签页的操作，进栈会让 Ctrl+Z 行为不可预测
-        // 也不再广播：否则两个标签页会互相把对方的回声再推一遍
-        return merged.config
-      })
-    },
-    [],
-  )
+  const applyRemoteConfig = useCallback((payload: { config: HomeDIYConfig; clocks: LayoutSlotClocks }) => {
+    // 合并、落盘、更新共享状态都在 lib 里做：不压撤销历史（远端改动不是本标签页的
+    // 操作，进栈会让 Ctrl+Z 行为不可预测），也不再广播（否则两边互相推回声）
+    applyRemoteHomeDiyConfig(payload)
+  }, [])
 
   // 3.2 建立 / 拆除跨标签页通道
   useEffect(() => {
@@ -642,60 +987,28 @@ export function useHomeDIY() {
     return await deleteCloudVault(identity)
   }, [])
 
-  const toggleEditingLayout = useCallback(() => {
-    setIsEditingLayout((v) => !v)
+  const setIsEditingLayout = useCallback((next: boolean) => {
+    setHomeDiyEditingLayout(next)
   }, [])
 
-  // 28. 撤销 (Undo)
+  /** 编排模式开关：工具栏与导航区读同一份状态，拖拽手柄才会真的出现 */
+  const toggleEditingLayout = useCallback(() => {
+    setHomeDiyEditingLayout(!getHomeDiySnapshot().isEditingLayout)
+  }, [])
+
+  // 28. 撤销 (Undo) / 重做 (Redo)：栈在共享状态里，谁按 Ctrl+Z 撤的都是同一条历史
   const canUndo = history.past.length > 0
   const canRedo = history.future.length > 0
 
   const undo = useCallback(() => {
-    setHistory((currHistory) => {
-      if (currHistory.past.length === 0) return currHistory
-      const nextHistory = undoLayoutHistory(currHistory)
-      setConfig((prev) => {
-        try {
-          const slots = diffChangedSlots(prev, nextHistory.present)
-          const clocks = bumpClocks(readSlotClocks(STORAGE_CLOCKS_KEY), slots)
-          writeSlotClocks(STORAGE_CLOCKS_KEY, clocks)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory.present))
-          window.dispatchEvent(new Event('navhub_home_diy_updated'))
-          syncChannelRef.current?.publish({
-            clientId: getLayoutClientId(),
-            config: nextHistory.present,
-            clocks,
-          })
-        } catch {}
-        return nextHistory.present
-      })
-      return nextHistory
-    })
-  }, [])
+    const result = undoHomeDiy()
+    if (result) publishToOtherTabs(result)
+  }, [publishToOtherTabs])
 
-  // 29. 重做 (Redo)
   const redo = useCallback(() => {
-    setHistory((currHistory) => {
-      if (currHistory.future.length === 0) return currHistory
-      const nextHistory = redoLayoutHistory(currHistory)
-      setConfig((prev) => {
-        try {
-          const slots = diffChangedSlots(prev, nextHistory.present)
-          const clocks = bumpClocks(readSlotClocks(STORAGE_CLOCKS_KEY), slots)
-          writeSlotClocks(STORAGE_CLOCKS_KEY, clocks)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory.present))
-          window.dispatchEvent(new Event('navhub_home_diy_updated'))
-          syncChannelRef.current?.publish({
-            clientId: getLayoutClientId(),
-            config: nextHistory.present,
-            clocks,
-          })
-        } catch {}
-        return nextHistory.present
-      })
-      return nextHistory
-    })
-  }, [])
+    const result = redoHomeDiy()
+    if (result) publishToOtherTabs(result)
+  }, [publishToOtherTabs])
 
   // 30. 全局快捷键监听 (编排模式下支持 Ctrl+Z / Cmd+Z 撤销, Ctrl+Shift+Z / Cmd+Shift+Z / Ctrl+Y 重做)
   useEffect(() => {
@@ -796,10 +1109,14 @@ export function useHomeDIY() {
     }))
   }, [persistConfig])
 
-  // URL Hash 免登预设分享与即时加载
-  const exportPresetToUrlHash = useCallback((): string => {
-    try {
-      const payload = {
+  // URL Hash 免登预设分享。编码逻辑在 lib/diy-share-link.ts：失败会带上原因，
+  // 不再像以前那样返回空串让调用方静默吞掉。
+  const exportPresetToUrlHash = useCallback((): ShareLinkOutcome => {
+    if (typeof window === 'undefined') {
+      return { ok: false, reason: '当前页面还没有准备好，稍后再试' }
+    }
+    return encodeShareLink(
+      {
         v: config.version,
         vm: config.viewMode,
         cdm: config.cardDisplayMode,
@@ -812,63 +1129,15 @@ export function useHomeDIY() {
         wp: config.customWallpaperUrl,
         gb: config.glassmorphismBlur,
         co_op: config.cardOpacity,
-      };
-      const json = JSON.stringify(payload);
-      const b64 = typeof window !== 'undefined' ? btoa(encodeURIComponent(json)) : '';
-      return `${window.location.origin}${window.location.pathname}#diy=${b64}`;
-    } catch {
-      return '';
-    }
+      },
+      { origin: window.location.origin, pathname: window.location.pathname },
+    )
   }, [config]);
 
-  const importPresetFromUrlHash = useCallback((hashStr?: string): boolean => {
-    try {
-      const hash = hashStr || (typeof window !== 'undefined' ? window.location.hash : '');
-      if (!hash.includes('#diy=')) return false;
-      const idx = hash.indexOf('#diy=');
-      const b64 = hash.slice(idx + '#diy='.length);
-      // 长度上限 4KB，超限直接拒绝
-      if (b64.length > 4096) return false;
-      const json = decodeURIComponent(atob(b64));
-      if (json.length > 4096) return false;
-      const parsed = JSON.parse(json);
-      if (!parsed || typeof parsed !== 'object') return false;
-
-      const normalized = {
-        viewMode: parsed.vm ?? parsed.viewMode,
-        cardDisplayMode: parsed.cdm ?? parsed.cardDisplayMode,
-        canvasBackground: parsed.bg ?? parsed.canvasBackground,
-        accentColor: parsed.ac ?? parsed.accentColor,
-        categoryOrder: parsed.co ?? parsed.categoryOrder,
-        pinnedCategoryIds: parsed.pco ?? parsed.pinnedCategoryIds,
-        hiddenCategoryIds: parsed.hco ?? parsed.hiddenCategoryIds,
-        siteCategoryOverrides: parsed.sco ?? parsed.siteCategoryOverrides,
-        customWallpaperUrl: parsed.wp ?? parsed.customWallpaperUrl,
-        glassmorphismBlur: parsed.gb ?? parsed.glassmorphismBlur,
-        cardOpacity: parsed.co_op ?? parsed.cardOpacity,
-      };
-      const check = validateAndCleanDIYConfig(normalized);
-      if (!check.valid || !check.config) return false;
-      persistConfig((prev) => ({
-        ...prev,
-        viewMode: check.config.viewMode ?? prev.viewMode,
-        cardDisplayMode: check.config.cardDisplayMode ?? prev.cardDisplayMode,
-        canvasBackground: check.config.canvasBackground ?? prev.canvasBackground,
-        accentColor: check.config.accentColor ?? prev.accentColor,
-        categoryOrder: check.config.categoryOrder ?? prev.categoryOrder,
-        pinnedCategoryIds: check.config.pinnedCategoryIds ?? prev.pinnedCategoryIds,
-        hiddenCategoryIds: check.config.hiddenCategoryIds ?? prev.hiddenCategoryIds,
-        siteCategoryOverrides: check.config.siteCategoryOverrides ?? prev.siteCategoryOverrides,
-        customWallpaperUrl: check.config.customWallpaperUrl ?? prev.customWallpaperUrl,
-        glassmorphismBlur: check.config.glassmorphismBlur ?? prev.glassmorphismBlur,
-        cardOpacity: check.config.cardOpacity ?? prev.cardOpacity,
-        updatedAt: Date.now(),
-      }))
-      return true;
-    } catch {
-      return false;
-    }
-  }, [persistConfig]);
+  // 注：以前这里还有一个 importPresetFromUrlHash，从没被调用过
+  // （唯一来源是 home-diy-toolbar 的解构，那边只用 exportPresetToUrlHash），
+  // 而且匹配条件比真正生效的 applyHomeDiyShareHash() 更宽（includes vs startsWith），
+  // 已删除：免登导入只保留上面那一条实现。
 
   return {
     config,
@@ -877,7 +1146,6 @@ export function useHomeDIY() {
     setCustomWallpaper,
     setAestheticSliders,
     exportPresetToUrlHash,
-    importPresetFromUrlHash,
     siteCategoryOverrides: config.siteCategoryOverrides || {},
     customWallpaperUrl: config.customWallpaperUrl || '',
     glassmorphismBlur: config.glassmorphismBlur ?? 12,
@@ -899,6 +1167,9 @@ export function useHomeDIY() {
     isEditingLayout,
     setIsEditingLayout,
     toggleEditingLayout,
+    /** 非 null = 上次落盘失败（改动已生效但刷新会丢）：界面必须显示出来 */
+    storageWarning,
+    dismissStorageWarning: dismissHomeDiyStorageWarning,
     canUndo,
     canRedo,
     undo,

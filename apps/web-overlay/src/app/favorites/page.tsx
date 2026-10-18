@@ -343,6 +343,31 @@ export default function FavoritesPage() {
           </div>
         )}
 
+        {/* 本地收藏读不出来：写入会被拒绝（为了不覆盖原数据），必须把话说清楚并给出出口 */}
+        {favorites.storageBlocked && (
+          <div
+            role="alert"
+            className="mb-6 p-3 rounded-lg border border-rose-500/30 bg-rose-500/10 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2"
+          >
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div className="space-y-2">
+              <p>{favorites.storageBlocked}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs rounded-lg"
+                onClick={() => {
+                  favorites.resetLocal()
+                  setSyncNote('已先把原数据备份到浏览器存储，并以空列表重置本地收藏')
+                  setSyncStatus('info')
+                }}
+              >
+                先备份原数据，再重置本地收藏
+              </Button>
+            </div>
+          </div>
+        )}
+
         {syncNote && (
           <div
             className={`mb-6 p-3 rounded-lg border text-xs flex items-center gap-2 ${
@@ -387,7 +412,7 @@ export default function FavoritesPage() {
                   设置金库主密码 (至少 6 位)
                 </label>
                 <div className="relative">
-                  <input
+                  <input aria-label="输入强主密码"
                     type={showPasswordText ? 'text' : 'password'}
                     value={vaultPassword}
                     onChange={(e) => setVaultPassword(e.target.value)}
@@ -404,10 +429,10 @@ export default function FavoritesPage() {
                 </div>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                <label htmlFor="vault-password-confirm" className="text-xs font-medium text-muted-foreground mb-1 block">
                   确认金库主密码
                 </label>
-                <input
+                <input id="vault-password-confirm"
                   type={showPasswordText ? 'text' : 'password'}
                   value={vaultPasswordConfirm}
                   onChange={(e) => setVaultPasswordConfirm(e.target.value)}
@@ -465,7 +490,7 @@ export default function FavoritesPage() {
                   >
                     <Upload className="w-3 h-3 mr-1" /> 选择本地金库文件
                   </Button>
-                  <input
+                  <input aria-label="选择金库文件"
                     type="file"
                     ref={fileInputRef}
                     onChange={handleFileChange}
@@ -473,7 +498,7 @@ export default function FavoritesPage() {
                     className="hidden"
                   />
                 </div>
-                <textarea
+                <textarea aria-label="可直接点击上方按钮选择文件，或在此粘贴密文 JSON"
                   value={importVaultPayload}
                   onChange={(e) => setImportVaultPayload(e.target.value)}
                   placeholder="可直接点击上方按钮选择文件，或在此粘贴密文 JSON..."
@@ -482,10 +507,10 @@ export default function FavoritesPage() {
               </div>
 
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                <label htmlFor="vault-import-passphrase" className="text-xs font-medium text-muted-foreground mb-1 block">
                   输入此金库的主密码
                 </label>
-                <input
+                <input id="vault-import-passphrase"
                   type="password"
                   value={importPassphrase}
                   onChange={(e) => setImportPassphrase(e.target.value)}
@@ -516,7 +541,7 @@ export default function FavoritesPage() {
         {showImport && (
           <div className="mb-6 space-y-2 p-4 rounded-lg border bg-muted/20">
             <div className="text-xs font-medium text-muted-foreground">导入传统未加密 JSON</div>
-            <textarea
+            <textarea aria-label="粘贴导出的 JSON 文本"
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
               placeholder='粘贴导出的 JSON，如 {"version":1,"items":[...]}'
@@ -577,11 +602,11 @@ export default function FavoritesPage() {
               在主页站点卡片或搜索结果里点击星标即可一键收藏（本地离线存储，无需登录，可随时导出为 E2EE 加密金库）。
             </p>
             <div className="pt-2">
-              <Link href="/">
-                <Button size="sm" variant="outline" className="text-xs">
+              <Button asChild size="sm" variant="outline" className="text-xs">
+                <Link href="/">
                   去主页探索发现
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </div>
         ) : filteredFavorites.length === 0 ? (

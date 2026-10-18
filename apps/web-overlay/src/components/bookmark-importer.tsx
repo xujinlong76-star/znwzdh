@@ -40,7 +40,10 @@ export function BookmarkImporter() {
           setCategories(data.map((c: any) => ({ id: c.id, label: (c.icon ? c.icon + " " : "") + c.title })))
         }
       })
-      .catch(() => {})
+      .catch(() => {
+        // 分类下拉只是「选填」数据源：拉不到就保持空列表（仍可留空或手输），
+        // 导入流程本身不依赖它，所以不打断也不打扰
+      })
   }, [])
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -133,12 +136,12 @@ export function BookmarkImporter() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Link href="/">
-                <Button variant="ghost" size="sm" className="h-7 px-2.5 rounded-full text-xs text-muted-foreground hover:text-foreground hover:bg-background/80 border border-border/50 gap-1.5 transition-all">
+              <Button asChild variant="ghost" size="sm" className="h-7 px-2.5 rounded-full text-xs text-muted-foreground hover:text-foreground hover:bg-background/80 border border-border/50 gap-1.5 transition-all">
+                <Link href="/">
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>返回主页</span>
-                </Button>
-              </Link>
+                </Link>
+              </Button>
               <span className="text-xs text-muted-foreground">/ 智能书签导入</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground via-foreground/90 to-muted-foreground flex items-center gap-2.5">
@@ -169,7 +172,7 @@ export function BookmarkImporter() {
         <CardContent className="p-6 space-y-5">
           {/* 上传拖拽区 */}
           <div className="relative group border-2 border-dashed border-border/80 hover:border-primary/60 rounded-2xl p-8 sm:p-10 text-center transition-all duration-300 bg-muted/20 hover:bg-primary/5 cursor-pointer">
-            <input
+            <input aria-label="选择书签 HTML 文件"
               type="file"
               accept=".html,.htm"
               onChange={handleFileUpload}
@@ -249,7 +252,7 @@ export function BookmarkImporter() {
               <div className="max-h-96 overflow-y-auto rounded-xl border border-border/80 divide-y divide-border/50 text-xs bg-background/50">
                 {bookmarks.map((b) => (
                   <div key={b.id} className="flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors">
-                    <input
+                    <input aria-label={`选择 ${b.title}`}
                       type="checkbox"
                       checked={b.selected}
                       onChange={() => toggleSelect(b.id)}
@@ -267,6 +270,7 @@ export function BookmarkImporter() {
                       <p className="text-xs text-muted-foreground/80 truncate font-mono">{b.url}</p>
                     </div>
                     <select
+                      aria-label={`为「${b.title}」选择建议分类`}
                       value={b.suggestedCategory}
                       onChange={(e) => {
                         const val = e.target.value

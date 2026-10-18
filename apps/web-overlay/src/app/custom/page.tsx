@@ -7,7 +7,7 @@ import { ArrowLeft, LayoutGrid, Sparkles, Move, Maximize2, ShieldCheck } from 'l
 import { Button } from '@/registry/new-york/ui/button'
 
 export const metadata: Metadata = {
-  title: '模块化自定义工作台 - NavHub 4.0+',
+  title: '模块化自定义工作台',
   description: '全响应式 12 栅格模块化页面系统，支持鼠标自由拖拽换位、双轴尺寸缩放、独立小组件即插即用与本地静止持久化。',
 }
 
@@ -21,16 +21,17 @@ export default function CustomPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <Link href="/">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2.5 rounded-full text-xs text-muted-foreground hover:text-foreground hover:bg-background/80 border border-border/50 gap-1.5 transition-all"
-                    >
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2.5 rounded-full text-xs text-muted-foreground hover:text-foreground hover:bg-background/80 border border-border/50 gap-1.5 transition-all"
+                  >
+                    <Link href="/">
                       <ArrowLeft className="w-3.5 h-3.5" />
                       <span>返回主页</span>
-                    </Button>
-                  </Link>
+                    </Link>
+                  </Button>
                   <span className="text-xs text-muted-foreground">/ 模块化排版系统</span>
                 </div>
                 <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-foreground via-foreground/90 to-muted-foreground flex items-center gap-2.5">

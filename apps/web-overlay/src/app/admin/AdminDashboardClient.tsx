@@ -40,6 +40,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { hubGet, hubSend } from '@/lib/navhub-api'
+import { describeDegrade } from '@/lib/degrade'
+import { describeTelemetry, type TelemetryState } from '@/lib/telemetry-status'
 
 interface DashboardData {
   overview: {
@@ -181,14 +183,31 @@ const CHANNEL_LABELS: Record<string, string> = {
   personal: '个性化偏置 (personal)',
 }
 
+/** 遥测徽标配色：只有真的在更新才是绿色，解析失败/离线一律不是 */
+const TELEMETRY_BADGE: Record<TelemetryState, string> = {
+  live: 'border-emerald-500/40 text-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20',
+  connecting: 'border-amber-500/40 text-amber-600 bg-amber-50/50 dark:bg-amber-950/20',
+  stale: 'border-amber-500/40 text-amber-600 bg-amber-50/50 dark:bg-amber-950/20',
+  offline: 'border-red-500/40 text-red-600 bg-red-50/50 dark:bg-red-950/20',
+}
+
+const TELEMETRY_DOT: Record<TelemetryState, string> = {
+  live: 'bg-emerald-500 animate-pulse',
+  connecting: 'bg-amber-500 animate-ping',
+  stale: 'bg-amber-500',
+  offline: 'bg-red-500',
+}
+
 export function AdminDashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [linucb, setLinucb] = useState<LinUCBInfo | null>(null)
   const [searchAi, setSearchAi] = useState<SearchAiOverviewData | null>(null)
   const [security, setSecurity] = useState<SecurityOverviewData | null>(null)
-  const [lastHeartbeatAt, setLastHeartbeatAt] = useState<number | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  // 最近有多少条实时消息解析失败。连接是通的、但数值冻住时，必须能说出来。
+  const [sseParseFailures, setSseParseFailures] = useState(0)
+  const [loadError, setLoadError] = useState<unknown>(null)
   const [actionNotice, setActionNotice] = useState<string | null>(null)
   const sseRef = useRef<EventSource | null>(null)
 
@@ -206,8 +225,12 @@ export function AdminDashboardClient() {
         if (searchAiData.linucb) setLinucb(searchAiData.linucb)
       }
       if (securityData) setSecurity(securityData)
+      setLoadError(null)
     } catch (err) {
+      // 以前只 console.error：首屏拉取失败时页面会永远停在「正在加载…」，
+      // 用户既不知道出了什么事，也没有重试入口。
       console.error('Failed to fetch dashboard data:', err)
+      setLoadError(err)
     } finally {
       if (showLoading) setIsRefreshing(false)
     }
@@ -233,13 +256,16 @@ export function AdminDashboardClient() {
         if (payload.linucb) {
           setLinucb(payload.linucb)
         }
-      } catch {}
+        setSseParseFailures(0)
+      } catch {
+        // 解析不了就只能继续用旧数值 —— 但要如实计数，不能装作还在实时刷新
+        setSseParseFailures((n) => n + 1)
+      }
     })
 
     sse.addEventListener('tick', (e) => {
       try {
         const payload = JSON.parse(e.data)
-        setLastHeartbeatAt(payload.timestamp ?? Date.now())
         if (payload.linucb) {
           setLinucb(payload.linucb)
         }
@@ -262,7 +288,11 @@ export function AdminDashboardClient() {
             },
           }
         })
-      } catch {}
+        setSseParseFailures(0)
+      } catch {
+        // 同上：一次解析失败不代表流断了，但数值会停在旧值，必须让徽标说出来
+        setSseParseFailures((n) => n + 1)
+      }
     })
 
     sse.onerror = () => {
@@ -382,6 +412,9 @@ export function AdminDashboardClient() {
     },
   ]
 
+  const telemetry = describeTelemetry(sseStatus, sseParseFailures)
+  const degradeNotice = loadError ? describeDegrade(loadError) : null
+
   return (
     <div className="space-y-6">
       {/* 顶部状态条与快捷控制 */}
@@ -391,28 +424,11 @@ export function AdminDashboardClient() {
             <h1 className="text-2xl font-bold tracking-tight">运营与监控中枢</h1>
             <Badge
               variant="outline"
-              className={`flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium ${
-                sseStatus === 'connected'
-                  ? 'border-emerald-500/40 text-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20'
-                  : sseStatus === 'connecting'
-                  ? 'border-amber-500/40 text-amber-600 bg-amber-50/50 dark:bg-amber-950/20'
-                  : 'border-red-500/40 text-red-600 bg-red-50/50 dark:bg-red-950/20'
-              }`}
+              title={telemetry.detail}
+              className={`flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-medium ${TELEMETRY_BADGE[telemetry.state]}`}
             >
-              <span
-                className={`w-1.5 h-1.5 rounded-full ${
-                  sseStatus === 'connected'
-                    ? 'bg-emerald-500 animate-pulse'
-                    : sseStatus === 'connecting'
-                    ? 'bg-amber-500 animate-ping'
-                    : 'bg-red-500'
-                }`}
-              />
-              {sseStatus === 'connected'
-                ? `SSE 遥测就绪${lastHeartbeatAt ? ' (3s 心跳)' : ''}`
-                : sseStatus === 'connecting'
-                ? '连接中'
-                : '离线'}
+              <span className={`w-1.5 h-1.5 rounded-full ${TELEMETRY_DOT[telemetry.state]}`} />
+              {telemetry.label}
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
@@ -453,6 +469,32 @@ export function AdminDashboardClient() {
           </Button>
         </div>
       </div>
+
+      {/* 拉取失败必须说出来：以前这里只 console.error，首屏失败就永远停在「正在加载…」 */}
+      {degradeNotice && (
+        <div
+          role="status"
+          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+        >
+          <span>
+            {data
+              ? `本次刷新失败，下面是上一次成功获取的数据。${degradeNotice.message}`
+              : `没能取回监控数据。${degradeNotice.message}`}
+          </span>
+          {degradeNotice.retryable && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 text-xs"
+              onClick={() => fetchFullDashboard(true)}
+              disabled={isRefreshing}
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              重试
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* 运行时轻量系统态势小卡片 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
@@ -894,11 +936,11 @@ export function AdminDashboardClient() {
                   近 7 天用户搜索需求与未收录关键词补录线索
                 </CardDescription>
               </div>
-              <Link href="/admin/stats">
-                <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground">
+              <Button asChild variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground">
+                <Link href="/admin/stats">
                   完整大盘 <ArrowRight className="w-3 h-3 ml-1" />
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -957,12 +999,12 @@ export function AdminDashboardClient() {
                       </span>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-muted-foreground">{q.count} 次未命中</span>
-                        <Link href={`/admin/sitelist?action=new&title=${encodeURIComponent(q.query)}`}>
-                          <Button variant="outline" size="sm" className="h-6 text-[10px] px-2 text-primary">
+                        <Button asChild variant="outline" size="sm" className="h-6 text-[10px] px-2 text-primary">
+                          <Link href={`/admin/sitelist?action=new&title=${encodeURIComponent(q.query)}`}>
                             <Plus className="w-2.5 h-2.5 mr-1" />
                             录入新站
-                          </Button>
-                        </Link>
+                          </Link>
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -989,11 +1031,11 @@ export function AdminDashboardClient() {
                   Token 签发管控与管理员操作可追溯流水
                 </CardDescription>
               </div>
-              <Link href="/admin/audit">
-                <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground">
+              <Button asChild variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground">
+                <Link href="/admin/audit">
                   全部审计 <ArrowRight className="w-3 h-3 ml-1" />
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">

@@ -17,7 +17,7 @@ export const profileRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
   /** 读画像：让终端用户看到「系统据我的行为推断出了什么」——可解释性即信任 */
   app.get("/api/profile", async (req, reply) => {
     const identity = identityOf(req as never);
-    if (!identity) return { error: "缺少 userId 或 anonId" };
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     return { profile: await ctx.repo.getUserProfile(identity) };
   });
@@ -28,7 +28,7 @@ export const profileRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
    */
   app.delete("/api/profile", async (req, reply) => {
     const identity = identityOf(req as never);
-    if (!identity) return { ok: false, error: "缺少 userId 或 anonId" };
+    if (!identity) { reply.code(400); return { ok: false, error: "缺少 userId 或 anonId" }; }
     if (!identityAllowed(ctx, req as never)) { reply.code(401); return { ok: false, error: "需要 Bearer token" }; }
     const result = await resetUserProfile(ctx, identity);
     return { ok: true, ...result };

@@ -34,6 +34,8 @@ import {
   type RouteScope,
 } from "./auth.ts";
 import { healthRoutes } from "./routes/health.ts";
+import { identityOf } from "./routes/shared.ts";
+import { verifyIdentitySignature } from "./identity-signature.ts";
 import { searchRoutes } from "./routes/search.ts";
 import { siteRoutes } from "./routes/sites.ts";
 import { trashRoutes } from "./routes/trash.ts";
@@ -243,6 +245,27 @@ export async function buildServer(ctx: AppContext) {
     const required = ((req.routeOptions?.config as { scope?: RouteScope } | undefined)?.scope ?? "public") as RouteScope;
     const auth: AuthIdentity = { ...ANONYMOUS_IDENTITY };
     req.auth = auth;
+
+    /**
+     * 身份签名校验（可选，配置 NAVHUB_IDENTITY_SECRET 后生效）。
+     *
+     * 与 authRequired 无关：即便处在开放模式，只要配了密钥，带身份的请求就必须
+     * 带对签名——否则没有任何凭据的请求可以自称任意身份读写他人数据。
+     */
+    if (ctx.config.identitySecret) {
+      const identity = identityOf(req as never);
+      const signature = req.headers["x-navhub-identity-signature"];
+      if (
+        identity &&
+        !verifyIdentitySignature(
+          ctx.config.identitySecret,
+          identity,
+          typeof signature === "string" ? signature : undefined,
+        )
+      ) {
+        return reply.code(401).send({ error: "身份签名缺失或无效" });
+      }
+    }
 
     if (!ctx.config.authRequired) return;
 

@@ -315,8 +315,8 @@ export default function AdminTokensPage() {
 
   const handleCopy = async () => {
     if (!plainResult?.token) return
-    const ok = await copyText(plainResult.token)
-    if (!ok) {
+    const result = await copyText(plainResult.token)
+    if (!result.ok) {
       // 绝不假装成功：明文只出现一次，复制失败必须让用户知道要手动选中
       toast({
         title: '自动复制失败',
@@ -487,8 +487,8 @@ export default function AdminTokensPage() {
 
           <form onSubmit={handleCreateToken} className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Token 标识名称</label>
-              <Input
+              <label htmlFor="token-new-name" className="text-xs font-semibold text-foreground">Token 标识名称</label>
+              <Input id="token-new-name"
                 placeholder="例如: claude-desktop-agent / chrome-ext"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
@@ -534,8 +534,8 @@ export default function AdminTokensPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">有效期</label>
-              <select
+              <label htmlFor="token-new-expires" className="text-xs font-semibold text-foreground">有效期</label>
+              <select id="token-new-expires"
                 value={expiresDays}
                 onChange={(e) => setExpiresDays(e.target.value)}
                 className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-xs"
@@ -577,8 +577,8 @@ export default function AdminTokensPage() {
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">标识名称</label>
-              <Input
+              <label htmlFor="token-edit-name" className="text-xs font-semibold text-foreground">标识名称</label>
+              <Input id="token-edit-name"
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 className="h-8.5 text-xs"
@@ -613,8 +613,8 @@ export default function AdminTokensPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">有效期（自今天起）</label>
-              <select
+              <label htmlFor="token-edit-expires" className="text-xs font-semibold text-foreground">有效期（自今天起）</label>
+              <select id="token-edit-expires"
                 value={editExpiresDays}
                 onChange={(e) => setEditExpiresDays(e.target.value)}
                 className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-xs"

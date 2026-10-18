@@ -33,7 +33,9 @@ export function PwaRegister() {
           for (const registration of registrations) {
             void registration.unregister()
           }
-        }).catch(() => undefined)
+        }).catch(() => {
+          // 开发环境注销残留 SW 的顺手操作：失败无需处理，也不影响生产逻辑
+        })
       }
       return
     }
@@ -54,11 +56,17 @@ export function PwaRegister() {
         reg.addEventListener('updatefound', () => {
           const sw = reg.installing
           if (!sw) return
-          sw.addEventListener('statechange', () => {
+          const onStateChange = () => {
             // installed 且当前页已被旧 SW 控制 = 这是一次真正的「更新」，
             // 而非首次安装；首次安装时 controller 为 null，不提示刷新。
             if (sw.state === 'installed' && navigator.serviceWorker.controller) markUpdate()
-          })
+            // SW 生命周期会多次触发 statechange（installing → installed → activating → activated），
+            // 终态后摘掉监听，避免注册对象长期持有闭包。
+            if (sw.state === 'installed' || sw.state === 'activated' || sw.state === 'redundant') {
+              sw.removeEventListener('statechange', onStateChange)
+            }
+          }
+          sw.addEventListener('statechange', onStateChange)
         })
       })
       .catch((err) => {

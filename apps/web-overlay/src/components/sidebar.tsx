@@ -9,8 +9,9 @@ import { Button } from '@/registry/new-york/ui/button'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import type { NavigationData } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
-import * as LucideIcons from 'lucide-react'
-import { ChevronDown, ChevronRight, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Compass, X } from 'lucide-react'
+import { NavIcon } from '@/components/nav-icon'
+import { NAV_ICON_FALLBACK, isIconUrl, resolveNavIcon } from '@/lib/nav-icons'
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   navigationData: NavigationData
@@ -43,9 +44,9 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
   }
 
   const renderIcon = (iconName?: string) => {
-    if (!iconName) return <LucideIcons.Folder className="h-4 w-4" />;
+    if (!iconName) return <NAV_ICON_FALLBACK className="h-4 w-4" />;
 
-    if (iconName.startsWith('/') || iconName.startsWith('http')) {
+    if (isIconUrl(iconName)) {
       return (
         <Image
           src={iconName}
@@ -57,9 +58,11 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
       );
     }
 
-    // Convert icon name to match Lucide icon component name
-    const IconComponent = (LucideIcons as unknown as Record<string, React.ComponentType<{ className?: string }>>)[iconName] || LucideIcons.Folder;
-    return <IconComponent className="h-4 w-4" />;
+    // 已知名字走静态映射（可被 tree-shaking，零额外体积、无闪烁）；
+    // 表外名字交给 NavIcon 按需拉取，行为与旧的整包查找一致。
+    const StaticIcon = resolveNavIcon(iconName);
+    if (StaticIcon) return <StaticIcon className="h-4 w-4" />;
+    return <NavIcon name={iconName} className="h-4 w-4" />;
   }
 
   // 使用对象存储每个分类的展开状态
@@ -91,7 +94,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
             />
           ) : (
             <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-2xs">
-              <LucideIcons.Compass className="h-4 w-4 text-primary" />
+              <Compass className="h-4 w-4 text-primary" />
             </div>
           )}
             <div className="flex flex-col">

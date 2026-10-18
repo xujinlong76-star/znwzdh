@@ -8,6 +8,7 @@ import { copyText } from '@/lib/clipboard'
 export function QuickToolsWidget() {
   const [activeTab, setActiveTab] = useState<'uuid' | 'timestamp' | 'b64'>('uuid')
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const [b64Input, setB64Input] = useState('')
   const [b64Output, setB64Output] = useState('')
   // 水合安全：SSR 与客户端的 Date.now()/randomUUID() 必然不同，直接做初始值会导致
@@ -19,16 +20,19 @@ export function QuickToolsWidget() {
     setUuid(typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'unsupported')
   }, [])
 
-  const handleCopy = (text: string) => {
-    if (!text) return
-    // 同 notes-widget：非安全上下文下 clipboard 会 reject，需接 catch
-    copyText(text).then(
-      () => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      },
-      () => {}
-    )
+  // 复制必须**先确认真写进去了**：原来失败分支是 `() => {}`，
+  // 环境不支持（非安全上下文）时 `?.` 还会让整条链短路 —— 点了复制毫无反应，
+  // 用户只能自己猜。现在失败会把原因显示出来。
+  const handleCopy = async (text: string) => {
+    const result = await copyText(text)
+    if (!result.ok) {
+      setCopied(false)
+      setCopyError(result.reason)
+      return
+    }
+    setCopyError(null)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   const generateUuid = () => {
@@ -171,7 +175,7 @@ export function QuickToolsWidget() {
 
         {activeTab === 'b64' && (
           <div className="space-y-1.5">
-            <input
+            <input aria-label="输入待编/解码文本"
               type="text"
               placeholder="输入待编/解码文本..."
               value={b64Input}
@@ -199,6 +203,12 @@ export function QuickToolsWidget() {
           </div>
         )}
       </div>
+
+      {copyError && (
+        <div role="status" title={copyError} className="text-xs text-destructive leading-tight">
+          复制失败：{copyError}
+        </div>
+      )}
 
       <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono">
         纯前端本地即时转换 · 零网络往返

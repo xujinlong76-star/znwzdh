@@ -81,7 +81,9 @@ export function ModularCanvas() {
       if (savedBg && ['dots', 'grid', 'aurora', 'clean'].includes(savedBg)) {
         setCanvasBg(savedBg as any)
       }
-    } catch {}
+    } catch {
+      // 读不到就沿用默认画布背景：纯外观偏好，不值得打扰用户
+    }
   }, [])
 
   // 画布背景风格切换
@@ -89,7 +91,9 @@ export function ModularCanvas() {
     setCanvasBg(bg)
     try {
       localStorage.setItem('navhub_modular_bg_style', bg)
-    } catch {}
+    } catch {
+      // 写盘失败只影响「下次打开还记得」：本次切换已经生效
+    }
   }
 
   // 打开模块配置弹窗（useCallback：传给 memo 化的 ModularItem）
@@ -134,16 +138,17 @@ export function ModularCanvas() {
     setDragOverIndex((prev) => (prev === index ? prev : index))
   }, [])
 
-  // 拖拽结束释放
+  // 拖拽结束释放：读已提交的拖拽状态后一次性收尾。
+  // 此前是 setDraggedIndex 里嵌套 setDragOverIndex、并在嵌套的 setState updater 内调
+  // reorderWidgets —— updater 双跑（StrictMode）会让 reorderWidgets 执行两次，
+  // 表现为「拖一次，模块跳两格」。现在 updater 保持纯粹，副作用只发生在事件处理器里。
   const handleDragEnd = useCallback(() => {
-    setDraggedIndex((from) => {
-      setDragOverIndex((over) => {
-        if (from !== null && over !== null && from !== over) reorderWidgetsRef.current(from, over)
-        return null
-      })
-      return null
-    })
-  }, [])
+    if (draggedIndex !== null && dragOverIndex !== null && draggedIndex !== dragOverIndex) {
+      reorderWidgetsRef.current(draggedIndex, dragOverIndex)
+    }
+    setDraggedIndex(null)
+    setDragOverIndex(null)
+  }, [draggedIndex, dragOverIndex])
 
   // 创建新看板
   const handleCreateBoardSubmit = (e: React.FormEvent) => {
@@ -242,7 +247,7 @@ export function ModularCanvas() {
           {isEditing && (
             isCreatingBoard ? (
               <form onSubmit={handleCreateBoardSubmit} className="flex items-center gap-1">
-                <input
+                <input aria-label="看板名称"
                   type="text"
                   autoFocus
                   placeholder="看板名称..."

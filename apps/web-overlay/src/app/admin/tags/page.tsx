@@ -12,10 +12,13 @@
  *   - DELETE /api/tags/:id/aliases/:a 解除别名绑定
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { LoadErrorNotice } from '@/components/admin/load-error-notice'
+import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
+import { newRequestGate, settleLatest, type RequestGate } from '@/lib/latest-request'
 import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface TagRow {
@@ -44,15 +47,32 @@ export default function AdminTagsPage() {
   const [filter, setFilter] = useState('')
   const [selectedGroup, setSelectedGroup] = useState('all')
   const [busyId, setBusyId] = useState<string | null>(null)
+  // 「没拉到」和「真的没有」必须分开（见 lib/admin-load-failure.ts）
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // 分组切换也要过闸：连点「领域」「平台」时，先发那次就算后到也不许覆盖后发那次
+  const groupGateRef = useRef<RequestGate | null>(null)
+  if (groupGateRef.current === null) groupGateRef.current = newRequestGate()
+  const groupGate = groupGateRef.current
 
   const load = useCallback(() => {
     setLoading(true)
+    setLoadError(null)
     const url = selectedGroup === 'all' ? '/api/tags?minCount=1' : `/api/tags?minCount=1&group=${selectedGroup}`
-    void hubGet<TagRow[]>(url)
-      .then((t) => setTags(Array.isArray(t) ? t : []))
-      .catch(() => setTags([]))
-      .finally(() => setLoading(false))
-  }, [selectedGroup])
+    void (async () => {
+      const out = await settleLatest(groupGate, () => hubGet<TagRow[]>(url))
+      // 过期（用户已经点了别的分组）：一个字都不要写，连 loading 都别动
+      if (out.status === 'stale') return
+      if (out.status === 'value') {
+        setTags(Array.isArray(out.value) ? out.value : [])
+      } else {
+        // 失败仍然回落到空列表，但必须留下错误态（见 lib/admin-load-failure.ts）
+        setTags([])
+        setLoadError(describeLoadFailure(out.error, '标签列表'))
+      }
+      setLoading(false)
+    })()
+  }, [groupGate, selectedGroup])
 
   useEffect(() => { load() }, [load])
 
@@ -77,11 +97,11 @@ export default function AdminTagsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/admin/facets">
-            <Button size="sm" variant="ghost" className="text-xs">
+          <Button asChild size="sm" variant="ghost" className="text-xs">
+            <Link href="/admin/facets">
               分面属性治理 →
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <Button size="sm" variant="outline" onClick={load} disabled={loading}>
             {loading ? '刷新中…' : '刷新'}
           </Button>
@@ -89,7 +109,7 @@ export default function AdminTagsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Input
+        <Input aria-label="按名称 / slug / 别名 / 分组过滤"
           placeholder="按名称 / slug / 别名 / 分组过滤"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -112,10 +132,12 @@ export default function AdminTagsPage() {
         </div>
       </div>
 
+      {loadError && <LoadErrorNotice message={loadError} onRetry={() => load()} retrying={loading} />}
+
       {loading ? (
         <div className="text-muted-foreground text-sm py-8 text-center">加载中…</div>
       ) : filtered.length === 0 ? (
-        <div className="text-muted-foreground text-sm py-8 text-center">暂无匹配标签</div>
+        <div className="text-muted-foreground text-sm py-8 text-center">{emptyStateText(loadError, '暂无匹配标签')}</div>
       ) : (
         <div className="rounded-md border bg-card overflow-x-auto">
           <table className="w-full text-sm">

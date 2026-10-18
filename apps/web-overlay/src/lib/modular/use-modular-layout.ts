@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import type { WidgetInstance, ModularPageLayout } from '@/types/modular'
 import { WIDGET_REGISTRY, PRESET_TEMPLATES, createWidgetInstance } from './registry'
 import { sanitizeWidgetInstances } from './sanitize'
+import { backupCorruptPayload } from './workspace-storage'
 
 export const STORAGE_KEY = 'navhub_modular_multi_boards_v2'
 const LEGACY_STORAGE_KEY = 'navhub_modular_layout_v1'
@@ -43,6 +44,11 @@ export function useModularLayout() {
   const boardsRef = useRef(boards)
   const historyRef = useRef(history)
   const futureRef = useRef(future)
+  /**
+   * 加载阶段发现存储损坏时置位：抑制紧随其后的「默认模板回写」。
+   * 该副作用本来会把默认布局写回同一个 key，把损坏但仍有救的原始数据彻底覆盖。
+   */
+  const skipNextPersistRef = useRef(false)
   useEffect(() => {
     boardsRef.current = boards
   }, [boards])
@@ -89,7 +95,17 @@ export function useModularLayout() {
         }
       }
     } catch (e) {
-      console.warn('加载工作台配置失败，将使用默认模版', e)
+      // 解析失败：先把现场备份下来再回退默认模板。
+      // 否则紧接着的自动持久化会把默认模板写回同一个 key，用户布局再无迹可寻。
+      let raw: string | null = null
+      try {
+        raw = localStorage.getItem(STORAGE_KEY)
+      } catch {
+        // 读都读不了（隐私模式）：没有现场可备份
+      }
+      const backupKey = raw ? backupCorruptPayload(STORAGE_KEY, raw, Date.now(), localStorage) : null
+      skipNextPersistRef.current = true
+      console.warn('加载工作台配置失败，已备份原始数据并使用默认模版', { backupKey, error: e })
     }
     return null
   }, [])
@@ -163,6 +179,12 @@ export function useModularLayout() {
   // 2. 状态改变自动持久化
   useEffect(() => {
     if (!initialized || boards.length === 0) return
+    if (skipNextPersistRef.current) {
+      // 加载阶段发现存储损坏：跳过这次「默认模板回写」，
+      // 把原始（损坏但有备份）的数据留在原 key，等用户真正编辑时再覆盖。
+      skipNextPersistRef.current = false
+      return
+    }
     try {
       const state: StoredWorkspaceState = {
         version: 2,
@@ -471,7 +493,10 @@ export function useModularLayout() {
         setBoards(nextBoards)
         return true
       }
-    } catch {}
+    } catch {
+      // 导入文本不是合法 JSON（或结构认不出来）：返回 false，
+      // 调用方据此提示「格式不正确」—— 这不是静默吞掉，而是失败经由返回值上报
+    }
     return false
   }, [])
 

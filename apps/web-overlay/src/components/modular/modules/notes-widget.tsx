@@ -7,8 +7,9 @@ import { copyText } from '@/lib/clipboard'
 export function NotesWidget() {
   const [content, setContent] = useState('')
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved')
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'failed'>('saved')
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
@@ -19,7 +20,11 @@ export function NotesWidget() {
       } else {
         setContent('## 🎯 极客工作台备忘\n- [x] 体验 12 栅格自适应模块化布局\n- [x] 体验主页站点 📌 一键固定到启动坞\n- [ ] 探索 GitHub 提交热力足迹\n- [ ] 尝试 Excalidraw 嵌入画板')
       }
-    } catch {}
+    } catch {
+      // 本地存储不可用（隐私模式 / 配额满）：草稿既读不出来也存不进去，
+      // 所以立刻把状态标成「未能保存」—— 原来会一直显示绿色的「自动已存」
+      setSaveStatus('failed')
+    }
   }, [])
 
   // 卸载时清理在途防抖定时器：模块被删除后 600ms 内不应再触发写盘
@@ -39,21 +44,28 @@ export function NotesWidget() {
       try {
         localStorage.setItem('navhub_modular_quick_notes', val)
         setSaveStatus('saved')
-      } catch {}
+      } catch {
+        // 存储不可用（隐私模式 / 配额满）：内容还在内存里、能继续编辑，
+        // 但**不能**继续显示「自动已存」—— 那会让用户以为刷新后还在
+        setSaveStatus('failed')
+      }
     }, 600)
   }
 
-  const handleCopy = () => {
-    if (!content) return
-    // clipboard API 在非安全上下文（http:// 局域网 IP）或权限被拒时会 reject，
-    // 不接 catch 会变成未处理的 Promise 拒绝，污染控制台
-    copyText(content).then(
-      () => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      },
-      () => setSaveStatus('saved') // 复制失败时静默保持现状，不抛错
-    )
+  // 复制必须**先确认真写进去了**。原来写的是
+  //   navigator.clipboard?.writeText(content).then(成功, () => setSaveStatus('saved'))
+  // —— 环境不支持时 `?.` 让整条链短路，写入被拒时失败分支只是把「自动已存」重设一遍：
+  // 两种情况下用户点了复制都毫无反应，也得不到任何原因。
+  const handleCopy = async () => {
+    const result = await copyText(content)
+    if (!result.ok) {
+      setCopied(false)
+      setCopyError(result.reason)
+      return
+    }
+    setCopyError(null)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   // 极简轻量 Markdown 渲染器
@@ -91,7 +103,7 @@ export function NotesWidget() {
           if (trimmed.startsWith('- [x] ') || trimmed.startsWith('- [X] ')) {
             return (
               <div key={index} className="flex items-center gap-2 text-muted-foreground line-through">
-                <input type="checkbox" checked readOnly className="rounded text-primary h-3 w-3 pointer-events-none" />
+                <input aria-hidden="true" type="checkbox" checked readOnly className="rounded text-primary h-3 w-3 pointer-events-none" />
                 <span>{trimmed.slice(6)}</span>
               </div>
             )
@@ -99,7 +111,7 @@ export function NotesWidget() {
           if (trimmed.startsWith('- [ ] ')) {
             return (
               <div key={index} className="flex items-center gap-2 text-foreground">
-                <input type="checkbox" checked={false} readOnly className="rounded text-primary h-3 w-3 pointer-events-none" />
+                <input aria-hidden="true" type="checkbox" checked={false} readOnly className="rounded text-primary h-3 w-3 pointer-events-none" />
                 <span>{trimmed.slice(6)}</span>
               </div>
             )
@@ -177,7 +189,7 @@ export function NotesWidget() {
       {/* 便签主体内容 */}
       <div className="flex-1 min-h-[90px] overflow-y-auto">
         {mode === 'edit' ? (
-          <textarea
+          <textarea aria-label="笔记内容（支持 Markdown）"
             value={content}
             onChange={(e) => handleChange(e.target.value)}
             placeholder="支持 Markdown 待办 (- [ ] 事项)、标题 (# )、列表 (- )..."
@@ -195,11 +207,26 @@ export function NotesWidget() {
         <div className="flex items-center gap-1">
           <span
             className={`w-1.5 h-1.5 rounded-full ${
-              saveStatus === 'saved' ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+              saveStatus === 'saved'
+                ? 'bg-emerald-500'
+                : saveStatus === 'failed'
+                  ? 'bg-red-500'
+                  : 'bg-amber-500 animate-pulse'
             }`}
           />
-          <span className="font-mono">{saveStatus === 'saved' ? '自动已存' : '正在保存...'}</span>
+          <span
+            className="font-mono"
+            role={saveStatus === 'failed' ? 'status' : undefined}
+            title={saveStatus === 'failed' ? '本地存储不可用，内容只在当前页面有效' : undefined}
+          >
+            {saveStatus === 'saved' ? '自动已存' : saveStatus === 'failed' ? '未能保存' : '正在保存...'}
+          </span>
         </div>
+        {copyError && (
+          <span role="status" title={copyError} className="text-destructive">
+            复制失败
+          </span>
+        )}
         <div className="font-mono text-muted-foreground/70">
           {content.length} 字符 · {content.split('\n').filter(Boolean).length} 行
         </div>

@@ -824,6 +824,18 @@ export class Repository {
     return pluginsRepo.reportPlugin(this, slug, input, actor);
   }
 
+  async pluginInteraction(pluginId: string, identity: string): Promise<{ installed: boolean; starred: boolean }> {
+    return pluginsRepo.pluginInteraction(this, pluginId, identity);
+  }
+
+  async hasUserStarredPlugin(pluginId: string, identity: string): Promise<boolean> {
+    return pluginsRepo.hasUserStarredPlugin(this, pluginId, identity);
+  }
+
+  async listPluginInstallsByIdentity(identity: string): Promise<pluginsRepo.PluginInstalledItem[]> {
+    return pluginsRepo.listPluginInstallsByIdentity(this, identity);
+  }
+
 
   /* ------------------------- 底层执行 ------------------------- */
 

@@ -59,6 +59,7 @@ import { identityRoutes } from "./routes/identity.ts";
 import { auditRoutes } from "./routes/audit.ts";
 import { statsRoutes } from "./routes/stats.ts";
 import { submissionRoutes } from "./routes/submissions.ts";
+import { pluginRoutes } from "./routes/plugins.ts";
 import { jobRoutes } from "./routes/jobs.ts";
 import { enrichRoutes } from "./routes/enrich.ts";
 import { telemetryRoutes } from "./routes/telemetry.ts";
@@ -194,6 +195,7 @@ export async function buildServer(ctx: AppContext) {
         "/api/tags",
         "/api/facets",
         "/api/taxonomy",
+        "/api/plugins",
       ];
       const url = req.url ?? "";
       if (SNAPSHOT_MUTATING_PREFIXES.some((p) => url.startsWith(p))) {
@@ -418,6 +420,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(auditRoutes, { ctx });
   await app.register(statsRoutes, { ctx });
   await app.register(submissionRoutes, { ctx });
+  await app.register(pluginRoutes, { ctx });
   await app.register(jobRoutes, { ctx });
   await app.register(enrichRoutes, { ctx });
   await app.register(telemetryRoutes, { ctx });

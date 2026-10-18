@@ -355,6 +355,17 @@ async function siteUrlExists(repo: Repository, url: string): Promise<boolean> {
   return rows.length > 0;
 }
 
+function parseInstallRow(row: Record<string, any>): PluginInstallRecord {
+  return {
+    pluginId: String(row.plugin_id),
+    identity: String(row.identity),
+    version: String(row.version),
+    meta: parseJson<unknown>(row.meta, null),
+    installedAt: Number(row.installed_at ?? 0),
+    removedAt: row.removed_at == null ? null : Number(row.removed_at),
+  };
+}
+
 export async function getPluginInstall(
   repo: Repository,
   pluginId: string,
@@ -365,15 +376,49 @@ export async function getPluginInstall(
     identity,
   ]);
   const row = rows[0];
-  if (!row) return null;
-  return {
-    pluginId: String(row.plugin_id),
-    identity: String(row.identity),
-    version: String(row.version),
-    meta: parseJson<unknown>(row.meta, null),
-    installedAt: Number(row.installed_at ?? 0),
-    removedAt: row.removed_at == null ? null : Number(row.removed_at),
-  };
+  return row ? parseInstallRow(row) : null;
+}
+
+/** 详情页/卡片交互态：某身份对该插件的安装与星标状态 */
+export async function pluginInteraction(
+  repo: Repository,
+  pluginId: string,
+  identity: string,
+): Promise<{ installed: boolean; starred: boolean }> {
+  const who = identity.trim().slice(0, 120);
+  if (!who) return { installed: false, starred: false };
+  const install = await getPluginInstall(repo, pluginId, who);
+  const stars = await repo.raw("SELECT 1 AS ok FROM plugin_stars WHERE plugin_id = ? AND identity = ? LIMIT 1", [
+    pluginId,
+    who,
+  ]);
+  return { installed: !!install && install.removedAt === null, starred: stars.length > 0 };
+}
+
+export interface PluginInstalledItem {
+  install: PluginInstallRecord;
+  plugin: PluginRecord;
+}
+
+/** 「我的插件」：某身份的活跃安装列表（含插件本体，按安装时间倒序） */
+export async function listPluginInstallsByIdentity(
+  repo: Repository,
+  identity: string,
+): Promise<PluginInstalledItem[]> {
+  const who = identity.trim().slice(0, 120);
+  if (!who) return [];
+  const rows = await repo.raw(
+    "SELECT * FROM plugin_installs WHERE identity = ? AND removed_at IS NULL ORDER BY installed_at DESC",
+    [who],
+  );
+  const items: PluginInstalledItem[] = [];
+  for (const row of rows) {
+    const pluginRows = await repo.raw("SELECT * FROM plugins WHERE id = ? LIMIT 1", [row.plugin_id]);
+    const pluginRow = pluginRows[0];
+    if (!pluginRow) continue;
+    items.push({ install: parseInstallRow(row), plugin: rowToPlugin(pluginRow) });
+  }
+  return items;
 }
 
 export async function installPlugin(
@@ -593,4 +638,18 @@ export async function reportPlugin(
     ip: actor?.ip,
   });
   return { reportCount };
+}
+
+export async function hasUserStarredPlugin(
+  repo: Repository,
+  pluginId: string,
+  identity: string,
+): Promise<boolean> {
+  const who = identity.trim().slice(0, 120);
+  if (!who) return false;
+  const rows = await repo.raw("SELECT 1 AS ok FROM plugin_stars WHERE plugin_id = ? AND identity = ? LIMIT 1", [
+    pluginId,
+    who,
+  ]);
+  return Boolean(rows[0]);
 }

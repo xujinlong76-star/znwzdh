@@ -31,6 +31,27 @@ export interface EncryptedVaultPayload {
 const PBKDF2_ITERATIONS = 100_000; // 兼顾安全性与客户端毫秒级性能
 const KEY_LENGTH_BITS = 256;
 
+/**
+ * 取 Web Crypto 实例。
+ *
+ * Node 20+ 与所有现代浏览器都提供全局 crypto，但历史上浏览器只在
+ * secure context 下暴露 window.crypto（file:// / 内网 http 部署时没有）。
+ * 这里做双路探测，Node 侧走 globalThis，浏览器侧兼容 window 回退。
+ * 该 shim 与前端镜像逐字节一致（见 scripts/core-mirrors.json），故两处行为相同。
+ */
+function getCrypto(): typeof globalThis.crypto {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto) {
+    return globalThis.crypto;
+  }
+  // 不直接写 `window`：core 的 tsconfig 不含 DOM lib，Node 侧编译会 TS2304。
+  // 通过 globalThis 形状探测拿 window，浏览器（非 secure context 下）仍能回退到 window.crypto。
+  const maybeWindow = (globalThis as { window?: { crypto?: typeof globalThis.crypto } }).window;
+  if (maybeWindow?.crypto) {
+    return maybeWindow.crypto;
+  }
+  throw new Error('当前运行环境不支持 Web Cryptography API');
+}
+
 function hexToBytes(hex: string): Uint8Array {
   if (typeof hex !== "string" || hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) {
     throw new Error("非法 hex 字符串");
@@ -75,7 +96,7 @@ export type VaultCryptoKey = Awaited<ReturnType<typeof globalThis.crypto.subtle.
 export async function deriveVaultKey(password: string, salt: Uint8Array): Promise<VaultCryptoKey> {
 
   const enc = new TextEncoder();
-  const keyMaterial = await globalThis.crypto.subtle.importKey(
+  const keyMaterial = await getCrypto().subtle.importKey(
     'raw',
     enc.encode(password),
     { name: 'PBKDF2' },
@@ -83,7 +104,7 @@ export async function deriveVaultKey(password: string, salt: Uint8Array): Promis
     ['deriveKey']
   );
 
-  return globalThis.crypto.subtle.deriveKey(
+  return getCrypto().subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt,
@@ -109,17 +130,17 @@ export async function encryptVault(
   }
 
   const salt = new Uint8Array(16);
-  globalThis.crypto.getRandomValues(salt);
+  getCrypto().getRandomValues(salt);
 
   const iv = new Uint8Array(12); // AES-GCM 标准 96 位初始化向量
-  globalThis.crypto.getRandomValues(iv);
+  getCrypto().getRandomValues(iv);
 
   const key = await deriveVaultKey(passphrase, salt);
 
   const plaintextStr = JSON.stringify(items);
   const plaintextBytes = new TextEncoder().encode(plaintextStr);
 
-  const cipherBuffer = await globalThis.crypto.subtle.encrypt(
+  const cipherBuffer = await getCrypto().subtle.encrypt(
     {
       name: 'AES-GCM',
       iv,
@@ -158,7 +179,7 @@ export async function decryptVault(
   const key = await deriveVaultKey(passphrase, salt);
 
   try {
-    const plainBuffer = await globalThis.crypto.subtle.decrypt(
+    const plainBuffer = await getCrypto().subtle.decrypt(
       {
         name: 'AES-GCM',
         iv,
@@ -201,17 +222,17 @@ export async function encryptGenericPayload<T>(
   }
 
   const salt = new Uint8Array(16);
-  globalThis.crypto.getRandomValues(salt);
+  getCrypto().getRandomValues(salt);
 
   const iv = new Uint8Array(12);
-  globalThis.crypto.getRandomValues(iv);
+  getCrypto().getRandomValues(iv);
 
   const key = await deriveVaultKey(passphrase, salt);
 
   const plaintextStr = JSON.stringify(data);
   const plaintextBytes = new TextEncoder().encode(plaintextStr);
 
-  const cipherBuffer = await globalThis.crypto.subtle.encrypt(
+  const cipherBuffer = await getCrypto().subtle.encrypt(
     {
       name: 'AES-GCM',
       iv,
@@ -250,7 +271,7 @@ export async function decryptGenericPayload<T>(
   const key = await deriveVaultKey(passphrase, salt);
 
   try {
-    const plainBuffer = await globalThis.crypto.subtle.decrypt(
+    const plainBuffer = await getCrypto().subtle.decrypt(
       {
         name: 'AES-GCM',
         iv,

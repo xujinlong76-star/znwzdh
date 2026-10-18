@@ -208,3 +208,19 @@ export class WebMcpBridge {
     );
   }
 }
+
+/**
+ * 进程/页面级单例。
+ *
+ * 浏览器侧只有一份桥（所有端侧 Agent 与扩展共享同一注册表），
+ * Node 侧同样应该是单例——否则同进程内多个 Agent 各自注册工具互不可见。
+ * 这里做在 core 事实源里，前端镜像才能保持逐字节一致（见 scripts/core-mirrors.json）。
+ */
+let globalBridge: WebMcpBridge | null = null;
+
+export function getWebMcpBridge(): WebMcpBridge {
+  if (!globalBridge) {
+    globalBridge = new WebMcpBridge();
+  }
+  return globalBridge;
+}

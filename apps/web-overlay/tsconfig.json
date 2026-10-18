@@ -11,6 +11,12 @@
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
+    // 允许 `import ... from './x.ts'` 显式后缀（与仓库根 tsconfig.base 的约定一致）。
+    // 需要该选项的原因：plugin-manifest-parity.test.ts 等自研测试按仓库统一风格
+    // 写 `.ts` 后缀导入，vite/vitest 能解析，tsc 默认会报 TS5097。
+    // 前置条件 noEmit 已满足；TS 7 起 baseUrl/moduleResolution:node 将被移除，
+    // 迁移时与升级批次一并处理（见 docs/UPGRADE-PROPOSAL-V3-2026-10-19.md）。
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "node",

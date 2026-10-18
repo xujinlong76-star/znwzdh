@@ -264,6 +264,24 @@ describe("SQLite 集成：FTS5 + sqlite-vec + 混合检索", () => {
     expect(Object.keys(contrib).length).toBeGreaterThanOrEqual(2);
   });
 
+  it("通道耗时按各通道自身墙钟计量（fts/pinyin 不再同值等于语义等待）", async () => {
+    // 故意让 embedding 慢 40ms：旧实现把整批 await 时间同值记给 fts/pinyin/semantic，
+    // 新实现下 fts/pinyin 只计自己的时间；semantic 仍如实包含推理等待。
+    const slowEmbed = async (): Promise<Float32Array> => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return rnd(99);
+    };
+    const slowEngine = new SearchEngine({ db, fts, vectors, embed: slowEmbed });
+    // 无精确命中 → planner 不 early-exit，三通道全跑
+    const r = await slowEngine.search({ q: "zzzznomatch", limit: 5 });
+    const t = r.channelTimings!;
+    expect(t.skippedSemantic).toBe(false);
+    expect(t.semanticMs).toBeGreaterThanOrEqual(30);
+    expect(t.ftsMs).toBeLessThan(30);
+    expect(t.pinyinMs).toBeLessThan(30);
+    expect(t.exactMs).toBeLessThan(30);
+  });
+
   it("类目过滤包含子类目", async () => {
     await repo.createSite({ url: "https://example.com/midjourney", title: "Midjourney", description: "AI 绘图", categoryId: "cat-ai-img", tags: ["ai"] });
     const r = await engine.search({ q: "", categoryId: "cat-ai", limit: 50 });

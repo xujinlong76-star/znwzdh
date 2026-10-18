@@ -1,5 +1,5 @@
 
-import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, relative } from "node:path";
 import { walkAndCopy } from "./lib/walk-copy.mjs";
@@ -31,29 +31,78 @@ try {
 console.log("[vendor] upstream sha=" + sha);
 
 // 2) download tarball
+// 缓存文件按 ref 命名：升级底座（换 sha）时不会误用旧 ref 的缓存；
+// 只有不可变 ref（40 位 sha）才允许复用缓存，分支/tag 情况一律重新下载。
 const url = "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/" + REF;
-console.log("[vendor] downloading " + url);
-let res;
-for (let i = 0; i < 3; i++) {
-  try {
-    res = await fetch(url, { headers: API, signal: AbortSignal.timeout(60000) });
-    if (res.ok) break;
-  } catch (e) {
-    if (i === 2) { console.error("[vendor] download failed", e); process.exit(1); }
-  }
-  await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
-}
-if (!res || !res.ok) { console.error("[vendor] download failed HTTP " + (res?.status || "error")); process.exit(1); }
-const buf = Buffer.from(await res.arrayBuffer());
-const tgz = join(ROOT, ".vendor-ns.tgz");
-writeFileSync(tgz, buf);
-console.log("[vendor] downloaded " + (buf.length / 1024).toFixed(0) + " KB");
+const refKey = REF.replace(/[^0-9a-zA-Z._-]/g, "").slice(0, 16) || "default";
+const tgz = join(ROOT, ".vendor-ns-" + refKey + ".tgz");
+const immutableRef = /^[0-9a-f]{40}$/i.test(REF);
 
-// 3) extract to a staging dir
+async function downloadTarball() {
+  console.log("[vendor] downloading " + url);
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(url, { headers: API, signal: AbortSignal.timeout(60000) });
+      if (res.ok) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        writeFileSync(tgz, buf);
+        console.log("[vendor] downloaded " + (buf.length / 1024).toFixed(0) + " KB");
+        return;
+      }
+      console.warn("[vendor] HTTP " + res.status + " (attempt " + (i + 1) + "/3)");
+    } catch (e) {
+      if (i === 2) {
+        // fetch 失败（本机代理/证书链问题）时回退到系统 curl：
+        // Windows 的 Schannel 需要 --ssl-no-revoke 跳过吊销检查，Linux/macOS 不认识该参数
+        const curl = process.platform === "win32" ? "curl.exe" : "curl";
+        const curlArgs = ["-L", "--fail", "-o", tgz, url];
+        if (process.platform === "win32") curlArgs.splice(1, 0, "--ssl-no-revoke");
+        console.warn("[vendor] fetch failed (" + e.message + "), falling back to " + curl);
+        try {
+          execFileSync(curl, curlArgs, { stdio: "inherit" });
+          return;
+        } catch (curlErr) {
+          console.error("[vendor] download failed via fetch and curl", curlErr);
+          process.exit(1);
+        }
+      }
+    }
+    await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+  }
+  console.error("[vendor] download failed after 3 attempts");
+  process.exit(1);
+}
+
+let reusedCache = false;
+if (immutableRef && existsSync(tgz)) {
+  try {
+    const size = statSync(tgz).size;
+    if (size > 100 * 1024) {
+      console.log("[vendor] reusing cached " + tgz + " (" + (size / 1024).toFixed(0) + " KB)");
+      reusedCache = true;
+    }
+  } catch { /* 读不到当作无缓存 */ }
+}
+if (!reusedCache) await downloadTarball();
+
+// 3) extract to a staging dir（缓存损坏时删掉重下一次，只自愈一次）
 const stage = join(ROOT, ".vendor-stage");
-rmSync(stage, { recursive: true, force: true });
-mkdirSync(stage, { recursive: true });
-execFileSync("tar", ["-xzf", tgz, "-C", stage], { stdio: "inherit" });
+for (let attempt = 0; ; attempt++) {
+  rmSync(stage, { recursive: true, force: true });
+  mkdirSync(stage, { recursive: true });
+  try {
+    execFileSync("tar", ["-xzf", tgz, "-C", stage], { stdio: "inherit" });
+    break;
+  } catch (e) {
+    if (attempt >= 1) {
+      console.error("[vendor] tarball extract failed: " + e);
+      process.exit(1);
+    }
+    console.warn("[vendor] cached tarball unusable; re-downloading once");
+    rmSync(tgz, { force: true });
+    await downloadTarball();
+  }
+}
 const inner = readdirSync(stage).map((d) => join(stage, d)).find((p) => {
   try { return readdirSync(p).length > 0; } catch { return false; }
 });
@@ -120,6 +169,23 @@ console.log("[vendor] copied upstream: " + upstreamCounter.count + " files");
 const overlayCounter = { count: 0 };
 walkAndCopy(OVERLAY, TARGET, { targetRoot: TARGET, counter: overlayCounter, log: console.log });
 console.log("[vendor] applied overlay: " + overlayCounter.count + " files");
+
+// 6b) prune obsolete/redundant upstream artifacts (Cloudflare/docker duplicates, unused docs)
+for (const rel of [
+  "_worker.js",
+  "wrangler.toml",
+  "vercel.json",
+  "pnpm-lock.yaml",
+  "README-CN.md",
+  "README-EN.md",
+  "doc",
+  "docker",
+  "docs",
+  "functions",
+]) {
+  const p = join(TARGET, rel);
+  if (existsSync(p)) rmSync(p, { recursive: true, force: true });
+}
 
 // 7) write UPSTREAM.md
 writeFileSync(join(TARGET, "UPSTREAM.md"), [

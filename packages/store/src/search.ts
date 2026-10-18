@@ -63,7 +63,12 @@ export interface SearchEngineOptions {
   earlyExitExactHits?: number;
 }
 
-/** 单次检索各通道耗时明细（供 Query Planner 调参与 OTel/Prometheus 透出） */
+/**
+ * 单次检索各通道耗时明细（供 Query Planner 调参与 OTel/Prometheus 透出）。
+ *
+ * 计量口径：各通道**自身**从发起到 resolve 的墙钟毫秒。fts/pinyin/semantic 是并行执行的，
+ * 区间可以相互重叠 —— 三者之和允许大于请求总耗时，端到端时间看 SearchResult.tookMs。
+ */
 export interface ChannelTimings {
   exactMs: number;
   ftsMs: number;
@@ -434,34 +439,40 @@ export class SearchEngine {
   /**
    * Query Planner：先跑 exact（~1ms），强命中直接跳过 semantic。
    * fuzzy=true（零结果兜底）时恒跑全通道，保证召回最大化。
+   *
+   * 通道耗时按「各通道自身墙钟」计量（并行区间可重叠）：旧实现把整批 await 时间
+   * 同值写进 fts/pinyin/semantic 三个字段，Prometheus 上 fts/pinyin 均值被语义推理
+   * 时间污染（三个通道永远同值），通道画像失真。
    */
   private async runChannels(raw: string, opt: SearchQuery, fuzzy: boolean, extraTerms: string[] = []): Promise<SearchCandidate[]> {
     const t0 = Date.now();
     const exact = await this.channelExact(raw, opt, fuzzy, extraTerms);
     const exactMs = Date.now() - t0;
+    /** 按通道计时：返回 [通道结果, 该通道墙钟毫秒] */
+    const timed = async <T>(fn: () => Promise<T>): Promise<[T, number]> => {
+      const started = Date.now();
+      const value = await fn();
+      return [value, Date.now() - started];
+    };
     // early-exit：精确命中足够强时，语义通道的 embedding 推理是纯浪费（首次 300ms+）。
     if (!fuzzy && !opt.disableSemantic && this.earlyExitExactHits > 0 && exact.length >= this.earlyExitExactHits) {
-      const t1 = Date.now();
-      const [ftsHits, pinyin] = await Promise.all([
-        this.channelFts(raw, opt, extraTerms),
-        this.channelPinyin(raw, opt),
-      ]);
-      const rest = Date.now() - t1;
-      this.lastTimings = { exactMs, ftsMs: rest, pinyinMs: rest, semanticMs: 0, skippedSemantic: true };
+      const [[ftsHits, ftsMs], [pinyin, pinyinMs]] = await Promise.all([
+        timed(() => this.channelFts(raw, opt, extraTerms)),
+        timed(() => this.channelPinyin(raw, opt)),
+      ] as const);
+      this.lastTimings = { exactMs, ftsMs, pinyinMs, semanticMs: 0, skippedSemantic: true };
       return [...exact, ...ftsHits, ...pinyin];
     }
-    const t2 = Date.now();
-    const [ftsHits, pinyin, semantic] = await Promise.all([
-      this.channelFts(raw, opt, extraTerms),
-      this.channelPinyin(raw, opt, fuzzy),
-      opt.disableSemantic ? Promise.resolve([]) : this.channelSemantic(raw, opt),
-    ]);
-    const rest2 = Date.now() - t2;
+    const [[ftsHits, ftsMs], [pinyin, pinyinMs], [semantic, semanticMs]] = await Promise.all([
+      timed(() => this.channelFts(raw, opt, extraTerms)),
+      timed(() => this.channelPinyin(raw, opt, fuzzy)),
+      timed(() => (opt.disableSemantic ? Promise.resolve<SearchCandidate[]>([]) : this.channelSemantic(raw, opt))),
+    ] as const);
     this.lastTimings = {
       exactMs,
-      ftsMs: rest2,
-      pinyinMs: rest2,
-      semanticMs: opt.disableSemantic ? 0 : rest2,
+      ftsMs,
+      pinyinMs,
+      semanticMs: opt.disableSemantic ? 0 : semanticMs,
       skippedSemantic: Boolean(opt.disableSemantic),
     };
     return [...exact, ...ftsHits, ...pinyin, ...semantic];
@@ -579,7 +590,9 @@ export class SearchEngine {
   /**
    * 通道 3：拼音。
    *
-   * 默认前缀匹配（`tianqi` → 中国天气网）；fuzzy 模式改为**包含**匹配，
+   * 默认前缀匹配：全拼串以查询词开头（`cainiao` → 菜鸟教程）或首字母精确命中
+   * （`cnjc` → 菜鸟教程）。查询词出现在拼音串**中段**时（`tianqi` → 中国天气网）
+   * 由 exact 通道的 contains 兜住；fuzzy 模式改为**包含**匹配，
    * 兜住「打了一半 / 拼错开头 / 非首字母」的查询（如 `tianq`、`gtqw`）。
    */
   private async channelPinyin(q: string, opt: SearchQuery, fuzzy = false): Promise<SearchCandidate[]> {

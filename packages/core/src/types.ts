@@ -336,7 +336,12 @@ export interface SearchResult {
    *   缺席        全通道正常跑（或 fuzzy 兜底）
    */
   planner?: "early-exit";
-  /** 各通道耗时明细（供调参 / OTel / Prometheus 透出） */
+  /**
+   * 各通道耗时明细（供调参 / OTel / Prometheus 透出）。
+   *
+   * 各通道**自身**墙钟毫秒；fts/pinyin/semantic 并行执行，区间可重叠，
+   * 三者之和允许大于 tookMs（端到端时间以 tookMs 为准）。
+   */
   channelTimings?: {
     exactMs: number;
     ftsMs: number;

@@ -3,7 +3,7 @@
  *
  * 真实缺陷（改动前）：全站**没有任何** prefers-reduced-motion 处理。
  * 卡片悬停的位移动画、depth-card 的阴影过渡、animate-pulse、抽屉与弹窗的滑入滑出
- * 对前庭功能敏感的用户一律强制播放；侧边栏与键盘导航还会调用
+ * 对前庭功能敏感的用户一律强制播放；侧边栏跳分类还会调用
  * `scrollIntoView({ behavior: 'smooth' })` —— JS 显式传的 behavior 会压过样式表，
  * 这段滚动动画用户关不掉。
  *
@@ -97,11 +97,9 @@ describe("源码守卫：样式表与调用点都不能退回硬编码", () => {
     expect(reduced).toBeGreaterThan(globals);
   });
 
-  it("侧边栏跳分类与键盘导航跟随都不再硬编码 'smooth'", () => {
-    for (const rel of ["src/components/sidebar.tsx", "src/lib/use-keyboard-navigator.ts"]) {
-      const src = overlaySource(rel);
-      expect(src).toContain("preferredScrollBehavior()");
-      expect(src).not.toMatch(/scrollIntoView\(\{\s*behavior:\s*'smooth'/);
-    }
+  it("侧边栏跳分类不再硬编码 'smooth'", () => {
+    const src = overlaySource("src/components/sidebar.tsx");
+    expect(src).toContain("preferredScrollBehavior()");
+    expect(src).not.toMatch(/scrollIntoView\(\{\s*behavior:\s*'smooth'/);
   });
 });

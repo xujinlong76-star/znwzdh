@@ -184,26 +184,31 @@ const splitKey = (k: string): [string, string, string] => {
 /** planner 决策计数：early-exit（剪掉语义） vs full（全通道） */
 let plannerEarlyExit = 0;
 let plannerFull = 0;
-/** 语义通道被剪掉时省下的 embedding 推理次数（≈ 省下的模型调用） */
+/** 语义通道未执行的次数（planner 剪枝或调用方显式 disableSemantic，≈ 省下的 embedding 推理） */
 let semanticSkipped = 0;
-/** 各通道累计耗时（毫秒） */
+/** 各通道累计耗时（毫秒，通道自身墙钟；并行区间可重叠） */
 const channelSums = { exact: 0, fts: 0, pinyin: 0, semantic: 0 };
 let channelSamples = 0;
 
-/** routes/search.ts 在每次检索后调用：记录 planner 决策与通道耗时 */
-export function recordSearchChannels(t: {
-  exactMs: number;
-  ftsMs: number;
-  pinyinMs: number;
-  semanticMs: number;
-  skippedSemantic: boolean;
-}): void {
-  if (t.skippedSemantic) {
+/** routes/search.ts 在每次检索后调用：记录 planner 决策、通道耗时与语义剪枝 */
+export function recordSearchChannels(
+  t: {
+    exactMs: number;
+    ftsMs: number;
+    pinyinMs: number;
+    semanticMs: number;
+    skippedSemantic: boolean;
+  },
+  /** search() 的真实 planner 决策（"early-exit" | "full"）；不要从 skippedSemantic 反推——
+   *  显式 disableSemantic 的请求语义没跑但并非 planner 剪枝，反推会让 early_exit 计数虚高 */
+  decision: "early-exit" | "full",
+): void {
+  if (decision === "early-exit") {
     plannerEarlyExit++;
-    semanticSkipped++;
   } else {
     plannerFull++;
   }
+  if (t.skippedSemantic) semanticSkipped++;
   channelSums.exact += t.exactMs;
   channelSums.fts += t.ftsMs;
   channelSums.pinyin += t.pinyinMs;
@@ -305,7 +310,7 @@ export async function renderMetrics(ctx: AppContext): Promise<string> {
     `navhub_search_planner_total{decision="early_exit"} ${planner.earlyExit}`,
     `navhub_search_planner_total{decision="full"} ${planner.full}`,
   ]);
-  gauge("navhub_search_semantic_skipped_total", "语义通道被剪掉的次数（≈省下的 embedding 推理）", planner.semanticSkipped);
+  gauge("navhub_search_semantic_skipped_total", "语义通道未执行次数（planner 剪枝或显式禁用，≈省下的 embedding 推理）", planner.semanticSkipped);
   metric("navhub_search_channel_avg_ms", "检索各通道平均耗时（毫秒）", "gauge", [
     `navhub_search_channel_avg_ms{channel="exact"} ${planner.avgMs.exact}`,
     `navhub_search_channel_avg_ms{channel="fts"} ${planner.avgMs.fts}`,

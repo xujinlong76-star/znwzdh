@@ -207,21 +207,9 @@ function hubUrl(path: string): string {
 
 ### 4.3 `src/lib/` 其他
 
-`auth.ts` / `auth.config.ts`（next-auth）、`session.ts`、`identity.ts`（anonId 生成）、`api.ts`、`data-loader.ts`、`navigation-tree.ts`、`icons.ts`、`utils.ts`、`prefetch.ts`、`speculative.ts`、`comparison.ts`、`architecture-recipe.ts`、`vault.ts`、`buffer-utils.ts`、`polyfills.ts`、`highlight.ts`（搜索高亮纯函数，见 §4.1）、`export-formats.ts`（导出格式纯函数，见 §4.4）。
+`auth.ts` / `auth.config.ts`（next-auth）、`session.ts`、`identity.ts`（anonId 生成）、`api.ts`、`data-loader.ts`、`navigation-tree.ts`、`icons.ts`、`utils.ts`、`prefetch.ts`、`speculative.ts`、`comparison.ts`、`architecture-recipe.ts`、`vault.ts`、`buffer-utils.ts`、`polyfills.ts`、`highlight.ts`（搜索高亮纯函数，见 §4.1）。
 
 > `lib/{speculative,comparison,architecture-recipe,vault,prefetch}.ts` 是 core 同名算法的**前端包装**（浏览器侧不带 `@navhub/*` 依赖，走 HTTP 或内联）。
-
-### 4.4 导出格式（`lib/export-formats.ts`）
-
-数据管理页（`/admin/data`）在 JSON 之外补两种可迁移格式（纯函数、可测）：
-
-| 格式 | 函数 | 用途与要点 |
-| --- | --- | --- |
-| Chrome 书签 HTML | `toBookmarksHtml(data, now?)` | Netscape Bookmark File Format，浏览器「导入书签」原生识别。`<!DOCTYPE NETSCAPE-Bookmark-file-1>` **大小写必须原样**（浏览器按字面量识别）；标题/描述做 HTML 转义（`& < > "`），否则破坏标签结构 |
-| CSV | `toCsv(data)` | 列：`分类,子分类,标题,网址,描述`。**两层转义**：含 `"` `,` 换行 → 双引号包裹 + `"` 加倍；以 `= + - @` 开头加前导 `'`——**CSV 注入防护**（站点标题/描述来自投稿，Excel 会把 `=...` 当公式执行） |
-
-入口：`/admin/data` 操作面板的「导出书签 HTML」「导出 CSV」按钮；JSON 非法时提示而不静默导出空文件。
-MCP 侧另有 `export_sites` 工具（read scope，json/csv，见 [07-mcp.md §3](./07-mcp.md)）。
 
 ## 5. PWA
 

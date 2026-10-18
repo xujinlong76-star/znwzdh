@@ -65,6 +65,9 @@ describe("Query Planner early-exit", () => {
       }
       const r = await engine.search({ q: "零阈值站", limit: 10, disableSemantic: true });
       expect(r.planner).toBeUndefined();
+      // 显式禁用语义（非 planner 剪枝）：timings 如实标记语义没跑，但不产生 planner 标记
+      expect(r.channelTimings?.skippedSemantic).toBe(true);
+      expect(r.channelTimings?.semanticMs).toBe(0);
     } finally {
       await ctx?.close();
       rmSync(dir, { recursive: true, force: true });

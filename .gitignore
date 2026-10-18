@@ -66,7 +66,7 @@ apps/web/src/app/api/home/navigation/*
 apps/web/src/app/api/home/site/*
 !apps/web/src/app/api/home/site/route.ts
 
-# vendor-web.mjs 的中间产物（正常结束会被脚本自己删掉，失败残留时也不应进仓库）
-.vendor-ns.tgz
+# vendor-web.mjs / sync-web-overlay.mjs 的中间产物（正常结束会被脚本自己删掉，失败残留时也不应进仓库）
+.vendor-ns*.tgz
 .vendor-stage/
 

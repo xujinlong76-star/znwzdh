@@ -79,8 +79,17 @@ export async function buildNavigationData(ctx: AppContext): Promise<NsNavigation
     err.statusCode = 413;
     throw err;
   }
-  const categories = (await ctx.repo.listCategories()).filter((c) => c.enabled).sort((a, b) => a.sort - b.sort);
-  const sites = await ctx.repo.listSites();
+  // 类目与站点**都不做可见性预过滤**：快照必须是数据的全量投影。
+  // 隐藏语义（enabled=false）由渲染层负责 —— web 端 data-loader 的
+  // filterNavigationData 已经过滤了类目/子类目/站点三级。
+  //
+  // 为什么不能在这里预过滤：快照写回把「快照里没有」当成「用户删了」。
+  // 被停用的类目如果在读侧就被滤掉，NavSphere 原版后台（按快照读改写）
+  // 既看不到它、也无法再启用它，下一次任意保存还会把它硬删、站点进回收站。
+  const categories = (await ctx.repo.listCategories()).sort((a, b) => a.sort - b.sort);
+  // listSites 默认 limit 100：快照会静默截断到 100 个站点，所以走全量版本
+  // （上限与上面的快照容量守卫一致）。
+  const sites = await ctx.repo.listAllSites(NAVIGATION_MAX_SITES);
 
   const byCategory = new Map<string, typeof sites>();
   for (const s of sites) {
@@ -168,11 +177,21 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
     let siteCount = 0;
 
     const existingCats = await ctx.repo.listCategories();
-    const existingSites = await ctx.repo.listSites();
+    // 必须全量：只看到前 100 个存量站点时，超出部分会在下面被当作「不在快照里」
+    // 或匹配不到存量行走 createSiteWithId 撞主键（见 listAllSites 注释）。
+    const existingSites = await ctx.repo.listAllSites(NAVIGATION_MAX_SITES);
     // O(1) 索引代替线性 find：原来是"每个快照条目扫一遍全表"= O(n²)，
     // 数千站点的大库保存一次要做上百万次比较（实测是最主要的保存耗时来源）。
     const catIndex = new Map(existingCats.map((c) => [c.id, c]));
     const siteIndex = new Map(existingSites.map((s) => [s.id, s]));
+    // 快照「可见集」：与 buildNavigationData 的投影规则严格一致（顶级类目 + 其直接子类目）。
+    // 只有本该出现在快照里的记录，缺席才等于被删除；快照模型看不见的记录
+    // （三级及更深类目、父类目不存在的孤儿类目）不能被写回顺手清掉。
+    const emittedCatIds = new Set<string>();
+    for (const c of existingCats) {
+      if (c.parentId === null) emittedCatIds.add(c.id);
+      else if (catIndex.get(c.parentId)?.parentId === null) emittedCatIds.add(c.id);
+    }
     const seenCategoryIds = new Set<string>();
     const seenSiteIds = new Set<string>();
 
@@ -237,6 +256,9 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
     // 导航，那个站点就被静默删除了（真实的数据丢失）。
     const removedSiteIds = existingSites
       .filter((s) => isSnapshotManaged(s.source) && !seenSiteIds.has(s.id))
+      // 只有「可见集里的站点」缺席才算删除；所属类目不在快照可见集里
+      // （孤儿 categoryId 等，接口未强校验）的站点本就不进快照，不能据此删除。
+      .filter((s) => emittedCatIds.has(s.categoryId))
       .map((s) => s.id);
     for (const id of removedSiteIds) {
       await ctx.repo.deleteSite(id);
@@ -245,7 +267,8 @@ export async function writeNavigationData(ctx: AppContext, data: NsNavigationDat
       await ctx.vectors.remove(removedSiteIds).catch(() => undefined);
     }
     for (const c of existingCats) {
-      if (isSnapshotManaged(c.source) && !seenCategoryIds.has(c.id)) await ctx.repo.deleteCategory(c.id);
+      // 同上：不可见的类目缺席 ≠ 删除
+      if (isSnapshotManaged(c.source) && emittedCatIds.has(c.id) && !seenCategoryIds.has(c.id)) await ctx.repo.deleteCategory(c.id);
     }
 
     return { categories: categoryCount, sites: siteCount };

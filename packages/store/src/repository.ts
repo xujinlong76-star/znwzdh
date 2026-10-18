@@ -160,6 +160,11 @@ export class Repository {
     return sitesRepo.listSites(this, filter);
   }
 
+  /** 全量站点（快照层专用，不分页；普通列表请用 listSites） */
+  async listAllSites(limit?: number): Promise<Site[]> {
+    return sitesRepo.listAllSites(this, limit);
+  }
+
   async getSitesByIds(ids: string[]): Promise<Map<string, Site>> {
     return sitesRepo.getSitesByIds(this, ids);
   }

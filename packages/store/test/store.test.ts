@@ -1066,3 +1066,39 @@ describe("SQLite 集成：导航增强能力", () => {
     expect(retained?.revokedAt).toBeTruthy();
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * 快照层用：listAllSites 不分页、不受 1000 上限裁剪
+ * ------------------------------------------------------------------ */
+
+describe("SQLite 集成：全量站点（快照层专用）", () => {
+  const TOTAL = 105;
+  let dir: string;
+  let db: Db;
+  let repo: Repository;
+
+  beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), "navhub-listall-"));
+    db = await openDb({ dialect: "sqlite", sqlitePath: join(dir, "test.db") });
+    repo = new Repository(db);
+    await repo.createCategory({ id: "c-all", title: "全部" });
+    for (let i = 0; i < TOTAL; i++) {
+      await repo.createSite({ url: "https://all-" + i + ".example.com", title: "全量站点" + i, categoryId: "c-all" });
+    }
+  });
+
+  afterAll(async () => {
+    await db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("listSites 默认截断 100（普通列表语义），listAllSites 返回全量", async () => {
+    expect((await repo.listSites()).length).toBe(100); // 普通列表的分页语义保持不变
+    expect((await repo.listAllSites()).length).toBe(TOTAL); // 快照层拿全量
+    expect((await repo.listAllSites(3)).length).toBe(3); // 上限参数仍可生效
+    // 软删站点不参与
+    const victim = (await repo.listSites()).find((s) => s.title === "全量站点0")!;
+    await repo.deleteSite(victim.id);
+    expect((await repo.listAllSites()).length).toBe(TOTAL - 1);
+  });
+});

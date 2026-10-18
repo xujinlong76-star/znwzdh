@@ -82,6 +82,25 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
   return rows.map(rowToSite);
 }
 
+/**
+ * 全量站点：不分页、不受 1000 上限裁剪（**仅供快照层使用**）。
+ *
+ * 为什么必须单独给快照开一个函数：navigation.json 是「全量投影」——
+ * 读侧少一条，写侧全量对齐时就会把它当成「用户删了」；反过来，读不到的
+ * 存量站点在写回时匹配不到行，会走 createSiteWithId 对活行 INSERT，
+ * 直接撞同 id 主键冲突（整个保存 500）。
+ * 普通列表接口继续用 listSites（默认 100、上限 1000）防止慢查询。
+ */
+export async function listAllSites(repo: Repository, limit?: number): Promise<Site[]> {
+  const rows = await repo.raw(
+    repo.selectSitesSql() +
+      " WHERE s.deleted_at IS NULL GROUP BY s.id ORDER BY s.sort ASC, s.weight DESC" +
+      (limit ? " LIMIT ?" : ""),
+    limit ? [limit] : [],
+  );
+  return rows.map(rowToSite);
+}
+
 export async function getSitesByIds(repo: Repository, ids: string[]): Promise<Map<string, Site>> {
   const out = new Map<string, Site>();
   const uniq = [...new Set(ids.filter(Boolean))];

@@ -159,7 +159,8 @@ export async function migrateColumns(db): Promise<string[]>   // 返回本次实
 
 | 方法 | 行为 |
 | --- | --- |
-| `listSites({categoryId?, status?, limit?})` | 列表 |
+| `listSites({categoryId?, status?, limit?})` | 列表（默认 limit 100、上限 1000 防慢查询） |
+| `listAllSites(limit?)` | **全量站点，不分页**——仅快照层（`storage.ts`）使用：navigation.json 读/写都要求全量投影，截断会导致写回时误删或主键冲突 |
 | `getSite(idOrUrl)` | **支持 id 或 URL** 查详情 |
 | `findSiteByUrl(url)` | URL 去重查询 |
 | `createSite(input)` / `createSiteWithId(input)` | 创建（后者由调用方指定 id，用于导入/种子）。**同 id 的软删行会被「复活」**（清 `deleted_at` 并覆盖内容）——快照写回用原 id 重建时不主键冲突 |

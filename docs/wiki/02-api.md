@@ -454,6 +454,14 @@ VIDEOS_PATH           = "src/navsphere/content/videos.json"
 
 回归测试与脚本：`scripts/d1-regression.mjs`。
 
+**快照层的三条不变量**（读的投影必须和写的全量对齐严格互逆，否则必然丢数据）：
+
+1. **不做可见性预过滤**：`buildNavigationData` 输出全部类目/站点（含 `enabled:false`），隐藏由渲染层负责（web 端 `data-loader.filterNavigationData` 统一过滤三级）。读侧预过滤会导致后台看不到停用类目、且下一次保存把它们**硬删**（`deleteCategory` 是真 DELETE，站点进回收站）。
+2. **不分页截断**：快照层必须用 `repo.listAllSites`（全量）；`repo.listSites` 默认 limit 100 —— 读侧被截断时，写侧匹配不到存量行会走 `createSiteWithId` 对活行 INSERT，直接**主键冲突 500**。
+3. **删除只在「可见集」内生效**：类目的可见集 = 顶级类目 + 其直接子类目（NavSphere 线格式只表达两级，见 [navigation-enhancement-plan.md §94](../navigation-enhancement-plan.md)）。更深层级类目、孤儿 `categoryId` 的站点本就不进快照，写回不能顺手清掉。
+
+回归测试：`apps/api/test/navigation-snapshot.test.ts`（>100 站点全量投影与写回、停用类目往返、三级类目/孤儿站点保护）。
+
 ### 4.4 NsItem 扩展字段
 
 NavSphere 站点项在 NavHub 侧扩展了 4.0 动态特性（见 [types.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/types.ts#L113-L151) 的 `Site`）：

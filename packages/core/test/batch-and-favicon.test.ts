@@ -7,6 +7,7 @@ import {
   generateDeterministicSvgDataUrl,
   resolveSiteIcon,
   isThirdPartyIconUrl,
+  sanitizeIconUrl,
   batchSetPinnedSitesInCategory,
   batchMoveSitesBetweenCustomCategories,
   batchDeleteSitesFromCustomCategories,
@@ -87,6 +88,13 @@ describe('确定性渐变徽标与自适应 Favicon 生成管线 (Deterministic 
     expect(isThirdPartyIconUrl('https://icons.duckduckgo.com/ip3/x.com.ico')).toBe(true)
     expect(isThirdPartyIconUrl('https://github.com/favicon.ico')).toBe(false)
     expect(isThirdPartyIconUrl('/assets/images/logos/chatgpt.webp')).toBe(false) // 相对路径不误伤
+
+    // 6. 机器生成的 icon URL 净化：第三方服务 -> null（视同没有），其余去空白保留
+    expect(sanitizeIconUrl('https://icon.horse/icon/v2ex.com')).toBeNull()
+    expect(sanitizeIconUrl('  https://github.com/favicon.ico  ')).toBe('https://github.com/favicon.ico')
+    expect(sanitizeIconUrl('')).toBeNull()
+    expect(sanitizeIconUrl(null)).toBeNull()
+    expect(sanitizeIconUrl(undefined)).toBeNull()
   })
 })
 

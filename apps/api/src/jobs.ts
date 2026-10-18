@@ -16,7 +16,7 @@
 
 import { EventEmitter } from "node:events";
 import { enrichUrl } from "@navhub/ai";
-import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol } from "@navhub/core";
+import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol, sanitizeIconUrl } from "@navhub/core";
 import {
   bindSqlite,
   toPgSql,
@@ -588,7 +588,9 @@ export class JobRunner {
     const patch: Record<string, unknown> = {};
     if (!site.description && enriched.description) patch.description = enriched.description;
     if (!site.title && enriched.title) patch.title = enriched.title;
-    if (!site.iconKey && enriched.iconUrl) patch.iconKey = enriched.iconUrl;
+    // 抓取到的 icon 指向第三方图标服务时不落库（视同没有；由前端本地解析链兜底）
+    const enrichedIcon = sanitizeIconUrl(enriched.iconUrl);
+    if (!site.iconKey && enrichedIcon) patch.iconKey = enrichedIcon;
     if (isStale(site.updatedAt) && enriched.description && !patch.description) {
       patch.description = enriched.description;
     }

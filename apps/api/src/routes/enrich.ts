@@ -6,6 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
+import { sanitizeIconUrl } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
 
 import type { AppContext } from "../context.ts";
@@ -64,7 +65,8 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       title: enriched.title,
       description: enriched.description,
       categoryId,
-      iconKey: enriched.iconUrl,
+      // 富化抓的是目标站自带的 icon 声明：若指向第三方图标服务（icon.horse 等）不落库
+      iconKey: sanitizeIconUrl(enriched.iconUrl),
       tags: body.data.tags ?? enriched.tags,
       source: "ai",
     });

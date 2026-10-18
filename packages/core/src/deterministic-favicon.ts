@@ -246,6 +246,18 @@ export function isThirdPartyIconUrl(value: string): boolean {
   }
 }
 
+/**
+ * 净化「机器生成」的图标 URL（元数据抓取 / 富化 / 快照回流等写入点）：
+ * 第三方图标服务地址视同没有自定义图标，返回 null；其余值去空白后原样返回。
+ * 用户显式提交的 iconKey 不走这里 —— 那条路径由渲染层黑名单兜底。
+ */
+export function sanitizeIconUrl(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  return isThirdPartyIconUrl(trimmed) ? null : trimmed
+}
+
 export function resolveSiteIcon(
   url: string,
   title?: string,

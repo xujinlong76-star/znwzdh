@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
-import { canonicalizeUrl, SiteCreateBody } from "@navhub/core";
+import { canonicalizeUrl, sanitizeIconUrl, SiteCreateBody } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import { indexSite } from "../index-site.ts";
 import type { AppContext } from "../context.ts";
@@ -83,7 +83,8 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         title: (typeof rawBody.title === "string" && rawBody.title.trim()) ? rawBody.title.trim() : enriched.title,
         description: enriched.description,
         categoryId,
-        iconKey: enriched.iconUrl,
+        // 富化抓的是目标站自带的 icon 声明：若指向第三方图标服务（icon.horse 等）不落库
+        iconKey: sanitizeIconUrl(enriched.iconUrl),
         tags: Array.isArray(rawBody.tags) ? (rawBody.tags as string[]) : enriched.tags,
         source: "ai",
       });

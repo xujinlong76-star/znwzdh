@@ -91,6 +91,11 @@ export default function SearchNavHub() {
                     title="打开 NavHub 完整站"
                     icon={Icon.Compass}
                   />
+                  <Action.OpenInBrowser
+                    url={`${(preferences.webUrl || "http://localhost:3000").replace(/\/$/, "")}/marketplace`}
+                    title="浏览插件市场"
+                    icon={Icon.Star}
+                  />
                 </ActionPanel>
               }
             />

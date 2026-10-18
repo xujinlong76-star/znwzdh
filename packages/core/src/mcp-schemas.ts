@@ -5,7 +5,8 @@
  *   apps/api 不能 import @navhub/mcp —— @navhub/mcp 反过来依赖 @navhub/api
  *   （它要复用 api 的仓储与业务函数），反向引用会成环。
  *   把 zod 定义下沉到 core 之后，MCP 工具与 REST 端点都从这一份定义取，
- *   OpenAPI 文档再用 zod-to-json-schema 从同一份定义生成 —— 不存在第二份手写清单。
+ *   OpenAPI 文档与 MCP inputSchema 再用 zod 4 原生的 z.toJSONSchema
+ *   （core/src/json-schema.ts）从同一份定义生成 —— 不存在第二份手写清单。
  */
 
 import { z } from "zod";
@@ -20,7 +21,7 @@ export const SearchSitesInput = z.object({
   limit: z.number().int().min(1).max(50).default(10).describe("返回条数上限"),
   categoryId: z.string().optional().describe("限定类目（含其子类目）"),
   tag: z.string().optional().describe("限定标签"),
-  facets: z.record(z.array(z.string())).optional().describe("限定分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
+  facets: z.record(z.string(), z.array(z.string())).optional().describe("限定分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
 });
 
 export const GetSiteInput = z.object({
@@ -31,13 +32,27 @@ export const ListCategoriesInput = z.object({
   includeCounts: z.boolean().default(true).describe("是否返回每个类目下的站点数"),
 });
 
+export const ListPluginsInput = z.object({
+  kind: z.enum(["site-pack", "workspace-preset", "theme"]).optional().describe("按插件类型过滤：网址包 / 工作台预设 / 主题"),
+  query: z.string().optional().describe("按名称、描述、作者关键词过滤"),
+  sort: z.enum(["new", "popular", "stars", "updated"]).default("new").describe("排序：new 最新 / popular 安装最多 / stars 星标最多 / updated 最近更新"),
+  limit: z.number().int().min(1).max(50).default(20).describe("返回条数上限"),
+  offset: z.number().int().min(0).default(0).describe("分页偏移"),
+});
+
+export const InstallPluginInput = z.object({
+  slug: z.string().describe("插件 slug（可从 list_plugins 结果中获取）"),
+  identity: z.string().optional().describe("安装归属的 identity；缺省为 mcp:<调用者标识>"),
+  idempotencyKey: z.string().optional().describe("幂等键；Agent 重试不会重复安装"),
+});
+
 export const CreateSiteInput = z.object({
   url: z.string().url().describe("站点网址"),
   title: z.string().min(1).optional().describe("标题；留空则自动抓取"),
   description: z.string().optional().describe("描述；留空则自动抓取"),
   categoryId: z.string().optional().describe("类目 id；留空则按 AI 建议自动归类"),
   tags: z.array(z.string()).max(8).optional().describe("标签"),
-  facets: z.record(z.array(z.string())).optional().describe("分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
+  facets: z.record(z.string(), z.array(z.string())).optional().describe("分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
   enrich: z.boolean().default(true).describe("是否自动抓取元数据并用 AI 富化"),
   idempotencyKey: z.string().optional().describe("幂等键；重复调用不会重复创建"),
 });
@@ -48,7 +63,7 @@ export const UpdateSiteInput = z.object({
   description: z.string().optional(),
   categoryId: z.string().optional(),
   tags: z.array(z.string()).max(8).optional(),
-  facets: z.record(z.array(z.string())).optional().describe("分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
+  facets: z.record(z.string(), z.array(z.string())).optional().describe("分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
   featured: z.boolean().optional(),
 });
 
@@ -103,7 +118,7 @@ export const RunJobInput = z.object({
     "taxonomy_audit",
     "data_retention",
   ]).describe("任务类型：health_check (健康巡检), refetch_metadata (重抓元数据), recompute_rank (重排热度), reindex (重建检索索引), site_self_healing (死链自愈诊断), token_audit (API 凭据过期与闲置巡检), purge_trash (过期回收站物理清理), taxonomy_audit (分类标签体系审计), data_retention (events/audit_logs 数据保留与明细聚合；cleanup 只 dry-run，rollup 可选 apply)"),
-  payload: z.record(z.unknown()).optional().describe("任务参数（如 refetch_metadata/site_self_healing 需要 siteId，token_audit 可选 expiringDays/dormantDays，purge_trash 可选 olderThanDays；data_retention 支持 mode=cleanup|rollup、apply、maxDays、maxGroups、maxScan）"),
+  payload: z.record(z.string(), z.unknown()).optional().describe("任务参数（如 refetch_metadata/site_self_healing 需要 siteId，token_audit 可选 expiringDays/dormantDays，purge_trash 可选 olderThanDays；data_retention 支持 mode=cleanup|rollup、apply、maxDays、maxGroups、maxScan）"),
 });
 
 export const ListJobsInput = z.object({
@@ -226,7 +241,7 @@ export const SynthesizeAgentToolInput = z.object({
     description: z.string(),
     url: z.string(),
     method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).default("GET"),
-    headers: z.record(z.string()).optional(),
+    headers: z.record(z.string(), z.string()).optional(),
     parameters: z.array(z.object({
       name: z.string(),
       type: z.enum(["string", "number", "boolean"]),
@@ -244,7 +259,7 @@ export const SynthesizeAgentToolInput = z.object({
     apiEndpoint: z.string().optional(),
     category: z.string().optional(),
   }).optional().describe("站点站内检索动作规格（kind=site_search 时生效）"),
-  openApiSpec: z.record(z.unknown()).optional().describe("OpenAPI 规范 JSON（kind=openapi 时生效）"),
+  openApiSpec: z.record(z.string(), z.unknown()).optional().describe("OpenAPI 规范 JSON（kind=openapi 时生效）"),
 });
 
 export const ExchangeP2pMeshInput = z.object({
@@ -358,7 +373,7 @@ export const SiteCreateBody = CreateSiteInput.omit({ enrich: true, idempotencyKe
   relations: z.array(SiteRelationSchema).optional().describe("技术关联图谱"),
   liveMetrics: SiteLiveMetricsSchema.optional().describe("实时指标/星数"),
   workspaces: z.array(z.string()).optional().describe("关联工作区 ID 列表"),
-  metadata: z.record(z.unknown()).optional().describe("动态扩展元数据"),
+  metadata: z.record(z.string(), z.unknown()).optional().describe("动态扩展元数据"),
 });
 
 export const SiteUpdateBody = UpdateSiteInput.omit({ id: true }).extend({
@@ -369,7 +384,7 @@ export const SiteUpdateBody = UpdateSiteInput.omit({ id: true }).extend({
   relations: z.array(SiteRelationSchema).optional().describe("技术关联图谱"),
   liveMetrics: SiteLiveMetricsSchema.optional().describe("实时指标/星数"),
   workspaces: z.array(z.string()).optional().describe("关联工作区 ID 列表"),
-  metadata: z.record(z.unknown()).optional().describe("动态扩展元数据"),
+  metadata: z.record(z.string(), z.unknown()).optional().describe("动态扩展元数据"),
 });
 
 export const CreateApiTokenInput = z.object({
@@ -589,5 +604,15 @@ export const MCP_TOOL_DEFS: ToolDefinition[] = [
     name: "resolve_wayback",
     description: "查询 Internet Archive Wayback 历史归档快照，为失效/下线/404 站点提供时间机器历史快照拯救链接，实现全网永久可用。",
     scope: "read", inputSchema: ResolveWaybackInput, mutating: false,
+  },
+  {
+    name: "list_plugins",
+    description: "浏览插件市场（社区共享的声明式插件：网址包 / 工作台预设 / 主题）。返回已上架插件的元数据与影响摘要（站点数 / 看板模块数 / 主题变量数）。适合回答「有什么现成的网址合集 / 工作台布局 / 主题可用」。",
+    scope: "read", inputSchema: ListPluginsInput, mutating: false,
+  },
+  {
+    name: "install_plugin",
+    description: "把一个已上架插件安装到本机（按 identity 归属）。网址包会以增量去重方式写入站点库（绝不覆盖既有数据）；工作台预设与主题由客户端消费生效。支持幂等键；未上架插件会被拒绝。",
+    scope: "write", inputSchema: InstallPluginInput, mutating: true,
   },
 ];

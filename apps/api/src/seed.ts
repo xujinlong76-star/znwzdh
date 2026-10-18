@@ -11,9 +11,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { hashSiteId } from "@navhub/store";
 import { siteEmbeddingText } from "@navhub/ai";
-import { resolveSiteIcon } from "@navhub/core";
+import { resolveSiteIcon, validateAndCleanPluginManifest } from "@navhub/core";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
+import { seedPluginDefs } from "./seed-plugins.ts";
 import { DEFAULT_SITE_CONFIG, writeSiteConfig } from "./storage.ts";
 
 interface SeedShape {
@@ -43,6 +44,7 @@ export interface SeedResult {
   categories: number;
   sites: number;
   collections: number;
+  plugins: number;
   skipped: number;
   embedded: number;
   siteConfigSeeded: boolean;
@@ -121,8 +123,35 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
     }
   }
 
+  let plugins = 0;
+  for (const def of seedPluginDefs()) {
+    try {
+      const existing = await ctx.repo.getPluginBySlug(def.slug);
+      if (existing) continue;
+      const validated = validateAndCleanPluginManifest(def.manifest);
+      if (!validated.ok) {
+        console.warn("[seed] 插件清单不合法，跳过: " + def.slug + " -> " + validated.errors.join("; "));
+        continue;
+      }
+      await ctx.repo.createPlugin(
+        {
+          manifest: validated.manifest,
+          author: validated.manifest.author ?? "NavHub 官方",
+          authorKind: "seed",
+          source: "seed",
+          status: def.status,
+          slug: def.slug,
+        },
+        { actor: "seed", actorKind: "system" },
+      );
+      plugins++;
+    } catch (err) {
+      console.warn("[seed] 插件导入跳过: " + def.slug, err);
+    }
+  }
+
   await ctx.close();
-  return { categories, sites, collections, skipped, embedded, siteConfigSeeded };
+  return { categories, sites, collections, plugins, skipped, embedded, siteConfigSeeded };
 }
 
 /**

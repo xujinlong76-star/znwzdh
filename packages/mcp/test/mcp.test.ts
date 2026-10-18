@@ -58,7 +58,7 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 22 个只读工具与 10 个写工具", () => {
+  it("包含 23 个只读工具与 11 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
@@ -80,12 +80,13 @@ describe("工具清单", () => {
       "list_categories",
       "list_collections",
       "list_jobs",
+      "list_plugins",
       "list_tags",
       "resolve_wayback",
       "search_sites",
       "synthesize_agent_tool",
     ]);
-    expect(write.length).toBe(10);
+    expect(write.length).toBe(11);
   });
 
   it("run_job 需要 admin 权限（触发全站扫描是危险操作）", () => {
@@ -637,5 +638,66 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     expect(body.targetUrl).toBe("https://example.com/dead-page");
     expect(body.recoveryUrl).toContain("web.archive.org/web");
     expect(body.saveUrl).toContain("web.archive.org/save");
+  });
+});
+
+describe("插件市场工具", () => {
+  function makeManifest(name: string, url: string) {
+    return {
+      manifestVersion: 1,
+      kind: "site-pack",
+      name,
+      description: "用于 MCP 安装链路测试的声明式网址包",
+      version: "1.0.0",
+      payload: {
+        categories: [{ title: "mcp 测试" }],
+        sites: [{ url, title: "MCP 示例站", category: "mcp 测试", tags: ["mcp"] }],
+      },
+    };
+  }
+
+  let publishedSlug = "";
+
+  it("list_plugins 只返回已上架插件（pending 不可见）", async () => {
+    const pending = await ctx.repo.createPlugin(
+      { manifest: makeManifest("MCP 测试网址包", "https://mcp-plugin.example.com") as any, author: "mcp-test", authorKind: "token", source: "user", status: "pending" },
+      { actor: "mcp:test", actorKind: "token" },
+    );
+
+    const before = payload(await handlers.list_plugins({ query: "MCP 测试" }, READONLY));
+    expect(before.plugins.some((p: any) => p.slug === pending.slug)).toBe(false);
+
+    await ctx.repo.reviewPlugin(pending.slug, "approve", null, { actor: "mcp:test", actorKind: "admin" });
+    publishedSlug = pending.slug;
+
+    const after = payload(await handlers.list_plugins({ query: "MCP 测试" }, READONLY));
+    const row = after.plugins.find((p: any) => p.slug === publishedSlug);
+    expect(row).toBeTruthy();
+    expect(row.summary.siteCount).toBe(1);
+    expect(row.installHint).toContain("install_plugin");
+  });
+
+  it("install_plugin 以增量方式写入站点并支持幂等键重放", async () => {
+    const res = await handlers.install_plugin({ slug: publishedSlug, idempotencyKey: "mcp-install-1" }, FULL);
+    const body = payload(res);
+    expect(body.applied.createdSiteIds.length).toBe(1);
+    expect(body.identity).toBe("mcp:mcp:test");
+
+    const replayed = payload(await handlers.install_plugin({ slug: publishedSlug, idempotencyKey: "mcp-install-1" }, FULL));
+    expect(replayed.replayed).toBe(true);
+  });
+
+  it("只读 token 不能安装插件（硬边界）", async () => {
+    await expect(handlers.install_plugin({ slug: publishedSlug }, READONLY)).rejects.toThrow(/权限/);
+  });
+
+  it("install_plugin 拒绝未上架插件（isError 而不是抛异常）", async () => {
+    const pending = await ctx.repo.createPlugin(
+      { manifest: makeManifest("MCP 未上架网址包", "https://mcp-pending.example.com") as any, author: "mcp-test", authorKind: "token", source: "user", status: "pending" },
+      { actor: "mcp:test", actorKind: "token" },
+    );
+    const res = await handlers.install_plugin({ slug: pending.slug }, FULL);
+    expect(res.isError).toBe(true);
+    expect(text(res)).toContain("不可安装");
   });
 });

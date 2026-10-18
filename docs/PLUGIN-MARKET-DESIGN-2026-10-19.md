@@ -266,8 +266,12 @@ CREATE TABLE IF NOT EXISTS plugin_stars (
 6. `installWidgetPreset` 新增 + 主题应用器（`lib/plugins/theme-runtime.ts`）+ 安装 consent/结果 UX。
 7. overlay → web 镜像同步 + `check:overlay`。
 
-### 阶段 C（后续批次）
-8. e2e 两条（市场浏览+安装、发布→审核）；MCP 工具 `list_plugins/install_plugin`；短链落点；扩展（Chrome/Raycast）消费市场；种子数据与文档更新。
+### 阶段 C（本批已落地）
+8. e2e 两条（`e2e/plugin-market.spec.ts`：市场浏览 → 详情 → 一键安装；发布待审 → 管理员审核上架 → 市场公开可见）。
+9. MCP 工具 `list_plugins`（read）/ `install_plugin`（write）：与 REST 共用仓储，含只读边界、幂等重放、未上架拒装断言；OpenAPI `x-mcp-tools` 与 parity 测试自动覆盖（工具总数 32 → 34）。
+10. 短链落点：`/marketplace/[slug]` 服务端 `generateMetadata`（title / description / openGraph / twitter，取不到数据时回退通用文案）——未来 `/s/xxx` 短链服务可直接 302 至此，slug 即稳定落点。
+11. 扩展消费市场：Chrome 弹窗页脚「🧩 插件市场」入口；Raycast「浏览插件市场」动作（跟随 `webUrl` 偏好）。
+12. 种子数据：`apps/api/src/seed-plugins.ts`（site-pack / workspace-preset / theme 三 kind 全覆盖 + 1 条待审样例演示审核链路），`pnpm seed` 幂等导入；文档同步（CODEBASE_OVERVIEW / wiki/07 工具计数）。
 
 ### 验收口径
 - `pnpm verify` 全绿（新增测试 ≥60 例）；`next build` + `check:bundle` 不劣化；

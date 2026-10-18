@@ -17,6 +17,7 @@ import { catalogHandlers } from "./handlers/catalog.ts";
 import { developerToolHandlers } from "./handlers/developer-tools.ts";
 import { discoveryHandlers } from "./handlers/discovery.ts";
 import { jobHandlers } from "./handlers/jobs.ts";
+import { pluginHandlers } from "./handlers/plugins.ts";
 import { bind, makeIndexSite, makeWithIdempotency, type HandlerDeps } from "./handlers/shared.ts";
 import { siteHandlers } from "./handlers/sites.ts";
 import { stateSyncHandlers } from "./handlers/state-sync.ts";
@@ -38,6 +39,7 @@ export function createHandlers(ctx: AppContext) {
     ...bind(discoveryHandlers, deps),
     ...bind(stateSyncHandlers, deps),
     ...bind(developerToolHandlers, deps),
+    ...bind(pluginHandlers, deps),
   };
 }
 

@@ -344,7 +344,7 @@ JobRunner.tick()（定时）
 
 横切关注点全部在 `server.ts`（384 行）：`onRoute` 收集 OpenAPI、`onRequest` 做请求 ID + 分级鉴权、`onSend` 做安全头 + 路由级缓存/ETag、`onResponse` 记指标、`setErrorHandler` 兜底。
 
-### 5.5 `packages/mcp`：32 个工具
+### 5.5 `packages/mcp`：34 个工具
 
 22 个 read、9 个 write、1 个 admin（`run_job`，会触发全站扫描）。按域拆在 `handlers/`：
 

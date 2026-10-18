@@ -72,7 +72,7 @@ export const MAX_BATCH_ITEMS = 100;   // 批量写入硬上限
 | `run_job` | **admin** | ✓ | `kind`(7选1)、`payload` | 入队后台任务；需 admin——会触发全站扫描 |
 | `list_jobs` | read | ✗ | `status`(5 选 1)、`limit`(1-100, 默认20) | 任务队列（最近在前）。补上「`run_job` 只负责入队、Agent 却查不到执行结果」的口子 |
 
-> **全部 33 个工具：只读 22 / 写 10 / admin 1**（由 `scope` + `mutating` 字段划分；上表只列核心 17 个，算法 / 发现 / 开发者类工具见 wiki 10）。测试 `工具清单 > 包含 22 个只读工具与 10 个写工具` 锁死只读名单。
+> **全部 34 个工具：只读 23 / 写 11（其中 run_job 为 admin 专属）**（由 `scope` + `mutating` 字段划分；上表只列核心 17 个，算法 / 发现 / 开发者类工具见 wiki 10）。测试 `工具清单 > 包含 23 个只读工具与 11 个写工具` 锁死只读名单。
 
 `ToolDefinition` 还带 `mutating: boolean`——**用于让宿主（MCP 客户端）决定是否需要人工确认**。
 

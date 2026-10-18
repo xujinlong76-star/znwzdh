@@ -19,10 +19,10 @@
     "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
       {
@@ -42,7 +42,8 @@
     ".next/types/**/*.ts",
     ".vercel/output/static/types/**/*.ts",
     "next-env.d.ts",
-    ".next-verify/types/**/*.ts"
+    ".next-verify/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

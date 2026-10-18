@@ -24,7 +24,7 @@ import { getIdentity } from '@/lib/identity'
 
 export interface PluginInstallModalProps {
   plugin: HubPluginItem | null
-  mode: 'install' | 'uninstall'
+  mode: 'install' | 'uninstall' | 'upgrade'
   identity?: string
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -51,13 +51,14 @@ export function PluginInstallModal({
   // D1 更新链路：已安装且市场版本更高时，本弹窗以「更新」语义呈现
   // （执行通道不变——重装即升级，服务端幂等增量，只增不删）
   const isUpdate =
-    mode === 'install' && resolveInstallAction(plugin.installedVersion, plugin.version) === 'update'
+    mode === 'upgrade' ||
+    (mode === 'install' && resolveInstallAction(plugin.installedVersion, plugin.version) === 'update')
 
   const handleConfirm = async () => {
     setLoading(true)
     try {
       const effectiveIdentity = identity || getIdentity()
-      if (mode === 'install') {
+      if (mode !== 'uninstall') {
         // 1. 服务端状态登记与 site-pack 增量写库
         const res = await installPlugin(plugin.slug, effectiveIdentity)
 
@@ -104,7 +105,7 @@ export function PluginInstallModal({
       onOpenChange(false)
       onSuccess?.()
     } catch (err) {
-      toast.error(mode === 'install' ? '安装失败' : '卸载失败', {
+      toast.error(mode === 'uninstall' ? '卸载失败' : isUpdate ? '升级失败' : '安装失败', {
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
@@ -123,20 +124,22 @@ export function PluginInstallModal({
             <span className="text-xs font-mono text-muted-foreground">v{plugin.version}</span>
           </div>
           <DialogTitle className="text-lg font-semibold pt-1">
-            {mode === 'install'
-              ? `确认${isUpdate ? '更新' : '安装'}「${plugin.name}」`
-              : `确认卸载「${plugin.name}」`}
+            {mode === 'uninstall'
+              ? `确认卸载「${plugin.name}」`
+              : `确认${isUpdate ? '更新' : '安装'}「${plugin.name}」`}
           </DialogTitle>
           <DialogDescription className="text-xs leading-relaxed text-muted-foreground">
-            {mode === 'install'
-              ? '请确认以下将要引入的数据变更与生效范围：'
-              : '卸载后您可以随时在插件市场重新安装。'}
+            {mode === 'uninstall'
+              ? '卸载后您可以随时在插件市场重新安装。'
+              : isUpdate
+                ? '将增量导入新版本内容（等价 URL 去重，不覆盖或删除您已有的数据）：'
+                : '请确认以下将要引入的数据变更与生效范围：'}
           </DialogDescription>
         </DialogHeader>
 
         {/* 详情影响说明 */}
         <div className="py-3 space-y-3">
-          {mode === 'install' ? (
+          {mode !== 'uninstall' ? (
             <>
               {plugin.kind === 'site-pack' && (
                 <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4 space-y-2">

@@ -549,6 +549,36 @@ export interface PluginUpgradeDiff {
   changed?: string[]
 }
 
+/** 插件生态大盘遥测（服务端 GET /api/admin/plugins/metrics） */
+export interface HubPluginTelemetryMetrics {
+  totalPlugins: number
+  publishedCount: number
+  pendingCount: number
+  rejectedCount: number
+  delistedCount: number
+  totalInstalls: number
+  activeInstalls: number
+  totalStars: number
+  totalReports: number
+  kindDistribution: { sitePack: number; workspacePreset: number; theme: number }
+  topInstalled: Array<{
+    id: string
+    slug: string
+    name: string
+    kind: string
+    version: string
+    installCount: number
+    starCount: number
+  }>
+}
+
+/** 拉取大盘遥测；失败降级为 null（管理页隐藏面板，不打断插件列表渲染） */
+export async function fetchPluginTelemetry(): Promise<HubPluginTelemetryMetrics | null> {
+  return degrade<HubPluginTelemetryMetrics | null>(null, () =>
+    getJson<HubPluginTelemetryMetrics>('/api/admin/plugins/metrics'),
+  )
+}
+
 export interface HubPluginItem {
   id: string
   slug: string

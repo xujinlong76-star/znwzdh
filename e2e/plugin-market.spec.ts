@@ -114,10 +114,10 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
 
     // 分享深链 ?install=1（D4）：直接落地详情页即自动弹出安装确认
     await page.goto(`/marketplace/${slug}?install=1`);
-    await expect(page.getByRole('heading', { level: 1 }).first()).toContainText(name);
     const dialog = page.getByRole('dialog');
     try {
-      await expect(dialog).toBeVisible({ timeout: 10_000 });
+      // 弹窗自动打开后页面主体对角色查询不可见（Radix aria-hidden），故弹窗断言放最前
+      await expect(dialog).toBeVisible({ timeout: 15_000 });
     } catch {
       // 冷启动水合 / 首屏取数竞态未自动弹窗时：轮询补击「立即安装该插件」直至弹窗出现
       await expect
@@ -134,6 +134,8 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
         )
         .toBe(true);
     }
+    // 页面主体已加载（h1 用 CSS 定位器：弹窗开启时不受 aria-hidden 影响）
+    await expect(page.locator('h1').first()).toContainText(name);
     await expect(dialog.getByText(`确认安装「${name}」`)).toBeVisible();
     await clickInstallAndAwaitToast(page, dialog, name);
 

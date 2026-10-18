@@ -37,3 +37,4 @@ export * from "./facets.ts";
 export * from "./relations.ts";
 export * from "./taxonomy-governance.ts";
 export * from "./query-intent.ts";
+export * from "./plugin-manifest.ts";

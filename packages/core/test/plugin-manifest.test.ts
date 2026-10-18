@@ -1,0 +1,322 @@
+/**
+ * 插件市场契约的「非空性」测试：
+ * 每个用例都对应一条发布/导入链路上「不该发生的暗损」——
+ * 去掉校验器里的守卫，必有断言变红。
+ */
+import { describe, expect, it } from 'vitest'
+import {
+  PLUGIN_LIMITS,
+  comparePluginVersions,
+  normalizePluginUrlKey,
+  parsePluginManifestJson,
+  pluginKindLabel,
+  summarizePluginManifest,
+  validateAndCleanPluginManifest,
+} from '../src/plugin-manifest.ts'
+
+const validSitePack = {
+  manifestVersion: 1,
+  kind: 'site-pack',
+  name: 'AI 工具集',
+  description: '精选 AI 编程工具',
+  icon: '🤖',
+  version: '1.0.0',
+  tags: ['AI', '工具'],
+  payload: {
+    categories: [{ title: 'AI 编程' }],
+    sites: [
+      { url: 'https://github.com/features/copilot', title: 'GitHub Copilot', category: 'AI 编程', tags: ['AI'] },
+      { url: 'https://cursor.com/', title: 'Cursor', tags: ['AI', 'ai'] },
+    ],
+  },
+}
+
+const validWorkspacePreset = {
+  manifestVersion: 1,
+  kind: 'workspace-preset',
+  name: '极客工作台',
+  version: '1.0.0',
+  payload: {
+    boards: [
+      {
+        name: '极客工作台',
+        widgets: [
+          { type: 'clock-pomodoro', colSpan: 3, rowSpan: 1 },
+          { type: 'quick-tools', colSpan: 4, rowSpan: 1, config: { note: 'ok' } },
+        ],
+      },
+    ],
+  },
+}
+
+const validTheme = {
+  manifestVersion: 1,
+  kind: 'theme',
+  name: '紫罗兰之夜',
+  version: '1.0.0',
+  payload: { accent: 'violet', tokens: { '--primary': '262 83% 58%', '--radius': '0.75rem' } },
+}
+
+function expectFail(input: unknown, ...fragments: string[]) {
+  const res = validateAndCleanPluginManifest(input)
+  expect(res.ok).toBe(false)
+  if (res.ok) return
+  const joined = res.errors.join(' | ')
+  for (const fragment of fragments) expect(joined).toContain(fragment)
+}
+
+function expectOk(input: unknown) {
+  const res = validateAndCleanPluginManifest(input)
+  expect(res.ok).toBe(true)
+  if (!res.ok) throw new Error(`预期通过但失败：${res.errors.join(' | ')}`)
+  return res
+}
+
+describe('插件清单校验：基础与元数据', () => {
+  it('合法网址包通过校验并保留全部字段', () => {
+    const res = expectOk(validSitePack)
+    expect(res.manifest.kind).toBe('site-pack')
+    expect(res.manifest.name).toBe('AI 工具集')
+    expect(res.manifest.description).toBe('精选 AI 编程工具')
+    expect(res.manifest.icon).toBe('🤖')
+    expect(res.manifest.tags).toEqual(['AI', '工具'])
+    expect(res.warnings).toEqual([])
+    const payload = res.manifest.payload as { sites: Array<{ title: string }> }
+    expect(payload.sites.length).toBe(2)
+  })
+
+  it('description 可省略且默认为空串（列表卡片不能拿 undefined 渲染）', () => {
+    const res = expectOk({ ...validSitePack, description: undefined })
+    expect(res.manifest.description).toBe('')
+  })
+
+  it('非对象输入（字符串/数组/null）一律拒绝', () => {
+    expectFail('x', 'JSON 对象')
+    expectFail(['x'], 'JSON 对象')
+    expectFail(null, 'JSON 对象')
+  })
+
+  it('manifestVersion 不符拒绝（契约升级必须先改版本）', () => {
+    expectFail({ ...validSitePack, manifestVersion: 2 }, 'manifestVersion')
+    expectFail({ ...validSitePack, manifestVersion: undefined }, 'manifestVersion')
+  })
+
+  it('未知 kind 拒绝', () => {
+    expectFail({ ...validSitePack, kind: 'script-pack' }, 'kind')
+  })
+
+  it('name 缺失或超长拒绝', () => {
+    expectFail({ ...validSitePack, name: '' }, 'name 不能为空')
+    expectFail({ ...validSitePack, name: 'x'.repeat(61) }, '60 字符')
+  })
+
+  it('version 必须是 x.y.z', () => {
+    expectFail({ ...validSitePack, version: '1.0' }, 'x.y.z')
+    expectFail({ ...validSitePack, version: 'v1.0.0' }, 'x.y.z')
+    expectFail({ ...validSitePack, version: '1.0.0-beta' }, 'x.y.z')
+  })
+
+  it('icon 禁远程图片（防追踪/SSRF 诱饵）', () => {
+    expectFail({ ...validSitePack, icon: 'https://evil.example/track.png' }, '禁止远程图片')
+  })
+
+  it('homepage 非 http(s) 拒绝', () => {
+    expectFail({ ...validSitePack, homepage: 'javascript:alert(1)' }, 'http/https')
+  })
+
+  it('超过 256KB 的原始负载拒绝（未知字段也要计入体积）', () => {
+    expectFail({ ...validSitePack, junk: 'x'.repeat(300 * 1024) }, '256KB 上限')
+  })
+})
+
+describe('插件清单校验：网址包负载', () => {
+  it('包内重复 URL 去重并给出警告（警告必须出现，不能静默）', () => {
+    const res = expectOk({
+      ...validSitePack,
+      payload: {
+        sites: [
+          { url: 'https://example.com/tool', title: 'A' },
+          { url: 'https://EXAMPLE.com/tool/', title: 'B' },
+        ],
+      },
+    })
+    const payload = res.manifest.payload as { sites: unknown[] }
+    expect(payload.sites.length).toBe(1)
+    expect(res.warnings.join(' ')).toContain('重复 URL 已去重：1 条')
+  })
+
+  it('站点数组为空拒绝；超过 200 条拒绝', () => {
+    expectFail({ ...validSitePack, payload: { sites: [] } }, '至少需要 1 个站点')
+    const many = { ...validSitePack, payload: { sites: Array.from({ length: 201 }, (_, i) => ({ url: `https://e.com/s${i}`, title: `S${i}` })) } }
+    expectFail(many, '最多 200 个')
+  })
+
+  it('javascript:/相对地址/带凭据的 URL 全部拒绝', () => {
+    expectFail({ ...validSitePack, payload: { sites: [{ url: 'javascript:alert(1)', title: 'x' }] } }, 'http/https')
+    expectFail({ ...validSitePack, payload: { sites: [{ url: '/relative', title: 'x' }] } }, 'http/https')
+    expectFail({ ...validSitePack, payload: { sites: [{ url: 'https://u:p@example.com/', title: 'x' }] } }, 'http/https')
+  })
+
+  it('站点标题超长、标签超量/超长拒绝', () => {
+    expectFail({ ...validSitePack, payload: { sites: [{ url: 'https://e.com', title: 'x'.repeat(121) }] } }, '120 字符')
+    expectFail(
+      { ...validSitePack, payload: { sites: [{ url: 'https://e.com', title: 'x', tags: ['a', 'b', 'c', 'd', 'e', 'f'] }] } },
+      '最多 5 个',
+    )
+    expectFail(
+      { ...validSitePack, payload: { sites: [{ url: 'https://e.com', title: 'x', tags: ['x'.repeat(21)] }] } },
+      '20 字符',
+    )
+  })
+
+  it('分类超过 20 个拒绝；包内同名分类去重（大小写不敏感）', () => {
+    const many = Array.from({ length: 21 }, (_, i) => ({ title: `C${i}` }))
+    expectFail({ ...validSitePack, payload: { categories: many, sites: [{ url: 'https://e.com', title: 'x' }] } }, '最多 20 个')
+    const res = expectOk({
+      ...validSitePack,
+      payload: {
+        categories: [{ title: 'AI 编程' }, { title: 'ai 编程' }],
+        sites: [{ url: 'https://e.com', title: 'x' }],
+      },
+    })
+    const payload = res.manifest.payload as { categories: unknown[] }
+    expect(payload.categories.length).toBe(1)
+  })
+})
+
+describe('插件清单校验：工作台预设负载', () => {
+  it('合法预设通过并保留 config', () => {
+    const res = expectOk(validWorkspacePreset)
+    const payload = res.manifest.payload as { boards: Array<{ widgets: Array<{ config?: Record<string, unknown> }> }> }
+    expect(payload.boards[0].widgets[1].config).toEqual({ note: 'ok' })
+  })
+
+  it('模块 type 必须是小写字母/数字/连字符', () => {
+    expectFail(
+      { ...validWorkspacePreset, payload: { boards: [{ name: 'b', widgets: [{ type: 'Clock!', colSpan: 3, rowSpan: 1 }] }] } },
+      '格式不合法',
+    )
+  })
+
+  it('colSpan/rowSpan 缺失或越界拒绝', () => {
+    expectFail(
+      { ...validWorkspacePreset, payload: { boards: [{ name: 'b', widgets: [{ type: 'clock-pomodoro', colSpan: 13, rowSpan: 1 }] }] } },
+      '1..12',
+    )
+    expectFail(
+      { ...validWorkspacePreset, payload: { boards: [{ name: 'b', widgets: [{ type: 'clock-pomodoro', colSpan: 3 }] }] } },
+      'rowSpan 必须是整数',
+    )
+  })
+
+  it('config 中的原型污染键被剥离（__proto__ 不得进入清洗结果）', () => {
+    const polluted = JSON.parse('{"__proto__":{"polluted":true},"safe":1}') as Record<string, unknown>
+    const res = expectOk({
+      ...validWorkspacePreset,
+      payload: { boards: [{ name: 'b', widgets: [{ type: 'clock-pomodoro', colSpan: 3, rowSpan: 1, config: polluted }] }] },
+    })
+    const payload = res.manifest.payload as { boards: Array<{ widgets: Array<{ config?: Record<string, unknown> }> }> }
+    const config = payload.boards[0].widgets[0].config as Record<string, unknown>
+    expect(Object.prototype.hasOwnProperty.call(config, '__proto__')).toBe(false)
+    expect((Object.getPrototypeOf(config) as Record<string, unknown>).polluted).toBeUndefined()
+    expect(config.safe).toBe(1)
+  })
+
+  it('config 净化后仍超 8KB 拒绝（防炸弹配置）', () => {
+    const bomb = { list: Array.from({ length: 100 }, () => 'x'.repeat(2000)) }
+    expectFail(
+      { ...validWorkspacePreset, payload: { boards: [{ name: 'b', widgets: [{ type: 'clock-pomodoro', colSpan: 3, rowSpan: 1, config: bomb }] }] } },
+      '8KB 上限',
+    )
+  })
+
+  it('看板/模块数量上限', () => {
+    const sixBoards = Array.from({ length: 6 }, (_, i) => ({ name: `b${i}`, widgets: [{ type: 'clock-pomodoro', colSpan: 3, rowSpan: 1 }] }))
+    expectFail({ ...validWorkspacePreset, payload: { boards: sixBoards } }, '最多 5 个')
+    const manyWidgets = Array.from({ length: 25 }, () => ({ type: 'quick-tools', colSpan: 3, rowSpan: 1 }))
+    expectFail({ ...validWorkspacePreset, payload: { boards: [{ name: 'b', widgets: manyWidgets }] } }, '最多 24 个')
+  })
+})
+
+describe('插件清单校验：主题负载', () => {
+  it('合法主题通过', () => {
+    const res = expectOk(validTheme)
+    const payload = res.manifest.payload as { accent?: string; tokens?: Record<string, string> }
+    expect(payload.accent).toBe('violet')
+    expect(payload.tokens?.['--primary']).toBe('262 83% 58%')
+  })
+
+  it('accent 白名单外的值拒绝', () => {
+    expectFail({ ...validTheme, payload: { accent: 'blue' } }, 'accent')
+  })
+
+  it('颜色变量必须是 HSL 三段式且在范围内', () => {
+    expectFail({ ...validTheme, payload: { tokens: { '--primary': 'blue' } } }, 'HSL 三段式')
+    expectFail({ ...validTheme, payload: { tokens: { '--primary': '361 50% 50%' } } }, 'HSL 三段式')
+    expectFail({ ...validTheme, payload: { tokens: { '--primary': '262 101% 50%' } } }, 'HSL 三段式')
+  })
+
+  it('未知变量与非 rem 圆角拒绝', () => {
+    expectFail({ ...validTheme, payload: { tokens: { '--evil': '1 1% 1%' } } }, '不支持变量')
+    expectFail({ ...validTheme, payload: { tokens: { '--radius': '3rem' } } }, '0..2rem')
+    expectFail({ ...validTheme, payload: { tokens: { '--radius': '12px' } } }, '0..2rem')
+  })
+
+  it('空主题（既无 accent 又无 tokens）拒绝', () => {
+    expectFail({ ...validTheme, payload: {} }, '至少需要 accent 或 tokens')
+  })
+})
+
+describe('摘要、版本比较与文本解析', () => {
+  it('网址包摘要：站点数/分类数/去重标签/主机前五', () => {
+    const res = expectOk(validSitePack)
+    const summary = summarizePluginManifest(res.manifest)
+    expect(summary.kind).toBe('site-pack')
+    expect(summary.siteCount).toBe(2)
+    expect(summary.categoryCount).toBe(1)
+    expect(summary.uniqueTagCount).toBe(2) // ai + 工具
+    expect(summary.hosts).toEqual(['github.com', 'cursor.com'])
+  })
+
+  it('工作台摘要：看板数/模块数/类型集合', () => {
+    const res = expectOk(validWorkspacePreset)
+    const summary = summarizePluginManifest(res.manifest)
+    expect(summary.boardCount).toBe(1)
+    expect(summary.widgetCount).toBe(2)
+    expect(summary.widgetTypes).toEqual(['clock-pomodoro', 'quick-tools'])
+  })
+
+  it('主题摘要：accent 与变量数', () => {
+    const res = expectOk(validTheme)
+    const summary = summarizePluginManifest(res.manifest)
+    expect(summary.accent).toBe('violet')
+    expect(summary.themeTokenCount).toBe(2)
+  })
+
+  it('版本比较按数值段（1.0.10 > 1.0.9 这种必须正确）', () => {
+    expect(comparePluginVersions('1.0.0', '1.0.0')).toBe(0)
+    expect(comparePluginVersions('1.0.10', '1.0.9')).toBe(1)
+    expect(comparePluginVersions('1.1.0', '2.0.0')).toBe(-1)
+  })
+
+  it('URL 规范化键：主机小写、去 hash、去尾斜杠、保 query/路径大小写', () => {
+    expect(normalizePluginUrlKey('HTTPS://Example.com/Path/#frag')).toBe('https://example.com/Path')
+    expect(normalizePluginUrlKey('https://e.com?q=1')).toBe('https://e.com?q=1')
+    expect(normalizePluginUrlKey('not a url')).toBe('not a url')
+  })
+
+  it('parsePluginManifestJson：非法 JSON 给中文错误，合法文本往返成功', () => {
+    const bad = parsePluginManifestJson('{oops')
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.errors.join(' ')).toContain('JSON')
+    const good = parsePluginManifestJson(JSON.stringify(validTheme))
+    expect(good.ok).toBe(true)
+  })
+
+  it('kind 中文标签与上限常量对齐', () => {
+    expect(pluginKindLabel('site-pack')).toBe('网址包')
+    expect(pluginKindLabel('workspace-preset')).toBe('工作台预设')
+    expect(pluginKindLabel('theme')).toBe('主题')
+    expect(PLUGIN_LIMITS.maxSites).toBe(200)
+  })
+})

@@ -34,6 +34,9 @@ apps/web/src/*
 apps/web/src/lib/*
 !apps/web/src/lib/github.ts
 !apps/web/src/lib/storage-adapter.ts
+!apps/web/src/lib/plugins/
+apps/web/src/lib/plugins/*
+!apps/web/src/lib/plugins/plugin-manifest.ts
 
 # 存储接缝的测试（github.ts / storage-adapter.ts 是 NavHub 自己维护的文件，
 # 不是上游代码；根 vitest.config.ts 只放行 apps/web/test 这一个目录）

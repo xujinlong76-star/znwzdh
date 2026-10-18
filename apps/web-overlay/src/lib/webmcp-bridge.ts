@@ -1,5 +1,15 @@
+// @core-mirror:parity-ignore-start
+// 本文件由 scripts/sync-core-mirrors.mjs 自动生成，请勿手工编辑。
+// 事实源：packages/core/src/webmcp-bridge.ts
+// 同步命令：node scripts/sync-core-mirrors.mjs
+// 一致性守门：node scripts/sync-core-mirrors.mjs --check（CI 可加）
+// @core-mirror:parity-ignore-end
 /**
- * 浏览器端端侧 Model Context Protocol (WebMCP) 双向通信网桥适配器
+ * 浏览器端端侧 Model Context Protocol (WebMCP) 双向通信网桥
+ *
+ * 核心设计目标：
+ * 为端侧 AI Agent、浏览器扩展、本地小模型 (WebLLM / Chrome Built-in AI)
+ * 提供标准化的 JSON-RPC 2.0 协议交互入口，使 AI 能够直接查询 NavHub 知识库与图谱。
  */
 
 export interface JsonRpcRequest {
@@ -34,19 +44,48 @@ export type WebMcpToolHandler = (params: Record<string, unknown>) => Promise<unk
 
 export class WebMcpBridge {
   private tools: Map<string, { def: WebMcpToolDefinition; handler: WebMcpToolHandler }> = new Map();
+  private allowedOrigins: Set<string>;
+  /** 动态注册表上限：防止 /api/tools/synthesize 被滥用导致内存无限增长 */
+  private readonly maxTools: number;
 
-  constructor() {
+  constructor(options?: { allowedOrigins?: string[]; maxTools?: number }) {
+    this.allowedOrigins = new Set(options?.allowedOrigins || ['*']);
+    // 下限 16（覆盖内置工具），上限 4096（防误配）；默认 512
+    this.maxTools = Math.max(16, Math.min(options?.maxTools ?? 512, 4096));
     this.registerBuiltInTools();
   }
 
-  public registerTool(def: WebMcpToolDefinition, handler: WebMcpToolHandler): void {
+  /**
+   * 注册自定义 MCP 工具
+   */
+  /**
+   * 注册自定义 MCP 工具。
+   * @returns 注册成功返回 true；同名覆盖返回 true；达到 maxTools 上限且为新工具时返回 false（调用方应回 429）
+   */
+  public registerTool(def: WebMcpToolDefinition, handler: WebMcpToolHandler): boolean {
+    if (!this.tools.has(def.name) && this.tools.size >= this.maxTools) return false;
     this.tools.set(def.name, { def, handler });
+    return true;
   }
 
+  public get toolCount(): number {
+    return this.tools.size;
+  }
+
+  public get maxToolCount(): number {
+    return this.maxTools;
+  }
+
+  /**
+   * 列出所有可用工具
+   */
   public listTools(): WebMcpToolDefinition[] {
     return Array.from(this.tools.values()).map((t) => t.def);
   }
 
+  /**
+   * 核心 JSON-RPC 2.0 请求处理器
+   */
   public async handleRpc(request: JsonRpcRequest): Promise<JsonRpcResponse> {
     if (!request || request.jsonrpc !== '2.0') {
       return {
@@ -132,6 +171,9 @@ export class WebMcpBridge {
     }
   }
 
+  /**
+   * 注册内置核心工具
+   */
   private registerBuiltInTools(): void {
     this.registerTool(
       {
@@ -173,6 +215,13 @@ export class WebMcpBridge {
   }
 }
 
+/**
+ * 进程/页面级单例。
+ *
+ * 浏览器侧只有一份桥（所有端侧 Agent 与扩展共享同一注册表），
+ * Node 侧同样应该是单例——否则同进程内多个 Agent 各自注册工具互不可见。
+ * 这里做在 core 事实源里，前端镜像才能保持逐字节一致（见 scripts/core-mirrors.json）。
+ */
 let globalBridge: WebMcpBridge | null = null;
 
 export function getWebMcpBridge(): WebMcpBridge {

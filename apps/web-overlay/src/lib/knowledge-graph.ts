@@ -1,5 +1,18 @@
+// @core-mirror:parity-ignore-start
+// 本文件由 scripts/sync-core-mirrors.mjs 自动生成，请勿手工编辑。
+// 事实源：packages/core/src/knowledge-graph.ts
+// 同步命令：node scripts/sync-core-mirrors.mjs
+// 一致性守门：node scripts/sync-core-mirrors.mjs --check（CI 可加）
+// @core-mirror:parity-ignore-end
 /**
- * 浏览器端技术知识图谱与路径寻路适配器 (Client-side Knowledge Graph & Tech Pathfinding)
+ * 次世代技术栈知识星图与多跳路径发现引擎 (Knowledge Graph & Tech Pathfinding)
+ *
+ * 核心设计目标：
+ * 终结单点孤立的网址陈列。构建结构化技术知识拓扑图谱：
+ * 1. 双向最短链路搜索 (Bi-directional Pathfinding)：查找任意两项技术之间的协同演进路径
+ *    （如：React -> Next.js -> Drizzle -> PostgreSQL）
+ * 2. 权威度与枢纽度分析 (Kleinberg HITS Algorithm)：计算技术生态中的基础权威组件与聚合枢纽
+ * 3. 架构方案兼容性与补齐推断 (Stack Compatibility & Gap Inference)
  */
 
 export interface GraphNode {
@@ -14,7 +27,7 @@ export interface GraphEdge {
   source: string;
   target: string;
   relation: 'integrates_with' | 'compiles_to' | 'queries' | 'deploys_on' | 'extends';
-  weight: number;
+  weight: number; // 0.1 ~ 1.0，越小代表结合越紧密、成本越低
 }
 
 export interface KnowledgeGraphData {
@@ -39,7 +52,7 @@ export interface TechPathResult {
 
 export interface StackCompatibilityReport {
   selectedTechIds: string[];
-  coherenceScore: number;
+  coherenceScore: number; // 0 ~ 100
   coveredLayers: string[];
   missingLayers: string[];
   synergies: string[];
@@ -90,6 +103,9 @@ export const PRESET_TECH_GRAPH: KnowledgeGraphData = {
   ],
 };
 
+/**
+ * 1. 双向最短技术演进链路寻路算法 (Bi-directional Dijkstra)
+ */
 export function findShortestTechPath(
   startId: string,
   targetId: string,
@@ -124,6 +140,7 @@ export function findShortestTechPath(
     };
   }
 
+  // 构建无向加权邻接表
   interface AdjItem {
     nodeId: string;
     weight: number;
@@ -144,6 +161,7 @@ export function findShortestTechPath(
     adj.get(t)!.push({ nodeId: s, weight: edge.weight, relation: `connected_to (${edge.relation})` });
   }
 
+  // Dijkstra 最短路
   const dist = new Map<string, number>();
   const prev = new Map<string, { from: string; relation: string }>();
   const visited = new Set<string>();
@@ -154,6 +172,7 @@ export function findShortestTechPath(
   dist.set(normStart, 0);
 
   while (visited.size < graph.nodes.length) {
+    // 选取未访问且距离最小的节点
     let u: string | null = null;
     let minD = Infinity;
     for (const [id, d] of dist.entries()) {
@@ -190,6 +209,7 @@ export function findShortestTechPath(
     };
   }
 
+  // 回溯还原链路
   const nodeChain: GraphNode[] = [];
   const steps: PathStep[] = [];
   let curr: string | undefined = normTarget;
@@ -219,6 +239,64 @@ export function findShortestTechPath(
   };
 }
 
+/**
+ * 2. 权威度与枢纽度分析 (Kleinberg HITS Algorithm)
+ */
+export function computeGraphCentrality(
+  graph: KnowledgeGraphData = PRESET_TECH_GRAPH,
+  iterations = 15
+): { hubs: Record<string, number>; authorities: Record<string, number> } {
+  const nodeIds = graph.nodes.map((n) => n.id.toLowerCase());
+  const hubs: Record<string, number> = {};
+  const authorities: Record<string, number> = {};
+
+  for (const id of nodeIds) {
+    hubs[id] = 1.0;
+    authorities[id] = 1.0;
+  }
+
+  for (let it = 0; it < iterations; it++) {
+    // 1. 更新 Authorities
+    let normAuth = 0;
+    for (const targetId of nodeIds) {
+      let sum = 0;
+      for (const edge of graph.edges) {
+        if (edge.target.toLowerCase() === targetId) {
+          sum += hubs[edge.source.toLowerCase()] ?? 0;
+        }
+      }
+      authorities[targetId] = sum;
+      normAuth += sum * sum;
+    }
+    normAuth = Math.sqrt(normAuth) || 1;
+    for (const id of nodeIds) {
+      authorities[id] = Math.round((authorities[id]! / normAuth) * 1000) / 1000;
+    }
+
+    // 2. 更新 Hubs
+    let normHub = 0;
+    for (const sourceId of nodeIds) {
+      let sum = 0;
+      for (const edge of graph.edges) {
+        if (edge.source.toLowerCase() === sourceId) {
+          sum += authorities[edge.target.toLowerCase()] ?? 0;
+        }
+      }
+      hubs[sourceId] = sum;
+      normHub += sum * sum;
+    }
+    normHub = Math.sqrt(normHub) || 1;
+    for (const id of nodeIds) {
+      hubs[id] = Math.round((hubs[id]! / normHub) * 1000) / 1000;
+    }
+  }
+
+  return { hubs, authorities };
+}
+
+/**
+ * 3. 架构方案兼容性诊断与补齐建议
+ */
 export function analyzeStackCompatibility(
   selectedTechIds: string[],
   graph: KnowledgeGraphData = PRESET_TECH_GRAPH
@@ -234,6 +312,7 @@ export function analyzeStackCompatibility(
   const allLayers: Array<GraphNode['layer']> = ['frontend', 'backend', 'database', 'devops'];
   const missingLayers = allLayers.filter((l) => !layersCovered.has(l));
 
+  // 计算协同匹配度
   let connectedEdges = 0;
   const synergies: string[] = [];
 
@@ -250,6 +329,7 @@ export function analyzeStackCompatibility(
 
   const baseScore = Math.min(100, Math.round((layersCovered.size / 4) * 50 + connectedEdges * 15));
 
+  // 推荐补齐缺失层
   const suggestedAdditions: Array<{ id: string; name: string; reason: string }> = [];
   for (const missing of missingLayers) {
     const candidate = graph.nodes.find((n) => n.layer === missing);

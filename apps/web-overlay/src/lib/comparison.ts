@@ -1,5 +1,15 @@
+// @core-mirror:parity-ignore-start
+// 本文件由 scripts/sync-core-mirrors.mjs 自动生成，请勿手工编辑。
+// 事实源：packages/core/src/comparison.ts
+// 同步命令：node scripts/sync-core-mirrors.mjs
+// 一致性守门：node scripts/sync-core-mirrors.mjs --check（CI 可加）
+// @core-mirror:parity-ignore-end
 /**
- * 浏览器端竞品对比矩阵适配器 (Browser-side Comparison Adapter)
+ * 端侧 Agentic 竞品并排对比矩阵合成引擎 (Side-by-Side Comparison Engine)
+ *
+ * 核心设计目标：
+ * 当用户在搜索框输入技术对决语法（如 "react vs vue", "cursor vs vscode", "pnpm vs bun"）时，
+ * 系统在 0 毫秒内原地解析并合成多维结构化对比看板，消解开发者跨站跳转对比的信息摩擦。
  */
 
 export interface ComparisonDimension {
@@ -48,7 +58,7 @@ export const COMPARISON_KNOWLEDGE_BASE: TechComparisonMatrix[] = [
       bestFor: '中大型敏捷开发、中文生态优先、追求极低开发与心智门槛的团队',
     },
     dimensions: [
-      { dimName: '响应式系统', valueA: '不可变数据 + 虚拟DOM对比', valueB: 'Proxy 细粒度依赖追踪 (Reactivity)', winner: 'B' },
+      { dimName: '响应式系统', valueA: '不可变数据 (Immutability) + 虚拟DOM对比', valueB: 'Proxy 细粒度依赖追踪 (Reactivity)', winner: 'B' },
       { dimName: '全栈与SSR', valueA: 'Next.js / Remix 业界主导', valueB: 'Nuxt 3 体验优秀但生态稍小', winner: 'A' },
       { dimName: '生态与招聘', valueA: '全球招聘基数最大', valueB: '国内招聘基数大，全球略少', winner: 'A' },
       { dimName: '上手与心智成本', valueA: '较复杂 (useCallback, useMemo)', valueB: '直观自然 (ref, reactive)', winner: 'B' },
@@ -126,7 +136,7 @@ export const COMPARISON_KNOWLEDGE_BASE: TechComparisonMatrix[] = [
       license: 'MIT',
       primaryPros: ['纯规则驱动，支持任意正则自定义样式属性', '零开销编译，原生支持属性化模式 (attributify)', '生态包袱极轻'],
       tradeoffs: ['主流商业组件生态多优先兼容标准 Tailwind'],
-      bestFor: '追求极致自由度、属性化编写模式与极限构建速度的团队',
+      bestFor: '追求极致自由度、属性化编写模式 (如 text="red bold") 与极限构建速度的团队',
     },
     dimensions: [
       { dimName: '生态与组件库兼容', valueA: '业界通用标准，shadcn 与各类库 100% 适配', valueB: '支持预设兼容，但在部分复杂预设中偶需适配', winner: 'A' },
@@ -190,10 +200,16 @@ export const COMPARISON_KNOWLEDGE_BASE: TechComparisonMatrix[] = [
   },
 ];
 
+/**
+ * 识别并解析用户对比查询
+ * 命中语法示例：
+ *   "react vs vue", "react 对比 vue", "cursor vs vscode", "pnpm pk bun"
+ */
 export function parseTechComparisonQuery(query: string): TechComparisonMatrix | null {
   const q = query.trim().toLowerCase();
   if (q.length < 3) return null;
 
+  // 提取两方名称
   const vsPattern = /^(.*?)\s+(?:vs|对比|pk|对决|\/)\s+(.*?)$/i;
   const match = q.match(vsPattern);
 
@@ -219,6 +235,7 @@ export function parseTechComparisonQuery(query: string): TechComparisonMatrix | 
     }
   }
 
+  // 单独匹配 "react 对比" 或 "cursor vs"
   for (const matrix of COMPARISON_KNOWLEDGE_BASE) {
     if (q.includes(matrix.id.replace('-vs-', ' vs ')) || q.includes(matrix.id.replace('-vs-', ' 对比 '))) {
       return matrix;

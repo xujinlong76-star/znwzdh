@@ -52,7 +52,7 @@ function getCrypto(): typeof globalThis.crypto {
   throw new Error('当前运行环境不支持 Web Cryptography API');
 }
 
-function hexToBytes(hex: string): Uint8Array {
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   if (typeof hex !== "string" || hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) {
     throw new Error("非法 hex 字符串");
   }
@@ -69,7 +69,7 @@ function bytesToHex(bytes: Uint8Array): string {
     .join('');
 }
 
-function base64ToBytes(b64: string): Uint8Array {
+function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   if (typeof Buffer !== "undefined") return new Uint8Array(Buffer.from(b64, "base64"));
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
@@ -93,7 +93,7 @@ export type VaultCryptoKey = Awaited<ReturnType<typeof globalThis.crypto.subtle.
 /**
  * 基于主密码与盐值派生 AES-256-GCM 密钥
  */
-export async function deriveVaultKey(password: string, salt: Uint8Array): Promise<VaultCryptoKey> {
+export async function deriveVaultKey(password: string, salt: Uint8Array<ArrayBuffer>): Promise<VaultCryptoKey> {
 
   const enc = new TextEncoder();
   const keyMaterial = await getCrypto().subtle.importKey(

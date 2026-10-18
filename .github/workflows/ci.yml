@@ -147,6 +147,9 @@ jobs:
       - run: node scripts/vendor-web.mjs
       # overlay 是 Docker 构建与 vendor 的事实源；apps/web 改了没同步回去会在这里失败
       - run: node scripts/check-web-overlay.mjs
+      # core 纯算法的前端运行时副本必须与 packages/core 事实源逐字节一致
+      # （历史事故：13 个镜像里 9 个悄悄漂移，knowledge-graph 前端缺 computeGraphCentrality）
+      - run: node scripts/sync-core-mirrors.mjs --check
       # 上游底座 ref 三处声明（vendor 脚本 / Dockerfile / UPSTREAM.md）同源，且产物未漂移
       - run: node scripts/check-upstream-ref.mjs
       # 验证浏览器扩展 (Chrome Manifest V3) 与桌面扩展 (Raycast) 的规范与文件完整性

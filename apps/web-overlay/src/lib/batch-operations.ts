@@ -1,6 +1,19 @@
+// @core-mirror:parity-ignore-start
+// 本文件由 scripts/sync-core-mirrors.mjs 自动生成，请勿手工编辑。
+// 事实源：packages/core/src/batch-operations.ts
+// 同步命令：node scripts/sync-core-mirrors.mjs
+// 一致性守门：node scripts/sync-core-mirrors.mjs --check（CI 可加）
+// @core-mirror:parity-ignore-end
 /**
  * 多选批量操作纯算法引擎 (Multi-Selection Batch Operations Engine)
  * 纯算法实现，0 DOM 依赖，跨 Node.js 和浏览器通用。
+ *
+ * 支持功能：
+ * 1. 批量分类内卡片置顶 / 取消置顶
+ * 2. 批量移动卡片至目标自定义分类
+ * 3. 批量删除选中卡片
+ * 4. 批量导出选中卡片为 Markdown 链接列表
+ * 5. 批量导出选中卡片为 OneTab 格式纯文本
  */
 
 export interface BatchSiteItem {
@@ -32,11 +45,13 @@ export function batchSetPinnedSitesInCategory(
   let nextPinned: string[]
 
   if (action === 'pin') {
+    // 保持已置顶的原序，把未置顶的追加或前置
     const newItems = targetIds.filter((id) => !currentPinned.includes(id))
     nextPinned = [...currentPinned, ...newItems]
   } else if (action === 'unpin') {
     nextPinned = currentPinned.filter((id) => !targetIds.includes(id))
   } else {
+    // toggle：如果全在里面则全取消，否则全置顶
     const allPinned = targetIds.every((id) => currentPinned.includes(id))
     if (allPinned) {
       nextPinned = currentPinned.filter((id) => !targetIds.includes(id))
@@ -66,8 +81,9 @@ export function batchMoveSitesBetweenCustomCategories<T extends BatchCategoryHol
   const targetIdSet = new Set(siteIds)
   const movedItems: BatchSiteItem[] = []
 
+  // 1. 搜集并从原分类移出
   const filteredCats = categories.map((cat) => {
-    if (cat.id === targetCategoryId) return cat
+    if (cat.id === targetCategoryId) return cat // 目标分类稍后统一注入
     const remaining: BatchSiteItem[] = []
     for (const item of cat.items) {
       if (targetIdSet.has(item.id)) {
@@ -86,6 +102,7 @@ export function batchMoveSitesBetweenCustomCategories<T extends BatchCategoryHol
     return { categories, movedCount: 0 }
   }
 
+  // 2. 注入目标分类 (防重)
   const finalCats = filteredCats.map((cat) => {
     if (cat.id !== targetCategoryId) return cat
     const existingIds = new Set(cat.items.map((i) => i.id))

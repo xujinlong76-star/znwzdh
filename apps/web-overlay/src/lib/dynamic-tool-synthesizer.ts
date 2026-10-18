@@ -1,3 +1,9 @@
+// @core-mirror:parity-ignore-start
+// 本文件由 scripts/sync-core-mirrors.mjs 自动生成，请勿手工编辑。
+// 事实源：packages/core/src/dynamic-tool-synthesizer.ts
+// 同步命令：node scripts/sync-core-mirrors.mjs
+// 一致性守门：node scripts/sync-core-mirrors.mjs --check（CI 可加）
+// @core-mirror:parity-ignore-end
 /**
  * 动态工具合成器与安全执行沙箱 (Dynamic WebMCP Tool Synthesizer & Guarded Executor)
  *
@@ -75,7 +81,9 @@ export function isSafeUrl(rawUrl: string, allowPrivate = false): { safe: boolean
     return { safe: true };
   }
 
-  const hostname = parsed.hostname.toLowerCase();
+  // 去掉尾随点：`localhost.` / `127.0.0.1.` 与不带点写法解析结果完全相同，
+  // 但字符串比较会漏掉它们。
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
 
   // 1. 本地域名阻断
   if (
@@ -85,6 +93,15 @@ export function isSafeUrl(rawUrl: string, allowPrivate = false): { safe: boolean
     hostname.endsWith('.internal')
   ) {
     return { safe: false, reason: 'Access to local domain is forbidden' };
+  }
+
+  // 1b. 非点分四段的 IP 变体：2130706433 / 0x7f000001 / 127.1 在多数解析器里
+  //     都指向 127.0.0.1，但字符串层面看不出是私有地址。看不懂就拒绝，不做「尽力猜测」。
+  if (/^\d+$/.test(hostname) || /^0x[0-9a-f]+$/.test(hostname)) {
+    return { safe: false, reason: 'Numeric-encoded host forbidden' };
+  }
+  if (/^\d+\.\d+$/.test(hostname)) {
+    return { safe: false, reason: 'Shorthand IPv4 host forbidden' };
   }
 
   // 2. IPv4 私有及保留网段阻断
@@ -101,6 +118,12 @@ export function isSafeUrl(rawUrl: string, allowPrivate = false): { safe: boolean
 
     if (octets.some((o) => o < 0 || o > 255)) {
       return { safe: false, reason: 'Invalid IPv4 octet' };
+    }
+
+    // 前导 0 的段会被解析器当八进制（0177 === 127），十进制 parseInt 看不出私有段
+    const raw = [match[1]!, match[2]!, match[3]!, match[4]!];
+    if (raw.some((o) => o.length > 1 && o.startsWith('0'))) {
+      return { safe: false, reason: 'Octal-encoded IPv4 octet forbidden' };
     }
 
     const [b0, b1] = octets;
@@ -129,16 +152,24 @@ export function isSafeUrl(rawUrl: string, allowPrivate = false): { safe: boolean
     }
   }
 
-  // 3. IPv6 阻断
-  if (
-    hostname === '::1' ||
-    hostname === '[::1]' ||
-    hostname.startsWith('fe80:') ||
-    hostname.startsWith('[fe80:') ||
-    hostname.startsWith('fc00:') ||
-    hostname.startsWith('[fc00:')
-  ) {
-    return { safe: false, reason: 'IPv6 local/private range forbidden' };
+  // 3. IPv6 阻断：覆盖各种等价写法（::1 / 0:0:0:0:0:0:0:1 / IPv4 映射写法）
+  const ipv6 = hostname.replace(/^\[/, '').replace(/\]$/, '');
+  if (ipv6.includes(':')) {
+    // IPv4 映射/兼容写法（::ffff:127.0.0.1）等价于内嵌的 IPv4，直接拒绝
+    if (ipv6.includes('ffff:')) {
+      return { safe: false, reason: 'IPv4-mapped IPv6 host forbidden' };
+    }
+    if (ipv6 === '::' || ipv6 === '::1' || /^(0{1,4}:){7}0{0,3}1$/.test(ipv6)) {
+      return { safe: false, reason: 'IPv6 loopback/unspecified forbidden' };
+    }
+    if (
+      ipv6.startsWith('fe80') ||
+      ipv6.startsWith('fc') ||
+      ipv6.startsWith('fd') ||
+      ipv6.startsWith('ff')
+    ) {
+      return { safe: false, reason: 'IPv6 link-local/private/multicast range forbidden' };
+    }
   }
 
   return { safe: true };
@@ -157,10 +188,13 @@ export function createGuardedApiExecutor(options: GuardOptions = {}) {
     targetUrl: string,
     init: RequestInit = {}
   ): Promise<{ status: number; data: unknown; headers: Record<string, string> }> => {
-    const safety = isSafeUrl(targetUrl, allowPrivate);
-    if (!safety.safe) {
-      throw new Error(`SSRF Guard Violation: ${safety.reason} (${targetUrl})`);
-    }
+    /**
+     * 逐跳校验：fetch 默认**自动跟随重定向**，公开 URL 只要 302 到
+     * http://169.254.169.254/... 就能整体绕过校验（一次性 isSafeUrl 只看首跳）。
+     * 改成手动跟跳，每一跳都重新校验目标。
+     */
+    const maxRedirects = 3;
+    const REDIRECT_STATUS = new Set([301, 302, 303, 307, 308]);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -173,11 +207,41 @@ export function createGuardedApiExecutor(options: GuardOptions = {}) {
         ...(init.headers as Record<string, string>),
       };
 
-      const res = await fetchImpl(targetUrl, {
-        ...init,
-        headers: mergedHeaders,
-        signal: controller.signal,
-      });
+      let currentUrl = targetUrl;
+      let res: Awaited<ReturnType<typeof fetchImpl>> | undefined;
+      for (let hop = 0; hop <= maxRedirects; hop++) {
+        const safety = isSafeUrl(currentUrl, allowPrivate);
+        if (!safety.safe) {
+          throw new Error(`SSRF Guard Violation: ${safety.reason} (${currentUrl})`);
+        }
+        const response = await fetchImpl(currentUrl, {
+          ...init,
+          headers: mergedHeaders,
+          redirect: 'manual',
+          signal: controller.signal,
+        });
+        if (!REDIRECT_STATUS.has(response.status)) {
+          res = response;
+          break;
+        }
+        const location = response.headers.get('location');
+        if (!location) {
+          throw new Error(`Redirect response without Location header (${currentUrl})`);
+        }
+        // 丢弃中间响应体，避免连接悬挂
+        try {
+          await response.body?.cancel();
+        } catch {
+          // 取消失败无关紧要：这个响应不会再被使用
+        }
+        if (hop === maxRedirects) {
+          throw new Error(`Too many redirects (>${maxRedirects}) from ${targetUrl}`);
+        }
+        currentUrl = new URL(location, currentUrl).toString();
+      }
+      if (!res) {
+        throw new Error(`Redirect chain exceeded limit (>${maxRedirects}) from ${targetUrl}`);
+      }
 
       const responseHeaders: Record<string, string> = {};
       res.headers.forEach((val, key) => {

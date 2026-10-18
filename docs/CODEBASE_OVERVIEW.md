@@ -121,28 +121,29 @@ NavHub 是一个 **AI 原生网址导航与开发者知识工作台**：以「�
 
 `apps/web/package.json` 中没有任何 `@navhub/*` 依赖。原因是前端需要保持「上游 NavSphere 可 vendor 覆盖」的独立性，无法引用 workspace 包。于是出现一条重要约定：
 
-> 纯算法在 `packages/core` 实现并单测，前端在 `apps/web-overlay/src/lib/` 保留一份**运行时副本**，两份必须手工同步。
+> 纯算法在 `packages/core` 实现并单测，前端在 `apps/web-overlay/src/lib/` 保留一份**运行时副本**。
+> **2026-10-19 起副本不再是手工同步的**：由 `scripts/sync-core-mirrors.mjs` 从 core 生成，
+> 并以 `--check` 模式进 `verify.mjs` 与 CI 做字节级守门（清单：`scripts/core-mirrors.json`）。
 
-已被复制到前端的算法（每条都在文件头注明了「本文件是 core 的浏览器镜像」）：
+镜像分三类，全部登记在同一份清单里：
 
-| core 源 | 前端副本 | 行数 |
-| :--- | :--- | ---: |
-| `core/src/diy-layout/*` | `lib/modular/diy-presets.ts` | 768 |
-| `core/src/crdt-sync.ts` | `lib/crdt-sync.ts` | 454 |
-| `core/src/layout-sync.ts` | `lib/modular/layout-sync.ts` | 355 |
-| `core/src/prefetch.ts` | `lib/prefetch.ts` | 181 |
-| `core/src/deterministic-favicon.ts` | `lib/deterministic-favicon.ts` | 150 |
-| `core/src/wayback-resolver.ts` | `lib/wayback-resolver.ts` | 97 |
-| `core/src/speculative-prerender.ts` | `lib/speculative-prerender.ts` | 156 |
-| `core/src/architecture-recipe.ts` | `lib/architecture-recipe.ts` | 263 |
-| `core/src/comparison.ts` | `lib/comparison.ts` | 230 |
-| `core/src/knowledge-graph.ts` | `lib/knowledge-graph.ts` | 274 |
-| `core/src/dynamic-tool-synthesizer.ts` | `lib/dynamic-tool-synthesizer.ts` | 444 |
-| `core/src/federated-recommendation.ts` | `lib/federated-recommendation.ts` | 133 |
-| `core/src/visual-fingerprint.ts` | `lib/visual-fingerprint.ts` | 198 |
-| `core/src/webmcp-bridge.ts` | `lib/webmcp-bridge.ts` | 184 |
+| 类型 | 含义 | 条目 |
+| :--- | :--- | :--- |
+| `verbatim` | 逐字节镜像，`sync-core-mirrors.mjs` 生成 + `--check` 守门 | 13 个：architecture-recipe / batch-operations / comparison / crdt-sync / dynamic-tool-synthesizer / federated-recommendation / knowledge-graph / prefetch / speculative-prerender / vault / visual-fingerprint / wayback-resolver / webmcp-bridge |
+| `adapter` | 前端有意保留浏览器适配层，不自动同步，需人工复核 | `lib/modular/layout-sync.ts`（localStorage 通道层）、`lib/modular/diy-presets.ts`（`diy-layout/` 8 模块的聚合体，结构不同） |
+| `external` | 已有独立 parity 守门 | `lib/plugins/plugin-manifest.ts`（`test/plugin-manifest-parity.test.ts`） |
 
-这是当前架构**最大的长期维护风险**：改一处算法要改两处，且没有自动校验（`check:overlay` 只比 web↔overlay，不比 core↔前端副本）。
+**历史教训（为什么要有 `--check`）**：在引入自动同步前，13 个 verbatim 镜像里有 9 个已经悄悄漂移——
+`knowledge-graph` 前端版缺 `computeGraphCentrality`、`visual-fingerprint` 缺 `colorDistance`、
+`dynamic-tool-synthesizer` 缺 IP 编码（octal / IPv4-mapped IPv6）防护，全靠 `check:overlay`
+（只比 web ↔ overlay，不比 core ↔ 前端副本）根本发现不了。改动算法请只改 core 再跑同步：
+
+```bash
+node scripts/sync-core-mirrors.mjs          # 生成 overlay 与 apps/web 两份镜像
+node scripts/sync-core-mirrors.mjs --check  # 校验（CI 同款）
+node scripts/check-web-overlay.mjs          # 镜像与 vendored 底座一致性
+```
+
 
 ---
 

@@ -1,3 +1,9 @@
+// @core-mirror:parity-ignore-start
+// 本文件由 scripts/sync-core-mirrors.mjs 自动生成，请勿手工编辑。
+// 事实源：packages/core/src/wayback-resolver.ts
+// 同步命令：node scripts/sync-core-mirrors.mjs
+// 一致性守门：node scripts/sync-core-mirrors.mjs --check（CI 可加）
+// @core-mirror:parity-ignore-end
 /**
  * 坏链自愈与时间机器历史镜像解析引擎 (Wayback Machine & Dead Link Sentinel)
  * 纯算法实现，0 DOM 依赖，跨 Node.js 和浏览器通用。
@@ -52,6 +58,9 @@ export function buildWaybackSnapshotUrl(
   return `https://web.archive.org/web/${timeSeg}/${clean}`
 }
 
+/** 别名兼容：根据目标网址生成 Wayback 归档快照拯救链接 */
+export const generateWaybackRecoveryUrl = buildWaybackSnapshotUrl;
+
 /**
  * 3. 构造主动向 Wayback Machine 归档请求的 URL
  */
@@ -65,6 +74,9 @@ export function buildWaybackSaveUrl(targetUrl: string): string {
  * 4. 判定是否为典型死链或服务器不可达状态码
  */
 export function isPotentialBrokenHttpCode(status: number): boolean {
+  // 404 (Not Found), 410 (Gone), 451 (Unavailable For Legal Reasons)
+  // 500, 502, 503, 504 (Server Errors)
+  // 521, 522, 523 (Cloudflare Server Down)
   return (
     status === 404 ||
     status === 410 ||

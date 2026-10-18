@@ -1,3 +1,9 @@
+// @core-mirror:parity-ignore-start
+// 本文件由 scripts/sync-core-mirrors.mjs 自动生成，请勿手工编辑。
+// 事实源：packages/core/src/prefetch.ts
+// 同步命令：node scripts/sync-core-mirrors.mjs
+// 一致性守门：node scripts/sync-core-mirrors.mjs --check（CI 可加）
+// @core-mirror:parity-ignore-end
 /**
  * 预测性鼠标轨迹预取与 0-RTT 物理瞬开引擎 (Predictive Trajectory Prefetching Engine)
  *
@@ -30,7 +36,10 @@ export interface MotionVector {
  * 计算两点间运动矢量
  */
 export function calculateMotionVector(p1: Point, p2: Point): MotionVector {
-  const dt = Math.max(1, p2.t - p1.t);
+  const rawDt = p2.t - p1.t;
+  // 时钟回拨/同毫秒：不产生虚假大速度
+  if (!Number.isFinite(rawDt) || rawDt <= 0) return { vx: 0, vy: 0, speed: 0 };
+  const dt = Math.max(1, Math.min(rawDt, 500));
   const dx = p2.x - p1.x;
   const dy = p2.y - p1.y;
   const vx = dx / dt;
@@ -44,7 +53,7 @@ export function calculateMotionVector(p1: Point, p2: Point): MotionVector {
  * @param currentPos 当前光标点
  * @param vector 当前运动矢量
  * @param rect 目标卡片包围盒
- * @param maxDistance 触发预测的最大距离（像素，默认 180px）
+ * @param maxDistance 触发预测的最大距离（像素，默认 250px）
  * @param minSpeed 触发预测的最低速度（像素/毫秒，默认 0.15px/ms）
  */
 export function isHeadingTowardsRect(
@@ -108,8 +117,9 @@ export function shouldPreconnectOrigin(
  * -------------------------------------------------------------
  * 二维卡尔曼滤波器 (2D Kalman Trajectory Filter)
  * -------------------------------------------------------------
- * 状态向量 x = [pos_x, pos_y, vel_x, vel_y]^T
- * 用于平滑鼠标轨迹微小手震并预测未来 100~300ms 的置信落点
+ * 注意：当前实现为固定增益 α 滤波（稳态增益 k=q/(q+r)），无协方差递推，
+ * 平滑能力弱于完整卡尔曼。如需完整实现应引入 P 更新；此处保留名称以兼容，
+ * 但 dt 已钳位并提供 reset()，避免切 Tab 后外推飞点。
  */
 export class KalmanFilter2D {
   private x: number;
@@ -132,7 +142,7 @@ export class KalmanFilter2D {
    * 观测并更新卡尔曼状态
    */
   update(measuredX: number, measuredY: number, dtMs: number): { x: number; y: number; vx: number; vy: number } {
-    const dt = Math.max(1, dtMs);
+    const dt = Math.max(1, Math.min(Number.isFinite(dtMs) ? dtMs : 16, 100));
     const prevX = this.x;
     const prevY = this.y;
 
@@ -158,10 +168,18 @@ export class KalmanFilter2D {
    * 预测未来 deltaMs 毫秒后的光标物理坐标
    */
   predictFuture(deltaMs: number): { x: number; y: number } {
-    return {
-      x: this.x + this.vx * deltaMs,
-      y: this.y + this.vy * deltaMs,
-    };
+    const dt = Number.isFinite(deltaMs) ? Math.max(0, Math.min(deltaMs, 500)) : 0;
+    const x = this.x + this.vx * dt;
+    const y = this.y + this.vy * dt;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return { x: this.x, y: this.y };
+    return { x, y };
+  }
+
+  reset(x = 0, y = 0): void {
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
   }
 }
 

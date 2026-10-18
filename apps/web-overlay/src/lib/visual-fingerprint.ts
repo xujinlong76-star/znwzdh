@@ -1,17 +1,29 @@
+// @core-mirror:parity-ignore-start
+// 本文件由 scripts/sync-core-mirrors.mjs 自动生成，请勿手工编辑。
+// 事实源：packages/core/src/visual-fingerprint.ts
+// 同步命令：node scripts/sync-core-mirrors.mjs
+// 一致性守门：node scripts/sync-core-mirrors.mjs --check（CI 可加）
+// @core-mirror:parity-ignore-end
 /**
- * 浏览器端视觉指纹与色彩和谐度适配器 (Client-side Visual Fingerprint & Color Harmony)
+ * 视觉指纹分析与美学和谐度引擎 (Visual Fingerprint & Color Harmony)
+ *
+ * 核心设计目标：
+ * 1. 颜色提取与量化分析 (RGB/HSL 转换，亮度与饱和度分布)
+ * 2. WCAG 2.1 对比度与可读性评估
+ * 3. 视觉情绪与美学风格分类 (cyberpunk, ocean, warm, minimalist, matrix)
+ * 4. 调色板和谐度分析 (Color Harmony Scoring & Suggestions)
  */
 
 export interface RgbColor {
-  r: number;
-  g: number;
-  b: number;
+  r: number; // 0 ~ 255
+  g: number; // 0 ~ 255
+  b: number; // 0 ~ 255
 }
 
 export interface HslColor {
-  h: number;
-  s: number;
-  l: number;
+  h: number; // 0 ~ 360
+  s: number; // 0 ~ 100 (%)
+  l: number; // 0 ~ 100 (%)
 }
 
 export type VisualMood = 'cyberpunk' | 'minimalist' | 'ocean' | 'warm' | 'matrix' | 'vibrant';
@@ -20,13 +32,16 @@ export interface ColorHarmonyReport {
   dominantColors: string[];
   averageLuminance: number;
   averageSaturation: number;
-  wcagContrastRatio: number;
+  wcagContrastRatio: number; // 前景 vs 背景对比度
   wcagPassLevel: 'AAA' | 'AA' | 'Fail';
   detectedMood: VisualMood;
-  harmonyScore: number;
+  harmonyScore: number; // 0 ~ 100
   recommendations: string[];
 }
 
+/**
+ * 16进制转 RGB
+ */
 export function hexToRgb(hex: string): RgbColor {
   let cleaned = hex.trim().replace(/^#/, '');
   if (cleaned.length === 3) {
@@ -43,6 +58,9 @@ export function hexToRgb(hex: string): RgbColor {
   };
 }
 
+/**
+ * RGB 转 16 进制
+ */
 export function rgbToHex(rgb: RgbColor): string {
   const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
   const r = clamp(rgb.r).toString(16).padStart(2, '0');
@@ -51,6 +69,9 @@ export function rgbToHex(rgb: RgbColor): string {
   return `#${r}${g}${b}`;
 }
 
+/**
+ * RGB 转 HSL
+ */
 export function rgbToHsl(rgb: RgbColor): HslColor {
   const r = rgb.r / 255;
   const g = rgb.g / 255;
@@ -86,6 +107,9 @@ export function rgbToHsl(rgb: RgbColor): HslColor {
   };
 }
 
+/**
+ * 计算相对亮度 (WCAG 2.1 规范)
+ */
 export function getRelativeLuminance(rgb: RgbColor): number {
   const normalize = (v: number) => {
     const s = v / 255;
@@ -97,6 +121,9 @@ export function getRelativeLuminance(rgb: RgbColor): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
+/**
+ * 计算两者之间的对比度 (WCAG 2.1)
+ */
 export function calculateContrastRatio(foreground: RgbColor, background: RgbColor): number {
   const lum1 = getRelativeLuminance(foreground);
   const lum2 = getRelativeLuminance(background);
@@ -106,10 +133,23 @@ export function calculateContrastRatio(foreground: RgbColor, background: RgbColo
   return Math.round(ratio * 100) / 100;
 }
 
+/**
+ * 欧氏色彩距离
+ */
+export function colorDistance(c1: RgbColor, c2: RgbColor): number {
+  const dr = c1.r - c2.r;
+  const dg = c1.g - c2.g;
+  const db = c1.b - c2.b;
+  return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
+/**
+ * 综合评估调色板视觉指纹与和谐度
+ */
 export function analyzeVisualFingerprint(
   paletteHex: string[],
-  backgroundHex = '#0f172a',
-  textHex = '#f8fafc'
+  backgroundHex = '#0f172a', // 默认深色底
+  textHex = '#f8fafc' // 默认浅色字
 ): ColorHarmonyReport {
   const cleanPalette = paletteHex.length > 0 ? paletteHex : ['#3b82f6', '#10b981'];
   const rgbs = cleanPalette.map(hexToRgb);
@@ -118,6 +158,7 @@ export function analyzeVisualFingerprint(
   const avgLum = Math.round(hsls.reduce((acc, c) => acc + c.l, 0) / hsls.length);
   const avgSat = Math.round(hsls.reduce((acc, c) => acc + c.s, 0) / hsls.length);
 
+  // 对比度检测
   const bgRgb = hexToRgb(backgroundHex);
   const textRgb = hexToRgb(textHex);
   const contrast = calculateContrastRatio(textRgb, bgRgb);
@@ -129,6 +170,7 @@ export function analyzeVisualFingerprint(
     passLevel = 'AA';
   }
 
+  // 风格情绪检测
   let detectedMood: VisualMood = 'minimalist';
   const hasNeonCyan = hsls.some((h) => h.h >= 170 && h.h <= 200 && h.s >= 70);
   const hasNeonMagenta = hsls.some((h) => (h.h >= 290 || h.h <= 340) && h.s >= 70);
@@ -150,6 +192,7 @@ export function analyzeVisualFingerprint(
     detectedMood = 'minimalist';
   }
 
+  // 计算和谐度得分
   const recommendations: string[] = [];
   let harmonyScore = 75;
 
@@ -162,13 +205,14 @@ export function analyzeVisualFingerprint(
     recommendations.push(`文本对比度不足 (${contrast}:1)，未达到 WCAG AA 级标准 (4.5:1)`);
   }
 
+  // 色相分散度检测
   if (hsls.length >= 2) {
     const hues = hsls.map((h) => h.h).sort((a, b) => a - b);
     const maxHueDiff = hues[hues.length - 1]! - hues[0]!;
     if (maxHueDiff > 240) {
-      harmonyScore += 5;
+      harmonyScore += 5; // 互补色张力
     } else if (maxHueDiff < 60) {
-      harmonyScore += 10;
+      harmonyScore += 10; // 相似色优雅
     }
   }
 

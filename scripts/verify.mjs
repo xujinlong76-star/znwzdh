@@ -22,6 +22,7 @@ function run(cmd, args) {
 }
 
 run("node", ["scripts/check-web-overlay.mjs"]);
+run("node", ["scripts/sync-core-mirrors.mjs", "--check"]);
 run("node", ["scripts/check-extensions.mjs"]);
 run("pnpm", ["-r", "--filter", "@navhub/*", "exec", "tsc", "--noEmit"]);
 run("pnpm", ["exec", "vitest", "run"]);

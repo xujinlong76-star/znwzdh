@@ -1,5 +1,16 @@
+// @core-mirror:parity-ignore-start
+// 本文件由 scripts/sync-core-mirrors.mjs 自动生成，请勿手工编辑。
+// 事实源：packages/core/src/architecture-recipe.ts
+// 同步命令：node scripts/sync-core-mirrors.mjs
+// 一致性守门：node scripts/sync-core-mirrors.mjs --check（CI 可加）
+// @core-mirror:parity-ignore-end
 /**
- * 浏览器端技术栈链路配方适配器 (Browser-side Architecture Recipe Adapter)
+ * Graph-RAG 多跳技术栈链路配方引擎 (Architecture Stack Recipe Engine)
+ *
+ * 核心设计目标：
+ * 终结传统网址导航孤立、割裂的单点搜索形态。
+ * 当用户需要搭建特定系统（协同文档、本地大模型、全栈Web、微前端、高可用监控）时，
+ * 系统在领域知识图谱中执行多跳子图遍历，直接合成端到端架构链路配方（Architecture Recipe）。
  */
 
 export interface StackLayer {
@@ -160,7 +171,7 @@ export const PRESET_RECIPES: ArchitectureRecipe[] = [
           id: 'langchain',
           title: 'LangChain / LangGraph',
           url: 'https://langchain.com',
-          description: '行业标准级 Agent 编排框架，支持多步决策循环、重排与知识切片。',
+          description: '行业标准级 Agent 编排框架，支持多步决策循环、重排（Rerank）与知识切片。',
           highlights: ['丰富的 Loader 生态', '支持图状态机循环', '完善评估工具'],
         },
         alternatives: [
@@ -243,6 +254,9 @@ export const PRESET_RECIPES: ArchitectureRecipe[] = [
   },
 ];
 
+/**
+ * 根据查询词匹配最佳技术栈配方 (Graph-RAG Subgraph Matcher)
+ */
 export function findMatchingArchitectureRecipe(query: string): ArchitectureRecipe | null {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return null;

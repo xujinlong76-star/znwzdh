@@ -1,0 +1,39 @@
+{
+  "_comment": "core → 前端运行时镜像清单（单一事实源登记处）。mode: verbatim = 逐字节镜像，由 sync-core-mirrors.mjs 生成并守门；adapter = 前端有意保留浏览器适配层，不自动同步，需人工复核；external = 已有独立 parity 测试（plugin-manifest）。",
+  "verbatim": [
+    { "name": "architecture-recipe", "why": "Graph-RAG 多跳配方，纯函数" },
+    { "name": "batch-operations", "why": "批量置顶/移动/删除/导出，纯函数" },
+    { "name": "comparison", "why": "竞品对比矩阵合成，纯函数" },
+    { "name": "crdt-sync", "why": "LWW 操作日志合并，纯函数" },
+    { "name": "dynamic-tool-synthesizer", "why": "0-RTT 工具合成 + SSRF 主机名判定，core 侧含更强 IP 编码防护" },
+    { "name": "federated-recommendation", "why": "联邦推荐权重，纯函数" },
+    { "name": "knowledge-graph", "why": "知识图谱寻路 + HITS 中心性，纯函数" },
+    { "name": "prefetch", "why": "Kalman 轨迹预测，纯函数" },
+    { "name": "speculative-prerender", "why": "推测渲染规则编译，纯函数" },
+    { "name": "visual-fingerprint", "why": "色彩指纹与 WCAG 对比度，纯函数" },
+    { "name": "vault", "why": "E2EE 金库（getCrypto shim 已下沉到 core，两侧一致）" },
+    { "name": "wayback-resolver", "why": "归档拯救链接生成，纯函数" },
+    { "name": "webmcp-bridge", "why": "WebMCP JSON-RPC 桥（单例已下沉到 core）" }
+  ],
+  "adapter": [
+    {
+      "name": "layout-sync",
+      "target": "apps/web-overlay/src/lib/modular/layout-sync.ts",
+      "why": "前端版额外持有 LAYOUT_SYNC_CHANNEL 与 readSlotClocks(localStorage) 这一层浏览器存储适配，属有意分叉"
+    },
+    {
+      "name": "diy-presets",
+      "source": "packages/core/src/diy-layout/",
+      "target": "apps/web-overlay/src/lib/modular/diy-presets.ts",
+      "why": "前端版是 diy-layout/ 下 8 个模块的聚合体（collapse/health/history/merge/ordering/presets/ranking/sanitize/suggestion），结构不同，需专门的聚合生成器"
+    }
+  ],
+  "external": [
+    {
+      "name": "plugin-manifest",
+      "source": "packages/core/src/plugin-manifest.ts",
+      "target": "apps/web-overlay/src/lib/plugins/plugin-manifest.ts",
+      "why": "已有独立 parity 守门（apps/web-overlay/test/plugin-manifest-parity.test.ts），不重复造闸门"
+    }
+  ]
+}

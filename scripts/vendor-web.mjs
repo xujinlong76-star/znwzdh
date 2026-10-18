@@ -174,6 +174,8 @@ console.log("[vendor] applied overlay: " + overlayCounter.count + " files");
 // src/middleware.ts：Next 16 起 middleware 更名为 proxy（运行时固定 nodejs），overlay 的
 // 事实源已是 src/proxy.ts；上游 tarball 仍带 middleware.ts，且 overlay 不再 own 它，
 // 不修剪会让 vendored 产物里 middleware/proxy 并存（Next 16 直接报错）。
+// .eslintrc.json：ESLint 已迁扁平配置（eslint.config.mjs，见 next-lint-to-eslint-cli
+// codemod），上游的 eslintrc 属陈旧格式；ESLint 9+ 本身不读它，修剪只为避免歧义。
 for (const rel of [
   "_worker.js",
   "wrangler.toml",
@@ -186,6 +188,7 @@ for (const rel of [
   "docs",
   "functions",
   "src/middleware.ts",
+  ".eslintrc.json",
 ]) {
   const p = join(TARGET, rel);
   if (existsSync(p)) rmSync(p, { recursive: true, force: true });

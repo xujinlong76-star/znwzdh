@@ -542,6 +542,13 @@ export async function fetchSiteRelations(siteId: string, onDegraded?: DegradedHa
 
 /* ------------------------------ 插件市场 (Plugin Marketplace) ------------------------------ */
 
+/** 版本升级变动明细（已安装版本 → 市场最新版本；服务端提供，缺省表示无可对比数据） */
+export interface PluginUpgradeDiff {
+  added?: string[]
+  removed?: string[]
+  changed?: string[]
+}
+
 export interface HubPluginItem {
   id: string
   slug: string
@@ -569,6 +576,7 @@ export interface HubPluginItem {
   starred?: boolean
   installedVersion?: string | null
   installedAt?: number | null
+  upgradeDiff?: PluginUpgradeDiff | null
 }
 
 export interface HubPluginsResponse {

@@ -32,6 +32,31 @@ import { indexSite, indexSitesBatch } from "./index-site.ts";
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
 
+/**
+ * 连续失败达到该次数才把站点标为 broken。
+ *
+ * 为什么不是「一次失败即 broken」：单次探测会被 403/429/超时/CDN 抖动命中。
+ * 实测（2026-10-18，50 站点）有 15 个被标 broken，其中 kubernetes.io、
+ * figma.com、npmjs.com 等知名站点实际可正常访问 —— 误判率 30%。
+ * 连续 N 次（默认 3）能把绝大多数瞬时抖动过滤掉。
+ */
+export const HEALTH_FAIL_THRESHOLD = Math.max(1, Number(process.env.NAVHUB_HEALTH_FAIL_THRESHOLD ?? 3));
+
+/**
+ * 健康判定的纯函数部分（可单测，不碰网络）。
+ *
+ * @param ok 本次探测是否健康
+ * @param priorConsecutiveFailures 本次之前已连续失败次数（不含本次）
+ */
+export function shouldMarkBroken(
+  ok: boolean,
+  priorConsecutiveFailures: number,
+  threshold: number = HEALTH_FAIL_THRESHOLD,
+): boolean {
+  if (ok) return false;
+  return priorConsecutiveFailures + 1 >= threshold;
+}
+
 export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention";
 
 export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention"];
@@ -548,13 +573,17 @@ export class JobRunner {
         }
 
         if (healthy) ok++;
+        // 恢复：曾被判 broken 的站点，只要这次探测健康就回到 active。
+        // 人工标记的 archived/pending 不会被这次恢复覆盖。
+        const nextStatus = healthy && site!.status === "broken" ? "active" : site!.status;
         await this.ctx.repo.updateSiteHealth(site!.id, {
           httpStatus: res.status,
           ok: healthy,
           latencyMs: Date.now() - t0,
           redirectTo: res.redirects?.at(-1) ?? null,
           error: reason,
-          currentStatus: site!.status,
+          currentStatus: nextStatus,
+          markBroken: healthy ? undefined : await this.shouldBreak(site!.id),
         });
       } catch (err) {
 
@@ -565,10 +594,32 @@ export class JobRunner {
           redirectTo: null,
           error: err instanceof Error ? err.message : String(err),
           currentStatus: site!.status,
+          markBroken: await this.shouldBreak(site!.id),
         });
       }
     }
     await this.ctx.repo.recordEvent("health_check", { meta: { checked: targets.length, ok } }).catch(() => undefined);
+  }
+
+  /**
+   * 本次失败是否足以把站点标为 broken。
+   * 查该站点最近 threshold-1 次巡检，统计「从最近往前连续失败」的次数。
+   */
+  private async shouldBreak(siteId: string): Promise<boolean> {
+    const threshold = HEALTH_FAIL_THRESHOLD;
+    if (threshold <= 1) return true;
+    try {
+      const recent = await this.ctx.repo.recentHealthChecks(siteId, threshold - 1);
+      let consecutive = 0;
+      for (const r of recent) {
+        if (r.ok) break;
+        consecutive++;
+      }
+      return shouldMarkBroken(false, consecutive, threshold);
+    } catch {
+      // 查不到历史（新库/表缺失）时保守处理：不标 broken，等下一轮
+      return false;
+    }
   }
 
   /** 元数据刷新：默认只用启发式（不烧 LLM）；payload.llm=true 才走 LLM */

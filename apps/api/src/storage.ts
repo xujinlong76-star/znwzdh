@@ -66,6 +66,93 @@ interface NsNavigationData { navigationItems: NsCategory[] }
  */
 const NAVIGATION_MAX_SITES = Math.max(100, Number(process.env.NAVHUB_NAVIGATION_MAX_SITES || 8000));
 
+/* ------------------------------------------------------------------ *
+ * 快照读缓存
+ *
+ * 背景：`/api/storage?path=navigation.json` 每次都会把「全部类目 + 全部站点
+ * + 每站增强数据」重新组装一遍。站点规模小时（50 站 ≈ 15ms）无所谓，
+ * 但这是全站唯一没有缓存的全量操作，成本随站点数线性增长，而首页
+ * `force-dynamic` 会让每次访问都触发它。
+ *
+ * 失效策略（三层，任何一层命中都足够正确）：
+ *   1. 任何成功的写请求（POST/PUT/PATCH/DELETE）由 server.ts 的 onResponse
+ *      统一调用 invalidateSnapshotCache() —— 覆盖 /api/sites、/api/categories、
+ *      /api/storage 等所有写入口，不依赖各路由自觉；
+ *   2. writeStoragePath 内部再显式失效一次（防止将来有绕过 server hook 的调用）；
+ *   3. TTL 兜底（默认 30s，NAVHUB_SNAPSHOT_TTL_MS 可调，0 表示关闭缓存），
+ *      用于覆盖「另一个进程/实例直接改库」这类绕过 API 的场景。
+ *
+ * 多实例：缓存是进程内的，A 实例写入不会让 B 实例立即失效，最长滞后 TTL。
+ * lite 模式（单实例）无此问题；standard 模式如需强一致，把 TTL 调小或关闭。
+ * ------------------------------------------------------------------ */
+const SNAPSHOT_TTL_MS = (() => {
+  const raw = process.env.NAVHUB_SNAPSHOT_TTL_MS;
+  if (raw === undefined || raw.trim() === "") return 30_000;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 30_000;
+})();
+
+let snapshotCache: { data: NsNavigationData; expiresAt: number; fp: string } | null = null;
+
+/**
+ * 数据指纹：用一条聚合查询判断「库有没有变」。
+ *
+ * 为什么需要它：缓存失效不能只依赖 HTTP 写请求 —— 后台任务
+ * （health_check 写健康列、recompute_rank 写热度分）以及测试/运维脚本
+ * 都是直接调 Repository 的，不经过路由层。只靠 server 的 onResponse
+ * 失效会让这些变更最长滞后一个 TTL。
+ *
+ * 代价：每次读取多一条聚合查询。SQLite 上是微秒级；PostgreSQL 在
+ * 十万级行上 COUNT(*) 会退化为顺序扫描（几十毫秒），仍远低于全量重建，
+ * 但如成为瓶颈，可把 NAVHUB_SNAPSHOT_TTL_MS 调小或改为版本号方案。
+ *
+ * 查询失败（老库缺列等）时返回空串：此时退化为「只靠 TTL + HTTP 失效」，
+ * 不会因为指纹不可用而让整个快照接口报错。
+ */
+async function snapshotFingerprint(ctx: AppContext): Promise<string> {
+  try {
+    const rows = await ctx.repo.raw(
+      `SELECT
+         (SELECT COUNT(*) FROM sites) AS sn,
+         (SELECT COALESCE(MAX(updated_at), 0) FROM sites) AS sm,
+         (SELECT COUNT(*) FROM categories) AS cn,
+         (SELECT COALESCE(MAX(updated_at), 0) FROM categories) AS cm,
+         (SELECT COUNT(*) FROM site_tags) AS tn`,
+    );
+    const r = rows[0] ?? {};
+    return [r.sn, r.sm, r.cn, r.cm, r.tn].join(":");
+  } catch {
+    return "";
+  }
+}
+
+/** 让下一次读取重建快照。写路径与 server 的 onResponse 都会调用。 */
+export function invalidateSnapshotCache(): void {
+  snapshotCache = null;
+}
+
+/** 供 /api/health 与测试观察缓存状态（不参与业务）。 */
+export function snapshotCacheInfo(): { cached: boolean; ttlMs: number } {
+  return { cached: snapshotCache !== null, ttlMs: SNAPSHOT_TTL_MS };
+}
+
+async function readNavigationSnapshot(ctx: AppContext): Promise<NsNavigationData> {
+  if (SNAPSHOT_TTL_MS <= 0) return buildNavigationData(ctx);
+  const now = Date.now();
+  if (snapshotCache && snapshotCache.expiresAt > now) {
+    const fp = await snapshotFingerprint(ctx);
+    // 指纹一致 = 库没变；指纹取不到（空串）时信任 TTL，避免每次都重建
+    if (fp === "" || fp === snapshotCache.fp) return snapshotCache.data;
+  }
+  const data = await buildNavigationData(ctx);
+  snapshotCache = {
+    data,
+    expiresAt: now + SNAPSHOT_TTL_MS,
+    fp: await snapshotFingerprint(ctx),
+  };
+  return data;
+}
+
 /**
  * 把数据库读成 NavSphere 的 navigation.json 形状。
  * 组级顺序严格按 sort，保证前端拖拽排序结果可复现。
@@ -435,7 +522,7 @@ export function pathToKey(path: string): string {
 export async function readStoragePath(ctx: AppContext, path: string): Promise<unknown> {
   const name = basename(path);
   // navigation-default.json 是"默认模板"，当前实现下与导航数据同源
-  if (name === "navigation-default.json" || name === "navigation.json") return buildNavigationData(ctx);
+  if (name === "navigation-default.json" || name === "navigation.json") return readNavigationSnapshot(ctx);
   if (name === "site.json") return readSiteConfig(ctx);
   if (name === "resource-metadata.json") return readResourceMetadata(ctx);
   if (name === "videos.json") return readVideosData(ctx);
@@ -448,6 +535,9 @@ export async function writeStoragePath(ctx: AppContext, path: string, content: s
   const parsed = content.trim() ? JSON.parse(content) : {};
   if (basename(path) === "navigation.json") {
     const r = await writeNavigationData(ctx, parsed as NsNavigationData);
+    // 与 server.ts 的 onResponse 失效互为兜底：即便将来有调用方绕过 HTTP 层，
+    // 也不会把旧快照继续喂给前端。
+    invalidateSnapshotCache();
     return { ok: true, note: "已写入 " + r.categories + " 个类目 / " + r.sites + " 个站点" };
   }
   if (path.includes("site.json")) {

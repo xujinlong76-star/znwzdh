@@ -16,11 +16,13 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList, CommandItem } from '@/registry/new-york/ui/command'
 import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { searchSites, reportClick, fetchSearchHistory, type HubSearchHit, type HubSiteRelation } from '@/lib/navhub-api'
+import { recordOfflineVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
 import { getIdentity } from '@/lib/identity'
@@ -28,15 +30,27 @@ import { useFavorites } from '@/hooks/useFavorites'
 import { useToast } from '@/components/ui/use-toast'
 import type { SiteConfig } from '@/types/site'
 import { parseSpeculativeIntent } from '@/lib/speculative'
-import { SpeculativeIntentCard } from '@/components/speculative-intent-card'
 import { parseTechComparisonQuery } from '@/lib/comparison'
 import { findMatchingArchitectureRecipe } from '@/lib/architecture-recipe'
-import { TechComparisonCard } from '@/components/tech-comparison-card'
-import { ArchitectureRecipeCard } from '@/components/architecture-recipe-card'
 import { SiteFavicon } from '@/components/site-favicon'
 import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
 
 
+
+// 三张「命中才出现」的富卡片：只有查询触发对应意图时才需要它们的代码。
+// 静态导入会把投机解析、对比矩阵、架构配方三条知识库一起打进首屏。
+const SpeculativeIntentCard = dynamic(
+  () => import('@/components/speculative-intent-card').then((m) => m.SpeculativeIntentCard),
+  { ssr: false }
+)
+const TechComparisonCard = dynamic(
+  () => import('@/components/tech-comparison-card').then((m) => m.TechComparisonCard),
+  { ssr: false }
+)
+const ArchitectureRecipeCard = dynamic(
+  () => import('@/components/architecture-recipe-card').then((m) => m.ArchitectureRecipeCard),
+  { ssr: false }
+)
 
 const CHANNEL_LABELS: Record<string, string> = {
   exact: '精确',
@@ -278,6 +292,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     // 非 http(s) 一律不跳，避免 javascript: 之类的脏数据直达执行
     const url = safeHref(site.url, '')
     if (!url || !isSafeHttpUrl(url)) return
+    // 离线可用性（P2-3）：把这次访问写进本地「最近访问」快照（IndexedDB，
+    // 隐私模式降级 localStorage）。断网时用户仍能从本地列表回到常用站点。
+    // 放在安全闸之后：只记录真的会打开的站点。
+    recordOfflineVisit({
+      id: site.id,
+      title: site.title ?? site.url,
+      href: url,
+      icon: site.iconKey ?? null,
+    })
     if (target === '_self') window.location.href = url
     else window.open(url, target, 'noopener,noreferrer')
     setQuery('')
@@ -313,6 +336,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input aria-label={placeholder}
+          data-search-input
           ref={inputRef}
           placeholder={placeholder}
           value={query}
@@ -332,6 +356,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           </kbd>
         </div>
       </div>
+
+      {/* 读屏播报：输入是防抖的，结果更新没有视觉焦点变化，
+          没有 live region 时读屏用户完全不知道「搜到了几条 / 搜完了」。
+          role=status 隐含 aria-live=polite，只播报增量，不打断当前朗读。 */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {loading
+          ? '正在检索'
+          : query.trim()
+            ? (hits.length > 0 ? '找到 ' + hits.length + ' 条结果' : '没有找到匹配结果')
+            : ''}
+      </p>
 
       {isFocused && !query.trim() && (
         <div className="absolute top-full left-0 right-0 mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">

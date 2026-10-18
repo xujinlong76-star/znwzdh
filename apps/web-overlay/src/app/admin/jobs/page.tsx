@@ -26,6 +26,8 @@ import {
   Wrench,
   Zap,
 } from 'lucide-react'
+import { ListChecks } from 'lucide-react'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -496,9 +498,11 @@ export default function AdminJobsPage() {
             </Button>
           </div>
         ) : filteredJobs.length === 0 ? (
-          <div className="rounded-md border p-8 text-center text-muted-foreground text-sm">
-            暂无匹配任务记录
-          </div>
+          <EmptyState
+            icon={ListChecks}
+            title="暂无匹配任务记录"
+            description="调整筛选条件，或到任务面板派发一个新任务。"
+          />
         ) : (
           <div className="rounded-md border overflow-x-auto">
             <table className="w-full text-sm">

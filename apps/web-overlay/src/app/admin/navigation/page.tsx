@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from "react"
+import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from "@/registry/new-york/ui/button"
 import { NavigationCard } from "./components/NavigationCard"
 import { AddNavigationForm } from "./components/AddNavigationForm"
@@ -262,23 +263,18 @@ export default function NavigationPage() {
             </div>
           ))
         ) : filteredItems.length === 0 ? (
-          <div className="flex h-[450px] shrink-0 items-center justify-center rounded-md border border-dashed">
-            <div className="mx-auto flex max-w-[420px] flex-col items-center justify-center text-center">
-              <Inbox className="h-10 w-10 text-muted-foreground" />
-              <h3 className="mt-4 text-lg font-semibold">暂无分类</h3>
-              <p className="mb-4 mt-2 text-sm text-muted-foreground">
-                {searchQuery ? "没有找到匹配的分类。" : "还没有添加任何分类，点击上方的添加按钮开���创建。"}
-              </p>
-              {searchQuery && (
-                <Button
-                  variant="outline"
-                  onClick={() => setSearchQuery("")}
-                >
+          <EmptyState
+            icon={Inbox}
+            title="暂无分类"
+            description={searchQuery ? "没有找到匹配的分类，换个关键词试试。" : "还没有添加任何分类，点击上方的添加按钮开始创建。"}
+            action={
+              searchQuery ? (
+                <Button variant="outline" onClick={() => setSearchQuery("")}>
                   清除搜索
                 </Button>
-              )}
-            </div>
-          </div>
+              ) : undefined
+            }
+          />
         ) : (
           <DragDropContext onDragEnd={handleDragEnd}>
             <Droppable droppableId="navigation-list">

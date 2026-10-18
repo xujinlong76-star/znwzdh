@@ -91,6 +91,8 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
                 <img
                   src={site.icon}
                   alt=""
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-contain"
                   onError={(e) => {
                     ;(e.target as HTMLImageElement).style.display = 'none'

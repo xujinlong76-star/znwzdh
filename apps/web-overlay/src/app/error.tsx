@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, RotateCcw, Home, Copy, Check, RefreshCw, WifiOff, Database, Clock } from 'lucide-react'
 import Link from 'next/link'
 import { crashReportText, describeCrash, type CrashKind } from '@/lib/error-report'
+import { reportClientError } from '@/lib/client-error-report'
 import { copyText } from '@/lib/clipboard'
 
 const ICONS: Record<CrashKind, typeof AlertTriangle> = {
@@ -40,6 +41,8 @@ export default function Error({
   useEffect(() => {
     console.error('Next.js Page Error:', error)
   }, [error])
+    // 上报到中枢（脱敏：只发分类 + 指纹 + pathname + digest；开关默认关闭）
+    reportClientError({ message: error?.message ?? String(error), digest: error?.digest })
 
   const copyDiagnostics = async () => {
     // copyText 永不 reject，返回值即真实结果：失败时把按钮状态还原成"未复制"，

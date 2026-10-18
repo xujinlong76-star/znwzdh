@@ -169,10 +169,16 @@ describe("batch-operations：导出格式必须能被工具直接吃下", () => 
 describe("源码守卫：入口真的存在，且默认行为不被改变", () => {
   it("操作坞被真正挂载（回归：组件写好了却全仓无人渲染）", () => {
     const src = overlaySource("src/components/navigation-content.tsx");
-    expect(src).toContain("import { BatchOperationDock } from '@/components/batch-operation-dock'");
+    // 2026-10-18：改为 next/dynamic 客户端懒加载（首屏分包 -48 KB），
+    // 形态从静态 import 变成 dynamic()，守卫放行两种写法，但必须真的引用组件模块并渲染。
+    const referenced =
+      src.includes("import { BatchOperationDock } from '@/components/batch-operation-dock'") ||
+      src.includes("import('@/components/batch-operation-dock')");
+    expect(referenced).toBe(true);
     expect(src).toContain("<BatchOperationDock");
     expect(src).toContain("selectedSites={selectedSites}");
-    expect(src).toContain("onClearSelection={() => setSelectedIds(clearSelected())}");
+    // 2026-10-18 P1-2：选中态抽到 use-site-selection hook，清除回调即 hook 返回值
+    expect(src).toContain("onClearSelection={clearSelection}");
   });
 
   it("工具栏有多选开关与全选，并把状态传给卡片", () => {
@@ -184,7 +190,10 @@ describe("源码守卫：入口真的存在，且默认行为不被改变", () =
     expect(countOccurrences(src, "selectable={selectionMode}")).toBe(2);
     expect(countOccurrences(src, "onToggleSelect={toggleSelectOne}")).toBe(2);
     // 列表变化后剪枝，避免导出到用户已经看不见的站点
-    expect(src).toContain("pruneSelected(prev, visibleSites.map((s) => s.id))");
+    // （P1-2：剪枝随选中态一起抽进 use-site-selection hook；守卫改查 hook 源 + 消费接线）
+    const hook = overlaySource("src/lib/modular/use-site-selection.ts");
+    expect(hook).toContain("pruneSelected(prev, visibleSites.map((s) => s.id))");
+    expect(src).toContain("useSiteSelection(");
   });
 
   it("卡片：多选模式下点击不导航，只切换选中；三个显示模式都要一致", () => {

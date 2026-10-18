@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NavHub 升级路线图 · 2026-10</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#fff; --ink:#111827; --muted:#5f6b7a; --line:#e5e9f0;
+    --p0:#c2410c; --p0bg:#fff4ec; --p1:#1d4ed8; --p1bg:#eef4ff;
+    --p2:#6d28d9; --p2bg:#f5f0ff; --p3:#475569; --p3bg:#f1f4f8;
+    --ok:#047857; --warn:#b45309; --radius:12px;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 10px 26px rgba(16,24,40,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1200px;margin:0 auto;padding:32px 24px 72px}
+  .eyebrow{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  h1{font-size:30px;letter-spacing:-.02em;margin:8px 0 10px;line-height:1.25}
+  .sub{color:var(--muted);max-width:860px;margin:0 0 22px}
+  .verdicts{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:26px}
+  .verdict{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
+  .verdict b{display:block;font-size:13px;margin-bottom:4px}
+  .verdict span{color:var(--muted);font-size:12.5px}
+  .scores{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:30px}
+  .score{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow)}
+  .score .n{font-size:24px;font-weight:700;letter-spacing:-.02em}
+  .score .n small{font-size:12px;color:var(--muted);font-weight:400}
+  .score .t{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .bar{height:5px;border-radius:3px;background:#eef1f6;margin-top:10px;overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#2563eb,#38bdf8)}
+  h2{font-size:18px;letter-spacing:-.01em;margin:34px 0 6px}
+  .hint{color:var(--muted);font-size:12.5px;margin:0 0 14px}
+  .lanes{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .lane{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;box-shadow:var(--shadow)}
+  .lane-h{display:flex;align-items:center;justify-content:space-between;margin:2px 2px 10px}
+  .lane-h b{font-size:13px}
+  .pill{font-size:10.5px;padding:2px 8px;border-radius:999px;font-weight:600}
+  .p0 .pill{background:var(--p0bg);color:var(--p0)} .p1 .pill{background:var(--p1bg);color:var(--p1)}
+  .p2 .pill{background:var(--p2bg);color:var(--p2)} .p3 .pill{background:var(--p3bg);color:var(--p3)}
+  .card{border:1px solid var(--line);border-radius:10px;padding:10px 11px;margin-bottom:9px;background:#fcfdff}
+  .card b{display:block;font-size:12.8px;margin-bottom:3px}
+  .card p{margin:0;color:var(--muted);font-size:12px}
+  .meta{display:flex;gap:8px;margin-top:7px;font-size:10.5px;color:#6b7280}
+  .meta em{font-style:normal;background:#f1f4f8;border-radius:5px;padding:1px 6px}
+  .p0 .card{border-left:3px solid var(--p0)} .p1 .card{border-left:3px solid var(--p1)}
+  .p2 .card{border-left:3px solid var(--p2)} .p3 .card{border-left:3px solid var(--p3)}
+  .timeline{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow);overflow-x:auto}
+  .weeks{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;min-width:760px}
+  .wk{border-radius:9px;padding:10px;background:#f8fafc;border:1px solid var(--line)}
+  .wk b{display:block;font-size:11.5px;color:var(--muted);font-weight:600}
+  .wk span{display:block;font-size:12px;margin-top:4px;line-height:1.45}
+  .wk.on{background:var(--p1bg);border-color:#c7dbff}
+  .wk.hot{background:var(--p0bg);border-color:#ffd9c2}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow)}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #eef1f6;font-size:12.5px}
+  th{background:#fbfcfe;color:var(--muted);font-weight:600;font-size:11.5px;letter-spacing:.03em}
+  tr:last-child td{border-bottom:0}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .tag{display:inline-block;background:#eef3fb;color:#1e4f9c;border-radius:5px;padding:1px 6px;font-size:11px;margin-right:4px}
+  .no{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 18px;box-shadow:var(--shadow)}
+  .no li{margin:7px 0;color:#374151;font-size:12.8px}
+  footer{margin-top:26px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  @media(max-width:1000px){
+    .verdicts{grid-template-columns:1fr}
+    .scores{grid-template-columns:repeat(2,1fr)}
+    .lanes{grid-template-columns:1fr 1fr}
+  }
+  @media(max-width:640px){.lanes{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">NavHub 4.0 · Upgrade Roadmap</div>
+  <h1>网站升级路线图</h1>
+  <p class="sub">聚焦网站侧的界面、体验、性能、功能与安全。后端与基建的 25 项升级已完成，本轮不重复。所有结论来自生产构建实测与接口实测。</p>
+
+  <div class="verdicts">
+    <div class="verdict"><b>能力过剩，感知不足</b><span>首屏 JS 约 1.0 MB（路由包 685 KB）、每请求 3 次存储读、19 张图无尺寸——用户先感受到「重」，不是「强」。</span></div>
+    <div class="verdict"><b>强在搜索与工作台，弱在第一次打开</b><span>没有引导：不知道能导入书签、能切工作台、⌘K 能搜。</span></div>
+    <div class="verdict"><b>后端安全好，浏览器侧默认值偏弱</b><span>CSP 默认关闭、next-auth 仍是 v5 beta、管理端无二次验证。</span></div>
+  </div>
+
+  <div class="scores">
+    <div class="score"><div class="n">7.5<small>/10</small></div><div class="t">界面设计</div><div class="bar"><i style="width:75%"></i></div></div>
+    <div class="score"><div class="n">8.0<small>/10</small></div><div class="t">用户体验</div><div class="bar"><i style="width:80%"></i></div></div>
+    <div class="score"><div class="n">6.5<small>/10</small></div><div class="t">性能</div><div class="bar"><i style="width:65%"></i></div></div>
+    <div class="score"><div class="n">8.5<small>/10</small></div><div class="t">功能</div><div class="bar"><i style="width:85%"></i></div></div>
+    <div class="score"><div class="n">8.0<small>/10</small></div><div class="t">安全</div><div class="bar"><i style="width:80%"></i></div></div>
+  </div>
+
+  <h2>优先级泳道</h2>
+  <p class="hint">按「影响 × 确定性 ÷ 成本」排序；同一泳道内自上而下执行。</p>
+  <div class="lanes">
+    <div class="lane p0">
+      <div class="lane-h"><b>P0 · 本周</b><span class="pill">5 项 / 5.5 人日</span></div>
+      <div class="card"><b>性能与体验基线</b><p>Web Vitals + Server-Timing + Lighthouse CI，让后续优化可验证。</p><div class="meta"><em>1 人日</em><em>低风险</em></div></div>
+      <div class="card"><b>首页数据链路去重</b><p>layout 与 page 共享一次读取，3 次 → 2 次。</p><div class="meta"><em>0.5 人日</em><em>低风险</em></div></div>
+      <div class="card"><b>快照短缓存 + 版本失效</b><p>30s 缓存 + 写路径 bump 版本；命中降 TTFB 40–60%。</p><div class="meta"><em>2 人日</em><em>中低风险</em></div></div>
+      <div class="card"><b>图片管线统一</b><p>19 处裸 img → 尺寸 + 懒加载；CLS &lt;0.1。</p><div class="meta"><em>1 人日</em><em>低风险</em></div></div>
+      <div class="card"><b>可访问性快赢</b><p>全局 focus-visible、aria-live 播报、对比度。</p><div class="meta"><em>1 人日</em><em>低风险</em></div></div>
+    </div>
+
+    <div class="lane p1">
+      <div class="lane-h"><b>P1 · 2–4 周</b><span class="pill">6 项 / 约 24 人日</span></div>
+      <div class="card"><b>首屏分包治理</b><p>懒加载工作台/图表，路由包 685 → ≤480 KB（含运行时约 1.0 MB）。</p><div class="meta"><em>3–5 人日</em><em>-30% JS</em></div></div>
+      <div class="card"><b>巨型组件拆分</b><p>4 个 &gt;1200 行文件按「容器/视图/hooks/纯函数」拆。</p><div class="meta"><em>5–8 人日</em><em>需补测试</em></div></div>
+      <div class="card"><b>路由级加载/错误边界</b><p>12 条主路由补 loading 与局部 error。</p><div class="meta"><em>2 人日</em><em>低风险</em></div></div>
+      <div class="card"><b>设计系统 2.0</b><p>token 三层 + 组件状态矩阵 + EmptyState。</p><div class="meta"><em>5 人日</em><em>渐进迁移</em></div></div>
+      <div class="card"><b>首访引导</b><p>导入书签 / 选工作区 / 钉常用，可跳过只一次。</p><div class="meta"><em>3 人日</em><em>激活 +15%</em></div></div>
+      <div class="card"><b>坏链治理</b><p>连续 3 次失败才置 broken；误判 30% → &lt;5%。</p><div class="meta"><em>3–4 人日</em><em>需重跑存量</em></div></div>
+    </div>
+
+    <div class="lane p2">
+      <div class="lane-h"><b>P2 · 1–2 月</b><span class="pill">6 项 / 约 48 人日</span></div>
+      <div class="card"><b>分享体系</b><p>短链 + OG 落地页 + 收藏夹公开分享。</p><div class="meta"><em>5–8 人日</em><em>需内容安全</em></div></div>
+      <div class="card"><b>多用户与团队空间</b><p>workspace_id + 权限模型，个人站 → 团队工作台。</p><div class="meta"><em>10–15 人日</em><em>数据模型级</em></div></div>
+      <div class="card"><b>PWA 与离线深化</b><p>最近 50 站离线可读、安装引导、快捷方式。</p><div class="meta"><em>3–5 人日</em><em>缓存版本要稳</em></div></div>
+      <div class="card"><b>浏览器侧安全</b><p>CSP nonce 默认开、next-auth 迁移、管理端 2FA。</p><div class="meta"><em>13 人日</em><em>先 report-only</em></div></div>
+      <div class="card"><b>RUM 与错误闭环</b><p>错误边界上报 + 前端错误率看板。</p><div class="meta"><em>3 人日</em><em>注意脱敏</em></div></div>
+      <div class="card"><b>搜索体验 2.0</b><p>结果分组、语法提示、历史管理、「为什么是它」。</p><div class="meta"><em>8–10 人日</em><em>需 A/B</em></div></div>
+    </div>
+
+    <div class="lane p3">
+      <div class="lane-h"><b>P3 · 季度</b><span class="pill">4 项</span></div>
+      <div class="card"><b>国际化</b><p>中/英双语，路由级 locale，hreflang。</p><div class="meta"><em>约 800 条文案</em></div></div>
+      <div class="card"><b>主题市场</b><p>用户投稿配色/壁纸/布局，一键应用。</p><div class="meta"><em>复用 DIY 底座</em></div></div>
+      <div class="card"><b>插件市场</b><p>MCP 工具与动态合成开放给第三方。</p><div class="meta"><em>沙箱+计费+审计</em></div></div>
+      <div class="card"><b>实验框架</b><p>特性开关 + 按 anonId 哈希分流。</p><div class="meta"><em>先有指标</em></div></div>
+    </div>
+  </div>
+
+  <h2>8 周排期</h2>
+  <p class="hint">W2–W3 可与 W4 并行（两人）；W6 与 W7 无依赖可互换。</p>
+  <div class="timeline">
+    <div class="weeks">
+      <div class="wk hot"><b>W1</b><span>止血与度量<br>P0 × 5</span></div>
+      <div class="wk on"><b>W2</b><span>首屏减重<br>分包 + 边界</span></div>
+      <div class="wk on"><b>W3</b><span>结构治理<br>组件拆分</span></div>
+      <div class="wk on"><b>W4</b><span>设计系统<br>token + 样板</span></div>
+      <div class="wk on"><b>W5</b><span>激活与质量<br>引导 + 坏链</span></div>
+      <div class="wk"><b>W6</b><span>分享闭环<br>短链 + 落地页</span></div>
+      <div class="wk"><b>W7</b><span>安全加固<br>CSP + 2FA</span></div>
+      <div class="wk"><b>W8</b><span>复盘<br>RUM + 立项</span></div>
+    </div>
+  </div>
+
+  <h2>目标指标</h2>
+  <p class="hint">技术指标由 P0-1 建立基线；产品指标复用 /api/events 埋点。</p>
+  <table>
+    <thead><tr><th>指标</th><th>当前</th><th>目标</th><th>归属</th></tr></thead>
+    <tbody>
+      <tr><td>首页路由初始 JS</td><td class="num">685 KB</td><td class="num">≤480 KB</td><td>P1-1</td></tr>
+      <tr><td>LCP（p75, 4G）</td><td>待测</td><td class="num">&lt;2.5s</td><td>P0-1 / P1-1</td></tr>
+      <tr><td>INP（p75）</td><td>待测</td><td class="num">&lt;200ms</td><td>P1-2</td></tr>
+      <tr><td>CLS</td><td>待测</td><td class="num">&lt;0.1</td><td>P0-4</td></tr>
+      <tr><td>axe critical</td><td>待测</td><td class="num">0</td><td>P0-5</td></tr>
+      <tr><td>首日激活（导入或收藏）</td><td>待测</td><td class="num">+15%</td><td>P1-5</td></tr>
+      <tr><td>搜索零结果率</td><td>待测</td><td class="num">&lt;8%</td><td>P2-6</td></tr>
+      <tr><td>坏链误判率</td><td class="num">30%</td><td class="num">&lt;5%</td><td>P1-6</td></tr>
+    </tbody>
+  </table>
+
+  <h2>明确不做</h2>
+  <div class="no">
+    <ul>
+      <li>不重写 vendored 上游代码——保留 overlay 机制，这是上游可升级的生命线。</li>
+      <li>不为 Lighthouse 分数牺牲检索质量——不用延迟结果换分数。</li>
+      <li>不做强制遮罩式引导——导航站用户对打断极敏感。</li>
+      <li>不在没有基线前做性能优化——先 P0-1，否则无法证明有效。</li>
+      <li>不同时开多租户与分享两条大改——都动数据模型与权限，串行推进。</li>
+    </ul>
+  </div>
+
+  <footer>
+    <span>详细论证与实施考量：<a href="./UPGRADE-PROPOSAL-2026-10-18.md">UPGRADE-PROPOSAL-2026-10-18.md</a></span>
+    <span>基线：778 文件 / 155,150 行 · 构建实测 · 2026-10-18</span>
+  </footer>
+</div>
+</body>
+</html>

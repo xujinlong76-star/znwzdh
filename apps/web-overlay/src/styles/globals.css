@@ -114,6 +114,29 @@
   }
 }
 
+/* 键盘焦点可见性（WCAG 2.4.7 Focus Visible）
+   背景：全站此前只有 6 处显式 focus-visible，大量图标按钮/卡片链接依赖浏览器
+   默认 outline —— 在自定义背景与深色模式下几乎不可见，键盘用户会「丢失焦点」。
+   这里给所有可聚焦元素一个统一、带偏移的焦点环；鼠标点击不会触发（:focus-visible）。
+   已经用 Tailwind ring 自绘焦点的组件可加 data-focus-ring="off" 退出。 */
+@layer base {
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  [data-focus-ring="off"]:focus-visible {
+    outline: none;
+  }
+
+  /* 高对比度模式下改用系统色，避免自定义 hsl 被强制反转后失真 */
+  @media (forced-colors: active) {
+    :focus-visible {
+      outline: 2px solid Highlight;
+    }
+  }
+}
+
 /* 确保 cursor 样式正常工作 */
 @layer utilities {
   .cursor-pointer {
@@ -205,6 +228,19 @@
     --depth-card: 0 3px 10px -2px oklch(0 0 0 / 0.05), 0 0 0 1px oklch(0 0 0 / 0.05);
     --depth-float: 0 12px 24px -4px oklch(0 0 0 / 0.08), 0 4px 8px -2px oklch(0 0 0 / 0.04);
     --depth-modal: 0 24px 48px -8px oklch(0 0 0 / 0.16), 0 0 0 1px oklch(0 0 0 / 0.08);
+
+
+    /* 动效 Token（P1-4 设计系统）：时长与缓动收敛到五个值。
+       用法：transition-[opacity,transform] duration-[--duration-base]
+       或直接在 CSS 里 var(--duration-fast)。reduced-motion.css 会把
+       它们统一压到 0.01ms（保留 transitionend 事件），所以这里只管
+       「正常状态下多快」，不用各自再写 @media 覆盖。 */
+    --duration-instant: 0.01ms; /* 状态瞬切，仍需保留事件 */
+    --duration-fast: 120ms; /* hover / pressed 等微小反馈 */
+    --duration-base: 200ms; /* 面板、抽屉滑入 */
+    --duration-slow: 320ms; /* 整页切换、模态 */
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* 标准缓出 */
+    --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 轻微回弹 */
 
     /* 三档内容密度矩阵：默认 Comfortable (舒适平衡) */
     --density-factor: 1;

@@ -16,6 +16,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Library, ListX } from 'lucide-react'
+import { EmptyState } from '@/components/ui/empty-state'
 import { LoadErrorNotice } from '@/components/admin/load-error-notice'
 import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
 import { newRequestGate, settleLatest, type RequestGate } from '@/lib/latest-request'
@@ -234,7 +236,11 @@ export default function AdminCollectionsPage() {
           {loading ? (
             <div className="text-muted-foreground text-sm">加载中…</div>
           ) : cols.length === 0 ? (
-            <div className="text-muted-foreground text-sm">{emptyStateText(loadError, '暂无专题')}</div>
+            <EmptyState
+              icon={Library}
+              title={emptyStateText(loadError, '暂无专题')}
+              description={loadError ? '拉取失败时列表为空，请重试。' : '把相关站点汇成一个专题，便于成套分享与维护。'}
+            />
           ) : (
             <div className="rounded-md border divide-y">
               {cols.map((c) => (
@@ -311,7 +317,11 @@ export default function AdminCollectionsPage() {
                   <LoadErrorNotice message={detailError} onRetry={() => selected && loadDetail(selected.id)} />
                 )}
                 {items.length === 0 ? (
-                  <div className="text-muted-foreground text-sm">{emptyStateText(detailError, '暂无条目')}</div>
+                  <EmptyState
+                    icon={ListX}
+                    title={emptyStateText(detailError, '暂无条目')}
+                    description={detailError ? '拉取失败时列表为空，请重试。' : '这个专题还没有收录任何站点。'}
+                  />
                 ) : (
                   <div className="rounded-md border divide-y">
                     {items.map((it) => (

@@ -42,6 +42,12 @@ const nextConfig = {
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       { key: "X-Frame-Options", value: "SAMEORIGIN" },
       { key: "Permissions-Policy", value: "geolocation=(), microphone=(), camera=()" },
+      // COOP：same-origin-allow-popups 兼顾 OAuth 弹窗登录（GitHub）。
+      // 裸 same-origin 会切断 opener 关系，弹窗回跳后前端收不到登录结果。
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+      // CORP：本站资源（favicon / 预取快照）只准被同站点页面引用，
+      // 挡住其它站点把我们的接口当图像端点白蹭。
+      { key: "Cross-Origin-Resource-Policy", value: "same-site" },
     ];
     // HSTS：http-only 的自托管一旦下发就会被浏览器强制升级，因此只在明确 https 时开启。
     const hsts = process.env.NAVHUB_HSTS === "1" || (process.env.NAVHUB_PUBLIC_URL || "").startsWith("https://");
@@ -64,6 +70,28 @@ const nextConfig = {
           "base-uri 'self'",
           "form-action 'self'",
         ].join("; "),
+      });
+    }
+    // CSP report-only（P2-4 第一步）：与 enforce 完全同源的策略，但只收集违规
+    // 不拦截。理由见下方 enforce 分支的注释——直接 enforce 会把需要内联脚本的
+    // 页面打挂，必须先跑一周收集真实违规再决定收哪些源。
+    // 用法：NAVHUB_CSP_REPORT_ONLY=1 开启；可选 NAVHUB_CSP_REPORT_URI 指定上报地址。
+    if (process.env.NAVHUB_CSP_REPORT_ONLY === "1") {
+      const directive = [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https:",
+        "font-src 'self' data:",
+        "connect-src 'self' https: wss:",
+        "frame-src https:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+      ].join("; ");
+      hosts.push({
+        key: "Content-Security-Policy-Report-Only",
+        value: process.env.NAVHUB_CSP_REPORT_URI ? `${directive}; report-uri ${process.env.NAVHUB_CSP_REPORT_URI}` : directive,
       });
     }
     return [{ source: "/:path*", headers: hosts }];

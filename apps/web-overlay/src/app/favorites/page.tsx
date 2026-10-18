@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -239,7 +240,7 @@ export default function FavoritesPage() {
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="max-w-2xl">
                 <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 shadow-xs">
+                  <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-xs">
                     <Shield className="w-5 h-5 sm:w-6 sm:h-6" />
                   </div>
                   <span>我的离线收藏与零知识金库</span>
@@ -593,37 +594,29 @@ export default function FavoritesPage() {
         {!favorites.ready ? (
           <div className="text-muted-foreground text-sm py-12 text-center">加载中…</div>
         ) : favorites.items.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/80 p-12 text-center max-w-lg mx-auto space-y-3 bg-card/40 my-8">
-            <div className="w-12 h-12 rounded-xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground border border-border/40">
-              <Shield className="w-6 h-6 text-emerald-500" />
-            </div>
-            <h3 className="text-sm font-semibold text-foreground">还没有收藏任何站点</h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              在主页站点卡片或搜索结果里点击星标即可一键收藏（本地离线存储，无需登录，可随时导出为 E2EE 加密金库）。
-            </p>
-            <div className="pt-2">
+          <EmptyState
+            icon={Shield}
+            iconTone="success"
+            title="还没有收藏任何站点"
+            description="在主页站点卡片或搜索结果里点击星标即可一键收藏（本地离线存储，无需登录，可随时导出为 E2EE 加密金库）。"
+            action={
               <Button asChild size="sm" variant="outline" className="text-xs">
-                <Link href="/">
-                  去主页探索发现
-                </Link>
+                <Link href="/">去主页探索发现</Link>
               </Button>
-            </div>
-          </div>
+            }
+          />
         ) : filteredFavorites.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/80 p-10 text-center max-w-lg mx-auto space-y-3 bg-card/40 my-6">
-            <div className="w-12 h-12 rounded-xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground border border-border/40">
-              <Search className="w-6 h-6" />
-            </div>
-            <h3 className="text-sm font-semibold text-foreground">{favoriteFilterEmptyMessage(favoriteQuery)}</h3>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              收藏并没有丢：共 {favorites.items.length} 个都还在本机，只是当前关键词没匹配到。
-            </p>
-            <div className="pt-2">
+          <EmptyState
+            icon={Search}
+            iconTone="muted"
+            title={favoriteFilterEmptyMessage(favoriteQuery)}
+            description={<>收藏并没有丢：共 {favorites.items.length} 个都还在本机，只是当前关键词没匹配到。</>}
+            action={
               <Button size="sm" variant="outline" className="text-xs" onClick={() => setFavoriteQuery('')}>
                 清除筛选
               </Button>
-            </div>
-          </div>
+            }
+          />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3.5 sm:gap-4">
             {filteredFavorites.map((f) => (
@@ -638,6 +631,8 @@ export default function FavoritesPage() {
                         <img
                           src={f.icon}
                           alt=""
+                          loading="lazy"
+                          decoding="async"
                           className="w-full h-full object-contain rounded-xs"
                           onError={(e) => {
                             ;(e.target as HTMLImageElement).style.display = 'none'

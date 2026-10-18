@@ -73,17 +73,35 @@ describe("recompute_rank 任务", () => {
 });
 
 describe("health_check 任务", () => {
-  it("SSRF 目标被判 broken 并记录原因，任务不失败", async () => {
+  /**
+   * 判定规则在 2026-10-18 改为「连续 3 次失败才 broken」：
+   * 单次探测会被 403/429/超时命中，实测把 kubernetes.io / figma.com 等
+   * 可正常访问的站点误标为 broken（50 站点里 15 个，误判率 30%）。
+   * 因此这里断言两段行为：第 1 次只记录不判死，第 3 次才置 broken。
+   */
+  it("SSRF 目标：首次失败只记录，连续 3 次才判 broken，任务不失败", async () => {
     const site = await ctx.repo.createSite({ url: "http://127.0.0.1:9/", title: "内网站", categoryId: "rc" });
-    await ctx.repo.enqueueJob("health_check", { siteId: site.id });
     const runner = new JobRunner(ctx);
-    const result = await runner.tick();
-    expect(result.processed).toBe(1);
 
-    const after = await ctx.repo.getSite(site.id);
-    expect(after!.status).toBe("broken");
-    expect(after!.health!.error).toBeTruthy();
-    expect(after!.health!.lastCheckedAt).toBeGreaterThan(0);
+    const runOnce = async () => {
+      await ctx.repo.enqueueJob("health_check", { siteId: site.id });
+      const result = await runner.tick();
+      expect(result.processed).toBe(1);
+    };
+
+    await runOnce();
+    const afterFirst = await ctx.repo.getSite(site.id);
+    expect(afterFirst!.status).toBe("active"); // 单次抖动不判死
+    expect(afterFirst!.health!.error).toBeTruthy();
+    expect(afterFirst!.health!.lastCheckedAt).toBeGreaterThan(0);
+
+    await runOnce();
+    expect((await ctx.repo.getSite(site.id))!.status).toBe("active");
+
+    await runOnce();
+    const afterThird = await ctx.repo.getSite(site.id);
+    expect(afterThird!.status).toBe("broken"); // 连续第 3 次才 broken
+
     // 任务本身是 done 不是 failed（抓取失败是业务的正常结果）
     const jobs = await ctx.repo.listJobs("done", 10);
     expect(jobs.some((j) => j.kind === "health_check")).toBe(true);

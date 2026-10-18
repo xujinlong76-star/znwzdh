@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Providers } from '@/components/providers'
 import { PwaRegister } from '@/components/pwa-register'
+import { WebVitalsReporter } from '@/components/web-vitals-reporter'
 import { OfflineBanner } from '@/components/offline-banner'
 import { getFileContent } from '@/lib/github'
 import type { Metadata, Viewport } from 'next'
@@ -152,6 +153,8 @@ export default function RootLayout({
           跳到主要内容
         </a>
         <PwaRegister />
+        {/* RUM：NEXT_PUBLIC_RUM=1 时采集 LCP/INP/CLS/TTFB，默认关闭 */}
+        <WebVitalsReporter />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"

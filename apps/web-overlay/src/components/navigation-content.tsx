@@ -11,9 +11,10 @@ import { ModeToggle } from '@/components/mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
 import { ViewModeToggle } from '@/components/view-mode-toggle'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
-import { HomeDIYToolbar } from '@/components/home-diy-toolbar'
+
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { Footer } from '@/components/footer'
+import { OnboardingCard } from '@/components/onboarding-card'
 import { useOverlayBehavior } from '@/components/ui/overlay'
 
 // 性能优化：动态懒加载大型组件，大幅缩减首屏 JS 体积与主线程阻塞时间
@@ -37,8 +38,19 @@ const QuickToolsDrawer = dynamic(
   () => import('@/components/quick-tools-drawer').then((m) => m.QuickToolsDrawer),
   { ssr: false }
 )
+// 浮动托盘与批量操作坞：都是「交互后才出现」的 UI。
+// 之前静态导入会把 1,365 行的工具栏与批量引擎一起塞进首页初始包；
+// 改为客户端懒加载后，首屏只留一个同高占位（不产生 CLS）。
+const HomeDIYToolbar = dynamic(
+  () => import('@/components/home-diy-toolbar').then((m) => m.HomeDIYToolbar),
+  { ssr: false }
+)
+const BatchOperationDock = dynamic(
+  () => import('@/components/batch-operation-dock').then((m) => m.BatchOperationDock),
+  { ssr: false }
+)
 import { Button } from '@/registry/new-york/ui/button'
-import { BatchOperationDock } from '@/components/batch-operation-dock'
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -80,15 +92,7 @@ import {
 
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import {
-  clearSelected,
-  pickSelectedSites,
-  pruneSelected,
-  selectAllIds,
-  summarizeSelection,
-  toggleSelected,
-} from '@/lib/selection'
-import type { BatchSiteItem } from '@/lib/batch-operations'
+import { summarizeSelection } from '@/lib/selection'
 import { WorkspaceFilter, type WorkspaceId } from '@/components/workspace-filter'
 import {
   sortCategoryItemsWithPinned,
@@ -97,6 +101,13 @@ import {
   isSafeWallpaperUrl,
   isSafeSiteHref,
 } from '@/lib/modular/diy-presets'
+import { filterNavigationByWorkspace } from '@/lib/modular/workspace-matching'
+import {
+  combineAndSortCategories,
+  customCategoriesToNavigation,
+} from '@/lib/modular/category-combine'
+import { useSiteSelection } from '@/lib/modular/use-site-selection'
+import { createCustomSiteId, normalizeCustomSiteHref } from '@/lib/modular/custom-site-input'
 import { useToast } from '@/components/ui/use-toast'
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 
@@ -152,118 +163,31 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
   // 拖拽卡片收录状态 (悬停的目标自定义分类 ID)
   const [dragOverCustomCatId, setDragOverCustomCatId] = useState<string | null>(null)
 
-  // 1. 场景工作台动态过滤
-  const filteredNavigationItems = useMemo(() => {
-    if (activeWorkspace === 'all') return navigationData.navigationItems
+  // 1. 场景工作台动态过滤（纯函数见 lib/modular/workspace-matching.ts，判定有单测）
+  const filteredNavigationItems = useMemo(
+    () => filterNavigationByWorkspace(navigationData.navigationItems, activeWorkspace),
+    [navigationData.navigationItems, activeWorkspace],
+  )
 
-    const matches = (item: NavigationSubItem) => {
-      if (item.workspaces?.includes(activeWorkspace)) return true
-      const text = `${item.title} ${item.description || ''} ${(item.tags || []).join(' ')}`.toLowerCase()
-      if (activeWorkspace === 'ai') return text.includes('ai') || text.includes('智能') || text.includes('gpt') || text.includes('模型') || text.includes('claude') || text.includes('chat')
-      if (activeWorkspace === 'dev') return text.includes('代码') || text.includes('开发') || text.includes('api') || text.includes('部署') || text.includes('容器') || text.includes('github') || text.includes('npm') || text.includes('docker')
-      if (activeWorkspace === 'design') return text.includes('设计') || text.includes('图') || text.includes('ui') || text.includes('icon') || text.includes('画') || text.includes('figma') || text.includes('unsplash')
-      if (activeWorkspace === 'efficiency') return text.includes('笔记') || text.includes('协作') || text.includes('工具') || text.includes('文档') || text.includes('notion')
-      return false
-    }
+  // 2. 自定义专属分类 → 导航形状 + 合并/重映射/隐藏/排序
+  //    （纯函数见 lib/modular/category-combine.ts）
+  const customAsCategories = useMemo(
+    () => customCategoriesToNavigation(customCategories),
+    [customCategories],
+  )
 
-    return navigationData.navigationItems
-      .map((category) => {
-        const directItems = (category.items || []).filter(matches)
-        const subCats = (category.subCategories || [])
-          .map((sub) => ({
-            ...sub,
-            items: (sub.items || []).filter(matches),
-          }))
-          .filter((sub) => (sub.items || []).length > 0)
-
-        if (directItems.length === 0 && subCats.length === 0) return null
-        return {
-          ...category,
-          items: directItems,
-          subCategories: subCats,
-        }
-      })
-      .filter(Boolean) as typeof navigationData.navigationItems
-  }, [navigationData.navigationItems, activeWorkspace])
-
-  // 2. 自定义专属分类转换
-  const customAsCategories = useMemo(() => {
-    return customCategories.map((c) => ({
-      id: c.id,
-      title: c.title,
-      icon: c.icon,
-      isCustom: true,
-      items: c.items.map((i) => ({
-        id: i.id,
-        title: i.title,
-        href: i.href,
-        icon: i.icon,
-        description: i.description,
-      })),
-      subCategories: [],
-    }))
-  }, [customCategories])
-
-  // 3. 合并分类与分类标题映射
-  const { allCategoryIds, categoryTitleMap, sortedCategories } = useMemo(() => {
-    const combined = [...customAsCategories, ...filteredNavigationItems]
-    const titleMap: Record<string, string> = {}
-    const allIds: string[] = []
-
-    for (const cat of combined) {
-      titleMap[cat.id] = cat.title
-      allIds.push(cat.id)
-    }
-
-    // 应用卡片跨分类归类重映射 (siteCategoryOverrides)
-    let processedCombined = combined;
-    if (siteCategoryOverrides && Object.keys(siteCategoryOverrides).length > 0) {
-      const movedMap: Record<string, any[]> = {};
-      processedCombined = combined.map((cat) => {
-        const catItems = Array.isArray(cat.items) ? (cat.items as any[]) : [];
-        const remaining = catItems.filter((item: any) => {
-          const targetId = siteCategoryOverrides[item.id];
-          if (targetId && targetId !== cat.id) {
-            if (!movedMap[targetId]) movedMap[targetId] = [];
-            movedMap[targetId]!.push(item);
-            return false;
-          }
-          return true;
-        });
-        return { ...cat, items: remaining };
-      }).map((cat) => {
-        const incoming = movedMap[cat.id] || [];
-        const currentItems = Array.isArray(cat.items) ? (cat.items as any[]) : [];
-        return incoming.length > 0 ? { ...cat, items: [...currentItems, ...incoming] } : cat;
-      });
-    }
-
-    // 过滤掉隐藏的分类
-    const visible = processedCombined.filter((c) => !hiddenCategoryIds.includes(c.id))
-
-    // 排序逻辑：置顶分类优先，其余依据 categoryOrder，其次保留原序
-    const sorted = [...visible].sort((a, b) => {
-      const aPinned = pinnedCategoryIds.includes(a.id)
-      const bPinned = pinnedCategoryIds.includes(b.id)
-      if (aPinned && !bPinned) return -1
-      if (!aPinned && bPinned) return 1
-
-      if (categoryOrder.length > 0) {
-        const aIdx = categoryOrder.indexOf(a.id)
-        const bIdx = categoryOrder.indexOf(b.id)
-        if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx
-        if (aIdx !== -1) return -1
-        if (bIdx !== -1) return 1
-      }
-      return 0
-    })
-
-    return {
-      allCategoryIds: allIds,
-      categoryTitleMap: titleMap,
-      sortedCategories: sorted,
-    }
-  }, [customAsCategories, filteredNavigationItems, hiddenCategoryIds, pinnedCategoryIds, categoryOrder, siteCategoryOverrides])
+  const { allCategoryIds, categoryTitleMap, sortedCategories } = useMemo(
+    () =>
+      combineAndSortCategories({
+        custom: customAsCategories,
+        navigation: filteredNavigationItems as never,
+        siteCategoryOverrides,
+        hiddenCategoryIds,
+        pinnedCategoryIds,
+        categoryOrder,
+      }),
+    [customAsCategories, filteredNavigationItems, hiddenCategoryIds, pinnedCategoryIds, categoryOrder, siteCategoryOverrides],
+  )
 
   /* ------------------------- 多选批量操作 -------------------------
    *
@@ -271,61 +195,20 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
    * 复制成 Markdown / 置顶 / 移动 / 删除）早就写好了，但**从未被挂载**：
    * 没有任何选中状态，也没有任何入口，用户「一次处理多个站点」的需求没有出口。
    * 这里补上入口：工具栏的「多选」开关 + 卡片选中态 + 底部操作坞。
+   *
+   * 选中态本身（可见站点收集 / 剪枝 / 切换 / 全选）已抽到
+   * `lib/modular/use-site-selection.ts`，组件只消费返回值。
    */
-  const [selectionMode, setSelectionMode] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
-
-  /** 当前**真实可见**的站点（跳过已折叠分类、按 id 去重）：全选与选中剪枝都以它为准 */
-  const visibleSites = useMemo(() => {
-    const seen = new Set<string>()
-    const out: BatchSiteItem[] = []
-    const push = (raw: any) => {
-      if (!raw?.id || seen.has(raw.id) || !raw.href) return
-      seen.add(raw.id)
-      out.push({
-        id: raw.id,
-        title: raw.title,
-        href: raw.href,
-        description: raw.description,
-        icon: raw.icon,
-      })
-    }
-    for (const category of sortedCategories as any[]) {
-      if (collapsedCategoryIds.includes(category.id)) continue
-      for (const item of (category.items as any[]) || []) push(item)
-      for (const sub of (category.subCategories as any[]) || []) {
-        for (const item of (sub.items as any[]) || []) push(item)
-      }
-    }
-    return out
-  }, [sortedCategories, collapsedCategoryIds])
-
-  /** 选中的站点数据（顺序 = 用户选择的先后），交给批量操作坞 */
-  const selectedSites = useMemo(
-    () => pickSelectedSites(selectedIds, visibleSites),
-    [selectedIds, visibleSites],
-  )
-
-  /** 列表变化（切换工作台 / 折叠分类 / 隐藏分类）后，丢掉已经看不见的选中项 */
-  useEffect(() => {
-    setSelectedIds((prev) => {
-      const next = pruneSelected(prev, visibleSites.map((s) => s.id))
-      return next.length === prev.length ? prev : next
-    })
-  }, [visibleSites])
-
-  const toggleSelectMode = () => {
-    if (selectionMode) setSelectedIds(clearSelected())
-    setSelectionMode(!selectionMode)
-  }
-
-  const toggleSelectOne = (siteId: string) => {
-    setSelectedIds((prev) => toggleSelected(prev, siteId))
-  }
-
-  const selectAllVisible = () => {
-    setSelectedIds(selectAllIds(visibleSites.map((s) => s.id)))
-  }
+  const {
+    selectionMode,
+    selectedIds,
+    selectedSites,
+    visibleSites,
+    clearSelection,
+    toggleSelectMode,
+    toggleSelectOne,
+    selectAllVisible,
+  } = useSiteSelection(sortedCategories as never, collapsedCategoryIds)
 
   // 4. 画布背景类名
   const canvasBgClass = useMemo(() => {
@@ -359,25 +242,21 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
   const handleAddCustomSiteSubmit = () => {
     if (!addSiteTargetCatId || !customSiteTitle.trim() || !customSiteHref.trim()) return
 
-    const rawHref = customSiteHref.trim()
-    // 拦截 javascript:/data:/vbscript: 等伪协议（纵深防御，防存储型 XSS）
-    if (/^(javascript|data|vbscript|file|blob):/i.test(rawHref)) {
-      toast({ title: '⚠️ 网址不安全', description: '仅允许 http/https 或站内相对路径。' })
-      return
-    }
-    let finalHref = rawHref
-    if (!/^https?:\/\//i.test(finalHref) && !finalHref.startsWith('/')) {
-      finalHref = `https://${finalHref}`
-    }
-    if (!isSafeSiteHref(finalHref)) {
-      toast({ title: '⚠️ 网址不合法', description: '请输入合法的 http(s) 网址。' })
+    // 伪协议拦截 + 协议补全 + 白名单校验统一在纯函数里（有单测，见 custom-site-input.test.ts）
+    const normalized = normalizeCustomSiteHref(customSiteHref)
+    if (!normalized.ok) {
+      if (normalized.reason === 'unsafe-protocol') {
+        toast({ title: '⚠️ 网址不安全', description: '仅允许 http/https 或站内相对路径。' })
+      } else {
+        toast({ title: '⚠️ 网址不合法', description: '请输入合法的 http(s) 网址。' })
+      }
       return
     }
 
     addSiteToCustomCategory(addSiteTargetCatId, {
-      id: `custom_site_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      id: createCustomSiteId(),
       title: customSiteTitle.trim(),
-      href: finalHref,
+      href: normalized.href,
       description: customSiteDesc.trim() || undefined,
     })
 
@@ -657,6 +536,8 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
         </div>
 
         <div className="px-4 sm:px-6 md:px-8 py-6 sm:py-8 flex-1">
+          {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
+          {viewMode !== 'workbench' && <OnboardingCard />}
           {viewMode === 'workbench' ? (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-1">
@@ -761,7 +642,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                                   return
                                 }
                                 addSiteToCustomCategory(category.id, {
-                                  id: `custom_site_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                                  id: createCustomSiteId(),
                                   title: card.title,
                                   href: card.href,
                                   description: card.description || undefined,
@@ -805,7 +686,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                                   return
                                 }
                                 addSiteToCustomCategory(category.id, {
-                                  id: `custom_site_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                                  id: createCustomSiteId(),
                                   title: card.title,
                                   href: card.href,
                                   description: card.description || undefined,
@@ -1082,7 +963,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
               title: c.title,
               items: (c.items as any[]) || [],
             }))}
-            onClearSelection={() => setSelectedIds(clearSelected())}
+            onClearSelection={clearSelection}
             onSelectAll={selectAllVisible}
             totalCount={visibleSites.length}
             onBatchAddToCustomCategory={(categoryId) => {
@@ -1093,7 +974,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
               }
               for (const site of usable) {
                 addSiteToCustomCategory(categoryId, {
-                  id: `custom_site_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                  id: createCustomSiteId(),
                   title: site.title,
                   href: site.href,
                   description: site.description,
@@ -1103,7 +984,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                 title: '✨ 已收录 ' + usable.length + ' 个站点',
                 description: '已批量加入所选专属分类。',
               })
-              setSelectedIds(clearSelected())
+              clearSelection()
             }}
             onBatchPinToWorkbench={() => {
               let pinned = 0

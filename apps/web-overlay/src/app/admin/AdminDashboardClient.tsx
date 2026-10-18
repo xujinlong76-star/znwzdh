@@ -6,6 +6,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  Bug,
   Bot,
   CheckCircle2,
   Clock,
@@ -143,6 +144,23 @@ interface SecurityOverviewData {
   }
 }
 
+interface ClientErrorItem {
+  kind: string
+  fingerprint: string
+  path: string | null
+  digest: string | null
+  count: number
+  firstSeen: number
+  lastSeen: number
+}
+
+interface ClientErrorsData {
+  total: number
+  byKind: Record<string, number>
+  recent: ClientErrorItem[]
+  retention: string
+}
+
 interface SearchAiOverviewData {
   days: number
   linucb: LinUCBInfo
@@ -203,6 +221,7 @@ export function AdminDashboardClient() {
   const [linucb, setLinucb] = useState<LinUCBInfo | null>(null)
   const [searchAi, setSearchAi] = useState<SearchAiOverviewData | null>(null)
   const [security, setSecurity] = useState<SecurityOverviewData | null>(null)
+  const [clientErrors, setClientErrors] = useState<ClientErrorsData | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   // 最近有多少条实时消息解析失败。连接是通的、但数值冻住时，必须能说出来。
@@ -214,10 +233,15 @@ export function AdminDashboardClient() {
   const fetchFullDashboard = useCallback(async (showLoading = false) => {
     try {
       if (showLoading) setIsRefreshing(true)
-      const [overviewData, searchAiData, securityData] = await Promise.all([
+      const [overviewData, searchAiData, securityData, clientErrorData] = await Promise.all([
         hubGet<DashboardData>('/api/admin/dashboard/overview'),
         hubGet<SearchAiOverviewData>('/api/admin/dashboard/search-ai?days=7'),
         hubGet<SecurityOverviewData>('/api/admin/dashboard/security?hours=24'),
+        // 前端错误聚合：单点失败只让这张卡片缺席，不拖垮整块面板
+        hubGet<ClientErrorsData>('/api/admin/client-errors').catch(() => {
+          /* 旧版中枢没有这个端点 / 瞬间故障：这张卡片显示「暂无」，其余面板照常 */
+          return null
+        }),
       ])
       if (overviewData) setData(overviewData)
       if (searchAiData) {
@@ -225,6 +249,7 @@ export function AdminDashboardClient() {
         if (searchAiData.linucb) setLinucb(searchAiData.linucb)
       }
       if (securityData) setSecurity(securityData)
+      setClientErrors(clientErrorData)
       setLoadError(null)
     } catch (err) {
       // 以前只 console.error：首屏拉取失败时页面会永远停在「正在加载…」，
@@ -1109,6 +1134,67 @@ export function AdminDashboardClient() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 前端错误闭环（P2-5）：崩溃不再只活在用户的标签页里 */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Bug className="h-4 w-4 text-destructive" />
+                前端错误监控
+                {clientErrors && clientErrors.total > 0 && (
+                  <Badge variant="destructive" className="text-[10px] h-5 px-1.5">
+                    {clientErrors.total} 次
+                  </Badge>
+                )}
+              </CardTitle>
+              <CardDescription>
+                错误边界捕获的崩溃（按指纹去重计数）。只收分类 / 指纹 / 路径，不含错误原文与用户内容；
+                需前端启用 NEXT_PUBLIC_ERROR_REPORT=1 才会上报。聚合视图为进程内存，events 表有全量明细。
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {clientErrors && clientErrors.total > 0 ? (
+            <>
+              <div className="flex flex-wrap gap-1.5">
+                {Object.entries(clientErrors.byKind)
+                  .filter(([, n]) => n > 0)
+                  .map(([kind, n]) => (
+                    <Badge key={kind} variant="outline" className="text-[10px] h-5 px-1.5 font-mono">
+                      {kind}: {n}
+                    </Badge>
+                  ))}
+              </div>
+              <div className="space-y-1.5">
+                {clientErrors.recent.slice(0, 6).map((e) => (
+                  <div
+                    key={`${e.kind}|${e.fingerprint}|${e.path ?? '-'}`}
+                    className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-md bg-muted/30"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-mono">
+                        {e.kind}
+                      </Badge>
+                      <span className="font-mono text-muted-foreground truncate">{e.path ?? '/'}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground/70 truncate">{e.fingerprint}</span>
+                    </span>
+                    <span className="text-muted-foreground shrink-0 ml-2">
+                      ×{e.count} · {new Date(e.lastSeen).toLocaleTimeString('zh-CN', { hour12: false })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-muted-foreground py-2 text-center">
+              暂无前端错误上报（进程启动以来）
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* 快捷运维与管理中枢导航 */}
       <div>

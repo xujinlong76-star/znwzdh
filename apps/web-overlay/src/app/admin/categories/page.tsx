@@ -17,6 +17,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { FolderTree } from 'lucide-react'
+import { EmptyState } from '@/components/ui/empty-state'
 import { LoadErrorNotice } from '@/components/admin/load-error-notice'
 import { describeLoadFailure, emptyStateText } from '@/lib/admin-load-failure'
 import { hubGet, hubSend } from '@/lib/navhub-api'
@@ -202,7 +204,11 @@ export default function AdminCategoriesPage() {
       {loading ? (
         <div className="text-muted-foreground text-sm">加载中…</div>
       ) : tree.length === 0 ? (
-        <div className="text-muted-foreground text-sm">{emptyStateText(loadError, '暂无类目')}</div>
+        <EmptyState
+          icon={FolderTree}
+          title={emptyStateText(loadError, '暂无类目')}
+          description={loadError ? '拉取失败时下面不会显示任何类目，请重试。' : '还没有任何类目，先创建一个再往里加站点。'}
+        />
       ) : (
         <div className="rounded-md border overflow-x-auto">
           <table className="w-full text-sm">

@@ -23,6 +23,7 @@ import { createHash } from "node:crypto";
 import type { AppContext } from "./context.ts";
 import { buildOpenApiDoc, renderDocsHtml, type RouteEntry } from "./openapi.ts";
 import { recordHttpMetric } from "./metrics.ts";
+import { invalidateSnapshotCache } from "./storage.ts";
 import {
   ANONYMOUS_IDENTITY,
   bearerOf,
@@ -61,6 +62,7 @@ import { submissionRoutes } from "./routes/submissions.ts";
 import { jobRoutes } from "./routes/jobs.ts";
 import { enrichRoutes } from "./routes/enrich.ts";
 import { telemetryRoutes } from "./routes/telemetry.ts";
+import { clientErrorRoutes } from "./routes/errors.ts";
 import { navsphereRoutes } from "./routes/navsphere.ts";
 import { tokenRoutes } from "./routes/tokens.ts";
 
@@ -125,6 +127,14 @@ export async function buildServer(ctx: AppContext) {
     reply.header("x-frame-options", "SAMEORIGIN");
     reply.header("referrer-policy", "no-referrer");
     reply.header("permissions-policy", "camera=(), microphone=(), geolocation=()");
+    // 应用处理耗时（不含网络）：`Server-Timing: app;dur=12.3`。
+    // 浏览器 DevTools 的 Timing 面板会直接展示，RUM 也能采集，
+    // 是「快照缓存是否真的生效」最直接的证据。
+    const started = (_req as unknown as { __startHr?: bigint }).__startHr;
+    if (started !== undefined) {
+      const durMs = Number(process.hrtime.bigint() - started) / 1e6;
+      reply.header("server-timing", "app;dur=" + durMs.toFixed(1));
+    }
     if (ctx.config.publicUrl.startsWith("https://")) {
       reply.header("strict-transport-security", "max-age=31536000; includeSubDomains");
     }
@@ -143,6 +153,9 @@ export async function buildServer(ctx: AppContext) {
     const rid = incoming.length > 0 ? incoming.slice(0, 128) : req.id;
     (req as unknown as { requestId: string }).requestId = rid;
     reply.header("x-request-id", rid);
+    // Server-Timing 的起点：在 onSend 里算出「应用处理耗时」，
+    // 让浏览器 DevTools / Lighthouse / RUM 都能把慢请求归因到服务端。
+    (req as unknown as { __startHr?: bigint }).__startHr = process.hrtime.bigint();
   });
 
   /* ---------------------------- 指标采集（Prometheus） ---------------------------- */
@@ -153,8 +166,40 @@ export async function buildServer(ctx: AppContext) {
    */
   app.addHook("onResponse", async (req, reply) => {
     const route = (req.routeOptions?.url as string | undefined) ?? "unmatched";
-    if (route === "/api/metrics") return;
-    recordHttpMetric(route, req.method, reply.statusCode, Number(reply.elapsedTime ?? 0));
+    if (route !== "/api/metrics") {
+      recordHttpMetric(route, req.method, reply.statusCode, Number(reply.elapsedTime ?? 0));
+    }
+
+    /**
+     * 快照缓存失效：任何「会改变导航数据」的成功写请求都让快照缓存作废。
+     *
+     * 为什么放在这一层而不是各路由里：写入口有 20+ 个（站点 CRUD、类目移动/合并、
+     * 标签、专题、投稿审核、富化、回收站、NavSphere 兼容写入），逐个加失效
+     * 必然会漏。这里用前缀白名单一次覆盖，且只在 2xx/3xx 时失效——
+     * 失败的写不应该白白触发一次全量重建。
+     *
+     * 刻意排除：/api/events（点击上报，高频）、/api/search（POST 查询）、
+     * 收藏/画像/金库/CRDT/任务（不影响导航快照）。
+     */
+    if (req.method !== "GET" && req.method !== "HEAD" && reply.statusCode < 400) {
+      const SNAPSHOT_MUTATING_PREFIXES = [
+        "/api/sites",
+        "/api/categories",
+        "/api/storage",
+        "/api/enrich",
+        "/api/submissions",
+        "/api/trash",
+        "/api/collections",
+        "/api/relations",
+        "/api/tags",
+        "/api/facets",
+        "/api/taxonomy",
+      ];
+      const url = req.url ?? "";
+      if (SNAPSHOT_MUTATING_PREFIXES.some((p) => url.startsWith(p))) {
+        invalidateSnapshotCache();
+      }
+    }
   });
 
 
@@ -376,6 +421,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(jobRoutes, { ctx });
   await app.register(enrichRoutes, { ctx });
   await app.register(telemetryRoutes, { ctx });
+  await app.register(clientErrorRoutes, { ctx });
   await app.register(navsphereRoutes, { ctx });
   await app.register(tokenRoutes, { ctx });
 

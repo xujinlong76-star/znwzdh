@@ -88,6 +88,29 @@ export async function healthCheckSeries(repo: Repository, since: number, limit =
   }));
 }
 
+/**
+ * 最近 N 次巡检结果（新→旧）。
+ *
+ * 用途：健康判定从「单次失败即 broken」改为「连续 N 次失败才 broken」。
+ * 实测背景：50 个站点里 15 个被标 broken，其中 kubernetes.io / figma.com /
+ * npmjs.com 全部可正常访问 —— 单次探测遇到 403/429/超时就会把健康站点打进
+ * 冷宫，前台还可能显示「已失效」。连续失败阈值能过滤掉绝大多数抖动。
+ */
+export async function recentHealthChecks(
+  repo: Repository,
+  siteId: string,
+  limit = 5,
+): Promise<Array<{ ok: boolean; checkedAt: number }>> {
+  const rows = await repo.raw(
+    "SELECT ok, checked_at FROM health_checks WHERE site_id = ? ORDER BY checked_at DESC LIMIT ?",
+    [siteId, limit],
+  );
+  return rows.map((r) => ({
+    ok: r.ok === null || r.ok === undefined ? false : Boolean(r.ok),
+    checkedAt: Number(r.checked_at ?? 0),
+  }));
+}
+
 export async function bumpVisit(repo: Repository, siteId: string): Promise<void> {
   const now = Date.now();
   await repo.run(

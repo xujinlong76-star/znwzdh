@@ -9,7 +9,8 @@
 
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, ScrollText } from 'lucide-react'
+import { EmptyState } from '@/components/ui/empty-state'
 import { hubGet } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
 
@@ -147,7 +148,11 @@ export default function AdminAuditPage() {
           )}
         </div>
       ) : items.length === 0 ? (
-        <div className="text-muted-foreground text-sm">暂无审计记录</div>
+        <EmptyState
+          icon={ScrollText}
+          title="暂无审计记录"
+          description="后台的登录、配置与维护动作会按时间倒序出现在这里。"
+        />
       ) : (
         <>
           {notice && (

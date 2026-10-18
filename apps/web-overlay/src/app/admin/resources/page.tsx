@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyState } from '@/components/ui/empty-state'
 import { useEffect, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -678,21 +679,22 @@ export default function ResourceManagement() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center h-64 border-2 border-dashed rounded-lg bg-muted/50">
-            <Icons.inbox className="h-10 w-10 text-gray-400 mb-2" />
-            <p className="text-gray-500">
-              {searchQuery ? '未找到匹配的资源' : '暂无资源'}
-            </p>
-            {!searchQuery && (
-              <Button
-                variant="outline"
-                onClick={() => setIsDialogOpen(true)}
-                className="mt-4"
-              >
-                上传第一个资源
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            icon={Icons.inbox}
+            title={searchQuery ? '未找到匹配的资源' : '暂无资源'}
+            description={searchQuery ? '换个关键词试试。' : '点击右上角添加第一个资源。'}
+            action={
+              !searchQuery ? (
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDialogOpen(true)}
+                  className="mt-4"
+                >
+                  添加资源
+                </Button>
+              ) : undefined
+            }
+          />
         )}
       </div>
 

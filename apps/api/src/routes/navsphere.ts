@@ -20,7 +20,7 @@ export const navsphereRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
    * 整个后台（增删改查、拖拽排序、投稿审核）就自动落到真实数据库上。
    * path 沿用它的原值（如 src/navsphere/content/navigation.json），前端连常量都不用改。
    */
-  app.get("/api/storage", { config: { scope: "read" } }, async (req, reply) => {
+  app.get("/api/storage", { config: { scope: "read", cache: { maxAge: 0, etag: true } } }, async (req, reply) => {
     const path = String((req.query as Record<string, string>)?.path ?? "");
     if (!path) { reply.code(400); return { error: "缺少 path 参数" }; }
     return readStoragePath(ctx, path);

@@ -67,4 +67,34 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
     return { ok: true };
   });
 
+  /* ---------------------------- Web Vitals ---------------------------- */
+
+  /**
+   * 真实用户性能指标（RUM）。
+   *
+   * 与 /api/events 分开的理由：events 的 kind 白名单服务画像与 LinUCB，
+   * 加一个 "vitals" 会污染「点击/收藏」这类行为语义；而且这条链路是
+   * sendBeacon 的 fire-and-forget，不需要也不应该触发画像刷新。
+   *
+   * 隐私：只收指标名、数值、评级与 pathname（不含 query、不含身份）。
+   * 采样：由前端一次性上报，每页最多 5 条；限流沿用全局 300/min。
+   */
+  const VITAL_NAMES = ["LCP", "INP", "CLS", "TTFB", "FCP"] as const;
+
+  app.post("/api/vitals", { config: { scope: "public" } }, async (req, reply) => {
+    const body = z.object({
+      name: z.enum(VITAL_NAMES),
+      value: z.number().finite().min(0).max(600_000),
+      rating: z.enum(["good", "needs-improvement", "poor"]).optional(),
+      path: z.string().max(200).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+    // 遥测失败绝不影响页面：吞掉异常，仍回 204
+    await ctx.repo.recordEvent("vitals", { meta: body.data }).catch(() => undefined);
+    reply.code(204);
+    return null;
+  });
 };

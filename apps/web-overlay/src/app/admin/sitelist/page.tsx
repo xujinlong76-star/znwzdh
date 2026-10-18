@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from "@/registry/new-york/ui/button"
 import { useToast } from "@/registry/new-york/hooks/use-toast"
 import { Icons } from "@/components/icons"
+import { EmptyState } from '@/components/ui/empty-state'
 import { Input } from "@/registry/new-york/ui/input"
 import {
   Dialog,
@@ -1969,27 +1970,21 @@ export default function SiteListPage() {
             </Button>
           </div>
         ) : (
-          <div className="text-center py-16">
-            <div className="mx-auto w-24 h-24 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
-              <Icons.search className="h-8 w-8 text-gray-400" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
-              {sites.length === 0 ? "暂无站点" : "未找到匹配的站点"}
-            </h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-6">
-              {sites.length === 0
+          <EmptyState
+            icon={Icons.search}
+            title={sites.length === 0 ? "暂无站点" : "未找到匹配的站点"}
+            description={
+              sites.length === 0
                 ? "开始添加您的第一个站点吧"
                 : "尝试调整搜索条件或筛选器"
-              }
-            </p>
-            {sites.length === 0 && (
-              <Button onClick={() => setShowAddDialog(true)}>
-                <Icons.plus className="mr-2 h-4 w-4" />
-                添加站点
-              </Button>
-            )}
-            {sites.length > 0 && filteredSites.length === 0 && (
-              <div className="flex gap-2 justify-center">
+            }
+            action={
+              sites.length === 0 ? (
+                <Button onClick={() => setShowAddDialog(true)}>
+                  <Icons.plus className="mr-2 h-4 w-4" />
+                  添加站点
+                </Button>
+              ) : filteredSites.length === 0 ? (
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -2000,9 +1995,9 @@ export default function SiteListPage() {
                 >
                   清除筛选
                 </Button>
-              </div>
-            )}
-          </div>
+              ) : undefined
+            }
+          />
         )}
 
         <AlertDialog open={showDeleteDialog} onOpenChange={(open) => {

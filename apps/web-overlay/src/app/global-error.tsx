@@ -14,7 +14,9 @@
  *  - 文案同样走 `lib/error-report.ts`，与 error.tsx 保持一致的解释口径。
  */
 
+import { useEffect } from 'react'
 import { crashReportText, describeCrash } from '@/lib/error-report'
+import { reportClientError } from '@/lib/client-error-report'
 
 export default function GlobalError({
   error,
@@ -24,6 +26,12 @@ export default function GlobalError({
   reset: () => void
 }) {
   const crash = describeCrash(error, error?.digest)
+
+  useEffect(() => {
+    // 根级兜底同样上报（脱敏：分类 + 指纹 + pathname + digest）
+    reportClientError({ message: error?.message ?? String(error), digest: error?.digest })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 崩溃时只需上报一次
+  }, [])
 
   return (
     <html lang="zh-CN">

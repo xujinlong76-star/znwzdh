@@ -432,6 +432,11 @@ export class Repository {
     return healthRepo.healthCheckSeries(this, since, limit);
   }
 
+  /** 某站点最近 N 次巡检（新→旧），供「连续失败才判 broken」使用 */
+  async recentHealthChecks(siteId: string, limit = 5): Promise<Array<{ ok: boolean; checkedAt: number }>> {
+    return healthRepo.recentHealthChecks(this, siteId, limit);
+  }
+
   async bumpVisit(siteId: string): Promise<void> {
     return healthRepo.bumpVisit(this, siteId);
   }

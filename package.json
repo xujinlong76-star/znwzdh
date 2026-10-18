@@ -23,6 +23,7 @@
     "vendor:web": "node scripts/vendor-web.mjs",
     "test:pg": "node --experimental-strip-types scripts/pg-check.mts",
     "check:overlay": "node scripts/check-web-overlay.mjs",
+    "check:bundle": "node scripts/check-bundle-budget.mjs",
     "check:extensions": "node scripts/check-extensions.mjs",
     "lint": "pnpm --filter navsphere lint",
     "backup": "node scripts/backup.mjs",

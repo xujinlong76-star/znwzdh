@@ -41,7 +41,7 @@ export function FavoritesDockWidget() {
               >
                 <div className="w-5 h-5 rounded bg-muted/60 flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0 overflow-hidden">
                   {site.icon ? (
-                    <img src={site.icon} alt="" className="w-full h-full object-contain" />
+                    <img src={site.icon} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain" />
                   ) : (
                     site.title.slice(0, 1)
                   )}

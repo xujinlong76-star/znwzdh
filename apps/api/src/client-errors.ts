@@ -78,8 +78,15 @@ export function summarizeClientErrors(
 
 export class ClientErrorStore {
   private entries = new Map<string, ClientErrorEntry>();
+  // 注意：不能写成 `constructor(private readonly capacity = 200)`。
+  // API 开发/CI 运行时是 `node --experimental-strip-types`（只剥类型、不做语法转换），
+  // 参数属性 / enum / namespace 这类「需要生成代码」的语法会在启动时抛
+  // ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX（vitest 用 esbuild 转换，测不出来）。
+  private readonly capacity: number;
 
-  constructor(private readonly capacity = 200) {}
+  constructor(capacity = 200) {
+    this.capacity = capacity;
+  }
 
   /** 记录一条（同键累计 count 并刷新 lastSeen；超容量时淘汰最旧条目） */
   record(input: {

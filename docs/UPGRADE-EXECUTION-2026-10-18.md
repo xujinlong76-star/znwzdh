@@ -277,6 +277,12 @@
 | `admin/resources/page.tsx` | 旧空态块两行孤儿收尾（`)}` + `</div>`）导致 JSX 语法错、tsc 15 连错 | 删除孤儿行，保留正确的三元收尾 |
 | `components/search-palette.tsx` | 离线快照写入用了不存在的 `site.icon`（根 verify 的 tsc 只覆盖 `@navhub/*`，此处漏网） | 改为 `site.iconKey` |
 
+### 运行时修复：API 开发/CI 启动崩溃（strip-only 语法）
+
+- **背景**：本地 e2e 三个管理端用例失败，日志显示 `dev-all` 的 API 启动即崩：`client-errors.ts` 的 `constructor(private readonly capacity = 200)` 抛 `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`——API 的开发/CI 运行时是 `node --experimental-strip-types`（只剥类型、不做语法转换），参数属性 / enum / namespace 都会在启动时炸；vitest（esbuild 转换）与 tsc 都测不出来。
+- **修复**：参数属性改为普通字段声明；全仓（`apps/api/src` + `packages/*/src`）扫描确认无同类语法残留。
+- **教训**：新增 API 侧类代码时禁用「需要生成代码」的 TS 语法；e2e 是这条路的唯一实测关卡。
+
 ### CI 红灯修复：chart.tsx 纳入 overlay（recharts 3 适配）
 
 - **背景**：main（5103b79）CI run #255 中 `test-web`（tsc/lint/build）红——`tsc --noEmit` 对 `chart.tsx` 报 8 个 recharts 3 类型错误（`payload`/`label` 不在 Tooltip 根 props、`LegendProps` 的 `Pick` 失效等）。此前「不修上游 vendored 噪音」的前提（CI 不以此为门槛）不成立。
@@ -294,8 +300,8 @@
 | `next lint` | ✅ 0 错误 |
 | `next build`（NEXT_DIST_DIR=.next-verify） | ✅ 通过 |
 | `pnpm check:bundle` | ✅ 全部路由在预算内（首页 637 / 预算 669 KB） |
-| `pnpm test:e2e` | 🕐 本地系统 Chrome 一轮；以 CI 首航的 e2e 作业为准 |
+| `pnpm test:e2e` | ✅ admin 三件套 6/6 转绿（strip-types 修复）；2 例前台用例受并发写盘干扰首轮失败、定向复跑 5/5 全绿；以 CI 首航为准 |
 
 ### 落盘
 
-整批（P0 全部 + P1 主体 + P2 三批 + admin 迁移 + CI 修复 + 文档）以单个提交落盘并推送 main，随后盯 CI 首航（PG / docker-smoke / E2E / audit 首次实跑本批代码）。
+整批（P0 全部 + P1 主体 + P2 三批 + admin 迁移 + CI 修复 + 文档）以主体提交落盘；strip-types 运行时修复与本节记录以跟进提交推送 main，随后盯 CI 首航（PG / docker-smoke / E2E / audit 首次实跑本批代码）。

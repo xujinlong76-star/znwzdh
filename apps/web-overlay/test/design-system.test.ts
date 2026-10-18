@@ -63,6 +63,55 @@ describe("已迁移页面：/favorites", () => {
   });
 });
 
+describe("已迁移页面：admin 主要列表页", () => {
+  // 迁移清单（2026-10-18 第五轮）：页面级空态统一走 <EmptyState>；
+  // 面板内嵌的小样本列表（facets 的分面站点样例）按契约允许保持内联。
+  const MIGRATED: Array<[string, string]> = [
+    ["src/app/admin/audit/page.tsx", "暂无审计记录"],
+    ["src/app/admin/categories/page.tsx", "emptyStateText(loadError, '暂无类目')"],
+    ["src/app/admin/collections/page.tsx", "emptyStateText(loadError, '暂无专题')"],
+    ["src/app/admin/jobs/page.tsx", "暂无匹配任务记录"],
+    ["src/app/admin/navigation/page.tsx", "暂无分类"],
+    ["src/app/admin/resources/page.tsx", "暂无资源"],
+    ["src/app/admin/sitelist/page.tsx", "暂无站点"],
+    ["src/app/admin/stats/page.tsx", "暂无巡检记录"],
+  ];
+
+  for (const [rel, marker] of MIGRATED) {
+    it(`${rel.split("/").slice(-2).join("/")} 使用 EmptyState`, () => {
+      const src = overlayFile(rel);
+      expect(src, rel + " 未导入 EmptyState").toContain("from '@/components/ui/empty-state'");
+      expect(src, rel + " 未出现 <EmptyState").toContain("<EmptyState");
+      expect(src, rel + " 空态文案应保留失败/为空区分").toContain(marker);
+    });
+  }
+
+  it("admin 不再有裸 gray 色值（暗色红线）", () => {
+    const files = [
+      "src/app/admin/audit/page.tsx",
+      "src/app/admin/categories/page.tsx",
+      "src/app/admin/collections/page.tsx",
+      "src/app/admin/jobs/page.tsx",
+      "src/app/admin/navigation/page.tsx",
+      "src/app/admin/resources/page.tsx",
+      "src/app/admin/sitelist/page.tsx",
+      "src/app/admin/stats/page.tsx",
+      "src/app/admin/taxonomy/page.tsx",
+    ];
+    for (const rel of files) {
+      const src = overlayFile(rel);
+      const bare = src.match(/(text|bg|border)-gray-[0-9]/g);
+      expect(bare, rel + " 仍有硬编码灰阶").toBeNull();
+    }
+  });
+
+  it("导航页乱码已修复（开???创建 → 开始创建）", () => {
+    const src = overlayFile("src/app/admin/navigation/page.tsx");
+    expect(src).toContain("按钮开始创建");
+    expect(src).not.toContain("\ufffd");
+  });
+});
+
 describe("动效 token", () => {
   it("globals.css 定义四档时长与两档缓动", () => {
     const s = overlayFile("src/styles/globals.css");

@@ -7,20 +7,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import {
-  Activity,
-  ArrowRight,
-  Clock,
-  ExternalLink,
-  Flame,
-  PlusCircle,
-  RefreshCw,
-  Search,
-  Sparkles,
-  TrendingUp,
-} from 'lucide-react'
+import { Activity, ArrowRight, Clock, ExternalLink, Flame, PlusCircle, RefreshCw, Search, Sparkles, TrendingUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Badge } from '@/components/ui/badge'
 import { hubGet } from '@/lib/navhub-api'
 import { newRequestGate, settleLatest, type RequestGate } from '@/lib/latest-request'
@@ -54,9 +44,11 @@ function HealthTrendChart({ points }: { points: HealthTrendPoint[] }) {
   const withData = points.filter((p) => p.rate !== null)
   if (withData.length === 0) {
     return (
-      <div className="py-12 text-center text-sm text-muted-foreground border rounded-lg bg-card">
-        暂无巡检记录（可在后台任务面板触发「健康巡检」或等待定时任务巡检）。
-      </div>
+      <EmptyState
+        icon={Activity}
+        title="暂无巡检记录"
+        description="可在后台任务面板触发「健康巡检」，或等待定时任务自动巡检。"
+      />
     )
   }
 
@@ -330,7 +322,7 @@ export default function AdminStatsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Activity className="h-4 w-4 text-blue-500" />
+            <Activity className="h-4 w-4 text-blue-600 dark:text-blue-400" />
             站点健康巡检与响应延迟趋势
           </CardTitle>
           <CardDescription>

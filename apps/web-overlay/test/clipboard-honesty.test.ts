@@ -175,7 +175,8 @@ describe("全仓：clipboard 写入不许无人接住", () => {
 
 describe("各复制入口只在真的成功后才显示成功", () => {
   const cases: Array<{ file: string; label: string }> = [
-    { file: "src/components/home-diy-toolbar.tsx", label: "DIY 工具栏（3 处）" },
+    // P1-2 拆分：三处复制入口随 handler 整体迁入 home-diy-backup-dialog.tsx
+    { file: "src/components/home-diy-backup-dialog.tsx", label: "DIY 备份弹窗（3 处）" },
     { file: "src/app/site/[id]/page.tsx", label: "站点详情页复制链接" },
     { file: "src/components/architecture-recipe-card.tsx", label: "架构配方卡" },
     { file: "src/components/speculative-intent-card.tsx", label: "推测意图卡" },
@@ -203,8 +204,8 @@ describe("各复制入口只在真的成功后才显示成功", () => {
     }
   });
 
-  it("DIY 工具栏：三处复制都在成功提示之前先处理失败", () => {
-    const src = overlaySource("src/components/home-diy-toolbar.tsx");
+  it("DIY 备份弹窗：三处复制都在成功提示之前先处理失败", () => {
+    const src = overlaySource("src/components/home-diy-backup-dialog.tsx");
     expect(src).toContain("copyFailureToast(result)");
     expect((src.match(/if \(!result\.ok\)/g) || []).length).toBeGreaterThanOrEqual(3);
     expect((src.match(/await copyText\(/g) || []).length).toBeGreaterThanOrEqual(3);

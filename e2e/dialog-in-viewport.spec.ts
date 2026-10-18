@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import type { Locator } from '@playwright/test';
 
 /**
  * 核心旅程 6：对话框必须出现在视口里（Tailwind v4 源扫描的真实回归）。
@@ -15,6 +16,14 @@ import { test, expect } from '@playwright/test';
  * 字符串守则（test/tailwind-source.test.ts）只能钉住那行声明，
  * 「类真的生成了、弹窗真的在视口里、真的点得动」只有浏览器里量一遍才算数。
  */
+
+/** 等弹窗入场动画收尾再量几何：zoom/slide 过渡帧里量到的 y 可以是负的（不是真实落位） */
+async function waitDialogSettled(dialog: Locator) {
+  await dialog.evaluate(async (el) => {
+    await Promise.all(el.getAnimations().map((a) => a.finished));
+  });
+}
+
 test.describe('核心旅程 6：对话框出现在视口内且可交互', () => {
   test('虚拟弹窗：新建专属分类的对话框在视口里，确认按钮真的点得动', async ({ page }) => {
     await page.goto('/');
@@ -25,6 +34,8 @@ test.describe('核心旅程 6：对话框出现在视口内且可交互', () => 
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
+    // 入场动画（zoom + slide）收尾前量到的是过渡帧（实测 y≈-26.7），不是真实落位
+    await waitDialogSettled(dialog);
 
     // 关键断言：弹窗整块落在视口内（修复前 y≈9000，远超 720 的视口高）
     const box = await dialog.boundingBox();
@@ -56,6 +67,7 @@ test.describe('核心旅程 6：对话框出现在视口内且可交互', () => 
 
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
+    await waitDialogSettled(dialog);
 
     const box = await dialog.boundingBox();
     const viewport = page.viewportSize();

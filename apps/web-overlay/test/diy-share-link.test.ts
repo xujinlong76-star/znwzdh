@@ -171,12 +171,14 @@ describe('守卫本体：能认出「静默失败」也会误判', () => {
   })
 })
 
-describe('工具栏：分享失败必须说出来', () => {
+describe('分享入口：分享失败必须说出来', () => {
   const toolbar = readFileSync(resolve(ROOT, 'src', 'components', 'home-diy-toolbar.tsx'), 'utf8')
+  // P1-2 拆分后，分享 handler 随备份弹窗迁入独立组件（工具栏只透传 props）
+  const dialog = readFileSync(resolve(ROOT, 'src', 'components', 'home-diy-backup-dialog.tsx'), 'utf8')
   const hook = readFileSync(resolve(ROOT, 'src', 'lib', 'modular', 'use-home-diy.ts'), 'utf8')
 
   it('handleShareUrlHash 拿的是带原因的结果，失败分支里有 toast', () => {
-    const body = toolbar.slice(toolbar.indexOf('const handleShareUrlHash'))
+    const body = dialog.slice(dialog.indexOf('const handleShareUrlHash'))
     expect(body.includes('const out = exportPresetToUrlHash()')).toBe(true)
     expect(failureIsAnnounced(body)).toBe(true)
   })

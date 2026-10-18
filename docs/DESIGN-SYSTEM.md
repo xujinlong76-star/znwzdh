@@ -99,8 +99,13 @@ Tailwind 侧已通过 `--color-*` 映射（`--color-primary: hsl(var(--primary))
 
 - 解释句要说清「数据去哪了」，不是「你操作错了」（收藏页范例：共 N 个都还在本机）；
 - `action` 可选但强烈建议给：空态是路口不是墙；
-- 迁移进度（首轮）：`/favorites` 两个空态已迁移（顺带消灭了 `text-emerald-500` 硬编码）。
-  其余 `admin/*` 列表页空态按文档 §5 节奏逐个迁移，迁移一个勾一个。
+- **迁移进度（2026-10-18 第五轮完成）**：`/favorites` 两个 + admin 主要列表页
+  （audit / categories / collections / jobs / navigation / resources / sitelist / stats）
+  共 10 处页面级空态已全部迁移；`admin-load-failure.ts` 的「失败 vs 真的没有」
+  区分原样保留（失败态走标题文案，不回退成空态误导）。同轮把 admin 的裸
+  `gray-*` 色值全部替换为语义 token（`text-muted-foreground` / `bg-muted` /
+  `border-border` 等），并修掉导航页一处历史乱码（`开???创建`）。
+  守卫测试 `apps/web/test/design-system.test.ts` 逐页锁定迁移结果。
 
 ---
 
@@ -125,7 +130,8 @@ Tailwind 侧已通过 `--color-*` 映射（`--color-primary: hsl(var(--primary))
 
 ## 6. 待办（下轮）
 
-- [ ] `admin/*` 8 个列表页空态迁移到 `<EmptyState>`
+- [x] `admin/*` 8 个列表页空态迁移到 `<EmptyState>`（第五轮完成）
+- [ ] `facets` 面板内嵌的分面站点样例空态（子面板，允许内联，按需再升级）
 - [ ] Button loading 态样板（spinner + `aria-busy`）
 - [ ] `--radius-*` / `--z-*` token 化
 - [ ] 暗色视觉走查（重点：glow 阴影、毛玻璃壁纸在暗下的对比度）

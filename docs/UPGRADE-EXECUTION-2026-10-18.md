@@ -8,7 +8,7 @@
 | 档位 | 项数 | 已完成 | 部分完成 | 未开始 |
 | :--- | ---: | ---: | ---: | ---: |
 | P0（本周） | 5 | **4** | 1（Lighthouse CI 以构建期预算脚本替代） | 0 |
-| P1（2–4 周） | 6 | **6**（P1-1/3/5/6 + P1-2 一段 + P1-4 样板） | 0 | 见 §9 迁移节奏 |
+| P1（2–4 周） | 6 | **6**（P1-1/3/5/6 + P1-2 两段 + P1-4 迁移完成） | 0 | 0 ✅ |
 | P2（1–2 月） | 6 | 0 | 0 | 6 |
 | P3（季度） | 4 | 0 | 0 | 4 |
 
@@ -307,3 +307,35 @@
 整批（P0 全部 + P1 主体 + P2 三批 + admin 迁移 + CI 修复 + 文档）以主体提交 `056ba5b` 落盘；strip-types 运行时修复与本节记录以跟进提交 `40992e8` 推送 main。
 
 **CI 首航结论（run #259，40992e8）**：8/8 作业全绿——此前红灯的「前端门禁（Web typecheck / lint / build）」转绿（chart.tsx recharts 3 适配生效）；「跨方言测试（PostgreSQL）」「浏览器 E2E」「镜像冒烟构建」「依赖审计」首次实跑本批代码即通过；覆盖层 / 扩展 / upstream-ref 检查一致。
+
+
+---
+
+## 十二、第五轮续（P1-4 空态迁移收官 + P1-2 第二段拆分）
+
+### P1-4 空态迁移收官：admin 8 个列表页 + 乱码修复
+
+| 页面 | 空态形态 |
+| :--- | :--- | :--- |
+| audit / categories / collections（×2）/ jobs / navigation / resources / sitelist / stats | 全部改为 `<EmptyState>`（图标 + 解释 + 主行动） |
+
+- **失败态区分保留**：`admin-load-failure.ts` 的「拉取失败 vs 真的没有」原样保留——失败时走标题文案（`emptyStateText(loadError, …)`），不回退成空态误导用户「本来就没数据」。
+- **暗色红线清理**：admin 的裸 `gray-*` 硬编码（resources 18 处 + taxonomy 6 处）全部替换为语义 token（`text-muted-foreground` / `bg-muted` / `border-border` / `border-input` / `border-primary`）。
+- **乱码修复**：`admin/navigation/page.tsx` 的历史乱码「点击上方的添加按钮开���创建」→「开始创建」（三个 U+FFFD，GBK/UTF-8 转换事故残留）。
+- 守卫测试 `design-system.test.ts` 扩到 **17 例**：逐页锁定 EmptyState 迁移、admin 零裸灰、乱码不再复现。
+
+### P1-2 第二段：home-diy-toolbar 1307 → 825 行
+
+| 抽出物 | 行数 | 内容 |
+| :--- | :--- | :--- |
+| `components/home-diy-backup-dialog.tsx` | 504 | 备份 / 漫游 / 云金库弹窗整体：6 个 state + 1 个 ref、10 个 handler（明文导入导出、URL-Hash 分享、E2EE 加解密、云端同步） |
+| `lib/modular/layout-tidy.ts` | ~60 | 「算法智能自愈整理」的纯决策函数 `computeLayoutTidyPlan` |
+
+- 弹窗改为 props 注入 8 个 `useHomeDIY` 函数（+ `open`/`onOpenChange`），不自己持有 DIY 状态；
+- 整理算法抽成纯函数：**顺手补了它人生第一个测试**（`layout-tidy.test.ts` 8 例：空分类隐藏、25 条阈值边界、二级计数、幂等、changeCount 语义）；
+- `home-diy-split.test.ts` 5 例守卫：备份弹窗必须被渲染且 8 依赖注入齐全、工具栏不许再把 230 行内联回去、工具栏规模 ≤900 行（防回退）；
+- 清理随之失效的导入（9 个 lucide 图标 + 剪贴板函数）。
+
+### 累计验证（第五轮后）
+
+`pnpm verify` **100% 通过**（vitest 126 文件 / **1581 通过 / 15 跳过**）；navsphere `tsc --noEmit` 0 错误；`next lint` 0 错误；`next build`（`.next-verify`）+ `check:bundle` 全绿（首页 638 / 预算 669 KB）。本轮新增测试：design-system +10、layout-tidy 8、home-diy-split 5；拆分后 `clipboard-honesty` / `diy-share-link` 两个源码守卫的扫描目标随之迁到 `home-diy-backup-dialog.tsx`（实现未动、仅路径）；`dialog-in-viewport` 几何断言前补等入场动画收尾（曾撞过渡帧 -26.7px 假红，settle 后实测 y=117.5）。本地全量 e2e **25/25 通过**；执行报告与 `docs/DESIGN-SYSTEM.md` 同步更新。

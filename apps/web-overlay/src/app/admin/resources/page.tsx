@@ -87,10 +87,10 @@ const ResourceGridSkeleton = () => (
   <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((index) => (
       <div key={index} className="bg-white rounded-lg border shadow-sm animate-pulse">
-        <div className="aspect-square bg-gray-200 rounded-t-lg" />
+        <div className="aspect-square bg-muted rounded-t-lg" />
         <div className="p-2 space-y-1">
-          <div className="h-2 w-3/4 bg-gray-200 rounded" />
-          <div className="h-2 w-1/2 bg-gray-200 rounded" />
+          <div className="h-2 w-3/4 bg-muted rounded" />
+          <div className="h-2 w-1/2 bg-muted rounded" />
         </div>
       </div>
     ))}
@@ -551,7 +551,7 @@ export default function ResourceManagement() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="relative">
-                <Icons.search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Icons.search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input aria-label="搜索资源"
                   placeholder="搜索资源..."
                   value={searchQuery}
@@ -632,7 +632,7 @@ export default function ResourceManagement() {
                       {selectedResources.has(resource.id) ? (
                         <Icons.checkSquare className="h-3 w-3 text-blue-600" />
                       ) : (
-                        <Icons.square className="h-3 w-3 text-gray-600" />
+                        <Icons.square className="h-3 w-3 text-muted-foreground" />
                       )}
                     </Button>
                   </div>
@@ -725,8 +725,8 @@ export default function ResourceManagement() {
                     <FormLabel>选择图片</FormLabel>
                     <FormControl>
                       <Card
-                        className={`border-2 border-dashed ${selectedImage ? 'border-blue-400' : 'border-gray-200'
-                          } hover:border-blue-400 transition-colors duration-200`}
+                        className={`border-2 border-dashed ${selectedImage ? 'border-primary' : 'border-border'
+                          } hover:border-primary transition-colors duration-200`}
                       >
                         <CardContent
                           className="flex flex-col items-center justify-center p-6 cursor-pointer"
@@ -769,12 +769,12 @@ export default function ResourceManagement() {
                             </div>
                           ) : (
                             <>
-                              <Icons.upload className="h-12 w-12 text-gray-400 mb-4" />
+                              <Icons.upload className="h-12 w-12 text-muted-foreground mb-4" />
                               <div className="space-y-2 text-center">
-                                <p className="text-sm text-gray-600">
+                                <p className="text-sm text-muted-foreground">
                                   点击或拖拽图片到此处
                                 </p>
-                                <p className="text-xs text-gray-400">
+                                <p className="text-xs text-muted-foreground">
                                   支持 JPG、PNG 格式，最大 5MB
                                 </p>
                               </div>
@@ -877,11 +877,11 @@ export default function ResourceManagement() {
             {/* 显示将要删除的资源列表 */}
             <div className="flex-1 overflow-hidden">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-medium text-gray-700">
+                <p className="text-sm font-medium text-foreground">
                   将要删除的资源 ({selectedResources.size} 个)：
                 </p>
                 {selectedResources.size > 12 && (
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     显示前 12 个，共 {selectedResources.size} 个
                   </p>
                 )}
@@ -916,17 +916,17 @@ export default function ResourceManagement() {
                       .filter(r => selectedResources.has(r.id))
                       .slice(0, 12)
                       .map((resource, index) => (
-                        <div key={index} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
+                        <div key={index} className="flex items-center gap-3 p-2 bg-muted/50 rounded-lg">
                           <img
                             src={resource.items[0].url}
                             alt="Resource"
                             className="w-12 h-12 object-cover rounded border flex-shrink-0"
                           />
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">
+                            <p className="text-sm font-medium text-foreground truncate">
                               {resource.items[0].url.split('/').pop()}
                             </p>
-                            <p className="text-xs text-gray-500 truncate">
+                            <p className="text-xs text-muted-foreground truncate">
                               {resource.items[0].url}
                             </p>
                           </div>
@@ -935,8 +935,8 @@ export default function ResourceManagement() {
                       ))}
 
                     {selectedResources.size > 12 && (
-                      <div className="text-center py-3 border-t border-gray-200">
-                        <p className="text-sm text-gray-500">
+                      <div className="text-center py-3 border-t border-border">
+                        <p className="text-sm text-muted-foreground">
                           还有 {selectedResources.size - 12} 个资源将被删除
                         </p>
                       </div>

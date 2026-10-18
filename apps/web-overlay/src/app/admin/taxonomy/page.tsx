@@ -348,7 +348,7 @@ export default function AdminTaxonomyPage() {
                   if (e.target.checked) setSelectedIds(filteredProposals.map((p) => p.id))
                   else setSelectedIds([])
                 }}
-                className="rounded border-gray-300"
+                className="rounded border-input"
               />
               <span>全选可见提案（共 {filteredProposals.length} 条）</span>
             </div>
@@ -360,8 +360,8 @@ export default function AdminTaxonomyPage() {
               const meta = KIND_META[proposal.kind] || {
                 label: proposal.kind,
                 icon: AlertCircle,
-                color: 'text-gray-600',
-                bg: 'bg-gray-50 border-gray-200',
+                color: 'text-muted-foreground',
+                bg: 'bg-muted/50 border-border',
               }
               const Icon = meta.icon
               const isSelected = selectedIds.includes(proposal.id)
@@ -379,7 +379,7 @@ export default function AdminTaxonomyPage() {
                       aria-label={`Select proposal ${proposal.id}`}
                       checked={isSelected}
                       onChange={() => toggleSelect(proposal.id)}
-                      className="mt-1 rounded border-gray-300"
+                      className="mt-1 rounded border-input"
                     />
 
                     <div className="space-y-1.5">
@@ -400,7 +400,7 @@ export default function AdminTaxonomyPage() {
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
                               proposal.status === 'applied'
                                 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                                : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                                : 'bg-muted text-muted-foreground'
                             }`}
                           >
                             {proposal.status === 'applied' ? <Check className="w-3 h-3" /> : <X className="w-3 h-3" />}

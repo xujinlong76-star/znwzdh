@@ -35,6 +35,42 @@ function sitePackManifest(name: string, stamp: string) {
   };
 }
 
+async function gotoAdmin(page: any, path: string) {
+  await page.goto(path);
+  await page.waitForLoadState('domcontentloaded');
+  // 管理页受保护时会重定向到登录页：走开放模式「一键进入」并在点击后等待回跳完成
+  if (page.url().includes('/auth/signin') || page.url().includes('/login')) {
+    const bypassBtn = page.getByRole('button', { name: /以管理员身份一键进入/ });
+    await expect(bypassBtn).toBeVisible({ timeout: 15_000 });
+    await bypassBtn.click();
+    await page.waitForURL(
+      (url: URL) =>
+        !url.pathname.startsWith('/auth/signin') && !url.pathname.startsWith('/login'),
+      { timeout: 30_000 },
+    );
+  }
+}
+
+/**
+ * 点击「立即安装」并等待成功 toast。
+ *
+ * 冷启动（CI 首次 dev 编译）存在 React 水合竞态：弹窗按钮已可见但事件处理器
+ * 尚未绑定，首击会静默丢失（点击本身不报错）。这里在未出现 toast 且弹窗仍在时
+ * 补击一次，消除这类环境性抖动。
+ */
+async function clickInstallAndAwaitToast(page: any, dialog: any, name: string) {
+  const toast = page.getByText(`成功安装「${name}」！`);
+  await dialog.getByRole('button', { name: '立即安装' }).click();
+  try {
+    await expect(toast).toBeVisible({ timeout: 10_000 });
+  } catch {
+    if (await dialog.isVisible().catch(() => false)) {
+      await dialog.getByRole('button', { name: '立即安装' }).click().catch(() => {});
+    }
+    await expect(toast).toBeVisible({ timeout: 15_000 });
+  }
+}
+
 test.describe('插件市场：浏览、安装与审核链路', () => {
   test('浏览 → 详情 → 一键安装网址包', async ({ page, request }) => {
     const stamp = Date.now().toString(36);
@@ -89,7 +125,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(page.getByText('没有匹配的插件，换个筛选条件试试')).toBeVisible();
 
     // 3. 管理员审核上架（开放模式无需登录）
-    await page.goto('/admin/plugins');
+    await gotoAdmin(page, '/admin/plugins');
     await expect(page.getByRole('heading', { name: '插件市场审核管理' })).toBeVisible();
     const card = page.locator('div.rounded-2xl').filter({ hasText: name }).first();
     await expect(card).toBeVisible();
@@ -98,6 +134,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
 
     // 4. 上架后：市场公开可见
     await page.goto('/marketplace');
+    await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
     await page.getByLabel('搜索插件').fill(name);
     await page.getByRole('button', { name: '搜索' }).click();
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
@@ -141,7 +178,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(page.getByRole('heading', { name: '投稿发布成功！' })).toBeVisible();
 
     // 2. 进入管理后台审核上架
-    await page.goto('/admin/plugins');
+    await gotoAdmin(page, '/admin/plugins');
     await expect(page.getByRole('heading', { name: '插件市场审核管理' })).toBeVisible();
     const pendingCard = page.locator('div.rounded-2xl').filter({ hasText: themeName }).first();
     await expect(pendingCard).toBeVisible();
@@ -151,8 +188,8 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     // 3. 市场浏览与卡片渲染
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
-    // 切换到「配色主题」分类 Tab
-    await page.getByRole('button', { name: /配色主题/ }).click();
+    // 切换到「主题」分类筛选
+    await page.getByLabel('按类型筛选').selectOption('theme');
     // 检索该插件
     await page.getByLabel('搜索插件').fill(themeName);
     await page.getByRole('button', { name: '搜索' }).click();

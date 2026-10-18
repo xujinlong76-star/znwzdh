@@ -37,11 +37,10 @@ auditConfig:
   ignoreGhsas:
     - GHSA-vfj7-8cjw-p6xm
 
-# zod 统一固定在 v3。
-# 原因：vendored 前端用 @hookform/resolvers@3 + react-hook-form，它只支持 zod v3；
-# 若让前端解析到 zod v4，类型检查会直接失败
-#   （Type error: ZodObject<...> is missing ... from type 'ZodType<any,any,$ZodTypeInternals>'）。
-# 后端本来也能跑 v3，所以整仓统一到 v3 最省心，避免同仓两个 zod 大版本共存。
+# zod 已全仓统一到 v4（2026-10-19 升级）：@hookform/resolvers 同步升到 5.x
+# （v5 的 peer 覆盖 zod ^3.25 || ^4），此前的 v3 override 与「前端只支持 v3」
+# 的约束随之解除，不再需要 overrides 钉版本。若未来再出现大版本分裂，
+# 在这里恢复 override 前先读 docs/UPGRADE-PROPOSAL-V3-2026-10-19.md 的实测记录。
 minimumReleaseAgeExclude:
   - '@next/env@15.5.28'
   - '@next/swc-darwin-arm64@15.5.28'
@@ -65,7 +64,6 @@ overrides:
   # 原钉 3.3.16 本身就在受影响区间（这条 overrides 从 apps/web/package.json 的
   # pnpm 字段搬进 workspace 配置、真正生效后，生产面 audit 立刻红灯）。
   nanoid@<4: 3.3.18
-  zod: ^3.25.76
   sharp: '>=0.35.5'
   undici: '>=7.29.1'
   next: 15.5.28

@@ -56,6 +56,7 @@ import {
 import { NavigationSubItem, NavigationItem } from '@/types/navigation'
 import { moveItem } from '@/lib/navigation-tree'
 import { describeDegrade } from '@/lib/degrade'
+import { Package } from 'lucide-react'
 
 interface SubCategory {
   id: string
@@ -243,6 +244,65 @@ export default function SiteListPage() {
       setIsLoading(false);
       setIsInitialLoading(false);
     }
+  };
+
+  // 一键将当前系统站点打包导出为标准 site-pack 插件清单
+  const handleExportAsPlugin = () => {
+    if (sites.length === 0) return
+    const categories: Array<{ title: string; description?: string }> = []
+    const packedSites: Array<{ url: string; title: string; description?: string; category?: string; subCategory?: string }> = []
+
+    for (const cat of navigationData) {
+      categories.push({ title: cat.title, description: cat.title })
+      for (const item of cat.items || []) {
+        packedSites.push({
+          url: item.href,
+          title: item.title,
+          description: item.description,
+          category: cat.title,
+        })
+      }
+      for (const sub of cat.subCategories || []) {
+        categories.push({ title: sub.title, description: `${cat.title} / ${sub.title}` })
+        for (const item of sub.items || []) {
+          packedSites.push({
+            url: item.href,
+            title: item.title,
+            description: item.description,
+            category: cat.title,
+            subCategory: sub.title,
+          })
+        }
+      }
+    }
+
+    const manifest = {
+      manifestVersion: 1,
+      kind: 'site-pack',
+      name: '系统站点全量包',
+      description: `包含 ${packedSites.length} 个站点的完整导航包，由 NavHub 管理后台一键导出。`,
+      icon: '🌐',
+      author: '系统管理员',
+      license: 'MIT',
+      version: '1.0.0',
+      tags: ['站点库', '导航包', '官方备份'],
+      payload: {
+        categories,
+        sites: packedSites,
+      },
+    }
+
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `navhub-plugin-sites-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    toast({
+      title: '导出成功',
+      description: `已将 ${packedSites.length} 个站点打包为标准插件清单（.json）`,
+    })
   };
 
   // 获取站点所属的分类
@@ -1162,6 +1222,17 @@ export default function SiteListPage() {
                 )}
               </Button>
             )}
+
+            <Button
+              variant="outline"
+              onClick={handleExportAsPlugin}
+              disabled={sites.length === 0}
+              className="border-sky-500/30 text-sky-600 dark:text-sky-400 hover:bg-sky-500/10"
+              title="将系统站点全量打包导出为插件市场规范的清单文件（.json）"
+            >
+              <Package className="mr-2 h-4 w-4" />
+              导出插件包
+            </Button>
 
             <Dialog open={showAddDialog} onOpenChange={(open) => {
               if (open) {

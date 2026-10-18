@@ -1,10 +1,18 @@
 'use client'
 
+import { useEffect } from 'react'
 import { SWRConfig } from 'swr'
 import { DensityProvider } from '@/components/density-provider'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { Toaster as SonnerToaster } from 'sonner'
+import { initThemeRuntime } from '@/lib/plugins/theme-runtime'
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    // 插件市场主题：客户端首屏恢复上次安装的 theme 插件（无活跃主题时为空操作）
+    initThemeRuntime()
+  }, [])
+
   return (
     <SWRConfig
       value={{
@@ -16,6 +24,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <TooltipProvider delayDuration={200} skipDelayDuration={100}>
         <DensityProvider>
           {children}
+          {/* 插件市场（components/plugins/** 与市场/后台页）使用 sonner 通知通道 */}
+          <SonnerToaster richColors position="top-center" />
         </DensityProvider>
       </TooltipProvider>
     </SWRConfig>

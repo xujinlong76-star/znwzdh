@@ -74,7 +74,7 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
         description: z.string(),
         url: z.string(),
         method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).default("GET"),
-        headers: z.record(z.string()).optional(),
+        headers: z.record(z.string(), z.string()).optional(),
         parameters: z.array(z.object({
           name: z.string(),
           type: z.enum(["string", "number", "boolean"]),
@@ -92,7 +92,7 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
         apiEndpoint: z.string().optional(),
         category: z.string().optional(),
       }).optional(),
-      openApiSpec: z.record(z.unknown()).optional(),
+      openApiSpec: z.record(z.string(), z.unknown()).optional(),
     }).safeParse(req.body ?? {});
 
     if (!body.success) {

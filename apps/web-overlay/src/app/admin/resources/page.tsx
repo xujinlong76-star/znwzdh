@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { useEffect, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import * as z from "zod"
+import { z } from "zod"
 import { Card, CardContent } from "@/registry/new-york/ui/card"
 import { Input } from "@/registry/new-york/ui/input"
 import { Button } from "@/registry/new-york/ui/button"

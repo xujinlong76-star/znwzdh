@@ -3,31 +3,17 @@
  *
  * 把「工具清单 + 工具调用」的协议层装配收敛到一处：
  *  - ListTools：按 toolCtx 的 scope 过滤（只读 token 看不到写工具，
- *    避免 AI 客户端列出一堆必然 403 的工具）；inputSchema 用 zod-to-json-schema 转换。
+ *    避免 AI 客户端列出一堆必然 403 的工具）；inputSchema 由 core 的
+ *    zodSchemaToJsonSchema 从 zod 契约生成（与 OpenAPI 文档同源）。
  *  - CallTool：查工具定义 -> 查处理器 -> 调用；异常统一转 isError 结果，
  *    不让单次调用失败炸掉传输连接。
  */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { zodToJsonSchema as zodToJsonSchemaImpl } from "zod-to-json-schema";
+import { zodSchemaToJsonSchema } from "@navhub/core";
 import type { AppContext } from "@navhub/api";
 import { TOOL_DEFS, type ToolContext } from "./tools.ts";
 import { createHandlers } from "./handlers.ts";
-
-/**
- * zod -> JSON Schema（MCP 用 JSON Schema 描述工具入参）。
- *
- * 全仓 zod 固定在 v3（原因见 pnpm-workspace.yaml），v3 没有内置的
- * toJSONSchema，因此使用官方社区实现 zod-to-json-schema。
- * 转换失败时退回宽松描述，保证工具仍可被发现与调用。
- */
-function zodToJsonSchema(schema: unknown): Record<string, unknown> {
-  try {
-    return zodToJsonSchemaImpl(schema as never, { $refStrategy: "none" }) as Record<string, unknown>;
-  } catch {
-    return { type: "object", additionalProperties: true };
-  }
-}
 
 export function createMcpServer(ctx: AppContext, toolCtx: ToolContext): Server {
   const handlers = createHandlers(ctx) as Record<string, (a: unknown, t: ToolContext) => Promise<unknown>>;
@@ -41,7 +27,7 @@ export function createMcpServer(ctx: AppContext, toolCtx: ToolContext): Server {
     tools: TOOL_DEFS.filter((t) => toolCtx.has(t.scope)).map((t) => ({
       name: t.name,
       description: t.description + (t.mutating ? "（写操作，会修改数据）" : ""),
-      inputSchema: zodToJsonSchema(t.inputSchema),
+      inputSchema: zodSchemaToJsonSchema(t.inputSchema),
     })),
   }));
 

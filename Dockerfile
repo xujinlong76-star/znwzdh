@@ -9,7 +9,7 @@
 # docker/docker-compose.yml（详见 docs/wiki/08-extensions-scripts-docker.md）。
 # 本文件仅保留兼容，不再演进；CI 不再引用它。
 
-FROM node:22-bookworm-slim AS base
+FROM node:24-bookworm-slim AS base
 WORKDIR /app
 
 RUN apt-get update && \

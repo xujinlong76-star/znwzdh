@@ -52,7 +52,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # 覆盖层比对在 check-web-overlay 作业里单独跑（全新检出需先 vendor，见那里）
@@ -94,7 +94,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # 只跑 PG 套件（SQLite 套件在 test-sqlite job 已覆盖）。
@@ -114,7 +114,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # apps/web 是 gitignore 的 vendored 底座：先重建（上游 + overlay 覆写），
@@ -138,7 +138,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # apps/web 是 gitignore 的生成物：全新检出只剩 12 个已跟踪文件，直接比对必然"缺失"
@@ -164,7 +164,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: node scripts/vendor-web.mjs
@@ -204,7 +204,7 @@ jobs:
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # 依赖高危漏洞阻断（此前为 continue-on-error 软门禁，已收紧）。

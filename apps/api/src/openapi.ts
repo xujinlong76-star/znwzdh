@@ -19,12 +19,12 @@
  */
 
 import type { RouteScope } from "./auth.ts";
-import { zodToJsonSchema } from "zod-to-json-schema";
 import {
   MCP_TOOL_DEFS,
   REST_SCHEMA_BINDINGS,
   SiteCreateBody,
   SiteUpdateBody,
+  zodSchemaToJsonSchema,
   type ZodSchemaLike,
 } from "@navhub/core";
 
@@ -95,16 +95,6 @@ function pathOf(url: string): { template: string; params: string[] } {
  * zod -> JSON Schema（OpenAPI 组件）
  * ------------------------------------------------------------------ */
 
-/** 转换失败时退回宽松 object：文档可以少写细节，但不能因为 schema 太新而 500 */
-function jsonSchemaOf(schema: ZodSchemaLike): Record<string, unknown> {
-  try {
-    const js = zodToJsonSchema(schema, { target: "openApi3", $refStrategy: "none" });
-    return (js ?? {}) as Record<string, unknown>;
-  } catch {
-    return { type: "object", additionalProperties: true };
-  }
-}
-
 const MCP_COMPONENT_PREFIX = "MCP_";
 
 function buildComponentSchemas(): {
@@ -112,8 +102,8 @@ function buildComponentSchemas(): {
   refOf: Map<ZodSchemaLike, string>;
 } {
   const schemas: Record<string, unknown> = {
-    SiteCreateBody: jsonSchemaOf(SiteCreateBody),
-    SiteUpdateBody: jsonSchemaOf(SiteUpdateBody),
+    SiteCreateBody: zodSchemaToJsonSchema(SiteCreateBody),
+    SiteUpdateBody: zodSchemaToJsonSchema(SiteUpdateBody),
   };
   const refOf = new Map<ZodSchemaLike, string>();
   refOf.set(SiteCreateBody as ZodSchemaLike, "SiteCreateBody");
@@ -122,7 +112,7 @@ function buildComponentSchemas(): {
   for (const def of MCP_TOOL_DEFS) {
     if (!def.inputSchema) continue;
     const key = MCP_COMPONENT_PREFIX + def.name;
-    schemas[key] = jsonSchemaOf(def.inputSchema);
+    schemas[key] = zodSchemaToJsonSchema(def.inputSchema);
     refOf.set(def.inputSchema, key);
   }
 
@@ -132,7 +122,7 @@ function buildComponentSchemas(): {
       const method = (parts[0] ?? "").toLowerCase();
       const pathPart = (parts[1] ?? "").replace(/^\/api\//, "").replace(/[^\w]+/g, "_").replace(/^_+|_+$/g, "");
       const key = "REST_" + method + "_" + pathPart + "_Body";
-      schemas[key] = jsonSchemaOf(item.schema);
+      schemas[key] = zodSchemaToJsonSchema(item.schema);
       refOf.set(item.schema, key);
     }
   }
@@ -142,7 +132,7 @@ function buildComponentSchemas(): {
 
 /** 把 zod 契约展开成 query 参数列表（GET 端点用） */
 function queryParametersOf(schema: ZodSchemaLike): Array<Record<string, unknown>> {
-  const js = jsonSchemaOf(schema);
+  const js = zodSchemaToJsonSchema(schema);
   const props = (js.properties ?? {}) as Record<string, Record<string, unknown>>;
   const required = new Set(Array.isArray(js.required) ? (js.required as string[]) : []);
   return Object.entries(props).map(([name, sub]) => ({

@@ -13,11 +13,15 @@ const isWin = process.platform === "win32";
 // 启动 Fastify API 中枢
 const apiProc = spawn(
   process.execPath,
-  ["apps/api/src/main.ts"],
+  ["src/main.ts"],
   {
-    cwd: rootDir,
+    cwd: resolve(rootDir, "apps/api"),
     stdio: "inherit",
-    env: { ...process.env },
+    env: {
+      ...process.env,
+      NAVHUB_SQLITE_PATH: resolve(rootDir, "data/navhub.db"),
+      NAVHUB_EMBEDDING_CACHE: resolve(rootDir, "data/models"),
+    },
   }
 );
 

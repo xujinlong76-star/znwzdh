@@ -19,6 +19,7 @@ import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { Globe, LayoutGrid, Palette, AlertTriangle, Check, Trash2, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { setActiveTheme, resetTheme } from '@/lib/plugins/theme-runtime'
+import { getIdentity } from '@/lib/identity'
 
 export interface PluginInstallModalProps {
   plugin: HubPluginItem | null
@@ -50,9 +51,10 @@ export function PluginInstallModal({
   const handleConfirm = async () => {
     setLoading(true)
     try {
+      const effectiveIdentity = identity || getIdentity()
       if (mode === 'install') {
         // 1. 服务端状态登记与 site-pack 增量写库
-        const res = await installPlugin(plugin.slug, identity)
+        const res = await installPlugin(plugin.slug, effectiveIdentity)
 
         // 2. 客户端工作台预设消费
         if (plugin.kind === 'workspace-preset' && onApplyPreset) {
@@ -77,7 +79,7 @@ export function PluginInstallModal({
         )
       } else {
         // 卸载
-        const res = await uninstallPlugin(plugin.slug, identity, removeSites)
+        const res = await uninstallPlugin(plugin.slug, effectiveIdentity, removeSites)
 
         // 若卸载的是正在生效的主题，回退系统默认
         if (plugin.kind === 'theme') {

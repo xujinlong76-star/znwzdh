@@ -73,3 +73,5 @@ apps/web/src/app/api/home/site/*
 .vendor-ns*.tgz
 .vendor-stage/
 
+.workbuddy/
+.workbuddy-ai/

@@ -40,7 +40,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   app.get(
     "/api/plugins",
-    { config: { scope: "public", cache: { maxAge: 60, etag: true } } },
+    { config: { scope: "public", cache: { maxAge: 0 } } },
     async (req, reply) => {
       const q = req.query as Record<string, string | undefined>;
       const kind = q.kind?.trim();

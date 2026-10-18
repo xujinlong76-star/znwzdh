@@ -32,7 +32,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     categoryId: z.string().optional(),
     tag: z.string().optional(),
     facets: z.union([
-      z.record(z.array(z.string()).max(200)),
+      z.record(z.string(), z.array(z.string()).max(200)),
       z.string().transform((str) => {
         try {
           const parsed = JSON.parse(str);

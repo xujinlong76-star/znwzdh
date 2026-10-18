@@ -26,7 +26,7 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       provider: z.string().min(1).default("github"),
       providerId: z.string().min(1),
       username: z.string().min(1).max(64),
-      email: z.string().email().nullable().optional(),
+      email: z.email().nullable().optional(),
       avatar: z.string().url().nullable().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }

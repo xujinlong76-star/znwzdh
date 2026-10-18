@@ -14,6 +14,7 @@
  */
 
 import { isNotFound, type DegradedHandler } from './degrade'
+import { getIdentity } from './identity'
 
 const BASE = '/api/hub'
 
@@ -634,14 +635,15 @@ export async function fetchInstalledPlugins(
   identity?: string,
   onDegraded?: DegradedHandler,
 ): Promise<{ items: HubPluginInstalledItem[]; total: number }> {
-  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return degrade<{ items: HubPluginInstalledItem[]; total: number }>(
     { items: [], total: 0 },
     () =>
       getJson<{ items: HubPluginInstalledItem[]; total: number }>(
         `/api/plugins/installed${qs}`,
         undefined,
-        identity ? anonHeaders(identity) : undefined,
+        effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
       ),
     onDegraded,
   )
@@ -652,12 +654,13 @@ export async function fetchPluginDetail(
   identity?: string,
   onDegraded?: DegradedHandler,
 ): Promise<{ plugin: HubPluginItem; summary: any } | null> {
-  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   try {
     return await getJson<{ plugin: HubPluginItem; summary: any }>(
       `/api/plugins/${encodeURIComponent(slug)}${qs}`,
       undefined,
-      identity ? anonHeaders(identity) : undefined,
+      effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
     )
   } catch (error) {
     if (!isNotFound(error)) notifyDegraded(onDegraded, error)
@@ -675,12 +678,13 @@ export async function publishPlugin(
   manifest: unknown,
   identity?: string,
 ): Promise<HubPluginItem> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   return sendJson<HubPluginItem>(
     '/api/plugins',
     'POST',
     { manifest },
     undefined,
-    identity ? anonHeaders(identity) : undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
 }
 
@@ -689,12 +693,13 @@ export async function importPlugin(
   explicitSlug?: string,
   identity?: string,
 ): Promise<{ success: boolean; plugin: HubPluginItem; alreadyExisted: boolean }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   return sendJson(
     '/api/plugins/import',
     'POST',
     { manifest, slug: explicitSlug },
     undefined,
-    identity ? anonHeaders(identity) : undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
 }
 
@@ -703,12 +708,13 @@ export async function updatePlugin(
   manifest: unknown,
   identity?: string,
 ): Promise<{ success: boolean; plugin: HubPluginItem }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}`,
     'PUT',
     { manifest },
     undefined,
-    identity ? anonHeaders(identity) : undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
 }
 
@@ -724,13 +730,14 @@ export async function installPlugin(
   slug: string,
   identity?: string,
 ): Promise<{ success: boolean; alreadyInstalled: boolean; plugin: HubPluginItem; applied: any }> {
-  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}/install${qs}`,
     'POST',
     {},
     undefined,
-    identity ? anonHeaders(identity) : undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
 }
 
@@ -739,8 +746,9 @@ export async function uninstallPlugin(
   identity?: string,
   removeSites = false,
 ): Promise<{ success: boolean; uninstalled: boolean; sitesRemoved: number }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   const qs = new URLSearchParams()
-  if (identity) qs.set('anonId', identity)
+  if (effectiveIdentity) qs.set('anonId', effectiveIdentity)
   if (removeSites) qs.set('removeSites', 'true')
   const qsStr = qs.toString() ? `?${qs.toString()}` : ''
   return sendJson(
@@ -748,7 +756,7 @@ export async function uninstallPlugin(
     'POST',
     { removeSites },
     undefined,
-    identity ? anonHeaders(identity) : undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
 }
 
@@ -756,13 +764,14 @@ export async function starPlugin(
   slug: string,
   identity?: string,
 ): Promise<{ success: boolean; starred: boolean; starCount: number }> {
-  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}/star${qs}`,
     'POST',
     {},
     undefined,
-    identity ? anonHeaders(identity) : undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
 }
 
@@ -770,13 +779,14 @@ export async function unstarPlugin(
   slug: string,
   identity?: string,
 ): Promise<{ success: boolean; starred: boolean; starCount: number }> {
-  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}/star${qs}`,
     'DELETE',
     undefined,
     undefined,
-    identity ? anonHeaders(identity) : undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
 }
 
@@ -785,14 +795,13 @@ export async function reportPlugin(
   reason: string,
   identity?: string,
 ): Promise<{ success: boolean; reportCount: number }> {
-  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}/report${qs}`,
     'POST',
     { reason },
     undefined,
-    identity ? anonHeaders(identity) : undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
 }
-
-

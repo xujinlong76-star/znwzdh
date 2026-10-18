@@ -55,7 +55,7 @@ export const facetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
 
     const body = z
       .object({
-        facets: z.record(z.array(z.string()).max(200)),
+        facets: z.record(z.string(), z.array(z.string()).max(200)),
       })
       .safeParse(req.body);
 

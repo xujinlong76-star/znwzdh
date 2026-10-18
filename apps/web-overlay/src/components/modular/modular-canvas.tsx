@@ -22,7 +22,8 @@ import {
   Trash2,
   Undo2,
   Redo2,
-  Palette
+  Palette,
+  Package
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
@@ -190,6 +191,42 @@ export function ModularCanvas() {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
     setExportNotice('全部工作台看板配置已导出为 JSON')
     setTimeout(() => setExportNotice(null), 2500)
+  }
+
+  // 一键导出为工作台预设插件清单 (workspace-preset)
+  const handleExportAsPlugin = () => {
+    const manifest = {
+      manifestVersion: 1,
+      kind: 'workspace-preset',
+      name: currentBoard ? `${currentBoard.name} 看板预设` : '我的工作台预设',
+      description: `包含 ${boards.length} 个看板的工作台预设配置，由 NavHub 工作台一键导出。`,
+      icon: '🛠️',
+      author: '社区用户',
+      license: 'MIT',
+      version: '1.0.0',
+      tags: ['工作台', '预设', '看板'],
+      payload: {
+        boards: boards.map((b) => ({
+          name: b.name,
+          widgets: b.widgets.map((w) => ({
+            type: w.type,
+            customTitle: w.customTitle,
+            colSpan: w.colSpan,
+            rowSpan: w.rowSpan,
+            config: w.config,
+          })),
+        })),
+      },
+    }
+    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `navhub-plugin-preset-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setExportNotice('已将当前工作台看板打包为标准插件清单（.json），可直接用于离线导入或市场投稿！')
+    setTimeout(() => setExportNotice(null), 3000)
   }
 
   // 导入 JSON
@@ -432,6 +469,17 @@ export function ModularCanvas() {
                 title="重置为默认模版"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                onClick={handleExportAsPlugin}
+                title="导出为插件市场规范的工作台预设清单（.json）"
+              >
+                <Package className="w-3.5 h-3.5" />
+                <span>导出插件</span>
               </Button>
 
               <Button

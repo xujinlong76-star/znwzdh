@@ -5,7 +5,7 @@
 #
 # 依赖存储 API，所以用 standard profile（与 api 服务同网络）。
 # 基础镜像可覆盖（同 Dockerfile.api 的说明）
-ARG NODE_IMAGE=node:22-bookworm-slim
+ARG NODE_IMAGE=node:24-bookworm-slim
 FROM ${NODE_IMAGE}
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl tar \

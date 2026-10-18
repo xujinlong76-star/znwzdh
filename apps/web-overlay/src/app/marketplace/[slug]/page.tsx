@@ -23,6 +23,7 @@ import {
 import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX } from '@/lib/plugins/plugin-manifest'
 import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
 import { PluginReportModal } from '@/components/plugins/plugin-report-modal'
+import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { useModularLayout } from '@/lib/modular/use-modular-layout'
@@ -64,6 +65,11 @@ export default function PluginDetailPage({
   const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
+  const [identity, setIdentity] = useState<string>('')
+
+  useEffect(() => {
+    setIdentity(getIdentity())
+  }, [])
 
   // 交互弹窗
   const [installModalOpen, setInstallModalOpen] = useState(false)
@@ -88,7 +94,8 @@ export default function PluginDetailPage({
     setLoading(true)
     setNotice(null)
     try {
-      const res = await fetchPluginDetail(slug, undefined, (err) =>
+      const activeIdentity = identity || getIdentity()
+      const res = await fetchPluginDetail(slug, activeIdentity, (err) =>
         setNotice(describeDegrade(err, '插件详情'))
       )
       if (res && res.plugin) {
@@ -672,6 +679,7 @@ export default function PluginDetailPage({
         {/* 安装 / 卸载确认弹窗 */}
         <PluginInstallModal
           plugin={plugin}
+          identity={identity}
           mode={modalMode}
           open={installModalOpen}
           onOpenChange={setInstallModalOpen}

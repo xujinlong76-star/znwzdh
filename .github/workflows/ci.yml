@@ -12,7 +12,7 @@
 #       设成 DATABASE_URL 是没人读的死变量——PG 测试会整套静默 skip，假绿灯）
 #    - pg-dialect 跨方言 E2E（12 项断言）+ pg-check.mts 标准模式 12 项基准检验
 # 3. test-web（前端门禁，升级改造方案 P1-2）:
-#    - vendor 重建 apps/web 后：tsc --noEmit + next lint + next build
+#    - vendor 重建 apps/web 后：tsc --noEmit + eslint（flat 配置）+ next build
 #    - 覆盖 NavHub 自研的 166 个 overlay 文件（此前零门禁）
 # 4. check-web-overlay:
 #    - vendor 重建 apps/web 后与 overlay 字节级比对（全新检出的前提，见作业内注释）
@@ -126,7 +126,9 @@ jobs:
       # 现状基线（2026-10-16 本地实测）：tsc 0 错误、lint 0 错误 259 警告
       # （警告不卡门禁）、next build 通过——故直接按硬门禁启用。
       - run: pnpm --filter navsphere exec tsc --noEmit
-      - run: pnpm --filter navsphere exec next lint
+      # Next 16 移除了 `next lint`（eslint-config-next@16 改为扁平配置 + ESLint CLI）。
+      # 基线（2026-10-16 本地实测，Next 15 时代）：0 错误 259 警告（警告不卡门禁）。
+      - run: pnpm --filter navsphere exec eslint .
       - run: pnpm --filter navsphere build
 
   check-web-overlay:

@@ -42,16 +42,16 @@ auditConfig:
 # 的约束随之解除，不再需要 overrides 钉版本。若未来再出现大版本分裂，
 # 在这里恢复 override 前先读 docs/UPGRADE-PROPOSAL-V3-2026-10-19.md 的实测记录。
 minimumReleaseAgeExclude:
-  - '@next/env@15.5.28'
-  - '@next/swc-darwin-arm64@15.5.28'
-  - '@next/swc-darwin-x64@15.5.28'
-  - '@next/swc-linux-arm64-gnu@15.5.28'
-  - '@next/swc-linux-arm64-musl@15.5.28'
-  - '@next/swc-linux-x64-gnu@15.5.28'
-  - '@next/swc-linux-x64-musl@15.5.28'
-  - '@next/swc-win32-arm64-msvc@15.5.28'
-  - '@next/swc-win32-x64-msvc@15.5.28'
-  - next@15.5.28
+  - '@next/env@16.4.2'
+  - '@next/swc-darwin-arm64@16.4.2'
+  - '@next/swc-darwin-x64@16.4.2'
+  - '@next/swc-linux-arm64-gnu@16.4.2'
+  - '@next/swc-linux-arm64-musl@16.4.2'
+  - '@next/swc-linux-x64-gnu@16.4.2'
+  - '@next/swc-linux-x64-musl@16.4.2'
+  - '@next/swc-win32-arm64-msvc@16.4.2'
+  - '@next/swc-win32-x64-msvc@16.4.2'
+  - next@16.4.2
 
 overrides:
   # 安全钉版本：原写在 apps/web/package.json 的 pnpm 字段里，但 pnpm 11 起不再读
@@ -66,7 +66,7 @@ overrides:
   nanoid@<4: 3.3.18
   sharp: '>=0.35.5'
   undici: '>=7.29.1'
-  next: 15.5.28
+  next: 16.4.2
   tinypool: '>=2.1.2'
   postcss: '>=8.4.31'
   ws: '>=8.21.0'

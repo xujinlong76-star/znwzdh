@@ -112,9 +112,28 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}`));
     await expect(page.getByRole('heading', { level: 1 }).first()).toContainText(name);
 
-    // 一键安装：确认弹窗 → 立即安装（含冷启动水合补击）
-    await page.getByRole('button', { name: '立即安装该插件' }).click();
+    // 分享深链 ?install=1（D4）：直接落地详情页即自动弹出安装确认
+    await page.goto(`/marketplace/${slug}?install=1`);
+    await expect(page.getByRole('heading', { level: 1 }).first()).toContainText(name);
     const dialog = page.getByRole('dialog');
+    try {
+      await expect(dialog).toBeVisible({ timeout: 10_000 });
+    } catch {
+      // 冷启动水合 / 首屏取数竞态未自动弹窗时：轮询补击「立即安装该插件」直至弹窗出现
+      await expect
+        .poll(
+          async () => {
+            if (await dialog.isVisible().catch(() => false)) return true;
+            await page
+              .getByRole('button', { name: '立即安装该插件' })
+              .click({ timeout: 3_000 })
+              .catch(() => {});
+            return dialog.isVisible().catch(() => false);
+          },
+          { timeout: 30_000, intervals: [1_000] },
+        )
+        .toBe(true);
+    }
     await expect(dialog.getByText(`确认安装「${name}」`)).toBeVisible();
     await clickInstallAndAwaitToast(page, dialog, name);
 

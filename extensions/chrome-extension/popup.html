@@ -155,6 +155,51 @@
       text-decoration: none;
     }
     .footer-links a:hover { text-decoration: underline; }
+    .plugin-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      margin-bottom: 6px;
+      text-decoration: none;
+      color: inherit;
+      transition: transform 0.15s, border-color 0.15s;
+    }
+    .plugin-item:hover {
+      border-color: var(--primary);
+      transform: translateY(-1px);
+    }
+    .plugin-icon {
+      font-size: 16px;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(99, 102, 241, 0.1);
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .plugin-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .plugin-title {
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .plugin-meta {
+      font-size: 10px;
+      color: var(--muted);
+      display: flex;
+      gap: 6px;
+    }
   </style>
 </head>
 <body>
@@ -174,13 +219,21 @@
     <!-- 动态结果渲染区 -->
   </div>
 
+  <div id="featured-plugins" style="margin-bottom: 12px; display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+      <span style="font-size: 11px; font-weight: 600; color: var(--muted);">🔥 热门精选插件</span>
+      <a id="more-plugins-link" href="http://localhost:3000/marketplace" target="_blank" style="font-size: 10px; color: var(--primary); text-decoration: none;">全部市场 →</a>
+    </div>
+    <div id="plugin-list"></div>
+  </div>
+
   <div class="save-card">
     <h4>📥 一键收录当前网页</h4>
     <p id="current-tab-info">正在读取当前标签页...</p>
     <button class="btn" id="save-btn">AI 富化并收录到 NavHub</button>
   </div>
 
-    <div class="save-card" style="border-style: solid; background: rgba(30, 41, 59, 0.6); padding: 8px; margin-bottom: 12px;">
+  <div class="save-card" style="border-style: solid; background: rgba(30, 41, 59, 0.6); padding: 8px; margin-bottom: 12px;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
       <h4 style="font-size: 11px; color: var(--muted); margin: 0;">🔑 API 鉴权 Token (用于收录权限)</h4>
     </div>
@@ -189,12 +242,16 @@
       <h4 style="font-size: 11px; color: var(--muted); margin: 0;">🌐 中枢 API 地址（与地址栏搜索共用）</h4>
     </div>
     <input type="text" id="api-input" placeholder="http://127.0.0.1:8787" style="width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; color: var(--text); font-size: 11px; outline: none;" />
+    <div style="display: flex; justify-content: space-between; align-items: center; margin: 8px 0 4px;">
+      <h4 style="font-size: 11px; color: var(--muted); margin: 0;">💻 Web 站点地址（点击直达与市场）</h4>
+    </div>
+    <input type="text" id="web-input" placeholder="http://localhost:3000" style="width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; color: var(--text); font-size: 11px; outline: none;" />
   </div>
 
   <div class="footer-links">
     <span>💡 地址栏输入 <b>nh + Tab</b> 秒搜</span>
-    <a href="http://localhost:3000" target="_blank">打开完整网站 →</a>
-    <a href="http://localhost:3000/marketplace" target="_blank">🧩 插件市场</a>
+    <a id="web-home-link" href="http://localhost:3000" target="_blank">打开完整网站 →</a>
+    <a id="web-market-link" href="http://localhost:3000/marketplace" target="_blank">🧩 插件市场</a>
   </div>
 
   <script src="popup.js"></script>

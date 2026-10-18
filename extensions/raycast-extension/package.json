@@ -13,6 +13,13 @@
       "subtitle": "NavHub 智能检索",
       "description": "全局极速搜索 NavHub 站点、平替与动作",
       "mode": "view"
+    },
+    {
+      "name": "browse-plugins",
+      "title": "Browse NavHub Plugins",
+      "subtitle": "插件市场与生态扩展",
+      "description": "全局浏览、筛选与一键安装 NavHub 精选插件包、主题与工作台预设",
+      "mode": "view"
     }
   ],
   "preferences": [

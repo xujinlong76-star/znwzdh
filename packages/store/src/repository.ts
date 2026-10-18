@@ -836,6 +836,14 @@ export class Repository {
     return pluginsRepo.listPluginInstallsByIdentity(this, identity);
   }
 
+  async getPluginInstalledManifest(pluginId: string, identity: string): Promise<pluginsRepo.PluginManifest | null> {
+    return pluginsRepo.getPluginInstalledManifest(this, pluginId, identity);
+  }
+
+  async getPluginTelemetry(): Promise<pluginsRepo.PluginTelemetryMetrics> {
+    return pluginsRepo.getPluginTelemetry(this);
+  }
+
 
   /* ------------------------- 底层执行 ------------------------- */
 

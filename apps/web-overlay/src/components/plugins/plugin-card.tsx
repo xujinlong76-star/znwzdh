@@ -9,6 +9,7 @@ import {
   installPlugin,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
+import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { Badge } from '@/components/ui/badge'
 import {
   Globe,
@@ -17,6 +18,7 @@ import {
   Star,
   Download,
   Check,
+  ArrowUpCircle,
   ExternalLink,
   Layers,
   Sparkles,
@@ -42,6 +44,13 @@ export function PluginCard({
   const [starLoading, setStarLoading] = useState(false)
   const [installed, setInstalled] = useState(Boolean(plugin.installed))
   const [installing, setInstalling] = useState(false)
+
+  // D1 更新链路：本地升级成功后不等父级刷新即切换为「已安装」
+  const [upgradedTo, setUpgradedTo] = useState<string | null>(null)
+  const needsUpdate =
+    installed &&
+    upgradedTo !== plugin.version &&
+    resolveInstallAction(plugin.installedVersion, plugin.version) === 'update'
 
   const handleStarToggle = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -95,11 +104,20 @@ export function PluginCard({
     setInstalling(true)
     try {
       const res = await installPlugin(plugin.slug, identity)
+      const wasUpdate = needsUpdate
       setInstalled(true)
-      toast.success(res.alreadyInstalled ? '插件已处于安装状态' : '插件安装成功！')
+      if (wasUpdate) setUpgradedTo(plugin.version)
+      toast.success(
+        wasUpdate
+          ? `已更新到 v${plugin.version}！`
+          : res.alreadyInstalled
+            ? '插件已处于安装状态'
+            : '插件安装成功！'
+      )
       onStatusChange?.({
         ...plugin,
         installed: true,
+        installedVersion: plugin.version,
         installCount: res.plugin?.installCount ?? plugin.installCount + (res.alreadyInstalled ? 0 : 1),
       })
     } catch (err) {
@@ -264,12 +282,19 @@ export function PluginCard({
             disabled={installing}
             className={cn(
               'inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg transition-all shadow-2xs',
-              installed
-                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20'
-                : 'bg-primary text-primary-foreground hover:opacity-90 active:scale-95'
+              needsUpdate
+                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/25'
+                : installed
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20'
+                  : 'bg-primary text-primary-foreground hover:opacity-90 active:scale-95'
             )}
           >
-            {installed ? (
+            {needsUpdate ? (
+              <>
+                <ArrowUpCircle className="w-3 h-3" />
+                <span>{installing ? '更新中…' : `更新到 v${plugin.version}`}</span>
+              </>
+            ) : installed ? (
               <>
                 <Check className="w-3 h-3" />
                 <span>已安装</span>

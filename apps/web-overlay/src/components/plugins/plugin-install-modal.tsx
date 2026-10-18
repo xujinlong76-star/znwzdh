@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
+import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { Globe, LayoutGrid, Palette, AlertTriangle, Check, Trash2, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { setActiveTheme, resetTheme } from '@/lib/plugins/theme-runtime'
@@ -47,6 +48,10 @@ export function PluginInstallModal({
   if (!plugin) return null
 
   const summary = plugin.summary
+  // D1 更新链路：已安装且市场版本更高时，本弹窗以「更新」语义呈现
+  // （执行通道不变——重装即升级，服务端幂等增量，只增不删）
+  const isUpdate =
+    mode === 'install' && resolveInstallAction(plugin.installedVersion, plugin.version) === 'update'
 
   const handleConfirm = async () => {
     setLoading(true)
@@ -73,9 +78,11 @@ export function PluginInstallModal({
         }
 
         toast.success(
-          res.alreadyInstalled
-            ? '插件已处于安装状态'
-            : `成功安装「${plugin.name}」！`
+          isUpdate
+            ? `已更新到 v${plugin.version}！`
+            : res.alreadyInstalled
+              ? '插件已处于安装状态'
+              : `成功安装「${plugin.name}」！`
         )
       } else {
         // 卸载
@@ -116,7 +123,9 @@ export function PluginInstallModal({
             <span className="text-xs font-mono text-muted-foreground">v{plugin.version}</span>
           </div>
           <DialogTitle className="text-lg font-semibold pt-1">
-            {mode === 'install' ? `确认安装「${plugin.name}」` : `确认卸载「${plugin.name}」`}
+            {mode === 'install'
+              ? `确认${isUpdate ? '更新' : '安装'}「${plugin.name}」`
+              : `确认卸载「${plugin.name}」`}
           </DialogTitle>
           <DialogDescription className="text-xs leading-relaxed text-muted-foreground">
             {mode === 'install'
@@ -241,22 +250,22 @@ export function PluginInstallModal({
             onClick={handleConfirm}
             disabled={loading}
             className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg transition-all ${
-              mode === 'install'
-                ? 'bg-primary text-primary-foreground hover:opacity-90'
-                : 'bg-destructive text-destructive-foreground hover:opacity-90'
+              mode === 'uninstall'
+                ? 'bg-destructive text-destructive-foreground hover:opacity-90'
+                : 'bg-primary text-primary-foreground hover:opacity-90'
             }`}
           >
             {loading ? (
               <span>处理中…</span>
-            ) : mode === 'install' ? (
-              <>
-                <Download className="w-3.5 h-3.5" />
-                <span>立即安装</span>
-              </>
-            ) : (
+            ) : mode === 'uninstall' ? (
               <>
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>确认卸载</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5" />
+                <span>{isUpdate ? '立即平滑升级' : '立即安装'}</span>
               </>
             )}
           </button>

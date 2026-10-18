@@ -684,3 +684,241 @@ export function comparePluginVersions(a: string, b: string): number {
   }
   return 0
 }
+
+/* ------------------------------------------------------------------ *
+ * 版本升级差异对比 (Plugin Version Upgrade Diff)
+ * ------------------------------------------------------------------ */
+
+export interface PluginDiffSiteChange {
+  url: string
+  title: string
+  category?: string
+  status: 'added' | 'removed' | 'modified' | 'unchanged'
+  changes?: string[]
+}
+
+export interface PluginDiffThemeTokenChange {
+  token: string
+  oldValue?: string
+  newValue?: string
+  status: 'added' | 'removed' | 'modified'
+}
+
+export interface PluginDiffResult {
+  kind: PluginKind
+  versionFrom: string
+  versionTo: string
+  versionCompared: number
+  hasChanges: boolean
+  nameChanged: boolean
+  descriptionChanged: boolean
+  oldName?: string
+  newName?: string
+  // site-pack
+  siteChanges?: PluginDiffSiteChange[]
+  sitesAddedCount: number
+  sitesRemovedCount: number
+  sitesModifiedCount: number
+  sitesUnchangedCount: number
+  categoriesAdded: string[]
+  // workspace-preset
+  boardsAdded: string[]
+  boardsRemoved: string[]
+  widgetsAddedCount: number
+  widgetsRemovedCount: number
+  // theme
+  accentChanged: boolean
+  oldAccent?: ThemeAccent
+  newAccent?: ThemeAccent
+  tokenChanges?: PluginDiffThemeTokenChange[]
+  tokensAddedCount: number
+  tokensRemovedCount: number
+  tokensModifiedCount: number
+}
+
+/** 对比两个插件清单，计算升级变更差异 */
+export function diffPluginManifests(base: PluginManifest, target: PluginManifest): PluginDiffResult {
+  const versionCompared = comparePluginVersions(target.version, base.version)
+  const nameChanged = base.name !== target.name
+  const descriptionChanged = base.description !== target.description
+  const kind = target.kind
+
+  const result: PluginDiffResult = {
+    kind,
+    versionFrom: base.version,
+    versionTo: target.version,
+    versionCompared,
+    hasChanges: false,
+    nameChanged,
+    descriptionChanged,
+    oldName: nameChanged ? base.name : undefined,
+    newName: nameChanged ? target.name : undefined,
+    sitesAddedCount: 0,
+    sitesRemovedCount: 0,
+    sitesModifiedCount: 0,
+    sitesUnchangedCount: 0,
+    categoriesAdded: [],
+    boardsAdded: [],
+    boardsRemoved: [],
+    widgetsAddedCount: 0,
+    widgetsRemovedCount: 0,
+    accentChanged: false,
+    tokensAddedCount: 0,
+    tokensRemovedCount: 0,
+    tokensModifiedCount: 0,
+  }
+
+  if (nameChanged || descriptionChanged || base.version !== target.version || base.kind !== target.kind) {
+    result.hasChanges = true
+  }
+
+  if (kind === 'site-pack' && base.kind === 'site-pack') {
+    const basePayload = base.payload as SitePackPayload
+    const targetPayload = target.payload as SitePackPayload
+    const siteChanges: PluginDiffSiteChange[] = []
+
+    const baseMap = new Map<string, SitePackSite>()
+    for (const site of basePayload.sites) {
+      baseMap.set(normalizePluginUrlKey(site.url), site)
+    }
+
+    const targetMap = new Map<string, SitePackSite>()
+    for (const site of targetPayload.sites) {
+      targetMap.set(normalizePluginUrlKey(site.url), site)
+    }
+
+    // 检查 target 中的站点（新增 或 变更/未变）
+    for (const [key, tSite] of targetMap.entries()) {
+      const bSite = baseMap.get(key)
+      if (!bSite) {
+        siteChanges.push({
+          url: tSite.url,
+          title: tSite.title,
+          category: tSite.category,
+          status: 'added',
+        })
+        result.sitesAddedCount++
+        result.hasChanges = true
+      } else {
+        const changes: string[] = []
+        if (bSite.title !== tSite.title) changes.push(`标题变更为「${tSite.title}」`)
+        if ((bSite.category ?? '') !== (tSite.category ?? '')) changes.push(`分类变更为「${tSite.category ?? '无'}」`)
+        if ((bSite.description ?? '') !== (tSite.description ?? '')) changes.push('描述更新')
+        if (JSON.stringify(bSite.tags ?? []) !== JSON.stringify(tSite.tags ?? [])) changes.push('标签变动')
+
+        if (changes.length > 0) {
+          siteChanges.push({
+            url: tSite.url,
+            title: tSite.title,
+            category: tSite.category,
+            status: 'modified',
+            changes,
+          })
+          result.sitesModifiedCount++
+          result.hasChanges = true
+        } else {
+          siteChanges.push({
+            url: tSite.url,
+            title: tSite.title,
+            category: tSite.category,
+            status: 'unchanged',
+          })
+          result.sitesUnchangedCount++
+        }
+      }
+    }
+
+    // 检查 base 中被移除的站点
+    for (const [key, bSite] of baseMap.entries()) {
+      if (!targetMap.has(key)) {
+        siteChanges.push({
+          url: bSite.url,
+          title: bSite.title,
+          category: bSite.category,
+          status: 'removed',
+        })
+        result.sitesRemovedCount++
+        result.hasChanges = true
+      }
+    }
+
+    // 分类变更
+    const baseCats = new Set((basePayload.categories ?? []).map((c) => c.title.toLowerCase()))
+    for (const cat of targetPayload.categories ?? []) {
+      if (!baseCats.has(cat.title.toLowerCase())) {
+        result.categoriesAdded.push(cat.title)
+        result.hasChanges = true
+      }
+    }
+
+    result.siteChanges = siteChanges
+  } else if (kind === 'workspace-preset' && base.kind === 'workspace-preset') {
+    const basePayload = base.payload as WorkspacePresetPayload
+    const targetPayload = target.payload as WorkspacePresetPayload
+
+    const baseBoardNames = new Set(basePayload.boards.map((b) => b.name))
+    const targetBoardNames = new Set(targetPayload.boards.map((b) => b.name))
+
+    for (const b of targetPayload.boards) {
+      if (!baseBoardNames.has(b.name)) {
+        result.boardsAdded.push(b.name)
+        result.hasChanges = true
+      }
+    }
+    for (const b of basePayload.boards) {
+      if (!targetBoardNames.has(b.name)) {
+        result.boardsRemoved.push(b.name)
+        result.hasChanges = true
+      }
+    }
+
+    const baseWidgetCount = basePayload.boards.reduce((acc, b) => acc + b.widgets.length, 0)
+    const targetWidgetCount = targetPayload.boards.reduce((acc, b) => acc + b.widgets.length, 0)
+    if (targetWidgetCount > baseWidgetCount) {
+      result.widgetsAddedCount = targetWidgetCount - baseWidgetCount
+      result.hasChanges = true
+    } else if (targetWidgetCount < baseWidgetCount) {
+      result.widgetsRemovedCount = baseWidgetCount - targetWidgetCount
+      result.hasChanges = true
+    }
+  } else if (kind === 'theme' && base.kind === 'theme') {
+    const basePayload = base.payload as ThemePayload
+    const targetPayload = target.payload as ThemePayload
+
+    if (basePayload.accent !== targetPayload.accent) {
+      result.accentChanged = true
+      result.oldAccent = basePayload.accent
+      result.newAccent = targetPayload.accent
+      result.hasChanges = true
+    }
+
+    const baseTokens = basePayload.tokens ?? {}
+    const targetTokens = targetPayload.tokens ?? {}
+    const tokenChanges: PluginDiffThemeTokenChange[] = []
+
+    for (const [key, tVal] of Object.entries(targetTokens)) {
+      if (!(key in baseTokens)) {
+        tokenChanges.push({ token: key, newValue: tVal, status: 'added' })
+        result.tokensAddedCount++
+        result.hasChanges = true
+      } else if (baseTokens[key] !== tVal) {
+        tokenChanges.push({ token: key, oldValue: baseTokens[key], newValue: tVal, status: 'modified' })
+        result.tokensModifiedCount++
+        result.hasChanges = true
+      }
+    }
+
+    for (const [key, bVal] of Object.entries(baseTokens)) {
+      if (!(key in targetTokens)) {
+        tokenChanges.push({ token: key, oldValue: bVal, status: 'removed' })
+        result.tokensRemovedCount++
+        result.hasChanges = true
+      }
+    }
+
+    result.tokenChanges = tokenChanges
+  }
+
+  return result
+}
+

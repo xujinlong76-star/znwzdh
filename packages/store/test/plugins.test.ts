@@ -272,5 +272,21 @@ describe("星标 / 举报 / 安装状态", () => {
     expect(install?.meta).toBeTruthy();
     const none = await repo.getPluginInstall(plugin.id, "visitor-404");
     expect(none).toBeNull();
+
+    const snapshot = await repo.getPluginInstalledManifest(plugin.id, "visitor-3");
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.name).toBe("回读演示");
+    expect(snapshot?.version).toBe("1.0.0");
+  });
+
+  it("getPluginTelemetry 正确统计大盘指标与 TOP 安装插件", async () => {
+    const telemetry = await repo.getPluginTelemetry();
+    expect(telemetry.totalPlugins).toBeGreaterThan(0);
+    expect(telemetry.publishedCount).toBeGreaterThan(0);
+    expect(telemetry.activeInstalls).toBeGreaterThan(0);
+    expect(telemetry.kindDistribution.sitePack).toBeGreaterThan(0);
+    expect(Array.isArray(telemetry.topInstalled)).toBe(true);
+    expect(telemetry.topInstalled.length).toBeGreaterThan(0);
   });
 });
+

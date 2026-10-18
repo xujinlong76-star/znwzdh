@@ -11,6 +11,7 @@
  */
 
 const DEFAULT_API_BASE = "http://127.0.0.1:8787";
+const DEFAULT_WEB_BASE = "http://localhost:3000";
 
 async function getApiBase() {
   try {
@@ -18,6 +19,15 @@ async function getApiBase() {
     return (store.apiUrl || DEFAULT_API_BASE).replace(/\/$/, "");
   } catch {
     return DEFAULT_API_BASE;
+  }
+}
+
+async function getWebBase() {
+  try {
+    const store = await chrome.storage.local.get(["webUrl"]);
+    return (store.webUrl || DEFAULT_WEB_BASE).replace(/\/$/, "");
+  } catch {
+    return DEFAULT_WEB_BASE;
   }
 }
 
@@ -63,16 +73,30 @@ function emptyHint(text) {
 
 const tokenInput = document.getElementById("token-input");
 const apiInput = document.getElementById("api-input");
+const webInput = document.getElementById("web-input");
 
 const searchInput = document.getElementById("search-input");
 const searchResults = document.getElementById("search-results");
+const featuredPlugins = document.getElementById("featured-plugins");
+const pluginList = document.getElementById("plugin-list");
+const morePluginsLink = document.getElementById("more-plugins-link");
+const webHomeLink = document.getElementById("web-home-link");
+const webMarketLink = document.getElementById("web-market-link");
+
 const currentTabInfo = document.getElementById("current-tab-info");
 const saveBtn = document.getElementById("save-btn");
 const statusIndicator = document.getElementById("status-indicator");
 
 let currentTab = null;
 
-// 0. 设置项回填（token + API 地址）
+function updateNavLinks(webBase) {
+  const base = (webBase || DEFAULT_WEB_BASE).replace(/\/$/, "");
+  if (webHomeLink) webHomeLink.href = base;
+  if (webMarketLink) webMarketLink.href = `${base}/marketplace`;
+  if (morePluginsLink) morePluginsLink.href = `${base}/marketplace`;
+}
+
+// 0. 设置项回填（token + API 地址 + Web 站点地址）
 (async () => {
   if (tokenInput) {
     tokenInput.value = await getToken();
@@ -85,6 +109,18 @@ let currentTab = null;
     apiInput.addEventListener("input", (e) => {
       setStore({ apiUrl: e.target.value.trim() });
     });
+  }
+  if (webInput) {
+    const initialWeb = await getWebBase();
+    webInput.value = initialWeb;
+    updateNavLinks(initialWeb);
+    webInput.addEventListener("input", async (e) => {
+      const val = e.target.value.trim();
+      await setStore({ webUrl: val });
+      updateNavLinks(val || DEFAULT_WEB_BASE);
+    });
+  } else {
+    updateNavLinks(await getWebBase());
   }
 })();
 
@@ -130,7 +166,14 @@ searchInput.addEventListener("input", (e) => {
   const q = e.target.value.trim();
   if (!q) {
     clearResults();
+    if (featuredPlugins && pluginList && pluginList.children.length > 0) {
+      featuredPlugins.style.display = "block";
+    }
     return;
+  }
+
+  if (featuredPlugins) {
+    featuredPlugins.style.display = "none";
   }
 
   debounceTimer = setTimeout(async () => {
@@ -253,4 +296,55 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
+// 5. 加载热门插件
+async function loadFeaturedPlugins() {
+  if (!featuredPlugins || !pluginList) return;
+  try {
+    const apiBase = await getApiBase();
+    const webBase = await getWebBase();
+    const res = await fetch(`${apiBase}/api/plugins?limit=3&sort=popular`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const items = data.items || [];
+    if (items.length === 0) {
+      featuredPlugins.style.display = "none";
+      return;
+    }
+    pluginList.replaceChildren();
+    for (const plugin of items) {
+      const link = document.createElement("a");
+      link.className = "plugin-item";
+      link.href = `${webBase}/marketplace/${encodeURIComponent(plugin.slug)}`;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+
+      const iconDiv = document.createElement("div");
+      iconDiv.className = "plugin-icon";
+      iconDiv.textContent = plugin.icon || (plugin.kind === "site-pack" ? "📦" : plugin.kind === "theme" ? "🎨" : "🧩");
+
+      const infoDiv = document.createElement("div");
+      infoDiv.className = "plugin-info";
+
+      const titleDiv = document.createElement("div");
+      titleDiv.className = "plugin-title";
+      titleDiv.textContent = plugin.name;
+
+      const metaDiv = document.createElement("div");
+      metaDiv.className = "plugin-meta";
+      const kindLabel = plugin.kind === "site-pack" ? "网址包" : plugin.kind === "theme" ? "主题" : "工作台预设";
+      metaDiv.textContent = `${kindLabel} · ⭐ ${plugin.starCount || 0} · 📥 ${plugin.installCount || 0}`;
+
+      infoDiv.appendChild(titleDiv);
+      infoDiv.appendChild(metaDiv);
+      link.appendChild(iconDiv);
+      link.appendChild(infoDiv);
+      pluginList.appendChild(link);
+    }
+    featuredPlugins.style.display = "block";
+  } catch (err) {
+    console.warn("[NavHub] 热门插件加载失败:", err);
+  }
+}
+
 checkHealth();
+loadFeaturedPlugins();

@@ -9,7 +9,7 @@
  * 3. 对主题插件提供客户端零刷新即时试用。
  */
 
-import { useState, useEffect, useCallback, use } from 'react'
+import { useState, useEffect, useCallback, useRef, use } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Container } from '@/components/ui/container'
@@ -20,9 +20,15 @@ import {
   unstarPlugin,
   type HubPluginItem,
 } from '@/lib/navhub-api'
-import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX } from '@/lib/plugins/plugin-manifest'
+import {
+  pluginKindLabel,
+  PLUGIN_MANIFEST_FILE_SUFFIX,
+  comparePluginVersions,
+} from '@/lib/plugins/plugin-manifest'
+import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
 import { PluginReportModal } from '@/components/plugins/plugin-report-modal'
+import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
@@ -47,6 +53,7 @@ import {
   Layers,
   Info,
   RotateCcw,
+  Share2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -73,7 +80,7 @@ export default function PluginDetailPage({
 
   // 交互弹窗
   const [installModalOpen, setInstallModalOpen] = useState(false)
-  const [modalMode, setModalMode] = useState<'install' | 'uninstall'>('install')
+  const [modalMode, setModalMode] = useState<'install' | 'uninstall' | 'upgrade'>('install')
   const [reportModalOpen, setReportModalOpen] = useState(false)
 
   // 星标状态
@@ -82,13 +89,39 @@ export default function PluginDetailPage({
   const [starLoading, setStarLoading] = useState(false)
 
   // 选项卡切换
-  const [activeTab, setActiveTab] = useState<'preview' | 'impact' | 'raw'>('preview')
+  const [activeTab, setActiveTab] = useState<'preview' | 'diff' | 'impact' | 'raw'>('preview')
 
   // 工作台预设注入钩子
   const { installWidgetPreset } = useModularLayout()
 
   // 主题试用状态
   const [isThemeApplied, setIsThemeApplied] = useState(false)
+
+  // D1 更新链路：解析「安装 / 更新 / 已安装」动作（已安装版本 < 市场版本 → 可更新）
+  const installAction = plugin ? resolveInstallAction(plugin.installedVersion, plugin.version) : 'install'
+
+  // D4 分享深链：?install=1 落地即弹安装确认（尚未安装时；仅处理一次，
+  // 避免星标等后续状态刷新触发重弹打扰）
+  const deepLinkHandled = useRef(false)
+  useEffect(() => {
+    if (loading || !plugin || deepLinkHandled.current) return
+    deepLinkHandled.current = true
+    const action = resolveInstallAction(plugin.installedVersion, plugin.version)
+    if (action === 'install' && new URLSearchParams(window.location.search).get('install') === '1') {
+      setModalMode('install')
+      setInstallModalOpen(true)
+    }
+  }, [loading, plugin])
+
+  const handleShareLink = useCallback(async () => {
+    const link = `${window.location.origin}/marketplace/${encodeURIComponent(slug)}?install=1`
+    const result = await copyText(link)
+    if (result.ok) {
+      toast.success('分享链接已复制', { description: '对方打开即可一键进入安装确认' })
+    } else {
+      toast.error('复制失败', { description: result.reason })
+    }
+  }, [slug])
 
   const loadDetail = useCallback(async () => {
     setLoading(true)
@@ -113,6 +146,7 @@ export default function PluginDetailPage({
         setPlugin(null)
       }
     } catch {
+      // 详情接口异常或 404 时置空，由下游状态渲染 404 或降级横幅
       setPlugin(null)
     } finally {
       setLoading(false)
@@ -233,6 +267,11 @@ export default function PluginDetailPage({
 
   const manifest = plugin.manifest
   const payload = manifest.payload
+  const hasUpgrade = Boolean(
+    plugin.installed &&
+    plugin.installedVersion &&
+    comparePluginVersions(plugin.version, plugin.installedVersion) > 0
+  )
 
   return (
     <Container as="main" id="main-content">
@@ -341,24 +380,60 @@ export default function PluginDetailPage({
                   <FileJson className="w-4 h-4 text-primary" />
                   <span>导出清单</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleShareLink}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-border/70 bg-background/70 hover:bg-muted text-foreground transition-all"
+                  title="复制带安装引导的分享链接（?install=1）"
+                >
+                  <Share2 className="w-4 h-4 text-primary" />
+                  <span>分享</span>
+                </button>
               </div>
 
-              {/* 安装 / 卸载主要按钮 */}
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              {/* 安装 / 更新 / 卸载主要按钮 */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                 {plugin.installed ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setModalMode('uninstall')
-                      setInstallModalOpen(true)
-                    }}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all group"
-                  >
-                    <Check className="w-4 h-4 group-hover:hidden" />
-                    <RotateCcw className="w-4 h-4 hidden group-hover:inline-block" />
-                    <span className="group-hover:hidden">已安装 (点击管理/卸载)</span>
-                    <span className="hidden group-hover:inline-block">卸载该插件</span>
-                  </button>
+                  installAction === 'update' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalMode('upgrade')
+                          setInstallModalOpen(true)
+                        }}
+                        className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all shadow-sm"
+                      >
+                        <Sparkles className="w-4 h-4 text-amber-300" />
+                        <span>平滑升级到 v{plugin.version}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setModalMode('uninstall')
+                          setInstallModalOpen(true)
+                        }}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-foreground border border-border/60 hover:bg-muted/50 transition-all"
+                      >
+                        <span>卸载当前版本 (v{plugin.installedVersion})</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModalMode('uninstall')
+                        setInstallModalOpen(true)
+                      }}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all group"
+                    >
+                      <Check className="w-4 h-4 group-hover:hidden" />
+                      <RotateCcw className="w-4 h-4 hidden group-hover:inline-block" />
+                      <span className="group-hover:hidden">已安装 (点击管理/卸载)</span>
+                      <span className="hidden group-hover:inline-block">卸载该插件</span>
+                    </button>
+                  )
                 ) : (
                   <button
                     type="button"
@@ -387,6 +462,41 @@ export default function PluginDetailPage({
               )}
             </div>
           </div>
+
+          {/* 新版本可用横幅提示 */}
+          {installAction === 'update' && (
+            <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                <div>
+                  <span className="font-semibold text-foreground">检测到新版本可用：</span>
+                  <span className="text-muted-foreground ml-1">
+                    当前安装版本为 <strong className="font-mono text-foreground">v{plugin.installedVersion}</strong>，插件市场最新版本为{' '}
+                    <strong className="font-mono text-primary font-bold">v{plugin.version}</strong>。
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('diff')}
+                  className="px-3 py-1.5 rounded-lg border border-primary/30 bg-background/80 hover:bg-background text-primary font-medium transition-colors"
+                >
+                  查看升级差异
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalMode('upgrade')
+                    setInstallModalOpen(true)
+                  }}
+                  className="px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 transition-all shadow-xs"
+                >
+                  平滑升级
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* 状态与安全背书 */}
           <div className="pt-4 border-t border-border/50 flex flex-wrap items-center justify-between gap-4 text-xs text-muted-foreground">
@@ -428,6 +538,23 @@ export default function PluginDetailPage({
               )}
             >
               内容明细与预览
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('diff')}
+              className={cn(
+                'px-4 py-2 rounded-xl text-xs font-medium transition-all inline-flex items-center gap-1.5',
+                activeTab === 'diff'
+                  ? 'bg-primary text-primary-foreground shadow-2xs'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              )}
+            >
+              <span>版本差异对比</span>
+              {installAction === 'update' && (
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-amber-500 text-white font-bold">
+                  新
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -601,6 +728,19 @@ export default function PluginDetailPage({
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* 选项卡：版本变更对比 */}
+          {activeTab === 'diff' && (
+            <div className="rounded-3xl border border-border/80 glass-surface p-6 sm:p-8 space-y-4 shadow-xs">
+              <div className="space-y-1">
+                <h3 className="text-base font-semibold text-foreground">版本升级变动明细</h3>
+                <p className="text-xs text-muted-foreground">
+                  详细比对已安装版本与市场最新版本的站点、分类、小组件及主题样式调整。
+                </p>
+              </div>
+              <PluginDiffView diff={plugin.upgradeDiff} />
             </div>
           )}
 

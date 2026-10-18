@@ -16,7 +16,9 @@ import { Footer } from '@/components/footer'
 import {
   fetchAdminPlugins,
   reviewPlugin,
+  fetchPluginTelemetry,
   type HubPluginItem,
+  type HubPluginTelemetryMetrics,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -58,6 +60,7 @@ const STATUS_TABS = [
 
 export default function AdminPluginsPage() {
   const [plugins, setPlugins] = useState<HubPluginItem[]>([])
+  const [telemetry, setTelemetry] = useState<HubPluginTelemetryMetrics | null>(null)
   const [pendingCount, setPendingCount] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
@@ -75,19 +78,27 @@ export default function AdminPluginsPage() {
     setLoading(true)
     setNotice(null)
     try {
-      const res = await fetchAdminPlugins(
-        {
-          status: activeStatus,
-          q: search.trim() || undefined,
-          limit: 100,
-        },
-        (err) => setNotice(describeDegrade(err, '管理台插件数据'))
-      )
+      const [res, telem] = await Promise.all([
+        fetchAdminPlugins(
+          {
+            status: activeStatus,
+            q: search.trim() || undefined,
+            limit: 100,
+          },
+          (err) => setNotice(describeDegrade(err, '管理台插件数据'))
+        ),
+        fetchPluginTelemetry().catch(() => {
+          // 遥测大盘指标加载失败时降级隐藏概览卡片，不阻塞插件列表主体展示
+          return null
+        }),
+      ])
       setPlugins(res.items)
+      if (telem) setTelemetry(telem)
       if (res.pending !== undefined) {
         setPendingCount(res.pending)
       }
     } catch {
+      // 接口异常时降级为空列表，notice 已在回调中提示
       setPlugins([])
     } finally {
       setLoading(false)
@@ -229,6 +240,96 @@ export default function AdminPluginsPage() {
             })}
           </div>
         </div>
+
+        {/* 生态遥测与大盘指标 */}
+        {telemetry && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="rounded-2xl border border-border/80 bg-card/60 p-4 space-y-1">
+                <div className="text-xs text-muted-foreground flex items-center justify-between">
+                  <span>总收录插件</span>
+                  <span className="text-[11px] px-1.5 py-0.2 rounded-md bg-muted/60 text-muted-foreground font-mono">
+                    {telemetry.publishedCount} 已上架
+                  </span>
+                </div>
+                <div className="text-2xl font-bold font-mono text-foreground">
+                  {telemetry.totalPlugins}
+                </div>
+                <div className="text-[11px] text-muted-foreground pt-0.5">
+                  待审: <strong className="text-amber-500 font-medium">{telemetry.pendingCount}</strong> · 驳回/下架: {telemetry.rejectedCount + telemetry.delistedCount}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4 space-y-1">
+                <div className="text-xs text-sky-600 dark:text-sky-400 flex items-center justify-between">
+                  <span>累计安装总量</span>
+                  <span className="text-[11px] px-1.5 py-0.2 rounded-md bg-sky-500/10 font-mono font-medium">
+                    {telemetry.activeInstalls} 活跃
+                  </span>
+                </div>
+                <div className="text-2xl font-bold font-mono text-foreground">
+                  {telemetry.totalInstalls}
+                </div>
+                <div className="text-[11px] text-muted-foreground pt-0.5">
+                  活跃留存率: {telemetry.totalInstalls > 0 ? Math.round((telemetry.activeInstalls / telemetry.totalInstalls) * 100) : 100}%
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 space-y-1">
+                <div className="text-xs text-violet-600 dark:text-violet-400 flex items-center justify-between">
+                  <span>类型构成分布</span>
+                  <span className="text-[11px] font-mono">3 大类别</span>
+                </div>
+                <div className="text-xs font-medium text-foreground flex items-center gap-2 pt-1">
+                  <span>包: <strong className="font-mono">{telemetry.kindDistribution.sitePack}</strong></span>
+                  <span>·</span>
+                  <span>看板: <strong className="font-mono">{telemetry.kindDistribution.workspacePreset}</strong></span>
+                  <span>·</span>
+                  <span>主题: <strong className="font-mono">{telemetry.kindDistribution.theme}</strong></span>
+                </div>
+                <div className="text-[11px] text-muted-foreground pt-1">
+                  覆盖网址、个人工作台与视觉主题
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-1">
+                <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center justify-between">
+                  <span>社区星标与合规</span>
+                  <span className="text-[11px] font-mono font-medium">
+                    ⭐ {telemetry.totalStars}
+                  </span>
+                </div>
+                <div className="text-2xl font-bold font-mono text-foreground">
+                  {telemetry.totalReports}
+                </div>
+                <div className="text-[11px] text-muted-foreground pt-0.5">
+                  社区违规举报次数（需核查）
+                </div>
+              </div>
+            </div>
+
+            {/* TOP 热门插件排行横条 */}
+            {telemetry.topInstalled && telemetry.topInstalled.length > 0 && (
+              <div className="rounded-xl border border-border/60 bg-muted/20 px-3.5 py-2 flex flex-wrap items-center gap-3 text-xs">
+                <span className="font-semibold text-foreground shrink-0">🔥 热门安装榜：</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {telemetry.topInstalled.map((p, idx) => (
+                    <Link
+                      key={p.slug}
+                      href={`/marketplace/${encodeURIComponent(p.slug)}`}
+                      target="_blank"
+                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-background/80 hover:bg-background border border-border/40 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <span className="font-mono text-primary font-bold">#{idx + 1}</span>
+                      <span>{p.name}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground">({p.installCount}次)</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 降级提示 */}
         {notice && <HubDegradedNotice notice={notice} onRetry={loadList} />}

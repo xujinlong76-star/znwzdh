@@ -171,6 +171,9 @@ walkAndCopy(OVERLAY, TARGET, { targetRoot: TARGET, counter: overlayCounter, log:
 console.log("[vendor] applied overlay: " + overlayCounter.count + " files");
 
 // 6b) prune obsolete/redundant upstream artifacts (Cloudflare/docker duplicates, unused docs)
+// src/middleware.ts：Next 16 起 middleware 更名为 proxy（运行时固定 nodejs），overlay 的
+// 事实源已是 src/proxy.ts；上游 tarball 仍带 middleware.ts，且 overlay 不再 own 它，
+// 不修剪会让 vendored 产物里 middleware/proxy 并存（Next 16 直接报错）。
 for (const rel of [
   "_worker.js",
   "wrangler.toml",
@@ -182,6 +185,7 @@ for (const rel of [
   "docker",
   "docs",
   "functions",
+  "src/middleware.ts",
 ]) {
   const p = join(TARGET, rel);
   if (existsSync(p)) rmSync(p, { recursive: true, force: true });

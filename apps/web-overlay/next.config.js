@@ -11,16 +11,17 @@ const nextConfig = {
 
   // Vendored 上游（NavSphere）的表单组件与本仓库的严格类型配置不兼容
   // （@hookform/resolvers@3.9.1 + zod 的 zodResolver 泛型不匹配，属上游依赖组合问题），
-  // 因此与 eslint 一样不在构建期做类型门禁。
+  // 因此不在构建期做类型门禁（ESLint 同样不进构建期，见下）。
   // 自研的 packages/* 与 apps/api 仍由 tsc --noEmit 严格检查。
   typescript: { ignoreBuildErrors: true },
 
-  // 不在构建期跑 ESLint（upstream 设定，保留）。
-  // 门禁没有因此缺失：CI 的 test-web job 会单独执行 `next lint`，本地 `pnpm lint` 同样可用。
+  // 不在构建期跑 ESLint。Next 16 起 next build 不再内置 lint，`next lint`
+  // 命令与 next.config 的 eslint 键都被移除——门禁没有因此缺失：
+  // CI 的 test-web job 单独执行 `eslint .`（ESLint CLI + eslint-config-next@16
+  // 扁平配置），本地 `pnpm lint` 同样可用。
   // 历史故障：本机 pnpm 链接层断裂导致 eslint-config-next 及其依赖未链入 apps/web，
-  // `next lint` 直接报 couldn't find the config "next/core-web-vitals"（2026-10-17 修复：
+  // `eslint .` 直接报 couldn't find the config "next/core-web-vitals"（2026-10-17 修复：
   // 重建 .pnpm 实例内的包链接）。若再次出现，先跑一次干净的 `pnpm install` 再重试。
-  eslint: { ignoreDuringBuilds: true },
 
   images: {
     // 导航站要展示任意站点的 favicon / 截图，域名天然不可枚举，
@@ -105,13 +106,11 @@ const nextConfig = {
     ];
   },
   devIndicators: false,
-  webpack: (config, { dev }) => {
-    if (dev) {
-      // 避免 Windows 环境下 webpack filesystem cache 发生 pack.gz 重命名锁竞争与 ENOENT 损坏
-      config.cache = { type: "memory" };
-    }
-    return config;
-  },
+  // 原 webpack 函数（dev 时把 filesystem cache 切成 memory，规避 Windows 上
+  // pack.gz 重命名锁竞争与 ENOENT 损坏）已移除：Next 16 起 Turbopack 是
+  // dev/build 的默认打包器，且 next.config 里残留 webpack 函数会直接导致
+  // next build 失败。Turbopack 的缓存机制不同，不存在该 Windows 问题，
+  // 故整体移除而非迁移到 turbopack 配置项。
   experimental: {
     serverActions: {
       allowedOrigins: ["localhost", "newkit.site"],

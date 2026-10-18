@@ -217,4 +217,38 @@ describe("插件市场 API 全链路", () => {
     const noIdentity = await app.inject({ method: "POST", url: `/api/plugins/${encodeURIComponent(imported)}/install` });
     expect(noIdentity.statusCode).toBe(400);
   });
+
+  it("遥测大盘：GET /api/admin/plugins/metrics 返回各维度统计", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/admin/plugins/metrics" });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.totalPlugins).toBeGreaterThan(0);
+    expect(json.publishedCount).toBeGreaterThan(0);
+    expect(json.kindDistribution).toBeDefined();
+    expect(Array.isArray(json.topInstalled)).toBe(true);
+  });
+
+  it("差异对比：POST /api/plugins/diff 校验并比对两份清单变更", async () => {
+    const base = sitePack("对比基准包", [{ url: "https://base.example.com", title: "Base" }]);
+    const target = {
+      ...sitePack("对比目标包", [
+        { url: "https://base.example.com", title: "Base (Updated)" },
+        { url: "https://new.example.com", title: "New Added" },
+      ]),
+      version: "1.1.0",
+    };
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/diff",
+      payload: { baseManifest: base, targetManifest: target },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.diff.hasChanges).toBe(true);
+    expect(body.diff.sitesAddedCount).toBe(1);
+    expect(body.diff.sitesModifiedCount).toBe(1);
+  });
 });
+

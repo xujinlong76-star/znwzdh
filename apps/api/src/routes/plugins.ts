@@ -13,6 +13,8 @@ import { indexSitesBatch } from "../index-site.ts";
 import {
   validateAndCleanPluginManifest,
   summarizePluginManifest,
+  diffPluginManifests,
+  comparePluginVersions,
   type PluginManifest,
   type PluginStatus,
   type PluginKind,
@@ -114,6 +116,19 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   );
 
   /**
+   * 插件生态大盘遥测数据
+   */
+  app.get(
+    "/api/admin/plugins/metrics",
+    { config: { scope: "read" } },
+    async (_req, _reply) => {
+      const telemetry = await ctx.repo.getPluginTelemetry();
+      return telemetry;
+    }
+  );
+
+
+  /**
    * 获取当前用户已安装的插件清单
    */
   app.get(
@@ -209,12 +224,29 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       let isInstalled = false;
       let isStarred = false;
       let installRecord = null;
+      let upgradeDiff = null;
 
       if (identity) {
         installRecord = await ctx.repo.getPluginInstall(plugin.id, identity);
         isInstalled = Boolean(installRecord && installRecord.removedAt === null);
         isStarred = await ctx.repo.hasUserStarredPlugin(plugin.id, identity);
+        if (
+          isInstalled &&
+          installRecord?.version &&
+          comparePluginVersions(plugin.version, installRecord.version) > 0
+        ) {
+          const installedManifest = await ctx.repo.getPluginInstalledManifest(plugin.id, identity);
+          if (installedManifest) {
+            upgradeDiff = diffPluginManifests(installedManifest, plugin.manifest);
+          }
+        }
       }
+
+      const hasUpgrade = Boolean(
+        isInstalled &&
+        installRecord?.version &&
+        comparePluginVersions(plugin.version, installRecord.version) > 0
+      );
 
       return {
         plugin: {
@@ -223,11 +255,58 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           starred: isStarred,
           installedVersion: isInstalled ? installRecord?.version : null,
           installedAt: isInstalled ? installRecord?.installedAt : null,
+          hasUpgrade,
+          upgradeDiff,
         },
         summary: summarizePluginManifest(plugin.manifest),
       };
     }
   );
+
+  /**
+   * 任意两份插件清单差异比对 (供发布/更新/升级前预览使用)
+   */
+  app.post(
+    "/api/plugins/diff",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as {
+        baseManifest?: unknown;
+        targetManifest?: unknown;
+        slug?: string;
+      };
+
+      let base: PluginManifest | null = null;
+      let target: PluginManifest | null = null;
+
+      if (body.slug && !body.baseManifest) {
+        const p = await ctx.repo.getPluginBySlug(body.slug);
+        if (p) base = p.manifest;
+      } else if (body.baseManifest) {
+        const vBase = validateAndCleanPluginManifest(body.baseManifest);
+        if (!vBase.ok) {
+          return badRequest(reply, "基准清单格式不合法: " + vBase.errors.join(", "));
+        }
+        base = vBase.manifest;
+      }
+
+      if (body.targetManifest) {
+        const vTarget = validateAndCleanPluginManifest(body.targetManifest);
+        if (!vTarget.ok) {
+          return badRequest(reply, "目标清单格式不合法: " + vTarget.errors.join(", "));
+        }
+        target = vTarget.manifest;
+      }
+
+      if (!base || !target) {
+        return badRequest(reply, "比对需要提供基准清单与目标清单（或合法 slug）");
+      }
+
+      const diff = diffPluginManifests(base, target);
+      return { ok: true, diff };
+    }
+  );
+
 
   /* ------------------------------------------------------------------ *
    * 投稿、导入与版本更新

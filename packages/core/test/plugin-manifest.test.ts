@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
   PLUGIN_LIMITS,
   comparePluginVersions,
+  diffPluginManifests,
   normalizePluginUrlKey,
   parsePluginManifestJson,
   pluginKindLabel,
@@ -320,3 +321,65 @@ describe('摘要、版本比较与文本解析', () => {
     expect(PLUGIN_LIMITS.maxSites).toBe(200)
   })
 })
+
+describe('版本升级差异对比 (diffPluginManifests)', () => {
+  it('检测 site-pack 新增站点、移除站点与修改站点', () => {
+    const base = expectOk(validSitePack).manifest
+    const target = expectOk({
+      ...validSitePack,
+      version: '1.1.0',
+      payload: {
+        categories: [{ title: 'AI 编程' }, { title: '数据分析' }],
+        sites: [
+          { url: 'https://github.com/features/copilot', title: 'GitHub Copilot (Pro)', category: 'AI 编程' },
+          { url: 'https://chatgpt.com/', title: 'ChatGPT', category: '数据分析' },
+        ],
+      },
+    }).manifest
+
+    const diff = diffPluginManifests(base, target)
+    expect(diff.hasChanges).toBe(true)
+    expect(diff.versionFrom).toBe('1.0.0')
+    expect(diff.versionTo).toBe('1.1.0')
+    expect(diff.versionCompared).toBe(1)
+    expect(diff.sitesAddedCount).toBe(1) // chatgpt
+    expect(diff.sitesRemovedCount).toBe(1) // cursor
+    expect(diff.sitesModifiedCount).toBe(1) // copilot title modified
+    expect(diff.categoriesAdded).toEqual(['数据分析'])
+    expect(diff.siteChanges?.find((s) => s.url === 'https://chatgpt.com/')?.status).toBe('added')
+    expect(diff.siteChanges?.find((s) => s.url === 'https://cursor.com/')?.status).toBe('removed')
+  })
+
+  it('检测 theme 颜色变量增删改与主色调变动', () => {
+    const base = expectOk(validTheme).manifest
+    const target = expectOk({
+      ...validTheme,
+      version: '1.2.0',
+      payload: {
+        accent: 'emerald',
+        tokens: {
+          '--primary': '142 76% 36%',
+          '--accent': '142 70% 45%',
+        },
+      },
+    }).manifest
+
+    const diff = diffPluginManifests(base, target)
+    expect(diff.hasChanges).toBe(true)
+    expect(diff.accentChanged).toBe(true)
+    expect(diff.oldAccent).toBe('violet')
+    expect(diff.newAccent).toBe('emerald')
+    expect(diff.tokensAddedCount).toBe(1) // --accent
+    expect(diff.tokensRemovedCount).toBe(1) // --radius
+    expect(diff.tokensModifiedCount).toBe(1) // --primary
+  })
+
+  it('无任何变更时 hasChanges 为 false', () => {
+    const base = expectOk(validWorkspacePreset).manifest
+    const target = expectOk(validWorkspacePreset).manifest
+    const diff = diffPluginManifests(base, target)
+    expect(diff.hasChanges).toBe(false)
+    expect(diff.versionCompared).toBe(0)
+  })
+})
+

@@ -489,7 +489,7 @@ export async function installPlugin(
   const now = Date.now();
   const existingInstall = await getPluginInstall(repo, plugin.id, who);
   const wasActive = !!existingInstall && existingInstall.removedAt === null;
-  const meta = JSON.stringify(applied);
+  const meta = JSON.stringify({ ...applied, manifest: plugin.manifest });
   if (existingInstall) {
     await repo.run(
       "UPDATE plugin_installs SET version = ?, meta = ?, installed_at = ?, removed_at = NULL WHERE plugin_id = ? AND identity = ?",
@@ -653,3 +653,105 @@ export async function hasUserStarredPlugin(
   ]);
   return Boolean(rows[0]);
 }
+
+/** 获取某用户安装时保留的清单快照 */
+export async function getPluginInstalledManifest(
+  repo: Repository,
+  pluginId: string,
+  identity: string,
+): Promise<PluginManifest | null> {
+  const install = await getPluginInstall(repo, pluginId, identity);
+  if (!install || !install.meta || typeof install.meta !== "object") return null;
+  const metaObj = install.meta as Record<string, unknown>;
+  if (metaObj.manifest && typeof metaObj.manifest === "object") {
+    return metaObj.manifest as PluginManifest;
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------ *
+ * 插件生态遥测与大盘指标 (Plugin Ecosystem Telemetry)
+ * ------------------------------------------------------------------ */
+
+export interface PluginTelemetryMetrics {
+  totalPlugins: number;
+  publishedCount: number;
+  pendingCount: number;
+  rejectedCount: number;
+  delistedCount: number;
+  totalInstalls: number;
+  activeInstalls: number;
+  totalStars: number;
+  totalReports: number;
+  kindDistribution: {
+    sitePack: number;
+    workspacePreset: number;
+    theme: number;
+  };
+  topInstalled: Array<{
+    id: string;
+    slug: string;
+    name: string;
+    kind: string;
+    version: string;
+    installCount: number;
+    starCount: number;
+  }>;
+}
+
+export async function getPluginTelemetry(repo: Repository): Promise<PluginTelemetryMetrics> {
+  const statRows = await repo.raw(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS published,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+      SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+      SUM(CASE WHEN status = 'delisted' THEN 1 ELSE 0 END) AS delisted,
+      COALESCE(SUM(install_count), 0) AS total_installs,
+      COALESCE(SUM(report_count), 0) AS total_reports,
+      SUM(CASE WHEN kind = 'site-pack' AND status = 'published' THEN 1 ELSE 0 END) AS site_packs,
+      SUM(CASE WHEN kind = 'workspace-preset' AND status = 'published' THEN 1 ELSE 0 END) AS workspace_presets,
+      SUM(CASE WHEN kind = 'theme' AND status = 'published' THEN 1 ELSE 0 END) AS themes
+    FROM plugins
+  `);
+
+  const stat = statRows[0] ?? {};
+
+  const activeRow = (await repo.raw("SELECT COUNT(*) AS cnt FROM plugin_installs WHERE removed_at IS NULL"))[0];
+  const starRow = (await repo.raw("SELECT COUNT(*) AS cnt FROM plugin_stars"))[0];
+
+  const topRows = await repo.raw(`
+    SELECT id, slug, name, kind, version, install_count, star_count
+    FROM plugins
+    WHERE status = 'published'
+    ORDER BY install_count DESC, star_count DESC
+    LIMIT 5
+  `);
+
+  return {
+    totalPlugins: Number(stat.total ?? 0),
+    publishedCount: Number(stat.published ?? 0),
+    pendingCount: Number(stat.pending ?? 0),
+    rejectedCount: Number(stat.rejected ?? 0),
+    delistedCount: Number(stat.delisted ?? 0),
+    totalInstalls: Number(stat.total_installs ?? 0),
+    activeInstalls: Number(activeRow?.cnt ?? 0),
+    totalStars: Number(starRow?.cnt ?? 0),
+    totalReports: Number(stat.total_reports ?? 0),
+    kindDistribution: {
+      sitePack: Number(stat.site_packs ?? 0),
+      workspacePreset: Number(stat.workspace_presets ?? 0),
+      theme: Number(stat.themes ?? 0),
+    },
+    topInstalled: topRows.map((r) => ({
+      id: String(r.id),
+      slug: String(r.slug),
+      name: String(r.name),
+      kind: String(r.kind),
+      version: String(r.version),
+      installCount: Number(r.install_count ?? 0),
+      starCount: Number(r.star_count ?? 0),
+    })),
+  };
+}
+

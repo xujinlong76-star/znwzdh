@@ -13,7 +13,7 @@ const isWin = process.platform === "win32";
 // 启动 Fastify API 中枢
 const apiProc = spawn(
   process.execPath,
-  ["--experimental-strip-types", "apps/api/src/main.ts"],
+  ["apps/api/src/main.ts"],
   {
     cwd: rootDir,
     stdio: "inherit",

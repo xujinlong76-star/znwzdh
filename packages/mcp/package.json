@@ -13,8 +13,8 @@
     "navhub-mcp": "./src/stdio.ts"
   },
   "scripts": {
-    "start": "node --experimental-strip-types src/stdio.ts",
-    "http": "node --experimental-strip-types src/http.ts",
+    "start": "node src/stdio.ts",
+    "http": "node src/http.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit -p tsconfig.json"
   },

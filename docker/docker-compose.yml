@@ -174,7 +174,7 @@ services:
     container_name: navhub-mcp
     profiles: ["mcp"]
     restart: unless-stopped
-    command: ["node", "--experimental-strip-types", "packages/mcp/src/http.ts"]
+    command: ["node", "packages/mcp/src/http.ts"]
     ports:
       - "${NAVHUB_MCP_PORT:-8790}:8790"
     volumes:

@@ -911,7 +911,7 @@ describe("SQLite 集成：导航增强能力", () => {
     expect(cols).toContain("trend_score");
     expect(cols).toContain("last_visited_at");
     const tables = (db.sqlite!.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((t) => t.name);
-    for (const t of ["favorites", "favorite_folders", "user_profiles", "search_history", "user_vault_sync"]) {
+    for (const t of ["favorites", "favorite_folders", "user_profiles", "search_history", "user_vault_sync", "plugins", "plugin_installs", "plugin_stars"]) {
       expect(tables).toContain(t);
     }
   });

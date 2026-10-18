@@ -147,9 +147,10 @@ export async function getDeletedSite(repo: Repository, id: string): Promise<Site
 
 export async function findSiteByUrl(repo: Repository, url: string): Promise<Site | null> {
   const canonical = canonicalizeUrl(url);
+  const alt = canonical.endsWith("/") ? canonical.slice(0, -1) : canonical + "/";
   const rows = await repo.raw(
-    repo.selectSitesSql() + " WHERE (s.url = ? OR s.url = ?) AND s.deleted_at IS NULL LIMIT 1",
-    [url, canonical],
+    repo.selectSitesSql() + " WHERE (s.url = ? OR s.url = ? OR s.url = ?) AND s.deleted_at IS NULL LIMIT 1",
+    [url, canonical, alt],
   );
   const row = rows[0];
   return row ? rowToSite(row) : null;

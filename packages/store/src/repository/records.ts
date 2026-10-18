@@ -1,6 +1,9 @@
 import type {
   Category,
   Collection,
+  PluginKind,
+  PluginManifest,
+  PluginStatus,
   Site,
   SiteAction,
   SiteLiveMetrics,
@@ -11,6 +14,7 @@ import type {
   TaxonomyProposalStatus,
 } from "@navhub/core";
 export type { TaxonomyProposal, TaxonomyProposalKind, TaxonomyProposalStatus };
+export type { PluginKind, PluginManifest, PluginStatus };
 import type { Db, Dialect } from "../driver.ts";
 
 export interface SiteInput {
@@ -260,4 +264,50 @@ export interface MaintenanceStatus {
   pageSize?: number;
   freePages?: number;
   tableCounts: Record<string, number>;
+}
+
+/* ------------------------- 插件市场 (Plugin Marketplace) ------------------------- */
+
+/** 插件记录；manifest / tags 已从 JSON 列解析 */
+export interface PluginRecord {
+  id: string;
+  slug: string;
+  kind: PluginKind;
+  name: string;
+  description: string;
+  icon: string | null;
+  tags: string[];
+  author: string | null;
+  authorKind: string | null;
+  license: string | null;
+  homepage: string | null;
+  version: string;
+  manifest: PluginManifest;
+  status: PluginStatus;
+  reviewNote: string | null;
+  reviewedAt: number | null;
+  source: string;
+  installCount: number;
+  starCount: number;
+  reportCount: number;
+  createdAt: number;
+  updatedAt: number;
+  publishedAt: number | null;
+}
+
+/** 安装记录（复合主键 plugin_id + identity；removed_at 非空 = 已卸载） */
+export interface PluginInstallRecord {
+  pluginId: string;
+  identity: string;
+  version: string;
+  meta: unknown;
+  installedAt: number;
+  removedAt: number | null;
+}
+
+/** 审计用调用者标识（来自 req.auth；identityOf 仅展示、不可信） */
+export interface PluginActor {
+  actor: string;
+  actorKind?: string;
+  ip?: string;
 }

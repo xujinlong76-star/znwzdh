@@ -57,6 +57,7 @@ import * as jobsRepo from "./repository/jobs.ts";
 import * as systemRepo from "./repository/system.ts";
 import * as maintenanceRepo from "./repository/maintenance.ts";
 import * as taxonomyRepo from "./repository/taxonomy-governance.ts";
+import * as pluginsRepo from "./repository/plugins.ts";
 import * as ioRepo from "./repository/io.ts";
 export * from "./repository/records.ts";
 export { bindSqlite, normalizeTokenScopes, slugify, toPgSql } from "./repository/dialect.ts";
@@ -774,6 +775,53 @@ export class Repository {
 
   async runTaxonomyAudit(options: { dryRun?: boolean; siteLimit?: number } = {}): Promise<{ proposalsCount: number; proposals: TaxonomyProposal[] }> {
     return taxonomyRepo.runTaxonomyAudit(this, options);
+  }
+
+
+  /* ------------------------- 插件市场 (Plugin Marketplace) ------------------------- */
+
+  async createPlugin(input: pluginsRepo.PluginCreateInput, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {
+    return pluginsRepo.createPlugin(this, input, actor);
+  }
+
+  async getPluginBySlug(slug: string): Promise<pluginsRepo.PluginRecord | null> {
+    return pluginsRepo.getPluginBySlug(this, slug);
+  }
+
+  async listPlugins(filter: pluginsRepo.PluginListFilter = {}): Promise<{ items: pluginsRepo.PluginRecord[]; total: number }> {
+    return pluginsRepo.listPlugins(this, filter);
+  }
+
+  async updatePlugin(slug: string, manifest: pluginsRepo.PluginManifest, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {
+    return pluginsRepo.updatePlugin(this, slug, manifest, actor);
+  }
+
+  async reviewPlugin(slug: string, action: pluginsRepo.PluginReviewAction, note: string | null = null, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {
+    return pluginsRepo.reviewPlugin(this, slug, action, note, actor);
+  }
+
+  async installPlugin(slug: string, identity: string, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginInstallResult> {
+    return pluginsRepo.installPlugin(this, slug, identity, actor);
+  }
+
+  async uninstallPlugin(slug: string, identity: string, options: { removeSites?: boolean } = {}, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginUninstallResult> {
+    return pluginsRepo.uninstallPlugin(this, slug, identity, options, actor);
+  }
+
+  async getPluginInstall(pluginId: string, identity: string): Promise<pluginsRepo.PluginInstallRecord | null> {
+    return pluginsRepo.getPluginInstall(this, pluginId, identity);
+  }
+
+  async starPlugin(slug: string, identity: string): Promise<{ starred: boolean; starCount: number }> {
+    return pluginsRepo.starPlugin(this, slug, identity);
+  }
+
+  async unstarPlugin(slug: string, identity: string): Promise<{ starred: boolean; starCount: number }> {
+    return pluginsRepo.unstarPlugin(this, slug, identity);
+  }
+
+  async reportPlugin(slug: string, input: { reason: string; identity?: string }, actor?: pluginsRepo.PluginActor): Promise<{ reportCount: number }> {
+    return pluginsRepo.reportPlugin(this, slug, input, actor);
   }
 
 

@@ -377,9 +377,66 @@ export const taxonomyProposals = sqliteTable("taxonomy_proposals", {
   index("taxonomy_proposals_target_idx").on(t.targetId),
 ]);
 
+/**
+ * 插件市场：插件注册表（社区广场）。
+ * manifest 存「已校验清洗后」的完整清单 JSON；计数列在写路径维护（与活跃状态挂钩，不做读时聚合）。
+ */
+export const plugins = sqliteTable("plugins", {
+  id: text("id").primaryKey(),
+  slug: text("slug").notNull(),
+  kind: text("kind").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  icon: text("icon"),
+  tags: text("tags").notNull().default("[]"),
+  author: text("author"),
+  authorKind: text("author_kind"),
+  license: text("license"),
+  homepage: text("homepage"),
+  version: text("version").notNull(),
+  manifest: text("manifest").notNull(),
+  status: text("status").notNull().default("pending"),
+  reviewNote: text("review_note"),
+  reviewedAt: integer("reviewed_at"),
+  source: text("source").notNull().default("user"),
+  installCount: integer("install_count").notNull().default(0),
+  starCount: integer("star_count").notNull().default(0),
+  reportCount: integer("report_count").notNull().default(0),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+  publishedAt: integer("published_at"),
+}, (t) => [
+  uniqueIndex("plugins_slug_idx").on(t.slug),
+  index("plugins_status_idx").on(t.status),
+  index("plugins_kind_idx").on(t.kind),
+]);
+
+/** 插件安装记录（复合主键；removed_at 非空 = 已卸载，重装复活同一行） */
+export const pluginInstalls = sqliteTable("plugin_installs", {
+  pluginId: text("plugin_id").notNull(),
+  identity: text("identity").notNull(),
+  version: text("version").notNull(),
+  meta: text("meta"),
+  installedAt: integer("installed_at").notNull(),
+  removedAt: integer("removed_at"),
+}, (t) => [
+  primaryKey({ columns: [t.pluginId, t.identity] }),
+  index("plugin_installs_plugin_idx").on(t.pluginId),
+]);
+
+/** 插件星标（复合主键，天然幂等） */
+export const pluginStars = sqliteTable("plugin_stars", {
+  pluginId: text("plugin_id").notNull(),
+  identity: text("identity").notNull(),
+  createdAt: integer("created_at").notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.pluginId, t.identity] }),
+]);
+
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates, taxonomyProposals,
+  plugins, pluginInstalls, pluginStars,
 };
 

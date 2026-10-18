@@ -301,6 +301,54 @@ CREATE TABLE IF NOT EXISTS taxonomy_proposals (
 CREATE INDEX IF NOT EXISTS taxonomy_proposals_status_idx ON taxonomy_proposals(status);
 CREATE INDEX IF NOT EXISTS taxonomy_proposals_kind_idx ON taxonomy_proposals(kind);
 CREATE INDEX IF NOT EXISTS taxonomy_proposals_target_idx ON taxonomy_proposals(target_id);
+
+-- 插件市场三表（2026-10）：注册表 / 安装记录 / 星标
+CREATE TABLE IF NOT EXISTS plugins (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  icon TEXT,
+  tags TEXT NOT NULL DEFAULT '[]',
+  author TEXT,
+  author_kind TEXT,
+  license TEXT,
+  homepage TEXT,
+  version TEXT NOT NULL,
+  manifest TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  review_note TEXT,
+  reviewed_at INTEGER,
+  source TEXT NOT NULL DEFAULT 'user',
+  install_count INTEGER NOT NULL DEFAULT 0,
+  star_count INTEGER NOT NULL DEFAULT 0,
+  report_count INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  published_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS plugins_slug_idx ON plugins(slug);
+CREATE INDEX IF NOT EXISTS plugins_status_idx ON plugins(status);
+CREATE INDEX IF NOT EXISTS plugins_kind_idx ON plugins(kind);
+
+CREATE TABLE IF NOT EXISTS plugin_installs (
+  plugin_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  version TEXT NOT NULL,
+  meta TEXT,
+  installed_at INTEGER NOT NULL,
+  removed_at INTEGER,
+  PRIMARY KEY (plugin_id, identity)
+);
+CREATE INDEX IF NOT EXISTS plugin_installs_plugin_idx ON plugin_installs(plugin_id);
+
+CREATE TABLE IF NOT EXISTS plugin_stars (
+  plugin_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (plugin_id, identity)
+);
 `;
 
 const DDL_PG = `
@@ -559,6 +607,54 @@ CREATE TABLE IF NOT EXISTS taxonomy_proposals (
 CREATE INDEX IF NOT EXISTS taxonomy_proposals_status_idx ON taxonomy_proposals(status);
 CREATE INDEX IF NOT EXISTS taxonomy_proposals_kind_idx ON taxonomy_proposals(kind);
 CREATE INDEX IF NOT EXISTS taxonomy_proposals_target_idx ON taxonomy_proposals(target_id);
+
+-- 插件市场三表（2026-10）：注册表 / 安装记录 / 星标
+CREATE TABLE IF NOT EXISTS plugins (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  icon TEXT,
+  tags TEXT NOT NULL DEFAULT '[]',
+  author TEXT,
+  author_kind TEXT,
+  license TEXT,
+  homepage TEXT,
+  version TEXT NOT NULL,
+  manifest TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  review_note TEXT,
+  reviewed_at BIGINT,
+  source TEXT NOT NULL DEFAULT 'user',
+  install_count INTEGER NOT NULL DEFAULT 0,
+  star_count INTEGER NOT NULL DEFAULT 0,
+  report_count INTEGER NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  published_at BIGINT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS plugins_slug_idx ON plugins(slug);
+CREATE INDEX IF NOT EXISTS plugins_status_idx ON plugins(status);
+CREATE INDEX IF NOT EXISTS plugins_kind_idx ON plugins(kind);
+
+CREATE TABLE IF NOT EXISTS plugin_installs (
+  plugin_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  version TEXT NOT NULL,
+  meta TEXT,
+  installed_at BIGINT NOT NULL,
+  removed_at BIGINT,
+  PRIMARY KEY (plugin_id, identity)
+);
+CREATE INDEX IF NOT EXISTS plugin_installs_plugin_idx ON plugin_installs(plugin_id);
+
+CREATE TABLE IF NOT EXISTS plugin_stars (
+  plugin_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (plugin_id, identity)
+);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;

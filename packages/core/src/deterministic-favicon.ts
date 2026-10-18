@@ -228,7 +228,14 @@ const THIRD_PARTY_ICON_HOSTS = ['icon.horse', 'favicon.cc', 'yandex.st', 'favico
 /** 路径型图标服务（整站不是图标服务，只有这个路径是），按 URL 前缀拦 */
 const THIRD_PARTY_ICON_PATHS = ['https://www.google.com/s2/favicons', 'https://icons.duckduckgo.com/ip3/']
 
-function isThirdPartyIcon(value: string): boolean {
+/**
+ * 判断图标 URL 是否指向第三方图标服务（icon.horse 之类）。
+ *
+ * 导出用途：净化「站点自定义图标」的写入与快照输出路径 ——
+ * 只把 customIcon 传给 resolveSiteIcon 不够，凡是 `iconKey || resolveSiteIcon(...)`
+ * 这种短路写法都会绕过黑名单，让脏值进库/进快照/RSC payload。
+ */
+export function isThirdPartyIconUrl(value: string): boolean {
   try {
     const u = new URL(value)
     const host = u.hostname.toLowerCase()
@@ -244,7 +251,7 @@ export function resolveSiteIcon(
   title?: string,
   customIcon?: string | null
 ): string {
-  if (customIcon && typeof customIcon === 'string' && customIcon.trim().length > 0 && !isThirdPartyIcon(customIcon.trim())) {
+  if (customIcon && typeof customIcon === 'string' && customIcon.trim().length > 0 && !isThirdPartyIconUrl(customIcon.trim())) {
     return customIcon.trim()
   }
 

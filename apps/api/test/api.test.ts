@@ -451,6 +451,33 @@ describe("回收站（软删除）", () => {
     expect(back.json().title).toBe("快照复活站v2");
     expect(back.json().deletedAt).toBeNull();
   });
+
+  it("快照读写对第三方图标服务净化：icon.horse 不落库、不出快照", async () => {
+    const NAV_PATH = "src/navsphere/content/navigation.json";
+    const snap = (await app.inject({ method: "GET", url: "/api/storage?path=" + encodeURIComponent(NAV_PATH) })).json();
+    const cat = (snap.navigationItems ?? []).find((c: any) => c.id);
+    if (!cat) return;
+    const nsId = "icon-sanitize-" + Date.now();
+    const dirty = "https://icon.horse/icon/icon-sanitize.example.com";
+    const clean = "https://icon-sanitize.example.com/favicon.ico";
+
+    // 写入路径：快照里的第三方图标不落库（视同没有自定义图标，回落目标站 favicon）
+    cat.items = [...(cat.items ?? []), { id: nsId, title: "图标净化站", href: "https://icon-sanitize.example.com", icon: dirty, enabled: true }];
+    const put = await app.inject({ method: "PUT", url: "/api/storage", payload: { path: NAV_PATH, content: JSON.stringify(snap) } });
+    expect(put.statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/sites/" + nsId })).json().iconKey).toBe(clean);
+
+    // 读取路径：库里已有的历史脏值同样进不了快照输出
+    ctx.db.sqlite!.prepare("UPDATE sites SET icon_key = ? WHERE id = ?").run(dirty, nsId);
+    const snap2 = (await app.inject({ method: "GET", url: "/api/storage?path=" + encodeURIComponent(NAV_PATH) })).json();
+    const item2 = (snap2.navigationItems ?? []).flatMap((c: any) => c.items ?? []).find((i: any) => i.id === nsId);
+    expect(item2.icon).toBe(clean);
+    expect(item2.icon).not.toContain("icon.horse");
+
+    // 清理：从快照移除（快照托管站点被对齐软删）
+    cat.items = cat.items.filter((i: any) => i.id !== nsId);
+    await app.inject({ method: "PUT", url: "/api/storage", payload: { path: NAV_PATH, content: JSON.stringify(snap) } });
+  });
 });
 
 describe("站点 CRUD", () => {

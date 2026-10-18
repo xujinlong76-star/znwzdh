@@ -6,6 +6,7 @@ import {
   generateDeterministicSvg,
   generateDeterministicSvgDataUrl,
   resolveSiteIcon,
+  isThirdPartyIconUrl,
   batchSetPinnedSitesInCategory,
   batchMoveSitesBetweenCustomCategories,
   batchDeleteSitesFromCustomCategories,
@@ -60,7 +61,7 @@ describe('确定性渐变徽标与自适应 Favicon 生成管线 (Deterministic 
     expect(dataUrl.startsWith('data:image/svg+xml;charset=utf-8,')).toBe(true)
   })
 
-  it('智能解析站点图标：支持本地品牌资产、标题关键词与高速 CDN 回退 (resolveSiteIcon)', () => {
+  it('智能解析站点图标：本地品牌资产 → 标题关键词 → 站点自身 favicon (resolveSiteIcon)', () => {
     // 1. 显式自定义图标优先级最高
     expect(resolveSiteIcon('https://github.com', 'GitHub', 'https://custom.icon/gh.png')).toBe('https://custom.icon/gh.png')
 
@@ -71,13 +72,21 @@ describe('确定性渐变徽标与自适应 Favicon 生成管线 (Deterministic 
     expect(resolveSiteIcon('https://figma.com', 'Figma')).toBe('/assets/images/logos/figma.webp')
     expect(resolveSiteIcon('https://fonts.google.com', 'Google Fonts')).toBe('/assets/images/logos/Materialicons.webp')
 
-    // 3. 通用域名路由至无跨域限制的高清 CDN (icon.horse)
+    // 3. 通用域名直取站点自身 favicon（历史上的 icon.horse CDN 已移除：不再外泄浏览记录）
     expect(resolveSiteIcon('https://github.com/features/copilot', 'GitHub Copilot')).toBe('https://github.com/favicon.ico')
     expect(resolveSiteIcon('https://bilibili.com', '哔哩哔哩')).toBe('https://bilibili.com/favicon.ico')
     expect(resolveSiteIcon('https://taobao.com', '淘宝')).toBe('https://taobao.com/favicon.ico')
 
     // 4. 显式传入第三方图标服务 (如 icon.horse) 时被拦截阻断，回退到站点自身 favicon.ico
     expect(resolveSiteIcon('https://v2ex.com', 'V2EX', 'https://icon.horse/icon/v2ex.com')).toBe('https://v2ex.com/favicon.ico')
+
+    // 5. 黑名单判定本身可独立复用（存储层写入/快照输出用它净化脏值）
+    expect(isThirdPartyIconUrl('https://icon.horse/icon/v2ex.com')).toBe(true)
+    expect(isThirdPartyIconUrl('https://cdn.icon.horse/icon/a.com')).toBe(true)
+    expect(isThirdPartyIconUrl('https://www.google.com/s2/favicons?domain=x.com')).toBe(true)
+    expect(isThirdPartyIconUrl('https://icons.duckduckgo.com/ip3/x.com.ico')).toBe(true)
+    expect(isThirdPartyIconUrl('https://github.com/favicon.ico')).toBe(false)
+    expect(isThirdPartyIconUrl('/assets/images/logos/chatgpt.webp')).toBe(false) // 相对路径不误伤
   })
 })
 

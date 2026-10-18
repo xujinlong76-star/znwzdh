@@ -95,7 +95,9 @@ export async function buildNavigationData(ctx: AppContext): Promise<NsNavigation
       title: s.title,
       href: s.url,
       description: s.description ?? undefined,
-      icon: s.iconKey || resolveSiteIcon(s.url, s.title),
+      // 自定义图标走 resolveSiteIcon 的第 3 参（而非 `iconKey || ...` 短路）：
+      // 指向第三方图标服务的脏值会在这里被视同没有自定义图标，避免进快照 / RSC payload。
+      icon: resolveSiteIcon(s.url, s.title, s.iconKey),
       enabled: s.enabled,
       tags: s.tags ?? tags,
       actions: s.actions ?? enhanced.actions,
@@ -262,7 +264,9 @@ async function upsertSite(
   const found = existing.get(item.id);
   const title = item.title ?? item.href;
   const description = item.description ?? null;
-  const resolvedIcon = item.icon || resolveSiteIcon(item.href, item.title);
+  // 自定义图标作为第 3 参传给 resolveSiteIcon：指向第三方图标服务的脏值不会写回库里
+  // （前端后台把快照读出来再保存一遍是常见的回流路径，这里必须同样净化）
+  const resolvedIcon = resolveSiteIcon(item.href, item.title, item.icon);
   if (found) {
     await ctx.repo.updateSite(item.id, {
       url: item.href, title, description, categoryId,

@@ -88,7 +88,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
     const site = await ctx.repo.createSite({
       url: s.url, title: s.title, description: s.description,
       categoryId: s.categoryId, tags: s.tags ?? [], source: "seed",
-      iconKey: s.icon ?? resolveSiteIcon(s.url, s.title),
+      iconKey: resolveSiteIcon(s.url, s.title, s.icon),
     });
     sites++;
 

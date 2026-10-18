@@ -24,7 +24,7 @@ services:
       dockerfile: docker/Dockerfile.api
       args:
         # Docker Hub 不可达时可覆盖为镜像源地址
-        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
         # Docker Hub 不可达时指向镜像源；deb.debian.org 被中断时可换 APT 镜像
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-deb.debian.org}
     image: navhub/api:0.1.0
@@ -77,7 +77,7 @@ services:
       dockerfile: docker/Dockerfile.web
       args:
         NAVSPHERE_REF: ${NAVSPHERE_REF:-main}
-        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
         # Docker Hub 不可达时指向镜像源；deb.debian.org 被中断时可换 APT 镜像
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-deb.debian.org}
     image: navhub/web:0.1.0
@@ -134,7 +134,7 @@ services:
       dockerfile: docker/Dockerfile.api
       args:
         # Docker Hub 不可达时可覆盖为镜像源地址
-        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
         # Docker Hub 不可达时指向镜像源；deb.debian.org 被中断时可换 APT 镜像
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-deb.debian.org}
     image: navhub/api:0.1.0
@@ -167,7 +167,7 @@ services:
       dockerfile: docker/Dockerfile.api
       args:
         # Docker Hub 不可达时可覆盖为镜像源地址
-        NODE_IMAGE: ${NODE_IMAGE:-node:22-bookworm-slim}
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
         # Docker Hub 不可达时指向镜像源；deb.debian.org 被中断时可换 APT 镜像
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-deb.debian.org}
     image: navhub/api:0.1.0

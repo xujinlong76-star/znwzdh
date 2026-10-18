@@ -300,8 +300,10 @@
 | `next lint` | ✅ 0 错误 |
 | `next build`（NEXT_DIST_DIR=.next-verify） | ✅ 通过 |
 | `pnpm check:bundle` | ✅ 全部路由在预算内（首页 637 / 预算 669 KB） |
-| `pnpm test:e2e` | ✅ admin 三件套 6/6 转绿（strip-types 修复）；2 例前台用例受并发写盘干扰首轮失败、定向复跑 5/5 全绿；以 CI 首航为准 |
+| `pnpm test:e2e` | ✅ 本地：admin 三件套 6/6 转绿（strip-types 修复）；2 例前台用例受并发写盘干扰首轮失败、定向复跑 5/5 全绿。CI 首航 #259：E2E 作业全绿（干净环境复证） |
 
 ### 落盘
 
-整批（P0 全部 + P1 主体 + P2 三批 + admin 迁移 + CI 修复 + 文档）以主体提交落盘；strip-types 运行时修复与本节记录以跟进提交推送 main，随后盯 CI 首航（PG / docker-smoke / E2E / audit 首次实跑本批代码）。
+整批（P0 全部 + P1 主体 + P2 三批 + admin 迁移 + CI 修复 + 文档）以主体提交 `056ba5b` 落盘；strip-types 运行时修复与本节记录以跟进提交 `40992e8` 推送 main。
+
+**CI 首航结论（run #259，40992e8）**：8/8 作业全绿——此前红灯的「前端门禁（Web typecheck / lint / build）」转绿（chart.tsx recharts 3 适配生效）；「跨方言测试（PostgreSQL）」「浏览器 E2E」「镜像冒烟构建」「依赖审计」首次实跑本批代码即通过；覆盖层 / 扩展 / upstream-ref 检查一致。

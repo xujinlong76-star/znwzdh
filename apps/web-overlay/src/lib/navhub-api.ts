@@ -539,3 +539,260 @@ export async function fetchSiteRelations(siteId: string, onDegraded?: DegradedHa
   )
 }
 
+/* ------------------------------ 插件市场 (Plugin Marketplace) ------------------------------ */
+
+export interface HubPluginItem {
+  id: string
+  slug: string
+  kind: 'site-pack' | 'workspace-preset' | 'theme'
+  name: string
+  description: string
+  icon?: string | null
+  author?: string | null
+  authorKind?: string | null
+  version: string
+  tags?: string[]
+  homepage?: string | null
+  license?: string | null
+  manifest: any
+  summary?: any
+  source: string
+  status: 'pending' | 'published' | 'rejected' | 'delisted'
+  installCount: number
+  starCount: number
+  reportCount: number
+  publishedAt?: number | null
+  createdAt: number
+  updatedAt: number
+  installed?: boolean
+  starred?: boolean
+  installedVersion?: string | null
+  installedAt?: number | null
+}
+
+export interface HubPluginsResponse {
+  items: HubPluginItem[]
+  total: number
+  pending?: number
+  limit: number
+  offset: number
+}
+
+export interface HubPluginInstalledItem {
+  id: string
+  slug: string
+  kind: string
+  name: string
+  description: string
+  icon?: string | null
+  version: string
+  installedVersion: string
+  installedAt: number
+  source: string
+}
+
+export async function fetchPlugins(
+  params: { kind?: string; q?: string; sort?: string; limit?: number; offset?: number } = {},
+  onDegraded?: DegradedHandler,
+): Promise<HubPluginsResponse> {
+  const sp = new URLSearchParams()
+  if (params.kind) sp.set('kind', params.kind)
+  if (params.q) sp.set('q', params.q)
+  if (params.sort) sp.set('sort', params.sort)
+  if (params.limit) sp.set('limit', String(params.limit))
+  if (params.offset) sp.set('offset', String(params.offset))
+  const qs = sp.toString()
+  const path = '/api/plugins' + (qs ? `?${qs}` : '')
+  return degrade<HubPluginsResponse>(
+    { items: [], total: 0, limit: params.limit ?? 24, offset: params.offset ?? 0 },
+    () => getJson<HubPluginsResponse>(path),
+    onDegraded,
+  )
+}
+
+export async function fetchAdminPlugins(
+  params: { status?: string; kind?: string; q?: string; sort?: string; limit?: number; offset?: number } = {},
+  onDegraded?: DegradedHandler,
+): Promise<HubPluginsResponse> {
+  const sp = new URLSearchParams()
+  if (params.status) sp.set('status', params.status)
+  if (params.kind) sp.set('kind', params.kind)
+  if (params.q) sp.set('q', params.q)
+  if (params.sort) sp.set('sort', params.sort)
+  if (params.limit) sp.set('limit', String(params.limit))
+  if (params.offset) sp.set('offset', String(params.offset))
+  const qs = sp.toString()
+  const path = '/api/admin/plugins' + (qs ? `?${qs}` : '')
+  return degrade<HubPluginsResponse>(
+    { items: [], total: 0, limit: params.limit ?? 24, offset: params.offset ?? 0 },
+    () => getJson<HubPluginsResponse>(path),
+    onDegraded,
+  )
+}
+
+export async function fetchInstalledPlugins(
+  identity?: string,
+  onDegraded?: DegradedHandler,
+): Promise<{ items: HubPluginInstalledItem[]; total: number }> {
+  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  return degrade<{ items: HubPluginInstalledItem[]; total: number }>(
+    { items: [], total: 0 },
+    () =>
+      getJson<{ items: HubPluginInstalledItem[]; total: number }>(
+        `/api/plugins/installed${qs}`,
+        undefined,
+        identity ? anonHeaders(identity) : undefined,
+      ),
+    onDegraded,
+  )
+}
+
+export async function fetchPluginDetail(
+  slug: string,
+  identity?: string,
+  onDegraded?: DegradedHandler,
+): Promise<{ plugin: HubPluginItem; summary: any } | null> {
+  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  try {
+    return await getJson<{ plugin: HubPluginItem; summary: any }>(
+      `/api/plugins/${encodeURIComponent(slug)}${qs}`,
+      undefined,
+      identity ? anonHeaders(identity) : undefined,
+    )
+  } catch (error) {
+    if (!isNotFound(error)) notifyDegraded(onDegraded, error)
+    return null
+  }
+}
+
+export async function validatePlugin(
+  manifest: unknown,
+): Promise<{ ok: boolean; manifest?: any; summary?: any; error?: string; errors?: string[] }> {
+  return sendJson('/api/plugins/validate', 'POST', { manifest })
+}
+
+export async function publishPlugin(
+  manifest: unknown,
+  identity?: string,
+): Promise<HubPluginItem> {
+  return sendJson<HubPluginItem>(
+    '/api/plugins',
+    'POST',
+    { manifest },
+    undefined,
+    identity ? anonHeaders(identity) : undefined,
+  )
+}
+
+export async function importPlugin(
+  manifest: unknown,
+  explicitSlug?: string,
+  identity?: string,
+): Promise<{ success: boolean; plugin: HubPluginItem; alreadyExisted: boolean }> {
+  return sendJson(
+    '/api/plugins/import',
+    'POST',
+    { manifest, slug: explicitSlug },
+    undefined,
+    identity ? anonHeaders(identity) : undefined,
+  )
+}
+
+export async function updatePlugin(
+  slug: string,
+  manifest: unknown,
+  identity?: string,
+): Promise<{ success: boolean; plugin: HubPluginItem }> {
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}`,
+    'PUT',
+    { manifest },
+    undefined,
+    identity ? anonHeaders(identity) : undefined,
+  )
+}
+
+export async function reviewPlugin(
+  slug: string,
+  action: 'approve' | 'reject' | 'delist',
+  note?: string,
+): Promise<{ success: boolean; plugin: HubPluginItem; action: string }> {
+  return sendJson(`/api/plugins/${encodeURIComponent(slug)}/review`, 'POST', { action, note })
+}
+
+export async function installPlugin(
+  slug: string,
+  identity?: string,
+): Promise<{ success: boolean; alreadyInstalled: boolean; plugin: HubPluginItem; applied: any }> {
+  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/install${qs}`,
+    'POST',
+    {},
+    undefined,
+    identity ? anonHeaders(identity) : undefined,
+  )
+}
+
+export async function uninstallPlugin(
+  slug: string,
+  identity?: string,
+  removeSites = false,
+): Promise<{ success: boolean; uninstalled: boolean; sitesRemoved: number }> {
+  const qs = new URLSearchParams()
+  if (identity) qs.set('anonId', identity)
+  if (removeSites) qs.set('removeSites', 'true')
+  const qsStr = qs.toString() ? `?${qs.toString()}` : ''
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/uninstall${qsStr}`,
+    'POST',
+    { removeSites },
+    undefined,
+    identity ? anonHeaders(identity) : undefined,
+  )
+}
+
+export async function starPlugin(
+  slug: string,
+  identity?: string,
+): Promise<{ success: boolean; starred: boolean; starCount: number }> {
+  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/star${qs}`,
+    'POST',
+    {},
+    undefined,
+    identity ? anonHeaders(identity) : undefined,
+  )
+}
+
+export async function unstarPlugin(
+  slug: string,
+  identity?: string,
+): Promise<{ success: boolean; starred: boolean; starCount: number }> {
+  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/star${qs}`,
+    'DELETE',
+    undefined,
+    undefined,
+    identity ? anonHeaders(identity) : undefined,
+  )
+}
+
+export async function reportPlugin(
+  slug: string,
+  reason: string,
+  identity?: string,
+): Promise<{ success: boolean; reportCount: number }> {
+  const qs = identity ? `?anonId=${encodeURIComponent(identity)}` : ''
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/report${qs}`,
+    'POST',
+    { reason },
+    undefined,
+    identity ? anonHeaders(identity) : undefined,
+  )
+}
+
+

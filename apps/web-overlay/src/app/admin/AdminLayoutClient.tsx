@@ -29,6 +29,7 @@ import {
   Tags,
   SlidersHorizontal,
   Star,
+  Package,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
 import {
@@ -110,6 +111,11 @@ const menuItems = [
     title: "投稿审核",
     href: "/admin/submissions",
     icon: Inbox
+  },
+  {
+    title: "插件市场",
+    href: "/admin/plugins",
+    icon: Package
   },
   {
     title: "运营数据",

@@ -82,6 +82,7 @@ import {
   Cpu,
   LayoutGrid,
   Compass,
+  Store,
   Pin,
   Sparkles,
   Plus,
@@ -434,6 +435,12 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
                     <Link href="/import" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Upload className="h-4 w-4 text-emerald-500 shrink-0" />
                       <span className="font-medium text-foreground">导入浏览器书签</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/marketplace" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
+                      <Store className="h-4 w-4 text-rose-500 shrink-0" />
+                      <span className="font-medium text-foreground">插件市场（社区共享）</span>
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>

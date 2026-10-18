@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
+import { takeStagedWorkspacePreset } from '@/lib/plugins/preset-staging'
 
 export function ModularCanvas() {
   const {
@@ -51,6 +52,7 @@ export function ModularCanvas() {
     exportLayoutJson,
     importLayoutJson,
     compactLayout,
+    installWidgetPreset,
     undo,
     redo,
     canUndo,
@@ -85,6 +87,20 @@ export function ModularCanvas() {
       // 读不到就沿用默认画布背景：纯外观偏好，不值得打扰用户
     }
   }, [])
+
+  // 插件市场：消费暂存的工作台预设（详情页安装后写入，仅消费一次；
+  // 必须等 initialized，否则会被 hydrate 的阶段覆盖掉）
+  useEffect(() => {
+    if (!initialized) return
+    const staged = takeStagedWorkspacePreset()
+    if (!staged) return
+    const ok = installWidgetPreset(staged.payload, staged.mode ?? 'append')
+    setExportNotice(
+      ok
+        ? `已从插件市场安装「${staged.name}」，可切换新看板查看`
+        : `「${staged.name}」没有当前可用的模块（类型可能已下线）`,
+    )
+  }, [initialized, installWidgetPreset])
 
   // 画布背景风格切换
   const handleSelectBg = (bg: 'dots' | 'grid' | 'aurora' | 'clean') => {

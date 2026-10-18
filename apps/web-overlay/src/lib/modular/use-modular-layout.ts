@@ -542,6 +542,60 @@ export function useModularLayout() {
     })
   }, [updateCurrentWidgets])
 
+  // 17. 插件市场工作台预设安装 (Plugin Preset Installer)
+  const installWidgetPreset = useCallback(
+    (
+      preset?: {
+        boards?: Array<{
+          name?: string
+          widgets?: Array<Record<string, unknown>>
+        }>
+      } | null,
+      mode: 'append' | 'replace' = 'append'
+    ) => {
+      if (!preset || !Array.isArray(preset.boards) || preset.boards.length === 0) return false
+      const isKnownType = (type: string) => Boolean(WIDGET_REGISTRY[type])
+      const newBoards: Board[] = preset.boards
+        .map((b: { name?: string; widgets?: Array<Record<string, unknown>> }, bIdx: number) => {
+          const instances: WidgetInstance[] = (b.widgets || []).map(
+            (w: Record<string, unknown>, wIdx: number) => ({
+              id: `widget-preset-${Date.now()}-${bIdx}-${wIdx}`,
+              type: String(w.type ?? ''),
+              customTitle: typeof w.customTitle === 'string' ? w.customTitle : undefined,
+              colSpan: typeof w.colSpan === 'number' ? w.colSpan : 4,
+              rowSpan: typeof w.rowSpan === 'number' ? w.rowSpan : 1,
+              config: typeof w.config === 'object' && w.config !== null ? (w.config as Record<string, unknown>) : {},
+              createdAt: Date.now(),
+            })
+          )
+          return {
+            id: `board-preset-${Date.now()}-${bIdx}`,
+            name: b.name || `预设看板 ${bIdx + 1}`,
+            widgets: sanitizeWidgetInstances<WidgetInstance>(instances, isKnownType),
+          }
+        })
+        .filter((b: Board) => b.widgets.length > 0)
+
+      if (newBoards.length === 0) return false
+
+      const prevBoards = boardsRef.current
+      const nextBoards = mode === 'replace' ? newBoards : [...prevBoards, ...newBoards]
+
+      const newHistory = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), prevBoards]
+      historyRef.current = newHistory
+      futureRef.current = []
+      boardsRef.current = nextBoards
+      setHistory(newHistory)
+      setFuture([])
+      setBoards(nextBoards)
+      if (newBoards[0]) {
+        setActiveBoardId(newBoards[0].id)
+      }
+      return true
+    },
+    []
+  )
+
   return {
     boards,
     activeBoardId,
@@ -566,10 +620,12 @@ export function useModularLayout() {
     exportLayoutJson,
     importLayoutJson,
     compactLayout,
+    installWidgetPreset,
     undo,
     redo,
     canUndo: history.length > 0,
     canRedo: future.length > 0,
   }
 }
+
 

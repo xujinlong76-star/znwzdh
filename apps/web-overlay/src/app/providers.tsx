@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect } from 'react'
+import { Toaster as SonnerToaster } from 'sonner'
+import { initThemeRuntime } from '@/lib/plugins/theme-runtime'
 import { SessionProvider } from 'next-auth/react'
 import { Toaster } from '@/components/ui/toaster'
 import { PredictivePrefetchProvider } from '@/components/predictive-prefetch-provider'
@@ -26,12 +28,21 @@ export function Providers({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection)
   }, [])
 
+  useEffect(() => {
+    // 插件市场主题：客户端首屏恢复上次安装的 theme 插件（无活跃主题时为空操作）。
+    // Providers 已是 'use client'，SSR 阶段 applyThemeTokens 自带 typeof document 守卫。
+    initThemeRuntime()
+  }, [])
+
   return (
     <SessionProvider>
       <PredictivePrefetchProvider>
         {children}
         <OfflineBanner />
         <Toaster />
+        {/* 插件市场（components/plugins/** 与市场/后台页）使用 sonner 通知通道；
+            没有这个挂载点，toast 调用会被静默丢弃 */}
+        <SonnerToaster richColors position="top-center" />
       </PredictivePrefetchProvider>
     </SessionProvider>
   )

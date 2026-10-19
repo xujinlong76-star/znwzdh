@@ -275,7 +275,7 @@ CREATE TABLE IF NOT EXISTS plugin_stars (
 
 ### 阶段 D（第二批已落地）
 13. D1 更新链路：`resolveInstallAction` 纯函数（`apps/web-overlay/src/lib/plugins/install-state.ts`，判定 install / update / installed）+ 单测；列表卡片「更新到 vX」徽标按钮、详情页三态主按钮（安装 / 更新 / 已安装管理）、安装弹窗 `upgrade` 模式文案（确认更新 / 立即平滑升级 / 成功 toast「已更新到 vX」）。服务端零新增状态机——重装即升级（幂等增量，只增不删）。
-14. D3 动态 OG 卡片：`apps/web-overlay/src/app/marketplace/[slug]/opengraph-image.tsx`（1200×630；ASCII 安全构图零字体依赖；取数失败回退通用卡）。sitemap / robots 留待下一小批。
+14. D3 动态 OG 卡片：`apps/web-overlay/src/app/marketplace/[slug]/opengraph-image.tsx`（1200×630；ASCII 安全构图零字体依赖；取数失败回退通用卡）。sitemap / robots 已补齐：`app/sitemap.ts` 收录首页/市场/热门 + 已上架插件详情（分页全量、上限 5000，中枢不可用只回退静态条目），`app/robots.ts` 放行公开页并屏蔽 admin/api/个人数据；两者均按请求头推导 origin，自托管换域名无需配置。
 15. D4 分享深链：`?install=1` 落地详情页自动弹安装确认（仅未安装时触发、只处理一次防打扰）；详情页「分享」按钮复制带参链接。e2e 测试 1 改走深链流程（含冷启动补击回退）作为回归口径。
 16. 同批收编（协作方产出经 overlay 收集器入库）：升级差异比对 `PluginDiffView` + `upgradeDiff` 契约、遥测大盘 `/api/admin/plugins/metrics` + `fetchPluginTelemetry` 契约补齐、Next 16 依赖与 tsconfig 收集、上游 admin 表单 zod4 类型修复（修复 CI 前端门禁红）。
 17. D2 语义检索与相似推荐：插件向量独立成表（持久层 `plugin_embeddings` + 向量表 `plugins_vec`；业务 id `plugin:<slug>`），与站点 `sites_vec` 互不挤占 KNN top-N；索引钩子收敛在 review approve / import / seed 一条路径，驳回 / 下架 / 更新回待审同步摘除；新增 `GET /api/plugins/search?q=&kind=&limit=`（语义优先，模型未就绪或不可用时关键词回退并标注 `degraded`）与 `GET /api/plugins/:slug/similar?limit=6`（详情页「相似插件」发现回路）；`reindex` 任务支持 `targets: ['sites','plugins']`（默认 sites 保兼容）；MCP 新增 `search_plugins`（工具总数 35）。测试覆盖持久层往返、降级回退、语义排序、状态门禁与工具计数。

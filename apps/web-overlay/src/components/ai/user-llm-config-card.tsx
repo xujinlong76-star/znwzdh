@@ -7,17 +7,21 @@
  * 密钥加密存储、只回显掩码；用户级端点强制禁私网（防内网探测）。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bot, CheckCircle2, Loader2, RefreshCw, Save, XCircle } from 'lucide-react'
+import { Bot, CheckCircle2, Loader2, RefreshCw, Save, Send, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
 import { LlmConfigFields, type LlmFormValue } from './llm-config-form'
 import { getIdentity } from '@/lib/identity'
 import {
+  chatWithUserLlm,
   deleteUserLlmConfig,
   fetchUserLlmConfig,
   saveUserLlmConfig,
   testUserLlmConfig,
+  type HubAiChatResult,
   type HubLlmTestResult,
   type HubUserLlmConfigView,
 } from '@/lib/navhub-api'
@@ -57,6 +61,10 @@ export function UserLlmConfigCard() {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<HubLlmTestResult | null>(null)
+  const [chatInput, setChatInput] = useState('')
+  const [chatting, setChatting] = useState(false)
+  const [chatReply, setChatReply] = useState<HubAiChatResult | null>(null)
+  const [chatError, setChatError] = useState<string | null>(null)
 
   const load = useCallback(async (id: string) => {
     if (!id) {
@@ -149,6 +157,23 @@ export function UserLlmConfigCard() {
       })
     } finally {
       setTesting(false)
+    }
+  }
+
+  async function handleChat() {
+    const content = chatInput.trim()
+    if (!content || chatting || !identityRef.current) return
+    setChatting(true)
+    setChatError(null)
+    setChatReply(null)
+    try {
+      const res = await chatWithUserLlm(identityRef.current, [{ role: 'user', content }], 512)
+      setChatReply(res)
+      setChatInput('')
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setChatting(false)
     }
   }
 
@@ -271,6 +296,40 @@ export function UserLlmConfigCard() {
           )}
         </div>
       )}
+
+      {/* 试聊：验证解析链当前生效的模型（个人或系统默认） */}
+      <div className="border-t pt-3 mt-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Label className="text-xs">试聊</Label>
+          <span className="text-xs text-muted-foreground">
+            当前生效：{view?.configured ? '个人配置' : '系统默认'}（含备用模型兜底）
+          </span>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) void handleChat()
+            }}
+            placeholder="输入一句话，例如：用一句话介绍你自己"
+            disabled={chatting}
+          />
+          <Button size="sm" onClick={() => void handleChat()} disabled={chatting || !chatInput.trim()}>
+            {chatting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-2 h-3.5 w-3.5" />}
+            发送
+          </Button>
+        </div>
+        {chatError && <p className="text-xs text-destructive">{chatError}</p>}
+        {chatReply && (
+          <div className="rounded-md border bg-muted/30 p-2.5 space-y-1">
+            <p className="text-xs whitespace-pre-wrap">{chatReply.reply}</p>
+            <p className="text-[11px] text-muted-foreground">
+              {chatReply.model} · {chatReply.latencyMs}ms · {chatReply.usage.totalTokens} tokens
+            </p>
+          </div>
+        )}
+      </div>
     </section>
   )
 }

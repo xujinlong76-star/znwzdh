@@ -4,7 +4,7 @@
  * 写操作一律「权限校验 -> （必要时）幂等去重 -> 审计落库」，与 REST 侧语义一致。
  */
 import { enrichUrl, guardedFetch } from "@navhub/ai";
-import { resolveLlm } from "@navhub/api";
+import { enrichLlmOf, resolveLlm } from "@navhub/api";
 import { auditPageHealth } from "@navhub/core";
 import {
   BatchImportInput,
@@ -74,9 +74,9 @@ export const siteHandlers = {
       if (input.enrich) {
         const cats = await ctx.repo.listCategories();
         // 与 HTTP 入口共用同一解析链：系统配置 > 环境变量 > 内置默认（Agnes）
-        const { provider } = await resolveLlm(ctx);
+        const resolved = await resolveLlm(ctx);
         const e = await enrichUrl(input.url, {
-          llm: provider, guard: ctx.config.fetch,
+          llm: enrichLlmOf(resolved), guard: ctx.config.fetch,
           knownCategories: cats.map((c) => c.title),
         });
         provenance = e.provenance;

@@ -7,7 +7,8 @@
  * 密钥任何情况下都不回显明文；写操作失败时只透出可读原因，不抛出内部堆栈。
  */
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
-import { LlmError } from "@navhub/ai";
+import { LlmError, chatCompletion } from "@navhub/ai";
+import { z } from "zod";
 import {
   LlmProviderInputSchema,
   SystemLlmConfigInputSchema,
@@ -154,6 +155,91 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       } catch (err) {
         return replyLlmError(reply, err);
       }
+    },
+  );
+
+  /* ---------------------------- 个人试聊 ---------------------------- */
+
+  /**
+   * 个人 AI 对话：按解析链选用模型（个人 → 系统 → 环境），主模型失败自动走备用池。
+   * 只接受 user/assistant 消息（不允许客户端注入 system 指令），限流 10 次/分钟。
+   */
+  const ChatBody = z.object({
+    messages: z
+      .array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string().min(1).max(8000),
+        }),
+      )
+      .min(1)
+      .max(20),
+    maxTokens: z.number().int().min(16).max(1024).optional(),
+  });
+
+  app.post(
+    "/api/user/ai/chat",
+    { config: { scope: "public", rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const identity = identityOf(req as never);
+      if (!identity) {
+        reply.code(400);
+        return { error: "缺少 userId 或 anonId" };
+      }
+      if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+
+      const body = ChatBody.safeParse(req.body ?? {});
+      if (!body.success) {
+        reply.code(400);
+        return { error: "参数无效", detail: body.error.issues };
+      }
+
+      const resolved = await resolveLlm(ctx, identity);
+      if (!resolved.provider.apiKey) {
+        reply.code(400);
+        return { error: "尚未配置可用的模型密钥", code: "config" };
+      }
+
+      const candidates = [resolved.provider, ...resolved.fallbacks];
+      let lastError: LlmError | null = null;
+      for (const candidate of candidates) {
+        try {
+          const result = await chatCompletion(candidate, {
+            messages: body.data.messages,
+            maxTokens: body.data.maxTokens ?? 512,
+          });
+          await ctx.repo
+            .recordEvent("ai_chat", {
+              identity,
+              meta: {
+                model: result.model,
+                source: resolved.source,
+                tokens: result.usage.totalTokens,
+                latencyMs: result.latencyMs,
+              },
+            })
+            .catch(() => undefined);
+          return {
+            reply: result.content,
+            model: result.model,
+            source: resolved.source,
+            usage: result.usage,
+            latencyMs: result.latencyMs,
+          };
+        } catch (err) {
+          if (!(err instanceof LlmError)) throw err;
+          lastError = err;
+          // 鉴权/参数类错误换备用模型也无意义，直接失败
+          if (err.code === "auth" || err.code === "config" || err.code === "ssrf") break;
+        }
+      }
+
+      reply.code(502);
+      return {
+        error: "模型调用失败",
+        code: lastError?.code ?? "network",
+        detail: lastError?.message ?? "未知错误",
+      };
     },
   );
 };

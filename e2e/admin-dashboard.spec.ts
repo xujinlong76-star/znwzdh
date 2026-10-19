@@ -10,7 +10,9 @@ test.describe('管理端控制台与运营洞察看板 E2E 测试', () => {
       await bypassBtn.click();
     }
     // 等待已成功进入控制台且主标题呈现
-    await expect(page.locator('h1').filter({ hasText: '运营与监控中枢' })).toBeVisible({ timeout: 45_000 });
+    // 收窄到可见主内容区：Next 16 流式水合会在 body 级暂存容器（#S:*）里短暂保留同一份内容，
+    // 裸 h1 选择器会撞上 Playwright 严格模式的双元素竞态（2026-10-19 E2E 复跑定位）。
+    await expect(page.locator('main#main-content h1').filter({ hasText: '运营与监控中枢' })).toBeVisible({ timeout: 45_000 });
   });
 
   test('控制台首页展示 6 大核心 KPI、系统轻量态势与 SSE 状态', async ({ page }) => {
@@ -52,7 +54,9 @@ test.describe('管理端控制台与运营洞察看板 E2E 测试', () => {
       await bypassBtn.click();
     }
 
-    await expect(page.locator('h1').filter({ hasText: '运营与搜索洞察看板' })).toBeVisible({ timeout: 30_000 });
+    // 收窄到可见主内容区：Next 16 流式水合会在 body 级暂存容器（#S:*）里短暂保留同一份内容，
+    // 裸 h1 选择器会撞上 Playwright 严格模式的双元素竞态（2026-10-19 E2E 复跑定位）。
+    await expect(page.locator('main#main-content h1').filter({ hasText: '运营与搜索洞察看板' })).toBeVisible({ timeout: 30_000 });
 
     // 验证时间跨度选择器存在
     await expect(page.getByRole('button', { name: '近 7 天' })).toBeVisible();

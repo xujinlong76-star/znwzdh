@@ -10,7 +10,9 @@ test.describe('核心旅程 5：管理端任务调度与 SSE 实时推流', () =
       await bypassBtn.click();
     }
     // 等待已成功进入管理页且主标题呈现
-    await expect(page.locator('h1').filter({ hasText: '任务调度与自动化中心' })).toBeVisible({ timeout: 45_000 });
+    // 收窄到可见主内容区：Next 16 流式水合会在 body 级暂存容器（#S:*）里短暂保留同一份内容，
+    // 裸 h1 选择器会撞上 Playwright 严格模式的双元素竞态（2026-10-19 E2E 复跑定位）。
+    await expect(page.locator('main#main-content h1').filter({ hasText: '任务调度与自动化中心' })).toBeVisible({ timeout: 45_000 });
     // 等待数据加载完成
     await expect(page.locator('text=正在装载任务队列…')).not.toBeVisible({ timeout: 25_000 });
   });

@@ -160,6 +160,67 @@ describe("系统级配置（管理端）", () => {
     expect(raw).toBeNull();
   });
 
+  it("备用模型池：加密落库、密钥沿用、解析链输出、私网拒绝", async () => {
+    // 1) 保存两个备用：A 带密钥，B 无密钥（不参与解析）
+    let res = await app.inject({
+      method: "PUT",
+      url: ADMIN,
+      payload: {
+        baseUrl: PUBLIC_URL,
+        model: "agnes-3.0-flash",
+        fallbacks: [
+          { id: "fb-test-1", name: "备用 A", baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", apiKey: "sk-fb-secret-1111" },
+          { name: "备用 B", baseUrl: PUBLIC_URL, model: "agnes-3.0-flash" },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const cfg = res.json().config;
+    expect(cfg.fallbacks).toHaveLength(2);
+    expect(cfg.fallbacks[0].apiKeyMasked).toBe("sk-****1111");
+    expect(JSON.stringify(cfg)).not.toContain("sk-fb-secret-1111");
+
+    // 2) 库内同样无明文，且无 id 的条目被分配稳定 id
+    const raw = await ctx.repo.getSystemState<Record<string, unknown>>(SYSTEM_LLM_CONFIG_KEY);
+    expect(JSON.stringify(raw)).not.toContain("sk-fb-secret-1111");
+    const storedFallbacks = (raw as { fallbacks: Array<Record<string, unknown>> }).fallbacks;
+    expect(storedFallbacks).toHaveLength(2);
+    expect(storedFallbacks[0].id).toBe("fb-test-1");
+    expect(typeof storedFallbacks[1].id).toBe("string");
+
+    // 3) 省略 apiKey 时按 id 沿用旧密文
+    res = await app.inject({
+      method: "PUT",
+      url: ADMIN,
+      payload: {
+        baseUrl: PUBLIC_URL,
+        model: "agnes-3.0-flash",
+        fallbacks: [{ id: "fb-test-1", baseUrl: PUBLIC_URL, model: "agnes-3.0-flash" }],
+      },
+    });
+    expect(res.json().config.fallbacks[0].apiKeyMasked).toBe("sk-****1111");
+
+    // 4) 解析链输出备用池（仅带密钥的条目）
+    const resolved = await resolveLlm(ctx);
+    expect(resolved.fallbacks).toHaveLength(1);
+    expect(resolved.fallbacks[0].apiKey).toBe("sk-fb-secret-1111");
+
+    // 5) 备用端点同样过 SSRF 校验
+    res = await app.inject({
+      method: "PUT",
+      url: ADMIN,
+      payload: {
+        baseUrl: PUBLIC_URL,
+        model: "agnes-3.0-flash",
+        fallbacks: [{ baseUrl: "http://127.0.0.1:9/v1", model: "m", allowPrivateNetwork: false }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("ssrf");
+
+    await app.inject({ method: "POST", url: "/api/admin/ai/config/reset" });
+  });
+
   it("连通性测试：mock 成功返回延迟与回复预览", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>

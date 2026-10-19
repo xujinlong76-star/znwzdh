@@ -16,7 +16,7 @@
 
 import { EventEmitter } from "node:events";
 import { enrichUrl } from "@navhub/ai";
-import { resolveLlm } from "./llm-config.ts";
+import { enrichLlmOf, resolveLlm } from "./llm-config.ts";
 import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol, sanitizeIconUrl } from "@navhub/core";
 import {
   bindSqlite,
@@ -637,7 +637,7 @@ export class JobRunner {
     if (!site) throw new Error("站点不存在: " + payload.siteId);
 
     const enriched = await enrichUrl(site.url, {
-      llm: payload.llm ? (await resolveLlm(this.ctx)).provider : undefined,
+      llm: payload.llm ? enrichLlmOf(await resolveLlm(this.ctx)) : undefined,
       guard: this.ctx.config.fetch,
       heuristicOnly: !payload.llm,
     });

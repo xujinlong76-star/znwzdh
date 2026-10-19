@@ -15,6 +15,7 @@
 
 import { isNotFound, type DegradedHandler } from './degrade'
 import { getIdentity } from './identity'
+import type { PluginDiffResult } from './plugins/plugin-manifest'
 
 const BASE = '/api/hub'
 
@@ -542,12 +543,8 @@ export async function fetchSiteRelations(siteId: string, onDegraded?: DegradedHa
 
 /* ------------------------------ 插件市场 (Plugin Marketplace) ------------------------------ */
 
-/** 版本升级变动明细（已安装版本 → 市场最新版本；服务端提供，缺省表示无可对比数据） */
-export interface PluginUpgradeDiff {
-  added?: string[]
-  removed?: string[]
-  changed?: string[]
-}
+/** 版本升级变动明细（已安装版本 → 市场最新版本；与核心 diffPluginManifests 的 PluginDiffResult 对齐，缺省表示无可对比数据） */
+export type PluginUpgradeDiff = PluginDiffResult
 
 /** 插件生态大盘遥测（服务端 GET /api/admin/plugins/metrics） */
 export interface HubPluginTelemetryMetrics {
@@ -1292,6 +1289,22 @@ export async function checkPluginUrls(
 
 export type HubJsonMode = 'auto' | 'response_format' | 'prompt'
 
+/** 备用模型视图（密钥只回显掩码） */
+export interface HubLlmFallbackView {
+  id: string
+  enabled: boolean
+  name: string
+  baseUrl: string
+  model: string
+  hasApiKey: boolean
+  apiKeyMasked: string
+  timeoutMs: number
+  temperature: number
+  maxTokens: number
+  jsonMode: HubJsonMode
+  allowPrivateNetwork: boolean
+}
+
 /** 系统级模型配置视图（密钥只回显掩码） */
 export interface HubLlmConfigView {
   configured: boolean
@@ -1307,6 +1320,7 @@ export interface HubLlmConfigView {
   maxTokens: number
   jsonMode: HubJsonMode
   allowPrivateNetwork: boolean
+  fallbacks: HubLlmFallbackView[]
   updatedAt: number | null
   updatedBy: string | null
 }
@@ -1328,6 +1342,21 @@ export interface HubUserLlmConfigView {
   system: { source: 'db' | 'env' | 'default'; name: string; model: string }
 }
 
+export interface HubLlmFallbackInput {
+  /** 沿用已存密钥时必传（与后端 fallbacks[].id 对应） */
+  id?: string
+  enabled?: boolean
+  name?: string
+  baseUrl: string
+  model: string
+  apiKey?: string
+  timeoutMs?: number
+  temperature?: number
+  maxTokens?: number
+  jsonMode?: HubJsonMode
+  allowPrivateNetwork?: boolean
+}
+
 export interface HubLlmConfigInput {
   enabled?: boolean
   name?: string
@@ -1340,6 +1369,8 @@ export interface HubLlmConfigInput {
   maxTokens?: number
   jsonMode?: HubJsonMode
   allowPrivateNetwork?: boolean
+  /** 备用模型池（整表替换；最多 3 个） */
+  fallbacks?: HubLlmFallbackInput[]
 }
 
 export interface HubLlmTestResult {
@@ -1416,6 +1447,34 @@ export async function testUserLlmConfig(
     '/api/user/ai/config/test?anonId=' + encodeURIComponent(identity),
     'POST',
     input,
+    undefined,
+    identityHeaders(identity),
+  )
+}
+
+export interface HubAiChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface HubAiChatResult {
+  reply: string
+  model: string
+  source: 'user' | 'system' | 'env' | 'default'
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number }
+  latencyMs: number
+}
+
+/** 个人试聊：按解析链（个人 → 系统 → 环境，含备用池）调用模型 */
+export async function chatWithUserLlm(
+  identity: string,
+  messages: HubAiChatMessage[],
+  maxTokens?: number,
+): Promise<HubAiChatResult> {
+  return sendJson(
+    '/api/user/ai/chat?anonId=' + encodeURIComponent(identity),
+    'POST',
+    { messages, ...(maxTokens ? { maxTokens } : {}) },
     undefined,
     identityHeaders(identity),
   )

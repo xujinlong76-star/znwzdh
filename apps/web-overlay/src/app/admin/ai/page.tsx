@@ -7,9 +7,11 @@
  * 密钥加密落库、只回显掩码，保存后立即刷新能力位（无需重启）。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Bot, CheckCircle2, Loader2, RefreshCw, RotateCcw, Save, XCircle } from 'lucide-react'
+import { AlertTriangle, Bot, CheckCircle2, Loader2, Plus, RefreshCw, RotateCcw, Save, Trash2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
 import { LlmConfigFields, type LlmFormValue } from '@/components/ai/llm-config-form'
 import {
@@ -28,6 +30,27 @@ const SOURCE_LABEL: Record<string, string> = {
   user: '个人配置',
   // effective.source 用 system 表示「系统层（即管理端配置）」
   system: '管理端配置',
+}
+
+/** 备用模型表单行（apiKey 留空=沿用同 id 的已存密钥） */
+interface FallbackForm extends LlmFormValue {
+  id?: string
+  apiKeyMasked?: string
+}
+
+function emptyFallback(): FallbackForm {
+  return {
+    enabled: true,
+    name: '备用模型',
+    baseUrl: 'https://api.agnes-ai.cn/v1',
+    model: 'agnes-3.0-flash',
+    apiKey: '',
+    timeoutMs: 20000,
+    temperature: 0.2,
+    maxTokens: 1024,
+    jsonMode: 'auto',
+    allowPrivateNetwork: false,
+  }
 }
 
 function emptyForm(): LlmFormValue {
@@ -57,6 +80,7 @@ export default function AdminAiPage() {
   const [clearingKey, setClearingKey] = useState(false)
   const [confirmReset, setConfirmReset] = useState(false)
   const [testResult, setTestResult] = useState<HubLlmTestResult | null>(null)
+  const [fallbacks, setFallbacks] = useState<FallbackForm[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -78,6 +102,22 @@ export default function AdminAiPage() {
         allowPrivateNetwork: c.allowPrivateNetwork,
       })
       setApiKeyMasked(c.hasApiKey ? c.apiKeyMasked : '')
+      setFallbacks(
+        (c.fallbacks ?? []).map((fb) => ({
+          id: fb.id,
+          enabled: fb.enabled,
+          name: fb.name,
+          baseUrl: fb.baseUrl,
+          model: fb.model,
+          apiKey: '',
+          apiKeyMasked: fb.hasApiKey ? fb.apiKeyMasked : '',
+          timeoutMs: fb.timeoutMs,
+          temperature: fb.temperature,
+          maxTokens: fb.maxTokens,
+          jsonMode: fb.jsonMode,
+          allowPrivateNetwork: fb.allowPrivateNetwork,
+        })),
+      )
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -103,7 +143,24 @@ export default function AdminAiPage() {
       jsonMode: form.jsonMode,
       allowPrivateNetwork: form.allowPrivateNetwork,
       ...(extraApiKey && form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}),
+      fallbacks: fallbacks.map((fb) => ({
+        ...(fb.id ? { id: fb.id } : {}),
+        enabled: fb.enabled,
+        name: fb.name.trim() || '备用模型',
+        baseUrl: fb.baseUrl.trim(),
+        model: fb.model.trim(),
+        timeoutMs: fb.timeoutMs,
+        temperature: fb.temperature,
+        maxTokens: fb.maxTokens,
+        jsonMode: fb.jsonMode,
+        allowPrivateNetwork: fb.allowPrivateNetwork,
+        ...(fb.apiKey.trim() ? { apiKey: fb.apiKey.trim() } : {}),
+      })),
     }
+  }
+
+  function patchFallback(index: number, next: FallbackForm) {
+    setFallbacks((list) => list.map((item, i) => (i === index ? next : item)))
   }
 
   async function handleSave() {
@@ -238,6 +295,112 @@ export default function AdminAiPage() {
           apiKeyMasked={apiKeyMasked}
           showAllowPrivateNetwork
         />
+
+        <div className="border-t pt-5 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold">备用模型（可选）</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                主模型超时或报错时按顺序尝试；密钥同样加密存储，最多 3 个。
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={fallbacks.length >= 3}
+              onClick={() => setFallbacks((list) => [...list, emptyFallback()])}
+            >
+              <Plus className="mr-2 h-3.5 w-3.5" />
+              添加备用模型
+            </Button>
+          </div>
+
+          {fallbacks.length === 0 ? (
+            <p className="text-xs text-muted-foreground">未配置备用模型。</p>
+          ) : (
+            fallbacks.map((fb, index) => (
+              <div key={fb.id ?? `new-${index}`} className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">备用 #{index + 1}</Badge>
+                    <span className="text-muted-foreground">
+                      {fb.apiKeyMasked ? `密钥：${fb.apiKeyMasked}` : '尚未配置密钥'}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFallbacks((list) => list.filter((_, i) => i !== index))}
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    移除
+                  </Button>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`fb-name-${index}`}>显示名称</Label>
+                    <Input
+                      id={`fb-name-${index}`}
+                      value={fb.name}
+                      onChange={(e) => patchFallback(index, { ...fb, name: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`fb-model-${index}`}>模型 ID</Label>
+                    <Input
+                      id={`fb-model-${index}`}
+                      value={fb.model}
+                      onChange={(e) => patchFallback(index, { ...fb, model: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor={`fb-base-${index}`}>接口地址（Base URL）</Label>
+                  <Input
+                    id={`fb-base-${index}`}
+                    value={fb.baseUrl}
+                    onChange={(e) => patchFallback(index, { ...fb, baseUrl: e.target.value })}
+                  />
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`fb-key-${index}`}>API 密钥</Label>
+                    <Input
+                      id={`fb-key-${index}`}
+                      type="password"
+                      autoComplete="new-password"
+                      value={fb.apiKey}
+                      placeholder={fb.apiKeyMasked ? `已配置：${fb.apiKeyMasked}（留空不修改）` : '尚未配置'}
+                      onChange={(e) => patchFallback(index, { ...fb, apiKey: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor={`fb-timeout-${index}`}>超时（毫秒）</Label>
+                    <Input
+                      id={`fb-timeout-${index}`}
+                      type="number"
+                      min={1000}
+                      max={120000}
+                      step={1000}
+                      value={fb.timeoutMs}
+                      onChange={(e) =>
+                        patchFallback(index, {
+                          ...fb,
+                          timeoutMs: Number(e.target.value) || fb.timeoutMs,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
 
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <Button onClick={() => void handleSave()} disabled={saving}>

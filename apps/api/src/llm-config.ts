@@ -12,6 +12,7 @@
  *   - 任何读接口只返回掩码；审计只记「是否变更」不记值；
  *   - baseUrl 属服务端可控请求面，写入前做 SSRF 校验（用户级强制禁私网）。
  */
+import { randomBytes } from "node:crypto";
 import {
   AGNES_BASE_URL,
   AGNES_MODEL,
@@ -21,6 +22,7 @@ import {
   chatCompletion,
   maskApiKey,
   type JsonMode,
+  type LlmConfig,
   type LlmProvider,
 } from "@navhub/ai";
 import {
@@ -54,15 +56,38 @@ export const LlmProviderInputSchema = z.object({
 });
 export type LlmProviderInput = z.infer<typeof LlmProviderInputSchema>;
 
+/** 备用模型输入：id 用于保留已存密钥；省略 apiKey 表示沿用同 id 的旧密钥 */
+export const LlmFallbackInputSchema = LlmProviderInputSchema.extend({
+  id: z.string().max(64).optional(),
+  allowPrivateNetwork: z.boolean().optional(),
+});
+export type LlmFallbackInput = z.infer<typeof LlmFallbackInputSchema>;
+
 export const SystemLlmConfigInputSchema = LlmProviderInputSchema.extend({
   /** 仅系统级可设：允许内网端点（本地 Ollama） */
   allowPrivateNetwork: z.boolean().optional(),
+  /** 备用模型池：主模型失败/超时后按顺序尝试（最多 3 个） */
+  fallbacks: z.array(LlmFallbackInputSchema).max(3).optional(),
 });
 export type SystemLlmConfigInput = z.infer<typeof SystemLlmConfigInputSchema>;
 
 /* ------------------------------------------------------------------ *
  * 存储形态
  * ------------------------------------------------------------------ */
+
+interface StoredLlmFallback {
+  id: string;
+  enabled: boolean;
+  name: string;
+  baseUrl: string;
+  model: string;
+  apiKeyEnc: EncryptedPayloadEnvelope | null;
+  timeoutMs: number;
+  temperature: number;
+  maxTokens: number;
+  jsonMode: JsonMode;
+  allowPrivateNetwork: boolean;
+}
 
 interface StoredLlmProvider {
   enabled: boolean;
@@ -75,9 +100,25 @@ interface StoredLlmProvider {
   maxTokens: number;
   jsonMode: JsonMode;
   allowPrivateNetwork: boolean;
+  /** 备用模型池（仅系统级配置使用） */
+  fallbacks: StoredLlmFallback[];
   updatedAt: number;
   updatedBy: string | null;
 }
+
+const StoredLlmFallbackSchema = z.object({
+  id: z.string(),
+  enabled: z.boolean().default(true),
+  name: z.string().default("备用模型"),
+  baseUrl: z.string(),
+  model: z.string(),
+  apiKeyEnc: z.unknown().nullable().optional(),
+  timeoutMs: z.number().default(20_000),
+  temperature: z.number().default(0.2),
+  maxTokens: z.number().default(1024),
+  jsonMode: z.enum(["auto", "response_format", "prompt"]).default("auto"),
+  allowPrivateNetwork: z.boolean().default(false),
+});
 
 const StoredLlmProviderSchema = z.object({
   enabled: z.boolean().default(true),
@@ -90,6 +131,7 @@ const StoredLlmProviderSchema = z.object({
   maxTokens: z.number().default(1024),
   jsonMode: z.enum(["auto", "response_format", "prompt"]).default("auto"),
   allowPrivateNetwork: z.boolean().default(false),
+  fallbacks: z.array(StoredLlmFallbackSchema).default([]),
   updatedAt: z.number().default(0),
   updatedBy: z.string().nullable().optional(),
 });
@@ -109,6 +151,7 @@ function envDefaults(config: AppConfig): Omit<StoredLlmProvider, "apiKeyEnc" | "
     maxTokens: config.llm.maxTokens,
     jsonMode: config.llm.jsonMode,
     allowPrivateNetwork: config.llm.allowPrivateNetwork,
+    fallbacks: [],
   };
 }
 
@@ -123,6 +166,20 @@ function toProvider(stored: StoredLlmProvider, apiKey: string | null, allowPriva
     maxTokens: stored.maxTokens,
     jsonMode: stored.jsonMode,
     allowPrivateNetwork,
+  };
+}
+
+function fallbackToProvider(fb: StoredLlmFallback, apiKey: string): LlmProvider {
+  return {
+    name: fb.name,
+    baseUrl: fb.baseUrl,
+    model: fb.model,
+    apiKey,
+    timeoutMs: fb.timeoutMs,
+    temperature: fb.temperature,
+    maxTokens: fb.maxTokens,
+    jsonMode: fb.jsonMode,
+    allowPrivateNetwork: fb.allowPrivateNetwork,
   };
 }
 
@@ -150,6 +207,10 @@ async function readStoredSystem(ctx: AppContext): Promise<StoredLlmProvider | nu
     ...envDefaults(ctx.config),
     ...parsed.data,
     apiKeyEnc: (parsed.data.apiKeyEnc ?? null) as EncryptedPayloadEnvelope | null,
+    fallbacks: parsed.data.fallbacks.map((fb) => ({
+      ...fb,
+      apiKeyEnc: (fb.apiKeyEnc ?? null) as EncryptedPayloadEnvelope | null,
+    })),
     updatedBy: parsed.data.updatedBy ?? null,
   };
 }
@@ -164,6 +225,8 @@ async function readStoredUser(ctx: AppContext, identity: string): Promise<Stored
     ...parsed.data,
     allowPrivateNetwork: false,
     apiKeyEnc: (parsed.data.apiKeyEnc ?? null) as EncryptedPayloadEnvelope | null,
+    // 个人配置不存备用池：统一复用系统级备用模型（安全网）
+    fallbacks: [],
     updatedAt: parsed.data.updatedAt ?? row.updatedAt,
     updatedBy: parsed.data.updatedBy ?? null,
   };
@@ -177,7 +240,22 @@ export type LlmSource = "user" | "system" | "env" | "default";
 
 export interface ResolvedLlm {
   provider: LlmProvider;
+  /** 备用模型池（主模型失败/超时后按顺序尝试），无则为空数组 */
+  fallbacks: LlmProvider[];
   source: LlmSource;
+}
+
+/** 解出可用的备用 provider（跳过停用项与无密钥项） */
+async function resolveFallbacks(ctx: AppContext, stored: StoredLlmProvider | null): Promise<LlmProvider[]> {
+  if (!stored || !stored.enabled) return [];
+  const out: LlmProvider[] = [];
+  for (const fb of stored.fallbacks) {
+    if (!fb.enabled) continue;
+    const key = await openKey(ctx, fb.apiKeyEnc);
+    if (!key) continue;
+    out.push(fallbackToProvider(fb, key));
+  }
+  return out;
 }
 
 /**
@@ -186,22 +264,31 @@ export interface ResolvedLlm {
  * - 用户配置需同时满足「存在 + enabled + 能解出密钥」，否则回退系统层；
  * - 系统层 enabled=false 视为「管理端显式关闭」：返回无密钥 provider，
  *   调用方据此跳过 LLM（不会被环境变量意外复活）；
- * - 无身份（任务队列等）直接走系统层。
+ * - 无身份（任务队列等）直接走系统层；
+ * - 备用池始终取系统级配置（个人配置失败时也能兜底）。
  */
 export async function resolveLlm(ctx: AppContext, identity?: string | null): Promise<ResolvedLlm> {
+  const system = await readStoredSystem(ctx);
+  const systemFallbacks = await resolveFallbacks(ctx, system);
+
   if (identity) {
     const user = await readStoredUser(ctx, identity);
     if (user && user.enabled) {
       const userKey = await openKey(ctx, user.apiKeyEnc);
-      if (userKey) return { provider: toProvider(user, userKey, false), source: "user" };
+      if (userKey) return { provider: toProvider(user, userKey, false), fallbacks: systemFallbacks, source: "user" };
     }
   }
 
-  const system = await readStoredSystem(ctx);
   if (system) {
-    if (!system.enabled) return { provider: toProvider(system, null, system.allowPrivateNetwork), source: "system" };
+    if (!system.enabled) {
+      return {
+        provider: toProvider(system, null, system.allowPrivateNetwork),
+        fallbacks: [],
+        source: "system",
+      };
+    }
     const key = (await openKey(ctx, system.apiKeyEnc)) ?? ctx.config.llm.apiKey;
-    return { provider: toProvider(system, key, system.allowPrivateNetwork), source: "system" };
+    return { provider: toProvider(system, key, system.allowPrivateNetwork), fallbacks: systemFallbacks, source: "system" };
   }
 
   const env: LlmProvider = {
@@ -215,7 +302,31 @@ export async function resolveLlm(ctx: AppContext, identity?: string | null): Pro
     jsonMode: ctx.config.llm.jsonMode,
     allowPrivateNetwork: ctx.config.llm.allowPrivateNetwork,
   };
-  return { provider: env, source: env.apiKey ? "env" : "default" };
+  return { provider: env, fallbacks: [], source: env.apiKey ? "env" : "default" };
+}
+
+/**
+ * 转成富化模块使用的 LlmConfig（含备用池）。
+ * 放在这里而不是调用点重复拼装：类型收敛 + 默认值只有一处。
+ */
+export function enrichLlmOf(resolved: ResolvedLlm): LlmConfig {
+  const base: LlmConfig = {
+    baseUrl: resolved.provider.baseUrl,
+    apiKey: resolved.provider.apiKey ?? null,
+    model: resolved.provider.model,
+    timeoutMs: resolved.provider.timeoutMs ?? 20_000,
+    jsonMode: resolved.provider.jsonMode,
+    allowPrivateNetwork: resolved.provider.allowPrivateNetwork,
+    fallbacks: resolved.fallbacks.map((fb) => ({
+      baseUrl: fb.baseUrl,
+      apiKey: fb.apiKey ?? null,
+      model: fb.model,
+      timeoutMs: fb.timeoutMs ?? 20_000,
+      jsonMode: fb.jsonMode,
+      allowPrivateNetwork: fb.allowPrivateNetwork,
+    })),
+  };
+  return base;
 }
 
 /** 配置变更后刷新能力位（/api/health、metrics、启动日志共用） */
@@ -232,6 +343,21 @@ export async function refreshLlmCapability(ctx: AppContext): Promise<void> {
  * 视图（掩码）
  * ------------------------------------------------------------------ */
 
+export interface LlmFallbackView {
+  id: string;
+  enabled: boolean;
+  name: string;
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
+  apiKeyMasked: string;
+  timeoutMs: number;
+  temperature: number;
+  maxTokens: number;
+  jsonMode: JsonMode;
+  allowPrivateNetwork: boolean;
+}
+
 export interface LlmConfigView {
   configured: boolean;
   source: "db" | "env" | "default";
@@ -246,6 +372,8 @@ export interface LlmConfigView {
   maxTokens: number;
   jsonMode: JsonMode;
   allowPrivateNetwork: boolean;
+  /** 备用模型池（仅系统级；密钥只回显掩码） */
+  fallbacks: LlmFallbackView[];
   updatedAt: number | null;
   updatedBy: string | null;
 }
@@ -265,6 +393,7 @@ function viewOf(stored: StoredLlmProvider, key: string | null, source: "db" | "e
     maxTokens: stored.maxTokens,
     jsonMode: stored.jsonMode,
     allowPrivateNetwork: stored.allowPrivateNetwork,
+    fallbacks: [],
     updatedAt: stored.updatedAt || null,
     updatedBy: stored.updatedBy,
   };
@@ -274,7 +403,25 @@ export async function getSystemLlmConfigView(ctx: AppContext): Promise<LlmConfig
   const stored = await readStoredSystem(ctx);
   if (stored) {
     const key = (await openKey(ctx, stored.apiKeyEnc)) ?? ctx.config.llm.apiKey;
-    return viewOf(stored, key, "db");
+    const fallbacks: LlmFallbackView[] = [];
+    for (const fb of stored.fallbacks) {
+      const fbKey = await openKey(ctx, fb.apiKeyEnc);
+      fallbacks.push({
+        id: fb.id,
+        enabled: fb.enabled,
+        name: fb.name,
+        baseUrl: fb.baseUrl,
+        model: fb.model,
+        hasApiKey: Boolean(fbKey),
+        apiKeyMasked: maskApiKey(fbKey),
+        timeoutMs: fb.timeoutMs,
+        temperature: fb.temperature,
+        maxTokens: fb.maxTokens,
+        jsonMode: fb.jsonMode,
+        allowPrivateNetwork: fb.allowPrivateNetwork,
+      });
+    }
+    return { ...viewOf(stored, key, "db"), fallbacks };
   }
   const envKey = ctx.config.llm.apiKey;
   const defaults: StoredLlmProvider = {
@@ -314,6 +461,40 @@ export async function saveSystemLlmConfig(
     apiKeyEnc = rawKey === "" ? null : await sealKey(ctx, rawKey);
   }
 
+  // 备用池：整表替换；未给 apiKey 的条目按 id 沿用旧密文
+  const existingById = new Map((existing?.fallbacks ?? []).map((fb) => [fb.id, fb]));
+  let fallbacks = existing?.fallbacks ?? [];
+  if (input.fallbacks !== undefined) {
+    const next: StoredLlmFallback[] = [];
+    for (const fb of input.fallbacks) {
+      const prev = fb.id ? existingById.get(fb.id) : undefined;
+      const fbAllowPrivate =
+        typeof fb.allowPrivateNetwork === "boolean" ? fb.allowPrivateNetwork : prev?.allowPrivateNetwork ?? allowPrivate;
+      await assertLlmEndpoint(fb.baseUrl, fbAllowPrivate); // 抛 LlmError -> 路由层转 400
+
+      let fbKeyEnc = prev?.apiKeyEnc ?? null;
+      const fbRawKey = typeof fb.apiKey === "string" ? fb.apiKey.trim() : undefined;
+      if (fbRawKey !== undefined) {
+        fbKeyEnc = fbRawKey === "" ? null : await sealKey(ctx, fbRawKey);
+      }
+
+      next.push({
+        id: fb.id ?? "fb-" + randomBytes(6).toString("hex"),
+        enabled: fb.enabled ?? true,
+        name: fb.name ?? prev?.name ?? "备用模型",
+        baseUrl: fb.baseUrl,
+        model: fb.model,
+        apiKeyEnc: fbKeyEnc,
+        timeoutMs: fb.timeoutMs ?? prev?.timeoutMs ?? 20_000,
+        temperature: fb.temperature ?? prev?.temperature ?? 0.2,
+        maxTokens: fb.maxTokens ?? prev?.maxTokens ?? 1024,
+        jsonMode: fb.jsonMode ?? prev?.jsonMode ?? "auto",
+        allowPrivateNetwork: fbAllowPrivate,
+      });
+    }
+    fallbacks = next;
+  }
+
   const stored: StoredLlmProvider = {
     enabled: input.enabled ?? base.enabled,
     name: input.name ?? base.name,
@@ -325,6 +506,7 @@ export async function saveSystemLlmConfig(
     maxTokens: input.maxTokens ?? base.maxTokens,
     jsonMode: input.jsonMode ?? base.jsonMode,
     allowPrivateNetwork: allowPrivate,
+    fallbacks,
     updatedAt: Date.now(),
     updatedBy: actor,
   };
@@ -339,6 +521,7 @@ export async function saveSystemLlmConfig(
       baseUrl: stored.baseUrl,
       enabled: stored.enabled,
       allowPrivateNetwork: stored.allowPrivateNetwork,
+      fallbackCount: stored.fallbacks.length,
       apiKeyChanged: rawKey !== undefined,
     },
     ip,
@@ -450,6 +633,7 @@ export async function saveUserLlmConfig(
     maxTokens: input.maxTokens ?? existing?.maxTokens ?? ctx.config.llm.maxTokens,
     jsonMode: input.jsonMode ?? existing?.jsonMode ?? ctx.config.llm.jsonMode,
     allowPrivateNetwork: false,
+    fallbacks: [],
     updatedAt: Date.now(),
     updatedBy: identity,
   };

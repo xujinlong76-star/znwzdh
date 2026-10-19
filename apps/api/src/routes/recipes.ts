@@ -57,11 +57,11 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   app.get("/api/graph/path", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
     const q = (req.query ?? {}) as Record<string, string>;
-    const from = String(q.from ?? "").trim();
-    const to = String(q.to ?? "").trim();
+    const from = String(q.from ?? q.start ?? "").trim();
+    const to = String(q.to ?? q.target ?? "").trim();
     if (!from || !to) {
       reply.code(400);
-      return { ok: false, error: "需要指定 from 与 to 查询参数" };
+      return { ok: false, error: "需要指定 from (或 start) 与 to (或 target) 查询参数" };
     }
     const pathResult = findShortestTechPath(from, to, PRESET_TECH_GRAPH);
     return { ok: true, result: pathResult };

@@ -601,3 +601,72 @@ export interface SiteHealthAuditSummary {
   issues: SiteHealthAuditIssue[];
 }
 
+/* ------------------------------------------------------------------ *
+ * Stage 3: 知识星图与语义去重 (Knowledge Mesh & Deduplication)
+ * ------------------------------------------------------------------ */
+
+export interface SiteKnowledgeNode {
+  id: string;
+  name: string;
+  type: "site" | "category" | "tag";
+  url?: string;
+  categoryId?: string;
+  val: number; // 节点权重
+  color?: string;
+}
+
+export interface SiteKnowledgeEdge {
+  source: string;
+  target: string;
+  relation: "belongs_to" | "has_tag" | "similar_to" | "integrates_with";
+  weight: number;
+}
+
+export interface SiteKnowledgeMesh {
+  nodes: SiteKnowledgeNode[];
+  edges: SiteKnowledgeEdge[];
+  stats: {
+    totalNodes: number;
+    totalEdges: number;
+    categoryCount: number;
+    siteCount: number;
+  };
+}
+
+export interface SiteDuplicatePair {
+  idA: string;
+  titleA: string;
+  urlA: string;
+  categoryA: string;
+  idB: string;
+  titleB: string;
+  urlB: string;
+  categoryB: string;
+  similarity: number; // 0.0 ~ 1.0
+  recommendation: "merge" | "keep_both" | "archive_b";
+  reason: string;
+}
+
+export interface SiteDuplicateReport {
+  scannedCount: number;
+  duplicatePairs: SiteDuplicatePair[];
+  potentialSavings: number;
+}
+
+/* ------------------------------------------------------------------ *
+ * Stage 4: 离线文档快照与 SingleFile 归档 (Offline Archive Reader)
+ * ------------------------------------------------------------------ */
+
+export interface SiteOfflineArchive {
+  siteId: string;
+  title: string;
+  url: string;
+  capturedAt: number;
+  excerpt: string;
+  readTimeMinutes: number;
+  htmlContent: string;
+  byteSize: number;
+  tags: string[];
+}
+
+

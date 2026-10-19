@@ -9,6 +9,7 @@ import { initThemeRuntime } from '@/lib/plugins/theme-runtime'
 import { ThemeTryoutRibbon } from '@/components/plugins/theme-tryout-ribbon'
 import { AiCopilotDrawer } from '@/components/ai/ai-copilot-drawer'
 import { SpotlightModal } from '@/components/search/spotlight-modal'
+import { FluidGlassCanvas } from '@/components/theme/fluid-glass-canvas'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -26,6 +27,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
     >
       <TooltipProvider delayDuration={200} skipDelayDuration={100}>
         <DensityProvider>
+          {/* 动态流光毛玻璃画布背景 */}
+          <FluidGlassCanvas />
           {children}
           {/* 主题免安装即时沙箱试用悬浮横条 */}
           <ThemeTryoutRibbon />

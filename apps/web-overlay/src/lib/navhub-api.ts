@@ -1846,6 +1846,99 @@ export async function recommendSiteAlternatives(siteId: string): Promise<{
   }>(`/api/sites/${encodeURIComponent(siteId)}/recommend-alternative`, 'POST', {})
 }
 
+export interface SiteKnowledgeNode {
+  id: string
+  label: string
+  type: 'category' | 'site' | 'tag'
+  category?: string
+  url?: string
+  size?: number
+  importance?: number
+}
 
+export interface SiteKnowledgeEdge {
+  source: string
+  target: string
+  type: 'belongs_to' | 'tagged_with' | 'alternative_to' | 'complements' | 'cross_link'
+  weight?: number
+}
 
+export interface SiteKnowledgeMesh {
+  nodes: SiteKnowledgeNode[]
+  edges: SiteKnowledgeEdge[]
+  stats: {
+    totalNodes: number
+    totalEdges: number
+    categoryCount: number
+    siteCount: number
+  }
+}
 
+export interface TechGraphStep {
+  from: string
+  to: string
+  relation: string
+  direction: 'outgoing' | 'incoming'
+  description?: string
+}
+
+export interface TechGraphPath {
+  from: string
+  to: string
+  found: boolean
+  steps: TechGraphStep[]
+  distance: number
+}
+
+export interface SiteDuplicatePair {
+  siteA: { id: string; title: string; url: string; categoryId?: string }
+  siteB: { id: string; title: string; url: string; categoryId?: string }
+  similarity: number
+  reason: string
+  suggestedAction: 'merge_tags' | 'remove_redundant' | 'keep_both'
+}
+
+export interface SiteDuplicateReport {
+  scannedCount: number
+  duplicatePairs: SiteDuplicatePair[]
+  highConfidenceCount: number
+}
+
+export interface SiteOfflineArchive {
+  siteId: string
+  url: string
+  title: string
+  capturedAt: number
+  contentLength: number
+  readTimeMinutes: number
+  htmlContent: string
+  plainText: string
+  meta: {
+    author?: string
+    description?: string
+    favicon?: string
+    keywords?: string[]
+  }
+}
+
+export async function fetchKnowledgeMesh(): Promise<{ ok: boolean; mesh: SiteKnowledgeMesh }> {
+  return getJson<{ ok: boolean; mesh: SiteKnowledgeMesh }>('/api/graph/mesh')
+}
+
+export async function findTechGraphPath(start: string, target: string): Promise<{ ok: boolean; path: TechGraphPath; result: TechGraphPath }> {
+  return getJson<{ ok: boolean; path: TechGraphPath; result: TechGraphPath }>(
+    `/api/graph/path?start=${encodeURIComponent(start)}&target=${encodeURIComponent(target)}`
+  )
+}
+
+export async function fetchSiteDuplicates(): Promise<{ ok: boolean; report: SiteDuplicateReport }> {
+  return getJson<{ ok: boolean; report: SiteDuplicateReport }>('/api/sites/duplicates')
+}
+
+export async function fetchSiteArchive(siteId: string): Promise<{ ok: boolean; archive: SiteOfflineArchive }> {
+  return getJson<{ ok: boolean; archive: SiteOfflineArchive }>(`/api/sites/${encodeURIComponent(siteId)}/archive`)
+}
+
+export async function createSiteArchive(siteId: string): Promise<{ ok: boolean; archive: SiteOfflineArchive }> {
+  return sendJson<{ ok: boolean; archive: SiteOfflineArchive }>(`/api/sites/${encodeURIComponent(siteId)}/archive`, 'POST', {})
+}

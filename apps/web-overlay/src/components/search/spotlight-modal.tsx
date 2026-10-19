@@ -44,6 +44,9 @@ import {
   Hash,
   Link2,
   FileJson,
+  Compass,
+  Radio,
+  BookOpen,
 } from 'lucide-react'
 import { Input } from '@/registry/new-york/ui/input'
 import { Button } from '@/registry/new-york/ui/button'
@@ -65,6 +68,9 @@ import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { applyThemeTokens } from '@/lib/plugins/theme-runtime'
 import { GeekMicroTools } from '@/components/tools/geek-micro-tools'
 import { SiteHealthAuditModal } from '@/components/ai/site-health-audit-modal'
+import { KnowledgeStarMapModal } from '@/components/graph/knowledge-star-map-modal'
+import { SiteArchiveReaderModal } from '@/components/reader/site-archive-reader-modal'
+import { P2PAirDropModal } from '@/components/p2p/p2p-airdrop-modal'
 
 const CHANNEL_BADGES: Record<string, { label: string; className: string }> = {
   exact: { label: '精确', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30' },
@@ -95,6 +101,10 @@ export function SpotlightModal() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [healingId, setHealingId] = useState<string | null>(null)
   const [healthAuditOpen, setHealthAuditOpen] = useState(false)
+  const [starMapOpen, setStarMapOpen] = useState(false)
+  const [airdropOpen, setAirdropOpen] = useState(false)
+  const [archiveSite, setArchiveSite] = useState<{ id: string; title: string; url: string; description?: string | null } | null>(null)
+  const [archiveReaderOpen, setArchiveReaderOpen] = useState(false)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -325,6 +335,52 @@ export function SpotlightModal() {
         setOpen(false)
         window.open('/api/navigation/export', '_blank', 'noopener,noreferrer')
         toast.success('已触发系统快照导出备份')
+      },
+    },
+    {
+      id: 'cmd-graph',
+      title: '全景 2D 知识星图与拓扑演进中枢 (Star Map)',
+      description: '可视化全站星系拓扑、技术演进最短寻路与关联边探测',
+      icon: Compass,
+      category: '知识网络',
+      handler: () => {
+        setOpen(false)
+        setStarMapOpen(true)
+      },
+    },
+    {
+      id: 'cmd-dedup',
+      title: '全站跨分类雷同站点查重审计 (Duplicate Sites)',
+      description: '智能扫描高重合度站点并提供标签融合与冗余清洗建议',
+      icon: Layers,
+      category: '质量巡检',
+      handler: () => {
+        setOpen(false)
+        setStarMapOpen(true)
+      },
+    },
+    {
+      id: 'cmd-airdrop',
+      title: 'NavDrop 局域网隔空快传 (Local P2P)',
+      description: '基于 WebRTC 与局域网广播向周围设备无损快传书签与配置',
+      icon: Radio,
+      category: '局域网协同',
+      handler: () => {
+        setOpen(false)
+        setAirdropOpen(true)
+      },
+    },
+    {
+      id: 'cmd-fluid',
+      title: '动态流光毛玻璃背景切换 (Toggle Fluid Glass)',
+      description: '开启或关闭极致平滑的流体渐变磨砂画布壁纸背景',
+      icon: Sparkles,
+      category: '界面外观',
+      handler: () => {
+        window.dispatchEvent(new CustomEvent('toggle-fluid-glass'))
+        const isNow = localStorage.getItem('navhub_fluid_glass_enabled') === 'true'
+        toast.success(isNow ? '已开启动态流光毛玻璃背景' : '已关闭流光背景')
+        setOpen(false)
       },
     },
   ], [router])
@@ -691,7 +747,7 @@ export function SpotlightModal() {
                       <Zap className="w-3.5 h-3.5 text-amber-500" />
                       <span>功能速览</span>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       <button
                         type="button"
                         onClick={() => {
@@ -732,6 +788,48 @@ export function SpotlightModal() {
                         <div>
                           <div className="text-xs font-medium">插件应用市场</div>
                           <div className="text-[10px] text-muted-foreground">生态组件源</div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(false)
+                          setStarMapOpen(true)
+                        }}
+                        className="p-2.5 rounded-xl border border-border/60 bg-muted/20 hover:bg-muted/50 text-left flex items-center gap-2.5 transition-colors"
+                      >
+                        <Compass className="w-4 h-4 text-indigo-500" />
+                        <div>
+                          <div className="text-xs font-medium">知识拓扑星图</div>
+                          <div className="text-[10px] text-muted-foreground">2D 拓扑演进</div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(false)
+                          setAirdropOpen(true)
+                        }}
+                        className="p-2.5 rounded-xl border border-border/60 bg-muted/20 hover:bg-muted/50 text-left flex items-center gap-2.5 transition-colors"
+                      >
+                        <Radio className="w-4 h-4 text-cyan-500" />
+                        <div>
+                          <div className="text-xs font-medium">NavDrop 快传</div>
+                          <div className="text-[10px] text-muted-foreground">局域网 P2P</div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(false)
+                          setHealthAuditOpen(true)
+                        }}
+                        className="p-2.5 rounded-xl border border-border/60 bg-muted/20 hover:bg-muted/50 text-left flex items-center gap-2.5 transition-colors"
+                      >
+                        <HeartPulse className="w-4 h-4 text-emerald-500" />
+                        <div>
+                          <div className="text-xs font-medium">站点自治巡检</div>
+                          <div className="text-[10px] text-muted-foreground">健康度自愈</div>
                         </div>
                       </button>
                     </div>
@@ -831,7 +929,22 @@ export function SpotlightModal() {
                           <button
                             type="button"
                             className="p-1 rounded-md text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="离线纯净阅读快照"
+                            aria-label={`离线纯净阅读 ${site.title}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setArchiveSite(site)
+                              setArchiveReaderOpen(true)
+                            }}
+                          >
+                            <BookOpen className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            className="p-1 rounded-md text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
                             title="复制网址"
+                            aria-label={`复制网址 ${site.url}`}
                             onClick={(e) => handleCopy(site.url, site.id, e)}
                           >
                             {copiedId === site.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -947,6 +1060,20 @@ export function SpotlightModal() {
 
       {/* 站点健康自治巡检与无感自愈中枢 */}
       <SiteHealthAuditModal open={healthAuditOpen} onClose={() => setHealthAuditOpen(false)} />
+
+      {/* 知识星图与拓扑演进中枢 */}
+      <KnowledgeStarMapModal open={starMapOpen} onOpenChange={setStarMapOpen} />
+
+      {/* 离线快照纯净阅读器 */}
+      <SiteArchiveReaderModal
+        site={archiveSite}
+        open={archiveReaderOpen}
+        onOpenChange={setArchiveReaderOpen}
+      />
+
+      {/* NavDrop 局域网隔空快传 */}
+      <P2PAirDropModal open={airdropOpen} onOpenChange={setAirdropOpen} />
     </>
   )
 }
+

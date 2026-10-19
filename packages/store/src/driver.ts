@@ -229,6 +229,11 @@ CREATE TABLE IF NOT EXISTS embeddings (
   vector BLOB, updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS plugin_embeddings (
+  slug TEXT PRIMARY KEY, model TEXT NOT NULL, dim INTEGER NOT NULL,
+  vector BLOB, updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS favorites (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -532,6 +537,11 @@ CREATE TABLE IF NOT EXISTS idempotency (
 
 CREATE TABLE IF NOT EXISTS embeddings (
   site_id TEXT PRIMARY KEY, model TEXT NOT NULL, dim INTEGER NOT NULL,
+  vector BYTEA, updated_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS plugin_embeddings (
+  slug TEXT PRIMARY KEY, model TEXT NOT NULL, dim INTEGER NOT NULL,
   vector BYTEA, updated_at BIGINT NOT NULL
 );
 

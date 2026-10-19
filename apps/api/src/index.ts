@@ -10,3 +10,5 @@ export * from "./server.ts";
 export * from "./storage.ts";
 export * from "./auth.ts";
 export * from "./index-site.ts";
+export * from "./index-plugin.ts";
+export * from "./plugins-search.ts";

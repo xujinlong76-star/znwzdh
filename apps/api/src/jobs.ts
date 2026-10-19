@@ -28,6 +28,7 @@ import {
 } from "@navhub/store";
 import type { AppContext } from "./context.ts";
 import { indexSite, indexSitesBatch } from "./index-site.ts";
+import { indexPluginsBatch, indexItemFromManifest } from "./index-plugin.ts";
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
@@ -673,8 +674,17 @@ export class JobRunner {
     await this.ctx.repo.recordEvent("recompute_rank", { meta: { sites: scores.length } }).catch(() => undefined);
   }
 
-  /** 重建索引：siteId 指定单个；否则全站。vectors=false 只重建拼音/FTS（快） */
-  private async runReindex(payload: { siteId?: string; vectors?: boolean }): Promise<void> {
+  /**
+   * 重建索引：siteId 指定单个；否则全站。vectors=false 只重建拼音/FTS（快）。
+   * targets 缺省 = ["sites"]（向后兼容）；包含 "plugins" 时同时重建插件语义向量。
+   */
+  private async runReindex(payload: { siteId?: string; vectors?: boolean; targets?: Array<"sites" | "plugins"> }): Promise<void> {
+    const targets: Array<"sites" | "plugins"> =
+      Array.isArray(payload.targets) && payload.targets.length > 0 ? payload.targets : ["sites"];
+    if (targets.includes("plugins")) {
+      await this.runReindexPlugins();
+    }
+    if (!targets.includes("sites")) return;
     // 显式标注：getSite/listSites 的返回在重构期间可能退化为 any，
     // 不标注会让后面的 filter/map 参数变成隐式 any（strict 下直接报错）。
     type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
@@ -708,6 +718,27 @@ export class JobRunner {
       }
     }
     await this.ctx.repo.recordEvent("reindex", { meta: { sites: sites.length, vectors: payload.vectors !== false } }).catch(() => undefined);
+  }
+
+  /** 重建插件语义索引：分页拉全量已上架插件，批量向量化（失败只记 notes，不中断） */
+  private async runReindexPlugins(): Promise<void> {
+    const PAGE = 100;
+    let offset = 0;
+    let total = 0;
+    for (;;) {
+      const res = await this.ctx.repo.listPlugins({ status: "published", limit: PAGE, offset });
+      if (res.items.length === 0) break;
+      await indexPluginsBatch(
+        this.ctx,
+        res.items.map((p) => indexItemFromManifest(p.slug, p.manifest)),
+      );
+      total += res.items.length;
+      offset += res.items.length;
+      if (res.items.length < PAGE) break;
+    }
+    await this.ctx.repo
+      .recordEvent("reindex", { meta: { plugins: total } })
+      .catch(() => undefined);
   }
 
   /** AI 自动自愈：对 broken/失效站点执行 Wayback 归档解析与同图谱健康替代推荐 */

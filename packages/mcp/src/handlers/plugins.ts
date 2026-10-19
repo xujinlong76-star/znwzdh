@@ -1,5 +1,5 @@
 /**
- * 插件市场域工具：list_plugins（读）/ install_plugin（写）。
+ * 插件市场域工具：list_plugins / search_plugins（读）/ install_plugin（写）。
  *
  * 与 REST 路由（apps/api/src/routes/plugins.ts）共用同一仓储（ctx.repo），
  * 保证 Agent 与网页端看到的清单、安装结果完全一致：网址包安装后同样
@@ -7,10 +7,11 @@
  * 只影响语义检索，不影响安装结果）。
  */
 import { summarizePluginManifest } from "@navhub/core";
-import { indexSitesBatch } from "@navhub/api";
+import { indexSitesBatch, searchPluginsSemantic } from "@navhub/api";
 import {
   InstallPluginInput,
   ListPluginsInput,
+  SearchPluginsInput,
   requireScope,
   type ToolContext,
 } from "../tools.ts";
@@ -46,6 +47,40 @@ export const pluginHandlers = {
         starCount: p.starCount,
         publishedAt: p.publishedAt,
         summary: summarizePluginManifest(p.manifest),
+        installHint: '安装：install_plugin { "slug": "' + p.slug + '" }',
+      })),
+    });
+  },
+
+  async search_plugins(deps: HandlerDeps, args: unknown, tc: ToolContext) {
+    const { ctx } = deps;
+    requireScope(tc, "read");
+    const input = SearchPluginsInput.parse(args ?? {});
+
+    const res = await searchPluginsSemantic(ctx, {
+      q: input.query,
+      kind: input.kind,
+      limit: input.limit,
+    });
+
+    return ok({
+      count: res.items.length,
+      total: res.total,
+      mode: res.mode,
+      degraded: res.degraded,
+      plugins: res.items.map((p) => ({
+        slug: p.slug,
+        kind: p.kind,
+        name: p.name,
+        description: p.description,
+        version: p.version,
+        author: p.author,
+        tags: p.tags,
+        installCount: p.installCount,
+        starCount: p.starCount,
+        publishedAt: p.publishedAt,
+        score: p.score ?? null,
+        summary: p.summary,
         installHint: '安装：install_plugin { "slug": "' + p.slug + '" }',
       })),
     });

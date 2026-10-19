@@ -706,6 +706,50 @@ export async function fetchPluginDetail(
   }
 }
 
+export interface HubPluginSearchResponse {
+  items: HubPluginItem[]
+  total: number
+  mode: 'semantic' | 'keyword'
+  degraded: boolean
+}
+
+/**
+ * 语义优先的插件检索（描述需求即可找到）。
+ *
+ * 服务端在模型不可用时自动关键词回退并用 degraded 标注；这里不再二次兜底，
+ * 请求失败才走 degrade 的兜底值（mode 标 keyword + degraded，等价于"什么都没找到"）。
+ */
+export async function searchPlugins(
+  params: { q: string; kind?: string; limit?: number },
+  onDegraded?: DegradedHandler,
+): Promise<HubPluginSearchResponse> {
+  const sp = new URLSearchParams()
+  sp.set('q', params.q)
+  if (params.kind) sp.set('kind', params.kind)
+  if (params.limit) sp.set('limit', String(params.limit))
+  return degrade<HubPluginSearchResponse>(
+    { items: [], total: 0, mode: 'keyword', degraded: true },
+    () => getJson<HubPluginSearchResponse>(`/api/plugins/search?${sp.toString()}`),
+    onDegraded,
+  )
+}
+
+/** 相似插件（详情页发现回路，语义近邻） */
+export async function fetchSimilarPlugins(
+  slug: string,
+  limit = 6,
+  onDegraded?: DegradedHandler,
+): Promise<{ items: HubPluginItem[]; total: number; degraded: boolean }> {
+  return degrade<{ items: HubPluginItem[]; total: number; degraded: boolean }>(
+    { items: [], total: 0, degraded: true },
+    () =>
+      getJson<{ items: HubPluginItem[]; total: number; degraded: boolean }>(
+        `/api/plugins/${encodeURIComponent(slug)}/similar?limit=${limit}`,
+      ),
+    onDegraded,
+  )
+}
+
 export async function validatePlugin(
   manifest: unknown,
 ): Promise<{ ok: boolean; manifest?: any; summary?: any; error?: string; errors?: string[] }> {

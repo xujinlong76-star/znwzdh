@@ -402,3 +402,30 @@ export function siteEmbeddingText(site: {
   if (site.url) parts.push("网址：" + site.url);
   return parts.join("。");
 }
+
+/**
+ * 插件索引文本：名称 + 描述 + 类型 + 标签 + 若干站点标题。
+ *
+ * site-pack 的 payload 里站点标题是强语义信号（「设计工具合集」这类需求
+ * 靠描述未必命中，靠站名列表反而能召回），因此取前 12 个拼进去；
+ * 其他 kind 没有该字段时自然跳过。
+ */
+export function pluginEmbeddingText(plugin: {
+  name: string;
+  description?: string | null;
+  kind?: string | null;
+  tags?: string[] | null;
+  sampleTitles?: string[] | null;
+}): string {
+  const kindLabels: Record<string, string> = {
+    "site-pack": "网址包",
+    "workspace-preset": "工作台预设",
+    theme: "主题",
+  };
+  const parts = ["为这个插件生成表示：" + plugin.name];
+  if (plugin.description) parts.push("描述：" + plugin.description);
+  if (plugin.kind) parts.push("类型：" + (kindLabels[plugin.kind] ?? plugin.kind));
+  if (plugin.tags?.length) parts.push("标签：" + plugin.tags.join(" / "));
+  if (plugin.sampleTitles?.length) parts.push("包含：" + plugin.sampleTitles.slice(0, 12).join("、"));
+  return parts.join("。");
+}

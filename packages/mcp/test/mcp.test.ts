@@ -58,7 +58,7 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 23 个只读工具与 11 个写工具", () => {
+  it("包含 24 个只读工具与 11 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
@@ -83,6 +83,7 @@ describe("工具清单", () => {
       "list_plugins",
       "list_tags",
       "resolve_wayback",
+      "search_plugins",
       "search_sites",
       "synthesize_agent_tool",
     ]);
@@ -675,6 +676,19 @@ describe("插件市场工具", () => {
     expect(row).toBeTruthy();
     expect(row.summary.siteCount).toBe(1);
     expect(row.installHint).toContain("install_plugin");
+  });
+
+  it("search_plugins 关键词回退可用（embedding 关闭时 degraded 如实标注）", async () => {
+    const body = payload(await handlers.search_plugins({ query: "MCP 测试" }, READONLY));
+    expect(body.mode).toBe("keyword");
+    expect(body.degraded).toBe(true);
+    const row = body.plugins.find((p: any) => p.slug === publishedSlug);
+    expect(row).toBeTruthy();
+    expect(row.installHint).toContain("install_plugin");
+  });
+
+  it("search_plugins 遵守输入契约（空 query 被拒绝）", async () => {
+    await expect(handlers.search_plugins({ query: "" }, READONLY)).rejects.toThrow();
   });
 
   it("install_plugin 以增量方式写入站点并支持幂等键重放", async () => {

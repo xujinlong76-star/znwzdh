@@ -274,6 +274,22 @@ export const embeddings = sqliteTable("embeddings", {
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 });
 
+/**
+ * 插件语义索引的持久层（与 embeddings 同构，键是插件 slug）。
+ *
+ * 为什么分表而不是把 "plugin:" 前缀塞进 embeddings.site_id：站点与插件的
+ * KNN 检索是两组独立结果集，混在一张 vec0 表里会互相挤占 top-N 名额；
+ * 分表后两边各自的 rehydrate 计数校验也互不影响（对方多写一行不该触发
+ * 本方的全量重建）。
+ */
+export const pluginEmbeddings = sqliteTable("plugin_embeddings", {
+  slug: text("slug").primaryKey(),
+  model: text("model").notNull(),
+  dim: integer("dim").notNull(),
+  vector: blob("vector", { mode: "buffer" }),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+});
+
 /* ------------------------------------------------------------------ *
  * 终端用户：收藏夹 / 收藏夹文件夹 / 个性化画像 / 搜索历史
  * ------------------------------------------------------------------ */
@@ -435,7 +451,7 @@ export const pluginStars = sqliteTable("plugin_stars", {
 
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
-  users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings,
+  users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates, taxonomyProposals,
   plugins, pluginInstalls, pluginStars,
 };

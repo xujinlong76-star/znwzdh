@@ -1096,8 +1096,9 @@ describe("SQLite 集成：全量站点（快照层专用）", () => {
     expect((await repo.listSites()).length).toBe(100); // 普通列表的分页语义保持不变
     expect((await repo.listAllSites()).length).toBe(TOTAL); // 快照层拿全量
     expect((await repo.listAllSites(3)).length).toBe(3); // 上限参数仍可生效
-    // 软删站点不参与
-    const victim = (await repo.listSites()).find((s) => s.title === "全量站点0")!;
+    // 软删站点不参与（用 listAllSites 找目标：listSites 只回前 100，创建时间相同的情况下
+    // 最老的站点未必在窗口内，用普通列表找会导致用例随排序抖动而失败）
+    const victim = (await repo.listAllSites()).find((s) => s.title === "全量站点0")!;
     await repo.deleteSite(victim.id);
     expect((await repo.listAllSites()).length).toBe(TOTAL - 1);
   });

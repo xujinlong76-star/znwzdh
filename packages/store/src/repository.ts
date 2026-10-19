@@ -337,6 +337,22 @@ export class Repository {
     return embeddingsRepo.savedEmbeddings(this);
   }
 
+  async savePluginEmbedding(slug: string, model: string, vector: Float32Array): Promise<void> {
+    return embeddingsRepo.savePluginEmbedding(this, slug, model, vector);
+  }
+
+  async savedPluginEmbeddings(): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
+    return embeddingsRepo.savedPluginEmbeddings(this);
+  }
+
+  async getPluginEmbedding(slug: string): Promise<Float32Array | null> {
+    return embeddingsRepo.getPluginEmbedding(this, slug);
+  }
+
+  async deletePluginEmbedding(slug: string): Promise<void> {
+    return embeddingsRepo.deletePluginEmbedding(this, slug);
+  }
+
 
   /* ------------------------- 统计 ------------------------- */
 

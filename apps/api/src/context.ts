@@ -28,6 +28,8 @@ export interface AppContext {
   repo: Repository;
   search: SearchEngine;
   vectors: VectorStore;
+  /** 插件向量独立表（plugins_vec）：与站点语义检索互不挤占 top-N */
+  pluginVectors: VectorStore;
   fts: FullTextStore | null;
   embedding: EmbeddingService | null;
   capabilities: Capabilities;
@@ -52,6 +54,7 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
 
   // ---- 向量存储 ----
   let vectors: VectorStore;
+  let pluginVectors: VectorStore;
   let fts: FullTextStore | null = null;
 
   if (config.mode === "lite") {
@@ -65,11 +68,17 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       const saved = await repo.savedEmbeddings();
       store.rehydrate(saved);
       vectors = store;
+      // 插件向量：同一数据库、独立 vec0 表；持久层 plugin_embeddings 为唯一事实源
+      const pluginStore = new SqliteVecStore({ db: db.sqlite as never, dim: config.embedding.dim, table: "plugins_vec" });
+      pluginStore.init();
+      pluginStore.rehydrate(await repo.savedPluginEmbeddings());
+      pluginVectors = pluginStore;
       notes.push("sqlite-vec 已加载，向量维度 " + config.embedding.dim);
     } catch (err) {
       notes.push("sqlite-vec 不可用，语义检索降级：" + msg(err));
       const { MemoryVectorStore } = await import("@navhub/store");
       vectors = new MemoryVectorStore(config.embedding.dim);
+      pluginVectors = new MemoryVectorStore(config.embedding.dim);
     }
     try {
       const store = new SqliteFtsStore(db.sqlite as never);
@@ -94,11 +103,15 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       const store = new PgVectorStore({ db: db.pg as never, dim: config.embedding.dim });
       await store.init();
       vectors = store;
+      const pluginStore = new PgVectorStore({ db: db.pg as never, dim: config.embedding.dim, table: "plugins_vec" });
+      await pluginStore.init();
+      pluginVectors = pluginStore;
       notes.push("pgvector (HNSW) 就绪");
     } catch (err) {
       notes.push("pgvector 不可用，语义检索降级：" + msg(err));
       const { MemoryVectorStore } = await import("@navhub/store");
       vectors = new MemoryVectorStore(config.embedding.dim);
+      pluginVectors = new MemoryVectorStore(config.embedding.dim);
     }
     // standard 模式的全文通道：PostgreSQL tsvector（语料仍用 navhub 的 CJK 二元分词）
     try {
@@ -153,7 +166,7 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
   };
 
   return {
-    config, db, repo, search, vectors, fts, embedding, capabilities,
+    config, db, repo, search, vectors, pluginVectors, fts, embedding, capabilities,
     async close() {
       try {
         await search.flushLinUCB();

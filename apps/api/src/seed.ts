@@ -14,6 +14,7 @@ import { siteEmbeddingText } from "@navhub/ai";
 import { resolveSiteIcon, validateAndCleanPluginManifest } from "@navhub/core";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
+import { indexPluginsBatch, indexItemFromManifest } from "./index-plugin.ts";
 import { seedPluginDefs } from "./seed-plugins.ts";
 import { DEFAULT_SITE_CONFIG, writeSiteConfig } from "./storage.ts";
 
@@ -133,7 +134,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
         console.warn("[seed] 插件清单不合法，跳过: " + def.slug + " -> " + validated.errors.join("; "));
         continue;
       }
-      await ctx.repo.createPlugin(
+      const created = await ctx.repo.createPlugin(
         {
           manifest: validated.manifest,
           author: validated.manifest.author ?? "NavHub 官方",
@@ -144,6 +145,10 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
         },
         { actor: "seed", actorKind: "system" },
       );
+      if (def.status === "published") {
+        // 与审核 / 导入同一条索引路径：种子数据上语义检索开箱即用
+        await indexPluginsBatch(ctx, [indexItemFromManifest(created.slug, created.manifest)]);
+      }
       plugins++;
     } catch (err) {
       console.warn("[seed] 插件导入跳过: " + def.slug, err);

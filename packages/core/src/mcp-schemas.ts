@@ -40,6 +40,12 @@ export const ListPluginsInput = z.object({
   offset: z.number().int().min(0).default(0).describe("分页偏移"),
 });
 
+export const SearchPluginsInput = z.object({
+  query: z.string().min(1).describe("需求描述或关键词，如「深色极简主题」「设计工具合集」「数据看板布局」"),
+  kind: z.enum(["site-pack", "workspace-preset", "theme"]).optional().describe("按插件类型过滤：网址包 / 工作台预设 / 主题"),
+  limit: z.number().int().min(1).max(50).default(10).describe("返回条数上限"),
+});
+
 export const InstallPluginInput = z.object({
   slug: z.string().describe("插件 slug（可从 list_plugins 结果中获取）"),
   identity: z.string().optional().describe("安装归属的 identity；缺省为 mcp:<调用者标识>"),
@@ -427,6 +433,7 @@ export const REST_SCHEMA_BINDINGS: Record<string, { schema: ZodSchemaLike; in: "
   "POST /api/sites/alternatives": { schema: GetAlternativesInput, in: "body" },
   "POST /api/wayback": { schema: ResolveWaybackInput, in: "body" },
   "GET /api/tags": { schema: ListTagsInput, in: "query" },
+  "GET /api/plugins/search": { schema: SearchPluginsInput, in: "query" },
   "GET /api/rank/trending": { schema: GetTrendingInput, in: "query" },
 };
 
@@ -609,6 +616,11 @@ export const MCP_TOOL_DEFS: ToolDefinition[] = [
     name: "list_plugins",
     description: "浏览插件市场（社区共享的声明式插件：网址包 / 工作台预设 / 主题）。返回已上架插件的元数据与影响摘要（站点数 / 看板模块数 / 主题变量数）。适合回答「有什么现成的网址合集 / 工作台布局 / 主题可用」。",
     scope: "read", inputSchema: ListPluginsInput, mutating: false,
+  },
+  {
+    name: "search_plugins",
+    description: "按自然语言需求检索插件市场（网址包 / 工作台预设 / 主题）。语义模型可用时走向量检索，否则自动降级关键词并用 degraded 标注。适合回答「有没有做 X 的插件 / 更像某风格的插件」。",
+    scope: "read", inputSchema: SearchPluginsInput, mutating: false,
   },
   {
     name: "install_plugin",

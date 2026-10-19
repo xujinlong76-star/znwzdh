@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 免登分享链接（#diy=）的编码与接线守卫。
  *
  * 修的是什么：`exportPresetToUrlHash()` 以前把编码整段包在 try 里，失败就 `return ''`；
@@ -103,7 +103,7 @@ describe('encodeShareLink：成功要能往返，失败要给出原因', () => {
   it('页面基准不完整时直接拒绝，不去拼一个坏链接', () => {
     // @ts-expect-error 故意传坏基准
     expect(encodeShareLink({ a: 1 }, { origin: 'https://x' }).ok).toBe(false)
-    // @ts-expect-error 同上
+    // @ts-expect-error 同上：空基准
     expect(encodeShareLink({ a: 1 }, null).ok).toBe(false)
   })
 

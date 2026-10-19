@@ -54,6 +54,13 @@ RUN curl -fsSL --connect-timeout 10 --max-time 300 --retry 3 --retry-delay 2 --r
 #    NAVHUB_STORAGE_BASE_URL），已包含在覆盖层里，无需在 Dockerfile 额外配置。
 COPY apps/web-overlay/ /app/apps/web/
 
+# 3) 修剪上游遗留文件（与 scripts/vendor-web.mjs 的 prune 列表保持一致）
+#    Next 16 起 middleware 更名为 proxy；上游 tarball 仍带 src/middleware.ts，
+#    与覆盖层的 src/proxy.ts 并存会让 next build 直接报错
+#    ("Both middleware file ... and proxy file ... are detected")。
+#    vendor 脚本在宿主机已修剪，但镜像构建不跑 vendor —— 必须在这里同步修剪。
+RUN rm -f /app/apps/web/src/middleware.ts /app/apps/web/.eslintrc.json
+
 WORKDIR /app/apps/web
 
 ENV NODE_ENV=production \

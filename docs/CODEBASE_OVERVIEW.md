@@ -344,14 +344,15 @@ JobRunner.tick()（定时）
 
 横切关注点全部在 `server.ts`（384 行）：`onRoute` 收集 OpenAPI、`onRequest` 做请求 ID + 分级鉴权、`onSend` 做安全头 + 路由级缓存/ETag、`onResponse` 记指标、`setErrorHandler` 兜底。
 
-### 5.5 `packages/mcp`：34 个工具
+### 5.5 `packages/mcp`：35 个工具
 
-22 个 read、9 个 write、1 个 admin（`run_job`，会触发全站扫描）。按域拆在 `handlers/`：
+24 个 read、11 个 write（其中 `run_job` 为 admin 专属，会触发全站扫描）。按域拆在 `handlers/`：
 
 | 域 | 工具 |
 | :--- | :--- |
-| sites | `search_sites`、`get_site`、`create_site`、`update_site`、`set_status`、`batch_import`、`export_sites`、`health_check`、`refresh_site` |
+| sites | `search_sites`、`get_site`、`create_site`、`update_site`、`set_status`、`batch_import`、`export_sites`、`health_check`、`refresh_site`、`delete_site` |
 | catalog | `list_categories`、`list_tags`、`get_stats`、`get_trending`、`list_collections` |
+| plugins | `list_plugins`、`search_plugins`、`install_plugin` |
 | jobs | `run_job`、`list_jobs` |
 | algorithms | `get_architecture_recipe`、`compare_technologies`、`heal_broken_site`、`find_tech_path`、`analyze_stack_compatibility`、`cluster_sites` |
 | discovery | `get_alternatives`、`resolve_wayback` |

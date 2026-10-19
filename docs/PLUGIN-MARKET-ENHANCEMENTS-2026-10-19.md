@@ -39,6 +39,8 @@
 
 ### D2 插件语义检索与相似推荐
 
+> **状态（2026-10-19）**：已落地。实现较本方案有一处升级——**独立 `plugin_embeddings` 表 + 独立 `plugins_vec` 向量表**（业务 id `plugin:<slug>`），而非共享 `ctx.vectors` 加 key 前缀：`VectorStore.search` 没有元数据过滤能力，混表会让插件向量挤占站点语义检索的 top-N（反之亦然）。其余按方案执行（索引单一路径、关键词回退 + `degraded`、reindex `targets`、MCP `search_plugins`）。
+
 - **用户价值**：从「知道名字才能搜到」升级为「描述需求就能找到」；详情页出现「相似插件」形成发现回路。
 - **现状地基**：embedding + vectors + reindex job 已为站点跑通；插件文本短（name+description+tags+summary），索引成本极低。
 - **方案要点**：

@@ -10,6 +10,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { indexSitesBatch } from "../index-site.ts";
+import { indexPluginsBatch, indexItemFromManifest, removePluginIndex } from "../index-plugin.ts";
+import { searchPluginsSemantic, similarPlugins } from "../plugins-search.ts";
 import {
   validateAndCleanPluginManifest,
   summarizePluginManifest,
@@ -29,6 +31,14 @@ import {
   identityOf,
   notFound,
 } from "./shared.ts";
+
+function extractPluginIdentity(req: any): string | null {
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const query = (req.query ?? {}) as Record<string, unknown>;
+  if (typeof body.identity === "string" && body.identity.trim()) return body.identity.trim().slice(0, 120);
+  if (typeof query.identity === "string" && query.identity.trim()) return query.identity.trim().slice(0, 120);
+  return identityOf(req);
+}
 
 export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -71,6 +81,22 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         limit,
         offset,
       };
+    }
+  );
+
+  /**
+   * 插件语义检索：描述需求即可找到（模型不可用时自动关键词回退，degraded 标注）
+   */
+  app.get(
+    "/api/plugins/search",
+    { config: { scope: "public", cache: { maxAge: 0 } } },
+    async (req, _reply) => {
+      const q = req.query as Record<string, string | undefined>;
+      return await searchPluginsSemantic(ctx, {
+        q: q.q?.trim() ?? "",
+        kind: q.kind?.trim() || undefined,
+        limit: q.limit ? parseInt(q.limit, 10) || undefined : undefined,
+      });
     }
   );
 
@@ -264,6 +290,25 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   );
 
   /**
+   * 相似插件（详情页发现回路）：语义向量近邻，排除自身与未上架项
+   */
+  app.get(
+    "/api/plugins/:slug/similar",
+    { config: { scope: "public", cache: { maxAge: 0 } } },
+    async (req, reply) => {
+      const rawSlug = (req.params as { slug: string }).slug;
+      const slug = decodeURIComponent(rawSlug);
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin || plugin.status !== "published") {
+        return notFound(reply, `插件未上架或不存在: ${slug}`);
+      }
+      const q = req.query as Record<string, string | undefined>;
+      const limit = q.limit ? parseInt(q.limit, 10) || 6 : 6;
+      return await similarPlugins(ctx, slug, limit);
+    }
+  );
+
+  /**
    * 任意两份插件清单差异比对 (供发布/更新/升级前预览使用)
    */
   app.post(
@@ -414,6 +459,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           }
         );
 
+        // 直接上架：与审核 approve 同一条索引路径（失败只记 notes，不影响导入结果）
+        await indexPluginsBatch(ctx, [indexItemFromManifest(imported.slug, imported.manifest)]);
+
         let installResult = null;
         if (body.installNow) {
           const identity = identityOf(req as any) || "admin";
@@ -464,6 +512,8 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           ip: req.ip,
         }
       );
+      // 更新回到待审：摘掉旧版本语义向量，重新过审时按新内容重建
+      await removePluginIndex(ctx, slug);
       return {
         ...updated,
         success: true,
@@ -518,6 +568,12 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           ip: req.ip,
         }
       );
+      // 上架 -> 建/重建语义索引；驳回/下架 -> 摘掉向量（检索仍以 published 为准）
+      if (body.data.action === "approve") {
+        await indexPluginsBatch(ctx, [indexItemFromManifest(reviewed.slug, reviewed.manifest)]);
+      } else {
+        await removePluginIndex(ctx, slug);
+      }
       return {
         success: true,
         plugin: reviewed,

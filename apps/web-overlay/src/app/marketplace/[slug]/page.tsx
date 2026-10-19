@@ -29,6 +29,7 @@ import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
 import { PluginReportModal } from '@/components/plugins/plugin-report-modal'
 import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
+import { PluginSimilar } from '@/components/plugins/plugin-similar'
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
@@ -815,6 +816,9 @@ export default function PluginDetailPage({
             </div>
           )}
         </div>
+
+        {/* 相似插件（语义近邻；语义未就绪时不渲染） */}
+        <PluginSimilar slug={plugin.slug} />
 
         {/* 安装 / 卸载确认弹窗 */}
         <PluginInstallModal

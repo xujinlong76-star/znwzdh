@@ -67,6 +67,23 @@ export function hashSiteId(siteId: string): number {
 export function vectorToBlob(v: Float32Array): Buffer {
   return toBlobParam(v);
 }
+
+/* ------------------------------------------------------------------ *
+ * 插件向量业务 id（与站点向量同构；冒号前缀让 KNN 结果无歧义映射回插件）
+ * ------------------------------------------------------------------ */
+
+/** 插件向量的业务 id 前缀：vec0 / pgvector 的 site_id 列对插件存 "plugin:<slug>" */
+export const PLUGIN_VECTOR_PREFIX = "plugin:";
+
+export function pluginVectorId(slug: string): string {
+  return PLUGIN_VECTOR_PREFIX + slug;
+}
+
+/** 反向映射：非插件 id（站点 UUID）返回 null，调用方据此过滤 */
+export function pluginSlugFromVectorId(id: string): string | null {
+  return id.startsWith(PLUGIN_VECTOR_PREFIX) ? id.slice(PLUGIN_VECTOR_PREFIX.length) : null;
+}
+
 export function blobToVector(b: Buffer): Float32Array {
   return new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
 }

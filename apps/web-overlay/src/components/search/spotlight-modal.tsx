@@ -482,6 +482,8 @@ export function SpotlightModal() {
       e.preventDefault()
       handleSelectCurrent()
     }
+  }
+
   return (
     <>
       {open && (

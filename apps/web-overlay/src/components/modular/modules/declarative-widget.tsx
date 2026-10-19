@@ -70,6 +70,7 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
   const title = config?.title || '声明式微组件'
   const layout = config?.layout || 'kpi-grid'
   const endpoint = config?.endpoint
+  const items = config?.items
   const intervalSec = Math.max(10, config?.refreshIntervalSeconds || 60)
 
   const [loading, setLoading] = useState(false)
@@ -81,7 +82,7 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
 
   const fetchData = useCallback(async () => {
     if (!endpoint) {
-      if (config?.items) setData(config.items)
+      if (items) setData(items)
       return
     }
 
@@ -104,7 +105,7 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
     } finally {
       setLoading(false)
     }
-  }, [endpoint, config?.items])
+  }, [endpoint, items])
 
   useEffect(() => {
     fetchData()

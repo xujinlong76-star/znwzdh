@@ -42,15 +42,18 @@ export function ThemeTryoutRibbon() {
     toast.success(`已正式保存并应用主题：${tryout.name}`)
   }
 
+  // 定位/宽度用内联样式：当前 Tailwind v4 构建漏生成了 bottom-5 与
+  // w-[calc(100%-2rem)]，fixed 元素会停在文档流末尾，滚动后按钮落在视口外。
   return (
     <aside
       aria-label="主题试用状态栏"
       aria-live="polite"
-      className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 max-w-xl w-[calc(100%-2rem)] shadow-2xl rounded-2xl border border-primary/30 bg-background/95 backdrop-blur-md px-4 py-3 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200"
+      style={{ bottom: '1.25rem', width: 'calc(100% - 2rem)' }}
+      className="fixed left-1/2 -translate-x-1/2 z-50 max-w-xl shadow-2xl rounded-2xl border border-primary/30 bg-background/95 backdrop-blur-md px-4 py-3 flex items-center justify-between gap-3"
     >
       <div className="flex items-center gap-2.5 min-w-0">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Sparkles className="h-4 w-4 animate-pulse" />
+          <Sparkles className="h-4 w-4" />
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">

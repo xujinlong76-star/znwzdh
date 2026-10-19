@@ -715,6 +715,8 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         slug: plugin.slug,
         currentVersion: plugin.version,
         versions: versions.map((v) => ({
+          // 前端时间轴用 id 做 React key 与短标识；漏传会让 v.id.slice() 直接崩溃
+          id: v.id,
           version: v.version,
           changelog: v.changelog,
           checksum: v.checksum,

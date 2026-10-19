@@ -148,8 +148,8 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const stamp = Date.now().toString(36);
     const name = `E2E 待审包 ${stamp}`;
 
-    // 1. 发布：进入 pending 待审队列
-    const published = await request.post('/api/hub/plugins', {
+    // 1. 发布：进入 pending 待审队列（F0 起发布必须带作者身份）
+    const published = await request.post(`/api/hub/plugins?anonId=e2e-owner-${stamp}`, {
       data: { manifest: sitePackManifest(name, stamp) },
     });
     expect(published.ok(), `发布失败 ${published.status()}: ${await published.text()}`).toBeTruthy();

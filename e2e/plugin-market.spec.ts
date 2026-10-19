@@ -537,8 +537,16 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     // 2. 发布向导：选择组合包类型 → 成员选择器出现，初始为空清单
     await page.goto('/marketplace/publish');
     await expect(page.getByRole('heading', { name: '投稿发布新插件' })).toBeVisible({ timeout: 30_000 });
-    await page.getByRole('button', { name: /组合包 \(bundle\)/ }).click();
-    await expect(page.getByText('成员选择器（从已上架插件中拼装）')).toBeVisible();
+    const bundleKind = page.getByRole('button', { name: /组合包 \(bundle\)/ });
+    const pickerTitle = page.getByText('成员选择器（从已上架插件中拼装）');
+    await bundleKind.click();
+    // dev 环境的快速刷新（编译/重启）可能重载页面并重置向导状态：未出现则再点一次
+    try {
+      await expect(pickerTitle).toBeVisible({ timeout: 5_000 });
+    } catch {
+      await bundleKind.click();
+    }
+    await expect(pickerTitle).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('已选 0 / 12')).toBeVisible();
     const payloadBox = page.locator('#publish-plugin-payload');
     await expect(payloadBox).toHaveValue(/"items": \[\]/);

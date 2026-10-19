@@ -23,6 +23,15 @@
    单独再声明一条，把 registry 子树纳入扫描。 */
 @source '../registry/**/*.{js,ts,jsx,tsx,mdx}';
 
+/* app/marketplace 与 components/plugins 同理：被根 .gitignore 的
+   `apps/web/src/app/*`、`apps/web/src/components/*` 通配忽略，@source 通配扫不到，
+   于是这些子树「独占」的工具类不生成（实测 2xl:grid-cols-4 一直没有产物，
+   lg:flex-row / bg-card/40 / sm:block / text-border/70 同样缺失）。
+   后果：排版类在生产 CSS 里缺席，页面看起来像没改过。
+   单独声明这两条子树，把插件市场的排版类纳入扫描。 */
+@source '../app/marketplace/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../components/plugins/**/*.{js,ts,jsx,tsx,mdx}';
+
 @custom-variant dark (&:is(.dark *));
 
 @theme {

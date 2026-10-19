@@ -25,6 +25,7 @@ import { getIdentity } from '@/lib/identity'
 import { PluginCard } from '@/components/plugins/plugin-card'
 import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
 import { PluginTapsModal } from '@/components/plugins/plugin-taps-modal'
+import { AiPluginStudioModal } from '@/components/plugins/ai-plugin-studio-modal'
 import { stageWorkspacePreset } from '@/lib/plugins/preset-staging'
 import {
   DEFAULT_MARKETPLACE_SORT,
@@ -84,6 +85,7 @@ export default function MarketplacePage() {
   const [reloadToken, setReloadToken] = useState(0)
   const [installTarget, setInstallTarget] = useState<HubPluginItem | null>(null)
   const [tapsModalOpen, setTapsModalOpen] = useState(false)
+  const [studioOpen, setStudioOpen] = useState(false)
   const [featured, setFeatured] = useState<HubPluginItem[]>([])
   const [rankings, setRankings] = useState<{
     popular: HubPluginItem[]
@@ -283,7 +285,15 @@ export default function MarketplacePage() {
                   作者中心
                 </Link>
               </Button>
-              <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
+              <Button
+                size="sm"
+                onClick={() => setStudioOpen(true)}
+                className="h-8 gap-1.5 text-xs bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-700 text-primary-foreground font-medium shadow-sm"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>AI 生成插件</span>
+              </Button>
+              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
                 <Link href="/marketplace/publish">发布插件</Link>
               </Button>
             </div>
@@ -489,7 +499,7 @@ export default function MarketplacePage() {
 
         {/* 列表 */}
         {loading ? (
-          <div aria-live="polite" aria-label="正在加载插件市场" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+          <div aria-live="polite" aria-label="正在加载插件市场" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1536px]:grid-cols-4! gap-4">
             {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
               <div key={i} className="rounded-2xl border border-border/70 bg-card/50 p-5 animate-pulse space-y-3">
                 <div className="flex items-center gap-2">
@@ -532,7 +542,7 @@ export default function MarketplacePage() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1536px]:grid-cols-4! gap-4">
             {items.map((p) => (
               <PluginCard
                 key={p.id}
@@ -582,6 +592,13 @@ export default function MarketplacePage() {
           open={tapsModalOpen}
           onOpenChange={setTapsModalOpen}
           onSynced={reload}
+        />
+
+        {/* AI 智能插件工坊 */}
+        <AiPluginStudioModal
+          open={studioOpen}
+          onOpenChange={setStudioOpen}
+          onPublished={reload}
         />
       </div>
       <Footer />

@@ -19,6 +19,12 @@ describe("插件市场排版：展板背景工具类", () => {
     expect(css).toContain(".dark .market-hero")
   })
 
+  it("globals.css 显式声明市场子树扫描源（否则排版类不进产物 CSS）", () => {
+    const css = overlaySource("src/styles/globals.css")
+    expect(css).toContain("@source '../app/marketplace/**/*.{js,ts,jsx,tsx,mdx}'")
+    expect(css).toContain("@source '../components/plugins/**/*.{js,ts,jsx,tsx,mdx}'")
+  })
+
   it("市场各页面展板统一使用 market-hero", () => {
     const pages = [
       "src/app/marketplace/page.tsx",
@@ -46,6 +52,12 @@ describe("插件市场排版：卡片与列表细节", () => {
     const page = overlaySource("src/app/marketplace/page.tsx")
     expect(page).toContain("animate-pulse")
     expect(page).toContain("正在加载插件市场")
+  })
+
+  it("宽屏才切到四列（2xl 变体在本仓库不生成，改用任意断点 + 重要标记）", () => {
+    const page = overlaySource("src/app/marketplace/page.tsx")
+    expect(page).toContain("min-[1536px]:grid-cols-4!")
+    expect(page).not.toContain("2xl:grid-cols")
   })
 
   it("详情页 OG 卡片带装饰光斑", () => {

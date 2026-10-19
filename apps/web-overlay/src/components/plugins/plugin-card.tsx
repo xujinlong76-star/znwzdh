@@ -354,8 +354,8 @@ export function PluginCard({
       </div>
 
       {/* 底部操作与统计栏 */}
-      <div className="mt-5 pt-3 border-t border-border/50 flex items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-3">
+      <div className="mt-5 pt-3 border-t border-border/50 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
             onClick={handleStarToggle}
@@ -384,20 +384,20 @@ export function PluginCard({
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={handleShare}
             disabled={sharing}
             aria-label="复制安装分享链接"
             title="复制带安装引导的分享链接"
-            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-60"
+            className="inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-60"
           >
             {sharing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
           </button>
           <Link
             href={`/marketplace/${encodeURIComponent(plugin.slug)}`}
-            className="px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground font-medium rounded-lg hover:bg-muted/60 transition-colors"
+            className="px-2.5 py-1 text-xs whitespace-nowrap text-muted-foreground hover:text-foreground font-medium rounded-lg hover:bg-muted/60 transition-colors"
           >
             详情
           </Link>
@@ -406,7 +406,7 @@ export function PluginCard({
             onClick={handleQuickInstall}
             disabled={installing}
             className={cn(
-              'inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg transition-all shadow-2xs',
+              'inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg whitespace-nowrap transition-all shadow-2xs',
               needsUpdate
                 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/25'
                 : installed

@@ -164,6 +164,24 @@ export function PluginCard({
     setSharing(false)
   }
 
+  /** 与图标同色系：头部小瓷砖的渐变底座，让 5 类插件远看就能区分 */
+  const kindTileClass = () => {
+    switch (plugin.kind) {
+      case 'site-pack':
+        return 'bg-sky-500/10 border-sky-500/30'
+      case 'workspace-preset':
+        return 'bg-emerald-500/10 border-emerald-500/30'
+      case 'theme':
+        return 'bg-violet-500/10 border-violet-500/30'
+      case 'search-pack':
+        return 'bg-sky-500/10 border-sky-500/30'
+      case 'bundle':
+        return 'bg-amber-500/10 border-amber-500/30'
+      default:
+        return 'bg-muted/60 border-border/40'
+    }
+  }
+
   const renderKindIcon = () => {
     switch (plugin.kind) {
       case 'site-pack':
@@ -252,12 +270,17 @@ export function PluginCard({
   }
 
   return (
-    <div className="group relative flex flex-col justify-between rounded-2xl border border-border/70 bg-card/60 backdrop-blur-xs p-5 transition-all duration-300 hover:border-border hover:bg-card hover:shadow-md">
+    <div
+      className={cn(
+        'nav-card-glow group relative flex flex-col justify-between rounded-2xl border border-border/70 bg-card/60 backdrop-blur-xs p-5 transition-all duration-300 hover:border-primary/30 hover:bg-card hover:shadow-md hover:-translate-y-0.5',
+        plugin.featured && 'border-amber-500/30'
+      )}
+    >
       <div className="space-y-3">
         {/* 头部：类型标签与版本 */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
-            <span className="p-1.5 rounded-lg bg-muted/60 border border-border/40 flex items-center justify-center">
+            <span className={cn('p-1.5 rounded-lg border flex items-center justify-center', kindTileClass())}>
               {renderKindIcon()}
             </span>
             <Badge
@@ -296,13 +319,19 @@ export function PluginCard({
             <span>{plugin.name}</span>
             <ExternalLink className="w-3.5 h-3.5 opacity-0 -translate-x-1 transition-all group-hover/title:opacity-100 group-hover/title:translate-x-0" />
           </Link>
-          <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed min-h-[32px]">
+          <p className="text-[13px] text-muted-foreground/90 line-clamp-2 leading-relaxed min-h-[38px]">
             {plugin.description || '暂无描述'}
           </p>
         </div>
 
         {/* 指标摘要 */}
-        <div className="pt-1">{renderSummaryMetrics()}</div>
+        <div className="pt-1">
+          {summary ? (
+            <div className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/50 bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground">
+              {renderSummaryMetrics()}
+            </div>
+          ) : null}
+        </div>
 
         {/* 标签列表 */}
         {plugin.tags && plugin.tags.length > 0 && (

@@ -94,7 +94,7 @@ export default function PluginAuthorPage({
           </div>
         ) : (
           <>
-            <div className="rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-7 space-y-4">
+            <div className="rounded-2xl border border-border/70 glass-surface market-hero p-6 sm:p-7 space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
                   <UserRound className="w-6 h-6" />

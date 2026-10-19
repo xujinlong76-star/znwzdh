@@ -97,7 +97,7 @@ export default function MyPluginsPage() {
           </Button>
         </div>
 
-        <div className="rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-7 space-y-3">
+        <div className="rounded-2xl border border-border/70 glass-surface market-hero p-6 sm:p-7 space-y-3">
           <div className="flex items-center gap-2 text-xs text-primary font-medium">
             <Store className="w-3.5 h-3.5" />
             作者中心

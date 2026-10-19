@@ -446,9 +446,9 @@ export default function PluginDetailPage({
         )}
 
         {/* 插件头部 Hero 卡片 */}
-        <div className="relative overflow-hidden rounded-3xl border border-border/80 glass-surface p-6 sm:p-8 space-y-6 shadow-xs">
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-5">
-            <div className="space-y-3 max-w-2xl">
+        <div className="relative overflow-hidden rounded-3xl border border-border/80 glass-surface market-hero p-6 sm:p-8 space-y-6 shadow-xs">
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
+            <div className="space-y-3 max-w-2xl min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <Badge
                   variant="outline"

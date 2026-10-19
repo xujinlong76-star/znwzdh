@@ -83,11 +83,16 @@ export default async function OpenGraphImage({ params }: { params: Promise<{ slu
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: '64px 72px',
-          background: 'linear-gradient(135deg, #4c1d95 0%, #6d28d9 45%, #1e1b4b 100%)',
+          background: 'linear-gradient(135deg, #160f34 0%, #4c1d95 45%, #7c3aed 78%, #6d28d9 100%)',
           color: '#ffffff',
           fontFamily: 'sans-serif',
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
+        {/* 装饰光斑（Satori 兼容：仅定位 + 渐变 + 圆角） */}
+        <div style={{ position: 'absolute', left: -150, top: -170, width: 380, height: 380, borderRadius: 999, background: 'rgba(255,255,255,0.07)' }} />
+        <div style={{ position: 'absolute', right: -140, bottom: -180, width: 460, height: 460, borderRadius: 999, background: 'rgba(129,140,248,0.25)' }} />
         {/* 顶部品牌行 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>

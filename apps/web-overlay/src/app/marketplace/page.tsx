@@ -226,7 +226,11 @@ export default function MarketplacePage() {
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
         {/* 顶部展板 */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-7 shadow-xs">
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero p-6 sm:p-7 shadow-xs">
+          {/* 装饰层：纯视觉，不拦截交互 */}
+          <div aria-hidden className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
+          <div aria-hidden className="pointer-events-none absolute -left-24 top-24 h-48 w-48 rounded-full bg-sky-400/10 blur-3xl" />
+          <Store aria-hidden className="pointer-events-none absolute right-5 top-5 hidden h-16 w-16 text-border/70 sm:block" strokeWidth={1} />
           <div className="flex items-center gap-2 mb-3">
             <Link
               href="/"
@@ -241,8 +245,8 @@ export default function MarketplacePage() {
               插件市场
             </span>
           </div>
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-            <div>
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
+            <div className="min-w-0 flex-1">
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
                 插件市场
               </h1>
@@ -251,7 +255,7 @@ export default function MarketplacePage() {
                 不含任何可执行代码；安装前可先看清单预览。
               </p>
             </div>
-            <div className="flex items-center flex-wrap gap-2 shrink-0">
+            <div className="flex items-center flex-wrap gap-2 shrink-0 lg:justify-end">
               <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
                 <Link href="/marketplace/installed">
                   <PackageCheck className="w-3.5 h-3.5 text-primary" />
@@ -303,8 +307,8 @@ export default function MarketplacePage() {
                   onClick={() => handleTopicClick(topic)}
                   className={`px-2.5 py-1 rounded-full text-xs transition-all ${
                     isTopicActive
-                      ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
-                      : 'bg-background/70 hover:bg-background text-muted-foreground hover:text-foreground border border-border/60'
+                      ? 'bg-primary text-primary-foreground font-semibold shadow-xs ring-2 ring-primary/20'
+                      : 'bg-background/70 hover:bg-background text-muted-foreground hover:text-foreground border border-border/60 hover:border-border hover:-translate-y-px'
                   }`}
                 >
                   {topic.title}
@@ -315,7 +319,7 @@ export default function MarketplacePage() {
         </div>
 
         {/* 筛选栏 */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-card/40 p-2 backdrop-blur-xs">
           <select
             aria-label="按类型筛选"
             className="h-8 rounded-md border border-input bg-background px-2 text-sm"
@@ -454,7 +458,7 @@ export default function MarketplacePage() {
               const rows = rankings[group.key]
               const Icon = group.icon
               return (
-                <div key={group.key} className="rounded-xl border border-border/70 bg-card/60 p-4 space-y-2.5">
+                <div key={group.key} className="rounded-xl border border-border/70 bg-card/60 p-4 space-y-2.5 transition-colors hover:border-border hover:bg-card">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                     <Icon className="w-3.5 h-3.5 text-primary" />
                     {group.title}
@@ -469,7 +473,7 @@ export default function MarketplacePage() {
                             href={`/marketplace/${encodeURIComponent(p.slug)}`}
                             className="flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-muted/60 transition-colors"
                           >
-                            <span className="w-4 text-[11px] tabular-nums text-muted-foreground">{index + 1}</span>
+                            <span className={`w-4 text-[11px] tabular-nums font-bold ${index === 0 ? 'text-amber-500' : index === 1 ? 'text-slate-400' : index === 2 ? 'text-orange-600/80' : 'text-muted-foreground'}`}>{index + 1}</span>
                             <span className="text-xs font-medium truncate flex-1">{p.name}</span>
                             <span className="text-[10px] text-muted-foreground shrink-0">{group.metric(p)}</span>
                           </Link>
@@ -485,13 +489,31 @@ export default function MarketplacePage() {
 
         {/* 列表 */}
         {loading ? (
-          <div className="py-16 text-center text-sm text-muted-foreground">
-            <Loader2 className="w-5 h-5 animate-spin mx-auto mb-3" />
-            正在加载插件市场…
+          <div aria-live="polite" aria-label="正在加载插件市场" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
+            {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+              <div key={i} className="rounded-2xl border border-border/70 bg-card/50 p-5 animate-pulse space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="h-7 w-7 rounded-lg bg-muted" />
+                  <div className="h-3.5 w-16 rounded bg-muted" />
+                  <div className="h-3.5 w-10 rounded bg-muted" />
+                </div>
+                <div className="h-4 w-2/3 rounded bg-muted" />
+                <div className="space-y-1.5">
+                  <div className="h-3 w-full rounded bg-muted" />
+                  <div className="h-3 w-4/5 rounded bg-muted" />
+                </div>
+                <div className="flex items-center justify-between pt-3 border-t border-border/50">
+                  <div className="h-6 w-14 rounded bg-muted" />
+                  <div className="h-6 w-16 rounded bg-muted" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : items.length === 0 ? (
           <div className="py-14 text-center border border-dashed border-border/70 rounded-2xl space-y-3">
-            <Store className="w-8 h-8 mx-auto text-muted-foreground/50" />
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-border/60 bg-muted/50 shadow-xs">
+              <Store className="w-7 h-7 text-muted-foreground/60" />
+            </div>
             <p className="text-sm text-muted-foreground">
               {hasFilter
                 ? '没有匹配的插件，换个筛选条件试试'

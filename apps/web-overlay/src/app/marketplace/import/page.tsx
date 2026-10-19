@@ -102,7 +102,7 @@ export default function MarketplaceImportPage() {
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6 max-w-3xl mx-auto">
         {/* 顶部展板 */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-7 shadow-xs">
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero p-6 sm:p-7 shadow-xs">
           <div className="flex items-center gap-2 mb-3">
             <Link
               href="/marketplace"

@@ -494,3 +494,14 @@
     --ring: 346 77% 55%;
   }
 }
+@layer utilities {
+  /* 插件市场展板：主色光斑 + 点阵（深色更浓） */
+  .market-hero {
+    background-image: radial-gradient(at 88% 0%, hsl(var(--primary) / 0.10) 0px, transparent 55%), radial-gradient(at 12% 100%, hsl(199 95% 55% / 0.07) 0px, transparent 50%), radial-gradient(hsl(var(--border) / 0.30) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 26px 26px;
+  }
+  .dark .market-hero {
+    background-image: radial-gradient(at 88% 0%, hsl(var(--primary) / 0.16) 0px, transparent 55%), radial-gradient(at 12% 100%, hsl(199 95% 55% / 0.10) 0px, transparent 50%), radial-gradient(hsl(var(--border) / 0.26) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 26px 26px;
+  }
+}

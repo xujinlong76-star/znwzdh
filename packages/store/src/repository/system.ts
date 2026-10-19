@@ -75,3 +75,8 @@ export async function setSystemState(repo: Repository, key: string, value: unkno
     );
   }
 }
+
+/** 删除一条系统状态（用于「恢复默认」：清除 DB 覆盖后回退环境变量）。 */
+export async function deleteSystemState(repo: Repository, key: string): Promise<void> {
+  await repo.run("DELETE FROM system_states WHERE key = ?", [key]);
+}

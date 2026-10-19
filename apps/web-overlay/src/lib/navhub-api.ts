@@ -1288,3 +1288,136 @@ export async function checkPluginUrls(
   return sendJson('/api/plugins/check-urls', 'POST', { urls })
 }
 
+/* ------------------------------ AI 模型配置 ------------------------------ */
+
+export type HubJsonMode = 'auto' | 'response_format' | 'prompt'
+
+/** 系统级模型配置视图（密钥只回显掩码） */
+export interface HubLlmConfigView {
+  configured: boolean
+  source: 'db' | 'env' | 'default'
+  enabled: boolean
+  name: string
+  baseUrl: string
+  model: string
+  hasApiKey: boolean
+  apiKeyMasked: string
+  timeoutMs: number
+  temperature: number
+  maxTokens: number
+  jsonMode: HubJsonMode
+  allowPrivateNetwork: boolean
+  updatedAt: number | null
+  updatedBy: string | null
+}
+
+/** 用户级模型配置视图 */
+export interface HubUserLlmConfigView {
+  configured: boolean
+  enabled: boolean
+  name: string
+  baseUrl: string
+  model: string
+  hasApiKey: boolean
+  apiKeyMasked: string
+  timeoutMs: number
+  temperature: number
+  maxTokens: number
+  jsonMode: HubJsonMode
+  updatedAt: number | null
+  system: { source: 'db' | 'env' | 'default'; name: string; model: string }
+}
+
+export interface HubLlmConfigInput {
+  enabled?: boolean
+  name?: string
+  baseUrl: string
+  model: string
+  /** 省略 = 保持原密钥；空串 = 清除；非空 = 覆盖 */
+  apiKey?: string
+  timeoutMs?: number
+  temperature?: number
+  maxTokens?: number
+  jsonMode?: HubJsonMode
+  allowPrivateNetwork?: boolean
+}
+
+export interface HubLlmTestResult {
+  ok: boolean
+  latencyMs: number
+  model: string
+  replyPreview: string
+  error?: string
+  code?: string
+  status?: number
+}
+
+export interface HubAdminLlmConfigResponse {
+  config: HubLlmConfigView
+  effective: { source: 'user' | 'system' | 'env' | 'default'; model: string; hasApiKey: boolean }
+}
+
+export async function fetchAdminLlmConfig(): Promise<HubAdminLlmConfigResponse> {
+  return getJson('/api/admin/ai/config')
+}
+
+export async function saveAdminLlmConfig(input: HubLlmConfigInput): Promise<{ config: HubLlmConfigView }> {
+  return sendJson('/api/admin/ai/config', 'PUT', input)
+}
+
+export async function resetAdminLlmConfig(): Promise<{ config: HubLlmConfigView }> {
+  return sendJson('/api/admin/ai/config/reset', 'POST', {})
+}
+
+export async function testAdminLlmConfig(input: HubLlmConfigInput): Promise<{ result: HubLlmTestResult }> {
+  return sendJson('/api/admin/ai/config/test', 'POST', input)
+}
+
+function identityHeaders(identity: string): Record<string, string> {
+  return { 'X-Navhub-Anon-Id': identity }
+}
+
+export async function fetchUserLlmConfig(identity: string): Promise<{ config: HubUserLlmConfigView }> {
+  return getJson(
+    '/api/user/ai/config?anonId=' + encodeURIComponent(identity),
+    undefined,
+    identityHeaders(identity),
+  )
+}
+
+export async function saveUserLlmConfig(
+  identity: string,
+  input: HubLlmConfigInput,
+): Promise<{ config: HubUserLlmConfigView }> {
+  return sendJson(
+    '/api/user/ai/config?anonId=' + encodeURIComponent(identity),
+    'PUT',
+    input,
+    undefined,
+    identityHeaders(identity),
+  )
+}
+
+export async function deleteUserLlmConfig(identity: string): Promise<{ config: HubUserLlmConfigView }> {
+  return sendJson(
+    '/api/user/ai/config?anonId=' + encodeURIComponent(identity),
+    'DELETE',
+    undefined,
+    undefined,
+    identityHeaders(identity),
+  )
+}
+
+export async function testUserLlmConfig(
+  identity: string,
+  input: HubLlmConfigInput,
+): Promise<{ result: HubLlmTestResult }> {
+  return sendJson(
+    '/api/user/ai/config/test?anonId=' + encodeURIComponent(identity),
+    'POST',
+    input,
+    undefined,
+    identityHeaders(identity),
+  )
+}
+

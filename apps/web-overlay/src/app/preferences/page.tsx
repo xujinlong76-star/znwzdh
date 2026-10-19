@@ -26,6 +26,7 @@ import {
   profileViewState,
 } from '@/lib/profile-view'
 import { Sparkles, RotateCcw, Tag, FolderOpen, History } from 'lucide-react'
+import { UserLlmConfigCard } from '@/components/ai/user-llm-config-card'
 
 interface Profile {
   userId: string
@@ -246,6 +247,10 @@ export default function PreferencesPage() {
           </section>
         </div>
       )}
+
+      <div className="mt-6">
+        <UserLlmConfigCard />
+      </div>
     </Container>
   )
 }

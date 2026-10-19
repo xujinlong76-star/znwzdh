@@ -6,6 +6,7 @@
  */
 export * from "./config.ts";
 export * from "./context.ts";
+export * from "./llm-config.ts";
 export * from "./server.ts";
 export * from "./storage.ts";
 export * from "./auth.ts";

@@ -14,20 +14,25 @@ import { z } from "zod";
 import { getEnhancedSiteData, type SiteRelation } from "@navhub/core";
 import { guardedFetch, type FetchGuardOptions } from "./ssrf.ts";
 import { extractMetadata } from "./metadata.ts";
+import { AGNES_BASE_URL, AGNES_MODEL, LlmError, chatCompletion, type JsonMode } from "./llm.ts";
 
 export interface LlmConfig {
   baseUrl: string;
   apiKey: string | null;
   model: string;
   timeoutMs: number;
+  /** JSON 约束策略；auto 时遇到不支持 response_format 的端点会自动去参重试 */
+  jsonMode?: JsonMode;
+  /** 允许内网端点（本地 Ollama）；仅系统级配置可开启 */
+  allowPrivateNetwork?: boolean;
   /** 备选 LLM 轮换池配置（主模型失败或超时后依次尝试） */
   fallbacks?: LlmConfig[];
 }
 
 export const DEFAULT_LLM: LlmConfig = {
-  baseUrl: "https://api.deepseek.com",
+  baseUrl: AGNES_BASE_URL,
   apiKey: null,
-  model: "deepseek-chat",
+  model: AGNES_MODEL,
   timeoutMs: 20_000,
 };
 
@@ -279,42 +284,41 @@ async function tryLlm(
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), llm.timeoutMs);
-      const res = await fetch(llm.baseUrl.replace(/\/$/, "") + "/chat/completions", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + llm.apiKey,
-        },
-        body: JSON.stringify({
+      // 统一网关：负责 SSRF 校验、鉴权头、超时、JSON 模式兼容与错误归一化
+      const result = await chatCompletion(
+        {
+          baseUrl: llm.baseUrl,
           model: llm.model,
-          temperature: attempt === 1 ? 0.2 : 0,
-          response_format: { type: "json_object" },
+          apiKey: llm.apiKey,
+          timeoutMs: llm.timeoutMs,
+          jsonMode: llm.jsonMode,
+          allowPrivateNetwork: llm.allowPrivateNetwork,
+        },
+        {
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },
           ],
-        }),
-      }).finally(() => clearTimeout(timer));
+          temperature: attempt === 1 ? 0.2 : 0,
+          maxTokens: 1024,
+          json: true,
+        },
+      );
 
-      if (!res.ok) {
-        warnings.push("LLM HTTP " + res.status);
-        continue;
-      }
-      const json: any = await res.json();
-      const content = json?.choices?.[0]?.message?.content;
-      if (typeof content !== "string") { warnings.push("LLM 返回结构异常"); continue; }
-
-      const parsed = EnrichmentSchema.safeParse(JSON.parse(stripCodeFence(content)));
+      const parsed = EnrichmentSchema.safeParse(JSON.parse(stripCodeFence(result.content)));
       if (!parsed.success) {
         warnings.push("LLM 输出未通过 schema 校验（第 " + attempt + " 次）");
         continue;
       }
       return parsed.data;
     } catch (err) {
-      warnings.push("LLM 调用异常：" + (err instanceof Error ? err.message : String(err)));
+      if (err instanceof LlmError) {
+        if (err.code === "invalid_response") warnings.push("LLM 返回结构异常");
+        else if (typeof err.status === "number") warnings.push("LLM HTTP " + err.status);
+        else warnings.push("LLM 调用异常：" + err.message);
+      } else {
+        warnings.push("LLM 调用异常：" + (err instanceof Error ? err.message : String(err)));
+      }
     }
   }
   return null;

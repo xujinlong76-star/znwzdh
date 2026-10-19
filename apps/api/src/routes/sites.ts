@@ -9,6 +9,8 @@ import { z } from "zod";
 import { canonicalizeUrl, sanitizeIconUrl, SiteCreateBody } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import { indexSite } from "../index-site.ts";
+import { resolveLlm } from "../llm-config.ts";
+import { identityOf } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -77,8 +79,9 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       const dup = await ctx.repo.findSiteByUrl(url);
       if (dup) { reply.code(409); return { error: "该网址已存在", siteId: dup.id, site: dup, created: false, reason: "已存在" }; }
       const categories = await ctx.repo.listCategories();
+      const { provider } = await resolveLlm(ctx, identityOf(req as never));
       const enriched = await enrichUrl(url, {
-        llm: ctx.config.llm,
+        llm: provider,
         guard: ctx.config.fetch,
         knownCategories: categories.map((c) => c.title),
       });

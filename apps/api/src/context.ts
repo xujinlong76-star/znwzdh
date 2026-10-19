@@ -14,6 +14,7 @@ import { dirname } from "node:path";
 import { createEmbeddingService, type EmbeddingService } from "@navhub/ai";
 import { Repository, SearchEngine, SqliteFtsStore, SqliteVecStore, openDb, type Db, type FullTextStore, type VectorStore } from "@navhub/store";
 import type { AppConfig } from "./config.ts";
+import { refreshLlmCapability } from "./llm-config.ts";
 
 export interface Capabilities {
   semantic: boolean;
@@ -165,7 +166,7 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
     notes,
   };
 
-  return {
+  const context: AppContext = {
     config, db, repo, search, vectors, pluginVectors, fts, embedding, capabilities,
     async close() {
       try {
@@ -177,6 +178,10 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       if (embedding?.close) await embedding.close();
     },
   };
+
+  // 系统级 LLM 配置（管理端写入）优先于环境变量；读取失败不阻断启动
+  await refreshLlmCapability(context);
+  return context;
 }
 
 function msg(err: unknown): string {

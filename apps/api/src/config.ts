@@ -30,10 +30,20 @@ export interface AppConfig {
     useWorker: boolean;
   };
   llm: {
+    /** 展示名（管理端/健康检查用） */
+    name: string;
     baseUrl: string;
     apiKey: string | null;
     model: string;
     timeoutMs: number;
+    temperature: number;
+    maxTokens: number;
+    /** JSON 约束策略：auto 时遇不支持 response_format 的端点自动去参重试 */
+    jsonMode: "auto" | "response_format" | "prompt";
+    /** 允许模型端点指向内网（本地 Ollama）；仅系统级配置可开启 */
+    allowPrivateNetwork: boolean;
+    /** 独立密钥加密口令（不设则回退 sessionSecret） */
+    secretsKey: string | null;
   };
   fetch: {
     timeoutMs: number;
@@ -106,6 +116,13 @@ function bool(key: string, fallback: boolean): boolean {
   return v === "1" || v.toLowerCase() === "true" || v.toLowerCase() === "yes";
 }
 
+/** jsonMode 只接受三个枚举值，非法输入静默回退 auto（不阻断启动） */
+function jsonMode(key: string, fallback: "auto" | "response_format" | "prompt" = "auto"): "auto" | "response_format" | "prompt" {
+  const v = (process.env[key] ?? "").trim();
+  if (v === "auto" || v === "response_format" || v === "prompt") return v;
+  return fallback;
+}
+
 const INSECURE_SECRETS_BLACKLIST = new Set([
   "change-me-please-use-a-long-random-string",
   "insecure-dev-secret-change-me",
@@ -164,7 +181,18 @@ function assertSecurityConstraints(
  * 配置聚合装配入口 (Config Assembler)
  * ------------------------------------------------------------------ */
 
-export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
+/**
+ * 测试/嵌入式装配用的覆盖项：四个子配置允许「部分字段」覆盖，
+ * 其余顶层字段保持 Partial。这样新增配置项不会强迫所有调用点同步补齐。
+ */
+export type ConfigOverrides = Partial<Omit<AppConfig, "llm" | "embedding" | "fetch" | "tokenPolicy">> & {
+  llm?: Partial<AppConfig["llm"]>;
+  embedding?: Partial<AppConfig["embedding"]>;
+  fetch?: Partial<AppConfig["fetch"]>;
+  tokenPolicy?: Partial<AppConfig["tokenPolicy"]>;
+};
+
+export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
   const mode = env("NAVHUB_MODE", "lite") as NavHubMode;
   if (mode !== "lite" && mode !== "standard") {
     throw new Error(`NAVHUB_MODE 只能是 lite 或 standard，收到: ${mode}`);
@@ -193,10 +221,18 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     },
 
     llm: {
-      baseUrl: env("NAVHUB_LLM_BASE_URL", "https://api.deepseek.com"),
+      // 默认模型：Agnes 3.0 Flash（OpenAI 兼容 /v1/chat/completions）。
+      // 密钥只从环境变量或管理端加密配置读取，代码里不留任何密钥。
+      name: env("NAVHUB_LLM_NAME", "Agnes 3.0 Flash"),
+      baseUrl: env("NAVHUB_LLM_BASE_URL", "https://api.agnes-ai.cn/v1"),
       apiKey: process.env.NAVHUB_LLM_API_KEY || null,
-      model: env("NAVHUB_LLM_MODEL", "deepseek-chat"),
+      model: env("NAVHUB_LLM_MODEL", "agnes-3.0-flash"),
       timeoutMs: num("NAVHUB_LLM_TIMEOUT_MS", 20_000),
+      temperature: num("NAVHUB_LLM_TEMPERATURE", 0.2),
+      maxTokens: num("NAVHUB_LLM_MAX_TOKENS", 1024),
+      jsonMode: jsonMode("NAVHUB_LLM_JSON_MODE", "auto"),
+      allowPrivateNetwork: bool("NAVHUB_LLM_ALLOW_PRIVATE", false),
+      secretsKey: process.env.NAVHUB_SECRETS_KEY?.trim() || null,
     },
 
     fetch: {

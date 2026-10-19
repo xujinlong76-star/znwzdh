@@ -371,6 +371,20 @@ export const systemStates = sqliteTable("system_states", {
 });
 
 /**
+ * 用户级 LLM 模型配置（个人设置中心）。
+ *
+ * 身份口径与收藏/画像一致：anon-xxx / userId / token:<id>。
+ * provider 存 JSON（密钥字段为加密信封），避免为每个参数加列；
+ * 单条记录可随身份注销/画像重置一并删除。
+ */
+export const userLlmConfigs = sqliteTable("user_llm_configs", {
+  identity: text("identity").primaryKey(),
+  provider: text("provider").notNull(),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+});
+
+/**
  * 分类与标签治理提案表（Taxonomy Proposals）
  * 存储 AI / 启发式规则生成的待审提案（分类契合迁移、冗余标签合并、零结果缺口等）
  */

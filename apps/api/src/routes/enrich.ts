@@ -8,6 +8,8 @@ import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
 import { sanitizeIconUrl } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
+import { resolveLlm } from "../llm-config.ts";
+import { identityOf } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
 
@@ -21,8 +23,9 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
     const categories = await ctx.repo.listCategories();
+    const { provider } = await resolveLlm(ctx, identityOf(req as never));
     const result = await enrichUrl(body.data.url, {
-      llm: ctx.config.llm,
+      llm: provider,
       guard: ctx.config.fetch,
       knownCategories: categories.map((c) => c.title),
     });
@@ -44,8 +47,9 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     if (dup) { return { created: false, reason: "已存在", site: dup }; }
 
     const categories = await ctx.repo.listCategories();
+    const { provider } = await resolveLlm(ctx, identityOf(req as never));
     const enriched = await enrichUrl(body.data.url, {
-      llm: ctx.config.llm,
+      llm: provider,
       guard: ctx.config.fetch,
       knownCategories: categories.map((c) => c.title),
     });

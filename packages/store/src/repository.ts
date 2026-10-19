@@ -55,6 +55,7 @@ import * as collectionsRepo from "./repository/collections.ts";
 import * as analyticsRepo from "./repository/analytics.ts";
 import * as jobsRepo from "./repository/jobs.ts";
 import * as systemRepo from "./repository/system.ts";
+import * as llmConfigRepo from "./repository/llm-config.ts";
 import * as maintenanceRepo from "./repository/maintenance.ts";
 import * as taxonomyRepo from "./repository/taxonomy-governance.ts";
 import * as pluginsRepo from "./repository/plugins.ts";
@@ -938,6 +939,28 @@ export class Repository {
 
   async resolveShortLink(code: string): Promise<pluginsRepo.ShortLinkRecord | null> {
     return pluginsRepo.resolveShortLink(this, code);
+  }
+
+  /* ---------------------- LLM 配置（系统/用户） ---------------------- */
+
+  /** 读用户级 LLM 配置（原始 JSON，密钥为加密信封） */
+  async getUserLlmConfig(identity: string): Promise<llmConfigRepo.UserLlmConfigRecord | null> {
+    return llmConfigRepo.getUserLlmConfig(this, identity);
+  }
+
+  /** 写入/覆盖用户级 LLM 配置 */
+  async upsertUserLlmConfig(identity: string, provider: Record<string, unknown>): Promise<void> {
+    return llmConfigRepo.upsertUserLlmConfig(this, identity, provider);
+  }
+
+  /** 删除用户级 LLM 配置（回退系统默认） */
+  async deleteUserLlmConfig(identity: string): Promise<void> {
+    return llmConfigRepo.deleteUserLlmConfig(this, identity);
+  }
+
+  /** 删除系统状态键（「恢复环境变量默认」用） */
+  async deleteSystemState(key: string): Promise<void> {
+    return systemRepo.deleteSystemState(this, key);
   }
 
 

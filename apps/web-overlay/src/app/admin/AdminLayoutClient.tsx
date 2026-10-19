@@ -30,6 +30,7 @@ import {
   SlidersHorizontal,
   Star,
   Package,
+  Bot,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
 import {
@@ -116,6 +117,11 @@ const menuItems = [
     title: "插件市场",
     href: "/admin/plugins",
     icon: Package
+  },
+  {
+    title: "AI 模型",
+    href: "/admin/ai",
+    icon: Bot
   },
   {
     title: "运营数据",

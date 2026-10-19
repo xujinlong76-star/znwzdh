@@ -289,6 +289,13 @@ CREATE TABLE IF NOT EXISTS system_states (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_llm_configs (
+  identity TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS taxonomy_proposals (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -645,6 +652,13 @@ CREATE TABLE IF NOT EXISTS user_vault_sync (
 CREATE TABLE IF NOT EXISTS system_states (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_llm_configs (
+  identity TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );
 

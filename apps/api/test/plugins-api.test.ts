@@ -757,4 +757,67 @@ describe("F0 / E1 / E5 / E6 / E4 / E3 / F2 API", () => {
     const missing = await app.inject({ method: "GET", url: "/api/shortlinks/notthere" });
     expect(missing.statusCode).toBe(404);
   });
+
+  it("Taps 远程订阅源：添加、列出、防范内网 SSRF、移除", async () => {
+    // 1. 获取初始列表
+    const init = await app.inject({ method: "GET", url: "/api/plugins/taps" });
+    expect(init.statusCode).toBe(200);
+    expect(Array.isArray(init.json().items)).toBe(true);
+
+    // 2. 添加内网地址应被拦截（防 SSRF）
+    const ssrf = await app.inject({
+      method: "POST",
+      url: "/api/plugins/taps",
+      payload: { name: "内网源", url: "http://192.168.1.1/taps.json" },
+    });
+    expect(ssrf.statusCode).toBe(400);
+
+    // 3. 添加合法公开源
+    const addRes = await app.inject({
+      method: "POST",
+      url: "/api/plugins/taps",
+      payload: { name: "官方精选源", url: "https://plugins.navhub.org/taps.json", description: "社区官方验证源" },
+    });
+    expect(addRes.statusCode).toBe(200);
+    expect(addRes.json().ok).toBe(true);
+    const tap = addRes.json().tap;
+    expect(tap.id).toMatch(/^tap-/);
+    expect(tap.name).toBe("官方精选源");
+
+    // 4. 重复添加返回 409
+    const dup = await app.inject({
+      method: "POST",
+      url: "/api/plugins/taps",
+      payload: { name: "重复源", url: "https://plugins.navhub.org/taps.json" },
+    });
+    expect(dup.statusCode).toBe(409);
+
+    // 5. 移除 Taps
+    const delRes = await app.inject({ method: "DELETE", url: `/api/plugins/taps/${tap.id}` });
+    expect(delRes.statusCode).toBe(200);
+
+    const afterDel = await app.inject({ method: "GET", url: "/api/plugins/taps" });
+    expect(afterDel.json().items.some((t: { id: string }) => t.id === tap.id)).toBe(false);
+  });
+
+  it("插件安全沙盒扫描：HTTPS 检测、危险伪协议拦截、作者认证与安全评级", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("安全审计测试插件", [{ url: "https://secure.example.com", title: "安全站点" }]),
+    });
+    const slug = created.json().slug as string;
+
+    const auditRes = await app.inject({ method: "GET", url: `/api/plugins/${encodeURIComponent(slug)}/audit` });
+    expect(auditRes.statusCode).toBe(200);
+    const report = auditRes.json().report;
+    expect(report.slug).toBe(slug);
+    expect(typeof report.score).toBe("number");
+    expect(report.score).toBeGreaterThanOrEqual(80);
+    expect(["safe", "low_risk"]).toContain(report.level);
+    expect(Array.isArray(report.checks)).toBe(true);
+    expect(report.checks.some((c: { name: string }) => c.name.includes("HTTPS"))).toBe(true);
+    expect(report.checks.some((c: { name: string }) => c.name.includes("代码注入"))).toBe(true);
+  });
 });
+

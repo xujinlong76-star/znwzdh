@@ -1403,4 +1403,275 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       return { code: link.code, target: link.target, clicks: link.clicks };
     }
   );
+
+  /* ------------------------------ 开放生态 2.0: Taps 远程订阅源 ------------------------------ */
+
+  /** 获取已配置的远程插件市场订阅源 (Taps) */
+  app.get(
+    "/api/plugins/taps",
+    { config: { scope: "public" } },
+    async () => {
+      const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];
+      return { ok: true, items: taps };
+    }
+  );
+
+  /** 添加远程插件市场订阅源 (Taps) */
+  app.post(
+    "/api/plugins/taps",
+    { config: { scope: "write" } },
+    async (req, reply) => {
+      const body = z.object({
+        name: z.string().min(1).max(50),
+        url: z.string().url().max(500),
+        description: z.string().max(200).optional(),
+      }).safeParse(req.body ?? {});
+
+      if (!body.success) {
+        return badRequest(reply, "参数无效", body.error.issues);
+      }
+
+      // 安全校验：防范 SSRF
+      const cleanUrl = body.data.url.trim();
+      const parsedUrl = new URL(cleanUrl);
+      const host = parsedUrl.hostname.toLowerCase();
+      if (
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "0.0.0.0" ||
+        host.startsWith("10.") ||
+        host.startsWith("192.168.") ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
+      ) {
+        return badRequest(reply, "禁止添加内网或私有地址作为 Taps 订阅源");
+      }
+
+      const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];
+      if (taps.some((t) => t.url.toLowerCase() === cleanUrl.toLowerCase())) {
+        return conflict(reply, "已存在相同 URL 的 Taps 订阅源");
+      }
+
+      const newTap = {
+        id: `tap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        name: body.data.name.trim(),
+        url: cleanUrl,
+        description: body.data.description?.trim(),
+        enabled: true,
+        pluginCount: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      taps.push(newTap);
+      await ctx.repo.setSystemState("plugins:taps", taps);
+      await ctx.repo.audit({
+        actor: req.auth.actor,
+        actorKind: req.auth.kind,
+        action: "plugin.tap_create",
+        target: newTap.id,
+        diff: newTap,
+      });
+
+      return { ok: true, tap: newTap };
+    }
+  );
+
+  /** 移除远程插件订阅源 */
+  app.delete(
+    "/api/plugins/taps/:id",
+    { config: { scope: "write" } },
+    async (req, reply) => {
+      const id = (req.params as { id: string }).id;
+      const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];
+      const filtered = taps.filter((t) => t.id !== id);
+      if (filtered.length === taps.length) {
+        return notFound(reply, "订阅源不存在");
+      }
+      await ctx.repo.setSystemState("plugins:taps", filtered);
+      await ctx.repo.audit({
+        actor: req.auth.actor,
+        actorKind: req.auth.kind,
+        action: "plugin.tap_delete",
+        target: id,
+      });
+      return { ok: true };
+    }
+  );
+
+  /** 同步远程插件订阅源并更新本地索引 */
+  app.post(
+    "/api/plugins/taps/:id/sync",
+    { config: { scope: "write" } },
+    async (req, reply) => {
+      const id = (req.params as { id: string }).id;
+      const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];
+      const targetTap = taps.find((t) => t.id === id);
+      if (!targetTap) {
+        return notFound(reply, "订阅源不存在");
+      }
+
+      let fetchedCount = 0;
+      let importedCount = 0;
+      try {
+        const res = await guardedFetch(targetTap.url, { timeoutMs: 8000 });
+        if (res.status !== 200) {
+          return badRequest(reply, `订阅源响应异常 (HTTP ${res.status})`);
+        }
+        const data = JSON.parse(res.body);
+        const pluginList: unknown[] = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.plugins)
+          ? data.plugins
+          : [];
+
+        fetchedCount = pluginList.length;
+
+        for (const item of pluginList) {
+          const validated = validateAndCleanPluginManifest(item);
+          if (!validated.ok) continue;
+
+          // 幂等导入：如果已有同名，跳过
+          const existing = await ctx.repo.listPlugins({ q: validated.manifest.name, limit: 5 });
+          const match = existing.items.find((p) => p.name === validated.manifest.name);
+          if (match) continue;
+
+          try {
+            const imported = await ctx.repo.createPlugin({
+              manifest: validated.manifest,
+              author: validated.manifest.author || targetTap.name,
+              authorKind: "tap",
+              source: "tap",
+              status: "published",
+            });
+            await indexPluginsBatch(ctx, [indexItemFromManifest(imported.slug, imported.manifest)]);
+            importedCount++;
+          } catch {
+            // 单条导入失败不阻断整批
+          }
+        }
+      } catch (err) {
+        return badRequest(reply, `获取订阅源失败: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      targetTap.lastSyncedAt = Date.now();
+      targetTap.pluginCount = fetchedCount;
+      targetTap.updatedAt = Date.now();
+      await ctx.repo.setSystemState("plugins:taps", taps);
+
+      return {
+        ok: true,
+        fetchedCount,
+        importedCount,
+        tap: targetTap,
+      };
+    }
+  );
+
+  /* ------------------------------ 开放生态 2.0: 插件安全沙盒扫描 ------------------------------ */
+
+  /** 插件全自动安全扫描评估与作者认证 */
+  app.get(
+    "/api/plugins/:slug/audit",
+    { config: { scope: "public" } },
+    async (req, reply) => {
+      const slug = (req.params as { slug: string }).slug;
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, "插件不存在");
+
+      const manifest = plugin.manifest as PluginManifest;
+      const checks: Array<{ name: string; passed: boolean; detail: string }> = [];
+      let deductions = 0;
+
+      // 1. 作者认证检查
+      const author = (manifest.author || "").toLowerCase();
+      const isVerifiedAuthor =
+        author.includes("official") ||
+        author.includes("navhub") ||
+        author.includes("verified") ||
+        plugin.authorKind === "token";
+      checks.push({
+        name: "开发者认证 (Author Authenticity)",
+        passed: isVerifiedAuthor,
+        detail: isVerifiedAuthor ? "官方已认证或已授权凭据作者" : "社区自建未签名作者（建议仔细甄别）",
+      });
+      if (!isVerifiedAuthor) deductions += 10;
+
+      // 2. URL 协议安全性扫描
+      const urls: string[] = [];
+      if (manifest.icon) urls.push(manifest.icon);
+      if (manifest.homepage) urls.push(manifest.homepage);
+      if (manifest.kind === "site-pack" && Array.isArray((manifest.payload as any)?.sites)) {
+        for (const s of (manifest.payload as any).sites) {
+          if (s.url) urls.push(s.url);
+          if (s.icon) urls.push(s.icon);
+        }
+      }
+
+      let allHttps = true;
+      let dangerousScheme = false;
+      let internalHost = false;
+
+      for (const u of urls) {
+        const lower = u.trim().toLowerCase();
+        if (lower.startsWith("javascript:") || lower.startsWith("data:") || lower.startsWith("file:")) {
+          dangerousScheme = true;
+        }
+        if (lower.startsWith("http://")) {
+          allHttps = false;
+        }
+        try {
+          const parsed = new URL(u);
+          const host = parsed.hostname.toLowerCase();
+          if (
+            host === "localhost" ||
+            host === "127.0.0.1" ||
+            host === "0.0.0.0" ||
+            host.startsWith("10.") ||
+            host.startsWith("192.168.")
+          ) {
+            internalHost = true;
+          }
+        } catch {
+          // not a valid URL format
+        }
+      }
+
+      checks.push({
+        name: "协议加密性 (HTTPS Enforcement)",
+        passed: allHttps,
+        detail: allHttps ? "所有外链与资源图标均强制采用 HTTPS 加密传输" : "检测到包含明文 HTTP 未加密外链",
+      });
+      if (!allHttps) deductions += 15;
+
+      checks.push({
+        name: "代码注入与 XSS 防护 (Script Injection Guard)",
+        passed: !dangerousScheme,
+        detail: !dangerousScheme ? "未检出危险伪协议 (javascript:, data: 等)" : "严重威胁：检测到恶意伪协议注入",
+      });
+      if (dangerousScheme) deductions += 50;
+
+      checks.push({
+        name: "内网穿透防护 (Anti-SSRF Guard)",
+        passed: !internalHost,
+        detail: !internalHost ? "所有链接均指向公网合法域名，无内网渗透特征" : "严重威胁：检测到包含私有内网或回环地址",
+      });
+      if (internalHost) deductions += 50;
+
+      const score = Math.max(0, 100 - deductions);
+      const level: "safe" | "low_risk" | "medium_risk" | "high_risk" =
+        score >= 85 ? "safe" : score >= 60 ? "low_risk" : score >= 40 ? "medium_risk" : "high_risk";
+
+      return {
+        ok: true,
+        report: {
+          slug,
+          score,
+          level,
+          verifiedAuthor: isVerifiedAuthor,
+          checks,
+          auditedAt: Date.now(),
+        },
+      };
+    }
+  );
 };

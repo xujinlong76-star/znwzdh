@@ -24,6 +24,7 @@ import { fetchPlugins, type HubPluginItem } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { PluginCard } from '@/components/plugins/plugin-card'
 import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
+import { PluginTapsModal } from '@/components/plugins/plugin-taps-modal'
 import { stageWorkspacePreset } from '@/lib/plugins/preset-staging'
 import {
   DEFAULT_MARKETPLACE_SORT,
@@ -37,6 +38,7 @@ import {
   Flame,
   Loader2,
   PackageCheck,
+  Radio,
   Search,
   Sparkles,
   Star,
@@ -81,6 +83,7 @@ export default function MarketplacePage() {
   const [filtersReady, setFiltersReady] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const [installTarget, setInstallTarget] = useState<HubPluginItem | null>(null)
+  const [tapsModalOpen, setTapsModalOpen] = useState(false)
   const [featured, setFeatured] = useState<HubPluginItem[]>([])
   const [rankings, setRankings] = useState<{
     popular: HubPluginItem[]
@@ -254,6 +257,15 @@ export default function MarketplacePage() {
                   <PackageCheck className="w-3.5 h-3.5 text-primary" />
                   已安装管家
                 </Link>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setTapsModalOpen(true)}
+                className="h-8 gap-1.5 text-xs border-indigo-500/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10"
+              >
+                <Radio className="w-3.5 h-3.5" />
+                <span>Taps 订阅源</span>
               </Button>
               <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
                 <Link href="/marketplace/import">
@@ -541,6 +553,13 @@ export default function MarketplacePage() {
               stageWorkspacePreset(installTarget.slug, installTarget.name, preset, mode)
             }
           }}
+        />
+
+        {/* 远程插件市场 Taps 订阅中心 */}
+        <PluginTapsModal
+          open={tapsModalOpen}
+          onOpenChange={setTapsModalOpen}
+          onSynced={reload}
         />
       </div>
       <Footer />

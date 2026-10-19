@@ -1564,4 +1564,71 @@ export async function healSiteWayback(
   return sendJson<HubWaybackHealResult>(`/api/sites/${encodeURIComponent(siteId)}/wayback/heal`, 'POST', options)
 }
 
+/* ------------------------------ 开放生态 2.0: Taps 远程订阅源 & 安全审计 ------------------------------ */
+
+export interface HubPluginTap {
+  id: string
+  name: string
+  url: string
+  description?: string
+  enabled: boolean
+  pluginCount?: number
+  lastSyncedAt?: number
+  createdAt: number
+  updatedAt: number
+}
+
+export interface HubPluginAuditReport {
+  slug: string
+  score: number
+  level: 'safe' | 'low_risk' | 'medium_risk' | 'high_risk'
+  verifiedAuthor: boolean
+  checks: Array<{
+    name: string
+    passed: boolean
+    detail: string
+  }>
+  auditedAt: number
+}
+
+/** 获取已配置的远程插件市场订阅源列表 */
+export async function fetchPluginTaps(): Promise<{ ok: boolean; items: HubPluginTap[] }> {
+  return getJson<{ ok: boolean; items: HubPluginTap[] }>('/api/plugins/taps')
+}
+
+/** 添加远程插件市场订阅源 */
+export async function addPluginTap(data: {
+  name: string
+  url: string
+  description?: string
+}): Promise<{ ok: boolean; tap: HubPluginTap }> {
+  return sendJson<{ ok: boolean; tap: HubPluginTap }>('/api/plugins/taps', 'POST', data)
+}
+
+/** 删除指定的远程插件市场订阅源 */
+export async function deletePluginTap(id: string): Promise<{ ok: boolean }> {
+  return sendJson<{ ok: boolean }>(`/api/plugins/taps/${encodeURIComponent(id)}`, 'DELETE')
+}
+
+/** 同步指定的远程插件市场订阅源 */
+export async function syncPluginTap(id: string): Promise<{
+  ok: boolean
+  fetchedCount: number
+  importedCount: number
+  tap: HubPluginTap
+}> {
+  return sendJson<{
+    ok: boolean
+    fetchedCount: number
+    importedCount: number
+    tap: HubPluginTap
+  }>(`/api/plugins/taps/${encodeURIComponent(id)}/sync`, 'POST')
+}
+
+/** 获取插件的全自动代码与外链安全扫描报告 */
+export async function fetchPluginAudit(slug: string): Promise<{ ok: boolean; report: HubPluginAuditReport }> {
+  return getJson<{ ok: boolean; report: HubPluginAuditReport }>(`/api/plugins/${encodeURIComponent(slug)}/audit`)
+}
+
+
 

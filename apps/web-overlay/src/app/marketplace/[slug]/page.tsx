@@ -17,11 +17,13 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import {
   fetchPluginDetail,
+  fetchPluginAudit,
   starPlugin,
   unstarPlugin,
   createPluginShortLink,
   trackPluginEvent,
   type HubPluginItem,
+  type HubPluginAuditReport,
 } from '@/lib/navhub-api'
 import {
   pluginKindLabel,
@@ -116,6 +118,8 @@ export default function PluginDetailPage({
   const [reportModalOpen, setReportModalOpen] = useState(false)
   const [badgeModalOpen, setBadgeModalOpen] = useState(false)
   const [badgeMetric, setBadgeMetric] = useState<'version' | 'installs' | 'stars' | 'rating'>('version')
+  const [auditModalOpen, setAuditModalOpen] = useState(false)
+  const [auditReport, setAuditReport] = useState<HubPluginAuditReport | null>(null)
 
   // 星标状态
   const [starred, setStarred] = useState(false)
@@ -254,6 +258,15 @@ export default function PluginDetailPage({
           const currentTheme = getActiveTheme()
           setIsThemeApplied(currentTheme?.slug === res.plugin.slug)
         }
+
+        // 异步调取全自动安全沙盒体检报告（不阻断主数据渲染）
+        fetchPluginAudit(slug)
+          .then((auditRes) => {
+            if (auditRes?.ok && auditRes.report) {
+              setAuditReport(auditRes.report)
+            }
+          })
+          .catch(() => {})
       } else {
         setPlugin(null)
       }
@@ -496,6 +509,28 @@ export default function PluginDetailPage({
                   >
                     <Star className="w-3.5 h-3.5 text-muted-foreground/40" />
                     <span>暂无评分 (点击评价)</span>
+                  </button>
+                )}
+
+                {auditReport && (
+                  <button
+                    type="button"
+                    onClick={() => setAuditModalOpen(true)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-full border transition-colors cursor-pointer',
+                      auditReport.level === 'safe'
+                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                        : auditReport.level === 'low_risk'
+                        ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20 hover:bg-blue-500/20'
+                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
+                    )}
+                    title="点击查看全自动代码沙盒安全审计报告"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="font-semibold">{auditReport.score}分安全评级</span>
+                    {auditReport.verifiedAuthor && (
+                      <span className="hidden sm:inline font-medium">· 认证作者</span>
+                    )}
                   </button>
                 )}
               </div>
@@ -1470,6 +1505,72 @@ export default function PluginDetailPage({
                   完成
                 </Button>
               </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* 全自动代码沙盒安全审计弹窗 */}
+        <Dialog open={auditModalOpen} onOpenChange={setAuditModalOpen}>
+          <DialogContent className="max-w-md p-5 glass-surface border-border/80 shadow-2xl rounded-2xl">
+            <DialogHeader className="space-y-1 pb-2 border-b border-border/50">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <DialogTitle className="text-base font-bold">全自动代码沙盒安全体检报告</DialogTitle>
+                  <DialogDescription className="text-xs text-muted-foreground">
+                    由 NavHub 全自动静态代码与外链沙盒审计引擎实时生成
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {auditReport ? (
+              <div className="py-2 space-y-3">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/60">
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground">综合安全评分</div>
+                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {auditReport.score} <span className="text-xs font-normal text-muted-foreground">/ 100 分</span>
+                    </div>
+                  </div>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'text-xs font-semibold px-2.5 py-1',
+                      auditReport.level === 'safe'
+                        ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30'
+                        : 'bg-amber-500/10 text-amber-600 border-amber-500/30'
+                    )}
+                  >
+                    {auditReport.level === 'safe' ? '安全等级：优良' : '安全等级：提示'}
+                  </Badge>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold text-muted-foreground">全链路扫描体检项：</div>
+                  {auditReport.checks.map((c, i) => (
+                    <div key={i} className="p-2.5 rounded-lg border border-border/40 bg-card/60 text-xs flex items-start gap-2.5">
+                      {c.passed ? (
+                        <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-medium text-foreground">{c.name}</div>
+                        <div className="text-[11px] text-muted-foreground leading-relaxed mt-0.5">{c.detail}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="text-[10px] text-muted-foreground/70 text-center pt-1">
+                  体检时间：{new Date(auditReport.auditedAt).toLocaleString()} · SHA-256 签名无害化校验
+                </div>
+              </div>
+            ) : (
+              <div className="py-6 text-center text-xs text-muted-foreground">加载安全报告中...</div>
+            )}
           </DialogContent>
         </Dialog>
 

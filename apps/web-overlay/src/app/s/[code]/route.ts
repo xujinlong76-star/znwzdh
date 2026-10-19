@@ -34,7 +34,7 @@ export async function GET(
     if (!target.startsWith('/marketplace/') || target.startsWith('//') || target.includes('\\')) {
       return invalid
     }
-    return NextResponse.redirect(new URL(target, request.url), 307)
+    return NextResponse.redirect(new URL(target, request.url), 302)
   } catch {
     return invalid
   }

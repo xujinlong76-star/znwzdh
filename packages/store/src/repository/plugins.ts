@@ -1369,7 +1369,7 @@ export async function getPluginFunnel(repo: Repository, days = 30): Promise<Plug
 /** 治理告警：待审超 SLA / 插件被举报 / 评价被举报；只读，不自动改变状态 */
 export async function getPluginGovernanceAlerts(repo: Repository): Promise<PluginGovernanceAlert[]> {
   const now = Date.now();
-  const slaCutoff = now - 72 * 60 * 60 * 1000;
+  const slaCutoff = now - 48 * 60 * 60 * 1000;
   const pending = await repo.raw(
     "SELECT slug, name, status, created_at FROM plugins WHERE status = 'pending' AND created_at < ? ORDER BY created_at ASC LIMIT 30",
     [slaCutoff],
@@ -1391,7 +1391,7 @@ export async function getPluginGovernanceAlerts(repo: Repository): Promise<Plugi
       slug: String(row.slug),
       name: String(row.name),
       status: String(row.status),
-      detail: `待审已 ${hours} 小时（SLA 72h）`,
+      detail: `待审已 ${hours} 小时（SLA 48h）`,
       value: hours,
       createdAt: Number(row.created_at ?? 0),
     });

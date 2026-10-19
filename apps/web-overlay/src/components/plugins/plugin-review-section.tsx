@@ -5,7 +5,6 @@ import {
   fetchPluginReviews,
   reportPluginReview,
   submitPluginReview,
-  type HubPluginReviewItem,
   type HubPluginReviewsResponse,
 } from '@/lib/navhub-api'
 import { Button } from '@/components/ui/button'

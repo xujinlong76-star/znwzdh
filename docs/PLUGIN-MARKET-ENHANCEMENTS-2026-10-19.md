@@ -6,6 +6,28 @@
 
 ---
 
+## 〇、实施状态（2026-10-19 落地批次）
+
+本批按「A 全做」落地了除 F4 之外的全部非暂缓项（D1-D4 已先期推送）：
+
+| 项 | 状态 | 实现口径 / 与原文的差异 |
+| :--- | :--- | :--- |
+| F0 作者归属 | 已落地 | `plugins.owner_identity` 仅内部使用；公开 `owner_key = sha256("navhub:plugin-owner:" + identity).slice(0,24)`。发布必须带 identity，作者中心 `/marketplace/mine`，公开作者页 `/marketplace/author/[key]`。MCP/管理员仍走导入与审核通道。 |
+| E1 精选位 + 榜单 | 已落地 | `featured` + `featured_rank`；市场首页编辑精选横排 + 新上架/安装最多/星标最多/评分最高榜单。 |
+| E2 作者主页 | 已落地 | 原文按 `author` 文本聚合；实际改为按 `owner_key` 聚合，避免同名作者串号，同时不暴露内部 identity。 |
+| E5 评分聚合 | 已落地 | 列表/卡片带 `ratingAvg`（保留 1 位小数）与 `reviewCount`；评分排序使用贝叶斯平滑（先验 3 条 × 3.5 星），避免 1 条 5 星压过大量 4.8 星。 |
+| E4 市场漏斗 | 已落地 | 新增客户端事件 `plugin_view / plugin_install_click / plugin_share`（服务端补记 `plugin_install_success / plugin_uninstall`），管理端按日聚合浏览→点击→安装→卸载/举报。 |
+| E3 治理自动化 | 已落地 | 新 job kind `plugin_governance`（每 4 小时）：待审超 48h、插件举报、评价举报三类告警，只写审计/日志，**不自动改状态**。 |
+| E6 评价治理 | 已落地 | `plugin_reviews.status / report_count / moderation_note / moderated_at / moderated_by`；公开列表与评分统计只算 `visible`；举报只累计计数，管理员人工隐藏/恢复。 |
+| F3 MCP 工具 | 已落地 | 新增 `star_plugin`、`update_plugin`；`list_plugins` / `search_plugins` 返回 `featured/ratingAvg/reviewCount` 并支持 `featured`、`rating` 排序。工具数 35 → 37。 |
+| F2 分享短链 | 已落地 | `short_links` 表 + `POST /api/shortlinks` + `GET /api/shortlinks/:code` + Web `/s/[code]` 302；目标强制 `/marketplace/` 内部路径，保留 `?install=1` 深链。 |
+| 统一搜索 | 已落地 | ⌘K 搜索面板在站点混合召回之外并行召回插件（`/api/plugins/search`，最多 5 条），带类型/安装量/评分与「查看全部插件结果」出口。 |
+| F4 组合插件 | 暂缓 | 依赖链/环检测与下架传播需要独立评审，按反目标继续不做。 |
+
+**测试与门禁**：store 插件套件 27 例、API 插件套件 20 例、代理身份签名/转发 32 例通过；`pnpm typecheck`、Web ESLint（0 error）、`check:overlay`、`check:extensions` 纳入本批门禁。所有新增 DDL 均为幂等迁移，SQLite / libSQL / PostgreSQL 三方言按现有 `driver.ts` + `migrate.ts` 机制补齐。
+
+---
+
 ## 一、现状盘点（可复用地基清单）
 
 | 地基 | 位置 | 已具备能力 | 可被哪些增强复用 |

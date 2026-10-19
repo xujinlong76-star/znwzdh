@@ -35,6 +35,7 @@ interface HomeDIYToolbarProps {
   categories?: any[]
   /**
    * 底部被别的固定浮层占用时抬高自己。
+   * 静息位（bottom-20）已为全局 AI 副驾胶囊（bottom-6 right-6）留出空间；
    * 批量操作坞（fixed bottom-6 居中、max-w-[95vw]）与本坞同钉在底部，
    * 窄屏下必然重叠；由使用方在多选模式打开时置 true。
    */
@@ -181,8 +182,9 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
       <div
         className={cn(
           'fixed right-6 z-40 flex flex-col items-end gap-2 pointer-events-none transition-[bottom] duration-200',
-          // 多选批量坞在场时抬高，避免两个底部固定浮层在窄屏上重叠
-          raised ? 'bottom-[5.5rem]' : 'bottom-6',
+          // 静息位抬到全局 AI 副驾胶囊（bottom-6 right-6）上方，避免最低那颗
+          // 「DIY 排版工坊」入口被胶囊拦截点击；多选批量坞在场时再进一步抬高
+          raised ? 'bottom-[5.5rem]' : 'bottom-20',
         )}
       >
         {/* 落盘失败必须说出来：改动还在屏幕上，但刷新就没了 ——

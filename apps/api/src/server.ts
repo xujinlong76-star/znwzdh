@@ -71,6 +71,8 @@ import { workspacesRoutes } from "./routes/workspaces.ts";
 import { healthAuditRoutes } from "./routes/health-audit.ts";
 import { graphRoutes } from "./routes/graph.ts";
 import { archiveRoutes } from "./routes/archive.ts";
+import { backupRoutes } from "./routes/backup.ts";
+import { copilotRoutes } from "./routes/copilot.ts";
 
 
 /**
@@ -438,6 +440,8 @@ export async function buildServer(ctx: AppContext) {
   await app.register(healthAuditRoutes, { ctx });
   await app.register(graphRoutes, { ctx });
   await app.register(archiveRoutes, { ctx });
+  await app.register(backupRoutes, { ctx });
+  await app.register(copilotRoutes, { ctx });
 
 
   return app;

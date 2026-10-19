@@ -1942,3 +1942,19 @@ export async function fetchSiteArchive(siteId: string): Promise<{ ok: boolean; a
 export async function createSiteArchive(siteId: string): Promise<{ ok: boolean; archive: SiteOfflineArchive }> {
   return sendJson<{ ok: boolean; archive: SiteOfflineArchive }>(`/api/sites/${encodeURIComponent(siteId)}/archive`, 'POST', {})
 }
+
+export interface CopilotChatResponse {
+  ok: boolean
+  reply: string
+  model: string
+  suggestions: string[]
+  error?: string
+}
+
+export async function sendCopilotChat(
+  message: string,
+  history?: Array<{ role: string; content: string }>
+): Promise<CopilotChatResponse> {
+  return sendJson<CopilotChatResponse>('/api/copilot/chat', 'POST', { message, history })
+}
+

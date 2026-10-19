@@ -17,6 +17,7 @@ import {
   normalizeSiteRelation,
   type FacetGroupSummary,
   type FacetOptionCount,
+  type SiteOfflineArchive,
 } from "@navhub/core";
 import type {
   ApiTokenRecord,
@@ -751,6 +752,56 @@ export async function findRelationsByQuery(
     });
   }
   return out;
+}
+
+export async function saveSiteArchive(repo: Repository, archive: SiteOfflineArchive): Promise<void> {
+  const id = randomUUID();
+  const tagsJson = JSON.stringify(archive.tags || []);
+  const nowTs = Date.now();
+  await repo.run(
+    `INSERT INTO site_archives (id, site_id, title, url, excerpt, read_time_minutes, html_content, byte_size, tags, captured_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      archive.siteId,
+      archive.title,
+      archive.url,
+      archive.excerpt || "",
+      archive.readTimeMinutes || 1,
+      archive.htmlContent,
+      archive.byteSize || Buffer.byteLength(archive.htmlContent, "utf8"),
+      tagsJson,
+      archive.capturedAt || nowTs,
+      nowTs,
+    ]
+  );
+}
+
+export async function getLatestSiteArchive(repo: Repository, siteId: string): Promise<SiteOfflineArchive | null> {
+  const rows = await repo.raw(
+    `SELECT * FROM site_archives WHERE site_id = ? ORDER BY captured_at DESC LIMIT 1`,
+    [siteId]
+  );
+  if (!rows || rows.length === 0) return null;
+  const r = rows[0];
+  if (!r) return null;
+  let tags: string[] = [];
+  try {
+    tags = typeof r.tags === "string" ? JSON.parse(r.tags) : (r.tags || []);
+  } catch {
+    tags = [];
+  }
+  return {
+    siteId: String(r.site_id),
+    title: String(r.title),
+    url: String(r.url),
+    capturedAt: Number(r.captured_at),
+    excerpt: String(r.excerpt || ""),
+    readTimeMinutes: Number(r.read_time_minutes || 1),
+    htmlContent: String(r.html_content),
+    byteSize: Number(r.byte_size || 0),
+    tags,
+  };
 }
 
 

@@ -13,6 +13,7 @@ import {
   type FacetGroupSummary,
   type SkosConcept,
   type TaxonomyProposal,
+  type SiteOfflineArchive,
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
 import type {
@@ -258,6 +259,14 @@ export class Repository {
 
   async findRelationsByQuery(query: string, limit = 5): Promise<MatchedSiteRelation[]> {
     return sitesRepo.findRelationsByQuery(this, query, limit);
+  }
+
+  async saveSiteArchive(archive: SiteOfflineArchive): Promise<void> {
+    return sitesRepo.saveSiteArchive(this, archive);
+  }
+
+  async getLatestSiteArchive(siteId: string): Promise<SiteOfflineArchive | null> {
+    return sitesRepo.getLatestSiteArchive(this, siteId);
   }
 
   /** @internal repository/* 域函数使用 */

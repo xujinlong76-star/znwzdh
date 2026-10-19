@@ -1,181 +1,218 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+/**
+ * Agnes 3.0 Flash 智能导航伴侣抽屉 (AI Web Copilot Drawer)
+ *
+ * 核心能力：
+ * 1. 全局唤醒：响应 Cmd+J / Ctrl+J 快捷键或 Spotlight 派发的 open-ai-copilot 事件；
+ * 2. Agnes 3.0 Flash 统一驱动：基于最新全站现场图谱与分类，提供意图洞察与工具链推荐；
+ * 3. 动态行动预设：一键发送极客效率、全站 AI 工具链、离线微工具、自治健康度等探索任务；
+ * 4. Markdown 智能渲染：原生解析推荐站点直达超链 [标题](链接)，一键直达生态。
+ */
+
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Sparkles,
   X,
   Send,
-  Loader2,
   RotateCcw,
   Bot,
   User,
-  Wand2,
-  HelpCircle,
+  Compass,
+  ArrowRight,
   ExternalLink,
-  ChevronDown,
+  Loader2,
+  Wand2,
 } from 'lucide-react'
+import { sendCopilotChat } from '@/lib/navhub-api'
 import { Button } from '@/registry/new-york/ui/button'
-import { chatWithUserLlm, type HubAiChatMessage } from '@/lib/navhub-api'
-import { getIdentity } from '@/lib/identity'
+import { Badge } from '@/components/ui/badge'
 
-// 时间取值收敛到模块作用域：调用点都在事件处理器/惰性初始化里，
-// 直接写在组件体内会被 react-hooks/purity 判为渲染期副作用。
-const nowMs = () => Date.now()
-
-interface MessageItem extends HubAiChatMessage {
+interface ChatMessage {
   id: string
+  role: 'user' | 'assistant'
+  content: string
   model?: string
-  latencyMs?: number
+  suggestions?: string[]
   timestamp: number
 }
 
-const DEFAULT_SUGGESTIONS = [
-  '✨ 帮我规划一个现代化前端工程开发工作台',
-  '📋 分析我的书签分类并给出智能化归类整理建议',
-  '🛠 推荐 5 个好用且现代化的开源 API 测试与调试工具',
-  '⚡ 告诉我 NavHub 目前支持的搜索前缀直达规则有哪些',
+const PRESET_PROMPTS = [
+  { icon: '🚀', label: '前端开发效率神器', prompt: '请根据当前全站收录，推荐最适合现代前端全栈开发的提效工具链。' },
+  { icon: '🤖', label: '盘点全站 AI 工具生态', prompt: '帮我盘点全站收录的核心 AI 工具与开源大模型平台，并给出对比建议。' },
+  { icon: '🛠️', label: '离线极客微工具推荐', prompt: 'NavHub 有哪些支持断网纯离线运行的实用极客微工具？' },
+  { icon: '🩺', label: '全站健康度与死链自愈', prompt: '帮我诊断当前全站有哪些异常或失效站点，并推荐对应的高活跃平替。' },
 ]
 
 export function AiCopilotDrawer() {
   const [isOpen, setIsOpen] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [messages, setMessages] = useState<MessageItem[]>(() => [
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content:
-        '你好！我是你的专属 **NavHub Web Copilot**，基于 **Agnes 3.0 Flash** 驱动。\n\n我可以帮你整理书签、规划工作台布局、推荐优质工具或回答任何技术问题。你可以随时按 `Ctrl+J` 或 `⌘J` 呼出我。',
-      timestamp: nowMs(),
-    },
-  ])
-
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // 快捷键绑定：Ctrl+J / ⌘J 全局切换呼出
+  // 滚动至最新消息
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
+
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
+    if (messages.length > 0) {
+      scrollToBottom()
+    }
+  }, [messages, scrollToBottom])
+
+  // 全局事件监听与快捷键
+  useEffect(() => {
+    const handleOpen = (e: Event) => {
+      const customEvent = e as CustomEvent<{ query?: string }>
+      setIsOpen(true)
+      if (customEvent.detail?.query) {
+        handleSend(customEvent.detail.query)
+      }
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault()
         setIsOpen((prev) => !prev)
+      } else if (e.key === 'Escape' && isOpen) {
+        setIsOpen(false)
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
 
-  // 打开时自动聚焦输入框
-  useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 150)
+    window.addEventListener('open-ai-copilot', handleOpen)
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('open-ai-copilot', handleOpen)
+      window.removeEventListener('keydown', handleKeyDown)
     }
   }, [isOpen])
 
-  // 消息自动滚到底部
+  // 展开抽屉时聚焦输入框
   useEffect(() => {
     if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      setTimeout(() => {
+        inputRef.current?.focus()
+      }, 150)
     }
-  }, [messages, isOpen])
+  }, [isOpen])
 
-  async function handleSend(textToSend?: string) {
-    const query = (textToSend ?? input).trim()
-    if (!query || loading) return
+  // 发送消息
+  const handleSend = async (textToSend?: string) => {
+    const content = (textToSend || input).trim()
+    if (!content || loading) return
 
-    const userMsg: MessageItem = {
-      id: `msg-${nowMs()}-u`,
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
       role: 'user',
-      content: query,
-      timestamp: nowMs(),
+      content,
+      timestamp: Date.now(),
     }
 
-    const nextMessages = [...messages, userMsg]
-    setMessages(nextMessages)
+    setMessages((prev) => [...prev, userMsg])
     setInput('')
     setLoading(true)
 
     try {
-      // 提取最近的对话上下文发给服务端（保留最近 10 条历史）
-      const apiMessages: HubAiChatMessage[] = nextMessages
-        .filter((m) => m.id !== 'welcome')
-        .slice(-10)
-        .map((m) => ({ role: m.role, content: m.content }))
+      const history = messages.slice(-6).map((m) => ({
+        role: m.role,
+        content: m.content,
+      }))
 
-      const res = await chatWithUserLlm(getIdentity(), apiMessages, 1024, {
-        activeTab: typeof window !== 'undefined' ? window.location.pathname : undefined,
-      })
-
-      const botMsg: MessageItem = {
-        id: `msg-${nowMs()}-a`,
-        role: 'assistant',
-        content: res.reply,
-        model: res.model,
-        latencyMs: res.latencyMs,
-        timestamp: nowMs(),
+      const res = await sendCopilotChat(content, history)
+      if (res.ok && res.reply) {
+        const assistantMsg: ChatMessage = {
+          id: `bot-${Date.now()}`,
+          role: 'assistant',
+          content: res.reply,
+          model: res.model || 'agnes-3.0-flash',
+          suggestions: res.suggestions,
+          timestamp: Date.now(),
+        }
+        setMessages((prev) => [...prev, assistantMsg])
+      } else {
+        const fallbackMsg: ChatMessage = {
+          id: `bot-${Date.now()}`,
+          role: 'assistant',
+          content: '抱歉，当前中枢智能问答服务无响应，请检查后端服务连接或稍后重试。',
+          timestamp: Date.now(),
+        }
+        setMessages((prev) => [...prev, fallbackMsg])
       }
-      setMessages((prev) => [...prev, botMsg])
-    } catch (err) {
-      const errorMsg: MessageItem = {
-        id: `msg-${nowMs()}-err`,
+    } catch {
+      const errMsg: ChatMessage = {
+        id: `bot-${Date.now()}`,
         role: 'assistant',
-        content: `⚠️ 对话失败：${err instanceof Error ? err.message : '网络异常或模型配置无效'}。\n可在「偏好设置 -> AI 模型」中检查配置或测试连通性。`,
-        timestamp: nowMs(),
+        content: '网络连接异常，无法连通 Agnes 3.0 Flash 智能中枢。',
+        timestamp: Date.now(),
       }
-      setMessages((prev) => [...prev, errorMsg])
+      setMessages((prev) => [...prev, errMsg])
     } finally {
       setLoading(false)
     }
   }
 
-  function handleReset() {
-    setMessages([
-      {
-        id: 'welcome',
-        role: 'assistant',
-        content: '对话已重置。有什么我可以帮你的？随时输入需求或点击下方建议标签。',
-        timestamp: nowMs(),
-      },
-    ])
+  // 简易 Markdown 超链接与排版解析
+  const renderMessageContent = (text: string) => {
+    const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g)
+    return parts.map((part, idx) => {
+      const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+      if (linkMatch) {
+        const [, title, url] = linkMatch
+        return (
+          <a
+            key={idx}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
+          >
+            <span>{title}</span>
+            <ExternalLink className="h-3 w-3 inline" />
+          </a>
+        )
+      }
+      return <span key={idx}>{part}</span>
+    })
   }
 
-  return (
-    <>
-      {/* 全局悬浮触发胶囊 */}
-      {!isOpen && (
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 z-40 group flex items-center gap-2 px-3 py-2 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 border border-primary-foreground/20"
-          title="点击或按 Ctrl+J / ⌘J 呼出 AI 智能副驾"
-          aria-label="呼出 AI 智能副驾"
-        >
-          <div className="relative flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-primary-foreground animate-pulse" />
-            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-green-400" />
-          </div>
-          <span className="text-xs font-semibold tracking-wide pr-1 hidden sm:inline-block">AI 副驾</span>
-          <span className="text-[10px] font-mono opacity-70 px-1 py-0.2 rounded bg-black/20 hidden md:inline-block">
-            ⌘J
-          </span>
-        </button>
-      )}
+  if (!isOpen) return null
 
-      {/* 浮窗抽屉面板 */}
-      {isOpen && (
-        <div className="fixed bottom-6 right-4 sm:right-6 z-50 w-[94vw] sm:w-[420px] h-[580px] max-h-[85vh] bg-background/95 backdrop-blur-xl border border-border/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
-          {/* 面板顶栏 */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 bg-muted/30">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                <Sparkles className="w-3.5 h-3.5" />
+  return (
+    <div className="fixed inset-0 z-50 overflow-hidden" role="dialog" aria-modal="true" aria-label="Agnes 3.0 Flash 智能导航伴侣">
+      {/* 遮罩背景 */}
+      <div
+        className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+        onClick={() => setIsOpen(false)}
+        role="presentation"
+        aria-hidden="true"
+      />
+
+      {/* 抽屉主面板 */}
+      <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
+        <aside
+          aria-label="Agnes 3.0 Flash 智能导航伴侣"
+          className="w-screen max-w-md bg-background/95 backdrop-blur-2xl border-l border-border shadow-2xl flex flex-col transition-all duration-300 ease-in-out"
+        >
+          {/* Header 标头 */}
+          <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-muted/30">
+            <div className="flex items-center gap-2.5">
+              <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-sm">
+                <Sparkles className="h-4 w-4 animate-pulse" />
               </div>
               <div>
-                <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs font-bold text-foreground">NavHub Web Copilot</h3>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                    Agnes 3.0 Flash
+                  </h2>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    系统默认
+                  </Badge>
                 </div>
-                <span className="text-[10px] text-muted-foreground font-mono">Agnes 3.0 Flash 默认模型</span>
+                <p className="text-[11px] text-muted-foreground">智慧导航伴侣 · 全站意图感知</p>
               </div>
             </div>
 
@@ -183,130 +220,174 @@ export function AiCopilotDrawer() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground"
+                onClick={() => setMessages([])}
                 title="清空对话"
-                onClick={handleReset}
+                disabled={messages.length === 0 || loading}
               >
-                <RotateCcw className="w-3.5 h-3.5" />
+                <RotateCcw className="h-3.5 w-3.5" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 rounded-lg text-muted-foreground hover:text-foreground"
-                title="关闭 (Esc / ⌘J)"
+                className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground"
                 onClick={() => setIsOpen(false)}
+                title="关闭抽屉 (Esc)"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="h-4 w-4" />
               </Button>
             </div>
           </div>
 
-          {/* 消息滚动流 */}
-          <div className="flex-1 p-3.5 overflow-y-auto space-y-3 text-xs">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={`flex gap-2.5 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                {m.role === 'assistant' && (
-                  <div className="w-6 h-6 rounded-md bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
-                    <Bot className="w-3.5 h-3.5" />
-                  </div>
-                )}
+          {/* 消息滚动区域 */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col justify-center items-center text-center px-4 py-8 space-y-6">
+                <div className="h-16 w-16 rounded-2xl bg-gradient-to-tr from-primary/20 via-primary/10 to-transparent border border-primary/20 flex items-center justify-center shadow-inner">
+                  <Bot className="h-8 w-8 text-primary" />
+                </div>
+                <div className="space-y-1.5">
+                  <h3 className="text-base font-semibold text-foreground">您好，我是 Agnes</h3>
+                  <p className="text-xs text-muted-foreground max-w-xs leading-relaxed">
+                    随时向我提问全站收录的工具、技术栈与高效站点。我已融合全站知识星图与实时健康度。
+                  </p>
+                </div>
 
+                {/* 快捷推荐 Pills */}
+                <div className="w-full space-y-2 pt-2">
+                  <p className="text-[11px] font-medium text-muted-foreground/80 text-left px-1">
+                    快速探索灵感：
+                  </p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {PRESET_PROMPTS.map((item, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSend(item.prompt)}
+                        className="w-full flex items-center justify-between p-2.5 rounded-xl border border-border/70 bg-card/60 hover:bg-accent hover:border-primary/30 text-left transition-all duration-200 group text-xs text-foreground"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{item.icon}</span>
+                          <span className="font-medium group-hover:text-primary transition-colors">
+                            {item.label}
+                          </span>
+                        </div>
+                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              messages.map((m) => (
                 <div
-                  className={`max-w-[85%] rounded-xl px-3 py-2 leading-relaxed break-words shadow-2xs whitespace-pre-wrap ${
-                    m.role === 'user'
-                      ? 'bg-primary text-primary-foreground font-medium rounded-tr-xs'
-                      : 'bg-muted/40 border border-border/60 text-foreground rounded-tl-xs'
-                  }`}
+                  key={m.id}
+                  className={`flex gap-2.5 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  {m.content}
-                  {m.latencyMs !== undefined && (
-                    <div className="mt-1 pt-1 border-t border-border/30 text-[10px] font-mono text-muted-foreground/75 flex items-center justify-between">
-                      <span>{m.model || 'Agnes 3.0'}</span>
-                      <span>⚡ {m.latencyMs}ms</span>
+                  {m.role === 'assistant' && (
+                    <div className="h-7 w-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-primary mt-0.5">
+                      <Sparkles className="h-3.5 w-3.5" />
+                    </div>
+                  )}
+
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed ${
+                      m.role === 'user'
+                        ? 'bg-primary text-primary-foreground font-medium rounded-tr-sm shadow-sm'
+                        : 'bg-muted/60 border border-border/80 text-foreground rounded-tl-sm shadow-sm'
+                    }`}
+                  >
+                    <div className="whitespace-pre-wrap">{renderMessageContent(m.content)}</div>
+
+                    {/* 推荐追问建议 */}
+                    {m.suggestions && m.suggestions.length > 0 && (
+                      <div className="mt-3 pt-2.5 border-t border-border/60 space-y-1.5">
+                        <p className="text-[10px] text-muted-foreground font-medium flex items-center gap-1">
+                          <Wand2 className="h-2.5 w-2.5" /> 建议探索：
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {m.suggestions.map((s, sIdx) => (
+                            <button
+                              key={sIdx}
+                              onClick={() => handleSend(s)}
+                              className="text-[11px] px-2 py-0.5 rounded-md bg-background/80 hover:bg-background border border-border/60 hover:border-primary/40 text-muted-foreground hover:text-primary transition-colors"
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {m.role === 'user' && (
+                    <div className="h-7 w-7 rounded-full bg-muted border border-border flex items-center justify-center shrink-0 text-muted-foreground mt-0.5">
+                      <User className="h-3.5 w-3.5" />
                     </div>
                   )}
                 </div>
+              ))
+            )}
 
-                {m.role === 'user' && (
-                  <div className="w-6 h-6 rounded-md bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0 mt-0.5">
-                    <User className="w-3.5 h-3.5" />
-                  </div>
-                )}
-              </div>
-            ))}
-
+            {/* 加载中的思考指示器 */}
             {loading && (
-              <div className="flex items-center gap-2 text-muted-foreground text-xs py-1">
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-500" />
-                <span>Agnes 正在深度思考生成回答…</span>
+              <div className="flex gap-2.5 justify-start">
+                <div className="h-7 w-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-primary mt-0.5">
+                  <Sparkles className="h-3.5 w-3.5 animate-spin" />
+                </div>
+                <div className="bg-muted/60 border border-border/80 rounded-2xl rounded-tl-sm px-4 py-3 text-xs text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                  <span>Agnes 3.0 Flash 正在深度思考并检索知识库...</span>
+                </div>
               </div>
             )}
+
             <div ref={messagesEndRef} />
           </div>
 
-          {/* 快捷引导提示词 */}
-          {messages.length <= 2 && (
-            <div className="px-3 pb-2 pt-1 border-t border-border/40 bg-muted/10 space-y-1">
-              <span className="text-[10px] font-medium text-muted-foreground">推荐提问：</span>
-              <div className="flex flex-col gap-1">
-                {DEFAULT_SUGGESTIONS.map((s, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => void handleSend(s)}
-                    className="text-left text-[11px] px-2 py-1 rounded-lg border border-border/60 bg-background/50 hover:bg-background text-muted-foreground hover:text-foreground transition-colors truncate"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* 底部输入框 */}
-          <div className="p-3 border-t border-border/60 bg-muted/20">
+          <div className="p-3 border-t border-border bg-card/50">
             <form
               onSubmit={(e) => {
                 e.preventDefault()
-                void handleSend()
+                handleSend()
               }}
-              className="flex items-center gap-1.5"
+              className="relative rounded-xl border border-input bg-background/80 focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all p-1"
             >
               <textarea
                 ref={inputRef}
-                aria-label="给 Agnes 发送指令或提问"
-                rows={1}
+                aria-label="输入给 Agnes 的问题或需求"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
-                    void handleSend()
+                    handleSend()
                   }
                 }}
-                placeholder="给 Agnes 发送指令或提问（Enter 发送）…"
-                className="flex-1 text-xs px-3 py-2 rounded-xl border border-border/80 bg-background outline-none focus:ring-1 focus:ring-primary resize-none max-h-20"
+                rows={2}
+                placeholder="询问 Agnes 任何工具或需求... (Enter 发送)"
+                disabled={loading}
+                className="w-full resize-none bg-transparent px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
               />
-              <Button
-                type="submit"
-                size="sm"
-                disabled={loading || !input.trim()}
-                className="h-8 w-8 p-0 rounded-xl bg-primary text-primary-foreground shrink-0 shadow-xs"
-                title="发送"
-              >
-                {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              </Button>
+              <div className="flex items-center justify-between px-2 py-1 text-[10px] text-muted-foreground border-t border-border/40">
+                <div className="flex items-center gap-1.5">
+                  <Compass className="h-3 w-3 text-primary" />
+                  <span>快捷键 Cmd+J / Ctrl+J 随时唤出</span>
+                </div>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!input.trim() || loading}
+                  className="h-6 px-2.5 rounded-lg text-[11px] gap-1 shadow-sm"
+                >
+                  <span>发送</span>
+                  <Send className="h-2.5 w-2.5" />
+                </Button>
+              </div>
             </form>
-            <div className="flex items-center justify-between text-[10px] text-muted-foreground mt-1.5 px-1 font-mono">
-              <span>Shift+Enter 换行</span>
-              <span>基于 NavHub 统一网关</span>
-            </div>
           </div>
-        </div>
-      )}
-    </>
+        </aside>
+      </div>
+    </div>
   )
 }

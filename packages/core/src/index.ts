@@ -39,3 +39,4 @@ export * from "./relations.ts";
 export * from "./taxonomy-governance.ts";
 export * from "./query-intent.ts";
 export * from "./plugin-manifest.ts";
+export * from "./bookmark-exporter.ts";

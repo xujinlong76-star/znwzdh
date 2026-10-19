@@ -2,9 +2,6 @@ import type { FastifyPluginAsync } from "fastify";
 import type { AppContext } from "../context.ts";
 import type { SiteOfflineArchive } from "@navhub/core";
 
-// 内存快照存储（生产环境可映射为 SQLite / 文件存储）
-const archiveStore = new Map<string, SiteOfflineArchive>();
-
 export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -13,7 +10,7 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
    */
   app.get("/api/sites/:id/archive", { config: { scope: "public" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const existing = archiveStore.get(id);
+    const existing = await ctx.repo.getLatestSiteArchive(id);
 
     if (existing) {
       return existing;
@@ -59,7 +56,7 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       tags: site.tags || [],
     };
 
-    archiveStore.set(id, archive);
+    await ctx.repo.saveSiteArchive(archive);
     return archive;
   });
 
@@ -130,7 +127,7 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       tags: site.tags || [],
     };
 
-    archiveStore.set(id, archive);
+    await ctx.repo.saveSiteArchive(archive);
     return archive;
   });
 };

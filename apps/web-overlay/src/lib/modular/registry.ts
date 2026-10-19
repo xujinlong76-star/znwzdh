@@ -15,6 +15,7 @@ import { QuickSearchWidget } from '@/components/modular/modules/quick-search-wid
 import { GithubHeatmapWidget } from '@/components/modular/modules/github-heatmap-widget'
 import { WeatherWidget } from '@/components/modular/modules/weather-widget'
 import { IframeWidget } from '@/components/modular/modules/iframe-widget'
+import { DeclarativeWidget } from '@/components/modular/modules/declarative-widget'
 
 /**
  * 所有可用独立模块的注册表清单
@@ -293,6 +294,21 @@ export const WIDGET_REGISTRY: Record<string, ModularWidgetDefinition & { compone
       },
     ],
     component: RssFeedWidget,
+  },
+  'declarative-widget': {
+    type: 'declarative-widget',
+    title: '声明式微组件沙箱',
+    description: '通过安全声明式 JSON Schema 渲染 KPI 指标、状态指示器与动态内容流，0 代码安全隔离。',
+    category: 'tools',
+    icon: 'Layers',
+    defaultColSpan: 4,
+    defaultRowSpan: 2,
+    minColSpan: 3,
+    maxColSpan: 8,
+    minRowSpan: 1,
+    maxRowSpan: 3,
+    badge: '0-Eval 沙箱',
+    component: DeclarativeWidget,
   },
 }
 

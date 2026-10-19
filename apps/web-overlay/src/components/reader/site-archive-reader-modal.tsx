@@ -82,6 +82,13 @@ export function SiteArchiveReaderModal({
 
         if (res.ok && res.archive) {
           setArchive(res.archive)
+          try {
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(`navhub:archive:${site.id}`, JSON.stringify(res.archive))
+            }
+          } catch {
+            // ignore storage quota
+          }
           if (forceRefresh) {
             toast.success('离线快照已重新抓取更新')
           }
@@ -89,7 +96,19 @@ export function SiteArchiveReaderModal({
           toast.error('获取离线快照失败')
         }
       } catch {
-        toast.error('网络异常，无法加载离线快照')
+        // 尝试从本地离线缓存恢复
+        const cached = typeof window !== 'undefined' ? localStorage.getItem(`navhub:archive:${site.id}`) : null
+        if (cached) {
+          try {
+            const parsed = JSON.parse(cached)
+            setArchive(parsed)
+            toast.info('已从本地离线缓存载入快照')
+            return
+          } catch {
+            // ignore parse error
+          }
+        }
+        toast.error('网络异常且无本地缓存，无法加载离线快照')
       } finally {
         setLoading(false)
       }

@@ -523,10 +523,28 @@ export const shortLinks = sqliteTable("short_links", {
   createdAt: integer("created_at").notNull(),
 });
 
+/** 站点离线快照存档（Local-First SingleFile 归档） */
+export const siteArchives = sqliteTable("site_archives", {
+  id: text("id").primaryKey(),
+  siteId: text("site_id").notNull(),
+  title: text("title").notNull(),
+  url: text("url").notNull(),
+  excerpt: text("excerpt"),
+  readTimeMinutes: integer("read_time_minutes").notNull().default(1),
+  htmlContent: text("html_content").notNull(),
+  byteSize: integer("byte_size").notNull().default(0),
+  tags: text("tags").notNull().default("[]"),
+  capturedAt: integer("captured_at").notNull().$defaultFn(now),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [
+  index("site_archives_site_id_idx").on(t.siteId),
+  index("site_archives_captured_at_idx").on(t.capturedAt),
+]);
+
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates, taxonomyProposals,
-  plugins, pluginInstalls, pluginStars, pluginVersions, pluginReviews, shortLinks,
+  plugins, pluginInstalls, pluginStars, pluginVersions, pluginReviews, shortLinks, siteArchives,
 };
 

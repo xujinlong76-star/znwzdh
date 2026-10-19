@@ -409,6 +409,22 @@ CREATE TABLE IF NOT EXISTS short_links (
   clicks INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS site_archives (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  excerpt TEXT,
+  read_time_minutes INTEGER NOT NULL DEFAULT 1,
+  html_content TEXT NOT NULL,
+  byte_size INTEGER NOT NULL DEFAULT 0,
+  tags TEXT NOT NULL DEFAULT '[]',
+  captured_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_archives_site_id_idx ON site_archives(site_id);
+CREATE INDEX IF NOT EXISTS site_archives_captured_at_idx ON site_archives(captured_at);
 `;
 
 const DDL_PG = `
@@ -775,6 +791,22 @@ CREATE TABLE IF NOT EXISTS short_links (
   clicks INTEGER NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS site_archives (
+  id TEXT PRIMARY KEY,
+  site_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  url TEXT NOT NULL,
+  excerpt TEXT,
+  read_time_minutes INTEGER NOT NULL DEFAULT 1,
+  html_content TEXT NOT NULL,
+  byte_size INTEGER NOT NULL DEFAULT 0,
+  tags TEXT NOT NULL DEFAULT '[]',
+  captured_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS site_archives_site_id_idx ON site_archives(site_id);
+CREATE INDEX IF NOT EXISTS site_archives_captured_at_idx ON site_archives(captured_at);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;

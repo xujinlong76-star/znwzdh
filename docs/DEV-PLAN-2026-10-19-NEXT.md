@@ -133,7 +133,17 @@
 
 **教训（协作纪律）**：`51e9dae` 曾把同伴已暂存的「AI 插件工坊」import 一并带进 `marketplace/page.tsx`（同伴新文件未提交 → CI tsc 报 Cannot find module）。已用 git plumbing 重建该文件为仅排版版本（`76c3037`，工作区文件原样保留）。后续提交前必须 `git diff --cached` 确认暂存区只含自己的路径。
 
-**遗留（质量收敛候选）**：同样的扫描缝隙覆盖 `lib/*`、其余 `components/*`、其余 `app/*` 子树；`2xl:` 变体死因未根治（引擎层，待专项定位）。其他页面也可能存在「用类不生效」。
+**遗留（质量收敛候选）**：同样的扫描缝隙覆盖 `lib/*`、其余 `components/*`、其余 `app/*` 子树。其他页面也可能存在「用类不生效」。（`2xl:` 变体已下一轮根治，见下。）
+
+### P2 宽屏断点根治轮（2026-10-20，commits `bf791f6` → `929666d`）
+
+**定死因（干净 worktree 探针实验，Tailwind 4.1.12）**：`xl:` 生成 ✓、`min-[96rem]:` 生成 ✓、自定义字母断点 `--breakpoint-widescreen` + `widescreen:` 生成 ✓；而 `2xl:` 在扫描文件里、且**即使 `--breakpoint-2xl: 96rem` 显式写进 @theme 也一律不生成** → 与主题无关，是 v4 对「数字开头变体名」的解析问题（`2xl:`/`3xl:` 恒为死类）。
+
+**修复**：全仓 8 处 `2xl:grid-cols-N` → `min-[1536px]:grid-cols-N!`（favorites / hot / tags / video-content×2 / navigation-content×3）；连带发现任意断点排序在命名断点之前——原 `min-[1920px]:grid-cols-M` 一直被 `xl:` 压制，一并加 `!`；同串内 `min-[1920px]!` 靠数值排序晚于 `min-[1536px]!` 胜出（按产物 CSS 逐一核了 important 位置）。新增守卫 `tw-variant-guard.test.ts`：源码禁止再写 `2xl:` 类。
+
+**实拍验收**（生产构建）：首页 1920 由 4 列恢复为预期的 6 列，`/hot` 1920 恢复 5 列，1440 维持 4 列。
+
+**流程教训（`bf791f6` CI 红的复盘）**：vendor-web.mjs 第 6 步把**整个 overlay（含 `test/`）覆盖到 `apps/web`**，`apps/web-overlay/` 才是唯一事实源；`bf791f6` 只提交了镜像 `apps/web/test/favorites-filter.test.ts`、漏了 overlay 副本（还是旧锚点），CI 用旧锚点找新页面 → `-1`，与注解 `expected -1 to be greater than -1` 完全吻合。本地验证 worktree 当时的 vendor 早于测试拷贝，掩盖了不一致——**今后凡动 `apps/web/test/*`，必须连同 overlay 副本一起提交，且改完先跑 vendor 再跑测试**。（`929666d` 补齐后 CI success，run `39306913597`。）
 
 ### P3｜工具链收尾（窗口期，3–5 天）
 

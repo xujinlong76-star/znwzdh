@@ -14,6 +14,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import {
   Search,
   Command,
@@ -66,11 +67,31 @@ import { getIdentity } from '@/lib/identity'
 import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { applyThemeTokens } from '@/lib/plugins/theme-runtime'
-import { GeekMicroTools } from '@/components/tools/geek-micro-tools'
-import { SiteHealthAuditModal } from '@/components/ai/site-health-audit-modal'
-import { KnowledgeStarMapModal } from '@/components/graph/knowledge-star-map-modal'
-import { SiteArchiveReaderModal } from '@/components/reader/site-archive-reader-modal'
-import { P2PAirDropModal } from '@/components/p2p/p2p-airdrop-modal'
+
+// 这些是 Spotlight 的「按需面板」，只在对应快捷键/指令被激活时才需要。
+// 静态 import 会把它们全部塞进全局首屏 chunk（Spotlight 挂在 Providers 上），
+// 2026-10-19 实测因此从 637 KB 涨到 909 KB（_not-found 基线）。改为 dynamic + 条件渲染，
+// 未打开时连 chunk 都不加载。
+const GeekMicroTools = dynamic(
+  () => import('@/components/tools/geek-micro-tools').then((m) => m.GeekMicroTools),
+  { ssr: false }
+)
+const SiteHealthAuditModal = dynamic(
+  () => import('@/components/ai/site-health-audit-modal').then((m) => m.SiteHealthAuditModal),
+  { ssr: false }
+)
+const KnowledgeStarMapModal = dynamic(
+  () => import('@/components/graph/knowledge-star-map-modal').then((m) => m.KnowledgeStarMapModal),
+  { ssr: false }
+)
+const SiteArchiveReaderModal = dynamic(
+  () => import('@/components/reader/site-archive-reader-modal').then((m) => m.SiteArchiveReaderModal),
+  { ssr: false }
+)
+const P2PAirDropModal = dynamic(
+  () => import('@/components/p2p/p2p-airdrop-modal').then((m) => m.P2PAirDropModal),
+  { ssr: false }
+)
 
 const CHANNEL_BADGES: Record<string, { label: string; className: string }> = {
   exact: { label: '精确', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30' },
@@ -1059,20 +1080,24 @@ export function SpotlightModal() {
       )}
 
       {/* 站点健康自治巡检与无感自愈中枢 */}
-      <SiteHealthAuditModal open={healthAuditOpen} onClose={() => setHealthAuditOpen(false)} />
+      {healthAuditOpen && (
+        <SiteHealthAuditModal open={healthAuditOpen} onClose={() => setHealthAuditOpen(false)} />
+      )}
 
       {/* 知识星图与拓扑演进中枢 */}
-      <KnowledgeStarMapModal open={starMapOpen} onOpenChange={setStarMapOpen} />
+      {starMapOpen && <KnowledgeStarMapModal open={starMapOpen} onOpenChange={setStarMapOpen} />}
 
       {/* 离线快照纯净阅读器 */}
-      <SiteArchiveReaderModal
-        site={archiveSite}
-        open={archiveReaderOpen}
-        onOpenChange={setArchiveReaderOpen}
-      />
+      {archiveReaderOpen && (
+        <SiteArchiveReaderModal
+          site={archiveSite}
+          open={archiveReaderOpen}
+          onOpenChange={setArchiveReaderOpen}
+        />
+      )}
 
       {/* NavDrop 局域网隔空快传 */}
-      <P2PAirDropModal open={airdropOpen} onOpenChange={setAirdropOpen} />
+      {airdropOpen && <P2PAirDropModal open={airdropOpen} onOpenChange={setAirdropOpen} />}
     </>
   )
 }

@@ -74,6 +74,7 @@ import { cn } from '@/lib/utils'
 const STATUS_TABS = [
   { key: 'pending', label: '待审核' },
   { key: 'published', label: '已上架' },
+  { key: 'quarantined', label: '已隔离' },
   { key: 'rejected', label: '已驳回' },
   { key: 'delisted', label: '已下架' },
 ] as const
@@ -344,17 +345,21 @@ export default function AdminPluginsPage() {
               <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 space-y-1">
                 <div className="text-xs text-violet-600 dark:text-violet-400 flex items-center justify-between">
                   <span>类型构成分布</span>
-                  <span className="text-[11px] font-mono">3 大类别</span>
+                  <span className="text-[11px] font-mono">5 大类别</span>
                 </div>
-                <div className="text-xs font-medium text-foreground flex items-center gap-2 pt-1">
+                <div className="text-xs font-medium text-foreground flex flex-wrap items-center gap-x-2 gap-y-1 pt-1">
                   <span>包: <strong className="font-mono">{telemetry.kindDistribution.sitePack}</strong></span>
                   <span>·</span>
                   <span>看板: <strong className="font-mono">{telemetry.kindDistribution.workspacePreset}</strong></span>
                   <span>·</span>
                   <span>主题: <strong className="font-mono">{telemetry.kindDistribution.theme}</strong></span>
+                  <span>·</span>
+                  <span>搜索: <strong className="font-mono">{telemetry.kindDistribution.searchPack ?? 0}</strong></span>
+                  <span>·</span>
+                  <span>组合: <strong className="font-mono">{telemetry.kindDistribution.bundle ?? 0}</strong></span>
                 </div>
                 <div className="text-[11px] text-muted-foreground pt-1">
-                  覆盖网址、个人工作台与视觉主题
+                  覆盖网址、个人工作台、视觉主题、搜索直达与组合包
                 </div>
               </div>
 
@@ -431,6 +436,12 @@ export default function AdminPluginsPage() {
                     <span className="text-xs font-mono text-muted-foreground">
                       v{item.version}
                     </span>
+                    {item.status === 'quarantined' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive border border-destructive/30">
+                        <AlertTriangle className="w-3 h-3" />
+                        <span>已隔离熔断</span>
+                      </span>
+                    )}
                     {item.reportCount > 0 && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 border border-amber-500/30">
                         <Flag className="w-3 h-3" />
@@ -512,7 +523,7 @@ export default function AdminPluginsPage() {
                     </button>
                   )}
 
-                  {(item.status === 'rejected' || item.status === 'delisted') && (
+                  {(item.status === 'rejected' || item.status === 'delisted' || item.status === 'quarantined') && (
                     <button
                       type="button"
                       onClick={() => handleApprove(item)}
@@ -520,7 +531,7 @@ export default function AdminPluginsPage() {
                       className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-600 hover:bg-emerald-500/10 rounded-lg border border-emerald-500/30 transition-colors"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
-                      <span>重新上架</span>
+                      <span>{item.status === 'quarantined' ? '审核解封并上架' : '重新上架'}</span>
                     </button>
                   )}
                 </div>

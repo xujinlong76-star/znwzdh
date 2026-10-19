@@ -56,6 +56,7 @@ const TOPIC_COLLECTIONS = [
   { id: 'search', title: '🔍 快捷直达引擎', kind: 'search-pack' },
   { id: 'devops', title: '📊 生产力工作台', kind: 'workspace-preset' },
   { id: 'theme', title: '🎨 赛博与暗黑美学', kind: 'theme' },
+  { id: 'bundle', title: '🧩 精选组合包', kind: 'bundle' },
 ] as const
 
 const KIND_LABELS: Record<string, string> = {
@@ -63,6 +64,7 @@ const KIND_LABELS: Record<string, string> = {
   'workspace-preset': '工作台预设',
   theme: '主题',
   'search-pack': '搜索引擎包',
+  bundle: '组合包',
 }
 
 export default function MarketplacePage() {
@@ -313,6 +315,7 @@ export default function MarketplacePage() {
             <option value="workspace-preset">工作台预设</option>
             <option value="theme">主题</option>
             <option value="search-pack">搜索引擎包</option>
+            <option value="bundle">组合包</option>
           </select>
           <select
             aria-label="排序方式"

@@ -36,6 +36,7 @@ import {
   Globe,
   LayoutGrid,
   Palette,
+  Boxes,
   Sparkles,
   Send,
   Eye,
@@ -241,6 +242,19 @@ export default function PluginPublishPage() {
           2
         )
       )
+    } else if (k === 'bundle') {
+      setPayloadJson(
+        JSON.stringify(
+          {
+            items: [
+              { slug: '请替换为已上架的-site-pack-slug', kind: 'site-pack' },
+              { slug: '请替换为已上架的-search-pack-slug', kind: 'search-pack' },
+            ],
+          },
+          null,
+          2
+        )
+      )
     }
   }
 
@@ -439,7 +453,7 @@ export default function PluginPublishPage() {
                 <div className="text-xs font-semibold text-foreground">
                   第 1 步：选择插件类型
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                   <button
                     type="button"
                     onClick={() => handleKindSelect('site-pack')}
@@ -513,6 +527,25 @@ export default function PluginPublishPage() {
                     </div>
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
                       包含 !前缀 快捷直达规则与检索 URL 占位符。
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleKindSelect('bundle')}
+                    className={cn(
+                      'p-4 rounded-2xl border text-left space-y-2 transition-all',
+                      kind === 'bundle'
+                        ? 'border-fuchsia-500 bg-fuchsia-500/10 shadow-xs'
+                        : 'border-border/70 hover:border-border hover:bg-muted/40'
+                    )}
+                  >
+                    <div className="flex items-center gap-2 text-fuchsia-600 dark:text-fuchsia-400 font-semibold text-xs">
+                      <Boxes className="w-4 h-4" />
+                      <span>组合包 (bundle)</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      引用已上架的网址包/搜索引擎包/主题，一次安装；不支持嵌套与工作台预设。
                     </p>
                   </button>
                 </div>

@@ -561,7 +561,7 @@ export interface HubPluginTelemetryMetrics {
   activeInstalls: number
   totalStars: number
   totalReports: number
-  kindDistribution: { sitePack: number; workspacePreset: number; theme: number; searchPack?: number }
+  kindDistribution: { sitePack: number; workspacePreset: number; theme: number; searchPack?: number; bundle?: number }
   topInstalled: Array<{
     id: string
     slug: string
@@ -580,10 +580,30 @@ export async function fetchPluginTelemetry(): Promise<HubPluginTelemetryMetrics 
   )
 }
 
+export interface HubPluginBundleMember {
+  slug: string
+  kind: string
+  name: string | null
+  icon: string | null
+  version: string | null
+  status: string
+  available: boolean
+  reason?: string
+  summary?: {
+    siteCount?: number
+    categoryCount?: number
+    engineCount?: number
+    themeTokenCount?: number
+    boardCount?: number
+    bundleItemCount?: number
+    bundleKinds?: string[]
+  } | null
+}
+
 export interface HubPluginItem {
   id: string
   slug: string
-  kind: 'site-pack' | 'workspace-preset' | 'theme' | 'search-pack'
+  kind: 'site-pack' | 'workspace-preset' | 'theme' | 'search-pack' | 'bundle'
   name: string
   description: string
   icon?: string | null
@@ -618,6 +638,10 @@ export interface HubPluginItem {
   installedVersion?: string | null
   installedAt?: number | null
   upgradeDiff?: PluginUpgradeDiff | null
+  /** 组合包成员解析结果（仅 kind=bundle 的详情响应返回） */
+  bundleItems?: HubPluginBundleMember[]
+  /** 组合包全部成员可用时为 true；任一成员失效则安装 fail closed */
+  bundleReady?: boolean
   isOwner?: boolean
   reviewStats?: {
     avgRating: number

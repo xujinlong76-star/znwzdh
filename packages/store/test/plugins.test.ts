@@ -46,6 +46,31 @@ const themeManifest = () =>
     payload: { accent: "violet", tokens: { "--primary": "262 83% 58%" } },
   });
 
+const searchPackRaw = (name: string, prefix = "!t") =>
+  manifestOf({
+    manifestVersion: 1,
+    kind: "search-pack",
+    name,
+    description: "测试用搜索引擎包",
+    version: "1.0.0",
+    payload: {
+      engines: [{ name: name + " 引擎", prefix, searchUrl: `https://search.example.com/?q={q}` }],
+    },
+  });
+
+const bundleRaw = (
+  name: string,
+  items: Array<{ slug: string; kind: "site-pack" | "search-pack" | "theme" }>,
+) =>
+  manifestOf({
+    manifestVersion: 1,
+    kind: "bundle",
+    name,
+    description: "测试用组合包",
+    version: "1.0.0",
+    payload: { items },
+  });
+
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-plugins-"));
   db = await openDb({ dialect: "sqlite", sqlitePath: join(dir, "test.db") });
@@ -461,6 +486,145 @@ describe("星标 / 举报 / 安装状态", () => {
   });
 });
 
+
+describe("F4 组合包（bundle）：引用校验 / 安装复用 / 失效 fail closed / 不级联卸载", () => {
+  it("创建与更新：引用必须已上架、类型一致、非自身非嵌套；成员状态可解析", async () => {
+    const member = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("组合成员包", [{ url: "https://bundle-member.example.com", title: "M" }])),
+      status: "published",
+    });
+    const engineMember = await repo.createPlugin({
+      manifest: searchPackRaw("组合成员引擎包", "!bm"),
+      status: "published",
+    });
+
+    // 引用不存在的插件 -> 拒绝
+    await expect(
+      repo.createPlugin({ manifest: bundleRaw("坏组合-缺失", [{ slug: "not-exist-slug", kind: "site-pack" }]) }),
+    ).rejects.toThrow("组合包引用的成员不可用");
+
+    // 引用未上架插件 -> 拒绝
+    const pending = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("未上架成员", [{ url: "https://pending-member.example.com", title: "P" }])),
+    });
+    await expect(
+      repo.createPlugin({ manifest: bundleRaw("坏组合-未上架", [{ slug: pending.slug, kind: "site-pack" }]) }),
+    ).rejects.toThrow("组合包引用的成员不可用");
+
+    // 类型漂移 -> 拒绝
+    await expect(
+      repo.createPlugin({ manifest: bundleRaw("坏组合-类型漂移", [{ slug: member.slug, kind: "theme" }]) }),
+    ).rejects.toThrow("组合包引用的成员不可用");
+
+    // 合法组合包：创建成功且成员状态可用
+    const bundle = await repo.createPlugin({
+      manifest: bundleRaw("合法组合包", [
+        { slug: member.slug, kind: "site-pack" },
+        { slug: engineMember.slug, kind: "search-pack" },
+      ]),
+      status: "published",
+    });
+    const members = await repo.getPluginBundleMembers(bundle);
+    expect(members).toHaveLength(2);
+    expect(members.every((m) => m.available)).toBe(true);
+    expect(members[0]?.summary?.siteCount).toBe(1);
+    expect(members[1]?.summary?.engineCount).toBe(1);
+
+    // 自引用 -> 拒绝
+    await expect(
+      repo.updatePlugin(bundle.slug, bundleRaw("合法组合包", [{ slug: bundle.slug, kind: "site-pack" }])),
+    ).rejects.toThrow("组合包引用的成员不可用");
+
+    // 成员被下架后：解析标记不可用，更新组合包被拒绝
+    await repo.reviewPlugin(member.slug, "delist", "测试下架", { actor: "admin", actorKind: "admin" });
+    const broken = await repo.getPluginBundleMembers(bundle);
+    expect(broken.find((m) => m.slug === member.slug)?.available).toBe(false);
+    await expect(
+      repo.updatePlugin(bundle.slug, bundleRaw("合法组合包", [{ slug: member.slug, kind: "site-pack" }])),
+    ).rejects.toThrow("组合包引用的成员不可用");
+  });
+
+  it("安装：顺序复用成员安装管道，聚合 applied，幂等且卸载不级联", async () => {
+    const siteMember = await repo.createPlugin({
+      manifest: manifestOf(
+        sitePackRaw("组合安装站点包", [{ url: "https://bundle-install-1.example.com", title: "B1" }]),
+      ),
+      status: "published",
+    });
+    const engineMember = await repo.createPlugin({
+      manifest: searchPackRaw("组合安装引擎包", "!bi"),
+      status: "published",
+    });
+    const themeMember = await repo.createPlugin({
+      manifest: themeManifest(),
+      status: "published",
+      slug: "bundle-theme-member",
+    });
+    const bundle = await repo.createPlugin({
+      manifest: bundleRaw("组合安装包", [
+        { slug: siteMember.slug, kind: "site-pack" },
+        { slug: engineMember.slug, kind: "search-pack" },
+        { slug: themeMember.slug, kind: "theme" },
+      ]),
+      status: "published",
+    });
+
+    const first = await repo.installPlugin(bundle.slug, "bundle-visitor-1");
+    expect(first.alreadyInstalled).toBe(false);
+    expect(first.applied.sitesAdded).toBe(1);
+    expect(first.applied.sitesSkipped).toBe(0);
+    expect(first.applied.bundleItems).toHaveLength(3);
+    expect(first.applied.bundleItems?.map((i) => i.slug)).toEqual([
+      siteMember.slug,
+      engineMember.slug,
+      themeMember.slug,
+    ]);
+    expect(first.applied.bundleItems?.find((i) => i.slug === themeMember.slug)?.alreadyInstalled).toBe(false);
+
+    // 成员与组合包各自计数，且组合包自身不落站点
+    const siteMemberAfter = await repo.getPluginBySlug(siteMember.slug);
+    expect(siteMemberAfter?.installCount).toBe(1);
+    expect(first.plugin.installCount).toBe(1);
+
+    // 重复安装：组合包与成员都幂等，不重复计数、不重复建站点
+    const again = await repo.installPlugin(bundle.slug, "bundle-visitor-1");
+    expect(again.alreadyInstalled).toBe(true);
+    expect(again.applied.sitesAdded).toBe(0);
+    expect(again.applied.sitesSkipped).toBe(1);
+    expect(again.applied.bundleItems?.every((i) => i.alreadyInstalled)).toBe(true);
+
+    // 卸载组合包：只解绑自身，成员安装记录与站点都保留
+    const uninstalled = await repo.uninstallPlugin(bundle.slug, "bundle-visitor-1", { removeSites: true });
+    expect(uninstalled.removed).toBe(true);
+    expect(uninstalled.removedSites).toBe(0);
+    const siteMemberInstall = await repo.getPluginInstall(siteMember.id, "bundle-visitor-1");
+    expect(siteMemberInstall?.removedAt).toBeNull();
+    const stillThere = await repo.raw("SELECT id FROM sites WHERE source = ? AND deleted_at IS NULL", [
+      `plugin:${siteMember.slug}`,
+    ]);
+    expect(stillThere.length).toBe(1);
+  });
+
+  it("成员失效后安装 fail closed；恢复上架后重新可安装", async () => {
+    const member = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("失效成员包", [{ url: "https://broken-member.example.com", title: "BM" }])),
+      status: "published",
+    });
+    const bundle = await repo.createPlugin({
+      manifest: bundleRaw("待失效组合包", [{ slug: member.slug, kind: "site-pack" }]),
+      status: "published",
+    });
+
+    await repo.reviewPlugin(member.slug, "delist", "模拟下架", { actor: "admin", actorKind: "admin" });
+    await expect(repo.installPlugin(bundle.slug, "bundle-visitor-2")).rejects.toThrow("组合包暂不可安装");
+
+    // 审核恢复后再 approve 组合包自身（模拟治理流程）即可重新安装
+    await repo.reviewPlugin(member.slug, "approve", null, { actor: "admin", actorKind: "admin" });
+    const retry = await repo.installPlugin(bundle.slug, "bundle-visitor-2");
+    expect(retry.applied.bundleItems).toHaveLength(1);
+    expect(retry.applied.sitesAdded).toBe(1);
+  });
+});
 
 describe("F0 作者归属 / 编辑精选 / 版本提交", () => {
   it("ownerKey 对同一身份稳定、不同身份不同；公开作者列表只含已上架", async () => {

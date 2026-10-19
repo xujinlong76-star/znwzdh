@@ -17,7 +17,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
-import { Globe, LayoutGrid, Palette, AlertTriangle, Check, Trash2, Download } from 'lucide-react'
+import { Globe, LayoutGrid, Palette, Boxes, AlertTriangle, Check, Trash2, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { setActiveTheme, resetTheme } from '@/lib/plugins/theme-runtime'
 import { getIdentity } from '@/lib/identity'
@@ -54,20 +54,30 @@ export function PluginInstallModal({
     mode === 'upgrade' ||
     (mode === 'install' && resolveInstallAction(plugin.installedVersion, plugin.version) === 'update')
 
+  // 组合包任一成员失效（下架/隔离/删除/类型漂移）即 fail closed，安装按钮禁用；
+  // 卸载不受影响，避免用户被失效组合包"锁死"。
+  const bundleBlocked = plugin.kind === 'bundle' && plugin.bundleReady === false
+  const memberKindLabels: Record<string, string> = {
+    'site-pack': '网址包',
+    'search-pack': '搜索引擎包',
+    theme: '主题',
+  }
+
   const handleConfirm = async () => {
     setLoading(true)
     try {
       const effectiveIdentity = identity || getIdentity()
       if (mode !== 'uninstall') {
         // 1. 服务端状态登记与 site-pack 增量写库
+        //    bundle 由服务端逐个成员复用同一条安装管道（预检失败即拒绝，无半安装）
         const res = await installPlugin(plugin.slug, effectiveIdentity)
 
-        // 2. 客户端工作台预设消费
+        // 2. 客户端工作台预设消费（组合包不含 workspace-preset，此分支不会被 bundle 命中）
         if (plugin.kind === 'workspace-preset' && onApplyPreset) {
           onApplyPreset(plugin.manifest.payload, presetMode)
         }
 
-        // 3. 客户端主题运行时激活
+        // 3. 客户端主题运行时激活（组合包只登记安装，主题需用户在已安装页显式启用）
         if (plugin.kind === 'theme') {
           const payload = plugin.manifest.payload
           setActiveTheme({
@@ -78,12 +88,27 @@ export function PluginInstallModal({
           })
         }
 
+        const bundleItems: Array<{ alreadyInstalled?: boolean }> = Array.isArray(res?.applied?.bundleItems)
+          ? res.applied.bundleItems
+          : []
+        const installedCount = bundleItems.filter((item) => !item.alreadyInstalled).length
+
         toast.success(
           isUpdate
             ? `已更新到 v${plugin.version}！`
             : res.alreadyInstalled
               ? '插件已处于安装状态'
-              : `成功安装「${plugin.name}」！`
+              : plugin.kind === 'bundle'
+                ? `组合包「${plugin.name}」处理完成`
+                : `成功安装「${plugin.name}」！`,
+          plugin.kind === 'bundle' && !res.alreadyInstalled
+            ? {
+                description:
+                  installedCount > 0
+                    ? `已安装 ${installedCount} 个新成员；主题类成员可在「已安装」页启用。`
+                    : '所有成员此前均已安装，无需重复引入。',
+              }
+            : undefined,
         )
       } else {
         // 卸载
@@ -209,6 +234,46 @@ export function PluginInstallModal({
                   </p>
                 </div>
               )}
+
+              {plugin.kind === 'bundle' && (
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium text-xs">
+                    <Boxes className="w-4 h-4" />
+                    <span>
+                      组合包：一次登记 {summary?.bundleItemCount ?? plugin.bundleItems?.length ?? 0} 个成员插件
+                    </span>
+                  </div>
+                  {bundleBlocked && (
+                    <div className="flex items-start gap-1.5 text-[11px] text-destructive">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>部分成员已失效，安装已暂停；可等待作者更新组合包或选择单独安装其余插件。</span>
+                    </div>
+                  )}
+                  {Array.isArray(plugin.bundleItems) && plugin.bundleItems.length > 0 && (
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      {plugin.bundleItems.map((item) => (
+                        <li key={item.slug} className="flex items-center gap-1.5 min-w-0">
+                          {item.available ? (
+                            <Check className="w-3 h-3 shrink-0 text-emerald-500" />
+                          ) : (
+                            <AlertTriangle className="w-3 h-3 shrink-0 text-destructive" />
+                          )}
+                          <span className="text-foreground truncate">{item.name ?? item.slug}</span>
+                          <span className="text-[10px] text-muted-foreground shrink-0">
+                            {memberKindLabels[item.kind] ?? item.kind}
+                          </span>
+                          {!item.available && item.reason && (
+                            <span className="text-[10px] text-destructive shrink-0">{item.reason}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    成员按清单顺序复用市场同一条安装管道：站点与搜索引擎立即生效；主题仅登记安装，可在「已安装」页显式启用。
+                  </p>
+                </div>
+              )}
             </>
           ) : (
             <div className="space-y-3">
@@ -235,6 +300,12 @@ export function PluginInstallModal({
                   卸载后系统将自动恢复为您原先的默认外观主题。
                 </p>
               )}
+              {plugin.kind === 'bundle' && (
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  卸载组合包只解除组合关系：<strong className="text-foreground">不会</strong>级联卸载成员插件，也不会删除成员已引入的站点。
+                  如需清理，请在「已安装」页逐个处理成员。
+                </p>
+              )}
             </div>
           )}
         </div>
@@ -251,8 +322,8 @@ export function PluginInstallModal({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={loading}
-            className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg transition-all ${
+            disabled={loading || (mode !== 'uninstall' && bundleBlocked)}
+            className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
               mode === 'uninstall'
                 ? 'bg-destructive text-destructive-foreground hover:opacity-90'
                 : 'bg-primary text-primary-foreground hover:opacity-90'

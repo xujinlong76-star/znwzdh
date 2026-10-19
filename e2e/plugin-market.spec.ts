@@ -361,4 +361,105 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await exportDialog.getByRole('button', { name: '取消' }).click();
     await expect(exportDialog).not.toBeVisible();
   });
+
+  test('进化增强全链路：已安装管家中心 -> 搜索引擎包快捷直达 -> 详情页 SVG 徽章 -> 自动熔断隔离与管理员审核解封', async ({ page, request, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
+
+    const stamp = Date.now().toString(36);
+    const searchPackName = `E2E 搜索引擎包 ${stamp}`;
+    const slug = `e2e-search-${stamp}`;
+    const searchPackManifest = {
+      manifestVersion: 1,
+      kind: 'search-pack',
+      name: searchPackName,
+      description: 'Playwright 进化增强全链路测试专用搜索引擎包',
+      version: '1.0.0',
+      tags: ['search-pack', 'e2e'],
+      payload: {
+        engines: [
+          {
+            prefix: `!test${stamp}`,
+            name: `E2E引擎 ${stamp}`,
+            searchUrl: 'https://e2e-search.example.com/search?q={q}',
+            description: '测试前缀快捷直达',
+          },
+        ],
+      },
+    };
+
+    // 1. 通过直接上架通道导入该搜索引擎包
+    const imported = await request.post('/api/hub/plugins/import', {
+      data: { manifest: searchPackManifest, slug },
+    });
+    expect(imported.ok(), `导入失败 ${imported.status()}: ${await imported.text()}`).toBeTruthy();
+
+    // 2. 访问详情页验证信息与 SVG 徽章获取
+    await page.goto(`/marketplace/${slug}`);
+    await expect(page.getByRole('heading', { level: 1 }).first()).toContainText(searchPackName);
+    await expect(page.getByText(`!test${stamp}`)).toBeVisible();
+
+    // 验证 SVG 徽章服务 API
+    const badgeRes = await request.get(`/api/hub/plugins/${slug}/badge.svg?metric=version`);
+    expect(badgeRes.status()).toBe(200);
+    expect(badgeRes.headers()['content-type']).toContain('image/svg+xml');
+    const svgText = await badgeRes.text();
+    expect(svgText).toContain('v1.0.0');
+
+    // 弹窗获取开源徽章代码
+    const badgeBtn = page.getByRole('button', { name: '获取徽章' });
+    await expect(badgeBtn).toBeVisible({ timeout: 15_000 });
+    await badgeBtn.click();
+    const badgeModal = page.getByRole('dialog');
+    await expect(badgeModal.getByText('获取开源徽章代码 (Open Source Badges)')).toBeVisible();
+    await expect(badgeModal.getByText(/实时矢量 SVG 徽章/)).toBeVisible();
+    await badgeModal.getByRole('button', { name: '复制 Markdown' }).click();
+    await expect(page.getByText('已复制 Markdown 徽章代码')).toBeVisible();
+    await badgeModal.getByRole('button', { name: '关闭' }).click();
+    await expect(badgeModal).not.toBeVisible();
+
+    // 3. 安装该搜索引擎包
+    await page.getByRole('button', { name: '立即安装该插件' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText(`确认安装「${searchPackName}」`)).toBeVisible();
+    await clickInstallAndAwaitToast(page, dialog, searchPackName);
+    await expect(page.getByRole('button', { name: /已安装/ })).toBeVisible();
+
+    // 4. 前往已安装管家中心 (/marketplace/installed)
+    await page.goto('/marketplace/installed');
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('已安装插件管家');
+    await expect(page.getByText(searchPackName)).toBeVisible();
+    await expect(page.getByText(`!test${stamp}`)).toBeVisible();
+
+    // 5. 社区高危举报触发自动熔断隔离 (quarantined)
+    // 连续发起 3 次独立匿名举报
+    for (const reporter of ['anon-rep-1', 'anon-rep-2', 'anon-rep-3']) {
+      const rep = await request.post(`/api/hub/plugins/${slug}/report?anonId=${reporter}`, {
+        data: { reason: `违规测试举报来自 ${reporter}` },
+      });
+      expect(rep.status()).toBe(200);
+    }
+
+    // 刷新详情页：验证自动熔断隔离横幅出现
+    await page.goto(`/marketplace/${slug}`);
+    await expect(page.getByText('该插件已被系统自动隔离体检 (Quarantined)')).toBeVisible({ timeout: 15_000 });
+
+    // 6. 管理后台解封恢复上架
+    await gotoAdmin(page, '/admin/plugins');
+    // 切换到「已隔离」标签
+    const quarantinedTab = page.getByRole('button', { name: /已隔离/ });
+    await expect(quarantinedTab).toBeVisible({ timeout: 15_000 });
+    await quarantinedTab.click();
+
+    // 找到该插件卡片并点击解封上架
+    const pluginCard = page.locator('div.rounded-2xl', { hasText: searchPackName });
+    await expect(pluginCard).toBeVisible({ timeout: 15_000 });
+    await expect(pluginCard.getByText('已隔离熔断')).toBeVisible();
+    await pluginCard.getByRole('button', { name: '审核解封并上架' }).click();
+    await expect(page.getByText(`已通过审核并上架「${searchPackName}」！`)).toBeVisible({ timeout: 15_000 });
+
+    // 回到详情页：隔离横幅已消失，恢复为正常状态
+    await page.goto(`/marketplace/${slug}`);
+    await expect(page.getByText('该插件已被系统自动隔离体检 (Quarantined)')).not.toBeVisible();
+  });
 });

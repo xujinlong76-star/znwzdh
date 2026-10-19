@@ -71,6 +71,21 @@ const validSearchPack = {
   },
 }
 
+const validBundle = {
+  manifestVersion: 1,
+  kind: 'bundle',
+  name: '极客起步包',
+  description: '一次安装网址包、搜索引擎包与主题',
+  version: '1.0.0',
+  payload: {
+    items: [
+      { slug: 'front-end-arsenal', kind: 'site-pack' },
+      { slug: 'dev-search-arsenal', kind: 'search-pack' },
+      { slug: 'dracula-dark', kind: 'theme' },
+    ],
+  },
+}
+
 function expectFail(input: unknown, ...fragments: string[]) {
   const res = validateAndCleanPluginManifest(input)
   expect(res.ok).toBe(false)
@@ -331,7 +346,43 @@ describe('摘要、版本比较与文本解析', () => {
     expect(pluginKindLabel('site-pack')).toBe('网址包')
     expect(pluginKindLabel('workspace-preset')).toBe('工作台预设')
     expect(pluginKindLabel('theme')).toBe('主题')
+    expect(pluginKindLabel('bundle')).toBe('组合包')
     expect(PLUGIN_LIMITS.maxSites).toBe(200)
+  })
+
+  it('组合包：校验成员类型/去重/数量，并生成摘要', () => {
+    const res = expectOk(validBundle)
+    expect(res.manifest.kind).toBe('bundle')
+    const summary = summarizePluginManifest(res.manifest)
+    expect(summary.bundleItemCount).toBe(3)
+    expect(summary.bundleKinds).toEqual(['site-pack', 'search-pack', 'theme'])
+
+    expectFail({ ...validBundle, payload: { items: [] } }, '至少需要 1 个成员')
+    expectFail(
+      { ...validBundle, payload: { items: [{ slug: 'a', kind: 'bundle' }] } },
+      '禁止嵌套组合包或工作台预设',
+    )
+    expectFail(
+      { ...validBundle, payload: { items: [{ slug: 'a', kind: 'workspace-preset' }] } },
+      '禁止嵌套组合包或工作台预设',
+    )
+    expectFail(
+      { ...validBundle, payload: { items: [{ slug: 'a', kind: 'site-pack' }, { slug: 'A', kind: 'theme' }] } },
+      'slug 重复',
+    )
+    expectFail(
+      { ...validBundle, payload: { items: [{ slug: 'bad slug', kind: 'site-pack' }] } },
+      '不能包含空白',
+    )
+    expectFail(
+      {
+        ...validBundle,
+        payload: {
+          items: Array.from({ length: 13 }, (_, i) => ({ slug: `p-${i}`, kind: 'site-pack' })),
+        },
+      },
+      '最多 12 个',
+    )
   })
 })
 
@@ -453,6 +504,26 @@ describe('版本升级差异对比 (diffPluginManifests)', () => {
     expect(diff.hasChanges).toBe(true)
     expect(diff.enginesAdded).toEqual(['NPM Packages'])
     expect(diff.enginesRemoved).toEqual(['MDN Web Docs'])
+  })
+
+  it('检测 bundle 成员增删与类型变更', () => {
+    const base = expectOk(validBundle).manifest
+    const target = expectOk({
+      ...validBundle,
+      version: '1.1.0',
+      payload: {
+        items: [
+          { slug: 'front-end-arsenal', kind: 'site-pack' },
+          { slug: 'dracula-dark', kind: 'search-pack' },
+          { slug: 'new-theme', kind: 'theme' },
+        ],
+      },
+    }).manifest
+
+    const diff = diffPluginManifests(base, target)
+    expect(diff.hasChanges).toBe(true)
+    expect(diff.bundleItemsAdded).toEqual(['dracula-dark', 'new-theme'])
+    expect(diff.bundleItemsRemoved).toEqual(['dracula-dark', 'dev-search-arsenal'])
   })
 })
 

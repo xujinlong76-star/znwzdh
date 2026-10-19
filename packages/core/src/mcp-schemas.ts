@@ -33,7 +33,7 @@ export const ListCategoriesInput = z.object({
 });
 
 export const ListPluginsInput = z.object({
-  kind: z.enum(["site-pack", "workspace-preset", "theme"]).optional().describe("按插件类型过滤：网址包 / 工作台预设 / 主题"),
+  kind: z.enum(["site-pack", "workspace-preset", "theme", "search-pack", "bundle"]).optional().describe("按插件类型过滤：网址包 / 工作台预设 / 主题 / 搜索引擎包 / 组合包"),
   query: z.string().optional().describe("按名称、描述、作者关键词过滤"),
   sort: z.enum(["new", "popular", "stars", "rating", "updated"]).default("new").describe("排序：new 最新 / popular 安装最多 / stars 星标最多 / rating 评分最高 / updated 最近更新"),
   featured: z.boolean().optional().describe("只看编辑精选"),
@@ -43,7 +43,7 @@ export const ListPluginsInput = z.object({
 
 export const SearchPluginsInput = z.object({
   query: z.string().min(1).describe("需求描述或关键词，如「深色极简主题」「设计工具合集」「数据看板布局」"),
-  kind: z.enum(["site-pack", "workspace-preset", "theme"]).optional().describe("按插件类型过滤：网址包 / 工作台预设 / 主题"),
+  kind: z.enum(["site-pack", "workspace-preset", "theme", "search-pack", "bundle"]).optional().describe("按插件类型过滤：网址包 / 工作台预设 / 主题 / 搜索引擎包 / 组合包"),
   limit: z.number().int().min(1).max(50).default(10).describe("返回条数上限"),
 });
 

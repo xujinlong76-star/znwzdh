@@ -2,11 +2,14 @@
  * 插件市场种子数据（开发 / 演示环境）。
  *
  * 目标：`pnpm seed` 之后插件市场立刻"有内容、看得出质量"，而不是空壳。
- * 覆盖三种 kind，并额外放一条**待审**样例用于演示审核链路：
- *   1. 设计师灵感导航包（site-pack，已上架）
- *   2. 数据洞察工作台（workspace-preset，已上架）
- *   3. 暮色罗盘（theme，已上架）
- *   4. 开发者效率精选（site-pack，待审 —— 演练 approve/reject）
+ * 覆盖全部五种 kind（含组合包），并额外放一条**待审**样例用于演示审核链路：
+ *   1. 极客开发者搜索引擎包（search-pack，已上架）
+ *   2. 前端开发武器库（site-pack，已上架）
+ *   3. 运维与 SRE 看板预设（workspace-preset，已上架）
+ *   4. 赛博深色主题（theme，已上架）
+ *   5. 设计师灵感导航包 / 数据洞察工作台 / 暮色罗盘（已上架）
+ *   6. 开发者效率精选（site-pack，待审 —— 演练 approve/reject）
+ *   7. 极客起步组合包（bundle，已上架 —— 单层引用第 1/2/4 条）
  *
  * 约束与仓库纪律一致：
  *   - 全部为声明式 JSON（零可执行代码），入库前经 validateAndCleanPluginManifest 校验；
@@ -455,6 +458,29 @@ export function seedPluginDefs(): SeedPluginDef[] {
               category: "开发工具",
               tags: ["定时任务"],
             },
+          ],
+        },
+      },
+    },
+    {
+      slug: "geek-starter-bundle",
+      status: "published",
+      manifest: {
+        manifestVersion: 1,
+        kind: "bundle",
+        name: "极客起步组合包",
+        description:
+          "一次安装拿齐前端武器库、极客搜索引擎包与赛博深色主题：站点与 !前缀 立即生效，主题可在「已安装」页启用。单层组合，不含可执行代码，卸载不级联。",
+        icon: "🧩",
+        author: "NavHub 官方",
+        license: "MIT",
+        version: "1.0.0",
+        tags: ["起步包", "组合", "极客"],
+        payload: {
+          items: [
+            { slug: "front-end-arsenal", kind: "site-pack" },
+            { slug: "dev-search-arsenal", kind: "search-pack" },
+            { slug: "dracula-dark", kind: "theme" },
           ],
         },
       },

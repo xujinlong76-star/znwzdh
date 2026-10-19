@@ -2,7 +2,7 @@
  * 插件类型的视觉元数据（市场列表 / 详情 / 后台共用同一套，避免三处漂移）。
  */
 
-import { Globe, LayoutGrid, Palette, Search, Store, type LucideIcon } from 'lucide-react'
+import { Boxes, Globe, LayoutGrid, Palette, Search, Store, type LucideIcon } from 'lucide-react'
 import type { PluginKind } from './plugin-manifest'
 
 /** 类型 → 图标（含未知类型的兜底） */
@@ -11,6 +11,7 @@ export const KIND_ICONS: Record<PluginKind, LucideIcon> = {
   'workspace-preset': LayoutGrid,
   theme: Palette,
   'search-pack': Search,
+  bundle: Boxes,
 }
 
 /** 类型 → 徽章色调（Tailwind 语义类，深浅色模式各一档透明度） */
@@ -19,6 +20,7 @@ export const KIND_TONES: Record<PluginKind, string> = {
   'workspace-preset': 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30',
   theme: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
   'search-pack': 'bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30',
+  bundle: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
 }
 
 /** 主题强调色的可视化色版（与 globals.css 的 data-accent 块同源口径） */

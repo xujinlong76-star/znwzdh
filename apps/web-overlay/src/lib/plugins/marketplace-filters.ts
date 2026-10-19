@@ -13,6 +13,7 @@ export const MARKETPLACE_KINDS = [
   'workspace-preset',
   'theme',
   'search-pack',
+  'bundle',
 ] as const
 
 export const MARKETPLACE_SORTS = [

@@ -392,6 +392,109 @@ describe("插件市场 API 全链路", () => {
     expect(body.failedCount).toBe(2);
     expect(body.results[0].ok).toBe(false);
   });
+
+  it("F4 组合包：引用已上架成员、详情解析、一次安装复用管道、失效后拒绝", async () => {
+    // 两个已上架成员：site-pack + search-pack
+    const siteRes = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("组合包站点成员", [{ url: "https://bundle-api-site.example.com", title: "Bundle Site" }]),
+    });
+    expect(siteRes.statusCode).toBe(201);
+    const siteSlug = siteRes.json().slug as string;
+
+    const searchRes = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: {
+        manifestVersion: 1,
+        kind: "search-pack",
+        name: "组合包搜索成员",
+        description: "组合包 API 测试搜索引擎",
+        version: "1.0.0",
+        payload: {
+          engines: [{ name: "Bundle Search", prefix: "!bapi", searchUrl: "https://search.example.com/?q={q}" }],
+        },
+      },
+    });
+    expect(searchRes.statusCode).toBe(201);
+    const searchSlug = searchRes.json().slug as string;
+
+    // 引用不存在成员 -> 409
+    const broken = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: {
+        manifestVersion: 1,
+        kind: "bundle",
+        name: "组合包不存在成员",
+        description: "应被拒绝",
+        version: "1.0.0",
+        payload: { items: [{ slug: "ghost-plugin-xyz", kind: "site-pack" }] },
+      },
+    });
+    expect(broken.statusCode).toBe(409);
+
+    // 合法组合包 -> 导入即上架
+    const bundleRes = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: {
+        manifestVersion: 1,
+        kind: "bundle",
+        name: "API 组合包",
+        description: "API 集成测试组合包",
+        version: "1.0.0",
+        payload: {
+          items: [
+            { slug: siteSlug, kind: "site-pack" },
+            { slug: searchSlug, kind: "search-pack" },
+          ],
+        },
+      },
+    });
+    expect(bundleRes.statusCode).toBe(201);
+    const bundleSlug = bundleRes.json().slug as string;
+    expect(bundleRes.json().status).toBe("published");
+    expect(bundleRes.json().summary.bundleItemCount).toBe(2);
+
+    // 详情返回成员解析与 ready 标记
+    const detail = await app.inject({ method: "GET", url: `/api/plugins/${encodeURIComponent(bundleSlug)}` });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().plugin.bundleReady).toBe(true);
+    expect(detail.json().plugin.bundleItems).toHaveLength(2);
+    expect(detail.json().plugin.bundleItems.every((m: { available: boolean }) => m.available)).toBe(true);
+
+    // 一次安装：聚合 applied.bundleItems，成员站点真实落库且幂等
+    const install = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(bundleSlug)}/install?anonId=bundle-api-user`,
+    });
+    expect(install.statusCode).toBe(200);
+    expect(install.json().applied.bundleItems).toHaveLength(2);
+    expect(install.json().applied.sitesAdded).toBe(1);
+    const installAgain = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(bundleSlug)}/install?anonId=bundle-api-user`,
+    });
+    expect(installAgain.json().applied.sitesAdded).toBe(0);
+    expect(installAgain.json().alreadyInstalled).toBe(true);
+
+    // 成员被下架：详情 ready=false，新用户安装被拒绝
+    await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(siteSlug)}/review`,
+      payload: { action: "delist", note: "组合包失效演练" },
+    });
+    const brokenDetail = await app.inject({ method: "GET", url: `/api/plugins/${encodeURIComponent(bundleSlug)}` });
+    expect(brokenDetail.json().plugin.bundleReady).toBe(false);
+    const blockedInstall = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(bundleSlug)}/install?anonId=bundle-api-user-2`,
+    });
+    expect(blockedInstall.statusCode).toBe(400);
+    expect(blockedInstall.json().error).toContain("组合包暂不可安装");
+  });
 });
 
 

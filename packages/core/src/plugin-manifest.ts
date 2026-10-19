@@ -14,8 +14,17 @@
 
 export const PLUGIN_MANIFEST_VERSION = 1
 
-export type PluginKind = 'site-pack' | 'workspace-preset' | 'theme' | 'search-pack'
-export const PLUGIN_KINDS: readonly PluginKind[] = ['site-pack', 'workspace-preset', 'theme', 'search-pack']
+export type PluginKind = 'site-pack' | 'workspace-preset' | 'theme' | 'search-pack' | 'bundle'
+export const PLUGIN_KINDS: readonly PluginKind[] = ['site-pack', 'workspace-preset', 'theme', 'search-pack', 'bundle']
+
+/**
+ * 组合包允许引用的成员类型。
+ *
+ * 刻意排除 `bundle`（禁止嵌套/环）与 `workspace-preset`（必须由用户显式选择
+ * 追加或覆盖，不能让组合包替用户决定工作台布局）。
+ */
+export type BundleItemKind = 'site-pack' | 'search-pack' | 'theme'
+export const BUNDLE_ITEM_KINDS: readonly BundleItemKind[] = ['site-pack', 'search-pack', 'theme']
 
 export type PluginStatus = 'pending' | 'published' | 'rejected' | 'delisted' | 'quarantined'
 
@@ -46,6 +55,8 @@ export const PLUGIN_LIMITS = {
   maxSearchEngines: 30,
   maxEngineName: 40,
   maxEnginePrefix: 16,
+  maxBundleItems: 12,
+  maxBundleSlug: 80,
 } as const
 
 export type ThemeAccent = 'violet' | 'emerald' | 'amber' | 'rose'
@@ -133,6 +144,17 @@ export interface SearchPackPayload {
   engines: SearchEngineItem[]
 }
 
+export interface BundleItem {
+  /** 已上架插件的稳定 slug */
+  slug: string
+  /** 成员类型；服务端会再次校验与真实插件类型一致 */
+  kind: BundleItemKind
+}
+
+export interface BundlePayload {
+  items: BundleItem[]
+}
+
 export interface PluginManifest {
   manifestVersion: typeof PLUGIN_MANIFEST_VERSION
   kind: PluginKind
@@ -144,7 +166,7 @@ export interface PluginManifest {
   license?: string
   version: string
   tags?: string[]
-  payload: SitePackPayload | WorkspacePresetPayload | ThemePayload | SearchPackPayload
+  payload: SitePackPayload | WorkspacePresetPayload | ThemePayload | SearchPackPayload | BundlePayload
 }
 
 /** 列表卡片 / 安装确认弹窗用的影响摘要（由已校验的 manifest 派生） */
@@ -162,6 +184,8 @@ export interface PluginSummary {
   themeTokenCount: number
   engineCount: number
   enginePrefixes: string[]
+  bundleItemCount: number
+  bundleKinds: BundleItemKind[]
 }
 
 export type PluginManifestValidation =
@@ -177,7 +201,9 @@ export function pluginKindLabel(kind: PluginKind): string {
       ? '工作台预设'
       : kind === 'theme'
         ? '主题'
-        : '搜索引擎包'
+        : kind === 'search-pack'
+          ? '搜索引擎包'
+          : '组合包'
 }
 
 /* ------------------------------------------------------------------ *
@@ -593,6 +619,50 @@ function validateSearchPackPayload(payload: Record<string, unknown>, errors: str
   return { engines }
 }
 
+function validateBundlePayload(payload: Record<string, unknown>, errors: string[]): BundlePayload {
+  const items: BundleItem[] = []
+  const rawItems = payload.items
+  if (!Array.isArray(rawItems)) {
+    errors.push('payload.items 必须是数组')
+    return { items }
+  }
+  if (rawItems.length === 0) {
+    errors.push('payload.items 至少需要 1 个成员插件')
+    return { items }
+  }
+  if (rawItems.length > PLUGIN_LIMITS.maxBundleItems) {
+    errors.push(`payload.items 最多 ${PLUGIN_LIMITS.maxBundleItems} 个成员插件`)
+    return { items }
+  }
+  const seen = new Set<string>()
+  for (let i = 0; i < rawItems.length; i++) {
+    const entry = rawItems[i]
+    const path = `payload.items[${i}]`
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      errors.push(`${path} 必须是对象`)
+      continue
+    }
+    const record = entry as Record<string, unknown>
+    const slug = readString(record.slug, PLUGIN_LIMITS.maxBundleSlug, `${path}.slug`, errors, { required: true })
+    const kind = readString(record.kind, 40, `${path}.kind`, errors, { required: true })
+    if (slug && /[\s/\\?#]/.test(slug)) {
+      errors.push(`${path}.slug 不能包含空白或 / \\ ? # 字符`)
+    }
+    if (kind && !(BUNDLE_ITEM_KINDS as readonly string[]).includes(kind)) {
+      errors.push(`${path}.kind 必须是 ${BUNDLE_ITEM_KINDS.join(' / ')} 之一（禁止嵌套组合包或工作台预设）`)
+    }
+    if (!slug || !kind || !(BUNDLE_ITEM_KINDS as readonly string[]).includes(kind)) continue
+    const key = slug.toLowerCase()
+    if (seen.has(key)) {
+      errors.push(`${path}.slug 重复：${slug}`)
+      continue
+    }
+    seen.add(key)
+    items.push({ slug, kind: kind as BundleItemKind })
+  }
+  return { items }
+}
+
 export function validateAndCleanPluginManifest(input: unknown): PluginManifestValidation {
   const errors: string[] = []
   const warnings: string[] = []
@@ -652,15 +722,17 @@ export function validateAndCleanPluginManifest(input: unknown): PluginManifestVa
   }
   const payloadRecord = raw.payload as Record<string, unknown>
 
-  let payload: SitePackPayload | WorkspacePresetPayload | ThemePayload | SearchPackPayload
+  let payload: SitePackPayload | WorkspacePresetPayload | ThemePayload | SearchPackPayload | BundlePayload
   if (kind === 'site-pack') {
     payload = validateSitePackPayload(payloadRecord, errors, warnings)
   } else if (kind === 'workspace-preset') {
     payload = validateWorkspacePresetPayload(payloadRecord, errors)
   } else if (kind === 'theme') {
     payload = validateThemePayload(payloadRecord, errors)
-  } else {
+  } else if (kind === 'search-pack') {
     payload = validateSearchPackPayload(payloadRecord, errors)
+  } else {
+    payload = validateBundlePayload(payloadRecord, errors)
   }
 
   if (errors.length > 0) return { ok: false, errors }
@@ -710,6 +782,8 @@ export function summarizePluginManifest(manifest: PluginManifest): PluginSummary
     themeTokenCount: 0,
     engineCount: 0,
     enginePrefixes: [],
+    bundleItemCount: 0,
+    bundleKinds: [],
   }
   const tags = new Set<string>()
   for (const tag of manifest.tags ?? []) tags.add(tag.toLowerCase())
@@ -747,10 +821,14 @@ export function summarizePluginManifest(manifest: PluginManifest): PluginSummary
     const payload = manifest.payload as ThemePayload
     summary.accent = payload.accent
     summary.themeTokenCount = payload.tokens ? Object.keys(payload.tokens).length : 0
-  } else {
+  } else if (manifest.kind === 'search-pack') {
     const payload = manifest.payload as SearchPackPayload
     summary.engineCount = payload.engines?.length ?? 0
     summary.enginePrefixes = (payload.engines ?? []).map((e) => e.prefix)
+  } else {
+    const payload = manifest.payload as BundlePayload
+    summary.bundleItemCount = payload.items?.length ?? 0
+    summary.bundleKinds = [...new Set((payload.items ?? []).map((item) => item.kind))]
   }
   summary.uniqueTagCount = tags.size
   return summary
@@ -820,6 +898,9 @@ export interface PluginDiffResult {
   // search-pack
   enginesAdded: string[]
   enginesRemoved: string[]
+  // bundle
+  bundleItemsAdded: string[]
+  bundleItemsRemoved: string[]
 }
 
 /** 对比两个插件清单，计算升级变更差异 */
@@ -854,6 +935,8 @@ export function diffPluginManifests(base: PluginManifest, target: PluginManifest
     tokensModifiedCount: 0,
     enginesAdded: [],
     enginesRemoved: [],
+    bundleItemsAdded: [],
+    bundleItemsRemoved: [],
   }
 
   if (nameChanged || descriptionChanged || base.version !== target.version || base.kind !== target.kind) {
@@ -1020,6 +1103,26 @@ export function diffPluginManifests(base: PluginManifest, target: PluginManifest
     for (const e of basePayload.engines ?? []) {
       if (!targetPrefixes.has(e.prefix)) {
         result.enginesRemoved.push(e.name || e.prefix)
+        result.hasChanges = true
+      }
+    }
+  } else if (kind === 'bundle' && base.kind === 'bundle') {
+    const basePayload = base.payload as BundlePayload
+    const targetPayload = target.payload as BundlePayload
+    const baseItems = new Map((basePayload.items ?? []).map((item) => [item.slug, item.kind]))
+    const targetItems = new Map((targetPayload.items ?? []).map((item) => [item.slug, item.kind]))
+
+    for (const [slug, itemKind] of targetItems) {
+      const previousKind = baseItems.get(slug)
+      if (previousKind !== itemKind) {
+        result.bundleItemsAdded.push(slug)
+        if (previousKind) result.bundleItemsRemoved.push(slug)
+        result.hasChanges = true
+      }
+    }
+    for (const slug of baseItems.keys()) {
+      if (!targetItems.has(slug)) {
+        result.bundleItemsRemoved.push(slug)
         result.hasChanges = true
       }
     }

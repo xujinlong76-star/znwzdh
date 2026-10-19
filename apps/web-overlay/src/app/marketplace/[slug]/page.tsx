@@ -29,6 +29,7 @@ import {
   comparePluginVersions,
 } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
+import { KIND_ICONS, KIND_TONES } from '@/lib/plugins/kind-meta'
 import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
 import { PluginReportModal } from '@/components/plugins/plugin-report-modal'
 import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
@@ -80,6 +81,7 @@ import {
   AlertTriangle,
   Upload,
   Search,
+  Boxes,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -182,6 +184,24 @@ export default function PluginDetailPage({
 
   // D1 更新链路：解析「安装 / 更新 / 已安装」动作（已安装版本 < 市场版本 → 可更新）
   const installAction = plugin ? resolveInstallAction(plugin.installedVersion, plugin.version) : 'install'
+
+  // F4 组合包：任一成员失效即暂停安装（服务端同样 fail closed；卸载不受影响）
+  const bundleBlocked = plugin?.kind === 'bundle' && plugin.bundleReady === false
+
+  // 组合包成员影响汇总（仅统计当前可用成员；失效成员单独在成员清单里标注）
+  const bundleTotals =
+    plugin?.kind === 'bundle'
+      ? (plugin.bundleItems ?? []).reduce(
+          (acc, item) => {
+            acc.sites += item.summary?.siteCount ?? 0
+            acc.categories += item.summary?.categoryCount ?? 0
+            acc.engines += item.summary?.engineCount ?? 0
+            acc.tokens += item.summary?.themeTokenCount ?? 0
+            return acc
+          },
+          { sites: 0, categories: 0, engines: 0, tokens: 0 },
+        )
+      : null
 
   // D4 分享深链：?install=1 落地即弹安装确认（尚未安装时；仅处理一次，
   // 避免星标等后续状态刷新触发重弹打扰）
@@ -422,7 +442,8 @@ export default function PluginDetailPage({
                     plugin.kind === 'site-pack' && 'text-sky-600 dark:text-sky-400 bg-sky-500/5',
                     plugin.kind === 'workspace-preset' && 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/5',
                     plugin.kind === 'theme' && 'text-violet-600 dark:text-violet-400 bg-violet-500/5',
-                    plugin.kind === 'search-pack' && 'text-amber-600 dark:text-amber-400 bg-amber-500/5'
+                    plugin.kind === 'search-pack' && 'text-amber-600 dark:text-amber-400 bg-amber-500/5',
+                    plugin.kind === 'bundle' && 'text-amber-600 dark:text-amber-400 bg-amber-500/5'
                   )}
                 >
                   {pluginKindLabel(plugin.kind)}
@@ -567,6 +588,12 @@ export default function PluginDetailPage({
 
               {/* 安装 / 更新 / 卸载主要按钮 */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+                {bundleBlocked && !plugin.installed && (
+                  <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-[11px] text-destructive flex items-start gap-1.5 max-w-xs">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>组合包成员已失效，安装已暂停；可查看下方「影响评估」中的成员明细。</span>
+                  </div>
+                )}
                 {plugin.installed ? (
                   installAction === 'update' ? (
                     <>
@@ -576,7 +603,8 @@ export default function PluginDetailPage({
                           setModalMode('upgrade')
                           setInstallModalOpen(true)
                         }}
-                        className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all shadow-sm"
+                        disabled={bundleBlocked}
+                        className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Sparkles className="w-4 h-4 text-amber-300" />
                         <span>平滑升级到 v{plugin.version}</span>
@@ -614,10 +642,11 @@ export default function PluginDetailPage({
                       setModalMode('install')
                       setInstallModalOpen(true)
                     }}
-                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all shadow-sm"
+                    disabled={bundleBlocked}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Download className="w-4 h-4" />
-                    <span>立即安装该插件</span>
+                    <span>{bundleBlocked ? '组合包暂不可安装' : '立即安装该插件'}</span>
                   </button>
                 )}
               </div>
@@ -1042,6 +1071,90 @@ export default function PluginDetailPage({
                   </div>
                 </div>
               )}
+
+              {/* bundle 组合包成员清单 */}
+              {plugin.kind === 'bundle' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <Boxes className="w-4 h-4 text-amber-500" />
+                      <span>
+                        组合包成员 ({summary?.bundleItemCount ?? plugin.bundleItems?.length ?? 0})
+                      </span>
+                    </h3>
+                    <span className="text-xs text-muted-foreground">一次安装，按清单顺序复用市场安装管道</span>
+                  </div>
+
+                  {plugin.bundleReady === false && (
+                    <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 flex items-start gap-2 text-xs text-destructive">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>
+                        部分成员当前不可用（下架/隔离/删除或类型变更），组合包已暂停安装；卸载仅解除组合关系，不会级联移除成员。
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {(plugin.bundleItems ?? []).map((item) => {
+                      const MemberIcon = (KIND_ICONS as Record<string, typeof Boxes>)[item.kind] ?? Boxes
+                      const memberTone = (KIND_TONES as Record<string, string>)[item.kind] ?? ''
+                      const metric = item.summary
+                        ? item.kind === 'site-pack'
+                          ? `${item.summary.siteCount ?? 0} 个站点 · ${item.summary.categoryCount ?? 0} 个类目`
+                          : item.kind === 'search-pack'
+                            ? `${item.summary.engineCount ?? 0} 个搜索引擎`
+                            : `${item.summary.themeTokenCount ?? 0} 项主题变量`
+                        : null
+                      const body = (
+                        <>
+                          <div className="flex items-center justify-between gap-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {item.icon ? (
+                                <span className="text-lg shrink-0">{item.icon}</span>
+                              ) : (
+                                <MemberIcon className="w-4 h-4 shrink-0 text-muted-foreground" />
+                              )}
+                              <span className="text-sm font-semibold text-foreground truncate">
+                                {item.name ?? item.slug}
+                              </span>
+                            </div>
+                            <Badge variant="outline" className={cn('text-[10px] shrink-0', memberTone)}>
+                              {pluginKindLabel(item.kind as Parameters<typeof pluginKindLabel>[0])}
+                            </Badge>
+                          </div>
+                          {item.available ? (
+                            <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                              <span className="truncate">{metric}</span>
+                              <span className="font-mono shrink-0">v{item.version}</span>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-destructive flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              <span>{item.reason ?? '当前不可用'}</span>
+                            </p>
+                          )}
+                        </>
+                      )
+                      return item.available ? (
+                        <Link
+                          key={item.slug}
+                          href={`/marketplace/${encodeURIComponent(item.slug)}`}
+                          className="p-4 rounded-xl border border-border/70 bg-card/60 space-y-2 hover:border-primary/40 hover:bg-card transition-all"
+                        >
+                          {body}
+                        </Link>
+                      ) : (
+                        <div
+                          key={item.slug}
+                          className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-2"
+                        >
+                          {body}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1072,7 +1185,41 @@ export default function PluginDetailPage({
               className="rounded-2xl border border-border/70 bg-card/60 p-6 space-y-4"
             >
               <h3 className="text-sm font-semibold text-foreground">安装影响评估</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
+              {plugin.kind === 'bundle' && bundleTotals ? (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                    <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
+                      <span className="text-xl font-bold text-foreground block font-mono">
+                        {summary?.bundleItemCount ?? plugin.bundleItems?.length ?? 0}
+                      </span>
+                      <span className="text-xs text-muted-foreground">成员插件</span>
+                    </div>
+                    <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
+                      <span className="text-xl font-bold text-foreground block font-mono">
+                        {bundleTotals.sites}
+                      </span>
+                      <span className="text-xs text-muted-foreground">新增站点（可用成员）</span>
+                    </div>
+                    <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
+                      <span className="text-xl font-bold text-foreground block font-mono">
+                        {bundleTotals.engines}
+                      </span>
+                      <span className="text-xs text-muted-foreground">直达引擎（可用成员）</span>
+                    </div>
+                    <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
+                      <span className="text-xl font-bold text-foreground block font-mono">
+                        {bundleTotals.tokens}
+                      </span>
+                      <span className="text-xs text-muted-foreground">主题变量（需手动启用）</span>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    组合包不包含可执行代码，也不做级联卸载：站点/搜索引擎按等价 URL 去重增量导入；主题类成员仅登记安装，
+                    请在「已安装」页显式启用。
+                  </p>
+                </>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
                 <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
                   <span className="text-xl font-bold text-foreground block font-mono">
                     {summary?.siteCount ?? 0}
@@ -1104,6 +1251,7 @@ export default function PluginDetailPage({
                   <span className="text-xs text-muted-foreground">直达引擎</span>
                 </div>
               </div>
+              )}
 
               {summary?.enginePrefixes && summary.enginePrefixes.length > 0 && (
                 <div className="pt-2 space-y-1.5">

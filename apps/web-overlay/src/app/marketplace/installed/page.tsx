@@ -35,6 +35,7 @@ import {
 import { comparePluginVersions } from '@/lib/plugins/plugin-manifest'
 import {
   ArrowLeft,
+  Boxes,
   Check,
   ExternalLink,
   FolderKanban,
@@ -48,7 +49,7 @@ import {
   Trash2,
 } from 'lucide-react'
 
-type KindTab = 'all' | 'theme' | 'search-pack' | 'site-pack' | 'workspace-preset'
+type KindTab = 'all' | 'theme' | 'search-pack' | 'site-pack' | 'workspace-preset' | 'bundle'
 
 export default function InstalledPluginsPage() {
   const [items, setItems] = useState<HubPluginInstalledItem[]>([])
@@ -352,6 +353,7 @@ export default function InstalledPluginsPage() {
               { key: 'site-pack', label: '网址包', icon: FolderKanban },
               { key: 'theme', label: '主题', icon: Palette },
               { key: 'search-pack', label: '搜索引擎包', icon: Search },
+              { key: 'bundle', label: '组合包', icon: Boxes },
               { key: 'workspace-preset', label: '工作台', icon: LayoutDashboard },
             ] as const
           ).map((tab) => {

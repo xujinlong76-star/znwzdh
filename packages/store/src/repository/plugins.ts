@@ -3,9 +3,12 @@ import { randomUUID, createHash } from "node:crypto";
 import {
   canonicalizeUrl,
   comparePluginVersions,
+  summarizePluginManifest,
+  type BundlePayload,
   type PluginKind,
   type PluginManifest,
   type PluginStatus,
+  type PluginSummary,
   type SitePackPayload,
 } from "@navhub/core";
 import { slugify } from "./dialect.ts";
@@ -88,12 +91,37 @@ export function pluginOwnerKey(identity: string): string {
 
 export type PluginReviewAction = "approve" | "reject" | "delist";
 
+export interface PluginBundleInstallItem {
+  slug: string
+  kind: PluginKind
+  name: string
+  alreadyInstalled: boolean
+  sitesAdded: number
+  sitesSkipped: number
+  enginesAdded: number
+}
+
 export interface PluginInstallApplied {
   sitesAdded: number;
   sitesSkipped: number;
   categoriesCreated: number;
   createdSiteIds: string[];
   enginesAdded?: number;
+  /** bundle 安装时逐个成员的结果（非 bundle 为空） */
+  bundleItems?: PluginBundleInstallItem[];
+}
+
+export interface PluginBundleMember {
+  slug: string;
+  /** 组合包清单声明的类型（用于识别类型漂移） */
+  kind: string;
+  name: string | null;
+  icon: string | null;
+  version: string | null;
+  status: PluginStatus | "missing";
+  available: boolean;
+  reason?: string;
+  summary: PluginSummary | null;
 }
 
 export interface PluginInstallResult {
@@ -193,6 +221,98 @@ async function uniqueSlug(repo: Repository, seed: string): Promise<string> {
  * 注册表：发布 / 读取 / 列表 / 更新 / 审核
  * ------------------------------------------------------------------ */
 
+type BundleOwner = Pick<PluginRecord, "slug" | "kind" | "manifest">;
+
+/**
+ * 解析组合包成员的真实状态。
+ *
+ * 公开返回只暴露已上架成员的名称/图标/版本；未上架或缺失成员只回 slug + 原因，
+ * 避免把待审内容通过组合包侧面泄露。`available` 为 false 时安装会 fail closed。
+ */
+export async function getPluginBundleMembers(
+  repo: Repository,
+  plugin: BundleOwner,
+): Promise<PluginBundleMember[]> {
+  if (plugin.kind !== "bundle") return [];
+  const payload = plugin.manifest.payload as BundlePayload;
+  const members: PluginBundleMember[] = [];
+  for (const item of payload.items ?? []) {
+    const ref = await getPluginBySlug(repo, item.slug);
+    const selfReference = String(item.slug).toLowerCase() === plugin.slug.toLowerCase();
+    if (!ref) {
+      members.push({
+        slug: item.slug,
+        kind: item.kind,
+        name: null,
+        icon: null,
+        version: null,
+        status: "missing",
+        available: false,
+        reason: "引用的插件不存在",
+        summary: null,
+      });
+      continue;
+    }
+    const kindMatches = ref.kind === item.kind;
+    const nested = ref.kind === "bundle";
+    const publiclyVisible = ref.status === "published";
+    let reason: string | undefined;
+    if (selfReference) reason = "组合包不能引用自身";
+    else if (nested) reason = "禁止嵌套组合包";
+    else if (!kindMatches) reason = `声明类型 ${item.kind} 与实际类型 ${ref.kind} 不一致`;
+    else if (!publiclyVisible) reason = `插件状态为 ${ref.status}`;
+    const available = !reason && publiclyVisible;
+    members.push({
+      slug: item.slug,
+      kind: item.kind,
+      name: publiclyVisible ? ref.name : null,
+      icon: publiclyVisible ? ref.icon : null,
+      version: publiclyVisible ? ref.version : null,
+      status: ref.status,
+      available,
+      ...(reason ? { reason } : {}),
+      summary: available ? summarizePluginManifest(ref.manifest) : null,
+    });
+  }
+  return members;
+}
+
+/** 服务端引用校验：组合包只能引用已上架、类型一致、非嵌套的非自身插件。 */
+async function assertBundleManifestReferences(
+  repo: Repository,
+  manifest: PluginManifest,
+  slug: string,
+): Promise<void> {
+  if (manifest.kind !== "bundle") return;
+  const members = await getPluginBundleMembers(repo, { slug, kind: manifest.kind, manifest });
+  const blocked = members.filter((member) => !member.available);
+  if (blocked.length > 0) {
+    const detail = blocked
+      .map((member) => `${member.slug}（${member.reason ?? "不可用"}）`)
+      .join("；");
+    throw new Error(`组合包引用的成员不可用：${detail}`);
+  }
+}
+
+/** 安装前解析出成员记录；任何成员失效都拒绝整个组合包，避免半安装。 */
+async function resolveBundleMembers(repo: Repository, plugin: PluginRecord): Promise<PluginRecord[]> {
+  const members = await getPluginBundleMembers(repo, plugin);
+  const blocked = members.filter((member) => !member.available);
+  if (blocked.length > 0) {
+    const detail = blocked
+      .map((member) => `${member.slug}（${member.reason ?? "不可用"}）`)
+      .join("；");
+    throw new Error(`组合包暂不可安装：${detail}`);
+  }
+  const resolved: PluginRecord[] = [];
+  for (const member of members) {
+    const ref = await getPluginBySlug(repo, member.slug);
+    if (!ref) throw new Error(`组合包成员不存在：${member.slug}`);
+    resolved.push(ref);
+  }
+  return resolved;
+}
+
 export async function createPlugin(
   repo: Repository,
   input: PluginCreateInput,
@@ -207,6 +327,7 @@ export async function createPlugin(
     if (existing) throw new Error(`插件 slug 已存在：${input.slug}`);
   }
   const slug = input.slug ?? (await uniqueSlug(repo, manifest.name));
+  await assertBundleManifestReferences(repo, manifest, slug);
   const ownerIdentity = input.ownerIdentity?.trim().slice(0, 120) || null;
   const ownerKey = ownerIdentity ? pluginOwnerKey(ownerIdentity) : null;
   const featuredDefault = repo.db.dialect === "pg" ? "FALSE" : "0";
@@ -362,6 +483,10 @@ export async function updatePlugin(
 ): Promise<PluginRecord> {
   const existing = await getPluginBySlug(repo, slug);
   if (!existing) throw new Error(`插件不存在：${slug}`);
+  if (existing.kind !== manifest.kind) {
+    throw new Error(`插件类型不可变：当前为 ${existing.kind}，提交为 ${manifest.kind}`);
+  }
+  await assertBundleManifestReferences(repo, manifest, slug);
   await repo.run(
     `UPDATE plugins SET name = ?, description = ?, icon = ?, tags = ?, license = ?, homepage = ?,
        version = ?, manifest = ?, status = 'pending', review_note = NULL, reviewed_at = NULL,
@@ -409,6 +534,7 @@ export async function submitPluginVersion(
   if (existing.kind !== manifest.kind) {
     throw new Error(`插件类型不可变：当前为 ${existing.kind}，提交为 ${manifest.kind}`);
   }
+  await assertBundleManifestReferences(repo, manifest, slug);
   // pending/rejected 允许同版本修正（驳回后作者需要修复并重新提交同一版本）；
   // 已上架/已下架必须严格递增，避免覆盖已发布的版本历史快照。
   const cmp = comparePluginVersions(manifest.version, existing.version);
@@ -499,6 +625,10 @@ export async function reviewPlugin(
     status = "rejected";
   } else {
     status = "delisted";
+  }
+  // 上架前重新校验组合包引用：成员可能在待审期间被下架/隔离。
+  if (action === "approve") {
+    await assertBundleManifestReferences(repo, existing.manifest, slug);
   }
   const now = Date.now();
   const changelog = existing.pendingChangelog?.trim() || note || "审核通过并上架";
@@ -634,6 +764,44 @@ export async function installPlugin(
   const who = identity.trim().slice(0, 120) || "anonymous";
   const applied: PluginInstallApplied = { sitesAdded: 0, sitesSkipped: 0, categoriesCreated: 0, createdSiteIds: [] };
 
+  if (plugin.kind === "bundle") {
+    // 单层组合包：先全量预检，再按清单顺序复用 installPlugin。
+    // 不在同一事务里包住多个成员（site-pack 自身使用事务）；预检后失败只会留下
+    // 已成功的幂等安装，重试可补齐，绝不回滚/删除用户已有数据。
+    const members = await resolveBundleMembers(repo, plugin);
+    const bundleItems: PluginBundleInstallItem[] = [];
+    const completed: string[] = [];
+    for (const member of members) {
+      try {
+        const result = await installPlugin(repo, member.slug, who, actor);
+        const memberApplied = result.applied;
+        applied.sitesAdded += memberApplied.sitesAdded;
+        applied.sitesSkipped += memberApplied.sitesSkipped;
+        applied.categoriesCreated += memberApplied.categoriesCreated;
+        applied.createdSiteIds.push(...memberApplied.createdSiteIds);
+        const enginesAdded = memberApplied.enginesAdded ?? 0;
+        applied.enginesAdded = (applied.enginesAdded ?? 0) + enginesAdded;
+        bundleItems.push({
+          slug: member.slug,
+          kind: member.kind,
+          name: member.name,
+          alreadyInstalled: result.alreadyInstalled,
+          sitesAdded: memberApplied.sitesAdded,
+          sitesSkipped: memberApplied.sitesSkipped,
+          enginesAdded,
+        });
+        completed.push(member.slug);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const done = completed.length > 0 ? completed.join("、") : "无";
+        throw new Error(
+          `组合包安装中断：${message}。已完成成员：${done}；重试会幂等补全，不会重复计数。`,
+        );
+      }
+    }
+    applied.bundleItems = bundleItems;
+  }
+
   if (plugin.kind === "site-pack") {
     const payload = plugin.manifest.payload as SitePackPayload;
     await repo.withTransaction(async () => {
@@ -742,6 +910,7 @@ export async function uninstallPlugin(
     return { removed: false, removedSites: 0, plugin };
   }
   let removedSites = 0;
+  // 组合包只解绑自身，不级联卸载成员，也不删除成员带来的站点/主题/预设。
   if (options.removeSites && plugin.kind === "site-pack") {
     // 只软删「来源仍是该插件」的站点（用户改过的来源已变，不会被误伤）；进回收站可恢复
     const rows = await repo.raw("SELECT id FROM sites WHERE source = ? AND deleted_at IS NULL", [`plugin:${slug}`]);
@@ -912,6 +1081,7 @@ export interface PluginTelemetryMetrics {
     workspacePreset: number;
     theme: number;
     searchPack: number;
+    bundle: number;
   };
   topInstalled: Array<{
     id: string;
@@ -938,7 +1108,8 @@ export async function getPluginTelemetry(repo: Repository): Promise<PluginTeleme
       SUM(CASE WHEN kind = 'site-pack' AND status = 'published' THEN 1 ELSE 0 END) AS site_packs,
       SUM(CASE WHEN kind = 'workspace-preset' AND status = 'published' THEN 1 ELSE 0 END) AS workspace_presets,
       SUM(CASE WHEN kind = 'theme' AND status = 'published' THEN 1 ELSE 0 END) AS themes,
-      SUM(CASE WHEN kind = 'search-pack' AND status = 'published' THEN 1 ELSE 0 END) AS search_packs
+      SUM(CASE WHEN kind = 'search-pack' AND status = 'published' THEN 1 ELSE 0 END) AS search_packs,
+      SUM(CASE WHEN kind = 'bundle' AND status = 'published' THEN 1 ELSE 0 END) AS bundles
     FROM plugins
   `);
 
@@ -971,6 +1142,7 @@ export async function getPluginTelemetry(repo: Repository): Promise<PluginTeleme
       workspacePreset: Number(stat.workspace_presets ?? 0),
       theme: Number(stat.themes ?? 0),
       searchPack: Number(stat.search_packs ?? 0),
+      bundle: Number(stat.bundles ?? 0),
     },
     topInstalled: topRows.map((r) => ({
       id: String(r.id),

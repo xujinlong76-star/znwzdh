@@ -836,6 +836,10 @@ export class Repository {
     return pluginsRepo.installPlugin(this, slug, identity, actor);
   }
 
+  async getPluginBundleMembers(plugin: pluginsRepo.PluginRecord): Promise<pluginsRepo.PluginBundleMember[]> {
+    return pluginsRepo.getPluginBundleMembers(this, plugin);
+  }
+
   async uninstallPlugin(slug: string, identity: string, options: { removeSites?: boolean } = {}, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginUninstallResult> {
     return pluginsRepo.uninstallPlugin(this, slug, identity, options, actor);
   }

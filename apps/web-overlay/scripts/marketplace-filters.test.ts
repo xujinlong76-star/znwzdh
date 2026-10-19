@@ -14,8 +14,13 @@ describe('marketplace filters URL contract', () => {
     })
   })
 
-  it('falls back to safe defaults for unknown or malformed values', () => {
-    expect(parseMarketplaceFilters('?kind=bundle&sort=hot&q=%20%20')).toEqual({
+  it('accepts bundle kind deep links and falls back for unknown values', () => {
+    expect(parseMarketplaceFilters('?kind=bundle')).toEqual({
+      kind: 'bundle',
+      q: '',
+      sort: DEFAULT_MARKETPLACE_SORT,
+    })
+    expect(parseMarketplaceFilters('?kind=script-pack&sort=hot&q=%20%20')).toEqual({
       kind: '',
       q: '',
       sort: DEFAULT_MARKETPLACE_SORT,

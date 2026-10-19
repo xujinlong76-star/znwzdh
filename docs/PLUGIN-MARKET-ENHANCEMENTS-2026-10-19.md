@@ -8,7 +8,7 @@
 
 ## 〇、实施状态（2026-10-19 落地批次）
 
-本批按「A 全做」落地了除 F4 之外的全部非暂缓项（D1-D4 已先期推送）：
+本批按「A 全做」落地了全部非暂缓项（D1-D4 已先期推送）；F4 在完成独立评审后，以受限单层范围落地：
 
 | 项 | 状态 | 实现口径 / 与原文的差异 |
 | :--- | :--- | :--- |
@@ -23,7 +23,7 @@
 | F2 分享短链 | 已落地 | `short_links` 表 + `POST /api/shortlinks` + `GET /api/shortlinks/:code` + Web `/s/[code]` 302；目标强制 `/marketplace/` 内部路径，保留 `?install=1` 深链。 |
 | 统一搜索 | 已落地 | ⌘K 搜索面板在站点混合召回之外并行召回插件（`/api/plugins/search`，最多 5 条），带类型/安装量/评分与「查看全部插件结果」出口。 |
 | 细节增强（第二批） | 已落地 | 筛选/排序/搜索与地址栏双向同步（补上统一搜索 `/marketplace?q=` 落点）；卡片新增安装深链分享；详情页选项卡支持 `?tab=reviews` 深链与键盘/读屏语义；评价支持分页加载与骨架态，移除评价列表中的内部 identity 展示；已安装管家按语义版本判定更新、更新置顶、生效主题升级后立即重放 token，并在卸载网址包时明确提示站点会同步软删除。 |
-| F4 组合插件 | 暂缓 | 依赖链/环检测与下架传播需要独立评审，按反目标继续不做。 |
+| F4 组合插件 | 已落地（受限单层） | 新 kind `bundle`，payload `{items:[{slug,kind}]}`，成员仅允许 `site-pack` / `search-pack` / `theme`（禁嵌套、禁工作台预设）；引用必须已上架、类型一致、非自身；安装前全量预检后按清单顺序复用同一条 install 管道；任一成员失效即 fail closed；卸载只解绑、不级联。核心/镜像契约、store、API 详情与安装、市场列表/详情/安装弹窗/已安装页/发布向导、MCP 类型枚举与 seed 样例同步更新。 |
 
 **测试与门禁**：store 插件套件 27 例、API 插件套件 20 例、代理身份签名/转发 32 例通过；`pnpm typecheck`、Web ESLint（0 error）、`check:overlay`、`check:extensions` 纳入本批门禁。所有新增 DDL 均为幂等迁移，SQLite / libSQL / PostgreSQL 三方言按现有 `driver.ts` + `migrate.ts` 机制补齐。
 

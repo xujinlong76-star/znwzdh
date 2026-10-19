@@ -18,6 +18,8 @@ import {
   Globe,
   LayoutGrid,
   Palette,
+  Search,
+  Boxes,
   Star,
   Download,
   Check,
@@ -170,6 +172,10 @@ export function PluginCard({
         return <LayoutGrid className="w-4 h-4 text-emerald-500" />
       case 'theme':
         return <Palette className="w-4 h-4 text-violet-500" />
+      case 'search-pack':
+        return <Search className="w-4 h-4 text-sky-500" />
+      case 'bundle':
+        return <Boxes className="w-4 h-4 text-amber-500" />
       default:
         return <Layers className="w-4 h-4 text-muted-foreground" />
     }
@@ -208,6 +214,40 @@ export function PluginCard({
         </span>
       )
     }
+    if (plugin.kind === 'search-pack') {
+      return (
+        <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+          <Search className="w-3 h-3 text-sky-500/70" />
+          <span>{summary.engineCount ?? 0} 个搜索引擎</span>
+          {Array.isArray(summary.enginePrefixes) && summary.enginePrefixes.length > 0 && (
+            <>
+              <span>·</span>
+              <span className="font-mono">{summary.enginePrefixes.slice(0, 3).join(' ')}</span>
+            </>
+          )}
+        </span>
+      )
+    }
+    if (plugin.kind === 'bundle') {
+      const kinds: string[] = Array.isArray(summary.bundleKinds) ? summary.bundleKinds : []
+      const kindLabels: Record<string, string> = {
+        'site-pack': '网址包',
+        'search-pack': '搜索包',
+        theme: '主题',
+      }
+      return (
+        <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+          <Boxes className="w-3 h-3 text-amber-500/70" />
+          <span>{summary.bundleItemCount ?? 0} 个成员</span>
+          {kinds.length > 0 && (
+            <>
+              <span>·</span>
+              <span>{kinds.map((k) => kindLabels[k] ?? k).join(' + ')}</span>
+            </>
+          )}
+        </span>
+      )
+    }
     return null
   }
 
@@ -226,7 +266,9 @@ export function PluginCard({
                 'text-[11px] font-medium px-2 py-0.5 border-border/60',
                 plugin.kind === 'site-pack' && 'text-sky-600 dark:text-sky-400 bg-sky-500/5',
                 plugin.kind === 'workspace-preset' && 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/5',
-                plugin.kind === 'theme' && 'text-violet-600 dark:text-violet-400 bg-violet-500/5'
+                plugin.kind === 'theme' && 'text-violet-600 dark:text-violet-400 bg-violet-500/5',
+                plugin.kind === 'search-pack' && 'text-sky-600 dark:text-sky-400 bg-sky-500/5',
+                plugin.kind === 'bundle' && 'text-amber-600 dark:text-amber-400 bg-amber-500/5'
               )}
             >
               {pluginKindLabel(plugin.kind)}

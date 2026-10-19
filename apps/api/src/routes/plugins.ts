@@ -575,6 +575,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
       const reviewStats = await ctx.repo.getPluginReviewStats(plugin.id);
       const myReview = identity ? await ctx.repo.getUserPluginReview(plugin.id, identity) : null;
+      const bundleItems = plugin.kind === "bundle" ? await ctx.repo.getPluginBundleMembers(plugin) : undefined;
 
       return {
         plugin: {
@@ -588,6 +589,12 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           reviewStats,
           myReview,
           isOwner,
+          ...(bundleItems
+            ? {
+                bundleItems,
+                bundleReady: bundleItems.every((member) => member.available),
+              }
+            : {}),
         },
         summary: summarizePluginManifest(plugin.manifest),
       };

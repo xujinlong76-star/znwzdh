@@ -110,9 +110,9 @@ interface CommandAction {
   handler: () => void
 }
 
-export function SpotlightModal() {
+export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean } = {}) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initialOpen)
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [hits, setHits] = useState<HubSearchHit[]>([])

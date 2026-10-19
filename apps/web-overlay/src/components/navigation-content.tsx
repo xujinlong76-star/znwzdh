@@ -8,7 +8,6 @@ import { Sidebar } from '@/components/sidebar'
 import { NavigationToolbar } from '@/components/navigation-toolbar'
 import { NavigationCategorySection } from '@/components/navigation-category-section'
 import { useHomeDIY } from '@/lib/modular/use-home-diy'
-
 import { Footer } from '@/components/footer'
 import { OnboardingCard } from '@/components/onboarding-card'
 import { useOverlayBehavior } from '@/components/ui/overlay'

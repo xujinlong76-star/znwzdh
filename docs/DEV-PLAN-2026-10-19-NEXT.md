@@ -73,8 +73,11 @@
 | 57e0c3c（CI 绿灯基线） | 1174 KB | `/admin/navigation` 1231 KB | `/hot` 1047 KB |
 | b8ae238（Stage 3–5 + Spotlight 懒加载） | 1160 KB | `/admin/navigation` 1217 KB | — |
 | 新预算（各路由 +5%） | 1233 KB | 1294 KB | — |
+| b7d157e（P1-1/P1-2 拆分后） | 1161 KB | `/admin/navigation` 1217 KB | — |
+| 本轮 P1-3（Spotlight/AI 网关） | 1152 KB | `/admin/navigation` 1182 KB | — |
+| 本轮棘轮预算（各路由 +5%） | 1210 KB | 1241 KB | — |
 
-结论：旧 637 KB 不是同一把尺子；新预算比 57e0c3c 实测高 5%，比当前实测高约 6%，只用于阻止继续增长。P1 的真实目标是先把 `/` 降到 ≤1.05 MB，而不是 600 KB。
+结论：旧 637 KB 不是同一把尺子；首轮预算比 57e0c3c 实测高 5%，只用于阻止继续增长。P1-3 后 `/` 实测 1152 KB（较 57e0c3c −22 KB，较 b7d157e −9 KB），最高路由 1182 KB（较 b7d157e −35 KB）；本轮已把预算棘轮到 1210/1241 KB。距离 P1 的 ≤1.05 MB 仍差约 77 KB：React/Next 地板约 500 KB，剩余大头是首页自身的图标/Radix/业务组件；后续优先继续拆全局浮层与首页 vendor，不为了数字牺牲交互。
 
 **风险**：低。唯一注意：同伴的 `node_modules` 换装目录（`.nm-partial-*` / `node_modules.partial-*`）存在时不要跑 build/测试。
 
@@ -82,10 +85,10 @@
 
 | 编号 | 任务 | 具体动作 | 验收 |
 | :--- | :--- | :--- | :--- |
-| P1-1 | `use-home-diy` 拆分 | 1111 行/47.8 KB。抽出 `home-diy-types.ts`、`home-diy-storage.ts`（读写/undo/redo）、`home-diy-io.ts`（导入导出/分享）、`home-diy-reducer.ts`（纯配置变换）；hook 只留状态编排 | 主文件 ≤600 行；现有 home-diy 测试全绿；行为不变 |
-| P1-2 | `navigation-content` 拆分 | 1036 行。拆 list/grid、filters、empty-state、selection-bar 四个子组件；筛选纯逻辑抽 `lib/` | 主文件 ≤500 行；相关单测 + E2E 不回归 |
-| P1-3 | 首屏懒加载核查 | 对首屏非必要的重模块做 `dynamic()`；重点核查 `ModularCanvas`、`HomeHeroDeck`、批量工具、全局 Provider/浮层（Spotlight、AI 抽屉、主题试用条）是否在首屏 chunk | `/` 实测下降：先把 `/` 降到 ≤1.05 MB，再冲 ≤900 KB；600 KB 在新口径下低于 React/Next 地板，不再作为硬目标，**不硬压** |
-| P1-4 | 预算下调 | 按真实产物把 `/` 预算从 1233 KB 逐步下调（≤1.05 MB → ≤900 KB）；同步文档目标 | `bundle-budget.json` 与文档一致，CI 绿 |
+| P1-1 | ✅ `use-home-diy` 拆分 | 已拆为 `home-diy-storage.ts`（587 行：共享状态、localStorage、迁移、#diy 分享 hash）与 `home-diy-io.ts`（127 行：导入导出/E2EE/云金库）；hook 保留编排并用 `export *` 保持导入路径 | 主文件 594 行（≤600）；home-diy 测试全绿；行为不变 |
+| P1-2 | ✅ `navigation-content` 拆分 | 实际拆为 `navigation-toolbar.tsx`（280 行）与 `navigation-category-section.tsx`（428 行）；批量操作坞、录入弹窗、主 landmark 仍留父组件 | 主文件 500 行；web 66 文件 726 测试全绿 |
+| P1-3 | 首屏懒加载核查 | ✅ 已完成首轮：Spotlight 45 KB 实现改为首次 Cmd/Ctrl+K 或 `open-spotlight` 事件才加载（`global-spotlight-gateway.tsx`）；AI 抽屉改为首次 Cmd/Ctrl+J 或 `open-ai-copilot` 事件才加载（`global-ai-gateway.tsx`）；theme-runtime 动态导入实测无收益，保留静态。`ModularCanvas`/`HomeHeroDeck`/批量工具此前已动态化 | `/` 1152 KB、最高路由 1182 KB；≤1.05 MB 仍差 ~77 KB，继续但不硬压 |
+| P1-4 | 预算下调 | ✅ 本轮按 P1-3 实测将 `/` 预算 1233 → 1210 KB、最高路由 1294 → 1241 KB；保留 ≤1.05 MB / ≤900 KB 为后续目标 | `bundle-budget.json` 与文档一致，CI 绿 |
 
 **风险**：中。首页是核心 UX；用「纯重构 + 现有测试/E2E 兜底」控制，不做行为变更。回滚粒度到组件/文件。
 

@@ -26,6 +26,74 @@ export interface SeedPluginDef {
 export function seedPluginDefs(): SeedPluginDef[] {
   return [
     {
+      slug: "dev-search-arsenal",
+      status: "published",
+      manifest: {
+        manifestVersion: 1,
+        kind: "search-pack",
+        name: "极客开发者搜索引擎包",
+        description:
+          "主流技术社区与权威文档快捷直达引擎包：支持在主搜索框以 !gh、!npm、!mdn、!so、!dd、!caniuse 等快捷前缀跨库检索，极客开发必备。",
+        icon: "🔍",
+        author: "NavHub 官方",
+        license: "MIT",
+        version: "1.0.0",
+        tags: ["搜索", "极客", "GitHub", "npm", "MDN", "工具"],
+        payload: {
+          engines: [
+            {
+              id: "github",
+              name: "GitHub",
+              prefix: "!gh",
+              searchUrl: "https://github.com/search?q={q}",
+              description: "全球最大代码托管平台，检索开源项目、代码与 Issue",
+              icon: "https://github.githubassets.com/favicons/favicon.svg",
+            },
+            {
+              id: "npm",
+              name: "npm",
+              prefix: "!npm",
+              searchUrl: "https://www.npmjs.com/search?q={q}",
+              description: "JavaScript / TypeScript 依赖包检索",
+              icon: "https://static-production.npmjs.com/b0f1a8318363185cc2ea6a400e32622c.png",
+            },
+            {
+              id: "mdn",
+              name: "MDN Web Docs",
+              prefix: "!mdn",
+              searchUrl: "https://developer.mozilla.org/zh-CN/search?q={q}",
+              description: "权威 Web 技术规范、API 文档与参考手册",
+              icon: "https://developer.mozilla.org/favicon-48x48.png",
+            },
+            {
+              id: "stackoverflow",
+              name: "Stack Overflow",
+              prefix: "!so",
+              searchUrl: "https://stackoverflow.com/search?q={q}",
+              description: "全球程序员问答社区，疑难 Bug 与方案直达",
+              icon: "https://cdn.sstatic.net/Sites/stackoverflow/Img/favicon.ico",
+            },
+            {
+              id: "devdocs",
+              name: "DevDocs",
+              prefix: "!dd",
+              searchUrl: "https://devdocs.io/#q={q}",
+              description: "全栈离线与在线 API 一站式快速手册",
+              icon: "https://devdocs.io/favicon.ico",
+            },
+            {
+              id: "caniuse",
+              name: "Can I use",
+              prefix: "!caniuse",
+              searchUrl: "https://caniuse.com/?search={q}",
+              description: "浏览器前沿特性与 HTML/CSS/JS 兼容度速查",
+              icon: "https://caniuse.com/img/favicon-128.png",
+            },
+          ],
+        },
+      },
+    },
+    {
       slug: "front-end-arsenal",
       status: "published",
       manifest: {

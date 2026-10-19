@@ -58,7 +58,7 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 24 个只读工具与 11 个写工具", () => {
+  it("包含 24 个只读工具与 13 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
@@ -87,7 +87,7 @@ describe("工具清单", () => {
       "search_sites",
       "synthesize_agent_tool",
     ]);
-    expect(write.length).toBe(11);
+    expect(write.length).toBe(13);
   });
 
   it("run_job 需要 admin 权限（触发全站扫描是危险操作）", () => {

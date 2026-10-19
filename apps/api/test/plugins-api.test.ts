@@ -70,7 +70,7 @@ describe("插件市场 API 全链路", () => {
 
     const created = await app.inject({
       method: "POST",
-      url: "/api/plugins",
+      url: "/api/plugins?anonId=author-1",
       payload: sitePack("集成测试包", [{ url: "https://plugin-a.example.com", title: "A" }]),
     });
     if (created.statusCode !== 201) {
@@ -339,6 +339,57 @@ describe("插件市场 API 全链路", () => {
     });
     expect(detailRes.statusCode).toBe(200);
     expect(detailRes.json().plugin.reviewStats?.reviewCount).toBe(1);
+  });
+
+  it("动态 SVG 徽章服务：正确渲染版本、安装量及 404 徽章", async () => {
+    const slug = await publishedSlug("评价测试包");
+
+    // 1. 默认 version 徽章
+    const vRes = await app.inject({
+      method: "GET",
+      url: `/api/plugins/${slug}/badge.svg`,
+    });
+    expect(vRes.statusCode).toBe(200);
+    expect(vRes.headers["content-type"]).toContain("image/svg+xml");
+    expect(vRes.body).toContain("<svg");
+    expect(vRes.body).toContain("v1.0.0");
+
+    // 2. installs 徽章
+    const iRes = await app.inject({
+      method: "GET",
+      url: `/api/plugins/${slug}/badge.svg?metric=installs&label=downloads`,
+    });
+    expect(iRes.statusCode).toBe(200);
+    expect(iRes.body).toContain("downloads");
+    expect(iRes.body).toContain("installs");
+
+    // 3. 不存在插件返回 404 错误徽章
+    const notFoundRes = await app.inject({
+      method: "GET",
+      url: "/api/plugins/non-existent-plugin-xyz/badge.svg",
+    });
+    expect(notFoundRes.statusCode).toBe(404);
+    expect(notFoundRes.body).toContain("not found");
+  });
+
+  it("URL 安全检测 check-urls：并发检测与异常防护", async () => {
+    const checkRes = await app.inject({
+      method: "POST",
+      url: "/api/plugins/check-urls",
+      payload: {
+        urls: [
+          "ftp://bad-protocol.com",
+          "invalid-url-format",
+        ],
+      },
+    });
+    expect(checkRes.statusCode).toBe(200);
+    const body = checkRes.json();
+    expect(body.success).toBe(true);
+    expect(body.total).toBe(2);
+    expect(body.okCount).toBe(0);
+    expect(body.failedCount).toBe(2);
+    expect(body.results[0].ok).toBe(false);
   });
 });
 

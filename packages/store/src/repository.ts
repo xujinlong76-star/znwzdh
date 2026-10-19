@@ -808,8 +808,24 @@ export class Repository {
     return pluginsRepo.listPlugins(this, filter);
   }
 
+  async listPluginsByOwner(identity: string, filter: Omit<pluginsRepo.PluginListFilter, "ownerIdentity" | "status" | "ownerKey"> = {}): Promise<{ items: pluginsRepo.PluginRecord[]; total: number }> {
+    return pluginsRepo.listPluginsByOwner(this, identity, filter);
+  }
+
+  async listPluginsByOwnerKey(ownerKey: string, filter: Omit<pluginsRepo.PluginListFilter, "ownerKey" | "status" | "ownerIdentity"> = {}): Promise<{ items: pluginsRepo.PluginRecord[]; total: number }> {
+    return pluginsRepo.listPluginsByOwnerKey(this, ownerKey, filter);
+  }
+
   async updatePlugin(slug: string, manifest: pluginsRepo.PluginManifest, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {
     return pluginsRepo.updatePlugin(this, slug, manifest, actor);
+  }
+
+  async submitPluginVersion(slug: string, manifest: pluginsRepo.PluginManifest, changelog: string | null, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {
+    return pluginsRepo.submitPluginVersion(this, slug, manifest, changelog, actor);
+  }
+
+  async setPluginFeatured(slug: string, featured: boolean, rank: number, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {
+    return pluginsRepo.setPluginFeatured(this, slug, featured, rank, actor);
   }
 
   async reviewPlugin(slug: string, action: pluginsRepo.PluginReviewAction, note: string | null = null, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {
@@ -836,7 +852,7 @@ export class Repository {
     return pluginsRepo.unstarPlugin(this, slug, identity);
   }
 
-  async reportPlugin(slug: string, input: { reason: string; identity?: string }, actor?: pluginsRepo.PluginActor): Promise<{ reportCount: number }> {
+  async reportPlugin(slug: string, input: { reason: string; identity?: string }, actor?: pluginsRepo.PluginActor): Promise<{ reportCount: number; status: pluginsRepo.PluginStatus; quarantined: boolean }> {
     return pluginsRepo.reportPlugin(this, slug, input, actor);
   }
 
@@ -879,7 +895,7 @@ export class Repository {
 
   async listPluginReviews(
     pluginId: string,
-    options?: { limit?: number; offset?: number },
+    options?: { limit?: number; offset?: number; includeHidden?: boolean },
   ): Promise<{ items: pluginsRepo.PluginReviewRecord[]; total: number }> {
     return pluginsRepo.listPluginReviews(this, pluginId, options);
   }
@@ -890,6 +906,34 @@ export class Repository {
 
   async getUserPluginReview(pluginId: string, identity: string): Promise<pluginsRepo.PluginReviewRecord | null> {
     return pluginsRepo.getUserPluginReview(this, pluginId, identity);
+  }
+
+  async listPluginReviewsForAdmin(options?: { status?: string; limit?: number; offset?: number }): Promise<{ items: pluginsRepo.PluginReviewAdminItem[]; total: number }> {
+    return pluginsRepo.listPluginReviewsForAdmin(this, options);
+  }
+
+  async moderatePluginReview(reviewId: string, action: "hide" | "restore", note: string | null = null, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginReviewRecord> {
+    return pluginsRepo.moderatePluginReview(this, reviewId, action, note, actor);
+  }
+
+  async reportPluginReview(slug: string, reviewId: string, reason: string, reporterIdentity: string | null, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginReviewRecord> {
+    return pluginsRepo.reportPluginReview(this, slug, reviewId, reason, reporterIdentity, actor);
+  }
+
+  async getPluginFunnel(days = 30): Promise<pluginsRepo.PluginFunnelMetrics> {
+    return pluginsRepo.getPluginFunnel(this, days);
+  }
+
+  async getPluginGovernanceAlerts(): Promise<pluginsRepo.PluginGovernanceAlert[]> {
+    return pluginsRepo.getPluginGovernanceAlerts(this);
+  }
+
+  async createShortLink(input: { target: string; pluginSlug?: string | null }): Promise<pluginsRepo.ShortLinkRecord> {
+    return pluginsRepo.createShortLink(this, input);
+  }
+
+  async resolveShortLink(code: string): Promise<pluginsRepo.ShortLinkRecord | null> {
+    return pluginsRepo.resolveShortLink(this, code);
   }
 
 

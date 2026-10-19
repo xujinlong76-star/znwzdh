@@ -19,9 +19,18 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList, CommandItem } from '@/registry/new-york/ui/command'
-import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork } from 'lucide-react'
+import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
-import { searchSites, reportClick, fetchSearchHistory, type HubSearchHit, type HubSiteRelation } from '@/lib/navhub-api'
+import {
+  searchSites,
+  searchPlugins,
+  reportClick,
+  fetchSearchHistory,
+  type HubSearchHit,
+  type HubSiteRelation,
+  type HubPluginSearchResponse,
+} from '@/lib/navhub-api'
+import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { recordOfflineVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
 import { planSearchPanel, type SearchPanelAction } from '@/lib/search-panel'
@@ -88,6 +97,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [query, setQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
   const [hits, setHits] = useState<HubSearchHit[]>([])
+  /** 统一搜索：同一关键词同时召回插件市场条目 */
+  const [pluginHits, setPluginHits] = useState<HubPluginSearchResponse | null>(null)
+  const [pluginLoading, setPluginLoading] = useState(false)
   const [loading, setLoading] = useState(false)
   const [degraded, setDegraded] = useState(false)
   const [semanticAvailable, setSemanticAvailable] = useState(true)
@@ -188,6 +200,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     // 新查询必须清空旧结果与旧提示：否则防抖 + 网络窗口里会拿上一个查询的结果
     // 冒充新查询的答案（还会带着上一个查询的「已放宽」横幅）
     setHits([])
+    setPluginHits(null)
+    setPluginLoading(false)
     setHasMore(false)
     setSuggestions([])
     setPopular([])
@@ -212,6 +226,19 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     debounceRef.current = setTimeout(() => {
       const controller = new AbortController()
       abortRef.current = controller
+      // 统一搜索：插件召回与站点召回并行，插件失败不影响站点结果
+      setPluginLoading(true)
+      void searchPlugins({ q, limit: 5 })
+        .then((res) => {
+          if (controller.signal.aborted || activeQueryRef.current !== q) return
+          setPluginHits(res)
+          setPluginLoading(false)
+        })
+        .catch(() => {
+          if (controller.signal.aborted || activeQueryRef.current !== q) return
+          setPluginHits(null)
+          setPluginLoading(false)
+        })
       void searchSites({ q, limit: 12, categoryId, identity }, controller.signal)
         .then((res) => {
           if (controller.signal.aborted || activeQueryRef.current !== q) return
@@ -313,10 +340,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
    * 避免「检索服务暂时不可用」和「未找到…」同时出现（自相矛盾），
    * 也保证零结果一定给出出口，并且不因命中微组件就隐瞒「导航检索为空」。
    */
+  const pluginItems = pluginHits?.items ?? []
   const panel = planSearchPanel({
-    loading,
+    loading: loading || pluginLoading,
     degraded,
-    hitCount: hits.length,
+    hitCount: hits.length + pluginItems.length,
     query,
     hasWidgetResult: Boolean(
       speculativeResult ||
@@ -608,6 +636,69 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           )}
                         </div>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* 统一搜索：插件市场命中（语义/关键词由 /api/plugins/search 返回） */}
+              {pluginItems.length > 0 && (
+                <div className="border-b border-border/60">
+                  <div className="px-3.5 py-2 flex items-center justify-between gap-2 bg-primary/5">
+                    <span className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                      <Store className="h-3.5 w-3.5" />
+                      插件市场
+                      {pluginLoading && <Loader2 className="h-3 w-3 animate-spin opacity-60" />}
+                    </span>
+                    <Link
+                      href={`/marketplace?q=${encodeURIComponent(query.trim())}`}
+                      onClick={() => setIsFocused(false)}
+                      className="text-[11px] text-primary/80 hover:text-primary hover:underline"
+                    >
+                      查看全部插件结果
+                    </Link>
+                  </div>
+                  <div className="p-1.5 space-y-1">
+                    {pluginItems.map((p) => (
+                      <Link
+                        key={p.id}
+                        href={`/marketplace/${encodeURIComponent(p.slug)}`}
+                        onClick={() => setIsFocused(false)}
+                        className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-accent/50 transition-colors"
+                      >
+                        <span className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
+                          <Store className="h-4 w-4 text-primary" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium truncate">
+                              <Highlighted text={p.name} query={query} />
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground shrink-0">
+                              {pluginKindLabel(p.kind)}
+                            </span>
+                          </span>
+                          {p.description && (
+                            <span className="block text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                              <Highlighted text={p.description} query={query} />
+                            </span>
+                          )}
+                        </span>
+                        <span className="flex items-center gap-2 text-[10px] text-muted-foreground shrink-0 font-mono">
+                          {(p.installCount ?? 0) > 0 && (
+                            <span className="inline-flex items-center gap-0.5">
+                              <Download className="h-3 w-3" />
+                              {p.installCount}
+                            </span>
+                          )}
+                          {(p.reviewCount ?? 0) > 0 && (
+                            <span className="inline-flex items-center gap-0.5 text-amber-500">
+                              <Star className="h-3 w-3 fill-amber-400" />
+                              {(p.ratingAvg ?? 0).toFixed(1)}
+                            </span>
+                          )}
+                          <ArrowRight className="h-3 w-3 opacity-40" />
+                        </span>
+                      </Link>
                     ))}
                   </div>
                 </div>

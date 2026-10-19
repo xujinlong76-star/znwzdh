@@ -26,6 +26,12 @@ export const FORWARD_REQUEST_HEADERS = [
   // 条件请求：透传 ETag 校验值，上游才能回 304 省掉重复传输
   'if-none-match',
   'authorization',
+  // 终端身份头：由 proxy 统一签名后转发（此前 header-only 身份会被丢弃，
+  // 导致 publish 等只带头的调用在开了 NAVHUB_IDENTITY_SECRET 后丢失归属）
+  'x-navhub-user-id',
+  'x-user-id',
+  'x-navhub-anon-id',
+  'x-anon-id',
 ] as const
 
 /** 可以回传给浏览器的响应头白名单（中枢会给出缓存/校验语义） */

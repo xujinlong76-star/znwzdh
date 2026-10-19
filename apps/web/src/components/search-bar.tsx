@@ -1,14 +1,15 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList, CommandGroup, CommandItem } from '@/registry/new-york/ui/command'
-import { Search, X } from 'lucide-react'
+import { Search, X, ExternalLink } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { highlightParts } from '@/lib/highlight'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
+import { matchSearchShortcut } from '@/lib/plugins/search-pack-runtime'
 
 interface SearchBarProps {
   navigationData: NavigationData
@@ -127,6 +128,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
   }
 
   const showResults = isFocused && searchQuery.trim().length > 0
+  const matchedShortcut = useMemo(() => matchSearchShortcut(searchQuery), [searchQuery])
 
   return (
     <div ref={searchRef} className="relative w-full max-w-lg mx-auto">
@@ -136,10 +138,17 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
           ref={inputRef}
           type="search"
           aria-label="搜索导航"
-          placeholder="搜索导航 (按 ⌘K 或 Ctrl+K 快速定位)..."
+          placeholder="搜索导航 (按 ⌘K 定位，支持 !gh, !npm, !mdn 直达)..."
           value={searchQuery}
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={() => setIsFocused(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && matchedShortcut.matched && matchedShortcut.directUrl) {
+              e.preventDefault()
+              window.open(matchedShortcut.directUrl, '_blank', 'noopener,noreferrer')
+              clearSearch()
+            }
+          }}
           className="pl-10 pr-20 h-10 sm:h-11 rounded-xl border-border/80 shadow-xs focus:shadow-md bg-background/80 backdrop-blur-xs transition-all duration-200"
         />
         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
@@ -162,6 +171,42 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
 
       {showResults && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[70vh] overflow-hidden">
+          {matchedShortcut.matched && matchedShortcut.engine && matchedShortcut.directUrl && (
+            <div className="p-2 border-b border-border/70 bg-primary/5">
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  window.open(matchedShortcut.directUrl, '_blank', 'noopener,noreferrer')
+                  clearSearch()
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    window.open(matchedShortcut.directUrl, '_blank', 'noopener,noreferrer')
+                    clearSearch()
+                  }
+                }}
+                className="flex items-center justify-between p-2.5 rounded-lg bg-background hover:bg-muted/80 border border-primary/20 hover:border-primary/40 cursor-pointer shadow-xs transition-all group"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-primary text-primary-foreground">
+                    {matchedShortcut.prefix}
+                  </span>
+                  <div className="text-xs sm:text-sm text-foreground truncate">
+                    <span>在 </span>
+                    <strong className="text-primary">{matchedShortcut.engine.name}</strong>
+                    <span> 搜索：</span>
+                    <span className="font-semibold text-primary underline decoration-primary/40">
+                      {matchedShortcut.keyword ? `"${matchedShortcut.keyword}"` : '(全部)'}
+                    </span>
+                  </div>
+                </div>
+                <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0 font-medium group-hover:text-foreground">
+                  回车直达 <ExternalLink className="w-3 h-3 text-primary" />
+                </span>
+              </div>
+            </div>
+          )}
           <Command className="border-0 shadow-none">
             <CommandList className="max-h-[70vh] overflow-y-auto">
               {searchResults.length === 0 ? (

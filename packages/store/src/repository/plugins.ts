@@ -1,12 +1,43 @@
 import type { Repository } from "../repository.ts";
 import { randomUUID, createHash } from "node:crypto";
-import { canonicalizeUrl, type PluginKind, type PluginManifest, type PluginStatus, type SitePackPayload } from "@navhub/core";
+import {
+  canonicalizeUrl,
+  comparePluginVersions,
+  type PluginKind,
+  type PluginManifest,
+  type PluginStatus,
+  type SitePackPayload,
+} from "@navhub/core";
 import { slugify } from "./dialect.ts";
-import type { PluginActor, PluginInstallRecord, PluginRecord, PluginVersionRecord, PluginReviewRecord, PluginReviewStats } from "./records.ts";
+import type {
+  PluginActor,
+  PluginFunnelDay,
+  PluginFunnelMetrics,
+  PluginGovernanceAlert,
+  PluginInstallRecord,
+  PluginRecord,
+  PluginReviewAdminItem,
+  PluginReviewRecord,
+  PluginReviewStats,
+  PluginVersionRecord,
+  ShortLinkRecord,
+} from "./records.ts";
 
 // 门面（repository.ts）通过 `pluginsRepo.` 命名空间引用插件域类型，保持域自包含
-export type { PluginActor, PluginInstallRecord, PluginRecord, PluginVersionRecord, PluginReviewRecord, PluginReviewStats } from "./records.ts";
-export type { PluginManifest } from "@navhub/core";
+export type {
+  PluginActor,
+  PluginFunnelDay,
+  PluginFunnelMetrics,
+  PluginGovernanceAlert,
+  PluginInstallRecord,
+  PluginRecord,
+  PluginReviewAdminItem,
+  PluginReviewRecord,
+  PluginReviewStats,
+  PluginVersionRecord,
+  ShortLinkRecord,
+} from "./records.ts";
+export type { PluginManifest, PluginStatus } from "@navhub/core";
 
 /**
  * 插件市场（Plugin Marketplace）存储层。
@@ -25,6 +56,8 @@ export interface PluginCreateInput {
   manifest: PluginManifest;
   author?: string | null;
   authorKind?: string | null;
+  /** 作者归属（发布者身份；seed/import 可空） */
+  ownerIdentity?: string | null;
   /** user（社区发布，默认待审）| import（本机导入，可直接上架）| seed */
   source?: string;
   status?: PluginStatus;
@@ -36,10 +69,21 @@ export interface PluginListFilter {
   status?: string;
   kind?: string;
   q?: string;
-  /** new（默认）| popular | stars | updated */
+  /** 编辑精选（仅 published 有意义） */
+  featured?: boolean;
+  /** 公开作者页 key */
+  ownerKey?: string;
+  /** 我的插件：内部归属身份 */
+  ownerIdentity?: string;
+  /** new（默认）| popular | stars | updated | rating */
   sort?: string;
   limit?: number;
   offset?: number;
+}
+
+/** 作者公开页 key：身份不可逆哈希，避免把匿名 id / userId 暴露在 URL 里 */
+export function pluginOwnerKey(identity: string): string {
+  return createHash("sha256").update("navhub:plugin-owner:" + identity).digest("hex").slice(0, 24);
 }
 
 export type PluginReviewAction = "approve" | "reject" | "delist";
@@ -49,6 +93,7 @@ export interface PluginInstallApplied {
   sitesSkipped: number;
   categoriesCreated: number;
   createdSiteIds: string[];
+  enginesAdded?: number;
 }
 
 export interface PluginInstallResult {
@@ -102,6 +147,8 @@ function rowToPlugin(row: Record<string, any>): PluginRecord {
     tags: Array.isArray(tagsRaw) ? tagsRaw.map(String) : [],
     author: row.author == null ? null : String(row.author),
     authorKind: row.author_kind == null ? null : String(row.author_kind),
+    ownerIdentity: row.owner_identity == null ? null : String(row.owner_identity),
+    ownerKey: row.owner_key == null ? null : String(row.owner_key),
     license: row.license == null ? null : String(row.license),
     homepage: row.homepage == null ? null : String(row.homepage),
     version: String(row.version ?? "0.0.0"),
@@ -109,10 +156,15 @@ function rowToPlugin(row: Record<string, any>): PluginRecord {
     status: String(row.status ?? "pending") as PluginStatus,
     reviewNote: row.review_note == null ? null : String(row.review_note),
     reviewedAt: row.reviewed_at == null ? null : Number(row.reviewed_at),
+    pendingChangelog: row.pending_changelog == null ? null : String(row.pending_changelog),
     source: String(row.source ?? "user"),
     installCount: Number(row.install_count ?? 0),
     starCount: Number(row.star_count ?? 0),
     reportCount: Number(row.report_count ?? 0),
+    featured: row.featured === true || Number(row.featured ?? 0) === 1,
+    featuredRank: Number(row.featured_rank ?? 0),
+    ratingAvg: Number(row.rating_avg ?? 0),
+    reviewCount: Number(row.review_count ?? 0),
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
     publishedAt: row.published_at == null ? null : Number(row.published_at),
@@ -155,12 +207,15 @@ export async function createPlugin(
     if (existing) throw new Error(`插件 slug 已存在：${input.slug}`);
   }
   const slug = input.slug ?? (await uniqueSlug(repo, manifest.name));
+  const ownerIdentity = input.ownerIdentity?.trim().slice(0, 120) || null;
+  const ownerKey = ownerIdentity ? pluginOwnerKey(ownerIdentity) : null;
+  const featuredDefault = repo.db.dialect === "pg" ? "FALSE" : "0";
   await repo.run(
     `INSERT INTO plugins (
-       id, slug, kind, name, description, icon, tags, author, author_kind, license, homepage,
-       version, manifest, status, review_note, reviewed_at, source,
-       install_count, star_count, report_count, created_at, updated_at, published_at
-     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,0,?,?,?)`,
+       id, slug, kind, name, description, icon, tags, author, author_kind, owner_identity, owner_key,
+       license, homepage, version, manifest, status, review_note, reviewed_at, source,
+       install_count, star_count, report_count, featured, featured_rank, created_at, updated_at, published_at
+     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,0,${featuredDefault},0,?,?,?)`,
     [
       randomUUID(),
       slug,
@@ -171,6 +226,8 @@ export async function createPlugin(
       JSON.stringify(manifest.tags ?? []),
       input.author ?? manifest.author ?? null,
       input.authorKind ?? null,
+      ownerIdentity,
+      ownerKey,
       manifest.license ?? null,
       manifest.homepage ?? null,
       manifest.version,
@@ -212,36 +269,85 @@ export async function listPlugins(
   const wheres: string[] = [];
   const params: unknown[] = [];
   if (filter.status) {
-    wheres.push("status = ?");
+    wheres.push("p.status = ?");
     params.push(filter.status);
   }
   if (filter.kind) {
-    wheres.push("kind = ?");
+    wheres.push("p.kind = ?");
     params.push(filter.kind);
   }
   if (filter.q) {
-    wheres.push("(name LIKE ? OR description LIKE ?)");
+    wheres.push("(p.name LIKE ? OR p.description LIKE ?)");
     const like = "%" + filter.q + "%";
     params.push(like, like);
   }
+  if (filter.featured !== undefined) {
+    const truthy = repo.db.dialect === "pg" ? "TRUE" : "1";
+    const falsy = repo.db.dialect === "pg" ? "FALSE" : "0";
+    wheres.push(`p.featured = ${filter.featured ? truthy : falsy}`);
+  }
+  if (filter.ownerKey) {
+    wheres.push("p.owner_key = ?");
+    params.push(filter.ownerKey);
+  }
+  if (filter.ownerIdentity) {
+    wheres.push("p.owner_identity = ?");
+    params.push(filter.ownerIdentity);
+  }
   const whereClause = wheres.length > 0 ? " WHERE " + wheres.join(" AND ") : "";
-  const countRow = (await repo.raw(`SELECT COUNT(*) AS cnt FROM plugins${whereClause}`, params))[0];
+  const countRow = (await repo.raw(`SELECT COUNT(*) AS cnt FROM plugins p${whereClause}`, params))[0];
   const total = Number(countRow?.cnt ?? 0);
   const limit = Math.min(100, Math.max(1, filter.limit ?? 24));
   const offset = Math.max(0, filter.offset ?? 0);
+  // 评分排序使用贝叶斯平滑（先验 3 条 3.5 星），避免 1 条 5 星压过大量 4.8 星。
+  const ratingOrder =
+    "CASE WHEN COALESCE(r.review_count, 0) > 0 THEN " +
+    "(COALESCE(r.avg_rating, 0) * r.review_count + 10.5) / (r.review_count + 3.0) ELSE 0 END DESC, " +
+    "p.install_count DESC, p.created_at DESC";
   const order =
     filter.sort === "popular"
-      ? "install_count DESC, star_count DESC, created_at DESC"
+      ? "p.install_count DESC, p.star_count DESC, p.created_at DESC"
       : filter.sort === "stars"
-        ? "star_count DESC, created_at DESC"
-        : filter.sort === "updated"
-          ? "updated_at DESC"
-          : "COALESCE(published_at, created_at) DESC, created_at DESC";
+        ? "p.star_count DESC, p.created_at DESC"
+        : filter.sort === "rating"
+          ? ratingOrder
+          : filter.sort === "featured"
+            ? "p.featured_rank DESC, COALESCE(p.published_at, p.created_at) DESC"
+            : filter.sort === "updated"
+              ? "p.updated_at DESC"
+              : filter.sort === "trending"
+              ? "(p.install_count * 3 + p.star_count * 5 - p.report_count * 10) DESC, COALESCE(p.published_at, p.created_at) DESC"
+              : "COALESCE(p.published_at, p.created_at) DESC, p.created_at DESC";
+  // 列表一次性带出评分聚合，避免前端/详情页 N+1；LEFT JOIN 只扫 visible 评价。
   const rows = await repo.raw(
-    `SELECT * FROM plugins${whereClause} ORDER BY ${order} LIMIT ? OFFSET ?`,
+    `SELECT p.*, COALESCE(r.avg_rating, 0) AS rating_avg, COALESCE(r.review_count, 0) AS review_count
+       FROM plugins p
+       LEFT JOIN (
+         SELECT plugin_id, AVG(rating) AS avg_rating, COUNT(*) AS review_count
+         FROM plugin_reviews WHERE status = 'visible' GROUP BY plugin_id
+       ) r ON r.plugin_id = p.id
+       ${whereClause} ORDER BY ${order} LIMIT ? OFFSET ?`,
     [...params, limit, offset],
   );
   return { items: rows.map(rowToPlugin), total };
+}
+
+/** 我的插件：按内部归属身份列出全部状态（供作者中心） */
+export async function listPluginsByOwner(
+  repo: Repository,
+  identity: string,
+  filter: Omit<PluginListFilter, "ownerIdentity" | "status" | "ownerKey"> = {},
+): Promise<{ items: PluginRecord[]; total: number }> {
+  return listPlugins(repo, { ...filter, ownerIdentity: identity });
+}
+
+/** 公开作者页：只列 published，按 ownerKey 聚合 */
+export async function listPluginsByOwnerKey(
+  repo: Repository,
+  ownerKey: string,
+  filter: Omit<PluginListFilter, "ownerKey" | "status" | "ownerIdentity"> = {},
+): Promise<{ items: PluginRecord[]; total: number }> {
+  return listPlugins(repo, { ...filter, ownerKey, status: "published" });
 }
 
 /**
@@ -259,7 +365,7 @@ export async function updatePlugin(
   await repo.run(
     `UPDATE plugins SET name = ?, description = ?, icon = ?, tags = ?, license = ?, homepage = ?,
        version = ?, manifest = ?, status = 'pending', review_note = NULL, reviewed_at = NULL,
-       published_at = NULL, updated_at = ?
+       pending_changelog = NULL, published_at = NULL, updated_at = ?
      WHERE slug = ?`,
     [
       manifest.name,
@@ -287,6 +393,92 @@ export async function updatePlugin(
   return updated;
 }
 
+/**
+ * 作者提交新版本：版本号必须严格递增，类型不可变；内容重新进入 pending 审核。
+ * 变更说明暂存在 plugins.pending_changelog，审核通过时写入版本历史。
+ */
+export async function submitPluginVersion(
+  repo: Repository,
+  slug: string,
+  manifest: PluginManifest,
+  changelog: string | null,
+  actor?: PluginActor,
+): Promise<PluginRecord> {
+  const existing = await getPluginBySlug(repo, slug);
+  if (!existing) throw new Error(`插件不存在：${slug}`);
+  if (existing.kind !== manifest.kind) {
+    throw new Error(`插件类型不可变：当前为 ${existing.kind}，提交为 ${manifest.kind}`);
+  }
+  // pending/rejected 允许同版本修正（驳回后作者需要修复并重新提交同一版本）；
+  // 已上架/已下架必须严格递增，避免覆盖已发布的版本历史快照。
+  const cmp = comparePluginVersions(manifest.version, existing.version);
+  const sameVersionAllowed = existing.status === "pending" || existing.status === "rejected";
+  if (cmp < 0 || (cmp === 0 && !sameVersionAllowed)) {
+    throw new Error(`新版本号必须大于当前版本 ${existing.version}`);
+  }
+  const now = Date.now();
+  await repo.run(
+    `UPDATE plugins SET name = ?, description = ?, icon = ?, tags = ?, license = ?, homepage = ?,
+       version = ?, manifest = ?, status = 'pending', review_note = NULL, reviewed_at = NULL,
+       pending_changelog = ?, published_at = NULL, updated_at = ?
+     WHERE slug = ?`,
+    [
+      manifest.name,
+      manifest.description,
+      manifest.icon ?? null,
+      JSON.stringify(manifest.tags ?? []),
+      manifest.license ?? null,
+      manifest.homepage ?? null,
+      manifest.version,
+      JSON.stringify(manifest),
+      changelog?.trim().slice(0, 2000) || null,
+      now,
+      slug,
+    ],
+  );
+  const updated = await getPluginBySlug(repo, slug);
+  if (!updated) throw new Error("提交版本后无法读回");
+  await repo.audit({
+    actor: actor?.actor ?? existing.ownerIdentity ?? existing.author ?? "anonymous",
+    actorKind: actor?.actorKind ?? "owner",
+    action: "plugin.version.submit",
+    target: slug,
+    diff: { from: existing.version, to: manifest.version, changelog: changelog?.trim().slice(0, 500) ?? null },
+    ip: actor?.ip,
+  });
+  return updated;
+}
+
+/** 编辑精选开关（管理台；featured 仅对 published 列表生效） */
+export async function setPluginFeatured(
+  repo: Repository,
+  slug: string,
+  featured: boolean,
+  rank: number,
+  actor?: PluginActor,
+): Promise<PluginRecord> {
+  const existing = await getPluginBySlug(repo, slug);
+  if (!existing) throw new Error(`插件不存在：${slug}`);
+  const truthy = repo.db.dialect === "pg" ? featured : featured ? 1 : 0;
+  await repo.run("UPDATE plugins SET featured = ?, featured_rank = ?, updated_at = ? WHERE slug = ?", [
+    truthy,
+    Math.max(0, Math.min(9999, Math.trunc(rank))),
+    Date.now(),
+    slug,
+  ]);
+  const updated = await getPluginBySlug(repo, slug);
+  if (!updated) throw new Error("更新精选后无法读回");
+  await repo.audit({
+    actor: actor?.actor ?? "admin",
+    actorKind: actor?.actorKind ?? "admin",
+    action: "plugin.featured",
+    target: slug,
+    diff: { featured, rank },
+    ip: actor?.ip,
+  });
+  return updated;
+}
+
 /** 审核动作：approve（pending|delisted → published）/ reject / delist */
 export async function reviewPlugin(
   repo: Repository,
@@ -299,8 +491,8 @@ export async function reviewPlugin(
   if (!existing) throw new Error(`插件不存在：${slug}`);
   let status: PluginStatus;
   if (action === "approve") {
-    if (existing.status !== "pending" && existing.status !== "delisted") {
-      throw new Error(`插件当前状态为 ${existing.status}，只有 pending/delisted 可以通过`);
+    if (existing.status !== "pending" && existing.status !== "delisted" && existing.status !== "quarantined") {
+      throw new Error(`插件当前状态为 ${existing.status}，只有 pending/delisted/quarantined 可以通过`);
     }
     status = "published";
   } else if (action === "reject") {
@@ -309,14 +501,15 @@ export async function reviewPlugin(
     status = "delisted";
   }
   const now = Date.now();
+  const changelog = existing.pendingChangelog?.trim() || note || "审核通过并上架";
   await repo.run(
-    "UPDATE plugins SET status = ?, review_note = ?, reviewed_at = ?, published_at = ?, updated_at = ? WHERE slug = ?",
+    "UPDATE plugins SET status = ?, review_note = ?, reviewed_at = ?, published_at = ?, pending_changelog = NULL, updated_at = ? WHERE slug = ?",
     [status, note, now, action === "approve" ? now : existing.publishedAt, now, slug],
   );
   const updated = await getPluginBySlug(repo, slug);
   if (!updated) throw new Error("审核后无法读回");
   if (action === "approve") {
-    await recordPluginVersion(repo, existing.id, existing.manifest, note || "审核通过并上架", now);
+    await recordPluginVersion(repo, existing.id, existing.manifest, changelog, now);
   }
   await repo.audit({
     actor: actor?.actor ?? "admin",
@@ -492,6 +685,11 @@ export async function installPlugin(
     });
   }
 
+  if (plugin.kind === "search-pack") {
+    const payload = plugin.manifest.payload as any;
+    applied.enginesAdded = Array.isArray(payload?.engines) ? payload.engines.length : 0;
+  }
+
   const now = Date.now();
   const existingInstall = await getPluginInstall(repo, plugin.id, who);
   const wasActive = !!existingInstall && existingInstall.removedAt === null;
@@ -625,25 +823,44 @@ export async function reportPlugin(
   slug: string,
   input: { reason: string; identity?: string },
   actor?: PluginActor,
-): Promise<{ reportCount: number }> {
+): Promise<{ reportCount: number; status: PluginStatus; quarantined: boolean }> {
   const plugin = await getPluginBySlug(repo, slug);
   if (!plugin) throw new Error(`插件不存在：${slug}`);
   const reason = input.reason.trim().slice(0, 500) || "（未填写理由）";
   const reportCount = plugin.reportCount + 1;
-  await repo.run("UPDATE plugins SET report_count = ? WHERE id = ?", [reportCount, plugin.id]);
+  const shouldQuarantine = reportCount >= 3 && plugin.status === "published";
+  const nextStatus: PluginStatus = shouldQuarantine ? "quarantined" : plugin.status;
+  const now = Date.now();
+
+  if (shouldQuarantine) {
+    await repo.run(
+      "UPDATE plugins SET report_count = ?, status = ?, review_note = ?, updated_at = ? WHERE id = ?",
+      [reportCount, nextStatus, `自动熔断隔离：累计举报达到 ${reportCount} 次（最近理由：${reason}）`, now, plugin.id],
+    );
+    await repo.audit({
+      actor: "system.quarantine",
+      actorKind: "system",
+      action: "plugin.auto_quarantine",
+      target: slug,
+      diff: { from: plugin.status, to: nextStatus, reportCount, reason },
+    });
+  } else {
+    await repo.run("UPDATE plugins SET report_count = ?, updated_at = ? WHERE id = ?", [reportCount, now, plugin.id]);
+  }
+
   await repo.recordEvent("plugin_report", {
     identity: input.identity,
-    meta: { slug, reason },
+    meta: { slug, reason, quarantined: shouldQuarantine },
   });
   await repo.audit({
     actor: actor?.actor ?? input.identity ?? "anonymous",
     actorKind: actor?.actorKind,
     action: "plugin.report",
     target: slug,
-    diff: { reason },
+    diff: { reason, reportCount, quarantined: shouldQuarantine },
     ip: actor?.ip,
   });
-  return { reportCount };
+  return { reportCount, status: nextStatus, quarantined: shouldQuarantine };
 }
 
 export async function hasUserStarredPlugin(
@@ -685,6 +902,7 @@ export interface PluginTelemetryMetrics {
   pendingCount: number;
   rejectedCount: number;
   delistedCount: number;
+  quarantinedCount: number;
   totalInstalls: number;
   activeInstalls: number;
   totalStars: number;
@@ -693,6 +911,7 @@ export interface PluginTelemetryMetrics {
     sitePack: number;
     workspacePreset: number;
     theme: number;
+    searchPack: number;
   };
   topInstalled: Array<{
     id: string;
@@ -713,11 +932,13 @@ export async function getPluginTelemetry(repo: Repository): Promise<PluginTeleme
       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
       SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
       SUM(CASE WHEN status = 'delisted' THEN 1 ELSE 0 END) AS delisted,
+      SUM(CASE WHEN status = 'quarantined' THEN 1 ELSE 0 END) AS quarantined,
       COALESCE(SUM(install_count), 0) AS total_installs,
       COALESCE(SUM(report_count), 0) AS total_reports,
       SUM(CASE WHEN kind = 'site-pack' AND status = 'published' THEN 1 ELSE 0 END) AS site_packs,
       SUM(CASE WHEN kind = 'workspace-preset' AND status = 'published' THEN 1 ELSE 0 END) AS workspace_presets,
-      SUM(CASE WHEN kind = 'theme' AND status = 'published' THEN 1 ELSE 0 END) AS themes
+      SUM(CASE WHEN kind = 'theme' AND status = 'published' THEN 1 ELSE 0 END) AS themes,
+      SUM(CASE WHEN kind = 'search-pack' AND status = 'published' THEN 1 ELSE 0 END) AS search_packs
     FROM plugins
   `);
 
@@ -740,6 +961,7 @@ export async function getPluginTelemetry(repo: Repository): Promise<PluginTeleme
     pendingCount: Number(stat.pending ?? 0),
     rejectedCount: Number(stat.rejected ?? 0),
     delistedCount: Number(stat.delisted ?? 0),
+    quarantinedCount: Number(stat.quarantined ?? 0),
     totalInstalls: Number(stat.total_installs ?? 0),
     activeInstalls: Number(activeRow?.cnt ?? 0),
     totalStars: Number(starRow?.cnt ?? 0),
@@ -748,6 +970,7 @@ export async function getPluginTelemetry(repo: Repository): Promise<PluginTeleme
       sitePack: Number(stat.site_packs ?? 0),
       workspacePreset: Number(stat.workspace_presets ?? 0),
       theme: Number(stat.themes ?? 0),
+      searchPack: Number(stat.search_packs ?? 0),
     },
     topInstalled: topRows.map((r) => ({
       id: String(r.id),
@@ -849,6 +1072,11 @@ function rowToPluginReview(row: Record<string, any>): PluginReviewRecord {
     title: row.title == null ? null : String(row.title),
     content: row.content == null ? null : String(row.content),
     installedVersion: String(row.installed_version ?? ""),
+    status: String(row.status ?? "visible"),
+    reportCount: Number(row.report_count ?? 0),
+    moderationNote: row.moderation_note == null ? null : String(row.moderation_note),
+    moderatedAt: row.moderated_at == null ? null : Number(row.moderated_at),
+    moderatedBy: row.moderated_by == null ? null : String(row.moderated_by),
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
   };
@@ -917,15 +1145,16 @@ export async function createPluginReview(
 export async function listPluginReviews(
   repo: Repository,
   pluginId: string,
-  options: { limit?: number; offset?: number } = {},
+  options: { limit?: number; offset?: number; includeHidden?: boolean } = {},
 ): Promise<{ items: PluginReviewRecord[]; total: number }> {
-  const countRow = (await repo.raw("SELECT COUNT(*) AS cnt FROM plugin_reviews WHERE plugin_id = ?", [pluginId]))[0];
+  const where = options.includeHidden ? "plugin_id = ?" : "plugin_id = ? AND status = 'visible'";
+  const countRow = (await repo.raw(`SELECT COUNT(*) AS cnt FROM plugin_reviews WHERE ${where}`, [pluginId]))[0];
   const total = Number(countRow?.cnt ?? 0);
   const limit = Math.min(100, Math.max(1, options.limit ?? 20));
   const offset = Math.max(0, options.offset ?? 0);
 
   const rows = await repo.raw(
-    "SELECT * FROM plugin_reviews WHERE plugin_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+    `SELECT * FROM plugin_reviews WHERE ${where} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
     [pluginId, limit, offset],
   );
 
@@ -937,7 +1166,7 @@ export async function getPluginReviewStats(
   pluginId: string,
 ): Promise<PluginReviewStats> {
   const rows = await repo.raw(
-    `SELECT rating, COUNT(*) as cnt FROM plugin_reviews WHERE plugin_id = ? GROUP BY rating`,
+    `SELECT rating, COUNT(*) as cnt FROM plugin_reviews WHERE plugin_id = ? AND status = 'visible' GROUP BY rating`,
     [pluginId],
   );
 
@@ -975,5 +1204,273 @@ export async function getUserPluginReview(
     [pluginId, who],
   );
   return rows[0] ? rowToPluginReview(rows[0]) : null;
+}
+
+/** 管理台评价列表：附插件信息，默认按举报数/更新时间倒序 */
+export async function listPluginReviewsForAdmin(
+  repo: Repository,
+  options: { status?: string; limit?: number; offset?: number } = {},
+): Promise<{ items: PluginReviewAdminItem[]; total: number }> {
+  const wheres: string[] = [];
+  const params: unknown[] = [];
+  if (options.status) {
+    wheres.push("r.status = ?");
+    params.push(options.status);
+  }
+  const where = wheres.length > 0 ? " WHERE " + wheres.join(" AND ") : "";
+  const countRow = (await repo.raw(`SELECT COUNT(*) AS cnt FROM plugin_reviews r${where}`, params))[0];
+  const total = Number(countRow?.cnt ?? 0);
+  const limit = Math.min(100, Math.max(1, options.limit ?? 30));
+  const offset = Math.max(0, options.offset ?? 0);
+  const rows = await repo.raw(
+    `SELECT r.*, p.slug AS plugin_slug, p.name AS plugin_name, p.kind AS plugin_kind
+       FROM plugin_reviews r JOIN plugins p ON p.id = r.plugin_id
+       ${where}
+       ORDER BY r.report_count DESC, r.updated_at DESC
+       LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  );
+  return {
+    items: rows.map((row) => ({
+      ...rowToPluginReview(row),
+      pluginSlug: String(row.plugin_slug ?? ""),
+      pluginName: String(row.plugin_name ?? ""),
+      pluginKind: String(row.plugin_kind ?? ""),
+    })),
+    total,
+  };
+}
+
+/** 隐藏/恢复评价；隐藏后立即退出公开列表与评分聚合 */
+export async function moderatePluginReview(
+  repo: Repository,
+  reviewId: string,
+  action: "hide" | "restore",
+  note: string | null,
+  actor?: PluginActor,
+): Promise<PluginReviewRecord> {
+  const row = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? LIMIT 1", [reviewId]))[0];
+  if (!row) throw new Error("评价不存在");
+  const status = action === "hide" ? "hidden" : "visible";
+  const now = Date.now();
+  await repo.run(
+    "UPDATE plugin_reviews SET status = ?, moderation_note = ?, moderated_at = ?, moderated_by = ?, updated_at = ? WHERE id = ?",
+    [status, note?.trim().slice(0, 500) || null, now, actor?.actor ?? "admin", now, reviewId],
+  );
+  const updated = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? LIMIT 1", [reviewId]))[0];
+  if (!updated) throw new Error("更新评价后无法读回");
+  await repo.audit({
+    actor: actor?.actor ?? "admin",
+    actorKind: actor?.actorKind ?? "admin",
+    action: `plugin.review.${action}`,
+    target: `${row.plugin_id}:${reviewId}`,
+    diff: { from: row.status ?? "visible", to: status, note: note ?? null },
+    ip: actor?.ip,
+  });
+  return rowToPluginReview(updated);
+}
+
+/** 公开举报：只累计计数并写事件，不自动隐藏（避免恶意举报一键下架） */
+export async function reportPluginReview(
+  repo: Repository,
+  slug: string,
+  reviewId: string,
+  reason: string,
+  reporterIdentity: string | null,
+  actor?: PluginActor,
+): Promise<PluginReviewRecord> {
+  const row = (await repo.raw(
+    "SELECT r.*, p.slug AS plugin_slug FROM plugin_reviews r JOIN plugins p ON p.id = r.plugin_id WHERE r.id = ? AND p.slug = ? LIMIT 1",
+    [reviewId, slug],
+  ))[0];
+  if (!row) throw new Error("评价不存在");
+  await repo.run("UPDATE plugin_reviews SET report_count = report_count + 1 WHERE id = ?", [reviewId]);
+  await repo.recordEvent("plugin_review_report", {
+    identity: reporterIdentity ?? undefined,
+    meta: { slug: row.plugin_slug, reviewId, reason: reason.slice(0, 200) },
+  });
+  await repo.audit({
+    actor: actor?.actor ?? reporterIdentity ?? "anonymous",
+    actorKind: actor?.actorKind ?? "identity",
+    action: "plugin.review.report",
+    target: `${row.plugin_slug}:${reviewId}`,
+    diff: { reason: reason.slice(0, 200) },
+    ip: actor?.ip,
+  });
+  const updated = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? LIMIT 1", [reviewId]))[0];
+  if (!updated) throw new Error("举报后无法读回评价");
+  return rowToPluginReview(updated);
+}
+
+/* ------------------------------------------------------------------ *
+ * 市场漏斗与治理 (Plugin Funnel / Governance)
+ * ------------------------------------------------------------------ */
+
+/** 市场漏斗：按日聚合客户端埋点 + 服务端安装结果；缺失日期补 0 */
+export async function getPluginFunnel(repo: Repository, days = 30): Promise<PluginFunnelMetrics> {
+  const span = Math.min(90, Math.max(1, Math.trunc(days)));
+  const since = Date.now() - span * 24 * 60 * 60 * 1000;
+  const dayExpr =
+    repo.db.dialect === "pg"
+      ? "to_char(to_timestamp(created_at / 1000.0) AT TIME ZONE 'UTC', 'YYYY-MM-DD')"
+      : "date(created_at / 1000, 'unixepoch')";
+  const rows = await repo.raw(
+    `SELECT ${dayExpr} AS d, kind, COUNT(*) AS cnt
+       FROM events
+       WHERE kind IN ('plugin_view','plugin_install_click','plugin_install_success','plugin_uninstall','plugin_review_report')
+         AND created_at >= ?
+       GROUP BY d, kind ORDER BY d ASC`,
+    [since],
+  );
+  const byDate = new Map<string, PluginFunnelDay>();
+  const total = { views: 0, installClicks: 0, installs: 0, uninstalls: 0, reports: 0 };
+  for (const row of rows) {
+    const d = String(row.d ?? "");
+    if (!d) continue;
+    const day = byDate.get(d) ?? { date: d, views: 0, installClicks: 0, installs: 0, uninstalls: 0, reports: 0 };
+    const count = Number(row.cnt ?? 0);
+    switch (String(row.kind)) {
+      case "plugin_view": day.views += count; total.views += count; break;
+      case "plugin_install_click": day.installClicks += count; total.installClicks += count; break;
+      case "plugin_install_success": day.installs += count; total.installs += count; break;
+      case "plugin_uninstall": day.uninstalls += count; total.uninstalls += count; break;
+      case "plugin_review_report": day.reports += count; total.reports += count; break;
+    }
+    byDate.set(d, day);
+  }
+  const series: PluginFunnelDay[] = [];
+  const today = new Date();
+  for (let i = span - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
+    const key = d.toISOString().slice(0, 10);
+    series.push(byDate.get(key) ?? { date: key, views: 0, installClicks: 0, installs: 0, uninstalls: 0, reports: 0 });
+  }
+  const ratio = (a: number, b: number) => (b > 0 ? Number((a / b).toFixed(3)) : 0);
+  const top = await repo.raw(
+    "SELECT slug, name, install_count FROM plugins WHERE status = 'published' ORDER BY install_count DESC, star_count DESC LIMIT 5",
+  );
+  return {
+    days: span,
+    totals: total,
+    conversion: {
+      viewToClick: ratio(total.installClicks, total.views),
+      clickToInstall: ratio(total.installs, total.installClicks),
+      viewToInstall: ratio(total.installs, total.views),
+    },
+    series,
+    topInstalled: top.map((row) => ({
+      slug: String(row.slug),
+      name: String(row.name),
+      installCount: Number(row.install_count ?? 0),
+    })),
+  };
+}
+
+/** 治理告警：待审超 SLA / 插件被举报 / 评价被举报；只读，不自动改变状态 */
+export async function getPluginGovernanceAlerts(repo: Repository): Promise<PluginGovernanceAlert[]> {
+  const now = Date.now();
+  const slaCutoff = now - 72 * 60 * 60 * 1000;
+  const pending = await repo.raw(
+    "SELECT slug, name, status, created_at FROM plugins WHERE status = 'pending' AND created_at < ? ORDER BY created_at ASC LIMIT 30",
+    [slaCutoff],
+  );
+  const reported = await repo.raw(
+    "SELECT slug, name, status, report_count, updated_at FROM plugins WHERE report_count >= 3 AND status = 'published' ORDER BY report_count DESC LIMIT 20",
+  );
+  const reviewReported = await repo.raw(
+    `SELECT r.id, r.report_count, r.created_at, p.slug, p.name, p.status
+       FROM plugin_reviews r JOIN plugins p ON p.id = r.plugin_id
+       WHERE r.report_count >= 3 AND r.status = 'visible'
+       ORDER BY r.report_count DESC LIMIT 20`,
+  );
+  const alerts: PluginGovernanceAlert[] = [];
+  for (const row of pending) {
+    const hours = Math.floor((now - Number(row.created_at ?? now)) / 3_600_000);
+    alerts.push({
+      kind: "pending_sla",
+      slug: String(row.slug),
+      name: String(row.name),
+      status: String(row.status),
+      detail: `待审已 ${hours} 小时（SLA 72h）`,
+      value: hours,
+      createdAt: Number(row.created_at ?? 0),
+    });
+  }
+  for (const row of reported) {
+    alerts.push({
+      kind: "reported",
+      slug: String(row.slug),
+      name: String(row.name),
+      status: String(row.status),
+      detail: `插件被举报 ${Number(row.report_count ?? 0)} 次`,
+      value: Number(row.report_count ?? 0),
+      createdAt: Number(row.updated_at ?? 0),
+    });
+  }
+  for (const row of reviewReported) {
+    alerts.push({
+      kind: "review_reported",
+      slug: String(row.slug),
+      name: `${String(row.name)} · 评价 ${String(row.id).slice(0, 8)}`,
+      status: String(row.status),
+      detail: `评价被举报 ${Number(row.report_count ?? 0)} 次`,
+      value: Number(row.report_count ?? 0),
+      createdAt: Number(row.created_at ?? 0),
+    });
+  }
+  return alerts.sort((a, b) => b.value - a.value).slice(0, 50);
+}
+
+/* ------------------------------------------------------------------ *
+ * 分享短链 (Short Links)
+ * ------------------------------------------------------------------ */
+
+/** 创建短链；只接受调用方已校验的内部 /marketplace/ 目标 */
+export async function createShortLink(
+  repo: Repository,
+  input: { target: string; pluginSlug?: string | null },
+): Promise<ShortLinkRecord> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = randomUUID().replace(/-/g, "").slice(0, 8);
+    try {
+      await repo.run("INSERT INTO short_links (code, target, plugin_slug, clicks, created_at) VALUES (?, ?, ?, 0, ?)", [
+        code,
+        input.target,
+        input.pluginSlug ?? null,
+        Date.now(),
+      ]);
+      const row = (await repo.raw("SELECT * FROM short_links WHERE code = ? LIMIT 1", [code]))[0];
+      if (row) {
+        return {
+          code: String(row.code),
+          target: String(row.target),
+          pluginSlug: row.plugin_slug == null ? null : String(row.plugin_slug),
+          clicks: Number(row.clicks ?? 0),
+          createdAt: Number(row.created_at ?? 0),
+        };
+      }
+    } catch {
+      // 极低概率的 code 冲突：重试
+    }
+  }
+  throw new Error("生成短链失败，请稍后重试");
+}
+
+/** 解析并累计点击；无效/外链目标返回 null（防开放重定向的最后一道闸） */
+export async function resolveShortLink(repo: Repository, code: string): Promise<ShortLinkRecord | null> {
+  const normalized = code.trim().slice(0, 32);
+  if (!/^[a-zA-Z0-9]+$/.test(normalized)) return null;
+  await repo.run("UPDATE short_links SET clicks = clicks + 1 WHERE code = ?", [normalized]);
+  const row = (await repo.raw("SELECT * FROM short_links WHERE code = ? LIMIT 1", [normalized]))[0];
+  if (!row) return null;
+  const target = String(row.target ?? "");
+  if (!target.startsWith("/marketplace/") || target.startsWith("//")) return null;
+  return {
+    code: String(row.code),
+    target,
+    pluginSlug: row.plugin_slug == null ? null : String(row.plugin_slug),
+    clicks: Number(row.clicks ?? 0),
+    createdAt: Number(row.created_at ?? 0),
+  };
 }
 

@@ -92,7 +92,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   // 未配置密钥时不加任何头，中枢也不校验（行为与历史版本一致）。
   const identitySecret = hubIdentitySecret()
   if (identitySecret) {
-    const identity = identityFromRequest(url, hasValidBody ? rawBody : undefined)
+    const identity = identityFromRequest(url, hasValidBody ? rawBody : undefined, request.headers)
     if (identity) headers['x-navhub-identity-signature'] = await signIdentity(identitySecret, identity)
   }
 

@@ -22,7 +22,11 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
    * kind 白名单：防止脏 kind 污染画像聚合与统计。
    * click 事件联动 visit_count（热度排序的原始信号）。
    */
-  const EVENT_KINDS = ["click", "favorite", "unfavorite", "impression", "dismiss"] as const;
+  const EVENT_KINDS = [
+    "click", "favorite", "unfavorite", "impression", "dismiss",
+    // 插件市场漏斗（浏览 → 安装点击 → 安装成功/卸载在服务端路由补记）
+    "plugin_view", "plugin_install_click", "plugin_share",
+  ] as const;
 
   app.post("/api/events", async (req, reply) => {
     const body = z.object({
@@ -30,6 +34,8 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       siteId: z.string().optional(),
       query: z.string().optional(),
       categoryId: z.string().optional(),
+      /** 插件事件归属（plugin_view / plugin_install_click / plugin_share） */
+      pluginSlug: z.string().max(80).optional(),
       channel: z.enum(["exact", "fts", "pinyin", "semantic", "personal"]).optional(),
       dwellSeconds: z.number().min(0).max(3600).optional(),
       interactionType: z.enum(["click", "copy", "bounce"]).optional(),
@@ -44,7 +50,9 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       siteId: body.data.siteId,
       query: body.data.query,
       categoryId: body.data.categoryId,
-      meta: identity ? { identity } : undefined,
+      meta: identity || body.data.pluginSlug
+        ? { ...(identity ? { identity } : {}), ...(body.data.pluginSlug ? { slug: body.data.pluginSlug } : {}) }
+        : undefined,
     }).catch(() => undefined);
     if (body.data.kind === "click" && body.data.siteId) {
       await ctx.repo.bumpVisit(body.data.siteId).catch(() => undefined);

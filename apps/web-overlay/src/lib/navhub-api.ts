@@ -556,11 +556,12 @@ export interface HubPluginTelemetryMetrics {
   pendingCount: number
   rejectedCount: number
   delistedCount: number
+  quarantinedCount?: number
   totalInstalls: number
   activeInstalls: number
   totalStars: number
   totalReports: number
-  kindDistribution: { sitePack: number; workspacePreset: number; theme: number }
+  kindDistribution: { sitePack: number; workspacePreset: number; theme: number; searchPack?: number }
   topInstalled: Array<{
     id: string
     slug: string
@@ -582,12 +583,14 @@ export async function fetchPluginTelemetry(): Promise<HubPluginTelemetryMetrics 
 export interface HubPluginItem {
   id: string
   slug: string
-  kind: 'site-pack' | 'workspace-preset' | 'theme'
+  kind: 'site-pack' | 'workspace-preset' | 'theme' | 'search-pack'
   name: string
   description: string
   icon?: string | null
   author?: string | null
   authorKind?: string | null
+  /** 作者公开页 key（身份不可逆哈希） */
+  ownerKey?: string | null
   version: string
   tags?: string[]
   homepage?: string | null
@@ -595,10 +598,18 @@ export interface HubPluginItem {
   manifest: any
   summary?: any
   source: string
-  status: 'pending' | 'published' | 'rejected' | 'delisted'
+  status: 'pending' | 'published' | 'rejected' | 'delisted' | 'quarantined'
   installCount: number
   starCount: number
   reportCount: number
+  featured?: boolean
+  featuredRank?: number
+  ratingAvg?: number
+  reviewCount?: number
+  /** 待审版本的变更说明（仅作者中心/作者本人可见） */
+  pendingChangelog?: string | null
+  reviewNote?: string | null
+  reviewedAt?: number | null
   publishedAt?: number | null
   createdAt: number
   updatedAt: number
@@ -607,6 +618,7 @@ export interface HubPluginItem {
   installedVersion?: string | null
   installedAt?: number | null
   upgradeDiff?: PluginUpgradeDiff | null
+  isOwner?: boolean
   reviewStats?: {
     avgRating: number
     reviewCount: number
@@ -637,13 +649,15 @@ export interface HubPluginInstalledItem {
 }
 
 export async function fetchPlugins(
-  params: { kind?: string; q?: string; sort?: string; limit?: number; offset?: number } = {},
+  params: { kind?: string; q?: string; sort?: string; featured?: boolean; ownerKey?: string; limit?: number; offset?: number } = {},
   onDegraded?: DegradedHandler,
 ): Promise<HubPluginsResponse> {
   const sp = new URLSearchParams()
   if (params.kind) sp.set('kind', params.kind)
   if (params.q) sp.set('q', params.q)
   if (params.sort) sp.set('sort', params.sort)
+  if (params.featured !== undefined) sp.set('featured', String(params.featured))
+  if (params.ownerKey) sp.set('ownerKey', params.ownerKey)
   if (params.limit) sp.set('limit', String(params.limit))
   if (params.offset) sp.set('offset', String(params.offset))
   const qs = sp.toString()
@@ -767,10 +781,81 @@ export async function publishPlugin(
   identity?: string,
 ): Promise<HubPluginItem> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  // 身份同时放 query：BFF 只对 query/body 签名，header-only 身份会在代理层丢失
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson<HubPluginItem>(
-    '/api/plugins',
+    `/api/plugins${qs}`,
     'POST',
     { manifest },
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+/** 我的插件（作者中心）：全部状态 + 待审说明 */
+export async function fetchMyPlugins(
+  params: { limit?: number; offset?: number; identity?: string } = {},
+  onDegraded?: DegradedHandler,
+): Promise<HubPluginsResponse> {
+  const effectiveIdentity = params.identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const sp = new URLSearchParams()
+  if (params.limit) sp.set('limit', String(params.limit))
+  if (params.offset) sp.set('offset', String(params.offset))
+  if (effectiveIdentity) sp.set('anonId', effectiveIdentity)
+  const qs = sp.toString() ? `?${sp.toString()}` : ''
+  return degrade<HubPluginsResponse>(
+    { items: [], total: 0, limit: params.limit ?? 24, offset: params.offset ?? 0 },
+    () =>
+      getJson<HubPluginsResponse>(
+        `/api/plugins/mine${qs}`,
+        undefined,
+        effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+      ),
+    onDegraded,
+  )
+}
+
+export interface HubPluginAuthorResponse {
+  ownerKey: string
+  author: string
+  authorKind?: string | null
+  stats: { plugins: number; installs: number; stars: number }
+  items: HubPluginItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/** 公开作者页 */
+export async function fetchAuthorPlugins(
+  ownerKey: string,
+  params: { limit?: number; offset?: number } = {},
+  onDegraded?: DegradedHandler,
+): Promise<HubPluginAuthorResponse | null> {
+  const sp = new URLSearchParams()
+  if (params.limit) sp.set('limit', String(params.limit))
+  if (params.offset) sp.set('offset', String(params.offset))
+  const qs = sp.toString() ? `?${sp.toString()}` : ''
+  return degrade<HubPluginAuthorResponse | null>(
+    null,
+    () => getJson<HubPluginAuthorResponse>(`/api/plugins/author/${encodeURIComponent(ownerKey)}${qs}`),
+    onDegraded,
+  )
+}
+
+/** 作者自助提交新版本（进入待审） */
+export async function submitPluginVersion(
+  slug: string,
+  manifest: unknown,
+  changelog: string,
+  identity?: string,
+): Promise<HubPluginItem> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
+  return sendJson<HubPluginItem>(
+    `/api/plugins/${encodeURIComponent(slug)}/versions${qs}`,
+    'POST',
+    { manifest, changelog },
     undefined,
     effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
@@ -950,6 +1035,11 @@ export interface HubPluginReviewItem {
   title?: string | null
   content?: string | null
   installedVersion: string
+  status?: 'visible' | 'hidden' | string
+  reportCount?: number
+  moderationNote?: string | null
+  moderatedAt?: number | null
+  moderatedBy?: string | null
   createdAt: number
   updatedAt: number
 }
@@ -1011,11 +1101,166 @@ export async function submitPluginReview(
   )
 }
 
+/** 举报评价（进入治理队列，不自动隐藏） */
+export async function reportPluginReview(
+  slug: string,
+  reviewId: string,
+  reason: string,
+  identity?: string,
+): Promise<{ ok: boolean; reportCount: number }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(reviewId)}/report`,
+    'POST',
+    { reason },
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+/* ------------------------------ 治理 / 漏斗 / 短链 ------------------------------ */
+
+export interface HubPluginFunnelDay {
+  date: string
+  views: number
+  installClicks: number
+  installs: number
+  uninstalls: number
+  reports: number
+}
+
+export interface HubPluginFunnel {
+  days: number
+  totals: { views: number; installClicks: number; installs: number; uninstalls: number; reports: number }
+  conversion: { viewToClick: number; clickToInstall: number; viewToInstall: number }
+  series: HubPluginFunnelDay[]
+  topInstalled: Array<{ slug: string; name: string; installCount: number }>
+}
+
+export async function fetchPluginFunnel(
+  days = 30,
+  onDegraded?: DegradedHandler,
+): Promise<HubPluginFunnel | null> {
+  return degrade<HubPluginFunnel | null>(
+    null,
+    () => getJson(`/api/admin/plugins/funnel?days=${days}`),
+    onDegraded,
+  )
+}
+
+export interface HubPluginGovernanceAlert {
+  kind: 'pending_sla' | 'reported' | 'review_reported'
+  slug: string
+  name: string
+  status: string
+  detail: string
+  value: number
+  createdAt: number
+}
+
+export async function fetchPluginGovernance(
+  onDegraded?: DegradedHandler,
+): Promise<{ alerts: HubPluginGovernanceAlert[]; generatedAt: number }> {
+  return degrade(
+    { alerts: [] as HubPluginGovernanceAlert[], generatedAt: 0 },
+    () => getJson('/api/admin/plugins/governance'),
+    onDegraded,
+  )
+}
+
+export interface HubAdminPluginReview extends HubPluginReviewItem {
+  pluginSlug: string
+  pluginName: string
+  pluginKind: string
+}
+
+export async function fetchAdminPluginReviews(
+  params: { status?: 'visible' | 'hidden'; limit?: number; offset?: number } = {},
+  onDegraded?: DegradedHandler,
+): Promise<{ items: HubAdminPluginReview[]; total: number; limit: number; offset: number }> {
+  const sp = new URLSearchParams()
+  if (params.status) sp.set('status', params.status)
+  if (params.limit) sp.set('limit', String(params.limit))
+  if (params.offset) sp.set('offset', String(params.offset))
+  const qs = sp.toString() ? `?${sp.toString()}` : ''
+  return degrade(
+    { items: [] as HubAdminPluginReview[], total: 0, limit: params.limit ?? 30, offset: params.offset ?? 0 },
+    () => getJson(`/api/admin/plugin-reviews${qs}`),
+    onDegraded,
+  )
+}
+
+export async function moderatePluginReview(
+  reviewId: string,
+  action: 'hide' | 'restore',
+  note?: string,
+): Promise<{ ok: boolean; review: HubPluginReviewItem }> {
+  return sendJson(`/api/admin/plugin-reviews/${encodeURIComponent(reviewId)}`, 'PATCH', { action, note })
+}
+
+export async function setPluginFeatured(
+  slug: string,
+  featured: boolean,
+  rank = 0,
+): Promise<{ ok: boolean; plugin: HubPluginItem }> {
+  return sendJson(`/api/plugins/${encodeURIComponent(slug)}/featured`, 'PATCH', { featured, rank })
+}
+
+/** 创建分享短链（只允许 /marketplace/ 目标） */
+export async function createPluginShortLink(
+  slug: string,
+  options: { install?: boolean } = {},
+): Promise<{ success: boolean; code: string; path: string; target: string }> {
+  return sendJson('/api/shortlinks', 'POST', { slug, install: options.install === true })
+}
+
+/** 插件漏斗埋点：浏览 / 安装点击 / 分享（fire-and-forget，不阻塞 UI） */
+export function trackPluginEvent(
+  kind: 'plugin_view' | 'plugin_install_click' | 'plugin_share',
+  slug: string,
+): void {
+  if (typeof window === 'undefined') return
+  const identity = getIdentity()
+  const body = JSON.stringify({ kind, pluginSlug: slug, anonId: identity })
+  // 必须走同源代理前缀 /api/hub/*；裸 /api/events 在 Next 应用里没有对应路由
+  const url = hubUrl('/api/events')
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }))
+      return
+    }
+  } catch {
+    // 落到 fetch 兜底
+  }
+  void fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => {
+    // 埋点数据上报失败静默忽略，绝不阻塞或影响主流程体验
+    return undefined
+  })
+}
+
 /** 任意清单比对接口 */
 export async function diffPluginManifestsApi(
   baseManifest: unknown,
   targetManifest: unknown,
 ): Promise<{ ok: boolean; diff: any }> {
   return sendJson('/api/plugins/diff', 'POST', { baseManifest, targetManifest })
+}
+
+/** 插件链接健康度并发体检 */
+export async function checkPluginUrls(
+  urls: string[],
+): Promise<{
+  success: boolean
+  total: number
+  okCount: number
+  failedCount: number
+  results: Array<{ url: string; ok: boolean; status: number; error?: string }>
+}> {
+  return sendJson('/api/plugins/check-urls', 'POST', { urls })
 }
 

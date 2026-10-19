@@ -25,9 +25,31 @@ import { getIdentity } from '@/lib/identity'
 import { PluginCard } from '@/components/plugins/plugin-card'
 import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
 import { stageWorkspacePreset } from '@/lib/plugins/preset-staging'
-import { ArrowLeft, Loader2, Search, Store, Upload } from 'lucide-react'
+import {
+  ArrowLeft,
+  Crown,
+  Flame,
+  Loader2,
+  PackageCheck,
+  Search,
+  Sparkles,
+  Star,
+  Store,
+  TrendingUp,
+  Upload,
+  UserRound,
+} from 'lucide-react'
 
 const PAGE_SIZE = 24
+
+const TOPIC_COLLECTIONS = [
+  { id: 'all', title: '全部插件', icon: '🌐' },
+  { id: 'trending', title: '🔥 飙升榜', sort: 'trending' },
+  { id: 'geek', title: '🚀 极客全栈装备', q: '武器库' },
+  { id: 'search', title: '🔍 快捷直达引擎', kind: 'search-pack' },
+  { id: 'devops', title: '📊 生产力工作台', kind: 'workspace-preset' },
+  { id: 'theme', title: '🎨 赛博与暗黑美学', kind: 'theme' },
+] as const
 
 export default function MarketplacePage() {
   const identity = useMemo(() => getIdentity(), [])
@@ -37,11 +59,17 @@ export default function MarketplacePage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [kind, setKind] = useState('')
-  const [sort, setSort] = useState('new')
+  const [sort, setSort] = useState('trending')
   const [qInput, setQInput] = useState('')
   const [q, setQ] = useState('')
   const [reloadToken, setReloadToken] = useState(0)
   const [installTarget, setInstallTarget] = useState<HubPluginItem | null>(null)
+  const [featured, setFeatured] = useState<HubPluginItem[]>([])
+  const [rankings, setRankings] = useState<{
+    popular: HubPluginItem[]
+    rating: HubPluginItem[]
+    fresh: HubPluginItem[]
+  }>({ popular: [], rating: [], fresh: [] })
 
   const load = useCallback(
     async (offset: number, append: boolean) => {
@@ -73,6 +101,67 @@ export default function MarketplacePage() {
 
   const hasFilter = Boolean(q || kind)
 
+  // 精选与三榜只在“无筛选”时加载：避免与主列表抢请求，也避免筛选后仍显示无关推荐
+  useEffect(() => {
+    if (hasFilter) return
+    let cancelled = false
+    void Promise.all([
+      fetchPlugins({ featured: true, sort: 'featured', limit: 6 }),
+      fetchPlugins({ sort: 'popular', limit: 5 }),
+      fetchPlugins({ sort: 'rating', limit: 5 }),
+      fetchPlugins({ sort: 'new', limit: 5 }),
+    ]).then(([f, popular, rating, fresh]) => {
+      if (cancelled) return
+      setFeatured(f.items)
+      setRankings({ popular: popular.items, rating: rating.items, fresh: fresh.items })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [hasFilter, reloadToken])
+
+  const rankingGroups = [
+    {
+      key: 'popular' as const,
+      title: '安装榜',
+      icon: TrendingUp,
+      metric: (p: HubPluginItem) => `${p.installCount} 次安装`,
+    },
+    {
+      key: 'rating' as const,
+      title: '口碑榜',
+      icon: Star,
+      metric: (p: HubPluginItem) =>
+        (p.reviewCount ?? 0) > 0 ? `${(p.ratingAvg ?? 0).toFixed(1)} 分 · ${p.reviewCount} 评价` : '暂无评价',
+    },
+    {
+      key: 'fresh' as const,
+      title: '新作榜',
+      icon: Sparkles,
+      metric: (p: HubPluginItem) => (p.publishedAt ? new Date(p.publishedAt).toLocaleDateString('zh-CN') : '刚刚上架'),
+    },
+  ]
+
+  const handleTopicClick = (topic: typeof TOPIC_COLLECTIONS[number]) => {
+    if (topic.id === 'all') {
+      setKind('')
+      setQ('')
+      setQInput('')
+      setSort('trending')
+    } else {
+      if ('kind' in topic && topic.kind) setKind(topic.kind)
+      else setKind('')
+      if ('q' in topic && topic.q) {
+        setQ(topic.q)
+        setQInput(topic.q)
+      } else {
+        setQ('')
+        setQInput('')
+      }
+      if ('sort' in topic && topic.sort) setSort(topic.sort)
+    }
+  }
+
   return (
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
@@ -98,21 +187,61 @@ export default function MarketplacePage() {
                 插件市场
               </h1>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed max-w-2xl">
-                与社区互换收藏的网址包、工作台布局与主题。全部插件都是可读可审计的声明式 JSON，
+                与社区互换收藏的网址包、工作台布局、主题与搜索引擎包。全部插件都是可读可审计的声明式 JSON，
                 不含任何可执行代码；安装前可先看清单预览。
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center flex-wrap gap-2 shrink-0">
+              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+                <Link href="/marketplace/installed">
+                  <PackageCheck className="w-3.5 h-3.5 text-primary" />
+                  已安装管家
+                </Link>
+              </Button>
               <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
                 <Link href="/marketplace/import">
                   <Upload className="w-3.5 h-3.5" />
                   导入插件文件
                 </Link>
               </Button>
+              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+                <Link href="/marketplace/mine">
+                  <UserRound className="w-3.5 h-3.5" />
+                  作者中心
+                </Link>
+              </Button>
               <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
                 <Link href="/marketplace/publish">发布插件</Link>
               </Button>
             </div>
+          </div>
+
+          {/* 精选专题集胶囊 */}
+          <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground flex items-center gap-1 mr-1">
+              <Flame className="w-3 h-3 text-amber-500" />
+              精选专题：
+            </span>
+            {TOPIC_COLLECTIONS.map((topic) => {
+              const isTopicActive =
+                (topic.id === 'all' && !kind && !q && sort === 'trending') ||
+                ('kind' in topic && kind === topic.kind) ||
+                ('q' in topic && q === topic.q) ||
+                ('sort' in topic && sort === topic.sort && !kind && !q)
+              return (
+                <button
+                  key={topic.id}
+                  onClick={() => handleTopicClick(topic)}
+                  className={`px-2.5 py-1 rounded-full text-xs transition-all ${
+                    isTopicActive
+                      ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+                      : 'bg-background/70 hover:bg-background text-muted-foreground hover:text-foreground border border-border/60'
+                  }`}
+                >
+                  {topic.title}
+                </button>
+              )
+            })}
           </div>
         </div>
 
@@ -128,6 +257,7 @@ export default function MarketplacePage() {
             <option value="site-pack">网站包</option>
             <option value="workspace-preset">工作台预设</option>
             <option value="theme">主题</option>
+            <option value="search-pack">搜索引擎包</option>
           </select>
           <select
             aria-label="排序方式"
@@ -135,9 +265,11 @@ export default function MarketplacePage() {
             value={sort}
             onChange={(e) => setSort(e.target.value)}
           >
+            <option value="trending">🔥 7天飙升榜</option>
             <option value="new">最新发布</option>
             <option value="popular">安装最多</option>
             <option value="stars">星标最多</option>
+            <option value="rating">评分最高</option>
             <option value="updated">最近更新</option>
           </select>
           <form
@@ -167,6 +299,64 @@ export default function MarketplacePage() {
         </div>
 
         {notice && <HubDegradedNotice notice={notice} onRetry={reload} subject="插件市场" />}
+
+        {!hasFilter && featured.length > 0 && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold flex items-center gap-1.5">
+                <Crown className="w-4 h-4 text-amber-500" />
+                编辑精选
+              </h2>
+              <span className="text-[11px] text-muted-foreground">人工挑选的社区代表作</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {featured.slice(0, 6).map((p) => (
+                <PluginCard
+                  key={`featured-${p.id}`}
+                  plugin={p}
+                  identity={identity}
+                  onStatusChange={patchItem}
+                  onOpenInstallModal={setInstallTarget}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {!hasFilter && (rankings.popular.length > 0 || rankings.rating.length > 0 || rankings.fresh.length > 0) && (
+          <section className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {rankingGroups.map((group) => {
+              const rows = rankings[group.key]
+              const Icon = group.icon
+              return (
+                <div key={group.key} className="rounded-xl border border-border/70 bg-card/60 p-4 space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Icon className="w-3.5 h-3.5 text-primary" />
+                    {group.title}
+                  </div>
+                  {rows.length === 0 ? (
+                    <p className="text-[11px] text-muted-foreground py-2">暂无数据</p>
+                  ) : (
+                    <ol className="space-y-1.5">
+                      {rows.map((p, index) => (
+                        <li key={`${group.key}-${p.id}`}>
+                          <Link
+                            href={`/marketplace/${encodeURIComponent(p.slug)}`}
+                            className="flex items-center gap-2 rounded-md px-1.5 py-1 -mx-1.5 hover:bg-muted/60 transition-colors"
+                          >
+                            <span className="w-4 text-[11px] tabular-nums text-muted-foreground">{index + 1}</span>
+                            <span className="text-xs font-medium truncate flex-1">{p.name}</span>
+                            <span className="text-[10px] text-muted-foreground shrink-0">{group.metric(p)}</span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+              )
+            })}
+          </section>
+        )}
 
         {/* 列表 */}
         {loading ? (

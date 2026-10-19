@@ -407,6 +407,10 @@ export const plugins = sqliteTable("plugins", {
   tags: text("tags").notNull().default("[]"),
   author: text("author"),
   authorKind: text("author_kind"),
+  /** 作者归属（内部标识；仅归属校验使用，不对外返回） */
+  ownerIdentity: text("owner_identity"),
+  /** 作者公开页 key（ownerIdentity 的不可逆哈希；可安全出现在 URL） */
+  ownerKey: text("owner_key"),
   license: text("license"),
   homepage: text("homepage"),
   version: text("version").notNull(),
@@ -414,10 +418,15 @@ export const plugins = sqliteTable("plugins", {
   status: text("status").notNull().default("pending"),
   reviewNote: text("review_note"),
   reviewedAt: integer("reviewed_at"),
+  /** 作者提交新版本时填写的变更说明；审核通过后写入版本历史并清空 */
+  pendingChangelog: text("pending_changelog"),
   source: text("source").notNull().default("user"),
   installCount: integer("install_count").notNull().default(0),
   starCount: integer("star_count").notNull().default(0),
   reportCount: integer("report_count").notNull().default(0),
+  /** 编辑精选（仅 published 生效；排序用 featuredRank 降序） */
+  featured: integer("featured", { mode: "boolean" }).notNull().default(false),
+  featuredRank: integer("featured_rank").notNull().default(0),
   createdAt: integer("created_at").notNull().$defaultFn(now),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
   publishedAt: integer("published_at"),
@@ -425,6 +434,8 @@ export const plugins = sqliteTable("plugins", {
   uniqueIndex("plugins_slug_idx").on(t.slug),
   index("plugins_status_idx").on(t.status),
   index("plugins_kind_idx").on(t.kind),
+  index("plugins_owner_key_idx").on(t.ownerKey),
+  index("plugins_featured_idx").on(t.featured),
 ]);
 
 /** 插件安装记录（复合主键；removed_at 非空 = 已卸载，重装复活同一行） */
@@ -449,10 +460,59 @@ export const pluginStars = sqliteTable("plugin_stars", {
   primaryKey({ columns: [t.pluginId, t.identity] }),
 ]);
 
+/**
+ * 插件版本快照（审核通过时落一条；同版本唯一）。
+ * 表由 migrate.ts / driver.ts 的幂等 DDL 创建，这里补 Drizzle 声明保持 schema 单一事实源。
+ */
+export const pluginVersions = sqliteTable("plugin_versions", {
+  id: text("id").primaryKey(),
+  pluginId: text("plugin_id").notNull(),
+  version: text("version").notNull(),
+  manifest: text("manifest").notNull(),
+  changelog: text("changelog"),
+  checksum: text("checksum").notNull(),
+  publishedAt: integer("published_at").notNull(),
+  createdAt: integer("created_at").notNull(),
+}, (t) => [
+  uniqueIndex("plugin_versions_plugin_version_idx").on(t.pluginId, t.version),
+  index("plugin_versions_plugin_idx").on(t.pluginId),
+]);
+
+/** 插件真实评价（仅活跃安装用户可写；status=hidden 由管理台治理） */
+export const pluginReviews = sqliteTable("plugin_reviews", {
+  id: text("id").primaryKey(),
+  pluginId: text("plugin_id").notNull(),
+  identity: text("identity").notNull(),
+  rating: integer("rating").notNull(),
+  title: text("title"),
+  content: text("content"),
+  installedVersion: text("installed_version").notNull(),
+  status: text("status").notNull().default("visible"),
+  reportCount: integer("report_count").notNull().default(0),
+  moderationNote: text("moderation_note"),
+  moderatedAt: integer("moderated_at"),
+  moderatedBy: text("moderated_by"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (t) => [
+  uniqueIndex("plugin_reviews_plugin_identity_idx").on(t.pluginId, t.identity),
+  index("plugin_reviews_plugin_idx").on(t.pluginId),
+  index("plugin_reviews_status_idx").on(t.status),
+]);
+
+/** 分享短链（只允许内部 /marketplace/ 目标，防开放重定向） */
+export const shortLinks = sqliteTable("short_links", {
+  code: text("code").primaryKey(),
+  target: text("target").notNull(),
+  pluginSlug: text("plugin_slug"),
+  clicks: integer("clicks").notNull().default(0),
+  createdAt: integer("created_at").notNull(),
+});
+
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates, taxonomyProposals,
-  plugins, pluginInstalls, pluginStars,
+  plugins, pluginInstalls, pluginStars, pluginVersions, pluginReviews, shortLinks,
 };
 

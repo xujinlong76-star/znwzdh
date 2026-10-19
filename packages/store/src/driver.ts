@@ -318,6 +318,8 @@ CREATE TABLE IF NOT EXISTS plugins (
   tags TEXT NOT NULL DEFAULT '[]',
   author TEXT,
   author_kind TEXT,
+  owner_identity TEXT,
+  owner_key TEXT,
   license TEXT,
   homepage TEXT,
   version TEXT NOT NULL,
@@ -325,10 +327,13 @@ CREATE TABLE IF NOT EXISTS plugins (
   status TEXT NOT NULL DEFAULT 'pending',
   review_note TEXT,
   reviewed_at INTEGER,
+  pending_changelog TEXT,
   source TEXT NOT NULL DEFAULT 'user',
   install_count INTEGER NOT NULL DEFAULT 0,
   star_count INTEGER NOT NULL DEFAULT 0,
   report_count INTEGER NOT NULL DEFAULT 0,
+  featured INTEGER NOT NULL DEFAULT 0,
+  featured_rank INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   published_at INTEGER
@@ -336,6 +341,8 @@ CREATE TABLE IF NOT EXISTS plugins (
 CREATE UNIQUE INDEX IF NOT EXISTS plugins_slug_idx ON plugins(slug);
 CREATE INDEX IF NOT EXISTS plugins_status_idx ON plugins(status);
 CREATE INDEX IF NOT EXISTS plugins_kind_idx ON plugins(kind);
+CREATE INDEX IF NOT EXISTS plugins_owner_key_idx ON plugins(owner_key);
+CREATE INDEX IF NOT EXISTS plugins_featured_idx ON plugins(featured);
 
 CREATE TABLE IF NOT EXISTS plugin_installs (
   plugin_id TEXT NOT NULL,
@@ -376,11 +383,25 @@ CREATE TABLE IF NOT EXISTS plugin_reviews (
   title TEXT,
   content TEXT,
   installed_version TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'visible',
+  report_count INTEGER NOT NULL DEFAULT 0,
+  moderation_note TEXT,
+  moderated_at INTEGER,
+  moderated_by TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE(plugin_id, identity)
 );
 CREATE INDEX IF NOT EXISTS plugin_reviews_plugin_idx ON plugin_reviews(plugin_id);
+CREATE INDEX IF NOT EXISTS plugin_reviews_status_idx ON plugin_reviews(status);
+
+CREATE TABLE IF NOT EXISTS short_links (
+  code TEXT PRIMARY KEY,
+  target TEXT NOT NULL,
+  plugin_slug TEXT,
+  clicks INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
 `;
 
 const DDL_PG = `
@@ -656,6 +677,8 @@ CREATE TABLE IF NOT EXISTS plugins (
   tags TEXT NOT NULL DEFAULT '[]',
   author TEXT,
   author_kind TEXT,
+  owner_identity TEXT,
+  owner_key TEXT,
   license TEXT,
   homepage TEXT,
   version TEXT NOT NULL,
@@ -663,10 +686,13 @@ CREATE TABLE IF NOT EXISTS plugins (
   status TEXT NOT NULL DEFAULT 'pending',
   review_note TEXT,
   reviewed_at BIGINT,
+  pending_changelog TEXT,
   source TEXT NOT NULL DEFAULT 'user',
   install_count INTEGER NOT NULL DEFAULT 0,
   star_count INTEGER NOT NULL DEFAULT 0,
   report_count INTEGER NOT NULL DEFAULT 0,
+  featured BOOLEAN NOT NULL DEFAULT FALSE,
+  featured_rank INTEGER NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   published_at BIGINT
@@ -674,6 +700,8 @@ CREATE TABLE IF NOT EXISTS plugins (
 CREATE UNIQUE INDEX IF NOT EXISTS plugins_slug_idx ON plugins(slug);
 CREATE INDEX IF NOT EXISTS plugins_status_idx ON plugins(status);
 CREATE INDEX IF NOT EXISTS plugins_kind_idx ON plugins(kind);
+CREATE INDEX IF NOT EXISTS plugins_owner_key_idx ON plugins(owner_key);
+CREATE INDEX IF NOT EXISTS plugins_featured_idx ON plugins(featured);
 
 CREATE TABLE IF NOT EXISTS plugin_installs (
   plugin_id TEXT NOT NULL,
@@ -714,11 +742,25 @@ CREATE TABLE IF NOT EXISTS plugin_reviews (
   title TEXT,
   content TEXT,
   installed_version TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'visible',
+  report_count INTEGER NOT NULL DEFAULT 0,
+  moderation_note TEXT,
+  moderated_at BIGINT,
+  moderated_by TEXT,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   UNIQUE(plugin_id, identity)
 );
 CREATE INDEX IF NOT EXISTS plugin_reviews_plugin_idx ON plugin_reviews(plugin_id);
+CREATE INDEX IF NOT EXISTS plugin_reviews_status_idx ON plugin_reviews(status);
+
+CREATE TABLE IF NOT EXISTS short_links (
+  code TEXT PRIMARY KEY,
+  target TEXT NOT NULL,
+  plugin_slug TEXT,
+  clicks INTEGER NOT NULL DEFAULT 0,
+  created_at BIGINT NOT NULL
+);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;

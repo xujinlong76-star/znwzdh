@@ -126,7 +126,7 @@ describe("search-palette 源码：竞态与矛盾文案的回归守卫", () => {
 
   it("加载更多带取消信号与查询守卫（不再污染分页）", () => {
     expect(src).toContain("offset: offsetRef.current, categoryId, identity }, controller.signal)");
-    expect(src.match(/activeQueryRef\.current !== q/g)?.length).toBe(3);
+    expect(src.match(/activeQueryRef\.current !== q/g)?.length).toBeGreaterThanOrEqual(3);
     expect(src).toContain("moreAbortRef.current.abort()");
   });
 

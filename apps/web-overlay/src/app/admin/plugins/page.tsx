@@ -17,11 +17,19 @@ import {
   fetchAdminPlugins,
   reviewPlugin,
   fetchPluginTelemetry,
+  fetchPluginFunnel,
+  fetchPluginGovernance,
+  fetchAdminPluginReviews,
+  moderatePluginReview,
+  setPluginFeatured,
   diffPluginManifestsApi,
   fetchPluginVersions,
   fetchPluginVersionDetail,
   type HubPluginItem,
   type HubPluginTelemetryMetrics,
+  type HubPluginFunnel,
+  type HubPluginGovernanceAlert,
+  type HubAdminPluginReview,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
@@ -53,6 +61,12 @@ import {
   RotateCcw,
   FileCode,
   Sparkles,
+  Crown,
+  Eye,
+  MousePointerClick,
+  Download,
+  Gauge,
+  MessageSquareWarning,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -67,6 +81,12 @@ const STATUS_TABS = [
 export default function AdminPluginsPage() {
   const [plugins, setPlugins] = useState<HubPluginItem[]>([])
   const [telemetry, setTelemetry] = useState<HubPluginTelemetryMetrics | null>(null)
+  const [funnel, setFunnel] = useState<HubPluginFunnel | null>(null)
+  const [governance, setGovernance] = useState<HubPluginGovernanceAlert[]>([])
+  const [adminReviews, setAdminReviews] = useState<HubAdminPluginReview[]>([])
+  const [reviewStatus, setReviewStatus] = useState<'visible' | 'hidden'>('visible')
+  const [reviewsLoading, setReviewsLoading] = useState(false)
+  const [rankDrafts, setRankDrafts] = useState<Record<string, number>>({})
   const [pendingCount, setPendingCount] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
@@ -114,7 +134,7 @@ export default function AdminPluginsPage() {
     setLoading(true)
     setNotice(null)
     try {
-      const [res, telem] = await Promise.all([
+      const [res, telem, funnelRes, governanceRes] = await Promise.all([
         fetchAdminPlugins(
           {
             status: activeStatus,
@@ -127,9 +147,19 @@ export default function AdminPluginsPage() {
           // 遥测大盘指标加载失败时降级隐藏概览卡片，不阻塞插件列表主体展示
           return null
         }),
+        fetchPluginFunnel(30).catch(() => {
+          // 漏斗转化指标请求失败时静默降级为 null，不阻塞插件列表与管理操作
+          return null
+        }),
+        fetchPluginGovernance().catch(() => {
+          // 治理预警请求失败时静默降级为空报警列表，不阻断主列表渲染
+          return { alerts: [], generatedAt: 0 }
+        }),
       ])
       setPlugins(res.items)
       if (telem) setTelemetry(telem)
+      setFunnel(funnelRes)
+      setGovernance(governanceRes.alerts)
       if (res.pending !== undefined) {
         setPendingCount(res.pending)
       }

@@ -279,6 +279,10 @@ export interface PluginRecord {
   tags: string[];
   author: string | null;
   authorKind: string | null;
+  /** 作者归属（内部字段；REST 公共响应会剔除） */
+  ownerIdentity?: string | null;
+  /** 作者公开页 key（ownerIdentity 的不可逆哈希） */
+  ownerKey?: string | null;
   license: string | null;
   homepage: string | null;
   version: string;
@@ -286,10 +290,17 @@ export interface PluginRecord {
   status: PluginStatus;
   reviewNote: string | null;
   reviewedAt: number | null;
+  /** 待审核版本的变更说明（内部字段；通过/驳回后清空） */
+  pendingChangelog?: string | null;
   source: string;
   installCount: number;
   starCount: number;
   reportCount: number;
+  featured: boolean;
+  featuredRank: number;
+  /** 列表聚合：仅统计 visible 评价（无评价为 0） */
+  ratingAvg: number;
+  reviewCount: number;
   createdAt: number;
   updatedAt: number;
   publishedAt: number | null;
@@ -333,6 +344,12 @@ export interface PluginReviewRecord {
   title: string | null;
   content: string | null;
   installedVersion: string;
+  /** visible | hidden（hidden 不进公开列表与评分统计） */
+  status: "visible" | "hidden" | string;
+  reportCount: number;
+  moderationNote: string | null;
+  moderatedAt: number | null;
+  moderatedBy: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -341,4 +358,48 @@ export interface PluginReviewStats {
   avgRating: number;
   reviewCount: number;
   ratingDistribution: Record<number, number>;
+}
+
+/** 管理台评价治理列表项（附插件名/slug，避免前端再查一次） */
+export interface PluginReviewAdminItem extends PluginReviewRecord {
+  pluginSlug: string;
+  pluginName: string;
+  pluginKind: string;
+}
+
+/** 市场漏斗（按日聚合） */
+export interface PluginFunnelDay {
+  date: string;
+  views: number;
+  installClicks: number;
+  installs: number;
+  uninstalls: number;
+  reports: number;
+}
+
+export interface PluginFunnelMetrics {
+  days: number;
+  totals: { views: number; installClicks: number; installs: number; uninstalls: number; reports: number };
+  conversion: { viewToClick: number; clickToInstall: number; viewToInstall: number };
+  series: PluginFunnelDay[];
+  topInstalled: Array<{ slug: string; name: string; installCount: number }>;
+}
+
+/** 治理告警（只读建议，不自动改变状态） */
+export interface PluginGovernanceAlert {
+  kind: "pending_sla" | "reported" | "review_reported";
+  slug: string;
+  name: string;
+  status: string;
+  detail: string;
+  value: number;
+  createdAt: number;
+}
+
+export interface ShortLinkRecord {
+  code: string;
+  target: string;
+  pluginSlug: string | null;
+  clicks: number;
+  createdAt: number;
 }

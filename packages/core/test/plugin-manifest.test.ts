@@ -58,6 +58,19 @@ const validTheme = {
   payload: { accent: 'violet', tokens: { '--primary': '262 83% 58%', '--radius': '0.75rem' } },
 }
 
+const validSearchPack = {
+  manifestVersion: 1,
+  kind: 'search-pack',
+  name: '开发者检索包',
+  version: '1.0.0',
+  payload: {
+    engines: [
+      { name: 'GitHub Code', prefix: '!gh', searchUrl: 'https://github.com/search?q={q}&type=code', icon: '⚡' },
+      { name: 'MDN Web Docs', prefix: '!mdn', searchUrl: 'https://developer.mozilla.org/zh-CN/search?q={q}' },
+    ],
+  },
+}
+
 function expectFail(input: unknown, ...fragments: string[]) {
   const res = validateAndCleanPluginManifest(input)
   expect(res.ok).toBe(false)
@@ -380,6 +393,66 @@ describe('版本升级差异对比 (diffPluginManifests)', () => {
     const diff = diffPluginManifests(base, target)
     expect(diff.hasChanges).toBe(false)
     expect(diff.versionCompared).toBe(0)
+  })
+
+  it('支持 search-pack 合法格式校验、摘要与错误拦截', () => {
+    // 正常通过
+    const ok = expectOk(validSearchPack).manifest
+    expect(ok.kind).toBe('search-pack')
+    const summary = summarizePluginManifest(ok)
+    expect(summary.engineCount).toBe(2)
+    expect(summary.enginePrefixes).toEqual(['!gh', '!mdn'])
+
+    // 前缀缺叹号拦截
+    expectFail(
+      {
+        ...validSearchPack,
+        payload: { engines: [{ name: 'Test', prefix: 'badprefix', searchUrl: 'https://example.com?q={q}' }] },
+      },
+      '必须以叹号开头',
+    )
+
+    // 重复前缀拦截
+    expectFail(
+      {
+        ...validSearchPack,
+        payload: {
+          engines: [
+            { name: 'Test1', prefix: '!gh', searchUrl: 'https://example.com?q={q}' },
+            { name: 'Test2', prefix: '!gh', searchUrl: 'https://example2.com?q={q}' },
+          ],
+        },
+      },
+      '前缀重复',
+    )
+
+    // 缺少 {q} 占位符拦截
+    expectFail(
+      {
+        ...validSearchPack,
+        payload: { engines: [{ name: 'Test', prefix: '!test', searchUrl: 'https://example.com/search' }] },
+      },
+      '必须包含 {q} 查询占位符',
+    )
+  })
+
+  it('检测 search-pack 搜索引擎增删差异', () => {
+    const base = expectOk(validSearchPack).manifest
+    const target = expectOk({
+      ...validSearchPack,
+      version: '1.1.0',
+      payload: {
+        engines: [
+          { name: 'GitHub Code', prefix: '!gh', searchUrl: 'https://github.com/search?q={q}&type=code' },
+          { name: 'NPM Packages', prefix: '!npm', searchUrl: 'https://www.npmjs.com/search?q={q}' },
+        ],
+      },
+    }).manifest
+
+    const diff = diffPluginManifests(base, target)
+    expect(diff.hasChanges).toBe(true)
+    expect(diff.enginesAdded).toEqual(['NPM Packages'])
+    expect(diff.enginesRemoved).toEqual(['MDN Web Docs'])
   })
 })
 

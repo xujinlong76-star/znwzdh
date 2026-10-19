@@ -35,7 +35,8 @@ export const ListCategoriesInput = z.object({
 export const ListPluginsInput = z.object({
   kind: z.enum(["site-pack", "workspace-preset", "theme"]).optional().describe("按插件类型过滤：网址包 / 工作台预设 / 主题"),
   query: z.string().optional().describe("按名称、描述、作者关键词过滤"),
-  sort: z.enum(["new", "popular", "stars", "updated"]).default("new").describe("排序：new 最新 / popular 安装最多 / stars 星标最多 / updated 最近更新"),
+  sort: z.enum(["new", "popular", "stars", "rating", "updated"]).default("new").describe("排序：new 最新 / popular 安装最多 / stars 星标最多 / rating 评分最高 / updated 最近更新"),
+  featured: z.boolean().optional().describe("只看编辑精选"),
   limit: z.number().int().min(1).max(50).default(20).describe("返回条数上限"),
   offset: z.number().int().min(0).default(0).describe("分页偏移"),
 });
@@ -50,6 +51,18 @@ export const InstallPluginInput = z.object({
   slug: z.string().describe("插件 slug（可从 list_plugins 结果中获取）"),
   identity: z.string().optional().describe("安装归属的 identity；缺省为 mcp:<调用者标识>"),
   idempotencyKey: z.string().optional().describe("幂等键；Agent 重试不会重复安装"),
+});
+
+export const StarPluginInput = z.object({
+  slug: z.string().describe("插件 slug"),
+  starred: z.boolean().default(true).describe("true 点亮星标 / false 取消星标（幂等）"),
+});
+
+export const UpdatePluginInput = z.object({
+  slug: z.string().describe("插件 slug"),
+  manifest: z.record(z.string(), z.unknown()).describe("完整插件清单（版本号必须大于当前版本，类型不可变）"),
+  changelog: z.string().max(2000).optional().describe("变更说明；审核通过后写入版本历史"),
+  idempotencyKey: z.string().optional().describe("幂等键；重试不会重复提交同一版本"),
 });
 
 export const CreateSiteInput = z.object({
@@ -626,5 +639,15 @@ export const MCP_TOOL_DEFS: ToolDefinition[] = [
     name: "install_plugin",
     description: "把一个已上架插件安装到本机（按 identity 归属）。网址包会以增量去重方式写入站点库（绝不覆盖既有数据）；工作台预设与主题由客户端消费生效。支持幂等键；未上架插件会被拒绝。",
     scope: "write", inputSchema: InstallPluginInput, mutating: true,
+  },
+  {
+    name: "star_plugin",
+    description: "点亮或取消插件星标（幂等）。星标数会进入插件市场排序与作者页统计。",
+    scope: "write", inputSchema: StarPluginInput, mutating: true,
+  },
+  {
+    name: "update_plugin",
+    description: "提交插件新版本（写操作，需 write 权限）。校验完整清单、版本号严格递增且类型不可变；提交后回到 pending 待审并立即失效旧语义向量。",
+    scope: "write", inputSchema: UpdatePluginInput, mutating: true,
   },
 ];

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { indexSitesBatch } from "../index-site.ts";
 import { indexPluginsBatch, indexItemFromManifest, removePluginIndex } from "../index-plugin.ts";
 import { searchPluginsSemantic, similarPlugins } from "../plugins-search.ts";
+import { guardedFetch } from "@navhub/ai";
 import {
   validateAndCleanPluginManifest,
   summarizePluginManifest,
@@ -32,12 +33,87 @@ import {
   notFound,
 } from "./shared.ts";
 
+function escapeXml(unsafe: string): string {
+  return unsafe.replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case "<": return "&lt;";
+      case ">": return "&gt;";
+      case "&": return "&amp;";
+      case "'": return "&apos;";
+      case '"': return "&quot;";
+      default: return c;
+    }
+  });
+}
+
+function calcTextWidth(text: string): number {
+  let width = 0;
+  for (const ch of text) {
+    if (/[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/.test(ch)) {
+      width += 12;
+    } else if (/[ijlI1:.]/.test(ch)) {
+      width += 4.5;
+    } else if (/[A-Z%@#&]/.test(ch)) {
+      width += 8;
+    } else {
+      width += 6.5;
+    }
+  }
+  return Math.ceil(width);
+}
+
+function renderBadgeSvg(leftText: string, rightText: string, rightColor: string): string {
+  const leftPadding = 12;
+  const rightPadding = 12;
+  const leftContentWidth = calcTextWidth(leftText);
+  const rightContentWidth = calcTextWidth(rightText);
+  const leftWidth = leftContentWidth + leftPadding;
+  const rightWidth = rightContentWidth + rightPadding;
+  const totalWidth = leftWidth + rightWidth;
+
+  const leftTextX = Math.round((leftWidth / 2) * 10);
+  const rightTextX = Math.round((leftWidth + rightWidth / 2) * 10);
+  const leftTextLength = Math.round(leftContentWidth * 10);
+  const rightTextLength = Math.round(rightContentWidth * 10);
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="20" role="img" aria-label="${escapeXml(leftText)}: ${escapeXml(rightText)}">
+  <title>${escapeXml(leftText)}: ${escapeXml(rightText)}</title>
+  <linearGradient id="s" x2="0" y2="100%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <clipPath id="r">
+    <rect width="${totalWidth}" height="20" rx="3" fill="#fff"/>
+  </clipPath>
+  <g clip-path="url(#r)">
+    <rect width="${leftWidth}" height="20" fill="#555"/>
+    <rect x="${leftWidth}" width="${rightWidth}" height="20" fill="${rightColor}"/>
+    <rect width="${totalWidth}" height="20" fill="url(#s)"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
+    <text aria-hidden="true" x="${leftTextX}" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="${leftTextLength}">${escapeXml(leftText)}</text>
+    <text x="${leftTextX}" y="140" transform="scale(.1)" fill="#fff" textLength="${leftTextLength}">${escapeXml(leftText)}</text>
+    <text aria-hidden="true" x="${rightTextX}" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="${rightTextLength}">${escapeXml(rightText)}</text>
+    <text x="${rightTextX}" y="140" transform="scale(.1)" fill="#fff" textLength="${rightTextLength}">${escapeXml(rightText)}</text>
+  </g>
+</svg>`;
+}
+
 function extractPluginIdentity(req: any): string | null {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const query = (req.query ?? {}) as Record<string, unknown>;
   if (typeof body.identity === "string" && body.identity.trim()) return body.identity.trim().slice(0, 120);
   if (typeof query.identity === "string" && query.identity.trim()) return query.identity.trim().slice(0, 120);
   return identityOf(req);
+}
+
+/**
+ * 公共插件序列化：剔除内部归属身份与待审变更说明。
+ * ownerKey 可以公开（不可逆哈希），用于作者页 URL。
+ */
+function publicPlugin(plugin: Record<string, any>, opts: { ownerView?: boolean } = {}): Record<string, any> {
+  const { ownerIdentity: _ownerIdentity, pendingChangelog, ...rest } = plugin;
+  return opts.ownerView ? { ...rest, pendingChangelog: pendingChangelog ?? null } : rest;
 }
 
 export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -60,23 +136,92 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const sort = q.sort?.trim() || "new";
       const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 24)) : 24;
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
+      const featured = q.featured === "true" ? true : q.featured === "false" ? false : undefined;
+      const ownerKey = (q.ownerKey ?? q.author)?.trim() || undefined;
 
       const res = await ctx.repo.listPlugins({
         status: "published",
         kind: kind || undefined,
         q: search || undefined,
+        featured,
+        ownerKey,
         sort,
         limit,
         offset,
       });
 
       const items = res.items.map((plugin) => ({
-        ...plugin,
+        ...publicPlugin(plugin),
         summary: summarizePluginManifest(plugin.manifest),
       }));
 
       return {
         items,
+        total: res.total,
+        limit,
+        offset,
+      };
+    }
+  );
+
+  /**
+   * 我的插件（作者中心）：按发布身份列出全部状态，含待审说明与待审变更日志。
+   * 身份从 query/body identity 或网关注入的 anonId/userId 解析。
+   */
+  app.get(
+    "/api/plugins/mine",
+    { config: { scope: "public", cache: { maxAge: 0 } } },
+    async (req, reply) => {
+      const identity = extractPluginIdentity(req);
+      if (!identity) return badRequest(reply, "缺少用户身份标识 (identity/anonId)");
+      const q = req.query as Record<string, string | undefined>;
+      const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 24)) : 24;
+      const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
+      const res = await ctx.repo.listPluginsByOwner(identity, { sort: "updated", limit, offset });
+      return {
+        items: res.items.map((plugin) => ({
+          ...publicPlugin(plugin, { ownerView: true }),
+          summary: summarizePluginManifest(plugin.manifest),
+          editable: true,
+        })),
+        total: res.total,
+        limit,
+        offset,
+      };
+    }
+  );
+
+  /**
+   * 公开作者页：只暴露 published 插件与聚合计数；ownerKey 为身份不可逆哈希。
+   */
+  app.get(
+    "/api/plugins/author/:key",
+    { config: { scope: "public", cache: { maxAge: 0 } } },
+    async (req, reply) => {
+      const key = ((req.params as { key: string }).key ?? "").trim();
+      if (!/^[a-f0-9]{8,64}$/i.test(key)) return badRequest(reply, "作者 key 格式不合法");
+      const q = req.query as Record<string, string | undefined>;
+      const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 24)) : 24;
+      const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
+      const [res, all] = await Promise.all([
+        ctx.repo.listPluginsByOwnerKey(key, { limit, offset }),
+        ctx.repo.listPluginsByOwnerKey(key, { limit: 100 }),
+      ]);
+      if (res.total === 0) return notFound(reply, "作者不存在或暂无已上架插件");
+      const first = all.items[0];
+      return {
+        ownerKey: key,
+        author: first?.author ?? "匿名作者",
+        authorKind: first?.authorKind ?? null,
+        stats: {
+          plugins: res.total,
+          installs: all.items.reduce((sum, p) => sum + p.installCount, 0),
+          stars: all.items.reduce((sum, p) => sum + p.starCount, 0),
+        },
+        items: res.items.map((plugin) => ({
+          ...publicPlugin(plugin),
+          summary: summarizePluginManifest(plugin.manifest),
+        })),
         total: res.total,
         limit,
         offset,
@@ -114,11 +259,13 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const sort = q.sort?.trim() || "new";
       const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 24)) : 24;
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
+      const featured = q.featured === "true" ? true : q.featured === "false" ? false : undefined;
 
       const res = await ctx.repo.listPlugins({
         status: status || undefined,
         kind: kind || undefined,
         q: search || undefined,
+        featured,
         sort,
         limit,
         offset,
@@ -127,7 +274,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const pendingRes = await ctx.repo.listPlugins({ status: "pending", limit: 1 });
 
       const items = res.items.map((plugin) => ({
-        ...plugin,
+        ...publicPlugin(plugin),
         summary: summarizePluginManifest(plugin.manifest),
       }));
 
@@ -150,6 +297,86 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     async (_req, _reply) => {
       const telemetry = await ctx.repo.getPluginTelemetry();
       return telemetry;
+    }
+  );
+
+  /** 市场漏斗：浏览 → 安装点击 → 安装成功 → 卸载/举报（按日） */
+  app.get(
+    "/api/admin/plugins/funnel",
+    { config: { scope: "read", cache: { maxAge: 0 } } },
+    async (req, _reply) => {
+      const q = req.query as Record<string, string | undefined>;
+      const days = q.days ? Math.min(90, Math.max(1, parseInt(q.days, 10) || 30)) : 30;
+      return await ctx.repo.getPluginFunnel(days);
+    }
+  );
+
+  /** 治理告警：待审 SLA、插件举报、评价举报（只读建议） */
+  app.get(
+    "/api/admin/plugins/governance",
+    { config: { scope: "read", cache: { maxAge: 0 } } },
+    async (_req, _reply) => {
+      return { alerts: await ctx.repo.getPluginGovernanceAlerts(), generatedAt: Date.now() };
+    }
+  );
+
+  /** 评价治理列表：默认全部状态，支持 status=visible|hidden 过滤 */
+  app.get(
+    "/api/admin/plugin-reviews",
+    { config: { scope: "read", cache: { maxAge: 0 } } },
+    async (req, _reply) => {
+      const q = req.query as Record<string, string | undefined>;
+      const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 30)) : 30;
+      const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
+      const status = q.status === "visible" || q.status === "hidden" ? q.status : undefined;
+      const res = await ctx.repo.listPluginReviewsForAdmin({ status, limit, offset });
+      return { ...res, limit, offset };
+    }
+  );
+
+  /** 隐藏/恢复评价（管理台）；隐藏后立即退出公开列表与评分统计 */
+  app.patch(
+    "/api/admin/plugin-reviews/:id",
+    { config: { scope: "write" } },
+    async (req, reply) => {
+      const id = (req.params as { id: string }).id;
+      const body = (req.body ?? {}) as { action?: string; note?: string };
+      if (body.action !== "hide" && body.action !== "restore") {
+        return badRequest(reply, "action 必须为 hide 或 restore");
+      }
+      try {
+        const review = await ctx.repo.moderatePluginReview(
+          id,
+          body.action,
+          typeof body.note === "string" ? body.note : null,
+          { actor: (req as any).auth?.actor ?? "admin", actorKind: "admin", ip: req.ip },
+        );
+        return { ok: true, review };
+      } catch (err) {
+        return notFound(reply, err instanceof Error ? err.message : "评价不存在");
+      }
+    }
+  );
+
+  /** 编辑精选开关（管理台） */
+  app.patch(
+    "/api/plugins/:slug/featured",
+    { config: { scope: "write" } },
+    async (req, reply) => {
+      const slug = decodeURIComponent((req.params as { slug: string }).slug);
+      const body = (req.body ?? {}) as { featured?: unknown; rank?: unknown };
+      if (typeof body.featured !== "boolean") return badRequest(reply, "featured 必须为布尔值");
+      const rank = typeof body.rank === "number" && Number.isFinite(body.rank) ? body.rank : 0;
+      try {
+        const plugin = await ctx.repo.setPluginFeatured(slug, body.featured, rank, {
+          actor: (req as any).auth?.actor ?? "admin",
+          actorKind: "admin",
+          ip: req.ip,
+        });
+        return { ok: true, plugin: publicPlugin(plugin) };
+      } catch (err) {
+        return notFound(reply, err instanceof Error ? err.message : "插件不存在");
+      }
     }
   );
 
@@ -225,6 +452,76 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   );
 
   /**
+   * 插件死链嗅探与健康检查：受限出网体检
+   * 采用 SSRF 保护与严格超时，单次最多并发检测 30 个站点
+   */
+  app.post(
+    "/api/plugins/check-urls",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const body = req.body as { urls?: unknown };
+      if (!body || !Array.isArray(body.urls)) {
+        return badRequest(reply, "缺少 urls 数组参数");
+      }
+      const rawUrls = body.urls as unknown[];
+      if (rawUrls.length === 0) {
+        return badRequest(reply, "urls 不能为空");
+      }
+      if (rawUrls.length > 30) {
+        return badRequest(reply, "单次最多支持检测 30 个 URL");
+      }
+
+      const tasks = rawUrls.map(async (item) => {
+        const urlStr = typeof item === "string" ? item.trim() : "";
+        if (!urlStr) {
+          return { url: urlStr, ok: false, status: 0, error: "URL 为空" };
+        }
+        try {
+          const parsed = new URL(urlStr);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            return { url: urlStr, ok: false, status: 0, error: "仅支持 HTTP(S) 协议" };
+          }
+        } catch {
+          return { url: urlStr, ok: false, status: 0, error: "URL 格式不合法" };
+        }
+
+        try {
+          const res = await guardedFetch(urlStr, {
+            timeoutMs: 3500,
+            maxBytes: 1024,
+            maxRedirects: 3,
+          });
+          const ok = res.status >= 200 && res.status < 400;
+          return {
+            url: urlStr,
+            ok,
+            status: res.status,
+            error: ok ? undefined : `HTTP ${res.status}`,
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return {
+            url: urlStr,
+            ok: false,
+            status: 0,
+            error: message,
+          };
+        }
+      });
+
+      const results = await Promise.all(tasks);
+      const okCount = results.filter((r) => r.ok).length;
+      return {
+        success: true,
+        total: results.length,
+        okCount,
+        failedCount: results.length - okCount,
+        results,
+      };
+    }
+  );
+
+  /**
    * 插件详情查询
    * 未上架插件对普通访客返回 404；已上架返回完整信息及安装/星标状态
    */
@@ -237,16 +534,18 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
 
-      // 状态门禁：非 published 仅授权身份/管理台可见，普通访客直接 404
+      const identity = extractPluginIdentity(req);
+      const isOwner = Boolean(identity && plugin.ownerIdentity && identity === plugin.ownerIdentity);
+
+      // 状态门禁：非 published 仅作者/管理台可见，普通访客直接 404
       if (plugin.status !== "published") {
         const callerAuth = (req as { auth?: { scopes?: string[] } }).auth;
         const isAdmin = callerAuth?.scopes?.includes("admin");
-        if (!isAdmin) {
+        if (!isAdmin && !isOwner) {
           return notFound(reply, `插件未上架或不存在: ${slug}`);
         }
       }
 
-      const identity = extractPluginIdentity(req);
       let isInstalled = false;
       let isStarred = false;
       let installRecord = null;
@@ -279,7 +578,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
       return {
         plugin: {
-          ...plugin,
+          ...publicPlugin(plugin, { ownerView: isOwner }),
           installed: isInstalled,
           starred: isStarred,
           installedVersion: isInstalled ? installRecord?.version : null,
@@ -288,9 +587,52 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           upgradeDiff,
           reviewStats,
           myReview,
+          isOwner,
         },
         summary: summarizePluginManifest(plugin.manifest),
       };
+    }
+  );
+
+  /**
+   * 插件动态 SVG 徽章服务（供 README、文档与官网展示）：
+   * 支持 metric: version | installs | rating | stars
+   */
+  app.get(
+    "/api/plugins/:slug/badge.svg",
+    { config: { scope: "public" } },
+    async (req, reply) => {
+      const rawSlug = (req.params as { slug: string }).slug;
+      const slug = decodeURIComponent(rawSlug);
+      const q = req.query as Record<string, string | undefined>;
+      const metric = q.metric?.toLowerCase().trim() || "version";
+      const customLabel = q.label?.trim() || "navhub";
+
+      reply.header("Content-Type", "image/svg+xml; charset=utf-8");
+      reply.header("Cache-Control", "public, max-age=300");
+
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin || plugin.status !== "published") {
+        reply.code(404);
+        return renderBadgeSvg(customLabel, "not found", "#e05d44");
+      }
+
+      let rightText = `v${plugin.version}`;
+      let rightColor = "#007ec6";
+
+      if (metric === "installs") {
+        rightText = `${plugin.installCount} installs`;
+        rightColor = "#4c1";
+      } else if (metric === "stars") {
+        rightText = `${plugin.starCount} ★`;
+        rightColor = "#dfb317";
+      } else if (metric === "rating") {
+        const stats = await ctx.repo.getPluginReviewStats(plugin.id);
+        rightText = stats.reviewCount > 0 ? `${stats.avgRating.toFixed(1)} ★` : "unrated";
+        rightColor = stats.reviewCount > 0 ? "#fe7d37" : "#9f9f9f";
+      }
+
+      return renderBadgeSvg(customLabel, rightText, rightColor);
     }
   );
 
@@ -498,6 +840,33 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   );
 
 
+  /**
+   * 举报评价：只累计计数并进入治理队列，不自动隐藏（防恶意举报）。
+   */
+  app.post(
+    "/api/plugins/:slug/reviews/:id/report",
+    { config: { scope: "public", rateLimit: { max: 20, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const { slug, id } = req.params as { slug: string; id: string };
+      const body = (req.body ?? {}) as { reason?: unknown };
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (reason.length < 2 || reason.length > 200) {
+        return badRequest(reply, "举报原因需为 2-200 字");
+      }
+      const identity = extractPluginIdentity(req);
+      try {
+        const review = await ctx.repo.reportPluginReview(slug, id, reason, identity, {
+          actor: identity ?? "anonymous",
+          actorKind: "identity",
+          ip: req.ip,
+        });
+        return { ok: true, reportCount: review.reportCount };
+      } catch (err) {
+        return notFound(reply, err instanceof Error ? err.message : "评价不存在");
+      }
+    }
+  );
+
   /* ------------------------------------------------------------------ *
    * 投稿、导入与版本更新
    * ------------------------------------------------------------------ */
@@ -523,15 +892,20 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
 
       const callerAuth = (req as { auth?: { actor?: string; kind?: string; scopes?: string[] } }).auth;
-      const actorName = callerAuth?.actor || identityOf(req as any) || validated.manifest.author || "anonymous";
+      const identity = extractPluginIdentity(req) || callerAuth?.actor || (ctx.config.authRequired ? null : "anonymous");
+      if (!identity) {
+        return badRequest(reply, "缺少用户身份标识，无法建立作者归属");
+      }
+      const actorName = callerAuth?.actor || identity;
       const actorKind = callerAuth?.kind || "user";
 
       try {
         const createdPlugin = await ctx.repo.createPlugin(
           {
             manifest: validated.manifest,
-            author: validated.manifest.author || actorName,
+            author: validated.manifest.author || identity,
             authorKind: actorKind,
+            ownerIdentity: identity,
             source: "user",
             status: "pending",
           },
@@ -544,7 +918,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
         reply.code(201);
         return {
-          ...createdPlugin,
+          ...publicPlugin(createdPlugin, { ownerView: true }),
           success: true,
           summary: summarizePluginManifest(createdPlugin.manifest),
         };
@@ -619,7 +993,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
         reply.code(201);
         return {
-          ...imported,
+          ...publicPlugin(imported),
           success: true,
           install: installResult,
           summary: summarizePluginManifest(imported.manifest),
@@ -660,7 +1034,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       // 更新回到待审：摘掉旧版本语义向量，重新过审时按新内容重建
       await removePluginIndex(ctx, slug);
       return {
-        ...updated,
+        ...publicPlugin(updated, { ownerView: true }),
         success: true,
         summary: summarizePluginManifest(updated.manifest),
       };
@@ -672,6 +1046,54 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
   app.put("/api/plugins/:slug", { config: { scope: "write" } }, updateHandler);
   app.patch("/api/plugins/:slug", { config: { scope: "write" } }, updateHandler);
+
+  /**
+   * 作者自助提交新版本：仅归属作者或管理员；类型不可变、版本号严格递增。
+   * 提交后回到 pending，旧语义向量立即失效，避免未审内容被检索命中。
+   */
+  app.post(
+    "/api/plugins/:slug/versions",
+    { config: { scope: "public", rateLimit: { max: 10, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const slug = decodeURIComponent((req.params as { slug: string }).slug);
+      const body = (req.body ?? {}) as { manifest?: unknown; changelog?: unknown } & Record<string, unknown>;
+      const manifestInput = body.manifest ?? body;
+      const validated = validateAndCleanPluginManifest(manifestInput);
+      if (!validated.ok) {
+        reply.code(400);
+        return { error: "插件清单格式不合法", errors: validated.errors };
+      }
+
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+      const identity = extractPluginIdentity(req);
+      const callerAuth = (req as { auth?: { actor?: string; kind?: string; scopes?: string[] } }).auth;
+      const isAdmin = Boolean(callerAuth?.scopes?.includes("admin"));
+      if (!identity) return badRequest(reply, "缺少用户身份标识");
+      if (!plugin.ownerIdentity || (plugin.ownerIdentity !== identity && !isAdmin)) {
+        return forbidden(reply, "只有插件作者可以提交新版本");
+      }
+
+      const changelog = typeof body.changelog === "string" ? body.changelog.trim().slice(0, 2000) : null;
+      try {
+        const updated = await ctx.repo.submitPluginVersion(slug, validated.manifest, changelog, {
+          actor: callerAuth?.actor || identity,
+          actorKind: callerAuth?.kind ?? "owner",
+          ip: req.ip,
+        });
+        await removePluginIndex(ctx, slug);
+        reply.code(202);
+        return {
+          ...publicPlugin(updated, { ownerView: true }),
+          success: true,
+          summary: summarizePluginManifest(updated.manifest),
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return badRequest(reply, message);
+      }
+    }
+  );
 
   /* ------------------------------------------------------------------ *
    * 管理员审核工作流 (Review Workflow)
@@ -772,6 +1194,13 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             .map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url }));
           await indexSitesBatch(ctx, sites);
         }
+        // 服务端漏斗：重复安装/升级不计入“新安装”，避免转化率虚高
+        if (!result.alreadyInstalled) {
+          void ctx.repo.recordEvent("plugin_install_success", {
+            identity,
+            meta: { slug, kind: plugin.kind, version: plugin.version },
+          }).catch((err) => console.error("[plugins] install event failed:", err));
+        }
         return {
           success: true,
           ...result,
@@ -810,6 +1239,12 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           ip: req.ip,
         }
       );
+      if (result.removed) {
+        void ctx.repo.recordEvent("plugin_uninstall", {
+          identity,
+          meta: { slug, version: result.plugin.version },
+        }).catch((err) => console.error("[plugins] uninstall event failed:", err));
+      }
       return {
         success: true,
         ...result,
@@ -908,6 +1343,51 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         const message = err instanceof Error ? err.message : String(err);
         return badRequest(reply, message);
       }
+    }
+  );
+
+  /* ------------------------------------------------------------------ *
+   * 分享短链 (Short Links)
+   * ------------------------------------------------------------------ */
+
+  /**
+   * 创建插件分享短链：只允许 /marketplace/ 内部目标，防开放重定向。
+   * 前端用返回的 path 拼 origin 生成可复制链接。
+   */
+  app.post(
+    "/api/shortlinks",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as { slug?: unknown; target?: unknown; install?: unknown };
+      const slug = typeof body.slug === "string" ? body.slug.trim() : "";
+      let target = typeof body.target === "string" ? body.target.trim() : "";
+      if (slug) {
+        const plugin = await ctx.repo.getPluginBySlug(slug);
+        if (!plugin || plugin.status !== "published") return notFound(reply, `插件未上架或不存在: ${slug}`);
+        // 分享深链保留 ?install=1：接收方落地即弹安装确认（与长链兜底一致）
+        target = `/marketplace/${encodeURIComponent(plugin.slug)}${body.install === true ? "?install=1" : ""}`;
+      }
+      if (!target.startsWith("/marketplace/") || target.startsWith("//") || target.includes("\\") || target.length > 500) {
+        return badRequest(reply, "短链目标必须是站内 /marketplace/ 路径");
+      }
+      try {
+        const link = await ctx.repo.createShortLink({ target, pluginSlug: slug || null });
+        return { success: true, code: link.code, path: `/s/${link.code}`, target: link.target };
+      } catch (err) {
+        return badRequest(reply, err instanceof Error ? err.message : "创建短链失败");
+      }
+    }
+  );
+
+  /** 解析短链并累计点击（Next /s/[code] 与外部调用共用） */
+  app.get(
+    "/api/shortlinks/:code",
+    { config: { scope: "public", cache: { maxAge: 0 } } },
+    async (req, reply) => {
+      const code = (req.params as { code: string }).code;
+      const link = await ctx.repo.resolveShortLink(code);
+      if (!link) return notFound(reply, "短链不存在或已失效");
+      return { code: link.code, target: link.target, clicks: link.clicks };
     }
   );
 };

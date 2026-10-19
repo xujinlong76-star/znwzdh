@@ -374,5 +374,90 @@ describe("星标 / 举报 / 安装状态", () => {
     const refreshedStats = await repo.getPluginReviewStats(p.id);
     expect(refreshedStats.avgRating).toBe(3.5);
   });
+
+  it("支持 search-pack 安装记录 enginesAdded，并支持 3 次举报自动熔断隔离及审核解封", async () => {
+    const sp = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "search-pack",
+        name: "极客搜索包",
+        version: "1.0.0",
+        payload: {
+          engines: [
+            { id: "gh", name: "GitHub", prefix: "!gh", searchUrl: "https://github.com/search?q={q}" },
+            { id: "npm", name: "npm", prefix: "!npm", searchUrl: "https://www.npmjs.com/search?q={q}" },
+          ],
+        },
+      }),
+      status: "published",
+    });
+
+    // 1. 安装记录 enginesAdded
+    const installRes = await repo.installPlugin(sp.slug, "dev-user");
+    expect(installRes.applied.enginesAdded).toBe(2);
+
+    // 2. 举报第 1、2 次，状态依然 published
+    const rep1 = await repo.reportPlugin(sp.slug, { reason: "搜索失效1", identity: "user-1" });
+    expect(rep1.reportCount).toBe(1);
+    expect(rep1.quarantined).toBe(false);
+    expect((await repo.getPluginBySlug(sp.slug))?.status).toBe("published");
+
+    const rep2 = await repo.reportPlugin(sp.slug, { reason: "搜索失效2", identity: "user-2" });
+    expect(rep2.reportCount).toBe(2);
+    expect(rep2.quarantined).toBe(false);
+
+    // 3. 举报第 3 次，自动熔断隔离为 quarantined
+    const rep3 = await repo.reportPlugin(sp.slug, { reason: "恶意诱导", identity: "user-3" });
+    expect(rep3.reportCount).toBe(3);
+    expect(rep3.quarantined).toBe(true);
+    expect(rep3.status).toBe("quarantined");
+
+    const quarantinedPlugin = await repo.getPluginBySlug(sp.slug);
+    expect(quarantinedPlugin?.status).toBe("quarantined");
+    expect(quarantinedPlugin?.reviewNote).toContain("自动熔断隔离");
+
+    // 4. 遥测统计包含 quarantinedCount 和 searchPack
+    const telemetry = await repo.getPluginTelemetry();
+    expect(telemetry.quarantinedCount).toBeGreaterThanOrEqual(1);
+    expect(telemetry.kindDistribution.searchPack).toBeGreaterThanOrEqual(0);
+
+    // 5. 管理员审核通过，恢复为 published
+    const unquarantined = await repo.reviewPlugin(sp.slug, "approve", "经人工核查无恶意行为，解封上架");
+    expect(unquarantined.status).toBe("published");
+  });
+
+  it("支持按 trending 综合飙升热度排序", async () => {
+    const p1 = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "普通插件",
+        version: "1.0.0",
+        payload: { sites: [{ url: "https://p1.example.com", title: "P1" }] },
+      }),
+      status: "published",
+    });
+
+    const p2 = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "热门插件",
+        version: "1.0.0",
+        payload: { sites: [{ url: "https://p2.example.com", title: "P2" }] },
+      }),
+      status: "published",
+    });
+
+    // 给 p2 刷安装与星标
+    await repo.installPlugin(p2.slug, "user-hot-1");
+    await repo.installPlugin(p2.slug, "user-hot-2");
+    await repo.starPlugin(p2.slug, "user-hot-1");
+
+    const list = await repo.listPlugins({ sort: "trending", limit: 10 });
+    const p2Idx = list.items.findIndex((item) => item.slug === p2.slug);
+    const p1Idx = list.items.findIndex((item) => item.slug === p1.slug);
+    expect(p2Idx).toBeLessThan(p1Idx);
+  });
 });
 

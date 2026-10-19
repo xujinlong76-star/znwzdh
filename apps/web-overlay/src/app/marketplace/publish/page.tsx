@@ -9,7 +9,7 @@
  * 3. 提交后自动进入 pending 审核队列，并记录审计日志。
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Container } from '@/components/ui/container'
@@ -17,6 +17,9 @@ import { Footer } from '@/components/footer'
 import {
   validatePlugin,
   publishPlugin,
+  submitPluginVersion,
+  fetchPluginDetail,
+  checkPluginUrls,
   type HubPluginItem,
 } from '@/lib/navhub-api'
 import {
@@ -37,12 +40,30 @@ import {
   Send,
   Eye,
   FileCode2,
+  Search,
+  Activity,
+  Check,
+  X,
+  Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
+/** 默认把补丁位 +1，作者仍可手动改成更高的版本号 */
+function nextPatchVersion(version: string | undefined): string {
+  const parts = String(version || '1.0.0').split('.').map((n) => Number(n) || 0)
+  while (parts.length < 3) parts.push(0)
+  parts[2] = (parts[2] ?? 0) + 1
+  return parts.join('.')
+}
+
 export default function PluginPublishPage() {
   const router = useRouter()
+
+  // 编辑模式：/marketplace/publish?from=<slug>（仅作者本人可进入）
+  const [editingSlug, setEditingSlug] = useState<string | null>(null)
+  const [changelog, setChangelog] = useState('')
+  const [loadingExisting, setLoadingExisting] = useState(false)
 
   // 步骤 1: 类型
   const [kind, setKind] = useState<PluginKind>('site-pack')
@@ -56,6 +77,15 @@ export default function PluginPublishPage() {
   const [homepage, setHomepage] = useState('')
   const [tagsInput, setTagsInput] = useState('')
   const [icon, setIcon] = useState('')
+
+  // 链接体检状态
+  const [checkingUrls, setCheckingUrls] = useState(false)
+  const [urlCheckResults, setUrlCheckResults] = useState<{
+    total: number
+    okCount: number
+    failedCount: number
+    results: Array<{ url: string; ok: boolean; status: number; error?: string }>
+  } | null>(null)
 
   // 步骤 3: Payload JSON 编辑器
   const [payloadJson, setPayloadJson] = useState(() =>
@@ -88,6 +118,43 @@ export default function PluginPublishPage() {
   // 提交状态
   const [submitting, setSubmitting] = useState(false)
   const [publishedPlugin, setPublishedPlugin] = useState<HubPluginItem | null>(null)
+
+  useEffect(() => {
+    const from = new URLSearchParams(window.location.search).get('from')
+    if (!from) return
+    let cancelled = false
+    setLoadingExisting(true)
+    void (async () => {
+      const res = await fetchPluginDetail(from)
+      if (cancelled) return
+      if (!res?.plugin) {
+        toast.error('未找到要更新的插件')
+        setLoadingExisting(false)
+        return
+      }
+      if (!res.plugin.isOwner) {
+        toast.error('只有插件作者可以发布新版本')
+        router.replace(`/marketplace/${encodeURIComponent(from)}`)
+        return
+      }
+      const manifest = res.plugin.manifest ?? {}
+      setEditingSlug(from)
+      setKind(manifest.kind ?? res.plugin.kind)
+      setName(manifest.name ?? res.plugin.name ?? '')
+      setDescription(manifest.description ?? res.plugin.description ?? '')
+      setVersion(nextPatchVersion(manifest.version ?? res.plugin.version))
+      setAuthor(manifest.author ?? res.plugin.author ?? '')
+      setLicense(manifest.license ?? '')
+      setHomepage(manifest.homepage ?? '')
+      setTagsInput((manifest.tags ?? []).join(', '))
+      setIcon(manifest.icon ?? '')
+      setPayloadJson(JSON.stringify(manifest.payload ?? {}, null, 2))
+      setLoadingExisting(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [router])
 
   // 切换类型时提供模板
   const handleKindSelect = (k: PluginKind) => {
@@ -149,6 +216,74 @@ export default function PluginPublishPage() {
           2
         )
       )
+    } else if (k === 'search-pack') {
+      setPayloadJson(
+        JSON.stringify(
+          {
+            engines: [
+              {
+                id: 'github',
+                name: 'GitHub',
+                prefix: '!gh',
+                searchUrl: 'https://github.com/search?q={q}',
+                description: '检索开源项目、代码与 Issue',
+              },
+              {
+                id: 'npm',
+                name: 'npm',
+                prefix: '!npm',
+                searchUrl: 'https://www.npmjs.com/search?q={q}',
+                description: 'JavaScript / TypeScript 依赖包检索',
+              },
+            ],
+          },
+          null,
+          2
+        )
+      )
+    }
+  }
+
+  // 链接可达性体检
+  const handleCheckUrls = async () => {
+    setCheckingUrls(true)
+    setUrlCheckResults(null)
+    try {
+      let parsedPayload: any = {}
+      try {
+        parsedPayload = JSON.parse(payloadJson)
+      } catch {
+        throw new Error('负载 JSON 格式不合法，请先修正语法')
+      }
+      const urls: string[] = []
+      if (Array.isArray(parsedPayload.sites)) {
+        for (const s of parsedPayload.sites) {
+          if (typeof s.url === 'string' && s.url.trim()) urls.push(s.url.trim())
+        }
+      } else if (Array.isArray(parsedPayload.engines)) {
+        for (const e of parsedPayload.engines) {
+          if (typeof e.searchUrl === 'string' && e.searchUrl.trim()) {
+            urls.push(e.searchUrl.replace('{q}', 'NavHub').trim())
+          }
+        }
+      }
+      if (urls.length === 0) {
+        toast.info('未在负载中检测到可体检的 URL')
+        return
+      }
+      const res = await checkPluginUrls(urls.slice(0, 30))
+      setUrlCheckResults(res)
+      if (res.okCount === res.total) {
+        toast.success(`全部 ${res.total} 个链接健康可用！`)
+      } else {
+        toast.warning(`检测完成：${res.okCount} 个正常，${res.failedCount} 个异常`)
+      }
+    } catch (err) {
+      toast.error('链接体检失败', {
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setCheckingUrls(false)
     }
   }
 
@@ -211,9 +346,11 @@ export default function PluginPublishPage() {
     setSubmitting(true)
     try {
       const manifest = buildManifest()
-      const plugin = await publishPlugin(manifest)
+      const plugin = editingSlug
+        ? await submitPluginVersion(editingSlug, manifest, changelog)
+        : await publishPlugin(manifest)
       setPublishedPlugin(plugin)
-      toast.success('投稿发布成功！已提交至管理员审核队列')
+      toast.success(editingSlug ? '新版本已提交审核！' : '投稿发布成功！已提交至管理员审核队列')
     } catch (err) {
       toast.error('提交发布失败', {
         description: err instanceof Error ? err.message : String(err),
@@ -241,15 +378,22 @@ export default function PluginPublishPage() {
         </div>
 
         {/* 主界面卡片 */}
-        {publishedPlugin ? (
+        {loadingExisting ? (
+          <div className="rounded-3xl border border-border/80 glass-surface p-12 text-center space-y-3">
+            <Loader2 className="w-6 h-6 animate-spin mx-auto text-primary" />
+            <p className="text-sm text-muted-foreground">正在载入当前插件清单…</p>
+          </div>
+        ) : publishedPlugin ? (
           <div className="rounded-3xl border border-border/80 glass-surface p-8 sm:p-12 text-center space-y-4 max-w-xl mx-auto shadow-sm">
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto text-emerald-500">
               <CheckCircle2 className="w-8 h-8" />
             </div>
-            <h2 className="text-xl font-bold text-foreground">投稿发布成功！</h2>
+            <h2 className="text-xl font-bold text-foreground">
+              {editingSlug ? '新版本已提交审核！' : '投稿发布成功！'}
+            </h2>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              插件「<strong>{publishedPlugin.name}</strong>」已登记至待审队列（status: pending）。
-              管理员将在后台审核其安全性与内容规范，审核通过后即全网可见。
+              插件「<strong>{publishedPlugin.name}</strong>」的 v{publishedPlugin.version} 已登记至待审队列
+              （status: pending）。管理员将在后台审核其安全性与内容规范，审核通过后即全网可见。
             </p>
             <div className="flex items-center justify-center gap-3 pt-4">
               <Link
@@ -278,13 +422,15 @@ export default function PluginPublishPage() {
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-medium">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>声明式扩展向导</span>
+                  <span>{editingSlug ? '作者更新向导' : '声明式扩展向导'}</span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-bold text-foreground">
-                  投稿发布新插件
+                  {editingSlug ? '发布新版本' : '投稿发布新插件'}
                 </h1>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  按照声明式 JSON 契约分享您的网址合集、看板配置或个性化配色主题。
+                  {editingSlug
+                    ? '版本号必须大于当前版本，类型不可变；提交后重新进入审核队列，旧语义索引会立即失效。'
+                    : '按照声明式 JSON 契约分享您的网址合集、看板配置或个性化配色主题。'}
                 </p>
               </div>
 
@@ -293,7 +439,7 @@ export default function PluginPublishPage() {
                 <div className="text-xs font-semibold text-foreground">
                   第 1 步：选择插件类型
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <button
                     type="button"
                     onClick={() => handleKindSelect('site-pack')}
@@ -348,6 +494,25 @@ export default function PluginPublishPage() {
                     </div>
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
                       CSS 变量色彩定义与强调色，客户端实时渲染。
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleKindSelect('search-pack')}
+                    className={cn(
+                      'p-4 rounded-2xl border text-left space-y-2 transition-all',
+                      kind === 'search-pack'
+                        ? 'border-amber-500 bg-amber-500/10 shadow-xs'
+                        : 'border-border/70 hover:border-border hover:bg-muted/40'
+                    )}
+                  >
+                    <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-semibold text-xs">
+                      <Search className="w-4 h-4" />
+                      <span>搜索引擎包 (search-pack)</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      包含 !前缀 快捷直达规则与检索 URL 占位符。
                     </p>
                   </button>
                 </div>
@@ -536,22 +701,101 @@ export default function PluginPublishPage() {
                       {kind === 'theme' && (
                         <span>变量数: {validationResult.summary.themeTokenCount}</span>
                       )}
+                      {kind === 'search-pack' && (
+                        <span>
+                          引擎数: {validationResult.summary.engineCount}，前缀: {validationResult.summary.enginePrefixes?.join(', ')}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
               )}
 
+              {/* 链接健康体检结果展示 */}
+              {urlCheckResults && (
+                <div
+                  className={cn(
+                    'p-4 rounded-2xl border text-xs space-y-2 animate-in fade-in',
+                    urlCheckResults.failedCount === 0
+                      ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300'
+                      : 'border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-300'
+                  )}
+                >
+                  <div className="flex items-center justify-between font-semibold">
+                    <div className="flex items-center gap-2">
+                      <Activity className="w-4 h-4" />
+                      <span>
+                        URL 可达性体检：共检测 {urlCheckResults.total} 个，
+                        {urlCheckResults.failedCount === 0 ? '全部健康' : `${urlCheckResults.failedCount} 个异常`}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="max-h-32 overflow-y-auto space-y-1 pt-1">
+                    {urlCheckResults.results.map((r, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px] font-mono gap-2">
+                        <span className="truncate max-w-[320px]">{r.url}</span>
+                        {r.ok ? (
+                          <span className="text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
+                            ✓ {r.status}
+                          </span>
+                        ) : (
+                          <span className="text-destructive font-bold shrink-0">
+                            ✕ {r.error || '失败'}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {editingSlug && (
+                <div className="space-y-1.5">
+                  <label htmlFor="plugin-changelog" className="text-xs font-medium text-foreground">
+                    变更说明（审核通过后写入版本历史）
+                  </label>
+                  <textarea
+                    id="plugin-changelog"
+                    value={changelog}
+                    onChange={(e) => setChangelog(e.target.value)}
+                    maxLength={2000}
+                    rows={3}
+                    placeholder="例如：新增 12 个设计工具站点；修复失效链接；调整主题强调色"
+                    className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs leading-relaxed resize-y"
+                  />
+                </div>
+              )}
+
               {/* 底部操作条 */}
               <div className="pt-4 border-t border-border/60 flex items-center justify-between gap-4">
-                <button
-                  type="button"
-                  onClick={handleValidate}
-                  disabled={validating || !name.trim() || !description.trim()}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-border/80 bg-background hover:bg-muted/60 text-foreground transition-all"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>{validating ? '预检中…' : '预检校验'}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleValidate}
+                    disabled={validating || !name.trim() || !description.trim()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-border/80 bg-background hover:bg-muted/60 text-foreground transition-all"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>{validating ? '预检中…' : '预检校验'}</span>
+                  </button>
+
+                  {(kind === 'site-pack' || kind === 'search-pack') && (
+                    <button
+                      type="button"
+                      onClick={handleCheckUrls}
+                      disabled={checkingUrls}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl border border-border/80 bg-background hover:bg-muted/60 text-foreground transition-all"
+                      title="检测清单中站点的可达性与是否存在死链"
+                    >
+                      {checkingUrls ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Activity className="w-3.5 h-3.5 text-primary" />
+                      )}
+                      <span>{checkingUrls ? '嗅探检测中…' : '体检链接可达性'}</span>
+                    </button>
+                  )}
+                </div>
 
                 <button
                   type="submit"
@@ -559,7 +803,7 @@ export default function PluginPublishPage() {
                   className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-medium rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all shadow-sm"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>{submitting ? '提交中…' : '立即提交审核'}</span>
+                  <span>{submitting ? '提交中…' : editingSlug ? '提交新版本审核' : '立即提交审核'}</span>
                 </button>
               </div>
             </div>

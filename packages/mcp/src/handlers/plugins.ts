@@ -6,12 +6,14 @@
  * 以增量去重方式写库，并补建检索向量索引（模型不可用时静默跳过，
  * 只影响语义检索，不影响安装结果）。
  */
-import { summarizePluginManifest } from "@navhub/core";
-import { indexSitesBatch, searchPluginsSemantic } from "@navhub/api";
+import { summarizePluginManifest, validateAndCleanPluginManifest } from "@navhub/core";
+import { indexSitesBatch, removePluginIndex, searchPluginsSemantic } from "@navhub/api";
 import {
   InstallPluginInput,
   ListPluginsInput,
   SearchPluginsInput,
+  StarPluginInput,
+  UpdatePluginInput,
   requireScope,
   type ToolContext,
 } from "../tools.ts";
@@ -27,6 +29,7 @@ export const pluginHandlers = {
       status: "published",
       kind: input.kind,
       q: input.query,
+      featured: input.featured,
       sort: input.sort,
       limit: input.limit,
       offset: input.offset,
@@ -45,6 +48,9 @@ export const pluginHandlers = {
         tags: p.tags,
         installCount: p.installCount,
         starCount: p.starCount,
+        ratingAvg: p.ratingAvg,
+        reviewCount: p.reviewCount,
+        featured: p.featured,
         publishedAt: p.publishedAt,
         summary: summarizePluginManifest(p.manifest),
         installHint: '安装：install_plugin { "slug": "' + p.slug + '" }',
@@ -78,6 +84,9 @@ export const pluginHandlers = {
         tags: p.tags,
         installCount: p.installCount,
         starCount: p.starCount,
+        ratingAvg: p.ratingAvg,
+        reviewCount: p.reviewCount,
+        featured: p.featured,
         publishedAt: p.publishedAt,
         score: p.score ?? null,
         summary: p.summary,
@@ -122,6 +131,54 @@ export const pluginHandlers = {
           version: plugin.version,
           identity,
           ...result,
+        };
+      });
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  },
+
+  async star_plugin(deps: HandlerDeps, args: unknown, tc: ToolContext) {
+    const { ctx } = deps;
+    requireScope(tc, "write");
+    const input = StarPluginInput.parse(args ?? {});
+    try {
+      const result = input.starred
+        ? await ctx.repo.starPlugin(input.slug, "mcp:" + tc.actor)
+        : await ctx.repo.unstarPlugin(input.slug, "mcp:" + tc.actor);
+      return ok({ slug: input.slug, starred: result.starred, starCount: result.starCount });
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  },
+
+  async update_plugin(deps: HandlerDeps, args: unknown, tc: ToolContext) {
+    const { ctx } = deps;
+    requireScope(tc, "write");
+    const input = UpdatePluginInput.parse(args ?? {});
+    const validated = validateAndCleanPluginManifest(input.manifest);
+    if (!validated.ok) {
+      return fail("插件清单校验失败: " + validated.errors.join("; "));
+    }
+
+    try {
+      return await deps.withIdempotency(input.idempotencyKey, async () => {
+        const actor = { actor: "mcp:" + tc.actor, actorKind: "token" };
+        // 规则统一收敛在 store：pending/rejected 允许同版本修正；已上架必须严格递增。
+        const updated = await ctx.repo.submitPluginVersion(
+          input.slug,
+          validated.manifest,
+          input.changelog ?? null,
+          actor,
+        );
+        await removePluginIndex(ctx, input.slug);
+        return {
+          success: true,
+          slug: updated.slug,
+          version: updated.version,
+          status: updated.status,
+          summary: summarizePluginManifest(updated.manifest),
+          reviewHint: "已进入待审队列；通过后版本历史会记录本次变更",
         };
       });
     } catch (err) {

@@ -24,7 +24,25 @@ export function hubIdentitySecret(
 }
 
 /** 与中枢 identityOf 对齐地从请求中取出待签名身份（无身份返回 null） */
-export function identityFromRequest(url: URL, rawBody?: string): string | null {
+export function identityFromRequest(
+  url: URL,
+  rawBody?: string,
+  headers?: Headers | Record<string, string | null | undefined>,
+): string | null {
+  // 与中枢 identityOf 同序：Header 优先，其次 Query，最后 Body
+  const getHeader = (name: string): string | null => {
+    if (!headers) return null
+    if (typeof (headers as Headers).get === 'function') return (headers as Headers).get(name)
+    const record = headers as Record<string, string | null | undefined>
+    return record[name] ?? record[name.toLowerCase()] ?? null
+  }
+  const fromHeader =
+    getHeader('x-navhub-user-id') ??
+    getHeader('x-user-id') ??
+    getHeader('x-navhub-anon-id') ??
+    getHeader('x-anon-id')
+  if (fromHeader) return fromHeader.slice(0, 64)
+
   const fromQuery = url.searchParams.get('userId') ?? url.searchParams.get('anonId')
   if (fromQuery) return fromQuery.slice(0, 64)
 

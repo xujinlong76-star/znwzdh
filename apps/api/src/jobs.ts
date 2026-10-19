@@ -58,9 +58,9 @@ export function shouldMarkBroken(
   return priorConsecutiveFailures + 1 >= threshold;
 }
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance"];
 
 /** data_retention 任务的参数：mode 决定走哪条路，apply 决定是否真的动手 */
 export interface DataRetentionPayload {
@@ -107,6 +107,8 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "purge_trash", intervalMs: 86_400_000, payload: { olderThanDays: 30 } },
   { kind: "token_audit", intervalMs: 7 * 86_400_000 },
   { kind: "taxonomy_audit", intervalMs: 86_400_000 },
+  // 插件治理巡检：只产告警与审计，不自动下架任何插件/评价
+  { kind: "plugin_governance", intervalMs: 4 * 3600_000 },
   // 数据治理默认只做 rollup 的 dry-run：自动化可以先"看见"，不该先"动手"。
   // 确认过输出后再把 payload 改成 { mode: "rollup", apply: true }（或手动触发一次）。
   { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30 } },
@@ -166,6 +168,7 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   purge_trash: { cron: "DAILY3AM", timeoutMs: 120_000, maxConcurrency: 1 },
   taxonomy_audit: { cron: "DAILY3AM", timeoutMs: 300_000, maxConcurrency: 1 },
   data_retention: { cron: "DAILY4AM", timeoutMs: 600_000, maxConcurrency: 1 },
+  plugin_governance: { cron: "X4H", timeoutMs: 120_000, maxConcurrency: 1 },
 };
 
 /** 标准 5 段 cron 字面量（与 DEFAULT_SCHEDULES 别名一一对应，集中存放避免块注释提前闭合） */
@@ -467,6 +470,9 @@ export class JobRunner {
           break;
         case "data_retention":
           await this.runDataRetention((payload ?? {}) as DataRetentionPayload);
+          break;
+        case "plugin_governance":
+          await this.runPluginGovernance();
           break;
         default:
           throw new Error("未知任务类型: " + kind);
@@ -851,6 +857,26 @@ export class JobRunner {
    *   - `cleanup`：删的是"唯一留底在归档文件里"的原样明细，任务里没有可靠的归档目标，
    *     **一律拒绝 apply** —— 要真删请用 CLI，别让调度器替人做这个决定。
    */
+  /**
+   * 插件治理巡检：待审超 SLA、插件被举报、评价被举报。
+   * 只写审计与日志，不自动下架/隐藏——治理动作必须由人做，避免误伤。
+   */
+  private async runPluginGovernance(): Promise<void> {
+    const alerts = await this.ctx.repo.getPluginGovernanceAlerts();
+    if (alerts.length === 0) return;
+    await this.ctx.repo.audit({
+      actor: "system",
+      actorKind: "system",
+      action: "plugin.governance.alert",
+      target: "plugin_governance",
+      diff: {
+        count: alerts.length,
+        alerts: alerts.slice(0, 20).map((a) => ({ kind: a.kind, slug: a.slug, value: a.value, detail: a.detail })),
+      },
+    });
+    console.warn(`[jobs] plugin_governance: ${alerts.length} 条告警待处理`);
+  }
+
   private async runDataRetention(payload: DataRetentionPayload = {}): Promise<void> {
     const mode = payload.mode === "cleanup" ? "cleanup" : "rollup";
     if (mode === "cleanup" && payload.apply === true) {

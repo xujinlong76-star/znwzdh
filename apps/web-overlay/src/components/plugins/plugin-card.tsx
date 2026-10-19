@@ -7,6 +7,7 @@ import {
   starPlugin,
   unstarPlugin,
   installPlugin,
+  trackPluginEvent,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
@@ -91,6 +92,7 @@ export function PluginCard({
   const handleQuickInstall = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    trackPluginEvent('plugin_install_click', plugin.slug)
 
     // 有确认弹窗时统一走弹窗：site-pack 可预演将写入的站点数，
     // workspace-preset / theme 必须在客户端消费 payload（暂存/激活），
@@ -198,6 +200,11 @@ export function PluginCard({
             >
               {pluginKindLabel(plugin.kind)}
             </Badge>
+            {plugin.featured && (
+              <Badge variant="outline" className="text-[10px] text-amber-600 bg-amber-500/10 border-amber-500/30">
+                精选
+              </Badge>
+            )}
             {plugin.source === 'import' && (
               <Badge variant="outline" className="text-[10px] text-amber-600 bg-amber-500/5 border-amber-500/20">
                 本地导入
@@ -267,6 +274,12 @@ export function PluginCard({
             <Download className="w-3.5 h-3.5 text-muted-foreground/60" />
             {plugin.installCount || 0}
           </span>
+          {(plugin.reviewCount ?? 0) > 0 && (
+            <span className="text-muted-foreground flex items-center gap-1 font-mono text-[11px]" title={`${plugin.reviewCount} 条评价`}>
+              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+              {(plugin.ratingAvg ?? 0).toFixed(1)}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

@@ -14,10 +14,10 @@
 
 export const PLUGIN_MANIFEST_VERSION = 1
 
-export type PluginKind = 'site-pack' | 'workspace-preset' | 'theme'
-export const PLUGIN_KINDS: readonly PluginKind[] = ['site-pack', 'workspace-preset', 'theme']
+export type PluginKind = 'site-pack' | 'workspace-preset' | 'theme' | 'search-pack'
+export const PLUGIN_KINDS: readonly PluginKind[] = ['site-pack', 'workspace-preset', 'theme', 'search-pack']
 
-export type PluginStatus = 'pending' | 'published' | 'rejected' | 'delisted'
+export type PluginStatus = 'pending' | 'published' | 'rejected' | 'delisted' | 'quarantined'
 
 export const PLUGIN_LIMITS = {
   maxManifestBytes: 256 * 1024,
@@ -43,6 +43,9 @@ export const PLUGIN_LIMITS = {
   maxWidgetTitle: 40,
   maxWidgetConfigBytes: 8 * 1024,
   maxThemeTokens: 30,
+  maxSearchEngines: 30,
+  maxEngineName: 40,
+  maxEnginePrefix: 16,
 } as const
 
 export type ThemeAccent = 'violet' | 'emerald' | 'amber' | 'rose'
@@ -118,6 +121,18 @@ export interface ThemePayload {
   tokens?: Record<string, string>
 }
 
+export interface SearchEngineItem {
+  name: string
+  prefix: string
+  searchUrl: string
+  icon?: string
+  description?: string
+}
+
+export interface SearchPackPayload {
+  engines: SearchEngineItem[]
+}
+
 export interface PluginManifest {
   manifestVersion: typeof PLUGIN_MANIFEST_VERSION
   kind: PluginKind
@@ -129,7 +144,7 @@ export interface PluginManifest {
   license?: string
   version: string
   tags?: string[]
-  payload: SitePackPayload | WorkspacePresetPayload | ThemePayload
+  payload: SitePackPayload | WorkspacePresetPayload | ThemePayload | SearchPackPayload
 }
 
 /** 列表卡片 / 安装确认弹窗用的影响摘要（由已校验的 manifest 派生） */
@@ -145,6 +160,8 @@ export interface PluginSummary {
   widgetTypes: string[]
   accent?: ThemeAccent
   themeTokenCount: number
+  engineCount: number
+  enginePrefixes: string[]
 }
 
 export type PluginManifestValidation =
@@ -154,7 +171,13 @@ export type PluginManifestValidation =
 export const PLUGIN_MANIFEST_FILE_SUFFIX = '.navhub-plugin.json'
 
 export function pluginKindLabel(kind: PluginKind): string {
-  return kind === 'site-pack' ? '网址包' : kind === 'workspace-preset' ? '工作台预设' : '主题'
+  return kind === 'site-pack'
+    ? '网址包'
+    : kind === 'workspace-preset'
+      ? '工作台预设'
+      : kind === 'theme'
+        ? '主题'
+        : '搜索引擎包'
 }
 
 /* ------------------------------------------------------------------ *
@@ -518,6 +541,58 @@ function validateThemePayload(payload: Record<string, unknown>, errors: string[]
   return out
 }
 
+function validateSearchPackPayload(payload: Record<string, unknown>, errors: string[]): SearchPackPayload {
+  const engines: SearchEngineItem[] = []
+  const rawEngines = payload.engines
+  if (!Array.isArray(rawEngines)) {
+    errors.push('payload.engines 必须是数组')
+    return { engines }
+  }
+  if (rawEngines.length === 0) {
+    errors.push('payload.engines 至少需要 1 个搜索引擎')
+    return { engines }
+  }
+  if (rawEngines.length > PLUGIN_LIMITS.maxSearchEngines) {
+    errors.push(`payload.engines 最多 ${PLUGIN_LIMITS.maxSearchEngines} 个`)
+    return { engines }
+  }
+  const prefixSet = new Set<string>()
+  for (let i = 0; i < rawEngines.length; i++) {
+    const entry = rawEngines[i]
+    const path = `payload.engines[${i}]`
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      errors.push(`${path} 必须是对象`)
+      continue
+    }
+    const record = entry as Record<string, unknown>
+    const name = readString(record.name, PLUGIN_LIMITS.maxEngineName, `${path}.name`, errors, { required: true })
+    const prefix = readString(record.prefix, PLUGIN_LIMITS.maxEnginePrefix, `${path}.prefix`, errors, { required: true })
+    if (prefix) {
+      if (!/^![a-zA-Z0-9_-]{1,15}$/.test(prefix)) {
+        errors.push(`${path}.prefix 必须以叹号开头后接英文字母/数字/下划线（如 !gh、!npm、!mdn）`)
+      } else if (prefixSet.has(prefix.toLowerCase())) {
+        errors.push(`${path}.prefix 前缀重复：${prefix}`)
+      } else {
+        prefixSet.add(prefix.toLowerCase())
+      }
+    }
+    const searchUrl = readHttpUrl(record.searchUrl, `${path}.searchUrl`, errors, true)
+    if (searchUrl && !searchUrl.includes('{q}')) {
+      errors.push(`${path}.searchUrl 必须包含 {q} 查询占位符`)
+    }
+    const icon = readString(record.icon, PLUGIN_LIMITS.maxIconChars, `${path}.icon`, errors)
+    const description = readString(record.description, 120, `${path}.description`, errors)
+
+    if (name && prefix && searchUrl) {
+      const item: SearchEngineItem = { name, prefix, searchUrl }
+      if (icon) item.icon = icon
+      if (description) item.description = description
+      engines.push(item)
+    }
+  }
+  return { engines }
+}
+
 export function validateAndCleanPluginManifest(input: unknown): PluginManifestValidation {
   const errors: string[] = []
   const warnings: string[] = []
@@ -577,13 +652,15 @@ export function validateAndCleanPluginManifest(input: unknown): PluginManifestVa
   }
   const payloadRecord = raw.payload as Record<string, unknown>
 
-  let payload: SitePackPayload | WorkspacePresetPayload | ThemePayload
+  let payload: SitePackPayload | WorkspacePresetPayload | ThemePayload | SearchPackPayload
   if (kind === 'site-pack') {
     payload = validateSitePackPayload(payloadRecord, errors, warnings)
   } else if (kind === 'workspace-preset') {
     payload = validateWorkspacePresetPayload(payloadRecord, errors)
-  } else {
+  } else if (kind === 'theme') {
     payload = validateThemePayload(payloadRecord, errors)
+  } else {
+    payload = validateSearchPackPayload(payloadRecord, errors)
   }
 
   if (errors.length > 0) return { ok: false, errors }
@@ -631,6 +708,8 @@ export function summarizePluginManifest(manifest: PluginManifest): PluginSummary
     widgetCount: 0,
     widgetTypes: [],
     themeTokenCount: 0,
+    engineCount: 0,
+    enginePrefixes: [],
   }
   const tags = new Set<string>()
   for (const tag of manifest.tags ?? []) tags.add(tag.toLowerCase())
@@ -664,10 +743,14 @@ export function summarizePluginManifest(manifest: PluginManifest): PluginSummary
     }
     summary.widgetCount = widgetCount
     summary.widgetTypes = [...types].slice(0, 12)
-  } else {
+  } else if (manifest.kind === 'theme') {
     const payload = manifest.payload as ThemePayload
     summary.accent = payload.accent
     summary.themeTokenCount = payload.tokens ? Object.keys(payload.tokens).length : 0
+  } else {
+    const payload = manifest.payload as SearchPackPayload
+    summary.engineCount = payload.engines?.length ?? 0
+    summary.enginePrefixes = (payload.engines ?? []).map((e) => e.prefix)
   }
   summary.uniqueTagCount = tags.size
   return summary
@@ -734,6 +817,9 @@ export interface PluginDiffResult {
   tokensAddedCount: number
   tokensRemovedCount: number
   tokensModifiedCount: number
+  // search-pack
+  enginesAdded: string[]
+  enginesRemoved: string[]
 }
 
 /** 对比两个插件清单，计算升级变更差异 */
@@ -766,6 +852,8 @@ export function diffPluginManifests(base: PluginManifest, target: PluginManifest
     tokensAddedCount: 0,
     tokensRemovedCount: 0,
     tokensModifiedCount: 0,
+    enginesAdded: [],
+    enginesRemoved: [],
   }
 
   if (nameChanged || descriptionChanged || base.version !== target.version || base.kind !== target.kind) {
@@ -917,6 +1005,24 @@ export function diffPluginManifests(base: PluginManifest, target: PluginManifest
     }
 
     result.tokenChanges = tokenChanges
+  } else if (kind === 'search-pack' && base.kind === 'search-pack') {
+    const basePayload = base.payload as SearchPackPayload
+    const targetPayload = target.payload as SearchPackPayload
+    const basePrefixes = new Set((basePayload.engines ?? []).map((e) => e.prefix))
+    const targetPrefixes = new Set((targetPayload.engines ?? []).map((e) => e.prefix))
+
+    for (const e of targetPayload.engines ?? []) {
+      if (!basePrefixes.has(e.prefix)) {
+        result.enginesAdded.push(e.name || e.prefix)
+        result.hasChanges = true
+      }
+    }
+    for (const e of basePayload.engines ?? []) {
+      if (!targetPrefixes.has(e.prefix)) {
+        result.enginesRemoved.push(e.name || e.prefix)
+        result.hasChanges = true
+      }
+    }
   }
 
   return result

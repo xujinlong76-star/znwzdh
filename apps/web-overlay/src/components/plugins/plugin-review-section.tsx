@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import {
   fetchPluginReviews,
+  reportPluginReview,
   submitPluginReview,
   type HubPluginReviewItem,
   type HubPluginReviewsResponse,
@@ -10,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
-import { Star, MessageSquare, CheckCircle2, ShieldCheck, UserCheck } from 'lucide-react'
+import { Star, MessageSquare, CheckCircle2, ShieldCheck, UserCheck, Flag } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface PluginReviewSectionProps {
@@ -44,6 +45,9 @@ export function PluginReviewSection({
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [reportingId, setReportingId] = useState<string | null>(null)
+  const [reportReason, setReportReason] = useState('')
+  const [reportSubmitting, setReportSubmitting] = useState(false)
 
   // 刷新评价列表
   const loadReviews = async () => {
@@ -90,6 +94,25 @@ export function PluginReviewSection({
       toast.error(err?.message || '提交评价失败，请稍后重试')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleReport = async (reviewId: string) => {
+    const reason = reportReason.trim()
+    if (reason.length < 2) {
+      toast.error('请填写至少 2 个字的举报原因')
+      return
+    }
+    setReportSubmitting(true)
+    try {
+      await reportPluginReview(slug, reviewId, reason)
+      toast.success('举报已提交', { description: '管理员会结合举报计数人工复核，不会自动隐藏评价' })
+      setReportingId(null)
+      setReportReason('')
+    } catch (err: any) {
+      toast.error(err?.message || '举报失败，请稍后重试')
+    } finally {
+      setReportSubmitting(false)
     }
   }
 
@@ -189,6 +212,12 @@ export function PluginReviewSection({
             </h4>
             <span className="text-xs text-muted-foreground">所有安装用户可见</span>
           </div>
+
+          {myReview?.status === 'hidden' && (
+            <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-400">
+              这条评价已被管理员隐藏，其他用户暂时看不到；修改后不会自动恢复，如需申诉请通过举报/反馈渠道联系管理员。
+            </p>
+          )}
 
           {/* 星级打分 */}
           <div>
@@ -340,13 +369,63 @@ export function PluginReviewSection({
                   </p>
                 )}
 
-                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70 pt-1">
-                  <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                  <span>已验证真实安装用户</span>
-                  <span className="font-mono text-muted-foreground/50">
-                    ({rev.identity.slice(0, 10)}...)
-                  </span>
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70">
+                    <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                    <span>已验证真实安装用户</span>
+                    <span className="font-mono text-muted-foreground/50">
+                      ({rev.identity.slice(0, 10)}...)
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReportingId((prev) => (prev === rev.id ? null : rev.id))
+                      setReportReason('')
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/60 hover:text-rose-500 transition-colors"
+                  >
+                    <Flag className="h-3 w-3" />
+                    举报
+                  </button>
                 </div>
+
+                {reportingId === rev.id && (
+                  <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-3 space-y-2">
+                    <p className="text-[11px] text-muted-foreground">
+                      请说明这条评价的问题（广告、人身攻击、虚假体验等）。举报只累计计数，由管理员人工复核。
+                    </p>
+                    <Textarea
+                      value={reportReason}
+                      onChange={(e) => setReportReason(e.target.value)}
+                      placeholder="举报原因（2-200 字）"
+                      aria-label="举报评价原因"
+                      maxLength={200}
+                      rows={2}
+                      className="text-xs bg-background resize-none"
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px]"
+                        onClick={() => setReportingId(null)}
+                      >
+                        取消
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 text-[11px] bg-rose-600 hover:bg-rose-700 text-white"
+                        disabled={reportSubmitting}
+                        onClick={() => void handleReport(rev.id)}
+                      >
+                        {reportSubmitting ? '提交中…' : '提交举报'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

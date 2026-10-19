@@ -14,10 +14,13 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
+import { Button } from '@/components/ui/button'
 import {
   fetchPluginDetail,
   starPlugin,
   unstarPlugin,
+  createPluginShortLink,
+  trackPluginEvent,
   type HubPluginItem,
 } from '@/lib/navhub-api'
 import {
@@ -66,6 +69,10 @@ import {
   Share2,
   History,
   MessageSquare,
+  Award,
+  AlertTriangle,
+  Upload,
+  Search,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -94,6 +101,8 @@ export default function PluginDetailPage({
   const [installModalOpen, setInstallModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState<'install' | 'uninstall' | 'upgrade'>('install')
   const [reportModalOpen, setReportModalOpen] = useState(false)
+  const [badgeModalOpen, setBadgeModalOpen] = useState(false)
+  const [badgeMetric, setBadgeMetric] = useState<'version' | 'installs' | 'stars' | 'rating'>('version')
 
   // 星标状态
   const [starred, setStarred] = useState(false)
@@ -136,7 +145,16 @@ export default function PluginDetailPage({
   }, [loading, plugin])
 
   const handleShareLink = useCallback(async () => {
-    const link = `${window.location.origin}/marketplace/${encodeURIComponent(slug)}?install=1`
+    // 优先创建站内短链；失败时退回完整深链，分享不因后端故障而不可用
+    let path = `/marketplace/${encodeURIComponent(slug)}?install=1`
+    try {
+      const short = await createPluginShortLink(slug, { install: true })
+      if (short.path) path = short.path
+    } catch {
+      // 保留长链兜底
+    }
+    trackPluginEvent('plugin_share', slug)
+    const link = `${window.location.origin}${path}`
     const result = await copyText(link)
     if (result.ok) {
       toast.success('分享链接已复制', { description: '对方打开即可一键进入安装确认' })
@@ -178,6 +196,14 @@ export default function PluginDetailPage({
   useEffect(() => {
     void loadDetail()
   }, [loadDetail])
+
+  // 漏斗：每个详情页会话只记一次浏览（避免星标/安装后的 loadDetail 重复计数）
+  const viewTracked = useRef(false)
+  useEffect(() => {
+    if (!plugin || viewTracked.current) return
+    viewTracked.current = true
+    trackPluginEvent('plugin_view', plugin.slug)
+  }, [plugin])
 
   const handleStarToggle = async () => {
     if (!plugin || starLoading) return
@@ -318,6 +344,20 @@ export default function PluginDetailPage({
         {/* 降级提示 */}
         {notice && <HubDegradedNotice notice={notice} onRetry={loadDetail} />}
 
+        {/* 自动隔离熔断警告 */}
+        {plugin.status === 'quarantined' && (
+          <div className="p-4 rounded-2xl border border-destructive/40 bg-destructive/10 text-destructive flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div className="text-xs sm:text-sm">
+              <h4 className="font-bold">⚠️ 该插件已被系统自动隔离体检 (Quarantined)</h4>
+              <p className="text-xs mt-1 text-destructive/90 leading-relaxed">
+                因累计收到多次社区用户违规举报，系统已自动触发安全熔断机制，暂停普通访客一键安装。
+                NavHub 管理员审核确认安全后将恢复上架。
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 插件头部 Hero 卡片 */}
         <div className="relative overflow-hidden rounded-3xl border border-border/80 glass-surface p-6 sm:p-8 space-y-6 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-5">
@@ -329,7 +369,8 @@ export default function PluginDetailPage({
                     'text-xs font-medium px-2.5 py-0.5 border-border/60',
                     plugin.kind === 'site-pack' && 'text-sky-600 dark:text-sky-400 bg-sky-500/5',
                     plugin.kind === 'workspace-preset' && 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/5',
-                    plugin.kind === 'theme' && 'text-violet-600 dark:text-violet-400 bg-violet-500/5'
+                    plugin.kind === 'theme' && 'text-violet-600 dark:text-violet-400 bg-violet-500/5',
+                    plugin.kind === 'search-pack' && 'text-amber-600 dark:text-amber-400 bg-amber-500/5'
                   )}
                 >
                   {pluginKindLabel(plugin.kind)}
@@ -344,8 +385,23 @@ export default function PluginDetailPage({
                 )}
                 {plugin.author && (
                   <span className="text-xs text-muted-foreground">
-                    作者: <strong className="text-foreground font-medium">{plugin.author}</strong>
+                    作者:{' '}
+                    {plugin.ownerKey ? (
+                      <Link
+                        href={`/marketplace/author/${encodeURIComponent(plugin.ownerKey)}`}
+                        className="text-foreground font-medium hover:text-primary hover:underline"
+                      >
+                        {plugin.author}
+                      </Link>
+                    ) : (
+                      <strong className="text-foreground font-medium">{plugin.author}</strong>
+                    )}
                   </span>
+                )}
+                {plugin.isOwner && (
+                  <Badge variant="outline" className="text-[10px] text-primary border-primary/30 bg-primary/5">
+                    作者本人
+                  </Badge>
                 )}
                 {plugin.reviewStats && plugin.reviewStats.reviewCount > 0 ? (
                   <button
@@ -427,10 +483,29 @@ export default function PluginDetailPage({
                   type="button"
                   onClick={handleShareLink}
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-border/70 bg-background/70 hover:bg-muted text-foreground transition-all"
-                  title="复制带安装引导的分享链接（?install=1）"
+                  title="复制带安装引导的分享链接（自动生成站内短链）"
                 >
                   <Share2 className="w-4 h-4 text-primary" />
                   <span>分享</span>
+                </button>
+
+                {plugin.isOwner && (
+                  <Button asChild size="sm" variant="outline" className="h-[34px] gap-1.5 text-xs">
+                    <Link href={`/marketplace/publish?from=${encodeURIComponent(plugin.slug)}`}>
+                      <Upload className="w-4 h-4 text-primary" />
+                      发布新版本
+                    </Link>
+                  </Button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setBadgeModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-border/70 bg-background/70 hover:bg-muted text-foreground transition-all"
+                  title="获取可在 GitHub README 或个人主页展示的动态 SVG 徽章"
+                >
+                  <Award className="w-4 h-4 text-primary" />
+                  <span>徽章</span>
                 </button>
               </div>
 
@@ -806,6 +881,64 @@ export default function PluginDetailPage({
                   )}
                 </div>
               )}
+
+              {/* search-pack 搜索引擎配置展示 */}
+              {plugin.kind === 'search-pack' && payload?.engines && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <Search className="w-4 h-4 text-sky-500" />
+                      <span>包含的快捷搜索引擎 ({payload.engines.length})</span>
+                    </h3>
+                    <span className="text-xs text-muted-foreground">在主搜索框键入前缀即可触发</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {payload.engines.map((eng: any) => (
+                      <div
+                        key={eng.prefix}
+                        className="p-4 rounded-xl border border-border/70 bg-card/60 space-y-2 hover:border-border transition-all"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {eng.icon && (
+                              <img
+                                src={eng.icon}
+                                alt={eng.name}
+                                className="w-4 h-4 rounded-xs shrink-0 object-contain"
+                                onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
+                              />
+                            )}
+                            <span className="text-sm font-semibold text-foreground truncate">
+                              {eng.name}
+                            </span>
+                          </div>
+                          <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-primary/10 text-primary shrink-0">
+                            {eng.prefix}
+                          </span>
+                        </div>
+                        {eng.description && (
+                          <p className="text-xs text-muted-foreground line-clamp-1">
+                            {eng.description}
+                          </p>
+                        )}
+                        <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2 text-xs">
+                          <code className="text-[11px] text-muted-foreground font-mono truncate max-w-[200px]">
+                            {eng.searchUrl}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => window.open(eng.searchUrl.replace('{q}', 'NavHub'), '_blank', 'noopener,noreferrer')}
+                            className="text-xs text-primary hover:underline flex items-center gap-1 shrink-0 font-medium"
+                          >
+                            测试直达 <ExternalLink className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -826,7 +959,7 @@ export default function PluginDetailPage({
           {activeTab === 'impact' && (
             <div className="rounded-2xl border border-border/70 bg-card/60 p-6 space-y-4">
               <h3 className="text-sm font-semibold text-foreground">安装影响评估</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
                 <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
                   <span className="text-xl font-bold text-foreground block font-mono">
                     {summary?.siteCount ?? 0}
@@ -851,7 +984,29 @@ export default function PluginDetailPage({
                   </span>
                   <span className="text-xs text-muted-foreground">色彩变量</span>
                 </div>
+                <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
+                  <span className="text-xl font-bold text-foreground block font-mono">
+                    {summary?.engineCount ?? (plugin.kind === 'search-pack' ? (payload?.engines?.length || 0) : 0)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">直达引擎</span>
+                </div>
               </div>
+
+              {summary?.enginePrefixes && summary.enginePrefixes.length > 0 && (
+                <div className="pt-2 space-y-1.5">
+                  <h4 className="text-xs font-medium text-foreground">包含的直达前缀：</h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {summary.enginePrefixes.map((p: string) => (
+                      <span
+                        key={p}
+                        className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-primary/10 text-primary"
+                      >
+                        {p}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {summary?.hosts && summary.hosts.length > 0 && (
                 <div className="pt-2 space-y-1.5">
@@ -946,6 +1101,117 @@ export default function PluginDetailPage({
           open={reportModalOpen}
           onOpenChange={setReportModalOpen}
         />
+
+        {/* 动态 SVG 徽章获取弹窗 */}
+        {badgeModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in">
+            <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Award className="w-5 h-5 text-primary" />
+                  <h3 className="text-base font-semibold text-foreground">获取开源动态徽章 (Badge)</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBadgeModalOpen(false)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  关闭
+                </button>
+              </div>
+
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                实时展示插件版本、累计安装量或评分。可直接嵌入 GitHub README、个人博客或文档中，支持矢量高清自适应。
+              </p>
+
+              {/* 指标切换 */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-muted-foreground">指标维度：</span>
+                {(
+                  [
+                    { key: 'version', label: '当前版本' },
+                    { key: 'installs', label: '累计安装量' },
+                    { key: 'stars', label: '星标计数' },
+                    { key: 'rating', label: '综合评分' },
+                  ] as const
+                ).map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setBadgeMetric(tab.key)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                      badgeMetric === tab.key
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted/60 text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* 实时预览 */}
+              <div className="p-4 rounded-xl border border-border/60 bg-muted/20 flex flex-col items-center justify-center gap-2">
+                <span className="text-xs text-muted-foreground">实时矢量预览：</span>
+                <img
+                  src={`/api/plugins/${encodeURIComponent(plugin.slug)}/badge.svg?metric=${badgeMetric}`}
+                  alt={`${plugin.name} badge`}
+                  className="h-5 object-contain"
+                />
+              </div>
+
+              {/* 代码片段复制 */}
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-foreground">Markdown 代码</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const origin = typeof window !== 'undefined' ? window.location.origin : ''
+                        const md = `[![NavHub Plugin](${origin}/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](${origin}/marketplace/${plugin.slug})`
+                        void copyText(md)
+                        toast.success('已复制 Markdown 徽章代码')
+                      }}
+                      className="text-primary hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3 h-3" /> 复制
+                    </button>
+                  </div>
+                  <pre className="p-2.5 rounded-lg bg-muted text-[11px] font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all">
+                    {`[![NavHub Plugin](https://.../api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](...)`}
+                  </pre>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-foreground">直接 SVG 地址</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const origin = typeof window !== 'undefined' ? window.location.origin : ''
+                        void copyText(`${origin}/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric}`)
+                        toast.success('已复制 SVG 链接')
+                      }}
+                      className="text-primary hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3 h-3" /> 复制
+                    </button>
+                  </div>
+                  <pre className="p-2.5 rounded-lg bg-muted text-[11px] font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all">
+                    {`/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric}`}
+                  </pre>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button size="sm" onClick={() => setBadgeModalOpen(false)}>
+                  完成
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 底部导航 */}
         <Footer />

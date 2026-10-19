@@ -85,10 +85,20 @@ const KIND_CONFIG: Record<
     desc: '彻底物理抹除软删除超过 30 天的垃圾站点与相关向量',
     icon: Trash2,
   },
+  taxonomy_audit: {
+    label: '分类治理巡检',
+    desc: '扫描未分类/重复/低置信度分类并给出治理建议（默认只读）',
+    icon: ListChecks,
+  },
   data_retention: {
     label: '数据保留',
     desc: 'events/audit_logs 聚合与清理：默认 rollup 预演（不删），确认后再手动带 apply 执行',
     icon: History,
+  },
+  plugin_governance: {
+    label: '插件治理巡检',
+    desc: '扫描待审超 SLA、插件举报与评价举报，只写告警审计，不自动下架',
+    icon: Wrench,
   },
 }
 

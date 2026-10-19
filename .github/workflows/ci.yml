@@ -130,6 +130,9 @@ jobs:
       # 基线（2026-10-16 本地实测，Next 15 时代）：0 错误 259 警告（警告不卡门禁）。
       - run: pnpm --filter navsphere exec eslint .
       - run: pnpm --filter navsphere build
+      # 首屏 JS 预算硬门禁：build 产物已就绪。阈值在 scripts/bundle-budget.json，
+      # 不允许为了过门禁上调——超了先优化，再按真实产物重新定基线。
+      - run: node scripts/check-bundle-budget.mjs
 
   check-web-overlay:
     timeout-minutes: 15
@@ -143,6 +146,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # 语法快速门禁：解析级检查，不依赖 vendor，几秒内定位标点级错误
+      - run: node scripts/check-syntax.mjs
       # apps/web 是 gitignore 的生成物：全新检出只剩 12 个已跟踪文件，直接比对必然"缺失"
       # （这正是 main 长期红灯的原因）。先用 vendor 重建 apps/web = 上游 + overlay，
       # overlay 覆写优先，之后比对即为真；顺带也 smoke test 了 Docker/vendor 这条路径。

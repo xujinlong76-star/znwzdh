@@ -461,3 +461,222 @@ describe("星标 / 举报 / 安装状态", () => {
   });
 });
 
+
+describe("F0 作者归属 / 编辑精选 / 版本提交", () => {
+  it("ownerKey 对同一身份稳定、不同身份不同；公开作者列表只含已上架", async () => {
+    const owner = "owner-" + Date.now();
+    const a = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("作者归属 A", [{ url: `https://owner-a-${Date.now()}.example.com`, title: "A" }])),
+      ownerIdentity: owner,
+    });
+    const b = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("作者归属 B", [{ url: `https://owner-b-${Date.now()}.example.com`, title: "B" }])),
+      ownerIdentity: owner,
+    });
+    const other = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("作者归属 C", [{ url: `https://owner-c-${Date.now()}.example.com`, title: "C" }])),
+      ownerIdentity: owner + "-other",
+    });
+
+    expect(a.ownerKey).toMatch(/^[a-f0-9]{24}$/);
+    expect(a.ownerKey).toBe(b.ownerKey);
+    expect(other.ownerKey).not.toBe(a.ownerKey);
+
+    const mine = await repo.listPluginsByOwner(owner);
+    expect(mine.items.map((p) => p.slug).sort()).toEqual([a.slug, b.slug].sort());
+
+    // 未上架时公开作者页为空
+    expect((await repo.listPluginsByOwnerKey(a.ownerKey!)).total).toBe(0);
+    await repo.reviewPlugin(a.slug, "approve", null, { actor: "admin" });
+    const publicPage = await repo.listPluginsByOwnerKey(a.ownerKey!);
+    expect(publicPage.items.map((p) => p.slug)).toEqual([a.slug]);
+  });
+
+  it("新版本提交：pending 存变更说明；驳回后允许同版本修复；通过后写入版本历史", async () => {
+    const owner = "version-owner-" + Date.now();
+    const created = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("版本提交演示", [{ url: `https://version-${Date.now()}.example.com`, title: "V1" }])),
+      ownerIdentity: owner,
+      status: "published",
+    });
+
+    const v11 = manifestOf({
+      ...sitePackRaw("版本提交演示", [
+        { url: `https://version-${Date.now()}.example.com`, title: "V1" },
+        { url: `https://version-2-${Date.now()}.example.com`, title: "V2" },
+      ]),
+      version: "1.1.0",
+    });
+    const submitted = await repo.submitPluginVersion(created.slug, v11, "新增站点 V2", { actor: owner });
+    expect(submitted.status).toBe("pending");
+    expect(submitted.version).toBe("1.1.0");
+    expect(submitted.pendingChangelog).toBe("新增站点 V2");
+    expect(submitted.publishedAt).toBeNull();
+
+    await repo.reviewPlugin(created.slug, "reject", "来源需补充", { actor: "admin" });
+    // 驳回后同一版本号允许修正内容再次提交
+    const resubmitted = await repo.submitPluginVersion(created.slug, v11, "补充来源后重新提交", { actor: owner });
+    expect(resubmitted.status).toBe("pending");
+    expect(resubmitted.pendingChangelog).toBe("补充来源后重新提交");
+
+    const approved = await repo.reviewPlugin(created.slug, "approve", null, { actor: "admin" });
+    expect(approved.status).toBe("published");
+    expect(approved.pendingChangelog).toBeNull();
+    const versions = await repo.listPluginVersions(created.id);
+    expect(versions.map((v) => v.version)).toEqual(["1.1.0", "1.0.0"]);
+    const v11Record = versions.find((v) => v.version === "1.1.0");
+    expect(v11Record?.changelog).toBe("补充来源后重新提交");
+
+    // 已上架后同版本修正被拒绝，必须递增
+    await expect(repo.submitPluginVersion(created.slug, v11, "覆盖已发布版本", { actor: owner })).rejects.toThrow(
+      /必须大于当前版本/,
+    );
+  });
+
+  it("编辑精选：featured 过滤与 rank 排序；关闭后退出精选列表", async () => {
+    const one = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("精选一号", [{ url: `https://featured-1-${Date.now()}.example.com`, title: "F1" }])),
+      status: "published",
+    });
+    const two = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("精选二号", [{ url: `https://featured-2-${Date.now()}.example.com`, title: "F2" }])),
+      status: "published",
+    });
+
+    await repo.setPluginFeatured(two.slug, true, 10, { actor: "admin" });
+    await repo.setPluginFeatured(one.slug, true, 20, { actor: "admin" });
+    const featured = await repo.listPlugins({ status: "published", featured: true, sort: "featured", limit: 100 });
+    const slugs = featured.items.map((p) => p.slug);
+    expect(slugs.indexOf(one.slug)).toBeLessThan(slugs.indexOf(two.slug));
+    expect(featured.items.find((p) => p.slug === one.slug)?.featured).toBe(true);
+    expect(featured.items.find((p) => p.slug === one.slug)?.featuredRank).toBe(20);
+
+    await repo.setPluginFeatured(one.slug, false, 0, { actor: "admin" });
+    const after = await repo.listPlugins({ status: "published", featured: true, limit: 100 });
+    expect(after.items.some((p) => p.slug === one.slug)).toBe(false);
+    const audits = await repo.raw("SELECT action FROM audit_logs WHERE target = ?", [one.slug]);
+    expect(audits.map((a) => a.action)).toContain("plugin.featured");
+  });
+});
+
+describe("E5/E6 评价聚合与治理", () => {
+  it("隐藏评价立即退出公开列表与评分统计；作者本人仍可看到状态；恢复后回归", async () => {
+    const plugin = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("评价治理演示", [{ url: `https://review-mod-${Date.now()}.example.com`, title: "R" }])),
+      status: "published",
+    });
+    await repo.installPlugin(plugin.slug, "reviewer-hide-1");
+    const review = await repo.createPluginReview(plugin.slug, "reviewer-hide-1", {
+      rating: 5,
+      title: "很好用",
+      content: "真实体验",
+    });
+
+    const reported = await repo.reportPluginReview(plugin.slug, review.id, "含广告嫌疑", "reporter-1", {
+      actor: "reporter-1",
+      actorKind: "identity",
+    });
+    expect(reported.reportCount).toBe(1);
+    // 举报不自动隐藏
+    expect((await repo.getPluginReviewStats(plugin.id)).reviewCount).toBe(1);
+
+    const hidden = await repo.moderatePluginReview(review.id, "hide", "人工复核后隐藏", {
+      actor: "admin",
+      actorKind: "admin",
+    });
+    expect(hidden.status).toBe("hidden");
+    expect(hidden.moderationNote).toBe("人工复核后隐藏");
+
+    const publicList = await repo.listPluginReviews(plugin.id);
+    expect(publicList.total).toBe(0);
+    const stats = await repo.getPluginReviewStats(plugin.id);
+    expect(stats.reviewCount).toBe(0);
+    expect(stats.avgRating).toBe(0);
+
+    const mine = await repo.getUserPluginReview(plugin.id, "reviewer-hide-1");
+    expect(mine?.status).toBe("hidden");
+
+    const adminVisible = await repo.listPluginReviewsForAdmin({ status: "hidden" });
+    expect(adminVisible.items.some((r) => r.id === review.id)).toBe(true);
+    const restored = await repo.moderatePluginReview(review.id, "restore", "申诉通过", { actor: "admin" });
+    expect(restored.status).toBe("visible");
+    expect((await repo.getPluginReviewStats(plugin.id)).reviewCount).toBe(1);
+  });
+});
+
+describe("E4/E3 漏斗、治理与 F2 短链", () => {
+  it("漏斗按日聚合插件浏览/点击/安装/卸载/评价举报事件", async () => {
+    const before = await repo.getPluginFunnel(1);
+    for (const kind of [
+      "plugin_view",
+      "plugin_install_click",
+      "plugin_install_success",
+      "plugin_uninstall",
+      "plugin_review_report",
+    ] as const) {
+      await repo.recordEvent(kind, { meta: { slug: "funnel-demo" } });
+    }
+    const after = await repo.getPluginFunnel(1);
+    expect(after.totals.views - before.totals.views).toBe(1);
+    expect(after.totals.installClicks - before.totals.installClicks).toBe(1);
+    expect(after.totals.installs - before.totals.installs).toBe(1);
+    expect(after.totals.uninstalls - before.totals.uninstalls).toBe(1);
+    expect(after.totals.reports - before.totals.reports).toBe(1);
+    expect(after.series).toHaveLength(1);
+    expect(after.series[0]?.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("治理告警：待审 SLA、插件举报、评价举报都只读提示", async () => {
+    const pending = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("SLA 待审演示", [{ url: `https://sla-${Date.now()}.example.com`, title: "S" }])),
+    });
+    await repo.run("UPDATE plugins SET created_at = ? WHERE slug = ?", [Date.now() - 80 * 3600_000, pending.slug]);
+
+    const reportedPlugin = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("举报插件演示", [{ url: `https://gov-${Date.now()}.example.com`, title: "G" }])),
+      status: "published",
+    });
+    await repo.run("UPDATE plugins SET report_count = 4 WHERE slug = ?", [reportedPlugin.slug]);
+
+    await repo.installPlugin(reportedPlugin.slug, "gov-reviewer");
+    const review = await repo.createPluginReview(reportedPlugin.slug, "gov-reviewer", { rating: 4, content: "还行" });
+    await repo.run("UPDATE plugin_reviews SET report_count = 3 WHERE id = ?", [review.id]);
+
+    const alerts = await repo.getPluginGovernanceAlerts();
+    expect(alerts.some((a) => a.kind === "pending_sla" && a.slug === pending.slug)).toBe(true);
+    expect(alerts.some((a) => a.kind === "reported" && a.slug === reportedPlugin.slug)).toBe(true);
+    expect(alerts.some((a) => a.kind === "review_reported" && a.slug === reportedPlugin.slug)).toBe(true);
+    // 只读告警：不改变插件/评价状态
+    expect((await repo.getPluginBySlug(pending.slug))?.status).toBe("pending");
+    expect((await repo.getPluginBySlug(reportedPlugin.slug))?.status).toBe("published");
+    expect((await repo.listPluginReviews(reportedPlugin.id)).total).toBe(1);
+  });
+
+  it("短链：只解析内部 /marketplace/ 目标并累计点击；非法目标拒绝", async () => {
+    const plugin = await repo.createPlugin({
+      manifest: manifestOf(sitePackRaw("短链演示", [{ url: `https://short-${Date.now()}.example.com`, title: "S" }])),
+      status: "published",
+    });
+    const link = await repo.createShortLink({
+      target: `/marketplace/${plugin.slug}?install=1`,
+      pluginSlug: plugin.slug,
+    });
+    expect(link.code).toMatch(/^[a-f0-9]{8}$/);
+    expect(link.target).toBe(`/marketplace/${plugin.slug}?install=1`);
+    const resolved = await repo.resolveShortLink(link.code);
+    expect(resolved?.target).toBe(link.target);
+    expect(resolved?.clicks).toBe(1);
+    const again = await repo.resolveShortLink(link.code);
+    expect(again?.clicks).toBe(2);
+
+    await repo.run("INSERT INTO short_links (code, target, plugin_slug, clicks, created_at) VALUES (?,?,?,?,?)", [
+      "eviltest",
+      "https://evil.example.com",
+      null,
+      0,
+      Date.now(),
+    ]);
+    expect(await repo.resolveShortLink("eviltest")).toBeNull();
+    expect(await repo.resolveShortLink("missing1")).toBeNull();
+  });
+});

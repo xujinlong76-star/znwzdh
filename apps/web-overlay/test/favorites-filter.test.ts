@@ -117,7 +117,7 @@ describe("文案：让用户知道是「被筛掉了」而不是「丢了」", (
 describe("源码守卫：筛选真的接在页面上，且两种「空」不混淆", () => {
   it("网格渲染的是筛选结果，不是全量收藏", () => {
     const src = overlaySource("src/app/favorites/page.tsx");
-    const gridAt = src.indexOf("2xl:grid-cols-5");
+    const gridAt = src.indexOf("min-[1536px]:grid-cols-5");
     expect(gridAt).toBeGreaterThan(-1);
     const grid = src.slice(gridAt, gridAt + 400);
     expect(grid).toContain("filteredFavorites.map(");

@@ -54,6 +54,7 @@ import {
 } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
+import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { applyThemeTokens } from '@/lib/plugins/theme-runtime'
 
 const CHANNEL_BADGES: Record<string, { label: string; className: string }> = {
@@ -126,7 +127,9 @@ export function SpotlightModal() {
         .then((items) => {
           if (Array.isArray(items)) setRecentQueries(items.slice(0, 8))
         })
-        .catch(() => {})
+        .catch(() => {
+          // 最近搜索只是锦上添花：拉取失败当作没有历史，不打断搜索主流程
+        })
     } else {
       setQuery('')
       setHits([])
@@ -219,7 +222,7 @@ export function SpotlightModal() {
       category: '数据安全',
       handler: () => {
         setOpen(false)
-        window.open('/api/navigation/export', '_blank')
+        window.open('/api/navigation/export', '_blank', 'noopener,noreferrer')
         toast.success('已触发系统快照导出备份')
       },
     },
@@ -260,8 +263,14 @@ export function SpotlightModal() {
     setLoading(true)
     const timer = setTimeout(() => {
       Promise.all([
-        searchSites({ q: trimmed, limit: 8, identity }, ac.signal).catch(() => null),
-        searchPlugins(trimmed, { limit: 3 }, undefined, ac.signal).catch(() => null),
+        searchSites({ q: trimmed, limit: 8, identity }, ac.signal).catch(() => {
+          // 并发召回允许单路失败：按「该路无结果」交给下面的 ?? [] 消费
+          return null
+        }),
+        searchPlugins({ q: trimmed, limit: 3 }).catch(() => {
+          // 插件召回是附赠通道：失败就当没有插件结果，站点结果照常展示
+          return null
+        }),
       ]).then(([sitesRes, pluginsRes]) => {
         if (!ac.signal.aborted) {
           setHits(sitesRes?.hits ?? [])
@@ -279,9 +288,15 @@ export function SpotlightModal() {
   }, [query, isCommandMode, isAiMode, identity])
 
   // 6. 复制链接
-  const handleCopy = useCallback((url: string, id: string, e: React.MouseEvent) => {
+  const handleCopy = useCallback(async (url: string, id: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    navigator.clipboard.writeText(url)
+    const result = await copyText(url)
+    if (!result.ok) {
+      // 复制失败不许报喜：把原因如实说给用户，不标记「已复制」
+      const note = copyFailureToast(result)
+      toast.error(note.title, { description: note.description })
+      return
+    }
     setCopiedId(id)
     toast.success('链接已复制到剪贴板')
     setTimeout(() => setCopiedId(null), 1800)
@@ -651,7 +666,7 @@ export function SpotlightModal() {
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
                           <div className="w-8 h-8 rounded-lg bg-muted/60 border border-border/60 flex items-center justify-center shrink-0 overflow-hidden">
-                            <SiteFavicon title={site.title} url={site.url} icon={site.iconKey} className="w-5 h-5 object-contain" />
+                            <SiteFavicon title={site.title} url={site.url} icon={site.iconKey ?? undefined} className="w-5 h-5 object-contain" />
                           </div>
 
                           <div className="min-w-0 flex-1">

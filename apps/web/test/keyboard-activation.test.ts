@@ -260,6 +260,38 @@ const MOUSE_ONLY_ALLOWLIST: MouseOnlyAllowlistEntry[] = [
       "浮层打开时在 document 捕获阶段监听 keydown，Esc 走 entry.close() 关掉最上层浮层，" +
       "面板带 role='dialog' + tabIndex=-1 供读屏与焦点定位。遮罩 aria-hidden，本就不在辅助树里。",
   },
+  {
+    file: "src/components/search/spotlight-modal.tsx",
+    marker: /fixed inset-0 z-50 bg-background\/80/,
+    evidence: ["e.key === 'Escape' && open", "onKeyDown={handleKeyDown}", "handleSelectCurrent()"],
+    why:
+      "Spotlight 弹层「点遮罩空白处关闭」只服务鼠标；键盘等价入口是全局 Esc 监听" +
+      "（e.key === 'Escape' 直接收起浮层），面板本体还挂了 onKeyDown 处理上下键与回车。",
+  },
+  {
+    file: "src/components/search/spotlight-modal.tsx",
+    marker: /key=\{cmd\.id\}\s+onClick=\{\(\) => cmd\.handler\(\)\}/,
+    evidence: ["if (e.key === 'ArrowDown')", "else if (e.key === 'ArrowUp')", "else if (e.key === 'Enter')", "handleSelectCurrent()"],
+    why:
+      "指令行的整行 onClick 只方便鼠标；键盘走面板 handleKeyDown：↑/↓ 移动 selectedIndex、" +
+      "Enter 调 handleSelectCurrent() 执行当前指令（焦点始终留在搜索框）。",
+  },
+  {
+    file: "src/components/search/spotlight-modal.tsx",
+    marker: /key=\{hit\.siteId\}/,
+    evidence: ["if (e.key === 'ArrowDown')", "else if (e.key === 'Enter')", "handleSelectCurrent()"],
+    why:
+      "站点结果行的整行 onClick 只方便鼠标；键盘走同一份 handleKeyDown：↑/↓ 选中、" +
+      "Enter 由 handleSelectCurrent() 打开（与鼠标点行走同一条代码路径）。",
+  },
+  {
+    file: "src/components/search/spotlight-modal.tsx",
+    marker: /key=\{plugin\.slug\}/,
+    evidence: ["if (e.key === 'ArrowDown')", "else if (e.key === 'Enter')", "handleSelectCurrent()"],
+    why:
+      "插件结果行的整行 onClick 只方便鼠标；键盘等价入口同上（↑/↓ + Enter，" +
+      "由 handleSelectCurrent() 分发到插件跳转）。",
+  },
 ];
 
 describe("全仓扫描：能点的地方键盘也要能到", () => {

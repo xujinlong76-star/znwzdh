@@ -266,7 +266,9 @@ export default function PluginDetailPage({
               setAuditReport(auditRes.report)
             }
           })
-          .catch(() => {})
+          .catch(() => {
+            // 体检报告是异步增强信息：失败时维持「暂无报告」，不阻断详情主数据
+          })
       } else {
         setPlugin(null)
       }

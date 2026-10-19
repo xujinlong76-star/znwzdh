@@ -29,7 +29,7 @@ function overlaySource(rel: string): string {
 
 /** 有搜索入口的页面（首页 + 404 + 三类站点列表页） */
 const PAGES_WITH_SEARCH = [
-  "src/components/navigation-content.tsx",
+  "src/components/navigation-toolbar.tsx",
   "src/app/not-found.tsx",
   "src/app/hot/page.tsx",
   "src/app/tags/[slug]/page.tsx",

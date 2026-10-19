@@ -111,7 +111,9 @@ describe("源码守卫：录入路径真的用上了纯函数", () => {
 
   it("四处 id 生成全部收敛到 createCustomSiteId（不再内联随机后缀）", () => {
     const src = overlaySource("src/components/navigation-content.tsx");
-    expect(countOccurrences(src, "createCustomSiteId()")).toBeGreaterThanOrEqual(4);
-    expect(src).not.toContain("custom_site_${Date.now()}");
+    // P1-2：一级/二级卡片的拖拽收录在 navigation-category-section.tsx
+    const section = overlaySource("src/components/navigation-category-section.tsx");
+    expect(countOccurrences(src + section, "createCustomSiteId()")).toBeGreaterThanOrEqual(4);
+    expect(src + section).not.toContain("custom_site_${Date.now()}");
   });
 });

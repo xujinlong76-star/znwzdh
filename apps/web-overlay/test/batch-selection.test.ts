@@ -182,13 +182,15 @@ describe("源码守卫：入口真的存在，且默认行为不被改变", () =
   });
 
   it("工具栏有多选开关与全选，并把状态传给卡片", () => {
+    const toolbar = overlaySource("src/components/navigation-toolbar.tsx");
+    const section = overlaySource("src/components/navigation-category-section.tsx");
     const src = overlaySource("src/components/navigation-content.tsx");
-    expect(src).toContain("aria-pressed={selectionMode}");
-    expect(src).toContain("onClick={toggleSelectMode}");
+    expect(toolbar).toContain("aria-pressed={selectionMode}");
+    expect(toolbar).toMatch(/onClick=\{(on)?[Tt]oggleSelectMode\}/);
     expect(src).toContain("onSelectAll={selectAllVisible}");
     // 两个卡片渲染点（一级分类 + 二级分类）都要进入多选
-    expect(countOccurrences(src, "selectable={selectionMode}")).toBe(2);
-    expect(countOccurrences(src, "onToggleSelect={toggleSelectOne}")).toBe(2);
+    expect(countOccurrences(section, "selectable={selectionMode}")).toBe(2);
+    expect(countOccurrences(section, "onToggleSelect={toggleSelectOne}")).toBe(2);
     // 列表变化后剪枝，避免导出到用户已经看不见的站点
     // （P1-2：剪枝随选中态一起抽进 use-site-selection hook；守卫改查 hook 源 + 消费接线）
     const hook = overlaySource("src/lib/modular/use-site-selection.ts");

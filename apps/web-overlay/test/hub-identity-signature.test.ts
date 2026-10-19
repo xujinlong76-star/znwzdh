@@ -58,6 +58,37 @@ describe('identityFromRequest：优先级与截断必须与中枢 identityOf 一
       'u'.repeat(64),
     )
   })
+
+  it('header 身份优先于 query/body（与中枢 identityOf 同序）', () => {
+    const headers = new Headers({
+      'x-navhub-anon-id': 'anon-header',
+      'x-navhub-user-id': 'user-header',
+    })
+    expect(
+      identityFromRequest(
+        new URL('https://x/api/a?userId=user-query&anonId=anon-query'),
+        JSON.stringify({ userId: 'user-body' }),
+        headers,
+      ),
+    ).toBe('user-header')
+
+    expect(
+      identityFromRequest(
+        new URL('https://x/api/a?anonId=anon-query'),
+        undefined,
+        new Headers({ 'x-navhub-anon-id': 'anon-header' }),
+      ),
+    ).toBe('anon-header')
+
+    // 旧版 x-user-id / x-anon-id 也要兼容，且 64 字符截断一致
+    expect(identityFromRequest(new URL('https://x/api/a'), undefined, { 'x-user-id': 'legacy' })).toBe('legacy')
+    expect(identityFromRequest(new URL('https://x/api/a'), undefined, { 'x-anon-id': 'legacy-anon' })).toBe(
+      'legacy-anon',
+    )
+    expect(
+      identityFromRequest(new URL('https://x/api/a'), undefined, new Headers({ 'x-user-id': 'u'.repeat(80) })),
+    ).toBe('u'.repeat(64))
+  })
 })
 
 describe('hubIdentitySecret：未配置时必须完全不影响行为', () => {
@@ -79,7 +110,8 @@ describe('接线：代理必须真的把签名加上', () => {
     expect(src).toContain("headers['x-navhub-identity-signature']")
   })
 
-  it('签名取值走 identityFromRequest（与中枢同一优先级）', () => {
+  it('签名取值走 identityFromRequest 并带入请求头（header-only 身份不能丢）', () => {
     expect(src).toMatch(/identityFromRequest\(url/)
+    expect(src).toContain('request.headers')
   })
 })

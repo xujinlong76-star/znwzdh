@@ -33,7 +33,11 @@ const sitePack = (name: string, description: string, siteTitle: string) => ({
 });
 
 async function publishAndApprove(name: string, description: string, siteTitle: string): Promise<string> {
-  const created = await app.inject({ method: "POST", url: "/api/plugins", payload: sitePack(name, description, siteTitle) });
+  const created = await app.inject({
+    method: "POST",
+    url: "/api/plugins?anonId=search-test-owner",
+    payload: sitePack(name, description, siteTitle),
+  });
   expect(created.statusCode).toBe(201);
   const slug = created.json().slug as string;
 

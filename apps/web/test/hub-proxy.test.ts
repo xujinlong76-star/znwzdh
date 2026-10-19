@@ -154,6 +154,12 @@ describe("pickResponseHeaders", () => {
   it("forwards If-None-Match so the hub can answer 304", () => {
     expect(FORWARD_REQUEST_HEADERS).toContain("if-none-match");
   });
+
+  it("forwards terminal identity headers so header-only publish/install calls keep ownership", () => {
+    for (const header of ["x-navhub-user-id", "x-user-id", "x-navhub-anon-id", "x-anon-id"]) {
+      expect(FORWARD_REQUEST_HEADERS).toContain(header);
+    }
+  });
 });
 
 describe("sanitizeForwardedFor", () => {

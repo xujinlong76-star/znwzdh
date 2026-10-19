@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { validateAndCleanPluginManifest } from "@navhub/core";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
@@ -394,3 +395,263 @@ describe("插件市场 API 全链路", () => {
 });
 
 
+
+describe("F0 / E1 / E5 / E6 / E4 / E3 / F2 API", () => {
+  it("发布必须身份；ownerKey 公开；/mine 与公开作者页按归属隔离", async () => {
+    const anonymous = await app.inject({
+      method: "POST",
+      url: "/api/plugins",
+      payload: sitePack("匿名发布应拒绝", [{ url: "https://anon-reject.example.com", title: "Anon" }]),
+    });
+    expect(anonymous.statusCode).toBe(400);
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/plugins?anonId=api-owner-1",
+      payload: sitePack("API 作者归属", [{ url: "https://api-owner.example.com", title: "Owner" }]),
+    });
+    expect(created.statusCode).toBe(201);
+    const body = created.json();
+    expect(body.ownerIdentity).toBeUndefined();
+    expect(body.ownerKey).toMatch(/^[a-f0-9]{24}$/);
+    const slug = body.slug as string;
+    const ownerKey = body.ownerKey as string;
+
+    const mine = await app.inject({ method: "GET", url: "/api/plugins/mine?anonId=api-owner-1" });
+    expect(mine.statusCode).toBe(200);
+    expect(mine.json().items.some((p: { slug: string }) => p.slug === slug)).toBe(true);
+    expect(mine.json().items.find((p: { slug: string }) => p.slug === slug).ownerIdentity).toBeUndefined();
+
+    const otherMine = await app.inject({ method: "GET", url: "/api/plugins/mine?anonId=api-owner-2" });
+    expect(otherMine.json().items.some((p: { slug: string }) => p.slug === slug)).toBe(false);
+
+    // pending 不进公开作者页
+    const before = await app.inject({ method: "GET", url: `/api/plugins/author/${ownerKey}` });
+    expect(before.statusCode).toBe(404);
+
+    await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/review`,
+      payload: { action: "approve", note: "API 测试通过" },
+    });
+
+    const author = await app.inject({ method: "GET", url: `/api/plugins/author/${ownerKey}` });
+    expect(author.statusCode).toBe(200);
+    expect(author.json().items.some((p: { slug: string }) => p.slug === slug)).toBe(true);
+    expect(author.json().stats.plugins).toBeGreaterThanOrEqual(1);
+  });
+
+  it("作者版本提交：非作者 403；作者 202；通过后版本历史带 changelog 且 pendingChangelog 清空", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/plugins?anonId=version-api-owner",
+      payload: sitePack("API 版本提交", [{ url: "https://api-version.example.com", title: "V1" }]),
+    });
+    const slug = created.json().slug as string;
+    const firstApprove = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/review`,
+      payload: { action: "approve" },
+    });
+    expect(firstApprove.statusCode).toBe(200);
+
+    const v11 = {
+      ...sitePack("API 版本提交", [
+        { url: "https://api-version.example.com", title: "V1" },
+        { url: "https://api-version-2.example.com", title: "V2" },
+      ]),
+      version: "1.1.0",
+    };
+    const forbiddenSubmit = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/versions?anonId=not-the-owner`,
+      payload: { manifest: v11, changelog: "冒名提交" },
+    });
+    expect(forbiddenSubmit.statusCode).toBe(403);
+
+    const submitted = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/versions?anonId=version-api-owner`,
+      payload: { manifest: v11, changelog: "新增 V2 站点" },
+    });
+    expect(submitted.statusCode).toBe(202);
+    expect(submitted.json().status).toBe("pending");
+    expect(submitted.json().pendingChangelog).toBe("新增 V2 站点");
+
+    const approved = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/review`,
+      payload: { action: "approve" },
+    });
+    expect(approved.statusCode).toBe(200);
+    expect(approved.json().plugin.pendingChangelog).toBeNull();
+
+    const versions = await app.inject({ method: "GET", url: `/api/plugins/${encodeURIComponent(slug)}/versions` });
+    const v11Record = versions.json().versions.find((v: { version: string }) => v.version === "1.1.0");
+    expect(v11Record).toBeTruthy();
+    expect(v11Record.changelog).toBe("新增 V2 站点");
+  });
+
+  it("编辑精选：PATCH 开关 + rank，公开列表 featured 过滤与排序生效", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("API 精选演示", [{ url: "https://api-featured.example.com", title: "F" }]),
+    });
+    const slug = created.json().slug as string;
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/plugins/${encodeURIComponent(slug)}/featured`,
+      payload: { featured: true, rank: 77 },
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json().plugin.featured).toBe(true);
+    expect(patched.json().plugin.featuredRank).toBe(77);
+    expect(patched.json().plugin.ownerIdentity).toBeUndefined();
+
+    const list = await app.inject({ method: "GET", url: "/api/plugins?featured=true&sort=featured&limit=100" });
+    expect(list.json().items[0].slug).toBe(slug);
+    expect(list.json().items[0].featured).toBe(true);
+
+    const bad = await app.inject({
+      method: "PATCH",
+      url: `/api/plugins/${encodeURIComponent(slug)}/featured`,
+      payload: { featured: "yes" },
+    });
+    expect(bad.statusCode).toBe(400);
+
+    await app.inject({
+      method: "PATCH",
+      url: `/api/plugins/${encodeURIComponent(slug)}/featured`,
+      payload: { featured: false, rank: 0 },
+    });
+    const after = await app.inject({ method: "GET", url: "/api/plugins?featured=true&limit=100" });
+    expect(after.json().items.some((p: { slug: string }) => p.slug === slug)).toBe(false);
+  });
+
+  it("评价举报/隐藏/恢复：公开统计剔除隐藏评价，作者仍能看到 myReview.status", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("API 评价治理", [{ url: "https://api-review-mod.example.com", title: "R" }]),
+    });
+    const slug = created.json().slug as string;
+    await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/install`,
+      payload: { identity: "api-review-buyer" },
+    });
+    const reviewRes = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/reviews`,
+      payload: { rating: 5, title: "不错", content: "真实体验", identity: "api-review-buyer" },
+    });
+    expect(reviewRes.statusCode).toBe(201);
+    const reviewId = reviewRes.json().review.id as string;
+
+    const report = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${encodeURIComponent(slug)}/reviews/${encodeURIComponent(reviewId)}/report`,
+      payload: { reason: "疑似广告" },
+    });
+    expect(report.statusCode).toBe(200);
+    expect(report.json().reportCount).toBe(1);
+
+    const adminList = await app.inject({ method: "GET", url: "/api/admin/plugin-reviews?status=visible" });
+    expect(adminList.statusCode).toBe(200);
+    expect(adminList.json().items.some((r: { id: string }) => r.id === reviewId)).toBe(true);
+
+    const hidden = await app.inject({
+      method: "PATCH",
+      url: `/api/admin/plugin-reviews/${encodeURIComponent(reviewId)}`,
+      payload: { action: "hide", note: "人工复核后隐藏" },
+    });
+    expect(hidden.statusCode).toBe(200);
+    expect(hidden.json().review.status).toBe("hidden");
+
+    const publicList = await app.inject({ method: "GET", url: `/api/plugins/${encodeURIComponent(slug)}/reviews` });
+    expect(publicList.json().total).toBe(0);
+    expect(publicList.json().stats.reviewCount).toBe(0);
+
+    const mine = await app.inject({
+      method: "GET",
+      url: `/api/plugins/${encodeURIComponent(slug)}/reviews?identity=api-review-buyer`,
+    });
+    expect(mine.json().myReview.status).toBe("hidden");
+
+    const restored = await app.inject({
+      method: "PATCH",
+      url: `/api/admin/plugin-reviews/${encodeURIComponent(reviewId)}`,
+      payload: { action: "restore" },
+    });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json().review.status).toBe("visible");
+    const publicAgain = await app.inject({ method: "GET", url: `/api/plugins/${encodeURIComponent(slug)}/reviews` });
+    expect(publicAgain.json().total).toBe(1);
+  });
+
+  it("漏斗事件与治理告警：/api/admin/plugins/funnel 与 governance 可用", async () => {
+    const before = await app.inject({ method: "GET", url: "/api/admin/plugins/funnel?days=1" });
+    expect(before.statusCode).toBe(200);
+    const beforeTotals = before.json().totals;
+
+    for (const kind of ["plugin_view", "plugin_install_click"] as const) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/events",
+        payload: { kind, pluginSlug: "funnel-api-demo", anonId: "funnel-api-user" },
+      });
+      expect(res.statusCode).toBe(200);
+    }
+    const after = await app.inject({ method: "GET", url: "/api/admin/plugins/funnel?days=1" });
+    expect(after.json().totals.views).toBeGreaterThanOrEqual(beforeTotals.views + 1);
+    expect(after.json().totals.installClicks).toBeGreaterThanOrEqual(beforeTotals.installClicks + 1);
+    expect(after.json().series).toHaveLength(1);
+
+    // 直接走 store 建 pending，避免触发发布路由的 5 次/小时限流（本文件其余用例已用满）
+    const validated = validateAndCleanPluginManifest(
+      sitePack("治理 SLA 演示", [{ url: "https://api-governance-sla.example.com", title: "S" }]),
+    );
+    if (!validated.ok) throw new Error(validated.errors.join(" | "));
+    const pending = await ctx.repo.createPlugin({ manifest: validated.manifest, status: "pending" });
+    await ctx.repo.run("UPDATE plugins SET created_at = ? WHERE slug = ?", [Date.now() - 80 * 3600_000, pending.slug]);
+
+    const gov = await app.inject({ method: "GET", url: "/api/admin/plugins/governance" });
+    expect(gov.statusCode).toBe(200);
+    expect(gov.json().alerts.some((a: { kind: string; slug: string }) => a.kind === "pending_sla" && a.slug === pending.slug)).toBe(true);
+  });
+
+  it("短链：创建内部目标（保留 install=1）、解析累计点击、拒绝外链", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("API 短链演示", [{ url: "https://api-short.example.com", title: "S" }]),
+    });
+    const slug = created.json().slug as string;
+
+    const link = await app.inject({
+      method: "POST",
+      url: "/api/shortlinks",
+      payload: { slug, install: true },
+    });
+    expect(link.statusCode).toBe(200);
+    expect(link.json().path).toMatch(/^\/s\/[a-f0-9]{8}$/);
+    expect(link.json().target).toBe(`/marketplace/${encodeURIComponent(slug)}?install=1`);
+
+    const resolved = await app.inject({ method: "GET", url: `/api/shortlinks/${link.json().code}` });
+    expect(resolved.statusCode).toBe(200);
+    expect(resolved.json().target).toBe(link.json().target);
+    expect(resolved.json().clicks).toBe(1);
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/shortlinks",
+      payload: { target: "https://evil.example.com" },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const missing = await app.inject({ method: "GET", url: "/api/shortlinks/notthere" });
+    expect(missing.statusCode).toBe(404);
+  });
+});

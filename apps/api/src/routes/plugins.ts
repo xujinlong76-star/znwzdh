@@ -892,7 +892,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
 
       const callerAuth = (req as { auth?: { actor?: string; kind?: string; scopes?: string[] } }).auth;
-      const identity = extractPluginIdentity(req) || callerAuth?.actor || (ctx.config.authRequired ? null : "anonymous");
+      // F0：发布必须能建立作者归属。不能用 req.auth.actor 兜底——开放模式下它是
+      // anonymous，会把所有匿名投稿都算成同一个作者，/mine 与作者页随之失真。
+      const identity = extractPluginIdentity(req);
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识，无法建立作者归属");
       }
@@ -1068,7 +1070,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
       const identity = extractPluginIdentity(req);
       const callerAuth = (req as { auth?: { actor?: string; kind?: string; scopes?: string[] } }).auth;
-      const isAdmin = Boolean(callerAuth?.scopes?.includes("admin"));
+      // 开放模式的匿名身份也带 admin scope，不能据此绕过归属校验；
+      // 管理员更新走 PUT /api/plugins/:slug，本接口只服务作者自助提交。
+      const isAdmin = Boolean(callerAuth?.scopes?.includes("admin")) && callerAuth?.kind !== "anonymous";
       if (!identity) return badRequest(reply, "缺少用户身份标识");
       if (!plugin.ownerIdentity || (plugin.ownerIdentity !== identity && !isAdmin)) {
         return forbidden(reply, "只有插件作者可以提交新版本");

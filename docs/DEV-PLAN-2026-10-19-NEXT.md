@@ -116,6 +116,25 @@
 
 本地验证：web 68 文件 737 测试、全仓 1826 passed / 15 skipped；root/web tsc 0；ESLint `--quiet` 0；overlay 一致；build 通过；`/` 1156 KB（预算 1210 KB）、最高路由 `/admin/navigation` 1185 KB（预算 1241 KB）。
 
+### P2 市场排版轮（2026-10-20，commits `3608c0d` / `51e9dae` / `76c3037`）
+
+深研插件市场排版，用 Playwright 对生产构建实测 390 / 800 / 1280 / 1440 / 1920 五档宽度，发现并修掉四类真问题：
+
+| 问题 | 根因 | 处置 |
+| :--- | :--- | :--- |
+| 头部描述在 640–1023px 被按钮挤成窄条 | `sm:flex-row` 过早并排 | 市场页与详情页头部改 `lg` 断点 + `min-w-0 flex-1` |
+| **市场排版类不进生产 CSS** | `apps/web/src/app/*`、`components/*` 被根 .gitignore 通配忽略，Tailwind v4 的 `@source` 通配扫不到被忽略路径（registry 曾踩过同坑） | globals.css 显式补 `@source '../app/marketplace/**'` 与 `'../components/plugins/**'`；实测补前 `lg:flex-row` / `bg-card/40` / `sm:block` / `text-border/70` 全部缺席，补后齐全（CSS 164→177 KB） |
+| `2xl:` 变体全仓无产物 | 本仓库 Tailwind 里 `2xl:` 工具类一律不生成（连已扫描的 navigation-content.tsx 的 `2xl:grid-cols-6` 也缺失），96rem 只出现在 container 链 | 市场页弃用 `2xl:`，改 `min-[1536px]:grid-cols-4!`（任意断点排序在命名断点之前，需 `!` 才能压过 `lg:grid-cols-3`）；实测 1280/1440 三列、1920 四列 |
+| 四列窄卡下页脚「详情/安装」断行 | 页脚无换行防御 | 卡片页脚加 `flex-wrap` / `whitespace-nowrap` / `shrink-0` |
+
+同时落地：`market-hero` 背景工具类统一市场各子页（市场/已安装/作者中心/导入/详情）、榜单前三金银铜、筛选栏工具条容器、骨架屏加载态、空状态图标、OG 分享卡更深渐变 + 光斑；新增 `marketplace-visual.test.ts` 接线守卫（锁展板类、扫描源声明、四列断点、骨架屏）。
+
+验证（干净 worktree，vendor → tsc → eslint → build → bundle → web 测试全绿）：web 69 文件 744 测试、全仓 1833 passed / 15 skipped；`/` 1156 KB（预算 1210）、最高路由 1185 KB（预算 1241）。
+
+**教训（协作纪律）**：`51e9dae` 曾把同伴已暂存的「AI 插件工坊」import 一并带进 `marketplace/page.tsx`（同伴新文件未提交 → CI tsc 报 Cannot find module）。已用 git plumbing 重建该文件为仅排版版本（`76c3037`，工作区文件原样保留）。后续提交前必须 `git diff --cached` 确认暂存区只含自己的路径。
+
+**遗留（质量收敛候选）**：同样的扫描缝隙覆盖 `lib/*`、其余 `components/*`、其余 `app/*` 子树；`2xl:` 变体死因未根治（引擎层，待专项定位）。其他页面也可能存在「用类不生效」。
+
 ### P3｜工具链收尾（窗口期，3–5 天）
 
 - **TS 6 → 7（native）**：TS 7 用于 `tsc --noEmit` 门禁；`typescript@6` 留给 typescript-eslint（TS 7 暂无 compiler API）。先处理两个硬阻断：`moduleResolution: "node"` → `"bundler"`；`baseUrl` → 相对 `paths`。

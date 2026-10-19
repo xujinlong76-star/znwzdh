@@ -176,6 +176,8 @@ describe('分享入口：分享失败必须说出来', () => {
   // P1-2 拆分后，分享 handler 随备份弹窗迁入独立组件（工具栏只透传 props）
   const dialog = readFileSync(resolve(ROOT, 'src', 'components', 'home-diy-backup-dialog.tsx'), 'utf8')
   const hook = readFileSync(resolve(ROOT, 'src', 'lib', 'modular', 'use-home-diy.ts'), 'utf8')
+  // P1-1 拆分后，hydrateHomeDiy 与 #diy 免登导入在 home-diy-storage.ts
+  const storage = readFileSync(resolve(ROOT, 'src', 'lib', 'modular', 'home-diy-storage.ts'), 'utf8')
 
   it('handleShareUrlHash 拿的是带原因的结果，失败分支里有 toast', () => {
     const body = dialog.slice(dialog.indexOf('const handleShareUrlHash'))
@@ -187,10 +189,11 @@ describe('分享入口：分享失败必须说出来', () => {
     expect(/^\s*importPresetFromUrlHash,?\s*$/m.test(toolbar)).toBe(false)
   })
 
-  it('钩子里只剩一条免登导入实现（applyHomeDiyShareHash），重复实现已删除', () => {
-    expect(/const importPresetFromUrlHash\s*=/.test(hook)).toBe(false)
-    expect(/^\s*importPresetFromUrlHash,?\s*$/m.test(hook)).toBe(false)
-    expect(/if \(applyHomeDiyShareHash\(\)\) return/.test(hook)).toBe(true)
+  it('免登导入只剩一条实现（applyHomeDiyShareHash），且确实被调用', () => {
+    const hookAndStorage = hook + storage
+    expect(/const importPresetFromUrlHash\s*=/.test(hookAndStorage)).toBe(false)
+    expect(/^\s*importPresetFromUrlHash,?\s*$/m.test(hookAndStorage)).toBe(false)
+    expect(/if \(applyHomeDiyShareHash\(\)\) return/.test(storage)).toBe(true)
   })
 
   it('导出类型是「带原因的结果」，不再是可能为空的字符串', () => {

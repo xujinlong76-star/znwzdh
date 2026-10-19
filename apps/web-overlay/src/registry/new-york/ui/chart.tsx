@@ -110,6 +110,8 @@ const ChartTooltip = RechartsPrimitive.Tooltip
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
+    // recharts 3 起 payload/label 只由 content 组件消费，不在 Tooltip 根 props 类型上——补最小声明
+    { payload?: any[]; label?: unknown } &
     React.ComponentProps<"div"> & {
       hideLabel?: boolean
       hideIndicator?: boolean
@@ -266,7 +268,7 @@ const ChartLegend = RechartsPrimitive.Legend
 const ChartLegendContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> &
-    Pick<RechartsPrimitive.LegendProps, "payload" | "verticalAlign"> & {
+    { payload?: any[]; verticalAlign?: "top" | "middle" | "bottom" } & {
       hideIcon?: boolean
       nameKey?: string
     }

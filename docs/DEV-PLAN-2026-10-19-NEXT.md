@@ -12,7 +12,7 @@
 
 2. **最大的风险不是缺功能，是门禁有缝隙。** `scripts/check-bundle-budget.mjs` 早就存在，但 **CI 和 `verify.mjs` 都没有调用它**；一次标点级语法错误就能让 main 全红一个修复周期。首屏预算、语法解析这两条线必须补上门禁。
 
-3. **首屏还有明确的减重空间，但别指望「拆文件」自动变小。** `/` 约 637 KB（预算 685 KB），其中约 344 KB 是 React/ReactDOM 运行时；真正能靠工程手段拿回来的是懒加载与依赖替换（如 `cmdk` 约 56 KB，文档口径）。拆巨型组件的主要收益是**可维护性与可测试性**，不是 KB。
+3. **首屏还有明确的减重空间，但别指望「拆文件」自动变小。** 旧口径 `/` 约 637 KB（预算 685 KB）；2026-10-19 用 Next 16 Turbopack 的完整口径复测为 **1174 KB（57e0c3c）/ 1160 KB（b8ae238，Spotlight 懒加载后）**，其中 React/ReactDOM + Next 运行时约 500 KB 是地板。旧 637 KB 来自 webpack `app-build-manifest` 口径，未完整计入 layout/providers 共享 chunk，与新数字不可比。真正能靠工程手段拿回来的是全局 provider/浮层的懒加载与依赖替换（如 `cmdk` 约 56 KB）；拆巨型组件的主要收益是**可维护性与可测试性**，不是 KB。
 
 4. **可观测性/安全比旧文档写的更完整，不要重复造。** `/api/metrics` 已经是 Prometheus 文本格式（`text/plain; version=0.0.4`）；CSP 已有 `NAVHUB_CSP=1`（enforce）与 `NAVHUB_CSP_REPORT_ONLY=1`（观察）双开关。剩下的只是「打开开关、收集、修依赖、再 enforce」的运维动作。
 
@@ -61,10 +61,20 @@
 
 | 编号 | 任务 | 具体动作 | 验收 |
 | :--- | :--- | :--- | :--- |
-| P0-1 | 首屏预算进 CI | 在 `test-web` 的 `pnpm --filter navsphere build` 之后加 `node scripts/check-bundle-budget.mjs`；`verify.mjs` 检测到 `apps/web/.next` 时自动跑，缺失则明确提示而非静默跳过 | CI 中预算超限即红；本地 build 后 `pnpm verify` 覆盖 |
-| P0-2 | 语法快速门禁 | 新增 `scripts/check-syntax.mjs`：用 TypeScript `transpileModule(reportDiagnostics)` 解析 `apps/api/src`、`apps/web-overlay/src`、`packages/*/src` 的 `.ts/.tsx`，输出 `file:line:col`；接入 `verify.mjs`，并挂到 pre-commit（仅检查 staged 的 TS 文件） | 故意删一个 `}`，脚本 2s 内定位；正常树退出 0 |
+| P0-1 | 首屏预算进 CI | 在 `test-web` 的 `pnpm --filter navsphere build` 之后加 `node scripts/check-bundle-budget.mjs`；`verify.mjs` 检测到 `apps/web/.next` 时自动跑，缺失则明确提示而非静默跳过。**同时修正预算口径**：旧 637/685 KB 未完整计入 layout/providers 共享 chunk，按 57e0c3c 实测逐路由 +5% 重定 `bundle-budget.json`（`/` 1233 KB、最高路由 1294 KB），作为棘轮而非放宽 | CI 中预算超限即红；本地 build 后 `pnpm verify` 覆盖；新基线写入本文件 |
+| P0-2 | 语法快速门禁 | 新增 `scripts/check-syntax.mjs`：用 TypeScript `createSourceFile(...).parseDiagnostics` 解析 `apps/api/src`、`apps/api/test`、`apps/web-overlay/src`、`apps/web-overlay/test`、`packages` 的 `.ts/.tsx/.mts/.cts`，输出 `file:line:col`（`transpileModule` 在个别文件会触发 TS 内部 "Output generation failed"，故改用纯解析路径）；接入 `verify.mjs`，并挂到 pre-commit（仅检查 staged 的 TS 文件） | 故意删一个 `}`，脚本 2s 内定位；正常树退出 0 |
 | P0-3 | 文档/环境对齐 | README `v22.x → v24.x`；复核 `.env.example` 重复键（V3 P0-3 提出，本轮实测未见重复，若已修复则记录关闭）；把 2.1 基线写进 `CODEBASE_OVERVIEW` 或本文件 | 文档与 engines/CI/Docker 一致 |
 | P0-4 | 首屏基线入档 | `node scripts/vendor-web.mjs` → `pnpm --filter navsphere build` → `node scripts/check-bundle-budget.mjs --json`，记录逐路由数字 | 基线 JSON/表格进 docs，作为 P1 对照 |
+
+**2026-10-19 首屏实测（未压缩字节，Turbopack 口径）**
+
+| 参照 | `/` | 最高路由 | HTML `<script>` 实测 |
+| :--- | ---: | :--- | ---: |
+| 57e0c3c（CI 绿灯基线） | 1174 KB | `/admin/navigation` 1231 KB | `/hot` 1047 KB |
+| b8ae238（Stage 3–5 + Spotlight 懒加载） | 1160 KB | `/admin/navigation` 1217 KB | — |
+| 新预算（各路由 +5%） | 1233 KB | 1294 KB | — |
+
+结论：旧 637 KB 不是同一把尺子；新预算比 57e0c3c 实测高 5%，比当前实测高约 6%，只用于阻止继续增长。P1 的真实目标是先把 `/` 降到 ≤1.05 MB，而不是 600 KB。
 
 **风险**：低。唯一注意：同伴的 `node_modules` 换装目录（`.nm-partial-*` / `node_modules.partial-*`）存在时不要跑 build/测试。
 
@@ -74,8 +84,8 @@
 | :--- | :--- | :--- | :--- |
 | P1-1 | `use-home-diy` 拆分 | 1111 行/47.8 KB。抽出 `home-diy-types.ts`、`home-diy-storage.ts`（读写/undo/redo）、`home-diy-io.ts`（导入导出/分享）、`home-diy-reducer.ts`（纯配置变换）；hook 只留状态编排 | 主文件 ≤600 行；现有 home-diy 测试全绿；行为不变 |
 | P1-2 | `navigation-content` 拆分 | 1036 行。拆 list/grid、filters、empty-state、selection-bar 四个子组件；筛选纯逻辑抽 `lib/` | 主文件 ≤500 行；相关单测 + E2E 不回归 |
-| P1-3 | 首屏懒加载核查 | 对首屏非必要的重模块做 `dynamic()`；重点核查 `ModularCanvas`、`HomeHeroDeck`、批量工具、Spotlight 是否已在首屏 chunk | `/` 实测下降；若达不到 600 KB，按实测 +5% 设预算并写明原因，**不硬压** |
-| P1-4 | 预算下调 | 按真实产物把 `/` 预算从 685 KB 调到 600 KB（或实测值 +5%）；同步文档目标 | `bundle-budget.json` 与文档一致，CI 绿 |
+| P1-3 | 首屏懒加载核查 | 对首屏非必要的重模块做 `dynamic()`；重点核查 `ModularCanvas`、`HomeHeroDeck`、批量工具、全局 Provider/浮层（Spotlight、AI 抽屉、主题试用条）是否在首屏 chunk | `/` 实测下降：先把 `/` 降到 ≤1.05 MB，再冲 ≤900 KB；600 KB 在新口径下低于 React/Next 地板，不再作为硬目标，**不硬压** |
+| P1-4 | 预算下调 | 按真实产物把 `/` 预算从 1233 KB 逐步下调（≤1.05 MB → ≤900 KB）；同步文档目标 | `bundle-budget.json` 与文档一致，CI 绿 |
 
 **风险**：中。首页是核心 UX；用「纯重构 + 现有测试/E2E 兜底」控制，不做行为变更。回滚粒度到组件/文件。
 
@@ -127,7 +137,7 @@
 2. 不引入 prom-client / OpenTelemetry / Sentry 整套（当前瓶颈不是「看不见」）。
 3. 不一次性升 31 个 Radix minor（diff 会淹没真改动）。
 4. 不同周硬上 TS 7 + ESLint 10（出问题无法归因）。
-5. 不为过门禁调高 `bundle-budget.json`（预算不能给现状背书）。
+5. 不为过门禁调高 `bundle-budget.json`。唯一例外是**口径修正**（旧 webpack `app-build-manifest` 口径 vs 新 Turbopack 完整口径，见 P0-4 实测表）；修正必须带实测证据、写入文档，并按新实测 +5% 设棘轮，之后只能降。
 6. 不碰同伴正在改的 `archive.ts` / `graph.ts` / `federated-recommendation.ts` / `speculative-prerender.ts` / `server.ts` / `recipes.ts` / `packages/core/src/types.ts`。
 7. 不在 `node_modules` 换装期间跑 install/build/长测试。
 

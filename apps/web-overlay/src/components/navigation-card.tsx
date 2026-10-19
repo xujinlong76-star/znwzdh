@@ -18,6 +18,7 @@ import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
+import { recordOfflineVisit } from '@/lib/offline-recent'
 
 interface NavigationCardProps {
   item: NavigationSubItem
@@ -55,7 +56,10 @@ export function NavigationCard({
    * 这是「批量操作」的入口：没有它，底部的批量操作坞永远不会出现。
    */
   const handleLinkClick = (e: React.MouseEvent) => {
-    if (!selectable) return
+    if (!selectable) {
+      recordOfflineVisit({ id: item.id, title: item.title, href: item.href, icon: item.icon })
+      return
+    }
     e.preventDefault()
     e.stopPropagation()
     onToggleSelect?.(item.id)

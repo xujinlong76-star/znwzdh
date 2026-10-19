@@ -86,6 +86,7 @@ export function OfflineBanner() {
             <div className="flex-1 min-w-0">
               <span className="font-semibold">{state.title}</span>
               <p className="text-xs opacity-90 mt-0.5 leading-relaxed">{state.hint}</p>
+              <a href="/offline" className="mt-1 inline-block text-xs font-medium underline underline-offset-2">查看离线可读列表</a>
             </div>
           </>
         ) : (

@@ -203,7 +203,7 @@ describe("源码守卫：入口真的存在，且默认行为不被改变", () =
     expect(src).toContain("selectable?: boolean");
     expect(src).toContain("selected?: boolean");
     expect(src).toContain("onToggleSelect?: (siteId: string) => void");
-    expect(src).toContain("if (!selectable) return");
+    expect(src).toContain("if (!selectable) {");
     expect(src).toContain("e.preventDefault()");
     expect(src).toContain("onToggleSelect?.(item.id)");
     // 紧凑 / 标准 / 丰富 三个分支都要挂上（漏一个就会「有的卡片点了没用」）
@@ -214,11 +214,11 @@ describe("源码守卫：入口真的存在，且默认行为不被改变", () =
 
   it("默认（非多选）模式必须不受影响：没有 selectable 时直接放行", () => {
     const src = overlaySource("src/components/navigation-card.tsx");
-    // handleLinkClick 的第一句就是「非多选直接返回」，不能有任何副作用
+    // 非多选时只记录离线最近访问，不阻断导航；多选才 preventDefault
     const idx = src.indexOf("const handleLinkClick");
     expect(idx).toBeGreaterThan(-1);
-    const body = src.slice(idx, idx + 320);
-    expect(body).toContain("if (!selectable) return");
-    expect(body.indexOf("if (!selectable) return")).toBeLessThan(body.indexOf("preventDefault"));
+    const body = src.slice(idx, idx + 420);
+    expect(body).toContain("if (!selectable) {");
+    expect(body.indexOf("if (!selectable) {")).toBeLessThan(body.indexOf("preventDefault"));
   });
 });

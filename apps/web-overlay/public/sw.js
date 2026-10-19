@@ -17,9 +17,10 @@ if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.
   })
   // 本地开发直接放行，不做任何 fetch 拦截
 } else {
-  const CACHE = 'navhub-v3'
+  const CACHE = 'navhub-v4'
   const SHELL = [
     '/',
+    '/offline',
     '/favorites',
     '/algorithms',
     '/icons/icon-192.png',
@@ -27,10 +28,26 @@ if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.
     '/manifest.webmanifest'
   ]
 
+  // 预缓存离线页引用的构建产物：SHELL 只抓 HTML 不会带 _next/static，
+  // 首次离线打开 /offline 时会白屏，因此在安装阶段顺手把脚本/样式收进缓存。
+  async function precacheOfflineAssets(cache) {
+    const res = await fetch('/offline', { cache: 'no-store' })
+    if (!res.ok) return
+    const html = await res.text()
+    const urls = new Set()
+    const re = /(?:src|href)="(\/_next\/static\/[^"]+)"/g
+    let match
+    while ((match = re.exec(html))) urls.add(match[1])
+    await Promise.allSettled([...urls].map((url) => cache.add(url)))
+  }
+
   self.addEventListener('install', (event) => {
     event.waitUntil(
       caches.open(CACHE)
-        .then((cache) => cache.addAll(SHELL))
+        .then(async (cache) => {
+          await cache.addAll(SHELL)
+          await precacheOfflineAssets(cache)
+        })
         .then(() => self.skipWaiting())
         .catch((err) => console.warn('[sw] 预缓存失败：', err))
     )

@@ -70,6 +70,8 @@ export function resetTheme(): void {
     // 忽略 localStorage 受限环境
   }
 
+  activeTryout = null
+  window.dispatchEvent(new CustomEvent('navhub_theme_tryout_changed', { detail: null }))
   // 派发主题变更事件以通知所有监听组件
   window.dispatchEvent(new CustomEvent('navhub_theme_changed', { detail: null }))
 }
@@ -127,3 +129,78 @@ export function initThemeRuntime(): ActiveThemeConfig | null {
   }
   return active
 }
+
+/* ------------------------------------------------------------------ *
+ * 免安装即时沙箱试用 (Theme Live Tryout Sandbox)
+ * ------------------------------------------------------------------ */
+
+export interface ThemeTryoutConfig {
+  slug: string
+  name: string
+  tokens?: Record<string, string>
+  accent?: ThemeAccent
+}
+
+let activeTryout: (ThemeTryoutConfig & { original: ActiveThemeConfig | null }) | null = null
+
+export function getActiveTryout(): (ThemeTryoutConfig & { original: ActiveThemeConfig | null }) | null {
+  return activeTryout
+}
+
+export function isThemeInTryout(slug?: string): boolean {
+  if (!activeTryout) return false
+  if (!slug) return true
+  return activeTryout.slug === slug
+}
+
+export function startThemeTryout(config: ThemeTryoutConfig): void {
+  if (typeof window === 'undefined') return
+  const current = getActiveTheme()
+  activeTryout = {
+    ...config,
+    original: current,
+  }
+
+  // 先清空当前 document 变量
+  const root = document.documentElement
+  for (const varName of VALID_VARS_SET) {
+    root.style.removeProperty(varName)
+  }
+
+  // 应用试用主题
+  applyThemeTokens(config.tokens, config.accent)
+  window.dispatchEvent(new CustomEvent('navhub_theme_tryout_changed', { detail: activeTryout }))
+}
+
+export function cancelThemeTryout(): void {
+  if (typeof window === 'undefined' || !activeTryout) return
+  const original = activeTryout.original
+  activeTryout = null
+
+  const root = document.documentElement
+  for (const varName of VALID_VARS_SET) {
+    root.style.removeProperty(varName)
+  }
+  root.removeAttribute('data-accent')
+
+  if (original) {
+    applyThemeTokens(original.tokens, original.accent)
+  }
+
+  window.dispatchEvent(new CustomEvent('navhub_theme_tryout_changed', { detail: null }))
+  window.dispatchEvent(new CustomEvent('navhub_theme_changed', { detail: original }))
+}
+
+export function commitThemeTryout(): void {
+  if (typeof window === 'undefined' || !activeTryout) return
+  const config = {
+    slug: activeTryout.slug,
+    name: activeTryout.name,
+    tokens: activeTryout.tokens,
+    accent: activeTryout.accent,
+  }
+  activeTryout = null
+  setActiveTheme(config)
+  window.dispatchEvent(new CustomEvent('navhub_theme_tryout_changed', { detail: null }))
+}
+

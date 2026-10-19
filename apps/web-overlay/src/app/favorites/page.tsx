@@ -27,12 +27,14 @@ import {
   type VaultItem,
   type EncryptedVaultPayload,
 } from '@/lib/vault'
+import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
 import { Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff, RefreshCw, CloudOff, Search, X, Package } from 'lucide-react'
 
 export default function FavoritesPage() {
   const favorites = useFavorites()
   const [syncNote, setSyncNote] = useState<string | null>(null)
   const [syncStatus, setSyncStatus] = useState<'success' | 'error' | 'info'>('info')
+  const [showPluginExport, setShowPluginExport] = useState(false)
   // 云端同步是一条会失败的链路，必须有独立状态：同步失败时用户最需要的
   // 是「收藏还在本机，换设备看不到」这个事实，而不是一片沉默。
   const [cloudResult, setCloudResult] = useState<CloudSyncResult | null>(null)
@@ -88,40 +90,9 @@ export default function FavoritesPage() {
     URL.revokeObjectURL(url)
   }
 
-  // 一键将收藏导出为标准网址包插件清单 (site-pack)
+  // 一键将收藏导出为标准网址包插件清单向导 (site-pack)
   const handleExportAsPlugin = () => {
-    const manifest = {
-      manifestVersion: 1,
-      kind: 'site-pack',
-      name: '我的精选收藏包',
-      description: `包含 ${favorites.items.length} 个优质网站的精选收藏包，由 NavHub 用户本地一键导出。`,
-      icon: '⭐',
-      author: '社区用户',
-      license: 'MIT',
-      version: '1.0.0',
-      tags: ['收藏', '网址包', '精选'],
-      payload: {
-        categories: [
-          { title: '精选收藏', description: '用户个人精选网址收藏合集' },
-        ],
-        sites: favorites.items.map((item) => ({
-          url: item.href,
-          title: item.title,
-          description: item.description || '',
-          category: '精选收藏',
-          tags: item.note ? [item.note] : ['收藏'],
-        })),
-      },
-    }
-    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `navhub-plugin-sitepack-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-    setSyncNote(`已将 ${favorites.items.length} 个收藏站点打包为标准插件清单（.json），可直接用于离线导入或市场投稿！`)
-    setSyncStatus('success')
+    setShowPluginExport(true)
   }
 
   const handleImportPlain = () => {
@@ -719,6 +690,28 @@ export default function FavoritesPage() {
           或
           <Link href="/hot" className="mx-1 text-primary hover:underline">浏览热度榜</Link>
         </div>
+
+        {/* 导出为插件市场清单向导弹窗 */}
+        <ExportPluginModal
+          open={showPluginExport}
+          onOpenChange={setShowPluginExport}
+          kind="site-pack"
+          defaultName="我的精选收藏包"
+          defaultDescription={`包含 ${favorites.items.length} 个优质网站的精选收藏包，由 NavHub 用户本地一键导出。`}
+          defaultTags={['收藏', '网址包', '精选']}
+          payload={{
+            categories: [
+              { title: '精选收藏', description: '用户个人精选网址收藏合集' },
+            ],
+            sites: favorites.items.map((item) => ({
+              url: item.href,
+              title: item.title,
+              description: item.description || '',
+              category: '精选收藏',
+              tags: item.note ? [item.note] : ['收藏'],
+            })),
+          }}
+        />
       </div>
       <Footer />
     </Container>

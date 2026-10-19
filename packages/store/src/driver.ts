@@ -354,6 +354,33 @@ CREATE TABLE IF NOT EXISTS plugin_stars (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (plugin_id, identity)
 );
+
+CREATE TABLE IF NOT EXISTS plugin_versions (
+  id TEXT PRIMARY KEY,
+  plugin_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  manifest TEXT NOT NULL,
+  changelog TEXT,
+  checksum TEXT NOT NULL,
+  published_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  UNIQUE(plugin_id, version)
+);
+CREATE INDEX IF NOT EXISTS plugin_versions_plugin_idx ON plugin_versions(plugin_id);
+
+CREATE TABLE IF NOT EXISTS plugin_reviews (
+  id TEXT PRIMARY KEY,
+  plugin_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  rating INTEGER NOT NULL,
+  title TEXT,
+  content TEXT,
+  installed_version TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(plugin_id, identity)
+);
+CREATE INDEX IF NOT EXISTS plugin_reviews_plugin_idx ON plugin_reviews(plugin_id);
 `;
 
 const DDL_PG = `
@@ -665,6 +692,33 @@ CREATE TABLE IF NOT EXISTS plugin_stars (
   created_at BIGINT NOT NULL,
   PRIMARY KEY (plugin_id, identity)
 );
+
+CREATE TABLE IF NOT EXISTS plugin_versions (
+  id TEXT PRIMARY KEY,
+  plugin_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  manifest TEXT NOT NULL,
+  changelog TEXT,
+  checksum TEXT NOT NULL,
+  published_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL,
+  UNIQUE(plugin_id, version)
+);
+CREATE INDEX IF NOT EXISTS plugin_versions_plugin_idx ON plugin_versions(plugin_id);
+
+CREATE TABLE IF NOT EXISTS plugin_reviews (
+  id TEXT PRIMARY KEY,
+  plugin_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  rating INTEGER NOT NULL,
+  title TEXT,
+  content TEXT,
+  installed_version TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL,
+  UNIQUE(plugin_id, identity)
+);
+CREATE INDEX IF NOT EXISTS plugin_reviews_plugin_idx ON plugin_reviews(plugin_id);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;

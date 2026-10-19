@@ -30,11 +30,20 @@ import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
 import { PluginReportModal } from '@/components/plugins/plugin-report-modal'
 import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
 import { PluginSimilar } from '@/components/plugins/plugin-similar'
+import { PluginVersionTimeline } from '@/components/plugins/plugin-version-timeline'
+import { PluginReviewSection } from '@/components/plugins/plugin-review-section'
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { useModularLayout } from '@/lib/modular/use-modular-layout'
-import { setActiveTheme, resetTheme, getActiveTheme } from '@/lib/plugins/theme-runtime'
+import {
+  startThemeTryout,
+  cancelThemeTryout,
+  isThemeInTryout,
+  setActiveTheme,
+  resetTheme,
+  getActiveTheme,
+} from '@/lib/plugins/theme-runtime'
 import { copyText } from '@/lib/clipboard'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -55,6 +64,8 @@ import {
   Info,
   RotateCcw,
   Share2,
+  History,
+  MessageSquare,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -90,13 +101,23 @@ export default function PluginDetailPage({
   const [starLoading, setStarLoading] = useState(false)
 
   // 选项卡切换
-  const [activeTab, setActiveTab] = useState<'preview' | 'diff' | 'impact' | 'raw'>('preview')
+  const [activeTab, setActiveTab] = useState<'preview' | 'diff' | 'impact' | 'raw' | 'history' | 'reviews'>('preview')
 
   // 工作台预设注入钩子
   const { installWidgetPreset } = useModularLayout()
 
-  // 主题试用状态
+  // 主题免安装试用状态
   const [isThemeApplied, setIsThemeApplied] = useState(false)
+  const [inTryout, setInTryout] = useState(false)
+
+  useEffect(() => {
+    if (plugin?.kind === 'theme') {
+      setInTryout(isThemeInTryout(plugin.slug))
+      const onTryoutChange = () => setInTryout(isThemeInTryout(plugin.slug))
+      window.addEventListener('navhub_theme_tryout_changed', onTryoutChange)
+      return () => window.removeEventListener('navhub_theme_tryout_changed', onTryoutChange)
+    }
+  }, [plugin?.slug, plugin?.kind])
 
   // D1 更新链路：解析「安装 / 更新 / 已安装」动作（已安装版本 < 市场版本 → 可更新）
   const installAction = plugin ? resolveInstallAction(plugin.installedVersion, plugin.version) : 'install'
@@ -210,22 +231,20 @@ export default function PluginDetailPage({
     }
   }
 
-  const handleToggleThemeLive = () => {
+  const handleToggleThemeTryout = () => {
     if (!plugin || plugin.kind !== 'theme') return
-    if (isThemeApplied) {
-      resetTheme()
-      setIsThemeApplied(false)
-      toast.info('已恢复系统默认主题')
+    if (inTryout) {
+      cancelThemeTryout()
+      toast.info('已退出主题试用沙箱')
     } else {
       const payload = plugin.manifest.payload
-      setActiveTheme({
+      startThemeTryout({
         slug: plugin.slug,
         name: plugin.name,
-        tokens: payload.tokens,
-        accent: payload.accent,
+        tokens: payload?.tokens,
+        accent: payload?.accent,
       })
-      setIsThemeApplied(true)
-      toast.success(`已实时应用「${plugin.name}」主题！`)
+      toast.success(`正在免安装沙箱试用「${plugin.name}」主题！`)
     }
   }
 
@@ -327,6 +346,28 @@ export default function PluginDetailPage({
                   <span className="text-xs text-muted-foreground">
                     作者: <strong className="text-foreground font-medium">{plugin.author}</strong>
                   </span>
+                )}
+                {plugin.reviewStats && plugin.reviewStats.reviewCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('reviews')}
+                    className="text-xs text-amber-500 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                  >
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    <span>{plugin.reviewStats.avgRating.toFixed(1)}</span>
+                    <span className="text-muted-foreground font-normal">
+                      ({plugin.reviewStats.reviewCount}人评价)
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('reviews')}
+                    className="text-xs text-muted-foreground/80 hover:text-foreground cursor-pointer flex items-center gap-1"
+                  >
+                    <Star className="w-3.5 h-3.5 text-muted-foreground/40" />
+                    <span>暂无评分 (点击评价)</span>
+                  </button>
                 )}
               </div>
 
@@ -450,15 +491,20 @@ export default function PluginDetailPage({
                 )}
               </div>
 
-              {/* 主题插件独享：零刷新实时试用 */}
+              {/* 主题插件独享：免安装即时沙箱试用 */}
               {plugin.kind === 'theme' && (
                 <button
                   type="button"
-                  onClick={handleToggleThemeLive}
-                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-violet-500/30 bg-violet-500/5 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10 transition-all"
+                  onClick={handleToggleThemeTryout}
+                  className={cn(
+                    'w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all',
+                    inTryout
+                      ? 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20'
+                      : 'border-violet-500/30 bg-violet-500/5 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10'
+                  )}
                 >
                   <Palette className="w-3.5 h-3.5" />
-                  <span>{isThemeApplied ? '恢复原主题' : '实时预览试用'}</span>
+                  <span>{inTryout ? '正在试用中 (点击退出)' : '免安装沙箱试用'}</span>
                 </button>
               )}
             </div>
@@ -580,6 +626,37 @@ export default function PluginDetailPage({
               )}
             >
               清单源码 (JSON)
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('history')}
+              className={cn(
+                'px-4 py-2 rounded-xl text-xs font-medium transition-all inline-flex items-center gap-1.5',
+                activeTab === 'history'
+                  ? 'bg-primary text-primary-foreground shadow-2xs'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              )}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>版本演进</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('reviews')}
+              className={cn(
+                'px-4 py-2 rounded-xl text-xs font-medium transition-all inline-flex items-center gap-1.5',
+                activeTab === 'reviews'
+                  ? 'bg-primary text-primary-foreground shadow-2xs'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+              )}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>用户评价</span>
+              {plugin.reviewStats && plugin.reviewStats.reviewCount > 0 && (
+                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-muted font-mono">
+                  {plugin.reviewStats.reviewCount}
+                </span>
+              )}
             </button>
           </div>
 
@@ -814,6 +891,33 @@ export default function PluginDetailPage({
                 {JSON.stringify(plugin.manifest, null, 2)}
               </pre>
             </div>
+          )}
+
+          {/* 选项卡 4：版本演进时间轴 */}
+          {activeTab === 'history' && (
+            <PluginVersionTimeline slug={plugin.slug} currentVersion={plugin.version} />
+          )}
+
+          {/* 选项卡 5：真实用户评价 */}
+          {activeTab === 'reviews' && (
+            <PluginReviewSection
+              slug={plugin.slug}
+              isInstalled={Boolean(plugin.installed)}
+              installedVersion={plugin.installedVersion}
+              initialReviews={
+                plugin.reviewStats
+                  ? {
+                      slug: plugin.slug,
+                      stats: plugin.reviewStats,
+                      myReview: plugin.myReview ?? null,
+                      items: [],
+                      total: plugin.reviewStats.reviewCount,
+                      limit: 20,
+                      offset: 0,
+                    }
+                  : null
+              }
+            />
           )}
         </div>
 

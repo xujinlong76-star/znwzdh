@@ -6,6 +6,7 @@ import { DensityProvider } from '@/components/density-provider'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Toaster as SonnerToaster } from 'sonner'
 import { initThemeRuntime } from '@/lib/plugins/theme-runtime'
+import { ThemeTryoutRibbon } from '@/components/plugins/theme-tryout-ribbon'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
@@ -24,6 +25,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <TooltipProvider delayDuration={200} skipDelayDuration={100}>
         <DensityProvider>
           {children}
+          {/* 主题免安装即时沙箱试用悬浮横条 */}
+          <ThemeTryoutRibbon />
           {/* 插件市场（components/plugins/** 与市场/后台页）使用 sonner 通知通道 */}
           <SonnerToaster richColors position="top-center" />
         </DensityProvider>

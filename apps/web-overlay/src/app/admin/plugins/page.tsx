@@ -17,10 +17,14 @@ import {
   fetchAdminPlugins,
   reviewPlugin,
   fetchPluginTelemetry,
+  diffPluginManifestsApi,
+  fetchPluginVersions,
+  fetchPluginVersionDetail,
   type HubPluginItem,
   type HubPluginTelemetryMetrics,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
+import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
 import { EmptyState } from '@/components/ui/empty-state'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
@@ -47,6 +51,8 @@ import {
   Search,
   PackageCheck,
   RotateCcw,
+  FileCode,
+  Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -73,6 +79,36 @@ export default function AdminPluginsPage() {
   const [rejectPluginItem, setRejectPluginItem] = useState<HubPluginItem | null>(null)
   const [rejectNote, setRejectNote] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
+
+  // 清单审查与差异对比弹窗
+  const [auditModalOpen, setAuditModalOpen] = useState(false)
+  const [auditPluginItem, setAuditPluginItem] = useState<HubPluginItem | null>(null)
+  const [auditDiff, setAuditDiff] = useState<any>(null)
+  const [auditLoading, setAuditLoading] = useState(false)
+
+  const handleOpenAudit = async (item: HubPluginItem) => {
+    setAuditPluginItem(item)
+    setAuditModalOpen(true)
+    setAuditLoading(true)
+    setAuditDiff(null)
+    try {
+      const history = await fetchPluginVersions(item.slug)
+      if (history.versions && history.versions.length > 0) {
+        const lastVer = history.versions[0]
+        const lastDetail = await fetchPluginVersionDetail(item.slug, lastVer.version)
+        if (lastDetail && lastDetail.manifest) {
+          const diffRes = await diffPluginManifestsApi(lastDetail.manifest, item.manifest)
+          if (diffRes.ok) {
+            setAuditDiff(diffRes.diff)
+          }
+        }
+      }
+    } catch {
+      // 容错降级
+    } finally {
+      setAuditLoading(false)
+    }
+  }
 
   const loadList = useCallback(async () => {
     setLoading(true)
@@ -405,6 +441,14 @@ export default function AdminPluginsPage() {
                     <>
                       <button
                         type="button"
+                        onClick={() => handleOpenAudit(item)}
+                        className="px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 rounded-lg border border-primary/30 transition-colors inline-flex items-center gap-1"
+                      >
+                        <FileCode className="w-3.5 h-3.5" />
+                        <span>审查差异</span>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => {
                           setRejectPluginItem(item)
                           setRejectNote('')
@@ -506,6 +550,130 @@ export default function AdminPluginsPage() {
               >
                 {actionLoading ? '提交中…' : '确认驳回'}
               </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 清单与差异审查弹窗 */}
+        <Dialog open={auditModalOpen} onOpenChange={setAuditModalOpen}>
+          <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-base flex items-center gap-2">
+                <FileCode className="w-4 h-4 text-primary" />
+                <span>审查待上架插件：{auditPluginItem?.name}</span>
+                <span className="text-xs font-mono text-muted-foreground px-2 py-0.5 rounded bg-muted">
+                  v{auditPluginItem?.version}
+                </span>
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                比对该插件与此前已发布版本清单的增量差异，审查是否存在安全隐患或越权变更。
+              </DialogDescription>
+            </DialogHeader>
+
+            {auditPluginItem && (
+              <div className="space-y-4 py-2">
+                {/* 概览指标 */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
+                    <span className="text-muted-foreground block text-[11px]">类型</span>
+                    <span className="font-semibold">{pluginKindLabel(auditPluginItem.kind)}</span>
+                  </div>
+                  <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
+                    <span className="text-muted-foreground block text-[11px]">提交作者</span>
+                    <span className="font-semibold truncate block">{auditPluginItem.author || '匿名'}</span>
+                  </div>
+                  <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
+                    <span className="text-muted-foreground block text-[11px]">唯一标识</span>
+                    <span className="font-mono text-[11px] truncate block">{auditPluginItem.slug}</span>
+                  </div>
+                  <div className="rounded-lg bg-muted/40 p-2.5 border border-border/50">
+                    <span className="text-muted-foreground block text-[11px]">包含资源</span>
+                    <span className="font-semibold">
+                      {auditPluginItem.manifest?.payload?.sites?.length
+                        ? `${auditPluginItem.manifest.payload.sites.length} 个站点`
+                        : auditPluginItem.manifest?.payload?.layout
+                          ? '工作台布局'
+                          : auditPluginItem.manifest?.payload?.tokens
+                            ? '主题色彩盘'
+                            : '声明配置'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 差异对比区 */}
+                <div>
+                  <h4 className="text-xs font-medium text-foreground mb-1.5 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-primary" />
+                    <span>与上一版本变更对比：</span>
+                  </h4>
+                  {auditLoading ? (
+                    <div className="rounded-xl border border-dashed border-border/70 p-4 text-center text-xs text-muted-foreground">
+                      正在比对历史版本快照...
+                    </div>
+                  ) : auditDiff ? (
+                    <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+                      <PluginDiffView diff={auditDiff} />
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border/70 p-4 text-center text-xs text-muted-foreground bg-muted/10">
+                      该插件暂无已发布的历史版本（首次提交或首发版本），无需比对历史增量。
+                    </div>
+                  )}
+                </div>
+
+                {/* 完整清单 JSON */}
+                <div>
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="cursor-pointer font-medium hover:text-foreground">
+                      查看待审完整清单 JSON
+                    </summary>
+                    <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-background p-3 text-[11px] font-mono text-foreground border border-border/50">
+                      {JSON.stringify(auditPluginItem.manifest, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter className="flex sm:justify-between items-center gap-2 pt-2 border-t border-border/60">
+              <button
+                type="button"
+                onClick={() => setAuditModalOpen(false)}
+                className="px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border border-border/60 hover:bg-muted/60 transition-colors"
+              >
+                关闭
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuditModalOpen(false)
+                    if (auditPluginItem) {
+                      setRejectPluginItem(auditPluginItem)
+                      setRejectNote('')
+                      setRejectModalOpen(true)
+                    }
+                  }}
+                  disabled={actionLoading}
+                  className="px-3.5 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-lg border border-destructive/30 transition-colors"
+                >
+                  驳回
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (auditPluginItem) {
+                      setAuditModalOpen(false)
+                      handleApprove(auditPluginItem)
+                    }
+                  }}
+                  disabled={actionLoading}
+                  className="inline-flex items-center gap-1 px-4 py-1.5 text-xs font-medium text-primary-foreground bg-primary hover:opacity-90 rounded-lg transition-all shadow-2xs"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>通过并立即上架</span>
+                </button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>

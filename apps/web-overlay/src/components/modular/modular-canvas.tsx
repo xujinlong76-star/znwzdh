@@ -28,6 +28,7 @@ import {
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
 import { takeStagedWorkspacePreset } from '@/lib/plugins/preset-staging'
+import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
 
 export function ModularCanvas() {
   const {
@@ -62,6 +63,7 @@ export function ModularCanvas() {
 
   const [isLibraryOpen, setIsLibraryOpen] = useState(false)
   const [isTemplateOpen, setIsTemplateOpen] = useState(false)
+  const [isExportPluginOpen, setIsExportPluginOpen] = useState(false)
   const [configTargetWidget, setConfigTargetWidget] = useState<any | null>(null)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
@@ -193,40 +195,9 @@ export function ModularCanvas() {
     setTimeout(() => setExportNotice(null), 2500)
   }
 
-  // 一键导出为工作台预设插件清单 (workspace-preset)
+  // 一键导出为工作台预设插件清单向导 (workspace-preset)
   const handleExportAsPlugin = () => {
-    const manifest = {
-      manifestVersion: 1,
-      kind: 'workspace-preset',
-      name: currentBoard ? `${currentBoard.name} 看板预设` : '我的工作台预设',
-      description: `包含 ${boards.length} 个看板的工作台预设配置，由 NavHub 工作台一键导出。`,
-      icon: '🛠️',
-      author: '社区用户',
-      license: 'MIT',
-      version: '1.0.0',
-      tags: ['工作台', '预设', '看板'],
-      payload: {
-        boards: boards.map((b) => ({
-          name: b.name,
-          widgets: b.widgets.map((w) => ({
-            type: w.type,
-            customTitle: w.customTitle,
-            colSpan: w.colSpan,
-            rowSpan: w.rowSpan,
-            config: w.config,
-          })),
-        })),
-      },
-    }
-    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `navhub-plugin-preset-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
-    setExportNotice('已将当前工作台看板打包为标准插件清单（.json），可直接用于离线导入或市场投稿！')
-    setTimeout(() => setExportNotice(null), 3000)
+    setIsExportPluginOpen(true)
   }
 
   // 导入 JSON
@@ -479,7 +450,7 @@ export function ModularCanvas() {
                 title="导出为插件市场规范的工作台预设清单（.json）"
               >
                 <Package className="w-3.5 h-3.5" />
-                <span>导出插件</span>
+                <span>导出为插件</span>
               </Button>
 
               <Button
@@ -622,6 +593,28 @@ export function ModularCanvas() {
         isOpen={isTemplateOpen}
         onClose={() => setIsTemplateOpen(false)}
         onApplyTemplate={applyTemplate}
+      />
+
+      {/* 导出为插件市场清单向导弹窗 */}
+      <ExportPluginModal
+        open={isExportPluginOpen}
+        onOpenChange={setIsExportPluginOpen}
+        kind="workspace-preset"
+        defaultName={currentBoard ? `${currentBoard.name} 看板预设` : '我的工作台预设'}
+        defaultDescription={`包含 ${boards.length} 个看板的工作台预设配置，由 NavHub 工作台一键导出。`}
+        defaultTags={['工作台', '预设', '看板']}
+        payload={{
+          boards: boards.map((b) => ({
+            name: b.name,
+            widgets: b.widgets.map((w) => ({
+              type: w.type,
+              customTitle: w.customTitle,
+              colSpan: w.colSpan,
+              rowSpan: w.rowSpan,
+              config: w.config,
+            })),
+          })),
+        }}
       />
     </div>
   )

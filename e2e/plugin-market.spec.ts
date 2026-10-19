@@ -247,4 +247,109 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const primaryColor = await page.evaluate(() => document.documentElement.style.getPropertyValue('--primary'));
     expect(primaryColor.trim()).toBe('262 83% 58%');
   });
+
+  test('NextGen 全功能链路：免安装主题沙箱试用 -> 安装后真实5星评价 -> 版本演进时间轴 -> 工作台导出插件', async ({ page, request, context }) => {
+    // 允许剪贴板读写权限
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
+
+    const stamp = Date.now().toString(36);
+    const themeName = `NextGen 试用主题 ${stamp}`;
+    const slug = `nextgen-theme-${stamp}`;
+    const themeManifest = {
+      manifestVersion: 1,
+      kind: 'theme',
+      name: themeName,
+      description: 'Playwright NextGen 全功能链路测试专用主题',
+      version: '1.0.0',
+      tags: ['theme', 'nextgen'],
+      payload: {
+        accent: 'rose',
+        tokens: {
+          '--primary': '336 90% 65%',
+          '--ring': '336 90% 65%',
+          '--radius': '0.75rem',
+        },
+      },
+    };
+
+    // 1. 通过直接上架通道导入该主题
+    const imported = await request.post('/api/hub/plugins/import', {
+      data: { manifest: themeManifest, slug },
+    });
+    expect(imported.ok(), `导入失败 ${imported.status()}: ${await imported.text()}`).toBeTruthy();
+
+    // 2. 访问详情页
+    await page.goto(`/marketplace/${slug}`);
+    await expect(page.getByRole('heading', { level: 1 }).first()).toContainText(themeName);
+
+    // 3. 免安装沙箱试用
+    const tryoutBtn = page.getByRole('button', { name: '免安装沙箱试用' });
+    await expect(tryoutBtn).toBeVisible({ timeout: 15_000 });
+    await tryoutBtn.click();
+
+    // 验证试用状态栏出现
+    const ribbon = page.locator('aside[aria-label="主题试用状态栏"]');
+    await expect(ribbon).toBeVisible({ timeout: 10_000 });
+    await expect(ribbon.getByText('免安装试用中')).toBeVisible();
+    await expect(ribbon.getByText(themeName)).toBeVisible();
+
+    // 验证 html 属性应用了试用强调色
+    await expect(page.locator('html')).toHaveAttribute('data-accent', 'rose');
+
+    // 退出试用
+    await ribbon.getByRole('button', { name: '退出试用' }).click();
+    await expect(ribbon).not.toBeVisible();
+
+    // 4. 正式安装该插件
+    await page.getByRole('button', { name: '立即安装该插件' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText(`确认安装「${themeName}」`)).toBeVisible();
+    await clickInstallAndAwaitToast(page, dialog, themeName);
+    await expect(page.getByRole('button', { name: /已安装/ })).toBeVisible();
+
+    // 5. 版本演进时间轴
+    await page.getByRole('button', { name: '版本演进' }).click();
+    await expect(page.getByRole('heading', { name: /版本演进时间轴/ })).toBeVisible();
+    await expect(page.getByText('v1.0.0', { exact: true }).first()).toBeVisible();
+
+    // 6. 真实安装用户 5 星评价
+    await page.getByRole('button', { name: '用户评价' }).click();
+    await expect(page.getByRole('heading', { name: /全部评价/ })).toBeVisible();
+    await page.getByRole('button', { name: '发表使用体验' }).click();
+
+    // 选中 5 星
+    await page.getByRole('button', { name: '5 星' }).click();
+    await page.getByLabel('一句话亮点或总结（可选）').fill('体验极佳，做工精美！');
+    await page.getByLabel('具体使用心得或改进建议（可选）').fill('高对比度配色非常好看，推荐给所有夜间开发者！');
+    await page.getByRole('button', { name: '提交评价' }).click();
+
+    await expect(page.getByText('评价发布成功，感谢您的反馈！')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('体验极佳，做工精美！')).toBeVisible();
+    await expect(page.getByText('已验证真实安装用户').first()).toBeVisible();
+
+    // 7. 工作台一键导出为插件 (UGC Export to Plugin)
+    await page.goto('/custom');
+    await page.waitForLoadState('domcontentloaded');
+
+    // 开启自定义排版模式展示工具栏
+    const editBtn = page.getByRole('button', { name: /自定义排版/ });
+    await expect(editBtn).toBeVisible({ timeout: 30_000 });
+    await editBtn.click();
+
+    const exportBtn = page.getByRole('button', { name: '导出为插件' });
+    await expect(exportBtn).toBeVisible({ timeout: 15_000 });
+    await exportBtn.click();
+
+    const exportDialog = page.getByRole('dialog');
+    await expect(exportDialog.getByText('导出为标准插件清单 (Export to Plugin)')).toBeVisible({ timeout: 15_000 });
+    await expect(exportDialog.getByText(/清单符合 NavHub 纯声明式 JSON 架构/)).toBeVisible();
+
+    // 复制 JSON
+    await exportDialog.getByRole('button', { name: '复制 JSON' }).click();
+    await expect(page.getByText('已复制清单 JSON 到剪贴板')).toBeVisible({ timeout: 10_000 });
+
+    // 关闭弹窗
+    await exportDialog.getByRole('button', { name: '取消' }).click();
+    await expect(exportDialog).not.toBeVisible();
+  });
 });

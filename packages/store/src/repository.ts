@@ -860,6 +860,38 @@ export class Repository {
     return pluginsRepo.getPluginTelemetry(this);
   }
 
+  async listPluginVersions(pluginId: string): Promise<pluginsRepo.PluginVersionRecord[]> {
+    return pluginsRepo.listPluginVersions(this, pluginId);
+  }
+
+  async getPluginVersion(pluginId: string, version: string): Promise<pluginsRepo.PluginVersionRecord | null> {
+    return pluginsRepo.getPluginVersion(this, pluginId, version);
+  }
+
+  async createPluginReview(
+    slug: string,
+    identity: string,
+    input: { rating: number; title?: string | null; content?: string | null },
+    actor?: pluginsRepo.PluginActor,
+  ): Promise<pluginsRepo.PluginReviewRecord> {
+    return pluginsRepo.createPluginReview(this, slug, identity, input, actor);
+  }
+
+  async listPluginReviews(
+    pluginId: string,
+    options?: { limit?: number; offset?: number },
+  ): Promise<{ items: pluginsRepo.PluginReviewRecord[]; total: number }> {
+    return pluginsRepo.listPluginReviews(this, pluginId, options);
+  }
+
+  async getPluginReviewStats(pluginId: string): Promise<pluginsRepo.PluginReviewStats> {
+    return pluginsRepo.getPluginReviewStats(this, pluginId);
+  }
+
+  async getUserPluginReview(pluginId: string, identity: string): Promise<pluginsRepo.PluginReviewRecord | null> {
+    return pluginsRepo.getUserPluginReview(this, pluginId, identity);
+  }
+
 
   /* ------------------------- 底层执行 ------------------------- */
 

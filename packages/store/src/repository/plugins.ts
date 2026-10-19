@@ -1,11 +1,11 @@
 import type { Repository } from "../repository.ts";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { canonicalizeUrl, type PluginKind, type PluginManifest, type PluginStatus, type SitePackPayload } from "@navhub/core";
 import { slugify } from "./dialect.ts";
-import type { PluginActor, PluginInstallRecord, PluginRecord } from "./records.ts";
+import type { PluginActor, PluginInstallRecord, PluginRecord, PluginVersionRecord, PluginReviewRecord, PluginReviewStats } from "./records.ts";
 
 // 门面（repository.ts）通过 `pluginsRepo.` 命名空间引用插件域类型，保持域自包含
-export type { PluginActor, PluginInstallRecord, PluginRecord } from "./records.ts";
+export type { PluginActor, PluginInstallRecord, PluginRecord, PluginVersionRecord, PluginReviewRecord, PluginReviewStats } from "./records.ts";
 export type { PluginManifest } from "@navhub/core";
 
 /**
@@ -186,6 +186,9 @@ export async function createPlugin(
   );
   const created = await getPluginBySlug(repo, slug);
   if (!created) throw new Error("创建插件后无法读回");
+  if (status === "published") {
+    await recordPluginVersion(repo, created.id, manifest, source === "import" ? "导入即上架" : "初始发布", now);
+  }
   await repo.audit({
     actor: actor?.actor ?? input.author ?? "anonymous",
     actorKind: actor?.actorKind ?? input.authorKind ?? "anonymous",
@@ -312,6 +315,9 @@ export async function reviewPlugin(
   );
   const updated = await getPluginBySlug(repo, slug);
   if (!updated) throw new Error("审核后无法读回");
+  if (action === "approve") {
+    await recordPluginVersion(repo, existing.id, existing.manifest, note || "审核通过并上架", now);
+  }
   await repo.audit({
     actor: actor?.actor ?? "admin",
     actorKind: actor?.actorKind,
@@ -753,5 +759,221 @@ export async function getPluginTelemetry(repo: Repository): Promise<PluginTeleme
       starCount: Number(r.star_count ?? 0),
     })),
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * 版本历史快照 (Plugin Versions)
+ * ------------------------------------------------------------------ */
+
+export function computeManifestChecksum(manifest: PluginManifest): string {
+  return createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
+}
+
+function rowToPluginVersion(row: Record<string, any>): PluginVersionRecord {
+  return {
+    id: String(row.id),
+    pluginId: String(row.plugin_id),
+    version: String(row.version),
+    manifest: parseJson<PluginManifest>(row.manifest, {} as any),
+    changelog: row.changelog == null ? null : String(row.changelog),
+    checksum: String(row.checksum ?? ""),
+    publishedAt: Number(row.published_at ?? 0),
+    createdAt: Number(row.created_at ?? 0),
+  };
+}
+
+export async function recordPluginVersion(
+  repo: Repository,
+  pluginId: string,
+  manifest: PluginManifest,
+  changelog?: string | null,
+  publishedAt?: number,
+): Promise<PluginVersionRecord> {
+  const version = manifest.version;
+  const checksum = computeManifestChecksum(manifest);
+  const now = Date.now();
+  const pubTime = publishedAt ?? now;
+
+  const existing = await repo.raw(
+    "SELECT * FROM plugin_versions WHERE plugin_id = ? AND version = ? LIMIT 1",
+    [pluginId, version],
+  );
+  if (existing[0]) {
+    return rowToPluginVersion(existing[0]);
+  }
+
+  const id = randomUUID();
+  await repo.run(
+    "INSERT INTO plugin_versions (id, plugin_id, version, manifest, changelog, checksum, published_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [id, pluginId, version, JSON.stringify(manifest), changelog ?? null, checksum, pubTime, now],
+  );
+
+  const row = (await repo.raw("SELECT * FROM plugin_versions WHERE id = ? LIMIT 1", [id]))[0];
+  if (!row) throw new Error("版本快照记录后无法读回");
+  return rowToPluginVersion(row);
+}
+
+export async function listPluginVersions(
+  repo: Repository,
+  pluginId: string,
+): Promise<PluginVersionRecord[]> {
+  const rows = await repo.raw(
+    "SELECT * FROM plugin_versions WHERE plugin_id = ? ORDER BY published_at DESC, created_at DESC",
+    [pluginId],
+  );
+  return rows.map(rowToPluginVersion);
+}
+
+export async function getPluginVersion(
+  repo: Repository,
+  pluginId: string,
+  version: string,
+): Promise<PluginVersionRecord | null> {
+  const rows = await repo.raw(
+    "SELECT * FROM plugin_versions WHERE plugin_id = ? AND version = ? LIMIT 1",
+    [pluginId, version],
+  );
+  return rows[0] ? rowToPluginVersion(rows[0]) : null;
+}
+
+/* ------------------------------------------------------------------ *
+ * 用户真实评价与评分 (Plugin Reviews)
+ * ------------------------------------------------------------------ */
+
+function rowToPluginReview(row: Record<string, any>): PluginReviewRecord {
+  return {
+    id: String(row.id),
+    pluginId: String(row.plugin_id),
+    identity: String(row.identity),
+    rating: Number(row.rating),
+    title: row.title == null ? null : String(row.title),
+    content: row.content == null ? null : String(row.content),
+    installedVersion: String(row.installed_version ?? ""),
+    createdAt: Number(row.created_at ?? 0),
+    updatedAt: Number(row.updated_at ?? 0),
+  };
+}
+
+export async function createPluginReview(
+  repo: Repository,
+  slug: string,
+  identity: string,
+  input: { rating: number; title?: string | null; content?: string | null },
+  actor?: PluginActor,
+): Promise<PluginReviewRecord> {
+  const plugin = await getPluginBySlug(repo, slug);
+  if (!plugin) throw new Error(`插件不存在：${slug}`);
+  const who = identity.trim().slice(0, 120);
+  if (!who) throw new Error("必须提供有效用户身份才能提交评价");
+
+  // 门禁：用户必须处于活跃安装状态才能打分
+  const install = await getPluginInstall(repo, plugin.id, who);
+  if (!install || install.removedAt !== null) {
+    throw new Error("只有已安装该插件的用户才能发表评价与打分");
+  }
+
+  const rating = Math.min(5, Math.max(1, Math.round(Number(input.rating))));
+  if (isNaN(rating)) throw new Error("评分必须为 1 到 5 之间的整数");
+
+  const now = Date.now();
+  const title = input.title ? input.title.trim().slice(0, 100) : null;
+  const content = input.content ? input.content.trim().slice(0, 1000) : null;
+  const installedVersion = install.version;
+
+  const existing = (await repo.raw(
+    "SELECT id FROM plugin_reviews WHERE plugin_id = ? AND identity = ? LIMIT 1",
+    [plugin.id, who],
+  ))[0];
+
+  let reviewId: string;
+  if (existing) {
+    reviewId = String(existing.id);
+    await repo.run(
+      "UPDATE plugin_reviews SET rating = ?, title = ?, content = ?, installed_version = ?, updated_at = ? WHERE id = ?",
+      [rating, title, content, installedVersion, now, reviewId],
+    );
+  } else {
+    reviewId = randomUUID();
+    await repo.run(
+      "INSERT INTO plugin_reviews (id, plugin_id, identity, rating, title, content, installed_version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [reviewId, plugin.id, who, rating, title, content, installedVersion, now, now],
+    );
+  }
+
+  await repo.audit({
+    actor: actor?.actor ?? who,
+    actorKind: actor?.actorKind ?? "identity",
+    action: "plugin.review.submit",
+    target: slug,
+    diff: { rating, title, version: installedVersion },
+    ip: actor?.ip,
+  });
+
+  const row = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? LIMIT 1", [reviewId]))[0];
+  if (!row) throw new Error("保存评价后无法读回");
+  return rowToPluginReview(row);
+}
+
+export async function listPluginReviews(
+  repo: Repository,
+  pluginId: string,
+  options: { limit?: number; offset?: number } = {},
+): Promise<{ items: PluginReviewRecord[]; total: number }> {
+  const countRow = (await repo.raw("SELECT COUNT(*) AS cnt FROM plugin_reviews WHERE plugin_id = ?", [pluginId]))[0];
+  const total = Number(countRow?.cnt ?? 0);
+  const limit = Math.min(100, Math.max(1, options.limit ?? 20));
+  const offset = Math.max(0, options.offset ?? 0);
+
+  const rows = await repo.raw(
+    "SELECT * FROM plugin_reviews WHERE plugin_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+    [pluginId, limit, offset],
+  );
+
+  return { items: rows.map(rowToPluginReview), total };
+}
+
+export async function getPluginReviewStats(
+  repo: Repository,
+  pluginId: string,
+): Promise<PluginReviewStats> {
+  const rows = await repo.raw(
+    `SELECT rating, COUNT(*) as cnt FROM plugin_reviews WHERE plugin_id = ? GROUP BY rating`,
+    [pluginId],
+  );
+
+  const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let totalReviews = 0;
+  let sumScore = 0;
+
+  for (const r of rows) {
+    const star = Number(r.rating);
+    const count = Number(r.cnt ?? 0);
+    if (star >= 1 && star <= 5) {
+      distribution[star] = count;
+      totalReviews += count;
+      sumScore += star * count;
+    }
+  }
+
+  const avgRating = totalReviews > 0 ? Number((sumScore / totalReviews).toFixed(1)) : 0;
+  return {
+    avgRating,
+    reviewCount: totalReviews,
+    ratingDistribution: distribution,
+  };
+}
+
+export async function getUserPluginReview(
+  repo: Repository,
+  pluginId: string,
+  identity: string,
+): Promise<PluginReviewRecord | null> {
+  const who = identity.trim().slice(0, 120);
+  if (!who) return null;
+  const rows = await repo.raw(
+    "SELECT * FROM plugin_reviews WHERE plugin_id = ? AND identity = ? LIMIT 1",
+    [pluginId, who],
+  );
+  return rows[0] ? rowToPluginReview(rows[0]) : null;
 }
 

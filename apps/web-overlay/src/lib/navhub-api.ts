@@ -607,6 +607,12 @@ export interface HubPluginItem {
   installedVersion?: string | null
   installedAt?: number | null
   upgradeDiff?: PluginUpgradeDiff | null
+  reviewStats?: {
+    avgRating: number
+    reviewCount: number
+    ratingDistribution: Record<number, number>
+  } | null
+  myReview?: HubPluginReviewItem | null
 }
 
 export interface HubPluginsResponse {
@@ -887,3 +893,129 @@ export async function reportPlugin(
     effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
 }
+
+/* ------------------------------ 多版本历史与清单对比 ------------------------------ */
+
+export interface HubPluginVersionItem {
+  id: string
+  version: string
+  changelog?: string | null
+  checksum: string
+  publishedAt: number
+  createdAt: number
+}
+
+export interface HubPluginVersionDetail {
+  slug: string
+  version: string
+  manifest: any
+  changelog?: string | null
+  checksum: string
+  publishedAt: number
+  diffAgainstCurrent: any
+}
+
+/** 查询插件版本时间轴历史 */
+export async function fetchPluginVersions(
+  slug: string,
+  onDegraded?: DegradedHandler,
+): Promise<{ slug: string; versions: HubPluginVersionItem[] }> {
+  return degrade<{ slug: string; versions: HubPluginVersionItem[] }>(
+    { slug, versions: [] },
+    () => getJson(`/api/plugins/${encodeURIComponent(slug)}/versions`),
+    onDegraded,
+  )
+}
+
+/** 查询特定历史版本的清单快照与对比 */
+export async function fetchPluginVersionDetail(
+  slug: string,
+  version: string,
+  onDegraded?: DegradedHandler,
+): Promise<HubPluginVersionDetail | null> {
+  return degrade<HubPluginVersionDetail | null>(
+    null,
+    () => getJson(`/api/plugins/${encodeURIComponent(slug)}/versions/${encodeURIComponent(version)}`),
+    onDegraded,
+  )
+}
+
+/* ------------------------------ 真实安装用户评价与评分 ------------------------------ */
+
+export interface HubPluginReviewItem {
+  id: string
+  pluginId: string
+  identity: string
+  rating: number
+  title?: string | null
+  content?: string | null
+  installedVersion: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface HubPluginReviewsResponse {
+  slug: string
+  stats: {
+    avgRating: number
+    reviewCount: number
+    ratingDistribution: Record<number, number>
+  }
+  myReview: HubPluginReviewItem | null
+  items: HubPluginReviewItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+/** 获取插件评价列表与大盘统计 */
+export async function fetchPluginReviews(
+  slug: string,
+  params: { limit?: number; offset?: number; identity?: string } = {},
+  onDegraded?: DegradedHandler,
+): Promise<HubPluginReviewsResponse> {
+  const effectiveIdentity = params.identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const sp = new URLSearchParams()
+  if (params.limit) sp.set('limit', String(params.limit))
+  if (params.offset) sp.set('offset', String(params.offset))
+  if (effectiveIdentity) sp.set('identity', effectiveIdentity)
+  const qs = sp.toString() ? `?${sp.toString()}` : ''
+  return degrade<HubPluginReviewsResponse>(
+    {
+      slug,
+      stats: { avgRating: 0, reviewCount: 0, ratingDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } },
+      myReview: null,
+      items: [],
+      total: 0,
+      limit: params.limit ?? 20,
+      offset: params.offset ?? 0,
+    },
+    () => getJson(`/api/plugins/${encodeURIComponent(slug)}/reviews${qs}`),
+    onDegraded,
+  )
+}
+
+/** 提交或修改评价（需活跃安装） */
+export async function submitPluginReview(
+  slug: string,
+  input: { rating: number; title?: string; content?: string },
+  identity?: string,
+): Promise<{ success: boolean; review: HubPluginReviewItem; stats: any }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  return sendJson(
+    `/api/plugins/${encodeURIComponent(slug)}/reviews`,
+    'POST',
+    { ...input, identity: effectiveIdentity },
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+/** 任意清单比对接口 */
+export async function diffPluginManifestsApi(
+  baseManifest: unknown,
+  targetManifest: unknown,
+): Promise<{ ok: boolean; diff: any }> {
+  return sendJson('/api/plugins/diff', 'POST', { baseManifest, targetManifest })
+}
+

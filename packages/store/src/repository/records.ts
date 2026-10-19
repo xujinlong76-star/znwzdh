@@ -311,3 +311,34 @@ export interface PluginActor {
   actorKind?: string;
   ip?: string;
 }
+
+/** 插件版本历史快照 */
+export interface PluginVersionRecord {
+  id: string;
+  pluginId: string;
+  version: string;
+  manifest: PluginManifest;
+  changelog: string | null;
+  checksum: string;
+  publishedAt: number;
+  createdAt: number;
+}
+
+/** 插件真实评价记录 */
+export interface PluginReviewRecord {
+  id: string;
+  pluginId: string;
+  identity: string;
+  rating: number;
+  title: string | null;
+  content: string | null;
+  installedVersion: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PluginReviewStats {
+  avgRating: number;
+  reviewCount: number;
+  ratingDistribution: Record<number, number>;
+}

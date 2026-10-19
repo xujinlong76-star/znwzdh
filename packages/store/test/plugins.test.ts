@@ -56,9 +56,13 @@ afterAll(async () => {
   try {
     await db?.close();
   } catch {
-    // 清理失败不影响断言结果
+    // 数据库关闭异常不阻塞退出
   }
-  rmSync(dir, { recursive: true, force: true });
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // 忽略 Windows 上 SQLite 文件句柄延迟释放产生的短暂占用
+  }
 });
 
 describe("插件注册表：发布 / slug / 列表", () => {
@@ -287,6 +291,88 @@ describe("星标 / 举报 / 安装状态", () => {
     expect(telemetry.kindDistribution.sitePack).toBeGreaterThan(0);
     expect(Array.isArray(telemetry.topInstalled)).toBe(true);
     expect(telemetry.topInstalled.length).toBeGreaterThan(0);
+  });
+
+  it("插件发布与审核时自动记录 plugin_versions 快照并支持查询", async () => {
+    const p = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "版本流转包",
+        version: "1.0.0",
+        payload: { sites: [{ url: "https://v1.com", title: "V1" }] },
+      }),
+      status: "published",
+    });
+
+    const versions = await repo.listPluginVersions(p.id);
+    expect(versions).toHaveLength(1);
+    expect(versions[0]?.version).toBe("1.0.0");
+    expect(versions[0]?.checksum).toBeTruthy();
+    expect(versions[0]?.manifest.name).toBe("版本流转包");
+
+    const v1 = await repo.getPluginVersion(p.id, "1.0.0");
+    expect(v1).not.toBeNull();
+    expect(v1?.version).toBe("1.0.0");
+
+    const vNone = await repo.getPluginVersion(p.id, "2.0.0");
+    expect(vNone).toBeNull();
+  });
+
+  it("真实安装者才允许对插件打分与评价，支持幂等更新与大盘统计", async () => {
+    const p = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "评价体验包",
+        version: "1.0.0",
+        payload: { sites: [{ url: "https://rev.com", title: "Rev" }] },
+      }),
+      status: "published",
+    });
+
+    // 1. 未安装直接打分报错
+    await expect(
+      repo.createPluginReview(p.slug, "uninstalled-user", { rating: 5, content: "好" })
+    ).rejects.toThrow("只有已安装该插件的用户才能发表评价与打分");
+
+    // 2. 安装后成功打分
+    await repo.installPlugin(p.slug, "reviewer-1");
+    const review1 = await repo.createPluginReview(p.slug, "reviewer-1", {
+      rating: 5,
+      title: "强烈推荐",
+      content: "内容非常实用！",
+    });
+    expect(review1.rating).toBe(5);
+    expect(review1.installedVersion).toBe("1.0.0");
+
+    // 3. 第二位用户打分 4 星
+    await repo.installPlugin(p.slug, "reviewer-2");
+    await repo.createPluginReview(p.slug, "reviewer-2", { rating: 4, content: "很不错" });
+
+    // 4. 统计指标计算
+    const stats = await repo.getPluginReviewStats(p.id);
+    expect(stats.reviewCount).toBe(2);
+    expect(stats.avgRating).toBe(4.5);
+    expect(stats.ratingDistribution[5]).toBe(1);
+    expect(stats.ratingDistribution[4]).toBe(1);
+
+    // 5. 评价列表与回读
+    const list = await repo.listPluginReviews(p.id);
+    expect(list.total).toBe(2);
+    expect(list.items).toHaveLength(2);
+
+    const myRev = await repo.getUserPluginReview(p.id, "reviewer-1");
+    expect(myRev?.title).toBe("强烈推荐");
+
+    // 6. 重复提交幂等更新评分
+    const updatedRev = await repo.createPluginReview(p.slug, "reviewer-1", {
+      rating: 3,
+      title: "重新评价",
+    });
+    expect(updatedRev.rating).toBe(3);
+    const refreshedStats = await repo.getPluginReviewStats(p.id);
+    expect(refreshedStats.avgRating).toBe(3.5);
   });
 });
 

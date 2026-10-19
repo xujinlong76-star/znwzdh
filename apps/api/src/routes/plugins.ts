@@ -246,7 +246,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         }
       }
 
-      const identity = identityOf(req as any);
+      const identity = extractPluginIdentity(req);
       let isInstalled = false;
       let isStarred = false;
       let installRecord = null;
@@ -274,6 +274,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         comparePluginVersions(plugin.version, installRecord.version) > 0
       );
 
+      const reviewStats = await ctx.repo.getPluginReviewStats(plugin.id);
+      const myReview = identity ? await ctx.repo.getUserPluginReview(plugin.id, identity) : null;
+
       return {
         plugin: {
           ...plugin,
@@ -283,6 +286,8 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           installedAt: isInstalled ? installRecord?.installedAt : null,
           hasUpgrade,
           upgradeDiff,
+          reviewStats,
+          myReview,
         },
         summary: summarizePluginManifest(plugin.manifest),
       };
@@ -349,6 +354,146 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
       const diff = diffPluginManifests(base, target);
       return { ok: true, diff };
+    }
+  );
+
+  /**
+   * 查询插件所有已发布的版本历史时间线
+   */
+  app.get(
+    "/api/plugins/:slug/versions",
+    { config: { scope: "public", cache: { maxAge: 0 } } },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+
+      const versions = await ctx.repo.listPluginVersions(plugin.id);
+      return {
+        slug: plugin.slug,
+        currentVersion: plugin.version,
+        versions: versions.map((v) => ({
+          version: v.version,
+          changelog: v.changelog,
+          checksum: v.checksum,
+          publishedAt: v.publishedAt,
+          createdAt: v.createdAt,
+        })),
+      };
+    }
+  );
+
+  /**
+   * 查询指定历史版本的清单快照与对比当前版本的差异
+   */
+  app.get(
+    "/api/plugins/:slug/versions/:version",
+    { config: { scope: "public", cache: { maxAge: 0 } } },
+    async (req, reply) => {
+      const { slug, version } = req.params as { slug: string; version: string };
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+
+      const vRecord = await ctx.repo.getPluginVersion(plugin.id, version);
+      if (!vRecord) return notFound(reply, `未找到该版本历史: v${version}`);
+
+      const diffAgainstCurrent = diffPluginManifests(vRecord.manifest, plugin.manifest);
+
+      return {
+        slug: plugin.slug,
+        version: vRecord.version,
+        manifest: vRecord.manifest,
+        changelog: vRecord.changelog,
+        checksum: vRecord.checksum,
+        publishedAt: vRecord.publishedAt,
+        diffAgainstCurrent,
+      };
+    }
+  );
+
+  /**
+   * 获取插件评价列表与评分大盘
+   */
+  app.get(
+    "/api/plugins/:slug/reviews",
+    { config: { scope: "public", cache: { maxAge: 0 } } },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      const q = req.query as Record<string, string | undefined>;
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+
+      const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 20)) : 20;
+      const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
+      const identity = (q.identity?.trim() || identityOf(req as any) || "").slice(0, 120);
+
+      const [reviewsResult, stats, myReview] = await Promise.all([
+        ctx.repo.listPluginReviews(plugin.id, { limit, offset }),
+        ctx.repo.getPluginReviewStats(plugin.id),
+        identity ? ctx.repo.getUserPluginReview(plugin.id, identity) : null,
+      ]);
+
+      return {
+        slug: plugin.slug,
+        stats,
+        myReview,
+        items: reviewsResult.items,
+        total: reviewsResult.total,
+        limit,
+        offset,
+      };
+    }
+  );
+
+  /**
+   * 提交或更新插件评价（仅限活跃安装用户）
+   */
+  app.post(
+    "/api/plugins/:slug/reviews",
+    { config: { scope: "public", rateLimit: { max: 15, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const { slug } = req.params as { slug: string };
+      const body = (req.body ?? {}) as { rating?: unknown; title?: unknown; content?: unknown; identity?: unknown };
+      const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
+      const identity = String(body.identity ?? callerAuth?.actor ?? identityOf(req as any) ?? "").trim();
+
+      if (!identity) {
+        return badRequest(reply, "缺少用户身份标识");
+      }
+
+      const rating = Number(body.rating);
+      if (isNaN(rating) || rating < 1 || rating > 5) {
+        return badRequest(reply, "评分必须为 1 到 5 之间的整数");
+      }
+
+      try {
+        const review = await ctx.repo.createPluginReview(
+          slug,
+          identity,
+          {
+            rating,
+            title: typeof body.title === "string" ? body.title : null,
+            content: typeof body.content === "string" ? body.content : null,
+          },
+          {
+            actor: identity,
+            actorKind: callerAuth?.kind ?? "identity",
+            ip: req.ip,
+          }
+        );
+
+        const stats = await ctx.repo.getPluginReviewStats(review.pluginId);
+
+        reply.code(201);
+        return {
+          success: true,
+          review,
+          stats,
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return badRequest(reply, message);
+      }
     }
   );
 
@@ -602,9 +747,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
-      const identity = identityOf(req as any);
+      const identity = extractPluginIdentity(req);
       if (!identity) {
-        return badRequest(reply, "缺少用户身份标识 (anonId/userId)");
+        return badRequest(reply, "缺少用户身份标识 (anonId/userId/identity)");
       }
 
       const plugin = await ctx.repo.getPluginBySlug(slug);
@@ -644,9 +789,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   const uninstallHandler = async (req: any, reply: any) => {
     const { slug } = req.params as { slug: string };
-    const identity = identityOf(req as any);
+    const identity = extractPluginIdentity(req);
     if (!identity) {
-      return badRequest(reply, "缺少用户身份标识 (anonId/userId)");
+      return badRequest(reply, "缺少用户身份标识 (anonId/userId/identity)");
     }
 
     const q = (req.query ?? {}) as Record<string, string>;
@@ -690,7 +835,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public", rateLimit: { max: 60, timeWindow: "1 hour" } } },
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
-      const identity = identityOf(req as any);
+      const identity = extractPluginIdentity(req);
       if (!identity) return badRequest(reply, "缺少用户身份标识");
 
       try {
@@ -711,7 +856,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public", rateLimit: { max: 60, timeWindow: "1 hour" } } },
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
-      const identity = identityOf(req as any);
+      const identity = extractPluginIdentity(req);
       if (!identity) return badRequest(reply, "缺少用户身份标识");
 
       try {

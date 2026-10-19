@@ -51,7 +51,11 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   await ctx.close();
-  rmSync(dir, { recursive: true, force: true });
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // 忽略 Windows 上 SQLite 文件 handle 异步释放产生的短暂占用
+  }
 });
 
 describe("插件市场 API 全链路", () => {
@@ -250,5 +254,92 @@ describe("插件市场 API 全链路", () => {
     expect(body.diff.sitesAddedCount).toBe(1);
     expect(body.diff.sitesModifiedCount).toBe(1);
   });
+
+  it("版本历史接口：GET /api/plugins/:slug/versions 与特定版本清单查询", async () => {
+    // 导入一份直接上架插件
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("版本历史测试包", [{ url: "https://ver.example.com", title: "Ver" }]),
+    });
+    expect(imported.statusCode).toBe(201);
+    const slug = imported.json().slug;
+
+    const listRes = await app.inject({ method: "GET", url: `/api/plugins/${slug}/versions` });
+    expect(listRes.statusCode).toBe(200);
+    const listBody = listRes.json();
+    expect(listBody.slug).toBe(slug);
+    expect(listBody.versions).toHaveLength(1);
+    expect(listBody.versions[0].version).toBe("1.0.0");
+    expect(listBody.versions[0].checksum).toBeTruthy();
+
+    const detailRes = await app.inject({ method: "GET", url: `/api/plugins/${slug}/versions/1.0.0` });
+    expect(detailRes.statusCode).toBe(200);
+    const detailBody = detailRes.json();
+    expect(detailBody.version).toBe("1.0.0");
+    expect(detailBody.manifest.name).toBe("版本历史测试包");
+    expect(detailBody.diffAgainstCurrent.hasChanges).toBe(false);
+  });
+
+  it("评价接口：POST 与 GET /api/plugins/:slug/reviews（需活跃安装）", async () => {
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/plugins/import",
+      payload: sitePack("评价测试包", [{ url: "https://review-test.example.com", title: "Review Test" }]),
+    });
+    const slug = imported.json().slug;
+
+    // 未安装时打分报 400
+    const failRes = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${slug}/reviews`,
+      payload: { rating: 5, identity: "user-uninstalled" },
+    });
+    expect(failRes.statusCode).toBe(400);
+
+    // 安装
+    await app.inject({
+      method: "POST",
+      url: `/api/plugins/${slug}/install`,
+      payload: { identity: "user-buyer" },
+    });
+
+    // 提交评价
+    const okRes = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${slug}/reviews`,
+      payload: {
+        rating: 5,
+        title: "十分好用",
+        content: "强烈推荐大家使用！",
+        identity: "user-buyer",
+      },
+    });
+    expect(okRes.statusCode).toBe(201);
+    const okBody = okRes.json();
+    expect(okBody.success).toBe(true);
+    expect(okBody.review.rating).toBe(5);
+    expect(okBody.stats.reviewCount).toBe(1);
+    expect(okBody.stats.avgRating).toBe(5);
+
+    // 查评价列表
+    const getRes = await app.inject({
+      method: "GET",
+      url: `/api/plugins/${slug}/reviews?identity=user-buyer`,
+    });
+    expect(getRes.statusCode).toBe(200);
+    const getBody = getRes.json();
+    expect(getBody.total).toBe(1);
+    expect(getBody.myReview?.title).toBe("十分好用");
+
+    // 详情接口也附带 reviewStats
+    const detailRes = await app.inject({
+      method: "GET",
+      url: `/api/plugins/${slug}?identity=user-buyer`,
+    });
+    expect(detailRes.statusCode).toBe(200);
+    expect(detailRes.json().plugin.reviewStats?.reviewCount).toBe(1);
+  });
 });
+
 

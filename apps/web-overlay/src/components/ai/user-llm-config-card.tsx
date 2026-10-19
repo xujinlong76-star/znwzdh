@@ -307,6 +307,7 @@ export function UserLlmConfigCard() {
         </div>
         <div className="flex gap-2">
           <Input
+            aria-label="试聊输入"
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => {

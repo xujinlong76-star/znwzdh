@@ -12,6 +12,8 @@ import type { SiteConfig } from '@/types/site'
 import { ChevronDown, ChevronRight, Compass, X } from 'lucide-react'
 import { NavIcon } from '@/components/nav-icon'
 import { NAV_ICON_FALLBACK, isIconUrl, resolveNavIcon } from '@/lib/nav-icons'
+import { WorkspaceSwitcher } from '@/components/workspace/workspace-switcher'
+import { CrdtSyncStatusPill } from '@/components/crdt/crdt-sync-status-pill'
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   navigationData: NavigationData
@@ -121,7 +123,11 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
         )}
       </div>
 
-      <ScrollArea className="h-[calc(100vh-3.5rem)] px-3 py-3">
+      <div className="px-3 py-2 border-b border-border/40">
+        <WorkspaceSwitcher />
+      </div>
+
+      <ScrollArea className="flex-1 px-3 py-3">
         <div className="space-y-1">
           {navigationData.navigationItems.map((category) => (
             <div key={category.id} className="py-1">
@@ -181,6 +187,11 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
           ))}
         </div>
       </ScrollArea>
+
+      <div className="p-2.5 border-t border-border/40 flex items-center justify-between">
+        <CrdtSyncStatusPill />
+      </div>
     </div>
   )
 }
+

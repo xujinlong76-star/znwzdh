@@ -7,13 +7,14 @@
  * 密钥加密落库、只回显掩码，保存后立即刷新能力位（无需重启）。
  */
 import { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Bot, CheckCircle2, Loader2, Plus, RefreshCw, RotateCcw, Save, Trash2, XCircle } from 'lucide-react'
+import { AlertTriangle, Bot, CheckCircle2, Cpu, Loader2, Plus, RefreshCw, RotateCcw, Save, Trash2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/use-toast'
 import { LlmConfigFields, type LlmFormValue } from '@/components/ai/llm-config-form'
+import { AiObservabilityPanel } from '@/components/ai/ai-observability-panel'
 import {
   fetchAdminLlmConfig,
   resetAdminLlmConfig,
@@ -22,6 +23,7 @@ import {
   type HubAdminLlmConfigResponse,
   type HubLlmTestResult,
 } from '@/lib/navhub-api'
+
 
 const SOURCE_LABEL: Record<string, string> = {
   db: '管理端配置',
@@ -81,6 +83,7 @@ export default function AdminAiPage() {
   const [confirmReset, setConfirmReset] = useState(false)
   const [testResult, setTestResult] = useState<HubLlmTestResult | null>(null)
   const [fallbacks, setFallbacks] = useState<FallbackForm[]>([])
+  const [activeTab, setActiveTab] = useState<'config' | 'observability'>('config')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -260,15 +263,55 @@ export default function AdminAiPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Bot className="h-6 w-6 text-primary" />
-          AI 模型配置
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          系统默认模型：所有未配置个人模型的 AI 调用都走这里。密钥加密存储，仅回显掩码。
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Bot className="h-6 w-6 text-primary" />
+            AI 模型中枢与效能管理
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            统一调度 Agnes 3.0 Flash 默认模型及备用池，提供全站模型配置与实时 Token 效能遥测大盘。
+          </p>
+        </div>
       </div>
+
+      {/* 顶部 Tab 导航 */}
+      <div className="flex border-b space-x-2">
+        <button
+          type="button"
+          aria-label="切换到模型配置"
+          onClick={() => setActiveTab('config')}
+          className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === 'config'
+              ? 'border-primary text-foreground font-semibold'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Bot className="h-4 w-4" />
+          模型参数与备用池配置
+        </button>
+        <button
+          type="button"
+          aria-label="切换到效能与 Token 遥测大盘"
+          onClick={() => setActiveTab('observability')}
+          className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+            activeTab === 'observability'
+              ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 font-semibold'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Cpu className="h-4 w-4 text-indigo-500" />
+          效能与 Token 遥测大盘
+          <Badge variant="outline" className="text-[10px] bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20">
+            Agnes 3.0 Flash
+          </Badge>
+        </button>
+      </div>
+
+      {activeTab === 'observability' ? (
+        <AiObservabilityPanel />
+      ) : (
+        <>
 
       <div className="rounded-xl border bg-card p-4 flex flex-wrap items-center gap-3 text-sm">
         <Badge variant="outline" className="gap-1">
@@ -511,6 +554,9 @@ export default function AdminAiPage() {
           </p>
         )}
       </div>
+        </>
+      )}
     </div>
   )
 }
+

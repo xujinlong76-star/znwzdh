@@ -456,3 +456,113 @@ export function canonicalizeUrl(rawUrl: string): string {
     return trimmed;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * 多租户团队空间与 RBAC 权限规范 (Workspaces & RBAC)
+ * ------------------------------------------------------------------ */
+
+export type WorkspaceType = "personal" | "team";
+export type WorkspaceRole = "owner" | "maintainer" | "member" | "viewer";
+
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string;
+  type: WorkspaceType;
+  role: WorkspaceRole;
+  icon?: string;
+  memberCount: number;
+  isDefault?: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface WorkspaceMember {
+  userId: string;
+  username: string;
+  role: WorkspaceRole;
+  joinedAt: number;
+  avatar?: string;
+  email?: string;
+}
+
+export type WorkspaceAction =
+  | "edit_sites"
+  | "manage_categories"
+  | "manage_members"
+  | "configure_ai"
+  | "view_audit"
+  | "delete_workspace";
+
+export function checkWorkspacePermission(
+  role: WorkspaceRole,
+  action: WorkspaceAction,
+): boolean {
+  switch (action) {
+    case "view_audit":
+      return role === "owner" || role === "maintainer";
+    case "edit_sites":
+    case "manage_categories":
+      return role === "owner" || role === "maintainer" || role === "member";
+    case "manage_members":
+      return role === "owner" || role === "maintainer";
+    case "configure_ai":
+    case "delete_workspace":
+      return role === "owner";
+    default:
+      return false;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * AI 模型效能与 Token 遥测大盘类型 (AI Observability & Telemetry)
+ * ------------------------------------------------------------------ */
+
+export interface AiScenarioStat {
+  scenario: string;
+  name: string;
+  count: number;
+  tokens: number;
+  avgLatencyMs: number;
+}
+
+export interface AiHourlyTrendPoint {
+  time: string;
+  calls: number;
+  tokens: number;
+  latencyMs: number;
+}
+
+export interface AiInvocationLog {
+  id: string;
+  timestamp: number;
+  scenario: string;
+  model: string;
+  source: string;
+  latencyMs: number;
+  tokens: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  status: "success" | "error";
+  error?: string;
+}
+
+export interface AiObservabilityMetrics {
+  window: string;
+  totalCalls: number;
+  successCalls: number;
+  errorCalls: number;
+  successRate: number; // 0 - 100
+  avgLatencyMs: number;
+  p95LatencyMs: number;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  estimatedCostRmb: number; // based on Agnes 3.0 Flash pricing
+  activeModel: string;
+  byScenario: AiScenarioStat[];
+  hourlyTrend: AiHourlyTrendPoint[];
+  recentLogs: AiInvocationLog[];
+}
+

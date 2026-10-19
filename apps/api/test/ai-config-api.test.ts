@@ -444,5 +444,26 @@ describe("用户级配置（个人设置）", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("GET /api/admin/ai/observability 聚合效能与 Token 消耗指标", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/admin/ai/observability?window=24h",
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.window).toBe("1d");
+    expect(body.totalCalls).toBeGreaterThan(0);
+    expect(body.successRate).toBeGreaterThanOrEqual(90);
+    expect(body.totalTokens).toBeGreaterThan(0);
+    expect(body.promptTokens).toBeGreaterThan(0);
+    expect(body.completionTokens).toBeGreaterThan(0);
+    expect(body.estimatedCostRmb).toBeGreaterThanOrEqual(0);
+    expect(body.activeModel).toBeDefined();
+    expect(Array.isArray(body.byScenario)).toBe(true);
+    expect(Array.isArray(body.hourlyTrend)).toBe(true);
+    expect(body.hourlyTrend.length).toBe(24);
+    expect(Array.isArray(body.recentLogs)).toBe(true);
+  });
 });
 

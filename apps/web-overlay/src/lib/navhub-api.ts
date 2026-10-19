@@ -1630,5 +1630,156 @@ export async function fetchPluginAudit(slug: string): Promise<{ ok: boolean; rep
   return getJson<{ ok: boolean; report: HubPluginAuditReport }>(`/api/plugins/${encodeURIComponent(slug)}/audit`)
 }
 
+/* ------------------------------------------------------------------ *
+ * Phase 4: AI 效能与 Token 遥测大盘 (AI Observability)
+ * ------------------------------------------------------------------ */
+
+export interface HubAiScenarioStat {
+  scenario: string
+  name: string
+  count: number
+  tokens: number
+  avgLatencyMs: number
+}
+
+export interface HubAiHourlyTrendPoint {
+  time: string
+  calls: number
+  tokens: number
+  latencyMs: number
+}
+
+export interface HubAiInvocationLog {
+  id: string
+  timestamp: number
+  scenario: string
+  model: string
+  source: string
+  latencyMs: number
+  tokens: number
+  promptTokens?: number
+  completionTokens?: number
+  status: 'success' | 'error'
+  error?: string
+}
+
+export interface HubAiObservabilityResponse {
+  window: string
+  totalCalls: number
+  successCalls: number
+  errorCalls: number
+  successRate: number
+  avgLatencyMs: number
+  p95LatencyMs: number
+  totalTokens: number
+  promptTokens: number
+  completionTokens: number
+  estimatedCostRmb: number
+  activeModel: string
+  byScenario: HubAiScenarioStat[]
+  hourlyTrend: HubAiHourlyTrendPoint[]
+  recentLogs: HubAiInvocationLog[]
+}
+
+export async function fetchAdminAiObservability(window = '24h'): Promise<HubAiObservabilityResponse> {
+  return getJson<HubAiObservabilityResponse>(`/api/admin/ai/observability?window=${encodeURIComponent(window)}`)
+}
+
+/* ------------------------------------------------------------------ *
+ * Phase 4: 多租户团队空间与 RBAC 权限规范 (Workspaces & RBAC)
+ * ------------------------------------------------------------------ */
+
+export type HubWorkspaceRole = 'owner' | 'maintainer' | 'member' | 'viewer'
+export type HubWorkspaceType = 'personal' | 'team'
+
+export interface HubWorkspace {
+  id: string
+  name: string
+  slug: string
+  description?: string
+  type: HubWorkspaceType
+  role: HubWorkspaceRole
+  icon?: string
+  memberCount: number
+  isDefault?: boolean
+  createdAt: number
+  updatedAt: number
+}
+
+export interface HubWorkspaceMember {
+  userId: string
+  username: string
+  role: HubWorkspaceRole
+  joinedAt: number
+  avatar?: string
+  email?: string
+}
+
+export async function fetchWorkspaces(): Promise<{ ok: boolean; items: HubWorkspace[] }> {
+  return getJson<{ ok: boolean; items: HubWorkspace[] }>('/api/workspaces')
+}
+
+export async function createWorkspace(data: {
+  name: string
+  slug?: string
+  description?: string
+  type?: 'personal' | 'team'
+}): Promise<{ ok: boolean; workspace: HubWorkspace }> {
+  return sendJson<{ ok: boolean; workspace: HubWorkspace }>('/api/workspaces', 'POST', data)
+}
+
+export async function fetchWorkspaceMembers(id: string): Promise<{
+  ok: boolean
+  workspaceId: string
+  members: HubWorkspaceMember[]
+  permissions: Record<string, boolean>
+}> {
+  return getJson<{
+    ok: boolean
+    workspaceId: string
+    members: HubWorkspaceMember[]
+    permissions: Record<string, boolean>
+  }>(`/api/workspaces/${encodeURIComponent(id)}/members`)
+}
+
+export async function addWorkspaceMember(
+  id: string,
+  data: { username: string; role: HubWorkspaceRole; email?: string }
+): Promise<{ ok: boolean; members: HubWorkspaceMember[] }> {
+  return sendJson<{ ok: boolean; members: HubWorkspaceMember[] }>(
+    `/api/workspaces/${encodeURIComponent(id)}/members`,
+    'POST',
+    data
+  )
+}
+
+export async function removeWorkspaceMember(
+  id: string,
+  userId: string
+): Promise<{ ok: boolean; members: HubWorkspaceMember[] }> {
+  return sendJson<{ ok: boolean; members: HubWorkspaceMember[] }>(
+    `/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`,
+    'DELETE'
+  )
+}
+
+/* ------------------------------------------------------------------ *
+ * Phase 4: CRDT 多端协同漫游 (CRDT Sync)
+ * ------------------------------------------------------------------ */
+
+export async function fetchCrdtSync(identity?: string): Promise<{ ok: boolean; operations: any[]; state: any }> {
+  const url = identity ? `/api/crdt/sync?userId=${encodeURIComponent(identity)}` : '/api/crdt/sync'
+  return getJson<{ ok: boolean; operations: any[]; state: any }>(url)
+}
+
+export async function pushCrdtSync(
+  operations: any[],
+  identity?: string
+): Promise<{ ok: boolean; operations: any[]; state: any; mergedCount?: number }> {
+  const url = identity ? `/api/crdt/sync?userId=${encodeURIComponent(identity)}` : '/api/crdt/sync'
+  return sendJson<{ ok: boolean; operations: any[]; state: any; mergedCount?: number }>(url, 'POST', { operations })
+}
+
+
 
 

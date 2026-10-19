@@ -139,6 +139,15 @@ function ModularItemImpl({
   const currentColRef = useRef(widget.colSpan || 4)
   const currentRowRef = useRef(widget.rowSpan || 1)
 
+  // widget 变化（菜单改尺寸 / 撤销）时同步 ref：拖拽过程中不覆盖。
+  // 必须放在 `if (!def)` 提前返回之前，保证 hook 调用顺序稳定；
+  // 同时不能在渲染期直接赋值（react-hooks/refs），故收进 effect。
+  useEffect(() => {
+    if (isResizingRef.current) return
+    currentColRef.current = widget.colSpan || def?.defaultColSpan || 4
+    currentRowRef.current = widget.rowSpan || def?.defaultRowSpan || 1
+  }, [widget.colSpan, widget.rowSpan, def?.defaultColSpan, def?.defaultRowSpan])
+
   if (!def) {
     // 模块类型已不存在（多见于导入的旧版 JSON / 注册表改名）。
     // 不能直接 return null：卡片会变成没有删除入口的"僵尸占位"，
@@ -266,11 +275,6 @@ function ModularItemImpl({
     window.addEventListener('pointercancel', handleUp)
   }
 
-  // widget 变化（菜单改尺寸 / 撤销）时同步 ref：拖拽过程中不覆盖
-  if (!isResizingRef.current) {
-    currentColRef.current = widget.colSpan || def.defaultColSpan
-    currentRowRef.current = widget.rowSpan || def.defaultRowSpan
-  }
 
   return (
     <div

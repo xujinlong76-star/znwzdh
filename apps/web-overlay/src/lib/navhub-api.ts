@@ -1780,6 +1780,72 @@ export async function pushCrdtSync(
   return sendJson<{ ok: boolean; operations: any[]; state: any; mergedCount?: number }>(url, 'POST', { operations })
 }
 
+/* ------------------------------------------------------------------ *
+ * 站点自治巡检与无感自愈 (Autonomous Health Audit & Self-Healing)
+ * ------------------------------------------------------------------ */
+
+export interface HubSiteHealthIssue {
+  siteId: string
+  url: string
+  title: string
+  status: 'broken' | 'pending' | 'archived' | 'active'
+  statusCode?: number
+  cause: string
+  severity: 'critical' | 'warning' | 'temporary'
+  description: string
+  diagnosedAt: number
+  waybackRecoveryUrl?: string
+  suggestedReplacements?: Array<{
+    id: string
+    title: string
+    url: string
+    reason: string
+    matchScore: number
+  }>
+  recommendedAction: 'wayback_fallback' | 'redirect_to_alternative' | 'archive_and_notify'
+  autoResolvable: boolean
+}
+
+export interface HubSiteHealthSummary {
+  scannedAt: number
+  totalSites: number
+  activeCount: number
+  brokenCount: number
+  healthScore: number
+  issues: HubSiteHealthIssue[]
+}
+
+export async function fetchSiteHealthAuditReport(): Promise<{ ok: boolean; summary: HubSiteHealthSummary }> {
+  return getJson<{ ok: boolean; summary: HubSiteHealthSummary }>('/api/admin/audit/report')
+}
+
+export async function runSiteHealthScan(): Promise<{ ok: boolean; scanned: number; summary: HubSiteHealthSummary }> {
+  return sendJson<{ ok: boolean; scanned: number; summary: HubSiteHealthSummary }>('/api/admin/audit/scan', 'POST', {})
+}
+
+export async function applySiteHealingAction(data: {
+  siteId: string
+  action: 'wayback' | 'replacement' | 'dismiss'
+  targetUrl?: string
+  targetTitle?: string
+}): Promise<{ ok: boolean; action: string; site?: any }> {
+  return sendJson<{ ok: boolean; action: string; site?: any }>('/api/admin/audit/apply', 'POST', data)
+}
+
+export async function recommendSiteAlternatives(siteId: string): Promise<{
+  ok: boolean
+  siteId: string
+  model: string
+  recommendations: Array<{ title: string; url: string; reason: string }>
+}> {
+  return sendJson<{
+    ok: boolean
+    siteId: string
+    model: string
+    recommendations: Array<{ title: string; url: string; reason: string }>
+  }>(`/api/sites/${encodeURIComponent(siteId)}/recommend-alternative`, 'POST', {})
+}
+
 
 
 

@@ -18,6 +18,10 @@ import { Button } from '@/registry/new-york/ui/button'
 import { chatWithUserLlm, type HubAiChatMessage } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 
+// 时间取值收敛到模块作用域：调用点都在事件处理器/惰性初始化里，
+// 直接写在组件体内会被 react-hooks/purity 判为渲染期副作用。
+const nowMs = () => Date.now()
+
 interface MessageItem extends HubAiChatMessage {
   id: string
   model?: string
@@ -36,13 +40,13 @@ export function AiCopilotDrawer() {
   const [isOpen, setIsOpen] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [messages, setMessages] = useState<MessageItem[]>([
+  const [messages, setMessages] = useState<MessageItem[]>(() => [
     {
       id: 'welcome',
       role: 'assistant',
       content:
         '你好！我是你的专属 **NavHub Web Copilot**，基于 **Agnes 3.0 Flash** 驱动。\n\n我可以帮你整理书签、规划工作台布局、推荐优质工具或回答任何技术问题。你可以随时按 `Ctrl+J` 或 `⌘J` 呼出我。',
-      timestamp: Date.now(),
+      timestamp: nowMs(),
     },
   ])
 
@@ -80,10 +84,10 @@ export function AiCopilotDrawer() {
     if (!query || loading) return
 
     const userMsg: MessageItem = {
-      id: `msg-${Date.now()}-u`,
+      id: `msg-${nowMs()}-u`,
       role: 'user',
       content: query,
-      timestamp: Date.now(),
+      timestamp: nowMs(),
     }
 
     const nextMessages = [...messages, userMsg]
@@ -103,20 +107,20 @@ export function AiCopilotDrawer() {
       })
 
       const botMsg: MessageItem = {
-        id: `msg-${Date.now()}-a`,
+        id: `msg-${nowMs()}-a`,
         role: 'assistant',
         content: res.reply,
         model: res.model,
         latencyMs: res.latencyMs,
-        timestamp: Date.now(),
+        timestamp: nowMs(),
       }
       setMessages((prev) => [...prev, botMsg])
     } catch (err) {
       const errorMsg: MessageItem = {
-        id: `msg-${Date.now()}-err`,
+        id: `msg-${nowMs()}-err`,
         role: 'assistant',
         content: `⚠️ 对话失败：${err instanceof Error ? err.message : '网络异常或模型配置无效'}。\n可在「偏好设置 -> AI 模型」中检查配置或测试连通性。`,
-        timestamp: Date.now(),
+        timestamp: nowMs(),
       }
       setMessages((prev) => [...prev, errorMsg])
     } finally {
@@ -130,7 +134,7 @@ export function AiCopilotDrawer() {
         id: 'welcome',
         role: 'assistant',
         content: '对话已重置。有什么我可以帮你的？随时输入需求或点击下方建议标签。',
-        timestamp: Date.now(),
+        timestamp: nowMs(),
       },
     ])
   }

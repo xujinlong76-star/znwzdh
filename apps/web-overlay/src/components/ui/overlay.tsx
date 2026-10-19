@@ -103,7 +103,10 @@ export function useOverlayBehavior({
   const containerRef = useRef<HTMLDivElement | null>(null)
   // 用 ref 存回调：调用方常常传内联箭头函数，闭包过期会让 Esc 关掉旧状态的浮层
   const closeRef = useRef(onClose)
-  closeRef.current = onClose
+  // 在 effect 里同步（而非渲染期赋值）：避免渲染阶段写 ref 的副作用
+  useEffect(() => {
+    closeRef.current = onClose
+  }, [onClose])
 
   const handleClose = useCallback(() => closeRef.current(), [])
 

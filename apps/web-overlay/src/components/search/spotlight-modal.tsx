@@ -37,6 +37,13 @@ import {
   Palette,
   Download,
   Loader2,
+  HeartPulse,
+  Code2,
+  KeyRound,
+  Fingerprint,
+  Hash,
+  Link2,
+  FileJson,
 } from 'lucide-react'
 import { Input } from '@/registry/new-york/ui/input'
 import { Button } from '@/registry/new-york/ui/button'
@@ -56,6 +63,8 @@ import { getIdentity } from '@/lib/identity'
 import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { applyThemeTokens } from '@/lib/plugins/theme-runtime'
+import { GeekMicroTools } from '@/components/tools/geek-micro-tools'
+import { SiteHealthAuditModal } from '@/components/ai/site-health-audit-modal'
 
 const CHANNEL_BADGES: Record<string, { label: string; className: string }> = {
   exact: { label: '精确', className: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30' },
@@ -85,6 +94,7 @@ export function SpotlightModal() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [healingId, setHealingId] = useState<string | null>(null)
+  const [healthAuditOpen, setHealthAuditOpen] = useState(false)
 
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -111,11 +121,17 @@ export function SpotlightModal() {
       }
     }
 
+    const handleHealthAuditOpen = () => {
+      setHealthAuditOpen(true)
+    }
+
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('open-spotlight', handleCustomOpen)
+    window.addEventListener('open-site-health-audit', handleHealthAuditOpen)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('open-spotlight', handleCustomOpen)
+      window.removeEventListener('open-site-health-audit', handleHealthAuditOpen)
     }
   }, [open])
 
@@ -144,8 +160,93 @@ export function SpotlightModal() {
   const cleanCmd = isCommandMode ? query.slice(1).trim().toLowerCase() : ''
   const cleanAiPrompt = isAiMode ? query.replace(/^[?]|ai\s+/i, '').trim() : ''
 
+  const GEEK_TOOL_PREFIXES = ['b64', 'base64', 'jwt', 'time', 'timestamp', 'uuid', 'hash', 'sha256', 'json', 'url']
+  const cleanCmdHead = cleanCmd.split(' ')[0]
+  const isGeekToolActive = isCommandMode && GEEK_TOOL_PREFIXES.includes(cleanCmdHead)
+
   // 4. 指令模式内置动作列表
   const systemCommands: CommandAction[] = useMemo(() => [
+    {
+      id: 'cmd-audit',
+      title: '全站健康自治巡检与无感自愈 (Autonomous Health)',
+      description: '扫描死链与 301 重定向，调取 Wayback 快照并推荐同生态平替',
+      icon: HeartPulse,
+      category: '智能自愈',
+      handler: () => {
+        setOpen(false)
+        setHealthAuditOpen(true)
+      },
+    },
+    {
+      id: 'cmd-tool-b64',
+      title: '> b64 (Base64 极速编解码)',
+      description: '本地纯前端 UTF-8 安全 Base64 编码与解码',
+      icon: Code2,
+      category: '极客微工具',
+      handler: () => {
+        setQuery('> b64 ')
+      },
+    },
+    {
+      id: 'cmd-tool-jwt',
+      title: '> jwt (JWT 验签与声明解析)',
+      description: '秒级解析 Header/Payload JSON 并计算过期时间',
+      icon: KeyRound,
+      category: '极客微工具',
+      handler: () => {
+        setQuery('> jwt ')
+      },
+    },
+    {
+      id: 'cmd-tool-time',
+      title: '> time (Unix 时间戳与日期换算)',
+      description: '毫秒级/秒级时间戳、本地时间与相对时间双向转换',
+      icon: Clock,
+      category: '极客微工具',
+      handler: () => {
+        setQuery('> time now')
+      },
+    },
+    {
+      id: 'cmd-tool-uuid',
+      title: '> uuid (UUID v4 随机生成器)',
+      description: '批量生成标准安全 RFC4122 v4 UUID',
+      icon: Fingerprint,
+      category: '极客微工具',
+      handler: () => {
+        setQuery('> uuid 1')
+      },
+    },
+    {
+      id: 'cmd-tool-hash',
+      title: '> hash (WebCrypto 哈希计算)',
+      description: '本地计算 SHA-256、SHA-1 与 SHA-512 摘要',
+      icon: Hash,
+      category: '极客微工具',
+      handler: () => {
+        setQuery('> hash ')
+      },
+    },
+    {
+      id: 'cmd-tool-json',
+      title: '> json (JSON 格式化与校验)',
+      description: '实时语法校验、结构美化与单行压缩',
+      icon: FileJson,
+      category: '极客微工具',
+      handler: () => {
+        setQuery('> json ')
+      },
+    },
+    {
+      id: 'cmd-tool-url',
+      title: '> url (URL Component 编解码)',
+      description: 'encodeURIComponent 与 decodeURIComponent 双向转换',
+      icon: Link2,
+      category: '极客微工具',
+      handler: () => {
+        setQuery('> url ')
+      },
+    },
     {
       id: 'cmd-canvas',
       title: '工作台画布 (Modular Canvas)',
@@ -381,15 +482,13 @@ export function SpotlightModal() {
       e.preventDefault()
       handleSelectCurrent()
     }
-  }
-
-  if (!open) return null
-
   return (
-    <div
-      className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-start justify-center pt-[10vh] px-4 animate-in fade-in-0 duration-150"
-      onClick={() => setOpen(false)}
-    >
+    <>
+      {open && (
+        <div
+          className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-start justify-center pt-[10vh] px-4 animate-in fade-in-0 duration-150"
+          onClick={() => setOpen(false)}
+        >
       <div
         className="w-full max-w-2xl bg-card/95 border border-border/80 shadow-2xl rounded-2xl overflow-hidden glass-surface flex flex-col max-h-[75vh]"
         onClick={(e) => e.stopPropagation()}
@@ -458,44 +557,48 @@ export function SpotlightModal() {
         <div ref={listRef} className="overflow-y-auto p-2 space-y-2 flex-1">
           {/* A. 指令模式 */}
           {isCommandMode && (
-            <div className="space-y-1">
-              <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-amber-500" />
-                <span>系统控制台快捷指令</span>
-              </div>
-              {filteredCommands.length === 0 ? (
-                <div className="py-8 text-center text-xs text-muted-foreground">
-                  未匹配到相关指令，可尝试输入 <span className="font-mono text-primary">&gt; canvas</span> 或 <span className="font-mono text-primary">&gt; theme</span>
+            isGeekToolActive ? (
+              <GeekMicroTools query={query} onSelectSample={(sample) => setQuery(sample)} />
+            ) : (
+              <div className="space-y-1">
+                <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-500" />
+                  <span>系统控制台快捷指令 & 极客微工具</span>
                 </div>
-              ) : (
-                filteredCommands.map((cmd, idx) => {
-                  const Icon = cmd.icon
-                  const isSelected = idx === selectedIndex
-                  return (
-                    <div
-                      key={cmd.id}
-                      onClick={() => cmd.handler()}
-                      className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
-                        isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50 text-foreground'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className={`p-2 rounded-lg ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
-                          <Icon className="w-4 h-4" />
+                {filteredCommands.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-muted-foreground">
+                    未匹配到相关指令，可尝试输入 <span className="font-mono text-primary">&gt; canvas</span> 或 <span className="font-mono text-primary">&gt; b64</span>
+                  </div>
+                ) : (
+                  filteredCommands.map((cmd, idx) => {
+                    const Icon = cmd.icon
+                    const isSelected = idx === selectedIndex
+                    return (
+                      <div
+                        key={cmd.id}
+                        onClick={() => cmd.handler()}
+                        className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
+                          isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50 text-foreground'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`p-2 rounded-lg ${isSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium truncate">{cmd.title}</div>
+                            <div className="text-[11px] text-muted-foreground truncate">{cmd.description}</div>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-medium truncate">{cmd.title}</div>
-                          <div className="text-[11px] text-muted-foreground truncate">{cmd.description}</div>
-                        </div>
+                        <Badge variant="secondary" className="text-[10px] shrink-0 font-normal">
+                          {cmd.category}
+                        </Badge>
                       </div>
-                      <Badge variant="secondary" className="text-[10px] shrink-0 font-normal">
-                        {cmd.category}
-                      </Badge>
-                    </div>
-                  )
-                })
-              )}
-            </div>
+                    )
+                  })
+                )}
+              </div>
+            )
           )}
 
           {/* B. AI 问答模式 */}
@@ -838,5 +941,10 @@ export function SpotlightModal() {
         </div>
       </div>
     </div>
+      )}
+
+      {/* 站点健康自治巡检与无感自愈中枢 */}
+      <SiteHealthAuditModal open={healthAuditOpen} onClose={() => setHealthAuditOpen(false)} />
+    </>
   )
 }

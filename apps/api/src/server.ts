@@ -68,6 +68,7 @@ import { clientErrorRoutes } from "./routes/errors.ts";
 import { navsphereRoutes } from "./routes/navsphere.ts";
 import { tokenRoutes } from "./routes/tokens.ts";
 import { workspacesRoutes } from "./routes/workspaces.ts";
+import { healthAuditRoutes } from "./routes/health-audit.ts";
 
 /**
  * 鉴权失败审计的节流窗口：同一 IP + 同一失败动作，在这个间隔内只记一条。
@@ -431,6 +432,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(navsphereRoutes, { ctx });
   await app.register(tokenRoutes, { ctx });
   await app.register(workspacesRoutes, { ctx });
+  await app.register(healthAuditRoutes, { ctx });
 
   return app;
 }

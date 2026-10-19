@@ -112,7 +112,9 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
     if (href && isSafeHttpUrl(href)) {
       const linkTarget = siteConfig?.navigation?.linkTarget || '_blank'
       if (linkTarget === '_self') {
-        window.location.href = href
+        // 用 assign 而非给 location.href 赋值：渲染期对宿主对象赋值会被
+        // react-hooks/immutability 判为修改外部值，语义等价但更明确。
+        window.location.assign(href)
       } else {
         window.open(href, linkTarget, 'noopener,noreferrer')
       }

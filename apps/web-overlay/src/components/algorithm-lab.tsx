@@ -32,6 +32,11 @@ import {
   Activity,
 } from 'lucide-react'
 import Link from 'next/link'
+
+// 时间取值收敛到模块作用域：调用点都在事件处理器里，但把 impure 调用
+// 留在组件体内会被 react-hooks/purity 判为渲染期副作用。
+const nowMs = () => Date.now()
+const perfNow = () => performance.now()
 import {
   parseSpeculativeIntent,
 } from '@/lib/speculative'
@@ -322,15 +327,15 @@ export function AlgorithmLab() {
 
   const handleRunMcpTool = async (tool: string) => {
     const bridge = getWebMcpBridge()
-    const t0 = performance.now()
+    const t0 = perfNow()
     const args = tool === 'navhub_echo' ? { message: mcpArgMsg } : {}
     const res = await bridge.handleRpc({
       jsonrpc: '2.0',
-      id: Date.now(),
+      id: nowMs(),
       method: 'tools/call',
       params: { name: tool, arguments: args },
     })
-    const elapsed = Math.round(performance.now() - t0)
+    const elapsed = Math.round(perfNow() - t0)
     setMcpResponse(res)
     setMcpLatency(elapsed)
   }

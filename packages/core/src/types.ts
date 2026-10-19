@@ -566,3 +566,38 @@ export interface AiObservabilityMetrics {
   recentLogs: AiInvocationLog[];
 }
 
+/* ------------------------------------------------------------------ *
+ * 站点自治巡检与无感自愈 (Autonomous Health Audit & Self-Healing)
+ * ------------------------------------------------------------------ */
+
+export interface SiteHealthAuditIssue {
+  siteId: string;
+  url: string;
+  title: string;
+  status: "broken" | "pending" | "archived" | "active";
+  statusCode?: number;
+  cause: string;
+  severity: "critical" | "warning" | "temporary";
+  description: string;
+  diagnosedAt: number;
+  waybackRecoveryUrl?: string;
+  suggestedReplacements?: Array<{
+    id: string;
+    title: string;
+    url: string;
+    reason: string;
+    matchScore: number;
+  }>;
+  recommendedAction: "wayback_fallback" | "redirect_to_alternative" | "archive_and_notify";
+  autoResolvable: boolean;
+}
+
+export interface SiteHealthAuditSummary {
+  scannedAt: number;
+  totalSites: number;
+  activeCount: number;
+  brokenCount: number;
+  healthScore: number; // 0 - 100
+  issues: SiteHealthAuditIssue[];
+}
+

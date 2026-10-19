@@ -200,7 +200,7 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                                                      {subCategory.title}
                                                  </h3>
                                                  <div
-                                                     className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 transition-all duration-200"
+                                                     className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! transition-all duration-200"
                                                      style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                                  >
                                                      {(subCategory.items || []).map((item) => (
@@ -211,7 +211,7 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                                         ))
                                     ) : (
                                         <div
-                                            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 transition-all duration-200"
+                                            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! transition-all duration-200"
                                             style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                         >
                                             {(category.items || []).map((item) => (

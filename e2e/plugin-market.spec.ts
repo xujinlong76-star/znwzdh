@@ -522,4 +522,46 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await page.goto(`/marketplace/${slug}`);
     await expect(page.getByText('该插件已被系统自动隔离体检 (Quarantined)')).not.toBeVisible();
   });
+
+  test('发布向导：组合包成员选择器拼装成员并实时回写 payload JSON', async ({ page, request }) => {
+    const stamp = Date.now().toString(36);
+    const memberName = `E2E 选择器成员 ${stamp}`;
+    const memberSlug = `e2e-picker-${stamp}`;
+
+    // 1. 通过导入通道落库一个已上架成员（候选只要求「已上架」）
+    const imported = await request.post('/api/hub/plugins/import', {
+      data: { manifest: sitePackManifest(memberName, stamp), slug: memberSlug },
+    });
+    expect(imported.ok(), `成员导入失败 ${imported.status()}: ${await imported.text()}`).toBeTruthy();
+
+    // 2. 发布向导：选择组合包类型 → 成员选择器出现，初始为空清单
+    await page.goto('/marketplace/publish');
+    await expect(page.getByRole('heading', { name: '投稿发布新插件' })).toBeVisible({ timeout: 30_000 });
+    await page.getByRole('button', { name: /组合包 \(bundle\)/ }).click();
+    await expect(page.getByText('成员选择器（从已上架插件中拼装）')).toBeVisible();
+    await expect(page.getByText('已选 0 / 12')).toBeVisible();
+    const payloadBox = page.locator('#publish-plugin-payload');
+    await expect(payloadBox).toHaveValue(/"items": \[\]/);
+
+    // 3. 用搜索框过滤出目标成员（顺带覆盖选择器搜索）；冷启动失败时点一次重试
+    await page.getByLabel('搜索候选成员').fill(memberSlug);
+    const candidate = page.getByRole('button', { name: new RegExp(memberSlug) }).first();
+    const retry = page.getByRole('button', { name: '重试' });
+    await expect(candidate.or(retry)).toBeVisible({ timeout: 30_000 });
+    if (await retry.isVisible().catch(() => false)) {
+      await retry.click();
+    }
+    await expect(candidate).toBeVisible({ timeout: 30_000 });
+    await candidate.click();
+
+    // 4. 选择实时回写 payload JSON（选择器与 JSON 保持单一事实源）
+    await expect(payloadBox).toHaveValue(new RegExp(`"slug": "${memberSlug}"`));
+    await expect(payloadBox).toHaveValue(/"kind": "site-pack"/);
+    await expect(page.getByText('已选 1 / 12')).toBeVisible();
+
+    // 5. 再点一次可移除成员（回到空清单）
+    await candidate.click();
+    await expect(payloadBox).toHaveValue(/"items": \[\]/);
+    await expect(page.getByText('已选 0 / 12')).toBeVisible();
+  });
 });

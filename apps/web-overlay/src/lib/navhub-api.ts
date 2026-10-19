@@ -1465,16 +1465,54 @@ export interface HubAiChatResult {
   latencyMs: number
 }
 
-/** 个人试聊：按解析链（个人 → 系统 → 环境，含备用池）调用模型 */
+/** 个人试聊与 Copilot 问答：按解析链（个人 → 系统 → 环境，含备用池）调用模型 */
 export async function chatWithUserLlm(
   identity: string,
   messages: HubAiChatMessage[],
   maxTokens?: number,
+  context?: { activeTab?: string; categories?: string[] },
 ): Promise<HubAiChatResult> {
   return sendJson(
     '/api/user/ai/chat?anonId=' + encodeURIComponent(identity),
     'POST',
-    { messages, ...(maxTokens ? { maxTokens } : {}) },
+    { messages, ...(maxTokens ? { maxTokens } : {}), ...(context ? { context } : {}) },
+    undefined,
+    identityHeaders(identity),
+  )
+}
+
+export interface HubAiCanvasGenerateResult {
+  success: boolean
+  layout: {
+    version: number
+    updatedAt: number
+    title: string
+    description?: string
+    rationale?: string
+    widgets: Array<{
+      id: string
+      type: string
+      customTitle?: string
+      colSpan: number
+      rowSpan: number
+      config: Record<string, unknown>
+      createdAt: number
+    }>
+  }
+  model: string
+  latencyMs: number
+}
+
+/** 一句话自然语言规划并生成模块化工作台画布 */
+export async function generateAiCanvas(
+  identity: string,
+  prompt: string,
+  categories?: string[],
+): Promise<HubAiCanvasGenerateResult> {
+  return sendJson(
+    '/api/user/ai/canvas/generate?anonId=' + encodeURIComponent(identity),
+    'POST',
+    { prompt, ...(categories ? { categories } : {}) },
     undefined,
     identityHeaders(identity),
   )

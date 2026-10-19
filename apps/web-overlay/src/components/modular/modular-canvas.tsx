@@ -7,6 +7,7 @@ import { WIDGET_REGISTRY } from '@/lib/modular/registry'
 import { ModularItem } from './modular-item'
 import { ModuleLibraryModal } from './module-library-modal'
 import { TemplateModal } from './template-modal'
+import { AiCanvasGeneratorModal } from './ai-canvas-generator-modal'
 import { WidgetConfigModal } from './widget-config-modal'
 import { 
   Plus, 
@@ -63,6 +64,7 @@ export function ModularCanvas() {
 
   const [isLibraryOpen, setIsLibraryOpen] = useState(false)
   const [isTemplateOpen, setIsTemplateOpen] = useState(false)
+  const [isAiGenOpen, setIsAiGenOpen] = useState(false)
   const [isExportPluginOpen, setIsExportPluginOpen] = useState(false)
   const [configTargetWidget, setConfigTargetWidget] = useState<any | null>(null)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
@@ -420,6 +422,17 @@ export function ModularCanvas() {
               <Button
                 size="sm"
                 variant="outline"
+                className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 shadow-xs"
+                onClick={() => setIsAiGenOpen(true)}
+                title="一句话让 Agnes 3.0 Flash 智能规划专属工作台"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>AI 智能规划</span>
+              </Button>
+
+              <Button
+                size="sm"
+                variant="outline"
                 className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
                 onClick={() => {
                   compactLayout()
@@ -593,6 +606,33 @@ export function ModularCanvas() {
         isOpen={isTemplateOpen}
         onClose={() => setIsTemplateOpen(false)}
         onApplyTemplate={applyTemplate}
+      />
+
+      {/* AI 智能生成工作台弹窗 */}
+      <AiCanvasGeneratorModal
+        isOpen={isAiGenOpen}
+        onClose={() => setIsAiGenOpen(false)}
+        onApplyLayout={(layout, mode) => {
+          installWidgetPreset(
+            {
+              boards: [
+                {
+                  name: layout.title || 'AI 规划工作台',
+                  widgets: layout.widgets.map((w) => ({
+                    type: w.type,
+                    customTitle: w.customTitle,
+                    colSpan: w.colSpan,
+                    rowSpan: w.rowSpan,
+                    config: w.config,
+                  })),
+                },
+              ],
+            },
+            mode === 'replace' ? 'replace' : 'append',
+          )
+          setExportNotice(`已成功套用 AI 规划工作台「${layout.title}」！`)
+          setTimeout(() => setExportNotice(null), 3000)
+        }}
       />
 
       {/* 导出为插件市场清单向导弹窗 */}

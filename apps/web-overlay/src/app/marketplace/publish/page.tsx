@@ -9,7 +9,7 @@
  * 3. 提交后自动进入 pending 审核队列，并记录审计日志。
  */
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Container } from '@/components/ui/container'
@@ -20,14 +20,27 @@ import {
   submitPluginVersion,
   fetchPluginDetail,
   checkPluginUrls,
+  fetchPlugins,
   type HubPluginItem,
 } from '@/lib/navhub-api'
 import {
   PLUGIN_MANIFEST_VERSION,
+  PLUGIN_LIMITS,
   type PluginKind,
   type ThemeAccent,
   THEME_ACCENTS,
 } from '@/lib/plugins/plugin-manifest'
+import {
+  BUNDLE_KIND_LABELS,
+  BUNDLE_MEMBER_KINDS,
+  bundlePayloadJson,
+  filterBundleCandidates,
+  mergeBundleCandidates,
+  parseBundleSelection,
+  toggleBundleMember,
+  type BundleCandidate,
+  type BundleMemberKind,
+} from '@/lib/plugins/bundle-builder'
 import { Badge } from '@/components/ui/badge'
 import {
   ArrowLeft,
@@ -119,6 +132,52 @@ export default function PluginPublishPage() {
   // 提交状态
   const [submitting, setSubmitting] = useState(false)
   const [publishedPlugin, setPublishedPlugin] = useState<HubPluginItem | null>(null)
+
+  // 组合包成员选择器状态（仅 kind === 'bundle' 时启用）
+  const [bundleCandidates, setBundleCandidates] = useState<BundleCandidate[]>([])
+  const [bundleCandidatesLoading, setBundleCandidatesLoading] = useState(false)
+  const [bundleCandidatesLoaded, setBundleCandidatesLoaded] = useState(false)
+  const [bundleCandidatesError, setBundleCandidatesError] = useState(false)
+  const [bundleQuery, setBundleQuery] = useState('')
+  const [bundleKindFilter, setBundleKindFilter] = useState<'all' | BundleMemberKind>('all')
+  const [bundlePickerError, setBundlePickerError] = useState<string | null>(null)
+
+  // 单一事实源：成员选择始终从 payload JSON 派生（手改 JSON 后选择器自动跟进）
+  const bundleSelection = useMemo(() => parseBundleSelection(payloadJson), [payloadJson])
+  const bundleFilteredCandidates = useMemo(
+    () => filterBundleCandidates(bundleCandidates, { query: bundleQuery, kind: bundleKindFilter }),
+    [bundleCandidates, bundleQuery, bundleKindFilter]
+  )
+  const bundleSelectedSlugs = useMemo(
+    () => new Set(bundleSelection.items.map((item) => item.slug)),
+    [bundleSelection]
+  )
+
+  // 懒加载候选成员：已上架的网址包 / 搜索引擎包 / 主题各取前 100 条
+  const loadBundleCandidates = useCallback(async () => {
+    setBundleCandidatesLoading(true)
+    setBundleCandidatesError(false)
+    let degraded = false
+    const markDegraded = () => {
+      degraded = true
+    }
+    const [sites, engines, themes] = await Promise.all([
+      fetchPlugins({ kind: 'site-pack', limit: 100 }, markDegraded),
+      fetchPlugins({ kind: 'search-pack', limit: 100 }, markDegraded),
+      fetchPlugins({ kind: 'theme', limit: 100 }, markDegraded),
+    ])
+    const merged = mergeBundleCandidates([sites.items, engines.items, themes.items])
+    setBundleCandidates(merged)
+    setBundleCandidatesError(degraded && merged.length === 0)
+    setBundleCandidatesLoaded(true)
+    setBundleCandidatesLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (kind === 'bundle' && !bundleCandidatesLoaded && !bundleCandidatesLoading) {
+      void loadBundleCandidates()
+    }
+  }, [kind, bundleCandidatesLoaded, bundleCandidatesLoading, loadBundleCandidates])
 
   useEffect(() => {
     const from = new URLSearchParams(window.location.search).get('from')
@@ -243,18 +302,9 @@ export default function PluginPublishPage() {
         )
       )
     } else if (k === 'bundle') {
-      setPayloadJson(
-        JSON.stringify(
-          {
-            items: [
-              { slug: '请替换为已上架的-site-pack-slug', kind: 'site-pack' },
-              { slug: '请替换为已上架的-search-pack-slug', kind: 'search-pack' },
-            ],
-          },
-          null,
-          2
-        )
-      )
+      // 组合包改由「成员选择器」拼装：从空清单开始，避免占位 slug 干扰预检
+      setPayloadJson(bundlePayloadJson([]))
+      setBundlePickerError(null)
     }
   }
 
@@ -299,6 +349,20 @@ export default function PluginPublishPage() {
     } finally {
       setCheckingUrls(false)
     }
+  }
+
+  // 成员选择器：点选 / 取消成员，实时回写 payload JSON（旧校验结果随即失效）
+  const handleToggleBundleMember = (candidate: BundleCandidate) => {
+    const { items, error } = toggleBundleMember(bundleSelection.items, candidate, {
+      selfSlug: editingSlug,
+    })
+    if (error) {
+      setBundlePickerError(error)
+      return
+    }
+    setBundlePickerError(null)
+    setValidationResult(null)
+    setPayloadJson(bundlePayloadJson(items))
   }
 
   // 组合完整 Manifest
@@ -664,6 +728,161 @@ export default function PluginPublishPage() {
                 </div>
               </div>
 
+              {/* 步骤 3（组合包专属）: 成员选择器 */}
+              {kind === 'bundle' && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <Boxes className="w-4 h-4 text-fuchsia-500" />
+                      <span>成员选择器（从已上架插件中拼装）</span>
+                    </div>
+                    <span className="text-[11px] text-muted-foreground font-mono">
+                      已选 {bundleSelection.items.length} / {PLUGIN_LIMITS.maxBundleItems}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    组合包只收纳「网址包 / 搜索引擎包 / 主题」三类成员，不支持嵌套组合包与工作台预设；
+                    勾选结果会实时写入下方 payload JSON，也可手动微调。
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 min-w-[220px]">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                      <input
+                        type="text"
+                        aria-label="搜索候选成员"
+                        value={bundleQuery}
+                        onChange={(e) => setBundleQuery(e.target.value)}
+                        placeholder="搜索名称 / slug / 描述…"
+                        className="w-full text-xs rounded-xl border border-border/80 bg-background/80 pl-8 pr-3 py-2 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {(['all', ...BUNDLE_MEMBER_KINDS] as const).map((k) => (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => setBundleKindFilter(k)}
+                          className={cn(
+                            'px-2.5 py-1.5 rounded-lg border text-[11px] transition-colors',
+                            bundleKindFilter === k
+                              ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                              : 'border-border/70 text-muted-foreground hover:bg-muted/50'
+                          )}
+                        >
+                          {k === 'all' ? '全部' : BUNDLE_KIND_LABELS[k]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {bundlePickerError && (
+                    <p className="text-[11px] text-destructive flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      <span>{bundlePickerError}</span>
+                    </p>
+                  )}
+                  {bundleSelection.dropped > 0 && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                      手写 JSON 中有 {bundleSelection.dropped} 条非法 / 重复 / 超限成员未被选择器识别（提交前预检同样会拦截）。
+                    </p>
+                  )}
+
+                  {/* 候选列表 */}
+                  <div className="rounded-2xl border border-border/80 bg-background/60 max-h-72 overflow-y-auto divide-y divide-border/50">
+                    {bundleCandidatesLoading ? (
+                      <div className="p-6 text-center text-xs text-muted-foreground space-y-2">
+                        <Loader2 className="w-4 h-4 animate-spin mx-auto text-primary" />
+                        <p>正在载入已上架插件…</p>
+                      </div>
+                    ) : bundleCandidatesError ? (
+                      <div className="p-6 text-center text-xs space-y-2">
+                        <p className="text-destructive">候选列表载入失败（网络或服务暂不可用）。</p>
+                        <button
+                          type="button"
+                          onClick={() => void loadBundleCandidates()}
+                          className="px-3 py-1.5 rounded-lg border border-border/80 hover:bg-muted/60 text-foreground"
+                        >
+                          重试
+                        </button>
+                      </div>
+                    ) : bundleFilteredCandidates.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-muted-foreground">
+                        {bundleCandidates.length === 0
+                          ? '市场暂无已上架的可用成员（需先发布并过审网址包 / 搜索引擎包 / 主题）。'
+                          : '没有符合搜索条件的候选成员。'}
+                      </div>
+                    ) : (
+                      bundleFilteredCandidates.map((candidate) => {
+                        const selected = bundleSelectedSlugs.has(candidate.slug)
+                        return (
+                          <button
+                            key={candidate.slug}
+                            type="button"
+                            onClick={() => handleToggleBundleMember(candidate)}
+                            aria-pressed={selected}
+                            className={cn(
+                              'w-full text-left px-3.5 py-2.5 flex items-center gap-3 transition-colors',
+                              selected ? 'bg-primary/5' : 'hover:bg-muted/40'
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'w-4 h-4 rounded border flex items-center justify-center shrink-0',
+                                selected
+                                  ? 'border-primary bg-primary text-primary-foreground'
+                                  : 'border-border/80'
+                              )}
+                            >
+                              {selected && <Check className="w-3 h-3" />}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-foreground truncate">
+                                  {candidate.name || candidate.slug}
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-border/70 text-muted-foreground shrink-0">
+                                  {BUNDLE_KIND_LABELS[candidate.kind]}
+                                </span>
+                              </span>
+                              <span className="block text-[11px] text-muted-foreground font-mono truncate">
+                                {candidate.slug}
+                                {(candidate.installCount ?? 0) > 0 ? ` · 安装 ${candidate.installCount}` : ''}
+                              </span>
+                            </span>
+                          </button>
+                        )
+                      })
+                    )}
+                  </div>
+
+                  {/* 已选成员摘要 */}
+                  {bundleSelection.items.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {bundleSelection.items.map((item) => {
+                        const candidate = bundleCandidates.find((c) => c.slug === item.slug)
+                        return (
+                          <span
+                            key={item.slug}
+                            className="inline-flex items-center gap-1.5 pl-2 pr-1.5 py-1 rounded-lg border border-border/80 bg-background/80 text-[11px]"
+                          >
+                            <span className="font-mono">{candidate?.name || item.slug}</span>
+                            <button
+                              type="button"
+                              aria-label={`移除成员 ${item.slug}`}
+                              onClick={() => handleToggleBundleMember(candidate ?? { slug: item.slug, kind: item.kind })}
+                              className="w-4 h-4 rounded hover:bg-destructive/10 hover:text-destructive flex items-center justify-center"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* 步骤 3: 声明式 JSON Payload */}
               <div className="space-y-2 pt-2">
                 <div className="flex items-center justify-between">
@@ -737,6 +956,12 @@ export default function PluginPublishPage() {
                       {kind === 'search-pack' && (
                         <span>
                           引擎数: {validationResult.summary.engineCount}，前缀: {validationResult.summary.enginePrefixes?.join(', ')}
+                        </span>
+                      )}
+                      {kind === 'bundle' && (
+                        <span>
+                          成员数: {validationResult.summary.bundleItemCount}，类型:{' '}
+                          {(validationResult.summary.bundleKinds ?? []).join(', ')}
                         </span>
                       )}
                     </div>

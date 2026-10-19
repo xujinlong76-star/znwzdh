@@ -454,6 +454,11 @@ export async function saveUserLlmConfig(
     updatedBy: identity,
   };
 
+  // 无密钥的个人配置会在解析链里被跳过（等于没配），必须明确拒绝而不是静默保存
+  if (!stored.apiKeyEnc) {
+    throw new LlmError("config", "请填写 API 密钥：没有密钥的个人模型不会生效");
+  }
+
   await ctx.repo.upsertUserLlmConfig(identity, stored as unknown as Record<string, unknown>);
   await ctx.repo.audit({
     actor: identity,

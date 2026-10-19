@@ -251,4 +251,15 @@ describe("用户级配置（个人设置）", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().code).toBe("ssrf");
   });
+
+  it("无密钥的个人配置被明确拒绝（避免静默失效）", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: USER,
+      headers: { "x-navhub-anon-id": "anon-test-c" },
+      payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("config");
+  });
 });

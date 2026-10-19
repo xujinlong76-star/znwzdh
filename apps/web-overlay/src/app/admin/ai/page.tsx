@@ -26,7 +26,8 @@ const SOURCE_LABEL: Record<string, string> = {
   env: '环境变量',
   default: '内置默认',
   user: '个人配置',
-  system: '系统配置',
+  // effective.source 用 system 表示「系统层（即管理端配置）」
+  system: '管理端配置',
 }
 
 function emptyForm(): LlmFormValue {

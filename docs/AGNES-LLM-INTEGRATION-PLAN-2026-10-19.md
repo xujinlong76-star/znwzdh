@@ -524,3 +524,55 @@ NAVHUB_LLM_ALLOW_PRIVATE=false
 | 输入模态 | 文本 + 图像 URL |
 | 计费 | 当前现价 ¥0（输入缓存命中 ¥0.035、输入 ¥0.35、输出 ¥1.00 / 百万 token 为刊例价） |
 | 未列字段 | `response_format`（→ 本方案的自动降级策略） |
+
+---
+
+## 13. 实施记录与验证证据（2026-10-19 已落地）
+
+### 13.1 落地清单
+
+- **网关**：`packages/ai/src/llm.ts`（chatCompletion / chatStream / JSON 模式自动降级 / SSRF 断言 / 错误归一化 / 密钥掩码），`enrich.ts` 已改为委托网关，`index.ts` 导出；
+- **存储**：`user_llm_configs` 表（schema + 双方言 DDL + 仓储 + Repository 方法 + `deleteSystemState`）；
+- **解析**：`apps/api/src/llm-config.ts`（四级解析链、AES-256-GCM 加密、掩码视图、连通性测试）；
+- **API**：`apps/api/src/routes/ai-config.ts`（管理端 4 + 用户端 4），`server.ts` 注册，`apps/api/src/index.ts` 对 MCP 导出；
+- **调用点收口**：`routes/enrich.ts`（2 处）、`routes/sites.ts`（1 处）、`jobs.ts`（1 处）、`packages/mcp/src/handlers/sites.ts`（1 处）；
+- **能力位**：`context.ts` 启动时按解析链刷新；`config.ts` 默认值改为 Agnes（含 temperature/maxTokens/jsonMode/allowPrivate/secretKey），`loadConfig` 支持子配置部分覆盖；`main.ts` 启动加载仓库根 `.env`；
+- **前端**：`/admin/ai` 页面 + 管理导航「AI 模型」；`/preferences` 新增「AI 模型（个人）」卡片；共享字段组件 `components/ai/llm-config-form.tsx`；`navhub-api.ts` 增加 8 个客户端函数。
+
+### 13.2 真实调用证据（Agnes 3.0 Flash）
+
+| 验证 | 结果 |
+| :--- | :--- |
+| 原生 `POST /v1/chat/completions`（curl 直连） | HTTP 200 · 1.47s · `usage {77, 2, 79}` · content `ok` |
+| `response_format: {type:"json_object"}` | **HTTP 200 且输出合法 JSON** → Agnes 实际支持该参数（文档未列）；`auto` 降级策略保留但不触发 |
+| 网关直连（Node 24，含 SSRF DNS 校验） | 0.86s / 2.99s（两次） |
+| API 测试端点（管理端） | `{ok:true, latencyMs:1732, model:agnes-3.0-flash, replyPreview:"ok"}` |
+| 完整富化链路 `POST /api/enrich` | `provenance: "llm"`，中文标题/摘要/标签，`warnings: []` |
+
+### 13.3 安全与持久化
+
+- DB 实际行（`system_states` / `ai.llm.config.v1`）：516 字节，**不含明文密钥**，含 `cipherTextBase64` / `saltHex` 加密信封；
+- 重启后：`capabilities.llm = true`，`GET /api/admin/ai/config` → `source: "db"`（配置持久化生效）；
+- 接口响应：仅 `apiKeyMasked`（`sk-****LGm5`），全链路无明文回显；
+- SSRF：用户级私网地址被 400 拒绝（`code: "ssrf"`）；系统级需显式 `allowPrivateNetwork`。
+
+### 13.4 测试与门禁
+
+| 门禁 | 结果 |
+| :--- | :--- |
+| 全量单测/集成 | **142 文件 / 1781 测试：1766 通过，15 跳过，0 失败**（164s） |
+| 新增网关单测 | 17 例（JSON 降级/超时/错误码/SSE/掩码/SSRF） |
+| 新增配置集成测 | 12 例（加密落库、密钥三态、SSRF、能力位、身份隔离、连通性） |
+| 网关守卫 | 2 例（除 `llm.ts` 外无 `/chat/completions` 字面量） |
+| `pnpm typecheck` | @navhub/* 全绿 |
+| `apps/web` tsc | 0 错误 |
+| 新增 UI 文件 eslint | 0 问题 |
+| `check:overlay` | 360 个覆盖层文件 0 漂移 |
+| Playwright UI 验证 | **11/11**：管理端来源/掩码/回填/连通（1.73s）；个人卡片保存/连通/恢复跟随系统 |
+
+### 13.5 运维要点
+
+1. **密钥轮换**：`NAVHUB_SECRETS_KEY` 变更后，库内旧密文无法解密 → 管理端重新填写密钥即可（不会导致启动失败，能力位会如实降级）。
+2. **停用 AI**：管理端关闭「启用」= 系统层显式停用（不会被环境变量复活）；用户级删除配置 = 回退系统。
+3. **本地 Ollama**：仅系统级可开「允许私网」，用户级始终禁私网。
+4. **成本**：每次富化调用 1 次 chat completions；测试端点限流 5 次/分钟。

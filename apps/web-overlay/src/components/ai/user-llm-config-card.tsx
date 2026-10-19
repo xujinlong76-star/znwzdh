@@ -177,9 +177,12 @@ export function UserLlmConfigCard() {
           AI 模型（个人）
         </h2>
         <div className="flex items-center gap-2">
-          <Badge variant="outline">
-            当前：{view?.configured ? '个人配置' : `跟随系统（${SOURCE_LABEL[view?.system.source ?? 'default'] ?? ''}）`}
-          </Badge>
+          {/* 未加载完成前不显示来源，避免闪现「内置默认」这种误导性文案 */}
+          {view && (
+            <Badge variant="outline">
+              当前：{view.configured ? '个人配置' : `跟随系统（${SOURCE_LABEL[view.system.source] ?? ''}）`}
+            </Badge>
+          )}
           {!editing && view?.system && (
             <span className="text-xs text-muted-foreground">
               系统默认：{view.system.name} · {view.system.model}

@@ -1518,3 +1518,50 @@ export async function generateAiCanvas(
   )
 }
 
+/* ------------------------------ Wayback 时间机器自愈 ------------------------------ */
+
+export interface HubWaybackInfo {
+  ok: boolean
+  siteId: string
+  url: string
+  snapshot: {
+    available: boolean
+    url?: string
+    timestamp?: string
+    status?: number
+  }
+  recoveryUrl: string
+  saveUrl: string
+  error?: string
+}
+
+export interface HubWaybackHealResult {
+  ok: boolean
+  healed: boolean
+  site?: HubSite
+  recoveryUrl?: string
+  saveUrl?: string
+  snapshot?: {
+    available: boolean
+    url?: string
+    timestamp?: string
+    status?: number
+  }
+  message?: string
+  error?: string
+}
+
+/** 查询站点的 Wayback 历史归档快照 */
+export async function fetchSiteWayback(siteId: string): Promise<HubWaybackInfo> {
+  return getJson<HubWaybackInfo>(`/api/sites/${encodeURIComponent(siteId)}/wayback`)
+}
+
+/** 一键自愈死链站点为 Wayback Machine 历史快照镜像 */
+export async function healSiteWayback(
+  siteId: string,
+  options: { replaceUrl?: boolean; markActive?: boolean } = { replaceUrl: true, markActive: true }
+): Promise<HubWaybackHealResult> {
+  return sendJson<HubWaybackHealResult>(`/api/sites/${encodeURIComponent(siteId)}/wayback/heal`, 'POST', options)
+}
+
+

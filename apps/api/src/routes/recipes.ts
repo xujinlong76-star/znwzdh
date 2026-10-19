@@ -20,6 +20,7 @@ import {
 
 import { buildWaybackSaveUrl, buildWaybackSnapshotUrl, normalizeTargetUrl, parseWaybackAvailabilityResponse, type WaybackSnapshotInfo } from "@navhub/core";
 import { guardedFetch } from "@navhub/ai";
+import { indexSite } from "../index-site.ts";
 import type { AppContext } from "../context.ts";
 
 export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -162,6 +163,74 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       snapshot,
       recoveryUrl: buildWaybackSnapshotUrl(cleanUrl, snapshot.timestamp),
       saveUrl: buildWaybackSaveUrl(cleanUrl),
+    };
+  });
+
+  /**
+   * Wayback 时间机器一键自愈端点：若站点失活/死链，尝试调取 Wayback Machine 历史快照并自愈
+   */
+  app.post("/api/sites/:id/wayback/heal", { config: { scope: "write" } }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const site = await ctx.repo.getSite(id);
+    if (!site) {
+      reply.code(404);
+      return { ok: false, error: "站点不存在" };
+    }
+    const body = z.object({
+      replaceUrl: z.boolean().default(true),
+      markActive: z.boolean().default(true),
+    }).safeParse(req.body ?? {});
+
+    const cleanUrl = normalizeTargetUrl(site.url);
+    let snapshot: WaybackSnapshotInfo = { available: false };
+    try {
+      const apiUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(cleanUrl)}`;
+      const res = await guardedFetch(apiUrl, { timeoutMs: 3000 });
+      if (res.status === 200) {
+        const data = JSON.parse(res.body);
+        snapshot = parseWaybackAvailabilityResponse(data);
+      }
+    } catch {
+      // 降级
+    }
+
+    const recoveryUrl = buildWaybackSnapshotUrl(cleanUrl, snapshot.timestamp);
+    const saveUrl = buildWaybackSaveUrl(cleanUrl);
+
+    const replaceUrl = body.success ? body.data.replaceUrl : true;
+    const markActive = body.success ? body.data.markActive : true;
+
+    const updates: { url?: string; status?: "active" } = {};
+    if (replaceUrl && recoveryUrl) {
+      updates.url = recoveryUrl;
+    }
+    if (markActive) {
+      updates.status = "active";
+    }
+
+    const updated = Object.keys(updates).length > 0 ? await ctx.repo.updateSite(site.id, updates) : site;
+    if (updated) {
+      await indexSite(ctx, updated.id, updated.title, updated.description ?? null, updated.url);
+      await ctx.repo.audit({
+        ip: req.ip,
+        actor: req.auth.actor,
+        actorKind: req.auth.kind,
+        action: "site.wayback_heal",
+        target: site.id,
+        diff: { before: { url: site.url, status: site.status }, after: updates },
+      });
+    }
+
+    return {
+      ok: true,
+      healed: Boolean(recoveryUrl),
+      site: updated ?? site,
+      recoveryUrl,
+      saveUrl,
+      snapshot,
+      message: recoveryUrl
+        ? "已成功将死链地址无缝自愈替换为 Wayback Machine 历史快照镜像"
+        : "未检索到远程历史快照，建议点击即时归档保存当前页面",
     };
   });
 

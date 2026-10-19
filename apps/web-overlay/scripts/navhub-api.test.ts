@@ -36,5 +36,14 @@ describe("hubUrl", () => {
   it("实体关系路径正确指向 /api/hub/sites/:id/relations", () => {
     expect(hubUrl("/api/sites/site-123/relations")).toBe("/api/hub/sites/site-123/relations");
   });
+
+  it("Wayback 时间机器自愈路径正确归一化", () => {
+    expect(hubUrl("/api/sites/site-123/wayback")).toBe("/api/hub/sites/site-123/wayback");
+    expect(hubUrl("/api/sites/site-123/wayback/heal")).toBe("/api/hub/sites/site-123/wayback/heal");
+  });
+
+  it("AI 工作台画布规划路径正确归一化", () => {
+    expect(hubUrl("/api/user/ai/canvas/generate?anonId=test")).toBe("/api/hub/user/ai/canvas/generate?anonId=test");
+  });
 });
 

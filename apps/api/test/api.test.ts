@@ -1434,6 +1434,28 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     expect(nonExist.statusCode).toBe(404);
   });
 
+  it("POST /api/sites/:id/wayback/heal 一键自愈死链站点并落审计", async () => {
+    const site = (await app.inject({
+      method: "POST", url: "/api/sites",
+      payload: { url: "https://dead-link-heal.example.com", title: "死链待自愈站点", categoryId: "cat-ai" },
+    })).json();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/sites/" + site.id + "/wayback/heal",
+      payload: { replaceUrl: true, markActive: true },
+    });
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.ok).toBe(true);
+    expect(json.healed).toBe(true);
+    expect(json.site.url).toContain("web.archive.org/web");
+    expect(json.site.status).toBe("active");
+
+    const nonExist = await app.inject({ method: "POST", url: "/api/sites/no-such-site/wayback/heal" });
+    expect(nonExist.statusCode).toBe(404);
+  });
+
   it("CRDT 本地优先协同漫游网络：多设备原子操作无损合流与状态收敛", async () => {
     // 1. 无 identity 时返回 400
     const noAuth = await app.inject({

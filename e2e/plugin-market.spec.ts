@@ -150,6 +150,65 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(page.getByRole('button', { name: /已安装/ })).toBeVisible();
   });
 
+  test('组合包：成员清单展示 → 一次安装成员生效 → 已安装页按类型聚合', async ({ page, request }) => {
+    const stamp = Date.now().toString(36);
+    const memberName = `E2E 组合成员 ${stamp}`;
+    const memberSlug = `e2e-bundle-member-${stamp}`;
+    const bundleName = `E2E 组合包 ${stamp}`;
+    const bundleSlug = `e2e-bundle-${stamp}`;
+
+    // 1. 先导入已上架成员（组合包只允许引用已上架插件）
+    const memberImport = await request.post('/api/hub/plugins/import', {
+      data: { manifest: sitePackManifest(memberName, stamp), slug: memberSlug },
+    });
+    expect(memberImport.ok(), `成员导入失败 ${memberImport.status()}: ${await memberImport.text()}`).toBeTruthy();
+
+    // 2. 导入单层组合包
+    const bundleImport = await request.post('/api/hub/plugins/import', {
+      data: {
+        manifest: {
+          manifestVersion: 1,
+          kind: 'bundle',
+          name: bundleName,
+          description: 'Playwright 端到端测试组合包（单层，仅引用已上架成员）',
+          version: '1.0.0',
+          tags: ['e2e', 'bundle'],
+          payload: { items: [{ slug: memberSlug, kind: 'site-pack' }] },
+        },
+        slug: bundleSlug,
+      },
+    });
+    expect(bundleImport.ok(), `组合包导入失败 ${bundleImport.status()}: ${await bundleImport.text()}`).toBeTruthy();
+
+    // 3. 详情页：成员清单可见、类型徽章与 ready 状态正常
+    await page.goto(`/marketplace/${bundleSlug}`);
+    await expect(page.getByRole('heading', { level: 1 }).first()).toContainText(bundleName);
+    await expect(page.getByText('组合包成员').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(memberName, { exact: true }).first()).toBeVisible();
+
+    // 4. 一次安装：组合包专用成功文案（沿用点击-补击模式对抗冷启动水合竞态）
+    await page.getByRole('button', { name: '立即安装该插件' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByText(`确认安装「${bundleName}」`)).toBeVisible();
+    await expect(dialog.getByText('一次登记 1 个成员插件')).toBeVisible();
+    const bundleToast = page.getByText(`组合包「${bundleName}」处理完成`);
+    await dialog.getByRole('button', { name: '立即安装' }).click();
+    try {
+      await expect(bundleToast).toBeVisible({ timeout: 10_000 });
+    } catch {
+      if (await dialog.isVisible().catch(() => false)) {
+        await dialog.getByRole('button', { name: '立即安装' }).click().catch(() => {});
+      }
+      await expect(bundleToast).toBeVisible({ timeout: 15_000 });
+    }
+
+    // 5. 已安装页：组合包独立分类聚合
+    await page.goto('/marketplace/installed');
+    await expect(page.getByRole('heading', { name: '已安装插件管家' })).toBeVisible({ timeout: 30_000 });
+    await page.getByRole('button', { name: '组合包' }).click();
+    await expect(page.getByText(bundleName, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
+  });
+
   test('发布入库（待审）→ 管理员审核上架 → 市场公开可见', async ({ page, request }) => {
     const stamp = Date.now().toString(36);
     const name = `E2E 待审包 ${stamp}`;

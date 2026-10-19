@@ -25,7 +25,7 @@
 | 细节增强（第二批） | 已落地 | 筛选/排序/搜索与地址栏双向同步（补上统一搜索 `/marketplace?q=` 落点）；卡片新增安装深链分享；详情页选项卡支持 `?tab=reviews` 深链与键盘/读屏语义；评价支持分页加载与骨架态，移除评价列表中的内部 identity 展示；已安装管家按语义版本判定更新、更新置顶、生效主题升级后立即重放 token，并在卸载网址包时明确提示站点会同步软删除。 |
 | F4 组合插件 | 已落地（受限单层） | 新 kind `bundle`，payload `{items:[{slug,kind}]}`，成员仅允许 `site-pack` / `search-pack` / `theme`（禁嵌套、禁工作台预设）；引用必须已上架、类型一致、非自身；安装前全量预检后按清单顺序复用同一条 install 管道；任一成员失效即 fail closed；卸载只解绑、不级联。核心/镜像契约、store、API 详情与安装、市场列表/详情/安装弹窗/已安装页/发布向导、MCP 类型枚举与 seed 样例同步更新。 |
 
-**测试与门禁**：store 插件套件 27 例、API 插件套件 20 例、代理身份签名/转发 32 例通过；`pnpm typecheck`、Web ESLint（0 error）、`check:overlay`、`check:extensions` 纳入本批门禁。所有新增 DDL 均为幂等迁移，SQLite / libSQL / PostgreSQL 三方言按现有 `driver.ts` + `migrate.ts` 机制补齐。
+**测试与门禁**：store 插件套件 30 例（含 F4 组合包 3 例）、API 插件套件 21 例（含 F4 API 全链路 1 例）、代理身份签名/转发 32 例通过；core 契约 40 例（含组合包校验/摘要/diff 7 例）。`pnpm typecheck`、Web ESLint（0 error）、`check:overlay`、`check:extensions` 纳入本批门禁。所有新增 DDL 均为幂等迁移，SQLite / libSQL / PostgreSQL 三方言按现有 `driver.ts` + `migrate.ts` 机制补齐；组合包复用 `plugins.kind` 文本列，无新 DDL。
 
 ---
 
@@ -128,7 +128,29 @@
 - `search_plugins`（语义，D2 顺带）、`star_plugin`（public+identity）、`update_plugin`（write；= 重装升级语义 + 返回 upgrade 标记）。工作量：S（随 D2/D1）。
 
 ### F4 「起步包」组合插件（bundle）
+
+> **状态（2026-10-19）**：独立评审完成，按受限单层范围落地（详见本章末「F4 独立评审结论」）。
+
 - 方案：新 kind `bundle`（payload: `{items: [{slug, kind}]}`，仅引用已上架项）——一次安装 = 顺序执行三个安装（复用 install 管道）。**谨慎**：引入引用解析链，需防自引用/环/下架引用；建议排在最后、独立评审。工作量：M-L。
+
+#### F4 独立评审结论（受限范围）
+
+**允许的引用图**：仅单层。成员只允许 `site-pack` / `search-pack` / `theme` 三种 kind；`bundle` 自身与 `workspace-preset` 一律拒绝（前者天然排除嵌套与环，后者必须由用户显式选择追加/覆盖模式，不能让组合包替用户决定工作台布局）。核心校验在 `packages/core/src/plugin-manifest.ts` 的 `BundlePayload` 校验中拒绝非法 kind，store 的 `getPluginBundleMembers` 再做一次「声明类型 vs 真实类型」一致性校验，双保险防类型漂移。
+
+**引用生命周期**：
+1. 创建 / 更新 / 提交新版本 / 审核通过四个写入点都调用 `assertBundleManifestReferences`，要求被引用插件**当时已上架**；任一成员缺失、未上架、类型不符、自引用或嵌套组合，写入直接失败并返回具体 slug + 原因；
+2. 成员事后被下架/隔离不触发任何自动动作（反目标 #4：不做自动下架），组合包详情返回 `bundleReady:false` 与逐成员 `available/reason`；安装前全量预检，任一成员失效即 fail closed（400 + 明确原因），不产生半安装；
+3. 成员恢复上架后，组合包无需重新审核即可再次安装（引用有效性在安装时实时重算）。
+
+**安装与卸载语义**：
+- 安装顺序复用同一条 `installPlugin` 管道：预检全部成员 → 逐个安装 → 聚合 `applied.bundleItems`；组合包自身只记录一次安装，成员各自独立计数；
+- 不做跨成员事务（成员 site-pack 内部已有事务）：预检通过后若极端情况下中途失败，错误信息会列出已完成成员，重试幂等补全，绝不回滚或删除既有数据；
+- 卸载组合包只解绑自身，**不级联**卸载成员、不删除成员引入的站点（`removeSites` 对 bundle 不生效）；成员可单独卸载；
+- 主题类成员仅登记安装，需用户在「已安装」页显式启用（避免组合包在一次点击中悄悄替换用户外观）。
+
+**测试覆盖**：core 契约 7 例（成员类型/去重/数量/摘要/diff）；store 3 例（引用校验、安装聚合与幂等、失效 fail closed 与恢复、卸载不级联）；API 1 例全链路（导入成员 → 导入组合包 → 详情解析 → 一次安装 → 成员下架 → ready=false 且安装被拒）。
+
+**未做（明确边界）**：嵌套组合包、依赖图解析/环检测、自动级联下架传播、组合包作者自助拼装 UI（当前通过发布向导 JSON 或导入通道创建，成员列表以 slug+kind 显式声明）。
 
 ---
 

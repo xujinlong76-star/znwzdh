@@ -5,6 +5,7 @@ import {
   type HubPluginItem,
   installPlugin,
   uninstallPlugin,
+  fetchPluginDetail,
 } from '@/lib/navhub-api'
 import {
   Dialog,
@@ -20,6 +21,10 @@ import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { Globe, LayoutGrid, Palette, Boxes, AlertTriangle, Check, Trash2, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { setActiveTheme, resetTheme } from '@/lib/plugins/theme-runtime'
+import {
+  registerSearchPackEngines,
+  unregisterSearchPackEngines,
+} from '@/lib/plugins/search-pack-runtime'
 import { getIdentity } from '@/lib/identity'
 
 export interface PluginInstallModalProps {
@@ -88,6 +93,25 @@ export function PluginInstallModal({
           })
         }
 
+        // 4. 搜索引擎包运行时注册：`!前缀` 直达写入本地运行时并持久化
+        if (plugin.kind === 'search-pack') {
+          registerSearchPackEngines(plugin.slug, plugin.manifest?.payload?.engines)
+        }
+
+        // 5. 组合包内的搜索引擎包成员：逐成员补注册 `!前缀`（尽力而为，失败不阻断安装结果）
+        if (plugin.kind === 'bundle') {
+          const searchPacks = (plugin.bundleItems ?? []).filter(
+            (item) => item.kind === 'search-pack' && item.available,
+          )
+          await Promise.allSettled(
+            searchPacks.map(async (item) => {
+              const detail = await fetchPluginDetail(item.slug)
+              const engines = detail?.plugin?.manifest?.payload?.engines
+              if (engines) registerSearchPackEngines(item.slug, engines)
+            }),
+          )
+        }
+
         const bundleItems: Array<{ alreadyInstalled?: boolean }> = Array.isArray(res?.applied?.bundleItems)
           ? res.applied.bundleItems
           : []
@@ -117,6 +141,11 @@ export function PluginInstallModal({
         // 若卸载的是正在生效的主题，回退系统默认
         if (plugin.kind === 'theme') {
           resetTheme()
+        }
+
+        // 卸载搜索引擎包时移除其注册的 `!前缀`；其它类型不涉及客户端注册
+        if (plugin.kind === 'search-pack') {
+          unregisterSearchPackEngines(plugin.slug)
         }
 
         toast.success(`已卸载「${plugin.name}」`, {

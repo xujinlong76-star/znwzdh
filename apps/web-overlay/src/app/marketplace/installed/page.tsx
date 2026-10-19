@@ -30,6 +30,8 @@ import {
 } from '@/lib/plugins/theme-runtime'
 import {
   getAllSearchEngines,
+  registerSearchPackEngines,
+  unregisterSearchPackEngines,
   type InstalledSearchEngine,
 } from '@/lib/plugins/search-pack-runtime'
 import { comparePluginVersions } from '@/lib/plugins/plugin-manifest'
@@ -138,6 +140,13 @@ export default function InstalledPluginsPage() {
         }
       }
 
+      // 搜索引擎包升级：前缀 / 检索 URL 可能变化，重新注册运行时直达
+      if (item.kind === 'search-pack') {
+        const detail = await fetchPluginDetail(item.slug)
+        const engines = detail?.plugin?.manifest?.payload?.engines
+        if (engines) registerSearchPackEngines(item.slug, engines)
+      }
+
       setActionMessage(`插件已成功升级至最新版本`)
       await loadData()
       setTimeout(() => setActionMessage(null), 3000)
@@ -159,6 +168,9 @@ export default function InstalledPluginsPage() {
       await uninstallPlugin(item.slug, undefined, removeSites)
       if (item.kind === 'theme' && activeThemeState?.slug === item.slug) {
         resetTheme()
+      }
+      if (item.kind === 'search-pack') {
+        unregisterSearchPackEngines(item.slug)
       }
       setActionMessage(`已成功卸载插件「${item.name}」`)
       await loadData()

@@ -109,6 +109,43 @@ export function getAllSearchEngines(): InstalledSearchEngine[] {
   return [...preservedDefaults, ...custom]
 }
 
+/**
+ * 注册某个 search-pack 的清单引擎（安装 / 升级时调用）。
+ *
+ * 覆盖式：先移除该插件此前的注册，再写入最新清单；同前缀的其它插件引擎让位，
+ * 避免重复前缀在 `!` 直达时命中歧义。清单已过服务端校验，这里仍做防御性归一化。
+ */
+export function registerSearchPackEngines(slug: string, engines: unknown): void {
+  const list = Array.isArray(engines) ? engines : []
+  const normalized: InstalledSearchEngine[] = []
+  for (const raw of list) {
+    if (!raw || typeof raw !== 'object') continue
+    const engine = raw as Record<string, unknown>
+    const prefix = typeof engine.prefix === 'string' ? engine.prefix.trim() : ''
+    const searchUrl = typeof engine.searchUrl === 'string' ? engine.searchUrl.trim() : ''
+    if (!prefix || !searchUrl.includes('{q}')) continue
+    normalized.push({
+      id: typeof engine.id === 'string' && engine.id.trim() ? engine.id : `${slug}::${prefix}`,
+      name: typeof engine.name === 'string' && engine.name.trim() ? engine.name.trim() : prefix,
+      prefix,
+      searchUrl,
+      ...(typeof engine.description === 'string' ? { description: engine.description } : {}),
+      ...(typeof engine.icon === 'string' ? { icon: engine.icon } : {}),
+      pluginSlug: slug,
+    })
+  }
+  const prefixes = new Set(normalized.map((e) => e.prefix.toLowerCase()))
+  const kept = getCustomSearchEngines().filter(
+    (e) => e.pluginSlug !== slug && !prefixes.has(e.prefix.toLowerCase())
+  )
+  saveCustomSearchEngines([...kept, ...normalized])
+}
+
+/** 卸载 search-pack 时移除其注册的引擎；内置默认引擎与其它插件不受影响。 */
+export function unregisterSearchPackEngines(slug: string): void {
+  saveCustomSearchEngines(getCustomSearchEngines().filter((e) => e.pluginSlug !== slug))
+}
+
 export interface MatchSearchResult {
   matched: boolean
   prefix?: string

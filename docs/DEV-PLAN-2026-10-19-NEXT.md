@@ -106,6 +106,16 @@
 | D. 移动端 DIY 拖拽 | dnd-kit 触摸传感器，替代当前的 ⬆️/⬇️ 按钮 | 3–5 天 | 低 | 体验补课，可放 P2 备选 |
 | E. i18n | 中英双语 | 大 | 中 | **暂缓**：V3 结论是无证据表明缺它掉用户 |
 
+**P2-A 首轮落地（2026-10-19，commit `8a5337d`）**
+
+| 能力 | 落地 | 验收 |
+| :--- | :--- | :--- |
+| 安装引导 | `lib/install-prompt.ts` 纯判定（3 次访问门槛、14 天稍后提醒、standalone/可安装判断）+ `components/install-prompt.tsx`（`beforeinstallprompt` / `appinstalled`），挂到根布局 | 纯逻辑单测覆盖阈值/退避/standalone；首次访问不打扰 |
+| 离线阅读 | 新增 `/offline` 页 + `offline-recent-list.tsx`，读取/清空本机最近访问；卡片普通点击记录，离线状态条加入口 | SW 预缓存 `/offline` 及其 `_next/static` 产物（`navhub-v4`），首次离线可打开 |
+| 已有能力接线 | SW 更新提示、离线状态条此前已实现；本轮只补入口与预缓存，不重复造 | 接线守卫测试锁住布局/入口，防「写好没挂上」 |
+
+本地验证：web 68 文件 737 测试、全仓 1826 passed / 15 skipped；root/web tsc 0；ESLint `--quiet` 0；overlay 一致；build 通过；`/` 1156 KB（预算 1210 KB）、最高路由 `/admin/navigation` 1185 KB（预算 1241 KB）。
+
 ### P3｜工具链收尾（窗口期，3–5 天）
 
 - **TS 6 → 7（native）**：TS 7 用于 `tsc --noEmit` 门禁；`typescript@6` 留给 typescript-eslint（TS 7 暂无 compiler API）。先处理两个硬阻断：`moduleResolution: "node"` → `"bundler"`；`baseUrl` → 相对 `paths`。

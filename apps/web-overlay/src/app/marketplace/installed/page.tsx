@@ -133,7 +133,7 @@ export default function InstalledPluginsPage() {
     setUninstallingSlug(item.slug)
     try {
       const removeSites = item.kind === 'site-pack'
-      await uninstallPlugin(item.slug, { removeSites })
+      await uninstallPlugin(item.slug, undefined, removeSites)
       if (item.kind === 'theme' && activeThemeState?.slug === item.slug) {
         resetTheme()
       }
@@ -329,7 +329,7 @@ export default function InstalledPluginsPage() {
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
-                {tab.icon && <tab.icon className="w-3.5 h-3.5" />}
+                {'icon' in tab && <tab.icon className="w-3.5 h-3.5" />}
                 {tab.label}
               </button>
             )

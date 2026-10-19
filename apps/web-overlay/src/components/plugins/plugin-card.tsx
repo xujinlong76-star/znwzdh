@@ -7,11 +7,13 @@ import {
   starPlugin,
   unstarPlugin,
   installPlugin,
+  createPluginShortLink,
   trackPluginEvent,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { Badge } from '@/components/ui/badge'
+import { copyText } from '@/lib/clipboard'
 import {
   Globe,
   LayoutGrid,
@@ -23,6 +25,8 @@ import {
   ExternalLink,
   Layers,
   Sparkles,
+  Share2,
+  Loader2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -45,6 +49,7 @@ export function PluginCard({
   const [starLoading, setStarLoading] = useState(false)
   const [installed, setInstalled] = useState(Boolean(plugin.installed))
   const [installing, setInstalling] = useState(false)
+  const [sharing, setSharing] = useState(false)
 
   // D1 更新链路：本地升级成功后不等父级刷新即切换为「已安装」
   const [upgradedTo, setUpgradedTo] = useState<string | null>(null)
@@ -129,6 +134,32 @@ export function PluginCard({
     } finally {
       setInstalling(false)
     }
+  }
+
+  const handleShare = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (sharing) return
+    setSharing(true)
+    trackPluginEvent('plugin_share', plugin.slug)
+
+    // 与详情页同口径：优先站内短链，失败回退完整安装深链，分享不因后端故障中断
+    let path = `/marketplace/${encodeURIComponent(plugin.slug)}?install=1`
+    try {
+      const short = await createPluginShortLink(plugin.slug, { install: true })
+      if (short.path) path = short.path
+    } catch {
+      // 保留长链兜底
+    }
+
+    const link = `${window.location.origin}${path}`
+    const result = await copyText(link)
+    if (result.ok) {
+      toast.success('分享链接已复制', { description: '打开即可进入安装确认' })
+    } else {
+      toast.error('复制失败', { description: result.reason })
+    }
+    setSharing(false)
   }
 
   const renderKindIcon = () => {
@@ -283,6 +314,16 @@ export function PluginCard({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleShare}
+            disabled={sharing}
+            aria-label="复制安装分享链接"
+            title="复制带安装引导的分享链接"
+            className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-60"
+          >
+            {sharing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+          </button>
           <Link
             href={`/marketplace/${encodeURIComponent(plugin.slug)}`}
             className="px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground font-medium rounded-lg hover:bg-muted/60 transition-colors"

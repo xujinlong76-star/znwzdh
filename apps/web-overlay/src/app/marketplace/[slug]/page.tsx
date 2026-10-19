@@ -50,6 +50,13 @@ import {
 import { copyText } from '@/lib/clipboard'
 import { Badge } from '@/components/ui/badge'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   ArrowLeft,
   Globe,
   LayoutGrid,
@@ -76,6 +83,10 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+
+type DetailTab = 'preview' | 'diff' | 'impact' | 'raw' | 'history' | 'reviews'
+
+const DETAIL_TABS: DetailTab[] = ['preview', 'diff', 'impact', 'raw', 'history', 'reviews']
 
 export default function PluginDetailPage({
   params,
@@ -109,8 +120,49 @@ export default function PluginDetailPage({
   const [starCount, setStarCount] = useState(0)
   const [starLoading, setStarLoading] = useState(false)
 
-  // 选项卡切换
-  const [activeTab, setActiveTab] = useState<'preview' | 'diff' | 'impact' | 'raw' | 'history' | 'reviews'>('preview')
+  // 选项卡切换（支持 ?tab=reviews 等深链，便于分享具体区块）
+  const [activeTab, setActiveTab] = useState<DetailTab>('preview')
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab')
+    if (requested && (DETAIL_TABS as string[]).includes(requested)) {
+      setActiveTab(requested as DetailTab)
+    }
+  }, [])
+
+  /** 切换选项卡时同步地址栏，复制链接即可回到同一区块。 */
+  const selectTab = useCallback((tab: DetailTab) => {
+    setActiveTab(tab)
+    const url = new URL(window.location.href)
+    if (tab === 'preview') url.searchParams.delete('tab')
+    else url.searchParams.set('tab', tab)
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${url.pathname}${url.search}${url.hash}`,
+    )
+  }, [])
+
+  /** 标准 ARIA Tabs 键盘交互：左右方向键循环，Home/End 跳首尾。 */
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement
+    if (target.getAttribute('role') !== 'tab') return
+    const tabs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+    )
+    const index = tabs.indexOf(target as HTMLButtonElement)
+    if (index < 0) return
+
+    let next = index
+    if (event.key === 'ArrowRight') next = (index + 1) % tabs.length
+    else if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = tabs.length - 1
+    else return
+
+    event.preventDefault()
+    selectTab(DETAIL_TABS[next])
+    tabs[next]?.focus()
+  }
 
   // 工作台预设注入钩子
   const { installWidgetPreset } = useModularLayout()
@@ -406,7 +458,7 @@ export default function PluginDetailPage({
                 {plugin.reviewStats && plugin.reviewStats.reviewCount > 0 ? (
                   <button
                     type="button"
-                    onClick={() => setActiveTab('reviews')}
+                    onClick={() => selectTab('reviews')}
                     className="text-xs text-amber-500 font-semibold flex items-center gap-1 hover:underline cursor-pointer"
                   >
                     <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
@@ -418,7 +470,7 @@ export default function PluginDetailPage({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setActiveTab('reviews')}
+                    onClick={() => selectTab('reviews')}
                     className="text-xs text-muted-foreground/80 hover:text-foreground cursor-pointer flex items-center gap-1"
                   >
                     <Star className="w-3.5 h-3.5 text-muted-foreground/40" />
@@ -452,11 +504,13 @@ export default function PluginDetailPage({
 
             {/* 主操作动作组 */}
             <div className="flex flex-col sm:items-end gap-3 shrink-0">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <button
                   type="button"
                   onClick={handleStarToggle}
                   disabled={starLoading}
+                  aria-label={starred ? '取消星标' : '点亮星标'}
+                  aria-pressed={starred}
                   className={cn(
                     'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-all',
                     starred
@@ -482,6 +536,7 @@ export default function PluginDetailPage({
                 <button
                   type="button"
                   onClick={handleShareLink}
+                  aria-label="复制带安装引导的分享链接"
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-border/70 bg-background/70 hover:bg-muted text-foreground transition-all"
                   title="复制带安装引导的分享链接（自动生成站内短链）"
                 >
@@ -501,6 +556,7 @@ export default function PluginDetailPage({
                 <button
                   type="button"
                   onClick={() => setBadgeModalOpen(true)}
+                  aria-label="获取动态 SVG 徽章"
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-border/70 bg-background/70 hover:bg-muted text-foreground transition-all"
                   title="获取可在 GitHub README 或个人主页展示的动态 SVG 徽章"
                 >
@@ -601,7 +657,7 @@ export default function PluginDetailPage({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('diff')}
+                  onClick={() => selectTab('diff')}
                   className="px-3 py-1.5 rounded-lg border border-primary/30 bg-background/80 hover:bg-background text-primary font-medium transition-colors"
                 >
                   查看升级差异
@@ -648,12 +704,22 @@ export default function PluginDetailPage({
 
         {/* 详情内容选项卡 */}
         <div className="space-y-4">
-          <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+          <div
+            role="tablist"
+            aria-label="插件详情内容"
+            onKeyDown={handleTabKeyDown}
+            className="flex items-center gap-2 border-b border-border/60 pb-2 overflow-x-auto"
+          >
             <button
               type="button"
-              onClick={() => setActiveTab('preview')}
+              role="tab"
+              id="plugin-tab-preview"
+              aria-selected={activeTab === 'preview'}
+              tabIndex={activeTab === 'preview' ? 0 : -1}
+              aria-controls="plugin-tabpanel-preview"
+              onClick={() => selectTab('preview')}
               className={cn(
-                'px-4 py-2 rounded-xl text-xs font-medium transition-all',
+                'px-4 py-2 rounded-xl text-xs font-medium transition-all whitespace-nowrap shrink-0',
                 activeTab === 'preview'
                   ? 'bg-primary text-primary-foreground shadow-2xs'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -663,9 +729,14 @@ export default function PluginDetailPage({
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('diff')}
+              role="tab"
+              id="plugin-tab-diff"
+              aria-selected={activeTab === 'diff'}
+              tabIndex={activeTab === 'diff' ? 0 : -1}
+              aria-controls="plugin-tabpanel-diff"
+              onClick={() => selectTab('diff')}
               className={cn(
-                'px-4 py-2 rounded-xl text-xs font-medium transition-all inline-flex items-center gap-1.5',
+                'px-4 py-2 rounded-xl text-xs font-medium transition-all inline-flex items-center gap-1.5 whitespace-nowrap shrink-0',
                 activeTab === 'diff'
                   ? 'bg-primary text-primary-foreground shadow-2xs'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -673,16 +744,21 @@ export default function PluginDetailPage({
             >
               <span>版本差异对比</span>
               {installAction === 'update' && (
-                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-amber-500 text-white font-bold">
+                <span className="px-1.5 py-0.5 text-[10px] rounded-full bg-amber-500 text-white font-bold">
                   新
                 </span>
               )}
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('impact')}
+              role="tab"
+              id="plugin-tab-impact"
+              aria-selected={activeTab === 'impact'}
+              tabIndex={activeTab === 'impact' ? 0 : -1}
+              aria-controls="plugin-tabpanel-impact"
+              onClick={() => selectTab('impact')}
               className={cn(
-                'px-4 py-2 rounded-xl text-xs font-medium transition-all',
+                'px-4 py-2 rounded-xl text-xs font-medium transition-all whitespace-nowrap shrink-0',
                 activeTab === 'impact'
                   ? 'bg-primary text-primary-foreground shadow-2xs'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -692,9 +768,14 @@ export default function PluginDetailPage({
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('raw')}
+              role="tab"
+              id="plugin-tab-raw"
+              aria-selected={activeTab === 'raw'}
+              tabIndex={activeTab === 'raw' ? 0 : -1}
+              aria-controls="plugin-tabpanel-raw"
+              onClick={() => selectTab('raw')}
               className={cn(
-                'px-4 py-2 rounded-xl text-xs font-medium transition-all',
+                'px-4 py-2 rounded-xl text-xs font-medium transition-all whitespace-nowrap shrink-0',
                 activeTab === 'raw'
                   ? 'bg-primary text-primary-foreground shadow-2xs'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -704,9 +785,14 @@ export default function PluginDetailPage({
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('history')}
+              role="tab"
+              id="plugin-tab-history"
+              aria-selected={activeTab === 'history'}
+              tabIndex={activeTab === 'history' ? 0 : -1}
+              aria-controls="plugin-tabpanel-history"
+              onClick={() => selectTab('history')}
               className={cn(
-                'px-4 py-2 rounded-xl text-xs font-medium transition-all inline-flex items-center gap-1.5',
+                'px-4 py-2 rounded-xl text-xs font-medium transition-all inline-flex items-center gap-1.5 whitespace-nowrap shrink-0',
                 activeTab === 'history'
                   ? 'bg-primary text-primary-foreground shadow-2xs'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -717,9 +803,14 @@ export default function PluginDetailPage({
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('reviews')}
+              role="tab"
+              id="plugin-tab-reviews"
+              aria-selected={activeTab === 'reviews'}
+              tabIndex={activeTab === 'reviews' ? 0 : -1}
+              aria-controls="plugin-tabpanel-reviews"
+              onClick={() => selectTab('reviews')}
               className={cn(
-                'px-4 py-2 rounded-xl text-xs font-medium transition-all inline-flex items-center gap-1.5',
+                'px-4 py-2 rounded-xl text-xs font-medium transition-all inline-flex items-center gap-1.5 whitespace-nowrap shrink-0',
                 activeTab === 'reviews'
                   ? 'bg-primary text-primary-foreground shadow-2xs'
                   : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -728,7 +819,14 @@ export default function PluginDetailPage({
               <MessageSquare className="w-3.5 h-3.5" />
               <span>用户评价</span>
               {plugin.reviewStats && plugin.reviewStats.reviewCount > 0 && (
-                <span className="px-1.5 py-0.2 text-[10px] rounded-full bg-muted font-mono">
+                <span
+                  className={cn(
+                    'px-1.5 py-0.5 text-[10px] rounded-full font-mono',
+                    activeTab === 'reviews'
+                      ? 'bg-primary-foreground/20 text-primary-foreground'
+                      : 'bg-muted text-muted-foreground',
+                  )}
+                >
                   {plugin.reviewStats.reviewCount}
                 </span>
               )}
@@ -737,7 +835,12 @@ export default function PluginDetailPage({
 
           {/* 选项卡 1：内容明细与预览 */}
           {activeTab === 'preview' && (
-            <div className="space-y-6">
+            <div
+              role="tabpanel"
+              id="plugin-tabpanel-preview"
+              aria-labelledby="plugin-tab-preview"
+              className="space-y-6"
+            >
               {/* site-pack 网址包明细展示 */}
               {plugin.kind === 'site-pack' && payload?.sites && (
                 <div className="space-y-4">
@@ -944,7 +1047,12 @@ export default function PluginDetailPage({
 
           {/* 选项卡：版本变更对比 */}
           {activeTab === 'diff' && (
-            <div className="rounded-3xl border border-border/80 glass-surface p-6 sm:p-8 space-y-4 shadow-xs">
+            <div
+              role="tabpanel"
+              id="plugin-tabpanel-diff"
+              aria-labelledby="plugin-tab-diff"
+              className="rounded-3xl border border-border/80 glass-surface p-6 sm:p-8 space-y-4 shadow-xs"
+            >
               <div className="space-y-1">
                 <h3 className="text-base font-semibold text-foreground">版本升级变动明细</h3>
                 <p className="text-xs text-muted-foreground">
@@ -957,7 +1065,12 @@ export default function PluginDetailPage({
 
           {/* 选项卡 2：影响评估 */}
           {activeTab === 'impact' && (
-            <div className="rounded-2xl border border-border/70 bg-card/60 p-6 space-y-4">
+            <div
+              role="tabpanel"
+              id="plugin-tabpanel-impact"
+              aria-labelledby="plugin-tab-impact"
+              className="rounded-2xl border border-border/70 bg-card/60 p-6 space-y-4"
+            >
               <h3 className="text-sm font-semibold text-foreground">安装影响评估</h3>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
                 <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
@@ -1028,7 +1141,12 @@ export default function PluginDetailPage({
 
           {/* 选项卡 3：清单源码 */}
           {activeTab === 'raw' && (
-            <div className="relative rounded-2xl border border-border/70 bg-card/60 p-4 space-y-2">
+            <div
+              role="tabpanel"
+              id="plugin-tabpanel-raw"
+              aria-labelledby="plugin-tab-raw"
+              className="relative rounded-2xl border border-border/70 bg-card/60 p-4 space-y-2"
+            >
               <div className="flex items-center justify-between pb-2 border-b border-border/50">
                 <span className="text-xs font-mono text-muted-foreground">
                   {plugin.slug}{PLUGIN_MANIFEST_FILE_SUFFIX}
@@ -1050,11 +1168,14 @@ export default function PluginDetailPage({
 
           {/* 选项卡 4：版本演进时间轴 */}
           {activeTab === 'history' && (
-            <PluginVersionTimeline slug={plugin.slug} currentVersion={plugin.version} />
+            <div role="tabpanel" id="plugin-tabpanel-history" aria-labelledby="plugin-tab-history">
+              <PluginVersionTimeline slug={plugin.slug} currentVersion={plugin.version} />
+            </div>
           )}
 
           {/* 选项卡 5：真实用户评价 */}
           {activeTab === 'reviews' && (
+            <div role="tabpanel" id="plugin-tabpanel-reviews" aria-labelledby="plugin-tab-reviews">
             <PluginReviewSection
               slug={plugin.slug}
               isInstalled={Boolean(plugin.installed)}
@@ -1073,6 +1194,7 @@ export default function PluginDetailPage({
                   : null
               }
             />
+            </div>
           )}
         </div>
 
@@ -1103,26 +1225,17 @@ export default function PluginDetailPage({
         />
 
         {/* 动态 SVG 徽章获取弹窗 */}
-        {badgeModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in">
-            <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+        <Dialog open={badgeModalOpen} onOpenChange={setBadgeModalOpen}>
+          <DialogContent className="w-full max-w-lg p-6 space-y-5">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-base">
                   <Award className="w-5 h-5 text-primary" />
-                  <h3 className="text-base font-semibold text-foreground">获取开源动态徽章 (Badge)</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setBadgeModalOpen(false)}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  关闭
-                </button>
-              </div>
-
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                实时展示插件版本、累计安装量或评分。可直接嵌入 GitHub README、个人博客或文档中，支持矢量高清自适应。
-              </p>
+                  获取开源动态徽章 (Badge)
+                </DialogTitle>
+                <DialogDescription className="text-xs leading-relaxed">
+                  实时展示插件版本、累计安装量或评分。可直接嵌入 GitHub README、个人博客或文档中，支持矢量高清自适应。
+                </DialogDescription>
+              </DialogHeader>
 
               {/* 指标切换 */}
               <div className="flex items-center gap-2 flex-wrap">
@@ -1209,9 +1322,8 @@ export default function PluginDetailPage({
                   完成
                 </Button>
               </div>
-            </div>
-          </div>
-        )}
+          </DialogContent>
+        </Dialog>
 
         {/* 底部导航 */}
         <Footer />

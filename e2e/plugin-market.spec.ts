@@ -106,6 +106,12 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await page.getByLabel('搜索插件').fill(name);
     await page.getByRole('button', { name: '搜索' }).click();
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+    // 筛选条件写回地址栏，统一搜索 /marketplace?q=... 与刷新都能还原
+    await expect(page).toHaveURL(/[?&]q=/);
+
+    await page.goto(`/marketplace?q=${encodeURIComponent(name)}`);
+    await expect(page.getByLabel('搜索插件')).toHaveValue(name);
+    await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
 
     // 详情页：标题与影响摘要
     await page.getByRole('link', { name: new RegExp(name) }).first().click();
@@ -307,18 +313,21 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await clickInstallAndAwaitToast(page, dialog, themeName);
     await expect(page.getByRole('button', { name: /已安装/ })).toBeVisible();
 
-    // 5. 版本演进时间轴
-    await page.getByRole('button', { name: '版本演进' }).click();
+    // 5. 版本演进时间轴（选项卡使用 role=tab，保留键盘/读屏语义）
+    await page.getByRole('tab', { name: '版本演进' }).click();
     await expect(page.getByRole('heading', { name: /版本演进时间轴/ })).toBeVisible();
     await expect(page.getByText('v1.0.0', { exact: true }).first()).toBeVisible();
 
-    // 6. 真实安装用户 5 星评价
-    await page.getByRole('button', { name: '用户评价' }).click();
+    // 6. 真实安装用户 5 星评价（End 键跳到末个选项卡，验证 ARIA Tabs 键盘交互）
+    await page.getByRole('tab', { name: '版本演进' }).focus();
+    await page.keyboard.press('End');
+    await expect(page.getByRole('tab', { name: '用户评价' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(/[?&]tab=reviews/);
     await expect(page.getByRole('heading', { name: /全部评价/ })).toBeVisible();
     await page.getByRole('button', { name: '发表使用体验' }).click();
 
     // 选中 5 星
-    await page.getByRole('button', { name: '5 星' }).click();
+    await page.getByRole('radio', { name: '5 星' }).click();
     await page.getByLabel('一句话亮点或总结（可选）').fill('体验极佳，做工精美！');
     await page.getByLabel('具体使用心得或改进建议（可选）').fill('高对比度配色非常好看，推荐给所有夜间开发者！');
     await page.getByRole('button', { name: '提交评价' }).click();

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   fetchPluginReviews,
   reportPluginReview,
@@ -37,7 +37,10 @@ export function PluginReviewSection({
       offset: 0,
     },
   )
-  const [loading, setLoading] = useState(false)
+  // 详情页传入的 initialReviews 只有统计没有条目：此时先显示骨架，
+  // 避免首屏短暂出现「全部评价 (N) + 暂无用户评价」的自相矛盾状态。
+  const [loading, setLoading] = useState(!initialReviews || initialReviews.items.length === 0)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [hoverRating, setHoverRating] = useState<number | null>(null)
   const [rating, setRating] = useState<number>(5)
@@ -48,8 +51,8 @@ export function PluginReviewSection({
   const [reportReason, setReportReason] = useState('')
   const [reportSubmitting, setReportSubmitting] = useState(false)
 
-  // 刷新评价列表
-  const loadReviews = async () => {
+  // 刷新评价列表（首屏 / 提交后回到第一页）
+  const loadReviews = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetchPluginReviews(slug)
@@ -64,11 +67,28 @@ export function PluginReviewSection({
     } finally {
       setLoading(false)
     }
-  }
+  }, [slug])
 
   useEffect(() => {
-    loadReviews()
-  }, [slug])
+    void loadReviews()
+  }, [loadReviews])
+
+  /** 分页加载更多：服务端按 offset 返回，追加到现有列表且不覆盖正在编辑的表单。 */
+  const loadMore = async () => {
+    if (loadingMore) return
+    setLoadingMore(true)
+    try {
+      const res = await fetchPluginReviews(slug, {
+        limit: data.limit || 20,
+        offset: data.items.length,
+      })
+      setData((prev) => ({ ...res, items: [...prev.items, ...res.items] }))
+    } catch {
+      toast.error('加载更多评价失败，请稍后重试')
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -115,8 +135,22 @@ export function PluginReviewSection({
     }
   }
 
+  const handleRatingKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, star: number) => {
+    let next = star
+    if (event.key === 'ArrowRight' || event.key === 'ArrowUp') next = Math.min(5, star + 1)
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') next = Math.max(1, star - 1)
+    else if (event.key === 'Home') next = 1
+    else if (event.key === 'End') next = 5
+    else return
+    event.preventDefault()
+    setRating(next)
+    const group = event.currentTarget.parentElement
+    group?.querySelector<HTMLButtonElement>(`button[data-rating="${next}"]`)?.focus()
+  }
+
   const { stats, myReview, items, total } = data
   const hasReviews = total > 0
+  const initialLoading = loading && items.length === 0
 
   return (
     <section className="space-y-6 pt-2">
@@ -223,18 +257,25 @@ export function PluginReviewSection({
             <label className="block text-xs font-medium text-muted-foreground mb-1.5">
               整体满意度评分 *
             </label>
-            <div className="flex items-center gap-1.5">
+            <div role="radiogroup" aria-label="整体满意度评分" className="flex items-center gap-1.5">
               {[1, 2, 3, 4, 5].map((star) => {
                 const active = (hoverRating ?? rating) >= star
                 return (
                   <button
                     type="button"
+                    role="radio"
+                    aria-checked={rating === star}
+                    aria-label={`${star} 星`}
+                    data-rating={star}
+                    tabIndex={rating === star ? 0 : -1}
                     key={star}
                     onMouseEnter={() => setHoverRating(star)}
                     onMouseLeave={() => setHoverRating(null)}
+                    onFocus={() => setHoverRating(star)}
+                    onBlur={() => setHoverRating(null)}
+                    onKeyDown={(event) => handleRatingKeyDown(event, star)}
                     onClick={() => setRating(star)}
-                    className="p-1 hover:scale-110 transition-transform focus:outline-none"
-                    aria-label={`${star} 星`}
+                    className="p-1 hover:scale-110 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-md"
                   >
                     <Star
                       className={`h-6 w-6 transition-colors ${
@@ -311,12 +352,25 @@ export function PluginReviewSection({
 
       {/* 评价列表 */}
       <div className="space-y-3">
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+        <h4
+          className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center justify-between"
+          aria-live="polite"
+        >
           <span>全部评价 ({total})</span>
           {loading && <span className="text-[11px] font-normal">加载中...</span>}
         </h4>
 
-        {!hasReviews ? (
+        {initialLoading ? (
+          <div className="space-y-3" aria-label="正在加载用户评价">
+            {[0, 1].map((row) => (
+              <div key={row} className="rounded-xl border border-border/60 bg-card/70 p-4 space-y-2 animate-pulse">
+                <div className="h-3.5 w-28 rounded bg-muted/60" />
+                <div className="h-3 w-full rounded bg-muted/40" />
+                <div className="h-3 w-2/3 rounded bg-muted/40" />
+              </div>
+            ))}
+          </div>
+        ) : !hasReviews ? (
           <div className="rounded-2xl border border-dashed border-border/80 p-8 text-center bg-card/30">
             <MessageSquare className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
             <p className="text-sm font-medium text-foreground">暂无用户评价</p>
@@ -372,12 +426,10 @@ export function PluginReviewSection({
                   <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/70">
                     <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                     <span>已验证真实安装用户</span>
-                    <span className="font-mono text-muted-foreground/50">
-                      ({rev.identity.slice(0, 10)}...)
-                    </span>
                   </div>
                   <button
                     type="button"
+                    aria-expanded={reportingId === rev.id}
                     onClick={() => {
                       setReportingId((prev) => (prev === rev.id ? null : rev.id))
                       setReportReason('')
@@ -427,6 +479,21 @@ export function PluginReviewSection({
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {!initialLoading && hasReviews && items.length < total && (
+          <div className="text-center pt-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loadingMore}
+              onClick={() => void loadMore()}
+              className="text-xs h-8"
+            >
+              {loadingMore ? '加载中…' : `加载更多评价（${items.length}/${total}）`}
+            </Button>
           </div>
         )}
       </div>

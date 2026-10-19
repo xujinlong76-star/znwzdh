@@ -26,6 +26,12 @@ import { PluginCard } from '@/components/plugins/plugin-card'
 import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
 import { stageWorkspacePreset } from '@/lib/plugins/preset-staging'
 import {
+  DEFAULT_MARKETPLACE_SORT,
+  buildMarketplaceQuery,
+  parseMarketplaceFilters,
+  type MarketplaceSort,
+} from '@/lib/plugins/marketplace-filters'
+import {
   ArrowLeft,
   Crown,
   Flame,
@@ -38,6 +44,7 @@ import {
   TrendingUp,
   Upload,
   UserRound,
+  X,
 } from 'lucide-react'
 
 const PAGE_SIZE = 24
@@ -51,6 +58,13 @@ const TOPIC_COLLECTIONS = [
   { id: 'theme', title: '🎨 赛博与暗黑美学', kind: 'theme' },
 ] as const
 
+const KIND_LABELS: Record<string, string> = {
+  'site-pack': '网站包',
+  'workspace-preset': '工作台预设',
+  theme: '主题',
+  'search-pack': '搜索引擎包',
+}
+
 export default function MarketplacePage() {
   const identity = useMemo(() => getIdentity(), [])
   const [items, setItems] = useState<HubPluginItem[]>([])
@@ -59,9 +73,10 @@ export default function MarketplacePage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [kind, setKind] = useState('')
-  const [sort, setSort] = useState('trending')
+  const [sort, setSort] = useState<MarketplaceSort>(DEFAULT_MARKETPLACE_SORT)
   const [qInput, setQInput] = useState('')
   const [q, setQ] = useState('')
+  const [filtersReady, setFiltersReady] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const [installTarget, setInstallTarget] = useState<HubPluginItem | null>(null)
   const [featured, setFeatured] = useState<HubPluginItem[]>([])
@@ -70,6 +85,36 @@ export default function MarketplacePage() {
     rating: HubPluginItem[]
     fresh: HubPluginItem[]
   }>({ popular: [], rating: [], fresh: [] })
+
+  // 统一搜索会深链到 /marketplace?q=...，首次进入必须先从地址栏恢复筛选；
+  // 监听 popstate 让浏览器前进/后退也能回到同一组条件。
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const parsed = parseMarketplaceFilters(window.location.search)
+      setKind(parsed.kind)
+      setQ(parsed.q)
+      setQInput(parsed.q)
+      setSort(parsed.sort)
+    }
+    syncFromUrl()
+    setFiltersReady(true)
+    window.addEventListener('popstate', syncFromUrl)
+    return () => window.removeEventListener('popstate', syncFromUrl)
+  }, [])
+
+  // 筛选变化只改写地址栏（replaceState），避免每次输入都触发一次服务端导航；
+  // 刷新/复制链接后仍能还原条件。默认排序不落参数，保持 /marketplace 干净。
+  useEffect(() => {
+    if (!filtersReady) return
+    const next =
+      window.location.pathname +
+      buildMarketplaceQuery({ kind, q, sort }) +
+      window.location.hash
+    const current = window.location.pathname + window.location.search + window.location.hash
+    if (next !== current) {
+      window.history.replaceState(window.history.state, '', next)
+    }
+  }, [filtersReady, kind, q, sort])
 
   const load = useCallback(
     async (offset: number, append: boolean) => {
@@ -90,10 +135,23 @@ export default function MarketplacePage() {
   )
 
   useEffect(() => {
+    if (!filtersReady) return
     void load(0, false)
-  }, [load, reloadToken])
+  }, [load, filtersReady, reloadToken])
 
   const reload = useCallback(() => setReloadToken((n) => n + 1), [])
+
+  const resetFilters = useCallback(() => {
+    setKind('')
+    setQ('')
+    setQInput('')
+    setSort(DEFAULT_MARKETPLACE_SORT)
+  }, [])
+
+  const clearSearch = useCallback(() => {
+    setQ('')
+    setQInput('')
+  }, [])
 
   const patchItem = useCallback((updated: HubPluginItem) => {
     setItems((prev) => prev.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)))
@@ -144,10 +202,7 @@ export default function MarketplacePage() {
 
   const handleTopicClick = (topic: typeof TOPIC_COLLECTIONS[number]) => {
     if (topic.id === 'all') {
-      setKind('')
-      setQ('')
-      setQInput('')
-      setSort('trending')
+      resetFilters()
     } else {
       if ('kind' in topic && topic.kind) setKind(topic.kind)
       else setKind('')
@@ -158,7 +213,7 @@ export default function MarketplacePage() {
         setQ('')
         setQInput('')
       }
-      if ('sort' in topic && topic.sort) setSort(topic.sort)
+      setSort('sort' in topic && topic.sort ? topic.sort : DEFAULT_MARKETPLACE_SORT)
     }
   }
 
@@ -263,7 +318,7 @@ export default function MarketplacePage() {
             aria-label="排序方式"
             className="h-8 rounded-md border border-input bg-background px-2 text-sm"
             value={sort}
-            onChange={(e) => setSort(e.target.value)}
+            onChange={(e) => setSort(e.target.value as MarketplaceSort)}
           >
             <option value="trending">🔥 7天飙升榜</option>
             <option value="new">最新发布</option>
@@ -273,6 +328,7 @@ export default function MarketplacePage() {
             <option value="updated">最近更新</option>
           </select>
           <form
+            role="search"
             className="flex items-center gap-1.5"
             onSubmit={(e) => {
               e.preventDefault()
@@ -282,21 +338,75 @@ export default function MarketplacePage() {
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
+                type="text"
+                name="q"
                 aria-label="搜索插件"
                 value={qInput}
                 onChange={(e) => setQInput(e.target.value)}
                 placeholder="搜索名称 / 描述"
-                className="h-8 w-52 rounded-md border border-input bg-background pl-8 pr-2.5 text-sm"
+                enterKeyHint="search"
+                className="h-8 w-52 rounded-md border border-input bg-background pl-8 pr-7 text-sm"
               />
+              {qInput && (
+                <button
+                  type="button"
+                  aria-label="清除输入"
+                  onClick={() => {
+                    setQInput('')
+                    setQ('')
+                  }}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
             <Button type="submit" size="sm" variant="outline" className="h-8">
               搜索
             </Button>
           </form>
           {total > 0 && !loading && (
-            <span className="text-xs text-muted-foreground ml-auto">共 {total} 个插件</span>
+            <span className="text-xs text-muted-foreground ml-auto" role="status" aria-live="polite">
+              共 {total} 个插件
+            </span>
           )}
         </div>
+
+        {/* 当前筛选条件：与地址栏同步，便于一键清除和分享 */}
+        {(q || kind) && (
+          <div className="flex flex-wrap items-center gap-2 text-xs -mt-2">
+            <span className="text-muted-foreground">当前筛选：</span>
+            {q && (
+              <button
+                type="button"
+                onClick={clearSearch}
+                className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/5 px-2.5 py-1 text-primary hover:bg-primary/10 transition-colors"
+                aria-label={`移除搜索条件 ${q}`}
+              >
+                搜索“{q}”
+                <X className="w-3 h-3" />
+              </button>
+            )}
+            {kind && (
+              <button
+                type="button"
+                onClick={() => setKind('')}
+                className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/70 px-2.5 py-1 text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                aria-label={`移除类型筛选 ${KIND_LABELS[kind] ?? kind}`}
+              >
+                类型：{KIND_LABELS[kind] ?? kind}
+                <X className="w-3 h-3" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="text-muted-foreground hover:text-foreground underline underline-offset-2"
+            >
+              清空全部
+            </button>
+          </div>
+        )}
 
         {notice && <HubDegradedNotice notice={notice} onRetry={reload} subject="插件市场" />}
 

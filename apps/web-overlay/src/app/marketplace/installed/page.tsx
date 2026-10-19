@@ -32,6 +32,7 @@ import {
   getAllSearchEngines,
   type InstalledSearchEngine,
 } from '@/lib/plugins/search-pack-runtime'
+import { comparePluginVersions } from '@/lib/plugins/plugin-manifest'
 import {
   ArrowLeft,
   Check,
@@ -114,10 +115,28 @@ export default function InstalledPluginsPage() {
     setTimeout(() => setActionMessage(null), 3000)
   }
 
-  const handleUpgrade = async (slug: string) => {
-    setUpgradingSlug(slug)
+  const handleUpgrade = async (item: HubPluginInstalledItem) => {
+    setUpgradingSlug(item.slug)
     try {
-      await installPlugin(slug)
+      const wasActiveTheme = item.kind === 'theme' && activeThemeState?.slug === item.slug
+      await installPlugin(item.slug)
+
+      // 正在生效的主题升级后要立即把新 token 应用到运行时，
+      // 否则服务端已是新版本、页面仍停留在旧配色，形成「升级了但没生效」。
+      if (wasActiveTheme) {
+        const detail = await fetchPluginDetail(item.slug)
+        const payload = detail?.plugin?.manifest?.payload
+        if (payload) {
+          setActiveTheme({
+            slug: item.slug,
+            name: detail?.plugin?.name || item.name,
+            tokens: payload.tokens,
+            accent: payload.accent,
+          })
+          setActiveThemeState(getActiveTheme())
+        }
+      }
+
       setActionMessage(`插件已成功升级至最新版本`)
       await loadData()
       setTimeout(() => setActionMessage(null), 3000)
@@ -129,10 +148,13 @@ export default function InstalledPluginsPage() {
   }
 
   const handleUninstall = async (item: HubPluginInstalledItem) => {
-    if (!confirm(`确定要卸载插件「${item.name}」吗？`)) return
+    const removeSites = item.kind === 'site-pack'
+    const message = removeSites
+      ? `确定要卸载插件「${item.name}」吗？\n\n该插件导入的站点会一并软删除（可在回收站恢复）。`
+      : `确定要卸载插件「${item.name}」吗？`
+    if (!confirm(message)) return
     setUninstallingSlug(item.slug)
     try {
-      const removeSites = item.kind === 'site-pack'
       await uninstallPlugin(item.slug, undefined, removeSites)
       if (item.kind === 'theme' && activeThemeState?.slug === item.slug) {
         resetTheme()
@@ -147,10 +169,20 @@ export default function InstalledPluginsPage() {
     }
   }
 
-  const filteredItems = items.filter((item) => {
-    if (activeTab === 'all') return true
-    return item.kind === activeTab
-  })
+  const hasUpdate = (item: HubPluginInstalledItem) =>
+    Boolean(
+      item.version &&
+        item.installedVersion &&
+        comparePluginVersions(item.version, item.installedVersion) > 0,
+    )
+
+  const updateCount = items.filter(hasUpdate).length
+
+  // 有更新的插件置顶，其余保持后端顺序；不能用字符串不等判断版本，
+  // 否则服务端回滚或预发布版本会被误标为「可升级」。
+  const filteredItems = items
+    .filter((item) => activeTab === 'all' || item.kind === activeTab)
+    .sort((a, b) => Number(hasUpdate(b)) - Number(hasUpdate(a)))
 
   const themeItems = items.filter((i) => i.kind === 'theme')
 
@@ -181,6 +213,11 @@ export default function InstalledPluginsPage() {
               <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed max-w-2xl">
                 管理当前设备与账号已安装的所有扩展。支持多套主题一键切换、快捷前缀直达语法速查、待更新插件平滑升级与彻底清理。
               </p>
+              {updateCount > 0 && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">
+                  有 {updateCount} 个插件可升级，已置顶显示。
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
@@ -357,7 +394,7 @@ export default function InstalledPluginsPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredItems.map((item) => {
-              const hasUpdate = Boolean(item.version && item.installedVersion && item.version !== item.installedVersion)
+              const itemHasUpdate = hasUpdate(item)
               const isUpgrading = upgradingSlug === item.slug
               const isUninstalling = uninstallingSlug === item.slug
 
@@ -385,6 +422,11 @@ export default function InstalledPluginsPage() {
                           </Link>
                           <span className="text-[11px] text-muted-foreground">
                             已安装 v{item.installedVersion}
+                            {itemHasUpdate && (
+                              <span className="ml-1.5 text-amber-600 dark:text-amber-400 font-medium">
+                                · 最新 v{item.version}
+                              </span>
+                            )}
                           </span>
                         </div>
                       </div>
@@ -399,12 +441,12 @@ export default function InstalledPluginsPage() {
 
                   <div className="pt-2 border-t border-border/50 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      {hasUpdate && (
+                      {itemHasUpdate && (
                         <Button
                           size="sm"
                           variant="outline"
                           disabled={isUpgrading}
-                          onClick={() => void handleUpgrade(item.slug)}
+                          onClick={() => void handleUpgrade(item)}
                           className="h-7 text-xs gap-1 border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
                         >
                           <RefreshCw className={`w-3 h-3 ${isUpgrading ? 'animate-spin' : ''}`} />
@@ -424,6 +466,7 @@ export default function InstalledPluginsPage() {
                       onClick={() => void handleUninstall(item)}
                       className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                       title="卸载此插件"
+                      aria-label={`卸载插件 ${item.name}`}
                     >
                       {isUninstalling ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />

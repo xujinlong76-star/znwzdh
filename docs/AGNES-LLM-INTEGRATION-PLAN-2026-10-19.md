@@ -570,7 +570,25 @@ NAVHUB_LLM_ALLOW_PRIVATE=false
 | `check:overlay` | 360 个覆盖层文件 0 漂移 |
 | Playwright UI 验证 | **11/11**：管理端来源/掩码/回填/连通（1.73s）；个人卡片保存/连通/恢复跟随系统 |
 
-### 13.5 运维要点
+### 13.5 增补：备用模型池与个人试聊（同日下午）
+
+- **备用模型池**：系统配置新增 `fallbacks: []`（最多 3 个），密钥同样 AES-GCM 加密；
+  保存时按 `id` 沿用旧密文（`apiKey` 留空即不修改）；每个备用端点独立过 SSRF 校验；
+  `resolveLlm` 输出 `fallbacks`，`enrichLlmOf()` 统一转换，富化链路自动轮换；
+  管理端新增「备用模型（可选）」编辑区（增删、掩码回显）。
+- **个人试聊**：新增 `POST /api/user/ai/chat`（身份隔离、10 次/分钟、只接受 user/assistant
+  消息、最多 20 轮/8000 字），按解析链调用并自动走备用池；`ai_chat` 事件记录
+  model/source/tokens/latency。`/preferences` 卡片新增「试聊」输入，回复直接展示。
+- **检查器**：`scripts/check-bundle-budget.mjs` 移植 Turbopack 口径（`build-manifest.json`
+  `rootMainFiles` + 逐路由 `page_client-reference-manifest.js` − 异步），并修复 `--json`
+  模式仍追加人类可读行的问题；新增 fixture 单测 4 例（Turbopack 两条 + webpack 兼容 + 缺产物）。
+- **E2E 竞态修复**：`admin-dashboard`(2)/`admin-jobs`/`admin-token` 的 h1 gate 收窄到
+  `main#main-content`，规避 Next 16 流式水合在 `#S:*` 暂存容器中的瞬态重复元素。
+
+验证补充：试聊真实回复 `agnes-3.0-flash · 4240ms · 105 tokens`；备用池保存/回显/清理
+UI 6/6；admin E2E 6/6；检查器 4/4；全量 1789 例通过（1 次 jobs 时序 flake，复跑绿）。
+
+### 13.6 运维要点
 
 1. **密钥轮换**：`NAVHUB_SECRETS_KEY` 变更后，库内旧密文无法解密 → 管理端重新填写密钥即可（不会导致启动失败，能力位会如实降级）。
 2. **停用 AI**：管理端关闭「启用」= 系统层显式停用（不会被环境变量复活）；用户级删除配置 = 回退系统。

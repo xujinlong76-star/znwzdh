@@ -7,19 +7,25 @@
  *   **静默退出且没有任何输出**（比报错更难排查）。
  *   因此把启动逻辑放在独立入口，导入即启动，不依赖任何主模块判断。
  */
+import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
 import { buildServer } from "./server.ts";
 import { JobRunner, MAX_JOB_ATTEMPTS } from "./jobs.ts";
 import { sendWebhookAlert } from "./alerts.ts";
 
-// 本地/容器启动时加载 .env（Node 原生能力，零依赖）；文件不存在则忽略。
-// 必须在 loadConfig() 之前执行，否则 .env 里的 NAVHUB_* 不会生效。
+// 本地/容器启动时加载仓库根目录的 .env（Node 原生能力，零依赖）。
+// 注意：dev-all 以 apps/api 为 CWD 启动，默认的 loadEnvFile() 会找 apps/api/.env，
+// 因此这里显式指向 ../../../.env；文件不存在则回退进程环境变量。
 const loadEnvFile = (process as unknown as { loadEnvFile?: (path?: string) => void }).loadEnvFile;
 try {
-  loadEnvFile?.();
+  loadEnvFile?.(fileURLToPath(new URL("../../../.env", import.meta.url)));
 } catch {
-  // 没有 .env 文件：使用进程环境变量
+  try {
+    loadEnvFile?.();
+  } catch {
+    // 没有 .env 文件：使用进程环境变量
+  }
 }
 
 const config = loadConfig();

@@ -464,16 +464,17 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const svgText = await badgeRes.text();
     expect(svgText).toContain('v1.0.0');
 
-    // 弹窗获取开源徽章代码
-    const badgeBtn = page.getByRole('button', { name: '获取徽章' });
+    // 弹窗获取开源徽章代码（文案与详情页徽章弹窗实际 UI 对齐）
+    const badgeBtn = page.getByRole('button', { name: '获取动态 SVG 徽章' });
     await expect(badgeBtn).toBeVisible({ timeout: 15_000 });
     await badgeBtn.click();
     const badgeModal = page.getByRole('dialog');
-    await expect(badgeModal.getByText('获取开源徽章代码 (Open Source Badges)')).toBeVisible();
-    await expect(badgeModal.getByText(/实时矢量 SVG 徽章/)).toBeVisible();
-    await badgeModal.getByRole('button', { name: '复制 Markdown' }).click();
+    await expect(badgeModal.getByText('获取开源动态徽章 (Badge)')).toBeVisible();
+    await expect(badgeModal.getByText(/实时矢量预览/)).toBeVisible();
+    // Markdown 代码块位于 SVG 直链之前，取第一个复制按钮即 Markdown 复制
+    await badgeModal.getByRole('button', { name: '复制' }).first().click();
     await expect(page.getByText('已复制 Markdown 徽章代码')).toBeVisible();
-    await badgeModal.getByRole('button', { name: '关闭' }).click();
+    await badgeModal.getByRole('button', { name: '完成' }).click();
     await expect(badgeModal).not.toBeVisible();
 
     // 3. 安装该搜索引擎包

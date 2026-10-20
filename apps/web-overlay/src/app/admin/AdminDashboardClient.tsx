@@ -435,6 +435,13 @@ export function AdminDashboardClient() {
       description: '软删除站点归档、快速还原与终极物理擦除',
       badge: `${overview?.trashedSites ?? 0} 个可恢复`,
     },
+    {
+      title: '网址体检',
+      icon: Bug,
+      href: '/admin/plugin-health',
+      description: '巡检插件与站点 URL 健康度，识别停放、劫持与拒绝爬虫',
+      badge: '健康巡检',
+    },
   ]
 
   const telemetry = describeTelemetry(sseStatus, sseParseFailures)

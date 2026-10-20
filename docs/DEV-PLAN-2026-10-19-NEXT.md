@@ -173,6 +173,21 @@
 
 **验证**：干净 worktree（`a4391e7` + 本轮改动）vendor → tsc 0 → eslint 0 errors（504 warnings）→ build 通过（CSS 244640 字节）→ bundle 全绿 → web 71 文件 746 测试 → overlay check OK。Playwright 生产构建实拍 1440 / 1920 两档：`/hot` 1920 五列、1440 四列；tags 云、favorites 空态、videos 页头、site 详情与 tag 详情均正常。
 
+### P2 内容页补漏轮（2026-10-20，commit `01f7f2d`）
+
+扫描修复后对剩余常规页做视觉审计（Playwright 生产构建，1920 / 1440 / 390 三档），补 4 个页面：
+
+| 页面 | 本轮改动 |
+| :--- | :--- |
+| collections | `market-hero` + Layers 水印 + 双光斑；专题数 / 专题类型数 / 人工策划胶囊；骨架网格；两种空态 EmptyState；卡片补「查看专题」页脚 |
+| collections/[slug] | 展板 + Layers 水印；收录数 / 人工策划胶囊；骨架屏；不存在与无站点两种 EmptyState |
+| offline | 页头展板（WifiOff 图标 + CloudOff 水印 + 天空色光斑）；列表骨架；空态 EmptyState；记录卡改玻璃卡 + 悬浮 |
+| preferences | 展板 + Sparkles 水印 + 状态胶囊（读取中 / 暂无 / 降级 / 已生成）；加载骨架；空态复用 `PROFILE_EMPTY_MESSAGE`；区块两列卡片化（不触碰同伴 `UserLlmConfigCard`） |
+
+**数据诚实性**：`/api/collections` 列表不返回 `siteCount`，首版显示的「0 个站点」会误导；改为「有计数才显示站点数，否则显示『人工精选』」，hero 同步改为「人工策划 · 持续更新」。
+
+**验证**：verify worktree vendor → tsc 0 → eslint 0 errors（503 warnings）→ build 通过（CSS 244232 字节）→ bundle 全绿（最高路由 1185 KB / 预算 1241 KB）→ web 71 文件 746 测试 → overlay check OK。实拍 1920 / 1440 / 390 正常，空态、骨架与悬浮态均按预期渲染。
+
 ### P3｜工具链收尾（窗口期，3–5 天）
 
 - **TS 6 → 7（native）**：TS 7 用于 `tsc --noEmit` 门禁；`typescript@6` 留给 typescript-eslint（TS 7 暂无 compiler API）。先处理两个硬阻断：`moduleResolution: "node"` → `"bundler"`；`baseUrl` → 相对 `paths`。

@@ -70,7 +70,12 @@
 
 ### 身份签名（`NAVHUB_IDENTITY_SECRET`）的边界
 
-- **开启条件**：中枢与 Web 端配同名密钥；不配置时行为与历史版本完全一致（零回归）。
+- **开启条件**：中枢与 Web 端配同名密钥。生产环境（`NODE_ENV=production`）且
+  `NAVHUB_AUTH_REQUIRED=true` 时必须配置至少 32 个非空白字符，否则中枢在
+  `buildServer` 装配路由前拒绝启动；非生产或开放模式不强制，保持历史行为。
+- **生产强校验**：`apps/api/src/security-readiness.ts` 在 `buildServer` 入口检查
+  `authRequired + identitySecret`，防止「已开启鉴权但忘记配签名」导致任意持票人
+  冒充其他 `userId`。配置错误会在启动阶段暴露，而不是等运行期数据被越权读写。
 - **保护范围**：凡是中枢能解析出身份的请求（Header / Query / Body），都必须携带
   `x-navhub-identity-signature = HMAC-SHA256(secret, identity)`，由 Web 的 `/api/hub/*`
   代理自动附带；缺失或错误一律 401，且签名与身份强绑定（拿 A 的签名不能冒充 B）。

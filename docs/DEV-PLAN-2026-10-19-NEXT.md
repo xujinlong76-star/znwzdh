@@ -119,6 +119,18 @@ $env:NEXT_DIST_DIR=".next-budget"; node scripts/check-bundle-budget.mjs --json
 
 后续（同日 `472503a`）：同伴基于同一个实测值 1,021,526 B 把 `/admin/navigation` 预算从 1,270,784 B 棘轮到 1,073,152 B（+5% 余量），来源与本表一致，故不矛盾；其余路由仍按上表预算，等 WIP 收口后再统一评估。
 
+#### 插件可信度与安装体感验收（2026-10-20）
+
+| 能力 | 实现 | 实测证据 |
+| :--- | :--- | :--- |
+| 未安装包的 URL 体检 | `POST /api/plugins/:slug/audit` + 管理端 `/admin/plugin-health` | 全市场抽样平均可达率 92%；418/403/412 归「存活但拒绝爬虫」并计入可达 |
+| 详情页体检徽标 | `GET /api/plugins/:slug/url-health`（只读审计留痕）+ `PluginUrlAuditBadge` | Playwright 生产态：`/marketplace/auto-driving` 头部显示「33% 可达 · 22 分钟前」，tooltip 给出 3/198 抽样与不可达口径 |
+| 跨包重复预览 | `GET /api/plugins/:slug/overlap`（与安装侧同口径） | Playwright：安装弹窗显示「其中 200 个已在您的库中（跨包重复），将自动跳过；预计实际新增 0 个」 |
+| 预览不撒谎 | 不变式测试：预览 `fresh` ≡ 安装 `sitesAdded`，`existing` ≡ `sitesSkipped` | `plugin-overlap-api.test.ts` 7/7；安装后再预览 `fresh=0` |
+| 安装体感 | 弹窗显示实时耗时；成功 toast 汇报新增/跳过/新建分类与用时 | 这些数字此前只写审计日志，现在用户可见 |
+
+**口径说明**：详情页徽标读的是「最近一次体检」的历史快照，不在页面打开时探测（否则每次浏览都会打 30 条外部请求）；无记录时徽标不渲染，不拿 0 冒充全挂。
+
 ### P2｜产品增值（第 3–4 周，三选一）
 
 按「用户价值 / 与同伴冲突风险 / 工作量」排序：

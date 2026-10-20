@@ -19,11 +19,15 @@ import {
 } from "@/components/ui/card"
 import { ShieldCheck, KeyRound, ArrowLeft, AlertCircle, Sparkles, Lock, User } from 'lucide-react'
 import { NETWORK_FAILURE_STATUS, describeSignInFailure } from '@/lib/signin-failure'
+import { normalizeCallbackUrl } from '@/lib/safe-callback'
 
 function SignInContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const callbackUrl = searchParams?.get('callbackUrl') || '/admin'
+  const callbackUrl = normalizeCallbackUrl(
+    searchParams?.get('callbackUrl'),
+    typeof window === 'undefined' ? 'http://localhost' : window.location.origin,
+  )
   const urlError = searchParams?.get('error')
 
   const [username, setUsername] = useState('admin')

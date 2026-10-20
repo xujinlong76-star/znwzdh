@@ -27,7 +27,7 @@ run("node", ["scripts/check-syntax.mjs"]);
 run("node", ["scripts/check-web-overlay.mjs"]);
 run("node", ["scripts/sync-core-mirrors.mjs", "--check"]);
 run("node", ["scripts/check-extensions.mjs"]);
-run("pnpm", ["-r", "--filter", "@navhub/*", "exec", "tsc", "--noEmit"]);
+run("node", ["scripts/typecheck.mjs"]);
 
 // 首屏预算：只有存在构建产物时才检查。CI 的 test-web 在 build 后显式调用，
 // 本地 `pnpm verify` 若没 build 则明确提示而不是静默跳过。

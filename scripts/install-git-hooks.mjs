@@ -40,7 +40,7 @@ node scripts/check-upstream-ref.mjs || exit 1
 # 解析级快速门禁：只查 staged 的 TS/TSX，秒级；tsc 之前先把标点级错误挡住
 node scripts/check-syntax.mjs --staged || exit 1
 
-pnpm -r --filter "@navhub/*" exec tsc --noEmit || exit 1
+node scripts/typecheck.mjs || exit 1
 npx vitest run --changed --passWithNoTests || exit 1
 `
 

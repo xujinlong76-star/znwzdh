@@ -18,7 +18,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "typecheck": "pnpm -r --filter \"@navhub/*\" exec tsc --noEmit",
+    "typecheck": "node scripts/typecheck.mjs",
     "seed": "node apps/api/src/seed-main.ts",
     "mcp:stdio": "pnpm --filter @navhub/mcp start",
     "vendor:web": "node scripts/vendor-web.mjs",
@@ -37,6 +37,7 @@
     "@types/node": "22.18.13",
     "esbuild": ">=0.28.1",
     "typescript": "5.9.3",
+    "typescript7": "npm:typescript@7.0.2",
     "vitest": "5.0.5"
   }
 }

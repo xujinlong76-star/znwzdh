@@ -197,12 +197,12 @@
 
 ### P4｜运维与安全（有部署/预发环境再做）
 
-- **CSP**：先开 `NAVHUB_CSP_REPORT_ONLY=1` + `NAVHUB_CSP_REPORT_URI` 收集一周；把 `unsafe-inline`/`unsafe-eval` 依赖收敛到 nonce/hash 后，再 `NAVHUB_CSP=1`。当前 enforce 策略仍含 `unsafe-inline`，直接开收益有限。
+- **CSP（代码/文档就绪，`f51f8d8`）**：先开 `NAVHUB_CSP_REPORT_ONLY=1` + `NAVHUB_CSP_REPORT_URI` 收集一周；把 `unsafe-inline`/`unsafe-eval` 依赖收敛到 nonce/hash 后，再 `NAVHUB_CSP=1`。当前 enforce 策略仍含 `unsafe-inline`，直接开收益有限。本轮把指令收敛为单一事实源、双开关 enforce 优先、enforce 也支持 report-uri；**实测发现 Next 的 `headers()` 在 build 时写入 routes-manifest，运行时改 env 无效**，已改为构建期语义并给 `docker/Dockerfile.web` 增加 build-arg，步骤见 `docs/CSP-ROLLOUT.md`。实际 report-only 观察仍待预发环境。
 - **指标（已完成，`d07d7c3`）**：`/api/metrics` 已可 scrape；新增格式与基数守卫（`# HELP` / `# TYPE` 配对、counter/summary 约定、标签白名单、route 模板、转义、家庭快照），抓取配置与告警示例见 `docs/OBSERVABILITY.md`。顺手修正 `navhub_search_semantic_skipped_total` 的 gauge → counter。
-- **备份演练**：`scripts/backup.mjs` 做一次备份→恢复→校验，步骤写进 runbook。
+- **备份演练（本地完成，`f51f8d8`）**：新增 `scripts/backup-drill.test.ts`（WAL 未 checkpoint 热备 + 源库缺失退出码）；本地临时库写入 50 行后不关连接直接备份，恢复校验 50 行、`integrity_check=ok`、无 `-wal/-shm` 残留。步骤与待演练项见 `docs/BACKUP-RUNBOOK.md`；生产恢复演练仍待环境。
 - **auth 决策**：next-auth v5 beta 留/拆是产品决策，单独立项；不做默认动作。
 
-**指标守卫验证**：干净 worktree `pnpm typecheck` 0 → API 28 文件 369 测试全绿（含新增 10 条格式测试）；web 门禁不受影响。CSP report-only 与备份演练仍待部署/预发环境。
+**P4 验证**：web 749 测试（含新增 3 条 CSP）、API 369、`pnpm typecheck` 0、eslint 0 errors、bundle / overlay 全绿；生产构建实测 report-only 与 enforce（双开关时只下发 enforce，带 report-uri）两档响应头。P3 仍受同伴 WIP 阻塞。
 
 ---
 

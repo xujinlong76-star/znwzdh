@@ -60,6 +60,7 @@ import { auditRoutes } from "./routes/audit.ts";
 import { statsRoutes } from "./routes/stats.ts";
 import { submissionRoutes } from "./routes/submissions.ts";
 import { pluginRoutes } from "./routes/plugins.ts";
+import { pluginAuditRoutes } from "./routes/plugin-audit.ts";
 import { jobRoutes } from "./routes/jobs.ts";
 import { enrichRoutes } from "./routes/enrich.ts";
 import { aiConfigRoutes } from "./routes/ai-config.ts";
@@ -429,6 +430,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(statsRoutes, { ctx });
   await app.register(submissionRoutes, { ctx });
   await app.register(pluginRoutes, { ctx });
+  await app.register(pluginAuditRoutes, { ctx });
   await app.register(jobRoutes, { ctx });
   await app.register(enrichRoutes, { ctx });
   await app.register(aiConfigRoutes, { ctx });

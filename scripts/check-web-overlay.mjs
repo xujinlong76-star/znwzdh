@@ -1,9 +1,9 @@
 /**
- * 检查 apps/web 工作区与 apps/web-overlay 的一致性。
+ * 检查 apps/web 工作区与 apps/web-overlay 的一致性（可选 --fix 定点修复）。
  *
  * overlay 是部署源（vendor / Docker 用它），apps/web 里的同名文件是本地开发镜像。
- * 改了 apps/web 忘了同步回 overlay -> 重新 vendor 或构建镜像时改动丢失。
- * 本脚本把这种漂移变成显式失败（CI 可加）。
+ * 两侧内容分叉即「漂移」：重新 vendor / 构建镜像时，无论哪一侧的新改动都会被另一边覆盖丢失。
+ * 本脚本把这种漂移变成显式失败（CI 用）。
  *
  * 双向检查说明：
  *  - 正向（overlay -> web，严格，失败退出 1）：overlay 每个文件在 web 里必须
@@ -13,7 +13,20 @@
  *    不联网拿不到上游 tarball 就无法区分（见 sync-web-overlay.mjs 的 owned 判定），
  *    所以这里只列出候选告警，不判失败；要确诊请跑 `node scripts/sync-web-overlay.mjs`。
  *
- * 用法：node scripts/check-web-overlay.mjs
+ * 用法：
+ *   node scripts/check-web-overlay.mjs          # 只检查
+ *   node scripts/check-web-overlay.mjs --fix    # 检查 + 定点修复（overlay -> apps/web）+ 复查
+ *
+ * --fix 的方向提醒：它以 overlay 为事实源，**会用 overlay 版覆盖 apps/web 的差异文件**。
+ * 若这次的改动本来就在 apps/web 侧（还没回移植到 overlay），请先把改动合回
+ * apps/web-overlay/ 同路径，否则 --fix 会把它盖掉。git 跟踪的自研文件缺失仍需人工处理
+ * （那属于「overlay 少文件」，方向相反，--fix 不代劳）。
+ *
+ * 四个工具的分工（避免重复造轮子）：
+ *   - 本脚本（+ --fix）              检查 / 检查+定点修复，单一入口
+ *   - scripts/sync-overlay-drift.mjs 定点同步：只写有差异/缺失的文件，秒级、无需联网、不动 dev 服务
+ *   - scripts/apply-web-overlay.mjs  无差别覆盖全部 overlay 文件（判定本身存疑时的兜底）
+ *   - scripts/sync-web-overlay.mjs   完整 vendor：联网拉上游 tarball 重建 apps/web（刷新上游底座）
  *
  * 比对逻辑住在 scripts/lib/overlay-drift.mjs（纯函数、有单测）。
  */
@@ -24,11 +37,14 @@ import { diffOverlay, findOwnedOrphans, isExcluded } from "./lib/overlay-drift.m
 const ROOT = resolve(".");
 const OVERLAY = join(ROOT, "apps", "web-overlay");
 const TARGET = join(ROOT, "apps", "web");
+const FIX = process.argv.includes("--fix");
 
 function diffHint(rel) {
   return (
     `  diff 定位：diff "apps/web-overlay/${rel}" "apps/web/${rel}"\n` +
-    `  修复：把 apps/web 的改动合回 overlay（或跑 node scripts/sync-web-overlay.mjs 重算）`
+    `  修复（方向二选一，先判断这次改动在哪一侧）：\n` +
+    `    · 改动在 overlay 侧：node scripts/check-web-overlay.mjs --fix（overlay -> apps/web 定点同步）\n` +
+    `    · 改动在 apps/web 侧：把该文件的内容合回 apps/web-overlay/${rel} 同路径`
   );
 }
 
@@ -88,7 +104,25 @@ if (reverseCandidates.length > 0) {
 }
 
 if (drifted.length > 0 || missing.length > 0) {
-  console.error(`[check] 失败：${drifted.length} 个漂移，${missing.length} 个缺失。请把 apps/web 的改动同步回 apps/web-overlay。`);
-  process.exit(1);
+  console.error(`[check] 失败：${drifted.length} 个漂移，${missing.length} 个缺失。`);
+  console.error("[check] 修复：node scripts/check-web-overlay.mjs --fix（overlay -> apps/web 定点同步）；若改动本在 apps/web 侧，请先合回 overlay");
+  if (!FIX) process.exit(1);
+
+  // --fix：交给定点同步脚本执行写盘（单一实现，避免两处维护同一套覆盖逻辑）
+  console.error("[check] --fix：调用 scripts/sync-overlay-drift.mjs（只写差异/缺失文件，方向 overlay -> apps/web）");
+  const { spawnSync } = await import("node:child_process");
+  const res = spawnSync(process.execPath, ["scripts/sync-overlay-drift.mjs"], { cwd: ROOT, stdio: "inherit" });
+  if (res.status !== 0) {
+    console.error(`[check] --fix 失败：同步脚本退出码 ${res.status ?? "null"}`);
+    process.exit(res.status ?? 1);
+  }
+
+  const after = diffOverlay({ overlayDir: OVERLAY, targetDir: TARGET });
+  if (after.drifted.length > 0 || after.missing.length > 0) {
+    console.error(`[check] --fix 后仍有 ${after.drifted.length} 个漂移、${after.missing.length} 个缺失（方向可能反了，请人工确认）`);
+    process.exit(1);
+  }
+  console.log(`[check] OK（--fix 已修复）：${after.overlayFiles.length} 个覆盖层文件与 apps/web 一致`);
+  process.exit(0);
 }
 console.log(`[check] OK：${overlayFiles.length} 个覆盖层文件与 apps/web 一致（反向候选 ${reverseCandidates.length} 个，仅告警）`);

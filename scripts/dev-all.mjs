@@ -19,8 +19,10 @@ const apiProc = spawn(
     stdio: "inherit",
     env: {
       ...process.env,
-      NAVHUB_SQLITE_PATH: resolve(rootDir, "data/navhub.db"),
-      NAVHUB_EMBEDDING_CACHE: resolve(rootDir, "data/models"),
+      // 允许调用方覆盖数据库路径：Playwright E2E 用独立库（data/e2e/navhub-e2e.db），
+      // 避免测试插件写进开发库（历史上开发库被 48 条 e2e-* 残留污染过）。
+      NAVHUB_SQLITE_PATH: process.env.NAVHUB_SQLITE_PATH ?? resolve(rootDir, "data/navhub.db"),
+      NAVHUB_EMBEDDING_CACHE: process.env.NAVHUB_EMBEDDING_CACHE ?? resolve(rootDir, "data/models"),
     },
   }
 );

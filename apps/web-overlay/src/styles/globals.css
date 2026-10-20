@@ -9,28 +9,36 @@
    加之后两者都出现。 */
 @plugin "tailwindcss-animate";
 
-/* 显式声明扫描源（修复：v4 自动源检测在这个仓库里漏扫大部分 src 文件，
-   导致 flex-wrap / space-y-* / rounded-2xl 等工具类未生成，
-   /tags 在移动端横向溢出 4369px、页脚文字竖排等渲染破坏）。
-   globals.css 位于 src/styles，../ 即覆盖整个 src 树。 */
+/* 内容扫描的两个硬约束（2026-10-20 引擎级实测，oxide 4.3.3）：
+   1) 自动检测与 @source 通配在遍历时都会剪掉被 .gitignore 忽略的「目录」，
+      且剪枝按目录发生 —— 被忽略目录只要位于 glob 的**字面前缀**之后，
+      整棵子树都不会被扫描；
+   2) @source 的字面前缀一旦落在被忽略目录内部，该条目就能绕开剪枝、正常扫描。
+   因此采用「宽泛行（覆盖未被忽略的文件）+ 每个被忽略子树一条字面 glob」的组合。
+   特别注意：不要再写 `../app/**`、`../components/**` 这类父级通配 —— 前缀在被忽略
+   目录之上会被整棵剪掉，既不报错也扫不到任何子树（曾导致 lg:flex-row / bg-card/40
+   等类长期缺席）。新增路由/组件目录后若漏加，app/test/tw-source-coverage.test.ts
+   会失败并提示要补的行。 */
 @source '../**/*.{js,ts,jsx,tsx,mdx}';
 
-/* registry = 上游 shadcn 组件副本（dialog / dropdown-menu / sheet …），
-   被根 .gitignore 的 apps/web/src 通配忽略掉；而 v4 的 @source 通配
-   **同样不会**去碰被忽略的路径，于是这些组件独占的工具类不生成。
-   实测（next build 后的 CSS）：少了这条声明时 ring-offset-background、
-   sm:rounded-lg 都没有产物 —— 焦点环外圈没有底色、小屏圆角丢失。
-   单独再声明一条，把 registry 子树纳入扫描。 */
+/* 历史守卫要求的独立声明（registry / marketplace / plugins 三块各留一条；
+   与下面的花括号条目等价，保留是为了让既有断言继续可读）。 */
 @source '../registry/**/*.{js,ts,jsx,tsx,mdx}';
-
-/* app/marketplace 与 components/plugins 同理：被根 .gitignore 的
-   `apps/web/src/app/*`、`apps/web/src/components/*` 通配忽略，@source 通配扫不到，
-   于是这些子树「独占」的工具类不生成（实测 2xl:grid-cols-4 一直没有产物，
-   lg:flex-row / bg-card/40 / sm:block / text-border/70 同样缺失）。
-   后果：排版类在生产 CSS 里缺席，页面看起来像没改过。
-   单独声明这两条子树，把插件市场的排版类纳入扫描。 */
 @source '../app/marketplace/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../components/plugins/**/*.{js,ts,jsx,tsx,mdx}';
+
+/* app 路由树：一级目录（被 .gitignore 的 apps/web/src/app/* 忽略）+ 二级特殊子树。 */
+@source '../app/{actions,admin,algorithms,auth,collections,components,custom,favorites,fonts,graph,hot,import,offline,preferences,s,site,styles,submit,tags,types}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../app/api/{admin,auth,extension,favicon,favicon-im,health,hub,navigation,resource,site,site-config,submissions,videos,website-metadata}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../app/videos/player/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../app/admin/data/**/*.{js,ts,jsx,tsx,mdx}';
+
+/* components 子树（被 apps/web/src/components/* 忽略）。 */
+@source '../components/{admin,ai,crdt,graph,modular,p2p,reader,search,theme,tools,ui,workspace}/**/*.{js,ts,jsx,tsx,mdx}';
+
+/* 其余源码目录（registry 为上游 shadcn 副本；lib/modular 是 lib 下被单独忽略的子目录）。 */
+@source '../{config,hooks,navsphere,services,styles,types,utils}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../lib/modular/**/*.{js,ts,jsx,tsx,mdx}';
 
 @custom-variant dark (&:is(.dark *));
 

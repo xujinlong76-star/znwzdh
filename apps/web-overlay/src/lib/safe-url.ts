@@ -30,7 +30,10 @@ export function safeHref(value?: string | null, fallback = '#'): string {
   if (!value) return fallback
   const v = value.trim()
   if (!v) return fallback
-  // 站内路径 / 锚点 / 协议相对路径
+  // 站内路径 / 锚点 / 相对路径。
+  // 明确拒绝协议相对路径（//evil.com）与反斜杠变体（/\evil.com）：
+  // 浏览器会把它们解析成站外地址，不能当“站内路径”放行。
+  if (v.startsWith('//') || v.startsWith('/\\')) return fallback
   if (v.startsWith('/') || v.startsWith('#') || v.startsWith('./') || v.startsWith('../')) {
     return v
   }

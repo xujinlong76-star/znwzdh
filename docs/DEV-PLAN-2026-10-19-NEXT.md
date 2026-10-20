@@ -191,7 +191,7 @@
 ### P3｜工具链收尾（窗口期，3–5 天）
 
 - **ESLint 10（已完成，`34156a0`）**：`eslint@10.13.0`。`eslint-config-next@16.4` 的 peer 为 `>=9`，现有 `typescript-eslint@8.71.2` 已支持 ESLint 10。实测先撞上自身安全 override：`brace-expansion@>=2: 2.1.4` 会把 minimatch@10 需要的 v5 压回旧 API，ESLint 启动即崩；已拆成 `>=2 <5: 2.1.4` 与 `>=5: 5.0.12`。结果 0 errors / 503 warnings，web 749 测试、构建、bundle、overlay 全绿。
-- **TS 7（预处理完成，升级待窗口）**：两个硬阻断已清——`baseUrl` 移除（`e93db80`）、显式 `types: ["node"]`（`81a2fab`）。隔离 worktree 实测 `typescript@7.0.2`：全量 `pnpm typecheck`、根测试 1850、web 749、构建均通过。仍有两个提交阻塞：① `apps/api` 与 `packages/*` 各自 pin `typescript: 5.9.3`，其中 `packages/ai`/`packages/store` 是同伴 WIP，不能改清单；② `typescript-eslint@8.71.2` 的 TS peer 是 `>=4.8.4 <6.1.0`，且 TS 6 无正式版，lint 必须继续用 5.9。等同伴落地 + typescript-eslint 支持 TS 7 后，按「根/API/packages 升 7、web 留 5.9 供 lint」执行。
+- **TS 7（预处理完成，升级待窗口）**：两个硬阻断已清——`baseUrl` 移除（`e93db80`）、显式 `types: ["node"]`（`81a2fab`）。隔离 worktree 实测 `typescript@7.0.2`：全量 `pnpm typecheck`、根测试 1850、web 749、构建均通过。Dependabot PR #89（TS 7.0.2）也验证了 web `tsc` 可通过；其 ESLint 与 check-syntax 失败，其中 check-syntax 已改用 esbuild（`fcfcbe2`，不依赖 compiler API）。仍有两个提交阻塞：① `apps/api` 与 `packages/*` 各自 pin `typescript: 5.9.3`，其中 `packages/ai`/`packages/store` 是同伴 WIP，不能改清单；② `typescript-eslint@8.71.2` 的 TS peer 是 `>=4.8.4 <6.1.0`，且 TS 6 无正式版，lint 必须继续用 5.9。等同伴落地 + typescript-eslint 支持 TS 7 后，按「根/API/packages 升 7、web 留 5.9 供 lint」执行。
 - **前置条件**：同伴 archive/graph 落地后再动 `apps/api` 与 `packages/*` 的 TS 版本；ESLint 10 已完成。
 - **验收**：typecheck 耗时对比待真正升级时记录；ESLint 10 已保持 typecheck / lint / build / web 测试全绿。
 

@@ -1,15 +1,25 @@
 'use client'
 
 import { useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { SWRConfig } from 'swr'
 import { DensityProvider } from '@/components/density-provider'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { Toaster as SonnerToaster } from 'sonner'
 import { initThemeRuntime } from '@/lib/plugins/theme-runtime'
-import { ThemeTryoutRibbon } from '@/components/plugins/theme-tryout-ribbon'
 import { GlobalAiGateway } from '@/components/ai/global-ai-gateway'
 import { GlobalSpotlightGateway } from '@/components/search/global-spotlight-gateway'
 import { FluidGlassCanvas } from '@/components/theme/fluid-glass-canvas'
+
+// sonner 与主题试用条都不是首屏必需：把它们的 JS 从根布局公共 chunk 移到
+// 水合后的独立 chunk。主题试用本身只在用户主动试用时才有内容。
+const SonnerToaster = dynamic(
+  () => import('sonner').then((mod) => mod.Toaster),
+  { ssr: false },
+)
+const ThemeTryoutRibbon = dynamic(
+  () => import('@/components/plugins/theme-tryout-ribbon').then((mod) => mod.ThemeTryoutRibbon),
+  { ssr: false },
+)
 
 export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {

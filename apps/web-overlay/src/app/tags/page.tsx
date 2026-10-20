@@ -12,9 +12,11 @@ import { fetchTags, type HubTag } from '@/lib/navhub-api'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { Footer } from '@/components/footer'
-import { Tags, ArrowLeft, Search, Hash } from 'lucide-react'
+import { Tags, ArrowLeft, Search, Hash, Flame } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Button } from '@/components/ui/button'
 
 export default function TagsPage() {
   const [tags, setTags] = useState<HubTag[]>([])
@@ -48,12 +50,24 @@ export default function TagsPage() {
     return tags.filter((t) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q))
   }, [tags, searchQuery])
 
+  const tagStats = useMemo(() => {
+    const coveredSites = tags.reduce((sum, t) => sum + (Number.isFinite(t.count) ? t.count : 0), 0)
+    const heavyTags = tags.filter((t) => t.count >= 10).length
+    return { coveredSites, heavyTags }
+  }, [tags])
+
   return (
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
-        {/* 沉浸式 Hero 展板 */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-8 shadow-xs">
-          <div className="absolute -right-12 -top-12 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+        {/* 沉浸式 Hero 展板（对齐插件市场轮的展板语言：market-hero + 光斑 + 水印图标） */}
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs">
+          <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl" />
+          <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl" />
+          <Tags
+            aria-hidden
+            strokeWidth={1}
+            className="pointer-events-none absolute right-5 bottom-5 hidden sm:block w-16 h-16 text-border/70"
+          />
 
           <div className="relative z-10 space-y-3">
             <div className="flex items-center gap-2">
@@ -96,21 +110,72 @@ export default function TagsPage() {
                 />
               </div>
             </div>
+
+            <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-indigo-500/25 bg-indigo-500/5 text-xs text-indigo-600 dark:text-indigo-400">
+                <Tags className="w-3 h-3" />
+                共 {tags.length} 个标签
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary/25 bg-primary/5 text-xs text-primary">
+                <Flame className="w-3 h-3" />
+                热门（≥10）{tagStats.heavyTags} 个
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
+                <Hash className="w-3 h-3 text-border" />
+                覆盖 {tagStats.coveredSites} 次站点归类
+              </span>
+            </div>
           </div>
         </div>
 
         {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
 
         {loading ? (
-          <div className="text-muted-foreground text-sm py-16 text-center">正在加载全景技术标签…</div>
+          <div
+            aria-busy="true"
+            aria-live="polite"
+            aria-label="正在加载标签云"
+            className="rounded-2xl border border-border/60 bg-card/50 p-5 sm:p-7 backdrop-blur-xs shadow-2xs"
+          >
+            <span className="sr-only">正在加载全景技术标签…</span>
+            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
+              {Array.from({ length: 24 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-8 rounded-xl bg-muted/70 animate-pulse"
+                  style={{ width: `${[72, 96, 64, 120, 84, 108, 76, 132][i % 8]}px` }}
+                />
+              ))}
+            </div>
+          </div>
         ) : tags.length === 0 ? (
-          <div className="text-muted-foreground text-sm py-12 text-center border border-dashed rounded-xl bg-muted/10">
-            {notice ? '本次未能取回标签数据' : '暂无标签数据'}
-          </div>
+          <EmptyState
+            icon={Tags}
+            iconTone="warning"
+            title={notice ? '本次未能取回标签数据' : '暂无标签数据'}
+            description={
+              notice
+                ? '中枢暂时不可用，标签统计没有取回来；这不代表站点没有标签。'
+                : '收录站点补齐标签后，这里会出现可按热度浏览的标签云。'
+            }
+            action={
+              <Button asChild size="sm" variant="outline" className="text-xs">
+                <Link href="/">去主页浏览站点</Link>
+              </Button>
+            }
+          />
         ) : filteredTags.length === 0 ? (
-          <div className="text-muted-foreground text-sm py-12 text-center border border-dashed rounded-xl bg-muted/10">
-            暂未找到与 “{searchQuery}” 匹配的技术标签
-          </div>
+          <EmptyState
+            icon={Search}
+            iconTone="muted"
+            title={`暂未找到与 “${searchQuery}” 匹配的技术标签`}
+            description={<>标签并没有丢：共有 {tags.length} 个标签，只是当前关键词没匹配到。</>}
+            action={
+              <Button size="sm" variant="outline" className="text-xs" onClick={() => setSearchQuery('')}>
+                清除搜索
+              </Button>
+            }
+          />
         ) : (
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 p-5 sm:p-7 rounded-2xl border border-border/60 bg-card/60 backdrop-blur-xs shadow-2xs">
             {filteredTags.map((t) => {

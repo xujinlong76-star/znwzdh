@@ -94,6 +94,24 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
         setSearchQuery(query)
     }
 
+    /** 视频页概览计数：与侧边栏同一份数据，禁用项不计 */
+    const videoStats = useMemo(() => {
+        let categories = 0
+        let subCategories = 0
+        let videos = 0
+        navigationData.navigationItems.forEach((category) => {
+            if (category.enabled === false) return
+            categories += 1
+            videos += (category.items || []).filter((item) => item.enabled !== false).length
+            ;(category.subCategories || []).forEach((sub) => {
+                if (sub.enabled === false) return
+                subCategories += 1
+                videos += (sub.items || []).filter((item) => item.enabled !== false).length
+            })
+        })
+        return { categories, subCategories, videos }
+    }, [navigationData])
+
     return (
         <div className="flex flex-col md:flex-row min-h-screen">
             <div className="hidden md:block">
@@ -186,6 +204,45 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
 
                 <div className="px-3 sm:px-6 py-4 sm:py-6">
                     <div className="space-y-6">
+                        {/* 页头展板（对齐市场轮展板语言） */}
+                        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-5 sm:p-6">
+                            <div aria-hidden className="pointer-events-none absolute -right-12 -top-16 w-56 h-56 bg-violet-500/10 rounded-full blur-3xl" />
+                            <div aria-hidden className="pointer-events-none absolute -left-16 bottom-0 w-40 h-40 bg-sky-400/10 rounded-full blur-3xl" />
+                            <MonitorPlay
+                                aria-hidden
+                                strokeWidth={1}
+                                className="pointer-events-none absolute right-5 top-5 hidden sm:block w-14 h-14 text-border/70"
+                            />
+                            <div className="relative z-10 space-y-3">
+                                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground px-2.5 py-1 rounded-md bg-background/60 border border-border/60">
+                                    <MonitorPlay className="w-3.5 h-3.5" />
+                                    视频中心
+                                </span>
+                                <div>
+                                    <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight flex items-center gap-2.5">
+                                        <div className="p-2 rounded-xl bg-violet-500/10 text-violet-500 border border-violet-500/20 shadow-xs">
+                                            <MonitorPlay className="w-5 h-5" />
+                                        </div>
+                                        <span>按分类浏览视频与教程</span>
+                                    </h1>
+                                    <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed max-w-2xl">
+                                        收录开发者常用的视频频道与教程源，按技术分类归档；支持播放器模式与实时搜索。
+                                    </p>
+                                </div>
+                                <div className="mt-4 pt-3.5 border-t border-border/50 flex flex-wrap items-center gap-2">
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-violet-500/25 bg-violet-500/5 text-xs text-violet-600 dark:text-violet-400">
+                                        {videoStats.categories} 个分类
+                                    </span>
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
+                                        {videoStats.subCategories} 个子分类
+                                    </span>
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
+                                        {videoStats.videos} 个视频源
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
                         {navigationData.navigationItems.map((category) => (
                             <section key={category.id} id={category.id} className="scroll-m-16">
                                 <div className="space-y-4">

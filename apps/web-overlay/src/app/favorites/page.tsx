@@ -226,8 +226,14 @@ export default function FavoritesPage() {
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
         {/* 沉浸式 Hero 展板 */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-8 shadow-xs">
-          <div className="absolute -right-12 -top-12 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs">
+          <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl" />
+          <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl" />
+          <Shield
+            aria-hidden
+            strokeWidth={1}
+            className="pointer-events-none absolute right-5 top-5 hidden sm:block w-16 h-16 text-border/70"
+          />
 
           <div className="relative z-10 space-y-4">
             <div className="flex items-center gap-2">
@@ -315,6 +321,21 @@ export default function FavoritesPage() {
                   导入 JSON
                 </Button>
               </div>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 text-xs text-emerald-600 dark:text-emerald-400">
+                <Shield className="w-3 h-3" />
+                本地收藏 {favorites.ready ? favorites.items.length : '—'} 条
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
+                <KeyRound className="w-3 h-3 text-border" />
+                AES-256-GCM 认证加密
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
+                <EyeOff className="w-3 h-3 text-border" />
+                零知识：密码不上云
+              </span>
             </div>
           </div>
         </div>
@@ -609,7 +630,30 @@ export default function FavoritesPage() {
         )}
 
         {!favorites.ready ? (
-          <div className="text-muted-foreground text-sm py-12 text-center">加载中…</div>
+          <div aria-busy="true" aria-live="polite" aria-label="正在读取本地收藏" className="space-y-4">
+            <span className="sr-only">加载中…</span>
+            <div className="h-9 w-full max-w-md rounded-xl bg-muted/60 animate-pulse" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 sm:gap-4">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="rounded-xl border border-border/70 bg-card/50 p-4 space-y-3 animate-pulse"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-muted shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3.5 w-2/3 rounded bg-muted" />
+                      <div className="h-3 w-full rounded bg-muted" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="h-5 w-16 rounded-full bg-muted" />
+                    <div className="h-5 w-12 rounded-full bg-muted" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : favorites.items.length === 0 ? (
           <EmptyState
             icon={Shield}

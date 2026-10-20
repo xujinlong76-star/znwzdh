@@ -29,7 +29,7 @@
 
 /* app 路由树：一级目录（被 .gitignore 的 apps/web/src/app/* 忽略）+ 二级特殊子树。 */
 @source '../app/{actions,admin,algorithms,auth,collections,components,custom,favorites,fonts,graph,hot,import,offline,preferences,s,site,styles,submit,tags,types}/**/*.{js,ts,jsx,tsx,mdx}';
-@source '../app/api/{admin,auth,extension,favicon,favicon-im,health,hub,navigation,resource,site,site-config,submissions,videos,website-metadata}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../app/api/{admin,auth,csp-report,extension,favicon,favicon-im,health,hub,navigation,resource,site,site-config,submissions,videos,website-metadata}/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../app/videos/player/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../app/admin/data/**/*.{js,ts,jsx,tsx,mdx}';
 
@@ -39,13 +39,16 @@
 /* 其余源码目录（registry 为上游 shadcn 副本；lib/modular 是 lib 下被单独忽略的子目录）。 */
 @source '../{config,hooks,navsphere,services,styles,types,utils}/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../lib/modular/**/*.{js,ts,jsx,tsx,mdx}';
+/* lib 下其余被 .gitignore 忽略的子树：seo（SEO 规则与阈值）、server（服务端桥接）。
+   父级通配会被剪枝，必须逐个指到被忽略目录内部。 */
+@source '../lib/{seo,server}/**/*.{js,ts,jsx,tsx,mdx}';
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --color-ring: hsl(var(--ring));
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
@@ -156,6 +159,20 @@
 
 /* 确保 cursor 样式正常工作 */
 @layer utilities {
+  /* 全平台视口安全区工具类 (Safe Area Inset Utilities) */
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top, 0px), 0px);
+  }
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 0px);
+  }
+  .pl-safe {
+    padding-left: max(env(safe-area-inset-left, 0px), 0px);
+  }
+  .pr-safe {
+    padding-right: max(env(safe-area-inset-right, 0px), 0px);
+  }
+
   .cursor-pointer {
     cursor: pointer;
   }
@@ -338,6 +355,9 @@
 
   html {
     @apply scroll-smooth;
+    -webkit-tap-highlight-color: transparent;
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
@@ -345,6 +365,14 @@
     /* font-feature-settings: "rlig" 1, "calt" 1; */
     font-synthesis-weight: none;
     text-rendering: optimizeLegibility;
+  }
+
+  /* 跨平台 Retina / HiDPI 高分屏字体平滑 */
+  @media screen and (-webkit-min-device-pixel-ratio: 2), screen and (min-resolution: 2dppx) {
+    body {
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
   }
 
   button {
@@ -415,14 +443,23 @@
     transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
-  .nav-card-glow:hover {
-    border-color: hsl(var(--primary) / 0.32);
-    box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 6px 12px -4px rgba(0, 0, 0, 0.02);
+  @media (hover: hover) and (pointer: fine) {
+    .nav-card-glow:hover {
+      border-color: hsl(var(--primary) / 0.32);
+      box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 6px 12px -4px rgba(0, 0, 0, 0.02);
+    }
+    .dark .nav-card-glow:hover {
+      border-color: hsl(var(--primary) / 0.35);
+      box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.45), 0 0 18px 2px rgba(59, 130, 246, 0.07);
+    }
   }
-
-  .dark .nav-card-glow:hover {
-    border-color: hsl(var(--primary) / 0.35);
-    box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.45), 0 0 18px 2px rgba(59, 130, 246, 0.07);
+  /* 移动端/触摸屏触控反馈：避免粘连 hover，使用瞬时弹性微动 */
+  @media (hover: none) or (pointer: coarse) {
+    .nav-card-glow:active {
+      transform: scale(0.985);
+      border-color: hsl(var(--primary) / 0.4);
+      transition-duration: 80ms;
+    }
   }
 
   .subtle-mesh, .canvas-bg-mesh {
@@ -520,5 +557,30 @@
   .dark .market-hero {
     background-image: radial-gradient(at 88% 0%, hsl(var(--primary) / 0.16) 0px, transparent 55%), radial-gradient(at 12% 100%, hsl(199 95% 55% / 0.10) 0px, transparent 50%), radial-gradient(hsl(var(--border) / 0.26) 1px, transparent 1px);
     background-size: 100% 100%, 100% 100%, 26px 26px;
+  }
+}
+
+/* 跨浏览器打印与 PDF 导出优化 (Print & PDF Export Styles) */
+@media print {
+  header,
+  nav,
+  aside,
+  button,
+  .sticky,
+  .fixed,
+  [role="dialog"],
+  [data-focus-ring] {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .nav-card-glow {
+    box-shadow: none !important;
+    border: 1px solid #e4e4e7 !important;
+    break-inside: avoid;
   }
 }

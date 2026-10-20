@@ -135,7 +135,9 @@ export async function readCappedBody(
     total += value.byteLength
     if (total > maxBytes) {
       tooLarge = true
-      await reader.cancel().catch(() => undefined)
+      await reader.cancel().catch(() => {
+        // 取消失败不影响结论：正文已超限，直接按 413 处理
+      })
       break
     }
     chunks.push(value)

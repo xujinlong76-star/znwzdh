@@ -52,7 +52,7 @@ const AUDIT_USER_AGENT =
  */
 const REACHABILITY_CAVEAT =
   "可达性为「从本机网络测得」的即时快照：超时与抓取失败可能是地域/网络限制或目标站风控，不等于死链，需人工复核；" +
-  "401/403/405/412/429 属于「存活但拒绝爬虫」（站点本身可用），已计入可达率。"
+  "401/403/405/412/418/429 属于「存活但拒绝爬虫」（站点本身可用），已计入可达率。"
 
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : fallback

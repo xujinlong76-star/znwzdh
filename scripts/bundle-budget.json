@@ -1,8 +1,9 @@
 {
   "_comment": "首屏 JS 预算（未压缩字节）。2026-10-19 口径修正：旧 637/685 KB 来自 webpack app-build-manifest 口径，未完整计入 layout/providers 共享 chunk；Next 16 Turbopack 的 rootMainFiles + page_client-reference-manifest 口径与 HTML <script> 实测一致（57e0c3c 实测 /hot 脚本共 1047 KB）。基线取 CI 绿灯 57e0c3c：/ = 1174 KB，最高 /admin/navigation = 1231 KB；本文件按各路由基线 +5% 设棘轮阈值，禁止为过门禁无依据上调。P1 目标：先把 / 降到 ≤1.05 MB，再逐步下调本文件。2026-10-19 P1-3 棘轮：Spotlight/AI 抽屉改为首次呼出加载后，/ = 1152 KB、最高 /admin/navigation = 1182 KB，本文件按 +5% 下调到 / 1210 KB、default 1241 KB；2026-10-20 workbench-bridge 去 registry 后 / = 1073 KB（≤1.05 MB），按 +5% 将 / 棘轮下调至 1126 KB；同日 sonner/主题试用条改为动态加载后 / = 1062 KB（1,087,396 B），再按 +5% 下调至 1115 KB，其余路由不变。",
+  "_ratchet": "2026-10-20: /admin/navigation 实测 1,021,526 B；按 +5% 将预算从 1,270,784 B 下调到 1,073,152 B，防止表单懒加载收益回退。",
   "default": 1270784,
   "routes": {
-    "/admin/navigation": 1270784,
+    "/admin/navigation": 1073152,
     "/admin/navigation/[id]/categories/[categoryId]/items": 1255424,
     "/admin/navigation/[id]/items": 1254400,
     "/admin/navigation/[id]/categories": 1250304,

@@ -125,6 +125,9 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       actor: req.auth.actor,
       actorKind: req.auth.kind,
       action: "audit.plugin_url_audit",
+      // target 必填：详情页徽标要按 slug 取「最近一次体检」，只靠 diff 里的 slug
+      // 就得全表扫 JSON；写进 target 后是一次点查。
+      target: slug,
       diff: {
         slug,
         declared: urls.length,
@@ -153,4 +156,62 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       params: { sample, timeoutMs, maxRedirects: PLUGIN_AUDIT_DEFAULTS.maxRedirects },
     }
   })
+
+  /**
+   * 读取某个插件**最近一次 URL 体检**结果（详情页徽标用）。
+   *
+   * 路径为什么是 `/url-health` 而不是 `/audit`：`GET /api/plugins/:slug/audit`
+   * 已被市场侧的「AI 安全扫描评估」占用（作者认证/协议检查，与本路由是两件事）。
+   * Fastify 不允许同方法同路径重复注册，且两者语义不同，故这里显式带 url-。
+   *
+   * 刻意不复用 POST：POST 会真的去探测 30 条外部 URL，耗时数秒且对目标站有压力；
+   * 详情页每被打开一次就跑一遍既慢又失礼。这里只读审计留痕里的历史结果，
+   * 没有记录时如实返回 checked=false（徽标不显示），绝不拿 0 冒充「全挂」。
+   *
+   * 公开只读：徽标就在公开详情页上，数据本身也只是一份聚合比例。
+   */
+  app.get(
+    "/api/plugins/:slug/url-health",
+    { config: { scope: "public", rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const slug = decodeURIComponent((req.params as { slug: string }).slug)
+      const plugin = await ctx.repo.getPluginBySlug(slug)
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
+
+      const rows = await ctx.repo.raw(
+        "SELECT created_at, diff FROM audit_logs WHERE action = ? AND target = ? ORDER BY id DESC LIMIT 1",
+        ["audit.plugin_url_audit", slug],
+      )
+      const row = rows[0]
+      if (!row) return { ok: true, slug, checked: false }
+
+      // diff 是历史 JSON，可能被人工改坏或来自旧版本格式：解析失败按「无记录」处理，
+      // 不让一条脏审计把详情页整页打挂。
+      let diff: Record<string, unknown> | null = null
+      try {
+        const parsed = typeof row.diff === "string" ? JSON.parse(row.diff) : row.diff
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          diff = parsed as Record<string, unknown>
+        }
+      } catch {
+        diff = null
+      }
+      if (!diff) return { ok: true, slug, checked: false }
+
+      const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null)
+      return {
+        ok: true,
+        slug,
+        checked: true,
+        auditedAt: Number(row.created_at ?? 0),
+        declared: num(diff.declared),
+        sampled: num(diff.sampled),
+        okCount: num(diff.ok),
+        blockedCount: num(diff.blocked),
+        brokenCount: num(diff.broken),
+        reachability: num(diff.reachability),
+        caveat: REACHABILITY_CAVEAT,
+      }
+    },
+  )
 }

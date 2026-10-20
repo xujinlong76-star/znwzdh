@@ -33,6 +33,7 @@ import {
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { KIND_ICONS, KIND_TONES } from '@/lib/plugins/kind-meta'
 import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
+import { PluginUrlAuditBadge } from '@/components/plugins/plugin-url-audit-badge'
 import { PluginReportModal } from '@/components/plugins/plugin-report-modal'
 import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
 import { PluginSimilar } from '@/components/plugins/plugin-similar'
@@ -466,6 +467,10 @@ export default function PluginDetailPage({
                 <span className="text-xs font-mono text-muted-foreground px-2 py-0.5 rounded-md bg-muted/50 border border-border/30">
                   v{plugin.version}
                 </span>
+                {/* 只有网址/组合包有 URL 可体检；无历史记录时组件自己返回 null */}
+                {(plugin.kind === 'site-pack' || plugin.kind === 'bundle') && (
+                  <PluginUrlAuditBadge slug={plugin.slug} />
+                )}
                 {plugin.license && (
                   <span className="text-xs text-muted-foreground font-mono">
                     协议: {plugin.license}

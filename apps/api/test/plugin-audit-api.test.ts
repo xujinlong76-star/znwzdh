@@ -133,3 +133,39 @@ describe("POST /api/plugins/:slug/audit", () => {
     expect(body.sampled).toBe(30);
   })
 })
+
+describe("GET /api/plugins/:slug/url-health（详情页徽标的数据源）", () => {
+  it("没有体检记录时如实返回 checked=false，而不是拿 0 冒充全挂", async () => {
+    await seedPack("health-none-pack", "未体检包", ["https://127.0.0.1/h1"]);
+    const res = await app.inject({ method: "GET", url: "/api/plugins/health-none-pack/url-health" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().checked).toBe(false);
+  })
+
+  it("体检后能读到最近一次的聚合结果，且与 POST 口径一致", async () => {
+    await seedPack("health-done-pack", "已体检包", ["https://127.0.0.1/p1", "https://127.0.0.1/p2"]);
+    const posted = await app.inject({
+      method: "POST",
+      url: "/api/plugins/health-done-pack/audit",
+      payload: { timeoutMs: 500 },
+    });
+    const postedBody = posted.json();
+
+    const res = await app.inject({ method: "GET", url: "/api/plugins/health-done-pack/url-health" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.checked).toBe(true);
+    expect(body.sampled).toBe(postedBody.sampled);
+    expect(body.declared).toBe(postedBody.declared);
+    expect(body.brokenCount).toBe(postedBody.brokenCount);
+    expect(body.reachability).toBe(postedBody.reachability);
+    expect(body.auditedAt).toBeGreaterThan(0);
+    // 徽标的 tooltip 要用到口径声明，别在读取路径上丢掉
+    expect(body.caveat).toContain("拒绝爬虫");
+  })
+
+  it("未知插件 404", async () => {
+    const miss = await app.inject({ method: "GET", url: "/api/plugins/nope-health/url-health" });
+    expect(miss.statusCode).toBe(404);
+  })
+})

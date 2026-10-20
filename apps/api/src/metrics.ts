@@ -310,7 +310,9 @@ export async function renderMetrics(ctx: AppContext): Promise<string> {
     `navhub_search_planner_total{decision="early_exit"} ${planner.earlyExit}`,
     `navhub_search_planner_total{decision="full"} ${planner.full}`,
   ]);
-  gauge("navhub_search_semantic_skipped_total", "语义通道未执行次数（planner 剪枝或显式禁用，≈省下的 embedding 推理）", planner.semanticSkipped);
+  metric("navhub_search_semantic_skipped_total", "语义通道未执行次数（planner 剪枝或显式禁用，≈省下的 embedding 推理）", "counter", [
+    `navhub_search_semantic_skipped_total ${planner.semanticSkipped}`,
+  ]);
   metric("navhub_search_channel_avg_ms", "检索各通道平均耗时（毫秒）", "gauge", [
     `navhub_search_channel_avg_ms{channel="exact"} ${planner.avgMs.exact}`,
     `navhub_search_channel_avg_ms{channel="fts"} ${planner.avgMs.fts}`,

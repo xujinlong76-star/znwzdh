@@ -29,8 +29,12 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
   /**
    * 导出全量冷备数据包 (.nhbak.json)
+   *
+   * 冷备包含 disabled 站点等未发布数据，且对应恢复接口是 admin；下载也必须
+   * 是 admin，避免匿名请求把「未启用/待上线」站点整体导出。书签 HTML 仍是
+   * 面向普通用户的 public 导出，但只包含 enabled 站点。
    */
-  app.get("/api/export/backup.json", { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (_req, reply) => {
+  app.get("/api/export/backup.json", { config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (_req, reply) => {
     const [categories, sites] = await Promise.all([
       ctx.repo.listCategories(),
       ctx.repo.listSites(),

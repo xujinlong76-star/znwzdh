@@ -7,6 +7,11 @@
  *   而且只有推到 CI 才跑。2026-10-19 一次缺失右花括号让 main 全红一个修复周期。
  *   本脚本只做「解析」不做类型检查，约 2–5s，适合放在 pre-commit 与 verify 最前面。
  *
+ * 为什么用 esbuild 而不是 typescript：
+ *   TS 7 native 不再提供 createSourceFile 等 compiler API，若这里 import "typescript"，
+ *   升级 TS 7 时语法门禁会先挂（Dependabot PR #89 已实测）。esbuild 已是 devDependency，
+ *   vitest 同源使用，解析 TS/TSX 只需毫秒级，且与 TS 版本解耦。
+ *
  * 用法：
  *   node scripts/check-syntax.mjs                 # 扫描默认目录
  *   node scripts/check-syntax.mjs --staged        # 只检查 git staged 的 TS/TSX
@@ -19,7 +24,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, relative, resolve } from "node:path";
-import ts from "typescript";
+import { transformSync } from "esbuild";
 
 const TS_EXT = /\.(ts|tsx|mts|cts)$/;
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next", ".turbo", "coverage", ".git"]);
@@ -72,15 +77,29 @@ if (files.length === 0) {
 const errors = [];
 for (const file of files) {
   const source = readFileSync(file, "utf8");
-  // 只解析、不生成输出：transpileModule 在个别文件上会触发 TS 内部
-  // "Output generation failed"（与语法无关），createSourceFile 只做 AST 解析。
-  const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, false, kind);
-  for (const d of sourceFile.parseDiagnostics ?? []) {
-    if (d.category !== ts.DiagnosticCategory.Error) continue;
-    const pos = d.file && d.start != null ? d.file.getLineAndCharacterOfPosition(d.start) : null;
-    const loc = pos ? `${relative(process.cwd(), d.file.fileName)}:${pos.line + 1}:${pos.character + 1}` : relative(process.cwd(), file);
-    errors.push(`${loc} TS${d.code} ${ts.flattenDiagnosticMessageText(d.messageText, " ")}`);
+  try {
+    // transformSync 只解析/转译，不解析 import、不做类型检查；target esnext 避免降级误报。
+    transformSync(source, {
+      loader: file.endsWith(".tsx") ? "tsx" : "ts",
+      format: "esm",
+      target: "esnext",
+      sourcefile: file,
+      logLevel: "silent",
+    });
+  } catch (error) {
+    // esbuild 的 TransformFailure 带 errors 数组，尽量保留每个错误的位置。
+    const failures = error && typeof error === "object" && Array.isArray(error.errors) ? error.errors : [];
+    if (failures.length === 0) {
+      errors.push(`${relative(process.cwd(), file)} ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+    for (const failure of failures) {
+      const location = failure.location;
+      const loc = location
+        ? `${relative(process.cwd(), location.file ?? file)}:${location.line}:${location.column + 1}`
+        : relative(process.cwd(), file);
+      errors.push(`${loc} ${failure.text}`);
+    }
   }
 }
 

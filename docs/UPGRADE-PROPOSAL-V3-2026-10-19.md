@@ -201,7 +201,7 @@ apps/web/test/plugin-manifest-parity.test.ts(13,48): error TS5097:
 | `moduleResolution: "node"` | `apps/web/tsconfig.json` | TS 7 **硬错误移除** → 改 `"bundler"`，再跑一次 tsc |
 | `baseUrl: "."` + `paths` | 同上 | TS 7 不支持 `baseUrl` → `paths` 改为相对项目根（`"@/*": ["./src/*"]` 已满足，删 `baseUrl`） |
 | `types` 默认变 `[]` | 根 `tsconfig.base.json` 用 `typeRoots`、前端未声明 `types` | 显式补 `"types": ["node"]`（前端再补 react/react-dom），否则 `process`、`Buffer` 全丢 |
-| 工具链 API 缺失 | TS 7 native 无 compiler API；Dependabot PR #89 中 `check-syntax` 与 ESLint 失败 | `check-syntax` 已改 esbuild（`fcfcbe2`）；ESLint/typescript-eslint 仍等上游支持。建议门禁 7、web lint 5.9 并存 |
+| 工具链 API 缺失 | TS 7 native 无 compiler API；Dependabot PR #89 中 `check-syntax` 与 ESLint 失败 | `check-syntax` 已改 esbuild（`fcfcbe2`）；TS 7 分离门禁已落地（`210e626`，门禁 7 / web lint 5.9），ESLint/typescript-eslint 仍等上游支持 |
 
 **顺序（2026-10-20 修正）**：TS 6 在 npm 上只有 beta/dev，没有正式版，原「先升 6.0 清 deprecation」不可执行。改为在 5.9 上直接清硬阻断后评估 7.0；ESLint 10 已独立完成，vitest 5 不受影响。
 
@@ -212,6 +212,7 @@ apps/web/test/plugin-manifest-parity.test.ts(13,48): error TS5097:
 - Dependabot PR #89（TS 7.0.2）实测：web `tsc` 通过；ESLint 与 `check-syntax` 失败。`check-syntax` 已改用 esbuild（`fcfcbe2`，702 文件 0 错误 + 3 条守卫测试），不再依赖 compiler API；剩余仅 typescript-eslint 与同伴清单。
 - 仍不能合入：① `apps/api`/`packages/*` 各自 pin `typescript: 5.9.3`，其中 `packages/ai`/`packages/store` 是同伴 WIP；② `typescript-eslint@8.71.2` 的 TS peer 是 `>=4.8.4 <6.1.0`。当前结论：**门禁可先升 7，lint 所在的 web 继续留 5.9.3**；等同伴清单落地 + typescript-eslint 支持 7 后再整体切。
 - ESLint 10 已单独完成（`34156a0`）：`10.13.0`；需把 brace-expansion override 拆成 `>=2 <5` 与 `>=5`，否则 minimatch@10 启动即崩。
+- TS 7 分离门禁已落地（`210e626`）：`typescript7` 别名只供门禁，根 `typescript`/web 仍 5.9.3；`pnpm typecheck` 59.6s → 8.5s（直接 7.5s，约 7×），守卫 3 条。PR #89 的全量清单升级不再需要，等 typescript-eslint 支持后再统一。
 
 ---
 

@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   type HubPluginItem,
   installPlugin,
   uninstallPlugin,
   fetchPluginDetail,
+  hubGet,
 } from '@/lib/navhub-api'
 import {
   Dialog,
@@ -49,6 +50,44 @@ export function PluginInstallModal({
   const [loading, setLoading] = useState(false)
   const [removeSites, setRemoveSites] = useState(false)
   const [presetMode, setPresetMode] = useState<'append' | 'replace'>('append')
+  /** 安装耗时（每 100ms 刷新一次），让「点了没反应」变成「看得见在处理」 */
+  const [elapsedMs, setElapsedMs] = useState(0)
+  /**
+   * 安装前重复预览（P0-2）：这一包里有多少条已经在本地库里了。
+   *
+   * null = 还没取到（加载中或接口失败）。**失败必须静默降级**——
+   * 预览只是体感优化，不能因为它挂了就拦住安装。
+   */
+  const [overlap, setOverlap] = useState<{ unique: number; existing: number; fresh: number } | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // 只在「打开 + 网址包 + 非卸载」时取预览；slug 变化或关闭弹窗都会撤销上一次的结果
+  const overlapSlug = open && plugin && plugin.kind === 'site-pack' && mode !== 'uninstall' ? plugin.slug : null
+  useEffect(() => {
+    setOverlap(null)
+    if (!overlapSlug) return
+    let cancelled = false
+    void hubGet<{ unique: number; existing: number; fresh: number }>(
+      `/plugins/${encodeURIComponent(overlapSlug)}/overlap`,
+    )
+      .then((res) => {
+        if (!cancelled) setOverlap({ unique: res.unique, existing: res.existing, fresh: res.fresh })
+      })
+      .catch(() => {
+        // 预览失败不影响安装能力，保持 null 即可
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [overlapSlug])
+
+  // 组件卸载时清掉计时器，避免关闭弹窗后继续 setState
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+    },
+    [],
+  )
 
   if (!plugin) return null
 
@@ -70,6 +109,10 @@ export function PluginInstallModal({
 
   const handleConfirm = async () => {
     setLoading(true)
+    const startedAt = Date.now()
+    setElapsedMs(0)
+    if (timerRef.current) clearInterval(timerRef.current)
+    timerRef.current = setInterval(() => setElapsedMs(Date.now() - startedAt), 100)
     try {
       const effectiveIdentity = identity || getIdentity()
       if (mode !== 'uninstall') {
@@ -117,6 +160,22 @@ export function PluginInstallModal({
           : []
         const installedCount = bundleItems.filter((item) => !item.alreadyInstalled).length
 
+        /**
+         * 成功提示要回答「到底发生了什么」，而不是只说「装好了」。
+         * 服务端 `applied.sitesSkipped` 是等价 URL 去重后的跳过数 ——
+         * 它正是跨包重复的量化结果（A 包装过、B 包又声明了同一条 URL），
+         * 此前这个数字只写进审计日志，用户完全看不到。
+         */
+        const applied = res?.applied ?? {}
+        const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1)
+        const sitePackDescription =
+          plugin.kind === 'site-pack' && !res.alreadyInstalled
+            ? `新增 ${applied.sitesAdded ?? 0} 个站点` +
+              ((applied.sitesSkipped ?? 0) > 0 ? `，跳过 ${applied.sitesSkipped} 个已存在` : '') +
+              ((applied.categoriesCreated ?? 0) > 0 ? `，新建 ${applied.categoriesCreated} 个分类` : '') +
+              ` · 用时 ${elapsedSec}s`
+            : undefined
+
         toast.success(
           isUpdate
             ? `已更新到 v${plugin.version}！`
@@ -125,14 +184,18 @@ export function PluginInstallModal({
               : plugin.kind === 'bundle'
                 ? `组合包「${plugin.name}」处理完成`
                 : `成功安装「${plugin.name}」！`,
-          plugin.kind === 'bundle' && !res.alreadyInstalled
-            ? {
-                description:
-                  installedCount > 0
-                    ? `已安装 ${installedCount} 个新成员；主题类成员可在「已安装」页启用。`
-                    : '所有成员此前均已安装，无需重复引入。',
-              }
-            : undefined,
+          sitePackDescription
+            ? { description: sitePackDescription }
+            : plugin.kind === 'bundle' && !res.alreadyInstalled
+              ? {
+                  description:
+                    (installedCount > 0
+                      ? `已安装 ${installedCount} 个新成员；主题类成员可在「已安装」页启用。`
+                      : '所有成员此前均已安装，无需重复引入。') + `用时 ${elapsedSec}s`,
+                }
+              : res.alreadyInstalled
+                ? { description: `未产生重复数据 · 用时 ${elapsedSec}s` }
+                : undefined,
         )
       } else {
         // 卸载
@@ -163,6 +226,10 @@ export function PluginInstallModal({
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
       setLoading(false)
     }
   }
@@ -204,6 +271,18 @@ export function PluginInstallModal({
                   <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
                     <li>将新增约 <strong className="text-foreground">{summary?.siteCount ?? 0}</strong> 个精选站点</li>
                     <li>将新增约 <strong className="text-foreground">{summary?.categoryCount ?? 0}</strong> 个分类导航</li>
+                    {/* 跨包重复预览：装第二个包时最需要的一句话，避免「以为装了两百个，实际只多三个」 */}
+                    {overlap && overlap.existing > 0 ? (
+                      <li>
+                        其中 <strong className="text-amber-600 dark:text-amber-400">{overlap.existing}</strong> 个已在您的库中
+                        （跨包重复），将自动跳过；<strong className="text-foreground">预计实际新增 {overlap.fresh}</strong> 个
+                      </li>
+                    ) : overlap ? (
+                      <li>
+                        这 {overlap.unique} 个站点在您的库中<strong className="text-foreground">都不重复</strong>，
+                        安装后将全部新增
+                      </li>
+                    ) : null}
                     <li>遵循等价 URL 去重原则，绝不覆盖您已存在的同名或同地址站点</li>
                   </ul>
                 </div>
@@ -359,7 +438,10 @@ export function PluginInstallModal({
             }`}
           >
             {loading ? (
-              <span>处理中…</span>
+              <span>
+                处理中…
+                {elapsedMs >= 200 ? ` ${(elapsedMs / 1000).toFixed(1)}s` : ''}
+              </span>
             ) : mode === 'uninstall' ? (
               <>
                 <Trash2 className="w-3.5 h-3.5" />

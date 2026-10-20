@@ -6,6 +6,8 @@
  * 系统不再仅仅返回外链结果，而是在 0 毫秒内原地预执行并生成即时计算结果（Micro-Widget）。
  */
 
+import { evaluateArithmeticExpression } from './arithmetic'
+
 export type SpeculativeIntentType =
   | 'cron'
   | 'jwt'
@@ -250,6 +252,8 @@ function tryParseColor(input: string): SpeculativeIntentResult | null {
  */
 function tryParseMath(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
+  // 表达式长度上限：防止长串每击键解析一次阻塞主线程（DoS 面）
+  if (trimmed.length > 256) return null;
   // 必须包含至少一个算术运算符，且仅包含数字、小数点、括号、运算符与空白
   if (!/[+\-*/%^]/.test(trimmed)) return null;
   if (!/^[\d\s+\-*/%^().]+$/.test(trimmed)) return null;
@@ -257,35 +261,18 @@ function tryParseMath(input: string): SpeculativeIntentResult | null {
   // 避免将类似版本号或单一负数判断为算式
   if (/^\d+(\.\d+)+$/.test(trimmed)) return null;
 
-  try {
-    // 将 ^ 转换为 **
-    const sanitized = trimmed.replace(/\^/g, '**');
+  const result = evaluateArithmeticExpression(trimmed);
+  if (result === null) return null;
 
-    // 严密 Token 校验，避免任意代码执行
-    if (/[a-zA-Z_$]/.test(sanitized)) return null;
-
-    // 表达式长度上限：极长表达式会让 new Function 的编译/求值阻塞主线程（DoS 面）
-    if (sanitized.length > 256) return null;
-
-    // 安全求值 (Function 严格只接受返回值表达式)
-    const fn = new Function(`"use strict"; return (${sanitized});`);
-    const result = fn();
-
-    if (typeof result === 'number' && Number.isFinite(result)) {
-      const formatted = Number.isInteger(result) ? result.toString() : result.toFixed(4).replace(/\.?0+$/, '');
-      return {
-        type: 'math',
-        title: '算术即刻计算',
-        subtitle: `${trimmed} =`,
-        previewValue: formatted,
-        actionLabel: '复制计算结果',
-        copyValue: formatted,
-      };
-    }
-  } catch {
-    return null;
-  }
-  return null;
+  const formatted = Number.isInteger(result) ? result.toString() : result.toFixed(4).replace(/\.?0+$/, '');
+  return {
+    type: 'math',
+    title: '算术即刻计算',
+    subtitle: `${trimmed} =`,
+    previewValue: formatted,
+    actionLabel: '复制计算结果',
+    copyValue: formatted,
+  };
 }
 
 /**

@@ -2,13 +2,14 @@
  * 计算/取值族检测器：算术表达式求值、颜色（HEX/RGB）速览。
  */
 import type { SpeculativeIntentResult } from './types.ts'
+import { evaluateArithmeticExpression } from './arithmetic.ts'
 
 /**
  * 纯算术表达式求值（安全计算，杜绝 unsafe eval）
  */
 export function tryParseMath(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
-  // 长度上限：防止 10KB 长串每击键编译一次 DoS；且需 CSP 允许 unsafe-eval，否则 Function 会抛错（已 catch）
+  // 长度上限：防止长串每击键解析一次 DoS
   if (trimmed.length > 200) return null;
   // 必须包含至少一个算术运算符，且仅包含数字、小数点、括号、运算符与空白
   if (!/[+\-*/%^]/.test(trimmed)) return null;
@@ -17,32 +18,18 @@ export function tryParseMath(input: string): SpeculativeIntentResult | null {
   // 避免将类似版本号或单一负数判断为算式
   if (/^\d+(\.\d+)+$/.test(trimmed)) return null;
 
-  try {
-    // 将 ^ 转换为 **
-    const sanitized = trimmed.replace(/\^/g, '**');
+  const result = evaluateArithmeticExpression(trimmed);
+  if (result === null) return null;
 
-    // 严密 Token 校验，避免任意代码执行
-    if (/[a-zA-Z_$]/.test(sanitized)) return null;
-
-    // 安全求值 (Function 严格只接受返回值表达式)
-    const fn = new Function(`"use strict"; return (${sanitized});`);
-    const result = fn();
-
-    if (typeof result === 'number' && Number.isFinite(result)) {
-      const formatted = Number.isInteger(result) ? result.toString() : result.toFixed(4).replace(/\.?0+$/, '');
-      return {
-        type: 'math',
-        title: '算术即刻计算',
-        subtitle: `${trimmed} =`,
-        previewValue: formatted,
-        actionLabel: '复制计算结果',
-        copyValue: formatted,
-      };
-    }
-  } catch {
-    return null;
-  }
-  return null;
+  const formatted = Number.isInteger(result) ? result.toString() : result.toFixed(4).replace(/\.?0+$/, '');
+  return {
+    type: 'math',
+    title: '算术即刻计算',
+    subtitle: `${trimmed} =`,
+    previewValue: formatted,
+    actionLabel: '复制计算结果',
+    copyValue: formatted,
+  };
 }
 
 /**

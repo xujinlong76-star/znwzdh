@@ -63,9 +63,10 @@ describe('P1-3：审核动作与投稿队列都必须要求管理员', () => {
 })
 
 describe('边界与清理项：不留可重入的副作用', () => {
-  it('算术投机解析对超长表达式有长度上限（new Function 不得吃进任意长输入）', () => {
+  it('算术投机解析不再使用 new Function，且仍有长度上限', () => {
     const src = read('src/lib/speculative.ts')
-    expect(src).toMatch(/sanitized\.length\s*>\s*\d+\)\s*return null/)
+    expect(src).not.toContain('new Function')
+    expect(src).toContain('if (trimmed.length > 256) return null')
   })
 
   it('模块级 <style> 注入按固定 id 去重（HMR 不再堆积重复节点）', () => {

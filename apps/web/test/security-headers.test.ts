@@ -74,6 +74,8 @@ describe("CSP 三档开关", () => {
     expect(csp).toBeDefined();
     expect(csp!.value).toContain("default-src 'self'");
     expect(csp!.value).toContain("object-src 'none'");
+    // 投机算式的 new Function 已移除，生产不再需要 unsafe-eval
+    expect(csp!.value).not.toContain("unsafe-eval");
     // 没有 report-only 时不应同时下发两个变体（浏览器会都执行）
     expect(find(headers, "Content-Security-Policy-Report-Only")).toBeUndefined();
   });

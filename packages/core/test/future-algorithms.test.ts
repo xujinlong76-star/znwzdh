@@ -87,6 +87,19 @@ describe('推测性意图 0-RTT 预执行引擎 (Speculative Intent)', () => {
     expect(invalid).toBeNull();
   });
 
+  it('算术解析器遵守优先级、括号、一元符号与 ^ 右结合，且拒绝非法输入', () => {
+    const value = (input: string) => parseSpeculativeIntent(input)?.previewValue;
+
+    expect(value('2 + 3 * 4')).toBe('14');
+    expect(value('(2 + 3) * 4')).toBe('20');
+    expect(value('-2^2')).toBe('-4');
+    expect(value('2^3^2')).toBe('512');
+    expect(value('10 % 3')).toBe('1');
+    expect(value('1 / 0')).toBeUndefined();
+    expect(value('2..3')).toBeUndefined();
+    expect(value('1 +')).toBeUndefined();
+  });
+
   it('应当验证并格式化有效 JSON', () => {
     const jsonRes = parseSpeculativeIntent('{"name":"navhub","v":4}');
     expect(jsonRes?.type).toBe('json_format');

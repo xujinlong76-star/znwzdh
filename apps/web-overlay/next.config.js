@@ -4,7 +4,9 @@
  */
 const CSP_DIRECTIVES = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  // 投机算式已改为纯递归下降求值（apps/web-overlay/src/lib/arithmetic.ts），
+  // 生产 CSP 不再需要 'unsafe-eval'；保留 'unsafe-inline' 是 Next 内联样式/脚本的边界。
+  "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: https:",
   "font-src 'self' data:",

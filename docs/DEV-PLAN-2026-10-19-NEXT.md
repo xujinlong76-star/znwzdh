@@ -123,13 +123,37 @@ $env:NEXT_DIST_DIR=".next-budget"; node scripts/check-bundle-budget.mjs --json
 
 | 能力 | 实现 | 实测证据 |
 | :--- | :--- | :--- |
-| 未安装包的 URL 体检 | `POST /api/plugins/:slug/audit` + 管理端 `/admin/plugin-health` | 全市场抽样平均可达率 92%；418/403/412 归「存活但拒绝爬虫」并计入可达 |
+| 未安装包的 URL 体检 | `POST /api/plugins/:slug/audit` + 管理端 `/admin/plugin-health` | 全市场 29 包 580 条抽样，平均可达率 **93.1%**（含重测消抖），40 条稳定不可达；418/403/412 归「存活但拒绝爬虫」并计入可达 |
 | 详情页体检徽标 | `GET /api/plugins/:slug/url-health`（只读审计留痕）+ `PluginUrlAuditBadge` | Playwright 生产态：`/marketplace/auto-driving` 头部显示「33% 可达 · 22 分钟前」，tooltip 给出 3/198 抽样与不可达口径 |
 | 跨包重复预览 | `GET /api/plugins/:slug/overlap`（与安装侧同口径） | Playwright：安装弹窗显示「其中 200 个已在您的库中（跨包重复），将自动跳过；预计实际新增 0 个」 |
 | 预览不撒谎 | 不变式测试：预览 `fresh` ≡ 安装 `sitesAdded`，`existing` ≡ `sitesSkipped` | `plugin-overlap-api.test.ts` 7/7；安装后再预览 `fresh=0` |
 | 安装体感 | 弹窗显示实时耗时；成功 toast 汇报新增/跳过/新建分类与用时 | 这些数字此前只写审计日志，现在用户可见 |
 
 **口径说明**：详情页徽标读的是「最近一次体检」的历史快照，不在页面打开时探测（否则每次浏览都会打 30 条外部请求）；无记录时徽标不渲染，不拿 0 冒充全挂。
+
+**全市场可达率复查（2026-10-20 夜，`--sample 20 --retry --json-out`）**
+
+命令：`node scripts/audit-plugin-urls.mjs --sample 20 --timeout-ms 8000 --retry --json-out`
+结果：29 个种子网址包 / 580 条抽样 / **平均可达率 93.1%** / 稳定不可达 40 条。
+报告文件：`apps/api/data/plugin-url-audit-2026-10-20T15-36-19-863Z.json`（`apps/api/data/` 已 gitignore）。
+
+低于 90% 的 8 个包（按可达率升序）：
+
+| 包 | 可达率 | 抽样 | 拒绝爬虫 | 稳定不可达 | 典型原因 |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| pet-family-parenting | 75% | 20 | 3 | 5 | 多为海外宠物站 `fetch failed`（连接层），另有 1 条 402 |
+| gov-public-service | 85% | 20 | 0 | 3 | 1 条 400、1 条超时、1 条 DNS 失败 |
+| finance-wealth | 85% | 20 | 0 | 3 | 超时/连接失败为主 |
+| news-media-cn | 85% | 20 | 1 | 3 | 超时为主 |
+| agriculture-rural | 85% | 20 | 3 | 3 | 1 条重定向超 6 跳、1 条 `fetch failed`、1 条超时 |
+| legal-compliance | 85% | 20 | 1 | 3 | 2 条 404（chinacourt / pccz.court.gov.cn）、1 条超时 |
+| life-care | 85% | 20 | 3 | 3 | 海外站 `fetch failed` 与超时 |
+| travel-mobility | 85% | 20 | 2 | 3 | 连接失败与超时 |
+
+**必须诚实标注的两点**：
+
+1. 这些数字是**从本机网络**测得的即时快照。海外站大量 `fetch failed` 在国内网络很常见，浏览器里通常可正常打开；`gov-public-service` 的 404/超时也需要人工复核。真正确定的死链是 2 条 HTTP 404（`chinacourt.org`、`pccz.court.gov.cn`）。
+2. 体检脚本按**种子清单**遍历（29 包）。库里还有一个 `source=user` 的 `web3-dev-toolkit`（10 站，早期通过发布通道创建），它不是种子包，因此**不在本次分母内**——报告不会把它静默算成 100%，也不会假装覆盖了它。
 
 ### P2｜产品增值（第 3–4 周，三选一）
 

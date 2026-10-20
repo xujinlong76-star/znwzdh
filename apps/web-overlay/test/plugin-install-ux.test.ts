@@ -29,7 +29,7 @@ describe("安装弹窗：跨包重复预览与耗时反馈", () => {
 
   it("预览失败静默降级：不能让 catch 吃掉安装能力", () => {
     expect(modal).toContain(".catch(() => {")
-    expect(modal).toContain("setOverlap(null)")
+    expect(modal).toContain("overlapResult && overlapResult.slug === overlapSlug")
   })
 
   it("安装结果里把 sitesSkipped（跨包重复）说给用户听", () => {

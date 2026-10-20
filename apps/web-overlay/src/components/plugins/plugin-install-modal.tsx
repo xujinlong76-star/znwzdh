@@ -55,23 +55,27 @@ export function PluginInstallModal({
   /**
    * 安装前重复预览（P0-2）：这一包里有多少条已经在本地库里了。
    *
-   * null = 还没取到（加载中或接口失败）。**失败必须静默降级**——
-   * 预览只是体感优化，不能因为它挂了就拦住安装。
+   * 结果与「它属于哪个 slug」一起存：slug 变了旧结果自然失效，
+   * 因此不需要在 effect 里同步清空 state（同步 setState 会触发级联渲染）。
    */
-  const [overlap, setOverlap] = useState<{ unique: number; existing: number; fresh: number } | null>(null)
+  const [overlapResult, setOverlapResult] = useState<
+    { slug: string; unique: number; existing: number; fresh: number } | null
+  >(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // 只在「打开 + 网址包 + 非卸载」时取预览；slug 变化或关闭弹窗都会撤销上一次的结果
+  // 只在「打开 + 网址包 + 非卸载」时取预览
   const overlapSlug = open && plugin && plugin.kind === 'site-pack' && mode !== 'uninstall' ? plugin.slug : null
+  /** null = 还没取到（加载中或接口失败）：预览只是体感优化，失败不拦安装 */
+  const overlap = overlapResult && overlapResult.slug === overlapSlug ? overlapResult : null
+
   useEffect(() => {
-    setOverlap(null)
     if (!overlapSlug) return
     let cancelled = false
     void hubGet<{ unique: number; existing: number; fresh: number }>(
       `/plugins/${encodeURIComponent(overlapSlug)}/overlap`,
     )
       .then((res) => {
-        if (!cancelled) setOverlap({ unique: res.unique, existing: res.existing, fresh: res.fresh })
+        if (!cancelled) setOverlapResult({ slug: overlapSlug, ...res })
       })
       .catch(() => {
         // 预览失败不影响安装能力，保持 null 即可
@@ -236,7 +240,7 @@ export function PluginInstallModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-6">
+      <DialogContent className="max-w-md p-4 sm:p-6">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-xs">

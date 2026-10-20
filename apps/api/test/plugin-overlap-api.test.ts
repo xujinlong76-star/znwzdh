@@ -160,4 +160,38 @@ describe("GET /api/plugins/:slug/overlap", () => {
     const notPack = await app.inject({ method: "GET", url: "/api/plugins/overlap-theme/overlap" });
     expect(notPack.statusCode).toBe(400);
   });
+
+  /**
+   * 最关键的不变式：预览说「会新增 X 个」，安装就必须真的新增 X 个。
+   *
+   * 两条路径是各自独立实现的（预览在 routes/plugin-overlap.ts，安装写库在
+   * packages/store/src/repository/plugins.ts），任何一侧改了去重口径都会漂移。
+   * 一旦漂移，用户看到的「预计实际新增」就成了假承诺 —— 比不显示更糟。
+   */
+  it("不变式：预览的 fresh 必须等于安装实际新增数", async () => {
+    await seedSite("https://inv-existing-1.example.com/");
+    await seedPack("overlap-invariant", "不变式包", [
+      "https://inv-existing-1.example.com", // 已存在
+      "https://inv-new-1.example.com",
+      "https://inv-new-2.example.com",
+    ]);
+
+    const preview = (await app.inject({ method: "GET", url: "/api/plugins/overlap-invariant/overlap" })).json();
+    expect(preview.existing).toBe(1);
+    expect(preview.fresh).toBe(2);
+
+    const install = await app.inject({
+      method: "POST",
+      url: "/api/plugins/overlap-invariant/install?anonId=anon-overlap-invariant",
+    });
+    expect(install.statusCode).toBe(200);
+    const applied = install.json().applied;
+    expect(applied.sitesAdded).toBe(preview.fresh);
+    expect(applied.sitesSkipped).toBe(preview.existing);
+
+    // 装完之后再预览：全部都已存在，说明「将新增」的承诺已兑现且不重复创建
+    const after = (await app.inject({ method: "GET", url: "/api/plugins/overlap-invariant/overlap" })).json();
+    expect(after.existing).toBe(after.unique);
+    expect(after.fresh).toBe(0);
+  });
 });

@@ -34,11 +34,14 @@ export const PLUGIN_LIMITS = {
   maxTags: 8,
   maxTagChars: 20,
   maxUrlLength: 2048,
-  maxSites: 200,
+  // 2026-10-20 内容扩容：20 个种子网址包里有 8 个恰好顶到 200 个站点的旧上限，
+  // 上限本身成了继续加深内容的唯一瓶颈（连"给薄弱分类补几条"都放不下），
+  // 因此按「留出约 60% 余量」抬到 320；分类与搜索引擎包同批放宽。
+  maxSites: 320,
   maxSiteTitle: 120,
   maxSiteDescription: 300,
   maxSiteTags: 5,
-  maxCategories: 20,
+  maxCategories: 24,
   maxCategoryTitle: 60,
   maxCategoryDescription: 120,
   maxBoards: 5,
@@ -47,7 +50,7 @@ export const PLUGIN_LIMITS = {
   maxWidgetTitle: 40,
   maxWidgetConfigBytes: 8 * 1024,
   maxThemeTokens: 30,
-  maxSearchEngines: 30,
+  maxSearchEngines: 40,
   maxEngineName: 40,
   maxEnginePrefix: 16,
   maxBundleItems: 12,

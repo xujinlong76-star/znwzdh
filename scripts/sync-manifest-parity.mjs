@@ -1,6 +1,9 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const core = readFileSync('packages/core/src/plugin-manifest.ts', 'utf8');
+// 工作副本可能是 CRLF（core.autocrlf=true）。旧版脚本按 '…-end\n' 精确查找，
+// 在 CRLF 检出下会直接抛「找不到标记」——CI 是 LF 所以一直没暴露。
+// 统一归一化为 LF 再切分，保证本地与 CI 行为一致（parity 测试本身也会归一化换行）。
+const core = readFileSync('packages/core/src/plugin-manifest.ts', 'utf8').replace(/\r\n/g, '\n');
 const END_TAG = '// @plugin-manifest:parity-ignore-end\n';
 const idx = core.indexOf(END_TAG);
 if (idx === -1) {

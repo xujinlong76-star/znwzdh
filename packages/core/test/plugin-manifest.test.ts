@@ -174,10 +174,10 @@ describe('插件清单校验：网址包负载', () => {
     expect(res.warnings.join(' ')).toContain('重复 URL 已去重：1 条')
   })
 
-  it('站点数组为空拒绝；超过 200 条拒绝', () => {
+  it('站点数组为空拒绝；超过 320 条拒绝', () => {
     expectFail({ ...validSitePack, payload: { sites: [] } }, '至少需要 1 个站点')
-    const many = { ...validSitePack, payload: { sites: Array.from({ length: 201 }, (_, i) => ({ url: `https://e.com/s${i}`, title: `S${i}` })) } }
-    expectFail(many, '最多 200 个')
+    const many = { ...validSitePack, payload: { sites: Array.from({ length: 321 }, (_, i) => ({ url: `https://e.com/s${i}`, title: `S${i}` })) } }
+    expectFail(many, '最多 320 个')
   })
 
   it('javascript:/相对地址/带凭据的 URL 全部拒绝', () => {
@@ -198,9 +198,9 @@ describe('插件清单校验：网址包负载', () => {
     )
   })
 
-  it('分类超过 20 个拒绝；包内同名分类去重（大小写不敏感）', () => {
-    const many = Array.from({ length: 21 }, (_, i) => ({ title: `C${i}` }))
-    expectFail({ ...validSitePack, payload: { categories: many, sites: [{ url: 'https://e.com', title: 'x' }] } }, '最多 20 个')
+  it('分类超过 24 个拒绝；包内同名分类去重（大小写不敏感）', () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({ title: `C${i}` }))
+    expectFail({ ...validSitePack, payload: { categories: many, sites: [{ url: 'https://e.com', title: 'x' }] } }, '最多 24 个')
     const res = expectOk({
       ...validSitePack,
       payload: {
@@ -347,7 +347,7 @@ describe('摘要、版本比较与文本解析', () => {
     expect(pluginKindLabel('workspace-preset')).toBe('工作台预设')
     expect(pluginKindLabel('theme')).toBe('主题')
     expect(pluginKindLabel('bundle')).toBe('组合包')
-    expect(PLUGIN_LIMITS.maxSites).toBe(200)
+    expect(PLUGIN_LIMITS.maxSites).toBe(320)
   })
 
   it('组合包：校验成员类型/去重/数量，并生成摘要', () => {

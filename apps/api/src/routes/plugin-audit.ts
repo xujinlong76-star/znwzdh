@@ -41,6 +41,18 @@ const AUDIT_USER_AGENT =
   process.env.NAVHUB_AUDIT_USER_AGENT?.trim() ||
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
+/**
+ * 报告口径声明（随响应返回，避免调用方把「本机测不到」误读成「站点挂了」）。
+ *
+ * 真实教训：政务包 30 条抽样里的 8 条「真不可达」全是超时/抓取失败
+ * （si.12333.gov.cn、gaj.tj.gov.cn、beijing.chinatax.gov.cn…），而这类 .gov.cn 站点
+ * 在国内网络通常是正常的 —— 地域或网络限制很容易被误当成死链。
+ * 做成响应字段而非 UI 文案：管理端面板与将来的全市场体检脚本共用同一口径。
+ */
+const REACHABILITY_CAVEAT =
+  "可达性为「从本机网络测得」的即时快照：超时与抓取失败可能是地域/网络限制或目标站风控，不等于死链，需人工复核；" +
+  "401/403/405/412/429 属于「存活但拒绝爬虫」（站点本身可用），已计入可达率。"
+
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : fallback
   return Math.min(max, Math.max(min, n))
@@ -126,6 +138,7 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       reachability: summary.reachability,
       brokenItems: summary.brokenItems,
       blockedItems: summary.blockedItems,
+      caveat: REACHABILITY_CAVEAT,
       params: { sample, timeoutMs },
     }
   })

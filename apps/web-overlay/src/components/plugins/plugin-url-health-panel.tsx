@@ -46,6 +46,8 @@ interface AuditResult {
   reachability: number | null
   brokenItems: Array<{ url: string; status?: number; error?: string }>
   blockedItems: Array<{ url: string; status?: number }>
+  /** 服务端返回的报告口径声明（本机网络测得 / 拒绝爬虫计入可达），随结果一起展示 */
+  caveat?: string
   params: { sample: number; timeoutMs: number }
 }
 
@@ -168,7 +170,12 @@ export function PluginUrlHealthPanel() {
                             存活但拒绝爬虫 {result.blockedCount}
                           </span>
                         )}
-                        <span className={result.brokenCount > 0 ? 'text-destructive' : ''}>不可达 {result.brokenCount}</span>
+                        <span
+                          className={result.brokenCount > 0 ? 'text-destructive' : ''}
+                          title="从本机网络探测失败：可能是地域/网络限制或目标站风控，不等于站点已死，需人工复核"
+                        >
+                          本机不可达 {result.brokenCount}
+                        </span>
                         {result.redirected > 0 && <span>重定向 {result.redirected}</span>}
                         <span>单条超时 {result.params.timeoutMs}ms</span>
                       </div>
@@ -210,6 +217,8 @@ export function PluginUrlHealthPanel() {
                           </ul>
                         </details>
                       )}
+
+                      {result.caveat && <p className="text-muted-foreground">{result.caveat}</p>}
                     </div>
                   )}
                 </li>

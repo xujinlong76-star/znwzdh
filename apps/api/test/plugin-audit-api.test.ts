@@ -101,6 +101,10 @@ describe("POST /api/plugins/:slug/audit", () => {
     expect(body.brokenItems).toHaveLength(3);
     expect(body.brokenItems[0].url).toBe("https://127.0.0.1/a");
     expect(body.params.timeoutMs).toBe(1000);
+    // 口径声明必须随响应返回：避免调用方把「本机测不到」误读成「站点挂了」
+    expect(typeof body.caveat).toBe("string");
+    expect(body.caveat).toContain("本机网络");
+    expect(body.caveat).toContain("拒绝爬虫");
   })
 
   it("抽样参数被夹紧：limit=9999 → 上限 200，且不超过声明条数", async () => {

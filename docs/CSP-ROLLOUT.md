@@ -98,7 +98,7 @@ docker build -f docker/Dockerfile.web \
 
 当前策略仍含：
 
-- `script-src 'unsafe-inline' 'unsafe-eval'`
+- `script-src 'unsafe-inline'`（`unsafe-eval` 已随投机算术的纯解析器改造移除）
 - `style-src 'unsafe-inline'`
 
 在这两项收敛前，enforce 的收益主要是「挡住未知外链」，而不是完整的 XSS 防护。**不要因为报告清零就误以为已经安全**。

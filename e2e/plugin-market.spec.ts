@@ -232,7 +232,8 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const card = page.locator('div.rounded-2xl').filter({ hasText: name }).first();
     await expect(card).toBeVisible({ timeout: 30_000 });
     await card.getByRole('button', { name: '通过并上架' }).click();
-    await expect(page.getByText(`已通过审核并上架「${name}」！`)).toBeVisible();
+    // 审核接口 + SWR 刷新在 CI 冷启动时可能超过默认 15s，避免把慢响应误判为功能失败
+    await expect(page.getByText(`已通过审核并上架「${name}」！`)).toBeVisible({ timeout: 30_000 });
 
     // 4. 上架后：市场公开可见
     await page.goto('/marketplace');

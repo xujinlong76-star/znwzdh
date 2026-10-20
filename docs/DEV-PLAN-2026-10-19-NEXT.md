@@ -198,9 +198,11 @@
 ### P4｜运维与安全（有部署/预发环境再做）
 
 - **CSP**：先开 `NAVHUB_CSP_REPORT_ONLY=1` + `NAVHUB_CSP_REPORT_URI` 收集一周；把 `unsafe-inline`/`unsafe-eval` 依赖收敛到 nonce/hash 后，再 `NAVHUB_CSP=1`。当前 enforce 策略仍含 `unsafe-inline`，直接开收益有限。
-- **指标**：`/api/metrics` 已可 scrape；补一条格式快照测试（`# HELP` / `# TYPE` / 有界标签），文档写抓取配置。
+- **指标（已完成，`d07d7c3`）**：`/api/metrics` 已可 scrape；新增格式与基数守卫（`# HELP` / `# TYPE` 配对、counter/summary 约定、标签白名单、route 模板、转义、家庭快照），抓取配置与告警示例见 `docs/OBSERVABILITY.md`。顺手修正 `navhub_search_semantic_skipped_total` 的 gauge → counter。
 - **备份演练**：`scripts/backup.mjs` 做一次备份→恢复→校验，步骤写进 runbook。
 - **auth 决策**：next-auth v5 beta 留/拆是产品决策，单独立项；不做默认动作。
+
+**指标守卫验证**：干净 worktree `pnpm typecheck` 0 → API 28 文件 369 测试全绿（含新增 10 条格式测试）；web 门禁不受影响。CSP report-only 与备份演练仍待部署/预发环境。
 
 ---
 

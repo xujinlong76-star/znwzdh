@@ -106,9 +106,10 @@ describe("存活但拒绝爬虫（401/403/405/412/429）不计入不可达", () 
     expect(s.brokenItems[0].url).toBe("https://d.example/");
   })
 
-  it("状态码归类：401/403/405/412/429 是「拒绝爬虫」；404/5xx/200 不是", () => {
-    for (const status of [401, 403, 405, 412, 429]) expect(isBlockedByBotStatus(status)).toBe(true);
-    for (const status of [200, 404, 500, 502, undefined]) expect(isBlockedByBotStatus(status)).toBe(false);
+  it("状态码归类：401/403/405/412/418/429 是「拒绝爬虫」；400/404/5xx/200 不是", () => {
+    for (const status of [401, 403, 405, 412, 418, 429]) expect(isBlockedByBotStatus(status)).toBe(true);
+    // 400 刻意不算：请求格式错误与风控拦截都可能返回它，无法区分 —— 宁可留人工复核，也不误判站点为活
+    for (const status of [200, 400, 404, 500, 502, undefined]) expect(isBlockedByBotStatus(status)).toBe(false);
   })
 
   it("显式 blocked=false 时不再按状态码兜底（调用方可强制归为真不可达）", () => {

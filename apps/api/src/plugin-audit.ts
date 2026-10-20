@@ -91,11 +91,18 @@ export const PLUGIN_AUDIT_DEFAULTS = {
 /**
  * 「存活但拒绝爬虫」的状态码集合。
  *
- * 401 未授权 / 403 禁止 / 405 方法不允许 / 412 前置条件失败 / 429 限流 ——
+ * 401 未授权 / 403 禁止 / 405 方法不允许 / 412 前置条件失败 / 429 限流 / 418 茶壶 ——
  * 共同点是「服务端活着、有 WAF/风控在应答」，与 DNS 失败、连接拒绝、超时、5xx 有本质区别。
  * 只看状态码无法区分「站点挂了」与「站点挡我」，所以这两类必须分开统计。
+ *
+ * 418（I'm a teapot）为什么算：它本是愚人节协议，但 Cloudflare/Akamai 一类 WAF 常拿它当
+ * 「我识别出你是爬虫」的回应 —— 实测 shop.lululemon.com / www.underarmour.com 就返回 418，
+ * 而这两个品牌官网在浏览器里完全正常。这是同类误杀的第三次出现（403 → 412 → 418）。
+ *
+ * 400 为什么**不**算：请求格式错误与风控拦截都会返回 400，无法从状态码区分，
+ * 宁可把它留在「不可达」里等人工复核，也不为了好看把可能真坏掉的站点判活。
  */
-export const BLOCKED_BY_BOT_STATUSES = [401, 403, 405, 412, 429] as const
+export const BLOCKED_BY_BOT_STATUSES = [401, 403, 405, 412, 418, 429] as const
 
 export function isBlockedByBotStatus(status: number | undefined): boolean {
   return status !== undefined && (BLOCKED_BY_BOT_STATUSES as readonly number[]).includes(status)

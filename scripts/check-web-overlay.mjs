@@ -14,8 +14,14 @@
  *    所以这里只列出候选告警，不判失败；要确诊请跑 `node scripts/sync-web-overlay.mjs`。
  *
  * 用法：
- *   node scripts/check-web-overlay.mjs          # 只检查
+ *   node scripts/check-web-overlay.mjs          # 只检查（全仓库）
+ *   node scripts/check-web-overlay.mjs --staged # 只对「本次提交涉及的文件」判失败（pre-commit 用）
  *   node scripts/check-web-overlay.mjs --fix    # 检查 + 定点修复（overlay -> apps/web）+ 复查
+ *
+ * --staged 为什么存在：pre-commit 钩子若跑全仓库判定，多会话并行时会被「别人正在编辑的文件」
+ * 的漂移挡住提交（本仓库真实发生过：并发会话在改 overlay，本会话连续两次提交中止）。
+ * 全仓库判定交给 CI 的 check-web-overlay 作业；本地只对「你这次要提交的东西」把关。
+ * 口径与 scripts/check-syntax.mjs --staged 一致。
  *
  * --fix 的方向提醒：它以 overlay 为事实源，**会用 overlay 版覆盖 apps/web 的差异文件**。
  * 若这次的改动本来就在 apps/web 侧（还没回移植到 overlay），请先把改动合回
@@ -30,6 +36,7 @@
  *
  * 比对逻辑住在 scripts/lib/overlay-drift.mjs（纯函数、有单测）。
  */
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { diffOverlay, findOwnedOrphans, isExcluded } from "./lib/overlay-drift.mjs";
@@ -38,6 +45,32 @@ const ROOT = resolve(".");
 const OVERLAY = join(ROOT, "apps", "web-overlay");
 const TARGET = join(ROOT, "apps", "web");
 const FIX = process.argv.includes("--fix");
+const STAGED = process.argv.includes("--staged");
+
+/**
+ * `--staged` 模式：只把「本次提交涉及的文件」纳入判定范围（见头部注释）。
+ * 返回 null 表示拿不到 git（Docker 构建上下文）——此时退回全仓库判定，与历史行为一致。
+ */
+function collectStagedRels() {
+  try {
+    const out = execFileSync("git", ["diff", "--cached", "--name-only", "--diff-filter=ACMR"], {
+      cwd: ROOT,
+      encoding: "utf8",
+    });
+    const rels = new Set();
+    for (const raw of out.split(/\r?\n/)) {
+      const p = raw.trim().replaceAll("\\", "/");
+      if (!p) continue;
+      if (p.startsWith("apps/web-overlay/")) rels.add(p.slice("apps/web-overlay/".length));
+      else if (p.startsWith("apps/web/")) rels.add(p.slice("apps/web/".length));
+    }
+    return rels;
+  } catch {
+    return null;
+  }
+}
+const stagedRels = STAGED ? collectStagedRels() : null;
+const inScope = (rel) => !STAGED || stagedRels === null || stagedRels.has(rel);
 
 function diffHint(rel) {
   return (
@@ -59,16 +92,33 @@ const { overlayFiles, missing, drifted, reverseCandidates } = diffOverlay({
   targetDir: TARGET,
 });
 
-// 按 overlay 的文件遍历顺序逐条报（与重构前输出完全一致）
-const missingSet = new Set(missing);
-const driftByRel = new Map(drifted.map((d) => [d.rel, d.kind]));
-for (const rel of overlayFiles) {
+// 全仓库判定结果先算全，--staged 时只对本次提交涉及的文件判失败
+const scopedDrifted = drifted.filter((d) => inScope(d.rel));
+const scopedMissing = missing.filter((rel) => inScope(rel));
+const outOfScope = STAGED ? drifted.length - scopedDrifted.length + (missing.length - scopedMissing.length) : 0;
+
+// 按 overlay 的文件遍历顺序逐条报（非 --staged 时与重构前输出完全一致）
+const missingSet = new Set(scopedMissing);
+const driftByRel = new Map(scopedDrifted.map((d) => [d.rel, d.kind]));
+const relsToReport = STAGED
+  ? overlayFiles.filter((rel) => missingSet.has(rel) || driftByRel.has(rel))
+  : overlayFiles;
+for (const rel of relsToReport) {
   if (missingSet.has(rel)) {
     console.error("[check] apps/web 缺少文件（未同步）: " + rel);
     continue;
   }
   const kind = driftByRel.get(rel);
   if (kind) console.error("[check] 内容漂移: " + rel + "（" + kind + "）\n" + diffHint(rel));
+}
+if (STAGED) {
+  console.log(
+    `[check] --staged：本次提交涉及 ${stagedRels === null ? "（无 git，按全仓库处理）" : stagedRels.size} 个 overlay/web 路径，` +
+      `其中漂移 ${scopedDrifted.length} 个、缺失 ${scopedMissing.length} 个`,
+  );
+  if (outOfScope > 0) {
+    console.log(`[check] 另有 ${outOfScope} 个仓库级漂移不在本次提交范围（留给 CI 与对应会话处理，不阻断本次提交）`);
+  }
 }
 
 // ---------- 硬化：git 跟踪的 apps/web 文件 = 自研，必须进 overlay（失败） ----------
@@ -77,12 +127,12 @@ for (const rel of overlayFiles) {
 // （真实事故：apps/web/package.json 的 React 19 / TS 5.9 手改被打回上游版本，
 //  导致 CI frozen-lockfile 全红）。因此这里按硬失败处理，不依赖联网比对上游。
 try {
-  const { execFileSync } = await import("node:child_process");
   const tracked = execFileSync("git", ["ls-files", "--", "apps/web"], { cwd: ROOT, encoding: "utf8" })
     .split("\n").map((s) => s.trim()).filter(Boolean)
     .map((f) => f.replace(/^apps\/web\//, "").replaceAll("\\", "/"))
     .filter((rel) => rel && rel !== "UPSTREAM.md" && !isExcluded(rel));
-  const orphan = findOwnedOrphans(tracked, overlayFiles);
+  // --staged 下同样只对本次提交涉及的文件判失败（别人未提交的自研文件不该挡住你）
+  const orphan = findOwnedOrphans(tracked, overlayFiles).filter((rel) => inScope(rel));
   if (orphan.length > 0) {
     console.error(`[check] ${orphan.length} 个被 git 跟踪的 apps/web 自研文件不在 overlay 中（vendor/Docker 会丢失）：`);
     for (const rel of orphan) console.error("  - " + rel);
@@ -96,15 +146,19 @@ try {
 
 // ---------- 反向：web -> overlay（告警，不判失败） ----------
 if (reverseCandidates.length > 0) {
-  console.warn(`[check] 提示：apps/web 有 ${reverseCandidates.length} 个文件不在 overlay 中。`);
-  console.warn("[check] 其中“与上游一致的”本就不该进 overlay；若含自研改动请同步回去。");
-  for (const rel of reverseCandidates.slice(0, 30)) console.warn("[check] 反向候选: " + rel);
-  if (reverseCandidates.length > 30) console.warn(`[check] ……还有 ${reverseCandidates.length - 30} 个未列出`);
-  console.warn("[check] 确诊：node scripts/sync-web-overlay.mjs（需联网拉上游 tarball）");
+  if (STAGED) {
+    console.log(`[check] （--staged 模式）仓库级反向候选 ${reverseCandidates.length} 个，仅告警，交给 CI 全量检查`);
+  } else {
+    console.warn(`[check] 提示：apps/web 有 ${reverseCandidates.length} 个文件不在 overlay 中。`);
+    console.warn("[check] 其中“与上游一致的”本就不该进 overlay；若含自研改动请同步回去。");
+    for (const rel of reverseCandidates.slice(0, 30)) console.warn("[check] 反向候选: " + rel);
+    if (reverseCandidates.length > 30) console.warn(`[check] ……还有 ${reverseCandidates.length - 30} 个未列出`);
+    console.warn("[check] 确诊：node scripts/sync-web-overlay.mjs（需联网拉上游 tarball）");
+  }
 }
 
-if (drifted.length > 0 || missing.length > 0) {
-  console.error(`[check] 失败：${drifted.length} 个漂移，${missing.length} 个缺失。`);
+if (scopedDrifted.length > 0 || scopedMissing.length > 0) {
+  console.error(`[check] 失败：${scopedDrifted.length} 个漂移，${scopedMissing.length} 个缺失${STAGED ? "（本次提交范围内）" : ""}。`);
   console.error("[check] 修复：node scripts/check-web-overlay.mjs --fix（overlay -> apps/web 定点同步）；若改动本在 apps/web 侧，请先合回 overlay");
   if (!FIX) process.exit(1);
 
@@ -118,11 +172,13 @@ if (drifted.length > 0 || missing.length > 0) {
   }
 
   const after = diffOverlay({ overlayDir: OVERLAY, targetDir: TARGET });
-  if (after.drifted.length > 0 || after.missing.length > 0) {
-    console.error(`[check] --fix 后仍有 ${after.drifted.length} 个漂移、${after.missing.length} 个缺失（方向可能反了，请人工确认）`);
+  const afterDrift = after.drifted.filter((d) => inScope(d.rel)).length;
+  const afterMissing = after.missing.filter((rel) => inScope(rel)).length;
+  if (afterDrift > 0 || afterMissing > 0) {
+    console.error(`[check] --fix 后仍有 ${afterDrift} 个漂移、${afterMissing} 个缺失（方向可能反了，请人工确认）`);
     process.exit(1);
   }
-  console.log(`[check] OK（--fix 已修复）：${after.overlayFiles.length} 个覆盖层文件与 apps/web 一致`);
+  console.log(`[check] OK（--fix 已修复）：${after.overlayFiles.length} 个覆盖层文件与 apps/web 一致${STAGED ? "（--staged 范围）" : ""}`);
   process.exit(0);
 }
 console.log(`[check] OK：${overlayFiles.length} 个覆盖层文件与 apps/web 一致（反向候选 ${reverseCandidates.length} 个，仅告警）`);

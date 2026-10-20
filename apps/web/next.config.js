@@ -1,3 +1,20 @@
+/**
+ * CSP 策略唯一事实源：enforce 与 report-only 必须逐字一致，
+ * 否则「观察到的」与「实际拦截的」不是同一套策略。新增源只改这里。
+ */
+const CSP_DIRECTIVES = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https: wss:",
+  "frame-src https:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join("; ");
+
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   // 构建输出目录可用 NEXT_DIST_DIR 覆盖（默认 .next）。
@@ -56,44 +73,23 @@ const nextConfig = {
       hosts.push({ key: "Strict-Transport-Security", value: "max-age=15552000" });
     }
     // CSP：Next 依赖内联脚本/样式，收紧需要逐页验证，故默认关闭，用 NAVHUB_CSP=1 开启。
+    // 注意：Next 的 headers() 在 `next build` 时求值并写入 routes-manifest，
+    // 因此 CSP 开关是**构建期**环境变量；运行时改 env 不会生效（Docker 用 --build-arg 传入）。
+    // 两种档位共用 CSP_DIRECTIVES（唯一事实源），避免「观察策略」与「拦截策略」漂移；
+    // NAVHUB_CSP_REPORT_URI 在两种档位都会追加 report-uri，enforce 后仍可持续收集违规。
+    const cspValue = process.env.NAVHUB_CSP_REPORT_URI
+      ? `${CSP_DIRECTIVES}; report-uri ${process.env.NAVHUB_CSP_REPORT_URI}`
+      : CSP_DIRECTIVES;
     if (process.env.NAVHUB_CSP === "1") {
-      hosts.push({
-        key: "Content-Security-Policy",
-        value: [
-          "default-src 'self'",
-          "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-          "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data: https:",
-          "font-src 'self' data:",
-          "connect-src 'self' https: wss:",
-          "frame-src https:",
-          "object-src 'none'",
-          "base-uri 'self'",
-          "form-action 'self'",
-        ].join("; "),
-      });
+      hosts.push({ key: "Content-Security-Policy", value: cspValue });
     }
     // CSP report-only（P2-4 第一步）：与 enforce 完全同源的策略，但只收集违规
     // 不拦截。理由见下方 enforce 分支的注释——直接 enforce 会把需要内联脚本的
     // 页面打挂，必须先跑一周收集真实违规再决定收哪些源。
     // 用法：NAVHUB_CSP_REPORT_ONLY=1 开启；可选 NAVHUB_CSP_REPORT_URI 指定上报地址。
-    if (process.env.NAVHUB_CSP_REPORT_ONLY === "1") {
-      const directive = [
-        "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-        "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: https:",
-        "font-src 'self' data:",
-        "connect-src 'self' https: wss:",
-        "frame-src https:",
-        "object-src 'none'",
-        "base-uri 'self'",
-        "form-action 'self'",
-      ].join("; ");
-      hosts.push({
-        key: "Content-Security-Policy-Report-Only",
-        value: process.env.NAVHUB_CSP_REPORT_URI ? `${directive}; report-uri ${process.env.NAVHUB_CSP_REPORT_URI}` : directive,
-      });
+    // 两个开关同时打开时 enforce 优先：只下发 enforce，避免同源策略双份报告。
+    if (process.env.NAVHUB_CSP_REPORT_ONLY === "1" && process.env.NAVHUB_CSP !== "1") {
+      hosts.push({ key: "Content-Security-Policy-Report-Only", value: cspValue });
     }
     return [{ source: "/:path*", headers: hosts }];
   },

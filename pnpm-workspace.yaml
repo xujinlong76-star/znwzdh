@@ -59,7 +59,11 @@ overrides:
   # 统一搬到 workspace 配置，顺带消除 Docker 只拷部分清单时的
   # ERR_PNPM_LOCKFILE_CONFIG_MISMATCH（见 docker/Dockerfile.api 注释）。
   brace-expansion@<2: 1.1.18
-  brace-expansion@>=2: 2.1.4
+  # >=2 <5 仍钉安全维护版 2.1.4；>=5 放行：ESLint 10 的 @eslint/config-array
+  # 依赖 minimatch@10，后者要求 brace-expansion ^5。此前一刀切 `>=2` 会把 v5
+  # 也压回 2.1.4，ESLint 10 启动即崩（braceExpand: expand is not a function）。
+  brace-expansion@>=2 <5: 2.1.4
+  brace-expansion@>=5: 5.0.12
   # nanoid v3 的 ReDoS/无限循环：GHSA-2v37-7h3g-55p8，修复版 >=3.3.18。
   # 原钉 3.3.16 本身就在受影响区间（这条 overrides 从 apps/web/package.json 的
   # pnpm 字段搬进 workspace 配置、真正生效后，生产面 audit 立刻红灯）。

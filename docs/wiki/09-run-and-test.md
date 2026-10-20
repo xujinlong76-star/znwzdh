@@ -15,8 +15,9 @@
 pnpm install
 cp .env.example .env
 
-# 1) 播种 50 个精选中文站点（同时生成向量，首次会下载 24MB 模型）
-pnpm --filter @navhub/api seed
+# 1) 播种内置站点与插件市场种子（同时生成向量，首次会下载 24MB 模型）
+#    必须在仓库根目录执行：库路径默认是 cwd 相对的 ./data/navhub.db
+pnpm seed
 
 # 2) 启动中枢 → http://localhost:8787
 pnpm --filter @navhub/api start
@@ -26,13 +27,13 @@ pnpm --filter @navhub/api start
 
 | 脚本 | 命令 | 说明 |
 | --- | --- | --- |
-| `pnpm dev` | `pnpm --filter @navhub/api dev` | 中枢开发模式 |
+| `pnpm dev` | `node apps/api/src/main.ts` | 中枢开发模式（以仓库根为 CWD，与 dev-all/Docker 同一套相对路径口径） |
 | `pnpm dev:web` | `node scripts/run.mjs --filter navsphere dev` | 前端（:3000） |
 | `pnpm build` | `pnpm -r --filter "@navhub/*" build` | 全部包构建 |
 | `pnpm test` | `vitest run` | 711 通过 / 11 跳过（42 个测试文件；其中 PG 跨方言 12 项未配 `NAVHUB_TEST_DATABASE_URL` 时 skip） |
 | `pnpm test:watch` | `vitest` | 监听模式 |
 | `pnpm typecheck` | `pnpm -r exec tsc --noEmit` | 全仓类型检查 |
-| `pnpm seed` | `pnpm --filter @navhub/api seed` | 播种 |
+| `pnpm seed` | `node apps/api/src/seed-main.ts` | 播种（必须根目录 CWD；子包脚本 `pnpm --filter @navhub/api seed` 会写错库） |
 | `pnpm mcp:stdio` | `pnpm --filter @navhub/mcp start` | 启动 MCP stdio |
 | `pnpm vendor:web` | `node scripts/vendor-web.mjs` | 拉取上游底座 |
 | `pnpm test:pg` | `node --experimental-strip-types scripts/pg-check.mts` | PostgreSQL 分档验收 |

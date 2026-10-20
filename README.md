@@ -104,7 +104,10 @@ cp .env.example .env
 ### 2. 播种初始化数据
 ```bash
 # 初始化分类并注入精选技术站点与专题合集
-pnpm --filter @navhub/api seed
+# 注意：必须在仓库根目录执行 —— config.ts 的库路径默认是 cwd 相对的 ./data/navhub.db，
+# 而 dev-all / Docker 用的都是仓库根的 data/navhub.db（写成 pnpm --filter @navhub/api seed
+# 会以 apps/api 为 CWD，把种子播进 apps/api/data/navhub.db，开发服务器永远看不到）
+pnpm seed
 ```
 
 ### 3. 启动开发服务

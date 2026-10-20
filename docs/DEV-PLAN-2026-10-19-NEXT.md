@@ -145,6 +145,34 @@
 
 **流程教训（`bf791f6` CI 红的复盘）**：vendor-web.mjs 第 6 步把**整个 overlay（含 `test/`）覆盖到 `apps/web`**，`apps/web-overlay/` 才是唯一事实源；`bf791f6` 只提交了镜像 `apps/web/test/favorites-filter.test.ts`、漏了 overlay 副本（还是旧锚点），CI 用旧锚点找新页面 → `-1`，与注解 `expected -1 to be greater than -1` 完全吻合。本地验证 worktree 当时的 vendor 早于测试拷贝，掩盖了不一致——**今后凡动 `apps/web/test/*`，必须连同 overlay 副本一起提交，且改完先跑 vendor 再跑测试**。（`929666d` 补齐后 CI success，run `39306913597`。）
 
+
+### P2 Tailwind 扫描根治轮（2026-10-20，commit `a4391e7`）
+
+**引擎级定因（oxide 4.3.3 实测）**：v4 的自动源检测与 `@source` 通配在遍历时按「目录」剪枝被 `.gitignore` 忽略的路径；`@source` 的**字面前缀**落在被忽略目录内部才能正常扫描，若在目录之上，整棵子树被剪掉且**不报错**。`git check-ignore` 证实 `apps/web/src/app/*`、`components/*`、`lib/*`、`registry`、`plugins` 都是整目录通配忽略，所以 `../app/**`、`../components/**` 等整树声明贡献为零（宽泛 `../**/*` 实测只扫到 146 个未忽略文件）。
+
+**修复**：`globals.css` 改为「宽泛行 + 每个被忽略子树一条字面 glob」，历史守卫要求的 registry / marketplace / plugins 保留独立行，其余用花括号展开。**构建实锤**：CSS 177300 → 244121 字节（+38%），类集合 1768 → 2546（+778，0 丢失）；`lg:flex-row` / `sm:flex-row` / `min-[1536px]:grid-cols-4` / `ring-offset-background` / `bg-card/40` 全部生成。
+
+**防回归**：新增 `tw-source-coverage.test.ts`，直接调用构建同款 `@tailwindcss/oxide` 的 `Scanner.files` 计算真实扫描集，断言所有受 `.gitignore` 约束的源码文件都在集合内。**不能用 glob 字符串匹配**——旧配置在字符串匹配下同样 0 uncovered。注意 `files` 必须先于 `scan()` 取用，否则会把候选清空。
+
+**教训**：`@source` 通配不会绕过被忽略目录；Turbopack 的 CSS 缓存不跟踪源文件改动，做扫描对照必须改配置文本并删 `.next` 重建；注释里禁止出现 `**/*` 字面（`*/` 会提前闭合块注释，esbuild 报 `Unexpected "*"`）。
+
+### P2 常规内容页美化轮（2026-10-20，commit `da9285f`）
+
+对齐市场轮展板语言，落到 6 个常规内容页：
+
+| 页面 | 本轮改动 |
+| :--- | :--- |
+| hot | `market-hero` + 双色光斑 + Trophy 水印；热度/新品统计胶囊；骨架网格；两个 Tab 空态换 EmptyState |
+| tags | `market-hero` + Tags 水印（右下避让搜索框）；标签数 / 热门数 / 覆盖计数胶囊；药丸骨架云；无数据与无匹配两种空态分开 |
+| tags/[slug] | `market-hero` + Tag 图标替代 emoji；`#slug`、收录数胶囊；骨架卡网格；空态 EmptyState |
+| favorites | `market-hero` + Shield 水印；本地条数 / AES-256-GCM / 零知识三胶囊；加载骨架网格 |
+| site/[id] | 展板 `market-hero` + Globe 水印（下移避开健康状态胶囊）；详情骨架屏；不存在页 EmptyState |
+| videos | 新增页头展板 + 分类 / 子分类 / 视频源计数；保留侧栏与播放器布局 |
+
+实现约束：空态文案保留原有三元守卫生效（`list-degrade.test.ts` 的 `notice ? '…' : '…'` 原样保留）；favorites 骨架屏刻意不用 `min-[1536px]:grid-cols-5` 标记，避免 `favorites-filter.test.ts` 的「首个 5 列网格必须是筛选结果」断言误判。
+
+**验证**：干净 worktree（`a4391e7` + 本轮改动）vendor → tsc 0 → eslint 0 errors（504 warnings）→ build 通过（CSS 244640 字节）→ bundle 全绿 → web 71 文件 746 测试 → overlay check OK。Playwright 生产构建实拍 1440 / 1920 两档：`/hot` 1920 五列、1440 四列；tags 云、favorites 空态、videos 页头、site 详情与 tag 详情均正常。
+
 ### P3｜工具链收尾（窗口期，3–5 天）
 
 - **TS 6 → 7（native）**：TS 7 用于 `tsc --noEmit` 门禁；`typescript@6` 留给 typescript-eslint（TS 7 暂无 compiler API）。先处理两个硬阻断：`moduleResolution: "node"` → `"bundler"`；`baseUrl` → 相对 `paths`。

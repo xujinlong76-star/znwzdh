@@ -152,7 +152,7 @@ $env:NEXT_DIST_DIR=".next-budget"; node scripts/check-bundle-budget.mjs --json
 
 **必须诚实标注的两点**：
 
-1. 这些数字是**从本机网络**测得的即时快照。海外站大量 `fetch failed` 在国内网络很常见，浏览器里通常可正常打开；`gov-public-service` 的 404/超时也需要人工复核。真正确定的死链是 2 条 HTTP 404（`chinacourt.org`、`pccz.court.gov.cn`）。
+1. 这些数字是**从本机网络**测得的即时快照。海外站大量 `fetch failed` 在国内网络很常见，浏览器里通常可正常打开；`gov-public-service` 的超时与 DNS 失败也需要人工复核。报告里 2 条被判 404 的司法站（`chinacourt.org`、`pccz.court.gov.cn`）已人工复测：HEAD 请求分别返回 **449 / 403**（浏览器 UA 亦然），说明是 WAF 按方法/UA 拒绝，**不是死链**——正因如此，体检结论一律标注「需人工复核」，不直接据此删站。
 2. 体检脚本按**种子清单**遍历（29 包）。库里还有一个 `source=user` 的 `web3-dev-toolkit`（10 站，早期通过发布通道创建），它不是种子包，因此**不在本次分母内**——报告不会把它静默算成 100%，也不会假装覆盖了它。
 
 ### P2｜产品增值（第 3–4 周，三选一）

@@ -7,7 +7,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
-import { identityAllowed, identityOf, unauthorized, forbidden } from "./shared.ts";
+import { identityAllowed, identityOf, notFound, unauthorized, forbidden } from "./shared.ts";
 import {
   checkWorkspacePermission,
   type Workspace,
@@ -82,6 +82,44 @@ const DEFAULT_MEMBERS: WorkspaceMember[] = [
   },
 ];
 
+function parseWorkspaceList(payload: string | null | undefined): Workspace[] {
+  if (!payload) return [];
+  try {
+    const parsed: unknown = JSON.parse(payload);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is Workspace => {
+      if (!item || typeof item !== "object") return false;
+      const value = item as Partial<Workspace>;
+      return typeof value.id === "string" && typeof value.name === "string";
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function loadCustomWorkspaces(ctx: AppContext, identity: string): Promise<Workspace[]> {
+  const stored = await ctx.repo.getUserVault("workspaces:" + identity);
+  return parseWorkspaceList(stored?.payload);
+}
+
+/**
+ * 解析当前身份在目标空间中的角色。
+ *
+ * 默认空间是演示/共享数据；自定义空间只存在于创建者的 vault 里，因此
+ * 非创建者拿不到角色，成员接口必须返回 404，避免跨空间 IDOR。
+ */
+async function resolveWorkspaceRole(
+  ctx: AppContext,
+  identity: string,
+  wsId: string,
+): Promise<WorkspaceRole | null> {
+  const preset = DEFAULT_WORKSPACES.find((workspace) => workspace.id === wsId);
+  if (preset) return preset.role;
+
+  const custom = await loadCustomWorkspaces(ctx, identity);
+  return custom.find((workspace) => workspace.id === wsId)?.role ?? null;
+}
+
 export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -113,6 +151,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
   app.post("/api/workspaces", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
 
     const schema = z.object({
       name: z.string().min(1).max(64),
@@ -143,19 +182,9 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
       updatedAt: now,
     };
 
-    if (identity) {
-      const vaultKey = "workspaces:" + identity;
-      const stored = await ctx.repo.getUserVault(vaultKey);
-      let list: Workspace[] = [];
-      if (stored?.payload) {
-        try {
-          const parsedList = JSON.parse(stored.payload);
-          if (Array.isArray(parsedList)) list = parsedList;
-        } catch {}
-      }
-      list.push(newWs);
-      await ctx.repo.saveUserVault(vaultKey, JSON.stringify(list));
-    }
+    const list = await loadCustomWorkspaces(ctx, identity);
+    list.push(newWs);
+    await ctx.repo.saveUserVault("workspaces:" + identity, JSON.stringify(list));
 
     await ctx.repo.audit({
       actor: identity || "anonymous",
@@ -176,9 +205,12 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
   app.get("/api/workspaces/:id/members", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
 
     const params = req.params as { id: string };
     const wsId = params.id;
+    const role = await resolveWorkspaceRole(ctx, identity, wsId);
+    if (!role) return notFound(reply, "工作空间不存在或无权访问");
 
     let members = [...DEFAULT_MEMBERS];
     const customKey = `ws_members:${wsId}`;
@@ -195,10 +227,10 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
       workspaceId: wsId,
       members,
       permissions: {
-        canEditSites: checkWorkspacePermission("maintainer", "edit_sites"),
-        canManageMembers: checkWorkspacePermission("maintainer", "manage_members"),
-        canConfigureAi: checkWorkspacePermission("maintainer", "configure_ai"),
-        canViewAudit: checkWorkspacePermission("maintainer", "view_audit"),
+        canEditSites: checkWorkspacePermission(role, "edit_sites"),
+        canManageMembers: checkWorkspacePermission(role, "manage_members"),
+        canConfigureAi: checkWorkspacePermission(role, "configure_ai"),
+        canViewAudit: checkWorkspacePermission(role, "view_audit"),
       },
     };
   });
@@ -209,9 +241,15 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
   app.post("/api/workspaces/:id/members", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
 
     const params = req.params as { id: string };
     const wsId = params.id;
+    const actorRole = await resolveWorkspaceRole(ctx, identity, wsId);
+    if (!actorRole) return notFound(reply, "工作空间不存在或无权访问");
+    if (!checkWorkspacePermission(actorRole, "manage_members")) {
+      return forbidden(reply, "无权管理该空间成员");
+    }
 
     const schema = z.object({
       username: z.string().min(1).max(64),
@@ -238,6 +276,13 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
     const targetUser = parsed.data.username.trim();
     const existingIdx = members.findIndex((m) => m.username.toLowerCase() === targetUser.toLowerCase());
     const now = Date.now();
+
+    if (existingIdx >= 0 && members[existingIdx]!.role === "owner") {
+      return forbidden(reply, "Owner 角色不可通过成员接口变更");
+    }
+    if (parsed.data.role === "owner" && actorRole !== "owner") {
+      return forbidden(reply, "仅 Owner 可授予 Owner 角色");
+    }
 
     if (existingIdx >= 0) {
       members[existingIdx] = {
@@ -275,9 +320,15 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
   app.delete("/api/workspaces/:id/members/:userId", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
 
     const params = req.params as { id: string; userId: string };
     const { id: wsId, userId } = params;
+    const actorRole = await resolveWorkspaceRole(ctx, identity, wsId);
+    if (!actorRole) return notFound(reply, "工作空间不存在或无权访问");
+    if (!checkWorkspacePermission(actorRole, "manage_members")) {
+      return forbidden(reply, "无权管理该空间成员");
+    }
 
     const customKey = `ws_members:${wsId}`;
     let members = [...DEFAULT_MEMBERS];

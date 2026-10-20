@@ -160,4 +160,62 @@ describe("多租户工作空间与细粒度 RBAC 体系 API", () => {
     const removed = body.members.find((m: any) => m.userId === "usr-member-2");
     expect(removed).toBeUndefined();
   });
+
+  it("成员接口拒绝匿名与非空间成员（自定义空间 IDOR 防护）", async () => {
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/workspaces",
+      headers: H_USER,
+      payload: { name: "Private Lab", slug: "private-lab", type: "team" },
+    });
+    expect(createRes.statusCode).toBe(201);
+    const wsId = createRes.json().workspace.id as string;
+
+    const anonymous = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${wsId}/members`,
+    });
+    expect(anonymous.statusCode).toBe(401);
+
+    const other = { "x-navhub-user-id": "usr-test-other" };
+    const readOther = await app.inject({
+      method: "GET",
+      url: `/api/workspaces/${wsId}/members`,
+      headers: other,
+    });
+    expect(readOther.statusCode).toBe(404);
+
+    const addOther = await app.inject({
+      method: "POST",
+      url: `/api/workspaces/${wsId}/members`,
+      headers: other,
+      payload: { username: "Intruder", role: "owner" },
+    });
+    expect(addOther.statusCode).toBe(404);
+
+    const removeOther = await app.inject({
+      method: "DELETE",
+      url: `/api/workspaces/${wsId}/members/usr-member-1`,
+      headers: other,
+    });
+    expect(removeOther.statusCode).toBe(404);
+  });
+
+  it("成员角色变更不能触碰 Owner，maintainer 不能授予 Owner", async () => {
+    const demote = await app.inject({
+      method: "POST",
+      url: "/api/workspaces/ws-team-shared/members",
+      headers: H_USER,
+      payload: { username: "Admin (系统管理员)", role: "viewer" },
+    });
+    expect(demote.statusCode).toBe(403);
+
+    const grant = await app.inject({
+      method: "POST",
+      url: "/api/workspaces/ws-team-shared/members",
+      headers: H_USER,
+      payload: { username: "NewOwner", role: "owner" },
+    });
+    expect(grant.statusCode).toBe(403);
+  });
 });

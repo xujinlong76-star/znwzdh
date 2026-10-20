@@ -65,7 +65,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     return runSearch(parsed.data);
   });
 
-  app.post("/api/search", async (req, reply) => {
+  app.post("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req, reply) => {
     const parsed = searchBody.safeParse(req.body ?? {});
     if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
     return runSearch(parsed.data);

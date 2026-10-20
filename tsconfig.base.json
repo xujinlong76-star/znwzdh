@@ -20,7 +20,9 @@
     "sourceMap": true,
     "forceConsistentCasingInFileNames": true,
     // 原生依赖（sqlite-vec）没有类型声明，自定义 ambient 声明放在仓库根 types/
-    "typeRoots": ["./types", "./node_modules/@types"]
+    "typeRoots": ["./types", "./node_modules/@types"],
+    // TS 7 不再默认注入所有 @types；显式声明全局 Node 类型（Buffer/URL/TextDecoder 等）。
+    "types": ["node"]
   },
   // 排除说明：
   //  - scripts/         本地验证脚手架（pg-check 等），连真实数据库、依赖运行时环境变量

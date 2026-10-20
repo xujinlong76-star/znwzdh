@@ -25,7 +25,7 @@ node scripts/vendor-web.mjs
 
 # 2) 以 report-only **构建**（env 必须在 build 时设置）
 NAVHUB_CSP_REPORT_ONLY=1 \
-NAVHUB_CSP_REPORT_URI=https://csp.example.com/report \
+NAVHUB_CSP_REPORT_URI=/api/csp-report \
 pnpm --filter navsphere build
 
 # 3) 启动（不需要再带 CSP env；响应头已写入构建产物）
@@ -33,14 +33,19 @@ pnpm --filter navsphere start --port 4180
 
 # 4) 看响应头
 curl -sI http://localhost:4180/ | grep -i content-security-policy
-# 期望：Content-Security-Policy-Report-Only: default-src 'self'; …; report-uri https://csp.example.com/report
+# 期望：Content-Security-Policy-Report-Only: default-src 'self'; …; report-uri /api/csp-report
+
+# 5) 手工验证收集端点（返回 204，日志里出现 [csp-report]）
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:4180/api/csp-report \
+  -H 'content-type: application/csp-report' \
+  -d '{"csp-report":{"document-uri":"https://example.com/?t=1","blocked-uri":"inline","violated-directive":"script-src"}}'
 ```
 
 Windows PowerShell：
 
 ```powershell
 $env:NAVHUB_CSP_REPORT_ONLY='1'
-$env:NAVHUB_CSP_REPORT_URI='https://csp.example.com/report'
+$env:NAVHUB_CSP_REPORT_URI='/api/csp-report'
 pnpm --filter navsphere build
 pnpm --filter navsphere start --port 4180
 ```
@@ -53,6 +58,11 @@ pnpm --filter navsphere start --port 4180
 
 `report-uri` 会收到浏览器上报的 `application/csp-report` JSON，包含 `document-uri`、`blocked-uri`、`violated-directive`。
 
+- **内置收集端点（自建部署首选）**：`/api/csp-report`（`apps/web-overlay/src/app/api/csp-report/route.ts`）。
+  构建时设 `NAVHUB_CSP_REPORT_URI=/api/csp-report` 即可，违规会打到应用自己的日志里：
+  - 只接受 POST；请求体上限 64 KB（超限 413）；单 IP 60 次/分钟、全局 600 次/分钟（超限 429）；
+  - 日志只写脱敏字段（URL 去掉 query/hash 并截断），不落原始请求体，也不做持久化；
+  - 兼容 `report-uri`（`csp-report` 包装）与 `report-to`（`type: csp-violation`）两种格式。
 - 可用外部服务（Sentry / Report URI / 自建网关）；
 - 也可先指向一个只记日志的入口，**不要记录完整页面 URL 的敏感查询串**；
 - 当前实现使用 `report-uri`（兼容性最好）；后续若上 `report-to`，需要同时下发 `Report-To` 头并做分组配置，属单独改动。
@@ -144,7 +154,8 @@ docker build -f docker/Dockerfile.web \
 ## 5. 代码守卫
 
 ```bash
-pnpm exec vitest run apps/web-overlay/test/security-headers.test.ts
+# overlay 的测试由 vendor 镜像到 apps/web/test 后再跑（vitest 只收集 apps/web/test）
+pnpm exec vitest run apps/web/test/security-headers.test.ts apps/web/test/csp-report.test.ts
 ```
 
-覆盖：默认不下发、enforce、report-only、`report-uri` 追加、双开关 enforce 优先、两种档位指令逐字一致、HSTS 仅 https 下发。
+覆盖：默认不下发、enforce、report-only、`report-uri` 追加、双开关 enforce 优先、两种档位指令逐字一致、HSTS 仅 https 下发；以及上报解析（两种格式）、URL 脱敏、单 IP/全局限流、请求体上限与端点状态码。

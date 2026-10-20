@@ -13,6 +13,23 @@ import { cn } from "@/lib/utils"
 // Format: { THEME_NAME: CSS_SELECTOR }
 const THEMES = { light: "", dark: ".dark" } as const
 
+const CHART_KEY_RE = /^[a-zA-Z0-9_-]+$/
+
+/** 只保留可安全拼进 CSS 选择器/变量名的字符，防止 id 逃逸出 [data-chart=...]。 */
+function safeChartId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "") || "chart"
+}
+
+/** 颜色来自调用方配置时，拒绝能闭合声明/规则或加载外部资源的 CSS。 */
+function safeChartColor(value: string | undefined): string | null {
+  if (!value) return null
+  const color = value.trim()
+  if (!color || /[;{}<>\\\r\n]/.test(color) || /url\s*\(/i.test(color) || /expression\s*\(/i.test(color)) {
+    return null
+  }
+  return color
+}
+
 export type ChartConfig = {
   [k in string]: {
     label?: React.ReactNode
@@ -49,7 +66,7 @@ const ChartContainer = React.forwardRef<
   }
 >(({ id, className, children, config, ...props }, ref) => {
   const uniqueId = React.useId()
-  const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
+  const chartId = `chart-${safeChartId(id || uniqueId)}`
 
   return (
     <ChartContext.Provider value={{ config }}>
@@ -81,28 +98,28 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null
   }
 
-  return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
+  const css = Object.entries(THEMES)
+    .map(
+      ([theme, prefix]) => `
 ${prefix} [data-chart=${id}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
-    const color =
+    if (!CHART_KEY_RE.test(key)) return null
+    const color = safeChartColor(
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
-      itemConfig.color
+        itemConfig.color
+    )
     return color ? `  --color-${key}: ${color};` : null
   })
   .join("\n")}
 }
 `
-          )
-          .join("\n"),
-      }}
-    />
-  )
+    )
+    .join("\n")
+
+  // 不用 dangerouslySetInnerHTML：即使未来传入用户配置，也由 React 转义文本节点；
+  // 上面的颜色/键名白名单负责阻止 CSS 语法逃逸。
+  return <style>{css}</style>
 }
 
 const ChartTooltip = RechartsPrimitive.Tooltip

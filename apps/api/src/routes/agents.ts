@@ -16,10 +16,56 @@ import {
   type MinimalOpenApiSpec,
   type P2PMessage,
 } from "@navhub/core";
+import { guardedFetch } from "@navhub/ai";
 import { webMcp } from "./visual.ts";
 
 import type { AppContext } from "../context.ts";
 import { identityAllowed } from "./shared.ts";
+
+/** 动态 REST 工具只放行 GET：写请求需要额外的 CSRF/重放与请求体语义评估。 */
+function isGetRestSpec(spec: { method?: string }): boolean {
+  return (spec.method ?? "GET").toUpperCase() === "GET";
+}
+
+/**
+ * 把 @navhub/ai 的 guardedFetch 适配成 fetch 形态供动态工具执行器使用。
+ *
+ * core 的执行器只做字面 IP/重定向校验，无法识别解析到私网的域名；
+ * guardedFetch 会解析 DNS 并拒绝私网/环回/云元数据地址，堵住
+ * `127.0.0.1.nip.io` 这类 SSRF 绕过。这里只允许 GET，且不透传调用方
+ * 自定义 Header，避免把内部凭据带到任意公网端点。
+ */
+const guardedToolFetch: typeof fetch = async (input, init = {}) => {
+  const rawUrl =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+
+  const method = (init.method ?? "GET").toUpperCase();
+  if (method !== "GET") {
+    throw new Error("动态 REST 工具仅允许 GET 请求");
+  }
+
+  const result = await guardedFetch(rawUrl, {
+    timeoutMs: 8_000,
+    maxBytes: 512 * 1024,
+    maxRedirects: 3,
+    allowPrivateNetworks: false,
+    userAgent: "NavHub-Agent/5.0 (Dynamic-Synthesizer; guarded)",
+  });
+
+  const headers = result.contentType
+    ? { "content-type": result.contentType }
+    : undefined;
+
+  // Response 构造器禁止 204/205/304 携带 body。
+  if (result.status === 204 || result.status === 205 || result.status === 304) {
+    return new Response(null, { status: result.status, headers });
+  }
+  return new Response(result.body, { status: result.status, headers });
+};
 
 export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -115,10 +161,13 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     }
 
     if (body.data.kind === "openapi" && body.data.openApiSpec) {
-      const specs = parseOpenApiToSpecs(body.data.openApiSpec as MinimalOpenApiSpec);
+      const allSpecs = parseOpenApiToSpecs(body.data.openApiSpec as MinimalOpenApiSpec);
+      // 写请求不在动态工具放行范围：只注册 GET，避免 SSRF 防护之外的
+      // CSRF/重放/请求体语义问题。
+      const specs = allSpecs.filter(isGetRestSpec);
       const tools = [];
       for (const s of specs) {
-        const syn = synthesizeRestTool(s);
+        const syn = synthesizeRestTool(s, { fetchFn: guardedToolFetch });
         if (!webMcp.registerTool(syn.definition, (p) => syn.handler(p))) break;
         tools.push(syn.definition);
       }
@@ -128,12 +177,17 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
         count: tools.length,
         tools,
         registered: tools.length > 0,
+        skipped: allSpecs.length - specs.length,
         capped: tools.length < specs.length,
       };
     }
 
     if (body.data.restSpec) {
-      const syn = synthesizeRestTool(body.data.restSpec);
+      if (!isGetRestSpec(body.data.restSpec)) {
+        reply.code(400);
+        return { error: "动态 REST 工具当前仅支持 GET 请求" };
+      }
+      const syn = synthesizeRestTool(body.data.restSpec, { fetchFn: guardedToolFetch });
       if (!webMcp.registerTool(syn.definition, (p) => syn.handler(p))) {
         reply.code(429);
         return { error: "工具注册表已满（上限 " + webMcp.maxToolCount + "），请联系管理员清理" };

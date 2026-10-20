@@ -1730,6 +1730,24 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     expect(restJson.tool.name).toBe("get_package_version");
   });
 
+  it("POST /api/tools/synthesize 拒绝动态 REST 写请求", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tools/synthesize",
+      payload: {
+        kind: "rest",
+        restSpec: {
+          name: "mutating_tool",
+          description: "不应被注册的写请求",
+          url: "https://example.com/api/write",
+          method: "POST",
+        },
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("GET");
+  });
+
   it("POST /api/p2p/signal P2P 网格信令与去中心化状态协商 Broker", async () => {
     const res = await app.inject({
       method: "POST",

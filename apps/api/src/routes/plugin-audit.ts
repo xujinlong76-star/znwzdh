@@ -15,6 +15,7 @@ import { guardedFetch } from "@navhub/ai";
 import type { SitePackPayload } from "@navhub/core";
 import {
   auditPluginUrls,
+  isBlockedByBotStatus,
   PLUGIN_AUDIT_DEFAULTS,
   type UrlProbeResult,
   type UrlProber,
@@ -28,6 +29,18 @@ const MAX_SAMPLE = 200
 const MIN_TIMEOUT_MS = 500
 const MAX_TIMEOUT_MS = 30_000
 
+/**
+ * 体检专用 UA：浏览器风格，可用 NAVHUB_AUDIT_USER_AGENT 覆盖。
+ *
+ * 为什么不用项目默认的 NavHubBot/0.1：首轮真实体检发现，前端包的「不可达」全是 403
+ * （webpagetest.org / wails.io）、政务包大量 412 —— 那是 WAF 在拒绝爬虫 UA，
+ * 站点本身在浏览器里完全正常。体检的目的是判断「用户能不能打开」，故用浏览器风格 UA；
+ * 拦不住的那部分会被归入 blocked（存活但拒绝爬虫），仍然计入可达，不会误杀。
+ */
+const AUDIT_USER_AGENT =
+  process.env.NAVHUB_AUDIT_USER_AGENT?.trim() ||
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
 function clampInt(value: unknown, fallback: number, min: number, max: number): number {
   const n = typeof value === "number" && Number.isFinite(value) ? Math.floor(value) : fallback
   return Math.min(max, Math.max(min, n))
@@ -38,10 +51,16 @@ function createGuardedProber(): UrlProber {
   return async (url, timeoutMs): Promise<UrlProbeResult> => {
     const started = Date.now()
     try {
-      const res = await guardedFetch(url, { timeoutMs, maxBytes: 8 * 1024, maxRedirects: 3 })
+      const res = await guardedFetch(url, {
+        timeoutMs,
+        maxBytes: 8 * 1024,
+        maxRedirects: 3,
+        userAgent: AUDIT_USER_AGENT,
+      })
       return {
         url,
         ok: res.status >= 200 && res.status < 400,
+        blocked: isBlockedByBotStatus(res.status),
         status: res.status,
         finalUrl: res.finalUrl,
         latencyMs: Date.now() - started,
@@ -89,6 +108,7 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         declared: urls.length,
         sampled: summary.total,
         ok: summary.ok,
+        blocked: summary.blocked,
         broken: summary.broken,
         reachability: summary.reachability,
       },
@@ -100,10 +120,12 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       declared: urls.length,
       sampled: summary.total,
       okCount: summary.ok,
+      blockedCount: summary.blocked,
       brokenCount: summary.broken,
       redirected: summary.redirected,
       reachability: summary.reachability,
       brokenItems: summary.brokenItems,
+      blockedItems: summary.blockedItems,
       params: { sample, timeoutMs },
     }
   })

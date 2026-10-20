@@ -39,10 +39,13 @@ interface AuditResult {
   declared: number
   sampled: number
   okCount: number
+  /** 存活但拒绝爬虫（401/403/405/412/429）—— 计入可达，不计入不可达 */
+  blockedCount: number
   brokenCount: number
   redirected: number
   reachability: number | null
   brokenItems: Array<{ url: string; status?: number; error?: string }>
+  blockedItems: Array<{ url: string; status?: number }>
   params: { sample: number; timeoutMs: number }
 }
 
@@ -160,6 +163,11 @@ export function PluginUrlHealthPanel() {
                         <span>声明 {result.declared} 条</span>
                         <span>抽样 {result.sampled} 条</span>
                         <span className="text-emerald-600 dark:text-emerald-400">可达 {result.okCount}</span>
+                        {result.blockedCount > 0 && (
+                          <span title="站点存活，只是 WAF 拒绝了爬虫（401/403/405/412/429），已计入可达">
+                            存活但拒绝爬虫 {result.blockedCount}
+                          </span>
+                        )}
                         <span className={result.brokenCount > 0 ? 'text-destructive' : ''}>不可达 {result.brokenCount}</span>
                         {result.redirected > 0 && <span>重定向 {result.redirected}</span>}
                         <span>单条超时 {result.params.timeoutMs}ms</span>
@@ -168,7 +176,7 @@ export function PluginUrlHealthPanel() {
                       {result.brokenCount === 0 ? (
                         <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                           <ShieldCheck className="h-3.5 w-3.5" />
-                          抽样样本全部可达
+                          抽样样本没有真死链{result.blockedCount > 0 ? '（有站点拒绝爬虫，但站点本身可用）' : ''}
                         </div>
                       ) : (
                         <ul className="space-y-1">
@@ -185,6 +193,22 @@ export function PluginUrlHealthPanel() {
                             <li className="text-muted-foreground">……还有 {result.brokenItems.length - MAX_BROKEN_ROWS} 条未列出</li>
                           )}
                         </ul>
+                      )}
+
+                      {result.blockedItems.length > 0 && (
+                        <details className="text-muted-foreground">
+                          <summary className="cursor-pointer">
+                            站点存活但拒绝爬虫的条目（{result.blockedItems.length} 条，不计入不可达）
+                          </summary>
+                          <ul className="mt-1 space-y-1">
+                            {result.blockedItems.slice(0, MAX_BROKEN_ROWS).map((item) => (
+                              <li key={item.url} className="flex items-start gap-1.5">
+                                <code className="break-all">{item.url}</code>
+                                <span className="shrink-0">{item.status ? `HTTP ${item.status}` : '被拦截'}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
                       )}
                     </div>
                   )}

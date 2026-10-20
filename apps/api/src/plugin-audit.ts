@@ -16,7 +16,16 @@
 export interface UrlProbeResult {
   url: string
   /** 判定为可达（2xx/3xx，且未被 SSRF 守卫拒绝） */
+  /** 2xx/3xx：服务端正常响应 */
   ok: boolean
+  /**
+   * 存活但拒绝爬虫：401/403/405/412/429。
+   *
+   * 为什么单列一类（2026-10-20 首轮真实体检的发现）：前端包的「不可达」全部是 HTTP 403
+   * （webpagetest.org / wails.io），政务包大量是 412 —— 这些站点**在浏览器里完全正常**，
+   * 只是 WAF/风控拒绝了我们的爬虫 UA。若把它们算成死链，会把好站点误判、甚至误导数据清理。
+   */
+  blocked?: boolean
   status?: number
   /** 跟随后重定向落点；与 url 归一后不同即视为发生重定向 */
   finalUrl?: string
@@ -27,13 +36,23 @@ export interface UrlProbeResult {
 /** 一个插件包的体检汇总（列表/徽标/报告三处共用同一口径） */
 export interface PluginAuditSummary {
   total: number
+  /** 正常响应（2xx/3xx） */
   ok: number
+  /** 存活但拒绝爬虫（401/403/405/412/429），**计入可达** */
+  blocked: number
+  /** 真不可达：DNS/连接失败、超时、5xx、其它 4xx */
   broken: number
   redirected: number
-  /** 可达率（0..1，保留 3 位小数）；total 为 0 时返回 null，避免用 0 冒充「全挂」 */
+  /**
+   * 可达率（0..1，保留 3 位小数）= (ok + blocked) / total。
+   * 口径说明：blocked 只说明「拒绝爬虫」，站点本身可用，因此计入可达；
+   * total 为 0 时返回 null，避免用 0 冒充「全挂」。
+   */
   reachability: number | null
-  /** 不可达明细（报告里逐条列出，便于人工复核或替换站点） */
+  /** 真不可达明细（逐条列出，便于人工复核或替换站点） */
   brokenItems: Array<{ url: string; status?: number; error?: string }>
+  /** 存活但拒绝爬虫的明细（单独列出，便于分辨「站点没问题、是爬虫被挡」） */
+  blockedItems: Array<{ url: string; status?: number }>
 }
 
 /** 体检默认参数：单包抽样 30 条、并发 6、单条兜底超时 5s */
@@ -42,6 +61,19 @@ export const PLUGIN_AUDIT_DEFAULTS = {
   concurrency: 6,
   timeoutMs: 5_000,
 } as const
+
+/**
+ * 「存活但拒绝爬虫」的状态码集合。
+ *
+ * 401 未授权 / 403 禁止 / 405 方法不允许 / 412 前置条件失败 / 429 限流 ——
+ * 共同点是「服务端活着、有 WAF/风控在应答」，与 DNS 失败、连接拒绝、超时、5xx 有本质区别。
+ * 只看状态码无法区分「站点挂了」与「站点挡我」，所以这两类必须分开统计。
+ */
+export const BLOCKED_BY_BOT_STATUSES = [401, 403, 405, 412, 429] as const
+
+export function isBlockedByBotStatus(status: number | undefined): boolean {
+  return status !== undefined && (BLOCKED_BY_BOT_STATUSES as readonly number[]).includes(status)
+}
 
 /** 归一化 URL：协议/主机小写、去尾斜杠、去 hash —— 判「是否重定向」时用 */
 export function normalizeAuditUrl(url: string): string {
@@ -81,26 +113,37 @@ export function sampleUrls(urls: readonly string[], limit: number): string[] {
 /** 汇总探活结果（列表徽标 / 详情报告 / 管理端报表共用） */
 export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditSummary {
   let ok = 0
+  let blocked = 0
   let broken = 0
   let redirected = 0
   const brokenItems: PluginAuditSummary['brokenItems'] = []
+  const blockedItems: PluginAuditSummary['blockedItems'] = []
   for (const p of probes) {
     if (p.ok) {
       ok++
       if (p.finalUrl && normalizeAuditUrl(p.finalUrl) !== normalizeAuditUrl(p.url)) redirected++
-    } else {
-      broken++
-      brokenItems.push({ url: p.url, status: p.status, error: p.error })
+      continue
     }
+    // 存活但拒绝爬虫：单列一类，并计入可达 —— 否则会把「WAF 挡我」误判成「站点挂了」
+    if (p.blocked ?? isBlockedByBotStatus(p.status)) {
+      blocked++
+      blockedItems.push({ url: p.url, status: p.status })
+      continue
+    }
+    broken++
+    brokenItems.push({ url: p.url, status: p.status, error: p.error })
   }
   const total = probes.length
+  const reachable = ok + blocked
   return {
     total,
     ok,
+    blocked,
     broken,
     redirected,
-    reachability: total === 0 ? null : Math.round((ok / total) * 1000) / 1000,
+    reachability: total === 0 ? null : Math.round((reachable / total) * 1000) / 1000,
     brokenItems,
+    blockedItems,
   }
 }
 

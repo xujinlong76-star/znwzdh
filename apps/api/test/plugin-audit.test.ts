@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 import {
   auditPluginUrls,
+  isBlockedByBotStatus,
   normalizeAuditUrl,
   PLUGIN_AUDIT_DEFAULTS,
   probeUrls,
@@ -79,6 +80,41 @@ describe("汇总：可达率与不可达明细", () => {
     expect(normalizeAuditUrl("https://B.example/x/#frag")).toBe("https://b.example/x");
     const same = summarizeProbes([{ url: "https://b.example/x/", ok: true, status: 200, finalUrl: "https://B.example/x#a" }]);
     expect(same.redirected).toBe(0);
+  })
+})
+
+describe("存活但拒绝爬虫（401/403/405/412/429）不计入不可达", () => {
+  /**
+   * 真实背景：首轮真实体检里，前端包的「不可达」全部是 403、政务包大量是 412 ——
+   * 那些站点在浏览器里完全正常，只是 WAF 拒绝了爬虫。把它们算成死链会误杀好站点。
+   */
+  const probes: UrlProbeResult[] = [
+    { url: "https://a.example/", ok: true, status: 200 },
+    { url: "https://b.example/", ok: false, blocked: true, status: 403 },
+    { url: "https://c.example/", ok: false, status: 412 },
+    { url: "https://d.example/", ok: false, error: "timeout" },
+  ];
+
+  it("blocked 单列且计入可达；真死链仍进 brokenItems", () => {
+    const s = summarizeProbes(probes);
+    expect(s.ok).toBe(1);
+    expect(s.blocked).toBe(2);
+    expect(s.broken).toBe(1);
+    expect(s.reachability).toBe(0.75); // (1 ok + 2 blocked) / 4
+    expect(s.blockedItems.map((i) => i.status).sort()).toEqual([403, 412]);
+    expect(s.brokenItems).toHaveLength(1);
+    expect(s.brokenItems[0].url).toBe("https://d.example/");
+  })
+
+  it("状态码归类：401/403/405/412/429 是「拒绝爬虫」；404/5xx/200 不是", () => {
+    for (const status of [401, 403, 405, 412, 429]) expect(isBlockedByBotStatus(status)).toBe(true);
+    for (const status of [200, 404, 500, 502, undefined]) expect(isBlockedByBotStatus(status)).toBe(false);
+  })
+
+  it("显式 blocked=false 时不再按状态码兜底（调用方可强制归为真不可达）", () => {
+    const s = summarizeProbes([{ url: "https://e.example/", ok: false, blocked: false, status: 403 }]);
+    expect(s.blocked).toBe(0);
+    expect(s.broken).toBe(1);
   })
 })
 

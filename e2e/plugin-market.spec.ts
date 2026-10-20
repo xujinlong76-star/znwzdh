@@ -492,9 +492,13 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(page.getByText(`!test${stamp}`)).toBeVisible();
 
     // 5. 社区高危举报触发自动熔断隔离 (quarantined)
-    // 连续发起 3 次独立匿名举报
-    for (const reporter of ['anon-rep-1', 'anon-rep-2', 'anon-rep-3']) {
+    // 连续发起 3 次独立匿名举报。举报接口限流为 5 次/小时/IP，
+    // 若三次都从 localhost 发出，测试重试时会累计 3+3>5 被 429；
+    // 这里用 TEST-NET-3 模拟三个独立来源 IP（E2E 已显式开启 TRUST_PROXY）。
+    const reporters = ['anon-rep-1', 'anon-rep-2', 'anon-rep-3'];
+    for (const [index, reporter] of reporters.entries()) {
       const rep = await request.post(`/api/hub/plugins/${slug}/report?anonId=${reporter}`, {
+        headers: { 'x-forwarded-for': `203.0.113.${index + 1}` },
         data: { reason: `违规测试举报来自 ${reporter}` },
       });
       expect(rep.status()).toBe(200);

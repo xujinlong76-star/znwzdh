@@ -48,6 +48,9 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       NAVHUB_SQLITE_PATH: E2E_DB_PATH,
+      // 举报接口按 IP 限流 5 次/小时；E2E 用不同 XFF 模拟独立举报人，
+      // 避免测试重试累计超过配额（仅测试进程生效，生产默认不信任 XFF）。
+      NAVHUB_TRUST_PROXY: '1',
     },
   },
 });

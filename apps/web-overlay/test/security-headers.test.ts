@@ -95,6 +95,31 @@ describe("CSP 三档开关", () => {
     const ro = find(headers, "Content-Security-Policy-Report-Only");
     expect(ro!.value).toContain("report-uri https://csp.example.com/report");
   });
+
+  it("enforce 档同样支持 report-uri（上线后继续收集违规）", async () => {
+    process.env.NAVHUB_CSP = "1";
+    process.env.NAVHUB_CSP_REPORT_URI = "https://csp.example.com/report";
+    const headers = await loadHeaders();
+    const csp = find(headers, "Content-Security-Policy");
+    expect(csp!.value).toContain("report-uri https://csp.example.com/report");
+  });
+
+  it("两个开关同时打开时 enforce 优先，不重复下发 Report-Only", async () => {
+    process.env.NAVHUB_CSP = "1";
+    process.env.NAVHUB_CSP_REPORT_ONLY = "1";
+    const headers = await loadHeaders();
+    expect(find(headers, "Content-Security-Policy")).toBeDefined();
+    expect(find(headers, "Content-Security-Policy-Report-Only")).toBeUndefined();
+  });
+
+  it("enforce 与 report-only 的指令逐字一致（单一事实源，防策略漂移）", async () => {
+    process.env.NAVHUB_CSP = "1";
+    const enforced = find(await loadHeaders(), "Content-Security-Policy")!.value;
+    delete process.env.NAVHUB_CSP;
+    process.env.NAVHUB_CSP_REPORT_ONLY = "1";
+    const observed = find(await loadHeaders(), "Content-Security-Policy-Report-Only")!.value;
+    expect(observed).toBe(enforced);
+  });
 });
 
 describe("HSTS 只在明确 https 时下发", () => {

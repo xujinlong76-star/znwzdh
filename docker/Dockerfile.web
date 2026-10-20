@@ -63,12 +63,23 @@ RUN rm -f /app/apps/web/src/middleware.ts /app/apps/web/.eslintrc.json
 
 WORKDIR /app/apps/web
 
+# CSP 开关是构建期变量：Next 的 headers() 在 next build 时写入 routes-manifest，
+# 运行时改 env 不会生效。需要 CSP 的镜像用：
+#   docker build --build-arg NAVHUB_CSP=1 -f docker/Dockerfile.web .
+# report-only 档：--build-arg NAVHUB_CSP_REPORT_ONLY=1 [--build-arg NAVHUB_CSP_REPORT_URI=https://...]
+ARG NAVHUB_CSP=
+ARG NAVHUB_CSP_REPORT_ONLY=
+ARG NAVHUB_CSP_REPORT_URI=
+
 ENV NODE_ENV=production \
     STORAGE_ADAPTER=http \
     NEXT_PUBLIC_API_URL=http://api:8787
 
 # 生产构建（不使用 standalone：避免 Windows/受限环境下创建符号链接失败）
-RUN pnpm build
+RUN NAVHUB_CSP="$NAVHUB_CSP" \
+    NAVHUB_CSP_REPORT_ONLY="$NAVHUB_CSP_REPORT_ONLY" \
+    NAVHUB_CSP_REPORT_URI="$NAVHUB_CSP_REPORT_URI" \
+    pnpm build
 
 EXPOSE 3000
 

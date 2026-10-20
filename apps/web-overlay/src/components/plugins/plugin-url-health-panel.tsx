@@ -44,32 +44,11 @@ interface AuditResult {
   brokenCount: number
   redirected: number
   reachability: number | null
-  brokenItems: Array<{ url: string; status?: number; error?: string; failureKind?: string }>
+  brokenItems: Array<{ url: string; status?: number; error?: string }>
   blockedItems: Array<{ url: string; status?: number }>
-  /** 不可达原因分布：区分「我们的探针限制」（超时/重定向超限）与「站点真挂」（连接失败/HTTP 错误） */
-  brokenByReason?: Record<string, number>
   /** 服务端返回的报告口径声明（本机网络测得 / 拒绝爬虫计入可达），随结果一起展示 */
   caveat?: string
-  params: { sample: number; timeoutMs: number; maxRedirects?: number }
-}
-
-/** 不可达原因的中文标签（报告与明细共用） */
-const REASON_LABELS: Record<string, string> = {
-  timeout: '超时',
-  'redirect-limit': '重定向超限',
-  'ssrf-blocked': 'SSRF 拦截',
-  connect: '连接失败',
-  'http-error': 'HTTP 错误',
-  other: '其它',
-}
-
-/** 把 brokenByReason 渲染成「超时 2 / 连接失败 1」这样的紧凑串 */
-function reasonSummary(byReason?: Record<string, number>): string {
-  if (!byReason) return ''
-  return Object.entries(byReason)
-    .filter(([, n]) => n > 0)
-    .map(([kind, n]) => `${REASON_LABELS[kind] ?? kind} ${n}`)
-    .join(' / ')
+  params: { sample: number; timeoutMs: number }
 }
 
 /** 可达率 → 徽标语义：≥95% 健康 / ≥80% 需关注 / 其余异常；null 视为未知（不拿 0 冒充全挂） */
@@ -197,9 +176,6 @@ export function PluginUrlHealthPanel() {
                         >
                           本机不可达 {result.brokenCount}
                         </span>
-                        {result.brokenCount > 0 && reasonSummary(result.brokenByReason) && (
-                          <span className="text-muted-foreground">（{reasonSummary(result.brokenByReason)}）</span>
-                        )}
                         {result.redirected > 0 && <span>重定向 {result.redirected}</span>}
                         <span>单条超时 {result.params.timeoutMs}ms</span>
                       </div>
@@ -216,8 +192,7 @@ export function PluginUrlHealthPanel() {
                               <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
                               <code className="break-all">{item.url}</code>
                               <span className="shrink-0 text-muted-foreground">
-                                {item.failureKind ? (REASON_LABELS[item.failureKind] ?? item.failureKind) : (item.status ? 'HTTP 错误' : '不可达')}
-                                {item.status ? ` HTTP ${item.status}` : ''}
+                                {item.status ? `HTTP ${item.status}` : (item.error ?? '不可达')}
                               </span>
                             </li>
                           ))}

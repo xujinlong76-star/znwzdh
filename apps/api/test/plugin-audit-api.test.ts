@@ -105,9 +105,6 @@ describe("POST /api/plugins/:slug/audit", () => {
     expect(typeof body.caveat).toBe("string");
     expect(body.caveat).toContain("本机网络");
     expect(body.caveat).toContain("拒绝爬虫");
-    // 原因归类：私网目标应被记为 ssrf-blocked（而不是笼统的「不可达」）
-    expect(body.brokenByReason["ssrf-blocked"]).toBe(3);
-    expect(body.params.maxRedirects).toBe(6);
   })
 
   it("抽样参数被夹紧：limit=9999 → 上限 200，且不超过声明条数", async () => {

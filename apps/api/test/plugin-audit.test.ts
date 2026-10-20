@@ -65,8 +65,8 @@ describe("汇总：可达率与不可达明细", () => {
     expect(s.redirected).toBe(1);
     expect(s.reachability).toBe(0.5);
     expect(s.brokenItems).toEqual([
-      { url: "https://c.example/", status: 404, error: undefined, failureKind: "http-error" },
-      { url: "https://d.example/", status: undefined, error: "timeout", failureKind: "timeout" },
+      { url: "https://c.example/", status: 404, error: undefined },
+      { url: "https://d.example/", status: undefined, error: "timeout" },
     ]);
   })
 
@@ -115,28 +115,6 @@ describe("存活但拒绝爬虫（401/403/405/412/429）不计入不可达", () 
     const s = summarizeProbes([{ url: "https://e.example/", ok: false, blocked: false, status: 403 }]);
     expect(s.blocked).toBe(0);
     expect(s.broken).toBe(1);
-  })
-})
-
-describe("失败原因归类：区分「我们的探针限制」与「站点真挂」", () => {
-  it("按 failureKind 分布统计；探针兜底超时优先记为 timeout", () => {
-    const s = summarizeProbes([
-      { url: "https://a.example/", ok: false, failureKind: "redirect-limit", error: "重定向次数超过 6 次" },
-      { url: "https://b.example/", ok: false, failureKind: "connect", error: "fetch failed" },
-      // 探针兜底超时只给 error='timeout'（没有 failureKind），必须也能归到 timeout
-      { url: "https://c.example/", ok: false, error: "timeout" },
-      // 有状态码、无 failureKind → 退化为 http-error
-      { url: "https://d.example/", ok: false, status: 500 },
-    ]);
-    expect(s.brokenByReason).toEqual({
-      timeout: 1,
-      "redirect-limit": 1,
-      "ssrf-blocked": 0,
-      connect: 1,
-      "http-error": 1,
-      other: 0,
-    });
-    expect(s.brokenItems.map((i) => i.failureKind)).toEqual(["redirect-limit", "connect", "timeout", "http-error"]);
   })
 })
 

@@ -17,7 +17,6 @@ import {
   auditPluginUrls,
   isBlockedByBotStatus,
   PLUGIN_AUDIT_DEFAULTS,
-  type ProbeFailureKind,
   type UrlProbeResult,
   type UrlProber,
 } from "../plugin-audit.ts";
@@ -67,7 +66,7 @@ function createGuardedProber(): UrlProber {
       const res = await guardedFetch(url, {
         timeoutMs,
         maxBytes: 8 * 1024,
-        maxRedirects: PLUGIN_AUDIT_DEFAULTS.maxRedirects,
+        maxRedirects: 3,
         userAgent: AUDIT_USER_AGENT,
       })
       return {
@@ -79,21 +78,12 @@ function createGuardedProber(): UrlProber {
         latencyMs: Date.now() - started,
       }
     } catch (err) {
-      const elapsed = Date.now() - started
-      const message = err instanceof Error ? err.message : String(err)
-      // 原因归类，顺序要紧：
-      //  1) 超时按「耗时逼近上限」判定 —— 比猜错误文案可靠（AbortError 的文案会随运行时变）；
-      //  2) 重定向超限与 SSRF 拦截都能从 guardedFetch 的文案稳定识别；
-      //  3) 其余归 connect（DNS/连接/TLS 层失败）。
-      const failureKind: ProbeFailureKind =
-        elapsed >= timeoutMs * 0.95 || message === "timeout"
-          ? "timeout"
-          : message.includes("重定向")
-            ? "redirect-limit"
-            : message.includes("受保护") || message.includes("SSRF") || message.includes("blocked")
-              ? "ssrf-blocked"
-              : "connect"
-      return { url, ok: false, latencyMs: elapsed, error: message, failureKind }
+      return {
+        url,
+        ok: false,
+        latencyMs: Date.now() - started,
+        error: err instanceof Error ? err.message : String(err),
+      }
     }
   }
 }
@@ -148,9 +138,8 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       reachability: summary.reachability,
       brokenItems: summary.brokenItems,
       blockedItems: summary.blockedItems,
-      brokenByReason: summary.brokenByReason,
       caveat: REACHABILITY_CAVEAT,
-      params: { sample, timeoutMs, maxRedirects: PLUGIN_AUDIT_DEFAULTS.maxRedirects },
+      params: { sample, timeoutMs },
     }
   })
 }

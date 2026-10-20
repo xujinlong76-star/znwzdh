@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { hashSiteId } from "@navhub/store";
 import { siteEmbeddingText } from "@navhub/ai";
-import { resolveSiteIcon, validateAndCleanPluginManifest } from "@navhub/core";
+import { comparePluginVersions, resolveSiteIcon, validateAndCleanPluginManifest } from "@navhub/core";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
 import { indexPluginsBatch, indexItemFromManifest } from "./index-plugin.ts";
@@ -46,6 +46,8 @@ export interface SeedResult {
   sites: number;
   collections: number;
   plugins: number;
+  /** 本次把已存在插件升级到新清单的条数（版本号更高或内容有变化） */
+  pluginsUpgraded: number;
   skipped: number;
   embedded: number;
   siteConfigSeeded: boolean;
@@ -125,38 +127,72 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   }
 
   let plugins = 0;
-  for (const def of seedPluginDefs()) {
+  let pluginsUpgraded = 0;
+  // 组合包依赖「成员已存在」：先插入非组合包，再插入组合包。
+  // 否则种子清单里 bundle 排在成员前面时，会因成员不存在而整包被拒（真实发生过的顺序陷阱）。
+  const defs = seedPluginDefs();
+  const orderedDefs = [
+    ...defs.filter((d) => (d.manifest as { kind?: string } | null)?.kind !== "bundle"),
+    ...defs.filter((d) => (d.manifest as { kind?: string } | null)?.kind === "bundle"),
+  ];
+  for (const def of orderedDefs) {
     try {
       const existing = await ctx.repo.getPluginBySlug(def.slug);
-      if (existing) continue;
-      const validated = validateAndCleanPluginManifest(def.manifest);
-      if (!validated.ok) {
-        console.warn("[seed] 插件清单不合法，跳过: " + def.slug + " -> " + validated.errors.join("; "));
+      if (!existing) {
+        const validated = validateAndCleanPluginManifest(def.manifest);
+        if (!validated.ok) {
+          console.warn("[seed] 插件清单不合法，跳过: " + def.slug + " -> " + validated.errors.join("; "));
+          continue;
+        }
+        const created = await ctx.repo.createPlugin(
+          {
+            manifest: validated.manifest,
+            author: validated.manifest.author ?? "NavHub 官方",
+            authorKind: "seed",
+            source: "seed",
+            status: def.status,
+            slug: def.slug,
+          },
+          { actor: "seed", actorKind: "system" },
+        );
+        if (def.status === "published") {
+          // 与审核 / 导入同一条索引路径：种子数据上语义检索开箱即用
+          await indexPluginsBatch(ctx, [indexItemFromManifest(created.slug, created.manifest)]);
+        }
+        plugins++;
         continue;
       }
-      const created = await ctx.repo.createPlugin(
-        {
-          manifest: validated.manifest,
-          author: validated.manifest.author ?? "NavHub 官方",
-          authorKind: "seed",
-          source: "seed",
-          status: def.status,
-          slug: def.slug,
-        },
-        { actor: "seed", actorKind: "system" },
-      );
-      if (def.status === "published") {
-        // 与审核 / 导入同一条索引路径：种子数据上语义检索开箱即用
-        await indexPluginsBatch(ctx, [indexItemFromManifest(created.slug, created.manifest)]);
+
+      // 已存在：只在「种子清单更新了」时才升级，否则保持库内现状（幂等）。
+      // 以前这里是直接 continue，导致升级后的商用级内容永远进不了已播种的库。
+      const validated = validateAndCleanPluginManifest(def.manifest);
+      if (!validated.ok) {
+        console.warn("[seed] 插件清单不合法，跳过升级: " + def.slug + " -> " + validated.errors.join("; "));
+        continue;
       }
-      plugins++;
+      const versionBumped = comparePluginVersions(validated.manifest.version, existing.version) > 0;
+      const contentChanged = JSON.stringify(existing.manifest) !== JSON.stringify(validated.manifest);
+      if (!versionBumped && !contentChanged) continue;
+      await ctx.repo.updatePlugin(def.slug, validated.manifest, { actor: "seed", actorKind: "system" });
+      if (def.status === "published") {
+        // updatePlugin 会让插件回到待审（作者提交新版本的同一条规则）；
+        // 种子数据属于可信系统来源，直接审核上架，让升级内容立刻可用。
+        await ctx.repo.reviewPlugin(def.slug, "approve", "种子数据升级自动上架", {
+          actor: "seed",
+          actorKind: "system",
+        });
+        await indexPluginsBatch(ctx, [indexItemFromManifest(def.slug, validated.manifest)]);
+      }
+      pluginsUpgraded++;
+      console.log(`[seed] 插件升级: ${def.slug} ${existing.version} -> ${validated.manifest.version}`);
+      continue;
     } catch (err) {
       console.warn("[seed] 插件导入跳过: " + def.slug, err);
     }
   }
 
   await ctx.close();
-  return { categories, sites, collections, plugins, skipped, embedded, siteConfigSeeded };
+  return { categories, sites, collections, plugins, pluginsUpgraded, skipped, embedded, siteConfigSeeded };
 }
 
 /**

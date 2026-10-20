@@ -21,6 +21,7 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { createHash } from "node:crypto";
 import type { AppContext } from "./context.ts";
+import { assertIdentitySecurity } from "./security-readiness.ts";
 import { buildOpenApiDoc, renderDocsHtml, type RouteEntry } from "./openapi.ts";
 import { recordHttpMetric } from "./metrics.ts";
 import { invalidateSnapshotCache } from "./storage.ts";
@@ -84,6 +85,9 @@ const AUTH_FAIL_AUDIT_THROTTLE_MS = 10_000;
 const AUTH_FAIL_AUDIT_AT = new Map<string, number>();
 
 export async function buildServer(ctx: AppContext) {
+  // 生产 + 鉴权 + 无身份签名 = 任意持票人可冒充其他 userId；在装配路由前直接拒绝启动。
+  assertIdentitySecurity(ctx.config);
+
   // 测试里默认静音，避免日志淹没断言输出；生产用 NAVHUB_LOG_LEVEL 控制
   const logLevel = process.env.NAVHUB_LOG_LEVEL ?? (process.env.VITEST ? "silent" : "info");
   // 信任 X-Forwarded-For：只有经过自家 /api/hub/* 代理时才开（由 ctx.config.trustProxy 统一解析，见 config.ts）。

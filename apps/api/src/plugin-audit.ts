@@ -12,6 +12,21 @@
  * 在无网络环境下把并发上限、超时兜底、分类口径全部锁住（仓库纪律：纯逻辑可测）。
  */
 
+/**
+ * 失败原因归类：让报告能区分「我们的探针限制」与「站点真挂」。
+ *
+ * 真实教训（全市场首轮报告）：`maoyan.com` / `5i5j.com` 被记为不可达，原因其实是
+ * 「重定向超过 3 次」——探针的跳数上限太紧，浏览器能正常打开；还有一批是 5s 超时，
+ * 对国内大站偏短。这两类都属于**我们的限制**，不该与连接失败混为一谈。
+ */
+export type ProbeFailureKind =
+  | 'timeout' // 超时（含探针兜底超时）
+  | 'redirect-limit' // 超过重定向跳数上限（多半是探针限制，非站点问题）
+  | 'ssrf-blocked' // 被 SSRF 守卫拦下（私网/内网目标）
+  | 'connect' // DNS/连接/TLS 层失败
+  | 'http-error' // 拿到了非 2xx/3xx 的响应码（4xx-other / 5xx）
+  | 'other'
+
 /** 单条 URL 的体检结果（与探活实现解耦的最小字段集） */
 export interface UrlProbeResult {
   url: string
@@ -31,6 +46,8 @@ export interface UrlProbeResult {
   finalUrl?: string
   latencyMs?: number
   error?: string
+  /** 不可达时的原因归类（见 ProbeFailureKind） */
+  failureKind?: ProbeFailureKind
 }
 
 /** 一个插件包的体检汇总（列表/徽标/报告三处共用同一口径） */
@@ -50,16 +67,25 @@ export interface PluginAuditSummary {
    */
   reachability: number | null
   /** 真不可达明细（逐条列出，便于人工复核或替换站点） */
-  brokenItems: Array<{ url: string; status?: number; error?: string }>
+  brokenItems: Array<{ url: string; status?: number; error?: string; failureKind?: ProbeFailureKind }>
   /** 存活但拒绝爬虫的明细（单独列出，便于分辨「站点没问题、是爬虫被挡」） */
   blockedItems: Array<{ url: string; status?: number }>
+  /** 不可达原因分布（区分「探针限制」与「站点真挂」的依据） */
+  brokenByReason: Record<ProbeFailureKind, number>
 }
 
-/** 体检默认参数：单包抽样 30 条、并发 6、单条兜底超时 5s */
+/**
+ * 体检默认参数：单包抽样 30 条、并发 6、单条兜底超时 8s、重定向上限 6 跳。
+ *
+ * timeoutMs 从 5s 放宽到 8s、maxRedirects 从 3 提到 6：全市场首轮报告证明 5s/3 跳
+ * 会把「国内大站响应慢」「站点跳转多」误判成不可达（maoyan.com、5i5j.com 等）。
+ * 探针应当有耐心，报告才能反映「用户能不能打开」而不是「我们等不等得起」。
+ */
 export const PLUGIN_AUDIT_DEFAULTS = {
   sample: 30,
   concurrency: 6,
-  timeoutMs: 5_000,
+  timeoutMs: 8_000,
+  maxRedirects: 6,
 } as const
 
 /**
@@ -118,6 +144,14 @@ export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditS
   let redirected = 0
   const brokenItems: PluginAuditSummary['brokenItems'] = []
   const blockedItems: PluginAuditSummary['blockedItems'] = []
+  const brokenByReason: PluginAuditSummary['brokenByReason'] = {
+    timeout: 0,
+    'redirect-limit': 0,
+    'ssrf-blocked': 0,
+    connect: 0,
+    'http-error': 0,
+    other: 0,
+  }
   for (const p of probes) {
     if (p.ok) {
       ok++
@@ -131,7 +165,12 @@ export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditS
       continue
     }
     broken++
-    brokenItems.push({ url: p.url, status: p.status, error: p.error })
+    // 原因归类：探针兜底超时（error==='timeout'）优先按 timeout 记；否则用探活器给的 failureKind，
+    // 再退化为「有状态码 = http-error / 无状态码 = other」
+    const kind: ProbeFailureKind =
+      p.error === "timeout" ? "timeout" : (p.failureKind ?? (p.status ? "http-error" : "other"))
+    brokenByReason[kind] = (brokenByReason[kind] ?? 0) + 1
+    brokenItems.push({ url: p.url, status: p.status, error: p.error, failureKind: kind })
   }
   const total = probes.length
   const reachable = ok + blocked
@@ -144,6 +183,7 @@ export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditS
     reachability: total === 0 ? null : Math.round((reachable / total) * 1000) / 1000,
     brokenItems,
     blockedItems,
+    brokenByReason,
   }
 }
 

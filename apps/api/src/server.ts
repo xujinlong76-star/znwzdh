@@ -1,4 +1,4 @@
-/**
+﻿/**
  * NavHub 中枢服务（Fastify）——装配与横切关注点。
  *
  * 业务路由已按域拆分至 ./routes/*.ts（升级改造方案 P1-3：原 2600+ 行单体按域拆为
@@ -62,6 +62,7 @@ import { statsRoutes } from "./routes/stats.ts";
 import { submissionRoutes } from "./routes/submissions.ts";
 import { pluginRoutes } from "./routes/plugins.ts";
 import { pluginAuditRoutes } from "./routes/plugin-audit.ts";
+import { pluginOverlapRoutes } from "./routes/plugin-overlap.ts";
 import { jobRoutes } from "./routes/jobs.ts";
 import { enrichRoutes } from "./routes/enrich.ts";
 import { aiConfigRoutes } from "./routes/ai-config.ts";
@@ -435,6 +436,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(submissionRoutes, { ctx });
   await app.register(pluginRoutes, { ctx });
   await app.register(pluginAuditRoutes, { ctx });
+  await app.register(pluginOverlapRoutes, { ctx });
   await app.register(jobRoutes, { ctx });
   await app.register(enrichRoutes, { ctx });
   await app.register(aiConfigRoutes, { ctx });

@@ -76,4 +76,65 @@ describe('createGuardedApiExecutor：重定向必须逐跳校验', () => {
     const exec = createGuardedApiExecutor({ fetchFn })
     await expect(exec('https://public.example/loop')).rejects.toThrow(/Too many redirects/)
   })
+
+  it('302 的 POST 会降级为 GET 并丢弃请求体', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    const fetchFn = (async (url: unknown, init: RequestInit = {}) => {
+      calls.push({ url: String(url), init })
+      if (calls.length === 1) {
+        return new Response(null, { status: 302, headers: { location: '/next' } })
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+
+    const exec = createGuardedApiExecutor({ fetchFn })
+    await exec('https://public.example/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"a":1}',
+    })
+    expect(calls[1]?.init.method).toBe('GET')
+    expect(calls[1]?.init.body).toBeUndefined()
+    expect(
+      Object.keys(calls[1]?.init.headers as Record<string, string>).map((k) => k.toLowerCase())
+    ).not.toContain('content-type')
+  })
+
+  it('307 保留原方法和请求体', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    const fetchFn = (async (url: unknown, init: RequestInit = {}) => {
+      calls.push({ url: String(url), init })
+      if (calls.length === 1) {
+        return new Response(null, { status: 307, headers: { location: '/next' } })
+      }
+      return new Response('ok', { status: 200 })
+    }) as unknown as typeof fetch
+
+    const exec = createGuardedApiExecutor({ fetchFn })
+    await exec('https://public.example/start', { method: 'PUT', body: 'payload' })
+    expect(calls[1]?.init.method).toBe('PUT')
+    expect(calls[1]?.init.body).toBe('payload')
+  })
+
+  it('跨源重定向移除 Authorization/Cookie', async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    const fetchFn = (async (url: unknown, init: RequestInit = {}) => {
+      calls.push({ url: String(url), init })
+      if (calls.length === 1) {
+        return new Response(null, { status: 302, headers: { location: 'https://other.example/next' } })
+      }
+      return new Response('ok', { status: 200 })
+    }) as unknown as typeof fetch
+
+    const exec = createGuardedApiExecutor({ fetchFn })
+    await exec('https://public.example/start', {
+      headers: { authorization: 'Bearer secret', cookie: 'sid=1' },
+    })
+    const headers = calls[1]?.init.headers as Record<string, string>
+    expect(headers.authorization).toBeUndefined()
+    expect(headers.cookie).toBeUndefined()
+  })
 })

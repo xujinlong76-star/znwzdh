@@ -202,18 +202,28 @@ export function createGuardedApiExecutor(options: GuardOptions = {}) {
       };
 
       let currentUrl = targetUrl;
+      let currentMethod = (init.method ?? 'GET').toUpperCase();
+      let currentBody = init.body;
+      const currentHeaders: Record<string, string> = { ...mergedHeaders };
       let res: Awaited<ReturnType<typeof fetchImpl>> | undefined;
       for (let hop = 0; hop <= maxRedirects; hop++) {
         const safety = isSafeUrl(currentUrl, allowPrivate);
         if (!safety.safe) {
           throw new Error(`SSRF Guard Violation: ${safety.reason} (${currentUrl})`);
         }
-        const response = await fetchImpl(currentUrl, {
+        const requestInit: RequestInit = {
           ...init,
-          headers: mergedHeaders,
+          method: currentMethod,
+          headers: currentHeaders,
           redirect: 'manual',
           signal: controller.signal,
-        });
+        };
+        if (currentMethod === 'GET' || currentMethod === 'HEAD') {
+          requestInit.body = undefined;
+        } else {
+          requestInit.body = currentBody;
+        }
+        const response = await fetchImpl(currentUrl, requestInit);
         if (!REDIRECT_STATUS.has(response.status)) {
           res = response;
           break;
@@ -231,7 +241,26 @@ export function createGuardedApiExecutor(options: GuardOptions = {}) {
         if (hop === maxRedirects) {
           throw new Error(`Too many redirects (>${maxRedirects}) from ${targetUrl}`);
         }
-        currentUrl = new URL(location, currentUrl).toString();
+        const nextUrl = new URL(location, currentUrl);
+        // 跨源跳转不携带调用方凭据，避免把 spec 里的 Authorization 带到另一主机。
+        if (nextUrl.origin !== new URL(currentUrl).origin) {
+          for (const key of Object.keys(currentHeaders)) {
+            if (['authorization', 'cookie', 'proxy-authorization'].includes(key.toLowerCase())) {
+              delete currentHeaders[key];
+            }
+          }
+        }
+        // 301/302 的 POST 与 303 的非 GET/HEAD 降级为 GET；307/308 保留方法和请求体。
+        if (
+          (response.status === 303 && currentMethod !== 'GET' && currentMethod !== 'HEAD') ||
+          ((response.status === 301 || response.status === 302) && currentMethod === 'POST')
+        ) {
+          currentMethod = 'GET';
+          currentBody = undefined;
+          delete currentHeaders['content-type'];
+          delete currentHeaders['Content-Type'];
+        }
+        currentUrl = nextUrl.toString();
       }
       if (!res) {
         throw new Error(`Redirect chain exceeded limit (>${maxRedirects}) from ${targetUrl}`);

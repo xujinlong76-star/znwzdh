@@ -22,9 +22,27 @@ import { webMcp } from "./visual.ts";
 import type { AppContext } from "../context.ts";
 import { identityAllowed } from "./shared.ts";
 
-/** 动态 REST 工具只放行 GET：写请求需要额外的 CSRF/重放与请求体语义评估。 */
-function isGetRestSpec(spec: { method?: string }): boolean {
-  return (spec.method ?? "GET").toUpperCase() === "GET";
+/** 动态 REST 工具允许的方法；HEAD/OPTIONS/TRACE 不注册，避免无意义的合成工具。 */
+const REST_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
+function isSupportedRestSpec(spec: { method?: string }): boolean {
+  return REST_METHODS.has((spec.method ?? "GET").toUpperCase());
+}
+
+function headersToRecord(input: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!input) return out;
+  if (input instanceof Headers) {
+    input.forEach((value, key) => { out[key] = value; });
+    return out;
+  }
+  if (Array.isArray(input)) {
+    for (const [key, value] of input as Array<[string, string]>) out[key] = String(value);
+    return out;
+  }
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    out[key] = String(value);
+  }
+  return out;
 }
 
 /**
@@ -32,8 +50,8 @@ function isGetRestSpec(spec: { method?: string }): boolean {
  *
  * core 的执行器只做字面 IP/重定向校验，无法识别解析到私网的域名；
  * guardedFetch 会解析 DNS 并拒绝私网/环回/云元数据地址，堵住
- * `127.0.0.1.nip.io` 这类 SSRF 绕过。这里只允许 GET，且不透传调用方
- * 自定义 Header，避免把内部凭据带到任意公网端点。
+ * `127.0.0.1.nip.io` 这类 SSRF 绕过。这里透传方法/请求头/请求体，但由
+ * guardedFetch 统一做逐跳校验、跨源凭据剥离和 301/302/303 方法降级。
  */
 const guardedToolFetch: typeof fetch = async (input, init = {}) => {
   const rawUrl =
@@ -44,8 +62,19 @@ const guardedToolFetch: typeof fetch = async (input, init = {}) => {
         : input.url;
 
   const method = (init.method ?? "GET").toUpperCase();
-  if (method !== "GET") {
-    throw new Error("动态 REST 工具仅允许 GET 请求");
+  if (!REST_METHODS.has(method)) {
+    throw new Error("动态 REST 工具不支持该方法: " + method);
+  }
+
+  const body = init.body == null
+    ? undefined
+    : typeof init.body === "string"
+      ? init.body
+      : init.body instanceof URLSearchParams
+        ? init.body
+        : undefined;
+  if (init.body != null && body === undefined) {
+    throw new Error("动态 REST 工具仅支持字符串或表单请求体");
   }
 
   const result = await guardedFetch(rawUrl, {
@@ -54,6 +83,11 @@ const guardedToolFetch: typeof fetch = async (input, init = {}) => {
     maxRedirects: 3,
     allowPrivateNetworks: false,
     userAgent: "NavHub-Agent/5.0 (Dynamic-Synthesizer; guarded)",
+  }, {
+    method,
+    body,
+    headers: headersToRecord(init.headers),
+    accept: "application/json, text/plain, */*",
   });
 
   const headers = result.contentType
@@ -162,9 +196,8 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
 
     if (body.data.kind === "openapi" && body.data.openApiSpec) {
       const allSpecs = parseOpenApiToSpecs(body.data.openApiSpec as MinimalOpenApiSpec);
-      // 写请求不在动态工具放行范围：只注册 GET，避免 SSRF 防护之外的
-      // CSRF/重放/请求体语义问题。
-      const specs = allSpecs.filter(isGetRestSpec);
+      // 只注册受支持的方法；写请求同样走 guardedFetch 的逐跳 SSRF 校验。
+      const specs = allSpecs.filter(isSupportedRestSpec);
       const tools = [];
       for (const s of specs) {
         const syn = synthesizeRestTool(s, { fetchFn: guardedToolFetch });
@@ -183,9 +216,9 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     }
 
     if (body.data.restSpec) {
-      if (!isGetRestSpec(body.data.restSpec)) {
+      if (!isSupportedRestSpec(body.data.restSpec)) {
         reply.code(400);
-        return { error: "动态 REST 工具当前仅支持 GET 请求" };
+        return { error: "动态 REST 工具仅支持 GET/POST/PUT/PATCH/DELETE 请求" };
       }
       const syn = synthesizeRestTool(body.data.restSpec, { fetchFn: guardedToolFetch });
       if (!webMcp.registerTool(syn.definition, (p) => syn.handler(p))) {

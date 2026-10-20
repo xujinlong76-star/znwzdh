@@ -77,33 +77,98 @@ export function isBlockedIpv4(ip: string): boolean {
   return false;
 }
 
+/**
+ * 把 IPv6 文本展开成 16 字节（不依赖字符串前缀猜测）。
+ *
+ * 为什么必须真解析：`::ffff:127.0.0.1`、`::ffff:7f00:1`、
+ * `0:0:0:0:0:ffff:127.0.0.1`、`0000:...:7f00:0001` 是**同一个地址**，
+ * 前缀匹配只能覆盖其中一部分写法；漏掉的那种就是 SSRF 绕过口子。
+ * 返回 null 表示不是合法 IPv6（调用方按 fail-closed 处理）。
+ */
+function ipv6ToBytes(input: string): Uint8Array | null {
+  let s = input.toLowerCase().split("%")[0] ?? "";
+  if (!s || !s.includes(":")) return null;
+
+  // 末尾内嵌点分 IPv4（::ffff:127.0.0.1）先折算成两个 hextet
+  if (s.includes(".")) {
+    const idx = s.lastIndexOf(":");
+    if (idx < 0) return null;
+    const parts = s.slice(idx + 1).split(".").map((p) => Number(p));
+    if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+    const hi = ((parts[0]! << 8) | parts[1]!).toString(16);
+    const lo = ((parts[2]! << 8) | parts[3]!).toString(16);
+    s = s.slice(0, idx + 1) + hi + ":" + lo;
+  }
+
+  const halves = s.split("::");
+  if (halves.length > 2) return null;
+  const left = halves[0] ? halves[0].split(":") : [];
+  const right = halves.length === 2 ? (halves[1] ? halves[1].split(":") : []) : [];
+
+  let groups: string[];
+  if (halves.length === 2) {
+    const missing = 8 - left.length - right.length;
+    if (missing < 0) return null;
+    groups = [...left, ...Array<string>(missing).fill("0"), ...right];
+  } else {
+    if (left.length !== 8) return null;
+    groups = left;
+  }
+
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 8; i++) {
+    const g = groups[i]!;
+    if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+    const v = Number.parseInt(g, 16);
+    bytes[i * 2] = v >> 8;
+    bytes[i * 2 + 1] = v & 0xff;
+  }
+  return bytes;
+}
+
+function bytesAllZero(bytes: Uint8Array, from: number, to: number): boolean {
+  for (let i = from; i < to; i++) if (bytes[i] !== 0) return false;
+  return true;
+}
+
+function embeddedIpv4(bytes: Uint8Array): string {
+  return [bytes[12], bytes[13], bytes[14], bytes[15]].join(".");
+}
+
 export function isBlockedIpv6(ip: string): boolean {
-  const lower = ip.toLowerCase().split("%")[0]!;
-  if (lower === "::" || lower === "::1") return true;                 // 未指定 / 环回
-  // fe80::/10 链路本地：fe80-febb（不能只判 fe80: 前缀）
-  const firstHextet = lower.split(":")[0] ?? "";
-  // 展开 :: 缩写时首段可能为空，此时保守起见走完整解析
-  if (lower.startsWith("fe80:") || lower.startsWith("fe90:") || lower.startsWith("fea") || lower.startsWith("feb")) {
-    // 快路径：常见 fe80/fe90-febf 前缀直接拦
-    if (/^fe[89ab]/i.test(firstHextet)) return true;
+  const b = ipv6ToBytes(ip);
+  // 解析不了的一律视为不安全（fail closed）
+  if (!b) return true;
+
+  // :: （未指定）与 ::1（环回）
+  if (bytesAllZero(b, 0, 16)) return true;
+  if (bytesAllZero(b, 0, 15) && b[15] === 1) return true;
+
+  // IPv4 映射 ::ffff:a.b.c.d —— 前 10 字节为 0 且 10/11 字节为 0xff
+  if (bytesAllZero(b, 0, 10) && b[10] === 0xff && b[11] === 0xff) {
+    return isBlockedIpv4(embeddedIpv4(b));
   }
-  if (firstHextet) {
-    const hi = parseInt(firstHextet, 16);
-    if (Number.isFinite(hi) && (hi & 0xffc0) === 0xfe80) return true;
+  // IPv4 兼容 ::a.b.c.d（已废弃，但 Linux 上仍可路由到内网）
+  if (bytesAllZero(b, 0, 12)) return isBlockedIpv4(embeddedIpv4(b));
+  // NAT64 64:ff9b::/96 —— 内嵌 v4，在 NAT64 网络里等价于直连该 v4
+  if (b[0] === 0x00 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b) {
+    return isBlockedIpv4(embeddedIpv4(b));
   }
-  if (lower.startsWith("fc") || lower.startsWith("fd")) return true;   // 唯一本地 fc00::/7
-  if (lower.startsWith("ff")) return true;                             // 组播
-  if (lower.startsWith("2001:db8")) return true;                        // 文档网段 2001:db8::/32
-  if (lower.startsWith("2002:")) return true;                           // 6to4 内嵌 v4
-  // IPv4 映射/兼容地址：取出内嵌的 IPv4 再判一次，防止 ::ffff:127.0.0.1 绕过
-  const mapped = lower.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped?.[1]) return isBlockedIpv4(mapped[1]);
-  const hex = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
-  if (hex?.[1] && hex[2]) {
-    const hi = parseInt(hex[1], 16), lo = parseInt(hex[2], 16);
-    const v4 = [hi >> 8, hi & 0xff, lo >> 8, lo & 0xff].join(".");
-    return isBlockedIpv4(v4);
-  }
+  // 6to4 2002::/16（内嵌 v4）
+  if (b[0] === 0x20 && b[1] === 0x02) return true;
+  // Teredo 2001:0000::/32（内嵌 v4，混淆编码）
+  if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0x00 && b[3] === 0x00) return true;
+  // 文档网段 2001:db8::/32
+  if (b[0] === 0x20 && b[1] === 0x01 && b[2] === 0x0d && b[3] === 0xb8) return true;
+  // 链路本地 fe80::/10
+  if (b[0] === 0xfe && (b[1]! & 0xc0) === 0x80) return true;
+  // 唯一本地 fc00::/7
+  if ((b[0]! & 0xfe) === 0xfc) return true;
+  // 组播 ff00::/8
+  if (b[0] === 0xff) return true;
+  // 丢弃前缀 100::/64
+  if (b[0] === 0x01 && b[1] === 0x00 && bytesAllZero(b, 2, 8)) return true;
+
   return false;
 }
 
@@ -184,14 +249,97 @@ export interface GuardedFetchResult {
   redirects: string[];
 }
 
+/** `guardedFetch` 允许的请求方法。GET/HEAD 不允许携带请求体。 */
+const GUARDED_METHODS = new Set(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]);
+const HOP_BY_HOP_HEADERS = new Set([
+  "host",
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+  "content-length",
+]);
+const SENSITIVE_REDIRECT_HEADERS = new Set(["authorization", "cookie", "proxy-authorization"]);
+const MAX_REQUEST_BODY_BYTES = 256 * 1024;
+
+export interface GuardedFetchRequest {
+  /** HTTP 方法，默认 GET；仅允许 GET/HEAD/POST/PUT/PATCH/DELETE。 */
+  method?: string;
+  /** 请求头。Host/Content-Length/Connection 等逐跳头会被丢弃。 */
+  headers?: Record<string, string>;
+  /** 请求体，仅支持字符串或 URLSearchParams；GET/HEAD 不得携带。 */
+  body?: string | URLSearchParams;
+  /** 未显式提供 Accept 时的默认值。 */
+  accept?: string;
+}
+
+function normalizeMethod(input?: string): string {
+  const method = (input ?? "GET").toUpperCase();
+  if (!GUARDED_METHODS.has(method)) {
+    throw new SsrfBlockedError("不允许的 HTTP 方法: " + method, "method");
+  }
+  return method;
+}
+
+function cloneHeaders(input?: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [rawKey, value] of Object.entries(input ?? {})) {
+    const key = rawKey.trim();
+    if (!key) continue;
+    if (HOP_BY_HOP_HEADERS.has(key.toLowerCase())) continue;
+    if (/[\r\n]/.test(key) || /[\r\n]/.test(value)) {
+      throw new SsrfBlockedError("请求头包含非法换行", "header-injection");
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+function hasHeader(headers: Record<string, string>, name: string): boolean {
+  return Object.keys(headers).some((key) => key.toLowerCase() === name);
+}
+
+function deleteHeader(headers: Record<string, string>, name: string): void {
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === name) delete headers[key];
+  }
+}
+
 /**
  * 带 SSRF 防护的 fetch。
  * 手工跟随重定向（fetch 的 redirect:"follow" 无法逐跳校验，因此禁用）。
+ *
+ * 第三参数用于动态 REST 工具等写请求：方法、请求头与请求体都会在每一跳重新
+ * 校验 URL/DNS；301/302/303 按浏览器语义降级为 GET 并丢弃请求体，307/308 保留。
+ * 跨源跳转会移除 Authorization/Cookie，避免把调用方凭据带到另一个主机。
  */
-export async function guardedFetch(rawUrl: string, options: Partial<FetchGuardOptions> = {}): Promise<GuardedFetchResult> {
+export async function guardedFetch(
+  rawUrl: string,
+  options: Partial<FetchGuardOptions> = {},
+  request: GuardedFetchRequest = {},
+): Promise<GuardedFetchResult> {
   const opts = { ...DEFAULT_GUARD, ...options };
   let current = assertUrlShape(rawUrl);
   const redirects: string[] = [];
+  let method = normalizeMethod(request.method);
+  let body = request.body instanceof URLSearchParams ? request.body.toString() : request.body;
+  if (body !== undefined && typeof body !== "string") {
+    throw new SsrfBlockedError("请求体只支持字符串或 URLSearchParams", "unsupported-body");
+  }
+  if (body !== undefined && (method === "GET" || method === "HEAD")) {
+    throw new SsrfBlockedError(method + " 请求不能携带请求体", "body-not-allowed");
+  }
+  if (body !== undefined && new TextEncoder().encode(body).byteLength > MAX_REQUEST_BODY_BYTES) {
+    throw new SsrfBlockedError("请求体超过 " + MAX_REQUEST_BODY_BYTES + " 字节", "body-too-large");
+  }
+  const headers = cloneHeaders(request.headers);
+  if (!hasHeader(headers, "user-agent")) headers["User-Agent"] = opts.userAgent;
+  if (!hasHeader(headers, "accept")) headers.Accept = request.accept ?? "text/html,application/xhtml+xml";
 
   for (let hop = 0; hop <= opts.maxRedirects; hop++) {
     await resolveAndCheck(current, opts);
@@ -217,18 +365,29 @@ export async function guardedFetch(rawUrl: string, options: Partial<FetchGuardOp
           if (isBlockedIp(first)) throw new SsrfBlockedError(current.hostname + " 解析到受保护网段 " + first, "blocked-ip");
           const portSuffix = current.port ? ":" + current.port : "";
           fetchUrl = "http://" + (first.includes(":") ? "[" + first + "]" : first) + portSuffix + (current.pathname + current.search + current.hash);
-          extraHeaders["Host"] = current.hostname;
+          extraHeaders.Host = current.host;
         }
       }
       res = await fetch(fetchUrl, {
+        method,
+        body: method === "GET" || method === "HEAD" ? undefined : body,
         redirect: "manual",
         signal: controller.signal,
-        headers: { "User-Agent": opts.userAgent, Accept: "text/html,application/xhtml+xml", ...extraHeaders },
+        headers: { ...headers, ...extraHeaders },
       });
-      // https 二次校验：收窄 DNS 重绑定窗口
-      if (current.protocol === "https:") await resolveAndCheck(current, opts).catch(() => undefined);
+      // https 二次校验：收窄 DNS 重绑定窗口。
+      // 只吞掉「解析失败」这类瞬态错误；若二次解析落到受保护网段（重绑定攻击的特征），
+      // 必须把 SsrfBlockedError 抛出去 —— 否则这次校验等于没做。
+      if (current.protocol === "https:") {
+        await resolveAndCheck(current, opts).catch((err) => {
+          if (err instanceof SsrfBlockedError) throw err;
+        });
+      }
     } catch (err) {
       clearTimeout(timer);
+      // 保留安全拦截的原始类型：调用方靠 instanceof SsrfBlockedError 区分
+      // 「被防护拒绝」与「网络失败」，包装成普通 Error 会让前者退化成 500。
+      if (err instanceof SsrfBlockedError) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error("抓取失败 " + current.toString() + ": " + msg);
     }
@@ -240,6 +399,22 @@ export async function guardedFetch(rawUrl: string, options: Partial<FetchGuardOp
       const next = new URL(loc, current);
       // 下一跳同样要过协议检查；IP 检查在循环头部进行
       assertUrlShape(next.toString());
+      // 释放中间响应体，避免连接一直挂着
+      await res.body?.cancel().catch(() => undefined);
+      if (next.origin !== current.origin) {
+        for (const key of Object.keys(headers)) {
+          if (SENSITIVE_REDIRECT_HEADERS.has(key.toLowerCase())) delete headers[key];
+        }
+      }
+      // 浏览器/fetch 语义：301/302 的 POST 与 303 的非 GET/HEAD 降级为 GET；307/308 保留。
+      if (
+        (res.status === 303 && method !== "GET" && method !== "HEAD") ||
+        ((res.status === 301 || res.status === 302) && method === "POST")
+      ) {
+        method = "GET";
+        body = undefined;
+        deleteHeader(headers, "content-type");
+      }
       redirects.push(next.toString());
       current = next;
       continue;

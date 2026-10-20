@@ -65,6 +65,33 @@ describe("SSRF: IPv6 网段判定", () => {
     expect(isBlockedIpv6("::ffff:8.8.8.8")).toBe(false);
   });
 
+  it("同一个内嵌 v4 的任意书写形式都不能绕过（展开/大写/补零/兼容/NAT64）", () => {
+    // 以下全部等价于 127.0.0.1，历史上前缀匹配只覆盖前两种
+    for (const ip of [
+      "0:0:0:0:0:ffff:127.0.0.1",
+      "0000:0000:0000:0000:0000:ffff:7f00:0001",
+      "::127.0.0.1",
+      "::7f00:1",
+      "64:ff9b::127.0.0.1",       // NAT64 内嵌 127.0.0.1
+      "64:ff9b::7f00:1",
+      "0:0:0:0:0:FFFF:127.0.0.1", // 大写
+    ]) {
+      expect(isBlockedIpv6(ip), ip).toBe(true);
+    }
+    // 同理，云元数据地址的各种写法
+    for (const ip of ["0:0:0:0:0:ffff:169.254.169.254", "0:0:0:0:0:ffff:a9fe:a9fe"]) {
+      expect(isBlockedIpv6(ip), ip).toBe(true);
+    }
+    // 但 NAT64 内嵌公网地址应放行
+    expect(isBlockedIpv6("64:ff9b::8.8.8.8")).toBe(false);
+  });
+
+  it("链路本地 fe80::/10 全段拦截（不止 fe80: 前缀）", () => {
+    for (const ip of ["fe80::1", "fe90::1", "fea0::1", "febf::1"]) {
+      expect(isBlockedIpv6(ip), ip).toBe(true);
+    }
+  });
+
   it("放行公网 IPv6", () => {
     expect(isBlockedIpv6("2001:4860:4860::8888")).toBe(false);
   });
@@ -256,6 +283,64 @@ describe("SSRF: 敏感端口与重定向链", () => {
       await expect(
         guardedFetch("http://127.0.0.1:" + port + "/loop", { allowPrivateNetworks: true, timeoutMs: 2000, maxRedirects: 2 }),
       ).rejects.toThrow(/重定向/);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  it("写请求：方法/请求体透传，302/303 降级 GET，307/308 保留，跨源剥离凭据", async () => {
+    const seen: Array<{ path: string; method: string; body: string; authorization?: string }> = [];
+    let port = 0;
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; });
+      req.on("end", () => {
+        const path = req.url ?? "";
+        seen.push({ path, method: req.method ?? "", body, authorization: req.headers.authorization });
+        if (path === "/start302") { res.writeHead(302, { location: "/echo" }); res.end(); return; }
+        if (path === "/start303") { res.writeHead(303, { location: "/echo" }); res.end(); return; }
+        if (path === "/start307") { res.writeHead(307, { location: "/echo" }); res.end(); return; }
+        if (path === "/start308") { res.writeHead(308, { location: "/echo" }); res.end(); return; }
+        if (path === "/cross") { res.writeHead(302, { location: "http://127.0.0.2:" + port + "/echo" }); res.end(); return; }
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end((req.method ?? "") + ":" + body);
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "0.0.0.0", r));
+    port = (server.address() as { port: number }).port;
+    const base = "http://127.0.0.1:" + port;
+    const guard = { allowPrivateNetworks: true, timeoutMs: 2000 };
+    try {
+      const direct = await guardedFetch(base + "/echo", guard, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer x" },
+        body: "{\"a\":1}",
+      });
+      expect(direct.body).toBe("POST:{\"a\":1}");
+
+      const r302 = await guardedFetch(base + "/start302", guard, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{\"a\":1}",
+      });
+      expect(r302.body).toBe("GET:");
+
+      const r303 = await guardedFetch(base + "/start303", guard, { method: "DELETE", body: "x" });
+      expect(r303.body).toBe("GET:");
+
+      const r307 = await guardedFetch(base + "/start307", guard, { method: "PUT", body: "payload" });
+      expect(r307.body).toBe("PUT:payload");
+
+      const r308 = await guardedFetch(base + "/start308", guard, { method: "PATCH", body: "payload" });
+      expect(r308.body).toBe("PATCH:payload");
+
+      await guardedFetch(base + "/cross", guard, {
+        method: "POST",
+        headers: { authorization: "Bearer secret", cookie: "sid=1" },
+        body: "x",
+      });
+      const cross = seen[seen.length - 1];
+      expect(cross?.authorization).toBeUndefined();
     } finally {
       await new Promise((r) => server.close(r));
     }

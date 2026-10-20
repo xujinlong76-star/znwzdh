@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from "@/registry/new-york/ui/button"
-import { NavigationCard } from "./components/NavigationCard"
+import { NavigationList } from "./components/NavigationList"
 import { AddNavigationForm } from "./components/AddNavigationForm"
 import { Input } from "@/registry/new-york/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/registry/new-york/ui/dialog"
@@ -11,7 +11,7 @@ import { useToast } from "@/registry/new-york/hooks/use-toast"
 import { Skeleton } from "@/registry/new-york/ui/skeleton"
 import useSWR from 'swr'
 import { NavigationItem } from "@/types/navigation"
-import { DragDropContext, Droppable, DropResult } from '@hello-pangea/dnd'
+import type { DropResult } from '@hello-pangea/dnd'
 import { Plus, AlertTriangle, Inbox } from 'lucide-react'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/registry/new-york/ui/select"
 
@@ -200,14 +200,14 @@ export default function NavigationPage() {
     )
 
   return (
-    <div className="h-full flex-1 flex-col space-y-8 p-8 md:flex">
-      <div className="flex items-center justify-between space-x-4">
-        <div className="flex items-center gap-4 flex-1">
+    <div className="h-full flex-1 flex-col space-y-5 sm:space-y-8 p-3 sm:p-6 lg:p-8 md:flex">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4 flex-1 w-full sm:w-auto">
           <Input aria-label="搜索分类"
             placeholder="搜索分类..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="max-w-[300px]"
+            className="w-full sm:max-w-[300px]"
           />
           <Select
             value={showEnabled === null ? "all" : String(showEnabled)}
@@ -219,7 +219,7 @@ export default function NavigationPage() {
               }
             }}
           >
-            <SelectTrigger aria-label="状态筛选" className="w-[180px]">
+            <SelectTrigger aria-label="状态筛选" className="w-full sm:w-[180px]">
               <SelectValue placeholder="状态筛选" />
             </SelectTrigger>
             <SelectContent>
@@ -229,7 +229,7 @@ export default function NavigationPage() {
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}>
+        <Button onClick={() => setIsDialogOpen(true)} className="w-full sm:w-auto shrink-0">
           <Plus className="mr-2 h-4 w-4" />
           添加分类
         </Button>
@@ -276,31 +276,13 @@ export default function NavigationPage() {
             }
           />
         ) : (
-          <DragDropContext onDragEnd={handleDragEnd}>
-            <Droppable droppableId="navigation-list">
-              {(provided) => (
-                <div
-                  {...provided.droppableProps}
-                  ref={provided.innerRef}
-                  className="space-y-4"
-                >
-                  {filteredItems.map((item, index) => (
-                    <NavigationCard
-                      key={item.id}
-                      item={item}
-                      index={index}
-                      onUpdate={mutate}
-                      showMoveToTop={index > 0}
-                      showMoveToBottom={index < filteredItems.length - 1}
-                      onMoveToTop={() => handleMoveToTop(item.id)}
-                      onMoveToBottom={() => handleMoveToBottom(item.id)}
-                    />
-                  ))}
-                  {provided.placeholder}
-                </div>
-              )}
-            </Droppable>
-          </DragDropContext>
+          <NavigationList
+            items={filteredItems}
+            onDragEnd={handleDragEnd}
+            onUpdate={mutate}
+            onMoveToTop={handleMoveToTop}
+            onMoveToBottom={handleMoveToBottom}
+          />
         )}
       </div>
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

@@ -23,3 +23,23 @@ describe('/admin/navigation 的添加表单必须按需加载', () => {
     expect(impl).toContain("from './IconSelector'")
   })
 })
+
+describe('/admin/navigation 的拖拽列表必须按需加载', () => {
+  it('页面不静态引入 dnd 与 NavigationCard', () => {
+    const page = read('src/app/admin/navigation/page.tsx')
+    expect(page).toContain('from "./components/NavigationList"')
+    expect(page).not.toMatch(/import\s*\{[^}]*DragDropContext[^}]*\}\s*from\s*["']@hello-pangea\/dnd["']/)
+    expect(page).not.toMatch(/from\s*["']\.\/components\/NavigationCard["']/)
+  })
+
+  it('包装器动态加载实现，实现保留 dnd 与卡片', () => {
+    const wrapper = read('src/app/admin/navigation/components/NavigationList.tsx')
+    expect(wrapper).toContain('dynamic(')
+    expect(wrapper).toMatch(/import\(["']\.\/NavigationList\.impl["']\)/)
+    expect(wrapper).not.toMatch(/from\s*["']@hello-pangea\/dnd["']/)
+
+    const impl = read('src/app/admin/navigation/components/NavigationList.impl.tsx')
+    expect(impl).toContain("from '@hello-pangea/dnd'")
+    expect(impl).toContain("from './NavigationCard'")
+  })
+})

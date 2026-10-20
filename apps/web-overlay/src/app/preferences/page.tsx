@@ -25,8 +25,9 @@ import {
   profileDegradeNotice,
   profileViewState,
 } from '@/lib/profile-view'
-import { Sparkles, RotateCcw, Tag, FolderOpen, History } from 'lucide-react'
+import { Sparkles, RotateCcw, Tag, FolderOpen, History, ArrowLeft } from 'lucide-react'
 import { UserLlmConfigCard } from '@/components/ai/user-llm-config-card'
+import { EmptyState } from '@/components/ui/empty-state'
 
 interface Profile {
   userId: string
@@ -147,29 +148,91 @@ export default function PreferencesPage() {
 
   return (
     <Container as="main" id="main-content" className="py-8">
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
-            我的偏好
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            搜索会根据你的浏览与收藏做轻量个性化重排。这里是系统据你的行为推断出的内容——
-            看得见，才可以控制。
-          </p>
+      <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs mb-6">
+        <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-primary/10 rounded-full blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-44 h-44 bg-sky-400/10 rounded-full blur-3xl" />
+        <Sparkles
+          aria-hidden
+          strokeWidth={1}
+          className="pointer-events-none absolute right-5 top-5 hidden sm:block w-16 h-16 text-border/70"
+        />
+        <div className="relative z-10 space-y-3">
+          <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1 rounded-md bg-background/60 hover:bg-background border border-border/60"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>返回主页</span>
+            </Link>
+            <span className="text-border">/</span>
+            <span className="text-xs text-primary font-medium">个性化偏好</span>
+          </div>
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+            <div className="max-w-2xl">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs">
+                  <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+                </div>
+                <span>我的偏好</span>
+              </h1>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
+                搜索会根据你的浏览与收藏做轻量个性化重排。这里是系统据你的行为推断出的内容——
+                看得见，才可以控制。
+              </p>
+            </div>
+            <Button variant="outline" size="sm" asChild className="shrink-0 text-xs">
+              <Link href="/favorites">
+                <History className="mr-2 h-4 w-4" />
+                搜索历史另在收藏页管理
+              </Link>
+            </Button>
+          </div>
+          <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary/25 bg-primary/5 text-xs text-primary">
+              <Sparkles className="w-3 h-3" />
+              {view === 'loading'
+                ? '正在读取画像'
+                : view === 'empty'
+                ? '暂无画像'
+                : view === 'degraded'
+                ? '画像暂不可用'
+                : '画像已生成'}
+            </span>
+            {profile && (
+              <>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
+                  搜索 {profile.searchCount} 次
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
+                  收藏 {profile.favoriteSiteIds.length} 个
+                </span>
+              </>
+            )}
+          </div>
         </div>
-        <Button variant="outline" size="sm" asChild>
-          <Link href="/favorites">
-            <History className="mr-2 h-4 w-4" />
-            搜索历史另在收藏页管理
-          </Link>
-        </Button>
       </div>
 
       {view === 'loading' ? (
-        <div className="text-sm text-muted-foreground">加载中…</div>
+        <div aria-busy="true" aria-live="polite" aria-label="正在加载偏好" className="space-y-4">
+          <span className="sr-only">加载中…</span>
+          <div className="rounded-xl border border-border/70 bg-card/50 p-5 space-y-3 animate-pulse">
+            <div className="h-4 w-32 rounded bg-muted" />
+            <div className="h-8 w-full rounded bg-muted" />
+            <div className="h-8 w-4/5 rounded bg-muted" />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="rounded-xl border border-border/70 bg-card/50 p-5 space-y-3 animate-pulse">
+                <div className="h-4 w-24 rounded bg-muted" />
+                <div className="h-3 w-full rounded bg-muted" />
+                <div className="h-3 w-2/3 rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        </div>
       ) : view === 'degraded' && degrade ? (
-        <div className="rounded-md border border-dashed p-6 text-center">
+        <div className="rounded-xl border border-dashed border-border/70 bg-card/40 p-6 text-center">
           <p className="text-sm text-muted-foreground">{degrade.message}</p>
           <p className="text-xs text-muted-foreground mt-2">{degrade.hint}</p>
           {degrade.retryable && (
@@ -180,19 +243,27 @@ export default function PreferencesPage() {
           )}
         </div>
       ) : view === 'empty' ? (
-        <div className="rounded-md border p-6 text-center text-sm text-muted-foreground">
-          {PROFILE_EMPTY_MESSAGE}
-        </div>
+        <EmptyState
+          icon={Sparkles}
+          iconTone="muted"
+          title="还没有可展示的偏好"
+          description={PROFILE_EMPTY_MESSAGE}
+          action={
+            <Button asChild size="sm" variant="outline" className="text-xs">
+              <Link href="/">去主页搜索并收藏站点</Link>
+            </Button>
+          }
+        />
       ) : (
-        <div className="space-y-6">
-          <section className="rounded-md border p-4">
-            <h2 className="text-sm font-medium mb-3 flex items-center gap-2">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <section className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 transition-colors hover:border-border">
+            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
               <FolderOpen className="h-4 w-4 text-primary" />
               常浏览的类目
             </h2>
             <div className="flex flex-wrap gap-2">
               {profile!.topCategories.map((c) => (
-                <span key={c} className="rounded-full bg-primary/10 px-3 py-1 text-xs">
+                <span key={c} className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs">
                   {catTitles[c] ?? c}
                 </span>
               ))}
@@ -202,14 +273,14 @@ export default function PreferencesPage() {
             </div>
           </section>
 
-          <section className="rounded-md border p-4">
-            <h2 className="text-sm font-medium mb-3 flex items-center gap-2">
+          <section className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 transition-colors hover:border-border">
+            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
               <Tag className="h-4 w-4 text-primary" />
               关注的标签
             </h2>
             <div className="flex flex-wrap gap-2">
               {profile!.topTags.map((t) => (
-                <span key={t} className="rounded-full bg-accent px-3 py-1 text-xs">
+                <span key={t} className="rounded-full border border-border/60 bg-accent px-3 py-1 text-xs">
                   {t}
                 </span>
               ))}
@@ -219,22 +290,25 @@ export default function PreferencesPage() {
             </div>
           </section>
 
-          <section className="rounded-md border p-4">
-            <h2 className="text-sm font-medium mb-3">最近访问过的站点（{profile!.visitedSiteIds.length}）</h2>
+          <section className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 sm:col-span-2">
+            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <History className="h-4 w-4 text-primary" />
+              最近访问过的站点（{profile!.visitedSiteIds.length}）
+            </h2>
             <div className="flex flex-wrap gap-2">
               {profile!.visitedSiteIds.slice(0, 20).map((id) => (
-                <span key={id} className="rounded-full bg-muted px-3 py-1 text-xs">
+                <span key={id} className="rounded-full border border-border/60 bg-muted px-3 py-1 text-xs">
                   {siteTitles[id] ?? id}
                 </span>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-3">
+            <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/50">
               搜索计数 {profile!.searchCount} 次 · 收藏 {profile!.favoriteSiteIds.length} 个 ·
               更新于 {new Date(profile!.updatedAt).toLocaleString('zh-CN')}
             </p>
           </section>
 
-          <section className="rounded-md border border-dashed p-4">
+          <section className="rounded-xl border border-dashed border-border/70 bg-card/40 p-4 sm:p-5 sm:col-span-2">
             <h2 className="text-sm font-medium mb-2">重置画像</h2>
             <p className="text-xs text-muted-foreground mb-3">
               清除以上偏好与相关行为记录。搜索结果将恢复为纯相关性排序。

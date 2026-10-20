@@ -15,9 +15,11 @@ import { fetchCollectionDetail, type HubCollection, type HubSite } from '@/lib/n
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SearchPalette } from '@/components/search-palette'
-import { ArrowLeft, Layers, ExternalLink } from 'lucide-react'
+import { ArrowLeft, Layers, ExternalLink, Boxes } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { SiteFavicon } from '@/components/site-favicon'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Button } from '@/components/ui/button'
 
 export default function CollectionDetailPage() {
   const params = useParams()
@@ -73,19 +75,55 @@ export default function CollectionDetailPage() {
         </div>
 
         {loading ? (
-          <div className="text-muted-foreground text-sm py-16 text-center">正在加载专题…</div>
+          <div aria-busy="true" aria-live="polite" aria-label="正在加载专题" className="space-y-6">
+            <span className="sr-only">正在加载专题…</span>
+            <div className="rounded-2xl border border-border/70 bg-card/50 p-6 sm:p-8 space-y-3 animate-pulse">
+              <div className="h-5 w-24 rounded-full bg-muted" />
+              <div className="h-8 w-2/3 rounded bg-muted" />
+              <div className="h-4 w-full rounded bg-muted" />
+              <div className="h-4 w-4/5 rounded bg-muted" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="rounded-xl border border-border/70 bg-card/50 p-3.5 space-y-3 animate-pulse">
+                  <div className="flex items-start gap-2.5">
+                    <div className="h-10 w-10 rounded-lg bg-muted shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3.5 w-2/3 rounded bg-muted" />
+                      <div className="h-3 w-full rounded bg-muted" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : notice && !collection ? (
           <div className="py-12 space-y-4 max-w-md mx-auto text-center">
             <p className="text-muted-foreground text-sm">暂时无法加载该专题</p>
             <HubDegradedNotice notice={notice} onRetry={reload} incompleteHint={false} />
           </div>
         ) : missing || !collection ? (
-          <div className="text-muted-foreground text-sm py-12 text-center border border-dashed rounded-xl bg-muted/10">
-            专题不存在或已下架
-          </div>
+          <EmptyState
+            icon={Layers}
+            iconTone="muted"
+            title="专题不存在或已下架"
+            description="这个专题可能已被站长下线，或链接里的 slug 不完整；可以回到专题列表看看其他合集。"
+            action={
+              <Button asChild size="sm" variant="outline" className="text-xs">
+                <Link href="/collections">浏览全部专题</Link>
+              </Button>
+            }
+          />
         ) : (
           <>
-            <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-8 shadow-xs">
+            <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs">
+              <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-violet-500/10 rounded-full blur-3xl" />
+              <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl" />
+              <Layers
+                aria-hidden
+                strokeWidth={1}
+                className="pointer-events-none absolute right-5 top-5 hidden sm:block w-16 h-16 text-border/70"
+              />
               <div className="relative z-10 space-y-2">
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-violet-500 border-violet-500/30 bg-violet-500/5 text-xs">
@@ -99,7 +137,15 @@ export default function CollectionDetailPage() {
                     {collection.description}
                   </p>
                 )}
-                <p className="text-xs text-muted-foreground">共收录 {sites.length} 个站点</p>
+                <div className="mt-4 pt-3.5 border-t border-border/50 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-violet-500/25 bg-violet-500/5 text-xs text-violet-600 dark:text-violet-400">
+                    <Layers className="w-3 h-3" />
+                    共收录 {sites.length} 个站点
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
+                    站长人工策划
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -107,9 +153,17 @@ export default function CollectionDetailPage() {
             <SearchPalette placeholder="不限于本专题：搜索全部站点（中文 / 拼音 / 语义）" />
 
             {sites.length === 0 ? (
-              <div className="text-muted-foreground text-sm py-12 text-center border border-dashed rounded-xl bg-muted/10">
-                该专题暂时没有站点
-              </div>
+              <EmptyState
+                icon={Boxes}
+                iconTone="muted"
+                title="该专题暂时没有站点"
+                description="专题可能还在编排中；可以用上方搜索直接查全部站点，或回专题列表逛逛。"
+                action={
+                  <Button asChild size="sm" variant="outline" className="text-xs">
+                    <Link href="/collections">浏览全部专题</Link>
+                  </Button>
+                }
+              />
             ) : (
               <div
                 className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 transition-all duration-200"

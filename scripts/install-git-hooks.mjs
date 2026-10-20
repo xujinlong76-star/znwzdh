@@ -41,7 +41,7 @@ node scripts/check-upstream-ref.mjs || exit 1
 node scripts/check-syntax.mjs --staged || exit 1
 
 node scripts/typecheck.mjs || exit 1
-npx vitest run --changed --passWithNoTests || exit 1
+pnpm exec vitest run --changed --passWithNoTests || exit 1
 `
 
 writeFileSync(preCommitPath, script, { encoding: 'utf-8', mode: 0o755 })

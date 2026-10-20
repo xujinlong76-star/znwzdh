@@ -6,7 +6,9 @@ set REPO=%1
 if "%REPO%"=="" set REPO=%DEFAULT_REPO%
 
 set TOKEN=%GITHUB_PAT%
-if "%TOKEN%"=="" set TOKEN=%2
+if "%TOKEN%"=="" (
+  echo [git] 未设置 GITHUB_PAT；将使用本机已有 Git 凭据，或请先设置环境变量。
+)
 
 if not exist ".git" (
   echo [git] 初始化本地仓库...

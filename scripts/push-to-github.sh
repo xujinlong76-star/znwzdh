@@ -4,7 +4,7 @@ set -e
 # 默认仓库配置
 DEFAULT_REPO="xujinlong76-star/znwzdh"
 REPO="${1:-$DEFAULT_REPO}"
-TOKEN="${GITHUB_PAT:-$2}"
+TOKEN="${GITHUB_PAT:-}"
 
 if [ ! -d ".git" ]; then
   echo "[git] 初始化本地仓库..."

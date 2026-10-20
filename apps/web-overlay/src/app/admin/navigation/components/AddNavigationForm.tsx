@@ -1,5 +1,6 @@
 'use client'
 
+import dynamic from "next/dynamic"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -8,7 +9,6 @@ import { Input } from "@/registry/new-york/ui/input"
 import { Switch } from "@/registry/new-york/ui/switch"
 import { Textarea } from "@/registry/new-york/ui/textarea"
 
-import { IconSelector } from './IconSelector'
 import {
   Form,
   FormControl,
@@ -19,6 +19,21 @@ import {
   FormDescription,
 } from "@/registry/new-york/ui/form"
 import { useToast } from "@/registry/new-york/hooks/use-toast"
+
+// 图标选择器依赖 cmdk/popover 与整张图标表；只在“添加导航”弹窗真正打开时加载，
+// 避免把这段交互依赖算进 /admin/navigation 首屏 chunk。
+const IconSelector = dynamic(
+  () => import('./IconSelector').then((mod) => mod.IconSelector),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="h-10 w-full animate-pulse rounded-md border bg-muted"
+        aria-hidden="true"
+      />
+    ),
+  }
+)
 
 const formSchema = z.object({
   title: z.string().min(2, { message: "标题至少需要2个字符" }),

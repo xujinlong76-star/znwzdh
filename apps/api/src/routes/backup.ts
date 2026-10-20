@@ -13,7 +13,7 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /**
    * 导出标准 Netscape 书签 HTML (可导入 Chrome, Firefox, Safari, Edge)
    */
-  app.get("/api/export/bookmarks.html", { config: { scope: "public" } }, async (_req, reply) => {
+  app.get("/api/export/bookmarks.html", { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (_req, reply) => {
     const [categories, sites] = await Promise.all([
       ctx.repo.listCategories(),
       ctx.repo.listSites(),
@@ -30,7 +30,7 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /**
    * 导出全量冷备数据包 (.nhbak.json)
    */
-  app.get("/api/export/backup.json", { config: { scope: "public" } }, async (_req, reply) => {
+  app.get("/api/export/backup.json", { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (_req, reply) => {
     const [categories, sites] = await Promise.all([
       ctx.repo.listCategories(),
       ctx.repo.listSites(),

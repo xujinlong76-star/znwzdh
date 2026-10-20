@@ -1,0 +1,158 @@
+/**
+ * 插件 URL 体检的核心逻辑（纯函数 + 注入式探活）。
+ *
+ * 背景与边界（2026-10-20 P0-1）：
+ *   1. **已安装**插件的站点本来就被既有链路覆盖：`jobs.ts` 的 `health_check`（24h、并发 2、
+ *      Weibull 抽样）用 `packages/ai/src/ssrf.ts` 的 `guardedFetch` 探活，并 `updateSiteHealth`
+ *      写回 `sites` 健康字段 + `health_checks` 历史。这条不需要重造。
+ *   2. 真正缺的是：**未安装插件包**里声明的 URL 从未被验活，以及**按插件维度**的可达率报告。
+ *      本文件负责后者的核心算法：抽样、并发探活编排、汇总。
+ *
+ * 为什么把探活函数做成参数注入：这里不 import 任何网络实现，测试可注入假探活器，
+ * 在无网络环境下把并发上限、超时兜底、分类口径全部锁住（仓库纪律：纯逻辑可测）。
+ */
+
+/** 单条 URL 的体检结果（与探活实现解耦的最小字段集） */
+export interface UrlProbeResult {
+  url: string
+  /** 判定为可达（2xx/3xx，且未被 SSRF 守卫拒绝） */
+  ok: boolean
+  status?: number
+  /** 跟随后重定向落点；与 url 归一后不同即视为发生重定向 */
+  finalUrl?: string
+  latencyMs?: number
+  error?: string
+}
+
+/** 一个插件包的体检汇总（列表/徽标/报告三处共用同一口径） */
+export interface PluginAuditSummary {
+  total: number
+  ok: number
+  broken: number
+  redirected: number
+  /** 可达率（0..1，保留 3 位小数）；total 为 0 时返回 null，避免用 0 冒充「全挂」 */
+  reachability: number | null
+  /** 不可达明细（报告里逐条列出，便于人工复核或替换站点） */
+  brokenItems: Array<{ url: string; status?: number; error?: string }>
+}
+
+/** 体检默认参数：单包抽样 30 条、并发 6、单条兜底超时 5s */
+export const PLUGIN_AUDIT_DEFAULTS = {
+  sample: 30,
+  concurrency: 6,
+  timeoutMs: 5_000,
+} as const
+
+/** 归一化 URL：协议/主机小写、去尾斜杠、去 hash —— 判「是否重定向」时用 */
+export function normalizeAuditUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    const path = u.pathname === '/' ? '' : u.pathname.replace(/\/+$/, '')
+    return `${u.protocol.toLowerCase()}//${u.host.toLowerCase()}${path}${u.search}`
+  } catch {
+    return url.trim()
+  }
+}
+
+/**
+ * 均匀抽样：把整包按等距取点，保证样本覆盖包内各个分类，
+ * 而不是只验前 N 条（后者会让「后面的分类全挂」这种问题漏检）。
+ * 确定性：同一输入多次调用结果一致（报告可复现、可对比）。
+ */
+export function sampleUrls(urls: readonly string[], limit: number): string[] {
+  const total = urls.length
+  if (limit <= 0) return []
+  if (total === 0) return []
+  if (limit >= total) return [...urls]
+  const picked: string[] = []
+  const seen = new Set<string>()
+  const step = total / limit
+  for (let i = 0; i < limit; i++) {
+    // 取每个等分区间内的固定位置（区间中点偏左，避免总是取到端点导致首尾过采样）
+    const index = Math.min(total - 1, Math.floor(i * step + step / 2))
+    const url = urls[index]
+    if (!url || seen.has(url)) continue
+    seen.add(url)
+    picked.push(url)
+  }
+  return picked
+}
+
+/** 汇总探活结果（列表徽标 / 详情报告 / 管理端报表共用） */
+export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditSummary {
+  let ok = 0
+  let broken = 0
+  let redirected = 0
+  const brokenItems: PluginAuditSummary['brokenItems'] = []
+  for (const p of probes) {
+    if (p.ok) {
+      ok++
+      if (p.finalUrl && normalizeAuditUrl(p.finalUrl) !== normalizeAuditUrl(p.url)) redirected++
+    } else {
+      broken++
+      brokenItems.push({ url: p.url, status: p.status, error: p.error })
+    }
+  }
+  const total = probes.length
+  return {
+    total,
+    ok,
+    broken,
+    redirected,
+    reachability: total === 0 ? null : Math.round((ok / total) * 1000) / 1000,
+    brokenItems,
+  }
+}
+
+/** 探活器签名：由调用方注入（生产用 guardedFetch 包装，测试注入假实现） */
+export type UrlProber = (url: string, timeoutMs: number) => Promise<UrlProbeResult>
+
+/**
+ * 并发探活编排：分批并发 + 单条兜底超时。
+ *
+ * 兜底超时的意义：探活器自己可能不守时（DNS 挂起、连接半开），
+ * 这里用 Promise.race 保证单条不会把整批体检拖死；超时按 broken 记录 error='timeout'。
+ */
+export async function probeUrls(
+  urls: readonly string[],
+  probe: UrlProber,
+  options: { concurrency?: number; timeoutMs?: number } = {},
+): Promise<UrlProbeResult[]> {
+  const concurrency = Math.max(1, options.concurrency ?? PLUGIN_AUDIT_DEFAULTS.concurrency)
+  const timeoutMs = Math.max(1, options.timeoutMs ?? PLUGIN_AUDIT_DEFAULTS.timeoutMs)
+  const results: UrlProbeResult[] = []
+
+  for (let i = 0; i < urls.length; i += concurrency) {
+    const batch = urls.slice(i, i + concurrency)
+    const settled = await Promise.all(
+      batch.map(async (url) => {
+        let timer: ReturnType<typeof setTimeout> | undefined
+        try {
+          return await Promise.race<UrlProbeResult>([
+            probe(url, timeoutMs),
+            new Promise<UrlProbeResult>((resolve) => {
+              timer = setTimeout(() => resolve({ url, ok: false, error: 'timeout' }), timeoutMs)
+            }),
+          ])
+        } catch (err) {
+          return { url, ok: false, error: err instanceof Error ? err.message : String(err) }
+        } finally {
+          if (timer) clearTimeout(timer)
+        }
+      }),
+    )
+    results.push(...settled)
+  }
+  return results
+}
+
+/** 配齐「抽样 → 探活 → 汇总」的一步到位入口（路由与 job 共用） */
+export async function auditPluginUrls(
+  urls: readonly string[],
+  probe: UrlProber,
+  options: { sample?: number; concurrency?: number; timeoutMs?: number } = {},
+): Promise<{ summary: PluginAuditSummary; sampledUrls: string[] }> {
+  const sampledUrls = sampleUrls(urls, options.sample ?? PLUGIN_AUDIT_DEFAULTS.sample)
+  const probes = await probeUrls(sampledUrls, probe, options)
+  return { summary: summarizeProbes(probes), sampledUrls }
+}

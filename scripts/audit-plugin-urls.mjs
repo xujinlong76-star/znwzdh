@@ -82,6 +82,8 @@ async function main() {
 
   const rows = [];
   const detail = [];
+  // 口径声明从接口取（事实源在服务端），不在脚本里另抄一份 —— 否则改了服务端口径，脚本还在印旧说法
+  let caveat = null;
   for (const pack of packs) {
     process.stdout.write(`· ${pack.slug.padEnd(28)} `);
     let first;
@@ -97,6 +99,7 @@ async function main() {
       rows.push({ slug: pack.slug, name: pack.name, declared: pack.urls.length, notSeeded: true });
       continue;
     }
+    if (!caveat && typeof first.caveat === "string") caveat = first.caveat;
 
     let second = null;
     if (RETRY && first.brokenCount > 0) second = await auditOnce(pack.slug);
@@ -135,8 +138,8 @@ async function main() {
 
   console.log(`\n汇总：${scored.length} 个包参与统计 | 抽样合计 ${totalSampled} 条 | 稳定不可达 ${totalBroken} 条`);
   console.log(`全市场平均可达率：${pct(avg)}`);
-  console.log("\n口径声明：可达性为「从本机网络测得」的即时快照；超时/抓取失败可能是地域或网络限制，不等于死链；");
-  console.log("          401/403/405/412/429 属「存活但拒绝爬虫」，已计入可达。" + (RETRY ? "（已用两轮复测区分稳定失败与抖动）" : "（加 --retry 可复测消抖）"));
+  console.log("\n口径声明：" + (caveat ?? "（未能从接口取得，请检查 API 是否在跑）"));
+  console.log("          " + (RETRY ? "（本次已用两轮复测区分稳定失败与抖动）" : "（加 --retry 可复测消抖）"));
 
   const worst = scored.filter((r) => r.reachability !== null && r.reachability < 0.9).sort((a, b) => a.reachability - b.reachability);
   if (worst.length) {

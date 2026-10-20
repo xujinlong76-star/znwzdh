@@ -96,6 +96,27 @@
 
 **P1 首屏收尾（2026-10-20）**：定位到 `workbench-bridge` 为创建 `favorites-dock` 静态导入 `use-modular-layout` → `registry` → 全部 widget；抽出 `layout-storage.ts` 键、`workbench-bridge` 改用最小工厂并加默认尺寸守卫后，`/` **1156 KB → 1073 KB（-83.7 KB）**，首次达到 ≤1.05 MB；最大路由 `/admin/navigation` 1185 KB。预算按实测 +5% 将 `/` 1210 → 1126 KB，其余不变。web 测试 7/7（新增 1 条启动坞默认尺寸守卫）、根测试 1882、web tsc/build/budget 全绿。
 
+**P1 首屏预算复核（2026-10-20 夜间，含同伴未提交改动）**
+
+口径与命令（可复核）：
+
+```powershell
+$env:NEXT_DIST_DIR=".next-budget"; pnpm --filter navsphere build   # 隔离产物目录，不动在用 .next
+$env:NEXT_DIST_DIR=".next-budget"; node scripts/check-bundle-budget.mjs --json
+```
+
+| 项 | 实测 | 预算 | 余量 |
+| :--- | ---: | ---: | ---: |
+| `/` | 1,088,797 B（**1063 KB**） | 1,141,766 B | 51.7 KB |
+| 最高路由 `/admin/navigation/[id]/categories/[categoryId]/items` | 1,183,154 B（**1155 KB**） | 1,255,424 B | 70.6 KB |
+| `/marketplace/[slug]` | 1,063,638 B（1039 KB） | 1,090,560 B | 26.3 KB |
+| `/marketplace` | 906,199 B（885 KB） | 949,248 B | 42.1 KB |
+| `/algorithms` | 937,773 B（916 KB） | 996,352 B | 57.2 KB |
+
+58 条路由 **0 条超预算**；打包器 Turbopack，未压缩字节。同轮门禁：`node scripts/typecheck.mjs` 5 包通过（19.8s，TS 7.0.2 native）、`pnpm test` **1962 passed / 15 skipped（176 文件）**、`check-web-overlay` 413 文件一致。
+
+**为什么本轮不调预算**：这次产物包含同伴**尚未提交**的 WIP（工作区 ~97 文件），chunk 划分还在变（`/admin/navigation` 从 1185 KB 掉到 998 KB 就是划分变化，不是我的减重成果）。按「棘轮必须基于可复现基线」的纪律，等同伴 WIP 收口并提交后，以那次干净构建为准再一次性下调；现在下调等于把临时状态固化成阈值。
+
 ### P2｜产品增值（第 3–4 周，三选一）
 
 按「用户价值 / 与同伴冲突风险 / 工作量」排序：

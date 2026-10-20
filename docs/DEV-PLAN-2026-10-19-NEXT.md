@@ -87,12 +87,14 @@
 | :--- | :--- | :--- | :--- |
 | P1-1 | ✅ `use-home-diy` 拆分 | 已拆为 `home-diy-storage.ts`（587 行：共享状态、localStorage、迁移、#diy 分享 hash）与 `home-diy-io.ts`（127 行：导入导出/E2EE/云金库）；hook 保留编排并用 `export *` 保持导入路径 | 主文件 594 行（≤600）；home-diy 测试全绿；行为不变 |
 | P1-2 | ✅ `navigation-content` 拆分 | 实际拆为 `navigation-toolbar.tsx`（280 行）与 `navigation-category-section.tsx`（428 行）；批量操作坞、录入弹窗、主 landmark 仍留父组件 | 主文件 500 行；web 66 文件 726 测试全绿 |
-| P1-3 | 首屏懒加载核查 | ✅ 已完成首轮：Spotlight 45 KB 实现改为首次 Cmd/Ctrl+K 或 `open-spotlight` 事件才加载（`global-spotlight-gateway.tsx`）；AI 抽屉改为首次 Cmd/Ctrl+J 或 `open-ai-copilot` 事件才加载（`global-ai-gateway.tsx`）；theme-runtime 动态导入实测无收益，保留静态。`ModularCanvas`/`HomeHeroDeck`/批量工具此前已动态化 | `/` 1152 KB、最高路由 1182 KB；≤1.05 MB 仍差 ~77 KB，继续但不硬压 |
-| P1-4 | 预算下调 | ✅ 本轮按 P1-3 实测将 `/` 预算 1233 → 1210 KB、最高路由 1294 → 1241 KB；保留 ≤1.05 MB / ≤900 KB 为后续目标 | `bundle-budget.json` 与文档一致，CI 绿 |
+| P1-3 | 首屏懒加载核查 | ✅ 已完成首轮：Spotlight 45 KB 实现改为首次 Cmd/Ctrl+K 或 `open-spotlight` 事件才加载（`global-spotlight-gateway.tsx`）；AI 抽屉改为首次 Cmd/Ctrl+J 或 `open-ai-copilot` 事件才加载（`global-ai-gateway.tsx`）；theme-runtime 动态导入实测无收益，保留静态。`ModularCanvas`/`HomeHeroDeck`/批量工具此前已动态化。2026-10-20 二次收口：`workbench-bridge` 去掉 registry 静态依赖 | `/` **1073 KB**、最高路由 1185 KB；已 ≤1.05 MB（-83.7 KB） |
+| P1-4 | 预算下调 | ✅ 2026-10-20 按实测将 `/` 预算 1233 → 1210 → **1126 KB**、最高路由 1294 → 1241 KB；`/` 已 ≤1.05 MB，保留 ≤900 KB 为后续目标 | `bundle-budget.json` 与文档一致，CI 绿 |
 
 **风险**：中。首页是核心 UX；用「纯重构 + 现有测试/E2E 兜底」控制，不做行为变更。回滚粒度到组件/文件。
 
 **说明**：拆文件本身不必然减 KB；P1-3 才是体积手段，P1-1/P1-2 是可维护性手段。两者分开验收，避免「拆了但没瘦」的错觉。
+
+**P1 首屏收尾（2026-10-20）**：定位到 `workbench-bridge` 为创建 `favorites-dock` 静态导入 `use-modular-layout` → `registry` → 全部 widget；抽出 `layout-storage.ts` 键、`workbench-bridge` 改用最小工厂并加默认尺寸守卫后，`/` **1156 KB → 1073 KB（-83.7 KB）**，首次达到 ≤1.05 MB；最大路由 `/admin/navigation` 1185 KB。预算按实测 +5% 将 `/` 1210 → 1126 KB，其余不变。web 测试 7/7（新增 1 条启动坞默认尺寸守卫）、根测试 1882、web tsc/build/budget 全绿。
 
 ### P2｜产品增值（第 3–4 周，三选一）
 

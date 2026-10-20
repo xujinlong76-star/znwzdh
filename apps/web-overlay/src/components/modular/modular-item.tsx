@@ -32,6 +32,8 @@ interface ModularItemProps {
   onDragStart: (e: React.DragEvent, index: number) => void
   onDragOver: (e: React.DragEvent, index: number) => void
   onDragEnd: (e: React.DragEvent) => void
+  /** 触控端长按拖拽：HTML5 drag 在移动端不触发，这里用 Pointer Events 兜底 */
+  onTouchDragPointerDown?: (e: React.PointerEvent, index: number) => void
   isDraggedOver?: boolean
   isDragging?: boolean
 }
@@ -57,6 +59,7 @@ function ModularItemImpl({
   onDragStart,
   onDragOver,
   onDragEnd,
+  onTouchDragPointerDown,
   isDraggedOver,
   isDragging,
 }: ModularItemProps) {
@@ -279,6 +282,7 @@ function ModularItemImpl({
   return (
     <div
       ref={itemRef}
+      data-modular-item-index={index}
       draggable={isEditing}
       onDragStart={(e) => {
         // 缩放手柄按下后指针还在本卡片内，移动会触发父级的原生 HTML5 拖拽，
@@ -304,7 +308,12 @@ function ModularItemImpl({
       {isEditing && (
         <div className="flex items-center justify-between px-3 py-1.5 bg-muted/60 border-b border-border/50 text-xs">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-grab">
+            <span
+              className="p-0.5 rounded text-muted-foreground hover:text-foreground cursor-grab select-none"
+              style={{ touchAction: 'none' }}
+              title="拖动排序（移动端长按手柄拖动）"
+              onPointerDown={(e) => onTouchDragPointerDown?.(e, index)}
+            >
               <GripVertical className="w-3.5 h-3.5" />
             </span>
             <span className="font-semibold text-foreground truncate text-xs">

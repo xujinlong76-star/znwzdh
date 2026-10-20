@@ -49,7 +49,7 @@
 | 巨型组件 | `algorithm-lab` 2059 / `admin/sitelist` 1992 / `navhub-api` 1763 / `marketplace/[slug]` 1500 / `AdminDashboardClient` 1174 / `use-home-diy` 1111 / `navigation-content` 1036 | 改一处要读全文件，回归面大 |
 | TS / ESLint | TS 5.9.3（工具）+ TS 7.0.2（typecheck 门禁）、ESLint 10.13 | 全量 TS 7 待同伴清单与 typescript-eslint；门禁已提速约 7× |
 | CSP 未 enforce | 默认关闭，只有开关 | XSS 防线未真正启用 |
-| 产品项 | 搜索 2.0、PWA 深化、分享短链、移动端 DIY 拖拽未做 | 见 P2 菜单 |
+| 产品项 | 搜索 2.0、分享短链未做；PWA 深化与移动端 DIY 拖拽已落首轮 | 见 P2 菜单 |
 
 ---
 
@@ -248,6 +248,19 @@ $env:NEXT_DIST_DIR=".next-budget"; node scripts/check-bundle-budget.mjs --json
 **数据诚实性**：`/api/collections` 列表不返回 `siteCount`，首版显示的「0 个站点」会误导；改为「有计数才显示站点数，否则显示『人工精选』」，hero 同步改为「人工策划 · 持续更新」。
 
 **验证**：verify worktree vendor → tsc 0 → eslint 0 errors（503 warnings）→ build 通过（CSS 244232 字节）→ bundle 全绿（最高路由 1185 KB / 预算 1241 KB）→ web 71 文件 746 测试 → overlay check OK。实拍 1920 / 1440 / 390 正常，空态、骨架与悬浮态均按预期渲染。
+
+### P2-D 移动端 DIY 拖拽轮（2026-10-21）
+
+给 DIY 画布补一条**触控拖拽通道**：手机/平板上按住卡片手柄即可拖动换位，不再只能点 ⬆️/⬇️。
+
+| 项 | 落地 |
+| :--- | :--- |
+| 判定 | `lib/modular/touch-reorder.ts` 纯函数：长按 180ms + 移动 8px 才激活；命中判定按卡片矩形取「包含优先、就近兜底」 |
+| 交互 | 卡片根节点带 `data-modular-item-index`；手柄 `touch-action: none`，长按后 `pointermove` 改用纯函数算出的目标卡片高亮，松手复用既有 `reorderWidgets` 换位并压入一次历史快照（可整体撤销） |
+| 边界 | 仅在 `(pointer: coarse)` 设备启用；桌面端 HTML5 drag 通道原样保留；⬆️/⬇️ 按钮继续保留（无障碍与兜底） |
+| 守门 | `touch-reorder.test.ts` 7 条纯函数用例 + `touch-dnd-guard.test.ts` 3 条接线守卫（防止手柄/画布链路被回退） |
+
+**为什么不用 dnd-kit**：方案原写「dnd-kit 触摸传感器」，本轮改为 Pointer Events 自实现，理由是：① 不新增运行时依赖（vendored `apps/web` 依赖与 lockfile 都要动，供应链面变大）；② 画布是 12 栅格、卡片高度可变，命中判定用「卡片矩形 + 就近兜底」比通用排序库更贴合；③ 判定逻辑抽成纯函数后可直接单测。若后续要支持跨行/多列自由摆放，再评估 dnd-kit。
 
 ### P3｜工具链收尾（窗口期，3–5 天）
 

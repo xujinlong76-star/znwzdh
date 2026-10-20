@@ -30,6 +30,14 @@ import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
 import { takeStagedWorkspacePreset } from '@/lib/plugins/preset-staging'
 import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
+import {
+  ITEM_INDEX_ATTR,
+  isCoarsePointer,
+  readItemIndex,
+  resolveDropIndex,
+  shouldActivateTouchDrag,
+  type ItemRect,
+} from '@/lib/modular/touch-reorder'
 
 export function ModularCanvas() {
   const {
@@ -171,6 +179,110 @@ export function ModularCanvas() {
     setDragOverIndex(null)
   }, [draggedIndex, dragOverIndex])
 
+  /**
+   * 移动端拖拽排序：长按手柄 → 拖到目标卡片 → 松手换位。
+   *
+   * 背景：HTML5 drag/drop 在移动端浏览器根本不触发，桌面端那套在手机上完全失效，
+   * 只能退回 ⬆️/⬇️ 按钮。这里用 Pointer Events 补一套触控通道：
+   *  - 仅在 `(pointer: coarse)` 的设备上启用，桌面端行为完全不变；
+   *  - 长按 180ms 且移动超过 8px 才激活，避免和页面滚动/点击打架；
+   *  - 命中判定走纯函数 `resolveDropIndex`（见 lib/modular/touch-reorder.ts）。
+   */
+  const touchDragRef = useRef<{
+    pointerId: number
+    fromIndex: number
+    startX: number
+    startY: number
+    startTime: number
+    active: boolean
+    overIndex: number | null
+  } | null>(null)
+  const [touchDragSession, setTouchDragSession] = useState(0)
+  // beginInteraction 引用随 activeBoardId 变化，用 ref 镜像避免反复重订监听
+  const beginInteractionRef = useRef(beginInteraction)
+  useEffect(() => {
+    beginInteractionRef.current = beginInteraction
+  }, [beginInteraction])
+
+  const handleTouchDragPointerDown = useCallback((e: React.PointerEvent, index: number) => {
+    // 鼠标走桌面端 HTML5 drag；触摸/笔才进触控通道
+    if (e.pointerType === 'mouse') return
+    if (!isCoarsePointer(typeof window !== 'undefined' ? window : null)) return
+    touchDragRef.current = {
+      pointerId: e.pointerId,
+      fromIndex: index,
+      startX: e.clientX,
+      startY: e.clientY,
+      startTime: Date.now(),
+      active: false,
+      overIndex: index,
+    }
+    // 触发一次 effect 重订阅（ref 变化不会触发重渲染）
+    setTouchDragSession((n) => n + 1)
+  }, [])
+
+  useEffect(() => {
+    if (touchDragSession === 0) return
+
+    const readItemRects = () => {
+      const nodes = Array.from(document.querySelectorAll(`[${ITEM_INDEX_ATTR}]`))
+      const rects: ItemRect[] = []
+      for (const node of nodes) {
+        const index = readItemIndex(node)
+        if (index === null) continue
+        const rect = node.getBoundingClientRect()
+        rects.push({ index, top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right })
+      }
+      return rects
+    }
+
+    const handleMove = (ev: PointerEvent) => {
+      const state = touchDragRef.current
+      if (!state || ev.pointerId !== state.pointerId) return
+      const distance = Math.hypot(ev.clientX - state.startX, ev.clientY - state.startY)
+      const elapsed = Date.now() - state.startTime
+      if (!state.active) {
+        if (!shouldActivateTouchDrag({ pointerType: ev.pointerType, elapsedMs: elapsed, distancePx: distance })) {
+          return
+        }
+        state.active = true
+        setDraggedIndex(state.fromIndex)
+        setDragOverIndex(state.fromIndex)
+        // 压入一份历史快照，保证整段拖拽可以整体撤销
+        beginInteractionRef.current?.()
+      }
+      // 手势已被接管：阻止默认行为（避免页面跟着滚动）
+      if (ev.cancelable) ev.preventDefault()
+      const over = resolveDropIndex(ev.clientX, ev.clientY, readItemRects())
+      if (over !== null && over !== state.overIndex) {
+        state.overIndex = over
+        setDragOverIndex(over)
+      }
+    }
+
+    const handleUp = (ev: PointerEvent) => {
+      const state = touchDragRef.current
+      touchDragRef.current = null
+      if (!state || ev.pointerId !== state.pointerId) return
+      if (state.active) {
+        const from = state.fromIndex
+        const to = state.overIndex ?? state.fromIndex
+        if (from !== to) reorderWidgetsRef.current(from, to)
+      }
+      setDraggedIndex(null)
+      setDragOverIndex(null)
+    }
+
+    window.addEventListener('pointermove', handleMove, { passive: false })
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
+    return () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+      window.removeEventListener('pointercancel', handleUp)
+    }
+  }, [touchDragSession])
+
   // 创建新看板
   const handleCreateBoardSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -238,17 +350,17 @@ export function ModularCanvas() {
   return (
     <div className="space-y-6">
       {/* 多看板工作区切换标签栏 (Multi-Board Switcher) */}
-      <div className="flex items-center justify-between gap-3 overflow-x-auto pb-1 border-b border-border/50 text-xs">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <div className="flex items-center gap-1 text-muted-foreground mr-1 text-xs font-mono">
+      <div className="flex items-center justify-between gap-3 overflow-x-auto no-scrollbar touch-pan-x pb-1.5 border-b border-border/50 text-xs">
+        <div className="flex items-center gap-1.5 flex-nowrap shrink-0">
+          <div className="flex items-center gap-1 text-muted-foreground mr-1 text-xs font-mono shrink-0">
             <Layers className="w-3.5 h-3.5 text-primary" />
             <span>我的工作台:</span>
           </div>
           {boards.map((b) => (
-            <div key={b.id} className="flex items-center group/tab">
+            <div key={b.id} className="flex items-center group/tab shrink-0">
               <button
                 onClick={() => switchBoard(b.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                   activeBoardId === b.id
                     ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
                     : 'bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground'
@@ -279,7 +391,7 @@ export function ModularCanvas() {
                   placeholder="看板名称..."
                   value={newBoardName}
                   onChange={(e) => setNewBoardName(e.target.value)}
-                  className="h-7 px-2 text-xs rounded-lg border border-border bg-background outline-none focus:ring-1 focus:ring-primary w-28"
+                  className="h-7 px-2 text-base sm:text-xs rounded-lg border border-border bg-background outline-none focus:ring-1 focus:ring-primary w-28"
                 />
                 <Button size="sm" type="submit" className="h-7 px-2 text-xs rounded-lg">
                   确定
@@ -297,7 +409,7 @@ export function ModularCanvas() {
             ) : (
               <button
                 onClick={() => setIsCreatingBoard(true)}
-                className="px-2.5 py-1.5 rounded-xl border border-dashed border-border/80 hover:border-primary/60 text-muted-foreground hover:text-foreground text-xs flex items-center gap-1 transition-colors"
+                className="px-2.5 py-1.5 rounded-xl border border-dashed border-border/80 hover:border-primary/60 text-muted-foreground hover:text-foreground text-xs flex items-center gap-1 transition-colors whitespace-nowrap shrink-0"
               >
                 <Plus className="w-3 h-3" />
                 <span>新建工作台</span>
@@ -331,7 +443,7 @@ export function ModularCanvas() {
         </div>
 
         {/* 快捷操作胶囊按钮组 */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
           {/* 画布背景风格切换 */}
           <div className="flex items-center gap-1 border border-border/60 rounded-xl p-0.5 bg-background/50 text-xs">
             <Palette className="w-3 h-3 text-muted-foreground ml-1 mr-0.5" />
@@ -563,6 +675,7 @@ export function ModularCanvas() {
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
+                onTouchDragPointerDown={handleTouchDragPointerDown}
                 isDragging={draggedIndex === index}
                 isDraggedOver={dragOverIndex === index && draggedIndex !== index}
               />

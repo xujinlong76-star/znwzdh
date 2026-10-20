@@ -194,7 +194,7 @@ apps/web/test/plugin-manifest-parity.test.ts(13,48): error TS5097:
 
 ### 批 4｜工具链：TS 7 / vitest 5 / ESLint 10（中风险，3–4 天）
 
-**TS 7 是本批最大收益（官方实测 8–12 倍，Slack CI 类型检查 7.5min → 1.25min），但本仓有两个硬阻断：**
+**TS 7 是本批最大收益（官方实测 8–12 倍，Slack CI 类型检查 7.5min → 1.25min），但本仓有三个硬阻断：**
 
 | 阻断 | 证据 | 处理 |
 | :--- | :--- | :--- |
@@ -203,7 +203,14 @@ apps/web/test/plugin-manifest-parity.test.ts(13,48): error TS5097:
 | `types` 默认变 `[]` | 根 `tsconfig.base.json` 用 `typeRoots`、前端未声明 `types` | 显式补 `"types": ["node"]`（前端再补 react/react-dom），否则 `process`、`Buffer` 全丢 |
 | 工具链 API 缺失 | TS 7 暂不带 compiler API（预计 7.1） | `typescript-eslint` 需要 `@typescript/typescript6`；建议：**门禁用 `@typescript/native@7`，工具用 `typescript@6`** 并行装 |
 
-**顺序**：先 TS 5.9 → 6.0（清掉所有 deprecation）→ 再 7.0（只用于 `tsc --noEmit` 门禁）。vitest 5 与 ESLint 10 放在 TS 之后，避免「升级失败时分不清是谁的错」。
+**顺序（2026-10-20 修正）**：TS 6 在 npm 上只有 beta/dev，没有正式版，原「先升 6.0 清 deprecation」不可执行。改为在 5.9 上直接清硬阻断后评估 7.0；ESLint 10 已独立完成，vitest 5 不受影响。
+
+**2026-10-20 执行记录**：
+
+- 已清：两处 `moduleResolution` 均已是 `"bundler"`；`baseUrl` 已移除（`e93db80`）；根 `types` 已显式补 `"node"`（`81a2fab`）。
+- 隔离 worktree 用 `typescript@7.0.2` 实测：全量 `pnpm typecheck`、根测试 1850、web 749、web tsc（直接用 TS 7 二进制）、构建全部通过。
+- 仍不能合入：① `apps/api`/`packages/*` 各自 pin `typescript: 5.9.3`，其中 `packages/ai`/`packages/store` 是同伴 WIP；② `typescript-eslint@8.71.2` 的 TS peer 是 `>=4.8.4 <6.1.0`。当前结论：**门禁可先升 7，lint 所在的 web 继续留 5.9.3**；等同伴清单落地 + typescript-eslint 支持 7 后再整体切。
+- ESLint 10 已单独完成（`34156a0`）：`10.13.0`；需把 brace-expansion override 拆成 `>=2 <5` 与 `>=5`，否则 minimatch@10 启动即崩。
 
 ---
 

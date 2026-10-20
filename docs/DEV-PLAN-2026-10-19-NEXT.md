@@ -47,7 +47,7 @@
 | **无快速语法门禁** | 只靠 `tsc --noEmit`（web 约 19s，根约 75s）；提交前无解析级检查 | 标点级错误可直达 main |
 | README 版本陈旧 | 仍写 `Node.js v22.x`，实际 engines `>=24` | 新同学按错版本装环境 |
 | 巨型组件 | `algorithm-lab` 2059 / `admin/sitelist` 1992 / `navhub-api` 1763 / `marketplace/[slug]` 1500 / `AdminDashboardClient` 1174 / `use-home-diy` 1111 / `navigation-content` 1036 | 改一处要读全文件，回归面大 |
-| TS / ESLint | TS 5.9.3、ESLint 9.33（TS 7 / ESLint 10 未升） | 类型检查慢；工具链落后 |
+| TS / ESLint | TS 5.9.3、ESLint 10.13 | TS 7 待同伴清单与 typescript-eslint；ESLint 10 已完成 |
 | CSP 未 enforce | 默认关闭，只有开关 | XSS 防线未真正启用 |
 | 产品项 | 搜索 2.0、PWA 深化、分享短链、移动端 DIY 拖拽未做 | 见 P2 菜单 |
 
@@ -190,10 +190,10 @@
 
 ### P3｜工具链收尾（窗口期，3–5 天）
 
-- **TS 6 → 7（native）**：TS 7 用于 `tsc --noEmit` 门禁；`typescript@6` 留给 typescript-eslint（TS 7 暂无 compiler API）。先处理两个硬阻断：`moduleResolution: "node"` → `"bundler"`；`baseUrl` → 相对 `paths`。
-- **ESLint 10**：先验证 `eslint-config-next@16.4` 与现有插件的兼容性；不兼容就只升 TS，不硬上。
-- **前置条件**：同伴 archive/graph 阶段落地、`pnpm-lock.yaml` 稳定、无 `.nm-partial-*`；不同周同时动 TS 7 与 ESLint 10。
-- **验收**：`pnpm typecheck` 前后耗时记录（目标 ≥5×）；typecheck / lint / build / E2E 全绿。
+- **ESLint 10（已完成，`34156a0`）**：`eslint@10.13.0`。`eslint-config-next@16.4` 的 peer 为 `>=9`，现有 `typescript-eslint@8.71.2` 已支持 ESLint 10。实测先撞上自身安全 override：`brace-expansion@>=2: 2.1.4` 会把 minimatch@10 需要的 v5 压回旧 API，ESLint 启动即崩；已拆成 `>=2 <5: 2.1.4` 与 `>=5: 5.0.12`。结果 0 errors / 503 warnings，web 749 测试、构建、bundle、overlay 全绿。
+- **TS 7（预处理完成，升级待窗口）**：两个硬阻断已清——`baseUrl` 移除（`e93db80`）、显式 `types: ["node"]`（`81a2fab`）。隔离 worktree 实测 `typescript@7.0.2`：全量 `pnpm typecheck`、根测试 1850、web 749、构建均通过。仍有两个提交阻塞：① `apps/api` 与 `packages/*` 各自 pin `typescript: 5.9.3`，其中 `packages/ai`/`packages/store` 是同伴 WIP，不能改清单；② `typescript-eslint@8.71.2` 的 TS peer 是 `>=4.8.4 <6.1.0`，且 TS 6 无正式版，lint 必须继续用 5.9。等同伴落地 + typescript-eslint 支持 TS 7 后，按「根/API/packages 升 7、web 留 5.9 供 lint」执行。
+- **前置条件**：同伴 archive/graph 落地后再动 `apps/api` 与 `packages/*` 的 TS 版本；ESLint 10 已完成。
+- **验收**：typecheck 耗时对比待真正升级时记录；ESLint 10 已保持 typecheck / lint / build / web 测试全绿。
 
 ### P4｜运维与安全（有部署/预发环境再做）
 
@@ -202,7 +202,7 @@
 - **备份演练（本地完成，`f51f8d8`）**：新增 `scripts/backup-drill.test.ts`（WAL 未 checkpoint 热备 + 源库缺失退出码）；本地临时库写入 50 行后不关连接直接备份，恢复校验 50 行、`integrity_check=ok`、无 `-wal/-shm` 残留。步骤与待演练项见 `docs/BACKUP-RUNBOOK.md`；生产恢复演练仍待环境。
 - **auth 决策**：next-auth v5 beta 留/拆是产品决策，单独立项；不做默认动作。
 
-**P4 验证**：web 749 测试（含新增 3 条 CSP）、API 369、`pnpm typecheck` 0、eslint 0 errors、bundle / overlay 全绿；生产构建实测 report-only 与 enforce（双开关时只下发 enforce，带 report-uri）两档响应头。P3 仍受同伴 WIP 阻塞。
+**P4 验证**：web 749 测试（含新增 3 条 CSP）、API 369、`pnpm typecheck` 0、eslint 0 errors、bundle / overlay 全绿；生产构建实测 report-only 与 enforce（双开关时只下发 enforce，带 report-uri）两档响应头。**P3**：ESLint 10 已完成（`34156a0`）；TS 7 预处理完成（`e93db80` + `81a2fab`），受同伴清单与 typescript-eslint 阻塞。
 
 ---
 

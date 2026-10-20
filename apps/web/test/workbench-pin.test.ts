@@ -21,6 +21,8 @@
  * 消息里说明「为避免覆盖已跳过收藏」）。启动坞那部分照旧生效，不因噎废食。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { STORAGE_KEY } from "@/lib/modular/layout-storage";
+import { WIDGET_REGISTRY } from "@/lib/modular/registry";
 import { pinSiteToWorkbench } from "@/lib/modular/workbench-bridge";
 
 const FAV_KEY = "navhub.favorites.v1";
@@ -111,5 +113,23 @@ describe("固定到工作台：收藏读不出来时不许覆盖", () => {
     const r = pinSiteToWorkbench(SITE);
     expect(store.get(FAV_KEY)).toBe("null");
     expect(r.addedToFavorites).toBe(false);
+  });
+
+  it("自动补启动坞：尺寸与注册表默认值一致", () => {
+    const store = installStorage({
+      [STORAGE_KEY]: JSON.stringify({
+        boards: [{ id: "b1", name: "默认", widgets: [] }],
+        activeBoardId: "b1",
+      }),
+    });
+
+    const r = pinSiteToWorkbench(SITE);
+
+    expect(r.ok).toBe(true);
+    const workspace = JSON.parse(store.get(STORAGE_KEY)!);
+    const dock = workspace.boards[0].widgets[0];
+    expect(dock).toMatchObject({ type: "favorites-dock", colSpan: 4, rowSpan: 1, config: {} });
+    expect(dock.colSpan).toBe(WIDGET_REGISTRY["favorites-dock"].defaultColSpan);
+    expect(dock.rowSpan).toBe(WIDGET_REGISTRY["favorites-dock"].defaultRowSpan);
   });
 });

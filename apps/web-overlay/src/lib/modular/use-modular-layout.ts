@@ -5,8 +5,9 @@ import type { WidgetInstance, ModularPageLayout } from '@/types/modular'
 import { WIDGET_REGISTRY, PRESET_TEMPLATES, createWidgetInstance } from './registry'
 import { sanitizeWidgetInstances } from './sanitize'
 import { backupCorruptPayload } from './workspace-storage'
+import { STORAGE_KEY } from './layout-storage'
 
-export const STORAGE_KEY = 'navhub_modular_multi_boards_v2'
+export { STORAGE_KEY }
 const LEGACY_STORAGE_KEY = 'navhub_modular_layout_v1'
 /** 撤销栈深度上限：一次拖拽/缩放只算一步，25 步足够回退整段编辑 */
 const HISTORY_LIMIT = 25

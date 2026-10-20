@@ -1,7 +1,8 @@
 'use client'
 
-import { STORAGE_KEY, type Board } from './use-modular-layout'
-import { createWidgetInstance } from './registry'
+import type { WidgetInstance } from '@/types/modular'
+import { STORAGE_KEY } from './layout-storage'
+import type { Board } from './use-modular-layout'
 
 const FAVORITES_STORAGE_KEY = 'navhub.favorites.v1'
 
@@ -29,6 +30,21 @@ export function isSitePinnedToWorkbench(siteId: string): boolean {
     return false
   }
   return false
+}
+
+/**
+ * 只构造 favorites-dock 的最小实例，避免把 registry 及其全部 widget 组件
+ * 静态拉进首页首屏；默认尺寸与 registry.ts 的 'favorites-dock' 保持一致。
+ */
+function createFavoritesDockInstance(): WidgetInstance {
+  return {
+    id: `widget-favorites-dock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type: 'favorites-dock',
+    colSpan: 4,
+    rowSpan: 1,
+    config: {},
+    createdAt: Date.now(),
+  }
 }
 
 /**
@@ -83,7 +99,7 @@ export function pinSiteToWorkbench(site: PinSitePayload): { ok: boolean; message
             const hasDock = board.widgets?.some((w: any) => w.type === 'favorites-dock')
             if (!hasDock) {
               // 自动补充一个启动坞模块到第一行
-              const newDockWidget = createWidgetInstance('favorites-dock')
+              const newDockWidget = createFavoritesDockInstance()
               workspace.boards[activeBoardIndex].widgets = [newDockWidget, ...(board.widgets || [])]
               localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace))
             }

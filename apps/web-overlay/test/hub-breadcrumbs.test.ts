@@ -109,4 +109,24 @@ describe("枢纽面包屑与合集详情元数据", () => {
     // 品牌名与根 layout 同源取数，不硬编码
     expect(src).toContain("getFileContent");
   });
+
+  it("/marketplace 索引页：服务端壳 + PluginMarketBoard 岛（64 插件入链的孤岛修复）", () => {
+    const src = overlayFile("src/app/marketplace/page.tsx");
+    expect(src).toContain("import { PluginMarketBoard } from '@/components/plugin-market-board'");
+    expect(src).toMatch(/<PluginMarketBoard\s+initialItems=/);
+    expect(src).toContain("<Breadcrumbs");
+    expect(src).not.toMatch(/'use client'/);
+    // 首屏种全量：分页追加的第二页起没有 SSR 入链（曾 40/64 孤岛）
+    expect(src).toContain("listQuery.set('limit', '1000')");
+  });
+
+  it("plugin-market-board.tsx 是客户端岛：种子状态 + 单次跳过重取", () => {
+    const src = overlayFile("src/components/plugin-market-board.tsx");
+    expect(src).toContain("'use client'");
+    expect(src).toContain("initialItems");
+    expect(src).toContain("initialFeatured");
+    // ref 单次消费：不能用粗守卫（会把筛选重取一起吃掉）
+    expect(src).toContain("skipFirstLoad");
+    expect(src).toContain("skipFirstSide");
+  });
 });

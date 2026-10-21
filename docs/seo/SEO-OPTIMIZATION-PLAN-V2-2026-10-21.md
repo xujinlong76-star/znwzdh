@@ -980,7 +980,19 @@ curl -s -o /dev/null -w '%{http_code}\n' "$SITE/api/sites?limit=1"  # 404（中�
 
 **客户端/服务端模块边界教训**：`BreadcrumbTrail` 原与服务端 `Breadcrumbs` 同文件，客户端页 import 会把 `origin.ts`（next/headers）拖进客户端图直接构建报错（/collections 实测 500）。已拆 `breadcrumb-trail.tsx`（零服务端依赖）并用守卫锁 import 行。
 
-**未决（本轮末尾实测）**：`/collections/<无效slug>` 的 404——layout 级 `notFound()`（无论 metadata 还是渲染体）在 dev 下被「Switched to client rendering」回退成 200 + NEXT_HTTP_ERROR_FALLBACK（已排除 error.tsx 与 loading.tsx 两个嫌疑）；`/tags` 的 page 级 notFound 正常。生产构建验证中，若生产同样 200 则需把判定下沉到 page 级（对方 WIP 页，需解阻）。
+**`/collections/<无效slug>` 404 的源码级结论（2026-10-21 19:10）**：layout 级 `notFound()` 在 dev 返回 200 + 「Switched to client rendering」，经 Next 16.4.2 源码分析定性为 **dev 专属行为**——`app-render.js` 里 `bailOnRootNotFound()` 分支带 `__NEXT_DEV_SERVER` 守卫（仅 dev 走「切换客户端渲染」回退）；生产路径同一处 catch 执行 `res.statusCode = getAccessFallbackHTTPStatus(err)`（app-render.js:2493 与 5241 两处），**布局与页面抛出一视同仁**。另发现 `HTTPAccessFallbackErrorBoundary` 是 `'use client'` 类组件（只捕客户端错误），SSR 状态码完全由上述服务端路径决定。生产行为的最终确认需要一次干净构建 + `next start` 实测（构建四次被 safe-delete 护栏/机器争用拦下，代码与源码结论均已就绪）。
+
+### 7.8 Batch E：marketplace 索引 SSR 化（2026-10-21 19:00，plugin 孤岛 64 → 0）
+
+并行会话提交了 marketplace/site 的 WIP（`22b9e54`/`792d700`）后这些文件解阻。`/marketplace` 改「服务端壳 + PluginMarketBoard 岛」（与 tags/collections 同构）：
+
+| 改动 | 说明 |
+|---|---|
+| `app/marketplace/page.tsx` → 服务端壳 | `parseMarketplaceFilters`（纯函数）服务端解析同款 URL 筛选——**深链筛选视图同样 SSR 直出**；无筛选时预取精选+三榜；面包屑 + 岛挂载 |
+| `components/plugin-market-board.tsx`（新，631 行迁移） | 原页面整体入岛（保留对方全部交互代码）；`initialItems/initialTotal/initialFeatured/initialRankings` 种子状态；**ref 单次跳过**首取（粗守卫会把筛选重取一起吃掉） |
+| 首屏 `limit=1000` 全量种子 | 「加载更多」是客户端追加，第二页起无 SSR 入链（实测 40/64 孤岛）；全量种子后每个 `/marketplace/{slug}` 都有首页入链，`items.length===total` 时按钮自然隐藏；筛选交互仍 24/页 |
+
+**link-graph 终态**（当前 dev 库）：site 57 / tag 21 / collection 4 / **plugin 64** 全部 **0 孤岛 100% 可达**；仅剩 other 2 个杂项孤岛（验收目标「真实内容页孤岛 ≤10」达标）。软 404 探针剩 6/12：`/site/*` ×3（对方 WIP）+ `/collections/*` ×3（上述 dev 回退）。
 
 **Batch D：合集索引 SSR 化（同轮顺手落地，孤岛 4 → 0）**
 

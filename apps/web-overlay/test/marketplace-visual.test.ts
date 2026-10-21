@@ -27,7 +27,8 @@ describe("插件市场排版：展板背景工具类", () => {
 
   it("市场各页面展板统一使用 market-hero", () => {
     const pages = [
-      "src/app/marketplace/page.tsx",
+      // Batch E 后市场首页是「服务端壳 + PluginMarketBoard 岛」，展板在岛里
+      "src/components/plugin-market-board.tsx",
       "src/app/marketplace/installed/page.tsx",
       "src/app/marketplace/mine/page.tsx",
       "src/app/marketplace/import/page.tsx",
@@ -49,13 +50,13 @@ describe("插件市场排版：卡片与列表细节", () => {
   })
 
   it("列表加载态用骨架屏，不再是居中转圈", () => {
-    const page = overlaySource("src/app/marketplace/page.tsx")
+    const page = overlaySource("src/components/plugin-market-board.tsx")
     expect(page).toContain("animate-pulse")
     expect(page).toContain("正在加载插件市场")
   })
 
   it("宽屏才切到四列（2xl 变体在本仓库不生成，改用任意断点 + 重要标记）", () => {
-    const page = overlaySource("src/app/marketplace/page.tsx")
+    const page = overlaySource("src/components/plugin-market-board.tsx")
     expect(page).toContain("min-[1536px]:grid-cols-4!")
     expect(page).not.toContain("2xl:grid-cols")
   })

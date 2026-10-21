@@ -49,7 +49,8 @@ describe("安装弹窗：跨包重复预览与耗时反馈", () => {
 
 describe("插件卡片与市场弹窗：已安装插件的卸载/管理联动", () => {
   const card = overlaySource("src/components/plugins/plugin-card.tsx")
-  const page = overlaySource("src/app/marketplace/page.tsx")
+  // Batch E 后市场首页是「服务端壳 + PluginMarketBoard 岛」，弹窗消费逻辑在岛里
+  const page = overlaySource("src/components/plugin-market-board.tsx")
   const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
 
   it("卡片按安装状态分流 targetMode，已安装时为 uninstall 而非继续 install", () => {

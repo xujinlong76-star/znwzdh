@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { guardedFetch } from "@navhub/ai";
 import type { AppContext } from "../context.ts";
 import type { SiteOfflineArchive } from "@navhub/core";
 
@@ -32,9 +33,9 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         <p class="lead">${escapeHtml(site.description || "暂无描述信息")}</p>
         <hr/>
         <div class="metadata">
-          <p><strong>官方网址：</strong> <a href="${site.url}" target="_blank" rel="noopener">${site.url}</a></p>
+          <p><strong>官方网址：</strong> <a href="${escapeHtml(site.url)}" target="_blank" rel="noopener">${escapeHtml(site.url)}</a></p>
           <p><strong>分类：</strong> ${escapeHtml(site.categoryId || "未分类")}</p>
-          <p><strong>标签：</strong> ${(site.tags || []).join(", ") || "无"}</p>
+          <p><strong>标签：</strong> ${(site.tags || []).map((t) => escapeHtml(String(t))).join(", ") || "无"}</p>
         </div>
         <section class="mt-4">
           <h2>关于 ${escapeHtml(site.title)}</h2>
@@ -78,15 +79,21 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     // 尝试拉取远程轻量网页文本或使用高保真离线模板
     let bodyText = site.description || "";
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 3000);
-      const res = await fetch(site.url, {
-        signal: controller.signal,
-        headers: { "User-Agent": "NavHub-OfflineArchiver/1.0" },
+      /**
+       * 必须走 guardedFetch，不能直接 fetch(site.url)：
+       * 这个端点 scope=public，站点 URL 又可由写入方自由指定（canonicalizeUrl 只做归一，
+       * 不拦私网）。裸 fetch 等于把「让服务端访问任意地址并把响应存库再公开读出」
+       * 的能力暴露给匿名用户（典型目标是 169.254.169.254 云元数据与内网管理台）。
+       * 逐跳 SSRF 校验 + 超时 + 响应体上限都交给同一个守卫。
+       */
+      const res = await guardedFetch(site.url, {
+        timeoutMs: 3000,
+        maxBytes: 256 * 1024,
+        maxRedirects: 2,
+        allowPrivateNetworks: ctx.config.fetch.allowPrivateNetworks,
       });
-      clearTimeout(timer);
-      if (res.ok) {
-        const text = await res.text();
+      if (res.status >= 200 && res.status < 300) {
+        const text = res.body;
         const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
         if (bodyMatch && bodyMatch[1]) {
           // 简易过滤 script/style
@@ -106,7 +113,7 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         <p class="lead">${escapeHtml(site.description || "")}</p>
         <hr/>
         <div class="metadata">
-          <p><strong>原站直达：</strong> <a href="${site.url}" target="_blank" rel="noopener">${site.url}</a></p>
+          <p><strong>原站直达：</strong> <a href="${escapeHtml(site.url)}" target="_blank" rel="noopener">${escapeHtml(site.url)}</a></p>
           <p><strong>快照生成时间：</strong> ${new Date().toLocaleString()}</p>
         </div>
         <div class="archive-body mt-4">

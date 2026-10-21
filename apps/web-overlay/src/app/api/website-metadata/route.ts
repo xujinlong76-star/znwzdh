@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { uint8ArrayToBase64 } from '@/lib/buffer-utils'
-import { guardedFetch, isProbablySafeUrl, SsrfBlockedError } from '@/lib/ssrf-guard'
+import { guardedFetch, isProbablySafeUrl, readBodyLimited, readTextLimited, SsrfBlockedError } from '@/lib/ssrf-guard'
 
 // nodejs：SSRF 防护需要 node:dns 做解析后 IP 校验，edge runtime 不具备该能力
 export const runtime = 'nodejs'
@@ -220,7 +220,9 @@ async function fetchWebsiteMetadata(url: string): Promise<WebsiteMetadata> {
         const { response } = await guardedFetch(url, { timeoutMs: 8000 }, { headers })
 
         if (response.ok) {
-            const html = await response.text()
+            // 按实际字节截断：分块传输可以不带 Content-Length，
+            // 只看响应头等于允许对方把任意大小的响应塞进服务端内存。
+            const { text: html } = await readTextLimited(response, 2 * 1024 * 1024)
             return parseMetadataFromHtml(html, url)
         } else if (response.status === 403) {
             console.warn(`网站拒绝访问 (403): 该网站可能阻止了自动化访问`)
@@ -373,8 +375,7 @@ async function downloadGoogleFavicon(domain: string, token: string): Promise<str
         })
 
         if (response.ok) {
-            const arrayBuffer = await response.arrayBuffer()
-            const binaryData = new Uint8Array(arrayBuffer)
+            const { bytes: binaryData } = await readBodyLimited(response, 2 * 1024 * 1024)
             const { path } = await uploadImageToGitHub(binaryData, token, 'png', 'favicon')
             return path
         } else {
@@ -453,8 +454,8 @@ async function downloadAndUploadIcon(
             )
 
             if (response.ok) {
-                const arrayBuffer = await response.arrayBuffer()
-                const binaryData = new Uint8Array(arrayBuffer)
+                // 上限与 maxBytes 对齐：图标不该有 5MB，超出直接截断
+                const { bytes: binaryData } = await readBodyLimited(response, 5 * 1024 * 1024)
 
                 // 上传到 GitHub
                 const { path } = await uploadImageToGitHub(

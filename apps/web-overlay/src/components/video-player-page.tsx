@@ -223,7 +223,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
     return (
         <div className="min-h-screen bg-background">
             {/* 顶部导航栏 */}
-            <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pt-[max(env(safe-area-inset-top,0px),0px)]">
                 <div className="flex h-14 items-center px-4 gap-4">
                     <Link href="/" className="flex items-center gap-2 font-semibold">
                         <PlayCircle className="w-6 h-6 text-primary" />
@@ -257,7 +257,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                         {/* 视频信息 */}
                         {selectedVideo && (
                             <div className="space-y-3">
-                                <h1 className="text-xl font-semibold">
+                                <h1 className="text-xl font-semibold break-words">
                                     {selectedVideo.title}
                                 </h1>
                                 {selectedVideo.description && (
@@ -309,7 +309,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
             </div>
 
             {/* 移动端底部播放列表 */}
-            <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur">
+            <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur pb-[max(env(safe-area-inset-bottom,0px),0px)]">
                 <ScrollArea className="h-48">
                     <div className="p-3 space-y-1">
                         {navigationData.navigationItems.map(category => renderCategory(category))}

@@ -28,6 +28,7 @@ export async function generateMetadata(): Promise<Metadata> {
         title: '视频播放器',
         description: '视频播放中心',
         keywords: 'Bilibili, YouTube, Videos, Player',
+        robots: { index: false, follow: true },
         icons: {
             icon: siteData.appearance.favicon,
         },

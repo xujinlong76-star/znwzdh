@@ -32,7 +32,7 @@ interface EditingItem {
 function LoadingSkeleton() {
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="space-y-2">
                     <Skeleton className="h-8 w-[200px]" />
                     <Skeleton className="h-4 w-[300px]" />
@@ -250,8 +250,8 @@ export default function VideoItemsPage() {
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 flex-1 w-full sm:w-auto">
                     <Button
                         variant="ghost"
                         size="icon"
@@ -325,7 +325,7 @@ export default function VideoItemsPage() {
                     {filteredItems.map((item, index) => (
                         <div
                             key={item.id}
-                            className="flex items-center justify-between p-4 rounded-lg border bg-card text-card-foreground shadow-sm hover:border-primary/50 transition-colors"
+                            className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-lg border bg-card text-card-foreground shadow-sm hover:border-primary/50 transition-colors"
                         >
                             <div className="flex items-center gap-3">
                                 <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-primary/10 overflow-hidden relative">
@@ -355,16 +355,16 @@ export default function VideoItemsPage() {
                                         )}
                                     </div>
                                     {item.description && (
-                                        <div className="text-xs text-muted-foreground mt-1 line-clamp-1 max-w-[400px]">
+                                        <div className="text-xs text-muted-foreground mt-1 line-clamp-1 max-w-[220px] sm:max-w-[400px]">
                                             {item.description}
                                         </div>
                                     )}
-                                    <div className="text-xs text-muted-foreground mt-0.5 truncate max-w-[400px] font-mono">
+                                    <div className="text-xs text-muted-foreground mt-0.5 truncate max-w-[220px] sm:max-w-[400px] font-mono">
                                         {item.href}
                                     </div>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 self-end sm:self-center shrink-0">
                                 <Button
                                     variant="ghost"
                                     size="icon"

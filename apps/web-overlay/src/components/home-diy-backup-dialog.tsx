@@ -425,7 +425,7 @@ export function HomeDIYBackupDialog({
               <p className="text-[11px] text-muted-foreground leading-relaxed">
                 端侧加密后直传中枢存储，服务端零知识（无法获知内容）。新设备输入相同主密码即可一键拉取还原。
               </p>
-              <div className="flex items-center gap-2 pt-0.5">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-0.5">
                 <Button
                   size="sm"
                   onClick={handleCloudUpload}

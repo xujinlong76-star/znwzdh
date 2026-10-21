@@ -77,14 +77,14 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
   })
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
       {scrim}
       <div
         {...containerProps}
         className="relative w-full max-w-2xl bg-background border border-border/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85dvh] outline-none"
       >
         {/* 标题栏 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 bg-muted/20">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-border/50 bg-muted/20">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
               <LayoutGrid className="w-4 h-4" />
@@ -100,7 +100,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
         </div>
 
         {/* 检索与分类过滤器 */}
-        <div className="p-4 border-b border-border/40 space-y-3 bg-card/40">
+        <div className="p-3 sm:p-4 border-b border-border/40 space-y-3 bg-card/40">
           <div className="relative">
             <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -114,7 +114,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
             />
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-pan-x pb-1 text-xs">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat.id}
@@ -132,7 +132,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
         </div>
 
         {/* 模块列表卡片流 */}
-        <div className="flex-1 overflow-y-auto p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
           {modules.map((m) => {
             const Icon = ICON_MAP[m.icon] || Sparkles
             return (
@@ -159,13 +159,13 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs text-muted-foreground">
-                  <span className="font-mono">
+                <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs text-muted-foreground gap-2">
+                  <span className="font-mono text-[11px] sm:text-xs truncate">
                     默认跨度: {m.defaultColSpan}格宽 / {m.defaultRowSpan}格高
                   </span>
                   <Button
                     size="sm"
-                    className="h-6 px-2.5 text-xs rounded-lg gap-1 shadow-xs"
+                    className="h-7 px-2.5 text-xs rounded-lg gap-1 shadow-xs shrink-0"
                     onClick={() => {
                       onAddModule(m.type)
                       onClose()
@@ -181,7 +181,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
         </div>
 
         {/* 底部信息提示 */}
-        <div className="px-6 py-2.5 bg-muted/30 border-t border-border/40 text-xs text-muted-foreground flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-2.5 bg-muted/30 border-t border-border/40 text-xs text-muted-foreground flex flex-wrap gap-1 items-center justify-between">
           <span>共 {modules.length} 个可用独立业务模块</span>
           <span className="font-mono">支持自由拖拽与双轴无级缩放</span>
         </div>

@@ -184,7 +184,8 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
           'fixed right-6 z-40 flex flex-col items-end gap-2 pointer-events-none transition-[bottom] duration-200',
           // 静息位抬到全局 AI 副驾胶囊（bottom-6 right-6）上方，避免最低那颗
           // 「DIY 排版工坊」入口被胶囊拦截点击；多选批量坞在场时再进一步抬高
-          raised ? 'bottom-[5.5rem]' : 'bottom-20',
+          raised ? 'bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))]' : 'bottom-[calc(5rem+env(safe-area-inset-bottom,0px))]',
+          'right-[max(env(safe-area-inset-right,0px),1.5rem)]',
         )}
       >
         {/* 落盘失败必须说出来：改动还在屏幕上，但刷新就没了 ——
@@ -206,7 +207,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
             </button>
           </div>
         )}
-        <div className="pointer-events-auto flex items-center gap-1.5 p-1.5 rounded-full bg-background/90 dark:bg-card/90 backdrop-blur-md border border-border/80 shadow-lg hover:shadow-xl transition-all duration-200">
+        <div className="pointer-events-auto flex items-center gap-1.5 p-1.5 rounded-full bg-background/90 dark:bg-card/90 backdrop-blur-md border border-border/80 shadow-lg hover:shadow-xl transition-all duration-200 max-w-[calc(100vw-3rem)] overflow-x-auto no-scrollbar touch-pan-x">
           <Button
             variant={isEditingLayout ? 'default' : 'ghost'}
             size="sm"
@@ -236,6 +237,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                     size="sm"
                     className="h-8 px-2.5 rounded-full text-xs gap-1 border-border/70"
                     title="开箱即用的预设排版方案"
+                    aria-label="预设排版方案"
                   >
                     <Wand2 className="w-3.5 h-3.5 text-amber-500" />
                     <span className="hidden sm:inline">预设</span>
@@ -270,6 +272,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                     variant="outline"
                     size="sm"
                     className="h-8 px-2.5 rounded-full text-xs gap-1 border-border/70"
+                    aria-label="卡片形态选择"
                   >
                     <CreditCard className="w-3.5 h-3.5 text-blue-500" />
                     <span className="hidden sm:inline">卡片:</span>
@@ -312,6 +315,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                     variant="outline"
                     size="sm"
                     className="h-8 px-2.5 rounded-full text-xs gap-1 border-border/70"
+                    aria-label="画布美学背景"
                   >
                     <Palette className="w-3.5 h-3.5 text-pink-500" />
                     <span className="hidden sm:inline">美学</span>
@@ -676,6 +680,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                       onClick={() => togglePinCategory(id)}
                       className={cn("h-7 w-7 rounded-md", isPinned && "text-amber-500 bg-amber-500/10")}
                       title={isPinned ? "取消置顶" : "置顶分类"}
+                      aria-label={isPinned ? "取消置顶" : "置顶分类"}
                     >
                       <Pin className={cn("w-3.5 h-3.5", isPinned && "fill-amber-500")} />
                     </Button>
@@ -687,6 +692,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                       onClick={() => moveCategory(id, 'up', allCategoryIds)}
                       className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground disabled:opacity-30"
                       title="上移"
+                      aria-label="上移分类"
                     >
                       <ArrowUp className="w-3.5 h-3.5" />
                     </Button>
@@ -698,6 +704,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                       onClick={() => moveCategory(id, 'down', allCategoryIds)}
                       className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground disabled:opacity-30"
                       title="下移"
+                      aria-label="下移分类"
                     >
                       <ArrowDown className="w-3.5 h-3.5" />
                     </Button>
@@ -708,6 +715,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                       onClick={() => toggleCollapseCategory(id)}
                       className={cn("h-7 w-7 rounded-md", isCollapsed ? "text-sky-500 bg-sky-500/10" : "text-muted-foreground hover:text-foreground")}
                       title={isCollapsed ? "展开分类" : "收起/折叠分类"}
+                      aria-label={isCollapsed ? "展开分类" : "收起分类"}
                     >
                       <ChevronsUpDown className="w-3.5 h-3.5" />
                     </Button>
@@ -718,6 +726,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                       onClick={() => toggleHideCategory(id)}
                       className={cn("h-7 w-7 rounded-md", isHidden ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-foreground")}
                       title={isHidden ? "显示分类" : "隐藏分类"}
+                      aria-label={isHidden ? "显示分类" : "隐藏分类"}
                     >
                       {isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </Button>
@@ -729,6 +738,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
                         onClick={() => deleteCustomCategory(id)}
                         className="h-7 w-7 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                         title="删除该专属分类"
+                        aria-label="删除该专属分类"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>

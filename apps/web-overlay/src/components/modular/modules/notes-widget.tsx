@@ -193,7 +193,7 @@ export function NotesWidget() {
             value={content}
             onChange={(e) => handleChange(e.target.value)}
             placeholder="支持 Markdown 待办 (- [ ] 事项)、标题 (# )、列表 (- )..."
-            className="w-full h-full resize-none bg-muted/20 border border-border/40 rounded-xl p-2.5 text-xs font-mono text-foreground outline-none focus:border-primary/50 transition-colors leading-relaxed"
+            className="w-full h-full resize-none bg-muted/20 border border-border/40 rounded-xl p-2.5 text-base sm:text-xs font-mono text-foreground outline-none focus:border-primary/50 transition-colors leading-relaxed"
           />
         ) : (
           <div className="h-full bg-muted/10 border border-border/30 rounded-xl p-2.5 overflow-y-auto">

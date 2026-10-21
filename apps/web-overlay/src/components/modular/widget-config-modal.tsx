@@ -100,7 +100,7 @@ export function WidgetConfigModal({
               placeholder={def.title}
               value={customTitle}
               onChange={(e) => setCustomTitle(e.target.value)}
-              className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60"
+              className="w-full text-base sm:text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60"
             />
             <p className="text-xs text-muted-foreground">留空则默认使用模块官方标题</p>
           </div>
@@ -120,7 +120,7 @@ export function WidgetConfigModal({
                   <select aria-label={schema.label}
                     value={String(configValues[schema.key] ?? schema.defaultValue ?? '')}
                     onChange={(e) => handleFieldChange(schema.key, e.target.value)}
-                    className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60"
+                    className="w-full text-base sm:text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60"
                   >
                     {schema.options?.map((opt) => (
                       <option key={String(opt.value)} value={opt.value}>
@@ -147,7 +147,7 @@ export function WidgetConfigModal({
                     type="number"
                     value={Number(configValues[schema.key] ?? schema.defaultValue ?? 0)}
                     onChange={(e) => handleFieldChange(schema.key, Number(e.target.value))}
-                    className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60"
+                    className="w-full text-base sm:text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60"
                   />
                 )}
 
@@ -156,7 +156,7 @@ export function WidgetConfigModal({
                     type="text"
                     value={String(configValues[schema.key] ?? schema.defaultValue ?? '')}
                     onChange={(e) => handleFieldChange(schema.key, e.target.value)}
-                    className="w-full text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60 font-mono"
+                    className="w-full text-base sm:text-xs px-3 py-2 rounded-xl border border-border bg-background outline-none focus:border-primary/60 font-mono"
                   />
                 )}
               </div>

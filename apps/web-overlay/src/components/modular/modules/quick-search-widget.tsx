@@ -84,7 +84,7 @@ export function QuickSearchWidget({ config }: { config?: Record<string, unknown>
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={`在 ${SEARCH_ENGINES[selectedEngine]?.name || 'Google'} 中快速搜索并直达...`}
-            className="w-full text-xs px-3 py-2 rounded-xl border border-border/70 bg-background outline-none pr-9 focus:border-blue-500/60 shadow-xs"
+            className="w-full text-base sm:text-xs px-3 py-2 rounded-xl border border-border/70 bg-background outline-none pr-9 focus:border-blue-500/60 shadow-xs"
           />
           <button
             type="submit"

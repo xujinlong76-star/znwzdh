@@ -180,7 +180,7 @@ export function QuickToolsWidget() {
               placeholder="输入待编/解码文本..."
               value={b64Input}
               onChange={(e) => setB64Input(e.target.value)}
-              className="w-full text-xs px-2 py-1 rounded border border-border/70 bg-background outline-none font-mono"
+              className="w-full text-base sm:text-xs px-2 py-1 rounded border border-border/70 bg-background outline-none font-mono"
             />
             <div className="flex items-center gap-1.5">
               <Button size="sm" variant="outline" className="h-6 text-xs px-2 flex-1" onClick={handleB64Encode}>

@@ -73,6 +73,41 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     return { ok: true, removed };
   });
 
+  /**
+   * 收藏管理的编辑入口：移动到文件夹 / 改备注。
+   * 两个字段都可单独出现；folderId 为 null 表示移出文件夹。
+   */
+  app.patch("/api/favorites/:siteId", async (req, reply) => {
+    const { siteId } = req.params as { siteId: string };
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    const body = z.object({
+      folderId: z.string().min(1).nullable().optional(),
+      note: z.string().max(200).nullable().optional(),
+    }).refine((v) => v.folderId !== undefined || v.note !== undefined, {
+      message: "至少要修改 folderId 或 note 之一",
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+
+    const result = await ctx.repo.updateFavorite(identity, siteId, body.data);
+    if (!result.ok) {
+      if (result.reason === "folder_not_found") { reply.code(400); return { error: "收藏夹不存在" }; }
+      reply.code(404);
+      return { error: "收藏不存在" };
+    }
+    return { ok: true, favorite: result.favorite };
+  });
+
+  /** 清空云端收藏（本地缓存由前端同步清掉） */
+  app.delete("/api/favorites", async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    const removed = await ctx.repo.clearFavorites(identity);
+    return { ok: true, removed };
+  });
+
   app.post("/api/favorites/folders", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
@@ -91,6 +126,24 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     await ctx.repo.deleteFavoriteFolder(identity, id);
     return { ok: true };
+  });
+
+  /** 收藏夹改名 / 排序（收藏管理页拖拽重排与重命名共用） */
+  app.patch("/api/favorites/folders/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    const body = z.object({
+      name: z.string().trim().min(1).max(30).optional(),
+      sort: z.number().int().optional(),
+    }).refine((v) => v.name !== undefined || v.sort !== undefined, {
+      message: "至少要修改 name 或 sort 之一",
+    }).safeParse(req.body ?? {});
+    if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    const result = await ctx.repo.updateFavoriteFolder(identity, id, body.data);
+    if (!result.ok) { reply.code(404); return { error: "收藏夹不存在" }; }
+    return { ok: true, folder: result.folder };
   });
 
 };

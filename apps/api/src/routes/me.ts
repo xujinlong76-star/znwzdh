@@ -34,8 +34,88 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       return { error: "缺少登录身份" };
     }
     const canonical = await ctx.repo.resolveIdentity(identity);
-    const overview = await ctx.repo.getUserCenterOverview(canonical);
-    return { ok: true, ...overview };
+    const [overview, settings] = await Promise.all([
+      ctx.repo.getUserCenterOverview(canonical),
+      ctx.repo.getUserSettings(canonical),
+    ]);
+    return { ok: true, ...overview, settings };
+  });
+
+  /* ------------------------- 设置 ------------------------- */
+
+  app.get("/api/me/settings", async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+    const canonical = await ctx.repo.resolveIdentity(identity);
+    return { ok: true, settings: await ctx.repo.getUserSettings(canonical) };
+  });
+
+  app.patch("/api/me/settings", async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+    const parsed = z.object({ personalizationEnabled: z.boolean().optional() }).safeParse(req.body ?? {});
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: parsed.error.issues };
+    }
+    const canonical = await ctx.repo.resolveIdentity(identity);
+    const settings = await ctx.repo.updateUserSettings(canonical, parsed.data);
+    return { ok: true, settings };
+  });
+
+  /* ------------------------- 数据主权 ------------------------- */
+
+  /** 导出全部个人数据（JSON 附件；LLM 密钥已脱敏，金库只带版本元信息） */
+  app.get("/api/me/export", async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+    const canonical = await ctx.repo.resolveIdentity(identity);
+    const payload = await ctx.repo.exportUserData(canonical);
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: canonical,
+      actorKind: "user",
+      action: "user.export",
+      target: canonical,
+      diff: {
+        favorites: payload.favorites.length,
+        folders: payload.favoriteFolders.length,
+        searches: payload.searchHistory.items.length,
+      },
+    }).catch(() => undefined);
+    const stamp = new Date().toISOString().slice(0, 10);
+    reply.header("content-type", "application/json; charset=utf-8");
+    reply.header("content-disposition", `attachment; filename="navhub-export-${stamp}.json"`);
+    return payload;
+  });
+
+  /**
+   * 注销：删除该身份的全部个人数据（保留登录账号本身，重新登录后是空账号）。
+   * 必须显式确认，避免误触把收藏与历史一次清空。
+   */
+  app.delete("/api/me", async (req, reply) => {
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+    if (identity.startsWith("anon-")) {
+      reply.code(403);
+      return { error: "匿名身份不支持云端注销，请直接清理本机数据" };
+    }
+    const parsed = z.object({ confirm: z.literal("DELETE") }).safeParse(req.body ?? {});
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: '需要 confirm: "DELETE" 二次确认' };
+    }
+    const canonical = await ctx.repo.resolveIdentity(identity);
+    const counts = await ctx.repo.deleteUserData(canonical);
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: canonical,
+      actorKind: "user",
+      action: "user.delete",
+      target: canonical,
+      diff: counts,
+    }).catch(() => undefined);
+    return { ok: true, deleted: counts };
   });
 
   app.post("/api/me/merge", async (req, reply) => {

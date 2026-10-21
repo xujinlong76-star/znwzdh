@@ -76,10 +76,16 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     // 显式传 personalize 的调用方（测试 / MCP）优先，保持向后兼容。
     // 检索前顺手刷新画像（节流 60s）：第一次搜索没有画像就没有个性化，符合预期。
     const identity = input.userId ?? input.anonId ?? null;
-    if (identity) void refreshUserProfile(ctx, identity);
+    let personalizationEnabled = true;
+    if (identity) {
+      // 用户关闭个性化后既不再更新画像，也不再注入 personal 通道。
+      // 显式传 personalize 的调用方（测试 / MCP）不受开关影响。
+      personalizationEnabled = (await ctx.repo.getUserSettings(identity)).personalizationEnabled;
+      if (personalizationEnabled) void refreshUserProfile(ctx, identity);
+    }
 
     let personalize = input.personalize;
-    if (!personalize && identity) {
+    if (!personalize && identity && personalizationEnabled) {
       const profile = await ctx.repo.getUserProfile(identity);
       if (profile && (profile.topCategories.length > 0 || profile.topTags.length > 0 || profile.visitedSiteIds.length > 0)) {
         personalize = {

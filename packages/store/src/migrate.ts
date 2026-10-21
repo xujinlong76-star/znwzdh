@@ -90,6 +90,10 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, id DESC)",
     "CREATE INDEX IF NOT EXISTS collection_items_site_idx ON collection_items(site_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS site_tags_unique_idx ON site_tags(site_id, tag_id)",
+    // 用户中心设置（画像开关 / 收藏信号清理水位）：旧库补齐，新库由 driver.ts DDL 建
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff BIGINT NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     // 行为事件身份等值过滤（behaviorEvents/deleteBehaviorEvents 从 meta LIKE 迁到 identity =）
     "CREATE INDEX IF NOT EXISTS events_identity_idx ON events(identity)",
     // 标签概念别名索引
@@ -275,7 +279,9 @@ export async function migrateEventIdentity(db: { dialect: string; sqlite?: any; 
  * 清理条件：
  * 1. 分类 source 以 'plugin:' 开头；
  * 2. 对应的插件在当前系统并无活跃安装（plugin_installs.removed_at IS NULL 不存在）；
- * 3. 该分类下无任何未删除的存活站点 (deleted_at IS NULL)。
+ * 3. 该分类下没有任何站点引用——回收站里的站点也算引用。它们在回收站期间可被恢复，
+ *    提前删掉分类会让恢复后的站点掉进「未分类」；等保留期结束、站点被物理清理后，
+ *    下一次启动清扫才会移除该分类。
  */
 export async function cleanupOrphanPluginCategories(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
   try {
@@ -285,8 +291,7 @@ export async function cleanupOrphanPluginCategories(db: { dialect: string; sqlit
         WHERE c.source LIKE 'plugin:%'
           AND NOT EXISTS (
             SELECT 1 FROM sites s
-            WHERE (s.category_id = c.id OR s.sub_category_id = c.id)
-              AND s.deleted_at IS NULL
+            WHERE s.category_id = c.id OR s.sub_category_id = c.id
           )
           AND NOT EXISTS (
             SELECT 1 FROM plugins p
@@ -320,8 +325,7 @@ export async function cleanupOrphanPluginCategories(db: { dialect: string; sqlit
         WHERE c.source LIKE 'plugin:%'
           AND NOT EXISTS (
             SELECT 1 FROM sites s
-            WHERE (s.category_id = c.id OR s.sub_category_id = c.id)
-              AND s.deleted_at IS NULL
+            WHERE s.category_id = c.id OR s.sub_category_id = c.id
           )
           AND NOT EXISTS (
             SELECT 1 FROM plugins p

@@ -316,6 +316,14 @@ CREATE TABLE IF NOT EXISTS user_llm_configs (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_settings (
+  identity TEXT PRIMARY KEY,
+  personalization_enabled INTEGER NOT NULL DEFAULT 1,
+  favorite_signal_cutoff INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS taxonomy_proposals (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
@@ -729,6 +737,14 @@ CREATE TABLE IF NOT EXISTS system_states (
 CREATE TABLE IF NOT EXISTS user_llm_configs (
   identity TEXT PRIMARY KEY,
   provider TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_settings (
+  identity TEXT PRIMARY KEY,
+  personalization_enabled INTEGER NOT NULL DEFAULT 1,
+  favorite_signal_cutoff BIGINT NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );

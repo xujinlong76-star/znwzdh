@@ -402,6 +402,20 @@ export const userLlmConfigs = sqliteTable("user_llm_configs", {
 });
 
 /**
+ * 用户中心设置（画像开关等）。
+ *
+ * favoriteSignalCutoff：用户清掉「收藏信号」的时间点，早于它的收藏不再参与
+ * 画像的 favoriteSiteIds；收藏本身保留（那是用户数据，不是被推断的偏好）。
+ */
+export const userSettings = sqliteTable("user_settings", {
+  identity: text("identity").primaryKey(),
+  personalizationEnabled: integer("personalization_enabled", { mode: "boolean" }).notNull().default(true),
+  favoriteSignalCutoff: integer("favorite_signal_cutoff").notNull().default(0),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+});
+
+/**
  * 分类与标签治理提案表（Taxonomy Proposals）
  * 存储 AI / 启发式规则生成的待审提案（分类契合迁移、冗余标签合并、零结果缺口等）
  */

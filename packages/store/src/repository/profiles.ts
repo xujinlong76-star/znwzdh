@@ -58,13 +58,22 @@ export async function deleteUserProfile(repo: Repository, userId: string): Promi
   await repo.run("DELETE FROM user_profiles WHERE user_id = ?", [userId]);
 }
 
-export async function deleteBehaviorEvents(repo: Repository, identity: string): Promise<number> {
-  const rows = await repo.raw(
-    "SELECT COUNT(*) AS c FROM events WHERE kind IN ('click','favorite') AND identity = ?",
-    [identity],
-  );
+/**
+ * 删除行为事件。传 kind 时只删该类（画像信号清理），不传则清 click+favorite 两类。
+ * 收藏本身（favorites 表）不在这里删——那是用户数据，不是被推断的偏好。
+ */
+export async function deleteBehaviorEvents(
+  repo: Repository,
+  identity: string,
+  kind?: "click" | "favorite",
+): Promise<number> {
+  const where = kind
+    ? "kind = ? AND identity = ?"
+    : "kind IN ('click','favorite') AND identity = ?";
+  const params = kind ? [kind, identity] : [identity];
+  const rows = await repo.raw(`SELECT COUNT(*) AS c FROM events WHERE ${where}`, params);
   const removed = Number(rows[0]?.c ?? 0);
-  await repo.run("DELETE FROM events WHERE kind IN ('click','favorite') AND identity = ?", [identity]);
+  await repo.run(`DELETE FROM events WHERE ${where}`, params);
   return removed;
 }
 

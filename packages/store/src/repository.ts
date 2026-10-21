@@ -64,6 +64,8 @@ import * as taxonomyRepo from "./repository/taxonomy-governance.ts";
 import * as pluginsRepo from "./repository/plugins.ts";
 import * as ioRepo from "./repository/io.ts";
 import * as identityRepo from "./repository/identity.ts";
+import * as settingsRepo from "./repository/settings.ts";
+import * as userDataRepo from "./repository/user-data.ts";
 export * from "./repository/records.ts";
 export { bindSqlite, normalizeTokenScopes, slugify, toPgSql } from "./repository/dialect.ts";
 export { TOKEN_TOUCH_THROTTLE_MS } from "./repository/tokens.ts";
@@ -646,6 +648,26 @@ export class Repository {
     return favoritesRepo.deleteFavoriteFolder(this, userId, folderId);
   }
 
+  async updateFavorite(
+    userId: string,
+    siteId: string,
+    patch: { folderId?: string | null; note?: string | null },
+  ): Promise<favoritesRepo.FavoriteUpdateResult> {
+    return favoritesRepo.updateFavorite(this, userId, siteId, patch);
+  }
+
+  async clearFavorites(userId: string): Promise<number> {
+    return favoritesRepo.clearFavorites(this, userId);
+  }
+
+  async updateFavoriteFolder(
+    userId: string,
+    folderId: string,
+    patch: { name?: string; sort?: number },
+  ): Promise<favoritesRepo.FavoriteFolderUpdateResult> {
+    return favoritesRepo.updateFavoriteFolder(this, userId, folderId, patch);
+  }
+
 
   /* ------------------------- 行为事件聚合 ------------------------- */
 
@@ -655,6 +677,10 @@ export class Repository {
 
   async countSearches(userId: string): Promise<number> {
     return behaviorRepo.countSearches(this, userId);
+  }
+
+  async signalCounts(identity: string, since: number): Promise<{ click: number; favorite: number; searches: number }> {
+    return behaviorRepo.signalCounts(this, identity, since);
   }
 
   async clickCountsSince(since: number): Promise<Map<string, number>> {
@@ -676,8 +702,8 @@ export class Repository {
     return profilesRepo.deleteUserProfile(this, userId);
   }
 
-  async deleteBehaviorEvents(identity: string): Promise<number> {
-    return profilesRepo.deleteBehaviorEvents(this, identity);
+  async deleteBehaviorEvents(identity: string, kind?: "click" | "favorite"): Promise<number> {
+    return profilesRepo.deleteBehaviorEvents(this, identity, kind);
   }
 
   async saveUserProfile(userId: string, profile: Omit<UserProfileRecord, "userId" | "updatedAt">): Promise<void> {
@@ -695,6 +721,14 @@ export class Repository {
     return vaultRepo.saveUserVault(this, userId, payload);
   }
 
+  async saveUserVaultIfUnchanged(
+    userId: string,
+    payload: string,
+    expectedVersion: number,
+  ): Promise<vaultRepo.VaultSaveResult> {
+    return vaultRepo.saveUserVaultIfUnchanged(this, userId, payload, expectedVersion);
+  }
+
   async deleteUserVault(userId: string): Promise<boolean> {
     return vaultRepo.deleteUserVault(this, userId);
   }
@@ -706,12 +740,28 @@ export class Repository {
     return historyRepo.recordSearch(this, userId, query, resultCount);
   }
 
-  async listSearchHistory(userId: string, limit = 10): Promise<Array<{ query: string; resultCount: number; createdAt: number }>> {
+  async listSearchHistory(userId: string, limit = 10): Promise<historyRepo.SearchHistoryItem[]> {
     return historyRepo.listSearchHistory(this, userId, limit);
+  }
+
+  async listSearchHistoryPage(
+    userId: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ items: historyRepo.SearchHistoryItem[]; hasMore: boolean }> {
+    return historyRepo.listSearchHistoryPage(this, userId, limit, offset);
+  }
+
+  async deleteSearchHistoryItem(userId: string, id: number): Promise<boolean> {
+    return historyRepo.deleteSearchHistoryItem(this, userId, id);
   }
 
   async clearSearchHistory(userId: string): Promise<void> {
     return historyRepo.clearSearchHistory(this, userId);
+  }
+
+  async countSearchHistory(userId: string): Promise<number> {
+    return historyRepo.countSearchHistory(this, userId);
   }
 
 
@@ -740,6 +790,33 @@ export class Repository {
   /** 用户中心概览聚合（计数 + 各域存在性 + 别名） */
   async getUserCenterOverview(identity: string): Promise<identityRepo.UserCenterOverview> {
     return identityRepo.getUserCenterOverview(this, identity);
+  }
+
+  /* ------------------------- 用户中心设置 / 数据主权 ------------------------- */
+
+  async getUserSettings(identity: string): Promise<settingsRepo.UserSettingsRecord> {
+    return settingsRepo.getUserSettings(this, identity);
+  }
+
+  async updateUserSettings(
+    identity: string,
+    patch: { personalizationEnabled?: boolean; favoriteSignalCutoff?: number },
+  ): Promise<settingsRepo.UserSettingsRecord> {
+    return settingsRepo.updateUserSettings(this, identity, patch);
+  }
+
+  async deleteUserSettings(identity: string): Promise<void> {
+    return settingsRepo.deleteUserSettings(this, identity);
+  }
+
+  /** 导出用户全部数据（密钥字段已脱敏，金库只带版本元信息） */
+  async exportUserData(identity: string): Promise<userDataRepo.UserDataExport> {
+    return userDataRepo.exportUserData(this, identity);
+  }
+
+  /** 注销：单事务级联删除该身份的全部用户数据 */
+  async deleteUserData(identity: string): Promise<userDataRepo.UserDataDeletionCounts> {
+    return userDataRepo.deleteUserData(this, identity);
   }
 
 

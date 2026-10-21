@@ -62,18 +62,25 @@ export async function refreshUserProfile(ctx: AppContext, identity: string): Pro
   lastRefresh.set(identity, now);
 
   try {
+    const settings = await ctx.repo.getUserSettings(identity);
+    // 用户关闭个性化：不再更新画像（已有画像也不参与搜索注入，见 routes/search.ts）
+    if (!settings.personalizationEnabled) return false;
     const since = now - WINDOW_MS;
     const [events, favorites, searchCount] = await Promise.all([
       ctx.repo.behaviorEvents(identity, since),
       ctx.repo.listFavorites(identity),
       ctx.repo.countSearches(identity),
     ]);
+    // 用户清理过「收藏信号」：早于水位的收藏不再作为画像素材（收藏本身仍然保留）
+    const favoriteSignals = settings.favoriteSignalCutoff > 0
+      ? favorites.filter((f) => f.createdAt > settings.favoriteSignalCutoff)
+      : favorites;
     const built = buildProfile(events, { now });
     await ctx.repo.saveUserProfile(identity, {
       topCategories: built.topCategories ?? [],
       topTags: built.topTags ?? [],
       visitedSiteIds: built.visitedSiteIds ?? [],
-      favoriteSiteIds: favorites.map((f) => f.siteId),
+      favoriteSiteIds: favoriteSignals.map((f) => f.siteId),
       searchCount,
     });
     return true;

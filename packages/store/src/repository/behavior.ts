@@ -78,6 +78,28 @@ export async function countSearches(repo: Repository, userId: string): Promise<n
   return Number(rows[0]?.c ?? 0);
 }
 
+/** 画像解释：窗口内各信号的真实条数（一次分组 + 一次计数，不逐类往返） */
+export async function signalCounts(
+  repo: Repository,
+  identity: string,
+  since: number,
+): Promise<{ click: number; favorite: number; searches: number }> {
+  const events = await repo.raw(
+    "SELECT kind, COUNT(*) AS c FROM events WHERE identity = ? AND kind IN ('click','favorite') AND created_at >= ? GROUP BY kind",
+    [identity, since],
+  );
+  const byKind = new Map(events.map((r) => [String(r.kind), Number(r.c ?? 0)]));
+  const search = await repo.raw(
+    "SELECT COUNT(*) AS c FROM search_history WHERE user_id = ? AND created_at >= ?",
+    [identity, since],
+  );
+  return {
+    click: byKind.get("click") ?? 0,
+    favorite: byKind.get("favorite") ?? 0,
+    searches: Number(search[0]?.c ?? 0),
+  };
+}
+
 export async function clickCountsSince(repo: Repository, since: number): Promise<Map<string, number>> {
   const rows = await repo.raw(
     "SELECT site_id AS siteid, COUNT(*) AS c FROM events WHERE kind = 'click' AND site_id IS NOT NULL AND created_at >= ? GROUP BY site_id",

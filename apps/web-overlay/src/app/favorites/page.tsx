@@ -224,9 +224,9 @@ export default function FavoritesPage() {
 
   return (
     <Container as="main" id="main-content">
-      <div className="py-6 sm:py-10 space-y-6">
+      <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
         {/* 沉浸式 Hero 展板 */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs">
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-8 shadow-xs">
           <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl" />
           <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl" />
           <Shield
@@ -263,7 +263,7 @@ export default function FavoritesPage() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <Button
                   variant="default"
                   size="sm"
@@ -456,7 +456,7 @@ export default function FavoritesPage() {
                     value={vaultPassword}
                     onChange={(e) => setVaultPassword(e.target.value)}
                     placeholder="输入强主密码..."
-                    className="w-full px-3 py-1.5 text-xs rounded-md border bg-background pr-8"
+                    className="w-full px-3 py-1.5 text-base sm:text-xs rounded-md border bg-background pr-8"
                   />
                   <button
                     type="button"
@@ -476,7 +476,7 @@ export default function FavoritesPage() {
                   value={vaultPasswordConfirm}
                   onChange={(e) => setVaultPasswordConfirm(e.target.value)}
                   placeholder="再次输入相同密码..."
-                  className="w-full px-3 py-1.5 text-xs rounded-md border bg-background"
+                  className="w-full px-3 py-1.5 text-base sm:text-xs rounded-md border bg-background"
                 />
               </div>
             </div>
@@ -541,7 +541,7 @@ export default function FavoritesPage() {
                   value={importVaultPayload}
                   onChange={(e) => setImportVaultPayload(e.target.value)}
                   placeholder="可直接点击上方按钮选择文件，或在此粘贴密文 JSON..."
-                  className="w-full h-24 rounded-md border bg-background p-2 text-xs font-mono"
+                  className="w-full h-24 rounded-md border bg-background p-2 text-base sm:text-xs font-mono"
                 />
               </div>
 
@@ -554,7 +554,7 @@ export default function FavoritesPage() {
                   value={importPassphrase}
                   onChange={(e) => setImportPassphrase(e.target.value)}
                   placeholder="输入解密密码..."
-                  className="w-full sm:w-80 px-3 py-1.5 text-xs rounded-md border bg-background"
+                  className="w-full sm:w-80 px-3 py-1.5 text-base sm:text-xs rounded-md border bg-background"
                 />
               </div>
             </div>
@@ -584,7 +584,7 @@ export default function FavoritesPage() {
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
               placeholder='粘贴导出的 JSON，如 {"version":1,"items":[...]}'
-              className="w-full h-24 rounded-md border bg-background p-2 text-xs font-mono"
+              className="w-full h-24 rounded-md border bg-background p-2 text-base sm:text-xs font-mono"
             />
             <div className="flex gap-2">
               <Button size="sm" onClick={handleImportPlain} disabled={!importText.trim()}>
@@ -600,7 +600,7 @@ export default function FavoritesPage() {
         {/* 本地筛选条：只在确实有收藏时出现（没有收藏时不需要筛选控件） */}
         {favorites.ready && favorites.items.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 mb-4">
-            <div className="relative flex-1 min-w-[13rem] max-w-sm">
+            <div className="relative flex-1 min-w-[160px] sm:min-w-[13rem] max-w-sm">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 value={favoriteQuery}

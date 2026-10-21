@@ -130,9 +130,9 @@ export function BookmarkImporter() {
   const selectedCount = bookmarks.filter((b) => b.selected).length
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+    <div className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-8 space-y-5 sm:space-y-6">
       {/* 顶部 Hero 展板 */}
-      <div className="relative overflow-hidden rounded-2xl border border-border/80 p-6 sm:p-8 glass-surface subtle-mesh shadow-sm">
+      <div className="relative overflow-hidden rounded-2xl border border-border/80 p-4 sm:p-8 glass-surface market-hero subtle-mesh shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
@@ -169,9 +169,9 @@ export function BookmarkImporter() {
       </div>
 
       <Card className="glass-surface rounded-2xl border-border/80 shadow-xs overflow-hidden">
-        <CardContent className="p-6 space-y-5">
+        <CardContent className="p-4 sm:p-6 space-y-4 sm:space-y-5">
           {/* 上传拖拽区 */}
-          <div className="relative group border-2 border-dashed border-border/80 hover:border-primary/60 rounded-2xl p-8 sm:p-10 text-center transition-all duration-300 bg-muted/20 hover:bg-primary/5 cursor-pointer">
+          <div className="relative group border-2 border-dashed border-border/80 hover:border-primary/60 rounded-2xl p-5 sm:p-10 text-center transition-all duration-300 bg-muted/20 hover:bg-primary/5 cursor-pointer">
             <input aria-label="选择书签 HTML 文件"
               type="file"
               accept=".html,.htm"
@@ -228,7 +228,7 @@ export function BookmarkImporter() {
                   <span className="font-semibold text-foreground">已解析出 {bookmarks.length} 个书签</span>
                   <Badge variant="secondary" className="font-mono bg-muted/80 px-2 py-0.5 rounded-full">已选中 {selectedCount}</Badge>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                   <Button
                     size="sm"
                     variant="outline"
@@ -251,41 +251,45 @@ export function BookmarkImporter() {
 
               <div className="max-h-96 overflow-y-auto rounded-xl border border-border/80 divide-y divide-border/50 text-xs bg-background/50">
                 {bookmarks.map((b) => (
-                  <div key={b.id} className="flex items-center gap-3 p-3 hover:bg-muted/40 transition-colors">
-                    <input aria-label={`选择 ${b.title}`}
-                      type="checkbox"
-                      checked={b.selected}
-                      onChange={() => toggleSelect(b.id)}
-                      className="rounded border-border text-primary focus:ring-primary h-4 w-4"
-                    />
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-foreground truncate">{b.title}</span>
-                        {b.folder && (
-                          <span className="text-xs text-muted-foreground bg-muted/80 px-2 py-0.5 rounded font-mono truncate max-w-[120px]">
-                            {b.folder}
-                          </span>
-                        )}
+                  <div key={b.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3 p-3 hover:bg-muted/40 transition-colors">
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      <input aria-label={`选择 ${b.title}`}
+                        type="checkbox"
+                        checked={b.selected}
+                        onChange={() => toggleSelect(b.id)}
+                        className="rounded border-border text-primary focus:ring-primary h-4 w-4 mt-0.5 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1 space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-foreground truncate">{b.title}</span>
+                          {b.folder && (
+                            <span className="text-[11px] text-muted-foreground bg-muted/80 px-1.5 py-0.5 rounded font-mono truncate max-w-[100px] sm:max-w-[120px] shrink-0">
+                              {b.folder}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground/80 truncate font-mono">{b.url}</p>
                       </div>
-                      <p className="text-xs text-muted-foreground/80 truncate font-mono">{b.url}</p>
                     </div>
-                    <select
-                      aria-label={`为「${b.title}」选择建议分类`}
-                      value={b.suggestedCategory}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setBookmarks((prev) =>
-                          prev.map((item) => (item.id === b.id ? { ...item, suggestedCategory: val } : item))
-                        )
-                      }}
-                      className="bg-background border border-border/70 rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-1 focus:ring-primary shrink-0"
-                    >
-                      {(categories.length > 0 ? categories : CATEGORY_OPTIONS).map((opt) => (
-                        <option key={opt.id} value={opt.id}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex items-center justify-end sm:justify-start pl-6 sm:pl-0 shrink-0">
+                      <select
+                        aria-label={`为「${b.title}」选择建议分类`}
+                        value={b.suggestedCategory}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setBookmarks((prev) =>
+                            prev.map((item) => (item.id === b.id ? { ...item, suggestedCategory: val } : item))
+                          )
+                        }}
+                        className="w-full sm:w-auto bg-background border border-border/70 rounded-lg px-2.5 py-1 text-xs outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        {(categories.length > 0 ? categories : CATEGORY_OPTIONS).map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 ))}
               </div>

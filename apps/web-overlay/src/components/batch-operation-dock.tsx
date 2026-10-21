@@ -124,7 +124,7 @@ export function BatchOperationDock({
   return (
     <aside
       aria-label="批量操作微浮坞"
-      className="fixed bottom-6 inset-x-0 mx-auto w-fit max-w-[95vw] z-40 animate-in fade-in slide-in-from-bottom-4 duration-200"
+      className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom,0px))] inset-x-0 mx-auto w-fit max-w-[95vw] z-40 animate-in fade-in slide-in-from-bottom-4 duration-200"
     >
       <div className="flex items-center gap-1.5 sm:gap-2.5 p-1.5 sm:p-2 pl-3 sm:pl-4 rounded-2xl bg-background/90 dark:bg-zinc-900/90 backdrop-blur-xl border border-border/80 shadow-2xl shadow-primary/10 ring-1 ring-white/10 dark:ring-white/5">
         {/* 选中数量徽标与全选 */}
@@ -251,6 +251,7 @@ export function BatchOperationDock({
             onClick={onClearSelection}
             className="h-8 w-8 rounded-xl text-muted-foreground hover:text-foreground ml-1"
             title="退出多选"
+            aria-label="退出多选"
           >
             <X className="w-4 h-4" />
           </Button>

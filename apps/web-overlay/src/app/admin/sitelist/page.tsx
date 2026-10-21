@@ -1120,7 +1120,7 @@ export default function SiteListPage() {
   return (
     <TooltipProvider>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-sm text-muted-foreground">
@@ -1130,8 +1130,8 @@ export default function SiteListPage() {
                 )}
               </span>
             </div>
-            <div className="flex gap-4">
-              <div className="relative max-w-sm">
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2.5 sm:gap-4 w-full lg:w-auto">
+              <div className="relative w-full sm:w-64 max-w-sm">
                 <Input aria-label="搜索站点"
                   placeholder="搜索站点..."
                   value={searchQuery}
@@ -1156,7 +1156,7 @@ export default function SiteListPage() {
                   setSubCategoryFilter('all') // 重置子分类筛选
                 }}
               >
-                <SelectTrigger className="w-[200px]" aria-label="按分类筛选">
+                <SelectTrigger className="w-full sm:w-[180px]" aria-label="按分类筛选">
                   <SelectValue placeholder="按分类筛选" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1173,7 +1173,7 @@ export default function SiteListPage() {
                 value={subCategoryFilter}
                 onValueChange={setSubCategoryFilter}
               >
-                <SelectTrigger className="w-[200px]" aria-label="按子分类筛选">
+                <SelectTrigger className="w-full sm:w-[180px]" aria-label="按子分类筛选">
                   <SelectValue placeholder="按子分类筛选" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1201,7 +1201,7 @@ export default function SiteListPage() {
               </Select>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {selectedSites.length > 0 && (
               <Button
                 variant="destructive"
@@ -1265,7 +1265,7 @@ export default function SiteListPage() {
                 <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-1">
                   <div className="grid gap-2">
                     <Label htmlFor="url">站点链接 *</Label>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                       <div className="relative flex-1">
                         <Input
                           id="url"
@@ -1310,7 +1310,7 @@ export default function SiteListPage() {
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="icon">站点图标</Label>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                       <div className="flex-1 relative">
                         <Input
                           id="icon"
@@ -1480,7 +1480,7 @@ export default function SiteListPage() {
                 <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-1">
                   <div className="grid gap-2">
                     <Label htmlFor="edit-url">站点链接 *</Label>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                       <div className="relative flex-1">
                         <Input
                           id="edit-url"
@@ -1525,7 +1525,7 @@ export default function SiteListPage() {
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="edit-icon">站点图标</Label>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
                       <div className="flex-1 relative">
                         <Input
                           id="edit-icon"
@@ -1768,14 +1768,14 @@ export default function SiteListPage() {
 
         {/* 选择状态栏 */}
         {selectedSites.length > 0 && (
-          <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+            <div className="flex flex-wrap items-center gap-2">
               <Icons.check className="h-4 w-4 text-blue-600" />
               <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
                 已选择 {selectedSites.length} 个站点
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -1835,7 +1835,7 @@ export default function SiteListPage() {
           </div>
         ) : isLoading ? (
           <div className="opacity-50 pointer-events-none">
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto no-scrollbar touch-pan-x">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1868,7 +1868,7 @@ export default function SiteListPage() {
                         />
                       </TableCell>
                       <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {getSiteCategoryInfo(site.id).categoryName && (
                             <div className="w-2 h-2 rounded-full bg-primary/20"></div>
                           )}
@@ -1904,7 +1904,7 @@ export default function SiteListPage() {
                         <DescriptionCell description={site.description} />
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1932,7 +1932,7 @@ export default function SiteListPage() {
             </div>
           </div>
         ) : filteredSites.length > 0 ? (
-          <div className="rounded-md border">
+          <div className="rounded-md border overflow-x-auto no-scrollbar touch-pan-x">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1965,7 +1965,7 @@ export default function SiteListPage() {
                       />
                     </TableCell>
                     <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         {getSiteCategoryInfo(site.id).categoryName && (
                           <div className="w-2 h-2 rounded-full bg-primary/20"></div>
                         )}
@@ -2001,7 +2001,7 @@ export default function SiteListPage() {
                       <DescriptionCell description={site.description} />
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Button
                           variant="ghost"
                           size="icon"

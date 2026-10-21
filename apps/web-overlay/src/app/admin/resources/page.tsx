@@ -84,7 +84,7 @@ interface LocalResourceMetadata {
 
 // 修改骨架屏组件，进一步调整大小
 const ResourceGridSkeleton = () => (
-  <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
+  <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
     {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((index) => (
       <div key={index} className="bg-white rounded-lg border shadow-sm animate-pulse">
         <div className="aspect-square bg-muted rounded-t-lg" />
@@ -548,15 +548,15 @@ export default function ResourceManagement() {
 
       <div className="space-y-4 p-6">
         <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full sm:w-auto">
               <div className="relative">
                 <Icons.search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input aria-label="搜索资源"
                   placeholder="搜索资源..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 max-w-md"
+                  className="pl-10 w-full sm:w-64 max-w-md"
                 />
               </div>
 
@@ -591,7 +591,7 @@ export default function ResourceManagement() {
               )}
             </div>
 
-            <Button onClick={() => setIsDialogOpen(true)}>
+            <Button onClick={() => setIsDialogOpen(true)} className="w-full sm:w-auto">
               <Icons.plus className="mr-2 h-4 w-4" />
               上传资源
             </Button>
@@ -613,7 +613,7 @@ export default function ResourceManagement() {
         {isLoading ? (
           <ResourceGridSkeleton />
         ) : filteredResources.length > 0 ? (
-          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
             {filteredResources.map((resource, index) => (
               <div
                 key={index}

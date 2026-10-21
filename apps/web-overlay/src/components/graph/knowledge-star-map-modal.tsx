@@ -265,7 +265,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
       .filter((e): e is NonNullable<typeof e> => Boolean(e))
   }, [mesh, filteredNodes, nodeMap])
 
-  // 鼠标拖拽平移画布
+  // 鼠标/触控拖拽平移画布
   const handleMouseDown = (e: React.MouseEvent) => {
     isDraggingRef.current = true
     dragStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y }
@@ -283,91 +283,125 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
     isDraggingRef.current = false
   }
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      isDraggingRef.current = true
+      dragStartRef.current = { x: e.touches[0].clientX - pan.x, y: e.touches[0].clientY - pan.y }
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDraggingRef.current || e.touches.length !== 1) return
+    setPan({
+      x: e.touches[0].clientX - dragStartRef.current.x,
+      y: e.touches[0].clientY - dragStartRef.current.y,
+    })
+  }
+
+  const handleTouchEnd = () => {
+    isDraggingRef.current = false
+  }
+
   if (!open) return null
 
   return (
     <div
       role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-200"
       onClick={() => onOpenChange(false)}
     >
       <div
-        className="relative flex flex-col w-full max-w-6xl h-[88vh] rounded-2xl border border-white/20 dark:border-white/10 bg-white/95 dark:bg-zinc-950/95 shadow-2xl overflow-hidden backdrop-blur-2xl"
+        className="relative flex flex-col w-full max-w-6xl h-[92vh] sm:h-[88vh] rounded-2xl border border-white/20 dark:border-white/10 bg-white/95 dark:bg-zinc-950/95 shadow-2xl overflow-hidden backdrop-blur-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 顶部标题栏与标签切换 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white shadow-md shadow-indigo-500/20">
-              <Compass className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-                  全景知识星图与拓扑演进中枢
-                </h2>
-                <Badge variant="outline" className="text-xs bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30">
-                  拓扑互联 2.0
-                </Badge>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 text-white shadow-md shadow-indigo-500/20 shrink-0">
+                <Compass className="w-4 h-4 sm:w-5 sm:h-5 animate-pulse" />
               </div>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                跨分类向心星图 · 技术演进最短寻路 · 语义查重聚类
-              </p>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <h2 className="text-sm sm:text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100 truncate">
+                    全景知识星图与拓扑演进中枢
+                  </h2>
+                  <Badge variant="outline" className="hidden sm:inline-flex text-[10px] sm:text-xs bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 shrink-0">
+                    拓扑互联 2.0
+                  </Badge>
+                </div>
+                <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                  跨分类向心星图 · 技术演进最短寻路 · 语义查重聚类
+                </p>
+              </div>
             </div>
+
+            {/* Mobile Close Button */}
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+              aria-label="关闭星图模态框"
+              className="md:hidden shrink-0 w-8 h-8 rounded-xl hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 text-zinc-500"
+            >
+              <X className="w-4 h-4" />
+            </Button>
           </div>
 
           {/* 模式切换 Switch */}
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-zinc-200/60 dark:bg-zinc-800/60 border border-zinc-300/40 dark:border-zinc-700/50">
-            <button
-              onClick={() => setActiveTab('star-map')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                activeTab === 'star-map'
-                  ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-            >
-              <Compass className="inline-block w-3.5 h-3.5 mr-1" />
-              全景星图
-            </button>
-            <button
-              onClick={() => setActiveTab('path-finder')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                activeTab === 'path-finder'
-                  ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-            >
-              <GitFork className="inline-block w-3.5 h-3.5 mr-1" />
-              最短演进寻路
-            </button>
-            <button
-              onClick={() => setActiveTab('dedup-audit')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                activeTab === 'dedup-audit'
-                  ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
-                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
-              }`}
-            >
-              <Layers className="inline-block w-3.5 h-3.5 mr-1" />
-              跨分类查重聚类
-              {dedupReport && dedupReport.duplicatePairs.length > 0 && (
-                <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-white font-mono">
-                  {dedupReport.duplicatePairs.length}
-                </span>
-              )}
-            </button>
-          </div>
+          <div className="flex items-center justify-between md:justify-end gap-2">
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-200/60 dark:bg-zinc-800/60 border border-zinc-300/40 dark:border-zinc-700/50 overflow-x-auto max-w-full">
+              <button
+                onClick={() => setActiveTab('star-map')}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                  activeTab === 'star-map'
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <Compass className="inline-block w-3.5 h-3.5 mr-1" />
+                全景星图
+              </button>
+              <button
+                onClick={() => setActiveTab('path-finder')}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                  activeTab === 'path-finder'
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <GitFork className="inline-block w-3.5 h-3.5 mr-1" />
+                最短寻路
+              </button>
+              <button
+                onClick={() => setActiveTab('dedup-audit')}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                  activeTab === 'dedup-audit'
+                    ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 shadow-sm'
+                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200'
+                }`}
+              >
+                <Layers className="inline-block w-3.5 h-3.5 mr-1" />
+                查重聚类
+                {dedupReport && dedupReport.duplicatePairs.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-500 text-white font-mono">
+                    {dedupReport.duplicatePairs.length}
+                  </span>
+                )}
+              </button>
+            </div>
 
-          {/* 关闭按钮 */}
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            aria-label="关闭星图模态框"
-            className="rounded-xl hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-          >
-            <X className="w-5 h-5" />
-          </Button>
+            {/* Desktop Close Button */}
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+              aria-label="关闭星图模态框"
+              className="hidden md:inline-flex shrink-0 rounded-xl hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          </div>
         </div>
 
         {/* 主体交互区域 */}
@@ -376,45 +410,45 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
           {activeTab === 'star-map' && (
             <div className="flex-1 flex flex-col relative select-none">
               {/* 控制搜索与过滤栏 */}
-              <div className="absolute top-4 left-4 z-10 flex items-center gap-2 p-2 rounded-xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800 shadow-lg">
-                <div className="relative w-48 sm:w-64">
+              <div className="absolute top-3 sm:top-4 left-3 sm:left-4 z-10 flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 rounded-xl bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800 shadow-lg max-w-[calc(100%-1.5rem)]">
+                <div className="relative w-32 min-[380px]:w-44 sm:w-64">
                   <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-zinc-400" />
                   <Input
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="聚焦节点或站点..."
                     aria-label="聚焦节点或站点"
-                    className="pl-8 h-9 text-xs rounded-lg bg-zinc-100/60 dark:bg-zinc-800/60 border-none"
+                    className="pl-8 h-8 sm:h-9 text-xs rounded-lg bg-zinc-100/60 dark:bg-zinc-800/60 border-none"
                   />
                   {searchQuery && (
                     <button
                       onClick={() => setSearchQuery('')}
                       aria-label="清空搜索"
-                      className="absolute right-2 top-2.5 text-zinc-400 hover:text-zinc-600"
+                      className="absolute right-2 top-2 sm:top-2.5 text-zinc-400 hover:text-zinc-600"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     </button>
                   )}
                 </div>
 
-                <div className="flex items-center gap-1 border-l border-zinc-200 dark:border-zinc-800 pl-2">
+                <div className="flex items-center gap-0.5 sm:gap-1 border-l border-zinc-200 dark:border-zinc-800 pl-1.5 sm:pl-2">
                   <Button
                     size="icon"
                     variant="ghost"
                     onClick={() => setZoom((z) => Math.min(z + 0.2, 2.5))}
                     aria-label="放大星图画布"
-                    className="w-8 h-8 rounded-lg"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg"
                   >
-                    <ZoomIn className="w-4 h-4" />
+                    <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </Button>
                   <Button
                     size="icon"
                     variant="ghost"
                     onClick={() => setZoom((z) => Math.max(z - 0.2, 0.4))}
                     aria-label="缩小星图画布"
-                    className="w-8 h-8 rounded-lg"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg"
                   >
-                    <ZoomOut className="w-4 h-4" />
+                    <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </Button>
                   <Button
                     size="icon"
@@ -424,9 +458,9 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                       setPan({ x: 0, y: 0 })
                     }}
                     aria-label="重置星图视角"
-                    className="w-8 h-8 rounded-lg"
+                    className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg"
                   >
-                    <RotateCcw className="w-4 h-4" />
+                    <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </Button>
                 </div>
               </div>
@@ -447,10 +481,13 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
 
               {/* SVG Canvas 交互画布 */}
               <div
-                className="flex-1 w-full h-full cursor-grab active:cursor-grabbing overflow-hidden bg-radial-gradient"
+                className="flex-1 w-full h-full cursor-grab active:cursor-grabbing overflow-hidden bg-radial-gradient touch-none"
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
+                onTouchStart={handleTouchStart}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
               >
                 <svg
                   className="w-full h-full"
@@ -577,7 +614,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
 
               {/* 节点探测侧边卡片 (Node Inspector) */}
               {selectedNode && (
-                <div className="absolute bottom-4 left-4 z-20 w-80 p-4 rounded-2xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in slide-in-from-bottom-2">
+                <div className="absolute bottom-3 sm:bottom-4 left-3 right-3 sm:right-auto sm:left-4 z-20 w-auto sm:w-80 max-w-sm p-3.5 sm:p-4 rounded-2xl bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-200 dark:border-zinc-800 shadow-2xl animate-in slide-in-from-bottom-2">
                   <div className="flex items-start justify-between">
                     <div>
                       <Badge

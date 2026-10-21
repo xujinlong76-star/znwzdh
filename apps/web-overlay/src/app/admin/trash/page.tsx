@@ -97,7 +97,7 @@ export default function AdminTrashPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-6xl mx-auto">
       <h1 className="text-xl font-bold mb-2 flex items-center gap-2">
         <Trash2 className="h-5 w-5" /> 回收站
       </h1>
@@ -115,7 +115,7 @@ export default function AdminTrashPage() {
           回收站是空的。
         </div>
       ) : (
-        <div className="rounded-md border overflow-x-auto">
+        <div className="rounded-md border overflow-x-auto no-scrollbar touch-pan-x">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
@@ -153,7 +153,7 @@ export default function AdminTrashPage() {
                       {new Date(site.updatedAt).toLocaleString('zh-CN')}
                     </td>
                     <td className="px-3 py-2">
-                      <div className="flex justify-end gap-1.5">
+                      <div className="whitespace-nowrap flex justify-end gap-1.5">
                         <Button
                           size="sm" variant="outline"
                           disabled={Boolean(action)}

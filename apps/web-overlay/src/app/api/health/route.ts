@@ -5,11 +5,10 @@ const START_TIME = Date.now()
 
 export async function GET() {
   let uptime: number
-  try {
-    // Node.js runtime: process.uptime() 可用
-    uptime = Math.floor(process.uptime())
-  } catch {
-    // Edge Runtime: process 对象存在但 uptime() 不可调用，降级为启动时间差
+  const proc = typeof globalThis !== 'undefined' ? (globalThis as unknown as { process?: { uptime?: () => number } }).process : undefined
+  if (proc && typeof proc.uptime === 'function') {
+    uptime = Math.floor(proc.uptime())
+  } else {
     uptime = Math.floor((Date.now() - START_TIME) / 1000)
   }
 

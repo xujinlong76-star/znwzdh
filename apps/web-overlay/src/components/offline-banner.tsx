@@ -71,7 +71,7 @@ export function OfflineBanner() {
       role="status"
       aria-live="polite"
       aria-label="网络状态通知"
-      className="fixed bottom-4 left-4 right-4 sm:right-auto z-[60] sm:max-w-sm animate-in fade-in slide-in-from-bottom-2 duration-300"
+      className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-4 right-4 sm:right-auto z-[60] sm:max-w-sm animate-in fade-in slide-in-from-bottom-2 duration-300"
     >
       <div
         className={`rounded-xl px-3.5 py-2.5 text-xs shadow-lg backdrop-blur-md border flex items-start gap-2.5 ${

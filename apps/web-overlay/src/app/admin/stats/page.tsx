@@ -109,7 +109,7 @@ function HealthTrendChart({ points }: { points: HealthTrendPoint[] }) {
         </div>
       </div>
 
-      <div className="rounded-lg border bg-card p-2 overflow-x-auto">
+      <div className="rounded-lg border bg-card p-2 overflow-x-auto no-scrollbar touch-pan-x">
         <svg
           viewBox={`0 0 ${w} ${h}`}
           className="w-full h-auto min-w-[560px]"
@@ -262,7 +262,7 @@ export default function AdminStatsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* 时间跨度 Pills */}
           <div className="flex rounded-lg border bg-muted/30 p-1 text-xs">
             {[7, 14, 30, 90].map((d) => (
@@ -392,7 +392,7 @@ export default function AdminStatsPage() {
               <div className="rounded-lg border divide-y text-sm">
                 {data.zeroResultQueries.map((q) => (
                   <div key={q.query} className="flex items-center justify-between px-3 py-2.5">
-                    <div className="truncate mr-2">
+                    <div className="truncate mr-2 min-w-0 flex-1">
                       <div className="font-medium truncate">{q.query}</div>
                       <div className="text-[11px] text-muted-foreground">
                         {q.count} 次无结果 · 最近于{' '}
@@ -437,7 +437,7 @@ export default function AdminStatsPage() {
                     key={s.id}
                     className="flex items-center justify-between px-3.5 py-2.5 hover:bg-muted/30 transition-colors"
                   >
-                    <div className="flex items-center gap-3 truncate mr-4">
+                    <div className="flex items-center gap-3 truncate mr-4 min-w-0 flex-1">
                       <span
                         className={`text-xs font-bold w-5 text-right ${
                           idx === 0

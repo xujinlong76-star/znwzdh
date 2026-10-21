@@ -64,6 +64,7 @@ import {
   type HubPluginSearchResponse,
 } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
+import { getModifierKey } from '@/lib/platform'
 import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { applyThemeTokens } from '@/lib/plugins/theme-runtime'
@@ -126,6 +127,10 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
   const [airdropOpen, setAirdropOpen] = useState(false)
   const [archiveSite, setArchiveSite] = useState<{ id: string; title: string; url: string; description?: string | null } | null>(null)
   const [archiveReaderOpen, setArchiveReaderOpen] = useState(false)
+  const [modKey, setModKey] = useState<string>('⌘')
+  useEffect(() => {
+    setModKey(getModifierKey())
+  }, [])
 
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
@@ -286,13 +291,13 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
       category: '页面直达',
       handler: () => {
         setOpen(false)
-        router.push('/modular')
+        router.push('/custom')
       },
     },
     {
       id: 'cmd-copilot',
       title: 'AI Web Copilot 智能助手',
-      description: '呼出右下角全局 AI 生产力浮窗抽屉 (Cmd+J)',
+      description: `呼出右下角全局 AI 生产力浮窗抽屉 (${modKey}+J)`,
       icon: Bot,
       category: 'AI 交互',
       handler: () => {
@@ -565,11 +570,11 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
     <>
       {open && (
         <div
-          className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-start justify-center pt-[10vh] px-4 animate-in fade-in-0 duration-150"
+          className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-start justify-center pt-[max(env(safe-area-inset-top,0px),0.5rem)] sm:pt-[10vh] px-2 sm:px-4 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] animate-in fade-in-0 duration-150"
           onClick={() => setOpen(false)}
         >
       <div
-        className="w-full max-w-2xl bg-card/95 border border-border/80 shadow-2xl rounded-2xl overflow-hidden glass-surface flex flex-col max-h-[75vh]"
+        className="w-full max-w-2xl bg-card/95 border border-border/80 shadow-2xl rounded-2xl overflow-hidden glass-surface flex flex-col max-h-[88dvh] sm:max-h-[75vh]"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
@@ -601,7 +606,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
                 setQuery(e.target.value)
                 setSelectedIndex(0)
               }}
-              className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0 text-sm px-0 placeholder:text-muted-foreground/60"
+              className="h-9 border-0 bg-transparent shadow-none focus-visible:ring-0 text-base sm:text-sm px-0 placeholder:text-muted-foreground/60"
             />
             {query && (
               <button
@@ -768,12 +773,12 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
                       <Zap className="w-3.5 h-3.5 text-amber-500" />
                       <span>功能速览</span>
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 min-[340px]:grid-cols-2 sm:grid-cols-3 gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           setOpen(false)
-                          router.push('/modular')
+                          router.push('/custom')
                         }}
                         className="p-2.5 rounded-xl border border-border/60 bg-muted/20 hover:bg-muted/50 text-left flex items-center gap-2.5 transition-colors"
                       >
@@ -794,7 +799,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
                         <Bot className="w-4 h-4 text-purple-500" />
                         <div>
                           <div className="text-xs font-medium">AI Web Copilot</div>
-                          <div className="text-[10px] text-muted-foreground">Cmd+J 助手</div>
+                          <div className="text-[10px] text-muted-foreground">{modKey}+J 助手</div>
                         </div>
                       </button>
                       <button
@@ -949,7 +954,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
 
                           <button
                             type="button"
-                            className="p-1 rounded-md text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="p-1 rounded-md text-muted-foreground hover:text-foreground opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                             title="离线纯净阅读快照"
                             aria-label={`离线纯净阅读 ${site.title}`}
                             onClick={(e) => {
@@ -963,7 +968,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
 
                           <button
                             type="button"
-                            className="p-1 rounded-md text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                            className="p-1 rounded-md text-muted-foreground hover:text-foreground opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                             title="复制网址"
                             aria-label={`复制网址 ${site.url}`}
                             onClick={(e) => handleCopy(site.url, site.id, e)}
@@ -1071,7 +1076,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
             </span>
           </div>
 
-          <div className="text-[10px] text-muted-foreground/70 font-mono">
+          <div className="hidden min-[420px]:block text-[10px] text-muted-foreground/70 font-mono truncate">
             RRF Multi-Channel Fusion
           </div>
         </div>

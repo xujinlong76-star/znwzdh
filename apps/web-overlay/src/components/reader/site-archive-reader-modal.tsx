@@ -195,21 +195,21 @@ export function SiteArchiveReaderModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* 顶部工具栏 */}
-        <div className="flex items-center justify-between px-6 py-3.5 border-b border-inherit bg-black/5 dark:bg-white/5 backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-              <BookOpen className="w-5 h-5" />
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-inherit bg-black/5 dark:bg-white/5 backdrop-blur-md">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shrink-0">
+              <BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-sm truncate max-w-sm sm:max-w-md">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h3 className="font-semibold text-xs sm:text-sm truncate max-w-[130px] min-[380px]:max-w-[180px] sm:max-w-md">
                   {archive?.title || site.title}
                 </h3>
-                <Badge variant="outline" className="text-[10px] py-0">
+                <Badge variant="outline" className="text-[10px] py-0 shrink-0">
                   离线快照
                 </Badge>
               </div>
-              <p className="text-[11px] opacity-60 font-mono truncate max-w-xs sm:max-w-md">
+              <p className="text-[10px] sm:text-[11px] opacity-60 font-mono truncate max-w-[150px] min-[380px]:max-w-[220px] sm:max-w-md">
                 {site.url}
               </p>
             </div>
@@ -300,24 +300,24 @@ export function SiteArchiveReaderModal({
 
         {/* 状态统计条 */}
         {archive && (
-          <div className="flex items-center justify-between px-6 py-2 border-b border-inherit bg-black/[0.02] dark:bg-white/[0.02] text-xs opacity-75">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 sm:px-6 py-2 border-b border-inherit bg-black/[0.02] dark:bg-white/[0.02] text-xs opacity-75">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-[11px] sm:text-xs">
               <span className="flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
                 预估阅读: {archive.readTimeMinutes} 分钟
               </span>
-              <span>·</span>
+              <span className="hidden min-[380px]:inline">·</span>
               <span className="flex items-center gap-1">
                 <FileText className="w-3.5 h-3.5" />
                 字数容量: {archive.contentLength.toLocaleString()} 字符
               </span>
-              <span>·</span>
-              <span>
+              <span className="hidden min-[480px]:inline">·</span>
+              <span className="hidden min-[480px]:inline">
                 归档时间: {new Date(archive.capturedAt).toLocaleTimeString()}
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5 justify-end">
               <Button
                 size="sm"
                 variant="ghost"
@@ -353,7 +353,7 @@ export function SiteArchiveReaderModal({
         )}
 
         {/* 正文阅读区 */}
-        <div className="flex-1 overflow-y-auto px-8 sm:px-16 py-8">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-16 py-6 sm:py-8">
           {loading && !archive ? (
             <div className="flex flex-col items-center justify-center h-full text-center py-20 space-y-3">
               <RefreshCw className="w-8 h-8 animate-spin text-indigo-500" />

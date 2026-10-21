@@ -105,7 +105,7 @@ export default function AdminAuditPage() {
   const notice = loadError === null ? null : describeDegrade(loadError)
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-6xl mx-auto">
       <h1 className="text-xl font-bold mb-2">审计日志</h1>
       <p className="text-xs text-muted-foreground mb-4">
         记录所有写操作的执行者与影响面。token 调用显示 token 名称（actorKind=token），开放模式显示 api。
@@ -113,7 +113,7 @@ export default function AdminAuditPage() {
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <select aria-label="按操作类型过滤"
-          className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+          className="h-8 rounded-md border border-input bg-background px-2 text-base sm:text-sm"
           value={action}
           onChange={(e) => setAction(e.target.value)}
         >
@@ -123,7 +123,7 @@ export default function AdminAuditPage() {
           ))}
         </select>
         <input aria-label="按执行者过滤"
-          className="h-8 rounded-md border border-input bg-background px-2 text-sm w-44"
+          className="h-8 rounded-md border border-input bg-background px-2 text-base sm:text-sm w-full sm:w-44"
           placeholder="按执行者过滤"
           value={actor}
           onChange={(e) => setActor(e.target.value)}
@@ -160,7 +160,7 @@ export default function AdminAuditPage() {
               {notice.message} 已加载的记录仍然可用，可点「加载更多」重试。
             </div>
           )}
-          <div className="rounded-md border overflow-x-auto">
+          <div className="rounded-md border overflow-x-auto no-scrollbar touch-pan-x">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/40">

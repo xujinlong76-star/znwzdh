@@ -147,8 +147,8 @@ export default function PreferencesPage() {
   const degrade = loadError === null ? null : profileDegradeNotice(loadError)
 
   return (
-    <Container as="main" id="main-content" className="py-8">
-      <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs mb-6">
+    <Container as="main" id="main-content" className="py-4 sm:py-8 space-y-5 sm:space-y-6">
+      <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-8 shadow-xs mb-6">
         <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-primary/10 rounded-full blur-3xl" />
         <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-44 h-44 bg-sky-400/10 rounded-full blur-3xl" />
         <Sparkles
@@ -171,17 +171,17 @@ export default function PreferencesPage() {
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
             <div className="max-w-2xl">
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs">
+                <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs shrink-0">
                   <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
-                <span>我的偏好</span>
+                <span className="truncate">我的偏好</span>
               </h1>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
                 搜索会根据你的浏览与收藏做轻量个性化重排。这里是系统据你的行为推断出的内容——
                 看得见，才可以控制。
               </p>
             </div>
-            <Button variant="outline" size="sm" asChild className="shrink-0 text-xs">
+            <Button variant="outline" size="sm" asChild className="w-full sm:w-auto shrink-0 text-xs">
               <Link href="/favorites">
                 <History className="mr-2 h-4 w-4" />
                 搜索历史另在收藏页管理
@@ -297,14 +297,17 @@ export default function PreferencesPage() {
             </h2>
             <div className="flex flex-wrap gap-2">
               {profile!.visitedSiteIds.slice(0, 20).map((id) => (
-                <span key={id} className="rounded-full border border-border/60 bg-muted px-3 py-1 text-xs">
+                <span key={id} className="rounded-full border border-border/60 bg-muted px-3 py-1 text-xs max-w-full truncate inline-block">
                   {siteTitles[id] ?? id}
                 </span>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/50">
-              搜索计数 {profile!.searchCount} 次 · 收藏 {profile!.favoriteSiteIds.length} 个 ·
-              更新于 {new Date(profile!.updatedAt).toLocaleString('zh-CN')}
+            <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/50 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>搜索计数 {profile!.searchCount} 次</span>
+              <span>·</span>
+              <span>收藏 {profile!.favoriteSiteIds.length} 个</span>
+              <span>·</span>
+              <span>更新于 {new Date(profile!.updatedAt).toLocaleString('zh-CN')}</span>
             </p>
           </section>
 
@@ -314,7 +317,7 @@ export default function PreferencesPage() {
               清除以上偏好与相关行为记录。搜索结果将恢复为纯相关性排序。
               <strong className="text-foreground"> 收藏夹与搜索历史不会被删除</strong>——那是你主动保存的数据。
             </p>
-            <Button size="sm" variant="destructive" onClick={handleReset} disabled={resetting}>
+            <Button size="sm" variant="destructive" onClick={handleReset} disabled={resetting} className="w-full sm:w-auto">
               <RotateCcw className="mr-2 h-4 w-4" />
               {resetting ? '重置中…' : '重置个性化画像'}
             </Button>

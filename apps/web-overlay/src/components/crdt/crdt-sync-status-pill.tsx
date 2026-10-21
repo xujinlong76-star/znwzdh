@@ -83,7 +83,7 @@ export function CrdtSyncStatusPill() {
 
         <div className="space-y-4 pt-2 text-xs">
           <div className="rounded-lg border bg-muted/30 p-3.5 space-y-2.5">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
               <span className="text-muted-foreground">当前协同状态</span>
               <div className="flex items-center gap-1.5">
                 {status === 'synced' ? (
@@ -134,7 +134,7 @@ export function CrdtSyncStatusPill() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2">
             <span className="text-[11px] text-muted-foreground">
               基于因果一致性与 LWW 确定性时序无损合流
             </span>
@@ -143,7 +143,7 @@ export function CrdtSyncStatusPill() {
               variant="outline"
               onClick={() => void handleManualSync()}
               disabled={manualSyncing}
-              className="h-7 text-xs gap-1.5"
+              className="h-8 sm:h-7 text-xs gap-1.5 w-full sm:w-auto shrink-0"
             >
               {manualSyncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
               即时合流

@@ -782,7 +782,7 @@ export function AdminDashboardClient() {
               {runtime?.topSlowRoutes && runtime.topSlowRoutes.length > 0 ? (
                 runtime.topSlowRoutes.map((r) => (
                   <div key={r.route} className="px-3 py-2 flex justify-between items-center">
-                    <span className="font-mono text-xs truncate max-w-[280px]">
+                    <span className="font-mono text-xs truncate min-w-0 max-w-[140px] sm:max-w-[280px]">
                       <span className="text-muted-foreground mr-1.5">{r.method}</span>
                       {r.route}
                     </span>
@@ -989,7 +989,7 @@ export function AdminDashboardClient() {
                       key={q.query}
                       className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-md bg-muted/30 hover:bg-muted/60 transition-colors"
                     >
-                      <span className="flex items-center gap-2 truncate">
+                      <span className="flex items-center gap-2 truncate min-w-0 flex-1">
                         <span className="font-mono text-muted-foreground w-4 text-right">
                           {idx + 1}
                         </span>
@@ -1026,7 +1026,7 @@ export function AdminDashboardClient() {
                       key={q.query}
                       className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-md border border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 transition-colors"
                     >
-                      <span className="font-medium text-foreground truncate max-w-[180px]">
+                      <span className="font-medium text-foreground truncate min-w-0 max-w-[120px] sm:max-w-[180px]">
                         {q.query}
                       </span>
                       <div className="flex items-center gap-2">
@@ -1122,7 +1122,7 @@ export function AdminDashboardClient() {
                           <Badge variant="outline" className={`text-[10px] h-5 px-1.5 font-mono ${badgeClass}`}>
                             {log.action}
                           </Badge>
-                          <span className="text-muted-foreground truncate max-w-[150px]">
+                          <span className="text-muted-foreground truncate min-w-0 max-w-[100px] sm:max-w-[150px]">
                             {log.actor} ({log.actorKind})
                           </span>
                         </div>
@@ -1181,7 +1181,7 @@ export function AdminDashboardClient() {
                     key={`${e.kind}|${e.fingerprint}|${e.path ?? '-'}`}
                     className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-md bg-muted/30"
                   >
-                    <span className="flex items-center gap-2 truncate">
+                    <span className="flex items-center gap-2 truncate min-w-0 flex-1">
                       <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-mono">
                         {e.kind}
                       </Badge>

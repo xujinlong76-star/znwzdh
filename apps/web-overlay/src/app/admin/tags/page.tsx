@@ -88,8 +88,8 @@ export default function AdminTagsPage() {
   })
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-3 sm:p-6 max-w-5xl mx-auto space-y-5 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">多维标签与词表治理</h1>
           <p className="text-xs text-muted-foreground mt-1">
@@ -113,7 +113,7 @@ export default function AdminTagsPage() {
           placeholder="按名称 / slug / 别名 / 分组过滤"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="max-w-xs"
+          className="w-full sm:max-w-xs"
         />
         <div className="flex items-center gap-1.5 flex-wrap">
           {COMMON_GROUPS.map((g) => (
@@ -139,7 +139,7 @@ export default function AdminTagsPage() {
       ) : filtered.length === 0 ? (
         <div className="text-muted-foreground text-sm py-8 text-center">{emptyStateText(loadError, '暂无匹配标签')}</div>
       ) : (
-        <div className="rounded-md border bg-card overflow-x-auto">
+        <div className="rounded-md border bg-card overflow-x-auto no-scrollbar touch-pan-x">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">
@@ -208,7 +208,7 @@ export default function AdminTagsPage() {
                     </div>
                   </td>
                   <td className="px-3 py-2.5 text-center font-mono">{t.count}</td>
-                  <td className="px-3 py-2.5 text-right space-x-1">
+                  <td className="px-3 py-2.5 text-right whitespace-nowrap space-x-1">
                     <Button
                       size="sm"
                       variant="ghost"

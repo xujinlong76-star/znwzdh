@@ -178,7 +178,7 @@ export default function AdminTaxonomyPage() {
   })
 
   return (
-    <div className="container max-w-7xl mx-auto py-8 px-4 sm:px-6 space-y-6">
+    <div className="container max-w-7xl mx-auto py-4 sm:py-8 px-3 sm:px-6 space-y-5 sm:space-y-6">
       {/* 头部标题与审计触发 */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
         <div>
@@ -239,7 +239,7 @@ export default function AdminTaxonomyPage() {
       {/* 状态与类型过滤控制面板 */}
       <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between bg-muted/40 p-4 rounded-xl border">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-lg border bg-background p-1 text-xs">
+          <div className="flex items-center rounded-lg border bg-background p-1 text-xs overflow-x-auto no-scrollbar touch-pan-x shrink-0">
             {(['pending', 'applied', 'dismissed', 'all'] as const).map((s) => (
               <button
                 key={s}
@@ -255,7 +255,7 @@ export default function AdminTaxonomyPage() {
             ))}
           </div>
 
-          <div className="flex items-center rounded-lg border bg-background p-1 text-xs">
+          <div className="flex items-center rounded-lg border bg-background p-1 text-xs overflow-x-auto no-scrollbar touch-pan-x shrink-0">
             {[
               { id: 'all', label: '全部类型' },
               { id: 'tag_consolidation', label: '标签收敛' },
@@ -289,7 +289,7 @@ export default function AdminTaxonomyPage() {
 
       {/* 批量操作工具坞 */}
       {selectedIds.length > 0 && (
-        <div className="bg-primary/5 border border-primary/20 p-3 rounded-xl flex items-center justify-between text-sm animate-in fade-in slide-in-from-top-2">
+        <div className="bg-primary/5 border border-primary/20 p-3 rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 text-sm animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2 font-medium">
             <span>已选择 {selectedIds.length} 项提案</span>
             <button

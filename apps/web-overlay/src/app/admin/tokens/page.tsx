@@ -330,7 +330,7 @@ export default function AdminTokensPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-6xl mx-auto space-y-5 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-border/60">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
@@ -374,7 +374,7 @@ export default function AdminTokensPage() {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-border/70 overflow-x-auto shadow-xs bg-card/60">
+        <div className="rounded-xl border border-border/70 overflow-x-auto no-scrollbar touch-pan-x shadow-xs bg-card/60">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40 text-xs font-medium text-muted-foreground">
@@ -538,7 +538,7 @@ export default function AdminTokensPage() {
               <select id="token-new-expires"
                 value={expiresDays}
                 onChange={(e) => setExpiresDays(e.target.value)}
-                className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-xs"
+                className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-base sm:text-xs"
               >
                 <option value="7">7 天后过期</option>
                 <option value="30">30 天后过期 (推荐)</option>
@@ -617,7 +617,7 @@ export default function AdminTokensPage() {
               <select id="token-edit-expires"
                 value={editExpiresDays}
                 onChange={(e) => setEditExpiresDays(e.target.value)}
-                className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-xs"
+                className="w-full h-8.5 rounded-xl border border-border bg-background px-3 text-base sm:text-xs"
               >
                 <option value="7">7 天</option>
                 <option value="30">30 天</option>

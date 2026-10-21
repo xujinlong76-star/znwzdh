@@ -298,7 +298,7 @@ export default function AdminJobsPage() {
   const degradeNotice = loadError ? describeDegrade(loadError) : null
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-6xl mx-auto space-y-5 sm:space-y-6">
       {/* 顶栏与 SSE 状态 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b">
         <div>
@@ -514,7 +514,7 @@ export default function AdminJobsPage() {
             description="调整筛选条件，或到任务面板派发一个新任务。"
           />
         ) : (
-          <div className="rounded-md border overflow-x-auto">
+          <div className="rounded-md border overflow-x-auto no-scrollbar touch-pan-x">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
@@ -560,7 +560,7 @@ export default function AdminJobsPage() {
                           '0'
                         )}
                       </td>
-                      <td className="px-4 py-3 text-xs max-w-[320px]">
+                      <td className="px-4 py-3 text-xs max-w-[140px] sm:max-w-[320px]">
                         {j.error ? (
                           <div
                             className="text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 p-1.5 rounded border border-rose-200 dark:border-rose-900 truncate"

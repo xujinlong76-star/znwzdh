@@ -276,7 +276,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   placeholder="在此粘贴原始 JSON 文本..."
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
-                  className="w-full h-44 sm:h-60 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none focus:outline-hidden focus:ring-1 focus:ring-primary/50 shadow-2xs"
+                  className="w-full h-44 sm:h-60 p-3.5 text-base sm:text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none focus:outline-hidden focus:ring-1 focus:ring-primary/50 shadow-2xs"
                 />
               </div>
               <div className="space-y-1.5">
@@ -285,7 +285,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   readOnly
                   placeholder="格式化结果输出..."
                   value={jsonOutput}
-                  className="w-full h-44 sm:h-60 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none focus:outline-hidden shadow-2xs select-all"
+                  className="w-full h-44 sm:h-60 p-3.5 text-base sm:text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none focus:outline-hidden shadow-2xs select-all"
                 />
               </div>
             </div>
@@ -320,7 +320,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   placeholder="在此输入待编码或解码的文本..."
                   value={b64Input}
                   onChange={(e) => setB64Input(e.target.value)}
-                  className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none focus:outline-hidden focus:ring-1 focus:ring-primary/50 shadow-2xs"
+                  className="w-full h-40 sm:h-52 p-3.5 text-base sm:text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none focus:outline-hidden focus:ring-1 focus:ring-primary/50 shadow-2xs"
                 />
               </div>
               <div className="space-y-1.5">
@@ -329,7 +329,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   readOnly
                   placeholder="结果输出..."
                   value={b64Output}
-                  className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none focus:outline-hidden shadow-2xs select-all"
+                  className="w-full h-40 sm:h-52 p-3.5 text-base sm:text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none focus:outline-hidden shadow-2xs select-all"
                 />
               </div>
             </div>
@@ -440,7 +440,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   placeholder="在此输入待编码或解码的 URL 或参数..."
                   value={urlInput}
                   onChange={(e) => setUrlInput(e.target.value)}
-                  className="w-full h-56 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none focus:outline-hidden focus:ring-1 focus:ring-primary/50 shadow-2xs"
+                  className="w-full h-56 p-3.5 text-base sm:text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none focus:outline-hidden focus:ring-1 focus:ring-primary/50 shadow-2xs"
                 />
               </div>
               <div className="space-y-1.5">
@@ -449,7 +449,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                   readOnly
                   placeholder="结果输出..."
                   value={urlOutput}
-                  className="w-full h-56 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none focus:outline-hidden shadow-2xs select-all"
+                  className="w-full h-56 p-3.5 text-base sm:text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none focus:outline-hidden shadow-2xs select-all"
                 />
               </div>
             </div>
@@ -482,7 +482,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                     value={jwtInput}
                     onChange={(e) => setJwtInput(e.target.value)}
                     placeholder="粘贴 eyJ... 格式的 JWT..."
-                    className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
+                    className="w-full h-40 sm:h-52 p-3.5 text-base sm:text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -491,7 +491,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                     readOnly
                     aria-label="解码后的 Payload 与状态"
                     value={preview}
-                    className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
+                    className="w-full h-40 sm:h-52 p-3.5 text-base sm:text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
                   />
                 </div>
               </div>
@@ -558,7 +558,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                     aria-label="Curl 命令"
                     value={curlInput}
                     onChange={(e) => setCurlInput(e.target.value)}
-                    className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
+                    className="w-full h-40 sm:h-52 p-3.5 text-base sm:text-xs font-mono rounded-xl border border-border/70 bg-background/90 resize-none"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -567,7 +567,7 @@ export function QuickToolsDrawer({ open, onOpenChange }: QuickToolsDrawerProps) 
                     readOnly
                     aria-label="生成的 Fetch 代码"
                     value={codeOut}
-                    className="w-full h-40 sm:h-52 p-3.5 text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
+                    className="w-full h-40 sm:h-52 p-3.5 text-base sm:text-xs font-mono rounded-xl border border-border/60 bg-muted/40 resize-none select-all"
                   />
                 </div>
               </div>

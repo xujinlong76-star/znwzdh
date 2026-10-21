@@ -9,15 +9,16 @@ import { Button } from '@/registry/new-york/ui/button'
 export const metadata: Metadata = {
   title: '模块化自定义工作台',
   description: '全响应式 12 栅格模块化页面系统，支持鼠标自由拖拽换位、双轴尺寸缩放、独立小组件即插即用与本地静止持久化。',
+  robots: { index: false, follow: true },
 }
 
 export default function CustomPage() {
   return (
     <div className="min-h-screen flex flex-col bg-background selection:bg-primary/20">
-      <main id="main-content" className="flex-1 py-6 sm:py-8">
+      <main id="main-content" className="flex-1 py-4 sm:py-8">
         <Container className="space-y-6">
           {/* 顶部 Hero 展板 */}
-          <div className="relative overflow-hidden rounded-2xl border border-border/80 p-6 sm:p-8 glass-surface subtle-mesh shadow-sm">
+          <div className="relative overflow-hidden rounded-2xl border border-border/80 p-4 sm:p-8 glass-surface subtle-mesh shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">

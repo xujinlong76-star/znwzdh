@@ -8,7 +8,7 @@
  * 合并策略：按 siteId 取并集，createdAt 新者胜。
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { addFavorite, listFavorites, removeFavorite, type HubFavorite } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
 import { getIdentity } from '@/lib/identity'
@@ -84,10 +84,20 @@ export function useFavorites(): FavoritesApi {
   const [items, setItems] = useState<LocalFavorite[]>([])
   const [ready, setReady] = useState(false)
   const [storageBlocked, setStorageBlocked] = useState<string | null>(null)
+  /**
+   * 同步镜像最新收藏。
+   *
+   * `setItems` 要到下一次渲染才更新闭包里的 `items`；同一渲染帧内连续点击两次
+   * 收藏时，两个 `toggle` 都会读到旧的 `items`，各自认为「尚未收藏」并插入一条，
+   * 结果收藏夹里出现重复项。所有读写都先经过这个 ref，第二次点击就能看到
+   * 第一次写入的结果（函数式更新也解决不了「异步云端同步需要知道最终状态」）。
+   */
+  const itemsRef = useRef<LocalFavorite[]>([])
 
   useEffect(() => {
     const refresh = () => {
       const loaded = loadLocal()
+      itemsRef.current = loaded.items
       setItems(loaded.items)
       setStorageBlocked(loaded.blocked)
     }
@@ -106,6 +116,7 @@ export function useFavorites(): FavoritesApi {
     (next: LocalFavorite[]) => {
       // 读不出来就不写：宁可这次改动不生效，也不能覆盖掉用户原有的收藏
       if (storageBlocked) return false
+      itemsRef.current = next
       setItems(next)
       saveLocal(next)
       return true
@@ -122,6 +133,7 @@ export function useFavorites(): FavoritesApi {
       // 备份写不进去（配额满）也要继续重置，但把这件事说出来，别让它静默
       console.warn('收藏原数据备份失败；重置后原数据可能无法找回', err)
     }
+    itemsRef.current = []
     setItems([])
     setStorageBlocked(null)
     saveLocal([])
@@ -131,10 +143,12 @@ export function useFavorites(): FavoritesApi {
 
   /** 切换收藏状态，返回切换后是否已收藏 */
   const toggle = useCallback(async (site: Omit<LocalFavorite, 'createdAt'>): Promise<boolean> => {
-    const existed = items.some((i) => i.siteId === site.siteId)
+    // 用 ref 读取「包含本次同步写入」的最新列表，避免快速双击时两次都读到旧状态
+    const current = itemsRef.current
+    const existed = current.some((i) => i.siteId === site.siteId)
     const next = existed
-      ? items.filter((i) => i.siteId !== site.siteId)
-      : [{ ...site, createdAt: Date.now() }, ...items]
+      ? current.filter((i) => i.siteId !== site.siteId)
+      : [{ ...site, createdAt: Date.now() }, ...current]
     // 写不进去就返回未改变的状态：调用方据此提示，界面不会出现「点了但没变化」
     if (!persist(next)) return existed
 
@@ -145,19 +159,19 @@ export function useFavorites(): FavoritesApi {
       else await addFavorite(identity, site.siteId)
     }
     return !existed
-  }, [items, persist])
+  }, [persist])
 
   const remove = useCallback((siteId: string) => {
-    if (!persist(items.filter((i) => i.siteId !== siteId))) return
+    if (!persist(itemsRef.current.filter((i) => i.siteId !== siteId))) return
     const identity = getIdentity()
     if (identity) void removeFavorite(identity, siteId)
-  }, [items, persist])
+  }, [persist])
 
   const clear = useCallback(() => {
     persist([])
   }, [persist])
 
-  const exportJson = useCallback(() => JSON.stringify({ version: 1, items }, null, 2), [items])
+  const exportJson = useCallback(() => JSON.stringify({ version: 1, items: itemsRef.current }, null, 2), [])
 
   const importJson = useCallback((json: string) => {
     // 存储读不出来时导入同样是写入：先拦住，并把原因作为错误返回（页面会显示）
@@ -168,7 +182,7 @@ export function useFavorites(): FavoritesApi {
       if (!Array.isArray(incoming)) return { ok: false, imported: 0, error: '格式不正确' }
       const valid = incoming.filter((i) => i && typeof i.siteId === 'string' && typeof i.href === 'string')
       const merged = [...valid]
-      for (const ex of items) {
+      for (const ex of itemsRef.current) {
         if (!merged.some((i) => i.siteId === ex.siteId)) merged.push(ex)
       }
       persist(merged)
@@ -176,7 +190,7 @@ export function useFavorites(): FavoritesApi {
     } catch (err) {
       return { ok: false, imported: 0, error: err instanceof Error ? err.message : '解析失败' }
     }
-  }, [items, persist, storageBlocked])
+  }, [persist, storageBlocked])
 
   return { items, ready, storageBlocked, isFavorite, toggle, remove, clear, resetLocal, exportJson, importJson }
 }

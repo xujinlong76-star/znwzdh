@@ -144,7 +144,7 @@ export default function AdminCategoriesPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-5xl mx-auto">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-xl font-bold">分类与 SKOS 概念治理</h1>
@@ -169,7 +169,7 @@ export default function AdminCategoriesPage() {
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="例如：设计资源"
-            className="w-48"
+            className="w-full sm:w-48"
           />
         </div>
         <div className="space-y-1">
@@ -177,7 +177,7 @@ export default function AdminCategoriesPage() {
           <select id="category-new-parent"
             value={newParent}
             onChange={(e) => setNewParent(e.target.value)}
-            className="h-9 rounded-md border bg-background px-3 text-sm w-48"
+            className="h-9 rounded-md border bg-background px-3 text-base sm:text-sm w-full sm:w-48"
           >
             <option value="">（根类目）</option>
             {options.map((o) => (
@@ -191,7 +191,7 @@ export default function AdminCategoriesPage() {
             value={newAltLabels}
             onChange={(e) => setNewAltLabels(e.target.value)}
             placeholder="如: UI, 素材, 灵感"
-            className="w-48"
+            className="w-full sm:w-48"
           />
         </div>
         <Button onClick={() => void create()} disabled={creating || !newTitle.trim()}>
@@ -210,7 +210,7 @@ export default function AdminCategoriesPage() {
           description={loadError ? '拉取失败时下面不会显示任何类目，请重试。' : '还没有任何类目，先创建一个再往里加站点。'}
         />
       ) : (
-        <div className="rounded-md border overflow-x-auto">
+        <div className="rounded-md border overflow-x-auto no-scrollbar touch-pan-x">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40">

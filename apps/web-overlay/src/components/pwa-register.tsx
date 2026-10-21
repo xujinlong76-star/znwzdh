@@ -92,7 +92,7 @@ export function PwaRegister() {
   if (!updateReady) return null
 
   return (
-    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 rounded-lg border border-border/80 bg-background/95 px-4 py-2.5 shadow-lg backdrop-blur">
+    <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 rounded-lg border border-border/80 bg-background/95 px-4 py-2.5 shadow-lg backdrop-blur">
       <span className="text-sm">有新版本可用</span>
       <button
         className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors"

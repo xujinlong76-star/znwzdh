@@ -194,7 +194,7 @@ export default function AdminCollectionsPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="p-3 sm:p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold">精选专题</h1>
         <Button size="sm" variant="outline" onClick={load} disabled={loading}>
@@ -205,18 +205,18 @@ export default function AdminCollectionsPage() {
       <div className="flex flex-wrap items-end gap-2 mb-6 p-3 rounded-md border bg-muted/20">
         <div className="space-y-1">
           <label htmlFor="collection-new-slug" className="text-xs text-muted-foreground">Slug（唯一）</label>
-          <Input id="collection-new-slug" value={newSlug} onChange={(e) => setNewSlug(e.target.value)} placeholder="ai-starter" className="w-44" />
+          <Input id="collection-new-slug" value={newSlug} onChange={(e) => setNewSlug(e.target.value)} placeholder="ai-starter" className="w-full sm:w-44" />
         </div>
         <div className="space-y-1">
           <label htmlFor="collection-new-title" className="text-xs text-muted-foreground">标题</label>
-          <Input id="collection-new-title" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="AI 入门必备" className="w-56" />
+          <Input id="collection-new-title" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="AI 入门必备" className="w-full sm:w-56" />
         </div>
         <div className="space-y-1">
           <label htmlFor="collection-new-kind" className="text-xs text-muted-foreground">类型</label>
           <select id="collection-new-kind"
             value={newKind}
             onChange={(e) => setNewKind(e.target.value)}
-            className="h-9 rounded-md border bg-background px-3 text-sm w-32"
+            className="h-9 rounded-md border bg-background px-3 text-base sm:text-sm w-full sm:w-32"
           >
             <option value="topic">主题</option>
             <option value="geo">地域</option>

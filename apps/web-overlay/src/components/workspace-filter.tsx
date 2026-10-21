@@ -46,7 +46,7 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
 
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 py-2.5 border-b border-border/40">
-      <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none [mask-image:linear-gradient(to_right,black_90%,transparent_100%)] sm:[mask-image:none]">
+      <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none touch-pan-x overscroll-x-contain [mask-image:linear-gradient(to_right,black_90%,transparent_100%)] sm:[mask-image:none]">
         {WORKSPACES.map((ws) => {
           const Icon = ws.icon
           const isActive = active === ws.id
@@ -54,7 +54,7 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
             <button
               key={ws.id}
               onClick={() => onChange(ws.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all shrink-0 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-medium transition-all shrink-0 cursor-pointer ${
                 isActive
                   ? 'bg-primary text-primary-foreground shadow-xs font-semibold'
                   : 'bg-muted/40 hover:bg-muted/80 text-muted-foreground hover:text-foreground border border-border/50 hover:border-border'

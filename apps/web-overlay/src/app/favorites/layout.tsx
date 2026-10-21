@@ -9,6 +9,7 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: '我的收藏',
   description: '你收藏的站点',
+  robots: { index: false, follow: true },
 }
 
 export default function FavoritesLayout({ children }: { children: React.ReactNode }) {

@@ -233,9 +233,9 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* 顶部标题栏 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-blue-500 to-indigo-500 text-white shadow-md shadow-blue-500/20">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 via-blue-500 to-indigo-500 text-white shadow-md shadow-blue-500/20 shrink-0">
               <Radio className="w-5 h-5 animate-pulse" />
             </div>
             <div>
@@ -265,18 +265,18 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
         </div>
 
         {/* 主体交互区 */}
-        <div className="p-6 space-y-6 overflow-y-auto max-h-[75vh]">
+        <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 overflow-y-auto max-h-[75vh]">
           {/* 本机状态卡片 */}
-          <div className="flex items-center justify-between p-4 rounded-xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-900/40">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-900/40">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
                 <Laptop className="w-4 h-4" />
               </div>
-              <div>
-                <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 truncate">
                   当前设备: {deviceName}
                 </div>
-                <div className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
+                <div className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 truncate">
                   ID: {deviceId} · 局域网广播就绪
                 </div>
               </div>
@@ -288,7 +288,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
               onClick={triggerScan}
               disabled={isScanning}
               aria-label="扫描周围在线设备"
-              className="h-8 text-xs rounded-lg gap-1.5"
+              className="h-8 text-xs rounded-lg gap-1.5 w-full sm:w-auto shrink-0"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
               {isScanning ? '雷达扫描中...' : '重新探测'}
@@ -351,10 +351,10 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                 {peers.map((peer) => (
                   <div
                     key={peer.id}
-                    className="flex items-center justify-between p-4 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 shadow-sm"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl bg-zinc-50 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 shadow-sm"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-800 flex items-center justify-center border border-zinc-200 dark:border-zinc-700">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-white dark:bg-zinc-800 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 shrink-0">
                         {peer.type === 'mobile' ? (
                           <Smartphone className="w-5 h-5 text-indigo-500" />
                         ) : peer.type === 'tablet' ? (
@@ -363,34 +363,34 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                           <Laptop className="w-5 h-5 text-blue-500" />
                         )}
                       </div>
-                      <div>
-                        <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-                          {peer.name}
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <div className="min-w-0">
+                        <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5 truncate">
+                          <span className="truncate">{peer.name}</span>
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                         </div>
-                        <div className="text-[11px] font-mono text-zinc-400">
+                        <div className="text-[11px] font-mono text-zinc-400 truncate">
                           {peer.id} · 局域网直连
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-zinc-200/60 dark:border-zinc-800/80">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => handleSendToPeer(peer, 'theme')}
-                        className="h-8 text-xs rounded-lg gap-1"
+                        className="h-8 text-xs rounded-lg gap-1 flex-1 sm:flex-initial text-center justify-center"
                       >
-                        <Palette className="w-3.5 h-3.5 text-purple-500" />
-                        投送主题
+                        <Palette className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                        <span>投送主题</span>
                       </Button>
                       <Button
                         size="sm"
                         onClick={() => handleSendToPeer(peer, 'bookmarks')}
-                        className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg gap-1"
+                        className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg gap-1 flex-1 sm:flex-initial text-center justify-center"
                       >
-                        <Share2 className="w-3.5 h-3.5" />
-                        隔空快传
+                        <Share2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>隔空快传</span>
                       </Button>
                     </div>
                   </div>
@@ -401,12 +401,12 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
         </div>
 
         {/* 底部保障 */}
-        <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 text-xs text-zinc-400">
-          <span className="flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-emerald-500" />
-            端到端内存隔离 · 零服务端中转数据落盘
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 px-4 sm:px-6 py-2.5 sm:py-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 text-xs text-zinc-400">
+          <span className="flex items-center gap-1.5 truncate">
+            <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span className="truncate">端到端内存隔离 · 零服务端中转数据落盘</span>
           </span>
-          <span className="font-mono">P2P v2.0 Local-First</span>
+          <span className="font-mono text-[11px] hidden sm:inline shrink-0">P2P v2.0 Local-First</span>
         </div>
       </div>
     </div>

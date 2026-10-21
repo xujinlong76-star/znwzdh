@@ -282,42 +282,42 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono">
-          <div className="p-2 rounded-lg border border-border/60 bg-muted/20 flex items-center justify-between">
-            <div>
+          <div className="p-2 rounded-lg border border-border/60 bg-muted/20 flex items-center justify-between gap-2">
+            <div className="min-w-0">
               <div className="text-[10px] text-muted-foreground font-sans">秒级时间戳 (Unix Seconds)</div>
               <div className="text-xs font-semibold text-foreground">{sec}</div>
             </div>
-            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={() => handleCopy(String(sec), 't-sec')}>
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] shrink-0" onClick={() => handleCopy(String(sec), 't-sec')}>
               <Copy className="w-3 h-3" />
             </Button>
           </div>
 
-          <div className="p-2 rounded-lg border border-border/60 bg-muted/20 flex items-center justify-between">
-            <div>
+          <div className="p-2 rounded-lg border border-border/60 bg-muted/20 flex items-center justify-between gap-2">
+            <div className="min-w-0">
               <div className="text-[10px] text-muted-foreground font-sans">毫秒级时间戳 (Unix Milliseconds)</div>
               <div className="text-xs font-semibold text-foreground">{ms}</div>
             </div>
-            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={() => handleCopy(String(ms), 't-ms')}>
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] shrink-0" onClick={() => handleCopy(String(ms), 't-ms')}>
               <Copy className="w-3 h-3" />
             </Button>
           </div>
 
-          <div className="p-2 rounded-lg border border-border/60 bg-muted/20 flex items-center justify-between">
-            <div>
+          <div className="p-2 rounded-lg border border-border/60 bg-muted/20 flex items-center justify-between gap-2">
+            <div className="min-w-0">
               <div className="text-[10px] text-muted-foreground font-sans">本地标准时间 (Local Datetime)</div>
               <div className="text-xs font-medium text-foreground">{local}</div>
             </div>
-            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={() => handleCopy(local, 't-loc')}>
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] shrink-0" onClick={() => handleCopy(local, 't-loc')}>
               <Copy className="w-3 h-3" />
             </Button>
           </div>
 
-          <div className="p-2 rounded-lg border border-border/60 bg-muted/20 flex items-center justify-between">
-            <div>
+          <div className="p-2 rounded-lg border border-border/60 bg-muted/20 flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
               <div className="text-[10px] text-muted-foreground font-sans">UTC / ISO-8601 标准字符串</div>
-              <div className="text-xs font-medium text-foreground truncate max-w-[180px]">{iso}</div>
+              <div className="text-xs font-medium text-foreground truncate min-w-0">{iso}</div>
             </div>
-            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={() => handleCopy(iso, 't-iso')}>
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] shrink-0" onClick={() => handleCopy(iso, 't-iso')}>
               <Copy className="w-3 h-3" />
             </Button>
           </div>
@@ -387,9 +387,9 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
 
         <div className="space-y-1.5 font-mono">
           {uuids.map((id, idx) => (
-            <div key={idx} className="p-2 rounded-lg border border-border/60 bg-muted/30 flex items-center justify-between">
-              <span className="text-xs text-foreground select-all">{id}</span>
-              <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]" onClick={() => handleCopy(id, `uuid-${idx}`)}>
+            <div key={idx} className="p-2 rounded-lg border border-border/60 bg-muted/30 flex items-center justify-between gap-2">
+              <span className="text-xs text-foreground select-all break-all min-w-0 font-mono">{id}</span>
+              <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[10px] shrink-0" onClick={() => handleCopy(id, `uuid-${idx}`)}>
                 {copiedKey === `uuid-${idx}` ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
               </Button>
             </div>
@@ -516,7 +516,7 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="flex items-center justify-end gap-1.5">
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
               <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => handleCopy(formatted, 'j-fmt')}>
                 <Copy className="w-2.5 h-2.5 mr-1" />复制美化版
               </Button>

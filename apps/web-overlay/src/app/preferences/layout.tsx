@@ -9,6 +9,7 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: '偏好设置',
   description: '外观、密度与推荐等个人偏好设置',
+  robots: { index: false, follow: true },
 }
 
 export default function PreferencesLayout({ children }: { children: React.ReactNode }) {

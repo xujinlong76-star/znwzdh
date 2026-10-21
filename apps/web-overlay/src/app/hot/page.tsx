@@ -134,7 +134,7 @@ export default function HotPage() {
               </div>
             </a>
           </div>
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="absolute top-2 right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
             <FavoriteButton
               site={{
                 siteId: site.id,
@@ -152,9 +152,9 @@ export default function HotPage() {
 
   return (
     <Container as="main" id="main-content">
-      <div className="py-6 sm:py-10 space-y-6">
+      <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
         {/* 沉浸式 Hero 展板（对齐插件市场轮的展板语言：market-hero + 光斑 + 水印图标） */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs">
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-8 shadow-xs">
           <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl" />
           <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl" />
           <Trophy
@@ -174,7 +174,7 @@ export default function HotPage() {
               </Link>
               <span className="text-border">/</span>
               <Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/5 text-xs">
-                实时动态榜单
+                站点榜单
               </Badge>
             </div>
 
@@ -186,7 +186,7 @@ export default function HotPage() {
                 <span>全站技术风向标与热度榜</span>
               </h1>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                基于真实用户检索与点击行为权重自动更新。掌握当下开发者最受追捧的新潮利器与经久不衰的经典基础设施。
+                按站点访问量排序展示已收录资源。当前访问量统计尚未积累，榜单暂不反映真实热度。
               </p>
             </div>
 
@@ -201,7 +201,7 @@ export default function HotPage() {
               </span>
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
                 <Trophy className="w-3 h-3 text-border" />
-                按真实访问热度自动排序
+                访问量统计中，排序暂为默认顺序
               </span>
             </div>
           </div>
@@ -247,7 +247,7 @@ export default function HotPage() {
               <TabsList className="p-1 rounded-xl bg-muted/40 border border-border/50">
                 <TabsTrigger value="trending" className="text-xs sm:text-sm gap-1.5 rounded-lg">
                   <Flame className="w-3.5 h-3.5 text-amber-500" />
-                  <span>热度飙升榜</span>
+                  <span>访问量榜</span>
                 </TabsTrigger>
                 <TabsTrigger value="new" className="text-xs sm:text-sm gap-1.5 rounded-lg">
                   <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
@@ -263,8 +263,8 @@ export default function HotPage() {
                 <EmptyState
                   icon={Flame}
                   iconTone="warning"
-                  title={notice ? '本次未能取回热度数据' : '暂无热度数据'}
-                  description="热度分由中枢按真实访问行为重算；榜单为空通常意味着重算任务尚未跑过，或服务暂时不可用。"
+                  title={notice ? '本次未能取回榜单数据' : '暂无访问量数据'}
+                  description="访问量统计尚未积累，当前不生成排名；可先浏览全部站点，或稍后再来看看。"
                   action={
                     <Button asChild size="sm" variant="outline" className="text-xs">
                       <Link href="/">去主页浏览全部站点</Link>

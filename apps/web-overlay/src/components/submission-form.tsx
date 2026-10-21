@@ -99,21 +99,21 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
 
     return (
         <Card className="w-full max-w-2xl mx-auto border border-border/70 rounded-2xl shadow-xs glass-surface subtle-mesh overflow-hidden">
-            <CardHeader className="space-y-1.5 pb-6 border-b border-border/50 bg-muted/15">
-                <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs">
+            <CardHeader className="space-y-1.5 p-4 sm:p-6 pb-4 sm:pb-6 border-b border-border/50 bg-muted/15">
+                <div className="flex items-start sm:items-center gap-3">
+                    <div className="p-2.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs shrink-0">
                         <Send className="h-5 w-5" />
                     </div>
-                    <div>
-                        <CardTitle className="text-xl sm:text-2xl font-bold">推荐与收录新站点</CardTitle>
-                        <CardDescription className="text-xs sm:text-sm mt-0.5">
+                    <div className="min-w-0 flex-1">
+                        <CardTitle className="text-xl sm:text-2xl font-bold truncate">推荐与收录新站点</CardTitle>
+                        <CardDescription className="text-xs sm:text-sm mt-0.5 leading-relaxed">
                             分享优质网站或开源工具，与全网开发者共同构建更强大的生产力矩阵
                         </CardDescription>
                     </div>
                 </div>
             </CardHeader>
 
-            <CardContent className="pt-6">
+            <CardContent className="p-4 sm:p-6 pt-4 sm:pt-6">
                 {result && (
                     <Alert
                         className={`mb-6 rounded-xl ${result.success
@@ -156,7 +156,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                             value={formData.title}
                             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                             required
-                            className="h-10 text-xs sm:text-sm rounded-xl border-border/70 bg-background/80"
+                            className="h-10 text-base sm:text-sm rounded-xl border-border/70 bg-background/80"
                         />
                     </div>
 
@@ -174,7 +174,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                             value={formData.url}
                             onChange={(e) => setFormData({ ...formData, url: e.target.value })}
                             required
-                            className="h-10 text-xs sm:text-sm rounded-xl border-border/70 bg-background/80 font-mono"
+                            className="h-10 text-base sm:text-sm rounded-xl border-border/70 bg-background/80 font-mono"
                         />
                     </div>
 
@@ -192,7 +192,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                             required
                             rows={3}
-                            className="text-xs sm:text-sm rounded-xl border-border/70 bg-background/80 resize-none"
+                            className="text-base sm:text-sm rounded-xl border-border/70 bg-background/80 resize-none"
                         />
                     </div>
 
@@ -207,7 +207,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                                 onValueChange={(value) => setFormData({ ...formData, category: value, subcategory: '' })}
                                 required
                             >
-                                <SelectTrigger aria-label="选择主分类" className="h-10 text-xs sm:text-sm rounded-xl border-border/70 bg-background/80">
+                                <SelectTrigger aria-label="选择主分类" className="h-10 text-base sm:text-sm rounded-xl border-border/70 bg-background/80">
                                     <SelectValue placeholder="选择所属分类" />
                                 </SelectTrigger>
                                 <SelectContent className="rounded-xl border-border/70 shadow-lg">
@@ -231,7 +231,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                                     value={formData.subcategory}
                                     onValueChange={(value) => setFormData({ ...formData, subcategory: value })}
                                 >
-                                    <SelectTrigger aria-label="选择二级子类目" className="h-10 text-xs sm:text-sm rounded-xl border-border/70 bg-background/80">
+                                    <SelectTrigger aria-label="选择二级子类目" className="h-10 text-base sm:text-sm rounded-xl border-border/70 bg-background/80">
                                         <SelectValue placeholder="选择子分类（可选）" />
                                     </SelectTrigger>
                                     <SelectContent className="rounded-xl border-border/70 shadow-lg">
@@ -259,7 +259,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                             value={formData.submitterNote}
                             onChange={(e) => setFormData({ ...formData, submitterNote: e.target.value })}
                             rows={2}
-                            className="text-xs sm:text-sm rounded-xl border-border/70 bg-background/80 resize-none"
+                            className="text-base sm:text-sm rounded-xl border-border/70 bg-background/80 resize-none"
                         />
                     </div>
 

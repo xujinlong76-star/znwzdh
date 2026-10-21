@@ -360,12 +360,12 @@ export function WorkspaceSwitcher() {
       <Dialog open={manageOpen} onOpenChange={setManageOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between text-sm font-semibold">
-              <span className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-indigo-500" />
-                「{activeWs.name}」成员与权限管理
+            <DialogTitle className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm font-semibold">
+              <span className="flex items-center gap-2 truncate">
+                <Users className="h-4 w-4 shrink-0 text-indigo-500" />
+                <span className="truncate">「{activeWs.name}」成员与权限管理</span>
               </span>
-              <Badge variant="outline" className={`text-xs ${roleMeta.color}`}>
+              <Badge variant="outline" className={`text-xs shrink-0 self-start sm:self-auto ${roleMeta.color}`}>
                 您的身份：{roleMeta.label}
               </Badge>
             </DialogTitle>
@@ -373,7 +373,7 @@ export function WorkspaceSwitcher() {
 
           <div className="space-y-4 pt-2 text-xs">
             {/* 权限说明 */}
-            <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground grid grid-cols-2 gap-2">
+            <div className="rounded-lg border bg-muted/30 p-3 text-[11px] text-muted-foreground grid grid-cols-1 min-[360px]:grid-cols-2 gap-2">
               <div>👑 <strong className="text-foreground">Owner:</strong> 全权拥有、空间配置与销毁</div>
               <div>🛡️ <strong className="text-foreground">Maintainer:</strong> 站点发布、成员角色分配</div>
               <div>👥 <strong className="text-foreground">Member:</strong> 常用站点添加与编辑</div>
@@ -391,14 +391,14 @@ export function WorkspaceSwitcher() {
                   placeholder="用户名 / 工号"
                   value={inviteUsername}
                   onChange={(e) => setInviteUsername(e.target.value)}
-                  className="text-xs"
+                  className="text-base sm:text-xs"
                   aria-label="待添加成员用户名"
                 />
                 <select
                   aria-label="成员权限角色"
                   value={inviteRole}
                   onChange={(e) => setInviteRole(e.target.value as HubWorkspaceRole)}
-                  className="rounded-md border border-input bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="rounded-md border border-input bg-background px-2.5 py-1.5 text-base sm:text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 >
                   <option value="member">👥 协作成员 (Member)</option>
                   <option value="maintainer">🛡️ 管理员 (Maintainer)</option>

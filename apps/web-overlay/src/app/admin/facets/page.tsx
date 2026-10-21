@@ -146,7 +146,7 @@ export default function AdminFacetsPage() {
   const samplesNotice = samplesError ? describeDegrade(samplesError) : null
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-3 sm:p-6 max-w-6xl mx-auto space-y-5 sm:space-y-6">
       {/* 头部标题与操作 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -198,7 +198,7 @@ export default function AdminFacetsPage() {
       )}
 
       {/* 分面维度 Tabs */}
-      <div className="flex items-center gap-2 border-b pb-3 overflow-x-auto">
+      <div className="flex items-center gap-2 border-b pb-3 overflow-x-auto no-scrollbar touch-pan-x flex-nowrap shrink-0">
         {data?.facets.map((f) => {
           const sum = f.options.reduce((acc, o) => acc + o.count, 0)
           const isActive = activeTab === f.key
@@ -247,7 +247,7 @@ export default function AdminFacetsPage() {
               placeholder="过滤当前分面选项…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="text-xs h-8 w-48"
+              className="text-xs h-8 w-full md:w-48"
             />
           </div>
         </div>

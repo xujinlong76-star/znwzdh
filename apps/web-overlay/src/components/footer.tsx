@@ -16,7 +16,7 @@ export function Footer({ siteInfo }: FooterProps) {
   const title = siteInfo?.basic?.title ?? 'NavHub'
 
   return (
-    <footer className="border-t border-border/40 py-8 bg-muted/10 mt-auto">
+    <footer className="border-t border-border/40 pt-8 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8 bg-muted/10 mt-auto">
       <div className="container flex flex-col items-center justify-between gap-4 md:flex-row px-4">
         <div className="flex flex-wrap items-center justify-center gap-3.5 text-xs text-muted-foreground">
           <Link href="/" className="hover:text-foreground transition-colors font-medium">主页</Link>
@@ -32,6 +32,11 @@ export function Footer({ siteInfo }: FooterProps) {
           <Link href="/hot" className="hover:text-foreground transition-colors">热度趋势榜</Link>
           <span className="text-border">·</span>
           <Link href="/tags" className="hover:text-foreground transition-colors">全景标签云</Link>
+          <span className="text-border">·</span>
+          {/* SEO：站点目录与合集入口此前页脚完全没有，导致 1013 个详情页与 4 个合集页全是孤岛 */}
+          <Link href="/sites" className="hover:text-foreground transition-colors">全部站点目录</Link>
+          <span className="text-border">·</span>
+          <Link href="/collections" className="hover:text-foreground transition-colors">精选专题合集</Link>
           <span className="text-border">·</span>
           <Link href="/custom" className="hover:text-foreground transition-colors text-emerald-600 dark:text-emerald-400 font-medium">模块化工作台</Link>
           <span className="text-border">·</span>

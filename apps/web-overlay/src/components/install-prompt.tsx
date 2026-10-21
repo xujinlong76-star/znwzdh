@@ -78,7 +78,7 @@ export function InstallPrompt() {
   if (!visible || !deferred) return null
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 z-[80] sm:left-auto sm:right-4 sm:max-w-sm">
+    <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] left-4 right-4 z-[80] sm:left-auto sm:right-4 sm:max-w-sm">
       <div className="rounded-xl border border-border/80 bg-background/95 p-3.5 shadow-lg backdrop-blur">
         <div className="flex items-start gap-2.5">
           <Download className="mt-0.5 h-4 w-4 text-primary" />

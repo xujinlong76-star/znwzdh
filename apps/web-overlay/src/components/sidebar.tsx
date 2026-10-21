@@ -83,8 +83,8 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
   }
 
   return (
-    <div className={cn("w-64 bg-background border-r border-border/40 flex flex-col", className)}>
-      <div className="flex h-14 items-center justify-between px-4 border-b border-border/40">
+    <div className={cn("w-full md:w-64 h-full bg-background border-r border-border/40 flex flex-col", className)}>
+      <div className="flex min-h-[3.5rem] items-center justify-between px-4 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40">
         <Link href="/" className="flex items-center gap-2.5 font-bold text-sm tracking-tight hover:opacity-90 transition-opacity">
           {siteInfo.appearance.logo ? (
             <Image
@@ -149,6 +149,8 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
                     size="sm"
                     className="h-8 w-7 px-0 hover:bg-muted/50 cursor-pointer text-muted-foreground"
                     onClick={() => toggleCategory(category.id)}
+                    aria-label={expandedCategories[category.id] ? `折叠分类：${category.title}` : `展开分类：${category.title}`}
+                    aria-expanded={Boolean(expandedCategories[category.id])}
                   >
                     {expandedCategories[category.id] ? (
                       <ChevronDown className="h-3.5 w-3.5" />
@@ -188,7 +190,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
         </div>
       </ScrollArea>
 
-      <div className="p-2.5 border-t border-border/40 flex items-center justify-between">
+      <div className="p-2.5 pb-[max(env(safe-area-inset-bottom,0px),0.625rem)] border-t border-border/40 flex items-center justify-between">
         <CrdtSyncStatusPill />
       </div>
     </div>

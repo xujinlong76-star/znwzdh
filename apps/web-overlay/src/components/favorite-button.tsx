@@ -17,8 +17,8 @@ export function FavoriteButton({ site, className }: FavoriteButtonProps) {
 
   return (
     <button
-      title={faved ? '取消收藏' : '收藏'}
-      aria-label={faved ? '取消收藏' : '收藏'}
+      title={faved ? `取消收藏${site.title ? '：' + site.title : ''}` : `收藏${site.title ? '：' + site.title : ''}`}
+      aria-label={faved ? `取消收藏${site.title ? '：' + site.title : ''}` : `收藏${site.title ? '：' + site.title : ''}`}
       className={'inline-flex items-center justify-center rounded-md p-1.5 transition-colors hover:bg-muted ' + (className ?? '')}
       onClick={(e) => {
         e.preventDefault()

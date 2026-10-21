@@ -29,6 +29,13 @@ run("node", ["scripts/sync-core-mirrors.mjs", "--check"]);
 run("node", ["scripts/check-extensions.mjs"]);
 run("node", ["scripts/typecheck.mjs"]);
 
+// 口径提示：typecheck 只覆盖 @navhub/*（apps/web 是 vendored 底座），前端
+// tsc / eslint / next build 在 CI 的 test-web 作业里，e2e 在 test-e2e 作业里。
+// 本脚本绿灯 ≠ CI 绿灯；本地要补前端门禁用 `pnpm verify:web`。
+console.log(
+  "\n[verify] 提示：未包含前端 tsc / eslint / next build 与 Playwright（CI 口径见 ci.yml 的 test-web / test-e2e）\n",
+);
+
 // 首屏预算：只有存在构建产物时才检查。CI 的 test-web 在 build 后显式调用，
 // 本地 `pnpm verify` 若没 build 则明确提示而不是静默跳过。
 const webDist = "apps/web/.next";

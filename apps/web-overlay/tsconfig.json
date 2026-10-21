@@ -42,7 +42,11 @@
     ".vercel/output/static/types/**/*.ts",
     "next-env.d.ts",
     ".next-verify/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-touch/types/**/*.ts",
+    ".next-touch/dev/types/**/*.ts",
+    ".next-opt/types/**/*.ts",
+    ".next-opt/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

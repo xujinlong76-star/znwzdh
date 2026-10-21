@@ -14,9 +14,11 @@ export default defineConfig({
   },
   test: {
     // 注意：apps/web 整体是 vendored 的上游底座，默认排除。
-    // 唯一例外是 apps/web/test —— 只放我们针对存储接缝自己写的测试
-    // （src/lib/github.ts 与 src/lib/storage-adapter.ts 受 .gitignore
-    // 白名单保护、由本仓库维护，是 NavHub 改造的核心接缝）。
+    // 测试从 apps/web/test 运行（它是 vendor 从 apps/web-overlay/test 生成的镜像）：
+    // overlay 目录没有自己的 node_modules（pnpm workspace 显式排除了它），
+    // 直接跑 overlay/test 会因 react/next/lucide 等裸包解析失败而整套报错。
+    // 代价：只改 overlay 测试时本地不会立刻生效——verify/pre-commit 的
+    // check-web-overlay 会强制 overlay -> apps/web 同步，同步后再跑即生效。
     // apps/web/scripts/*.test.ts 是上游遗留、无人运行，继续排除。
     include: [
       "packages/**/test/**/*.test.ts",

@@ -75,3 +75,7 @@ apps/web/src/app/api/home/site/*
 
 .workbuddy/
 .workbuddy-ai/
+
+# SEO 巡检临时产物与一次性调试脚本（非交付物，避免误入版本库）
+.seo-tmp/
+/parity-check.tmp.mjs

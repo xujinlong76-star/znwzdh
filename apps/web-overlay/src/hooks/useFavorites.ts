@@ -28,6 +28,8 @@ export interface LocalFavorite {
   icon?: string
   description?: string
   note?: string
+  /** 云端收藏夹 id（匿名/离线时为空，登录后由云端元数据合并） */
+  folderId?: string | null
   createdAt: number
 }
 
@@ -73,6 +75,8 @@ export interface FavoritesApi {
   isFavorite: (siteId: string) => boolean
   toggle: (site: Omit<LocalFavorite, 'createdAt'>) => Promise<boolean>
   remove: (siteId: string) => void
+  /** 收藏管理：更新本地缓存的文件夹/备注（云端写入由调用方 best-effort 处理） */
+  updateMeta: (siteId: string, patch: { folderId?: string | null; note?: string | null }) => boolean
   clear: () => void
   /** 用户显式重置：先把读不出来的原数据备份到旁边，再写空列表 */
   resetLocal: () => void
@@ -167,6 +171,20 @@ export function useFavorites(): FavoritesApi {
     if (identity) void removeFavorite(identity, siteId)
   }, [persist])
 
+  const updateMeta = useCallback((siteId: string, patch: { folderId?: string | null; note?: string | null }) => {
+    const current = itemsRef.current
+    if (!current.some((i) => i.siteId === siteId)) return false
+    const next = current.map((i) => {
+      if (i.siteId !== siteId) return i
+      const merged: LocalFavorite = { ...i }
+      if (patch.folderId !== undefined) merged.folderId = patch.folderId
+      // note 允许显式传 null（清空备注），落盘统一成 undefined 保持旧数据形状
+      if (patch.note !== undefined) merged.note = patch.note ?? undefined
+      return merged
+    })
+    return persist(next)
+  }, [persist])
+
   const clear = useCallback(() => {
     persist([])
   }, [persist])
@@ -192,7 +210,7 @@ export function useFavorites(): FavoritesApi {
     }
   }, [persist, storageBlocked])
 
-  return { items, ready, storageBlocked, isFavorite, toggle, remove, clear, resetLocal, exportJson, importJson }
+  return { items, ready, storageBlocked, isFavorite, toggle, remove, updateMeta, clear, resetLocal, exportJson, importJson }
 }
 
 /**

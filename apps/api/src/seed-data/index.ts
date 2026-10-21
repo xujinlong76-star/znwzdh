@@ -44,6 +44,7 @@ import { autoDrivingPack } from "./site-packs/auto-driving.ts";
 import { foodDrinkPack } from "./site-packs/food-drink.ts";
 import { sportsOutdoorPack } from "./site-packs/sports-outdoor.ts";
 import { agricultureRuralPack } from "./site-packs/agriculture-rural.ts";
+import { lifeCarePack } from "./site-packs/life-care.ts";
 
 // ---- 搜索引擎包（search-pack）×3 ----
 import { devSearchArsenal } from "./search-packs/dev-search-arsenal.ts";
@@ -111,6 +112,7 @@ export const allSeedPluginDefs: SeedPluginDef[] = [
   foodDrinkPack,
   sportsOutdoorPack,
   agricultureRuralPack,
+  lifeCarePack,
   govPublicServicePack,
   // 搜索引擎包
   devSearchArsenal,

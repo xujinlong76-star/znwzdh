@@ -35,6 +35,7 @@ import {
   isCoarsePointer,
   readItemIndex,
   resolveDropIndex,
+  resolveTouchDragEnd,
   shouldActivateTouchDrag,
   type ItemRect,
 } from '@/lib/modular/touch-reorder'
@@ -208,6 +209,8 @@ export function ModularCanvas() {
     // 鼠标走桌面端 HTML5 drag；触摸/笔才进触控通道
     if (e.pointerType === 'mouse') return
     if (!isCoarsePointer(typeof window !== 'undefined' ? window : null)) return
+    // 已有手指正在拖拽：第二根手指按到手柄上不能覆盖当前会话
+    if (touchDragRef.current) return
     touchDragRef.current = {
       pointerId: e.pointerId,
       fromIndex: index,
@@ -260,26 +263,25 @@ export function ModularCanvas() {
       }
     }
 
-    const handleUp = (ev: PointerEvent) => {
-      const state = touchDragRef.current
+    const finish = (ev: PointerEvent, cancelled: boolean) => {
+      const decision = resolveTouchDragEnd(touchDragRef.current, ev.pointerId, cancelled)
+      // 不是发起拖拽的那根手指：保持原会话不动
+      if (!decision.clear) return
       touchDragRef.current = null
-      if (!state || ev.pointerId !== state.pointerId) return
-      if (state.active) {
-        const from = state.fromIndex
-        const to = state.overIndex ?? state.fromIndex
-        if (from !== to) reorderWidgetsRef.current(from, to)
-      }
+      if (decision.reorder) reorderWidgetsRef.current(decision.reorder[0], decision.reorder[1])
       setDraggedIndex(null)
       setDragOverIndex(null)
     }
+    const handleUp = (ev: PointerEvent) => finish(ev, false)
+    const handleCancel = (ev: PointerEvent) => finish(ev, true)
 
     window.addEventListener('pointermove', handleMove, { passive: false })
     window.addEventListener('pointerup', handleUp)
-    window.addEventListener('pointercancel', handleUp)
+    window.addEventListener('pointercancel', handleCancel)
     return () => {
       window.removeEventListener('pointermove', handleMove)
       window.removeEventListener('pointerup', handleUp)
-      window.removeEventListener('pointercancel', handleUp)
+      window.removeEventListener('pointercancel', handleCancel)
     }
   }, [touchDragSession])
 

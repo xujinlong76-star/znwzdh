@@ -699,7 +699,7 @@ describe("F0 / E1 / E5 / E6 / E4 / E3 / F2 API", () => {
     expect(before.statusCode).toBe(200);
     const beforeTotals = before.json().totals;
 
-    for (const kind of ["plugin_view", "plugin_install_click"] as const) {
+    for (const kind of ["plugin_view", "plugin_install_click", "plugin_uninstall_click"] as const) {
       const res = await app.inject({
         method: "POST",
         url: "/api/events",

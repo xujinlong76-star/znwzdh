@@ -70,6 +70,41 @@ export function resolveDropIndex(x: number, y: number, rects: ItemRect[]): numbe
   return bestIndex
 }
 
+export interface TouchDragState {
+  pointerId: number
+  fromIndex: number
+  overIndex: number | null
+  active: boolean
+}
+
+export interface TouchDragEnd {
+  /** 是否清理拖拽会话与高亮 */
+  clear: boolean
+  /** 需要提交的换位（null = 不换位） */
+  reorder: [from: number, to: number] | null
+}
+
+/**
+ * 指针结束时的收尾决策。
+ *
+ * - 不是发起拖拽的那根手指（多指触控）→ 什么都不做。早先实现会在这里清掉
+ *   整个会话，原拖动会永久卡在「拖拽中」高亮。
+ * - pointercancel（系统手势 / 来电 / 浏览器接管）→ 只清理、不换位。
+ *   取消不等于确认，早先实现把它当成 pointerup，模块会被误移动。
+ */
+export function resolveTouchDragEnd(
+  state: TouchDragState | null,
+  endPointerId: number,
+  cancelled: boolean,
+): TouchDragEnd {
+  if (!state || state.pointerId !== endPointerId) return { clear: false, reorder: null }
+  if (cancelled) return { clear: true, reorder: null }
+  if (state.active && state.overIndex !== null && state.overIndex !== state.fromIndex) {
+    return { clear: true, reorder: [state.fromIndex, state.overIndex] }
+  }
+  return { clear: true, reorder: null }
+}
+
 /** 从 DOM 元素上读出卡片索引（用于命中测试） */
 export function readItemIndex(el: Element | null): number | null {
   if (!el) return null

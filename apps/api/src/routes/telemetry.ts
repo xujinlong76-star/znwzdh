@@ -25,7 +25,7 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
   const EVENT_KINDS = [
     "click", "favorite", "unfavorite", "impression", "dismiss",
     // 插件市场漏斗（浏览 → 安装点击 → 安装成功/卸载在服务端路由补记）
-    "plugin_view", "plugin_install_click", "plugin_share",
+    "plugin_view", "plugin_install_click", "plugin_uninstall_click", "plugin_share",
   ] as const;
 
   app.post("/api/events", async (req, reply) => {
@@ -34,7 +34,7 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       siteId: z.string().optional(),
       query: z.string().optional(),
       categoryId: z.string().optional(),
-      /** 插件事件归属（plugin_view / plugin_install_click / plugin_share） */
+      /** 插件事件归属（plugin_view / plugin_install_click / plugin_uninstall_click / plugin_share） */
       pluginSlug: z.string().max(80).optional(),
       channel: z.enum(["exact", "fts", "pinyin", "semantic", "personal"]).optional(),
       dwellSeconds: z.number().min(0).max(3600).optional(),

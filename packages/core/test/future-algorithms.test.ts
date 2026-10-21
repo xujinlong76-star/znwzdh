@@ -408,6 +408,14 @@ describe('前沿算法进阶改造测试套件', () => {
       const resMidnight = parseSpeculativeIntent('0 0 * * *');
       expect(resMidnight?.type).toBe('cron');
       expect(resMidnight?.subtitle).toContain('午夜 00:00');
+
+      // 回归：分钟位不为 0 时曾固定输出 "9:00"，把 09:30 说成 09:00
+      const resHalfPast = parseSpeculativeIntent('30 9 * * *');
+      expect(resHalfPast?.subtitle).toContain('每天 09:30');
+
+      // 回归：步长小时曾被当成「每天 */2:00」
+      const resEvery2h = parseSpeculativeIntent('0 */2 * * *');
+      expect(resEvery2h?.subtitle).toContain('每隔 2 小时');
     });
 
     it('应当解析 JWT Token 并分析过期状态', () => {

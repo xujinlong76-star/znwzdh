@@ -106,3 +106,16 @@ export function evaluateArithmeticExpression(input: string): number | null {
   if (result === null || i !== s.length || !Number.isFinite(result)) return null;
   return result;
 }
+
+/**
+ * 把算术结果格式化成人读文本。
+ *
+ * 不能用 `toFixed(4).replace(/\.?0+$/, '')` 直接收尾：1/100000 = 0.00001
+ * 会得到空串，负数则只剩一个 "-" —— 预览卡片看起来像计算失败。
+ * 小于 1e-4 的非零结果改用有效数字表示。
+ */
+export function formatArithmeticResult(result: number): string {
+  if (Number.isInteger(result)) return result.toString();
+  if (Math.abs(result) < 0.0001) return Number(result.toPrecision(4)).toString();
+  return result.toFixed(4).replace(/\.?0+$/, "");
+}

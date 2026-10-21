@@ -59,7 +59,7 @@ export function isBlockedIp(ip: string): boolean {
 export function isBlockedIpv4(ip: string): boolean {
   const parts = ip.split(".").map((p) => Number(p));
   if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
-  const [a, b] = parts as [number, number, number, number];
+  const [a, b, c] = parts as [number, number, number, number];
 
   if (a === 0) return true;                          // 0.0.0.0/8      "本网络"
   if (a === 10) return true;                         // 10.0.0.0/8     私网
@@ -68,11 +68,14 @@ export function isBlockedIpv4(ip: string): boolean {
   if (a === 169 && b === 254) return true;           // 169.254.0.0/16 链路本地（云元数据！）
   if (a === 172 && b >= 16 && b <= 31) return true;  // 172.16.0.0/12  私网
   if (a === 192 && b === 168) return true;           // 192.168.0.0/16 私网
-  if (a === 192 && b === 0) return true;             // 192.0.0.0/24   保留
-  if (a === 192 && b === 88) return true;            // 192.88.99.0/24 6to4 中继
+  // 以下保留网段必须精确到 /24：早先只比较前两段，把 192.0.1.x/192.88.1.x
+  // 这类正常公网地址一起拦了；同时 192.0.2.0/24（TEST-NET-1）反而漏拦。
+  if (a === 192 && b === 0 && c === 0) return true;  // 192.0.0.0/24   IETF 协议保留
+  if (a === 192 && b === 0 && c === 2) return true;  // 192.0.2.0/24   TEST-NET-1 文档
+  if (a === 192 && b === 88 && c === 99) return true; // 192.88.99.0/24 6to4 中继
   if (a === 198 && (b === 18 || b === 19)) return true; // 198.18.0.0/15 基准测试
-  if (a === 198 && b === 51) return true;            // 192.0.2/198.51.100 文档
-  if (a === 203 && b === 0) return true;             // 203.0.113.0/24 文档
+  if (a === 198 && b === 51 && c === 100) return true;  // 198.51.100.0/24 文档
+  if (a === 203 && b === 0 && c === 113) return true;   // 203.0.113.0/24 文档
   if (a >= 224) return true;                         // 224.0.0.0/4 组播 + 240.0.0.0/4 保留 + 255.255.255.255
   return false;
 }

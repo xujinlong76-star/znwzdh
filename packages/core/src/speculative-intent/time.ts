@@ -80,10 +80,14 @@ export function tryParseCron(input: string): SpeculativeIntentResult | null {
   } else if (min?.startsWith('*/')) {
     const step = min.slice(2);
     explanation = `每隔 ${step} 分钟执行一次`;
-  } else if (min === '0' && hour === '0' && dom === '*' && mon === '*' && dow === '*') {
-    explanation = '每天午夜 00:00 执行一次';
-  } else if (min === '0' && hour !== '*' && dom === '*' && mon === '*' && dow === '*') {
-    explanation = `每天 ${hour}:00 执行一次`;
+  } else if (hour?.startsWith('*/')) {
+    const step = hour.slice(2);
+    explanation = min === '0' ? `每隔 ${step} 小时执行一次` : `每隔 ${step} 小时的第 ${min} 分执行一次`;
+  } else if (/^\d+$/.test(min ?? '') && /^\d+$/.test(hour ?? '') && dom === '*' && mon === '*' && dow === '*') {
+    // 分钟位不一定为 0（如 "30 9 * * *"），此前固定写成 "9:00" 会把时间说错
+    const h = String(Number(hour)).padStart(2, '0');
+    const m = String(Number(min)).padStart(2, '0');
+    explanation = h === '00' && m === '00' ? '每天午夜 00:00 执行一次' : `每天 ${h}:${m} 执行一次`;
   } else if (dow !== '*' && dom === '*') {
     explanation = `每周特定工作日/周末执行 (星期: ${dow})`;
   } else {

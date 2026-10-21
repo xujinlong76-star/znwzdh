@@ -2,7 +2,7 @@
  * 计算/取值族检测器：算术表达式求值、颜色（HEX/RGB）速览。
  */
 import type { SpeculativeIntentResult } from './types.ts'
-import { evaluateArithmeticExpression } from './arithmetic.ts'
+import { evaluateArithmeticExpression, formatArithmeticResult } from './arithmetic.ts'
 
 /**
  * 纯算术表达式求值（安全计算，杜绝 unsafe eval）
@@ -21,7 +21,7 @@ export function tryParseMath(input: string): SpeculativeIntentResult | null {
   const result = evaluateArithmeticExpression(trimmed);
   if (result === null) return null;
 
-  const formatted = Number.isInteger(result) ? result.toString() : result.toFixed(4).replace(/\.?0+$/, '');
+  const formatted = formatArithmeticResult(result);
   return {
     type: 'math',
     title: '算术即刻计算',

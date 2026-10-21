@@ -6,6 +6,7 @@ import {
   isCoarsePointer,
   readItemIndex,
   resolveDropIndex,
+  resolveTouchDragEnd,
   shouldActivateTouchDrag,
   type ItemRect,
 } from '../src/lib/modular/touch-reorder'
@@ -73,5 +74,29 @@ describe('移动端 DIY 拖拽：命中判定', () => {
     expect(readItemIndex(fake('abc'))).toBeNull()
     expect(readItemIndex(null)).toBeNull()
     expect(ITEM_INDEX_ATTR).toBe('data-modular-item-index')
+  })
+})
+
+describe('移动端 DIY 拖拽：结束与取消', () => {
+  const base = { pointerId: 7, fromIndex: 2, overIndex: 5, active: true }
+
+  it('同一根手指松手时提交换位', () => {
+    expect(resolveTouchDragEnd(base, 7, false)).toEqual({ clear: true, reorder: [2, 5] })
+  })
+
+  it('放回原位或没有命中目标时不换位', () => {
+    expect(resolveTouchDragEnd({ ...base, overIndex: 2 }, 7, false)).toEqual({ clear: true, reorder: null })
+    expect(resolveTouchDragEnd({ ...base, overIndex: null }, 7, false)).toEqual({ clear: true, reorder: null })
+    expect(resolveTouchDragEnd({ ...base, active: false }, 7, false)).toEqual({ clear: true, reorder: null })
+  })
+
+  it('pointercancel（系统手势/来电）只清理，不提交换位', () => {
+    expect(resolveTouchDragEnd(base, 7, true)).toEqual({ clear: true, reorder: null })
+  })
+
+  it('其他手指抬起不能清掉进行中的拖拽会话', () => {
+    expect(resolveTouchDragEnd(base, 8, false)).toEqual({ clear: false, reorder: null })
+    expect(resolveTouchDragEnd(base, 8, true)).toEqual({ clear: false, reorder: null })
+    expect(resolveTouchDragEnd(null, 7, false)).toEqual({ clear: false, reorder: null })
   })
 })

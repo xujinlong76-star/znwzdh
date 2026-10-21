@@ -21,7 +21,9 @@ describe('移动端 DIY 拖拽通道必须保持在', () => {
     expect(canvas).toContain("from '@/lib/modular/touch-reorder'")
     expect(canvas).toContain('shouldActivateTouchDrag')
     expect(canvas).toContain('resolveDropIndex')
-    expect(canvas).toContain('reorderWidgetsRef.current(from, to)')
+    // 判定已收敛到纯函数 resolveTouchDragEnd，最终仍复用既有换位入口
+    expect(canvas).toContain('resolveTouchDragEnd')
+    expect(canvas).toContain('reorderWidgetsRef.current(decision.reorder[0], decision.reorder[1])')
     expect(canvas).toContain('onTouchDragPointerDown={handleTouchDragPointerDown}')
   })
 

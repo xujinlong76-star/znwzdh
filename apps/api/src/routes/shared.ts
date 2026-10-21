@@ -131,6 +131,69 @@ export function parseTimeWindow(
 }
 
 /* ------------------------------------------------------------------ *
+ * 分面过滤参数预算 (Facet Filter Budget)
+ * ------------------------------------------------------------------ */
+
+/** facets 允许的键数上限（一次分面过滤的维度本来就不该有几十个） */
+export const FACET_MAX_KEYS = 20;
+/** 单个 facets 键允许的值个数上限（与 /api/search schema 里数组的 .max(200) 同口径） */
+export const FACET_MAX_VALUES_PER_KEY = 200;
+
+/**
+ * 归一化客户端传来的 `facets`（对象或 JSON 字符串），并强制预算。
+ *
+ * 为什么必须在路由层做，而不是交给存储层：
+ *  - `facets` 是**公开读接口**上的自由 JSON。`filterSiteIdsByFacets` 会按「键数」
+ *    发查询、按「每键值数」拼 `IN (?,...)`。没有预算时，一条 ~10KB 的查询串就能
+ *    放大成上千次绑定参数与整表扫，参数总数还会超 SQLite/PG 的语句级上限 → 500。
+ *  - 旧实现把「解析失败」静默当成「没传 filters」：客户端以为自己在按 pricing 筛选，
+ *    实际拿到的是**未过滤的全量列表**。错误输入必须回 400，不能回错数据。
+ *
+ * @returns `error` 非空时调用方直接回 400；否则 `facets` 已去空、去重、转小写
+ */
+export function clampFacets(input: unknown): { facets?: Record<string, string[]>; error?: string } {
+  if (input === undefined || input === null) return {};
+  let source: unknown = input;
+  if (typeof source === "string") {
+    const trimmed = source.trim();
+    if (!trimmed) return {};
+    try {
+      source = JSON.parse(trimmed);
+    } catch {
+      return { error: "facets 必须是合法的 JSON 对象" };
+    }
+  }
+  if (Array.isArray(source) || typeof source !== "object" || source === null) {
+    return { error: "facets 必须是 { 键: 值或值数组 } 形态的对象" };
+  }
+  const entries = Object.entries(source as Record<string, unknown>);
+  if (entries.length > FACET_MAX_KEYS) {
+    return { error: `facets 最多 ${FACET_MAX_KEYS} 个键，收到 ${entries.length} 个` };
+  }
+  const facets: Record<string, string[]> = {};
+  for (const [key, rawValue] of entries) {
+    if (!key.trim()) continue;
+    const rawValues = Array.isArray(rawValue) ? rawValue : [rawValue];
+    const values: string[] = [];
+    for (const v of rawValues) {
+      // 只接受纯量：以前 `String(v)` 会把 null 变成 'null'、把 {a:1} 变成
+      // '[object Object]' 一起绑进 SQL；静默丢弃同样糟（客户端以为在筛选，
+      // 条件其实已经消失）。两种都回 400，让调用方立刻知道自己的写法错了。
+      if (typeof v !== "string" && typeof v !== "number") {
+        return { error: `facets.${key} 的值必须是字符串或数字` };
+      }
+      const normalized = String(v).trim().toLowerCase();
+      if (normalized) values.push(normalized);
+    }
+    if (values.length > FACET_MAX_VALUES_PER_KEY) {
+      return { error: `facets.${key} 最多 ${FACET_MAX_VALUES_PER_KEY} 个值，收到 ${values.length} 个` };
+    }
+    if (values.length > 0) facets[key.trim().toLowerCase()] = [...new Set(values)];
+  }
+  return { facets };
+}
+
+/* ------------------------------------------------------------------ *
  * 流式通道与日志助手 (Streaming & Audit Utilities)
  * ------------------------------------------------------------------ */
 

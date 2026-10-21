@@ -25,6 +25,7 @@ import type { Db, Dialect } from "./driver.ts";
 import type { FullTextStore } from "./fts.ts";
 import { bindSqlite, toPgSql } from "./repository.ts";
 import { containsLike, escapeLike, prefixLike } from "./sql-like.ts";
+import { chunkList } from "./sql-in.ts";
 import type { VectorStore } from "./vector/types.ts";
 
 /**
@@ -878,37 +879,42 @@ export class SearchEngine {
    * - 单个分面键内的多个取值（例如 platform = web OR platform = ios）为 OR（并集）
    */
   private async siteIdsWithFacets(facets: Record<string, string[]>): Promise<Set<string>> {
-    const keys = Object.keys(facets).filter((k) => Array.isArray(facets[k]) && facets[k].length > 0);
-    if (keys.length === 0) return new Set();
+    const conditions = Object.entries(facets)
+      .map(([key, rawVals]) => {
+        const vals = [...new Set((rawVals ?? []).map((v) => String(v).trim().toLowerCase()).filter(Boolean))];
+        return vals.length > 0 ? { key: key.toLowerCase(), vals } : null;
+      })
+      .filter((c): c is { key: string; vals: string[] } => c !== null);
+    if (conditions.length === 0) return new Set();
 
-    let candidateSet: Set<string> | null = null;
-
-    for (const key of keys) {
-      const rawVals = facets[key] ?? [];
-      const vals = [...new Set(rawVals.map((v) => String(v).trim().toLowerCase()).filter(Boolean))];
-      if (vals.length === 0) continue;
-
-      const placeholders = vals.map(() => "?").join(", ");
-      const rows = await this.rawRows(
-        `SELECT DISTINCT site_id AS id FROM site_facets WHERE facet_key = ? AND facet_value IN (${placeholders})`,
-        [key.toLowerCase(), ...vals],
-      );
-      const currentKeySites = new Set(rows.map((r) => r.id));
-
-      if (candidateSet === null) {
-        candidateSet = currentKeySites;
-      } else {
-        const nextSet = new Set<string>();
-        for (const id of candidateSet) {
-          if (currentKeySites.has(id)) nextSet.add(id);
+    // 条件之间并发查（键数与每键值数已由路由侧 clampFacets 设预算），
+    // 值再按 SQL_IN_CHUNK 分片，保证绑定参数不会撞语句级上限。
+    const perCondition = await Promise.all(
+      conditions.map(async ({ key, vals }) => {
+        const sites = new Set<string>();
+        for (const part of chunkList(vals)) {
+          const placeholders = part.map(() => "?").join(", ");
+          const rows = await this.rawRows(
+            `SELECT DISTINCT site_id AS id FROM site_facets WHERE facet_key = ? AND facet_value IN (${placeholders})`,
+            [key, ...part],
+          );
+          for (const r of rows) sites.add(r.id);
         }
-        candidateSet = nextSet;
-      }
+        return sites;
+      }),
+    );
 
-      if (candidateSet.size === 0) return new Set();
+    let candidateSet = perCondition[0]!;
+    for (const set of perCondition.slice(1)) {
+      if (candidateSet.size === 0) break;
+      const nextSet = new Set<string>();
+      for (const id of candidateSet) {
+        if (set.has(id)) nextSet.add(id);
+      }
+      candidateSet = nextSet;
     }
 
-    return candidateSet ?? new Set();
+    return candidateSet;
   }
 
   /** 方言无关的原始查询：sqlite 同步、pg 异步，这里统一成 Promise */

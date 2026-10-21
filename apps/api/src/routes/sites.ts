@@ -6,12 +6,12 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
-import { canonicalizeUrl, sanitizeIconUrl, SiteCreateBody } from "@navhub/core";
+import { canonicalizeUrl, httpUrl, sanitizeIconUrl, SiteCreateBody } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
-import { identityOf } from "./shared.ts";
+import { badRequest, clampFacets, identityOf } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -32,25 +32,17 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
 
   // 注意：保持返回数组（不包 {items,hasMore}）：前端多处按数组消费，改结构会破坏兼容。
   // 默认 limit 100、上限 1000 防全表扫；offset 分页支持。
-  app.get("/api/sites", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req) => {
+  app.get("/api/sites", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
     const q = (req.query ?? {}) as Record<string, unknown>;
     const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 1000);
     const offset = Math.max(0, Number(q.offset) || 0);
-    let facets: Record<string, string[]> | undefined = undefined;
-    if (q.facets) {
-      try {
-        facets = typeof q.facets === "string"
-          ? (JSON.parse(q.facets) as Record<string, string[]>)
-          : (q.facets as Record<string, string[]>);
-      } catch {
-        // ignore
-      }
-    }
+    const facetFilter = clampFacets(q.facets);
+    if (facetFilter.error) return badRequest(reply, "参数无效", facetFilter.error);
     return ctx.repo.listSites({
       categoryId: typeof q.categoryId === "string" ? q.categoryId : undefined,
       status: parseStatusFilter(q.status),
       source: typeof q.source === "string" ? q.source : undefined,
-      facets,
+      facets: facetFilter.facets,
       limit,
       offset,
     });
@@ -79,6 +71,9 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     if (rawBody.enrich === true && (!rawBody.categoryId || typeof rawBody.categoryId !== "string")) {
       const url = typeof rawBody.url === "string" ? rawBody.url.trim() : "";
       if (!url) { reply.code(400); return { error: "缺少 URL 参数" }; }
+      // 本分支绕过了 siteInput：不校验协议的话，enrichUrl 抓失败仍会把伪协议原样落库
+      const shape = httpUrl().safeParse(url);
+      if (!shape.success) { reply.code(400); return { error: "参数无效", detail: shape.error.issues }; }
       const dup = await ctx.repo.findSiteByUrl(url);
       if (dup) { reply.code(409); return { error: "该网址已存在", siteId: dup.id, site: dup, created: false, reason: "已存在" }; }
       const categories = await ctx.repo.listCategories();
@@ -213,7 +208,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   app.post("/api/sites/batch", { config: { scope: "write", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
     const body = z.object({
       sites: z.array(z.object({
-        url: z.string().url(),
+        url: httpUrl(),
         title: z.string().min(1).optional(),
         description: z.string().nullable().optional(),
         categoryId: z.string().optional(),

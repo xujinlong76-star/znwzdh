@@ -93,7 +93,7 @@ export interface AppContext {
 | --- | --- | --- |
 | `logger.level` | `NAVHUB_LOG_LEVEL`，测试时 `silent` | |
 | `bodyLimit` | 4 MB | |
-| `trustProxy` | 默认 **true**，`NAVHUB_TRUST_PROXY=0` 关闭 | 前端 `/api/hub/*` 代理透传 `X-Forwarded-For`；不信任会退化成整站共享一个限流桶 |
+| `trustProxy` | 默认**关闭**（`NAVHUB_TRUST_PROXY=0`/未设）；`1`/`true` 信任整条链；其它字符串按 proxy-addr 网段列表 | 前端 `/api/hub/*` 代理透传 `X-Forwarded-For`；完全不信任会退化成整站共享一个限流桶。`1` 取的是客户端自报的最左值（可伪造绕限流），反代后应写网段列表如 `"loopback, 172.16.0.0/12"` |
 | CORS | `NAVHUB_CORS_ORIGINS`（默认 `*`），`credentials: true` | |
 | 全局限流 | 300 次/分钟 | 路由级可覆盖 |
 

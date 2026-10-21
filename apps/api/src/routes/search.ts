@@ -7,7 +7,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { recordSearchChannels } from "../metrics.ts";
 
-import { badRequest } from "./shared.ts";
+import { badRequest, clampFacets } from "./shared.ts";
 import { refreshUserProfile } from "../profile-service.ts";
 import type { AppContext } from "../context.ts";
 
@@ -31,17 +31,14 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     offset: z.coerce.number().int().min(0).max(1000).optional(),
     categoryId: z.string().optional(),
     tag: z.string().optional(),
-    facets: z.union([
-      z.record(z.string(), z.array(z.string()).max(200)),
-      z.string().transform((str) => {
-        try {
-          const parsed = JSON.parse(str);
-          return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : undefined;
-        } catch {
-          return undefined;
-        }
-      }),
-    ]).optional(),
+    /**
+     * facets 的校验交给 clampFacets（结构 + 预算：键数、每键值数、值类型）。
+     * 这里只留 unknown：以前是 union + 静默 transform，「非法 JSON」会退化成
+     * undefined → 客户端以为在按分面筛选，实际拿到的是未过滤的全量结果；
+     * 而且 GET 的 JSON 字符串分支绕过 `.max(200)`，值个数完全由客户端决定
+     * （一次 IN 查询的绑定参数数量 = 客户端给的个数）。
+     */
+    facets: z.unknown().optional(),
     excludedTerms: z.union([
       z.array(z.string()),
       z.string().transform((str) => str.split(",").map((s) => s.trim()).filter(Boolean)),
@@ -62,16 +59,20 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true } } }, async (req, reply) => {
     const parsed = searchBody.safeParse(req.query ?? {});
     if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
-    return runSearch(parsed.data);
+    const facetFilter = clampFacets(parsed.data.facets);
+    if (facetFilter.error) return badRequest(reply, "参数无效", facetFilter.error);
+    return runSearch(parsed.data, facetFilter.facets);
   });
 
   app.post("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req, reply) => {
     const parsed = searchBody.safeParse(req.body ?? {});
     if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
-    return runSearch(parsed.data);
+    const facetFilter = clampFacets(parsed.data.facets);
+    if (facetFilter.error) return badRequest(reply, "参数无效", facetFilter.error);
+    return runSearch(parsed.data, facetFilter.facets);
   });
 
-  async function runSearch(input: z.infer<typeof searchBody>) {
+  async function runSearch(input: z.infer<typeof searchBody>, facets?: Record<string, string[]>) {
     // 个性化信号服务端解析：身份 -> user_profiles -> personalize。
     // 显式传 personalize 的调用方（测试 / MCP）优先，保持向后兼容。
     // 检索前顺手刷新画像（节流 60s）：第一次搜索没有画像就没有个性化，符合预期。
@@ -96,7 +97,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
     }
 
-    const result = await ctx.search.search({ ...input, personalize });
+    const result = await ctx.search.search({ ...input, facets, personalize });
     // Query Planner 观测：每次检索后记一次决策与通道耗时（/metrics 透出）。
     // 必须读本次 result 上的 channelTimings —— ctx.search 是单例，
     // getLastTimings() 在并发请求下会把别的请求的耗时记到这一次头上。

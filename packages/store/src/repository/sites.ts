@@ -58,6 +58,7 @@ import {
   toPgSql,
 } from "./dialect.ts";
 import type { Db } from "../driver.ts";
+import { chunkList, inPredicate, SQL_IN_CHUNK } from "../sql-in.ts";
 
 export async function listSites(repo: Repository, filter: { categoryId?: string; status?: SiteStatus; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {
   const where: string[] = ["s.deleted_at IS NULL"];
@@ -65,23 +66,58 @@ export async function listSites(repo: Repository, filter: { categoryId?: string;
   if (filter.categoryId) { where.push("s.category_id = ?"); params.push(filter.categoryId); }
   if (filter.status) { where.push("s.status = ?"); params.push(filter.status); }
   if (filter.source) { where.push("s.source = ?"); params.push(filter.source); }
-  if (filter.facets && Object.keys(filter.facets).length > 0) {
-    const ids = await repo.filterSiteIdsByFacets(filter.facets);
-    if (ids.length === 0) return [];
-    where.push("s.id IN (" + ids.map(() => "?").join(",") + ")");
-    params.push(...ids);
-  }
   // 默认 limit 100、上限 1000：无限制的全表扫是慢查询主因；调用方需显式传 limit 覆盖。
   const limit = Math.min(Math.max(filter.limit ?? 100, 1), 1000);
   const offset = Math.max(0, filter.offset ?? 0);
-  const sqlText = repo.selectSitesSql() +
-    " WHERE " + where.join(" AND ") +
-    " GROUP BY s.id" +
-    " ORDER BY s.sort ASC, s.weight DESC" +
-    " LIMIT ? OFFSET ?";
-  params.push(limit, offset);
-  const rows = await repo.raw(sqlText, params);
-  return rows.map(rowToSite);
+
+  let facetIds: string[] | null = null;
+  if (filter.facets && Object.keys(filter.facets).length > 0) {
+    facetIds = await repo.filterSiteIdsByFacets(filter.facets);
+    if (facetIds.length === 0) return [];
+    if (facetIds.length <= SQL_IN_CHUNK) {
+      const predicate = inPredicate("s.id", facetIds);
+      where.push(predicate.sql);
+      params.push(...predicate.params);
+    }
+  }
+  const baseWhere = where.join(" AND ");
+  const baseParams = [...params];
+
+  if (facetIds === null || facetIds.length <= SQL_IN_CHUNK) {
+    const sqlText = repo.selectSitesSql() +
+      " WHERE " + baseWhere +
+      " GROUP BY s.id" +
+      " ORDER BY s.sort ASC, s.weight DESC" +
+      " LIMIT ? OFFSET ?";
+    const rows = await repo.raw(sqlText, [...baseParams, limit, offset]);
+    return rows.map(rowToSite);
+  }
+
+  // 分面交集超过一片（热门分面值能覆盖上千站点）时，不能把 id 全绑进一条语句：
+  // 参数上限是语句级的（见 sql-in.ts），超限就是 500 而不是变慢。
+  // 分片各取「本页候选」（只取排序键与 id，成本远低于整行），在 JS 里按同一条
+  // ORDER BY 归并分页，最后用内部已分片的 getSitesByIds 取整行。
+  const window = offset + limit;
+  const ranked: Array<{ id: string; sort: number; weight: number }> = [];
+  for (const part of chunkList(facetIds)) {
+    const predicate = inPredicate("s.id", part);
+    const rows = (await repo.raw(
+      "SELECT s.id AS id, s.sort AS sort, s.weight AS weight FROM sites s" +
+        " WHERE " + predicate.sql + " AND " + baseWhere +
+        " ORDER BY s.sort ASC, s.weight DESC LIMIT ?",
+      [...predicate.params, ...baseParams, window],
+    )) as Array<{ id: unknown; sort: unknown; weight: unknown }>;
+    for (const r of rows) {
+      ranked.push({ id: String(r.id), sort: Number(r.sort) || 0, weight: Number(r.weight) || 0 });
+    }
+  }
+  ranked.sort((a, b) => a.sort - b.sort || b.weight - a.weight);
+  const pageIds = ranked.slice(offset, offset + limit).map((r) => r.id);
+  if (pageIds.length === 0) return [];
+  const siteMap = await repo.getSitesByIds(pageIds);
+  return pageIds
+    .map((id) => siteMap.get(id))
+    .filter((s): s is Site => Boolean(s));
 }
 
 /**
@@ -107,12 +143,11 @@ export async function getSitesByIds(repo: Repository, ids: string[]): Promise<Ma
   const out = new Map<string, Site>();
   const uniq = [...new Set(ids.filter(Boolean))];
   if (uniq.length === 0) return out;
-  for (let i = 0; i < uniq.length; i += 500) {
-    const chunk = uniq.slice(i, i + 500);
-    const placeholders = chunk.map(() => "?").join(", ");
+  for (const part of chunkList(uniq)) {
+    const placeholders = part.map(() => "?").join(", ");
     const rows = await repo.raw(
       repo.selectSitesSql() + " WHERE s.id IN (" + placeholders + ") AND s.deleted_at IS NULL",
-      chunk,
+      part,
     );
     for (const r of rows.map(rowToSite)) out.set(r.id, r);
   }
@@ -397,43 +432,46 @@ export async function filterSiteIdsByFacets(
   repo: Repository,
   facets: Record<string, string[] | string | null | undefined>,
 ): Promise<string[]> {
-  const keys = Object.keys(facets).filter((k) => {
-    const v = facets[k];
-    return Array.isArray(v) ? v.length > 0 : Boolean(v);
-  });
-  if (keys.length === 0) return [];
+  const conditions = Object.entries(facets)
+    .map(([rawKey, rawVal]) => {
+      const vals = (Array.isArray(rawVal) ? rawVal : [rawVal])
+        .filter((v) => v !== null && v !== undefined)
+        .map((v) => String(v).trim().toLowerCase())
+        .filter(Boolean);
+      return vals.length > 0 ? { key: rawKey.trim().toLowerCase(), vals } : null;
+    })
+    .filter((c): c is { key: string; vals: string[] } => c !== null);
+  if (conditions.length === 0) return [];
 
-  let candidateSet: Set<string> | null = null;
-
-  for (const rawKey of keys) {
-    const key = rawKey.trim().toLowerCase();
-    const rawVal = facets[rawKey];
-    const vals = (Array.isArray(rawVal) ? rawVal : [rawVal])
-      .map((v) => String(v).trim().toLowerCase())
-      .filter(Boolean);
-    if (vals.length === 0) continue;
-
-    const placeholders = vals.map(() => "?").join(", ");
-    const rows = await repo.raw(
-      `SELECT DISTINCT site_id FROM site_facets WHERE facet_key = ? AND facet_value IN (${placeholders})`,
-      [key, ...vals],
-    );
-    const currentKeySites = new Set(rows.map((r: any) => String(r.site_id)));
-
-    if (candidateSet === null) {
-      candidateSet = currentKeySites;
-    } else {
-      const next = new Set<string>();
-      for (const id of candidateSet) {
-        if (currentKeySites.has(id)) next.add(id);
+  // 条件之间并发查：条件数由客户端的 facets JSON 决定，串行 await 等于
+  // 「一个查询串放大成 N 次网络往返」（PG 上实测每个 key 一跳）。
+  // DbAccessGate 允许并发读，所以这里 Promise.all 不与写事务争锁。
+  const perCondition = await Promise.all(
+    conditions.map(async ({ key, vals }) => {
+      const sites = new Set<string>();
+      for (const part of chunkList(vals)) {
+        const placeholders = part.map(() => "?").join(", ");
+        const rows = (await repo.raw(
+          `SELECT DISTINCT site_id FROM site_facets WHERE facet_key = ? AND facet_value IN (${placeholders})`,
+          [key, ...part],
+        )) as Array<{ site_id: unknown }>;
+        for (const r of rows) sites.add(String(r.site_id));
       }
-      candidateSet = next;
-    }
+      return sites;
+    }),
+  );
 
-    if (candidateSet.size === 0) return [];
+  let candidateSet = perCondition[0]!;
+  for (const set of perCondition.slice(1)) {
+    if (candidateSet.size === 0) break;
+    const next = new Set<string>();
+    for (const id of candidateSet) {
+      if (set.has(id)) next.add(id);
+    }
+    candidateSet = next;
   }
 
-  return candidateSet ? [...candidateSet] : [];
+  return [...candidateSet];
 }
 
 export async function listFacetsSummary(

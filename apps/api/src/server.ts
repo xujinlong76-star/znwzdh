@@ -54,6 +54,7 @@ import { rankRoutes } from "./routes/rank.ts";
 import { agentRoutes } from "./routes/agents.ts";
 import { historyRoutes } from "./routes/history.ts";
 import { profileRoutes } from "./routes/profile.ts";
+import { meRoutes } from "./routes/me.ts";
 import { vaultRoutes } from "./routes/vault.ts";
 import { crdtRoutes } from "./routes/crdt.ts";
 import { identityRoutes } from "./routes/identity.ts";
@@ -436,6 +437,7 @@ export async function buildServer(ctx: AppContext) {
   await app.register(agentRoutes, { ctx });
   await app.register(historyRoutes, { ctx });
   await app.register(profileRoutes, { ctx });
+  await app.register(meRoutes, { ctx });
   await app.register(vaultRoutes, { ctx });
   await app.register(crdtRoutes, { ctx });
   await app.register(identityRoutes, { ctx });

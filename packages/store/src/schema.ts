@@ -189,6 +189,23 @@ export const sessions = sqliteTable("sessions", {
   createdAt: integer("created_at").notNull().$defaultFn(now),
 });
 
+/** 匿名身份 -> 登录身份的别名；合并后旧 anonId 仍能解析到 canonical id */
+export const identityAliases = sqliteTable("identity_aliases", {
+  alias: text("alias").primaryKey(),
+  canonical: text("canonical").notNull(),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [index("identity_aliases_canonical_idx").on(t.canonical)]);
+
+/** 合并记录（幂等 + 审计）；同一 source/target 只允许一条 */
+export const identityMerges = sqliteTable("identity_merges", {
+  id: text("id").primaryKey(),
+  source: text("source").notNull(),
+  target: text("target").notNull(),
+  status: text("status").notNull().default("completed"),
+  stats: text("stats"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [uniqueIndex("identity_merges_pair_idx").on(t.source, t.target)]);
+
 export const apiTokens = sqliteTable("api_tokens", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

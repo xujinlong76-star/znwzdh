@@ -179,6 +179,26 @@ CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL
 );
 
+-- 匿名身份 -> 登录身份的别名（合并后旧 anonId 仍可解析到 canonical userId，
+-- 避免旧标签页/其它设备带着旧 id 继续读写孤儿数据）
+CREATE TABLE IF NOT EXISTS identity_aliases (
+  alias TEXT PRIMARY KEY,
+  canonical TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS identity_aliases_canonical_idx ON identity_aliases(canonical);
+
+-- 合并记录：幂等与审计的唯一凭据（同一 source/target 只允许一条）
+CREATE TABLE IF NOT EXISTS identity_merges (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  target TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'completed',
+  stats TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS identity_merges_pair_idx ON identity_merges(source, target);
+
 CREATE TABLE IF NOT EXISTS api_tokens (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL,
   scopes TEXT NOT NULL DEFAULT 'read', last_used_at INTEGER, expires_at INTEGER, created_at INTEGER NOT NULL,
@@ -579,6 +599,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users(username);
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at BIGINT NOT NULL, created_at BIGINT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS identity_aliases (
+  alias TEXT PRIMARY KEY,
+  canonical TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS identity_aliases_canonical_idx ON identity_aliases(canonical);
+
+CREATE TABLE IF NOT EXISTS identity_merges (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  target TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'completed',
+  stats TEXT,
+  created_at BIGINT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS identity_merges_pair_idx ON identity_merges(source, target);
 
 CREATE TABLE IF NOT EXISTS api_tokens (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL,

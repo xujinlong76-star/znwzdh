@@ -88,6 +88,11 @@ export function resetProfileThrottle(): void {
   lastRefresh.clear();
 }
 
+/** 身份合并后让目标画像立即重建：清掉该身份的节流记录 */
+export function invalidateProfileThrottle(identity: string): void {
+  lastRefresh.delete(identity);
+}
+
 /**
  * 重置某身份的个性化画像（「我的偏好」页面的重置按钮）。
  *

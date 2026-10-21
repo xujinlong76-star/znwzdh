@@ -35,6 +35,7 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       username: body.data.username,
       email: body.data.email ?? null,
       avatar: body.data.avatar ?? null,
+      source: body.data.provider === "credentials" ? "local" : "github",
     });
     return user;
   });

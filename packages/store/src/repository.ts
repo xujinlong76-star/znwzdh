@@ -63,6 +63,7 @@ import * as maintenanceRepo from "./repository/maintenance.ts";
 import * as taxonomyRepo from "./repository/taxonomy-governance.ts";
 import * as pluginsRepo from "./repository/plugins.ts";
 import * as ioRepo from "./repository/io.ts";
+import * as identityRepo from "./repository/identity.ts";
 export * from "./repository/records.ts";
 export { bindSqlite, normalizeTokenScopes, slugify, toPgSql } from "./repository/dialect.ts";
 export { TOKEN_TOUCH_THROTTLE_MS } from "./repository/tokens.ts";
@@ -716,12 +717,29 @@ export class Repository {
 
   /* ------------------------- 用户 ------------------------- */
 
-  async upsertOauthUser(input: { id?: string; username: string; email?: string | null; avatar?: string | null }): Promise<UserRecord> {
+  async upsertOauthUser(input: { id?: string; username: string; email?: string | null; avatar?: string | null; source?: string }): Promise<UserRecord> {
     return usersRepo.upsertOauthUser(this, input);
   }
 
   async getUser(idOrUsername: string): Promise<UserRecord | null> {
     return usersRepo.getUser(this, idOrUsername);
+  }
+
+  /* ------------------------- 身份合并 / 用户中心 ------------------------- */
+
+  /** 解析旧 anonId 到合并后的 canonical userId */
+  async resolveIdentity(identity: string): Promise<string> {
+    return identityRepo.resolveIdentity(this, identity);
+  }
+
+  /** 匿名身份 -> 登录身份（幂等、事务、写入别名与合并记录） */
+  async mergeIdentity(source: string, target: string): Promise<identityRepo.IdentityMergeResult> {
+    return identityRepo.mergeIdentity(this, source, target);
+  }
+
+  /** 用户中心概览聚合（计数 + 各域存在性 + 别名） */
+  async getUserCenterOverview(identity: string): Promise<identityRepo.UserCenterOverview> {
+    return identityRepo.getUserCenterOverview(this, identity);
   }
 
 

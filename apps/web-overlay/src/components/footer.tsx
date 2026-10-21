@@ -21,6 +21,8 @@ export function Footer({ siteInfo }: FooterProps) {
         <div className="flex flex-wrap items-center justify-center gap-3.5 text-xs text-muted-foreground">
           <Link href="/" className="hover:text-foreground transition-colors font-medium">主页</Link>
           <span className="text-border">·</span>
+          <Link href="/me" className="hover:text-foreground transition-colors">用户中心</Link>
+          <span className="text-border">·</span>
           <Link href="/favorites" className="hover:text-foreground transition-colors">我的收藏 (E2EE)</Link>
           <span className="text-border">·</span>
           <Link href="/graph" className="hover:text-foreground transition-colors">技术生态图谱</Link>

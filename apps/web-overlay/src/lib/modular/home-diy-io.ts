@@ -68,7 +68,8 @@ export async function importEncryptedDIYConfig(
 export async function syncToCloudVault(
   config: HomeDIYConfig,
   passphrase: string,
-): Promise<{ success: boolean; version?: number; error?: string }> {
+  expectedVersion?: number,
+): Promise<{ success: boolean; version?: number; conflict?: boolean; error?: string }> {
   if (!passphrase || passphrase.length < 6) {
     return { success: false, error: '主密码长度至少需 6 位' }
   }
@@ -80,9 +81,16 @@ export async function syncToCloudVault(
   if (!identity) {
     return { success: false, error: '无法获取用户身份标识' }
   }
-  const res = await saveCloudVault(identity, encrypted)
+  const res = await saveCloudVault(identity, encrypted, expectedVersion)
+  if (res.conflict) {
+    return {
+      success: false,
+      conflict: true,
+      error: '云端金库已被其它设备更新。请先「从云端拉取」确认最新内容，再重新推送，避免覆盖别人的修改。',
+    }
+  }
   if (!res.ok) {
-    return { success: false, error: '中枢云端金库同步失败，请检查网络或后端服务' }
+    return { success: false, error: res.error || '中枢云端金库同步失败，请检查网络或后端服务' }
   }
   return { success: true, version: res.version }
 }

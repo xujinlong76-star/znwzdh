@@ -423,9 +423,16 @@ export interface HubFavorite {
 }
 
 /** 云端收藏接口的返回形状（listFavorites / 同步结果共用） */
+export interface HubFavoriteFolder {
+  id: string
+  name: string
+  sort?: number
+  createdAt?: number
+}
+
 export interface HubFavoritesPayload {
   items: HubFavorite[]
-  folders: Array<{ id: string; name: string }>
+  folders: HubFavoriteFolder[]
 }
 
 export async function listFavorites(identity: string, onDegraded?: DegradedHandler): Promise<HubFavoritesPayload> {
@@ -463,6 +470,91 @@ export async function removeFavorite(identity: string, siteId: string, onDegrade
   )
 }
 
+/** 收藏管理：移动到文件夹 / 改备注（folderId=null 表示移出文件夹） */
+export async function updateFavoriteMeta(
+  identity: string,
+  siteId: string,
+  patch: { folderId?: string | null; note?: string | null },
+  onDegraded?: DegradedHandler,
+): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson(
+        '/api/favorites/' + encodeURIComponent(siteId) + '?anonId=' + encodeURIComponent(identity),
+        'PATCH',
+        patch,
+        undefined,
+        anonHeaders(identity),
+      )
+      return true
+    },
+    onDegraded,
+  )
+}
+
+/** 清空云端收藏 */
+export async function clearCloudFavorites(identity: string, onDegraded?: DegradedHandler): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson('/api/favorites?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
+      return true
+    },
+    onDegraded,
+  )
+}
+
+export async function createFavoriteFolder(identity: string, name: string, onDegraded?: DegradedHandler): Promise<HubFavoriteFolder | null> {
+  return degrade<HubFavoriteFolder | null>(null, () =>
+    sendJson<HubFavoriteFolder>(
+      '/api/favorites/folders?anonId=' + encodeURIComponent(identity),
+      'POST',
+      { name },
+      undefined,
+      anonHeaders(identity),
+    ), onDegraded)
+}
+
+export async function updateFavoriteFolder(
+  identity: string,
+  folderId: string,
+  patch: { name?: string; sort?: number },
+  onDegraded?: DegradedHandler,
+): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson(
+        '/api/favorites/folders/' + encodeURIComponent(folderId) + '?anonId=' + encodeURIComponent(identity),
+        'PATCH',
+        patch,
+        undefined,
+        anonHeaders(identity),
+      )
+      return true
+    },
+    onDegraded,
+  )
+}
+
+export async function deleteFavoriteFolder(identity: string, folderId: string, onDegraded?: DegradedHandler): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson(
+        '/api/favorites/folders/' + encodeURIComponent(folderId) + '?anonId=' + encodeURIComponent(identity),
+        'DELETE',
+        undefined,
+        undefined,
+        anonHeaders(identity),
+      )
+      return true
+    },
+    onDegraded,
+  )
+}
+
 /* ------------------------------ 搜索历史 ------------------------------ */
 
 export async function fetchSearchHistory(identity: string, limit = 8, onDegraded?: DegradedHandler): Promise<string[]> {
@@ -474,6 +566,111 @@ export async function fetchSearchHistory(identity: string, limit = 8, onDegraded
     )
     return data.items.map((i) => i.query)
   }, onDegraded)
+}
+
+export interface HubSearchHistoryItem {
+  id: number
+  query: string
+  resultCount: number
+  createdAt: number
+}
+
+export async function fetchSearchHistoryPage(
+  identity: string,
+  options: { limit?: number; offset?: number } = {},
+  onDegraded?: DegradedHandler,
+): Promise<{ items: HubSearchHistoryItem[]; hasMore: boolean; nextOffset: number }> {
+  const limit = options.limit ?? 20
+  const offset = options.offset ?? 0
+  return degrade(
+    { items: [], hasMore: false, nextOffset: offset },
+    () =>
+      getJson<{ items: HubSearchHistoryItem[]; hasMore: boolean; nextOffset: number }>(
+        '/api/search-history?anonId=' + encodeURIComponent(identity) + '&limit=' + limit + '&offset=' + offset,
+        undefined,
+        anonHeaders(identity),
+      ),
+    onDegraded,
+  )
+}
+
+export async function deleteSearchHistoryItem(identity: string, id: number, onDegraded?: DegradedHandler): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson(
+        '/api/search-history/' + id + '?anonId=' + encodeURIComponent(identity),
+        'DELETE',
+        undefined,
+        undefined,
+        anonHeaders(identity),
+      )
+      return true
+    },
+    onDegraded,
+  )
+}
+
+export async function clearCloudSearchHistory(identity: string, onDegraded?: DegradedHandler): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson('/api/search-history?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
+      return true
+    },
+    onDegraded,
+  )
+}
+
+/* ------------------------------ 画像 ------------------------------ */
+
+export interface HubProfileExplain {
+  profile: {
+    topCategories: string[]
+    topTags: string[]
+    visitedSiteIds: string[]
+    favoriteSiteIds: string[]
+    searchCount: number
+    updatedAt: number
+  } | null
+  explain: {
+    windowDays: number
+    personalizationEnabled: boolean
+    favoriteSignalCutoff: number
+    signalCounts: { click: number; favorite: number; searches: number }
+    generatedAt: number
+  }
+}
+
+export async function fetchProfileExplain(identity: string, onDegraded?: DegradedHandler): Promise<HubProfileExplain | null> {
+  return degrade<HubProfileExplain | null>(null, () =>
+    getJson<HubProfileExplain>(
+      '/api/profile?explain=1&anonId=' + encodeURIComponent(identity),
+      undefined,
+      anonHeaders(identity),
+    ), onDegraded)
+}
+
+/** 清理某一类画像信号（click / search / favorite），服务端会立即重建画像 */
+export async function clearProfileSignals(
+  identity: string,
+  kind: 'click' | 'search' | 'favorite',
+  onDegraded?: DegradedHandler,
+): Promise<boolean> {
+  return degrade(
+    false,
+    async () => {
+      await sendJson(
+        '/api/profile/signals/' + kind + '?anonId=' + encodeURIComponent(identity),
+        'DELETE',
+        undefined,
+        undefined,
+        anonHeaders(identity),
+      )
+      return true
+    },
+    onDegraded,
+  )
 }
 
 /* ------------------------ E2EE 零知识云端金库 ------------------------ */
@@ -496,12 +693,58 @@ export async function fetchCloudVault(identity: string, onDegraded?: DegradedHan
   }, onDegraded)
 }
 
-export async function saveCloudVault(identity: string, payload: string, onDegraded?: DegradedHandler): Promise<{ ok: boolean; version?: number; updatedAt?: number }> {
+export interface VaultSaveOutcome {
+  ok: boolean
+  version?: number
+  updatedAt?: number
+  /** 云端版本与 expectedVersion 不一致（409） */
+  conflict?: boolean
+  current?: { version: number; updatedAt: number } | null
+  error?: string
+}
+
+/**
+ * 推送金库密文。
+ *
+ * expectedVersion 为空时保持旧行为（无条件覆盖）；带上时只有云端仍是该版本才写入，
+ * 否则返回 conflict —— 多端同时编辑时，覆盖别人的密文等于静默丢数据。
+ */
+export async function saveCloudVault(
+  identity: string,
+  payload: string,
+  expectedVersion?: number,
+  onDegraded?: DegradedHandler,
+): Promise<VaultSaveOutcome> {
   try {
-    return await sendJson('/api/vault/sync?anonId=' + encodeURIComponent(identity), 'PUT', { payload }, undefined, anonHeaders(identity))
+    const body: Record<string, unknown> = { payload }
+    if (typeof expectedVersion === 'number') body.version = expectedVersion
+    const res = await fetch(hubUrl('/api/vault/sync?anonId=' + encodeURIComponent(identity)), {
+      method: 'PUT',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...authHeaders(), ...anonHeaders(identity) },
+      body: JSON.stringify(body),
+      signal: typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(READ_TIMEOUT_MS)
+        : undefined,
+    })
+    const text = await res.text()
+    const parsed = (text ? JSON.parse(text) : {}) as Record<string, unknown>
+    if (res.status === 409) {
+      return {
+        ok: false,
+        conflict: true,
+        current: (parsed.current as { version: number; updatedAt: number } | null | undefined) ?? null,
+        error: typeof parsed.error === 'string' ? parsed.error : '云端金库版本冲突',
+      }
+    }
+    if (!res.ok) throw hubError(res.status, typeof parsed.error === 'string' ? parsed.error : undefined)
+    return {
+      ok: true,
+      version: typeof parsed.version === 'number' ? parsed.version : undefined,
+      updatedAt: typeof parsed.updatedAt === 'number' ? parsed.updatedAt : undefined,
+    }
   } catch (error) {
     notifyDegraded(onDegraded, error)
-    return { ok: false }
+    return { ok: false, error: error instanceof Error ? error.message : '云端金库同步失败' }
   }
 }
 

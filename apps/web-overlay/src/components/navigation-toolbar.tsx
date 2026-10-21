@@ -34,6 +34,7 @@ import {
   CheckSquare,
   ListChecks,
   Sparkles,
+  User,
 } from 'lucide-react'
 import type { SiteConfig } from '@/types/site'
 import { SearchPalette } from '@/components/search-palette'
@@ -212,6 +213,18 @@ export function NavigationToolbar({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              {/* 用户中心：账号、收藏、历史、偏好与数据管理的统一入口 */}
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
+              >
+                <Link href="/me" title="用户中心" aria-label="用户中心">
+                  <User className="h-4 w-4" />
+                </Link>
+              </Button>
 
               {/* 快捷键指南按钮 */}
               <Button

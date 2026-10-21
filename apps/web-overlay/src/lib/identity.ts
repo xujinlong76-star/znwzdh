@@ -40,8 +40,21 @@ export function getIdentity(): string {
 }
 
 export function setIdentity(userId: string): void {
+  const value = userId.trim()
+  // 匿名 id 绝不能写进 userId 键：那会让 getIdentity() 把匿名身份误当登录身份，
+  // 云端同步/作者中心/合并全部按错误归属读写。
+  if (!value || value.startsWith('anon-')) return
   try {
-    window.localStorage.setItem('navhub.userId', userId)
+    window.localStorage.setItem('navhub.userId', value)
+  } catch {
+    // ignore
+  }
+}
+
+/** 退出登录时清掉登录身份，回落到匿名 id（匿名数据仍然保留） */
+export function clearIdentity(): void {
+  try {
+    window.localStorage.removeItem('navhub.userId')
   } catch {
     // ignore
   }

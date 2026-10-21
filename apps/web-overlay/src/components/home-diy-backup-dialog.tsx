@@ -50,7 +50,7 @@ export interface HomeDIYBackupDialogProps {
   importDIYConfig: (json: string) => { ok: boolean; message: string }
   exportEncryptedDIYConfig: (passphrase: string) => Promise<string>
   importEncryptedDIYConfig: (json: string, passphrase: string) => Promise<{ ok: boolean; message: string }>
-  syncToCloudVault: (passphrase: string) => Promise<{ success: boolean; version?: number; error?: string }>
+  syncToCloudVault: (passphrase: string, expectedVersion?: number) => Promise<{ success: boolean; version?: number; conflict?: boolean; error?: string }>
   syncFromCloudVault: (passphrase: string) => Promise<{ success: boolean; error?: string }>
   checkCloudVaultStatus: () => Promise<{ hasCloudVault: boolean; updatedAt?: number; version?: number }>
 }
@@ -101,7 +101,11 @@ export function HomeDIYBackupDialog({
     }
     setIsSyncingCloud(true)
     try {
-      const res = await syncToCloudVault(vaultPassphrase.trim())
+      // 先取云端当前版本，作为本次写入的前置条件：多端同时编辑时避免静默覆盖
+      const before = await checkCloudVaultStatus()
+      setCloudVaultMeta(before)
+      const expected = before.hasCloudVault ? before.version : 0
+      const res = await syncToCloudVault(vaultPassphrase.trim(), expected)
       if (res.success) {
         toast({
           title: '☁️ 已加密同步至中枢云端',
@@ -109,6 +113,12 @@ export function HomeDIYBackupDialog({
         })
         const status = await checkCloudVaultStatus()
         setCloudVaultMeta(status)
+      } else if (res.conflict) {
+        toast({
+          title: '云端金库已被其它设备更新',
+          description: res.error,
+          variant: 'destructive',
+        })
       } else {
         toast({ title: '云端同步失败', description: res.error, variant: 'destructive' })
       }

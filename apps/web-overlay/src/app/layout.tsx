@@ -11,6 +11,7 @@ import { PwaRegister } from '@/components/pwa-register'
 import { InstallPrompt } from '@/components/install-prompt'
 import { WebVitalsReporter } from '@/components/web-vitals-reporter'
 import { OfflineBanner } from '@/components/offline-banner'
+import { SessionSync } from '@/components/user-center/session-sync'
 import { getFileContent } from '@/lib/github'
 import { siteOrigin } from '@/lib/seo/origin'
 import type { Metadata, Viewport } from 'next'
@@ -174,6 +175,8 @@ export default function RootLayout({
         <a href="#main-content" className="skip-to-content">
           跳到主要内容
         </a>
+        {/* 登录后把会话身份同步到用户中心，并合并本机匿名数据（幂等） */}
+        <SessionSync />
         <PwaRegister />
         <InstallPrompt />
         {/* RUM：NEXT_PUBLIC_RUM=1 时采集 LCP/INP/CLS/TTFB，默认关闭 */}

@@ -28,7 +28,18 @@ import {
   type EncryptedVaultPayload,
 } from '@/lib/vault'
 import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
-import { Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff, RefreshCw, CloudOff, Search, X, Package } from 'lucide-react'
+import {
+  createFavoriteFolder,
+  deleteFavoriteFolder,
+  listFavorites,
+  updateFavoriteFolder,
+  updateFavoriteMeta,
+  type HubFavoriteFolder,
+} from '@/lib/navhub-api'
+import {
+  Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
+  RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check,
+} from 'lucide-react'
 
 export default function FavoritesPage() {
   const favorites = useFavorites()
@@ -43,11 +54,26 @@ export default function FavoritesPage() {
   const [showImport, setShowImport] = useState(false)
   // 本页收藏的本地筛选（不联网）：收藏攒到几十个以后，「用眼睛扫网格」不是一种检索方式
   const [favoriteQuery, setFavoriteQuery] = useState('')
+  // 收藏管理（云端文件夹 / 备注）：只在登录身份下出现
+  const [cloudIdentity, setCloudIdentity] = useState('')
+  const [folders, setFolders] = useState<HubFavoriteFolder[]>([])
+  const [activeFolder, setActiveFolder] = useState<string>('all')
+  const [newFolderName, setNewFolderName] = useState('')
+  const [folderBusy, setFolderBusy] = useState(false)
+  const [editingFolder, setEditingFolder] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const [noteEditor, setNoteEditor] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [manageBusy, setManageBusy] = useState(false)
 
   /** 只过滤本页已加载的收藏；空关键词原样返回，不做无谓的重渲染 */
   const filteredFavorites = useMemo(
     () => filterFavorites(favorites.items, favoriteQuery),
     [favorites.items, favoriteQuery],
+  )
+  const visibleFavorites = useMemo(
+    () => (activeFolder === 'all' ? filteredFavorites : filteredFavorites.filter((f) => (f.folderId ?? '') === activeFolder)),
+    [filteredFavorites, activeFolder],
   )
   const filterSummary = describeFavoritesFilter(
     filteredFavorites.length,
@@ -75,10 +101,116 @@ export default function FavoritesPage() {
   }, [])
 
   useEffect(() => {
+    if (!favorites.ready) return
     const identity = getIdentity()
     if (!identity || identity.startsWith('anon-')) return
-    void runCloudSync()
-  }, [runCloudSync])
+    setCloudIdentity(identity)
+    void (async () => {
+      await runCloudSync()
+      // 合并成功后拉一次云端全集：新设备能直接看到云端收藏，本地条目也能拿到文件夹/备注
+      const data = await listFavorites(identity)
+      setFolders(data.folders)
+      const localBySite = new Map(favorites.items.map((item) => [item.siteId, item]))
+      const incoming = data.items
+        .filter((item) => item.site)
+        .map((item) => {
+          const local = localBySite.get(item.siteId)
+          return {
+            siteId: item.siteId,
+            title: item.site?.title ?? local?.title ?? item.siteId,
+            href: item.site?.url ?? local?.href ?? '',
+            // 图标/描述优先用本地已有的（云端列表不带 icon，避免把本地图标覆盖掉）
+            icon: local?.icon,
+            description: item.site?.description ?? local?.description,
+            note: item.note ?? local?.note,
+            folderId: item.folderId,
+            createdAt: item.createdAt || local?.createdAt || Date.now(),
+          }
+        })
+        .filter((item) => item.href)
+      if (incoming.length > 0) {
+        favorites.importJson(JSON.stringify({ version: 1, items: incoming }))
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runCloudSync, favorites.ready])
+
+  /** 收藏夹操作统一入口：刷新列表并给出失败提示 */
+  const refreshFolders = useCallback(async () => {
+    if (!cloudIdentity) return
+    const data = await listFavorites(cloudIdentity)
+    setFolders(data.folders)
+  }, [cloudIdentity])
+
+  const addFolder = useCallback(async () => {
+    const name = newFolderName.trim()
+    if (!name || !cloudIdentity || folderBusy) return
+    setFolderBusy(true)
+    const folder = await createFavoriteFolder(cloudIdentity, name)
+    setFolderBusy(false)
+    if (!folder) {
+      setSyncNote('创建收藏夹失败：云端暂不可用')
+      setSyncStatus('error')
+      return
+    }
+    setNewFolderName('')
+    await refreshFolders()
+  }, [cloudIdentity, folderBusy, newFolderName, refreshFolders])
+
+  const saveFolderName = useCallback(async (folderId: string) => {
+    const name = editingName.trim()
+    setEditingFolder(null)
+    if (!cloudIdentity || !name) return
+    const ok = await updateFavoriteFolder(cloudIdentity, folderId, { name })
+    if (!ok) {
+      setSyncNote('重命名收藏夹失败：云端暂不可用')
+      setSyncStatus('error')
+      return
+    }
+    setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, name } : f)))
+  }, [cloudIdentity, editingName])
+
+  const removeFolder = useCallback(async (folderId: string) => {
+    if (!cloudIdentity) return
+    const ok = await deleteFavoriteFolder(cloudIdentity, folderId)
+    if (!ok) {
+      setSyncNote('删除收藏夹失败：云端暂不可用')
+      setSyncStatus('error')
+      return
+    }
+    // 云端会把该文件夹下的收藏置空，本地同步去掉 folderId
+    favorites.items
+      .filter((f) => f.folderId === folderId)
+      .forEach((f) => favorites.updateMeta(f.siteId, { folderId: null }))
+    setFolders((prev) => prev.filter((f) => f.id !== folderId))
+    if (activeFolder === folderId) setActiveFolder('all')
+  }, [activeFolder, cloudIdentity, favorites])
+
+  const assignFolder = useCallback(async (siteId: string, folderId: string | null) => {
+    favorites.updateMeta(siteId, { folderId })
+    if (!cloudIdentity) return
+    setManageBusy(true)
+    const ok = await updateFavoriteMeta(cloudIdentity, siteId, { folderId })
+    setManageBusy(false)
+    if (!ok) {
+      setSyncNote('移动收藏失败：云端暂不可用，已在本机保留位置')
+      setSyncStatus('error')
+    }
+  }, [cloudIdentity, favorites])
+
+  const saveNote = useCallback(async (siteId: string) => {
+    const note = noteDraft.trim() || null
+    favorites.updateMeta(siteId, { note })
+    setNoteEditor(null)
+    if (!cloudIdentity) return
+    setManageBusy(true)
+    const ok = await updateFavoriteMeta(cloudIdentity, siteId, { note })
+    setManageBusy(false)
+    if (!ok) {
+      setSyncNote('保存备注失败：云端暂不可用，已保存在本机')
+      setSyncStatus('error')
+    }
+  }, [cloudIdentity, favorites, noteDraft])
 
   const handleExportPlain = () => {
     const blob = new Blob([favorites.exportJson()], { type: 'application/json' })
@@ -597,6 +729,111 @@ export default function FavoritesPage() {
           </div>
         )}
 
+        {/* 收藏夹管理：只在登录身份下出现（文件夹是云端数据，匿名用户没有归属） */}
+        {cloudIdentity && favorites.items.length > 0 && (
+          <div className="mb-4 rounded-xl border border-border/70 bg-card/50 p-3 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Folder className="h-3.5 w-3.5" />
+                收藏夹
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveFolder('all')}
+                className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                  activeFolder === 'all'
+                    ? 'border-primary/40 bg-primary/10 text-primary'
+                    : 'border-border/60 bg-background/60 text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                全部 {favorites.items.length}
+              </button>
+              {folders.map((folder) => {
+                const count = favorites.items.filter((f) => f.folderId === folder.id).length
+                const active = activeFolder === folder.id
+                return (
+                  <span key={folder.id} className="inline-flex items-center gap-1">
+                    {editingFolder === folder.id ? (
+                      <>
+                        <Input
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void saveFolderName(folder.id)
+                            if (e.key === 'Escape') setEditingFolder(null)
+                          }}
+                          aria-label="收藏夹名称"
+                          className="h-7 w-32 text-[11px]"
+                          autoFocus
+                        />
+                        <Button size="sm" variant="ghost" className="h-7 px-1.5" onClick={() => void saveFolderName(folder.id)} aria-label="保存名称">
+                          <Check className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setActiveFolder(active ? 'all' : folder.id)}
+                          className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
+                            active
+                              ? 'border-primary/40 bg-primary/10 text-primary'
+                              : 'border-border/60 bg-background/60 text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {folder.name} {count}
+                        </button>
+                        {active && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-1 text-muted-foreground"
+                              aria-label="重命名收藏夹"
+                              onClick={() => {
+                                setEditingFolder(folder.id)
+                                setEditingName(folder.name)
+                              }}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-1 text-muted-foreground hover:text-destructive"
+                              aria-label="删除收藏夹"
+                              onClick={() => void removeFolder(folder.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </span>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-2 border-t border-border/60 pt-2">
+              <Input
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void addFolder()
+                }}
+                placeholder="新建收藏夹"
+                aria-label="新建收藏夹名称"
+                className="h-8 w-40 text-xs"
+              />
+              <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!newFolderName.trim() || folderBusy} onClick={() => void addFolder()}>
+                <FolderPlus className="mr-1 h-3.5 w-3.5" />
+                创建
+              </Button>
+              {manageBusy && <span className="text-[11px] text-muted-foreground">正在同步…</span>}
+            </div>
+          </div>
+        )}
+
         {/* 本地筛选条：只在确实有收藏时出现（没有收藏时不需要筛选控件） */}
         {favorites.ready && favorites.items.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -666,21 +903,33 @@ export default function FavoritesPage() {
               </Button>
             }
           />
-        ) : filteredFavorites.length === 0 ? (
+        ) : visibleFavorites.length === 0 ? (
           <EmptyState
             icon={Search}
             iconTone="muted"
-            title={favoriteFilterEmptyMessage(favoriteQuery)}
-            description={<>收藏并没有丢：共 {favorites.items.length} 个都还在本机，只是当前关键词没匹配到。</>}
+            title={activeFolder === 'all' ? favoriteFilterEmptyMessage(favoriteQuery) : '这个收藏夹下还没有站点'}
+            description={
+              activeFolder === 'all'
+                ? <>收藏并没有丢：共 {favorites.items.length} 个都还在本机，只是当前关键词没匹配到。</>
+                : <>切换「全部」后可以把任意收藏移动到当前收藏夹。</>
+            }
             action={
-              <Button size="sm" variant="outline" className="text-xs" onClick={() => setFavoriteQuery('')}>
-                清除筛选
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs"
+                onClick={() => {
+                  setFavoriteQuery('')
+                  if (activeFolder !== 'all') setActiveFolder('all')
+                }}
+              >
+                查看全部收藏
               </Button>
             }
           />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! gap-3.5 sm:gap-4">
-            {filteredFavorites.map((f) => (
+            {visibleFavorites.map((f) => (
               <div
                 key={f.siteId}
                 className="group relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-3.5 flex flex-col justify-between"
@@ -720,6 +969,56 @@ export default function FavoritesPage() {
                     </div>
                   </div>
                 </a>
+                {cloudIdentity && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2">
+                    <select
+                      value={f.folderId ?? ''}
+                      onChange={(e) => void assignFolder(f.siteId, e.target.value || null)}
+                      aria-label={`移动 ${f.title} 到收藏夹`}
+                      className="h-7 max-w-[8.5rem] rounded-md border border-border/60 bg-background px-1.5 text-[11px] text-muted-foreground"
+                    >
+                      <option value="">未分组</option>
+                      {folders.map((folder) => (
+                        <option key={folder.id} value={folder.id}>{folder.name}</option>
+                      ))}
+                    </select>
+                    {noteEditor === f.siteId ? (
+                      <span className="flex min-w-0 flex-1 items-center gap-1">
+                        <Input
+                          value={noteDraft}
+                          onChange={(e) => setNoteDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void saveNote(f.siteId)
+                            if (e.key === 'Escape') setNoteEditor(null)
+                          }}
+                          placeholder="备注"
+                          aria-label="收藏备注"
+                          className="h-7 text-[11px]"
+                          autoFocus
+                        />
+                        <Button size="sm" variant="ghost" className="h-7 px-1" aria-label="保存备注" onClick={() => void saveNote(f.siteId)}>
+                          <Check className="h-3.5 w-3.5" />
+                        </Button>
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-1.5 text-[11px] text-muted-foreground"
+                        onClick={() => {
+                          setNoteEditor(f.siteId)
+                          setNoteDraft(f.note ?? '')
+                        }}
+                      >
+                        <Pencil className="mr-1 h-3 w-3" />
+                        {f.note ? '改备注' : '备注'}
+                      </Button>
+                    )}
+                    {f.note && noteEditor !== f.siteId && (
+                      <span className="basis-full truncate text-[11px] text-muted-foreground">{f.note}</span>
+                    )}
+                  </div>
+                )}
                 <div className="absolute top-2 right-2">
                   <FavoriteButton site={f} />
                 </div>

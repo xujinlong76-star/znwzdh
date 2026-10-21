@@ -28,13 +28,15 @@
 @source '../components/plugins/**/*.{js,ts,jsx,tsx,mdx}';
 
 /* app 路由树：一级目录（被 .gitignore 的 apps/web/src/app/* 忽略）+ 二级特殊子树。 */
-@source '../app/{actions,admin,algorithms,auth,collections,components,custom,favorites,fonts,graph,hot,import,offline,preferences,s,site,sites,styles,submit,tags,types}/**/*.{js,ts,jsx,tsx,mdx}';
-@source '../app/api/{admin,auth,csp-report,extension,favicon,favicon-im,health,hub,navigation,resource,site,site-config,submissions,videos,website-metadata}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../app/{actions,admin,algorithms,auth,category,collections,components,custom,favorites,feed.xml,fonts,graph,hot,import,me,offline,preferences,s,site,sites,styles,submit,tags,types}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../app/api/{admin,auth,csp-report,extension,favicon,favicon-im,health,hub,me,navigation,resource,site,site-config,submissions,videos,website-metadata}/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../app/videos/player/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../app/admin/data/**/*.{js,ts,jsx,tsx,mdx}';
+/* `data/` 目录名被 .gitignore 的通配规则剪枝，必须指到目录内部才能扫到 */
+@source '../app/me/data/**/*.{js,ts,jsx,tsx,mdx}';
 
 /* components 子树（被 apps/web/src/components/* 忽略）。 */
-@source '../components/{admin,ai,crdt,graph,modular,p2p,reader,search,theme,tools,ui,workspace}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../components/{admin,ai,crdt,graph,modular,p2p,reader,search,theme,tools,ui,user-center,workspace}/**/*.{js,ts,jsx,tsx,mdx}';
 
 /* 其余源码目录（registry 为上游 shadcn 副本；lib/modular 是 lib 下被单独忽略的子目录）。 */
 @source '../{config,hooks,navsphere,services,styles,types,utils}/**/*.{js,ts,jsx,tsx,mdx}';

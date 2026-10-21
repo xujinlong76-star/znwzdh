@@ -25,6 +25,8 @@ export interface LlmConfig {
   jsonMode?: JsonMode;
   /** 允许内网端点（本地 Ollama）；仅系统级配置可开启 */
   allowPrivateNetwork?: boolean;
+  /** 是否开启深度思考（Agnes 3.0 Flash native thinking） */
+  thinking?: boolean;
   /** 备选 LLM 轮换池配置（主模型失败或超时后依次尝试） */
   fallbacks?: LlmConfig[];
 }
@@ -159,6 +161,19 @@ export function heuristicTags(text: string): string[] {
   return [...out].slice(0, 8);
 }
 
+/** 单次富化 LLM 调用的用量信息（成功与失败都会回调，供上层落 llm_usage） */
+export interface EnrichLlmCallInfo {
+  ok: boolean;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  latencyMs: number;
+  /** 归一化错误码（config/ssrf/timeout/auth/…），成功时为 undefined */
+  errorCode?: string;
+  /** 本次是否启用深度思考 */
+  thinking?: boolean;
+}
+
 export interface EnrichOptions {
   llm?: Partial<LlmConfig>;
   guard?: Partial<FetchGuardOptions>;
@@ -166,6 +181,14 @@ export interface EnrichOptions {
   knownCategories?: string[];
   /** 禁用 LLM，仅启发式（测试或隐私模式） */
   heuristicOnly?: boolean;
+  /**
+   * 每次模型调用后的用量回调。
+   *
+   * 为什么用回调而不是让 enrich 依赖 store：本包保持「纯 AI 能力」，
+   * 不引入持久化依赖；调用方（REST / jobs）自己决定记到哪张表。
+   * 成功与失败都回调 —— 观测要能看见失败，而不是只统计成功。
+   */
+  onLlmCall?: (info: EnrichLlmCallInfo) => void;
 }
 
 export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Promise<EnrichmentResult> {
@@ -205,15 +228,18 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
 
   // ---- 3. LLM 富化（可选） ----
   const llm = { ...DEFAULT_LLM, ...options.llm };
-  const canUseLlm = !options.heuristicOnly && Boolean(llm.apiKey);
+  // 本地 Ollama 等网关允许空密钥；是否放行内网由 allowPrivateNetwork 显式声明
+  const llmReady = (c: LlmConfig) => Boolean(c.apiKey) || c.allowPrivateNetwork === true;
+  const canUseLlm = !options.heuristicOnly && llmReady(llm);
 
   if (canUseLlm) {
-    const configsToTry = [llm, ...(llm.fallbacks || [])].filter((c) => Boolean(c.apiKey));
+    const configsToTry = [llm, ...(llm.fallbacks || [])].filter(llmReady);
     for (const activeLlm of configsToTry) {
       const payload = await tryLlm(
         activeLlm,
         { url: finalUrl, title: fallbackTitle, description: metaDesc, knownCategories: options.knownCategories },
         warnings,
+        options.onLlmCall,
       );
       if (payload) {
         return {
@@ -262,6 +288,15 @@ async function tryLlm(
   llm: LlmConfig,
   input: { url: string; title: string; description: string | null; knownCategories?: string[] },
   warnings: string[],
+  onLlmCall?: (call: {
+    ok: boolean;
+    model: string;
+    promptTokens: number;
+    completionTokens: number;
+    latencyMs: number;
+    errorCode?: string;
+    thinking?: boolean;
+  }) => void,
 ): Promise<EnrichmentPayload | null> {
   const categoryHint = input.knownCategories?.length
     ? "请从以下分类中选择最合适的一个：" + input.knownCategories.join("、")
@@ -283,6 +318,7 @@ async function tryLlm(
   ].join("\n");
 
   for (let attempt = 1; attempt <= 2; attempt++) {
+    const startedAt = Date.now();
     try {
       // 统一网关：负责 SSRF 校验、鉴权头、超时、JSON 模式兼容与错误归一化
       const result = await chatCompletion(
@@ -305,6 +341,15 @@ async function tryLlm(
         },
       );
 
+      // 用量回调：即使 schema 校验失败，这次调用也已经真实发生并计费
+      onLlmCall?.({
+        ok: true,
+        model: result.model,
+        promptTokens: result.usage.promptTokens,
+        completionTokens: result.usage.completionTokens,
+        latencyMs: result.latencyMs,
+        thinking: llm.thinking,
+      });
       const parsed = EnrichmentSchema.safeParse(JSON.parse(stripCodeFence(result.content)));
       if (!parsed.success) {
         warnings.push("LLM 输出未通过 schema 校验（第 " + attempt + " 次）");
@@ -312,6 +357,16 @@ async function tryLlm(
       }
       return parsed.data;
     } catch (err) {
+      const errorCode = err instanceof LlmError ? err.code : "unknown";
+      onLlmCall?.({
+        ok: false,
+        model: llm.model,
+        promptTokens: 0,
+        completionTokens: 0,
+        latencyMs: Date.now() - startedAt,
+        errorCode,
+        thinking: llm.thinking,
+      });
       if (err instanceof LlmError) {
         if (err.code === "invalid_response") warnings.push("LLM 返回结构异常");
         else if (typeof err.status === "number") warnings.push("LLM HTTP " + err.status);

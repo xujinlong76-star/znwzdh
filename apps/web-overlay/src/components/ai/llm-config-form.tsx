@@ -9,6 +9,7 @@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { HubJsonMode } from '@/lib/navhub-api'
+import { PROVIDER_PRESETS } from './provider-presets'
 
 export interface LlmFormValue {
   enabled: boolean
@@ -20,6 +21,8 @@ export interface LlmFormValue {
   temperature: number
   maxTokens: number
   jsonMode: HubJsonMode
+  /** 深度思考（产品默认开；富化类批量场景可关） */
+  thinking: boolean
   allowPrivateNetwork: boolean
 }
 
@@ -57,8 +60,60 @@ export function LlmConfigFields({
     return Number.isFinite(n) ? n : fallback
   }
 
+  const currentPreset =
+    PROVIDER_PRESETS.find(
+      (p) => p.id !== 'custom' && p.baseUrl === value.baseUrl && p.model === value.model,
+    )?.id ?? 'custom'
+
+  const onSelectPreset = (presetId: string) => {
+    const preset = PROVIDER_PRESETS.find((p) => p.id === presetId)
+    if (!preset || preset.id === 'custom') return
+    onChange({
+      ...value,
+      name: preset.name,
+      model: preset.model,
+      baseUrl: preset.baseUrl,
+      ...(preset.jsonMode ? { jsonMode: preset.jsonMode } : {}),
+      ...(preset.allowPrivateNetwork !== undefined && showAllowPrivateNetwork
+        ? { allowPrivateNetwork: preset.allowPrivateNetwork }
+        : {}),
+    })
+  }
+
+  const selectedPresetObj = PROVIDER_PRESETS.find((p) => p.id === currentPreset)
+
   return (
     <div className="space-y-5">
+      {/* 预设服务商快捷选择 */}
+      <div className="rounded-lg border border-border/70 bg-muted/30 p-3.5 space-y-2">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="llm-preset-select" className="text-xs font-semibold text-foreground">
+            快速预设厂商模版
+          </Label>
+          {selectedPresetObj?.supportsThinking && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+              ⚡ 支持原生深度思考
+            </span>
+          )}
+        </div>
+        <select
+          id="llm-preset-select"
+          className={SELECT_CLASS}
+          value={currentPreset}
+          disabled={disabled}
+          onChange={(e) => onSelectPreset(e.target.value)}
+        >
+          {PROVIDER_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        {selectedPresetObj?.description && (
+          <p className="text-xs text-muted-foreground">{selectedPresetObj.description}</p>
+        )}
+      </div>
+
       {showEnabled && (
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -186,6 +241,24 @@ export function LlmConfigFields({
           auto：先带 <code>response_format</code>，端点不支持时自动去参重试并记住能力。
         </p>
       </div>
+
+      {/* 深度思考：Agnes 3.0 Flash 的 chat_template_kwargs.enable_thinking。
+          默认开（复杂任务质量优先），关掉可显著省 token 与延迟。 */}
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 rounded border-input accent-[var(--primary)]"
+          checked={value.thinking}
+          disabled={disabled}
+          onChange={(e) => set('thinking', e.target.checked)}
+        />
+        <span>
+          启用深度思考（Thinking）
+          <span className="block text-xs text-muted-foreground">
+            复杂任务更准，但更慢、更费 token。富化类批量任务建议关闭；连通性探测始终关闭。
+          </span>
+        </span>
+      </label>
 
       {showAllowPrivateNetwork && (
         <label className="flex items-start gap-2 text-sm">

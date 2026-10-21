@@ -66,7 +66,7 @@ export function AiObservabilityPanel() {
       {/* 头部控制栏 */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-base font-semibold tracking-tight text-foreground flex items-center gap-2">
               <Cpu className="h-5 w-5 text-indigo-500" />
               AI 效能与 Token 遥测大盘
@@ -80,7 +80,7 @@ export function AiObservabilityPanel() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
           {/* 时间跨度选择 */}
           <div className="flex rounded-lg border bg-muted/40 p-0.5 text-xs">
             {TIME_WINDOWS.map((tw) => (
@@ -135,11 +135,19 @@ export function AiObservabilityPanel() {
             </span>
             <span className="text-xs text-muted-foreground">次请求</span>
           </div>
-          <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+          <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 flex-wrap">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
             <span>成功率: {data ? `${data.successRate}%` : '--'}</span>
             <span className="text-muted-foreground/60">·</span>
             <span>异常: {data ? data.errorCalls : 0}</span>
+            {data && typeof data.thinkingCalls === 'number' && data.thinkingCalls > 0 && (
+              <>
+                <span className="text-muted-foreground/60">·</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                  🧠 思考调用: {data.thinkingCalls}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -197,6 +205,18 @@ export function AiObservabilityPanel() {
           </div>
         </div>
       </div>
+
+      {/* 真实遥测说明引导 */}
+      {data && (!data.hasData || data.totalCalls === 0) && (
+        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4 text-xs text-muted-foreground flex items-center justify-between">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Sparkles className="h-4 w-4 text-indigo-500 shrink-0" />
+            <span>
+              <strong>真实遥测已就绪：</strong>当前统计周期内尚未产生真实调用。在 Copilot 抽屉提问、在个人中心试聊、使用工作台智能生成或触发站点标签富化，系统将实时采集并在本大盘呈现真实 Token 与时延。
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* 中部图表区：24小时走势 + 业务场景分布 */}
       <div className="grid gap-6 lg:grid-cols-3">
@@ -325,7 +345,7 @@ export function AiObservabilityPanel() {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto no-scrollbar touch-pan-x">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b text-muted-foreground">
@@ -357,6 +377,12 @@ export function AiObservabilityPanel() {
                           ? '一句话工作台生成'
                           : log.scenario === 'ai_config_test'
                           ? '连通性测试探测'
+                          : log.scenario === 'copilot'
+                          ? 'Copilot 导航问答'
+                          : log.scenario === 'health_audit'
+                          ? '健康审计与平替推荐'
+                          : log.scenario === 'enrich'
+                          ? '站点标签与描述富化'
                           : log.scenario}
                       </td>
                       <td className="py-2 px-3">

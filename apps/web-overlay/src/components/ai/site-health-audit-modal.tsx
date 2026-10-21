@@ -140,35 +140,35 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in-0 duration-200">
       <div className="relative w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl border border-border/80 bg-card/95 shadow-2xl overflow-hidden backdrop-blur-xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-muted/20">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-3.5 sm:py-4 border-b border-border/60 bg-muted/20">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 shrink-0">
               <HeartPulse className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-sm text-foreground">站点健康自治巡检与无感自愈中枢</span>
-                <Badge variant="outline" className="text-[10px] font-normal text-rose-600 border-rose-500/30">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-sm text-foreground truncate">站点健康自治巡检与无感自愈中枢</span>
+                <Badge variant="outline" className="text-[10px] font-normal text-rose-600 border-rose-500/30 shrink-0">
                   Autonomous Health
                 </Badge>
               </div>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-[11px] text-muted-foreground mt-0.5 truncate sm:whitespace-normal">
                 实时探活死链、域名失效与 301 重定向，联动 Wayback 时间机器与 Agnes 3.0 Flash 智能推荐平替
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
             <Button
               size="sm"
               variant="outline"
               disabled={scanning}
               onClick={handleScan}
-              className="h-8 text-xs gap-1.5"
+              className="h-8 text-xs gap-1.5 flex-1 sm:flex-initial"
             >
               {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
               <span>{scanning ? '巡检中...' : '即刻全面巡检'}</span>
             </Button>
-            <Button size="icon" variant="ghost" aria-label="关闭健康自愈中枢" className="h-8 w-8 rounded-full" onClick={onClose}>
+            <Button size="icon" variant="ghost" aria-label="关闭健康自愈中枢" className="h-8 w-8 rounded-full shrink-0" onClick={onClose}>
               <X className="w-4 h-4" />
             </Button>
           </div>
@@ -176,7 +176,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
 
         {/* KPI 概览 */}
         {summary && (
-          <div className="grid grid-cols-4 gap-2 px-5 py-3 border-b border-border/40 bg-muted/10 text-xs">
+          <div className="grid grid-cols-2 min-[480px]:grid-cols-4 gap-2 px-4 sm:px-5 py-3 border-b border-border/40 bg-muted/10 text-xs">
             <div className="p-2.5 rounded-lg border border-border/50 bg-background/50">
               <div className="text-[10px] text-muted-foreground">全站健康度评分</div>
               <div className="text-base font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
@@ -235,9 +235,9 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
                     key={issue.siteId}
                     className="p-3.5 rounded-xl border border-rose-500/30 bg-rose-500/5 dark:bg-rose-950/10 space-y-3 transition-colors"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                       <div className="min-w-0 space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold text-xs text-foreground truncate">{issue.title}</span>
                           <Badge variant="destructive" className="text-[10px] px-1.5 py-0 font-mono">
                             {issue.cause}
@@ -251,24 +251,24 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
                       </div>
 
                       {/* 修复动作 */}
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1.5 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-rose-500/20 shrink-0">
                         {issue.waybackRecoveryUrl && (
                           <Button
                             size="sm"
                             variant="secondary"
                             disabled={healingId === issue.siteId}
-                            className="h-7 text-xs gap-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-200 border border-amber-500/30"
+                            className="h-7 text-xs gap-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-200 border border-amber-500/30 flex-1 sm:flex-initial"
                             onClick={() => handleApplyWayback(issue)}
                           >
                             <History className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                            <span>采纳 Wayback 快照</span>
+                            <span>采纳快照</span>
                           </Button>
                         )}
                         <Button
                           size="sm"
                           variant="outline"
                           disabled={recommendingId === issue.siteId}
-                          className="h-7 text-xs gap-1 border-purple-500/30 text-purple-700 dark:text-purple-300 hover:bg-purple-500/10"
+                          className="h-7 text-xs gap-1 border-purple-500/30 text-purple-700 dark:text-purple-300 hover:bg-purple-500/10 flex-1 sm:flex-initial"
                           onClick={() => handleFetchAiAlternatives(issue)}
                         >
                           {recommendingId === issue.siteId ? (
@@ -321,12 +321,12 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-border/60 bg-muted/20 flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-            <span>自愈动作已连接审计流水 (Audit Log)，每次替换均具备回滚与快照保障</span>
+        <div className="px-4 sm:px-5 py-3 border-t border-border/60 bg-muted/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5 truncate">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            <span className="truncate">自愈动作已连接审计流水 (Audit Log)，每次替换均具备回滚与快照保障</span>
           </div>
-          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={onClose}>
+          <Button size="sm" variant="outline" className="h-7 text-xs w-full sm:w-auto shrink-0" onClick={onClose}>
             完成
           </Button>
         </div>

@@ -162,7 +162,8 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
     // warmup/首次 encode 成功后由 /api/health 动态读取 ready()（见 server.ts 健康端点）。
     semantic: Boolean(embedding?.ready() && vectors),
     fts: Boolean(fts),
-    llm: Boolean(config.llm.apiKey),
+    // 本地网关（Ollama 等）可以无密钥，管理员显式放行内网即视为可用
+    llm: Boolean(config.llm.apiKey) || config.llm.allowPrivateNetwork === true,
     notes,
   };
 

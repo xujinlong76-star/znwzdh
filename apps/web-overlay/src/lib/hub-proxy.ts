@@ -43,10 +43,24 @@ export const DEFAULT_RESPONSE_CACHE_CONTROL = 'no-store'
 /** 上游响应上限，可用 NAVHUB_HUB_TIMEOUT_MS 覆盖（毫秒） */
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 30_000
 
-/** 解析超时配置：非法/缺省时回落到默认值，不放大也不缩小到 0 */
-export function upstreamTimeoutMs(raw: string | undefined = process.env.NAVHUB_HUB_TIMEOUT_MS): number {
+/** 复杂 AI 规划/生成场景响应上限，可用 NAVHUB_AI_TIMEOUT_MS 覆盖（毫秒） */
+export const DEFAULT_AI_UPSTREAM_TIMEOUT_MS = 120_000
+
+/** 解析超时配置：非法/缺省时回落到默认值，不放大也不缩小到 0。对于 AI 规划类长耗时接口自动放宽超时 */
+export function upstreamTimeoutMs(
+  raw: string | undefined = process.env.NAVHUB_HUB_TIMEOUT_MS,
+  path?: string[] | string,
+): number {
   const n = Number(raw)
-  return Number.isFinite(n) && n > 0 ? n : DEFAULT_UPSTREAM_TIMEOUT_MS
+  if (Number.isFinite(n) && n > 0) return n
+
+  const pathStr = Array.isArray(path) ? path.join('/') : (path ?? '')
+  if (pathStr.includes('ai') || pathStr.includes('plugin/generate')) {
+    const aiTimeout = Number(process.env.NAVHUB_AI_TIMEOUT_MS)
+    return Number.isFinite(aiTimeout) && aiTimeout > 0 ? aiTimeout : DEFAULT_AI_UPSTREAM_TIMEOUT_MS
+  }
+
+  return DEFAULT_UPSTREAM_TIMEOUT_MS
 }
 
 /**

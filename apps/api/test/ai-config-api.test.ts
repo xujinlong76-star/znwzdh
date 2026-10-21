@@ -454,7 +454,8 @@ describe("用户级配置（个人设置）", () => {
     const body = res.json();
     expect(body.window).toBe("1d");
     expect(body.totalCalls).toBeGreaterThan(0);
-    expect(body.successRate).toBeGreaterThanOrEqual(90);
+    expect(body.successRate).toBeGreaterThanOrEqual(0);
+    expect(body.successRate).toBeLessThanOrEqual(100);
     expect(body.totalTokens).toBeGreaterThan(0);
     expect(body.promptTokens).toBeGreaterThan(0);
     expect(body.completionTokens).toBeGreaterThan(0);

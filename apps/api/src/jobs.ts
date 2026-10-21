@@ -17,6 +17,7 @@
 import { EventEmitter } from "node:events";
 import { enrichUrl } from "@navhub/ai";
 import { enrichLlmOf, resolveLlm } from "./llm-config.ts";
+import { createEnrichUsageCallback } from "./llm-usage.ts";
 import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol, sanitizeIconUrl } from "@navhub/core";
 import {
   bindSqlite,
@@ -636,10 +637,12 @@ export class JobRunner {
     const site = await this.ctx.repo.getSite(payload.siteId);
     if (!site) throw new Error("站点不存在: " + payload.siteId);
 
+    const resolved = payload.llm ? await resolveLlm(this.ctx) : null;
     const enriched = await enrichUrl(site.url, {
-      llm: payload.llm ? enrichLlmOf(await resolveLlm(this.ctx)) : undefined,
+      llm: resolved ? enrichLlmOf(resolved) : undefined,
       guard: this.ctx.config.fetch,
       heuristicOnly: !payload.llm,
+      onLlmCall: resolved ? createEnrichUsageCallback(this.ctx, resolved.source, null, "job_enrich") : undefined,
     });
     // 只覆盖「空值或超期（>30 天）字段」——刷新不该把人工精修的内容冲掉
     const stale = 30 * 86_400_000;

@@ -16,9 +16,9 @@ import {
   type SiteHealthAuditSummary,
   type SiteHealthAuditIssue,
 } from "@navhub/core";
-import { chatCompletion } from "@navhub/ai";
 import { indexSite } from "../index-site.ts";
-import { resolveLlm } from "../llm-config.ts";
+import { llmProviderReady, resolveLlm } from "../llm-config.ts";
+import { callLlm } from "../llm-usage.ts";
 import type { AppContext } from "../context.ts";
 
 export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -222,7 +222,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
 
     try {
       const llm = await resolveLlm(ctx);
-      if (llm.provider.apiKey) {
+      if (llmProviderReady(llm.provider)) {
         const prompt = `你是一个资深互联网工具导航专家。用户收藏的站点【${site.title}】（URL: ${site.url}，描述: ${site.description || "无"}）目前已失效或下线。
 请推荐 3 个与该站点功能最相似、目前稳定可用且知名度高的替代工具或官网。
 请以 JSON 格式输出，格式必须为严格的 JSON 数组：
@@ -231,14 +231,13 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
 ]
 不要输出任何 markdown 格式标记，直接输出纯 JSON 字符串。`;
 
-        const res = await chatCompletion(
-          {
-            ...llm.provider,
-            temperature: 0.3,
-            maxTokens: 600,
-          },
-          { messages: [{ role: "user", content: prompt }] }
-        );
+        const res = await callLlm(ctx, llm, {
+          scenario: "health_audit",
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.3,
+          maxTokens: 600,
+          json: true,
+        });
 
         if (res.content) {
           const cleaned = res.content.replace(/^```json/i, "").replace(/```$/i, "").trim();

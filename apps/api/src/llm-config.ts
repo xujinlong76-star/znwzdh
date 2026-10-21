@@ -53,6 +53,8 @@ export const LlmProviderInputSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   maxTokens: z.number().int().min(1).max(65_536).optional(),
   jsonMode: z.enum(["auto", "response_format", "prompt"]).optional(),
+  /** 深度思考开关；省略时继承上层（系统级默认开） */
+  thinking: z.boolean().optional(),
 });
 export type LlmProviderInput = z.infer<typeof LlmProviderInputSchema>;
 
@@ -100,6 +102,8 @@ interface StoredLlmProvider {
   maxTokens: number;
   jsonMode: JsonMode;
   allowPrivateNetwork: boolean;
+  /** 深度思考；旧配置没有该字段时按「开」处理（产品默认） */
+  thinking?: boolean;
   /** 备用模型池（仅系统级配置使用） */
   fallbacks: StoredLlmFallback[];
   updatedAt: number;
@@ -166,6 +170,8 @@ function toProvider(stored: StoredLlmProvider, apiKey: string | null, allowPriva
     maxTokens: stored.maxTokens,
     jsonMode: stored.jsonMode,
     allowPrivateNetwork,
+    // 旧配置没有 thinking 字段 → 按产品默认「开」处理
+    thinking: stored.thinking ?? true,
   };
 }
 
@@ -282,7 +288,10 @@ export async function resolveLlm(ctx: AppContext, identity?: string | null): Pro
   if (system) {
     if (!system.enabled) {
       return {
-        provider: toProvider(system, null, system.allowPrivateNetwork),
+        // 显式关闭：不只清空密钥，也撤销「放行内网」。否则免密钥的本地网关
+        // 仍会被判定为可用（llmProviderReady 只看 allowPrivateNetwork），
+        // 等于绕过管理端的关闭开关。
+        provider: toProvider(system, null, false),
         fallbacks: [],
         source: "system",
       };
@@ -301,6 +310,7 @@ export async function resolveLlm(ctx: AppContext, identity?: string | null): Pro
     maxTokens: ctx.config.llm.maxTokens,
     jsonMode: ctx.config.llm.jsonMode,
     allowPrivateNetwork: ctx.config.llm.allowPrivateNetwork,
+    thinking: ctx.config.llm.thinking,
   };
   return { provider: env, fallbacks: [], source: env.apiKey ? "env" : "default" };
 }
@@ -317,6 +327,7 @@ export function enrichLlmOf(resolved: ResolvedLlm): LlmConfig {
     timeoutMs: resolved.provider.timeoutMs ?? 20_000,
     jsonMode: resolved.provider.jsonMode,
     allowPrivateNetwork: resolved.provider.allowPrivateNetwork,
+    thinking: resolved.provider.thinking ?? true,
     fallbacks: resolved.fallbacks.map((fb) => ({
       baseUrl: fb.baseUrl,
       apiKey: fb.apiKey ?? null,
@@ -333,10 +344,24 @@ export function enrichLlmOf(resolved: ResolvedLlm): LlmConfig {
 export async function refreshLlmCapability(ctx: AppContext): Promise<void> {
   try {
     const { provider } = await resolveLlm(ctx);
-    ctx.capabilities.llm = Boolean(provider.apiKey);
+    ctx.capabilities.llm = llmProviderReady(provider);
   } catch {
     ctx.capabilities.llm = false;
   }
+}
+
+/**
+ * provider 是否可用于真实调用。
+ *
+ * 不能只看 `apiKey`：本地 Ollama 等自托管网关不需要密钥，配置页预设也明确写着
+ * 「可留空」。是否放行由 `allowPrivateNetwork` 控制 —— 它只能由管理员在系统级
+ * 配置里开启（用户级配置强制为 false），因此不存在匿名用户借空密钥访问内网的路径。
+ */
+export function llmProviderReady(
+  provider: { apiKey?: string | null; allowPrivateNetwork?: boolean } | null | undefined,
+): boolean {
+  if (!provider) return false;
+  return Boolean(provider.apiKey) || provider.allowPrivateNetwork === true;
 }
 
 /* ------------------------------------------------------------------ *
@@ -372,13 +397,17 @@ export interface LlmConfigView {
   maxTokens: number;
   jsonMode: JsonMode;
   allowPrivateNetwork: boolean;
+  /** 深度思考（默认开；可在配置页关闭） */
+  thinking: boolean;
   /** 备用模型池（仅系统级；密钥只回显掩码） */
   fallbacks: LlmFallbackView[];
   updatedAt: number | null;
   updatedBy: string | null;
+  /** 最终生效的模型信息与来源 */
+  effective: { source: "system" | "env" | "default"; name: string; model: string; baseUrl: string };
 }
 
-function viewOf(stored: StoredLlmProvider, key: string | null, source: "db" | "env" | "default"): LlmConfigView {
+function viewOf(stored: StoredLlmProvider, key: string | null, source: "db" | "env" | "default", effective?: LlmConfigView["effective"]): LlmConfigView {
   return {
     configured: Boolean(key),
     source,
@@ -393,13 +422,27 @@ function viewOf(stored: StoredLlmProvider, key: string | null, source: "db" | "e
     maxTokens: stored.maxTokens,
     jsonMode: stored.jsonMode,
     allowPrivateNetwork: stored.allowPrivateNetwork,
+    thinking: stored.thinking ?? true,
     fallbacks: [],
     updatedAt: stored.updatedAt || null,
     updatedBy: stored.updatedBy,
+    effective: effective ?? {
+      source: source === "db" ? "system" : source,
+      name: stored.name,
+      model: stored.model,
+      baseUrl: stored.baseUrl,
+    },
   };
 }
 
 export async function getSystemLlmConfigView(ctx: AppContext): Promise<LlmConfigView> {
+  const resolved = await resolveLlm(ctx);
+  const effective: LlmConfigView["effective"] = {
+    source: resolved.source === "user" ? "system" : (resolved.source as "system" | "env" | "default"),
+    name: resolved.provider.name || "Agnes 3.0 Flash",
+    model: resolved.provider.model,
+    baseUrl: resolved.provider.baseUrl,
+  };
   const stored = await readStoredSystem(ctx);
   if (stored) {
     const key = (await openKey(ctx, stored.apiKeyEnc)) ?? ctx.config.llm.apiKey;
@@ -421,7 +464,7 @@ export async function getSystemLlmConfigView(ctx: AppContext): Promise<LlmConfig
         allowPrivateNetwork: fb.allowPrivateNetwork,
       });
     }
-    return { ...viewOf(stored, key, "db"), fallbacks };
+    return { ...viewOf(stored, key, "db", effective), fallbacks, effective };
   }
   const envKey = ctx.config.llm.apiKey;
   const defaults: StoredLlmProvider = {
@@ -430,7 +473,7 @@ export async function getSystemLlmConfigView(ctx: AppContext): Promise<LlmConfig
     updatedAt: 0,
     updatedBy: null,
   };
-  return viewOf(defaults, envKey, envKey ? "env" : "default");
+  return { ...viewOf(defaults, envKey, envKey ? "env" : "default", effective), effective };
 }
 
 /* ------------------------------------------------------------------ *
@@ -505,6 +548,8 @@ export async function saveSystemLlmConfig(
     temperature: input.temperature ?? base.temperature,
     maxTokens: input.maxTokens ?? base.maxTokens,
     jsonMode: input.jsonMode ?? base.jsonMode,
+    // 产品默认开；显式关掉才落 false
+    thinking: input.thinking ?? base.thinking ?? true,
     allowPrivateNetwork: allowPrivate,
     fallbacks,
     updatedAt: Date.now(),
@@ -553,9 +598,12 @@ export interface UserLlmConfigView {
   temperature: number;
   maxTokens: number;
   jsonMode: JsonMode;
+  thinking: boolean;
   updatedAt: number | null;
   /** 系统默认摘要（不含地址与密钥），供「跟随系统」提示 */
   system: { source: "db" | "env" | "default"; name: string; model: string };
+  /** 最终生效的模型信息与来源 */
+  effective: { source: "user" | "system" | "env" | "default"; name: string; model: string; baseUrl: string };
 }
 
 async function systemSummary(ctx: AppContext): Promise<UserLlmConfigView["system"]> {
@@ -571,6 +619,13 @@ async function systemSummary(ctx: AppContext): Promise<UserLlmConfigView["system
 export async function getUserLlmConfigView(ctx: AppContext, identity: string): Promise<UserLlmConfigView> {
   const stored = await readStoredUser(ctx, identity);
   const system = await systemSummary(ctx);
+  const resolved = await resolveLlm(ctx, identity);
+  const effective: UserLlmConfigView["effective"] = {
+    source: resolved.source,
+    name: resolved.provider.name || "Agnes 3.0 Flash",
+    model: resolved.provider.model,
+    baseUrl: resolved.provider.baseUrl,
+  };
   if (!stored) {
     return {
       configured: false,
@@ -584,8 +639,10 @@ export async function getUserLlmConfigView(ctx: AppContext, identity: string): P
       temperature: ctx.config.llm.temperature,
       maxTokens: ctx.config.llm.maxTokens,
       jsonMode: ctx.config.llm.jsonMode,
+      thinking: ctx.config.llm.thinking,
       updatedAt: null,
       system,
+      effective,
     };
   }
   const key = await openKey(ctx, stored.apiKeyEnc);
@@ -601,8 +658,10 @@ export async function getUserLlmConfigView(ctx: AppContext, identity: string): P
     temperature: stored.temperature,
     maxTokens: stored.maxTokens,
     jsonMode: stored.jsonMode,
+    thinking: stored.thinking ?? true,
     updatedAt: stored.updatedAt || null,
     system,
+    effective,
   };
 }
 
@@ -632,6 +691,7 @@ export async function saveUserLlmConfig(
     temperature: input.temperature ?? existing?.temperature ?? ctx.config.llm.temperature,
     maxTokens: input.maxTokens ?? existing?.maxTokens ?? ctx.config.llm.maxTokens,
     jsonMode: input.jsonMode ?? existing?.jsonMode ?? ctx.config.llm.jsonMode,
+    thinking: input.thinking ?? existing?.thinking ?? ctx.config.llm.thinking,
     allowPrivateNetwork: false,
     fallbacks: [],
     updatedAt: Date.now(),
@@ -704,7 +764,7 @@ export async function testLlmProvider(
   }
   if (!apiKey) apiKey = ctx.config.llm.apiKey;
 
-  if (!apiKey) {
+  if (!apiKey && !allowPrivate) {
     return { ok: false, latencyMs: 0, model: input.model, replyPreview: "", error: "尚未配置 API 密钥", code: "config" };
   }
 
@@ -719,6 +779,8 @@ export async function testLlmProvider(
         temperature: 0,
         maxTokens: 32,
         jsonMode: input.jsonMode ?? "auto",
+        // 连通性探测只要一个 token，开思考纯属浪费
+        thinking: false,
         allowPrivateNetwork: allowPrivate,
       },
       {
@@ -730,17 +792,41 @@ export async function testLlmProvider(
         maxTokens: 32,
       },
     );
+    const latencyMs = result.latencyMs || (Date.now() - startedAt);
+    void ctx.repo.recordLlmUsage({
+      scenario: "ai_config_test",
+      // source 描述的是「哪个配置层发起的测试」：带身份 = 用户级配置，否则是系统级。
+      // 不能用 allowPrivateNetwork 代替 —— 它只表示是否放行内网地址，
+      // 否则管理端测系统配置会被记成 user，观测面板的来源分布从此失真。
+      source: identity ? "user" : "system",
+      model: result.model,
+      identity,
+      promptTokens: result.usage.promptTokens,
+      completionTokens: result.usage.completionTokens,
+      latencyMs,
+      ok: true,
+    });
     return {
       ok: true,
-      latencyMs: result.latencyMs,
+      latencyMs,
       model: result.model,
       replyPreview: result.content.trim().slice(0, 80),
     };
   } catch (err) {
+    const latencyMs = Date.now() - startedAt;
+    void ctx.repo.recordLlmUsage({
+      scenario: "ai_config_test",
+      source: identity ? "user" : "system",
+      model: input.model,
+      identity,
+      latencyMs,
+      ok: false,
+      errorCode: err instanceof LlmError ? err.code : "network",
+    });
     if (err instanceof LlmError) {
       return {
         ok: false,
-        latencyMs: Date.now() - startedAt,
+        latencyMs,
         model: input.model,
         replyPreview: "",
         error: err.message,
@@ -750,7 +836,7 @@ export async function testLlmProvider(
     }
     return {
       ok: false,
-      latencyMs: Date.now() - startedAt,
+      latencyMs,
       model: input.model,
       replyPreview: "",
       error: err instanceof Error ? err.message : String(err),

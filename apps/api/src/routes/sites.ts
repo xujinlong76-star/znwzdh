@@ -10,6 +10,7 @@ import { canonicalizeUrl, sanitizeIconUrl, SiteCreateBody } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
+import { createEnrichUsageCallback } from "../llm-usage.ts";
 import { identityOf } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
@@ -32,21 +33,23 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   // 注意：保持返回数组（不包 {items,hasMore}）：前端多处按数组消费，改结构会破坏兼容。
   // 默认 limit 100、上限 1000 防全表扫；offset 分页支持。
   app.get("/api/sites", { config: { scope: "read", cache: { maxAge: 60, etag: true } } }, async (req) => {
-    const q = (req.query ?? {}) as Record<string, any>;
+    const q = (req.query ?? {}) as Record<string, unknown>;
     const limit = Math.min(Math.max(Number(q.limit) || 100, 1), 1000);
     const offset = Math.max(0, Number(q.offset) || 0);
     let facets: Record<string, string[]> | undefined = undefined;
     if (q.facets) {
       try {
-        facets = typeof q.facets === "string" ? JSON.parse(q.facets) : q.facets;
+        facets = typeof q.facets === "string"
+          ? (JSON.parse(q.facets) as Record<string, string[]>)
+          : (q.facets as Record<string, string[]>);
       } catch {
         // ignore
       }
     }
     return ctx.repo.listSites({
-      categoryId: q.categoryId,
+      categoryId: typeof q.categoryId === "string" ? q.categoryId : undefined,
       status: parseStatusFilter(q.status),
-      source: q.source,
+      source: typeof q.source === "string" ? q.source : undefined,
       facets,
       limit,
       offset,
@@ -84,6 +87,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         llm: enrichLlmOf(resolved),
         guard: ctx.config.fetch,
         knownCategories: categories.map((c) => c.title),
+        onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identityOf(req as never)),
       });
       let categoryId = enriched.suggestedCategory
         ? categories.find((c) => c.title === enriched.suggestedCategory)?.id ?? null

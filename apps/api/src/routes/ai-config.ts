@@ -7,7 +7,8 @@
  * 密钥任何情况下都不回显明文；写操作失败时只透出可读原因，不抛出内部堆栈。
  */
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
-import { LlmError, chatCompletion } from "@navhub/ai";
+import { LlmError } from "@navhub/ai";
+import { callLlm } from "../llm-usage.ts";
 import { z } from "zod";
 import {
   LlmProviderInputSchema,
@@ -15,12 +16,19 @@ import {
   deleteUserLlmConfig,
   getSystemLlmConfigView,
   getUserLlmConfigView,
+  llmProviderReady,
   resetSystemLlmConfig,
   resolveLlm,
   saveSystemLlmConfig,
   saveUserLlmConfig,
   testLlmProvider,
 } from "../llm-config.ts";
+import {
+  validateAndCleanPluginManifest,
+  summarizePluginManifest,
+  type PluginManifest,
+  type PluginKind,
+} from "@navhub/core";
 import { identityAllowed, identityOf, unauthorized } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
@@ -96,150 +104,67 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     const windowDays = q.window === "7d" ? 7 : q.window === "30d" ? 30 : 1;
     const since = Date.now() - windowDays * 24 * 3600 * 1000;
 
-    let rows: any[] = [];
-    try {
-      rows = await ctx.repo.raw(
-        "SELECT id, kind, meta, created_at, identity FROM events WHERE (kind LIKE 'ai_%' OR kind = 'enrich') AND created_at >= ? ORDER BY id DESC LIMIT 500",
-        [since],
-      );
-    } catch {
-      rows = [];
-    }
-
-    let totalCalls = rows.length;
-    let totalTokens = 0;
-    let promptTokens = 0;
-    let completionTokens = 0;
-    let totalLatency = 0;
-    let errorCalls = 0;
-    const latencies: number[] = [];
-
-    const scenarioMap = new Map<string, { count: number; tokens: number; totalLatency: number }>();
-    const recentLogs: any[] = [];
-
-    for (const r of rows) {
-      let meta: any = {};
-      if (typeof r.meta === "string") {
-        try {
-          meta = JSON.parse(r.meta);
-        } catch {}
-      } else if (r.meta && typeof r.meta === "object") {
-        meta = r.meta;
-      }
-
-      const tokens = Number(meta.tokens) || 0;
-      const latency = Number(meta.latencyMs) || 0;
-      const status = meta.error ? "error" : "success";
-
-      if (status === "error") errorCalls++;
-      totalTokens += tokens;
-      promptTokens += Math.round(tokens * 0.65);
-      completionTokens += Math.round(tokens * 0.35);
-
-      if (latency > 0) {
-        totalLatency += latency;
-        latencies.push(latency);
-      }
-
-      const sc = String(r.kind);
-      const existing = scenarioMap.get(sc) || { count: 0, tokens: 0, totalLatency: 0 };
-      existing.count++;
-      existing.tokens += tokens;
-      existing.totalLatency += latency;
-      scenarioMap.set(sc, existing);
-
-      if (recentLogs.length < 20) {
-        recentLogs.push({
-          id: `ai-log-${r.id}`,
-          timestamp: Number(r.created_at) || Date.now(),
-          scenario: sc,
-          model: meta.model || "agnes-3.0-flash",
-          source: meta.source || "system",
-          latencyMs: latency,
-          tokens,
-          promptTokens: Math.round(tokens * 0.65),
-          completionTokens: Math.round(tokens * 0.35),
-          status,
-          error: meta.error,
-        });
-      }
-    }
-
-    if (totalCalls === 0) {
-      totalCalls = 168;
-      errorCalls = 1;
-      totalTokens = 194200;
-      promptTokens = 126230;
-      completionTokens = 67970;
-      latencies.push(320, 290, 410, 350, 480, 520, 310, 280);
-      totalLatency = 350 * totalCalls;
-      scenarioMap.set("ai_chat", { count: 96, tokens: 104000, totalLatency: 96 * 310 });
-      scenarioMap.set("ai_canvas_generate", { count: 52, tokens: 78000, totalLatency: 52 * 450 });
-      scenarioMap.set("ai_config_test", { count: 20, tokens: 12200, totalLatency: 20 * 240 });
-
-      const now = Date.now();
-      recentLogs.push(
-        { id: "ai-log-base-1", timestamp: now - 1000 * 60 * 2, scenario: "ai_chat", model: "agnes-3.0-flash", source: "system", latencyMs: 312, tokens: 840, promptTokens: 520, completionTokens: 320, status: "success" },
-        { id: "ai-log-base-2", timestamp: now - 1000 * 60 * 18, scenario: "ai_canvas_generate", model: "agnes-3.0-flash", source: "system", latencyMs: 538, tokens: 2150, promptTokens: 1400, completionTokens: 750, status: "success" },
-        { id: "ai-log-base-3", timestamp: now - 1000 * 60 * 45, scenario: "ai_chat", model: "agnes-3.0-flash", source: "user", latencyMs: 295, tokens: 620, promptTokens: 410, completionTokens: 210, status: "success" },
-        { id: "ai-log-base-4", timestamp: now - 1000 * 60 * 80, scenario: "ai_config_test", model: "agnes-3.0-flash", source: "system", latencyMs: 240, tokens: 180, promptTokens: 120, completionTokens: 60, status: "success" },
-      );
-    }
-
-    latencies.sort((a, b) => a - b);
-    const p95Index = Math.min(latencies.length - 1, Math.floor(latencies.length * 0.95));
-    const p95LatencyMs = latencies[p95Index] || 380;
-    const avgLatencyMs = latencies.length > 0 ? Math.round(totalLatency / (latencies.length || 1)) : 320;
-    const successCalls = totalCalls - errorCalls;
-    const successRate = totalCalls > 0 ? Number(((successCalls / totalCalls) * 100).toFixed(1)) : 100;
-    const estimatedCostRmb = Number(((totalTokens / 1000) * 0.001).toFixed(4));
+    const agg = await ctx.repo.aggregateLlmUsage({ since });
+    const recent = await ctx.repo.listRecentLlmUsage(20);
 
     const SCENARIO_NAMES: Record<string, string> = {
       ai_chat: "AI Web Copilot 对话",
+      copilot: "Agnes 3.0 Flash 伴侣",
       ai_canvas_generate: "自然语言工作台规划生成",
+      canvas: "自然语言工作台规划生成",
       ai_config_test: "模型连通性探测",
       enrich: "站点智能元数据富化",
+      health_audit: "站点自治健康巡检",
+      job_enrich: "后台元数据批量刷新",
     };
 
-    const byScenario = Array.from(scenarioMap.entries()).map(([sc, val]) => ({
-      scenario: sc,
-      name: SCENARIO_NAMES[sc] || sc,
-      count: val.count,
-      tokens: val.tokens,
-      avgLatencyMs: val.count > 0 ? Math.round(val.totalLatency / val.count) : 0,
+    const byScenario = agg.byScenario.map((sc) => ({
+      scenario: sc.scenario,
+      name: SCENARIO_NAMES[sc.scenario] || sc.scenario,
+      count: sc.count,
+      tokens: sc.tokens,
+      avgLatencyMs: sc.avgLatencyMs,
+      errorCalls: sc.errorCalls,
     }));
 
-    const hourlyTrend: any[] = [];
-    const currentHour = new Date().getHours();
-    for (let i = 23; i >= 0; i--) {
-      const h = (currentHour - i + 24) % 24;
-      const timeLabel = `${String(h).padStart(2, "0")}:00`;
-      const isDay = h >= 9 && h <= 21;
-      const weight = isDay ? 1.5 : 0.4;
-      const hourCalls = Math.max(1, Math.round((totalCalls / 28) * weight + (Math.sin(h) * 2)));
-      const hourTokens = Math.round(hourCalls * (totalTokens / totalCalls || 1100));
-      const hourLatency = Math.round(avgLatencyMs + (Math.cos(h) * 40));
-      hourlyTrend.push({
-        time: timeLabel,
-        calls: hourCalls,
-        tokens: hourTokens,
-        latencyMs: Math.max(120, hourLatency),
-      });
-    }
+    const hourlyTrend = agg.hourly.map((h) => ({
+      time: `${String(h.hour).padStart(2, "0")}:00`,
+      calls: h.calls,
+      tokens: h.tokens,
+      latencyMs: h.avgLatencyMs,
+    }));
+
+    const recentLogs = recent.map((r) => ({
+      id: `ai-log-${r.id}`,
+      timestamp: r.createdAt,
+      scenario: r.scenario,
+      model: r.model,
+      source: r.source,
+      latencyMs: r.latencyMs,
+      tokens: r.promptTokens + r.completionTokens,
+      promptTokens: r.promptTokens,
+      completionTokens: r.completionTokens,
+      status: r.ok ? ("success" as const) : ("error" as const),
+      error: r.errorCode || undefined,
+      thinking: r.thinking,
+    }));
 
     const resolved = await resolveLlm(ctx);
+    const estimatedCostRmb = Number(((agg.totalTokens / 1000) * 0.001).toFixed(4));
 
     return {
       window: `${windowDays}d`,
-      totalCalls,
-      successCalls,
-      errorCalls,
-      successRate,
-      avgLatencyMs,
-      p95LatencyMs,
-      totalTokens,
-      promptTokens,
-      completionTokens,
+      hasData: agg.totalCalls > 0,
+      totalCalls: agg.totalCalls,
+      successCalls: agg.successCalls,
+      errorCalls: agg.errorCalls,
+      successRate: agg.successRate ?? 0,
+      avgLatencyMs: agg.avgLatencyMs ?? 0,
+      p95LatencyMs: agg.p95LatencyMs ?? 0,
+      totalTokens: agg.totalTokens,
+      promptTokens: agg.promptTokens,
+      completionTokens: agg.completionTokens,
+      thinkingCalls: agg.thinkingCalls,
       estimatedCostRmb,
       activeModel: resolved.provider.model || "agnes-3.0-flash",
       byScenario,
@@ -334,6 +259,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       .min(1)
       .max(20),
     maxTokens: z.number().int().min(16).max(1024).optional(),
+    thinking: z.boolean().optional(),
     context: z
       .object({
         activeTab: z.string().max(100).optional(),
@@ -360,7 +286,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       }
 
       const resolved = await resolveLlm(ctx, identity);
-      if (!resolved.provider.apiKey) {
+      if (!llmProviderReady(resolved.provider)) {
         reply.code(400);
         return { error: "尚未配置可用的模型密钥", code: "config" };
       }
@@ -382,45 +308,32 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         ...body.data.messages,
       ];
 
-      const candidates = [resolved.provider, ...resolved.fallbacks];
-      let lastError: LlmError | null = null;
-      for (const candidate of candidates) {
-        try {
-          const result = await chatCompletion(candidate, {
-            messages,
-            maxTokens: body.data.maxTokens ?? 512,
-          });
-          await ctx.repo
-            .recordEvent("ai_chat", {
-              identity,
-              meta: {
-                model: result.model,
-                source: resolved.source,
-                tokens: result.usage.totalTokens,
-                latencyMs: result.latencyMs,
-              },
-            })
-            .catch(() => undefined);
-          return {
-            reply: result.content,
-            model: result.model,
-            source: resolved.source,
-            usage: result.usage,
-            latencyMs: result.latencyMs,
-          };
-        } catch (err) {
-          if (!(err instanceof LlmError)) throw err;
-          lastError = err;
-          if (err.code === "auth" || err.code === "config" || err.code === "ssrf") break;
-        }
-      }
+      try {
+        const result = await callLlm(ctx, resolved, {
+          scenario: "ai_chat",
+          identity,
+          messages,
+          maxTokens: body.data.maxTokens ?? 512,
+          thinking: body.data.thinking,
+        });
 
-      reply.code(502);
-      return {
-        error: "模型调用失败",
-        code: lastError?.code ?? "network",
-        detail: lastError?.message ?? "未知错误",
-      };
+        return {
+          reply: result.content,
+          reasoningContent: result.reasoningContent,
+          model: result.model,
+          source: resolved.source,
+          usage: result.usage,
+          latencyMs: result.latencyMs,
+        };
+      } catch (err) {
+        const lastError = err instanceof LlmError ? err : null;
+        reply.code(502);
+        return {
+          error: "模型调用失败",
+          code: lastError?.code ?? "network",
+          detail: err instanceof Error ? err.message : "未知错误",
+        };
+      }
     },
   );
 
@@ -477,7 +390,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       }
 
       const resolved = await resolveLlm(ctx, identity);
-      if (!resolved.provider.apiKey) {
+      if (!llmProviderReady(resolved.provider)) {
         reply.code(400);
         return { error: "尚未配置可用的模型密钥", code: "config" };
       }
@@ -536,97 +449,277 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         { role: "user" as const, content: `请为我规划专属工作台：${body.data.prompt}` },
       ];
 
-      const candidates = [resolved.provider, ...resolved.fallbacks];
-      let lastError: LlmError | null = null;
-      for (const candidate of candidates) {
+      try {
+        const result = await callLlm(ctx, resolved, {
+          scenario: "canvas",
+          identity,
+          messages,
+          maxTokens: 1024,
+          temperature: 0.3,
+          json: true,
+          timeoutMs: 45_000,
+        });
+
+        const rawJson = extractJson(result.content);
+        let parsed: any;
         try {
-          const result = await chatCompletion(candidate, {
-            messages,
-            maxTokens: 1024,
-            temperature: 0.3,
-            json: true,
+          parsed = JSON.parse(rawJson);
+        } catch (jsonErr) {
+          throw new LlmError("invalid_response", "模型返回的 JSON 解析失败", 200, rawJson);
+        }
+
+        const title = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : "AI 规划工作台";
+        const description = typeof parsed.description === "string" ? parsed.description.trim() : "";
+        const rationale = typeof parsed.rationale === "string" ? parsed.rationale.trim() : "";
+
+        const rawWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
+        const now = Date.now();
+        const widgets = rawWidgets
+          .filter((w: any) => w && typeof w === "object" && VALID_WIDGET_TYPES.has(String(w.type)))
+          .map((w: any, index: number) => {
+            const colSpan = Math.min(12, Math.max(1, Number(w.colSpan) || 4));
+            const rowSpan = Math.min(4, Math.max(1, Number(w.rowSpan) || 2));
+            return {
+              id: `ai-widget-${now}-${index + 1}`,
+              type: String(w.type),
+              customTitle: typeof w.customTitle === "string" ? w.customTitle.trim() : undefined,
+              colSpan,
+              rowSpan,
+              config: typeof w.config === "object" && w.config !== null ? w.config : {},
+              createdAt: now,
+            };
           });
 
-          const rawJson = extractJson(result.content);
-          let parsed: any;
-          try {
-            parsed = JSON.parse(rawJson);
-          } catch (jsonErr) {
-            throw new LlmError("invalid_response", "模型返回的 JSON 解析失败", 200, rawJson);
-          }
-
-          const title = typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : "AI 规划工作台";
-          const description = typeof parsed.description === "string" ? parsed.description.trim() : "";
-          const rationale = typeof parsed.rationale === "string" ? parsed.rationale.trim() : "";
-
-          const rawWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
-          const now = Date.now();
-          const widgets = rawWidgets
-            .filter((w: any) => w && typeof w === "object" && VALID_WIDGET_TYPES.has(String(w.type)))
-            .map((w: any, index: number) => {
-              const colSpan = Math.min(12, Math.max(1, Number(w.colSpan) || 4));
-              const rowSpan = Math.min(4, Math.max(1, Number(w.rowSpan) || 2));
-              return {
-                id: `ai-widget-${now}-${index + 1}`,
-                type: String(w.type),
-                customTitle: typeof w.customTitle === "string" ? w.customTitle.trim() : undefined,
-                colSpan,
-                rowSpan,
-                config: typeof w.config === "object" && w.config !== null ? w.config : {},
-                createdAt: now,
-              };
-            });
-
-          // 如果模型返回的组件列表全非法，至少提供一个通用保底组件
-          if (widgets.length === 0) {
-            widgets.push(
-              { id: `ai-widget-${now}-1`, type: "quick-search", customTitle: "快捷搜索", colSpan: 12, rowSpan: 1, config: {}, createdAt: now },
-              { id: `ai-widget-${now}-2`, type: "favorites-dock", customTitle: "常用收藏", colSpan: 8, rowSpan: 2, config: {}, createdAt: now },
-              { id: `ai-widget-${now}-3`, type: "notes", customTitle: "备忘随手记", colSpan: 4, rowSpan: 2, config: {}, createdAt: now },
-            );
-          }
-
-          const layout = {
-            version: 1,
-            updatedAt: now,
-            title,
-            description,
-            rationale,
-            widgets,
-          };
-
-          await ctx.repo
-            .recordEvent("ai_canvas_generate", {
-              identity,
-              meta: {
-                model: result.model,
-                widgetCount: widgets.length,
-                tokens: result.usage.totalTokens,
-                latencyMs: result.latencyMs,
-              },
-            })
-            .catch(() => undefined);
-
-          return {
-            success: true,
-            layout,
-            model: result.model,
-            usage: result.usage,
-            latencyMs: result.latencyMs,
-          };
-        } catch (err) {
-          if (!(err instanceof LlmError)) throw err;
-          lastError = err;
-          if (err.code === "auth" || err.code === "config" || err.code === "ssrf") break;
+        // 如果模型返回的组件列表全非法，至少提供一个通用保底组件
+        if (widgets.length === 0) {
+          widgets.push(
+            { id: `ai-widget-${now}-1`, type: "quick-search", customTitle: "快捷搜索", colSpan: 12, rowSpan: 1, config: {}, createdAt: now },
+            { id: `ai-widget-${now}-2`, type: "favorites-dock", customTitle: "常用收藏", colSpan: 8, rowSpan: 2, config: {}, createdAt: now },
+            { id: `ai-widget-${now}-3`, type: "notes", customTitle: "备忘随手记", colSpan: 4, rowSpan: 2, config: {}, createdAt: now },
+          );
         }
+
+        const layout = {
+          version: 1,
+          updatedAt: now,
+          title,
+          description,
+          rationale,
+          widgets,
+        };
+
+        return {
+          success: true,
+          layout,
+          model: result.model,
+          usage: result.usage,
+          latencyMs: result.latencyMs,
+        };
+      } catch (err) {
+        const lastError = err instanceof LlmError ? err : null;
+        reply.code(502);
+        return {
+          error: "生成工作台画布失败",
+          code: lastError?.code ?? "network",
+          detail: err instanceof Error ? err.message : "未知错误",
+        };
+      }
+    },
+  );
+
+  /* ---------------------- AI 自然语言插件生成 ---------------------- */
+
+  const PluginGenerateBody = z.object({
+    prompt: z.string().min(2, "需求描述至少2个字符").max(1000, "需求描述最多1000字符"),
+    kind: z.enum(["auto", "site-pack", "workspace-preset", "theme", "search-pack", "bundle"]).default("auto"),
+    thinking: z.boolean().optional(),
+    existingManifest: z.record(z.string(), z.unknown()).optional(),
+    changelogNote: z.string().optional(),
+  });
+
+  app.post(
+    "/api/user/ai/plugin/generate",
+    { config: { scope: "public", rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const identity = identityOf(req as never) || (req as any).auth?.actor || "anonymous";
+      if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+
+      const body = PluginGenerateBody.safeParse(req.body ?? {});
+      if (!body.success) {
+        reply.code(400);
+        return { error: "参数无效", detail: body.error.issues };
       }
 
-      reply.code(502);
-      return {
-        error: "生成工作台画布失败",
-        code: lastError?.code ?? "network",
-        detail: lastError?.message ?? "未知错误",
-      };
+      const resolved = await resolveLlm(ctx, identity);
+      if (!llmProviderReady(resolved.provider)) {
+        reply.code(400);
+        return { error: "尚未配置可用的模型密钥", code: "config" };
+      }
+
+      // 获取系统已知分类与精选站点辅助规划
+      let knownCategories: string[] = [];
+      let sampleSites: string[] = [];
+      try {
+        const [cats, sites] = await Promise.all([
+          ctx.repo.listCategories().catch(() => []),
+          ctx.repo.listSites({ limit: 30, status: "active" }).catch(() => []),
+        ]);
+        knownCategories = cats.map((c) => c.title).slice(0, 15);
+        sampleSites = sites.slice(0, 15).map((s) => `${s.title} (${s.url})`);
+      } catch {
+        // 容错降级
+      }
+
+      const isIncremental = Boolean(body.data.existingManifest);
+
+      const systemPrompt = [
+        "你是一名顶级导航生态架构师与插件设计师。",
+        isIncremental
+          ? "【增量修饰微调模式】：用户提供了一份已有的插件清单 (existingManifest)，本次任务是在保持该清单合理结构的基础上，根据用户的修改指令进行针对性增量修改或扩充（例如添加新站点、修改主题强调色、调整版本号、修改名称描述等）。"
+          : "【全新插件规划模式】：用户希望根据自然语言需求规划并生成一份 100% 声明式的 NavHub 插件清单 (PluginManifest)。",
+        `目标插件类型 (kind)：${body.data.kind === "auto" ? "由你根据用户意图判断最合适的类型（site-pack / theme / search-pack / workspace-preset / bundle），并在 manifest.kind 中指定" : body.data.kind}`,
+        "",
+        "【NavHub 声明式规范约束】：",
+        "1. 顶级结构必须为：",
+        "{",
+        '  "rationale": "简要设计理念与规划理由（1-2句话）",',
+        '  "manifest": {',
+        '    "manifestVersion": 1,',
+        '    "kind": "site-pack" | "workspace-preset" | "theme" | "search-pack" | "bundle",',
+        '    "name": "插件名称（简明扼要，≤40字符）",',
+        '    "description": "插件详细描述（≤200字符）",',
+        '    "icon": "Emoji 或小图标（如 🌐 / ⚡ / 🎨 / 🚀 / 🛠️）",',
+        '    "author": "作者昵称",',
+        '    "version": "1.0.0",',
+        '    "license": "MIT",',
+        '    "tags": ["标签1", "标签2"],',
+        '    "payload": { ... }',
+        "  }",
+        "}",
+        "2. 各类型 payload 规范（根据 manifest.kind 选择）：",
+        "  - site-pack: { categories?: [{ title, description? }], sites: [{ url: '必须为有效的 https:// 绝对地址', title: '站点名称', description: '功能描述（简明，≤30字）', category: '所属分类', tags: ['标签'] }] }，站点数量精选 5~8 个核心站点。",
+        "  - theme: { accent?: 'violet' | 'emerald' | 'amber' | 'rose', tokens?: { '--radius': '0.75rem', '--primary': '262 83% 58%' } }",
+        "  - search-pack: { engines: [{ name: '引擎名称', prefix: '!前缀（如 !gh、!npm，必须以!开头）', searchUrl: '必须包含 {q} 占位符的有效 https 链接，例如 https://github.com/search?q={q}', icon: '图标', description: '描述' }] }",
+        "  - workspace-preset: { boards: [{ name: '看板名称', widgets: [{ type: 'quick-search'|'favorites-dock'|'quick-tools'|'notes'|'clock'|'weather', customTitle: '自定义标题', colSpan: 4, rowSpan: 2, config: {} }] }] }",
+        "  - bundle: { items: [{ slug: '已有插件slug', kind: 'site-pack'|'search-pack'|'theme' }] }",
+        "",
+        knownCategories.length > 0 ? `全站已有分类参考：${knownCategories.join("、")}` : "",
+        sampleSites.length > 0 ? `优质站点参考：${sampleSites.join("，")}` : "",
+        "",
+        "思考规划要求：在思考中快速提炼核心决策与分类，确保站点真实有效，随后直接输出完整的 JSON 清单（不要包含任何多余文字或额外说明）。",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      const userContent = isIncremental
+        ? `已有插件清单如下：\n\`\`\`json\n${JSON.stringify(body.data.existingManifest, null, 2)}\n\`\`\`\n\n请根据以下指令进行增量微调：${body.data.prompt}`
+        : `请为我规划生成插件：${body.data.prompt}`;
+
+      const messages = [
+        { role: "system" as const, content: systemPrompt },
+        { role: "user" as const, content: userContent },
+      ];
+
+      try {
+        const result = await callLlm(ctx, resolved, {
+          scenario: "plugin_generate",
+          identity,
+          messages,
+          maxTokens: 1800,
+          temperature: 0.3,
+          json: true,
+          thinking: body.data.thinking,
+          timeoutMs: 60_000,
+        });
+
+        const rawJson = extractJson(result.content);
+        let parsed: any;
+        try {
+          parsed = JSON.parse(rawJson);
+        } catch (jsonErr) {
+          throw new LlmError("invalid_response", "模型返回的 JSON 解析失败", 200, rawJson);
+        }
+
+        const rawManifest =
+          parsed.manifest && typeof parsed.manifest === "object" ? parsed.manifest : parsed;
+
+        // 基础自愈与默认字段修补
+        rawManifest.manifestVersion = 1;
+        if (typeof rawManifest.name !== "string" || !rawManifest.name.trim()) {
+          rawManifest.name = "AI 创意插件";
+        }
+        if (typeof rawManifest.version !== "string" || !/^\d+\.\d+\.\d+/.test(rawManifest.version)) {
+          rawManifest.version = "1.0.0";
+        }
+        if (typeof rawManifest.description !== "string" || !rawManifest.description.trim()) {
+          rawManifest.description = "由 Agnes 3.0 Flash 规划生成的 NavHub 声明式插件";
+        }
+        if (typeof rawManifest.author !== "string" || !rawManifest.author.trim()) {
+          rawManifest.author = identity !== "anonymous" ? identity : "NavHub 创作者";
+        }
+        if (typeof rawManifest.license !== "string" || !rawManifest.license.trim()) {
+          rawManifest.license = "MIT";
+        }
+
+        // 针对 site-pack URL 自动修补协议
+        if (rawManifest.kind === "site-pack" && rawManifest.payload?.sites && Array.isArray(rawManifest.payload.sites)) {
+          for (const s of rawManifest.payload.sites) {
+            if (s && typeof s.url === "string") {
+              const u = s.url.trim();
+              if (!u.startsWith("http://") && !u.startsWith("https://")) {
+                s.url = `https://${u}`;
+              }
+            }
+          }
+        }
+
+        // 针对 search-pack 自动修补 {q} 与前缀 !
+        if (rawManifest.kind === "search-pack" && rawManifest.payload?.engines && Array.isArray(rawManifest.payload.engines)) {
+          for (let idx = 0; idx < rawManifest.payload.engines.length; idx++) {
+            const e = rawManifest.payload.engines[idx];
+            if (e && typeof e === "object") {
+              if (typeof e.prefix === "string" && !e.prefix.startsWith("!")) {
+                e.prefix = `!${e.prefix.replace(/[^a-zA-Z0-9_-]/g, "") || `s${idx + 1}`}`;
+              }
+              if (typeof e.searchUrl === "string" && !e.searchUrl.includes("{q}")) {
+                e.searchUrl = e.searchUrl.includes("?") ? `${e.searchUrl}&q={q}` : `${e.searchUrl}?q={q}`;
+              }
+            }
+          }
+        }
+
+        const validated = validateAndCleanPluginManifest(rawManifest);
+        if (!validated.ok) {
+          reply.code(400);
+          return {
+            success: false,
+            error: "插件清单校验失败",
+            errors: validated.errors,
+            manifest: rawManifest,
+            rationale: parsed.rationale || "模型生成的内容格式存在偏差，请重试或微调提示词",
+          };
+        }
+
+        const summary = summarizePluginManifest(validated.manifest);
+        return {
+          success: true,
+          manifest: validated.manifest,
+          summary,
+          rationale: parsed.rationale || "根据您的提示词规划生成",
+          reasoningContent: result.reasoningContent,
+          model: result.model,
+          usage: result.usage,
+          latencyMs: result.latencyMs,
+        };
+      } catch (err) {
+        const lastError = err instanceof LlmError ? err : null;
+        reply.code(502);
+        return {
+          error: "AI 生成插件失败",
+          code: lastError?.code ?? "network",
+          detail: err instanceof Error ? err.message : "未知错误",
+        };
+      }
     },
   );
 };

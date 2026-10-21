@@ -83,28 +83,28 @@ export function AiCanvasGeneratorModal({
         className="relative w-full max-w-2xl bg-background border border-border/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88dvh] outline-none"
       >
         {/* 顶部标题栏 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border/50 bg-muted/20">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-border/50 bg-muted/20">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-600 dark:text-purple-400 shrink-0">
               <Sparkles className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-foreground">一句话 AI 生成工作台</h2>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-foreground truncate">一句话 AI 生成工作台</h2>
+                <span className="text-[10px] sm:text-[11px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 shrink-0">
                   Agnes 3.0 Flash 智能规划
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground">输入工作场景或需求，由大模型为您量身编排 12 栅格微组件组合</p>
+              <p className="text-xs text-muted-foreground truncate sm:whitespace-normal">输入工作场景或需求，由大模型为您量身编排 12 栅格微组件组合</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" aria-label="关闭" title="关闭" onClick={onClose}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full shrink-0" aria-label="关闭" title="关闭" onClick={onClose}>
             <X className="w-4 h-4" />
           </Button>
         </div>
 
         {/* 内容区 */}
-        <div className="p-6 space-y-4 overflow-y-auto">
+        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto">
           {/* 预设情境快捷选择 */}
           <div className="space-y-1.5">
             <span className="text-xs font-semibold text-muted-foreground">情境灵感推荐：</span>
@@ -137,21 +137,21 @@ export function AiCanvasGeneratorModal({
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="例如：我是一名独立出海开发者，需要包含跨国搜索、外汇时钟、GitHub热力图与便签..."
-              className="w-full text-xs p-3 rounded-xl border border-border bg-background/50 focus:bg-background focus:ring-1 focus:ring-purple-500 outline-none resize-none transition-all leading-relaxed"
+              className="w-full text-base sm:text-xs p-3 rounded-xl border border-border bg-background/50 focus:bg-background focus:ring-1 focus:ring-purple-500 outline-none resize-none transition-all leading-relaxed"
             />
           </div>
 
           {/* 生成动作 */}
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Info className="w-3.5 h-3.5 text-purple-500" />
+              <Info className="w-3.5 h-3.5 text-purple-500 shrink-0" />
               <span>智能根据 12 栅格排版规律合理分配组件尺寸与位置</span>
             </div>
             <Button
               type="button"
               disabled={loading || !prompt.trim()}
               onClick={() => void handleGenerate()}
-              className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs h-8 px-4 gap-1.5 shadow-xs"
+              className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs h-8 px-4 gap-1.5 shadow-xs w-full sm:w-auto shrink-0"
             >
               {loading ? (
                 <>
@@ -230,12 +230,12 @@ export function AiCanvasGeneratorModal({
               </div>
 
               {/* 应用操作按钮组 */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 pt-2 border-t border-border/40">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="rounded-xl text-xs h-8 px-3 gap-1"
+                  className="rounded-xl text-xs h-8 px-3 gap-1 w-full sm:w-auto"
                   onClick={() => handleApply('new-board')}
                 >
                   <Layers className="w-3.5 h-3.5" />
@@ -244,7 +244,7 @@ export function AiCanvasGeneratorModal({
                 <Button
                   type="button"
                   size="sm"
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-xs h-8 px-3 gap-1 shadow-xs"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl text-xs h-8 px-3 gap-1 shadow-xs w-full sm:w-auto"
                   onClick={() => handleApply('replace')}
                 >
                   <Check className="w-3.5 h-3.5" />

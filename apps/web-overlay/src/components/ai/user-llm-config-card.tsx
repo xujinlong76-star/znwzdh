@@ -45,6 +45,7 @@ function defaultForm(system?: HubUserLlmConfigView['system']): LlmFormValue {
     temperature: 0.2,
     maxTokens: 1024,
     jsonMode: 'auto',
+    thinking: true,
     allowPrivateNetwork: false,
   }
 }
@@ -62,6 +63,7 @@ export function UserLlmConfigCard() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<HubLlmTestResult | null>(null)
   const [chatInput, setChatInput] = useState('')
+  const [chatThinking, setChatThinking] = useState(true)
   const [chatting, setChatting] = useState(false)
   const [chatReply, setChatReply] = useState<HubAiChatResult | null>(null)
   const [chatError, setChatError] = useState<string | null>(null)
@@ -87,6 +89,7 @@ export function UserLlmConfigCard() {
           temperature: res.config.temperature,
           maxTokens: res.config.maxTokens,
           jsonMode: res.config.jsonMode,
+          thinking: res.config.thinking ?? true,
           allowPrivateNetwork: false,
         })
         setEditing(true)
@@ -167,7 +170,13 @@ export function UserLlmConfigCard() {
     setChatError(null)
     setChatReply(null)
     try {
-      const res = await chatWithUserLlm(identityRef.current, [{ role: 'user', content }], 512)
+      const res = await chatWithUserLlm(
+        identityRef.current,
+        [{ role: 'user', content }],
+        512,
+        undefined,
+        chatThinking,
+      )
       setChatReply(res)
       setChatInput('')
     } catch (err) {
@@ -201,11 +210,20 @@ export function UserLlmConfigCard() {
           <Bot className="h-4 w-4 text-primary" />
           AI 模型（个人）
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* 未加载完成前不显示来源，避免闪现「内置默认」这种误导性文案 */}
           {view && (
-            <Badge variant="outline">
-              当前：{view.configured ? '个人配置' : `跟随系统（${SOURCE_LABEL[view.system.source] ?? ''}）`}
+            <Badge variant="outline" className="gap-1.5 text-xs py-1">
+              <span>当前生效：</span>
+              <strong className="text-foreground">
+                {view.effective?.name ?? (view.configured ? view.name : view.system.name)}
+              </strong>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                ({view.effective?.model ?? (view.configured ? view.model : view.system.model)})
+              </span>
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">
+                {SOURCE_LABEL[view.effective?.source ?? (view.configured ? 'user' : view.system.source)] ?? '系统'}
+              </span>
             </Badge>
           )}
           {!editing && view?.system && (
@@ -299,11 +317,22 @@ export function UserLlmConfigCard() {
 
       {/* 试聊：验证解析链当前生效的模型（个人或系统默认） */}
       <div className="border-t pt-3 mt-3 space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Label className="text-xs">试聊</Label>
-          <span className="text-xs text-muted-foreground">
-            当前生效：{view?.configured ? '个人配置' : '系统默认'}（含备用模型兜底）
-          </span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Label className="text-xs">试聊验证</Label>
+            <span className="text-xs text-muted-foreground">
+              当前生效：{view?.effective?.name || (view?.configured ? '个人配置' : '系统默认')}
+            </span>
+          </div>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none text-muted-foreground hover:text-foreground">
+            <input
+              type="checkbox"
+              checked={chatThinking}
+              onChange={(e) => setChatThinking(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-input accent-[var(--primary)]"
+            />
+            <span>深度思考 (Thinking)</span>
+          </label>
         </div>
         <div className="flex gap-2">
           <Input
@@ -323,7 +352,18 @@ export function UserLlmConfigCard() {
         </div>
         {chatError && <p className="text-xs text-destructive">{chatError}</p>}
         {chatReply && (
-          <div className="rounded-md border bg-muted/30 p-2.5 space-y-1">
+          <div className="rounded-md border bg-muted/30 p-2.5 space-y-2">
+            {chatReply.reasoningContent && (
+              <details className="rounded border border-primary/20 bg-primary/5 p-2 text-xs">
+                <summary className="cursor-pointer font-medium text-primary select-none flex items-center gap-1 hover:text-primary/80">
+                  <span>🧠 深度思考过程</span>
+                  <span className="text-[10px] text-muted-foreground font-normal">(点击折叠/展开)</span>
+                </summary>
+                <div className="mt-1.5 max-h-48 overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-muted-foreground pl-2 border-l-2 border-primary/30">
+                  {chatReply.reasoningContent}
+                </div>
+              </details>
+            )}
             <p className="text-xs whitespace-pre-wrap">{chatReply.reply}</p>
             <p className="text-[11px] text-muted-foreground">
               {chatReply.model} · {chatReply.latencyMs}ms · {chatReply.usage.totalTokens} tokens

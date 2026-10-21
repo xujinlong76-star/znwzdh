@@ -44,6 +44,8 @@ export interface LlmProvider {
   jsonMode?: JsonMode;
   /** 允许 baseUrl 指向内网（本地 Ollama 等）；仅系统级配置可开启 */
   allowPrivateNetwork?: boolean;
+  /** 默认是否启用深度思考（调用点未显式指定时以此为准） */
+  thinking?: boolean;
 }
 
 export type ChatContentPart =
@@ -63,6 +65,12 @@ export interface ChatOptions {
   json?: boolean;
   tools?: unknown[];
   toolChoice?: unknown;
+  /**
+   * 深度思考（Agnes 3.0 Flash 的 chat_template_kwargs.enable_thinking）。
+   * 只在 true 时下发该字段：不支持的服务商收到未知字段可能 400，
+   * 而 false 与「不带」在语义上等价（默认不思考）。
+   */
+  thinking?: boolean;
   signal?: AbortSignal;
   /** 测试注入；生产不传 */
   fetchImpl?: typeof fetch;
@@ -76,6 +84,8 @@ export interface ChatUsage {
 
 export interface ChatResult {
   content: string;
+  /** 深度思考推导过程（Agnes / DeepSeek reasoning_content 或 <think>...</think>） */
+  reasoningContent?: string;
   model: string;
   usage: ChatUsage;
   latencyMs: number;
@@ -244,6 +254,15 @@ function buildBody(provider: LlmProvider, opts: ChatOptions, useResponseFormat: 
     body.tools = opts.tools;
     if (opts.toolChoice !== undefined) body.tool_choice = opts.toolChoice;
   }
+  // 深度思考：Agnes 官方规范使用 thinking: { type: 'enabled', budget_tokens }，
+  // 同时兼容 vLLM 系的 chat_template_kwargs: { enable_thinking: true }
+  if (opts.thinking === true) {
+    body.thinking = {
+      type: "enabled",
+      budget_tokens: Math.min(typeof maxTokens === "number" && maxTokens > 0 ? maxTokens : 2048, 4096),
+    };
+    body.chat_template_kwargs = { enable_thinking: true };
+  }
   return body;
 }
 
@@ -263,7 +282,8 @@ async function callOnce(
   const url = chatCompletionsUrl(provider.baseUrl);
   await assertLlmEndpoint(url, provider.allowPrivateNetwork === true);
 
-  const timeoutMs = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
+  const baseTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
+  const timeoutMs = opts.thinking ? Math.max(baseTimeout, 60_000) : baseTimeout;
   const gate = timeoutSignal(timeoutMs, opts.signal);
   const fetchImpl = opts.fetchImpl ?? fetch;
   const startedAt = Date.now();
@@ -301,8 +321,20 @@ async function callOnce(
       throw new LlmError("invalid_response", "模型响应缺少 choices[0].message.content", res.status);
     }
 
+    let reasoningContent: string | undefined =
+      typeof message?.reasoning_content === "string" ? message.reasoning_content : undefined;
+    let finalContent = content;
+    if (!reasoningContent && typeof finalContent === "string") {
+      const thinkMatch = /<think>([\s\S]*?)<\/think>/i.exec(finalContent);
+      if (thinkMatch && typeof thinkMatch[1] === "string") {
+        reasoningContent = thinkMatch[1].trim();
+        finalContent = finalContent.replace(/<think>[\s\S]*?<\/think>/i, "").trim();
+      }
+    }
+
     return {
-      content,
+      content: finalContent,
+      reasoningContent,
       model: typeof record.model === "string" ? record.model : provider.model,
       usage: normalizeUsage(record.usage),
       latencyMs: Date.now() - startedAt,

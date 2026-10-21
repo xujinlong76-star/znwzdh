@@ -51,6 +51,7 @@ function emptyFallback(): FallbackForm {
     temperature: 0.2,
     maxTokens: 1024,
     jsonMode: 'auto',
+    thinking: true,
     allowPrivateNetwork: false,
   }
 }
@@ -66,6 +67,7 @@ function emptyForm(): LlmFormValue {
     temperature: 0.2,
     maxTokens: 1024,
     jsonMode: 'auto',
+    thinking: true,
     allowPrivateNetwork: false,
   }
 }
@@ -102,6 +104,7 @@ export default function AdminAiPage() {
         temperature: c.temperature,
         maxTokens: c.maxTokens,
         jsonMode: c.jsonMode,
+        thinking: c.thinking ?? true,
         allowPrivateNetwork: c.allowPrivateNetwork,
       })
       setApiKeyMasked(c.hasApiKey ? c.apiKeyMasked : '')
@@ -118,6 +121,7 @@ export default function AdminAiPage() {
           temperature: fb.temperature,
           maxTokens: fb.maxTokens,
           jsonMode: fb.jsonMode,
+          thinking: fb.thinking ?? true,
           allowPrivateNetwork: fb.allowPrivateNetwork,
         })),
       )
@@ -144,6 +148,7 @@ export default function AdminAiPage() {
       temperature: form.temperature,
       maxTokens: form.maxTokens,
       jsonMode: form.jsonMode,
+      thinking: form.thinking,
       allowPrivateNetwork: form.allowPrivateNetwork,
       ...(extraApiKey && form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}),
       fallbacks: fallbacks.map((fb) => ({
@@ -321,7 +326,7 @@ export default function AdminAiPage() {
           {effective?.hasApiKey ? '密钥已配置' : '缺少密钥（AI 富化将降级为启发式）'}
         </Badge>
         <span className="text-muted-foreground">
-          当前模型：<code className="text-xs">{effective?.model ?? config?.model}</code>
+          当前生效模型：<strong className="text-foreground">{effective?.name ?? config?.name}</strong> (<code className="text-xs">{effective?.model ?? config?.model}</code>)
         </span>
         {config?.updatedAt && (
           <span className="text-xs text-muted-foreground">
@@ -445,12 +450,12 @@ export default function AdminAiPage() {
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button onClick={() => void handleSave()} disabled={saving}>
+        <div className="flex flex-wrap items-center gap-2 pt-2">
+          <Button onClick={() => void handleSave()} disabled={saving} className="flex-1 sm:flex-initial">
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             保存
           </Button>
-          <Button variant="outline" onClick={() => void handleTest()} disabled={testing}>
+          <Button variant="outline" onClick={() => void handleTest()} disabled={testing} className="flex-1 sm:flex-initial">
             {testing ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -462,10 +467,11 @@ export default function AdminAiPage() {
             variant="outline"
             onClick={() => void handleClearKey()}
             disabled={clearingKey || !apiKeyMasked}
+            className="w-full min-[420px]:w-auto sm:flex-initial"
           >
             清除已存密钥
           </Button>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="w-full sm:w-auto sm:ml-auto flex items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40">
             {confirmReset ? (
               <>
                 <span className="text-xs text-muted-foreground">确认清除管理端配置？</span>

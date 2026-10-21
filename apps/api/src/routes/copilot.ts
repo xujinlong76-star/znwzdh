@@ -4,13 +4,14 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { chatCompletion } from "@navhub/ai";
-import { resolveLlm } from "../llm-config.ts";
+import { llmProviderReady, resolveLlm } from "../llm-config.ts";
+import { callLlm } from "../llm-usage.ts";
 import { identityOf } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 const chatSchema = z.object({
   message: z.string().min(1, "消息内容不能为空"),
+  thinking: z.boolean().optional(),
   history: z
     .array(
       z.object({
@@ -40,7 +41,7 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       };
     }
 
-    const { message, history = [], context = {} } = parsed.data;
+    const { message, thinking, history = [], context = {} } = parsed.data;
     const llm = await resolveLlm(ctx, identityOf(req as never));
 
     // 收集全站实时上下文（分类与核心站点）
@@ -83,7 +84,7 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
       .slice(0, 5);
 
     try {
-      if (llm.provider.apiKey) {
+      if (llmProviderReady(llm.provider)) {
         const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
           { role: "system", content: systemPrompt },
           ...history.slice(-6).map((h) => ({
@@ -93,14 +94,14 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
           { role: "user", content: message },
         ];
 
-        const res = await chatCompletion(
-          {
-            ...llm.provider,
-            temperature: 0.6,
-            maxTokens: 1200,
-          },
-          { messages }
-        );
+        const res = await callLlm(ctx, llm, {
+          scenario: "copilot",
+          identity: identityOf(req as never),
+          messages,
+          temperature: 0.6,
+          maxTokens: 1200,
+          thinking,
+        });
 
         if (res.content) {
           // 提取建议项
@@ -113,7 +114,8 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
           return {
             ok: true,
             reply: res.content,
-            model: llm.provider.model,
+            reasoningContent: res.reasoningContent,
+            model: res.model || llm.provider.model,
             suggestions:
               suggestions.length > 0
                 ? suggestions

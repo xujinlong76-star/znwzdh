@@ -9,6 +9,7 @@ import { enrichUrl } from "@navhub/ai";
 import { sanitizeIconUrl } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
+import { createEnrichUsageCallback } from "../llm-usage.ts";
 import { identityOf } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
@@ -28,6 +29,7 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       llm: enrichLlmOf(resolved),
       guard: ctx.config.fetch,
       knownCategories: categories.map((c) => c.title),
+      onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identityOf(req as never)),
     });
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
     await ctx.repo.recordEvent("enrich", { meta: { url: body.data.url, provenance: result.provenance } }).catch(() => undefined);
@@ -52,6 +54,7 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       llm: enrichLlmOf(resolved),
       guard: ctx.config.fetch,
       knownCategories: categories.map((c) => c.title),
+      onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identityOf(req as never)),
     });
 
     // 分类解析：调用方指定 -> 富化建议匹配已有类目 -> 自动新建

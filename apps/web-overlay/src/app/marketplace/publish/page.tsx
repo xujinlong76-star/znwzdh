@@ -14,6 +14,13 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
+import { Button } from '@/components/ui/button'
+import dynamic from 'next/dynamic'
+
+const AiPluginStudioModal = dynamic(
+  () => import('@/components/plugins/ai-plugin-studio-modal').then((m) => m.AiPluginStudioModal),
+  { ssr: false }
+)
 import {
   validatePlugin,
   publishPlugin,
@@ -132,6 +139,7 @@ export default function PluginPublishPage() {
   // 提交状态
   const [submitting, setSubmitting] = useState(false)
   const [publishedPlugin, setPublishedPlugin] = useState<HubPluginItem | null>(null)
+  const [studioOpen, setStudioOpen] = useState(false)
 
   // 组合包成员选择器状态（仅 kind === 'bundle' 时启用）
   const [bundleCandidates, setBundleCandidates] = useState<BundleCandidate[]>([])
@@ -496,7 +504,7 @@ export default function PluginPublishPage() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="rounded-3xl border border-border/80 glass-surface p-6 sm:p-8 space-y-6 shadow-xs">
+            <div className="rounded-3xl border border-border/80 glass-surface p-4 sm:p-8 space-y-5 sm:space-y-6 shadow-xs">
               <div className="space-y-1">
                 <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-medium">
                   <Sparkles className="w-3.5 h-3.5" />
@@ -511,6 +519,35 @@ export default function PluginPublishPage() {
                     : '按照声明式 JSON 契约分享您的网址合集、看板配置或个性化配色主题。'}
                 </p>
               </div>
+
+              {/* AI 灵感辅助生成横幅 */}
+              {!editingSlug && (
+                <div className="p-3.5 sm:p-4 rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-violet-500/10 to-primary/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 shadow-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center text-primary shrink-0 shadow-sm">
+                      <Sparkles className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                        <span>没有现成的 JSON 清单？让 Agnes 帮你一句话生成</span>
+                        <Badge variant="outline" className="text-[10px] border-primary/30 text-primary">AI 赋能</Badge>
+                      </h3>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        自然语言规划，支持实装沙箱实时预览与多轮自然语言微调，生成后一键直达发布。
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setStudioOpen(true)}
+                    className="h-8 gap-1.5 text-xs bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 text-primary-foreground font-medium shrink-0 shadow-sm"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>打开 AI 插件工坊</span>
+                  </Button>
+                </div>
+              )}
 
               {/* 步骤 1: 选择插件类型 */}
               <div className="space-y-2 pt-2">
@@ -632,7 +669,7 @@ export default function PluginPublishPage() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="如：全栈开发者工具箱"
-                      className="w-full text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      className="w-full text-base sm:text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                       maxLength={60}
                       required
                     />
@@ -649,7 +686,7 @@ export default function PluginPublishPage() {
                       value={version}
                       onChange={(e) => setVersion(e.target.value)}
                       placeholder="1.0.0"
-                      className="w-full text-xs font-mono rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      className="w-full text-base sm:text-xs font-mono rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                       pattern="^\d{1,4}\.\d{1,4}\.\d{1,4}$"
                       required
                     />
@@ -666,7 +703,7 @@ export default function PluginPublishPage() {
                       onChange={(e) => setDescription(e.target.value)}
                       placeholder="用 1-2 句话阐明该插件包含的站点类型或设计特色…"
                       rows={2}
-                      className="w-full text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 resize-none"
+                      className="w-full text-base sm:text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 resize-none"
                       maxLength={500}
                       required
                     />
@@ -681,7 +718,7 @@ export default function PluginPublishPage() {
                       value={author}
                       onChange={(e) => setAuthor(e.target.value)}
                       placeholder="您的社区昵称或 GitHub ID"
-                      className="w-full text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      className="w-full text-base sm:text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                       maxLength={60}
                     />
                   </div>
@@ -695,7 +732,7 @@ export default function PluginPublishPage() {
                       value={license}
                       onChange={(e) => setLicense(e.target.value)}
                       placeholder="如：MIT、Apache-2.0"
-                      className="w-full text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      className="w-full text-base sm:text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                       maxLength={40}
                     />
                   </div>
@@ -709,7 +746,7 @@ export default function PluginPublishPage() {
                       value={homepage}
                       onChange={(e) => setHomepage(e.target.value)}
                       placeholder="https://github.com/..."
-                      className="w-full text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      className="w-full text-base sm:text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
 
@@ -722,7 +759,7 @@ export default function PluginPublishPage() {
                       value={tagsInput}
                       onChange={(e) => setTagsInput(e.target.value)}
                       placeholder="工具, 效率, 编程"
-                      className="w-full text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      className="w-full text-base sm:text-xs rounded-xl border border-border/80 bg-background/80 p-2.5 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
                 </div>
@@ -754,7 +791,7 @@ export default function PluginPublishPage() {
                         value={bundleQuery}
                         onChange={(e) => setBundleQuery(e.target.value)}
                         placeholder="搜索名称 / slug / 描述…"
-                        className="w-full text-xs rounded-xl border border-border/80 bg-background/80 pl-8 pr-3 py-2 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                        className="w-full text-base sm:text-xs rounded-xl border border-border/80 bg-background/80 pl-8 pr-3 py-2 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40"
                       />
                     </div>
                     <div className="flex items-center gap-1">
@@ -901,7 +938,7 @@ export default function PluginPublishPage() {
                     setValidationResult(null)
                   }}
                   rows={10}
-                  className="w-full text-xs font-mono rounded-2xl border border-border/80 bg-background/90 p-4 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 leading-relaxed"
+                  className="w-full text-base sm:text-xs font-mono rounded-2xl border border-border/80 bg-background/90 p-4 text-foreground focus:outline-hidden focus:ring-2 focus:ring-primary/40 leading-relaxed"
                   required
                 />
               </div>
@@ -1019,19 +1056,19 @@ export default function PluginPublishPage() {
                     maxLength={2000}
                     rows={3}
                     placeholder="例如：新增 12 个设计工具站点；修复失效链接；调整主题强调色"
-                    className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs leading-relaxed resize-y"
+                    className="w-full rounded-xl border border-input bg-background px-3 py-2 text-base sm:text-xs leading-relaxed resize-y"
                   />
                 </div>
               )}
 
               {/* 底部操作条 */}
-              <div className="pt-4 border-t border-border/60 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
+              <div className="pt-4 border-t border-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={handleValidate}
                     disabled={validating || !name.trim() || !description.trim()}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl border border-border/80 bg-background hover:bg-muted/60 text-foreground transition-all"
+                    className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 sm:py-2 text-xs font-medium rounded-xl border border-border/80 bg-background hover:bg-muted/60 text-foreground transition-all"
                   >
                     <Eye className="w-3.5 h-3.5" />
                     <span>{validating ? '预检中…' : '预检校验'}</span>
@@ -1042,7 +1079,7 @@ export default function PluginPublishPage() {
                       type="button"
                       onClick={handleCheckUrls}
                       disabled={checkingUrls}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl border border-border/80 bg-background hover:bg-muted/60 text-foreground transition-all"
+                      className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-2 text-xs font-medium rounded-xl border border-border/80 bg-background hover:bg-muted/60 text-foreground transition-all"
                       title="检测清单中站点的可达性与是否存在死链"
                     >
                       {checkingUrls ? (
@@ -1058,7 +1095,7 @@ export default function PluginPublishPage() {
                 <button
                   type="submit"
                   disabled={submitting || !name.trim() || !description.trim()}
-                  className="inline-flex items-center gap-2 px-6 py-2.5 text-xs font-medium rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all shadow-sm"
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-medium rounded-xl bg-primary text-primary-foreground hover:opacity-90 active:scale-95 transition-all shadow-sm"
                 >
                   <Send className="w-3.5 h-3.5" />
                   <span>{submitting ? '提交中…' : editingSlug ? '提交新版本审核' : '立即提交审核'}</span>
@@ -1067,6 +1104,13 @@ export default function PluginPublishPage() {
             </div>
           </form>
         )}
+
+        {/* AI 插件工坊模态沙箱 */}
+        <AiPluginStudioModal
+          open={studioOpen}
+          onOpenChange={setStudioOpen}
+          onPublished={(p) => setPublishedPlugin(p)}
+        />
 
         {/* 底部导航 */}
         <Footer />

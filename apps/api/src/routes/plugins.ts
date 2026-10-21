@@ -14,6 +14,12 @@ import { indexPluginsBatch, indexItemFromManifest, removePluginIndex } from "../
 import { searchPluginsSemantic, similarPlugins } from "../plugins-search.ts";
 import { guardedFetch } from "@navhub/ai";
 import {
+  executeAutoAuditAndPublish,
+  evaluatePluginAudit,
+  autoRemediatePluginManifest,
+  type PluginAuditResult,
+} from "../ai-plugin-auditor.ts";
+import {
   validateAndCleanPluginManifest,
   summarizePluginManifest,
   diffPluginManifests,
@@ -32,89 +38,11 @@ import {
   identityOf,
   notFound,
 } from "./shared.ts";
-
-function escapeXml(unsafe: string): string {
-  return unsafe.replace(/[<>&'"]/g, (c) => {
-    switch (c) {
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case "&": return "&amp;";
-      case "'": return "&apos;";
-      case '"': return "&quot;";
-      default: return c;
-    }
-  });
-}
-
-function calcTextWidth(text: string): number {
-  let width = 0;
-  for (const ch of text) {
-    if (/[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/.test(ch)) {
-      width += 12;
-    } else if (/[ijlI1:.]/.test(ch)) {
-      width += 4.5;
-    } else if (/[A-Z%@#&]/.test(ch)) {
-      width += 8;
-    } else {
-      width += 6.5;
-    }
-  }
-  return Math.ceil(width);
-}
-
-function renderBadgeSvg(leftText: string, rightText: string, rightColor: string): string {
-  const leftPadding = 12;
-  const rightPadding = 12;
-  const leftContentWidth = calcTextWidth(leftText);
-  const rightContentWidth = calcTextWidth(rightText);
-  const leftWidth = leftContentWidth + leftPadding;
-  const rightWidth = rightContentWidth + rightPadding;
-  const totalWidth = leftWidth + rightWidth;
-
-  const leftTextX = Math.round((leftWidth / 2) * 10);
-  const rightTextX = Math.round((leftWidth + rightWidth / 2) * 10);
-  const leftTextLength = Math.round(leftContentWidth * 10);
-  const rightTextLength = Math.round(rightContentWidth * 10);
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="20" role="img" aria-label="${escapeXml(leftText)}: ${escapeXml(rightText)}">
-  <title>${escapeXml(leftText)}: ${escapeXml(rightText)}</title>
-  <linearGradient id="s" x2="0" y2="100%">
-    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
-    <stop offset="1" stop-opacity=".1"/>
-  </linearGradient>
-  <clipPath id="r">
-    <rect width="${totalWidth}" height="20" rx="3" fill="#fff"/>
-  </clipPath>
-  <g clip-path="url(#r)">
-    <rect width="${leftWidth}" height="20" fill="#555"/>
-    <rect x="${leftWidth}" width="${rightWidth}" height="20" fill="${rightColor}"/>
-    <rect width="${totalWidth}" height="20" fill="url(#s)"/>
-  </g>
-  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">
-    <text aria-hidden="true" x="${leftTextX}" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="${leftTextLength}">${escapeXml(leftText)}</text>
-    <text x="${leftTextX}" y="140" transform="scale(.1)" fill="#fff" textLength="${leftTextLength}">${escapeXml(leftText)}</text>
-    <text aria-hidden="true" x="${rightTextX}" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="${rightTextLength}">${escapeXml(rightText)}</text>
-    <text x="${rightTextX}" y="140" transform="scale(.1)" fill="#fff" textLength="${rightTextLength}">${escapeXml(rightText)}</text>
-  </g>
-</svg>`;
-}
-
-function extractPluginIdentity(req: any): string | null {
-  const body = (req.body ?? {}) as Record<string, unknown>;
-  const query = (req.query ?? {}) as Record<string, unknown>;
-  if (typeof body.identity === "string" && body.identity.trim()) return body.identity.trim().slice(0, 120);
-  if (typeof query.identity === "string" && query.identity.trim()) return query.identity.trim().slice(0, 120);
-  return identityOf(req);
-}
-
-/**
- * 公共插件序列化：剔除内部归属身份与待审变更说明。
- * ownerKey 可以公开（不可逆哈希），用于作者页 URL。
- */
-function publicPlugin(plugin: Record<string, any>, opts: { ownerView?: boolean } = {}): Record<string, any> {
-  const { ownerIdentity: _ownerIdentity, pendingChangelog, ...rest } = plugin;
-  return opts.ownerView ? { ...rest, pendingChangelog: pendingChangelog ?? null } : rest;
-}
+import {
+  extractPluginIdentity,
+  publicPlugin,
+  renderBadgeSvg,
+} from "./plugin-presentation.ts";
 
 export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -150,10 +78,26 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         offset,
       });
 
-      const items = res.items.map((plugin) => ({
-        ...publicPlugin(plugin),
-        summary: summarizePluginManifest(plugin.manifest),
-      }));
+      /**
+       * 列表瘦身（2026-10 实测）：一页 24 条的响应 **1.16MB**，其中 730KB 是
+       * site-pack 的 manifest（单个约 34KB，内含最多 200 个站点 + 20 个分类）。
+       *
+       * 客户端在列表页从不读 site-pack 的 manifest：
+       *  - 卡片只用 `summary`（siteCount / categoryCount / hosts）；
+       *  - 详情页与安装弹窗都走 `/api/plugins/:slug` 拿完整清单；
+       *  - 安装动作由服务端按 slug 读库，不需要浏览器上传清单。
+       * 只有「复制 JSON 清单」这类工具场景需要（Raycast 扩展），
+       * 它们显式带 `?manifest=1` 即可拿回全量——默认精简、按需完整。
+       */
+      const includeManifest = q.manifest === "1" || q.manifest === "true";
+      const items = res.items.map((plugin) => {
+        const item: Record<string, unknown> = {
+          ...publicPlugin(plugin),
+          summary: summarizePluginManifest(plugin.manifest),
+        };
+        if (!includeManifest && plugin.kind === "site-pack") delete item.manifest;
+        return item;
+      });
 
       return {
         items,
@@ -388,7 +332,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     "/api/plugins/installed",
     { config: { scope: "public" } },
     async (req, reply) => {
-      const identity = identityOf(req as any);
+      const identity = identityOf(req as never);
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识 (identity/anonId)");
       }
@@ -776,7 +720,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
       const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 20)) : 20;
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
-      const identity = (q.identity?.trim() || identityOf(req as any) || "").slice(0, 120);
+      const identity = (q.identity?.trim() || identityOf(req as never) || "").slice(0, 120);
 
       const [reviewsResult, stats, myReview] = await Promise.all([
         ctx.repo.listPluginReviews(plugin.id, { limit, offset }),
@@ -806,7 +750,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const { slug } = req.params as { slug: string };
       const body = (req.body ?? {}) as { rating?: unknown; title?: unknown; content?: unknown; identity?: unknown };
       const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
-      const identity = String(body.identity ?? callerAuth?.actor ?? identityOf(req as any) ?? "").trim();
+      const identity = String(body.identity ?? callerAuth?.actor ?? identityOf(req as never) ?? "").trim();
 
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识");
@@ -882,14 +826,16 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
   /**
    * 社区发布插件
-   * 默认进入 pending 待审队列
+   * 默认进入 pending 待审队列；若指定 autoAudit=true 则由 AI 智能审查中枢执行多维严审并自动批准上架
    */
   app.post(
     "/api/plugins",
-    { config: { scope: "public", rateLimit: { max: 5, timeWindow: "1 hour" } } },
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 hour" } } },
     async (req, reply) => {
-      const body = (req.body ?? {}) as { manifest?: unknown } & Record<string, unknown>;
+      const body = (req.body ?? {}) as { manifest?: unknown; autoAudit?: boolean } & Record<string, unknown>;
       const manifestInput = body.manifest ?? body;
+      const q = req.query as Record<string, string | undefined>;
+      const shouldAutoAudit = body.autoAudit === true || q?.autoAudit === "true" || q?.autoAudit === "1";
 
       const validated = validateAndCleanPluginManifest(manifestInput);
       if (!validated.ok) {
@@ -927,6 +873,25 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           }
         );
 
+        // AI 智能自动化审核与即时上架流水线
+        if (shouldAutoAudit) {
+          try {
+            const { plugin: auditedPlugin, audit } = await executeAutoAuditAndPublish(ctx, createdPlugin, {
+              actorIp: req.ip,
+              identity,
+            });
+            reply.code(201);
+            return {
+              ...publicPlugin(auditedPlugin, { ownerView: true }),
+              success: true,
+              summary: summarizePluginManifest(auditedPlugin.manifest),
+              audit,
+            };
+          } catch (auditErr) {
+            console.error("[plugins route] executeAutoAuditAndPublish failed:", auditErr);
+          }
+        }
+
         reply.code(201);
         return {
           ...publicPlugin(createdPlugin, { ownerView: true }),
@@ -937,6 +902,117 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         console.error("[plugins route] createPlugin failed:", err);
         const message = err instanceof Error ? err.message : String(err);
         return conflict(reply, message);
+      }
+    }
+  );
+
+  /**
+   * AI 智能自动审查与即时审批上架端点
+   */
+  app.post(
+    "/api/plugins/:slug/ai-audit",
+    { config: { scope: "public", rateLimit: { max: 20, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const rawSlug = (req.params as { slug: string }).slug;
+      const slug = decodeURIComponent(rawSlug);
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+
+      const identity = extractPluginIdentity(req);
+      const callerAuth = (req as { auth?: { scopes?: string[] } }).auth;
+      const isAdmin = Boolean(callerAuth?.scopes?.includes("admin"));
+      const isOwner = Boolean(identity && plugin.ownerIdentity && identity === plugin.ownerIdentity);
+
+      if (!isAdmin && !isOwner) {
+        return forbidden(reply, "只有插件作者或管理员可发起 AI 自动化审核");
+      }
+
+      try {
+        const { plugin: auditedPlugin, audit } = await executeAutoAuditAndPublish(ctx, plugin, {
+          actorIp: req.ip,
+          identity: identity || undefined,
+        });
+
+        return {
+          success: true,
+          plugin: publicPlugin(auditedPlugin, { ownerView: true }),
+          summary: summarizePluginManifest(auditedPlugin.manifest),
+          audit,
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return badRequest(reply, `AI 审核执行失败: ${message}`);
+      }
+    }
+  );
+
+  /**
+   * 插件清单提交前 AI 预检 (Pre-flight Audit)
+   * 不写入数据库，直接返回全真静态沙箱扫描、外链探活、AI 伦理合规与四维评分雷达
+   */
+  app.post(
+    "/api/plugins/pre-audit",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as { manifest?: unknown } & Record<string, unknown>;
+      const manifestInput = body.manifest ?? body;
+      const validated = validateAndCleanPluginManifest(manifestInput);
+      if (!validated.ok) {
+        return badRequest(reply, "插件清单格式不合法: " + validated.errors.join(", "));
+      }
+
+      const identity = extractPluginIdentity(req);
+      try {
+        const audit = await evaluatePluginAudit(ctx, validated.manifest, {
+          slug: validated.manifest.name,
+          identity: identity || undefined,
+        });
+
+        return {
+          ok: true,
+          audit,
+          summary: summarizePluginManifest(validated.manifest),
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return badRequest(reply, `预检执行失败: ${message}`);
+      }
+    }
+  );
+
+  /**
+   * AI 驱动的清单自动化深度修复与规范化 (Auto-Remediate)
+   * 自动修复 HTTPS 协议、去重站点、规范分类与标签，并返回修复后的清单及修复日志
+   */
+  app.post(
+    "/api/plugins/auto-fix",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const body = (req.body ?? {}) as { manifest?: unknown } & Record<string, unknown>;
+      const manifestInput = body.manifest ?? body;
+      const validated = validateAndCleanPluginManifest(manifestInput);
+      if (!validated.ok) {
+        return badRequest(reply, "插件清单格式不合法: " + validated.errors.join(", "));
+      }
+
+      const identity = extractPluginIdentity(req);
+      try {
+        const { fixedManifest, changes } = autoRemediatePluginManifest(validated.manifest);
+        const audit = await evaluatePluginAudit(ctx, fixedManifest, {
+          slug: fixedManifest.name,
+          identity: identity || undefined,
+        });
+
+        return {
+          ok: true,
+          manifest: fixedManifest,
+          changes,
+          audit,
+          summary: summarizePluginManifest(fixedManifest),
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return badRequest(reply, `自动修复失败: ${message}`);
       }
     }
   );
@@ -969,7 +1045,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
 
       const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
-      const actorName = callerAuth?.actor || identityOf(req as any) || "admin";
+      const actorName = callerAuth?.actor || identityOf(req as never) || "admin";
       const actorKind = callerAuth?.kind || "token";
 
       try {
@@ -994,7 +1070,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
         let installResult = null;
         if (body.installNow) {
-          const identity = identityOf(req as any) || "admin";
+          const identity = identityOf(req as never) || "admin";
           installResult = await ctx.repo.installPlugin(imported.slug, identity, {
             actor: actorName,
             actorKind,
@@ -1088,6 +1164,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
 
       const changelog = typeof body.changelog === "string" ? body.changelog.trim().slice(0, 2000) : null;
+      const q = req.query as Record<string, string | undefined>;
+      const shouldAutoAudit = (body as { autoAudit?: boolean }).autoAudit === true || q?.autoAudit === "true" || q?.autoAudit === "1";
+
       try {
         const updated = await ctx.repo.submitPluginVersion(slug, validated.manifest, changelog, {
           actor: callerAuth?.actor || identity,
@@ -1095,6 +1174,26 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           ip: req.ip,
         });
         await removePluginIndex(ctx, slug);
+
+        // 若请求要求由 AI 自动审核，则执行全链路严审并自动批准上架
+        if (shouldAutoAudit) {
+          try {
+            const { plugin: auditedPlugin, audit } = await executeAutoAuditAndPublish(ctx, updated, {
+              actorIp: req.ip,
+              identity: identity || undefined,
+            });
+            reply.code(200);
+            return {
+              ...publicPlugin(auditedPlugin, { ownerView: true }),
+              success: true,
+              summary: summarizePluginManifest(auditedPlugin.manifest),
+              audit,
+            };
+          } catch (auditErr) {
+            console.error("[versions route] executeAutoAuditAndPublish failed:", auditErr);
+          }
+        }
+
         reply.code(202);
         return {
           ...publicPlugin(updated, { ownerView: true }),
@@ -1202,7 +1301,10 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         });
         // 新建站点进检索向量索引（失败只记 capabilities.notes，不影响安装结果）
         if (result.applied.createdSiteIds.length > 0) {
-          const sites = (await Promise.all(result.applied.createdSiteIds.map((id) => ctx.repo.getSite(id))))
+          // 一次 IN 查询取回整批站点，避免逐条 getSite 的 N+1
+          const siteMap = await ctx.repo.getSitesByIds(result.applied.createdSiteIds);
+          const sites = result.applied.createdSiteIds
+            .map((id) => siteMap.get(id))
             .filter((s): s is NonNullable<typeof s> => !!s)
             .map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url }));
           await indexSitesBatch(ctx, sites);
@@ -1332,7 +1434,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         return badRequest(reply, "请填写举报理由（不能为空）");
       }
 
-      const identity = identityOf(req as any) || undefined;
+      const identity = identityOf(req as never) || undefined;
       const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
       try {
         const result = await ctx.repo.reportPlugin(
@@ -1657,9 +1759,18 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       });
       if (internalHost) deductions += 50;
 
-      const score = Math.max(0, 100 - deductions);
+      let parsedNote: any = null;
+      if (plugin.reviewNote) {
+        try {
+          parsedNote = JSON.parse(plugin.reviewNote);
+        } catch {
+          // not json
+        }
+      }
+
+      const score = typeof parsedNote?.score === "number" ? parsedNote.score : Math.max(0, 100 - deductions);
       const level: "safe" | "low_risk" | "medium_risk" | "high_risk" =
-        score >= 85 ? "safe" : score >= 60 ? "low_risk" : score >= 40 ? "medium_risk" : "high_risk";
+        parsedNote?.level ?? (score >= 85 ? "safe" : score >= 60 ? "low_risk" : score >= 40 ? "medium_risk" : "high_risk");
 
       return {
         ok: true,
@@ -1667,9 +1778,14 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           slug,
           score,
           level,
+          decision: parsedNote?.decision || (plugin.status === "published" ? "approve" : plugin.status === "rejected" ? "reject" : undefined),
+          aiRationale: parsedNote?.rationale,
+          dimensionScores: parsedNote?.dimensionScores,
+          linkSurvivalRate: parsedNote?.linkSurvivalRate,
+          model: parsedNote?.model,
           verifiedAuthor: isVerifiedAuthor,
           checks,
-          auditedAt: Date.now(),
+          auditedAt: parsedNote?.auditedAt || plugin.reviewedAt || Date.now(),
         },
       };
     }

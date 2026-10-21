@@ -22,6 +22,12 @@ import {
 } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { PluginCard } from '@/components/plugins/plugin-card'
+import dynamic from 'next/dynamic'
+
+const PluginInstallModal = dynamic(
+  () => import('@/components/plugins/plugin-install-modal').then((m) => m.PluginInstallModal),
+  { ssr: false }
+)
 import { ArrowLeft, Download, Loader2, Star, Store, UserRound } from 'lucide-react'
 
 export default function PluginAuthorPage({
@@ -35,6 +41,16 @@ export default function PluginAuthorPage({
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const [installTarget, setInstallTarget] = useState<HubPluginItem | null>(null)
+  const [installMode, setInstallMode] = useState<'install' | 'uninstall' | 'upgrade'>('install')
+
+  const handleOpenInstallModal = useCallback(
+    (plugin: HubPluginItem, mode: 'install' | 'uninstall' | 'upgrade' = 'install') => {
+      setInstallTarget(plugin)
+      setInstallMode(mode)
+    },
+    [],
+  )
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -145,6 +161,7 @@ export default function PluginAuthorPage({
                     plugin={plugin}
                     identity={identity}
                     onStatusChange={patchItem}
+                    onOpenInstallModal={handleOpenInstallModal}
                   />
                 ))}
               </div>
@@ -152,6 +169,21 @@ export default function PluginAuthorPage({
           </>
         )}
       </div>
+
+        {/* 安装 / 卸载确认弹窗 */}
+        <PluginInstallModal
+          plugin={installTarget}
+          mode={installMode}
+          identity={identity}
+          open={Boolean(installTarget)}
+          onOpenChange={(next) => {
+            if (!next) {
+              setInstallTarget(null)
+              setInstallMode('install')
+            }
+          }}
+          onSuccess={() => setReloadToken((n) => n + 1)}
+        />
       <Footer />
     </Container>
   )

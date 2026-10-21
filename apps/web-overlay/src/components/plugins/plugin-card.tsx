@@ -7,12 +7,19 @@ import {
   starPlugin,
   unstarPlugin,
   installPlugin,
+  uninstallPlugin,
   createPluginShortLink,
   trackPluginEvent,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
 import { Badge } from '@/components/ui/badge'
+import dynamic from 'next/dynamic'
+
+const PluginAuditModal = dynamic(
+  () => import('./plugin-audit-modal').then((m) => m.PluginAuditModal),
+  { ssr: false }
+)
 import { copyText } from '@/lib/clipboard'
 import {
   Globe,
@@ -29,6 +36,8 @@ import {
   Sparkles,
   Share2,
   Loader2,
+  ShieldCheck,
+  RotateCcw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -37,7 +46,7 @@ export interface PluginCardProps {
   plugin: HubPluginItem
   identity?: string
   onStatusChange?: (updated: HubPluginItem) => void
-  onOpenInstallModal?: (plugin: HubPluginItem) => void
+  onOpenInstallModal?: (plugin: HubPluginItem, mode: 'install' | 'uninstall' | 'upgrade') => void
 }
 
 export function PluginCard({
@@ -52,6 +61,7 @@ export function PluginCard({
   const [installed, setInstalled] = useState(Boolean(plugin.installed))
   const [installing, setInstalling] = useState(false)
   const [sharing, setSharing] = useState(false)
+  const [auditModalOpen, setAuditModalOpen] = useState(false)
 
   // D1 更新链路：本地升级成功后不等父级刷新即切换为「已安装」
   const [upgradedTo, setUpgradedTo] = useState<string | null>(null)
@@ -96,22 +106,43 @@ export function PluginCard({
     }
   }
 
-  const handleQuickInstall = async (e: React.MouseEvent) => {
+  const targetMode: 'install' | 'uninstall' | 'upgrade' = needsUpdate
+    ? 'upgrade'
+    : installed
+      ? 'uninstall'
+      : 'install'
+
+  const handleAction = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    trackPluginEvent('plugin_install_click', plugin.slug)
+    trackPluginEvent(targetMode === 'uninstall' ? 'plugin_uninstall_click' : 'plugin_install_click', plugin.slug)
 
-    // 有确认弹窗时统一走弹窗：site-pack 可预演将写入的站点数，
-    // workspace-preset / theme 必须在客户端消费 payload（暂存/激活），
-    // 快装直连 API 会跳过这两步，造成"已安装但没生效"的静默半安装
+    // 有确认弹窗时统一走弹窗，并精确传递当前动作语义（升级 / 卸载 / 安装），
+    // 彻底解决已安装状态下重复弹出安装确认框的交互 BUG
     if (onOpenInstallModal) {
-      onOpenInstallModal(plugin)
+      onOpenInstallModal(plugin, targetMode)
       return
     }
 
     if (installing) return
     setInstalling(true)
     try {
+      if (targetMode === 'uninstall') {
+        const res = await uninstallPlugin(plugin.slug, identity)
+        setInstalled(false)
+        setUpgradedTo(null)
+        toast.success(`已卸载「${plugin.name}」`, {
+          description: res.sitesRemoved > 0 ? `已清理 ${res.sitesRemoved} 个关联站点` : undefined,
+        })
+        onStatusChange?.({
+          ...plugin,
+          installed: false,
+          installedVersion: undefined,
+          installCount: Math.max(0, (plugin.installCount ?? 1) - 1),
+        })
+        return
+      }
+
       const res = await installPlugin(plugin.slug, identity)
       const wasUpdate = needsUpdate
       setInstalled(true)
@@ -130,7 +161,7 @@ export function PluginCard({
         installCount: res.plugin?.installCount ?? plugin.installCount + (res.alreadyInstalled ? 0 : 1),
       })
     } catch (err) {
-      toast.error('安装失败', {
+      toast.error(targetMode === 'uninstall' ? '卸载失败' : '安装失败', {
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
@@ -272,7 +303,7 @@ export function PluginCard({
   return (
     <div
       className={cn(
-        'nav-card-glow group relative flex flex-col justify-between rounded-2xl border border-border/70 bg-card/60 backdrop-blur-xs p-5 transition-all duration-300 hover:border-primary/30 hover:bg-card hover:shadow-md hover:-translate-y-0.5',
+        'nav-card-glow group relative flex flex-col justify-between rounded-2xl border border-border/70 bg-card/60 backdrop-blur-xs p-4 sm:p-5 transition-all duration-300 hover:border-primary/30 hover:bg-card hover:shadow-md hover:-translate-y-0.5',
         plugin.featured && 'border-amber-500/30'
       )}
     >
@@ -306,6 +337,26 @@ export function PluginCard({
                 本地导入
               </Badge>
             )}
+            {plugin.aiAudit && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setAuditModalOpen(true)
+                }}
+                className="cursor-pointer inline-flex items-center"
+              >
+                <Badge
+                  variant="outline"
+                  className="text-[10px] text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 inline-flex items-center gap-1 font-mono transition-colors"
+                  title="点击查看 AI 智能四维审查认证详情报告"
+                >
+                  <ShieldCheck className="w-3 h-3 text-emerald-500" />
+                  <span>AI 严审 · {plugin.aiAudit.score}分</span>
+                </Badge>
+              </button>
+            )}
           </div>
           <span className="text-[11px] font-mono text-muted-foreground/80">v{plugin.version}</span>
         </div>
@@ -317,9 +368,9 @@ export function PluginCard({
             className="group/title inline-flex items-center gap-1.5 font-semibold text-foreground hover:text-primary transition-colors text-base"
           >
             <span>{plugin.name}</span>
-            <ExternalLink className="w-3.5 h-3.5 opacity-0 -translate-x-1 transition-all group-hover/title:opacity-100 group-hover/title:translate-x-0" />
+            <ExternalLink className="w-3.5 h-3.5 opacity-40 sm:opacity-0 -translate-x-1 transition-all group-hover/title:opacity-100 group-hover/title:translate-x-0" />
           </Link>
-          <p className="text-[13px] text-muted-foreground/90 line-clamp-2 leading-relaxed min-h-[38px]">
+          <p className="text-[13px] text-muted-foreground/90 line-clamp-2 leading-relaxed min-h-[38px] break-words">
             {plugin.description || '暂无描述'}
           </p>
         </div>
@@ -361,7 +412,7 @@ export function PluginCard({
             onClick={handleStarToggle}
             disabled={starLoading}
             className={cn(
-              'inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors border',
+              'inline-flex items-center gap-1 px-2 py-1.5 min-h-[32px] rounded-md transition-colors border',
               starred
                 ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
                 : 'text-muted-foreground hover:text-foreground border-transparent hover:bg-muted/60'
@@ -397,20 +448,22 @@ export function PluginCard({
           </button>
           <Link
             href={`/marketplace/${encodeURIComponent(plugin.slug)}`}
-            className="px-2.5 py-1 text-xs whitespace-nowrap text-muted-foreground hover:text-foreground font-medium rounded-lg hover:bg-muted/60 transition-colors"
+            className="h-8 px-2.5 inline-flex items-center text-xs whitespace-nowrap text-muted-foreground hover:text-foreground font-medium rounded-lg hover:bg-muted/60 transition-colors"
           >
             详情
           </Link>
           <button
             type="button"
-            onClick={handleQuickInstall}
+            onClick={handleAction}
             disabled={installing}
+            title={needsUpdate ? `更新到 v${plugin.version}` : installed ? '已安装（点击管理或卸载）' : '安装插件'}
+            aria-label={needsUpdate ? `更新到 v${plugin.version}` : installed ? `已安装「${plugin.name}」，点击管理或卸载` : `安装「${plugin.name}」`}
             className={cn(
-              'inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg whitespace-nowrap transition-all shadow-2xs',
+              'inline-flex items-center gap-1.5 h-8 px-3 text-xs font-medium rounded-lg whitespace-nowrap transition-all shadow-2xs',
               needsUpdate
                 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:bg-amber-500/25'
                 : installed
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20'
+                  ? 'group/btn bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30'
                   : 'bg-primary text-primary-foreground hover:opacity-90 active:scale-95'
             )}
           >
@@ -421,8 +474,10 @@ export function PluginCard({
               </>
             ) : installed ? (
               <>
-                <Check className="w-3 h-3" />
-                <span>已安装</span>
+                <Check className="w-3 h-3 group-hover/btn:hidden" />
+                <RotateCcw className="w-3 h-3 hidden group-hover/btn:inline-block" />
+                <span className="group-hover/btn:hidden">已安装</span>
+                <span className="hidden group-hover/btn:inline">管理 / 卸载</span>
               </>
             ) : (
               <>
@@ -433,6 +488,15 @@ export function PluginCard({
           </button>
         </div>
       </div>
+
+      {/* AI 严审安全认证模态框 */}
+      {auditModalOpen && (
+        <PluginAuditModal
+          open={auditModalOpen}
+          onOpenChange={setAuditModalOpen}
+          plugin={plugin}
+        />
+      )}
     </div>
   )
 }

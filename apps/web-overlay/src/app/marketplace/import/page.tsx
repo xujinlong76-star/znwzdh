@@ -146,7 +146,7 @@ export default function MarketplaceImportPage() {
               value={jsonText}
               onChange={(e) => setJsonText(e.target.value)}
               placeholder='{"manifestVersion":1,"kind":"site-pack","name":"我的收藏包",...}'
-              className="mt-2 w-full min-h-40 rounded-lg border border-input bg-background p-3 text-xs font-mono leading-relaxed"
+              className="mt-2 w-full min-h-40 rounded-lg border border-input bg-background p-3 text-base sm:text-xs font-mono leading-relaxed"
             />
           </details>
 
@@ -157,7 +157,7 @@ export default function MarketplaceImportPage() {
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
                 placeholder="my-site-pack"
-                className="w-full h-8 rounded-md border border-input bg-background px-2.5 text-sm font-mono"
+                className="w-full h-9 rounded-md border border-input bg-background px-2.5 text-base sm:text-sm font-mono"
               />
             </label>
             <label className="flex items-end gap-2 text-xs pb-1.5">

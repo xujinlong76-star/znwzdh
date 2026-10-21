@@ -116,7 +116,17 @@ const menuItems = [
   {
     title: "插件市场",
     href: "/admin/plugins",
-    icon: Package
+    icon: Package,
+    subItems: [
+      {
+        title: "插件审核",
+        href: "/admin/plugins"
+      },
+      {
+        title: "网址体检",
+        href: "/admin/plugin-health"
+      }
+    ]
   },
   {
     title: "AI 模型",
@@ -342,7 +352,7 @@ export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
   return (
     <div className="flex flex-col min-h-screen bg-background">
       {/* 移动端与平板顶部栏 (<lg) */}
-      <header className="lg:hidden flex items-center justify-between px-3.5 py-2.5 border-b border-border/60 bg-background/95 backdrop-blur-md sticky top-0 z-30 shadow-2xs">
+      <header className="lg:hidden flex items-center justify-between px-3.5 pt-[max(env(safe-area-inset-top,0px),0.625rem)] pb-2.5 border-b border-border/60 bg-background/95 backdrop-blur-md sticky top-0 z-30 shadow-2xs">
         <div className="flex items-center gap-2">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
@@ -474,7 +484,7 @@ export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
 
         {/* 主内容区域 */}
         <main id="main-content" className="flex-1 min-w-0 overflow-y-auto">
-          <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+          <div className="p-3 sm:p-6 lg:p-8 max-w-7xl mx-auto">
             {children}
           </div>
         </main>

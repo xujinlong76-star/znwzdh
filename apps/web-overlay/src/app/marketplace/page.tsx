@@ -23,8 +23,20 @@ import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { fetchPlugins, type HubPluginItem } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { PluginCard } from '@/components/plugins/plugin-card'
-import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
-import { PluginTapsModal } from '@/components/plugins/plugin-taps-modal'
+import dynamic from 'next/dynamic'
+
+const PluginInstallModal = dynamic(
+  () => import('@/components/plugins/plugin-install-modal').then((m) => m.PluginInstallModal),
+  { ssr: false }
+)
+const PluginTapsModal = dynamic(
+  () => import('@/components/plugins/plugin-taps-modal').then((m) => m.PluginTapsModal),
+  { ssr: false }
+)
+const AiPluginStudioModal = dynamic(
+  () => import('@/components/plugins/ai-plugin-studio-modal').then((m) => m.AiPluginStudioModal),
+  { ssr: false }
+)
 import { stageWorkspacePreset } from '@/lib/plugins/preset-staging'
 import {
   DEFAULT_MARKETPLACE_SORT,
@@ -83,7 +95,17 @@ export default function MarketplacePage() {
   const [filtersReady, setFiltersReady] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const [installTarget, setInstallTarget] = useState<HubPluginItem | null>(null)
+  const [installMode, setInstallMode] = useState<'install' | 'uninstall' | 'upgrade'>('install')
+
+  const handleOpenInstallModal = useCallback(
+    (plugin: HubPluginItem, mode: 'install' | 'uninstall' | 'upgrade' = 'install') => {
+      setInstallTarget(plugin)
+      setInstallMode(mode)
+    },
+    [],
+  )
   const [tapsModalOpen, setTapsModalOpen] = useState(false)
+  const [studioOpen, setStudioOpen] = useState(false)
   const [featured, setFeatured] = useState<HubPluginItem[]>([])
   const [rankings, setRankings] = useState<{
     popular: HubPluginItem[]
@@ -160,6 +182,7 @@ export default function MarketplacePage() {
 
   const patchItem = useCallback((updated: HubPluginItem) => {
     setItems((prev) => prev.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)))
+    setFeatured((prev) => prev.map((p) => (p.slug === updated.slug ? { ...p, ...updated } : p)))
   }, [])
 
   const hasFilter = Boolean(q || kind)
@@ -226,7 +249,7 @@ export default function MarketplacePage() {
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
         {/* 顶部展板 */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero p-6 sm:p-7 shadow-xs">
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero p-4 sm:p-7 shadow-xs">
           {/* 装饰层：纯视觉，不拦截交互 */}
           <div aria-hidden className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-primary/10 blur-3xl" />
           <div aria-hidden className="pointer-events-none absolute -left-24 top-24 h-48 w-48 rounded-full bg-sky-400/10 blur-3xl" />
@@ -255,7 +278,7 @@ export default function MarketplacePage() {
                 不含任何可执行代码；安装前可先看清单预览。
               </p>
             </div>
-            <div className="flex items-center flex-wrap gap-2 shrink-0 lg:justify-end">
+            <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 shrink-0 lg:justify-end">
               <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
                 <Link href="/marketplace/installed">
                   <PackageCheck className="w-3.5 h-3.5 text-primary" />
@@ -283,14 +306,22 @@ export default function MarketplacePage() {
                   作者中心
                 </Link>
               </Button>
-              <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
+              <Button
+                size="sm"
+                onClick={() => setStudioOpen(true)}
+                className="h-8 gap-1.5 text-xs bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-700 text-primary-foreground font-medium shadow-sm"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>AI 生成插件</span>
+              </Button>
+              <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
                 <Link href="/marketplace/publish">发布插件</Link>
               </Button>
             </div>
           </div>
 
           {/* 精选专题集胶囊 */}
-          <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
+          <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-1.5 sm:gap-2">
             <span className="text-xs text-muted-foreground flex items-center gap-1 mr-1">
               <Flame className="w-3 h-3 text-amber-500" />
               精选专题：
@@ -322,7 +353,7 @@ export default function MarketplacePage() {
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-card/40 p-2 backdrop-blur-xs">
           <select
             aria-label="按类型筛选"
-            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+            className="h-8 rounded-md border border-input bg-background px-2 text-base sm:text-sm"
             value={kind}
             onChange={(e) => setKind(e.target.value)}
           >
@@ -335,7 +366,7 @@ export default function MarketplacePage() {
           </select>
           <select
             aria-label="排序方式"
-            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+            className="h-8 rounded-md border border-input bg-background px-2 text-base sm:text-sm"
             value={sort}
             onChange={(e) => setSort(e.target.value as MarketplaceSort)}
           >
@@ -348,13 +379,13 @@ export default function MarketplacePage() {
           </select>
           <form
             role="search"
-            className="flex items-center gap-1.5"
+            className="flex items-center gap-1.5 flex-1 min-w-[180px] sm:flex-initial"
             onSubmit={(e) => {
               e.preventDefault()
               setQ(qInput.trim())
             }}
           >
-            <div className="relative">
+            <div className="relative flex-1 sm:flex-initial">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
@@ -364,7 +395,7 @@ export default function MarketplacePage() {
                 onChange={(e) => setQInput(e.target.value)}
                 placeholder="搜索名称 / 描述"
                 enterKeyHint="search"
-                className="h-8 w-52 rounded-md border border-input bg-background pl-8 pr-7 text-sm"
+                className="h-8 w-full sm:w-52 rounded-md border border-input bg-background pl-8 pr-7 text-base sm:text-sm"
               />
               {qInput && (
                 <button
@@ -445,7 +476,7 @@ export default function MarketplacePage() {
                   plugin={p}
                   identity={identity}
                   onStatusChange={patchItem}
-                  onOpenInstallModal={setInstallTarget}
+                  onOpenInstallModal={handleOpenInstallModal}
                 />
               ))}
             </div>
@@ -539,7 +570,7 @@ export default function MarketplacePage() {
                 plugin={p}
                 identity={identity}
                 onStatusChange={patchItem}
-                onOpenInstallModal={setInstallTarget}
+                onOpenInstallModal={handleOpenInstallModal}
               />
             ))}
           </div>
@@ -562,11 +593,14 @@ export default function MarketplacePage() {
         {/* 安装确认弹窗：卡片快捷安装统一走这里（预演范围 + 客户端消费 payload） */}
         <PluginInstallModal
           plugin={installTarget}
-          mode="install"
+          mode={installMode}
           identity={identity}
           open={Boolean(installTarget)}
           onOpenChange={(next) => {
-            if (!next) setInstallTarget(null)
+            if (!next) {
+              setInstallTarget(null)
+              setInstallMode('install')
+            }
           }}
           onSuccess={reload}
           onApplyPreset={(preset, mode) => {
@@ -582,6 +616,13 @@ export default function MarketplacePage() {
           open={tapsModalOpen}
           onOpenChange={setTapsModalOpen}
           onSynced={reload}
+        />
+
+        {/* AI 智能插件工坊 */}
+        <AiPluginStudioModal
+          open={studioOpen}
+          onOpenChange={setStudioOpen}
+          onPublished={reload}
         />
       </div>
       <Footer />

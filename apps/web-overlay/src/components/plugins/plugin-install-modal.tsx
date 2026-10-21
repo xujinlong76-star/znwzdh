@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
   type HubPluginItem,
   installPlugin,
@@ -422,15 +423,25 @@ export function PluginInstallModal({
           )}
         </div>
 
-        <DialogFooter className="flex sm:justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-            className="px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border border-border/60 hover:bg-muted/60 transition-colors"
-          >
-            取消
-          </button>
+        <DialogFooter className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2">
+          {mode === 'uninstall' ? (
+            <Link
+              href="/marketplace/installed"
+              onClick={() => onOpenChange(false)}
+              className="text-xs text-muted-foreground hover:text-primary underline underline-offset-2 inline-flex items-center gap-1"
+            >
+              <span>前往已安装管家 →</span>
+            </Link>
+          ) : <div />}
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              disabled={loading}
+              className="px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground rounded-lg border border-border/60 hover:bg-muted/60 transition-colors"
+            >
+              取消
+            </button>
           <button
             type="button"
             onClick={handleConfirm}
@@ -458,6 +469,7 @@ export function PluginInstallModal({
               </>
             )}
           </button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -39,6 +39,12 @@ import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
 import { PluginSimilar } from '@/components/plugins/plugin-similar'
 import { PluginVersionTimeline } from '@/components/plugins/plugin-version-timeline'
 import { PluginReviewSection } from '@/components/plugins/plugin-review-section'
+import dynamic from 'next/dynamic'
+
+const AiPluginStudioModal = dynamic(
+  () => import('@/components/plugins/ai-plugin-studio-modal').then((m) => m.AiPluginStudioModal),
+  { ssr: false }
+)
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
@@ -177,6 +183,7 @@ export default function PluginDetailPage({
   // 主题免安装试用状态
   const [isThemeApplied, setIsThemeApplied] = useState(false)
   const [inTryout, setInTryout] = useState(false)
+  const [studioModalOpen, setStudioModalOpen] = useState(false)
 
   useEffect(() => {
     if (plugin?.kind === 'theme') {
@@ -446,8 +453,26 @@ export default function PluginDetailPage({
           </div>
         )}
 
+        {/* 待审核状态提示（作者/管理员视角可见） */}
+        {plugin.status === 'pending' && (
+          <div className="p-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200 flex items-start gap-3">
+            <Info className="w-5 h-5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+            <div className="text-xs sm:text-sm">
+              <h4 className="font-bold flex items-center gap-2">
+                <span>⏳ 该插件当前处于【待审核】状态</span>
+                <Badge variant="outline" className="text-[10px] bg-amber-500/20 text-amber-800 dark:text-amber-200 border-amber-500/30">
+                  作者与管理员可见
+                </Badge>
+              </h4>
+              <p className="text-xs mt-1 text-amber-800/90 dark:text-amber-200/90 leading-relaxed">
+                插件清单已提交至中枢审核队列，目前仅您本人与管理员可见。审核通过后将面向全网公开展示并建立语义检索索引。
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 插件头部 Hero 卡片 */}
-        <div className="relative overflow-hidden rounded-3xl border border-border/80 glass-surface market-hero p-6 sm:p-8 space-y-6 shadow-xs">
+        <div className="relative overflow-hidden rounded-3xl border border-border/80 glass-surface market-hero p-4 sm:p-8 space-y-5 sm:space-y-6 shadow-xs">
           <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
             <div className="space-y-3 max-w-2xl min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -567,7 +592,7 @@ export default function PluginDetailPage({
 
             {/* 主操作动作组 */}
             <div className="flex flex-col sm:items-end gap-3 shrink-0">
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 sm:justify-end">
                 <button
                   type="button"
                   onClick={handleStarToggle}
@@ -608,12 +633,23 @@ export default function PluginDetailPage({
                 </button>
 
                 {plugin.isOwner && (
-                  <Button asChild size="sm" variant="outline" className="h-[34px] gap-1.5 text-xs">
-                    <Link href={`/marketplace/publish?from=${encodeURIComponent(plugin.slug)}`}>
-                      <Upload className="w-4 h-4 text-primary" />
-                      发布新版本
-                    </Link>
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setStudioModalOpen(true)}
+                      className="h-[34px] gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/5"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      AI 工坊升级
+                    </Button>
+                    <Button asChild size="sm" variant="outline" className="h-[34px] gap-1.5 text-xs">
+                      <Link href={`/marketplace/publish?from=${encodeURIComponent(plugin.slug)}`}>
+                        <Upload className="w-4 h-4 text-primary" />
+                        手动发版本
+                      </Link>
+                    </Button>
+                  </>
                 )}
 
                 <button
@@ -779,7 +815,7 @@ export default function PluginDetailPage({
             role="tablist"
             aria-label="插件详情内容"
             onKeyDown={handleTabKeyDown}
-            className="flex items-center gap-2 border-b border-border/60 pb-2 overflow-x-auto"
+            className="flex items-center gap-2 border-b border-border/60 pb-2 overflow-x-auto no-scrollbar touch-pan-x"
           >
             <button
               type="button"
@@ -1536,8 +1572,15 @@ export default function PluginDetailPage({
               <div className="py-2 space-y-3">
                 <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/60">
                   <div>
-                    <div className="text-xs font-medium text-muted-foreground">综合安全评分</div>
-                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                      <span>综合质量与安全评分</span>
+                      {auditReport.decision === 'approve' && (
+                        <Badge variant="outline" className="text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
+                          AI 严审通过
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
                       {auditReport.score} <span className="text-xs font-normal text-muted-foreground">/ 100 分</span>
                     </div>
                   </div>
@@ -1550,9 +1593,50 @@ export default function PluginDetailPage({
                         : 'bg-amber-500/10 text-amber-600 border-amber-500/30'
                     )}
                   >
-                    {auditReport.level === 'safe' ? '安全等级：优良' : '安全等级：提示'}
+                    {auditReport.level === 'safe' ? '安全等级：优良 (Safe)' : '安全等级：关注 (Notice)'}
                   </Badge>
                 </div>
+
+                {auditReport.aiRationale && (
+                  <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 text-xs space-y-1">
+                    <div className="text-[11px] font-semibold text-primary flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>AI 审查委员会审理意见：</span>
+                    </div>
+                    <p className="text-muted-foreground leading-relaxed text-[11px]">
+                      {auditReport.aiRationale}
+                    </p>
+                  </div>
+                )}
+
+                {auditReport.dimensionScores && (
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-2 rounded-lg bg-card border border-border/50">
+                      <div className="text-[10px] text-muted-foreground">静态安全沙箱</div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+                        {auditReport.dimensionScores.security} 分
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-card border border-border/50">
+                      <div className="text-[10px] text-muted-foreground">外链探活可用率</div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+                        {auditReport.dimensionScores.availability} 分
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-card border border-border/50">
+                      <div className="text-[10px] text-muted-foreground">AI 合规反欺诈</div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+                        {auditReport.dimensionScores.compliance} 分
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-card border border-border/50">
+                      <div className="text-[10px] text-muted-foreground">语义相关性</div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+                        {auditReport.dimensionScores.relevance} 分
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <div className="text-xs font-semibold text-muted-foreground">全链路扫描体检项：</div>
@@ -1580,6 +1664,19 @@ export default function PluginDetailPage({
             )}
           </DialogContent>
         </Dialog>
+
+        {studioModalOpen && plugin && (
+          <AiPluginStudioModal
+            open={studioModalOpen}
+            onOpenChange={setStudioModalOpen}
+            initialManifest={plugin.manifest}
+            initialSlug={plugin.slug}
+            onPublished={() => {
+              setStudioModalOpen(false)
+              void loadDetail()
+            }}
+          />
+        )}
 
         {/* 底部导航 */}
         <Footer />

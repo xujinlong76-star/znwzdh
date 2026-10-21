@@ -15,9 +15,16 @@
 
 import { isNotFound, type DegradedHandler } from './degrade'
 import { getIdentity } from './identity'
-import type { PluginDiffResult } from './plugins/plugin-manifest'
+import type { PluginDiffResult, PluginManifest, PluginKind } from './plugins/plugin-manifest'
 
 const BASE = '/api/hub'
+
+/**
+ * 读请求超时：中枢「TCP 连上但不回包」时，没有超时的 fetch 会永远挂起，
+ * 按钮一直转圈，用户既看不到错误也没有重试入口。30s 与 Next 代理侧默认超时
+ * 对齐；写请求（尤其是 AI 生成）可能合法地跑更久，因此只约束 GET。
+ */
+const READ_TIMEOUT_MS = 30_000
 
 /**
  * 归一化路径。
@@ -129,8 +136,19 @@ export interface HubTag {
   count: number
 }
 
+function readSignal(signal?: AbortSignal): AbortSignal | undefined {
+  if (signal) return signal
+  // 老浏览器没有 AbortSignal.timeout 时不强行制造超时（保持旧行为，而不是直接抛错）
+  return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(READ_TIMEOUT_MS)
+    : undefined
+}
+
 async function getJson<T>(path: string, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<T> {
-  const res = await fetch(hubUrl(path), { signal, headers: { Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) } })
+  const res = await fetch(hubUrl(path), {
+    signal: readSignal(signal),
+    headers: { Accept: 'application/json', ...authHeaders(), ...(extraHeaders || {}) },
+  })
   if (!res.ok) throw hubError(res.status, await hubServerMessage(res))
   const text = await res.text()
   return (text.trim() ? JSON.parse(text) : {}) as T
@@ -640,6 +658,11 @@ export interface HubPluginItem {
   /** 组合包全部成员可用时为 true；任一成员失效则安装 fail closed */
   bundleReady?: boolean
   isOwner?: boolean
+  aiAudit?: {
+    score: number
+    level: string
+    auditedAt: number
+  } | null
   reviewStats?: {
     avgRating: number
     reviewCount: number
@@ -800,14 +823,34 @@ export async function validatePlugin(
 export async function publishPlugin(
   manifest: unknown,
   identity?: string,
-): Promise<HubPluginItem> {
+  options?: { autoAudit?: boolean }
+): Promise<HubPluginItem & { audit?: HubPluginAuditReport }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  // 身份同时放 query：BFF 只对 query/body 签名，header-only 身份会在代理层丢失
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
-  return sendJson<HubPluginItem>(
+  const shouldAutoAudit = options?.autoAudit !== false
+  const params = new URLSearchParams()
+  if (effectiveIdentity) params.set('anonId', effectiveIdentity)
+  if (shouldAutoAudit) params.set('autoAudit', 'true')
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  return sendJson<HubPluginItem & { audit?: HubPluginAuditReport }>(
     `/api/plugins${qs}`,
     'POST',
-    { manifest },
+    { manifest, autoAudit: shouldAutoAudit },
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+/** 对指定插件发起 AI 智能自动审查与即时审批 */
+export async function runAiPluginAudit(
+  slug: string,
+  identity?: string
+): Promise<{ success: boolean; plugin: HubPluginItem; audit: HubPluginAuditReport }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
+  return sendJson<{ success: boolean; plugin: HubPluginItem; audit: HubPluginAuditReport }>(
+    `/api/plugins/${encodeURIComponent(slug)}/ai-audit${qs}`,
+    'POST',
+    {},
     undefined,
     effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
@@ -864,19 +907,56 @@ export async function fetchAuthorPlugins(
   )
 }
 
-/** 作者自助提交新版本（进入待审） */
+/** 作者自助提交新版本（支持 autoAudit 自动严审即时上架） */
 export async function submitPluginVersion(
   slug: string,
   manifest: unknown,
   changelog: string,
   identity?: string,
-): Promise<HubPluginItem> {
+  options?: { autoAudit?: boolean }
+): Promise<HubPluginItem & { audit?: HubPluginAuditReport }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
-  return sendJson<HubPluginItem>(
+  const shouldAutoAudit = options?.autoAudit !== false
+  const params = new URLSearchParams()
+  if (effectiveIdentity) params.set('anonId', effectiveIdentity)
+  if (shouldAutoAudit) params.set('autoAudit', 'true')
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  return sendJson<HubPluginItem & { audit?: HubPluginAuditReport }>(
     `/api/plugins/${encodeURIComponent(slug)}/versions${qs}`,
     'POST',
-    { manifest, changelog },
+    { manifest, changelog, autoAudit: shouldAutoAudit },
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+/** 插件清单提交前 AI 预检 (Pre-flight Audit) */
+export async function preAuditPlugin(
+  manifest: unknown,
+  identity?: string
+): Promise<{ ok: boolean; audit: HubPluginAuditReport; summary: any }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
+  return sendJson<{ ok: boolean; audit: HubPluginAuditReport; summary: any }>(
+    `/api/plugins/pre-audit${qs}`,
+    'POST',
+    { manifest },
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
+/** 插件清单 AI 自动深度修复与规范化 (Auto-Remediate) */
+export async function autoFixPlugin(
+  manifest: unknown,
+  identity?: string
+): Promise<{ ok: boolean; manifest: any; changes: string[]; audit: HubPluginAuditReport; summary: any }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
+  return sendJson<{ ok: boolean; manifest: any; changes: string[]; audit: HubPluginAuditReport; summary: any }>(
+    `/api/plugins/auto-fix${qs}`,
+    'POST',
+    { manifest },
     undefined,
     effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
@@ -1235,9 +1315,9 @@ export async function createPluginShortLink(
   return sendJson('/api/shortlinks', 'POST', { slug, install: options.install === true })
 }
 
-/** 插件漏斗埋点：浏览 / 安装点击 / 分享（fire-and-forget，不阻塞 UI） */
+/** 插件漏斗埋点：浏览 / 安装点击 / 卸载点击 / 分享（fire-and-forget，不阻塞 UI） */
 export function trackPluginEvent(
-  kind: 'plugin_view' | 'plugin_install_click' | 'plugin_share',
+  kind: 'plugin_view' | 'plugin_install_click' | 'plugin_uninstall_click' | 'plugin_share',
   slug: string,
 ): void {
   if (typeof window === 'undefined') return
@@ -1303,6 +1383,7 @@ export interface HubLlmFallbackView {
   maxTokens: number
   jsonMode: HubJsonMode
   allowPrivateNetwork: boolean
+  thinking?: boolean
 }
 
 /** 系统级模型配置视图（密钥只回显掩码） */
@@ -1320,9 +1401,11 @@ export interface HubLlmConfigView {
   maxTokens: number
   jsonMode: HubJsonMode
   allowPrivateNetwork: boolean
+  thinking?: boolean
   fallbacks: HubLlmFallbackView[]
   updatedAt: number | null
   updatedBy: string | null
+  effective?: { source: 'system' | 'env' | 'default'; name: string; model: string; baseUrl: string }
 }
 
 /** 用户级模型配置视图 */
@@ -1338,8 +1421,10 @@ export interface HubUserLlmConfigView {
   temperature: number
   maxTokens: number
   jsonMode: HubJsonMode
+  thinking?: boolean
   updatedAt: number | null
   system: { source: 'db' | 'env' | 'default'; name: string; model: string }
+  effective?: { source: 'user' | 'system' | 'env' | 'default'; name: string; model: string; baseUrl: string }
 }
 
 export interface HubLlmFallbackInput {
@@ -1385,7 +1470,7 @@ export interface HubLlmTestResult {
 
 export interface HubAdminLlmConfigResponse {
   config: HubLlmConfigView
-  effective: { source: 'user' | 'system' | 'env' | 'default'; model: string; hasApiKey: boolean }
+  effective: { source: 'user' | 'system' | 'env' | 'default'; name?: string; model: string; hasApiKey: boolean }
 }
 
 export async function fetchAdminLlmConfig(): Promise<HubAdminLlmConfigResponse> {
@@ -1459,6 +1544,7 @@ export interface HubAiChatMessage {
 
 export interface HubAiChatResult {
   reply: string
+  reasoningContent?: string
   model: string
   source: 'user' | 'system' | 'env' | 'default'
   usage: { promptTokens: number; completionTokens: number; totalTokens: number }
@@ -1471,11 +1557,17 @@ export async function chatWithUserLlm(
   messages: HubAiChatMessage[],
   maxTokens?: number,
   context?: { activeTab?: string; categories?: string[] },
+  thinking?: boolean,
 ): Promise<HubAiChatResult> {
   return sendJson(
     '/api/user/ai/chat?anonId=' + encodeURIComponent(identity),
     'POST',
-    { messages, ...(maxTokens ? { maxTokens } : {}), ...(context ? { context } : {}) },
+    {
+      messages,
+      ...(maxTokens ? { maxTokens } : {}),
+      ...(context ? { context } : {}),
+      ...(thinking !== undefined ? { thinking } : {}),
+    },
     undefined,
     identityHeaders(identity),
   )
@@ -1589,6 +1681,17 @@ export interface HubPluginAuditReport {
     detail: string
   }>
   auditedAt: number
+  decision?: 'approve' | 'reject'
+  aiRationale?: string
+  dimensionScores?: {
+    security: number
+    availability: number
+    compliance: number
+    relevance: number
+  }
+  linkSurvivalRate?: number
+  suggestions?: string[]
+  model?: string
 }
 
 /** 获取已配置的远程插件市场订阅源列表 */
@@ -1664,10 +1767,12 @@ export interface HubAiInvocationLog {
 }
 
 export interface HubAiObservabilityResponse {
+  hasData?: boolean
   window: string
   totalCalls: number
   successCalls: number
   errorCalls: number
+  thinkingCalls?: number
   successRate: number
   avgLatencyMs: number
   p95LatencyMs: number
@@ -1946,6 +2051,7 @@ export async function createSiteArchive(siteId: string): Promise<{ ok: boolean; 
 export interface CopilotChatResponse {
   ok: boolean
   reply: string
+  reasoningContent?: string
   model: string
   suggestions: string[]
   error?: string
@@ -1953,8 +2059,46 @@ export interface CopilotChatResponse {
 
 export async function sendCopilotChat(
   message: string,
-  history?: Array<{ role: string; content: string }>
+  history?: Array<{ role: string; content: string }>,
+  options?: { thinking?: boolean },
 ): Promise<CopilotChatResponse> {
-  return sendJson<CopilotChatResponse>('/api/copilot/chat', 'POST', { message, history })
+  return sendJson<CopilotChatResponse>('/api/copilot/chat', 'POST', {
+    message,
+    history,
+    ...(options?.thinking !== undefined ? { thinking: options.thinking } : {}),
+  })
+}
+
+export interface AiPluginGenerateParams {
+  prompt: string
+  kind?: PluginKind | 'auto'
+  thinking?: boolean
+  existingManifest?: any
+  changelogNote?: string
+}
+
+export interface AiPluginGenerateResponse {
+  success: boolean
+  manifest?: PluginManifest
+  summary?: any
+  rationale?: string
+  reasoningContent?: string
+  model?: string
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+  latencyMs?: number
+  error?: string
+  errors?: string[]
+}
+
+export async function generateAiPlugin(params: AiPluginGenerateParams): Promise<AiPluginGenerateResponse> {
+  const effectiveIdentity = typeof window !== 'undefined' ? getIdentity() : undefined
+  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
+  return sendJson<AiPluginGenerateResponse>(
+    `/api/user/ai/plugin/generate${qs}`,
+    'POST',
+    params,
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
 }
 

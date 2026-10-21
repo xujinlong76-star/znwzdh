@@ -46,3 +46,33 @@ describe("安装弹窗：跨包重复预览与耗时反馈", () => {
     expect(modal).toContain("clearInterval(timerRef.current)")
   })
 })
+
+describe("插件卡片与市场弹窗：已安装插件的卸载/管理联动", () => {
+  const card = overlaySource("src/components/plugins/plugin-card.tsx")
+  const page = overlaySource("src/app/marketplace/page.tsx")
+  const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
+
+  it("卡片按安装状态分流 targetMode，已安装时为 uninstall 而非继续 install", () => {
+    expect(card).toContain("targetMode")
+    expect(card).toContain("'uninstall'")
+    expect(card).toContain("'install'")
+    expect(card).toContain("onOpenInstallModal(plugin, targetMode)")
+  })
+
+  it("卡片已安装按钮悬停时展示管理/卸载文案与危险样式", () => {
+    expect(card).toContain("管理 / 卸载")
+    expect(card).toContain("group-hover/btn")
+    expect(card).toContain("hover:text-destructive")
+  })
+
+  it("市场首页弹窗消费卡片传递的 installMode，支持卸载与升级模式", () => {
+    expect(page).toContain("const [installMode, setInstallMode] = useState")
+    expect(page).toContain("mode={installMode}")
+    expect(page).toContain("handleOpenInstallModal")
+  })
+
+  it("卸载弹窗提供直达已安装管家的快捷入口", () => {
+    expect(modal).toContain("/marketplace/installed")
+    expect(modal).toContain("前往已安装管家")
+  })
+})

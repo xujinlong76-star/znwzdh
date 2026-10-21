@@ -28,9 +28,16 @@ import {
   PencilLine,
   Plus,
   ShieldAlert,
+  Sparkles,
   Store,
   XCircle,
 } from 'lucide-react'
+import dynamic from 'next/dynamic'
+
+const AiPluginStudioModal = dynamic(
+  () => import('@/components/plugins/ai-plugin-studio-modal').then((m) => m.AiPluginStudioModal),
+  { ssr: false }
+)
 
 const STATUS_META: Record<
   string,
@@ -50,6 +57,7 @@ export default function MyPluginsPage() {
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const [studioPlugin, setStudioPlugin] = useState<HubPluginItem | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -97,7 +105,7 @@ export default function MyPluginsPage() {
           </Button>
         </div>
 
-        <div className="rounded-2xl border border-border/70 glass-surface market-hero p-6 sm:p-7 space-y-3">
+        <div className="rounded-2xl border border-border/70 glass-surface market-hero p-4 sm:p-7 space-y-3">
           <div className="flex items-center gap-2 text-xs text-primary font-medium">
             <Store className="w-3.5 h-3.5" />
             作者中心
@@ -182,17 +190,26 @@ export default function MyPluginsPage() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
                     <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
                       <Link href={`/marketplace/${encodeURIComponent(plugin.slug)}`}>
                         <Eye className="w-3.5 h-3.5" />
                         预览
                       </Link>
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setStudioPlugin(plugin)}
+                      className="h-8 gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/5"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      AI 工坊升级
+                    </Button>
                     <Button asChild size="sm" className="h-8 gap-1.5 text-xs">
                       <Link href={`/marketplace/publish?from=${encodeURIComponent(plugin.slug)}`}>
                         <PencilLine className="w-3.5 h-3.5" />
-                        发布新版本
+                        手动发版本
                       </Link>
                     </Button>
                   </div>
@@ -202,6 +219,22 @@ export default function MyPluginsPage() {
           </div>
         )}
       </div>
+
+      {studioPlugin && (
+        <AiPluginStudioModal
+          open={Boolean(studioPlugin)}
+          onOpenChange={(open) => {
+            if (!open) setStudioPlugin(null)
+          }}
+          initialManifest={studioPlugin.manifest}
+          initialSlug={studioPlugin.slug}
+          onPublished={() => {
+            setStudioPlugin(null)
+            void load()
+          }}
+        />
+      )}
+
       <Footer />
     </Container>
   )

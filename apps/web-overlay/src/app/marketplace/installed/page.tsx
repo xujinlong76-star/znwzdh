@@ -203,7 +203,7 @@ export default function InstalledPluginsPage() {
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
         {/* 顶部展板 */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero p-6 sm:p-7 shadow-xs">
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero p-4 sm:p-7 shadow-xs">
           <div className="flex items-center gap-2 mb-3">
             <Link
               href="/marketplace"
@@ -358,7 +358,7 @@ export default function InstalledPluginsPage() {
         )}
 
         {/* 分类标签栏 */}
-        <div className="flex items-center gap-1.5 border-b border-border/60 pb-2">
+        <div className="flex items-center gap-1.5 border-b border-border/60 pb-2 overflow-x-auto no-scrollbar touch-pan-x">
           {(
             [
               { key: 'all', label: `全部 (${items.length})` },
@@ -374,7 +374,7 @@ export default function InstalledPluginsPage() {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                   isSelected
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-muted'

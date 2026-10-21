@@ -266,7 +266,7 @@ export default function AdminPluginsPage() {
         </div>
 
         {/* 头部面板 */}
-        <div className="rounded-3xl border border-border/80 glass-surface p-6 sm:p-8 space-y-4 shadow-xs">
+        <div className="rounded-3xl border border-border/80 glass-surface p-4 sm:p-8 space-y-4 shadow-xs">
           <div className="space-y-1">
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-primary/20 bg-primary/5 text-primary text-xs font-medium">
               <ShieldCheck className="w-3.5 h-3.5" />
@@ -454,7 +454,7 @@ export default function AdminPluginsPage() {
                     {item.description || '暂无描述'}
                   </p>
 
-                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground/80">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/80">
                     <span>
                       作者: <strong className="text-foreground">{item.author || '匿名'}</strong>
                     </span>
@@ -468,7 +468,7 @@ export default function AdminPluginsPage() {
                 </div>
 
                 {/* 审核操作动作栏 */}
-                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                <div className="flex flex-wrap items-center gap-2 self-end sm:self-center shrink-0 w-full sm:w-auto justify-end">
                   <Link
                     href={`/marketplace/${encodeURIComponent(item.slug)}`}
                     target="_blank"
@@ -676,7 +676,7 @@ export default function AdminPluginsPage() {
               </div>
             )}
 
-            <DialogFooter className="flex sm:justify-between items-center gap-2 pt-2 border-t border-border/60">
+            <DialogFooter className="flex flex-col sm:flex-row sm:justify-between items-stretch sm:items-center gap-2 pt-2 border-t border-border/60">
               <button
                 type="button"
                 onClick={() => setAuditModalOpen(false)}

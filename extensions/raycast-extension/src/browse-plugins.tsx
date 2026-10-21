@@ -47,7 +47,9 @@ export default function BrowsePlugins() {
       if (preferences.apiToken) {
         headers["Authorization"] = `Bearer ${preferences.apiToken.trim()}`;
       }
-      const res = await fetch(`${apiBase}/api/plugins?limit=100&sort=popular`, { headers });
+      // manifest=1：列表默认只回精简字段（site-pack 清单约 34KB/条，一页就是 730KB）。
+      // 本扩展的「复制插件 JSON 清单」需要完整清单，因此显式请求全量。
+      const res = await fetch(`${apiBase}/api/plugins?limit=100&sort=popular&manifest=1`, { headers });
       if (!res.ok) throw new Error("获取插件列表失败");
       const data = (await res.json()) as { items?: HubPlugin[] };
       setPlugins(data.items || []);

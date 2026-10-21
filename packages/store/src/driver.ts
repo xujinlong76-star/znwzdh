@@ -425,6 +425,24 @@ CREATE TABLE IF NOT EXISTS site_archives (
 );
 CREATE INDEX IF NOT EXISTS site_archives_site_id_idx ON site_archives(site_id);
 CREATE INDEX IF NOT EXISTS site_archives_captured_at_idx ON site_archives(captured_at);
+
+CREATE TABLE IF NOT EXISTS llm_usage (
+  id TEXT PRIMARY KEY,
+  scenario TEXT NOT NULL,
+  source TEXT NOT NULL,
+  model TEXT NOT NULL,
+  identity TEXT,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  latency_ms INTEGER NOT NULL DEFAULT 0,
+  ok INTEGER NOT NULL,
+  error_code TEXT,
+  thinking INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS llm_usage_time_idx ON llm_usage(created_at);
+CREATE INDEX IF NOT EXISTS llm_usage_scenario_idx ON llm_usage(scenario, created_at);
+CREATE INDEX IF NOT EXISTS llm_usage_source_idx ON llm_usage(source, created_at);
 `;
 
 const DDL_PG = `
@@ -807,6 +825,24 @@ CREATE TABLE IF NOT EXISTS site_archives (
 );
 CREATE INDEX IF NOT EXISTS site_archives_site_id_idx ON site_archives(site_id);
 CREATE INDEX IF NOT EXISTS site_archives_captured_at_idx ON site_archives(captured_at);
+
+CREATE TABLE IF NOT EXISTS llm_usage (
+  id TEXT PRIMARY KEY,
+  scenario TEXT NOT NULL,
+  source TEXT NOT NULL,
+  model TEXT NOT NULL,
+  identity TEXT,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  latency_ms INTEGER NOT NULL DEFAULT 0,
+  ok BOOLEAN NOT NULL DEFAULT TRUE,
+  error_code TEXT,
+  thinking BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS llm_usage_time_idx ON llm_usage(created_at);
+CREATE INDEX IF NOT EXISTS llm_usage_scenario_idx ON llm_usage(scenario, created_at);
+CREATE INDEX IF NOT EXISTS llm_usage_source_idx ON llm_usage(source, created_at);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;
@@ -859,55 +895,22 @@ export async function openDb(config: {
   }
 
   if (config.dialect === "libsql") {
-    let libsql: any;
-    try {
-      const moduleName = "@libsql/client";
-      libsql = await (Function("m", "return import(m)")(moduleName) as Promise<any>);
-    } catch {
-      throw new Error("使用 libsql 方言前请先安装 @libsql/client: pnpm add @libsql/client");
-    }
-    const createClient = libsql.createClient || libsql.default?.createClient;
-    const client = createClient({
-      url: config.databaseUrl || "file:" + (config.sqlitePath ?? "./data/navhub.db"),
-    });
-    const runner: SqliteRunner = {
-      exec(sqlStr: string) {
-        return client.executeMultiple(sqlStr);
-      },
-      prepare(sqlStr: string) {
-        return {
-          run(...params: unknown[]) {
-            return client.execute({ sql: sqlStr, args: params });
-          },
-          all(...params: unknown[]) {
-            return client.execute({ sql: sqlStr, args: params });
-          },
-          get(...params: unknown[]) {
-            return client.execute({ sql: sqlStr, args: params });
-          },
-        };
-      },
-      close() {
-        client.close();
-      },
-    };
-    const db: Db = {
-      dialect: "libsql",
-      orm: null,
-      sqlite: runner,
-      async close() { runner.close(); },
-    };
-    try {
-      await client.executeMultiple(DDL_SQLITE);
-    } catch {
-      // 容错重试
-      await migrateColumns(db);
-      await client.executeMultiple(DDL_SQLITE);
-    }
-    await migrateColumns(db);
-    await migrateSiteIndexes(db);
-    await migrateEventIdentity(db);
-    return db;
+    /**
+     * 明确拒绝，而不是「看起来能跑」。
+     *
+     * `Db.sqlite` 是**同步**接口（better-sqlite3 语义）：调用方写完 `.all()` 就当数组用。
+     * `@libsql/client` 的 execute() 返回 Promise —— 旧实现把这个 Promise 原样当成
+     * `{ rows }` 返回，于是每一次查询在上层都表现为「空结果」：不抛错、不打日志，
+     * 只是数据默默消失（列表永远空、计数永远 0）。这比启动失败难排查得多。
+     *
+     * 真要支持 libsql，得先把仓储层（116 个文件的调用点）改成异步接口，
+     * 属于架构级改动；在那之前这里必须 fail fast。README / 配置项均未宣传该方言，
+     * 因此不会破坏任何既有部署。
+     */
+    throw new Error(
+      "libsql 方言尚未实现：Db 的同步查询接口与 @libsql/client 的异步驱动不兼容" +
+        "（查询会静默返回空结果）。请使用 sqlite（better-sqlite3）或 pg 方言。",
+    );
   }
 
   const { default: pg } = await import("pg");

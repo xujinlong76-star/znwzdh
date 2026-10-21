@@ -12,6 +12,7 @@ import {
   type SitePackPayload,
 } from "@navhub/core";
 import { slugify } from "./dialect.ts";
+import { containsLike } from "../sql-like.ts";
 import type {
   PluginActor,
   PluginFunnelDay,
@@ -398,8 +399,8 @@ export async function listPlugins(
     params.push(filter.kind);
   }
   if (filter.q) {
-    wheres.push("(p.name LIKE ? OR p.description LIKE ?)");
-    const like = "%" + filter.q + "%";
+    wheres.push("(p.name LIKE ? ESCAPE '!' OR p.description LIKE ? ESCAPE '!')");
+    const like = containsLike(filter.q);
     params.push(like, like);
   }
   if (filter.featured !== undefined) {
@@ -652,6 +653,28 @@ export async function reviewPlugin(
   return updated;
 }
 
+/**
+ * 写入一次「不改变状态」的审核结论。
+ *
+ * 用于已上架插件的复审：`reviewPlugin('approve')` 只接受 pending/delisted/quarantined，
+ * 对 published 会抛错；但复审通过时状态本来就该保持 published，只需要刷新
+ * review_note / reviewed_at（详情页徽标与 AI 审核报告都从这里读）。
+ */
+export async function recordPluginAuditNote(
+  repo: Repository,
+  slug: string,
+  note: string | null,
+  at: number = Date.now(),
+): Promise<PluginRecord> {
+  await repo.run(
+    "UPDATE plugins SET review_note = ?, reviewed_at = ?, updated_at = ? WHERE slug = ?",
+    [note, at, at, slug],
+  );
+  const updated = await getPluginBySlug(repo, slug);
+  if (!updated) throw new Error("审核记录写入后无法读回");
+  return updated;
+}
+
 /* ------------------------------------------------------------------ *
  * 安装 / 卸载
  * ------------------------------------------------------------------ */
@@ -740,10 +763,17 @@ export async function listPluginInstallsByIdentity(
     "SELECT * FROM plugin_installs WHERE identity = ? AND removed_at IS NULL ORDER BY installed_at DESC",
     [who],
   );
+  if (rows.length === 0) return [];
+  // 一次 IN 查询取回全部插件，替代「每条安装记录一次 SELECT」的 N+1。
+  const pluginIds = [...new Set(rows.map((r) => String(r.plugin_id)))];
+  const pluginRows = (await repo.raw(
+    `SELECT * FROM plugins WHERE id IN (${pluginIds.map(() => "?").join(",")})`,
+    pluginIds,
+  )) as Array<Record<string, unknown>>;
+  const pluginById = new Map(pluginRows.map((p) => [String(p.id), p]));
   const items: PluginInstalledItem[] = [];
   for (const row of rows) {
-    const pluginRows = await repo.raw("SELECT * FROM plugins WHERE id = ? LIMIT 1", [row.plugin_id]);
-    const pluginRow = pluginRows[0];
+    const pluginRow = pluginById.get(String(row.plugin_id));
     if (!pluginRow) continue;
     items.push({ install: parseInstallRow(row), plugin: rowToPlugin(pluginRow) });
   }

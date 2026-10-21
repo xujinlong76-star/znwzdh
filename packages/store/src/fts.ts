@@ -94,11 +94,14 @@ export class SqliteFtsStore implements FullTextStore {
     if (!match || limit <= 0) return [];
     const rows = this.db
       .prepare(
+        // enabled 过滤必须与 exact/pinyin/browse 通道一致：否则后台「停用但未删除」
+        // 的站点仍会被全文检索命中（PG 侧 fts-pg.ts 早已过滤 TRUE，这里是对齐修复）。
         `SELECT sites.id AS siteId
            FROM ${this.table}
            JOIN sites ON sites.rowid = ${this.table}.rowid
           WHERE ${this.table} MATCH ?
             AND sites.deleted_at IS NULL
+            AND sites.enabled = 1
           ORDER BY bm25(${this.table}, 10.0, 4.0, 6.0, 2.0, 2.0)
           LIMIT ?`,
       )

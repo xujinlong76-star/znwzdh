@@ -91,8 +91,10 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }
 
     const result = await ctx.search.search({ ...input, personalize });
-    // Query Planner 观测：每次检索后记一次决策与通道耗时（/metrics 透出）
-    const timings = ctx.search.getLastTimings();
+    // Query Planner 观测：每次检索后记一次决策与通道耗时（/metrics 透出）。
+    // 必须读本次 result 上的 channelTimings —— ctx.search 是单例，
+    // getLastTimings() 在并发请求下会把别的请求的耗时记到这一次头上。
+    const timings = result.channelTimings;
     if (timings) {
       try { recordSearchChannels(timings, result.planner === "early-exit" ? "early-exit" : "full"); } catch { /* 观测不影响主链路 */ }
     }

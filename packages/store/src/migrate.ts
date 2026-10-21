@@ -99,21 +99,21 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS site_facets_key_val_idx ON site_facets(facet_key, facet_value)",
     "CREATE INDEX IF NOT EXISTS site_facets_site_idx ON site_facets(site_id)",
     // 实体关系表与索引 (Taxonomy Phase 3)
-    db.dialect === "postgres"
+    db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS site_relations (id TEXT PRIMARY KEY, source_site_id TEXT NOT NULL, target_site_id TEXT, target_title TEXT NOT NULL, target_url TEXT NOT NULL, relation_type TEXT NOT NULL DEFAULT 'related', is_free_or_open_source BOOLEAN NOT NULL DEFAULT FALSE, note TEXT, confidence DOUBLE PRECISION NOT NULL DEFAULT 1.0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)"
       : "CREATE TABLE IF NOT EXISTS site_relations (id TEXT PRIMARY KEY, source_site_id TEXT NOT NULL, target_site_id TEXT, target_title TEXT NOT NULL, target_url TEXT NOT NULL, relation_type TEXT NOT NULL DEFAULT 'related', is_free_or_open_source INTEGER NOT NULL DEFAULT 0, note TEXT, confidence REAL NOT NULL DEFAULT 1.0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS site_relations_source_idx ON site_relations(source_site_id)",
     "CREATE INDEX IF NOT EXISTS site_relations_target_idx ON site_relations(target_site_id)",
     "CREATE INDEX IF NOT EXISTS site_relations_type_idx ON site_relations(relation_type)",
     // 治理提案表与索引 (Taxonomy Phase 4)
-    db.dialect === "postgres"
+    db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS taxonomy_proposals (id TEXT PRIMARY KEY, kind TEXT NOT NULL, target_id TEXT NOT NULL, target_title TEXT, current_value TEXT, suggested_value TEXT NOT NULL, confidence DOUBLE PRECISION NOT NULL DEFAULT 0.8, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', meta TEXT, created_at BIGINT NOT NULL, applied_at BIGINT)"
       : "CREATE TABLE IF NOT EXISTS taxonomy_proposals (id TEXT PRIMARY KEY, kind TEXT NOT NULL, target_id TEXT NOT NULL, target_title TEXT, current_value TEXT, suggested_value TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 0.8, reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', meta TEXT, created_at INTEGER NOT NULL, applied_at INTEGER)",
     "CREATE INDEX IF NOT EXISTS taxonomy_proposals_status_idx ON taxonomy_proposals(status)",
     "CREATE INDEX IF NOT EXISTS taxonomy_proposals_kind_idx ON taxonomy_proposals(kind)",
     "CREATE INDEX IF NOT EXISTS taxonomy_proposals_target_idx ON taxonomy_proposals(target_id)",
     // 插件市场三表（2026-10 新增；与 driver.ts DDL 保持一致，幂等）
-    db.dialect === "postgres"
+    db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS plugins (id TEXT PRIMARY KEY, slug TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', icon TEXT, tags TEXT NOT NULL DEFAULT '[]', author TEXT, author_kind TEXT, owner_identity TEXT, owner_key TEXT, license TEXT, homepage TEXT, version TEXT NOT NULL, manifest TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', review_note TEXT, reviewed_at BIGINT, pending_changelog TEXT, source TEXT NOT NULL DEFAULT 'user', install_count INTEGER NOT NULL DEFAULT 0, star_count INTEGER NOT NULL DEFAULT 0, report_count INTEGER NOT NULL DEFAULT 0, featured BOOLEAN NOT NULL DEFAULT FALSE, featured_rank INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, published_at BIGINT)"
       : "CREATE TABLE IF NOT EXISTS plugins (id TEXT PRIMARY KEY, slug TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', icon TEXT, tags TEXT NOT NULL DEFAULT '[]', author TEXT, author_kind TEXT, owner_identity TEXT, owner_key TEXT, license TEXT, homepage TEXT, version TEXT NOT NULL, manifest TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', review_note TEXT, reviewed_at INTEGER, pending_changelog TEXT, source TEXT NOT NULL DEFAULT 'user', install_count INTEGER NOT NULL DEFAULT 0, star_count INTEGER NOT NULL DEFAULT 0, report_count INTEGER NOT NULL DEFAULT 0, featured INTEGER NOT NULL DEFAULT 0, featured_rank INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, published_at INTEGER)",
     "CREATE UNIQUE INDEX IF NOT EXISTS plugins_slug_idx ON plugins(slug)",
@@ -121,32 +121,46 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS plugins_kind_idx ON plugins(kind)",
     "CREATE INDEX IF NOT EXISTS plugins_owner_key_idx ON plugins(owner_key)",
     "CREATE INDEX IF NOT EXISTS plugins_featured_idx ON plugins(featured)",
-    db.dialect === "postgres"
+    db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS plugin_installs (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, version TEXT NOT NULL, meta TEXT, installed_at BIGINT NOT NULL, removed_at BIGINT, PRIMARY KEY (plugin_id, identity))"
       : "CREATE TABLE IF NOT EXISTS plugin_installs (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, version TEXT NOT NULL, meta TEXT, installed_at INTEGER NOT NULL, removed_at INTEGER, PRIMARY KEY (plugin_id, identity))",
     "CREATE INDEX IF NOT EXISTS plugin_installs_plugin_idx ON plugin_installs(plugin_id)",
-    db.dialect === "postgres"
+    db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS plugin_stars (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, created_at BIGINT NOT NULL, PRIMARY KEY (plugin_id, identity))"
       : "CREATE TABLE IF NOT EXISTS plugin_stars (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (plugin_id, identity))",
-    db.dialect === "postgres"
+    db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS plugin_versions (id TEXT PRIMARY KEY, plugin_id TEXT NOT NULL, version TEXT NOT NULL, manifest TEXT NOT NULL, changelog TEXT, checksum TEXT NOT NULL, published_at BIGINT NOT NULL, created_at BIGINT NOT NULL, UNIQUE(plugin_id, version))"
       : "CREATE TABLE IF NOT EXISTS plugin_versions (id TEXT PRIMARY KEY, plugin_id TEXT NOT NULL, version TEXT NOT NULL, manifest TEXT NOT NULL, changelog TEXT, checksum TEXT NOT NULL, published_at INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(plugin_id, version))",
     "CREATE INDEX IF NOT EXISTS plugin_versions_plugin_idx ON plugin_versions(plugin_id)",
-    db.dialect === "postgres"
+    db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS plugin_reviews (id TEXT PRIMARY KEY, plugin_id TEXT NOT NULL, identity TEXT NOT NULL, rating INTEGER NOT NULL, title TEXT, content TEXT, installed_version TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'visible', report_count INTEGER NOT NULL DEFAULT 0, moderation_note TEXT, moderated_at BIGINT, moderated_by TEXT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL, UNIQUE(plugin_id, identity))"
       : "CREATE TABLE IF NOT EXISTS plugin_reviews (id TEXT PRIMARY KEY, plugin_id TEXT NOT NULL, identity TEXT NOT NULL, rating INTEGER NOT NULL, title TEXT, content TEXT, installed_version TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'visible', report_count INTEGER NOT NULL DEFAULT 0, moderation_note TEXT, moderated_at INTEGER, moderated_by TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(plugin_id, identity))",
     "CREATE INDEX IF NOT EXISTS plugin_reviews_plugin_idx ON plugin_reviews(plugin_id)",
     "CREATE INDEX IF NOT EXISTS plugin_reviews_status_idx ON plugin_reviews(status)",
+    // LLM 用量明细（2026-10-19）：观测面板的唯一真实数据源。
+    // 为什么不塞进 events：events 承载 click/favorite/vitals/client_error 等语义事件，
+    // AI 调用是高频 + 固定列的结构化数据，混在一起既膨胀又难聚合；
+    // 独立表可按 retention 单独设 TTL（默认 90 天）。
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS llm_usage (id TEXT PRIMARY KEY, scenario TEXT NOT NULL, source TEXT NOT NULL, model TEXT NOT NULL, identity TEXT, prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0, latency_ms INTEGER NOT NULL DEFAULT 0, ok BOOLEAN NOT NULL, error_code TEXT, thinking BOOLEAN NOT NULL DEFAULT FALSE, created_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS llm_usage (id TEXT PRIMARY KEY, scenario TEXT NOT NULL, source TEXT NOT NULL, model TEXT NOT NULL, identity TEXT, prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0, latency_ms INTEGER NOT NULL DEFAULT 0, ok INTEGER NOT NULL, error_code TEXT, thinking INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS llm_usage_time_idx ON llm_usage(created_at)",
+    "CREATE INDEX IF NOT EXISTS llm_usage_scenario_idx ON llm_usage(scenario, created_at)",
+    "CREATE INDEX IF NOT EXISTS llm_usage_source_idx ON llm_usage(source, created_at)",
     // 分享短链：只存内部 /marketplace/ 目标（防开放重定向）
-    db.dialect === "postgres"
+    db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS short_links (code TEXT PRIMARY KEY, target TEXT NOT NULL, plugin_slug TEXT, clicks INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL)"
       : "CREATE TABLE IF NOT EXISTS short_links (code TEXT PRIMARY KEY, target TEXT NOT NULL, plugin_slug TEXT, clicks INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)",
   ];
   for (const sqlText of statements) {
     try {
-      if (db.dialect === "sqlite") {
+      // 判据必须写「非 pg」：libsql 与 sqlite 共用同一个同步 runner 接口
+      // （见 driver.ts 的 libsql 分支），而它根本没有 db.pg。
+      // 旧代码写 `=== "sqlite"` 会让 libsql 落进 pg 分支抛错，随后被下面的
+      // catch 静默吞掉 —— 等于 libsql 部署的索引迁移从未执行过一次。
+      if (db.dialect !== "pg" && db.sqlite) {
         db.sqlite.exec(sqlText);
-      } else {
+      } else if (db.pg) {
         await db.pg.query(sqlText);
       }
     } catch {
@@ -156,10 +170,19 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
 }
 
 async function tableColumns(db: { dialect: string; sqlite?: any; pg?: any }, table: string): Promise<Set<string>> {
-  if (db.dialect === "sqlite") {
-    const rows = db.sqlite.prepare("PRAGMA table_info(" + table + ")").all() as Array<{ name: string }>;
+  if (db.dialect !== "pg" && db.sqlite) {
+    const prepared = db.sqlite.prepare("PRAGMA table_info(" + table + ")").all() as
+      | Array<{ name: string }>
+      | Promise<{ rows?: Array<{ name: string }> }>;
+    // libsql 的 runner 是异步驱动（prepare().all() 返回 Promise 而非数组），
+    // better-sqlite3 是同步数组。两种形态在这里归一化：
+    // 否则 libsql 上 rows.map 直接抛错 → 被外层 catch 吞掉 → 列迁移永远空转。
+    const rows = typeof (prepared as Promise<unknown>)?.then === "function"
+      ? ((await prepared) as { rows?: Array<{ name: string }> }).rows ?? []
+      : (prepared as Array<{ name: string }>);
     return new Set(rows.map((r) => r.name));
   }
+  if (!db.pg) return new Set();
   const res = await db.pg.query(
     "SELECT column_name FROM information_schema.columns WHERE table_name = $1",
     [table],
@@ -187,11 +210,14 @@ export async function migrateColumns(db: { dialect: string; sqlite?: any; pg?: a
       try {
         if (!existing) existing = await tableColumns(db, table);
         if (existing.has(a.column)) continue;
-        const ddl = db.dialect === "sqlite" ? a.sqlite : a.pg;
+        const ddl = db.dialect === "pg" ? a.pg : a.sqlite;
         const statement = "ALTER TABLE " + table + " ADD COLUMN " + a.column + " " + ddl;
-        if (db.dialect === "sqlite") {
-          db.sqlite.exec(statement);
-        } else {
+        if (db.dialect !== "pg" && db.sqlite) {
+          const maybe = db.sqlite.exec(statement);
+          // libsql 的 exec 返回 Promise：必须 await，否则并发启动时下一次
+          // PRAGMA 可能先于 ALTER 落地，读到旧列集合重复补列（duplicate column）。
+          if (maybe && typeof (maybe as Promise<unknown>).then === "function") await maybe;
+        } else if (db.pg) {
           await db.pg.query(statement);
         }
         added.push(table + "." + a.column);
@@ -217,13 +243,19 @@ export async function migrateColumns(db: { dialect: string; sqlite?: any; pg?: a
  */
 export async function migrateEventIdentity(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
   try {
-    if (db.dialect === "sqlite") {
-      const res = db.sqlite.prepare(
+    if (db.dialect !== "pg" && db.sqlite) {
+      const maybe = db.sqlite.prepare(
         `UPDATE events SET identity = json_extract(meta, '$.identity')
           WHERE identity IS NULL AND meta IS NOT NULL AND meta LIKE '%"identity"%' AND json_valid(meta)`,
-      ).run();
-      return Number(res.changes ?? 0);
+      ).run() as { changes?: number } | Promise<{ rowsAffected?: number; changes?: number }>;
+      // libsql 返回 Promise（行数在 rowsAffected），better-sqlite3 同步返回 { changes }
+      const res: { changes?: number; rowsAffected?: number } =
+        maybe && typeof (maybe as Promise<unknown>).then === "function"
+          ? await (maybe as Promise<{ changes?: number; rowsAffected?: number }>)
+          : (maybe as { changes?: number });
+      return Number(res.changes ?? res.rowsAffected ?? 0);
     }
+    if (!db.pg) return 0;
     const res = await db.pg.query(
       `UPDATE events SET identity = substring(meta from '"identity":"([^"]*)"')
         WHERE identity IS NULL AND meta LIKE '%"identity"%'`,

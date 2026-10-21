@@ -232,6 +232,23 @@ describe("SQLite 集成：FTS5 + sqlite-vec + 混合检索", () => {
     expect(site?.title).toBe("中国天气网");
   });
 
+  it("停用站点不会从 FTS / 语义通道泄漏（enabled 过滤跨通道一致）", async () => {
+    const site = await repo.findSiteByUrl("https://unsplash.com");
+    expect(site).not.toBeNull();
+    await repo.updateSite(site!.id, { enabled: false });
+    try {
+      // 直连 FTS：SQLite 侧此前只过滤 deleted_at，停用站点仍会命中
+      const ftsHits = await fts.search("Unsplash", 5);
+      expect(ftsHits.map((h) => h.siteId)).not.toContain(site!.id);
+
+      // 混合检索：fts / semantic 两路都不得回流
+      const r = await engine.search({ q: "Unsplash", limit: 10 });
+      expect(r.hits.map((h) => h.siteId)).not.toContain(site!.id);
+    } finally {
+      await repo.updateSite(site!.id, { enabled: true });
+    }
+  });
+
   it("拼音全拼与首字母都能命中", async () => {
     for (const q of ["qidong", "qdjb", "zgtqw"]) {
       const r = await engine.search({ q, limit: 5 });

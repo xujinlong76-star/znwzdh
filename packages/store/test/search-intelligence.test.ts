@@ -123,4 +123,13 @@ describe("Search Intelligence: 分面意图、标签检索与同义词扩展", (
     const penpot = await repo.findSiteByUrl("https://penpot.app");
     expect(res.hits.map((h) => h.siteId)).toContain(penpot?.id);
   });
+
+  it("LIKE 通配符必须按字面量处理，不能把 % / _ 当成全表通配", async () => {
+    // 旧实现把用户输入直接拼进 LIKE：'penpot%' 会命中 Penpot，'penpo_' 同理。
+    // 正确行为是「站点文本里必须真的出现这个百分号/下划线」，因此两者都应为空。
+    for (const q of ["penpot%", "penpo_"]) {
+      const res = await search.search({ q, disableSemantic: true });
+      expect(res.hits, q).toHaveLength(0);
+    }
+  });
 });

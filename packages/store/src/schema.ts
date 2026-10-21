@@ -541,10 +541,30 @@ export const siteArchives = sqliteTable("site_archives", {
   index("site_archives_captured_at_idx").on(t.capturedAt),
 ]);
 
+/** 大模型用量统计（AI Observability 事实源） */
+export const llmUsage = sqliteTable("llm_usage", {
+  id: text("id").primaryKey(),
+  scenario: text("scenario").notNull(),
+  source: text("source").notNull(),
+  model: text("model").notNull(),
+  identity: text("identity"),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  latencyMs: integer("latency_ms").notNull().default(0),
+  ok: integer("ok", { mode: "boolean" }).notNull().default(true),
+  errorCode: text("error_code"),
+  thinking: integer("thinking", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [
+  index("llm_usage_time_idx").on(t.createdAt),
+  index("llm_usage_scenario_idx").on(t.scenario, t.createdAt),
+  index("llm_usage_source_idx").on(t.source, t.createdAt),
+]);
+
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates, taxonomyProposals,
-  plugins, pluginInstalls, pluginStars, pluginVersions, pluginReviews, shortLinks, siteArchives,
+  plugins, pluginInstalls, pluginStars, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
 };
 

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   buildFtsTokens,
   canonicalizeUrl,
@@ -43,6 +44,7 @@ import * as embeddingsRepo from "./repository/embeddings.ts";
 import * as statsRepo from "./repository/stats.ts";
 import * as dashboardRepo from "./repository/dashboard.ts";
 import * as eventsRepo from "./repository/events.ts";
+import * as llmUsageRepo from "./repository/llm-usage.ts";
 import * as healthRepo from "./repository/health.ts";
 import * as tagsRepo from "./repository/tags.ts";
 import * as favoritesRepo from "./repository/favorites.ts";
@@ -65,6 +67,73 @@ export * from "./repository/records.ts";
 export { bindSqlite, normalizeTokenScopes, slugify, toPgSql } from "./repository/dialect.ts";
 export { TOKEN_TOUCH_THROTTLE_MS } from "./repository/tokens.ts";
 /**
+ * 数据库访问闸门（读写锁）。
+ *
+ * SQLite 只有一个连接，事务一旦 BEGIN，任何在 `await` 期间插进来的普通查询
+ * 都会落进这个事务；事务回滚时，普通查询的写入会被一起抹掉。
+ * 事务持有写锁、普通查询持有读锁，确保「事务期间没有外部 SQL」。
+ */
+class DbAccessGate {
+  private readers = 0;
+  private writer = false;
+  private readonly queue: Array<{ mode: "read" | "write"; resolve: () => void }> = [];
+
+  async read<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire("read");
+    try {
+      return await fn();
+    } finally {
+      this.release("read");
+    }
+  }
+
+  async write<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire("write");
+    try {
+      return await fn();
+    } finally {
+      this.release("write");
+    }
+  }
+
+  private acquire(mode: "read" | "write"): Promise<void> {
+    if (mode === "read" && !this.writer && this.queue.length === 0) {
+      this.readers++;
+      return Promise.resolve();
+    }
+    if (mode === "write" && !this.writer && this.readers === 0 && this.queue.length === 0) {
+      this.writer = true;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => this.queue.push({ mode, resolve }));
+  }
+
+  private release(mode: "read" | "write"): void {
+    if (mode === "write") this.writer = false;
+    else this.readers--;
+    this.drain();
+  }
+
+  private drain(): void {
+    if (this.writer) return;
+    const head = this.queue[0];
+    if (!head) return;
+    if (head.mode === "write") {
+      if (this.readers > 0) return;
+      this.queue.shift();
+      this.writer = true;
+      head.resolve();
+      return;
+    }
+    while (this.queue[0]?.mode === "read") {
+      const next = this.queue.shift()!;
+      this.readers++;
+      next.resolve();
+    }
+  }
+}
+
+/**
  * 数据仓储。
  *
  * 这一层是「NavSphere 的 JSON 世界」与「真实数据库」之间的翻译层。
@@ -79,42 +148,59 @@ export class Repository {
   readonly db: Db;
   /** @internal token 触点节流表：供 repository/tokens 使用 */
   readonly tokenTouchAt = new Map<string, number>();
-  private txDepth = 0;
+  /**
+   * 「当前异步上下文已在事务内」标记。
+   *
+   * 不能用实例上的计数器（原 `txDepth`）判断嵌套：那是**跨请求共享**的状态，
+   * A 请求开事务后，B 请求看到计数 > 0 就会绕过 BEGIN 直接执行，
+   * 其写入被并入 A 的事务 —— A 回滚时 B 已「提交」的数据一起消失。
+   * AsyncLocalStorage 把判断范围收窄到「同一条异步调用链」，并发请求互不可见。
+   */
+  private readonly txContext = new AsyncLocalStorage<true>();
+  /**
+   * 事务 / 普通查询互斥闸门。
+   *
+   * SQLite 只有一个连接；PostgreSQL 分支为了原子性会临时把 `db.pg` 指向独占连接。
+   * 事务期间必须阻止普通查询插进同一个连接，否则事务回滚会连带丢失外部写入。
+   */
+  private readonly dbGate = new DbAccessGate();
 
   constructor(db: Db) {
     this.db = db;
   }
 
   async withTransaction<T>(action: () => Promise<T>): Promise<T> {
-    if (this.txDepth > 0) return action();
+    // 真嵌套（同一异步调用链）：复用外层事务，不重复 BEGIN
+    if (this.txContext.getStore()) return action();
+
+    // 写锁覆盖整个 BEGIN ... COMMIT，普通查询在此期间排队
+    return this.dbGate.write(() => this.txContext.run(true, () => this.runTransaction(action)));
+  }
+
+  private async runTransaction<T>(action: () => Promise<T>): Promise<T> {
     if (this.db.dialect === "sqlite" && this.db.sqlite) {
-      this.txDepth++;
-      try {
-        try { this.db.sqlite.exec("PRAGMA busy_timeout = 5000"); } catch { /* ignore */ }
-        let lastErr: unknown = null;
-        for (let attempt = 1; attempt <= 3; attempt++) {
+      try { this.db.sqlite.exec("PRAGMA busy_timeout = 5000"); } catch { /* ignore */ }
+      let lastErr: unknown = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          this.db.sqlite.exec("BEGIN IMMEDIATE");
           try {
-            this.db.sqlite.exec("BEGIN IMMEDIATE");
-            try {
-              const result = await action();
-              this.db.sqlite.exec("COMMIT");
-              return result;
-            } catch (err) {
-              try { this.db.sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
-              throw err;
-            }
+            const result = await action();
+            this.db.sqlite.exec("COMMIT");
+            return result;
           } catch (err) {
-            lastErr = err;
-            const msg = err instanceof Error ? err.message : String(err);
-            // 只有 BUSY/LOCKED 才重试，其它错误直接抛
-            if (!/BUSY|LOCKED/i.test(msg) || attempt === 3) throw err;
-            await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
+            try { this.db.sqlite.exec("ROLLBACK"); } catch { /* ignore */ }
+            throw err;
           }
+        } catch (err) {
+          lastErr = err;
+          const msg = err instanceof Error ? err.message : String(err);
+          // 只有 BUSY/LOCKED 才重试，其它错误直接抛
+          if (!/BUSY|LOCKED/i.test(msg) || attempt === 3) throw err;
+          await new Promise((r) => setTimeout(r, 50 * 2 ** (attempt - 1)));
         }
-        throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
-      } finally {
-        this.txDepth--;
       }
+      throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
     } else if (this.db.dialect === "pg" && this.db.pg) {
       // 必须在独占连接上跑 BEGIN/COMMIT，否则 pool 会把语句打散到不同连接，原子性丢失。
       const poolAny = this.db.pg as unknown as {
@@ -123,10 +209,10 @@ export class Repository {
       };
       if (typeof poolAny.connect === "function") {
         const client = await poolAny.connect();
-        // 事务期间把 this.db.pg 临时指向该独占连接，保证内部 run/raw 走同一连接
+        // 事务期间把 this.db.pg 临时指向该独占连接，保证内部 run/raw 走同一连接。
+        // 因为事务已由 txLock 串行化，这里不会与另一个事务的替换互相覆盖。
         const origPg = this.db.pg;
         (this as unknown as { db: { pg: unknown } }).db.pg = client as never;
-        this.txDepth++;
         try {
           await client.query("BEGIN", []);
           const result = await action();
@@ -138,10 +224,8 @@ export class Repository {
         } finally {
           (this as unknown as { db: { pg: unknown } }).db.pg = origPg as never;
           client.release();
-          this.txDepth--;
         }
       }
-      this.txDepth++;
       try {
         await this.db.pg.query("BEGIN");
         const result = await action();
@@ -150,8 +234,6 @@ export class Repository {
       } catch (err) {
         try { await this.db.pg.query("ROLLBACK"); } catch { /* ignore */ }
         throw err;
-      } finally {
-        this.txDepth--;
       }
     }
     return action();
@@ -462,6 +544,28 @@ export class Repository {
   /** 某站点最近 N 次巡检（新→旧），供「连续失败才判 broken」使用 */
   async recentHealthChecks(siteId: string, limit = 5): Promise<Array<{ ok: boolean; checkedAt: number }>> {
     return healthRepo.recentHealthChecks(this, siteId, limit);
+  }
+
+  /* ------------------------------ LLM 用量 ------------------------------ */
+
+  /** 记录一次模型调用（成功/失败都记；失败静默，不影响调用结果） */
+  async recordLlmUsage(input: Parameters<typeof llmUsageRepo.recordLlmUsage>[1]): Promise<void> {
+    return llmUsageRepo.recordLlmUsage(this, input);
+  }
+
+  /** 聚合窗口内用量（总量/成功率/p50/p95/按场景/按来源/真实小时分桶） */
+  async aggregateLlmUsage(options: { since: number; until?: number; maxRows?: number }) {
+    return llmUsageRepo.aggregateLlmUsage(this, options);
+  }
+
+  /** 最近 N 条调用明细（新→旧） */
+  async listRecentLlmUsage(limit = 20) {
+    return llmUsageRepo.listRecentLlmUsage(this, limit);
+  }
+
+  /** 按 retention 清理旧用量，返回删除条数 */
+  async pruneLlmUsage(before: number): Promise<number> {
+    return llmUsageRepo.pruneLlmUsage(this, before);
   }
 
   async bumpVisit(siteId: string): Promise<void> {
@@ -842,6 +946,11 @@ export class Repository {
     return pluginsRepo.reviewPlugin(this, slug, action, note, actor);
   }
 
+  /** 已上架插件复审：只刷新审核结论，不改变 published 状态 */
+  async recordPluginAuditNote(slug: string, note: string | null, at?: number): Promise<pluginsRepo.PluginRecord> {
+    return pluginsRepo.recordPluginAuditNote(this, slug, note, at);
+  }
+
   async installPlugin(slug: string, identity: string, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginInstallResult> {
     return pluginsRepo.installPlugin(this, slug, identity, actor);
   }
@@ -982,17 +1091,20 @@ export class Repository {
 
   /** @internal repository/* 域函数使用 */
   async runCount(sqlText: string, params: unknown[]): Promise<number> {
-    return ioRepo.runCount(this, sqlText, params);
+    if (this.txContext.getStore()) return ioRepo.runCount(this, sqlText, params);
+    return this.dbGate.read(() => ioRepo.runCount(this, sqlText, params));
   }
 
   /** @internal repository/* 域函数使用 */
   async raw(sqlText: string, params: unknown[] = []): Promise<Record<string, any>[]> {
-    return ioRepo.raw(this, sqlText, params);
+    if (this.txContext.getStore()) return ioRepo.raw(this, sqlText, params);
+    return this.dbGate.read(() => ioRepo.raw(this, sqlText, params));
   }
 
   /** @internal repository/* 域函数使用 */
   async run(sqlText: string, params: unknown[] = []): Promise<void> {
-    return ioRepo.run(this, sqlText, params);
+    if (this.txContext.getStore()) return ioRepo.run(this, sqlText, params);
+    return this.dbGate.read(() => ioRepo.run(this, sqlText, params));
   }
 
 }

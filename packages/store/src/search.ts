@@ -24,6 +24,7 @@ import {
 import type { Db, Dialect } from "./driver.ts";
 import type { FullTextStore } from "./fts.ts";
 import { bindSqlite, toPgSql } from "./repository.ts";
+import { containsLike, escapeLike, prefixLike } from "./sql-like.ts";
 import type { VectorStore } from "./vector/types.ts";
 
 /**
@@ -75,6 +76,22 @@ export interface ChannelTimings {
   pinyinMs: number;
   semanticMs: number;
   skippedSemantic: boolean;
+}
+
+/**
+ * 单次检索内共享的过滤集合缓存。
+ *
+ * 为什么需要：category/tag/facets 三组过滤是**通道无关**的，但四个通道各自
+ * 调一次 postFilter —— 一个带类目+标签+2 个分面的查询，同一份过滤集合会被
+ * 重复算 4 次（每次 3~5 条 SQL），纯属浪费。这里让同一次 search 内只算一次。
+ *
+ * 只挂在单次 search 的局部变量上，不放到实例上 —— 放实例就成了跨请求共享，
+ * 并发下会把 A 用户的过滤集合套到 B 用户的查询上。
+ */
+interface FilterCache {
+  category?: Promise<Set<string>>;
+  tag?: Promise<Set<string>>;
+  facets?: Promise<Set<string>>;
 }
 
 /**
@@ -253,11 +270,36 @@ export class SearchEngine {
   }
 
   /**
+   * 同义词/别名扩展结果的短 TTL 缓存。
+   *
+   * `expandQueryTerms` 在**每次**检索前串行跑 2 条查询，是召回开始前的固定延迟。
+   * 别名表与类目 alt_labels 变动极少（管理端手工维护），60 秒的新鲜度足够，
+   * 却能把热门查询的这部分往返直接省掉。缓存按查询词分桶并设上限，
+   * 避免高基数查询把内存撑爆。
+   */
+  private expansionCache = new Map<string, { at: number; terms: string[] }>();
+  private static readonly EXPANSION_TTL_MS = 60_000;
+  private static readonly EXPANSION_CACHE_MAX = 512;
+
+  /**
    * 基于 tag_aliases 与 categories.alt_labels 的同义词/知识图谱查询扩展
    */
   private async expandQueryTerms(raw: string): Promise<string[]> {
     const norm = raw.trim().toLowerCase();
     if (!norm) return [];
+    const cached = this.expansionCache.get(norm);
+    if (cached && Date.now() - cached.at < SearchEngine.EXPANSION_TTL_MS) return cached.terms;
+    const terms = await this.loadExpandedTerms(norm);
+    if (this.expansionCache.size >= SearchEngine.EXPANSION_CACHE_MAX) {
+      // 简单的 FIFO 淘汰：Map 保持插入顺序，删最早的即可
+      const oldest = this.expansionCache.keys().next();
+      if (!oldest.done) this.expansionCache.delete(oldest.value);
+    }
+    this.expansionCache.set(norm, { at: Date.now(), terms });
+    return terms;
+  }
+
+  private async loadExpandedTerms(norm: string): Promise<string[]> {
     const terms = [norm];
     try {
       // 1. 查 tag_aliases 别名表与主标签
@@ -278,8 +320,8 @@ export class SearchEngine {
 
       // 2. 查 categories.alt_labels (JSON 数组)
       const catRows = (await this.rawRows(
-        `SELECT title, alt_labels FROM categories WHERE alt_labels LIKE ? LIMIT 2`,
-        [`%"${norm}"%`]
+        `SELECT title, alt_labels FROM categories WHERE alt_labels LIKE ? ESCAPE '!' LIMIT 2`,
+        [`%${escapeLike(JSON.stringify(norm))}%`]
       )) as unknown as Array<{ title?: string; alt_labels?: string }>;
 
       for (const c of catRows) {
@@ -359,7 +401,15 @@ export class SearchEngine {
       (effectiveOpt.facets && Object.keys(effectiveOpt.facets).length > 0)
     );
     let fallback: SearchResult["fallback"];
-    let candidates = await this.runChannels(effectiveQuery, effectiveOpt, false, expandedTerms);
+    // 过滤集合按「一次 search」缓存，四个通道共用 —— 见 FilterCache 注释
+    const filterCache: FilterCache = {};
+    let { candidates, timings } = await this.runChannels(
+      effectiveQuery,
+      effectiveOpt,
+      false,
+      expandedTerms,
+      filterCache,
+    );
 
     // ---- 零结果兜底（两级放宽） ----
     // 第 1 级：原查询带类目/标签/分面正向过滤 → 先怀疑是过滤器太窄，去掉正向过滤重试（负向排除关键词仍坚决保留）
@@ -368,18 +418,21 @@ export class SearchEngine {
         effectiveQuery,
         { ...effectiveOpt, categoryId: undefined, tag: undefined, facets: undefined },
         false,
-        expandedTerms
+        expandedTerms,
+        filterCache,
       );
-      if (widened.length > 0) {
-        candidates = widened;
+      if (widened.candidates.length > 0) {
+        candidates = widened.candidates;
+        timings = widened.timings;
         fallback = "filter";
       }
     }
     // 第 2 级：拼音从「前缀」放宽为「包含」、英文多词改逐词 OR。
     if (candidates.length === 0) {
-      const widened = await this.runChannels(effectiveQuery, effectiveOpt, true, expandedTerms);
-      if (widened.length > 0) {
-        candidates = widened;
+      const widened = await this.runChannels(effectiveQuery, effectiveOpt, true, expandedTerms, filterCache);
+      if (widened.candidates.length > 0) {
+        candidates = widened.candidates;
+        timings = widened.timings;
         fallback = "fuzzy";
       }
     }
@@ -417,6 +470,9 @@ export class SearchEngine {
     const hits: SearchHit[] = fuse(candidates, weights, pool);
 
     const used = new Set(candidates.map((c) => c.channel));
+    // 兼容旧调用方（getLastTimings）；请求内请优先读 result.channelTimings ——
+    // 实例字段在并发下会被其它请求覆盖，只有返回值是本请求自己的。
+    this.lastTimings = timings;
     return {
       hits: hits.slice(offset, offset + limit),
       channelsUsed: [...used] as SearchChannel[],
@@ -425,8 +481,8 @@ export class SearchEngine {
       offset,
       hasMore: offset + limit < hits.length,
       ...(fallback ? { fallback } : {}),
-      ...(this.lastTimings?.skippedSemantic && !effectiveOpt.disableSemantic ? { planner: "early-exit" as const } : {}),
-      ...(this.lastTimings ? { channelTimings: this.lastTimings } : {}),
+      ...(timings.skippedSemantic && !effectiveOpt.disableSemantic ? { planner: "early-exit" as const } : {}),
+      channelTimings: timings,
       ...(hasInferredFacets ? { inferredFacets: parsedIntent.inferredFacets } : {}),
       ...(parsedIntent.inferredTag ? { inferredTag: parsedIntent.inferredTag } : {}),
       ...(parsedIntent.inferredCategory ? { inferredCategory: parsedIntent.inferredCategory } : {}),
@@ -444,9 +500,15 @@ export class SearchEngine {
    * 同值写进 fts/pinyin/semantic 三个字段，Prometheus 上 fts/pinyin 均值被语义推理
    * 时间污染（三个通道永远同值），通道画像失真。
    */
-  private async runChannels(raw: string, opt: SearchQuery, fuzzy: boolean, extraTerms: string[] = []): Promise<SearchCandidate[]> {
+  private async runChannels(
+    raw: string,
+    opt: SearchQuery,
+    fuzzy: boolean,
+    extraTerms: string[] = [],
+    cache: FilterCache = {},
+  ): Promise<{ candidates: SearchCandidate[]; timings: ChannelTimings }> {
     const t0 = Date.now();
-    const exact = await this.channelExact(raw, opt, fuzzy, extraTerms);
+    const exact = await this.channelExact(raw, opt, fuzzy, extraTerms, cache);
     const exactMs = Date.now() - t0;
     /** 按通道计时：返回 [通道结果, 该通道墙钟毫秒] */
     const timed = async <T>(fn: () => Promise<T>): Promise<[T, number]> => {
@@ -457,31 +519,35 @@ export class SearchEngine {
     // early-exit：精确命中足够强时，语义通道的 embedding 推理是纯浪费（首次 300ms+）。
     if (!fuzzy && !opt.disableSemantic && this.earlyExitExactHits > 0 && exact.length >= this.earlyExitExactHits) {
       const [[ftsHits, ftsMs], [pinyin, pinyinMs]] = await Promise.all([
-        timed(() => this.channelFts(raw, opt, extraTerms)),
-        timed(() => this.channelPinyin(raw, opt)),
+        timed(() => this.channelFts(raw, opt, extraTerms, cache)),
+        timed(() => this.channelPinyin(raw, opt, false, cache)),
       ] as const);
-      this.lastTimings = { exactMs, ftsMs, pinyinMs, semanticMs: 0, skippedSemantic: true };
-      return [...exact, ...ftsHits, ...pinyin];
+      return {
+        candidates: [...exact, ...ftsHits, ...pinyin],
+        timings: { exactMs, ftsMs, pinyinMs, semanticMs: 0, skippedSemantic: true },
+      };
     }
     const [[ftsHits, ftsMs], [pinyin, pinyinMs], [semantic, semanticMs]] = await Promise.all([
-      timed(() => this.channelFts(raw, opt, extraTerms)),
-      timed(() => this.channelPinyin(raw, opt, fuzzy)),
-      timed(() => (opt.disableSemantic ? Promise.resolve<SearchCandidate[]>([]) : this.channelSemantic(raw, opt))),
+      timed(() => this.channelFts(raw, opt, extraTerms, cache)),
+      timed(() => this.channelPinyin(raw, opt, fuzzy, cache)),
+      timed(() => (opt.disableSemantic ? Promise.resolve<SearchCandidate[]>([]) : this.channelSemantic(raw, opt, cache))),
     ] as const);
-    this.lastTimings = {
-      exactMs,
-      ftsMs,
-      pinyinMs,
-      semanticMs: opt.disableSemantic ? 0 : semanticMs,
-      skippedSemantic: Boolean(opt.disableSemantic),
+    return {
+      candidates: [...exact, ...ftsHits, ...pinyin, ...semantic],
+      timings: {
+        exactMs,
+        ftsMs,
+        pinyinMs,
+        semanticMs: opt.disableSemantic ? 0 : semanticMs,
+        skippedSemantic: Boolean(opt.disableSemantic),
+      },
     };
-    return [...exact, ...ftsHits, ...pinyin, ...semantic];
   }
 
   /**
    * 通道 1：子串精确匹配（支持站点标签、多词交叉检索与同义词扩展）。
    */
-  private async channelExact(q: string, opt: SearchQuery, fuzzy = false, extraTerms: string[] = []): Promise<SearchCandidate[]> {
+  private async channelExact(q: string, opt: SearchQuery, fuzzy = false, extraTerms: string[] = [], cache?: FilterCache): Promise<SearchCandidate[]> {
     const lowered = q.toLowerCase();
     const tokens = q.split(/[\s,;|/]+/).map((t) => t.trim().toLowerCase()).filter(Boolean);
     const terms: string[] = [lowered, ...extraTerms.map((t) => t.toLowerCase())];
@@ -492,12 +558,12 @@ export class SearchEngine {
     const uniqueTerms = [...new Set(terms.filter(Boolean))];
 
     const conditions = [
-      "lower(title) LIKE ?",
-      "lower(url) LIKE ?",
-      "lower(coalesce(description,'')) LIKE ?",
-      "pinyin_full LIKE ?",
-      "pinyin_initials LIKE ?",
-      "id IN (SELECT st.site_id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE lower(t.name) LIKE ? OR lower(t.slug) LIKE ?)",
+      "lower(title) LIKE ? ESCAPE '!'",
+      "lower(url) LIKE ? ESCAPE '!'",
+      "lower(coalesce(description,'')) LIKE ? ESCAPE '!'",
+      "pinyin_full LIKE ? ESCAPE '!'",
+      "pinyin_initials LIKE ? ESCAPE '!'",
+      "id IN (SELECT st.site_id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE lower(t.name) LIKE ? ESCAPE '!' OR lower(t.slug) LIKE ? ESCAPE '!')",
     ];
     const singleCondClause = "(" + conditions.join(" OR ") + ")";
 
@@ -505,16 +571,16 @@ export class SearchEngine {
     const orGroups: string[] = [];
     const likeParams: unknown[] = [];
     for (const t of uniqueTerms) {
-      const like = "%" + t + "%";
+      const like = containsLike(t);
       orGroups.push(singleCondClause);
       likeParams.push(like, like, like, like, like, like, like);
     }
 
     const textConditions = [
-      "lower(title) LIKE ?",
-      "lower(url) LIKE ?",
-      "lower(coalesce(description,'')) LIKE ?",
-      "id IN (SELECT st.site_id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE lower(t.name) LIKE ? OR lower(t.slug) LIKE ?)",
+      "lower(title) LIKE ? ESCAPE '!'",
+      "lower(url) LIKE ? ESCAPE '!'",
+      "lower(coalesce(description,'')) LIKE ? ESCAPE '!'",
+      "id IN (SELECT st.site_id FROM site_tags st JOIN tags t ON t.id = st.tag_id WHERE lower(t.name) LIKE ? ESCAPE '!' OR lower(t.slug) LIKE ? ESCAPE '!')",
     ];
     const textCondClause = "(" + textConditions.join(" OR ") + ")";
 
@@ -526,7 +592,7 @@ export class SearchEngine {
       const tokenClauses: string[] = [];
       for (const tok of tokens) {
         tokenClauses.push(textCondClause);
-        const lk = "%" + tok + "%";
+        const lk = containsLike(tok);
         multiTokenParams.push(lk, lk, lk, lk, lk);
       }
       multiTokenClause = `(${tokenClauses.join(" AND ")}) OR `;
@@ -540,19 +606,19 @@ export class SearchEngine {
           AND deleted_at IS NULL
           AND (${multiTokenClause}${orGroups.join(" OR ")})
         ORDER BY
-          CASE WHEN lower(title) LIKE ? THEN 0
-               WHEN lower(title) LIKE ? THEN 1
+          CASE WHEN lower(title) LIKE ? ESCAPE '!' THEN 0
+               WHEN lower(title) LIKE ? ESCAPE '!' THEN 1
                ELSE 2 END,
           weight DESC, sort ASC
         LIMIT ?`,
-      [...multiTokenParams, ...likeParams, "%" + lowered + "%", "%" + (tokens[0] || lowered) + "%", this.perChannel],
+      [...multiTokenParams, ...likeParams, containsLike(lowered), containsLike(tokens[0] || lowered), this.perChannel],
     );
-    const filtered = await this.postFilter(rows, opt);
+    const filtered = await this.postFilter(rows, opt, cache);
     return filtered.map((r, i) => ({ siteId: r.id, channel: "exact" as const, rank: i + 1 }));
   }
 
   /** 通道 2：BM25 全文（支持同义词多词检索） */
-  private async channelFts(q: string, opt: SearchQuery, extraTerms: string[] = []): Promise<SearchCandidate[]> {
+  private async channelFts(q: string, opt: SearchQuery, extraTerms: string[] = [], cache?: FilterCache): Promise<SearchCandidate[]> {
     if (!this.deps.fts) return [];
     try {
       const searchQueries = [q, ...extraTerms.filter((t) => t !== q.toLowerCase())];
@@ -572,12 +638,16 @@ export class SearchEngine {
 
       if (allHits.length === 0) return [];
       const rows = await this.rawRows(
+        // enabled 与 exact/pinyin/browse 通道对齐：停用站点不应经 FTS 通道回流。
+        // PG 的 fts-pg 已在 SQL 内过滤，SQLite 的 Fts5Store 也已补上，这里是
+        // 「通道取回后二次筛选」这层的兜底（防其它 FullTextStore 实现漏过滤）。
         `SELECT id, url, title, description, category_id AS categoryid,
                 pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
-           FROM sites WHERE id IN (${allHits.map(() => "?").join(",")}) AND deleted_at IS NULL`,
+           FROM sites WHERE id IN (${allHits.map(() => "?").join(",")})
+             AND deleted_at IS NULL AND enabled = ${this.enabled}`,
         allHits.map((h) => h.siteId),
       );
-      const allowed = await this.postFilter(rows, opt);
+      const allowed = await this.postFilter(rows, opt, cache);
       const allowedIds = new Set(allowed.map((r) => r.id));
       return allHits
         .filter((h) => allowedIds.has(h.siteId))
@@ -595,44 +665,47 @@ export class SearchEngine {
    * 由 exact 通道的 contains 兜住；fuzzy 模式改为**包含**匹配，
    * 兜住「打了一半 / 拼错开头 / 非首字母」的查询（如 `tianq`、`gtqw`）。
    */
-  private async channelPinyin(q: string, opt: SearchQuery, fuzzy = false): Promise<SearchCandidate[]> {
+  private async channelPinyin(q: string, opt: SearchQuery, fuzzy = false, cache?: FilterCache): Promise<SearchCandidate[]> {
     if (!looksLikeLatinQuery(q) && !/[\u4e00-\u9fff]/.test(q)) return [];
     const { full, initials } = normalizeQueryPinyin(q);
     if (!full) return [];
-    const pattern = fuzzy ? "%" + full + "%" : full + "%";
-    const initialPattern = fuzzy ? "%" + initials + "%" : initials + "%";
+    const pattern = fuzzy ? containsLike(full) : prefixLike(full);
+    const initialPattern = fuzzy ? containsLike(initials) : prefixLike(initials);
     const rows = await this.rawRows(
       `SELECT id, url, title, description, category_id AS categoryid,
               pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
          FROM sites
-        WHERE enabled = ${this.enabled} AND deleted_at IS NULL AND (pinyin_full LIKE ? OR pinyin_initials LIKE ?)
+        WHERE enabled = ${this.enabled} AND deleted_at IS NULL AND (pinyin_full LIKE ? ESCAPE '!' OR pinyin_initials LIKE ? ESCAPE '!')
         ORDER BY
           CASE WHEN pinyin_initials = ? THEN 0
                WHEN pinyin_full = ? THEN 0
-               WHEN pinyin_initials LIKE ? THEN 1
+               WHEN pinyin_initials LIKE ? ESCAPE '!' THEN 1
                ELSE 2 END,
           weight DESC, sort ASC
         LIMIT ?`,
       [pattern, initialPattern, initials, full, initialPattern, this.perChannel],
     );
-    const filtered = await this.postFilter(rows, opt);
+    const filtered = await this.postFilter(rows, opt, cache);
     return filtered.map((r, i) => ({ siteId: r.id, channel: "pinyin" as const, rank: i + 1 }));
   }
 
   /** 通道 4：语义向量 */
-  private async channelSemantic(q: string, opt: SearchQuery): Promise<SearchCandidate[]> {
+  private async channelSemantic(q: string, opt: SearchQuery, cache?: FilterCache): Promise<SearchCandidate[]> {
     if (!this.deps.vectors || !this.deps.embed) return [];
     try {
       const vec = await this.deps.embed(q);
       const matches = await this.deps.vectors.search(vec, this.perChannel);
       if (matches.length === 0) return [];
       const rows = await this.rawRows(
+        // 语义通道同样只应召回启用中的站点：向量表不会随 enabled 变更自动清理，
+        // 缺这层过滤会让「已停用」的站点继续出现在搜索结果里。
         `SELECT id, url, title, description, category_id AS categoryid,
                 pinyin_full AS pinyinfull, pinyin_initials AS pinyininitials, status, NULL AS tags
-           FROM sites WHERE id IN (${matches.map(() => "?").join(",")}) AND deleted_at IS NULL`,
+           FROM sites WHERE id IN (${matches.map(() => "?").join(",")})
+             AND deleted_at IS NULL AND enabled = ${this.enabled}`,
         matches.map((m) => m.siteId),
       );
-      const allowed = await this.postFilter(rows, opt);
+      const allowed = await this.postFilter(rows, opt, cache);
       const allowedIds = new Set(allowed.map((r) => r.id));
       return matches
         .filter((m) => allowedIds.has(m.siteId))
@@ -643,8 +716,8 @@ export class SearchEngine {
     }
   }
 
-  /** 分类/标签/状态过滤，通道内统一处理 */
-  private async postFilter(rows: SiteRow[], opt: SearchQuery): Promise<SiteRow[]> {
+  /** 分类/标签/分面过滤，通道内统一处理 */
+  private async postFilter(rows: SiteRow[], opt: SearchQuery, cache?: FilterCache): Promise<SiteRow[]> {
     let out = rows;
     if (opt.statuses?.length) {
       const set = new Set(opt.statuses);
@@ -653,15 +726,22 @@ export class SearchEngine {
       out = out.filter((r) => r.status !== "archived");
     }
     if (opt.categoryId) {
-      const ids = await this.categoryWithDescendants(opt.categoryId);
+      const ids = await (cache
+        ? (cache.category ??= this.categoryWithDescendants(opt.categoryId))
+        : this.categoryWithDescendants(opt.categoryId));
       out = out.filter((r) => ids.has(r.categoryid));
     }
     if (opt.tag) {
-      const ids = await this.siteIdsWithTag(opt.tag);
+      const ids = await (cache
+        ? (cache.tag ??= this.siteIdsWithTag(opt.tag))
+        : this.siteIdsWithTag(opt.tag));
       out = out.filter((r) => ids.has(r.id));
     }
     if (opt.facets && Object.keys(opt.facets).length > 0) {
-      const ids = await this.siteIdsWithFacets(opt.facets);
+      const facets = opt.facets;
+      const ids = await (cache
+        ? (cache.facets ??= this.siteIdsWithFacets(facets))
+        : this.siteIdsWithFacets(facets));
       out = out.filter((r) => ids.has(r.id));
     }
     if (opt.excludedTerms && opt.excludedTerms.length > 0) {
@@ -756,8 +836,8 @@ export class SearchEngine {
     const norm = categoryId.trim();
     // 匹配真实 ID、类目标题，或 alt_labels JSON 别名
     const rows = await this.rawRows(
-      `SELECT id, anchor FROM categories WHERE id = ? OR title = ? OR alt_labels LIKE ? LIMIT 1`,
-      [norm, norm, `%"${norm}"%`]
+      `SELECT id, anchor FROM categories WHERE id = ? OR title = ? OR alt_labels LIKE ? ESCAPE '!' LIMIT 1`,
+      [norm, norm, `%${escapeLike(JSON.stringify(norm))}%`]
     ) as unknown as Array<{ id?: string; anchor?: string }>;
 
     const targetId = rows[0]?.id ? String(rows[0].id) : norm;

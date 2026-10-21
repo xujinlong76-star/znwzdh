@@ -1,5 +1,6 @@
 import type { Repository } from "../repository.ts";
 import { randomUUID } from "node:crypto";
+import { containsLike } from "../sql-like.ts";
 import {
   buildFtsTokens,
   canonicalizeUrl,
@@ -184,15 +185,17 @@ export async function createSiteWithId(repo: Repository, input: SiteInput & { id
         metaStr, now, id,
       ],
     );
-    if (input.tags?.length) await repo.setSiteTags(id, input.tags);
+    // 复活语义等价于「用新数据重建」：旧行的 tags/facets/relations 必须清空后重写，
+    // 否则调用方没传的字段会悄悄继承上一次删除前的关联数据。
+    await repo.setSiteTags(id, input.tags ?? []);
     if (input.facets !== undefined) {
       await repo.setSiteFacets(id, input.facets);
     } else if (input.workspaces?.length) {
       await repo.setSiteFacets(id, { scene: input.workspaces });
+    } else {
+      await repo.setSiteFacets(id, {});
     }
-    if (input.relations !== undefined) {
-      await repo.setSiteRelations(id, input.relations);
-    }
+    await repo.setSiteRelations(id, input.relations ?? []);
     const revived = await repo.getSite(id);
     if (!revived) throw new Error("复活站点后无法读回");
     return revived;
@@ -226,9 +229,11 @@ export async function createSiteWithId(repo: Repository, input: SiteInput & { id
 }
 
 export async function updateSite(repo: Repository, id: string, patch: Partial<SiteInput>): Promise<Site | null> {
+  return repo.withTransaction(async () => {
+  // 读取放进事务内：事务外读 + 事务内写会让并发两次 PATCH 基于同一旧快照，
+  // 后写者覆盖先写者（丢失更新）。
   const existing = await repo.getSite(id);
   if (!existing) return null;
-  return repo.withTransaction(async () => {
 
   const title = patch.title ?? existing.title;
   const description = patch.description === undefined ? existing.description : patch.description;
@@ -286,6 +291,15 @@ export async function purgeSite(repo: Repository, id: string): Promise<boolean> 
   await repo.run("DELETE FROM site_facets WHERE site_id = ?", [id]);
   await repo.run("DELETE FROM site_relations WHERE source_site_id = ? OR target_site_id = ?", [id, id]);
   await repo.run("DELETE FROM embeddings WHERE site_id = ?", [id]);
+  // 以下五张表同样以 site_id 关联站点，但 schema 里没有外键（跨方言手写 DDL），
+  // 不会自动级联。漏删的后果：site_archives 留着整页 HTML（体积最大、回收站
+  // 清理后存储持续膨胀），favorites / collection_items 留下指向不存在站点的
+  // 空引用，health_checks / events 无限增长。
+  await repo.run("DELETE FROM site_archives WHERE site_id = ?", [id]);
+  await repo.run("DELETE FROM health_checks WHERE site_id = ?", [id]);
+  await repo.run("DELETE FROM favorites WHERE site_id = ?", [id]);
+  await repo.run("DELETE FROM collection_items WHERE site_id = ?", [id]);
+  await repo.run("DELETE FROM events WHERE site_id = ?", [id]);
   await repo.run("DELETE FROM sites WHERE id = ?", [id]);
   });
   return true;
@@ -666,6 +680,10 @@ export async function getSiteKnowledgeGraph(
   const seenEdges = new Set<string>();
 
   const slice = detailed.all.slice(0, maxNeighbors);
+  // 批量取邻居与类目，避免「每个邻居 2 次串行查询」的 N+1（最多 15×2 = 30 次往返）。
+  const targetIds = [...new Set(slice.map((r) => r.targetSiteId).filter((v): v is string => Boolean(v)))];
+  const targetSites = await repo.getSitesByIds(targetIds);
+  const categoryTitles = new Map((await repo.listCategories()).map((c) => [c.id, c.title] as const));
   for (const rel of slice) {
     const meta = CONTROLLED_RELATION_TYPES[rel.relationType] ?? CONTROLLED_RELATION_TYPES.related;
     const targetId = rel.targetSiteId ?? `ext-${Buffer.from(rel.targetUrl).toString("base64url").slice(0, 12)}`;
@@ -673,13 +691,10 @@ export async function getSiteKnowledgeGraph(
       let catTitle: string | undefined;
       let iconKey: string | null = null;
       if (rel.targetSiteId) {
-        const targetSite = await repo.getSite(rel.targetSiteId);
+        const targetSite = targetSites.get(rel.targetSiteId);
         if (targetSite) {
           iconKey = targetSite.iconKey ?? null;
-          if (targetSite.categoryId) {
-            const cat = await repo.getCategory(targetSite.categoryId);
-            catTitle = cat?.title;
-          }
+          if (targetSite.categoryId) catTitle = categoryTitles.get(targetSite.categoryId);
         }
       }
       nodesMap.set(targetId, {
@@ -723,13 +738,13 @@ export async function findRelationsByQuery(
 ): Promise<MatchedSiteRelation[]> {
   const norm = query.trim().toLowerCase();
   if (!norm || norm.length < 2) return [];
-  const pattern = `%${norm}%`;
+  const pattern = containsLike(norm);
 
   const rows = await repo.raw(
     `SELECT sr.*
        FROM site_relations sr
        JOIN sites s ON s.id = sr.source_site_id
-      WHERE (lower(sr.target_title) LIKE ? OR lower(sr.target_url) LIKE ?)
+      WHERE (lower(sr.target_title) LIKE ? ESCAPE '!' OR lower(sr.target_url) LIKE ? ESCAPE '!')
         AND s.deleted_at IS NULL
       ORDER BY (CASE WHEN sr.relation_type = 'alternative' THEN 1 ELSE 2 END) ASC,
                sr.confidence DESC

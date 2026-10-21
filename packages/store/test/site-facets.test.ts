@@ -209,9 +209,43 @@ describe("Taxonomy Phase 2: 受控分面属性 (site_facets) 与正交检索", (
     const facetsBefore = await repo.getSiteFacets(site.id);
     expect(facetsBefore.pricing).toEqual(["free"]);
 
+    // 其余五张以 site_id 关联的表没有外键，必须由 purgeSite 显式清理。
+    const db2 = db.sqlite!;
+    const now = Date.now();
+    db2.prepare(
+      "INSERT INTO site_archives (id, site_id, title, url, excerpt, read_time_minutes, html_content, byte_size, tags, captured_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    ).run("arch-1", site.id, "t", "https://to-be-purged.example.com", "", 1, "<html></html>", 13, "[]", now, now);
+    db2.prepare(
+      "INSERT INTO health_checks (site_id, checked_at, ok, http_status, latency_ms, redirect_to, error) VALUES (?,?,?,?,?,?,?)",
+    ).run(site.id, now, 1, 200, 12, null, null);
+    db2.prepare(
+      "INSERT INTO favorites (id, user_id, site_id, folder_id, note, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+    ).run("fav-1", "user-1", site.id, null, null, now, now);
+    db2.prepare(
+      "INSERT INTO collection_items (collection_id, site_id, sort, note) VALUES (?,?,?,?)",
+    ).run("col-1", site.id, 0, null);
+    db2.prepare(
+      "INSERT INTO events (kind, site_id, query, category_id, meta, identity, created_at) VALUES (?,?,?,?,?,?,?)",
+    ).run("click", site.id, null, null, null, "user-1", now);
+
+    const countOf = (table: string): number =>
+      Number((db2.prepare(`SELECT COUNT(*) AS c FROM ${table} WHERE site_id = ?`).get(site.id) as { c: number }).c);
+
+    expect(countOf("site_archives")).toBe(1);
+    expect(countOf("health_checks")).toBe(1);
+    expect(countOf("favorites")).toBe(1);
+    expect(countOf("collection_items")).toBe(1);
+    expect(countOf("events")).toBe(1);
+
     await repo.purgeSite(site.id);
 
     const facetsAfter = await repo.getSiteFacets(site.id);
     expect(Object.keys(facetsAfter).length).toBe(0);
+    // 级联清理回归：任何一张漏删都会让下面某条断言变成 1
+    expect(countOf("site_archives")).toBe(0);
+    expect(countOf("health_checks")).toBe(0);
+    expect(countOf("favorites")).toBe(0);
+    expect(countOf("collection_items")).toBe(0);
+    expect(countOf("events")).toBe(0);
   });
 });

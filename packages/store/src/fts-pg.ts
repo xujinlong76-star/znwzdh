@@ -1,5 +1,6 @@
 import { buildFtsQuery, hanToTokens } from "@navhub/core";
 import type { FtsHit, FullTextStore } from "./fts.ts";
+import { escapeLike } from "./sql-like.ts";
 
 /**
  * PostgreSQL 全文检索（tsvector）。
@@ -64,13 +65,14 @@ export class PgFtsStore implements FullTextStore {
     // 复用与 SQLite 相同的 token 构造（中文加引号、英文前缀），
     // 仅把 OR 语法换成 PostgreSQL 的 | 。
     const tsquery = match.replace(/ OR /g, " | ");
-    const phrase = query.replace(/\s+/g, "");
+    // 转义 LIKE 通配符：`%` / `_` 是用户输入，不能当模式元字符
+    const phrase = escapeLike(query.replace(/\s+/g, ""));
     const vec = vectorExpr("s.fts_tokens");
 
     const sql = [
       "SELECT s.id AS site_id,",
       " (" + "ts_rank(" + vec + ", to_tsquery('" + CFG + "', $1))",
-      "  + CASE WHEN $2 <> '' AND s.title ILIKE '%' || $2 || '%' THEN 1.0 ELSE 0 END) AS score",
+      "  + CASE WHEN $2 <> '' AND s.title ILIKE '%' || $2 || '%' ESCAPE '!' THEN 1.0 ELSE 0 END) AS score",
       " FROM sites s",
       " WHERE s.enabled = TRUE",
       "   AND s.deleted_at IS NULL",

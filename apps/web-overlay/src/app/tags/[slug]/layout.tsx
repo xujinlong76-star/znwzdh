@@ -1,26 +1,23 @@
-import type { Metadata } from 'next'
 import { Container } from '@/components/ui/container'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 
 /**
- * 标题层：`page.tsx` 是客户端组件（'use client'），无法导出 metadata，
- * 因此由这一层 server layout 提供。
+ * 标签详情页的 server layout：只挂面包屑。
  *
- * 标签名在客户端才知道，所以这里只给通用标题（不编造具体标签名）。
+ * metadata 为什么在 page.tsx 而不在这里（2026-10-21 修正）：
+ * 实测 Next 16 的 title.template 语义——**中间层一旦定义字符串 title，
+ * 根 layout 的模板（'%s - 站点名'）就传不到孙级**：`/tags/layout.tsx`
+ * 定义了 `title: '标签总览'`，导致 `/tags/[slug]/layout.tsx` 的标题
+ * 拿不到品牌后缀（369 个标签页的 <title> 全是光杆）。而 page 级
+ * metadata 不受影响（`/site/[id]` 的页面标题就带后缀）。
+ * 因此 generateMetadata 放在 page.tsx，与 /sites、/site/[id] 同构。
  *
- * 面包屑为什么挂 layout 而不是 page：page 是客户端组件，挂不上服务端
- * Breadcrumbs；且 layout 的渲染结果**在 SSR HTML 里**（客户端页面
- * useEffect 取数不影响 layout 直出），爬虫首轮即可见。
+ * 面包屑为什么挂 layout 而不是 page：page 的主体是客户端岛挂载者，
+ * 面包屑是服务端组件，挂 layout 里进 SSR HTML，爬虫首轮即可见。
  *
- * 别往这个中间层 layout 加 `alternates.canonical`：会被子路由继承，
- * 全部标签页 canonical 到同一个地址（继承陷阱，与 /tags、/collections
- * 中间层不加 canonical 同一理由）。
+ * 别往这里加 `alternates.canonical`：标签页 canonical 归一属于
+ * Phase 2 家族（无效 slug → 404/308），不在这轮改动里。
  */
-export const metadata: Metadata = {
-  title: '标签详情',
-  description: '该标签下的站点列表',
-}
-
 export default async function TagDetailLayout({
   children,
   params,

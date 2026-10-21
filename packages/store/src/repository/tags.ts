@@ -278,14 +278,14 @@ export async function listTagAliases(repo: Repository, tagId?: string): Promise<
 export async function resolveTag(
   repo: Repository,
   rawNameOrAlias: string,
-): Promise<{ id: string; name: string; slug: string; group: string } | null> {
+): Promise<{ id: string; name: string; slug: string; group: string; description: string | null } | null> {
   const norm = rawNameOrAlias.trim();
   if (!norm) return null;
   const slugNorm = slugify(norm);
 
   // 1. 直查主标签表 (name 或 slug 命中)
   const tagRows = await repo.raw(
-    "SELECT id, name, slug, group_name FROM tags WHERE slug = ? OR name = ? OR slug = ? LIMIT 1",
+    "SELECT id, name, slug, group_name, description FROM tags WHERE slug = ? OR name = ? OR slug = ? LIMIT 1",
     [slugNorm, norm, norm],
   );
   if (tagRows.length) {
@@ -295,13 +295,14 @@ export async function resolveTag(
       name: String(r.name),
       slug: String(r.slug),
       group: String(r.group_name || "topic"),
+      description: r.description ? String(r.description) : null,
     };
   }
 
   // 2. 查别名表 (alias 或 slug(alias) 命中)
   try {
     const aliasRows = await repo.raw(
-      "SELECT t.id, t.name, t.slug, t.group_name FROM tag_aliases ta JOIN tags t ON t.id = ta.tag_id WHERE ta.alias = ? OR ta.alias = ? LIMIT 1",
+      "SELECT t.id, t.name, t.slug, t.group_name, t.description FROM tag_aliases ta JOIN tags t ON t.id = ta.tag_id WHERE ta.alias = ? OR ta.alias = ? LIMIT 1",
       [slugNorm, norm],
     );
     if (aliasRows.length) {
@@ -311,6 +312,7 @@ export async function resolveTag(
         name: String(r.name),
         slug: String(r.slug),
         group: String(r.group_name || "topic"),
+        description: r.description ? String(r.description) : null,
       };
     }
   } catch {

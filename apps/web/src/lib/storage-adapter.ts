@@ -72,6 +72,25 @@ export interface HttpAdapterOptions {
    * 读/写直接以连接级错误快速失败。可用 NAVHUB_STORAGE_COOLDOWN_MS 覆盖。
    */
   cooldownMs?: number;
+  /**
+   * 读请求的 Next Data Cache 有效期（秒）。0 = 禁用（保持每次实时读中枢）。
+   *
+   * 解决的问题：没有它时每个 SSR 请求都同步打一次中枢——Googlebot 抓一次
+   * 就是一次全量读取，标签云/目录页的爬虫突发还会放大成并发读；带上
+   * `next: { revalidate }` 后读请求进 Data Cache，路由配
+   * `export const revalidate` 即可 ISR：缓存期内部署秒回，过期后
+   * Next 先吐旧内容再后台再生，没有任何请求阻塞在枢纽上。
+   * （本机 hub 读延迟实测 5-15ms，此改动省的是「每请求一次的穿透结构与
+   * 爬虫突发放大」，不是单次延迟本身。）
+   *
+   * 两个生效前提（不满足时自动退化为实时读，不会坏）：
+   *   1. 路由不是 force-dynamic —— force-dynamic 会让所有 fetch 变 no-store；
+   *   2. 请求不带 Authorization —— Next 对带鉴权头的 fetch 默认不缓存
+   *      （开了 NAVHUB_STORAGE_TOKEN 的部署保持实时读，属安全降级）。
+   *
+   * 注意：只给 GET 读加，写（PUT）永远不过缓存。
+   */
+  revalidateS?: number;
 }
 
 export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
@@ -79,6 +98,7 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
   const doFetch = opts.fetchImpl ?? fetch;
   const timeout = opts.timeoutMs ?? 15_000;
   const cooldownMs = opts.cooldownMs ?? 5_000;
+  const revalidateS = opts.revalidateS ?? 60;
 
   /**
    * 连接熔断器（进程内，按适配器实例；0 = 未跳闸）。
@@ -150,9 +170,17 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
   async function call(url: string, init: RequestInit): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
+    // 读请求（GET/无 method）才进 Data Cache；写不过缓存。
+    // next 是 Next 对 fetch 的扩展字段，非 Next 环境（脚本/测试的 fetchImpl）忽略。
+    const isRead = !init.method || init.method.toUpperCase() === "GET";
     let res: Response;
     try {
-      res = await doFetch(url, { ...init, headers: headers(), signal: controller.signal });
+      res = await doFetch(url, {
+        ...init,
+        headers: headers(),
+        signal: controller.signal,
+        ...(isRead && revalidateS > 0 ? { next: { revalidate: revalidateS } } : {}),
+      });
     } catch (err) {
       // 只有 fetch 自身抛出才算连接级故障。必须与下面的「响应处理」分开
       // catch：响应体畸形说明中枢活着，不能跳闸、也不能算 unreachable。

@@ -43,6 +43,25 @@ function cooldownFromEnv(env: Record<string, string | undefined>): number {
   return Math.floor(n);
 }
 
+/**
+ * 读请求的 Data Cache 有效期（秒）：默认 60。
+ *
+ * 与 cooldownFromEnv 同一风格（脏环境值一律回退默认，绝不抛错——取数链路
+ * 抛错会让首屏 500）。置 0 或 NAVHUB_STORAGE_REVALIDATE_S=0 表示禁用缓存，
+ * 回到「每次实时读中枢」的旧行为（后台改完立即生效，但 TTFB 打穿中枢）。
+ *
+ * 默认 60s 的取舍：导航内容是人工策划的，变更频率以天计；后台改完后最多
+ * 60s 全站可见，换取 Googlebot 命中缓存、首页 TTFB 从「等一次中枢往返」
+ * 降到「本地渲染」。sitemap 用 3600（它更不怕旧），首页更保守。
+ */
+export function revalidateFromEnv(env: Record<string, string | undefined>): number {
+  const raw = env.NAVHUB_STORAGE_REVALIDATE_S;
+  if (raw === undefined || raw.trim() === "") return 60;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 60;
+  return Math.floor(n);
+}
+
 function getAdapter(): StorageAdapter {
   if (cached) return cached;
   const kind = resolveAdapterKind(process.env);
@@ -58,6 +77,9 @@ function getAdapter(): StorageAdapter {
           "http://localhost:8787",
         token: process.env.NAVHUB_STORAGE_TOKEN ?? null,
         cooldownMs: cooldownFromEnv(process.env),
+        // 读请求进 Next Data Cache（配合路由级 revalidate 变 ISR）；
+        // 详见 storage-adapter.ts 里 HttpAdapterOptions.revalidateS 的注释
+        revalidateS: revalidateFromEnv(process.env),
       },
     });
     return cached;

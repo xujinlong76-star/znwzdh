@@ -194,3 +194,57 @@ describe("连接熔断器", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("读请求的 Data Cache（next.revalidate）", () => {
+  /** 取最近一次 fetch 的 init（含 next 扩展字段） */
+  function lastInit(fetchImpl: ReturnType<typeof vi.fn>): RequestInit & { next?: { revalidate?: number } } {
+    return fetchImpl.mock.calls.at(-1)?.[1] as RequestInit & { next?: { revalidate?: number } };
+  }
+
+  it("默认 read 带 next.revalidate=60（首页 TTFB 不再每次打穿中枢）", async () => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await adapter.read("site.json");
+    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60 });
+  });
+
+  it("revalidateS 可覆盖（部署侧按内容变更频率调档）", async () => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch, revalidateS: 300 });
+
+    await adapter.read("site.json");
+    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 300 });
+  });
+
+  it("revalidateS=0 时不带 next 选项（显式禁用 = 回到实时读）", async () => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch, revalidateS: 0 });
+
+    await adapter.read("site.json");
+    expect(lastInit(fetchImpl).next).toBeUndefined();
+  });
+
+  it("write（PUT）永远不带 next —— 写不过缓存", async () => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ note: "ok" }));
+    const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await adapter.write("p.json", "{}", "msg");
+    expect(lastInit(fetchImpl).next).toBeUndefined();
+    expect(lastInit(fetchImpl).method).toBe("PUT");
+  });
+
+  it("带 token 的部署也照常附带选项（Next 对鉴权 fetch 不缓存是它的安全默认，适配器只管附上）", async () => {
+    spyConsole();
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch, token: "t0ken" });
+
+    await adapter.read("site.json");
+    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60 });
+    expect((lastInit(fetchImpl).headers as Record<string, string>).Authorization).toBe("Bearer t0ken");
+  });
+});

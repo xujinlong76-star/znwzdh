@@ -13,7 +13,7 @@
 | 可抓取与索引控制 | 25% | 40 | sitemap 67 条（应 ≈1170）；robots 漏 9 类私密路径；全站 0 个 `noindex`；`/site/{无效id}` 返回 200 |
 | 页面元数据 | 20% | 28 | 1106 个详情页共用 3 组 title；0 canonical、0 metadataBase；3 个中间层 layout 打断 `title.template` |
 | 结构化数据 | 10% | 3 | 全站 0 个 `application/ld+json` |
-| 渲染与性能 | 20% | 25 | `/site/{id}` 49 KB 空壳、0 字正文；**全站 `Cache-Control: no-store`**；首页 7.5 MB / 8.2 s |
+| 渲染与性能 | 20% | 25 | `/site/{id}` 49 KB 空壳、0 字正文；**全站 `Cache-Control: no-store`**；首页 7.5 MB / 8.2 s（2026-10-21 实测更正：7.5MB 为 dev 模式全资源口径失真，生产首访 gzip 约 530KB；8.2s 未能在当前环境复现，hub 读延迟实测 5-15ms。详见 §7.6） |
 | URL 架构 | 10% | 40 | 详情页主键 UUID；`/videos/player?id=`；无 `/category`；`categories.anchor` 含斜杠不可用 |
 | 社交分享 | 5% | 15 | 仅 `/marketplace/[slug]` 有 OG/Twitter |
 | 内容质量治理 | 10% | 20 | 462 个 <5 站点分类、877 个 <3 站点标签、无索引门槛 |
@@ -851,6 +851,80 @@ curl -s -o /dev/null -w '%{http_code}\n' "$SITE/api/sites?limit=1"  # 404（中�
 
 修复后两文件 24 用例全绿（13 + 11），全仓无其他守卫引用这两个旧页面路径（已 grep 证实）。**教训**：RSC 化重写页面后，源码守卫型测试必须同步改指向——它们是按路径读文件的，不会因为行为还在（只是换了文件）而自动通过；且这正是守卫的价值：它抓住了「壳忘了挂岛」这类真实退化风险。
 
+### 7.4 Phase 5 Batch C 落地记录（2026-10-21 14:30，卡片 #tag 内链化）
+
+**改了什么**：
+
+| 文件 | 形态 |
+|---|---|
+| `src/components/navigation-card.tsx`（rich 模式） | 标签池移出卡片外链 `</Link>` 成为流内兄弟节点；`#{tag}` 由 `<span>` 改真 `<Link href="/tags/{slug}">`；外链去掉 `h-full`（rich 网格同行拉伸会把标签池挤出 `overflow-hidden` 卡片）；新增 `handleTagClick`（多选模式下标签点击与整卡同语义：不导航、只切换选中） |
+| `src/lib/seo/tag-slug.ts`（新） | 标签名 → slug，与 `packages/store/src/repository/dialect.ts` 的 `slugify` 逐字同构（trim → 小写 → 空白转连字符 → 保留 [a-z0-9 中文 -] → 空兜底 "tag"） |
+| `src/types/navigation.ts` + `apps/web/src/lib/data-loader.ts` | **根因修复**：`processNavigationSubItem` 是字段白名单，navigation.json 条目一直带着 tags 却被裁掉——rich 卡片芯片永远没数据。Raw 类型补 `tags?: string[]`，白名单放行（只放行 tags） |
+| `test/tag-slug.test.ts`、`test/card-tag-links.test.ts`、`test/data-loader-tags.test.ts`、`scripts/tag-slug-parity.test.ts`（新） | slug 契约 6 例 + 卡片结构守卫 7 例（含「标签链必须在 `</Link>`/`</CardHeader>` 之后」的嵌套锚点防护）+ data-loader 行为 3 例 + **双实现 Parity 26 例**（web tagSlug ↔ store slugify 对跑，漂移即红灯） |
+
+**规格冲突的综合裁决**（方案 626 行说「≥2 站渲染 Link（369 个）」vs 631 行说「只给 82 个 ≥5 站标签」）：**全量 Link 化，不设 count 门槛**。理由：① 卡片数据里没有 tag count，灌 count 要新增首页 `/api/tags` 拉取并穿透 props 给所有卡片消费方，违背最小改动；② ≥5 是 sitemap 的**索引**门槛，用作**渲染**门槛会把 287 个 2-4 站标签页的内链价值一起丢掉；③ 1 站标签的自指是 UX 微瑕而非断裂（用户主动点了想看这个标签），收录侧由 B-8 noindex 收口。href 一律用 slug 形态——sitemap 与标签云都是 slug，用名字会造出同内容双 URL。
+
+**浏览器实测（playwright，dev 栈）**：注入 rich 偏好后 58 张卡片渲染 **118 个 `/tags/{slug}` 内链**（如 `/tags/%E5%A4%A7%E6%A8%A1%E5%9E%8B`），全部落在卡内；**全页嵌套锚点 0**；点标签 → 标签详情页 h1「『大模型』相关站点共 5 个站点」正常；卡片主外链 58 条 + 操作按钮 232 个健在；聚焦卡片按 Space → peek 弹窗正常呼出（含站点标题与描述）；无 JS 错误（2 条 `ERR_BLOCKED_BY_RESPONSE` 资源阻塞经标准模式对照证实为 headless 预存，非本轮引入）。既有守卫 batch-selection / keyboard-activation / pwa-offline 69 例全过。
+
+**诚实修正——爬虫收益为零（本轮最重要的结论）**：rich 模式是 **localStorage 客户端偏好**，SSR HTML 用的是默认 standard 模式（无标签芯片），爬虫没有 localStorage。因此卡片标签链**不进任何爬虫可见的 HTML**，方案原文「给 369+ 标签页提供来自首页的内链」的乐观 framing 不成立。本轮的真实价值是：① **UX**——span 变真链接，新标签页打开 / 复制链接 / 中键点击全部可用；② **结构正确性**——芯片原本就在 `<a>` 内部，现在手序上杜绝嵌套。要拿到爬虫收益，路径是 W3 的 `/category/[slug]` 枢纽与 `/sites` 式服务端卡片网格（`detailLinkMode` 机制尚未建立），或把 chips 加进默认 standard 模式（视觉变更，需产品确认——不在最小改动范围内）。
+
+**顺带发现（预存问题，未修）**：`processNavigationSubItem` 白名单同时裁掉了 `relations` / `actions` / `liveMetrics` / `health`——首页卡片上的「平替 / 深链 / GitHub stars / 快照自愈」徽标在现行管线里全是死路径（数据永远到不了卡片）。`site/[id]` 详情页自己从 hub 拉 relations 所以不受影响。修不修由产品定：放行需要确认首页管线的增补来源，否则放了也是 undefined。
+
+### 7.5 Phase 6a 落地记录（2026-10-21 15:10，读路径缓存：爬虫不再每次打穿中枢）
+
+**问题**：全站渲染路径对 hub 的读全部是「每请求一发」。首页 `force-dynamic` + storage-adapter 的 fetch 不带任何缓存选项；Batch B RSC 化后 `/tags`（369 标签）与 `/tags/[slug]`（369 页 × 50-100 站点查询）成为新的高频读源——爬虫一轮抓取就是 400+ 次 hub 聚合查询，全部打穿到 SQLite。
+
+**改了什么**：
+
+| 文件 | 改动 |
+|---|---|
+| `src/lib/storage-adapter.ts` | `HttpAdapterOptions` 新增 `revalidateS?: number`（默认 60）；`call()` 对**非写请求**注入 `next: { revalidate }`，写（PUT）永远不带（写不过缓存）；`revalidateS=0` 显式禁用 = 回到实时读 |
+| `src/lib/github.ts` | 新增 `revalidateFromEnv()`（读 `NAVHUB_STORAGE_REVALIDATE_S`，非法值回落 60），透传给 `createHttpAdapter` |
+| `src/app/page.tsx` | `export const dynamic = "force-dynamic"` → `export const revalidate = 60`。原注释场景（元信息被固化在构建产物里）由 metadataBase + fetch 级 revalidate 共同解决：构建期不再固化数据，运行期 60s 保鲜 |
+| `src/app/tags/page.tsx` | `hubGet('/api/tags?minCount=1')` → 传 `60` |
+| `src/app/tags/[slug]/page.tsx` | `hubGet('/api/search?q=&tag=...&limit=100')` → 传 `60`（369 个标签页的重复抓取走 Data Cache） |
+| `src/app/sites/page.tsx` | `loadActiveSites()` 两个分页 `hubGet` 各传 `60`（17 个分页 × searchParams 组合独立取数） |
+| `test/storage-adapter.test.ts` | 新增 5 例：默认 read 带 `next.revalidate=60`、`revalidateS` 可覆盖、`=0` 不带 next、PUT 永远不带 next |
+| `test/storage-revalidate-env.test.ts`（新） | `revalidateFromEnv` 6 例：未设置/空/合法值/0/非法/小数 的解析口径 |
+
+**为什么是 60s 而不是 sitemap 的 3600s**：首页含 `siteData.basic`（标题/描述）与站点列表，后台改站点信息是高频运营动作；标签与站点集合是低频变更。60s 是「运营改完一分钟内见效」与「爬虫突发被缓存吸收」的折中。sitemap 保持 3600 不动（搜索引擎不会分钟级重访 sitemap）。
+
+**验证**：tsc 干净（仅并行会话 plugin-card 已知项）；eslint 0 error；dev 栈四路由冒烟 `/tags` 200、`/tags/开源` 200、`/sites` 200、`/sites?page=2` 308（设计中的分页归一化）；**SSR 内容零损**——`/tags` 仍直出 369 条标签内链、`/tags/开源` 仍直出 3 条站点内链、`/sites` 仍直出 51 条（51≠60 为已知环境口径差，dev hub 内存库 51 active）；26 个 storage 相关测试全绿。
+
+**注意（Next 16 语义）**：`fetch` 的 `next.revalidate` 在 App Router 里同时决定 Data Cache 与 ISR 行为；本仓库页面都是动态渲染（无 `generateStaticParams`），实际生效的是**请求级 Data Cache 复用**——同一 URL 在 revalidate 窗口内的重复请求命中缓存，不产生新的 hub 上游请求。生产部署（Docker + next start）行为一致。
+
+**残留**：admin 系列页面（10+ 个 hubGet 调用点）刻意不传 revalidate——后台要实时；这是设计而非遗漏。
+
+### 7.6 Phase 6b/6c 落地记录（2026-10-21 16:00，体积实测 + 82 条标签文案）
+
+**6b：首页「7.5MB 瘦身」——实测后撤销该议题（无生产问题）**
+
+方案原文把「首页 7.5MB」列为 Phase 6 性能项。实测（`NEXT_DIST_DIR=.next-verify next build` + `next start` 生产服务 + `scripts/check-bundle-budget.mjs`）：
+
+| 口径 | dev 模式 | **生产模式** |
+|---|---:|---:|
+| HTML（raw / gzip） | 1.83MB / — | **1.78MB / 100KB** |
+| 首屏 JS+CSS（raw / gzip） | 8.56MB / — | **1.46MB / 430KB** |
+| 首访全资源（raw / gzip） | 10.4MB / — | **3.24MB / 530KB** |
+| 首屏 JS（预算口径，未压缩） | — | **1063KB（预算 1115KB，60 条路由全过）** |
+
+「7.5MB」是 **dev 模式全资源传输**的失真数字——未压缩的 React development 构建（react-dom-client_development 单 chunk 1.05MB）、next-devtools（887KB）、HMR runtime 在构建产物里全部不存在。仓库自 2026-10-19 起就有首屏 JS 棘轮门禁（`scripts/check-bundle-budget.mjs` + `bundle-budget.json`，`/` 预算 1115KB，历史从 1174KB 逐轮棘轮下调到 1062KB）。**结论：无需瘦身动作**；持续控制交给既有棘轮门禁。本方案文档后续版本应删除该议题，避免再拿 dev 数字申报生产问题。
+
+**6c：82 条标签描述（content-writer 产出 + 回填 + 全链路渲染）**
+
+| 文件 | 改动 |
+|---|---|
+| `docs/seo/tag-descriptions-draft.md`（新） | content-writer 按 seed-data 实证聚合撰写的 82 条描述（≥5 站标签全量）；独立复核：82 条无重复、0 违禁词（最/第一/全网/持续更新/感叹号）、字数 min 30 / median 37 / max 56，全部 ≤200 字上限 |
+| `scripts/tag-descriptions.mjs`（新） | 回填脚本：**解析上述 markdown 为唯一事实源**（不嵌文案副本，杜绝漂移）；按 name 匹配标签；默认 dry-run，`--apply` 写入；幂等（描述相同即跳过）；超 200 字拒绝；`--db`/`NAVHUB_SQLITE_PATH` 与 data-retention.mjs 同口径。已对 dev 库执行（前置 `scripts/backup.mjs` 备份 integrity ok），复跑 dry-run 报「已一致 82」 |
+| `packages/store/src/repository/tags.ts` + `repository.ts` | `resolveTag` 两个分支（主表/别名表）的 SELECT 增加 `description`，返回类型加 `description: string \| null`——纯增量，既有 4 个消费方（sites.ts upsertTag、测试）不受影响 |
+| `src/app/tags/[slug]/page.tsx` | **新增 `generateMetadata`**：每页独立 title（`「{标签名}」相关站点`）与 description（优先标签自身描述，缺失才兜底）——369 个标签页不再共享写死的「标签详情」；正文同步取 resolve 描述经 `tagDescription` prop 下发 hero（369 页不再共用同一段通用正文） |
+| `src/app/tags/page.tsx` + `src/app/tags/layout.tsx` | 标题从 layout 迁到 page（见下） |
+| `test/tag-metadata.test.ts`（新，6 例） | 结构锁：`/tags/layout.tsx` 无 metadata export（模板贯通）、`/tags/page.tsx` 有、`/tags/[slug]/page.tsx` 有 generateMetadata 且标题/描述来自运行时、hero 消费 tagDescription |
+
+**Next 16 title.template 截断坑（实测，已写进三处代码注释 + 守卫）**：根 layout 的 `title.template`（`%s - 站点名`）向孙级传递时，**会被中间层的字符串 title 截断**。`/tags/layout.tsx` 的 `title: '标签总览'` 导致全部 369 个 `/tags/[slug]` 页的 `<title>` 拿不到品牌后缀（同病：`/collections/[slug]`「合集详情」、`/marketplace/[slug]`「插件详情与安装」；反证：`/site/[id]` 父层无 title，后缀正常）。修法：标题下沉到 page 级 metadata，中间层 layout 不留 title。**实测修复后**：`/tags` → `标签总览 - NavHub 导航`，`/tags/开源` → `「开源」相关站点 - NavHub 导航`。
+
+**生产构建全链路验证**（`next start` + 真实 hub）：`/tags` SSR 369 条标签内链、`/tags/开源` 3 条站点内链 + title 后缀 + hero 描述 + BreadcrumbList JSON-LD 全部在场。另核实一处环境疑云：dev 库真实状态为 **51 active + 7 broken + 962 软删除**（hub 与直查 SQLite 一致），此前记忆中的「1011 站点」是未过滤 `deleted_at` 的误算——非 bug。
+
 | 周 | 内容 | 交付物 |
 |---|---|---|
 | W0（2-3 天） | 站点去重、`NAVHUB_SITE_URL`、分类 slug 迁移 | 前置 PR |
@@ -909,7 +983,7 @@ curl -s -o /dev/null -w '%{http_code}\n' "$SITE/api/sites?limit=1"  # 404（中�
 
 1. **`/site/[id]` 服务端化 + 真 404 + 页面级 metadata/canonical** —— 1013 个页面从"空白模板"变成有标题、有 `<h1>`、有正文、有内链的真页面；无效 id 从 200 变 404。这是唯一一个"改完可索引页从 67 变 1100+"的动作，其它优化都以它为前提。
 2. **`/sites` 目录 + sitemap 扩容** —— 服务端化只解决"能被索引"，内链 + sitemap 才解决"能被发现"；`/sites` 一个页面、17 个分页、首页一条入口，就把 1013 个详情页的点击深度从 ∞ 降到 2，且一张卡片都不用改。
-3. **修 `storage-adapter.ts:189` 的读缓存 + 首页瘦身** —— 不改这一行，前两件做完仍会每次抓取打穿中枢、首页 7.5 MB / 8.2 s，爬虫配额与 LCP 会把收益吃光。这是唯一跨全站的杠杆点：一行 fetch 选项 + 一次首页折叠。
+3. **修 `storage-adapter.ts` 的读缓存** —— 不改这一处，前两件做完仍会每次抓取打穿中枢。这是唯一跨全站的杠杆点：一行 fetch 选项（2026-10-21 已落地，见 §7.5/§7.6）。~~首页瘦身~~ **已撤销**：生产实测首屏 JS 1063KB（预算内）、HTML gzip 100KB，审计里的「7.5 MB / 8.2 s」是 dev 模式全资源口径的失真（§7.6 有完整对比表）。
 
 第 4 件才是 **132 个分类 hub**：它把 1005 个站点的爬取路径从"首页直连"变成"首页 → 分类 → 站点"，是内链结构的最后一块，但**不必等 `categories.slug` 迁移**——先用 `/category/{id}` 就能上线，slug 只是后续可读性优化。
 

@@ -30,10 +30,13 @@ export function TagResultsBoard({
   slug,
   initialSites,
   degraded: initialDegraded,
+  tagDescription,
 }: {
   slug: string
   initialSites: HubSite[]
   degraded: boolean
+  /** 标签自身描述（≥5 站标签已由 scripts/tag-descriptions.mjs 回填）；null 时 hero 用通用文案 */
+  tagDescription?: string | null
 }) {
   const [sites, setSites] = useState<HubSite[]>(initialSites)
   const [loading, setLoading] = useState(false)
@@ -83,7 +86,8 @@ export function TagResultsBoard({
                 </span>
               </h1>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                基于中枢多通道检索与向量图谱，为您汇总所有归属于「{slug}」分类的优质技术资产与工具。
+                {tagDescription ??
+                  `基于中枢多通道检索与向量图谱，为您汇总所有归属于「${slug}」分类的优质技术资产与工具。`}
               </p>
             </div>
           </div>

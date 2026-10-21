@@ -18,6 +18,7 @@ import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 import type { CardDisplayMode } from '@/lib/modular/use-home-diy'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
+import { tagSlug } from '@/lib/seo/tag-slug'
 import { recordOfflineVisit } from '@/lib/offline-recent'
 
 interface NavigationCardProps {
@@ -60,6 +61,18 @@ export function NavigationCard({
       recordOfflineVisit({ id: item.id, title: item.title, href: item.href, icon: item.icon })
       return
     }
+    e.preventDefault()
+    e.stopPropagation()
+    onToggleSelect?.(item.id)
+  }
+
+  /**
+   * 标签芯片点击语义：非多选时走 Link 默认导航（去 /tags/{slug}）；
+   * 多选模式下与整卡一致——不导航，只切换选中。批量操作进行中误点
+   * 标签不该把用户带离当前上下文（选择态是临时的，标签页随时能回）。
+   */
+  const handleTagClick = (e: React.MouseEvent) => {
+    if (!selectable) return
     e.preventDefault()
     e.stopPropagation()
     onToggleSelect?.(item.id)
@@ -207,6 +220,7 @@ export function NavigationCard({
                       isPinnedInCategory ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-amber-500"
                     )}
                     title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
+                    aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                     onClick={handleCategoryPin}
                   >
                     <Pin className={cn("w-3 h-3", isPinnedInCategory && "fill-amber-500")} />
@@ -217,6 +231,7 @@ export function NavigationCard({
                   size="icon"
                   className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
                   title="速览与行动"
+                  aria-label={`速览与行动：${item.title}`}
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
@@ -228,8 +243,9 @@ export function NavigationCard({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-6 w-6 rounded-md text-muted-foreground hover:text-emerald-500"
+                  className="hidden sm:inline-flex h-6 w-6 rounded-md text-muted-foreground hover:text-emerald-500"
                   title="📌 固定到工作台"
+                  aria-label={`固定到工作台：${item.title}`}
                   onClick={handleWorkbenchPin}
                 >
                   <Pin className="w-3 h-3" />
@@ -280,7 +296,7 @@ export function NavigationCard({
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
                 onClick={handleLinkClick}
-                className="block h-full"
+                className="block"
               >
                 <CardHeader className="p-4 sm:p-5">
                   <div className="flex items-start gap-3.5">
@@ -294,7 +310,7 @@ export function NavigationCard({
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap pr-20">
+                      <div className="flex items-center gap-1.5 flex-wrap pr-14 sm:pr-20">
                         <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover:text-primary transition-colors truncate">
                           {item.title}
                         </CardTitle>
@@ -321,44 +337,54 @@ export function NavigationCard({
                       </div>
 
                       {item.description && (
-                        <CardDescription className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1.5">
+                        <CardDescription className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1.5 break-words">
                           {item.description}
                         </CardDescription>
                       )}
-
-                      {/* 丰富标签池 */}
-                      <div className="flex items-center gap-1.5 pt-2.5 flex-wrap">
-                        {item.tags?.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag}
-                            className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground font-mono"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                        {topAlternative && (
-                          <span
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              onPeek?.(item)
-                            }}
-                            className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
-                          >
-                            <span>平替: {topAlternative.targetTitle}</span>
-                          </span>
-                        )}
-                        {item.actions && item.actions.length > 0 && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
-                            <Zap className="w-2.5 h-2.5" />
-                            <span>深链</span>
-                          </span>
-                        )}
-                      </div>
                     </div>
                   </div>
                 </CardHeader>
               </Link>
+
+              {/* 丰富标签池：**必须在卡片外链 </Link> 之外**。
+                  <a> 里嵌 <a> 是非法 HTML，浏览器会自动闭合外层 <a>，
+                  整卡点击当场坏掉（tag-results-board 双模式卡片的同一纪律）。
+                  标签是真内链：/tags/{slug} 与 sitemap、标签云同形态
+                  （tagSlug 与 store slugify 同构，见 lib/seo/tag-slug.ts），
+                  给标签页提供来自首页的内链——这是 Batch C 的核心。
+                  外链为什么不带 h-full：rich 网格同行拉伸（grid 默认
+                  align-items: stretch），h-full 的 Link 会按整卡高解析，
+                  把后面流内的标签池挤出 overflow-hidden 的卡片。 */}
+              <div className="flex items-center gap-1.5 px-4 sm:px-5 pb-4 sm:pb-5 flex-wrap">
+                {item.tags?.slice(0, 3).map((tag) => (
+                  <Link
+                    key={tag}
+                    href={'/tags/' + encodeURIComponent(tagSlug(tag))}
+                    onClick={handleTagClick}
+                    className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
+                  >
+                    #{tag}
+                  </Link>
+                ))}
+                {topAlternative && (
+                  <span
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      onPeek?.(item)
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
+                  >
+                    <span>平替: {topAlternative.targetTitle}</span>
+                  </span>
+                )}
+                {item.actions && item.actions.length > 0 && (
+                  <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                    <Zap className="w-2.5 h-2.5" />
+                    <span>深链</span>
+                  </span>
+                )}
+              </div>
 
               {/* 操作区：右上角悬浮药丸胶囊 */}
               <div className="absolute top-2 right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150">
@@ -371,6 +397,7 @@ export function NavigationCard({
                       isPinnedInCategory ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-amber-500"
                     )}
                     title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
+                    aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                     onClick={handleCategoryPin}
                   >
                     <Pin className={cn("w-3.5 h-3.5", isPinnedInCategory && "fill-amber-500")} />
@@ -381,6 +408,7 @@ export function NavigationCard({
                   size="icon"
                   className="h-7 w-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent"
                   title="速览与行动"
+                  aria-label={`速览与行动：${item.title}`}
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
@@ -392,8 +420,9 @@ export function NavigationCard({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                  className="hidden sm:inline-flex h-7 w-7 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
                   title="📌 固定到工作台"
+                  aria-label={`固定到工作台：${item.title}`}
                   onClick={handleWorkbenchPin}
                 >
                   <Pin className="w-3.5 h-3.5" />
@@ -457,7 +486,7 @@ export function NavigationCard({
                     />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 flex-wrap pr-20">
+                    <div className="flex items-center gap-1.5 flex-wrap pr-14 sm:pr-20">
                       <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors truncate">
                         {item.title}
                       </CardTitle>
@@ -483,7 +512,7 @@ export function NavigationCard({
                       )}
                     </div>
                     {item.description && (
-                      <CardDescription className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1">
+                      <CardDescription className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1 break-words">
                         {item.description}
                       </CardDescription>
                     )}
@@ -527,6 +556,7 @@ export function NavigationCard({
                     isPinnedInCategory ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground hover:text-amber-500"
                   )}
                   title={isPinnedInCategory ? "取消分类内置顶" : "置顶在当前分类首位"}
+                  aria-label={isPinnedInCategory ? `取消分类内置顶：${item.title}` : `置顶在当前分类首位：${item.title}`}
                   onClick={handleCategoryPin}
                 >
                   <Pin className={cn("w-3.5 h-3.5", isPinnedInCategory && "fill-amber-500")} />
@@ -537,6 +567,7 @@ export function NavigationCard({
                 size="icon"
                 className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent"
                 title="按空格键或点击速览详情与行动"
+                aria-label={`速览与行动：${item.title}`}
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
@@ -548,8 +579,9 @@ export function NavigationCard({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                className="hidden sm:inline-flex h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
                 title="📌 固定到模块化工作台快捷启动坞"
+                aria-label={`固定到工作台：${item.title}`}
                 onClick={handleWorkbenchPin}
               >
                 <Pin className="w-3.5 h-3.5" />

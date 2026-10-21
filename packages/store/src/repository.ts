@@ -510,7 +510,7 @@ export class Repository {
     return tagsRepo.listTagAliases(this, tagId);
   }
 
-  async resolveTag(nameOrAlias: string): Promise<{ id: string; name: string; slug: string; group: string } | null> {
+  async resolveTag(nameOrAlias: string): Promise<{ id: string; name: string; slug: string; group: string; description: string | null } | null> {
     return tagsRepo.resolveTag(this, nameOrAlias);
   }
 

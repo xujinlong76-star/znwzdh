@@ -17,6 +17,13 @@ export interface NavigationSubItemRaw {
   useDefaultIcon?: boolean
   enabled: boolean
   videoConfig?: VideoConfigRaw
+  /**
+   * 站点标签（导航站自己的 taxonomy，与 hub 的 tags 同源）。
+   * 2026-10-21 补：此前 Raw 类型没有这个字段，processNavigationSubItem
+   * 的白名单把它裁掉，首页 rich 卡片的 #tag 芯片永远拿不到数据
+   * （Batch C 内链化的前置修复）。navigation.json 的条目一直带着 tags。
+   */
+  tags?: string[]
 }
 
 export interface SiteAction {

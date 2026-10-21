@@ -130,6 +130,12 @@ export const LOCAL_LOGO_MAP: Record<string, string> = {
   'ui-cloud.com': '/assets/images/logos/UICloud.webp',
   'ads.google.com': '/assets/images/logos/gads.webp',
   'analytics.google.com': '/assets/images/logos/analytics.webp',
+  'photoshop.com': '/assets/images/logos/photoshop.webp',
+  'adobe.com': '/assets/images/logos/photoshop.webp',
+  'affinity.serif.com': '/assets/images/logos/AffinityDesigner.webp',
+  'instantlogosearch.com': '/assets/images/logos/InstantLogoSearch.webp',
+  'iconsfeed.com': '/assets/images/logos/iconsfeed.webp',
+  'iosicongallery.com': '/assets/images/logos/iosicongallery.webp',
 }
 
 /**
@@ -208,6 +214,9 @@ export function resolveSiteIcon(
   }
 }
 
+// 记录加载失败过的图标地址，避免重复发起失效请求
+const failedFaviconCache = new Set<string>()
+
 export function SiteFavicon({
   title = '',
   url,
@@ -217,11 +226,36 @@ export function SiteFavicon({
 }: SiteFaviconProps) {
   const [loadFailed, setLoadFailed] = useState(false)
 
-  // 综合计算有效图标地址：自定义 icon 优先（但屏蔽第三方隐私泄漏服务）；若未提供或被拦截则通过 url 智能解析
+  // 1. 若显式指定默认图标，直接渲染确定性高质感渐变字母徽标
+  if (useDefaultIcon) {
+    const monogram = extractFaviconMonogram(title, url)
+    const gradient = getDeterministicGradient(url || title || 'navhub')
+    return (
+      <div
+        className={`flex items-center justify-center font-bold text-xs select-none rounded-sm shadow-xs transition-transform duration-150 ${className}`}
+        style={{
+          background: gradient.cssGradient,
+          color: gradient.textColor,
+        }}
+        title={title}
+        aria-label={title ? `${title} 图标` : '站点图标'}
+      >
+        <span className="leading-none drop-shadow-xs">{monogram}</span>
+      </div>
+    )
+  }
+
+  // 2. 综合计算有效图标地址
   const effectiveIcon = resolveSiteIcon(url, title, icon)
 
-  // 若明确指定使用默认图标，或无有效图标，或图片加载失败，展示高质量确定性渐变徽标
-  if (useDefaultIcon || !effectiveIcon || loadFailed) {
+  // 3. 判断是否为明确的自定义图标或本地品牌资源
+  const hasCustomIcon = Boolean(icon && typeof icon === 'string' && icon.trim().length > 0 && !isThirdPartyIcon(icon.trim()))
+  const isLocalAsset = effectiveIcon.startsWith('/') || effectiveIcon.startsWith('data:')
+
+  // 4. 若此前已知加载失败、或未提供自定义 icon 且无内置 Logo（即属于自动生成的外部 /favicon.ico 盲猜地址）：
+  //    外部站点普遍存在缺乏根目录 /favicon.ico、防盗链限制、CORP (NotSameOrigin) 阻断或跨境网络超时；
+  //    直接加载会导致浏览器控制台报大量 net::ERR_* 错误。此处直接展示 NavHub 确定性渐变徽标，零网络开销且体验极佳。
+  if (!effectiveIcon || loadFailed || failedFaviconCache.has(effectiveIcon) || (!hasCustomIcon && !isLocalAsset)) {
     const monogram = extractFaviconMonogram(title, url)
     const gradient = getDeterministicGradient(url || title || 'navhub')
 
@@ -249,7 +283,10 @@ export function SiteFavicon({
       decoding="async"
       width={24}
       height={24}
-      onError={() => setLoadFailed(true)}
+      onError={() => {
+        failedFaviconCache.add(effectiveIcon)
+        setLoadFailed(true)
+      }}
     />
   )
 }

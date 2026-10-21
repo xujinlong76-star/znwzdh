@@ -6,6 +6,7 @@
  * 负责分类标题、折叠/置顶/排序控件、一级与二级站点的拖拽/收录/多选。
  * 共享状态直接走 useHomeDIY()，拖拽目标等跨区块 UI 状态由父组件注入。
  */
+import { useMemo } from 'react'
 import { NavigationCard } from '@/components/navigation-card'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { ChevronDown, Pin, Plus, Sparkles } from 'lucide-react'
@@ -86,9 +87,41 @@ export function NavigationCategorySection({
   const subCount = subCats.reduce((acc: number, sub: any) => acc + ((sub.items as any[])?.length || 0), 0)
   const totalCount = directCount + subCount
   const categoryPinnedItemIds = pinnedSiteIdsByCategory[category.id] || []
-  const sortedDirectItems = isAdaptiveRankingEnabled
-    ? computeAdaptiveSiteRanking((category.items as any[]) || [], { pinnedItemIds: categoryPinnedItemIds })
-    : sortCategoryItemsWithPinned((category.items as any[]) || [], categoryPinnedItemIds)
+  /**
+   * 排序结果必须缓存。
+   *
+   * 拖拽过程中 `setDragOverCustomCatId` 每次悬停变化都会让父组件重渲染，
+   * 这里若每帧重排整个分类（几十~上百条），主线程会被排序吃满，拖拽明显掉帧。
+   */
+  const sortedDirectItems = useMemo(
+    () =>
+      isAdaptiveRankingEnabled
+        ? computeAdaptiveSiteRanking((category.items as any[]) || [], { pinnedItemIds: categoryPinnedItemIds })
+        : sortCategoryItemsWithPinned((category.items as any[]) || [], categoryPinnedItemIds),
+    [category.items, categoryPinnedItemIds, isAdaptiveRankingEnabled]
+  )
+
+  /**
+   * 选中态查找用 Set：`.includes()` 是 O(n)，而它对**每张卡片**都要跑一次，
+   * 整体退化成 O(卡片数 × 选中数)。全选上千条时这一项就能占掉整帧预算。
+   */
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds])
+
+  /** 二级分类的排序同样缓存（原来写在 render 的 map 回调里，每帧重算） */
+  const sortedSubCategories = useMemo(
+    () =>
+      ((category.subCategories as any[]) || []).map((subCategory: any) => {
+        const subPinnedItemIds = pinnedSiteIdsByCategory[subCategory.id] || []
+        return {
+          subCategory,
+          subPinnedItemIds,
+          sortedSubItems: isAdaptiveRankingEnabled
+            ? computeAdaptiveSiteRanking((subCategory.items as any[]) || [], { pinnedItemIds: subPinnedItemIds })
+            : sortCategoryItemsWithPinned((subCategory.items as any[]) || [], subPinnedItemIds),
+        }
+      }),
+    [category.subCategories, pinnedSiteIdsByCategory, isAdaptiveRankingEnabled]
+  )
 
   return (
                     <section
@@ -263,6 +296,7 @@ export function NavigationCategorySection({
                               onClick={() => toggleCollapseCategory(category.id)}
                               className="p-1 -ml-1 rounded-md text-muted-foreground/70 hover:text-foreground hover:bg-muted/80 transition-all flex items-center justify-center cursor-pointer"
                               title={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
+                              aria-label={isCollapsed ? `展开「${category.title}」` : `收起「${category.title}」`}
                               aria-expanded={!isCollapsed}
                             >
                               <ChevronDown className={cn("w-4 h-4 transition-transform duration-200", isCollapsed && "-rotate-90")} />
@@ -273,7 +307,7 @@ export function NavigationCategorySection({
                               isCustom ? "bg-emerald-500" : isPinned ? "bg-amber-500" : "bg-primary"
                             )} />
                             <h2
-                              className="text-lg sm:text-xl font-bold tracking-tight text-foreground flex items-center gap-2 cursor-pointer select-none"
+                              className="text-base sm:text-xl font-bold tracking-tight text-foreground flex flex-wrap items-center gap-1.5 sm:gap-2 cursor-pointer select-none"
                               onClick={() => toggleCollapseCategory(category.id)}
                               title={isCollapsed ? "点击展开" : "点击折叠"}
                             >
@@ -347,7 +381,7 @@ export function NavigationCategorySection({
                                     isDraggable={isEditingLayout}
                                     sourceCategoryId={category.id}
                                     selectable={selectionMode}
-                                    selected={selectedIds.includes(item.id)}
+                                    selected={selectedIdSet.has(item.id)}
                                     onToggleSelect={toggleSelectOne}
                                   />
                                 ))}
@@ -371,18 +405,8 @@ export function NavigationCategorySection({
                             )}
 
                             {/* 二级分类及其站点 */}
-                            {category.subCategories && category.subCategories.length > 0 &&
-                              category.subCategories.map((subCategory: any) => {
-                                const subPinnedItemIds = pinnedSiteIdsByCategory[subCategory.id] || []
-                                const sortedSubItems = isAdaptiveRankingEnabled
-                                  ? computeAdaptiveSiteRanking((subCategory.items as any[]) || [], {
-                                      pinnedItemIds: subPinnedItemIds,
-                                    })
-                                  : sortCategoryItemsWithPinned(
-                                      (subCategory.items as any[]) || [],
-                                      subPinnedItemIds
-                                    )
-
+                            {sortedSubCategories.length > 0 &&
+                              sortedSubCategories.map(({ subCategory, subPinnedItemIds, sortedSubItems }) => {
                                 return (
                                   <div key={subCategory.id} id={subCategory.id} className="space-y-3 pt-2">
                                     <div className="flex items-center gap-2 pb-0.5 pt-1">
@@ -410,7 +434,7 @@ export function NavigationCategorySection({
                                           isDraggable={isEditingLayout}
                                           sourceCategoryId={subCategory.id}
                                           selectable={selectionMode}
-                                          selected={selectedIds.includes(item.id)}
+                                          selected={selectedIdSet.has(item.id)}
                                           onToggleSelect={toggleSelectOne}
                                         />
                                       ))}

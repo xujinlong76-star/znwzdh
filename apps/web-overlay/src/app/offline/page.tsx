@@ -6,6 +6,7 @@ import { OfflineRecentList } from "@/components/offline-recent-list"
 export const metadata: Metadata = {
   title: "离线阅读",
   description: "断网时也能打开最近访问的站点",
+  robots: { index: false, follow: true },
 }
 
 export default function OfflinePage() {

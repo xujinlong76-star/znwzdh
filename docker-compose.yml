@@ -35,6 +35,8 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      # 站点对外地址（canonical / sitemap / OG 基准），部署时改成真实域名
+      - NAVHUB_SITE_URL=http://localhost:3000
       - NAVHUB_STORAGE_BASE_URL=http://navhub-api:8787
       - NEXT_PUBLIC_API_URL=http://localhost:8787
       - NEXT_PUBLIC_NAVHUB_API_URL=http://localhost:8787

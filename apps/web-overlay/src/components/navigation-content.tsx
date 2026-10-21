@@ -186,7 +186,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
   // 5. 根据多态卡片选择自适应网格列数
   const gridColumnsClass = useMemo(() => {
     if (cardDisplayMode === 'compact') {
-      return 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 min-[1536px]:grid-cols-6! min-[1920px]:grid-cols-7!'
+      return 'grid grid-cols-1 min-[480px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 min-[1536px]:grid-cols-6! min-[1920px]:grid-cols-7!'
     }
     if (cardDisplayMode === 'rich') {
       return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 min-[1536px]:grid-cols-4! min-[1920px]:grid-cols-5!'
@@ -301,7 +301,7 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
           onToggleSelectMode={toggleSelectMode}
           onSelectAllVisible={selectAllVisible}
         />
-        <div className="px-4 sm:px-6 md:px-8 py-6 sm:py-8 flex-1">
+        <div className="px-3 sm:px-6 md:px-8 py-4 sm:py-8 flex-1">
           {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
           {viewMode !== 'workbench' && <OnboardingCard />}
           {viewMode === 'workbench' ? (

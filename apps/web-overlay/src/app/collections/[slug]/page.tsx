@@ -63,7 +63,7 @@ export default function CollectionDetailPage() {
 
   return (
     <Container as="main" id="main-content">
-      <div className="py-6 sm:py-10 space-y-6">
+      <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
         <div className="flex items-center gap-2">
           <Link
             href="/collections"
@@ -116,7 +116,7 @@ export default function CollectionDetailPage() {
           />
         ) : (
           <>
-            <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs">
+            <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-8 shadow-xs">
               <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-violet-500/10 rounded-full blur-3xl" />
               <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl" />
               <Layers
@@ -196,7 +196,7 @@ export default function CollectionDetailPage() {
                         </div>
                       </div>
                     </a>
-                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                    <div className="absolute top-2 right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center gap-1">
                       <a
                         href={site.url}
                         target="_blank"

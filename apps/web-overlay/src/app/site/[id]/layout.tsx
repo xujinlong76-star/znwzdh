@@ -8,7 +8,7 @@ import type { Metadata } from 'next'
  */
 export const metadata: Metadata = {
   title: '站点详情',
-  description: '站点简介、相似推荐与生态关联',
+  description: '官网入口、一句话简介与所属分类',
 }
 
 export default function SiteDetailLayout({ children }: { children: React.ReactNode }) {

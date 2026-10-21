@@ -38,9 +38,12 @@ type PageProps = { searchParams: Promise<{ page?: string }> }
 async function loadActiveSites(): Promise<HubSite[]> {
   // `/api/sites` 的 limit 上限 1000，当前 active 1013 条需两页；
   // 站点数超过 2000 时这里要改成循环分页。
+  // revalidate=60（Phase 6a）：/sites 是 17 页的爬虫面目录，全量列表每个
+  // searchParams 组合都会独立取一次数；带 60s Data Cache 后重复抓取不再
+  // 打穿中枢（站点上下架是低频操作，最多 60s 延迟体现）。
   const [a, b] = await Promise.all([
-    hubGet<HubSite[]>('/api/sites?status=active&limit=1000&offset=0'),
-    hubGet<HubSite[]>('/api/sites?status=active&limit=1000&offset=1000'),
+    hubGet<HubSite[]>('/api/sites?status=active&limit=1000&offset=0', 60),
+    hubGet<HubSite[]>('/api/sites?status=active&limit=1000&offset=1000', 60),
   ])
   return [...(a ?? []), ...(b ?? [])]
 }

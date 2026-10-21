@@ -417,8 +417,12 @@ export default function SiteDetailPage() {
               />
             </div>
             <div className="flex items-center gap-2 text-xs text-muted-foreground/80 font-mono">
-              <Activity className="w-3.5 h-3.5 text-muted-foreground" />
-              <span>{(site.visitCount ?? 0) > 0 ? `${site.visitCount} 次点击` : '暂无点击'}</span>
+              {(site.visitCount ?? 0) > 0 && (
+                <>
+                  <Activity className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span>{site.visitCount} 次点击</span>
+                </>
+              )}
               {site.health?.lastCheckedAt && (
                 <span>· 巡检时间: {new Date(site.health.lastCheckedAt).toLocaleDateString('zh-CN')}</span>
               )}

@@ -72,9 +72,9 @@ export function NavigationToolbar({
   onSelectAllVisible,
 }: NavigationToolbarProps) {
   return (
-        <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-4 sm:px-6 border-b border-border/40 shadow-2xs">
-          <div className="flex h-14 items-center justify-between gap-3">
-            <div className="flex-1 max-w-xl">
+        <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
+          <div className="flex h-14 items-center justify-between gap-1.5 sm:gap-3">
+            <div className="flex-1 min-w-0 max-w-xl">
               {/* NavHub 混合检索引擎 */}
               <SearchPalette siteConfig={siteConfig} />
             </div>
@@ -83,7 +83,7 @@ export function NavigationToolbar({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors hidden sm:inline-flex"
                 onClick={() => onOpenTools()}
                 title="打开内置微工具箱 (快捷键: T)"
                 aria-label="微工具箱"
@@ -95,7 +95,7 @@ export function NavigationToolbar({
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
+                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-amber-500 hover:bg-amber-500/10 transition-colors hidden sm:inline-flex"
               >
                 <Link href="/hot" aria-label="热度榜" title="热度趋势与新品榜">
                   <Flame className="h-4 w-4" />
@@ -108,7 +108,7 @@ export function NavigationToolbar({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                    className="h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
                     title="探索矩阵"
                     aria-label="探索矩阵"
                   >
@@ -119,6 +119,22 @@ export function NavigationToolbar({
                   <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
                     认知与前沿矩阵
                   </DropdownMenuLabel>
+                  <DropdownMenuItem onClick={() => onOpenTools()} className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent sm:hidden">
+                    <Wrench className="h-4 w-4 text-emerald-500 shrink-0" />
+                    <div className="flex flex-col">
+                      <span className="font-medium text-foreground">开发者微工具箱</span>
+                      <span className="text-xs text-muted-foreground">Base64 / JSON / 正则</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="sm:hidden">
+                    <Link href="/hot" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
+                      <Flame className="h-4 w-4 text-amber-500 shrink-0" />
+                      <div className="flex flex-col">
+                        <span className="font-medium text-foreground">热度趋势榜</span>
+                        <span className="text-xs text-muted-foreground">全站高频流行站点</span>
+                      </div>
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href="/graph" className="flex items-center gap-2.5 px-2 py-2 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Network className="h-4 w-4 text-pink-500 shrink-0" />
@@ -214,7 +230,7 @@ export function NavigationToolbar({
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "relative h-8.5 w-8.5 rounded-lg transition-colors",
+                  "relative h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-lg transition-colors",
                   selectionMode
                     ? "text-primary bg-primary/10"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
@@ -245,14 +261,14 @@ export function NavigationToolbar({
                 </Button>
               )}
 
-              <ViewModeToggle />
-              <DensityToggle />
+              <div className="hidden sm:inline-flex"><ViewModeToggle /></div>
+              <div className="hidden sm:inline-flex"><DensityToggle /></div>
               <ModeToggle />
               <Button
                 asChild
                 variant="ghost"
                 size="icon"
-                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                className="h-8.5 w-8.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 hidden sm:inline-flex"
               >
                 <Link
                   href="https://github.com/tianyaxiang/NavSphere"
@@ -268,7 +284,7 @@ export function NavigationToolbar({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8.5 w-8.5 rounded-lg md:hidden text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 sm:h-8.5 sm:w-8.5 rounded-lg md:hidden text-muted-foreground hover:text-foreground"
                 onClick={() => onToggleSidebar()}
                 aria-label="打开菜单"
               >

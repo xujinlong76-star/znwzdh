@@ -21,7 +21,6 @@ export interface GraphNode {
   url: string
   category: 'dev' | 'design' | 'ai' | 'efficiency'
   description: string
-  stars?: number
   openSource?: boolean
   x?: number
   y?: number
@@ -40,37 +39,37 @@ const DEFAULT_NODES: GraphNode[] = [
   // AI
   { id: 'cursor', title: 'Cursor', url: 'https://cursor.com', category: 'ai', description: '新一代 AI 原生 IDE' },
   { id: 'copilot', title: 'GitHub Copilot', url: 'https://github.com/features/copilot', category: 'ai', description: '微软官方 AI 编程助手' },
-  { id: 'continue', title: 'Continue.dev', url: 'https://continue.dev', category: 'ai', description: '开源本地大模型代码助手', openSource: true, stars: 22000 },
+  { id: 'continue', title: 'Continue.dev', url: 'https://continue.dev', category: 'ai', description: '开源本地大模型代码助手', openSource: true },
   { id: 'claude', title: 'Claude', url: 'https://claude.ai', category: 'ai', description: 'Anthropic 旗舰推理与长文本模型' },
   { id: 'deepseek', title: 'DeepSeek', url: 'https://chat.deepseek.com', category: 'ai', description: '高性价比国产推理大模型', openSource: true },
-  { id: 'ollama', title: 'Ollama', url: 'https://ollama.com', category: 'ai', description: '本地轻量离线大模型运行框架', openSource: true, stars: 125000 },
-  { id: 'vllm', title: 'vLLM', url: 'https://github.com/vllm-project/vllm', category: 'ai', description: '高吞吐量大模型推理引擎', openSource: true, stars: 38000 },
+  { id: 'ollama', title: 'Ollama', url: 'https://ollama.com', category: 'ai', description: '本地轻量离线大模型运行框架', openSource: true },
+  { id: 'vllm', title: 'vLLM', url: 'https://github.com/vllm-project/vllm', category: 'ai', description: '高吞吐量大模型推理引擎', openSource: true },
 
   // Dev
   { id: 'github', title: 'GitHub', url: 'https://github.com', category: 'dev', description: '全球开源代码协作中心' },
   { id: 'gitlab', title: 'GitLab', url: 'https://gitlab.com', category: 'dev', description: '支持自托管的 DevOps 平台', openSource: true },
   { id: 'vercel', title: 'Vercel', url: 'https://vercel.com', category: 'dev', description: '前端与全栈极速部署云平台' },
-  { id: 'coolify', title: 'Coolify', url: 'https://coolify.io', category: 'dev', description: '开源自托管 Vercel/Heroku 替代方案', openSource: true, stars: 39000 },
+  { id: 'coolify', title: 'Coolify', url: 'https://coolify.io', category: 'dev', description: '开源自托管 Vercel/Heroku 替代方案', openSource: true },
   { id: 'zeabur', title: 'Zeabur', url: 'https://zeabur.com', category: 'dev', description: '多语言极速容器托管' },
   { id: 'docker', title: 'Docker Hub', url: 'https://hub.docker.com', category: 'dev', description: '容器镜像官方仓库' },
   { id: 'npm', title: 'npm', url: 'https://npmjs.com', category: 'dev', description: 'Node.js 官方包管理器' },
-  { id: 'nextjs', title: 'Next.js', url: 'https://nextjs.org', category: 'dev', description: '企业级 React 全栈框架', openSource: true, stars: 130000 },
+  { id: 'nextjs', title: 'Next.js', url: 'https://nextjs.org', category: 'dev', description: '企业级 React 全栈框架', openSource: true },
 
   // Design
   { id: 'figma', title: 'Figma', url: 'https://figma.com', category: 'design', description: '主流云端 UI/UX 设计与原型工具' },
-  { id: 'penpot', title: 'Penpot', url: 'https://penpot.app', category: 'design', description: '首款开源 Web 矢量协同设计工具', openSource: true, stars: 34000 },
+  { id: 'penpot', title: 'Penpot', url: 'https://penpot.app', category: 'design', description: '首款开源 Web 矢量协同设计工具', openSource: true },
   { id: 'pixso', title: 'Pixso', url: 'https://pixso.cn', category: 'design', description: '国产专业级协同原型设计' },
   { id: 'tinypng', title: 'TinyPNG', url: 'https://tinypng.com', category: 'design', description: '智能无损图片压缩' },
-  { id: 'squoosh', title: 'Squoosh', url: 'https://squoosh.app', category: 'design', description: 'Google 开源端侧图片压缩', openSource: true, stars: 20000 },
+  { id: 'squoosh', title: 'Squoosh', url: 'https://squoosh.app', category: 'design', description: 'Google 开源端侧图片压缩', openSource: true },
   { id: 'unsplash', title: 'Unsplash', url: 'https://unsplash.com', category: 'design', description: '高质量免版权摄影图库' },
   { id: 'pexels', title: 'Pexels', url: 'https://pexels.com', category: 'design', description: '免费商用摄影与 4K 视频' },
-  { id: 'excalidraw', title: 'Excalidraw', url: 'https://excalidraw.com', category: 'design', description: '精美手绘风格虚拟白板', openSource: true, stars: 86000 },
-  { id: 'tldraw', title: 'tldraw', url: 'https://tldraw.com', category: 'design', description: '轻量易扩展开源画板', openSource: true, stars: 40000 },
+  { id: 'excalidraw', title: 'Excalidraw', url: 'https://excalidraw.com', category: 'design', description: '精美手绘风格虚拟白板', openSource: true },
+  { id: 'tldraw', title: 'tldraw', url: 'https://tldraw.com', category: 'design', description: '轻量易扩展开源画板', openSource: true },
 
   // Efficiency
   { id: 'notion', title: 'Notion', url: 'https://notion.so', category: 'efficiency', description: '全能一体化模块化笔记与工作区' },
   { id: 'obsidian', title: 'Obsidian', url: 'https://obsidian.md', category: 'efficiency', description: '本地优先离线双链 Markdown 知识库', openSource: false },
-  { id: 'appflowy', title: 'AppFlowy', url: 'https://appflowy.io', category: 'efficiency', description: '开源私有化 Notion 替代品', openSource: true, stars: 56000 },
+  { id: 'appflowy', title: 'AppFlowy', url: 'https://appflowy.io', category: 'efficiency', description: '开源私有化 Notion 替代品', openSource: true },
 ]
 
 const DEFAULT_EDGES: GraphEdge[] = [
@@ -395,7 +394,7 @@ export function EcosystemGraph() {
         </div>
 
         {/* 场景分类过滤 */}
-        <div className="flex items-center gap-1.5 overflow-x-auto p-1 rounded-xl bg-muted/40 border border-border/50">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar touch-pan-x p-1 rounded-xl bg-muted/40 border border-border/50">
           {(['all', 'dev', 'design', 'ai', 'efficiency'] as const).map((cat) => (
             <Button
               key={cat}
@@ -572,7 +571,7 @@ export function EcosystemGraph() {
 
         {/* 右侧节点详情抽屉 */}
         {selectedNode && (
-          <div className="absolute right-4 top-4 bottom-4 w-80 sm:w-88 max-w-[calc(100%-2rem)] glass-surface subtle-mesh rounded-2xl border border-border/70 p-5 shadow-2xl flex flex-col space-y-4 animate-in fade-in slide-in-from-right-4 z-30 overflow-y-auto">
+          <div className="absolute right-2 sm:right-4 top-2 sm:top-4 bottom-2 sm:bottom-4 w-full sm:w-88 max-w-[calc(100%-1rem)] sm:max-w-[calc(100%-2rem)] glass-surface subtle-mesh rounded-2xl border border-border/70 p-3.5 sm:p-5 shadow-2xl flex flex-col space-y-4 animate-in fade-in slide-in-from-right-4 z-30 overflow-y-auto">
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2">
@@ -600,9 +599,6 @@ export function EcosystemGraph() {
             {selectedNode.openSource && (
               <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs border border-emerald-500/20 font-medium">
                 <span>🌱 开源生态项目</span>
-                {selectedNode.stars && (
-                  <span className="font-mono font-bold ml-auto">⭐ {(selectedNode.stars / 1000).toFixed(0)}k stars</span>
-                )}
               </div>
             )}
 

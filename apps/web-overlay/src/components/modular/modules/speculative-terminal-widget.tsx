@@ -53,7 +53,7 @@ export function SpeculativeTerminalWidget() {
             value={expr}
             onChange={(e) => evaluateExpr(e.target.value)}
             placeholder="输入算式 (如 1024 * 8) 或 HEX 色值..."
-            className="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border/70 bg-background outline-none pr-7 focus:border-amber-500/50"
+            className="w-full text-base sm:text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border/70 bg-background outline-none pr-7 focus:border-amber-500/50"
           />
           <CornerDownLeft className="w-3.5 h-3.5 text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2 opacity-60" />
         </div>

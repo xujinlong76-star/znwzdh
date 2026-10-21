@@ -61,7 +61,7 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
     relations: [
       { targetTitle: "vLLM", targetUrl: "https://github.com/vllm-project/vllm", relationType: "ecosystem", isFreeOrOpenSource: true, note: "高吞吐量大模型推理引擎" },
     ],
-    liveMetrics: { githubStars: 125000, openSource: true, license: "MIT" },
+    liveMetrics: { openSource: true, license: "MIT" },
   },
 
   // --- 开发与代码 ---
@@ -154,7 +154,7 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
       { targetTitle: "tldraw", targetUrl: "https://www.tldraw.com", relationType: "alternative", isFreeOrOpenSource: true, note: "轻量易用的开源协同画板" },
       { targetTitle: "Draw.io", targetUrl: "https://app.diagrams.net", relationType: "alternative", isFreeOrOpenSource: true, note: "专业架构与流程图利器" },
     ],
-    liveMetrics: { githubStars: 86000, openSource: true, license: "MIT" },
+    liveMetrics: { openSource: true, license: "MIT" },
   },
   "iconify.design": {
     workspaces: ["design", "dev"],
@@ -178,13 +178,58 @@ export const ECOSYSTEM_MAP: Record<string, EnhancedSiteData> = {
 };
 
 /**
+ * 把「站点 URL」与「ECOSYSTEM_MAP 的键」都归一成 host + path 再比较。
+ *
+ * 不能再用 `url.includes(key)`：`github.com/rakyll/hey` 会命中 `github.com`，
+ * 于是这个压测 CLI 被标成 GitLab / Gitee 的平替；`notfigma.com` 也会命中
+ * `figma.com`。匹配必须落在主机边界上，并且 host-only 的键只匹配站点首页，
+ * 否则 GitHub 上的任意仓库页都会继承 GitHub 平台本身的关系与动作。
+ */
+interface EcosystemTarget {
+  host: string;
+  path: string;
+  data: EnhancedSiteData;
+}
+
+function parseEcosystemUrl(raw: string): { host: string; path: string } | null {
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    const path = parsed.pathname.replace(/\/+$/, "") || "/";
+    return { host, path: path.toLowerCase() };
+  } catch {
+    return null;
+  }
+}
+
+/** 最长（最具体）的键优先：`github.com/features/copilot` 必须先于 `github.com` 尝试。 */
+const ECOSYSTEM_TARGETS: EcosystemTarget[] = Object.entries(ECOSYSTEM_MAP)
+  .map(([key, data]) => {
+    const parsed = parseEcosystemUrl(`https://${key}`);
+    return parsed ? { ...parsed, data } : null;
+  })
+  .filter((item): item is EcosystemTarget => item !== null)
+  .sort((a, b) => b.path.length - a.path.length || b.host.length - a.host.length);
+
+function matchesEcosystemTarget(site: { host: string; path: string }, target: EcosystemTarget): boolean {
+  if (site.host !== target.host) return false;
+  // 键里没有路径 = 只代表该产品首页；不能把子页面当成产品本身
+  if (target.path === "/") return site.path === "/";
+  return site.path === target.path || site.path.startsWith(`${target.path}/`);
+}
+
+/**
  * 根据站点 URL 或标题匹配富化数据。
  */
 export function getEnhancedSiteData(url: string, title?: string): EnhancedSiteData {
   const normUrl = url.toLowerCase();
-  for (const [key, data] of Object.entries(ECOSYSTEM_MAP)) {
-    if (normUrl.includes(key)) {
-      return data;
+  const parsed = parseEcosystemUrl(url);
+  if (parsed) {
+    for (const target of ECOSYSTEM_TARGETS) {
+      if (matchesEcosystemTarget(parsed, target)) {
+        return target.data;
+      }
     }
   }
 

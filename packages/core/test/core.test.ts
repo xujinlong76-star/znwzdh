@@ -220,4 +220,31 @@ describe("4.0 生态增强与平替雷达", () => {
     expect(aiSite.workspaces).toContain("ai");
     expect(aiSite.workspaces).toContain("dev");
   });
+
+  it("不会把 GitHub 上的仓库页误认成 GitHub 平台本身", async () => {
+    const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
+    // hey 是压测 CLI；旧实现用 includes("github.com") 命中，错标成 GitLab/Gitee 平替
+    const hey = getEnhancedSiteData("https://github.com/rakyll/hey", "hey");
+    expect(hey.relations).toBeUndefined();
+    expect(hey.actions).toBeUndefined();
+  });
+
+  it("优先匹配更具体的路径键（GitHub Copilot 而非 GitHub 平台）", async () => {
+    const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
+    const copilot = getEnhancedSiteData("https://github.com/features/copilot");
+    expect(copilot.relations?.map((r) => r.targetTitle)).toEqual(["Cursor", "Continue.dev"]);
+    expect(copilot.relations?.some((r) => r.targetTitle === "GitLab")).toBe(false);
+  });
+
+  it("主机边界匹配：notfigma.com 与 github.com.evil.com 不得命中", async () => {
+    const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
+    expect(getEnhancedSiteData("https://notfigma.com").relations).toBeUndefined();
+    expect(getEnhancedSiteData("https://github.com.evil.com").relations).toBeUndefined();
+  });
+
+  it("带 www 的首页仍可命中，子页面不再继承平台关系", async () => {
+    const { getEnhancedSiteData } = await import("../src/ecosystem.ts");
+    expect(getEnhancedSiteData("https://www.figma.com/").relations).toBeDefined();
+    expect(getEnhancedSiteData("https://www.figma.com/file/abc").relations).toBeUndefined();
+  });
 });

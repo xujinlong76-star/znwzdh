@@ -4,7 +4,11 @@ import { hubIdentitySecret, signIdentity } from '@/lib/identity-signature'
 import { canonicalUserId, isAnonId } from '@/lib/me-identity'
 
 /**
- * 用户中心 BFF：/api/me/*
+ * 用户中心 BFF：/api/me 与 /api/me/*
+ *
+ * 为什么用可选 catch-all（[[...path]]）：概览页请求的正是 `/api/me` 本身，
+ * 必选 catch-all（[...path]）只匹配 `/api/me/` 之后还有段落的路径，
+ * 会让 `/api/me` 直接落到 404 —— 页面永远停在「用户中心加载失败」。
  *
  * 为什么需要这一层：中枢（Fastify）不持有 NextAuth 会话，无法自己判断「当前是谁」。
  * 这里在服务端读取会话，派生 canonical identity，再带 HMAC 签名转发给中枢。
@@ -33,7 +37,7 @@ function serviceToken(): string | undefined {
   )
 }
 
-type Ctx = { params: Promise<{ path: string[] }> }
+type Ctx = { params: Promise<{ path?: string[] }> }
 
 async function currentUser() {
   const session = await auth()
@@ -49,7 +53,7 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     return NextResponse.json({ error: '未登录' }, { status: 401, headers: { 'cache-control': 'no-store' } })
   }
 
-  const path = (await ctx.params).path.filter((p) => p && p !== '.' && p !== '..')
+  const path = ((await ctx.params).path ?? []).filter((p) => p && p !== '.' && p !== '..')
   const method = request.method.toUpperCase()
 
   // 登录后把用户 upsert 进 users 表，返回 canonical userId
@@ -120,7 +124,8 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
   }
 
   const search = request.nextUrl.search || ''
-  const target = HUB_BASE + '/api/me/' + path.join('/') + search
+  const suffix = path.length > 0 ? '/' + path.join('/') : ''
+  const target = HUB_BASE + '/api/me' + suffix + search
 
   try {
     const upstream = await fetch(target, {

@@ -23,6 +23,15 @@ const ROOT = overlayRoot()
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
 describe('用户中心第二批页面', () => {
+  it('BFF 同时覆盖 /api/me 本身与子路径（可选 catch-all）', () => {
+    const rel = 'src/app/api/me/[[...path]]/route.ts'
+    expect(existsSync(join(ROOT, rel)), 'BFF 必须是可选 catch-all，否则 GET /api/me 会 404').toBe(true)
+    const src = read(rel)
+    expect(src).toContain("path[0] === 'sync'")
+    expect(src).toContain('const suffix = path.length > 0')
+    expect(src).toContain("HUB_BASE + '/api/me' + suffix")
+  })
+
   it('搜索历史页有地标、分页与删除接线', () => {
     const src = read('src/app/me/history/page.tsx')
     expect(src).toContain('id="main-content"')

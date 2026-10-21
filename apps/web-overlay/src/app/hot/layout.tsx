@@ -10,6 +10,8 @@ import type { Metadata } from 'next'
 export const metadata: Metadata = {
   title: '今日热榜',
   description: '按热度排序的热门站点与资源',
+  // /hot 是叶子路由（无子路由），og:url 不会被子页面错误继承
+  openGraph: { url: '/hot' },
 }
 
 export default function HotLayout({ children }: { children: React.ReactNode }) {

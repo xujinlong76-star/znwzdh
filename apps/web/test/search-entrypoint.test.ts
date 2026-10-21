@@ -27,19 +27,30 @@ function overlaySource(rel: string): string {
   return readFileSync(hit, "utf8");
 }
 
-/** 有搜索入口的页面（首页 + 404 + 三类站点列表页） */
+/** 有搜索入口的页面（首页 + 404 + 站点列表页），搜索面板就在页面源码里 */
 const PAGES_WITH_SEARCH = [
   "src/components/navigation-toolbar.tsx",
   "src/app/not-found.tsx",
   "src/app/hot/page.tsx",
-  "src/app/tags/[slug]/page.tsx",
   "src/app/collections/[slug]/page.tsx",
 ];
 
-/** 这一批是本 PR 新加的站点列表页，提示文案必须点明「全部站点」 */
+/**
+ * Batch B（RSC 化）后 /tags/[slug] 重写成「服务端壳 + 客户端岛」：页面源码里
+ * 不再出现 SearchPalette，改由 components/tag-results-board.tsx 渲染。守卫
+ * 因此拆两半——壳必须挂岛（否则 SSR 首帧连搜索入口都没有，正是本测试要防的
+ * 退化），岛必须渲染面板。将来 /hot、/collections/[slug] 若也 RSC 化，往这个
+ * 表里加一行即可。
+ */
+const ISLAND_SEARCH_PAGES = [
+  { page: "src/app/tags/[slug]/page.tsx", island: "src/components/tag-results-board.tsx" },
+];
+
+/** 这一批是本 PR 新加的站点列表页，提示文案必须点明「全部站点」。
+ *  /tags/[slug] 的文案在客户端岛里（RSC 化后面板随岛走），其余在页面源码里。 */
 const SITE_LIST_PAGES = [
   "src/app/hot/page.tsx",
-  "src/app/tags/[slug]/page.tsx",
+  "src/components/tag-results-board.tsx",
   "src/app/collections/[slug]/page.tsx",
 ];
 
@@ -48,6 +59,14 @@ describe("站点列表页必须有搜索入口", () => {
     const src = overlaySource(rel);
     expect(src).toContain("import { SearchPalette } from '@/components/search-palette'");
     expect(src).toMatch(/<SearchPalette/);
+  });
+
+  it.each(ISLAND_SEARCH_PAGES)("$page 经客户端岛 $island 提供搜索", ({ page, island }) => {
+    const shell = overlaySource(page);
+    const board = overlaySource(island);
+    expect(shell).toContain("<TagResultsBoard");
+    expect(board).toContain("import { SearchPalette } from '@/components/search-palette'");
+    expect(board).toMatch(/<SearchPalette/);
   });
 
   it.each(SITE_LIST_PAGES)("%s 的提示文案要说清「搜的是全部站点」", (rel) => {

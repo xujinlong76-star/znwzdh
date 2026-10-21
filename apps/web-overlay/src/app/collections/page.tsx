@@ -57,8 +57,8 @@ export default function CollectionsPage() {
 
   return (
     <Container as="main" id="main-content">
-      <div className="py-6 sm:py-10 space-y-6">
-        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-6 sm:p-8 shadow-xs">
+      <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
+        <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-8 shadow-xs">
           <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-violet-500/10 rounded-full blur-3xl" />
           <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-48 h-48 bg-sky-400/10 rounded-full blur-3xl" />
           <Layers
@@ -88,7 +88,7 @@ export default function CollectionsPage() {
                 <span>精选专题</span>
               </h1>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                由站长人工策划的主题合集：入门路线、地域资源、场景方案，开箱即用。
+                由站长人工策划的主题合集：AI 智能体、AI 编码、前端入门与设计工具四个方向。
               </p>
             </div>
             <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
@@ -149,7 +149,7 @@ export default function CollectionsPage() {
             }
           />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
             {cols.map((c) => {
               const meta = KIND_META[c.kind] ?? KIND_META.topic!
               const Icon = meta.icon
@@ -157,7 +157,7 @@ export default function CollectionsPage() {
                 <Link
                   key={c.id}
                   href={'/collections/' + encodeURIComponent(c.slug)}
-                  className="group rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 backdrop-blur-xs p-5 transition-all duration-200 hover:-translate-y-0.5 shadow-2xs flex flex-col"
+                  className="group rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 backdrop-blur-xs p-4 sm:p-5 transition-all duration-200 hover:-translate-y-0.5 shadow-2xs flex flex-col"
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <span className="p-1.5 rounded-lg bg-violet-500/10 text-violet-500 border border-violet-500/20">

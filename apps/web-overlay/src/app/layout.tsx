@@ -12,6 +12,7 @@ import { InstallPrompt } from '@/components/install-prompt'
 import { WebVitalsReporter } from '@/components/web-vitals-reporter'
 import { OfflineBanner } from '@/components/offline-banner'
 import { getFileContent } from '@/lib/github'
+import { siteOrigin } from '@/lib/seo/origin'
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 /**
@@ -35,13 +36,25 @@ const SITE_PATH = 'src/navsphere/content/site.json'
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getFileContent<{ basic?: { title?: string }; appearance?: { favicon?: string } }>(SITE_PATH);
   const siteName = site?.basic?.title ?? 'NavHub';
+  // canonical / OG 相对地址的解析基准。未注入 NAVHUB_SITE_URL 时回退请求头，
+  // 但那样相关路由会变成动态渲染，生产环境必须注入该变量。
+  const origin = await siteOrigin();
 
   return {
+    ...(origin ? { metadataBase: new URL(origin) } : {}),
     title: {
       default: siteName,
       template: '%s - ' + siteName,
     },
     description: 'AI 原生的网址导航',
+    openGraph: {
+      type: 'website',
+      siteName,
+      locale: 'zh_CN',
+      // public/ 下没有 logo.png，icon-512 满足 OG 图最小尺寸要求
+      images: [{ url: '/icons/icon-512.png', width: 512, height: 512, alt: siteName }],
+    },
+    twitter: { card: 'summary' },
     // PWA：manifest 由 app/manifest.ts 自动注入
     manifest: '/manifest.webmanifest',
     appleWebApp: {
@@ -58,7 +71,15 @@ export async function generateMetadata(): Promise<Metadata> {
 
 /** PWA 主题色（与 manifest.theme_color 一致；Next 15 的 viewport 导出） */
 export const viewport: Viewport = {
-  themeColor: '#378ADD',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: 'cover',
+  interactiveWidget: 'resizes-visual',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: dark)', color: '#090d16' },
+  ],
 }
 
 export default function RootLayout({

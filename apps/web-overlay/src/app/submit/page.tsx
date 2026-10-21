@@ -28,6 +28,8 @@ async function getData() {
 export const metadata: Metadata = {
     title: '网站投稿',
     description: '投稿优质网站，分享好资源',
+    alternates: { canonical: '/submit' },
+    openGraph: { url: '/submit' },
 }
 
 export default async function SubmitPage() {
@@ -35,9 +37,9 @@ export default async function SubmitPage() {
 
     return (
         <Container as="main" id="main-content">
-            <div className="py-6 sm:py-10 space-y-6 max-w-3xl mx-auto">
+            <div className="py-4 sm:py-8 space-y-5 sm:space-y-6 max-w-3xl mx-auto">
                 {/* 顶部面包屑与标题展板 */}
-                <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface subtle-mesh p-6 sm:p-7 shadow-xs">
+                <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface subtle-mesh p-4 sm:p-7 shadow-xs">
                     <div className="flex items-center gap-2 mb-3">
                         <Link
                             href="/"
@@ -61,7 +63,7 @@ export default async function SubmitPage() {
                 <SubmissionForm navigationData={navigationData} />
 
                 {/* 投稿说明 */}
-                <div className="p-6 rounded-2xl border border-border/60 bg-muted/20 space-y-3.5 text-xs shadow-2xs">
+                <div className="p-4 sm:p-6 rounded-2xl border border-border/60 bg-muted/20 space-y-3.5 text-xs shadow-2xs">
                     <h3 className="font-bold text-sm text-foreground flex items-center gap-2">
                         <span>📋</span>
                         <span>投稿与审核规范</span>

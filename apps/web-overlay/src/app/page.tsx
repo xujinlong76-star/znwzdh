@@ -5,6 +5,9 @@ import { ScrollToTop } from "@/components/ScrollToTop";
 import { Container } from "@/components/ui/container";
 import { getProcessedData } from "@/lib/data-loader";
 import { getFileContent } from "@/lib/github";
+import { siteOrigin } from "@/lib/seo/origin";
+import { webSiteLd } from "@/lib/seo/json-ld";
+import { JsonLd } from "@/components/json-ld";
 
 /**
  * 从存储层读取首页数据。
@@ -42,6 +45,11 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: siteData.basic.title,
     description: siteData.basic.description,
+    // canonical 只写相对路径，交给 metadataBase 解析成绝对地址
+    alternates: { canonical: '/' },
+    // og:url 与 canonical 同值：根 layout 已提供 og:image/site_name/locale，
+    // 这里只补 url（不写 images —— 会被 file-convention 的 opengraph-image 覆盖规则搞混）
+    openGraph: { url: '/' },
     keywords: siteData.basic.keywords,
     icons: {
       icon: siteData.appearance.favicon,
@@ -51,10 +59,14 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function HomePage() {
   const { navigationData, siteData } = await getData();
+  // WebSite 结构化数据：全站唯一入口页挂一份即可。
+  // 不写 potentialAction（没有 /search 页面），不写 aggregateRating（没有评价体系）。
+  const origin = await siteOrigin();
 
   return (
     <>
       <NavigationContent navigationData={navigationData} siteData={siteData} />
+      {origin ? <JsonLd data={webSiteLd(origin, siteData.basic.title, siteData.basic.description)} /> : null}
       <ScrollToTop />
     </>
   );

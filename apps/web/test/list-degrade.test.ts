@@ -11,6 +11,12 @@
  *
  * 这里用源码守卫锁住修复：必须接上 onDegraded、渲染统一提示条与重试，
  * 且空状态文案要区分「取不回来」与「本来就没有」。
+ *
+ * Batch B（RSC 化）后 /tags、/tags/[slug] 重写成「服务端壳 + 客户端岛」：
+ * 行为（降级回调、提示条、重试、空状态文案）随岛迁到
+ * components/tag-cloud.tsx 与 components/tag-results-board.tsx，本文件的
+ * 行为守卫因此指向岛文件；另配「壳必须挂岛」断言——壳空挂等于岛不上
+ * SSR，标签内链 0 条进 HTML 的老问题就回来了，比任何文案回归都严重。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -27,9 +33,11 @@ function overlayFile(rel: string): string {
 }
 
 const hot = overlayFile("src/app/hot/page.tsx");
-const tags = overlayFile("src/app/tags/page.tsx");
 const collections = overlayFile("src/app/collections/page.tsx");
-const tagDetail = overlayFile("src/app/tags/[slug]/page.tsx");
+const tags = overlayFile("src/components/tag-cloud.tsx");
+const tagDetail = overlayFile("src/components/tag-results-board.tsx");
+const tagsPage = overlayFile("src/app/tags/page.tsx");
+const tagDetailPage = overlayFile("src/app/tags/[slug]/page.tsx");
 
 describe("/hot：榜单取不回来时要说出来", () => {
   it("把降级原因接回页面（两个榜单都要挂回调）", () => {
@@ -45,12 +53,16 @@ describe("/hot：榜单取不回来时要说出来", () => {
   });
 
   it("空状态区分「取不回来」与「暂无数据」", () => {
-    expect(hot).toContain("notice ? '本次未能取回热度数据' : '暂无热度数据'");
+    expect(hot).toContain("notice ? '本次未能取回榜单数据' : '暂无访问量数据'");
     expect(hot).toContain("notice ? '本次未能取回新入库数据' : '暂无新入库数据'");
   });
 });
 
 describe("/tags：标签云的「0 个标签」不能说成事实", () => {
+  it("页面壳把 TagCloud 挂上 SSR（RSC 化后壳不能空挂）", () => {
+    expect(tagsPage).toContain("<TagCloud");
+  });
+
   it("接上降级回调与重试", () => {
     expect(tags).toContain("describeDegrade(error, '标签数据')");
     expect(tags).toMatch(/fetchTags\(\(error\)/);
@@ -82,6 +94,10 @@ describe("/collections：别把故障甩锅给站长", () => {
 });
 
 describe("/tags/[slug]：降级横幅统一成可重试的提示条", () => {
+  it("页面壳把 TagResultsBoard 挂上 SSR（RSC 化后壳不能空挂）", () => {
+    expect(tagDetailPage).toContain("<TagResultsBoard");
+  });
+
   it("复用 HubDegradedNotice 并带重试", () => {
     expect(tagDetail).toContain("<HubDegradedNotice");
     expect(tagDetail).toContain("onRetry={reload}");
@@ -90,6 +106,7 @@ describe("/tags/[slug]：降级横幅统一成可重试的提示条", () => {
 
   it("不再使用页面私有的 ⚠️ 横幅样式", () => {
     expect(tagDetail).not.toContain("⚠️ 检索服务暂时不可用");
+    expect(tagDetailPage).not.toContain("⚠️ 检索服务暂时不可用");
   });
 
   it("请求回调带取消守卫，重试不会写入已卸载的组件", () => {

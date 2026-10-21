@@ -1,5 +1,9 @@
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
+import { siteOrigin } from '@/lib/seo/origin'
+import { softwareApplicationLd } from '@/lib/seo/json-ld'
+import { Breadcrumbs } from '@/components/breadcrumbs'
+import { JsonLd } from '@/components/json-ld'
 
 /**
  * 插件详情页 OG 元数据（分享短链落点预备，见设计文档 §八 P1-5）。
@@ -46,13 +50,16 @@ export async function generateMetadata({
     }
   }
   const title = `「${meta.name}」· 插件市场`
+  const canonical = `/marketplace/${encodeURIComponent(slug)}`
   return {
     title,
     description: meta.description,
+    alternates: { canonical },
     openGraph: {
       title,
       description: meta.description,
       type: 'website',
+      url: canonical,
     },
     twitter: {
       card: 'summary',
@@ -62,6 +69,32 @@ export async function generateMetadata({
   }
 }
 
-export default function MarketplaceDetailLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+export default async function MarketplaceDetailLayout({
+  children,
+  params,
+}: {
+  children: React.ReactNode
+  params: Promise<{ slug: string }>
+}) {
+  const { slug } = await params
+  // 复用 generateMetadata 的取数（同一请求内 fetch 去重，且带 60s 缓存）。
+  // 取不到插件名时面包屑只到「插件市场」，不留空 label——
+  // 空 label 会让 BreadcrumbList 的 position 断档，整条被 Google 丢弃。
+  const meta = await loadPluginMeta(slug)
+  const origin = await siteOrigin()
+  return (
+    <>
+      <Breadcrumbs
+        items={[
+          { label: '首页', path: '/' },
+          { label: '插件市场', path: '/marketplace' },
+          ...(meta ? [{ label: meta.name, path: `/marketplace/${encodeURIComponent(slug)}` }] : []),
+        ]}
+      />
+      {origin && meta ? (
+        <JsonLd data={softwareApplicationLd(origin, { slug, name: meta.name, description: meta.description })} />
+      ) : null}
+      {children}
+    </>
+  )
 }

@@ -980,7 +980,18 @@ curl -s -o /dev/null -w '%{http_code}\n' "$SITE/api/sites?limit=1"  # 404（中�
 
 **客户端/服务端模块边界教训**：`BreadcrumbTrail` 原与服务端 `Breadcrumbs` 同文件，客户端页 import 会把 `origin.ts`（next/headers）拖进客户端图直接构建报错（/collections 实测 500）。已拆 `breadcrumb-trail.tsx`（零服务端依赖）并用守卫锁 import 行。
 
-**`/collections/<无效slug>` 404 的源码级结论（2026-10-21 19:10）**：layout 级 `notFound()` 在 dev 返回 200 + 「Switched to client rendering」，经 Next 16.4.2 源码分析定性为 **dev 专属行为**——`app-render.js` 里 `bailOnRootNotFound()` 分支带 `__NEXT_DEV_SERVER` 守卫（仅 dev 走「切换客户端渲染」回退）；生产路径同一处 catch 执行 `res.statusCode = getAccessFallbackHTTPStatus(err)`（app-render.js:2493 与 5241 两处），**布局与页面抛出一视同仁**。另发现 `HTTPAccessFallbackErrorBoundary` 是 `'use client'` 类组件（只捕客户端错误），SSR 状态码完全由上述服务端路径决定。生产行为的最终确认需要一次干净构建 + `next start` 实测（构建四次被 safe-delete 护栏/机器争用拦下，代码与源码结论均已就绪）。
+**`/collections/<无效slug>` 404 的生产终审判决（2026-10-21 22:30，构建 + next start 实测）**：此前的「源码级结论（19:10）」判断**错误**，被生产实测推翻——生产构建（.next-verify + `next start -p 3100`，AUTH_SECRET + 中枢在线）实测 layout 级 `notFound()` **同样返回 200**（响应含 NEXT_HTTP_ERROR_FALLBACK 痕迹，两次复测确认）。对照组同场验证：
+
+| 探测 | 期望 | 生产实测 | 判定 |
+|---|---|---|---|
+| `/collections/nonexistent-xyz`（layout 级 notFound） | 404 | **200** | ❌ 生产也不生效 |
+| `/tags/不存在xyz`（page 级 notFound） | 404 | **404** | ✓ |
+| `/collections/frontend-starter` | 200 | 200 + `前端入门路线 - NavHub 导航` | ✓ |
+| `/tags/大模型` | 200 | 200 + `「大模型」相关站点 - NavHub 导航` | ✓（首轮 404 系 Data Cache 从空 hub 窗口缓存的假象，revalidate=60 过期后恢复） |
+
+**规律定稿（dev + 生产一致）**：`notFound()` 必须在 **page 组件渲染体**抛出（或 page 的 generateMetadata——tags 家族实测有效）；**layout 渲染体与 layout 的 generateMetadata 抛出的都会被回退成 200**。`/site/[id]` 与 `/collections/[slug]` 的 page 级方案是正确范式（前者已落地 ed6f2af，生产实测 404 ✓）。
+
+**环境知识（本轮沉淀）**：① 生产 `next start` 必须设 `AUTH_SECRET`（≥32 字符，否则 middleware 拒启）且中枢要用 `NAVHUB_SQLITE_PATH` 指到真库（裸 `node src/main.ts` 会开空库）；② Data Cache 会把 404/空结果缓存 `revalidate` 时长，切数据源后必须等过期再下结论；③ 同 dist 目录二次 `next build` 会因清理旧 turbopack 缓存触发 safe-delete 护栏——`mv` 重命名旧 dist（rename 零 unlink）后构建即净。
 
 ### 7.8 Batch E：marketplace 索引 SSR 化（2026-10-21 19:00，plugin 孤岛 64 → 0）
 

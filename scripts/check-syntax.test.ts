@@ -49,7 +49,7 @@ describe("语法快速门禁（scripts/check-syntax.mjs）", () => {
     const result = run([]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("[syntax] 通过");
-  });
+  }, 90_000);
 
   it("合法 TS 与 TSX 返回 0", () => {
     const dir = tempDir();

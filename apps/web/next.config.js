@@ -104,6 +104,15 @@ const nextConfig = {
     ];
   },
   devIndicators: false,
+  // 拖拽库懒加载：管理端几个上游列表页直接 import '@hello-pangea/dnd'，
+  // 把 ~92 KB 拖进首屏。别名把裸包名指向我们的代理组件（src/lib/lazy-dnd.tsx），
+  // 代理内部再用深路径直指包内 ESM 产物以绕开别名自递归。
+  // 详见 apps/web-overlay/src/lib/lazy-dnd.tsx 顶部的说明。
+  turbopack: {
+    resolveAlias: {
+      "@hello-pangea/dnd": "./src/lib/lazy-dnd.tsx",
+    },
+  },
   // 原 webpack 函数（dev 时把 filesystem cache 切成 memory，规避 Windows 上
   // pack.gz 重命名锁竞争与 ENOENT 损坏）已移除：Next 16 起 Turbopack 是
   // dev/build 的默认打包器，且 next.config 里残留 webpack 函数会直接导致

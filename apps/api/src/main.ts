@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
 import { buildServer } from "./server.ts";
+import { registerCompression } from "./http-compression.ts";
 import { JobRunner, MAX_JOB_ATTEMPTS } from "./jobs.ts";
 import { sendWebhookAlert } from "./alerts.ts";
 
@@ -31,6 +32,9 @@ try {
 const config = loadConfig();
 const ctx = await createContext(config);
 const app = await buildServer(ctx);
+// 响应压缩：必须早于 listen()（Fastify 在 ready 时固化钩子链）。
+// 见 http-compression.ts 的文件头——插件列表单次响应 1.16MB，默认部署没有反代压缩。
+registerCompression(app);
 
 // 任务 Runner：定时健康巡检 / 元数据刷新 / 热度重算 / 索引重建。
 // 默认开启（单实例锁保证多副本只有一个在跑）；NAVHUB_JOBS_ENABLED=0 关闭。

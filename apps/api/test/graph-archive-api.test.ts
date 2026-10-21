@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -153,5 +155,34 @@ describe("Stage 3 & 4: Graph Mesh & Offline Archive API", () => {
     const body = res.json();
     expect(body.siteId).toBe(createdSiteId);
     expect(body.capturedAt).toBeGreaterThan(0);
+  });
+
+  it("POST /api/sites/:id/archive 不得访问私网地址（SSRF 回归）", async () => {
+    // 起一个只在本机回环可访问的“内网服务”，把它的内容当作金丝雀：
+    // 旧实现用裸 fetch，会真的请求它并把响应写进公开可读的快照。
+    const server = createServer((_req, res) => {
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      res.end("<html><body>SSRF-CANARY-INTERNAL</body></html>");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const cat = await ctx.repo.createCategory({ title: "归档 SSRF 测试", slug: "archive-ssrf-test" });
+      const site = await ctx.repo.createSite({
+        title: "内网目标",
+        url: `http://127.0.0.1:${port}/`,
+        description: "本应作为降级描述的公开信息",
+        categoryId: cat.id,
+      });
+
+      const res = await app.inject({ method: "POST", url: `/api/sites/${site.id}/archive` });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // 私网目标被守卫拦下 → 只能走描述降级，金丝雀内容绝不能进快照
+      expect(body.htmlContent).not.toContain("SSRF-CANARY-INTERNAL");
+      expect(body.htmlContent).toContain("本应作为降级描述的公开信息");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

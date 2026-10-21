@@ -191,4 +191,44 @@ describe("Taxonomy Phase 1: 多维标签治理与概念别名 (SKOS)", () => {
     expect(aliases.length).toBe(0);
     expect(await repo.resolveTag("aigc")).toBeNull();
   });
+
+  it("listTagsWithCounts 只计存活站点：软删除与停用站点不进计数", async () => {
+    // 口径守卫：曾用裸 COUNT(st.site_id) 把软删除站点也算进引用计数
+    // （dev 库实测「开源」报 123 而存活站点只有 3），chip 计数、TAG_LINK_MIN
+    // 渲染规则、sitemap 的 ≥5 门槛全部失真。计数必须与 search 候选集同口径：
+    // deleted_at IS NULL AND enabled。
+    const cat = (await repo.listCategories())[0]!;
+    const doomed = await repo.createSite({
+      url: "https://example.com/count-a",
+      title: "计数甲",
+      categoryId: cat.id,
+      tags: ["计数口径"],
+      status: "active",
+    });
+    await repo.createSite({
+      url: "https://example.com/count-b",
+      title: "计数乙",
+      categoryId: cat.id,
+      tags: ["计数口径"],
+      status: "active",
+    });
+    await repo.createSite({
+      url: "https://example.com/count-c",
+      title: "计数丙",
+      categoryId: cat.id,
+      tags: ["计数口径"],
+      status: "active",
+      enabled: false,
+    });
+    // 3 条关联：1 条随后软删除、1 条停用 → 存活计数应为 1
+    await repo.deleteSite(doomed.id);
+
+    const hit = (await repo.listTagsWithCounts()).find((t) => t.name === "计数口径");
+    expect(hit).toBeTruthy();
+    expect(hit!.count).toBe(1);
+
+    // minCount=2 不应再返回该标签（旧口径会因虚高计数误进 minCount 门槛）
+    const above = await repo.listTagsWithCounts(2);
+    expect(above.find((t) => t.name === "计数口径")).toBeUndefined();
+  });
 });

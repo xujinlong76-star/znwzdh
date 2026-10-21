@@ -947,6 +947,47 @@ curl -s -o /dev/null -w '%{http_code}\n' "$SITE/api/sites?limit=1"  # 404（中�
 | 有 JSON-LD 的模板页 | 0 | 全部可索引模板 |
 | 首页 TTFB（Googlebot，无缓存） | 打穿中枢 | P95 <800ms |
 
+### 7.7 计数口径修复 + B-8 落地 + 枢纽面包屑（2026-10-21 17:00）
+
+**最重要的发现：标签计数被软删除站点污染（数据完整性 bug，已修）**
+
+`listTagsWithCounts` 用裸 `COUNT(st.site_id)` 不过滤站点状态——dev 库 962 条软删除站点的标签关联让全部计数虚高：「开源」报 123 而存活站点只有 3。**方案 §4.1 的分层表（82/287/710）建立在虚高计数上**；按存活口径（与 search 候选集同语义：`deleted_at IS NULL AND enabled`）当前 dev 库真实分布是：≥5 站 1 个（大模型）、2-4 站 20 个、1 站 69 个。分层**规则**（≥5/2-4/1/0 四档）不变且 count 驱动，站点集恢复后数字自动回填。
+
+修复面（同一根因三处）：
+1. `packages/store/src/repository/tags.ts` 的 `listTagsWithCounts`：LEFT JOIN sites 过滤存活 + `COUNT(s.id)`（新增 store 测试锁口径：软删除与停用站点不进计数）；
+2. `scripts/link-graph.mjs` 的站点全集查询（`status='active'` 漏 `deleted_at IS NULL`——955 条软删站点被计入全集判孤岛，**此前「site 955 孤岛」的真因就是它**）与标签全集查询（同款裸 COUNT）；
+3. sitemap 注释更正（「只提交 82 条」已失真）。
+
+**link-graph 修正口径后的真实孤岛图景**（当前 dev 库 51 active 站点）：
+
+| 类型 | URL | 孤岛 | 可达% | 说明 |
+|---|---:|---:|---:|---|
+| site | 57 | **0** | **100%** | `/sites` 目录的目标其实已达成（此前 955 孤岛是测量 bug） |
+| tag | 21 | 0 | 100% | TAG_MIN=2 的存活口径 |
+| collection | 4 | **4** | **0%** | 真孤岛：合集索引页是客户端取数，详情链接不进 SSR HTML |
+| plugin | 64 | **64** | 0% | 同因：市场索引页客户端渲染 |
+| 软 404 探针 12 个 | | 6 个仍 200 | | /site/*×3（对方 WIP）、/collections/*×3（见下）；**/tags/* 已全部 404** |
+
+**B-8 薄标签分层落地**（`/tags/[slug]`，实测逐项通过）：
+
+| 存活站点数 | 实测样本 | 行为 |
+|---|---|---|
+| ≥5（大模型=5） | `「大模型」相关站点 - NavHub 导航` + 真描述 | 200 可索引 |
+| <5（开源=3） | `<meta name="robots" content="noindex, follow"/>` | 200 不收录 |
+| 0 / 不存在 | `/tags/xyz` → **404** | 真 404（search 成功且 0 命中双证；中枢挂了降级渲染不误伤） |
+
+**枢纽面包屑 + 合集元数据**（实测通过）：`/hot` 面包屑 + BreadcrumbList；`/collections` 可见面包屑；`/collections/[slug]` 每合集独立 title（`前端入门路线 - NavHub 导航`——**title.template 截断用 `{default, template}` 双层结构修通**，与 /tags 家族同款病症不同药方）+ 描述 + 面包屑 JSON-LD。marketplace 索引面包屑跳过（page 是并行会话弹窗懒加载 WIP）。
+
+**客户端/服务端模块边界教训**：`BreadcrumbTrail` 原与服务端 `Breadcrumbs` 同文件，客户端页 import 会把 `origin.ts`（next/headers）拖进客户端图直接构建报错（/collections 实测 500）。已拆 `breadcrumb-trail.tsx`（零服务端依赖）并用守卫锁 import 行。
+
+**未决（本轮末尾实测）**：`/collections/<无效slug>` 的 404——layout 级 `notFound()`（无论 metadata 还是渲染体）在 dev 下被「Switched to client rendering」回退成 200 + NEXT_HTTP_ERROR_FALLBACK（已排除 error.tsx 与 loading.tsx 两个嫌疑）；`/tags` 的 page 级 notFound 正常。生产构建验证中，若生产同样 200 则需把判定下沉到 page 级（对方 WIP 页，需解阻）。
+
+**Batch D：合集索引 SSR 化（同轮顺手落地，孤岛 4 → 0）**
+
+`/collections` 从整页客户端组件改为「服务端壳 + CollectionBoard 岛」（与 tags 家族 Batch B 同构）：服务端 `hubGet('/api/collections', 60)` 取数经 `initialCollections` props 下发，null 时岛挂载即自动客户端重取；面包屑升级为服务端 `Breadcrumbs`（带 BreadcrumbList JSON-LD）。**实测**：SSR 直出 4 条 `/collections/{slug}` 内链，link-graph 复验 **collection 4 页 0 孤岛 100% 可达**（改前 4 孤岛 0%）。降级语义原样保留（「策划中」与「中枢挂了」分开说的诚实区分）。
+
+孤岛全景（Batch D 后）：site 57 页 0 孤岛 ✓、tag 21 页 0 ✓、collection 4 页 0 ✓；**剩余真孤岛只有 plugin 64 页**（marketplace 索引页是并行会话弹窗懒加载 WIP，同款 SSR 化方案待解阻后套用）。
+
 ---
 
 ## 八、红线

@@ -177,15 +177,19 @@ async function loadUniverse() {
   add('/')
   for (const t of ['/tags', '/collections', '/marketplace', '/hot', '/graph', '/algorithms', '/custom', '/import', '/videos', '/submit']) add(t)
 
-  for (const r of db.prepare("select id from sites where status = 'active'").all()) add(`/site/${r.id}`)
+  for (const r of db.prepare("select id from sites where status = 'active' and deleted_at is null").all()) add(`/site/${r.id}`)
   for (const r of db.prepare('select slug from collections where enabled = 1').all()) add(`/collections/${r.slug}`)
   for (const r of db.prepare("select slug from plugins where status = 'published'").all()) add(`/marketplace/${r.slug}`)
+  // 标签计数只算存活站点（与 store 的 listTagsWithCounts 同口径，2026-10-21）：
+  // 裸 count(site_tags) 会把软删除站点的关联算进来，universe 虚高 → 大量
+  // 「孤岛」实为已删站点的标签页，--check 指标失真。
   for (const r of db
     .prepare(
       `select t.slug from tags t
         left join site_tags st on st.tag_id = t.id
+        left join sites s on s.id = st.site_id and s.deleted_at is null and s.enabled = 1
        group by t.id
-      having count(st.site_id) >= ?`,
+      having count(s.id) >= ?`,
     )
     .all(TAG_MIN)) {
     add(`/tags/${encodeURIComponent(r.slug)}`)

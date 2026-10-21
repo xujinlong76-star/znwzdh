@@ -52,16 +52,25 @@ import type { Db } from "../driver.ts";
 
 export async function listTagsWithCounts(repo: Repository, minCount = 1, group?: string): Promise<TagWithCount[]> {
   const params: unknown[] = [];
+  // 计数只算**存活站点**（s.deleted_at IS NULL AND s.enabled，与 search 的
+  // 候选集同口径）。曾用裸 COUNT(st.site_id) 把软删除站点的标签关联也算进来：
+  // 实测 dev 库里「开源」报 123 而存活站点只有 3——chip 计数、TAG_LINK_MIN
+  // 渲染规则、sitemap 的 ≥5 门槛全部失真（方案 §4.1 的分层表也因此虚高）。
+  // JOIN 条件里过滤而不是 WHERE：让 0 存活站点的标签仍出现在结果里（cnt=0，
+  // 由 minCount/HAVING 决定去留），行为面与旧版一致。
   let sql =
-    "SELECT t.id, t.name, t.slug, t.group_name, t.color, t.description, COUNT(st.site_id) AS cnt " +
-    "FROM tags t LEFT JOIN site_tags st ON st.tag_id = t.id ";
+    "SELECT t.id, t.name, t.slug, t.group_name, t.color, t.description, COUNT(s.id) AS cnt " +
+    "FROM tags t " +
+    "LEFT JOIN site_tags st ON st.tag_id = t.id " +
+    "LEFT JOIN sites s ON s.id = st.site_id AND s.deleted_at IS NULL AND s.enabled = ? ";
+  params.push(true);
   if (group && group.trim()) {
     sql += "WHERE t.group_name = ? ";
     params.push(group.trim());
   }
   sql +=
     "GROUP BY t.id, t.name, t.slug, t.group_name, t.color, t.description " +
-    "HAVING COUNT(st.site_id) >= ? " +
+    "HAVING COUNT(s.id) >= ? " +
     "ORDER BY cnt DESC, t.name ASC";
   params.push(minCount);
 

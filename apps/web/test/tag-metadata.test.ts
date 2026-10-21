@@ -53,7 +53,7 @@ describe("标签段 metadata 归属（Next title.template 截断修复的结构�
     // 标题是模板字符串表达式而非字面量
     expect(src).toMatch(/title:\s*`「\$\{name\}」相关站点`/);
     // description 优先用标签自身描述，缺失才兜底
-    expect(src).toMatch(/description:\s*[\s\S]*?res\?\.tag\?\.description\s*\?\?/);
+    expect(src).toMatch(/description:\s*[\s\S]*?tagRes\?\.tag\?\.description\s*\?\?/);
     expect(src).toContain("/api/tags/resolve?q=");
   });
 
@@ -69,5 +69,24 @@ describe("标签段 metadata 归属（Next title.template 截断修复的结构�
     const src = overlayFile("src/components/tag-results-board.tsx");
     expect(src).toContain("tagDescription");
     expect(src).toMatch(/\{tagDescription\s*\?\?/);
+  });
+
+  it("B-8 薄标签：存活站点数 < MIN_SITES_FOR_INDEX 时 robots noindex,follow", () => {
+    const src = overlayFile("src/app/tags/[slug]/page.tsx");
+    // 阈值从 thresholds 导入（与 sitemap 的 ≥5 同源，不写死数字）
+    expect(src).toContain("import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'");
+    // noindex,follow：页面保留、内链传权重，只是不进索引（方案 §4.1 定稿）
+    expect(src).toContain("robots: { index: false, follow: true }");
+    // 分层依据必须是存活站点数（search hits），不是标签的名义计数
+    expect(src).toMatch(/sites\.length\s*>=\s*MIN_SITES_FOR_INDEX/);
+  });
+
+  it("0 命中的标签页走真 404（软 404 消灭），search 失败不误伤", () => {
+    const src = overlayFile("src/app/tags/[slug]/page.tsx");
+    expect(src).toContain("notFound()");
+    // 双条件：search 成功（res !== null）且 0 命中才 404——中枢挂了要降级渲染
+    expect(src).toMatch(/if\s*\(res\s*!==\s*null\s*&&\s*sites\.length\s*===\s*0\)\s*notFound\(\)/);
+    // 共享 loader 供 metadata 与页面复用（fetch memoization 去重）
+    expect(src).toContain("async function loadTagPage");
   });
 });

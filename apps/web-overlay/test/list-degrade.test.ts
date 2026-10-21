@@ -33,7 +33,10 @@ function overlayFile(rel: string): string {
 }
 
 const hot = overlayFile("src/app/hot/page.tsx");
+// Batch D 起 /collections 是「服务端壳 + CollectionBoard 岛」：降级行为在岛里，
+// 壳的职责是挂上岛（壳空挂 = 岛不上 SSR，与 tags 家族同款断言）
 const collections = overlayFile("src/app/collections/page.tsx");
+const collectionBoard = overlayFile("src/components/collection-board.tsx");
 const tags = overlayFile("src/components/tag-cloud.tsx");
 const tagDetail = overlayFile("src/components/tag-results-board.tsx");
 const tagsPage = overlayFile("src/app/tags/page.tsx");
@@ -82,14 +85,23 @@ describe("/tags：标签云的「0 个标签」不能说成事实", () => {
 });
 
 describe("/collections：别把故障甩锅给站长", () => {
+  it("页面壳把 CollectionBoard 挂上 SSR（RSC 化后壳不能空挂）", () => {
+    expect(collections).toContain("<CollectionBoard");
+    expect(collections).toContain("initialCollections={cols}");
+  });
+
   it("接上降级回调与重试", () => {
-    expect(collections).toContain("describeDegrade(error, '专题数据')");
-    expect(collections).toMatch(/fetchCollections\(\(error\)/);
-    expect(collections).toContain("<HubDegradedNotice notice={notice} onRetry={reload}");
+    expect(collectionBoard).toContain("describeDegrade(error, '专题数据')");
+    expect(collectionBoard).toMatch(/fetchCollections\(\(error\)/);
+    expect(collectionBoard).toContain("<HubDegradedNotice notice={notice} onRetry={reload}");
   });
 
   it("空状态区分「取不回来」与「暂无专题」", () => {
-    expect(collections).toContain("notice ? '本次未能取回专题列表' : '暂无精选专题，站长正在策划中'");
+    expect(collectionBoard).toContain("notice ? '本次未能取回专题列表' : '暂无精选专题，站长正在策划中'");
+  });
+
+  it("服务端没取到时岛自动重取（不逼用户点按钮）", () => {
+    expect(collectionBoard).toMatch(/initialCollections\s*===\s*null/);
   });
 });
 

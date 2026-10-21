@@ -125,6 +125,7 @@ describe("成功路径", () => {
     expect(r.localCount).toBe(2);
     expect(r.pushed).toBe(2);
     expect(r.cloud).toEqual([]);
+    expect(r.cloudFolders).toEqual([]);
     expect(calls.filter((c) => c.method === "POST").length).toBe(2);
     expect(calls.filter((c) => c.method === "GET").length).toBe(1);
   });
@@ -198,6 +199,17 @@ describe("源码守卫：这套契约不许被改回去", () => {
     expect(src).toContain("if (!ok) break");
     expect(src).toContain("cloud: cloudFailed ? null : list.items");
     expect(src).toContain("describeDegrade");
+  });
+
+  it("同步成功后以云端成员集合替换本地，而不是并集导入", () => {
+    const src = overlaySource("src/app/favorites/page.tsx");
+    expect(src).toContain("mergeCloudFavorites(favorites.items, result.cloud)");
+    expect(src).toContain("favorites.replaceAll(");
+    // 旧的并集导入会把「其它设备已删除」的收藏重新写回本地
+    expect(src).not.toContain("importJson(JSON.stringify({ version: 1, items: incoming }))");
+    const hook = overlaySource("src/hooks/useFavorites.ts");
+    expect(hook).toContain("cloudFolders");
+    expect(hook).toContain("replaceAll");
   });
 
   it("navhub-api 的收藏接口把失败交回调用方（不再自己吞掉）", () => {

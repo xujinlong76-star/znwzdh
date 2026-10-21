@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { UserCenterNav } from '@/components/user-center/user-center-nav'
 
 /**
  * 用户中心是私密页面：不进搜索索引，但保留 follow（页面内的公开链接仍可爬）。
@@ -10,5 +11,13 @@ export const metadata: Metadata = {
 }
 
 export default function MeLayout({ children }: { children: React.ReactNode }) {
-  return children
+  return (
+    <>
+      {/* 子导航与页面同宽；放在 main 之外，读屏可当作独立导航地标 */}
+      <div className="mx-auto w-full max-w-(--breakpoint-2xl) px-3 pt-4 sm:px-6 md:px-8 lg:px-10 xl:px-12">
+        <UserCenterNav />
+      </div>
+      {children}
+    </>
+  )
 }

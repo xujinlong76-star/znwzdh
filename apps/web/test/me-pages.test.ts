@@ -23,6 +23,17 @@ const ROOT = overlayRoot()
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
 describe('用户中心第二批页面', () => {
+  it('统一子导航覆盖概览/收藏/历史/数据/偏好并挂在相关页面', () => {
+    const nav = read('src/components/user-center/user-center-nav.tsx')
+    for (const href of ["'/me'", "'/favorites'", "'/me/history'", "'/me/data'", "'/preferences'"]) {
+      expect(nav).toContain(href)
+    }
+    expect(nav).toContain('aria-current')
+    expect(read('src/app/me/layout.tsx')).toContain('<UserCenterNav />')
+    expect(read('src/app/favorites/page.tsx')).toContain('<UserCenterNav />')
+    expect(read('src/app/preferences/page.tsx')).toContain('<UserCenterNav />')
+  })
+
   it('BFF 同时覆盖 /api/me 本身与子路径（可选 catch-all）', () => {
     const rel = 'src/app/api/me/[[...path]]/route.ts'
     expect(existsSync(join(ROOT, rel)), 'BFF 必须是可选 catch-all，否则 GET /api/me 会 404').toBe(true)

@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { FavoriteButton } from '@/components/favorite-button'
 import { useFavorites, syncFavoritesToCloud, type CloudSyncResult } from '@/hooks/useFavorites'
 import { getIdentity } from '@/lib/identity'
+import { mergeCloudFavorites } from '@/lib/favorites-merge'
 import {
   filterFavorites,
   describeFavoritesFilter,
@@ -28,6 +29,7 @@ import {
   type EncryptedVaultPayload,
 } from '@/lib/vault'
 import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
+import { UserCenterNav } from '@/components/user-center/user-center-nav'
 import {
   createFavoriteFolder,
   deleteFavoriteFolder,
@@ -93,11 +95,12 @@ export default function FavoritesPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 登录用户：进页面时尝试把本地收藏合并到云端
-  const runCloudSync = useCallback(async () => {
+  const runCloudSync = useCallback(async (): Promise<CloudSyncResult> => {
     setSyncingCloud(true)
     const result = await syncFavoritesToCloud()
     setCloudResult(result)
     setSyncingCloud(false)
+    return result
   }, [])
 
   useEffect(() => {
@@ -106,31 +109,11 @@ export default function FavoritesPage() {
     if (!identity || identity.startsWith('anon-')) return
     setCloudIdentity(identity)
     void (async () => {
-      await runCloudSync()
-      // 合并成功后拉一次云端全集：新设备能直接看到云端收藏，本地条目也能拿到文件夹/备注
-      const data = await listFavorites(identity)
-      setFolders(data.folders)
-      const localBySite = new Map(favorites.items.map((item) => [item.siteId, item]))
-      const incoming = data.items
-        .filter((item) => item.site)
-        .map((item) => {
-          const local = localBySite.get(item.siteId)
-          return {
-            siteId: item.siteId,
-            title: item.site?.title ?? local?.title ?? item.siteId,
-            href: item.site?.url ?? local?.href ?? '',
-            // 图标/描述优先用本地已有的（云端列表不带 icon，避免把本地图标覆盖掉）
-            icon: local?.icon,
-            description: item.site?.description ?? local?.description,
-            note: item.note ?? local?.note,
-            folderId: item.folderId,
-            createdAt: item.createdAt || local?.createdAt || Date.now(),
-          }
-        })
-        .filter((item) => item.href)
-      if (incoming.length > 0) {
-        favorites.importJson(JSON.stringify({ version: 1, items: incoming }))
-      }
+      const result = await runCloudSync()
+      if (!result.ok || !result.cloud || !result.cloudFolders) return
+      // 云端是事实源：整体替换本地成员集合，避免「其它设备已删除的收藏」被本机缓存推回去
+      setFolders(result.cloudFolders)
+      favorites.replaceAll(mergeCloudFavorites(favorites.items, result.cloud))
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runCloudSync, favorites.ready])
@@ -357,6 +340,7 @@ export default function FavoritesPage() {
   return (
     <Container as="main" id="main-content">
       <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
+        <UserCenterNav />
         {/* 沉浸式 Hero 展板 */}
         <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-8 shadow-xs">
           <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl" />

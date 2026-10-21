@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { addFavorite, listFavorites, removeFavorite, type HubFavorite } from '@/lib/navhub-api'
+import { addFavorite, listFavorites, removeFavorite, type HubFavorite, type HubFavoriteFolder } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
 import { getIdentity } from '@/lib/identity'
 import {
@@ -77,6 +77,8 @@ export interface FavoritesApi {
   remove: (siteId: string) => void
   /** 收藏管理：更新本地缓存的文件夹/备注（云端写入由调用方 best-effort 处理） */
   updateMeta: (siteId: string, patch: { folderId?: string | null; note?: string | null }) => boolean
+  /** 登录同步成功后用云端列表整体替换本地（云端是事实源，避免删除被本地缓存复活） */
+  replaceAll: (items: LocalFavorite[]) => boolean
   clear: () => void
   /** 用户显式重置：先把读不出来的原数据备份到旁边，再写空列表 */
   resetLocal: () => void
@@ -185,6 +187,8 @@ export function useFavorites(): FavoritesApi {
     return persist(next)
   }, [persist])
 
+  const replaceAll = useCallback((next: LocalFavorite[]) => persist(next), [persist])
+
   const clear = useCallback(() => {
     persist([])
   }, [persist])
@@ -210,11 +214,12 @@ export function useFavorites(): FavoritesApi {
     }
   }, [persist, storageBlocked])
 
-  return { items, ready, storageBlocked, isFavorite, toggle, remove, updateMeta, clear, resetLocal, exportJson, importJson }
+  return { items, ready, storageBlocked, isFavorite, toggle, remove, updateMeta, replaceAll, clear, resetLocal, exportJson, importJson }
 }
 
 /**
- * 登录后调用一次：把本地收藏合并到云端（并集，createdAt 新者胜）。
+ * 登录后调用一次：先把本地收藏推到云端（仅用于首次迁移/离线期间新增的条目），
+ * 再拉回云端全集。成员集合最终以云端为准——否则其它设备删掉的收藏会被本机缓存复活。
  *
  * 返回值刻意不是「数组或 null」——那让调用方无法区分两件事：
  *   - 云端**确实**没有收藏（空数组，正常）
@@ -236,6 +241,8 @@ export interface CloudSyncResult {
   pushed: number
   /** 合并后的云端收藏；**失败时为 null**（空数组表示云端确实没有收藏） */
   cloud: HubFavorite[] | null
+  /** 云端收藏夹；失败时为 null（与 cloud 同生命周期，页面无需再发一次请求） */
+  cloudFolders: HubFavoriteFolder[] | null
   /** 失败原因（可直接渲染）；ok 时为 undefined */
   error?: string
   /** 是否值得给用户一个「重试」 */
@@ -252,6 +259,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       localCount: 0,
       pushed: 0,
       cloud: null,
+      cloudFolders: null,
       error: blocked,
       retryable: false,
     }
@@ -262,6 +270,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       localCount: local.length,
       pushed: 0,
       cloud: null,
+      cloudFolders: null,
       error: '未登录：收藏只保存在本机浏览器',
       retryable: false,
     }
@@ -288,6 +297,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       localCount: local.length,
       pushed,
       cloud: null,
+      cloudFolders: null,
       error: failure.message,
       retryable: failure.retryable,
     }
@@ -304,6 +314,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     localCount: local.length,
     pushed,
     cloud: cloudFailed ? null : list.items,
+    cloudFolders: cloudFailed ? null : list.folders,
     error: failure.message,
     retryable: failure.retryable,
   }

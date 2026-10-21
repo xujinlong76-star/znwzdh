@@ -42,6 +42,12 @@ export interface AppConfig {
     jsonMode: "auto" | "response_format" | "prompt";
     /** 允许模型端点指向内网（本地 Ollama）；仅系统级配置可开启 */
     allowPrivateNetwork: boolean;
+    /**
+     * 深度思考（Agnes 的 chat_template_kwargs.enable_thinking）。
+     * 产品决策（2026-10-19）：全站默认开启 —— 复杂任务质量优先；
+     * 富化类批量场景可在系统级配置里关掉以省 token。
+     */
+    thinking: boolean;
     /** 独立密钥加密口令（不设则回退 sessionSecret） */
     secretsKey: string | null;
   };
@@ -136,6 +142,29 @@ const VALID_EMBEDDING_DTYPES = new Set(["q8", "fp16", "fp32", "q4"]);
  * 生产安全断言校验 (Production Guard Asserter)
  * ------------------------------------------------------------------ */
 
+/**
+ * 判断 publicUrl 是否指向本机/内网。
+ *
+ * 旧实现用正则直接匹配整串 URL（`/10\./` 等），会把 `http://10.example.com`
+ * 这类公网域名误判为内网，从而跳过「生产公网必须开鉴权」的硬校验。
+ * 这里改为解析 hostname 后按 IP 段判断。
+ */
+function isLocalHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host === "::1") return true;
+
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    return a === 127 || a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31);
+  }
+
+  // IPv6 唯一本地地址（fc00::/7）与链路本地（fe80::/10）
+  if (/^f[cd][0-9a-f]{2}:/.test(host) || /^fe[89ab][0-9a-f]:/.test(host)) return true;
+  return false;
+}
+
 function assertSecurityConstraints(
   config: AppConfig,
   isProd: boolean,
@@ -155,9 +184,13 @@ function assertSecurityConstraints(
   }
 
   // 3. 生产公网暴露鉴权守护（防管理后台未授权公开裸奔）
-  const isLocalPublic = /localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])/.test(
-    config.publicUrl
-  );
+  // 解析失败按「公网」处理：宁可多要一次鉴权，也不能让畸形 URL 成为逃生阀
+  let isLocalPublic = false;
+  try {
+    isLocalPublic = isLocalHostname(new URL(config.publicUrl).hostname);
+  } catch {
+    isLocalPublic = false;
+  }
 
   if (!isLocalPublic && !config.authRequired) {
     if (isProd && !allowInsecurePublic) {
@@ -232,6 +265,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
       maxTokens: num("NAVHUB_LLM_MAX_TOKENS", 1024),
       jsonMode: jsonMode("NAVHUB_LLM_JSON_MODE", "auto"),
       allowPrivateNetwork: bool("NAVHUB_LLM_ALLOW_PRIVATE", false),
+      thinking: bool("NAVHUB_LLM_THINKING", true),
       secretsKey: process.env.NAVHUB_SECRETS_KEY?.trim() || null,
     },
 

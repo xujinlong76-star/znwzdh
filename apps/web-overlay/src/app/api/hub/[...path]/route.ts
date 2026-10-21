@@ -77,6 +77,17 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
 
   const method = request.method.toUpperCase()
   const hasBody = method !== 'GET' && method !== 'HEAD'
+  // 先看声明长度：request.text() 会把整个请求体读进内存，事后再判 1MB 上限
+  // 等于先让任意大包把进程内存打满（chunked 无 content-length 时靠下面的兜底）。
+  if (hasBody) {
+    const declared = Number(request.headers.get('content-length') ?? '')
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      return NextResponse.json(
+        { error: '请求体过大（上限 1MB）' },
+        { status: 413, headers: { 'cache-control': 'no-store' } },
+      )
+    }
+  }
   const rawBody = hasBody ? await request.text() : undefined
   const hasValidBody = hasBody && typeof rawBody === 'string' && rawBody.trim().length > 0
   const body = hasValidBody ? rawBody : undefined
@@ -104,7 +115,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   }
 
   // 上游必须有上限：卡死的中枢不能把前端请求无限期挂住（SSE 在拿到响应头后解除，见下）
-  const deadline = createDeadline(upstreamTimeoutMs())
+  const deadline = createDeadline(upstreamTimeoutMs(undefined, cleanPath))
 
   try {
     const upstream = await fetch(target, {

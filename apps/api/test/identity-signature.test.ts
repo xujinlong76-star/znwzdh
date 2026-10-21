@@ -128,4 +128,75 @@ describe("identity-signature：路由行为", () => {
     });
     expect(signed.statusCode).toBe(200);
   });
+
+  /**
+   * 请求体入口的签名守卫（2026-10-20 修复的 P1）。
+   *
+   * 旧实现把校验放在 onRequest —— 那一阶段 Fastify 还没解析 body，
+   * 于是「只在 body 里带 userId」的请求取到的 identity 恒为 null，
+   * 校验被整段跳过；而路由随后用同一个 identityOf 从 body 读出身份。
+   * 结果：配置了密钥也完全不设防。现在校验移到 preValidation。
+   */
+  it("身份只在请求体里（不带签名）→ 401", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/favorites",
+      payload: { userId: "github:alice", siteId: "whatever" },
+    });
+    // 修复前是 404（绕过签名后走到「站点不存在」），修复后必须是 401
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe("身份签名缺失或无效");
+  });
+
+  it("请求体身份签名正确 → 通过签名关卡（后续业务校验照常）", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/favorites",
+      headers: { "x-navhub-identity-signature": signIdentity(SECRET, "github:alice") },
+      payload: { userId: "github:alice", siteId: "no-such-site" },
+    });
+    // 签名过了才会到达业务层：站点不存在 → 404（而非 401）
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("请求体身份与签名不匹配 → 401", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/favorites",
+      headers: { "x-navhub-identity-signature": signIdentity(SECRET, "github:alice") },
+      payload: { userId: "github:bob", siteId: "no-such-site" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  /**
+   * 插件域的 `identity` 字段（安装/评价/上架/我的插件）此前不在 identityOf 的
+   * 解析范围内：只带 identity 的请求被签名 hook 视为「无身份」直接放行，
+   * 插件路由随后却拿 body.identity 当真实用户 → 配置了密钥也能冒充任意用户。
+   */
+  it("插件域 identity（query）不带签名 → 401", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins/mine?identity=github:alice" });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error).toBe("身份签名缺失或无效");
+  });
+
+  it("插件域 identity（body）不带签名 → 401", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/no-such-plugin/install",
+      payload: { identity: "github:alice" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("插件域 identity 签名正确 → 越过签名关卡（业务照常校验）", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/no-such-plugin/install",
+      headers: { "x-navhub-identity-signature": signIdentity(SECRET, "github:alice") },
+      payload: { identity: "github:alice" },
+    });
+    // 签名通过后才到达业务层：插件不存在 → 404，而不是 401
+    expect(res.statusCode).toBe(404);
+  });
 });

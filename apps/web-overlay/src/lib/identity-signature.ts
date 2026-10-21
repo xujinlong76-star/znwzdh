@@ -43,13 +43,18 @@ export function identityFromRequest(
     getHeader('x-anon-id')
   if (fromHeader) return fromHeader.slice(0, 64)
 
-  const fromQuery = url.searchParams.get('userId') ?? url.searchParams.get('anonId')
+  // identity 是插件域的用户身份字段，必须与中枢 identityOf 同序纳入签名，
+  // 否则「只带 identity」的请求能绕过 HMAC 冒充任意用户（安装/评价/上架）。
+  const fromQuery =
+    url.searchParams.get('userId') ??
+    url.searchParams.get('anonId') ??
+    url.searchParams.get('identity')
   if (fromQuery) return fromQuery.slice(0, 64)
 
   if (!rawBody) return null
   try {
     const parsed = JSON.parse(rawBody) as Record<string, unknown> | null
-    const v = parsed?.userId ?? parsed?.anonId
+    const v = parsed?.userId ?? parsed?.anonId ?? parsed?.identity
     return typeof v === 'string' && v ? v.slice(0, 64) : null
   } catch {
     // 非 JSON body（表单/纯文本）：没有可签的身份

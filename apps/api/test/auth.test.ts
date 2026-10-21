@@ -550,6 +550,10 @@ describe("生产配置硬校验与批量查询回归", () => {
       expect(loadConfig().authRequired).toBe(false);
       delete process.env.NAVHUB_ALLOW_INSECURE_PUBLIC;
 
+      // 回归：公网域名不能因为以 "10." 开头就被当成内网（旧正则的误判）
+      process.env.NAVHUB_PUBLIC_URL = "http://10.example.com";
+      expect(() => loadConfig()).toThrow(/NAVHUB_AUTH_REQUIRED/);
+
       // 内网地址原本就不拦截
       process.env.NAVHUB_PUBLIC_URL = "http://192.168.1.10:8787";
       expect(() => loadConfig()).not.toThrow();

@@ -307,27 +307,6 @@ export async function buildServer(ctx: AppContext) {
     const auth: AuthIdentity = { ...ANONYMOUS_IDENTITY };
     req.auth = auth;
 
-    /**
-     * 身份签名校验（可选，配置 NAVHUB_IDENTITY_SECRET 后生效）。
-     *
-     * 与 authRequired 无关：即便处在开放模式，只要配了密钥，带身份的请求就必须
-     * 带对签名——否则没有任何凭据的请求可以自称任意身份读写他人数据。
-     */
-    if (ctx.config.identitySecret) {
-      const identity = identityOf(req as never);
-      const signature = req.headers["x-navhub-identity-signature"];
-      if (
-        identity &&
-        !verifyIdentitySignature(
-          ctx.config.identitySecret,
-          identity,
-          typeof signature === "string" ? signature : undefined,
-        )
-      ) {
-        return reply.code(401).send({ error: "身份签名缺失或无效" });
-      }
-    }
-
     if (!ctx.config.authRequired) return;
 
     /**
@@ -407,6 +386,35 @@ export async function buildServer(ctx: AppContext) {
     auth.tokenId = record.id;
     auth.scopes = tokenScopes;
     void ctx.repo.touchApiToken(record.id).catch(() => undefined);
+  });
+
+  /**
+   * 身份签名校验（可选，配置 NAVHUB_IDENTITY_SECRET 后生效）。
+   *
+   * 为什么挂在 preValidation 而不是 onRequest：身份可以从 **请求体** 传入
+   * （见 `identityOf` 的 Query → Body 回退），而 onRequest 阶段 body 尚未解析。
+   * 放在 onRequest 时，「只在 body 里带 userId/anonId」的请求取到的 identity
+   * 恒为 null → 签名校验被整段跳过 → 路由随后却能从 body 读出任意身份，
+   * 正好击穿本机制存在的唯一意义（防冒充）。preValidation 是 body 解析完成、
+   * 业务处理开始之前的第一站，两个入口（Header/Query 与 Body）都能覆盖。
+   *
+   * 与 authRequired 无关：即便处在开放模式，只要配了密钥，带身份的请求就必须
+   * 带对签名——否则没有任何凭据的请求可以自称任意身份读写他人数据。
+   */
+  app.addHook("preValidation", async (req, reply) => {
+    if (!ctx.config.identitySecret) return;
+    const identity = identityOf(req as never);
+    if (!identity) return;
+    const signature = req.headers["x-navhub-identity-signature"];
+    if (
+      !verifyIdentitySignature(
+        ctx.config.identitySecret,
+        identity,
+        typeof signature === "string" ? signature : undefined,
+      )
+    ) {
+      return reply.code(401).send({ error: "身份签名缺失或无效" });
+    }
   });
 
   /* ---------------------------- 业务路由（按域 register） ---------------------------- */

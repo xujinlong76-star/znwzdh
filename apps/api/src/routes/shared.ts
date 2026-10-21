@@ -207,7 +207,12 @@ export function identityOf(req: {
 
   const fromQuery = (req.query ?? {}) as Record<string, string>;
   const fromBody = (req.body ?? {}) as Record<string, string>;
-  const v = fromQuery.userId ?? fromQuery.anonId ?? fromBody.userId ?? fromBody.anonId ?? null;
+  // identity 是插件域对终端用户身份的字段名（安装/评价/上架）。它必须参与这里
+  // 的身份解析，否则「只带 identity」的请求对签名 hook 恒为 null → 签名整段跳过，
+  // 而插件路由随后仍会把 body.identity 当作真实身份使用（可冒充任意用户）。
+  const v =
+    fromQuery.userId ?? fromQuery.anonId ?? fromQuery.identity ??
+    fromBody.userId ?? fromBody.anonId ?? fromBody.identity ?? null;
   return typeof v === "string" ? v.slice(0, 64) : v;
 }
 

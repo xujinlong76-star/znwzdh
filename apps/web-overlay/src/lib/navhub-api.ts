@@ -1018,8 +1018,8 @@ export async function installPlugin(
 export async function uninstallPlugin(
   slug: string,
   identity?: string,
-  removeSites = false,
-): Promise<{ success: boolean; uninstalled: boolean; sitesRemoved: number }> {
+  removeSites = true,
+): Promise<{ success: boolean; uninstalled: boolean; sitesRemoved: number; categoriesRemoved?: number }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   const qs = new URLSearchParams()
   if (effectiveIdentity) qs.set('anonId', effectiveIdentity)

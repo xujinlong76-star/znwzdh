@@ -72,6 +72,12 @@ describe("插件卡片与市场弹窗：已安装插件的卸载/管理联动", 
     expect(page).toContain("handleOpenInstallModal")
   })
 
+
+  it("卸载弹窗默认勾选清理站点与分类，并向用户反馈分类同步删除结果", () => {
+    expect(modal).toContain("useState(true)")
+    expect(modal).toContain("同时清理该插件带来的站点与分类")
+    expect(modal).toContain("categoriesRemoved")
+  })
   it("卸载弹窗提供直达已安装管家的快捷入口", () => {
     expect(modal).toContain("/marketplace/installed")
     expect(modal).toContain("前往已安装管家")

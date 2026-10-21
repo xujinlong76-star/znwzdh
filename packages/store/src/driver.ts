@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { migrateColumns, migrateSiteIndexes, migrateEventIdentity } from "./migrate.ts";
+import { migrateColumns, migrateSiteIndexes, migrateEventIdentity, cleanupOrphanPluginCategories } from "./migrate.ts";
 
 /**
  * 数据库驱动抽象。
@@ -891,6 +891,7 @@ export async function openDb(config: {
     await migrateColumns(db);
     await migrateSiteIndexes(db);
     await migrateEventIdentity(db);
+    await cleanupOrphanPluginCategories(db);
     return db;
   }
 
@@ -932,7 +933,8 @@ export async function openDb(config: {
   await migrateColumns(db);
   await migrateSiteIndexes(db);
   await migrateEventIdentity(db);
-  return db;
+    await cleanupOrphanPluginCategories(db);
+    return db;
 }
 
 /** 供 drizzle 查询使用的原始 SQL 助手 */

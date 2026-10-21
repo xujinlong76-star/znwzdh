@@ -137,6 +137,7 @@ export interface PluginUninstallResult {
   /** false = 没有活跃安装（幂等语义，不报错） */
   removed: boolean;
   removedSites: number;
+  removedCategories: number;
   plugin: PluginRecord;
 }
 
@@ -937,16 +938,45 @@ export async function uninstallPlugin(
   const who = identity.trim().slice(0, 120) || "anonymous";
   const install = await getPluginInstall(repo, plugin.id, who);
   if (!install || install.removedAt !== null) {
-    return { removed: false, removedSites: 0, plugin };
+    return { removed: false, removedSites: 0, removedCategories: 0, plugin };
   }
   let removedSites = 0;
+  let removedCategories = 0;
   // 组合包只解绑自身，不级联卸载成员，也不删除成员带来的站点/主题/预设。
   if (options.removeSites && plugin.kind === "site-pack") {
-    // 只软删「来源仍是该插件」的站点（用户改过的来源已变，不会被误伤）；进回收站可恢复
+    // 1. 只软删「来源仍是该插件」的站点（用户改过的来源已变，不会被误伤）；进回收站可恢复
     const rows = await repo.raw("SELECT id FROM sites WHERE source = ? AND deleted_at IS NULL", [`plugin:${slug}`]);
     for (const row of rows) {
       await repo.deleteSite(String(row.id));
       removedSites++;
+    }
+
+    // 2. 同步清理该插件创建的网址分类与子分类
+    const pluginCats = await repo.raw(
+      "SELECT id, parent_id FROM categories WHERE source = ?",
+      [`plugin:${slug}`]
+    );
+    // 子分类排在前面优先清理，避免外键或 anchor 约束问题
+    pluginCats.sort((a: any, b: any) => {
+      const aIsChild = a.parent_id ? 1 : 0;
+      const bIsChild = b.parent_id ? 1 : 0;
+      return bIsChild - aIsChild;
+    });
+
+    for (const cat of pluginCats) {
+      // 检查是否有非本插件来源的存活站点
+      const otherActiveSites = await repo.raw(
+        "SELECT 1 AS ok FROM sites WHERE (category_id = ? OR sub_category_id = ?) AND source != ? AND deleted_at IS NULL LIMIT 1",
+        [cat.id, cat.id, `plugin:${slug}`]
+      );
+      if (otherActiveSites.length > 0) {
+        // 如果用户在其中添加了其他存活站点，保留该分类并将 source 转为 api，避免误删用户数据
+        await repo.run("UPDATE categories SET source = 'api', updated_at = ? WHERE id = ?", [Date.now(), cat.id]);
+      } else {
+        // 无其他存活站点，彻底删除分类
+        await repo.deleteCategory(String(cat.id));
+        removedCategories++;
+      }
     }
   }
   await repo.run("UPDATE plugin_installs SET removed_at = ? WHERE plugin_id = ? AND identity = ?", [
@@ -963,12 +993,12 @@ export async function uninstallPlugin(
     actorKind: actor?.actorKind ?? "identity",
     action: "plugin.uninstall",
     target: slug,
-    diff: { version: install.version, removedSites },
+    diff: { version: install.version, removedSites, removedCategories },
     ip: actor?.ip,
   });
   const refreshed = await getPluginBySlug(repo, slug);
   if (!refreshed) throw new Error("卸载后无法读回插件状态");
-  return { removed: true, removedSites, plugin: refreshed };
+  return { removed: true, removedSites, removedCategories, plugin: refreshed };
 }
 
 /* ------------------------------------------------------------------ *

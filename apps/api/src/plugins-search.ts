@@ -25,11 +25,25 @@ export interface PluginSearchOptions {
   limit?: number;
 }
 
-export type PluginSearchItem = PluginRecord & {
+export type PluginSearchItem = Omit<PluginRecord, "manifest"> & {
+  /** site-pack 不下发完整清单，卡片只用 summary；详情走 `/api/plugins/:slug` */
+  manifest?: PluginRecord["manifest"];
   summary: ReturnType<typeof summarizePluginManifest>;
   /** 语义模式的余弦相似度（1 - distance，越大越接近）；关键词回退时缺省 */
   score?: number | null;
 };
+
+/**
+ * 搜索/相似结果是卡片型载荷，与 `GET /api/plugins` 的默认裁剪保持一致：
+ * site-pack 的完整清单单包可达数十 KB，按 5~12 条返回就是数百 KB，
+ * 而消费方（搜索面板、详情页相似区、MCP）全部只读 summary。
+ */
+function toSearchItem(p: PluginRecord, score?: number | null): PluginSearchItem {
+  const item: PluginSearchItem = { ...p, summary: summarizePluginManifest(p.manifest) };
+  if (p.kind === "site-pack") delete item.manifest;
+  if (score !== undefined) item.score = score;
+  return item;
+}
 
 export interface PluginSearchResult {
   items: PluginSearchItem[];
@@ -112,11 +126,9 @@ export async function searchPluginsSemantic(
       (p): p is PluginRecord =>
         Boolean(p) && p!.status === "published" && (!opts.kind || p!.kind === opts.kind),
     );
-    const items = hydrated.slice(0, limit).map((p) => ({
-      ...p,
-      summary: summarizePluginManifest(p.manifest),
-      score: hits.scoreBySlug.get(p.slug) ?? null,
-    }));
+    const items = hydrated
+      .slice(0, limit)
+      .map((p) => toSearchItem(p, hits.scoreBySlug.get(p.slug) ?? null));
     return { items, total: items.length, mode: "semantic", degraded: false };
   }
 
@@ -128,10 +140,7 @@ export async function searchPluginsSemantic(
     limit,
     offset: 0,
   });
-  const items = res.items.map((p) => ({
-    ...p,
-    summary: summarizePluginManifest(p.manifest),
-  }));
+  const items = res.items.map((p) => toSearchItem(p));
   return { items, total: res.total, mode: "keyword", degraded: Boolean(q) };
 }
 
@@ -174,10 +183,7 @@ export async function similarPlugins(
     const hydrated = (
       await Promise.all(slugs.map((s) => ctx.repo.getPluginBySlug(s)))
     ).filter((p): p is PluginRecord => Boolean(p) && p!.status === "published");
-    const items = hydrated.slice(0, n).map((p) => ({
-      ...p,
-      summary: summarizePluginManifest(p.manifest),
-    }));
+    const items = hydrated.slice(0, n).map((p) => toSearchItem(p));
     return { items, total: items.length, degraded: false };
   } catch (err) {
     ctx.capabilities.notes.push("相似插件检索失败：" + msg(err));

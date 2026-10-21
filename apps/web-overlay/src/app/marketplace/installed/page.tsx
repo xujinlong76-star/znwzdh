@@ -172,7 +172,7 @@ export default function InstalledPluginsPage() {
       if (item.kind === 'search-pack') {
         unregisterSearchPackEngines(item.slug)
       }
-      setActionMessage(`已成功卸载插件「${item.name}」`)
+      setActionMessage(`已成功卸载插件「${item.name}」，关联站点与分类已同步清理`)
       await loadData()
       setTimeout(() => setActionMessage(null), 3000)
     } catch (err) {

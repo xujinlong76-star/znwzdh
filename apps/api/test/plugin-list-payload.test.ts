@@ -111,3 +111,28 @@ describe("GET /api/plugins 载荷契约", () => {
     expect(pack!.manifest.payload.sites).toHaveLength(12);
   });
 });
+
+/**
+ * 搜索是「输入即请求」的高频路径：limit=5 时若每条都带完整 site-pack 清单，
+ * 一次按键就是数百 KB。搜索面板/相似区/MCP 都只读 summary，因此同样裁剪。
+ */
+describe("GET /api/plugins/search 载荷契约", () => {
+  it("site-pack 不带 manifest，theme 保留，summary 都还在", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/plugins/search?q=" + encodeURIComponent("载荷测试") + "&limit=10",
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { items: Array<Record<string, any>>; mode: string };
+    expect(body.mode).toBe("keyword");
+
+    const pack = body.items.find((i) => i.slug === "payload-site-pack");
+    expect(pack).toBeTruthy();
+    expect(pack!.manifest).toBeUndefined();
+    expect(pack!.summary.siteCount).toBe(12);
+
+    const theme = body.items.find((i) => i.slug === "payload-theme");
+    expect(theme!.manifest).toBeTruthy();
+    expect(theme!.manifest.kind).toBe("theme");
+  });
+});

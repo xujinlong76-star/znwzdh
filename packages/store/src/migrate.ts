@@ -265,3 +265,87 @@ export async function migrateEventIdentity(db: { dialect: string; sqlite?: any; 
     return 0;
   }
 }
+
+/**
+ * 清理历史卸载遗留的无主插件类目 (Orphan Plugin Categories Cleanup)
+ *
+ * 历史原因：此前卸载 site-pack 时只软删了 sites 表中的站点，未同步清理 categories 表中 source='plugin:xxx' 的分类，
+ * 导致卸载插件后类目残留（如幽灵分类）。
+ * 
+ * 清理条件：
+ * 1. 分类 source 以 'plugin:' 开头；
+ * 2. 对应的插件在当前系统并无活跃安装（plugin_installs.removed_at IS NULL 不存在）；
+ * 3. 该分类下无任何未删除的存活站点 (deleted_at IS NULL)。
+ */
+export async function cleanupOrphanPluginCategories(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
+  try {
+    if (db.dialect !== "pg" && db.sqlite) {
+      const selectSql = `
+        SELECT c.id, c.parent_id FROM categories c
+        WHERE c.source LIKE 'plugin:%'
+          AND NOT EXISTS (
+            SELECT 1 FROM sites s
+            WHERE (s.category_id = c.id OR s.sub_category_id = c.id)
+              AND s.deleted_at IS NULL
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM plugins p
+            JOIN plugin_installs pi ON pi.plugin_id = p.id
+            WHERE ('plugin:' || p.slug) = c.source
+              AND pi.removed_at IS NULL
+          )
+      `;
+      const rows = (db.sqlite.prepare(selectSql).all() ?? []) as Array<{ id: string; parent_id: string | null }>;
+      if (!rows.length) return 0;
+
+      // 子分类排在前面优先清理，避免外键或 anchor 约束问题
+      rows.sort((a, b) => {
+        const aIsChild = a.parent_id ? 1 : 0;
+        const bIsChild = b.parent_id ? 1 : 0;
+        return bIsChild - aIsChild;
+      });
+
+      const delStmt = db.sqlite.prepare("DELETE FROM categories WHERE id = ?");
+      let count = 0;
+      for (const row of rows) {
+        delStmt.run(row.id);
+        count++;
+      }
+      return count;
+    }
+
+    if (db.pg) {
+      const selectSql = `
+        SELECT c.id, c.parent_id FROM categories c
+        WHERE c.source LIKE 'plugin:%'
+          AND NOT EXISTS (
+            SELECT 1 FROM sites s
+            WHERE (s.category_id = c.id OR s.sub_category_id = c.id)
+              AND s.deleted_at IS NULL
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM plugins p
+            JOIN plugin_installs pi ON pi.plugin_id = p.id
+            WHERE ('plugin:' || p.slug) = c.source
+              AND pi.removed_at IS NULL
+          )
+      `;
+      const res = await db.pg.query(selectSql);
+      const rows = res.rows as Array<{ id: string; parent_id: string | null }>;
+      if (!rows.length) return 0;
+      rows.sort((a, b) => {
+        const aIsChild = a.parent_id ? 1 : 0;
+        const bIsChild = b.parent_id ? 1 : 0;
+        return bIsChild - aIsChild;
+      });
+      for (const row of rows) {
+        await db.pg.query("DELETE FROM categories WHERE id = $1", [row.id]);
+      }
+      return rows.length;
+    }
+    return 0;
+  } catch (err) {
+    console.error("[migrate] cleanupOrphanPluginCategories 异常:", err);
+    return 0;
+  }
+}

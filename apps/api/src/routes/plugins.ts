@@ -1340,7 +1340,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
     const q = (req.query ?? {}) as Record<string, string>;
     const body = (req.body ?? {}) as { removeSites?: boolean };
-    const removeSites = q.removeSites === "true" || Boolean(body.removeSites);
+    const removeSites = q.removeSites !== undefined ? q.removeSites === "true" : body.removeSites !== undefined ? Boolean(body.removeSites) : true;
 
     const callerAuth = req.auth;
     try {
@@ -1363,6 +1363,8 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       return {
         success: true,
         ...result,
+        sitesRemoved: result.removedSites,
+        categoriesRemoved: result.removedCategories,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

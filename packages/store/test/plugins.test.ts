@@ -264,6 +264,44 @@ describe("安装 / 卸载（site-pack 真实落库）", () => {
     expect(again.removed).toBe(false);
     expect(again.removedSites).toBe(0);
   });
+  it("卸载 site-pack 且 removeSites=true 时同步清理专属分类与子分类", async () => {
+    const pluginWithCat = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "专属分类包",
+        description: "测试专属分类同步清理",
+        icon: "🧪",
+        version: "1.0.0",
+        tags: ["测试"],
+        payload: {
+          categories: [{ title: "专属测试主分类" }],
+          sites: [
+            {
+              url: "https://cat-test-1.example.com",
+              title: "CatSite 1",
+              category: "专属测试主分类",
+              subCategory: "专属测试子分类",
+            },
+          ],
+        },
+      }),
+      status: "published",
+    });
+
+    await repo.installPlugin(pluginWithCat.slug, "user-cat-test");
+    let catRows = await repo.raw("SELECT id FROM categories WHERE source = ?", ["plugin:" + pluginWithCat.slug]);
+    expect(catRows.length).toBe(2); // 主分类与子分类
+
+    const uninst = await repo.uninstallPlugin(pluginWithCat.slug, "user-cat-test", { removeSites: true });
+    expect(uninst.removed).toBe(true);
+    expect(uninst.removedSites).toBe(1);
+    expect(uninst.removedCategories).toBe(2);
+
+    catRows = await repo.raw("SELECT id FROM categories WHERE source = ?", ["plugin:" + pluginWithCat.slug]);
+    expect(catRows.length).toBe(0);
+  });
+
 });
 
 describe("星标 / 举报 / 安装状态", () => {

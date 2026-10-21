@@ -49,7 +49,7 @@ export function PluginInstallModal({
   onApplyPreset,
 }: PluginInstallModalProps) {
   const [loading, setLoading] = useState(false)
-  const [removeSites, setRemoveSites] = useState(false)
+  const [removeSites, setRemoveSites] = useState(true)
   const [presetMode, setPresetMode] = useState<'append' | 'replace'>('append')
   /** 安装耗时（每 100ms 刷新一次），让「点了没反应」变成「看得见在处理」 */
   const [elapsedMs, setElapsedMs] = useState(0)
@@ -218,8 +218,8 @@ export function PluginInstallModal({
 
         toast.success(`已卸载「${plugin.name}」`, {
           description:
-            removeSites && res.sitesRemoved > 0
-              ? `已软删除 ${res.sitesRemoved} 个关联站点（可去回收站恢复）`
+            removeSites
+              ? `已清理关联站点${res.sitesRemoved > 0 ? `（${res.sitesRemoved} 个站点已移至回收站）` : ''}${res.categoriesRemoved ? `，并同步删除 ${res.categoriesRemoved} 个网址分类` : ''}`
               : '站点数据已保留在您的实例中',
         })
       }
@@ -400,10 +400,10 @@ export function PluginInstallModal({
                   />
                   <div className="text-xs space-y-0.5">
                     <span className="font-medium text-foreground block">
-                      同时清理该插件带来的站点
+                      同时清理该插件带来的站点与分类
                     </span>
                     <span className="text-muted-foreground block text-[11px]">
-                      勾选后将软删除来源为本插件的所有站点（移动至回收站，可随时找回恢复）。不勾选则保留站点数据。
+                      勾选后将软删除来源为本插件的所有站点（移动至回收站，可随时找回恢复），并同步清理对应的专属分类导航。不勾选则保留数据。
                     </span>
                   </div>
                 </label>

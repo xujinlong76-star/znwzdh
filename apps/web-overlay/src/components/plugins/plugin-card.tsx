@@ -128,7 +128,7 @@ export function PluginCard({
     setInstalling(true)
     try {
       if (targetMode === 'uninstall') {
-        const res = await uninstallPlugin(plugin.slug, identity)
+        const res = await uninstallPlugin(plugin.slug, identity, true)
         setInstalled(false)
         setUpgradedTo(null)
         toast.success(`已卸载「${plugin.name}」`, {

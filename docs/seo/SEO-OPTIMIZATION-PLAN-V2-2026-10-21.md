@@ -989,9 +989,44 @@ curl -s -o /dev/null -w '%{http_code}\n' "$SITE/api/sites?limit=1"  # 404（中�
 | `/collections/frontend-starter` | 200 | 200 + `前端入门路线 - NavHub 导航` | ✓ |
 | `/tags/大模型` | 200 | 200 + `「大模型」相关站点 - NavHub 导航` | ✓（首轮 404 系 Data Cache 从空 hub 窗口缓存的假象，revalidate=60 过期后恢复） |
 
-**规律定稿（dev + 生产一致）**：`notFound()` 必须在 **page 组件渲染体**抛出（或 page 的 generateMetadata——tags 家族实测有效）；**layout 渲染体与 layout 的 generateMetadata 抛出的都会被回退成 200**。`/site/[id]` 与 `/collections/[slug]` 的 page 级方案是正确范式（前者已落地 ed6f2af，生产实测 404 ✓）。
+**规律定稿（生产终审 2026-10-21 23:50，v7 构建实测，五项全过）**：`notFound()` 在 **page 渲染体**与 **page 的 generateMetadata** 抛出都生效（前者 /tags /site 实测 404，后者 /collections 实测 404）；**唯一失效的是 layout 级**（layout 渲染体与 layout generateMetadata 均返回 200 + 回退）。此前 19:10 源码推断与「metadata 级无效」的 dev 结论均被生产实测推翻，根因是陈旧 dev 服务器编译态污染（见 §7.10 教训）。
+
+| 生产终审探测 | 期望 | 实测 |
+|---|---|---|
+| `/collections/nonexistent-xyz`（page generateMetadata notFound） | 404 | **404** ✓ |
+| `/collections/frontend-starter` | 200 | 200 + `前端入门路线 - NavHub 导航` ✓ |
+| `/tags/不存在xyz`（page 渲染体 notFound） | 404 | **404** ✓ |
+| `/site/zz-probe-nonexistent123`（page 渲染体 notFound） | 404 | **404** ✓ |
+| `/tags/大模型` | 200 | 200 + `「大模型」相关站点 - NavHub 导航` ✓ |
 
 **环境知识（本轮沉淀）**：① 生产 `next start` 必须设 `AUTH_SECRET`（≥32 字符，否则 middleware 拒启）且中枢要用 `NAVHUB_SQLITE_PATH` 指到真库（裸 `node src/main.ts` 会开空库）；② Data Cache 会把 404/空结果缓存 `revalidate` 时长，切数据源后必须等过期再下结论；③ 同 dist 目录二次 `next build` 会因清理旧 turbopack 缓存触发 safe-delete 护栏——`mv` 重命名旧 dist（rename 零 unlink）后构建即净。
+
+### 7.10 软 404 归零 + 孤岛全景收官（2026-10-21 23:45，fresh dev 服务器实测）
+
+**软 404 = 0**（link-graph 12 个随机 slug 探针全部非 200；此前 6/12 软 404）。三处修复合龙：
+- `/tags/*`：page 渲染体 notFound（我的 B-8，dev+生产双证 404）
+- `/site/*`：page 渲染体 notFound（worker 交付，生产实测 404）
+- `/collections/*`：并行会话的 page 级 generateMetadata notFound（dev 实测 404）
+
+**孤岛全景（link-graph 实测，数据已随并行会话扩张：165 plugin / 88 tag / 54 site / 6 category）**：
+
+| 类型 | URL | 孤岛 | 可达% |
+|---|---:|---:|---:|
+| site | 54 | 0 | 100% |
+| collection | 4 | 0 | 100% |
+| plugin | 165 | 0 | 100% |
+| tag | 88 | 0 | 100% |
+| category | 6 | 0 | 100% |
+| marketplaceSub | 5 | 0 | 100% |
+| other | 9 | **2**（`/videos`、`/submit`） | 77.8% |
+
+真实内容页孤岛 **2 个**（验收线 ≤10 达标）。`/videos`、`/submit` 是次级功能页（视频墙 / 提交入口），补 footer/首页入口即清零（footer 在并行会话手中，待解阻）。
+
+**关键新教训：删掉 layout.tsx / loading.tsx 后必须重启 dev 服务器**。陈旧 Turbopack 编译态会继续引用已删文件，表现为同一路由对不同请求给出 200/500 混合假象（本轮 collections 的 200 与 500 均为陈旧态假象，fresh 重启后 404/200 立即正确）。「dev 实测」结论必须在 fresh 服务器上取，否则会得出错误规律——我此前「metadata 级 notFound 无效」的判断就是陈旧态污染，**23:50 生产终审（v7 构建）已证伪：page generateMetadata 的 notFound 生产实测 404**。
+
+**软 404 生产终审全过（2026-10-21 23:50）**：`/collections/*` metadata 级 404 ✓、`/tags/*` page 级 404 ✓、`/site/*` page 级 404 ✓——三类无效 slug 在**生产模式下全部返回真 404**，软 404 清零落地。
+
+**验证**：全量回归 2358 passed | 15 skipped（223 文件，0 失败）。
 
 ### 7.8 Batch E：marketplace 索引 SSR 化（2026-10-21 19:00，plugin 孤岛 64 → 0）
 
@@ -1010,6 +1045,23 @@ curl -s -o /dev/null -w '%{http_code}\n' "$SITE/api/sites?limit=1"  # 404（中�
 `/collections` 从整页客户端组件改为「服务端壳 + CollectionBoard 岛」（与 tags 家族 Batch B 同构）：服务端 `hubGet('/api/collections', 60)` 取数经 `initialCollections` props 下发，null 时岛挂载即自动客户端重取；面包屑升级为服务端 `Breadcrumbs`（带 BreadcrumbList JSON-LD）。**实测**：SSR 直出 4 条 `/collections/{slug}` 内链，link-graph 复验 **collection 4 页 0 孤岛 100% 可达**（改前 4 孤岛 0%）。降级语义原样保留（「策划中」与「中枢挂了」分开说的诚实区分）。
 
 孤岛全景（Batch D 后）：site 57 页 0 孤岛 ✓、tag 21 页 0 ✓、collection 4 页 0 ✓；**剩余真孤岛只有 plugin 64 页**（marketplace 索引页是并行会话弹窗懒加载 WIP，同款 SSR 化方案待解阻后套用）。
+
+### 7.9 站点详情元信息收口 + SEO 运维工具（2026-10-21 23:20）
+
+**`/site/[id]` 最后一项审计失败清零**（ed6f2af 只解决了 404，标题/canonical/h1 仍在）：
+
+| 改动 | 说明 |
+|---|---|
+| `app/site/[id]/page.tsx` 新增 `generateMetadata` | 每站独立 `{站点名} · 站点详情` + description + canonical + og:url；`safeDecodeParam` 畸形参数 → 404；`failed` 分支只回退通用标题，不编造站点名 |
+| 同页下发 `initialSite` | `hubGetProbe` 的 `ok` 数据直接传给岛，SSR 直出 `<h1>` 与正文；`failed` 时传 null 保持客户端降级路径 |
+| `components/site-detail-view.tsx` | 接收 `initialSite`，`reloadToken === 0` 时跳过首屏重复取数；重试仍走客户端 |
+| `app/site/[id]/layout.tsx` | 删除静态 metadata（此前 1013 页共享「站点详情」） |
+
+**实测（dev + hub 在线）**：`/site/06fbcc3b…` → `<title>Google Fonts · 站点详情 - NavHub 导航</title>`、canonical/og:url 为该页绝对地址、`<h1>` 恰好 1 个；伪造 id → 404；畸形 `%` → 400（HTTP 层拒绝）；**hub 停机时仍 200**（本地 Data Cache 兜底，绝不误伤成 404）。`seo-audit` 12 页抽样 **0 问题**（此前 11 项全部来自站点详情）。
+
+**同批运维能力**（本轮前半段已落地）：`app/feed.xml/route.ts`（RSS 2.0，最新 50 站）、`scripts/indexnow.mjs`（sitemap 解析 + 批量提交）、`scripts/seo-audit.mjs`（robots/feed/真 404/sitemap 抽样/canonical/title 查重）、首页站点验证 meta（Google/Bing/百度，空值不输出）、首页 `Organization` JSON-LD（与 `WebSite` 双块，logo 绝对地址；不写 sameAs/address 等无事实字段）。
+
+**运维坑**：长时间运行的 dev server 在大量文件变更后曾出现 `Jest worker encountered 2 child process exceptions`（整路由 500，重启 dev 即恢复）——排障时先重启，再怀疑页面代码。
 
 ---
 

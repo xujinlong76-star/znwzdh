@@ -43,8 +43,13 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     return { hits: (await ctx.repo.newestSites(limit)).map((s) => ({ site: s })) };
   });
 
-  /** 相似站点（向量 KNN，零新依赖的相关推荐） */
-  app.get("/api/rank/similar/:siteId", async (req, reply) => {
+  /**
+   * 相似站点（向量 KNN，零新依赖的相关推荐）
+   *
+   * 站点无关（不含任何身份字段），每次请求都要走一遍向量检索 + 批量取站点，
+   * 因此给最短的一档缓存：60s + ETag。降级/不可用的空结果最多也只错 60s。
+   */
+  app.get("/api/rank/similar/:siteId", { config: { cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
     const q = (req.query ?? {}) as Record<string, string>;
     const { limit } = parsePagination(q, { defaultLimit: 6, maxLimit: 20 });
@@ -69,8 +74,9 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   /**
    * 洛伦兹/庞加莱双曲空间平替推理端点（Hyperbolic Alternative Inference）
    * 结合真实 BGE 语义向量（或标签/类目特征降级投影）计算双曲测地线距离与同层级平替得分。
+   * 与 similar 同为「站点无关的重计算」公开端点，缓存口径一致（60s + ETag）。
    */
-  app.get("/api/rank/alternatives/:siteId", { config: { scope: "public" } }, async (req, reply) => {
+  app.get("/api/rank/alternatives/:siteId", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
     const q = (req.query ?? {}) as Record<string, string>;
     const { limit } = parsePagination(q, { defaultLimit: 6, maxLimit: 20 });
@@ -90,12 +96,19 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
           const targetBall = clampToBall(Array.from(vec.slice(0, 16)).map((v) => v * 0.6));
           const targetLorentz = poincareToLorentz(targetBall);
 
+          // 候选集原本逐条 getSite + getEmbedding：默认 24 个候选就是 48 次串行往返
+          // （getSite 还各带一个标签子查询）。站点改成一次 IN 批量、向量按候选集并发取，
+          // 串行等待从 2N 批到 1 + 1。soft-delete 过滤口径与 getSite 一致（deleted_at IS NULL）。
+          const candidates = matches.filter((m) => m.siteId !== siteId);
+          const candSiteMap = await ctx.repo.getSitesByIds(candidates.map((m) => m.siteId));
+          const candVecs = await Promise.all(candidates.map((m) => ctx.repo.getEmbedding(m.siteId)));
+
           const scored = [];
-          for (const m of matches) {
-            if (m.siteId === siteId) continue;
-            const candSite = await ctx.repo.getSite(m.siteId);
+          for (let i = 0; i < candidates.length; i++) {
+            const candId = candidates[i]!.siteId;
+            const candSite = candSiteMap.get(candId);
             if (!candSite || candSite.status === "broken") continue;
-            const candVec = await ctx.repo.getEmbedding(m.siteId);
+            const candVec = candVecs[i];
             const candBall = candVec
               ? clampToBall(Array.from(candVec.slice(0, 16)).map((v) => v * 0.6))
               : targetBall.map((v, idx) => v * (idx % 2 === 0 ? 0.85 : 0.9));

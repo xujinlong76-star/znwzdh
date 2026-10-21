@@ -46,15 +46,45 @@ services:
       # entrypoint.sh 生成随机值并持久化到 /data/.session-secret，
       # api 与 web 共享同一份；显式设置则优先生效。
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
-      # 生产若直接暴露公网（无可信反向代理），请显式设为 0，并收紧 CORS（不要用 *）。
-      NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-1}
+      # X-Forwarded-For 信任度。取值：0 不读（默认）/ 1 信任整条链 / 可信代理网段列表。
+      # 默认关：本文件把 8787 直接 publish 到宿主机，前面没有必然存在的反向代理，
+      # 开启后客户端每个请求换一个伪造 XFF 就能换一个限流桶（300/min、投稿 5/hour 全部失效）。
+      # 前面确实有 nginx/caddy/traefik 时，别用 1（那是采信客户端自报的最左值），
+      # 用网段列表，例如 NAVHUB_TRUST_PROXY="loopback, 172.16.0.0/12"
+      # —— 只有对端落在这些网段才解析 XFF，且取的是「代理实际看到的那一跳」。
+      # 注意：profile web 的 Next.js /api/hub/* 代理只转发客户端带来的 XFF、无法追加对端地址
+      # （Next 15 路由处理器拿不到 socket IP），单独跑 api+web 时开着它并不等于可信。
+      NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-0}
       NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
       NAVHUB_SEED_ON_START: ${NAVHUB_SEED_ON_START:-1}
       # 公网部署必须设为 1：生产 + NAVHUB_PUBLIC_URL 指向公网 + 未开鉴权 → 服务拒绝启动（fail-closed）。
       # 开启后先用 NAVHUB_BOOTSTRAP_TOKEN 创建正式 token，再删除该变量重启。
       NAVHUB_AUTH_REQUIRED: ${NAVHUB_AUTH_REQUIRED:-0}
-      # NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
+      # 鉴权开启后**唯一**的首个凭据入口（server.ts 里与 Bearer token 恒定时间比较）。
+      # 引导出正式 token 后请删除本变量重启，否则这个长期有效的引导凭据一直可用。
+      NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
       # NAVHUB_ALLOW_INSECURE_PUBLIC: ${NAVHUB_ALLOW_INSECURE_PUBLIC:-0}
+      # 中枢对外的规范地址。**不传时下面那条例用它的规则是死的**：
+      # config.ts 默认 publicUrl=http://localhost:8787 → 判定为内网 →
+      # 「生产 + publicUrl 指向公网 + 未开鉴权 → 拒绝启动」这条 fail-closed 永远不会触发。
+      # 公网部署请把同一个值同时填给 web 服务的 NAVHUB_SITE_URL（canonical/sitemap 用它）。
+      NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-}
+      # 密钥轮换窗口：新签发只用 SESSION_SECRET，旧签名在窗口内仍被接受。
+      # compose 不传这个变量就等于「轮换做不了」（详见 .env.example）。
+      NAVHUB_SESSION_SECRET_PREV: ${NAVHUB_SESSION_SECRET_PREV:-}
+      # 任务重试耗尽时的告警投递（main.ts 横幅会打印是否已配置）。
+      NAVHUB_ALERT_WEBHOOK: ${NAVHUB_ALERT_WEBHOOK:-}
+      # 终端用户身份签名密钥。**必须与下面 web 服务里的同名变量取值完全一致**。
+      # 为什么不像 SESSION_SECRET 那样自动生成：自动配上就等于**默认开启**签名校验，
+      # 而只有 Web 的 /api/hub/* 代理会自动签名，直连中枢的消费者
+      # （浏览器扩展、MCP、自建脚本）带的 anonId/userId 会立刻全部 401。
+      # 所以这里保持「空 = 不校验」的历史行为，由运维显式开启。
+      # ⚠️ 但 AUTH_REQUIRED=1 时它不再是可选项：容器里 NODE_ENV=production，
+      # 中枢在装配路由前会校验「鉴权开启 → 必须有 ≥32 字符的身份签名密钥」并
+      # **拒绝启动**。本变量没往容器里透传时，那条路径会变成无法配置的崩溃重启循环
+      # —— 只能改 compose（就是这一行）。
+      # 开启后每个带身份的请求都要 x-navhub-identity-signature = HMAC-SHA256(secret, identity)。
+      NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/api/health"]
       interval: 30s
@@ -103,9 +133,17 @@ services:
       STORAGE_ADAPTER: http
       NEXT_PUBLIC_API_URL: http://api:8787
       NAVHUB_STORAGE_BASE_URL: http://api:8787
+      # 对外站点的唯一 origin（canonical/sitemap/OG 都靠它）。公网部署必须显式
+      # 设置，否则会退化为请求 Host 推导，反代配置错误时整站 canonical 会写错。
+      NAVHUB_SITE_URL: ${NAVHUB_SITE_URL:-}
       # 代理上游超时（毫秒）：卡死的中枢不能把前端请求无限期挂住；SSE 长连接不受影响
       NAVHUB_HUB_TIMEOUT_MS: ${NAVHUB_HUB_TIMEOUT_MS:-30000}
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
+      # **必须与 api 服务的同名变量完全一致**：Web 的 /api/hub/* 代理用它给转发的
+      # userId/anonId 计算 HMAC 签名，中枢用同一把密钥校验。两边不同 = 站点里所有
+      # 带身份的请求 401；只有中枢有、代理没有 = 同样 401（代理不会补签名头）。
+      # 留空 = 两侧都不签名/不校验，等于历史行为。
+      NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
 
   postgres:
     image: pgvector/pgvector:pg17
@@ -159,7 +197,18 @@ services:
       # entrypoint.sh 生成随机值并持久化到 /data/.session-secret，
       # api 与 web 共享同一份；显式设置则优先生效。
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
-      NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-1}
+      # 同 api：8787 直接 publish，默认可伪造 XFF 不参与限流分桶（详见 api 服务注释）
+      NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-0}
+      # 以下四项与 api 服务保持同一组透传（语义见 api 服务里的注释）。
+      # 这里漏一项，standard 模式就等于「鉴权/引导凭据/身份签名/公网 fail-closed 全都配不上」，
+      # 只能改 compose 文件本身。
+      NAVHUB_AUTH_REQUIRED: ${NAVHUB_AUTH_REQUIRED:-0}
+      NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
+      NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
+      NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-}
+      NAVHUB_SESSION_SECRET_PREV: ${NAVHUB_SESSION_SECRET_PREV:-}
+      NAVHUB_ALERT_WEBHOOK: ${NAVHUB_ALERT_WEBHOOK:-}
+      NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
 
   mcp:
     build:

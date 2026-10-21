@@ -548,10 +548,16 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /**
    * 插件动态 SVG 徽章服务（供 README、文档与官网展示）：
    * 支持 metric: version | installs | rating | stars
+   *
+   * 缓存必须在 route config 里声明：onSend 钩子对「未声明 cache 的 GET」一律改写
+   * `cache-control: no-store`，此前在这里手写 `public, max-age=300` 会被整行覆盖。
+   * 徽章挂在 README / 官网首页上，no-store 意味着每次页面加载都回源打 2 次库，
+   * 还要和全局 300/min IP 桶抢额度——高峰期直接表现为 429 碎图。
+   * ETag 让超时后的再验证走 304，不必重新渲染 SVG。
    */
   app.get(
     "/api/plugins/:slug/badge.svg",
-    { config: { scope: "public" } },
+    { config: { scope: "public", cache: { maxAge: 300, etag: true } } },
     async (req, reply) => {
       const rawSlug = (req.params as { slug: string }).slug;
       const slug = decodeURIComponent(rawSlug);
@@ -560,7 +566,6 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const customLabel = q.label?.trim() || "navhub";
 
       reply.header("Content-Type", "image/svg+xml; charset=utf-8");
-      reply.header("Cache-Control", "public, max-age=300");
 
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin || plugin.status !== "published") {

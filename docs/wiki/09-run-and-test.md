@@ -119,7 +119,7 @@ NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d
 | `NAVHUB_PUBLIC_URL` | `http://localhost:8787` | |
 | `NAVHUB_SESSION_SECRET` | `insecure-dev-secret-change-me` | **生产（`NODE_ENV=production`）强制要求 ≥32 字符且非默认值，否则拒绝启动** |
 | `NAVHUB_LOG_LEVEL` | `info`（测试时 `silent`） | |
-| `NAVHUB_TRUST_PROXY` | 关闭（`=1`/`true` 开启） | 默认不信任 `X-Forwarded-For`（防公网直连伪造 XFF 绕过限流）；部署在可信反代/Next.js 代理后设为 `1` |
+| `NAVHUB_TRUST_PROXY` | 关闭（见说明） | 默认不信任 `X-Forwarded-For`（防公网直连伪造 XFF 绕过限流）。`1`/`true` 信任整条链，但 `req.ip` 取的是**客户端自报的最左值**，换个伪造值就换个限流桶；反代后推荐给可信网段列表（proxy-addr 语法，如 `"loopback, 172.16.0.0/12"`）。数字不是跳数：`2` 会让 XFF 整段失效，配置层直接报错 |
 | `NAVHUB_NAVIGATION_MAX_SITES` | `8000` | `navigation.json` 单文件快照站点数上限，超限返回 HTTP 413 |
 | `NAVHUB_CORS_ORIGINS` | `*` | 逗号分隔 |
 | `NAVHUB_JOBS_ENABLED` | 开启（`=0`/`false` 关闭） | 任务队列开关 |
@@ -295,7 +295,7 @@ node --experimental-strip-types scripts/pg-check.mts     # 或 pnpm test:pg
 ### 7.4 检索与网络
 
 8. **`NAVHUB_EMBEDDING_ENDPOINT`**：不是 `HF_ENDPOINT`——`transformers.js` v4 不读取该环境变量，必须走 `env.remoteHost`
-9. **`NAVHUB_TRUST_PROXY` 默认关闭（`false`）**：公网直连时防止客户端伪造 `X-Forwarded-For` 绕过限流；若置于可信反向代理或 Next.js `/api/hub/*` 代理之后，请显式设 `NAVHUB_TRUST_PROXY=1`
+9. **`NAVHUB_TRUST_PROXY` 默认关闭（`false`）**：公网直连时防止客户端伪造 `X-Forwarded-For` 绕过限流。置于反代之后时**别习惯性写 `1`**：`1` 采信的是链首（客户端自己写的）值，按 IP 的限流仍可被逐个请求伪造绕开；应写可信代理网段列表（如 `"loopback, 172.16.0.0/12"`），此时只有 socket 对端在列表内才解析 XFF，且 `req.ip` 取的是代理实际看到的下一跳
 10. **前端代理必须透传 `X-Forwarded-For`**：否则所有访客共享一个限流桶，投稿第 6 位就被 429 挡住
 11. **URL 形态查询要 `encodeURIComponent`**：`/api/sites/https://chatgpt.com` 会被切成多段 → 404（HTTP 路由固有行为）
 

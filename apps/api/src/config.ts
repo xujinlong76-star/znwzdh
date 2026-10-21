@@ -59,7 +59,11 @@ export interface AppConfig {
     userAgent: string;
   };
   corsOrigins: string[];
-  trustProxy: boolean;
+  /**
+   * `false` 不读 X-Forwarded-For；`true` 信任整条链（取最左值，客户端可伪造）；
+   * 字符串 = 可信代理网段列表（proxy-addr 语法，防伪造的正确配法）。见 trustProxyMode。
+   */
+  trustProxy: boolean | string;
   /**
    * 是否对管理面强制 Bearer token 鉴权
    * 默认 false（开放模式）：个人 / NAS 部署零配置可用
@@ -120,6 +124,54 @@ function bool(key: string, fallback: boolean): boolean {
   const v = process.env[key];
   if (v === undefined || v === "") return fallback;
   return v === "1" || v.toLowerCase() === "true" || v.toLowerCase() === "yes";
+}
+
+const TRUST_PROXY_ALIASES = new Set(["loopback", "linklocal", "uniquelocal"]);
+/** 只做「形状」粗校验（挡住 abc / bogus 这类拼错），CIDR 语义是否合法交给 proxy-addr 判定 */
+const IP_CIDR_SHAPE_RE = /^[0-9a-fA-F:.]+(\/\d{1,3})?$/;
+
+/**
+ * `NAVHUB_TRUST_PROXY` 解析。三种取值，语义差异很大：
+ *
+ *  - `0` / 未设 → `false`：完全不读 `X-Forwarded-For`，`req.ip` 就是 socket 对端。
+ *    中枢直接暴露公网时这是唯一安全选项。
+ *  - `1` / `true` → `true`：Fastify 采信**整条** XFF 链并取**最左**条目当客户端 IP。
+ *    最左条目由客户端自己写 → 每个请求换一个伪造值就换一个限流桶，
+ *    300/min、投稿 5/hour 这类按 IP 的限流形同虚设。保留只是为了兼容既有部署。
+ *  - 其它字符串 → 原样交给 Fastify 当作 proxy-addr 的**可信代理网段列表**
+ *    （如 `loopback, 172.16.0.0/12`）。只有当 socket 对端落在列表里时才解析 XFF，
+ *    并取「最近一个可信代理看到的那个地址」（= 从右数第一个不可信条目），
+ *    客户端塞在左边的伪造条目被忽略 —— 这才是防伪造的正确配法。
+ *
+ * ⚠️ 数字**不是**跳数：实测 Fastify v5 把 `trustProxy: 2` 当成「不认识的配置」，
+ * XFF 整段忽略，所有人退回共享桶。所以除 `1` 以外的纯数字一律报错，
+ * 而不是静默接受（`"2"` 作为网段串同样匹配不到任何东西，同样是静默失效）。
+ */
+function trustProxyMode(): boolean | string {
+  const raw = (process.env.NAVHUB_TRUST_PROXY ?? "").trim();
+  const v = raw.toLowerCase();
+  if (!v || v === "0" || v === "false" || v === "no" || v === "off") return false;
+  if (v === "1" || v === "true" || v === "yes" || v === "on") return true;
+  if (/^\d+$/.test(v)) {
+    throw new Error(
+      `NAVHUB_TRUST_PROXY=${raw} 无效：Fastify 不支持按跳数信任代理（纯数字会让 X-Forwarded-For 整段失效，` +
+        `所有访客共享一个限流桶）。请填 0（不信任）、1（信任整条链，可被伪造 XFF 绕过限流），` +
+        `或可信代理网段列表如 "loopback, 172.16.0.0/12"`,
+    );
+  }
+  const tokens = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (tokens.length === 0) return false;
+  for (const t of tokens) {
+    if (!TRUST_PROXY_ALIASES.has(t.toLowerCase()) && !IP_CIDR_SHAPE_RE.test(t)) {
+      // 提前报错：proxy-addr 对非法条目抛的是 "invalid IP address: xxx"，
+      // 而且是在 Fastify 构造期抛，栈里看不出是本变量配的，排查成本高。
+      throw new Error(
+        `NAVHUB_TRUST_PROXY 含无法识别的条目 "${t}"：只接受 proxy-addr 别名 ` +
+          `(loopback / linklocal / uniquelocal) 或 IPv4/IPv6(/CIDR)`,
+      );
+    }
+  }
+  return tokens.join(", ");
 }
 
 /** jsonMode 只接受三个枚举值，非法输入静默回退 auto（不阻断启动） */
@@ -282,9 +334,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
       .map((s) => s.trim())
       .filter(Boolean),
 
-    trustProxy:
-      process.env.NAVHUB_TRUST_PROXY === "1" ||
-      process.env.NAVHUB_TRUST_PROXY?.toLowerCase() === "true",
+    trustProxy: trustProxyMode(),
 
     authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,

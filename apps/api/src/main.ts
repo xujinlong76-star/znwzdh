@@ -76,5 +76,13 @@ console.log("  全文检索 " + (ctx.capabilities.fts ? "可用" : "不可用"))
 console.log("  LLM 富化 " + (ctx.capabilities.llm ? "可用" : "不可用（降级为启发式）"));
 console.log("  任务队列 " + (runner ? "已启动（" + Math.round(runner.interval / 1000) + "s 轮询，单实例锁；失败指数退避重试 " + MAX_JOB_ATTEMPTS + " 次）" : "已关闭（NAVHUB_JOBS_ENABLED=0）"));
 console.log("  任务告警 " + (config.alertWebhook ? "webhook 已配置" : "未配置（仅 console.error）"));
+// 身份签名默认关闭，且关掉之后没有任何提示：收藏/历史/画像/私有草稿这些
+// 「按身份隔离」的数据，实际隔离强度只是一个可自报的字符串。横幅把它显式化。
+console.log(
+  "  身份签名 " +
+    (config.identitySecret
+      ? "已启用（带 userId/anonId 的请求必须携带 x-navhub-identity-signature）"
+      : "未启用（NAVHUB_IDENTITY_SECRET 为空 → 任何请求可自称任意身份）"),
+);
 for (const n of ctx.capabilities.notes) console.log("  · " + n);
 console.log("=".repeat(64));

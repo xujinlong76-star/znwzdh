@@ -79,10 +79,10 @@ export interface PluginIdentityRequest {
 }
 
 export function extractPluginIdentity(req: PluginIdentityRequest): string | null {
-  const body = (req.body ?? {}) as Record<string, unknown>;
-  const query = (req.query ?? {}) as Record<string, unknown>;
-  if (typeof body.identity === "string" && body.identity.trim()) return body.identity.trim().slice(0, 120);
-  if (typeof query.identity === "string" && query.identity.trim()) return query.identity.trim().slice(0, 120);
+  // 必须与签名 hook 用**同一个**解析器。这里曾先取 body.identity、再取 query.identity，
+  // 且截 120 字符，而 hook 校验的是 identityOf（Header → Query → Body，截 64）：
+  // 「头里签攻击者自己的身份、body 里塞受害者身份」能通过签名校验，却以受害者身份
+  // 执行安装/评价/`/api/plugins/mine`（他人私有草稿会整批读出）。
   return identityOf(req as never);
 }
 

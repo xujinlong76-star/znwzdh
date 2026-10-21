@@ -92,8 +92,11 @@ export async function buildServer(ctx: AppContext) {
 
   // 测试里默认静音，避免日志淹没断言输出；生产用 NAVHUB_LOG_LEVEL 控制
   const logLevel = process.env.NAVHUB_LOG_LEVEL ?? (process.env.VITEST ? "silent" : "info");
-  // 信任 X-Forwarded-For：只有经过自家 /api/hub/* 代理时才开（由 ctx.config.trustProxy 统一解析，见 config.ts）。
-  // 默认关闭（直连公网伪造 XFF 可绕过按 IP 限流）；docker/docker-compose.yml 经代理时默认注入 NAVHUB_TRUST_PROXY=1。
+  // 信任 X-Forwarded-For：取值由 ctx.config.trustProxy 统一解析（见 config.ts trustProxyMode）。
+  // 默认关闭：直连公网时伪造 XFF 就能逐请求换限流桶。docker/docker-compose.yml 也默认 0
+  //（它把 8787 直接 publish，前面不必然有反代）。
+  // 前面有可信反代时优先给**网段列表**（如 "loopback, 172.16.0.0/12"）而不是 1：
+  // `1` 采信的是客户端自报的最左值，`网段列表` 采信的是代理实际看到的那一跳。
   // 不开启时 req.ip 会退化成代理地址，按 IP 的限流（300/min、投稿 5/hour）会整站共享一桶——按部署拓扑二选一。
   const app = Fastify({
     logger: { level: logLevel },
@@ -265,9 +268,18 @@ export async function buildServer(ctx: AppContext) {
     etag?: boolean;
   }
 
+  /**
+   * GET 与 HEAD 走同一套策略：`exposeHeadRoutes` 会按 GET 路由自动生成 HEAD，
+   * Fastify 只在写 socket 时去掉 body，onSend 里拿到的 payload 仍是完整表示
+   * （实测 HEAD 的 payload 长度与 GET 一致、`content-length` 也保留）。
+   * 因此 HEAD 可以照旧算 ETag——这正是 HEAD 该有的语义（探测「变了吗」）。
+   * 此前条件只写 `!== "GET"`，HEAD 一律被改成 `no-store` 且不带 ETag：
+   * 条件请求恒回 200 全量计算一遍再丢弃 body，缓存也无法用 HEAD 新鲜化已有条目。
+   */
   app.addHook("onSend", async (req, reply, payload) => {
     const policy = (req.routeOptions?.config as { cache?: CachePolicy } | undefined)?.cache;
-    if (req.method !== "GET" || !policy || reply.statusCode !== 200) {
+    const isGetLike = req.method === "GET" || req.method === "HEAD";
+    if (!isGetLike || !policy || reply.statusCode !== 200) {
       reply.header("cache-control", "no-store");
       return payload;
     }

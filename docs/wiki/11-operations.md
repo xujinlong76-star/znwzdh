@@ -297,3 +297,107 @@ PostgreSQL 侧的 SQL（`$n` 占位符、`GROUP BY 1,2` 序号、`LIMIT $2`、`O
 - **聚合结果没有消费方**：`events_daily` / `audit_daily` 目前只是被写入（CLI 与 `data_retention` 任务各写各的），后台趋势与运营看板还没读它。接入前建议先在只读副本上核对与新明细口径一致。
 - **任务的 `apply` 没有二次确认**：目前"手动 API 带 `apply: true`"就是全部闸门，没有"预演后 N 分钟内才允许执行"这类短期令牌机制。若以后要开放给非核心运维，建议加一次性确认码。
 - **查询预算**：热点列表查询必须带 `limit`，新增聚合查询要在测试里断言扫描行数不随数据量线性爆炸。
+
+---
+
+## 7. users.email 去重与恢复
+
+### 7.1 什么时候会发生
+
+`users.email` 长期可重复（OAuth sync 曾按 email 绑定，也没有唯一约束）。为给部分唯一索引
+`users_email_unique_idx` 铺路，`packages/store/src/migrate.ts` 的 `dedupeUserEmails` 会在
+**每次 openDb 启动期**自动收敛重复值，调用顺序在 `migrateSiteIndexes` **之前**（存量重复会让
+`CREATE UNIQUE INDEX` 失败并被逐语句 try/catch 静默跳过，等于"规则写在文档里、数据库不认"）。
+
+- **幂等**：没有重复组时一次 SELECT 就返回，重复组清零后重跑不再有动作。
+- **口径**：每组保留 `created_at` 最早的一行（并列取 id 字典序最小）——那是账号的原始主人；
+  其余行把 email 置 **NULL** 而不是删行（行上挂着收藏 / 画像 / 凭据，删行等于连带销毁数据）。
+  `email = ''` 与 NULL 都属于"没有邮箱"，不参与去重。
+- **不可逆**：被置 NULL 的原值只留在启动日志和备份里，数据库内不留底。
+
+### 7.2 日志长什么样
+
+每清空一行对应一条 `console.warn`（同一邮箱多行时每组一条）：
+
+```
+[migrate] users.email 重复，保留 <保留行 id>，已清空 <被清空 id1,id2,...> 的 email
+```
+
+运维日志收集（journald / docker logs）里以 `[migrate] users.email 重复` 为检索词即可捞出全部记录。
+**去重发生在启动那一刻，事后只能凭这条日志和备份恢复。**
+
+### 7.3 事前：升级 / 启动前先看影响面
+
+只读预演脚本（只 SELECT，sqlite 侧以 `readonly` 模式打开，没有任何写路径）：
+
+```bash
+# lite（SQLite）：默认读 NAVHUB_SQLITE_PATH，兜底 data/navhub.db
+node scripts/users-email-dedupe-report.mjs [--db <path>]
+
+# standard（PostgreSQL）：显式给连接串（默认读 NAVHUB_DATABASE_URL）
+node scripts/users-email-dedupe-report.mjs --url "$NAVHUB_DATABASE_URL"
+
+# 机器可读（监控 / CI 解析）
+node scripts/users-email-dedupe-report.mjs --json
+```
+
+输出样例（临时库预演，2 个重复组）：
+
+```
+重复 email 组 2 个（按组内最早注册时间排序）：
+
+[1] dup@example.com（2 行，最早 1970-01-01T00:00:01.000Z）
+    保留  u_aaa  alice  1970-01-01T00:00:01.000Z  ← 保留（dedupeUserEmails 口径：created_at 最早，并列取 id 最小）
+    清空  u_bbb  alice2  1970-01-01T00:00:02.000Z  → email 将被置 NULL
+
+[2] tie@example.com（2 行，最早 1970-01-01T00:00:03.000Z）
+    保留  u_ddd  dave  1970-01-01T00:00:03.000Z  ← 保留（dedupeUserEmails 口径：created_at 最早，并列取 id 最小）
+    清空  u_eee  eve  1970-01-01T00:00:03.000Z  → email 将被置 NULL
+
+汇总：
+  重复 email 组数:       2
+  涉及行数:             4
+  将被清空 email 的行数: 2
+```
+
+`--json` 输出 `{ dialect, database, readOnly, groups[{ email, count, keepId, clearIds, rows[] }], summary }`。
+无重复时输出「无重复 email」并以退出码 0 结束；数据库文件不存在时退出码 2 并提示应设置的
+env 变量名（`NAVHUB_SQLITE_PATH` 或 `--db`）。
+
+**建议动作顺序**：先按 §5 备份 → 跑本脚本看影响面 → 确认无误再启动服务触发迁移。
+若报告显示的影响面不可接受（例如某邮箱挂着的其实是两个独立真人账号），先在备份库里决策
+保留哪一行、如何合并，再升级。
+
+### 7.4 事后：凭日志 / 备份恢复
+
+日志只告诉**哪些 id** 的 email 被置了 NULL，**原值只有日志上下文和备份里有**
+（日志行本身不含原值）。恢复步骤：
+
+1. 找到该次启动前后最近的备份（§5 的 `data/backups/navhub-*.db` 或 pg_dump）；
+2. 从备份库取出被清空 id 的原值（示例 SQL，**手动操作，勿脚本化**）：
+
+```sql
+-- 在【备份库】上执行，取回原值（按 7.2 日志里的 id 列表替换）
+SELECT id, username, email FROM users WHERE id IN ('u_bbb', 'u_eee');
+```
+
+3. 确认业务归属后，在生产库逐行写回（示例 SQL，**手动操作，勿脚本化**）：
+
+```sql
+-- 在【生产库】上执行；每条 UPDATE 前先确认这个邮箱写回后不会撞唯一索引
+UPDATE users SET email = 'dup@example.com' WHERE id = 'u_bbb';
+```
+
+**恢复即重新引入重复**：`users_email_unique_idx` 已建，写回一个已存在于其它行的 email 会
+违反唯一索引直接报错。想恢复旧状态必须先 `DROP INDEX users_email_unique_idx`，或明确只把
+邮箱归还给唯一的那一行。恢复后建议重新评估去重口径，而不是简单回退。
+
+### 7.5 风险提示
+
+- **本机 `data/navhub.db` 实测 0 行用户**（2026-10-22 验证），去重不会动任何数据；
+  生产 / 他人部署的用户量未知，**升级包含本迁移的版本前，先跑 7.3 的报告脚本**。
+- 去重只清 `email` 列，不删行：`favorites` / `identity_aliases` / `api_tokens` 等按
+  `user_id` 关联的数据不受影响；但被清空 email 的行若原本靠 email 登录 / 找回密码，
+  该能力对这部分行失效（username 登录不受影响）。
+- 日志留存策略要覆盖启动日志：`[migrate] users.email 重复` 是唯一的"谁被清空"凭据，
+  日志轮转过早会让恢复缺一环。

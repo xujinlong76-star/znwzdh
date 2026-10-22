@@ -119,8 +119,10 @@ describe("枢纽面包屑与合集详情元数据", () => {
     expect(src).toMatch(/<PluginMarketBoard\s+initialItems=/);
     expect(src).toContain("<Breadcrumbs");
     expect(src).not.toMatch(/'use client'/);
-    // 首屏种全量：分页追加的第二页起没有 SSR 入链（曾 40/64 孤岛）
-    expect(src).toContain("listQuery.set('limit', '1000')");
+    // 首屏取全：API 单页上限 100，旧的 limit=1000 会被静默截断，
+    // 第 101 个之后的插件详情页会重新变成没有 SSR 入链的孤岛
+    expect(src).toContain("MARKET_LIST_PAGE_SIZE = 100");
+    expect(src).toContain("loadMarketPluginList(listQuery)");
   });
 
   it("plugin-market-board.tsx 是客户端岛：种子状态 + 单次跳过重取", () => {

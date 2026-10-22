@@ -11,6 +11,7 @@ import { PwaRegister } from '@/components/pwa-register'
 import { InstallPrompt } from '@/components/install-prompt'
 import { WebVitalsReporter } from '@/components/web-vitals-reporter'
 import { OfflineBanner } from '@/components/offline-banner'
+import MobileNav from '@/components/mobile-nav'
 import { SessionSync } from '@/components/user-center/session-sync'
 import { getFileContent } from '@/lib/github'
 import { siteOrigin } from '@/lib/seo/origin'
@@ -194,6 +195,8 @@ export default function RootLayout({
           <Providers>
             {children}
           </Providers>
+          {/* 移动端底部导航（sm 以下可见；footer 已预留安全区，勿再加负 margin） */}
+          <MobileNav />
           {/* 网络状态提示：全站可见。离线时告诉用户「是你的网络断了，不是站点没数据」 */}
           <OfflineBanner />
           <Toaster />

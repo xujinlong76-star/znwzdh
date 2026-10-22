@@ -1,6 +1,5 @@
 import type {
   Category,
-  Collection,
   PluginKind,
   PluginManifest,
   PluginStatus,
@@ -15,7 +14,7 @@ import type {
 } from "@navhub/core";
 export type { TaxonomyProposal, TaxonomyProposalKind, TaxonomyProposalStatus };
 export type { PluginKind, PluginManifest, PluginStatus };
-import type { Db, Dialect } from "../driver.ts";
+import type { Dialect } from "../driver.ts";
 
 export interface SiteInput {
   url: string;

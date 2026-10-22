@@ -1,17 +1,7 @@
 import type { Repository } from "../repository.ts";
 import { randomUUID } from "node:crypto";
 import {
-  buildFtsTokens,
-  canonicalizeUrl,
-  getEnhancedSiteData,
-  pinyinTraits,
   type Category,
-  type Collection,
-  type Site,
-  type SiteAction,
-  type SiteLiveMetrics,
-  type SiteRelation,
-  type SiteStatus,
   type SkosConcept,
   UNCATEGORIZED_CATEGORY_ID,
   UNCATEGORIZED_CATEGORY_TITLE,
@@ -19,41 +9,11 @@ import {
   categoryToSkosConcept,
 } from "@navhub/core";
 import type {
-  ApiTokenRecord,
-  AuditLogRecord,
-  CategoryDistributionItem,
   CategorySemanticDetail,
-  DashboardOverview,
-  FavoriteFolderRecord,
-  FavoriteRecord,
-  JobRecord,
-  MaintenanceStatus,
-  SecurityOverview,
-  SiteInput,
-  TagWithCount,
-  UserProfileRecord,
-  UserRecord,
-  UserVaultRecord,
 } from "./records.ts";
 import {
-  bindSqlite,
-  buildIndexFields,
-  normalizeTokenScopes,
-  packMetadata,
-  rowToApiToken,
-  rowToAuditLog,
   rowToCategory,
-  rowToCollection,
-  rowToFavorite,
-  rowToFolder,
-  rowToJob,
-  rowToProfile,
-  rowToSite,
-  rowToUser,
-  slugify,
-  toPgSql,
 } from "./dialect.ts";
-import type { Db } from "../driver.ts";
 import { chunkList, inPredicate } from "../sql-in.ts";
 
 export async function listCategories(repo: Repository): Promise<Category[]> {

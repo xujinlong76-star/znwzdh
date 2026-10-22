@@ -1,14 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
-  buildFtsTokens,
-  canonicalizeUrl,
-  getEnhancedSiteData,
-  pinyinTraits,
   type Category,
   type Collection,
   type Site,
-  type SiteAction,
-  type SiteLiveMetrics,
   type SiteRelation,
   type SiteStatus,
   type FacetGroupSummary,

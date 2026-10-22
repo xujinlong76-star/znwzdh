@@ -14,6 +14,7 @@
 # 3. test-web（前端门禁，升级改造方案 P1-2）:
 #    - vendor 重建 apps/web 后：tsc --noEmit + eslint（flat 配置）+ next build
 #    - 覆盖 NavHub 自研的 166 个 overlay 文件（此前零门禁）
+#    - check-isr-routes：收录型路由必须是 ISR（●），页面签名不得读 searchParams
 # 4. check-web-overlay:
 #    - vendor 重建 apps/web 后与 overlay 字节级比对（全新检出的前提，见作业内注释）
 # 5. audit: 依赖审计（硬门禁：高危漏洞直接红灯）
@@ -136,6 +137,11 @@ jobs:
       # 首屏 JS 预算硬门禁：build 产物已就绪。阈值在 scripts/bundle-budget.json，
       # 不允许为了过门禁上调——超了先优化，再按真实产物重新定基线。
       - run: node scripts/check-bundle-budget.mjs
+      # ISR 硬门禁：收录型路由（分类/分页/插件详情/站点详情/标签/合集）必须是 ●，
+      # 并且页面签名不得读 searchParams。动机：这类路由带 revalidate +
+      # generateStaticParams，读了 searchParams 的未预渲染参数在按需生成时直接抛
+      # DYNAMIC_SERVER_USAGE（生产 500），而 next dev / tsc / eslint 都照不出来。
+      - run: node scripts/check-isr-routes.mjs
 
   check-web-overlay:
     timeout-minutes: 15
@@ -229,12 +235,13 @@ jobs:
       # （--prod 会忽略 devDependencies 树，因此不需要 --ignore）
       - run: pnpm --registry=https://registry.npmjs.org audit --prod --audit-level high
 
-  # 运行时 SEO 审计：只对生产预览跑全量 sitemap，不在 PR 上临时拉起 API + Web + seed。
+  # 运行时线上检查：只对生产预览跑，不在 PR 上临时拉起 API + Web + seed。
+  # 三步：全量 SEO 审计（sitemap）、ISR 线上抽查、站内链接图阈值。
   # 地址来自仓库变量 NAVHUB_SITE_URL；未配置时 job 直接 skip，不产生噪音。
   # 失败只让本 job 红灯并留下 artifact，不进 ci-passed，不阻塞 PR。
   seo-audit-prod:
     timeout-minutes: 30
-    name: 运行时 SEO 审计（生产预览，非 PR 门禁）
+    name: 运行时线上检查（生产预览，非 PR 门禁）
     if: github.event_name == 'workflow_dispatch' && vars.NAVHUB_SITE_URL != ''
     runs-on: ubuntu-latest
     steps:
@@ -246,6 +253,19 @@ jobs:
       # 发现问题时脚本退出码为 1，本 job 红灯即通知，artifact 仍会因 always() 上传。
       - name: 全量审计（sitemap 最多 2000 条）
         run: node scripts/seo-audit.mjs --base="$NAVHUB_SITE_URL" --limit=2000 --retries=2 --json > seo-audit-report.json
+        env:
+          NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
+      # 线上形态的 ISR 实证：抽查收录型页面必须 200 且带 s-maxage，
+      # 旧形态 /category/{slug}?page=N 必须 30x 到 /p/{N}。
+      # 这一条只在 next start 的产物上有意义（dev 没有静态生成这一步）。
+      - name: ISR 线上抽查
+        run: node scripts/check-isr-routes.mjs --live --base="$NAVHUB_SITE_URL" --sample=2
+        env:
+          NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
+      # 链接架构阈值（孤岛页 / 点击深度 / 软 404）。--from-db=none：
+      # 这里没有生产库，"应有页面清单"的口径由 seo-audit 的 sitemap 覆盖。
+      - name: 站内链接图阈值检查
+        run: node scripts/link-graph.mjs --check --from-db=none --base="$NAVHUB_SITE_URL" --max-urls=2000
         env:
           NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

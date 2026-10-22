@@ -76,7 +76,76 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "plugin_reviews", column: "moderation_note", sqlite: "TEXT", pg: "TEXT" },
   { table: "plugin_reviews", column: "moderated_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "plugin_reviews", column: "moderated_by", sqlite: "TEXT", pg: "TEXT" },
+  // 收藏同步换代（M1）：软删墓碑。硬删会让「删除」事件在增量同步里
+  // 无处表达——客户端按 updated_at 拉增量时看不见任何痕迹，于是删除永不传播。
+  { table: "favorites", column: "deleted_at", sqlite: "INTEGER", pg: "BIGINT" },
 ];
+
+/**
+ * 收敛 users.email 的重复值，为部分唯一索引 `users_email_unique_idx` 铺路。
+ *
+ * 背景：`users.email` 长期可重复（OAuth sync 曾按 email 绑定、也没有唯一约束），
+ * 于是同一邮箱可能挂在多行上。一旦建唯一索引就会因为存量重复而**每次都失败**
+ * （migrateSiteIndexes 里是逐语句 try/catch，失败被静默吞掉 → 规则写在文档里、
+ * 数据库不认的假绿灯）。所以先 dedupe，再建索引。
+ *
+ * 口径：
+ * - 每个重复组保留 `created_at` 最早的一行（并列取 id 字典序最小）——那是账号的
+ *   原始主人；其余行把 email 置 NULL，而不是删行（行上挂着收藏/画像/凭据，
+ *   删行等于连带销毁数据）。
+ * - `email = ''` 与 NULL 都属于「没有邮箱」，不参与去重（与部分索引条件一致）。
+ * - best-effort：失败返回 0 不阻断启动，下次启动兜底（索引建不上就继续不建）。
+ *
+ * @returns 被清空 email 的行数
+ */
+export async function dedupeUserEmails(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
+  try {
+    const isSqlite = db.dialect !== "pg" && !!db.sqlite;
+    const read = async (sql: string, params: unknown[] = []): Promise<Array<Record<string, any>>> => {
+      if (isSqlite) {
+        const maybe = db.sqlite.prepare(sql).all(...params);
+        // libsql 的 runner 返回 Promise，better-sqlite3 返回数组
+        return maybe && typeof maybe.then === "function" ? await maybe : maybe;
+      }
+      if (!db.pg) return [];
+      return (await db.pg.query(toPgSql(sql), params)).rows;
+    };
+    const write = async (sql: string, params: unknown[]): Promise<void> => {
+      if (isSqlite) {
+        const maybe = db.sqlite.prepare(sql).run(...params);
+        if (maybe && typeof maybe.then === "function") await maybe;
+        return;
+      }
+      await db.pg.query(toPgSql(sql), params);
+    };
+
+    const dupGroups = await read(
+      "SELECT email, COUNT(*) AS c FROM users WHERE email IS NOT NULL AND email <> '' GROUP BY email HAVING COUNT(*) > 1",
+    );
+    if (dupGroups.length === 0) return 0;
+
+    let cleared = 0;
+    for (const group of dupGroups) {
+      const email = String(group.email);
+      const ids = (await read(
+        "SELECT id FROM users WHERE email = ? ORDER BY created_at ASC, id ASC",
+        [email],
+      )).map((r) => String(r.id));
+      if (ids.length < 2) continue;
+      const keepId = ids[0]!;
+      const otherIds = ids.slice(1);
+      for (const id of otherIds) {
+        await write("UPDATE users SET email = NULL WHERE id = ?", [id]);
+        cleared += 1;
+      }
+      console.warn(`[migrate] users.email 重复，保留 ${keepId}，已清空 ${otherIds.join(",")} 的 email`);
+    }
+    return cleared;
+  } catch (err) {
+    console.warn("[migrate] dedupeUserEmails 失败:", err instanceof Error ? err.message : err);
+    return 0;
+  }
+}
 
 /**
  * 软删除（回收站）需要的索引演进。必须在 migrateColumns 之后调用
@@ -86,6 +155,9 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
  *    旧索引会挡住「删完同 URL 站点后重新添加」。删旧建新的窗口极小
  *    且发生在启动期（尚无写入），可接受。
  * 2. `sites_deleted_at_idx`：回收站探针的部分索引，体积只随删除量增长。
+ * 3. `users_email_unique_idx`：users.email 部分唯一。调用顺序要求
+ *    **dedupeUserEmails 在前**（见 driver.ts 的 openDb 序列），否则存量重复会让
+ *    建索引失败并被逐语句 try/catch 静默跳过。
  */
 export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
   const statements = [
@@ -95,9 +167,15 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     // 存储层补索引（旧库补齐；幂等 IF NOT EXISTS；与 driver.ts DDL 保持一致）
     "CREATE INDEX IF NOT EXISTS sites_source_status_idx ON sites(source, status)",
     "CREATE INDEX IF NOT EXISTS sites_hot_idx ON sites(enabled, trend_score DESC)",
+    // 邮箱唯一（部分索引：NULL 与空串都不进索引，等于「没有邮箱」不互斥）。
+    // 必须晚于 dedupeUserEmails —— 存量重复会让 CREATE UNIQUE INDEX 直接失败，
+    // 而这里逐语句 try/catch，失败只会静默跳过（下次启动再试）。
+    "CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique_idx ON users(email) WHERE email IS NOT NULL AND email <> ''",
     "CREATE INDEX IF NOT EXISTS events_search_idx ON events(kind, created_at, query)",
     "CREATE INDEX IF NOT EXISTS search_history_user_created_idx ON search_history(user_id, created_at DESC, id DESC)",
     "CREATE INDEX IF NOT EXISTS favorites_user_created_idx ON favorites(user_id, created_at DESC)",
+    // 增量同步游标：WHERE user_id = ? AND updated_at > ? 的主路径
+    "CREATE INDEX IF NOT EXISTS favorites_user_updated_idx ON favorites(user_id, updated_at)",
     "CREATE INDEX IF NOT EXISTS events_identity_created_idx ON events(identity, created_at)",
     "CREATE INDEX IF NOT EXISTS plugins_owner_identity_idx ON plugins(owner_identity)",
     "CREATE INDEX IF NOT EXISTS health_checks_checked_idx ON health_checks(checked_at)",

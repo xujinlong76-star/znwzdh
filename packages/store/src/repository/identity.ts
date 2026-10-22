@@ -137,8 +137,10 @@ export async function mergeIdentity(
       vaultNeedsChoice: false,
     };
 
-    // 1) 收藏：按 (user_id, site_id) 去重；目标已有则跳过，源行最后统一删除
-    const favorites = await repo.raw("SELECT * FROM favorites WHERE user_id = ?", [source]);
+    // 1) 收藏：按 (user_id, site_id) 去重；目标已有则跳过，源行最后统一删除。
+    //    墓碑（deleted_at 非空）不搬迁：它只是「删除」的同步信号，搬过去会被当成
+    //    一条新增的活收藏（INSERT 不带 deleted_at），等于把用户删掉的收藏复活。
+    const favorites = await repo.raw("SELECT * FROM favorites WHERE user_id = ? AND deleted_at IS NULL", [source]);
     for (const row of favorites) {
       const changes = await repo.runCount(
         `INSERT INTO favorites (id, user_id, site_id, folder_id, note, created_at, updated_at)
@@ -329,7 +331,7 @@ export async function getUserCenterOverview(repo: Repository, identity: string):
 
   const countRow = (await repo.raw(
     `SELECT
-       (SELECT COUNT(*) FROM favorites WHERE user_id = ?) AS favorites,
+       (SELECT COUNT(*) FROM favorites WHERE user_id = ? AND deleted_at IS NULL) AS favorites,
        (SELECT COUNT(*) FROM favorite_folders WHERE user_id = ?) AS folders,
        (SELECT COUNT(*) FROM search_history WHERE user_id = ?) AS searches,
        (SELECT COUNT(*) FROM plugin_installs WHERE identity = ? AND removed_at IS NULL) AS active_installs,

@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { migrateColumns, migrateSiteIndexes, migrateEventIdentity, migrateCategorySlugs, cleanupOrphanPluginCategories } from "./migrate.ts";
+import { migrateColumns, migrateSiteIndexes, migrateEventIdentity, migrateCategorySlugs, dedupeUserEmails, cleanupOrphanPluginCategories } from "./migrate.ts";
 
 /**
  * 数据库驱动抽象。
@@ -263,7 +263,8 @@ CREATE TABLE IF NOT EXISTS favorites (
   folder_id TEXT,
   note TEXT,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS favorites_user_site_idx ON favorites(user_id, site_id);
 CREATE INDEX IF NOT EXISTS favorites_user_idx ON favorites(user_id);
@@ -690,7 +691,8 @@ CREATE TABLE IF NOT EXISTS favorites (
   folder_id TEXT,
   note TEXT,
   created_at BIGINT NOT NULL,
-  updated_at BIGINT NOT NULL
+  updated_at BIGINT NOT NULL,
+  deleted_at BIGINT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS favorites_user_site_idx ON favorites(user_id, site_id);
 CREATE INDEX IF NOT EXISTS favorites_user_idx ON favorites(user_id);
@@ -948,6 +950,10 @@ export async function openDb(config: {
       raw.exec(DDL_SQLITE);
     }
     await migrateColumns(db);
+    // 先清空重复 email，再建 users_email_unique_idx（索引在 migrateSiteIndexes 里）。
+    // 顺序不能反：存量重复会让 CREATE UNIQUE INDEX 失败，而那里是逐语句 try/catch，
+    // 失败等于静默跳过索引 —— 看起来迁移成功，实际约束从未生效。
+    await dedupeUserEmails(db);
     await migrateSiteIndexes(db);
     await migrateEventIdentity(db);
     await migrateCategorySlugs(db);
@@ -991,6 +997,8 @@ export async function openDb(config: {
     await pool.query(DDL_PG);
   }
   await migrateColumns(db);
+  // 同 sqlite 分支：dedupe 必须早于 users_email_unique_idx 的创建（在 migrateSiteIndexes 内）。
+  await dedupeUserEmails(db);
   await migrateSiteIndexes(db);
   await migrateEventIdentity(db);
   await migrateCategorySlugs(db);

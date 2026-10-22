@@ -859,7 +859,7 @@ describe("SQLite 集成：导航增强能力", () => {
 
   /* ------------------------- 终端用户 ------------------------- */
 
-  it("OAuth 用户 upsert：新建、更新、按 email 归一", async () => {
+  it("OAuth 用户 upsert：按 username 归一，不再按 email 绑定", async () => {
     const created = await repo.upsertOauthUser({ id: "github:1", username: "alice", email: "alice@example.com" });
     expect(created.role).toBe("user");
     expect(created.source).toBe("github");
@@ -869,9 +869,11 @@ describe("SQLite 集成：导航增强能力", () => {
     expect(again.id).toBe(created.id);
     expect(again.avatar).toBe("https://a.png");
 
-    // 换 username 但同 email：归一到同一用户
+    // 换 username 但同 email：**不再**归一到同一用户（email 可伪造，静默绑定=账号接管面）。
+    // 新行会撞 users_email_unique_idx，于是降级为不写 email，而不是让登录失败。
     const byEmail = await repo.upsertOauthUser({ username: "alice2", email: "alice@example.com" });
-    expect(byEmail.id).toBe(created.id);
+    expect(byEmail.id).not.toBe(created.id);
+    expect(byEmail.email).toBeNull();
 
     const fetched = await repo.getUser("alice");
     expect(fetched!.email).toBe("alice@example.com");

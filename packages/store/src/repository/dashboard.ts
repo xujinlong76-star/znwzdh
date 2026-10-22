@@ -73,7 +73,7 @@ export async function dashboardOverview(repo: Repository): Promise<DashboardOver
     one("SELECT COUNT(*) AS c FROM categories"),
     one("SELECT COUNT(*) AS c FROM tags"),
     one("SELECT COUNT(*) AS c FROM collections"),
-    one("SELECT COUNT(*) AS c FROM favorites"),
+    one("SELECT COUNT(*) AS c FROM favorites WHERE deleted_at IS NULL"),
     one("SELECT COUNT(*) AS c FROM sites WHERE created_at >= ? AND deleted_at IS NULL", [since24h]),
     (async () => {
       const rows = await repo.raw(

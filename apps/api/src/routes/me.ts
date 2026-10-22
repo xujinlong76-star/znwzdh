@@ -129,6 +129,55 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   );
 
   /**
+   * 收藏批量同步（M1）。
+   *
+   * 旧方案：客户端逐条 POST /api/favorites（首条失败即中断）+ 云端整集合覆盖。
+   * 前者慢且不可恢复，后者无法表达删除、也没有版本号。
+   * 现在一次往返完成「提交 ops → 按水位拉增量」，删除以墓碑（deletedAt）下发。
+   */
+  app.post(
+    "/api/me/favorites/sync",
+    { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      const identity = identityOf(req as never);
+      if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+      const parsed = z.object({
+        ops: z.array(z.object({
+          op: z.enum(["add", "update", "remove"]),
+          siteId: z.string().min(1).max(64),
+          folderId: z.string().max(64).optional().nullable(),
+          note: z.string().max(200).optional().nullable(),
+          at: z.number().optional(),
+        })).max(500),
+        since: z.number().optional(),
+      }).safeParse(req.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: "参数无效", detail: parsed.error.issues };
+      }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+      const applied = await ctx.repo.applyFavoriteOps(canonical, parsed.data.ops);
+      const [slice, folders] = await Promise.all([
+        ctx.repo.listFavoritesSince(canonical, parsed.data.since ?? 0),
+        ctx.repo.listFavoriteFolders(canonical),
+      ]);
+      // 增量条目必须自带站点元信息（title/url）：客户端换设备首拉时本地没有任何缓存，
+      // 只有 siteId 无法渲染，合并逻辑会把这些条目整条丢掉 —— 用户看到的是"收藏全没了"。
+      // 一次批量 IN 查询，与 GET /api/favorites 同款；墓碑行照此 join，前端以 deletedAt 为准。
+      const siteMap = await ctx.repo.getSitesByIds(slice.items.map((item) => item.siteId));
+      // 两次读的 MAX(updated_at) 取大：ops 落库后水位必然不低，任一读法都不会倒退
+      return {
+        ok: true,
+        applied: applied.applied,
+        version: Math.max(applied.version, slice.version),
+        items: slice.items.map((item) => ({ ...item, site: siteMap.get(item.siteId) ?? null })),
+        folders,
+      };
+    },
+  );
+
+  /**
    * 用户级书签导出（M9 互操作）：收藏 → Netscape 书签 HTML，
    * 可直接导入 Chrome / Firefox / Safari / Edge；分组按收藏夹还原。
    * 这是「搬回浏览器」与「迁到别家」的标准格式，私有 JSON 做不到。

@@ -112,7 +112,7 @@ export async function clickCountsSince(repo: Repository, since: number): Promise
 
 export async function favoriteCountsSince(repo: Repository, since: number): Promise<Map<string, number>> {
   const rows = await repo.raw(
-    "SELECT site_id AS siteid, COUNT(*) AS c FROM favorites WHERE created_at >= ? GROUP BY site_id",
+    "SELECT site_id AS siteid, COUNT(*) AS c FROM favorites WHERE created_at >= ? AND deleted_at IS NULL GROUP BY site_id",
     [since],
   );
   const out = new Map<string, number>();

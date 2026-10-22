@@ -40,6 +40,7 @@ import type {
 
 import * as sitesRepo from "./repository/sites.ts";
 import * as categoriesRepo from "./repository/categories.ts";
+import * as registrySeedRepo from "./repository/category-registry.ts";
 import * as embeddingsRepo from "./repository/embeddings.ts";
 import * as statsRepo from "./repository/stats.ts";
 import * as dashboardRepo from "./repository/dashboard.ts";
@@ -420,6 +421,23 @@ export class Repository {
     return categoriesRepo.ensureUncategorized(this);
   }
 
+  /** 站点归属的边界校验：类目存在且不是「一级根」（未分类除外）；写入口据此返回 400，成功时回吐解析后的真实 id */
+  async checkSiteCategoryAttachment(
+    categoryId: string | null | undefined,
+  ): Promise<{ ok: true; categoryId: string | null } | { ok: false; error: string }> {
+    return categoriesRepo.checkSiteCategoryAttachment(this, categoryId);
+  }
+
+  /** 权威树：补齐单个条目（含它的父级）；slug 不在树里返回 null，调用方走「未分类 + 提案」 */
+  async ensureRegistryCategory(slug: string): Promise<Category | null> {
+    return registrySeedRepo.ensureRegistryCategory(this, slug);
+  }
+
+  /** 权威树全量播种（幂等，装包/富化前都能安全调用） */
+  async seedCategoryRegistry(): Promise<{ total: number; created: number; patched: number; failed: string[] }> {
+    return registrySeedRepo.seedCategoryRegistry(this);
+  }
+
   async moveCategory(id: string, parentId: string | null): Promise<Category | null> {
     return categoriesRepo.moveCategory(this, id, parentId);
   }
@@ -681,6 +699,19 @@ export class Repository {
 
   async clearFavorites(userId: string): Promise<number> {
     return favoritesRepo.clearFavorites(this, userId);
+  }
+
+  /** 增量拉取收藏（含墓碑）+ 水位 */
+  async listFavoritesSince(userId: string, since: number): Promise<favoritesRepo.FavoriteSyncSlice> {
+    return favoritesRepo.listFavoritesSince(this, userId, since);
+  }
+
+  /** 批量应用客户端收藏 ops（LWW + 事务） */
+  async applyFavoriteOps(
+    userId: string,
+    ops: favoritesRepo.FavoriteOp[],
+  ): Promise<{ applied: number; version: number }> {
+    return favoritesRepo.applyFavoriteOps(this, userId, ops);
   }
 
   async updateFavoriteFolder(

@@ -144,6 +144,8 @@ export interface FavoriteRecord {
   note: string | null;
   createdAt: number;
   updatedAt: number;
+  /** 软删墓碑时间戳；非空即「已删」。增量同步靠它把删除传播给客户端。 */
+  deletedAt?: number | null;
 }
 
 export interface FavoriteFolderRecord {

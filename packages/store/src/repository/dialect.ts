@@ -212,6 +212,7 @@ export function rowToFavorite(row: Record<string, any>): FavoriteRecord {
     note: row.note ?? null,
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
+    deletedAt: row.deleted_at == null ? null : Number(row.deleted_at),
   };
 }
 

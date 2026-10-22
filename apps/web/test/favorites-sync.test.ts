@@ -245,11 +245,12 @@ describe("登录用户：一次批量同步", () => {
     expect(r.error).toContain("登录已过期");
   });
 
-  it("批量请求失败：cloud 与 nextItems 都是 null，并给出可重试原因", async () => {
+  it("批量请求失败：重试耗尽后 cloud/nextItems 仍为 null，并给出可重试原因", async () => {
     signedIn(["a", "b"]);
     const calls = stubFetch([502]);
     const r = await syncFavoritesToCloud();
-    expect(calls.length).toBe(1);
+    // 5xx 会退避重试两次（300/900ms），因此是 3 次而不是 1 次；结果语义不变
+    expect(calls.length).toBe(3);
     expect(r.ok).toBe(false);
     expect(r.cloud).toBeNull();
     expect(r.nextItems).toBeNull();
@@ -310,6 +311,51 @@ describe("匿名用户：保持逐条通道（新端点只给登录态）", () =
     expect(r.error).toBeTruthy();
     expect(r.retryable).toBe(true);
     expect(calls.length).toBe(1);
+  });
+});
+
+describe("M1 二期：有限重试 / 墓碑提示 / 同步状态", () => {
+  it("5xx 可重试：退避后第二次成功（只多一次往返）", async () => {
+    signedIn(["a"]);
+    const calls = stubFetch([502, 200], { 200: batchBody([{ siteId: "a" }]) });
+    const r = await syncFavoritesToCloud();
+    expect(r.ok).toBe(true);
+    expect(calls.length).toBe(2);
+  });
+
+  it("404 不可重试：不浪费第二次请求", async () => {
+    signedIn(["a"]);
+    const calls = stubFetch([404, 200], { 200: batchBody([{ siteId: "a" }]) });
+    const r = await syncFavoritesToCloud();
+    expect(r.ok).toBe(false);
+    expect(calls.length).toBe(1);
+  });
+
+  it("墓碑计数透出：另一台设备删了几条，页面上就要说几条", async () => {
+    signedIn(["a", "b"]);
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a", "b"]),
+      "navhub.favorites.sync.v1.user-1": "100",
+    });
+    stubFetch([200], { 200: batchBody([{ siteId: "a", deletedAt: 123 }], 200) });
+    const r = await syncFavoritesToCloud();
+    expect(r.remoteRemoved).toBe(1);
+  });
+
+  it("同步状态落盘：成功与失败都可读回（页面上「上次同步」用它）", async () => {
+    signedIn(["a"]);
+    stubFetch([200], { 200: batchBody([{ siteId: "a" }]) });
+    await syncFavoritesToCloud();
+    const ok = JSON.parse(lastStore["navhub.favorites.sync.last"] ?? "{}") as { ok: boolean; pushed: number };
+    expect(ok.ok).toBe(true);
+    expect(ok.pushed).toBe(1);
+
+    stubFetch([502]);
+    await syncFavoritesToCloud();
+    const bad = JSON.parse(lastStore["navhub.favorites.sync.last"] ?? "{}") as { ok: boolean; error?: string };
+    expect(bad.ok).toBe(false);
+    expect(bad.error).toBeTruthy();
   });
 });
 

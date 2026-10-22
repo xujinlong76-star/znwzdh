@@ -18,6 +18,7 @@
 | 9 | [09-run-and-test.md](./09-run-and-test.md) | 运行方式：本地开发、Docker、环境变量全表、测试套件、环境坑与排障 | 所有人 |
 | 10 | [10-bento-diy-and-advanced-algorithms.md](./10-bento-diy-and-advanced-algorithms.md) | **Bento-Flow 智能工作台与前沿算法升级**：跨分类拖拽重排、免登 URL-Hash 分享、Discounted-LinUCB、洛伦兹超曲面、0-RTT AST、卡尔曼滤波与元素审查 | 架构/全栈/算法 |
 | 11 | [11-operations.md](./11-operations.md) | 运维手册：发布与回滚流程、on-call runbook、SLO/SLI、SQLite 与 PostgreSQL 备份恢复、数据治理 | 运维/on-call |
+| 12 | [12-user-center.md](./12-user-center.md) | **用户中心域**：/me · 收藏批量同步（ops+游标+墓碑）· 身份信任链 · 数据主权 · 13 张表 · 测试矩阵与已知风险 | 用户域/全栈 |
 
 ## 一页速览
 

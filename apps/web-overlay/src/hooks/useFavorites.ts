@@ -18,6 +18,7 @@ import {
   type HubFavorite,
   type HubFavoriteFolder,
   type HubFavoriteSyncItem,
+  type HubFavoritesSyncPayload,
 } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
 import { mergeCloudFavorites } from '@/lib/favorites-merge'
@@ -263,6 +264,64 @@ export function useFavorites(): FavoritesApi {
 /** 同步游标：仅记录「一次成功同步之后」的版本，失败时绝不推进 */
 const SYNC_CURSOR_PREFIX = 'navhub.favorites.sync.v1.'
 
+/** 最近一次同步结果（只写不删：用户能看到「上次同步是什么时候、成没成」） */
+const SYNC_STATUS_KEY = 'navhub.favorites.sync.last'
+
+export interface FavoritesSyncStatus {
+  at: number
+  ok: boolean
+  pushed: number
+  remoteRemoved: number
+  error?: string
+}
+
+function writeSyncStatus(status: FavoritesSyncStatus): void {
+  try {
+    window.localStorage.setItem(SYNC_STATUS_KEY, JSON.stringify(status))
+  } catch {
+    // 写不进状态只是少一行提示，不影响同步本身
+  }
+}
+
+export function readSyncStatus(): FavoritesSyncStatus | null {
+  try {
+    const raw = window.localStorage.getItem(SYNC_STATUS_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<FavoritesSyncStatus>
+    return {
+      at: Number(parsed.at) || 0,
+      ok: Boolean(parsed.ok),
+      pushed: Number(parsed.pushed) || 0,
+      remoteRemoved: Number(parsed.remoteRemoved) || 0,
+      error: typeof parsed.error === 'string' ? parsed.error : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** 批量同步有限重试：只对可重试错误退避（300ms / 900ms），404 之类不重试 */
+async function syncBatchWithRetry(
+  ops: FavoriteSyncOp[],
+  since: number,
+  onFail: (error: unknown) => void,
+): Promise<HubFavoritesSyncPayload | null> {
+  let retryable = false
+  const mark = (error: unknown) => {
+    onFail(error)
+    retryable = describeDegrade(error, '云端收藏').retryable
+  }
+  const first = await syncFavoritesBatch(ops, since, mark)
+  if (first) return first
+  for (const delay of [300, 900]) {
+    if (!retryable) return null
+    await new Promise((resolve) => setTimeout(resolve, delay))
+    const retried = await syncFavoritesBatch(ops, since, mark)
+    if (retried) return retried
+  }
+  return null
+}
+
 function readSyncCursor(identity: string): number {
   try {
     const raw = window.localStorage.getItem(SYNC_CURSOR_PREFIX + identity)
@@ -358,6 +417,8 @@ export interface CloudSyncResult {
    * 失败时为 null（不许落库）。
    */
   nextItems: LocalFavorite[] | null
+  /** 本次同步中被「另一台设备」删除的条数（墓碑），用于给用户可见提示 */
+  remoteRemoved: number
 }
 
 export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
@@ -426,8 +487,9 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     // 所有分片都用同一个 since：这样每片的响应都覆盖「自游标以来的全部变化」，
     // 不会因为逐片推进游标而漏掉「at 早于新游标」的条目（拼接后按 siteId 去重）。
     for (const chunk of chunks) {
-      const result = await syncFavoritesBatch(opsOf(chunk), since, onFail)
+      const result = await syncBatchWithRetry(opsOf(chunk), since, onFail)
       if (!result) {
+        writeSyncStatus({ at: Date.now(), ok: false, pushed: 0, remoteRemoved: 0, error: failure.message })
         return {
           ok: false,
           localCount: local.length,
@@ -446,8 +508,9 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
 
     // 本机没有可推条目时仍需拉取：首拉（since=0）要全集，已有游标时要知道云端新增与墓碑
     if (chunks.length === 0) {
-      const pulled = await syncFavoritesBatch([], since, onFail)
+      const pulled = await syncBatchWithRetry([], since, onFail)
       if (!pulled) {
+        writeSyncStatus({ at: Date.now(), ok: false, pushed: 0, remoteRemoved: 0, error: failure.message })
         return {
           ok: false,
           localCount: local.length,
@@ -468,10 +531,17 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     writeSyncCursor(identity, version)
 
     const alive = aggregated.filter((item) => item.deletedAt == null)
+    const remoteRemoved = aggregated.length - alive.length
     // since=0 是全集，可以走「云端覆盖本地」；since>0 是增量，必须按行 upsert，
     // 否则本地尚未推送的条目会被整体替换误删。
     const nextItems =
       since === 0 ? mergeCloudFavorites(local, alive) : applyFavoriteDelta(local, aggregated)
+    writeSyncStatus({
+      at: Date.now(),
+      ok: true,
+      pushed: local.length,
+      remoteRemoved,
+    })
     return {
       ok: true,
       localCount: local.length,
@@ -481,6 +551,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       cloudFolders: folders,
       retryable: false,
       nextItems,
+      remoteRemoved,
     }
   }
 
@@ -502,6 +573,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       error: failure.message,
       retryable: failure.retryable,
       nextItems: null,
+      remoteRemoved: 0,
     }
   }
 

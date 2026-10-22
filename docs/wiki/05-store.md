@@ -102,6 +102,10 @@
 | `favorites` | `id`(PK)、`user_id`、`site_id`、`folder_id`、`note`、`created_at`、`updated_at` | **UNIQUE(user_id, site_id)**；匿名先存 localStorage，登录后合并 |
 | `favorite_folders` | `id`(PK)、`user_id`、`name`、`sort` | |
 | `user_profiles` | `user_id`(PK)、`top_categories`、`top_tags`、`visited_site_ids`、`favorite_site_ids`（均 JSON 文本）、`search_count`、`updated_at` | **宽表 + JSON 文本列**——读取路径每次搜索都用、聚合是批量的，读写频率极度不对称 |
+| `identity_aliases` / `identity_merges` | 合并别名（5 跳上限）与幂等凭据 |
+| `user_vault_sync` | E2EE 密文（版本冲突 409）|
+| `user_workspace_blobs` | 工作区明文（独立表，非 E2EE）|
+| `user_settings` / `user_llm_configs` | 画像开关与收藏信号水位 / 个人 LLM 配置（密钥加密信封）|
 | `search_history` | `id`(自增 PK)、`user_id`、`query`、`result_count`、`created_at` | append-only；自增主键解决同毫秒多条的稳定排序 |
 
 ## 3. 双驱动抽象（driver.ts）

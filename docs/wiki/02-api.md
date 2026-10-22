@@ -261,7 +261,8 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 
 ### 3.7 收藏夹（终端用户）
 
-> **身份方案**：由调用方传 `userId`（登录 canonical id）或 `anonId`（前端 localStorage）——个人导航站的轻量方案，**不引入终端用户鉴权体系**；多用户公开场景应改用 Bearer token（`api_tokens` 表已具备能力）。
+> **身份方案（2026-10 更新）**：`userId` / `anonId` 仍是身份的**载体**，但不再是「谁都能自称」——① 中枢侧这些端点已统一过 `identityTrusted`（开放模式 / 持票 / 身份签名三者其一）；② `/api/hub/*` 代理改为**会话优先**：有会话一律用 canonical 身份并剥离客户端自称头，无会话仅允许 `anon-*`；③ 收藏同步新增批量端点 `POST /api/me/favorites/sync`（ops+since 游标+墓碑），详见 [12-user-center.md](./12-user-center.md)。
+> 历史说明（已过时）：本段原写「不引入终端用户鉴权体系」——签名机制落地后不再成立。
 
 | 方法 | 路径 | 功能 | 状态码 |
 | --- | --- | --- | --- |

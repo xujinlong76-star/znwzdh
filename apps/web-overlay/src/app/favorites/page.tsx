@@ -14,7 +14,13 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FavoriteButton } from '@/components/favorite-button'
-import { useFavorites, syncFavoritesToCloud, type CloudSyncResult } from '@/hooks/useFavorites'
+import {
+  readSyncStatus,
+  syncFavoritesToCloud,
+  useFavorites,
+  type CloudSyncResult,
+  type FavoritesSyncStatus,
+} from '@/hooks/useFavorites'
 import { getIdentity } from '@/lib/identity'
 import {
   filterFavorites,
@@ -88,6 +94,7 @@ export default function FavoritesPage() {
   const [vaultPassword, setVaultPassword] = useState('')
   const [vaultPasswordConfirm, setVaultPasswordConfirm] = useState('')
   const [importPassphrase, setImportPassphrase] = useState('')
+  const [syncLast, setSyncLast] = useState<FavoritesSyncStatus | null>(null)
   const [importVaultPayload, setImportVaultPayload] = useState('')
   const [showPasswordText, setShowPasswordText] = useState(false)
   const [vaultLoading, setVaultLoading] = useState(false)
@@ -114,11 +121,20 @@ export default function FavoritesPage() {
       if (!result.ok || !result.cloud || !result.cloudFolders || !result.nextItems) return false
       setFolders(result.cloudFolders)
       favorites.replaceAll(result.nextItems)
+      // 墓碑来自另一台设备的删除：必须说出来，否则用户会以为本地数据「自己消失」
+      if (result.remoteRemoved > 0) {
+        setSyncNote(`另一台设备删除了 ${result.remoteRemoved} 条收藏，已与云端保持一致`)
+        setSyncStatus('success')
+      }
       return true
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [favorites],
   )
+
+  useEffect(() => {
+    setSyncLast(readSyncStatus())
+  }, [])
 
   useEffect(() => {
     if (!favorites.ready) return
@@ -561,6 +577,16 @@ export default function FavoritesPage() {
             )}
             <span>{syncNote}</span>
           </div>
+        )}
+
+        {syncLast && (
+          <p className="mb-4 text-xs text-muted-foreground" data-testid="sync-last">
+            上次同步：
+            {syncLast.at > 0 ? new Date(syncLast.at).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}
+            {' · '}
+            {syncLast.ok ? `成功（${syncLast.pushed} 条）` : `失败（${syncLast.error ?? '原因未知'}）`}
+            {syncLast.remoteRemoved > 0 ? ` · 另一设备删除 ${syncLast.remoteRemoved} 条` : ''}
+          </p>
         )}
 
         {/* 零知识加密导出面板 */}

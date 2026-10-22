@@ -129,6 +129,7 @@ function hubUrl(path: string): string {
 | `/hot` | 热度榜 |
 | `/favorites` | 我的收藏（localStorage 优先 + 登录后云端合并） |
 | `/preferences` | **我的偏好**（个性化画像可见性与重置：展示 `topCategories`/`topTags`/`visitedSiteIds`/`searchCount`，「重置画像」调 `DELETE /api/profile` 并明示收藏与搜索历史不受影响） |
+| `/me`、`/me/history`、`/me/data` | **用户中心三页**（均 noindex）：服务端壳注入概览 + 客户端岛；历史/数据管理；详见 [12-user-center.md](./12-user-center.md) |
 | `/submit` | 投稿 |
 | `/import` | 导入 |
 | `/custom` | 自定义 |

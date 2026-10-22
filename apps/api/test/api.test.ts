@@ -199,6 +199,34 @@ describe("检索接口", () => {
     expect(body.fallback).toBe("filter");
   });
 
+  it("status=active 过滤失效站点（分类 hub 的分页口径）", async () => {
+    // 分类页只展示 active 站点；若 search 不按状态过滤，broken 会占据
+    // limit/offset 名额，导致「存活 ≥5」误判和翻页漏站。
+    const broken = await ctx.repo.createSite({
+      url: "https://broken.example.com",
+      title: "失效站点",
+      categoryId: "cat-dev",
+      status: "broken",
+    });
+    try {
+      const all = await app.inject({
+        method: "GET",
+        url: "/api/search?q=&categoryId=cat-dev&limit=100",
+      });
+      expect(all.json().hits.some((h: any) => h.site?.title === "失效站点")).toBe(true);
+
+      const active = await app.inject({
+        method: "GET",
+        url: "/api/search?q=&status=active&categoryId=cat-dev&limit=100",
+      });
+      const titles = active.json().hits.map((h: any) => h.site?.title);
+      expect(titles).not.toContain("失效站点");
+      expect(titles).toContain("npm");
+    } finally {
+      await ctx.repo.deleteSite(broken.id);
+    }
+  });
+
   /* ---- 分页 ---- */
 
   it("offset 分页：拼接结果与一次取全一致，且 hasMore 正确透传", async () => {

@@ -11,6 +11,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { ExternalLink, ShieldCheck } from 'lucide-react'
 import type { HubPluginItem } from '@/lib/navhub-api'
+import { pluginDetailHref } from '@/lib/plugins/detail-href'
 
 export interface PluginAuditModalProps {
   open: boolean
@@ -99,7 +100,7 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
 
           <div className="pt-2 flex flex-col sm:flex-row justify-end gap-2">
             <Link
-              href={`/marketplace/${encodeURIComponent(plugin.slug)}`}
+              href={pluginDetailHref(plugin.slug, plugin.status)}
               className="w-full sm:w-auto justify-center inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg bg-primary text-primary-foreground font-medium hover:opacity-90 transition-all"
               onClick={() => onOpenChange(false)}
             >

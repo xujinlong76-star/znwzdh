@@ -46,6 +46,11 @@ describe('分类页结构', () => {
     expect(src).toMatch(/indexable\s*=\s*requested\s*===\s*1/)
   })
 
+  it('分页查询只取 active 站点，避免 broken 占 offset 名额导致漏站/误判', () => {
+    const src = overlayFile('src/lib/server/categories.ts')
+    expect(src).toContain('/api/search?q=&status=active&categoryId=')
+  })
+
   it('分类总览只链接达标分类，避免 462 条死链', () => {
     const src = overlayFile('src/app/category/page.tsx')
     expect(src).toContain('MIN_SITES_FOR_INDEX')

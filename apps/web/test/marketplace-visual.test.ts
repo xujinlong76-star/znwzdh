@@ -66,4 +66,11 @@ describe("插件市场排版：卡片与列表细节", () => {
     expect(og).toContain("position: 'absolute'")
     expect(og).toContain("borderRadius: 999")
   })
+
+  it("市场首页按 API 单页上限分页取全，不能写会被截断的 limit=1000", () => {
+    const page = overlaySource("src/app/marketplace/page.tsx")
+    expect(page).toContain("MARKET_LIST_PAGE_SIZE = 100")
+    expect(page).toContain("loadMarketPluginList")
+    expect(page).not.toContain("set('limit', '1000')")
+  })
 })

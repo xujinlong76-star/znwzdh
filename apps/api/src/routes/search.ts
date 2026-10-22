@@ -32,6 +32,11 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     categoryId: z.string().optional(),
     tag: z.string().optional(),
     /**
+     * 站点状态过滤（可选）。分类 hub 只需要 active 站点；不传时保持原行为
+     * （排除 archived，包含 broken/pending）。既往调用方不受影响。
+     */
+    status: z.enum(["active", "pending", "broken", "archived"]).optional(),
+    /**
      * facets 的校验交给 clampFacets（结构 + 预算：键数、每键值数、值类型）。
      * 这里只留 unknown：以前是 union + 静默 transform，「非法 JSON」会退化成
      * undefined → 客户端以为在按分面筛选，实际拿到的是未过滤的全量结果；
@@ -97,7 +102,13 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
     }
 
-    const result = await ctx.search.search({ ...input, facets, personalize });
+    const { status, ...searchInput } = input;
+    const result = await ctx.search.search({
+      ...searchInput,
+      statuses: status ? [status] : undefined,
+      facets,
+      personalize,
+    });
     // Query Planner 观测：每次检索后记一次决策与通道耗时（/metrics 透出）。
     // 必须读本次 result 上的 channelTimings —— ctx.search 是单例，
     // getLastTimings() 在并发请求下会把别的请求的耗时记到这一次头上。

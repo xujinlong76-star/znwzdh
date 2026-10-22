@@ -283,6 +283,10 @@ export default function PluginDetailView({
           .catch(() => {
             // 体检报告是异步增强信息：失败时维持「暂无报告」，不阻断详情主数据
           })
+
+        // 只有真正拿到身份态数据才算同步完成：刷新失败时 installed 仍是 SSR
+        // 的「未安装」占位，若此时放行深链会再次误弹安装确认。
+        setDetailSynced(true)
       } else if (!opts?.silent) {
         setPlugin(null)
       }
@@ -291,7 +295,6 @@ export default function PluginDetailView({
       if (!opts?.silent) setPlugin(null)
     } finally {
       if (!opts?.silent) setLoading(false)
-      setDetailSynced(true)
     }
   }, [slug])
 

@@ -38,6 +38,32 @@ type RankGroups = {
   fresh: HubPluginItem[]
 }
 
+/** `/api/plugins` 单页上限 100（服务端硬限制），SSR 种子必须按 offset 取全。 */
+const MARKET_LIST_PAGE_SIZE = 100
+/** 首屏 SSR 最多种 300 个详情链接，避免插件规模失控时无限串行取数；其余仍有 sitemap。 */
+const MARKET_SSR_LIMIT = 300
+
+/**
+ * 取全市场列表（受 MARKET_SSR_LIMIT 约束）。
+ *
+ * 之前直接写 `limit=1000` 会被 API 静默截到 100：市场超过 100 个插件后，
+ * 第 101 个之后的详情页又变成没有首页内链的孤岛（正是服务端化要修的问题）。
+ */
+async function loadMarketPluginList(query: URLSearchParams): Promise<HubPluginsResponse | null> {
+  const first = await hubGet<HubPluginsResponse>('/api/plugins?' + query.toString(), 60)
+  if (!first) return null
+  const items = [...first.items]
+  const total = first.total
+  while (items.length < total && items.length < MARKET_SSR_LIMIT) {
+    const nextQuery = new URLSearchParams(query)
+    nextQuery.set('offset', String(items.length))
+    const next = await hubGet<HubPluginsResponse>('/api/plugins?' + nextQuery.toString(), 60)
+    if (!next || next.items.length === 0) break
+    items.push(...next.items)
+  }
+  return { items, total }
+}
+
 function searchToString(sp: Record<string, string | string[] | undefined>): string {
   const params = new URLSearchParams()
   for (const [k, v] of Object.entries(sp)) {
@@ -93,14 +119,14 @@ export default async function MarketplacePage({
   if (kind) listQuery.set('kind', kind)
   if (q) listQuery.set('q', q)
   listQuery.set('sort', sort)
-  // 首屏种全量（当前市场 64 个插件）：分页式「加载更多」是客户端追加，
+  // 全量种子（当前市场 64 个插件）：分页式「加载更多」是客户端追加，
   // 第二页起的插件卡片没有 SSR 入链（link-graph 实测 40/64 孤岛）。
-  // 全量种子让每个 /marketplace/{slug} 都有首页入链；「加载更多」按钮在
+  // API 单页上限 100，必须按 offset 取到 total；「加载更多」按钮在
   // items.length === total 时自然隐藏。筛选交互后仍走 24/页的分页 UX。
-  listQuery.set('limit', '1000')
+  listQuery.set('limit', String(MARKET_LIST_PAGE_SIZE))
 
   const [list, featuredRes, popularRes, ratingRes, freshRes] = await Promise.all([
-    hubGet<HubPluginsResponse>('/api/plugins?' + listQuery.toString(), 60),
+    loadMarketPluginList(listQuery),
     ...(hasFilter
       ? [null, null, null, null]
       : [

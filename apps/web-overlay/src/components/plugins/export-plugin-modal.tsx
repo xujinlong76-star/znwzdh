@@ -20,6 +20,7 @@ import {
   type HubPluginItem,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
+import { pluginDetailHref } from '@/lib/plugins/detail-href'
 import { copyText } from '@/lib/clipboard'
 import {
   Package,
@@ -167,7 +168,7 @@ export function ExportPluginModal({
         description: '审核通过后将自动上架插件市场。',
       })
       onOpenChange(false)
-      router.push(`/marketplace/${encodeURIComponent(res.slug)}`)
+      router.push(pluginDetailHref(res.slug, res.status))
     } catch (err: any) {
       toast.error('投递失败', {
         description: err?.message || '请检查同名插件冲突或重试',

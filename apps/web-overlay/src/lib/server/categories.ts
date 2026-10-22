@@ -45,9 +45,10 @@ export function loadCategorySites(
   revalidate = 60,
 ): Promise<CategorySearchResult | null> {
   // search 的 categoryId 过滤在 store 层已展开到后代（categoryWithDescendants），
-  // 与「category_id ∪ sub_category_id」的建站口径一致。
+  // 与「category_id ∪ sub_category_id」的建站口径一致。必须显式限定 status=active：
+  // 否则 broken/pending 也占分页名额，页面再过滤会让「存活 ≥5」误判、翻页漏站。
   return hubGet<CategorySearchResult>(
-    `/api/search?q=&categoryId=${encodeURIComponent(id)}&limit=${limit}&offset=${offset}`,
+    `/api/search?q=&status=active&categoryId=${encodeURIComponent(id)}&limit=${limit}&offset=${offset}`,
     revalidate,
   )
 }

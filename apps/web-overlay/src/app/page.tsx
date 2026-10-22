@@ -4,7 +4,7 @@ import { Metadata } from "next/types";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { getProcessedData } from "@/lib/data-loader";
 import { getFileContent } from "@/lib/github";
-import { siteOrigin } from "@/lib/seo/origin";
+import { configuredSiteOrigin } from "@/lib/seo/origin";
 import { webSiteLd, organizationLd } from "@/lib/seo/json-ld";
 import { JsonLd } from "@/components/json-ld";
 import { pageShareMetadata } from "@/lib/seo/metadata";
@@ -38,9 +38,10 @@ import {
  * 可调，置 0 退回实时读）。导航是人工策划内容，变更以天计，这个延迟换
  * 爬虫预算与中枢负载划算。sitemap 用 3600 是同一模式更激进的档位。
  *
- * 仍会动态渲染的两种可接受降级：① 未注入 NAVHUB_SITE_URL 时 siteOrigin()
- * 回退读请求头；② 中枢开启鉴权（带 Authorization 的 fetch 不进缓存）。
- * 生产环境注入 NAVHUB_SITE_URL 后即完整 ISR。
+ * 仍会动态渲染的一种可接受降级：中枢开启鉴权（带 Authorization 的 fetch 不进缓存）。
+ * origin 走 configuredSiteOrigin()（只读环境变量），所以未注入 NAVHUB_SITE_URL 时首页
+ * 仍然是预渲染的，代价只是这份 WebSite/Organization JSON-LD 不输出、分享图地址落回
+ * localhost；配上变量后一个 revalidate 周期自愈。
  */
 export const revalidate = 60;
 
@@ -85,7 +86,9 @@ const DIRECTORY_CATEGORY_LINKS = 8;
 async function loadDirectoryLinks() {
   const [categories, rawCounts] = await Promise.all([
     loadCategories(3600),
-    loadActiveCategoryCounts(3600),
+    // 与类目页的 404 判定同频：页面按 60s 的 active 搜索结果判「是否达标」，
+    // 目录带若用 3600s 的计数，健康巡检一次抖动就会出现最长 1 小时的死链。
+    loadActiveCategoryCounts(60),
   ])
   const counts = descendantSiteCounts(categories ?? [], rawCounts)
   if (!categories || !counts) return [];
@@ -164,7 +167,10 @@ export default async function HomePage() {
   const { navigationData, siteData } = await getData();
   // WebSite 结构化数据：全站唯一入口页挂一份即可。
   // 不写 potentialAction（没有 /search 页面），不写 aggregateRating（没有评价体系）。
-  const [origin, directoryLinks] = await Promise.all([siteOrigin(), loadDirectoryLinks()]);
+  // origin 只读配置：首页带 revalidate，一旦回退到 headers() 就会在构建期落成 ƒ、
+  // 60s 缓存静默作废（缺配置的正确降级是「这份 JSON-LD 不输出」，地址保持相对）。
+  const origin = configuredSiteOrigin();
+  const directoryLinks = await loadDirectoryLinks();
 
   return (
     <>

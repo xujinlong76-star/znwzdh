@@ -17,6 +17,10 @@
  * `cache-control: s-maxage`（没有就说明退化成了每次请求现渲），且不得 5xx；
  * `/category/{slug}?page=N` 必须被配置层 308 到 `/p/{N}`（旧形态是已收录 URL）。
  *
+ * `--min-checked=N`（默认 1）是 --live 的覆盖率下限：抽查页数不足 N 直接红灯。
+ * 空 sitemap / 中枢未起 / base 指错时，每个族只会打一行「跳过」，
+ * 于是「0 页通过」看起来像绿灯——那是比红灯更坏的失败（守卫永远不响）。
+ *
  * `NAVHUB_SITE_URL` 不是 --live 跑通的前提（prod 配置清单仍然要求配好它）。
  * 实测（2026-10-22，同一份无 origin 构建产物 + 运行时也不给这个变量）：收录型
  * 渲染链全绿，缺配置的形态是「canonical / og:url 走相对地址、面包屑与 ItemList
@@ -25,6 +29,11 @@
  * `/marketplace/{slug}` 会整批 500：它们在按需生成（静态上下文）里
  * `await siteOrigin()`，拿不到配置就走到 `headers()`，于是抛
  * DYNAMIC_SERVER_USAGE。ISR_RENDER_CHAIN 的源码钉子就是防止这条路走回头。
+ *
+ * 产物门禁还有一条「永久快照」检查：`prerender.routes` 里
+ * `initialRevalidateSeconds: false` 的页一旦把 `http://localhost:3000/…` 烤进
+ * `server/app/*.html`（metadataBase 缺席时的兜底），就没有 revalidate 周期能把它
+ * 洗掉，只能等下次构建。带 revalidate 的路由同款问题会自愈，所以不报。
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -57,6 +66,15 @@ const SRC_ROOT = resolve(valueOf('src-root', ROOT));
  * 故意不含 /marketplace/[slug]/preview：内部预览通道，不进索引也不该有缓存语义。
  */
 const WHITELIST = [
+  {
+    // 首页：全站被爬最多的一条，也是 `/sites` 同族的最后一处「构建期读到 headers()
+    // 就落成 ƒ、revalidate=60 静默作废」。`exact` 是因为 urlPrefix 为 '/' 时
+    // startsWith 会匹配所有路径，live 抽查必须只取 sitemap 里的根条目。
+    route: '/',
+    urlPrefix: '/',
+    src: 'apps/web-overlay/src/app/page.tsx',
+    exact: true,
+  },
   {
     route: '/category/[slug]',
     urlPrefix: '/category/',
@@ -112,11 +130,14 @@ const WHITELIST = [
  * 正确写法是 `configuredSiteOrigin()`（只读环境变量）：缺配置时的降级是
  * 「JSON-LD 不输出、地址保持相对」，既不掉缓存也不炸页。
  *
- * 故意不在这个名单里：`sitemap.ts` / `robots.ts` / `feed.xml` / 首页 —— 它们本来就是
+ * 故意不在这个名单里：`sitemap.ts` / `robots.ts` / `feed.xml` —— 它们本来就是
  * ƒ（每次请求现渲），headers() 兜底在那儿是合法且有用的（sitemap 的 `<loc>` 必须绝对）。
+ * 首页已在名单内：它带 `revalidate = 60`，兜底 read headers() 会把这条最要紧的
+ * 收录页钉成 ƒ（2026-10-22 实测），和 /sites 是同一个缺陷。
  */
 const ISR_RENDER_CHAIN = [
   'apps/web-overlay/src/app/layout.tsx',
+  'apps/web-overlay/src/app/page.tsx',
   'apps/web-overlay/src/components/breadcrumbs.tsx',
   'apps/web-overlay/src/app/sites/page.tsx',
   'apps/web-overlay/src/app/sites/sites-directory.tsx',
@@ -188,6 +209,36 @@ function checkSource(srcRoot = SRC_ROOT) {
   return failures;
 }
 
+/**
+ * 「永久快照」检查。
+ *
+ * `initialRevalidateSeconds: false` 的预渲染页没有 revalidate 周期：Next 缺
+ * `metadataBase`（即没注入 `NAVHUB_SITE_URL`）时用 `http://localhost:3000` 兜底
+ * 解析 og:image，这个地址一旦被烤进产物就一直在线，直到下次重新构建才会变。
+ * 带 revalidate 的同款缺陷一个周期就自愈（实测 `/sites`、`/category` 都是这样），
+ * 所以只钉这一族——2026-10-22 在 `.next-home` 的 `algorithms.html` 里实测到
+ * 2 处 `localhost:3000/og-default.png`，而 `/algorithms` 是 sitemap 里唯一一条
+ * `revalidate=false` 的收录页。
+ */
+const LOCAL_ORIGIN_ASSET = /http:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1])(?::\d+)?\/[^\s"'<>]*/i;
+
+function checkPermanentSnapshots(dist, staticRoutes) {
+  const failures = [];
+  for (const [path, entry] of Object.entries(staticRoutes)) {
+    if (entry?.initialRevalidateSeconds !== false) continue;
+    const rel = path.replace(/^\/+/, '').replace(/\/+$/, '') || 'index';
+    const file = resolve(dist, 'server/app', `${rel}.html`);
+    // 非 HTML 产物（manifest.webmanifest 等）不在这一条覆盖范围内
+    if (!existsSync(file)) continue;
+    const hit = readFileSync(file, 'utf8').match(LOCAL_ORIGIN_ASSET)?.[0];
+    if (!hit) continue;
+    failures.push(
+      `${path}：revalidate=false 的永久快照里烤进了本机地址（${hit}）——缺 NAVHUB_SITE_URL 时 metadataBase 用 http://localhost:3000 兜底，这一族没有自愈周期；要么给它 revalidate，要么别输出绝对兜底地址`,
+    );
+  }
+  return failures;
+}
+
 function checkBuild() {
   const distDir = process.env.NEXT_DIST_DIR || '.next';
   const dist = resolve(ROOT, 'apps/web', distDir);
@@ -219,6 +270,7 @@ function checkBuild() {
 
   const srcFailures = [...checkSource(), ...checkRenderChain()];
   failures.push(...srcFailures);
+  failures.push(...checkPermanentSnapshots(dist, staticRoutes));
 
   for (const [mark, route, note] of rows) {
     console.log(`${mark} ${route.padEnd(28)} ${note}`);
@@ -293,8 +345,8 @@ async function checkLive() {
   }
 
   for (const entry of WHITELIST) {
-    const { route, urlPrefix, paged } = entry;
-    const all = [...new Set(paths.filter((p) => p.startsWith(urlPrefix)))];
+    const { route, urlPrefix, paged, exact } = entry;
+    const all = [...new Set(paths.filter((p) => (exact ? p === urlPrefix : p.startsWith(urlPrefix))))];
     const matching = all.filter((p) => (paged ? /\/p\/[^/]+$/.test(p) : !/\/p\/[^/]+$/.test(p)));
     // 分页页不会进 sitemap（第 2 页起 noindex），但恰恰是它最容易在按需生成时 500。
     // 没有现成样本时用第一个分类页造一个 /p/2：超出末页的 404 是正确行为，
@@ -350,6 +402,17 @@ async function checkLive() {
       `${ok ? '✓' : '✖'} ${'旧形态归一'.padEnd(9)} ${url.padEnd(44)} ${r.status} loc=${r.location || '—'}`,
     );
     if (!ok) failures.push(`${url} 没有 30x 到 ${target || '（裸路径）'}（旧收录 URL 会白扔权重）`);
+  }
+
+  // 「一条都没抽查到」不是通过。空 sitemap / 全 5xx / base 指错都会让上面
+  // 每个族打一行「跳过」然后走到这里——若不设底，--live 就变成一条永远不会红的守卫，
+  // 而 CI 一旦习惯了它的绿灯，这条约束实际上就没人看着了。
+  const minChecked = Math.max(0, Number(valueOf('min-checked', '1')) || 0);
+  if (checked < minChecked) {
+    console.error(
+      `\n✖ 线上 ISR 抽查只覆盖到 ${checked} 页，低于下限 ${minChecked}：sitemap 里没有可抽查样本（中枢空库/取数失败/base 指错），门禁没跑到 ≠ 门禁通过`,
+    );
+    return 1;
   }
 
   if (failures.length) {

@@ -142,8 +142,10 @@ describe("og:image 与 canonical 同源", () => {
   it("工厂在 imageUrl 缺省时才退回静态品牌卡", () => {
     const src = overlayFile("src/lib/seo/metadata.ts");
     expect(src).toContain("input.imageUrl || DEFAULT_OG_IMAGE.url");
+    // 未配置 origin 时宁可不出图，也不把 localhost 烤进分享卡
+    expect(src).toContain("const shareImage = configuredSiteOrigin() ? image : null");
     // og 与 twitter 必须同一张图：twitter 只写默认图会让两平台预览不一致
-    expect(src).toContain("images: [image]");
-    expect(src).toContain("images: [{ url: image.url, alt: image.alt }]");
+    expect(src).toContain("...(shareImage ? { images: [shareImage] } : {})");
+    expect(src).toContain("...(shareImage ? { images: [{ url: shareImage.url, alt: shareImage.alt }] } : {})");
   });
 });

@@ -1069,7 +1069,9 @@ export async function publishPlugin(
   options?: { autoAudit?: boolean }
 ): Promise<HubPluginItem & { audit?: HubPluginAuditReport }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const shouldAutoAudit = options?.autoAudit !== false
+  // API 合约：默认进入 pending 待审队列，只有显式 autoAudit=true 才自动上架。
+  // 手动投稿页/导出弹窗都承诺“已提交审核”，别让这句文案变成已上架。
+  const shouldAutoAudit = options?.autoAudit === true
   const params = new URLSearchParams()
   if (effectiveIdentity) params.set('anonId', effectiveIdentity)
   if (shouldAutoAudit) params.set('autoAudit', 'true')
@@ -1159,7 +1161,8 @@ export async function submitPluginVersion(
   options?: { autoAudit?: boolean }
 ): Promise<HubPluginItem & { audit?: HubPluginAuditReport }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const shouldAutoAudit = options?.autoAudit !== false
+  // 同 publishPlugin：版本提交默认也进人工审核队列，AI 工坊显式传 true。
+  const shouldAutoAudit = options?.autoAudit === true
   const params = new URLSearchParams()
   if (effectiveIdentity) params.set('anonId', effectiveIdentity)
   if (shouldAutoAudit) params.set('autoAudit', 'true')

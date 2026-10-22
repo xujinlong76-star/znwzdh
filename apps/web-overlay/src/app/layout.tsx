@@ -14,7 +14,7 @@ import { OfflineBanner } from '@/components/offline-banner'
 import MobileNav from '@/components/mobile-nav'
 import { SessionSync } from '@/components/user-center/session-sync'
 import { getFileContent } from '@/lib/github'
-import { siteOrigin } from '@/lib/seo/origin'
+import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { DEFAULT_OG_IMAGE } from '@/lib/seo/metadata'
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
@@ -39,9 +39,18 @@ const SITE_PATH = 'src/navsphere/content/site.json'
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getFileContent<{ basic?: { title?: string }; appearance?: { favicon?: string } }>(SITE_PATH);
   const siteName = site?.basic?.title ?? 'NavHub';
-  // canonical / OG 相对地址的解析基准。未注入 NAVHUB_SITE_URL 时回退请求头，
-  // 但那样相关路由会变成动态渲染，生产环境必须注入该变量。
-  const origin = await siteOrigin();
+  // canonical / OG 相对地址的解析基准。
+  //
+  // 这里刻意用 configuredSiteOrigin()（只读 NAVHUB_SITE_URL，绝不碰 headers()）
+  // 而不是 siteOrigin()：根布局的 generateMetadata 参与每一条路由的解析，
+  // 它一旦读 headers()，`/sites` 这类**没有动态段**的收录页就在构建期被判成
+  // ƒ（每次请求现渲），`revalidate` 全废 —— 而 Docker 的 `pnpm build` 阶段拿不到
+  // NAVHUB_SITE_URL（它在运行时才注入，见 docker/Dockerfile.web 与 compose）。
+  //
+  // 代价：构建期没有 origin 时 metadataBase 缺席，首份快照的 og:url / og:image
+  // 是相对地址；运行时后台 revalidate 读得到配置，绝对地址在一个周期内自愈。
+  // 生产部署仍必须注入 NAVHUB_SITE_URL（否则永远是相对地址，分享卡质量下降）。
+  const origin = configuredSiteOrigin();
 
   return {
     ...(origin ? { metadataBase: new URL(origin) } : {}),

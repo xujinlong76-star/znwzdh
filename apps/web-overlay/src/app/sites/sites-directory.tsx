@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { hubGet } from '@/lib/server/hub'
-import { siteOrigin } from '@/lib/seo/origin'
+import { fetchPagedCatalog } from '@/lib/server/sites-catalog'
+import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { itemListLd } from '@/lib/seo/json-ld'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { JsonLd } from '@/components/json-ld'
@@ -32,19 +33,23 @@ const MAX_PAGE_LINKS = 5
 export type SitesPageData = {
   all: HubSite[]
   totalPages: number
+  /** 取数没取完（触到分块上限，或中途某一块失败）：此时的 all 不是全量 */
+  incomplete: boolean
 }
 
 export async function loadSitesPage(): Promise<SitesPageData> {
-  // `/api/sites` 的 limit 上限 1000，当前 1013 条 active 需两页；
-  // 站点数超过 2000 时这里要改成循环分页。
+  // 按块循环取到「不满一块」为止（见 lib/server/sites-catalog 的契约与残留风险）。
+  // 旧写法是写死两块 1000，站点数超过 2000 会静默截断。
   // revalidate=60：目录页是爬虫面，全量列表每次渲染都要取一遍；带 60s Data Cache
   // 后重复抓取不再打穿中枢（站点上下架是低频操作，最多 60s 延迟体现）。
-  const [a, b] = await Promise.all([
-    hubGet<HubSite[]>('/api/sites?status=active&limit=1000&offset=0', 60),
-    hubGet<HubSite[]>('/api/sites?status=active&limit=1000&offset=1000', 60),
-  ])
-  const all = [...(a ?? []), ...(b ?? [])]
-  return { all, totalPages: Math.max(1, Math.ceil(all.length / SITES_PAGE_SIZE)) }
+  const catalog = await fetchPagedCatalog<HubSite>((offset, limit) =>
+    hubGet<HubSite[]>(`/api/sites?status=active&limit=${limit}&offset=${offset}`, 60),
+  )
+  return {
+    all: catalog.items,
+    totalPages: Math.max(1, Math.ceil(catalog.items.length / SITES_PAGE_SIZE)),
+    incomplete: catalog.truncated || catalog.failed,
+  }
 }
 
 /** 第 1 页是裸路径：`/sites?page=1` 与 `/sites` 是同一个页面，不能两个形态都发出去 */
@@ -73,7 +78,7 @@ export function sitesPageDescription(page: number): string {
 }
 
 export async function SitesDirectory({ requested, data }: { requested: number; data: SitesPageData }) {
-  const { all, totalPages } = data
+  const { all, totalPages, incomplete } = data
   // 归一只认 sitesNormalizedPage 这一处：路由的 canonical/308 与这里的渲染必须同值，
   // 否则「元信息说第 2 页、正文渲染第 3 页」这类断档没人兜得住。
   const current = sitesNormalizedPage(requested, totalPages)
@@ -82,9 +87,14 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
 
   // 结构化数据与可索引面包屑只挂页 1：noindex 页输出 JSON-LD 没有意义，
   // 反而让「声明可索引」与 meta robots 自相矛盾。
-  // origin 给 ItemList 拼绝对 URL；面包屑的 JSON-LD 由 Breadcrumbs 内部
-  // 自行取 origin 并按 indexable 决定输不输出（职责单一，两边不会重复）。
-  const origin = await siteOrigin()
+  //
+  // origin 走 configuredSiteOrigin()（只读环境变量，绝不碰 headers()）：`/sites`
+  // 是没有动态段的静态路径，渲染链上任何一处 `headers()` 都会让它在构建期
+  // 判为 ƒ、`revalidate` 全废——而 Docker 的 `pnpm build` 阶段恰好拿不到
+  // NAVHUB_SITE_URL（那是运行时注入的）。构建期因此少了 origin，只是让首份快照
+  // 的 canonical/og 用相对地址（爬虫按页面 URL 解析，成立）；运行时后台
+  // revalidate 重新生成时读得到配置，绝对地址自愈，最迟一个 revalidate 周期。
+  const origin = configuredSiteOrigin()
   const indexable = origin !== null && current === 1
 
   // 页码窗口：围绕当前页取最多 MAX_PAGE_LINKS 个
@@ -100,6 +110,7 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
           {/* 面包屑（可见 DOM 与 BreadcrumbList JSON-LD 同源，页 ≥2 只出可见部分） */}
           <Breadcrumbs
             jsonLd={indexable}
+            origin={origin}
             items={[
               { label: '首页', path: '/' },
               { label: '全部站点目录', path: '/sites' },
@@ -110,7 +121,11 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
               全部站点目录
             </h1>
             <p className="text-sm text-muted-foreground">
-              本站共收录 {all.length} 个站点，当前第 {current} / {totalPages} 页，每页 {SITES_PAGE_SIZE} 个。
+              {incomplete
+                ? // 取数没取完时不能写「共收录 N 个」：那个 N 是已取到的条数，不是总数。
+                  // 如实说「已列出前 N 个」，并给出分类页这条不依赖整表的路径。
+                  `本站已列出前 ${all.length} 个站点（收录总数超出本次取数上限），当前第 ${current} / ${totalPages} 页，每页 ${SITES_PAGE_SIZE} 个；也可以按分类浏览完整目录。`
+                : `本站共收录 ${all.length} 个站点，当前第 ${current} / ${totalPages} 页，每页 ${SITES_PAGE_SIZE} 个。`}
             </p>
             {/* 枢纽互链：目录页同时是「按主题逛」的入口，与页脚入口互补不重复 */}
             <nav aria-label="站内目录" className="flex flex-wrap items-center gap-3 text-xs pt-1">

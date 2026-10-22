@@ -64,15 +64,31 @@ const SRCS = [
   "apps/web-overlay/src/app/collections/[slug]/page.tsx",
 ];
 
-/** 造一棵「全部干净」的源码 fixture：每个页面都声明 revalidate 且不读 searchParams */
-function writeSources(badRel?: string): string {
+/** 静态收录路径的渲染链（与脚本内 STATIC_RENDER_CHAIN 同构） */
+const STATIC_SRCS = [
+  "apps/web-overlay/src/app/layout.tsx",
+  "apps/web-overlay/src/app/sites/page.tsx",
+  "apps/web-overlay/src/app/sites/sites-directory.tsx",
+];
+
+/**
+ * 造一棵「全部干净」的源码 fixture：
+ * 每个页面都声明 revalidate 且不读 searchParams，静态渲染链不调用 siteOrigin()。
+ */
+function writeSources(badRel?: string, staticBadRel?: string): string {
   const root = resolve("apps/web/.next-isr-gate-src-fixture");
   rmSync(root, { recursive: true, force: true });
-  for (const rel of SRCS) {
-    const body =
-      rel === badRel
-        ? "export const revalidate = 60\nexport default async function P({ params, searchParams }: any) {\n  return searchParams\n}\n"
-        : "export const revalidate = 60\n// 说明：签名里只要出现 searchParams 就会抛 DYNAMIC_SERVER_USAGE\nexport default async function P({ params }: any) {\n  return params\n}\n";
+  for (const rel of new Set([...SRCS, ...STATIC_SRCS])) {
+    let body =
+      "export const revalidate = 60\n// 说明：签名里只要出现 searchParams 就会抛 DYNAMIC_SERVER_USAGE\nexport default async function P({ params }: any) {\n  return params\n}\n";
+    if (rel === badRel) {
+      body = "export const revalidate = 60\nexport default async function P({ params, searchParams }: any) {\n  return searchParams\n}\n";
+    } else if (rel === staticBadRel) {
+      // 只把 origin 换成会读 headers() 的那一个变体，其余约束照常满足，
+      // 这样红灯原因只会来自静态渲染链门禁。
+      body =
+        "export const revalidate = 60\nimport { siteOrigin } from '@/lib/seo/origin'\nexport default async function P({ params }: any) {\n  return [params, await siteOrigin()]\n}\n";
+    }
     const file = resolve(root, rel);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, body);
@@ -93,15 +109,15 @@ describe("check-isr-routes.mjs", () => {
     expect(code).toBe(0);
   });
 
-  it("/sites 页 1 是 soft 族：产物缺它只提示，不判失败", () => {
-    // 页 1 是不是 ● 取决于构建期有没有 NAVHUB_SITE_URL（没配时 siteOrigin() 读
-    // headers() 把整页钉成现渲）。那是配置口径，所以这里必须是提示而不是红灯；
-    // 但签名读 searchParams 仍然会红——见下一条对硬族的钉子与 fixture 用例。
+  it("/sites 页 1 退化成 ƒ 同样红灯（soft 豁免已随构建期 origin 依赖一起废除）", () => {
+    // 历史：页 1 的渲染链经 siteOrigin() 兜底读 headers()，CI/Docker 的 build 阶段
+    // 没有 NAVHUB_SITE_URL，产物只能是 ƒ，于是给它开过「只提示不判失败」的豁免。
+    // 现在 metadataBase 与站点目录改用 configuredSiteOrigin()，静态路径的预渲染
+    // 不再依赖构建期 origin —— 缺了就是真回归（根布局或目录页把 headers() 放回来了）。
     writeManifest(ALL_ROUTES.filter((r) => r !== "/sites"));
     const { code, out } = run();
-    expect(out, out).toContain("! /sites：产物是 ƒ");
-    expect(out, out).not.toContain("✖ ISR 门禁未通过");
-    expect(code).toBe(0);
+    expect(code, out).toBe(1);
+    expect(out).toContain("/sites：退化为动态渲染");
   });
 
   it("任一收录型路由退化成动态渲染（不在 prerender-manifest）就红灯", () => {
@@ -156,5 +172,29 @@ describe("check-isr-routes.mjs", () => {
     expect(code, out).toBe(1);
     expect(out).toContain("/tags/[slug]");
     expect(out).toContain("revalidate");
+  });
+
+  it("fixture 源码：静态渲染链里调用 siteOrigin() 就红灯（构建期读 headers() 会把 /sites 钉成 ƒ）", () => {
+    writeManifest(ALL_ROUTES);
+    const srcRoot = writeSources(undefined, "apps/web-overlay/src/app/layout.tsx");
+    const { code, out } = run([`--src-root=${srcRoot}`]);
+    expect(code, out).toBe(1);
+    expect(out).toContain("apps/web-overlay/src/app/layout.tsx");
+    expect(out).toContain("configuredSiteOrigin");
+  });
+
+  it("fixture 源码：configuredSiteOrigin()（只读环境变量）不算违规", () => {
+    // 防误报：真实源码用的就是 configuredSiteOrigin()，朴素 includes(src, 'siteOrigin')
+    // 会把正确写法一并判红，门禁一旦常年红在无关处就没人再看它。
+    writeManifest(ALL_ROUTES);
+    const srcRoot = writeSources();
+    const rel = "apps/web-overlay/src/app/sites/sites-directory.tsx";
+    writeFileSync(
+      resolve(srcRoot, rel),
+      "export const revalidate = 60\nimport { configuredSiteOrigin } from '@/lib/seo/origin'\nexport default async function P({ params }: any) {\n  return [params, configuredSiteOrigin()]\n}\n",
+    );
+    const { code, out } = run([`--src-root=${srcRoot}`]);
+    expect(out, out).not.toContain("调用了 siteOrigin()");
+    expect(code).toBe(0);
   });
 });

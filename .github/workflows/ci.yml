@@ -137,12 +137,13 @@ jobs:
       # 首屏 JS 预算硬门禁：build 产物已就绪。阈值在 scripts/bundle-budget.json，
       # 不允许为了过门禁上调——超了先优化，再按真实产物重新定基线。
       - run: node scripts/check-bundle-budget.mjs
-      # ISR 硬门禁：收录型路由（分类/分页/插件详情/站点详情/标签/合集）必须是 ●，
+      # ISR 硬门禁：收录型路由（分类/分页/插件详情/站点详情/标签/合集/站点目录）必须是 ●，
       # 并且页面签名不得读 searchParams。动机：这类路由带 revalidate +
       # generateStaticParams，读了 searchParams 的未预渲染参数在按需生成时直接抛
       # DYNAMIC_SERVER_USAGE（生产 500），而 next dev / tsc / eslint 都照不出来。
-      # /sites 页 1 是 soft 族：CI 构建没有 NAVHUB_SITE_URL，siteOrigin() 兜底读
-      # headers() 会把它钉成 ƒ——那是配置口径，不是代码回归，故只提示不红灯。
+      # CI 构建同样没有 NAVHUB_SITE_URL，所以这一条就是在证明「构建期不需要 origin
+      # 也能预渲染 /sites」：静态渲染链（根布局 metadataBase + 站点目录）一旦把
+      # siteOrigin() 的 headers() 兜底放回来，/sites 退化成 ƒ，这里立刻红灯。
       - run: node scripts/check-isr-routes.mjs
 
   check-web-overlay:

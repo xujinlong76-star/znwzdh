@@ -16,6 +16,13 @@
  * --live 校验的是「产物跑起来之后」的表现：ISR 族页面必须带
  * `cache-control: s-maxage`（没有就说明退化成了每次请求现渲），且不得 5xx；
  * `/category/{slug}?page=N` 必须被配置层 308 到 `/p/{N}`（旧形态是已收录 URL）。
+ *
+ * --live 必须在配置了 `NAVHUB_SITE_URL` 的环境跑（CI 的 deploy job 就是这么注入的）。
+ * 实测（2026-10-22，同一份无 origin 构建产物）：运行时也没这个变量时，
+ * `/sites` 族照样 200 + s-maxage（静态渲染链已改成只读配置），而 `/site/{id}`、
+ * `/tags/{slug}`、`/collections/{slug}`、`/marketplace/{slug}` 会整批 500 ——
+ * 它们在按需生成（静态上下文）里 `await siteOrigin()`，拿不到配置就走到 `headers()`，
+ * 于是抛 DYNAMIC_SERVER_USAGE。那种 500 是真配置缺失，门禁照红灯就是它该做的事。
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -37,10 +44,13 @@ const SRC_ROOT = resolve(valueOf('src-root', ROOT));
  * `src` 用于源码门禁：这些文件一旦读 searchParams 或删掉 revalidate，
  * 构建产物会在下一次 CI 里红灯，而不是等线上 500。
  *
- * `soft: true` 只做提示、不判失败：`/sites` 页 1 是不是 ● 取决于**构建期**有没有
- * `NAVHUB_SITE_URL`——没配时 `siteOrigin()` 兜底去读 `headers()`（面包屑的绝对 URL
- * 要用它），整页就被钉成现渲。这是配置口径而不是代码回归，所以源码照常硬门禁、
- * 产物形态只记账。（实测对照：CI 无变量 → ƒ；本地带变量构建 → ○ 且 revalidate 1m）
+ * 收录型路由一律硬门禁，不设「只看提示」的豁免档。`/sites` 页 1 曾经豁免过，
+ * 理由当时成立、后来不成立：它的渲染链会经 `siteOrigin()` 兜底读 `headers()`，
+ * 而 CI / Docker 的 `next build` 阶段都没有 `NAVHUB_SITE_URL`（运行时才注入），
+ * 于是构建期判成 ƒ、`revalidate` 全废。2026-10-22 起根布局 metadataBase 与
+ * 站点目录改用 `configuredSiteOrigin()`（只读环境变量，绝不碰 headers()），
+ * 静态路径的预渲染不再依赖构建期 origin —— 门禁因此重新封死，任何一处
+ * 把 `headers()` 放回 `/sites` 渲染链的改动都会在这里红灯。
  *
  * 故意不含 /marketplace/[slug]/preview：内部预览通道，不进索引也不该有缓存语义。
  */
@@ -59,12 +69,12 @@ const WHITELIST = [
     paged: true,
   },
   {
-    // 站点目录第 1 页：静态路由 + revalidate，构建期配了 origin 才落在 prerender.routes
+    // 站点目录第 1 页：没有动态段的静态路径，构建期就要落进 prerender.routes
+    // （渲染链不读 headers()，见上面 WHITELIST 注释）
     route: '/sites',
     urlPrefix: '/sites',
     src: 'apps/web-overlay/src/app/sites/page.tsx',
     excludePaged: true,
-    soft: true,
   },
   {
     // 站点目录第 2 页起：2026-10-22 从 `?page=N` 迁到路径段，就是为了这条族能进 ISR
@@ -86,6 +96,43 @@ const WHITELIST = [
     src: 'apps/web-overlay/src/app/collections/[slug]/page.tsx',
   },
 ];
+
+/**
+ * 静态收录路径（没有动态段、构建期就要预渲染）的渲染链文件。
+ *
+ * 这一族禁止出现 `siteOrigin()`：它在 `NAVHUB_SITE_URL` 缺失时回退到 `headers()`，
+ * 而 CI / Docker 的 `next build` 阶段恰好拿不到该变量（运行时才注入），一旦读它
+ * 整条路由就在构建期判成 ƒ，`revalidate` 静默失效。改用 `configuredSiteOrigin()`
+ * （只读环境变量，永不碰请求头）。
+ *
+ * 产物门禁（/sites 缺 prerender 记录即红灯）已经能拦住这类回归，这里额外点名文件
+ * 是为了让红灯直接说出「是哪一处把 headers() 放回来了」。
+ * 动态段路由（/site/[id]、/tags/[slug] 等）不受此列表约束：它们在运行时按需生成，
+ * 那时环境变量读得到，兜底分支不会被走到。
+ */
+const STATIC_RENDER_CHAIN = [
+  'apps/web-overlay/src/app/layout.tsx',
+  'apps/web-overlay/src/app/sites/page.tsx',
+  'apps/web-overlay/src/app/sites/sites-directory.tsx',
+];
+
+function checkStaticChain(srcRoot = SRC_ROOT) {
+  const failures = [];
+  for (const rel of STATIC_RENDER_CHAIN) {
+    const file = resolve(srcRoot, rel);
+    if (!existsSync(file)) {
+      failures.push(`${rel}：静态渲染链文件不存在`);
+      continue;
+    }
+    const body = stripComments(readFileSync(file, 'utf8'));
+    if (/\bsiteOrigin\s*\(/.test(body)) {
+      failures.push(
+        `${rel}：调用了 siteOrigin()（缺 NAVHUB_SITE_URL 时会读 headers()）——静态收录页会退化成 ƒ，改用 configuredSiteOrigin() 或由调用方传入 origin`,
+      );
+    }
+  }
+  return failures;
+}
 
 /** 注释里出现 searchParams 是正常说法（解释为什么不能用），门禁只看真实代码 */
 function stripComments(src) {
@@ -138,8 +185,7 @@ function checkBuild() {
 
   const rows = [];
   const failures = [];
-  const notes = [];
-  for (const { route, soft } of WHITELIST) {
+  for (const { route } of WHITELIST) {
     const entry = dynamic[route];
     const prerendered = Object.keys(staticRoutes).some((p) => p === route || p.startsWith(`${route}/`));
     if (entry) {
@@ -149,28 +195,24 @@ function checkBuild() {
       }
     } else if (prerendered) {
       rows.push(['●', route, 'build 期全量预渲染']);
-    } else if (soft) {
-      rows.push(['ƒ', route, '不在 prerender-manifest（每次请求现渲）']);
-      notes.push(`${route}：产物是 ƒ —— 构建期没配 NAVHUB_SITE_URL，siteOrigin() 读了 headers()；只提示不判失败`);
     } else {
       rows.push(['ƒ', route, '不在 prerender-manifest（每次请求现渲）']);
       failures.push(`${route}：退化为动态渲染（ƒ）——ISR 丢失`);
     }
   }
 
-  const srcFailures = checkSource();
+  const srcFailures = [...checkSource(), ...checkStaticChain()];
   failures.push(...srcFailures);
 
   for (const [mark, route, note] of rows) {
     console.log(`${mark} ${route.padEnd(28)} ${note}`);
   }
-  for (const n of notes) console.log(`  ! ${n}`);
   if (failures.length) {
     console.error('\n✖ ISR 门禁未通过：');
     for (const f of failures) console.error(`  - ${f}`);
     return 1;
   }
-  console.log(`\n✓ ${WHITELIST.length} 条收录型路由的产物与源码门禁都通过${notes.length ? `（${notes.length} 条提示）` : ''}`);
+  console.log(`\n✓ ${WHITELIST.length} 条收录型路由的产物与源码门禁都通过`);
   return 0;
 }
 
@@ -235,7 +277,7 @@ async function checkLive() {
   }
 
   for (const entry of WHITELIST) {
-    const { route, urlPrefix, paged, soft } = entry;
+    const { route, urlPrefix, paged } = entry;
     const all = [...new Set(paths.filter((p) => p.startsWith(urlPrefix)))];
     const matching = all.filter((p) => (paged ? /\/p\/[^/]+$/.test(p) : !/\/p\/[^/]+$/.test(p)));
     // 分页页不会进 sitemap（第 2 页起 noindex），但恰恰是它最容易在按需生成时 500。
@@ -260,10 +302,8 @@ async function checkLive() {
         `${okStatus && cached ? '✓' : '✖'} ${(paged ? 'ISR 分页' : 'ISR 页面').padEnd(9)} ${path.padEnd(44)} ${r.status} cc=${r.cacheControl || '—'}`,
       );
       if (r.status >= 500) failures.push(`${path}：HTTP ${r.status}（5xx 通常是 DYNAMIC_SERVER_USAGE）`);
-      else if (!okStatus && !soft) failures.push(`${path}：HTTP ${r.status}，期望 ${allow.join('/')}`);
-      // soft 族：没缓存只可能是构建期没配 origin（见 WHITELIST 注释），5xx 才是真回归
-      else if (!cached && !soft) failures.push(`${path}：没有 s-maxage，说明这一页没走 ISR 缓存`);
-      else if (!cached) console.log(`  ! ${path}：没有 s-maxage（${route} 是 soft 族，只提示）`);
+      else if (!okStatus) failures.push(`${path}：HTTP ${r.status}，期望 ${allow.join('/')}`);
+      else if (!cached) failures.push(`${path}：没有 s-maxage，说明这一页没走 ISR 缓存`);
     }
   }
 

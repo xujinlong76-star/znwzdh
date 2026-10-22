@@ -2,15 +2,8 @@ import type { Repository } from "../repository.ts";
 import { randomUUID } from "node:crypto";
 import { containsLike } from "../sql-like.ts";
 import {
-  buildFtsTokens,
   canonicalizeUrl,
-  getEnhancedSiteData,
-  pinyinTraits,
-  type Category,
-  type Collection,
   type Site,
-  type SiteAction,
-  type SiteLiveMetrics,
   type SiteRelation,
   type SiteStatus,
   CONTROLLED_FACETS,
@@ -21,43 +14,17 @@ import {
   type SiteOfflineArchive,
 } from "@navhub/core";
 import type {
-  ApiTokenRecord,
-  AuditLogRecord,
-  CategoryDistributionItem,
   SiteKnowledgeGraph,
   MatchedSiteRelation,
-  DashboardOverview,
-  FavoriteFolderRecord,
-  FavoriteRecord,
-  JobRecord,
-  MaintenanceStatus,
-  SecurityOverview,
   SiteInput,
-  TagWithCount,
-  UserProfileRecord,
-  UserRecord,
-  UserVaultRecord,
 } from "./records.ts";
 import {
-  bindSqlite,
   buildIndexFields,
-  normalizeTokenScopes,
   packMetadata,
-  rowToApiToken,
-  rowToAuditLog,
-  rowToCategory,
-  rowToCollection,
-  rowToFavorite,
-  rowToFolder,
-  rowToJob,
-  rowToProfile,
   rowToSite,
   rowToSiteRelation,
-  rowToUser,
   slugify,
-  toPgSql,
 } from "./dialect.ts";
-import type { Db } from "../driver.ts";
 import { chunkList, inPredicate, SQL_IN_CHUNK } from "../sql-in.ts";
 
 export async function listSites(repo: Repository, filter: { categoryId?: string; status?: SiteStatus; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {

@@ -274,7 +274,7 @@
 | P1-3 / P1-5 | ✅ 已完成 | CRDT canonical 与审核事件流决策注释 |
 | P1-11 | ✅ 已完成 | `auth.config.ts` 的 `isAdminAccessAllowed` 成为唯一放行矩阵，`proxy.ts` 与 API 同口径；顺手去掉 `authorized` 里对 `role` 的信任（历史 session 可能带被默认成 admin 的 role） |
 | P1-9 | ✅ 已完成 | `user_workspace_blobs` 补进 `schema.ts` 的 drizzle 定义与导出集 |
-| P1-8 | ✅ 首轮落地（+ 后续清死导入） | `apps/api` / `packages/store` 各加 `eslint.config.mjs`（仅 src，三条规则全部 warn），根脚本 `lint:backend`，CI 以 `continue-on-error` 运行。store 基线 868 → **39**（见 §7.3），api 61 条 `no-console` 未动 |
+| P1-8 | ✅ 首轮落地（+ 后续清死导入） | `apps/api` / `packages/store` 各加 `eslint.config.mjs`（仅 src，三条规则全部 warn），根脚本 `lint:backend`，CI 以 `continue-on-error` 运行。store 基线 868 → **0**、api 61 → **24**（见 §7.3） |
 | P1-6 | ⛔ 复核后不实施 | 见 §4：7 个端点不存在，其余已有测试 |
 | P1-4 | ✅ 已完成（并行会话） | `recipes.ts` 改走 `getSitesByIds`，`sites-cluster.test.ts` 覆盖两条分支 |
 | P1-1 | ⏸ 暂缓 | 需逐文件判定「源码字符串断言」归属，且目标文件（`/me*`、`/favorites`）正在被并行会话重写；此时改动会与进行中的组件拆分互相踩踏，等其稳定后单独立项 |
@@ -362,7 +362,7 @@ vitest 收尾时会整体删除 `coverage/.tmp`（几百个文件），被本机
 | 包 | 基线（清理前） | 清理后 |
 |---|---|---|
 | `apps/api` | **61 条**（43 `no-console` + 18 未使用导入） | **24 条**（20 条 `console.log` 调试残留 + 4 条非导入位置的未用变量） |
-| `packages/store` | **868 条**（862 未使用导入 + 6 `no-console`） | **33 条**（全部在 `sites.ts`） |
+| `packages/store` | **868 条**（862 未使用导入 + 6 `no-console`） | **0 条**（`b3982bb` + `sites.ts` 收尾，共清 862 个死导入） |
 
 `no-console` 口径已收紧为「只提示 `console.log`」：服务端的 `console.warn/error/info` 是正常运维输出，不再计噪音（两个包配置一致）。
 
@@ -371,9 +371,9 @@ vitest 收尾时会整体删除 `coverage/.tmp`（几百个文件），被本机
 - 抽查 `repository/analytics.ts`、`categories.ts`、`behavior.ts`、`vault.ts` 等文件，`rowToFavorite` / `rowToFolder` / `rowToJob` / `toPgSql` 等被点名的符号在每个文件里**只出现一次**——就在 import 行，正文与 `export` 中都没有引用；`git grep` 全仓也只在真正的使用方（`repository.ts`、`migrate.ts`、`search.ts`）里找到引用。
 - 这些文件不是 barrel：它们是从 `records.ts` / `dialect.ts` 复制过来的大段导入后**没有裁剪**，属真实死导入。误报不会如此整齐地分布在 28 个文件、每个文件 41–43 条。
 
-**已落地的修法**（`b3982bb` + 本批）：用 TypeScript AST 定点剔除 `packages/store` 22 个仓库文件里的 **829 个**未使用具名导入、`apps/api` 8 个文件里的 **14 个**（按字符区间删除，保留其余格式与再导出），`packages/store/src/repository/sites.ts` 因并行会话正在编辑未纳入。验证：`tsc --noEmit` 5 包全过，store 测试 **303 passed**，全量回归 **3052 passed / 0 failed**。
+**已落地的修法**（`b3982bb` + `5a0ff2e` + 本批）：用 TypeScript AST 定点剔除 `packages/store` 23 个仓库文件里的 **862 个**未使用具名导入、`apps/api` 8 个文件里的 **14 个**（按字符区间删除，保留其余格式与再导出）。验证：`tsc --noEmit` 5 包全过，store 测试 **303 passed**，全量回归 **3052 passed / 0 failed**，store lint **0 warning**。
 
-**剩余 57 条的归属**：33 条在 `sites.ts`（等并行会话落定后同法清理）；`apps/api` 20 条是 `console.log` 调试残留（需逐条判断是真调试残留还是启动横幅，不能脚本一刀切）；4 条是非导入位置的未用变量。
+**剩余 24 条的归属**（全部在 `apps/api`）：20 条是 `console.log` 调试残留（需逐条判断是真调试残留还是启动横幅，不能脚本一刀切），4 条是非导入位置的未用变量。store 侧已清零，可先把它单独提为 error 门禁；api 侧等 24 条清完再提。
 
 > 跑法备忘（ESLint 10.13.0 已作为 `apps/api` / `packages/store` 的 devDependency 安装）：
 > 在仓库根跑 `pnpm run lint:backend` 即可（内部 `pnpm --filter ... run lint`）；flat config 的 basePath 在各自包根。

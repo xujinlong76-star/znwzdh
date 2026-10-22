@@ -12,11 +12,16 @@
  *   - `nextItems` 是算好的本地结果：全量（since=0）走云端覆盖，增量（since>0）
  *     走逐行 upsert——**增量绝不能做全量合并**，否则会删掉本地未推送的条目；
  *   - 游标只在完整成功后推进；写不进去就下次走全量（幂等）。
+ *
+ * M1 三期（只推脏条目）：不再把本地全量当 ops 重发。变更点置脏
+ * （navhub.favorites.dirty.v1），ops = 脏集合 ∩ 本地列表（add）
+ * + 脏集合里已不在本地列表的 siteId（remove）；一次成功同步后清脏，
+ * 失败保留（下次重试仍推）。pushed 从此是「本次实际提交的 ops 数」。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { syncFavoritesToCloud } from "../src/hooks/useFavorites";
 
@@ -78,6 +83,19 @@ function anonUser(siteIds: string[]): void {
     "navhub.anonId": "anon-11111111-2222-3333-4444-555555555555",
     "navhub.favorites.v1": localItems(siteIds),
   });
+}
+
+/** 脏标记键（M1 三期）：本地变更过、云端还没确认的 siteId 列表 */
+const DIRTY_KEY = "navhub.favorites.dirty.v1";
+
+/**
+ * 取一个「刚挂载」的 useFavorites 模块实例：内存脏集合为空，只认 localStorage
+ * 里的脏标记。文件顶部的静态 import 是长生命周期实例（内存脏集合跨用例残留），
+ * 需要「注入上一会话落盘的脏标记」或「模拟刷新重挂载」时用它。
+ */
+async function mountedModule(): Promise<typeof import("../src/hooks/useFavorites")> {
+  vi.resetModules();
+  return import("../src/hooks/useFavorites");
 }
 
 /**
@@ -154,7 +172,12 @@ describe("登录用户：一次批量同步", () => {
     expect(calls[0].method).toBe("POST");
     expect(calls[0].url).toContain("/api/me/favorites/sync");
     expect(r.ok).toBe(true);
+    // M1 三期：脏键从未写过 → 一次性迁移把本地全量推一次（防匿名转登录丢条目）；
+    // 本机条数以 localCount 为准，别再把 pushed 当成本机条数
     expect(r.pushed).toBe(2);
+    expect(r.localCount).toBe(2);
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: unknown[] };
+    expect(payload.ops).toHaveLength(2);
     expect(r.cloud?.map((i) => i.siteId).sort()).toEqual(["a", "b"]);
     expect(r.nextItems?.map((i) => i.siteId).sort()).toEqual(["a", "b"]);
   });
@@ -205,9 +228,15 @@ describe("登录用户：一次批量同步", () => {
   });
 
   it("请求体带 ops 与 since（mock 不校验 body 就是假绿）", async () => {
-    signedIn(["a", "b"]);
+    // M1 三期：ops 只来自脏集合，先注入两条脏标记（上一会话的 toggle 落盘的）
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a", "b"]),
+      [DIRTY_KEY]: JSON.stringify(["a", "b"]),
+    });
+    const { syncFavoritesToCloud: sync } = await mountedModule();
     const calls = stubFetch([200], { 200: batchBody([{ siteId: "a" }, { siteId: "b" }]) });
-    await syncFavoritesToCloud();
+    await sync();
     const payload = JSON.parse(calls[0].body ?? "{}") as { ops: unknown[]; since: number };
     expect(payload.ops).toHaveLength(2);
     expect(payload.since).toBe(0);
@@ -215,9 +244,15 @@ describe("登录用户：一次批量同步", () => {
 
   it("超过 500 条自动分片：每片 <=500，不会因 400 变成永久失败", async () => {
     const many = Array.from({ length: 501 }, (_, i) => "s" + i);
-    signedIn(many);
+    // M1 三期：分片对象从「本地全量」变成「脏集合」，501 条脏标记仍是 500 + 1 两片
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(many),
+      [DIRTY_KEY]: JSON.stringify(many),
+    });
+    const { syncFavoritesToCloud: sync } = await mountedModule();
     const calls = stubFetch([200], { 200: batchBody([{ siteId: "s0" }]) });
-    const r = await syncFavoritesToCloud();
+    const r = await sync();
     expect(r.ok).toBe(true);
     expect(calls.length).toBe(2);
     for (const call of calls) {
@@ -314,6 +349,38 @@ describe("匿名用户：保持逐条通道（新端点只给登录态）", () =
   });
 });
 
+describe("M1 三期：一次性迁移（脏键从未写过）", () => {
+  it("脏键不存在且本地非空 → 首同步按全量推一次（匿名转登录不丢条目）", async () => {
+    signedIn(["a", "b"]);
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "a" }, { siteId: "b" }]) });
+    const r = await syncFavoritesToCloud();
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: Array<{ op: string; siteId: string }> };
+    expect(payload.ops.map((o) => o.siteId).sort()).toEqual(["a", "b"]);
+    expect(payload.ops.every((o) => o.op === "add")).toBe(true);
+    expect(r.ok).toBe(true);
+
+    // 迁移只发生一次：键已写 → 第二次同步 ops 为空
+    stubFetch([200], { 200: batchBody([{ siteId: "a" }]) });
+    const calls2 = stubFetch([200], { 200: batchBody([{ siteId: "a" }]) });
+    await syncFavoritesToCloud();
+    const payload2 = JSON.parse(calls2[0].body ?? "{}") as { ops: unknown[] };
+    expect(payload2.ops).toHaveLength(0);
+  });
+
+  it("脏键写过空数组 → 不触发迁移（用户确实清过脏）", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a"]),
+      "navhub.favorites.dirty.v1": "[]",
+      "navhub.favorites.sync.v1.user-1": "100",
+    });
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "a" }], 200) });
+    await syncFavoritesToCloud();
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: unknown[] };
+    expect(payload.ops).toHaveLength(0);
+  });
+});
+
 describe("M1 二期：有限重试 / 墓碑提示 / 同步状态", () => {
   it("5xx 可重试：退避后第二次成功（只多一次往返）", async () => {
     signedIn(["a"]);
@@ -344,18 +411,162 @@ describe("M1 二期：有限重试 / 墓碑提示 / 同步状态", () => {
   });
 
   it("同步状态落盘：成功与失败都可读回（页面上「上次同步」用它）", async () => {
-    signedIn(["a"]);
+    // M1 三期：pushed = 本次实际提交的 ops 数；注入 1 条脏标记，推 1 条
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a"]),
+      [DIRTY_KEY]: JSON.stringify(["a"]),
+    });
+    const { syncFavoritesToCloud: sync } = await mountedModule();
     stubFetch([200], { 200: batchBody([{ siteId: "a" }]) });
-    await syncFavoritesToCloud();
+    await sync();
     const ok = JSON.parse(lastStore["navhub.favorites.sync.last"] ?? "{}") as { ok: boolean; pushed: number };
     expect(ok.ok).toBe(true);
     expect(ok.pushed).toBe(1);
 
+    // 第一次成功同步后脏标记已清空：这次失败走纯拉取，状态仍是失败
     stubFetch([502]);
-    await syncFavoritesToCloud();
+    await sync();
     const bad = JSON.parse(lastStore["navhub.favorites.sync.last"] ?? "{}") as { ok: boolean; error?: string };
     expect(bad.ok).toBe(false);
     expect(bad.error).toBeTruthy();
+  });
+});
+
+describe("M1 三期：只推脏条目", () => {
+  it("① 首次同步：本地 2 条都是脏 → ops 长度 2，成功后脏标记清空", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a", "b"]),
+      [DIRTY_KEY]: JSON.stringify(["a", "b"]),
+    });
+    const { syncFavoritesToCloud: sync } = await mountedModule();
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "a" }, { siteId: "b" }]) });
+    const r = await sync();
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: Array<{ op: string; siteId: string }> };
+    expect(payload.ops).toHaveLength(2);
+    expect(payload.ops.map((o) => o.siteId).sort()).toEqual(["a", "b"]);
+    expect(payload.ops.every((o) => o.op === "add")).toBe(true);
+    expect(r.pushed).toBe(2);
+    expect(r.localCount).toBe(2);
+    // 云端确认后清脏：落盘为空数组，不是原样留着
+    expect(lastStore[DIRTY_KEY]).toBe("[]");
+  });
+
+  it("② 同一会话再同步：脏已确认 → ops 长度 0，只剩一次纯拉取", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a", "b"]),
+      [DIRTY_KEY]: JSON.stringify(["a", "b"]),
+    });
+    const { syncFavoritesToCloud: sync } = await mountedModule();
+    stubFetch([200], { 200: batchBody([{ siteId: "a" }, { siteId: "b" }]) });
+    const first = await sync();
+    expect(first.pushed).toBe(2);
+
+    // 同一个模块实例（同一会话）：内存脏集合已在成功后清空，不再推任何 ops
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "a" }, { siteId: "b" }]) });
+    const again = await sync();
+    expect(calls.length).toBe(1);
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: unknown[]; since: number };
+    expect(payload.ops).toHaveLength(0);
+    expect(payload.since).toBe(999);
+    expect(again.pushed).toBe(0);
+    // pushed 变了，本机条数不变
+    expect(again.localCount).toBe(2);
+  });
+
+  it("③ 跨重新挂载：内存脏集合丢失，localStorage 里的标记仍只推那 1 条", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a", "b"]),
+      [DIRTY_KEY]: JSON.stringify(["a"]),
+    });
+    // 会话 1：a 被推送并确认（该实例的内存脏集合随即清空）
+    const session1 = await mountedModule();
+    stubFetch([200], { 200: batchBody([{ siteId: "a" }, { siteId: "b" }]) });
+    expect((await session1.syncFavoritesToCloud()).pushed).toBe(1);
+
+    // 会话 1 里用户又改了一次收藏：落盘脏标记（等价于 toggle 的 markDirty；
+    // 本测试文件不挂载 React 拿不到 hook 实例，直接写同一把键）
+    lastStore[DIRTY_KEY] = JSON.stringify(["a"]);
+
+    // 会话 2：重新挂载 = 新模块实例，内存脏集合丢失，只能从 localStorage 恢复
+    const session2 = await mountedModule();
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "a" }, { siteId: "b" }]) });
+    const r = await session2.syncFavoritesToCloud();
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: Array<{ op: string; siteId: string }> };
+    expect(payload.ops).toHaveLength(1);
+    expect(payload.ops[0]!.op).toBe("add");
+    expect(payload.ops[0]!.siteId).toBe("a");
+    expect(r.pushed).toBe(1);
+    // 重挂载也不会把全量重发一遍：b 自始至终不是脏的
+    expect(r.localCount).toBe(2);
+  });
+
+  it("④ 本地删除（toggle 取消）：ops 含 remove，删除项走 remove、留存项走 add", async () => {
+    // b 被取消收藏：本地列表只剩 a，但 b 的脏标记还在（toggle 取消同样置脏）
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a"]),
+      [DIRTY_KEY]: JSON.stringify(["a", "b"]),
+    });
+    const { syncFavoritesToCloud: sync } = await mountedModule();
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "a" }]) });
+    const r = await sync();
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: Array<{ op: string; siteId: string }> };
+    expect(payload.ops).toHaveLength(2);
+    const removes = payload.ops.filter((o) => o.op === "remove");
+    expect(removes).toHaveLength(1);
+    expect(removes[0]!.siteId).toBe("b");
+    // a 还在本地列表里：走 add（服务端 upsert），不是 remove
+    expect(payload.ops.find((o) => o.siteId === "a")?.op).toBe("add");
+    expect(r.pushed).toBe(2);
+  });
+
+  it("⑤ clear() 之后：本地空、全部置脏 → ops 全为 remove", async () => {
+    // clear() 把当前所有 siteId 置脏后清空本地：同步时它们都已不在本地列表
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems([]),
+      [DIRTY_KEY]: JSON.stringify(["a", "b"]),
+    });
+    const { syncFavoritesToCloud: sync } = await mountedModule();
+    const calls = stubFetch([200], { 200: batchBody([]) });
+    const r = await sync();
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: Array<{ op: string; siteId: string }> };
+    expect(payload.ops).toHaveLength(2);
+    expect(payload.ops.every((o) => o.op === "remove")).toBe(true);
+    expect(payload.ops.map((o) => o.siteId).sort()).toEqual(["a", "b"]);
+    expect(r.pushed).toBe(2);
+    expect(r.localCount).toBe(0);
+    // 云端确认删除后清脏
+    expect(lastStore[DIRTY_KEY]).toBe("[]");
+  });
+
+  it("⑥ 同步失败：脏标记保留，再同步 ops 数量不变", async () => {
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a"]),
+      [DIRTY_KEY]: JSON.stringify(["a"]),
+    });
+    const { syncFavoritesToCloud: sync } = await mountedModule();
+    // 5xx 退避重试两次，共 3 次请求，全部失败
+    stubFetch([502]);
+    const failed = await sync();
+    expect(failed.ok).toBe(false);
+    // 失败不清脏：落盘标记原样保留，下次重试仍会推
+    expect(lastStore[DIRTY_KEY]).toBe(JSON.stringify(["a"]));
+
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "a" }]) });
+    const retried = await sync();
+    expect(retried.ok).toBe(true);
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: Array<{ siteId: string }> };
+    expect(payload.ops).toHaveLength(1);
+    expect(payload.ops[0]!.siteId).toBe("a");
+    expect(retried.pushed).toBe(1);
+    // 重试成功后确认
+    expect(lastStore[DIRTY_KEY]).toBe("[]");
   });
 });
 
@@ -389,6 +600,24 @@ describe("源码守卫：这套契约不许被改回去", () => {
     expect(src).toContain("favorites.replaceAll(result.nextItems)");
     expect(src).not.toContain("mergeCloudFavorites(favorites.items, result.cloud)");
     expect(src).not.toContain("importJson(JSON.stringify({ version: 1, items: incoming }))");
+  });
+
+  it("M1 三期：只推脏条目，不许改回全量重发", () => {
+    const hook = overlaySource("src/hooks/useFavorites.ts");
+    // 脏标记的键与读写辅助必须存在
+    expect(hook).toContain("navhub.favorites.dirty.v1");
+    expect(hook).toContain("function readDirty()");
+    expect(hook).toContain("function writeDirty(");
+    expect(hook).toContain("function markDirty(");
+    expect(hook).toContain("function clearDirty(");
+    // ops 两类来源：脏集合 ∩ 本地（add）与脏集合 ∖ 本地（remove）
+    expect(hook).toContain("if (!dirty.has(f.siteId)) continue");
+    expect(hook).toContain("op: 'remove'");
+    // 变更点必须置脏；replaceAll/clear 的语义区别必须在代码里说清
+    expect(hook).toContain("markDirty([site.siteId])");
+    expect(hook).toContain("markDirty(valid.map((i) => i.siteId))");
+    // 成功清脏、失败不清（下次重试仍推）
+    expect(hook).toContain("clearDirty()");
   });
 
   it("navhub-api 暴露批量同步且失败交回调用方", () => {

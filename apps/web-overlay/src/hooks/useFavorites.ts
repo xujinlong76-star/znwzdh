@@ -187,6 +187,9 @@ export function useFavorites(): FavoritesApi {
     }
     applyLocalFavorites({ items: [], blocked: null })
     saveLocal([])
+    // 重置 = 本地记录整体丢弃：脏标记一起清（游标上面已经清了，下次同步重拉全量，
+    // 拉回来的内容就是云端事实源，没有「待推」可言）
+    clearDirty()
   }, [])
 
   const isFavorite = useCallback((siteId: string) => items.some((i) => i.siteId === siteId), [items])
@@ -202,6 +205,10 @@ export function useFavorites(): FavoritesApi {
     // 写不进去就返回未改变的状态：调用方据此提示，界面不会出现「点了但没变化」
     if (!persist(next)) return existed
 
+    // 新增与取消都是待推变更：新增在本地列表里（同步推 add），
+    // 取消后已不在本地列表（同步推 remove）——同一条置脏路径覆盖两种 op
+    markDirty([site.siteId])
+
     // 异步尝试同步到云端（失败不影响本地态——离线优先）
     const identity = getIdentity()
     if (identity) {
@@ -213,6 +220,8 @@ export function useFavorites(): FavoritesApi {
 
   const remove = useCallback((siteId: string) => {
     if (!persist(sharedFavorites.filter((i) => i.siteId !== siteId))) return
+    // 本地已删：siteId 留在脏集合里、已不在本地列表，同步时生成 remove op 让云端也删
+    markDirty([siteId])
     const identity = getIdentity()
     if (identity) void removeFavorite(identity, siteId)
   }, [persist])
@@ -228,13 +237,28 @@ export function useFavorites(): FavoritesApi {
       if (patch.note !== undefined) merged.note = patch.note ?? undefined
       return merged
     })
-    return persist(next)
+    const ok = persist(next)
+    // 文件夹 / 备注也是待推变更：页面会 best-effort 直连云端，失败时批量同步是兜底通道
+    if (ok) markDirty([siteId])
+    return ok
   }, [persist])
 
-  const replaceAll = useCallback((next: LocalFavorite[]) => persist(next), [persist])
+  const replaceAll = useCallback((next: LocalFavorite[]) => {
+    // replaceAll 的入参来自云端同步结果（或用户显式整体替换）：本地整体已被
+    // 「云端版本」取代，不存在待云端确认的变更——清空全部脏标记，
+    // 否则下次同步会把刚确认的内容原样推回去（LWW 虽会跳过，但 ops 白跑）
+    const ok = persist(next)
+    if (ok) clearDirty()
+    return ok
+  }, [persist])
 
   const clear = useCallback(() => {
-    persist([])
+    // 与 replaceAll 的区别：clear 是「收藏被清空」，云端也必须删掉。
+    // 把当前所有 siteId 置脏——它们随即不在本地列表，同步时走 remove ops
+    // （与 toggle 取消收藏同一条路径）。先取到列表再 persist，否则读到的是空数组。
+    const siteIds = sharedFavorites.map((i) => i.siteId)
+    // persist 成功才置脏：写不进说明本地没变，此时推 remove 会把云端收藏误删
+    if (persist([])) markDirty(siteIds)
   }, [persist])
 
   const exportJson = useCallback(() => JSON.stringify({ version: 1, items: sharedFavorites }, null, 2), [])
@@ -252,6 +276,9 @@ export function useFavorites(): FavoritesApi {
         if (!merged.some((i) => i.siteId === ex.siteId)) merged.push(ex)
       }
       persist(merged)
+      // 导入进来的条目都是待推变更：云端多半没有它们（换设备导入的场景），
+      // 或本地这份是更新版——不进脏集合的话同步永远不会推
+      markDirty(valid.map((i) => i.siteId))
       return { ok: true, imported: valid.length }
     } catch (err) {
       return { ok: false, imported: 0, error: err instanceof Error ? err.message : '解析失败' }
@@ -298,6 +325,86 @@ export function readSyncStatus(): FavoritesSyncStatus | null {
   } catch {
     return null
   }
+}
+
+/**
+ * 脏标记（M1 三期「只推脏条目」）：本地变更过、云端还没确认的 siteId 集合。
+ *
+ * 为什么需要它：批量同步早期把「本地全量」当 ops 重发，服务端 LWW 会跳过绝大多数
+ * ——正确但不经济（收藏 500 条就是 500 个 ops/次）。现在只推脏集合：
+ * 变更点（toggle / remove / updateMeta / importJson / clear）置脏，
+ * 一次成功同步后全部确认（清脏），失败则保留（下次重试仍会推）。
+ */
+const DIRTY_KEY = 'navhub.favorites.dirty.v1'
+
+/**
+ * 内存里持一份脏集合，避免每次同步都读 localStorage。
+ * 写入一定双写（内存 + 存储）；「重新挂载」（刷新页面 / 新标签页）时内存丢失，
+ * 从 localStorage 恢复——只要标记还在，下次同步仍会推这些条目。
+ */
+let memoryDirty: Set<string> | null = null
+
+/** 读脏集合：内存优先，未加载过才落 localStorage。读失败按空集合（下次多推几条，不影响正确性） */
+function readDirty(): Set<string> {
+  if (memoryDirty) return memoryDirty
+  let ids: string[] = []
+  try {
+    const raw = window.localStorage.getItem(DIRTY_KEY)
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw)
+      if (Array.isArray(parsed)) ids = parsed.filter((x): x is string => typeof x === 'string')
+    }
+  } catch {
+    // 读不出（隐私模式 / 数据坏了）就当没有待推条目：最坏结果是下次同步少推几条，
+    // 而「读失败」与「没有数据」的区分由收藏本体的 loadLocal 负责，这里不需要拦
+    ids = []
+  }
+  memoryDirty = new Set(ids)
+  return memoryDirty
+}
+
+/** 写脏集合：内存 + localStorage 双写。存储写不进只是下次多推几条，不影响正确性 */
+function writeDirty(ids: Set<string>): void {
+  memoryDirty = new Set(ids)
+  try {
+    window.localStorage.setItem(DIRTY_KEY, JSON.stringify([...memoryDirty]))
+  } catch {
+    // 配额满 / 隐私模式：内存态仍然生效（本次会话内的同步逻辑照常工作），
+    // 刷新后标记丢失——代价是下次多推几条全量，不会推错
+  }
+}
+
+/** 把一批 siteId 置脏（新增待推变更） */
+/** 脏键是否曾被写过（一次性迁移判定：从未写过 = 机制上线前的存量本地收藏） */
+function dirtyKeyEverWritten(): boolean {
+  try {
+    return window.localStorage.getItem(DIRTY_KEY) !== null
+  } catch {
+    // 读不到就当写过：不触发全量迁移（存储不可用时同步本来也走不远）
+    return true
+  }
+}
+
+function markDirty(siteIds: string[]): void {
+  if (siteIds.length === 0) return
+  const next = readDirty()
+  for (const id of siteIds) next.add(id)
+  writeDirty(next)
+}
+
+/**
+ * 清除脏标记：不传 ids = 全部确认（一次成功同步后调用）；
+ * 传 ids = 只确认这几条（当前没有调用方按条清，保留给将来的按条确认）。
+ */
+function clearDirty(ids?: string[]): void {
+  const current = readDirty()
+  if (!ids) {
+    writeDirty(new Set<string>())
+    return
+  }
+  if (ids.length === 0) return
+  for (const id of ids) current.delete(id)
+  writeDirty(current)
 }
 
 /** 批量同步有限重试：只对可重试错误退避（300ms / 900ms），404 之类不重试 */
@@ -382,8 +489,9 @@ export function applyFavoriteDelta(
 }
 
 /**
- * 登录后调用一次：先把本地收藏推到云端（仅用于首次迁移/离线期间新增的条目），
- * 再拉回云端全集。成员集合最终以云端为准——否则其它设备删掉的收藏会被本机缓存复活。
+ * 登录后调用一次：把本地**变更过、云端还没确认**的收藏推到云端（M1 三期起只推
+ * 脏条目，不再重发全量），再拉回云端增量/全集。成员集合最终以云端为准——否则
+ * 其它设备删掉的收藏会被本机缓存复活。
  *
  * 返回值刻意不是「数组或 null」——那让调用方无法区分两件事：
  *   - 云端**确实**没有收藏（空数组，正常）
@@ -401,7 +509,7 @@ export interface CloudSyncResult {
   ok: boolean
   /** 本机收藏条数 */
   localCount: number
-  /** 本次成功推到云端的条数 */
+  /** 本次实际提交到云端的 ops 数（M1 三期起只推脏条目：0 = 纯拉取） */
   pushed: number
   /** 合并后的云端收藏；**失败时为 null**（空数组表示云端确实没有收藏） */
   cloud: HubFavorite[] | null
@@ -468,19 +576,44 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
   // 匿名用户保持旧的逐条端点——新端点只接受会话派生身份，匿名调它必然 401。
   if (!identity.startsWith('anon-')) {
     const since = readSyncCursor(identity)
-    /** 服务端单批 ops 上限 500；超出必须分片，否则 400 会让 >500 条收藏的账号永久同步失败 */
-    const OP_BATCH = 500
-    const chunks: LocalFavorite[][] = []
-    for (let i = 0; i < local.length; i += OP_BATCH) chunks.push(local.slice(i, i + OP_BATCH))
-
-    const opsOf = (list: LocalFavorite[]): FavoriteSyncOp[] =>
-      list.map((f) => ({
+    /**
+     * 一次性迁移：脏键从未写过且本地非空 → 本次按全量推一次。
+     * 否则 since=0 的全量合并会把「云端没有的本地条目」从本地删掉、
+     * 且它们永远推不上去——匿名收藏转登录的主路径会静默丢数据。
+     * 写过空数组（用户确实清过脏）不触发，避免每次同步都全量重发。
+     */
+    if (local.length > 0 && !dirtyKeyEverWritten()) {
+      markDirty(local.map((f) => f.siteId))
+    }
+    /**
+     * M1 三期：只推「本地变更过、云端还没确认」的条目（脏集合），
+     * 不再把本地全量当 ops 重发（LWW 会跳过绝大多数——正确但不经济）。
+     * ops 两类来源：
+     *   1. 脏集合 ∩ 当前本地列表 → add。服务端 add 是 upsert（缺失则插入、
+     *      存量则整行覆盖），不能用 update 替代——服务端对「缺失行上的 update」
+     *      直接跳过，新增永远上不去；
+     *   2. 脏集合里已不在本地列表的 siteId → remove（本地删掉的条目要推删除）。
+     */
+    const dirty = readDirty()
+    const ops: FavoriteSyncOp[] = []
+    for (const f of local) {
+      if (!dirty.has(f.siteId)) continue
+      ops.push({
         op: 'add',
         siteId: f.siteId,
         folderId: f.folderId ?? null,
         note: f.note ?? null,
         at: f.createdAt,
-      }))
+      })
+    }
+    for (const siteId of dirty) {
+      if (local.some((f) => f.siteId === siteId)) continue
+      ops.push({ op: 'remove', siteId, at: Date.now() })
+    }
+    /** 服务端单批 ops 上限 500；超出必须分片，否则 400 会让 >500 条收藏的账号永久同步失败 */
+    const OP_BATCH = 500
+    const chunks: FavoriteSyncOp[][] = []
+    for (let i = 0; i < ops.length; i += OP_BATCH) chunks.push(ops.slice(i, i + OP_BATCH))
 
     let version = since
     let aggregated: HubFavoriteSyncItem[] = []
@@ -489,7 +622,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     // 所有分片都用同一个 since：这样每片的响应都覆盖「自游标以来的全部变化」，
     // 不会因为逐片推进游标而漏掉「at 早于新游标」的条目（拼接后按 siteId 去重）。
     for (const chunk of chunks) {
-      const result = await syncBatchWithRetry(opsOf(chunk), since, onFail)
+      const result = await syncBatchWithRetry(chunk, since, onFail)
       if (!result) {
         writeSyncStatus({ at: Date.now(), ok: false, pushed: 0, remoteRemoved: 0, error: failure.message })
         return {
@@ -540,17 +673,21 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     // 否则本地尚未推送的条目会被整体替换误删。
     const nextItems =
       since === 0 ? mergeCloudFavorites(local, alive) : applyFavoriteDelta(local, aggregated)
+    // 全部请求成功：本次脏条目已获云端确认，清空标记。
+    // 失败路径（上面几处 return）故意不清——下次重试仍会推这些条目。
+    clearDirty()
     writeSyncStatus({
       at: Date.now(),
       ok: true,
-      pushed: local.length,
+      pushed: ops.length,
       remoteRemoved,
     })
     return {
       ok: true,
       localCount: local.length,
-      // 批量路径下「本机条数」即本次提交的 op 数（契约：反映有多少条待推数据）
-      pushed: local.length,
+      // pushed = 本次实际提交的 ops 数（0 = 纯拉取，什么都没有推）；
+      // localCount 仍是本机条数，两者语义不同，别混
+      pushed: ops.length,
       cloud: alive,
       cloudFolders: folders,
       retryable: false,

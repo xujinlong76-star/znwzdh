@@ -31,27 +31,28 @@ function overlaySource(rel: string): string {
 const PAGES_WITH_SEARCH = [
   "src/components/navigation-toolbar.tsx",
   "src/app/not-found.tsx",
-  "src/app/hot/page.tsx",
-  "src/app/collections/[slug]/page.tsx",
 ];
 
 /**
- * Batch B（RSC 化）后 /tags/[slug] 重写成「服务端壳 + 客户端岛」：页面源码里
- * 不再出现 SearchPalette，改由 components/tag-results-board.tsx 渲染。守卫
- * 因此拆两半——壳必须挂岛（否则 SSR 首帧连搜索入口都没有，正是本测试要防的
- * 退化），岛必须渲染面板。将来 /hot、/collections/[slug] 若也 RSC 化，往这个
- * 表里加一行即可。
+ * RSC 化后站点列表页都是「服务端壳 + 客户端岛」：页面源码里不再出现
+ * SearchPalette，改由岛渲染。守卫因此拆两半——壳必须挂岛（否则 SSR 首帧
+ * 连搜索入口都没有，正是本测试要防的退化），岛必须渲染面板。
  */
 const ISLAND_SEARCH_PAGES = [
-  { page: "src/app/tags/[slug]/page.tsx", island: "src/components/tag-results-board.tsx" },
+  { page: "src/app/tags/[slug]/page.tsx", island: "src/components/tag-results-board.tsx", marker: "<TagResultsBoard" },
+  { page: "src/app/hot/page.tsx", island: "src/app/hot/hot-view.tsx", marker: "<HotView" },
+  {
+    page: "src/app/collections/[slug]/page.tsx",
+    island: "src/app/collections/[slug]/collection-detail-view.tsx",
+    marker: "<CollectionDetailView",
+  },
 ];
 
-/** 这一批是本 PR 新加的站点列表页，提示文案必须点明「全部站点」。
- *  /tags/[slug] 的文案在客户端岛里（RSC 化后面板随岛走），其余在页面源码里。 */
+/** 这一批是站点列表页，提示文案必须点明「全部站点」（RSC 化后都在岛里）。 */
 const SITE_LIST_PAGES = [
-  "src/app/hot/page.tsx",
+  "src/app/hot/hot-view.tsx",
   "src/components/tag-results-board.tsx",
-  "src/app/collections/[slug]/page.tsx",
+  "src/app/collections/[slug]/collection-detail-view.tsx",
 ];
 
 describe("站点列表页必须有搜索入口", () => {
@@ -61,10 +62,10 @@ describe("站点列表页必须有搜索入口", () => {
     expect(src).toMatch(/<SearchPalette/);
   });
 
-  it.each(ISLAND_SEARCH_PAGES)("$page 经客户端岛 $island 提供搜索", ({ page, island }) => {
+  it.each(ISLAND_SEARCH_PAGES)("$page 经客户端岛 $island 提供搜索", ({ page, island, marker }) => {
     const shell = overlaySource(page);
     const board = overlaySource(island);
-    expect(shell).toContain("<TagResultsBoard");
+    expect(shell).toContain(marker);
     expect(board).toContain("import { SearchPalette } from '@/components/search-palette'");
     expect(board).toMatch(/<SearchPalette/);
   });
@@ -76,7 +77,7 @@ describe("站点列表页必须有搜索入口", () => {
   });
 
   it("搜索面板放在列表之前（列表为空时它仍然可见）", () => {
-    const src = overlaySource("src/app/collections/[slug]/page.tsx");
+    const src = overlaySource("src/app/collections/[slug]/collection-detail-view.tsx");
     const palette = src.indexOf("<SearchPalette");
     const empty = src.indexOf("该专题暂时没有站点");
     const grid = src.indexOf("sites.map((site)");

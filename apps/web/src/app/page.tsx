@@ -2,12 +2,18 @@ import { cache } from "react";
 import { NavigationContent } from "@/components/navigation-content";
 import { Metadata } from "next/types";
 import { ScrollToTop } from "@/components/ScrollToTop";
-import { Container } from "@/components/ui/container";
 import { getProcessedData } from "@/lib/data-loader";
 import { getFileContent } from "@/lib/github";
 import { siteOrigin } from "@/lib/seo/origin";
-import { webSiteLd } from "@/lib/seo/json-ld";
+import { webSiteLd, organizationLd } from "@/lib/seo/json-ld";
 import { JsonLd } from "@/components/json-ld";
+import { pageShareMetadata } from "@/lib/seo/metadata";
+import { MIN_SITES_FOR_INDEX } from "@/lib/seo/thresholds";
+import {
+  categoryDisplayName,
+  loadActiveCategoryCounts,
+  loadCategories,
+} from "@/lib/server/categories";
 
 /**
  * 从存储层读取首页数据。
@@ -56,21 +62,84 @@ const getData = cache(async () => {
   return getProcessedData(navigationRaw as never, siteRaw as never);
 });
 
+/** 首页目录带最多展示的分类数：再多就成了分类总览页的重复 */
+const DIRECTORY_CATEGORY_LINKS = 8;
+
+/**
+ * 首页 → 分类 hub 的入口数据。
+ *
+ * 实测（2026-10-21）：首页模板里 0 条 `/category` 链接，分类页只能靠
+ * sitemap 被发现，点击深度断在首页。这里只挑达标分类（分类页对
+ * < MIN_SITES_FOR_INDEX 的页面直接 404），按存活站点数降序取前 8。
+ * 取数失败返回空数组——页面上仍有 /category、/sites、/tags 三个入口，
+ * 不因中枢抖动把整条目录带吞掉。
+ */
+async function loadDirectoryLinks() {
+  const [categories, counts] = await Promise.all([loadCategories(3600), loadActiveCategoryCounts(3600)]);
+  if (!categories || !counts) return [];
+  return categories
+    .filter((c) => c.enabled !== false && (counts.get(c.id) ?? 0) >= MIN_SITES_FOR_INDEX)
+    .sort(
+      (a, b) =>
+        (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0) ||
+        a.title.localeCompare(b.title, "zh-CN"),
+    )
+    .slice(0, DIRECTORY_CATEGORY_LINKS)
+    .map((c) => ({
+      id: c.id,
+      title: categoryDisplayName(c, categories),
+      count: counts.get(c.id) ?? 0,
+    }));
+}
+
+/**
+ * 搜索引擎站点验证：只在配置了对应环境变量时输出 meta。
+ *
+ * 空字符串不能输出空标签——Google 会把 `content=""` 当成验证失败，而且
+ * 空标签会让打包检查误以为「已经配置」。三家国内常用引擎的 meta 名不同：
+ * 百度是 `baidu-site-verification`，Bing 是 `msvalidate.01`（Next 没有专门
+ * 字段，走 verification.other）。
+ */
+function searchEngineVerification(): Metadata['verification'] | undefined {
+  const google = process.env.GOOGLE_SITE_VERIFICATION?.trim();
+  const bing = process.env.BING_SITE_VERIFICATION?.trim();
+  const baidu = process.env.BAIDU_SITE_VERIFICATION?.trim();
+
+  const other: Record<string, string> = {};
+  if (bing) other["msvalidate.01"] = bing;
+  if (baidu) other["baidu-site-verification"] = baidu;
+
+  const verification: NonNullable<Metadata['verification']> = {};
+  if (google) verification.google = google;
+  if (Object.keys(other).length > 0) verification.other = other;
+  return Object.keys(verification).length > 0 ? verification : undefined;
+}
+
 export async function generateMetadata(): Promise<Metadata> {
   const { siteData } = await getData();
+  const verification = searchEngineVerification();
 
   return {
     title: siteData.basic.title,
     description: siteData.basic.description,
-    // canonical 只写相对路径，交给 metadataBase 解析成绝对地址
-    alternates: { canonical: '/' },
-    // og:url 与 canonical 同值：根 layout 已提供 og:image/site_name/locale，
-    // 这里只补 url（不写 images —— 会被 file-convention 的 opengraph-image 覆盖规则搞混）
-    openGraph: { url: '/' },
+    // canonical 只写相对路径，交给 metadataBase 解析成绝对地址；
+    // RSS 用 alternates.types 声明，聚合器与浏览器扩展据此自动发现 feed
+    alternates: {
+      canonical: '/',
+      types: { 'application/rss+xml': '/feed.xml' },
+    },
+    // 页面级 share 元信息必须整体走 helper：裸写 openGraph 会把根布局的
+    // type/siteName/locale/images 整体顶掉（Next 不深合并）
+    ...(await pageShareMetadata({
+      url: '/',
+      title: siteData.basic.title,
+      description: siteData.basic.description,
+    })),
     keywords: siteData.basic.keywords,
     icons: {
       icon: siteData.appearance.favicon,
     },
+    ...(verification ? { verification } : {}),
   };
 }
 
@@ -78,12 +147,23 @@ export default async function HomePage() {
   const { navigationData, siteData } = await getData();
   // WebSite 结构化数据：全站唯一入口页挂一份即可。
   // 不写 potentialAction（没有 /search 页面），不写 aggregateRating（没有评价体系）。
-  const origin = await siteOrigin();
+  const [origin, directoryLinks] = await Promise.all([siteOrigin(), loadDirectoryLinks()]);
 
   return (
     <>
-      <NavigationContent navigationData={navigationData} siteData={siteData} />
-      {origin ? <JsonLd data={webSiteLd(origin, siteData.basic.title, siteData.basic.description)} /> : null}
+      <NavigationContent
+        navigationData={navigationData}
+        siteData={siteData}
+        directoryLinks={directoryLinks}
+      />
+      {origin ? (
+        <>
+          <JsonLd data={webSiteLd(origin, siteData.basic.title, siteData.basic.description)} />
+          <JsonLd
+            data={organizationLd(origin, siteData.basic.title, '/icons/icon-512.png', siteData.basic.description)}
+          />
+        </>
+      ) : null}
       <ScrollToTop />
     </>
   );

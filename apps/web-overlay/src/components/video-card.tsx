@@ -10,9 +10,11 @@ import Image from 'next/image'
 interface VideoCardProps {
     item: NavigationSubItem
     siteConfig?: SiteConfig
+    /** 首屏第一张封面：预加载以压低 LCP，其余卡片保持懒加载 */
+    priority?: boolean
 }
 
-export function VideoCard({ item }: VideoCardProps) {
+export function VideoCard({ item, priority = false }: VideoCardProps) {
     const [isOpen, setIsOpen] = useState(false)
     const [imageLoaded, setImageLoaded] = useState(false)
     const [imageError, setImageError] = useState(false)
@@ -122,8 +124,9 @@ export function VideoCard({ item }: VideoCardProps) {
                             )}
                             <Image
                                 src={normalizedCoverPath}
-                                alt={item.title}
+                                alt=""
                                 fill
+                                priority={priority}
                                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                                 className={`object-cover transition-all duration-500 
                                            group-hover:scale-105 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
@@ -158,10 +161,12 @@ export function VideoCard({ item }: VideoCardProps) {
 
                 {/* 标题区域 */}
                 <div className="p-[var(--density-card-padding,0.75rem)] space-y-1.5">
-                    <h3 className="font-medium text-sm leading-snug line-clamp-2 
+                    {/* button 只允许 phrasing content：标题用 span，
+                        卡片名由可见文本提供，封面 alt 留空避免重复朗读 */}
+                    <span className="block font-medium text-sm leading-snug line-clamp-2 
                                    group-hover:text-primary transition-colors duration-200">
                         {item.title}
-                    </h3>
+                    </span>
 
                     {item.description && (
                         <p className="text-xs text-muted-foreground line-clamp-1">

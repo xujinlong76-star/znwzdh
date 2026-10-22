@@ -94,12 +94,36 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
         setSearchQuery(query)
     }
 
+    // 公开页只渲染有内容的分类：空分类会留下光秃秃的标题，
+    // 侧栏也会出现点进去什么都没有的入口。统计、侧栏与正文共用这份数据。
+    const visibleNavigationData = useMemo<NavigationData>(() => ({
+        navigationItems: navigationData.navigationItems.flatMap((category) => {
+            const subCategories = (category.subCategories ?? []).filter(
+                (sub) => (sub.items?.length ?? 0) > 0
+            )
+            const hasItems = (category.items?.length ?? 0) > 0
+            if (subCategories.length === 0 && !hasItems) return []
+            return [{ ...category, subCategories }]
+        }),
+    }), [navigationData])
+
+    /** 首屏第一张封面：优先加载，其余保持懒加载 */
+    const firstItemId = useMemo(() => {
+        for (const category of visibleNavigationData.navigationItems) {
+            const first = category.subCategories?.length
+                ? category.subCategories[0]?.items?.[0]
+                : category.items?.[0]
+            if (first) return first.id
+        }
+        return null
+    }, [visibleNavigationData])
+
     /** 视频页概览计数：与侧边栏同一份数据，禁用项不计 */
     const videoStats = useMemo(() => {
         let categories = 0
         let subCategories = 0
         let videos = 0
-        navigationData.navigationItems.forEach((category) => {
+        visibleNavigationData.navigationItems.forEach((category) => {
             if (category.enabled === false) return
             categories += 1
             videos += (category.items || []).filter((item) => item.enabled !== false).length
@@ -110,13 +134,13 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
             })
         })
         return { categories, subCategories, videos }
-    }, [navigationData])
+    }, [visibleNavigationData])
 
     return (
         <div className="flex flex-col md:flex-row min-h-screen">
             <div className="hidden md:block">
                 <Sidebar
-                    navigationData={navigationData}
+                    navigationData={visibleNavigationData}
                     siteInfo={siteData}
                     className="sticky top-0 h-screen"
                 />
@@ -139,7 +163,7 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                     )}
                 >
                     <Sidebar
-                        navigationData={navigationData}
+                        navigationData={visibleNavigationData}
                         siteInfo={siteData}
                         onClose={() => setIsSidebarOpen(false)}
                     />
@@ -243,7 +267,7 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                             </div>
                         </div>
 
-                        {navigationData.navigationItems.map((category) => (
+                        {visibleNavigationData.navigationItems.map((category) => (
                             <section key={category.id} id={category.id} className="scroll-m-16">
                                 <div className="space-y-4">
                                     <h2 className="text-base font-bold tracking-tight">
@@ -261,7 +285,7 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                                                      style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                                  >
                                                      {(subCategory.items || []).map((item) => (
-                                                         <VideoCard key={item.id} item={item} siteConfig={siteData} />
+                                                         <VideoCard key={item.id} item={item} siteConfig={siteData} priority={item.id === firstItemId} />
                                                      ))}
                                                  </div>
                                              </div>
@@ -272,7 +296,7 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                                             style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                         >
                                             {(category.items || []).map((item) => (
-                                                <VideoCard key={item.id} item={item} siteConfig={siteData} />
+                                                <VideoCard key={item.id} item={item} siteConfig={siteData} priority={item.id === firstItemId} />
                                             ))}
                                         </div>
                                     )}

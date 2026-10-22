@@ -603,7 +603,7 @@ export default function SiteListPage() {
         id: `site_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         title: newSite.name,
         href: newSite.url,
-        description: newSite.description,
+        description: newSite.description.trim().slice(0, 160),
         icon: newSite.icon,
         useDefaultIcon: newSite.useDefaultIcon,
         enabled: true
@@ -696,7 +696,7 @@ export default function SiteListPage() {
         id: editingSite.id,
         title: editSite.name,
         href: editSite.url,
-        description: editSite.description,
+        description: editSite.description.trim().slice(0, 160),
         icon: editSite.icon,
         useDefaultIcon: editSite.useDefaultIcon,
         enabled: true
@@ -1027,7 +1027,9 @@ export default function SiteListPage() {
         updates.name = metadata.title
       }
       if (forceUpdate || !site.description) {
-        updates.description = metadata.description
+        if (typeof metadata.description === 'string') {
+          updates.description = metadata.description.trim().slice(0, 160)
+        }
       }
       if ((forceUpdate || !site.icon) && metadata.icon) {
         updates.icon = metadata.icon
@@ -1442,10 +1444,18 @@ export default function SiteListPage() {
                       id="description"
                       value={newSite.description}
                       onChange={(e) => setNewSite({ ...newSite, description: e.target.value })}
-                      placeholder="输入站点描述（可选）"
+                      placeholder="输入站点描述（可选，建议 20-160 字）"
                       className="resize-none"
+                      maxLength={160}
                       disabled={isAddingSubmitting}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      {newSite.description.trim().length === 0
+                        ? '待补全：建议填写 20-160 字；过短时详情页会用站点名与分类兜底。'
+                        : newSite.description.trim().length < 20
+                          ? `待补全：当前 ${newSite.description.trim().length} 字，建议至少 20 字。`
+                          : `${newSite.description.trim().length}/160 字`}
+                    </p>
                   </div>
                 </div>
                 <DialogFooter>
@@ -1657,10 +1667,18 @@ export default function SiteListPage() {
                       id="edit-description"
                       value={editSite.description}
                       onChange={(e) => setEditSite({ ...editSite, description: e.target.value })}
-                      placeholder="输入站点描述（可选）"
+                      placeholder="输入站点描述（可选，建议 20-160 字）"
                       className="resize-none"
+                      maxLength={160}
                       disabled={isEditingSubmitting}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      {editSite.description.trim().length === 0
+                        ? '待补全：建议填写 20-160 字；过短时详情页会用站点名与分类兜底。'
+                        : editSite.description.trim().length < 20
+                          ? `待补全：当前 ${editSite.description.trim().length} 字，建议至少 20 字。`
+                          : `${editSite.description.trim().length}/160 字`}
+                    </p>
                   </div>
                 </div>
                 <DialogFooter>

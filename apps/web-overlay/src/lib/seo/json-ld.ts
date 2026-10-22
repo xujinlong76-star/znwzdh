@@ -60,6 +60,32 @@ export function webSiteLd(origin: string, name: string, description?: string | n
 }
 
 /**
+ * Organization schema（首页）。
+ *
+ * 只声明有事实依据的字段：名称、站点地址、logo。
+ * 不写 sameAs（没有核验过的官方社交主页）、不写 address/telephone（导航站没有实体信息）、
+ * 不写 aggregateRating（没有评价体系）——编造实体信息同样会触发人工处罚。
+ */
+export function organizationLd(
+  origin: string,
+  name: string,
+  logoPath = '/icons/icon-512.png',
+  description?: string | null,
+): Record<string, unknown> {
+  const cleanName = (name ?? '').trim()
+  const cleanDesc = typeof description === 'string' ? description.trim() : ''
+  const logo = (logoPath ?? '').trim() || '/icons/icon-512.png'
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Organization',
+    name: cleanName || 'NavHub',
+    url: absUrl(origin, '/'),
+    logo: absUrl(origin, logo),
+    ...(cleanDesc ? { description: cleanDesc.slice(0, 300) } : {}),
+  }
+}
+
+/**
  * BreadcrumbList schema。
  * 过滤空 label / 空 path，position 重新连续编号——
  * Google 要求 position 从 1 开始连续递增，中间断档会被整条丢弃。

@@ -42,9 +42,36 @@ export function originFromHeaders(
   return `${proto}://${normalizedHost}`
 }
 
+/**
+ * 配置值的格式收敛：必须是纯 origin（http/https + host[:port]），
+ * 拒绝路径、查询串、userinfo 与非法协议。canonical/sitemap/OG 都靠这个值，
+ * 一个尾斜杠或路径都会拼出错误 URL。
+ */
+export function normalizeConfiguredOrigin(value: string | null | undefined): string | null {
+  const raw = value?.trim()
+  if (!raw) return null
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
+    if (url.username || url.password || url.search || url.hash) return null
+    if (url.pathname !== '/' && url.pathname !== '') return null
+    return url.origin
+  } catch {
+    return null
+  }
+}
+
 export async function siteOrigin(): Promise<string | null> {
-  const configured = process.env.NAVHUB_SITE_URL?.trim()
-  if (configured) return configured.replace(/\/+$/, '')
+  const configured = normalizeConfiguredOrigin(process.env.NAVHUB_SITE_URL)
+  if (configured) return configured
+  // 配了但格式非法时不要悄悄回落到请求头：Host 可由客户端伪造，
+  // canonical 指向攻击者域名比配置错误更危险。生产环境直接失败，
+  // 开发环境降级为请求头推导但留日志。
+  if (process.env.NAVHUB_SITE_URL?.trim()) {
+    const message = 'NAVHUB_SITE_URL 格式非法（必须是纯 http/https origin，不含路径/查询串）'
+    if (process.env.NODE_ENV === 'production') throw new Error(message)
+    console.error(message)
+  }
 
   const h = await headers()
   // 反代链路上没有 x-forwarded-proto 时按 https 兜底：自托管的公开站点基本都是 https，
@@ -54,6 +81,5 @@ export async function siteOrigin(): Promise<string | null> {
 
 /** 同步版本：给不能 await 的地方（如 route handler 的常量初始化）用。 */
 export function configuredSiteOrigin(): string | null {
-  const configured = process.env.NAVHUB_SITE_URL?.trim()
-  return configured ? configured.replace(/\/+$/, '') : null
+  return normalizeConfiguredOrigin(process.env.NAVHUB_SITE_URL)
 }

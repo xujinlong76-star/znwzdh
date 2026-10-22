@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
@@ -74,12 +75,24 @@ import { createCustomSiteId, normalizeCustomSiteHref } from '@/lib/modular/custo
 import { useToast } from '@/components/ui/use-toast'
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 
+interface DirectoryLink {
+  id: string
+  title: string
+  count: number
+}
+
 interface NavigationContentProps {
   navigationData: NavigationData
   siteData: SiteConfig
+  /** 服务端生成的达标分类入口（首页目录带）；中枢失败时为空数组 */
+  directoryLinks?: DirectoryLink[]
 }
 
-export function NavigationContent({ navigationData, siteData }: NavigationContentProps) {
+export function NavigationContent({
+  navigationData,
+  siteData,
+  directoryLinks = [],
+}: NavigationContentProps) {
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   // 抽屉的公共行为：Esc 关、点遮罩关、锁背景滚动、焦点圈养与还原、role=dialog
@@ -302,6 +315,46 @@ export function NavigationContent({ navigationData, siteData }: NavigationConten
           onSelectAllVisible={selectAllVisible}
         />
         <div className="px-3 sm:px-6 md:px-8 py-4 sm:py-8 flex-1">
+          {/* 站内目录带：首页此前 0 条 /category 链接，分类 hub 只能靠 sitemap
+              发现。服务端下发达标分类，SSR 直出；三个总览入口常驻。 */}
+          <nav
+            aria-labelledby="home-directory-title"
+            className="mb-4 sm:mb-6 rounded-xl border border-border/60 bg-background/60 px-3 py-2.5 backdrop-blur-sm"
+          >
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span id="home-directory-title" className="text-xs font-semibold text-foreground">
+                站内目录
+              </span>
+              <Link href="/category" className="text-xs text-primary hover:underline">
+                全部分类
+              </Link>
+              <Link href="/sites" className="text-xs text-primary hover:underline">
+                全部站点
+              </Link>
+              <Link href="/tags" className="text-xs text-primary hover:underline">
+                按标签浏览
+              </Link>
+              {directoryLinks.length > 0 && (
+                <>
+                  <span aria-hidden className="hidden sm:block h-3.5 w-px bg-border" />
+                  <ul className="flex flex-wrap items-center gap-1.5">
+                    {directoryLinks.map((link) => (
+                      <li key={link.id}>
+                        <Link
+                          href={`/category/${encodeURIComponent(link.id)}`}
+                          className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                        >
+                          {link.title}
+                          <span className="font-mono text-[10px] opacity-70">{link.count}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          </nav>
+
           {/* 首访引导：非阻断式卡片，只在首页且非工作台视图出现 */}
           {viewMode !== 'workbench' && <OnboardingCard />}
           {viewMode === 'workbench' ? (

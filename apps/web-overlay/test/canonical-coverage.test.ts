@@ -1,0 +1,77 @@
+import { describe, expect, it } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/**
+ * canonical 覆盖守卫（2026-10-21）。
+ *
+ * 收录型页面必须自指 canonical，否则同一个内容会被 query/分页/别名拆成
+ * 多个 URL 竞争同一关键词。这里锁住「谁负责写 canonical」与写法：
+ *   - 动态页 canonical 必须由**运行时参数**拼出来，不能是写死的字面量；
+ *   - 分页页 canonical 自指（第 2 页不回指第 1 页），与 noindex 口径一致；
+ *   - canonical 只写相对路径，origin 统一交给 metadataBase（避免硬编码域名）。
+ *
+ * 首页 canonical 由 /page.tsx 的 generateMetadata 提供（'/'），单独校验。
+ */
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+function overlayFile(rel: string): string {
+  const candidates = [resolve(HERE, "..", rel), resolve(HERE, "..", "..", "web-overlay", rel)];
+  const hit = candidates.find((p) => p.replace(/\\/g, "/").includes("/web-overlay/") && existsSync(p));
+  if (!hit) throw new Error("无法定位 overlay 文件 " + rel + "（候选：" + candidates.join(" | ") + "）");
+  return readFileSync(hit, "utf8");
+}
+
+const SELF_CANONICAL = [
+  { file: "src/app/hot/page.tsx", snippet: "canonical: '/hot'" },
+  { file: "src/app/category/page.tsx", snippet: "canonical: '/category'" },
+  { file: "src/app/collections/layout.tsx", snippet: "canonical: '/collections'" },
+  { file: "src/app/tags/page.tsx", snippet: "canonical: '/tags'" },
+  { file: "src/app/sites/page.tsx", snippet: "n <= 1 ? '/sites' : `/sites?page=${n}`" },
+  { file: "src/app/tags/[slug]/page.tsx", snippet: "const canonical = `/tags/${encodeURIComponent(safeSlug)}`" },
+  {
+    file: "src/app/collections/[slug]/page.tsx",
+    snippet: "const canonical = `/collections/${encodeURIComponent(safeSlug)}`",
+  },
+  { file: "src/app/category/[id]/page.tsx", snippet: "const canonical = categoryPath(safeId, n)" },
+  {
+    file: "src/app/marketplace/page.tsx",
+    snippet: "const canonical = `/marketplace${buildMarketplaceQuery(state)}`",
+  },
+];
+
+describe("收录型页面的 canonical", () => {
+  it.each(SELF_CANONICAL)("$file 输出 $snippet", ({ file, snippet }) => {
+    const src = overlayFile(file);
+    expect(src).toContain(snippet);
+    expect(src).toMatch(/alternates:\s*\{\s*canonical/);
+  });
+
+  it("canonical 一律相对路径（origin 交给 metadataBase，禁止写死域名）", () => {
+    for (const { file } of SELF_CANONICAL) {
+      const src = overlayFile(file);
+      const matches = src.match(/canonical[^\n]{0,120}/g) ?? [];
+      for (const line of matches) {
+        expect(line, `${file} 的 canonical 不应包含硬编码域名：${line}`).not.toMatch(/https?:\/\//);
+      }
+    }
+  });
+
+  it("分页 ≥2 页自指 canonical，且与 noindex,follow 同口径", () => {
+    const sites = overlayFile("src/app/sites/page.tsx");
+    expect(sites).toContain("robots: { index: false, follow: true }");
+    expect(sites).toMatch(/n\s*<=\s*1\s*\?\s*'\/sites'\s*:\s*`\/sites\?page=\$\{n\}`/);
+
+    // 分类第 N 页：canonical 自指（categoryPath 带 page），不是回第 1 页
+    const category = overlayFile("src/app/category/[id]/page.tsx");
+    expect(category).toContain("categoryPath(safeId, n)");
+    expect(category).not.toMatch(/canonical:\s*categoryPath\(safeId\)/);
+  });
+
+  it("首页 canonical 为 '/'（唯一允许的根路径）", () => {
+    const home = overlayFile("src/app/page.tsx");
+    expect(home).toContain("canonical: '/'");
+  });
+});

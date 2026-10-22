@@ -4,6 +4,7 @@ import { permanentRedirect } from 'next/navigation'
 import { hubGet } from '@/lib/server/hub'
 import { siteOrigin } from '@/lib/seo/origin'
 import { itemListLd } from '@/lib/seo/json-ld'
+import { pageShareMetadata } from '@/lib/seo/metadata'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { JsonLd } from '@/components/json-ld'
 import type { HubSite } from '@/lib/navhub-api'
@@ -65,7 +66,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
     description: description,
     alternates: { canonical },
     // og:url 与 canonical 同值（页 ≥2 是 noindex，og:url 跟着 canonical 走即可）
-    openGraph: { url: canonical },
+    ...(await pageShareMetadata({ url: canonical, title, description })),
     // 页 2 起不进索引，但必须允许跟随，否则详情页拿不到权重
     ...(n <= 1 ? {} : { robots: { index: false, follow: true } }),
   }
@@ -130,6 +131,12 @@ export default async function SitesDirectoryPage({ searchParams }: PageProps) {
             </p>
             {/* 枢纽互链：目录页同时是「按主题逛」的入口，与页脚入口互补不重复 */}
             <nav aria-label="站内目录" className="flex flex-wrap items-center gap-3 text-xs pt-1">
+              <Link href="/category" className="text-primary hover:underline">
+                按分类浏览
+              </Link>
+              <span className="text-border" aria-hidden>
+                ·
+              </span>
               <Link href="/tags" className="text-primary hover:underline">
                 按标签浏览全部站点
               </Link>

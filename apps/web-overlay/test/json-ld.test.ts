@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   MAX_ITEM_LIST,
@@ -5,6 +8,7 @@ import {
   breadcrumbLd,
   itemListLd,
   jsonLdScript,
+  organizationLd,
   softwareApplicationLd,
   webSiteLd,
 } from '../src/lib/seo/json-ld'
@@ -68,6 +72,53 @@ describe('webSiteLd', () => {
   it('name 为空时回退 NavHub，不输出空 name', () => {
     const ld = webSiteLd(ORIGIN, '   ') as Record<string, unknown>
     expect(ld.name).toBe('NavHub')
+  })
+})
+
+describe('organizationLd', () => {
+  it('输出最小 Organization（name/url/绝对 logo）', () => {
+    const ld = organizationLd(ORIGIN, 'NavHub 导航', '/icons/icon-512.png', '导航站') as Record<string, unknown>
+    expect(ld['@context']).toBe('https://schema.org')
+    expect(ld['@type']).toBe('Organization')
+    expect(ld.name).toBe('NavHub 导航')
+    expect(ld.url).toBe(`${ORIGIN}/`)
+    expect(ld.logo).toBe(`${ORIGIN}/icons/icon-512.png`)
+    expect(ld.description).toBe('导航站')
+  })
+
+  it('logo 路径归一（无前导斜杠也拼成绝对地址）', () => {
+    const ld = organizationLd(ORIGIN, 'NavHub', 'icons/icon-512.png') as Record<string, unknown>
+    expect(ld.logo).toBe(`${ORIGIN}/icons/icon-512.png`)
+    const ld2 = organizationLd(ORIGIN, 'NavHub', '  ') as Record<string, unknown>
+    expect(ld2.logo).toBe(`${ORIGIN}/icons/icon-512.png`)
+  })
+
+  it('description 超长截断、空值省略；name 空回退', () => {
+    const ld = organizationLd(ORIGIN, '  ', '/icons/icon-512.png', 'x'.repeat(500)) as Record<string, unknown>
+    expect(ld.name).toBe('NavHub')
+    expect((ld.description as string).length).toBe(300)
+    const ld2 = organizationLd(ORIGIN, 'NavHub', '/icons/icon-512.png', '  ') as Record<string, unknown>
+    expect(ld2.description).toBeUndefined()
+  })
+
+  it('不编造实体信息：无 sameAs / address / telephone / aggregateRating', () => {
+    const ld = organizationLd(ORIGIN, 'NavHub') as Record<string, unknown>
+    for (const field of ['sameAs', 'address', 'telephone', 'aggregateRating']) {
+      expect(ld[field]).toBeUndefined()
+    }
+  })
+})
+
+describe('首页接线', () => {
+  const HERE = dirname(fileURLToPath(import.meta.url))
+  const candidates = [resolve(HERE, '..'), resolve(HERE, '..', '..', 'web-overlay')]
+  const root = candidates.find((p) => existsSync(join(p, 'src', 'app', 'page.tsx')))!
+  const home = readFileSync(join(root, 'src', 'app', 'page.tsx'), 'utf8')
+
+  it('首页同时输出 WebSite 与 Organization，且都经 JsonLd 组件序列化', () => {
+    expect(home).toContain('webSiteLd(')
+    expect(home).toContain('organizationLd(')
+    expect([...home.matchAll(/<JsonLd\b/g)]).toHaveLength(2)
   })
 })
 

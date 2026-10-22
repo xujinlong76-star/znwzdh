@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { getFileContent } from '@/lib/github'
+import { pageShareMetadata } from '@/lib/seo/metadata'
 
 /**
  * 合集段的标题层：`page.tsx` 是客户端组件（'use client'），无法导出
@@ -25,6 +26,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: { default: '合集', template: '%s - ' + siteName },
     description: '按主题整理的站点合集',
+    alternates: { canonical: '/collections' },
+    ...(await pageShareMetadata({ url: '/collections' })),
   }
 }
 

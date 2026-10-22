@@ -6,6 +6,8 @@
  * 纯函数，路由只负责取数与拼装。
  */
 
+import { toDate } from '@/lib/seo/sitemap-entries'
+
 export interface SitemapPluginRef {
   slug: string
   updatedAt?: number | null
@@ -24,10 +26,6 @@ const MAX_SLUG_LENGTH = 200
 
 function normalizeBase(base: string): string {
   return base.replace(/\/+$/, '')
-}
-
-function validTimestamp(value: number | null | undefined): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
 }
 
 /**
@@ -50,11 +48,8 @@ export function pluginSitemapEntries(
     if (!slug || slug.length > MAX_SLUG_LENGTH || seen.has(slug)) continue
     seen.add(slug)
 
-    const lastModified = validTimestamp(plugin.updatedAt)
-      ? new Date(plugin.updatedAt)
-      : validTimestamp(plugin.publishedAt)
-        ? new Date(plugin.publishedAt)
-        : undefined
+    // 与站点/合集共用同一套时间戳归一：秒级、毫秒级、NaN、未来时间都处理
+    const lastModified = toDate(plugin.updatedAt) ?? toDate(plugin.publishedAt)
 
     entries.push({
       url: `${root}/marketplace/${encodeURIComponent(slug)}`,

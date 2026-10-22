@@ -16,6 +16,9 @@ import { MIN_SITES_FOR_INDEX } from './thresholds'
 export interface SiteRef {
   id: string
   updatedAt?: number | null
+  /** 分类计数的双指针（建站时父级与子级都挂） */
+  categoryId?: string | null
+  subCategoryId?: string | null
 }
 
 export interface TagRef {
@@ -26,18 +29,31 @@ export interface TagRef {
 export interface CollectionRef {
   slug: string
   enabled?: boolean | null
+  updatedAt?: number | null
 }
 
-/** 进 sitemap 的静态页（不含 /category，分类 hub 上线后再加）。 */
+export interface CategoryRef {
+  id: string
+  enabled?: boolean | null
+  /** `/api/categories` 实际返回 updatedAt；有值就写 lastModified */
+  updatedAt?: number | null
+}
+
+/**
+ * 进 sitemap 的静态页（/category 随分类 hub 上线）。
+ *
+ * `/videos` 暂不收录：视频库仍是占位内容，页面已声明 noindex，
+ * 提交进 sitemap 只会制造「sitemap 与 robots 打架」。
+ */
 export const STATIC_PATHS = [
   '/',
   '/marketplace',
   '/hot',
   '/tags',
   '/collections',
+  '/category',
   '/graph',
   '/algorithms',
-  '/videos',
   '/sites',
 ] as const
 
@@ -47,7 +63,7 @@ function normOrigin(origin: string): string {
 }
 
 /** 时间戳非法（NaN / 负数 / 未来）时不写 lastModified，宁缺勿错。 */
-function toDate(value: number | null | undefined): Date | undefined {
+export function toDate(value: number | null | undefined): Date | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
   const ms = value > 1e12 ? value : value * 1000 // 兼容秒级与毫秒级
   if (ms > Date.now() + 24 * 3600 * 1000) return undefined
@@ -101,6 +117,47 @@ export function tagEntries(
   return out
 }
 
+/** 分类计数：一级指针与子级指针都要算，同一站点只计一次 */
+export function countCategorySites(sites: SiteRef[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const site of sites ?? []) {
+    for (const id of new Set([site.categoryId, site.subCategoryId])) {
+      if (typeof id === 'string' && id.trim()) counts.set(id, (counts.get(id) ?? 0) + 1)
+    }
+  }
+  return counts
+}
+
+/**
+ * 分类 hub 条目：只收录 enabled 且存活站点数达标的分类。
+ *
+ * 计数由调用方按 `category_id ∪ sub_category_id` 去重聚合（建站双指针）；
+ * 详情页对未达标分类直接 404，这里若照单全收就是主动提交死链。
+ */
+export function categoryEntries(
+  origin: string,
+  categories: CategoryRef[],
+  counts: Map<string, number> | null,
+  minSites: number = MIN_SITES_FOR_INDEX,
+): MetadataRoute.Sitemap {
+  const seen = new Set<string>()
+  const out: MetadataRoute.Sitemap = []
+  for (const c of categories ?? []) {
+    const id = typeof c?.id === 'string' ? c.id.trim() : ''
+    if (!id || c?.enabled === false || seen.has(id)) continue
+    if ((counts?.get(id) ?? 0) < minSites) continue
+    seen.add(id)
+    const lastModified = toDate(c.updatedAt)
+    out.push({
+      url: `${normOrigin(origin)}/category/${encodeURIComponent(id)}`,
+      ...(lastModified ? { lastModified } : {}),
+      changeFrequency: 'weekly',
+      priority: 0.6,
+    })
+  }
+  return out
+}
+
 export function collectionEntries(origin: string, collections: CollectionRef[]): MetadataRoute.Sitemap {
   const seen = new Set<string>()
   const out: MetadataRoute.Sitemap = []
@@ -108,8 +165,10 @@ export function collectionEntries(origin: string, collections: CollectionRef[]):
     const slug = typeof c?.slug === 'string' ? c.slug.trim() : ''
     if (!slug || c?.enabled === false || seen.has(slug)) continue
     seen.add(slug)
+    const lastModified = toDate(c.updatedAt)
     out.push({
       url: `${normOrigin(origin)}/collections/${encodeURIComponent(slug)}`,
+      ...(lastModified ? { lastModified } : {}),
       changeFrequency: 'weekly',
       priority: 0.5,
     })

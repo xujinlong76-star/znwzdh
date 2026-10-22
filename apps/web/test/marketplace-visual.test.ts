@@ -32,7 +32,7 @@ describe("插件市场排版：展板背景工具类", () => {
       "src/app/marketplace/installed/page.tsx",
       "src/app/marketplace/mine/page.tsx",
       "src/app/marketplace/import/page.tsx",
-      "src/app/marketplace/author/[key]/page.tsx",
+      "src/app/marketplace/author/[key]/author-plugins-view.tsx",
     ]
     for (const p of pages) {
       expect(overlaySource(p)).toContain("market-hero")

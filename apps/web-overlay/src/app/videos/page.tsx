@@ -1,9 +1,9 @@
 import { VideoContent } from '@/components/video-content'
 import { Metadata } from 'next/types'
 import { ScrollToTop } from '@/components/ScrollToTop'
-import { Container } from '@/components/ui/container'
 import { getProcessedData } from '@/lib/data-loader'
 import { getFileContent } from '@/lib/github'
+import { pageShareMetadata } from '@/lib/seo/metadata'
 
 /**
  * NavHub 改动：数据改为从中枢异步读取（原为 import 构建期静态 JSON），
@@ -29,9 +29,13 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     // 只写页面名：根 layout 的 title.template 会统一追加站点名
     title: '视频中心',
-    description: '按分类浏览视频内容，选择后进入站内播放页',
+    // 点击行为是站内弹窗播放或无播放配置时直达原站，不是「进入站内播放页」
+    description: '按分类浏览收录的视频与教程，支持站内弹窗播放或直达原站',
     alternates: { canonical: '/videos' },
-    openGraph: { url: '/videos' },
+    // 视频库仍是占位内容：先不参与收录（follow 保留内链权重），
+    // 同时已从 sitemap 移除；内容补齐后再放开。
+    robots: { index: false, follow: true },
+    ...(await pageShareMetadata({ url: '/videos' })),
     keywords: 'Bilibili, YouTube, Videos',
     icons: {
       icon: siteData.appearance.favicon,

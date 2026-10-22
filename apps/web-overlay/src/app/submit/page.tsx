@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Button } from '@/registry/new-york/ui/button'
 import type { NavigationData } from '@/types/navigation'
 import { Footer } from '@/components/footer'
+import { pageShareMetadata } from '@/lib/seo/metadata'
 
 /**
  * NavHub 改动：
@@ -25,11 +26,13 @@ async function getData() {
     return { navigationData }
 }
 
-export const metadata: Metadata = {
-    title: '网站投稿',
-    description: '投稿优质网站，分享好资源',
-    alternates: { canonical: '/submit' },
-    openGraph: { url: '/submit' },
+export async function generateMetadata(): Promise<Metadata> {
+    return {
+        title: '网站投稿',
+        description: '投稿优质网站，分享好资源',
+        alternates: { canonical: '/submit' },
+        ...(await pageShareMetadata({ url: '/submit' })),
+    }
 }
 
 export default async function SubmitPage() {

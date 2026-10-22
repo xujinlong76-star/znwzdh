@@ -140,7 +140,10 @@ interface TitleSource {
 /** 字段被赋值成表达式（而非字面量）：用来区分「运行时取值」与「根本没写」 */
 function hasRuntimeField(obj: string, field: "title" | "description"): boolean {
   const re = new RegExp(`(^|[\\s,{])${field}\\s*:\\s*(?!['"{])`, "m");
-  return re.test(obj);
+  // 简写属性（`return { title, description }`）同样是运行时变量：
+  // /marketplace 按搜索参数拼标题，变量在函数体里算出来
+  const shorthand = new RegExp(`(^|[\\s,{])${field}\\s*,`, "m");
+  return re.test(obj) || shorthand.test(obj);
 }
 
 /** 每个路由的「标题来源」：自己的 page.tsx 或同目录 layout.tsx（首页的 page.tsx 就是它自己） */

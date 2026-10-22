@@ -4,17 +4,20 @@ import { hubGet } from '@/lib/server/hub'
 import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'
 import { pluginSitemapEntries, type SitemapPluginRef } from '@/lib/plugins/sitemap'
 import {
+  categoryEntries,
   collectionEntries,
+  countCategorySites,
   siteEntries,
   staticEntries,
   tagEntries,
+  type CategoryRef,
   type CollectionRef,
   type SiteRef,
   type TagRef,
 } from '@/lib/seo/sitemap-entries'
 
 /**
- * 全站 sitemap：静态页 + 站点 + 达标标签 + 合集 + 已上架插件。
+ * 全站 sitemap：静态页 + 站点 + 达标标签 + 达标分类 + 合集 + 已上架插件。
  *
  * 与上一版的三处差异：
  * 1. 站点必须带 `status=active` —— 不带时会返回 1020 条（含 7 条 broken），
@@ -35,66 +38,71 @@ export const revalidate = 3600
 const PAGE_SIZE = 100
 /** 单次 sitemap 最多收录 5000 个插件，防止异常数据把响应拖到超时 */
 const MAX_PAGES = 50
-/** 站点翻页：4 页 × 500 = 2000 条余量，当前 active 1013 条绰绰有余 */
-const SITE_PAGES = [0, 1, 2, 3]
+/** 站点翻页上限：40 × 500 = 20000 条，超出属于异常数据，避免无限循环 */
 const SITE_LIMIT = 500
+const MAX_SITE_PAGES = 40
 
-async function loadPublishedPlugins(origin: string): Promise<SitemapPluginRef[]> {
+/**
+ * 插件列表直连中枢，不再通过公开域名自取 /api/hub/plugins：
+ * 自取依赖对外 origin 与 route 转发，且 origin 解析失败时整份 sitemap 直接为空。
+ */
+async function loadPublishedPlugins(): Promise<SitemapPluginRef[]> {
   const rows: SitemapPluginRef[] = []
+  let fetched = 0
 
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const offset = page * PAGE_SIZE
-    try {
-      const res = await fetch(`${origin}/api/hub/plugins?limit=${PAGE_SIZE}&offset=${offset}`, {
-        next: { revalidate: 3600 },
+    const body = await hubGet<{ items?: unknown; total?: unknown }>(
+      `/api/plugins?limit=${PAGE_SIZE}&offset=${offset}&sort=updated`,
+      3600,
+    )
+    if (!body) break
+
+    const items = Array.isArray(body.items) ? body.items : []
+    fetched += items.length
+
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue
+      const record = item as { slug?: unknown; updatedAt?: unknown; publishedAt?: unknown }
+      rows.push({
+        slug: typeof record.slug === 'string' ? record.slug : '',
+        updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : null,
+        publishedAt: typeof record.publishedAt === 'number' ? record.publishedAt : null,
       })
-      if (!res.ok) break
-
-      const body = (await res.json()) as { items?: unknown; total?: unknown }
-      const items = Array.isArray(body.items) ? body.items : []
-
-      for (const item of items) {
-        if (!item || typeof item !== 'object') continue
-        const record = item as { slug?: unknown; updatedAt?: unknown; publishedAt?: unknown }
-        rows.push({
-          slug: typeof record.slug === 'string' ? record.slug : '',
-          updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : null,
-          publishedAt: typeof record.publishedAt === 'number' ? record.publishedAt : null,
-        })
-      }
-
-      const total = typeof body.total === 'number' ? body.total : rows.length
-      if (items.length < PAGE_SIZE || rows.length >= total) break
-    } catch {
-      // 中枢不可用：保留已取到的部分（静态条目照常输出）
-      break
     }
+
+    const total = typeof body.total === 'number' ? body.total : fetched
+    if (items.length < PAGE_SIZE || fetched >= total) break
   }
 
   return rows
+}
+
+/** 站点分页按实际返回长度推进，超过 20000 条才由 MAX_SITE_PAGES 截断。 */
+async function loadActiveSites(): Promise<SiteRef[]> {
+  const out: SiteRef[] = []
+  for (let page = 0; page < MAX_SITE_PAGES; page += 1) {
+    const rows = await hubGet<SiteRef[]>(
+      `/api/sites?status=active&limit=${SITE_LIMIT}&offset=${page * SITE_LIMIT}`,
+      3600,
+    )
+    if (!rows?.length) break
+    out.push(...rows)
+    if (rows.length < SITE_LIMIT) break
+  }
+  return out
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const origin = await siteOrigin()
   if (!origin) return []
 
-  // 并行取四路数据；任何一路失败都返回 null，由下面的纯函数自然产出空数组
-  const [plugins, sites, tags, collections] = await Promise.all([
-    loadPublishedPlugins(origin),
-    (async () => {
-      const out: SiteRef[] = []
-      for (const page of SITE_PAGES) {
-        const rows = await hubGet<SiteRef[]>(
-          `/api/sites?status=active&limit=${SITE_LIMIT}&offset=${page * SITE_LIMIT}`,
-          3600,
-        )
-        if (!rows?.length) break
-        out.push(...rows)
-        if (rows.length < SITE_LIMIT) break
-      }
-      return out
-    })(),
+  // 并行取五路数据；任何一路失败都返回 null，由下面的纯函数自然产出空数组
+  const [plugins, sites, tags, categories, collections] = await Promise.all([
+    loadPublishedPlugins(),
+    loadActiveSites(),
     hubGet<TagRef[]>('/api/tags', 3600),
+    hubGet<CategoryRef[]>('/api/categories', 3600),
     hubGet<CollectionRef[]>('/api/collections', 3600),
   ])
 
@@ -102,6 +110,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...staticEntries(origin),
     ...siteEntries(origin, sites),
     ...tagEntries(origin, tags ?? [], MIN_SITES_FOR_INDEX),
+    ...categoryEntries(origin, categories ?? [], countCategorySites(sites), MIN_SITES_FOR_INDEX),
     ...collectionEntries(origin, collections ?? []),
     ...pluginSitemapEntries(origin, plugins),
   ]

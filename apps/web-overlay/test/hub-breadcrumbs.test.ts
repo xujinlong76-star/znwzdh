@@ -14,9 +14,9 @@ import { fileURLToPath } from "node:url";
  *   品牌后缀（与 /tags 家族同病，实测「合集详情」光杆）。
  *
  * 锁的不变量：
- *   1. /hot/layout 挂服务端 Breadcrumbs（叶子枢纽，SSR 直出）；
+ *   1. /hot 服务端 page 挂 Breadcrumbs（旧 layout 已删除，元数据也回 page）；
  *   2. /collections 索引页用客户端 Trail（page 是 'use client'）；
- *   3. /collections/[slug]/layout 用服务端 Breadcrumbs + generateMetadata；
+ *   3. /collections/[slug] 服务端 page 挂 Breadcrumbs + generateMetadata；
  *   4. 确定性 miss 走 notFound()（hubGetProbe 区分 404 与网络失败）；
  *   5. /collections/layout 的 title 是 { default, template }（模板贯通到孙级）。
  */
@@ -32,8 +32,10 @@ function overlayFile(rel: string): string {
 }
 
 describe("枢纽面包屑与合集详情元数据", () => {
-  it("/hot/layout 挂服务端 Breadcrumbs（首页 > 今日热榜）", () => {
-    const src = overlayFile("src/app/hot/layout.tsx");
+  it("/hot 服务端 page 挂 Breadcrumbs（首页 > 今日热榜）", () => {
+    // 2026-10-21：客户端 page 服务端化后，面包屑从 layout 收回 page，
+    // layout 已删除（空壳层会让路由结构更难读）
+    const src = overlayFile("src/app/hot/page.tsx");
     expect(src).toContain("import { Breadcrumbs } from '@/components/breadcrumbs'");
     expect(src).toContain("<Breadcrumbs");
     expect(src).toContain("label: '今日热榜'");
@@ -73,8 +75,9 @@ describe("枢纽面包屑与合集详情元数据", () => {
     expect(imports).not.toContain("components/json-ld");
   });
 
-  it("/collections/[slug]/layout 用服务端 Breadcrumbs（带 JSON-LD，进 SSR HTML）", () => {
-    const src = overlayFile("src/app/collections/[slug]/layout.tsx");
+  it("/collections/[slug] 服务端 page 用 Breadcrumbs（带 JSON-LD，进 SSR HTML）", () => {
+    // 客户端体已下沉到 collection-detail-view.tsx，page 是服务端组件
+    const src = overlayFile("src/app/collections/[slug]/page.tsx");
     expect(src).toContain("import { Breadcrumbs } from '@/components/breadcrumbs'");
     expect(src).toContain("<Breadcrumbs");
     // 足迹完整：首页 > 合集 > 具体合集
@@ -83,7 +86,7 @@ describe("枢纽面包屑与合集详情元数据", () => {
   });
 
   it("/collections/[slug] 每合集独立 metadata（不再共享「合集详情」）", () => {
-    const src = overlayFile("src/app/collections/[slug]/layout.tsx");
+    const src = overlayFile("src/app/collections/[slug]/page.tsx");
     expect(src).toMatch(/export\s+async\s+function\s+generateMetadata\b/);
     expect(src).toContain("title: col.title");
     expect(src).toContain("/api/collections/");
@@ -93,7 +96,7 @@ describe("枢纽面包屑与合集详情元数据", () => {
   });
 
   it("确定性 miss 走 notFound()，网络失败降级不误伤", () => {
-    const src = overlayFile("src/app/collections/[slug]/layout.tsx");
+    const src = overlayFile("src/app/collections/[slug]/page.tsx");
     // hubGetProbe 三态：只有 miss 判 404
     expect(src).toContain("hubGetProbe");
     expect(src).toMatch(/if\s*\(probe\.status\s*===\s*'miss'\)\s*notFound\(\)/);

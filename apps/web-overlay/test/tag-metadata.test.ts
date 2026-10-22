@@ -37,9 +37,10 @@ describe("标签段 metadata 归属（Next title.template 截断修复的结构�
     expect(src).not.toMatch(/export\s+(?:async\s+)?function\s+generateMetadata\b/);
   });
 
-  it("/tags/page.tsx 导出 metadata（标题从 layout 迁来，仍带品牌后缀）", () => {
+  it("/tags/page.tsx 在页面级导出 metadata（标题从 layout 迁来，仍带品牌后缀）", () => {
     const src = overlayFile("src/app/tags/page.tsx");
-    expect(src).toMatch(/export\s+const\s+metadata\b/);
+    // 静态 metadata 或 generateMetadata 都算页面级持有；关键是**不能**留在 layout
+    expect(src).toMatch(/export\s+(?:const\s+metadata|async\s+function\s+generateMetadata)\b/);
     expect(src).toContain("title: '标签总览'");
   });
 
@@ -50,19 +51,22 @@ describe("标签段 metadata 归属（Next title.template 截断修复的结构�
 
   it("/tags/[slug]/page.tsx 的标题与描述都来自运行时数据（resolve 通道）", () => {
     const src = overlayFile("src/app/tags/[slug]/page.tsx");
-    // 标题是模板字符串表达式而非字面量
-    expect(src).toMatch(/title:\s*`「\$\{name\}」相关站点`/);
+    // 标题是模板字符串表达式而非字面量（重构后先赋给 title 常量再返回）
+    expect(src).toMatch(/title:\s*`「\$\{name\}」相关站点`|const\s+title\s*=\s*`「\$\{name\}」相关站点`/);
     // description 优先用标签自身描述，缺失才兜底
     expect(src).toMatch(/description:\s*[\s\S]*?tagRes\?\.tag\?\.description\s*\?\?/);
     expect(src).toContain("/api/tags/resolve?q=");
   });
 
-  it("/tags/[slug]/layout.tsx 不导出 metadata（只挂面包屑）", () => {
-    const src = overlayFile("src/app/tags/[slug]/layout.tsx");
-    expect(src).not.toMatch(/export\s+const\s+metadata\b/);
-    expect(src).not.toMatch(/export\s+(?:async\s+)?function\s+generateMetadata\b/);
-    // 面包屑仍挂 layout（服务端组件，进 SSR HTML）
+  it("/tags/[slug]/layout.tsx 已删除：page 本身就是服务端组件，面包屑直接在 page 渲染", () => {
+    const layout = resolve(HERE, "..", "src/app/tags/[slug]/layout.tsx");
+    expect(existsSync(layout)).toBe(false);
+    const src = overlayFile("src/app/tags/[slug]/page.tsx");
     expect(src).toContain("<Breadcrumbs");
+    // 薄标签不输出 BreadcrumbList：JSON-LD 与 noindex 口径一致
+    expect(src).toMatch(/jsonLd=\{indexable\}/);
+    // 面包屑用标签规范名，而不是 slug
+    expect(src).toContain("tagRes?.tag?.name ?? safeSlug");
   });
 
   it("hero 文案消费标签描述（消灭 369 页共用同一段通用正文）", () => {

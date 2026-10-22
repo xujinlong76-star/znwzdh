@@ -2,7 +2,9 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
+import { Breadcrumbs } from '@/components/breadcrumbs'
 import { hubGet } from '@/lib/server/hub'
+import { safeDecodeParam } from '@/lib/server/route-params'
 import type { HubSite } from '@/lib/navhub-api'
 import { TagResultsBoard } from '@/components/tag-results-board'
 import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'
@@ -44,7 +46,12 @@ async function loadTagPage(slug: string) {
     ),
     hubGet<TagMeta>('/api/tags/resolve?q=' + encodeURIComponent(slug), 60),
   ])
-  const sites = (res?.hits ?? []).map((h) => h.site).filter((s): s is HubSite => Boolean(s))
+  // 索引门槛按 **active** 站点算：broken 站点仍会出现在 search 候选集里，
+  // 但它们不该为一个薄标签页凑数（实测唯一达标的标签有 2/5 是 broken）。
+  const sites = (res?.hits ?? [])
+    .map((h) => h.site)
+    .filter((s): s is HubSite => Boolean(s))
+    .filter((s) => s.status === 'active')
   return { res, sites, tagRes }
 }
 
@@ -66,31 +73,46 @@ async function loadTagPage(slug: string) {
  */
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
-  const safeSlug = decodeURIComponent(slug)
+  const safeSlug = safeDecodeParam(slug)
+  if (!safeSlug) notFound()
   const { res, sites, tagRes } = await loadTagPage(safeSlug)
   const name = tagRes?.tag?.name ?? safeSlug
   // search 失败（res === null）时按可索引处理：降级渲染不该把整批标签页
   // 临时标成 noindex；只有确认了真实存活数才降档。
   const indexable = res === null || sites.length >= MIN_SITES_FOR_INDEX
+  const canonical = `/tags/${encodeURIComponent(safeSlug)}`
   return {
     title: `「${name}」相关站点`,
     description:
       tagRes?.tag?.description ?? `「${name}」标签下的站点列表，按收录顺序排列，可进入详情查看简介、分类与标签。`,
+    alternates: { canonical },
+    openGraph: { url: canonical },
     ...(indexable ? {} : { robots: { index: false, follow: true } }),
   }
 }
 
 export default async function TagDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const safeSlug = decodeURIComponent(slug)
+  const safeSlug = safeDecodeParam(slug)
+  if (!safeSlug) notFound()
   const { res, sites, tagRes } = await loadTagPage(safeSlug)
   // 真 404（软 404 消灭战）：search 成功但 0 命中 = 标签无存活站点或压根
   // 不存在（方案 §4.1：两类都 404）。search **失败**（res === null）不 404——
   // 中枢挂了不该把整站标签页打成 404，降级渲染由岛负责。
   if (res !== null && sites.length === 0) notFound()
+  const indexable = res === null || sites.length >= MIN_SITES_FOR_INDEX
+  const name = tagRes?.tag?.name ?? safeSlug
   return (
     <Container as="main" id="main-content">
       <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
+        <Breadcrumbs
+          jsonLd={indexable}
+          items={[
+            { label: '首页', path: '/' },
+            { label: '标签云', path: '/tags' },
+            { label: name, path: `/tags/${encodeURIComponent(safeSlug)}` },
+          ]}
+        />
         <TagResultsBoard
           slug={safeSlug}
           initialSites={sites}

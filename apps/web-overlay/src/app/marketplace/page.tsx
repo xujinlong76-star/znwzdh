@@ -1,9 +1,14 @@
+import type { Metadata } from 'next'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { hubGet } from '@/lib/server/hub'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { PluginMarketBoard } from '@/components/plugin-market-board'
-import { parseMarketplaceFilters } from '@/lib/plugins/marketplace-filters'
+import {
+  buildMarketplaceQuery,
+  DEFAULT_MARKETPLACE_SORT,
+  parseMarketplaceFilters,
+} from '@/lib/plugins/marketplace-filters'
 import type { HubPluginItem } from '@/lib/navhub-api'
 
 /**
@@ -42,6 +47,38 @@ function searchToString(sp: Record<string, string | string[] | undefined>): stri
   return s ? '?' + s : ''
 }
 
+/**
+ * 筛选视图不制造可索引的薄 URL：默认市场页可索引，带 q/kind/非默认 sort
+ * 的视图一律 noindex,follow + 自指 canonical。canonical 走同一套归一化
+ * （默认 sort 不写回），避免 ?sort=trending 与 /marketplace 各自成页。
+ */
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}): Promise<Metadata> {
+  const sp = await searchParams
+  const state = parseMarketplaceFilters(searchToString(sp))
+  const filtered =
+    Boolean(state.kind || state.q) || state.sort !== DEFAULT_MARKETPLACE_SORT
+  const canonical = `/marketplace${buildMarketplaceQuery(state)}`
+  const title = state.q
+    ? `插件市场 · 搜索「${state.q}」`
+    : state.kind
+      ? `插件市场 · ${state.kind}`
+      : '插件市场'
+  const description = state.q
+    ? `在插件市场搜索「${state.q}」的结果，包含网址包、工作台预设与主题扩展。`
+    : '声明式网址包、工作台预设与个性化配色主题扩展中心'
+  return {
+    title,
+    description,
+    alternates: { canonical },
+    openGraph: { url: canonical },
+    ...(filtered ? { robots: { index: false, follow: true } } : {}),
+  }
+}
+
 export default async function MarketplacePage({
   searchParams,
 }: {
@@ -49,7 +86,7 @@ export default async function MarketplacePage({
 }) {
   const sp = await searchParams
   const { kind, q, sort } = parseMarketplaceFilters(searchToString(sp))
-  const hasFilter = Boolean(q || kind)
+  const hasFilter = Boolean(q || kind) || sort !== DEFAULT_MARKETPLACE_SORT
 
   const listQuery = new URLSearchParams()
   if (kind) listQuery.set('kind', kind)

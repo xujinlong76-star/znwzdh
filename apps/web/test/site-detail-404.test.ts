@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
  *   2. 三态口径：只有 'miss'（API 确认 404）才 notFound()，
  *      'failed'（网络/中枢抖动）必须降级正常渲染，绝不误伤成 404；
  *   3. page 不再是 'use client'（服务端组件才能跑 hubGetProbe/notFound）；
- *   4. 客户端岛保留 'use client' 与原交互，只接收 id。
+ *   4. 客户端岛保留 'use client' 与原交互，接收 id 与服务端下发的首屏 initialSite。
  *
  * 另锁一条实测根因：本路由不得有 loading.tsx——骨架屏边界会先流式
  * 刷 HTTP 200，之后 notFound()（含 generateMetadata 里的）改不了状态码。
@@ -38,7 +38,7 @@ describe("站点详情页软 404 判定（/site/<无效 id> 必须真 404）", (
     const src = overlayFile("src/app/site/[id]/page.tsx");
     expect(src).not.toMatch(/^\s*['"]use client['"]/m);
     expect(src).toContain("import { hubGetProbe } from '@/lib/server/hub'");
-    expect(src).toMatch(/hubGetProbe\(\s*['"]\/api\/sites\/['"]\s*\+\s*encodeURIComponent\(id\)\s*,\s*60\s*\)/);
+    expect(src).toMatch(/hubGetProbe(?:<[^>]+>)?\(\s*['"]\/api\/sites\/['"]\s*\+\s*encodeURIComponent\(safeId\)\s*,\s*60\s*\)/);
   });
 
   it("只有 'miss'（中枢确认 404）才 notFound()，'failed' 降级渲染不误伤", () => {
@@ -49,10 +49,25 @@ describe("站点详情页软 404 判定（/site/<无效 id> 必须真 404）", (
     expect(src).not.toMatch(/probe\.status\s*!==\s*['"]ok['"]/);
   });
 
-  it("判定落在 page 渲染体（方案铁律），且不导出 metadata（标题仍在 layout，不顶掉 792d700）", () => {
+  it("判定落在 page 渲染体（方案铁律）；标题改由 page 级 generateMetadata 逐站产出", () => {
     const src = overlayFile("src/app/site/[id]/page.tsx");
     expect(src).toMatch(/export\s+default\s+async\s+function\s+SiteDetailPage\b/);
-    // page 不许再导出 metadata：route-titles 扫描 page 优先，会顶掉 layout 的标题来源
+    // 静态 metadata 仍不许导出：1013 个详情页会共享同一标题；
+    // 必须走 generateMetadata 读运行时站点数据。
+    expect(src).not.toMatch(/export\s+const\s+metadata\b/);
+    expect(src).toMatch(/export\s+async\s+function\s+generateMetadata\b/);
+  });
+
+  it("每站独立 title/description/canonical；'failed' 只降级标题，不编造站点名", () => {
+    const src = overlayFile("src/app/site/[id]/page.tsx");
+    expect(src).toContain("const title = `${site.title} · 站点详情`");
+    expect(src).toContain("alternates: { canonical }");
+    expect(src).toContain("pageShareMetadata({ url: canonical, title, description })");
+    expect(src).toContain("if (probe.status === 'failed')");
+  });
+
+  it("layout 不再保有静态 metadata（页面级元信息才是唯一来源）", () => {
+    const src = overlayFile("src/app/site/[id]/layout.tsx");
     expect(src).not.toMatch(/export\s+const\s+metadata\b/);
     expect(src).not.toMatch(/export\s+(?:async\s+)?function\s+generateMetadata\b/);
   });
@@ -69,13 +84,61 @@ describe("站点详情页软 404 判定（/site/<无效 id> 必须真 404）", (
     }
   });
 
-  it("客户端岛承接原交互：SiteDetailView 保留 'use client'，由壳下发 id", () => {
+  it("客户端岛承接交互，并由壳下发 id + 首屏 initialSite（SSR 直出 h1 与正文）", () => {
     const pageSrc = overlayFile("src/app/site/[id]/page.tsx");
     expect(pageSrc).toContain("import { SiteDetailView } from '@/components/site-detail-view'");
-    expect(pageSrc).toMatch(/<SiteDetailView\s+id=\{id\}\s*\/>/);
+    expect(pageSrc).toMatch(/<SiteDetailView\s+id=\{safeId\}\s+initialSite=\{site\}/);
 
     const islandSrc = overlayFile("src/components/site-detail-view.tsx");
     expect(islandSrc).toMatch(/^\s*['"]use client['"]/m);
-    expect(islandSrc).toContain("export function SiteDetailView({ id }: { id: string })");
+    expect(islandSrc).toContain("export function SiteDetailView({");
+    expect(islandSrc).toContain("initialSite = null");
+    expect(islandSrc).toContain("initialRelated = []");
+    // 首屏有服务端数据时不得再请求一次；重试仍走客户端
+    expect(islandSrc).toContain("if (initialSite && reloadToken === 0) return");
+  });
+});
+
+/**
+ * F2：详情页站内内链闭环（2026-10-22）。
+ *
+ * 背景：/site/<id> 曾是内链死胡同——HTML 里 0 条 /site/、0 条 /category、
+ * 0 个 JSON-LD，KNN 推荐全是客户端外链。修复：
+ *   - 服务端按分类取同分类站点，首批 6 条 /site 内链直出；
+ *   - BreadcrumbList 与可见面包屑同源（Breadcrumbs 服务端组件）；
+ *   - 分类入口只在站点数达 MIN_SITES_FOR_INDEX 时出现——分类页对薄分类
+ *     直接 404，不能把爬虫送进死链。
+ */
+describe("站点详情页内链闭环（F2）", () => {
+  it("服务端壳取同分类站点并下发，不依赖客户端 useEffect", () => {
+    const src = overlayFile("src/app/site/[id]/page.tsx");
+    expect(src).toContain("loadCategorySites(categoryId, RELATED_LIMIT + 1, 0, 300)");
+    expect(src).toContain("initialRelated={context.related}");
+    expect(src).toContain("await loadSiteContext(site)");
+  });
+
+  it("面包屑用服务端 Breadcrumbs（可见 DOM 与 BreadcrumbList 同源）", () => {
+    const src = overlayFile("src/app/site/[id]/page.tsx");
+    expect(src).toContain("import { Breadcrumbs } from '@/components/breadcrumbs'");
+    expect(src).toContain("<Breadcrumbs items={crumbs}");
+    expect(src).toContain("breadcrumb={<Breadcrumbs");
+    expect(src).toContain("{ label: '全部站点', path: '/sites' }");
+  });
+
+  it("分类入口只链达标分类（< MIN_SITES_FOR_INDEX 的页面是 404）", () => {
+    const src = overlayFile("src/app/site/[id]/page.tsx");
+    expect(src).toContain("import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'");
+    expect(src).toMatch(/categoryCount\s*>=\s*MIN_SITES_FOR_INDEX/);
+    // counts 取数失败（null）时不得赌分类存在
+    expect(src).toMatch(/counts\s*!==\s*null/);
+    expect(src).toContain("canLinkCategory={context.canLinkCategory}");
+  });
+
+  it("岛内把同分类站点渲染成站内 /site 链接，分类入口按 canLinkCategory 门控", () => {
+    const src = overlayFile("src/components/site-detail-view.tsx");
+    expect(src).toContain("initialRelated.length > 0");
+    expect(src).toContain("href={`/site/${encodeURIComponent(s.id)}`}");
+    expect(src).toContain("category && canLinkCategory");
+    expect(src).toContain("href={`/category/${encodeURIComponent(category.id)}`}");
   });
 });

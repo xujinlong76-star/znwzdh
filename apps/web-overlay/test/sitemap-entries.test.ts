@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   STATIC_PATHS,
+  categoryEntries,
   collectionEntries,
+  countCategorySites,
   siteEntries,
   staticEntries,
   tagEntries,
@@ -17,6 +19,55 @@ describe('staticEntries', () => {
     expect(entries[0]!.url).toBe(`${base}/`)
     expect(entries[0]!.priority).toBe(1)
     expect(entries.some((e) => e.url === `${base}/sites`)).toBe(true)
+    expect(entries.some((e) => e.url === `${base}/category`)).toBe(true)
+  })
+})
+
+describe('countCategorySites', () => {
+  it('一级与子级指针都计数，同一站点的两个指针只算一次', () => {
+    const counts = countCategorySites([
+      { id: 'a', categoryId: 'parent', subCategoryId: 'child' },
+      { id: 'b', categoryId: 'parent', subCategoryId: 'child' },
+      { id: 'c', categoryId: 'parent', subCategoryId: null },
+      { id: 'd', categoryId: null, subCategoryId: 'child' },
+      { id: 'e', categoryId: '  ', subCategoryId: '' },
+    ])
+    expect(counts.get('parent')).toBe(3)
+    expect(counts.get('child')).toBe(3)
+    expect(counts.size).toBe(2)
+  })
+})
+
+describe('categoryEntries', () => {
+  it('只收录 enabled 且达到阈值的分类，id 做 encode', () => {
+    const counts = countCategorySites([
+      ...Array.from({ length: 5 }, (_, i) => ({ id: `s${i}`, categoryId: 'ok' })),
+      ...Array.from({ length: 4 }, (_, i) => ({ id: `t${i}`, categoryId: 'thin' })),
+    ])
+    const entries = categoryEntries(base, [
+      { id: 'ok', updatedAt: 1_700_000_000_000 },
+      { id: 'thin' },
+      { id: 'disabled', enabled: false },
+      { id: 'ok' },
+      { id: 'a/b c' },
+    ], counts)
+    expect(entries.map((e) => e.url)).toEqual([`${base}/category/ok`])
+    expect(entries[0]!.priority).toBe(0.6)
+    // G3：分类 updatedAt 有值必须写 lastModified（此前 5 条分类页全缺）
+    expect(new Date(entries[0]!.lastModified!).getTime()).toBe(1_700_000_000_000)
+  })
+
+  it('分类没有 updatedAt 时不伪造 lastModified', () => {
+    const counts = countCategorySites(
+      Array.from({ length: 5 }, (_, i) => ({ id: `s${i}`, categoryId: 'ok' })),
+    )
+    const entries = categoryEntries(base, [{ id: 'ok' }], counts)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.lastModified).toBeUndefined()
+  })
+
+  it('计数缺失（中枢失败）时不产出分类条目', () => {
+    expect(categoryEntries(base, [{ id: 'ok' }], null)).toHaveLength(0)
   })
 })
 

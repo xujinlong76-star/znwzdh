@@ -17,6 +17,8 @@ import { TagCloud } from '@/components/tag-cloud'
 export const metadata: Metadata = {
   title: '标签总览',
   description: '按标签浏览全部站点，找到同一主题下的其它资源',
+  alternates: { canonical: '/tags' },
+  openGraph: { url: '/tags' },
 }
 
 /**

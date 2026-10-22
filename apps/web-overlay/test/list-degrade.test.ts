@@ -32,7 +32,9 @@ function overlayFile(rel: string): string {
   return readFileSync(hit, "utf8");
 }
 
-const hot = overlayFile("src/app/hot/page.tsx");
+// 2026-10-21 起 /hot 是「服务端 page + HotView 岛」：降级行为随岛迁移
+const hot = overlayFile("src/app/hot/hot-view.tsx");
+const hotPage = overlayFile("src/app/hot/page.tsx");
 // Batch D 起 /collections 是「服务端壳 + CollectionBoard 岛」：降级行为在岛里，
 // 壳的职责是挂上岛（壳空挂 = 岛不上 SSR，与 tags 家族同款断言）
 const collections = overlayFile("src/app/collections/page.tsx");
@@ -43,6 +45,12 @@ const tagsPage = overlayFile("src/app/tags/page.tsx");
 const tagDetailPage = overlayFile("src/app/tags/[slug]/page.tsx");
 
 describe("/hot：榜单取不回来时要说出来", () => {
+  it("页面壳把 HotView 挂上 SSR（壳不能空挂）", () => {
+    expect(hotPage).toContain("<HotView");
+    expect(hotPage).toContain("initialTrending={trending}");
+    expect(hotPage).toContain("initialFresh={fresh}");
+  });
+
   it("把降级原因接回页面（两个榜单都要挂回调）", () => {
     expect(hot).toContain("describeDegrade(error, '榜单数据')");
     expect(hot).toContain("fetchTrending(30, onDegraded)");

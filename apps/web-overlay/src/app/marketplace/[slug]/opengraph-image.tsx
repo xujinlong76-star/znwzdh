@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/og'
-import { headers } from 'next/headers'
+import { safeDecodeParam } from '@/lib/server/route-params'
+import { loadPluginDetail } from '@/lib/server/plugin-detail'
 
 /**
  * 插件详情页动态 OG 分享卡片（1200×630）。
@@ -30,46 +31,35 @@ interface CardData {
 }
 
 async function loadCardData(slug: string): Promise<CardData | null> {
-  try {
-    const h = await headers()
-    const host = h.get('host')
-    if (!host) return null
-    const proto = (h.get('x-forwarded-proto') ?? 'http').split(',')[0]!.trim()
-    const res = await fetch(`${proto}://${host}/api/hub/plugins/${encodeURIComponent(slug)}`, {
-      next: { revalidate: 60 },
-    })
-    if (!res.ok) return null
-    const body = (await res.json()) as {
-      plugin?: { kind?: unknown; version?: unknown; name?: unknown; installCount?: unknown }
-      summary?: { siteCount?: unknown; themeTokenCount?: unknown }
-    }
-    const kind = typeof body.plugin?.kind === 'string' ? body.plugin.kind : 'site-pack'
-    const version = typeof body.plugin?.version === 'string' ? body.plugin.version : '1.0.0'
-    const rawName = typeof body.plugin?.name === 'string' ? body.plugin.name : ''
-    // Satori 默认字体不含 CJK：过滤出 ASCII 片段，为空则回退 slug
-    const asciiName =
-      rawName.replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim() || slug
-    const installs = Number(body.plugin?.installCount ?? 0) || 0
-    const siteCount = Number(body.summary?.siteCount ?? 0) || 0
-    const tokenCount = Number(body.summary?.themeTokenCount ?? 0) || 0
-    const statLine =
-      kind === 'theme'
-        ? `${tokenCount} design tokens`
-        : kind === 'site-pack'
-          ? `${siteCount} curated sites`
-          : 'workbench boards & widgets'
-    return { kind, version, asciiName: asciiName.slice(0, 42), installs, statLine }
-  } catch {
-    return null
-  }
+  const probe = await loadPluginDetail(slug)
+  if (probe.status !== 'ok') return null
+  const plugin = probe.data.plugin
+  const summary = probe.data.summary
+  const kind = typeof plugin.kind === 'string' ? plugin.kind : 'site-pack'
+  const version = typeof plugin.version === 'string' ? plugin.version : '1.0.0'
+  const rawName = typeof plugin.name === 'string' ? plugin.name : ''
+  // Satori 默认字体不含 CJK：过滤出 ASCII 片段，为空则回退 slug
+  const asciiName =
+    rawName.replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim() || slug
+  const installs = Number(plugin.installCount ?? 0) || 0
+  const siteCount = Number(summary?.siteCount ?? 0) || 0
+  const tokenCount = Number(summary?.themeTokenCount ?? 0) || 0
+  const statLine =
+    kind === 'theme'
+      ? `${tokenCount} design tokens`
+      : kind === 'site-pack'
+        ? `${siteCount} curated sites`
+        : 'workbench boards & widgets'
+  return { kind, version, asciiName: asciiName.slice(0, 42), installs, statLine }
 }
 
 export default async function OpenGraphImage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const data = await loadCardData(slug)
+  const safeSlug = safeDecodeParam(slug) ?? slug
+  const data = await loadCardData(safeSlug)
   const kind = data?.kind ?? 'site-pack'
   const version = data?.version ?? '1.0.0'
-  const asciiName = data?.asciiName ?? slug.slice(0, 42)
+  const asciiName = data?.asciiName ?? safeSlug.slice(0, 42)
   const installs = data?.installs ?? 0
   const statLine = data?.statLine ?? 'declarative plugins for NavHub'
 

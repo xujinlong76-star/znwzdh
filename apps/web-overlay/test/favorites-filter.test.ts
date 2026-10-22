@@ -115,6 +115,8 @@ describe("文案：让用户知道是「被筛掉了」而不是「丢了」", (
 });
 
 describe("源码守卫：筛选真的接在页面上，且两种「空」不混淆", () => {
+  // P1-1 分层：纯函数行为在上面；这里只锁「页面确实把筛选接进了渲染链」。
+  // 「筛选没命中」的渲染文案由 e2e/user-center.spec.ts 断言，源码里不再重复。
   it("网格渲染的是筛选结果（再叠加收藏夹过滤），不是全量收藏", () => {
     const src = overlaySource("src/app/favorites/page.tsx");
     const gridAt = src.indexOf("min-[1536px]:grid-cols-5");
@@ -148,11 +150,10 @@ describe("源码守卫：筛选真的接在页面上，且两种「空」不混�
 
   it("「收藏是空的」与「筛选没命中」必须是两个不同的分支和文案", () => {
     const src = overlaySource("src/app/favorites/page.tsx");
-    // 真正的空：引导用户去收藏
+    // 真正的空（E2E 未覆盖，保留文案守卫）：引导用户去收藏
     expect(src).toContain("还没有收藏任何站点");
-    // 筛选/收藏夹未命中：单独分支，且明确说明数据还在
+    // 筛选/收藏夹未命中：必须走独立分支，而不是复用全量空态
     expect(src).toContain("visibleFavorites.length === 0 ? (");
     expect(src).toContain("favoriteFilterEmptyMessage(favoriteQuery)");
-    expect(src).toContain("收藏并没有丢：共 {favorites.items.length} 个都还在本机");
   });
 });

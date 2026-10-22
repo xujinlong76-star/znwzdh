@@ -571,6 +571,8 @@ describe("M1 三期：只推脏条目", () => {
 });
 
 describe("源码守卫：这套契约不许被改回去", () => {
+  // P1-1 分层：同步行为（墓碑、游标、批量/逐条、重试）已在本文件上半部分用
+  // 真实模块跑过；这里只锁「页面/钩子仍然接着这些能力」，不重复断言文案。
   it("favorites 页把失败文案与重试交给纯函数，而不是静默", () => {
     const src = overlaySource("src/app/favorites/page.tsx");
     // 文案已下沉到 lib/favorites-sync-copy（五种分支由 favorites-sync-copy.test.ts 行为级单测），

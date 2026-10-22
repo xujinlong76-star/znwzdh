@@ -141,6 +141,24 @@
 **最小改法**：不删除既有断言（它们对防误删仍有价值），而是**分层**：对已有 E2E 覆盖的面（`/me*`、`/favorites`），把源码断言降级为「存在性守卫」（只断言文件/导出存在），行为正确性交给 E2E 与渲染测试；新增行为一律优先写 E2E。
 **工作量**：**M**（需逐个判定归属，不能批量改）
 
+**已执行（2026-10-23，本轮）**——分层规则与落点：
+
+| 层 | 断言什么 | 落点 |
+|---|---|---|
+| L1 存在性 | 文件/路由/导出存在、页面不被索引 | `me-pages` 的页面存在与 `robots`、`favorites-local-folders` 的模块存在 |
+| L2 接线 | API 路径、hook 返回值、state 分支、存储键、导航入口 | `me-degrade-states`（分支→state）、`identity-ready`（useIdentityReady/重载）、`favorites-sync`（页面接纯函数）、`favorites-filter`（渲染链用筛选结果）、`me-pages`（API/入口） |
+| L3 行为 | 真实模块执行与真实页面渲染 | 纯函数单测（`favorites-sync-copy` / `favorites-folders` / `describeFavoritesFilter`）+ `e2e/user-center.spec.ts` |
+
+本轮具体动作：
+
+1. **新增 E2E**：`/favorites` 筛选无命中 → 断言「没有收藏匹配…」与「收藏并没有丢：共 1 个都还在本机」（此前只有源码断言）；清空后条目恢复。
+2. **降级重复文案断言**（E2E 已断言渲染结果）：`me-degrade-states` 移除 `/me` 的「登录状态暂时无法确认」与 `/me/history` 的「不代表历史被清空」字面量，改为断言「降级分支与真空分支互斥」；`me/data` 的「重试」改为断言按钮接回 `loadSession`。
+3. **去掉实现形状断言**：`me-pages` 不再锁 `STAT_ITEMS` 的整行字面量，只要求入口表里存在 `/me/history`。
+4. **favorites 两处**：`favorites-filter` 移除已被新 E2E 覆盖的「收藏并没有丢…」，保留「真空 vs 筛选未命中必须是两个分支」；`favorites-local-folders` 只保留旧错误文案的反向断言与新文案片段。
+
+**刻意保留**：L2 接线断言无法用渲染测试替代（node 环境跑不起 Next 页面），删掉就等于没人挡「接线被移除」。它们不是「假门禁」，只是职责不同——E2E 管「跑起来对不对」，源码守卫管「能力还在不在」。
+
+
 ### P1-2【中】昂贵端点缺少独立限流额度
 
 **证据**：`apps/api/src/server.ts:146` 注册了全局 `rateLimit { max: 300, timeWindow: "1 minute" }`——**有兜底，不是裸奔**。但 `copilot.ts` / `enrich.ts` / `sites.ts`（LLM 路径）/ 导入类端点没有更严格的独立额度。300/min 对普通读接口合理，对触发 LLM 调用的接口意味着**单 IP 每分钟可发起 300 次模型调用**。
@@ -277,7 +295,7 @@
 | P1-8 | ✅ 首轮落地（+ 后续清死导入） | `apps/api` / `packages/store` 各加 `eslint.config.mjs`（仅 src，三条规则全部 warn），根脚本 `lint:backend`，CI 以 `continue-on-error` 运行。store 基线 868 → **0**、api 61 → **24**（见 §7.3） |
 | P1-6 | ⛔ 复核后不实施 | 见 §4：7 个端点不存在，其余已有测试 |
 | P1-4 | ✅ 已完成（并行会话） | `recipes.ts` 改走 `getSitesByIds`，`sites-cluster.test.ts` 覆盖两条分支 |
-| P1-1 | ⏸ 暂缓 | 需逐文件判定「源码字符串断言」归属，且目标文件（`/me*`、`/favorites`）正在被并行会话重写；此时改动会与进行中的组件拆分互相踩踏，等其稳定后单独立项 |
+| P1-1 | ✅ 已执行（用户中心面） | `/me*` 与 `/favorites` 的源码断言按 L1/L2/L3 分层：重复文案断言移交给 E2E（新增 `/favorites` 筛选无命中用例），源码只保留存在性与接线守卫；规则与落点见 §3 P1-1。其余页面按同一规则在后续改动中逐步收口 |
 
 ---
 

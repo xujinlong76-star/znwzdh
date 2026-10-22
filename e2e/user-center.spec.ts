@@ -70,6 +70,7 @@ test.describe('用户中心：三态', () => {
     await page.route('**/api/auth/session', (route) => route.fulfill({ status: 500, body: '{}' }))
     await page.goto('/me/data')
     await expect(page.getByText('登录状态暂时无法确认')).toBeVisible()
+    await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
     await expect(page.getByText('需要登录后管理云端数据')).toHaveCount(0)
   })
   test('/favorites 匿名态：可以建本地收藏夹并持久化（P2）', async ({ page }) => {
@@ -99,5 +100,37 @@ test.describe('用户中心：三态', () => {
     // 持久化：刷新后分组仍在（独立键，不与收藏本体混存）
     await page.reload()
     await expect(page.getByRole('button', { name: /本地分组/ })).toBeVisible()
+  })
+
+  test('/favorites 筛选：无命中时说明收藏还在，清空后恢复', async ({ page }) => {
+    // 只播种、不清空：addInitScript 每次导航都会跑，清空会把刚播种的收藏一起清掉。
+    await page.addInitScript(() => {
+      if (window.localStorage.getItem('navhub.favorites.v1')) return
+      window.localStorage.setItem(
+        'navhub.favorites.v1',
+        JSON.stringify([
+          {
+            siteId: 'e2e-filter-1',
+            title: 'E2E 筛选站点',
+            href: 'https://filter.example.com',
+            createdAt: Date.now(),
+          },
+        ]),
+      )
+    })
+    await page.goto('/favorites')
+
+    const search = page.getByLabel('筛选收藏')
+    await expect(search).toBeVisible()
+    await expect(page.getByText('E2E 筛选站点').first()).toBeVisible()
+
+    await search.fill('zzz-no-such-keyword')
+    // 两种「空」必须分开说：这里是「筛选没命中」，不是「收藏为空」
+    await expect(page.getByText(/没有收藏匹配「zzz-no-such-keyword」/)).toBeVisible()
+    await expect(page.getByText(/收藏并没有丢：共 1 个都还在本机/)).toBeVisible()
+    await expect(page.getByText('E2E 筛选站点')).toHaveCount(0)
+
+    await search.fill('')
+    await expect(page.getByText('E2E 筛选站点').first()).toBeVisible()
   })
 })

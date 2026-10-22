@@ -62,8 +62,11 @@ const LANDMARK_ELSEWHERE: Record<string, string> = {
   "src/app/site/[id]/page.tsx": "站点详情主体在 components/site-detail-view.tsx",
   "src/app/marketplace/[slug]/page.tsx":
     "插件详情主体在 app/marketplace/[slug]/plugin-detail-view.tsx（服务端壳只探活）",
+  "src/app/marketplace/[slug]/preview/page.tsx":
+    "插件预览主体同样在 app/marketplace/[slug]/plugin-detail-view.tsx（预览壳不探活）",
   "src/app/marketplace/author/[key]/page.tsx":
     "作者主页主体在 app/marketplace/author/[key]/author-plugins-view.tsx（服务端壳只探活）",
+  "src/app/me/page.tsx": "用户中心主体在 app/me/me-view.tsx（服务端壳只注入首屏概览）",
 };
 
 /** 这些文件必须真的带地标（承载了委托页面的主体） */
@@ -76,6 +79,8 @@ const COMPONENTS_WITH_LANDMARK = [
   "src/app/error.tsx",
   "src/app/global-error.tsx",
   "src/app/not-found.tsx",
+  // M5：/me 的地标随主体一起搬进客户端岛（page.tsx 变成只注入数据的服务端壳）
+  "src/app/me/me-view.tsx",
 ];
 
 describe("每个内容页都要有主内容地标", () => {

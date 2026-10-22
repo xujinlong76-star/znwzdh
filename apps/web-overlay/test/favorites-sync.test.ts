@@ -1,24 +1,17 @@
 /**
- * 收藏的云端同步：**失败必须说出来**。
+ * 收藏的云端同步：**失败必须说出来**，且登录/匿名走不同通道。
  *
- * 真实缺陷（改动前）：`syncFavoritesToCloud()` 是这样写的——
+ * 历史缺陷（改动前）：逐条 `addFavorite` + 全量 `listFavorites`，中枢不可达时
+ * 每条都等满超时；失败与「云端确实没有收藏」不可区分，用户以为已同步。
  *
- *   for (const f of local) await addFavorite(identity, f.siteId)  // 返回值被丢掉
- *   const cloud = await listFavorites(identity)
- *   return cloud.items                                            // 失败时是 []
- *
- * 而 addFavorite/listFavorites 内部都是 `catch { return false/空 }`，于是：
- *
- *   1. 中枢不可达时，**每一条**本地收藏都会各发一次请求、各自等满超时
- *      （收藏 30 个站 + 中枢已停 = 页面在「同步」里空转十几分钟，零提示）；
- *   2. 页面只判断 `cloud.length > 0`，失败与「云端确实没有收藏」不可区分，
- *      用户以为收藏已经在云端 —— 换设备登录才发现全没了。
- *
- * 这里锁住新契约：
- *   - 首条推送失败即中止（同一时刻的中枢故障是共因），不要把 N 次超时排成队；
- *   - 失败时 `cloud` 必须是 **null**，空数组只表示「云端确实没有收藏」；
- *   - 全程不抛异常，失败原因与「值不值得重试」交回调用方；
- *   - 页面与 navhub-api 的源码保持这套契约（源码守卫）。
+ * 当前契约（M1 批量同步）：
+ *   - 登录用户：一次 `POST /api/me/favorites/sync`（ops + since），响应即增量
+ *     （含墓碑）。**不再逐条推、不再单独 GET**；
+ *   - 匿名用户：新端点只接受会话派生身份，因此保持旧的逐条通道（首条失败即中止）；
+ *   - `cloud` 失败时必须为 null（空数组只表示「云端确实没有收藏」）；
+ *   - `nextItems` 是算好的本地结果：全量（since=0）走云端覆盖，增量（since>0）
+ *     走逐行 upsert——**增量绝不能做全量合并**，否则会删掉本地未推送的条目；
+ *   - 游标只在完整成功后推进；写不进去就下次走全量（幂等）。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -40,14 +33,17 @@ function overlaySource(rel: string): string {
 interface FetchCall {
   method: string;
   url: string;
+  body?: string;
 }
 
 const originalFetch = globalThis.fetch;
 const globals = globalThis as unknown as { window?: unknown; localStorage?: unknown };
+let lastStore: Record<string, string> = {};
 
 /** 伪造 localStorage + window（node 环境没有），让身份与本地收藏可用 */
 function installStorage(entries: Record<string, string>): void {
   const store: Record<string, string> = { ...entries };
+  lastStore = store;
   const localStorage = {
     getItem: (k: string) => (k in store ? store[k] : null),
     setItem: (k: string, v: string) => {
@@ -65,13 +61,22 @@ function installStorage(entries: Record<string, string>): void {
   };
 }
 
+function localItems(siteIds: string[]): string {
+  return JSON.stringify(
+    siteIds.map((siteId) => ({ siteId, title: "站点 " + siteId, href: "https://example.com/" + siteId, createdAt: 1 })),
+  );
+}
+
 /** 登录态 + 本地收藏 */
 function signedIn(siteIds: string[]): void {
+  installStorage({ "navhub.userId": "user-1", "navhub.favorites.v1": localItems(siteIds) });
+}
+
+/** 匿名态 + 本地收藏 */
+function anonUser(siteIds: string[]): void {
   installStorage({
-    "navhub.userId": "user-1",
-    "navhub.favorites.v1": JSON.stringify(
-      siteIds.map((siteId) => ({ siteId, title: "站点 " + siteId, href: "https://example.com/" + siteId, createdAt: 1 })),
-    ),
+    "navhub.anonId": "anon-11111111-2222-3333-4444-555555555555",
+    "navhub.favorites.v1": localItems(siteIds),
   });
 }
 
@@ -82,8 +87,8 @@ function signedIn(siteIds: string[]): void {
 function stubFetch(seq: Array<number | "network">, bodies: Record<number, string> = {}): FetchCall[] {
   const calls: FetchCall[] = [];
   let i = 0;
-  globalThis.fetch = (async (input: unknown, init?: { method?: string }) => {
-    calls.push({ method: (init?.method ?? "GET").toUpperCase(), url: String(input) });
+  globalThis.fetch = (async (input: unknown, init?: { method?: string; body?: string }) => {
+    calls.push({ method: (init?.method ?? "GET").toUpperCase(), url: String(input), body: init?.body });
     const next = seq.length === 0 ? 200 : seq[Math.min(i, seq.length - 1)];
     i++;
     if (next === "network") throw new TypeError("fetch failed");
@@ -98,80 +103,158 @@ function stubFetch(seq: Array<number | "network">, bodies: Record<number, string
 
 const EMPTY_CLOUD = JSON.stringify({ items: [], folders: [] });
 
+function batchBody(
+  items: Array<{ siteId: string; title?: string; deletedAt?: number | null; note?: string | null; folderId?: string | null }>,
+  version = 999,
+): string {
+  return JSON.stringify({
+    ok: true,
+    applied: items.length,
+    version,
+    items: items.map((item) => ({
+      siteId: item.siteId,
+      folderId: item.folderId ?? null,
+      note: item.note ?? null,
+      createdAt: 1,
+      deletedAt: item.deletedAt ?? null,
+      site: item.deletedAt ? null : { url: "https://example.com/" + item.siteId, title: item.title ?? "A" },
+    })),
+    folders: [],
+  });
+}
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
   delete globals.window;
   delete globals.localStorage;
+  lastStore = {};
 });
 
 describe("未登录：不假装同步过", () => {
   it("没有身份时直接给出原因，且一个请求都不发", async () => {
+    // 不装 window：getIdentity() 在无 window 时返回空串（浏览器里总会回落 anon，
+    // 这条测的是「拿到空身份」的防御分支）
     const calls = stubFetch([200]);
     const r = await syncFavoritesToCloud();
     expect(calls).toEqual([]);
     expect(r.ok).toBe(false);
     expect(r.cloud).toBeNull();
+    expect(r.nextItems).toBeNull();
     expect(r.retryable).toBe(false);
     expect(r.error).toContain("未登录");
   });
 });
 
-describe("成功路径", () => {
-  it("逐条推上云端，再拉回云端列表", async () => {
+describe("登录用户：一次批量同步", () => {
+  it("只发一个 POST 到 /api/me/favorites/sync，不再逐条推 + GET", async () => {
     signedIn(["a", "b"]);
-    const calls = stubFetch([200], { 200: EMPTY_CLOUD });
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "a" }, { siteId: "b" }]) });
     const r = await syncFavoritesToCloud();
+    expect(calls.length).toBe(1);
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].url).toContain("/api/me/favorites/sync");
     expect(r.ok).toBe(true);
-    expect(r.localCount).toBe(2);
     expect(r.pushed).toBe(2);
-    expect(r.cloud).toEqual([]);
-    expect(r.cloudFolders).toEqual([]);
-    expect(calls.filter((c) => c.method === "POST").length).toBe(2);
-    expect(calls.filter((c) => c.method === "GET").length).toBe(1);
+    expect(r.cloud?.map((i) => i.siteId).sort()).toEqual(["a", "b"]);
+    expect(r.nextItems?.map((i) => i.siteId).sort()).toEqual(["a", "b"]);
   });
 
-  it("云端确实没有收藏时 cloud 是空数组而不是 null（两者含义不同）", async () => {
-    signedIn([]);
-    stubFetch([200], { 200: EMPTY_CLOUD });
+  it("成功后推进游标；失败时游标不动", async () => {
+    signedIn(["a"]);
+    stubFetch([200], { 200: batchBody([{ siteId: "a" }], 1234) });
+    await syncFavoritesToCloud();
+    expect(lastStore["navhub.favorites.sync.v1.user-1"]).toBe("1234");
+
+    delete lastStore["navhub.favorites.sync.v1.user-1"];
+    stubFetch([502]);
+    await syncFavoritesToCloud();
+    expect(lastStore["navhub.favorites.sync.v1.user-1"]).toBeUndefined();
+  });
+
+  it("首次（since=0）是全量语义：云端没有的本地条目会被移除", async () => {
+    signedIn(["a", "stale"]);
+    stubFetch([200], { 200: batchBody([{ siteId: "a" }]) });
+    const r = await syncFavoritesToCloud();
+    expect(r.nextItems?.map((i) => i.siteId)).toEqual(["a"]);
+  });
+
+  it("增量（since>0）绝不整表替换：本地未推送的条目必须保留", async () => {
+    signedIn(["a", "local-only"]);
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a", "local-only"]),
+      "navhub.favorites.sync.v1.user-1": "100",
+    });
+    stubFetch([200], { 200: batchBody([{ siteId: "a", title: "云端改名" }], 200) });
+    const r = await syncFavoritesToCloud();
+    const ids = r.nextItems?.map((i) => i.siteId).sort();
+    expect(ids).toEqual(["a", "local-only"]);
+    expect(r.nextItems?.find((i) => i.siteId === "a")?.title).toBe("云端改名");
+  });
+
+  it("墓碑传播删除：deletedAt 非空的条目从本地移除", async () => {
+    signedIn(["a", "b"]);
+    installStorage({
+      "navhub.userId": "user-1",
+      "navhub.favorites.v1": localItems(["a", "b"]),
+      "navhub.favorites.sync.v1.user-1": "100",
+    });
+    stubFetch([200], { 200: batchBody([{ siteId: "a", deletedAt: 123 }], 300) });
+    const r = await syncFavoritesToCloud();
+    expect(r.nextItems?.map((i) => i.siteId)).toEqual(["b"]);
+  });
+
+  it("请求体带 ops 与 since（mock 不校验 body 就是假绿）", async () => {
+    signedIn(["a", "b"]);
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "a" }, { siteId: "b" }]) });
+    await syncFavoritesToCloud();
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: unknown[]; since: number };
+    expect(payload.ops).toHaveLength(2);
+    expect(payload.since).toBe(0);
+  });
+
+  it("超过 500 条自动分片：每片 <=500，不会因 400 变成永久失败", async () => {
+    const many = Array.from({ length: 501 }, (_, i) => "s" + i);
+    signedIn(many);
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "s0" }]) });
     const r = await syncFavoritesToCloud();
     expect(r.ok).toBe(true);
-    expect(r.pushed).toBe(0);
-    expect(r.cloud).toEqual([]);
+    expect(calls.length).toBe(2);
+    for (const call of calls) {
+      const payload = JSON.parse(call.body ?? "{}") as { ops: unknown[] };
+      expect(payload.ops.length).toBeLessThanOrEqual(500);
+    }
   });
-});
 
-describe("失败必须说出来（回归：旧实现完全静默）", () => {
-  it("首条推送就失败时立刻中止，不再为剩余每条各等满一次超时", async () => {
-    signedIn(["a", "b", "c"]);
+  it("本机为空但已有游标：仍拉一次增量（否则永不知云端新增）", async () => {
+    installStorage({ "navhub.userId": "user-1", "navhub.favorites.sync.v1.user-1": "500" });
+    const calls = stubFetch([200], { 200: batchBody([{ siteId: "remote-new" }], 600) });
+    const r = await syncFavoritesToCloud();
+    expect(calls.length).toBe(1);
+    const payload = JSON.parse(calls[0].body ?? "{}") as { ops: unknown[]; since: number };
+    expect(payload.ops).toHaveLength(0);
+    expect(payload.since).toBe(500);
+    expect(r.nextItems?.map((i) => i.siteId)).toEqual(["remote-new"]);
+  });
+
+  it("401 说的是登录过期，不是「更新 API Token」", async () => {
+    signedIn(["a"]);
+    stubFetch([401]);
+    const r = await syncFavoritesToCloud();
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("登录已过期");
+  });
+
+  it("批量请求失败：cloud 与 nextItems 都是 null，并给出可重试原因", async () => {
+    signedIn(["a", "b"]);
     const calls = stubFetch([502]);
     const r = await syncFavoritesToCloud();
+    expect(calls.length).toBe(1);
     expect(r.ok).toBe(false);
-    expect(r.pushed).toBe(0);
     expect(r.cloud).toBeNull();
+    expect(r.nextItems).toBeNull();
     expect(r.retryable).toBe(true);
     expect(r.error).toBeTruthy();
-    expect(calls.length).toBe(1);
-  });
-
-  it("推送成功但拉取失败：cloud 必须是 null（失败 ≠ 云端没有收藏）", async () => {
-    signedIn(["a"]);
-    const calls = stubFetch([200, 503]);
-    const r = await syncFavoritesToCloud();
-    expect(r.ok).toBe(false);
-    expect(r.pushed).toBe(1);
-    expect(r.cloud).toBeNull();
-    expect(r.error).toBeTruthy();
-    expect(calls.map((c) => c.method)).toEqual(["POST", "GET"]);
-  });
-
-  it("网络层失败（中枢没启动 / 断网）不抛异常，只把原因交回调用方", async () => {
-    signedIn(["a"]);
-    const calls = stubFetch(["network"]);
-    const r = await syncFavoritesToCloud();
-    expect(r.ok).toBe(false);
-    expect(r.error).toBeTruthy();
-    expect(r.retryable).toBe(true);
-    expect(calls.length).toBe(1);
   });
 
   it("404 不值得重试，5xx 值得（不要给用户一个按了也没用的按钮）", async () => {
@@ -183,6 +266,53 @@ describe("失败必须说出来（回归：旧实现完全静默）", () => {
   });
 });
 
+describe("匿名用户：保持逐条通道（新端点只给登录态）", () => {
+  it("逐条推上云端，再拉回云端列表", async () => {
+    anonUser(["a", "b"]);
+    const calls = stubFetch([200, 200, 200], { 200: EMPTY_CLOUD });
+    const r = await syncFavoritesToCloud();
+    expect(r.ok).toBe(true);
+    expect(r.pushed).toBe(2);
+    expect(r.cloud).toEqual([]);
+    expect(r.nextItems).toEqual([]);
+    expect(calls.filter((c) => c.method === "POST").length).toBe(2);
+    expect(calls.filter((c) => c.method === "GET").length).toBe(1);
+    // 匿名不得打批量端点（会 401）
+    expect(calls.every((c) => !c.url.includes("/api/me/favorites/sync"))).toBe(true);
+  });
+
+  it("首条失败即中止，不再为剩余每条各等满一次超时", async () => {
+    anonUser(["a", "b", "c"]);
+    const calls = stubFetch([502]);
+    const r = await syncFavoritesToCloud();
+    expect(r.ok).toBe(false);
+    expect(r.pushed).toBe(0);
+    expect(r.nextItems).toBeNull();
+    expect(calls.length).toBe(1);
+  });
+
+  it("推送成功但拉取失败：cloud 必须是 null（失败 ≠ 云端没有收藏）", async () => {
+    anonUser(["a"]);
+    const calls = stubFetch([200, 503]);
+    const r = await syncFavoritesToCloud();
+    expect(r.ok).toBe(false);
+    expect(r.pushed).toBe(1);
+    expect(r.cloud).toBeNull();
+    expect(r.nextItems).toBeNull();
+    expect(calls.map((c) => c.method)).toEqual(["POST", "GET"]);
+  });
+
+  it("网络层失败（中枢没启动 / 断网）不抛异常", async () => {
+    anonUser(["a"]);
+    const calls = stubFetch(["network"]);
+    const r = await syncFavoritesToCloud();
+    expect(r.ok).toBe(false);
+    expect(r.error).toBeTruthy();
+    expect(r.retryable).toBe(true);
+    expect(calls.length).toBe(1);
+  });
+});
+
 describe("源码守卫：这套契约不许被改回去", () => {
   it("favorites 页会展示失败原因与重试，而不是静默", () => {
     const src = overlaySource("src/app/favorites/page.tsx");
@@ -190,30 +320,35 @@ describe("源码守卫：这套契约不许被改回去", () => {
     expect(src).toContain("换设备登录可能看不到");
     expect(src).toContain("重试同步");
     expect(src).toContain("runCloudSync");
-    // 旧写法：只判断 cloud.length，失败与空不可区分
     expect(src).not.toContain("if (cloud && cloud.length > 0)");
   });
 
-  it("syncFavoritesToCloud 首条失败即 break，且失败时 cloud 为 null", () => {
-    const src = overlaySource("src/hooks/useFavorites.ts");
-    expect(src).toContain("if (!ok) break");
-    expect(src).toContain("cloud: cloudFailed ? null : list.items");
-    expect(src).toContain("describeDegrade");
-  });
-
-  it("同步成功后以云端成员集合替换本地，而不是并集导入", () => {
-    const src = overlaySource("src/app/favorites/page.tsx");
-    expect(src).toContain("mergeCloudFavorites(favorites.items, result.cloud)");
-    expect(src).toContain("favorites.replaceAll(");
-    // 旧的并集导入会把「其它设备已删除」的收藏重新写回本地
-    expect(src).not.toContain("importJson(JSON.stringify({ version: 1, items: incoming }))");
+  it("登录态批量 / 匿名逐条双分支，且增量不和全量合并混用", () => {
     const hook = overlaySource("src/hooks/useFavorites.ts");
-    expect(hook).toContain("cloudFolders");
-    expect(hook).toContain("replaceAll");
+    expect(hook).toContain("identity.startsWith('anon-')");
+    expect(hook).toContain("syncFavoritesBatch(");
+    expect(hook).toContain("applyFavoriteDelta(");
+    expect(hook).toContain("writeSyncCursor(");
+    expect(hook).toContain("readSyncCursor(");
+    // 全量才允许 mergeCloudFavorites；增量必须是 applyFavoriteDelta
+    expect(hook).toMatch(/since === 0 \? mergeCloudFavorites\(local, alive\) : applyFavoriteDelta\(local, aggregated\)/);
+    // 游标只在全部请求成功后推进一次
+    expect(hook).toContain("removeItem(SYNC_CURSOR_PREFIX");
+    // 匿名通道保留「首条失败即 break」
+    expect(hook).toContain("if (!ok) break");
   });
 
-  it("navhub-api 的收藏接口把失败交回调用方（不再自己吞掉）", () => {
+  it("页面用 nextItems 落库，不自己再跑全量合并", () => {
+    const src = overlaySource("src/app/favorites/page.tsx");
+    expect(src).toContain("favorites.replaceAll(result.nextItems)");
+    expect(src).not.toContain("mergeCloudFavorites(favorites.items, result.cloud)");
+    expect(src).not.toContain("importJson(JSON.stringify({ version: 1, items: incoming }))");
+  });
+
+  it("navhub-api 暴露批量同步且失败交回调用方", () => {
     const src = overlaySource("src/lib/navhub-api.ts");
+    expect(src).toContain("export async function syncFavoritesBatch(");
+    expect(src).toContain("/api/me/favorites/sync");
     expect(src).toContain("export async function listFavorites(identity: string, onDegraded?: DegradedHandler)");
     expect(src).toContain("export async function addFavorite(identity: string, siteId: string, onDegraded?: DegradedHandler)");
     expect(src).toContain(

@@ -16,7 +16,6 @@ import { Input } from '@/components/ui/input'
 import { FavoriteButton } from '@/components/favorite-button'
 import { useFavorites, syncFavoritesToCloud, type CloudSyncResult } from '@/hooks/useFavorites'
 import { getIdentity } from '@/lib/identity'
-import { mergeCloudFavorites } from '@/lib/favorites-merge'
 import {
   filterFavorites,
   describeFavoritesFilter,
@@ -110,14 +109,15 @@ export default function FavoritesPage() {
    */
   const applyCloudResult = useCallback(
     (result: CloudSyncResult) => {
-      if (!result.ok || !result.cloud || !result.cloudFolders) return false
-      // 云端是事实源：整体替换本地成员集合，避免「其它设备已删除的收藏」被本机缓存推回去
+      // nextItems 由 syncFavoritesToCloud 按「全量=覆盖 / 增量=逐行 upsert」算好：
+      // 页面层不再自己跑 mergeCloudFavorites——增量结果做全量合并会删掉本地未推送的条目。
+      if (!result.ok || !result.cloud || !result.cloudFolders || !result.nextItems) return false
       setFolders(result.cloudFolders)
-      favorites.replaceAll(mergeCloudFavorites(favorites.items, result.cloud))
+      favorites.replaceAll(result.nextItems)
       return true
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [favorites.items],
+    [favorites],
   )
 
   useEffect(() => {

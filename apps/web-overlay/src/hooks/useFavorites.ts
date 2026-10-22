@@ -9,8 +9,18 @@
  */
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { addFavorite, listFavorites, removeFavorite, type HubFavorite, type HubFavoriteFolder } from '@/lib/navhub-api'
+import {
+  addFavorite,
+  listFavorites,
+  removeFavorite,
+  syncFavoritesBatch,
+  type FavoriteSyncOp,
+  type HubFavorite,
+  type HubFavoriteFolder,
+  type HubFavoriteSyncItem,
+} from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
+import { mergeCloudFavorites } from '@/lib/favorites-merge'
 import { getIdentity } from '@/lib/identity'
 import {
   FAVORITES_STORAGE_KEY,
@@ -166,6 +176,14 @@ export function useFavorites(): FavoritesApi {
       // 备份写不进去（配额满）也要继续重置，但把这件事说出来，别让它静默
       console.warn('收藏原数据备份失败；重置后原数据可能无法找回', err)
     }
+    // 重置意味着本地记录被丢弃：游标也必须一起清，否则下次增量会从「旧水位」
+    // 开始，被清空的那段云端数据永远拉不回来（重拉全量是幂等的）。
+    try {
+      const identity = getIdentity()
+      if (identity) window.localStorage.removeItem(SYNC_CURSOR_PREFIX + identity)
+    } catch {
+      // 清不掉游标不阻断重置；下次成功同步时会被新版本覆盖
+    }
     applyLocalFavorites({ items: [], blocked: null })
     saveLocal([])
   }, [])
@@ -242,6 +260,68 @@ export function useFavorites(): FavoritesApi {
   return { items, ready, storageBlocked, isFavorite, toggle, remove, updateMeta, replaceAll, clear, resetLocal, exportJson, importJson }
 }
 
+/** 同步游标：仅记录「一次成功同步之后」的版本，失败时绝不推进 */
+const SYNC_CURSOR_PREFIX = 'navhub.favorites.sync.v1.'
+
+function readSyncCursor(identity: string): number {
+  try {
+    const raw = window.localStorage.getItem(SYNC_CURSOR_PREFIX + identity)
+    const n = Number(raw)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  } catch {
+    // 读不到游标就按 0（全量）处理：宁可多拉一次全集，也不能跳过增量
+    return 0
+  }
+}
+
+function writeSyncCursor(identity: string, version: number): void {
+  if (!(version > 0)) return
+  try {
+    window.localStorage.setItem(SYNC_CURSOR_PREFIX + identity, String(version))
+  } catch {
+    // 写不进游标不影响本次结果，只是下次仍走全量（全量是幂等的）
+  }
+}
+
+/**
+ * 增量应用（M1）：服务端返回「自 since 以来变化的行，含墓碑」。
+ *
+ * 与 mergeCloudFavorites 的关键差别：后者是「云端全集覆盖本地」，用在增量上
+ * 会把本地尚未推送的条目误删。这里只按 siteId upsert / delete，绝不整体替换。
+ * 落本地走白名单字段：墓碑行残留的 note/folderId 是删除前的旧值，不能写回。
+ */
+export function applyFavoriteDelta(
+  local: LocalFavorite[],
+  delta: HubFavoriteSyncItem[],
+): LocalFavorite[] {
+  const map = new Map(local.map((item) => [item.siteId, item]))
+  const fresh: LocalFavorite[] = []
+  for (const remote of delta) {
+    if (remote.deletedAt != null) {
+      map.delete(remote.siteId)
+      continue
+    }
+    const cached = map.get(remote.siteId)
+    const href = remote.site?.url ?? cached?.href ?? ''
+    // 站点已被硬删除且本地也没有展示信息：无法渲染，跳过
+    if (!href) continue
+    const next: LocalFavorite = {
+      ...(cached ?? { siteId: remote.siteId }),
+      siteId: remote.siteId,
+      title: remote.site?.title ?? cached?.title ?? remote.siteId,
+      href,
+      icon: cached?.icon,
+      description: remote.site?.description ?? cached?.description,
+      note: remote.note ?? undefined,
+      folderId: remote.folderId,
+      createdAt: remote.createdAt || cached?.createdAt || Date.now(),
+    }
+    if (cached) map.set(remote.siteId, next)
+    else fresh.push(next)
+  }
+  return fresh.length > 0 ? [...fresh, ...map.values()] : [...map.values()]
+}
+
 /**
  * 登录后调用一次：先把本地收藏推到云端（仅用于首次迁移/离线期间新增的条目），
  * 再拉回云端全集。成员集合最终以云端为准——否则其它设备删掉的收藏会被本机缓存复活。
@@ -272,6 +352,12 @@ export interface CloudSyncResult {
   error?: string
   /** 是否值得给用户一个「重试」 */
   retryable: boolean
+  /**
+   * 已算好的「本地应变成什么」。页面必须用它 replaceAll，而不是自己再跑一次
+   * mergeCloudFavorites——增量场景下全量合并会把本地未推送的条目误删。
+   * 失败时为 null（不许落库）。
+   */
+  nextItems: LocalFavorite[] | null
 }
 
 export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
@@ -287,6 +373,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       cloudFolders: null,
       error: blocked,
       retryable: false,
+      nextItems: null,
     }
   }
   if (!identity) {
@@ -298,6 +385,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       cloudFolders: null,
       error: '未登录：收藏只保存在本机浏览器',
       retryable: false,
+      nextItems: null,
     }
   }
 
@@ -306,6 +394,94 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     const notice = describeDegrade(error, '云端收藏')
     failure.message = notice.message
     failure.retryable = notice.retryable
+    // 批量端点走 BFF 会话：401 是「登录过期」，不是 API Token 问题
+    if ((error as { status?: number } | null)?.status === 401) {
+      failure.message = '登录已过期，请重新登录后同步收藏'
+      failure.retryable = true
+    }
+  }
+
+  // 登录用户走批量同步：一次请求提交 ops 并取回增量（含墓碑）。
+  // 匿名用户保持旧的逐条端点——新端点只接受会话派生身份，匿名调它必然 401。
+  if (!identity.startsWith('anon-')) {
+    const since = readSyncCursor(identity)
+    /** 服务端单批 ops 上限 500；超出必须分片，否则 400 会让 >500 条收藏的账号永久同步失败 */
+    const OP_BATCH = 500
+    const chunks: LocalFavorite[][] = []
+    for (let i = 0; i < local.length; i += OP_BATCH) chunks.push(local.slice(i, i + OP_BATCH))
+
+    const opsOf = (list: LocalFavorite[]): FavoriteSyncOp[] =>
+      list.map((f) => ({
+        op: 'add',
+        siteId: f.siteId,
+        folderId: f.folderId ?? null,
+        note: f.note ?? null,
+        at: f.createdAt,
+      }))
+
+    let version = since
+    let aggregated: HubFavoriteSyncItem[] = []
+    let folders: HubFavoriteFolder[] = []
+
+    // 所有分片都用同一个 since：这样每片的响应都覆盖「自游标以来的全部变化」，
+    // 不会因为逐片推进游标而漏掉「at 早于新游标」的条目（拼接后按 siteId 去重）。
+    for (const chunk of chunks) {
+      const result = await syncFavoritesBatch(opsOf(chunk), since, onFail)
+      if (!result) {
+        return {
+          ok: false,
+          localCount: local.length,
+          pushed: 0,
+          cloud: null,
+          cloudFolders: null,
+          error: failure.message,
+          retryable: failure.retryable,
+          nextItems: null,
+        }
+      }
+      version = Math.max(version, result.version)
+      aggregated.push(...result.items)
+      folders = result.folders
+    }
+
+    // 本机没有可推条目时仍需拉取：首拉（since=0）要全集，已有游标时要知道云端新增与墓碑
+    if (chunks.length === 0) {
+      const pulled = await syncFavoritesBatch([], since, onFail)
+      if (!pulled) {
+        return {
+          ok: false,
+          localCount: local.length,
+          pushed: 0,
+          cloud: null,
+          cloudFolders: null,
+          error: failure.message,
+          retryable: failure.retryable,
+          nextItems: null,
+        }
+      }
+      aggregated = pulled.items
+      version = pulled.version
+      folders = pulled.folders
+    }
+
+    // 游标只在全部请求成功后推进一次（失败时保持原值，重试仍覆盖这段区间，幂等）
+    writeSyncCursor(identity, version)
+
+    const alive = aggregated.filter((item) => item.deletedAt == null)
+    // since=0 是全集，可以走「云端覆盖本地」；since>0 是增量，必须按行 upsert，
+    // 否则本地尚未推送的条目会被整体替换误删。
+    const nextItems =
+      since === 0 ? mergeCloudFavorites(local, alive) : applyFavoriteDelta(local, aggregated)
+    return {
+      ok: true,
+      localCount: local.length,
+      // 批量路径下「本机条数」即本次提交的 op 数（契约：反映有多少条待推数据）
+      pushed: local.length,
+      cloud: alive,
+      cloudFolders: folders,
+      retryable: false,
+      nextItems,
+    }
   }
 
   let pushed = 0
@@ -325,6 +501,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       cloudFolders: null,
       error: failure.message,
       retryable: failure.retryable,
+      nextItems: null,
     }
   }
 
@@ -342,5 +519,6 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     cloudFolders: cloudFailed ? null : list.folders,
     error: failure.message,
     retryable: failure.retryable,
+    nextItems: cloudFailed ? null : mergeCloudFavorites(local, list.items ?? []),
   }
 }

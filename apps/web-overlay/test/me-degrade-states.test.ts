@@ -14,7 +14,9 @@ const ROOT = resolve(__dirname, '..')
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8')
 
 describe('/me：会话探测失败必须落 error，不得落 anonymous', () => {
-  const src = read('src/app/me/page.tsx')
+  // M5 起概览页 = 服务端壳（page.tsx）+ 客户端岛（me-view.tsx）。四态机整体搬到
+  // 岛里，所以这里读联合文本：断言原意不变，代码在哪一半都能被看见。
+  const src = ['src/app/me/page.tsx', 'src/app/me/me-view.tsx'].map(read).join('\n')
 
   it('非 2xx 与解析失败各有 error 分支', () => {
     expect(src).toContain('if (!sessionRes.ok)')

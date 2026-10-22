@@ -68,7 +68,10 @@ describe('用户中心第二批页面', () => {
   })
 
   it('概览页接个性化开关、信号清理与新入口', () => {
-    const src = read('src/app/me/page.tsx')
+    // M5 把概览页拆成「服务端壳 page.tsx + 客户端岛 me-view.tsx」。
+    // 断言原意不变（这些接线必须还在），只是要跨两个文件找——只看 page.tsx
+    // 会因为代码搬到岛里而误报。
+    const src = ['src/app/me/page.tsx', 'src/app/me/me-view.tsx'].map(read).join('\n')
     expect(src).toContain('/api/me/settings')
     expect(src).toContain('clearProfileSignals')
     expect(src).toContain("href=\"/me/history\"")

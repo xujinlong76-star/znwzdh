@@ -448,6 +448,58 @@ export async function listFavorites(identity: string, onDegraded?: DegradedHandl
   )
 }
 
+export interface HubFavoriteSyncItem extends HubFavorite {
+  /** 行最后更新时间（服务端时钟） */
+  updatedAt?: number
+  /** 非空表示墓碑：该 siteId 已被删除，本地必须一并移除 */
+  deletedAt?: number | null
+}
+
+export interface HubFavoritesSyncPayload {
+  ok: boolean
+  applied: number
+  version: number
+  items: HubFavoriteSyncItem[]
+  folders: HubFavoriteFolder[]
+}
+
+export interface FavoriteSyncOp {
+  op: 'add' | 'update' | 'remove'
+  siteId: string
+  folderId?: string | null
+  note?: string | null
+  /** 客户端发生时间；省略则由服务端取当前时间（LWW 依据） */
+  at?: number
+}
+
+/**
+ * 批量同步（M1）：一次请求提交 ops 并取回 since 之后的增量（含墓碑）。
+ *
+ * 走 BFF `/api/me/favorites/sync`（会话派生身份）——匿名身份不适用，
+ * 匿名分支仍走旧的逐条端点（见 useFavorites 的 syncFavoritesToCloud）。
+ */
+export async function syncFavoritesBatch(
+  ops: FavoriteSyncOp[],
+  since: number,
+  onDegraded?: DegradedHandler,
+): Promise<HubFavoritesSyncPayload | null> {
+  return degrade<HubFavoritesSyncPayload | null>(
+    null,
+    async () => {
+      const res = await fetch('/api/me/favorites/sync', {
+        method: 'POST',
+        signal: readSignal(undefined),
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ops, since }),
+      })
+      if (!res.ok) throw hubError(res.status, await hubServerMessage(res))
+      const text = await res.text()
+      return (text ? JSON.parse(text) : {}) as HubFavoritesSyncPayload
+    },
+    onDegraded,
+  )
+}
+
 export async function addFavorite(identity: string, siteId: string, onDegraded?: DegradedHandler): Promise<boolean> {
   return degrade(
     false,

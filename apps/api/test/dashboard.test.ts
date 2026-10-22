@@ -129,6 +129,35 @@ describe("Dashboard & Telemetry Routes", () => {
     expect(typeof pruneRes.json().pruned).toBe("number");
   });
 
+  it("POST /api/jobs/prune 只清终态任务：借住 jobs 表的 KV 行不被删、也不计入回执", async () => {
+    // P0-2 的第二层验收：store 层已锁 pruneJobs 的 SQL，这里证明 HTTP 入口
+    // 真的接上了同一条语句——只改 store 不改路由、或路由另写一份清理，都会红。
+    const old = Date.now() - 30 * 24 * 3600_000;
+    await ctx.repo.run(
+      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+      ["job-old-done", "reindex", "{}", "done", 1, old, old],
+    );
+    await ctx.repo.run(
+      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+      ["kv:site-config", "kv", '{"brand":"NavSphere"}', "done", 0, old, old],
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/jobs/prune",
+      payload: { olderThanDays: 1, statuses: ["done"] },
+    });
+    expect(res.statusCode).toBe(200);
+    // 真任务被清掉、KV 不计入「已清理 N 条」：两边口径必须一致
+    expect(res.json().pruned).toBe(1);
+
+    const kv = await ctx.repo.raw("SELECT payload FROM jobs WHERE id = ?", ["kv:site-config"]);
+    expect(kv).toHaveLength(1);
+
+    const listed = await ctx.repo.listJobs("done", 50);
+    expect(listed.some((j) => j.id === "kv:site-config")).toBe(false);
+  });
+
   it("GET /api/admin/maintenance/status, /checkpoint, /vacuum 数据库自检维护端点", async () => {
     const statusRes = await app.inject({
       method: "GET",

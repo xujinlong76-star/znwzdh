@@ -65,7 +65,11 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    */
   const siteInput = SiteCreateBody;
 
-  app.post("/api/sites", { config: { scope: "write" } }, async (req, reply) => {
+  // 建站默认会抓取并走 AI 富化：单 IP 30/min，避免全局 300/min 把模型调用放大
+  app.post(
+    "/api/sites",
+    { config: { scope: "write", rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 30, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     const rawBody = (req.body ?? {}) as Record<string, unknown>;
     // 兼容客户端（如浏览器插件）在 POST /api/sites 时传入 enrich: true 且未指定有效 categoryId 的自动富化入库调用
     if (rawBody.enrich === true && (!rawBody.categoryId || typeof rawBody.categoryId !== "string")) {
@@ -239,7 +243,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    * 批量创建/导入站点（供书签导入器与批量脚本使用）。
    * 内部自动处理 URL 去重与分类回退，大幅降低并发 HTTP 往返与限流风险。
    */
-  app.post("/api/sites/batch", { config: { scope: "write", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
+  app.post("/api/sites/batch", { config: { scope: "write", rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 30, timeWindow: "1 minute" } } }, async (req, reply) => {
     const body = z.object({
       sites: z.array(z.object({
         url: httpUrl(),

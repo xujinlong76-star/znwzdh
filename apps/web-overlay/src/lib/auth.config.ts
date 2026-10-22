@@ -13,11 +13,39 @@ const ADMIN_IDS = (process.env.NAVHUB_ADMIN_IDS || '')
   .split(',')
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean)
-const IS_DEV = process.env.NODE_ENV === 'development'
+/**
+ * 「非生产」而不是「development」：本地用 `node` 直跑时 NODE_ENV 常常是 undefined，
+ * 与 verifyAdminSession 的既有豁免口径（`NODE_ENV !== 'production'`）保持一致。
+ */
+const IS_NON_PRODUCTION = process.env.NODE_ENV !== 'production'
 
 export function isAdminIdentity(identity?: string | null): boolean {
   if (!identity) return false
   return ADMIN_IDS.includes(identity.toLowerCase())
+}
+
+export interface AdminUserLike {
+  id?: string
+  email?: string | null
+  name?: string | null
+  role?: string
+}
+
+/**
+ * 管理员放行矩阵 —— **唯一口径**。
+ *
+ * 三处调用方：`authConfig.callbacks.authorized`（页面层）、`proxy.ts`（/admin 路由）、
+ * `verifyAdminSession`（API 守卫）。此前三处各写一份判定，最松的那份决定实际权限：
+ * proxy 只判「已登录」，于是 API 关了、页面还进得去（P1-11）。
+ *
+ * 刻意**不看 role**：jwt 回调历史上把 role 默认成 'admin'，旧 session 可能仍带这个值；
+ * 凭证管理员由固定 id / 固定邮箱识别（见 lib/auth.ts 的 jwt 回调）。
+ */
+export function isAdminAccessAllowed(user: AdminUserLike | null | undefined): boolean {
+  if (!user) return false
+  if (user.id === 'admin' || user.email === 'admin@navhub.local') return true
+  if (ADMIN_IDS.length === 0) return IS_NON_PRODUCTION
+  return isAdminIdentity(user.email || user.name)
 }
 
 /**
@@ -62,20 +90,11 @@ export const authConfig = {
   providers: [],
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
-      const isLoggedIn = !!auth?.user
       const isOnAdmin = nextUrl.pathname.startsWith('/admin')
 
       if (isOnAdmin) {
-        if (!isLoggedIn) return false
-        const user = auth?.user as { email?: string; name?: string; role?: string; id?: string } | undefined
-        // 管理员凭证或单机开发放行身份直接授权通过
-        if (user?.role === 'admin' || user?.id === 'admin' || user?.email === 'admin@navhub.local') {
-          return true
-        }
-        // 白名单未配置时：开发环境放行，生产环境 fail-closed
-        const identity = user?.email || user?.name
-        if (ADMIN_IDS.length === 0) return IS_DEV
-        return isAdminIdentity(identity)
+        // 与 proxy.ts / verifyAdminSession 共用同一份放行矩阵（P1-11）
+        return isAdminAccessAllowed(auth?.user as AdminUserLike | undefined)
       }
 
       return true

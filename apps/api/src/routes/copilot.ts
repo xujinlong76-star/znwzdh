@@ -10,15 +10,16 @@ import { identityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 const chatSchema = z.object({
-  message: z.string().min(1, "消息内容不能为空"),
+  message: z.string().min(1, "消息内容不能为空").max(8000, "消息过长"),
   thinking: z.boolean().optional(),
   history: z
     .array(
       z.object({
         role: z.enum(["user", "assistant", "system"]),
-        content: z.string(),
+        content: z.string().max(8000, "历史消息过长"),
       })
     )
+    .max(20, "历史消息过多")
     .optional(),
   context: z
     .object({
@@ -31,7 +32,11 @@ const chatSchema = z.object({
 export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
-  app.post("/api/copilot/chat", { config: { scope: "public" } }, async (req, reply) => {
+  // LLM 调用成本远高于普通读接口：全局 300/min 兜底不够，单 IP 独立额度 20/min
+  app.post(
+    "/api/copilot/chat",
+    { config: { scope: "public", rateLimit: { max: 20, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     const parsed = chatSchema.safeParse(req.body);
     if (!parsed.success) {
       reply.code(400);

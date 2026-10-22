@@ -1,4 +1,4 @@
-import { auth } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 
 /**
  * 管理接口统一守卫。
@@ -6,46 +6,38 @@ import { auth } from '@/lib/auth'
  * 背景：此前各管理路由各自手写 `if (!session) return 401`，口径不一，且
  * `app/api/admin/stats` 完全漏了鉴权（任何人可直接拉取站内统计）。
  *
- * 语义（渐进收紧，避免未配置时误伤既有部署）：
+ * **唯一口径 = `verifyAdminSession`**：
  *   1. 未登录 -> 401
- *   2. 配置了 NAVHUB_ADMIN_IDS 但未命中 -> 403
- *   3. 未配置白名单 -> 维持「已登录即可」的历史行为
+ *   2. 凭证管理员（id='admin'）-> 放行
+ *   3. 配置了 NAVHUB_ADMIN_IDS 且命中 -> 放行
+ *   4. 生产环境未配置白名单 -> **403（fail-closed）**
+ *   5. 仅开发环境未配置白名单 -> 放行（与既有开发体验一致）
  *
- * 需要严格管控时，设置 NAVHUB_ADMIN_IDS=github登录名或邮箱（逗号分隔），
- * 此时后台页面（middleware）与所有接入本守卫的接口都会强制校验。
+ * 历史缺陷：本文件曾自己维护一份 ADMIN_IDS，未配置时任何已登录用户都放行且
+ * 不区分环境——生产漏配白名单等于把 `/api/admin/*` 对所有人开放。现已删除
+ * 这份副本，避免两套口径再次分叉。
+ *
+ * 上线迁移步骤（运维）：
+ *   1. 部署前设置 `NAVHUB_ADMIN_IDS=github登录名或邮箱`（逗号分隔，大小写不敏感），
+ *      或改用 `NAVHUB_ADMIN_PASSWORD` 走凭证管理员登录（后者不受白名单影响）；
+ *   2. 来不及配也不要放宽本守卫——生产启动日志会打印
+ *      「未配置 NAVHUB_ADMIN_IDS：管理员入口将拒绝全部请求」，
+ *      看到即说明「还没配」已被观测到，后台 403 是预期的安全默认而非故障；
+ *   3. 本地开发（NODE_ENV !== production）未配白名单仍放行，不影响既有开发流程。
  */
-const ADMIN_IDS = (process.env.NAVHUB_ADMIN_IDS || '')
-  .split(',')
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean)
-
 export interface AdminGuardResult {
   ok: boolean
   status?: number
   reason?: string
 }
 
-interface AdminSessionUser {
-  email?: string | null
-  name?: string | null
-}
-
 export async function requireAdmin(): Promise<AdminGuardResult> {
-  let session: { user?: AdminSessionUser } | null = null
   try {
-    session = (await auth()) as { user?: AdminSessionUser } | null
+    const result = await verifyAdminSession()
+    if (result.ok) return { ok: true }
+    return { ok: false, status: result.status, reason: result.error }
   } catch {
+    // auth() 自身异常（密钥缺失/会话解析失败）按未授权处理，不放行
     return { ok: false, status: 401, reason: 'Unauthorized' }
   }
-
-  if (!session?.user) return { ok: false, status: 401, reason: 'Unauthorized' }
-
-  if (ADMIN_IDS.length > 0) {
-    const identity = (session.user.email || session.user.name || '').toLowerCase()
-    if (!identity || !ADMIN_IDS.includes(identity)) {
-      return { ok: false, status: 403, reason: 'Forbidden' }
-    }
-  }
-
-  return { ok: true }
 }

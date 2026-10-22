@@ -137,6 +137,35 @@ describe("authorized 回调：/admin 守卫矩阵", () => {
   });
 });
 
+describe("isAdminAccessAllowed（proxy / authorized / verifyAdminSession 的唯一口径）", () => {
+  it("未登录 → false；凭证管理员（固定 id 或固定邮箱）→ true", async () => {
+    const mod = await loadConfig({ NODE_ENV: "production", NAVHUB_ADMIN_IDS: "koudev" });
+    expect(mod.isAdminAccessAllowed(null)).toBe(false);
+    expect(mod.isAdminAccessAllowed(undefined)).toBe(false);
+    expect(mod.isAdminAccessAllowed({ id: "admin" })).toBe(true);
+    expect(mod.isAdminAccessAllowed({ email: "admin@navhub.local" })).toBe(true);
+  });
+
+  it("只有 role='admin' 的历史 session → 不放行（role 曾被默认成 admin，不能再据此授权）", async () => {
+    const mod = await loadConfig({ NODE_ENV: "production", NAVHUB_ADMIN_IDS: "koudev" });
+    expect(mod.isAdminAccessAllowed({ id: "gh-1", email: "stranger@example.com", role: "admin" })).toBe(false);
+  });
+
+  it("白名单未配置：生产 fail-closed / 非生产放行", async () => {
+    const prod = await loadConfig({ NODE_ENV: "production", NAVHUB_ADMIN_IDS: "" });
+    expect(prod.isAdminAccessAllowed({ id: "gh-1", email: "anyone@example.com" })).toBe(false);
+    const dev = await loadConfig({ NODE_ENV: "development", NAVHUB_ADMIN_IDS: "" });
+    expect(dev.isAdminAccessAllowed({ id: "gh-1", email: "anyone@example.com" })).toBe(true);
+  });
+
+  it("白名单命中（邮箱或登录名，大小写不敏感）→ 放行；未命中 → 拒绝", async () => {
+    const mod = await loadConfig({ NODE_ENV: "production", NAVHUB_ADMIN_IDS: "KouDev,dev@example.com" });
+    expect(mod.isAdminAccessAllowed({ email: "DEV@example.com" })).toBe(true);
+    expect(mod.isAdminAccessAllowed({ name: "koudev" })).toBe(true);
+    expect(mod.isAdminAccessAllowed({ email: "stranger@example.com", name: "stranger" })).toBe(false);
+  });
+});
+
 describe("isAdminIdentity", () => {
   it("空值与未命中 → false", async () => {
     const mod = await loadConfig({ NODE_ENV: "development", NAVHUB_ADMIN_IDS: "koudev" });

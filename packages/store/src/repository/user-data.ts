@@ -77,6 +77,13 @@ export interface UserDataExport {
     installedAt: number;
   }>;
   vault: Pick<UserVaultRecord, "version" | "updatedAt"> & { exists: boolean };
+  /**
+   * CRDT 编辑日志（`crdt:<identity>` 行）。
+   *
+   * 它此前既不在导出包里、也不在注销删除清单里：用户换设备后自建分类/
+   * 自定义站点全部消失，注销后这些日志仍留在服务端（删除权未履行）。
+   */
+  crdt: { exists: boolean; payload: string | null; updatedAt: number };
 }
 
 function safeLlmConfig(config: UserLlmConfigRecord | null): ExportedLlmConfig | null {
@@ -96,7 +103,7 @@ function safeLlmConfig(config: UserLlmConfigRecord | null): ExportedLlmConfig | 
 }
 
 export async function exportUserData(repo: Repository, identity: string): Promise<UserDataExport> {
-  const [user, favorites, folders, history, profile, settings, llm, installs, vault] = await Promise.all([
+  const [user, favorites, folders, history, profile, settings, llm, installs, vault, crdtVault] = await Promise.all([
     repo.getUser(identity),
     repo.listFavorites(identity),
     repo.listFavoriteFolders(identity),
@@ -106,6 +113,8 @@ export async function exportUserData(repo: Repository, identity: string): Promis
     repo.getUserLlmConfig(identity),
     repo.listPluginInstallsByIdentity(identity),
     repo.getUserVault(identity),
+    // 编辑日志是该身份的独立 vault 行（`crdt:<id>`），不属于默认 vault
+    repo.getUserVault("crdt:" + identity),
   ]);
   // 星标 / 评价 / 工作区 / 事件聚合：原先导出缺这四类，用户拿到的「全部数据」名不副实
   const [starRows, reviewRows, workspaceRows, eventRows] = await Promise.all([
@@ -174,6 +183,9 @@ export async function exportUserData(repo: Repository, identity: string): Promis
     vault: vault
       ? { exists: true, version: vault.version, updatedAt: vault.updatedAt }
       : { exists: false, version: 0, updatedAt: 0 },
+    crdt: crdtVault
+      ? { exists: true, payload: crdtVault.payload, updatedAt: crdtVault.updatedAt }
+      : { exists: false, payload: null, updatedAt: 0 },
   };
 }
 
@@ -215,7 +227,11 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
       searchHistory: await count("SELECT COUNT(*) AS c FROM search_history WHERE user_id = ?", [identity]),
       events: await count("SELECT COUNT(*) AS c FROM events WHERE identity = ?", [identity]),
       profile: await count("SELECT COUNT(*) AS c FROM user_profiles WHERE user_id = ?", [identity]),
-      vault: await count("SELECT COUNT(*) AS c FROM user_vault_sync WHERE user_id = ?", [identity]),
+      // 默认金库 + CRDT 编辑日志：回执里的删除数必须与真实清理范围一致
+      vault: await count("SELECT COUNT(*) AS c FROM user_vault_sync WHERE user_id = ? OR user_id = ?", [
+        identity,
+        "crdt:" + identity,
+      ]),
       llmConfig: await count("SELECT COUNT(*) AS c FROM user_llm_configs WHERE identity = ?", [identity]),
       settings: await count("SELECT COUNT(*) AS c FROM user_settings WHERE identity = ?", [identity]),
       identityAliases: await count(
@@ -249,6 +265,8 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
     await repo.run("DELETE FROM events WHERE identity = ?", [identity]);
     await repo.run("DELETE FROM user_profiles WHERE user_id = ?", [identity]);
     await repo.run("DELETE FROM user_vault_sync WHERE user_id = ?", [identity]);
+    // CRDT 编辑日志是另一行（`crdt:<id>`）：精确匹配删不到，注销后会永久残留
+    await repo.run("DELETE FROM user_vault_sync WHERE user_id = ?", ["crdt:" + identity]);
     await repo.run("DELETE FROM user_llm_configs WHERE identity = ?", [identity]);
     await repo.run("DELETE FROM user_settings WHERE identity = ?", [identity]);
     await repo.run("DELETE FROM identity_aliases WHERE alias = ? OR canonical = ?", [identity, identity]);

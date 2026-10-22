@@ -2,7 +2,7 @@ import NextAuth from 'next-auth'
 import GithubProvider from 'next-auth/providers/github'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import type { NextAuthConfig } from 'next-auth'
-import { authConfig, authSecret, isAdminIdentity } from './auth.config'
+import { authConfig, authSecret, isAdminAccessAllowed } from './auth.config'
 
 /**
  * 服务端侧的 GitHub token 保管（进程内、仅服务端可读）。
@@ -13,6 +13,30 @@ import { authConfig, authSecret, isAdminIdentity } from './auth.config'
  * 服务端路由（需自行校验会话与管理员身份），不再接触原始 token。
  */
 const serverTokenStore = new Map<string, string>()
+
+/**
+ * 启动期可观测告警：管理员白名单缺失。
+ *
+ * 白名单未配置时，verifyAdminSession / requireAdmin 在生产环境一律 fail-closed（403），
+ * 「还没配 NAVHUB_ADMIN_IDS」必须是一条部署后立刻能看见的告警，而不是等后台被锁死
+ * 才被发现。凭证管理员（NAVHUB_ADMIN_PASSWORD 等）不受影响，仅 GitHub OAuth 身份被拒。
+ *
+ * next build 期（NEXT_PHASE）不打：构建期本来就不持有任何部署配置，打了只会污染
+ * 镜像构建日志（口径与 auth.config.ts 的 secret 检查一致）。
+ */
+const ADMIN_IDS_CONFIGURED = Boolean(process.env.NAVHUB_ADMIN_IDS)
+const IS_PRODUCTION_RUNTIME =
+  process.env.NODE_ENV === 'production' &&
+  process.env.NEXT_PHASE !== 'phase-production-build'
+
+if (IS_PRODUCTION_RUNTIME && !ADMIN_IDS_CONFIGURED) {
+  console.warn(
+    '[navhub][安全警告] 未配置 NAVHUB_ADMIN_IDS：生产环境下管理员入口将拒绝全部请求' +
+      '（/admin 页面与 /api/admin/*、投稿审核、导航写接口等一律 403）。' +
+      '迁移步骤：设置 NAVHUB_ADMIN_IDS=github登录名或邮箱（逗号分隔，大小写不敏感），' +
+      '或改用 NAVHUB_ADMIN_PASSWORD 凭证管理员登录；设置后重启生效。'
+  )
+}
 
 /** 服务端获取指定用户的 GitHub token（仅供服务端路由使用） */
 export function getServerGithubToken(sub?: string | null): string | undefined {
@@ -185,31 +209,22 @@ export const { handlers: { GET, POST } } = handler
 
 /**
  * 校验当前请求是否具备管理员权限（供后台管理 API 路由统一调用）。
+ *
+ * 放行矩阵在 auth.config.ts 的 `isAdminAccessAllowed`——页面 authorized 回调、
+ * proxy.ts 的 /admin 路由、本函数三处共用，避免再出现「API 关了、页面还进得去」。
  */
 export async function verifyAdminSession() {
   const session = await auth()
-  if (!session?.user) {
+  const user = session?.user as { id?: string; email?: string; name?: string; role?: string } | undefined
+
+  if (!user) {
     return { ok: false as const, error: 'Unauthorized', status: 401 }
   }
+  if (!isAdminAccessAllowed(user)) {
+    return { ok: false as const, error: 'Forbidden', status: 403 }
+  }
 
-  const user = session.user as { id?: string; email?: string; name?: string; role?: string }
+  // 只有凭证管理员（固定 id）会拿到服务端 GitHub token；GitHub OAuth 身份走白名单放行
   const githubToken = getServerGithubToken(user.id) || process.env.GITHUB_PAT || ''
-
-  // 1. 管理员凭证登录：只有 Credentials 通道会返回固定 id='admin'（email 亦为固定值）。
-  //    刻意**不看 role**：role 曾经对所有登录用户默认成 'admin'，导致白名单形同虚设；
-  //    即使有历史签发的旧 session 携带 role='admin'，这里也不会再据此放行。
-  if (user.id === 'admin' || user.email === 'admin@navhub.local') {
-    return { ok: true as const, session, user, githubToken }
-  }
-
-  // 2. GitHub 身份白名单校验
-  const identity = user.email || user.name
-  const isDev = process.env.NODE_ENV !== 'production'
-  const hasAdminIds = Boolean(process.env.NAVHUB_ADMIN_IDS)
-
-  if (isAdminIdentity(identity) || (isDev && !hasAdminIds)) {
-    return { ok: true as const, session, user, githubToken }
-  }
-
-  return { ok: false as const, error: 'Forbidden', status: 403 }
+  return { ok: true as const, session, user, githubToken }
 }

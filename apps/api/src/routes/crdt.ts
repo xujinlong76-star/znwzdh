@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { identityTrusted, identityOf } from "./shared.ts";
+import { identityTrusted, identityOf, resolveCanonicalIdentity } from "./shared.ts";
 import {
   compactOperationLogs,
   mergeOperationLogs,
@@ -24,9 +24,11 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    * 拉取当前身份的 CRDT 操作日志与最新折叠状态
    */
   app.get("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
-    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    const rawIdentity = identityOf(req as never);
+    if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    // 合并后旧 id 仍会从旧标签页发来：不解析就会读到一个空日志
+    const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
     const crdtRecord = await ctx.repo.getUserVault("crdt:" + identity);
     let serverOps: CRDTOperation[] = [];
     if (crdtRecord?.payload) {
@@ -42,12 +44,14 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   });
 
   /**
-   * 提交本地原子操作日志，与云端合流、压缩并返回最新全局状态
+   * 提交本地原子操作日志，与云端合流、压缩并返回最新全局状态（带 CAS 乐观锁重试防并发覆盖）
    */
   app.post("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
-    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    const rawIdentity = identityOf(req as never);
+    if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    // 写入落 canonical：否则会在 `crdt:<旧id>` 另起一行孤儿日志
+    const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
     const body = z.object({
       operations: z.array(z.object({
         id: z.string(),
@@ -74,27 +78,49 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     }
 
     const crdtKey = "crdt:" + identity;
-    const existing = await ctx.repo.getUserVault(crdtKey);
-    let serverOps: CRDTOperation[] = [];
-    if (existing?.payload) {
-      try {
-        const parsed = JSON.parse(existing.payload) as { operations?: CRDTOperation[] };
-        if (Array.isArray(parsed.operations)) {
-          serverOps = parsed.operations;
-        }
-      } catch { /* 容错 */ }
+    let finalOps: CRDTOperation[] = [];
+    let reduced: ReturnType<typeof reduceOperationsToState> = {
+      pinnedCategoryIds: [],
+      categoryOrder: [],
+      pinnedSiteIdsByCategory: {},
+      // 自定义分类是数组（带 items 的树），不是 map——写成 {} 会让 typecheck 直接失败
+      customCategories: [],
+    };
+
+    const maxRetries = 3;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const existing = await ctx.repo.getUserVault(crdtKey);
+      let serverOps: CRDTOperation[] = [];
+      if (existing?.payload) {
+        try {
+          const parsed = JSON.parse(existing.payload) as { operations?: CRDTOperation[] };
+          if (Array.isArray(parsed.operations)) {
+            serverOps = parsed.operations;
+          }
+        } catch { /* 容错 */ }
+      }
+
+      const merged = mergeOperationLogs(serverOps, body.data.operations as CRDTOperation[]);
+      finalOps = merged.length > 100 ? compactOperationLogs(merged) : merged;
+      reduced = reduceOperationsToState(finalOps);
+
+      const payloadStr = JSON.stringify({
+        version: 1,
+        operations: finalOps,
+        state: reduced,
+        updatedAt: Date.now(),
+      });
+
+      const expectedVersion = existing?.version ?? 0;
+      const saveRes = await ctx.repo.saveUserVaultIfUnchanged(crdtKey, payloadStr, expectedVersion);
+      if (saveRes.ok) {
+        break;
+      }
+      if (attempt === maxRetries - 1) {
+        // 重试耗尽后的兜底保底写入
+        await ctx.repo.saveUserVault(crdtKey, payloadStr);
+      }
     }
-
-    const merged = mergeOperationLogs(serverOps, body.data.operations as CRDTOperation[]);
-    const finalOps = merged.length > 100 ? compactOperationLogs(merged) : merged;
-    const reduced = reduceOperationsToState(finalOps);
-
-    await ctx.repo.saveUserVault(crdtKey, JSON.stringify({
-      version: 1,
-      operations: finalOps,
-      state: reduced,
-      updatedAt: Date.now(),
-    }));
 
     return {
       ok: true,
@@ -109,9 +135,10 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    * 清除 CRDT 漫游日志
    */
   app.delete("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
-    if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+    const rawIdentity = identityOf(req as never);
+    if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
     await ctx.repo.deleteUserVault("crdt:" + identity);
     return { ok: true };
   });

@@ -44,7 +44,10 @@ describe('P0-1：登录用户不得因 role 默认值自动成为管理员', () 
     const body = end > 0 ? rest.slice(0, end) : rest
 
     expect(body).not.toContain("user.role === 'admin'")
-    expect(body).toContain("user.id === 'admin'")
+    // 放行矩阵已下沉到 auth.config（P1-11），凭证管理员识别仍在那里、且同样不看 role
+    expect(body).toContain('isAdminAccessAllowed(user)')
+    expect(authConfig).toContain("user.id === 'admin'")
+    expect(authConfig).not.toContain("user.role === 'admin'")
   })
 })
 

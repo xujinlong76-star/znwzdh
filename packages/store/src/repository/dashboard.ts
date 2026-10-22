@@ -95,11 +95,12 @@ export async function dashboardOverview(repo: Repository): Promise<DashboardOver
       const avgLatencyMs = latencyN > 0 ? Math.round(latencySum / latencyN) : null;
       return { total, failed: total - okCount, rate, avgLatencyMs };
     })(),
-    one("SELECT COUNT(*) AS c FROM jobs WHERE created_at >= ?", [since24h]),
-    one("SELECT COUNT(*) AS c FROM jobs WHERE status = 'completed' AND created_at >= ?", [since24h]),
-    one("SELECT COUNT(*) AS c FROM jobs WHERE status = 'failed' AND created_at >= ?", [since24h]),
-    one("SELECT COUNT(*) AS c FROM jobs WHERE status = 'pending'"),
-    one("SELECT COUNT(*) AS c FROM jobs WHERE status = 'running'"),
+    // KV 存储借住 jobs 表（kind='kv', status='done'）：它不是任务，计入会虚高成功率
+    one("SELECT COUNT(*) AS c FROM jobs WHERE kind <> 'kv' AND created_at >= ?", [since24h]),
+    one("SELECT COUNT(*) AS c FROM jobs WHERE kind <> 'kv' AND status = 'done' AND created_at >= ?", [since24h]),
+    one("SELECT COUNT(*) AS c FROM jobs WHERE kind <> 'kv' AND status = 'failed' AND created_at >= ?", [since24h]),
+    one("SELECT COUNT(*) AS c FROM jobs WHERE kind <> 'kv' AND status = 'pending'"),
+    one("SELECT COUNT(*) AS c FROM jobs WHERE kind <> 'kv' AND status = 'running'"),
     one("SELECT COUNT(*) AS c FROM audit_logs WHERE created_at >= ?", [since24h]),
     one("SELECT COUNT(*) AS c FROM audit_logs WHERE action LIKE 'auth.%' AND created_at >= ?", [since24h]),
     one("SELECT COUNT(*) AS c FROM events WHERE created_at >= ?", [since24h]),

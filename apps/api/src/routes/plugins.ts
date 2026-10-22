@@ -795,8 +795,8 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           identity,
           {
             rating,
-            title: typeof body.title === "string" ? body.title : null,
-            content: typeof body.content === "string" ? body.content : null,
+            title: typeof body.title === "string" ? body.title.slice(0, 200) : null,
+            content: typeof body.content === "string" ? body.content.slice(0, 4000) : null,
           },
           {
             actor: identity,
@@ -1061,7 +1061,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   app.post(
     "/api/plugins/import",
-    { config: { scope: "write" } },
+    { config: { scope: "admin" } },
     async (req, reply) => {
       const body = (req.body ?? {}) as {
         manifest?: unknown;
@@ -1169,8 +1169,10 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }
   };
 
-  app.put("/api/plugins/:slug", { config: { scope: "write" } }, updateHandler);
-  app.patch("/api/plugins/:slug", { config: { scope: "write" } }, updateHandler);
+  // 插件清单可直接进入市场并被安装，编辑/覆盖属于供应链写操作；
+  // 作者自助发版走 /versions（带归属校验），这里只允许管理面。
+  app.put("/api/plugins/:slug", { config: { scope: "admin" } }, updateHandler);
+  app.patch("/api/plugins/:slug", { config: { scope: "admin" } }, updateHandler);
 
   /**
    * 作者自助提交新版本：仅归属作者或管理员；类型不可变、版本号严格递增。
@@ -1253,6 +1255,11 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /**
    * 审核插件：approve（上架）、reject（驳回）、delist（下架）
    * 重复 approve 返回 409
+   *
+   * 设计决策：审核态变更**刻意不写入 `events`**。events 是用户行为时间序列
+   * （画像、活跃度、行为分析都从它聚合），管理员的上架/驳回属于管理动作，
+   * 混进去会污染用户侧统计。可追溯性由 `audit_logs`（action='plugin.review'）
+   * 承担——`GET /api/me/activity` 读的也是它，用户能看到与自己相关的审核记录。
    */
   const reviewHandler = async (req: any, reply: any) => {
     const { slug } = req.params as { slug: string };
@@ -1303,8 +1310,8 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }
   };
 
-  app.post("/api/plugins/:slug/review", { config: { scope: "write" } }, reviewHandler);
-  app.patch("/api/plugins/:slug/review", { config: { scope: "write" } }, reviewHandler);
+  app.post("/api/plugins/:slug/review", { config: { scope: "admin" } }, reviewHandler);
+  app.patch("/api/plugins/:slug/review", { config: { scope: "admin" } }, reviewHandler);
 
   /* ------------------------------------------------------------------ *
    * 安装、卸载生命周期
@@ -1565,7 +1572,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   app.get(
     "/api/plugins/taps",
-    { config: { scope: "write" } },
+    { config: { scope: "admin" } },
     async () => {
       const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];
       return { ok: true, items: taps };
@@ -1575,7 +1582,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /** 添加远程插件市场订阅源 (Taps) */
   app.post(
     "/api/plugins/taps",
-    { config: { scope: "write" } },
+    { config: { scope: "admin" } },
     async (req, reply) => {
       const body = z.object({
         name: z.string().min(1).max(50),
@@ -1635,7 +1642,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /** 移除远程插件订阅源 */
   app.delete(
     "/api/plugins/taps/:id",
-    { config: { scope: "write" } },
+    { config: { scope: "admin" } },
     async (req, reply) => {
       const id = (req.params as { id: string }).id;
       const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];
@@ -1657,7 +1664,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /** 同步远程插件订阅源并更新本地索引 */
   app.post(
     "/api/plugins/taps/:id/sync",
-    { config: { scope: "write" } },
+    { config: { scope: "admin" } },
     async (req, reply) => {
       const id = (req.params as { id: string }).id;
       const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];

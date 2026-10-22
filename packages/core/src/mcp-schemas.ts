@@ -14,6 +14,31 @@ import { z } from "zod";
 /** 批量写入的硬上限，防止单次调用造成不可控影响 */
 export const MAX_BATCH_ITEMS = 100;
 
+/**
+ * 只接受 http(s) 绝对地址的 URL 字段。
+ *
+ * `z.string().url()` 太宽：`javascript:`、`data:`、`file:`、`blob:` 都能通过（本机
+ * zod 4.6.7 实测）。而 MCP 的 `create_site` / `batch_import` 是 **parse 完直接入库**
+ * （packages/mcp/src/handlers/sites.ts 里没有任何二次校验），伪协议一旦进库，
+ * 前端 `<a href>`、书签/JSON 导出、`canonicalizeUrl`（非 http 原样返回）都会把它
+ * 当成正常站点处理。协议白名单放在契约层，是为了让 REST、MCP、OpenAPI 文档
+ * 三条入口共用同一个口径——`plugin-manifest.ts` 头部那句「与入库 httpUrl schema
+ * 同口径」此前并没有对应的 schema，现在就是这里。
+ */
+export function httpUrl(label = "必须是 http(s) 绝对地址") {
+  return z
+    .string()
+    .url(label)
+    .refine((value) => {
+      try {
+        const protocol = new URL(value).protocol;
+        return protocol === "http:" || protocol === "https:";
+      } catch {
+        return false;
+      }
+    }, label);
+}
+
 export type McpScope = "read" | "write" | "admin";
 
 export const SearchSitesInput = z.object({
@@ -66,7 +91,7 @@ export const UpdatePluginInput = z.object({
 });
 
 export const CreateSiteInput = z.object({
-  url: z.string().url().describe("站点网址"),
+  url: httpUrl().describe("站点网址"),
   title: z.string().min(1).optional().describe("标题；留空则自动抓取"),
   description: z.string().optional().describe("描述；留空则自动抓取"),
   categoryId: z.string().optional().describe("类目 id；留空则按 AI 建议自动归类"),
@@ -93,7 +118,7 @@ export const SetStatusInput = z.object({
 
 export const BatchImportInput = z.object({
   sites: z.array(z.object({
-    url: z.string().url(),
+    url: httpUrl(),
     title: z.string().optional(),
     description: z.string().optional(),
     categoryId: z.string().optional(),
@@ -347,7 +372,8 @@ export const SiteStatusSchema = z.enum(["active", "pending", "broken", "archived
 export const SiteActionSchema = z.object({
   id: z.string(),
   label: z.string(),
-  urlTemplate: z.string(),
+  // 深链模板：站点详情按 <a href> 直接消费、无 sink 兜底，协议白名单必须钉在契约层；{q} 占位符实测合法
+  urlTemplate: httpUrl(),
   placeholder: z.string().optional(),
   icon: z.string().optional(),
 });
@@ -357,7 +383,8 @@ export const SiteRelationSchema = z.object({
   sourceSiteId: z.string().optional(),
   targetSiteId: z.string().nullable().optional(),
   targetTitle: z.string(),
-  targetUrl: z.string(),
+  // 前端把关联站直接渲染成 <a href>（站点详情无 sink 兜底）：伪协议入库即存储型 XSS
+  targetUrl: httpUrl(),
   relationType: z.enum([
     "alternative",
     "ecosystem",

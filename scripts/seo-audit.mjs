@@ -13,8 +13,11 @@
  *   - robots.txt 可访问且声明 Sitemap（且不再输出 Yandex Host）；
  *   - sitemap.xml 可解析，抽样页面均 200、无跳转；
  *   - 每页 title / description / canonical / lang / 唯一 h1 齐全；
+ *   - 跨页 title 与 description 重复检测（同一文案覆盖多页 = 模板没落到页面，或该合并）；
  *   - sitemap 页面不得声明 noindex；canonical 与 og:url 同源同路径；
- *   - sitemap 页面必须带完整 OG（image/type/site_name/locale/url）；
+ *   - sitemap 页面必须带完整 OG（image/type/site_name/locale/url），
+ *     og:image 指向本机地址或本机端口与页面不一致时报错
+ *     （Next 缺 metadataBase 时用 http://localhost:3000 兜底，会烤进产物）；
  *   - JSON-LD 可解析、声明 schema.org、@type 齐全、列表 position 连续、无 aggregateRating；
  *   - 站内链接闭环：首页 → /category/，站点详情 → 其他 /site/，分类页 → /site/；
  *   - /feed.xml 返回 RSS 且 Content-Type 正确；
@@ -23,6 +26,10 @@
  * `--all` 对 dev 只用于冒烟：dev 的 20 条超时已证明它不适合当全量门禁。
  *
  * 退出码：0 = 全部通过；1 = 有问题（--no-fail 可只报告不失败）。
+ * `--json` 与退出码同时生效：JSON 走 stdout，进程码照旧，CI 可以直接判。
+ *
+ * summary 字段口径：`failed` 只数「没拿到 HTTP 200 的页」，
+ * 有 finding 的页数在 `pagesWithIssues`，问题总条数在 issues.length。
  */
 
 import {
@@ -68,10 +75,23 @@ const report = {
   summary: {
     sitemapUrls: 0,
     pages: 0,
+    /** 真正没拿到 HTTP 200 的页（状态码非 200 或请求异常）；2026-10-22 之前这个字段
+     *  被写成 issues.length，于是「1109 个问题」在报告里长成像「1109 页打不开」，
+     *  而实测 1126 页全部 200。字段名保留（有外部消费者），语义已改成 HTTP 失败数。 */
     failed: 0,
+    /** 有至少一条 finding 的页数 —— 原先被错当成 failed 的那个量 */
+    pagesWithIssues: 0,
+    metaIssues: 0,
+    canonicalIssues: 0,
+    robotsIssues: 0,
     ogMissing: 0,
     jsonLdInvalid: 0,
     internalLinkMissing: 0,
+    titleDuplicateGroups: 0,
+    descriptionDuplicateGroups: 0,
+    /** description 长度分布，只记账不判失败：长度是否要收窄是内容决定，不是技术闸门 */
+    descriptionTooShort: 0,
+    descriptionTooLong: 0,
     fetchRetries: 0,
     durationMs: 0,
   },
@@ -195,33 +215,48 @@ async function mapPool(items, size, worker) {
 }
 
 const titles = [];
+const descriptions = [];
 await mapPool(sample, concurrency, async (url) => {
   try {
     const res = await fetchText(url);
     const redirected = normalizeUrl(res.finalUrl, url) !== normalizeUrl(url, url);
     if (res.status !== 200) {
       issue(url, `HTTP ${res.status}`);
+      report.summary.failed++;
       report.results.push({ url, status: res.status, kind: "page" });
       return;
     }
     if (redirected) issue(url, `发生跳转 → ${res.finalUrl}（sitemap 应直接列出最终地址）`);
     if (!/text\/html/i.test(res.contentType)) {
       issue(url, `Content-Type 为 ${res.contentType || "(空)"}，不是 HTML`);
+      report.summary.failed++;
       return;
     }
     const page = analyzeHtml(res.body, url);
     const problems = auditPageDetailed(page);
     for (const problem of problems) issue(url, problem.message);
     const kinds = new Set(problems.map((problem) => problem.kind));
+    if (problems.length > 0) report.summary.pagesWithIssues++;
+    if (kinds.has("meta")) report.summary.metaIssues++;
+    if (kinds.has("canonical")) report.summary.canonicalIssues++;
+    if (kinds.has("robots")) report.summary.robotsIssues++;
     if (kinds.has("og")) report.summary.ogMissing++;
     if (kinds.has("jsonld")) report.summary.jsonLdInvalid++;
     if (kinds.has("links")) report.summary.internalLinkMissing++;
     if (page.title) titles.push({ url, title: page.title });
+    if (typeof page.description === "string" && page.description.trim()) {
+      descriptions.push({ url, description: page.description.trim() });
+      // 阈值来源：本轮实测 description 长度 8~160（中位 51）。<20 是「一句话都没说清」，
+      // >80 在 CJK 下必然被 Google 摘要截断。两个都只记账，不当闸门。
+      if (page.description.trim().length < 20) report.summary.descriptionTooShort++;
+      if (page.description.trim().length > 80) report.summary.descriptionTooLong++;
+    }
     report.results.push({
       url,
       status: res.status,
       kind: "page",
       title: page.title,
+      description: page.description,
       canonical: page.canonical,
       h1Count: page.h1Count,
       jsonLdCount: page.jsonLd.length,
@@ -231,6 +266,7 @@ await mapPool(sample, concurrency, async (url) => {
     log(`${problems.length ? "✖" : "✓"} ${url}${page.title ? ` · ${page.title}` : ""}`);
   } catch (error) {
     issue(url, `请求失败：${error.message}`);
+    report.summary.failed++;
     report.results.push({ url, status: null, kind: "page", error: error.message });
   }
 });
@@ -245,19 +281,36 @@ for (const item of titles) {
 for (const [title, urls] of byTitle) {
   if (urls.length > 1) issue("重复 title", `「${title}」被 ${urls.length} 个页面共享：${urls.slice(0, 5).join(" | ")}`);
 }
+// description 同理：一个 description 覆盖多页 = 模板没落到页面上，
+// 或这些页本来就该合并（实测 2 对详情页指向同一外部站点，title 与 description 都同）
+const byDescription = new Map();
+for (const item of descriptions) {
+  const list = byDescription.get(item.description) ?? [];
+  list.push(item.url);
+  byDescription.set(item.description, list);
+}
+for (const [description, urls] of byDescription) {
+  if (urls.length > 1) {
+    report.summary.descriptionDuplicateGroups++;
+    issue("重复 description", `「${description.slice(0, 60)}」被 ${urls.length} 个页面共享：${urls.slice(0, 5).join(" | ")}`);
+  }
+}
+report.summary.titleDuplicateGroups = [...byTitle.values()].filter((urls) => urls.length > 1).length;
 
 report.summary.pages = sample.length;
-report.summary.failed = report.issues.length;
 report.summary.durationMs = Date.now() - started;
 
 if (json) {
   console.log(JSON.stringify(report, null, 2));
 } else {
   console.log(
-    `\n${report.issues.length === 0 ? "✓" : "✖"} 完成：${sample.length} 个页面，${report.issues.length} 个问题，${report.summary.durationMs}ms`,
+    `\n${report.issues.length === 0 ? "✓" : "✖"} 完成：${sample.length} 个页面，${report.issues.length} 个问题，HTTP 失败 ${report.summary.failed} 页，${report.summary.durationMs}ms`,
   );
   console.log(
-    `OG 缺失 ${report.summary.ogMissing} · JSON-LD 异常 ${report.summary.jsonLdInvalid} · 内链缺失 ${report.summary.internalLinkMissing} · 重试 ${report.summary.fetchRetries}`,
+    `meta ${report.summary.metaIssues} · canonical ${report.summary.canonicalIssues} · robots ${report.summary.robotsIssues} · OG ${report.summary.ogMissing} · JSON-LD ${report.summary.jsonLdInvalid} · 内链 ${report.summary.internalLinkMissing} · 重复 title ${report.summary.titleDuplicateGroups} · 重复 description ${report.summary.descriptionDuplicateGroups} · 重试 ${report.summary.fetchRetries}`,
+  );
+  console.log(
+    `description 过短(<20) ${report.summary.descriptionTooShort} · 超长(>80) ${report.summary.descriptionTooLong}（只记账，不作闸门）`,
   );
 }
 

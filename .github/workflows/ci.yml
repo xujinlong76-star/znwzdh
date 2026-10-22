@@ -15,10 +15,18 @@
 #    - vendor 重建 apps/web 后：tsc --noEmit + eslint（flat 配置）+ next build
 #    - 覆盖 NavHub 自研的 166 个 overlay 文件（此前零门禁）
 #    - check-isr-routes：收录型路由必须是 ISR（●），页面签名不得读 searchParams
-# 4. check-web-overlay:
+# 4. check-isr-live（2026-10-22 新增）:
+#    - CI 内自建预览（migrate + seed 的中枢 + next start 产物）跑 --live 抽查，
+#      覆盖「产物跑起来之后」：必须 200、必须带 s-maxage、旧 ?page=N 必须 30x
+#    - --min-checked=8 兜覆盖率：空 sitemap 时每个族只会打「跳过」，
+#      0 页通过曾经会静默绿灯——那是比红灯更坏的失败
+#    - 此前 --live 只存在于 workflow_dispatch 的 seo-audit-prod，等于每个 PR 都没跑
+#    - 一次性 AUTH_SECRET 由作业现场生成：生产守卫拒绝仓库内的开发回退密钥，
+#      不给的话 next start 每个请求都是 500，门禁会红在无关处
+# 5. check-web-overlay:
 #    - vendor 重建 apps/web 后与 overlay 字节级比对（全新检出的前提，见作业内注释）
-# 5. audit: 依赖审计（硬门禁：高危漏洞直接红灯）
-# 6. ci-passed:
+# 6. audit: 依赖审计（硬门禁：高危漏洞直接红灯）
+# 7. ci-passed:
 #    - 聚合闸门作业，供 GitHub 分支保护规则 (Branch Protection Rules) 设置单一必经项
 # ==============================================================================
 
@@ -146,6 +154,63 @@ jobs:
       # siteOrigin() 的 headers() 兜底放回来，/sites 退化成 ƒ，这里立刻红灯。
       - run: node scripts/check-isr-routes.mjs
 
+  # --live 抽查此前只存在于 seo-audit-prod（workflow_dispatch + 需要仓库变量
+  # NAVHUB_SITE_URL），也就是**每个 PR 都没跑过**：ISR 快照「跑起来之后」是不是
+  # 真带 s-maxage、旧 ?page=N 有没有 30x，全靠本地手工实测。
+  # 这里在 CI 内自建一套（迁移 + 种子的中枢 + next start 产物），
+  # 不依赖外部域名与仓库变量，所以每个 PR 都会跑。
+  check-isr-live:
+    timeout-minutes: 30
+    name: 线上 ISR 抽查（CI 内自建预览，PR 门禁）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/vendor-web.mjs
+      # 构建期**给** origin：这个 job 测的是产物跑起来的行为，
+      # 「无 origin 能否预渲染」由 test-web 里那条 check-isr-routes 负责，两条互补。
+      - run: pnpm --filter navsphere build
+        env:
+          NAVHUB_SITE_URL: http://localhost:3000
+      # migrate 与 seed 都以仓库根为 CWD：config.ts 的 NAVHUB_SQLITE_PATH 默认是
+      # cwd 相对的 ./data/navhub.db（见根 package.json 的 //seed 注释）。
+      # seed 不建表，所以必须先 migrate；空库会让 sitemap 为空，--live 每个族
+      # 只会打「跳过」，正是 --min-checked 要拦的静默通过。
+      - run: node apps/api/src/migrate.ts
+      - run: pnpm seed
+      # 生产守卫（apps/web/src/lib/auth.config.ts）会拒绝仓库内的开发回退密钥，
+      # `next start` 走生产分支 —— 不给 AUTH_SECRET 的话预览站每个请求都是 500，
+      # 这个门禁就会红在无关处。密钥只在本次作业的一次性 shell 环境里存在，
+      # 不进 git、不进日志（预览站不需要能被外部登录）。
+      - name: 生成一次性会话密钥
+        run: node -e "console.log('AUTH_SECRET=' + require('crypto').randomBytes(32).toString('hex'))" >> "$GITHUB_ENV"
+      - name: 启动中枢（后台）
+        run: nohup node apps/api/src/main.ts > /tmp/hub.log 2>&1 &
+        env:
+          PORT: 8787
+      - name: 启动 Web 产物（next start，后台）
+        run: nohup node apps/web/node_modules/next/dist/bin/next start -p 3000 > /tmp/web.log 2>&1 &
+        env:
+          NAVHUB_SITE_URL: http://localhost:3000
+      - name: ISR 线上抽查
+        # 用 --min-checked=8 兜住覆盖率：白名单 9 个族，允许其中最多 1 族因
+        # 本地种子数据薄而没有样本；再多就是没跑到，不算通过。
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3000/sitemap.xml | grep -q "<loc>"; then break; fi
+            sleep 2
+            if [ "$i" = "60" ]; then echo "✖ 预览站 120s 内没给出可用 sitemap"; tail -40 /tmp/hub.log /tmp/web.log; exit 1; fi
+          done
+          node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 --min-checked=8
+      - name: 失败时留下预览站日志
+        if: ${{ failure() }}
+        run: tail -80 /tmp/hub.log /tmp/web.log
+
   check-web-overlay:
     timeout-minutes: 15
     name: 覆盖层与扩展规范性检查
@@ -238,10 +303,11 @@ jobs:
       # （--prod 会忽略 devDependencies 树，因此不需要 --ignore）
       - run: pnpm --registry=https://registry.npmjs.org audit --prod --audit-level high
 
-  # 运行时线上检查：只对生产预览跑，不在 PR 上临时拉起 API + Web + seed。
-  # 三步：全量 SEO 审计（sitemap）、ISR 线上抽查、站内链接图阈值。
-  # 地址来自仓库变量 NAVHUB_SITE_URL；未配置时 job 直接 skip，不产生噪音。
-  # 失败只让本 job 红灯并留下 artifact，不进 ci-passed，不阻塞 PR。
+  # 运行时线上检查：只对着**真实生产域名**跑，不进 PR 门禁。
+  # 与 check-isr-live 的分工：那个作业在 CI 内自建预览（migrate + seed + next start），
+  # 每个 PR 都跑，覆盖 ISR 抽查这一步；这里跑的是全量 SEO 审计 + 生产数据下的
+  # 链接图阈值，需要仓库变量 NAVHUB_SITE_URL 指向线上，本地起不出等价条件。
+  # 未配置变量时 job 直接 skip，不产生噪音；失败只让本 job 红灯并留下 artifact。
   seo-audit-prod:
     timeout-minutes: 30
     name: 运行时线上检查（生产预览，非 PR 门禁）
@@ -262,7 +328,7 @@ jobs:
       # 旧形态 /category/{slug}?page=N 必须 30x 到 /p/{N}。
       # 这一条只在 next start 的产物上有意义（dev 没有静态生成这一步）。
       - name: ISR 线上抽查
-        run: node scripts/check-isr-routes.mjs --live --base="$NAVHUB_SITE_URL" --sample=2
+        run: node scripts/check-isr-routes.mjs --live --base="$NAVHUB_SITE_URL" --sample=2 --min-checked=8
         env:
           NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
       # 链接架构阈值（孤岛页 / 点击深度 / 软 404）。--from-db=none：
@@ -282,7 +348,7 @@ jobs:
   ci-passed:
     name: CI 整体通过 (All Checks Passed)
     runs-on: ubuntu-latest
-    needs: [test-sqlite, test-postgres, test-web, check-web-overlay, test-e2e, docker-smoke, audit]
+    needs: [test-sqlite, test-postgres, test-web, check-web-overlay, check-isr-live, test-e2e, docker-smoke, audit]
     if: always()
     steps:
       - name: 评估检查结果
@@ -291,17 +357,19 @@ jobs:
              [ "${{ needs.test-postgres.result }}" != "success" ] || \
              [ "${{ needs.test-web.result }}" != "success" ] || \
              [ "${{ needs.check-web-overlay.result }}" != "success" ] || \
+             [ "${{ needs.check-isr-live.result }}" != "success" ] || \
              [ "${{ needs.test-e2e.result }}" != "success" ] || \
              [ "${{ needs.docker-smoke.result }}" != "success" ] || \
              [ "${{ needs.audit.result }}" != "success" ]; then
             echo "CI 检查未全部通过！"
-            echo "SQLite:  ${{ needs.test-sqlite.result }}"
-            echo "PG:      ${{ needs.test-postgres.result }}"
-            echo "Web:     ${{ needs.test-web.result }}"
-            echo "Overlay: ${{ needs.check-web-overlay.result }}"
-            echo "E2E:     ${{ needs.test-e2e.result }}"
-            echo "Docker:  ${{ needs.docker-smoke.result }}"
-            echo "Audit:   ${{ needs.audit.result }}"
+            echo "SQLite:   ${{ needs.test-sqlite.result }}"
+            echo "PG:       ${{ needs.test-postgres.result }}"
+            echo "Web:      ${{ needs.test-web.result }}"
+            echo "Overlay:  ${{ needs.check-web-overlay.result }}"
+            echo "ISR live: ${{ needs.check-isr-live.result }}"
+            echo "E2E:      ${{ needs.test-e2e.result }}"
+            echo "Docker:   ${{ needs.docker-smoke.result }}"
+            echo "Audit:    ${{ needs.audit.result }}"
             exit 1
           fi
           echo "🎉 所有 CI 检查均已顺利通过！"

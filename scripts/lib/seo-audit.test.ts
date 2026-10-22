@@ -203,6 +203,19 @@ describe("isBogusLocalOriginAsset：metadataBase 兜底地址", () => {
     expect(isBogusLocalOriginAsset("http://localhost:3000/og.png", "http://localhost:3000/sites")).toBe(false);
   });
 
+  it("同为本机但端口不同仍算问题（产物里烤死的兜底地址）", () => {
+    // 只看 host 会漏掉这一类：本地审计跑在 :3078，而构建产物里 Next 用
+    // http://localhost:3000 兜底 metadataBase —— 两个都是「本机」，端口不同才暴露它
+    // 是被烤进快照的地址，不是当次请求解析出来的。2026-10-22 在 /algorithms 上实测。
+    expect(isBogusLocalOriginAsset("http://localhost:3000/og-default.png", "http://localhost:3078/algorithms")).toBe(true);
+    expect(isBogusLocalOriginAsset("http://127.0.0.1:3000/x.png", "http://localhost:3078/sites")).toBe(true);
+  });
+
+  it("默认端口（80/443 缺省）与显式端口不同时也算问题", () => {
+    expect(isBogusLocalOriginAsset("http://localhost:3000/x.png", "http://localhost/robots")).toBe(true);
+    expect(isBogusLocalOriginAsset("http://localhost/x.png", "http://localhost:3000/sites")).toBe(true);
+  });
+
   it("同域/外链图片与解析失败的地址一律放行", () => {
     expect(isBogusLocalOriginAsset("https://nav.example/og.png", "https://nav.example/sites")).toBe(false);
     expect(isBogusLocalOriginAsset("https://cdn.example/og.png", "https://nav.example/sites")).toBe(false);

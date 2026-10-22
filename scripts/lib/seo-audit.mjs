@@ -268,7 +268,7 @@ export function auditInternalLinks(url, anchors) {
 /**
  * 「图片指向本机、页面不指向本机」= Next 在 metadataBase 缺席时用
  * `http://localhost:3000` 兜底解析出来的地址。审计的 base 本身就是 localhost 时
- * 不算问题（本地/dev 的正常形态），所以要比 host，而不是只看值里有没有 localhost。
+ * 光看 host 不够（本地/dev 也是 localhost），所以要连端口一起比。
  */
 export function isBogusLocalOriginAsset(assetUrl, pageUrl) {
   const LOCAL_HOST_RE = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/i;
@@ -276,7 +276,13 @@ export function isBogusLocalOriginAsset(assetUrl, pageUrl) {
     const asset = new URL(assetUrl, pageUrl);
     const page = new URL(pageUrl);
     if (!LOCAL_HOST_RE.test(asset.hostname)) return false;
-    return !LOCAL_HOST_RE.test(page.hostname);
+    // 真域名页面 + 本机图片：分享图必然打不开，是配置缺失。
+    if (!LOCAL_HOST_RE.test(page.hostname)) return true;
+    // 两边都是本机但端口不同（页面 :3078、图片 :3000）说明这个地址不是当前服务
+    // 解析出来的，而是构建期 metadataBase 兜底值被烤进产物的残留 —— 实测
+    // `/algorithms`（当时无 revalidate）三连 HIT 一直是 http://localhost:3000。
+    // 端口相同则不报：那是本地/dev 的正常形态，报了就是常年红在无关处。
+    return asset.port !== page.port;
   } catch {
     return false;
   }

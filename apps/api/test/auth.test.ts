@@ -55,12 +55,17 @@ beforeAll(async () => {
   openCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "open.db") }));
   openApp = await buildServer(openCtx);
   await openApp.ready();
+  // 写入口现在校验「类目存在且是叶子」：开放模式的夹具也得有真叶子可用
+  await openCtx.repo.createCategory({ id: "cat-ai", title: "AI 工具" });
+  await openCtx.repo.createCategory({ id: "cat-ai-code", title: "AI 编程助手", parentId: "cat-ai" });
 
   authCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "auth.db"), authRequired: true, bootstrapToken: BOOTSTRAP }));
   authApp = await buildServer(authCtx);
   await authApp.ready();
 
   await authCtx.repo.createCategory({ id: "cat-ai", title: "AI 工具" });
+  // 写入口只接受叶子（G2）：夹具给根配一个子类目，POST /api/sites 用它做归属
+  await authCtx.repo.createCategory({ id: "cat-ai-code", title: "AI 编程助手", parentId: "cat-ai" });
 });
 
 afterAll(async () => {
@@ -77,7 +82,7 @@ describe("开放模式（默认，authRequired=false）", () => {
   it("管理面写操作无需 token", async () => {
     const res = await openApp.inject({
       method: "POST", url: "/api/sites",
-      payload: { url: "https://open-mode.example.com", title: "开放模式", categoryId: "cat-ai" },
+      payload: { url: "https://open-mode.example.com", title: "开放模式", categoryId: "cat-ai-code" },
     });
     expect(res.statusCode).toBe(201);
   });
@@ -114,7 +119,7 @@ describe("鉴权模式：拒绝未授权访问", () => {
   });
 
   it("write 路由无 token 返回 401", async () => {
-    const res = await as(null, "POST", "/api/sites", { url: "https://x.com", categoryId: "cat-ai" });
+    const res = await as(null, "POST", "/api/sites", { url: "https://x.com", categoryId: "cat-ai-code" });
     expect(res.statusCode).toBe(401);
   });
 
@@ -144,13 +149,13 @@ describe("鉴权模式：scope 含义（admin ⊇ write ⊇ read）", () => {
   });
 
   it("read token 不能写（403 且说明所需 scope）", async () => {
-    const res = await as(readTok, "POST", "/api/sites", { url: "https://r.example.com", categoryId: "cat-ai" });
+    const res = await as(readTok, "POST", "/api/sites", { url: "https://r.example.com", categoryId: "cat-ai-code" });
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toContain("write");
   });
 
   it("write token 能创建站点", async () => {
-    const res = await as(writeTok, "POST", "/api/sites", { url: "https://w.example.com", title: "W", categoryId: "cat-ai" });
+    const res = await as(writeTok, "POST", "/api/sites", { url: "https://w.example.com", title: "W", categoryId: "cat-ai-code" });
     expect(res.statusCode).toBe(201);
   });
 
@@ -219,7 +224,7 @@ describe("鉴权模式：token 生命周期", () => {
     expect(res.statusCode).toBe(201);
     expect(res.json().scopes).toEqual(["read"]);
     const raw = res.json().token as string;
-    const denied = await as(raw, "POST", "/api/sites", { url: "https://z.com", categoryId: "cat-ai" });
+    const denied = await as(raw, "POST", "/api/sites", { url: "https://z.com", categoryId: "cat-ai-code" });
     expect(denied.statusCode).toBe(403);
   });
 
@@ -456,7 +461,7 @@ describe("tokenPolicy.allowPermanentTokens=true：显式放行长期凭据", () 
 describe("鉴权模式：审计记录真实身份", () => {
   it("token 写操作的 actor 是 token 名称，kind 为 token", async () => {
     const tok = await mintToken("审计验证员", "write");
-    const res = await as(tok, "POST", "/api/sites", { url: "https://audit.example.com", title: "审计", categoryId: "cat-ai" });
+    const res = await as(tok, "POST", "/api/sites", { url: "https://audit.example.com", title: "审计", categoryId: "cat-ai-code" });
     expect(res.statusCode).toBe(201);
     const siteId = res.json().id as string;
     const rows = await authCtx.db.sqlite!.prepare("SELECT actor, actor_kind FROM audit_logs WHERE target = ? ORDER BY id DESC").all(siteId) as any[];

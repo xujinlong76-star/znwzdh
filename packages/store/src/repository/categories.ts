@@ -271,6 +271,31 @@ export async function ensureUncategorized(repo: Repository): Promise<string> {
   return created.id;
 }
 
+/**
+ * 站点归属的边界校验（方案 §2.6）：类目必须存在，且不能是一级根。
+ *
+ * 只在写入口拦、仓储写路径保持宽松：迁移脚本与 SKOS 全量导出需要直挂根的能力，
+ * 存量夹具也普遍把站点挂在平铺根上——把「只挂叶子」做成存储不变量收益为负。
+ * 「未分类」是唯一的根例外：它是兜底桶，按设计就挂在顶层。
+ *
+ * 成功时回吐解析后的真实 id：入参可以是 slug，直接把它写进 sites.category_id 会造出悬空外键。
+ */
+export async function checkSiteCategoryAttachment(
+  repo: Repository,
+  categoryId: string | null | undefined,
+): Promise<{ ok: true; categoryId: string | null } | { ok: false; error: string }> {
+  const id = (categoryId ?? "").trim();
+  if (!id) return { ok: true, categoryId: null };
+  const category = (await getCategory(repo, id)) ?? (await getCategoryBySlug(repo, id));
+  if (!category) return { ok: false, error: `类目「${id}」不存在；站点只能挂在子类目（叶子）上` };
+  if (category.parentId || category.id === UNCATEGORIZED_CATEGORY_ID) return { ok: true, categoryId: category.id };
+  const leaves = (await listCategories(repo)).filter((c) => c.parentId === category.id);
+  const hint = leaves.length > 0
+    ? `请改挂它的子类目：${leaves.slice(0, 8).map((l) => `「${l.title}」`).join("、")}${leaves.length > 8 ? ` 等 ${leaves.length} 个` : ""}`
+    : `「${category.title}」下还没有子类目，请先建一个叶子再挂站点`;
+  return { ok: false, error: `类目「${category.title}」是一级根，只能作导航；${hint}` };
+}
+
 export async function moveCategory(repo: Repository, id: string, parentId: string | null): Promise<Category | null> {
   const existing = await repo.getCategory(id);
   if (!existing) return null;

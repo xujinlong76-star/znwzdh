@@ -46,7 +46,10 @@ beforeAll(async () => {
   ctx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "urlproto.db") }));
   app = await buildServer(ctx);
   await app.ready();
-  const cat = await app.inject({ method: "POST", url: "/api/categories", payload: { title: "协议白名单类目" } });
+  const root = await app.inject({ method: "POST", url: "/api/categories", payload: { title: "协议白名单根" } });
+  const rootId = (root.json() as { id: string }).id;
+  // 站点只能挂叶子（G2）：夹具建到第二层，让「协议校验」成为这些用例唯一的变量
+  const cat = await app.inject({ method: "POST", url: "/api/categories", payload: { title: "协议白名单子级", parentId: rootId } });
   categoryId = (cat.json() as { id: string }).id;
 });
 

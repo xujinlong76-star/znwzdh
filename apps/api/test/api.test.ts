@@ -18,10 +18,18 @@ let dir: string;
 let ctx: AppContext;
 let app: Awaited<ReturnType<typeof buildServer>>;
 
+// 写入口只接受叶子（G2：一级根只作导航），所以夹具把三条业务类目放在第二层，
+// 各配一个上层根——这样 HTTP 用例仍能照原样用 cat-* 做归属目标。
+const CAT_ROOTS = [
+  { id: "root-ai", title: "AI 专区" },
+  { id: "root-dev", title: "开发专区" },
+  { id: "root-life", title: "生活专区" },
+];
+
 const CATS = [
-  { id: "cat-ai", title: "AI 工具" },
-  { id: "cat-dev", title: "开发运维" },
-  { id: "cat-life", title: "生活服务" },
+  { id: "cat-ai", title: "AI 工具", parentId: "root-ai" },
+  { id: "cat-dev", title: "开发运维", parentId: "root-dev" },
+  { id: "cat-life", title: "生活服务", parentId: "root-life" },
 ];
 
 const SITES: Array<{ url: string; title: string; description: string; categoryId: string; tags: string[] }> = [
@@ -47,7 +55,8 @@ beforeAll(async () => {
   app = await buildServer(ctx);
   await app.ready();
 
-  for (const c of CATS) await ctx.repo.createCategory({ id: c.id, title: c.title });
+  for (const c of CAT_ROOTS) await ctx.repo.createCategory({ id: c.id, title: c.title });
+  for (const c of CATS) await ctx.repo.createCategory({ id: c.id, title: c.title, parentId: c.parentId });
   for (const s of SITES) await ctx.repo.createSite(s);
 });
 
@@ -586,7 +595,8 @@ describe("类目与统计", () => {
   });
 
   it("子类目站点能被父类目过滤命中", async () => {
-    const sub = (await app.inject({ method: "POST", url: "/api/categories", payload: { title: "AI 视频" } })).json();
+    // 挂到 cat-ai 下面成为真叶子：写入口不接受一级根（G2）
+    const sub = (await app.inject({ method: "POST", url: "/api/categories", payload: { title: "AI 视频", parentId: "cat-ai" } })).json();
     await app.inject({ method: "POST", url: "/api/sites", payload: { url: "https://example.com/aivideo", title: "AI 视频工具", categoryId: sub.id } });
     const hits = (await app.inject({ method: "POST", url: "/api/search", payload: { q: "", categoryId: sub.id, limit: 20 } })).json().hits;
     expect(hits.some((h: any) => h.site.title === "AI 视频工具")).toBe(true);
@@ -736,7 +746,7 @@ describe("分类管理增强", () => {
   });
 
   it("删除类目把站点移入未分类而不是级联删除", async () => {
-    const cat = (await app.inject({ method: "POST", url: "/api/categories", payload: { title: "临时类目" } })).json();
+    const cat = (await app.inject({ method: "POST", url: "/api/categories", payload: { title: "临时类目", parentId: "cat-ai" } })).json();
     const site = (await app.inject({
       method: "POST", url: "/api/sites",
       payload: { url: "https://example.com/in-temp-cat", title: "临时类目里的站", categoryId: cat.id },
@@ -772,8 +782,9 @@ describe("分类管理增强", () => {
   });
 
   it("合并类目把站点迁入目标", async () => {
-    const src = (await app.inject({ method: "POST", url: "/api/categories", payload: { title: "合并源" } })).json();
-    const dst = (await app.inject({ method: "POST", url: "/api/categories", payload: { title: "合并目标" } })).json();
+    // 源与目标都要能接站点：写入口只接受叶子（G2）
+    const src = (await app.inject({ method: "POST", url: "/api/categories", payload: { title: "合并源", parentId: "cat-ai" } })).json();
+    const dst = (await app.inject({ method: "POST", url: "/api/categories", payload: { title: "合并目标", parentId: "cat-dev" } })).json();
     const site = (await app.inject({ method: "POST", url: "/api/sites", payload: { url: "https://example.com/merge-me", title: "被合并的站", categoryId: src.id } })).json();
 
     const res = await app.inject({ method: "POST", url: "/api/categories/merge", payload: { sourceId: src.id, targetId: dst.id } });

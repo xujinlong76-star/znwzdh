@@ -130,7 +130,9 @@ describe("B 鉴权 + 已配置签名密钥：签名访客是合法一等公民",
   }
 
   it("签名访客写入收藏 → 成功，且只有签名者自己能读回", async () => {
-    await ctxB.repo.createCategory({ id: "cat-plane", title: "身份轴类目" });
+    // 写入口只接受叶子（G2），夹具照真树形建一个「根 + 叶」
+    await ctxB.repo.createCategory({ id: "cat-plane-root", title: "身份轴根" });
+    await ctxB.repo.createCategory({ id: "cat-plane", title: "身份轴类目", parentId: "cat-plane-root" });
     const site = await appB.inject({
       method: "POST",
       url: "/api/sites",

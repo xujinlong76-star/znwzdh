@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
-import { canonicalizeUrl, httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl, SiteCreateBody } from "@navhub/core";
+import { canonicalizeUrl, httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl, SiteCreateBody, UNCATEGORIZED_CATEGORY_ID } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
@@ -124,12 +124,18 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     const parsed = siteInput.safeParse(req.body ?? {});
     if (!parsed.success) { reply.code(400); return { error: "参数无效", detail: parsed.error.issues }; }
 
+    // 站点只能挂叶子（一级根只作导航）：这条规矩在边界拦，仓储层保持宽松
+    const attach = await ctx.repo.checkSiteCategoryAttachment(parsed.data.categoryId);
+    if (!attach.ok) { reply.code(400); return { error: attach.error }; }
+
     // URL 去重：导航站最常见的脏数据来源
     const dup = await ctx.repo.findSiteByUrl(parsed.data.url);
     if (dup) { reply.code(409); return { error: "该网址已存在", siteId: dup.id, site: dup }; }
 
     const site = await ctx.repo.createSite({
       ...parsed.data,
+      // 校验器允许传 slug，落库必须是解析后的真实 id，否则 category_id 直接悬空
+      ...(attach.categoryId ? { categoryId: attach.categoryId } : {}),
       title: parsed.data.title ?? parsed.data.url,
     });
     await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
@@ -142,11 +148,18 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     const { id } = req.params as { id: string };
     const parsed = siteInput.partial().safeParse(req.body ?? {});
     if (!parsed.success) { reply.code(400); return { error: "参数无效", detail: parsed.error.issues }; }
+    let patch = parsed.data;
+    if (patch.categoryId !== undefined) {
+      const attach = await ctx.repo.checkSiteCategoryAttachment(patch.categoryId);
+      if (!attach.ok) { reply.code(400); return { error: attach.error }; }
+      // 校验器允许传 slug，落库必须是解析后的真实 id，否则 category_id 悬空
+      if (attach.categoryId) patch = { ...patch, categoryId: attach.categoryId };
+    }
     const before = await ctx.repo.getSite(id);
-    const site = await ctx.repo.updateSite(id, parsed.data);
+    const site = await ctx.repo.updateSite(id, patch);
     if (!site) { reply.code(404); return { error: "站点不存在" }; }
     await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.update", target: id, diff: { before, after: parsed.data } });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.update", target: id, diff: { before, after: patch } });
     return site;
   });
 
@@ -177,6 +190,13 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const { op, ids, dryRun } = body.data;
     if (op === "setCategory" && !body.data.categoryId) { reply.code(400); return { error: "setCategory 需要 categoryId" }; }
+    // 目标必须能挂站点；校验允许传 slug，落库要用解析后的真实 id，否则 category_id 悬空
+    let targetCategoryId = body.data.categoryId;
+    if (op === "setCategory") {
+      const attach = await ctx.repo.checkSiteCategoryAttachment(body.data.categoryId);
+      if (!attach.ok) { reply.code(400); return { error: attach.error }; }
+      targetCategoryId = attach.categoryId ?? body.data.categoryId;
+    }
     if (op === "setStatus" && !body.data.status) { reply.code(400); return { error: "setStatus 需要 status" }; }
 
     // 逐个解析存在性：不存在的 id 计入 plan 的 skip，不整批失败——
@@ -201,7 +221,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       if (op === "delete") {
         await ctx.repo.deleteSite(id);
       } else if (op === "setCategory") {
-        await ctx.repo.updateSite(id, { categoryId: body.data.categoryId });
+        await ctx.repo.updateSite(id, { categoryId: targetCategoryId });
       } else {
         await ctx.repo.updateSite(id, { status: body.data.status });
       }
@@ -234,16 +254,27 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
     const cats = await ctx.repo.listCategories();
-    const catIdSet = new Set(cats.map((c) => c.id));
-    let fallback = (body.data.defaultCategoryId && catIdSet.has(body.data.defaultCategoryId))
-      ? body.data.defaultCategoryId
+    // 可挂集合 = 有父级的类目 + 兜底「未分类」，id 和 slug 都认（与 MCP batch_import 同口径）。
+    // 一级根不进集合：批量导入没有 400 可退（一次上千条，报错等于整批失败），
+    // 所以根一律降级到未分类而不是照收。
+    const attachable = new Map<string, string>();
+    for (const c of cats) {
+      if (!c.parentId && c.id !== UNCATEGORIZED_CATEGORY_ID) continue;
+      attachable.set(c.id, c.id);
+      if (c.slug) attachable.set(c.slug, c.id);
+    }
+    let fallback = (body.data.defaultCategoryId && attachable.get(body.data.defaultCategoryId))
+      ? attachable.get(body.data.defaultCategoryId)!
       // 兜底是「未分类」而不是 cats[0]：按 sort 取第一个类目等于把没指定分类的
       // 导入站点随机塞进某个真实领域（实测是 AI 工具），运营事后完全看不出。
       : await ctx.repo.ensureUncategorized();
-    catIdSet.add(fallback);
+    attachable.set(fallback, fallback);
 
     let created = 0;
     let duplicates = 0;
+    // 传了类目但没挂上（不存在 / 一级根）的条数：书签导入器要靠它判断
+    // 「这批是不是其实没归类成功」，否则站点静默堆进未分类没人知道。
+    let degraded = 0;
     const createdSites: Array<Awaited<ReturnType<typeof ctx.repo.createSite>>> = [];
 
     // DB 写入包事务（去重检查 + 创建原子提交）；向量索引在提交后补做，避免长事务持有写锁。
@@ -255,7 +286,9 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         duplicates++;
         continue;
       }
-      const categoryId = (item.categoryId && catIdSet.has(item.categoryId)) ? item.categoryId : fallback;
+      const resolved = item.categoryId ? attachable.get(item.categoryId) : undefined;
+      if (item.categoryId && !resolved) degraded++;
+      const categoryId = resolved ?? fallback;
       const site = await ctx.repo.createSite({
         url: cleanUrl,
         title: item.title ?? item.url,
@@ -277,11 +310,11 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       actor: req.auth.actor,
       actorKind: req.auth.kind,
       action: "site.batch",
-      diff: { total: body.data.sites.length, created, duplicates },
+      diff: { total: body.data.sites.length, created, duplicates, categoryDegraded: degraded },
     });
 
     reply.code(201);
-    return { success: true, created, duplicates, sites: createdSites };
+    return { success: true, created, duplicates, categoryDegraded: degraded, sites: createdSites };
   });
 
 };

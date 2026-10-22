@@ -48,8 +48,11 @@ beforeAll(async () => {
 
   await ctx.repo.createCategory({ id: "cat-ai", title: "AI 工具" });
   await ctx.repo.createCategory({ id: "cat-dev", title: "开发运维" });
-  await ctx.repo.createSite({ url: "https://github.com/features/copilot", title: "GitHub Copilot", description: "AI 代码补全", categoryId: "cat-ai", tags: ["ai"] });
-  await ctx.repo.createSite({ url: "https://weather.com.cn", title: "中国天气网", description: "全国天气预报", categoryId: "cat-dev", tags: ["天气"] });
+  // G2「站点只挂叶子」在写入口生效：写工具用这两个叶子做归属，根只作导航
+  await ctx.repo.createCategory({ id: "cat-ai-code", title: "AI 编程助手", parentId: "cat-ai" });
+  await ctx.repo.createCategory({ id: "cat-dev-ops", title: "部署与监控", parentId: "cat-dev" });
+  await ctx.repo.createSite({ url: "https://github.com/features/copilot", title: "GitHub Copilot", description: "AI 代码补全", categoryId: "cat-ai-code", tags: ["ai"] });
+  await ctx.repo.createSite({ url: "https://weather.com.cn", title: "中国天气网", description: "全国天气预报", categoryId: "cat-dev-ops", tags: ["天气"] });
 });
 
 afterAll(async () => {
@@ -132,8 +135,10 @@ describe("只读工具", () => {
 
   it("list_categories 可返回站点计数", async () => {
     const body = payload(await handlers.list_categories({ includeCounts: true }, FULL));
-    const ai = body.find((c: any) => c.id === "cat-ai");
-    expect(ai.siteCount).toBe(1);
+    // 计数按单个类目算：站点挂在叶子上，所以是叶子有数、它的根为 0（聚合是前端的事）
+    const leaf = body.find((c: any) => c.id === "cat-ai-code");
+    expect(leaf.siteCount).toBe(1);
+    expect(body.find((c: any) => c.id === "cat-ai").siteCount).toBe(0);
   });
 
   it("get_stats 返回统计与能力", async () => {
@@ -165,7 +170,7 @@ describe("权限是硬边界", () => {
 describe("写工具：幂等与审计", () => {
   it("create_site 可以创建并留下审计", async () => {
     const body = payload(await handlers.create_site({
-      url: "https://example.com/fresh", title: "新站点", categoryId: "cat-dev", enrich: false,
+      url: "https://example.com/fresh", title: "新站点", categoryId: "cat-dev-ops", enrich: false,
     }, FULL));
     expect(body.created).toBe(true);
     const logs = ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE actor = ?").get("mcp:test") as { c: number };
@@ -179,7 +184,7 @@ describe("写工具：幂等与审计", () => {
   });
 
   it("幂等键：重复调用返回上次结果且不重复创建", async () => {
-    const args = { url: "https://example.com/idem", title: "幂等站点", categoryId: "cat-dev", enrich: false, idempotencyKey: "key-1" };
+    const args = { url: "https://example.com/idem", title: "幂等站点", categoryId: "cat-dev-ops", enrich: false, idempotencyKey: "key-1" };
     const first = payload(await handlers.create_site(args, FULL));
     const second = payload(await handlers.create_site(args, FULL));
     expect(first.created).toBe(true);
@@ -212,7 +217,7 @@ describe("批量导入：dryRun 是默认行为", () => {
   it("dryRun=false 时才真正写入", async () => {
     const body = payload(await handlers.batch_import({
       sites: [{ url: "https://example.com/r1", title: "R1" }, { url: "https://example.com/r2", title: "R2" }],
-      dryRun: false, defaultCategoryId: "cat-dev",
+      dryRun: false, defaultCategoryId: "cat-dev-ops",
     }, FULL));
     expect(body.created).toBe(2);
   });
@@ -233,7 +238,7 @@ describe("批量导入：dryRun 是默认行为", () => {
 
 describe("健康巡检", () => {
   it("SSRF 目标被判为 broken 并记录原因，而不是抛出", async () => {
-    await handlers.create_site({ url: "https://example.com/hc", title: "巡检目标", categoryId: "cat-dev", enrich: false }, FULL);
+    await handlers.create_site({ url: "https://example.com/hc", title: "巡检目标", categoryId: "cat-dev-ops", enrich: false }, FULL);
     const body = payload(await handlers.health_check({ limit: 50 }, FULL));
     expect(body.checked).toBeGreaterThan(0);
     expect(Array.isArray(body.broken)).toBe(true);
@@ -343,7 +348,7 @@ describe("Phase 4 新工具", () => {
 describe("删除与导出工具", () => {
   it("delete_site 软删除并落审计，站点进入回收站", async () => {
     const created = payload(await handlers.create_site({
-      url: "https://example.com/del-me", title: "待删除", categoryId: "cat-dev", enrich: false,
+      url: "https://example.com/del-me", title: "待删除", categoryId: "cat-dev-ops", enrich: false,
     }, FULL));
     const res = await handlers.delete_site({ idOrUrl: created.site.id }, FULL);
     const body = payload(res);
@@ -374,7 +379,7 @@ describe("删除与导出工具", () => {
     expect(lines[0]).toContain("url");
     // 数据行里以 = 开头的值必须被转义（防 Excel 公式注入）
     const injected = payload(await handlers.create_site({
-      url: "https://example.com/csv-inject", title: "=HYPERLINK(\"http://evil\")", categoryId: "cat-dev", enrich: false,
+      url: "https://example.com/csv-inject", title: "=HYPERLINK(\"http://evil\")", categoryId: "cat-dev-ops", enrich: false,
     }, FULL));
     expect(injected.created).toBe(true);
     const csv2 = payload(await handlers.export_sites({ format: "csv" }, READONLY));

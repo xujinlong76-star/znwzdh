@@ -5,7 +5,7 @@
  */
 import { enrichUrl, guardedFetch } from "@navhub/ai";
 import { enrichLlmOf, resolveLlm } from "@navhub/api";
-import { auditPageHealth, resolveCategoryTitleSuggestion } from "@navhub/core";
+import { auditPageHealth, resolveCategoryTitleSuggestion, UNCATEGORIZED_CATEGORY_ID } from "@navhub/core";
 import {
   BatchImportInput,
   CreateSiteInput,
@@ -62,6 +62,14 @@ export const siteHandlers = {
     const { ctx, withIdempotency, indexSite } = deps;
     requireScope(tc, "write");
     const input = CreateSiteInput.parse(args ?? {});
+    // 显式给的类目必须能挂站点（存在且不是「一级根」）：REST 侧同一条规矩，
+    // 否则 Agent 会把整棵树挂平。错误文案直接列出该根下的叶子，省一轮试错。
+    let attachableCategoryId: string | null = null;
+    if (input.categoryId) {
+      const attach = await ctx.repo.checkSiteCategoryAttachment(input.categoryId);
+      if (!attach.ok) return fail(attach.error);
+      attachableCategoryId = attach.categoryId;
+    }
     return withIdempotency(input.idempotencyKey, async () => {
       const dup = await ctx.repo.findSiteByUrl(input.url);
       // 已存在不算错误：Agent 无法预知库里有什么，报错会让它进入无效重试
@@ -69,7 +77,7 @@ export const siteHandlers = {
 
       let title = input.title ?? input.url;
       let description = input.description ?? null;
-      let categoryId = input.categoryId ?? null;
+      let categoryId = attachableCategoryId;
       let tags = input.tags ?? [];
       let provenance: string | null = null;
       let gapTitle: string | null = null;
@@ -122,10 +130,17 @@ export const siteHandlers = {
     const input = UpdateSiteInput.parse(args ?? {});
     const before = await ctx.repo.getSite(input.id);
     if (!before) return fail("未找到站点：" + input.id);
+    // 改类目同样只能挂叶子；slug 入参要用解析后的真实 id 落库
+    let categoryId = input.categoryId;
+    if (categoryId !== undefined) {
+      const attach = await ctx.repo.checkSiteCategoryAttachment(categoryId);
+      if (!attach.ok) return fail(attach.error);
+      if (attach.categoryId) categoryId = attach.categoryId;
+    }
     const site = await ctx.repo.updateSite(input.id, {
       title: input.title,
       description: input.description as never,
-      categoryId: input.categoryId,
+      categoryId,
       tags: input.tags,
       facets: input.facets,
       featured: input.featured,
@@ -162,36 +177,54 @@ export const siteHandlers = {
       unique.push(s);
     }
 
+    // 可挂集合 = 有父级的类目（叶子）+ 固定 id 的「未分类」，id 和 slug 都能查。
+    // 批导入没有 400 可退（一次上千条，报错等于整批白跑），所以逐条传错一律降级到本批兜底类目，
+    // 但显式的 defaultCategoryId 只有一个值，传错就报错让调用方改。
+    const leafById = new Map<string, string>();
+    for (const c of await ctx.repo.listCategories()) {
+      if (!c.parentId && c.id !== UNCATEGORIZED_CATEGORY_ID) continue;
+      leafById.set(c.id, c.id);
+      if (c.slug) leafById.set(c.slug, c.id);
+    }
+    const defaultAttach = await ctx.repo.checkSiteCategoryAttachment(input.defaultCategoryId);
+    if (!defaultAttach.ok) return fail(defaultAttach.error);
+    // 「未分类」即便库里还没这行也算可挂：落库分支会 ensure 它，dryRun 不写库
+    leafById.set(UNCATEGORIZED_CATEGORY_ID, UNCATEGORIZED_CATEGORY_ID);
+
     const plan: Array<{ url: string; action: string; title?: string; reason?: string }> = [];
+    let degraded = 0;
     for (const s of unique) {
       const dup = await ctx.repo.findSiteByUrl(s.url);
-      plan.push(dup
-        ? { url: s.url, action: "skip", title: dup.title, reason: "已存在" }
-        : { url: s.url, action: "create", title: s.title });
+      if (dup) { plan.push({ url: s.url, action: "skip", title: dup.title, reason: "已存在" }); continue; }
+      if (s.categoryId && !leafById.has(s.categoryId)) {
+        degraded++;
+        plan.push({ url: s.url, action: "create", title: s.title, reason: `类目「${s.categoryId}」不能挂站点（不存在或是一级根），将落到本批兜底类目` });
+        continue;
+      }
+      plan.push({ url: s.url, action: "create", title: s.title });
     }
 
     // dryRun 默认 true：先让调用方看到影响面再决定是否落库
     if (input.dryRun) {
-      return ok({ dryRun: true, total: input.sites.length, wouldCreate: plan.filter((p) => p.action === "create").length, duplicateUrls, plan });
+      return ok({ dryRun: true, total: input.sites.length, wouldCreate: plan.filter((p) => p.action === "create").length, categoryDegraded: degraded, duplicateUrls, plan });
     }
 
     return withIdempotency(input.idempotencyKey, async () => {
-      // 兜底走固定 id 的「未分类」：批导入没给 defaultCategoryId 时，
-      // 旧的 cats[0] 会把整批站点塞进 sort 最靠前的真实类目。
-      const fallback = input.defaultCategoryId ?? (await ctx.repo.ensureUncategorized());
+      const fallback = defaultAttach.categoryId ?? (await ctx.repo.ensureUncategorized());
       const created: string[] = [];
       for (let i = 0; i < unique.length; i++) {
         if (plan[i]!.action !== "create") continue;
         const s = unique[i]!;
         const site = await ctx.repo.createSite({
           url: s.url, title: s.title ?? s.url, description: s.description ?? null,
-          categoryId: s.categoryId ?? fallback, tags: s.tags ?? [], source: "mcp-batch",
+          categoryId: (s.categoryId ? leafById.get(s.categoryId) : undefined) ?? fallback,
+          tags: s.tags ?? [], source: "mcp-batch",
         });
         await indexSite(site.id, site.title, site.description ?? null, site.url);
         created.push(site.id);
       }
-      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.batchImport", diff: { created: created.length, duplicateUrls: duplicateUrls.length } });
-      return { dryRun: false, created: created.length, ids: created, duplicateUrls };
+      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.batchImport", diff: { created: created.length, duplicateUrls: duplicateUrls.length, categoryDegraded: degraded } });
+      return { dryRun: false, created: created.length, ids: created, duplicateUrls, categoryDegraded: degraded };
     });
   },
 

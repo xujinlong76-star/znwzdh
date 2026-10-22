@@ -43,7 +43,9 @@ beforeAll(async () => {
       corsOrigins: ["*"],
     } as never),
   );
-  await ctx.repo.createCategory({ id: "cat-body", title: "编码测试" });
+  // create_site 的类目入参必须是叶子（G2 在写入口生效），夹具照真树形建
+  await ctx.repo.createCategory({ id: "cat-body-root", title: "编码测试" });
+  await ctx.repo.createCategory({ id: "cat-body", title: "编码测试子类目", parentId: "cat-body-root" });
   server = createMcpHttpServer({ ctx, token: TOKEN, scopes: ["read", "write"] });
   base = await listen(server);
 });

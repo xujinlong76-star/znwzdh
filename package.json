@@ -10,6 +10,7 @@
     "pnpm": ">=11.7.0"
   },
   "//seed": "必须以仓库根目录为 CWD 运行：config.ts 的 NAVHUB_SQLITE_PATH 默认值是 cwd 相对的 ./data/navhub.db，而 dev-all/Docker 用的是仓库根的 data/navhub.db。此前 `pnpm --filter @navhub/api seed` 以 apps/api 为 CWD，把种子播进了 apps/api/data/navhub.db——开发服务器永远看不到，市场因此像空壳。",
+  "//coverage": "覆盖率出数（非门禁）：跑全量测试并把实测覆盖率打出来，产物落在 coverage/（已 gitignore）。默认不做判定——check-coverage.mjs 未收到 --max-lines/--max-functions 时只打印并 exit 0；存量摸清后再在 CI 传阈值收紧。",
   "scripts": {
     "build": "pnpm -r --filter \"@navhub/*\" build",
     "dev": "node apps/api/src/main.ts",
@@ -18,6 +19,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "coverage": "vitest run --coverage && node scripts/check-coverage.mjs",
     "typecheck": "node scripts/typecheck.mjs",
     "seed": "node apps/api/src/seed-main.ts",
     "mcp:stdio": "pnpm --filter @navhub/mcp start",
@@ -31,6 +33,8 @@
     "seo:html-budget": "node scripts/html-budget.mjs",
     "seo:indexnow": "node scripts/indexnow.mjs",
     "lint": "pnpm --filter navsphere lint",
+    "//lint:backend": "后端静态检查（P1-8）：首轮只有三条 warning 规则，不 block；CI 以 continue-on-error 运行同一命令。",
+    "lint:backend": "pnpm --filter @navhub/api --filter @navhub/store run lint",
     "backup": "node scripts/backup.mjs",
     "prepare": "node scripts/install-git-hooks.mjs",
     "verify": "node scripts/verify.mjs",
@@ -40,6 +44,7 @@
   "devDependencies": {
     "@playwright/test": "^1.64.1",
     "@types/node": "22.18.13",
+    "@vitest/coverage-v8": "5.0.5",
     "esbuild": ">=0.28.1",
     "typescript": "5.9.3",
     "typescript7": "npm:typescript@7.0.2",

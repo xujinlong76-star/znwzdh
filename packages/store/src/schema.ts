@@ -379,6 +379,18 @@ export const userVaultSync = sqliteTable("user_vault_sync", {
 });
 
 /**
+ * 工作区明文存储（独立于 E2EE 金库，见 repository/workspace-blobs.ts）。
+ *
+ * 键沿用旧版格式（`workspaces:<identity>` / `ws_members:<identity>:<wsId>`），
+ * 表由 migrate.ts 的幂等 DDL 创建；这里补 Drizzle 声明保持 schema 单一事实源。
+ */
+export const userWorkspaceBlobs = sqliteTable("user_workspace_blobs", {
+  userId: text("user_id").primaryKey(),
+  payload: text("payload").notNull(),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+});
+
+/**
  * 系统全局状态表：用于存储模型检查点（LinUCB 等）与自动化任务调度运行水位。
  */
 export const systemStates = sqliteTable("system_states", {
@@ -595,7 +607,7 @@ export const llmUsage = sqliteTable("llm_usage", {
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
-  favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates, taxonomyProposals,
+  favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, userWorkspaceBlobs, systemStates, taxonomyProposals,
   plugins, pluginInstalls, pluginStars, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
   // 用户域补齐（N11）：此前这四张表没有进入导出，drizzle 工具链拿不到它们，
   // 「schema 是单一事实源」名不副实——迁移脚本与 DDL 各写一份，drift 无从校验。

@@ -117,7 +117,13 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
 ];
 
 const LOCK_KEY = "lock:job-runner";
+/**
+ * SQLite 持锁有效期（不是「任务预算」）：崩溃后最多等这么久，别的实例就能接管。
+ * 有效期内必须由心跳续期，否则跑过 TTL 的长任务会让锁被合法夺走。
+ */
 const LOCK_TTL_MS = 120_000;
+/** 默认心跳周期 = TTL/3：连续两次续期都失败才会过期，留出重试窗口 */
+const LOCK_HEARTBEAT_DEFAULT_MS = Math.floor(LOCK_TTL_MS / 3);
 const PG_LOCK_KEY = 728_501_001;
 
 /** PG 独占连接（advisory lock 是会话级的：加锁与解锁必须在同一连接上） */
@@ -148,18 +154,26 @@ function envInterval(): number {
  */
 export interface JobSchedulePolicy {
   /**
-   * cron 表达式（5 段标准：分 时 日 月 周，如每 5 分钟一次）。
-   * 留空 = 按 kind 默认周期（health_check 5min / refetch 30min / recompute 60min /
-   * reindex 4h / 其余 60min），Runner 心跳轮询到期即跑。
+   * cron 别名（对应 CRON_EXPRS 的 5 段标准式）。
+   * 注意：cron 表达式目前是**声明值**，Runner 实际按 DEFAULT_CRON_SCHEDULES 的
+   * intervalMs 到期入队；cronDue/scheduleCronOf 只用于管理端展示与测试。
    */
   cron?: string;
-  /** 单次执行的超时上限（毫秒）；超时抛错走正常重试链。默认 5 分钟 */
+  /**
+   * 单次执行的预算（毫秒）。**当前不做任务级硬超时**：
+   * 每个 handler 的每次网络/LLM 调用各自带超时（fetch 10s / LLM 20s / embedding 30s），
+   * 所以真正的兜底是「所有调用都有上限」，而不是这个数。
+   * 为什么不用 Promise.race 强行掐：掐不掉——handler 里没有 AbortSignal，
+   * 超时只是让 Runner 提前把任务标成失败并放行下一轮，僵尸 handler 还在跑，
+   * 于是同一个 kind 被两边并发执行（比重置为 retrying 更糟）。
+   * 要变成硬预算，得先把 signal 贯穿 runXxx 与 @navhub/ai 的抓取/嵌入调用。
+   */
   timeoutMs?: number;
-  /** 允许的最大并发执行数（按 kind）；默认 1 */
+  /** 期望的按 kind 最大并发数。**当前 Runner 全程串行**，该值同样只是声明 */
   maxConcurrency?: number;
 }
 
-/** 各任务默认调度策略（Runner 的兜底周期，DB 里有更细的 schedule 即优先） */
+/** 各任务默认调度策略（cron/预算为声明值，见 JobSchedulePolicy；实际到期判定走 intervalMs） */
 export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   health_check: { cron: "X5MIN", timeoutMs: 240_000, maxConcurrency: 2 },
   refetch_metadata: { cron: "X30MIN", timeoutMs: 300_000, maxConcurrency: 1 },
@@ -180,9 +194,14 @@ const CRON_EXPRS = {
   HOURLY: "0 \u002a \u002a \u002a \u002a",
   X4H: "0 \u002a/4 \u002a \u002a \u002a",
   DAILY3AM: "0 3 \u002a \u002a \u002a",
+  DAILY4AM: "0 4 \u002a \u002a \u002a",
 } as const;
 
-/** 取某任务的真实 cron 表达式（别名 → 5 段标准式；未知别名原样返回） */
+/**
+ * 取某任务的真实 cron 表达式。
+ * 别名不在 CRON_EXPRS 里时原样返回——若原值不是 5 段，cronDue 会恒判 false
+ * （任务看着已排期、实际永远不触发）。全量断言在 upgrade-batch1 的「cron 调度语义」。
+ */
 export function scheduleCronOf(kind: JobKind): string {
   const alias = DEFAULT_SCHEDULES[kind].cron as keyof typeof CRON_EXPRS;
   return CRON_EXPRS[alias] ?? alias;
@@ -190,7 +209,7 @@ export function scheduleCronOf(kind: JobKind): string {
 
 /**
  * 最小 cron 匹配器（5 段：分 时 日 月 周；支持 *、步长、枚举与范围）。
- * 不引入 cron 依赖——调度精度到分钟级已满足全部 7 种任务。
+ * 不引入 cron 依赖——调度精度到分钟级已满足全部任务类型。
  */
 export function cronDue(cron: string, now: Date = new Date()): boolean {
   const parts = cron.trim().split(/\s+/);
@@ -235,6 +254,11 @@ export interface JobRunnerOptions {
   holder?: string;
   /** 是否在 tick 时检查并自动调度 Cron 周期任务（start() 启动后台时自动置为 true） */
   enableCron?: boolean;
+  /**
+   * SQLite 持锁心跳周期（毫秒，默认 LOCK_TTL/3 = 40s）。
+   * 生产沿用默认即可；测试用小值，才能在单个任务里观察到续期。
+   */
+  lockHeartbeatMs?: number;
   /** 连续失败告警阈值（达到后 log.error 一次；测试可注入回调收集） */
   onAlert?: (message: string, detail: { kind: string; attempts: number; error: string }) => void;
 }
@@ -245,6 +269,7 @@ export class JobRunner {
   private maxPerTick: number;
   private holder: string;
   private enableCron: boolean;
+  private lockHeartbeatMs: number;
   private onAlert: JobRunnerOptions["onAlert"];
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
@@ -258,6 +283,7 @@ export class JobRunner {
     this.maxPerTick = opts.maxPerTick ?? 10;
     this.holder = opts.holder ?? "pid-" + process.pid;
     this.enableCron = opts.enableCron ?? false;
+    this.lockHeartbeatMs = opts.lockHeartbeatMs ?? LOCK_HEARTBEAT_DEFAULT_MS;
     this.onAlert = opts.onAlert;
   }
 
@@ -304,6 +330,13 @@ export class JobRunner {
       const locked = await this.acquireLock();
       if (!locked) return { processed: 0, skipped: true };
       let processed = 0;
+      // 锁心跳：只在「任务之间」续期是不够的。单个任务就可能跑过 LOCK_TTL——
+      // health_check 默认巡检 100 个站点、串行抓取每次最长 10s，慢网络下轻松超过 120s。
+      // TTL 一过，别的实例按 SQL 语义就是**合法**夺锁，于是两个实例同时跑同一批任务：
+      // 重复抓取、重复写 health/rank、对目标站点翻倍施压。
+      // 续期语句带 `response = holder` 条件，锁真被夺走时只会 0 行命中，不会反向顶掉新持有者。
+      const heartbeat = setInterval(() => void this.renewLock(), this.lockHeartbeatMs);
+      if (typeof heartbeat.unref === "function") heartbeat.unref();
       try {
         if (this.enableCron) {
           await this.checkRecurringSchedules().catch(() => undefined);
@@ -316,11 +349,9 @@ export class JobRunner {
           if (!job) break;
           await this.process(job.kind as JobKind, job.payload, job.id, job.attempts);
           processed++;
-          // 长任务续期：SQLite 锁靠 TTL，逐个任务刷新持有时间，
-          // 避免一轮跑太久（慢网络 health_check）被其它实例判定过期夺走。
-          await this.renewLock();
         }
       } finally {
+        clearInterval(heartbeat);
         await this.releaseLock();
       }
       return { processed, skipped: false };
@@ -421,7 +452,11 @@ export class JobRunner {
     this.lockHeld = false;
   }
 
-  /** SQLite 锁续期：刷新持有时间，防止长任务被判过期夺走；PG advisory 无需续期 */
+  /**
+   * SQLite 锁续期（tick 心跳调用）：只刷新**自己名下**的锁行。
+   * 若 TTL 期间锁已被别的实例夺走，这里匹配 0 行、静默无效——不会把新持有者顶掉，
+   * 于是本轮剩下的任务只是白跑，不会演变成两边互相抢锁。PG advisory 无需续期。
+   */
   private async renewLock(): Promise<void> {
     if (!this.lockHeld || this.ctx.db.dialect !== "sqlite") return;
     try {
@@ -896,6 +931,9 @@ export class JobRunner {
     if (mode === "rollup") {
       const res = await runRollup(adapter, {
         targets: DEFAULT_ROLLUP_TARGETS.map((t) => ({ spec: t.spec, keepDays: t.keepDays })),
+        // 建聚合表时按方言分叉（AUTOINCREMENT vs BIGSERIAL）：这里的词汇是 "postgres"，
+        // 与存储层的 "pg" 不同名。漏传即默认 SQLite DDL，PG 上建表直接报错、聚合永不生效。
+        dialect: this.ctx.db.dialect === "pg" ? "postgres" : "sqlite",
         maxDaysPerRun: payload.maxDays ?? 30,
         maxGroupsPerDay: payload.maxGroups ?? 5000,
         dryRun: !apply,

@@ -76,13 +76,20 @@ describe("Query Planner early-exit", () => {
 });
 
 describe("cron 调度语义", () => {
-  it("七种任务默认策略齐全且 cron 可解析", () => {
-    const kinds = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash"] as const;
+  /**
+   * 必须遍历**全部** kind：手写名单曾经漏掉 data_retention / taxonomy_audit /
+   * plugin_governance，于是 data_retention 的 "DAILY4AM" 别名不在 CRON_EXPRS 里、
+   * scheduleCronOf 原样吐出 1 段串、cronDue 恒 false 这件事一直没被抓到。
+   */
+  it("所有任务默认策略齐全且 cron 别名都能解析成 5 段", () => {
+    const kinds = Object.keys(DEFAULT_SCHEDULES) as Array<keyof typeof DEFAULT_SCHEDULES>;
+    expect(kinds.length).toBeGreaterThanOrEqual(10);
     for (const k of kinds) {
       expect(DEFAULT_SCHEDULES[k].timeoutMs).toBeGreaterThan(0);
       expect(DEFAULT_SCHEDULES[k].maxConcurrency).toBeGreaterThanOrEqual(1);
       const expr = scheduleCronOf(k);
-      expect(expr.split(" ").length).toBe(5);
+      // 别名没登记时 scheduleCronOf 会原样吐出别名（1 段），cronDue 从此恒 false
+      expect(expr.split(" ").length, `${k} 的 cron 别名 "${DEFAULT_SCHEDULES[k].cron}" 未在 CRON_EXPRS 登记`).toBe(5);
     }
   });
 
@@ -96,6 +103,9 @@ describe("cron 调度语义", () => {
     expect(cronDue(scheduleCronOf("recompute_rank"), d2)).toBe(false);
     // 非法表达式直接 false，不抛错
     expect(cronDue("not-a-cron", d)).toBe(false);
+    // 每天 04:00 的任务：只有 4 点整到
+    expect(cronDue(scheduleCronOf("data_retention"), new Date(2026, 9, 18, 4, 0, 0))).toBe(true);
+    expect(cronDue(scheduleCronOf("data_retention"), new Date(2026, 9, 18, 3, 0, 0))).toBe(false);
   });
 });
 

@@ -302,6 +302,55 @@ describe("安装 / 卸载（site-pack 真实落库）", () => {
     expect(catRows.length).toBe(0);
   });
 
+  it("回收站里的用户站点也保护插件分类：卸载后保留分类，恢复站点仍落回原分类", async () => {
+    // 分类名必须独有：ensureCategory 按 title 去重，复用已有分类时 source 不会记为 plugin
+    const plugin = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "回收站分类保护",
+        description: "测试用网址包",
+        icon: "🧪",
+        version: "1.0.0",
+        tags: ["测试"],
+        payload: {
+          categories: [{ title: "回收站专属分类" }],
+          sites: [
+            {
+              url: "https://trash-cat-own.example.com",
+              title: "插件站点",
+              category: "回收站专属分类",
+            },
+          ],
+        },
+      }),
+      status: "published",
+    });
+    await repo.installPlugin(plugin.slug, "user-trash-cat");
+    const catRows = await repo.raw("SELECT id FROM categories WHERE source = ?", ["plugin:" + plugin.slug]);
+    expect(catRows.length).toBe(1);
+    const categoryId = String(catRows[0]!.id);
+
+    // 用户把自己的站点放进插件分类，随后删除（进回收站）
+    const userSite = await repo.createSite({
+      url: "https://trash-cat-user.example.com",
+      title: "用户站点",
+      categoryId,
+    });
+    await repo.deleteSite(userSite.id);
+
+    const uninst = await repo.uninstallPlugin(plugin.slug, "user-trash-cat", { removeSites: true });
+    expect(uninst.removedSites).toBe(1);
+    // 旧实现只看 deleted_at IS NULL，会把仍被回收站引用的分类一并删掉
+    expect(uninst.removedCategories).toBe(0);
+    const kept = await repo.getCategory(categoryId);
+    expect(kept).not.toBeNull();
+    expect(kept!.source).toBe("api");
+
+    const restored = await repo.restoreSite(userSite.id);
+    expect(restored!.categoryId).toBe(categoryId);
+  });
+
 });
 
 describe("星标 / 举报 / 安装状态", () => {

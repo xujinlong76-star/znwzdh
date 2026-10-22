@@ -60,6 +60,9 @@ export async function updateSiteHealth(repo: Repository, siteId: string, health:
     currentStatus?: string
   }): Promise<void> {
   const now = Date.now();
+  // 两条写必须同生同死：只写了 sites 而没写进 health_checks，
+  // 连续失败判定（recentHealthChecks）就少算一次，站点会被误判或漏判为 broken
+  return repo.withTransaction(async () => {
   await repo.run(
     `UPDATE sites SET http_status = ?, health_ok = ?, latency_ms = ?, redirect_to = ?,
             health_error = ?, last_checked_at = ?, status = ? WHERE id = ?`,
@@ -73,6 +76,7 @@ export async function updateSiteHealth(repo: Repository, siteId: string, health:
     "INSERT INTO health_checks (site_id, checked_at, ok, http_status, latency_ms, redirect_to, error) VALUES (?,?,?,?,?,?,?)",
     [siteId, now, health.ok, health.httpStatus, health.latencyMs, health.redirectTo, health.error],
   );
+  });
 }
 
 export async function healthCheckSeries(repo: Repository, since: number, limit = 5000): Promise<Array<{ siteId: string; checkedAt: number; ok: boolean; latencyMs: number | null }>> {

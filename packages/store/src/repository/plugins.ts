@@ -964,16 +964,18 @@ export async function uninstallPlugin(
     });
 
     for (const cat of pluginCats) {
-      // 检查是否有非本插件来源的存活站点
-      const otherActiveSites = await repo.raw(
-        "SELECT 1 AS ok FROM sites WHERE (category_id = ? OR sub_category_id = ?) AND source != ? AND deleted_at IS NULL LIMIT 1",
-        [cat.id, cat.id, `plugin:${slug}`]
+      // 检查是否有非本插件来源的站点。回收站里的站点也算引用：直接 DELETE 分类
+      // 会在恢复站点时把它扔进「未分类」（schema 没有外键，甚至留下悬空 category_id）。
+      // 本插件来源的站点在上一步已软删、且用户明确要求 removeSites，不阻止清理。
+      const otherSites = await repo.raw(
+        "SELECT 1 AS ok FROM sites WHERE (category_id = ? OR sub_category_id = ?) AND source != ? LIMIT 1",
+        [cat.id, cat.id, `plugin:${slug}`],
       );
-      if (otherActiveSites.length > 0) {
-        // 如果用户在其中添加了其他存活站点，保留该分类并将 source 转为 api，避免误删用户数据
+      if (otherSites.length > 0) {
+        // 用户数据（含回收站）仍引用该分类，保留并把 source 转为 api，避免误删
         await repo.run("UPDATE categories SET source = 'api', updated_at = ? WHERE id = ?", [Date.now(), cat.id]);
       } else {
-        // 无其他存活站点，彻底删除分类
+        // 只有本插件的站点引用，彻底删除分类
         await repo.deleteCategory(String(cat.id));
         removedCategories++;
       }

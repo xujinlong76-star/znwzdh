@@ -192,11 +192,12 @@ describe("Taxonomy Phase 1: 多维标签治理与概念别名 (SKOS)", () => {
     expect(await repo.resolveTag("aigc")).toBeNull();
   });
 
-  it("listTagsWithCounts 只计存活站点：软删除与停用站点不进计数", async () => {
+  it("listTagsWithCounts 只计存活站点：软删除、停用与非 active 状态都不进计数", async () => {
     // 口径守卫：曾用裸 COUNT(st.site_id) 把软删除站点也算进引用计数
     // （dev 库实测「开源」报 123 而存活站点只有 3），chip 计数、TAG_LINK_MIN
-    // 渲染规则、sitemap 的 ≥5 门槛全部失真。计数必须与 search 候选集同口径：
-    // deleted_at IS NULL AND enabled。
+    // 渲染规则、sitemap 的 ≥5 门槛全部失真。计数必须与 catalog/sitemap 同口径：
+    // deleted_at IS NULL AND enabled AND status = 'active'——broken 站点的标签页
+    // 本身不可索引，计进来会把门槛撑过 5、提交软 404。
     const cat = (await repo.listCategories())[0]!;
     const doomed = await repo.createSite({
       url: "https://example.com/count-a",
@@ -220,7 +221,14 @@ describe("Taxonomy Phase 1: 多维标签治理与概念别名 (SKOS)", () => {
       status: "active",
       enabled: false,
     });
-    // 3 条关联：1 条随后软删除、1 条停用 → 存活计数应为 1
+    await repo.createSite({
+      url: "https://example.com/count-d",
+      title: "计数丁",
+      categoryId: cat.id,
+      tags: ["计数口径"],
+      status: "broken",
+    });
+    // 4 条关联：1 条随后软删除、1 条停用、1 条 broken → 存活计数应为 1
     await repo.deleteSite(doomed.id);
 
     const hit = (await repo.listTagsWithCounts()).find((t) => t.name === "计数口径");

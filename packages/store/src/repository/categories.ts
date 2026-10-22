@@ -228,7 +228,12 @@ export async function deleteCategory(repo: Repository, id: string): Promise<void
 
   // 3. 站点移入「未分类」而不是删除
   const fallback = await repo.ensureCategory("未分类", "api");
-  await repo.run("UPDATE sites SET category_id = ?, updated_at = ? WHERE category_id = ?", [fallback, now, id]);
+  // 搬走的站点子引用要一起清：被提升的后代已不是「未分类」的下级，留着就是父子错配
+  await repo.run(
+    "UPDATE sites SET category_id = ?, sub_category_id = NULL, updated_at = ? WHERE category_id = ?",
+    [fallback, now, id],
+  );
+  await repo.run("UPDATE sites SET sub_category_id = NULL, updated_at = ? WHERE sub_category_id = ?", [now, id]);
 
   // 4. 最后删除类目自身
   await repo.run("DELETE FROM categories WHERE id = ?", [id]);

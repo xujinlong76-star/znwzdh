@@ -3,32 +3,46 @@
     {
       "id": "cat-ai",
       "title": "AI 工具",
+      "slug": "ai-tools",
       "icon": "sparkles",
       "description": "大模型、AI 编程、生成式工具"
     },
     {
       "id": "cat-dev",
       "title": "开发运维",
+      "slug": "development-operations",
       "icon": "code",
       "description": "代码托管、包管理、部署与监控"
     },
     {
       "id": "cat-design",
       "title": "设计资源",
+      "slug": "design-resources",
       "icon": "palette",
       "description": "UI 设计、图片素材、配色与字体"
     },
     {
       "id": "cat-learn",
       "title": "学习教育",
+      "slug": "learning",
       "icon": "book",
       "description": "文档、教程、百科与课程"
     },
     {
       "id": "cat-life",
       "title": "生活服务",
+      "slug": "daily-life",
       "icon": "coffee",
       "description": "天气、地图、出行与购物"
+    },
+    {
+      "id": "cat-uncategorized",
+      "title": "未分类",
+      "slug": "uncategorized",
+      "icon": "folder",
+      "description": "待归类的站点兜底位置，不出现在导航与站点地图",
+      "sort": 999,
+      "source": "system"
     }
   ],
   "sites": [

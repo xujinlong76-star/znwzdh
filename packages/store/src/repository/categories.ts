@@ -13,6 +13,9 @@ import {
   type SiteRelation,
   type SiteStatus,
   type SkosConcept,
+  UNCATEGORIZED_CATEGORY_ID,
+  UNCATEGORIZED_CATEGORY_TITLE,
+  categorySlug,
   categoryToSkosConcept,
 } from "@navhub/core";
 import type {
@@ -51,10 +54,75 @@ import {
   toPgSql,
 } from "./dialect.ts";
 import type { Db } from "../driver.ts";
+import { chunkList, inPredicate } from "../sql-in.ts";
 
 export async function listCategories(repo: Repository): Promise<Category[]> {
   const rows = await repo.raw("SELECT * FROM categories ORDER BY sort ASC, title ASC", []);
   return rows.map(rowToCategory);
+}
+
+/**
+ * 有界分页读取类目。
+ *
+ * `listCategories()` 的全量口径要保留（SKOS 导出、快照构建都要整棵树），
+ * 但 HTTP 接口不能再无条件返回全表：类目树上线后是 154 行量级，
+ * 一旦治理失手就是几百行 × 每次请求。分页参数由路由层收窄后再进来。
+ *
+ * `parentId === null` → 只要根；字符串 → 只要该父的直接子级；
+ * 两者都不传 → 全树（再配 `level` 可按「根 / 非根」粗筛）。
+ */
+export async function listCategoriesPage(
+  repo: Repository,
+  filter: { limit?: number; offset?: number; parentId?: string | null; level?: number } = {}
+): Promise<{ items: Category[]; total: number; limit: number; offset: number }> {
+  const limit = Math.min(Math.max(Math.trunc(filter.limit ?? 200), 1), 500);
+  const offset = Math.max(Math.trunc(filter.offset ?? 0), 0);
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (filter.parentId === null) where.push("parent_id IS NULL");
+  else if (typeof filter.parentId === "string") {
+    where.push("parent_id = ?");
+    params.push(filter.parentId);
+  } else if (filter.level === 1) where.push("parent_id IS NULL");
+  else if (filter.level === 2) where.push("parent_id IS NOT NULL");
+  const whereSql = where.length ? " WHERE " + where.join(" AND ") : "";
+
+  const totalRows = await repo.raw(`SELECT COUNT(*) AS c FROM categories${whereSql}`, params);
+  const rows = await repo.raw(
+    `SELECT * FROM categories${whereSql} ORDER BY sort ASC, title ASC LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  );
+  return { items: rows.map(rowToCategory), total: Number(totalRows[0]?.c ?? 0), limit, offset };
+}
+
+/**
+ * 每个类目的存活站点数（一次聚合，取代调用方「翻 5 页 × 1000 站点再 JS 计数」）。
+ *
+ * 口径与展示层历史一致：**`status = 'active'` 且未进回收站**，
+ * 并且是**双指针并集**（sites.category_id ∪ sites.sub_category_id，
+ * 同一站点在同一类目只计一次）。broken/pending 不计入 —— 类目页本身
+ * 只列 active，把坏链算进「达标」判定会让页面显示「12 个站点」却只渲染 8 个。
+ * 这是过渡口径 —— 类目树改造后 sub_category_id 降级为只读镜像，
+ * 届时这里收敛为单指针 + 后代聚合，调用方无需改。
+ */
+export async function categorySiteCounts(repo: Repository): Promise<Array<{ categoryId: string; sites: number }>> {
+  const rows = await repo.raw(
+    `SELECT id AS categoryid, SUM(c) AS sites
+       FROM (
+             SELECT category_id AS id, COUNT(*) AS c FROM sites
+              WHERE deleted_at IS NULL AND status = 'active' GROUP BY category_id
+             UNION ALL
+             SELECT sub_category_id AS id, COUNT(*) AS c FROM sites
+              WHERE deleted_at IS NULL AND status = 'active' AND sub_category_id IS NOT NULL
+                AND sub_category_id <> category_id
+              GROUP BY sub_category_id
+           ) AS t
+      GROUP BY id`,
+    [],
+  );
+  return rows
+    .map((r) => ({ categoryId: String(r.categoryid), sites: Number(r.sites ?? 0) }))
+    .filter((r) => r.categoryId && r.categoryId !== "null");
 }
 
 export async function getCategory(repo: Repository, id: string): Promise<Category | null> {
@@ -63,12 +131,54 @@ export async function getCategory(repo: Repository, id: string): Promise<Categor
   return row ? rowToCategory(row) : null;
 }
 
+export async function getCategoryBySlug(repo: Repository, slug: string): Promise<Category | null> {
+  const norm = (slug ?? "").trim().toLowerCase();
+  if (!norm) return null;
+  const rows = await repo.raw("SELECT * FROM categories WHERE slug = ? LIMIT 1", [norm]);
+  const row = rows[0];
+  return row ? rowToCategory(row) : null;
+}
+
+/**
+ * 取一个全局未被占用的 slug。
+ *
+ * 冲突要判**全表**而不是判同父：URL 是 /category/{slug}，没有父级路径，
+ * 两个不同父下的同名类目会撞同一个 URL。「每父标题唯一」是另一条规矩
+ * （见 assertNoSiblingTitleClash），不能拿它当 slug 的作用域。
+ */
+async function reserveCategorySlug(repo: Repository, base: string): Promise<string> {
+  const root = base || "category";
+  let candidate = root;
+  // 到 -50 还撞不完说明同名堆积异常（例如回填脚本没跑），退回时间戳保证可用且不覆盖
+  for (let i = 2; i <= 50; i += 1) {
+    const rows = await repo.raw("SELECT id FROM categories WHERE slug = ? LIMIT 1", [candidate]);
+    if (!rows[0]) return candidate;
+    candidate = `${root}-${i}`;
+  }
+  return `${root}-${Date.now().toString(36)}`;
+}
+
+/** 同一父级下标题重名（trim 后精确比较，和将来那个 UNIQUE 索引同口径） */
+async function assertNoSiblingTitleClash(
+  repo: Repository,
+  parentId: string | null,
+  title: string,
+  exceptId?: string
+): Promise<void> {
+  const norm = (title ?? "").trim();
+  const rows = parentId
+    ? await repo.raw("SELECT id FROM categories WHERE parent_id = ? AND title = ? AND id <> ? LIMIT 1", [parentId, norm, exceptId ?? ""])
+    : await repo.raw("SELECT id FROM categories WHERE parent_id IS NULL AND title = ? AND id <> ? LIMIT 1", [norm, exceptId ?? ""]);
+  if (rows[0]) throw new Error(`同级下已存在名为「${norm}」的类目，请换名或改放不同父级`);
+}
+
 export async function createCategory(
   repo: Repository,
   input: {
     id?: string;
     title: string;
     titleEn?: string | null;
+    slug?: string | null;
     parentId?: string | null;
     icon?: string | null;
     description?: string | null;
@@ -85,17 +195,31 @@ export async function createCategory(
     if (!parent) throw new Error("父类目不存在: " + input.parentId);
     anchor = parent.anchor + "/" + id;
   }
+  const title = (input.title ?? "").trim();
+  await assertNoSiblingTitleClash(repo, input.parentId ?? null, title);
+  const explicitSlug = (input.slug ?? "").trim().toLowerCase();
+  let slug: string;
+  if (explicitSlug) {
+    // 显式 slug（registry 播种走这条路）撞名要报错而不是自动改名：
+    // URL 是外部资产，静默加 -2 会让「registry 里的 slug」和「库里的 slug」对不上。
+    const clash = await repo.raw("SELECT id FROM categories WHERE slug = ? LIMIT 1", [explicitSlug]);
+    if (clash[0]) throw new Error(`类目 slug「${explicitSlug}」已被占用`);
+    slug = explicitSlug;
+  } else {
+    slug = await reserveCategorySlug(repo, categorySlug(input.titleEn, title));
+  }
   const now = Date.now();
   const altLabels = JSON.stringify(input.altLabels ?? []);
   const relatedCategories = JSON.stringify(input.relatedCategories ?? []);
   await repo.run(
-    "INSERT INTO categories (id, anchor, parent_id, title, title_en, description, icon, enabled, sort, source, alt_labels, related_categories, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO categories (id, anchor, parent_id, title, title_en, slug, description, icon, enabled, sort, source, alt_labels, related_categories, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     [
       id,
       anchor,
       input.parentId ?? null,
-      input.title,
+      title,
       input.titleEn ?? null,
+      slug,
       input.description ?? null,
       input.icon ?? null,
       1,
@@ -119,6 +243,34 @@ export async function ensureCategory(repo: Repository, title: string, source?: s
   return created.id;
 }
 
+/**
+ * 「未分类」兜底类目：按固定 id 取，缺则用该 id 建。
+ *
+ * 为什么不复用 `ensureCategory("未分类")`：那条路按标题匹配，
+ * 一旦有人手工建了同名类目或标题被改（如加上「（待归类）」），
+ * 兜底就会指向一个随时可被删除/改名的普通类目。
+ *
+ * `source = "system"` 是刻意的：
+ *   - 不能是 `seed`/`null` —— 那属于快照托管集（storage.ts 的 SNAPSHOT_MANAGED_SOURCES），
+ *     前端保存导航时快照里没有它 = 删除；
+ *   - 不能是 `plugin:*` —— 会被启动清扫当孤儿删掉。
+ * 两者都会让兜底类目在某个瞬间消失，站点随即落回悬空 category_id。
+ */
+export async function ensureUncategorized(repo: Repository): Promise<string> {
+  const existing = await repo.getCategory(UNCATEGORIZED_CATEGORY_ID);
+  if (existing) return existing.id;
+  const created = await repo.createCategory({
+    id: UNCATEGORIZED_CATEGORY_ID,
+    title: UNCATEGORIZED_CATEGORY_TITLE,
+    titleEn: "Uncategorized",
+    description: "待归类的站点兜底位置，不出现在导航与站点地图",
+    icon: "folder",
+    sort: 999,
+    source: "system",
+  });
+  return created.id;
+}
+
 export async function moveCategory(repo: Repository, id: string, parentId: string | null): Promise<Category | null> {
   const existing = await repo.getCategory(id);
   if (!existing) return null;
@@ -130,6 +282,11 @@ export async function moveCategory(repo: Repository, id: string, parentId: strin
     if (parent.anchor === existing.anchor || parent.anchor.startsWith(existing.anchor + "/")) {
       throw new Error("不能把类目移动到它的子类目下面（会成环）");
     }
+  }
+  // 移动同样受「每父唯一标题」约束：把子树挪进一个已有同名子级的父级，
+  // 会把重名带进目标层，之后那个 UNIQUE 索引就再也建不上了。
+  if ((existing.parentId ?? null) !== (parentId ?? null)) {
+    await assertNoSiblingTitleClash(repo, parentId ?? null, existing.title, id);
   }
   const newAnchor = parent ? parent.anchor + "/" + id : id;
   if (existing.anchor !== newAnchor) {
@@ -160,21 +317,34 @@ export async function mergeCategories(repo: Repository, sourceId: string, target
   return repo.withTransaction(async () => {
 
   const subtree = await repo.raw(
-    "SELECT id FROM categories WHERE anchor = ? OR anchor LIKE ?",
+    "SELECT id, anchor FROM categories WHERE anchor = ? OR anchor LIKE ?",
     [source.anchor, source.anchor + "/%"],
   );
+  // 目标在源子树里 = 把父类目并进自己的孙子：子树连目标一起删掉，
+  // 站点会指向已删除的类目行（schema 没有外键，悬空不报错）。
+  if (subtree.some((r) => String(r.id) === targetId)) {
+    throw new Error("目标类目不能是源类目本身或它的子类目");
+  }
   const ids = subtree.map((r) => String(r.id));
   const now = Date.now();
+  // 集合式 UPDATE，且**不筛 deleted_at**：回收站里的站点同样带着 category_id，
+  // 按「存活站点」搬（旧实现走 listSites，还受默认 limit 100 截断）会让
+  // 被删子树里的回收站行与 100 名之后的行留下悬空 category_id。
   let moved = 0;
-  for (const cid of ids) {
-    const sites = await repo.listSites({ categoryId: cid });
-    for (const s of sites) {
-      await repo.run(
-        "UPDATE sites SET category_id = ?, sub_category_id = NULL, updated_at = ? WHERE id = ?",
-        [targetId, now, s.id],
-      );
-      moved++;
-    }
+  for (const chunk of chunkList(ids)) {
+    const byCategory = inPredicate("category_id", chunk);
+    const counted = await repo.raw(`SELECT COUNT(*) AS c FROM sites WHERE ${byCategory.sql}`, byCategory.params);
+    moved += Number(counted[0]?.c ?? 0);
+    await repo.run(
+      `UPDATE sites SET category_id = ?, sub_category_id = NULL, updated_at = ? WHERE ${byCategory.sql}`,
+      [targetId, now, ...byCategory.params],
+    );
+    // 挂在别处、但子指针指向被并入类目的行：子指针必须清掉，否则同样悬空
+    const bySub = inPredicate("sub_category_id", chunk);
+    await repo.run(`UPDATE sites SET sub_category_id = NULL, updated_at = ? WHERE ${bySub.sql}`, [
+      now,
+      ...bySub.params,
+    ]);
   }
   for (const cid of ids) await repo.run("DELETE FROM categories WHERE id = ?", [cid]);
   return { movedSites: moved, removedCategories: ids.length };
@@ -184,15 +354,29 @@ export async function mergeCategories(repo: Repository, sourceId: string, target
 export async function updateCategory(
   repo: Repository,
   id: string,
-  patch: Partial<Pick<Category, "title" | "titleEn" | "icon" | "description" | "enabled" | "sort" | "altLabels" | "relatedCategories">>
+  patch: Partial<Pick<Category, "title" | "titleEn" | "slug" | "icon" | "description" | "enabled" | "sort" | "altLabels" | "relatedCategories">>
 ): Promise<Category | null> {
   const existing = await repo.getCategory(id);
   if (!existing) return null;
+  // 改名不自动改 slug：slug 已经发出去过（导航、sitemap、外链），
+  // 跟着标题重写等于把所有入链打成 404。要换 URL 就显式传 slug，由这里做冲突检查。
+  if (patch.title !== undefined && patch.title.trim() !== existing.title) {
+    await assertNoSiblingTitleClash(repo, existing.parentId ?? null, patch.title, id);
+  }
   const sets: string[] = ["updated_at = ?"];
   const params: unknown[] = [Date.now()];
   const assign = (col: string, v: unknown) => { sets.push(col + " = ?"); params.push(v); };
-  if (patch.title !== undefined) assign("title", patch.title);
+  if (patch.title !== undefined) assign("title", patch.title.trim());
   if (patch.titleEn !== undefined) assign("title_en", patch.titleEn);
+  if (patch.slug !== undefined) {
+    const nextSlug = (patch.slug ?? "").trim().toLowerCase();
+    if (!nextSlug) throw new Error("类目 slug 不能为空");
+    if (nextSlug !== existing.slug) {
+      const clash = await repo.raw("SELECT id FROM categories WHERE slug = ? AND id <> ? LIMIT 1", [nextSlug, id]);
+      if (clash[0]) throw new Error(`类目 slug「${nextSlug}」已被占用`);
+    }
+    assign("slug", nextSlug);
+  }
   if (patch.icon !== undefined) assign("icon", patch.icon);
   if (patch.description !== undefined) assign("description", patch.description);
   if (patch.enabled !== undefined) assign("enabled", patch.enabled ? 1 : 0);
@@ -205,6 +389,7 @@ export async function updateCategory(
 }
 
 export async function deleteCategory(repo: Repository, id: string): Promise<void> {
+  if (id === UNCATEGORIZED_CATEGORY_ID) throw new Error("「未分类」是兜底类目，不能删除");
   const existing = await repo.getCategory(id);
   if (!existing) return;
   await repo.withTransaction(async () => {
@@ -227,7 +412,7 @@ export async function deleteCategory(repo: Repository, id: string): Promise<void
   }
 
   // 3. 站点移入「未分类」而不是删除
-  const fallback = await repo.ensureCategory("未分类", "api");
+  const fallback = await repo.ensureUncategorized();
   // 搬走的站点子引用要一起清：被提升的后代已不是「未分类」的下级，留着就是父子错配
   await repo.run(
     "UPDATE sites SET category_id = ?, sub_category_id = NULL, updated_at = ? WHERE category_id = ?",

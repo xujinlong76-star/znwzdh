@@ -30,7 +30,7 @@ import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface TaxonomyProposal {
   id: string
-  kind: 'categorization_mismatch' | 'tag_consolidation' | 'zero_result_gap' | 'facet_gap'
+  kind: 'categorization_mismatch' | 'tag_consolidation' | 'zero_result_gap' | 'facet_gap' | 'category_gap'
   targetId: string
   targetTitle?: string
   currentValue?: string
@@ -41,6 +41,12 @@ interface TaxonomyProposal {
   meta?: Record<string, unknown>
   createdAt: number
   appliedAt?: number | null
+}
+
+interface CategoryOption {
+  id: string
+  title: string
+  slug?: string | null
 }
 
 const KIND_META: Record<TaxonomyProposal['kind'], { label: string; icon: any; color: string; bg: string }> = {
@@ -68,6 +74,12 @@ const KIND_META: Record<TaxonomyProposal['kind'], { label: string; icon: any; co
     color: 'text-purple-600 dark:text-purple-400',
     bg: 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800',
   },
+  category_gap: {
+    label: '类目缺口',
+    icon: FolderTree,
+    color: 'text-sky-600 dark:text-sky-400',
+    bg: 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800',
+  },
 }
 
 export default function AdminTaxonomyPage() {
@@ -79,6 +91,9 @@ export default function AdminTaxonomyPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+  // category_gap 采纳时由审核人选定父级：一级根的数量是编辑决策，不由提案决定
+  const [roots, setRoots] = useState<CategoryOption[]>([])
+  const [gapParent, setGapParent] = useState<Record<string, string>>({})
 
   const showFeedback = (type: 'success' | 'error', message: string) => {
     setFeedback({ type, message })
@@ -107,6 +122,13 @@ export default function AdminTaxonomyPage() {
     void loadProposals()
   }, [loadProposals])
 
+  useEffect(() => {
+    // 只取根：/api/categories/page 有界，避免整棵树进浏览器包
+    hubGet<{ items: CategoryOption[] }>('/api/categories/page?parentId=null&limit=500')
+      .then((res) => setRoots((res.items ?? []).filter((c) => c.id !== 'cat-uncategorized')))
+      .catch(() => setRoots([]))
+  }, [])
+
   const handleRunAudit = async () => {
     setAuditing(true)
     try {
@@ -124,11 +146,14 @@ export default function AdminTaxonomyPage() {
     }
   }
 
-  const handleApplySingle = async (id: string) => {
+  const handleApplySingle = async (proposal: TaxonomyProposal) => {
+    const payload =
+      proposal.kind === 'category_gap' ? { parentId: gapParent[proposal.id] || null } : undefined
     try {
       const res = await hubSend<{ ok: boolean; message: string }>(
-        `/api/taxonomy/proposals/${encodeURIComponent(id)}/apply`,
+        `/api/taxonomy/proposals/${encodeURIComponent(proposal.id)}/apply`,
         'POST',
+        payload,
       )
       showFeedback('success', res.message || '提案采纳成功')
       await loadProposals()
@@ -258,6 +283,7 @@ export default function AdminTaxonomyPage() {
           <div className="flex items-center rounded-lg border bg-background p-1 text-xs overflow-x-auto no-scrollbar touch-pan-x shrink-0">
             {[
               { id: 'all', label: '全部类型' },
+              { id: 'category_gap', label: '类目缺口' },
               { id: 'tag_consolidation', label: '标签收敛' },
               { id: 'categorization_mismatch', label: '跨类迁移' },
               { id: 'zero_result_gap', label: '零结果发现' },
@@ -430,24 +456,45 @@ export default function AdminTaxonomyPage() {
 
                   {/* 右侧动作按钮 */}
                   {proposal.status === 'pending' ? (
-                    <div className="flex items-center gap-2 self-end md:self-center">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleDismissSingle(proposal.id)}
-                        className="text-muted-foreground hover:text-red-600 hover:bg-red-50 text-xs h-8 px-2.5"
-                      >
-                        <X className="w-3.5 h-3.5 mr-1" />
-                        驳回
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleApplySingle(proposal.id)}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-3"
-                      >
-                        <Check className="w-3.5 h-3.5 mr-1" />
-                        采纳
-                      </Button>
+                    <div className="flex flex-col items-end gap-2 self-end md:self-center">
+                      {proposal.kind === 'category_gap' && (
+                        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span>挂到</span>
+                          <select
+                            aria-label={`为提案 ${proposal.id} 选择父类目`}
+                            value={gapParent[proposal.id] ?? ''}
+                            onChange={(e) => setGapParent((prev) => ({ ...prev, [proposal.id]: e.target.value }))}
+                            className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                          >
+                            <option value="">选择一级类目…</option>
+                            {roots.map((r) => (
+                              <option key={r.id} value={r.id}>
+                                {r.title}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDismissSingle(proposal.id)}
+                          className="text-muted-foreground hover:text-red-600 hover:bg-red-50 text-xs h-8 px-2.5"
+                        >
+                          <X className="w-3.5 h-3.5 mr-1" />
+                          驳回
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => handleApplySingle(proposal)}
+                          disabled={proposal.kind === 'category_gap' && !gapParent[proposal.id]}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-3"
+                        >
+                          <Check className="w-3.5 h-3.5 mr-1" />
+                          采纳
+                        </Button>
+                      </div>
                     </div>
                   ) : (
                     <div className="text-xs text-muted-foreground flex items-center gap-1 self-end md:self-center">

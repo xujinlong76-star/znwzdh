@@ -6,8 +6,20 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
+import { assertCategoryName } from "@navhub/core";
 import type { AppContext } from "../context.ts";
 import { badRequest, created, notFound } from "./shared.ts";
+
+/**
+ * 写入层守卫报错的统一出口。
+ *
+ * 命名规则（宽度/禁用轴）、同级重名、slug 撞库都从仓储层或 assertCategoryName
+ * 抛出。它们本质是「客户端输入不合规」，必须是 400 而不是 500 —— 之前
+ * move/merge 已经这么处理，创建/改名漏了。
+ */
+function guardMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -18,11 +30,55 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
 
   /**
    * 全量类目列表（公开可读，支持 60s 缓存与 ETag 协商）
+   *
+   * 无分页 = 全表；SKOS 导出与快照构建确实需要整棵树，所以这个口径保留。
+   * 只要「一页 + 总数」的调用方走 /api/categories/page。
    */
   app.get(
     "/api/categories",
     { config: { scope: "public", cache: { maxAge: 60, etag: true } } },
     async () => ctx.repo.listCategories()
+  );
+
+  /**
+   * 分页读取类目（公开）。limit 默认 200、上限 500，超界值收敛而不是报错，
+   * 免得调用方把 0 或负数传进来拿到一个 500。
+   *
+   * `parentId=null`（或空串）= 只要根：查询串里只有字符串，所以显式归一化。
+   */
+  app.get(
+    "/api/categories/page",
+    { config: { scope: "public", cache: { maxAge: 60, etag: true } } },
+    async (req, reply) => {
+      const query = z
+        .object({
+          limit: z.coerce.number().optional(),
+          offset: z.coerce.number().optional(),
+          level: z.coerce.number().optional(),
+          parentId: z
+            .string()
+            .transform((v) => (v === "" || v === "null" ? null : v))
+            .optional(),
+        })
+        .safeParse(req.query ?? {});
+      if (!query.success) {
+        return badRequest(reply, "参数无效", query.error.issues);
+      }
+      return ctx.repo.listCategoriesPage(query.data);
+    }
+  );
+
+  /**
+   * 类目 → 存活站点数（一次 GROUP BY）。
+   *
+   * 存在的理由：此前展示层要数「每个类目有几个站点」只能翻 /api/sites
+   * （5 页 × 1000 条）在前端 JS 里累加，超过 5000 站点静默少算，
+   * 而达标判定（进不进导航/站点地图）正是用这个数。
+   */
+  app.get(
+    "/api/categories/counts",
+    { config: { scope: "public", cache: { maxAge: 60, etag: true } } },
+    async () => ({ counts: await ctx.repo.categorySiteCounts() })
   );
 
   /**
@@ -32,10 +88,26 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     "/api/categories/skos",
     { config: { scope: "public", cache: { maxAge: 300, etag: true } } },
     async (req) => {
-      const origin = `${req.protocol}://${req.hostname}/categories/`;
+      const origin = `${req.protocol}://${req.hostname}/category/`;
       return ctx.repo.exportSkosConcepts(origin);
     }
   );
+
+  /**
+   * 按 slug 取单个类目（公开）。
+   *
+   * slug 是类目的对外标识（URL `/category/{slug}`），uuid 留在库里当内部主键。
+   * 这条口子单独存在，是为了让调用方不必先拉全表再自己找——`/api/categories/:id`
+   * 按 id 查，混用两种标识只会让两边的 404 语义互相污染。
+   */
+  app.get("/api/categories/by-slug/:slug", { config: { scope: "public", cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
+    const { slug } = req.params as { slug: string };
+    const cat = await ctx.repo.getCategoryBySlug(slug);
+    if (!cat) {
+      return notFound(reply, "类目不存在");
+    }
+    return cat;
+  });
 
   /**
    * 获取单个类目详情
@@ -62,7 +134,10 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   });
 
   /**
-   * 创建类目
+   * 创建类目。
+   *
+   * slug 由服务端按英文名/标题生成，**不接受客户端传入**：URL 是对外资产，
+   * registry 播种走仓储层显式传 slug，HTTP 这条口子上没有那个映射表可校验。
    */
   app.post("/api/categories", { config: { scope: "write" } }, async (req, reply) => {
     const body = z
@@ -82,7 +157,18 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       return badRequest(reply, "参数无效", body.error.issues);
     }
 
-    const cat = await ctx.repo.createCategory({ ...body.data, source: "api" });
+    try {
+      assertCategoryName({ title: body.data.title, titleEn: body.data.titleEn });
+    } catch (err) {
+      return badRequest(reply, guardMessage(err));
+    }
+
+    let cat;
+    try {
+      cat = await ctx.repo.createCategory({ ...body.data, source: "api" });
+    } catch (err) {
+      return badRequest(reply, guardMessage(err));
+    }
     await ctx.repo.audit({
       ip: req.ip,
       actor: req.auth.actor,
@@ -111,6 +197,9 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
 
   /**
    * 部分更新类目属性（标题/图标/描述/状态/排序）
+   *
+   * 改名不重写 slug（外链已发出），slug 也不可从这里改；命名规则只在
+   * 动了 title / titleEn 时校验，改图标描述不该被命名规则挡住。
    */
   app.patch("/api/categories/:id", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
@@ -120,7 +209,27 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     }
 
     const before = await ctx.repo.getCategory(id);
-    const cat = await ctx.repo.updateCategory(id, body.data);
+    if (!before) {
+      return notFound(reply, "类目不存在");
+    }
+
+    if (body.data.title !== undefined || body.data.titleEn !== undefined) {
+      try {
+        assertCategoryName({
+          title: body.data.title ?? before.title,
+          titleEn: body.data.titleEn === undefined ? before.titleEn : body.data.titleEn,
+        });
+      } catch (err) {
+        return badRequest(reply, guardMessage(err));
+      }
+    }
+
+    let cat;
+    try {
+      cat = await ctx.repo.updateCategory(id, body.data);
+    } catch (err) {
+      return badRequest(reply, guardMessage(err));
+    }
     if (!cat) {
       return notFound(reply, "类目不存在");
     }

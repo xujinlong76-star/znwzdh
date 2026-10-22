@@ -3,8 +3,11 @@ import {
   auditSiteCategorization,
   auditTagConsolidation,
   auditZeroResultGaps,
+  categoryGapProposalId,
   levenshteinDistance,
+  normalizeCategoryKey,
   normalizeTagKey,
+  resolveCategoryTitleSuggestion,
 } from "../src/taxonomy-governance.ts";
 
 describe("Taxonomy Governance Core Algorithms", () => {
@@ -93,5 +96,37 @@ describe("Taxonomy Governance Core Algorithms", () => {
     expect(proposals[0].kind).toBe("categorization_mismatch");
     expect(proposals[0].suggestedValue).toBe("开发运维");
     expect(proposals[0].confidence).toBeGreaterThan(0.7);
+  });
+});
+
+describe("类目名解析（AI / MCP 归类闸门的地基）", () => {
+  const categories = [
+    { id: "cat-ai", title: "AI 工具", altLabels: ["人工智能", "大模型"] },
+    { id: "cat-frontend", title: "前端开发", altLabels: [] },
+    { id: "lang-1", title: "语言", altLabels: [] },
+    { id: "lang-2", title: "语言", altLabels: [] },
+  ];
+
+  it("标题与 altLabel 都能命中，且忽略大小写/空格/连字符", () => {
+    expect(resolveCategoryTitleSuggestion("AI工具", categories)).toEqual({ status: "unique", categoryId: "cat-ai" });
+    expect(resolveCategoryTitleSuggestion("大模型", categories)).toEqual({ status: "unique", categoryId: "cat-ai" });
+    expect(resolveCategoryTitleSuggestion("前端开发", categories)).toEqual({ status: "unique", categoryId: "cat-frontend" });
+  });
+
+  it("重名不再静默挑一个：交人工，并同时给出全部候选", () => {
+    const r = resolveCategoryTitleSuggestion("语言", categories);
+    expect(r.status).toBe("ambiguous");
+    expect(r.status === "ambiguous" && r.categoryIds.sort()).toEqual(["lang-1", "lang-2"]);
+  });
+
+  it("空名与未收录名都算未命中（调用方据此产提案，而不是建根）", () => {
+    expect(resolveCategoryTitleSuggestion("   ", categories)).toEqual({ status: "none" });
+    expect(resolveCategoryTitleSuggestion("会议纪要", categories)).toEqual({ status: "none" });
+  });
+
+  it("缺口提案 id 稳定：同一个名字的多种写法归一为一条", () => {
+    expect(categoryGapProposalId(" AI 工具 ")).toBe(categoryGapProposalId("AI工具"));
+    expect(categoryGapProposalId("会议纪要")).toMatch(/^category_gap_/);
+    expect(normalizeCategoryKey("Dev-Tools")).toBe("devtools");
   });
 });

@@ -179,6 +179,13 @@ export interface Category {
   parentId: Id | null;
   title: string;
   titleEn?: string | null;
+  /**
+   * URL 标识（/category/{slug}，全局唯一）。
+   *
+   * 可空是过渡口径：历史行由启动期 migrateCategorySlugs 回填，
+   * 回填失败时 /category/{id} 的 UUID 形态继续可用并由路由 301 到新形态。
+   */
+  slug?: string | null;
   description?: string | null;
   icon?: string | null;
   enabled: boolean;

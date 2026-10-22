@@ -1,8 +1,12 @@
 import type { Repository } from "../repository.ts";
 import {
+  UNCATEGORIZED_CATEGORY_ID,
+  UNCATEGORIZED_CATEGORY_TITLE,
+  assertCategoryName,
   auditSiteCategorization,
   auditTagConsolidation,
   auditZeroResultGaps,
+  categoryGapProposalId,
   type TaxonomyProposal,
 } from "@navhub/core";
 import { rowToTaxonomyProposal, slugify } from "./dialect.ts";
@@ -59,6 +63,71 @@ export async function saveTaxonomyProposals(
   }
 
   return savedCount;
+}
+
+/**
+ * 记一条「类目缺口」提案（AI / MCP / 投稿建议了一个树里不存在的类目名）。
+ *
+ * 替代的是旧行为：解析不到就 `createCategory` 建一个**根**类目。
+ * 那条口子是层级坍塌的主要来源之一 —— 模型每次自由发挥都往树顶加一根新柱子，
+ * 装包时代因此长到 106 个平铺根。现在站点落「未分类」，建树的动作交给人工采纳。
+ *
+ * 幂等：同名（忽略大小写/空格/连字符）只有一条提案，重复出现累加 `seenCount`
+ * 并把站点补进 `meta.siteIds`（采纳时一次性回填）。已驳回/已采纳的行不动 ——
+ * 那是人工决议。
+ */
+export async function recordCategoryGap(
+  repo: Repository,
+  input: {
+    title: string;
+    siteId?: string;
+    siteUrl?: string;
+    source: string;
+    /** 树里有多个同名类目：既产缺口提案，也说明这批类目该合并 */
+    ambiguousCategoryIds?: string[];
+    reasonNote?: string;
+  }
+): Promise<{ proposalId: string; seenCount: number }> {
+  const title = (input.title ?? "").trim();
+  const id = categoryGapProposalId(title);
+  const existing = await getTaxonomyProposal(repo, id);
+  if (existing && existing.status !== "pending") {
+    return { proposalId: id, seenCount: Number(existing.meta?.seenCount ?? 1) };
+  }
+  const priorSiteIds = Array.isArray(existing?.meta?.siteIds) ? (existing!.meta!.siteIds as string[]) : [];
+  const siteIds = [...new Set([...priorSiteIds, ...(input.siteId ? [input.siteId] : [])])].slice(0, 50);
+  const seenCount = Number(existing?.meta?.seenCount ?? 0) + 1;
+  const ambiguous = Array.isArray(existing?.meta?.ambiguousCategoryIds)
+    ? (existing!.meta!.ambiguousCategoryIds as string[])
+    : (input.ambiguousCategoryIds ?? []);
+
+  await saveTaxonomyProposals(repo, [
+    {
+      id,
+      kind: "category_gap",
+      targetId: title.toLowerCase(),
+      targetTitle: title,
+      currentValue: UNCATEGORIZED_CATEGORY_TITLE,
+      suggestedValue: title,
+      // 反复出现 = 真需求；一次性幻觉 = 低置信。上限 0.9：建树始终要人工点头
+      confidence: Math.min(0.9, 0.5 + seenCount * 0.1),
+      reason:
+        `${input.source} 建议新建类目「${title}」，现树中没有唯一匹配（第 ${seenCount} 次）。` +
+        `站点已落「未分类」，请判定：在某个一级根下建子类目，或改挂现有类目。` +
+        (ambiguous.length > 0 ? `注意：树里已有 ${ambiguous.length} 个同名类目，属合并候选。` : "") +
+        (input.reasonNote ? ` ${input.reasonNote}` : ""),
+      status: "pending",
+      meta: {
+        seenCount,
+        siteIds,
+        source: input.source,
+        siteUrl: input.siteUrl ?? null,
+        ambiguousCategoryIds: ambiguous,
+      },
+      createdAt: existing?.createdAt ?? Date.now(),
+    },
+  ]);
+  return { proposalId: id, seenCount };
 }
 
 /**
@@ -120,10 +189,23 @@ export async function applyTaxonomyProposal(
   repo: Repository,
   id: string,
   actor = "admin",
+  overrides?: { parentId?: string | null; titleEn?: string | null; icon?: string | null }
 ): Promise<{ ok: boolean; message: string; proposal: TaxonomyProposal }> {
-  const proposal = await getTaxonomyProposal(repo, id);
+  let proposal = await getTaxonomyProposal(repo, id);
   if (!proposal) {
     throw new Error(`治理提案不存在: ${id}`);
+  }
+  // category_gap 的「建在哪、英文名/图标是什么」由审核人在采纳时补齐。
+  // 先写回 meta 再执行：这样审计里看到的提案就是真正落地的那一份。
+  if (overrides && proposal.status !== "applied") {
+    const merged = {
+      ...proposal.meta,
+      ...(overrides.parentId !== undefined ? { parentId: overrides.parentId } : {}),
+      ...(overrides.titleEn !== undefined ? { titleEn: overrides.titleEn } : {}),
+      ...(overrides.icon !== undefined ? { icon: overrides.icon } : {}),
+    };
+    await repo.run("UPDATE taxonomy_proposals SET meta = ? WHERE id = ?", [JSON.stringify(merged), id]);
+    proposal = (await getTaxonomyProposal(repo, id))!;
   }
   if (proposal.status === "applied") {
     return { ok: true, message: "该提案已处于采纳状态", proposal };
@@ -169,6 +251,33 @@ export async function applyTaxonomyProposal(
     const tagName = proposal.suggestedValue;
     await repo.upsertTag(tagName, slugify(tagName), "topic");
     actionMessage = `已将未收录热词 "${tagName}" 扩充为系统领域标签`;
+  } else if (proposal.kind === "category_gap") {
+    const title = proposal.suggestedValue;
+    const titleEn = typeof proposal.meta?.titleEn === "string" ? proposal.meta.titleEn : null;
+    const icon = typeof proposal.meta?.icon === "string" ? proposal.meta.icon : null;
+    const parentId = typeof proposal.meta?.parentId === "string" ? proposal.meta.parentId : null;
+    // 必须挂在某个父级下：一级根的数量是编辑决策（新树 18 根），不能由提案随手加柱子。
+    // 真要新增一级根，走类目管理页 —— 那里是显式的人工动作。
+    if (!parentId) {
+      throw new Error("该提案需要先指定父类目（meta.parentId）：站点只挂子类目，新增一级根请走类目管理");
+    }
+    assertCategoryName({ title, titleEn });
+    const parent = await repo.getCategory(parentId);
+    if (!parent) {
+      throw new Error(`父类目不存在: ${parentId}`);
+    }
+    const created = await repo.createCategory({ title, titleEn, icon, parentId, source: "api" });
+    const siteIds = Array.isArray(proposal.meta?.siteIds) ? (proposal.meta.siteIds as string[]) : [];
+    let reassigned = 0;
+    for (const siteId of siteIds) {
+      const site = await repo.getSite(siteId);
+      // 只搬仍落在「未分类」的站点：审核期间人工可能已经单独归好类，不能覆盖
+      if (site && site.categoryId === UNCATEGORIZED_CATEGORY_ID) {
+        await repo.updateSite(siteId, { categoryId: created.id });
+        reassigned += 1;
+      }
+    }
+    actionMessage = `已在「${parent.title}」下新建子类目「${created.title}」，回填 ${reassigned}/${siteIds.length} 个站点`;
   } else {
     actionMessage = `已标记采纳治理提案 (${proposal.kind})`;
   }

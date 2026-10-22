@@ -12,9 +12,22 @@ export type TaxonomyProposalKind =
   | "categorization_mismatch"
   | "tag_consolidation"
   | "zero_result_gap"
-  | "facet_gap";
+  | "facet_gap"
+  | "category_gap";
 
 export type TaxonomyProposalStatus = "pending" | "applied" | "dismissed";
+
+/**
+ * 「未分类」兜底类目的固定 id。
+ *
+ * 它此前是懒创建的：`ensureCategory("未分类")` 按标题匹配，谁先触发谁建，
+ * 于是没有图标/描述/排序，`sort` 挤在默认 0，也不在任何种子数据里 ——
+ * 删掉类目、AI 归类失败、插件卸载的站点全都往它身上落。
+ * 固定 id 之后它成为第一个「有主」的系统类目：显式种子、可从清扫中豁免、
+ * 并按 slug 从导航与 sitemap 排除。
+ */
+export const UNCATEGORIZED_CATEGORY_ID = "cat-uncategorized";
+export const UNCATEGORIZED_CATEGORY_TITLE = "未分类";
 
 export interface TaxonomyProposal {
   id: string;
@@ -70,6 +83,50 @@ export function levenshteinDistance(a: string, b: string): number {
  */
 export function normalizeTagKey(tag: string): string {
   return tag.trim().toLowerCase().replace(/[\-_.\s]+/g, "");
+}
+
+/**
+ * 类目名的匹配键：与标签同口径（忽略大小写、空格与连字符）。
+ *
+ * 「AI 工具」和「AI工具」是同一个概念；slug 化与去重都靠它。
+ */
+export function normalizeCategoryKey(title: string): string {
+  return normalizeTagKey(title ?? "");
+}
+
+/** AI / MCP 建议的类目名在现树里的解析结果 */
+export type CategoryTitleResolution =
+  | { status: "unique"; categoryId: string }
+  | { status: "none" }
+  | { status: "ambiguous"; categoryIds: string[] };
+
+/**
+ * 把模型给的类目名解析到已有类目：先标题、再 SKOS altLabel，要求唯一命中。
+ *
+ * 为什么不返回「第一个匹配」：标题历史上不唯一（实测「语言」×3），
+ * 静默挑一个会让「AI 归类」的结果取决于存储顺序。歧义时交人工裁决，
+ * 调用方拿 ambiguous 去产提案（同名的两个类目本身也是合并候选）。
+ */
+export function resolveCategoryTitleSuggestion(
+  title: string,
+  categories: Array<{ id: string; title: string; altLabels?: string[] }>,
+): CategoryTitleResolution {
+  const key = normalizeCategoryKey(title);
+  if (!key) return { status: "none" };
+  const hits = new Set<string>();
+  for (const c of categories) {
+    if (normalizeCategoryKey(c.title) === key || (c.altLabels ?? []).some((a) => normalizeCategoryKey(a) === key)) {
+      hits.add(c.id);
+    }
+  }
+  if (hits.size === 0) return { status: "none" };
+  if (hits.size > 1) return { status: "ambiguous", categoryIds: [...hits] };
+  return { status: "unique", categoryId: [...hits][0]! };
+}
+
+/** category_gap 提案的稳定 id：同一个建议名在队列里只有一条，重复出现累加 seenCount */
+export function categoryGapProposalId(title: string): string {
+  return `category_gap_${encodeURIComponent(normalizeCategoryKey(title))}`;
 }
 
 /**

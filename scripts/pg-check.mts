@@ -1,5 +1,6 @@
 
 import { loadConfig, createContext } from "../apps/api/src/index.ts";
+import { cleanupOrphanPluginCategories, migrateCategorySlugs } from "../packages/store/src/migrate.ts";
 
 // 本脚本会**清库**（下面 DELETE FROM sites/categories/... 是无条件的），
 // 所以目标库必须是显式声明的测试库。
@@ -129,6 +130,79 @@ await ctx.repo.recordEvent("search", { query: "天气" });
 const ev = await db.query("SELECT count(*)::int AS c FROM events");
 const au = await db.query("SELECT count(*)::int AS c FROM audit_logs");
 check("审计与事件落库", Number((ev.rows[0] as any).c) > 0 && Number((au.rows[0] as any).c) > 0);
+
+// 13) 类目计数聚合（GET /api/categories/counts 的实现，双指针并集）
+const countCat = await ctx.repo.createCategory({ id: "pg-cat-count", title: "PG 计数类目" });
+const otherCat = await ctx.repo.createCategory({ id: "pg-cat-other", title: "PG 计数类目二" });
+await ctx.repo.createSite({ url: "https://count-pg-1.example.com", title: "计数站点一", categoryId: countCat.id });
+await ctx.repo.createSite({ url: "https://count-pg-2.example.com", title: "计数站点二", categoryId: countCat.id, subCategoryId: otherCat.id });
+// 主副指针同类目：只计一次
+await ctx.repo.createSite({ url: "https://count-pg-3.example.com", title: "计数站点三", categoryId: countCat.id, subCategoryId: countCat.id });
+await ctx.repo.createSite({ url: "https://count-pg-4.example.com", title: "计数站点四", categoryId: countCat.id, status: "broken" });
+const cnt = new Map((await ctx.repo.categorySiteCounts()).map((r) => [r.categoryId, r.sites]));
+check(
+  "类目计数：双指针并集、同指针去重、只算 active 未删",
+  cnt.get(countCat.id) === 3 && cnt.get(otherCat.id) === 1 && !cnt.has("pg-cat"),
+  JSON.stringify([...cnt]),
+);
+
+// 14) 类目分页有界
+const page1 = await ctx.repo.listCategoriesPage({ limit: 2, offset: 0 });
+check("类目分页：limit 生效并回 total", page1.items.length === 2 && page1.total === 4 && page1.limit === 2, `total=${page1.total}`);
+const page2 = await ctx.repo.listCategoriesPage({ limit: 2, offset: 2 });
+check("类目分页：offset 翻页不重不漏", page2.items.length === 2 && !page1.items.some((c) => page2.items.some((d) => d.id === c.id)));
+const rootPage = await ctx.repo.listCategoriesPage({ parentId: null });
+check("类目分页：parentId=null 只出根", rootPage.items.every((c) => !c.parentId) && rootPage.total === 3, `total=${rootPage.total}`);
+
+// 15) 兜底类目在 PG 上同样是「清扫打不掉」的系统类目
+const unc = await ctx.repo.ensureUncategorized();
+const uncCat = await ctx.repo.getCategory(unc);
+check("未分类：固定 id + source=system", unc === "cat-uncategorized" && uncCat?.source === "system" && uncCat?.sort === 999);
+await cleanupOrphanPluginCategories(ctx.db);
+check("启动清扫不吃掉未分类", (await ctx.repo.getCategory(unc)) !== null);
+
+// 16) slug：列 / 部分唯一索引 / 存量回填（/category/{slug} 的地基）
+const slugCat = await ctx.repo.createCategory({ id: "pg-cat-slug", title: "PG 效率类目", titleEn: "PG Slug Demo" });
+check("新建类目自带 ASCII slug", slugCat.slug === "pg-slug-demo", `slug=${slugCat.slug}`);
+const slugZh = await ctx.repo.createCategory({ id: "pg-cat-slug-zh", title: "游戏电竞" });
+check(
+  "纯中文标题走拼音兜底",
+  (await ctx.repo.getCategoryBySlug("youxidianjing"))?.id === slugZh.id,
+  `slug=${slugZh.slug}`,
+);
+// 部分唯一索引必须真在：没有 WHERE slug IS NOT NULL，下面的两条 NULL 会直接炸
+const slugIdx = await ctx.repo.raw("SELECT indexdef FROM pg_indexes WHERE tablename = 'categories' AND indexname = 'categories_slug_idx'");
+check("slug 唯一索引存在且为部分索引", String((slugIdx as any)[0]?.indexdef ?? "").includes("WHERE (slug IS NOT NULL)"), String((slugIdx as any)[0]?.indexdef));
+await ctx.repo.run(
+  "INSERT INTO categories (id, anchor, parent_id, title, title_en, slug, description, icon, enabled, sort, source, alt_labels, related_categories, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+  ["pg-cat-legacy-1", "pg-cat-legacy-1", null, "PG 旧行甲", null, null, null, null, 1, 0, "api", "[]", "[]", Date.now(), Date.now()],
+);
+await ctx.repo.run(
+  "INSERT INTO categories (id, anchor, parent_id, title, title_en, slug, description, icon, enabled, sort, source, alt_labels, related_categories, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+  ["pg-cat-legacy-2", "pg-cat-legacy-2", null, "PG 旧行乙", null, null, null, null, 1, 0, "api", "[]", "[]", Date.now(), Date.now()],
+);
+const backfilled = await migrateCategorySlugs(ctx.db);
+check("存量 NULL slug 回填（只补 NULL 行）", backfilled === 2, `written=${backfilled}`);
+check("回填后再跑是幂等零写", (await migrateCategorySlugs(ctx.db)) === 0);
+// 「PG 旧行甲」的 ASCII 部分只剩 pg，两条同名前缀必须拿到不同 URL
+const legacySlugs = [
+  (await ctx.repo.getCategory("pg-cat-legacy-1"))!.slug!,
+  (await ctx.repo.getCategory("pg-cat-legacy-2"))!.slug!,
+];
+check(
+  "回填行可按 slug 读回且互不撞车",
+  new Set(legacySlugs).size === 2 &&
+    legacySlugs.every((s) => /^pg(-\d+)?$/.test(s)) &&
+    (await ctx.repo.getCategoryBySlug(legacySlugs[0]))?.id === "pg-cat-legacy-1",
+  legacySlugs.join(","),
+);
+let slugClash = false;
+try {
+  await ctx.repo.createCategory({ id: "pg-cat-slug-clash", title: "撞名", slug: "pg-slug-demo" });
+} catch {
+  slugClash = true;
+}
+check("显式 slug 撞库报错（不静默改名）", slugClash);
 
 await ctx.close();
 

@@ -47,13 +47,26 @@ export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
 
   /**
    * 采纳单条治理提案并执行相关业务变更
+   *
+   * body 可选：category_gap 需要审核人补齐「建在哪个父级下 / 英文名 / 图标」。
+   * 一级根不由提案新增 —— 那必须是类目管理页上的显式决策。
    */
   app.post("/api/taxonomy/proposals/:id/apply", { config: { scope: "write" } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const actor = req.auth.actor ?? "admin";
+    const body = z
+      .object({
+        parentId: z.string().nullable().optional(),
+        titleEn: z.string().max(60).nullable().optional(),
+        icon: z.string().max(40).nullable().optional(),
+      })
+      .safeParse(req.body ?? {});
+    if (!body.success) {
+      return badRequest(reply, "参数无效", body.error.issues);
+    }
 
     try {
-      const result = await ctx.repo.applyTaxonomyProposal(id, actor);
+      const result = await ctx.repo.applyTaxonomyProposal(id, actor, body.data);
       return { ok: true, message: result.message, proposal: result.proposal };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

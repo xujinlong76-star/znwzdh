@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { migrateColumns, migrateSiteIndexes, migrateEventIdentity, cleanupOrphanPluginCategories } from "./migrate.ts";
+import { migrateColumns, migrateSiteIndexes, migrateEventIdentity, migrateCategorySlugs, cleanupOrphanPluginCategories } from "./migrate.ts";
 
 /**
  * 数据库驱动抽象。
@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS categories (
   parent_id TEXT,
   title TEXT NOT NULL,
   title_en TEXT,
+  slug TEXT,
   description TEXT,
   icon TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
@@ -66,6 +67,7 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 CREATE INDEX IF NOT EXISTS categories_anchor_idx ON categories(anchor);
 CREATE INDEX IF NOT EXISTS categories_parent_idx ON categories(parent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS categories_slug_idx ON categories(slug) WHERE slug IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS sites (
   id TEXT PRIMARY KEY,
@@ -480,6 +482,7 @@ CREATE TABLE IF NOT EXISTS categories (
   parent_id TEXT,
   title TEXT NOT NULL,
   title_en TEXT,
+  slug TEXT,
   description TEXT,
   icon TEXT,
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -492,6 +495,7 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 CREATE INDEX IF NOT EXISTS categories_anchor_idx ON categories(anchor);
 CREATE INDEX IF NOT EXISTS categories_parent_idx ON categories(parent_id);
+CREATE UNIQUE INDEX IF NOT EXISTS categories_slug_idx ON categories(slug) WHERE slug IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS sites (
   id TEXT PRIMARY KEY,
@@ -904,6 +908,8 @@ export async function openDb(config: {
   dialect: Dialect;
   sqlitePath?: string;
   databaseUrl?: string;
+  /** 停用「孤儿插件类目」启动清扫（NAVHUB_SKIP_ORPHAN_CLEANUP=1）。类目树迁移窗口必须停用。 */
+  skipOrphanCleanup?: boolean;
 }): Promise<Db> {
   if (config.dialect === "sqlite") {
     const mod = await import("better-sqlite3");
@@ -944,7 +950,8 @@ export async function openDb(config: {
     await migrateColumns(db);
     await migrateSiteIndexes(db);
     await migrateEventIdentity(db);
-    await cleanupOrphanPluginCategories(db);
+    await migrateCategorySlugs(db);
+    await cleanupOrphanPluginCategories(db, { skip: config.skipOrphanCleanup });
     return db;
   }
 
@@ -986,8 +993,9 @@ export async function openDb(config: {
   await migrateColumns(db);
   await migrateSiteIndexes(db);
   await migrateEventIdentity(db);
-    await cleanupOrphanPluginCategories(db);
-    return db;
+  await migrateCategorySlugs(db);
+  await cleanupOrphanPluginCategories(db, { skip: config.skipOrphanCleanup });
+  return db;
 }
 
 /** 供 drizzle 查询使用的原始 SQL 助手 */

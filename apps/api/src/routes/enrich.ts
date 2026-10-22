@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
-import { httpUrl, sanitizeIconUrl } from "@navhub/core";
+import { httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
@@ -58,14 +58,23 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identityOf(req as never)),
     });
 
-    // 分类解析：调用方指定 -> 富化建议匹配已有类目 -> 自动新建
+    // 分类解析：调用方指定 -> 富化建议匹配已有类目 -> 落「未分类」并产类目缺口提案
     let categoryId = body.data.categoryId ?? null;
+    let gapTitle: string | null = null;
+    let ambiguousCategoryIds: string[] = [];
     if (!categoryId && enriched.suggestedCategory) {
-      categoryId = categories.find((c) => c.title === enriched.suggestedCategory)?.id ?? null;
+      const resolution = resolveCategoryTitleSuggestion(
+        enriched.suggestedCategory,
+        categories.map((c) => ({ id: c.id, title: c.title, altLabels: c.altLabels })),
+      );
+      if (resolution.status === "unique") categoryId = resolution.categoryId;
+      else {
+        gapTitle = enriched.suggestedCategory;
+        if (resolution.status === "ambiguous") ambiguousCategoryIds = resolution.categoryIds;
+      }
     }
     if (!categoryId) {
-      const created = await ctx.repo.createCategory({ title: enriched.suggestedCategory ?? "未分类" });
-      categoryId = created.id;
+      categoryId = await ctx.repo.ensureUncategorized();
     }
 
     const site = await ctx.repo.createSite({
@@ -78,10 +87,14 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       tags: body.data.tags ?? enriched.tags,
       source: "ai",
     });
+    // 建不建这个类目是编辑决策：模型自由发挥的名字直接进树 = 106 个平铺根的成因
+    const categoryGap = gapTitle
+      ? await ctx.repo.recordCategoryGap({ title: gapTitle, siteId: site.id, siteUrl: site.url, source: "AI 富化", ambiguousCategoryIds })
+      : null;
     await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance } });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance, categoryGap: categoryGap?.proposalId ?? null } });
     reply.code(201);
-    return { created: true, site, enrichment: enriched };
+    return { created: true, site, enrichment: enriched, categoryGap };
   });
 
 };

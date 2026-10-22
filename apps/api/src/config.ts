@@ -98,6 +98,12 @@ export interface AppConfig {
   alertWebhook: string | null;
   /** Webhook 投递超时（毫秒，内部限制于 1s~30s 范围） */
   alertTimeoutMs: number;
+  /**
+   * 停用「孤儿插件类目」启动清扫。
+   * 类目树迁移（scripts/taxonomy-migrate.mjs）窗口必须置 1：
+   * 新树叶子在回填站点前暂无存活引用，正好落在该清扫的删除条件里。
+   */
+  skipOrphanCleanup: boolean;
 }
 
 /* ------------------------------------------------------------------ *
@@ -351,6 +357,8 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
 
     alertWebhook: process.env.NAVHUB_ALERT_WEBHOOK?.trim() || null,
     alertTimeoutMs: num("NAVHUB_ALERT_TIMEOUT_MS", 5_000),
+
+    skipOrphanCleanup: bool("NAVHUB_SKIP_ORPHAN_CLEANUP", false),
   };
 
   const finalConfig: AppConfig = {

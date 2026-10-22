@@ -117,7 +117,9 @@ export function categoryToSkosConcept(
     "@context": "http://www.w3.org/2004/02/skos/core#",
     "@type": "Concept",
     id: cat.id,
-    uri: `${baseUri}${cat.id}`,
+    // 概念 URI 用 slug：它要和人类可访问的 /category/{slug} 是同一个标识，
+    // uuid 只在库里当主键，跨系统交换时既不稳定的也不可读
+    uri: `${baseUri}${(cat.slug ?? '').trim() || cat.id}`,
     prefLabel: {
       zh: cat.title,
       en: cat.titleEn || undefined,

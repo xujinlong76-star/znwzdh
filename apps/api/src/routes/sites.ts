@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
-import { canonicalizeUrl, httpUrl, sanitizeIconUrl, SiteCreateBody } from "@navhub/core";
+import { canonicalizeUrl, httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl, SiteCreateBody } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
@@ -84,13 +84,18 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         knownCategories: categories.map((c) => c.title),
         onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identityOf(req as never)),
       });
-      let categoryId = enriched.suggestedCategory
-        ? categories.find((c) => c.title === enriched.suggestedCategory)?.id ?? null
-        : null;
-      if (!categoryId) {
-        const created = await ctx.repo.createCategory({ title: enriched.suggestedCategory ?? "未分类" });
-        categoryId = created.id;
-      }
+      const suggested = enriched.suggestedCategory ?? "";
+      const resolution = suggested
+        ? resolveCategoryTitleSuggestion(
+            suggested,
+            categories.map((c) => ({ id: c.id, title: c.title, altLabels: c.altLabels })),
+          )
+        : ({ status: "none" } as const);
+      // 建议名在树里不存在/有歧义 → 兜底类目 + 记账成 category_gap 提案。
+      // P1 之前这里会按建议直接建一个**根**类目（106 平铺根的成因之一）。
+      const categoryId =
+        resolution.status === "unique" ? resolution.categoryId : await ctx.repo.ensureUncategorized();
+      const gapTitle = suggested && resolution.status !== "unique" ? suggested : null;
       const site = await ctx.repo.createSite({
         url: enriched.url,
         title: (typeof rawBody.title === "string" && rawBody.title.trim()) ? rawBody.title.trim() : enriched.title,
@@ -101,6 +106,15 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         tags: Array.isArray(rawBody.tags) ? (rawBody.tags as string[]) : enriched.tags,
         source: "ai",
       });
+      if (gapTitle) {
+        await ctx.repo.recordCategoryGap({
+          title: gapTitle,
+          siteId: site.id,
+          siteUrl: site.url,
+          source: "AI 富化（enrich:true）",
+          ambiguousCategoryIds: resolution.status === "ambiguous" ? resolution.categoryIds : [],
+        });
+      }
       await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
       await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance } });
       reply.code(201);
@@ -223,8 +237,9 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     const catIdSet = new Set(cats.map((c) => c.id));
     let fallback = (body.data.defaultCategoryId && catIdSet.has(body.data.defaultCategoryId))
       ? body.data.defaultCategoryId
-      : (cats[0]?.id ?? (await ctx.repo.createCategory({ title: "未分类" })).id);
-    // 若新建了“未分类”，把新分类 id 加入集合
+      // 兜底是「未分类」而不是 cats[0]：按 sort 取第一个类目等于把没指定分类的
+      // 导入站点随机塞进某个真实领域（实测是 AI 工具），运营事后完全看不出。
+      : await ctx.repo.ensureUncategorized();
     catIdSet.add(fallback);
 
     let created = 0;

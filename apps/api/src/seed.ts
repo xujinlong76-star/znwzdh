@@ -19,7 +19,7 @@ import { seedPluginDefs } from "./seed-plugins.ts";
 import { DEFAULT_SITE_CONFIG, writeSiteConfig } from "./storage.ts";
 
 interface SeedShape {
-  categories: Array<{ id: string; title: string; icon?: string; description?: string }>;
+  categories: Array<{ id: string; title: string; slug?: string; icon?: string; description?: string; sort?: number; source?: string }>;
   sites: Array<{ url: string; title: string; description: string; categoryId: string; tags?: string[]; icon?: string }>;
   collections?: Array<{ slug: string; title: string; kind: string; description: string; sites: string[] }>;
 }
@@ -76,9 +76,28 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
 
   let categories = 0;
   for (const c of raw.categories) {
+    const declared = (c.slug ?? "").trim().toLowerCase();
     const existing = await ctx.repo.getCategory(c.id);
-    if (existing) continue;
-    await ctx.repo.createCategory({ id: c.id, title: c.title, icon: c.icon ?? null, description: c.description ?? null, sort: categories });
+    if (existing) {
+      // 种子声明的 slug 优先于启动回填生成的兜底 slug（回填只会产出拼音全拼）。
+      // 路由已上线，为什么还敢覆盖：这条口子里的 slug 只可能是机器生成的——
+      // HTTP 层改标题不重写 slug（见 routes/categories.ts 的 PATCH），
+      // 人工整理走 registry/迁移脚本并显式传 slug，那些行不在 raw.categories 里。
+      // 已发布的 URL 形态因此不会每次重启漂移。
+      if (declared && existing.slug !== declared && !(await ctx.repo.getCategoryBySlug(declared))) {
+        await ctx.repo.updateCategory(c.id, { slug: declared });
+      }
+      continue;
+    }
+    await ctx.repo.createCategory({
+      id: c.id,
+      title: c.title,
+      slug: declared || undefined,
+      icon: c.icon ?? null,
+      description: c.description ?? null,
+      sort: c.sort ?? categories,
+      source: c.source ?? null,
+    });
     categories++;
   }
 

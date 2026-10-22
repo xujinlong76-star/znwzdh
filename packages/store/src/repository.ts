@@ -381,6 +381,11 @@ export class Repository {
     return categoriesRepo.getCategory(this, id);
   }
 
+  /** 按 slug 取类目（/category/{slug} 的读路径；slug 全局唯一） */
+  async getCategoryBySlug(slug: string): Promise<Category | null> {
+    return categoriesRepo.getCategoryBySlug(this, slug);
+  }
+
   async getCategoryWithSemantic(id: string): Promise<CategorySemanticDetail | null> {
     return categoriesRepo.getCategoryWithSemantic(this, id);
   }
@@ -393,6 +398,8 @@ export class Repository {
     id?: string;
     title: string;
     titleEn?: string | null;
+    /** 省略则由 titleEn/title 生成并自动避让全局冲突 */
+    slug?: string | null;
     parentId?: string | null;
     icon?: string | null;
     description?: string | null;
@@ -428,7 +435,7 @@ export class Repository {
 
   async updateCategory(
     id: string,
-    patch: Partial<Pick<Category, "title" | "titleEn" | "icon" | "description" | "enabled" | "sort" | "altLabels" | "relatedCategories">>
+    patch: Partial<Pick<Category, "title" | "titleEn" | "slug" | "icon" | "description" | "enabled" | "sort" | "altLabels" | "relatedCategories">>
   ): Promise<Category | null> {
     return categoriesRepo.updateCategory(this, id, patch);
   }
@@ -1008,6 +1015,18 @@ export class Repository {
     return taxonomyRepo.saveTaxonomyProposals(this, proposals);
   }
 
+  /** AI / MCP 建议了树里不存在的类目名时记账，而不是直接建根 */
+  async recordCategoryGap(input: {
+    title: string;
+    siteId?: string;
+    siteUrl?: string;
+    source: string;
+    ambiguousCategoryIds?: string[];
+    reasonNote?: string;
+  }): Promise<{ proposalId: string; seenCount: number }> {
+    return taxonomyRepo.recordCategoryGap(this, input);
+  }
+
   async listTaxonomyProposals(filter: { status?: string; kind?: string; limit?: number; offset?: number } = {}): Promise<{ items: TaxonomyProposal[]; total: number }> {
     return taxonomyRepo.listTaxonomyProposals(this, filter);
   }
@@ -1016,8 +1035,12 @@ export class Repository {
     return taxonomyRepo.getTaxonomyProposal(this, id);
   }
 
-  async applyTaxonomyProposal(id: string, actor = "admin"): Promise<{ ok: boolean; message: string; proposal: TaxonomyProposal }> {
-    return taxonomyRepo.applyTaxonomyProposal(this, id, actor);
+  async applyTaxonomyProposal(
+    id: string,
+    actor = "admin",
+    overrides?: { parentId?: string | null; titleEn?: string | null; icon?: string | null }
+  ): Promise<{ ok: boolean; message: string; proposal: TaxonomyProposal }> {
+    return taxonomyRepo.applyTaxonomyProposal(this, id, actor, overrides);
   }
 
   async dismissTaxonomyProposal(id: string, actor = "admin"): Promise<{ ok: boolean; proposal: TaxonomyProposal }> {

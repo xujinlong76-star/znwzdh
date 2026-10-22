@@ -49,6 +49,7 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
     dialect: config.mode === "lite" ? "sqlite" : "pg",
     sqlitePath: config.sqlitePath,
     databaseUrl: config.databaseUrl ?? undefined,
+    skipOrphanCleanup: config.skipOrphanCleanup,
   });
 
   const repo = new Repository(db);

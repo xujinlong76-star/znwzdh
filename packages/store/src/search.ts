@@ -832,18 +832,35 @@ export class SearchEngine {
     return map;
   }
 
-  /** 类目含后代（支持 ID、标题或 SKOS altLabel 同义词解析，及 anchor 物化路径前缀） */
+  /**
+   * 类目含后代（anchor 物化路径前缀展开）。
+   *
+   * 解析口径：**先 id，再 slug**（slug 全局唯一，见 categories_slug_idx）；
+   * 两者都未命中才退回「标题 / SKOS altLabel」，且要求**唯一**命中。
+   * 旧实现把三种解析并成一条 `LIMIT 1`，
+   * 而标题既不唯一也不受约束（实测「语言」×3、「操作系统」×2），
+   * 于是同名类目的过滤结果由存储顺序决定 —— 静默选错节点。
+   * 歧义时按「无法解析」处理：返回只含入参的集合，结果为空而不是选错的那个。
+   */
   private async categoryWithDescendants(categoryId: string): Promise<Set<string>> {
     const norm = categoryId.trim();
-    // 匹配真实 ID、类目标题，或 alt_labels JSON 别名
-    const rows = await this.rawRows(
-      `SELECT id, anchor FROM categories WHERE id = ? OR title = ? OR alt_labels LIKE ? ESCAPE '!' LIMIT 1`,
-      [norm, norm, `%${escapeLike(JSON.stringify(norm))}%`]
-    ) as unknown as Array<{ id?: string; anchor?: string }>;
+    const byId = (await this.rawRows(`SELECT id, anchor FROM categories WHERE id = ?`, [norm])) as unknown as Array<{ id?: string; anchor?: string }>;
+    let target = byId[0];
+    if (!target) {
+      // /category/{slug} 的读路径要把 slug 直接透给检索，否则前端得先换成 id 多一跳
+      const bySlug = (await this.rawRows(`SELECT id, anchor FROM categories WHERE slug = ? LIMIT 1`, [norm.toLowerCase()])) as unknown as Array<{ id?: string; anchor?: string }>;
+      target = bySlug[0];
+    }
+    if (!target) {
+      const byName = (await this.rawRows(
+        `SELECT id, anchor FROM categories WHERE title = ? OR alt_labels LIKE ? ESCAPE '!' LIMIT 2`,
+        [norm, `%${escapeLike(JSON.stringify(norm))}%`],
+      )) as unknown as Array<{ id?: string; anchor?: string }>;
+      if (byName.length === 1) target = byName[0];
+    }
 
-    const targetId = rows[0]?.id ? String(rows[0].id) : norm;
-    const anchor = rows[0]?.anchor;
-    const ids = new Set<string>([targetId]);
+    const ids = new Set<string>([target?.id ? String(target.id) : norm]);
+    const anchor = target?.anchor;
     if (!anchor) return ids;
 
     const descendants = await this.rawRows(

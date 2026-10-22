@@ -13,6 +13,9 @@
  * 重复执行不会报 "duplicate column"。
  */
 
+import { categorySlug } from "@navhub/core";
+import { toPgSql } from "./repository/dialect.ts";
+
 export interface ColumnAlter {
   table: string;
   column: string;
@@ -25,6 +28,9 @@ export interface ColumnAlter {
 /** 全量列迁移清单。新增列时在这里登记一行即可，两个方言都会生效。 */
 export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "categories", column: "source", sqlite: "TEXT", pg: "TEXT" },
+  // 类目 URL 标识（/category/{slug}）。可空：历史行由 migrateCategorySlugs 回填，
+  // 回填失败时读路径退回 id，不影响可用性。
+  { table: "categories", column: "slug", sqlite: "TEXT", pg: "TEXT" },
   { table: "sites", column: "visit_count", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   { table: "sites", column: "last_visited_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "sites", column: "trend_score", sqlite: "REAL NOT NULL DEFAULT 0", pg: "DOUBLE PRECISION NOT NULL DEFAULT 0" },
@@ -102,6 +108,12 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff BIGINT NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)"
       : "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    // 类目 slug 全局唯一（URL 是 /category/{slug}，不带父级路径）。
+    // 部分索引：NULL 不进索引，所以回填窗口里多行 NULL 不冲突。
+    // 标题的「每父唯一」索引故意**不**放这里 —— 现有库里有「语言」×3，
+    // 建不上会被下面的 catch 静默吞掉，变成「规则写在文档里、数据库不认」的假绿灯；
+    // 等 P3 把重名收敛干净后再登记。
+    "CREATE UNIQUE INDEX IF NOT EXISTS categories_slug_idx ON categories(slug) WHERE slug IS NOT NULL",
     // 行为事件身份等值过滤（behaviorEvents/deleteBehaviorEvents 从 meta LIKE 迁到 identity =）
     "CREATE INDEX IF NOT EXISTS events_identity_idx ON events(identity)",
     // 工作区明文专用表（M3）：原先 workspaces:<id> / ws_members:<id>:* 明文写在
@@ -288,6 +300,59 @@ export async function migrateEventIdentity(db: { dialect: string; sqlite?: any; 
         WHERE identity IS NULL AND meta LIKE '%"identity"%'`,
     );
     return res.rowCount ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * 回填 categories.slug —— 类目 URL 从 UUID 换成可读 slug 的前置条件。
+ *
+ * 口径：
+ * - **只填 slug IS NULL 的行**。slug 一旦发布就是 URL 资产，启动期重写已有值
+ *   等于把已收录的 /category/{slug} 全部打成 404。
+ * - **全局唯一**：URL 形如 /category/{slug}，不带父级路径，所以冲突判定看全表。
+ *   「每父唯一」是标题的规矩（P2 数据干净后才建那个索引），不是 slug 的。
+ * - best-effort：失败不阻断启动，下次启动兜底。因此读路径必须容忍 NULL slug
+ *   （/category/{id} 的 UUID 形态在过渡期继续可用，并由路由 301 到新形态）。
+ */
+export async function migrateCategorySlugs(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
+  try {
+    const isSqlite = db.dialect !== "pg" && !!db.sqlite;
+    const read = async (sql: string, params: unknown[] = []): Promise<Array<Record<string, any>>> => {
+      if (isSqlite) {
+        const maybe = db.sqlite.prepare(sql).all(...params);
+        // libsql 的 runner 返回 Promise，better-sqlite3 返回数组
+        return maybe && typeof maybe.then === "function" ? await maybe : maybe;
+      }
+      return (await db.pg.query(toPgSql(sql), params)).rows;
+    };
+    const write = async (sql: string, params: unknown[]): Promise<void> => {
+      if (isSqlite) {
+        const maybe = db.sqlite.prepare(sql).run(...params);
+        if (maybe && typeof maybe.then === "function") await maybe;
+        return;
+      }
+      await db.pg.query(toPgSql(sql), params);
+    };
+
+    const pending = await read(
+      "SELECT id, title, title_en FROM categories WHERE slug IS NULL ORDER BY sort ASC, title ASC",
+    );
+    if (pending.length === 0) return 0;
+    const used = new Set<string>(
+      (await read("SELECT slug FROM categories WHERE slug IS NOT NULL")).map((r) => String(r.slug)),
+    );
+    let written = 0;
+    for (const row of pending) {
+      const base = categorySlug(row.title_en ?? null, String(row.title ?? ""));
+      let candidate = base;
+      for (let i = 2; used.has(candidate); i += 1) candidate = `${base}-${i}`;
+      used.add(candidate);
+      await write("UPDATE categories SET slug = ? WHERE id = ?", [candidate, String(row.id)]);
+      written += 1;
+    }
+    return written;
   } catch {
     return 0;
   }

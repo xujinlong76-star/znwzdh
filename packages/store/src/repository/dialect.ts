@@ -174,6 +174,7 @@ export function rowToCategory(row: Record<string, any>): Category {
     parentId: row.parent_id ?? null,
     title: String(row.title),
     titleEn: row.title_en ?? null,
+    slug: row.slug ?? null,
     description: row.description ?? null,
     icon: row.icon ?? null,
     enabled: Boolean(row.enabled),

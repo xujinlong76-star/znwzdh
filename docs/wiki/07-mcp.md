@@ -97,7 +97,8 @@ const dup = await ctx.repo.findSiteByUrl(input.url);
 if (dup) return { created: false, reason: "already_exists", site: dup };
 ```
 
-富化链：`enrichUrl()` → 用 `suggestedCategory` 匹配已有类目 → 匹配不到用第一个类目 → 兜底新建「未分类」。
+富化链：`enrichUrl()` → 用 `suggestedCategory` **唯一**匹配已有类目（标题或 SKOS altLabel）→ 未命中（含重名歧义）落固定 id 的「未分类」，并记一条 `category_gap` 提案，返回值里带 `categoryGap`。
+建议名**不再自动建类目**——那是 106 个平铺根的成因；是否新建由编辑在 `admin/taxonomy` 采纳（新建只允许挂在指定父下，见 [02-api.md](./02-api.md)）。
 `source: "mcp"`（批量为 `"mcp-batch"`）——**这个 source 决定了它不会被前端 navigation.json 快照误删**（见 [02-api.md §4.3](./02-api.md)）。
 
 ### 3.3 `batch_import` 的两段式

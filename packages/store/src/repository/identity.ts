@@ -132,6 +132,7 @@ export async function mergeIdentity(
       starsMoved: 0,
       reviewsMoved: 0,
       llmConfigMoved: false,
+      settingsMoved: false,
       workspacesMoved: false,
       vaultNeedsChoice: false,
     };

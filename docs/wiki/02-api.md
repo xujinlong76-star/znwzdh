@@ -313,7 +313,8 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 > **收编意义**：审核队列原走 Next 自己的 `/api/submissions/[number]` 路由（GitHub 通道），NavHub 回退通道此前直接拿 hash number 调 `/api/sites/:id` → **必然 404，审核按钮静默失效**。现在两端统一走中枢的 GET/PATCH，审核动作**落审计**（此前无审计）。
 > hash 规则两端必须一致：中枢 `submissionNumber()` 与前端 `hashNumericId()` 同为 djb2 变体（`((hash<<5)-hash)+ch`），有测试锁定（见 `投稿审核收编中枢` describe）。
 
-`/api/sites/auto` 的分类解析链：调用方指定 → 富化建议匹配已有类目 → 自动新建（兜底「未分类」）。
+`/api/sites/auto` 的分类解析链：调用方指定 → 富化建议**唯一**匹配已有类目（标题或 SKOS altLabel）→ 否则落「未分类」并记一条 `category_gap` 提案。
+建议名不再自动建成类目：那是层级坍塌的入口（模型每次发挥就多一根一级根），改由人工在 `admin/taxonomy` 选定父级后采纳；重名歧义（实测「语言」×3）也走提案而不是静默挑一个。
 
 ### 3.12 任务与事件
 

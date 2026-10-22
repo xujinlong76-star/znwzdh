@@ -5,7 +5,7 @@
  */
 import { enrichUrl, guardedFetch } from "@navhub/ai";
 import { enrichLlmOf, resolveLlm } from "@navhub/api";
-import { auditPageHealth } from "@navhub/core";
+import { auditPageHealth, resolveCategoryTitleSuggestion } from "@navhub/core";
 import {
   BatchImportInput,
   CreateSiteInput,
@@ -72,6 +72,8 @@ export const siteHandlers = {
       let categoryId = input.categoryId ?? null;
       let tags = input.tags ?? [];
       let provenance: string | null = null;
+      let gapTitle: string | null = null;
+      let ambiguousCategoryIds: string[] = [];
 
       if (input.enrich) {
         const cats = await ctx.repo.listCategories();
@@ -86,19 +88,31 @@ export const siteHandlers = {
         description = input.description ?? e.description;
         tags = input.tags ?? e.tags;
         if (!categoryId && e.suggestedCategory) {
-          categoryId = cats.find((c) => c.title === e.suggestedCategory)?.id ?? null;
+          const r = resolveCategoryTitleSuggestion(
+            e.suggestedCategory,
+            cats.map((c) => ({ id: c.id, title: c.title, altLabels: c.altLabels })),
+          );
+          if (r.status === "unique") categoryId = r.categoryId;
+          else {
+            gapTitle = e.suggestedCategory;
+            if (r.status === "ambiguous") ambiguousCategoryIds = r.categoryIds;
+          }
         }
       }
 
       if (!categoryId) {
-        const cats = await ctx.repo.listCategories();
-        categoryId = cats[0]?.id ?? (await ctx.repo.createCategory({ title: "未分类" })).id;
+        // 兜底走固定 id 的「未分类」，不是 cats[0]（那等于随机塞进第一个领域类目）
+        categoryId = await ctx.repo.ensureUncategorized();
       }
 
       const site = await ctx.repo.createSite({ url: input.url, title, description, categoryId, tags, facets: input.facets, source: "mcp" });
+      // Agent 建议的类目名不再自动进树：记账成提案，由编辑在后台判定（见 category_gap）
+      const categoryGap = gapTitle
+        ? await ctx.repo.recordCategoryGap({ title: gapTitle, siteId: site.id, siteUrl: site.url, source: "MCP create_site", ambiguousCategoryIds })
+        : null;
       await indexSite(site.id, site.title, site.description ?? null, site.url);
-      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.create", target: site.id, diff: { provenance } });
-      return { created: true, site, provenance };
+      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.create", target: site.id, diff: { provenance, categoryGap: categoryGap?.proposalId ?? null } });
+      return { created: true, site, provenance, categoryGap };
     });
   },
 
@@ -162,8 +176,9 @@ export const siteHandlers = {
     }
 
     return withIdempotency(input.idempotencyKey, async () => {
-      const cats = await ctx.repo.listCategories();
-      const fallback = input.defaultCategoryId ?? cats[0]?.id ?? (await ctx.repo.createCategory({ title: "未分类" })).id;
+      // 兜底走固定 id 的「未分类」：批导入没给 defaultCategoryId 时，
+      // 旧的 cats[0] 会把整批站点塞进 sort 最靠前的真实类目。
+      const fallback = input.defaultCategoryId ?? (await ctx.repo.ensureUncategorized());
       const created: string[] = [];
       for (let i = 0; i < unique.length; i++) {
         if (plan[i]!.action !== "create") continue;

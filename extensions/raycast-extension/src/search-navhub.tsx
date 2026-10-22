@@ -2,13 +2,14 @@ import { useState, useEffect } from "react";
 import { List, ActionPanel, Action, Icon, getPreferenceValues } from "@raycast/api";
 
 interface SearchHit {
+  /** 中枢允许返回 null：命中来自向量/标签层而站点已进回收站（软删不删向量） */
   site: {
     id: string;
     title: string;
     url: string;
     description?: string;
     tags?: string[];
-  };
+  } | null;
   channels?: string[];
   score: number;
 }
@@ -31,6 +32,9 @@ export default function SearchNavHub() {
     let active = true;
     if (!searchText.trim()) {
       setItems([]);
+      // 清空输入时上一发的请求还在飞：cleanup 把 active 置 false，
+      // 它的 finally 不会再复位 isLoading，转圈会一直挂着。
+      setIsLoading(false);
       return;
     }
 
@@ -60,6 +64,9 @@ export default function SearchNavHub() {
     };
   }, [searchText, apiBase]);
 
+  // site 为 null 的命中不能进渲染：一条就抛错，整个搜索视图直接变成错误页
+  const visible = items.filter((hit) => hit.site);
+
   return (
     <List
       isLoading={isLoading}
@@ -67,9 +74,9 @@ export default function SearchNavHub() {
       searchBarPlaceholder="输入自然语言、拼音或英文搜索 NavHub 网址..."
       throttle
     >
-      <List.Section title={searchText ? `搜索结果 (${items.length})` : "输入关键词开始检索"}>
-        {items.map((hit) => {
-          const site = hit.site;
+      <List.Section title={searchText ? `搜索结果 (${visible.length})` : "输入关键词开始检索"}>
+        {visible.map((hit) => {
+          const site = hit.site!;
           const channelsStr = (hit.channels || []).join("+");
           return (
             <List.Item

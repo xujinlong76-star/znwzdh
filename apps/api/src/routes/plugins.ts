@@ -10,7 +10,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { indexSitesBatch } from "../index-site.ts";
-import { indexPluginsBatch, indexItemFromManifest, removePluginIndex } from "../index-plugin.ts";
+import { indexPluginsBatch, indexItemFromManifest, removePluginIndex, type IndexPluginItem } from "../index-plugin.ts";
 import { searchPluginsSemantic, similarPlugins } from "../plugins-search.ts";
 import { guardedFetch } from "@navhub/ai";
 import {
@@ -43,6 +43,12 @@ import {
   publicPlugin,
   renderBadgeSvg,
 } from "./plugin-presentation.ts";
+
+/**
+ * 单次订阅源同步最多处理多少条清单条目（NAVHUB_TAP_IMPORT_MAX 可调）。
+ * 清单长度来自远端，属于外部输入；处理上限必须在本侧成立。
+ */
+const MAX_TAP_IMPORT_ITEMS = Math.max(1, Number(process.env.NAVHUB_TAP_IMPORT_MAX || 500));
 
 export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -1621,6 +1627,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
       let fetchedCount = 0;
       let importedCount = 0;
+      let truncated = false;
       try {
         const res = await guardedFetch(targetTap.url, { timeoutMs: 8000 });
         if (res.status !== 200) {
@@ -1634,15 +1641,23 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           : [];
 
         fetchedCount = pluginList.length;
+        // 远端清单长度是外部输入，而下面每条都要写库 + 向量化：不设上限时
+        // 一个「10 万条」的订阅源会把这一个请求变成几小时的后台任务。
+        const items = pluginList.slice(0, MAX_TAP_IMPORT_ITEMS);
+        truncated = pluginList.length > items.length;
 
-        for (const item of pluginList) {
+        // 已存在的插件名一次取全，代替"每条跑一次 LIKE + limit 5、再要求精确同名"：
+        // 前者是 N 次无法走索引的全表 LIKE；后者还会因为同名插件被 5 条上限挤出
+        // 结果窗口而重复导入（common-name 订阅源下市场里出现成对同名插件）。
+        const existingNames = new Set<string>(
+          (await ctx.repo.raw("SELECT name FROM plugins")).map((r) => String(r.name)),
+        );
+
+        const pendingIndex: IndexPluginItem[] = [];
+        for (const item of items) {
           const validated = validateAndCleanPluginManifest(item);
           if (!validated.ok) continue;
-
-          // 幂等导入：如果已有同名，跳过
-          const existing = await ctx.repo.listPlugins({ q: validated.manifest.name, limit: 5 });
-          const match = existing.items.find((p) => p.name === validated.manifest.name);
-          if (match) continue;
+          if (existingNames.has(validated.manifest.name)) continue;
 
           try {
             const imported = await ctx.repo.createPlugin({
@@ -1652,12 +1667,16 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
               source: "tap",
               status: "published",
             });
-            await indexPluginsBatch(ctx, [indexItemFromManifest(imported.slug, imported.manifest)]);
+            // 同一份清单里的重名也要挡住（原来靠每次都查库才碰巧挡住）
+            existingNames.add(validated.manifest.name);
+            pendingIndex.push(indexItemFromManifest(imported.slug, imported.manifest));
             importedCount++;
           } catch {
             // 单条导入失败不阻断整批
           }
         }
+        // 向量化批量做（内部已经吞掉模型不可用的错误，索引可由 reindex 任务重建）
+        await indexPluginsBatch(ctx, pendingIndex);
       } catch (err) {
         return badRequest(reply, `获取订阅源失败: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -1671,6 +1690,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         ok: true,
         fetchedCount,
         importedCount,
+        // 清单被处理上限截断时必须说出来：否则调用方看到 importedCount 远小于
+        // fetchedCount 会以为订阅源里都是重复项。
+        truncated,
         tap: targetTap,
       };
     }

@@ -16,9 +16,9 @@ function makeTable(rows: RetentionRow[]) {
     get size() {
       return data.length;
     },
-    select(cutoff: number, take: number) {
+    select(cutoff: number, take: number, afterId: number | null = null) {
       return data
-        .filter((r) => r.created_at < cutoff)
+        .filter((r) => r.created_at < cutoff && (afterId === null || (r.id as number) > afterId))
         .sort((a, b) => a.id - b.id)
         .slice(0, take);
     },
@@ -44,7 +44,10 @@ function makeAdapter(tables: Record<string, ReturnType<typeof makeTable>>, style
       const table = sql.match(/FROM (\w+)/)?.[1] ?? "";
       const limit = Number(sql.match(/LIMIT (\d+)/)?.[1] ?? 0);
       const cutoff = Number(params[0]);
-      return tables[table].select(cutoff, limit);
+      // 假 adapter 必须真的执行 id 游标：否则 dry-run「每轮取到同一批」这个缺陷
+      // 在测试里根本表现不出来（真实 adapter 走的是同一句 SQL）
+      const afterId = /AND id > /i.test(sql) ? Number(params[1]) : null;
+      return tables[table].select(cutoff, limit, afterId);
     },
     execute(sql, params) {
       calls.push({ sql, params });
@@ -77,6 +80,57 @@ describe("runRetention", () => {
     expect(events.size).toBe(3); // 一行没少
     // dry-run 不应该出现 DELETE
     expect(calls.some((c) => c.sql.startsWith("DELETE"))).toBe(false);
+  });
+
+  it("dry-run 命中量超过一批时用 id 游标推进，且不写任何归档", async () => {
+    // 7 行全过期、batchSize=3 → 需要 3 轮才能走完
+    const events = makeTable([row(1, 400), row(2, 399), row(3, 398), row(4, 397), row(5, 396), row(6, 395), row(7, 394)]);
+    const archivedRows: unknown[] = [];
+    const { adapter, calls } = makeAdapter({ events });
+
+    const result = await runRetention(adapter, {
+      targets: [{ table: "events", keepDays: 30 }],
+      now: NOW,
+      batchSize: 3,
+      maxScan: 100_000,
+      archive: (_t, r) => {
+        archivedRows.push(r.id);
+      },
+    });
+
+    const t = result.tables[0];
+    expect(t.scanned).toBe(7); // 缺陷版：每轮取到同一批，直到撞上 maxScan 才停
+    expect(t.archived).toBe(7); // dry-run 报的是"真跑会归档多少行"
+    expect(t.truncated).toBe(false);
+    expect(t.deleted).toBe(0);
+    expect(events.size).toBe(7);
+    // 预览阶段一次都不该调用 archive 回调（否则归档目录里是"没被删除的行"）
+    expect(archivedRows.length).toBe(0);
+    // 3 批：3 + 3 + 1（最后一批不满即到底）
+    expect(t.batches).toBe(3);
+    expect(calls.filter((c) => c.sql.startsWith("SELECT")).length).toBe(3);
+    // 第 2、3 轮必须带游标，否则是在原地重复读同一批
+    expect(calls.filter((c) => /AND id > /i.test(c.sql)).length).toBe(2);
+  });
+
+  it("apply 模式每行只归档一次（删除推进与归档不重复）", async () => {
+    const events = makeTable([row(1, 400), row(2, 399), row(3, 398), row(4, 397), row(5, 396)]);
+    const archivedRows: unknown[] = [];
+    const { adapter } = makeAdapter({ events });
+
+    const result = await runRetention(adapter, {
+      targets: [{ table: "events", keepDays: 30 }],
+      now: NOW,
+      batchSize: 2,
+      dryRun: false,
+      archive: (_t, r) => {
+        archivedRows.push(r.id);
+      },
+    });
+
+    expect(result.tables[0].deleted).toBe(5);
+    expect(archivedRows.sort((a, b) => Number(a) - Number(b))).toEqual([1, 2, 3, 4, 5]);
+    expect(events.size).toBe(0);
   });
 
   it("apply 后只剩保留期内的数据，且截止时间是严格小于", async () => {

@@ -10,6 +10,7 @@ import {
   parseMarketplaceFilters,
 } from '@/lib/plugins/marketplace-filters'
 import type { HubPluginItem } from '@/lib/navhub-api'
+import { pageShareMetadata } from '@/lib/seo/metadata'
 
 /**
  * 插件市场首页（服务端取数 + 客户端岛渲染）。
@@ -74,7 +75,7 @@ export async function generateMetadata({
     title,
     description,
     alternates: { canonical },
-    openGraph: { url: canonical },
+    ...(await pageShareMetadata({ url: canonical, title, description })),
     ...(filtered ? { robots: { index: false, follow: true } } : {}),
   }
 }

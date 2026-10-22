@@ -5,6 +5,7 @@ import { hubGet } from '@/lib/server/hub'
 import type { HubTag } from '@/lib/navhub-api'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { TagCloud } from '@/components/tag-cloud'
+import { pageShareMetadata } from '@/lib/seo/metadata'
 
 /**
  * 标题与描述（2026-10-21 从 layout 迁来）。
@@ -13,12 +14,17 @@ import { TagCloud } from '@/components/tag-cloud'
  * 字符串 title 截断——本页的标题原先写在 `layout.tsx`，导致全部
  * 369 个 `/tags/[slug]` 页的 <title> 没有品牌后缀。放到 page 级
  * 后模板贯通（与 /sites、/site/[id] 同构）。
+ *
+ * og/twitter 走 pageShareMetadata 工厂：裸 `openGraph: { url }` 会整体
+ * 替换根层默认值，运行时审计实测丢了 og:image/type/site_name/locale。
  */
-export const metadata: Metadata = {
-  title: '标签总览',
-  description: '按标签浏览全部站点，找到同一主题下的其它资源',
-  alternates: { canonical: '/tags' },
-  openGraph: { url: '/tags' },
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: '标签总览',
+    description: '按标签浏览全部站点，找到同一主题下的其它资源',
+    alternates: { canonical: '/tags' },
+    ...(await pageShareMetadata({ url: '/tags', title: '标签总览' })),
+  }
 }
 
 /**

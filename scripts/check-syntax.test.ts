@@ -45,11 +45,16 @@ function run(args: string[]): { status: number; stdout: string; stderr: string }
 }
 
 describe("语法快速门禁（scripts/check-syntax.mjs）", () => {
+  /**
+   * 全仓扫描空机约 50s，但它是 `execFileSync`（同步阻塞、超时也打不断子进程）：
+   * 全量 vitest 并行时同机 220+ worker 抢 CPU，实测被拉到 **290s** 并判超时红。
+   * 预算给到 10 分钟只兜住这种争用，不掩盖真错——真错是子进程返回码 1，秒级就能判定。
+   */
   it("默认扫描仓库 TS/TSX 通过", () => {
     const result = run([]);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("[syntax] 通过");
-  }, 90_000);
+  }, 600_000);
 
   it("合法 TS 与 TSX 返回 0", () => {
     const dir = tempDir();

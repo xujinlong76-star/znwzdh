@@ -95,7 +95,9 @@ function assertTable(table: string): asserts table is RetentionTable {
 /**
  * 按保留期清理/归档过期数据。
  *
- * @returns 每张表的扫描/删除/归档统计。dryRun 时 deleted 恒为 0，但 scanned 反映真实命中量。
+ * @returns 每张表的扫描/删除/归档统计。dryRun 时 deleted 恒为 0，
+ *   scanned 是真实命中量、archived 是「真跑会归档多少行」的预计量 —— 预览阶段
+ *   不会调用 archive 回调，因此不会在归档目录里留下没被删除的行。
  */
 export async function runRetention(
   adapter: RetentionAdapter,
@@ -126,6 +128,13 @@ export async function runRetention(
     };
 
     // 先主键排序再取，保证同一批的 id 连续可读、重复执行时行为稳定
+    // dry-run 用 id 游标推进：它不删行，而 SELECT 本身没有 offset，
+    // 不加游标时每轮取到的是**同一批**——scanned/archived 按批次重复累加
+    // （真实 5 行能报成几万，直到撞上 --max-scan 才停），
+    // 更糟的是 archive 回调会把同一批行反复写进冷归档文件，
+    // 下一次真删时再归档一遍 → 归档里出现重复行。
+    // apply 模式不需要游标：DELETE 本身就是推进。
+    let afterId: number | string | null = null;
     for (;;) {
       const remaining = maxScan - result.scanned;
       if (remaining <= 0) {
@@ -133,18 +142,27 @@ export async function runRetention(
         break;
       }
       const take = Math.min(batchSize, remaining);
+      const cursorOn = dryRun && afterId !== null;
       const rows = await adapter.select(
-        `SELECT * FROM ${target.table} WHERE created_at < ${adapter.placeholder(1)} ORDER BY id LIMIT ${take}`,
-        [cutoff],
+        `SELECT * FROM ${target.table} WHERE created_at < ${adapter.placeholder(1)}` +
+          (cursorOn ? ` AND id > ${adapter.placeholder(2)}` : "") +
+          ` ORDER BY id LIMIT ${take}`,
+        cursorOn ? [cutoff, afterId] : [cutoff],
       );
       if (!rows.length) break;
+      if (dryRun) afterId = rows[rows.length - 1]!.id as number | string;
 
       result.batches++;
       result.scanned += rows.length;
 
-      for (const row of rows) {
-        options.archive?.(target.table, row);
-        result.archived++;
+      if (dryRun) {
+        // 预览不产出任何文件：archived 记的是"真跑会归档多少行"
+        result.archived += rows.length;
+      } else {
+        for (const row of rows) {
+          options.archive?.(target.table, row);
+          result.archived++;
+        }
       }
 
       let deleted = 0;

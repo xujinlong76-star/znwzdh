@@ -651,6 +651,11 @@ export interface SiteDuplicateReport {
   scannedCount: number;
   duplicatePairs: SiteDuplicatePair[];
   potentialSavings: number;
+  /**
+   * 配对数达到上限后被截断（同域名站点很多时配对数是平方级）。
+   * 为 true 时 duplicatePairs 不是全集，前端不能把它的长度当作"冗余总数"。
+   */
+  truncated?: boolean;
 }
 
 /* ------------------------------------------------------------------ *

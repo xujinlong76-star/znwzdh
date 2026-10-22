@@ -32,7 +32,8 @@
  *   - 本脚本（+ --fix）              检查 / 检查+定点修复，单一入口
  *   - scripts/sync-overlay-drift.mjs 定点同步：只写有差异/缺失的文件，秒级、无需联网、不动 dev 服务
  *   - scripts/apply-web-overlay.mjs  无差别覆盖全部 overlay 文件（判定本身存疑时的兜底）
- *   - scripts/sync-web-overlay.mjs   完整 vendor：联网拉上游 tarball 重建 apps/web（刷新上游底座）
+ *   - scripts/sync-web-overlay.mjs   上游口径确诊：联网拉上游 tarball，按「与上游不同」重算自研集合并回写 overlay
+ *                                    （默认 DRY RUN 只打印计划；要落盘必须显式 --apply）
  *
  * 比对逻辑住在 scripts/lib/overlay-drift.mjs（纯函数、有单测）。
  */
@@ -136,7 +137,7 @@ try {
   if (orphan.length > 0) {
     console.error(`[check] ${orphan.length} 个被 git 跟踪的 apps/web 自研文件不在 overlay 中（vendor/Docker 会丢失）：`);
     for (const rel of orphan) console.error("  - " + rel);
-    console.error("[check] 修复：复制到 apps/web-overlay/ 同路径，或跑 node scripts/sync-web-overlay.mjs（需联网）");
+    console.error("[check] 修复：复制到 apps/web-overlay/ 同路径，或跑 node scripts/sync-web-overlay.mjs --apply（需联网）");
     process.exit(1);
   }
   console.log(`[check] OK：${tracked.length} 个 git 跟踪的自研文件全部在 overlay 中`);

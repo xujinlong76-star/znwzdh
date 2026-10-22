@@ -12,16 +12,27 @@
  *   - apps/web 与上游内容一致       -> 从 overlay 删除（不再是自研文件）
  *   - 排除：node_modules/.next/构建产物/二进制大文件目录(logos)
  *
- * 用法：node scripts/sync-web-overlay.mjs
+ * 用法：
+ *   node scripts/sync-web-overlay.mjs [ref]            # 只打印计划，不动盘（默认 dry-run）
+ *   node scripts/sync-web-overlay.mjs [ref] --apply    # 真正执行
+ *   node scripts/sync-web-overlay.mjs [ref] --apply --force  # 连「overlay 比 apps/web 新」的也覆盖
+ *
+ * 为什么默认 dry-run：脚本方向是 apps/web → overlay，而 apps/web 是 gitignore 的
+ * 生成物、可能是上一次 vendor 的旧快照。按旧行为直接跑，会把「只在 overlay 里改过、
+ * 还没回灌 apps/web」的自研文件当孤儿删掉——删的正是唯一事实源。现在必须 --apply。
  */
-import { writeFileSync, existsSync, rmSync, mkdirSync, readdirSync, statSync, readFileSync, cpSync } from "node:fs";
+import { writeFileSync, existsSync, rmSync, mkdirSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join, resolve, relative, dirname } from "node:path";
 
 const ROOT = resolve(".");
 const TARGET = join(ROOT, "apps", "web");
 const OVERLAY = join(ROOT, "apps", "web-overlay");
-const REF = process.argv[2] || "main";
+const argv = process.argv.slice(2);
+const flags = new Set(argv.filter((a) => a.startsWith("--")));
+const REF = argv.find((a) => !a.startsWith("--")) ?? "main";
+const APPLY = flags.has("--apply");
+const FORCE = flags.has("--force");
 
 // 不进 overlay 的目录/文件（构建产物、第三方资产、依赖、生成文件）
 const EXCLUDE = new Set(["node_modules", "dist", "out", "coverage"]);
@@ -46,6 +57,12 @@ function isExcluded(rel) {
 }
 
 // 1) 下载上游 tarball
+if (!existsSync(TARGET) || !existsSync(OVERLAY)) {
+  // 缺 apps/web 时原先在 walk() 里抛 ENOENT，下载已经白跑一遍
+  console.error("[sync] 需要 apps/web（vendor 产物）与 apps/web-overlay 同时存在，当前目录：" + ROOT);
+  process.exit(1);
+}
+console.log("[sync] 模式：" + (APPLY ? "执行（--apply）" + (FORCE ? " + --force" : "") : "DRY RUN（默认，只打印计划）"));
 console.log("[sync] 下载上游 NavSphere@" + REF + " …");
 const url = "https://codeload.github.com/tianyaxiang/NavSphere/tar.gz/refs/heads/" + REF;
 const res = await fetch(url);
@@ -79,33 +96,56 @@ const local = walk(TARGET, TARGET);
 
 // 4) 计算 NavHub 自有集合并同步 overlay
 let added = 0, updated = 0, removed = 0, unchanged = 0;
+const skippedNewer = [];
 const owned = [];
+/** overlay 副本比 apps/web 快照新 => 改动只落在事实源里，覆盖/删除都会丢工作 */
+function overlayIsNewer(dest, webMtimeMs) {
+  if (!existsSync(dest)) return false;
+  try {
+    return statSync(dest).mtimeMs > webMtimeMs;
+  } catch {
+    return false;
+  }
+}
 for (const [rel, content] of local) {
   const up = upstream.get(rel);
+  const dest = join(OVERLAY, rel);
+  const newer = overlayIsNewer(dest, statSync(join(TARGET, rel)).mtimeMs);
   if (!up || !up.equals(content)) {
     owned.push(rel);
-    const dest = join(OVERLAY, rel);
     const cur = existsSync(dest) ? readFileSync(dest) : null;
+    if (newer && !FORCE) {
+      skippedNewer.push(rel);
+      continue;
+    }
     if (!cur) added++;
     else if (!cur.equals(content)) updated++;
-    mkdirSync(dirname(dest), { recursive: true });
-    // 用内存内容写入而非 cpSync：后者在个别文件上会触发 Windows EPERM 怪错。
-    // 写入偶发被占用/围栏拦截失败（实测约两次一次），重试一次即可成功。
-    try {
-      writeFileSync(dest, content);
-    } catch (err) {
+    if (APPLY) {
+      mkdirSync(dirname(dest), { recursive: true });
+      // 用内存内容写入而非 cpSync：后者在个别文件上会触发 Windows EPERM 怪错。
+      // 写入偶发被占用/围栏拦截失败（实测约两次一次），重试一次即可成功。
       try {
         writeFileSync(dest, content);
-      } catch {
-        console.error("[sync] 写入失败（已重试）：" + rel + " -> " + String(err));
-        throw err;
+      } catch (err) {
+        try {
+          writeFileSync(dest, content);
+        } catch {
+          console.error("[sync] 写入失败（已重试）：" + rel + " -> " + String(err));
+          throw err;
+        }
       }
     }
   } else {
     unchanged++;
     // 已与上游一致：不再属于自研文件，从 overlay 移除
-    const dest = join(OVERLAY, rel);
-    if (existsSync(dest)) { rmSync(dest); removed++; }
+    if (existsSync(dest)) {
+      if (newer && !FORCE) {
+        skippedNewer.push(rel);
+      } else {
+        removed++;
+        if (APPLY) rmSync(dest);
+      }
+    }
   }
 }
 
@@ -121,13 +161,32 @@ const overlayFiles = [];
   }
 })(OVERLAY);
 let deletedFromOverlay = 0;
+const orphans = [];
 for (const rel of overlayFiles) {
-  if (!local.has(rel)) { rmSync(join(OVERLAY, rel)); deletedFromOverlay++; }
+  if (!local.has(rel)) {
+    orphans.push(rel);
+    deletedFromOverlay++;
+    if (APPLY) rmSync(join(OVERLAY, rel));
+  }
 }
 
-rmSync(tgz, { force: true });
-rmSync(stage, { recursive: true, force: true });
+if (APPLY) {
+  rmSync(tgz, { force: true });
+  rmSync(stage, { recursive: true, force: true });
+}
 
-console.log(`[sync] 自有文件 ${owned.length} 个：新增 ${added}，更新 ${updated}，清理过期 ${removed}，overlay 删除孤儿 ${deletedFromOverlay}`);
+const mode = APPLY ? "已执行" : "DRY RUN（未写盘，加 --apply 才会执行）";
+console.log(`[sync] ${mode}：自有文件 ${owned.length} 个：新增 ${added}，更新 ${updated}，清理过期 ${removed}，overlay 孤儿 ${deletedFromOverlay}`);
 console.log(`[sync] 与上游一致的文件 ${unchanged} 个（不进 overlay）`);
-console.log("[sync] 完成。校验一致性：node scripts/check-web-overlay.mjs");
+if (skippedNewer.length) {
+  console.warn(`[sync] 跳过 ${skippedNewer.length} 个「overlay 比 apps/web 新」的文件（改动只在事实源里，不让旧快照盖掉）：`);
+  for (const rel of skippedNewer.slice(0, 20)) console.warn("  - " + rel);
+  if (skippedNewer.length > 20) console.warn(`  … 其余 ${skippedNewer.length - 20} 个`);
+  console.warn("[sync] 确实要用 apps/web 覆盖时加 --force（通常应先把手工改动回灌 apps/web）。");
+}
+if (orphans.length) {
+  console.warn(`[sync] overlay 里有 ${orphans.length} 个 apps/web 不存在的文件${APPLY ? "（已删除）" : "（未删除）"}：`);
+  for (const rel of orphans.slice(0, 20)) console.warn("  - " + rel);
+  if (orphans.length > 20) console.warn(`  … 其余 ${orphans.length - 20} 个`);
+}
+console.log("[sync] 校验一致性：node scripts/check-web-overlay.mjs");

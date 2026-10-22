@@ -28,7 +28,9 @@ if [ -z "$NAVHUB_SESSION_SECRET" ] && [ -d /data ]; then
   export NAVHUB_SESSION_SECRET
 fi
 
-if [ "${NAVHUB_SEED_ON_START:-1}" = "1" ]; then
+if [ "${NAVHUB_SEED_ON_START:-1}" = "1" ] && [ "$#" -eq 0 ]; then
+  # 带自定义命令时不种子：那是另一个进程（如 MCP 传输），它连的是同一个 /data 卷，
+  # 由它再写一遍种子只会和中枢同时抢 SQLite 的写锁，且幂等去重救不了并发。
   echo "[navhub] 检查种子数据..."
   # runSeed 按 url 幂等去重，重复执行不会产生副本；
   # embedding 失败不会让启动失败（会降级为关键词+拼音检索）
@@ -36,5 +38,15 @@ if [ "${NAVHUB_SEED_ON_START:-1}" = "1" ]; then
     echo "[navhub] 种子导入失败，继续启动（搜索仍可用）"
 fi
 
+# `docker compose ... run` / `docker run <image> <cmd>` 传进来的命令必须尊重。
+# 原来这里无条件 exec 中枢：docker-compose.yml 的 mcp 服务写着
+#   command: ["node", "packages/mcp/src/http.ts"]
+# 却被 entrypoint 整个丢掉，容器实际起的是**第二个 lite 中枢**（还挂着同一个 /data 卷，
+# 与真正的 api 抢同一个 SQLite），而 8790 上什么都没有 —— compose 显示"已启动"，
+# 端口连不上，排查时看不出任何异常。
+if [ "$#" -gt 0 ]; then
+  echo "[navhub] 使用外部命令: $*"
+  exec "$@"
+fi
 echo "[navhub] 启动中枢..."
 exec node apps/api/src/main.ts

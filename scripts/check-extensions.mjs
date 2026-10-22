@@ -8,7 +8,7 @@
 
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 
 const ROOT = process.cwd()
 let errors = 0
@@ -22,6 +22,24 @@ function logOk(msg) {
   console.log('✅ [extensions-check] ' + msg)
 }
 
+/**
+ * `node --check <file>`：走 execFileSync 而不是 execSync 的字符串命令。
+ * execSync 在 Windows 上把路径拼进 cmd.exe 命令行，`%`、`&`、`"` 都会被 shell
+ * 二次解释；execFileSync 直接 execve，参数不进 shell。
+ * 失败时把 stderr 一起打出来：`err.message` 只有「Command failed」，
+ * 门禁红了却看不到是哪一行语法错，等于逼人手跑一次。
+ */
+function checkSyntax(file, label) {
+  try {
+    execFileSync(process.execPath, ['--check', file], { stdio: ['ignore', 'pipe', 'pipe'] })
+    return true
+  } catch (err) {
+    const detail = String(err.stderr ?? err.message ?? '').trim().split('\n').slice(0, 6).join('\n')
+    logError(`${label} 语法检查失败: ${file}\n${detail}`)
+    return false
+  }
+}
+
 // ---- 1. Chrome Extension 校验 ----
 const chromeDir = join(ROOT, 'extensions', 'chrome-extension')
 const chromeManifestPath = join(chromeDir, 'manifest.json')
@@ -29,6 +47,9 @@ const chromeManifestPath = join(chromeDir, 'manifest.json')
 if (!existsSync(chromeManifestPath)) {
   logError('Chrome 扩展 manifest.json 不存在: ' + chromeManifestPath)
 } else {
+  // 段内错误计数：以前 ✅ 是无条件打印的，同一节里报了 10 个 ❌ 后面照样跟一句「校验通过」，
+  // 读 CI 日志的人只看最后一行就会误判为绿灯。
+  const errorsBefore = errors
   try {
     const raw = readFileSync(chromeManifestPath, 'utf-8')
     const manifest = JSON.parse(raw)
@@ -45,12 +66,7 @@ if (!existsSync(chromeManifestPath)) {
     if (!sw || !existsSync(join(chromeDir, sw))) {
       logError('Chrome service_worker 文件缺失: ' + sw)
     } else {
-      // 语法合法性检验
-      try {
-        execSync(`node --check "${join(chromeDir, sw)}"`, { stdio: 'pipe' })
-      } catch (err) {
-        logError('Chrome service_worker 语法检查失败: ' + err.message)
-      }
+      checkSyntax(join(chromeDir, sw), 'Chrome service_worker')
     }
 
     // 检查 popup
@@ -61,13 +77,7 @@ if (!existsSync(chromeManifestPath)) {
 
     // 检查 popup.js 语法
     const popupJs = join(chromeDir, 'popup.js')
-    if (existsSync(popupJs)) {
-      try {
-        execSync(`node --check "${popupJs}"`, { stdio: 'pipe' })
-      } catch (err) {
-        logError('Chrome popup.js 语法检查失败: ' + err.message)
-      }
-    }
+    if (existsSync(popupJs)) checkSyntax(popupJs, 'Chrome popup.js')
 
     // 检查图标
     if (manifest.icons && typeof manifest.icons === 'object') {
@@ -78,7 +88,7 @@ if (!existsSync(chromeManifestPath)) {
       }
     }
 
-    logOk('Chrome 扩展 (Manifest V3) 静态资源与语法校验通过')
+    if (errors === errorsBefore) logOk('Chrome 扩展 (Manifest V3) 静态资源与语法校验通过')
   } catch (err) {
     logError('Chrome manifest.json JSON 解析失败: ' + err.message)
   }
@@ -91,6 +101,7 @@ const raycastPkgPath = join(raycastDir, 'package.json')
 if (!existsSync(raycastPkgPath)) {
   logError('Raycast 扩展 package.json 不存在: ' + raycastPkgPath)
 } else {
+  const errorsBefore = errors
   try {
     const raw = readFileSync(raycastPkgPath, 'utf-8')
     const pkg = JSON.parse(raw)
@@ -117,7 +128,7 @@ if (!existsSync(raycastPkgPath)) {
       }
     }
 
-    logOk('Raycast 扩展结构与命令入口校验通过')
+    if (errors === errorsBefore) logOk('Raycast 扩展结构与命令入口校验通过')
   } catch (err) {
     logError('Raycast package.json JSON 解析失败: ' + err.message)
   }

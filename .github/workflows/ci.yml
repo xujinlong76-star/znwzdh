@@ -229,6 +229,33 @@ jobs:
       # （--prod 会忽略 devDependencies 树，因此不需要 --ignore）
       - run: pnpm --registry=https://registry.npmjs.org audit --prod --audit-level high
 
+  # 运行时 SEO 审计：只对生产预览跑全量 sitemap，不在 PR 上临时拉起 API + Web + seed。
+  # 地址来自仓库变量 NAVHUB_SITE_URL；未配置时 job 直接 skip，不产生噪音。
+  # 失败只让本 job 红灯并留下 artifact，不进 ci-passed，不阻塞 PR。
+  seo-audit-prod:
+    timeout-minutes: 30
+    name: 运行时 SEO 审计（生产预览，非 PR 门禁）
+    if: github.event_name == 'workflow_dispatch' && vars.NAVHUB_SITE_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+      # 无第三方依赖，无需 pnpm install。--json 把报告写到文件；
+      # 发现问题时脚本退出码为 1，本 job 红灯即通知，artifact 仍会因 always() 上传。
+      - name: 全量审计（sitemap 最多 2000 条）
+        run: node scripts/seo-audit.mjs --base="$NAVHUB_SITE_URL" --limit=2000 --retries=2 --json > seo-audit-report.json
+        env:
+          NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: ${{ always() }}
+        with:
+          name: seo-audit-report
+          path: seo-audit-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+
   ci-passed:
     name: CI 整体通过 (All Checks Passed)
     runs-on: ubuntu-latest

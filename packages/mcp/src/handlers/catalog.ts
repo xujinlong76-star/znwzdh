@@ -18,9 +18,15 @@ export const catalogHandlers = {
     const input = ListCategoriesInput.parse(args ?? {});
     const cats = await ctx.repo.listCategories();
     if (!input.includeCounts) return ok(cats);
-    const all = await ctx.repo.listSites();
+    // 一条 GROUP BY 出计数。原先是 listSites()（默认 limit=100）再在 JS 里数：
+    // 库超过 100 条时每个类目的 siteCount 都被截断（报告出来的数是假的），
+    // 而且为"数个数"把整行连标签/分面关联子查询一起拉回来。口径与 listSites
+    // 保持一致：软删站点不计。
+    const countRows = await ctx.repo.raw(
+      "SELECT category_id AS cid, COUNT(*) AS n FROM sites WHERE deleted_at IS NULL GROUP BY category_id",
+    );
     const counts = new Map<string, number>();
-    for (const s of all) counts.set(s.categoryId, (counts.get(s.categoryId) ?? 0) + 1);
+    for (const r of countRows) counts.set(String(r.cid), Number(r.n));
     return ok(cats.map((c) => ({ ...c, siteCount: counts.get(c.id) ?? 0 })));
   },
 

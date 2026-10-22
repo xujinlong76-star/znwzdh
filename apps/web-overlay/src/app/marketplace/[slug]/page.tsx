@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import { loadPluginDetail } from '@/lib/server/plugin-detail'
+import { pageShareMetadata } from '@/lib/seo/metadata'
 import PluginDetailView from './plugin-detail-view'
 
 /**
@@ -12,6 +13,10 @@ import PluginDetailView from './plugin-detail-view'
  *    否则一次抖动会把整批插件页误伤成 404。
  * 2. 首屏与 metadata：名称/描述/canonical 进 SSR HTML，客户端视图只负责
  *    安装、星标、评论等交互；它仍会静默刷新一次以补齐 identity 相关状态。
+ *
+ * og/twitter 走 pageShareMetadata 工厂：Next 的 metadata 合并里子层
+ * `openGraph` 对象**整体替换**根布局同名字段——裸 `openGraph: { url }`
+ * 会让 165 个插件页丢失 og:image/type/site_name/locale（运行时审计实测）。
  */
 
 export async function generateMetadata({
@@ -32,7 +37,7 @@ export async function generateMetadata({
       title: '插件详情与安装',
       description: '查看插件声明式清单明细、实时预览与一键安装',
       alternates: { canonical },
-      openGraph: { url: canonical },
+      ...(await pageShareMetadata({ url: canonical, title: '插件详情与安装' })),
     }
   }
 
@@ -43,17 +48,7 @@ export async function generateMetadata({
     title,
     description,
     alternates: { canonical },
-    openGraph: {
-      title,
-      description,
-      type: 'website',
-      url: canonical,
-    },
-    twitter: {
-      card: 'summary',
-      title,
-      description,
-    },
+    ...(await pageShareMetadata({ url: canonical, title, description })),
   }
 }
 

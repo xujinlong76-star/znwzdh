@@ -10,7 +10,12 @@
 #   docker compose up -d                                   # lite：仅中枢（SQLite，单容器零外部依赖）
 #   docker compose --profile web up -d                     # 追加 Web 前端（从 NavSphere 底座构建）
 #   docker compose --profile standard up -d                # PostgreSQL + pgvector（多用户/公开站）
+#     注意：lite 的 api 没有 profile，会被一起带起来，所以 standard 的中枢
+#     映射到宿主机 **8788**（NAVHUB_STANDARD_PORT 可改）。要让 web 读 standard，
+#     再设 NAVHUB_WEB_API_URL=http://api-standard:8787。
 #   NAVHUB_MCP_TOKEN=xxx docker compose --profile mcp up -d # 追加 MCP HTTP（供远程 AI 客户端）
+#     standard 部署还要设 NAVHUB_MODE=standard 与 NAVHUB_MCP_DATABASE_URL=...，
+#     否则 MCP 读的是 /data/navhub.db 而不是 Postgres（两边数据会分叉）。
 #
 # 说明：
 #  - embedding 模型在首次启动时下载到 /data/models（约 24MB，来自 hf-mirror）。
@@ -106,7 +111,10 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.web
       args:
-        NAVSPHERE_REF: ${NAVSPHERE_REF:-main}
+        # 默认必须是**具体 commit**，不是分支名：`${NAVSPHERE_REF:-main}` 会让每次构建
+        # 拉一条会动的分支，同一个仓库标签构建出不同镜像，也把 vendor 脚本 / Dockerfile.web
+        # 里的 pin 变成摆设（node scripts/check-upstream-ref.mjs 现在会连这里一起校验）。
+        NAVSPHERE_REF: ${NAVSPHERE_REF:-6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a}
         NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
         # Docker Hub 不可达时指向镜像源；deb.debian.org 被中断时可换 APT 镜像
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-deb.debian.org}
@@ -126,13 +134,21 @@ services:
       retries: 3
       start_period: 60s
     # 与 api 共享数据卷：读取 api 入口生成的 /data/.session-secret，
-    # 保证两容器 session 签名密钥一致且重启不失效（方案 P0-1）
+    # 保证两容器 session 签名密钥一致且重启不失效（方案 P0-1）。
+    # 只读挂载：web 入口只 cat 这个文件（entrypoint-web.sh 里没有任何写操作），
+    # 给它写权限等于让前端容器能改中枢的 navhub.db。
     volumes:
-      - navhub-data:/data
+      - navhub-data:/data:ro
     environment:
       STORAGE_ADAPTER: http
-      NEXT_PUBLIC_API_URL: http://api:8787
-      NAVHUB_STORAGE_BASE_URL: http://api:8787
+      # 指向哪个中枢必须可覆盖：--profile standard 跑的是 api-standard，
+      # 写死 http://api:8787 等于让前端读 lite 容器里那个 SQLite，
+      # 而运营看到的数据在 Postgres 里（两边都"健康"，只是不是同一份数据）。
+      # 注意 NEXT_PUBLIC_* 在 next build 时被内联进浏览器包：这里的运行时覆盖只对
+      # 服务端 route handler / lib 生效（本仓库引用它的 8 处都在服务端），客户端代码
+      # 仍需要用同名 build-arg 重新构建镜像。
+      NEXT_PUBLIC_API_URL: ${NAVHUB_WEB_API_URL:-http://api:8787}
+      NAVHUB_STORAGE_BASE_URL: ${NAVHUB_WEB_API_URL:-http://api:8787}
       # 对外站点的唯一 origin（canonical/sitemap/OG 都靠它）。公网部署必须显式
       # 设置，否则会退化为请求 Host 推导，反代配置错误时整站 canonical 会写错。
       NAVHUB_SITE_URL: ${NAVHUB_SITE_URL:-}
@@ -151,9 +167,11 @@ services:
     profiles: ["standard"]
     restart: unless-stopped
     ports:
-      # 暴露给宿主机，便于本地开发时把中枢指到容器里的数据库
-      # （api-standard 容器之间走 compose 网络，不依赖这个映射）
-      - "${POSTGRES_PORT:-5432}:5432"
+      # 默认只绑回环：这个服务默认口令是 navhub，`${POSTGRES_PORT:-5432}:5432` 的写法
+      # 会把带默认口令的数据库 publish 到宿主机所有网卡（公网机器上等于公开）。
+      # 本机开发走 127.0.0.1:5432 不受影响；确实要对外时显式设 POSTGRES_PORT="0.0.0.0:5432"
+      # 并先改掉 POSTGRES_PASSWORD。
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: navhub
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-navhub}
@@ -183,7 +201,10 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "${NAVHUB_PORT:-8787}:8787"
+      # 必须与 lite 的 api 分开：`api` 服务没有 profile，`--profile standard` 会把它
+      # 一起带起来，两个容器抢同一个宿主机 8787 → 后启动的那个直接
+      # "port is already allocated"，standard 这条路径开箱就是坏的。
+      - "${NAVHUB_STANDARD_PORT:-8788}:8787"
     volumes:
       - navhub-data:/data
     environment:
@@ -226,6 +247,15 @@ services:
     command: ["node", "packages/mcp/src/http.ts"]
     ports:
       - "${NAVHUB_MCP_PORT:-8790}:8790"
+    healthcheck:
+      # 镜像自带的 HEALTHCHECK 打的是中枢的 :8787/api/health；本容器跑的是 MCP 传输，
+      # 沿用会永远 unhealthy（compose 看起来"起来了但一直不健康"）。
+      # MCP 传输自己的探测点在 :8790/health。
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8790/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     volumes:
       - navhub-data:/data
     environment:
@@ -236,6 +266,11 @@ services:
       # 真正的强制校验放在 mcp/src/http.ts 启动逻辑里（未设 token 时拒绝启动并退出码 2）。
       NAVHUB_MCP_TOKEN: ${NAVHUB_MCP_TOKEN:-}
       NAVHUB_MCP_SCOPES: ${NAVHUB_MCP_SCOPES:-read,write}
+      # 模式与数据库必须跟中枢一致，否则 --profile standard 下 MCP 读的是
+      # /data/navhub.db（lite 那个 SQLite），REST/Web 读的却是 Postgres：
+      # 同一个 token 在两边看到完全不同的数据，且没有任何报错。
+      NAVHUB_MODE: ${NAVHUB_MODE:-lite}
+      NAVHUB_DATABASE_URL: ${NAVHUB_MCP_DATABASE_URL:-}
       NAVHUB_SQLITE_PATH: /data/navhub.db
       NAVHUB_EMBEDDING_CACHE: /data/models
       NAVHUB_EMBEDDING_ENDPOINT: ${NAVHUB_EMBEDDING_ENDPOINT:-https://hf-mirror.com}

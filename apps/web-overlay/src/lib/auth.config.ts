@@ -84,6 +84,7 @@ export const authConfig = {
       if (account?.access_token) {
         token.accessToken = account.access_token
       }
+      if (account?.provider) token.provider = account.provider
       if (user) {
         // 与 lib/auth.ts 保持一致：不把 role 默认成 'admin'（否则等于绕过白名单）。
         token.role = (user as { role?: string }).role
@@ -96,6 +97,9 @@ export const authConfig = {
         ;(session.user as { id?: string }).id = token.sub
         if (typeof token.role === 'string') {
           ;(session.user as { role?: string }).role = token.role
+        }
+        if (typeof token.provider === 'string') {
+          ;(session.user as { provider?: string }).provider = token.provider
         }
       }
       return session

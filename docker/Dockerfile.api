@@ -48,14 +48,19 @@ COPY apps/api/package.json ./apps/api/
 # 脚本本身无副作用（仓库里没有 .git 时只打印一行跳过）。
 COPY scripts/install-git-hooks.mjs ./scripts/
 
-# 只装中枢及其依赖：前端的 next/react 等不进这个镜像。
+# 只装中枢与 MCP 传输及其依赖：前端的 next/react 等不进这个镜像。
+#
+# 为什么必须有 @navhub/mcp：镜像里 COPY packages 会把 packages/mcp 的**源码**一起带进来，
+# 而依赖闭包只按 @navhub/api... 解算时，@modelcontextprotocol/sdk（只有 mcp 包依赖它）
+# 根本不在 node_modules 里。compose 的 mcp 服务于是以"命令被 entrypoint 丢掉"和
+# "import 直接 ERR_MODULE_NOT_FOUND"两种方式各失败一次。
 #
 # 用 --frozen-lockfile + 把 pnpm-lock.yaml 拷进镜像：镜像装的就是仓库锁定的那一套版本，
 # 构建可复现（此前 lockfile 没进镜像、只能 --no-frozen-lockfile，等于每次构建重新解一遍范围）。
 # 部分 workspace 清单 + frozen 之所以可行：overrides 已统一到 pnpm-workspace.yaml（唯一事实源），
 # pnpm 不再从成员 package.json 推导 overrides，也就不存在"清单不全 → 配置不一致"。
 # 已按镜像的清单集合本机复现验证：补不补前端清单都能通过 frozen 校验。
-RUN pnpm install --frozen-lockfile --filter "@navhub/api..."
+RUN pnpm install --frozen-lockfile --filter "@navhub/api..." --filter "@navhub/mcp..."
 
 COPY packages ./packages
 COPY apps/api ./apps/api

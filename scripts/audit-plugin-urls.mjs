@@ -160,6 +160,20 @@ async function main() {
     writeFileSync(file, JSON.stringify({ generatedAt: new Date().toISOString(), api: API, sample: SAMPLE, retry: RETRY, rows, detail, summary: { packs: scored.length, sampled: totalSampled, broken: totalBroken, avgReachability: avg } }, null, 2), "utf8");
     console.log(`\n结构化报告已写入：${file}`);
   }
+
+  // 退出码必须反映"这次体检到底取到数据没有"。
+  // 之前中枢没起（每个包都调用失败）时，脚本照样印"抽样合计 0 条 / 平均可达率 NaN%"并退出 0，
+  // 在巡检记录与 CI 里就是一条绿灯。
+  const failed = rows.filter((r) => r.error);
+  if (totalSampled === 0) {
+    console.error(`\n体检没有取到任何抽样数据（${packs.length} 个包全部失败或未播种）——不判为通过。`);
+    if (failed.length) console.error("  首条失败原因：" + failed[0].error);
+    process.exit(2);
+  }
+  if (failed.length) {
+    console.error(`\n${failed.length}/${packs.length} 个包体检失败（其余统计仍有效）：${failed.map((r) => r.slug).join(", ")}`);
+    process.exit(1);
+  }
 }
 
 await main();

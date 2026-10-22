@@ -7,6 +7,17 @@ import {
   type NavHubColdBackup,
 } from "@navhub/core";
 
+/**
+ * 书签导出单次最多带多少站点。
+ *
+ * 存在的意义是"别把整库读进内存"这一层保护，而不是分页语义：
+ * repo.listSites() 的默认 limit=100 曾让书签/冷备静默只含前 100 条，
+ * 用户拿到的是**不完整备份**却看不出任何异常。导出必须显式走全量通道
+ * （listAllSites），上限给到实际导航库不可能触及的量级，并且只在
+ * 匿名可触发的书签导出上设限；admin 冷备不设限（见下）。
+ */
+const EXPORT_MAX_SITES = Math.max(100, Number(process.env.NAVHUB_EXPORT_MAX_SITES || 20_000));
+
 export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -16,7 +27,7 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   app.get("/api/export/bookmarks.html", { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (_req, reply) => {
     const [categories, sites] = await Promise.all([
       ctx.repo.listCategories(),
-      ctx.repo.listSites(),
+      ctx.repo.listAllSites(EXPORT_MAX_SITES),
     ]);
 
     const activeSites = sites.filter((s) => s.enabled !== false);
@@ -37,7 +48,9 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   app.get("/api/export/backup.json", { config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (_req, reply) => {
     const [categories, sites] = await Promise.all([
       ctx.repo.listCategories(),
-      ctx.repo.listSites(),
+      // 冷备必须全量：少一条就是恢复时真的少一条。admin 作用域 + 限流已经
+      // 把访问面收得很小，这里不设上限（宁可在极端大库上慢，也不要静默缺数据）。
+      ctx.repo.listAllSites(),
     ]);
 
     const json = exportNavHubBackup(categories, sites);
@@ -87,8 +100,13 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     // 幂等式恢复站点
     const updatedCats = await ctx.repo.listCategories();
     const defaultCatId = updatedCats[0]?.id || "default";
-    const existingSites = await ctx.repo.listSites();
-    const existingUrls = new Set(existingSites.map((s) => s.url.replace(/\/+$/, "").toLowerCase()));
+    const existingSites = await ctx.repo.raw("SELECT url FROM sites WHERE deleted_at IS NULL");
+    // 去重集合必须覆盖全库：原来用 listSites()（默认只回 100 条）建集合，
+    // 超过 100 条的库里"其实已存在"的网址会被当成新增，撞上 sites_url_idx
+    // 唯一索引 → 恢复请求中途 500，留下半恢复状态。这里只取 url 一列。
+    const existingUrls = new Set(
+      existingSites.map((s) => String(s.url ?? "").replace(/\/+$/, "").toLowerCase()),
+    );
 
     for (const site of sites) {
       const norm = (site.url || "").replace(/\/+$/, "").toLowerCase();

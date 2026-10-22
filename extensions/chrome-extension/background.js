@@ -4,10 +4,16 @@
  */
 
 const DEFAULT_API_URL = "http://127.0.0.1:8787";
+const DEFAULT_WEB_URL = "http://localhost:3000";
 
 async function getApiUrl() {
   const store = await chrome.storage.local.get(["apiUrl"]);
   return (store.apiUrl || DEFAULT_API_URL).replace(/\/$/, "");
+}
+
+async function getWebUrl() {
+  const store = await chrome.storage.local.get(["webUrl"]);
+  return (store.webUrl || DEFAULT_WEB_URL).replace(/\/$/, "");
 }
 
 // 监听地址栏输入改变
@@ -22,14 +28,18 @@ chrome.omnibox.onInputChanged.addListener(async (text, suggest) => {
     const data = await res.json();
     const items = data.hits || data.items || [];
 
-    const suggestions = items.map((item) => {
-      const site = item.site;
-      const channels = item.channels?.join("+") || "hub";
-      return {
-        content: site.url,
-        description: `[${channels}] <match>${escapeXml(site.title)}</match> - <dim>${escapeXml(site.description || site.url)}</dim>`,
-      };
-    });
+    // hits[].site 允许为 null（命中来自向量/标签而站点已进回收站），
+    // 直接取 site.url 会抛错并被外层 catch 吞掉——整条建议列表空返回。
+    const suggestions = items
+      .filter((item) => item && item.site && item.site.url)
+      .map((item) => {
+        const site = item.site;
+        const channels = item.channels?.join("+") || "hub";
+        return {
+          content: site.url,
+          description: `[${channels}] <match>${escapeXml(site.title)}</match> - <dim>${escapeXml(site.description || site.url)}</dim>`,
+        };
+      });
 
     suggest(suggestions);
   } catch (err) {
@@ -38,10 +48,10 @@ chrome.omnibox.onInputChanged.addListener(async (text, suggest) => {
 });
 
 // 监听地址栏回车选定
-chrome.omnibox.onInputEntered.addListener((text, disposition) => {
+chrome.omnibox.onInputEntered.addListener(async (text, disposition) => {
   const url = text.startsWith("http://") || text.startsWith("https://")
     ? text
-    : `http://localhost:3000?q=${encodeURIComponent(text)}`;
+    : `${await getWebUrl()}/?q=${encodeURIComponent(text)}`;
 
   switch (disposition) {
     case "currentTab":

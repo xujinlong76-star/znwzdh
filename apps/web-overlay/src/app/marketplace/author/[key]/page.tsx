@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import { AUTHOR_KEY_RE, loadPluginAuthor } from '@/lib/server/plugin-author'
+import { pageShareMetadata } from '@/lib/seo/metadata'
 import AuthorPluginsView from './author-plugins-view'
 
 /**
@@ -30,7 +31,7 @@ export async function generateMetadata({
       title: '作者主页与插件作品',
       description: '查看作者在插件市场公开发布的全部插件与主页资料',
       alternates: { canonical },
-      openGraph: { url: canonical },
+      ...(await pageShareMetadata({ url: canonical, title: '作者主页与插件作品' })),
     }
   }
 
@@ -41,8 +42,8 @@ export async function generateMetadata({
     title,
     description,
     alternates: { canonical },
-    openGraph: { title, description, type: 'website', url: canonical },
-    twitter: { card: 'summary', title, description },
+    // og/twitter 走工厂：补齐根层默认的 siteName/locale/images/type
+    ...(await pageShareMetadata({ url: canonical, title, description })),
   }
 }
 

@@ -151,6 +151,7 @@ const config = {
       if (account?.access_token) {
         if (token.sub) serverTokenStore.set(token.sub, account.access_token)
       }
+      if (account?.provider) token.provider = account.provider
       if (user) {
         // 这里**不能**默认成 'admin'：GitHub OAuth 用户的 profile 没有 role 字段，
         // 一旦默认成 admin，verifyAdminSession 里的 `user.role === 'admin'` 就会对
@@ -166,6 +167,9 @@ const config = {
         ;(session.user as { id?: string }).id = token.sub
         if (typeof token.role === 'string') {
           ;(session.user as { role?: string }).role = token.role
+        }
+        if (typeof token.provider === 'string') {
+          ;(session.user as { provider?: string }).provider = token.provider
         }
       }
       return session

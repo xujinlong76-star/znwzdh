@@ -1,5 +1,36 @@
 import { useState, useEffect } from "react";
-import { List, ActionPanel, Action, Icon, Color, getPreferenceValues, showToast, Toast } from "@raycast/api";
+import {
+  List,
+  ActionPanel,
+  Action,
+  Icon,
+  Color,
+  getPreferenceValues,
+  showToast,
+  Toast,
+  getStorage,
+  setStorage,
+} from "@raycast/api";
+import { randomUUID } from "node:crypto";
+
+/**
+ * 安装/评价用的「本机匿名身份」：首次运行生成一个随机串存进 Raycast 本地存储。
+ *
+ * 之前硬编码 `?anonId=raycast-user`——所有装了本扩展的人共用同一个身份：
+ * 安装量被合并计数，`/api/plugins/mine` 会把别人装的包显示成自己装的。
+ * 走 Header 而不是 query：身份串会留在中枢访问日志与浏览器历史里。
+ */
+const ANON_ID_KEY = "navhub-anon-id";
+/** 中枢把身份串截到 64 字符（identityOf），签名对象也是截断后的值 → 主动留在预算内 */
+const ANON_ID_MAX_LEN = 64;
+
+async function localAnonId(): Promise<string> {
+  const stored = await getStorage<string>(ANON_ID_KEY);
+  if (typeof stored === "string" && stored.length > 0 && stored.length <= ANON_ID_MAX_LEN) return stored;
+  const fresh = `raycast-${randomUUID()}`.slice(0, ANON_ID_MAX_LEN);
+  await setStorage(ANON_ID_KEY, fresh);
+  return fresh;
+}
 
 interface HubPlugin {
   id: string;
@@ -79,7 +110,8 @@ export default function BrowsePlugins() {
       if (preferences.apiToken) {
         headers["Authorization"] = `Bearer ${preferences.apiToken.trim()}`;
       }
-      const res = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(plugin.slug)}/install?anonId=raycast-user`, {
+      headers["x-navhub-anon-id"] = await localAnonId();
+      const res = await fetch(`${apiBase}/api/plugins/${encodeURIComponent(plugin.slug)}/install`, {
         method: "POST",
         headers,
       });

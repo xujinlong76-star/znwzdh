@@ -90,4 +90,12 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
 # 见 entrypoint-web.sh 注释；方案 P0-1），再启动 next start
 COPY docker/entrypoint-web.sh /usr/local/bin/navhub-web-entrypoint
 RUN chmod +x /usr/local/bin/navhub-web-entrypoint
+
+# ---- 最小权限运行 ----
+# 此前整个镜像以 root 跑 next start：前端一旦被 RCE 就是容器内 root，而它还挂着
+# 与中枢共享的 navhub-data 卷（可写 → 能改 navhub.db、也能改 /data/.session-secret
+# 给自己签一个合法 session）。与 Dockerfile.api 用同一个 node 身份。
+RUN mkdir -p /data && chown -R node:node /data /app
+USER node
+
 ENTRYPOINT ["/usr/local/bin/navhub-web-entrypoint"]

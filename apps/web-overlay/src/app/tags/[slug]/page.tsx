@@ -8,6 +8,7 @@ import { safeDecodeParam } from '@/lib/server/route-params'
 import type { HubSite } from '@/lib/navhub-api'
 import { TagResultsBoard } from '@/components/tag-results-board'
 import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'
+import { pageShareMetadata } from '@/lib/seo/metadata'
 
 /**
  * 标签结果页（服务端取数 + 客户端岛渲染）。
@@ -81,12 +82,15 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // 临时标成 noindex；只有确认了真实存活数才降档。
   const indexable = res === null || sites.length >= MIN_SITES_FOR_INDEX
   const canonical = `/tags/${encodeURIComponent(safeSlug)}`
+  const title = `「${name}」相关站点`
+  const description =
+    tagRes?.tag?.description ?? `「${name}」标签下的站点列表，按收录顺序排列，可进入详情查看简介、分类与标签。`
   return {
-    title: `「${name}」相关站点`,
-    description:
-      tagRes?.tag?.description ?? `「${name}」标签下的站点列表，按收录顺序排列，可进入详情查看简介、分类与标签。`,
+    title,
+    description,
     alternates: { canonical },
-    openGraph: { url: canonical },
+    // og/twitter 走工厂：裸 openGraph 会整体替换根层默认值（丢 image/type/site_name/locale）
+    ...(await pageShareMetadata({ url: canonical, title, description })),
     ...(indexable ? {} : { robots: { index: false, follow: true } }),
   }
 }

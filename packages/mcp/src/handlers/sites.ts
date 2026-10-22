@@ -28,7 +28,9 @@ export const siteHandlers = {
     const { ctx } = deps;
     requireScope(tc, "read");
     const input = SearchSitesInput.parse(args ?? {});
-    const result = await ctx.search.search({ q: input.query, limit: input.limit, categoryId: input.categoryId, tag: input.tag });
+    // facets 在 schema 里是对外承诺过的过滤维度（MCP inputSchema / OpenAPI 都从那份契约生成），
+    // 漏传等于"文档说能筛、实际静默不过滤"，Agent 会拿到超集还以为是结果。
+    const result = await ctx.search.search({ q: input.query, limit: input.limit, categoryId: input.categoryId, tag: input.tag, facets: input.facets });
     const byId = await ctx.repo.getSitesByIds(result.hits.map((h) => h.siteId));
     const results = result.hits.map((h) => {
       const site = byId.get(h.siteId);
@@ -93,7 +95,7 @@ export const siteHandlers = {
         categoryId = cats[0]?.id ?? (await ctx.repo.createCategory({ title: "未分类" })).id;
       }
 
-      const site = await ctx.repo.createSite({ url: input.url, title, description, categoryId, tags, source: "mcp" });
+      const site = await ctx.repo.createSite({ url: input.url, title, description, categoryId, tags, facets: input.facets, source: "mcp" });
       await indexSite(site.id, site.title, site.description ?? null, site.url);
       await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.create", target: site.id, diff: { provenance } });
       return { created: true, site, provenance };
@@ -111,6 +113,7 @@ export const siteHandlers = {
       description: input.description as never,
       categoryId: input.categoryId,
       tags: input.tags,
+      facets: input.facets,
       featured: input.featured,
     });
     if (site) await indexSite(site.id, site.title, site.description ?? null, site.url);
@@ -136,8 +139,17 @@ export const siteHandlers = {
       return fail("单次导入不能超过 " + MAX_BATCH_ITEMS + " 条，收到 " + input.sites.length);
     }
 
-    const plan: Array<{ url: string; action: string; title?: string; reason?: string }> = [];
+    // 先按 URL 去重再规划：findSiteByUrl 只看"这批开始之前"的库状态，
+    // 同一份 payload 里重复的 url 会被判成两条 create，落库时真的多出两行站点。
+    const unique: typeof input.sites = [];
+    const duplicateUrls: string[] = [];
     for (const s of input.sites) {
+      if (unique.some((u) => u.url === s.url)) { duplicateUrls.push(s.url); continue; }
+      unique.push(s);
+    }
+
+    const plan: Array<{ url: string; action: string; title?: string; reason?: string }> = [];
+    for (const s of unique) {
       const dup = await ctx.repo.findSiteByUrl(s.url);
       plan.push(dup
         ? { url: s.url, action: "skip", title: dup.title, reason: "已存在" }
@@ -146,15 +158,16 @@ export const siteHandlers = {
 
     // dryRun 默认 true：先让调用方看到影响面再决定是否落库
     if (input.dryRun) {
-      return ok({ dryRun: true, total: input.sites.length, wouldCreate: plan.filter((p) => p.action === "create").length, plan });
+      return ok({ dryRun: true, total: input.sites.length, wouldCreate: plan.filter((p) => p.action === "create").length, duplicateUrls, plan });
     }
 
     return withIdempotency(input.idempotencyKey, async () => {
       const cats = await ctx.repo.listCategories();
       const fallback = input.defaultCategoryId ?? cats[0]?.id ?? (await ctx.repo.createCategory({ title: "未分类" })).id;
       const created: string[] = [];
-      for (const s of input.sites) {
-        if (plan.find((p) => p.url === s.url)?.action === "skip") continue;
+      for (let i = 0; i < unique.length; i++) {
+        if (plan[i]!.action !== "create") continue;
+        const s = unique[i]!;
         const site = await ctx.repo.createSite({
           url: s.url, title: s.title ?? s.url, description: s.description ?? null,
           categoryId: s.categoryId ?? fallback, tags: s.tags ?? [], source: "mcp-batch",
@@ -162,8 +175,8 @@ export const siteHandlers = {
         await indexSite(site.id, site.title, site.description ?? null, site.url);
         created.push(site.id);
       }
-      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.batchImport", diff: { created: created.length } });
-      return { dryRun: false, created: created.length, ids: created };
+      await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.batchImport", diff: { created: created.length, duplicateUrls: duplicateUrls.length } });
+      return { dryRun: false, created: created.length, ids: created, duplicateUrls };
     });
   },
 
@@ -171,8 +184,15 @@ export const siteHandlers = {
     const { ctx } = deps;
     requireScope(tc, "write");
     const input = HealthCheckInput.parse(args ?? {});
-    const all = await ctx.repo.listSites({ limit: input.limit });
-    const target = input.onlyUnchecked ? all.filter((s) => !s.health?.lastCheckedAt) : all;
+    // onlyUnchecked 必须"先筛后截"：limit 约束的是本次巡检几条，不是候选池几条。
+    // 原实现先 listSites({ limit }) 再 filter，等于只在最前面 limit 条里找未巡检的——
+    // 未巡检的站点排在后面时，这一轮扫到 0 条却报告 checked:0（看起来"都巡检过了"）。
+    // 放大窗口只是把排序靠后的候选捞回来，上限取仓储层的硬钳制值 1000。
+    const scanLimit = input.onlyUnchecked ? Math.min(input.limit * 10, 1000) : input.limit;
+    const all = await ctx.repo.listSites({ limit: scanLimit });
+    const target = input.onlyUnchecked
+      ? all.filter((s) => !s.health?.lastCheckedAt).slice(0, input.limit)
+      : all;
 
     const results: Array<{ url: string; ok: boolean; status: number | null; latencyMs: number; error?: string }> = [];
     for (const site of target) {
@@ -209,7 +229,7 @@ export const siteHandlers = {
 
     const broken = results.filter((r) => !r.ok);
     await ctx.repo.audit({ actor: tc.actor, actorKind: "mcp", action: "site.healthCheck", diff: { checked: results.length, broken: broken.length } });
-    return ok({ checked: results.length, healthy: results.length - broken.length, broken, results });
+    return ok({ checked: results.length, scanned: all.length, healthy: results.length - broken.length, broken, results });
   },
 
   async delete_site(deps: HandlerDeps, args: unknown, tc: ToolContext) {

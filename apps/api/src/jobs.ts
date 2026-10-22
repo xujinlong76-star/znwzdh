@@ -702,19 +702,25 @@ export class JobRunner {
   private async runRecomputeRank(): Promise<void> {
     const now = Date.now();
     const since7d = now - 7 * 86_400_000;
-    const sites: SiteRow[] = await this.ctx.repo.listSites();
-    const [clicks, favorites] = await Promise.all([
+    // 全库覆盖 + 只取需要的两列。原来用 listSites()（默认 limit=100），
+    // 第 101 条以后的站点永远拿不到新分数 —— 排序质量随库变大静默退化。
+    // 走 selectSitesSql 还会为每行做标签/分面两个关联子查询，这里用不上。
+    const [clicks, favorites, rankRows] = await Promise.all([
       this.ctx.repo.clickCountsSince(since7d),
       this.ctx.repo.favoriteCountsSince(since7d),
+      this.ctx.repo.raw("SELECT id, created_at FROM sites WHERE deleted_at IS NULL"),
     ]);
-    const scores = sites.map((s) => ({
-      id: s.id,
-      trendScore: trendScore({
-        visits7d: clicks.get(s.id) ?? 0,
-        favorites7d: favorites.get(s.id) ?? 0,
-        ageDays: ageInDays(s.createdAt, now),
-      }, now),
-    }));
+    const scores = rankRows.map((r) => {
+      const id = String(r.id);
+      return {
+        id,
+        trendScore: trendScore({
+          visits7d: clicks.get(id) ?? 0,
+          favorites7d: favorites.get(id) ?? 0,
+          ageDays: ageInDays(Number(r.created_at), now),
+        }, now),
+      };
+    });
     await this.ctx.repo.setTrendScores(scores);
     await this.ctx.repo.recordEvent("recompute_rank", { meta: { sites: scores.length } }).catch(() => undefined);
   }
@@ -730,13 +736,28 @@ export class JobRunner {
       await this.runReindexPlugins();
     }
     if (!targets.includes("sites")) return;
-    // 显式标注：getSite/listSites 的返回在重构期间可能退化为 any，
-    // 不标注会让后面的 filter/map 参数变成隐式 any（strict 下直接报错）。
-    type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
-    const found: Array<SiteRow | null> = payload.siteId
-      ? [await this.ctx.repo.getSite(payload.siteId)]
-      : await this.ctx.repo.listSites();
-    const sites: SiteRow[] = found.filter((s): s is SiteRow => Boolean(s));
+    // 重建索引需要 id/标题/描述/网址四列。全量分支不能走 listSites()：它默认
+    // limit=100（给匿名搜索通道设的成本上限），会让"全站重建"静默只覆盖前 100
+    // 条，事件里还照报 sites:100；也不能走 listAllSites()：那会为每行再做标签与
+    // 分面两个关联子查询，重建索引根本用不到。
+    type ReindexRow = { id: string; title: string; description: string | null; url: string };
+    const sites: ReindexRow[] = [];
+    if (payload.siteId) {
+      const one = await this.ctx.repo.getSite(payload.siteId);
+      if (one) sites.push({ id: one.id, title: one.title, description: one.description ?? null, url: one.url });
+    } else {
+      const rows = await this.ctx.repo.raw(
+        "SELECT id, title, description, url FROM sites WHERE deleted_at IS NULL ORDER BY id",
+      );
+      for (const r of rows) {
+        sites.push({
+          id: String(r.id),
+          title: String(r.title ?? ""),
+          description: r.description == null ? null : String(r.description),
+          url: String(r.url ?? ""),
+        });
+      }
+    }
 
     const BATCH_SIZE = 32;
     for (let i = 0; i < sites.length; i += BATCH_SIZE) {

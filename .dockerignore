@@ -1,13 +1,38 @@
+# 上下文排除清单。
+#
+# 关键坑：这里的模式是**相对上下文根**匹配的路径，`*` 不跨 `/`。
+# 所以裸写 `node_modules` 只排除根的那一个，`apps/web/node_modules`、
+# `packages/*/node_modules`（pnpm 隔离布局给每个成员都链了一份）全都留在上下文里；
+# `data/*.db` 也管不到 `data/backups/navhub-*.db`。
+# 递归排除必须显式用 `**/`。两条一起写：根级那条更直观，`**/` 那条才真的覆盖子目录。
 node_modules
+**/node_modules
 .next
-.git
-.turbo
+**/.next
 dist
+**/dist
 build
+**/build
+.turbo
+**/.turbo
 *.log
+**/*.log
 .system_generated
-.env*.local
+.git
+**/.git
+
 # 密钥与本地数据永不进镜像
+.env*.local
 .env*
-data/*.db
+
+# 运行期数据整目录排除：本地 SQLite（navhub.db 17MB + -wal/-shm）、每日备份
+# （data/backups/*.db 是**生产数据的副本**）、以及 200MB 的 embedding 模型缓存。
+# 容器里的数据一律走 /data 卷挂载，镜像不需要仓库里的 data/。
+data
+data/**
 *.db
+**/*.db
+**/*.db-wal
+**/*.db-shm
+*.sqlite
+**/*.sqlite

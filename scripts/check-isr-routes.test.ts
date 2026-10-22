@@ -15,8 +15,15 @@ import type { AddressInfo } from "node:net";
 import { CONTRACT_KINDS_DEFAULT, contractFindings } from "./check-isr-routes.mjs";
 
 const SCRIPT = resolve("scripts/check-isr-routes.mjs");
-// 脚本按 apps/web/<NEXT_DIST_DIR> 找产物（与 check-bundle-budget 同一套环境变量）
-const FIXTURE_DIST = resolve("apps/web/.next-isr-gate-fixture");
+// 脚本按 apps/web/<NEXT_DIST_DIR> 找产物（与 check-bundle-budget 同一套环境变量）。
+// 两个 fixture 目录都**按进程隔离**：这台机器上常有第二个会话同时跑同一套用例，
+// 而 writeManifest / writeSources 第一步就是 rmSync 整个目录 —— 共用固定路径时
+// A 刚写完 prerender-manifest.json 就被 B 删掉，A 的 spawn 报「读不到产物，先跑 next build」。
+// 那是假红灯（已被别的会话当成门禁疑点记进 docs/UPGRADE-PLAN-2026-10-23.md 7.4）。
+// `apps/web/*` 整目录在 .gitignore 里，per-PID 目录不会污染 git status。
+const FIXTURE_DIR_NAME = `.next-isr-gate-fixture-${process.pid}`;
+const FIXTURE_DIST = resolve("apps/web", FIXTURE_DIR_NAME);
+const SRC_FIXTURE_ROOT = resolve("apps/web", `.next-isr-gate-src-fixture-${process.pid}`);
 // 真实渲染的页面语料（契约层变异自证的输入，见 scripts/capture-isr-corpus.mjs）
 const CORPUS_DIR = resolve("scripts/fixtures/isr-live-corpus");
 
@@ -62,7 +69,7 @@ function writeManifest(routes: string[]) {
 function run(extraArgs: string[] = [], envExtra: Record<string, string> = {}) {
   const res = spawnSync(process.execPath, [SCRIPT, ...extraArgs], {
     encoding: "utf8",
-    env: { ...process.env, NEXT_DIST_DIR: ".next-isr-gate-fixture", ...envExtra },
+    env: { ...process.env, NEXT_DIST_DIR: FIXTURE_DIR_NAME, ...envExtra },
   });
   return { code: res.status ?? -1, out: `${res.stdout ?? ""}${res.stderr ?? ""}` };
 }
@@ -104,7 +111,7 @@ const STATIC_SRCS = [
  * 每个页面都声明 revalidate 且不读 searchParams，静态渲染链不调用 siteOrigin()。
  */
 function writeSources(badRel?: string, staticBadRel?: string): string {
-  const root = resolve("apps/web/.next-isr-gate-src-fixture");
+  const root = SRC_FIXTURE_ROOT;
   rmSync(root, { recursive: true, force: true });
   for (const rel of new Set([...SRCS, ...STATIC_SRCS])) {
     let body =
@@ -126,7 +133,7 @@ function writeSources(badRel?: string, staticBadRel?: string): string {
 
 afterEach(() => {
   rmSync(FIXTURE_DIST, { recursive: true, force: true });
-  rmSync(resolve("apps/web/.next-isr-gate-src-fixture"), { recursive: true, force: true });
+  rmSync(SRC_FIXTURE_ROOT, { recursive: true, force: true });
 });
 
 describe("check-isr-routes.mjs", () => {
@@ -488,7 +495,7 @@ describe("check-isr-routes.mjs --live 抽查", () => {
       // 不能用 spawnSync：它会占满当前线程，假预览站（在同进程里）无法响应，
       // 子进程只能等到 15s 超时——测试会在完全无关的地方失败。
       const child = spawn(process.execPath, [SCRIPT, "--live", `--base=${base}`, ...extra], {
-        env: { ...process.env, NEXT_DIST_DIR: ".next-isr-gate-fixture" },
+        env: { ...process.env, NEXT_DIST_DIR: FIXTURE_DIR_NAME },
       });
       let out = "";
       child.stdout.setEncoding("utf8");

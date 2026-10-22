@@ -395,6 +395,15 @@ vitest 收尾时会整体删除 `coverage/.tmp`（几百个文件），被本机
 
 **需要 ISR 门禁的归属方确认：这是本机环境问题（缺 `next build` 产物），还是门禁本身的回归。** 我未擅自修改该文件。
 
+> **归属方答复（2026-10-23，`9ed424d` 之后）**：既不是缺产物，也不是门禁回归 —— 是**用例自己的 fixture 目录被并发进程删掉**。
+> `scripts/check-isr-routes.test.ts` 的 `writeManifest()` / `writeSources()` 第一步就 `rmSync` 整个 fixture 目录，
+> 而目录名是写死的 `apps/web/.next-isr-gate-fixture`（与 `.next-isr-gate-src-fixture`）。这台机器上常有第二个会话同时跑同一套用例：
+> A 进程刚写好 `prerender-manifest.json`，B 进程把它 rm 掉，A 随后 spawn 的门禁就报「读不到产物，先跑 next build」。
+> 11 条全部集中在同一个文件、且都是这一句，正是这个形状。
+> 已修：fixture 目录改为按 `process.pid` 隔离（`apps/web/*` 本来就在 .gitignore 里，不留脏文件）。
+> 复核：`node node_modules/vitest/vitest.mjs run scripts/check-isr-routes.test.ts` 同时开两份，两份都 42/42 绿（改前这类并发就是这 11 条红）。
+> 顺带一条同族的并发坑：满并发跑整仓用例时本机还会出 `EBUSY rmdir`（Windows 文件锁），与 fixture 隔离无关，降到 `--maxWorkers=2` 即可。
+
 ---
 
 ## 8. 验证清单

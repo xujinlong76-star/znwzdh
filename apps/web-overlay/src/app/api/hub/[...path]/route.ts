@@ -1,5 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { verifyAdminSession } from '@/lib/auth'
+import { auth, verifyAdminSession } from '@/lib/auth'
+import { canonicalUserId } from '@/lib/me-identity'
+import {
+  ANON_COOKIE,
+  encodeAnonCookie,
+  resolveHubIdentity,
+} from '@/lib/hub-identity-guard'
 import {
   FORWARD_REQUEST_HEADERS,
   createDeadline,
@@ -98,13 +104,70 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     delete headers['content-type']
   }
 
-  // 身份签名：中枢配置 NAVHUB_IDENTITY_SECRET 后，带身份的请求必须带对签名，
-  // 否则任何持票人（开放模式下甚至匿名）都能自称任意 userId 读写他人数据。
-  // 未配置密钥时不加任何头，中枢也不校验（行为与历史版本一致）。
+  // 身份裁决：**会话优先**。签名只证明"代理见过这个字符串"，不证明调用方拥有它
+  // ——不收敛的话，任何登录用户改一个 anonId 参数就能读写他人数据（见
+  // @/lib/hub-identity-guard 的注释与单测）。规则：
+  //   有会话 → 用会话派生身份，覆盖并剥离客户端自称的一切身份头；
+  //   无会话 → 只允许 anon-* 匿名身份；自称 github:xxx 等一律 403（无密钥部署同样生效）。
   const identitySecret = hubIdentitySecret()
-  if (identitySecret) {
-    const identity = identityFromRequest(url, hasValidBody ? rawBody : undefined, request.headers)
-    if (identity) headers['x-navhub-identity-signature'] = await signIdentity(identitySecret, identity)
+  const claimed = identityFromRequest(url, hasValidBody ? rawBody : undefined, request.headers)
+
+  let sessionIdentity: string | null = null
+  try {
+    const session = await auth()
+    const user = session?.user as { id?: string; provider?: string } | undefined
+    sessionIdentity = canonicalUserId(user) ?? null
+  } catch {
+    // 会话读取失败按匿名处理：宁可按匿名域降级，也不放行会话覆盖
+    sessionIdentity = null
+  }
+
+  const verdict = resolveHubIdentity({ sessionIdentity, claimedIdentity: claimed })
+
+  if (verdict.kind === 'rejected') {
+    return NextResponse.json(
+      { error: '身份无效：未登录请求只能使用匿名身份（anon- 前缀），不得自称其他账号' },
+      { status: 403, headers: { 'cache-control': 'no-store' } },
+    )
+  }
+
+  // 剥离客户端自带的身份头，只保留裁决后的唯一身份，避免多入口歧义
+  delete headers['x-navhub-user-id']
+  delete headers['x-user-id']
+  delete headers['x-navhub-anon-id']
+  delete headers['x-anon-id']
+
+  let resolvedIdentity: string | null = null
+  let anonCookie: string | null = null
+  if (verdict.kind === 'session') {
+    headers['x-navhub-user-id'] = verdict.identity
+    resolvedIdentity = verdict.identity
+  } else if (verdict.kind === 'anon') {
+    headers['x-navhub-anon-id'] = verdict.identity
+    resolvedIdentity = verdict.identity
+    if (identitySecret) {
+      // 匿名绑定 cookie：HttpOnly，合并时校验 body.anonId 与当前浏览器是否一致
+      anonCookie = encodeAnonCookie(
+        verdict.identity,
+        await signIdentity(identitySecret, verdict.identity),
+      )
+    }
+  }
+
+  if (identitySecret && resolvedIdentity) {
+    headers['x-navhub-identity-signature'] = await signIdentity(identitySecret, resolvedIdentity)
+  }
+
+  /** 统一出口：匿名请求附加绑定 cookie（共享设备防串号） */
+  const finish = (res: Response): Response => {
+    if (!anonCookie) return res
+    const h = new Headers(res.headers)
+    h.append(
+      'set-cookie',
+      `${ANON_COOKIE}=${anonCookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000` +
+        (process.env.NODE_ENV === 'production' ? '; Secure' : ''),
+    )
+    return new Response(res.body, { status: res.status, headers: h })
   }
 
   if (body && body.length > MAX_BODY_BYTES) {
@@ -130,40 +193,46 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     if (isStreamingContentType(contentType)) {
       // 长连接：立刻解除定时器，否则推流会在超时后被 abort 掐断
       deadline.clear()
-      return new Response(upstream.body, {
-        status: upstream.status,
-        headers: {
-          ...pickResponseHeaders(upstream.headers),
-          'content-type': 'text/event-stream; charset=utf-8',
-          'cache-control': 'no-cache, no-transform',
-          'connection': 'keep-alive',
-          'x-accel-buffering': 'no',
-        },
-      })
+      return finish(
+        new Response(upstream.body, {
+          status: upstream.status,
+          headers: {
+            ...pickResponseHeaders(upstream.headers),
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-cache, no-transform',
+            'connection': 'keep-alive',
+            'x-accel-buffering': 'no',
+          },
+        }),
+      )
     }
 
     const responseHeaders = pickResponseHeaders(upstream.headers)
 
     // 304/204/205 按 HTTP 规定不能带 body：给 '{}' 会直接抛 TypeError
     if (isNullBodyStatus(upstream.status)) {
-      return new NextResponse(null, { status: upstream.status, headers: responseHeaders })
+      return finish(new NextResponse(null, { status: upstream.status, headers: responseHeaders }))
     }
 
     // 二进制响应按字节透传：走 .text() 会按 UTF-8 解码把内容解码坏
     if (!isTextContentType(contentType)) {
-      return new NextResponse(await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders })
+      return finish(
+        new NextResponse(await upstream.arrayBuffer(), { status: upstream.status, headers: responseHeaders }),
+      )
     }
 
     const text = await upstream.text()
     // 中枢返回空体时给 {}，避免前端 JSON.parse 炸裂
-    return new NextResponse(text || '{}', { status: upstream.status, headers: responseHeaders })
+    return finish(new NextResponse(text || '{}', { status: upstream.status, headers: responseHeaders }))
   } catch (error) {
     // 超时与"中枢没起来"要能分辨：前者是 504（外部依赖慢），后者是 502（连不上）
     const timedOut = deadline.signal.aborted
     console.error('[hub proxy] upstream ' + (timedOut ? 'timeout' : 'unavailable') + ':', error)
-    return NextResponse.json(
-      { error: timedOut ? 'NavHub 中枢响应超时' : 'NavHub 中枢不可用' },
-      { status: timedOut ? 504 : 502, headers: { 'cache-control': 'no-store' } },
+    return finish(
+      NextResponse.json(
+        { error: timedOut ? 'NavHub 中枢响应超时' : 'NavHub 中枢不可用' },
+        { status: timedOut ? 504 : 502, headers: { 'cache-control': 'no-store' } },
+      ),
     )
   } finally {
     deadline.clear()

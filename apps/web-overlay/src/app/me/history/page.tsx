@@ -53,7 +53,16 @@ export default function SearchHistoryPage() {
       return
     }
     setState('loading')
-    const page = await fetchSearchHistoryPage(id, { limit: PAGE_SIZE, offset: 0 })
+    // 降级 ≠ 空：取数失败必须落 error（带重试），不能渲染成「还没有搜索记录」——
+    // 后者会让用户以为历史被清空。fetchSearchHistoryPage 的 degrade 回调正是为此存在。
+    let degraded = false
+    const page = await fetchSearchHistoryPage(id, { limit: PAGE_SIZE, offset: 0 }, () => {
+      degraded = true
+    })
+    if (degraded) {
+      setState('error')
+      return
+    }
     setItems(page.items)
     setHasMore(page.hasMore)
     setNextOffset(page.nextOffset)
@@ -151,6 +160,18 @@ export default function SearchHistoryPage() {
       {state === 'no-identity' && (
         <section className="rounded-xl border border-dashed border-border/70 bg-card/40 p-6 text-sm text-muted-foreground">
           还没有可用的身份标识。先在首页搜索一次或登录账号，再回到这里管理历史。
+        </section>
+      )}
+
+      {state === 'error' && (
+        <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 space-y-3" role="alert">
+          <p className="text-sm font-semibold">历史记录暂时取不到</p>
+          <p className="text-xs text-muted-foreground">
+            云端暂时不可用，这不代表历史被清空——恢复后记录会原样回来。
+          </p>
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => void load()}>
+            重试
+          </Button>
         </section>
       )}
 

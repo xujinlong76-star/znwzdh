@@ -6,6 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { RetrievalChannel } from "@navhub/core";
 import { refreshUserProfile, resetUserProfile } from "../profile-service.ts";
+import { identityTrusted, identityOf } from "./shared.ts";
 
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
@@ -44,7 +45,14 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       anonId: z.string().max(64).optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    const identity = body.data.userId ?? body.data.anonId ?? null;
+    // 身份必须走 identityOf（header → query → body 的统一入口），不能直接读 body：
+    // 后者绕过身份签名覆盖，认证模式下匿名调用方可写任意 identity 的 click/favorite
+    // 事件，直接污染他人画像（recordEvent 会把 meta.identity 提升为独立列）。
+    const identity = identityOf(req as never);
+    if (identity && !identityTrusted(ctx, req as never)) {
+      reply.code(401);
+      return { error: "需要 Bearer token" };
+    }
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
     await ctx.repo.recordEvent(body.data.kind, {
       siteId: body.data.siteId,

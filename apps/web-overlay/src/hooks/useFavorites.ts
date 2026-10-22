@@ -8,7 +8,7 @@
  * 合并策略：按 siteId 取并集，createdAt 新者胜。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { addFavorite, listFavorites, removeFavorite, type HubFavorite, type HubFavoriteFolder } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
 import { getIdentity } from '@/lib/identity'
@@ -86,30 +86,58 @@ export interface FavoritesApi {
   importJson: (json: string) => { ok: boolean; imported: number; error?: string }
 }
 
+/* ---------------------------- 模块级共享状态 ---------------------------- */
+
+type FavoritesSnapshot = { items: LocalFavorite[]; blocked: string | null }
+
+let sharedFavorites: LocalFavorite[] = []
+let sharedBlocked: string | null = null
+let favoritesSnapshot: FavoritesSnapshot = { items: sharedFavorites, blocked: sharedBlocked }
+let favoritesInitialized = false
+const favoritesListeners = new Set<() => void>()
+
+/**
+ * 唯一写入口：更新模块状态并同步通知所有订阅实例。
+ * snapshot 必须换新引用，useSyncExternalStore 才会判定为变更。
+ */
+function applyLocalFavorites(next: { items: LocalFavorite[]; blocked: string | null }) {
+  sharedFavorites = next.items
+  sharedBlocked = next.blocked
+  favoritesSnapshot = { items: next.items, blocked: next.blocked }
+  for (const listener of favoritesListeners) listener()
+}
+
+function subscribeFavorites(listener: () => void): () => void {
+  favoritesListeners.add(listener)
+  return () => {
+    favoritesListeners.delete(listener)
+  }
+}
+
+function getFavoritesSnapshot(): FavoritesSnapshot {
+  return favoritesSnapshot
+}
+
 export function useFavorites(): FavoritesApi {
-  const [items, setItems] = useState<LocalFavorite[]>([])
-  const [ready, setReady] = useState(false)
-  const [storageBlocked, setStorageBlocked] = useState<string | null>(null)
   /**
-   * 同步镜像最新收藏。
+   * 模块级共享状态（useSyncExternalStore）。
    *
-   * `setItems` 要到下一次渲染才更新闭包里的 `items`；同一渲染帧内连续点击两次
-   * 收藏时，两个 `toggle` 都会读到旧的 `items`，各自认为「尚未收藏」并插入一条，
-   * 结果收藏夹里出现重复项。所有读写都先经过这个 ref，第二次点击就能看到
-   * 第一次写入的结果（函数式更新也解决不了「异步云端同步需要知道最终状态」）。
+   * 为什么不再用每实例 useState：同文档内的 `storage` 事件不会触发（浏览器规范），
+   * 而 `persist` 原先也不派发任何事件——收藏页里每张卡的 <FavoriteButton> 是
+   * 独立实例，点星取消收藏后卡片不消失、筛选计数不同步，只能刷新页面。
+   * 现在所有实例订阅同一份模块状态，任何一次写入都通知全体重渲染。
    */
-  const itemsRef = useRef<LocalFavorite[]>([])
+  const snap = useSyncExternalStore(subscribeFavorites, getFavoritesSnapshot, getFavoritesSnapshot)
+  const { items, blocked: storageBlocked } = snap
+  const [ready, setReady] = useState(() => favoritesInitialized)
 
   useEffect(() => {
-    const refresh = () => {
-      const loaded = loadLocal()
-      itemsRef.current = loaded.items
-      setItems(loaded.items)
-      setStorageBlocked(loaded.blocked)
+    if (!favoritesInitialized) {
+      favoritesInitialized = true
+      applyLocalFavorites(loadLocal())
     }
-    refresh()
     setReady(true)
-
+    const refresh = () => applyLocalFavorites(loadLocal())
     window.addEventListener('navhub_workbench_updated', refresh)
     window.addEventListener('storage', refresh)
     return () => {
@@ -122,8 +150,7 @@ export function useFavorites(): FavoritesApi {
     (next: LocalFavorite[]) => {
       // 读不出来就不写：宁可这次改动不生效，也不能覆盖掉用户原有的收藏
       if (storageBlocked) return false
-      itemsRef.current = next
-      setItems(next)
+      applyLocalFavorites({ items: next, blocked: storageBlocked })
       saveLocal(next)
       return true
     },
@@ -139,9 +166,7 @@ export function useFavorites(): FavoritesApi {
       // 备份写不进去（配额满）也要继续重置，但把这件事说出来，别让它静默
       console.warn('收藏原数据备份失败；重置后原数据可能无法找回', err)
     }
-    itemsRef.current = []
-    setItems([])
-    setStorageBlocked(null)
+    applyLocalFavorites({ items: [], blocked: null })
     saveLocal([])
   }, [])
 
@@ -149,8 +174,8 @@ export function useFavorites(): FavoritesApi {
 
   /** 切换收藏状态，返回切换后是否已收藏 */
   const toggle = useCallback(async (site: Omit<LocalFavorite, 'createdAt'>): Promise<boolean> => {
-    // 用 ref 读取「包含本次同步写入」的最新列表，避免快速双击时两次都读到旧状态
-    const current = itemsRef.current
+    // 读共享状态（同步更新，包含本帧内已发生的写入），避免快速双击时两次都读到旧状态
+    const current = sharedFavorites
     const existed = current.some((i) => i.siteId === site.siteId)
     const next = existed
       ? current.filter((i) => i.siteId !== site.siteId)
@@ -168,13 +193,13 @@ export function useFavorites(): FavoritesApi {
   }, [persist])
 
   const remove = useCallback((siteId: string) => {
-    if (!persist(itemsRef.current.filter((i) => i.siteId !== siteId))) return
+    if (!persist(sharedFavorites.filter((i) => i.siteId !== siteId))) return
     const identity = getIdentity()
     if (identity) void removeFavorite(identity, siteId)
   }, [persist])
 
   const updateMeta = useCallback((siteId: string, patch: { folderId?: string | null; note?: string | null }) => {
-    const current = itemsRef.current
+    const current = sharedFavorites
     if (!current.some((i) => i.siteId === siteId)) return false
     const next = current.map((i) => {
       if (i.siteId !== siteId) return i
@@ -193,7 +218,7 @@ export function useFavorites(): FavoritesApi {
     persist([])
   }, [persist])
 
-  const exportJson = useCallback(() => JSON.stringify({ version: 1, items: itemsRef.current }, null, 2), [])
+  const exportJson = useCallback(() => JSON.stringify({ version: 1, items: sharedFavorites }, null, 2), [])
 
   const importJson = useCallback((json: string) => {
     // 存储读不出来时导入同样是写入：先拦住，并把原因作为错误返回（页面会显示）
@@ -204,7 +229,7 @@ export function useFavorites(): FavoritesApi {
       if (!Array.isArray(incoming)) return { ok: false, imported: 0, error: '格式不正确' }
       const valid = incoming.filter((i) => i && typeof i.siteId === 'string' && typeof i.href === 'string')
       const merged = [...valid]
-      for (const ex of itemsRef.current) {
+      for (const ex of sharedFavorites) {
         if (!merged.some((i) => i.siteId === ex.siteId)) merged.push(ex)
       }
       persist(merged)

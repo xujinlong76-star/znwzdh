@@ -103,6 +103,23 @@ export default function FavoritesPage() {
     return result
   }, [])
 
+  /**
+   * 云端结果落地：文件夹列表 + 本地成员集合整体替换。
+   * 首挂载与「重试同步」必须走同一条路径——否则重试成功后界面仍显示旧数据，
+   * 用户只能手动刷新（历史缺陷：重试按钮只更新了 cloudResult）。
+   */
+  const applyCloudResult = useCallback(
+    (result: CloudSyncResult) => {
+      if (!result.ok || !result.cloud || !result.cloudFolders) return false
+      // 云端是事实源：整体替换本地成员集合，避免「其它设备已删除的收藏」被本机缓存推回去
+      setFolders(result.cloudFolders)
+      favorites.replaceAll(mergeCloudFavorites(favorites.items, result.cloud))
+      return true
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [favorites.items],
+  )
+
   useEffect(() => {
     if (!favorites.ready) return
     const identity = getIdentity()
@@ -110,10 +127,7 @@ export default function FavoritesPage() {
     setCloudIdentity(identity)
     void (async () => {
       const result = await runCloudSync()
-      if (!result.ok || !result.cloud || !result.cloudFolders) return
-      // 云端是事实源：整体替换本地成员集合，避免「其它设备已删除的收藏」被本机缓存推回去
-      setFolders(result.cloudFolders)
-      favorites.replaceAll(mergeCloudFavorites(favorites.items, result.cloud))
+      applyCloudResult(result)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runCloudSync, favorites.ready])
@@ -489,7 +503,12 @@ export default function FavoritesPage() {
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs rounded-lg gap-1.5"
-                onClick={() => void runCloudSync()}
+                onClick={() =>
+                  void (async () => {
+                    const result = await runCloudSync()
+                    applyCloudResult(result)
+                  })()
+                }
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 重试同步

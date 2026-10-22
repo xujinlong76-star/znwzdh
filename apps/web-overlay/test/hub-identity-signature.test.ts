@@ -114,4 +114,12 @@ describe('接线：代理必须真的把签名加上', () => {
     expect(src).toMatch(/identityFromRequest\(url/)
     expect(src).toContain('request.headers')
   })
+
+  it('签名对象必须是「裁决后的身份」而不是客户端自称（签名 ≠ 授权）', () => {
+    // 2026-10-22 口径变更：会话优先，客户端自称的非匿名身份一律拒绝。
+    // 详细用例见 hub-identity-guard.test.ts。
+    expect(src).toContain('resolveHubIdentity(')
+    expect(src).toMatch(/signIdentity\(identitySecret, resolvedIdentity\)/)
+    expect(src).not.toMatch(/signIdentity\(identitySecret, identity\)/)
+  })
 })

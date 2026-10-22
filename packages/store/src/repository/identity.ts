@@ -25,6 +25,7 @@ export interface IdentityMergeStats {
   starsMoved: number;
   reviewsMoved: number;
   llmConfigMoved: boolean;
+  settingsMoved: boolean;
   workspacesMoved: boolean;
   vaultNeedsChoice: boolean;
 }
@@ -81,6 +82,7 @@ function parseStats(raw: unknown): IdentityMergeStats | null {
       starsMoved: Number(parsed.starsMoved ?? 0),
       reviewsMoved: Number(parsed.reviewsMoved ?? 0),
       llmConfigMoved: Boolean(parsed.llmConfigMoved),
+      settingsMoved: Boolean(parsed.settingsMoved),
       workspacesMoved: Boolean(parsed.workspacesMoved),
       vaultNeedsChoice: Boolean(parsed.vaultNeedsChoice),
     };
@@ -184,6 +186,34 @@ export async function mergeIdentity(
         "UPDATE user_llm_configs SET identity = ? WHERE identity = ?",
         [target, source],
       )) > 0;
+    }
+
+    // 5.5) 个人设置：目标没有就接管；两边都有时保留目标、只把 favoriteSignalCutoff
+    //      取更晚的值（保守：不把源账号已忽略的收藏信号重新算进来）。源行必须删除，
+    //      否则别名已指向 target，这行永远读不到，成为孤儿。
+    const sourceSettings = await repo.raw(
+      "SELECT favorite_signal_cutoff FROM user_settings WHERE identity = ? LIMIT 1",
+      [source],
+    );
+    if (sourceSettings[0]) {
+      const targetSettings = await repo.raw(
+        "SELECT favorite_signal_cutoff FROM user_settings WHERE identity = ? LIMIT 1",
+        [target],
+      );
+      if (!targetSettings[0]) {
+        await repo.run("UPDATE user_settings SET identity = ? WHERE identity = ?", [target, source]);
+      } else {
+        const mergedCutoff = Math.max(
+          Number(targetSettings[0].favorite_signal_cutoff) || 0,
+          Number(sourceSettings[0].favorite_signal_cutoff) || 0,
+        );
+        await repo.run("UPDATE user_settings SET favorite_signal_cutoff = ? WHERE identity = ?", [
+          mergedCutoff,
+          target,
+        ]);
+        await repo.run("DELETE FROM user_settings WHERE identity = ?", [source]);
+      }
+      stats.settingsMoved = true;
     }
 
     // 6) 工作空间：目前仍存在 vault 的 workspaces:<identity> 键，目标没有才接管

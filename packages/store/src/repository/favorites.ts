@@ -58,21 +58,20 @@ export async function listFavorites(repo: Repository, userId: string): Promise<F
 }
 
 export async function addFavorite(repo: Repository, input: { userId: string; siteId: string; folderId?: string | null; note?: string | null }): Promise<{ favorite: FavoriteRecord; existed: boolean }> {
-  const existing = await repo.raw(
-    "SELECT * FROM favorites WHERE user_id = ? AND site_id = ? LIMIT 1",
-    [input.userId, input.siteId],
-  );
-  const existingRow = existing[0];
-  if (existingRow) return { favorite: rowToFavorite(existingRow), existed: true };
   const id = randomUUID();
   const now = Date.now();
-  await repo.run(
-    "INSERT INTO favorites (id, user_id, site_id, folder_id, note, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+  // 幂等写入：并发双写靠 UNIQUE(user_id, site_id) 兜底，不再「先查后插」——
+  // 先查后插在双写竞态下会撞唯一索引抛 500（本可返回 existed:true）。
+  const changes = await repo.runCount(
+    "INSERT INTO favorites (id, user_id, site_id, folder_id, note, created_at, updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(user_id, site_id) DO NOTHING",
     [id, input.userId, input.siteId, input.folderId ?? null, input.note ?? null, now, now],
   );
-  const row = (await repo.raw("SELECT * FROM favorites WHERE id = ?", [id]))[0];
+  const row = (await repo.raw(
+    "SELECT * FROM favorites WHERE user_id = ? AND site_id = ? LIMIT 1",
+    [input.userId, input.siteId],
+  ))[0];
   if (!row) throw new Error("创建收藏后无法读回");
-  return { favorite: rowToFavorite(row), existed: false };
+  return { favorite: rowToFavorite(row), existed: changes === 0 };
 }
 
 export async function removeFavorite(repo: Repository, userId: string, siteId: string): Promise<boolean> {
@@ -102,11 +101,14 @@ export async function createFavoriteFolder(repo: Repository, userId: string, nam
 
 export async function deleteFavoriteFolder(repo: Repository, userId: string, folderId: string): Promise<void> {
   const now = Date.now();
-  await repo.run(
-    "UPDATE favorites SET folder_id = NULL, updated_at = ? WHERE user_id = ? AND folder_id = ?",
-    [now, userId, folderId],
-  );
-  await repo.run("DELETE FROM favorite_folders WHERE id = ? AND user_id = ?", [folderId, userId]);
+  // 两条写语句必须原子：先移出收藏再删夹，中途失败会留下"收藏仍指向已删夹"的悬空态
+  await repo.withTransaction(async () => {
+    await repo.run(
+      "UPDATE favorites SET folder_id = NULL, updated_at = ? WHERE user_id = ? AND folder_id = ?",
+      [now, userId, folderId],
+    );
+    await repo.run("DELETE FROM favorite_folders WHERE id = ? AND user_id = ?", [folderId, userId]);
+  });
 }
 
 export type FavoriteUpdateResult =

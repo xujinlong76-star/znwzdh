@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
 import { hubIdentitySecret, signIdentity } from '@/lib/identity-signature'
+import { ANON_COOKIE, encodeAnonCookie, parseAnonCookie } from '@/lib/hub-identity-guard'
 import { canonicalUserId, isAnonId } from '@/lib/me-identity'
 
 /**
@@ -109,12 +110,31 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
   if (rawBody !== undefined) headers['content-type'] = 'application/json'
 
   const secret = hubIdentitySecret()
+  let pendingAnonCookie: string | null = null
   if (secret) {
     headers['x-navhub-identity-signature'] = await signIdentity(secret, identity)
     if (path[0] === 'merge' && rawBody) {
       try {
         const parsed = JSON.parse(rawBody) as { anonId?: unknown }
         if (isAnonId(parsed.anonId)) {
+          // 匿名所有权校验：浏览器绑定的 HttpOnly cookie 必须与 body.anonId 一致。
+          // 没 cookie（老用户首次合并）按 TOFU 绑定；有 cookie 但不一致 → 401，
+          // 防共享设备/多账号把别人的匿名数据并进当前账号。
+          const bound = parseAnonCookie(request.cookies.get(ANON_COOKIE)?.value)
+          if (bound) {
+            const expectedMac = await signIdentity(secret, bound.anonId)
+            if (bound.mac !== expectedMac || bound.anonId !== parsed.anonId) {
+              return NextResponse.json(
+                { error: '匿名身份与当前浏览器不一致，已拒绝合并' },
+                { status: 401, headers: { 'cache-control': 'no-store' } },
+              )
+            }
+          } else {
+            pendingAnonCookie = encodeAnonCookie(
+              parsed.anonId,
+              await signIdentity(secret, parsed.anonId),
+            )
+          }
           headers['x-navhub-anon-signature'] = await signIdentity(secret, parsed.anonId)
         }
       } catch {
@@ -137,9 +157,18 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     })
     const text = await upstream.text()
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
+    const responseHeaders: Record<string, string> = {
+      'content-type': contentType,
+      'cache-control': 'no-store',
+    }
+    if (pendingAnonCookie) {
+      responseHeaders['set-cookie'] =
+        `${ANON_COOKIE}=${pendingAnonCookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000` +
+        (process.env.NODE_ENV === 'production' ? '; Secure' : '')
+    }
     return new NextResponse(text || '{}', {
       status: upstream.status,
-      headers: { 'content-type': contentType, 'cache-control': 'no-store' },
+      headers: responseHeaders,
     })
   } catch (error) {
     const timedOut =

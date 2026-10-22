@@ -47,6 +47,15 @@
  * 收录路由的 Edge middleware，代价和爆炸半径都远超收益；裁决见
  * docs/seo/ISR-ROUTES.md），它成立的前提是落地页 canonical 干净 —— 那个前提才是
  * 必须守的东西，所以把它变成断言而不是留一句注释。
+ *
+ * 两种「不是 200 但正确」的形态在 CI 自建预览里必然出现（2026-10-23 用新 seed 库
+ * 实测），门禁按裁决放行，别当 bug 修：
+ *  - 分页样本 308 回归一后的族基底 —— seed 只有 57 个站点、每页 60 个，
+ *    totalPages=1，`/sites/p/2` 就是该被 `permanentRedirect` 送回 `/sites`；
+ *  - 旧形态跳转的落地页 404 —— 该分类第 2 页确实没内容，硬 404 本身就是
+ *    「不可收录」的裁决，没有重复页可谈，所以 canonical 断言只跟着跳转链
+ *    走到 200 那一页，走不到就不断言（在 404/308 的响应体里找 canonical 只会
+ *    造出假红灯，第一条 CI run 就是这么红的）。
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -238,13 +247,26 @@ const LOCAL_ORIGIN_ASSET = /http:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1]
 
 function checkPermanentSnapshots(dist, staticRoutes) {
   const failures = [];
+  // 参照地址：产物里烤进去的本机地址是不是「兜底值」，取决于构建期到底有没有配
+  // NAVHUB_SITE_URL。CI / Docker 的 next build 没有它 ⇒ 任何本机绝对地址都是兜底；
+  // 本地拿 http://localhost:3079 构建的产物里出现同端口的地址则是正确形态
+  // （2026-10-23 在同机复现时实测：这一族一度把 :3079 的正常地址全判成红）。
+  // 判定与 --live、与 seo-audit 用同一把尺（端口感知），三处规则不漂移。
+  const configured = String(process.env.NAVHUB_SITE_URL ?? '').trim();
   for (const [path, entry] of Object.entries(staticRoutes)) {
     if (entry?.initialRevalidateSeconds !== false) continue;
     const rel = path.replace(/^\/+/, '').replace(/\/+$/, '') || 'index';
     const file = resolve(dist, 'server/app', `${rel}.html`);
     // 非 HTML 产物（manifest.webmanifest 等）不在这一条覆盖范围内
     if (!existsSync(file)) continue;
-    const hit = readFileSync(file, 'utf8').match(LOCAL_ORIGIN_ASSET)?.[0];
+    const html = readFileSync(file, 'utf8');
+    let hit = '';
+    for (const m of html.matchAll(new RegExp(LOCAL_ORIGIN_ASSET.source, 'gi'))) {
+      if (!configured || isBogusLocalOriginAsset(m[0], configured)) {
+        hit = m[0];
+        break;
+      }
+    }
     if (!hit) continue;
     failures.push(
       `${path}：revalidate=false 的永久快照里烤进了本机地址（${hit}）——缺 NAVHUB_SITE_URL 时 metadataBase 用 http://localhost:3000 兜底，这一族没有自愈周期；要么给它 revalidate，要么别输出绝对兜底地址`,
@@ -327,6 +349,36 @@ async function probe(base, path, { body = false } = {}) {
 }
 
 /**
+ * 把一个 30x 的 Location 归一成同源 URL，取不到就返回 null。
+ *
+ * 两件事在这里兜住：
+ * - `res.headers.get()` 会把重复的同名头合并成 `a, b`。实测冷生成 `/sites/p/1`
+ *   时见过 `location: /sites, /sites` 的双写（同一份产物、下一次请求就只剩一条），
+ *   合并值直接喂给 `new URL()` 会变成 `/sites,%20/sites` → 404，把门禁自己带跑。
+ *   取第一个片段即可；双写本身只在冷生成那一次出现过，删掉 route-cache 重新生成
+ *   就是单条（实测），没能在产物里复现第二次，所以不在这里判失败。
+ * - 跨域跳转不在门禁的取证范围（落地页不是本产物），返回 null 让调用方跳过。
+ */
+function redirectTarget(location, base) {
+  const first = String(location ?? "")
+    .split(",")[0]
+    .trim();
+  if (!first) return null;
+  try {
+    const url = new URL(first, base);
+    return url.origin === new URL(base).origin ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 去掉末尾斜杠后的路径，用于比较「是不是同一条路由」。 */
+function pathOf(url) {
+  const trimmed = url.pathname.replace(/\/+$/, "");
+  return trimmed === "" ? "/" : trimmed;
+}
+
+/**
  * 响应体里「指向本机、且端口和当前 base 不一致」的绝对地址。
  * 判定复用审计侧的同一把尺（isBogusLocalOriginAsset），免得两处规则漂移。
  */
@@ -397,12 +449,20 @@ async function checkLive() {
       checked += 1;
       const r = await probe(base, path, { body: true });
       const allow = paged ? [200, 404] : [200];
-      const okStatus = allow.includes(r.status);
+      // 分页族还有第三种合法裁决：页码归一后不是本页时，页面自己 permanentRedirect
+      // 回归一后的 URL。seed 数据不足一页时（实测：新库 57 个站点、每页 60 个 ⇒
+      // totalPages=1 ⇒ `/sites/p/2` 308 → `/sites`）造的样本必然走这一支。
+      // 它同样是「这条路由活着、且带着 ISR 缓存语义」的证据，不能判失败。
+      const familyBase = path.replace(/\/p\/[^/]+$/, "");
+      const target = paged ? redirectTarget(r.location, base) : null;
+      const normalizedBack =
+        (r.status === 301 || r.status === 308) && target !== null && pathOf(target) === familyBase;
+      const okStatus = allow.includes(r.status) || normalizedBack;
       const cached = /s-maxage=\d+/.test(r.cacheControl);
       // 只有拿到正文才有资格谈元信息：404（薄分页的正常裁决）与重定向没有快照可言
       const badAssets = r.status === 200 && r.body ? localOriginAssetFindings(r.body, `${base}${path}`) : [];
       console.log(
-        `${okStatus && cached && !badAssets.length ? '✓' : '✖'} ${(paged ? 'ISR 分页' : 'ISR 页面').padEnd(9)} ${path.padEnd(44)} ${r.status} cc=${r.cacheControl || '—'}`,
+        `${okStatus && cached && !badAssets.length ? '✓' : '✖'} ${(paged ? 'ISR 分页' : 'ISR 页面').padEnd(9)} ${path.padEnd(44)} ${r.status}${normalizedBack ? ` → ${pathOf(target)}` : ''} cc=${r.cacheControl || '—'}`,
       );
       if (r.status >= 500) failures.push(`${path}：HTTP ${r.status}（5xx 通常是 DYNAMIC_SERVER_USAGE）`);
       else if (!okStatus) failures.push(`${path}：HTTP ${r.status}，期望 ${allow.join('/')}`);
@@ -448,23 +508,37 @@ async function checkLive() {
     // 308 的 Location 会把原始 query 一起带过去（配置层 redirects 的行为，实测
     // `/category/x?page=2` → `/category/x/p/2?page=2`）。这个形态**判为不改**，
     // 理由与裁决记录在 docs/seo/ISR-ROUTES.md；它成立的前提只有一个：
-    // 落地页的 canonical 必须干净。所以真正该守的是这个前提，把它变成断言。
-    let landing = null;
-    try {
-      landing = new URL(r.location, base);
-    } catch {
-      landing = null;
+    // 最终留下的那一页 canonical 必须干净。所以真正该守的是这个前提，把它变成断言。
+    //
+    // 因此这里跟着跳转链走到底（最多 3 跳），只在 200 上读 canonical：
+    // 落地页如果是 404（实测：`/category/ai-tools/p/2` 这一页没内容 → notFound），
+    // 那本来就是「不可收录」的裁决，不存在重复页，拿 404 的响应体找 canonical
+    // 只会造出一条假红灯。
+    let final = null;
+    let hop = redirectTarget(r.location, base);
+    for (let i = 0; i < 3 && hop; i += 1) {
+      const page = await probe(base, `${hop.pathname}${hop.search}`, { body: true });
+      if (page.status >= 300 && page.status < 400) {
+        hop = redirectTarget(page.location, base);
+        continue;
+      }
+      final = { page, url: `${hop.pathname}${hop.search}` };
+      break;
     }
-    if (!landing || landing.origin !== new URL(base).origin) continue;
-    const page = await probe(base, `${landing.pathname}${landing.search}`, { body: true });
-    const canonical = linkHref(page.body, 'canonical');
+    if (!final || final.page.status !== 200) {
+      console.log(
+        `– ${'跳转页 canonical'.padEnd(9)} 落地页不是 200（${final ? final.page.status : '链上没有 200'}），不可收录形态不断言 canonical`,
+      );
+      continue;
+    }
+    const canonical = linkHref(final.page.body, 'canonical');
     const clean = Boolean(canonical) && new URL(canonical, base).search === '';
     console.log(
-      `${clean ? '✓' : '✖'} ${'跳转页 canonical'.padEnd(9)} ${`${landing.pathname}${landing.search}`.padEnd(40)} ${page.status} canonical=${canonical || '—'}`,
+      `${clean ? '✓' : '✖'} ${'跳转页 canonical'.padEnd(9)} ${final.url.padEnd(40)} ${final.page.status} canonical=${canonical || '—'}`,
     );
     if (!clean) {
       failures.push(
-        `${landing.pathname}${landing.search}：跳转落地页的 canonical ${canonical ? `仍带 query（${canonical}）` : '缺失'}——带参 URL 会变成一条可收录的重复页，旧形态归一的权重交接不再自洽`,
+        `${final.url}：跳转落地页的 canonical ${canonical ? `仍带 query（${canonical}）` : '缺失'}——带参 URL 会变成一条可收录的重复页，旧形态归一的权重交接不再自洽`,
       );
     }
   }
@@ -485,7 +559,9 @@ async function checkLive() {
     for (const f of failures) console.error(`  - ${f}`);
     return 1;
   }
-  console.log(`\n✓ 线上 ISR 抽查通过：${checked} 页全部 200 且带 s-maxage，响应体里没有兜底的本机地址`);
+  console.log(
+    `\n✓ 线上 ISR 抽查通过：${checked} 页形态正确且都带 s-maxage，200 页的响应体里没有兜底的本机地址`,
+  );
   return 0;
 }
 

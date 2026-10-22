@@ -19,7 +19,10 @@
 #    - CI 内自建预览（migrate + seed 的中枢 + next start 产物）跑 --live 抽查，
 #      覆盖「产物跑起来之后」：必须 200、必须带 s-maxage、旧 ?page=N 必须 30x
 #    - --min-checked=8 兜覆盖率：空 sitemap 时每个族只会打「跳过」，
-#      0 页通过曾经会静默绿灯——那是比红灯更坏的失败
+#      0 页通过曾经会静默绿灯——那是比红灯更坏的失败。8 是按 2026-10-23 本地
+#      同构复现实测的 11 页定的（见作业内注释），不是拍脑袋
+#    - 就绪探测盯 /site/* 条目：中枢失联时 sitemap 仍有 9 条静态 <loc>，
+#      只看「有没有 <loc>」会误判就绪，门禁随后红在覆盖率上而不是真实原因上
 #    - 此前 --live 只存在于 workflow_dispatch 的 seo-audit-prod，等于每个 PR 都没跑
 #    - 一次性 AUTH_SECRET 由作业现场生成：生产守卫拒绝仓库内的开发回退密钥，
 #      不给的话 next start 每个请求都是 500，门禁会红在无关处
@@ -198,13 +201,20 @@ jobs:
         env:
           NAVHUB_SITE_URL: http://localhost:3000
       - name: ISR 线上抽查
-        # 用 --min-checked=8 兜住覆盖率：白名单 9 个族，允许其中最多 1 族因
-        # 本地种子数据薄而没有样本；再多就是没跑到，不算通过。
+        # 就绪判据要盯「中枢喂进来的条目」（/site/{id}），不是任意 <loc>：
+        # 中枢没起时 sitemap 仍会给出 9 条纯静态条目、照样含 <loc>，探测会误判就绪，
+        # 然后门禁只在 3 页上红——红在无关处，日志里看不出现在这个原因。
+        #
+        # --min-checked=8 的标定来自 2026-10-23 的本地同构复现（新 migrate + 新 seed
+        # 库 + next start 产物，--sample=2）：白名单 9 族里实际抽到 11 页
+        # （首页 1、分类 1+分页 1、站点目录 1+分页 1、插件市场 2、站点详情 2、
+        # 标签 0——种子标签进不了 sitemap、合集 2）。下限取 8 留 3 页余量：
+        # 单一种子数据变薄可以容忍，中枢整条链路失联（只剩 9 条静态 ⇒ 3 页）必须红。
         run: |
           for i in $(seq 1 60); do
-            if curl -sf http://localhost:3000/sitemap.xml | grep -q "<loc>"; then break; fi
+            if curl -sf http://localhost:3000/sitemap.xml | grep -q "<loc>http://localhost:3000/site/"; then break; fi
             sleep 2
-            if [ "$i" = "60" ]; then echo "✖ 预览站 120s 内没给出可用 sitemap"; tail -40 /tmp/hub.log /tmp/web.log; exit 1; fi
+            if [ "$i" = "60" ]; then echo "✖ 预览站 120s 内没给出中枢喂好的 sitemap（/site/* 条目缺失）"; tail -40 /tmp/hub.log /tmp/web.log; exit 1; fi
           done
           node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 --min-checked=8
       - name: 失败时留下预览站日志

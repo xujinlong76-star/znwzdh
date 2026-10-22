@@ -32,17 +32,55 @@ GET /category/ai-tools?page=2
    了一个新的失败面。
 
 **于是改成监控前提，而不是修现象**：`scripts/check-isr-routes.mjs --live` 在验完
-「旧形态必须 30x 到路径段」之后，会**跟进 308 的落地 URL**，断言它的 canonical 存在且
-不带 query（`跳转页 canonical` 那一行）。前提一旦破（canonical 把 query 吃回去，或缺失），
-门禁立刻红灯 —— 那时带参 URL 才真的是一条重复页。
+「旧形态必须 30x 到路径段」之后，会**跟着跳转链走到底（最多 3 跳）**，在最后那个 200 页上
+断言 canonical 存在且不带 query（`跳转页 canonical` 那一行）。前提一旦破（canonical 把
+query 吃回去，或缺失），门禁立刻红灯 —— 那时带参 URL 才真的是一条重复页。
+
+落地页不是 200 时**不断言**（打 `–` 行）：`/category/ai-tools?page=2` → `/p/2?page=2` → 硬 404
+（2026-10-23 用新 seed 库实测），404 本身就是「这一页不存在、不可收录」的裁决，没有重复页
+可谈；在 404 或 308 的响应体里找 canonical 只会造出一条假红灯 —— CI 首个 run 正是这样红的。
 
 **复核**：
 
 ```bash
 node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 --min-checked=8
-# 假站回归（含「canonical 带 query 就红灯」这条用例）：
+# 假站回归（含「canonical 带 query 就红灯」「落地页 404 不断言」两条用例）：
 node node_modules/vitest/vitest.mjs run scripts/check-isr-routes.test.ts
 ```
+
+---
+
+## 裁决 1b：种子数据不足一页时，分页样本的 308 回基底是正确形态
+
+**现象（实测，2026-10-23，新 migrate + 新 seed 库）**：站点目录每页 60 个，种子只有 57 个
+活跃站点 ⇒ `totalPages = 1`。于是 `--live` 为分页族造的样本 `/sites/p/2` 不是 200 也不是 404，
+而是页面自己的归一裁决：
+
+```
+GET /sites/p/2
+→ 308  Location: /sites   （cache-control: s-maxage=60，x-nextjs-cache: HIT）
+```
+
+**为什么判为正确**：`apps/web-overlay/src/app/sites/p/[n]/page.tsx` 用
+`sitesNormalizedPage(requested, totalPages)` 把越界页码送回归一后的页，这正是「不给不存在的
+分页留一个 200 软 404」的设计。CI 自建预览的库永远是小库，所以这条在 CI 里必然出现。
+
+**做法**：`--live` 的分页族样本额外接受「30x 且落点等于本条样本去掉 `/p/{n}` 的族基底」，
+输出行写成 `308 → /sites`；其余 3xx（落点不是族基底）仍判失败。s-maxage 检查照旧 ——
+连这条归一都得走 ISR 缓存，退化成每次现渲照样红灯。
+
+**复核**：
+
+```bash
+node node_modules/vitest/vitest.mjs run scripts/check-isr-routes.test.ts
+# 用例：分页样本 308 回归一后的族基底时判为正确（种子数据不足一页）
+```
+
+顺带记录一条只在冷生成时出现过的观察：`/sites/p/1` 的第一次生成发过**两条**
+`location: /sites`（`Headers.get()` 合并成 `/sites, /sites`，喂给 `new URL()` 得到
+`/sites,%20/sites` → 404）。删掉 `server/route-cache` 重新生成后只剩一条，同一份产物
+没能复现第二次，因此不判失败，只在 `redirectTarget()` 里取第一个片段、不让门禁自己被
+一个不存在的 URL 带跑（有用例钉住）。若哪天能在产物里稳定复现双写，那才是产品缺陷。
 
 ---
 

@@ -56,10 +56,10 @@ function writeManifest(routes: string[]) {
   );
 }
 
-function run(extraArgs: string[] = []) {
+function run(extraArgs: string[] = [], envExtra: Record<string, string> = {}) {
   const res = spawnSync(process.execPath, [SCRIPT, ...extraArgs], {
     encoding: "utf8",
-    env: { ...process.env, NEXT_DIST_DIR: ".next-isr-gate-fixture" },
+    env: { ...process.env, NEXT_DIST_DIR: ".next-isr-gate-fixture", ...envExtra },
   });
   return { code: res.status ?? -1, out: `${res.stdout ?? ""}${res.stderr ?? ""}` };
 }
@@ -286,7 +286,9 @@ describe("check-isr-routes.mjs 永久快照（revalidate=false）", () => {
     writeManifest(ALL_ROUTES);
     const srcRoot = writeSources();
     addBakedPage("/algorithms", false, BAKED_WITH_LOCALHOST);
-    const { code, out } = run([`--src-root=${srcRoot}`]);
+    // 参照 origin 显式钉成「没配」：开发机导出过 NAVHUB_SITE_URL 时，
+    // 不设这一条的话红绿会随本机环境变，用例就在骗自己了
+    const { code, out } = run([`--src-root=${srcRoot}`], { NAVHUB_SITE_URL: "" });
     expect(code, out).toBe(1);
     expect(out).toContain("/algorithms");
     expect(out).toContain("本机地址");
@@ -296,7 +298,7 @@ describe("check-isr-routes.mjs 永久快照（revalidate=false）", () => {
     writeManifest(ALL_ROUTES);
     const srcRoot = writeSources();
     addBakedPage("/sites-p0", 60, BAKED_WITH_LOCALHOST);
-    const { code, out } = run([`--src-root=${srcRoot}`]);
+    const { code, out } = run([`--src-root=${srcRoot}`], { NAVHUB_SITE_URL: "" });
     expect(out, out).not.toContain("本机地址");
     expect(code).toBe(0);
   });
@@ -305,9 +307,33 @@ describe("check-isr-routes.mjs 永久快照（revalidate=false）", () => {
     writeManifest(ALL_ROUTES);
     const srcRoot = writeSources();
     addBakedPage("/algorithms", false, BAKED_WITH_LOCALHOST.replace(/content="[^"]*"/, 'content="/og-default.png"'));
-    const { code, out } = run([`--src-root=${srcRoot}`]);
+    const { code, out } = run([`--src-root=${srcRoot}`], { NAVHUB_SITE_URL: "" });
     expect(out, out).not.toContain("本机地址");
     expect(code).toBe(0);
+  });
+
+  /**
+   * 「本机地址」不等于「兜底地址」：构建期配了 origin，产物里那个端口就是正确形态。
+   * 2026-10-23 在同机复现 CI 时实测到这一族把 `http://localhost:3079/...` 全判成红
+   * （那台预览站就是这么构建的），判定因此改成与 --live / seo-audit 同一把尺：
+   * 端口和配置不一致才算兜底残留。
+   */
+  it("构建期配过 origin 时，同端口的本机地址不算兜底残留（绿灯）", () => {
+    writeManifest(ALL_ROUTES);
+    const srcRoot = writeSources();
+    addBakedPage("/algorithms", false, BAKED_WITH_LOCALHOST.replace("localhost:3000", "localhost:3079"));
+    const { code, out } = run([`--src-root=${srcRoot}`], { NAVHUB_SITE_URL: "http://localhost:3079" });
+    expect(out, out).not.toContain("本机地址");
+    expect(code).toBe(0);
+  });
+
+  it("配置指向别的端口时，兜底残留照旧红灯（端口比对不是放行本机地址）", () => {
+    writeManifest(ALL_ROUTES);
+    const srcRoot = writeSources();
+    addBakedPage("/algorithms", false, BAKED_WITH_LOCALHOST);
+    const { code, out } = run([`--src-root=${srcRoot}`], { NAVHUB_SITE_URL: "http://localhost:3079" });
+    expect(code, out).toBe(1);
+    expect(out).toContain("本机地址");
   });
 });
 
@@ -330,7 +356,13 @@ describe("check-isr-routes.mjs --live 抽查", () => {
    */
   function serve(
     paths: string[],
-    opts: { canonicalKeepsQuery?: boolean; bakeLocalAsset?: boolean } = {},
+    opts: {
+      canonicalKeepsQuery?: boolean;
+      bakeLocalAsset?: boolean;
+      collapsePagesToBase?: boolean;
+      notFoundPages?: boolean;
+      duplicateLocation?: boolean;
+    } = {},
   ): Promise<{ base: string; close: () => Promise<void> }> {
     return new Promise((resolvePromise) => {
       const server = createServer((req, res) => {
@@ -354,8 +386,27 @@ describe("check-isr-routes.mjs --live 抽查", () => {
           return;
         }
         if (url.pathname === "/sites/p/1") {
-          res.writeHead(308, { location: "/sites" });
+          // 实测：冷生成那一次 Next 发了两条一模一样的 location。
+          // Headers.get() 会把同名头合并成 "/sites, /sites"，直接 new URL() 得到
+          // 一个不存在的地址 —— 门禁必须只取第一段。
+          res.setHeader("location", "/sites");
+          if (opts.duplicateLocation) res.appendHeader("location", "/sites");
+          res.writeHead(308);
           res.end();
+          return;
+        }
+        // 种子数据不足一页（新库 57 站点 / 每页 60 ⇒ totalPages=1）时，
+        // `/sites/p/{n≥2}` 被页面自己的 permanentRedirect 送回基底 URL。
+        const paged = /^\/sites\/p\/([2-9][0-9]*)$/.exec(url.pathname);
+        if (paged && opts.collapsePagesToBase) {
+          res.writeHead(308, { location: "/sites", "cache-control": "s-maxage=60" });
+          res.end();
+          return;
+        }
+        if (paged && opts.notFoundPages) {
+          // 分类第 2 页没内容是硬 404，不是软 200：Next 在这条裁决上同样带 s-maxage
+          res.writeHead(404, { "content-type": "text/html", "cache-control": "s-maxage=60" });
+          res.end("<html><body>not found</body></html>");
           return;
         }
         const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -381,7 +432,13 @@ describe("check-isr-routes.mjs --live 抽查", () => {
   async function runLive(
     paths: string[],
     extra: string[] = [],
-    opts: { canonicalKeepsQuery?: boolean; bakeLocalAsset?: boolean } = {},
+    opts: {
+      canonicalKeepsQuery?: boolean;
+      bakeLocalAsset?: boolean;
+      collapsePagesToBase?: boolean;
+      notFoundPages?: boolean;
+      duplicateLocation?: boolean;
+    } = {},
   ) {
     const { base, close } = await serve(paths, opts);
     try {
@@ -455,5 +512,33 @@ describe("check-isr-routes.mjs --live 抽查", () => {
     expect(code, out).toBe(1);
     expect(out).toContain("canonical");
     expect(out).toMatch(/仍带 query|缺失/);
+  });
+
+  /**
+   * 下面两条是 CI 首个 run（2026-10-23）红出来的两个门禁缺陷。
+   * 假站的形态照抄那一次的实测：新 seed 库 57 个站点、每页 60 个 ⇒ totalPages=1，
+   * 于是 `/sites/p/2` 不是 200 也不是 404，而是页面自己 permanentRedirect 回 `/sites`；
+   * 分类第 2 页没内容时是硬 404。两种都是正确裁决，判失败就是把门禁修歪。
+   */
+  it("分页样本 308 回归一后的族基底时判为正确（种子数据不足一页）", async () => {
+    const { code, out } = await runLive(["/sites"], [], { collapsePagesToBase: true });
+    expect(out, out).toContain("✓ ISR 分页");
+    expect(out, out).toContain("308 → /sites");
+    expect(out, out).toContain("✓ 线上 ISR 抽查通过：2 页");
+    expect(code).toBe(0);
+  });
+
+  it("跳转落地页是 404 时不断言 canonical（硬 404 已是不可收录裁决）", async () => {
+    const { code, out } = await runLive(["/sites"], [], { notFoundPages: true });
+    expect(out, out).toContain("落地页不是 200（404）");
+    expect(out, out).not.toContain("canonical 缺失");
+    expect(code).toBe(0);
+  });
+
+  it("Location 被合并成重复值时只取第一段（否则门禁自己跳去一个不存在的 URL）", async () => {
+    const { code, out } = await runLive(["/sites"], [], { duplicateLocation: true });
+    expect(out, out).not.toContain("sites,%20/sites");
+    expect(out, out).toContain("✓ 跳转页 canonical");
+    expect(code).toBe(0);
   });
 });

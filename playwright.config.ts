@@ -51,6 +51,12 @@ export default defineConfig({
       // 举报接口按 IP 限流 5 次/小时；E2E 用不同 XFF 模拟独立举报人，
       // 避免测试重试累计超过配额（仅测试进程生效，生产默认不信任 XFF）。
       NAVHUB_TRUST_PROXY: '1',
+      // 审核上架/安装会同步重建向量索引。CI 冷启动没有模型缓存，首次
+      // embedding 要从 hf-mirror 下载 ~24MB 模型（本地实测 9s，CI 更慢），
+      // 足以把 15s/30s 的 UI 断言拖成超时且随网络抖动时绿时红。
+      // E2E 不验证语义排序（search.spec 只测意图微部件），关掉后走关键词
+      // 检索，安装/审核路径与状态机完全一致。
+      NAVHUB_EMBEDDING_ENABLED: '0',
     },
   },
 });

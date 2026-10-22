@@ -74,7 +74,17 @@ export const algorithmHandlers = {
       },
     });
 
-    return ok({ healed: true, report });
+    // 返回体必须说清"只诊断、没改数据"：healed:true 会让 Agent 认为站点已修复，
+    // 于是不再调 set_status / 不再排队重抓，故障站点带着"已自愈"的记录一直留在库里。
+    return ok({
+      healed: false,
+      diagnosed: true,
+      applied: false,
+      siteId: site.id,
+      recommendedAction: report.recommendedAction,
+      note: "本工具只做诊断（根因 + 归档快照 + 替代品推荐），不改动站点数据。需要落库请显式调用 set_status 或 update_site。",
+      report,
+    });
   },
 
   async find_tech_path(deps: HandlerDeps, args: unknown, tc: ToolContext) {

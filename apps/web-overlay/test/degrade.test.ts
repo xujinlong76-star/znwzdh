@@ -201,8 +201,13 @@ describe("navhub-api：失败事实要交回调用方，404 除外", () => {
 });
 
 describe("页面源码：不许把「中枢挂了」写成「不存在」", () => {
-  const sitePage = readFileSync(overlayFile("src/app/site/[id]/page.tsx"), "utf8");
-  const collectionPage = readFileSync(overlayFile("src/app/collections/[slug]/page.tsx"), "utf8");
+  // 2026-10-21 起站点详情交互体在客户端岛（服务端壳只做软 404 判定）；
+  // 专题详情同批服务端化，降级行为随岛迁移到 collection-detail-view.tsx
+  const sitePage = readFileSync(overlayFile("src/components/site-detail-view.tsx"), "utf8");
+  const collectionPage = readFileSync(
+    overlayFile("src/app/collections/[slug]/collection-detail-view.tsx"),
+    "utf8",
+  );
 
   it("站点详情页：用 !failed 守卫区分失败与不存在，并渲染降级提示 + 重试", () => {
     expect(sitePage).toContain("if (!s && !failed) setNotFound(true)");

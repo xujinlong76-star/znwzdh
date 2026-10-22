@@ -3,9 +3,10 @@
 /**
  * 站点详情客户端岛（SiteDetailView）：完整信息 + 正交分面属性 + 强类型实体平替生态图谱 + 向量相似推荐。
  *
- * 由 `app/site/[id]/page.tsx` 服务端壳下发 id 后挂载。壳负责软 404 判定
- * （hubGetProbe 确认不存在 → notFound()），本岛只管渲染与交互——
- * 2026-10-21 从 page.tsx 整体抽出，交互代码原样保留。
+ * 由 `app/site/[id]/page.tsx` 服务端壳下发 id 与首屏 `initialSite` 后挂载。
+ * 壳负责软 404 判定（hubGetProbe 确认不存在 → notFound()）与元信息；本岛
+ * 只管渲染与交互——2026-10-21 从 page.tsx 整体抽出，交互代码原样保留。
+ * 有 initialSite 时首屏不再重复请求（SSR 直出 `<h1>` 与正文），重试仍走客户端。
  *
  * 核心能力：
  * 1. 核心站点展板：Favicon、SLA 状态、点击频次、外链与一键复制
@@ -14,7 +15,7 @@
  * 4. 向量相似推荐：基于嵌入向量 KNN 的相关站点发现
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { FavoriteButton } from '@/components/favorite-button'
@@ -22,7 +23,6 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import {
   ExternalLink,
-  ArrowLeft,
   Copy,
   Check,
   Sparkles,
@@ -30,7 +30,7 @@ import {
   ArrowRight,
   GitFork,
   Boxes,
-  Workflow,
+  LayoutGrid,
   ShieldCheck,
   Tag,
   DollarSign,
@@ -98,13 +98,32 @@ const FACET_LABELS: Record<string, { label: string; icon: any }> = {
   language: { label: '界面语言', icon: Globe },
 }
 
-export function SiteDetailView({ id }: { id: string }) {
-  const [site, setSite] = useState<HubSite | null>(null)
+export function SiteDetailView({
+  id,
+  initialSite = null,
+  initialRelated = [],
+  category = null,
+  canLinkCategory = false,
+  categoryCount = 0,
+  breadcrumb = null,
+}: {
+  id: string
+  initialSite?: HubSite | null
+  /** 同分类站点（服务端下发，SSR 输出 /site 内链） */
+  initialRelated?: HubSite[]
+  category?: { id: string; title: string } | null
+  /** 分类站点数达标才链分类页——薄分类路由是 404 */
+  canLinkCategory?: boolean
+  categoryCount?: number
+  /** 服务端渲染的可见面包屑 + BreadcrumbList JSON-LD */
+  breadcrumb?: ReactNode
+}) {
+  const [site, setSite] = useState<HubSite | null>(initialSite)
   const [similar, setSimilar] = useState<HubSite[]>([])
   const [relations, setRelations] = useState<HubSiteRelation[]>([])
   /** 关系网络降级：中枢不可用时 relations 静默为空，需与「确实没有关系」区分 */
   const [relationsDegraded, setRelationsDegraded] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialSite)
   const [notFound, setNotFound] = useState(false)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
@@ -120,9 +139,10 @@ export function SiteDetailView({ id }: { id: string }) {
     setTimeout(() => setCopyState('idle'), 2000)
   }
 
-  // 加载站点主数据
+  // 加载站点主数据（服务端已下发且未点重试时跳过，避免首屏重复请求）
   useEffect(() => {
     if (!id) return
+    if (initialSite && reloadToken === 0) return
     let cancelled = false
     let failed = false
     setLoading(true)
@@ -140,7 +160,7 @@ export function SiteDetailView({ id }: { id: string }) {
     return () => {
       cancelled = true
     }
-  }, [id, reloadToken])
+  }, [id, reloadToken, initialSite])
 
   // 加载 KNN 相似站点
   useEffect(() => {
@@ -261,18 +281,8 @@ export function SiteDetailView({ id }: { id: string }) {
   return (
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 max-w-4xl mx-auto space-y-8">
-        {/* 面包屑 */}
-        <div className="flex items-center gap-2">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1 rounded-md bg-background/60 hover:bg-background border border-border/60"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>返回导航</span>
-          </Link>
-          <span className="text-border">/</span>
-          <span className="text-xs text-foreground font-medium truncate max-w-[200px]">{site.title}</span>
-        </div>
+        {/* 面包屑：服务端渲染（可见 DOM 与 BreadcrumbList 同源） */}
+        {breadcrumb}
 
         {/* 降级提示 */}
         {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
@@ -554,6 +564,77 @@ export function SiteDetailView({ id }: { id: string }) {
               })}
             </div>
           </div>
+        )}
+
+        {/* 同分类站点：服务端下发的站内 /site 内链（爬虫可见），
+            与客户端 KNN 外链推荐分开——前者补内链图，后者做发现 */}
+        {(initialRelated.length > 0 || (category && canLinkCategory)) && (
+          <section aria-labelledby="related-sites-heading" className="space-y-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <h2
+                id="related-sites-heading"
+                className="text-sm sm:text-base font-bold flex items-center gap-2 text-foreground"
+              >
+                <LayoutGrid className="w-4 h-4 text-sky-500" />
+                <span>同分类站点</span>
+              </h2>
+              {category && <span className="text-xs text-muted-foreground font-mono truncate">{category.title}</span>}
+            </div>
+            {initialRelated.length > 0 && (
+              <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+                {initialRelated.map((s) => (
+                  <li
+                    key={s.id}
+                    className="rounded-xl border border-border/70 bg-card p-3.5 hover:border-sky-500/40 transition-all shadow-2xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/site/${encodeURIComponent(s.id)}`}
+                        className="flex min-w-0 flex-1 items-center gap-3 group"
+                      >
+                        <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-muted/60 border border-border/50 p-1 flex items-center justify-center overflow-hidden">
+                          <SiteFavicon
+                            title={s.title}
+                            url={s.url}
+                            icon={s.iconKey ?? undefined}
+                            className="w-full h-full object-contain rounded"
+                          />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs sm:text-sm font-semibold truncate group-hover:text-primary transition-colors">
+                            {s.title}
+                          </div>
+                          {s.description && (
+                            <div className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                              {s.description}
+                            </div>
+                          )}
+                        </div>
+                      </Link>
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`访问 ${s.title} 官网`}
+                        className="text-muted-foreground hover:text-primary p-1"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {category && canLinkCategory && (
+              <Link
+                href={`/category/${encodeURIComponent(category.id)}`}
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                浏览全部 {categoryCount} 个「{category.title}」站点
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            )}
+          </section>
         )}
 
         {/* 向量图谱相似推荐 (KNN) */}

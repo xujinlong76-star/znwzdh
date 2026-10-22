@@ -1,16 +1,9 @@
-import type { Metadata } from 'next'
-
 /**
- * 标题层：`page.tsx` 是客户端组件（'use client'），无法导出 metadata，
- * 因此由这一层 server layout 提供。
+ * 纯布局层：标题/描述已由 page.tsx 的 generateMetadata 逐站产出。
  *
- * 站点名在客户端才知道，所以这里只给通用标题（不编造具体站点名）。
+ * 这里刻意不再保留静态 metadata——页面级 metadata 会覆盖 layout 的同名字段，
+ * 留着只会让后来者误以为标题来源在这；错误边界页的品牌后缀由根 layout 兜底。
  */
-export const metadata: Metadata = {
-  title: '站点详情',
-  description: '官网入口、一句话简介与所属分类',
-}
-
 export default function SiteDetailLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }

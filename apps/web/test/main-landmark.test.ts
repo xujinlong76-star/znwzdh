@@ -59,6 +59,11 @@ const LANDMARK_ELSEWHERE: Record<string, string> = {
   "src/app/page.tsx": "首页主体在 components/navigation-content.tsx",
   "src/app/videos/page.tsx": "视频页主体在 components/video-content.tsx",
   "src/app/graph/page.tsx": "图谱页主体在 components/ecosystem-graph.tsx",
+  "src/app/site/[id]/page.tsx": "站点详情主体在 components/site-detail-view.tsx",
+  "src/app/marketplace/[slug]/page.tsx":
+    "插件详情主体在 app/marketplace/[slug]/plugin-detail-view.tsx（服务端壳只探活）",
+  "src/app/marketplace/author/[key]/page.tsx":
+    "作者主页主体在 app/marketplace/author/[key]/author-plugins-view.tsx（服务端壳只探活）",
 };
 
 /** 这些文件必须真的带地标（承载了委托页面的主体） */
@@ -66,6 +71,7 @@ const COMPONENTS_WITH_LANDMARK = [
   "src/components/navigation-content.tsx",
   "src/components/video-content.tsx",
   "src/components/ecosystem-graph.tsx",
+  "src/components/site-detail-view.tsx",
   "src/app/admin/AdminLayoutClient.tsx",
   "src/app/error.tsx",
   "src/app/global-error.tsx",
@@ -153,8 +159,8 @@ describe("Container 作为地标是可选行为", () => {
     expect(src).toContain("<div id={id}");
   });
 
-  it("站点详情页的分支各自成地标（同一次渲染只会命中一个分支）", () => {
-    const src = overlaySource("src/app/site/[id]/page.tsx");
+  it("站点详情岛的分支各自成地标（同一次渲染只会命中一个分支）", () => {
+    const src = overlaySource("src/components/site-detail-view.tsx");
     const hits = src.split('as="main" id="main-content"').length - 1;
     expect(hits).toBeGreaterThanOrEqual(4);
   });

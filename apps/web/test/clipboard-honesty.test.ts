@@ -177,7 +177,8 @@ describe("各复制入口只在真的成功后才显示成功", () => {
   const cases: Array<{ file: string; label: string }> = [
     // P1-2 拆分：三处复制入口随 handler 整体迁入 home-diy-backup-dialog.tsx
     { file: "src/components/home-diy-backup-dialog.tsx", label: "DIY 备份弹窗（3 处）" },
-    { file: "src/app/site/[id]/page.tsx", label: "站点详情页复制链接" },
+    // 2026-10-21 起站点详情交互体在客户端岛（服务端壳只做软 404 判定）
+    { file: "src/components/site-detail-view.tsx", label: "站点详情页复制链接" },
     { file: "src/components/architecture-recipe-card.tsx", label: "架构配方卡" },
     { file: "src/components/speculative-intent-card.tsx", label: "推测意图卡" },
   ];
@@ -189,7 +190,7 @@ describe("各复制入口只在真的成功后才显示成功", () => {
   });
 
   it("站点详情页：只有 ok 才显示「已复制」，失败时给失败态", () => {
-    const src = overlaySource("src/app/site/[id]/page.tsx");
+    const src = overlaySource("src/components/site-detail-view.tsx");
     expect(src).toContain("await copyText(site.url)");
     expect(src).toContain("setCopyState(result.ok ? 'copied' : 'failed')");
     expect(src).toContain("复制失败，请手动选中链接复制");

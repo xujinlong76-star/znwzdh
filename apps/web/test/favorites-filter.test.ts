@@ -120,9 +120,12 @@ describe("源码守卫：筛选真的接在页面上，且两种「空」不混�
     const gridAt = src.indexOf("min-[1536px]:grid-cols-5");
     expect(gridAt).toBeGreaterThan(-1);
     const grid = src.slice(gridAt, gridAt + 400);
-    // 第二批在筛选结果之上叠加了收藏夹过滤（visibleFavorites），但绝不能直接用全量 items
-    expect(grid).toContain("visibleFavorites.map(");
+    // 第二批在筛选结果之上叠加了收藏夹过滤（visibleFavorites），第三批再按
+    // visibleCount 渐进渲染（renderedFavorites）——但绝不能直接用全量 items
+    expect(grid).toContain("renderedFavorites.map(");
     expect(grid).not.toContain("favorites.items.map(");
+    // 渐进渲染必须是可见集合的切片，不能绕开筛选/收藏夹过滤
+    expect(src).toContain("visibleFavorites.slice(0, visibleCount)");
     const filteredAt = src.indexOf("const filteredFavorites = useMemo(");
     expect(filteredAt).toBeGreaterThan(-1);
     expect(src.slice(filteredAt, filteredAt + 300)).toContain("filterFavorites(favorites.items, favoriteQuery)");

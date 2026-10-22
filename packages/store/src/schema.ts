@@ -597,5 +597,8 @@ export const schema = {
   users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, systemStates, taxonomyProposals,
   plugins, pluginInstalls, pluginStars, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
+  // 用户域补齐（N11）：此前这四张表没有进入导出，drizzle 工具链拿不到它们，
+  // 「schema 是单一事实源」名不副实——迁移脚本与 DDL 各写一份，drift 无从校验。
+  identityAliases, identityMerges, userLlmConfigs, userSettings,
 };
 

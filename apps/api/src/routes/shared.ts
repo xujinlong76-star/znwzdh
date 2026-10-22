@@ -314,6 +314,31 @@ export function identityTrusted(ctx: AppContext, req: { auth?: { kind?: string }
 }
 
 /**
+ * 把「调用方自称的身份」解析成身份合并之后的 canonical 身份。
+ *
+ * 为什么必须在每个用户域路由里都做：身份合并（`identity_aliases`）之后，旧 id 仍然
+ * 是一枚**合法且已签名**的身份——扩展、MCP、没刷新的旧标签页都会继续用它发请求。
+ * 如果只有 `/api/me*` 解析别名，这些写入就会落在旧 id 上变成孤儿行：`/me` 概览看不到、
+ * 导出与注销也覆盖不到（用户以为数据没了，其实还在库里）。
+ *
+ * 时序红线：本函数只能在签名校验**之后**调用。签名对象是 `identityOf` 截断 64 字符的
+ * **原始**身份，若在 preValidation 之前改写身份，签名校验必然失败（见 `identity-signature.ts`）。
+ * 因此这里只影响「用哪个 id 读写仓储」，不参与任何签名计算。
+ *
+ * 未配置别名表 / 查不到别名时原样返回，语义等同旧行为（无别名即自身）。
+ */
+export async function resolveCanonicalIdentity(ctx: AppContext, identity: string): Promise<string> {
+  if (!identity) return identity;
+  try {
+    return await ctx.repo.resolveIdentity(identity);
+  } catch {
+    // 解析失败不阻断请求：退回原始身份，最坏结果与改造前一致（可能产生孤儿行），
+    // 但不会因为一次别名表抖动让整个用户域 500。
+    return identity;
+  }
+}
+
+/**
  * 「这个调用方算不算管理员」——比直接读 `req.auth.scopes` 严一档。
  *
  * 坑在挂载方式：`server.ts` 的 onRequest 先无条件把 `req.auth` 复制成

@@ -670,6 +670,14 @@ export class Repository {
     return favoritesRepo.listFavorites(this, userId);
   }
 
+  /** 列表 UI 用的分页/检索版；导出与画像聚合仍走上面的全量 `listFavorites` */
+  async listFavoritesPage(
+    userId: string,
+    query: favoritesRepo.FavoriteListQuery = {},
+  ): Promise<favoritesRepo.FavoriteListPage> {
+    return favoritesRepo.listFavoritesPage(this, userId, query);
+  }
+
   async addFavorite(input: { userId: string; siteId: string; folderId?: string | null; note?: string | null }): Promise<{ favorite: FavoriteRecord; existed: boolean }> {
     return favoritesRepo.addFavorite(this, input);
   }

@@ -82,6 +82,89 @@ export async function listFavorites(repo: Repository, userId: string): Promise<F
   return rows.map(rowToFavorite);
 }
 
+/** 收藏列表的检索 / 排序 / 分页参数（N8：万级收藏可用） */
+export interface FavoriteListQuery {
+  /** 关键词：匹配收藏备注、站点标题、站点地址（大小写不敏感） */
+  q?: string;
+  /** 限定某个收藏夹；空串 / 缺省 = 全部 */
+  folderId?: string | null;
+  /** created（默认，新→旧）| title（标题升序） */
+  sort?: "created" | "title";
+  limit?: number;
+  offset?: number;
+}
+
+export interface FavoriteListPage {
+  items: FavoriteRecord[];
+  /** 满足筛选条件的总条数（不受 limit 影响），供前端显示「x / y」与判断 hasMore */
+  total: number;
+  hasMore: boolean;
+}
+
+/**
+ * LIKE 通配符转义：用户输入的 `%` / `_` 必须当字面量，否则搜 `100%` 会变成前缀通配。
+ * 反斜杠本身要先转义（顺序不能反）。
+ */
+function escapeLikeTerm(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => "\\" + ch);
+}
+
+/**
+ * 收藏列表分页版（`GET /api/favorites?limit=…`）。
+ *
+ * 与 `listFavorites` 的分工：后者是**全量**，供导出 / 书签 HTML / 画像聚合使用——
+ * 那些场景少一条就是数据丢失，绝不能加 LIMIT。这里只服务列表 UI。
+ *
+ * 关键词检索必须 JOIN sites：收藏行本身只有 note，用户眼里的「标题/网址」在 sites 表。
+ * 站点被软删时 LEFT JOIN 仍保留收藏行（title/url 为 NULL），只按备注命中。
+ */
+export async function listFavoritesPage(
+  repo: Repository,
+  userId: string,
+  query: FavoriteListQuery = {},
+): Promise<FavoriteListPage> {
+  const where: string[] = ["f.user_id = ?", "f.deleted_at IS NULL"];
+  const params: unknown[] = [userId];
+
+  const q = (query.q ?? "").trim();
+  if (q) {
+    const term = `%${escapeLikeTerm(q)}%`;
+    where.push("(f.note LIKE ? ESCAPE '\\' OR s.title LIKE ? ESCAPE '\\' OR s.url LIKE ? ESCAPE '\\')");
+    params.push(term, term, term);
+  }
+  if (query.folderId) {
+    where.push("f.folder_id = ?");
+    params.push(query.folderId);
+  }
+
+  const whereSql = where.join(" AND ");
+  // 排序表达式必须双方言通用：`COLLATE NOCASE` 是 SQLite 专有，PG 会直接报错。
+  // LOWER() 在两边语义一致，中文排序仍按码点（与既有 sort 行为一致）。
+  const orderSql =
+    query.sort === "title"
+      ? "ORDER BY LOWER(COALESCE(s.title, '')) ASC, f.created_at DESC"
+      : "ORDER BY f.created_at DESC";
+
+  const limit = Math.min(Math.max(Math.trunc(query.limit ?? 50), 1), 200);
+  const offset = Math.max(Math.trunc(query.offset ?? 0), 0);
+
+  const rows = await repo.raw(
+    `SELECT f.* FROM favorites f LEFT JOIN sites s ON s.id = f.site_id
+     WHERE ${whereSql} ${orderSql} LIMIT ? OFFSET ?`,
+    [...params, limit, offset],
+  );
+  const countRows = await repo.raw(
+    `SELECT COUNT(*) AS c FROM favorites f LEFT JOIN sites s ON s.id = f.site_id WHERE ${whereSql}`,
+    params,
+  );
+  const total = Number(countRows[0]?.c ?? 0);
+  return {
+    items: rows.map(rowToFavorite),
+    total,
+    hasMore: offset + rows.length < total,
+  };
+}
+
 export async function addFavorite(repo: Repository, input: { userId: string; siteId: string; folderId?: string | null; note?: string | null }): Promise<{ favorite: FavoriteRecord; existed: boolean }> {
   const id = randomUUID();
   const now = Date.now();

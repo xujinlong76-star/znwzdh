@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
-import { AlertTriangle, ArrowLeft, CheckCircle2, Database, Download, Loader2, ShieldCheck, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Bookmark, CheckCircle2, Database, Download, Loader2, ShieldCheck, Trash2 } from 'lucide-react'
 
 type ViewState = 'loading' | 'anonymous' | 'ready' | 'deleted' | 'error'
 
@@ -37,11 +37,20 @@ export default function MeDataPage() {
         setState('error')
         return
       }
-      const session = (await res.json().catch(() => {
-        // 非 JSON / 解析中断：返回 null，下面按「状态未知」渲染，而不是当作匿名
-        return null
-      })) as { user?: { id?: string } } | null
-      setState(session === null ? 'error' : session?.user?.id ? 'ready' : 'anonymous')
+      // 与 me-view 同一口径：NextAuth 未登录返回字面量 null（200），那是「没有会话」的
+      // 正常回答；只有**解析抛错**才是故障。把 null 当故障会让匿名访客看到错误态。
+      let parsed: unknown
+      try {
+        parsed = await res.json()
+      } catch {
+        parsed = undefined
+      }
+      if (parsed === undefined) {
+        setState('error')
+        return
+      }
+      const session = (parsed ?? {}) as { user?: { id?: string } }
+      setState(session.user?.id ? 'ready' : 'anonymous')
     } catch {
       setState('error')
     }
@@ -185,10 +194,22 @@ export default function MeDataPage() {
               包含收藏与文件夹、搜索历史、画像、设置、插件安装记录、金库版本信息。LLM 配置只保留模型与地址，
               不含密钥；金库只导出加密后的元信息。
             </p>
-            <Button size="sm" className="text-xs" disabled={exporting} onClick={() => void handleExport()}>
-              {exporting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
-              下载 JSON
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" className="text-xs" disabled={exporting} onClick={() => void handleExport()}>
+                {exporting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
+                下载 JSON
+              </Button>
+              {/* M9 互操作：书签 HTML 是 Chrome/Firefox/Safari/Edge 都能直接导入的标准格式 */}
+              <Button asChild size="sm" variant="outline" className="text-xs">
+                <a href="/api/me/export/bookmarks.html">
+                  <Bookmark className="mr-2 h-3.5 w-3.5" />
+                  导出浏览器书签（HTML）
+                </a>
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              书签文件可直接导入 Chrome / Firefox / Safari / Edge，分组按收藏夹还原。
+            </p>
           </section>
 
           <section className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 space-y-3">

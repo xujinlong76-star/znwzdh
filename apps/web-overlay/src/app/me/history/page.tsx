@@ -12,7 +12,7 @@ import { Container } from '@/components/ui/container'
 import { Button } from '@/components/ui/button'
 import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
-import { getIdentity } from '@/lib/identity'
+import { useIdentityReady } from '@/hooks/useIdentityReady'
 import {
   clearCloudSearchHistory,
   deleteSearchHistoryItem,
@@ -36,6 +36,8 @@ function formatTime(ts: number): string {
 
 export default function SearchHistoryPage() {
   const { toast } = useToast()
+  // 身份就绪（N1）：登录/合并/退出后自动重取，不再出现「匿名历史 + 已登录头部」
+  const identityReady = useIdentityReady()
   const [identity, setIdentity] = useState('')
   const [items, setItems] = useState<HubSearchHistoryItem[]>([])
   const [hasMore, setHasMore] = useState(false)
@@ -45,8 +47,7 @@ export default function SearchHistoryPage() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
 
-  const load = useCallback(async () => {
-    const id = getIdentity()
+  const load = useCallback(async (id: string) => {
     setIdentity(id)
     if (!id) {
       setState('no-identity')
@@ -70,8 +71,10 @@ export default function SearchHistoryPage() {
   }, [])
 
   useEffect(() => {
-    void load()
-  }, [load])
+    // 等身份就绪再取数：登录/合并/退出都会改变 identity，从而自动重取
+    if (!identityReady.ready) return
+    void load(identityReady.identity ?? '')
+  }, [load, identityReady.ready, identityReady.identity])
 
   const loadMore = useCallback(async () => {
     if (!identity || loadingMore) return
@@ -169,7 +172,7 @@ export default function SearchHistoryPage() {
           <p className="text-xs text-muted-foreground">
             云端暂时不可用，这不代表历史被清空——恢复后记录会原样回来。
           </p>
-          <Button size="sm" variant="outline" className="text-xs" onClick={() => void load()}>
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => void load(identityReady.identity ?? '')}>
             重试
           </Button>
         </section>

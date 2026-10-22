@@ -194,6 +194,103 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
     expect(await ctx!.repo.getUserProfile("pg-e2e-user")).toBeNull();
   });
 
+  /* -------------------- 用户域（N6 补齐：此前 PG 零覆盖） -------------------- */
+
+  it("收藏：幂等写入 + 墓碑复活（ON CONFLICT DO NOTHING 与部分唯一索引）", async () => {
+    const user = "pg-e2e-fav-user";
+    const site = await ctx!.repo.createSite({ url: "https://example.com/pg-fav", title: "PG 收藏站", categoryId: catId });
+    const first = await ctx!.repo.addFavorite({ userId: user, siteId: site.id });
+    expect(first.existed).toBe(false);
+    // 双写竞态：第二次必须是幂等 200，而不是撞唯一索引抛错
+    const second = await ctx!.repo.addFavorite({ userId: user, siteId: site.id });
+    expect(second.existed).toBe(true);
+    expect((await ctx!.repo.listFavorites(user)).length).toBe(1);
+
+    // 软删后再收藏 = 复活：墓碑必须被清掉，否则列表里看不到（SQLite 侧已修）
+    expect(await ctx!.repo.removeFavorite(user, site.id)).toBe(true);
+    expect((await ctx!.repo.listFavorites(user)).length).toBe(0);
+    const revived = await ctx!.repo.addFavorite({ userId: user, siteId: site.id });
+    expect(revived.existed).toBe(false);
+    expect((await ctx!.repo.listFavorites(user)).length).toBe(1);
+    await ctx!.repo.clearFavorites(user);
+  });
+
+  it("收藏：批量 ops 的 LWW 与墓碑传播（增量同步的服务端语义）", async () => {
+    const user = "pg-e2e-sync-user";
+    const site = await ctx!.repo.createSite({ url: "https://example.com/pg-sync", title: "PG 同步站", categoryId: catId });
+
+    const added = await ctx!.repo.applyFavoriteOps(user, [{ op: "add", siteId: site.id, note: "来自批量", at: 1_000 }]);
+    expect(added.applied).toBe(1);
+    expect(added.version).toBeGreaterThanOrEqual(1_000);
+
+    // at 不大于 updated_at → LWW 跳过（同一端的旧请求重放不能覆盖新状态）
+    const stale = await ctx!.repo.applyFavoriteOps(user, [{ op: "add", siteId: site.id, note: "旧请求", at: 500 }]);
+    expect(stale.applied).toBe(0);
+    expect((await ctx!.repo.listFavorites(user))[0].note).toBe("来自批量");
+
+    // remove 落墓碑，增量拉取必须能看到它（否则另一端永远不知道被删了）
+    await ctx!.repo.applyFavoriteOps(user, [{ op: "remove", siteId: site.id, at: 2_000 }]);
+    const since = await ctx!.repo.listFavoritesSince(user, 1_500);
+    expect(since.items.length).toBe(1);
+    expect(since.items[0].deletedAt).not.toBeNull();
+    expect((await ctx!.repo.listFavorites(user)).length).toBe(0);
+    await ctx!.repo.clearFavorites(user);
+  });
+
+  it("收藏列表：JOIN + LIKE 转义 + 分页在 PG 上等价", async () => {
+    const user = "pg-e2e-list-user";
+    const alpha = await ctx!.repo.createSite({ url: "https://alpha.example.com/pg", title: "Alpha 站", categoryId: catId });
+    const beta = await ctx!.repo.createSite({ url: "https://beta.example.com/pg", title: "Beta 站", categoryId: catId });
+    await ctx!.repo.addFavorite({ userId: user, siteId: alpha.id, note: "100% 命中" });
+    await ctx!.repo.addFavorite({ userId: user, siteId: beta.id });
+
+    const page = await ctx!.repo.listFavoritesPage(user, { limit: 1, offset: 0 });
+    expect(page.total).toBe(2);
+    expect(page.hasMore).toBe(true);
+    const second = await ctx!.repo.listFavoritesPage(user, { limit: 1, offset: 1 });
+    expect(second.hasMore).toBe(false);
+
+    // 标题检索走 LEFT JOIN sites
+    expect((await ctx!.repo.listFavoritesPage(user, { q: "Alpha" })).total).toBe(1);
+    // 备注检索 + `%` 必须当字面量：ESCAPE '' 在 PG 上同样生效
+    expect((await ctx!.repo.listFavoritesPage(user, { q: "100%" })).total).toBe(1);
+    expect((await ctx!.repo.listFavoritesPage(user, { q: "%" })).total).toBe(0);
+    // 标题排序：LOWER(COALESCE(...)) 是双方言表达式
+    const sorted = await ctx!.repo.listFavoritesPage(user, { sort: "title", limit: 50 });
+    expect(sorted.items.map((f) => f.siteId)).toEqual([alpha.id, beta.id]);
+    await ctx!.repo.clearFavorites(user);
+  });
+
+  it("身份合并：收藏搬到目标身份，源身份不再有行", async () => {
+    const source = "pg-e2e-merge-src";
+    const target = "pg-e2e-merge-dst";
+    const site = await ctx!.repo.createSite({ url: "https://example.com/pg-merge", title: "PG 合并站", categoryId: catId });
+    await ctx!.repo.addFavorite({ userId: source, siteId: site.id });
+    const result = await ctx!.repo.mergeIdentity(source, target);
+    expect(result.favoritesMoved).toBe(1);
+    expect((await ctx!.repo.listFavorites(target)).length).toBe(1);
+    expect((await ctx!.repo.listFavorites(source)).length).toBe(0);
+    // 解析别名：旧 id 的读写必须落到目标身份
+    expect(await ctx!.repo.resolveIdentity(source)).toBe(target);
+    await ctx!.repo.clearFavorites(target);
+  });
+
+  it("数据主权：设置水位读写 + 注销计数（PG 事务与布尔列）", async () => {
+    const user = "pg-e2e-sovereign";
+    const site = await ctx!.repo.createSite({ url: "https://example.com/pg-sovereign", title: "PG 主权站", categoryId: catId });
+    await ctx!.repo.addFavorite({ userId: user, siteId: site.id });
+    await ctx!.repo.updateUserSettings(user, { personalizationEnabled: false, favoriteSignalCutoff: 1_700_000_000_000 });
+    const settings = await ctx!.repo.getUserSettings(user);
+    expect(settings.personalizationEnabled).toBe(false);
+    expect(settings.favoriteSignalCutoff).toBe(1_700_000_000_000);
+
+    const counts = await ctx!.repo.deleteUserData(user);
+    expect(counts.favorites).toBe(1);
+    expect(counts.settings).toBe(1);
+    expect((await ctx!.repo.listFavorites(user)).length).toBe(0);
+    expect(await ctx!.repo.getUserSettings(user).then((s) => s.personalizationEnabled)).toBe(true);
+  });
+
   it("专题条目按 item sort 聚合排序（PG 不允许 GROUP BY s.id + ORDER BY ci.sort）", async () => {
     const a = await ctx!.repo.createSite({ url: "https://example.com/pg-col-a", title: "专题条目甲", categoryId: lifeId });
     const b = await ctx!.repo.createSite({ url: "https://example.com/pg-col-b", title: "专题条目乙", categoryId: lifeId });

@@ -6,6 +6,11 @@ out/
 .env
 .env.local
 data/
+# 例外：/me/data 是真实路由目录（不是本地数据目录）。`data/` 这条规则会连带把
+# 该路由下的新文件（如 loading.tsx）静默排除——文件在本机存在、能跑，但永远不会
+# 进版本库，CI 与生产构建拿不到。必须先反排除目录本身，否则目录层已被排除、
+# 内部文件的否定规则不会生效。
+!/apps/web-overlay/src/app/me/data/
 *.db
 *.db-journal
 *.db-wal

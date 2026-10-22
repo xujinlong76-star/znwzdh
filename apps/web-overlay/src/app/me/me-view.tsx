@@ -59,6 +59,36 @@ export interface Overview {
 
 type ViewState = 'loading' | 'anonymous' | 'ready' | 'error'
 
+/** 操作记录的中文映射：未知 action 原样展示，不吞掉新事件 */
+const ACTIVITY_LABELS: Record<string, string> = {
+  'user.export': '导出个人数据',
+  'user.delete': '删除云端个人数据',
+  'identity.merge': '合并匿名身份',
+  'identity.sync': '同步登录身份',
+  'workspace:create': '创建工作空间',
+  'workspace:member_update': '更新空间成员',
+  'workspace:member_remove': '移除空间成员',
+}
+
+interface ActivityItem {
+  action: string
+  target: string
+  at: number
+}
+
+function activityLabel(action: string): string {
+  return ACTIVITY_LABELS[action] ?? action
+}
+
+function relativeTime(ts: number): string {
+  if (!ts) return ''
+  const diff = Date.now() - ts
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`
+  return `${Math.floor(diff / 86_400_000)} 天前`
+}
+
 const STAT_ITEMS: Array<{
   key: keyof Overview['counts']
   label: string
@@ -83,6 +113,7 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [anonId, setAnonId] = useState('')
+  const [activity, setActivity] = useState<ActivityItem[]>([])
 
   const load = useCallback(async () => {
     setState('loading')
@@ -96,19 +127,23 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
         setState('error')
         return
       }
-      const session = (await sessionRes.json().catch(() => {
-        // 非 JSON / 解析中断：返回 null，由下方统一按「暂时无法确认」处理——
-        // 不能把故障当成匿名状态告知用户
-        return null
-      })) as
-        | { user?: { id?: string } }
-        | null
-      if (session === null) {
+      // NextAuth 未登录时返回的是**字面量 null**（200）——它是「没有会话」的正常回答，
+      // 不是故障。把 null 当成解析失败，会让每一个匿名访客都看到「登录状态暂时无法确认」，
+      // 比原来的「把故障说成匿名」更糟：这次是把事实说成了故障。
+      // 因此只用「解析抛错」当故障，body 为 null / {} 一律走匿名分支。
+      let parsed: unknown
+      try {
+        parsed = await sessionRes.json()
+      } catch {
+        parsed = undefined
+      }
+      if (parsed === undefined) {
         setError('登录状态暂时无法确认，请稍后重试')
         setState('error')
         return
       }
-      if (!session?.user?.id) {
+      const session = (parsed ?? {}) as { user?: { id?: string } }
+      if (!session.user?.id) {
         setAnonId(getAnonId())
         setState('anonymous')
         return
@@ -151,6 +186,25 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
       window.removeEventListener('navhub_identity_changed', onMerged)
     }
   }, [initialOverview, load])
+
+  // 最近操作（M10 接线）：辅助信息，失败保持静默，绝不打断主面板
+  useEffect(() => {
+    if (state !== 'ready') return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch('/api/me/activity?limit=10', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = (await res.json()) as { items?: ActivityItem[] }
+        if (!cancelled && Array.isArray(data.items)) setActivity(data.items)
+      } catch {
+        // 辅助信息取不到就不展示：用户中心的错误条只留给关键区块
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [state])
 
   const togglePersonalization = useCallback(async () => {
     if (!overview || settingsBusy) return
@@ -378,6 +432,28 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
                 </Button>
               ))}
             </div>
+          </section>
+
+          <section className="rounded-xl border border-border/70 bg-card/50 p-4 sm:p-5 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">最近操作</h2>
+              <span className="text-[11px] text-muted-foreground">只显示动作与时间，不含 IP 与内部差异</span>
+            </div>
+            {activity.length === 0 ? (
+              <p className="text-xs text-muted-foreground">最近没有可展示的操作记录。</p>
+            ) : (
+              <ul className="divide-y divide-border/60">
+                {activity.map((item, index) => (
+                  <li key={`${item.action}-${item.target}-${item.at}-${index}`} className="flex items-center justify-between gap-3 py-2 text-xs">
+                    <span className="min-w-0 truncate">
+                      <span className="font-medium text-foreground">{activityLabel(item.action)}</span>
+                      {item.target ? <span className="ml-1.5 text-muted-foreground">{item.target}</span> : null}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground">{relativeTime(item.at)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="rounded-xl border border-border/70 bg-card/50 p-4 sm:p-5 space-y-3">

@@ -21,7 +21,7 @@ import {
   type CloudSyncResult,
   type FavoritesSyncStatus,
 } from '@/hooks/useFavorites'
-import { getIdentity } from '@/lib/identity'
+import { useIdentityReady } from '@/hooks/useIdentityReady'
 import {
   filterFavorites,
   describeFavoritesFilter,
@@ -36,6 +36,7 @@ import {
 import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
 import {
+  clearCloudFavorites,
   createFavoriteFolder,
   deleteFavoriteFolder,
   listFavorites,
@@ -45,11 +46,13 @@ import {
 } from '@/lib/navhub-api'
 import {
   Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
-  RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check,
+  RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check, LogIn,
 } from 'lucide-react'
 
 export default function FavoritesPage() {
   const favorites = useFavorites()
+  // 身份就绪（N1）：不再在挂载时读一次 localStorage，登录/合并/退出都会自动重取
+  const identityReady = useIdentityReady()
   const [syncNote, setSyncNote] = useState<string | null>(null)
   const [syncStatus, setSyncStatus] = useState<'success' | 'error' | 'info'>('info')
   const [showPluginExport, setShowPluginExport] = useState(false)
@@ -63,6 +66,8 @@ export default function FavoritesPage() {
   const [favoriteQuery, setFavoriteQuery] = useState('')
   // 收藏管理（云端文件夹 / 备注）：只在登录身份下出现
   const [cloudIdentity, setCloudIdentity] = useState('')
+  // 清空云端收藏是两步确认：第一次点击只把按钮变成「再次点击确认」
+  const [confirmClearCloud, setConfirmClearCloud] = useState(false)
   const [folders, setFolders] = useState<HubFavoriteFolder[]>([])
   const [activeFolder, setActiveFolder] = useState<string>('all')
   const [newFolderName, setNewFolderName] = useState('')
@@ -72,16 +77,27 @@ export default function FavoritesPage() {
   const [noteEditor, setNoteEditor] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState('')
   const [manageBusy, setManageBusy] = useState(false)
+  // 排序与渐进渲染（N8）：收藏上千条时「一屏渲染全部」会让首屏明显变慢，
+  // 这里先排好序，再只渲染前若干条，其余按需加载。
+  const [sortBy, setSortBy] = useState<'created' | 'title'>('created')
+  const [visibleCount, setVisibleCount] = useState(60)
 
   /** 只过滤本页已加载的收藏；空关键词原样返回，不做无谓的重渲染 */
   const filteredFavorites = useMemo(
     () => filterFavorites(favorites.items, favoriteQuery),
     [favorites.items, favoriteQuery],
   )
-  const visibleFavorites = useMemo(
-    () => (activeFolder === 'all' ? filteredFavorites : filteredFavorites.filter((f) => (f.folderId ?? '') === activeFolder)),
-    [filteredFavorites, activeFolder],
-  )
+  const visibleFavorites = useMemo(() => {
+    const byFolder =
+      activeFolder === 'all' ? filteredFavorites : filteredFavorites.filter((f) => (f.folderId ?? '') === activeFolder)
+    // 排序是纯本地操作（收藏已在内存里），不引入服务端分页——本地优先是收藏页的根基，
+    // 为排序把数据源改成接口会破坏离线可用性。
+    const sorted = [...byFolder]
+    if (sortBy === 'title') sorted.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'))
+    return sorted
+  }, [filteredFavorites, activeFolder, sortBy])
+  /** 渐进渲染：只渲染前 visibleCount 条，避免上千个 DOM 同时进场 */
+  const renderedFavorites = visibleFavorites.slice(0, visibleCount)
   const filterSummary = describeFavoritesFilter(
     filteredFavorites.length,
     favorites.items.length,
@@ -136,17 +152,29 @@ export default function FavoritesPage() {
     setSyncLast(readSyncStatus())
   }, [])
 
+  // 筛选 / 排序 / 收藏夹变化时回到首屏窗口：否则沿用旧窗口会让新筛选看起来「少了内容」
   useEffect(() => {
-    if (!favorites.ready) return
-    const identity = getIdentity()
-    if (!identity || identity.startsWith('anon-')) return
+    setVisibleCount(60)
+  }, [favoriteQuery, activeFolder, sortBy])
+
+  useEffect(() => {
+    // 两个就绪条件缺一不可：本地收藏读完（favorites.ready）+ 会话同步完成（N1）。
+    // 只看 favorites.ready 会在「刚登录、userId 尚未写入」时把页面按匿名渲染，
+    // 且不再重试——首次登录直接进本页就永远不同步。
+    if (!favorites.ready || !identityReady.ready) return
+    const identity = identityReady.identity
+    if (!identity || identity.startsWith('anon-')) {
+      // 退出登录 / 确认匿名：撤掉云端管理区，保留本地收藏
+      setCloudIdentity('')
+      return
+    }
     setCloudIdentity(identity)
     void (async () => {
       const result = await runCloudSync()
       applyCloudResult(result)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runCloudSync, favorites.ready])
+  }, [runCloudSync, favorites.ready, identityReady.ready, identityReady.identity])
 
   /** 收藏夹操作统一入口：刷新列表并给出失败提示 */
   const refreshFolders = useCallback(async () => {
@@ -198,6 +226,32 @@ export default function FavoritesPage() {
     setFolders((prev) => prev.filter((f) => f.id !== folderId))
     if (activeFolder === folderId) setActiveFolder('all')
   }, [activeFolder, cloudIdentity, favorites])
+
+  /**
+   * 清空云端收藏（N3 接线）：两步确认，成功后连本地缓存一起清掉。
+   * 只清云端不清本地会留下「本地还有、云端没了」的分裂状态，下次同步又会推回去。
+   */
+  const clearCloud = useCallback(async () => {
+    if (!cloudIdentity || manageBusy) return
+    if (!confirmClearCloud) {
+      setConfirmClearCloud(true)
+      return
+    }
+    setConfirmClearCloud(false)
+    setManageBusy(true)
+    const ok = await clearCloudFavorites(cloudIdentity)
+    setManageBusy(false)
+    if (!ok) {
+      setSyncNote('清空云端收藏失败：云端暂不可用，本地收藏未受影响')
+      setSyncStatus('error')
+      return
+    }
+    favorites.clear()
+    setFolders([])
+    setActiveFolder('all')
+    setSyncNote('云端收藏已清空，本机缓存也已清除')
+    setSyncStatus('success')
+  }, [cloudIdentity, confirmClearCloud, favorites, manageBusy])
 
   const assignFolder = useCallback(async (siteId: string, folderId: string | null) => {
     favorites.updateMeta(siteId, { folderId })
@@ -405,10 +459,13 @@ export default function FavoritesPage() {
                   <span>我的离线收藏与零知识金库</span>
                 </h1>
                 <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
-                  本地离线优先存储，支持军工级 AES-256-GCM 认证加密导出为 <code>.navhub.vault</code> 文件。密码不上云，不可逆，防篡改。
+                  本地离线优先：收藏先存在本机，登录后自动与云端同步；也可用 AES-256-GCM 加密导出为 <code>.navhub.vault</code> 文件，密码不上云、不可逆、防篡改。
                 </p>
               </div>
 
+              {/* IA 收敛（N9）：主任务只留一个主操作，其余四个降级为「更多导入导出」，
+                 分开摆放——它们本质是导入/导出的备选格式，与「管理收藏」不是同一层级。 */}
+              <div className="flex flex-col gap-2 lg:items-end">
               <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <Button
                   variant="default"
@@ -435,22 +492,15 @@ export default function FavoritesPage() {
                 >
                   <KeyRound className="w-3.5 h-3.5" /> 解密导入金库
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleExportAsPlugin}
-                  disabled={favorites.items.length === 0}
-                  className="text-xs text-sky-600 dark:text-sky-400 border-sky-500/30 hover:bg-sky-500/10 h-8.5 rounded-xl flex items-center gap-1.5"
-                  title="将全部收藏打包导出为标准网址包插件（.json）"
-                >
-                  <Package className="w-3.5 h-3.5" /> 导出为插件
-                </Button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 border-t border-border/50 pt-3">
+                <span className="text-[11px] text-muted-foreground">更多导入导出</span>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleExportPlain}
                   disabled={favorites.items.length === 0}
-                  className="text-xs text-muted-foreground h-8.5 rounded-xl hover:bg-accent"
+                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
                 >
                   明文 JSON
                 </Button>
@@ -462,10 +512,22 @@ export default function FavoritesPage() {
                     setShowVaultExport(false)
                     setShowVaultImport(false)
                   }}
-                  className="text-xs text-muted-foreground h-8.5 rounded-xl hover:bg-accent"
+                  className="text-xs text-muted-foreground h-8 rounded-lg hover:bg-accent"
                 >
                   导入 JSON
                 </Button>
+                {/* 导出为插件属于「发布到市场」，不是数据管理动作：标注清楚去向 */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleExportAsPlugin}
+                  disabled={favorites.items.length === 0}
+                  className="text-xs text-sky-600 dark:text-sky-400 h-8 rounded-lg hover:bg-sky-500/10"
+                  title="把全部收藏打包成网址包插件（.json），可在插件市场发布"
+                >
+                  <Package className="w-3.5 h-3.5" /> 导出为插件
+                </Button>
+              </div>
               </div>
             </div>
 
@@ -763,7 +825,7 @@ export default function FavoritesPage() {
         )}
 
         {/* 收藏夹管理：只在登录身份下出现（文件夹是云端数据，匿名用户没有归属） */}
-        {cloudIdentity && favorites.items.length > 0 && (
+        {favorites.items.length > 0 && (
           <div className="mb-4 rounded-xl border border-border/70 bg-card/50 p-3 space-y-3">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
@@ -847,23 +909,47 @@ export default function FavoritesPage() {
                 )
               })}
             </div>
-            <div className="flex items-center gap-2 border-t border-border/60 pt-2">
-              <Input
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void addFolder()
-                }}
-                placeholder="新建收藏夹"
-                aria-label="新建收藏夹名称"
-                className="h-8 w-40 text-xs"
-              />
-              <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!newFolderName.trim() || folderBusy} onClick={() => void addFolder()}>
-                <FolderPlus className="mr-1 h-3.5 w-3.5" />
-                创建
-              </Button>
-              {manageBusy && <span className="text-[11px] text-muted-foreground">正在同步…</span>}
-            </div>
+            {cloudIdentity && (
+              <>
+                <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
+                  <Input
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void addFolder()
+                    }}
+                    placeholder="新建收藏夹"
+                    aria-label="新建收藏夹名称"
+                    className="h-8 w-40 text-xs"
+                  />
+                  <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!newFolderName.trim() || folderBusy} onClick={() => void addFolder()}>
+                    <FolderPlus className="mr-1.5 h-3.5 w-3.5" />
+                    创建
+                  </Button>
+                  {manageBusy && <span className="text-[11px] text-muted-foreground">正在同步…</span>}
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
+                  <span className="text-[11px] text-muted-foreground">清空只影响云端收藏；本机缓存会一并清除</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 border-destructive/30 text-[11px] text-destructive hover:bg-destructive/10"
+                    disabled={manageBusy}
+                    onClick={() => void clearCloud()}
+                  >
+                    <Trash2 className="mr-1 h-3 w-3" />
+                    {confirmClearCloud ? '再次点击确认清空' : '清空云端收藏'}
+                  </Button>
+                </div>
+              </>
+            )}
+            {/* 匿名态的能力边界要说清楚：能收藏、能导出，但收藏夹与备注需要登录 */}
+            {!cloudIdentity && (
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+                <LogIn className="h-3 w-3 shrink-0" />
+                <span>登录后可创建收藏夹、写备注，并把本机收藏合并到账号。</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -896,6 +982,15 @@ export default function FavoritesPage() {
                 清除
               </Button>
             )}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value === 'title' ? 'title' : 'created')}
+              aria-label="收藏排序"
+              className="h-9 rounded-md border border-border/60 bg-background px-2 text-xs text-muted-foreground"
+            >
+              <option value="created">最近收藏</option>
+              <option value="title">按标题</option>
+            </select>
           </div>
         )}
 
@@ -962,7 +1057,7 @@ export default function FavoritesPage() {
           />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! gap-3.5 sm:gap-4">
-            {visibleFavorites.map((f) => (
+            {renderedFavorites.map((f) => (
               <div
                 key={f.siteId}
                 className="group relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-3.5 flex flex-col justify-between"
@@ -1060,8 +1155,23 @@ export default function FavoritesPage() {
           </div>
         )}
 
+        {/* 渐进渲染的续载：未展示的条目仍在本地，只是不占用首屏 */}
+        {visibleFavorites.length > renderedFavorites.length && (
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <p className="text-xs text-muted-foreground" role="status" aria-live="polite">
+              已显示 {renderedFavorites.length} / {visibleFavorites.length}
+            </p>
+            <Button variant="outline" size="sm" className="text-xs" onClick={() => setVisibleCount((n) => n + 60)}>
+              加载更多收藏
+            </Button>
+          </div>
+        )}
+
         <div className="mt-8 text-xs text-muted-foreground">
-          收藏数据当前保存在浏览器本地（localStorage）。
+          {/* 数据在哪由状态决定，不再写死「只在本机」——那与上方的云端同步状态条自相矛盾 */}
+          {cloudIdentity
+            ? '收藏已与云端同步（换设备登录即可看到），本机缓存用于离线与快速打开。'
+            : '当前为匿名身份：收藏只保存在本机浏览器，登录后可跨设备同步。'}
           <Link href="/tags" className="mx-1 text-primary hover:underline">去标签云看看</Link>
           或
           <Link href="/hot" className="mx-1 text-primary hover:underline">浏览热度榜</Link>

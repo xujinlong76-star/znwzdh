@@ -13,7 +13,7 @@
  * /me 页面显示待处理状态。未登录时清掉陈旧 userId，回落到匿名身份。
  */
 import { useEffect } from 'react'
-import { clearIdentity, getAnonId, setIdentity } from '@/lib/identity'
+import { clearIdentity, getAnonId, getIdentity, setIdentity } from '@/lib/identity'
 import { canonicalUserId } from '@/lib/me-identity'
 
 export function SessionSync() {
@@ -21,6 +21,19 @@ export function SessionSync() {
     let cancelled = false
 
     const run = async () => {
+      // 「会话同步完成」只广播一次：登录与匿名都要发，页面才能区分
+      // 「确实是匿名」和「还没同步完」（见 hooks/useIdentityReady.ts）
+      let announced = false
+      const announceReady = (identity?: string | null) => {
+        if (announced || cancelled) return
+        announced = true
+        window.dispatchEvent(
+          new CustomEvent('navhub_identity_ready', {
+            detail: { identity: identity === undefined ? getIdentity() : identity },
+          }),
+        )
+      }
+
       try {
         const res = await fetch('/api/auth/session', { cache: 'no-store' })
         if (!res.ok) return
@@ -78,6 +91,10 @@ export function SessionSync() {
         }
       } catch {
         // 会话/中枢不可用：保持现状，不覆盖本地身份
+      } finally {
+        // 任何路径（登录 / 匿名 / 请求失败）都要解锁页面：失败时按当前身份继续，
+        // 页面自身的降级态再处理「取数失败」，不让身份同步成为新的无限等待点
+        announceReady()
       }
     }
 

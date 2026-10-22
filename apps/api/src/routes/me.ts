@@ -27,6 +27,7 @@ import type { AppContext } from "../context.ts";
 import { identityOf, identityTrusted } from "./shared.ts";
 import { verifyIdentitySignature } from "../identity-signature.ts";
 import { invalidateProfileThrottle, refreshUserProfile } from "../profile-service.ts";
+import { recordUserCenterMetric } from "../user-center-metrics.ts";
 
 /** 前端生成的匿名 id 形态：anon-<uuid>；限制长度避免异常值写入别名表 */
 const ANON_ID_RE = /^anon-[A-Za-z0-9_-]{8,80}$/;
@@ -63,7 +64,22 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = identityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
-    const parsed = z.object({ personalizationEnabled: z.boolean().optional() }).safeParse(req.body ?? {});
+    // favoriteSignalCutoff 可选：它是「清理收藏信号」的时间水位，普通用户不需要手动设，
+    // 但产品上已存在该列且清理信号时会被写入——不开放写入会让它只能由系统单方推进。
+    const parsed = z
+      .object({
+        personalizationEnabled: z.boolean().optional(),
+        favoriteSignalCutoff: z
+          .number()
+          .int()
+          .min(0)
+          .max(4_102_444_800_000) // 2100-01-01，挡住异常大值与未来时间戳
+          .optional(),
+      })
+      .refine((v) => v.personalizationEnabled !== undefined || v.favoriteSignalCutoff !== undefined, {
+        message: "至少要修改 personalizationEnabled 或 favoriteSignalCutoff 之一",
+      })
+      .safeParse(req.body ?? {});
     if (!parsed.success) {
       reply.code(400);
       return { error: "参数无效", detail: parsed.error.issues };
@@ -97,6 +113,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         searches: payload.searchHistory.items.length,
       },
     }).catch(() => undefined);
+    recordUserCenterMetric("dataSovereignty.exportJson");
     const stamp = new Date().toISOString().slice(0, 10);
     reply.header("content-type", "application/json; charset=utf-8");
     reply.header("content-disposition", `attachment; filename="navhub-export-${stamp}.json"`);
@@ -119,6 +136,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       const q = (req.query ?? {}) as Record<string, string>;
       const limit = Math.min(Math.max(Number(q.limit ?? 20) || 20, 1), 100);
       const page = await ctx.repo.listAuditLogs({ actor: canonical, limit });
+      recordUserCenterMetric("dataSovereignty.activityRead");
       return {
         ok: true,
         identity: canonical,
@@ -153,11 +171,13 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         since: z.number().optional(),
       }).safeParse(req.body ?? {});
       if (!parsed.success) {
+        recordUserCenterMetric("favoritesSync.failure");
         reply.code(400);
         return { error: "参数无效", detail: parsed.error.issues };
       }
       const canonical = await ctx.repo.resolveIdentity(identity);
       const applied = await ctx.repo.applyFavoriteOps(canonical, parsed.data.ops);
+      recordUserCenterMetric("favoritesSync.opsSubmitted", parsed.data.ops.length);
       const [slice, folders] = await Promise.all([
         ctx.repo.listFavoritesSince(canonical, parsed.data.since ?? 0),
         ctx.repo.listFavoriteFolders(canonical),
@@ -167,6 +187,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       // 一次批量 IN 查询，与 GET /api/favorites 同款；墓碑行照此 join，前端以 deletedAt 为准。
       const siteMap = await ctx.repo.getSitesByIds(slice.items.map((item) => item.siteId));
       // 两次读的 MAX(updated_at) 取大：ops 落库后水位必然不低，任一读法都不会倒退
+      recordUserCenterMetric("favoritesSync.success");
       return {
         ok: true,
         applied: applied.applied,
@@ -234,6 +255,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         diff: { format: "netscape", favorites: favorites.length },
       }).catch(() => undefined);
 
+      recordUserCenterMetric("dataSovereignty.exportBookmarks");
       reply.header("content-type", "text/html; charset=utf-8");
       reply.header("content-disposition", 'attachment; filename="navhub-bookmarks.html"');
       return html;
@@ -259,6 +281,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     }
     const canonical = await ctx.repo.resolveIdentity(identity);
     const counts = await ctx.repo.deleteUserData(canonical);
+    recordUserCenterMetric("dataSovereignty.deleteAccount");
     await ctx.repo.audit({
       ip: req.ip,
       actor: canonical,
@@ -307,6 +330,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     const canonicalTarget = await ctx.repo.resolveIdentity(target);
     const resolvedSource = await ctx.repo.resolveIdentity(parsed.data.anonId);
     if (resolvedSource === canonicalTarget) {
+      recordUserCenterMetric("identityMerge.alreadyMerged");
       return {
         ok: true,
         alreadyMerged: true,
@@ -316,7 +340,15 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       };
     }
 
-    const result = await ctx.repo.mergeIdentity(resolvedSource, canonicalTarget);
+    let result: Awaited<ReturnType<typeof ctx.repo.mergeIdentity>>;
+    try {
+      result = await ctx.repo.mergeIdentity(resolvedSource, canonicalTarget);
+      recordUserCenterMetric("identityMerge.success");
+    } catch (err) {
+      // 合并失败必须留下痕迹：它是登录后第一条主路径，静默失败等于"数据没了"
+      recordUserCenterMetric("identityMerge.failure");
+      throw err;
+    }
 
     // 合并后画像应从新的事件集合重建（收藏也会参与）；失败不影响合并结果
     invalidateProfileThrottle(canonicalTarget);

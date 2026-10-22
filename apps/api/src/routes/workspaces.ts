@@ -7,7 +7,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
-import { identityTrusted, identityOf, notFound, unauthorized, forbidden } from "./shared.ts";
+import { identityTrusted, identityOf, resolveCanonicalIdentity, notFound, unauthorized, forbidden } from "./shared.ts";
 import {
   checkWorkspacePermission,
   type Workspace,
@@ -143,8 +143,10 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    * 获取用户当前可见的所有工作空间
    */
   app.get("/api/workspaces", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
+    const rawIdentity = identityOf(req as never);
     if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    // 合并后旧 id 仍会发请求：工作区名册按 canonical 读写，避免出现「空名册」
+    const identity = rawIdentity ? await resolveCanonicalIdentity(ctx, rawIdentity) : rawIdentity;
 
     let customWorkspaces: Workspace[] = [];
     if (identity) {
@@ -165,9 +167,10 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    * 创建新的团队空间
    */
   app.post("/api/workspaces", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
+    const rawIdentity = identityOf(req as never);
     if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
-    if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
+    if (!rawIdentity) return unauthorized(reply, "缺少 userId 或 anonId");
+    const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
 
     const schema = z.object({
       name: z.string().min(1).max(64),
@@ -219,9 +222,10 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    * 获取指定工作空间的成员列表与 RBAC 角色
    */
   app.get("/api/workspaces/:id/members", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
+    const rawIdentity = identityOf(req as never);
     if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
-    if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
+    if (!rawIdentity) return unauthorized(reply, "缺少 userId 或 anonId");
+    const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
 
     const params = req.params as { id: string };
     const wsId = params.id;
@@ -255,9 +259,10 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    * 添加或更新工作空间成员角色 (RBAC)
    */
   app.post("/api/workspaces/:id/members", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
+    const rawIdentity = identityOf(req as never);
     if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
-    if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
+    if (!rawIdentity) return unauthorized(reply, "缺少 userId 或 anonId");
+    const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
 
     const params = req.params as { id: string };
     const wsId = params.id;
@@ -334,9 +339,10 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    * 移除空间成员
    */
   app.delete("/api/workspaces/:id/members/:userId", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
+    const rawIdentity = identityOf(req as never);
     if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
-    if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
+    if (!rawIdentity) return unauthorized(reply, "缺少 userId 或 anonId");
+    const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
 
     const params = req.params as { id: string; userId: string };
     const { id: wsId, userId } = params;

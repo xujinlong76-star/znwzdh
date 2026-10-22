@@ -129,8 +129,25 @@ describe("设置与画像信号", () => {
     expect(explain.json().explain.signalCounts).toHaveProperty("searches");
   });
 
-  it("DELETE /api/profile/signals/click 清空点击事件", async () => {
-    await ctx.repo.recordEvent("click", { siteId, identity: USER });
+  it("PATCH /api/me/settings 支持 favoriteSignalCutoff，并拒绝越界值", async () => {
+    const stamp = 1700000000000;
+    const patch = await data("PATCH", "/api/me/settings", { favoriteSignalCutoff: stamp });
+    expect(patch.statusCode).toBe(200);
+    expect(patch.json().settings.favoriteSignalCutoff).toBe(stamp);
+
+    const negative = await data("PATCH", "/api/me/settings", { favoriteSignalCutoff: -1 });
+    expect(negative.statusCode).toBe(400);
+    const absurd = await data("PATCH", "/api/me/settings", { favoriteSignalCutoff: Number.MAX_SAFE_INTEGER });
+    expect(absurd.statusCode).toBe(400);
+    const empty = await data("PATCH", "/api/me/settings", {});
+    expect(empty.statusCode).toBe(400);
+
+    // 读回仍是合法值：越界请求不得留下脏数据
+    const after = await data("GET", "/api/me/settings");
+    expect(after.json().settings.favoriteSignalCutoff).toBe(stamp);
+  });
+
+  it("DELETE /api/profile/signals/click 清空点击事件", async () => {    await ctx.repo.recordEvent("click", { siteId, identity: USER });
     const res = await data("DELETE", "/api/profile/signals/click");
     expect(res.statusCode).toBe(200);
     expect(res.json().removed).toBeGreaterThanOrEqual(1);

@@ -416,11 +416,27 @@ jobs:
         run: node scripts/seo-audit.mjs --base="$NAVHUB_SITE_URL" --limit=2000 --retries=2 --json > seo-audit-report.json
         env:
           NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
-      # 线上形态的 ISR 实证：抽查收录型页面必须 200 且带 s-maxage，
-      # 旧形态 /category/{slug}?page=N 必须 30x 到 /p/{N}。
-      # 这一条只在 next start 的产物上有意义（dev 没有静态生成这一步）。
-      - name: ISR 线上抽查
-        run: node scripts/check-isr-routes.mjs --live --base="$NAVHUB_SITE_URL" --sample=2 --min-checked=8
+      # 线上形态的 ISR 实证 —— 与 check-isr-live 作业跑**同一套三层契约**
+      # （抽查页 s-maxage / 本机地址兜底 + 逐页技术面契约 + sitemap 族下限与 lastmod 覆盖率），
+      # 只有阈值按生产规模重标定。
+      # 代理口径实测（2026-10-23：本地 996 站点库跑起来的 next dev 服务）：sitemap 1126 条，
+      # 族为 站点 996 / 分类 36 / 标签 16 / 合集 4 / 插件 65 / 目录 1，lastmod 覆盖 98%，
+      # 不可收录形态（/p/{n} 与带 query 的 loc）0 条，抽到的 14 页技术面契约全绿。
+      # 注意 dev 的 cache-control 是 no-store，所以那一轮「没有 s-maxage」14 项全红**是预期的**
+      # （dev 没有静态生成这一步）：这一层只有 CI 的 next start 预览和本次 dispatch 能实证。
+      # 下限取今天实测的 1/5～1/3：低到不会因正常增删抖动而红，又能在「某族整族丢失」
+      # （sitemap 生成侧抛错、取数被截断）时立刻红。
+      # 这里不需要 CI 那个「门禁自检标签」：CI 补标签是因为种子库最大标签只有 5 个站点，
+      # 够不到 MIN_SITES_FOR_TAG_INDEX=10；生产有 16 个达标标签，天然抽得到样本。
+      # 若首次 dispatch 红在「没有 s-maxage」，那不是门禁坏了 —— 生产 CDN/反代把
+      # cache-control 改写或吞掉，正是这一层要抓出来的真问题。
+      - name: ISR 线上抽查（三层契约，生产阈值）
+        run: |
+          node scripts/check-isr-routes.mjs --live --base="$NAVHUB_SITE_URL" --sample=2 \
+            --min-checked=8 \
+            --sitemap-min-site=200 --sitemap-min-category=10 --sitemap-min-tag=5 \
+            --sitemap-min-collection=2 --sitemap-min-plugin=20 --sitemap-min-directory=1 \
+            --sitemap-min-lastmod-ratio=0.9
         env:
           NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
       # 链接架构阈值（孤岛页 / 点击深度 / 软 404）。--from-db=none：

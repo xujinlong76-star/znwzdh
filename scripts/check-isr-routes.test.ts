@@ -7,15 +7,18 @@
  * 一个永远不会失败的守卫比没有守卫更危险——它会让人以为这条约束有人看着。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { CONTRACT_KINDS_DEFAULT, contractFindings } from "./check-isr-routes.mjs";
 
 const SCRIPT = resolve("scripts/check-isr-routes.mjs");
 // 脚本按 apps/web/<NEXT_DIST_DIR> 找产物（与 check-bundle-budget 同一套环境变量）
 const FIXTURE_DIST = resolve("apps/web/.next-isr-gate-fixture");
+// 真实渲染的页面语料（契约层变异自证的输入，见 scripts/capture-isr-corpus.mjs）
+const CORPUS_DIR = resolve("scripts/fixtures/isr-live-corpus");
 
 /** 门禁白名单里的全部路由模板 —— 少一条就应该红灯 */
 const ALL_ROUTES = [
@@ -364,6 +367,8 @@ describe("check-isr-routes.mjs --live 抽查", () => {
       duplicateLocation?: boolean;
       stripContract?: boolean;
       lastmod?: boolean;
+      /** 直接往 <urlset> 里追加原始 <loc>，用来造「不可收录形态也进了 sitemap」 */
+      extraLocs?: string[];
     } = {},
   ): Promise<{ base: string; close: () => Promise<void> }> {
     return new Promise((resolvePromise) => {
@@ -378,6 +383,8 @@ describe("check-isr-routes.mjs --live 抽查", () => {
                 (p) =>
                   `<url><loc>${origin}${p}</loc>${opts.lastmod ? "<lastmod>2026-10-23</lastmod>" : ""}</url>`,
               )
+              .join("")}${(opts.extraLocs ?? [])
+              .map((p) => `<url><loc>${origin}${p}</loc></url>`)
               .join("")}</urlset>`,
           );
           return;
@@ -627,5 +634,124 @@ describe("check-isr-routes.mjs --live 抽查", () => {
     });
     expect(withLastmod.out, withLastmod.out).toContain("✓ 线上 ISR 抽查通过");
     expect(withLastmod.code).toBe(0);
+  });
+
+  it("不可收录形态（分页 /p/{n} 与带 query 的 loc）出现在 sitemap 里就红灯", async () => {
+    // 抽查只看得见「抽到的页」，而这类退化在 sitemap 生成侧：分页页自己声明 noindex，
+    // 进 sitemap 就是让爬虫把「同一内容的第 N 页」当独立页收；带 query 的 <loc> 同理，
+    // 还会和「落地页 canonical 必须干净」那条前提直接冲突。整份语料判一次，不靠抽样。
+    // 实测两处都是 0 条（CI seed 138 / 大库代理 1126），所以这条不会假红。
+    const { code, out } = await runLive(["/sites"], [], {
+      extraLocs: ["/category/ai-tools/p/2", "/sites?page=2"],
+    });
+    expect(code, out).toBe(1);
+    expect(out).toContain("不可收录形态 2 条");
+    expect(out).toContain("sitemap 里有 2 条不可收录形态条目");
+    expect(out).toContain("/category/ai-tools/p/2");
+    expect(out).toContain("/sites?page=2");
+  });
+
+  it("sitemap 只有归一后的路径段形态时不误红（带 query 与 /p/ 都没出现）", async () => {
+    const { code, out } = await runLive(["/sites", "/category/ai-tools"]);
+    expect(out, out).toContain("不可收录形态 0 条");
+    expect(code).toBe(0);
+  });
+});
+
+/**
+ * 契约层的变异自证：输入必须是**真实渲染**的页面。
+ *
+ * 前面所有用例喂给判定的是手写的坏 HTML —— 那只能证明「我预期它会红的那些形态」真的红。
+ * 真实页面由 Next 渲染，head 里挤着 viewport / theme-color / manifest / 多组
+ * og:image 尺寸变体，ld+json 可能落在 body；判定链（analyzeHtml → auditPageDetailed）
+ * 的正则假设一旦和真实结构错位，契约层就会**静默绿**：CI 照常打勾，线上收录页在裸奔。
+ * 只有拿真页面逐个剥字段，才能暴露「解析器根本没看见」。
+ *
+ * 语料由 `node scripts/capture-isr-corpus.mjs --base=http://localhost:3000` 生成
+ * （每个族取 sitemap 里第一条真实 URL），冻结进仓库当基线；刷新基线 = 重跑那条命令，
+ * 不要手改文件 —— 手改会把「真实形态」这个前提改没，这组用例也就失去意义。
+ */
+describe("契约层变异自证（真实渲染语料）", () => {
+  const corpus = readdirSync(CORPUS_DIR)
+    .filter((f) => f.endsWith(".html"))
+    .sort();
+
+  /** 每一类都是「线上真会这么坏」的形态：漏 metadata 字段、整族 JSON-LD 丢失、误挂 noindex */
+  const MUTATIONS: {
+    key: string;
+    kind: string;
+    message: string;
+    apply: (html: string) => string;
+  }[] = [
+    { key: "缺 title", kind: "meta", message: "缺少 <title>", apply: (h) => h.replace(/<title\b[\s\S]*?<\/title>/, "") },
+    {
+      key: "缺 description",
+      kind: "meta",
+      message: "缺少 meta description",
+      apply: (h) => h.replace(/<meta\b[^>]*name="description"[^>]*>/, ""),
+    },
+    { key: "缺 canonical", kind: "canonical", message: "缺少 canonical", apply: (h) => h.replace(/<link\b[^>]*rel="canonical"[^>]*>/, "") },
+    { key: "缺 og:image", kind: "og", message: "缺少 og:image", apply: (h) => h.replace(/<meta\b[^>]*property="og:image"[^>]*>/, "") },
+    {
+      key: "JSON-LD 整族丢失",
+      kind: "jsonld",
+      message: "结构化数据整族丢失",
+      apply: (h) => h.replace(/<script\b[^>]*application\/ld\+json[^>]*>[\s\S]*?<\/script>/g, ""),
+    },
+    {
+      key: "误挂 noindex",
+      kind: "robots",
+      message: "出现在 sitemap 却声明 noindex",
+      apply: (h) => h.replace(/<head>/, '<head><meta name="robots" content="noindex,nofollow">'),
+    },
+  ];
+
+  it("语料覆盖收录族，且绝对地址已归一到中性 origin", () => {
+    // 少于 6 个文件说明生成脚本没跑成（族在 sitemap 里缺失时会跳过并只打一行日志）。
+    expect(corpus.length).toBeGreaterThanOrEqual(6);
+    for (const f of corpus) {
+      const html = readFileSync(resolve(CORPUS_DIR, f), "utf8");
+      // 留着抓取时的本机地址，基线会先撞在「本机地址兜底」那条判定上，
+      // 这组用例就测不到契约本身了。
+      expect(html, `${f} 的 canonical 仍指向本机地址`).not.toMatch(/rel="canonical" href="https?:\/\/(localhost|127\.0\.0\.1)/);
+    }
+  });
+
+  for (const f of corpus) {
+    it(`${f}：未变异必须全绿，六类变异逐个必须被抓到`, () => {
+      const html = readFileSync(resolve(CORPUS_DIR, f), "utf8");
+      const url = (html.match(/rel="canonical" href="([^"]+)"/) ?? [])[1];
+      expect(url, `${f} 里没有 canonical —— 语料本身就不是真实页面`).toBeTruthy();
+      const kinds = new Set<string>(CONTRACT_KINDS_DEFAULT);
+
+      // 基线：真实页面的 head 必须一条问题都不报。基线红说明语料或判定链坏了，
+      // 这时后面那些「变异被抓到」毫无意义，所以先单独断言。
+      expect(contractFindings(html, url!, kinds), `${f} 未变异却有契约问题`).toEqual([]);
+
+      for (const m of MUTATIONS) {
+        const mutated = m.apply(html);
+        // 变异必须真的改动字节：正则失配时 HTML 会「原样通过」，
+        // 那等于用「根本没改坏」来满足断言 —— 和被测对象静默绿是同一种假绿灯。
+        expect(mutated.length, `「${m.key}」在 ${f} 上没改动任何内容（语料形态与正则假设不符）`).not.toBe(html.length);
+        const issues = contractFindings(mutated, url!, kinds);
+        expect(issues.length, `「${m.key}」在 ${f} 上没被抓到：${JSON.stringify(issues)}`).toBeGreaterThan(0);
+        expect(issues.map((i) => i.kind), `「${m.key}」在 ${f} 上归错了类`).toContain(m.kind);
+        expect(
+          issues.some((i) => String(i.message).includes(m.message)),
+          `「${m.key}」在 ${f} 上报的不是这一条：${JSON.stringify(issues.map((i) => i.message))}`,
+        ).toBe(true);
+      }
+    });
+  }
+
+  it("links（内链最低要求）不进 --live 默认契约", () => {
+    // 校准数据（2026-10-23，996 站点库跑起来的本地服务）：首页 / /sites / 分类 /
+    // 标签 / 合集 / 插件详情 / 站点详情共 7 个真实收录页，links 类发现 **0 条**
+    // ——「今天加进去不会红」。但裁决仍然是不加：
+    //  auditInternalLinks 只对 /、/site/*、/category/* 三种形态有定义，
+    //  判据是「本页有没有链到下一层」，命中与否取决于这次渲染里相关站点/条目模块
+    //  有没有出内容 —— 那是数据形态，不是技术面契约；抽查 12 页也看不出站内结构退化。
+    // 全量审计（scripts/seo-audit.mjs）对着整份 sitemap 跑 links，才是这条约束该待的地方。
+    expect(CONTRACT_KINDS_DEFAULT).not.toContain("links");
   });
 });

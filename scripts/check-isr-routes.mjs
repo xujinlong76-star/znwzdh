@@ -62,13 +62,18 @@
  *    复用 `scripts/lib/seo-audit.mjs` 的 `auditPageDetailed`，规则只有一份。
  *    CI 自建预览上实测 7 个族全绿，所以默认就判；`--no-contract` 留给本地快跑。
  *    内链最低要求（kind=`links`）故意不在默认里 —— 那是全量审计的职责。
- *  - **sitemap 自身的收录面**：族条目下限与 lastmod 覆盖率。抽查只看「sitemap
- *    里已有的页」，sitemap 少一整族时抽查照样全绿，所以这条要单独判。
- *    只在实际传了 `--sitemap-min-*` 时才判，不传就只报观察值 —— 生产库和 CI
+ *  - **sitemap 自身的收录面**：族条目下限、lastmod 覆盖率，以及「不可收录形态
+ *    不该进清单」（`/…/p/{n}` 与带 query 的 `<loc>` —— 那些页自己声明 noindex，
+ *    递进 sitemap 等于请爬虫收录重复内容）。抽查只看「sitemap 里已有的页」，
+ *    sitemap 少一整族或多一整族时抽查照样全绿，所以这两条都要单独判整份清单。
+ *    下限只在实际传了 `--sitemap-min-*` 时才判，不传就只报观察值 —— 生产库和 CI
  *    小库的量级差两个数量级，把下限写死进代码会变成第二条假红灯。
+ *
+ * 契约层自己会不会「静默绿」由 `scripts/fixtures/isr-live-corpus/` 的真实页面
+ * 变异自证（用例在 check-isr-routes.test.ts，语料用 `scripts/capture-isr-corpus.mjs` 刷新）。
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -412,18 +417,24 @@ async function fetchSitemapXml(base) {
 }
 
 /** sitemap 里的一条 URL：路径（同源比较用）+ 有没有 lastmod。 */
-function sitemapEntries(xml) {
+export function sitemapEntries(xml) {
   return [...xml.matchAll(/<url>([\s\S]*?)<\/url>/g)].map((m) => {
     const block = m[1];
     const loc = /<loc>([^<]+)<\/loc>/.exec(block)?.[1] ?? '';
     let pathname = loc;
+    let search = '';
     try {
-      pathname = new URL(loc).pathname;
+      const parsed = new URL(loc);
+      pathname = parsed.pathname;
+      search = parsed.search;
     } catch {
-      pathname = String(loc).split('?')[0];
+      const [before, after = ''] = String(loc).split('?');
+      pathname = before;
+      search = after ? `?${after}` : '';
     }
     return {
       path: pathname.startsWith('/') ? pathname : `/${pathname}`,
+      search,
       lastmod: /<lastmod>[^<]+<\/lastmod>/.test(block),
     };
   });
@@ -442,9 +453,9 @@ function pathsFromSitemapXml(xml) {
  * 抽查 11 页看不出站内结构退化，却会把「本页恰好没链到同类」这种数据形态
  * 变成门禁红灯。
  */
-const CONTRACT_KINDS_DEFAULT = ['meta', 'canonical', 'og', 'robots', 'jsonld'];
+export const CONTRACT_KINDS_DEFAULT = ['meta', 'canonical', 'og', 'robots', 'jsonld'];
 
-function contractFindings(html, url, kinds, { expectIndexable = true } = {}) {
+export function contractFindings(html, url, kinds, { expectIndexable = true } = {}) {
   const page = analyzeHtml(html, url);
   const issues = auditPageDetailed(page, { expectIndexable }).filter((i) => kinds.has(i.kind));
   // auditPageDetailed 只校验已有 JSON-LD 的结构；「整族没有结构化数据」要单独判。
@@ -633,11 +644,27 @@ async function checkLive() {
   }));
   const withLastmod = entries.filter((e) => e.lastmod).length;
   const ratio = entries.length ? withLastmod / entries.length : 0;
+  // 不可收录形态不得进 sitemap —— 整份语料判，不靠抽样：
+  //  - `/…/p/{n}` 分页页按设计是 noindex（见 docs/seo/ISR-ROUTES.md 裁决 5.2），递到
+  //    sitemap 里就是让爬虫把「同一内容的第 N 页」当独立页收；
+  //  - 带 query 的 <loc>（旧形态 `?page=N`）与「落地页 canonical 必须干净」这条前提直接
+  //    冲突，等于自己造一条可收录的重复页。
+  // 两处实测都是 0 条（CI seed 138 条、大库代理 1126 条），所以这条不会假红；
+  // 一旦非零，说明是 sitemap 生成侧漏了过滤，不是抽查噪声。
+  const nonIndexable = entries.filter((e) => /\/p\/[^/]+$/.test(e.path) || e.search);
   console.log(
     `· ${'sitemap 收录面'.padEnd(9)} 共 ${entries.length} 条：${observed
       .map((o) => `${o.key} ${o.count}`)
-      .join(' / ')}；lastmod 覆盖 ${withLastmod}/${entries.length}（${(ratio * 100).toFixed(0)}%）`,
+      .join(' / ')}；lastmod 覆盖 ${withLastmod}/${entries.length}（${(ratio * 100).toFixed(0)}%）；不可收录形态 ${nonIndexable.length} 条`,
   );
+  if (nonIndexable.length) {
+    failures.push(
+      `sitemap 里有 ${nonIndexable.length} 条不可收录形态条目（分页 /p/{n} 或带 query）：${nonIndexable
+        .slice(0, 3)
+        .map((e) => `${e.path}${e.search}`)
+        .join(' | ')} —— 这些页面自己声明 noindex，进 sitemap 就是把重复页递给爬虫收录`,
+    );
+  }
   for (const o of observed) {
     const raw = valueOf(o.flag, '0');
     const min = Number(raw);
@@ -677,5 +704,26 @@ async function checkLive() {
   return 0;
 }
 
-const code = flags.has('--live') ? await checkLive() : checkBuild();
-process.exit(code);
+/**
+ * 只有「被直接执行」才跑门禁，被 import 时只导出函数（变异自证用例要复用
+ * `contractFindings` / `sitemapEntries`，不能顺带触发构建产物检查，更不能把
+ * 测试进程 `process.exit` 掉）。
+ *
+ * 判定必须走 realpath：本机仓库路径经过 junction，Node 加载模块时已把符号链接
+ * 解析成真实路径，而 `process.argv[1]` 保持 junction 地址 —— 只比字符串的话
+ * 「直接跑」会被误判成「被 import」，门禁变成静默不执行（比红灯更坏的失败形态）。
+ * 真出现这种错位，本文件测试里那批 spawn 用例会立刻全红，不会溜过去。
+ */
+const canonicalPath = (p) => {
+  let out;
+  try {
+    out = realpathSync(p);
+  } catch {
+    out = p;
+  }
+  return out.replace(/\\/g, '/').toLowerCase();
+};
+const entryPath = process.argv[1] ? resolve(process.argv[1]) : '';
+const invokedDirectly = Boolean(entryPath) && canonicalPath(entryPath) === canonicalPath(fileURLToPath(import.meta.url));
+
+if (invokedDirectly) process.exit(flags.has('--live') ? await checkLive() : checkBuild());

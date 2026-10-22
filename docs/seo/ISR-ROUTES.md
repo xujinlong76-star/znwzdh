@@ -206,6 +206,43 @@ HTML —— 三处各管一段，缺一处就有中间地带。`links`（内链�
 `sitemap-min-plugin=10`、`lastmod-ratio=0.8`）；单一种子数据变薄可容忍，
 整条链路失联必须红。
 
+**5.4 sitemap 的集合级检查：不可收录形态不该出现在收录清单里。**
+5.3 数的是「该有的族有没有」，这一层数的是「不该有的条目在不在」：`/…/p/{n}` 分页页与
+任何带 query 的 `<loc>`。理由不是风格 —— 分页页自己声明 `noindex`，把它递进 sitemap 就是
+主动请爬虫收录一份重复内容；带 query 的 `<loc>` 还会和裁决 3 的前提（落地页 canonical
+必须干净）直接打架。这一层不看抽样，整份 sitemap 一次性判，实测两处都是 0 条
+（CI 种子 138 条 / 生产代理口径 1126 条），所以不会假红。
+用例：`scripts/check-isr-routes.test.ts` 的「不可收录形态…就红灯」与
+「sitemap 只有归一后的路径段形态时不误红」—— 前者用 `extraLocs` 往假 sitemap 里塞
+`/category/ai-tools/p/2` 与 `/sites?page=2`，后者证明归一版本不触发。
+
+**5.5 契约层必须拿真实渲染的页面做变异自证。**
+`check-isr-routes.test.ts` 里其余用例喂的是手写 HTML，只能证明「我预期它会红的形态」真的红。
+判定链（`analyzeHtml` → `auditPageDetailed`）全靠正则，一旦和 Next 真实输出的结构错位
+（属性换序、`ld+json` 落到 body、og:image 变成多组尺寸变体），契约层就退化成**静默绿** ——
+比红灯更坏的失败。语料在 `scripts/fixtures/isr-live-corpus/`（6 个族、每个约 3–10 KB，
+只有 head 区块 + `ld+json` + 首个 H1，正文不进仓库：正文随库里数据漂移，会把基线变成噪音），
+由 `scripts/capture-isr-corpus.mjs` 对着跑起来的站点生成 —— 每个族从 `/sitemap.xml`
+取第一条真实 URL，所以换库也能重跑，不硬编码站点 uuid；响应里的 origin 字面量统一改写成
+`https://navhub.example`，否则先撞在「本机地址兜底」那条判定上，测不到契约本身。
+每个文件断言两件事：未变异必须 0 问题（基线）、六类变异（剥掉 title / description /
+canonical / og:image / 全部 `ld+json` / 注入 `noindex`）逐个必须被抓到并归对类。
+变异还额外断言 `mutated.length !== html.length`：正则失配时 HTML 原样通过，
+用「根本没改坏」来满足「坏页面被抓到」，是和静默绿同一类的假绿灯。
+
+**5.6 三层带到生产口径（`seo-audit-prod` 的 ISR 步骤）。**
+2026-10-23 用本地 996 站点库 + 同一份产物做代理实测：sitemap 1126 条
+（站点 996 / 分类 36 / 标签 16 / 合集 4 / 插件 65 / 目录 1），lastmod 覆盖 1101/1126=98%，
+不可收录形态 0 条，抽到的 14 页契约全绿。生产阈值取实测的 1/5～1/3
+（`site=200 category=10 tag=5 collection=2 plugin=20 directory=1 lastmod-ratio=0.9`，
+`--min-checked=8`），既不会因正常增删抖动红，也能在某族整条链路失联时立刻红。
+两点差别要写清楚：① 生产有 16 个达标标签，不需要 5.1 那个门禁自检夹具；
+② 代理实测的服务是 `next dev`，`cache-control: no-store`，所以那一轮「没有 s-maxage」
+14 项全红**是预期的**（dev 没有静态生成这一步），它只验证了契约层与 sitemap 两层；
+s-maxage 那一层仍只有 CI 的 `next start` 预览和真实 dispatch 能实证。
+`seo-audit-prod` 首次 dispatch 若红在「没有 s-maxage」，那是 CDN/反代改写了响应头 ——
+属于要查的真问题，不是门禁 bug。
+
 **复核**：
 
 ```bash
@@ -214,6 +251,13 @@ node scripts/check-isr-routes.mjs --live --base=http://localhost:3079 --sample=2
   --min-checked=10 --sitemap-min-site=20 --sitemap-min-category=1 --sitemap-min-tag=1 \
   --sitemap-min-collection=1 --sitemap-min-plugin=10 --sitemap-min-directory=1 \
   --sitemap-min-lastmod-ratio=0.8
-# 用例（夹具页自带齐契约；stripContract / barePaged / lastmod 三个开关分别造三种红灯）
+# 用例（夹具页自带齐契约；stripContract / barePaged / lastmod / extraLocs 四个开关分别造红灯）
 node node_modules/vitest/vitest.mjs run scripts/check-isr-routes.test.ts
+# 刷新真实语料（对着任意跑起来的站点，dev 或 next start 都行）
+node scripts/capture-isr-corpus.mjs --base=http://localhost:3000
+# 生产阈值 rehearsal（本地大库；next dev 下「没有 s-maxage」全红是预期的，看契约与 sitemap 两层）
+node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 --min-checked=8 \
+  --sitemap-min-site=200 --sitemap-min-category=10 --sitemap-min-tag=5 \
+  --sitemap-min-collection=2 --sitemap-min-plugin=20 --sitemap-min-directory=1 \
+  --sitemap-min-lastmod-ratio=0.9
 ```

@@ -21,8 +21,13 @@ const ITEMS = [
 
 export function UserCenterNav() {
   const pathname = usePathname() || '/me'
+  // 窄屏不再折成两行（折行后高度翻倍、点击目标挤在一起）：改为横向滚动，
+  // 一屏内滑动切换；桌面端宽度足够，不会出现滚动条。
   return (
-    <nav aria-label="用户中心导航" className="flex flex-wrap gap-1.5">
+    <nav
+      aria-label="用户中心导航"
+      className="flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
       {ITEMS.map((item) => {
         const active = item.href === '/me' ? pathname === '/me' : pathname === item.href || pathname.startsWith(item.href + '/')
         return (
@@ -31,10 +36,11 @@ export function UserCenterNav() {
             href={item.href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'rounded-full border px-3 py-1 text-[11px] font-medium transition-colors',
+              'shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
               active
                 ? 'border-primary/40 bg-primary/10 text-primary'
-                : 'border-border/60 bg-background/60 text-muted-foreground hover:text-foreground hover:bg-muted/40',
+                : 'border-border/60 bg-background/60 text-muted-foreground hover:border-border hover:bg-muted/40 hover:text-foreground',
             )}
           >
             {item.label}

@@ -14,7 +14,8 @@ import { Input } from '@/components/ui/input'
 import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
-import { AlertTriangle, ArrowLeft, Bookmark, CheckCircle2, Database, Download, Loader2, ShieldCheck, Trash2 } from 'lucide-react'
+import { CenterPageHeader } from '@/components/user-center/center-page-header'
+import { AlertTriangle, Bookmark, CheckCircle2, Database, Download, Loader2, ShieldCheck, Trash2 } from 'lucide-react'
 
 type ViewState = 'loading' | 'anonymous' | 'ready' | 'deleted' | 'error'
 
@@ -111,65 +112,57 @@ export default function MeDataPage() {
   }, [confirmText, favorites, toast])
 
   return (
-    <Container as="main" id="main-content" className="py-4 sm:py-8 space-y-5">
-      <section className="rounded-2xl border border-border/70 glass-surface market-hero p-4 sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Button asChild variant="ghost" size="sm" className="h-8 px-2 text-xs">
-              <Link href="/me">
-                <ArrowLeft className="mr-1 h-4 w-4" />
-                用户中心
-              </Link>
-            </Button>
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <ShieldCheck className="h-4 w-4 text-primary" />
-              数据与隐私
-            </div>
-          </div>
-        </div>
-        <p className="mt-3 text-xs text-muted-foreground leading-relaxed">
-          你的收藏、搜索历史、画像、LLM 配置与金库元信息都归你所有：可以随时导出，也可以一次性删除。
-        </p>
-      </section>
+    <Container as="main" id="main-content" className="space-y-6 pt-3 pb-8 sm:pt-4 sm:pb-10">
+      <CenterPageHeader
+        title="数据与隐私"
+        icon={ShieldCheck}
+        back={{ href: '/me', label: '用户中心' }}
+        description="你的收藏、搜索历史、画像、LLM 配置与金库元信息都归你所有：可以随时导出，也可以一次性删除。"
+      />
 
       {state === 'loading' && (
-        <div className="h-32 animate-pulse rounded-xl border border-border/70 bg-card/50" aria-busy="true" />
+        <div className="h-32 animate-pulse rounded-2xl border border-border/70 bg-card/50" aria-busy="true" />
       )}
 
       {state === 'error' && (
-        <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 space-y-3" role="alert">
+        <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-6" role="alert">
           <p className="text-sm font-semibold">登录状态暂时无法确认</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs leading-relaxed text-muted-foreground">
             这通常是网络或会话服务抖动，不代表你的账号有问题。稍后重试即可，数据没有任何变动。
           </p>
-          <Button size="sm" variant="outline" className="text-xs" onClick={() => void loadSession()}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full text-xs sm:w-auto"
+            onClick={() => void loadSession()}
+          >
             重试
           </Button>
         </section>
       )}
 
       {state === 'anonymous' && (
-        <section className="rounded-xl border border-dashed border-border/70 bg-card/40 p-6 space-y-3">
+        <section className="space-y-3 rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 sm:p-6">
           <p className="text-sm font-semibold">需要登录后管理云端数据</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
             匿名数据只保存在本机浏览器；登录后可导出与删除云端数据，也能把本机匿名数据合并到账号。
           </p>
-          <Button asChild size="sm" className="text-xs">
+          <Button asChild size="sm" className="w-full text-xs sm:w-auto">
             <Link href="/auth/signin?callbackUrl=/me/data">登录 / 创建账号</Link>
           </Button>
         </section>
       )}
 
       {state === 'deleted' && (
-        <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-6">
+        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 p-4 sm:p-6">
           <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-500" />
-            <div>
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" aria-hidden />
+            <div className="min-w-0">
               <p className="text-sm font-semibold">云端数据已删除</p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 收藏、历史、画像、LLM 配置、金库元信息与插件安装记录均已清除，登录账号本身保留。
               </p>
-              <Button asChild variant="outline" size="sm" className="mt-3 text-xs">
+              <Button asChild variant="outline" size="sm" className="mt-3 w-full text-xs sm:w-auto">
                 <Link href="/me">返回用户中心</Link>
               </Button>
             </div>
@@ -180,72 +173,80 @@ export default function MeDataPage() {
       {state === 'ready' && (
         <>
           {error && (
-            <section className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-xs text-destructive">
+            <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-xs text-destructive" role="alert">
               {error}
             </section>
           )}
 
-          <section className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <Download className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold">导出我的数据</h2>
+          <section className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <Download className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                导出我的数据
+              </h2>
+              <span className="text-[11px] text-muted-foreground">JSON 与书签 HTML 两种格式</span>
             </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">
+            <p className="mt-3 max-w-prose text-xs leading-relaxed text-muted-foreground">
               包含收藏与文件夹、搜索历史、画像、设置、插件安装记录、金库版本信息。LLM 配置只保留模型与地址，
               不含密钥；金库只导出加密后的元信息。
             </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" className="text-xs" disabled={exporting} onClick={() => void handleExport()}>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <Button size="sm" className="w-full text-xs sm:w-auto" disabled={exporting} onClick={() => void handleExport()}>
                 {exporting ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-2 h-3.5 w-3.5" />}
                 下载 JSON
               </Button>
               {/* M9 互操作：书签 HTML 是 Chrome/Firefox/Safari/Edge 都能直接导入的标准格式 */}
-              <Button asChild size="sm" variant="outline" className="text-xs">
+              <Button asChild size="sm" variant="outline" className="w-full text-xs sm:w-auto">
                 <a href="/api/me/export/bookmarks.html">
                   <Bookmark className="mr-2 h-3.5 w-3.5" />
                   导出浏览器书签（HTML）
                 </a>
               </Button>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
               书签文件可直接导入 Chrome / Firefox / Safari / Edge，分组按收藏夹还原。
             </p>
           </section>
 
-          <section className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 space-y-3">
+          <section className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
             <div className="flex items-center gap-2">
-              <Database className="h-4 w-4 text-muted-foreground" />
+              <Database className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
               <h2 className="text-sm font-semibold">数据说明</h2>
             </div>
-            <ul className="list-inside list-disc space-y-1 text-xs text-muted-foreground">
-              <li>收藏与文件夹：删除后不可恢复，本机收藏缓存也会清空。</li>
-              <li>搜索历史与行为事件：画像会随之清空，之后按新行为重新积累。</li>
-              <li>LLM 配置：个人模型密钥（加密存储）一并删除，系统回退到全局配置。</li>
-              <li>插件安装与星标：安装记录清除，已安装的插件页面不受影响。</li>
-              <li>登录账号保留：NextAuth 会话仍然有效，重新登录后是空账号。</li>
+            <ul className="mt-3 list-inside list-disc space-y-1.5 text-xs leading-relaxed text-muted-foreground marker:text-muted-foreground/60">
+              <li className="break-words">收藏与文件夹：删除后不可恢复，本机收藏缓存也会清空。</li>
+              <li className="break-words">搜索历史与行为事件：画像会随之清空，之后按新行为重新积累。</li>
+              <li className="break-words">LLM 配置：个人模型密钥（加密存储）一并删除，系统回退到全局配置。</li>
+              <li className="break-words">插件安装与星标：安装记录清除，已安装的插件页面不受影响。</li>
+              <li className="break-words">登录账号保留：NextAuth 会话仍然有效，重新登录后是空账号。</li>
             </ul>
           </section>
 
-          <section className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:p-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-              <h2 className="text-sm font-semibold text-destructive">删除全部云端数据</h2>
+          <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive">
+                <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+                删除全部云端数据
+              </h2>
+              <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive">
+                不可逆
+              </span>
             </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">
+            <p className="mt-3 max-w-prose text-xs leading-relaxed text-muted-foreground">
               这是不可逆操作。输入 <span className="font-mono font-semibold text-destructive">DELETE</span> 解锁按钮。
             </p>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
               <Input
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
                 placeholder="输入 DELETE"
-                className="h-8 w-40 text-xs"
+                className="h-9 w-full text-xs sm:w-44"
                 aria-label="删除确认"
               />
               <Button
                 variant="destructive"
                 size="sm"
-                className="text-xs"
+                className="w-full text-xs sm:w-auto"
                 disabled={deleting || confirmText.trim().toUpperCase() !== 'DELETE'}
                 onClick={() => void handleDelete()}
               >

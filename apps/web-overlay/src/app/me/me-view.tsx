@@ -20,6 +20,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
 import { getAnonId } from '@/lib/identity'
 import { clearProfileSignals, fetchProfileExplain, type HubProfileExplain } from '@/lib/navhub-api'
+import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import {
   AlertTriangle,
   ArrowRight,
@@ -242,53 +243,47 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
   }, [overview, toast])
 
   return (
-    <Container as="main" id="main-content" className="py-4 sm:py-8 space-y-5 sm:space-y-6">
-      <section className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero p-4 sm:p-8 shadow-xs">
-        <div aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-primary/10 blur-3xl" />
-        <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3.5 min-w-0">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
-              <User className="h-6 w-6" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight truncate">用户中心</h1>
-              <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
-                账号身份、收藏、历史、个性化偏好与数据管理，从这里统一进入。
-              </p>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" className="w-full sm:w-auto text-xs" onClick={() => void load()}>
+    <Container as="main" id="main-content" className="space-y-6 pt-3 pb-8 sm:pt-4 sm:pb-10">
+      <CenterPageHeader
+        title="用户中心"
+        eyebrow="账户与数据"
+        icon={User}
+        description="账号身份、收藏、历史、个性化偏好与数据管理，从这里统一进入。"
+        actions={
+          <Button variant="outline" size="sm" className="w-full text-xs sm:w-auto" onClick={() => void load()}>
             <RefreshCw className="mr-2 h-3.5 w-3.5" />
             刷新
           </Button>
-        </div>
-      </section>
+        }
+      />
 
       {state === 'loading' && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3" aria-busy="true">
           {[0, 1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-24 rounded-xl border border-border/70 bg-card/50 animate-pulse" />
+            <div key={i} className="h-24 animate-pulse rounded-2xl border border-border/70 bg-card/50" />
           ))}
         </div>
       )}
 
       {state === 'anonymous' && (
-        <section className="rounded-xl border border-dashed border-border/70 bg-card/40 p-6 space-y-4">
+        <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 sm:p-6">
           <div className="flex items-start gap-3">
-            <LogIn className="mt-0.5 h-5 w-5 text-primary" />
-            <div>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <LogIn className="h-4 w-4" aria-hidden />
+            </span>
+            <div className="min-w-0 space-y-1">
               <h2 className="text-sm font-semibold">当前是匿名身份</h2>
-              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
-                收藏与画像已保存在本机（{favorites.items.length} 个收藏，匿名标识 {anonId.slice(0, 14)}…）。
-                登录后可跨设备同步，并把本机匿名数据合并到账号。
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                收藏与画像已保存在本机（{favorites.items.length} 个收藏，匿名标识{' '}
+                <span className="font-mono">{anonId.slice(0, 14)}…</span>）。登录后可跨设备同步，并把本机匿名数据合并到账号。
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild size="sm" className="text-xs">
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <Button asChild size="sm" className="w-full text-xs sm:w-auto">
               <Link href="/auth/signin?callbackUrl=/me">登录 / 创建账号</Link>
             </Button>
-            <Button asChild variant="outline" size="sm" className="text-xs">
+            <Button asChild variant="outline" size="sm" className="w-full text-xs sm:w-auto">
               <Link href="/favorites">查看本机收藏</Link>
             </Button>
           </div>
@@ -296,13 +291,13 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
       )}
 
       {state === 'error' && (
-        <section className="rounded-xl border border-destructive/30 bg-destructive/5 p-6">
+        <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-6" role="alert">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" />
-            <div>
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" aria-hidden />
+            <div className="min-w-0">
               <h2 className="text-sm font-semibold">用户中心加载失败</h2>
-              <p className="mt-1 text-xs text-muted-foreground">{error}</p>
-              <Button variant="outline" size="sm" className="mt-3 text-xs" onClick={() => void load()}>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{error}</p>
+              <Button variant="outline" size="sm" className="mt-3 w-full text-xs sm:w-auto" onClick={() => void load()}>
                 重试
               </Button>
             </div>
@@ -312,58 +307,66 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
 
       {state === 'ready' && overview && (
         <>
-          <section className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3 min-w-0">
+          <section className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
                 {overview.user?.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={overview.user.avatar} alt="" className="h-11 w-11 rounded-full border border-border object-cover" />
+                  <img
+                    src={overview.user.avatar}
+                    alt=""
+                    className="h-11 w-11 shrink-0 rounded-full border border-border object-cover"
+                  />
                 ) : (
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full border border-border bg-muted text-sm font-bold">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-sm font-bold">
                     {(overview.user?.username || 'U').slice(0, 1).toUpperCase()}
                   </div>
                 )}
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">
-                    {overview.user?.username || '已登录用户'}
-                    <span className="ml-2 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-sm font-semibold" title={overview.user?.username || '已登录用户'}>
+                      {overview.user?.username || '已登录用户'}
+                    </p>
+                    <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
                       {overview.user?.source || 'account'}
                     </span>
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
+                  </div>
+                  <p
+                    className="truncate text-[11px] text-muted-foreground sm:text-xs"
+                    title={overview.user?.email || overview.identity}
+                  >
                     {overview.user?.email || overview.identity}
                   </p>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2 text-[11px]">
+              <div className="flex flex-wrap gap-1.5 text-[11px]">
                 <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-1 text-muted-foreground">
-                  <CheckCircle2 className="h-3 w-3 text-emerald-500" /> 身份已同步
+                  <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-500" aria-hidden /> 身份已同步
                 </span>
                 {overview.profile.exists && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-1 text-muted-foreground">
-                    <Sparkles className="h-3 w-3 text-violet-500" /> 画像已生成
+                    <Sparkles className="h-3 w-3 shrink-0 text-violet-500" aria-hidden /> 画像已生成
                   </span>
                 )}
                 {overview.vault.exists && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-1 text-muted-foreground">
-                    <Database className="h-3 w-3 text-sky-500" /> 云端金库 v{overview.vault.version ?? 1}
+                    <Database className="h-3 w-3 shrink-0 text-sky-500" aria-hidden /> 云端金库 v{overview.vault.version ?? 1}
                   </span>
                 )}
                 {overview.llmConfig.exists && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-2.5 py-1 text-muted-foreground">
-                    <Bot className="h-3 w-3 text-emerald-500" /> 个人 AI 已配置
+                    <Bot className="h-3 w-3 shrink-0 text-emerald-500" aria-hidden /> 个人 AI 已配置
                   </span>
                 )}
               </div>
             </div>
             {overview.aliases.length > 0 && (
-              <p className="mt-3 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+              <p className="mt-3 border-t border-border/60 pt-3 text-[11px] leading-relaxed text-muted-foreground">
                 已合并 {overview.aliases.length} 个匿名身份（旧数据已归入当前账号）。
               </p>
             )}
           </section>
 
-          <section aria-label="用户数据概览" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <section aria-label="用户数据概览" className="grid grid-cols-2 gap-3 md:grid-cols-3">
             {STAT_ITEMS.map((item) => {
               const Icon = item.icon
               const value = overview.counts[item.key]
@@ -371,121 +374,236 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
                 <Link
                   key={item.key}
                   href={item.href}
-                  className="group rounded-xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-primary/40 hover:bg-primary/5"
+                  className="group flex flex-col justify-between gap-3 rounded-2xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Icon className="h-4 w-4 text-muted-foreground group-hover:text-primary" />
-                      {item.label}
-                    </div>
-                    <ArrowRight className="h-3.5 w-3.5 text-border group-hover:text-primary" />
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                      <Icon className="h-4 w-4 shrink-0 transition-colors group-hover:text-primary" aria-hidden />
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                    <ArrowRight
+                      className="h-3.5 w-3.5 shrink-0 text-border transition-transform group-hover:translate-x-0.5 group-hover:text-primary"
+                      aria-hidden
+                    />
                   </div>
-                  <p className="mt-2 text-2xl font-bold tracking-tight tabular-nums">{value}</p>
+                  <p className="text-2xl font-semibold leading-none tracking-tight tabular-nums sm:text-[26px]">{value}</p>
                 </Link>
               )
             })}
           </section>
 
-          <section className="rounded-xl border border-border/70 bg-card/50 p-4 sm:p-5 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Wand2 className="h-4 w-4 text-primary" />
-                <h2 className="text-sm font-semibold">个性化</h2>
-              </div>
-              <Button
-                variant={overview.settings.personalizationEnabled ? 'outline' : 'default'}
-                size="sm"
-                className="text-xs"
-                disabled={settingsBusy}
-                onClick={() => void togglePersonalization()}
-              >
-                {overview.settings.personalizationEnabled ? '已开启 · 点击关闭' : '已关闭 · 点击开启'}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              关闭后搜索结果不再按你的点击/收藏偏好排序，也不再更新画像；收藏与历史本身不受影响。
-            </p>
-            {explain?.explain && (
-              <p className="text-[11px] text-muted-foreground">
-                近 {explain.explain.windowDays} 天信号：点击 {explain.explain.signalCounts.click} · 收藏{' '}
-                {explain.explain.signalCounts.favorite} · 搜索 {explain.explain.signalCounts.searches}
-                {explain.profile?.topTags.length ? ` · 偏好标签 ${explain.profile.topTags.slice(0, 3).join('、')}` : ''}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2 border-t border-border/60 pt-3">
-              {(
-                [
-                  ['click', '清理点击信号'],
-                  ['search', '清理搜索信号'],
-                  ['favorite', '清理收藏信号'],
-                ] as const
-              ).map(([kind, label]) => (
+          <div className="grid gap-4 lg:grid-cols-12">
+            <section className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5 lg:col-span-7">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <h2 className="flex items-center gap-2 text-sm font-semibold">
+                    <Wand2 className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                    个性化
+                  </h2>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    决定搜索结果排序与画像是否继续更新
+                  </p>
+                </div>
                 <Button
-                  key={kind}
-                  variant="outline"
+                  variant={overview.settings.personalizationEnabled ? 'outline' : 'default'}
                   size="sm"
-                  className="text-[11px]"
+                  className="w-full text-xs sm:w-auto"
                   disabled={settingsBusy}
-                  onClick={() => void clearSignal(kind)}
+                  onClick={() => void togglePersonalization()}
                 >
-                  {label}
+                  {overview.settings.personalizationEnabled ? '已开启 · 点击关闭' : '已关闭 · 点击开启'}
                 </Button>
-              ))}
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-border/70 bg-card/50 p-4 sm:p-5 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold">最近操作</h2>
-              <span className="text-[11px] text-muted-foreground">只显示动作与时间，不含 IP 与内部差异</span>
-            </div>
-            {activity.length === 0 ? (
-              <p className="text-xs text-muted-foreground">最近没有可展示的操作记录。</p>
-            ) : (
-              <ul className="divide-y divide-border/60">
-                {activity.map((item, index) => (
-                  <li key={`${item.action}-${item.target}-${item.at}-${index}`} className="flex items-center justify-between gap-3 py-2 text-xs">
-                    <span className="min-w-0 truncate">
-                      <span className="font-medium text-foreground">{activityLabel(item.action)}</span>
-                      {item.target ? <span className="ml-1.5 text-muted-foreground">{item.target}</span> : null}
+              </div>
+              <p className="mt-3 max-w-prose text-xs leading-relaxed text-muted-foreground">
+                关闭后搜索结果不再按你的点击/收藏偏好排序，也不再更新画像；收藏与历史本身不受影响。
+              </p>
+              {explain?.explain && (
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-background/40 px-3 py-2 text-[11px] text-muted-foreground">
+                  <span>近 {explain.explain.windowDays} 天信号</span>
+                  <span>
+                    点击{' '}
+                    <span className="font-medium tabular-nums text-foreground">{explain.explain.signalCounts.click}</span>
+                  </span>
+                  <span>
+                    收藏{' '}
+                    <span className="font-medium tabular-nums text-foreground">{explain.explain.signalCounts.favorite}</span>
+                  </span>
+                  <span>
+                    搜索{' '}
+                    <span className="font-medium tabular-nums text-foreground">{explain.explain.signalCounts.searches}</span>
+                  </span>
+                  {explain.profile?.topTags.length ? (
+                    <span className="min-w-0 max-w-full truncate" title={explain.profile.topTags.slice(0, 3).join('、')}>
+                      偏好标签 {explain.profile.topTags.slice(0, 3).join('、')}
                     </span>
-                    <span className="shrink-0 text-muted-foreground">{relativeTime(item.at)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+                  ) : null}
+                </div>
+              )}
+              <div className="mt-4 border-t border-border/60 pt-3">
+                <p className="text-[11px] font-medium text-muted-foreground">按信号类型清理（画像会按剩余行为重建）</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(
+                    [
+                      ['click', '清理点击信号'],
+                      ['search', '清理搜索信号'],
+                      ['favorite', '清理收藏信号'],
+                    ] as const
+                  ).map(([kind, label]) => (
+                    <Button
+                      key={kind}
+                      variant="outline"
+                      size="sm"
+                      className="text-[11px]"
+                      disabled={settingsBusy}
+                      onClick={() => void clearSignal(kind)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </section>
 
-          <section className="rounded-xl border border-border/70 bg-card/50 p-4 sm:p-5 space-y-3">
-            <h2 className="text-sm font-semibold">更多管理入口</h2>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Link href="/favorites" className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-xs hover:bg-muted/40">
-                <span>收藏管理（文件夹 / 备注 / E2EE 金库）</span>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-              </Link>
-              <Link href="/me/history" className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-xs hover:bg-muted/40">
-                <span>搜索历史管理</span>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-              </Link>
-              <Link href="/me/data" className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-xs hover:bg-muted/40">
-                <span className="inline-flex items-center gap-1.5">
-                  <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                  数据导出与删除
-                </span>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-              </Link>
-              <Link href="/preferences" className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-xs hover:bg-muted/40">
-                <span>我的偏好与个人 AI</span>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-              </Link>
-              <Link href="/marketplace/installed" className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-xs hover:bg-muted/40">
-                <span>已安装插件</span>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-              </Link>
-              <Link href="/marketplace/mine" className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 text-xs hover:bg-muted/40">
-                <span>插件作者中心</span>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-              </Link>
+            <section className="flex flex-col rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5 lg:col-span-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h2 className="text-sm font-semibold">最近操作</h2>
+                <span className="text-[11px] text-muted-foreground">只显示动作与时间，不含 IP 与内部差异</span>
+              </div>
+              {activity.length === 0 ? (
+                <p className="mt-3 rounded-xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">
+                  最近没有可展示的操作记录。
+                </p>
+              ) : (
+                <ul className="mt-1 divide-y divide-border/60">
+                  {activity.map((item, index) => (
+                    <li
+                      key={`${item.action}-${item.target}-${item.at}-${index}`}
+                      className="flex items-start justify-between gap-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-foreground">{activityLabel(item.action)}</p>
+                        {item.target ? (
+                          <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={item.target}>
+                            {item.target}
+                          </p>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                        {relativeTime(item.at)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+
+          <section className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h2 className="text-sm font-semibold">更多管理入口</h2>
+              <span className="text-[11px] text-muted-foreground">按主题分组</span>
+            </div>
+            <div className="mt-3 grid gap-5 sm:grid-cols-2">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">数据与隐私</p>
+                <ul className="mt-2 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/60">
+                  <li>
+                    <Link
+                      href="/favorites"
+                      className="group flex items-center justify-between gap-3 px-3 py-2.5 text-xs transition-colors hover:bg-muted/40"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Heart className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="truncate">收藏管理（文件夹 / 备注 / E2EE 金库）</span>
+                      </span>
+                      <ArrowRight
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                        aria-hidden
+                      />
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/me/history"
+                      className="group flex items-center justify-between gap-3 px-3 py-2.5 text-xs transition-colors hover:bg-muted/40"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="truncate">搜索历史管理</span>
+                      </span>
+                      <ArrowRight
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                        aria-hidden
+                      />
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/me/data"
+                      className="group flex items-center justify-between gap-3 px-3 py-2.5 text-xs transition-colors hover:bg-muted/40"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+                        <span className="truncate">数据导出与删除</span>
+                      </span>
+                      <ArrowRight
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                        aria-hidden
+                      />
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">扩展与 AI</p>
+                <ul className="mt-2 divide-y divide-border/60 overflow-hidden rounded-xl border border-border/60">
+                  <li>
+                    <Link
+                      href="/preferences"
+                      className="group flex items-center justify-between gap-3 px-3 py-2.5 text-xs transition-colors hover:bg-muted/40"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Wand2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="truncate">我的偏好与个人 AI</span>
+                      </span>
+                      <ArrowRight
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                        aria-hidden
+                      />
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/marketplace/installed"
+                      className="group flex items-center justify-between gap-3 px-3 py-2.5 text-xs transition-colors hover:bg-muted/40"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Plug className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="truncate">已安装插件</span>
+                      </span>
+                      <ArrowRight
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                        aria-hidden
+                      />
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      href="/marketplace/mine"
+                      className="group flex items-center justify-between gap-3 px-3 py-2.5 text-xs transition-colors hover:bg-muted/40"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Sparkles className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="truncate">插件作者中心</span>
+                      </span>
+                      <ArrowRight
+                        className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                        aria-hidden
+                      />
+                    </Link>
+                  </li>
+                </ul>
+              </div>
             </div>
           </section>
         </>

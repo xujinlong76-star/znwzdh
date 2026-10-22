@@ -13,8 +13,9 @@ export const metadata: Metadata = {
 export default function MeLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      {/* 子导航与页面同宽；放在 main 之外，读屏可当作独立导航地标 */}
-      <div className="mx-auto w-full max-w-(--breakpoint-2xl) px-3 pt-4 sm:px-6 md:px-8 lg:px-10 xl:px-12">
+      {/* 子导航与页面同宽；放在 main 之外，读屏可当作独立导航地标。
+          顶部只留 12~20px：页面自身还有 pt-3/pt-4，两者相加才是导航与页头的间距。 */}
+      <div className="mx-auto w-full max-w-(--breakpoint-2xl) px-3 pt-3 sm:px-6 sm:pt-5 md:px-8 lg:px-10 xl:px-12">
         <UserCenterNav />
       </div>
       {children}

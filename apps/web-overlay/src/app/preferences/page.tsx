@@ -148,9 +148,9 @@ export default function PreferencesPage() {
   const degrade = loadError === null ? null : profileDegradeNotice(loadError)
 
   return (
-    <Container as="main" id="main-content" className="py-4 sm:py-8 space-y-5 sm:space-y-6">
+    <Container as="main" id="main-content" className="space-y-6 pt-3 pb-8 sm:pt-4 sm:pb-10">
       <UserCenterNav />
-      <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-8 shadow-xs mb-6">
+      <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-6 shadow-xs">
         <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-primary/10 rounded-full blur-3xl" />
         <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-44 h-44 bg-sky-400/10 rounded-full blur-3xl" />
         <Sparkles
@@ -171,14 +171,14 @@ export default function PreferencesPage() {
             <span className="text-xs text-primary font-medium">个性化偏好</span>
           </div>
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-            <div className="max-w-2xl">
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-primary/10 text-primary border border-primary/20 shadow-xs shrink-0">
-                  <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+            <div className="min-w-0 max-w-2xl">
+              <h1 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight sm:text-2xl">
+                <div className="p-1.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shrink-0">
+                  <Sparkles className="w-4 h-4" />
                 </div>
                 <span className="truncate">我的偏好</span>
               </h1>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
+              <p className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed">
                 搜索会根据你的浏览与收藏做轻量个性化重排。这里是系统据你的行为推断出的内容——
                 看得见，才可以控制。
               </p>

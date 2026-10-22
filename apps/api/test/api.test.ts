@@ -1423,7 +1423,8 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
     expect(res.headers["content-type"]).toContain("image/svg+xml");
     expect(res.body).toContain("<svg");
     expect(res.body).toContain("linearGradient");
-    expect(res.headers["cache-control"]).toContain("private, max-age=86400");
+    // 300s 而不是 86400：字母标由标题推导，改名后一整天不回源就是旧首字母
+    expect(res.headers["cache-control"]).toContain("private, max-age=300");
   });
 
   it("POST /api/sites/:id/heal 触发自动诊断并返回自愈报告与落审计", async () => {

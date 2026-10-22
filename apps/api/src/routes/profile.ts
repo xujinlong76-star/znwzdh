@@ -4,7 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { identityAllowed, identityOf } from "./shared.ts";
+import { identityTrusted, identityOf } from "./shared.ts";
 import { invalidateProfileThrottle, refreshUserProfile, resetUserProfile } from "../profile-service.ts";
 
 import type { AppContext } from "../context.ts";
@@ -25,7 +25,7 @@ export const profileRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
   app.get("/api/profile", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const profile = await ctx.repo.getUserProfile(identity);
     const query = (req.query ?? {}) as Record<string, unknown>;
     const wantExplain = query.explain === "1" || query.explain === "true";
@@ -54,7 +54,7 @@ export const profileRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
   app.delete("/api/profile", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { ok: false, error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { ok: false, error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { ok: false, error: "需要 Bearer token" }; }
     const result = await resetUserProfile(ctx, identity);
     return { ok: true, ...result };
   });
@@ -70,7 +70,7 @@ export const profileRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     if (!SIGNAL_KINDS.has(kind)) { reply.code(400); return { ok: false, error: "kind 只支持 click/search/favorite" }; }
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { ok: false, error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { ok: false, error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { ok: false, error: "需要 Bearer token" }; }
 
     let removed = 0;
     if (kind === "click" || kind === "favorite") {

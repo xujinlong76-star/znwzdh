@@ -157,7 +157,11 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
    */
   app.get("/api/graph/mesh", { config: { scope: "public" } }, async (req, reply) => {
     try {
-      const sites = await ctx.repo.listSites({ limit: 1000 });
+      // 星图是访客可见的公开面：只画 active。全站其余访客侧装配（copilot、recipes
+      // 同类推荐、health-audit 邻居、AI 建议）都按 status:"active" 取数，唯独这里
+      // 不带状态过滤，等于把「待审投稿」和「已归档」一起贴到公开星图上——
+      // 投稿默认进待审队列之后，这条就是审核台的抽屉被反着拉开。
+      const sites = await ctx.repo.listSites({ limit: 1000, status: "active" });
       const categories = await ctx.repo.listCategories();
 
       const nodes: SiteKnowledgeNode[] = [];
@@ -269,7 +273,11 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
    */
   app.get("/api/sites/duplicates", { config: { scope: "public" } }, async (req, reply) => {
     try {
-      const sites = await ctx.repo.listSites({ limit: 1000 });
+      // 与 /api/graph/mesh 同一张公开星图的「冗余分析」页签，取数口径必须一致：
+      // 只比 active，否则待审投稿的标题与 URL 会被公开回显。
+      // （它本质上更像管理面报表；把页签收到 `scope:"read"` 需要同时改
+      //  knowledge-star-map-modal.tsx，那是热区，此处只登记建议。）
+      const sites = await ctx.repo.listSites({ limit: 1000, status: "active" });
       const categories = await ctx.repo.listCategories();
       const catMap = new Map<string, string>(
         categories.map((c) => [c.id, (c as any).title || (c as any).name || c.id])

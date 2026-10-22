@@ -131,6 +131,42 @@ describe("Stage 3 & 4: Graph Mesh & Offline Archive API", () => {
     expect(pair.similarity).toBeGreaterThan(0.7);
   });
 
+  it("公开星图与冗余分析都不该把待审/归档站点摊出去", async () => {
+    // 投稿现在默认进待审队列（2026-10-21），而这两条路由是访客可见的公开面。
+    // 修复前它们用 listSites({limit:1000}) 不带状态过滤，等于把未上架的投稿
+    // 标题、URL、标签连同分类一起贴到公开星图上。
+    const anchor = await ctx.repo.getSite(createdSiteId);
+    expect(anchor).not.toBeNull();
+    await ctx.repo.createSite({
+      title: "待审投稿-不该公开",
+      url: "https://pending-only.example.com",
+      categoryId: anchor!.categoryId,
+      status: "pending",
+      tags: ["git"],
+    });
+    await ctx.repo.createSite({
+      title: "已归档-不该公开",
+      url: "https://archived-only.example.com",
+      categoryId: anchor!.categoryId,
+      status: "archived",
+      tags: ["git"],
+    });
+
+    const mesh = await app.inject({ method: "GET", url: "/api/graph/mesh" });
+    expect(mesh.statusCode).toBe(200);
+    expect(mesh.payload).not.toContain("pending-only.example.com");
+    expect(mesh.payload).not.toContain("archived-only.example.com");
+    expect(mesh.payload).not.toContain("待审投稿");
+    // 只有两条 active 站点进图（这条同时锁住「计数口径」与「过滤真的生效」）
+    expect((mesh.json() as { stats: { siteCount: number } }).stats.siteCount).toBe(2);
+
+    const dup = await app.inject({ method: "GET", url: "/api/sites/duplicates" });
+    expect(dup.statusCode).toBe(200);
+    expect(dup.payload).not.toContain("pending-only.example.com");
+    expect(dup.payload).not.toContain("archived-only.example.com");
+    expect((dup.json() as { scannedCount: number }).scannedCount).toBe(2);
+  });
+
   it("GET /api/sites/:id/archive 应能生成或读取离线快照", async () => {
     const res = await app.inject({
       method: "GET",

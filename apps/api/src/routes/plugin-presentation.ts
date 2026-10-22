@@ -4,7 +4,8 @@
  * 从 routes/plugins.ts 抽出的纯函数：徽章 SVG 渲染、身份提取、公共序列化。
  * 它们不依赖 Fastify 实例，抽离后可单测、也让路由文件只保留「端点编排」。
  */
-import { identityOf } from "./shared.ts";
+import { identityOf, identityTrusted } from "./shared.ts";
+import type { AppContext } from "../context.ts";
 
 export function escapeXml(unsafe: string): string {
   return unsafe.replace(/[<>&'"]/g, (c) => {
@@ -84,6 +85,30 @@ export function extractPluginIdentity(req: PluginIdentityRequest): string | null
   // 「头里签攻击者自己的身份、body 里塞受害者身份」能通过签名校验，却以受害者身份
   // 执行安装/评价/`/api/plugins/mine`（他人私有草稿会整批读出）。
   return identityOf(req as never);
+}
+
+/**
+ * 插件域身份的**唯一可信取用入口**：把「调用方配不配用这个身份」和「身份是什么」绑在一起。
+ *
+ * 为什么需要它：`NAVHUB_AUTH_REQUIRED=true` 只把门抬到「管理面必须持票」，而插件路由
+ * 大多是 `scope:"public"`（访客可浏览/安装/评价），于是无票请求也能带
+ * `?identity=<victim>` / body.identity 进来。第二道闸 `NAVHUB_IDENTITY_SECRET`
+ * 只在 `NODE_ENV=production` 时才被 security-readiness 要求——也就是说
+ * 「开了鉴权、没配签名密钥」这套部署（staging、内网、compose 默认）里，
+ * 任何人都能读走他人的私有草稿（`/api/plugins/mine`）、以他人身份发评价/投稿/安装，
+ * 靠猜到 `github:<id>` 这类归属串把未上架插件读出来，
+ * 甚至用 `resolveLlm(identity)` 借他人存的密钥跑 AI（pre-audit / auto-fix / ai-audit）。
+ *
+ * 语义刻意不是「一律 403」：无票访客在本项目里是合法的一等公民（前端注释见
+ * `navhub-api.ts` 「不带时回退匿名行为」，`/api/hub/*` 代理会给匿名身份签名）。
+ * 所以闸门取 `identityTrusted`：开放模式与签名绑定的访客行为完全不变，只有
+ * 「鉴权开着 + 签名没配 + 调用方没票」这一格被堵住。被堵时读私有视图的路由
+ * 降级为 null（`isOwner`/`myReview` 自然变 false、未上架插件回到 404），
+ * 而「以该身份写数据」的路由直接 401——写错人的数据没有可降级的形态。
+ */
+export function pluginIdentity(ctx: AppContext, req: PluginIdentityRequest): string | null {
+  if (!identityTrusted(ctx, req as never)) return null;
+  return extractPluginIdentity(req);
 }
 
 /**

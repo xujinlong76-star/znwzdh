@@ -286,3 +286,52 @@ export function identityAllowed(ctx: AppContext, req: { auth?: { kind?: string }
   if (!ctx.config.authRequired) return true;
   return (req as { auth?: { kind?: string } }).auth?.kind !== "anonymous";
 }
+
+/**
+ * 「调用方自称的终端用户身份」是否可信——两轴鉴权里的第二轴。
+ *
+ * 第一轴（`identityAllowed` / Bearer token）只回答「调用方是不是持票人」。
+ * 但有两类合法调用方天生没有票：
+ *   - 开放模式（`authRequired=false`，个人/NAS 默认）；
+ *   - 公共站的匿名访客——Web 侧 `/api/hub/*` 代理会给他们的身份打 HMAC 签名
+ *     （见 `server.ts` 的 preValidation hook，配了 `NAVHUB_IDENTITY_SECRET` 才生效）。
+ * 只按第一轴收紧，会把这两类调用方的终端用户功能整片砍掉。
+ *
+ * 第二轴：**配了签名密钥 = 能走到路由的身份都已通过签名校验**（hook 用的是同一个
+ * `identityOf`，签名不匹配在 preValidation 就 401 了）。于是本函数为真当且仅当：
+ * 开放模式 / 持票 / 身份已被签名绑定。
+ *
+ * 依赖的硬不变量：调用方**只能**用 `identityOf`（或其委托者 `extractPluginIdentity`）
+ * 取身份。若某条路由另开一个入口读 body 里的身份字段，签名覆盖不到它，这里就退化成
+ * 无条件放行——插件域曾经正是那种情况（见 `identity-plugin-impersonation.test.ts`）。
+ *
+ * 反例：不要用它替换「写进程级共享状态」这类路由的闸门（`POST /api/tools/synthesize`、
+ * `POST /api/p2p/signal`），那些要求的确实是持票。
+ */
+export function identityTrusted(ctx: AppContext, req: { auth?: { kind?: string } }): boolean {
+  if (ctx.config.identitySecret) return true;
+  return identityAllowed(ctx, req);
+}
+
+/**
+ * 「这个调用方算不算管理员」——比直接读 `req.auth.scopes` 严一档。
+ *
+ * 坑在挂载方式：`server.ts` 的 onRequest 先无条件把 `req.auth` 复制成
+ * `ANONYMOUS_IDENTITY`（scopes 天生是全量的 read,write,admin），随后只在
+ * 「带了有效 token」时才覆写 scopes。于是**鉴权开着但没票**的调用方，在
+ * `scope:"public"` 路由上提前 return，手里依然攥着 `["read","write","admin"]`，
+ * 只有 `kind` 诚实地写着 `"anonymous"`。任何 `scopes.includes("admin")` 的判定
+ * 都会被它放行——已上架门禁（未发布插件全文可见）、AI 审核（可替任意插件跳审上架）
+ * 都吃过这一口。
+ *
+ * 口径：开放模式（`authRequired=false`）按设计「操作者即管理员、无凭据」，
+ * 保持历史行为不变；开了鉴权就只认非匿名调用方的 scope。
+ * 根治应在 hook 里把无票分支的 scopes 清空（`server.ts` 是热区，此处只做本地修复
+ * 并把根因写进审计报告）。
+ */
+export function isAdminScope(ctx: AppContext, req: { auth?: { kind?: string; scopes?: string[] } }): boolean {
+  const auth = (req as { auth?: { kind?: string; scopes?: string[] } }).auth;
+  if (!auth?.scopes?.includes("admin")) return false;
+  if (ctx.config.authRequired && auth.kind === "anonymous") return false;
+  return true;
+}

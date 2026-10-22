@@ -6,7 +6,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
-import { identityOf } from "./shared.ts";
+import { identityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 const chatSchema = z.object({
@@ -42,7 +42,14 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     }
 
     const { message, thinking, history = [], context = {} } = parsed.data;
-    const llm = await resolveLlm(ctx, identityOf(req as never));
+    /**
+     * 自报身份必须先过第二轴（见 `shared.ts` 的 `identityTrusted`）。
+     * 本路由是 `scope:"public"`：不过闸门就等价于「任何人自称 `github:<别人>`，
+     * `resolveLlm` 就去解**那个人**存的个人 API Key 跑这次对话」——白烧他人配额，
+     * 用量还记到他人账上。过不了的调用方降级用系统级配置，功能不中断。
+     */
+    const identity = identityTrusted(ctx, req as never) ? identityOf(req as never) : null;
+    const llm = await resolveLlm(ctx, identity);
 
     // 收集全站实时上下文（分类与核心站点）
     const [categories, sites] = await Promise.all([
@@ -96,7 +103,7 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
 
         const res = await callLlm(ctx, llm, {
           scenario: "copilot",
-          identity: identityOf(req as never),
+          identity,
           messages,
           temperature: 0.6,
           maxTokens: 1200,

@@ -155,10 +155,10 @@ describe("推荐端点的缓存策略", () => {
     expect(missing.headers["cache-control"]).toBe("no-store");
   });
 
-  /**
-   * alternatives 的 N+1 守卫（没有 embedding/向量时这段循环在测试里跑不到，
-   * 只能用源码契约锁住，别让它改回逐个 getSite + getEmbedding）。
-   */
+/**
+ * alternatives 的 N+1 守卫（没有 embedding/向量时这段循环在测试里跑不到，
+ * 只能用源码契约锁住，别让它改回逐个 getSite + getEmbedding）。
+ */
   it("候选集改成批量取站点：源码里不再有逐条 getSite 的循环调用", async () => {
     const src = await readFile(join(import.meta.dirname, "../src/routes/rank.ts"), "utf8");
     const start = src.indexOf("const candidates = matches.filter");
@@ -167,5 +167,48 @@ describe("推荐端点的缓存策略", () => {
     const loop = src.slice(start, end);
     expect(loop).toContain("getSitesByIds");
     expect(loop).not.toMatch(/await ctx\.repo\.getSite\(/);
+  });
+});
+
+/**
+ * 字母标 favicon：图标内容由**标题**推导，缓存头必须跟得上改名。
+ * 此前是 `max-age=86400`，改名后浏览器一整天不回源——列表已是新标题，
+ * 图标还是旧首字母，只能硬刷新。
+ */
+describe("字母标 favicon 的缓存策略", () => {
+  it("GET /api/favicon/:id → max-age=300 + ETag，改名后 ETag 跟着变", async () => {
+    const categoryId = await ctx.repo.ensureCategory("字母标探针类目", "test");
+    const site = await ctx.repo.createSite({
+      url: "https://letter-mark.example/",
+      title: "阿里邮箱",
+      categoryId,
+    } as never);
+
+    const first = await app.inject({ method: "GET", url: "/api/favicon/" + site.id });
+    expect(first.statusCode).toBe(200);
+    expect(first.headers["cache-control"]).toBe("private, max-age=300");
+    expect(String(first.headers["cache-control"])).not.toContain("86400");
+    const firstEtag = String(first.headers["etag"]);
+    expect(firstEtag).toBeTruthy();
+    expect(first.body).toContain("阿");
+
+    // 用旧 ETag 再验证：没变就是 304，不重新出图
+    const fresh = await app.inject({
+      method: "GET",
+      url: "/api/favicon/" + site.id,
+      headers: { "if-none-match": firstEtag },
+    });
+    expect(fresh.statusCode).toBe(304);
+
+    await ctx.repo.updateSite(site.id, { title: "字节跳动" } as never);
+    const renamed = await app.inject({
+      method: "GET",
+      url: "/api/favicon/" + site.id,
+      headers: { "if-none-match": firstEtag },
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.headers["etag"]).not.toBe(firstEtag);
+    expect(renamed.body).toContain("字");
+    expect(renamed.body).not.toContain("阿");
   });
 });

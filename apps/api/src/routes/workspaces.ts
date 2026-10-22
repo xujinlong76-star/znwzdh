@@ -7,7 +7,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
-import { identityAllowed, identityOf, notFound, unauthorized, forbidden } from "./shared.ts";
+import { identityTrusted, identityOf, notFound, unauthorized, forbidden } from "./shared.ts";
 import {
   checkWorkspacePermission,
   type Workspace,
@@ -103,6 +103,22 @@ async function loadCustomWorkspaces(ctx: AppContext, identity: string): Promise<
 }
 
 /**
+ * 成员名册的存储键必须带上调用方身份，不能只带空间 id。
+ *
+ * 旧键 `ws_members:<wsId>` 是全库单行共享的，而 `resolveWorkspaceRole` 对两个预设
+ * 空间（`ws-personal`、`ws-team-shared`）无条件发给每个调用方 owner / maintainer——
+ * 于是任何登录用户都能改写「别人的个人私有空间」的名册，同名键最后写入者胜出，
+ * 读侧再把这份被污染的名单回给所有空间相同的人。自定义空间的 id 随机、且只有创建者
+ * 能解析出角色，本来没有这个口；把名册按调用方隔离后，共享写入面整体消失。
+ *
+ * 代价：历史上通过旧键写进去的名册不再可见（那些行本来就是任意用户越权写出来的），
+ * 读不到时回落到 DEFAULT_MEMBERS。
+ */
+function membersKey(identity: string, wsId: string): string {
+  return `ws_members:${identity}:${wsId}`;
+}
+
+/**
  * 解析当前身份在目标空间中的角色。
  *
  * 默认空间是演示/共享数据；自定义空间只存在于创建者的 vault 里，因此
@@ -128,7 +144,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    */
   app.get("/api/workspaces", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
-    if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
 
     let customWorkspaces: Workspace[] = [];
     if (identity) {
@@ -150,7 +166,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    */
   app.post("/api/workspaces", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
-    if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
     if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
 
     const schema = z.object({
@@ -204,7 +220,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    */
   app.get("/api/workspaces/:id/members", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
-    if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
     if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
 
     const params = req.params as { id: string };
@@ -213,7 +229,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
     if (!role) return notFound(reply, "工作空间不存在或无权访问");
 
     let members = [...DEFAULT_MEMBERS];
-    const customKey = `ws_members:${wsId}`;
+    const customKey = membersKey(identity, wsId);
     const stored = await ctx.repo.getUserVault(customKey);
     if (stored?.payload) {
       try {
@@ -240,7 +256,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    */
   app.post("/api/workspaces/:id/members", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
-    if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
     if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
 
     const params = req.params as { id: string };
@@ -263,7 +279,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
       return { error: "参数无效", detail: parsed.error.issues };
     }
 
-    const customKey = `ws_members:${wsId}`;
+    const customKey = membersKey(identity, wsId);
     let members = [...DEFAULT_MEMBERS];
     const stored = await ctx.repo.getUserVault(customKey);
     if (stored?.payload) {
@@ -319,7 +335,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    */
   app.delete("/api/workspaces/:id/members/:userId", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
-    if (!identityAllowed(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+    if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
     if (!identity) return unauthorized(reply, "缺少 userId 或 anonId");
 
     const params = req.params as { id: string; userId: string };
@@ -330,7 +346,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
       return forbidden(reply, "无权管理该空间成员");
     }
 
-    const customKey = `ws_members:${wsId}`;
+    const customKey = membersKey(identity, wsId);
     let members = [...DEFAULT_MEMBERS];
     const stored = await ctx.repo.getUserVault(customKey);
     if (stored?.payload) {

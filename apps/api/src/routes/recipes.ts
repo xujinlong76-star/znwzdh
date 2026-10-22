@@ -89,8 +89,13 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
   /**
    * 确定性 SVG Favicon 代理端点（解决小众/外网站点 Favicon 裂开或 CORS 阻断）
+   *
+   * 字母标是从**站点标题**推出来的，而 `max-age=86400` 让浏览器一整天不回源：
+   * 改名之后列表已经换新标题，图标却还是旧首字母，用户只能硬刷新。
+   * 压到 300 秒：页面内重复请求照样命中本地缓存，过期后用 ETag 走 304，
+   * 改名最多 5 分钟就跟上（这条路由每次请求都要读库 + 生成 SVG，再验证并不贵）。
    */
-  app.get("/api/favicon/:id", { config: { scope: "public", cache: { maxAge: 86400, etag: true } } }, async (req, reply) => {
+  app.get("/api/favicon/:id", { config: { scope: "public", cache: { maxAge: 300, etag: true } } }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const site = await ctx.repo.getSite(id);
     const title = site ? site.title : id;

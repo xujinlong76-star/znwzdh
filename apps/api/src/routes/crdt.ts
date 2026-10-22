@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { identityAllowed, identityOf } from "./shared.ts";
+import { identityTrusted, identityOf } from "./shared.ts";
 import {
   compactOperationLogs,
   mergeOperationLogs,
@@ -26,7 +26,7 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   app.get("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const crdtRecord = await ctx.repo.getUserVault("crdt:" + identity);
     let serverOps: CRDTOperation[] = [];
     if (crdtRecord?.payload) {
@@ -47,7 +47,7 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   app.post("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({
       operations: z.array(z.object({
         id: z.string(),
@@ -111,7 +111,7 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   app.delete("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     await ctx.repo.deleteUserVault("crdt:" + identity);
     return { ok: true };
   });

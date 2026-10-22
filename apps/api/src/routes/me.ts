@@ -5,6 +5,13 @@
  * `x-navhub-user-id` + `x-navhub-identity-signature` 转发到中枢。
  * 这里不接受客户端自报的 userId（BFF 会剥离客户端同名头）。
  *
+ * 上一句只在流量确实经过 `/api/hub/*` 代理时成立：API 端口一旦被直接暴露
+ * （compose 默认映射、MCP、curl），`x-navhub-user-id` 就是纯自报的字符串。
+ * 所以每个端点先过 `identityTrusted`（开放模式 / 持票 / 身份已被签名绑定，三者其一），
+ * 否则「无票自称他人」可以导出任意用户的全部个人数据、改写其设置、甚至直接注销。
+ * ——本文件是热区：这条是审计报告里登记的例外，理由是闸门只能落在路由处理器里，
+ * 在别处（hook）拦不住——签名 hook 只在配了 `NAVHUB_IDENTITY_SECRET` 时才生效。
+ *
  * 端点：
  *  - GET  /api/me        概览（身份、计数、画像/金库/AI 配置存在性、别名）
  *  - POST /api/me/merge  匿名数据合并到登录身份（幂等、事务、审计）
@@ -17,7 +24,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
 import type { AppContext } from "../context.ts";
-import { identityOf } from "./shared.ts";
+import { identityOf, identityTrusted } from "./shared.ts";
 import { verifyIdentitySignature } from "../identity-signature.ts";
 import { invalidateProfileThrottle, refreshUserProfile } from "../profile-service.ts";
 
@@ -28,6 +35,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   const ctx = opts.ctx;
 
   app.get("/api/me", async (req, reply) => {
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = identityOf(req as never);
     if (!identity) {
       reply.code(401);
@@ -44,6 +52,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   /* ------------------------- 设置 ------------------------- */
 
   app.get("/api/me/settings", async (req, reply) => {
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = identityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
@@ -51,6 +60,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   });
 
   app.patch("/api/me/settings", async (req, reply) => {
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = identityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const parsed = z.object({ personalizationEnabled: z.boolean().optional() }).safeParse(req.body ?? {});
@@ -67,6 +77,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   /** 导出全部个人数据（JSON 附件；LLM 密钥已脱敏，金库只带版本元信息） */
   app.get("/api/me/export", async (req, reply) => {
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = identityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
@@ -94,6 +105,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
    * 必须显式确认，避免误触把收藏与历史一次清空。
    */
   app.delete("/api/me", async (req, reply) => {
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = identityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     if (identity.startsWith("anon-")) {
@@ -119,6 +131,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   });
 
   app.post("/api/me/merge", async (req, reply) => {
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const target = identityOf(req as never);
     if (!target) {
       reply.code(401);

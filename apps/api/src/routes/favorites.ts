@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { identityAllowed, identityOf } from "./shared.ts";
+import { identityTrusted, identityOf } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
 
@@ -30,7 +30,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.get("/api/favorites", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const items = await ctx.repo.listFavorites(identity);
     const folders = await ctx.repo.listFavoriteFolders(identity);
     // 批量取站点（同 runSearch 的 N+1 优化）
@@ -45,7 +45,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.post("/api/favorites", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = favoriteInput.safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const site = await ctx.repo.getSite(body.data.siteId);
@@ -65,7 +65,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     const { siteId } = req.params as { siteId: string };
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const removed = await ctx.repo.removeFavorite(identity, siteId);
     if (removed) {
       await ctx.repo.recordEvent("unfavorite", { siteId, meta: { identity } }).catch(() => undefined);
@@ -81,7 +81,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     const { siteId } = req.params as { siteId: string };
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({
       folderId: z.string().min(1).nullable().optional(),
       note: z.string().max(200).nullable().optional(),
@@ -103,7 +103,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.delete("/api/favorites", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const removed = await ctx.repo.clearFavorites(identity);
     return { ok: true, removed };
   });
@@ -111,7 +111,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.post("/api/favorites/folders", async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({ name: z.string().min(1).max(30) }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const folder = await ctx.repo.createFavoriteFolder(identity, body.data.name);
@@ -123,7 +123,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     const { id } = req.params as { id: string };
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     await ctx.repo.deleteFavoriteFolder(identity, id);
     return { ok: true };
   });
@@ -133,7 +133,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     const { id } = req.params as { id: string };
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
-    if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({
       name: z.string().trim().min(1).max(30).optional(),
       sort: z.number().int().optional(),

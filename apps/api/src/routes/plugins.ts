@@ -36,10 +36,14 @@ import {
   created,
   forbidden,
   identityOf,
+  isAdminScope,
+  identityTrusted,
   notFound,
+  unauthorized,
 } from "./shared.ts";
 import {
   extractPluginIdentity,
+  pluginIdentity,
   publicPlugin,
   renderBadgeSvg,
 } from "./plugin-presentation.ts";
@@ -122,6 +126,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     "/api/plugins/mine",
     { config: { scope: "public", cache: { maxAge: 0 } } },
     async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
       const identity = extractPluginIdentity(req);
       if (!identity) return badRequest(reply, "缺少用户身份标识 (identity/anonId)");
       const q = req.query as Record<string, string | undefined>;
@@ -338,6 +343,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     "/api/plugins/installed",
     { config: { scope: "public" } },
     async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
       const identity = identityOf(req as never);
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识 (identity/anonId)");
@@ -484,13 +490,16 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
 
-      const identity = extractPluginIdentity(req);
+      // 私有视图（归属/安装状态/我的评价）只跟随「配得上该身份」的调用方：
+      // 无票请求降级为 null，插件本体仍按公开可见性返回。
+      const identity = pluginIdentity(ctx, req);
       const isOwner = Boolean(identity && plugin.ownerIdentity && identity === plugin.ownerIdentity);
 
       // 状态门禁：非 published 仅作者/管理台可见，普通访客直接 404
       if (plugin.status !== "published") {
-        const callerAuth = (req as { auth?: { scopes?: string[] } }).auth;
-        const isAdmin = callerAuth?.scopes?.includes("admin");
+        // 不能直接读 req.auth.scopes：鉴权模式下的无票调用方带着 ANONYMOUS_IDENTITY
+        // 的全量 scopes（hook 只在有效 token 时覆写），只有 kind 可信。
+        const isAdmin = isAdminScope(ctx, req as never);
         if (!isAdmin && !isOwner) {
           return notFound(reply, `插件未上架或不存在: ${slug}`);
         }
@@ -731,7 +740,10 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
       const limit = q.limit ? Math.min(100, Math.max(1, parseInt(q.limit, 10) || 20)) : 20;
       const offset = q.offset ? Math.max(0, parseInt(q.offset, 10) || 0) : 0;
-      const identity = (q.identity?.trim() || identityOf(req as never) || "").slice(0, 120);
+      // myReview 属私有视图：统一走身份闸门 + identityOf 口径（64 字符），
+      // 不再单独放宽到 120——写入侧（安装/星标/评价）一直按 identityOf 取值，
+      // 这里读更长的串只会查不到自己的评价，或与签名校验的取值错位。
+      const identity = pluginIdentity(ctx, req);
 
       const [reviewsResult, stats, myReview] = await Promise.all([
         ctx.repo.listPluginReviews(plugin.id, { limit, offset }),
@@ -760,8 +772,13 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
       const body = (req.body ?? {}) as { rating?: unknown; title?: unknown; content?: unknown; identity?: unknown };
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
       const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
-      const identity = String(body.identity ?? callerAuth?.actor ?? identityOf(req as never) ?? "").trim();
+      // 取值口径必须与签名 hook 同源（identityOf：Header → Query → Body，截 64）。
+      // 旧的 `body.identity` 优先正是 `identity-plugin-impersonation.test.ts` 记过的那类
+      // 破口：签自己的头 + body 塞受害者身份，校验通过却以受害者身份落评价，
+      // 而评价还要求「活跃安装」，等于顺手把受害者的安装记录也用了。
+      const identity = String(identityOf(req as never) ?? callerAuth?.actor ?? "").trim();
 
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识");
@@ -817,7 +834,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       if (reason.length < 2 || reason.length > 200) {
         return badRequest(reply, "举报原因需为 2-200 字");
       }
-      const identity = extractPluginIdentity(req);
+      // 匿名举报本来就允许（actor 回退 anonymous），但归属字段不能由无票调用方指定，
+      // 否则可以把自己对某条评价的举报记到任意用户名下，污染其「我的举报」与治理队列。
+      const identity = pluginIdentity(ctx, req);
       try {
         const review = await ctx.repo.reportPluginReview(slug, id, reason, identity, {
           actor: identity ?? "anonymous",
@@ -857,6 +876,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         };
       }
 
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
       const callerAuth = (req as { auth?: { actor?: string; kind?: string; scopes?: string[] } }).auth;
       // F0：发布必须能建立作者归属。不能用 req.auth.actor 兜底——开放模式下它是
       // anonymous，会把所有匿名投稿都算成同一个作者，/mine 与作者页随之失真。
@@ -929,9 +949,14 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
 
+      // AI 审核会把插件直接推向 published，并按 identity 取用其**个人 LLM 密钥**
+      // （resolveLlm → readStoredUser → openKey）。无票自称他人身份 = 白拿别人的额度，
+      // 还能替别人上架。
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
       const identity = extractPluginIdentity(req);
-      const callerAuth = (req as { auth?: { scopes?: string[] } }).auth;
-      const isAdmin = Boolean(callerAuth?.scopes?.includes("admin"));
+      // 同上：无票调用方的 admin scope 是 ANONYMOUS_IDENTITY 的默认值，不是真凭据。
+      // AI 审核会把插件直接推向 published，绝不能让「配了签名密钥的普通访客」蒙过这一关。
+      const isAdmin = isAdminScope(ctx, req as never);
       const isOwner = Boolean(identity && plugin.ownerIdentity && identity === plugin.ownerIdentity);
 
       if (!isAdmin && !isOwner) {
@@ -972,7 +997,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         return badRequest(reply, "插件清单格式不合法: " + validated.errors.join(", "));
       }
 
-      const identity = extractPluginIdentity(req);
+      // identity 在这里决定用谁的 LLM 配置（resolveLlm），无票调用方不得借用他人密钥，
+      // 降级为系统配置即可，预检本身仍然可用。
+      const identity = pluginIdentity(ctx, req);
       try {
         const audit = await evaluatePluginAudit(ctx, validated.manifest, {
           slug: validated.manifest.name,
@@ -1006,7 +1033,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         return badRequest(reply, "插件清单格式不合法: " + validated.errors.join(", "));
       }
 
-      const identity = extractPluginIdentity(req);
+      const identity = pluginIdentity(ctx, req);
       try {
         const { fixedManifest, changes } = autoRemediatePluginManifest(validated.manifest);
         const audit = await evaluatePluginAudit(ctx, fixedManifest, {
@@ -1164,6 +1191,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
       const identity = extractPluginIdentity(req);
       const callerAuth = (req as { auth?: { actor?: string; kind?: string; scopes?: string[] } }).auth;
       // 开放模式的匿名身份也带 admin scope，不能据此绕过归属校验；
@@ -1292,6 +1320,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
       const identity = extractPluginIdentity(req);
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识 (anonId/userId/identity)");
@@ -1344,6 +1373,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   const uninstallHandler = async (req: any, reply: any) => {
     const { slug } = req.params as { slug: string };
+    // 卸载会按 identity 找安装记录，并默认把该用户「由插件带入」的站点**软删除**
+    // （removeSites 缺省为 true）。无票自称他人身份 =  anyone 可以清空他人的库。
+    if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
     const identity = extractPluginIdentity(req);
     if (!identity) {
       return badRequest(reply, "缺少用户身份标识 (anonId/userId/identity)");
@@ -1398,6 +1430,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public", rateLimit: { max: 60, timeWindow: "1 hour" } } },
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
       const identity = extractPluginIdentity(req);
       if (!identity) return badRequest(reply, "缺少用户身份标识");
 
@@ -1419,6 +1452,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public", rateLimit: { max: 60, timeWindow: "1 hour" } } },
     async (req, reply) => {
       const { slug } = req.params as { slug: string };
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
       const identity = extractPluginIdentity(req);
       if (!identity) return badRequest(reply, "缺少用户身份标识");
 
@@ -1447,7 +1481,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         return badRequest(reply, "请填写举报理由（不能为空）");
       }
 
-      const identity = identityOf(req as never) || undefined;
+      const identity = pluginIdentity(ctx, req) || undefined;
       const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
       try {
         const result = await ctx.repo.reportPlugin(
@@ -1521,10 +1555,17 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
   /* ------------------------------ 开放生态 2.0: Taps 远程订阅源 ------------------------------ */
 
-  /** 获取已配置的远程插件市场订阅源 (Taps) */
+  /**
+   * 获取已配置的远程插件市场订阅源 (Taps)。
+   *
+   * 原先是 `public`，与同一组里的 POST / DELETE / sync（全部 `write`）不一致：
+   * 匿名访客能读出管理员配置的第三方源 URL 清单。Taps 只服务于「订阅源管理中心」
+   * 这一个管理面弹窗——市场列表本身读的是已导入的插件，不会实时拉取订阅清单——
+   * 而这些 URL 常带访问凭据（GitHub raw 的 `?token=` 一类），属于不该外发的配置。
+   */
   app.get(
     "/api/plugins/taps",
-    { config: { scope: "public" } },
+    { config: { scope: "write" } },
     async () => {
       const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];
       return { ok: true, items: taps };

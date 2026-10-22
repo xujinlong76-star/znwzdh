@@ -29,7 +29,7 @@ const SELF_CANONICAL = [
   { file: "src/app/category/page.tsx", snippet: "canonical: '/category'" },
   { file: "src/app/collections/layout.tsx", snippet: "canonical: '/collections'" },
   { file: "src/app/tags/page.tsx", snippet: "canonical: '/tags'" },
-  { file: "src/app/sites/page.tsx", snippet: "n <= 1 ? '/sites' : `/sites?page=${n}`" },
+  { file: "src/app/sites/page.tsx", snippet: "const canonical = sitesPageHref(1)" },
   { file: "src/app/tags/[slug]/page.tsx", snippet: "const canonical = `/tags/${encodeURIComponent(canonicalSlug)}`" },
   {
     file: "src/app/collections/[slug]/page.tsx",
@@ -67,9 +67,13 @@ describe("收录型页面的 canonical", () => {
   });
 
   it("分页 ≥2 页自指 canonical，且与 noindex,follow 同口径", () => {
-    const sites = overlayFile("src/app/sites/page.tsx");
-    expect(sites).toContain("robots: { index: false, follow: true }");
-    expect(sites).toMatch(/n\s*<=\s*1\s*\?\s*'\/sites'\s*:\s*`\/sites\?page=\$\{n\}`/);
+    // 站点目录分页同样从 `?page=N` 迁到 `/sites/p/{n}`（读 searchParams 会触发
+    // DYNAMIC_SERVER_USAGE），第 1 页只保留裸 `/sites` 一个 canonical。
+    const sitesPaged = overlayFile("src/app/sites/p/[n]/page.tsx");
+    expect(sitesPaged).toContain("robots: { index: false, follow: true }");
+    expect(sitesPaged).toContain("const canonical = sitesPageHref(page)");
+    // Math.max(2, ...) 是「canonical 不回指第 1 页」的实现保证
+    expect(sitesPaged).toMatch(/Math\.max\(2,\s*parsePageSegment\(n\)\s*\?\?\s*2\)/);
 
     // 分类第 N 页（`/category/{slug}/p/{n}`）：canonical 自指，不是回第 1 页
     const category = overlayFile("src/app/category/[slug]/p/[n]/page.tsx");

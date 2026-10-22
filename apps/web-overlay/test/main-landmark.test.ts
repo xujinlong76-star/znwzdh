@@ -70,6 +70,8 @@ const LANDMARK_ELSEWHERE: Record<string, string> = {
     "分类 hub 主体在 app/category/[slug]/category-board.tsx（第 1 页壳只做取数与归一）",
   "src/app/category/[slug]/p/[n]/page.tsx":
     "分类分页壳，地标同样由 app/category/[slug]/category-board.tsx 提供",
+  "src/app/sites/page.tsx": "站点目录主体在 app/sites/sites-directory.tsx（第 1 页壳只负责取数与 canonical）",
+  "src/app/sites/p/[n]/page.tsx": "站点目录分页壳，地标同样由 app/sites/sites-directory.tsx 提供",
   "src/app/me/page.tsx": "用户中心主体在 app/me/me-view.tsx（服务端壳只注入首屏概览）",
 };
 
@@ -87,6 +89,8 @@ const COMPONENTS_WITH_LANDMARK = [
   "src/app/me/me-view.tsx",
   // 分类 hub：第 1 页与 p/{n} 共用同一个服务端主体，地标在它身上
   "src/app/category/[slug]/category-board.tsx",
+  // 站点目录：第 1 页与 p/{n} 共用同一个服务端主体，地标在它身上
+  "src/app/sites/sites-directory.tsx",
 ];
 
 describe("每个内容页都要有主内容地标", () => {

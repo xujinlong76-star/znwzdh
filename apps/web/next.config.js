@@ -119,6 +119,16 @@ const nextConfig = {
         destination: "/category/:slug/p/:n",
         permanent: true,
       },
+      {
+        // 站点目录分页 `?page=N`（N≥2）→ `/sites/p/{n}`。
+        // 同上：`/sites` 带 revalidate，页面签名不能读 searchParams。
+        // 永久：`/sites?page=N` 是已收录 URL，权重一次性交给新形态。
+        // `?page=1` 不拦：裸 URL 忽略多余 query，canonical 自指会自行归一。
+        source: "/sites",
+        has: [{ type: "query", key: "page", value: "(?<n>[2-9]|[1-9][0-9]+)" }],
+        destination: "/sites/p/:n",
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

@@ -31,8 +31,9 @@ describe('categoryHref', () => {
     expect(categoryHref('ai-tools', 1)).toBe('/category/ai-tools')
   })
 
-  it('第 2 页起带 ?page=N', () => {
-    expect(categoryHref({ id: 'x', slug: 'ai-tools' }, 3)).toBe('/category/ai-tools?page=3')
+  it('第 2 页起是路径段 /p/{n}：带 query 会让这条 ISR 路由按需生成时 500', () => {
+    expect(categoryHref({ id: 'x', slug: 'ai-tools' }, 3)).toBe('/category/ai-tools/p/3')
+    expect(categoryHref('ai-tools', 2)).toBe('/category/ai-tools/p/2')
   })
 
   it('中文 slug 要百分号编码（slugify 允许保留中文）', () => {

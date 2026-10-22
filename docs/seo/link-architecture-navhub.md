@@ -2,6 +2,8 @@
 
 > 数据口径：本地 :3000 实测 SSR HTML + `data/navhub.db` 直查。所有数字可复现（脚本见 §8）。
 
+> **口径更新（2026-10-22 类目树升级）**：本文的分类口径（594 分类 / 132 个 ≥5 站点 / 488 条 `parent_id` / 门槛 5）是**旧平铺树**的历史快照，留作当时的证据，不要再据此改代码。新口径：权威树 18 根 / 215 叶（`packages/core/src/category-registry.ts`），站点只挂叶子、一级根只做导航；根与父级的站点数按后代聚合（`apps/web-overlay/src/lib/seo/category-totals.ts`）；索引门槛已分档——类目 12 / 标签 5（`apps/web-overlay/src/lib/seo/thresholds.ts`）。复核请用 [方案 V4](./SEO-OPTIMIZATION-PLAN-V4-2026-10-22.md)。
+
 ## 1. 现状内链图谱（SSR 实测，非推测）
 
 | 页面类型 | 数量 | 出链到哪些类型 | 入链来源（SSR 内 `<a>`） | 是否孤岛 |

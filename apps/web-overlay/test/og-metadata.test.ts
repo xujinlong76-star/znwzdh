@@ -28,6 +28,7 @@ const MIGRATED = [
   "videos/page.tsx",
   "category/page.tsx",
   "category/[slug]/page.tsx",
+  "category/[slug]/p/[n]/page.tsx",
   "collections/layout.tsx",
   "collections/[slug]/page.tsx",
   "marketplace/layout.tsx",

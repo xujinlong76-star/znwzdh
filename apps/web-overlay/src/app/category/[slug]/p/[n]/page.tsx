@@ -1,0 +1,108 @@
+import type { Metadata } from 'next'
+import { notFound, permanentRedirect } from 'next/navigation'
+import { safeDecodeParam } from '@/lib/server/route-params'
+import { pageShareMetadata } from '@/lib/seo/metadata'
+import { ogImageUrl } from '@/lib/seo/og-text'
+import { categoryHref, isCategoryUuidRef } from '@/lib/seo/category-url'
+import {
+  CategoryBoard,
+  categoryPageName,
+  categoryPageUrlKey,
+  loadCategoryPage,
+} from '../../category-board'
+
+/**
+ * 分类 hub 第 2 页起（`/category/{slug}/p/{n}`，服务端页面）。
+ *
+ * 从 `?page=N` 拆出来只有一个原因：这条路由带 `revalidate` +
+ * `generateStaticParams`，签名里出现 `searchParams` 会让未预渲染的 slug 在按需
+ * 生成时直接抛 `DYNAMIC_SERVER_USAGE`（生产构建实测 500）。取数与视图跟第 1 页
+ * 共用 `../../category-board.tsx`，这里只负责页码的解析、归一与索引口径。
+ *
+ * 索引口径（方案 §3.1 / §4）：
+ * - `n === 1` 永久回指 `/category/{slug}`，同一内容不留两个 URL；
+ * - 页 ≥2 `noindex, follow` + canonical 自指（不回指第 1 页），
+ *   否则第 2 页的站点永远不会被单独收录；
+ * - 中枢失败（degraded）时保持可索引：不因一次抖动把整批分页降档。
+ */
+
+export const revalidate = 60
+
+/** 动态段要进入按需 ISR，必须有 generateStaticParams；空数组 = 全部首次请求时生成 */
+export async function generateStaticParams() {
+  return []
+}
+
+type PageProps = {
+  params: Promise<{ slug: string; n: string }>
+}
+
+/**
+ * 页码只接受无符号、无前导零的正整数。
+ * `/p/01`、`/p/0`、`/p/2%20` 这类形态一律 404：它们和 `/p/1` 是同一内容的
+ * 拼写变体，接受就等于自己造重复页。
+ */
+function parsePageSegment(raw: string | undefined): number | null {
+  const value = (raw ?? '').trim()
+  if (!/^[1-9][0-9]*$/.test(value)) return null
+  const n = Number.parseInt(value, 10)
+  return Number.isSafeInteger(n) ? n : null
+}
+
+async function resolve(ref: string, n: number) {
+  const safeRef = safeDecodeParam(ref)
+  if (!safeRef) notFound()
+  const data = await loadCategoryPage(safeRef, n)
+  // 分类不存在 / 已停用 / 这一页没有站点：与第 1 页同一口径
+  if (data.categories !== null && (!data.category || !data.qualifies)) notFound()
+  return { safeRef, data }
+}
+
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { slug, n: rawN } = await params
+  const n = parsePageSegment(rawN)
+  if (n === null) notFound()
+  const { safeRef, data } = await resolve(slug, n)
+
+  const name = categoryPageName(data)
+  const urlKey = categoryPageUrlKey(data, safeRef)
+  // n === 1 由页面永久回指裸 URL，元信息不替它留一个可索引副本
+  const canonical = categoryHref(urlKey, n)
+  const title = `「${name}」工具与服务（第 ${n} 页）`
+  const description = `「${name}」分类站点列表第 ${n} 页，可进入详情查看简介、标签与同类推荐。`
+
+  return {
+    title,
+    description,
+    alternates: { canonical },
+    ...(await pageShareMetadata({
+      url: canonical,
+      title,
+      description,
+      // 卡片仍用第 1 页的动态 OG 图：这里没有 `p/{n}/opengraph-image`，
+      // 指过去就是 404，而分页本身 noindex，不需要独立配图。
+      ...(data.degraded
+        ? {}
+        : {
+            imageUrl: ogImageUrl(categoryHref(urlKey, 1)),
+            imageAlt: `「${name}」分类 · NavHub`,
+          }),
+    })),
+    ...(!data.degraded ? { robots: { index: false, follow: true } } : {}),
+  }
+}
+
+export default async function CategoryPageDetail({ params }: PageProps) {
+  const { slug, n: rawN } = await params
+  const n = parsePageSegment(rawN)
+  if (n === null) notFound()
+  const { safeRef, data } = await resolve(slug, n)
+
+  const urlKey = categoryPageUrlKey(data, safeRef)
+  // uuid 入参 / 第 1 页都归一到规范形态，顺带把权重交给第 1 页
+  if (n === 1 || (isCategoryUuidRef(safeRef) && urlKey !== safeRef)) {
+    permanentRedirect(categoryHref(urlKey, n))
+  }
+
+  return <CategoryBoard requested={n} urlKey={urlKey} name={categoryPageName(data)} data={data} />
+}

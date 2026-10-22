@@ -48,7 +48,11 @@ describe('短描述治理入口', () => {
   it('站点详情 metadata 走兜底 helper', () => {
     const page = read('../src/app/site/[id]/page.tsx')
     expect(page).toContain('siteMetaDescription(site, categoryName)')
-    expect(page).toContain('SITE_DESCRIPTION_MIN')
+    // 2026-10-22：短描述判定已下沉到 siteMetaDescription 内部（SITE_DESCRIPTION_MIN
+    // 不再出现在页面文件里）；页面侧现在**无条件**解析分类名——它同时用于标题后缀，
+    // 是 71 组同标题站点的消歧依据，不能只在描述过短时才取。
+    expect(page).toContain('loadSiteCategoryName(site.categoryId)')
+    expect(page).toMatch(/title = `\$\{site\.title\} · \$\{categoryName \?\? '站点详情'\}`/)
   })
 
   it('后台新增/编辑站点提供 160 字上限与「待补全」提示', () => {

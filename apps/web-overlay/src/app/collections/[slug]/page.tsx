@@ -9,6 +9,7 @@ import { safeDecodeParam } from '@/lib/server/route-params'
 import { siteOrigin } from '@/lib/seo/origin'
 import { itemListLd } from '@/lib/seo/json-ld'
 import { pageShareMetadata } from '@/lib/seo/metadata'
+import { ogImageUrl } from '@/lib/seo/og-text'
 import type { HubCollection, HubSite } from '@/lib/navhub-api'
 import CollectionDetailView from './collection-detail-view'
 
@@ -71,7 +72,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: col.title,
     description,
     alternates: { canonical },
-    ...(await pageShareMetadata({ url: canonical, title: col.title, description })),
+    ...(await pageShareMetadata({
+      url: canonical,
+      title: col.title,
+      description,
+      imageUrl: ogImageUrl(canonical),
+      imageAlt: `${col.title} · NavHub 专题`,
+    })),
   }
 }
 

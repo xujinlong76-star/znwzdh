@@ -4,6 +4,8 @@
 > 复核日期：2026-10-21　｜　上一版：`docs/seo/SEO-OPTIMIZATION-PLAN-2026-10-20.md`
 > **结论先行：站点不是"SEO 做得不够"，而是"内容层在爬虫眼里基本不存在"。** 1020 个站点页首屏只有 1 个 `<a>`（skip-link）、0 个 `<h1>`、正文 0 字；1080 个标签页同样；sitemap 只提交 67 条（覆盖 3.1%）；全站 0 canonical、0 JSON-LD；任意不存在的 `/site/{id}` 返回 200。可索引骨架是有的，但 **99.4% 的内容页是孤岛 + 空壳**（2163/2171，`scripts/link-graph.mjs` 实测）。
 
+> **口径更新（2026-10-22 类目树升级）**：本文的分类口径（594 类目、132 个 ≥5 站点、门槛 `MIN_SITES_FOR_INDEX = 5`）是**旧平铺树**的历史快照，留作当时的证据，不要再据此改代码。新口径：权威树 18 根 / 215 叶（`packages/core/src/category-registry.ts`），站点只挂叶子、一级根只做导航；根与父级的站点数按后代聚合（`apps/web-overlay/src/lib/seo/category-totals.ts`）；索引门槛已分档——类目 12 / 标签 5（`apps/web-overlay/src/lib/seo/thresholds.ts`）。复核请用 [方案 V4](./SEO-OPTIMIZATION-PLAN-V4-2026-10-22.md)。
+
 ---
 
 ## 一、体检评分：28 / 100（技术）；内容健康度 12.3 / 100

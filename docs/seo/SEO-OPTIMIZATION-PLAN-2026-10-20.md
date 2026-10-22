@@ -4,6 +4,8 @@
 > 扫描日期：2026-10-20
 > 结论先行：**骨架是有的（robots / sitemap / manifest / title.template / skip-link 都做了），但索引体系只覆盖了站内可索引资产的 2.5%，且动态页标题全站重复、零 canonical、零结构化数据、1020 个站点详情页是内链孤岛。现在能收录首页，但完全吃不到长尾。**
 
+> **口径更新（2026-10-22 类目树升级）**：本文的分类口径（594 类目、≥5 站点仅 99/132 个、门槛 `MIN_SITES_FOR_INDEX = 5`）是**旧平铺树**的历史快照，留作当时的证据，不要再据此改代码。新口径：权威树 18 根 / 215 叶（`packages/core/src/category-registry.ts`），站点只挂叶子、一级根只做导航；根与父级的站点数按后代聚合（`apps/web-overlay/src/lib/seo/category-totals.ts`）；索引门槛已分档——类目 12 / 标签 5（`apps/web-overlay/src/lib/seo/thresholds.ts`）。复核请用 [方案 V4](./SEO-OPTIMIZATION-PLAN-V4-2026-10-22.md)。
+
 ---
 
 ## 一、现状盘点

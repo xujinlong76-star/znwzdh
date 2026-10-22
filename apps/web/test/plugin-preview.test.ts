@@ -9,9 +9,11 @@ import { pluginDetailHref } from '../src/lib/plugins/detail-href.ts'
  *
  * 详情页 SSR 拿不到 localStorage 里的 anonId，API 对 pending/rejected 等
  * 非公开状态只会返回 404。内部入口如果仍链到裸 URL，作者刚投稿完点「预览」
- * 就是 404。这里锁两件事：
- *   1. 链接工厂对非 published 状态加 `?preview=1`；
- *   2. 详情页识别预览参数、跳过服务端 404，并输出 noindex。
+ * 就是 404。这里锁四件事：
+ *   1. 链接工厂对非 published 状态走 `/marketplace/{slug}/preview`；
+ *   2. 预览路由跳过服务端存在性判定，并输出 noindex；
+ *   3. 主路由不再读 searchParams——那是它能进按需 ISR 的前提；
+ *   4. 旧 `?preview=1` 链接由 next.config 的 redirects 兜住。
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -23,38 +25,72 @@ function overlayFile(rel: string): string {
   return readFileSync(hit, 'utf8')
 }
 
-describe('pluginDetailHref：非公开状态走预览通道', () => {
+describe('pluginDetailHref：非公开状态走预览路由', () => {
   it('published 与未知状态保持规范 URL', () => {
     expect(pluginDetailHref('legal-pro', 'published')).toBe('/marketplace/legal-pro')
     expect(pluginDetailHref('legal-pro')).toBe('/marketplace/legal-pro')
     expect(pluginDetailHref('legal-pro', null)).toBe('/marketplace/legal-pro')
   })
 
-  it('pending/rejected/delisted/quarantined 带 preview=1', () => {
+  it('pending/rejected/delisted/quarantined 走 /preview', () => {
     for (const status of ['pending', 'rejected', 'delisted', 'quarantined']) {
-      expect(pluginDetailHref('legal-pro', status)).toBe('/marketplace/legal-pro?preview=1')
+      expect(pluginDetailHref('legal-pro', status)).toBe('/marketplace/legal-pro/preview')
+    }
+  })
+
+  it('不再产出 ?preview=1（那会把主路由挤出 ISR）', () => {
+    for (const status of ['pending', 'rejected', 'delisted', 'quarantined', 'published']) {
+      expect(pluginDetailHref('legal-pro', status)).not.toContain('preview=1')
     }
   })
 
   it('slug 做 URL 编码', () => {
-    expect(pluginDetailHref('a b/c', 'pending')).toBe('/marketplace/a%20b%2Fc?preview=1')
+    expect(pluginDetailHref('a b/c', 'pending')).toBe('/marketplace/a%20b%2Fc/preview')
   })
 })
 
-describe('详情页：preview=1 跳过 SSR 404 且 noindex', () => {
-  const src = overlayFile('src/app/marketplace/[slug]/page.tsx')
+describe('预览路由：跳过 SSR 404 且 noindex', () => {
+  const src = overlayFile('src/app/marketplace/[slug]/preview/page.tsx')
 
-  it('metadata 与页面都识别预览参数', () => {
-    expect(src).toContain('isPreviewSearch')
-    expect(src).toMatch(/if\s*\(isPreviewSearch\(sp\)\)\s*\{\s*return\s*\{[\s\S]*?robots:\s*\{\s*index:\s*false,\s*follow:\s*false\s*\}/)
-    expect(src).toMatch(/if\s*\(isPreviewSearch\(sp\)\)\s*\{\s*return\s*<PluginDetailView\s+slug=\{safeSlug\}\s*\/>/)
+  it('输出 noindex,nofollow', () => {
+    expect(src).toMatch(/robots:\s*\{\s*index:\s*false,\s*follow:\s*false\s*\}/)
   })
 
-  it('预览分支在 loadPluginDetail/notFound 之前', () => {
-    const previewIdx = src.indexOf('if (isPreviewSearch(sp))')
-    const probeIdx = src.indexOf('const probe = await loadPluginDetail(safeSlug)', previewIdx)
-    expect(previewIdx).toBeGreaterThan(-1)
-    expect(probeIdx).toBeGreaterThan(previewIdx)
+  it('不做服务端探活，直接交给客户端带身份取数', () => {
+    expect(src).not.toContain('loadPluginDetail')
+    expect(src).toContain('<PluginDetailView slug={safeSlug} />')
+  })
+
+  it('参数解码走 safeDecodeParam', () => {
+    expect(src).toContain('safeDecodeParam')
+    expect(src).not.toMatch(/decodeURIComponent\s*\(/)
+  })
+
+  it('强制动态渲染：预览不该命中 60 秒缓存', () => {
+    expect(src).toContain("export const dynamic = 'force-dynamic'")
+  })
+})
+
+describe('详情主路由：去掉 searchParams 才能进按需 ISR', () => {
+  const src = overlayFile('src/app/marketplace/[slug]/page.tsx')
+
+  it('page 与 generateMetadata 都不再接收 searchParams', () => {
+    // 只挡真实用法（解构/类型/入参），注释里提这个词是刻意的背景说明
+    expect(src).not.toMatch(/searchParams\s*[,=}:]/)
+    expect(src).not.toContain('isPreviewSearch')
+  })
+
+  it('revalidate + 空 generateStaticParams（Next 16 的 ISR 硬性前提）', () => {
+    expect(src).toContain('export const revalidate = 60')
+    expect(src).toMatch(/export async function generateStaticParams\(\)\s*\{\s*return \[\]/)
+  })
+})
+
+describe('旧 ?preview=1 链接仍有去向', () => {
+  const cfg = overlayFile('next.config.js')
+
+  it('redirects 把 ?preview=1 兜到 /preview', () => {
+    expect(cfg).toMatch(/source:\s*"\/marketplace\/:slug"[\s\S]*?key:\s*"preview",\s*value:\s*"1"[\s\S]*?destination:\s*"\/marketplace\/:slug\/preview"/)
   })
 })
 

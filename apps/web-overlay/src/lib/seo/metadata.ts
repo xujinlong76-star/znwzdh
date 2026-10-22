@@ -49,14 +49,30 @@ export interface PageShareMetadata {
   }
 }
 
+/**
+ * `imageUrl` 是逐页动态分享图（同路由的 `opengraph-image.tsx`）的 URL。
+ *
+ * 为什么必须显式传：Next 的优先级是 **Metadata API 覆盖文件约定**（2026-10-22
+ * 生产实测：`/marketplace/{slug}` 同时有 `opengraph-image.tsx` 与工厂给出的
+ * `images:[/og-default.png]`，页面 `og:image` 出的是后者，动态图根本没进分享）。
+ * 所以「加了图就生效」是错的，图片 URL 要由本工厂写进 og/twitter 两处。
+ */
 export async function pageShareMetadata(input: {
   url: string
   title?: string
   description?: string
+  imageUrl?: string | null
+  imageAlt?: string | null
 }): Promise<PageShareMetadata> {
   const siteName = await loadBrandName()
   // 品牌名本身可能已含「导航」，再拼后缀会得到「NavHub 导航 导航」
-  const alt = siteName
+  const alt = input.imageAlt?.trim() || siteName
+  const image = {
+    url: input.imageUrl || DEFAULT_OG_IMAGE.url,
+    width: DEFAULT_OG_IMAGE.width,
+    height: DEFAULT_OG_IMAGE.height,
+    alt,
+  }
   return {
     openGraph: {
       type: 'website',
@@ -65,20 +81,13 @@ export async function pageShareMetadata(input: {
       url: input.url,
       ...(input.title ? { title: input.title } : {}),
       ...(input.description ? { description: input.description } : {}),
-      images: [
-        {
-          url: DEFAULT_OG_IMAGE.url,
-          width: DEFAULT_OG_IMAGE.width,
-          height: DEFAULT_OG_IMAGE.height,
-          alt,
-        },
-      ],
+      images: [image],
     },
     twitter: {
       card: 'summary_large_image',
       ...(input.title ? { title: input.title } : {}),
       ...(input.description ? { description: input.description } : {}),
-      images: [{ url: DEFAULT_OG_IMAGE.url, alt }],
+      images: [{ url: image.url, alt: image.alt }],
     },
   }
 }

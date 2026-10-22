@@ -28,7 +28,7 @@ function overlayFile(rel: string): string {
 
 describe("标签 URL 单一形态", () => {
   it.each([
-    "src/app/category/[slug]/page.tsx",
+    "src/app/category/[slug]/category-board.tsx",
     "src/components/site-detail-view.tsx",
     "src/components/navigation-card.tsx",
   ])("%s 的 #tag 链接都经过 tagSlug()", (file) => {

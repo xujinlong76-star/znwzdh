@@ -6,8 +6,10 @@ import { SiteDetailView } from '@/components/site-detail-view'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import type { Crumb } from '@/lib/seo/json-ld'
 import { pageShareMetadata } from '@/lib/seo/metadata'
-import { SITE_DESCRIPTION_MIN, siteMetaDescription } from '@/lib/seo/site-description'
-import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'
+import { ogImageUrl } from '@/lib/seo/og-text'
+import { siteMetaDescription } from '@/lib/seo/site-description'
+import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
+import { descendantSiteCounts } from '@/lib/seo/category-totals'
 import { categoryUrlKey } from '@/lib/seo/category-url'
 import type { HubSite } from '@/lib/navhub-api'
 import {
@@ -71,20 +73,23 @@ async function loadSite(id: string) {
 /**
  * 同分类站点与分类入口（服务端取数，进 SSR HTML）。
  *
- * 为什么只信 `counts`：分类页对 < MIN_SITES_FOR_INDEX 的分类直接 404，
- * 详情页若按 API 返回的站点数链接，薄分类会变成一条站内死链。counts
- * 取数失败（null）时宁可不链，也不赌。
+ * 为什么只信 `counts`：分类页对 < 门槛的分类直接 404，详情页若按 API 返回的
+ * 站点数链接，薄分类会变成一条站内死链。counts 取数失败（null）时宁可不链，也不赌。
+ * 计数走 `descendantSiteCounts`：站点归属的类目在新树里是叶子（自身计数就够），
+ * 但存量数据里还有一批直接挂在一级根上的站点，原始计数读它们是 0，
+ * 分类页（按子树展开取站点）却明显可达——口径不一致会让详情页少一条内链。
  */
 async function loadSiteContext(site: HubSite) {
   const categoryId = (site.categoryId ?? '').trim()
   const empty = { related: [] as HubSite[], category: null, canLinkCategory: false, categoryCount: 0 }
   if (!categoryId) return empty
 
-  const [res, categories, counts] = await Promise.all([
+  const [res, categories, rawCounts] = await Promise.all([
     loadCategorySites(categoryId, RELATED_LIMIT + 1, 0, 300),
     loadCategories(3600),
     loadActiveCategoryCounts(3600),
   ])
+  const counts = descendantSiteCounts(categories ?? [], rawCounts)
   const category = categories?.find((c) => c.id === categoryId && c.enabled !== false) ?? null
   // search 结果保持中枢相关度排序；只做自站/非活跃过滤与截断
   const related = (res?.hits ?? [])
@@ -98,7 +103,7 @@ async function loadSiteContext(site: HubSite) {
       category && categories
         ? { id: category.id, slug: categoryUrlKey(category), title: categoryDisplayName(category, categories) }
         : null,
-    canLinkCategory: Boolean(category) && counts !== null && categoryCount >= MIN_SITES_FOR_INDEX,
+    canLinkCategory: Boolean(category) && counts !== null && categoryCount >= MIN_SITES_FOR_CATEGORY_INDEX,
     categoryCount,
   }
 }
@@ -132,15 +137,32 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   }
 
   const site = probe.data
-  const title = `${site.title} · 站点详情`
-  const needFallback = (site.description ?? '').trim().length < SITE_DESCRIPTION_MIN
-  const categoryName = needFallback ? await loadSiteCategoryName(site.categoryId) : null
+  /**
+   * 标题后缀用**分类名**而不是「站点详情」。
+   *
+   * 两个理由：
+   * 1. 关键词：`Cursor · AI 编程助手` 比 `Cursor · 站点详情` 多一个可排名词，
+   *    而「站点详情」是全站 4000+ 页共用的零信息后缀；
+   * 2. 消歧：生产种子去重后仍有 71 组「同标题、不同 URL」的站点
+   *    （ChatGPT / Cursor 这类官网迁移到新域名的历史条目），
+   *    后缀若固定不变，两条详情页的 <title> 会完全一样，互相蚕食。
+   *
+   * 取不到分类时退回原后缀，绝不编造分类名。
+   */
+  const categoryName = await loadSiteCategoryName(site.categoryId)
+  const title = `${site.title} · ${categoryName ?? '站点详情'}`
   const description = siteMetaDescription(site, categoryName)
   return {
     title,
     description,
     alternates: { canonical },
-    ...(await pageShareMetadata({ url: canonical, title, description })),
+    ...(await pageShareMetadata({
+      url: canonical,
+      title,
+      description,
+      imageUrl: ogImageUrl(canonical),
+      imageAlt: `${site.title} · NavHub 站点详情`,
+    })),
   }
 }
 

@@ -140,11 +140,14 @@ describe("auditJsonLd：结构化数据", () => {
 });
 
 describe("auditInternalLinks：站内链接闭环", () => {
-  it("首页必须链到 /category/", () => {
+  it("首页必须链到分类入口（/category 总览或 /category/{slug}）", () => {
     expect(auditInternalLinks("https://nav.example/", ["/sites"])).toEqual([
-      "首页缺少 /category/ 站内链接",
+      "首页缺少 /category 站内链接",
     ]);
     expect(auditInternalLinks("https://nav.example/", ["/category/cat-ai"])).toEqual([]);
+    // 达标分类不足时目录带整体隐藏，总览 hub 是唯一合法入口：
+    // 只认子路径会把「数据薄但结构正确」的首页误判成内链缺失。
+    expect(auditInternalLinks("https://nav.example/", ["/category"])).toEqual([]);
   });
 
   it("站点详情必须链到其他站点，自链/外链不算", () => {

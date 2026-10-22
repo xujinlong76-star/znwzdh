@@ -1,7 +1,8 @@
 import type { MetadataRoute } from 'next'
 import { siteOrigin } from '@/lib/seo/origin'
 import { hubGet } from '@/lib/server/hub'
-import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'
+import { MIN_SITES_FOR_CATEGORY_INDEX, MIN_SITES_FOR_TAG_INDEX } from '@/lib/seo/thresholds'
+import { descendantSiteCounts } from '@/lib/seo/category-totals'
 import { pluginSitemapEntries, authorSitemapEntries, type SitemapPluginRef } from '@/lib/plugins/sitemap'
 import {
   categoryEntries,
@@ -22,7 +23,7 @@ import {
  * 与上一版的三处差异：
  * 1. 站点必须带 `status=active` —— 不带时会返回 1020 条（含 7 条 broken），
  *    等于主动把 7 个软 404 提交给搜索引擎；
- * 2. 标签走 `/api/tags` 的 `count` 并按 `MIN_SITES_FOR_INDEX` 过滤——count 是
+ * 2. 标签走 `/api/tags` 的 `count` 并按 `MIN_SITES_FOR_TAG_INDEX` 过滤——count 是
  *    **存活站点数**（2026-10-21 修了 listTagsWithCounts 的软删除计数污染后，
  *    数量随数据集浮动：当前 dev 库只有「大模型」1 条达标；站点集恢复后分层
  *    自动回填，无写死名单）；
@@ -110,8 +111,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
     ...staticEntries(origin),
     ...siteEntries(origin, sites),
-    ...tagEntries(origin, tags ?? [], MIN_SITES_FOR_INDEX),
-    ...categoryEntries(origin, categories ?? [], countCategorySites(sites), MIN_SITES_FOR_INDEX),
+    ...tagEntries(origin, tags ?? [], MIN_SITES_FOR_TAG_INDEX),
+    // 根页也要进 sitemap：新树里它是一级导航入口，站点数来自子树聚合。
+    // 直接把 countCategorySites 的原始计数喂进去，18 个根会全被门槛挡掉。
+    ...categoryEntries(
+      origin,
+      categories ?? [],
+      descendantSiteCounts(categories ?? [], countCategorySites(sites)),
+      MIN_SITES_FOR_CATEGORY_INDEX,
+    ),
     ...collectionEntries(origin, collections ?? []),
     ...pluginSitemapEntries(origin, plugins),
     ...authorSitemapEntries(origin, plugins),

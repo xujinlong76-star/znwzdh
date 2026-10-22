@@ -95,6 +95,32 @@ const nextConfig = {
     }
     return [{ source: "/:path*", headers: hosts }];
   },
+  async redirects() {
+    // 两条都是「分页/预览从 query 迁到路径段」的兜底，动机相同：
+    // 这些路由带 revalidate + generateStaticParams，页面签名一读 searchParams
+    // 就会在按需生成阶段抛 DYNAMIC_SERVER_USAGE（生产构建实测 500），
+    // 所以查询参数形态只能由配置层接住，不能进页面代码。
+    return [
+      {
+        // 插件预览 `?preview=1` → `/marketplace/{slug}/preview`。
+        // 非永久跳转：预览是内部通道，留回退余地。
+        source: "/marketplace/:slug",
+        has: [{ type: "query", key: "preview", value: "1" }],
+        destination: "/marketplace/:slug/preview",
+        permanent: false,
+      },
+      {
+        // 分类分页 `?page=N`（N≥2）→ `/category/{slug}/p/{n}`。
+        // 永久：旧形态是已收录 URL，要把权重一次性交给新形态。
+        // `:slug` 只匹配一段，不会吃掉 `/category/x/p/2` 自身，不构成环。
+        // `?page=1` 不拦：裸 URL 忽略多余 query，canonical 自指会自行归一。
+        source: "/category/:slug",
+        has: [{ type: "query", key: "page", value: "(?<n>[2-9]|[1-9][0-9]+)" }],
+        destination: "/category/:slug/p/:n",
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     // /api/hub/* 不走 rewrite：改用 src/app/api/hub/[...path]/route.ts 运行时转发
     // （rewrite 目标在构建期固化，改中枢地址要重新构建；路由在运行时读环境变量）。

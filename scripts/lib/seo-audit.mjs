@@ -233,8 +233,17 @@ export function auditInternalLinks(url, anchors) {
   let match = null;
   let message = null;
   if (path === "/") {
-    match = (hrefPath) => hrefPath.startsWith("/category/");
-    message = "首页缺少 /category/ 站内链接";
+    /**
+     * 首页必须有分类入口。
+     *
+     * 接受 `/category`（总览 hub）与 `/category/{slug}`（达标分类）两种形态：
+     * 达标分类不足门槛时，首页目录带会整体隐藏（链到未达标分类就是链到 404），
+     * 此时 `/category` 总览是**唯一合法的分类入口**。只认子路径会把
+     * 「数据薄但结构正确」的首页误判成内链缺失。
+     * 子分类链接是否真的渲染，由 test/home-directory.test.ts 的源码守卫负责。
+     */
+    match = (hrefPath) => hrefPath === "/category" || hrefPath.startsWith("/category/");
+    message = "首页缺少 /category 站内链接";
   } else if (path.startsWith("/site/")) {
     match = (hrefPath) => hrefPath.startsWith("/site/") && (hrefPath.replace(/\/+$/, "") || "/") !== path;
     message = "站点详情缺少相关 /site/ 站内链接";

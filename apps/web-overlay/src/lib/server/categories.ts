@@ -61,6 +61,9 @@ export function loadCategorySites(
  * 此前这里翻 `/api/sites`（最多 5 页 × 1000 条）在前端累加：
  * 站点数一过 5000 就**静默少算**，而「达标类目」判定用的正是这个数。
  * 返回 null 表示中枢取数失败——调用方应降级，而不是把全部分类当 0 站。
+ *
+ * 口径是**单个类目自身**：一级根恒为 0（站点只挂叶子），展示层级要的是
+ * 子树合计，用 `descendantSiteCounts`（`@/lib/seo/category-totals`）聚合后再比门槛。
  */
 export async function loadActiveCategoryCounts(revalidate = 3600): Promise<Map<string, number> | null> {
   const res = await hubGet<CategoryCountPayload>('/api/categories/counts', revalidate)
@@ -76,7 +79,7 @@ export async function loadActiveCategoryCounts(revalidate = 3600): Promise<Map<s
 
 /**
  * 同名分类标题消歧：4 组同名（「语言」「操作系统」等）若直接用 title，
- * 132 个分类页会出现重复 <title>。有父级时用「父 · 子」前缀。
+ * 分类页会出现重复 <title>。有父级时用「父 · 子」前缀。
  */
 export function categoryDisplayName(category: HubCategory, categories: HubCategory[]): string {
   const duplicated = categories.some((c) => c.id !== category.id && c.title === category.title)

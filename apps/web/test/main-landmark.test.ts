@@ -66,6 +66,10 @@ const LANDMARK_ELSEWHERE: Record<string, string> = {
     "插件预览主体同样在 app/marketplace/[slug]/plugin-detail-view.tsx（预览壳不探活）",
   "src/app/marketplace/author/[key]/page.tsx":
     "作者主页主体在 app/marketplace/author/[key]/author-plugins-view.tsx（服务端壳只探活）",
+  "src/app/category/[slug]/page.tsx":
+    "分类 hub 主体在 app/category/[slug]/category-board.tsx（第 1 页壳只做取数与归一）",
+  "src/app/category/[slug]/p/[n]/page.tsx":
+    "分类分页壳，地标同样由 app/category/[slug]/category-board.tsx 提供",
   "src/app/me/page.tsx": "用户中心主体在 app/me/me-view.tsx（服务端壳只注入首屏概览）",
 };
 
@@ -81,6 +85,8 @@ const COMPONENTS_WITH_LANDMARK = [
   "src/app/not-found.tsx",
   // M5：/me 的地标随主体一起搬进客户端岛（page.tsx 变成只注入数据的服务端壳）
   "src/app/me/me-view.tsx",
+  // 分类 hub：第 1 页与 p/{n} 共用同一个服务端主体，地标在它身上
+  "src/app/category/[slug]/category-board.tsx",
 ];
 
 describe("每个内容页都要有主内容地标", () => {

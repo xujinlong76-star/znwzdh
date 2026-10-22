@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import { loadPluginDetail } from '@/lib/server/plugin-detail'
 import { pageShareMetadata } from '@/lib/seo/metadata'
+import { ogImageUrl } from '@/lib/seo/og-text'
 import PluginDetailView from './plugin-detail-view'
 
 /**
@@ -18,36 +19,27 @@ import PluginDetailView from './plugin-detail-view'
  * `openGraph` 对象**整体替换**根布局同名字段——裸 `openGraph: { url }`
  * 会让 165 个插件页丢失 og:image/type/site_name/locale（运行时审计实测）。
  *
- * `?preview=1` 是作者/管理员预览通道：SSR 探活没有 localStorage 身份，
- * pending/rejected 等非公开记录一定 404；带预览标记时跳过服务端判定，
- * 由客户端带身份取数。该页面 noindex，且 API 仍按 owner/admin 门禁鉴权。
+ * 预览通道在 `./preview/page.tsx`，不在这里读 `searchParams`：一旦
+ * page/generateMetadata 签名里出现 searchParams，Next 就把整条路由当成逐请求
+ * 渲染，`revalidate` 形同虚设（`/category/{slug}` 的分页也因同一约束拆成了 `/p/{n}`）。
+ * 旧的 `?preview=1` 链接由 next.config 的 redirects 兜到 `/preview`。
  */
 
-type DetailSearchParams = Record<string, string | string[] | undefined>
+export const revalidate = 60
 
-function isPreviewSearch(sp: DetailSearchParams): boolean {
-  const raw = sp.preview
-  return raw === '1' || (Array.isArray(raw) && raw.includes('1'))
+/** 动态段要进入按需 ISR，必须有 generateStaticParams；空数组 = 全部首次请求时生成 */
+export async function generateStaticParams() {
+  return []
 }
 
 export async function generateMetadata({
   params,
-  searchParams,
 }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<DetailSearchParams>
 }): Promise<Metadata> {
-  const [{ slug }, sp] = await Promise.all([params, searchParams])
+  const { slug } = await params
   const safeSlug = safeDecodeParam(slug)
   if (!safeSlug) notFound()
-
-  if (isPreviewSearch(sp)) {
-    return {
-      title: '插件预览',
-      description: '仅作者与管理员可见的插件预览',
-      robots: { index: false, follow: false },
-    }
-  }
 
   const probe = await loadPluginDetail(safeSlug)
   if (probe.status === 'miss') notFound()
@@ -73,26 +65,27 @@ export async function generateMetadata({
     title,
     description,
     alternates: { canonical },
-    ...(await pageShareMetadata({ url: canonical, title, description })),
+    ...(await pageShareMetadata({
+      url: canonical,
+      title,
+      description,
+      // 本路由有 opengraph-image.tsx，但 Next 的优先级是 Metadata API 覆盖文件
+      // 约定——不显式写 imageUrl，og:image 会退回工厂默认的 /og-default.png，
+      // 动态卡变成永远没人请求的死路由（2026-10-22 实测）。
+      imageUrl: ogImageUrl(canonical),
+      imageAlt: `${plugin.name} · NavHub 插件市场`,
+    })),
   }
 }
 
 export default async function PluginDetailPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ slug: string }>
-  searchParams: Promise<DetailSearchParams>
 }) {
-  const [{ slug }, sp] = await Promise.all([params, searchParams])
+  const { slug } = await params
   const safeSlug = safeDecodeParam(slug)
   if (!safeSlug) notFound()
-
-  // 预览通道不做服务端 404：待审/已下架插件对无身份的 SSR 请求必然 miss，
-  // 但作者与管理员应该能打开；真正的权限判定在客户端带身份请求 API 时完成。
-  if (isPreviewSearch(sp)) {
-    return <PluginDetailView slug={safeSlug} />
-  }
 
   const probe = await loadPluginDetail(safeSlug)
   if (probe.status === 'miss') notFound()

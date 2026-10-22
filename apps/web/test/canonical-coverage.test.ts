@@ -37,7 +37,11 @@ const SELF_CANONICAL = [
   },
   {
     file: "src/app/category/[slug]/page.tsx",
-    snippet: "const canonical = categoryHref(category ?? safeRef, n)",
+    snippet: "const canonical = categoryHref(data.category ?? safeRef, 1)",
+  },
+  {
+    file: "src/app/category/[slug]/p/[n]/page.tsx",
+    snippet: "const canonical = categoryHref(urlKey, n)",
   },
   {
     file: "src/app/marketplace/page.tsx",
@@ -67,11 +71,15 @@ describe("收录型页面的 canonical", () => {
     expect(sites).toContain("robots: { index: false, follow: true }");
     expect(sites).toMatch(/n\s*<=\s*1\s*\?\s*'\/sites'\s*:\s*`\/sites\?page=\$\{n\}`/);
 
-    // 分类第 N 页：canonical 自指（href 带 page），不是回第 1 页
-    const category = overlayFile("src/app/category/[slug]/page.tsx");
-    expect(category).toContain("const canonical = categoryHref(category ?? safeRef, n)");
+    // 分类第 N 页（`/category/{slug}/p/{n}`）：canonical 自指，不是回第 1 页
+    const category = overlayFile("src/app/category/[slug]/p/[n]/page.tsx");
+    expect(category).toContain("const canonical = categoryHref(urlKey, n)");
+    expect(category).toContain("robots: { index: false, follow: true }");
     // 少写第二个参数 = canonical 指回第 1 页，后续页会被判重复内容
     expect(category).not.toMatch(/canonical\s*=\s*categoryHref\([^,)]+\)/);
+    // 第 1 页的 canonical 也必须显式写页码 1，不能省略参数留给人猜
+    const first = overlayFile("src/app/category/[slug]/page.tsx");
+    expect(first).toContain("const canonical = categoryHref(data.category ?? safeRef, 1)");
   });
 
   it("首页 canonical 为 '/'（唯一允许的根路径）", () => {

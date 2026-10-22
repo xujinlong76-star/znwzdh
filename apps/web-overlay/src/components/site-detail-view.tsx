@@ -100,6 +100,25 @@ const FACET_LABELS: Record<string, { label: string; icon: any }> = {
   language: { label: '界面语言', icon: Globe },
 }
 
+/** 域名：解析失败就原样返回，绝不因为脏 URL 把整页打挂 */
+function safeHostname(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url
+  }
+}
+
+/** 档案里的日期：缺失/非法时间戳返回 null，由调用方决定整行不渲染 */
+function formatArchiveDay(ts: number | null | undefined): string | null {
+  if (typeof ts !== 'number' || !Number.isFinite(ts) || ts <= 0) return null
+  try {
+    return new Date(ts).toLocaleDateString('zh-CN')
+  } catch {
+    return null
+  }
+}
+
 export function SiteDetailView({
   id,
   initialSite = null,
@@ -281,6 +300,11 @@ export function SiteDetailView({
   const hasFacets = site.facets && Object.keys(site.facets).length > 0
   const healthBadge = siteHealthBadge(site.health)
 
+  // 收录档案用的事实值：只在有真实时间戳时渲染，缺失就整行不出现，
+  // 不用「未知 / --」占位（占位符会把缺失数据伪装成已核实）。
+  const createdDay = formatArchiveDay(site.createdAt)
+  const checkedDay = formatArchiveDay(site.health?.lastCheckedAt)
+
   return (
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 max-w-4xl mx-auto space-y-8">
@@ -443,6 +467,62 @@ export function SiteDetailView({
             </div>
           </div>
         </div>
+
+        {/* 收录档案：详情页此前只有标题 + 一句话简介（生产集中位数 23 字），
+            正文几乎全是链接列表。这里用库里**已有的事实字段**补出可读正文
+            （域名 / 分类 / 标签 / 收录时间 / 巡检状态），既是用户判断"这站靠不靠谱"
+            的依据，也是页面唯一的原创文本来源。
+            严禁写「最好 / 必备 / 第一」这类无数据支撑的形容——红线与 V3 同源。 */}
+        <section
+          aria-labelledby="site-archive-heading"
+          className="rounded-xl border border-border/70 bg-card/60 px-3.5 py-3 space-y-2.5"
+        >
+          <h2 id="site-archive-heading" className="text-sm font-bold text-foreground">
+            收录档案
+          </h2>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+            <div className="flex gap-2 min-w-0">
+              <dt className="text-muted-foreground shrink-0">官网</dt>
+              <dd className="font-mono truncate" title={site.url}>{safeHostname(site.url)}</dd>
+            </div>
+            <div className="flex gap-2 min-w-0">
+              <dt className="text-muted-foreground shrink-0">所属分类</dt>
+              <dd className="truncate">
+                {category && canLinkCategory ? (
+                  <Link href={`/category/${encodeURIComponent(category.slug)}`} className="hover:text-primary hover:underline">
+                    {category.title}
+                  </Link>
+                ) : (
+                  category?.title ?? '未分类'
+                )}
+              </dd>
+            </div>
+            {createdDay && (
+              <div className="flex gap-2">
+                <dt className="text-muted-foreground shrink-0">收录时间</dt>
+                <dd>{createdDay}</dd>
+              </div>
+            )}
+            {checkedDay && (
+              <div className="flex gap-2">
+                <dt className="text-muted-foreground shrink-0">最近巡检</dt>
+                <dd>
+                  {checkedDay}
+                  {site.health?.httpStatus ? ` · HTTP ${site.health.httpStatus}` : ''}
+                </dd>
+              </div>
+            )}
+          </dl>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {site.title} 收录于「{category?.title ?? '未分类'}」分类，官网域名为 {safeHostname(site.url)}。
+            {checkedDay
+              ? `最近一次可达性巡检于 ${checkedDay} 完成${site.health?.httpStatus ? `，返回 HTTP ${site.health.httpStatus}` : ''}。`
+              : ''}
+            {(site.tags ?? []).length > 0
+              ? `相关标签：${(site.tags ?? []).slice(0, 5).join('、')}。`
+              : ''}
+          </p>
+        </section>
 
         {/* 关系网络降级提示：此前中枢不可用时 relations 静默为空，
             与「该站点确实没有平替/生态关系」无法区分 */}

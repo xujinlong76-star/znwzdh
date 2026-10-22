@@ -60,7 +60,10 @@ describe("站点详情页软 404 判定（/site/<无效 id> 必须真 404）", (
 
   it("每站独立 title/description/canonical；'failed' 只降级标题，不编造站点名", () => {
     const src = overlayFile("src/app/site/[id]/page.tsx");
-    expect(src).toContain("const title = `${site.title} · 站点详情`");
+    // 2026-10-22：标题后缀从固定的「站点详情」改为分类名——既补关键词，
+    // 也消歧 71 组「同标题、不同 URL」的历史站点（ChatGPT / Cursor 官网迁移）。
+    // 取不到分类时才退回原后缀，绝不编造。
+    expect(src).toMatch(/title = `\$\{site\.title\} · \$\{categoryName \?\? '站点详情'\}`/);
     expect(src).toContain("alternates: { canonical }");
     expect(src).toContain("pageShareMetadata({ url: canonical, title, description })");
     expect(src).toContain("if (probe.status === 'failed')");
@@ -106,7 +109,7 @@ describe("站点详情页软 404 判定（/site/<无效 id> 必须真 404）", (
  * 0 个 JSON-LD，KNN 推荐全是客户端外链。修复：
  *   - 服务端按分类取同分类站点，首批 6 条 /site 内链直出；
  *   - BreadcrumbList 与可见面包屑同源（Breadcrumbs 服务端组件）；
- *   - 分类入口只在站点数达 MIN_SITES_FOR_INDEX 时出现——分类页对薄分类
+ *   - 分类入口只在站点数达 MIN_SITES_FOR_CATEGORY_INDEX 时出现——分类页对薄分类
  *     直接 404，不能把爬虫送进死链。
  */
 describe("站点详情页内链闭环（F2）", () => {
@@ -125,10 +128,12 @@ describe("站点详情页内链闭环（F2）", () => {
     expect(src).toContain("{ label: '全部站点', path: '/sites' }");
   });
 
-  it("分类入口只链达标分类（< MIN_SITES_FOR_INDEX 的页面是 404）", () => {
+  it("分类入口只链达标分类（低于分类门槛的页面是 404）", () => {
     const src = overlayFile("src/app/site/[id]/page.tsx");
-    expect(src).toContain("import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'");
-    expect(src).toMatch(/categoryCount\s*>=\s*MIN_SITES_FOR_INDEX/);
+    // 阈值已按权威树分档：分类走 MIN_SITES_FOR_CATEGORY_INDEX（12），
+    // 与 sitemap / 分类页同源，避免这里用标签门槛把薄分类也链出去。
+    expect(src).toContain("import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'");
+    expect(src).toMatch(/categoryCount\s*>=\s*MIN_SITES_FOR_CATEGORY_INDEX/);
     // counts 取数失败（null）时不得赌分类存在
     expect(src).toMatch(/counts\s*!==\s*null/);
     expect(src).toContain("canLinkCategory={context.canLinkCategory}");

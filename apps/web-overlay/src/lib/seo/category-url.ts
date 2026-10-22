@@ -29,11 +29,18 @@ export function categoryUrlKey(category: CategoryUrlRef): string {
   return slug || category.id
 }
 
-/** 类目页 href：第 2 页起带 ?page=N（与详情页 canonical 口径一致） */
+/**
+ * 类目页 href：第 2 页起走 `/category/{slug}/p/{n}`。
+ *
+ * 用路径段而不是 `?page=N` 不是审美问题：`/category/[slug]` 带 `revalidate` +
+ * `generateStaticParams`，页面签名一读 `searchParams`，未预渲染的 slug 在按需
+ * 生成阶段就抛 `DYNAMIC_SERVER_USAGE`（生产构建实测 500）。旧的 `?page=N`
+ * 由 `next.config.js` 的 redirect 兜到这一形态。
+ */
 export function categoryHref(category: CategoryUrlRef | string, page = 1): string {
   const key = typeof category === 'string' ? category : categoryUrlKey(category)
   const base = `/category/${encodeURIComponent(key)}`
-  return page > 1 ? `${base}?page=${page}` : base
+  return page > 1 ? `${base}/p/${page}` : base
 }
 
 /** 不进导航、不进 sitemap 的类目：「未分类」是归类失败的兜底桶，不是可浏览入口 */

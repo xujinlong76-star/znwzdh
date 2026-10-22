@@ -264,6 +264,33 @@ describe("网址包：分类必须落在权威树上（方案 §2.6 / P2a-7）",
       `不同「包×叶子」覆盖面只剩 ${pairs.size}（下限 ${PROFESSIONAL_SITE_PACK.minLeafCoveragePairs}），各包分布：${perPack.join(" ")}`,
     ).toBeGreaterThanOrEqual(PROFESSIONAL_SITE_PACK.minLeafCoveragePairs)
   })
+
+  it("类目索引门槛的站点覆盖率是棘轮（方案 P4-2 定档依据）", () => {
+    // 门槛值决定「哪些叶子有分类 hub」，写错不报错，只会让成片站点失去分类入口
+    // （SEO 方案 V4 初稿就按包内 536 个标题估出「门槛 12 砍掉 59% 入口」，实际按叶子
+    // 算是 89.6%）。所以把覆盖率钉成断言，而不是留在一次性脚本里。
+    // 这里的 12 必须与 apps/web-overlay/src/lib/seo/thresholds.ts 的
+    // MIN_SITES_FOR_CATEGORY_INDEX 同口径（跨包无法直接 import，改一边就要改另一边）。
+    const MIN_SITES_PER_LEAF = 12
+    const perLeaf = new Map<string, number>()
+    let total = 0
+    for (const item of packs()) {
+      for (const site of (item.manifest.payload as SitePackPayload).sites) {
+        const slug = resolveRegistryLeaf(site.category)?.slug
+        if (!slug) continue
+        perLeaf.set(slug, (perLeaf.get(slug) ?? 0) + 1)
+        total++
+      }
+    }
+    expect(total, "站点总数为 0 说明分类全解析不到叶子，上面的用例应该先红").toBeGreaterThan(0)
+    const qualified = [...perLeaf.values()].filter((n) => n >= MIN_SITES_PER_LEAF)
+    const covered = qualified.reduce((sum, n) => sum + n, 0)
+    expect(
+      covered / total,
+      `门槛 ${MIN_SITES_PER_LEAF} 只接住 ${covered}/${total}（${((covered / total) * 100).toFixed(1)}%）站点；` +
+        `达标叶子 ${qualified.length}/${perLeaf.size}，中位数 ${[...perLeaf.values()].sort((a, b) => a - b)[Math.floor(perLeaf.size / 2)]}`,
+    ).toBeGreaterThanOrEqual(0.85)
+  })
 })
 
 describe("搜索引擎包：前缀可用、图标合规、规模达标", () => {

@@ -2,6 +2,8 @@
 
 > 事实源 `apps/web-overlay/src/app/**`；`apps/web` 是 vendor+overlay 镜像，**patch 只写 overlay**。线上 `localhost:3000`（Next 16.4.2）+ 中枢 `:8787` 实测，结论均有 curl / file:line 支撑。
 
+> **口径更新（2026-10-22 类目树升级）**：本文的分类口径（594 类目、462 个 <5 站点、132 个达标、门槛 5）是**旧平铺树**的历史快照，留作当时的证据，不要再据此改代码。新口径：权威树 18 根 / 215 叶（`packages/core/src/category-registry.ts`），站点只挂叶子、一级根只做导航；根与父级的站点数按后代聚合（`apps/web-overlay/src/lib/seo/category-totals.ts`）；索引门槛已分档——类目 12 / 标签 5（`apps/web-overlay/src/lib/seo/thresholds.ts`）。复核请用 [方案 V4](./SEO-OPTIMIZATION-PLAN-V4-2026-10-22.md)。
+
 ## 一、体检评分
 
 | 维度 | 权重 | 得分 | 扣分依据（实测） |

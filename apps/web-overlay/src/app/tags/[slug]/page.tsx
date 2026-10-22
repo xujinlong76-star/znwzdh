@@ -7,8 +7,9 @@ import { hubGet } from '@/lib/server/hub'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import type { HubSite } from '@/lib/navhub-api'
 import { TagResultsBoard } from '@/components/tag-results-board'
-import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'
+import { MIN_SITES_FOR_TAG_INDEX } from '@/lib/seo/thresholds'
 import { pageShareMetadata } from '@/lib/seo/metadata'
+import { ogImageUrl } from '@/lib/seo/og-text'
 
 /**
  * 标签结果页（服务端取数 + 客户端岛渲染）。
@@ -73,7 +74,7 @@ async function loadTagPage(slug: string) {
  * metadata 不受影响（与 /sites、/site/[id] 同构）。
  *
  * B-8 薄标签分层（方案 §4.1 定稿，count 驱动、无写死名单）：
- * - 存活站点 ≥ MIN_SITES_FOR_INDEX（5）→ 默认可索引，进 sitemap；
+ * - 存活站点 ≥ MIN_SITES_FOR_TAG_INDEX（5）→ 默认可索引，进 sitemap；
  * - <5（含 2-4 站与 1 站）→ `noindex,follow`：页面保留、内链照常传权重，
  *   但不进搜索索引——薄内容页不与站点详情页竞争同一词；
  * - 0 站与不存在的标签 → 页面侧 notFound()（真 404，见下方）。
@@ -91,7 +92,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const canonicalSlug = tagRes?.tag?.slug ?? safeSlug
   // search 失败（res === null）时按可索引处理：降级渲染不该把整批标签页
   // 临时标成 noindex；只有确认了真实存活数才降档。
-  const indexable = res === null || sites.length >= MIN_SITES_FOR_INDEX
+  const indexable = res === null || sites.length >= MIN_SITES_FOR_TAG_INDEX
   const canonical = `/tags/${encodeURIComponent(canonicalSlug)}`
   const title = `「${name}」相关站点`
   const description =
@@ -101,7 +102,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     description,
     alternates: { canonical },
     // og/twitter 走工厂：裸 openGraph 会整体替换根层默认值（丢 image/type/site_name/locale）
-    ...(await pageShareMetadata({ url: canonical, title, description })),
+    ...(await pageShareMetadata({
+      url: canonical,
+      title,
+      description,
+      // 中枢没答上来时不指动态卡（卡片拿不到真实站点数，默认品牌卡更诚实）
+      ...(res === null ? {} : { imageUrl: ogImageUrl(canonical), imageAlt: `${name} · NavHub 标签` }),
+    })),
     ...(indexable ? {} : { robots: { index: false, follow: true } }),
   }
 }
@@ -115,7 +122,7 @@ export default async function TagDetailPage({ params }: { params: Promise<{ slug
   // 不存在（方案 §4.1：两类都 404）。search **失败**（res === null）不 404——
   // 中枢挂了不该把整站标签页打成 404，降级渲染由岛负责。
   if (res !== null && sites.length === 0) notFound()
-  const indexable = res === null || sites.length >= MIN_SITES_FOR_INDEX
+  const indexable = res === null || sites.length >= MIN_SITES_FOR_TAG_INDEX
   const name = tagRes?.tag?.name ?? safeSlug
   const canonicalSlug = tagRes?.tag?.slug ?? safeSlug
   return (

@@ -8,7 +8,7 @@ import {
   staticEntries,
   tagEntries,
 } from '../src/lib/seo/sitemap-entries'
-import { MIN_SITES_FOR_INDEX } from '../src/lib/seo/thresholds'
+import { MIN_SITES_FOR_TAG_INDEX } from '../src/lib/seo/thresholds'
 
 const base = 'https://navhub.example.com'
 
@@ -40,11 +40,13 @@ describe('countCategorySites', () => {
 
 describe('categoryEntries', () => {
   it('只收录 enabled 且达到阈值的分类，URL 用 slug、没有 slug 才退回 id', () => {
+    // 分类门槛已按权威树分档（MIN_SITES_FOR_CATEGORY_INDEX = 12）：
+    // 达标样本必须 ≥12，薄样本保持 4 以验证淘汰逻辑。
     const counts = countCategorySites([
-      ...Array.from({ length: 5 }, (_, i) => ({ id: `s${i}`, categoryId: 'ok' })),
+      ...Array.from({ length: 12 }, (_, i) => ({ id: `s${i}`, categoryId: 'ok' })),
       ...Array.from({ length: 4 }, (_, i) => ({ id: `t${i}`, categoryId: 'thin' })),
-      ...Array.from({ length: 9 }, (_, i) => ({ id: `u${i}`, categoryId: 'cat-uncategorized' })),
-      ...Array.from({ length: 6 }, (_, i) => ({ id: `w${i}`, categoryId: 'a/b c' })),
+      ...Array.from({ length: 12 }, (_, i) => ({ id: `u${i}`, categoryId: 'cat-uncategorized' })),
+      ...Array.from({ length: 12 }, (_, i) => ({ id: `w${i}`, categoryId: 'a/b c' })),
     ])
     const entries = categoryEntries(base, [
       { id: 'ok', slug: 'ai-tools', updatedAt: 1_700_000_000_000 },
@@ -67,7 +69,8 @@ describe('categoryEntries', () => {
 
   it('分类没有 updatedAt 时不伪造 lastModified', () => {
     const counts = countCategorySites(
-      Array.from({ length: 5 }, (_, i) => ({ id: `s${i}`, categoryId: 'ok' })),
+      // 必须达到分类门槛（12），否则条目会被阈值过滤掉，测不到 lastModified 分支
+      Array.from({ length: 12 }, (_, i) => ({ id: `s${i}`, categoryId: 'ok' })),
     )
     const entries = categoryEntries(base, [{ id: 'ok' }], counts)
     expect(entries).toHaveLength(1)
@@ -116,7 +119,7 @@ describe('tagEntries', () => {
   it('按阈值过滤：低于阈值的标签不进 sitemap', () => {
     const entries = tagEntries(base, [
       { slug: '开源', count: 123 },
-      { slug: '冷门', count: MIN_SITES_FOR_INDEX - 1 },
+      { slug: '冷门', count: MIN_SITES_FOR_TAG_INDEX - 1 },
       { slug: '无计数' },
       { slug: '  ' },
       { slug: '开源', count: 123 },

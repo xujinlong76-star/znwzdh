@@ -107,6 +107,36 @@ export function breadcrumbLd(origin: string, crumbs: Crumb[]): Record<string, un
 }
 
 /**
+ * 一级根页的 ItemList：列的是**子分类页**，不是站点。
+ *
+ * 根页正文确实是子树站点的并集，但它的结构身份是目录：把站点喂进 ItemList
+ * 等于让爬虫以为这一页是终点，215 个叶子页反而少一条被发现的入口。
+ * `itemListLd` 的 URL 模板写死 `/site/{id}`，所以这里单独一份。
+ */
+export function categoryItemListLd(
+  origin: string,
+  categories: Array<{ slug: string; title: string }>,
+  name = '子分类',
+): Record<string, unknown> {
+  const items = (categories ?? [])
+    .map((c) => ({ slug: (c?.slug ?? '').trim(), title: (c?.title ?? '').trim() }))
+    .filter((c) => c.slug && c.title)
+    .slice(0, MAX_ITEM_LIST)
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name,
+    numberOfItems: items.length,
+    itemListElement: items.map((c, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: c.title,
+      url: absUrl(origin, `/category/${encodeURIComponent(c.slug)}`),
+    })),
+  }
+}
+
+/**
  * ItemList schema（目录页用）。
  * URL 走 `/site/{id}`，与 sitemap-entries.siteEntries 同一编码规则。
  */

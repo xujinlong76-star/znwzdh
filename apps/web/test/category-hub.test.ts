@@ -5,14 +5,15 @@ import { fileURLToPath } from 'node:url'
 import { categoryDisplayName, type HubCategory } from '../src/lib/server/categories'
 
 /**
- * 分类 hub 的结构锁（2026-10-21，2026-10-22 补 slug 路由）。
+ * 分类 hub 的结构锁（2026-10-21，2026-10-22 补 slug 路由与新树层级口径）。
  *
- * 分类页最容易悄悄退化的五件事：
+ * 分类页最容易悄悄退化的六件事：
  * 1. 又变回客户端取数（标题链接不进 SSR HTML，孤岛问题复发）；
- * 2. 薄分类（<5 站）不再 404，变成批量 noindex 空页；
+ * 2. 薄分类（聚合后 <12 站）不再 404，变成批量 noindex 空页；
  * 3. 页 ≥2 的 canonical 回指第 1 页（后续页站点永远不被单独收录）；
  * 4. sitemap 把未达标分类也提交（等于主动送死链）；
- * 5. URL 退回 uuid 形态，或把 `/category/{uuid}` 的老外链直接判 404。
+ * 5. URL 退回 uuid 形态，或把 `/category/{uuid}` 的老外链直接判 404；
+ * 6. 计数退回「单个类目自身」——站点只挂叶子，一级根会变 0 站并从导航里消失。
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -25,22 +26,31 @@ function overlayFile(rel: string): string {
 }
 
 const ROUTE = 'src/app/category/[slug]/page.tsx'
+/** 主体视图与取数（2026-10-22 从 page.tsx 拆出，第 1 页与 p/{n} 共用） */
+const BOARD = 'src/app/category/[slug]/category-board.tsx'
+/** 第 2 页起：路径段分页，noindex,follow + canonical 自指 */
+const PAGE_N = 'src/app/category/[slug]/p/[n]/page.tsx'
 
 describe('分类页结构', () => {
   it('详情页是服务端页面：安全解码 + 真 404 + SSR 站点内链', () => {
-    const src = overlayFile(ROUTE)
-    expect(src).not.toContain("'use client'")
-    expect(src).toContain('safeDecodeParam')
-    expect(src).toContain('notFound()')
-    expect(src).toContain('/site/${encodeURIComponent(site.id)}')
+    const page = overlayFile(ROUTE)
+    const board = overlayFile(BOARD)
+    expect(page).not.toContain("'use client'")
+    expect(board).not.toContain("'use client'")
+    expect(page).toContain('safeDecodeParam')
+    expect(page).toContain('notFound()')
+    // 站点内链在主体视图里渲染（page.tsx 只是壳）
+    expect(board).toContain('/site/${encodeURIComponent(site.id)}')
   })
 
   it('URL 标识是 slug，老 uuid 链接 301 而不是 404', () => {
-    const src = overlayFile(ROUTE)
-    expect(src).toContain('params: Promise<{ slug: string }>')
-    expect(src).toContain('categoryUrlKey(category)')
-    expect(src).toContain('isCategoryUuidRef(safeRef)')
-    expect(src).toMatch(/permanentRedirect\(categoryHref\(urlKey, requested\)\)/)
+    const page = overlayFile(ROUTE)
+    expect(page).toContain('params: Promise<{ slug: string }>')
+    expect(page).toContain('categoryPageUrlKey')
+    expect(page).toContain('isCategoryUuidRef(safeRef)')
+    expect(page).toMatch(/permanentRedirect\(categoryHref\(urlKey, 1\)\)/)
+    // 规范 key 的派生只在 category-board 的 categoryPageUrlKey 里做一次
+    expect(overlayFile(BOARD)).toContain('categoryUrlKey')
   })
 
   it('构建期只预渲染「有 slug、未停用、达标、非未分类」的类目', () => {
@@ -48,21 +58,28 @@ describe('分类页结构', () => {
     expect(src).toContain('export async function generateStaticParams()')
     expect(src).toMatch(/Boolean\(c\.slug\)/)
     expect(src).toMatch(/!isHiddenCategory\(c\)/)
-    expect(src).toMatch(/\(counts\.get\(c\.id\) \?\? 0\) >= MIN_SITES_FOR_INDEX/)
+    expect(src).toMatch(/\(counts\.get\(c\.id\) \?\? 0\) >= MIN_SITES_FOR_CATEGORY_INDEX/)
   })
 
   it('薄分类 404，而不是生成 noindex 空页', () => {
-    const src = overlayFile(ROUTE)
-    expect(src).toContain('MIN_SITES_FOR_INDEX')
-    expect(src).toMatch(/sites\.length\s*>=\s*MIN_SITES_FOR_INDEX\s*\|\|\s*Boolean\(res\?\.hasMore\)/)
+    // 达标判定在 loadCategoryPage（category-board），页面只消费 qualifies
+    const board = overlayFile(BOARD)
+    expect(board).toContain('MIN_SITES_FOR_CATEGORY_INDEX')
+    expect(board).toMatch(/sites\.length\s*>=\s*MIN_SITES_FOR_CATEGORY_INDEX\s*\|\|\s*Boolean\(res\?\.hasMore\)/)
+    expect(overlayFile(ROUTE)).toMatch(/!data\.category\s*\|\|\s*!data\.qualifies/)
   })
 
   it('页 ≥2 自指 canonical + noindex,follow；页 1 输出 ItemList', () => {
-    const src = overlayFile(ROUTE)
-    expect(src).toContain('canonical')
-    expect(src).toContain("robots: { index: false, follow: true }")
-    expect(src).toContain('itemListLd')
-    expect(src).toMatch(/indexable\s*=\s*requested\s*===\s*1/)
+    const page = overlayFile(ROUTE)
+    const board = overlayFile(BOARD)
+    const pageN = overlayFile(PAGE_N)
+    expect(page).toContain('canonical')
+    // 第 2 页起由 p/{n} 承担：自指 canonical + noindex,follow（降级时保持可索引）
+    expect(pageN).toContain('alternates: { canonical }')
+    expect(pageN).toContain('robots: { index: false, follow: true }')
+    // 第 1 页输出 ItemList；分页页只保留列表与页码
+    expect(board).toContain('itemListLd')
+    expect(board).toMatch(/indexable\s*=\s*requested\s*===\s*1/)
   })
 
   it('分页查询只取 active 站点，避免 broken 占 offset 名额导致漏站/误判', () => {
@@ -72,9 +89,13 @@ describe('分类页结构', () => {
 
   it('分类总览只链接达标分类，且不把「未分类」当入口', () => {
     const src = overlayFile('src/app/category/page.tsx')
-    expect(src).toContain('MIN_SITES_FOR_INDEX')
-    expect(src).toMatch(/count\s*<\s*MIN_SITES_FOR_INDEX/)
-    expect(src).toContain('isHiddenCategory(category)')
+    expect(src).toContain('MIN_SITES_FOR_CATEGORY_INDEX')
+    // 2026-10-22：总览页改成「一级分组 + 子分类」后，判定变量从 count 变成
+    // rootCount（根按子树聚合计数），子分类另有 l.count 判定，两处都要钉住。
+    expect(src).toMatch(/rootCount\s*<\s*MIN_SITES_FOR_CATEGORY_INDEX/)
+    expect(src).toMatch(/l\.count\s*>=\s*MIN_SITES_FOR_CATEGORY_INDEX/)
+    // 未分类判定：改名后变量是 root（一级根遍历），语义不变
+    expect(src).toContain('isHiddenCategory(root)')
     expect(src).toContain("alternates: { canonical: '/category' }")
   })
 
@@ -83,6 +104,32 @@ describe('分类页结构', () => {
     expect(src).toContain('categoryEntries')
     expect(src).toContain('countCategorySites')
     expect(src).toContain('/api/categories')
+  })
+
+  it('计数口径是后代聚合：一级根不因「自身 0 站」整层消失', () => {
+    // 站点只挂叶子（方案 G2），/api/categories/counts 又是单类目 GROUP BY，
+    // 任何一处退回原始 counts，那一处的一级根就恒为 0 → 页面 404 / 条目被过滤。
+    for (const rel of [
+      'src/app/category/page.tsx',
+      'src/app/category/[slug]/page.tsx',
+      'src/app/category/[slug]/category-board.tsx',
+      'src/app/site/[id]/page.tsx',
+      'src/app/sitemap.ts',
+      'src/app/category/[slug]/opengraph-image.tsx',
+    ]) {
+      expect(overlayFile(rel), rel).toContain('descendantSiteCounts')
+    }
+  })
+
+  it('根页列子分类（不是站点）：面包屑带父级 + ItemList 指向 /category/{slug}', () => {
+    const src = overlayFile(BOARD)
+    expect(src).toContain('isRootPage')
+    // 父级靠 parent_id 找：库里还有同名分类，按标题找会认错爹
+    expect(src).toMatch(/c\.id === category\.parentId/)
+    expect(src).toContain('categoryItemListLd')
+    expect(src).toMatch(/isRootPage\s*&&\s*related\.length\s*>\s*0\s*\?/)
+    expect(src).toMatch(/<JsonLd\s+data=\{categoryItemListLd/)
+    expect(overlayFile('src/lib/seo/json-ld.ts')).toContain('/category/${encodeURIComponent(c.slug)}')
   })
 })
 

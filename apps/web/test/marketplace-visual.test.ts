@@ -61,8 +61,9 @@ describe("插件市场排版：卡片与列表细节", () => {
     expect(page).not.toContain("2xl:grid-cols")
   })
 
-  it("详情页 OG 卡片带装饰光斑", () => {
-    const og = overlaySource("src/app/marketplace/[slug]/opengraph-image.tsx")
+  it("详情页 OG 卡片带装饰光斑（构图在共享卡片里）", () => {
+    // 构图本体已抽到 lib/seo/og-card.tsx，五类页面共用；详情页只负责取数与文案
+    const og = overlaySource("src/lib/seo/og-card.tsx")
     expect(og).toContain("position: 'absolute'")
     expect(og).toContain("borderRadius: 999")
   })

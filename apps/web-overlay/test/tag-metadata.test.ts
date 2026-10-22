@@ -75,14 +75,14 @@ describe("标签段 metadata 归属（Next title.template 截断修复的结构�
     expect(src).toMatch(/\{tagDescription\s*\?\?/);
   });
 
-  it("B-8 薄标签：存活站点数 < MIN_SITES_FOR_INDEX 时 robots noindex,follow", () => {
+  it("B-8 薄标签：存活站点数 < MIN_SITES_FOR_TAG_INDEX 时 robots noindex,follow", () => {
     const src = overlayFile("src/app/tags/[slug]/page.tsx");
     // 阈值从 thresholds 导入（与 sitemap 的 ≥5 同源，不写死数字）
-    expect(src).toContain("import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'");
+    expect(src).toContain("import { MIN_SITES_FOR_TAG_INDEX } from '@/lib/seo/thresholds'");
     // noindex,follow：页面保留、内链传权重，只是不进索引（方案 §4.1 定稿）
     expect(src).toContain("robots: { index: false, follow: true }");
     // 分层依据必须是存活站点数（search hits），不是标签的名义计数
-    expect(src).toMatch(/sites\.length\s*>=\s*MIN_SITES_FOR_INDEX/);
+    expect(src).toMatch(/sites\.length\s*>=\s*MIN_SITES_FOR_TAG_INDEX/);
   });
 
   it("0 命中的标签页走真 404（软 404 消灭），search 失败不误伤", () => {

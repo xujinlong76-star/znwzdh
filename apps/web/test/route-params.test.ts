@@ -56,7 +56,9 @@ describe("动态段服务端页面统一走解码入口", () => {
     "src/app/tags/[slug]/page.tsx",
     "src/app/collections/[slug]/page.tsx",
     "src/app/category/[slug]/page.tsx",
+    "src/app/category/[slug]/p/[n]/page.tsx",
     "src/app/marketplace/[slug]/page.tsx",
+    "src/app/marketplace/[slug]/preview/page.tsx",
     "src/app/marketplace/author/[key]/page.tsx",
   ];
 

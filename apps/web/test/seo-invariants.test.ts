@@ -83,7 +83,9 @@ describe('sitemap 取数约束', () => {
 
   it('标签条目走阈值过滤，不提交薄标签', () => {
     const sitemap = appFile('sitemap.ts')
-    expect(sitemap).toContain('MIN_SITES_FOR_INDEX')
+    // 阈值已按权威树分档：标签用 MIN_SITES_FOR_TAG_INDEX，分类用 MIN_SITES_FOR_CATEGORY_INDEX。
+    // 这里钉标签那一路，避免有人为了「sitemap 好看」把它并回分类口径或写死数字。
+    expect(sitemap).toContain('MIN_SITES_FOR_TAG_INDEX')
     expect(sitemap).toContain('tagEntries')
   })
 })

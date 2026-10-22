@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next'
 import { categoryUrlKey, isHiddenCategory } from './category-url'
-import { MIN_SITES_FOR_INDEX } from './thresholds'
+import { MIN_SITES_FOR_CATEGORY_INDEX, MIN_SITES_FOR_TAG_INDEX } from './thresholds'
 
 /**
  * sitemap 条目纯函数。
@@ -40,6 +40,11 @@ export interface CategoryRef {
   enabled?: boolean | null
   /** `/api/categories` 实际返回 updatedAt；有值就写 lastModified */
   updatedAt?: number | null
+  /**
+   * 父级 id。`categoryEntries` 自己不读它——但一级根的计数必须是后代聚合，
+   * 调用方要用 `descendantSiteCounts(categories, counts)` 才能拿到非 0 的根计数。
+   */
+  parentId?: string | null
 }
 
 /**
@@ -102,7 +107,7 @@ export function siteEntries(origin: string, sites: SiteRef[]): MetadataRoute.Sit
 export function tagEntries(
   origin: string,
   tags: TagRef[],
-  minSites: number = MIN_SITES_FOR_INDEX,
+  minSites: number = MIN_SITES_FOR_TAG_INDEX,
 ): MetadataRoute.Sitemap {
   const seen = new Set<string>()
   const out: MetadataRoute.Sitemap = []
@@ -136,7 +141,9 @@ export function countCategorySites(sites: SiteRef[]): Map<string, number> {
  *
  * URL 用 slug 形态（`/category/{slug}`）：sitemap 是「告诉爬虫哪批 URL 值得
  * 长期抓」的清单，提交 uuid 等于把 301 前的旧地址再喂一遍。
- * 计数由调用方按 `category_id ∪ sub_category_id` 去重聚合（建站双指针）；
+ * 计数由调用方提供：叶子用 `category_id ∪ sub_category_id` 去重后的自身计数，
+ * **一级根必须传后代聚合值**（`descendantSiteCounts`）——新树站点只挂叶子，
+ * 原始计数里每个根都是 0，不聚合就是「18 个根全站缺席」。
  * 详情页对未达标分类直接 404，这里若照单全收就是主动提交死链。
  * 「未分类」不提交：它是归类失败的兜底桶，不是可浏览入口。
  */
@@ -144,7 +151,7 @@ export function categoryEntries(
   origin: string,
   categories: CategoryRef[],
   counts: Map<string, number> | null,
-  minSites: number = MIN_SITES_FOR_INDEX,
+  minSites: number = MIN_SITES_FOR_CATEGORY_INDEX,
 ): MetadataRoute.Sitemap {
   const seen = new Set<string>()
   const out: MetadataRoute.Sitemap = []

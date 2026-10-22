@@ -8,7 +8,8 @@ import { siteOrigin } from "@/lib/seo/origin";
 import { webSiteLd, organizationLd } from "@/lib/seo/json-ld";
 import { JsonLd } from "@/components/json-ld";
 import { pageShareMetadata } from "@/lib/seo/metadata";
-import { MIN_SITES_FOR_INDEX } from "@/lib/seo/thresholds";
+import { MIN_SITES_FOR_CATEGORY_INDEX } from "@/lib/seo/thresholds";
+import { descendantSiteCounts } from "@/lib/seo/category-totals";
 import { categoryUrlKey, isHiddenCategory } from "@/lib/seo/category-url";
 import {
   categoryDisplayName,
@@ -71,27 +72,34 @@ const DIRECTORY_CATEGORY_LINKS = 8;
  *
  * 实测（2026-10-21）：首页模板里 0 条 `/category` 链接，分类页只能靠
  * sitemap 被发现，点击深度断在首页。这里只挑达标分类（分类页对
- * < MIN_SITES_FOR_INDEX 的页面直接 404），按存活站点数降序取前 8。
- * URL 用 slug 形态：目录带是全站权重最高的一批内链，链到 uuid 等于把
- * 旧 URL 继续喂给爬虫。
+ * < 门槛的页面直接 404）。URL 用 slug 形态：目录带是全站权重最高的一批内链，
+ * 链到 uuid 等于把旧 URL 继续喂给爬虫。
  * 取数失败返回空数组——页面上仍有 /category、/sites、/tags 三个入口，
  * 不因中枢抖动把整条目录带吞掉。
+ *
+ * 新树口径（2026-10-22，方案 P4）：目录带只放**一级根**，站点数按后代聚合。
+ * 一级根在原始 counts 里恒为 0（站点只挂叶子），不聚合就等于目录带永久消失。
+ * 选取从「站点数降序」改成权威树 `sort` 升序：这排内链的位置不该随数据浮动，
+ * 否则同一个站今天排第一、明天第五，首页每天换脸，爬虫也难判断锚点。
  */
 async function loadDirectoryLinks() {
-  const [categories, counts] = await Promise.all([loadCategories(3600), loadActiveCategoryCounts(3600)]);
+  const [categories, rawCounts] = await Promise.all([
+    loadCategories(3600),
+    loadActiveCategoryCounts(3600),
+  ])
+  const counts = descendantSiteCounts(categories ?? [], rawCounts)
   if (!categories || !counts) return [];
+  // 存量脏行的 sort 可能是 0 或缺失：视为「没排过序」沉到末尾，而不是抢首位
+  const rank = (c: (typeof categories)[number]) => (c.sort && c.sort > 0 ? c.sort : Number.MAX_SAFE_INTEGER);
   return categories
     .filter(
       (c) =>
+        !c.parentId &&
         c.enabled !== false &&
         !isHiddenCategory(c) &&
-        (counts.get(c.id) ?? 0) >= MIN_SITES_FOR_INDEX,
+        (counts.get(c.id) ?? 0) >= MIN_SITES_FOR_CATEGORY_INDEX,
     )
-    .sort(
-      (a, b) =>
-        (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0) ||
-        a.title.localeCompare(b.title, "zh-CN"),
-    )
+    .sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title, "zh-CN"))
     .slice(0, DIRECTORY_CATEGORY_LINKS)
     .map((c) => ({
       id: c.id,

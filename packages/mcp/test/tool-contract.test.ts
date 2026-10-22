@@ -177,3 +177,37 @@ describe("batch_import 与 health_check 的边界", () => {
     expect(body.scanned).toBeGreaterThan(limit);
   });
 });
+
+describe("list_categories 的 siteCount 必须是真实计数", () => {
+  // 放在文件最后：这一组要插入 130 个站点，前面的用例不能被它影响。
+  const CAT = "c-count";
+  const N = 130; // > listSites 的默认 100，缺陷版会把这里数成 0（这批站点插在库尾）
+
+  beforeAll(async () => {
+    await ctx.repo.createCategory({ id: CAT, title: "计数类目" });
+    for (let i = 0; i < N; i++) {
+      await ctx.repo.createSite({
+        url: `https://count-cover.example/s${i}`,
+        title: "计数站点 " + i,
+        categoryId: CAT,
+        tags: [],
+      });
+    }
+  });
+
+  it("includeCounts 报出的数量等于类目里的真实站点数", async () => {
+    const body = payload(await handlers.list_categories({ includeCounts: true }, A));
+    const row = (Array.isArray(body) ? body : body.categories ?? []).find((c: any) => c.id === CAT);
+    expect(row).toBeDefined();
+    expect(row.siteCount).toBe(N);
+  });
+
+  it("软删站点不计入 siteCount（与 listSites 的口径一致）", async () => {
+    const one = await ctx.repo.createSite({ url: "https://count-cover.example/deleted", title: "计数待删", categoryId: CAT, tags: [] });
+    const before = payload(await handlers.list_categories({ includeCounts: true }, A));
+    expect(before.find((c: any) => c.id === CAT).siteCount).toBe(N + 1);
+    await ctx.repo.deleteSite(one.id);
+    const after = payload(await handlers.list_categories({ includeCounts: true }, A));
+    expect(after.find((c: any) => c.id === CAT).siteCount).toBe(N);
+  });
+});

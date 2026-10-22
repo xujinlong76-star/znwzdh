@@ -34,11 +34,25 @@
  * `initialRevalidateSeconds: false` 的页一旦把 `http://localhost:3000/…` 烤进
  * `server/app/*.html`（metadataBase 缺席时的兜底），就没有 revalidate 周期能把它
  * 洗掉，只能等下次构建。带 revalidate 的路由同款问题会自愈，所以不报。
+ *
+ * `--live` 侧对同一件事做**独立**取证（2026-10-23）：产物检查读的是构建目录里的
+ * HTML，而真正被爬虫拿到的是线上响应。两处都断言才不会被「构建产物干净、线上
+ * 那份快照是旧的」这类错位蒙过去。响应体里凡是绝对地址指向本机、且端口和当前
+ * base 不一致的（`isBogusLocalOriginAsset`），就是 metadataBase 兜底值被烤死的
+ * 残留 —— 分享图在别人机器上打不开，收录页还自带一个错域名绝对地址。
+ *
+ * 旧形态归一还顺手盯住「跳转目标的 canonical 不得带 query」：配置层 `redirects()`
+ * 会把原始 query 带进 308 的 Location（实测 `/category/x?page=2` →
+ * `/category/x/p/2?page=2`）。这一点**判为不改**（要抹掉得新增一个会命中所有
+ * 收录路由的 Edge middleware，代价和爆炸半径都远超收益；裁决见
+ * docs/seo/ISR-ROUTES.md），它成立的前提是落地页 canonical 干净 —— 那个前提才是
+ * 必须守的东西，所以把它变成断言而不是留一句注释。
  */
 
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isBogusLocalOriginAsset, linkHref } from './lib/seo-audit.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -286,7 +300,7 @@ function checkBuild() {
 
 const TIMEOUT_MS = Number(valueOf('timeout', '15000')) || 15000;
 
-async function probe(base, path) {
+async function probe(base, path, { body = false } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -295,14 +309,33 @@ async function probe(base, path) {
       signal: controller.signal,
       headers: { 'user-agent': 'NavHub-ISR-Check/1.0', accept: 'text/html' },
     });
-    return {
+    const out = {
       status: res.status,
       cacheControl: res.headers.get('cache-control') ?? '',
       location: res.headers.get('location') ?? '',
+      contentType: res.headers.get('content-type') ?? '',
+      body: '',
     };
+    // 只在真要取证时读体：2xx/3xx 的 HTML 才有元信息可读，其余状态码没有正文可言
+    if (body && res.status >= 200 && res.status < 400 && /text\/html/i.test(out.contentType)) {
+      out.body = await res.text();
+    }
+    return out;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * 响应体里「指向本机、且端口和当前 base 不一致」的绝对地址。
+ * 判定复用审计侧的同一把尺（isBogusLocalOriginAsset），免得两处规则漂移。
+ */
+function localOriginAssetFindings(html, pageUrl) {
+  const found = new Set();
+  for (const m of html.matchAll(new RegExp(LOCAL_ORIGIN_ASSET.source, 'gi'))) {
+    if (isBogusLocalOriginAsset(m[0], pageUrl)) found.add(m[0]);
+  }
+  return [...found];
 }
 
 async function sitemapPaths(base) {
@@ -362,16 +395,23 @@ async function checkLive() {
     }
     for (const path of sample) {
       checked += 1;
-      const r = await probe(base, path);
+      const r = await probe(base, path, { body: true });
       const allow = paged ? [200, 404] : [200];
       const okStatus = allow.includes(r.status);
       const cached = /s-maxage=\d+/.test(r.cacheControl);
+      // 只有拿到正文才有资格谈元信息：404（薄分页的正常裁决）与重定向没有快照可言
+      const badAssets = r.status === 200 && r.body ? localOriginAssetFindings(r.body, `${base}${path}`) : [];
       console.log(
-        `${okStatus && cached ? '✓' : '✖'} ${(paged ? 'ISR 分页' : 'ISR 页面').padEnd(9)} ${path.padEnd(44)} ${r.status} cc=${r.cacheControl || '—'}`,
+        `${okStatus && cached && !badAssets.length ? '✓' : '✖'} ${(paged ? 'ISR 分页' : 'ISR 页面').padEnd(9)} ${path.padEnd(44)} ${r.status} cc=${r.cacheControl || '—'}`,
       );
       if (r.status >= 500) failures.push(`${path}：HTTP ${r.status}（5xx 通常是 DYNAMIC_SERVER_USAGE）`);
       else if (!okStatus) failures.push(`${path}：HTTP ${r.status}，期望 ${allow.join('/')}`);
       else if (!cached) failures.push(`${path}：没有 s-maxage，说明这一页没走 ISR 缓存`);
+      else if (badAssets.length) {
+        failures.push(
+          `${path}：线上响应里带着构建期兜底的本机地址（${badAssets.slice(0, 3).join(' | ')}）——缺 NAVHUB_SITE_URL 时 metadataBase 用 http://localhost:3000 解析，分享图在别人的机器上打不开，canonical/og:url 还会多出一个错域名；配好变量后按需生成一次即可洗掉，永久快照那一族则要靠下一次构建`,
+        );
+      }
     }
   }
 
@@ -401,7 +441,32 @@ async function checkLive() {
     console.log(
       `${ok ? '✓' : '✖'} ${'旧形态归一'.padEnd(9)} ${url.padEnd(44)} ${r.status} loc=${r.location || '—'}`,
     );
-    if (!ok) failures.push(`${url} 没有 30x 到 ${target || '（裸路径）'}（旧收录 URL 会白扔权重）`);
+    if (!ok) {
+      failures.push(`${url} 没有 30x 到 ${target || '（裸路径）'}（旧收录 URL 会白扔权重）`);
+      continue;
+    }
+    // 308 的 Location 会把原始 query 一起带过去（配置层 redirects 的行为，实测
+    // `/category/x?page=2` → `/category/x/p/2?page=2`）。这个形态**判为不改**，
+    // 理由与裁决记录在 docs/seo/ISR-ROUTES.md；它成立的前提只有一个：
+    // 落地页的 canonical 必须干净。所以真正该守的是这个前提，把它变成断言。
+    let landing = null;
+    try {
+      landing = new URL(r.location, base);
+    } catch {
+      landing = null;
+    }
+    if (!landing || landing.origin !== new URL(base).origin) continue;
+    const page = await probe(base, `${landing.pathname}${landing.search}`, { body: true });
+    const canonical = linkHref(page.body, 'canonical');
+    const clean = Boolean(canonical) && new URL(canonical, base).search === '';
+    console.log(
+      `${clean ? '✓' : '✖'} ${'跳转页 canonical'.padEnd(9)} ${`${landing.pathname}${landing.search}`.padEnd(40)} ${page.status} canonical=${canonical || '—'}`,
+    );
+    if (!clean) {
+      failures.push(
+        `${landing.pathname}${landing.search}：跳转落地页的 canonical ${canonical ? `仍带 query（${canonical}）` : '缺失'}——带参 URL 会变成一条可收录的重复页，旧形态归一的权重交接不再自洽`,
+      );
+    }
   }
 
   // 「一条都没抽查到」不是通过。空 sitemap / 全 5xx / base 指错都会让上面
@@ -420,7 +485,7 @@ async function checkLive() {
     for (const f of failures) console.error(`  - ${f}`);
     return 1;
   }
-  console.log(`\n✓ 线上 ISR 抽查通过：${checked} 页全部 200 且带 s-maxage`);
+  console.log(`\n✓ 线上 ISR 抽查通过：${checked} 页全部 200 且带 s-maxage，响应体里没有兜底的本机地址`);
   return 0;
 }
 

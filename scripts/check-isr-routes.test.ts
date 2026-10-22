@@ -312,16 +312,26 @@ describe("check-isr-routes.mjs 永久快照（revalidate=false）", () => {
 });
 
 /**
- * --live 的覆盖率下限。
+ * --live 抽查：覆盖率下限 + 响应体取证。
  *
  * 起因：--live 过去只活在 workflow_dispatch 的 seo-audit-prod 里，每个 PR 都没跑过。
  * 把它接进 PR 门禁的前提是它**不会静默通过**——空 sitemap（中枢没起 / 没 seed /
  * base 指错）时每个族只会打一行「跳过」，`checked` 停在 0，旧实现在这里打
  * 「✓ 线上 ISR 抽查通过：0 页」并 exit 0。一条永远不会响的守卫比没有守卫更危险。
  */
-describe("check-isr-routes.mjs --live 覆盖率下限", () => {
-  /** 假预览站：sitemap.xml 只列指定路径，页面一律 200 + s-maxage=60 */
-  function serve(paths: string[]): Promise<{ base: string; close: () => Promise<void> }> {
+describe("check-isr-routes.mjs --live 抽查", () => {
+  /**
+   * 假预览站：sitemap.xml 只列指定路径，页面 200 + s-maxage=60 + 自指 canonical。
+   *
+   * 两个形态刻意照抄生产实测，否则这一族测不到真东西：
+   * - 配置层 redirects 会把原始 query 带进 308 的 Location
+   *   （`/sites?page=2` → `/sites/p/2?page=2`），所以落地 URL 是带参的；
+   * - 落地页 canonical 不带 query，权重交接才自洽。
+   */
+  function serve(
+    paths: string[],
+    opts: { canonicalKeepsQuery?: boolean; bakeLocalAsset?: boolean } = {},
+  ): Promise<{ base: string; close: () => Promise<void> }> {
     return new Promise((resolvePromise) => {
       const server = createServer((req, res) => {
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -339,7 +349,7 @@ describe("check-isr-routes.mjs --live 覆盖率下限", () => {
         // 假站不配合的话所有样本都会被这条判失败，测不到覆盖率下限本身。
         const page = url.searchParams.get("page");
         if (page && (url.pathname === "/sites" || url.pathname.startsWith("/category/"))) {
-          res.writeHead(308, { location: `${url.pathname}/p/${page}` });
+          res.writeHead(308, { location: `${url.pathname}/p/${page}?page=${page}` });
           res.end();
           return;
         }
@@ -348,8 +358,15 @@ describe("check-isr-routes.mjs --live 覆盖率下限", () => {
           res.end();
           return;
         }
+        const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+        const canonical = opts.canonicalKeepsQuery ? `${origin}${url.pathname}${url.search}` : `${origin}${url.pathname}`;
+        // 缺 NAVHUB_SITE_URL 时 Next 用 http://localhost:3000 兜底解析 og:image；
+        // 假站用随机端口，所以这个地址必然与当前 base 不同端口。
+        const og = opts.bakeLocalAsset
+          ? '<meta property="og:image" content="http://localhost:3000/og-default.png"/>'
+          : "";
         res.writeHead(200, { "content-type": "text/html", "cache-control": "s-maxage=60, stale-while-revalidate=31535940" });
-        res.end("<html><body>ok</body></html>");
+        res.end(`<html><head><link rel="canonical" href="${canonical}"/>${og}</head><body>ok</body></html>`);
       });
       server.listen(0, "127.0.0.1", () => {
         const { port } = server.address() as AddressInfo;
@@ -361,8 +378,12 @@ describe("check-isr-routes.mjs --live 覆盖率下限", () => {
     });
   }
 
-  async function runLive(paths: string[], extra: string[] = []) {
-    const { base, close } = await serve(paths);
+  async function runLive(
+    paths: string[],
+    extra: string[] = [],
+    opts: { canonicalKeepsQuery?: boolean; bakeLocalAsset?: boolean } = {},
+  ) {
+    const { base, close } = await serve(paths, opts);
     try {
       // 不能用 spawnSync：它会占满当前线程，假预览站（在同进程里）无法响应，
       // 子进程只能等到 15s 超时——测试会在完全无关的地方失败。
@@ -409,5 +430,30 @@ describe("check-isr-routes.mjs --live 覆盖率下限", () => {
     const { code, out } = await runLive(["/sites"]);
     expect(out, out).toContain("✓ 线上 ISR 抽查通过：2 页");
     expect(code).toBe(0);
+  });
+
+  /**
+   * 线上侧的「本机地址」取证。产物门禁（checkPermanentSnapshots）读的是构建目录里
+   * 的 HTML，这里读的是爬虫真正拿到的响应：同一件事两处都断言，才不会漏掉
+   * 「产物是干净的、线上那份快照还是修复前生成的」这种错位。
+   */
+  it("线上响应里带构建期兜底的 localhost 资源地址就红灯", async () => {
+    const { code, out } = await runLive(["/sites"], [], { bakeLocalAsset: true });
+    expect(code, out).toBe(1);
+    expect(out).toContain("本机地址");
+    expect(out).toContain("http://localhost:3000/og-default.png");
+  });
+
+  /**
+   * 旧形态 308 的 Location 带 query 这件事本身判为不改（配置层行为，见
+   * docs/seo/ISR-ROUTES.md）。它成立的前提是落地页 canonical 干净，
+   * 所以这条断言盯的是前提：canonical 一旦把 query 吃回去，带参 URL 就成了
+   * 一条可收录的重复页，归一的权重交接不再自洽。
+   */
+  it("跳转落地页的 canonical 带 query 就红灯（旧形态归一的前提）", async () => {
+    const { code, out } = await runLive(["/sites"], [], { canonicalKeepsQuery: true });
+    expect(code, out).toBe(1);
+    expect(out).toContain("canonical");
+    expect(out).toMatch(/仍带 query|缺失/);
   });
 });

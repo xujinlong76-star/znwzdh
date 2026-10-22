@@ -1,0 +1,343 @@
+﻿优先级,标签,站点数,主要分类（站点数）,代表站点
+1,交易所,18,证券与行情(5) / 加密与区块链(5) / 期货与衍生品(4),Coinbase、HTX（原火币）、Kraken
+2,北京,18,医疗健康(3) / 交通与出行(2) / 司法法律(2),北京114预约挂号、北京交通安全综合服务管理平台、北京产权交易所
+3,医院,17,医疗健康(14) / 文献检索(2) / 运动与户外(1),120健康网、上海交通大学医学院附属仁济医院、上海交通大学医学院附属第九人民医院
+4,期刊,17,学科基础(5) / 文献检索(4) / 运动与户外(2),BJSM 运动医学杂志、DOAJ、GSA 美国老年学学会
+5,英文,17,科普与通识(4) / 问答社区(3) / 宠物与家庭(2),Allrecipes、BabyCenter、DEV Community
+6,腾讯,17,电商购物(2) / 视频会议(1) / 技术招聘(1),LPL、Trovo、VooV Meeting
+7,深度,17,独立媒体(3) / 深度报道(2) / 国际媒体(2),Ars Technica、Polygon、Punch
+8,财经,17,国际媒体(7) / 财经数据研报(3) / 财经新闻(3),Bloomberg、FT 中文网、东方财富
+9,考试,16,K12 与升学(7) / 考证与资格(3) / 公职招考(2),上海市教育考试院、东奥会计在线、中国人事考试网
+10,游戏,16,电商购物(4) / 直播(2) / 儿童与兴趣(2),Bandicam、Coolmath4kids、HyperX
+11,券商,16,证券与行情(16),中信证券、中国银河证券、中金公司
+12,新闻资讯,16,门户综合资讯(16),36氪、中国新闻网、人民网
+13,地图,16,交通与出行(11) / 气象与环境(1) / 电台广播(1),Apple 地图、Google 地图、Google 地球
+14,认证,16,运动与户外(4) / 宠物与家庭(2) / 生命关怀(2),ACE 美国运动委员会、ASE 汽车服务卓越协会、Aquaculture Alliance
+15,培训,15,考证与资格(3) / 考研与留学(2) / K12 与升学(2),Balanced Body、Darkness to Light、RoSPA
+16,订阅,15,素材与模板(4) / UI 资源素材(1) / 运动与户外(1),AWeber、Alo Moves、EA
+17,报告,15,薪酬洞察(4) / 运动与户外(2) / 学科基础(2),CIES 足球观察、Gatling、IPCC
+18,政务,15,政务办事(14) / 社保公积金(1),上海市人民政府、中国政府网、人力资源和社会保障政务服务平台
+19,天文与航天,15,学科基础(15),APOD 每日一天文图、ESA、ESA Hubble
+20,协会,15,宠物与家庭(3) / 美食与饮品(3) / 医疗健康(2),AAMFT 婚姻家庭治疗协会、AIGA、APDT 宠物犬训练协会
+21,跨境,15,出海创作(4) / 支付与钱包(3) / 司法法律(2),PayPal、SHOPLINE、Temu
+22,数据库,15,三农服务(3) / 影视评分(2) / 信创与私有云(1),Airtable、Baserow、BoxRec
+23,评论,15,独立媒体(3) / 国际媒体(2) / 门户综合资讯(2),AI Snake Oil、Jalopnik、OpenCritic
+24,权威,15,宠物与家庭(2) / 词典与翻译(2) / 数据新闻(2),KidsHealth、Mayo Clinic 疾病库、中国互联网联合辟谣平台
+25,科研,14,医疗健康(3) / 科普与通识(2) / 文献检索(2),Consensus、Nature News、ORCID
+26,金融理财,14,基金理财(14),上海证券交易所、东方财富、中国人民银行
+27,播客,14,播客与音频制作(3) / 音乐(3) / 视频会议(1),Apple Podcasts、BBC Sounds、Castbox
+28,大模型对话助手,14,对话助手(14),ChatGPT、Google Gemini、Grok
+29,变现与内容平台,14,变现与 MCN(14),B 站创作中心、Patreon、Substack
+30,短视频,14,短视频(6) / 长视频(2) / 视频剪辑后期(1),Pika、Tastemade、TikTok
+31,文化,14,美食与饮品(2) / 汽车与驾驶(2) / 科普与通识(1),Design Observer、Jalopnik、PBS
+32,足球,14,运动与户外(13) / 垂类资讯(1),Bundesliga 德甲、CIES 足球观察、FIFA 国际足联
+33,咨询,14,心理健康(4) / 医疗健康(3) / 猎头中高端(3),120健康网、12366 纳税服务平台、51健康网
+34,办公套件与文档,14,办公套件(14),Apache OpenOffice、Apple iWork、Collabora Online
+35,剪辑,14,视频剪辑后期(7) / 截图与 PDF(2) / 考证与资格(2),Camtasia、Camtasia、Descript
+36,行业,14,证券与行情(2) / 司法法律(2) / 医疗健康(2),AIGA、一览英才网、中华全国专利代理师协会
+37,数据平台与热点,14,选题与热点数据(14),5118、Google Analytics、SimilarWeb
+38,时政,14,本地民生(6) / 门户综合资讯(3) / 权威与政务发布(2),上观新闻、中国台湾网、人民网
+39,博物馆与文博,14,学科基础(14),MoMA、上海博物馆、南京博物院
+40,骑行,14,运动与户外(14),BikeRadar、Cyclingnews、Garmin
+41,组件库与 UI 体系,14,组件与 UI 体系(14),Ant Design、Arco Design、Ark UI
+42,机票与航班服务,14,交通与出行(14),Google 航班、中国东方航空、中国国际航空
+43,数学,13,学科基础(8) / 编程学习(3) / 科普与通识(1),3Blue1Brown、Brilliant、Coolmath4kids
+44,税务,13,财税发票(10) / 司法法律(1) / 政务办事(1),中国注册税务师协会、云账户、国家税务总局
+45,航空,13,交通与出行(12) / 政务办事(1),中国东方航空、中国南方航空、中国国际航空
+46,游戏媒体与评测,13,游戏媒体(13),17173、3DM、A9VG
+47,流媒体,13,海外流媒体(11) / 运动与户外(1) / 纪录片(1),Apple TV+、CuriosityStream、DAZN
+48,海外医疗与学术文献,13,文献检索(13),Cochrane Library、Healthline、MedlinePlus
+49,海外券商与全球市场,13,证券与行情(13),东京证券交易所、伦敦证券交易所、嘉信理财
+50,澳洲,13,生命关怀(4) / 宠物与家庭(3) / 司法法律(3),AFDA 澳洲殡葬协会、AFSA 澳洲破产管理、Advance Care Planning AU
+51,教育,13,宠物与家庭(2) / 美食与饮品(2) / 证券与行情(1),Barista Hustle、Childnet、中国教育新闻网
+52,资源,13,K12 与升学(4) / UI 资源素材(2) / 海外与远程(1),21 世纪教育网、Childnet、DrawKit
+53,预约,13,医疗健康(7) / 户籍与出入境(2) / 日历与待办(2),Cal.com、Calendly、中康体检网
+54,趋势,13,美食与饮品(3) / 选题与热点数据(2) / 三农服务(2),Agritechnica、Aquaculture Magazine、GitHub Trending
+55,构建工具与工程化,13,构建与工程化(13),Lerna、Nx、Parcel
+56,统计,13,运动与户外(3) / 三农服务(2) / 埋点与分析(1),Esports Charts、FAO 渔业、FAOSTAT
+57,公积金,13,社保公积金(11) / 劳动权益(2),上海住房公积金网、北京住房公积金管理中心、南京住房公积金管理中心
+58,攻略,13,旅行与住宿(5) / 攻略与数据(4) / 交通与出行(1),Altema、Game8、GameFAQs
+59,零售,13,宠物与家庭(2) / 汽车与驾驶(2) / 银行(2),Advance Auto Parts、Bass Pro Shops、Nutrien
+60,目的地官方旅游机构,13,旅行与住宿(13),中国文化和旅游部、台湾观光署、德国国家旅游局
+61,核心框架与元框架,13,核心框架(13),Angular、Astro、Next.js
+62,原型与协作工具,13,原型与协作(13),Balsamiq、Canva、Figma
+63,国际视野,13,国际媒体(12) / 编码小工具(1),BBC 中文网、FT 中文网、共同网
+64,物理与化学,13,学科基础(13),CERN、Chem-Station、Fermilab
+65,英文与海外媒体,12,国际媒体(12),BBC News、Bloomberg、MIT Technology Review
+66,论文资讯与学习,12,AI 评测与学习(12),AI Snake Oil、Anthropic News、Google AI for Developers
+67,地球与环境,12,学科基础(12),IPCC、NASA Earth Observatory、NOAA
+68,交易,12,证券与行情(3) / 游戏平台(2) / 运动与户外(1),ESPN NBA、上海证券交易所、中药材天地网
+69,证券公司与行情软件,12,证券与行情(12),中信证券、中国银河证券、中金公司
+70,咖啡,12,美食与饮品(11) / 市场监管(1),Barista Hustle、Blue Bottle、Coffee Research
+71,加密货币与区块链,12,加密与区块链(12),CoinDesk、CoinGecko、CoinMarketCap
+72,记账与个人财务,12,记账与财务(12),Copilot Money、Empower、Goodbudget
+73,地方政府门户,12,政务办事(12),上海市人民政府、北京市人民政府、四川省人民政府
+74,火车票与长途客运,12,交通与出行(12),12308 汽车票、Bus365 公路客票网、JR 东日本
+75,指南,12,宠物与家庭(3) / 医疗健康(2) / 养老照护(2),AAP 美国儿科学会、ACOG 妇产科医师学会、ACSM 美国运动医学会
+76,网盘与同步,12,网盘与传输(12),Dropbox、Google Drive、MEGA
+77,葡萄酒,12,美食与饮品(12),Decanter、Jancis Robinson、OIV 国际葡萄与葡萄酒组织
+78,基金与理财平台,12,基金理财(12),且慢、中国证券投资基金业协会、京东金融
+79,模组与玩家创作,12,游戏社区(12),3DM MOD 站、CurseForge、GameBanana
+80,压缩与文件管理,12,桌面实用工具(12),7-Zip、Bandizip、Double Commander
+81,系统工具与驱动,12,桌面实用工具(12),AMD 驱动与支持、Apple 官方下载、Debian
+82,互联网大厂与科技公司招聘,12,技术招聘(12),京东招聘、华为招聘、字节跳动招聘
+83,篮球,12,运动与户外(11) / 直播(1),Basketball Reference、CBA 联赛、Cleaning the Glass
+84,杂志,12,美食与饮品(4) / 科普与通识(2) / 设计系统与规范(2),Bon Appétit、Communication Arts、Epicurious
+85,规则,12,运动与户外(8) / 司法法律(1) / 期货与衍生品(1),Badminton Information、FIA 国际汽联、FIBA 国际篮联
+86,本地民生与城市新闻,12,本地民生(12),上观新闻、北京日报、华龙网
+87,医药电商与用药查询,12,医疗健康(12),1药网、健客网、医药魔方
+88,视频影音,12,长视频(12),1905电影网、优酷、央视频
+89,酒店预订,12,旅行与住宿(12),7 天连锁酒店、万豪国际、亚朵酒店
+90,跨境电商与海淘,12,跨境海淘(12),Amazon、Gmarket、SHEIN
+91,赛事,12,电竞赛事(4) / 运动与户外(3) / 宠物与家庭(1),ADCC、FloSports、LoL Esports
+92,清理优化与硬件检测,12,桌面实用工具(12),AIDA64、BleachBit、CCleaner
+93,下载与传输工具,12,网盘与传输(12),FileZilla、Free Download Manager、Internet Download Manager
+94,PDF 与扫描 OCR,12,截图与 PDF(12),Adobe Acrobat、Adobe Acrobat 在线工具、PDF-XChange
+95,电竞赛事与战队,12,电竞赛事(12),BLAST、DreamHack、ESL Gaming
+96,健康,12,医疗健康(7) / 文献检索(3) / 保险(1),39健康网、99健康网、CrystalDiskInfo
+97,文献,12,文献检索(6) / 数字图书馆(2) / 运动与户外(1),JSTOR、Khymos、PubMed
+98,购买比价与折扣追踪,12,游戏平台(12),AllKeyShop、CheapShark、DLCompare
+99,剪贴板与快捷启动,12,桌面实用工具(12),Alfred、AutoHotkey、CopyQ
+100,邮轮与海岛度假,12,旅行与住宿(12),公主邮轮、关岛观光局、嘉年华邮轮
+101,港台与海外华文媒体,12,国际媒体(12),世界日报、中央社、中时新闻网
+102,通勤与公共交通查询,12,交通与出行(12),8684 公交查询、上海地铁、东京地铁
+103,官方文档与手册,12,官方文档(12),Django 文档、Docker 文档、Flask 文档
+104,权威医学机构与政策,12,医疗健康(12),世界卫生组织、中华医学会、中华预防医学会
+105,媒体,12,医疗健康(3) / 加密与区块链(2) / 选题与热点数据(1),CoinDesk、Datawrapper、Eye on Design
+106,题库,12,题库刷题(4) / 汽车与驾驶(3) / K12 与升学(2),233网校、InterviewBit、中华考试网
+107,CSS 与样式方案,12,CSS 与样式(12),CSS-Tricks、Emotion、Less
+108,大厂,12,技术招聘(12),京东招聘、华为招聘、字节跳动招聘
+109,海外旅行预订平台,12,旅行与住宿(12),Agoda 安可达、Booking.com 缤客、Expedia
+110,银行与网上银行,12,银行(12),中信银行、中国光大银行、中国农业银行
+111,测评,12,职业规划(5) / 面试题库(2) / 宠物与家庭(1),16Personalities、CodeSignal、HackerRank
+112,保险与保障,12,保险(12),中国人寿、中国人民保险集团、中国太平
+113,户外露营与徒步,12,运动与户外(12),8264 户外资料网、AllTrails、Komoot
+114,游戏数据与销量统计,12,攻略与数据(12),Backloggd、Gamalytic、HowLongToBeat
+115,独立游戏与发行,12,独立游戏(12),Chucklefish、Devolver Digital、Global Game Jam
+116,家居百货垂类,12,数码与家居(12),九阳、全友家居、公牛
+117,工具查询,12,编码小工具(12),IP138、中国天气网、必应
+118,慢病管理与健康档案,12,医疗健康(12),三诺生物、乐心医疗、卫宁健康
+119,CRM,12,埋点与分析(6) / 私域与社群(4) / 表单与问卷(1),Freshworks、HubSpot、Microsoft Dynamics 365
+120,社交,11,社交与婚恋(5) / 出海创作(3) / 技术招聘(1),Facebook、Instagram、LinkedIn
+121,祭祀文化与家族纪念,11,生命关怀(11),Ancestry、Family Treasures、FamilySearch
+122,居家照护与适老化,11,养老照护(11),AARP Livable Communities、AgingInPlace.org、BenefitsCheckUp
+123,对比,11,保险(2) / 养老照护(2) / 生命关怀(1),Design Systems Repo、Diffchecker、FuneralWise
+124,安全与密钥管理,11,应用与密钥安全(11),Authelia、Falco、Grype
+125,格斗与搏击,11,运动与户外(11),ADCC、BoxRec、IBF 国际拳击联合会
+126,水产与渔业,11,三农服务(11),Aquaculture Alliance、Aquaculture Magazine、FAO 渔业
+127,数字纪念与数字遗产,11,生命关怀(11),Afterword、Artifcts、Death Wish List
+128,教师教案与备课资源,11,K12 与升学(11),21 世纪教育网、中国教师教育网、中国教师研修网
+129,密码与隐私安全,11,密码与隐私(11),1Password、AdGuard、Bitwarden
+130,宠物保险与出行服务,11,宠物与家庭(11),ASPCA 宠物保险、BringFido、Embrace
+131,律师与律所,11,司法法律(11),Chambers、中伦律师事务所、中华全国律师协会
+132,印刷与排版规范,11,设计系统与规范(11),Communication Arts、Design Observer、Fonts In Use
+133,儿童安全与保护,11,宠物与家庭(11),Child Mind Institute、Childnet、Committee for Children
+134,生前预嘱与医疗决策,11,生命关怀(11),Advance Care Planning AU、Advance Care Planning Canada、Compassion & Choices
+135,农业展会与商贸,11,三农服务(11),Agritechnica、Anuga、BioFach
+136,影视行业与影评媒体,11,影评媒体(11),Box Office Mojo、Collider、Deadline
+137,认知症与失智照护,11,养老照护(11),ADI 国际阿尔茨海默病协会、Alzheimer Society of Canada、Alzheimer's Association
+138,考研考公考编备考,11,考研与留学(11),中公事业单位考试网、中公教育、中公考研网
+139,德国,11,汽车与驾驶(3) / 数码与家居(2) / 三农服务(2),CLAAS 克拉斯、Fissler 菲仕乐、KW Suspensions
+140,高校官网与学籍查询,11,高等学历(11),上海交通大学、中国学位与研究生教育信息网、中国科学技术大学
+141,鸡尾酒与烈酒,11,美食与饮品(11),Bacardi、Cocktail Flow、Diageo 帝亚吉欧
+142,运动医学与康复,11,运动与户外(11),ACSM 美国运动医学会、APTA 美国物理治疗协会、BJSM 运动医学杂志
+143,邮件营销与 Newsletter,11,邮件通讯(11),ActiveCampaign、Brevo、Buttondown
+144,法律咨询平台,11,司法法律(11),Avvo、JustAnswer 法律、LawDepot
+145,生命教育与死亡素养,11,生命关怀(11),Death Cafe、Death Salon、Dying Matters
+146,游戏平台与商店,11,游戏平台(11),EA、Epic Games Store、Fanatical
+147,宠物用品与电商,11,宠物与家庭(11),Chewy、Omlet、PETKIT 小佩
+148,架构学习与社区,11,分布式与限流(11),AWS 架构中心、Azure 云设计模式、ByteByteGo
+149,3D 与 AR/VR 设计,11,3D 与 AR 设计(11),Babylon.js、CGTrader、Immersive Web
+150,政务服务,11,政务办事(11),四川政务服务网、国家政务服务平台、安徽政务服务网
+151,广东,11,政务办事(3) / 财税发票(1) / 社保公积金(1),南方网、国家税务总局广东省税务局、广东交通安全综合服务管理平台
+152,孕期与产后,11,宠物与家庭(11),ACOG 妇产科医师学会、BabyCenter 孕期、Lamaze
+153,科普与通识教育,11,科普与通识(11),HowStuffWorks、New Scientist、Quanta Magazine
+154,破产重整与强制执行,11,司法法律(11),ABI 美国破产学会、AFSA 澳洲破产管理、III 破产协会
+155,蓝领与灵活用工,11,蓝领灵活用工(11),51社保、云账户、兼职吧
+156,国际车企,11,汽车与驾驶(11),Audi、BMW、Ford
+157,公墓陵园与生态葬,11,生命关怀(11),BillionGraves、Find a Grave、Forest Burial
+158,宠物医疗与健康,11,宠物与家庭(11),ASPCA 动物毒物控制、ASPCA 宠物护理、AVMA 美国兽医协会
+159,法院与检察院,11,司法法律(11),12309 中国检察网、上海法院、中国法院网
+160,仲裁与替代争议解决,11,司法法律(11),AAA / ICDR、LCIA、上海国际仲裁中心
+161,直播运营与设备,11,直播运营(11),Elgato、RØDE、Streamlabs
+162,赛事直播与数据,11,运动与户外(11),DAZN、ESPN Watch、Eurosport
+163,论坛,11,游戏社区(3) / 问答社区(2) / 汽车与驾驶(2),3DM 论坛、NGA 玩家社区、NeoGAF
+164,调味与酱料,11,美食与饮品(11),Huy Fong 汇丰、McCormick、Sriracha2Go
+165,维修保养,11,汽车与驾驶(11),ASE 汽车服务卓越协会、Advance Auto Parts、AutoZone
+166,餐厅评鉴与榜单,11,美食与饮品(11),50 Best Discovery、AA 酒店餐厅评鉴、Andy Hayler
+167,公积金与住房保障,11,社保公积金(11),南京住房公积金管理中心、南宁住房公积金管理中心、大连市住房公积金管理中心
+168,简历,11,简历工具(6) / 技术招聘(3) / 海外与远程(1),FlowCV、Monster、Reactive Resume
+169,畜牧与养殖,11,三农服务(11),WOAH 世界动物卫生组织、中国兽医协会、中国饲料工业协会
+170,留学与国际教育,11,考研与留学(11),Hotcourses Abroad、IDP 教育、QS 世界大学排名
+171,钓鱼,11,运动与户外(11),Angling Trust、Bass Pro Shops、Bassmaster
+172,历史与考古,11,学科基础(11),三星堆博物馆、世界数字图书馆、中国国家博物馆
+173,茶与茶文化,11,美食与饮品(11),Harney & Sons、Tea Association of the USA、中茶
+174,数据隐私与网络安全合规,11,司法法律(11),DataGuidance、EDPB、ENISA
+175,数字农业与智慧乡村,11,三农服务(11),Big Dutchman、Climate FieldView、Descartes Labs
+176,汽车媒体与评测,11,汽车与驾驶(11),Auto Express、Autocar、Car and Driver
+177,婴幼儿护理,11,宠物与家庭(11),AAP 分龄养育、BabyCenter 婴儿期、CDC 儿童发育
+178,改装与性能,11,汽车与驾驶(11),Akrapovič、Borla、Brembo
+179,理财,11,记账与财务(3) / 基金理财(3) / 银行(3),Empower、NerdWallet、中国理财网
+180,预约挂号与就医服务,11,医疗健康(11),上海交通大学医学院附属仁济医院、上海申康医院发展中心、中南大学湘雅医院
+181,烘焙与甜品,11,美食与饮品(11),America's Test Kitchen、Breadtopia、Joy of Baking
+182,天气与空气质量,11,气象与环境(11),2345 天气王、AccuWeather、IQAir
+183,剧集,11,海外流媒体(6) / 长视频(4) / 字幕社区(1),Hulu、Max、Netflix
+184,Adobe,11,截图与 PDF(3) / 视频剪辑后期(1) / 司法法律(1),Adobe Acrobat、Adobe Acrobat、Adobe Acrobat Sign
+185,打车与租车,11,交通与出行(11),Grab、Hertz 赫兹租车、Rentalcars
+186,网球,11,运动与户外(11),ATP Tour、ITF 国际网球联合会、Tennis Abstract
+187,中高端人才与猎头服务,11,猎头中高端(11),万宝盛华大中华、任仕达 Randstad、光辉国际 Korn Ferry
+188,车友社区与行业组织,11,汽车与驾驶(11),Reddit r/cars、中国汽车工业协会、中国汽车技术研究中心
+189,农业科普与媒体,11,三农服务(11),AgDaily、AgFunderNews、AgWeb
+190,精酿啤酒,11,美食与饮品(11),American Homebrewers Association、BJCP、BeerAdvocate
+191,图标字体与素材,11,图标与字体(11),Bootstrap Icons、Favicon.io、Font Awesome
+192,林业与生态,11,三农服务(11),BirdLife International、CIFOR-ICRAF、FSC 森林管理委员会
+193,烹饪科学与食材百科,11,美食与饮品(11),ATK 器具评测、ChefSteps、Cook's Illustrated
+194,商用音乐与音效素材,11,素材与模板(11),Artlist、Bensound、Epidemic Sound
+195,白酒与黄酒,11,美食与饮品(11),中国酒业协会、五粮液、会稽山
+196,宠物综合社区与媒体,11,宠物与家庭(11),Catster、Dogster、PetGuide
+197,美食媒体与纪录片,11,美食与饮品(11),Atlas Obscura 食物、BBC Food、Food & Wine
+198,动漫二次元,11,动漫与二次元(11),COMIC WALKER、Crunchyroll、MANGA Plus
+199,赛车与赛事,11,汽车与驾驶(11),Autosport、BTCC、FIA 国际汽联
+200,截图录屏与录制,11,截图与 PDF(11),Bandicam、Camtasia、FastStone Capture
+201,商标与专利检索,11,司法法律(11),FreePatentsOnline、J-PlatPat、PATENTSCOPE
+202,独立,11,独立媒体(5) / 独立游戏(2) / 音乐(1),Bandcamp、Devolver Digital、GameMaker
+203,滑雪与冬季运动,11,运动与户外(11),Burton、Epic Pass、FIS 国际雪联
+204,种业与品种,11,三农服务(11),ISF 国际种子联盟、KWS、Limagrain
+205,服饰美妆垂类,11,服饰美妆(11),上海家化、丝芙兰中国、安踏
+206,投资社区与财商学习,11,证券与行情(11),CFA 协会、Investopedia、东方财富股吧
+207,记账,11,记账与财务(10) / 财税发票(1),Copilot Money、Goodbudget、Monarch Money
+208,校园招聘与实习,11,校招实习(11),刺猬实习、前程无忧校园招聘、北京大学学生就业指导服务中心
+209,测试与质量保障,11,前端测试(11),Biome、Chromatic、Cypress
+210,用品与配件,11,汽车与驾驶(11),3M 汽车、Bosch Auto Parts、Chemical Guys
+211,轮胎与耗材,11,汽车与驾驶(11),Discount Tire、Tire Rack、三角轮胎
+212,数据可视化与图表工具,11,数据可视化(11),Apache ECharts、Apache Superset、Chart.js
+213,签证,11,户籍与出入境(10) / 考研与留学(1),TLScontact、VFS Global、佰程旅行网
+214,有机与绿色认证,11,市场监管(11),CCOF、Demeter、EU 有机农业
+215,运动健身与训练计划,11,运动与户外(11),COROS 高驰、Nike、Strava
+216,游泳与水上运动,11,运动与户外(11),Arena、ISA 国际冲浪协会、PADI 潜水
+217,自主品牌与新势力,11,汽车与驾驶(11),上汽集团、吉利汽车、奇瑞汽车
+218,宠物品种与百科,11,宠物与家庭(11),AKC 犬种库、CFA 国际爱猫联合会、Dog Breed Info
+219,项目协作与管理,11,项目与研发管理(11),Asana、ClickUp、Confluence
+220,A/B 测试与转化优化,11,SEO 与增长(11),AB Tasty、Convert、Crazy Egg
+221,视频剪辑与后期,11,视频剪辑后期(11),ArcTime、DaVinci Resolve、Final Cut Pro
+222,新能源与充电,11,汽车与驾驶(11),ChargePoint、Electrek、Electrify America
+223,酒水电商与购买,11,美食与饮品(11),1919 酒类直供、K&L Wine Merchants、Master of Malt
+224,签证与出入境服务,11,户籍与出入境(11),TLScontact、VFS Global、佰程旅行网
+225,农资与化肥农药,11,三农服务(11),Crop Nutrition、IFA 国际肥料协会、Mosaic
+226,国有企业与央企招聘,11,公职招考(11),中国电信招聘、中国电建招聘、中国石化招聘
+227,瑜伽与普拉提,11,运动与户外(11),Alo Moves、Balanced Body、DoYogaWithMe
+228,职业资格与技能证书,11,考证与资格(11),233网校、医学教育网、嗨学网
+229,宠物训练与行为,11,宠物与家庭(11),AKC 训练指南、APDT 宠物犬训练协会、ASPCA 行为问题库
+230,哀伤辅导与丧亲支持,11,生命关怀(11),Child Bereavement UK、Cruse Bereavement Support、Grief Speaks
+231,宠物领养与救助,11,宠物与家庭(11),ASPCA 领养中心、Adopt-a-Pet、Best Friends
+232,摩托车与骑行,11,汽车与驾驶(11),BMW Motorrad、Ducati、Harley-Davidson
+233,开源社区与代码搜索,11,代码托管(11),CodeTriage、GitHub 搜索、Good First Issue
+234,安宁疗护与临终关怀,11,生命关怀(11),CAPC 姑息治疗中心、CaringInfo、EAPC 欧洲姑息治疗协会
+235,农业数据与行情,11,三农服务(11),CEPEA、FAO 世界粮食形势、FAOSTAT
+236,器官与遗体捐献,11,生命关怀(11),Donate Life America、Gift of Life、LifeSource
+237,法律学习与职业考试,11,司法法律(11),Coursera 法学课程、Law.com、Legal Cheek
+238,开源自托管与替代方案,11,编码小工具(11),Gitea、Home Assistant、Immich
+239,农业国际合作,11,三农服务(11),Agrinatura、Apimondia、Chatham House
+240,种植技术与农艺,11,三农服务(11),191 农资人、CABI、FMC
+241,合规,11,司法法律(4) / 截图与 PDF(1) / 埋点与分析(1),AHCA/NCAL、Coinbase、Creative Commons
+242,攻略与数据库,11,攻略与数据(11),Altema、Bulbapedia、Fandom
+243,殡仪服务与礼仪,11,生命关怀(11),Co-op Funeralcare、Dignity Memorial、Ever Loved
+244,供应链与商家工具,11,电商购物(11),一亩田、中国制造网、义乌购
+245,深度报道与特稿,11,深度报道(11),一席、三明治、三联生活周刊
+246,政务服务与一网通办,11,政务办事(11),上海市一网通办、四川政务服务网、安徽政务服务网
+247,农机与智能装备,11,三农服务(11),AGCO 爱科、CLAAS 克拉斯、CNH
+248,支付,10,支付与钱包(7) / 基金理财(1) / 生命关怀(1),CMS 美国医保中心、Medicare 官方门户、京东支付
+249,交通管理与车辆业务,10,政务办事(10),上海交通安全综合服务管理平台、中华人民共和国海事局、中国民用航空局
+250,模型微调与训练平台,10,模型训练与微调(10),Axolotl、LLaMA-Factory、MLflow
+251,用户体验调研方法,10,用研与可用性(10),Baymard Institute、Dovetail、Hotjar
+252,心理健康与咨询,10,心理健康(10),7 Cups、Calm、Headspace
+253,语音克隆与变声,10,AI 音频语音(10),Coqui TTS、CosyVoice、FakeYou
+254,向量库与 RAG 应用,10,向量库与 RAG(10),Chroma、Dify、FastGPT
+255,代码托管与协作,10,代码托管(10),Bitbucket、Codeberg、Conventional Commits
+256,市场,10,UI 资源素材(2) / 游戏平台(2) / 3D 与 AR 设计(1),Creative Market、Eneba、G2A
+257,亲子活动与场馆,10,宠物与家庭(10),Disney、LEGOLAND、Taronga 动物园
+258,具身智能与机器人,10,AI 硬件与具身(10),Boston Dynamics、CARLA、Figure AI
+259,公益,10,宠物与家庭(4) / 公益志愿(3) / 心理健康(1),ASPCA 宠物保险、Age UK、Best Friends
+260,输入法与字体,10,桌面实用工具(10),Adobe Fonts、FontForge、Rime 输入法
+261,税务与发票,10,财税发票(10),12366 纳税服务平台、全国统一电子税务局、国家税务总局上海市税务局
+262,心理,10,心理健康(8) / 宠物与家庭(1) / 职业规划(1),7 Cups、Child Mind Institute、OpenPsychometrics
+263,汽车与驾考,10,汽车与驾驶(10),交管 12123、优信二手车、太平洋汽车
+264,涉外法律与贸易合规,10,司法法律(10),ASIL 美国国际法学会、EU Access2Markets、EU Sanctions Map
+265,3D,10,3D 与 AR 设计(8) / 数码与家居(1) / AI 图像生成(1),Blender、Luma AI、Poly Haven
+266,票务,10,演出票务(8) / 电商购物(2),Bandsintown、Songkick、StubHub
+267,状态管理与数据流,10,状态与数据流(10),Apollo Client、Jotai、MobX
+268,家庭,10,医疗健康(3) / 记账与财务(2) / 生命关怀(2),APA 家庭专题、Gift of Life、Goodbudget
+269,电影,10,影院票务(4) / 海外流媒体(2) / 垂类资讯(1),1905电影网、Fandango、MUBI
+270,行业组织与职业教育,10,养老照护(10),AHCA/NCAL、AOTA 美国作业治疗协会、ASA 美国老龄学会
+271,落地页与活动页搭建,10,落地页搭建(10),Carrd、Squarespace、Strikingly
+272,财经数据与研究报告,10,财经数据研报(10),万得 Wind、中国债券信息网、中国证券报
+273,司法案例与裁判文书,10,司法法律(10),CourtListener、FindLaw 判例库、Oyez
+274,民宿与短租,10,旅行与住宿(10),Couchsurfing、HomeExchange、Homestay
+275,设计资讯与学习,10,设计博客案例(10),AIGA、Core77、Creative Bloq
+276,知识产权,10,司法法律(10),EPO 欧洲专利局、EU IP Helpdesk、Espacenet
+277,儿童读物与绘本,10,儿童与兴趣(10),Common Sense 育儿文章、Epic、HarperCollins
+278,调试与开发工具,10,在线演练场(10),CodePen、CodeSandbox、DevDocs
+279,图标与插画素材,10,图标与字体(10),Blush、DrawKit、Flaticon
+280,社区资讯与学习,10,问答社区(10),A List Apart、DEV Community、Frontend Masters
+281,品牌与 VI 规范,10,品牌与 VI(10),Brand New、Brandfetch、Brands of the World
+282,体育产业与政策,10,运动与户外(10),Sportcal、SportsPro、Statista
+283,监管,10,财经新闻(3) / 文献检索(2) / 交通与出行(1),NHTSA 自动驾驶安全、中国证券监督管理委员会、中国证券监督管理委员会
+284,殡葬管理与政策,10,生命关怀(10),AFDA 澳洲殡葬协会、Bereavement Advice、Funeral Guide
+285,数码家电垂类,10,数码与家居(10),中关村在线、天极网、太平洋电脑网
+286,AI 数据标注与数据集服务,10,模型与数据集(10),Appen、DagsHub、Hugging Face Datasets
+287,独立媒体与 Newsletter,10,独立媒体(10),中国数字时代、关键评论网、刺猬公社
+288,时间管理与专注工具,10,日历与待办(10),Clockify、Cold Turkey、Forest 专注森林
+289,事件驱动与 Serverless,10,无服务器与事件(10),AWS Lambda、Amazon EventBridge、Azure Functions
+290,分析,10,司法法律(3) / 埋点与分析(2) / SEO 与增长(1),FICO、Heap、Import AI
+291,营销学习与案例库,10,图文创作排版(10),SocialBeta、TOPYS、亿邦动力
+292,消息队列与流处理,10,消息与流处理(10),ActiveMQ、Apache Flink、Apache Kafka
+293,人力资源,10,猎头中高端(4) / 蓝领灵活用工(3) / 公开课与方法(1),51社保、万宝盛华大中华、三茅人力资源网
+294,集团,10,汽车与驾驶(4) / 保险(3) / 美食与饮品(1),BMW Group、CNH、Diageo 帝亚吉欧
+295,营养,10,医疗健康(5) / 运动与户外(2) / 宠物与家庭(1),Bodybuilding.com、Cronometer、Mosaic
+296,图片设计与素材,10,素材与模板(10),100font、凡科快图、创客贴
+297,公证与司法鉴定,10,司法法律(10),AAFS 美国法医学会、Crime Scene Investigator、ENFSI
+298,国际化与无障碍,10,国际化无障碍(10),Crowdin、Deque axe、FormatJS
+299,在线问诊与互联网医院,10,医疗健康(10),120健康网、51健康网、医联
+300,音效,10,素材与模板(7) / 视频剪辑后期(1) / 图片视频素材(1),BBC Sound Effects、Freesound、Mixkit
+301,论文,10,文献检索(5) / 司法法律(2) / 科研管理(1),Connected Papers、Hugging Face Papers、Papers with Code
+302,外语学习,10,语言学习(10),BBC Learning English、TED、VOA 慢速英语
+303,跨端与桌面端框架,10,跨端与桌面(10),Capacitor、Electron、Expo
+304,自动驾驶与智能网联,10,汽车与驾驶(10),Mobileye、NHTSA 自动驾驶安全、NVIDIA 汽车
+305,数码,10,数码与家居(5) / 科技资讯(3) / 二手闲置(1),IT 之家、中关村在线、华为商城
+306,AI 安全与对齐研究,10,AI 安全与对齐(10),AISafety.info、Alignment Forum、Anthropic Research
+307,健身与力量,10,运动与户外(10),ACE 美国运动委员会、Bodybuilding.com、CrossFit
+308,劳动人事合规,10,司法法律(10),ACAS、EEOC、Fair Work
+309,户政与出入境,10,户籍与出入境(10),上海市公安局、公安部、北京市公安局
+310,快递与物流查询,10,交通与出行(10),中国邮政 EMS、中通快递、丰巢
+311,自由职业与副业接单,10,自由职业(10),Fiverr、Freelancer、Toptal
+312,农业科研与院校,10,三农服务(10),CGIAR、FAO 联合国粮农组织、中国农业大学
+313,基金,10,基金理财(7) / 司法法律(1) / 教育民生服务(1),且慢、中国博士后网、中国证券投资基金业协会
+314,疫苗,10,医疗健康(8) / 三农服务(2),CDC Vaccines、Gavi 疫苗联盟、Immunize.org
+315,入门,10,编程学习(3) / 运动与户外(2) / 美食与饮品(2),AISafety.info、Codecademy、Liquor.com
+316,缓存与搜索中间件,10,缓存与搜索(10),Apache Ignite、Apache Solr、Dragonfly
+317,平台,10,医疗健康(2) / 跨境海淘(2) / 心理健康(1),Flipkart、General Motors、Steam
+318,SRE 手册与故障复盘库,10,SRE 与复盘(10),Awesome SRE、FireHydrant、Google SRE
+319,设计求职与作品集平台,10,灵感与作品集(10),Adobe Portfolio、ArtStation、Authentic Jobs
+320,产品,10,埋点与分析(3) / 图文创作排版(1) / 信托资管(1),Amplitude、Heap、Mixpanel
+321,留学,10,考研与留学(7) / 高等学历(2) / K12 与升学(1),Hotcourses Abroad、IDP 教育、启德教育
+322,驾培与安全评测,10,汽车与驾驶(10),C-NCAP、Euro NCAP、IIHS 碰撞评级
+323,网页与交互评审,10,设计博客案例(10),Awwwards、CSS Design Awards、Godly
+324,体育,10,直播(4) / 运动与户外(2) / 长视频(2),ESPN、PPTV聚力、中华全国体育总会
+325,台湾,10,国际媒体(6) / 旅行与住宿(1) / 交通与出行(1),中国台湾网、中央社、中时新闻网
+326,育儿知识科普,10,宠物与家庭(10),AAP 情绪健康、ADDitude、Common Sense Media
+327,税务与财务合规,10,财税发票(10),OECD 税收、中国会计网、中国注册税务师协会
+328,分布式协调与限流,10,分布式与限流(10),Apache Curator、Apache ZooKeeper、Envoy Rate Limit
+329,百度,10,问答社区(2) / 技术招聘(1) / 短视频(1),好看视频、文心一言、百家号
+330,购物电商,10,电商购物(10),华为商城、唯品会、天猫
+331,生鲜与食材,10,生鲜与外卖(10),Codex 食品法典、FishWatch、Foodland
+332,老年健康与慢病管理,10,养老照护(10),AGS 美国老年医学会、BGS 英国老年医学会、CDC 老龄化
+333,社保与医保,10,社保公积金(10),上海市人力资源和社会保障局、人力资源和社会保障政务服务平台、北京市人力资源和社会保障局
+334,远程协作与屏幕共享,10,即时沟通(10),Cisco Webex、Google Meet、Microsoft Teams
+335,翻译,10,词典与翻译(4) / 旅行与住宿(2) / 编码小工具(2),DeepL 翻译、DeepL 翻译、Google 翻译
+336,知识库与笔记体系,10,笔记与知识库(10),Anki、Anytype、Heptabase
+337,设计团队博客与案例库,10,设计博客案例(10),Airbnb Design、Atlassian 设计博客、Dropbox Design
+338,羽毛球与乒乓球,10,运动与户外(10),BWF 世界羽联、Badminton Information、Butterfly 蝴蝶
+339,阅读,10,动漫与二次元(3) / 播客与有声书(2) / 深度报道(2),Starfall、SumatraPDF、中国日报英语点津
+340,网关与流量治理,10,网关与流量(10),Apache APISIX、Caddy、Consul
+341,官网,10,高等学历(10),上海交通大学、中国科学技术大学、中山大学
+342,营养饮食与热量管理,10,医疗健康(10),Cronometer、Eat This Much、MyFitnessPal

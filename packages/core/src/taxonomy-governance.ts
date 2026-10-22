@@ -8,12 +8,27 @@
  * 4. 治理提案结构定义与状态机（Pending -> Applied / Dismissed）
  */
 
-export type TaxonomyProposalKind =
-  | "categorization_mismatch"
-  | "tag_consolidation"
-  | "zero_result_gap"
-  | "facet_gap"
-  | "category_gap";
+import { UNCATEGORIZED_SLUG } from "./category-registry.ts";
+
+/**
+ * 治理提案的全部类型（运行时真相源）。
+ *
+ * 队列 UI、API 校验与审计函数都从这份清单取值：新增 kind 时忘改 UI 会由
+ * `admin-taxonomy-kinds.test.ts` 直接报错，而不是让提案静默落进「未知类型」。
+ */
+export const TAXONOMY_PROPOSAL_KINDS = [
+  "categorization_mismatch",
+  "tag_consolidation",
+  "zero_result_gap",
+  "facet_gap",
+  "category_gap",
+  /** 叶子站点量低于治理线：只出合并/降级提案，绝不自动动树 */
+  "leaf_too_small",
+  /** 同一父级下标题重复：挡住 (parent_id, title) 唯一索引的那批行 */
+  "duplicate_title",
+] as const;
+
+export type TaxonomyProposalKind = (typeof TAXONOMY_PROPOSAL_KINDS)[number];
 
 export type TaxonomyProposalStatus = "pending" | "applied" | "dismissed";
 
@@ -28,6 +43,29 @@ export type TaxonomyProposalStatus = "pending" | "applied" | "dismissed";
  */
 export const UNCATEGORIZED_CATEGORY_ID = "cat-uncategorized";
 export const UNCATEGORIZED_CATEGORY_TITLE = "未分类";
+
+/**
+ * 叶子的「健康站点量」线：低于它的叶子只出合并/降级提案，不自动动树。
+ *
+ * 与索引门槛（`MIN_SITES_FOR_CATEGORY_INDEX = 12`，见 web 侧 thresholds）刻意分开：
+ * 12 是「够不够格被搜索引擎收录」，20 是「值不值得继续独立成一类」。
+ * 前者是发布闸门，后者是治理信号；把两者合成一个数会让每次调 SEO 都改动树。
+ */
+export const LEAF_TOO_SMALL_MIN_SITES = 20;
+
+/** 类目健康审计的输入节点：只描述事实，不关心它来自 DB 还是 registry */
+export interface CategoryHealthNode {
+  id: string;
+  title: string;
+  slug?: string | null;
+  parentId?: string | null;
+  /** 直接挂在该类目下的存活站点数（叶子只挂站点，所以不做后代聚合） */
+  sites: number;
+}
+
+function isUncategorized(c: Pick<CategoryHealthNode, "id" | "slug">): boolean {
+  return c.id === UNCATEGORIZED_CATEGORY_ID || c.slug === UNCATEGORIZED_SLUG;
+}
 
 export interface TaxonomyProposal {
   id: string;
@@ -233,6 +271,111 @@ export function auditZeroResultGaps(
       meta: { count: item.count, lastAt: item.lastAt ?? Date.now() },
       createdAt: Date.now(),
     });
+  }
+
+  return proposals;
+}
+
+/**
+ * 叶子过小审计：站点量低于治理线的叶子只产提案，**不自动合并/删除**。
+ *
+ * 自动合并的诱惑很大（一次扫完就「清理」了），但树是编辑决策：
+ * 空叶子可能是刚建的、十九站的叶子可能是刻意收窄的垂直类。
+ * 这里只负责把「谁该被看一眼」排到人工队列里。
+ */
+export function auditLeafTooSmall(
+  categories: CategoryHealthNode[],
+  options: { minSites?: number } = {},
+): TaxonomyProposal[] {
+  const minSites = options.minSites ?? LEAF_TOO_SMALL_MIN_SITES;
+  const proposals: TaxonomyProposal[] = [];
+  const leaves = categories
+    .filter((c) => Boolean(c.parentId) && !isUncategorized(c))
+    .sort((a, b) => a.sites - b.sites || a.id.localeCompare(b.id));
+
+  for (const leaf of leaves) {
+    if (leaf.sites >= minSites) continue;
+    const empty = leaf.sites === 0;
+    proposals.push({
+      id: `leaf_too_small_${leaf.id}`,
+      kind: "leaf_too_small",
+      targetId: leaf.id,
+      targetTitle: leaf.title,
+      currentValue: `${leaf.sites} 个站点`,
+      suggestedValue: empty ? "降级为标签或删除" : "并入同根兄弟叶",
+      // 空叶子几乎必然是历史残留；有站点但偏少的可能是刻意收窄，置信度低一档
+      confidence: empty ? 0.9 : 0.7,
+      reason:
+        `叶子「${leaf.title}」只有 ${leaf.sites} 个站（低于健康线 ${minSites}）。` +
+        `低于索引门槛时它不会进 sitemap，继续维持独立分类只会稀释导航。` +
+        `建议复核：${empty ? "确认无站点后可降级为标签或删除" : "与同根兄弟叶合并，或把站点转为标签"}。` +
+        `本条只记录提案，不会自动改动类目树。`,
+      status: "pending",
+      meta: {
+        sites: leaf.sites,
+        minSites,
+        slug: leaf.slug ?? null,
+        parentId: leaf.parentId ?? null,
+        actionHint: empty ? "demote_to_tags" : "merge_into_sibling",
+      },
+      createdAt: Date.now(),
+    });
+  }
+
+  return proposals;
+}
+
+/**
+ * 同父同名审计：找出挡在 `(parent_id, title)` 唯一索引前面的那批行。
+ *
+ * 只查同一父级下的重名 —— 不同根下出现同名叶子是允许的（面包屑负责消歧），
+ * 跨父级重名只做提示、不产提案。保留哪一条按「站点更多」定，平票时按 id
+ * 排序取第一个，保证每次审计给出的 survivor 稳定。
+ */
+export function auditDuplicateTitles(categories: CategoryHealthNode[]): TaxonomyProposal[] {
+  const groups = new Map<string, CategoryHealthNode[]>();
+  for (const c of categories) {
+    if (isUncategorized(c)) continue;
+    const titleKey = normalizeCategoryKey(c.title);
+    if (!titleKey) continue;
+    const key = `${c.parentId ?? "__root__"}\u0000${titleKey}`;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(c);
+    else groups.set(key, [c]);
+  }
+
+  const proposals: TaxonomyProposal[] = [];
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const ranked = [...group].sort((a, b) => b.sites - a.sites || a.id.localeCompare(b.id));
+    const survivor = ranked[0]!;
+    for (const loser of ranked.slice(1)) {
+      proposals.push({
+        id: `duplicate_title_${loser.id}`,
+        kind: "duplicate_title",
+        targetId: loser.id,
+        targetTitle: loser.title,
+        currentValue: loser.title,
+        suggestedValue: survivor.title,
+        confidence: 0.85,
+        reason:
+          `同一父级下存在 ${group.length} 个同名类目「${loser.title}」` +
+          `（保留项 ${survivor.sites} 站 / 本条 ${loser.sites} 站）。` +
+          `同名会让标题解析退化成「按存储顺序挑一个」，也挡住 (parent_id,title) 唯一索引。` +
+          `建议把本条站点并入保留项后删除；本条不会自动合并。`,
+        status: "pending",
+        meta: {
+          keepId: survivor.id,
+          keepTitle: survivor.title,
+          keepSites: survivor.sites,
+          sites: loser.sites,
+          slug: loser.slug ?? null,
+          parentId: loser.parentId ?? null,
+          groupSize: group.length,
+        },
+        createdAt: Date.now(),
+      });
+    }
   }
 
   return proposals;

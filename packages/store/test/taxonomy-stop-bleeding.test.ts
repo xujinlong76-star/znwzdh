@@ -173,6 +173,8 @@ describe("类目过滤的标题解析必须唯一命中", () => {
 
   /** 绕过写入层校验，造一条「旧库里就存在的同名根类目」（slug 为 NULL，同 legacy 行） */
   async function insertLegacyDuplicateRoot(title: string): Promise<string> {
+    // P3 登记了根层标题唯一索引；这里先摘掉索引，模拟「索引登记之前」的存量重名库
+    await repo.run("DROP INDEX IF EXISTS categories_root_title_uniq");
     const id = randomUUID();
     const now = Date.now();
     await repo.run(

@@ -96,6 +96,8 @@ describe("getCategoryBySlug", () => {
 
 describe("存量行的 slug 回填", () => {
   it("NULL slug 可以共存（部分唯一索引），回填后补齐且全局唯一", async () => {
+    // P3 登记了根层标题唯一索引；先摘掉索引，模拟「索引登记之前」的存量库
+    await repo.run("DROP INDEX IF EXISTS categories_root_title_uniq");
     // 多条 NULL 同时存在：若索引没写成 WHERE slug IS NOT NULL，这条 INSERT 就会炸
     const first = await insertLegacyCategory("游戏电竞");
     const second = await insertLegacyCategory("游戏电竞");

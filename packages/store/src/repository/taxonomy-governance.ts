@@ -3,11 +3,14 @@ import {
   UNCATEGORIZED_CATEGORY_ID,
   UNCATEGORIZED_CATEGORY_TITLE,
   assertCategoryName,
+  auditDuplicateTitles,
+  auditLeafTooSmall,
   auditSiteCategorization,
   auditTagConsolidation,
   auditZeroResultGaps,
   categoryGapProposalId,
   type TaxonomyProposal,
+  type TaxonomyProposalKind,
 } from "@navhub/core";
 import { rowToTaxonomyProposal, slugify } from "./dialect.ts";
 
@@ -230,21 +233,40 @@ export async function applyTaxonomyProposal(
     const fromTag = proposal.targetId;
     const toTag = proposal.suggestedValue;
 
-    // 获取或创建目标主标签
-    const targetTagRow = (await repo.raw("SELECT id FROM tags WHERE name = ? OR slug = ? LIMIT 1", [toTag, slugify(toTag)]))[0];
-    const targetTagId = targetTagRow ? String(targetTagRow.id) : await repo.upsertTag(toTag, slugify(toTag), "topic");
-
-    if (action === "alias") {
-      await repo.addTagAlias(targetTagId, fromTag);
-      actionMessage = `已为标签 "${fromTag}" 创建指向 "${toTag}" 的同义别名`;
-    } else {
+    if (action === "delete") {
+      // 迁移脚本只对「零引用」标签出删除提案；采纳时再核一次，引用不为零就拒绝，
+      // 人工采纳是删除 tags 行的唯一入口（禁止脚本直接 DELETE FROM tags）。
       const sourceTagRow = (await repo.raw("SELECT id FROM tags WHERE name = ? OR slug = ? LIMIT 1", [fromTag, slugify(fromTag)]))[0];
-      if (sourceTagRow && String(sourceTagRow.id) !== targetTagId) {
-        await repo.mergeTags(String(sourceTagRow.id), targetTagId);
-        actionMessage = `已将低频标签 "${fromTag}" 合并至主标签 "${toTag}"`;
+      if (!sourceTagRow) {
+        actionMessage = `标签 "${fromTag}" 已不存在，提案按已删除处理`;
       } else {
+        const sourceTagId = String(sourceTagRow.id);
+        const refRow = (await repo.raw("SELECT COUNT(*) AS n FROM site_tags WHERE tag_id = ?", [sourceTagId]))[0];
+        const refs = Number(refRow?.n ?? 0);
+        if (refs > 0) {
+          throw new Error(`标签 "${fromTag}" 仍有 ${refs} 个站点引用，拒绝删除`);
+        }
+        await repo.run("DELETE FROM tag_aliases WHERE tag_id = ?", [sourceTagId]);
+        await repo.run("DELETE FROM tags WHERE id = ?", [sourceTagId]);
+        actionMessage = `已删除零引用标签 "${fromTag}"`;
+      }
+    } else {
+      // 获取或创建目标主标签
+      const targetTagRow = (await repo.raw("SELECT id FROM tags WHERE name = ? OR slug = ? LIMIT 1", [toTag, slugify(toTag)]))[0];
+      const targetTagId = targetTagRow ? String(targetTagRow.id) : await repo.upsertTag(toTag, slugify(toTag), "topic");
+
+      if (action === "alias") {
         await repo.addTagAlias(targetTagId, fromTag);
         actionMessage = `已为标签 "${fromTag}" 创建指向 "${toTag}" 的同义别名`;
+      } else {
+        const sourceTagRow = (await repo.raw("SELECT id FROM tags WHERE name = ? OR slug = ? LIMIT 1", [fromTag, slugify(fromTag)]))[0];
+        if (sourceTagRow && String(sourceTagRow.id) !== targetTagId) {
+          await repo.mergeTags(String(sourceTagRow.id), targetTagId);
+          actionMessage = `已将低频标签 "${fromTag}" 合并至主标签 "${toTag}"`;
+        } else {
+          await repo.addTagAlias(targetTagId, fromTag);
+          actionMessage = `已为标签 "${fromTag}" 创建指向 "${toTag}" 的同义别名`;
+        }
       }
     }
   } else if (proposal.kind === "zero_result_gap") {
@@ -278,6 +300,13 @@ export async function applyTaxonomyProposal(
       }
     }
     actionMessage = `已在「${parent.title}」下新建子类目「${created.title}」，回填 ${reassigned}/${siteIds.length} 个站点`;
+  } else if (proposal.kind === "leaf_too_small" || proposal.kind === "duplicate_title") {
+    // 这两类只记录人工决议：合并/降级是类目管理页上的显式动作。
+    // 自动执行会绕过编辑判断——空叶子可能是刚建的，十九站的叶子可能是刻意收窄的垂直类。
+    actionMessage =
+      proposal.kind === "duplicate_title"
+        ? `已记录合并决议：请到类目管理把「${proposal.targetTitle}」的站点并入保留项后删除（本次未改动类目树）`
+        : `已记录处理决议：请到类目管理复核「${proposal.targetTitle}」的合并/降级（本次未改动类目树）`;
   } else {
     actionMessage = `已标记采纳治理提案 (${proposal.kind})`;
   }
@@ -336,7 +365,12 @@ export async function dismissTaxonomyProposal(
 export async function runTaxonomyAudit(
   repo: Repository,
   options: { dryRun?: boolean; siteLimit?: number } = {},
-): Promise<{ proposalsCount: number; proposals: TaxonomyProposal[] }> {
+): Promise<{
+  proposalsCount: number;
+  proposals: TaxonomyProposal[];
+  /** 按 kind 汇总：日报与运营看板靠它判断「这一轮新增了什么」 */
+  byKind: Partial<Record<TaxonomyProposalKind, number>>;
+}> {
   const allProposals: TaxonomyProposal[] = [];
 
   // 1. 标签冗余与同义词合并审计
@@ -367,7 +401,20 @@ export async function runTaxonomyAudit(
   );
   allProposals.push(...gapProposals);
 
-  // 3. 站点归类契合度审计
+  // 3. 类目树健康：过小叶子 + 同父同名（只出提案，人工合并，绝不自动动树）
+  const rawCounts = await repo.categorySiteCounts();
+  const siteCountByCategory = new Map(rawCounts.map((r) => [r.categoryId, r.sites] as const));
+  const healthNodes = categories.map((c) => ({
+    id: c.id,
+    title: c.title,
+    slug: c.slug ?? null,
+    parentId: c.parentId ?? null,
+    sites: siteCountByCategory.get(c.id) ?? 0,
+  }));
+  allProposals.push(...auditLeafTooSmall(healthNodes));
+  allProposals.push(...auditDuplicateTitles(healthNodes));
+
+  // 4. 站点归类契合度审计
   const sites = await repo.listSites({ limit: options.siteLimit ?? 500 });
   const siteProposals = auditSiteCategorization(
     sites.map((s) => ({
@@ -385,8 +432,14 @@ export async function runTaxonomyAudit(
     await saveTaxonomyProposals(repo, allProposals);
   }
 
+  const byKind: Partial<Record<TaxonomyProposalKind, number>> = {};
+  for (const p of allProposals) {
+    byKind[p.kind] = (byKind[p.kind] ?? 0) + 1;
+  }
+
   return {
     proposalsCount: allProposals.length,
     proposals: allProposals,
+    byKind,
   };
 }

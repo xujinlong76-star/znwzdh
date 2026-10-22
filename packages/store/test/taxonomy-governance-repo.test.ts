@@ -137,6 +137,55 @@ describe("Taxonomy Phase 4: AI Taxonomy Governance Repository", () => {
     expect(resolved?.name).toBe("AI");
   });
 
+  it("零引用删除提案：采纳后删除标签，仍有站点引用时拒绝", async () => {
+    await repo.upsertTag("ZeroTag", "zerotag", "topic");
+    const proposal: TaxonomyProposal = {
+      id: "prop-tag-delete-1",
+      kind: "tag_consolidation",
+      targetId: "ZeroTag",
+      targetTitle: "ZeroTag",
+      currentValue: "ZeroTag",
+      suggestedValue: "ZeroTag",
+      confidence: 0.6,
+      reason: "迁移后零引用",
+      status: "pending",
+      meta: { action: "delete" },
+      createdAt: Date.now(),
+    };
+    await repo.saveTaxonomyProposals([proposal]);
+    const res = await repo.applyTaxonomyProposal("prop-tag-delete-1");
+    expect(res.ok).toBe(true);
+    expect(res.message).toContain("已删除零引用标签");
+    expect(await repo.raw("SELECT id FROM tags WHERE name = ?", ["ZeroTag"])).toHaveLength(0);
+
+    const cat = await repo.createCategory({ title: "删除标签测试" });
+    const site = await repo.createSite({
+      url: "https://keep-tag.example.com",
+      title: "保留标签站点",
+      categoryId: cat.id,
+    });
+    await repo.setSiteTags(site.id, ["ReferencedTag"]);
+    await repo.saveTaxonomyProposals([
+      {
+        id: "prop-tag-delete-2",
+        kind: "tag_consolidation",
+        targetId: "ReferencedTag",
+        targetTitle: "ReferencedTag",
+        currentValue: "ReferencedTag",
+        suggestedValue: "ReferencedTag",
+        confidence: 0.6,
+        reason: "迁移后零引用",
+        status: "pending",
+        meta: { action: "delete" },
+        createdAt: Date.now(),
+      },
+    ]);
+    await expect(repo.applyTaxonomyProposal("prop-tag-delete-2")).rejects.toThrow(/仍有 1 个站点引用/);
+    expect(await repo.raw("SELECT id FROM tags WHERE name = ?", ["ReferencedTag"])).toHaveLength(1);
+    // 拒绝不算采纳：提案保持 pending，人工处理引用后可重试
+    expect((await repo.getTaxonomyProposal("prop-tag-delete-2"))?.status).toBe("pending");
+  });
+
   it("支持驳回提案 (dismissTaxonomyProposal)", async () => {
     const proposal: TaxonomyProposal = {
       id: "prop-dismiss-1",
@@ -156,6 +205,45 @@ describe("Taxonomy Phase 4: AI Taxonomy Governance Repository", () => {
 
     const auditLogs = await repo.listAuditLogs({ action: "taxonomy.proposal.dismiss" });
     expect(auditLogs.items.some((l) => l.target === "prop-dismiss-1")).toBe(true);
+  });
+
+  it("类目健康审计产出 leaf_too_small / duplicate_title，采纳只记录决议不动树", async () => {
+    const root = await repo.createCategory({ title: "健康审计根" });
+    const dupA = await repo.createCategory({ title: "重名叶", parentId: root.id });
+    const dupB = await repo.createCategory({ title: "重名叶B", parentId: root.id });
+    // 应用层已禁同级重名；这里先摘掉 P3 的标题唯一索引再改库，
+    // 模拟「索引登记之前」的历史脏行（正是治理审计要捞的那批）
+    await repo.run("DROP INDEX IF EXISTS categories_child_title_uniq");
+    await repo.run("DROP INDEX IF EXISTS categories_root_title_uniq");
+    await repo.run("UPDATE categories SET title = ? WHERE id = ?", ["重名叶", dupB.id]);
+    const small = await repo.createCategory({ title: "小叶子", parentId: root.id });
+    await repo.createSite({
+      url: "https://small-leaf.example.com",
+      title: "小叶子站点",
+      categoryId: small.id,
+    });
+
+    const audit = await repo.runTaxonomyAudit({ dryRun: true });
+    expect(audit.byKind.duplicate_title).toBeGreaterThanOrEqual(1);
+    expect(audit.byKind.leaf_too_small).toBeGreaterThanOrEqual(1);
+
+    const dupProposal = audit.proposals.find(
+      (p) => p.kind === "duplicate_title" && (p.targetId === dupA.id || p.targetId === dupB.id),
+    );
+    expect(dupProposal?.meta?.keepId).toBe(dupProposal?.targetId === dupA.id ? dupB.id : dupA.id);
+    const smallProposal = audit.proposals.find((p) => p.kind === "leaf_too_small" && p.targetId === small.id);
+    expect(smallProposal?.meta?.sites).toBe(1);
+    // dryRun 不落库
+    expect(await repo.getTaxonomyProposal(smallProposal!.id)).toBeNull();
+
+    // 采纳只把提案标为 applied，类目树原样保留（不自动合并、不自动删除）
+    await repo.saveTaxonomyProposals([smallProposal!]);
+    const applied = await repo.applyTaxonomyProposal(smallProposal!.id);
+    expect(applied.ok).toBe(true);
+    expect(applied.message).toContain("未改动类目树");
+    expect((await repo.getCategory(small.id))?.parentId).toBe(root.id);
+    expect((await repo.getCategory(dupA.id))?.title).toBe("重名叶");
+    expect((await repo.getCategory(dupB.id))?.title).toBe("重名叶");
   });
 
   it("全流程执行全站分类与标签健康度审计 (runTaxonomyAudit)", async () => {

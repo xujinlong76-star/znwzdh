@@ -1017,7 +1017,24 @@ export class JobRunner {
       dryRun: payload.dryRun ?? false,
       siteLimit: payload.siteLimit ?? 500,
     });
-    console.log(`[navhub-taxonomy-audit] 审计完成，共发现 ${res.proposalsCount} 条治理提案`);
+    const byKind = Object.entries(res.byKind)
+      .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+      .map(([kind, count]) => `${kind}:${count}`)
+      .join(" / ");
+    // 日报口径：一行里同时出现总数与分类型分布，运营不必再点进队列才知道「今天多了什么」
+    console.log(
+      `[navhub-taxonomy-audit] 审计完成：${res.proposalsCount} 条提案（${byKind || "无"}）`,
+    );
+    // dryRun 是演练，不落审计日志，避免污染运营时间线
+    if (!payload.dryRun) {
+      await this.ctx.repo.audit({
+        actor: "system:job-runner",
+        actorKind: "job",
+        action: "taxonomy.audit.daily",
+        target: "taxonomy",
+        diff: { proposalsCount: res.proposalsCount, byKind: res.byKind },
+      });
+    }
   }
 
   /* --------------------------- 底层执行 --------------------------- */

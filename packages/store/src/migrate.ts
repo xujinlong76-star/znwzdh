@@ -188,10 +188,14 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
       : "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     // 类目 slug 全局唯一（URL 是 /category/{slug}，不带父级路径）。
     // 部分索引：NULL 不进索引，所以回填窗口里多行 NULL 不冲突。
-    // 标题的「每父唯一」索引故意**不**放这里 —— 现有库里有「语言」×3，
-    // 建不上会被下面的 catch 静默吞掉，变成「规则写在文档里、数据库不认」的假绿灯；
-    // 等 P3 把重名收敛干净后再登记。
+    // 标题的「每父唯一」索引在 P3 收敛重名后登记（两条部分索引分别覆盖子树与根层：
+    // SQLite 把 NULL 视为互不相同，单条 (parent_id,title) 唯一索引拦不住根重名；
+    // 部分索引在 PG 上同样可建，不依赖 NULLS NOT DISTINCT）。
+    // P3 迁移窗口里 taxonomy-migrate.mjs 会在投影 registry 之前临时 DROP 掉它们，
+    // 否则旧根「AI 工具」会与 registry 根同名冲突。
     "CREATE UNIQUE INDEX IF NOT EXISTS categories_slug_idx ON categories(slug) WHERE slug IS NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS categories_child_title_uniq ON categories(parent_id, title) WHERE parent_id IS NOT NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS categories_root_title_uniq ON categories(title) WHERE parent_id IS NULL",
     // 行为事件身份等值过滤（behaviorEvents/deleteBehaviorEvents 从 meta LIKE 迁到 identity =）
     "CREATE INDEX IF NOT EXISTS events_identity_idx ON events(identity)",
     // 工作区明文专用表（M3）：原先 workspaces:<id> / ws_members:<id>:* 明文写在

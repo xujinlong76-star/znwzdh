@@ -14,6 +14,7 @@ import {
   type FacetGroupSummary,
   type SkosConcept,
   type TaxonomyProposal,
+  type TaxonomyProposalKind,
   type SiteOfflineArchive,
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
@@ -1078,7 +1079,11 @@ export class Repository {
     return taxonomyRepo.dismissTaxonomyProposal(this, id, actor);
   }
 
-  async runTaxonomyAudit(options: { dryRun?: boolean; siteLimit?: number } = {}): Promise<{ proposalsCount: number; proposals: TaxonomyProposal[] }> {
+  async runTaxonomyAudit(options: { dryRun?: boolean; siteLimit?: number } = {}): Promise<{
+    proposalsCount: number;
+    proposals: TaxonomyProposal[];
+    byKind: Partial<Record<TaxonomyProposalKind, number>>;
+  }> {
     return taxonomyRepo.runTaxonomyAudit(this, options);
   }
 

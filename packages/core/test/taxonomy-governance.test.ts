@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  LEAF_TOO_SMALL_MIN_SITES,
+  auditDuplicateTitles,
+  auditLeafTooSmall,
   auditSiteCategorization,
   auditTagConsolidation,
   auditZeroResultGaps,
@@ -96,6 +99,53 @@ describe("Taxonomy Governance Core Algorithms", () => {
     expect(proposals[0].kind).toBe("categorization_mismatch");
     expect(proposals[0].suggestedValue).toBe("开发运维");
     expect(proposals[0].confidence).toBeGreaterThan(0.7);
+  });
+});
+
+describe("类目健康审计（P6：只出提案，不自动动树）", () => {
+  it("叶子过小只对叶子出提案，根与「未分类」豁免", () => {
+    const proposals = auditLeafTooSmall([
+      { id: "root-x", title: "工具", sites: 3 }, // 根：导航用，不按站点量治理
+      { id: "cat-uncategorized", title: "未分类", slug: "uncategorized", parentId: "root-x", sites: 0 },
+      { id: "leaf-empty", title: "空叶", parentId: "root-x", sites: 0 },
+      { id: "leaf-small", title: "小叶子", parentId: "root-x", sites: 7 },
+      { id: "leaf-ok", title: "健康叶子", parentId: "root-x", sites: 40 },
+    ]);
+
+    expect(proposals.map((p) => p.targetId)).toEqual(["leaf-empty", "leaf-small"]);
+    expect(proposals.every((p) => p.kind === "leaf_too_small")).toBe(true);
+    expect(proposals.every((p) => p.meta?.minSites === LEAF_TOO_SMALL_MIN_SITES)).toBe(true);
+    const empty = proposals.find((p) => p.targetId === "leaf-empty")!;
+    expect(empty.meta?.actionHint).toBe("demote_to_tags");
+    expect(empty.confidence).toBeGreaterThan(proposals.find((p) => p.targetId === "leaf-small")!.confidence);
+  });
+
+  it("阈值可覆盖：恰好等于健康线不算过小", () => {
+    expect(auditLeafTooSmall([{ id: "l", title: "叶", parentId: "r", sites: 20 }])).toEqual([]);
+    expect(auditLeafTooSmall([{ id: "l", title: "叶", parentId: "r", sites: 19 }])).toHaveLength(1);
+  });
+
+  it("同父同名出 duplicate_title，保留站点更多的那条；跨父重名不算", () => {
+    const proposals = auditDuplicateTitles([
+      { id: "a1", title: "编程语言", parentId: "dev", sites: 9 },
+      { id: "a2", title: "编程 语言", parentId: "dev", sites: 30 }, // 规范化后同名
+      { id: "a3", title: "编程语言", parentId: "edu", sites: 4 }, // 不同父级：允许
+      { id: "root-1", title: "开发", sites: 0 },
+      { id: "root-2", title: "开发", sites: 12 }, // 一级根重名同样要管
+    ]);
+
+    expect(proposals.map((p) => p.targetId).sort()).toEqual(["a1", "root-1"]);
+    const leafDup = proposals.find((p) => p.targetId === "a1")!;
+    expect(leafDup.kind).toBe("duplicate_title");
+    expect(leafDup.meta?.keepId).toBe("a2");
+    expect(leafDup.meta?.groupSize).toBe(2);
+    expect(proposals.find((p) => p.targetId === "root-1")!.meta?.keepId).toBe("root-2");
+  });
+
+  it("提案 id 稳定：重复审计不会在队列里堆重复行", () => {
+    const input = [{ id: "leaf-1", title: "叶", parentId: "r", sites: 1 }];
+    expect(auditLeafTooSmall(input)[0]!.id).toBe("leaf_too_small_leaf-1");
+    expect(auditLeafTooSmall(input)[0]!.id).toBe(auditLeafTooSmall(input)[0]!.id);
   });
 });
 

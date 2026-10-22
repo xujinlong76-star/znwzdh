@@ -53,6 +53,13 @@ describe("migrateSiteIndexes：按方言分派", () => {
     await migrateSiteIndexes(db);
     expect(calls.some((s) => s.includes("sites_url_idx") && s.includes("WHERE deleted_at IS NULL"))).toBe(true);
     expect(calls.some((s) => s.includes("events_identity_idx"))).toBe(true);
+    // P3 的「每父标题唯一」：两条部分索引（子树 + 根层），PG 不依赖 NULLS NOT DISTINCT
+    expect(
+      calls.some((s) => s.includes("categories_child_title_uniq") && s.includes("parent_id, title") && s.includes("WHERE parent_id IS NOT NULL")),
+    ).toBe(true);
+    expect(
+      calls.some((s) => s.includes("categories_root_title_uniq") && s.includes("ON categories(title)") && s.includes("WHERE parent_id IS NULL")),
+    ).toBe(true);
   });
 
   it("libsql：走同步 exec，而不是不存在的 pg.query", async () => {

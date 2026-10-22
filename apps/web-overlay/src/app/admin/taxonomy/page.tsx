@@ -23,6 +23,8 @@ import {
   Clock,
   ArrowRight,
   SlidersHorizontal,
+  Layers,
+  Copy,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,7 +32,14 @@ import { hubGet, hubSend } from '@/lib/navhub-api'
 
 interface TaxonomyProposal {
   id: string
-  kind: 'categorization_mismatch' | 'tag_consolidation' | 'zero_result_gap' | 'facet_gap' | 'category_gap'
+  kind:
+    | 'categorization_mismatch'
+    | 'tag_consolidation'
+    | 'zero_result_gap'
+    | 'facet_gap'
+    | 'category_gap'
+    | 'leaf_too_small'
+    | 'duplicate_title'
   targetId: string
   targetTitle?: string
   currentValue?: string
@@ -79,6 +88,18 @@ const KIND_META: Record<TaxonomyProposal['kind'], { label: string; icon: any; co
     icon: FolderTree,
     color: 'text-sky-600 dark:text-sky-400',
     bg: 'bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800',
+  },
+  leaf_too_small: {
+    label: '叶子过小',
+    icon: Layers,
+    color: 'text-rose-600 dark:text-rose-400',
+    bg: 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800',
+  },
+  duplicate_title: {
+    label: '同级重名',
+    icon: Copy,
+    color: 'text-orange-600 dark:text-orange-400',
+    bg: 'bg-orange-50 dark:bg-orange-950/40 border-orange-200 dark:border-orange-800',
   },
 }
 
@@ -132,12 +153,20 @@ export default function AdminTaxonomyPage() {
   const handleRunAudit = async () => {
     setAuditing(true)
     try {
-      const res = await hubSend<{ ok: boolean; proposalsCount: number }>(
+      const res = await hubSend<{ ok: boolean; proposalsCount: number; byKind?: Record<string, number> }>(
         '/api/taxonomy/audit',
         'POST',
         { dryRun: false, siteLimit: 500 },
       )
-      showFeedback('success', `全站体检审计完成！共发现/更新 ${res.proposalsCount} 条治理提案`)
+      const summary = Object.entries(res.byKind ?? {})
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([kind, count]) => `${KIND_META[kind as TaxonomyProposal['kind']]?.label ?? kind} ${count}`)
+        .join(' / ')
+      showFeedback(
+        'success',
+        `全站体检审计完成！共发现/更新 ${res.proposalsCount} 条治理提案${summary ? `（${summary}）` : ''}`,
+      )
       await loadProposals()
     } catch (err) {
       showFeedback('error', '触发审计失败: ' + (err instanceof Error ? err.message : String(err)))
@@ -284,6 +313,8 @@ export default function AdminTaxonomyPage() {
             {[
               { id: 'all', label: '全部类型' },
               { id: 'category_gap', label: '类目缺口' },
+              { id: 'leaf_too_small', label: '叶子过小' },
+              { id: 'duplicate_title', label: '同级重名' },
               { id: 'tag_consolidation', label: '标签收敛' },
               { id: 'categorization_mismatch', label: '跨类迁移' },
               { id: 'zero_result_gap', label: '零结果发现' },
@@ -451,6 +482,19 @@ export default function AdminTaxonomyPage() {
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         {proposal.reason}
                       </p>
+
+                      {/* 类目健康提案的处置线索：采纳不会自动合并，审核人要手动去类目管理执行 */}
+                      {proposal.kind === 'duplicate_title' && (
+                        <p className="text-[11px] text-muted-foreground/80 font-mono">
+                          保留项：{String(proposal.meta?.keepTitle ?? '')} · {String(proposal.meta?.keepId ?? '')}
+                        </p>
+                      )}
+                      {proposal.kind === 'leaf_too_small' && (
+                        <p className="text-[11px] text-muted-foreground/80 font-mono">
+                          站点 {String(proposal.meta?.sites ?? 0)} / 健康线 {String(proposal.meta?.minSites ?? 20)} ·{' '}
+                          {proposal.meta?.actionHint === 'demote_to_tags' ? '建议降级为标签' : '建议与兄弟叶合并'}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -492,7 +536,9 @@ export default function AdminTaxonomyPage() {
                           className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-8 px-3"
                         >
                           <Check className="w-3.5 h-3.5 mr-1" />
-                          采纳
+                          {proposal.kind === 'leaf_too_small' || proposal.kind === 'duplicate_title'
+                            ? '记录决议'
+                            : '采纳'}
                         </Button>
                       </div>
                     </div>

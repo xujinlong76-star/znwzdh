@@ -41,6 +41,7 @@ export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       ok: true,
       dryRun: body.data.dryRun,
       proposalsCount: result.proposalsCount,
+      byKind: result.byKind,
       proposals: result.proposals,
     };
   });

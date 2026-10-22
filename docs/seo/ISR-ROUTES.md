@@ -82,6 +82,20 @@ node node_modules/vitest/vitest.mjs run scripts/check-isr-routes.test.ts
 没能复现第二次，因此不判失败，只在 `redirectTarget()` 里取第一个片段、不让门禁自己被
 一个不存在的 URL 带跑（有用例钉住）。若哪天能在产物里稳定复现双写，那才是产品缺陷。
 
+**2026-10-23 补：双写复现了，但结论不变。** 在 CI 同构复现里清掉 `route-cache` 冷启动后：
+
+```
+curl -D - http://localhost:3079/category/ai-tools/p/1   → location: /category/ai-tools ×2
+curl -D - http://localhost:3079/sites/p/1               → location: /sites ×1
+（同一进程再请求一轮，两条路径都只剩 ×1）
+```
+
+即双写出现在**过期快照的后台再生成窗口**（`s-maxage=60` 而 `x-nextjs-stale-time: 300`），
+不是某个路由的固有行为。要害在于两处值**完全相同**：真实客户端读单行 `Location`
+（curl `-L` 实测 `final=/sites code=200`），拿到哪一条都一样。那个 404 从头到尾是
+Node `Headers.get()` 把同名头用 `, ` 拼接的门禁侧假象。所以维持原判：不改产品，
+门禁继续只取第一个片段。
+
 ---
 
 ## 裁决 2：降级壳（中枢不可达）不落缓存这条路放弃，改为给坏快照盖 `noindex`
@@ -116,3 +130,43 @@ node node_modules/vitest/vitest.mjs run apps/web/test/degrade.test.ts
 **不出图**，而不是出一张指向别人机器的图）；`/algorithms` 补了 `revalidate = 3600`。
 两侧各有一条取证：构建产物（`checkPermanentSnapshots`，读 `server/app/*.html`）与线上响应
 （`--live` 读响应体、用 `scripts/lib/seo-audit.mjs` 的端口感知判定）。
+
+---
+
+## 裁决 4：CI 自建预览（`check-isr-live`）有两个必须成立的前提，否则红在无关处
+
+门禁本身连红两次才把这两条逼出来 —— 每次都是「预览站根本没跑起来/没喂好」，
+而不是收录形态有问题。两条都只在 CI 的作业形状里出现，本地手工复现很容易绕过。
+
+**前提 A：`next start` 必须以 `apps/web` 为工作目录。**
+在仓库根执行 `node apps/web/node_modules/next/dist/bin/next start` 会打印
+`The module 'react' was not found`，然后起来一个**没有任何路由的空应用**：
+`curl -sf /sitemap.xml` 一直非 2xx，就绪探测等满 120s 才红灯（2026-10-23 实测：
+同一条命令在根目录拿不到 sitemap，`cd apps/web` 后立刻 137 条 `<loc>`、57 条 `/site/`）。
+作业里写成 `working-directory: apps/web`。
+
+**前提 B：中枢必须在 `next build` 之前起来（并额外 purge 一次快照）。**
+`/sitemap.xml` 在产物里是 `compute: "static"` + `initialRevalidateSeconds: 300`
+（读 `prerender-manifest.json` 的 `routes["/sitemap.xml"]`）。构建期没有中枢，烤出来的
+就是**只有 9 条纯静态条目的快照**（`/site/*` 为 0），而 `next start` 会把它当
+`x-nextjs-cache: HIT` 连续供满 300s —— 就绪探测只等 120s，永远等不到中枢喂进来的条目。
+
+```bash
+# 实测：清掉 route-cache、保持构建快照不动，冷启动第一次请求就是旧快照
+rm -rf apps/web/.next-isrlive/server/route-cache
+# → locs=9  site=0  x-nextjs-cache: HIT
+# 再把 server/app/sitemap.xml.{body,meta} 一起删掉，同一份产物
+# → locs=137 site=57（走真·运行时渲染，读活着的中枢）
+```
+
+所以作业顺序改成 `migrate → seed → 密钥 → 起中枢 → build → purge 快照 → next start → 抽查`：
+构建期就有真数据（贴近真实部署），purge 只是补一道保险，让抽查测到的确实是运行时渲染
+而不是构建产物。**删的只是 `.body`/`.meta` 这一对文件** —— `server/app/sitemap.xml/` 是
+同名**目录**（里面是 `route.js`），删掉等于把路由删了。
+
+**复核**：
+
+```bash
+node -e "const y=require('js-yaml'),f=require('fs');const d=y.load(f.readFileSync('.github/workflows/ci.yml','utf8'));
+d.jobs['check-isr-live'].steps.forEach((s,i)=>console.log(i,s.name||s.run&&s.run.split('\n')[0],'cwd='+(s['working-directory']||'.')))"
+```

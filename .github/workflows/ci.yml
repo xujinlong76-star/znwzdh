@@ -181,11 +181,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: node scripts/vendor-web.mjs
-      # 构建期**给** origin：这个 job 测的是产物跑起来的行为，
-      # 「无 origin 能否预渲染」由 test-web 里那条 check-isr-routes 负责，两条互补。
-      - run: pnpm --filter navsphere build
-        env:
-          NAVHUB_SITE_URL: http://localhost:3000
       # migrate 与 seed 都以仓库根为 CWD：config.ts 的 NAVHUB_SQLITE_PATH 默认是
       # cwd 相对的 ./data/navhub.db（见根 package.json 的 //seed 注释）。
       # seed 不建表，所以必须先 migrate；空库会让 sitemap 为空，--live 每个族
@@ -198,12 +193,39 @@ jobs:
       # 不进 git、不进日志（预览站不需要能被外部登录）。
       - name: 生成一次性会话密钥
         run: node -e "console.log('AUTH_SECRET=' + require('crypto').randomBytes(32).toString('hex'))" >> "$GITHUB_ENV"
+      # 中枢必须在 build **之前**起来。两条实测证据（2026-10-23 本地同构复现）：
+      # 1) `/sitemap.xml` 在产物里是 `compute: "static"` + `initialRevalidateSeconds: 300`
+      #    —— 构建期没有中枢，烤出来的就是 9 条纯静态条目的快照（`/site/*` 为 0）；
+      #    `next start` 会把这个快照当 HIT 连续供满 300s，就绪探测只等 120s，
+      #    于是门禁必然红在「预览站没给出中枢喂好的 sitemap」这一条无关处。
+      # 2) 快照本身也可以事后删掉（下一步的 purge），但让构建期就有真数据，
+      #    才让这个 job 的产物贴近真实部署（构建时中枢在线）。
       - name: 启动中枢（后台）
         run: nohup node apps/api/src/main.ts > /tmp/hub.log 2>&1 &
         env:
           PORT: 8787
+      # 构建期**给** origin：这个 job 测的是产物跑起来的行为，
+      # 「无 origin 能否预渲染」由 test-web 里那条 check-isr-routes 负责，两条互补。
+      - run: pnpm --filter navsphere build
+        env:
+          NAVHUB_SITE_URL: http://localhost:3000
+      # 把构建期烤出的 sitemap/robots 快照连同路由缓存一起删掉，逼第一次请求走
+      # 真·运行时渲染（读活着的中枢），而不是吃 300s 的旧快照。
+      # 只删 `.body`/`.meta` 这一对文件：`server/app/sitemap.xml/` 是同名的**目录**
+      # （里面是 route.js），删了会把路由本身删没。
+      - name: 清掉构建期烤出的 sitemap 快照
+        run: |
+          rm -f apps/web/.next/server/app/sitemap.xml.body apps/web/.next/server/app/sitemap.xml.meta \
+                apps/web/.next/server/app/robots.txt.body apps/web/.next/server/app/robots.txt.meta
+          rm -rf apps/web/.next/server/route-cache
+          ls apps/web/.next/server/app | grep -E "sitemap|robots" || echo "（sitemap/robots 快照已清空）"
+      # `next start` 必须以 apps/web 为 CWD：它的 app 目录取 process.cwd()，
+      # 在仓库根跑会报「react was not found」并起来一个没有任何路由的空应用
+      # —— 每个请求都非 2xx，就绪探测等满 120s 后红灯（2026-10-23 实测：
+      # 根目录起 → curl 拿不到 sitemap.xml；apps/web 起 → 立刻 137 条 /site 57 条）。
       - name: 启动 Web 产物（next start，后台）
-        run: nohup node apps/web/node_modules/next/dist/bin/next start -p 3000 > /tmp/web.log 2>&1 &
+        working-directory: apps/web
+        run: nohup node node_modules/next/dist/bin/next start -p 3000 > /tmp/web.log 2>&1 &
         env:
           NAVHUB_SITE_URL: http://localhost:3000
       - name: ISR 线上抽查
@@ -217,24 +239,31 @@ jobs:
         # 标签 0——种子标签进不了 sitemap、合集 2）。下限取 8 留 3 页余量：
         # 单一种子数据变薄可以容忍，中枢整条链路失联（只剩 9 条静态 ⇒ 3 页）必须红。
         run: |
+          ready=0
           for i in $(seq 1 60); do
-            if curl -sf http://localhost:3000/sitemap.xml | grep -q "<loc>http://localhost:3000/site/"; then break; fi
+            if curl -sf http://localhost:3000/sitemap.xml | grep -q "<loc>http://localhost:3000/site/"; then ready=1; break; fi
             sleep 2
-            if [ "$i" = "60" ]; then echo "✖ 预览站 120s 内没给出中枢喂好的 sitemap（/site/* 条目缺失）"; tail -40 /tmp/hub.log /tmp/web.log; exit 1; fi
           done
+          smcount=$(curl -sf http://localhost:3000/sitemap.xml | grep -c '<loc>' || true)
+          if [ "$ready" != "1" ]; then
+            echo "::error::sitemap 120s 内没有 /site/* 条目（中枢失联或 seed 空），当前条目数 ${smcount}"
+            tail -20 /tmp/hub.log /tmp/web.log || true
+            exit 1
+          fi
           set +e
-          node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 --min-checked=8 2>&1 | tee /tmp/isr-live.log
-          rc=${PIPESTATUS[0]}
+          node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 --min-checked=8 > /tmp/isr-live.log 2>&1
+          rc=$?
           set -e
+          cat /tmp/isr-live.log
           if [ "$rc" != "0" ]; then
-            # 无 token 时作业日志接口是 403，能跨机器读到的只有 annotations（页面与
-            # check-runs API 都公开）。红的时候把判据本身写成 ::error::，
-            # 不用靠猜：覆盖几页、sitemap 几条、红在哪一族，一眼可见。
-            echo "sitemap 条目数：$(curl -sf http://localhost:3000/sitemap.xml | grep -c '<loc>')"
-            {
-              echo "sitemap 条目数：$(curl -sf http://localhost:3000/sitemap.xml | grep -c '<loc>')"
-              grep -E "^✖|^– |线上 ISR 抽查只覆盖到|未通过" /tmp/isr-live.log | cut -c1-200
-            } | while IFS= read -r line; do echo "::error::${line}"; done
+            # 无 token 时作业日志接口是 403，跨机器只剩 annotations 可读，而且
+            # 消息必须「无条件」发：上一版按 grep 匹配行发，门禁自己抛异常时
+            # 一行都不剩，等于白加。这里固定发两条 —— 判据数字 + 输出尾部原文。
+            printf '::error::ISR 门禁 rc=%s，sitemap 条目 %s，红行 %s 条，覆盖行：%s\n' \
+              "$rc" "$smcount" "$(grep -c '^✖' /tmp/isr-live.log || true)" \
+              "$(grep -oE '共 [0-9]+ 页|[0-9]+ 页形态正确|只覆盖到 [0-9]+ 页' /tmp/isr-live.log | tr '\n' '/' | sed 's/::/--/g')"
+            printf '::error::输出尾部：%s\n' \
+              "$(tail -c 600 /tmp/isr-live.log | tr '\n%' '|')"
             exit "$rc"
           fi
       - name: 失败时留下预览站日志

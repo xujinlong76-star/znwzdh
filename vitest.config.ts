@@ -49,6 +49,12 @@ export default defineConfig({
       // 产物统一落在仓库根 coverage/（已 gitignore）。
       // scripts/check-coverage.mjs 里的 COVERAGE_DIR 常量必须与此保持一致。
       reportsDirectory: "./coverage",
+      // 关掉 vitest 自带的产物清理：它会在收尾时整体删除 coverage/.tmp（几百个文件），
+      // 被本机的批量删除护栏拦下 → 抛错 → `reportsDirectory` 里只剩半成品，
+      // coverage-summary.json 根本没写出来，脚本读到的就是空。
+      // 不清理只是留下 .tmp 与上一轮的残留，两者都在被 gitignore 的 coverage/ 内，无副作用。
+      clean: false,
+      cleanAfterRun: false,
     },
   },
 });

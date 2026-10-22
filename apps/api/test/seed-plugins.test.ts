@@ -12,6 +12,9 @@
  *   2. slug 唯一、版本号 x.y.z、许可证为免费许可；
  *   3. 网址包达到专业导航规模：分类与站点数量达标，站点必须带
  *      描述/合法分类（必须引用包内已声明分类）/标签，URL 归一后不重复；
+ *   3b. 包内分类必须解析得到权威树（CATEGORY_REGISTRY）的叶子：包内自洽但树里
+ *      查无此叶 = 装完全进未分类，表面成功、归类丢失；并对「包×叶子」总覆盖面
+ *      定棘轮（近义标题塌到同一叶 = 覆盖面缩水）；
  *   4. 搜索引擎包：每个引擎带 {q}、前缀合法唯一、icon 为短文本（非远程地址）；
  *   5. 主题：包含完整色板 token 与圆角，而非只改一两个变量；
  *   6. 工作台预设：组件类型必须存在于前端注册表，且 col/rowSpan 落在该组件的
@@ -23,6 +26,9 @@ import {
   comparePluginVersions,
   normalizePluginUrlKey,
   PLUGIN_LIMITS,
+  REGISTRY_BY_SLUG,
+  resolveRegistryEntry,
+  resolveRegistryLeaf,
   validateAndCleanPluginManifest,
   type PluginManifest,
   type BundlePayload,
@@ -36,8 +42,16 @@ import { seedPluginDefs } from "../src/seed-plugins.ts";
 /** 允许在种子数据里出现的免费许可证（用户要求：插件全部免费提供下载使用） */
 const FREE_LICENSES = new Set(["MIT", "Apache-2.0", "GPL-3.0", "BSD-3-Clause"]);
 
-/** 商用级网址包的内容下限（分类数 / 站点数 / 单个分类内最少站点数） */
-const PROFESSIONAL_SITE_PACK = { minCategories: 18, minSites: 190, minSitesPerCategory: 6 }
+/**
+ * 商用级网址包的内容下限。
+ *
+ * minCategories / minSites / minSitesPerCategory 是「单个包」的体量口径。
+ * minLeafCoveragePairs 是「全市场」的口径：29 个包声明的分类解析到的**不同叶子**
+ * 去重后的总覆盖对数。2026-10-22 实测 302（最差包 18 条垂类标题只塌到 1 个叶子），
+ * 定档 300 只是防止继续缩水；P2b 逐包把近义标题改成 registry 叶子标题后要抬到
+ * 「包数 × minCategories」量级。
+ */
+const PROFESSIONAL_SITE_PACK = { minCategories: 18, minSites: 190, minSitesPerCategory: 6, minLeafCoveragePairs: 300 }
 /** 商用级搜索引擎包的下限 */
 const PROFESSIONAL_SEARCH_PACK = { minEngines: 36 }
 /** 商用级主题的 token 下限（色板变量可用集合共 19 色 + 圆角 = 20 项，取满才算完整皮肤） */
@@ -192,6 +206,63 @@ describe("网址包：达到专业导航站点的内容规模与完整度", () =
         seen.add(key)
       }
     }
+  })
+})
+
+describe("网址包：分类必须落在权威树上（方案 §2.6 / P2a-7）", () => {
+  const packs = () => collectValidated().items.filter((i) => i.manifest.kind === "site-pack")
+
+  it("每个声明分类都解析得到叶子，且 parentCategory 与权威树的根一致", () => {
+    for (const item of packs()) {
+      const payload = item.manifest.payload as SitePackPayload
+      for (const category of payload.categories ?? []) {
+        const leaf = resolveRegistryLeaf(category.title)
+        expect(leaf, `${item.slug} 的分类「${category.title}」不在权威树里：安装时会落未分类并产 category_gap 提案`).toBeTruthy()
+        if (!leaf?.parentSlug) continue
+        if (!category.parentCategory) continue
+        const parent = resolveRegistryEntry(category.parentCategory)
+        expect(parent?.slug, `${item.slug} 的 parentCategory「${category.parentCategory}」不是权威树的一级根`).toBeTruthy()
+        const rootTitle = parent?.slug ? REGISTRY_BY_SLUG.get(parent.slug)?.title : undefined
+        expect(
+          parent?.slug === leaf.parentSlug,
+          `${item.slug} 分类「${category.title}」声明挂在「${rootTitle ?? category.parentCategory}」下，权威树里它的父级是「${REGISTRY_BY_SLUG.get(leaf.parentSlug)?.title ?? leaf.parentSlug}」`,
+        ).toBe(true)
+      }
+    }
+  })
+
+  it("站点引用的分类解析得到叶子，而不只是「包内声明过」", () => {
+    // 包内自造名与权威树可以各自成立：声明与站点都自洽、但树里查无此叶，
+    // 装完照样全进未分类。这条把口径从「包内一致」抬到「树内一致」。
+    for (const item of packs()) {
+      const payload = item.manifest.payload as SitePackPayload
+      for (const site of payload.sites) {
+        expect(
+          resolveRegistryLeaf(site.category),
+          `${item.slug} 站点「${site.title}」的分类「${site.category}」解析不到权威树叶子`,
+        ).toBeTruthy()
+      }
+    }
+  })
+
+  it("全市场对「不同叶子」的覆盖面是棘轮：包内近义标题塌到同一叶等于覆盖面缩水", () => {
+    // 每个包都声明 18–20 个分类，但它们解析到的**不同叶子**可以少得多：
+    // 实测 auto-driving 的 18 条垂类标题只解析出 1 个叶子。近义重复在 P2b
+    // 逐包改写内容时收敛，这里按「包×叶子」去重后的总覆盖面定档，只许升不许降。
+    const pairs = new Set<string>()
+    const perPack: string[] = []
+    for (const item of packs()) {
+      const payload = item.manifest.payload as SitePackPayload
+      const leaves = new Set(
+        (payload.categories ?? []).map((c) => resolveRegistryLeaf(c.title)?.slug).filter((s): s is string => Boolean(s)),
+      )
+      for (const slug of leaves) pairs.add(`${item.slug}::${slug}`)
+      perPack.push(`${item.slug}=${leaves.size}/${(payload.categories ?? []).length}`)
+    }
+    expect(
+      pairs.size,
+      `不同「包×叶子」覆盖面只剩 ${pairs.size}（下限 ${PROFESSIONAL_SITE_PACK.minLeafCoveragePairs}），各包分布：${perPack.join(" ")}`,
+    ).toBeGreaterThanOrEqual(PROFESSIONAL_SITE_PACK.minLeafCoveragePairs)
   })
 })
 

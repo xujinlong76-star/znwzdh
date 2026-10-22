@@ -33,7 +33,7 @@ function sitePackRaw(
     icon: "🧪",
     version: "1.0.0",
     tags: ["测试"],
-    payload: { categories: [{ title: "AI 编程" }], sites },
+    payload: { categories: [{ title: "AI 编程助手" }], sites },
   };
 }
 
@@ -264,24 +264,24 @@ describe("安装 / 卸载（site-pack 真实落库）", () => {
     expect(again.removed).toBe(false);
     expect(again.removedSites).toBe(0);
   });
-  it("卸载 site-pack 且 removeSites=true 时同步清理专属分类与子分类", async () => {
+  it("安装只解析权威树：不造 plugin:* 类目行，卸载也吃不到 registry 叶子", async () => {
     const pluginWithCat = await repo.createPlugin({
       manifest: manifestOf({
         manifestVersion: 1,
         kind: "site-pack",
         name: "专属分类包",
-        description: "测试专属分类同步清理",
+        description: "测试安装落位与卸载半径",
         icon: "🧪",
         version: "1.0.0",
         tags: ["测试"],
         payload: {
-          categories: [{ title: "专属测试主分类" }],
+          categories: [{ title: "AI 编程助手", parentCategory: "AI 工具" }],
           sites: [
             {
               url: "https://cat-test-1.example.com",
               title: "CatSite 1",
-              category: "专属测试主分类",
-              subCategory: "专属测试子分类",
+              category: "AI 编程助手",
+              subCategory: "对话助手",
             },
           ],
         },
@@ -289,21 +289,97 @@ describe("安装 / 卸载（site-pack 真实落库）", () => {
       status: "published",
     });
 
-    await repo.installPlugin(pluginWithCat.slug, "user-cat-test");
-    let catRows = await repo.raw("SELECT id FROM categories WHERE source = ?", ["plugin:" + pluginWithCat.slug]);
-    expect(catRows.length).toBe(2); // 主分类与子分类
+    const installed = await repo.installPlugin(pluginWithCat.slug, "user-cat-test");
+    // 权威树条目是首次安装时播种出来的，但来源必须是 registry
+    expect(installed.applied.categoriesCreated).toBeGreaterThan(0);
+    expect(installed.applied.categoryGaps ?? []).toEqual([]);
+    const minted = await repo.raw("SELECT id FROM categories WHERE source LIKE 'plugin:%'");
+    expect(minted.length).toBe(0);
 
+    const leaf = await repo.getCategoryBySlug("ai-coding-assistant");
+    expect(leaf).not.toBeNull();
+    expect(leaf!.source).toBe("registry");
+    const root = await repo.getCategoryBySlug("ai-tools");
+    expect(leaf!.parentId).toBe(root?.id);
+    const siteRows = await repo.raw("SELECT category_id, sub_category_id FROM sites WHERE url = ?", [
+      "https://cat-test-1.example.com",
+    ]);
+    expect(String(siteRows[0].category_id)).toBe(leaf!.id);
+    // 同根兄弟叶子才允许当二级（跨根会让 dashboard 把站点计到两个一级根名下）
+    const sibling = await repo.getCategoryBySlug("chat-assistants");
+    expect(String(siteRows[0].sub_category_id)).toBe(sibling?.id);
+
+    // 存量数据里旧安装留下的 plugin:* 行：卸载仍要清掉
+    await repo.createCategory({ title: "旧版专属分类", source: `plugin:${pluginWithCat.slug}` });
     const uninst = await repo.uninstallPlugin(pluginWithCat.slug, "user-cat-test", { removeSites: true });
     expect(uninst.removed).toBe(true);
     expect(uninst.removedSites).toBe(1);
-    expect(uninst.removedCategories).toBe(2);
+    expect(uninst.removedCategories).toBe(1);
+    // 反噬回归：新树叶子不在卸载的射程内（方案 §2.4 修正 3）
+    expect(await repo.getCategoryBySlug("ai-coding-assistant")).not.toBeNull();
+    expect(await repo.getCategoryBySlug("ai-tools")).not.toBeNull();
+  });
 
-    catRows = await repo.raw("SELECT id FROM categories WHERE source = ?", ["plugin:" + pluginWithCat.slug]);
-    expect(catRows.length).toBe(0);
+  it("垂类标题塌进同一个叶子时，包内分类名降级成标签保住那层细分", async () => {
+    // 真实形态：auto-driving 的 18 个包内分类全部解析到「汽车与驾驶」一个叶子。
+    // 树只有两层、放不下第三层细分，不接住的话装完就是 200 站平铺、层级全丢。
+    const plugin = await repo.createPlugin({
+      manifest: manifestOf({
+        manifestVersion: 1,
+        kind: "site-pack",
+        name: "垂类折叠包",
+        description: "测试包内细分的承接方式",
+        icon: "🧪",
+        version: "1.0.0",
+        tags: ["测试"],
+        payload: {
+          // 两个标题是同一个叶子（anime-and-fandom）的 legacyTitles —— 折叠就发生在这里
+          categories: [{ title: "科幻与未来" }, { title: "动漫二次元" }],
+          sites: [
+            { url: "https://collapse-1.example.com", title: "折叠站 1", category: "科幻与未来", tags: ["社区"] },
+            { url: "https://collapse-2.example.com", title: "折叠站 2", category: "动漫二次元" },
+            { url: "https://collapse-3.example.com", title: "已有同名标签", category: "科幻与未来", tags: ["科幻与未来"] },
+            {
+              url: "https://collapse-4.example.com",
+              title: "标签已满",
+              category: "科幻与未来",
+              tags: ["t1", "t2", "t3", "t4", "t5"],
+            },
+          ],
+        },
+      }),
+      status: "published",
+    });
+
+    const installed = await repo.installPlugin(plugin.slug, "user-collapse");
+    const leaf = await repo.getCategoryBySlug("anime-and-fandom");
+    expect(leaf).not.toBeNull();
+    // 两个包内标题共用一个叶子：类目只播种一次
+    expect(installed.applied.categoryGaps ?? []).toEqual([]);
+
+    const tagsOf = async (url: string) => {
+      const rows = await repo.raw(
+        `SELECT t.name AS name FROM sites s
+           JOIN site_tags st ON st.site_id = s.id
+           JOIN tags t ON t.id = st.tag_id
+          WHERE s.url = ?`,
+        [url],
+      );
+      return rows.map((r) => String(r.name)).sort();
+    };
+
+    expect(await tagsOf("https://collapse-1.example.com")).toEqual(["社区", "科幻与未来"].sort());
+    expect(await tagsOf("https://collapse-2.example.com")).toEqual(["动漫二次元"]);
+    // 站点已经带了这个标签：不能再插一遍（site_tags 重复行会让标签计数翻倍）
+    expect(await tagsOf("https://collapse-3.example.com")).toEqual(["科幻与未来"]);
+    // 契约上限 PLUGIN_LIMITS.maxSiteTags：满了就放弃折叠标签，不能从后门绕过清单校验的约束
+    expect(await tagsOf("https://collapse-4.example.com")).toEqual(["t1", "t2", "t3", "t4", "t5"]);
+
+    const siteRows = await repo.raw("SELECT category_id FROM sites WHERE url = ?", ["https://collapse-1.example.com"]);
+    expect(String(siteRows[0].category_id)).toBe(leaf!.id);
   });
 
   it("回收站里的用户站点也保护插件分类：卸载后保留分类，恢复站点仍落回原分类", async () => {
-    // 分类名必须独有：ensureCategory 按 title 去重，复用已有分类时 source 不会记为 plugin
     const plugin = await repo.createPlugin({
       manifest: manifestOf({
         manifestVersion: 1,
@@ -314,12 +390,12 @@ describe("安装 / 卸载（site-pack 真实落库）", () => {
         version: "1.0.0",
         tags: ["测试"],
         payload: {
-          categories: [{ title: "回收站专属分类" }],
+          categories: [{ title: "AI 写作办公" }],
           sites: [
             {
               url: "https://trash-cat-own.example.com",
               title: "插件站点",
-              category: "回收站专属分类",
+              category: "AI 写作办公",
             },
           ],
         },
@@ -327,9 +403,9 @@ describe("安装 / 卸载（site-pack 真实落库）", () => {
       status: "published",
     });
     await repo.installPlugin(plugin.slug, "user-trash-cat");
-    const catRows = await repo.raw("SELECT id FROM categories WHERE source = ?", ["plugin:" + plugin.slug]);
-    expect(catRows.length).toBe(1);
-    const categoryId = String(catRows[0]!.id);
+    // P2 起安装不再产 plugin:* 行，这条保护逻辑的夹具改成直接构造存量形态
+    const cat = await repo.createCategory({ title: "回收站专属分类", source: `plugin:${plugin.slug}` });
+    const categoryId = cat.id;
 
     // 用户把自己的站点放进插件分类，随后删除（进回收站）
     const userSite = await repo.createSite({

@@ -3,6 +3,9 @@ import { randomUUID, createHash } from "node:crypto";
 import {
   canonicalizeUrl,
   comparePluginVersions,
+  PLUGIN_LIMITS,
+  resolveRegistryEntry,
+  resolveRegistryLeaf,
   summarizePluginManifest,
   type BundlePayload,
   type PluginKind,
@@ -108,6 +111,10 @@ export interface PluginInstallApplied {
   categoriesCreated: number;
   createdSiteIds: string[];
   enginesAdded?: number;
+  /** 解析不出、只能落「未分类」的包内类目标题（已各记一条 category_gap 提案） */
+  categoryGaps?: string[];
+  /** 包声明的 parentCategory 与权威树不一致（站点仍按权威树落位，仅告警） */
+  categoryParentMismatches?: string[];
   /** bundle 安装时逐个成员的结果（非 bundle 为空） */
   bundleItems?: PluginBundleInstallItem[];
 }
@@ -680,12 +687,13 @@ export async function recordPluginAuditNote(
  * 安装 / 卸载
  * ------------------------------------------------------------------ */
 
-/** 子分类：按「父类 + 标题」精确匹配，缺则创建（挂到父类下） */
-async function ensureSubCategory(repo: Repository, parentId: string, title: string, source: string): Promise<string> {
-  const rows = await repo.raw("SELECT id FROM categories WHERE parent_id = ? AND title = ? LIMIT 1", [parentId, title]);
-  if (rows[0]) return String(rows[0].id);
-  const created = await repo.createCategory({ title, parentId, source });
-  return created.id;
+/** 站点包安装时的叶子解析结果：库里那一行的 id + 它在权威树里的位置 */
+interface PackLeaf {
+  id: string;
+  slug: string;
+  /** 权威树里的叶子标题；包自己的垂类标题与它不同才算「被折叠」 */
+  title: string;
+  parentSlug: string;
 }
 
 /**
@@ -810,6 +818,13 @@ export async function installPlugin(
         applied.sitesSkipped += memberApplied.sitesSkipped;
         applied.categoriesCreated += memberApplied.categoriesCreated;
         applied.createdSiteIds.push(...memberApplied.createdSiteIds);
+        applied.categoryGaps = [...new Set([...(applied.categoryGaps ?? []), ...(memberApplied.categoryGaps ?? [])])];
+        applied.categoryParentMismatches = [
+          ...new Set([
+            ...(applied.categoryParentMismatches ?? []),
+            ...(memberApplied.categoryParentMismatches ?? []),
+          ]),
+        ];
         const enginesAdded = memberApplied.enginesAdded ?? 0;
         applied.enginesAdded = (applied.enginesAdded ?? 0) + enginesAdded;
         bundleItems.push({
@@ -836,36 +851,92 @@ export async function installPlugin(
   if (plugin.kind === "site-pack") {
     const payload = plugin.manifest.payload as SitePackPayload;
     await repo.withTransaction(async () => {
-      // 分类解析：实例已有分类（大小写不敏感）优先复用，缺则创建并标记来源
-      const titleIndex = new Map<string, string>();
+      // 只认权威树：安装不再凭空造类目行。`plugin:*` 类目既是 106 个平铺根的成因，
+      // 也是「卸载/启动清扫把新树叶子一起吃掉」的反噬入口——不造行，反噬路径自动消失。
+      const knownSlugs = new Set<string>();
       for (const category of await repo.listCategories()) {
-        titleIndex.set(category.title.toLowerCase(), category.id);
+        if (category.slug) knownSlugs.add(category.slug.toLowerCase());
       }
+      const leafCache = new Map<string, PackLeaf | null>();
+      async function resolveLeaf(title: string): Promise<PackLeaf | null> {
+        const key = title.trim().toLowerCase();
+        if (!key) return null;
+        if (leafCache.has(key)) return leafCache.get(key)!;
+        const entry = resolveRegistryLeaf(title);
+        if (!entry) {
+          leafCache.set(key, null);
+          return null;
+        }
+        const row = await repo.ensureRegistryCategory(entry.slug);
+        if (!row) {
+          leafCache.set(key, null);
+          return null;
+        }
+        if (!knownSlugs.has(entry.slug)) {
+          knownSlugs.add(entry.slug);
+          applied.categoriesCreated++;
+        }
+        const leaf: PackLeaf = { id: row.id, slug: entry.slug, title: entry.title, parentSlug: entry.parentSlug ?? "" };
+        leafCache.set(key, leaf);
+        return leaf;
+      }
+
+      // 包声明的分类：解析不出就是缺口（站点级还会再兜一次），但绝不建 `plugin:*` 行
+      const gapTitles = new Map<string, string>();
+      const parentMismatches: string[] = [];
       for (const category of payload.categories ?? []) {
-        const key = category.title.trim().toLowerCase();
-        if (!key || titleIndex.has(key)) continue;
-        const id = await repo.ensureCategory(category.title.trim(), `plugin:${slug}`);
-        titleIndex.set(key, id);
-        applied.categoriesCreated++;
+        const leaf = await resolveLeaf(category.title);
+        if (!leaf) {
+          const key = category.title.trim().toLowerCase();
+          if (key) gapTitles.set(key, category.title.trim());
+          continue;
+        }
+        const declared = (category.parentCategory ?? "").trim();
+        if (!declared) continue;
+        const declaredRoot = resolveRegistryEntry(declared);
+        if (!declaredRoot || declaredRoot.slug !== leaf.parentSlug) {
+          parentMismatches.push(`${category.title.trim()}（声明父级「${declared}」≠ 权威树「${leaf.parentSlug}」）`);
+        }
       }
+
+      let uncategorizedId: string | null = null;
+      // 单分类包（旧夹具常见写法）：站点不重复写 category，包声明的那一个就是默认桶
+      const defaultTitle = payload.categories?.length === 1 ? (payload.categories[0]?.title ?? "").trim() : "";
       for (const site of payload.sites) {
         if (await siteUrlExists(repo, site.url)) {
           applied.sitesSkipped++;
           continue;
         }
-        const categoryTitle = (site.category ?? "").trim() || "插件导入";
-        const categoryKey = categoryTitle.toLowerCase();
-        let categoryId = titleIndex.get(categoryKey);
+        const rawTitle = (site.category ?? "").trim() || defaultTitle;
+        const primary = await resolveLeaf(rawTitle);
+        if (!primary && rawTitle) gapTitles.set(rawTitle.toLowerCase(), rawTitle);
+        let categoryId = primary?.id ?? null;
         if (!categoryId) {
-          categoryId = await repo.ensureCategory(categoryTitle, `plugin:${slug}`);
-          titleIndex.set(categoryKey, categoryId);
-          applied.categoriesCreated++;
+          uncategorizedId ??= await repo.ensureUncategorized();
+          categoryId = uncategorizedId;
         }
-        let subCategoryId: string | null = null;
+        // 二级只作「同根兄弟叶子」的细化：跨根会把站点计到两个一级根名下（dashboard 双算）
         const subTitle = site.subCategory?.trim();
-        if (subTitle) {
-          subCategoryId = await ensureSubCategory(repo, categoryId, subTitle, `plugin:${slug}`);
+        let subCategoryId: string | null = null;
+        if (subTitle && primary) {
+          const sub = await resolveLeaf(subTitle);
+          if (sub && sub.parentSlug === primary.parentSlug && sub.slug !== primary.slug) {
+            subCategoryId = sub.id;
+          }
         }
+        // 包自己的垂类标题（如「赛车与赛事」）在权威树里塌进同一个叶子（「汽车与驾驶」）时，
+        // 那层细分在树上已无处安放——只剩标签能接住（方案 §2.4「解析不出就只留 tags」）。
+        // 不这么做的话，一个垂类包装完就是 200 站平铺在一个叶子里，浏览层级全丢。
+        const tagNames: string[] = [];
+        const pushTag = (name: string | undefined | null) => {
+          const t = (name ?? "").trim();
+          if (!t || t.length > PLUGIN_LIMITS.maxTagChars) return;
+          if (tagNames.length >= PLUGIN_LIMITS.maxSiteTags) return;
+          if (tagNames.some((x) => x.toLowerCase() === t.toLowerCase())) return;
+          tagNames.push(t);
+        };
+        for (const t of site.tags ?? []) pushTag(t);
+        if (primary && rawTitle && rawTitle !== primary.title) pushTag(rawTitle);
         const created = await repo.createSiteWithId({
           id: randomUUID(),
           url: site.url,
@@ -873,7 +944,7 @@ export async function installPlugin(
           description: site.description ?? null,
           categoryId,
           subCategoryId,
-          tags: site.tags,
+          tags: tagNames,
           status: "active",
           enabled: true,
           source: `plugin:${slug}`,
@@ -881,6 +952,17 @@ export async function installPlugin(
         applied.sitesAdded++;
         applied.createdSiteIds.push(created.id);
       }
+
+      // 缺口交给人工判定：站点已落未分类，采纳时再决定「挂在哪个根下、叫什么」
+      for (const title of gapTitles.values()) {
+        await repo.recordCategoryGap({
+          title,
+          source: `站点包「${plugin.name}」安装`,
+          reasonNote: "该标题既不在权威树里、也没有 legacyTitles 归宿；请判定是并入现有叶子还是新建叶子。",
+        });
+      }
+      if (gapTitles.size > 0) applied.categoryGaps = [...gapTitles.values()];
+      if (parentMismatches.length > 0) applied.categoryParentMismatches = parentMismatches;
     });
   }
 

@@ -6,13 +6,15 @@
  *  - facets：SearchSitesInput / CreateSiteInput / UpdateSiteInput 都声明了它
  *    （inputSchema 由同一份 zod 生成，Agent 看得见），漏传等于"文档说能筛、实际不过滤"；
  *  - batch_import 同一批里的重复 URL；
- *  - health_check 的 onlyUnchecked 必须先筛后截。
+ *  - health_check 的 onlyUnchecked 必须先筛后截；
+ *  - 站点归属只能到叶子：一级根只作导航（G2），写入口要么拒绝要么降级，不能静默挂平。
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, loadConfig, type AppContext } from "@navhub/api";
+import { UNCATEGORIZED_CATEGORY_ID } from "@navhub/core";
 import { createHandlers } from "../src/handlers.ts";
 import { qualifyIdempotencyKey } from "../src/handlers/shared.ts";
 import type { McpScope, ToolContext } from "../src/tools.ts";
@@ -28,8 +30,12 @@ function identity(actor: string): ToolContext {
 const A = identity("mcp:agent-a");
 const B = identity("mcp:agent-b");
 
+function textOf(res: { content: Array<{ text: string }> }): string {
+  return res.content.map((c) => c.text).join("");
+}
+
 function payload(res: { content: Array<{ text: string }> }): any {
-  return JSON.parse(res.content.map((c) => c.text).join(""));
+  return JSON.parse(textOf(res));
 }
 
 beforeAll(async () => {
@@ -44,7 +50,9 @@ beforeAll(async () => {
   });
   ctx = await createContext(config);
   handlers = createHandlers(ctx);
-  await ctx.repo.createCategory({ id: "c1", title: "契约类目" });
+  // G2「站点只挂叶子」在写入口生效，所以夹具必须造出真实的层级而不是单个平铺根
+  await ctx.repo.createCategory({ id: "c0", title: "契约根" });
+  await ctx.repo.createCategory({ id: "c1", title: "契约类目", parentId: "c0" });
 });
 
 afterAll(async () => {
@@ -175,6 +183,69 @@ describe("batch_import 与 health_check 的边界", () => {
     expect(body.checked).toBeGreaterThan(0);
     expect(body.checked).toBeLessThanOrEqual(limit);
     expect(body.scanned).toBeGreaterThan(limit);
+  });
+});
+
+describe("站点归属只能到叶子（G2 的 MCP 侧）", () => {
+  it("create_site 传一级根：拒绝并列出可改挂的叶子", async () => {
+    const res = await handlers.create_site({ url: "https://attach.example/root", title: "挂根的站", categoryId: "c0", enrich: false }, A);
+    expect(res.isError).toBe(true);
+    expect(textOf(res)).toContain("一级根");
+    expect(textOf(res)).toContain("契约类目");
+    // 拒绝必须发生在落库之前：Agent 拿到指路文案后重发，不该先脏一条再报错
+    expect(await ctx.repo.findSiteByUrl("https://attach.example/root")).toBeNull();
+  });
+
+  it("slug 可入参，但落库必须是解析后的真实 id", async () => {
+    await ctx.repo.seedCategoryRegistry();
+    const body = payload(await handlers.create_site({ url: "https://attach.example/slug", title: "按 slug 挂", categoryId: "chat-assistants", enrich: false }, A));
+    const leaf = await ctx.repo.getCategoryBySlug("chat-assistants");
+    expect(body.site.categoryId).toBe(leaf!.id);
+
+    const denied = await handlers.create_site({ url: "https://attach.example/slug-root", title: "slug 指向根", categoryId: "ai-tools", enrich: false }, A);
+    expect(denied.isError).toBe(true);
+  });
+
+  it("update_site 挪回一级根被拒，改挂叶子（slug 形态）落真实 id", async () => {
+    const created = payload(await handlers.create_site({ url: "https://attach.example/move", title: "待挪站", categoryId: "c1", enrich: false }, A));
+    const denied = await handlers.update_site({ id: created.site.id, categoryId: "c0" }, A);
+    expect(denied.isError).toBe(true);
+    expect((await ctx.repo.getSite(created.site.id))!.categoryId).toBe("c1");
+
+    const moved = payload(await handlers.update_site({ id: created.site.id, categoryId: "ai-coding-assistant" }, A));
+    const leaf = await ctx.repo.getCategoryBySlug("ai-coding-assistant");
+    expect(moved.site.categoryId).toBe(leaf!.id);
+  });
+
+  it("batch_import：兜底类目是根就报错，逐条类目不可挂则降级且在报表里点名", async () => {
+    const sites = [
+      { url: "https://batch-attach.example/good", title: "合法" },
+      { url: "https://batch-attach.example/bad", title: "类目是根", categoryId: "c0" },
+    ];
+    const denied = await handlers.batch_import({ sites, defaultCategoryId: "c0" }, A);
+    expect(denied.isError).toBe(true);
+    expect(textOf(denied)).toContain("一级根");
+
+    const preview = payload(await handlers.batch_import({ sites, defaultCategoryId: "c1" }, A));
+    expect(preview.categoryDegraded).toBe(1);
+    expect(preview.plan.find((p: any) => String(p.url).endsWith("/bad")).reason).toContain("兜底");
+    expect(await ctx.repo.findSiteByUrl("https://batch-attach.example/good")).toBeNull();
+
+    const applied = payload(await handlers.batch_import({ sites, dryRun: false, defaultCategoryId: "c1" }, A));
+    expect(applied.created).toBe(2);
+    expect(applied.categoryDegraded).toBe(1);
+    // 降级目标就是本批兜底类目：没给 defaultCategoryId 时它是「未分类」
+    const bad = await ctx.repo.findSiteByUrl("https://batch-attach.example/bad");
+    expect(bad!.categoryId).toBe("c1");
+    const good = await ctx.repo.findSiteByUrl("https://batch-attach.example/good");
+    expect(good!.categoryId).toBe("c1");
+
+    const noDefault = payload(await handlers.batch_import({
+      sites: [{ url: "https://batch-attach.example/lonely", title: "没有兜底类目", categoryId: "c0" }],
+      dryRun: false,
+    }, A));
+    expect(noDefault.categoryDegraded).toBe(1);
+    expect((await ctx.repo.findSiteByUrl("https://batch-attach.example/lonely"))!.categoryId).toBe(UNCATEGORIZED_CATEGORY_ID);
   });
 });
 

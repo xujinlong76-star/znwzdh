@@ -90,6 +90,8 @@ export const THEME_RADIUS_VAR = '--radius'
 export interface SitePackCategory {
   title: string
   description?: string
+  /** 所属一级根的标题；缺省时由权威树按标题反查 */
+  parentCategory?: string
 }
 
 export interface SitePackSite {
@@ -384,7 +386,14 @@ function validateSitePackPayload(payload: Record<string, unknown>, errors: strin
         if (seen.has(key)) continue
         seen.add(key)
         const description = readString(record.description, PLUGIN_LIMITS.maxCategoryDescription, `payload.categories[${i}].description`, errors)
-        categories.push(description ? { title, description } : { title })
+        // 层级字段只做「形状」校验：本文件零依赖（前端有字节级镜像），
+        // 与权威树的一致性在仓储层安装时校验（那时才拿得到 registry）。
+        const parentCategory = readString(record.parentCategory, PLUGIN_LIMITS.maxCategoryTitle, `payload.categories[${i}].parentCategory`, errors)
+        categories.push({
+          title,
+          ...(description ? { description } : {}),
+          ...(parentCategory ? { parentCategory } : {}),
+        })
       }
     }
   }

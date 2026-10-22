@@ -38,6 +38,7 @@ export * from "./facets.ts";
 export * from "./relations.ts";
 export * from "./taxonomy-governance.ts";
 export * from "./taxonomy-rules.ts";
+export * from "./category-registry.ts";
 export * from "./query-intent.ts";
 export * from "./plugin-manifest.ts";
 export * from "./bookmark-exporter.ts";

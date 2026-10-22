@@ -19,8 +19,9 @@ import { seedPluginDefs } from "./seed-plugins.ts";
 import { DEFAULT_SITE_CONFIG, writeSiteConfig } from "./storage.ts";
 
 interface SeedShape {
+  /** 只剩兜底类目：整棵树由 CATEGORY_REGISTRY 播种，种子清单不再声明层级 */
   categories: Array<{ id: string; title: string; slug?: string; icon?: string; description?: string; sort?: number; source?: string }>;
-  sites: Array<{ url: string; title: string; description: string; categoryId: string; tags?: string[]; icon?: string }>;
+  sites: Array<{ url: string; title: string; description: string; categorySlug: string; tags?: string[]; icon?: string }>;
   collections?: Array<{ slug: string; title: string; kind: string; description: string; sites: string[] }>;
 }
 
@@ -43,6 +44,8 @@ async function readStoredSiteConfig(ctx: { db: { dialect: string; sqlite?: unkno
 
 export interface SeedResult {
   categories: number;
+  /** 权威树播种结果（18 根 + 全部叶子）；total 是树规模，不是本次写入数 */
+  registry: { total: number; created: number; patched: number; failed: string[] };
   sites: number;
   collections: number;
   plugins: number;
@@ -72,6 +75,13 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   if (storedConfig === null) {
     await writeSiteConfig(ctx, structuredClone(DEFAULT_SITE_CONFIG) as unknown as Record<string, unknown>);
     siteConfigSeeded = true;
+  }
+
+  // 权威树先落地：站点直接挂叶子（一级根只作导航，不挂站点），
+  // 所以「库里有 6 个平铺根」那种老种子形态必须被整棵树取代。
+  const registry = await ctx.repo.seedCategoryRegistry();
+  if (registry.failed.length > 0) {
+    console.warn(`[seed] 权威树有 ${registry.failed.length} 条没落进库：${registry.failed.join("、")}`);
   }
 
   let categories = 0;
@@ -104,14 +114,26 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   let sites = 0;
   let skipped = 0;
   let embedded = 0;
+  const leafIdBySlug = new Map<string, string>();
   const wantsEmbeddings = opts.withEmbeddings ?? true;
 
   for (const s of raw.sites) {
     const dup = await ctx.repo.findSiteByUrl(s.url);
     if (dup) { skipped++; continue; }
+    let categoryId = leafIdBySlug.get(s.categorySlug);
+    if (!categoryId) {
+      const leaf = await ctx.repo.getCategoryBySlug(s.categorySlug);
+      if (leaf) {
+        categoryId = leaf.id;
+      } else {
+        categoryId = await ctx.repo.ensureUncategorized();
+        console.warn(`[seed] 种子站点「${s.title}」的分类「${s.categorySlug}」不在权威树里，落未分类`);
+      }
+      leafIdBySlug.set(s.categorySlug, categoryId);
+    }
     const site = await ctx.repo.createSite({
       url: s.url, title: s.title, description: s.description,
-      categoryId: s.categoryId, tags: s.tags ?? [], source: "seed",
+      categoryId, tags: s.tags ?? [], source: "seed",
       iconKey: resolveSiteIcon(s.url, s.title, s.icon),
     });
     sites++;
@@ -211,7 +233,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   }
 
   await ctx.close();
-  return { categories, sites, collections, plugins, pluginsUpgraded, skipped, embedded, siteConfigSeeded };
+  return { categories, registry, sites, collections, plugins, pluginsUpgraded, skipped, embedded, siteConfigSeeded };
 }
 
 /**

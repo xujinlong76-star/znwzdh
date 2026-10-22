@@ -195,9 +195,20 @@ function normalizeUsage(raw: unknown): ChatUsage {
   };
 }
 
+/**
+ * 「这个端点不支持 response_format」的判定词。
+ *
+ * 只能按**字段名**判定，不能用 `unknown field` / `unrecognized` / `extra parameter`
+ * 这类泛化措辞：那条 400 说的可能是请求体里的任何字段（例如刚加上的 `thinking`、
+ * `chat_template_kwargs`）。误判的后果是进程级的——`jsonModeUnsupported` 会记住
+ * 这个 `baseUrl|model`，之后所有调用都静默丢掉 `response_format`，只能靠测试专用的
+ * reset 清掉；表现为 JSON 解析失败率莫名升高、富化悄悄降级成启发式。
+ */
+const RESPONSE_FORMAT_HINT = /response[\s_-]?format|json_object|json_schema|structured_outputs/i;
+
 /** response_format 相关的错误体判定（只在 auto + 400/422 时使用） */
 function looksLikeResponseFormatRejection(detail: string): boolean {
-  return /response_format|json_object|response[\s_-]?format|unknown (field|parameter)|unrecognized|unsupported (field|parameter)|extra (field|parameter)/i.test(detail);
+  return RESPONSE_FORMAT_HINT.test(detail);
 }
 
 async function readErrorDetail(res: Response): Promise<string> {

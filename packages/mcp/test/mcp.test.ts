@@ -258,10 +258,23 @@ describe("Phase 4 新工具", () => {
   });
 
   it("list_tags 返回标签与计数", async () => {
-    const res = await handlers.list_tags({ minCount: 1, limit: 10 }, READONLY);
+    // 不复用模块级 fixture 站点：上面的「健康巡检」把所有不可达站点都标成了 broken，
+    // 而标签计数只统计 status='active' 的站点（见 listTagsWithCounts 的 JOIN 条件）。
+    // 依赖既有数据就等于让结果取决于「前面跑了哪些用例」，实测整文件按序跑时
+    // 这里会拿到空数组（单独跑却通过）—— 现造一个带独占标签的活站点来断言。
+    await ctx.repo.createSite({
+      url: "https://tags-count-probe.example",
+      title: "标签计数探针",
+      description: "只用于验证标签计数可见性",
+      categoryId: "cat-dev",
+      tags: ["标签计数探针"],
+    });
+    const res = await handlers.list_tags({ minCount: 1, limit: 50 }, READONLY);
     const body = payload(res);
     expect(body.tags.length).toBeGreaterThan(0);
-    expect(body.tags[0].count).toBeGreaterThanOrEqual(1);
+    const probe = body.tags.find((t: any) => t.name === "标签计数探针");
+    expect(probe).toBeTruthy();
+    expect(probe!.count).toBeGreaterThanOrEqual(1);
   });
 
   it("list_collections 默认只看启用中的专题，all=true 才带停用的", async () => {
@@ -403,10 +416,11 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
     expect(noMatchBody.matched).toBe(false);
   });
 
-  it("heal_broken_site 诊断故障站点并生成自愈报告", async () => {
+  it("heal_broken_site 诊断故障站点并生成自愈报告（但不改数据）", async () => {
     const res = await handlers.heal_broken_site({ idOrUrl: "https://weather.com.cn" }, FULL);
     const body = payload(res);
-    expect(body.healed).toBe(true);
+    expect(body.healed).toBe(false);
+    expect(body.diagnosed).toBe(true);
     expect(body.report).toBeTruthy();
     expect(body.report.waybackFallbackUrl).toContain("web.archive.org");
     const audit = ctx.db.sqlite!.prepare("SELECT COUNT(*) AS c FROM audit_logs WHERE action = ?").get("site.heal") as { c: number };

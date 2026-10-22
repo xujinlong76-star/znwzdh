@@ -5,6 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { httpUrl } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
 import { submissionNumber } from "./shared.ts";
 
@@ -23,7 +24,7 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
   app.post("/api/submissions", { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } }, async (req, reply) => {
     const body = z.object({
       title: z.string().min(1).max(120),
-      url: z.string().url(),
+      url: httpUrl(),
       description: z.string().max(500).default(""),
       categoryId: z.string().min(1),
       subCategoryId: z.string().nullable().optional(),

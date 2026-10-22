@@ -16,6 +16,22 @@ export interface ExtractedMetadata {
   themeColor: string | null;
 }
 
+/**
+ * 数字实体解码。
+ *
+ * 页面上的实体是**第三方输入**：`&#1114112;`、`&#x110000;` 这类越界值会让
+ * `String.fromCodePoint` 直接抛 `RangeError`，而调用方 `extractMetadata` 在
+ * enrich.ts 里位于 try 之外（try 只兜抓取）——一个坏实体就能把整条富化请求
+ * 打成 500，投稿与 `refetch_metadata` 任务一起失败。越界与代理区一律降级成
+ * U+FFFD：宁可得到一个带替换符的标题，也不能让整页抽取失败或把孤立代理项写进库
+ * （PG 的 text 不接受孤立代理码位）。
+ */
+function decodeCodePoint(cp: number): string {
+  if (!Number.isInteger(cp) || cp < 0 || cp > 0x10ffff) return "\uFFFD";
+  if (cp >= 0xd800 && cp <= 0xdfff) return "\uFFFD";
+  return String.fromCodePoint(cp);
+}
+
 function decodeEntities(s: string): string {
   return s
     .replace(/&amp;/g, "&")
@@ -24,8 +40,8 @@ function decodeEntities(s: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ")
-    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(Number(d)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(parseInt(h, 16)));
+    .replace(/&#(\d+);/g, (_, d: string) => decodeCodePoint(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => decodeCodePoint(parseInt(h, 16)));
 }
 
 function clean(s: string | null | undefined): string | null {

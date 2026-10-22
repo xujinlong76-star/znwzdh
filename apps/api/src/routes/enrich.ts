@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { enrichUrl } from "@navhub/ai";
-import { sanitizeIconUrl } from "@navhub/core";
+import { httpUrl, sanitizeIconUrl } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
@@ -20,7 +20,7 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /* ---------------------------- AI 富化 ---------------------------- */
 
   app.post("/api/enrich", { config: { rateLimit: { max: 20, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
-    const body = z.object({ url: z.string().url() }).safeParse(req.body ?? {});
+    const body = z.object({ url: httpUrl() }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
     const categories = await ctx.repo.listCategories();
@@ -39,7 +39,8 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /** 一步到位：抓取 + 富化 + 入库（AI 自动入库的核心接口） */
   app.post("/api/sites/auto", { config: { rateLimit: { max: 15, timeWindow: "1 minute" }, scope: "write" } }, async (req, reply) => {
     const body = z.object({
-      url: z.string().url(),
+      // enrichUrl 抓失败不抛、原样回传 url，伪协议会绕过抓取直接落库 → 必须在入口拦
+      url: httpUrl(),
       categoryId: z.string().optional(),
       tags: z.array(z.string()).max(50).optional(),
     }).safeParse(req.body ?? {});

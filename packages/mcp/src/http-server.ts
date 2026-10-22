@@ -137,11 +137,18 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
   }
 
   async function readJsonBody(req: IncomingMessage): Promise<{ ok: true; body: unknown } | { ok: false; reason: "toolarge" | "invalid" }> {
-    let raw = "";
+    // 必须攒够再整体解码：`raw += chunk` 把每个 Buffer 单独按 UTF-8 转字符串，
+    // 跨 socket 分片的多字节汉字被拆成 U+FFFD——JSON 照样解析成功，
+    // 但写进库的中文标题/描述已经是坏的。
+    const chunks: Buffer[] = [];
+    let received = 0;
     for await (const chunk of req) {
-      raw += chunk;
-      if (raw.length > MAX_BODY_BYTES) return { ok: false, reason: "toolarge" };
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+      received += buf.length;
+      if (received > MAX_BODY_BYTES) return { ok: false, reason: "toolarge" };
+      chunks.push(buf);
     }
+    const raw = Buffer.concat(chunks, received).toString("utf8");
     if (!raw.trim()) return { ok: true, body: {} };
     try {
       return { ok: true, body: JSON.parse(raw) };

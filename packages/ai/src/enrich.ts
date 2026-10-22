@@ -338,6 +338,9 @@ async function tryLlm(
           temperature: attempt === 1 ? 0.2 : 0,
           maxTokens: 1024,
           json: true,
+          // 直连 chatCompletion 绕过了 llm-usage.ts 那个注入 thinking 的包装，不显式传就静默丢掉；
+          // 而用量回调记的却是 llm.thinking —— 后台显示 100% 思考调用，实际一个字段都没发。
+          thinking: llm.thinking,
         },
       );
 

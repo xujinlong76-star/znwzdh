@@ -72,6 +72,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # 覆盖层比对在 check-web-overlay 作业里单独跑（全新检出需先 vendor，见那里）
       - run: pnpm run typecheck
+      # 后端 ESLint（方案 P1-8）：apps/api / packages/store 此前零静态检查。
+      # 首轮只开 no-unused-vars / no-empty / no-console 且全部为 warning，
+      # 所以这里 continue-on-error：告警看得见，但不阻塞合并。
+      # 全量清完告警后再去掉这一行并收紧规则。
+      - run: pnpm run lint:backend
+        continue-on-error: true
       # apps/web/test/*.test.ts 打的是存储接缝：github.ts 顶层 import @/lib/auth 与
       # @/navsphere/content/*.json。这些同属 gitignore 的生成物（来自上游），全新检出
       # 并不存在 —— 不先 vendor 重建 apps/web，vitest 会以
@@ -216,7 +222,21 @@ jobs:
             sleep 2
             if [ "$i" = "60" ]; then echo "✖ 预览站 120s 内没给出中枢喂好的 sitemap（/site/* 条目缺失）"; tail -40 /tmp/hub.log /tmp/web.log; exit 1; fi
           done
-          node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 --min-checked=8
+          set +e
+          node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 --min-checked=8 2>&1 | tee /tmp/isr-live.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" != "0" ]; then
+            # 无 token 时作业日志接口是 403，能跨机器读到的只有 annotations（页面与
+            # check-runs API 都公开）。红的时候把判据本身写成 ::error::，
+            # 不用靠猜：覆盖几页、sitemap 几条、红在哪一族，一眼可见。
+            echo "sitemap 条目数：$(curl -sf http://localhost:3000/sitemap.xml | grep -c '<loc>')"
+            {
+              echo "sitemap 条目数：$(curl -sf http://localhost:3000/sitemap.xml | grep -c '<loc>')"
+              grep -E "^✖|^– |线上 ISR 抽查只覆盖到|未通过" /tmp/isr-live.log | cut -c1-200
+            } | while IFS= read -r line; do echo "::error::${line}"; done
+            exit "$rc"
+          fi
       - name: 失败时留下预览站日志
         if: ${{ failure() }}
         run: tail -80 /tmp/hub.log /tmp/web.log

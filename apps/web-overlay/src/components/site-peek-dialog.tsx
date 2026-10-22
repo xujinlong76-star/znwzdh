@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { safeHref, safeSrc, isSafeHttpUrl } from '@/lib/safe-url'
 import { buildWaybackSnapshotUrl } from '@/lib/wayback-resolver'
+import { siteHealthBadge } from '@/lib/site-health'
 
 interface SitePeekDialogProps {
   item: NavigationSubItem | null
@@ -68,6 +69,7 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
 
   // iframe 预览源：非法 URL 直接不渲染（safeSrc 返回 undefined）
   const previewSrc = safeSrc(item.href)
+  const healthBadge = siteHealthBadge(item.health)
 
   return (
     <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setShowIframe(false) }}>
@@ -358,11 +360,11 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
             <span>网址:</span>
             <span className="font-mono text-foreground/80 truncate max-w-[280px]">{item.href}</span>
           </div>
-          {item.health && (
+          {healthBadge && (
             <div className="flex items-center gap-1.5 font-mono">
-              <span className={`w-2 h-2 rounded-full ${item.health.ok ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-              <span>SLA: {item.health.ok ? '在线正常' : '响应缓慢'}</span>
-              {item.health.latencyMs && <span>({item.health.latencyMs}ms)</span>}
+              <span className={`w-2 h-2 rounded-full ${healthBadge.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              <span>{healthBadge.label}</span>
+              {healthBadge.latencyMs != null && <span>({healthBadge.latencyMs}ms)</span>}
             </div>
           )}
         </div>

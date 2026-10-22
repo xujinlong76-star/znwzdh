@@ -47,6 +47,8 @@ const PRESET_CATEGORIES: CategoryPreset[] = [
 ]
 
 export function CustomCategoryWidget({ config }: { config?: Record<string, any> }) {
+  // `categoryId` 只是本地演示页签的 id（ai/dev/tools），不是中枢类目 id/slug：
+  // 这个组件的站点全是内置示例、直接外链，不会走 /api/sites，所以不随类目树升级改。
   const [selectedCatId, setSelectedCatId] = useState(() => config?.categoryId || 'ai')
 
   const currentCategory = PRESET_CATEGORIES.find((c) => c.id === selectedCatId) || PRESET_CATEGORIES[0]

@@ -1,4 +1,4 @@
-import { siteOrigin } from '@/lib/seo/origin'
+import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { softwareApplicationLd } from '@/lib/seo/json-ld'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import { loadPluginDetail } from '@/lib/server/plugin-detail'
@@ -32,7 +32,7 @@ export default async function MarketplaceDetailLayout({
   const { slug } = await params
   const safeSlug = safeDecodeParam(slug)
   const meta = safeSlug ? await loadPluginMeta(safeSlug) : null
-  const origin = await siteOrigin()
+  const origin = configuredSiteOrigin()
   return (
     <>
       <Breadcrumbs

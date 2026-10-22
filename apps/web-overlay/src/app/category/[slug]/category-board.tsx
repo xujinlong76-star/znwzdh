@@ -4,7 +4,7 @@ import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { JsonLd } from '@/components/json-ld'
 import { SiteFavicon } from '@/components/site-favicon'
-import { siteOrigin } from '@/lib/seo/origin'
+import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { categoryItemListLd, itemListLd } from '@/lib/seo/json-ld'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { descendantSiteCounts } from '@/lib/seo/category-totals'
@@ -137,7 +137,7 @@ export async function CategoryBoard({
 }) {
   const { categories, category, res, sites, counts, degraded } = data
   const indexable = requested === 1 && !degraded
-  const origin = await siteOrigin()
+  const origin = configuredSiteOrigin()
   const isRootPage = Boolean(category && !category.parentId)
   // 父级按外键（`parent_id`，与 `anchor` 同一条信息）找，不按标题找：
   // 库里还有 4 组同名分类，按标题匹配会让「编程 · 语言」的面包屑挂到「自然语言」下。

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import { AUTHOR_KEY_RE, loadPluginAuthor } from '@/lib/server/plugin-author'
 import { pageShareMetadata } from '@/lib/seo/metadata'
-import { siteOrigin } from '@/lib/seo/origin'
+import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { profilePageLd } from '@/lib/seo/json-ld'
 import { JsonLd } from '@/components/json-ld'
 import AuthorPluginsView from './author-plugins-view'
@@ -66,7 +66,7 @@ export default async function PluginAuthorPage({
   const probe = await loadPluginAuthor(safeKey)
   if (probe.status === 'miss') notFound()
 
-  const origin = await siteOrigin()
+  const origin = configuredSiteOrigin()
   const canonical = `/marketplace/author/${encodeURIComponent(safeKey)}`
   const ld =
     probe.status === 'ok' && origin

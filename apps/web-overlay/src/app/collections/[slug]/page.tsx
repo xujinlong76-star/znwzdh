@@ -6,7 +6,7 @@ import { Breadcrumbs } from '@/components/breadcrumbs'
 import { JsonLd } from '@/components/json-ld'
 import { hubGetProbe } from '@/lib/server/hub'
 import { safeDecodeParam } from '@/lib/server/route-params'
-import { siteOrigin } from '@/lib/seo/origin'
+import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { itemListLd } from '@/lib/seo/json-ld'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { ogImageUrl } from '@/lib/seo/og-text'
@@ -92,7 +92,7 @@ export default async function CollectionDetailPage({ params }: { params: Promise
   const ok = probe.status === 'ok'
   const collection = ok ? probe.data.collection : null
   const sites = ok ? (probe.data.sites ?? []) : []
-  const origin = await siteOrigin()
+  const origin = configuredSiteOrigin()
   const name = collection?.title ?? safeSlug
 
   return (

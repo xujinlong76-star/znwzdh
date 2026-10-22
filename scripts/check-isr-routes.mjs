@@ -17,12 +17,14 @@
  * `cache-control: s-maxage`（没有就说明退化成了每次请求现渲），且不得 5xx；
  * `/category/{slug}?page=N` 必须被配置层 308 到 `/p/{N}`（旧形态是已收录 URL）。
  *
- * --live 必须在配置了 `NAVHUB_SITE_URL` 的环境跑（CI 的 deploy job 就是这么注入的）。
- * 实测（2026-10-22，同一份无 origin 构建产物）：运行时也没这个变量时，
- * `/sites` 族照样 200 + s-maxage（静态渲染链已改成只读配置），而 `/site/{id}`、
- * `/tags/{slug}`、`/collections/{slug}`、`/marketplace/{slug}` 会整批 500 ——
- * 它们在按需生成（静态上下文）里 `await siteOrigin()`，拿不到配置就走到 `headers()`，
- * 于是抛 DYNAMIC_SERVER_USAGE。那种 500 是真配置缺失，门禁照红灯就是它该做的事。
+ * `NAVHUB_SITE_URL` 不是 --live 跑通的前提（prod 配置清单仍然要求配好它）。
+ * 实测（2026-10-22，同一份无 origin 构建产物 + 运行时也不给这个变量）：收录型
+ * 渲染链全绿，缺配置的形态是「canonical / og:url 走相对地址、面包屑与 ItemList
+ * 的结构化数据缺席」而不是 500 —— 补上环境变量后一个 revalidate 周期自愈。
+ * 历史上这里 `/site/{id}`、`/tags/{slug}`、`/collections/{slug}`、
+ * `/marketplace/{slug}` 会整批 500：它们在按需生成（静态上下文）里
+ * `await siteOrigin()`，拿不到配置就走到 `headers()`，于是抛
+ * DYNAMIC_SERVER_USAGE。ISR_RENDER_CHAIN 的源码钉子就是防止这条路走回头。
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -98,36 +100,50 @@ const WHITELIST = [
 ];
 
 /**
- * 静态收录路径（没有动态段、构建期就要预渲染）的渲染链文件。
+ * 收录型 ISR 路由的渲染链文件——一律禁止出现 `siteOrigin()`。
  *
- * 这一族禁止出现 `siteOrigin()`：它在 `NAVHUB_SITE_URL` 缺失时回退到 `headers()`，
- * 而 CI / Docker 的 `next build` 阶段恰好拿不到该变量（运行时才注入），一旦读它
- * 整条路由就在构建期判成 ƒ，`revalidate` 静默失效。改用 `configuredSiteOrigin()`
- * （只读环境变量，永不碰请求头）。
+ * 它在 `NAVHUB_SITE_URL` 缺失时回退到 `headers()`，而后果按路由形态分两种，
+ * 两种都是实测（2026-10-22，无 origin 的构建产物）而不是推断：
+ *  - 没有动态段的静态路径（`/sites`）在**构建期**解析，读到 headers() 就落成 ƒ，
+ *    `revalidate` 静默作废、爬虫面每次请求现渲；
+ *  - 带动态段的按需生成（`/site/{id}`、`/tags/{slug}`、`/collections/{slug}`、
+ *    `/marketplace/{slug}`）走的是静态生成上下文，读到 headers() 直接抛
+ *    DYNAMIC_SERVER_USAGE —— **500**，整条内容页全废。
+ * 正确写法是 `configuredSiteOrigin()`（只读环境变量）：缺配置时的降级是
+ * 「JSON-LD 不输出、地址保持相对」，既不掉缓存也不炸页。
  *
- * 产物门禁（/sites 缺 prerender 记录即红灯）已经能拦住这类回归，这里额外点名文件
- * 是为了让红灯直接说出「是哪一处把 headers() 放回来了」。
- * 动态段路由（/site/[id]、/tags/[slug] 等）不受此列表约束：它们在运行时按需生成，
- * 那时环境变量读得到，兜底分支不会被走到。
+ * 故意不在这个名单里：`sitemap.ts` / `robots.ts` / `feed.xml` / 首页 —— 它们本来就是
+ * ƒ（每次请求现渲），headers() 兜底在那儿是合法且有用的（sitemap 的 `<loc>` 必须绝对）。
  */
-const STATIC_RENDER_CHAIN = [
+const ISR_RENDER_CHAIN = [
   'apps/web-overlay/src/app/layout.tsx',
+  'apps/web-overlay/src/components/breadcrumbs.tsx',
   'apps/web-overlay/src/app/sites/page.tsx',
   'apps/web-overlay/src/app/sites/sites-directory.tsx',
+  'apps/web-overlay/src/app/sites/p/[n]/page.tsx',
+  'apps/web-overlay/src/app/category/[slug]/category-board.tsx',
+  'apps/web-overlay/src/app/category/[slug]/page.tsx',
+  'apps/web-overlay/src/app/category/[slug]/p/[n]/page.tsx',
+  'apps/web-overlay/src/app/site/[id]/page.tsx',
+  'apps/web-overlay/src/app/tags/[slug]/page.tsx',
+  'apps/web-overlay/src/app/collections/[slug]/page.tsx',
+  'apps/web-overlay/src/app/marketplace/[slug]/layout.tsx',
+  'apps/web-overlay/src/app/marketplace/[slug]/page.tsx',
+  'apps/web-overlay/src/app/marketplace/author/[key]/page.tsx',
 ];
 
-function checkStaticChain(srcRoot = SRC_ROOT) {
+function checkRenderChain(srcRoot = SRC_ROOT) {
   const failures = [];
-  for (const rel of STATIC_RENDER_CHAIN) {
+  for (const rel of ISR_RENDER_CHAIN) {
     const file = resolve(srcRoot, rel);
     if (!existsSync(file)) {
-      failures.push(`${rel}：静态渲染链文件不存在`);
+      failures.push(`${rel}：收录型渲染链文件不存在`);
       continue;
     }
     const body = stripComments(readFileSync(file, 'utf8'));
     if (/\bsiteOrigin\s*\(/.test(body)) {
       failures.push(
-        `${rel}：调用了 siteOrigin()（缺 NAVHUB_SITE_URL 时会读 headers()）——静态收录页会退化成 ƒ，改用 configuredSiteOrigin() 或由调用方传入 origin`,
+        `${rel}：调用了 siteOrigin()（缺 NAVHUB_SITE_URL 时会读 headers()）——静态路径退化成 ƒ、按需生成直接 500；改用 configuredSiteOrigin()`,
       );
     }
   }
@@ -201,7 +217,7 @@ function checkBuild() {
     }
   }
 
-  const srcFailures = [...checkSource(), ...checkStaticChain()];
+  const srcFailures = [...checkSource(), ...checkRenderChain()];
   failures.push(...srcFailures);
 
   for (const [mark, route, note] of rows) {

@@ -64,11 +64,22 @@ const SRCS = [
   "apps/web-overlay/src/app/collections/[slug]/page.tsx",
 ];
 
-/** 静态收录路径的渲染链（与脚本内 STATIC_RENDER_CHAIN 同构） */
+/** 收录型 ISR 渲染链（与脚本内 ISR_RENDER_CHAIN 同构，缺文件会红灯，两边不会静默漂移） */
 const STATIC_SRCS = [
   "apps/web-overlay/src/app/layout.tsx",
+  "apps/web-overlay/src/components/breadcrumbs.tsx",
   "apps/web-overlay/src/app/sites/page.tsx",
   "apps/web-overlay/src/app/sites/sites-directory.tsx",
+  "apps/web-overlay/src/app/sites/p/[n]/page.tsx",
+  "apps/web-overlay/src/app/category/[slug]/category-board.tsx",
+  "apps/web-overlay/src/app/category/[slug]/page.tsx",
+  "apps/web-overlay/src/app/category/[slug]/p/[n]/page.tsx",
+  "apps/web-overlay/src/app/site/[id]/page.tsx",
+  "apps/web-overlay/src/app/tags/[slug]/page.tsx",
+  "apps/web-overlay/src/app/collections/[slug]/page.tsx",
+  "apps/web-overlay/src/app/marketplace/[slug]/layout.tsx",
+  "apps/web-overlay/src/app/marketplace/[slug]/page.tsx",
+  "apps/web-overlay/src/app/marketplace/author/[key]/page.tsx",
 ];
 
 /**
@@ -174,13 +185,28 @@ describe("check-isr-routes.mjs", () => {
     expect(out).toContain("revalidate");
   });
 
-  it("fixture 源码：静态渲染链里调用 siteOrigin() 就红灯（构建期读 headers() 会把 /sites 钉成 ƒ）", () => {
+  it("fixture 源码：收录型渲染链里调用 siteOrigin() 就红灯（静态路径退化 ƒ / 按需生成 500）", () => {
     writeManifest(ALL_ROUTES);
     const srcRoot = writeSources(undefined, "apps/web-overlay/src/app/layout.tsx");
     const { code, out } = run([`--src-root=${srcRoot}`]);
     expect(code, out).toBe(1);
     expect(out).toContain("apps/web-overlay/src/app/layout.tsx");
     expect(out).toContain("configuredSiteOrigin");
+  });
+
+  it("fixture 源码：Breadcrumbs 与带动态段的详情页同样受渲染链钉子保护", () => {
+    // 两类后果不同的路由共用一条规则：`breadcrumbs.tsx` 挂在所有收录页上，
+    // `site/[id]` 一旦读 headers() 不是丢缓存而是 500。
+    for (const rel of [
+      "apps/web-overlay/src/components/breadcrumbs.tsx",
+      "apps/web-overlay/src/app/site/[id]/page.tsx",
+    ]) {
+      writeManifest(ALL_ROUTES);
+      const srcRoot = writeSources(undefined, rel);
+      const { code, out } = run([`--src-root=${srcRoot}`]);
+      expect(code, `${rel}\n${out}`).toBe(1);
+      expect(out).toContain(rel);
+    }
   });
 
   it("fixture 源码：configuredSiteOrigin()（只读环境变量）不算违规", () => {

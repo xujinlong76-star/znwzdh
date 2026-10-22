@@ -110,7 +110,6 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
           {/* 面包屑（可见 DOM 与 BreadcrumbList JSON-LD 同源，页 ≥2 只出可见部分） */}
           <Breadcrumbs
             jsonLd={indexable}
-            origin={origin}
             items={[
               { label: '首页', path: '/' },
               { label: '全部站点目录', path: '/sites' },

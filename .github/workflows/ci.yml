@@ -141,6 +141,8 @@ jobs:
       # 并且页面签名不得读 searchParams。动机：这类路由带 revalidate +
       # generateStaticParams，读了 searchParams 的未预渲染参数在按需生成时直接抛
       # DYNAMIC_SERVER_USAGE（生产 500），而 next dev / tsc / eslint 都照不出来。
+      # /sites 页 1 是 soft 族：CI 构建没有 NAVHUB_SITE_URL，siteOrigin() 兜底读
+      # headers() 会把它钉成 ƒ——那是配置口径，不是代码回归，故只提示不红灯。
       - run: node scripts/check-isr-routes.mjs
 
   check-web-overlay:

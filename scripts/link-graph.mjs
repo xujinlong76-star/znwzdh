@@ -385,7 +385,7 @@ function printReport(m, probe) {
  * 为什么必须进 CI：这里的错误都是「不报错、只是白做」的形态——
  *   · 为了 noindex 顺手写 follow:false → 1013 条内链的权重传递当场断掉；
  *   · 页 1 被判 noindex → 整个目录页白建；
- *   · `?page=1` 返 200 → 同页两个 URL 并存。
+ *   · `/sites/p/1` 返 200 → 与 `/sites` 同页两个 URL 并存。
  * 路由未建时（当前 /sites 是 404）不判失败，只标注 skipped。
  */
 async function assertPagination(graph) {
@@ -405,7 +405,15 @@ async function assertPagination(graph) {
     }
   }
   const rootStatus = await head('/sites')
-  const page1Status = await head('/sites?page=1')
+  // 只关心「状态 + Location」：分页归一全靠 30x，正文不解析
+  const probeRedirect = async (key) => {
+    try {
+      const res = await fetch(BASE + key, { redirect: 'manual' })
+      return { status: res.status, location: res.headers.get('location') ?? '' }
+    } catch {
+      return { status: 0, location: '' }
+    }
+  }
   const built = rootStatus === 200
 
   if (!built) {
@@ -433,7 +441,7 @@ async function assertPagination(graph) {
       return { key, status: 0, robots: '', siteLinks: 0 }
     }
   }
-  for (const key of ['/sites?page=2', '/sites?page=3']) {
+  for (const key of ['/sites/p/2', '/sites/p/3']) {
     const p = await probePagination(key)
     if (p.status !== 200) continue
     if (p.siteLinks > 0 && p.robots.includes('nofollow')) {
@@ -451,9 +459,9 @@ async function assertPagination(graph) {
       })
     }
   }
-  if (!robots.has('/sites?page=2')) {
+  if (!robots.has('/sites/p/2')) {
     // 记录一下：BFS 没走到分页页，说明分页链接不可爬（本身也是个提示，不判失败）
-    results.push({ ok: true, rule: 'pagination-discoverable', detail: 'BFS 未从页 1 发现 ?page=2（分页链接可能不在 SSR 里）' })
+    results.push({ ok: true, rule: 'pagination-discoverable', detail: 'BFS 未从页 1 发现 /sites/p/2（分页链接可能不在 SSR 里）' })
   }
 
   // 断言 2：页 1 不得 noindex
@@ -469,16 +477,27 @@ async function assertPagination(graph) {
     results.push({ ok: true, rule: 'page1-indexable', detail: `/sites robots="${rootRobots || '(无)'}"` })
   }
 
-  // 断言 3：?page=1 必须 308 到 /sites
-  if (![301, 308].includes(page1Status)) {
+  // 断言 3：第 1 页只留一个 URL。`/sites/p/1` 必须 308 到 `/sites`；
+  // `?page=1` 不再拦（页面签名不能读 searchParams，见 sites-directory.tsx），
+  // 由自指 canonical 归一，因此只记录状态不判失败。
+  const pageVariant = await probeRedirect('/sites/p/1')
+  // 只看 pathname：Location 可能是相对（/sites）也可能是绝对（带 origin）
+  const landedOn = (() => {
+    try {
+      return new URL(pageVariant.location, BASE).pathname
+    } catch {
+      return ''
+    }
+  })()
+  if (!(pageVariant.location && landedOn === '/sites') || ![301, 308].includes(pageVariant.status)) {
     results.push({
       ok: false,
       rule: 'page1-canonical-url',
-      detail: `/sites?page=1 返回 ${page1Status}，期望 301/308 —— 同页两个 URL 并存`,
-      fix: '在 page.tsx 里对 page=1 做 permanentRedirect("/sites")',
+      detail: `/sites/p/1 返回 ${pageVariant.status} loc=${pageVariant.location || '—'}，期望 30x → /sites —— 同一内容两个 URL 并存`,
+      fix: '在 sites/p/[n]/page.tsx 里对 requested===1 做 permanentRedirect(sitesPageHref(1))',
     })
   } else {
-    results.push({ ok: true, rule: 'page1-canonical-url', detail: `/sites?page=1 → ${page1Status}` })
+    results.push({ ok: true, rule: 'page1-canonical-url', detail: `/sites/p/1 → ${pageVariant.location}` })
   }
 
   // 断言 4：页 1 首屏 SSR 的 /site/ 出链数 = 60

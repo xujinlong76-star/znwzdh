@@ -8,7 +8,7 @@ import {
   sitesPageDescription,
   sitesPageHref,
   sitesPageTitle,
-} from '../sites-directory'
+} from '../../sites-directory'
 
 /**
  * 站点目录第 2 页起（`/sites/p/{n}`）。
@@ -40,17 +40,13 @@ function parsePageSegment(raw: string | undefined): number | null {
   return Number.isSafeInteger(n) ? n : null
 }
 
-async function resolve(rawN: string | undefined) {
-  const n = parsePageSegment(rawN)
-  if (n === null) notFound()
-  const data = await loadSitesPage()
-  return { n, data }
-}
-
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { n } = await params
-  const { data } = await resolve(n)
-  const page = Math.min(data.totalPages, Math.max(2, parsePageSegment(n) ?? 2))
+  const requested = parsePageSegment(n)
+  if (requested === null) notFound()
+  const data = await loadSitesPage()
+  // 与页面本体同一条归一规则：canonical 永远指向最终会留下 200 的那个 URL
+  const page = sitesNormalizedPage(requested, data.totalPages)
   const canonical = sitesPageHref(page)
   const title = sitesPageTitle(page)
   const description = sitesPageDescription(page)
@@ -64,14 +60,18 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 }
 
-export default async function SitesDirectoryPagePage({ params }: PageProps) {
+export default async function SitesDirectoryPaged({ params }: PageProps) {
   const { n } = await params
-  const { n: requested, data } = await resolve(n)
+  const requested = parsePageSegment(n)
+  if (requested === null) notFound()
+  const data = await loadSitesPage()
 
-  // 第 1 页只有一个 URL：`/sites/p/1` 与 `/sites` 并存会分散权重
+  // 第 1 页只有一个 URL：`/sites/p/1` 与 `/sites` 并存会分散权重，
+  // 归一函数对 n=1 是恒等的，所以这一条必须单独拦。
   if (requested === 1) permanentRedirect(sitesPageHref(1))
-  // 超出末页不留 200：否则会生成一批不存在的分页 URL（软 404）
-  if (requested > data.totalPages) permanentRedirect(sitesPageHref(data.totalPages))
+  // 超出末页不留 200，否则会生成一批不存在的分页 URL（软 404）
+  const current = sitesNormalizedPage(requested, data.totalPages)
+  if (current !== requested) permanentRedirect(sitesPageHref(current))
 
-  return <SitesDirectory requested={requested} data={data} />
+  return <SitesDirectory requested={current} data={data} />
 }

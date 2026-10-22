@@ -19,6 +19,8 @@ const FIXTURE_DIST = resolve("apps/web/.next-isr-gate-fixture");
 const ALL_ROUTES = [
   "/category/[slug]",
   "/category/[slug]/p/[n]",
+  "/sites",
+  "/sites/p/[n]",
   "/marketplace/[slug]",
   "/site/[id]",
   "/tags/[slug]",
@@ -54,6 +56,8 @@ function run(extraArgs: string[] = []) {
 const SRCS = [
   "apps/web-overlay/src/app/category/[slug]/page.tsx",
   "apps/web-overlay/src/app/category/[slug]/p/[n]/page.tsx",
+  "apps/web-overlay/src/app/sites/page.tsx",
+  "apps/web-overlay/src/app/sites/p/[n]/page.tsx",
   "apps/web-overlay/src/app/marketplace/[slug]/page.tsx",
   "apps/web-overlay/src/app/site/[id]/page.tsx",
   "apps/web-overlay/src/app/tags/[slug]/page.tsx",
@@ -85,7 +89,18 @@ describe("check-isr-routes.mjs", () => {
   it("产物里每条白名单路由都在 prerender-manifest 时才绿灯（顺带钉住源码门禁的当前基线）", () => {
     writeManifest(ALL_ROUTES);
     const { code, out } = run();
-    expect(out, out).toContain("6 条收录型路由都是 ISR");
+    expect(out, out).toContain("8 条收录型路由的产物与源码门禁都通过");
+    expect(code).toBe(0);
+  });
+
+  it("/sites 页 1 是 soft 族：产物缺它只提示，不判失败", () => {
+    // 页 1 是不是 ● 取决于构建期有没有 NAVHUB_SITE_URL（没配时 siteOrigin() 读
+    // headers() 把整页钉成现渲）。那是配置口径，所以这里必须是提示而不是红灯；
+    // 但签名读 searchParams 仍然会红——见下一条对硬族的钉子与 fixture 用例。
+    writeManifest(ALL_ROUTES.filter((r) => r !== "/sites"));
+    const { code, out } = run();
+    expect(out, out).toContain("! /sites：产物是 ƒ");
+    expect(out, out).not.toContain("✖ ISR 门禁未通过");
     expect(code).toBe(0);
   });
 

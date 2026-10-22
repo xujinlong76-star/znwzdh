@@ -74,7 +74,9 @@ export function sitesPageDescription(page: number): string {
 
 export async function SitesDirectory({ requested, data }: { requested: number; data: SitesPageData }) {
   const { all, totalPages } = data
-  const current = Math.min(Math.max(1, requested), totalPages)
+  // 归一只认 sitesNormalizedPage 这一处：路由的 canonical/308 与这里的渲染必须同值，
+  // 否则「元信息说第 2 页、正文渲染第 3 页」这类断档没人兜得住。
+  const current = sitesNormalizedPage(requested, totalPages)
   const start = (current - 1) * SITES_PAGE_SIZE
   const items = all.slice(start, start + SITES_PAGE_SIZE)
 

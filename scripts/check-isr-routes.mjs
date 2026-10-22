@@ -37,8 +37,12 @@ const SRC_ROOT = resolve(valueOf('src-root', ROOT));
  * `src` 用于源码门禁：这些文件一旦读 searchParams 或删掉 revalidate，
  * 构建产物会在下一次 CI 里红灯，而不是等线上 500。
  *
- * 故意不含 /marketplace/[slug]/preview 与 /sites：前者是内部预览通道，
- * 后者仍按 ?page=N 现渲（已知缺口，见 docs/seo 的收尾清单）。
+ * `soft: true` 只做提示、不判失败：`/sites` 页 1 是不是 ● 取决于**构建期**有没有
+ * `NAVHUB_SITE_URL`——没配时 `siteOrigin()` 兜底去读 `headers()`（面包屑的绝对 URL
+ * 要用它），整页就被钉成现渲。这是配置口径而不是代码回归，所以源码照常硬门禁、
+ * 产物形态只记账。（实测对照：CI 无变量 → ƒ；本地带变量构建 → ○ 且 revalidate 1m）
+ *
+ * 故意不含 /marketplace/[slug]/preview：内部预览通道，不进索引也不该有缓存语义。
  */
 const WHITELIST = [
   {
@@ -52,6 +56,21 @@ const WHITELIST = [
     route: '/category/[slug]/p/[n]',
     urlPrefix: '/category/',
     src: 'apps/web-overlay/src/app/category/[slug]/p/[n]/page.tsx',
+    paged: true,
+  },
+  {
+    // 站点目录第 1 页：静态路由 + revalidate，构建期配了 origin 才落在 prerender.routes
+    route: '/sites',
+    urlPrefix: '/sites',
+    src: 'apps/web-overlay/src/app/sites/page.tsx',
+    excludePaged: true,
+    soft: true,
+  },
+  {
+    // 站点目录第 2 页起：2026-10-22 从 `?page=N` 迁到路径段，就是为了这条族能进 ISR
+    route: '/sites/p/[n]',
+    urlPrefix: '/sites',
+    src: 'apps/web-overlay/src/app/sites/p/[n]/page.tsx',
     paged: true,
   },
   {
@@ -119,7 +138,8 @@ function checkBuild() {
 
   const rows = [];
   const failures = [];
-  for (const { route } of WHITELIST) {
+  const notes = [];
+  for (const { route, soft } of WHITELIST) {
     const entry = dynamic[route];
     const prerendered = Object.keys(staticRoutes).some((p) => p === route || p.startsWith(`${route}/`));
     if (entry) {
@@ -129,6 +149,9 @@ function checkBuild() {
       }
     } else if (prerendered) {
       rows.push(['●', route, 'build 期全量预渲染']);
+    } else if (soft) {
+      rows.push(['ƒ', route, '不在 prerender-manifest（每次请求现渲）']);
+      notes.push(`${route}：产物是 ƒ —— 构建期没配 NAVHUB_SITE_URL，siteOrigin() 读了 headers()；只提示不判失败`);
     } else {
       rows.push(['ƒ', route, '不在 prerender-manifest（每次请求现渲）']);
       failures.push(`${route}：退化为动态渲染（ƒ）——ISR 丢失`);
@@ -141,12 +164,13 @@ function checkBuild() {
   for (const [mark, route, note] of rows) {
     console.log(`${mark} ${route.padEnd(28)} ${note}`);
   }
+  for (const n of notes) console.log(`  ! ${n}`);
   if (failures.length) {
     console.error('\n✖ ISR 门禁未通过：');
     for (const f of failures) console.error(`  - ${f}`);
     return 1;
   }
-  console.log(`\n✓ ${WHITELIST.length} 条收录型路由都是 ISR（●）`);
+  console.log(`\n✓ ${WHITELIST.length} 条收录型路由的产物与源码门禁都通过${notes.length ? `（${notes.length} 条提示）` : ''}`);
   return 0;
 }
 
@@ -211,7 +235,7 @@ async function checkLive() {
   }
 
   for (const entry of WHITELIST) {
-    const { route, urlPrefix, paged } = entry;
+    const { route, urlPrefix, paged, soft } = entry;
     const all = [...new Set(paths.filter((p) => p.startsWith(urlPrefix)))];
     const matching = all.filter((p) => (paged ? /\/p\/[^/]+$/.test(p) : !/\/p\/[^/]+$/.test(p)));
     // 分页页不会进 sitemap（第 2 页起 noindex），但恰恰是它最容易在按需生成时 500。
@@ -236,19 +260,40 @@ async function checkLive() {
         `${okStatus && cached ? '✓' : '✖'} ${(paged ? 'ISR 分页' : 'ISR 页面').padEnd(9)} ${path.padEnd(44)} ${r.status} cc=${r.cacheControl || '—'}`,
       );
       if (r.status >= 500) failures.push(`${path}：HTTP ${r.status}（5xx 通常是 DYNAMIC_SERVER_USAGE）`);
-      else if (!okStatus) failures.push(`${path}：HTTP ${r.status}，期望 ${allow.join('/')}`);
-      else if (!cached) failures.push(`${path}：没有 s-maxage，说明这一页没走 ISR 缓存`);
+      else if (!okStatus && !soft) failures.push(`${path}：HTTP ${r.status}，期望 ${allow.join('/')}`);
+      // soft 族：没缓存只可能是构建期没配 origin（见 WHITELIST 注释），5xx 才是真回归
+      else if (!cached && !soft) failures.push(`${path}：没有 s-maxage，说明这一页没走 ISR 缓存`);
+      else if (!cached) console.log(`  ! ${path}：没有 s-maxage（${route} 是 soft 族，只提示）`);
     }
   }
 
-  // 旧形态 ?page=N 的归一：分类第 2 页起必须被配置层 308 到 /p/{N}
-  const category = paths.find((p) => p.startsWith('/category/') && !/\/p\//.test(p));
-  if (category) {
-    const r = await probe(base, `${category}?page=2`);
-    const target = `${category}/p/2`;
+  // 旧形态 ?page=N 与第 1 页变体的归一：必须被配置层/路由 30x 到路径段形态，
+  // 否则已收录的旧 URL 权重白扔，还会多出 `/sites/p/1` 这类重复页。
+  const legacyChecks = [
+    {
+      // 分类：从 sitemap 里取一个真实分类页做样本
+      base: paths.find((p) => p.startsWith('/category/') && !/\/p\//.test(p)),
+      from: '?page=2',
+      to: '/p/2',
+    },
+    {
+      // 站点目录：`/sites` 只有一条 sitemap 入口，第 1 页形态是裸路径
+      base: paths.find((p) => p === '/sites') ? '/sites' : undefined,
+      from: '?page=2',
+      to: '/p/2',
+    },
+    { base: '/sites', from: '/p/1', to: '' },
+  ];
+  for (const { base: pageBase, from, to } of legacyChecks) {
+    if (!pageBase) continue;
+    const url = `${pageBase}${from}`;
+    const r = await probe(base, url);
+    const target = `${pageBase}${to}`;
     const ok = (r.status === 301 || r.status === 308) && r.location.startsWith(target);
-    console.log(`${ok ? '✓' : '✖'} ${'旧形态归一'.padEnd(9)} ${(category + '?page=2').padEnd(44)} ${r.status} loc=${r.location || '—'}`);
-    if (!ok) failures.push(`${category}?page=2 没有 30x 到 ${target}（旧收录 URL 会白扔权重）`);
+    console.log(
+      `${ok ? '✓' : '✖'} ${'旧形态归一'.padEnd(9)} ${url.padEnd(44)} ${r.status} loc=${r.location || '—'}`,
+    );
+    if (!ok) failures.push(`${url} 没有 30x 到 ${target || '（裸路径）'}（旧收录 URL 会白扔权重）`);
   }
 
   if (failures.length) {

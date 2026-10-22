@@ -72,8 +72,13 @@ describe("收录型页面的 canonical", () => {
     const sitesPaged = overlayFile("src/app/sites/p/[n]/page.tsx");
     expect(sitesPaged).toContain("robots: { index: false, follow: true }");
     expect(sitesPaged).toContain("const canonical = sitesPageHref(page)");
-    // Math.max(2, ...) 是「canonical 不回指第 1 页」的实现保证
-    expect(sitesPaged).toMatch(/Math\.max\(2,\s*parsePageSegment\(n\)\s*\?\?\s*2\)/);
+    // 页码夹在 [2, totalPages] 之外只会是 1（→ 308 到 /sites）或超末页（→ 308 到末页），
+    // 归一规则必须元信息与页面本体共用同一个函数，否则 canonical 与落地 URL 分叉。
+    expect(sitesPaged).toContain("sitesNormalizedPage(requested, data.totalPages)");
+    const sitesShared = overlayFile("src/app/sites/sites-directory.tsx");
+    expect(sitesShared).toMatch(/sitesNormalizedPage[\s\S]{0,200}Math\.min\(Math\.max\(1, requested\), totalPages\)/);
+    // sitesPageHref 的第 1 页形态只能是裸 /sites，`?page=1` 是重复 URL
+    expect(sitesShared).toContain("return page > 1 ? `/sites/p/${page}` : '/sites'");
 
     // 分类第 N 页（`/category/{slug}/p/{n}`）：canonical 自指，不是回第 1 页
     const category = overlayFile("src/app/category/[slug]/p/[n]/page.tsx");

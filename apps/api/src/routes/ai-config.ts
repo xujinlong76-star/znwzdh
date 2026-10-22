@@ -29,7 +29,7 @@ import {
   type PluginManifest,
   type PluginKind,
 } from "@navhub/core";
-import { identityTrusted, identityOf, unauthorized } from "./shared.ts";
+import { identityTrusted, identityOf, unauthorized, resolveCanonicalIdentity } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -234,7 +234,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         return { error: "参数无效", detail: body.error.issues };
       }
       try {
-        const result = await testLlmProvider(ctx, body.data, identity);
+        const result = await testLlmProvider(ctx, { ...body.data, allowPrivateNetwork: false }, identity);
         return { result };
       } catch (err) {
         return replyLlmError(reply, err);
@@ -541,8 +541,13 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     "/api/user/ai/plugin/generate",
     { config: { scope: "public", rateLimit: { max: 10, timeWindow: "1 minute" } } },
     async (req, reply) => {
-      const identity = identityOf(req as never) || (req as any).auth?.actor || "anonymous";
+      const rawIdentity = identityOf(req as never);
+      if (!rawIdentity) {
+        reply.code(400);
+        return { error: "缺少 userId 或 anonId" };
+      }
       if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+      const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
 
       const body = PluginGenerateBody.safeParse(req.body ?? {});
       if (!body.success) {

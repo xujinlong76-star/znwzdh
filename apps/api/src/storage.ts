@@ -540,11 +540,11 @@ export async function writeStoragePath(ctx: AppContext, path: string, content: s
     invalidateSnapshotCache();
     return { ok: true, note: "已写入 " + r.categories + " 个类目 / " + r.sites + " 个站点" };
   }
-  if (path.includes("site.json")) {
+  if (basename(path) === "site.json") {
     await writeSiteConfig(ctx, parsed as Record<string, unknown>);
     return { ok: true, note: "站点配置已更新" };
   }
-  if (path.includes("resource-metadata.json")) {
+  if (basename(path) === "resource-metadata.json") {
     await writeResourceMetadata(ctx, parsed);
     return { ok: true, note: "资源元数据已更新" };
   }

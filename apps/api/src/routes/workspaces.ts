@@ -6,6 +6,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { randomBytes } from "node:crypto";
 import type { AppContext } from "../context.ts";
 import { identityTrusted, identityOf, resolveCanonicalIdentity, notFound, unauthorized, forbidden } from "./shared.ts";
 import {
@@ -150,13 +151,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
     let customWorkspaces: Workspace[] = [];
     if (identity) {
-      const stored = await ctx.repo.getWorkspaceBlob("workspaces:" + identity);
-      if (stored?.payload) {
-        try {
-          const parsed = JSON.parse(stored.payload);
-          if (Array.isArray(parsed)) customWorkspaces = parsed;
-        } catch {}
-      }
+      customWorkspaces = await loadCustomWorkspaces(ctx, identity);
     }
 
     const items = [...DEFAULT_WORKSPACES, ...customWorkspaces];
@@ -188,7 +183,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
     const now = Date.now();
     const slug = parsed.data.slug || parsed.data.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 32);
     const newWs: Workspace = {
-      id: `ws-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `ws-${now}-${randomBytes(4).toString("hex")}`,
       name: parsed.data.name.trim(),
       slug,
       description: parsed.data.description?.trim(),
@@ -313,7 +308,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
       };
     } else {
       members.push({
-        userId: `usr-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        userId: `usr-${now}-${randomBytes(4).toString("hex")}`,
         username: targetUser,
         role: parsed.data.role as WorkspaceRole,
         email: parsed.data.email,

@@ -571,40 +571,42 @@ export async function setSiteRelations(
   siteId: string,
   relations: SiteRelation[]
 ): Promise<void> {
-  await repo.run("DELETE FROM site_relations WHERE source_site_id = ?", [siteId]);
-  const now = Date.now();
-  for (const raw of relations) {
-    const norm = normalizeSiteRelation(raw);
-    if (!norm) continue;
-    const id = norm.id ?? randomUUID();
-    let targetSiteId = norm.targetSiteId ?? null;
-    if (!targetSiteId) {
-      const targetRows = await repo.raw(
-        "SELECT id FROM sites WHERE url = ? AND deleted_at IS NULL LIMIT 1",
-        [norm.targetUrl]
+  await repo.withTransaction(async () => {
+    await repo.run("DELETE FROM site_relations WHERE source_site_id = ?", [siteId]);
+    const now = Date.now();
+    for (const raw of relations) {
+      const norm = normalizeSiteRelation(raw);
+      if (!norm) continue;
+      const id = norm.id ?? randomUUID();
+      let targetSiteId = norm.targetSiteId ?? null;
+      if (!targetSiteId) {
+        const targetRows = await repo.raw(
+          "SELECT id FROM sites WHERE url = ? AND deleted_at IS NULL LIMIT 1",
+          [norm.targetUrl]
+        );
+        if (targetRows[0]) targetSiteId = String(targetRows[0].id);
+      }
+      await repo.run(
+        `INSERT INTO site_relations (
+           id, source_site_id, target_site_id, target_title, target_url, relation_type,
+           is_free_or_open_source, note, confidence, created_at, updated_at
+         ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          id,
+          siteId,
+          targetSiteId,
+          norm.targetTitle,
+          norm.targetUrl,
+          norm.relationType,
+          norm.isFreeOrOpenSource ? 1 : 0,
+          norm.note ?? null,
+          norm.confidence ?? 1.0,
+          norm.createdAt ?? now,
+          now,
+        ]
       );
-      if (targetRows[0]) targetSiteId = String(targetRows[0].id);
     }
-    await repo.run(
-      `INSERT INTO site_relations (
-         id, source_site_id, target_site_id, target_title, target_url, relation_type,
-         is_free_or_open_source, note, confidence, created_at, updated_at
-       ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [
-        id,
-        siteId,
-        targetSiteId,
-        norm.targetTitle,
-        norm.targetUrl,
-        norm.relationType,
-        norm.isFreeOrOpenSource ? 1 : 0,
-        norm.note ?? null,
-        norm.confidence ?? 1.0,
-        norm.createdAt ?? now,
-        now,
-      ]
-    );
-  }
+  });
 }
 
 /**

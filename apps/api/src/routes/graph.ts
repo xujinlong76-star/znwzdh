@@ -155,7 +155,10 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   /**
    * 全景知识拓扑星图：生成包含站点、分类、标签及其引力关系的星图 Mesh
    */
-  app.get("/api/graph/mesh", { config: { scope: "public" } }, async (req, reply) => {
+  app.get(
+    "/api/graph/mesh",
+    { config: { scope: "public", rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 60, timeWindow: "1 minute" }, cache: { maxAge: 30, etag: true } } },
+    async (req, reply) => {
     try {
       // 星图是访客可见的公开面：只画 active。全站其余访客侧装配（copilot、recipes
       // 同类推荐、health-audit 邻居、AI 建议）都按 status:"active" 取数，唯独这里
@@ -271,7 +274,10 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   /**
    * 跨分类雷同站点查重与冗余分析
    */
-  app.get("/api/sites/duplicates", { config: { scope: "public" } }, async (req, reply) => {
+  app.get(
+    "/api/sites/duplicates",
+    { config: { scope: "public", rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 60, timeWindow: "1 minute" }, cache: { maxAge: 30, etag: true } } },
+    async (req, reply) => {
     try {
       // 与 /api/graph/mesh 同一张公开星图的「冗余分析」页签，取数口径必须一致：
       // 只比 active，否则待审投稿的标题与 URL 会被公开回显。

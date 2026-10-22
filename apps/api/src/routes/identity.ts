@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import type { AppContext } from "../context.ts";
 import { identityAllowed } from "./shared.ts";
+import { verifyIdentitySignature } from "../identity-signature.ts";
 
 export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -30,8 +31,22 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       avatar: z.string().url().nullable().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    const targetId = body.data.provider + ":" + body.data.providerId;
+    if (ctx.config.identitySecret && (req as any).auth?.kind === "anonymous") {
+      const signature = (req.headers as any)["x-navhub-identity-signature"];
+      if (
+        !verifyIdentitySignature(
+          ctx.config.identitySecret,
+          targetId,
+          typeof signature === "string" ? signature : undefined,
+        )
+      ) {
+        reply.code(401);
+        return { error: "身份签名缺失或无效" };
+      }
+    }
     const user = await ctx.repo.upsertOauthUser({
-      id: body.data.provider + ":" + body.data.providerId,
+      id: targetId,
       username: body.data.username,
       email: body.data.email ?? null,
       avatar: body.data.avatar ?? null,

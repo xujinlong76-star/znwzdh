@@ -13,6 +13,7 @@ import {
   runAutonomousHealing,
   buildWaybackSnapshotUrl,
   normalizeTargetUrl,
+  httpUrl,
   type SiteHealthAuditSummary,
   type SiteHealthAuditIssue,
 } from "@navhub/core";
@@ -148,7 +149,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     const body = z.object({
       siteId: z.string().min(1),
       action: z.enum(["wayback", "replacement", "dismiss"]),
-      targetUrl: z.string().url().optional(),
+      targetUrl: httpUrl().optional(),
       targetTitle: z.string().min(1).optional(),
     }).safeParse(req.body ?? {});
 
@@ -223,7 +224,10 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     try {
       const llm = await resolveLlm(ctx);
       if (llmProviderReady(llm.provider)) {
-        const prompt = `你是一个资深互联网工具导航专家。用户收藏的站点【${site.title}】（URL: ${site.url}，描述: ${site.description || "无"}）目前已失效或下线。
+        const safeTitle = (site.title || "").replace(/[\r\n]/g, " ").slice(0, 100);
+        const safeUrl = (site.url || "").replace(/[\r\n]/g, "").slice(0, 200);
+        const safeDesc = (site.description || "无").replace(/[\r\n]/g, " ").slice(0, 300);
+        const prompt = `你是一个资深互联网工具导航专家。用户收藏的站点【${safeTitle}】（URL: ${safeUrl}，描述: ${safeDesc}）目前已失效或下线。
 请推荐 3 个与该站点功能最相似、目前稳定可用且知名度高的替代工具或官网。
 请以 JSON 格式输出，格式必须为严格的 JSON 数组：
 [
@@ -242,12 +246,18 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         if (res.content) {
           const cleaned = res.content.replace(/^```json/i, "").replace(/```$/i, "").trim();
           const items = JSON.parse(cleaned);
-          if (Array.isArray(items) && items.length > 0) {
+          const RecSchema = z.object({
+            title: z.string().min(1).max(200),
+            url: httpUrl(),
+            reason: z.string().min(1).max(500),
+          });
+          const parsed = z.array(RecSchema).safeParse(items);
+          if (parsed.success && parsed.data.length > 0) {
             return {
               ok: true,
               siteId: site.id,
               model: llm.provider.model,
-              recommendations: items.slice(0, 3),
+              recommendations: parsed.data.slice(0, 3),
             };
           }
         }

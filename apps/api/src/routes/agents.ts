@@ -13,6 +13,7 @@ import {
   renderSpeculationRulesScript,
   synthesizeRestTool,
   synthesizeSiteSearchTool,
+  httpUrl,
   type MinimalOpenApiSpec,
   type P2PMessage,
 } from "@navhub/core";
@@ -110,7 +111,7 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   app.post("/api/speculation/rules", { config: { scope: "public" } }, async (req, reply) => {
     const body = z.object({
       candidates: z.array(z.object({
-        url: z.string(),
+        url: httpUrl(),
         confidence: z.number().min(0).max(1),
         predictedArrivalMs: z.number().nonnegative(),
       })).min(1).max(200),
@@ -168,8 +169,8 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       siteSearchSpec: z.object({
         siteId: z.string(),
         siteName: z.string(),
-        searchUrlTemplate: z.string().optional(),
-        apiEndpoint: z.string().optional(),
+        searchUrlTemplate: z.string().regex(/^https?:\/\//i, "searchUrlTemplate 必须以 http:// 或 https:// 开头").optional(),
+        apiEndpoint: z.string().regex(/^https?:\/\//i, "apiEndpoint 必须以 http:// 或 https:// 开头").optional(),
         category: z.string().optional(),
       }).optional(),
       openApiSpec: z.record(z.string(), z.unknown()).optional(),
@@ -249,7 +250,7 @@ export const agentRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   const p2pLastSeen = new Map<string, number>();
   let p2pLastSweep = 0;
 
-  app.post("/api/p2p/signal", { config: { scope: "public" } }, async (req, reply) => {
+  app.post("/api/p2p/signal", { config: { scope: "public", rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 60, timeWindow: "1 minute" } } }, async (req, reply) => {
     // 公共写入面：开放模式保持可用；开启鉴权后必须带有效 token。
     if (!identityAllowed(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const body = z.object({

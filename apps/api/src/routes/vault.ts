@@ -47,7 +47,13 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
     const ifMatch = req.headers["if-match"];
-    const headerVersion = typeof ifMatch === "string" ? Number(ifMatch.match(/\d+/)?.[0]) : NaN;
+    let headerVersion = NaN;
+    if (typeof ifMatch === "string") {
+      const match = ifMatch.trim().match(/^(?:W\/)?"?(\d+)"?$/);
+      if (match) {
+        headerVersion = Number(match[1]);
+      }
+    }
     const expected = body.data.version ?? (Number.isFinite(headerVersion) ? headerVersion : undefined);
 
     if (expected === undefined) {

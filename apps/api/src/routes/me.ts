@@ -224,6 +224,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       for (const fav of favorites) {
         const site = sites.get(fav.siteId);
         if (!site) continue; // 软删除站点在 getSitesByIds 已被过滤：没有可导出的地址
+        if (!/^https?:\/\//i.test(site.url)) continue; // 过滤非 HTTP(S) 地址，防止书签 XSS
         const key = fav.folderId ? (folderName.get(fav.folderId) ?? "未分组") : "未分组";
         const list = byFolder.get(key) ?? [];
         list.push({ url: site.url, title: fav.note || site.title, createdAt: fav.createdAt });

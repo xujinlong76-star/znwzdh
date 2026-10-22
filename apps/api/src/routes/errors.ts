@@ -25,7 +25,10 @@ export const clientErrorRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
   const ctx = opts.ctx;
   const store = new ClientErrorStore();
 
-  app.post("/api/errors", { config: { scope: "public" } }, async (req, reply) => {
+  app.post(
+    "/api/errors",
+    { config: { scope: "public", rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 60, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     const body = z
       .object({
         kind: z.enum(CLIENT_ERROR_KINDS),

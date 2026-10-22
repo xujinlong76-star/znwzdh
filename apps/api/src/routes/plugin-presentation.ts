@@ -37,6 +37,7 @@ function calcTextWidth(text: string): number {
 }
 
 export function renderBadgeSvg(leftText: string, rightText: string, rightColor: string): string {
+  const safeColor = /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]{3,20})$/.test(rightColor) ? rightColor : "#4c1";
   const leftPadding = 12;
   const rightPadding = 12;
   const leftContentWidth = calcTextWidth(leftText);
@@ -61,7 +62,7 @@ export function renderBadgeSvg(leftText: string, rightText: string, rightColor: 
   </clipPath>
   <g clip-path="url(#r)">
     <rect width="${leftWidth}" height="20" fill="#555"/>
-    <rect x="${leftWidth}" width="${rightWidth}" height="20" fill="${rightColor}"/>
+    <rect x="${leftWidth}" width="${rightWidth}" height="20" fill="${safeColor}"/>
     <rect width="${totalWidth}" height="20" fill="url(#s)"/>
   </g>
   <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" text-rendering="geometricPrecision" font-size="110">

@@ -333,7 +333,10 @@ export async function buildServer(ctx: AppContext) {
    */
   app.addHook("onRequest", async (req, reply) => {
     const required = ((req.routeOptions?.config as { scope?: RouteScope } | undefined)?.scope ?? "public") as RouteScope;
-    const auth: AuthIdentity = { ...ANONYMOUS_IDENTITY };
+    const auth: AuthIdentity = {
+      ...ANONYMOUS_IDENTITY,
+      scopes: ctx.config.authRequired ? [] : ANONYMOUS_IDENTITY.scopes,
+    };
     req.auth = auth;
 
     if (!ctx.config.authRequired) return;

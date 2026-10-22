@@ -314,6 +314,7 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     try {
       const result = await ctx.repo.mergeCategories(body.data.sourceId, body.data.targetId);
       await ctx.repo.audit({
+        ip: req.ip,
         actor: req.auth.actor,
         actorKind: req.auth.kind,
         action: "category.merge",

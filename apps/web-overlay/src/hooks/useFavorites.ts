@@ -435,6 +435,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       error: blocked,
       retryable: false,
       nextItems: null,
+      remoteRemoved: 0,
     }
   }
   if (!identity) {
@@ -447,6 +448,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
       error: '未登录：收藏只保存在本机浏览器',
       retryable: false,
       nextItems: null,
+      remoteRemoved: 0,
     }
   }
 
@@ -499,6 +501,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
           error: failure.message,
           retryable: failure.retryable,
           nextItems: null,
+          remoteRemoved: 0,
         }
       }
       version = Math.max(version, result.version)
@@ -520,6 +523,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
           error: failure.message,
           retryable: failure.retryable,
           nextItems: null,
+          remoteRemoved: 0,
         }
       }
       aggregated = pulled.items
@@ -592,5 +596,7 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
     error: failure.message,
     retryable: failure.retryable,
     nextItems: cloudFailed ? null : mergeCloudFavorites(local, list.items ?? []),
+    // 匿名通道没有墓碑概念：云端不返回删除记录，本地合并也不会删任何条目
+    remoteRemoved: 0,
   }
 }

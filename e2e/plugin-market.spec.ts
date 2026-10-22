@@ -214,7 +214,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const name = `E2E 待审包 ${stamp}`;
 
     // 1. 发布：进入 pending 待审队列（F0 起发布必须带作者身份）
-    const published = await request.post(`/api/hub/plugins?anonId=e2e-owner-${stamp}`, {
+    const published = await request.post(`/api/hub/plugins?anonId=anon-e2e-owner-${stamp}`, {
       data: { manifest: sitePackManifest(name, stamp) },
     });
     expect(published.ok(), `发布失败 ${published.status()}: ${await published.text()}`).toBeTruthy();
@@ -496,7 +496,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     // 连续发起 3 次独立匿名举报。举报接口限流为 5 次/小时/IP，
     // 若三次都从 localhost 发出，测试重试时会累计 3+3>5 被 429；
     // 这里用 TEST-NET-3 模拟三个独立来源 IP（E2E 已显式开启 TRUST_PROXY）。
-    const reporters = ['anon-rep-1', 'anon-rep-2', 'anon-rep-3'];
+    const reporters = ['anon-reporter-1', 'anon-reporter-2', 'anon-reporter-3'];
     for (const [index, reporter] of reporters.entries()) {
       const rep = await request.post(`/api/hub/plugins/${slug}/report?anonId=${reporter}`, {
         headers: { 'x-forwarded-for': `203.0.113.${index + 1}` },

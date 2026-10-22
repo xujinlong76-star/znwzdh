@@ -252,9 +252,11 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
 
     // 标题检索走 LEFT JOIN sites
     expect((await ctx!.repo.listFavoritesPage(user, { q: "Alpha" })).total).toBe(1);
-    // 备注检索 + `%` 必须当字面量：ESCAPE '' 在 PG 上同样生效
+    // 备注检索 + `%` 必须当字面量：alpha 的备注含 "100%"，所以 q="%" 只命中它一条，
+    // 而不是把两条都当通配符匹配；q="_" 没有任何字面量下划线，应为 0。
     expect((await ctx!.repo.listFavoritesPage(user, { q: "100%" })).total).toBe(1);
-    expect((await ctx!.repo.listFavoritesPage(user, { q: "%" })).total).toBe(0);
+    expect((await ctx!.repo.listFavoritesPage(user, { q: "%" })).total).toBe(1);
+    expect((await ctx!.repo.listFavoritesPage(user, { q: "_" })).total).toBe(0);
     // 标题排序：LOWER(COALESCE(...)) 是双方言表达式
     const sorted = await ctx!.repo.listFavoritesPage(user, { sort: "title", limit: 50 });
     expect(sorted.items.map((f) => f.siteId)).toEqual([alpha.id, beta.id]);

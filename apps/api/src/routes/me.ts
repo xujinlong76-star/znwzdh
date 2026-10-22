@@ -34,7 +34,7 @@ const ANON_ID_RE = /^anon-[A-Za-z0-9_-]{8,80}$/;
 export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
-  app.get("/api/me", async (req, reply) => {
+  app.get("/api/me", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = identityOf(req as never);
     if (!identity) {
@@ -76,7 +76,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   /* ------------------------- 数据主权 ------------------------- */
 
   /** 导出全部个人数据（JSON 附件；LLM 密钥已脱敏，金库只带版本元信息） */
-  app.get("/api/me/export", async (req, reply) => {
+  app.get(
+    "/api/me/export",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = identityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
@@ -101,10 +104,35 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   });
 
   /**
+   * 我的操作记录：用户可见的数据主权面板（M10）。
+   * 数据源是既有 audit_logs（user.export / user.delete / identity.merge / workspace:*），
+   * 只暴露 action / target / 时间；IP 与内部 diff 不外传。
+   */
+  app.get(
+    "/api/me/activity",
+    { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      const identity = identityOf(req as never);
+      if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+      const q = (req.query ?? {}) as Record<string, string>;
+      const limit = Math.min(Math.max(Number(q.limit ?? 20) || 20, 1), 100);
+      const page = await ctx.repo.listAuditLogs({ actor: canonical, limit });
+      return {
+        ok: true,
+        identity: canonical,
+        items: page.items.map((row) => ({ action: row.action, target: row.target, at: row.createdAt })),
+        hasMore: page.hasMore,
+      };
+    },
+  );
+
+  /**
    * 注销：删除该身份的全部个人数据（保留登录账号本身，重新登录后是空账号）。
    * 必须显式确认，避免误触把收藏与历史一次清空。
    */
-  app.delete("/api/me", async (req, reply) => {
+  app.delete("/api/me", { config: { rateLimit: { max: 3, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = identityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
@@ -130,7 +158,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     return { ok: true, deleted: counts };
   });
 
-  app.post("/api/me/merge", async (req, reply) => {
+  app.post("/api/me/merge", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const target = identityOf(req as never);
     if (!target) {

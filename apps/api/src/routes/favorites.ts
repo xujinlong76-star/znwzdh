@@ -42,7 +42,10 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     };
   });
 
-  app.post("/api/favorites", async (req, reply) => {
+  app.post(
+    "/api/favorites",
+    { config: { rateLimit: { max: 600, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
@@ -61,7 +64,10 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     return { favorite, existed };
   });
 
-  app.delete("/api/favorites/:siteId", async (req, reply) => {
+  app.delete(
+    "/api/favorites/:siteId",
+    { config: { rateLimit: { max: 600, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
     const identity = identityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }

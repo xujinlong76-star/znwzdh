@@ -159,3 +159,95 @@ describe("用户数据管理", () => {
     expect(await repo.countSearchHistory("github:other")).toBe(1);
   });
 });
+
+describe("数据主权补齐（M2）：导出覆盖四类、注销不留残渣", () => {
+  let db: Db;
+  let repo: Repository;
+  const user = "github:u-full";
+  const admin = "local-admin";
+
+  beforeAll(async () => {
+    db = await openDb({ dialect: "sqlite", sqlitePath: ":memory:" });
+    repo = new Repository(db);
+    const now = Date.now();
+    // 造数：评价 / 会话 / 用量 / 工作区 / OAuth 用户行 / 内置管理员行
+    await repo.run(
+      "INSERT INTO plugin_reviews (id, plugin_id, identity, rating, title, content, installed_version, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+      ["rv-1", "pl-1", user, 5, "好评", "正文属于用户内容", "1.0.0", "visible", now, now],
+    );
+    await repo.run("INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?,?,?,?)", [
+      "tk-1",
+      user,
+      now + 86400000,
+      now,
+    ]);
+    await repo.run(
+      "INSERT INTO llm_usage (id, scenario, source, model, identity, prompt_tokens, completion_tokens, latency_ms, ok, thinking, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      ["lu-1", "search", "user", "gpt-x", user, 10, 5, 100, 1, 0, now],
+    );
+    // 工作区明文已迁出 E2EE 表（M3）→ 写入专用表
+    await repo.run("INSERT INTO user_workspace_blobs (user_id, payload, updated_at) VALUES (?,?,?)", [
+      "workspaces:" + user,
+      "[]",
+      now,
+    ]);
+    await repo.run("INSERT INTO user_workspace_blobs (user_id, payload, updated_at) VALUES (?,?,?)", [
+      "ws_members:" + user + ":ws-1",
+      "[]",
+      now,
+    ]);
+    await repo.run(
+      "INSERT INTO users (id, username, password_hash, role, source, created_at) VALUES (?,?,?,?,?,?)",
+      [user, "u-full", "x", "admin", "github", now],
+    );
+    await repo.run(
+      "INSERT INTO users (id, username, password_hash, role, source, created_at) VALUES (?,?,?,?,?,?)",
+      [admin, "local-admin", "x", "admin", "local", now],
+    );
+  });
+
+  afterAll(async () => {
+    await db.close();
+  });
+
+  it("导出包含星标/评价/工作区/事件聚合", async () => {
+    const now = Date.now();
+    await repo.run("INSERT INTO plugin_stars (plugin_id, identity, created_at) VALUES (?,?,?)", ["pl-1", user, now]);
+    await repo.run("INSERT INTO events (kind, site_id, identity, created_at) VALUES (?,?,?,?)", [
+      "click",
+      "s-1",
+      user,
+      now,
+    ]);
+    const exported = await repo.exportUserData(user);
+    expect(exported.pluginReviews).toHaveLength(1);
+    expect(exported.pluginReviews[0].content).toContain("正文");
+    expect(exported.pluginStars).toHaveLength(1);
+    expect(exported.workspaces.map((w) => w.key).sort()).toEqual([
+      "workspaces:" + user,
+      "ws_members:" + user + ":ws-1",
+    ]);
+    expect(exported.eventsSummary.find((e) => e.kind === "click")?.count).toBe(1);
+  });
+
+  it("注销清空评价/会话/工作区，匿名化用量，删除 OAuth 行但保留内置管理员", async () => {
+    const counts = await repo.deleteUserData(user);
+    expect(counts.pluginReviews).toBe(1);
+    expect(counts.sessions).toBe(1);
+    expect(counts.llmUsage).toBe(1);
+    expect(counts.workspaces).toBe(2);
+    expect(counts.userRow).toBe(1);
+
+    expect((await repo.raw("SELECT 1 AS ok FROM plugin_reviews WHERE identity = ?", [user])).length).toBe(0);
+    expect((await repo.raw("SELECT 1 AS ok FROM sessions WHERE user_id = ?", [user])).length).toBe(0);
+    // 用量行仍在，但身份已抹掉
+    const usage = await repo.raw("SELECT identity FROM llm_usage WHERE id = ?", ["lu-1"]);
+    expect(usage).toHaveLength(1);
+    expect(usage[0].identity).toBeNull();
+    expect((await repo.raw("SELECT 1 AS ok FROM user_workspace_blobs WHERE user_id LIKE ?", ["%u-full%"])).length).toBe(0);
+    expect((await repo.raw("SELECT 1 AS ok FROM user_vault_sync WHERE user_id LIKE ?", ["%u-full%"])).length).toBe(0);
+    expect((await repo.raw("SELECT 1 AS ok FROM users WHERE id = ?", [user])).length).toBe(0);
+    // 内置管理员（id 不含 ':'）不受影响
+    expect((await repo.raw("SELECT 1 AS ok FROM users WHERE id = ?", [admin])).length).toBe(1);
+  });
+});

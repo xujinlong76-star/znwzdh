@@ -29,6 +29,11 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "sites", column: "last_visited_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "sites", column: "trend_score", sqlite: "REAL NOT NULL DEFAULT 0", pg: "DOUBLE PRECISION NOT NULL DEFAULT 0" },
   { table: "sites", column: "deleted_at", sqlite: "INTEGER", pg: "BIGINT" },
+  // 站点子类目指针：早期库没有这一列，而读路径（categorySiteCounts、
+  // cleanupOrphanPluginCategories、dashboard 分布）都按双指针写 SQL ——
+  // 缺列时这些语句直接抛 "no such column" 并被 catch 吞掉，
+  // 等于旧部署的类目清扫从未生效。
+  { table: "sites", column: "sub_category_id", sqlite: "TEXT", pg: "TEXT" },
   { table: "sites", column: "metadata", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "email", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "avatar", sqlite: "TEXT", pg: "TEXT" },
@@ -99,6 +104,21 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
       : "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     // 行为事件身份等值过滤（behaviorEvents/deleteBehaviorEvents 从 meta LIKE 迁到 identity =）
     "CREATE INDEX IF NOT EXISTS events_identity_idx ON events(identity)",
+    // 工作区明文专用表（M3）：原先 workspaces:<id> / ws_members:<id>:* 明文写在
+    // user_vault_sync（E2EE 密文表），造成「隐私表述 vs 实现」冲突。迁出后
+    // vault 表回归纯密文；本表命名明确不含 vault/e2ee 字样。
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS user_workspace_blobs (user_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS user_workspace_blobs (user_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at INTEGER NOT NULL)",
+    // 一次性搬迁（幂等）：先把存量明文键复制进新表，再删掉 vault 里的旧行。
+    // LIKE 里的下划线是通配符，必须 ESCAPE 转义，否则 ws_members 会匹配到其它键。
+    `INSERT INTO user_workspace_blobs (user_id, payload, updated_at)
+       SELECT user_id, payload, updated_at FROM user_vault_sync
+       WHERE (user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\')
+         AND payload IS NOT NULL
+       ON CONFLICT(user_id) DO NOTHING`,
+    `DELETE FROM user_vault_sync
+       WHERE user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\'`,
     // 标签概念别名索引
     "CREATE INDEX IF NOT EXISTS tag_aliases_tag_idx ON tag_aliases(tag_id)",
     // 分面属性表与索引 (Taxonomy Phase 2)
@@ -285,8 +305,18 @@ export async function migrateEventIdentity(db: { dialect: string; sqlite?: any; 
  * 3. 该分类下没有任何站点引用——回收站里的站点也算引用。它们在回收站期间可被恢复，
  *    提前删掉分类会让恢复后的站点掉进「未分类」；等保留期结束、站点被物理清理后，
  *    下一次启动清扫才会移除该分类。
+ *
+ * `options.skip`（环境变量 NAVHUB_SKIP_ORPHAN_CLEANUP=1）整体停用本函数。
+ * 类目树迁移（taxonomy-migrate）期间必须停用：新树的叶子在回填站点之前
+ * 短暂地没有存活引用，正是这条清扫的删除条件；不停用会让清扫在迁移窗口里
+ * 把刚建好的叶子再吃一遍 —— 2026-10-21 那批「回收站站点分类全部悬空」
+ * （962 行 / 100 个不存在的 category_id）就是这么来的。
  */
-export async function cleanupOrphanPluginCategories(db: { dialect: string; sqlite?: any; pg?: any }): Promise<number> {
+export async function cleanupOrphanPluginCategories(
+  db: { dialect: string; sqlite?: any; pg?: any },
+  options: { skip?: boolean } = {},
+): Promise<number> {
+  if (options.skip) return 0;
   try {
     if (db.dialect !== "pg" && db.sqlite) {
       const selectSql = `

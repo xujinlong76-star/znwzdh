@@ -98,7 +98,7 @@ function parseWorkspaceList(payload: string | null | undefined): Workspace[] {
 }
 
 async function loadCustomWorkspaces(ctx: AppContext, identity: string): Promise<Workspace[]> {
-  const stored = await ctx.repo.getUserVault("workspaces:" + identity);
+  const stored = await ctx.repo.getWorkspaceBlob("workspaces:" + identity);
   return parseWorkspaceList(stored?.payload);
 }
 
@@ -148,7 +148,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
     let customWorkspaces: Workspace[] = [];
     if (identity) {
-      const stored = await ctx.repo.getUserVault("workspaces:" + identity);
+      const stored = await ctx.repo.getWorkspaceBlob("workspaces:" + identity);
       if (stored?.payload) {
         try {
           const parsed = JSON.parse(stored.payload);
@@ -200,7 +200,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
     const list = await loadCustomWorkspaces(ctx, identity);
     list.push(newWs);
-    await ctx.repo.saveUserVault("workspaces:" + identity, JSON.stringify(list));
+    await ctx.repo.saveWorkspaceBlob("workspaces:" + identity, JSON.stringify(list));
 
     await ctx.repo.audit({
       actor: identity || "anonymous",
@@ -230,7 +230,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
     let members = [...DEFAULT_MEMBERS];
     const customKey = membersKey(identity, wsId);
-    const stored = await ctx.repo.getUserVault(customKey);
+    const stored = await ctx.repo.getWorkspaceBlob(customKey);
     if (stored?.payload) {
       try {
         const parsed = JSON.parse(stored.payload);
@@ -281,7 +281,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
     const customKey = membersKey(identity, wsId);
     let members = [...DEFAULT_MEMBERS];
-    const stored = await ctx.repo.getUserVault(customKey);
+    const stored = await ctx.repo.getWorkspaceBlob(customKey);
     if (stored?.payload) {
       try {
         const parsedList = JSON.parse(stored.payload);
@@ -316,7 +316,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
       });
     }
 
-    await ctx.repo.saveUserVault(customKey, JSON.stringify(members));
+    await ctx.repo.saveWorkspaceBlob(customKey, JSON.stringify(members));
 
     await ctx.repo.audit({
       actor: identity || "anonymous",
@@ -348,7 +348,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
     const customKey = membersKey(identity, wsId);
     let members = [...DEFAULT_MEMBERS];
-    const stored = await ctx.repo.getUserVault(customKey);
+    const stored = await ctx.repo.getWorkspaceBlob(customKey);
     if (stored?.payload) {
       try {
         const parsedList = JSON.parse(stored.payload);
@@ -363,7 +363,7 @@ export const workspacesRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
     }
 
     members = members.filter((m) => m.userId !== userId);
-    await ctx.repo.saveUserVault(customKey, JSON.stringify(members));
+    await ctx.repo.saveWorkspaceBlob(customKey, JSON.stringify(members));
 
     await ctx.repo.audit({
       actor: identity || "anonymous",

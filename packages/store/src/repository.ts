@@ -51,6 +51,7 @@ import * as favoritesRepo from "./repository/favorites.ts";
 import * as behaviorRepo from "./repository/behavior.ts";
 import * as profilesRepo from "./repository/profiles.ts";
 import * as vaultRepo from "./repository/vault.ts";
+import * as workspaceBlobRepo from "./repository/workspace-blobs.ts";
 import * as historyRepo from "./repository/history.ts";
 import * as usersRepo from "./repository/users.ts";
 import * as tokensRepo from "./repository/tokens.ts";
@@ -366,6 +367,16 @@ export class Repository {
     return categoriesRepo.listCategories(this);
   }
 
+  async listCategoriesPage(
+    filter: { limit?: number; offset?: number; parentId?: string | null; level?: number } = {}
+  ): Promise<{ items: Category[]; total: number; limit: number; offset: number }> {
+    return categoriesRepo.listCategoriesPage(this, filter);
+  }
+
+  async categorySiteCounts(): Promise<Array<{ categoryId: string; sites: number }>> {
+    return categoriesRepo.categorySiteCounts(this);
+  }
+
   async getCategory(id: string): Promise<Category | null> {
     return categoriesRepo.getCategory(this, id);
   }
@@ -395,6 +406,11 @@ export class Repository {
 
   async ensureCategory(title: string, source?: string): Promise<string> {
     return categoriesRepo.ensureCategory(this, title, source);
+  }
+
+  /** 「未分类」兜底类目（固定 id cat-uncategorized），缺则建 */
+  async ensureUncategorized(): Promise<string> {
+    return categoriesRepo.ensureUncategorized(this);
   }
 
   async moveCategory(id: string, parentId: string | null): Promise<Category | null> {
@@ -719,6 +735,16 @@ export class Repository {
 
   async saveUserVault(userId: string, payload: string): Promise<{ version: number; updatedAt: number }> {
     return vaultRepo.saveUserVault(this, userId, payload);
+  }
+
+  /* --------------- 工作区明文存储（非 E2EE，见 workspace-blobs.ts） --------------- */
+
+  async getWorkspaceBlob(key: string) {
+    return workspaceBlobRepo.getWorkspaceBlob(this, key);
+  }
+
+  async saveWorkspaceBlob(key: string, payload: string): Promise<void> {
+    return workspaceBlobRepo.saveWorkspaceBlob(this, key, payload);
   }
 
   async saveUserVaultIfUnchanged(

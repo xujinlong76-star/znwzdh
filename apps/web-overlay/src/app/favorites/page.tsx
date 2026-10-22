@@ -582,11 +582,12 @@ export default function FavoritesPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                <label htmlFor="vault-password-main" className="text-xs font-medium text-muted-foreground mb-1 block">
                   设置金库主密码 (至少 6 位)
                 </label>
                 <div className="relative">
                   <input aria-label="输入强主密码"
+                    id="vault-password-main"
                     type={showPasswordText ? 'text' : 'password'}
                     value={vaultPassword}
                     onChange={(e) => setVaultPassword(e.target.value)}
@@ -596,6 +597,9 @@ export default function FavoritesPage() {
                   <button
                     type="button"
                     onClick={() => setShowPasswordText(!showPasswordText)}
+                    aria-label={showPasswordText ? '隐藏密码' : '显示密码'}
+                    title={showPasswordText ? '隐藏密码' : '显示密码'}
+                    aria-pressed={showPasswordText}
                     className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
                   >
                     {showPasswordText ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}

@@ -136,3 +136,24 @@ describe("/api/me/merge", () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe("/api/me/activity（M10 用户可见操作记录）", () => {
+  it("返回自己的审计事件，不含他人事件；未受信 401", async () => {
+    await ctx.repo.audit({ actor: USER, actorKind: "user", action: "user.export", target: USER });
+    await ctx.repo.audit({
+      actor: "github:someone-else",
+      actorKind: "user",
+      action: "user.delete",
+      target: "github:someone-else",
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/me/activity", headers: userHeaders() });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { identity: string; items: Array<{ action: string; target: string | null }> };
+    expect(body.identity).toBe(USER);
+    expect(body.items.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(body.items)).not.toContain("someone-else");
+    // 只暴露 action/target/at，不外传 ip 与 diff
+    expect(Object.keys(body.items[0]).sort()).toEqual(["action", "at", "target"]);
+  });
+});

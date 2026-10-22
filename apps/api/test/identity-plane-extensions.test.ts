@@ -244,8 +244,11 @@ describe("工作空间名册：按调用方隔离", () => {
   });
 
   it("名册写在带身份的键下，全局键不再被任何调用方写", async () => {
-    expect(await ctxB.repo.getUserVault("ws_members:" + VICTIM + ":ws-personal")).not.toBeNull();
-    expect(await ctxB.repo.getUserVault("ws_members:ws-personal")).toBeNull();
+    // 工作区明文已迁出 E2EE 表（M3）：探针改读 user_workspace_blobs，
+    // 同时确认 vault 表里不再有这两类明文键。
+    expect(await ctxB.repo.getWorkspaceBlob("ws_members:" + VICTIM + ":ws-personal")).not.toBeNull();
+    expect(await ctxB.repo.getWorkspaceBlob("ws_members:ws-personal")).toBeNull();
+    expect(await ctxB.repo.getUserVault("ws_members:" + VICTIM + ":ws-personal")).toBeNull();
   });
 
   it("无票自称身份仍然一律 401（第一轴没被放宽）", async () => {

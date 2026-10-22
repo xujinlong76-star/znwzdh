@@ -210,8 +210,11 @@ HTML —— 三处各管一段，缺一处就有中间地带。`links`（内链�
 5.3 数的是「该有的族有没有」，这一层数的是「不该有的条目在不在」：`/…/p/{n}` 分页页与
 任何带 query 的 `<loc>`。理由不是风格 —— 分页页自己声明 `noindex`，把它递进 sitemap 就是
 主动请爬虫收录一份重复内容；带 query 的 `<loc>` 还会和裁决 3 的前提（落地页 canonical
-必须干净）直接打架。这一层不看抽样，整份 sitemap 一次性判，实测两处都是 0 条
-（CI 种子 138 条 / 生产代理口径 1126 条），所以不会假红。
+必须干净）直接打架。这一层不看抽样，整份 sitemap 一次性判。
+不会假红有两层依据：① 生成侧的 URL 模板全是纯路径 —— `sitemap-entries.ts` 里
+`staticEntries` / `siteEntries` / `tagEntries` / `categoryEntries` / `collectionEntries`
+和 `plugins/sitemap.ts` 的插件、作者条目，所有 `url:` 拼接都不带 `?`，也没有 `/p/`；
+② 实测大库代理口径 1126 条里 0 条（CI 种子那一轮由门禁自己把数字打在日志里）。
 用例：`scripts/check-isr-routes.test.ts` 的「不可收录形态…就红灯」与
 「sitemap 只有归一后的路径段形态时不误红」—— 前者用 `extraLocs` 往假 sitemap 里塞
 `/category/ai-tools/p/2` 与 `/sites?page=2`，后者证明归一版本不触发。

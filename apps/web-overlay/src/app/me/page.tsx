@@ -83,7 +83,25 @@ export default function MePage() {
     setError(null)
     try {
       const sessionRes = await fetch('/api/auth/session', { cache: 'no-store' })
-      const session = (await sessionRes.json().catch(() => ({}))) as { user?: { id?: string } }
+      // 会话探测失败 ≠ 匿名：非 2xx / 解析失败都按"暂时无法确认"处理，
+      // 否则已登录用户会被明确告知"你是匿名，登录后可同步"——把故障说成事实。
+      if (!sessionRes.ok) {
+        setError('登录状态暂时无法确认，请稍后重试')
+        setState('error')
+        return
+      }
+      const session = (await sessionRes.json().catch(() => {
+        // 非 JSON / 解析中断：返回 null，由下方统一按「暂时无法确认」处理——
+        // 不能把故障当成匿名状态告知用户
+        return null
+      })) as
+        | { user?: { id?: string } }
+        | null
+      if (session === null) {
+        setError('登录状态暂时无法确认，请稍后重试')
+        setState('error')
+        return
+      }
       if (!session?.user?.id) {
         setAnonId(getAnonId())
         setState('anonymous')

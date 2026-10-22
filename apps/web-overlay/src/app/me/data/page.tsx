@@ -16,7 +16,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
 import { AlertTriangle, ArrowLeft, CheckCircle2, Database, Download, Loader2, ShieldCheck, Trash2 } from 'lucide-react'
 
-type ViewState = 'loading' | 'anonymous' | 'ready' | 'deleted'
+type ViewState = 'loading' | 'anonymous' | 'ready' | 'deleted' | 'error'
 
 export default function MeDataPage() {
   const { toast } = useToast()
@@ -27,22 +27,29 @@ export default function MeDataPage() {
   const [confirmText, setConfirmText] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let alive = true
-    void (async () => {
-      try {
-        const res = await fetch('/api/auth/session', { cache: 'no-store' })
-        const session = (await res.json().catch(() => ({}))) as { user?: { id?: string } }
-        if (!alive) return
-        setState(session?.user?.id ? 'ready' : 'anonymous')
-      } catch {
-        if (alive) setState('anonymous')
+  // 会话探测失败 ≠ 匿名：非 2xx / 解析失败 / 网络异常一律落 error（可重试），
+  // 只有"服务端明确返回无 user"才是 anonymous。
+  const loadSession = useCallback(async () => {
+    setState('loading')
+    try {
+      const res = await fetch('/api/auth/session', { cache: 'no-store' })
+      if (!res.ok) {
+        setState('error')
+        return
       }
-    })()
-    return () => {
-      alive = false
+      const session = (await res.json().catch(() => {
+        // 非 JSON / 解析中断：返回 null，下面按「状态未知」渲染，而不是当作匿名
+        return null
+      })) as { user?: { id?: string } } | null
+      setState(session === null ? 'error' : session?.user?.id ? 'ready' : 'anonymous')
+    } catch {
+      setState('error')
     }
   }, [])
+
+  useEffect(() => {
+    void loadSession()
+  }, [loadSession])
 
   const handleExport = useCallback(async () => {
     setExporting(true)
@@ -118,6 +125,18 @@ export default function MeDataPage() {
 
       {state === 'loading' && (
         <div className="h-32 animate-pulse rounded-xl border border-border/70 bg-card/50" aria-busy="true" />
+      )}
+
+      {state === 'error' && (
+        <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 space-y-3" role="alert">
+          <p className="text-sm font-semibold">登录状态暂时无法确认</p>
+          <p className="text-xs text-muted-foreground">
+            这通常是网络或会话服务抖动，不代表你的账号有问题。稍后重试即可，数据没有任何变动。
+          </p>
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => void loadSession()}>
+            重试
+          </Button>
+        </section>
       )}
 
       {state === 'anonymous' && (

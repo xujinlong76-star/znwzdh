@@ -95,6 +95,12 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     }
   }
   const rawBody = hasBody ? await request.text() : undefined
+  if (rawBody && rawBody.length > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      { error: '请求体过大（上限 1MB）' },
+      { status: 413, headers: { 'cache-control': 'no-store' } },
+    )
+  }
   const hasValidBody = hasBody && typeof rawBody === 'string' && rawBody.trim().length > 0
   const body = hasValidBody ? rawBody : undefined
 

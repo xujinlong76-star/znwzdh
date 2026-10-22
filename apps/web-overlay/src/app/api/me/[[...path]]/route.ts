@@ -65,13 +65,20 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     const [provider, ...rest] = identity.split(':')
     const providerId = identity.includes(':') ? rest.join(':') : identity
     const token = serviceToken()
+    const secret = hubIdentitySecret()
+    const targetUserId = `${provider || 'github'}:${providerId}`
+    const syncHeaders: Record<string, string> = {
+      'content-type': 'application/json',
+      ...(token ? { authorization: 'Bearer ' + token } : {}),
+      'x-navhub-user-id': targetUserId,
+    }
+    if (secret) {
+      syncHeaders['x-navhub-identity-signature'] = await signIdentity(secret, targetUserId)
+    }
     try {
       const res = await fetch(HUB_BASE + '/api/users/sync', {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(token ? { authorization: 'Bearer ' + token } : {}),
-        },
+        headers: syncHeaders,
         body: JSON.stringify({
           provider: provider || 'github',
           providerId,

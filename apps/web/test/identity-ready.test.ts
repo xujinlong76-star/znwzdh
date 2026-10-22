@@ -4,6 +4,10 @@
  * 这组守卫锁的是「时序」而不是样式：页面不能再在挂载时读一次 localStorage
  * 就下结论——首次登录直接落在 /favorites 或 /me/history 时，SessionSync 可能
  * 还没把 userId 写入，页面会整页按匿名渲染且永不重试。
+ *
+ * P1-1 分层：这里断言的是 hook 接线与事件订阅（node 环境无法渲染 Next 页面，
+ * 删掉这些 import/调用就没有任何测试能挡住）；渲染结果由 `e2e/user-center.spec.ts`
+ * 与共享态/存储测试覆盖。
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'

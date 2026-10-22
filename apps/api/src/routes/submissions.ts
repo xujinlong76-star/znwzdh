@@ -136,6 +136,9 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
 
     const nextStatus = body.data.action === "approve" ? "active" : "archived";
     await ctx.repo.updateSite(site.id, { status: nextStatus as never });
+    if (body.data.action === "approve") {
+      await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
+    }
     await ctx.repo.audit({
       ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
       action: body.data.action === "approve" ? "submission.approve" : "submission.reject",

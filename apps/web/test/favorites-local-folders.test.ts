@@ -68,7 +68,9 @@ describe('本地收藏夹（P2）', () => {
 
   it('匿名态不再谎称"需要登录才能建收藏夹"', () => {
     const page = overlaySource('src/app/favorites/page.tsx')
+    // 旧文案（能力与承诺不对等）必须消失；新文案的渲染结果由
+    // e2e/user-center.spec.ts 的本地收藏夹用例断言，源码里不重复锁字面量。
     expect(page).not.toContain('登录后可创建收藏夹、写备注')
-    expect(page).toContain('本地收藏夹仅存本机；登录后按名称合并到云端')
+    expect(page).toContain('本地收藏夹仅存本机')
   })
 })

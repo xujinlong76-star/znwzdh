@@ -83,6 +83,7 @@ export function exportNetscapeBookmarks(categories: Category[], sites: Site[]): 
     lines.push("    <DL><p>");
 
     for (const site of catSites) {
+      if (!site.url || !/^https?:\/\//i.test(site.url)) continue;
       const siteAddDate = Math.floor((site.createdAt || Date.now()) / 1000);
       const siteIcon = (site as any).icon || site.iconKey || "";
       const iconAttr = siteIcon ? ` ICON="${escapeHtml(siteIcon)}"` : "";
@@ -100,6 +101,7 @@ export function exportNetscapeBookmarks(categories: Category[], sites: Site[]): 
     lines.push(`    <DT><H3 ADD_DATE="${Math.floor(Date.now() / 1000)}">未分类书签</H3>`);
     lines.push("    <DL><p>");
     for (const site of uncategorized) {
+      if (!site.url || !/^https?:\/\//i.test(site.url)) continue;
       const siteAddDate = Math.floor((site.createdAt || Date.now()) / 1000);
       const siteIcon = (site as any).icon || site.iconKey || "";
       const iconAttr = siteIcon ? ` ICON="${escapeHtml(siteIcon)}"` : "";

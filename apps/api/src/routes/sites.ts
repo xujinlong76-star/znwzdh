@@ -160,6 +160,14 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       if (attach.categoryId) patch = { ...patch, categoryId: attach.categoryId };
     }
     const before = await ctx.repo.getSite(id);
+    if (!before) { reply.code(404); return { error: "站点不存在" }; }
+    if (patch.url !== undefined && patch.url !== before.url) {
+      const dup = await ctx.repo.findSiteByUrl(patch.url);
+      if (dup && dup.id !== id) {
+        reply.code(409);
+        return { error: "该网址已存在", siteId: dup.id, site: dup };
+      }
+    }
     const site = await ctx.repo.updateSite(id, patch);
     if (!site) { reply.code(404); return { error: "站点不存在" }; }
     await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);

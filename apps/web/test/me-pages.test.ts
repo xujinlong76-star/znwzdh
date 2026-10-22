@@ -7,6 +7,10 @@ import { describe, expect, it } from 'vitest'
  * 第二批用户中心的静态守卫：页面存在、可访问性地标、关键接口接线。
  * 这里刻意检查源码字符串而不是渲染：路由依赖 NextAuth 会话与中枢，
  * 渲染测试需要整套运行时；这些断言保证的是「功能没有被后续改动删掉」。
+ *
+ * P1-1 分层：本文件只做**存在性与接线**守卫（文件/路由/API 路径/导航入口）。
+ * 页面渲染出来的状态与文案交给 `e2e/user-center.spec.ts`，不在源码里重复断言
+ * 同一句文案，也不把实现写成哪一行（如 STAT_ITEMS 的精确字面量）。
  */
 const HERE = dirname(fileURLToPath(import.meta.url))
 function overlayRoot(): string {
@@ -76,8 +80,9 @@ describe('用户中心第二批页面', () => {
     expect(src).toContain('clearProfileSignals')
     expect(src).toContain("href=\"/me/history\"")
     expect(src).toContain("href=\"/me/data\"")
-    // 搜索历史入口不再错误地指向收藏页
-    expect(src).toContain("label: '搜索历史', icon: Search, href: '/me/history'")
+    // 搜索历史入口不再错误地指向收藏页：入口表里必须有一项指向 /me/history
+    // （不锁整行字面量——图标或字段顺序变化不该让守卫变红）
+    expect(src).toMatch(/href:\s*'\/me\/history'/)
   })
 
   it('收藏页接入文件夹和备注管理', () => {

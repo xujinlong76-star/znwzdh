@@ -263,7 +263,16 @@ export const visualRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /**
    * 视觉指纹与调色板 WCAG 对比度/美学和谐度审计端点
    */
-  app.post("/api/design/harmony", { config: { scope: "public", cache: { maxAge: 60 } } }, async (req, reply) => {
+  app.post(
+    "/api/design/harmony",
+    {
+      config: {
+        scope: "public",
+        cache: { maxAge: 60 },
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 60, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
     const body = z.object({
       palette: z.array(z.string()).min(1).max(64),
       foreground: z.string().optional().default("#ffffff"),
@@ -279,7 +288,15 @@ export const visualRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     return { ok: true, report };
   });
 
-  app.post("/api/mcp", { config: { scope: "public" } }, async (req, reply) => {
+  app.post(
+    "/api/mcp",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 60, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
     // JSON-RPC 批量请求会逐项执行工具；不设上限时一个 4MB body 就能让单请求
     // 放大成数万次仓储调用。这里只做体积闸门，协议校验仍交给 handleRpc。
     if (!req.body || typeof req.body !== "object") {

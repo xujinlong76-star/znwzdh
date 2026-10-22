@@ -15,7 +15,7 @@ const chatSchema = z.object({
   history: z
     .array(
       z.object({
-        role: z.enum(["user", "assistant", "system"]),
+        role: z.enum(["user", "assistant"]),
         content: z.string().max(8000, "历史消息过长"),
       })
     )
@@ -100,7 +100,7 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
         const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
           { role: "system", content: systemPrompt },
           ...history.slice(-6).map((h) => ({
-            role: h.role as "user" | "assistant",
+            role: (h.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
             content: h.content,
           })),
           { role: "user", content: message },

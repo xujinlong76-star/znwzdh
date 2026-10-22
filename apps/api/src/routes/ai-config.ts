@@ -295,10 +295,17 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         "请使用条理清晰、友好且专业的中文回答，重要链接和工具名称请加粗或使用 Markdown 格式。",
       ];
       if (body.data.context?.categories?.length) {
-        systemPromptParts.push(`用户现有的导航分类包含：${body.data.context.categories.slice(0, 15).join("、")}`);
+        systemPromptParts.push(
+          `用户现有的导航分类包含：${body.data.context.categories
+            .slice(0, 15)
+            .map((c) => c.replace(/[\r\n]/g, " "))
+            .join("、")}`,
+        );
       }
       if (body.data.context?.activeTab) {
-        systemPromptParts.push(`用户当前所在界面为：${body.data.context.activeTab}`);
+        systemPromptParts.push(
+          `用户当前所在界面为：${body.data.context.activeTab.replace(/[\r\n]/g, " ")}`,
+        );
       }
 
       const messages = [

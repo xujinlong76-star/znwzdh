@@ -123,6 +123,7 @@ export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     try {
       const result = await ctx.repo.mergeTags(body.data.sourceId, body.data.targetId);
       await ctx.repo.audit({
+        ip: req.ip,
         actor: req.auth.actor,
         actorKind: req.auth.kind,
         action: "tag.merge",

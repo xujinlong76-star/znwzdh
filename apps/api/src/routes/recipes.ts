@@ -124,9 +124,10 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     });
 
     await ctx.repo.audit({
+      ip: req.ip,
       actor: req.auth.actor,
       actorKind: req.auth.kind,
-      action: "site.heal",
+      action: "site.heal", 
       target: site.id,
       diff: {
         diagnosis: report.diagnosis,
@@ -243,7 +244,15 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    * Next-Gen 5.0 语义聚类与自适应类目生成端点
    * 对未分类、批量导入或指定分类下的站点进行 K-Means++ 语义聚类与命名生成
    */
-  app.post("/api/sites/cluster", { config: { scope: "public" } }, async (req, reply) => {
+  app.post(
+    "/api/sites/cluster",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 30, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
     const body = z.object({
       siteIds: z.array(z.string()).max(100).optional(),
       categoryId: z.string().optional(),

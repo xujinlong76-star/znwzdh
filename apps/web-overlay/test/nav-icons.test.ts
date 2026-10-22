@@ -108,6 +108,13 @@ function seedIconNames(): string[] {
   return names
 }
 
+/** 权威类目树（packages/core/src/category-registry.ts）里的图标 token */
+function registryIconNames(): string[] {
+  const file = join(REPO, 'packages', 'core', 'src', 'category-registry.ts')
+  const source = stripComments(readFileSync(file, 'utf8'))
+  return [...source.matchAll(/icon:\s*"([^"]+)"/g)].map((m) => m[1] as string)
+}
+
 describe('真实数据里的图标名必须命中静态映射', () => {
   it('先确认真的读到了数据（否则空数组会假装通过）', () => {
     const names = webContentIconNames()
@@ -123,15 +130,24 @@ describe('真实数据里的图标名必须命中静态映射', () => {
     expect(misses, `这些名字没进静态表：${misses.join(', ')}`).toEqual([])
   })
 
-  it('中枢 seed 的小写名字也命中（sparkles / code / palette / book / coffee）', () => {
+  it('权威树的图标 token 全部命中静态表（18 个根的图标都在库里）', () => {
+    const names = [...new Set(registryIconNames())]
+    expect(names.length).toBeGreaterThanOrEqual(18)
+    const misses = names.filter((n) => resolveNavIcon(n) === null)
+    expect(misses, `这些名字没进静态表：${misses.join(', ')}`).toEqual([])
+  })
+
+  it('中枢 seed 剩下的图标（兜底「未分类」的 folder）也命中', () => {
+    // 5 个平铺种子根已经退给权威树，seed-data 里只剩 source:'system' 的兜底桶
     const names = [...new Set(seedIconNames().filter((n) => n.trim() !== '' && !isIconUrl(n)))]
-    expect(names).toContain('code')
+    expect(names).toContain('folder')
     const misses = names.filter((n) => resolveNavIcon(n) === null)
     expect(misses, `这些名字没进静态表：${misses.join(', ')}`).toEqual([])
   })
 
   it('历史遗留的 linecons-thumbs-up 有明确映射（不再默默显示文件夹）', () => {
-    expect(webContentIconNames()).toContain('linecons-thumbs-up')
+    // 基线文件已换成权威树快照（scripts/gen-nav-baseline.mts），这个值只剩在存量库里；
+    // 正因如此映射不能删——老数据还在请求它。
     expect(resolveNavIcon('linecons-thumbs-up')).toBe(NAV_ICONS['linecons-thumbs-up'])
     expect(resolveNavIcon('linecons-thumbs-up')).not.toBeNull()
   })

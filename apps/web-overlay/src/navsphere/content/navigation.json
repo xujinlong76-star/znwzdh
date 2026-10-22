@@ -1,0 +1,1140 @@
+{
+  "navigationItems": [
+    {
+      "id": "reg-ai-tools",
+      "title": "AI 工具",
+      "icon": "sparkles",
+      "description": "大模型与 AI 产品矩阵",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-chat-assistants",
+          "title": "对话助手",
+          "description": "通用对话机器人与多模型入口",
+          "parentId": "reg-ai-tools",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-da02af4f6414",
+              "title": "ChatGPT",
+              "href": "https://chatgpt.com",
+              "description": "OpenAI 的对话式 AI 助手",
+              "icon": "/assets/images/logos/chatgpt.webp",
+              "enabled": true,
+              "tags": [
+                "对话",
+                "大模型"
+              ]
+            },
+            {
+              "id": "nav-9336ef9971b1",
+              "title": "DeepSeek",
+              "href": "https://chat.deepseek.com",
+              "description": "深度求索的大模型对话与推理服务，中文表现优秀",
+              "icon": "https://chat.deepseek.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "中文",
+                "大模型"
+              ]
+            },
+            {
+              "id": "nav-b6079f993ed2",
+              "title": "Claude",
+              "href": "https://claude.ai",
+              "description": "Anthropic 的大语言模型对话助手，擅长长文本与代码理解",
+              "icon": "/assets/images/logos/claude.webp",
+              "enabled": true,
+              "tags": [
+                "对话",
+                "大模型"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-ai-coding-assistant",
+          "title": "AI 编程助手",
+          "description": "代码补全、AI IDE 与编程代理",
+          "parentId": "reg-ai-tools",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-4537a5e836ce",
+              "title": "Cline",
+              "href": "https://github.com/cline/cline",
+              "description": "自主型 AI 编程 Agent，直接执行终端命令、读写文件并迭代解决工程任务",
+              "icon": "https://github.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "agent",
+                "自主",
+                "ai-编程"
+              ]
+            },
+            {
+              "id": "nav-ec57d26d0bcb",
+              "title": "GitHub Copilot",
+              "href": "https://github.com/features/copilot",
+              "description": "AI 代码补全与编程助手，支持 VS Code、JetBrains 等主流编辑器",
+              "icon": "https://github.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "代码补全",
+                "编程助手"
+              ]
+            },
+            {
+              "id": "nav-94e2b6dc31b5",
+              "title": "Cursor",
+              "href": "https://cursor.com",
+              "description": "AI 驱动的代码编辑器，用自然语言写代码、改代码",
+              "icon": "https://cursor.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "代码编辑器",
+                "ai-编程"
+              ]
+            },
+            {
+              "id": "nav-ee398c68f878",
+              "title": "Windsurf",
+              "href": "https://windsurf.ai",
+              "description": "Codeium 打造的下一代 Agentic AI IDE，支持级联思考 (Cascade)",
+              "icon": "https://windsurf.ai/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "agentic-ide",
+                "ai-编程"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-ai-image-generation",
+          "title": "AI 图像生成",
+          "description": "文生图、图像编辑与视觉模型",
+          "parentId": "reg-ai-tools",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-bf794ea816c3",
+              "title": "Midjourney",
+              "href": "https://midjourney.com",
+              "description": "AI 绘画与图像生成工具",
+              "icon": "https://midjourney.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "ai-绘图",
+                "生成"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-ai-audio-voice",
+          "title": "AI 音频语音",
+          "description": "语音合成、识别、克隆与音频生成",
+          "parentId": "reg-ai-tools",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-9e9db2e08ffe",
+              "title": "Suno",
+              "href": "https://suno.com",
+              "description": "AI 音乐生成，输入歌词即可出歌",
+              "icon": "https://suno.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "ai-音乐",
+                "生成"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-agents-and-automation",
+          "title": "智能体与自动化",
+          "description": "Agent 框架、工作流与自动化编排",
+          "parentId": "reg-ai-tools",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-f46ea0410157",
+              "title": "LangGraph",
+              "href": "https://github.com/langchain-ai/langgraph",
+              "description": "构建可控、有状态、支持循环工作流的多智能体编排引擎",
+              "icon": "https://github.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "多智能体",
+                "编排"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-models-and-datasets",
+          "title": "模型与数据集",
+          "description": "模型社区、数据集与标注服务",
+          "parentId": "reg-ai-tools",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-1fac4a7503a0",
+              "title": "魔搭 ModelScope",
+              "href": "https://modelscope.cn",
+              "description": "阿里达摩院开源模型社区，国内模型下载优选",
+              "icon": "https://modelscope.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "国内",
+                "模型库"
+              ]
+            },
+            {
+              "id": "nav-9564f66ddc16",
+              "title": "Hugging Face",
+              "href": "https://huggingface.co",
+              "description": "开源模型与数据集社区，模型下载与在线推理",
+              "icon": "https://huggingface.co/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "模型库",
+                "数据集"
+              ]
+            },
+            {
+              "id": "nav-ae0df63eb94c",
+              "title": "Ollama",
+              "href": "https://ollama.com",
+              "description": "本地一键运行开源大模型，隐私友好",
+              "icon": "https://ollama.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "本地部署",
+                "大模型"
+              ]
+            },
+            {
+              "id": "nav-55a843da50d7",
+              "title": "Qwen 2.5",
+              "href": "https://github.com/QwenLM/Qwen2.5",
+              "description": "阿里通义千问开源大模型，具备极强代码与数学推理能力",
+              "icon": "https://github.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "开源",
+                "大模型"
+              ]
+            },
+            {
+              "id": "nav-65e32dabe8c3",
+              "title": "vLLM",
+              "href": "https://github.com/vllm-project/vllm",
+              "description": "高吞吐、低显存占用的大模型推理与服务引擎，支持 PagedAttention",
+              "icon": "https://github.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "高吞吐",
+                "模型推理"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-frontend-development",
+      "title": "前端开发",
+      "icon": "code",
+      "description": "框架、工程化与交互实现",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-build-and-tooling",
+          "title": "构建与工程化",
+          "description": "打包器、包管理器与 Monorepo",
+          "parentId": "reg-frontend-development",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-a867c19af98c",
+              "title": "npmmirror",
+              "href": "https://registry.npmmirror.com",
+              "description": "淘宝 NPM 镜像，国内安装依赖加速",
+              "icon": "https://registry.npmmirror.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "镜像",
+                "包管理"
+              ]
+            },
+            {
+              "id": "nav-33126b9d8bd3",
+              "title": "npm",
+              "href": "https://npmjs.com",
+              "description": "JavaScript 包管理器与依赖仓库",
+              "icon": "https://npmjs.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "javascript",
+                "包管理"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-components-and-ui",
+          "title": "组件与 UI 体系",
+          "description": "组件库、无头组件与设计基座",
+          "parentId": "reg-frontend-development",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-6e95fda33796",
+              "title": "Uiverse",
+              "href": "https://uiverse.io",
+              "description": "社区分享的开源 UI 组件与 CSS 特效",
+              "icon": "https://uiverse.io/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "组件",
+                "css"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-backend-and-cloud",
+      "title": "后端与云",
+      "icon": "cloud",
+      "description": "运行时、数据库与基础设施",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-languages-and-runtimes",
+          "title": "语言与运行时",
+          "description": "编程语言官网、运行时与版本管理",
+          "parentId": "reg-backend-and-cloud",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-8cf2ddc041b7",
+              "title": "Bun",
+              "href": "https://bun.sh",
+              "description": "全功能超高速 JavaScript/TypeScript 运行时、打包器与测试套件",
+              "icon": "https://bun.sh/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "运行时",
+                "极速"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-backend-frameworks",
+          "title": "后端框架",
+          "description": "Web 框架、RPC 与微服务框架",
+          "parentId": "reg-backend-and-cloud",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-6b8b45c286e3",
+              "title": "Fastify",
+              "href": "https://fastify.dev",
+              "description": "极速且低开销的 Node.js 现代微服务后端框架",
+              "icon": "https://fastify.dev/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "高性能",
+                "后端框架"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-databases-and-storage",
+          "title": "数据库与存储",
+          "description": "关系型、NoSQL 与对象存储",
+          "parentId": "reg-backend-and-cloud",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-8589adf0fa18",
+              "title": "Drizzle ORM",
+              "href": "https://orm.drizzle.team",
+              "description": "现代轻量、无头、零运行时开销的 100% 类型安全 TypeScript SQL ORM",
+              "icon": "https://orm.drizzle.team/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "typescript",
+                "orm",
+                "数据库"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-containers-and-orchestration",
+          "title": "容器与编排",
+          "description": "容器镜像、编排与集群管理",
+          "parentId": "reg-backend-and-cloud",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-0040b04719f7",
+              "title": "Docker Hub",
+              "href": "https://hub.docker.com",
+              "description": "容器镜像仓库，镜像拉取与发布",
+              "icon": "https://hub.docker.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "部署",
+                "容器"
+              ]
+            },
+            {
+              "id": "nav-26bfddc112e2",
+              "title": "Kubernetes",
+              "href": "https://kubernetes.io",
+              "description": "容器编排系统官方文档与下载",
+              "icon": "https://kubernetes.io/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "编排",
+                "容器"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-cloud-and-iac",
+          "title": "IaC 与云厂商",
+          "description": "基础设施即代码与公有云控制台",
+          "parentId": "reg-backend-and-cloud",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-e1b397fc3214",
+              "title": "Vercel",
+              "href": "https://vercel.com",
+              "description": "前端部署平台，推送即上线",
+              "icon": "/assets/images/logos/vercel.webp",
+              "enabled": true,
+              "tags": [
+                "托管",
+                "部署"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-devops-and-security",
+      "title": "运维与安全",
+      "icon": "shield",
+      "description": "发布、监控与防护",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-gateway-and-traffic",
+          "title": "网关与流量",
+          "description": "负载均衡、服务网格与流量治理",
+          "parentId": "reg-devops-and-security",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-36fec9ad3e59",
+              "title": "Cloudflare",
+              "href": "https://cloudflare.com",
+              "description": "CDN、DNS、Workers 边缘计算与 Pages 部署",
+              "icon": "/assets/images/logos/cloudflar.webp",
+              "enabled": true,
+              "tags": [
+                "cdn",
+                "边缘计算"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-developer-resources",
+      "title": "开发者资源",
+      "icon": "laptop",
+      "description": "托管、文档、演练与速查",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-code-hosting",
+          "title": "代码托管",
+          "description": "仓库托管、代码搜索与协作平台",
+          "parentId": "reg-developer-resources",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-6f36c8bb7920",
+              "title": "Gitee 码云",
+              "href": "https://gitee.com",
+              "description": "国内代码托管平台，访问速度快",
+              "icon": "https://gitee.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "代码托管",
+                "国内"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-qa-communities",
+          "title": "问答社区",
+          "description": "技术问答、论坛与知识社区",
+          "parentId": "reg-developer-resources",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-507f520c3bf3",
+              "title": "Stack Overflow",
+              "href": "https://stackoverflow.com",
+              "description": "程序员问答社区，几乎所有报错都能找到答案",
+              "icon": "https://stackoverflow.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "问答",
+                "社区"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-official-docs",
+          "title": "官方文档",
+          "description": "规范原文、手册与标准组织",
+          "parentId": "reg-developer-resources",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-d3df48a5371e",
+              "title": "MDN Web Docs",
+              "href": "https://developer.mozilla.org",
+              "description": "Web 技术权威文档，HTML/CSS/JS 参考",
+              "icon": "https://developer.mozilla.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "web",
+                "文档"
+              ]
+            },
+            {
+              "id": "nav-e8e654c9c7e4",
+              "title": "MDN 中文",
+              "href": "https://developer.mozilla.org/zh-CN",
+              "description": "MDN Web 文档中文版，前端必读",
+              "icon": "https://developer.mozilla.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "文档",
+                "前端"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-learning-paths",
+          "title": "学习路线",
+          "description": "路线图、课程与技能评估",
+          "parentId": "reg-developer-resources",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-a8cb4c370926",
+              "title": "roadmap.sh",
+              "href": "https://roadmap.sh",
+              "description": "开发者学习路线图，规划技术成长路径",
+              "icon": "https://roadmap.sh/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "路线图",
+                "规划"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-algorithm-interviews",
+          "title": "算法面试",
+          "description": "刷题平台、面试题与竞赛",
+          "parentId": "reg-developer-resources",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-05c14d1da7a2",
+              "title": "力扣 LeetCode",
+              "href": "https://leetcode.cn",
+              "description": "算法题库与在线编程练习",
+              "icon": "https://leetcode.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "算法",
+                "练习"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-design-and-creative",
+      "title": "设计与创意",
+      "icon": "palette",
+      "description": "灵感、UI、字体与品牌",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-inspiration-and-showcase",
+          "title": "灵感与作品集",
+          "description": "作品社区、评审与求职作品集",
+          "parentId": "reg-design-and-creative",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-93efc6a224fa",
+              "title": "Dribbble",
+              "href": "https://dribbble.com",
+              "description": "设计师作品社区，寻找设计灵感",
+              "icon": "https://dribbble.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "灵感",
+                "社区"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-ui-assets",
+          "title": "UI 资源素材",
+          "description": "界面套件、模型与插件素材",
+          "parentId": "reg-design-and-creative",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-0c2be6ab8fb0",
+              "title": "TinyPNG",
+              "href": "https://tinypng.com",
+              "description": "在线图片压缩，显著减小体积且保持画质",
+              "icon": "/assets/images/logos/tinypng.webp",
+              "enabled": true,
+              "tags": [
+                "压缩",
+                "图片处理"
+              ]
+            },
+            {
+              "id": "nav-03b44480b539",
+              "title": "Remove.bg",
+              "href": "https://www.remove.bg",
+              "description": "AI 一键抠图去背景",
+              "icon": "https://remove.bg/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "ai",
+                "抠图"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-icons-and-typefaces",
+          "title": "图标与字体",
+          "description": "图标集、插图与中英文字体",
+          "parentId": "reg-design-and-creative",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-b9b2d2b2e7f8",
+              "title": "Iconify",
+              "href": "https://iconify.design",
+              "description": "海量开源图标聚合，支持多套图标集",
+              "icon": "https://iconify.design/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "图标",
+                "素材"
+              ]
+            },
+            {
+              "id": "nav-92a457b294f1",
+              "title": "Google Fonts",
+              "href": "https://fonts.google.com",
+              "description": "免费开源字体库，中英文字体齐全",
+              "icon": "/assets/images/logos/Materialicons.webp",
+              "enabled": true,
+              "tags": [
+                "免费",
+                "字体"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-color-palettes",
+          "title": "配色与色板",
+          "description": "取色器、色板与对比度工具",
+          "parentId": "reg-design-and-creative",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-28db7169d6e6",
+              "title": "Coolors",
+              "href": "https://coolors.co",
+              "description": "快速生成与微调配色方案",
+              "icon": "https://coolors.co/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "工具",
+                "配色"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-stock-media",
+          "title": "图片视频素材",
+          "description": "图库、视频素材与免版权资源",
+          "parentId": "reg-design-and-creative",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-186e99992a26",
+              "title": "Unsplash",
+              "href": "https://unsplash.com",
+              "description": "免费高清图片素材库，可商用",
+              "icon": "/assets/images/logos/unsplash.webp",
+              "enabled": true,
+              "tags": [
+                "图片素材",
+                "免费"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-prototyping-and-collab",
+          "title": "原型与协作",
+          "description": "原型工具、设计令牌与交付联调",
+          "parentId": "reg-design-and-creative",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-b220d784d62a",
+              "title": "Figma",
+              "href": "https://figma.com",
+              "description": "在线 UI 设计与原型协作工具，多人实时编辑",
+              "icon": "/assets/images/logos/figma.webp",
+              "enabled": true,
+              "tags": [
+                "协作",
+                "ui-设计"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-office-productivity",
+      "title": "效率办公",
+      "icon": "briefcase",
+      "description": "文档协作、笔记与桌面工具",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-mindmaps-and-boards",
+          "title": "思维导图与白板",
+          "description": "思维导图、流程图与在线白板",
+          "parentId": "reg-office-productivity",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-fc4808a9bd0d",
+              "title": "Excalidraw",
+              "href": "https://excalidraw.com",
+              "description": "在线手绘风格白板，画流程图与架构图",
+              "icon": "https://excalidraw.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "流程图",
+                "白板"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-learning-growth",
+      "title": "学习成长",
+      "icon": "bookopen",
+      "description": "课程、考试、语言与技能",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-programming-learning",
+          "title": "编程学习",
+          "description": "编程基础、算法与青少年科创",
+          "parentId": "reg-learning-growth",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-8477ee9ea720",
+              "title": "菜鸟教程",
+              "href": "https://www.runoob.com",
+              "description": "编程入门教程，覆盖主流语言与框架",
+              "icon": "https://runoob.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "入门",
+                "教程"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-online-courses",
+          "title": "在线课程",
+          "description": "MOOC 与综合课程平台",
+          "parentId": "reg-learning-growth",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-851b8e2cbc38",
+              "title": "哔哩哔哩",
+              "href": "https://www.bilibili.com",
+              "description": "国内视频社区，技术课程与学习资源丰富",
+              "icon": "https://bilibili.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "视频",
+                "课程"
+              ]
+            },
+            {
+              "id": "nav-c32ae6fc9d92",
+              "title": "Coursera",
+              "href": "https://www.coursera.org",
+              "description": "国际名校在线课程平台",
+              "icon": "https://coursera.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "课程",
+                "国际"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-digital-libraries",
+          "title": "数字图书馆",
+          "description": "图书馆、电子书与阅读管理",
+          "parentId": "reg-learning-growth",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-f8c966c919a4",
+              "title": "维基百科",
+              "href": "https://zh.wikipedia.org",
+              "description": "自由的百科全书",
+              "icon": "https://zh.wikipedia.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "知识",
+                "百科"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-academic-research",
+      "title": "学术科研",
+      "icon": "book",
+      "description": "文献、检索与学术出版",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-literature-search",
+          "title": "文献检索",
+          "description": "数据库、索引与全文检索入口",
+          "parentId": "reg-academic-research",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-bd7aa388347c",
+              "title": "arXiv",
+              "href": "https://arxiv.org",
+              "description": "预印本论文库，AI 与计算机科学前沿",
+              "icon": "https://arxiv.org/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "论文",
+                "科研"
+              ]
+            },
+            {
+              "id": "nav-0ab4df3bab56",
+              "title": "Papers with Code",
+              "href": "https://paperswithcode.com",
+              "description": "论文与开源实现对照，AI 研究必备",
+              "icon": "https://paperswithcode.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "论文",
+                "代码"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-news-and-media",
+      "title": "资讯媒体",
+      "icon": "filetext",
+      "description": "权威媒体、垂类资讯与核查",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-tech-news",
+          "title": "科技资讯",
+          "description": "科技媒体、行业观察与开发者新闻",
+          "parentId": "reg-news-and-media",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-587f03113c25",
+              "title": "GitHub Trending",
+              "href": "https://github.com/trending",
+              "description": "每日热门开源项目榜，追踪技术趋势",
+              "icon": "https://github.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "趋势",
+                "开源"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-entertainment",
+      "title": "影音娱乐",
+      "icon": "film",
+      "description": "长短视频、音乐、播客与演出",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-ratings-and-reviews",
+          "title": "影视评分",
+          "description": "评分榜单、片单与影视资料库",
+          "parentId": "reg-entertainment",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-b0ac61074c51",
+              "title": "豆瓣",
+              "href": "https://www.douban.com",
+              "description": "书影音评分与评论社区",
+              "icon": "https://douban.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "书影音",
+                "评分"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-consumer-life",
+      "title": "消费生活",
+      "icon": "shoppingbag",
+      "description": "购物、美食、出行、运动与家庭",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-ecommerce",
+          "title": "电商购物",
+          "description": "综合商城、品牌店与商家工具",
+          "parentId": "reg-consumer-life",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-29bea3ce4550",
+              "title": "淘宝",
+              "href": "https://www.taobao.com",
+              "description": "综合电商购物平台",
+              "icon": "https://taobao.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "电商",
+                "购物"
+              ]
+            },
+            {
+              "id": "nav-8aca4a15bb97",
+              "title": "京东",
+              "href": "https://www.jd.com",
+              "description": "自营电商，数码家电配送快",
+              "icon": "https://jd.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "电商",
+                "购物"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-transit-and-mobility",
+          "title": "交通与出行",
+          "description": "票务、地图导航、通勤与物流",
+          "parentId": "reg-consumer-life",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-f653aea738ca",
+              "title": "百度地图",
+              "href": "https://map.baidu.com",
+              "description": "地图导航、路线规划与周边搜索",
+              "icon": "https://map.baidu.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "地图",
+                "导航"
+              ]
+            },
+            {
+              "id": "nav-d9f255845165",
+              "title": "铁路 12306",
+              "href": "https://www.12306.cn",
+              "description": "火车票与高铁票官方购票平台",
+              "icon": "https://12306.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "出行",
+                "购票"
+              ]
+            },
+            {
+              "id": "nav-3f4b76d9cbfd",
+              "title": "高德地图",
+              "href": "https://www.amap.com",
+              "description": "地图导航与实时路况",
+              "icon": "https://amap.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "路况",
+                "地图"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-social-and-dating",
+          "title": "社交与婚恋",
+          "description": "社交平台、社区与婚恋服务",
+          "parentId": "reg-consumer-life",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-8d8c02444fdf",
+              "title": "小红书",
+              "href": "https://www.xiaohongshu.com",
+              "description": "生活方式分享社区，攻略与测评",
+              "icon": "https://xiaohongshu.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "生活",
+                "社区"
+              ]
+            },
+            {
+              "id": "nav-240d7ed2bb28",
+              "title": "知乎",
+              "href": "https://www.zhihu.com",
+              "description": "中文问答社区，深度讨论与经验分享",
+              "icon": "https://zhihu.com/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "问答",
+                "社区"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reg-public-services",
+      "title": "公共服务",
+      "icon": "building",
+      "description": "政务、法律、医疗、三农与生命关怀",
+      "enabled": true,
+      "subCategories": [
+        {
+          "id": "reg-government-affairs",
+          "title": "政务办事",
+          "description": "部委、地方门户与一网通办",
+          "parentId": "reg-public-services",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-d798930a89ac",
+              "title": "国家网信办举报中心",
+              "href": "https://www.12377.cn",
+              "description": "网络违法和不良信息举报平台",
+              "icon": "https://12377.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "政务",
+                "举报"
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reg-weather-and-environment",
+          "title": "气象与环境",
+          "description": "天气预报、空气质量与环境监测",
+          "parentId": "reg-public-services",
+          "enabled": true,
+          "items": [
+            {
+              "id": "nav-60bb52f1114d",
+              "title": "中国天气网",
+              "href": "https://weather.com.cn",
+              "description": "全国天气预报与灾害预警查询",
+              "icon": "https://weather.com.cn/favicon.ico",
+              "enabled": true,
+              "tags": [
+                "天气",
+                "查询"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

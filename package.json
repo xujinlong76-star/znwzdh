@@ -22,6 +22,7 @@
     "seed": "node apps/api/src/seed-main.ts",
     "mcp:stdio": "pnpm --filter @navhub/mcp start",
     "vendor:web": "node scripts/vendor-web.mjs",
+    "nav:baseline": "node scripts/gen-nav-baseline.mts",
     "test:pg": "node scripts/pg-check.mts",
     "check:overlay": "node scripts/check-web-overlay.mjs",
     "check:bundle": "node scripts/check-bundle-budget.mjs",

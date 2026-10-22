@@ -234,3 +234,40 @@ describe("页面源码：不许把「中枢挂了」写成「不存在」", () =
     expect(colMissingOrder).toBeGreaterThan(colNoticeOrder);
   });
 });
+
+/**
+ * 降级快照的收录语义（2026-10-23）。
+ *
+ * 一轮全量审计（1126 URL / 89s）打穿中枢取数后，997 个详情页里 551 个以
+ * 「HTTP 200 + title=站点详情 + `<h1>` 数 0 + 无 JSON-LD」落进 ISR 缓存，
+ * `x-nextjs-cache: HIT` 还能续 60s —— 空壳是以「可索引」的形态被收录的。
+ *
+ * 两条钉子对应两个结论：
+ *   1. 坏快照必须自己声明 `noindex, follow`（不收录，但内链权重照走），
+ *      一个 revalidate 周期后被正常快照覆盖，标记一起消失；
+ *   2. 不许再用 `connection()` 想把降级渲染标成不可缓存 —— 实测这条路由
+ *      按需生成时 `await connection()` 直接抛 DYNAMIC_SERVER_USAGE 变成 500，
+ *      比坏快照更糟（它就是 /site/{id} 那批 500 的同一个失败形态）。
+ */
+describe("站点详情服务端壳：降级快照的收录语义", () => {
+  const shell = readFileSync(overlayFile("src/app/site/[id]/page.tsx"), "utf8");
+
+  it("取数失败分支给出 noindex, follow（而不是留着空页可索引）", () => {
+    expect(shell).toContain("robots: 'noindex, follow'");
+    // 必须落在 failed 分支里，而不是无条件挂在整个页面上
+    const failedBranch = shell.slice(
+      shell.indexOf("if (probe.status === 'failed')"),
+      shell.indexOf("const site = probe.data"),
+    );
+    expect(failedBranch).toContain("noindex");
+    expect(shell.indexOf("robots: 'noindex")).toBeLessThan(shell.indexOf("const site = probe.data"));
+  });
+
+  it("不许引入 next/server 的 connection()（按需生成会抛 DYNAMIC_SERVER_USAGE）", () => {
+    // 先剥注释：上面那条实测结论就写在注释里，不剥的话钉子会把「解释为什么不能用」
+    // 一起判红——和 check-isr-routes.mjs 对 searchParams 的处理同一口径。
+    const code = shell.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+    expect(code).not.toMatch(/from ['"]next\/server['"]/);
+    expect(code).not.toContain("connection()");
+  });
+});

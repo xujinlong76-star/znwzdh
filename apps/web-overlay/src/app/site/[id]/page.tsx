@@ -67,6 +67,11 @@ async function loadSite(id: string) {
   const safeId = safeDecodeParam(id)
   if (!safeId) return { safeId, probe: { status: 'failed' as const } }
   const probe = await hubGetProbe<HubSite>('/api/sites/' + encodeURIComponent(safeId), 60)
+  // 这里**不要**试图用 `connection()` 把降级渲染标成不可缓存。
+  // 实测（2026-10-23，无 origin 产物 + 中枢不可达）：本路由按需生成时
+  // `await connection()` 直接抛 DYNAMIC_SERVER_USAGE → HTTP 500，
+  // 和「缺 NAVHUB_SITE_URL 时读 headers()」是同一个失败形态，比坏快照更糟
+  // （降级壳至少是 200，且带 noindex，见 generateMetadata 的 failed 分支）。
   return { safeId, probe }
 }
 
@@ -87,7 +92,7 @@ async function loadSiteContext(site: HubSite) {
   const [res, categories, rawCounts] = await Promise.all([
     loadCategorySites(categoryId, RELATED_LIMIT + 1, 0, 300),
     loadCategories(3600),
-    loadActiveCategoryCounts(3600),
+    loadActiveCategoryCounts(60),
   ])
   const counts = descendantSiteCounts(categories ?? [], rawCounts)
   const category = categories?.find((c) => c.id === categoryId && c.enabled !== false) ?? null
@@ -125,12 +130,21 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
   const canonical = `/site/${encodeURIComponent(safeId)}`
   if (probe.status === 'failed') {
-    // 降级：不编造站点名，保留通用标题与 canonical
+    // 降级：不编造站点名，保留通用标题与 canonical。
+    //
+    // `noindex, follow` 是这一份快照唯一的自我标记：中枢抖动时，降级壳会被
+    // 当作正常 ISR 快照落盘（实测一轮全量审计里 997 个详情页有 551 个是这样，
+    // `x-nextjs-cache: HIT` 续 60s），而它带的是全站共用的「站点详情」标题、
+    // 正文靠客户端补——爬虫在这 60s 里拿到的是一个可索引的空页。
+    // 缓存本身没法按需绕过（见 loadSite 里 connection() 的实测结论），
+    // 所以改为给坏快照盖章：不收录、但仍顺着内链走，一个 revalidate 周期后
+    // 正常快照覆盖回来，`noindex` 一起消失。
     const title = '站点详情'
     const description = '官网入口、一句话简介与所属分类'
     return {
       title,
       description,
+      robots: 'noindex, follow',
       alternates: { canonical },
       ...(await pageShareMetadata({ url: canonical, title, description })),
     }

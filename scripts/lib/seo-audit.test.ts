@@ -6,6 +6,7 @@ import {
   auditPage,
   auditPageDetailed,
   decodeHtmlEntities,
+  isBogusLocalOriginAsset,
   linkHref,
   metaContent,
   normalizeUrl,
@@ -187,6 +188,63 @@ describe("auditPageDetailed：OG 门槛", () => {
     expect(
       auditPageDetailed(analyzeHtml(html, "https://nav.example/site/a"), { expectIndexable: false }),
     ).toEqual([]);
+  });
+});
+
+describe("isBogusLocalOriginAsset：metadataBase 兜底地址", () => {
+  it("真实域名页面引用本机图片算问题", () => {
+    expect(isBogusLocalOriginAsset("http://localhost:3000/og-default.png", "https://nav.example/sites")).toBe(true);
+    expect(isBogusLocalOriginAsset("http://127.0.0.1:3000/x.png", "https://nav.example/sites")).toBe(true);
+    expect(isBogusLocalOriginAsset("http://[::1]:3000/x.png", "https://nav.example/sites")).toBe(true);
+  });
+
+  it("审计目标本身就是本机时不算问题", () => {
+    expect(isBogusLocalOriginAsset("http://localhost:3078/og.png", "http://127.0.0.1:3078/sites")).toBe(false);
+    expect(isBogusLocalOriginAsset("http://localhost:3000/og.png", "http://localhost:3000/sites")).toBe(false);
+  });
+
+  it("同域/外链图片与解析失败的地址一律放行", () => {
+    expect(isBogusLocalOriginAsset("https://nav.example/og.png", "https://nav.example/sites")).toBe(false);
+    expect(isBogusLocalOriginAsset("https://cdn.example/og.png", "https://nav.example/sites")).toBe(false);
+    expect(isBogusLocalOriginAsset("/og.png", "https://nav.example/sites")).toBe(false);
+    expect(isBogusLocalOriginAsset("not a url", "https://nav.example/sites")).toBe(false);
+  });
+});
+
+describe("auditPageDetailed：og:image 指向本机", () => {
+  const htmlWithImage = (image: string) => `<!doctype html><html lang="zh-CN"><head>
+    <title>站点目录</title>
+    <meta name="description" content="描述">
+    <link rel="canonical" href="/sites">
+    <meta property="og:url" content="/sites">
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="示例导航" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:image" content="${image}">
+    </head><body><h1>站点目录</h1><a href="/site/b">B</a></body></html>`;
+
+  it("线上域名抓到 localhost:3000 的图片时按 og 报", () => {
+    const issues = auditPageDetailed(
+      analyzeHtml(htmlWithImage("http://localhost:3000/og-default.png"), "https://nav.example/sites"),
+    );
+    const og = issues.filter((issue) => issue.kind === "og").map((issue) => issue.message);
+    expect(og.length).toBe(1);
+    expect(og[0]).toContain("og:image 指向本机地址");
+    expect(og[0]).toContain("NAVHUB_SITE_URL");
+  });
+
+  it("本地环境（base 也是本机）不误报", () => {
+    const issues = auditPageDetailed(
+      analyzeHtml(htmlWithImage("http://localhost:3078/og-default.png"), "http://127.0.0.1:3078/sites"),
+    );
+    expect(issues.filter((issue) => issue.kind === "og")).toEqual([]);
+  });
+
+  it("缺 origin 时的相对 canonical / og:url 仍然干净", () => {
+    const issues = auditPageDetailed(
+      analyzeHtml(htmlWithImage("https://nav.example/og-default.png"), "https://nav.example/sites"),
+    );
+    expect(issues.filter((issue) => issue.kind === "canonical" || issue.kind === "og")).toEqual([]);
   });
 });
 

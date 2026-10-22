@@ -266,6 +266,23 @@ export function auditInternalLinks(url, anchors) {
 }
 
 /**
+ * 「图片指向本机、页面不指向本机」= Next 在 metadataBase 缺席时用
+ * `http://localhost:3000` 兜底解析出来的地址。审计的 base 本身就是 localhost 时
+ * 不算问题（本地/dev 的正常形态），所以要比 host，而不是只看值里有没有 localhost。
+ */
+export function isBogusLocalOriginAsset(assetUrl, pageUrl) {
+  const LOCAL_HOST_RE = /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/i;
+  try {
+    const asset = new URL(assetUrl, pageUrl);
+    const page = new URL(pageUrl);
+    if (!LOCAL_HOST_RE.test(asset.hostname)) return false;
+    return !LOCAL_HOST_RE.test(page.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 单页收录底线检查的明细版。`kind` 用于 CLI 汇总：
  * meta / canonical / robots / og / jsonld / links。
  */
@@ -296,6 +313,18 @@ export function auditPageDetailed(page, { expectIndexable = true } = {}) {
 
   if (expectIndexable) {
     if (!page.ogImage) push("og", "缺少 og:image");
+    else if (isBogusLocalOriginAsset(page.ogImage, page.url)) {
+      // 专防 metadataBase 缺席的那一类静默错误：Next 在没有 metadataBase 时
+      // 用 `http://localhost:3000` 兜底解析相对图片地址，于是分享卡的图片指向
+      // 一个绝不存在的外域地址。canonical / og:url 不会被兜底（保持相对，
+      // 且相对地址已由上面两条比对覆盖），只有 images 会中招。
+      // 根因是部署侧没注入 NAVHUB_SITE_URL；构建期首份 ISR 快照也可能暂时如此，
+      // 一个 revalidate 周期后自愈，所以这条报「配置/快照」而不是「页面坏了」。
+      push(
+        "og",
+        `og:image 指向本机地址（${page.ogImage}）：NAVHUB_SITE_URL 未注入时 Next 用 http://localhost:3000 兜底 metadataBase；若线上确实配了，说明抓到的是构建期首份快照，等一个 revalidate 周期复查`,
+      );
+    }
     if (!page.ogType) push("og", "缺少 og:type");
     if (!page.ogSiteName) push("og", "缺少 og:site_name");
     if (!page.ogLocale) push("og", "缺少 og:locale");

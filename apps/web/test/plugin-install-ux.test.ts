@@ -83,3 +83,13 @@ describe("插件卡片与市场弹窗：已安装插件的卸载/管理联动", 
     expect(modal).toContain("前往已安装管家")
   })
 })
+
+describe("插件详情：分享深链只对未安装用户自动弹窗", () => {
+  const view = overlaySource("src/app/marketplace/[slug]/plugin-detail-view.tsx")
+
+  it("等客户端带身份刷新完成后再决定是否弹窗（SSR 首屏没有 installed）", () => {
+    expect(view).toContain("detailSynced")
+    expect(view).toContain("if (!detailSynced || loading || !plugin")
+    expect(view).toContain("setDetailSynced(true)")
+  })
+})

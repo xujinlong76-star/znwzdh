@@ -110,6 +110,12 @@ export default function PluginDetailView({
   const [plugin, setPlugin] = useState<HubPluginItem | null>(initialPlugin)
   const [summary, setSummary] = useState<any>(initialSummary)
   const [loading, setLoading] = useState(!initialPlugin)
+  /**
+   * 服务端首屏不携带 identity（身份在 localStorage），installed/starred 一定是
+   * 「未安装」的初始值。必须等客户端带身份静默刷新完成后再做安装相关的自动决策，
+   * 否则分享深链会在已安装用户刷新页面时重新弹出安装确认。
+   */
+  const [detailSynced, setDetailSynced] = useState(!initialPlugin)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [identity, setIdentity] = useState<string>('')
 
@@ -214,17 +220,19 @@ export default function PluginDetailView({
       : null
 
   // D4 分享深链：?install=1 落地即弹安装确认（尚未安装时；仅处理一次，
-  // 避免星标等后续状态刷新触发重弹打扰）
+  // 避免星标等后续状态刷新触发重弹打扰）。
+  // 必须等 detailSynced：SSR 首屏没有 identity，直接看 installed 会把已安装
+  // 用户误判成未安装，刷新后重新弹窗并遮住「已安装」按钮。
   const deepLinkHandled = useRef(false)
   useEffect(() => {
-    if (loading || !plugin || deepLinkHandled.current) return
+    if (!detailSynced || loading || !plugin || deepLinkHandled.current) return
     deepLinkHandled.current = true
     const action = resolveInstallAction(plugin.installedVersion, plugin.version)
     if (action === 'install' && new URLSearchParams(window.location.search).get('install') === '1') {
       setModalMode('install')
       setInstallModalOpen(true)
     }
-  }, [loading, plugin])
+  }, [detailSynced, loading, plugin])
 
   const handleShareLink = useCallback(async () => {
     // 优先创建站内短链；失败时退回完整深链，分享不因后端故障而不可用
@@ -283,6 +291,7 @@ export default function PluginDetailView({
       if (!opts?.silent) setPlugin(null)
     } finally {
       if (!opts?.silent) setLoading(false)
+      setDetailSynced(true)
     }
   }, [slug])
 

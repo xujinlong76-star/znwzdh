@@ -27,15 +27,18 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const storeRequire = createRequire(path.join(ROOT, "packages/store/package.json"));
 
 function parseArgs(argv) {
-  const args = { db: null, out: null, keep: 7, rotate: true };
+  // 保留 35 份而不是 7 份：purge_trash 每天清理 30 天前进入回收站的站点，
+  // 7 天窗口意味着「上周误删、这周才发现」时已没有任何一份备份同时包含删除前数据。
+  // 备份是纯增量追加的单文件，磁盘成本远低于丢数据的代价。
+  const args = { db: null, out: null, keep: 35, rotate: true };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--db") args.db = argv[++i];
     else if (a === "--out") args.out = argv[++i];
-    else if (a === "--keep") args.keep = Math.max(1, Number(argv[++i]) || 7);
+    else if (a === "--keep") args.keep = Math.max(1, Number(argv[++i]) || 35);
     else if (a === "--no-rotate") args.rotate = false;
     else if (a === "--help" || a === "-h") {
-      console.log("用法: node scripts/backup.mjs [--db <path>] [--out <dir>] [--keep <n>] [--no-rotate]");
+      console.log("用法: node scripts/backup.mjs [--db <path>] [--out <dir>] [--keep <n>] [--no-rotate]  （默认保留 35 份）");
       process.exit(0);
     } else {
       console.error(`未知参数: ${a}（--help 查看用法）`);

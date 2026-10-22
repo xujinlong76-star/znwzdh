@@ -421,3 +421,54 @@ e2e/front-pages.spec.ts（三条冒烟） 3 passed（IA 重构未破坏既有断
 ```
 
 > 备注：`page.route` 的 glob 必须写成 `**/search-history**`——`lib/navhub-api.ts` 的 `hubUrl()` 会剥掉前导 `/api`，真实请求是 `/api/hub/search-history`，不是 `/api/hub/api/search-history`。写错 glob 会让拦截静默不生效，测试「通过」但什么都没验证。
+---
+
+## 9. 下一步三项的执行结果（2026-10-23 凌晨）
+
+> 对应 v2.0 结尾给出的三个下一步，按 P0 → P1 → P2 顺序全部执行完毕。
+
+### 9.1 P1 · 先补测试再拆文件（已完成）
+
+**抽出的可测纯逻辑**（原先是页面里的内联代码，零覆盖）：
+
+| 模块 | 覆盖的曾经过失 |
+|---|---|
+| `lib/favorites-vault.ts` | 收藏 ↔ 金库的字段映射（`note→category`、`icon→tags[0]`）、缺 `url` 条目丢弃、缺 `createdAt` 补确定值、导出文件名 |
+| `lib/favorites-sync-copy.ts` | 同步状态条五种分支：同步中 / 推了 N 条 / 纯拉取 / 墓碑优先提示 / 失败必带原因（含"原因未知"）；重试按钮只在「失败 + 可重试」时出现 |
+| `lib/favorites-folders.ts` | 本地收藏夹的解析降级、名称归一化与重名拒绝、上传计划（同名复用云端 id） |
+
+新增单测：`favorites-vault` 7 条、`favorites-sync-copy` 8 条、`favorites-folders` 11 条、`favorites-local-folders` 6 条（接线守卫）。
+
+**页面拆分**：E2EE 金库的两个面板（导出 / 解密导入，约 200 行 JSX）抽为 `components/user-center/favorites-vault-panels.tsx`——无自有状态、全部 props 注入，可在没有 store 与网络的环境下单独渲染。`favorites/page.tsx` 从 1,095 行降到约 1,050 行，且主流程（读本地 → 同步 → 渲染列表）不再被两段密码表单淹没。
+
+> 未做完整拆分的理由：剩余部分（同步状态条、收藏夹面板、卡片列表）与本地 store、云端同步强耦合，且 `e2e/front-pages.spec.ts` 断言 Hero 文案；在无组件级渲染测试的环境里继续拆，回归只能靠 E2E 冒烟，风险高于收益。
+
+### 9.2 P2 · 收藏夹本地化（已完成）
+
+**改动**：
+- 新键 `navhub.favorites.folders.v1`（**不动** `navhub.favorites.v1` 等既有键——那是"改了等于丢老用户收藏"的红线）；
+- `visibleFolders`：登录态取云端夹子，匿名态取本地夹子，**同一套 UI 两个数据源**——不是给匿名用户另做一套界面；
+- 建 / 改 / 删三条路径都有本地分支；本地 id 带 `local-` 前缀，与云端 uuid 可区分；
+- 登录同步成功后 `migrateLocalFolders` 按名称把本地夹子合并上云（同名复用、异名新建），再把条目 `folderId` 重映射到云端 id，最后清空本地表。
+
+**两个关键实现选择**：
+1. 重映射走 `updateMeta`（逐条置脏）而**不是** `replaceAll`——后者会清掉全部脏标记，把还没推送成功的收藏变更一起丢掉；
+2. 重映射的条目取自同步结果的 `nextItems` 而**不是** `favorites.items`——后者可能是同步前的旧闭包。
+
+**用户可见变化**：匿名态现在显示"本地收藏夹仅存本机；登录后按名称合并到云端"，卡片上的"移动到收藏夹 / 备注"对匿名用户也可用。
+
+### 9.3 E2E 抓到的第二个测试自身缺陷
+
+本地收藏夹用例首跑假红：`beforeEach` 里的 `page.addInitScript(() => localStorage.clear())` 在**每次导航**（含 `reload`）都会执行，于是"刷新后分组仍在"这条断言必然失败——测的是测试自己的 bug。已改为依赖 Playwright 的 per-test context 隔离（每个用例本就拥有空 localStorage），并在注释里写清原因。
+
+**这条的价值**：持久化类断言与"每次导航都清空"的 init script 是结构性冲突，和上一轮 `null` 会话那个 bug 一样——都属于"测试写错了但看起来像产品坏了"。
+
+### 9.4 验证记录（本轮追加）
+
+```
+vitest  apps/web/test/favorites-{vault,sync-copy,folders,local-folders}.test.ts   32 passed
+vitest  apps/web/test/favorites-{sync,filter,shared-state,storage,merge}.test.ts  全绿
+vitest  apps/web/test/me-{pages,degrade-states,identity}.test.ts                 全绿
+tsc     apps/web（排除 .next-* 生成目录与既有的 vitest 类型解析告警）              通过
+e2e     user-center.spec.ts                                                       7 passed
+```

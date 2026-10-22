@@ -23,6 +23,9 @@ describe('isSafeUrl：等价于本机的各种写法都不可绕过', () => {
     'http://[0:0:0:0:0:0:0:1]/', // 未压缩的 loopback
     'http://169.254.169.254/latest/meta-data/', // 云元数据
     'file:///etc/passwd',
+    'http://test.127.0.0.1.nip.io/api',
+    'http://sub.169.254.169.254.nip.io/meta',
+    'http://192.168.1.1.sslip.io/login',
   ])('%s 必须被拒绝', (url) => {
     expect(isSafeUrl(url).safe).toBe(false)
   })
@@ -136,5 +139,19 @@ describe('createGuardedApiExecutor：重定向必须逐跳校验', () => {
     const headers = calls[1]?.init.headers as Record<string, string>
     expect(headers.authorization).toBeUndefined()
     expect(headers.cookie).toBeUndefined()
+  })
+
+  it('支持自定义 validateUrl 扩展异步或 DNS 校验', async () => {
+    const fetchFn = (async () => new Response('ok', { status: 200 })) as unknown as typeof fetch
+    const exec = createGuardedApiExecutor({
+      fetchFn,
+      validateUrl: async (url) => {
+        if (url.includes('rebinding.example')) {
+          return { safe: false, reason: 'DNS resolved to private IP' }
+        }
+        return { safe: true }
+      },
+    })
+    await expect(exec('https://rebinding.example/api')).rejects.toThrow(/DNS resolved to private IP/)
   })
 })

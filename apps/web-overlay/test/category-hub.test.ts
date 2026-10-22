@@ -121,6 +121,26 @@ describe('分类页结构', () => {
     }
   })
 
+  it('链接生成与 404 判定同频：计数 TTL 不得长于详情页的 active 搜索', () => {
+    // 详情页按 60s 的 active 搜索结果判「<12 即 404」。入口侧若用 3600s 计数，
+    // 健康巡检把站点标 broken 后，入口会继续链向已 404 的页面最长 1 小时。
+    for (const rel of [
+      'src/app/page.tsx',
+      'src/app/category/page.tsx',
+      'src/app/category/[slug]/category-board.tsx',
+      'src/app/site/[id]/page.tsx',
+    ]) {
+      expect(overlayFile(rel), rel).toContain('loadActiveCategoryCounts(60)')
+    }
+    const index = overlayFile('src/app/category/page.tsx')
+    expect(index).toContain('export const revalidate = 300')
+
+    // sitemap 的站点列表同时决定站点 URL 与类目计数，必须与路由缓存一起缩短
+    const sitemap = overlayFile('src/app/sitemap.ts')
+    expect(sitemap).toContain('export const revalidate = 300')
+    expect(sitemap).toMatch(/status=active&limit=\$\{SITE_LIMIT\}&offset=0`,\s*300,/)
+  })
+
   it('根页列子分类（不是站点）：面包屑带父级 + ItemList 指向 /category/{slug}', () => {
     const src = overlayFile(BOARD)
     expect(src).toContain('isRootPage')

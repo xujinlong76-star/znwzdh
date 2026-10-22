@@ -27,14 +27,18 @@ import {
  *    **存活站点数**（2026-10-21 修了 listTagsWithCounts 的软删除计数污染后，
  *    数量随数据集浮动：当前 dev 库只有「大模型」1 条达标；站点集恢复后分层
  *    自动回填，无写死名单）；
- * 3. `force-dynamic` 改为 `revalidate = 3600` —— 前提是 `siteOrigin()` 先读到
+ * 3. `force-dynamic` 改为 `revalidate = 300` —— 前提是 `siteOrigin()` 先读到
  *    环境变量，否则仍会退化成动态渲染（属可接受降级）。
+ *    为什么不是 3600：健康巡检会把 active 站标成 broken，而类目详情页按
+ *    active 计数直接 404；整份清单缓存 1 小时，就会持续提交已 404 的类目 URL。
+ *    站点列表的取数 TTL 同样收到 300s，保证「条目」与「计数」同频（仍有
+ *    300s 窗口，但已从小时级降到分钟级）。
  *
  * 中枢不可用时只输出已取到的部分，绝不 500：sitemap 是辅助，不该因一次上游
  * 抖动把整站爬虫体验打穿。
  */
 
-export const revalidate = 3600
+export const revalidate = 300
 
 const PAGE_SIZE = 100
 /** 单次 sitemap 最多收录 5000 个插件，防止异常数据把响应拖到超时 */
@@ -97,7 +101,7 @@ const SITE_BATCH = 4
 async function loadActiveSites(): Promise<SiteRef[]> {
   const first = await hubGet<SiteRef[]>(
     `/api/sites?status=active&limit=${SITE_LIMIT}&offset=0`,
-    3600,
+    300,
   )
   if (!first?.length) return []
   if (first.length < SITE_LIMIT) return first
@@ -110,7 +114,7 @@ async function loadActiveSites(): Promise<SiteRef[]> {
       Array.from({ length: SITE_BATCH }, (_, i) =>
         hubGet<SiteRef[]>(
           `/api/sites?status=active&limit=${SITE_LIMIT}&offset=${offset + i * SITE_LIMIT}`,
-          3600,
+          300,
         ),
       ),
     )

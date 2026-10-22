@@ -470,16 +470,22 @@ export class Repository {
     return embeddingsRepo.saveEmbedding(this, siteId, model, vector);
   }
 
-  async savedEmbeddings(): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
-    return embeddingsRepo.savedEmbeddings(this);
+  async savedEmbeddings(filter?: {
+    model?: string;
+    dim?: number;
+  }): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
+    return embeddingsRepo.savedEmbeddings(this, filter);
   }
 
   async savePluginEmbedding(slug: string, model: string, vector: Float32Array): Promise<void> {
     return embeddingsRepo.savePluginEmbedding(this, slug, model, vector);
   }
 
-  async savedPluginEmbeddings(): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
-    return embeddingsRepo.savedPluginEmbeddings(this);
+  async savedPluginEmbeddings(filter?: {
+    model?: string;
+    dim?: number;
+  }): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
+    return embeddingsRepo.savedPluginEmbeddings(this, filter);
   }
 
   async getPluginEmbedding(slug: string): Promise<Float32Array | null> {
@@ -613,6 +619,10 @@ export class Repository {
     return llmUsageRepo.pruneLlmUsage(this, before);
   }
 
+  async pruneHealthChecks(before: number): Promise<number> {
+    return healthRepo.pruneHealthChecks(this, before);
+  }
+
   async bumpVisit(siteId: string): Promise<void> {
     return healthRepo.bumpVisit(this, siteId);
   }
@@ -651,8 +661,8 @@ export class Repository {
     return tagsRepo.addTagAlias(this, tagId, alias);
   }
 
-  async removeTagAlias(alias: string): Promise<void> {
-    return tagsRepo.removeTagAlias(this, alias);
+  async removeTagAlias(alias: string, tagId?: string): Promise<void> {
+    return tagsRepo.removeTagAlias(this, alias, tagId);
   }
 
   async listTagAliases(tagId?: string): Promise<TagAliasRecord[]> {
@@ -1002,8 +1012,12 @@ export class Repository {
     return jobsRepo.claimNextJob(this);
   }
 
-  async completeJob(id: string, error?: string | null, opts: { retryAt?: number | null; exhausted?: boolean } | null = null): Promise<void> {
+  async completeJob(id: string, error?: string | null, opts: { retryAt?: number | null; exhausted?: boolean } | null = null): Promise<boolean> {
     return jobsRepo.completeJob(this, id, error, opts);
+  }
+
+  async heartbeatJob(id: string): Promise<boolean> {
+    return jobsRepo.heartbeatJob(this, id);
   }
 
   async listJobs(status?: string, limit = 50): Promise<JobRecord[]> {

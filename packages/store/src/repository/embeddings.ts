@@ -61,8 +61,30 @@ export async function saveEmbedding(repo: Repository, siteId: string, model: str
   );
 }
 
-export async function savedEmbeddings(repo: Repository): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
-  const rows = await repo.raw("SELECT site_id AS siteId, vector FROM embeddings", []);
+/**
+ * 读取持久层向量，可按模型/维度过滤。
+ *
+ * 过滤是必要的：换模型或换维度后旧向量仍在 embeddings 表里，若全量灌进
+ * vec0，维度不符的记录会被 rehydrate 跳过，但计数已把它算进去 ——
+ * 于是「表里条数」永远对不上「实际灌入条数」，每次启动都触发全量重建；
+ * 若维度恰好相同，旧模型的向量则会混入 KNN，污染检索结果。
+ */
+export async function savedEmbeddings(
+  repo: Repository,
+  filter?: { model?: string; dim?: number },
+): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (filter?.model) {
+    conditions.push("model = ?");
+    params.push(filter.model);
+  }
+  if (filter?.dim) {
+    conditions.push("dim = ?");
+    params.push(filter.dim);
+  }
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
+  const rows = await repo.raw(`SELECT site_id AS siteId, vector FROM embeddings${where}`, params);
   const out: Array<{ key: number; siteId: string; vector: Float32Array }> = [];
   for (const r of rows) {
     const buf = r.vector as Buffer | Uint8Array | null;
@@ -93,8 +115,22 @@ export async function savePluginEmbedding(repo: Repository, slug: string, model:
   );
 }
 
-export async function savedPluginEmbeddings(repo: Repository): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
-  const rows = await repo.raw("SELECT slug, vector FROM plugin_embeddings", []);
+export async function savedPluginEmbeddings(
+  repo: Repository,
+  filter?: { model?: string; dim?: number },
+): Promise<Array<{ key: number; siteId: string; vector: Float32Array }>> {
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (filter?.model) {
+    conditions.push("model = ?");
+    params.push(filter.model);
+  }
+  if (filter?.dim) {
+    conditions.push("dim = ?");
+    params.push(filter.dim);
+  }
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
+  const rows = await repo.raw(`SELECT slug, vector FROM plugin_embeddings${where}`, params);
   const out: Array<{ key: number; siteId: string; vector: Float32Array }> = [];
   for (const r of rows) {
     const buf = r.vector as Buffer | Uint8Array | null;

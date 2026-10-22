@@ -164,6 +164,7 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const send = (code: number, body: unknown) => {
+      if (res.writableEnded) return;
       const text = JSON.stringify(body);
       res.writeHead(code, {
         "Content-Type": "application/json; charset=utf-8",
@@ -172,7 +173,13 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
       res.end(text);
     };
 
-    const url = new URL(req.url ?? "/", "http://" + (req.headers.host ?? "localhost"));
+    try {
+      let url: URL;
+      try {
+        url = new URL(req.url ?? "/", "http://" + (req.headers.host ?? "localhost"));
+      } catch {
+        return send(400, { error: "Invalid Host or URL" });
+      }
 
     if (req.method === "GET" && url.pathname === "/health") {
       // 精简版健康检查：鉴权前不泄露 capabilities / 工具数（枚举攻击面）。
@@ -283,10 +290,19 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
       }
     }
 
-    return send(404, {
-      error: "未知路径",
-      hint: "MCP: POST /mcp（标准 Streamable HTTP）| GET /tools | POST /tools/<name> | GET /health",
-    });
+      return send(404, {
+        error: "未知路径",
+        hint: "MCP: POST /mcp（标准 Streamable HTTP）| GET /tools | POST /tools/<name> | GET /health",
+      });
+    } catch (fatalErr) {
+      if (!res.writableEnded) {
+        send(500, {
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: null,
+        });
+      }
+    }
   });
 
   // 会话空闲回收：有活跃 SSE 流的会话不回收

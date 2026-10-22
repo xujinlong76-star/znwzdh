@@ -545,8 +545,13 @@ CREATE INDEX IF NOT EXISTS sites_source_status_idx ON sites(source, status);
 
 -- pg_trgm 让 LIKE '%关键词%' 也能走索引（中文子串检索的关键）
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+-- 裸列索引服务 ILIKE 场景（fts-pg 标题加权、收藏/插件搜索）。
 CREATE INDEX IF NOT EXISTS sites_title_trgm_idx ON sites USING gin (title gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS sites_desc_trgm_idx ON sites USING gin (description gin_trgm_ops);
+-- 检索 exact 通道谓词是 lower(title) / lower(coalesce(description,'')) LIKE，
+-- 表达式必须逐字匹配才走索引；只建裸列索引时该通道会退化为全表扫描。
+CREATE INDEX IF NOT EXISTS sites_title_lower_trgm_idx ON sites USING gin (lower(title) gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS sites_desc_lower_trgm_idx ON sites USING gin (lower(coalesce(description, '')) gin_trgm_ops);
 
 CREATE TABLE IF NOT EXISTS tags (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL,
@@ -981,7 +986,17 @@ export async function openDb(config: {
   }
 
   const { default: pg } = await import("pg");
-  const pool = new pg.Pool({ connectionString: config.databaseUrl });
+  const pool = new pg.Pool({
+    connectionString: config.databaseUrl,
+    max: 10,
+    // 默认 0 = 无限等待：连不上时请求与就绪探针会一起挂死，必须显式给上限。
+    connectionTimeoutMillis: 10_000,
+    idleTimeoutMillis: 30_000,
+    // 单语句超时：防止慢查询长期占住连接、拖垮整个池。上限放宽到 60s，
+    // 避免把大库上的分析型查询误杀。
+    statement_timeout: 60_000,
+    query_timeout: 60_000,
+  });
   const { drizzle } = await import("drizzle-orm/node-postgres");
   const db: Db = {
     dialect: "pg",

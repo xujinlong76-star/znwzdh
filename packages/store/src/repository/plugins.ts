@@ -1097,19 +1097,19 @@ export async function starPlugin(
   const plugin = await getPluginBySlug(repo, slug);
   if (!plugin) throw new Error(`插件不存在：${slug}`);
   const who = identity.trim().slice(0, 120) || "anonymous";
-  const existing = await repo.raw("SELECT 1 AS ok FROM plugin_stars WHERE plugin_id = ? AND identity = ? LIMIT 1", [
-    plugin.id,
-    who,
-  ]);
-  if (existing[0]) return { starred: true, starCount: plugin.starCount };
-  await repo.run("INSERT INTO plugin_stars (plugin_id, identity, created_at) VALUES (?,?,?)", [
-    plugin.id,
-    who,
-    Date.now(),
-  ]);
-  const starCount = plugin.starCount + 1;
-  await repo.run("UPDATE plugins SET star_count = ? WHERE id = ?", [starCount, plugin.id]);
-  return { starred: true, starCount };
+  // 幂等插入 + 相对自增放在同一事务：并发的重复点赞不会把计数推高，
+  // 也不会用读到的旧值覆盖别的写入者刚加上的 star。
+  await repo.withTransaction(async () => {
+    const inserted = await repo.runCount(
+      "INSERT INTO plugin_stars (plugin_id, identity, created_at) VALUES (?,?,?) ON CONFLICT (plugin_id, identity) DO NOTHING",
+      [plugin.id, who, Date.now()],
+    );
+    if (inserted > 0) {
+      await repo.run("UPDATE plugins SET star_count = star_count + 1 WHERE id = ?", [plugin.id]);
+    }
+  });
+  const rows = await repo.raw("SELECT star_count FROM plugins WHERE id = ?", [plugin.id]);
+  return { starred: true, starCount: Number(rows[0]?.star_count ?? plugin.starCount) };
 }
 
 export async function unstarPlugin(
@@ -1120,15 +1120,17 @@ export async function unstarPlugin(
   const plugin = await getPluginBySlug(repo, slug);
   if (!plugin) throw new Error(`插件不存在：${slug}`);
   const who = identity.trim().slice(0, 120) || "anonymous";
-  const existing = await repo.raw("SELECT 1 AS ok FROM plugin_stars WHERE plugin_id = ? AND identity = ? LIMIT 1", [
-    plugin.id,
-    who,
-  ]);
-  if (!existing[0]) return { starred: false, starCount: plugin.starCount };
-  await repo.run("DELETE FROM plugin_stars WHERE plugin_id = ? AND identity = ?", [plugin.id, who]);
-  const starCount = Math.max(0, plugin.starCount - 1);
-  await repo.run("UPDATE plugins SET star_count = ? WHERE id = ?", [starCount, plugin.id]);
-  return { starred: false, starCount };
+  await repo.withTransaction(async () => {
+    const removed = await repo.runCount("DELETE FROM plugin_stars WHERE plugin_id = ? AND identity = ?", [plugin.id, who]);
+    if (removed > 0) {
+      await repo.run(
+        "UPDATE plugins SET star_count = CASE WHEN star_count > 0 THEN star_count - 1 ELSE 0 END WHERE id = ?",
+        [plugin.id],
+      );
+    }
+  });
+  const rows = await repo.raw("SELECT star_count FROM plugins WHERE id = ?", [plugin.id]);
+  return { starred: false, starCount: Number(rows[0]?.star_count ?? plugin.starCount) };
 }
 
 export async function reportPlugin(

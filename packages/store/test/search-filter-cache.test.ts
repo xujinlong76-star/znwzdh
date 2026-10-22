@@ -45,6 +45,46 @@ describe("Search: 过滤集合复用与请求级耗时", () => {
     });
   });
 
+  it("深翻页时通道召回随 offset 放大，过滤后不会误触发去过滤兜底", async () => {
+    const catA = await repo.createCategory({ title: "分页噪声分类" });
+    const catB = await repo.createCategory({ title: "分页目标分类" });
+    // A 组权重更高，排序永远压在 B 组前面；固定 50 条召回时 B 被完全挡住。
+    for (let i = 0; i < 60; i++) {
+      const s = await repo.createSite({
+        url: `https://deep-recall-a-${i}.example.com`,
+        title: `DeepRecallTest A${String(i).padStart(3, "0")}`,
+        categoryId: catA.id,
+      });
+      await repo.run("UPDATE sites SET weight = 100 WHERE id = ?", [s.id]);
+    }
+    const bIds: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      const s = await repo.createSite({
+        url: `https://deep-recall-b-${i}.example.com`,
+        title: `DeepRecallTest B${String(i).padStart(3, "0")}`,
+        categoryId: catB.id,
+      });
+      bIds.push(s.id);
+    }
+
+    const result = await search.search({
+      q: "deeprecalltest",
+      categoryId: catB.id,
+      offset: 10,
+      limit: 5,
+      disableSemantic: true,
+      disablePersonal: true,
+    });
+
+    expect(result.fallback).toBeUndefined();
+    expect(result.hits).toHaveLength(5);
+    const sites = await repo.getSitesByIds(result.hits.map((h) => h.siteId));
+    for (const hit of result.hits) {
+      expect(sites.get(hit.siteId)?.categoryId).toBe(catB.id);
+      expect(bIds).toContain(hit.siteId);
+    }
+  });
+
   it("一次检索只解析一次类目/标签/分面（不再按通道重复查询）", async () => {
     const proto = SearchEngine.prototype as unknown as Record<string, (...args: unknown[]) => unknown>;
     const catSpy = vi.spyOn(proto, "categoryWithDescendants");

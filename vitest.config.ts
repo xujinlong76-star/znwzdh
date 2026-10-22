@@ -34,5 +34,21 @@ export default defineConfig({
     pool: "forks",
     maxWorkers: 3,
     execArgv: ["--max-old-space-size=4096"],
+    coverage: {
+      // 覆盖率只统计本仓库自己维护的后端与核心包源码：
+      // apps/web 是 vendored 的上游底座（apps/web/src 由 overlay 生成），
+      // 把它算进来只会稀释数字且无意义，故不纳入。
+      provider: "v8",
+      include: ["apps/api/src/**", "packages/*/src/**"],
+      exclude: ["**/*.d.ts", "**/*.test.ts", "**/node_modules/**"],
+      // reporter 组合：
+      // - text          : 终端可读摘要（跑完立刻能看）
+      // - json-summary  : coverage-summary.json，只有 total + 每文件汇总（脚本读取它）
+      // - json          : coverage-final.json，逐行明细，供后续做「零覆盖文件」下钻
+      reporter: ["text", "json-summary", "json"],
+      // 产物统一落在仓库根 coverage/（已 gitignore）。
+      // scripts/check-coverage.mjs 里的 COVERAGE_DIR 常量必须与此保持一致。
+      reportsDirectory: "./coverage",
+    },
   },
 });

@@ -135,4 +135,34 @@ describe("Dimension 2: Data Sovereignty & Backup API", () => {
     expect(body2.restored.categories).toBe(0);
     expect(body2.restored.sites).toBe(0);
   });
+
+  it("恢复中途任一条失败 → 整体回滚，不留半套分类/站点", async () => {
+    const payload = {
+      version: "1.0",
+      generator: "NavHub 2026 Sovereign Backup Engine",
+      exportedAt: Date.now(),
+      categories: [
+        { id: "cat-rollback-test", title: "回滚测试分类", slug: "rollback-test" },
+        // 同 id 不同标题：第二条 INSERT 撞主键，触发「已插入的第一条分类」整体回滚
+        { id: "cat-rollback-test", title: "重复ID分类", slug: "rollback-dup" },
+      ],
+      sites: [
+        {
+          id: "site-rollback-ok",
+          title: "正常站点",
+          url: "https://rollback-ok.example.com",
+          categoryId: "cat-rollback-test",
+        },
+      ],
+    };
+
+    const res = await app.inject({ method: "POST", url: "/api/backup/restore", payload });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe("RESTORE_FAILED");
+
+    const cats = await ctx.repo.listCategories();
+    expect(cats.some((c) => c.title === "回滚测试分类")).toBe(false);
+    const sites = await ctx.repo.raw("SELECT url FROM sites WHERE url LIKE ?", ["%rollback-%"]);
+    expect(sites).toHaveLength(0);
+  });
 });

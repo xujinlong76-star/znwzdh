@@ -24,16 +24,17 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function parseArgs(argv) {
-  const args = { url: null, out: null, keep: 7, rotate: true, docker: null };
+  // 与 backup.mjs 对齐：35 份覆盖 purge_trash 的 30 天回收站窗口
+  const args = { url: null, out: null, keep: 35, rotate: true, docker: null };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--url") args.url = argv[++i];
     else if (a === "--out") args.out = argv[++i];
-    else if (a === "--keep") args.keep = Math.max(1, Number(argv[++i]) || 7);
+    else if (a === "--keep") args.keep = Math.max(1, Number(argv[++i]) || 35);
     else if (a === "--docker") args.docker = argv[++i];
     else if (a === "--no-rotate") args.rotate = false;
     else if (a === "--help" || a === "-h") {
-      console.log("用法: node scripts/backup-pg.mjs [--url <postgres://...>] [--out <dir>] [--keep <n>] [--no-rotate] [--docker <container>]");
+      console.log("用法: node scripts/backup-pg.mjs [--url <postgres://...>] [--out <dir>] [--keep <n>] [--no-rotate] [--docker <container>]  （默认保留 35 份）");
       process.exit(0);
     } else {
       console.error(`未知参数: ${a}（--help 查看用法）`);

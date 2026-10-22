@@ -119,6 +119,16 @@ function formatArchiveDay(ts: number | null | undefined): string | null {
   }
 }
 
+/**
+ * 收录时长（天）。未来时间戳与非法值一律返回 null：
+ * 种子数据里出现过「更新时间在未来」的脏行，直接减会得到负数，写进正文就是错的。
+ */
+function daysSince(ts: number | null | undefined): number | null {
+  if (typeof ts !== 'number' || !Number.isFinite(ts) || ts <= 0) return null
+  const days = Math.floor((Date.now() - ts) / 86_400_000)
+  return days >= 0 ? days : null
+}
+
 export function SiteDetailView({
   id,
   initialSite = null,
@@ -304,6 +314,17 @@ export function SiteDetailView({
   // 不用「未知 / --」占位（占位符会把缺失数据伪装成已核实）。
   const createdDay = formatArchiveDay(site.createdAt)
   const checkedDay = formatArchiveDay(site.health?.lastCheckedAt)
+  const archivedForDays = daysSince(site.createdAt)
+  /**
+   * 条目来源：库里是 `seed` / `submit` / 其它自由值。
+   * 只翻译有确定含义的两个，其余原样显示——不猜、不美化。
+   */
+  const sourceLabel =
+    site.source === 'seed'
+      ? '官方整理收录'
+      : site.source === 'submit'
+        ? '用户投稿'
+        : (site.source ?? '').trim() || null
 
   return (
     <Container as="main" id="main-content">
@@ -500,7 +521,22 @@ export function SiteDetailView({
             {createdDay && (
               <div className="flex gap-2">
                 <dt className="text-muted-foreground shrink-0">收录时间</dt>
-                <dd>{createdDay}</dd>
+                <dd>
+                  {createdDay}
+                  {archivedForDays !== null ? ` · 已收录 ${archivedForDays} 天` : ''}
+                </dd>
+              </div>
+            )}
+            {sourceLabel && (
+              <div className="flex gap-2">
+                <dt className="text-muted-foreground shrink-0">收录来源</dt>
+                <dd>{sourceLabel}</dd>
+              </div>
+            )}
+            {site.titleEn && (
+              <div className="flex gap-2 min-w-0">
+                <dt className="text-muted-foreground shrink-0">英文名</dt>
+                <dd className="truncate">{site.titleEn}</dd>
               </div>
             )}
             {checkedDay && (
@@ -513,14 +549,19 @@ export function SiteDetailView({
               </div>
             )}
           </dl>
+          {/*
+            这一段**刻意不复述标题、简介与标签**——它们在首屏卡片与标签区已经出现，
+            重复一遍只是把字数刷上去，对读者和搜索引擎都没有增量。
+            这里只写页面上别处没有的事实：站内位置、收录时长、巡检状态、条目来源。
+          */}
           <p className="text-xs leading-relaxed text-muted-foreground">
-            {site.title} 收录于「{category?.title ?? '未分类'}」分类，官网域名为 {safeHostname(site.url)}。
+            {site.title} 位于「{category?.title ?? '未分类'}」分类
+            {categoryCount > 1 ? `，该分类下另有 ${categoryCount - 1} 个同类条目可横向对比` : ''}
+            {archivedForDays !== null ? `；本条自 ${createdDay} 收录，已维护 ${archivedForDays} 天` : ''}
             {checkedDay
-              ? `最近一次可达性巡检于 ${checkedDay} 完成${site.health?.httpStatus ? `，返回 HTTP ${site.health.httpStatus}` : ''}。`
+              ? `。最近一次可达性巡检于 ${checkedDay} 完成${site.health?.httpStatus ? `，返回 HTTP ${site.health.httpStatus}` : ''}`
               : ''}
-            {(site.tags ?? []).length > 0
-              ? `相关标签：${(site.tags ?? []).slice(0, 5).join('、')}。`
-              : ''}
+            {sourceLabel ? `；条目来源为${sourceLabel}` : ''}。
           </p>
         </section>
 

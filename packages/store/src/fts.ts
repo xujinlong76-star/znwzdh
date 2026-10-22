@@ -73,14 +73,32 @@ export class SqliteFtsStore implements FullTextStore {
         VALUES ('delete', old.rowid, old.title, coalesce(old.description,''), old.fts_tokens, old.pinyin_full, old.pinyin_initials);
       END;
     `);
-    this.db.exec(`
-      CREATE TRIGGER IF NOT EXISTS ${this.table}_au AFTER UPDATE ON sites BEGIN
-        INSERT INTO ${this.table}(${this.table}, rowid, title, description, fts_tokens, pinyin_full, pinyin_initials)
-        VALUES ('delete', old.rowid, old.title, coalesce(old.description,''), old.fts_tokens, old.pinyin_full, old.pinyin_initials);
-        INSERT INTO ${this.table}(rowid, title, description, fts_tokens, pinyin_full, pinyin_initials)
-        VALUES (new.rowid, new.title, coalesce(new.description,''), new.fts_tokens, new.pinyin_full, new.pinyin_initials);
-      END;
-    `);
+    // UPDATE 触发器必须限定列：健康巡检/访问计数会频繁 UPDATE sites 的
+    // health_ok/latency/last_checked 等字段，旧触发器对每次 UPDATE 都做一次
+    // FTS delete+insert，等于把点击/巡检流量放大成全表索引写。
+    // 只在「被索引的 5 列真的变化」时同步，其余 UPDATE 直接零成本。
+    const updateTrigger = `${this.table}_au`;
+    const existing = this.db
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?")
+      .get(updateTrigger) as { sql?: string } | undefined;
+    if (!existing || !/AFTER\s+UPDATE\s+OF/i.test(String(existing.sql ?? ""))) {
+      // 老库沿用 CREATE TRIGGER IF NOT EXISTS 的旧定义，必须主动替换
+      this.db.exec(`DROP TRIGGER IF EXISTS ${updateTrigger}`);
+      this.db.exec(`
+        CREATE TRIGGER ${updateTrigger} AFTER UPDATE OF title, description, fts_tokens, pinyin_full, pinyin_initials ON sites
+        WHEN old.title IS NOT new.title
+          OR old.description IS NOT new.description
+          OR old.fts_tokens IS NOT new.fts_tokens
+          OR old.pinyin_full IS NOT new.pinyin_full
+          OR old.pinyin_initials IS NOT new.pinyin_initials
+        BEGIN
+          INSERT INTO ${this.table}(${this.table}, rowid, title, description, fts_tokens, pinyin_full, pinyin_initials)
+          VALUES ('delete', old.rowid, old.title, coalesce(old.description,''), old.fts_tokens, old.pinyin_full, old.pinyin_initials);
+          INSERT INTO ${this.table}(rowid, title, description, fts_tokens, pinyin_full, pinyin_initials)
+          VALUES (new.rowid, new.title, coalesce(new.description,''), new.fts_tokens, new.pinyin_full, new.pinyin_initials);
+        END;
+      `);
+    }
 
     if (rebuildNow) this.rebuild();
   }

@@ -18,6 +18,16 @@ import {
  */
 const EXPORT_MAX_SITES = Math.max(100, Number(process.env.NAVHUB_EXPORT_MAX_SITES || 20_000));
 
+/**
+ * 单次恢复的条目上限。
+ *
+ * 4MB bodyLimit 只能限制字节数，拦不住“十万条超短记录”这种形状；恢复是
+ * admin 触发的全量写事务，一旦在中途被 OOM/超时打断，回滚成本同样高。
+ * 上限按实际导航库量级给足余量（导出端 EXPORT_MAX_SITES 是 2 万）。
+ */
+const RESTORE_MAX_CATEGORIES = 2_000;
+const RESTORE_MAX_SITES = 50_000;
+
 export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -77,51 +87,76 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }
 
     const { categories, sites } = validation.backup;
+    if (categories.length > RESTORE_MAX_CATEGORIES || sites.length > RESTORE_MAX_SITES) {
+      reply.code(413);
+      return {
+        error: "BACKUP_TOO_LARGE",
+        message: `备份条目过多：分类 ${categories.length}/${RESTORE_MAX_CATEGORIES}，站点 ${sites.length}/${RESTORE_MAX_SITES}`,
+      };
+    }
+
     let restoredCategories = 0;
     let restoredSites = 0;
 
-    // 幂等式恢复分类
-    const existingCats = await ctx.repo.listCategories();
-    const existingCatTitles = new Set(existingCats.map((c) => c.title));
+    /**
+     * 全量恢复必须是一个事务：旧实现逐条 createCategory/createSite，第 N 条撞唯一索引
+     * 或校验失败时，前 N-1 条已经落库，调用方拿到 500 却留下一半新数据——
+     * “重试一次”会把剩余部分补上，看起来像成功，但缺失/重复已经无法自动判定。
+     * 现在任一条失败即整体回滚，返回 409 让调用方修好备份后重试。
+     */
+    try {
+      await ctx.repo.withTransaction(async () => {
+        // 幂等式恢复分类
+        const existingCats = await ctx.repo.listCategories();
+        const existingCatTitles = new Set(existingCats.map((c) => c.title));
 
-    for (const cat of categories) {
-      if (!existingCatTitles.has(cat.title)) {
-        await ctx.repo.createCategory({
-          id: cat.id,
-          title: cat.title,
-          description: cat.description || null,
-          sort: cat.sort || 0,
-        });
-        restoredCategories++;
-        existingCatTitles.add(cat.title);
-      }
-    }
+        for (const cat of categories) {
+          if (!existingCatTitles.has(cat.title)) {
+            await ctx.repo.createCategory({
+              id: cat.id,
+              title: cat.title,
+              description: cat.description || null,
+              sort: cat.sort || 0,
+            });
+            restoredCategories++;
+            existingCatTitles.add(cat.title);
+          }
+        }
 
-    // 幂等式恢复站点
-    const updatedCats = await ctx.repo.listCategories();
-    const defaultCatId = updatedCats[0]?.id || "default";
-    const existingSites = await ctx.repo.raw("SELECT url FROM sites WHERE deleted_at IS NULL");
-    // 去重集合必须覆盖全库：原来用 listSites()（默认只回 100 条）建集合，
-    // 超过 100 条的库里"其实已存在"的网址会被当成新增，撞上 sites_url_idx
-    // 唯一索引 → 恢复请求中途 500，留下半恢复状态。这里只取 url 一列。
-    const existingUrls = new Set(
-      existingSites.map((s) => String(s.url ?? "").replace(/\/+$/, "").toLowerCase()),
-    );
+        // 幂等式恢复站点
+        const updatedCats = await ctx.repo.listCategories();
+        const defaultCatId = updatedCats[0]?.id || "default";
+        const existingSites = await ctx.repo.raw("SELECT url FROM sites WHERE deleted_at IS NULL");
+        // 去重集合必须覆盖全库：原来用 listSites()（默认只回 100 条）建集合，
+        // 超过 100 条的库里"其实已存在"的网址会被当成新增，撞上 sites_url_idx
+        // 唯一索引 → 恢复请求中途 500，留下半恢复状态。这里只取 url 一列。
+        const existingUrls = new Set(
+          existingSites.map((s) => String(s.url ?? "").replace(/\/+$/, "").toLowerCase()),
+        );
 
-    for (const site of sites) {
-      const norm = (site.url || "").replace(/\/+$/, "").toLowerCase();
-      if (norm && !existingUrls.has(norm)) {
-        await ctx.repo.createSite({
-          title: site.title,
-          url: site.url,
-          description: site.description || "",
-          categoryId: site.categoryId || defaultCatId,
-          tags: site.tags || [],
-          iconKey: site.icon || null,
-        });
-        restoredSites++;
-        existingUrls.add(norm);
-      }
+        for (const site of sites) {
+          const norm = (site.url || "").replace(/\/+$/, "").toLowerCase();
+          if (norm && !existingUrls.has(norm)) {
+            await ctx.repo.createSite({
+              title: site.title,
+              url: site.url,
+              description: site.description || "",
+              categoryId: site.categoryId || defaultCatId,
+              tags: site.tags || [],
+              iconKey: site.icon || null,
+            });
+            restoredSites++;
+            existingUrls.add(norm);
+          }
+        }
+      });
+    } catch (err) {
+      req.log.error({ err }, "备份恢复失败，事务已回滚");
+      reply.code(409);
+      return {
+        error: "RESTORE_FAILED",
+        message: "备份恢复失败，已整体回滚；请修正备份内容后重试",
+      };
     }
 
     return {

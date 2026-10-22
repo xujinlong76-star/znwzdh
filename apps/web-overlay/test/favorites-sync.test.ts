@@ -571,10 +571,12 @@ describe("M1 三期：只推脏条目", () => {
 });
 
 describe("源码守卫：这套契约不许被改回去", () => {
-  it("favorites 页会展示失败原因与重试，而不是静默", () => {
+  it("favorites 页把失败文案与重试交给纯函数，而不是静默", () => {
     const src = overlaySource("src/app/favorites/page.tsx");
-    expect(src).toContain("云端同步失败");
-    expect(src).toContain("换设备登录可能看不到");
+    // 文案已下沉到 lib/favorites-sync-copy（五种分支由 favorites-sync-copy.test.ts 行为级单测），
+    // 这里只锁「页面确实用了它、且重试按钮真的会重新跑同步」这条接线。
+    expect(src).toContain("describeSyncBanner");
+    expect(src).toContain("shouldOfferRetry");
     expect(src).toContain("重试同步");
     expect(src).toContain("runCloudSync");
     expect(src).not.toContain("if (cloud && cloud.length > 0)");

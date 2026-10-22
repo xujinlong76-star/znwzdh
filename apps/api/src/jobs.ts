@@ -76,6 +76,8 @@ export interface DataRetentionPayload {
   maxGroups?: number;
   /** cleanup：单表最多扫描多少行后收尾，默认 200000（别一次扫全表） */
   maxScan?: number;
+  /** 内部遥测（health_checks / llm_usage）保留天数，默认 90。不受 apply 约束。 */
+  telemetryDays?: number;
 }
 
 export interface JobEventPayload {
@@ -113,7 +115,7 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "plugin_governance", intervalMs: 4 * 3600_000 },
   // 数据治理默认只做 rollup 的 dry-run：自动化可以先"看见"，不该先"动手"。
   // 确认过输出后再把 payload 改成 { mode: "rollup", apply: true }（或手动触发一次）。
-  { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30 } },
+  { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30, telemetryDays: 90 } },
 ];
 
 const LOCK_KEY = "lock:job-runner";
@@ -124,6 +126,8 @@ const LOCK_KEY = "lock:job-runner";
 const LOCK_TTL_MS = 120_000;
 /** 默认心跳周期 = TTL/3：连续两次续期都失败才会过期，留出重试窗口 */
 const LOCK_HEARTBEAT_DEFAULT_MS = Math.floor(LOCK_TTL_MS / 3);
+/** 执行中任务的心跳（reapStaleJobs 的判定窗口是 15 分钟） */
+const JOB_HEARTBEAT_DEFAULT_MS = 60_000;
 const PG_LOCK_KEY = 728_501_001;
 
 /** PG 独占连接（advisory lock 是会话级的：加锁与解锁必须在同一连接上） */
@@ -259,6 +263,11 @@ export interface JobRunnerOptions {
    * 生产沿用默认即可；测试用小值，才能在单个任务里观察到续期。
    */
   lockHeartbeatMs?: number;
+  /**
+   * 执行中任务的心跳周期（毫秒，默认 60s）。reapStaleJobs 的僵尸判定是
+   * updated_at < now-15min，取 1/15 周期给慢 SQLite 写/事件循环抖动留足余量。
+   */
+  jobHeartbeatMs?: number;
   /** 连续失败告警阈值（达到后 log.error 一次；测试可注入回调收集） */
   onAlert?: (message: string, detail: { kind: string; attempts: number; error: string }) => void;
 }
@@ -270,10 +279,13 @@ export class JobRunner {
   private holder: string;
   private enableCron: boolean;
   private lockHeartbeatMs: number;
+  private jobHeartbeatMs: number;
   private onAlert: JobRunnerOptions["onAlert"];
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
   private lockHeld = false;
+  /** 心跳发现锁已丢失（SQLite 被夺 / PG 连接断开）：本轮不再认领新任务 */
+  private lockLost = false;
   /** PG advisory lock 持有期间独占的连接（解锁前不归还给池） */
   private pgClient: PgLockClient | null = null;
 
@@ -284,6 +296,7 @@ export class JobRunner {
     this.holder = opts.holder ?? "pid-" + process.pid;
     this.enableCron = opts.enableCron ?? false;
     this.lockHeartbeatMs = opts.lockHeartbeatMs ?? LOCK_HEARTBEAT_DEFAULT_MS;
+    this.jobHeartbeatMs = opts.jobHeartbeatMs ?? JOB_HEARTBEAT_DEFAULT_MS;
     this.onAlert = opts.onAlert;
   }
 
@@ -345,10 +358,13 @@ export class JobRunner {
           await this.ctx.repo.reapStaleJobs().catch(() => undefined);
         }
         for (let i = 0; i < this.maxPerTick; i++) {
+          // 心跳已发现锁丢失：停止认领，避免与合法新持有者双跑
+          if (this.lockLost || !this.lockHeld) break;
           const job = await this.ctx.repo.claimNextJob();
           if (!job) break;
           await this.process(job.kind as JobKind, job.payload, job.id, job.attempts);
           processed++;
+          if (this.lockLost) break;
         }
       } finally {
         clearInterval(heartbeat);
@@ -403,6 +419,7 @@ export class JobRunner {
         }
         this.pgClient = client;
         this.lockHeld = true;
+        this.lockLost = false;
         return true;
       } catch {
         return false;
@@ -414,12 +431,13 @@ export class JobRunner {
         "UPDATE idempotency SET response = ?, created_at = ? WHERE key = ? AND created_at < ?",
         [this.holder, now, LOCK_KEY, now - LOCK_TTL_MS],
       );
-      if (stolen > 0) { this.lockHeld = true; return true; }
+      if (stolen > 0) { this.lockHeld = true; this.lockLost = false; return true; }
       await this.run(
         "INSERT INTO idempotency (key, response, created_at) VALUES (?,?,?)",
         [LOCK_KEY, this.holder, now],
       );
       this.lockHeld = true;
+      this.lockLost = false;
       return true;
     } catch {
       // 唯一键冲突 = 别的实例持有
@@ -453,17 +471,43 @@ export class JobRunner {
   }
 
   /**
-   * SQLite 锁续期（tick 心跳调用）：只刷新**自己名下**的锁行。
-   * 若 TTL 期间锁已被别的实例夺走，这里匹配 0 行、静默无效——不会把新持有者顶掉，
-   * 于是本轮剩下的任务只是白跑，不会演变成两边互相抢锁。PG advisory 无需续期。
+   * 锁心跳（tick 心跳调用）。
+   *
+   * SQLite：只刷新**自己名下**的锁行。若 TTL 期间锁已被别的实例夺走，这里匹配 0 行，
+   * 立即标记 lockLost，本轮不再认领新任务——旧实现静默忽略，剩下的任务只是白跑。
+   *
+   * PG：advisory lock 是会话级的，无需续期；但长任务期间连接可能被网络/服务端掐断，
+   * 此时锁已随会话消失，另一实例可合法接管。心跳对独占连接做一次轻量查询，
+   * 失败即认定锁丢失，避免“以为还持锁”继续认领。
    */
   private async renewLock(): Promise<void> {
-    if (!this.lockHeld || this.ctx.db.dialect !== "sqlite") return;
+    if (!this.lockHeld) return;
+    if (this.ctx.db.dialect === "pg") {
+      const client = this.pgClient;
+      if (!client) {
+        this.lockLost = true;
+        this.lockHeld = false;
+        return;
+      }
+      try {
+        await client.query("SELECT 1");
+      } catch {
+        this.lockLost = true;
+        this.lockHeld = false;
+        this.pgClient = null;
+        try { client.release(); } catch { /* 坏连接由池丢弃 */ }
+      }
+      return;
+    }
     try {
-      await this.run(
+      const renewed = await this.runCount(
         "UPDATE idempotency SET created_at = ? WHERE key = ? AND response = ?",
         [Date.now(), LOCK_KEY, this.holder],
       );
+      if (renewed === 0) {
+        this.lockLost = true;
+        this.lockHeld = false;
+      }
     } catch {
       // 续期失败不影响本轮（下一轮重新抢锁）
     }
@@ -479,6 +523,15 @@ export class JobRunner {
       attempts,
       timestamp: Date.now(),
     });
+    // 执行中心跳：reapStaleJobs 以 updated_at 判定僵尸，没有心跳时任何超过
+    // 15 分钟的合法长任务都会被另一实例回收，造成同一任务并发执行。
+    const jobHeartbeat =
+      typeof this.ctx.repo.heartbeatJob === "function"
+        ? setInterval(() => {
+            void this.ctx.repo.heartbeatJob(jobId).catch(() => undefined);
+          }, this.jobHeartbeatMs)
+        : null;
+    if (jobHeartbeat && typeof jobHeartbeat.unref === "function") jobHeartbeat.unref();
     try {
       switch (kind) {
         case "health_check":
@@ -514,21 +567,32 @@ export class JobRunner {
         default:
           throw new Error("未知任务类型: " + kind);
       }
-      await this.ctx.repo.completeJob(jobId, null);
-      jobEventBus.emitJobUpdate({
-        jobId,
-        kind,
-        status: "completed",
-        attempts,
-        timestamp: Date.now(),
-      });
+      const applied = await this.ctx.repo.completeJob(jobId, null);
+      if (applied) {
+        jobEventBus.emitJobUpdate({
+          jobId,
+          kind,
+          status: "completed",
+          attempts,
+          timestamp: Date.now(),
+        });
+      } else {
+        // 执行期间任务被取消 / 被 reaper 回收 / 已被接管：结果只记日志，不改写终态
+        console.warn("[navhub-job] 完成回写被忽略（任务已不在 running）", { jobId, kind });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // 指数退避重试：瞬时抖动（网络/磁盘）不再一击毙命。
       // attempts 来自 claimNextJob（已 +1），耗尽后落 failed 终态。
       const exhausted = attempts >= MAX_JOB_ATTEMPTS;
       const retryAt = exhausted ? null : Date.now() + backoffMs(attempts);
-      await this.ctx.repo.completeJob(jobId, message, { retryAt, exhausted }).catch(() => undefined);
+      const applied = await this.ctx.repo
+        .completeJob(jobId, message, { retryAt, exhausted })
+        .catch(() => false);
+      if (!applied) {
+        console.warn("[navhub-job] 失败回写被忽略（任务已不在 running）", { jobId, kind, error: message });
+        return;
+      }
       jobEventBus.emitJobUpdate({
         jobId,
         kind,
@@ -541,6 +605,8 @@ export class JobRunner {
         const detail = { kind, attempts, error: message };
         this.alert("任务 " + kind + " 连续失败 " + attempts + " 次，已停止重试：" + message, detail);
       }
+    } finally {
+      if (jobHeartbeat) clearInterval(jobHeartbeat);
     }
   }
 
@@ -984,6 +1050,17 @@ export class JobRunner {
       };
     }
 
+    // 内部遥测按固定 TTL 自动清理：巡检历史每站每天一行、LLM 用量每次调用一行，
+    // 都是只增不删的机器数据，且不承载用户内容 —— 不需要像 events/audit 那样
+    // 先看 dry-run 再人工确认。用户侧数据（搜索历史/离线归档）仍只走 CLI。
+    const telemetryDays = Math.max(1, payload.telemetryDays ?? 90);
+    const since = Date.now() - telemetryDays * 86_400_000;
+    summary.telemetry = {
+      days: telemetryDays,
+      healthChecks: await this.ctx.repo.pruneHealthChecks(since),
+      llmUsage: await this.ctx.repo.pruneLlmUsage(since),
+    };
+
     // 留一条行为事件：运维在事件流里能看到"这轮会动多少行 / 动了多少行"
     await this.ctx.repo.recordEvent("data_retention", { meta: summary }).catch(() => undefined);
   }
@@ -1008,6 +1085,9 @@ export class JobRunner {
         }
         return Promise.reject(new Error(`数据保留任务不支持的存储方言: ${db.dialect}`));
       },
+      // 仓储层的事务会临时把 db.pg 换成独占连接，因此上面的 select/execute
+      // 在事务期间自动落在同一条连接上。
+      transaction: (fn) => repo.withTransaction(fn),
     };
   }
 

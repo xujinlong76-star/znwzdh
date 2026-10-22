@@ -258,13 +258,19 @@ export const recipeRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     let sitesToCluster: Array<{ id: string; title: string; url: string; tags: string[] }> = [];
 
     if (body.data.siteIds && body.data.siteIds.length > 0) {
-      const all = await Promise.all(body.data.siteIds.map((id) => ctx.repo.getSite(id)));
-      sitesToCluster = all.filter((s): s is NonNullable<typeof s> => Boolean(s)).map((s) => ({
-        id: s.id,
-        title: s.title,
-        url: s.url,
-        tags: s.tags || [],
-      }));
+      // 批量取站点（内部自带分片 IN）：schema 上限 100 条，逐条 getSite 就是 100 次
+      // 单点查询（N+1）。保留调用方给出的顺序，软删除的 id 由 getSitesByIds 过滤掉。
+      const ids = [...new Set(body.data.siteIds.filter(Boolean))];
+      const siteMap = await ctx.repo.getSitesByIds(ids);
+      sitesToCluster = ids
+        .map((id) => siteMap.get(id))
+        .filter((s): s is NonNullable<typeof s> => Boolean(s))
+        .map((s) => ({
+          id: s.id,
+          title: s.title,
+          url: s.url,
+          tags: s.tags || [],
+        }));
     } else {
       const list = await ctx.repo.listSites({
         categoryId: body.data.categoryId,

@@ -98,26 +98,19 @@ export async function listCategoriesPage(
 /**
  * 每个类目的存活站点数（一次聚合，取代调用方「翻 5 页 × 1000 站点再 JS 计数」）。
  *
- * 口径与展示层历史一致：**`status = 'active'` 且未进回收站**，
- * 并且是**双指针并集**（sites.category_id ∪ sites.sub_category_id，
- * 同一站点在同一类目只计一次）。broken/pending 不计入 —— 类目页本身
- * 只列 active，把坏链算进「达标」判定会让页面显示「12 个站点」却只渲染 8 个。
- * 这是过渡口径 —— 类目树改造后 sub_category_id 降级为只读镜像，
- * 届时这里收敛为单指针 + 后代聚合，调用方无需改。
+ * 口径：**单主指针**（`sites.category_id`），`status = 'active'` 且未进回收站。
+ * 新树落地后 `sub_category_id` 只是同根下的只读副指针，浏览侧（search 的
+ * categoryId 过滤）也只看主指针；把它并集进来会让「一级根 = 子叶计数之和」
+ * 重复计算同根副指针站点（实测 jobs-and-career 11 站被算成 13），进而让
+ * 首页/sitemap 链向一个按 11 站判定已 404 的类目页。
+ * broken/pending 不计入：类目页只列 active，坏链算进「达标」会显示 N 个却渲染更少。
  */
 export async function categorySiteCounts(repo: Repository): Promise<Array<{ categoryId: string; sites: number }>> {
   const rows = await repo.raw(
-    `SELECT id AS categoryid, SUM(c) AS sites
-       FROM (
-             SELECT category_id AS id, COUNT(*) AS c FROM sites
-              WHERE deleted_at IS NULL AND status = 'active' GROUP BY category_id
-             UNION ALL
-             SELECT sub_category_id AS id, COUNT(*) AS c FROM sites
-              WHERE deleted_at IS NULL AND status = 'active' AND sub_category_id IS NOT NULL
-                AND sub_category_id <> category_id
-              GROUP BY sub_category_id
-           ) AS t
-      GROUP BY id`,
+    `SELECT category_id AS categoryid, COUNT(*) AS sites
+       FROM sites
+      WHERE deleted_at IS NULL AND status = 'active' AND category_id IS NOT NULL
+      GROUP BY category_id`,
     [],
   );
   return rows
@@ -297,28 +290,30 @@ export async function checkSiteCategoryAttachment(
 }
 
 export async function moveCategory(repo: Repository, id: string, parentId: string | null): Promise<Category | null> {
-  const existing = await repo.getCategory(id);
-  if (!existing) return null;
-  if (parentId === id) throw new Error("不能把类目移动到它自己下面");
-  let parent: Category | null = null;
-  if (parentId) {
-    parent = await repo.getCategory(parentId);
-    if (!parent) throw new Error("目标父类目不存在: " + parentId);
-    if (parent.anchor === existing.anchor || parent.anchor.startsWith(existing.anchor + "/")) {
-      throw new Error("不能把类目移动到它的子类目下面（会成环）");
+  return repo.withTransaction(async () => {
+    const existing = await repo.getCategory(id);
+    if (!existing) return null;
+    if (parentId === id) throw new Error("不能把类目移动到它自己下面");
+    let parent: Category | null = null;
+    if (parentId) {
+      parent = await repo.getCategory(parentId);
+      if (!parent) throw new Error("目标父类目不存在: " + parentId);
+      if (parent.anchor === existing.anchor || parent.anchor.startsWith(existing.anchor + "/")) {
+        throw new Error("不能把类目移动到它的子类目下面（会成环）");
+      }
     }
-  }
-  // 移动同样受「每父唯一标题」约束：把子树挪进一个已有同名子级的父级，
-  // 会把重名带进目标层，之后那个 UNIQUE 索引就再也建不上了。
-  if ((existing.parentId ?? null) !== (parentId ?? null)) {
-    await assertNoSiblingTitleClash(repo, parentId ?? null, existing.title, id);
-  }
-  const newAnchor = parent ? parent.anchor + "/" + id : id;
-  if (existing.anchor !== newAnchor) {
-    await repo.replaceAnchorPrefix(existing.anchor, newAnchor);
-  }
-  await repo.run("UPDATE categories SET parent_id = ?, updated_at = ? WHERE id = ?", [parentId ?? null, Date.now(), id]);
-  return repo.getCategory(id);
+    // 移动同样受「每父唯一标题」约束：把子树挪进一个已有同名子级的父级，
+    // 会把重名带进目标层，之后那个 UNIQUE 索引就再也建不上了。
+    if ((existing.parentId ?? null) !== (parentId ?? null)) {
+      await assertNoSiblingTitleClash(repo, parentId ?? null, existing.title, id);
+    }
+    const newAnchor = parent ? parent.anchor + "/" + id : id;
+    if (existing.anchor !== newAnchor) {
+      await repo.replaceAnchorPrefix(existing.anchor, newAnchor);
+    }
+    await repo.run("UPDATE categories SET parent_id = ?, updated_at = ? WHERE id = ?", [parentId ?? null, Date.now(), id]);
+    return repo.getCategory(id);
+  });
 }
 
 export async function replaceAnchorPrefix(repo: Repository, oldPrefix: string, newPrefix: string): Promise<void> {

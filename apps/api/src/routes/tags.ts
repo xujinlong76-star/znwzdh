@@ -172,7 +172,7 @@ export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     const { id, alias } = req.params as { id: string; alias: string };
     try {
       const decodedAlias = decodeURIComponent(alias);
-      await ctx.repo.removeTagAlias(decodedAlias);
+      await ctx.repo.removeTagAlias(decodedAlias, id);
       await ctx.repo.audit({
         ip: req.ip,
         actor: req.auth.actor,

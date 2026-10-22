@@ -20,21 +20,29 @@ import {
   useFavorites,
   type CloudSyncResult,
   type FavoritesSyncStatus,
+  type LocalFavorite,
 } from '@/hooks/useFavorites'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
+import {
+  addLocalFolder,
+  parseLocalFolders,
+  planFolderUpload,
+  removeLocalFolder,
+  renameLocalFolder,
+  serializeLocalFolders,
+  type LocalFolder,
+} from '@/lib/favorites-folders'
+import { favoritesToVaultItems, vaultExportFilename, vaultItemsToFavorites } from '@/lib/favorites-vault'
+import { describeSyncBanner, shouldOfferRetry, type SyncBannerInput } from '@/lib/favorites-sync-copy'
 import {
   filterFavorites,
   describeFavoritesFilter,
   favoriteFilterEmptyMessage,
 } from '@/lib/favorites-filter'
-import {
-  encryptVault,
-  decryptVault,
-  type VaultItem,
-  type EncryptedVaultPayload,
-} from '@/lib/vault'
+import { encryptVault, decryptVault, type EncryptedVaultPayload } from '@/lib/vault'
 import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
+import { FavoritesVaultPanels } from '@/components/user-center/favorites-vault-panels'
 import {
   clearCloudFavorites,
   createFavoriteFolder,
@@ -48,6 +56,31 @@ import {
   Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
   RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check, LogIn,
 } from 'lucide-react'
+
+/**
+ * 本地收藏夹的存储键（P2）。
+ *
+ * 刻意新开一个键而不是塞进 `navhub.favorites.v1`：那个键的结构被注释明示
+ * "改了等于丢老用户收藏"，而收藏夹是衍生数据，分开存才能在出问题时只丢分组、
+ * 不丢收藏。登录后云端夹子成为事实源，这个键会被清空。
+ */
+const LOCAL_FOLDERS_KEY = 'navhub.favorites.folders.v1'
+
+function readLocalFolders(): LocalFolder[] {
+  try {
+    return parseLocalFolders(window.localStorage.getItem(LOCAL_FOLDERS_KEY))
+  } catch {
+    return []
+  }
+}
+
+function writeLocalFolders(folders: LocalFolder[]): void {
+  try {
+    window.localStorage.setItem(LOCAL_FOLDERS_KEY, serializeLocalFolders(folders))
+  } catch {
+    // 写不进去只丢分组能力，不影响收藏本身
+  }
+}
 
 export default function FavoritesPage() {
   const favorites = useFavorites()
@@ -69,6 +102,10 @@ export default function FavoritesPage() {
   // 清空云端收藏是两步确认：第一次点击只把按钮变成「再次点击确认」
   const [confirmClearCloud, setConfirmClearCloud] = useState(false)
   const [folders, setFolders] = useState<HubFavoriteFolder[]>([])
+  // 本地收藏夹（P2）：匿名期与离线时的分组来源；登录同步成功后迁移到云端并清空
+  const [localFolders, setLocalFolders] = useState<LocalFolder[]>(() =>
+    typeof window === 'undefined' ? [] : readLocalFolders(),
+  )
   const [activeFolder, setActiveFolder] = useState<string>('all')
   const [newFolderName, setNewFolderName] = useState('')
   const [folderBusy, setFolderBusy] = useState(false)
@@ -148,9 +185,31 @@ export default function FavoritesPage() {
     [favorites],
   )
 
+  // 同步状态条的输入与文案（纯函数在 lib/favorites-sync-copy）。
+  // 这里显式映射而不是直接传 cloudResult：CloudSyncResult 的云端条数在 cloud 数组里，
+  // 直接传会把「cloud 为 null（没同步成功）」误读成「云端 0 条」。
+  const syncBannerInput: SyncBannerInput | null = syncingCloud
+    ? { syncing: true }
+    : cloudResult
+      ? {
+          ok: cloudResult.ok,
+          pushed: cloudResult.pushed,
+          cloudCount: cloudResult.cloud ? cloudResult.cloud.length : null,
+          remoteRemoved: cloudResult.remoteRemoved,
+          error: cloudResult.error,
+          retryable: cloudResult.retryable,
+        }
+      : null
+  const syncBanner = describeSyncBanner(syncBannerInput)
+
   useEffect(() => {
     setSyncLast(readSyncStatus())
   }, [])
+
+  // 本地收藏夹落盘：与收藏本体同生命周期，但独立键
+  useEffect(() => {
+    writeLocalFolders(localFolders)
+  }, [localFolders])
 
   // 筛选 / 排序 / 收藏夹变化时回到首屏窗口：否则沿用旧窗口会让新筛选看起来「少了内容」
   useEffect(() => {
@@ -172,9 +231,26 @@ export default function FavoritesPage() {
     void (async () => {
       const result = await runCloudSync()
       applyCloudResult(result)
+      // 云端夹子已成为事实源：把本机分组按名称合并上去（P2）
+      if (result.ok && result.cloudFolders && result.nextItems) {
+        await migrateLocalFolders(result.cloudFolders, result.nextItems)
+      }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runCloudSync, favorites.ready, identityReady.ready, identityReady.identity])
+
+  /**
+   * 当前生效的收藏夹列表（P2）。
+   *
+   * 登录态 = 云端夹子（事实源）；匿名态 = 本地夹子。两者形状对齐到 {id,name}，
+   * 渲染层不关心来源——这是"匿名也能分组"能成立的关键：不是给匿名用户另做一套 UI，
+   * 而是让同一套 UI 有两个数据源。
+   */
+  const visibleFolders = useMemo<Array<{ id: string; name: string }>>(
+    () => (cloudIdentity ? folders : localFolders),
+    [cloudIdentity, folders, localFolders],
+  )
 
   /** 收藏夹操作统一入口：刷新列表并给出失败提示 */
   const refreshFolders = useCallback(async () => {
@@ -185,7 +261,21 @@ export default function FavoritesPage() {
 
   const addFolder = useCallback(async () => {
     const name = newFolderName.trim()
-    if (!name || !cloudIdentity || folderBusy) return
+    if (!name || folderBusy) return
+
+    // 匿名 / 离线：建本地夹子（P2）。失败只可能是重名或空名，属于用户可自纠的输入问题
+    if (!cloudIdentity) {
+      const result = addLocalFolder(localFolders, name, Date.now())
+      if (!result.ok) {
+        setSyncNote(result.error)
+        setSyncStatus('error')
+        return
+      }
+      setLocalFolders(result.folders)
+      setNewFolderName('')
+      return
+    }
+
     setFolderBusy(true)
     const folder = await createFavoriteFolder(cloudIdentity, name)
     setFolderBusy(false)
@@ -196,12 +286,18 @@ export default function FavoritesPage() {
     }
     setNewFolderName('')
     await refreshFolders()
-  }, [cloudIdentity, folderBusy, newFolderName, refreshFolders])
+  }, [cloudIdentity, folderBusy, localFolders, newFolderName, refreshFolders])
 
   const saveFolderName = useCallback(async (folderId: string) => {
     const name = editingName.trim()
     setEditingFolder(null)
-    if (!cloudIdentity || !name) return
+    if (!name) return
+
+    if (!cloudIdentity) {
+      setLocalFolders((prev) => renameLocalFolder(prev, folderId, name))
+      return
+    }
+
     const ok = await updateFavoriteFolder(cloudIdentity, folderId, { name })
     if (!ok) {
       setSyncNote('重命名收藏夹失败：云端暂不可用')
@@ -212,7 +308,16 @@ export default function FavoritesPage() {
   }, [cloudIdentity, editingName])
 
   const removeFolder = useCallback(async (folderId: string) => {
-    if (!cloudIdentity) return
+    // 本地夹子：只移除分组本身，条目保留（与云端语义一致）
+    if (!cloudIdentity) {
+      setLocalFolders((prev) => removeLocalFolder(prev, folderId).folders)
+      favorites.items
+        .filter((f) => f.folderId === folderId)
+        .forEach((f) => favorites.updateMeta(f.siteId, { folderId: null }))
+      if (activeFolder === folderId) setActiveFolder('all')
+      return
+    }
+
     const ok = await deleteFavoriteFolder(cloudIdentity, folderId)
     if (!ok) {
       setSyncNote('删除收藏夹失败：云端暂不可用')
@@ -252,6 +357,43 @@ export default function FavoritesPage() {
     setSyncNote('云端收藏已清空，本机缓存也已清除')
     setSyncStatus('success')
   }, [cloudIdentity, confirmClearCloud, favorites, manageBusy])
+
+  /**
+   * 本地收藏夹上云（P2 收尾）：登录同步成功后调用。
+   *
+   * 步骤：按名称把本地夹子合并到云端（同名复用、异名新建）→ 把本地条目里的
+   * folderId 重映射到云端 id → 清空本地表。
+   *
+   * 两个容易错的点：
+   *  - 重映射必须走 `updateMeta`（逐条置脏），**不能**用 `replaceAll`：后者会清掉
+   *    全部脏标记，把还没推送成功的收藏变更一起丢掉；
+   *  - 条目不从 `favorites.items` 读：那可能是同步前的旧闭包。用同步结果里的
+   *    `nextItems`（已经是云端合并后的新列表），否则重映射会作用在过期数据上。
+   */
+  const migrateLocalFolders = useCallback(
+    async (remoteFolders: HubFavoriteFolder[], nextItems: LocalFavorite[]) => {
+      if (!cloudIdentity || localFolders.length === 0) return
+      const { mapping, toCreate } = planFolderUpload(localFolders, remoteFolders)
+      for (const folder of toCreate) {
+        const created = await createFavoriteFolder(cloudIdentity, folder.name)
+        if (created) mapping.set(folder.id, created.id)
+      }
+      let remapped = 0
+      for (const item of nextItems) {
+        const mapped = item.folderId ? mapping.get(item.folderId) : undefined
+        if (mapped && mapped !== item.folderId) {
+          favorites.updateMeta(item.siteId, { folderId: mapped })
+          remapped += 1
+        }
+      }
+      if (mapping.size > 0) {
+        setLocalFolders([])
+        setSyncNote(`已把 ${mapping.size} 个本机收藏夹合并到云端` + (remapped > 0 ? `，${remapped} 条收藏的分组已更新` : ''))
+        setSyncStatus('success')
+      }
+    },
+    [cloudIdentity, favorites, localFolders],
+  )
 
   const assignFolder = useCallback(async (siteId: string, folderId: string | null) => {
     favorites.updateMeta(siteId, { folderId })
@@ -322,16 +464,7 @@ export default function FavoritesPage() {
 
     setVaultLoading(true)
     try {
-      const vaultItems: VaultItem[] = favorites.items.map((f) => ({
-        id: f.siteId,
-        title: f.title,
-        url: f.href,
-        description: f.description,
-        category: f.note,
-        tags: f.icon ? [f.icon] : [],
-        createdAt: f.createdAt,
-      }))
-
+      const vaultItems = favoritesToVaultItems(favorites.items)
       const payload = await encryptVault(vaultItems, vaultPassword)
       const blob = new Blob([JSON.stringify(payload, null, 2)], {
         type: 'application/octet-stream',
@@ -339,7 +472,7 @@ export default function FavoritesPage() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `navhub-vault-${new Date().toISOString().slice(0, 10)}.navhub.vault`
+      a.download = vaultExportFilename(Date.now())
       a.click()
       URL.revokeObjectURL(url)
 
@@ -392,16 +525,8 @@ export default function FavoritesPage() {
 
       const decryptedItems = await decryptVault(parsedPayload, importPassphrase)
 
-      // 还原为 LocalFavorite 格式
-      const localItems = decryptedItems.map((item) => ({
-        siteId: item.id,
-        title: item.title,
-        href: item.url,
-        description: item.description,
-        note: item.category,
-        icon: item.tags?.[0],
-        createdAt: item.createdAt ?? Date.now(),
-      }))
+      // 还原为 LocalFavorite 格式（纯转换在 lib/favorites-vault，缺 url 的条目会被丢弃）
+      const localItems = vaultItemsToFavorites(decryptedItems, Date.now())
 
       const importResult = favorites.importJson(JSON.stringify({ version: 1, items: localItems }))
       if (importResult.ok) {
@@ -548,35 +673,27 @@ export default function FavoritesPage() {
           </div>
         </div>
 
-        {/* 云端同步状态：失败必须说出来，否则用户以为换设备也能看到 */}
-        {(syncingCloud || cloudResult) && (
+        {/* 云端同步状态：失败必须说出来，否则用户以为换设备也能看到。
+            文案与图标由 lib/favorites-sync-copy 的纯函数决定（五种分支有单测）。 */}
+        {syncBanner.tone !== 'hidden' && (
           <div
             className={`mb-6 p-3 rounded-lg border text-xs flex flex-wrap items-center gap-2 ${
-              syncingCloud
+              syncBanner.tone === 'syncing'
                 ? 'bg-muted border-border text-muted-foreground'
-                : cloudResult?.ok
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                : 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400'
+                : syncBanner.tone === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400'
             }`}
           >
-            {syncingCloud ? (
+            {syncBanner.tone === 'syncing' ? (
               <RefreshCw className="w-4 h-4 flex-shrink-0 animate-spin" />
-            ) : cloudResult?.ok ? (
+            ) : syncBanner.tone === 'success' ? (
               <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
             ) : (
               <CloudOff className="w-4 h-4 flex-shrink-0" />
             )}
-            <span className="flex-1 min-w-0">
-              {syncingCloud
-                ? '正在与云端同步收藏…'
-                : cloudResult?.ok
-                ? cloudResult.pushed > 0
-                  ? `已把本机 ${cloudResult.pushed} 条收藏合并到云端` +
-                    (cloudResult.cloud ? `（云端共 ${cloudResult.cloud.length} 条）` : '')
-                  : `云端同步正常` + (cloudResult.cloud ? `（云端 ${cloudResult.cloud.length} 条）` : '')
-                : `云端同步失败：${cloudResult?.error ?? '未知原因'}。收藏已保存在本机浏览器，换设备登录可能看不到。`}
-            </span>
-            {!syncingCloud && cloudResult && !cloudResult.ok && cloudResult.retryable && (
+            <span className="flex-1 min-w-0">{syncBanner.text}</span>
+            {shouldOfferRetry(syncBannerInput) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -651,157 +768,32 @@ export default function FavoritesPage() {
           </p>
         )}
 
-        {/* 零知识加密导出面板 */}
-        {showVaultExport && (
-          <div className="mb-6 p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 space-y-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-sm font-semibold flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
-                  <Shield className="w-4 h-4" /> 导出零知识加密金库 (.navhub.vault)
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  基于 PBKDF2 (100,000 次哈希迭代) 派生 256 位密钥 + AES-256-GCM 认证加密。密码不上云，不可逆，防篡改。
-                </p>
-              </div>
-              <Button size="sm" variant="ghost" onClick={() => setShowVaultExport(false)}>
-                收起
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label htmlFor="vault-password-main" className="text-xs font-medium text-muted-foreground mb-1 block">
-                  设置金库主密码 (至少 6 位)
-                </label>
-                <div className="relative">
-                  <input aria-label="输入强主密码"
-                    id="vault-password-main"
-                    type={showPasswordText ? 'text' : 'password'}
-                    value={vaultPassword}
-                    onChange={(e) => setVaultPassword(e.target.value)}
-                    placeholder="输入强主密码..."
-                    className="w-full px-3 py-1.5 text-base sm:text-xs rounded-md border bg-background pr-8"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPasswordText(!showPasswordText)}
-                    aria-label={showPasswordText ? '隐藏密码' : '显示密码'}
-                    title={showPasswordText ? '隐藏密码' : '显示密码'}
-                    aria-pressed={showPasswordText}
-                    className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showPasswordText ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label htmlFor="vault-password-confirm" className="text-xs font-medium text-muted-foreground mb-1 block">
-                  确认金库主密码
-                </label>
-                <input id="vault-password-confirm"
-                  type={showPasswordText ? 'text' : 'password'}
-                  value={vaultPasswordConfirm}
-                  onChange={(e) => setVaultPasswordConfirm(e.target.value)}
-                  placeholder="再次输入相同密码..."
-                  className="w-full px-3 py-1.5 text-base sm:text-xs rounded-md border bg-background"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pt-1">
-              <Button
-                size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5"
-                onClick={handleExportVault}
-                disabled={vaultLoading || !vaultPassword || vaultPassword.length < 6}
-              >
-                <Download className="w-3.5 h-3.5" />
-                {vaultLoading ? '正在派生密钥加密…' : `生成并下载 .navhub.vault (${favorites.items.length} 条)`}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setShowVaultExport(false)}>
-                取消
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* 零知识解密导入面板 */}
-        {showVaultImport && (
-          <div className="mb-6 p-4 rounded-xl border border-blue-500/30 bg-blue-500/5 space-y-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-sm font-semibold flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
-                  <KeyRound className="w-4 h-4" /> 导入并解密私密金库
-                </h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  输入主密码验证消息认证码 (GMAC)，如密码错误或密文遭到单字节篡改将立刻阻断并报警。
-                </p>
-              </div>
-              <Button size="sm" variant="ghost" onClick={() => setShowVaultImport(false)}>
-                收起
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    选择 .navhub.vault 文件或粘贴密文
-                  </label>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-6.5 text-xs px-2.5"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Upload className="w-3 h-3 mr-1" /> 选择本地金库文件
-                  </Button>
-                  <input aria-label="选择金库文件"
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    accept=".vault,.json"
-                    className="hidden"
-                  />
-                </div>
-                <textarea aria-label="可直接点击上方按钮选择文件，或在此粘贴密文 JSON"
-                  value={importVaultPayload}
-                  onChange={(e) => setImportVaultPayload(e.target.value)}
-                  placeholder="可直接点击上方按钮选择文件，或在此粘贴密文 JSON..."
-                  className="w-full h-24 rounded-md border bg-background p-2 text-base sm:text-xs font-mono"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="vault-import-passphrase" className="text-xs font-medium text-muted-foreground mb-1 block">
-                  输入此金库的主密码
-                </label>
-                <input id="vault-import-passphrase"
-                  type="password"
-                  value={importPassphrase}
-                  onChange={(e) => setImportPassphrase(e.target.value)}
-                  placeholder="输入解密密码..."
-                  className="w-full sm:w-80 px-3 py-1.5 text-base sm:text-xs rounded-md border bg-background"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pt-1">
-              <Button
-                size="sm"
-                className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5"
-                onClick={handleImportVault}
-                disabled={vaultLoading || !importVaultPayload.trim() || !importPassphrase}
-              >
-                <KeyRound className="w-3.5 h-3.5" />
-                {vaultLoading ? '正在解密并验证认证码…' : '验证密码并导入'}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setShowVaultImport(false)}>
-                取消
-              </Button>
-            </div>
-          </div>
-        )}
+        {/* E2EE 金库面板（P1 抽出为组件：导出 / 解密导入，无自有状态） */}
+        <FavoritesVaultPanels
+          mode={showVaultExport ? 'export' : showVaultImport ? 'import' : null}
+          onClose={() => {
+            setShowVaultExport(false)
+            setShowVaultImport(false)
+          }}
+          itemCount={favorites.items.length}
+          password={vaultPassword}
+          onPasswordChange={setVaultPassword}
+          confirmPassword={vaultPasswordConfirm}
+          onConfirmPasswordChange={setVaultPasswordConfirm}
+          showPassword={showPasswordText}
+          onToggleShowPassword={() => setShowPasswordText(!showPasswordText)}
+          exporting={vaultLoading}
+          onExport={() => void handleExportVault()}
+          payload={importVaultPayload}
+          onPayloadChange={setImportVaultPayload}
+          passphrase={importPassphrase}
+          onPassphraseChange={setImportPassphrase}
+          onPickFile={() => fileInputRef.current?.click()}
+          fileInputRef={fileInputRef}
+          onFileChange={handleFileChange}
+          importing={vaultLoading}
+          onImport={() => void handleImportVault()}
+        />
 
         {/* 传统明文 JSON 导入面板 */}
         {showImport && (
@@ -843,7 +835,7 @@ export default function FavoritesPage() {
               >
                 全部 {favorites.items.length}
               </button>
-              {folders.map((folder) => {
+              {visibleFolders.map((folder) => {
                 const count = favorites.items.filter((f) => f.folderId === folder.id).length
                 const active = activeFolder === folder.id
                 return (
@@ -909,45 +901,44 @@ export default function FavoritesPage() {
                 )
               })}
             </div>
+            {/* 新建收藏夹：匿名建本地夹子，登录建云端夹子（P2 起两边都能建） */}
+            <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
+              <Input
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void addFolder()
+                }}
+                placeholder="新建收藏夹"
+                aria-label="新建收藏夹名称"
+                className="h-8 w-40 text-xs"
+              />
+              <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!newFolderName.trim() || folderBusy} onClick={() => void addFolder()}>
+                <FolderPlus className="mr-1.5 h-3.5 w-3.5" />
+                创建
+              </Button>
+              {manageBusy && <span className="text-[11px] text-muted-foreground">正在同步…</span>}
+              {!cloudIdentity && (
+                <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <LogIn className="h-3 w-3 shrink-0" />
+                  本地收藏夹仅存本机；登录后按名称合并到云端
+                </span>
+              )}
+            </div>
+            {/* 清空云端收藏只对登录态有意义 */}
             {cloudIdentity && (
-              <>
-                <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
-                  <Input
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') void addFolder()
-                    }}
-                    placeholder="新建收藏夹"
-                    aria-label="新建收藏夹名称"
-                    className="h-8 w-40 text-xs"
-                  />
-                  <Button size="sm" variant="outline" className="h-8 text-xs" disabled={!newFolderName.trim() || folderBusy} onClick={() => void addFolder()}>
-                    <FolderPlus className="mr-1.5 h-3.5 w-3.5" />
-                    创建
-                  </Button>
-                  {manageBusy && <span className="text-[11px] text-muted-foreground">正在同步…</span>}
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
-                  <span className="text-[11px] text-muted-foreground">清空只影响云端收藏；本机缓存会一并清除</span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 border-destructive/30 text-[11px] text-destructive hover:bg-destructive/10"
-                    disabled={manageBusy}
-                    onClick={() => void clearCloud()}
-                  >
-                    <Trash2 className="mr-1 h-3 w-3" />
-                    {confirmClearCloud ? '再次点击确认清空' : '清空云端收藏'}
-                  </Button>
-                </div>
-              </>
-            )}
-            {/* 匿名态的能力边界要说清楚：能收藏、能导出，但收藏夹与备注需要登录 */}
-            {!cloudIdentity && (
-              <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
-                <LogIn className="h-3 w-3 shrink-0" />
-                <span>登录后可创建收藏夹、写备注，并把本机收藏合并到账号。</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
+                <span className="text-[11px] text-muted-foreground">清空只影响云端收藏；本机缓存会一并清除</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 border-destructive/30 text-[11px] text-destructive hover:bg-destructive/10"
+                  disabled={manageBusy}
+                  onClick={() => void clearCloud()}
+                >
+                  <Trash2 className="mr-1 h-3 w-3" />
+                  {confirmClearCloud ? '再次点击确认清空' : '清空云端收藏'}
+                </Button>
               </div>
             )}
           </div>
@@ -1097,16 +1088,15 @@ export default function FavoritesPage() {
                     </div>
                   </div>
                 </a>
-                {cloudIdentity && (
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2">
-                    <select
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2">
+                  <select
                       value={f.folderId ?? ''}
                       onChange={(e) => void assignFolder(f.siteId, e.target.value || null)}
                       aria-label={`移动 ${f.title} 到收藏夹`}
                       className="h-7 max-w-[8.5rem] rounded-md border border-border/60 bg-background px-1.5 text-[11px] text-muted-foreground"
                     >
                       <option value="">未分组</option>
-                      {folders.map((folder) => (
+                      {visibleFolders.map((folder) => (
                         <option key={folder.id} value={folder.id}>{folder.name}</option>
                       ))}
                     </select>
@@ -1145,8 +1135,7 @@ export default function FavoritesPage() {
                     {f.note && noteEditor !== f.siteId && (
                       <span className="basis-full truncate text-[11px] text-muted-foreground">{f.note}</span>
                     )}
-                  </div>
-                )}
+                </div>
                 <div className="absolute top-2 right-2">
                   <FavoriteButton site={f} />
                 </div>

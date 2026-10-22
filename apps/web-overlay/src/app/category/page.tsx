@@ -27,7 +27,10 @@ import {
  * 顺序按权威树 `sort`，不按站点数降序——总览页每天换位置，用户找不到老入口。
  */
 
-export const revalidate = 3600
+// 300s：本页只负责「哪些类目值得给入口」，而详情页的达标判定按 60s 的
+// active 搜索结果执行。整页缓存若拿 3600s，巡检把某类目打到 12 站以下后，
+// 总览页会在最长 1 小时内继续链向一个已经 404 的详情页。
+export const revalidate = 300
 
 /** 权威树展示序：根 sort 1–18、叶 sort 1–14；0/缺失是脏行，沉到末尾而不是抢首位 */
 function treeRank(c: HubCategory): number {
@@ -82,7 +85,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function CategoryIndexPage() {
-  const [categories, rawCounts] = await Promise.all([loadCategories(3600), loadActiveCategoryCounts(3600)])
+  const [categories, rawCounts] = await Promise.all([loadCategories(3600), loadActiveCategoryCounts(60)])
   const counts = descendantSiteCounts(categories ?? [], rawCounts)
   const groups = categories && counts ? buildGroups(categories, counts) : []
   const leafTotal = groups.reduce((n, g) => n + g.leaves.length, 0)

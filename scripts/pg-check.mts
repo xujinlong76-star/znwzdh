@@ -131,7 +131,7 @@ const ev = await db.query("SELECT count(*)::int AS c FROM events");
 const au = await db.query("SELECT count(*)::int AS c FROM audit_logs");
 check("审计与事件落库", Number((ev.rows[0] as any).c) > 0 && Number((au.rows[0] as any).c) > 0);
 
-// 13) 类目计数聚合（GET /api/categories/counts 的实现，双指针并集）
+// 13) 类目计数聚合（GET /api/categories/counts 的实现，单主指针）
 const countCat = await ctx.repo.createCategory({ id: "pg-cat-count", title: "PG 计数类目" });
 const otherCat = await ctx.repo.createCategory({ id: "pg-cat-other", title: "PG 计数类目二" });
 await ctx.repo.createSite({ url: "https://count-pg-1.example.com", title: "计数站点一", categoryId: countCat.id });
@@ -141,8 +141,8 @@ await ctx.repo.createSite({ url: "https://count-pg-3.example.com", title: "计�
 await ctx.repo.createSite({ url: "https://count-pg-4.example.com", title: "计数站点四", categoryId: countCat.id, status: "broken" });
 const cnt = new Map((await ctx.repo.categorySiteCounts()).map((r) => [r.categoryId, r.sites]));
 check(
-  "类目计数：双指针并集、同指针去重、只算 active 未删",
-  cnt.get(countCat.id) === 3 && cnt.get(otherCat.id) === 1 && !cnt.has("pg-cat"),
+  "类目计数：只按主指针、同指针去重、只算 active 未删",
+  cnt.get(countCat.id) === 3 && !cnt.has(otherCat.id) && !cnt.has("pg-cat"),
   JSON.stringify([...cnt]),
 );
 

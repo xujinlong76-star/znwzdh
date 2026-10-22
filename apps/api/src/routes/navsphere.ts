@@ -26,7 +26,9 @@ export const navsphereRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
     return readStoragePath(ctx, path);
   });
 
-  app.put("/api/storage", { config: { scope: "write" } }, async (req, reply) => {
+  // 快照写入会按「本次未出现」删除前端托管站点/类目，是一次全量覆盖。
+  // 仅管理面（admin）可触发，避免 write 级内容编辑凭据误删整站导航。
+  app.put("/api/storage", { config: { scope: "admin" } }, async (req, reply) => {
     const body = z.object({
       path: z.string().min(1),
       content: z.string(),

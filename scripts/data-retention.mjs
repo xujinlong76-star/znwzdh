@@ -72,6 +72,8 @@ function usage() {
   --vacuum               删除后整理空间（SQLite 跑 VACUUM；PG 只提示，因为它要锁表）
   --events-days <n>      events 保留天数（默认 180）
   --audit-days <n>       audit_logs 保留天数（默认 365）
+  --search-days <n>      search_history 保留天数（默认 180）
+  --archive-days <n>     site_archives 保留天数（默认 365）
   --batch <n>            每批行数（默认 1000，仅清理模式）
   --max-scan <n>         单表最多扫描行数（默认不限，仅清理模式）
   --max-days <n>         聚合模式单表单轮最多处理天数（默认 30）
@@ -88,6 +90,8 @@ function parseArgs(argv) {
     vacuum: false,
     eventsDays: null,
     auditDays: null,
+    searchDays: null,
+    archiveDays: null,
     batch: 1000,
     maxScan: null,
     maxDays: null,
@@ -103,6 +107,8 @@ function parseArgs(argv) {
     else if (a === "--vacuum") args.vacuum = true;
     else if (a === "--events-days") args.eventsDays = Number(argv[++i]);
     else if (a === "--audit-days") args.auditDays = Number(argv[++i]);
+    else if (a === "--search-days") args.searchDays = Number(argv[++i]);
+    else if (a === "--archive-days") args.archiveDays = Number(argv[++i]);
     else if (a === "--batch") args.batch = Number(argv[++i]) || 1000;
     else if (a === "--max-scan") args.maxScan = Number(argv[++i]);
     else if (a === "--max-days") args.maxDays = Number(argv[++i]) || 30;
@@ -153,6 +159,18 @@ function openSqlite() {
       placeholder: () => "?",
       select: (sql, params) => raw.prepare(sql).all(...params),
       execute: (sql, params) => raw.prepare(sql).run(...params).changes,
+      // 脚本是单连接单进程，BEGIN IMMEDIATE 与后续语句天然同连接。
+      transaction: async (fn) => {
+        raw.exec("BEGIN IMMEDIATE");
+        try {
+          const result = await fn();
+          raw.exec("COMMIT");
+          return result;
+        } catch (err) {
+          try { raw.exec("ROLLBACK"); } catch { /* 连接已不可用时由进程退出兜底 */ }
+          throw err;
+        }
+      },
     },
   };
 }
@@ -162,13 +180,32 @@ function openPg() {
   const pg = loadDep("pg");
   if (!pg) fail("缺少 pg：请先 pnpm install（它位于 packages/store 的依赖里）");
   const pool = new pg.Pool({ connectionString: url });
+  // 事务必须固定在独占连接上；pool.query 会把语句打散到不同连接，BEGIN 等于没开。
+  let txClient = null;
+  const query = (sql, params) => (txClient ? txClient.query(sql, params) : pool.query(sql, params));
   return {
     kind: "postgres",
     close: () => pool.end(),
     adapter: {
       placeholder: (i) => `$${i}`,
-      select: async (sql, params) => (await pool.query(sql, params)).rows,
-      execute: async (sql, params) => (await pool.query(sql, params)).rowCount ?? 0,
+      select: async (sql, params) => (await query(sql, params)).rows,
+      execute: async (sql, params) => (await query(sql, params)).rowCount ?? 0,
+      transaction: async (fn) => {
+        const client = await pool.connect();
+        txClient = client;
+        try {
+          await client.query("BEGIN");
+          const result = await fn();
+          await client.query("COMMIT");
+          return result;
+        } catch (err) {
+          try { await client.query("ROLLBACK"); } catch { /* 连接已不可用时由释放兜底 */ }
+          throw err;
+        } finally {
+          txClient = null;
+          client.release();
+        }
+      },
     },
   };
 }
@@ -232,8 +269,14 @@ async function closeWriters() {
 }
 
 // ---------- 目标表 ----------
+const dayOverride = {
+  events: args.eventsDays,
+  audit_logs: args.auditDays,
+  search_history: args.searchDays,
+  site_archives: args.archiveDays,
+};
 const targets = DEFAULT_RETENTION_TARGETS.map((t) => {
-  const override = t.table === "events" ? args.eventsDays : args.auditDays;
+  const override = dayOverride[t.table];
   return { table: t.table, keepDays: override && override > 0 ? override : t.keepDays };
 });
 

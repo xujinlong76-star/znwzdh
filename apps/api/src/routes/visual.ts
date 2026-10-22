@@ -282,6 +282,16 @@ export const visualRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   });
 
   app.post("/api/mcp", { config: { scope: "public" } }, async (req, reply) => {
+    // JSON-RPC 批量请求会逐项执行工具；不设上限时一个 4MB body 就能让单请求
+    // 放大成数万次仓储调用。这里只做体积闸门，协议校验仍交给 handleRpc。
+    if (!req.body || typeof req.body !== "object") {
+      reply.code(400);
+      return { error: "INVALID_REQUEST", message: "请求体必须是 JSON-RPC 对象" };
+    }
+    if (JSON.stringify(req.body).length > 256 * 1024) {
+      reply.code(413);
+      return { error: "PAYLOAD_TOO_LARGE", message: "MCP 请求体超过 256KB 上限" };
+    }
     const rpcRes = await webMcp.handleRpc(req.body as JsonRpcRequest);
     return rpcRes;
   });

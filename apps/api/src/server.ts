@@ -1,4 +1,4 @@
-﻿/**
+/**
  * NavHub 中枢服务（Fastify）——装配与横切关注点。
  *
  * 业务路由已按域拆分至 ./routes/*.ts（升级改造方案 P1-3：原 2600+ 行单体按域拆为
@@ -99,7 +99,20 @@ export async function buildServer(ctx: AppContext) {
   // `1` 采信的是客户端自报的最左值，`网段列表` 采信的是代理实际看到的那一跳。
   // 不开启时 req.ip 会退化成代理地址，按 IP 的限流（300/min、投稿 5/hour）会整站共享一桶——按部署拓扑二选一。
   const app = Fastify({
-    logger: { level: logLevel },
+    logger: {
+      level: logLevel,
+      // 日志脱敏：请求头里的 Bearer / Cookie / 身份签名绝不能进日志聚合。
+      // Fastify 默认不打印 body，这里把已知的敏感 header 一并兜住。
+      redact: {
+        paths: [
+          "req.headers.authorization",
+          "req.headers.cookie",
+          "req.headers['x-navhub-identity-signature']",
+          "res.headers['set-cookie']",
+        ],
+        censor: "[redacted]",
+      },
+    },
     bodyLimit: 4 * 1024 * 1024,
     trustProxy: ctx.config.trustProxy,
   });
@@ -130,7 +143,7 @@ export async function buildServer(ctx: AppContext) {
     origin: allowAll ? true : ctx.config.corsOrigins,
     credentials: !allowAll,
   });
-  await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
+  await app.register(rateLimit, { max: process.env.NODE_ENV === "test" ? 10_000 : 300, timeWindow: "1 minute" });
 
   /* ---------------------------- 安全响应头（升级 #7 纵深，不引入 helmet 依赖） ---------------------------- */
 
@@ -171,6 +184,9 @@ export async function buildServer(ctx: AppContext) {
     const incoming = String(req.headers["x-request-id"] ?? "").trim();
     const rid = incoming.length > 0 ? incoming.slice(0, 128) : req.id;
     (req as unknown as { requestId: string }).requestId = rid;
+    // 让每行日志都带同一个 requestId：否则日志里只有进程内随机 reqId，
+    // 客户端/反代拿 x-request-id 对不上任何一条记录。
+    req.log = req.log.child({ requestId: rid });
     reply.header("x-request-id", rid);
     // Server-Timing 的起点：在 onSend 里算出「应用处理耗时」，
     // 让浏览器 DevTools / Lighthouse / RUM 都能把慢请求归因到服务端。
@@ -367,12 +383,19 @@ export async function buildServer(ctx: AppContext) {
       return reply.code(401).send({ error: "缺少 Bearer token（该路由要求 " + required + " 权限）" });
     }
 
-    // 引导 token / 会话特权：内存比对，视同 admin。用于首次创建库内 token 的 bootstrap 或 Web 管理端会话委托
+    // 引导 token / 管理端凭据 / 会话特权：内存比对，视同 admin。
+    // NAVHUB_ADMIN_TOKEN 与 sessionSecret 拆开后，轮换会话签名密钥不再连带泄露管理面。
     if (
       (ctx.config.bootstrapToken && secureEqual(token, ctx.config.bootstrapToken)) ||
+      (ctx.config.adminToken && secureEqual(token, ctx.config.adminToken)) ||
       (ctx.config.sessionSecret && secureEqual(token, ctx.config.sessionSecret))
     ) {
-      auth.actor = ctx.config.bootstrapToken && secureEqual(token, ctx.config.bootstrapToken) ? "bootstrap" : "admin_session";
+      auth.actor =
+        ctx.config.bootstrapToken && secureEqual(token, ctx.config.bootstrapToken)
+          ? "bootstrap"
+          : ctx.config.adminToken && secureEqual(token, ctx.config.adminToken)
+            ? "admin_token"
+            : "admin_session";
       auth.kind = "static";
       auth.scopes = ["read", "write", "admin"];
       return;
@@ -473,6 +496,15 @@ export async function buildServer(ctx: AppContext) {
   await app.register(backupRoutes, { ctx });
   await app.register(copilotRoutes, { ctx });
 
+  // 统一 JSON 404：默认响应也是 JSON，但这里显式补上 error 码与 requestId，
+  // 便于客户端/排障区分「路由不存在」与「业务 404」（例如 site not found）。
+  app.setNotFoundHandler((req, reply) => {
+    reply.code(404).send({
+      error: "NOT_FOUND",
+      message: `路由不存在: ${req.method} ${req.url}`,
+      requestId: (req as unknown as { requestId?: string }).requestId ?? req.id,
+    });
+  });
 
   return app;
 }

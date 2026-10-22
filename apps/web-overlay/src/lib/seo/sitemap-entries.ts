@@ -129,9 +129,12 @@ export function tagEntries(
 export function countCategorySites(sites: SiteRef[]): Map<string, number> {
   const counts = new Map<string, number>()
   for (const site of sites ?? []) {
-    for (const id of new Set([site.categoryId, site.subCategoryId])) {
-      if (typeof id === 'string' && id.trim()) counts.set(id, (counts.get(id) ?? 0) + 1)
-    }
+    // 单主指针：与类目页 search 的 categoryId 过滤、中枢 /api/categories/counts
+    // 完全同口径。副指针（subCategoryId）在浏览侧不可见，计入会让一级根的
+    // 子树合计重复计算同根副指针站点（如 jobs-and-career 11 → 13），
+    // 产出指向 404 的 sitemap 条目。
+    const id = site.categoryId
+    if (typeof id === 'string' && id.trim()) counts.set(id, (counts.get(id) ?? 0) + 1)
   }
   return counts
 }

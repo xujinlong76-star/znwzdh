@@ -8,6 +8,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
 import { getHttpMetricsSummary } from "../metrics.ts";
+import { getUserCenterMetrics } from "../user-center-metrics.ts";
 import { parseTimeWindow, setupSseStream } from "./shared.ts";
 
 export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -82,6 +83,19 @@ export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
   /**
    * 仪表盘实时 SSE 遥测通道：推送运行时 QPS、内存、任务队列运行深度与最新计数
    */
+  /**
+   * 用户中心领域指标（N10）：同步成功率、合并成功率、数据主权动作用量。
+   *
+   * 与上面的 HTTP 计数互补：那个回答「端点被调了多少次」，这个回答「产品链路健康吗」。
+   * 进程内计数，重启清零——看趋势请用 audit_logs（user.export / user.delete /
+   * identity.merge 均已落库，retention 365 天）。
+   */
+  app.get(
+    "/api/admin/user-center/metrics",
+    { config: { scope: "read", cache: { maxAge: 5 } } },
+    async () => ({ ok: true, userCenter: getUserCenterMetrics() }),
+  );
+
   app.get("/api/admin/dashboard/stream", { config: { scope: "read" } }, async (req, reply) => {
     setupSseStream(reply);
 

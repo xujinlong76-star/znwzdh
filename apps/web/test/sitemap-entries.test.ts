@@ -24,7 +24,7 @@ describe('staticEntries', () => {
 })
 
 describe('countCategorySites', () => {
-  it('一级与子级指针都计数，同一站点的两个指针只算一次', () => {
+  it('只按主指针计数：副指针在浏览侧不可见，计入会超过子叶之和', () => {
     const counts = countCategorySites([
       { id: 'a', categoryId: 'parent', subCategoryId: 'child' },
       { id: 'b', categoryId: 'parent', subCategoryId: 'child' },
@@ -33,8 +33,8 @@ describe('countCategorySites', () => {
       { id: 'e', categoryId: '  ', subCategoryId: '' },
     ])
     expect(counts.get('parent')).toBe(3)
-    expect(counts.get('child')).toBe(3)
-    expect(counts.size).toBe(2)
+    expect(counts.has('child')).toBe(false)
+    expect(counts.size).toBe(1)
   })
 })
 

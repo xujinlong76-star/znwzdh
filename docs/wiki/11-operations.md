@@ -143,7 +143,7 @@ pg_restore -d navhub_restore --no-owner navhub-pg-<时间戳>.dump
 
 ## 6. 数据治理（events / audit_logs）
 
-`events`（点击、搜索、曝光）与 `audit_logs`（管理操作）是持续增长的两张表。同一个脚本提供两种处理模式，`scripts/data-retention.mjs`，一律默认 dry-run：
+`events`（点击、搜索、曝光）与 `audit_logs`（管理操作）是持续增长的两张表；`search_history`（搜索历史）与 `site_archives`（离线归档整页 HTML）同样只增不删。同一个脚本提供两种处理模式，`scripts/data-retention.mjs`，一律默认 dry-run：
 
 | 模式 | 命令 | 适合什么 |
 | --- | --- | --- |
@@ -164,8 +164,8 @@ node scripts/data-retention.mjs
 # 2) 确认无误后执行清理，同时把被删的行 gzip 归档到 data/archive
 node scripts/data-retention.mjs --apply
 
-# 自定义保留期（默认 events 180 天 / audit_logs 365 天）
-node scripts/data-retention.mjs --events-days 90 --audit-days 365 --apply
+# 自定义保留期（默认 events/search_history 180 天，audit_logs/site_archives 365 天）
+node scripts/data-retention.mjs --events-days 90 --audit-days 365 --search-days 90 --archive-days 180 --apply
 
 # standard 模式：显式给 PG 连接串（默认读 NAVHUB_DATABASE_URL）
 node scripts/data-retention.mjs --url "$NAVHUB_DATABASE_URL" --apply
@@ -206,7 +206,7 @@ node scripts/data-retention.mjs --url "$NAVHUB_DATABASE_URL" --apply
 
 | 触发方式 | payload | 行为 |
 | --- | --- | --- |
-| 定时调度（每天 04:00） | `{ mode: "rollup", apply: false, maxDays: 30 }` | rollup dry-run：只统计会汇总多少天/行，不建表不删 |
+| 定时调度（每天 04:00） | `{ mode: "rollup", apply: false, maxDays: 30, telemetryDays: 90 }` | rollup dry-run：只统计会汇总多少天/行，不建表不删；**同时真正清理**超过 90 天的 `health_checks` / `llm_usage`（内部遥测，不受 apply 约束） |
 | 管理端点触发按钮 | `{}`（无 payload） | 同上 —— 前端按钮发不出 `apply`，想真删必须显式带 payload |
 | 手动 API 调用 | `{ mode: "rollup", apply: true }` | 写 `events_daily` / `audit_daily` 并删除已聚合天的明细 |
 | 手动 API 调用 | `{ mode: "cleanup" }` | cleanup dry-run（限量扫描 20 万行/表） |
@@ -216,7 +216,8 @@ node scripts/data-retention.mjs --url "$NAVHUB_DATABASE_URL" --apply
 
 - **`cleanup` 在任务里永远不删**。它删的是"唯一留底在归档文件里"的原样明细，而任务进程没有可靠的归档落点（容器文件系统随时可能丢），所以传 `apply: true` 会直接抛错，让人改用 CLI。
 - **`rollup` 允许 apply**，因为聚合先落表、统计在库内兜底，不依赖任何外部文件；但定时调度和前端按钮都只发 dry-run，真要执行必须显式带 payload —— 自动化可以先"看见"，不该先"动手"。
-- 每一轮都会往 `events` 里写一条 `data_retention` 行为事件（`meta` 带 days/groups/rows/deleted），事件流里能回看每轮动了什么；Runner 的重试与告警机制对它同样生效。
+- **内部遥测自动清理**：`health_checks`（每站每次巡检一行）与 `llm_usage`（每次 AI 调用一行）超过 `telemetryDays`（默认 90 天）直接删除。它们不承载用户内容，属于机器遥测，所以不必等人工确认；用户侧数据（`search_history` / `site_archives`）仍然只走 CLI 且默认 dry-run。
+- 每一轮都会往 `events` 里写一条 `data_retention` 行为事件（`meta` 带 days/groups/rows/deleted 与 telemetry 清理条数），事件流里能回看每轮动了什么；Runner 的重试与告警机制对它同样生效。
 
 ```bash
 # 手动预演一次（等价于定时任务每天做的事）

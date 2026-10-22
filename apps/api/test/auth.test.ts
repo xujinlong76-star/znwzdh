@@ -19,6 +19,7 @@ import { loadConfig } from "../src/config.ts";
 import { hashToken } from "../src/auth.ts";
 
 const BOOTSTRAP = "boot-secret-please-rotate";
+const ADMIN_STATIC = "admin-static-please-rotate";
 
 const dir = mkdtempSync(join(tmpdir(), "navhub-auth-"));
 const base = {
@@ -59,7 +60,7 @@ beforeAll(async () => {
   await openCtx.repo.createCategory({ id: "cat-ai", title: "AI 工具" });
   await openCtx.repo.createCategory({ id: "cat-ai-code", title: "AI 编程助手", parentId: "cat-ai" });
 
-  authCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "auth.db"), authRequired: true, bootstrapToken: BOOTSTRAP }));
+  authCtx = await createContext(loadConfig({ ...base, sqlitePath: join(dir, "auth.db"), authRequired: true, bootstrapToken: BOOTSTRAP, adminToken: ADMIN_STATIC }));
   authApp = await buildServer(authCtx);
   await authApp.ready();
 
@@ -178,9 +179,17 @@ describe("鉴权模式：scope 含义（admin ⊇ write ⊇ read）", () => {
     expect(created.statusCode).toBe(201);
   });
 
-  it("PUT /api/storage（写入导航快照）受 write 保护", async () => {
-    const res = await as(readTok, "PUT", "/api/storage", { path: "src/navsphere/content/site.json", content: "{}" });
-    expect(res.statusCode).toBe(403);
+  it("NAVHUB_ADMIN_TOKEN 作为独立的静态管理凭据（与 bootstrap/sessionSecret 分离）", async () => {
+    expect((await as(ADMIN_STATIC, "GET", "/api/tokens")).statusCode).toBe(200);
+    expect((await as(ADMIN_STATIC, "DELETE", "/api/sites/non-existent")).statusCode).not.toBe(401);
+  });
+
+  it("PUT /api/storage（写入导航快照）要求 admin：快照会删除缺失项", async () => {
+    for (const tok of [readTok, writeTok]) {
+      const res = await as(tok, "PUT", "/api/storage", { path: "src/navsphere/content/site.json", content: "{}" });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toContain("admin");
+    }
   });
 
   it("GET /api/storage 受 read 保护", async () => {
@@ -504,6 +513,7 @@ describe("生产配置硬校验与批量查询回归", () => {
   it("NODE_ENV=production 下缺失或默认 NAVHUB_SESSION_SECRET 拒绝启动", () => {
     const prevNodeEnv = process.env.NODE_ENV;
     const prevSecret = process.env.NAVHUB_SESSION_SECRET;
+    const prevUrl = process.env.NAVHUB_PUBLIC_URL;
     try {
       process.env.NODE_ENV = "production";
       delete process.env.NAVHUB_SESSION_SECRET;
@@ -516,10 +526,15 @@ describe("生产配置硬校验与批量查询回归", () => {
       expect(() => loadConfig()).toThrow(/NAVHUB_SESSION_SECRET/);
 
       process.env.NAVHUB_SESSION_SECRET = "a-very-strong-production-secret-with-at-least-32-chars!";
+      // 生产未开鉴权时必须显式声明 publicUrl：localhost 默认值不能再当逃生阀
+      delete process.env.NAVHUB_PUBLIC_URL;
+      expect(() => loadConfig()).toThrow(/NAVHUB_PUBLIC_URL/);
+      process.env.NAVHUB_PUBLIC_URL = "http://localhost:8787";
       expect(loadConfig().sessionSecret).toBe("a-very-strong-production-secret-with-at-least-32-chars!");
     } finally {
       if (prevNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prevNodeEnv;
       if (prevSecret === undefined) delete process.env.NAVHUB_SESSION_SECRET; else process.env.NAVHUB_SESSION_SECRET = prevSecret;
+      if (prevUrl === undefined) delete process.env.NAVHUB_PUBLIC_URL; else process.env.NAVHUB_PUBLIC_URL = prevUrl;
     }
   });
 

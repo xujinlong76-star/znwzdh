@@ -160,16 +160,18 @@ export class SqliteVecStore implements VectorStore {
     const existing = (this.db.prepare(`SELECT COUNT(*) AS c FROM ${this.table}`).get() as { c: number }).c;
     const needsRebuild = existing !== records.length;
 
-    if (needsRebuild && records.length > 0) {
+    if (needsRebuild) {
+      // 必须无条件清空：持久层记录为 0 而 vec0 里仍有行（删除/换模型后的残留）
+      // 时，旧逻辑因 `records.length > 0` 跳过重建，残留向量会永远留在索引里。
       this.db.exec(`DELETE FROM ${this.table}`);
-      const ins = this.db.prepare(`INSERT INTO ${this.table}(site_key, site_id, embedding) VALUES (?, ?, ?)`);
-      for (const r of records) {
-        if (r.vector.length === this.dim) {
-          ins.run(BigInt(r.key), r.siteId, normalize(r.vector));
+      if (records.length > 0) {
+        const ins = this.db.prepare(`INSERT INTO ${this.table}(site_key, site_id, embedding) VALUES (?, ?, ?)`);
+        for (const r of records) {
+          if (r.vector.length === this.dim) {
+            ins.run(BigInt(r.key), r.siteId, normalize(r.vector));
+          }
         }
       }
-    } else if (existing === 0 && records.length === 0) {
-      // 两边都为空，无需处理
     }
 
     for (const r of records) {

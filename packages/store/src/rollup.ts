@@ -267,8 +267,9 @@ export async function runRollup(adapter: RetentionAdapter, options: RollupOption
 
       let processed = 0;
 
-      for (const dayRow of days) {
-        const dayStart = Number(dayRow.day_start);
+      // 单日处理抽成函数：apply 时整体包进事务，保证"聚合写完 + 明细删除"同进同退。
+      // 事务覆盖当日分组的读取，避免另一个写入者在读完与删除之间插入新行。
+      const processDay = async (dayStart: number) => {
         const dayEnd = dayStart + DAY_MS;
         const window = [dayStart, dayEnd] as const;
 
@@ -282,13 +283,7 @@ export async function runRollup(adapter: RetentionAdapter, options: RollupOption
           maxGroups > 0 && rows.length > maxGroups
             ? `该日分组数 ${rows.length} 超过上限 ${maxGroups}，整轮跳过（明细保留，未被删除）`
             : undefined;
-
-        if (skipped) {
-          seenSkipped.add(dayStart);
-          result.skippedDays++;
-          options.onDay?.({ table: spec.table, dayStart, groups: rows.length, rows: 0, deleted: 0, skipped });
-          continue;
-        }
+        if (skipped) return { skipped, groups: rows.length, rows: 0, deleted: 0 };
 
         let aggregated = 0;
         for (const r of rows) {
@@ -303,10 +298,6 @@ export async function runRollup(adapter: RetentionAdapter, options: RollupOption
             ]);
           }
         }
-        result.groups += rows.length;
-        result.rows += aggregated;
-        result.days++;
-        processed++;
 
         let deleted = 0;
         if (!dryRun) {
@@ -315,9 +306,30 @@ export async function runRollup(adapter: RetentionAdapter, options: RollupOption
             `DELETE FROM ${spec.table} WHERE created_at >= ${p(1)} AND created_at < ${p(2)}`,
             [...window],
           );
-          result.deleted += deleted;
         }
-        options.onDay?.({ table: spec.table, dayStart, groups: rows.length, rows: aggregated, deleted });
+        return { skipped: undefined, groups: rows.length, rows: aggregated, deleted };
+      };
+
+      for (const dayRow of days) {
+        const dayStart = Number(dayRow.day_start);
+        const outcome =
+          dryRun || !adapter.transaction
+            ? await processDay(dayStart)
+            : await adapter.transaction(() => processDay(dayStart));
+
+        if (outcome.skipped) {
+          seenSkipped.add(dayStart);
+          result.skippedDays++;
+          options.onDay?.({ table: spec.table, dayStart, groups: outcome.groups, rows: 0, deleted: 0, skipped: outcome.skipped });
+          continue;
+        }
+
+        result.groups += outcome.groups;
+        result.rows += outcome.rows;
+        result.days++;
+        processed++;
+        result.deleted += outcome.deleted;
+        options.onDay?.({ table: spec.table, dayStart, groups: outcome.groups, rows: outcome.rows, deleted: outcome.deleted });
       }
 
       // dry-run 不删行，再查还是同一批日期；这一趟没有任何一天被写走时也必须停

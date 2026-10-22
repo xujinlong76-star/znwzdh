@@ -23,7 +23,16 @@ describe('/me：会话探测失败必须落 error，不得落 anonymous', () => 
     expect(src).toContain('登录状态暂时无法确认')
     // 解析失败也不能当匿名：catch(() => ({})) 会把失败吞成"无 user"
     expect(src).not.toContain('json().catch(() => ({}))')
-    expect(src).toContain('session === null')
+  })
+
+  it('未登录返回的字面量 null 是「没有会话」，不是故障', () => {
+    // 回归锁（2026-10-22 E2E 抓到）：NextAuth 未登录时 /api/auth/session 返回
+    // body 为字面量 null 的 200。把它当解析失败，会让每一个匿名访客都看到
+    // 「登录状态暂时无法确认」——那是把事实说成故障，比原来的反向错误更糟。
+    // 因此只用「解析抛错」当故障：body 为 null / {} 一律走匿名分支。
+    expect(src).not.toContain('session === null')
+    expect(src).toMatch(/parsed === undefined/)
+    expect(src).toMatch(/parsed \?\? \{\}/)
   })
 
   it('error 态提供重试入口', () => {
@@ -38,6 +47,11 @@ describe('/me/data：会话探测失败必须落 error（可重试）', () => {
     expect(src).toMatch(/type ViewState = .*'error'/)
     expect(src).toContain('if (!res.ok)')
     expect(src).toContain('setState(\'error\')')
+  })
+
+  it('未登录返回的字面量 null 走 anonymous，不是 error', () => {
+    expect(src).not.toContain("session === null ? 'error'")
+    expect(src).toMatch(/parsed === undefined/)
   })
 
   it('error 分支有说明与重试按钮', () => {

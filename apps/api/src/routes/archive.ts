@@ -96,11 +96,8 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         const text = res.body;
         const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
         if (bodyMatch && bodyMatch[1]) {
-          // 简易过滤 script/style
-          bodyText = bodyMatch[1]
-            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-            .trim();
+          // 严格清洗 HTML 标签与属性（防 XSS）
+          bodyText = sanitizeSnapshotHtml(bodyMatch[1]);
         }
       }
     } catch {
@@ -146,4 +143,18 @@ function escapeHtml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function sanitizeSnapshotHtml(raw: string): string {
+  return raw
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "")
+    .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, "")
+    .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, "")
+    .replace(/<form\b[^<]*(?:(?!<\/form>)<[^<]*)*<\/form>/gi, "")
+    .replace(/\bon[a-z]+\s*=\s*(["'][^"']*["']|[^\s>]+)/gi, "")
+    .replace(/\bhref\s*=\s*(["']\s*javascript:[^"']*["']|\s*javascript:[^\s>]+)/gi, 'href="#"')
+    .replace(/\bsrc\s*=\s*(["']\s*javascript:[^"']*["']|\s*javascript:[^\s>]+)/gi, 'src=""')
+    .trim();
 }

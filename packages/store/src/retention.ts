@@ -17,10 +17,16 @@
  *   - **默认 dry-run**：不显式传 `dryRun: false` 只统计不删除，避免误操作删库。
  */
 
-/** 支持保留策略的表。白名单也是 SQL 拼接的安全边界（见 assertTable）。 */
-export type RetentionTable = "events" | "audit_logs";
+/**
+ * 支持保留策略的表。白名单也是 SQL 拼接的安全边界（见 assertTable）。
+ *
+ * 入选条件：必须有 `id` 主键与 `created_at` 毫秒时间戳（分批与游标都依赖这两列）。
+ * `health_checks` 只有 `checked_at`，时间列口径不同，暂不纳入 ——
+ * 要么先把列改名/补列，要么单独写一套按 `checked_at` 的清理，不能硬套。
+ */
+export type RetentionTable = "events" | "audit_logs" | "search_history" | "site_archives";
 
-const TABLES: readonly RetentionTable[] = ["events", "audit_logs"];
+const TABLES: readonly RetentionTable[] = ["events", "audit_logs", "search_history", "site_archives"];
 
 /** 行数据（列名 → 值），由 adapter 原样返回。 */
 export type RetentionRow = Record<string, unknown>;
@@ -35,6 +41,13 @@ export interface RetentionAdapter {
   select(sql: string, params: readonly unknown[]): RetentionRow[] | Promise<RetentionRow[]>;
   /** 执行写操作，返回受影响行数。 */
   execute(sql: string, params: readonly unknown[]): number | Promise<number>;
+  /**
+   * 可选事务：把回调内的读写放进同一事务。
+   *
+   * 目前只有 rollup 使用（"写聚合 + 删明细"按天原子化）。清理模式刻意不用 ——
+   * 它靠小批量删除切碎锁粒度，包进一个大事务会适得其反。
+   */
+  transaction?<T>(fn: () => Promise<T>): Promise<T>;
 }
 
 export interface RetentionTarget {
@@ -189,8 +202,15 @@ export async function runRetention(
   return { startedAt: now, dryRun, batchSize, tables };
 }
 
-/** 默认保留策略：行为事件 180 天、审计日志 365 天（审计要留得比行为事件久）。 */
+/**
+ * 默认保留策略：行为事件 180 天、审计日志 365 天（审计要留得比行为事件久）。
+ *
+ * 搜索历史同样是个人行为数据，按 180 天清理；离线归档是整页 HTML（单行最大），
+ * 保留 365 天。两者都必须由人显式执行删除（任务侧 cleanup 只做 dry-run）。
+ */
 export const DEFAULT_RETENTION_TARGETS: RetentionTarget[] = [
   { table: "events", keepDays: 180 },
   { table: "audit_logs", keepDays: 365 },
+  { table: "search_history", keepDays: 180 },
+  { table: "site_archives", keepDays: 365 },
 ];

@@ -282,15 +282,23 @@ describe("runRetention", () => {
     ).rejects.toThrow(/保留天数必须为正数/);
   });
 
-  it("默认策略：行为事件 180 天、审计日志 365 天（审计留得更久）", async () => {
+  it("默认策略：行为/搜索 180 天、审计/归档 365 天（审计与归档留得更久）", async () => {
     expect(DEFAULT_RETENTION_TARGETS).toEqual([
       { table: "events", keepDays: 180 },
       { table: "audit_logs", keepDays: 365 },
+      { table: "search_history", keepDays: 180 },
+      { table: "site_archives", keepDays: 365 },
     ]);
 
-    // 200 天前的审计日志在 365 天策略下要留下
+    // 200 天前的审计日志在 365 天策略下要留下；同期的搜索历史按 180 天应被清掉
     const auditLogs = makeTable([row(1, 200)]);
-    const { adapter } = makeAdapter({ events: makeTable([]), audit_logs: auditLogs });
+    const searchHistory = makeTable([row(1, 200)]);
+    const { adapter } = makeAdapter({
+      events: makeTable([]),
+      audit_logs: auditLogs,
+      search_history: searchHistory,
+      site_archives: makeTable([]),
+    });
     const result = await runRetention(adapter, {
       targets: DEFAULT_RETENTION_TARGETS,
       now: NOW,
@@ -298,6 +306,8 @@ describe("runRetention", () => {
     });
     expect(result.tables[1].deleted).toBe(0);
     expect(auditLogs.size).toBe(1);
+    expect(result.tables[2].deleted).toBe(1);
+    expect(searchHistory.size).toBe(0);
   });
 
   it("表里没有过期数据时没有任何 SQL 写操作", async () => {

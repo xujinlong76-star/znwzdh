@@ -115,6 +115,17 @@ export async function recentHealthChecks(
   }));
 }
 
+/**
+ * 删除 before 之前的巡检历史，返回删除条数。
+ *
+ * 这张表每个站点每天一行，长期只增不删；它不承载用户内容，
+ * 与 llm_usage 同属"可以按 TTL 自动清理"的内部遥测。
+ * 用 checked_at 而不是 created_at —— 该表没有 created_at 列。
+ */
+export async function pruneHealthChecks(repo: Repository, before: number): Promise<number> {
+  return repo.runCount("DELETE FROM health_checks WHERE checked_at < ?", [before]);
+}
+
 export async function bumpVisit(repo: Repository, siteId: string): Promise<void> {
   const now = Date.now();
   await repo.run(

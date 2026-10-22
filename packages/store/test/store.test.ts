@@ -128,6 +128,21 @@ describe("SqliteVecStore：site_id 列（跨进程语义检索不失效）", () 
     expect(hits[0]!.siteId).toBe("legacy-1");
   });
 
+  it("rehydrate 空集时必须清空残留向量（持久层已删/换模型）", async () => {
+    const Database = (await import("better-sqlite3")).default;
+    const sqliteVec = await import("sqlite-vec");
+    const raw = new Database(":memory:");
+    sqliteVec.load(raw as never);
+
+    const store = new SqliteVecStore({ db: raw as never, dim: DIM });
+    await store.upsert([{ key: hashSiteId("stale-1"), siteId: "stale-1", vector: rnd(3) }]);
+    expect(await store.count()).toBe(1);
+
+    store.rehydrate([]);
+    expect(await store.count()).toBe(0);
+    expect(await store.search(rnd(3), 5)).toEqual([]);
+  });
+
   it("remove 按 site_id 直接删，不依赖映射", async () => {
     const Database = (await import("better-sqlite3")).default;
     const sqliteVec = await import("sqlite-vec");
@@ -913,9 +928,15 @@ describe("SQLite 集成：导航增强能力", () => {
     await repo.completeJob(claimed!.id, null);
     const done = (await repo.listJobs("done", 10)).find((j) => j.id === claimed!.id);
     expect(done).toBeTruthy();
-    await repo.completeJob(claimed!.id, "boom");
+    // completeJob 是 CAS 到 running：已完成的任务不会被迟到的失败结果改写。
+    // 要验证失败落库，先把任务恢复成 running（模拟重新认领）。
+    await repo.run("UPDATE jobs SET status = 'running' WHERE id = ?", [claimed!.id]);
+    expect(await repo.completeJob(claimed!.id, "boom")).toBe(true);
     const failed = (await repo.listJobs("failed", 10)).find((j) => j.id === claimed!.id);
     expect(failed!.error).toBe("boom");
+    // 再次回写同一任务（已不在 running）必须被忽略
+    expect(await repo.completeJob(claimed!.id, "late")).toBe(false);
+    expect((await repo.getJob(claimed!.id))?.error).toBe("boom");
   });
 
   /* ------------------------- 迁移幂等 ------------------------- */

@@ -264,11 +264,15 @@ export async function addTagAlias(repo: Repository, tagId: string, rawAlias: str
   return { alias };
 }
 
-export async function removeTagAlias(repo: Repository, rawAlias: string): Promise<void> {
+export async function removeTagAlias(repo: Repository, rawAlias: string, tagId?: string): Promise<void> {
   const norm = rawAlias.trim();
   if (!norm) return;
   const alias = slugify(norm) || norm.toLowerCase();
-  await repo.run("DELETE FROM tag_aliases WHERE alias = ? OR alias = ?", [alias, norm]);
+  if (tagId) {
+    await repo.run("DELETE FROM tag_aliases WHERE (alias = ? OR alias = ?) AND tag_id = ?", [alias, norm, tagId]);
+  } else {
+    await repo.run("DELETE FROM tag_aliases WHERE alias = ? OR alias = ?", [alias, norm]);
+  }
 }
 
 export async function listTagAliases(repo: Repository, tagId?: string): Promise<TagAliasRecord[]> {

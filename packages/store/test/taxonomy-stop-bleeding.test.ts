@@ -147,20 +147,23 @@ describe("「未分类」是显式系统类目", () => {
 });
 
 describe("categorySiteCounts", () => {
-  it("一次聚合给出双指针并集，且只算 active 未删站点", async () => {
+  it("只按主指针聚合，且只算 active 未删站点", async () => {
     const a = await repo.createCategory({ title: "计数甲" });
     const b = await repo.createCategory({ title: "计数乙" });
     await repo.createSite({ url: "https://count-1.example.com", title: "一", categoryId: a.id });
     await repo.createSite({ url: "https://count-2.example.com", title: "二", categoryId: a.id, subCategoryId: b.id });
-    // 主副指针同类目：不能重复计数
+    // 主副指针同类目：只能计一次
     await repo.createSite({ url: "https://count-3.example.com", title: "三", categoryId: a.id, subCategoryId: a.id });
     await repo.createSite({ url: "https://count-4.example.com", title: "四", categoryId: a.id, status: "broken" });
     const trashed = await repo.createSite({ url: "https://count-5.example.com", title: "五", categoryId: b.id });
     await repo.deleteSite(trashed.id);
+    // 只有副指针（浏览侧 search 不可见）：不得计给 b
+    await repo.createSite({ url: "https://count-6.example.com", title: "六", categoryId: "", subCategoryId: b.id });
 
     const counts = new Map((await repo.categorySiteCounts()).map((r) => [r.categoryId, r.sites]));
+    // 副指针是只读镜像：并集会让一级根计数 > 子叶之和，与类目页 /api/search 口径分叉
     expect(counts.get(a.id)).toBe(3);
-    expect(counts.get(b.id)).toBe(1);
+    expect(counts.has(b.id)).toBe(false);
   });
 });
 

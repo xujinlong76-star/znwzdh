@@ -112,9 +112,7 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
   /**
    * 审核投稿（approve → active / reject → archived）。
    *
-   * :number 是前端沿用的 GitHub Issue number（site.id 的 hash），这里反查回
-   * 真实 site id——此前 Next 的 hub 回退直接拿 hash number 调 /api/sites/:id，
-   * 必然 404，审核按钮在 NavHub 模式下是**静默失效**的（本次收编修复）。
+   * :number 优先支持新前端直传 siteId；若查无结果且为数字则兼容旧版 djb2 哈希编号查找。
    * 审核动作落 submission.approve / submission.reject 审计（此前只有 POST 有审计）。
    */
   app.patch("/api/submissions/:number", { config: { scope: "write" } }, async (req, reply) => {
@@ -125,12 +123,15 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { success: false, message: "无效的操作" }; }
 
-    const wanted = Number(number);
-    if (!Number.isFinite(wanted)) { reply.code(400); return { success: false, message: "无效的投稿编号" }; }
-    // 精准按 source=submission 过滤查询反查 hash，不受全站常规站点数量影响
-    // 注意：djb2 截断风险——投稿超 1000 会被 limit 截断而 404；兼容旧前端，新前端请直传 siteId。
-    const candidates = await ctx.repo.listSites({ source: "submission", limit: 1000 });
-    const site = candidates.find((s) => submissionNumber(s.id) === wanted);
+    // 优先按真实 siteId 匹配；若未匹配且传入的是纯数字编号，回退按 djb2 哈希编号查找
+    let site = await ctx.repo.getSite(number);
+    if (!site || site.source !== "submission") {
+      const wanted = Number(number);
+      if (Number.isFinite(wanted)) {
+        const candidates = await ctx.repo.listSites({ source: "submission", limit: 1000 });
+        site = candidates.find((s) => submissionNumber(s.id) === wanted) ?? null;
+      }
+    }
     if (!site) { reply.code(404); return { success: false, message: "投稿不存在" }; }
 
     const nextStatus = body.data.action === "approve" ? "active" : "archived";

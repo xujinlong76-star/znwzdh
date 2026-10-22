@@ -68,12 +68,15 @@ services:
       # 鉴权开启后**唯一**的首个凭据入口（server.ts 里与 Bearer token 恒定时间比较）。
       # 引导出正式 token 后请删除本变量重启，否则这个长期有效的引导凭据一直可用。
       NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
+      # 管理面静态凭据（可选，建议与 SESSION_SECRET 分开）：设置后以其为准，
+      # sessionSecret 仅保留兼容回退。轮换会话签名密钥不再连带泄露 admin。
+      NAVHUB_ADMIN_TOKEN: ${NAVHUB_ADMIN_TOKEN:-}
       # NAVHUB_ALLOW_INSECURE_PUBLIC: ${NAVHUB_ALLOW_INSECURE_PUBLIC:-0}
-      # 中枢对外的规范地址。**不传时下面那条例用它的规则是死的**：
-      # config.ts 默认 publicUrl=http://localhost:8787 → 判定为内网 →
-      # 「生产 + publicUrl 指向公网 + 未开鉴权 → 拒绝启动」这条 fail-closed 永远不会触发。
-      # 公网部署请把同一个值同时填给 web 服务的 NAVHUB_SITE_URL（canonical/sitemap 用它）。
-      NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-}
+      # 中枢对外的规范地址。默认 localhost 是**显式声明内网部署**：生产环境未开鉴权时
+      # config.ts 要求本变量必须有值，缺省会让容器启动即拒绝（fail-closed）。
+      # 公网部署请改成真实域名，并把同一个值同时填给 web 服务的 NAVHUB_SITE_URL
+      #（canonical/sitemap 用它）。
+      NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-http://localhost:8787}
       # 密钥轮换窗口：新签发只用 SESSION_SECRET，旧签名在窗口内仍被接受。
       # compose 不传这个变量就等于「轮换做不了」（详见 .env.example）。
       NAVHUB_SESSION_SECRET_PREV: ${NAVHUB_SESSION_SECRET_PREV:-}
@@ -91,11 +94,16 @@ services:
       # 开启后每个带身份的请求都要 x-navhub-identity-signature = HMAC-SHA256(secret, identity)。
       NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/api/health"]
+      # /api/ready 会真实 ping 数据库/存储；/api/health 只证明进程活着，
+      # 数据库挂掉时容器仍会显示 healthy（restart 策略也就永远不会触发）。
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/api/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 40s
+    # main.ts 先 drain 任务与请求（最多 30s）再退出；默认 10s 会在排空中途 SIGKILL，
+    # 留下 running 状态的僵尸任务与半写请求。
+    stop_grace_period: 45s
     # ---- 资源上限示例（默认关闭，保持现有可运行性） ----
     # 公开部署建议取消注释，防止 embedding/检索把宿主机内存吃光：
     # deploy:
@@ -225,11 +233,19 @@ services:
       # 只能改 compose 文件本身。
       NAVHUB_AUTH_REQUIRED: ${NAVHUB_AUTH_REQUIRED:-0}
       NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
+      NAVHUB_ADMIN_TOKEN: ${NAVHUB_ADMIN_TOKEN:-}
       NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
-      NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-}
+      NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-http://localhost:8788}
       NAVHUB_SESSION_SECRET_PREV: ${NAVHUB_SESSION_SECRET_PREV:-}
       NAVHUB_ALERT_WEBHOOK: ${NAVHUB_ALERT_WEBHOOK:-}
       NAVHUB_CORS_ORIGINS: ${NAVHUB_CORS_ORIGINS:-*}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/api/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 45s
 
   mcp:
     build:

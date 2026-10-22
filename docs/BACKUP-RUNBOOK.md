@@ -6,7 +6,8 @@
 ## 1. 备份
 
 ```bash
-# 默认：data/navhub.db → data/backups/navhub-YYYY-MM-DD_HH-mm-ss.db，保留 7 份
+# 默认：data/navhub.db → data/backups/navhub-YYYY-MM-DD_HH-mm-ss.db，保留 35 份
+# （35 份按日备份覆盖 purge_trash 的 30 天回收站窗口：误删后一个月内仍能找回删除前快照）
 pnpm backup
 
 # 指定库与输出目录，保留 14 份
@@ -26,8 +27,8 @@ node scripts/backup.mjs --db ./data/navhub.db --out ./data/backups --no-rotate
 ### 定时任务（示例）
 
 ```cron
-# 每天 03:17 备份，保留 7 份
-17 3 * * * cd /srv/navhub && /usr/bin/node scripts/backup.mjs --keep 7 >> /var/log/navhub-backup.log 2>&1
+# 每天 03:17 备份，保留 35 份（覆盖 30 天回收站窗口）
+17 3 * * * cd /srv/navhub && /usr/bin/node scripts/backup.mjs --keep 35 >> /var/log/navhub-backup.log 2>&1
 ```
 
 建议再加一条「备份文件数量/最新文件时间」告警，避免 cron 静默失败。

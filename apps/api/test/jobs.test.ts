@@ -280,6 +280,29 @@ describe("data_retention 任务", () => {
     expect(await countClicks()).toBe(before); // 一行没删
   });
 
+  it("内部遥测按 TTL 清理：超过 90 天的巡检历史与 LLM 用量被删，近期保留", async () => {
+    const old = Date.now() - 120 * 86_400_000;
+    const fresh = Date.now() - 2 * 86_400_000;
+    const insHealth = ctx.db.sqlite!.prepare("INSERT INTO health_checks (site_id, checked_at, ok) VALUES (?,?,1)");
+    insHealth.run("telemetry-old", old);
+    insHealth.run("telemetry-new", fresh);
+    const insUsage = ctx.db.sqlite!.prepare(
+      "INSERT INTO llm_usage (id, scenario, source, model, ok, created_at) VALUES (?,?,?,?,1,?)",
+    );
+    insUsage.run("telemetry-old", "chat", "test", "m", old);
+    insUsage.run("telemetry-new", "chat", "test", "m", fresh);
+
+    await ctx.repo.enqueueJob("data_retention", { mode: "rollup", apply: false, telemetryDays: 90 });
+    await new JobRunner(ctx).tick();
+
+    const health = await ctx.db.sqlite!
+      .prepare("SELECT site_id FROM health_checks WHERE site_id LIKE 'telemetry-%'")
+      .all();
+    expect(health.map((r) => r.site_id).sort()).toEqual(["telemetry-new"]);
+    const usage = await ctx.db.sqlite!.prepare("SELECT id FROM llm_usage WHERE id LIKE 'telemetry-%'").all();
+    expect(usage.map((r) => r.id)).toEqual(["telemetry-new"]);
+  });
+
   it("cleanup dry-run 正常完成并给出命中量（不删任何行）", async () => {
     await clearOldClicks();
     await seedOldEvents([500, 400], 2);

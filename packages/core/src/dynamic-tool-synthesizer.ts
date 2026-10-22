@@ -26,6 +26,7 @@ export interface GuardOptions {
   allowPrivateIps?: boolean;
   fetchFn?: typeof fetch;
   customHeaders?: Record<string, string>;
+  validateUrl?: (url: string) => Promise<{ safe: boolean; reason?: string }> | { safe: boolean; reason?: string };
 }
 
 export interface RestParameterSpec {
@@ -96,6 +97,27 @@ export function isSafeUrl(rawUrl: string, allowPrivate = false): { safe: boolean
   }
   if (/^\d+\.\d+$/.test(hostname)) {
     return { safe: false, reason: 'Shorthand IPv4 host forbidden' };
+  }
+
+  // 1c. 泛域名解析服务（如 nip.io, sslip.io）内嵌私有/环回/元数据 IP 阻断
+  const embeddedIpv4 = hostname.match(/(?:^|\.)(?:(\d{1,3})[-.](\d{1,3})[-.](\d{1,3})[-.](\d{1,3}))(?:\.|$)/);
+  if (embeddedIpv4) {
+    const b0 = Number.parseInt(embeddedIpv4[1]!, 10);
+    const b1 = Number.parseInt(embeddedIpv4[2]!, 10);
+    const b2 = Number.parseInt(embeddedIpv4[3]!, 10);
+    const b3 = Number.parseInt(embeddedIpv4[4]!, 10);
+    if (b0 <= 255 && b1 <= 255 && b2 <= 255 && b3 <= 255) {
+      if (
+        b0 === 0 ||
+        b0 === 127 ||
+        b0 === 10 ||
+        (b0 === 172 && b1 >= 16 && b1 <= 31) ||
+        (b0 === 192 && b1 === 168) ||
+        (b0 === 169 && b1 === 254)
+      ) {
+        return { safe: false, reason: 'Embedded private IP in domain is forbidden' };
+      }
+    }
   }
 
   // 2. IPv4 私有及保留网段阻断
@@ -210,6 +232,12 @@ export function createGuardedApiExecutor(options: GuardOptions = {}) {
         const safety = isSafeUrl(currentUrl, allowPrivate);
         if (!safety.safe) {
           throw new Error(`SSRF Guard Violation: ${safety.reason} (${currentUrl})`);
+        }
+        if (options.validateUrl) {
+          const customSafety = await options.validateUrl(currentUrl);
+          if (!customSafety.safe) {
+            throw new Error(`SSRF Guard Violation: ${customSafety.reason} (${currentUrl})`);
+          }
         }
         const requestInit: RequestInit = {
           ...init,

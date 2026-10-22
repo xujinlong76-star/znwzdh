@@ -1441,7 +1441,7 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
   it("POST /api/sites/:id/heal 触发自动诊断并返回自愈报告与落审计", async () => {
     const site = (await app.inject({
       method: "POST", url: "/api/sites",
-      payload: { url: "https://broken-legacy.example.com", title: "失效站点", categoryId: "cat-ai" },
+      payload: { url: "https://broken-legacy.example.com", title: "失效站点", categoryId: "cat-dev" },
     })).json();
 
     const res = await app.inject({ method: "POST", url: "/api/sites/" + site.id + "/heal" });
@@ -1459,7 +1459,7 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
   it("GET /api/sites/:id/wayback 返回 Wayback 历史归档快照与自愈入口", async () => {
     const site = (await app.inject({
       method: "POST", url: "/api/sites",
-      payload: { url: "https://wayback-test.example.com", title: "Wayback测试站点", categoryId: "cat-ai" },
+      payload: { url: "https://wayback-test.example.com", title: "Wayback测试站点", categoryId: "cat-dev" },
     })).json();
 
     const res = await app.inject({ method: "GET", url: "/api/sites/" + site.id + "/wayback" });
@@ -1477,7 +1477,7 @@ describe("次世代架构配方、选型对比与确定性 Favicon 端点", () =
   it("POST /api/sites/:id/wayback/heal 一键自愈死链站点并落审计", async () => {
     const site = (await app.inject({
       method: "POST", url: "/api/sites",
-      payload: { url: "https://dead-link-heal.example.com", title: "死链待自愈站点", categoryId: "cat-ai" },
+      payload: { url: "https://dead-link-heal.example.com", title: "死链待自愈站点", categoryId: "cat-dev" },
     })).json();
 
     const res = await app.inject({

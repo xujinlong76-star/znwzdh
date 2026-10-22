@@ -106,4 +106,22 @@ describe("plugin_embeddings 持久层", () => {
     expect(hits[0]!.siteId).toBe("plugin:a-pack");
     expect(hits[0]!.distance).toBeLessThan(1e-5);
   });
+
+  it("savedEmbeddings 按模型/维度过滤：旧模型向量不混入当前索引", async () => {
+    await repo.saveEmbedding("site-current", "model-a", vec(21));
+    await repo.saveEmbedding("site-old-model", "model-b", vec(22));
+    await repo.saveEmbedding("site-old-dim", "model-a", new Float32Array([1, 2, 3]));
+
+    const current = await repo.savedEmbeddings({ model: "model-a", dim: DIM });
+    expect(current.map((r) => r.siteId).sort()).toEqual(["site-current"]);
+
+    // 不带过滤时全部可见（回溯/运维用途）
+    const all = await repo.savedEmbeddings();
+    expect(all.length).toBe(3);
+
+    await repo.savePluginEmbedding("pack-current", "model-a", vec(23));
+    await repo.savePluginEmbedding("pack-old", "model-b", vec(24));
+    const plugins = await repo.savedPluginEmbeddings({ model: "model-a", dim: DIM });
+    expect(plugins.map((r) => r.siteId)).toEqual(["plugin:pack-current"]);
+  });
 });

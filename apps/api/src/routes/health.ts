@@ -13,19 +13,63 @@ export const healthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
   /* ---------------------------- 健康与能力 ---------------------------- */
 
-  app.get("/api/health", { config: { cache: { maxAge: 15 } } }, async () => ({
-    ok: true,
-    mode: ctx.config.mode,
-    capabilities: ctx.capabilities,
-    stats: await ctx.repo.stats(),
-    embedding: ctx.embedding?.stats ? { cache: ctx.embedding.stats() } : undefined,
-  }));
+  app.get("/api/health", { config: { cache: { maxAge: 15 } } }, async () => {
+    // 存活探针不依赖数据库：DB 故障时这里返回 500 会让容器被反复重启，
+    // 而重启解决不了数据库问题，只会放大抖动。DB 状态交给 /ready 与 db 字段。
+    let dbOk = true;
+    let stats: Awaited<ReturnType<typeof ctx.repo.stats>> | null = null;
+    try {
+      stats = await ctx.repo.stats();
+    } catch {
+      dbOk = false;
+    }
+    return {
+      ok: true,
+      mode: ctx.config.mode,
+      capabilities: ctx.capabilities,
+      db: { ok: dbOk },
+      stats,
+      embedding: ctx.embedding?.stats ? { cache: ctx.embedding.stats() } : undefined,
+    };
+  });
 
-  // 就绪探针：compose depends_on 应指 /ready（迁移水位+embedding 就绪），/health 仅表进程存活
-  app.get("/api/ready", async () => {
+  /**
+   * 就绪探针：compose healthcheck / depends_on 应指 /ready。
+   *
+   * 旧实现恒返回 ok:true，只报告 embedding/fts 的装配状态——数据库文件被删、
+   * PG 断连、连接池耗尽时容器仍显示 healthy，restart 策略永远不会触发。
+   * 现在真实 ping 一次数据库；失败返回 503，让编排层把流量摘走并触发重启。
+   * embedding 是可选能力（首次部署要下载模型），不参与就绪判定。
+   */
+  app.get("/api/ready", async (_req, reply) => {
+    const started = Date.now();
+    let dbOk = false;
+    let dbError: string | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        ctx.repo.raw("SELECT 1 AS ok"),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error("数据库探测超时（2s）")), 2_000);
+        }),
+      ]);
+      dbOk = true;
+    } catch (err) {
+      dbError = err instanceof Error ? err.message : String(err);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     const embeddingReady = ctx.embedding ? ctx.embedding.ready() : false;
     const semantic = Boolean(ctx.embedding && ctx.vectors && embeddingReady);
-    return { ok: true, mode: ctx.config.mode, semantic, embeddingReady, fts: Boolean(ctx.fts) };
+    if (!dbOk) reply.code(503);
+    return {
+      ok: dbOk,
+      mode: ctx.config.mode,
+      db: { ok: dbOk, latencyMs: Date.now() - started, ...(dbError ? { error: dbError } : {}) },
+      semantic,
+      embeddingReady,
+      fts: Boolean(ctx.fts),
+    };
   });
 
   /**

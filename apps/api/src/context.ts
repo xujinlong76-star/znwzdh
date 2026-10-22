@@ -65,15 +65,15 @@ export async function createContext(config: AppConfig): Promise<AppContext> {
       sqliteVec.load(db.sqlite as never);
       const store = new SqliteVecStore({ db: db.sqlite as never, dim: config.embedding.dim });
       store.init();
-      // 进程重启后重建 key -> siteId 映射，并在 vec0 表为空（如刚迁移）时用向量重灌。
-      // savedEmbeddings() 返回 { key, siteId, vector }，正好是 VectorRecord[]。
-      const saved = await repo.savedEmbeddings();
-      store.rehydrate(saved);
+      // 进程重启后重建 key -> siteId 映射，并在 vec0 表与持久层不一致时用向量重灌。
+      // 只取当前模型/维度：换模型后旧向量不能混进 KNN，否则计数也会永久对不上。
+      const vectorFilter = { model: config.embedding.model, dim: config.embedding.dim };
+      store.rehydrate(await repo.savedEmbeddings(vectorFilter));
       vectors = store;
       // 插件向量：同一数据库、独立 vec0 表；持久层 plugin_embeddings 为唯一事实源
       const pluginStore = new SqliteVecStore({ db: db.sqlite as never, dim: config.embedding.dim, table: "plugins_vec" });
       pluginStore.init();
-      pluginStore.rehydrate(await repo.savedPluginEmbeddings());
+      pluginStore.rehydrate(await repo.savedPluginEmbeddings(vectorFilter));
       pluginVectors = pluginStore;
       notes.push("sqlite-vec 已加载，向量维度 " + config.embedding.dim);
     } catch (err) {

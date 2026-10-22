@@ -162,7 +162,7 @@ export const RunJobInput = z.object({
     "taxonomy_audit",
     "data_retention",
   ]).describe("任务类型：health_check (健康巡检), refetch_metadata (重抓元数据), recompute_rank (重排热度), reindex (重建检索索引), site_self_healing (死链自愈诊断), token_audit (API 凭据过期与闲置巡检), purge_trash (过期回收站物理清理), taxonomy_audit (分类标签体系审计), data_retention (events/audit_logs 数据保留与明细聚合；cleanup 只 dry-run，rollup 可选 apply)"),
-  payload: z.record(z.string(), z.unknown()).optional().describe("任务参数（如 refetch_metadata/site_self_healing 需要 siteId，token_audit 可选 expiringDays/dormantDays，purge_trash 可选 olderThanDays；data_retention 支持 mode=cleanup|rollup、apply、maxDays、maxGroups、maxScan）"),
+  payload: z.record(z.string(), z.unknown()).optional().describe("任务参数（如 refetch_metadata/site_self_healing 需要 siteId，token_audit 可选 expiringDays/dormantDays，purge_trash 可选 olderThanDays；data_retention 支持 mode=cleanup|rollup、apply、maxDays、maxGroups、maxScan、telemetryDays）"),
 });
 
 export const ListJobsInput = z.object({

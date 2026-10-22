@@ -115,6 +115,12 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     if (!job) {
       return notFound(reply, "任务不存在");
     }
+    // 仓储层的 CAS 会兜住并发，但这里先给出明确原因：
+    // pending/running 重试会清零 attempts 或造成双跑，done 重试会抹掉历史结果。
+    if (job.status !== "failed" && job.status !== "cancelled") {
+      reply.code(409);
+      return { error: "JOB_NOT_RETRYABLE", message: `任务状态为 ${job.status}，仅失败或已取消的任务可重试` };
+    }
 
     const retried = await ctx.repo.retryJob(id);
     jobEventBus.emitJobUpdate({
@@ -209,30 +215,40 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     setupSseStream(reply);
     reply.raw.write(": connected\n\n");
 
+    let cleaned = false;
+    let heartbeat: NodeJS.Timeout | null = null;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
+      jobEventBus.off(`job:${id}`, onJobUpdate);
+    };
+
     const onJobUpdate = (payload: JobEventPayload) => {
       try {
         reply.raw.write(`event: update\ndata: ${JSON.stringify(payload)}\n\n`);
         if (payload.status === "completed" || payload.status === "failed") {
+          cleanup();
           reply.raw.end();
         }
       } catch {
-        // 连接关闭容错
+        cleanup();
       }
     };
 
     jobEventBus.on(`job:${id}`, onJobUpdate);
 
-    const heartbeat = setInterval(() => {
+    heartbeat = setInterval(() => {
       try {
         reply.raw.write(": ping\n\n");
       } catch {
-        // 心跳容错
+        cleanup();
       }
     }, 15_000);
 
-    req.raw.on("close", () => {
-      clearInterval(heartbeat);
-      jobEventBus.off(`job:${id}`, onJobUpdate);
-    });
+    req.raw.on("close", cleanup);
   });
 };

@@ -18,6 +18,14 @@ export interface AppConfig {
   host: string;
   publicUrl: string;
   sessionSecret: string;
+  /**
+   * 管理面静态委托凭据（可选）。
+   *
+   * 历史上 sessionSecret 同时充当「会话签名密钥」和「管理端 Bearer」，
+   * 一旦 Web 侧泄露就等于拿到 admin。配置本项后优先使用独立凭据，
+   * sessionSecret 仍保留兼容回退（轮换/拆除前不致断服）。
+   */
+  adminToken: string | null;
   sqlitePath: string;
   databaseUrl: string | null;
   embedding: {
@@ -242,6 +250,25 @@ function assertSecurityConstraints(
   }
 
   // 3. 生产公网暴露鉴权守护（防管理后台未授权公开裸奔）
+  //
+  // 仅靠 publicUrl 判断会有一个致命缺口：未显式配置时默认值是 localhost，
+  // 于是一次漏配就让「公网 + 未开鉴权」被当成内网部署放行。
+  // 生产环境未开鉴权时，必须**显式**声明 publicUrl（哪怕是 localhost），
+  // 让「我不知道自己部署在哪」无法成为逃生阀。
+  if (isProd && !config.authRequired && !process.env.NAVHUB_PUBLIC_URL?.trim()) {
+    throw new Error(
+      "生产环境未开启鉴权时，必须显式设置 NAVHUB_PUBLIC_URL（例如 http://localhost:8787 或 https://your-domain）。" +
+        "未配置时的 localhost 默认值会让公网部署绕过鉴权守护。"
+    );
+  }
+
+  if (isProd && !config.adminToken) {
+    console.warn(
+      "[navhub] 警告：未设置 NAVHUB_ADMIN_TOKEN，管理端仍可将 NAVHUB_SESSION_SECRET 作为静态凭据使用；" +
+        "建议拆分出独立的管理 token，避免会话签名密钥泄露即等于 admin。"
+    );
+  }
+
   // 解析失败按「公网」处理：宁可多要一次鉴权，也不能让畸形 URL 成为逃生阀
   let isLocalPublic = false;
   try {
@@ -298,6 +325,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     host: env("NAVHUB_HOST", env("HOST", "0.0.0.0")),
     publicUrl: env("NAVHUB_PUBLIC_URL", "http://localhost:8787"),
     sessionSecret: env("NAVHUB_SESSION_SECRET", "insecure-dev-secret-change-me"),
+    adminToken: process.env.NAVHUB_ADMIN_TOKEN?.trim() || null,
     sqlitePath: env("NAVHUB_SQLITE_PATH", env("NAVHUB_DB_PATH", "./data/navhub.db")),
     databaseUrl: process.env.NAVHUB_DATABASE_URL || null,
 

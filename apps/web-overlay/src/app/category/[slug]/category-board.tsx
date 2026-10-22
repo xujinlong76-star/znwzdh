@@ -89,7 +89,7 @@ export async function loadCategoryPage(ref: string, page: number): Promise<Categ
   const [categories, res, rawCounts] = await Promise.all([
     loadCategories(300),
     loadCategorySites(ref, PAGE_SIZE, (page - 1) * PAGE_SIZE, 60),
-    loadActiveCategoryCounts(3600),
+    loadActiveCategoryCounts(60),
   ])
   // 门槛判定与展示计数都按子树聚合：原始计数按单个类目 GROUP BY，
   // 站点只挂叶子的新树里每个一级根都是 0。

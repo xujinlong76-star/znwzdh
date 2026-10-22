@@ -32,6 +32,15 @@ export const trashRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       return { error: "同网址已存在新站点，无法恢复（可先删除新站点）", existingSiteId: clash.id };
     }
 
+    // 若原类目在软删期间已被物理删除，安全回退至未分类（防孤儿站点）
+    if (deleted.categoryId) {
+      const cat = await ctx.repo.getCategory(deleted.categoryId);
+      if (!cat) {
+        const fallbackId = await ctx.repo.ensureUncategorized();
+        await ctx.repo.updateSite(id, { categoryId: fallbackId });
+      }
+    }
+
     const site = await ctx.repo.restoreSite(id);
     // 向量在软删期间保留，恢复即生效；保险起见重建一次（幂等）
     await indexSite(ctx, site!.id, site!.title, site!.description ?? null, site!.url);

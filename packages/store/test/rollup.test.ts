@@ -198,6 +198,58 @@ describe("runRollup", () => {
     expect(rows[0]?.day_start).toBe((NOW - day * DAY) - ((NOW - day * DAY) % DAY));
   });
 
+  it("apply 时每天的处理包在事务里：中途失败回滚当日写入，重跑仍能完成", async () => {
+    const day = 400;
+    const sources: Source = { events: [ev(day), ev(day, { kind: "search" })] };
+    const { adapter, dests } = makeFake({ sources, specs: [EVENT_DAILY_ROLLUP] });
+
+    let txCount = 0;
+    let failInsert = true;
+    let executeCount = 0;
+    const baseExecute = adapter.execute.bind(adapter);
+    const wrapped: RetentionAdapter = {
+      ...adapter,
+      execute(sql, params) {
+        executeCount++;
+        if (failInsert && sql.startsWith("INSERT")) throw new Error("simulated insert failure");
+        return baseExecute(sql, params);
+      },
+      async transaction(fn) {
+        txCount++;
+        // 简易回滚：快照内存表，失败时恢复
+        const snapshotSources = JSON.parse(JSON.stringify(sources));
+        const snapshotDests = new Map([...dests].map(([k, v]) => [k, JSON.parse(JSON.stringify(v))]));
+        try {
+          return await fn();
+        } catch (err) {
+          for (const k of Object.keys(sources)) delete sources[k];
+          Object.assign(sources, snapshotSources);
+          dests.clear();
+          for (const [k, v] of snapshotDests) dests.set(k, v);
+          throw err;
+        }
+      },
+    };
+
+    await expect(
+      runRollup(wrapped, { targets: [{ spec: EVENT_DAILY_ROLLUP, keepDays: 180 }], now: NOW, dryRun: false }),
+    ).rejects.toThrow("simulated insert failure");
+    expect(txCount).toBe(1);
+    expect(sources.events).toHaveLength(2); // 回滚后明细还在
+    expect(dests.get("events_daily") ?? []).toHaveLength(0);
+
+    failInsert = false;
+    const result = await runRollup(wrapped, {
+      targets: [{ spec: EVENT_DAILY_ROLLUP, keepDays: 180 }],
+      now: NOW,
+      dryRun: false,
+    });
+    expect(txCount).toBe(2);
+    expect(first(result).deleted).toBe(2);
+    expect(sources.events).toHaveLength(0);
+    expect(executeCount).toBeGreaterThan(2);
+  });
+
   it("只推进整天过期的日期：某天里还有未到期行时，那一天整轮不动", async () => {
     // cutoff = NOW - 2.5 天，落在"2 天前"那一天的中午：那天的上午已过期、下午还没
     const halfCut = NOW - 2.5 * DAY;

@@ -445,6 +445,21 @@ describe("星标 / 举报 / 安装状态", () => {
     expect(u2.starred).toBe(false);
   });
 
+  it("并发星标：同一身份只计一次，不同身份各自累加", async () => {
+    const plugin = await repo.createPlugin({ manifest: manifestOf(sitePackRaw("并发星标", [{ url: "https://n.example.com", title: "N" }])), status: "published" });
+    await Promise.all(Array.from({ length: 6 }, () => repo.starPlugin(plugin.slug, "same-user")));
+    const same = await repo.raw("SELECT star_count FROM plugins WHERE id = ?", [plugin.id]);
+    expect(Number(same[0].star_count)).toBe(1);
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) => repo.starPlugin(plugin.slug, `parallel-${i}`)),
+    );
+    // 回读的瞬时值可能被并发提交推进，只约束区间；权威值看事务提交后的计数。
+    for (const r of results) expect(r.starCount).toBeGreaterThanOrEqual(2);
+    const total = await repo.raw("SELECT star_count FROM plugins WHERE id = ?", [plugin.id]);
+    expect(Number(total[0].star_count)).toBe(6);
+  });
+
   it("举报：计数 + 事件 + 审计三处留痕", async () => {
     const plugin = await repo.createPlugin({ manifest: manifestOf(sitePackRaw("举报演示", [{ url: "https://j.example.com", title: "J" }])), status: "published" });
     const result = await repo.reportPlugin(plugin.slug, { reason: "包含失效链接", identity: "user-c" });

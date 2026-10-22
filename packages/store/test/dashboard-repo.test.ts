@@ -126,7 +126,8 @@ describe("Dashboard Repository & Search Extensions", () => {
     expect(retried?.status).toBe("pending");
     expect(retried?.attempts).toBe(0);
 
-    // 模拟任务失败
+    // 模拟任务失败（completeJob 只接受 running，先恢复成执行中）
+    await repo.run("UPDATE jobs SET status = 'running' WHERE id = ?", [jobId]);
     await repo.completeJob(jobId, "simulated error", { retryAt: null, exhausted: true });
     const failedJob = await repo.getJob(jobId);
     expect(failedJob?.status).toBe("failed");
@@ -137,8 +138,9 @@ describe("Dashboard Repository & Search Extensions", () => {
     expect(retriedAgain?.status).toBe("pending");
     expect(retriedAgain?.error).toBeNull();
 
-    // 标记完成并测试 prune
-    await repo.completeJob(jobId, null);
+    // 标记完成并测试 prune（先恢复成 running，completeJob 是 running→终态的 CAS）
+    await repo.run("UPDATE jobs SET status = 'running' WHERE id = ?", [jobId]);
+    expect(await repo.completeJob(jobId, null)).toBe(true);
     const pruneResult = await repo.pruneJobs(0, ["done"]);
     expect(pruneResult.pruned).toBeGreaterThanOrEqual(1);
     const prunedJob = await repo.getJob(jobId);
@@ -181,5 +183,29 @@ describe("Dashboard Repository & Search Extensions", () => {
     const reapedJob = await repo.getJob(id);
     expect(reapedJob?.status).toBe("failed");
     expect(reapedJob?.error).toContain("超时");
+  });
+
+  it("retryJob 只接受 failed/cancelled：pending/running/done 原样返回", async () => {
+    await repo.run("DELETE FROM jobs");
+    const id = await repo.enqueueJob("retry_state_test", {});
+    expect((await repo.retryJob(id))?.status).toBe("pending");
+    expect((await repo.claimNextJob())?.id).toBe(id);
+    expect((await repo.retryJob(id))?.status).toBe("running");
+    await repo.completeJob(id, null);
+    const done = await repo.retryJob(id);
+    expect(done?.status).toBe("done");
+  });
+
+  it("heartbeatJob 只为 running 任务续期，取消后返回 false", async () => {
+    await repo.run("DELETE FROM jobs");
+    const id = await repo.enqueueJob("heartbeat_test", {});
+    await repo.claimNextJob();
+    const stale = Date.now() - 10 * 60 * 1000;
+    await repo.run("UPDATE jobs SET updated_at = ? WHERE id = ?", [stale, id]);
+    expect(await repo.heartbeatJob(id)).toBe(true);
+    expect((await repo.getJob(id))?.updatedAt).toBeGreaterThan(stale);
+
+    await repo.cancelJob(id);
+    expect(await repo.heartbeatJob(id)).toBe(false);
   });
 });

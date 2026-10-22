@@ -182,6 +182,16 @@
   .hover\:cursor-pointer:hover {
     cursor: pointer;
   }
+
+  /*
+   * 首页是 1000+ 卡片的长列表：离屏分类跳过布局与绘制，降低首屏主线程占用。
+   * contain-intrinsic-size 给浏览器一个占位高度，避免滚动条与锚点定位跳动。
+   * 卡片仍在 SSR HTML 里（爬虫与 Ctrl+F 可见），这里只影响渲染时机。
+   */
+  .cv-auto-section {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 640px;
+  }
 }
 
 @utility step {

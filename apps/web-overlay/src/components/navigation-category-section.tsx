@@ -264,7 +264,7 @@ export function NavigationCategorySection({
                         }
                       }}
                       className={cn(
-                        "relative scroll-m-16 transition-all duration-200",
+                        "cv-auto-section relative scroll-m-16 transition-all duration-200",
                         isPinned && "p-3 sm:p-4 rounded-2xl bg-primary/3 border border-primary/20 depth-surface",
                         isEditingLayout && "p-3 sm:p-4 rounded-2xl border-2 border-dashed border-primary/30 bg-muted/20",
                         dragOverCustomCatId === category.id && "ring-2 ring-emerald-500 bg-emerald-500/10 rounded-2xl border-emerald-500/60"

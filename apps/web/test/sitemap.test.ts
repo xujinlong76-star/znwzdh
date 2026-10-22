@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pluginSitemapEntries } from '../src/lib/plugins/sitemap'
+import { authorSitemapEntries, pluginSitemapEntries } from '../src/lib/plugins/sitemap'
 
 describe('pluginSitemapEntries', () => {
   const base = 'https://navhub.example.com'
@@ -40,5 +40,39 @@ describe('pluginSitemapEntries', () => {
       `${base}/marketplace/a`,
       `${base}/marketplace/c`,
     ])
+  })
+})
+
+describe('authorSitemapEntries', () => {
+  const base = 'https://navhub.example.com'
+  const key = '0b2cf6fc3fe5dde6d0ef78e4'
+
+  it('按 ownerKey 聚合：同作者多插件只产出一条作者页 URL', () => {
+    const entries = authorSitemapEntries(base + '/', [
+      { slug: 'a', ownerKey: key, updatedAt: 1_700_000_000_000 },
+      { slug: 'b', ownerKey: key, updatedAt: 1_700_000_100_000 },
+      { slug: 'a', ownerKey: key, updatedAt: 1_700_000_200_000 },
+    ])
+    expect(entries).toHaveLength(1)
+    expect(entries[0]!.url).toBe(`${base}/marketplace/author/${key}`)
+    expect(entries[0]!.lastModified?.getTime()).toBe(1_700_000_100_000)
+    expect(entries[0]!.priority).toBe(0.5)
+  })
+
+  it('跳过空 ownerKey 与非法 key（种子插件不该产出 404 作者页）', () => {
+    const entries = authorSitemapEntries(base, [
+      { slug: 'seed', ownerKey: null },
+      { slug: 'seed2' },
+      { slug: 'bad', ownerKey: '../../etc/passwd' },
+      { slug: 'short', ownerKey: 'abc' },
+    ])
+    expect(entries).toEqual([])
+  })
+
+  it('时间戳非法时不写 lastModified', () => {
+    const [entry] = authorSitemapEntries(base, [
+      { slug: 'x', ownerKey: key, updatedAt: Number.NaN, publishedAt: -1 },
+    ])
+    expect(entry!.lastModified).toBeUndefined()
   })
 })

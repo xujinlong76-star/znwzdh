@@ -1127,6 +1127,10 @@ export default function PluginDetailView({
                               <img
                                 src={eng.icon}
                                 alt={eng.name}
+                                width={16}
+                                height={16}
+                                loading="lazy"
+                                decoding="async"
                                 className="w-4 h-4 rounded-xs shrink-0 object-contain"
                                 onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
                               />

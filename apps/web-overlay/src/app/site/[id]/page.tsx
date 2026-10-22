@@ -8,6 +8,7 @@ import type { Crumb } from '@/lib/seo/json-ld'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { SITE_DESCRIPTION_MIN, siteMetaDescription } from '@/lib/seo/site-description'
 import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'
+import { categoryUrlKey } from '@/lib/seo/category-url'
 import type { HubSite } from '@/lib/navhub-api'
 import {
   categoryDisplayName,
@@ -33,6 +34,30 @@ import {
  * 现在 page 产出每站独立 title/description/canonical，并把首屏站点数据
  * 下发给岛——h1 与正文直出，同时首屏少一次客户端往返。
  */
+
+/**
+ * ISR（2026-10-22）：详情页此前每个请求都要重新渲染，并重复向中枢取
+ * 「详情 + 同分类 + 分类表 + 计数」四路数据。页面与 fetch 同为 60s，
+ * 让 HTML 也进增量缓存：首请求生成，后续 60s 内直接命中，重复抓取
+ * 不再打穿中枢。notFound() 的 404 同样随缓存过期，站点删除后最多
+ * 多存活一个窗口，与下方软 404 判定口径一致。
+ *
+ * 本路由不能加 loading.tsx（见头部说明）——ISR 也不例外：骨架屏边界
+ * 会让 404 变成流式 200。
+ */
+export const revalidate = 60
+
+/**
+ * Next 16 的硬性前提：动态段只有在存在 `generateStaticParams`（哪怕返回
+ * 空数组）或 `dynamic = 'force-static'` 时，运行时生成的结果才会进 ISR。
+ * 只写 `revalidate` 实测仍是逐请求渲染（Cache-Control: no-store）。
+ *
+ * 空数组 = 构建期不预生成任何详情页，首个请求按需生成并缓存；站点数量
+ * 千级且持续增删，全量列举既拖慢构建又会把新站漏成动态页。
+ */
+export async function generateStaticParams() {
+  return []
+}
 
 const RELATED_LIMIT = 6
 
@@ -70,7 +95,9 @@ async function loadSiteContext(site: HubSite) {
   return {
     related,
     category:
-      category && categories ? { id: category.id, title: categoryDisplayName(category, categories) } : null,
+      category && categories
+        ? { id: category.id, slug: categoryUrlKey(category), title: categoryDisplayName(category, categories) }
+        : null,
     canLinkCategory: Boolean(category) && counts !== null && categoryCount >= MIN_SITES_FOR_INDEX,
     categoryCount,
   }
@@ -134,7 +161,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
     { label: '全部站点', path: '/sites' },
     // 薄分类不链（分类页会 404）；分类取数失败时同样不链
     ...(context.category && context.canLinkCategory
-      ? [{ label: context.category.title, path: `/category/${encodeURIComponent(context.category.id)}` }]
+      ? [{ label: context.category.title, path: `/category/${encodeURIComponent(context.category.slug)}` }]
       : []),
     { label: site?.title ?? '站点详情', path: sitePath },
   ]

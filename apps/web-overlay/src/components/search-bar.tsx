@@ -246,6 +246,8 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                               alt={`${item.title} icon`}
                               loading="lazy"
                               decoding="async"
+                              width={32}
+                              height={32}
                               className="w-full h-full object-contain rounded"
                               onError={(e) => {
                                 const target = e.target as HTMLImageElement
@@ -288,6 +290,8 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                                   alt={`${item.title} icon`}
                                   loading="lazy"
                                   decoding="async"
+                                  width={32}
+                                  height={32}
                                   className="w-full h-full object-contain rounded"
                                   onError={(e) => {
                                     const target = e.target as HTMLImageElement

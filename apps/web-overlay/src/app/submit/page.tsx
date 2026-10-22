@@ -31,7 +31,11 @@ export async function generateMetadata(): Promise<Metadata> {
         title: '网站投稿',
         description: '投稿优质网站，分享好资源',
         alternates: { canonical: '/submit' },
-        ...(await pageShareMetadata({ url: '/submit' })),
+        ...(await pageShareMetadata({
+            url: '/submit',
+            title: '网站投稿',
+            description: '投稿优质网站，分享好资源',
+        })),
     }
 }
 

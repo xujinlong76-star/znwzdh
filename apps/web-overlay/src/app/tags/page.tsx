@@ -23,7 +23,11 @@ export async function generateMetadata(): Promise<Metadata> {
     title: '标签总览',
     description: '按标签浏览全部站点，找到同一主题下的其它资源',
     alternates: { canonical: '/tags' },
-    ...(await pageShareMetadata({ url: '/tags', title: '标签总览' })),
+    ...(await pageShareMetadata({
+      url: '/tags',
+      title: '标签总览',
+      description: '按标签浏览全部站点，找到同一主题下的其它资源',
+    })),
   }
 }
 

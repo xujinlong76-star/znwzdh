@@ -5,11 +5,14 @@ import { pageShareMetadata } from '@/lib/seo/metadata'
 
 /** 标题只写页面名，站点名由根 layout 的 title.template 追加（避免品牌名重复两次） */
 export async function generateMetadata(): Promise<Metadata> {
+  const title = '前沿自适应算法实验室'
+  const description =
+    '探索并交互式体验 LinUCB 多臂老虎机融合、Poincaré 双曲几何平替推演、Shannon 文本熵防软 404 及 0-RTT 意图预执行引擎。'
   return {
-    title: '前沿自适应算法实验室',
-    description: '探索并交互式体验 LinUCB 多臂老虎机融合、Poincaré 双曲几何平替推演、Shannon 文本熵防软 404 及 0-RTT 意图预执行引擎。',
+    title,
+    description,
     alternates: { canonical: '/algorithms' },
-    ...(await pageShareMetadata({ url: '/algorithms' })),
+    ...(await pageShareMetadata({ url: '/algorithms', title, description })),
   }
 }
 

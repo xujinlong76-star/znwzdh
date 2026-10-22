@@ -27,7 +27,11 @@ export async function generateMetadata(): Promise<Metadata> {
     title: { default: '合集', template: '%s - ' + siteName },
     description: '按主题整理的站点合集',
     alternates: { canonical: '/collections' },
-    ...(await pageShareMetadata({ url: '/collections' })),
+    ...(await pageShareMetadata({
+      url: '/collections',
+      title: '合集',
+      description: '按主题整理的站点合集',
+    })),
   }
 }
 

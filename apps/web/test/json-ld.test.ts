@@ -9,6 +9,7 @@ import {
   itemListLd,
   jsonLdScript,
   organizationLd,
+  profilePageLd,
   softwareApplicationLd,
   webSiteLd,
 } from '../src/lib/seo/json-ld'
@@ -40,8 +41,7 @@ describe('absUrl', () => {
   })
 })
 
-describe('webSiteLd', () => {
-  it('输出最小合法 WebSite（含 name/url/inLanguage）', () => {
+describe('webSiteLd', () => {  it('输出最小合法 WebSite（含 name/url/inLanguage）', () => {
     const ld = webSiteLd(ORIGIN, 'NavHub', '一个导航站') as Record<string, unknown>
     expect(ld['@context']).toBe('https://schema.org')
     expect(ld['@type']).toBe('WebSite')
@@ -221,6 +221,38 @@ describe('softwareApplicationLd', () => {
     const ld = softwareApplicationLd(ORIGIN, { slug: '', name: '  ' }) as Record<string, unknown>
     expect(ld.name).toBe('NavHub 插件')
     expect(ld.url).toBeUndefined()
+  })
+})
+
+describe('profilePageLd', () => {
+  it('输出 ProfilePage + Person，url 指向作者主页', () => {
+    const ld = profilePageLd(ORIGIN, {
+      name: '小明',
+      path: '/marketplace/author/0b2cf6fc3fe5dde6d0ef78e4',
+      description: '已上架 3 个插件',
+    }) as Record<string, unknown>
+    expect(ld['@type']).toBe('ProfilePage')
+    expect(ld.inLanguage).toBe('zh-CN')
+    const person = ld.mainEntity as Record<string, unknown>
+    expect(person['@type']).toBe('Person')
+    expect(person.name).toBe('小明')
+    expect(person.url).toBe(`${ORIGIN}/marketplace/author/0b2cf6fc3fe5dde6d0ef78e4`)
+    expect(person.description).toBe('已上架 3 个插件')
+  })
+
+  it('不编造 sameAs / image / jobTitle（匿名哈希主体没有可核验资料）', () => {
+    const ld = profilePageLd(ORIGIN, { name: '匿名', path: '/marketplace/author/abc12345' })
+    const person = ld.mainEntity as Record<string, unknown>
+    expect(person.sameAs).toBeUndefined()
+    expect(person.image).toBeUndefined()
+    expect(person.jobTitle).toBeUndefined()
+  })
+
+  it('name 为空回退默认作者名，description 超长截断', () => {
+    const ld = profilePageLd(ORIGIN, { name: '  ', path: '/x', description: 'y'.repeat(500) })
+    const person = ld.mainEntity as Record<string, unknown>
+    expect(person.name).toBe('NavHub 插件作者')
+    expect((person.description as string).length).toBe(300)
   })
 })
 

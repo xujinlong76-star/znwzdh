@@ -3,6 +3,9 @@ import { notFound } from 'next/navigation'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import { AUTHOR_KEY_RE, loadPluginAuthor } from '@/lib/server/plugin-author'
 import { pageShareMetadata } from '@/lib/seo/metadata'
+import { siteOrigin } from '@/lib/seo/origin'
+import { profilePageLd } from '@/lib/seo/json-ld'
+import { JsonLd } from '@/components/json-ld'
 import AuthorPluginsView from './author-plugins-view'
 
 /**
@@ -31,7 +34,11 @@ export async function generateMetadata({
       title: '作者主页与插件作品',
       description: '查看作者在插件市场公开发布的全部插件与主页资料',
       alternates: { canonical },
-      ...(await pageShareMetadata({ url: canonical, title: '作者主页与插件作品' })),
+      ...(await pageShareMetadata({
+        url: canonical,
+        title: '作者主页与插件作品',
+        description: '查看作者在插件市场公开发布的全部插件与主页资料',
+      })),
     }
   }
 
@@ -59,10 +66,24 @@ export default async function PluginAuthorPage({
   const probe = await loadPluginAuthor(safeKey)
   if (probe.status === 'miss') notFound()
 
+  const origin = await siteOrigin()
+  const canonical = `/marketplace/author/${encodeURIComponent(safeKey)}`
+  const ld =
+    probe.status === 'ok' && origin
+      ? profilePageLd(origin, {
+          name: probe.data.author,
+          path: canonical,
+          description: `插件作者公开主页：已上架 ${probe.data.stats.plugins} 个插件。`,
+        })
+      : null
+
   return (
-    <AuthorPluginsView
-      ownerKey={safeKey}
-      initialData={probe.status === 'ok' ? probe.data : null}
-    />
+    <>
+      {ld ? <JsonLd data={ld} /> : null}
+      <AuthorPluginsView
+        ownerKey={safeKey}
+        initialData={probe.status === 'ok' ? probe.data : null}
+      />
+    </>
   )
 }

@@ -9,11 +9,13 @@ import { pageShareMetadata } from '@/lib/seo/metadata'
  * 这里再拼一次品牌名会渲染成「技术生态与平替拓扑图谱 - NavHub - NavHub」。
  */
 export async function generateMetadata(): Promise<Metadata> {
+  const title = '技术生态与平替拓扑图谱'
+  const description = '全景交互式探索前端、AI、全栈开发与设计工具链生态，发现开源与高性价比替代方案。'
   return {
-    title: '技术生态与平替拓扑图谱',
-    description: '全景交互式探索前端、AI、全栈开发与设计工具链生态，发现开源与高性价比替代方案。',
+    title,
+    description,
     alternates: { canonical: '/graph' },
-    ...(await pageShareMetadata({ url: '/graph' })),
+    ...(await pageShareMetadata({ url: '/graph', title, description })),
   }
 }
 

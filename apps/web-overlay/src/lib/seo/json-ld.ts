@@ -170,3 +170,29 @@ export function softwareApplicationLd(origin: string, plugin: PluginRef): Record
     ...(slug ? { url: absUrl(origin, `/marketplace/${encodeURIComponent(slug)}`) } : {}),
   }
 }
+
+/**
+ * 插件作者公开主页的 ProfilePage。
+ *
+ * 只声明页面上真实存在的 Person 名称与主页地址；作者是哈希 key 背后的
+ * 匿名主体，没有可核验的 sameAs / 头像 / 社交主页，一律不编造。
+ */
+export function profilePageLd(
+  origin: string,
+  input: { name: string; path: string; description?: string | null },
+): Record<string, unknown> {
+  const name = (input?.name ?? '').trim()
+  const path = (input?.path ?? '').trim()
+  const desc = typeof input?.description === 'string' ? input.description.trim() : ''
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ProfilePage',
+    inLanguage: 'zh-CN',
+    mainEntity: {
+      '@type': 'Person',
+      name: name || 'NavHub 插件作者',
+      ...(path ? { url: absUrl(origin, path) } : {}),
+      ...(desc ? { description: desc.slice(0, 300) } : {}),
+    },
+  }
+}

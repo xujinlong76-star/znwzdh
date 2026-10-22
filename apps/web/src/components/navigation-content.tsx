@@ -77,6 +77,8 @@ import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
 
 interface DirectoryLink {
   id: string
+  /** URL 标识（slug；历史行没 slug 时是 id） */
+  slug: string
   title: string
   count: number
 }
@@ -341,7 +343,7 @@ export function NavigationContent({
                     {directoryLinks.map((link) => (
                       <li key={link.id}>
                         <Link
-                          href={`/category/${encodeURIComponent(link.id)}`}
+                          href={`/category/${encodeURIComponent(link.slug)}`}
                           className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
                         >
                           {link.title}

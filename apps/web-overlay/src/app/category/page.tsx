@@ -4,6 +4,7 @@ import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { pageShareMetadata } from '@/lib/seo/metadata'
+import { categoryHref, isHiddenCategory } from '@/lib/seo/category-url'
 import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'
 import {
   categoryDisplayName,
@@ -27,7 +28,11 @@ export async function generateMetadata(): Promise<Metadata> {
     title: '分类总览',
     description: `按分类浏览全部站点。仅列出收录站点不少于 ${MIN_SITES_FOR_INDEX} 个的分类，避免薄内容空页。`,
     alternates: { canonical: '/category' },
-    ...(await pageShareMetadata({ url: '/category' })),
+    ...(await pageShareMetadata({
+      url: '/category',
+      title: '分类总览',
+      description: `按分类浏览全部站点。仅列出收录站点不少于 ${MIN_SITES_FOR_INDEX} 个的分类，避免薄内容空页。`,
+    })),
   }
 }
 
@@ -41,6 +46,8 @@ export default async function CategoryIndexPage() {
   if (categories && counts) {
     for (const category of categories) {
       if (category.enabled === false) continue
+      // 「未分类」是归类失败的兜底桶，不是可浏览入口：列进总览等于承认树有洞
+      if (isHiddenCategory(category)) continue
       const count = counts.get(category.id) ?? 0
       if (count < MIN_SITES_FOR_INDEX) continue
       items.push({ category, count })
@@ -87,7 +94,7 @@ export default async function CategoryIndexPage() {
               {items.map(({ category, count }) => (
                 <li key={category.id}>
                   <Link
-                    href={`/category/${encodeURIComponent(category.id)}`}
+                    href={categoryHref(category)}
                     className="flex items-center justify-between gap-3 rounded-xl border border-border/70 px-3 py-2.5 hover:bg-muted/50 transition-colors"
                   >
                     <span className="min-w-0">

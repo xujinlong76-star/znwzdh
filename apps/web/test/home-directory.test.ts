@@ -34,6 +34,9 @@ describe("首页站内目录带（F1）", () => {
     expect(src).toMatch(/counts\.get\(c\.id\) \?\? 0\) >= MIN_SITES_FOR_INDEX/);
     expect(src).toContain("DIRECTORY_CATEGORY_LINKS = 8");
     expect(src).toContain("directoryLinks={directoryLinks}");
+    // 全站权重最高的内链必须用 slug 形态，且不得把「未分类」当目录入口
+    expect(src).toContain("slug: categoryUrlKey(c)");
+    expect(src).toContain("!isHiddenCategory(c)");
   });
 
   it("取数失败返回空数组，不影响页面其余部分", () => {
@@ -47,6 +50,6 @@ describe("首页站内目录带（F1）", () => {
     expect(src).toContain('href="/category"');
     expect(src).toContain('href="/sites"');
     expect(src).toContain('href="/tags"');
-    expect(src).toContain("href={`/category/${encodeURIComponent(link.id)}`}");
+    expect(src).toContain("href={`/category/${encodeURIComponent(link.slug)}`}");
   });
 });

@@ -9,6 +9,7 @@ import { webSiteLd, organizationLd } from "@/lib/seo/json-ld";
 import { JsonLd } from "@/components/json-ld";
 import { pageShareMetadata } from "@/lib/seo/metadata";
 import { MIN_SITES_FOR_INDEX } from "@/lib/seo/thresholds";
+import { categoryUrlKey, isHiddenCategory } from "@/lib/seo/category-url";
 import {
   categoryDisplayName,
   loadActiveCategoryCounts,
@@ -71,6 +72,8 @@ const DIRECTORY_CATEGORY_LINKS = 8;
  * 实测（2026-10-21）：首页模板里 0 条 `/category` 链接，分类页只能靠
  * sitemap 被发现，点击深度断在首页。这里只挑达标分类（分类页对
  * < MIN_SITES_FOR_INDEX 的页面直接 404），按存活站点数降序取前 8。
+ * URL 用 slug 形态：目录带是全站权重最高的一批内链，链到 uuid 等于把
+ * 旧 URL 继续喂给爬虫。
  * 取数失败返回空数组——页面上仍有 /category、/sites、/tags 三个入口，
  * 不因中枢抖动把整条目录带吞掉。
  */
@@ -78,7 +81,12 @@ async function loadDirectoryLinks() {
   const [categories, counts] = await Promise.all([loadCategories(3600), loadActiveCategoryCounts(3600)]);
   if (!categories || !counts) return [];
   return categories
-    .filter((c) => c.enabled !== false && (counts.get(c.id) ?? 0) >= MIN_SITES_FOR_INDEX)
+    .filter(
+      (c) =>
+        c.enabled !== false &&
+        !isHiddenCategory(c) &&
+        (counts.get(c.id) ?? 0) >= MIN_SITES_FOR_INDEX,
+    )
     .sort(
       (a, b) =>
         (counts.get(b.id) ?? 0) - (counts.get(a.id) ?? 0) ||
@@ -87,6 +95,7 @@ async function loadDirectoryLinks() {
     .slice(0, DIRECTORY_CATEGORY_LINKS)
     .map((c) => ({
       id: c.id,
+      slug: categoryUrlKey(c),
       title: categoryDisplayName(c, categories),
       count: counts.get(c.id) ?? 0,
     }));

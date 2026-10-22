@@ -139,6 +139,6 @@ describe("站点详情页内链闭环（F2）", () => {
     expect(src).toContain("initialRelated.length > 0");
     expect(src).toContain("href={`/site/${encodeURIComponent(s.id)}`}");
     expect(src).toContain("category && canLinkCategory");
-    expect(src).toContain("href={`/category/${encodeURIComponent(category.id)}`}");
+    expect(src).toContain("href={`/category/${encodeURIComponent(category.slug)}`}");
   });
 });

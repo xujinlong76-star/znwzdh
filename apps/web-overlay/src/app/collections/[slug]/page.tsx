@@ -27,6 +27,13 @@ import CollectionDetailView from './collection-detail-view'
  * 缓存让重复抓取不再每次打穿 hub。
  */
 
+export const revalidate = 60
+
+/** 动态段要进入按需 ISR，必须存在 generateStaticParams；空数组 = 全部运行时生成 */
+export async function generateStaticParams() {
+  return []
+}
+
 type CollectionDetail = { collection: HubCollection; sites: HubSite[] }
 
 /** generateMetadata 与页面共用；同请求内 fetch memoization 去重 */
@@ -49,17 +56,22 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title: '合集详情',
       description: '该合集收录的站点',
       alternates: { canonical },
-      ...(await pageShareMetadata({ url: canonical })),
+      ...(await pageShareMetadata({
+        url: canonical,
+        title: '合集详情',
+        description: '该合集收录的站点',
+      })),
     }
   }
   const col = probe.data.collection
+  const description =
+    col.description ||
+    `「${col.title}」合集收录的站点，按策划顺序排列，可进入详情查看简介、分类与标签。`
   return {
     title: col.title,
-    description:
-      col.description ||
-      `「${col.title}」合集收录的站点，按策划顺序排列，可进入详情查看简介、分类与标签。`,
+    description,
     alternates: { canonical },
-    ...(await pageShareMetadata({ url: canonical, title: col.title, description: col.description ?? undefined })),
+    ...(await pageShareMetadata({ url: canonical, title: col.title, description })),
   }
 }
 

@@ -35,7 +35,11 @@ export async function generateMetadata(): Promise<Metadata> {
     // 视频库仍是占位内容：先不参与收录（follow 保留内链权重），
     // 同时已从 sitemap 移除；内容补齐后再放开。
     robots: { index: false, follow: true },
-    ...(await pageShareMetadata({ url: '/videos' })),
+    ...(await pageShareMetadata({
+      url: '/videos',
+      title: '视频中心',
+      description: '按分类浏览收录的视频与教程，支持站内弹窗播放或直达原站',
+    })),
     keywords: 'Bilibili, YouTube, Videos',
     icons: {
       icon: siteData.appearance.favicon,

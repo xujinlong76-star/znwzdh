@@ -28,6 +28,13 @@ import { pageShareMetadata } from '@/lib/seo/metadata'
  * identity 不带：公开检索即可，个性化是客户端重试时的增强项。
  */
 
+export const revalidate = 60
+
+/** 空参数列表 = 不在构建期枚举 369 个标签，首次请求按需生成并进 ISR 缓存 */
+export async function generateStaticParams() {
+  return []
+}
+
 /** 标签元信息（resolve 通道）：name 是规范名，description 为回填的标签描述 */
 type TagMeta = { ok: boolean; tag: { name: string; slug: string; description: string | null } | null }
 
@@ -78,10 +85,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!safeSlug) notFound()
   const { res, sites, tagRes } = await loadTagPage(safeSlug)
   const name = tagRes?.tag?.name ?? safeSlug
+  // resolve 返回的是规范 slug：别名/原名 URL（如 /tags/AI 编程）与规范页
+  // 内容完全相同，canonical 必须指向规范页，否则同一内容在两个 URL 上竞争。
+  // resolve 失败（中枢抖动）时退回请求 slug，至少保持自指不串页。
+  const canonicalSlug = tagRes?.tag?.slug ?? safeSlug
   // search 失败（res === null）时按可索引处理：降级渲染不该把整批标签页
   // 临时标成 noindex；只有确认了真实存活数才降档。
   const indexable = res === null || sites.length >= MIN_SITES_FOR_INDEX
-  const canonical = `/tags/${encodeURIComponent(safeSlug)}`
+  const canonical = `/tags/${encodeURIComponent(canonicalSlug)}`
   const title = `「${name}」相关站点`
   const description =
     tagRes?.tag?.description ?? `「${name}」标签下的站点列表，按收录顺序排列，可进入详情查看简介、分类与标签。`
@@ -106,6 +117,7 @@ export default async function TagDetailPage({ params }: { params: Promise<{ slug
   if (res !== null && sites.length === 0) notFound()
   const indexable = res === null || sites.length >= MIN_SITES_FOR_INDEX
   const name = tagRes?.tag?.name ?? safeSlug
+  const canonicalSlug = tagRes?.tag?.slug ?? safeSlug
   return (
     <Container as="main" id="main-content">
       <div className="py-4 sm:py-8 space-y-5 sm:space-y-6">
@@ -114,11 +126,11 @@ export default async function TagDetailPage({ params }: { params: Promise<{ slug
           items={[
             { label: '首页', path: '/' },
             { label: '标签云', path: '/tags' },
-            { label: name, path: `/tags/${encodeURIComponent(safeSlug)}` },
+            { label: name, path: `/tags/${encodeURIComponent(canonicalSlug)}` },
           ]}
         />
         <TagResultsBoard
-          slug={safeSlug}
+          slug={canonicalSlug}
           initialSites={sites}
           degraded={res === null}
           tagDescription={tagRes?.tag?.description ?? null}

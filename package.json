@@ -27,6 +27,7 @@
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "check:extensions": "node scripts/check-extensions.mjs",
     "seo:audit": "node scripts/seo-audit.mjs",
+    "seo:html-budget": "node scripts/html-budget.mjs",
     "seo:indexnow": "node scripts/indexnow.mjs",
     "lint": "pnpm --filter navsphere lint",
     "backup": "node scripts/backup.mjs",

@@ -23,7 +23,11 @@ export async function generateMetadata(): Promise<Metadata> {
     title: '今日热榜',
     description: '按热度排序的热门站点与资源',
     alternates: { canonical: '/hot' },
-    ...(await pageShareMetadata({ url: '/hot' })),
+    ...(await pageShareMetadata({
+      url: '/hot',
+      title: '今日热榜',
+      description: '按热度排序的热门站点与资源',
+    })),
   }
 }
 

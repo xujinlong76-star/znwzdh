@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next'
 import { siteOrigin } from '@/lib/seo/origin'
 import { hubGet } from '@/lib/server/hub'
 import { MIN_SITES_FOR_INDEX } from '@/lib/seo/thresholds'
-import { pluginSitemapEntries, type SitemapPluginRef } from '@/lib/plugins/sitemap'
+import { pluginSitemapEntries, authorSitemapEntries, type SitemapPluginRef } from '@/lib/plugins/sitemap'
 import {
   categoryEntries,
   collectionEntries,
@@ -63,9 +63,10 @@ async function loadPublishedPlugins(): Promise<SitemapPluginRef[]> {
 
     for (const item of items) {
       if (!item || typeof item !== 'object') continue
-      const record = item as { slug?: unknown; updatedAt?: unknown; publishedAt?: unknown }
+      const record = item as { slug?: unknown; ownerKey?: unknown; updatedAt?: unknown; publishedAt?: unknown }
       rows.push({
         slug: typeof record.slug === 'string' ? record.slug : '',
+        ownerKey: typeof record.ownerKey === 'string' ? record.ownerKey : null,
         updatedAt: typeof record.updatedAt === 'number' ? record.updatedAt : null,
         publishedAt: typeof record.publishedAt === 'number' ? record.publishedAt : null,
       })
@@ -113,5 +114,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...categoryEntries(origin, categories ?? [], countCategorySites(sites), MIN_SITES_FOR_INDEX),
     ...collectionEntries(origin, collections ?? []),
     ...pluginSitemapEntries(origin, plugins),
+    ...authorSitemapEntries(origin, plugins),
   ]
 }

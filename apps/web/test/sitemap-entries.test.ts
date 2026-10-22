@@ -39,19 +39,27 @@ describe('countCategorySites', () => {
 })
 
 describe('categoryEntries', () => {
-  it('只收录 enabled 且达到阈值的分类，id 做 encode', () => {
+  it('只收录 enabled 且达到阈值的分类，URL 用 slug、没有 slug 才退回 id', () => {
     const counts = countCategorySites([
       ...Array.from({ length: 5 }, (_, i) => ({ id: `s${i}`, categoryId: 'ok' })),
       ...Array.from({ length: 4 }, (_, i) => ({ id: `t${i}`, categoryId: 'thin' })),
+      ...Array.from({ length: 9 }, (_, i) => ({ id: `u${i}`, categoryId: 'cat-uncategorized' })),
+      ...Array.from({ length: 6 }, (_, i) => ({ id: `w${i}`, categoryId: 'a/b c' })),
     ])
     const entries = categoryEntries(base, [
-      { id: 'ok', updatedAt: 1_700_000_000_000 },
+      { id: 'ok', slug: 'ai-tools', updatedAt: 1_700_000_000_000 },
       { id: 'thin' },
-      { id: 'disabled', enabled: false },
-      { id: 'ok' },
+      { id: 'disabled', slug: 'disabled', enabled: false },
+      { id: 'ok', slug: 'ai-tools' },
+      // 同一 slug 挂在不同 id 上（合并中的重复行）也只能出一条
+      { id: 'ok-legacy', slug: 'ai-tools' },
       { id: 'a/b c' },
+      { id: 'cat-uncategorized', slug: 'uncategorized' },
     ], counts)
-    expect(entries.map((e) => e.url)).toEqual([`${base}/category/ok`])
+    expect(entries.map((e) => e.url)).toEqual([
+      `${base}/category/ai-tools`,
+      `${base}/category/a%2Fb%20c`,
+    ])
     expect(entries[0]!.priority).toBe(0.6)
     // G3：分类 updatedAt 有值必须写 lastModified（此前 5 条分类页全缺）
     expect(new Date(entries[0]!.lastModified!).getTime()).toBe(1_700_000_000_000)

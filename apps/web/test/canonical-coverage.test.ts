@@ -30,12 +30,15 @@ const SELF_CANONICAL = [
   { file: "src/app/collections/layout.tsx", snippet: "canonical: '/collections'" },
   { file: "src/app/tags/page.tsx", snippet: "canonical: '/tags'" },
   { file: "src/app/sites/page.tsx", snippet: "n <= 1 ? '/sites' : `/sites?page=${n}`" },
-  { file: "src/app/tags/[slug]/page.tsx", snippet: "const canonical = `/tags/${encodeURIComponent(safeSlug)}`" },
+  { file: "src/app/tags/[slug]/page.tsx", snippet: "const canonical = `/tags/${encodeURIComponent(canonicalSlug)}`" },
   {
     file: "src/app/collections/[slug]/page.tsx",
     snippet: "const canonical = `/collections/${encodeURIComponent(safeSlug)}`",
   },
-  { file: "src/app/category/[id]/page.tsx", snippet: "const canonical = categoryPath(safeId, n)" },
+  {
+    file: "src/app/category/[slug]/page.tsx",
+    snippet: "const canonical = categoryHref(category ?? safeRef, n)",
+  },
   {
     file: "src/app/marketplace/page.tsx",
     snippet: "const canonical = `/marketplace${buildMarketplaceQuery(state)}`",
@@ -64,10 +67,11 @@ describe("收录型页面的 canonical", () => {
     expect(sites).toContain("robots: { index: false, follow: true }");
     expect(sites).toMatch(/n\s*<=\s*1\s*\?\s*'\/sites'\s*:\s*`\/sites\?page=\$\{n\}`/);
 
-    // 分类第 N 页：canonical 自指（categoryPath 带 page），不是回第 1 页
-    const category = overlayFile("src/app/category/[id]/page.tsx");
-    expect(category).toContain("categoryPath(safeId, n)");
-    expect(category).not.toMatch(/canonical:\s*categoryPath\(safeId\)/);
+    // 分类第 N 页：canonical 自指（href 带 page），不是回第 1 页
+    const category = overlayFile("src/app/category/[slug]/page.tsx");
+    expect(category).toContain("const canonical = categoryHref(category ?? safeRef, n)");
+    // 少写第二个参数 = canonical 指回第 1 页，后续页会被判重复内容
+    expect(category).not.toMatch(/canonical\s*=\s*categoryHref\([^,)]+\)/);
   });
 
   it("首页 canonical 为 '/'（唯一允许的根路径）", () => {

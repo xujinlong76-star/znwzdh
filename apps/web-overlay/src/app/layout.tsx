@@ -14,6 +14,7 @@ import { OfflineBanner } from '@/components/offline-banner'
 import { SessionSync } from '@/components/user-center/session-sync'
 import { getFileContent } from '@/lib/github'
 import { siteOrigin } from '@/lib/seo/origin'
+import { DEFAULT_OG_IMAGE } from '@/lib/seo/metadata'
 import type { Metadata, Viewport } from 'next'
 import Script from 'next/script'
 /**
@@ -52,10 +53,13 @@ export async function generateMetadata(): Promise<Metadata> {
       type: 'website',
       siteName,
       locale: 'zh_CN',
-      // public/ 下没有 logo.png，icon-512 满足 OG 图最小尺寸要求
-      images: [{ url: '/icons/icon-512.png', width: 512, height: 512, alt: siteName }],
+      // 1200×630 大图卡：512 方图只能进 summary 小卡，分享预览面积不足
+      images: [{ ...DEFAULT_OG_IMAGE, alt: siteName }],
     },
-    twitter: { card: 'summary' },
+    twitter: {
+      card: 'summary_large_image',
+      images: [{ url: DEFAULT_OG_IMAGE.url, alt: siteName }],
+    },
     // PWA：manifest 由 app/manifest.ts 自动注入
     manifest: '/manifest.webmanifest',
     appleWebApp: {

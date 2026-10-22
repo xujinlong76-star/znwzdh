@@ -58,7 +58,11 @@ export async function generateMetadata({
       title: '插件详情与安装',
       description: '查看插件声明式清单明细、实时预览与一键安装',
       alternates: { canonical },
-      ...(await pageShareMetadata({ url: canonical, title: '插件详情与安装' })),
+      ...(await pageShareMetadata({
+        url: canonical,
+        title: '插件详情与安装',
+        description: '查看插件声明式清单明细、实时预览与一键安装',
+      })),
     }
   }
 

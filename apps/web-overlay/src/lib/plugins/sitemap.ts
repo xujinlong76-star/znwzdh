@@ -10,6 +10,8 @@ import { toDate } from '@/lib/seo/sitemap-entries'
 
 export interface SitemapPluginRef {
   slug: string
+  /** 公开作者 key（身份不可逆哈希）；种子插件可能为空 */
+  ownerKey?: string | null
   updatedAt?: number | null
   publishedAt?: number | null
 }
@@ -60,4 +62,48 @@ export function pluginSitemapEntries(
   }
 
   return entries
+}
+
+/** 作者 key 与 API 校验同构（sha256 前 24 位十六进制） */
+const AUTHOR_KEY_RE = /^[a-f0-9]{8,64}$/i
+
+/**
+ * 公开作者页条目：从已上架插件反推作者，而不是要求中枢另开作者清单接口。
+ *
+ * - 只收录 key 合法且有 ≥1 个已上架插件的作者（作者页对其余 key 返回 404）；
+ * - 同一 slug 只计一次（分页期间可能重复），避免 count 灌水；
+ * - lastModified 取该作者插件的最新更新时间。
+ */
+export function authorSitemapEntries(
+  base: string,
+  plugins: SitemapPluginRef[],
+): PluginSitemapEntry[] {
+  const root = normalizeBase(base)
+  const authors = new Map<string, { slugs: Set<string>; updatedAt: number | null }>()
+
+  for (const plugin of plugins) {
+    const slug = typeof plugin.slug === 'string' ? plugin.slug.trim() : ''
+    const key = typeof plugin.ownerKey === 'string' ? plugin.ownerKey.trim() : ''
+    if (!slug || !AUTHOR_KEY_RE.test(key)) continue
+
+    const entry = authors.get(key) ?? { slugs: new Set<string>(), updatedAt: null }
+    if (entry.slugs.has(slug)) continue
+    entry.slugs.add(slug)
+
+    const ts = [plugin.updatedAt, plugin.publishedAt].find(
+      (v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0,
+    )
+    if (ts && (entry.updatedAt === null || ts > entry.updatedAt)) entry.updatedAt = ts
+    authors.set(key, entry)
+  }
+
+  return [...authors.entries()].map(([key, { updatedAt }]) => {
+    const lastModified = toDate(updatedAt)
+    return {
+      url: `${root}/marketplace/author/${encodeURIComponent(key)}`,
+      ...(lastModified ? { lastModified } : {}),
+      changeFrequency: 'weekly' as const,
+      priority: 0.5,
+    }
+  })
 }

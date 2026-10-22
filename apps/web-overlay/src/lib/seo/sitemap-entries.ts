@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next'
+import { categoryUrlKey, isHiddenCategory } from './category-url'
 import { MIN_SITES_FOR_INDEX } from './thresholds'
 
 /**
@@ -34,6 +35,8 @@ export interface CollectionRef {
 
 export interface CategoryRef {
   id: string
+  /** URL 标识；历史行可能为空，此时退回 id 保证不产死链 */
+  slug?: string | null
   enabled?: boolean | null
   /** `/api/categories` 实际返回 updatedAt；有值就写 lastModified */
   updatedAt?: number | null
@@ -131,8 +134,11 @@ export function countCategorySites(sites: SiteRef[]): Map<string, number> {
 /**
  * 分类 hub 条目：只收录 enabled 且存活站点数达标的分类。
  *
+ * URL 用 slug 形态（`/category/{slug}`）：sitemap 是「告诉爬虫哪批 URL 值得
+ * 长期抓」的清单，提交 uuid 等于把 301 前的旧地址再喂一遍。
  * 计数由调用方按 `category_id ∪ sub_category_id` 去重聚合（建站双指针）；
  * 详情页对未达标分类直接 404，这里若照单全收就是主动提交死链。
+ * 「未分类」不提交：它是归类失败的兜底桶，不是可浏览入口。
  */
 export function categoryEntries(
   origin: string,
@@ -144,12 +150,14 @@ export function categoryEntries(
   const out: MetadataRoute.Sitemap = []
   for (const c of categories ?? []) {
     const id = typeof c?.id === 'string' ? c.id.trim() : ''
-    if (!id || c?.enabled === false || seen.has(id)) continue
+    if (!id || c?.enabled === false || isHiddenCategory(c)) continue
+    const key = categoryUrlKey(c)
+    if (seen.has(key)) continue
     if ((counts?.get(id) ?? 0) < minSites) continue
-    seen.add(id)
+    seen.add(key)
     const lastModified = toDate(c.updatedAt)
     out.push({
-      url: `${normOrigin(origin)}/category/${encodeURIComponent(id)}`,
+      url: `${normOrigin(origin)}/category/${encodeURIComponent(key)}`,
       ...(lastModified ? { lastModified } : {}),
       changeFrequency: 'weekly',
       priority: 0.6,

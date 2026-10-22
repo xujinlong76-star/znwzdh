@@ -9,7 +9,7 @@
  * 有 initialSite 时首屏不再重复请求（SSR 直出 `<h1>` 与正文），重试仍走客户端。
  *
  * 核心能力：
- * 1. 核心站点展板：Favicon、SLA 状态、点击频次、外链与一键复制
+ * 1. 核心站点展板：Favicon、巡检状态、点击频次、外链与一键复制
  * 2. 正交分面属性胶囊：价格模型（免费/开源/商业）、支持平台、架构形态与语言
  * 3. 强类型实体知识图谱：对标平替 (Alternative)、生态搭配 (Complementary) 与上下游依赖 (Upstream)
  * 4. 向量相似推荐：基于嵌入向量 KNN 的相关站点发现
@@ -21,6 +21,7 @@ import { Container } from '@/components/ui/container'
 import { FavoriteButton } from '@/components/favorite-button'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
+import { tagSlug } from '@/lib/seo/tag-slug'
 import {
   ExternalLink,
   Copy,
@@ -51,6 +52,7 @@ import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { copyText } from '@/lib/clipboard'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
+import { siteHealthBadge } from '@/lib/site-health'
 import { cn } from '@/lib/utils'
 
 const RELATION_TYPE_LABEL: Record<string, { label: string; color: string; bg: string }> = {
@@ -111,7 +113,7 @@ export function SiteDetailView({
   initialSite?: HubSite | null
   /** 同分类站点（服务端下发，SSR 输出 /site 内链） */
   initialRelated?: HubSite[]
-  category?: { id: string; title: string } | null
+  category?: { id: string; slug: string; title: string } | null
   /** 分类站点数达标才链分类页——薄分类路由是 404 */
   canLinkCategory?: boolean
   categoryCount?: number
@@ -277,6 +279,7 @@ export function SiteDetailView({
   )
 
   const hasFacets = site.facets && Object.keys(site.facets).length > 0
+  const healthBadge = siteHealthBadge(site.health)
 
   return (
     <Container as="main" id="main-content">
@@ -310,17 +313,17 @@ export function SiteDetailView({
                 <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
                   {site.title}
                 </h1>
-                {site.health && (
+                {healthBadge && (
                   <span
                     className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-mono text-xs border ${
-                      site.health.ok
+                      healthBadge.tone === 'ok'
                         ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
                         : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
                     }`}
                   >
-                    <span className={`w-2 h-2 rounded-full ${site.health.ok ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-                    <span>{site.health.ok ? 'SLA 正常' : '响应缓慢'}</span>
-                    {site.health.latencyMs && <span>({site.health.latencyMs}ms)</span>}
+                    <span className={`w-2 h-2 rounded-full ${healthBadge.tone === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                    <span>{healthBadge.label}</span>
+                    {healthBadge.latencyMs != null && <span>({healthBadge.latencyMs}ms)</span>}
                   </span>
                 )}
               </div>
@@ -397,7 +400,7 @@ export function SiteDetailView({
                   {site.tags.map((t) => (
                     <Link
                       key={t}
-                      href={'/tags/' + encodeURIComponent(t)}
+                      href={'/tags/' + encodeURIComponent(tagSlug(t))}
                       className="text-xs px-2.5 py-0.5 rounded-full bg-muted/80 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
                     >
                       #{t}
@@ -627,7 +630,7 @@ export function SiteDetailView({
             )}
             {category && canLinkCategory && (
               <Link
-                href={`/category/${encodeURIComponent(category.id)}`}
+                href={`/category/${encodeURIComponent(category.slug)}`}
                 className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
               >
                 浏览全部 {categoryCount} 个「{category.title}」站点

@@ -86,7 +86,12 @@
         "本地部署",
         "大模型"
       ],
-      "icon": "https://ollama.com/favicon.ico"
+      "icon": "https://ollama.com/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     },
     {
       "url": "https://midjourney.com",
@@ -131,7 +136,12 @@
         "AI 编程",
         "自主"
       ],
-      "icon": "https://github.com/favicon.ico"
+      "icon": "https://github.com/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     },
     {
       "url": "https://windsurf.ai",
@@ -153,7 +163,12 @@
         "模型推理",
         "高吞吐"
       ],
-      "icon": "https://github.com/favicon.ico"
+      "icon": "https://github.com/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     },
     {
       "url": "https://github.com/QwenLM/Qwen2.5",
@@ -175,7 +190,12 @@
         "多智能体",
         "编排"
       ],
-      "icon": "https://github.com/favicon.ico"
+      "icon": "https://github.com/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     },
     {
       "url": "https://orm.drizzle.team",
@@ -187,7 +207,12 @@
         "TypeScript",
         "数据库"
       ],
-      "icon": "https://orm.drizzle.team/favicon.ico"
+      "icon": "https://orm.drizzle.team/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     },
     {
       "url": "https://bun.sh",
@@ -198,7 +223,12 @@
         "运行时",
         "极速"
       ],
-      "icon": "https://bun.sh/favicon.ico"
+      "icon": "https://bun.sh/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     },
     {
       "url": "https://fastify.dev",
@@ -209,7 +239,12 @@
         "后端框架",
         "高性能"
       ],
-      "icon": "https://fastify.dev/favicon.ico"
+      "icon": "https://fastify.dev/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     },
     {
       "url": "https://gitee.com",
@@ -264,7 +299,12 @@
         "容器",
         "编排"
       ],
-      "icon": "https://kubernetes.io/favicon.ico"
+      "icon": "https://kubernetes.io/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     },
     {
       "url": "https://developer.mozilla.org",
@@ -341,7 +381,12 @@
         "图标",
         "素材"
       ],
-      "icon": "https://iconify.design/favicon.ico"
+      "icon": "https://iconify.design/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     },
     {
       "url": "https://coolors.co",
@@ -363,7 +408,12 @@
         "白板",
         "流程图"
       ],
-      "icon": "https://excalidraw.com/favicon.ico"
+      "icon": "https://excalidraw.com/favicon.ico",
+      "facets": {
+        "pricing": [
+          "open_source"
+        ]
+      }
     },
     {
       "url": "https://fonts.google.com",
@@ -690,6 +740,42 @@
         "https://coolors.co",
         "https://fonts.google.com",
         "https://www.remove.bg"
+      ]
+    },
+    {
+      "slug": "open-source-alternatives",
+      "title": "开源替代",
+      "kind": "topic",
+      "description": "「开源」不再是一个类目：这里按 facets.pricing=open_source 承接，付费模式是分面属性而不是分类轴",
+      "sites": [
+        "https://ollama.com",
+        "https://github.com/vllm-project/vllm",
+        "https://github.com/cline/cline",
+        "https://github.com/langchain-ai/langgraph",
+        "https://bun.sh",
+        "https://fastify.dev",
+        "https://orm.drizzle.team",
+        "https://kubernetes.io",
+        "https://iconify.design",
+        "https://excalidraw.com"
+      ]
+    },
+    {
+      "slug": "editors-picks",
+      "title": "编辑精选",
+      "kind": "topic",
+      "description": "「最新/热门」类目退役后的时效轴落地页：跨领域人工挑选，配合 /hot 排序使用",
+      "sites": [
+        "https://github.com/trending",
+        "https://chat.deepseek.com",
+        "https://figma.com",
+        "https://developer.mozilla.org",
+        "https://leetcode.cn",
+        "https://www.bilibili.com",
+        "https://www.12306.cn",
+        "https://www.amap.com",
+        "https://www.zhihu.com",
+        "https://arxiv.org"
       ]
     }
   ]

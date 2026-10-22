@@ -18,10 +18,36 @@ import { indexPluginsBatch, indexItemFromManifest } from "./index-plugin.ts";
 import { seedPluginDefs } from "./seed-plugins.ts";
 import { DEFAULT_SITE_CONFIG, writeSiteConfig } from "./storage.ts";
 
+/**
+ * 重复 URL 的「描述择优」门槛：新描述至少比库里那条长这么多字才覆盖。
+ *
+ * 10 字是经验值——小于这个差值的改动多是标点/措辞微调，覆盖收益接近零，
+ * 却会白白产生一次写库与一次 updated_at 变更（进而影响 sitemap 的 lastmod）。
+ */
+const DESCRIPTION_IMPROVE_MARGIN = 10;
+
+/**
+ * 重复 URL 是否该用新描述覆盖旧描述（纯函数，便于单测）。
+ *
+ * 只比长度，不比内容：种子描述都是人工写的一句话，没有可靠的语义信号可用；
+ * 长度是这里唯一可验证的「信息量」代理指标。空描述永远被覆盖（除非新描述也空）。
+ */
+export function shouldImproveDescription(
+  existing: string | null | undefined,
+  incoming: string | null | undefined,
+): boolean {
+  const before = (existing ?? "").trim();
+  const after = (incoming ?? "").trim();
+  if (!after) return false;
+  // 从「没有描述」到「有描述」是量级差异，不该被长度门槛挡住
+  if (!before) return true;
+  return after.length > before.length + DESCRIPTION_IMPROVE_MARGIN;
+}
+
 interface SeedShape {
   /** 只剩兜底类目：整棵树由 CATEGORY_REGISTRY 播种，种子清单不再声明层级 */
   categories: Array<{ id: string; title: string; slug?: string; icon?: string; description?: string; sort?: number; source?: string }>;
-  sites: Array<{ url: string; title: string; description: string; categorySlug: string; tags?: string[]; icon?: string }>;
+  sites: Array<{ url: string; title: string; description: string; categorySlug: string; tags?: string[]; icon?: string; facets?: Record<string, string[]> }>;
   collections?: Array<{ slug: string; title: string; kind: string; description: string; sites: string[] }>;
 }
 
@@ -52,6 +78,14 @@ export interface SeedResult {
   /** 本次把已存在插件升级到新清单的条数（版本号更高或内容有变化） */
   pluginsUpgraded: number;
   skipped: number;
+  /**
+   * 重复 URL 中「后到包描述更完整、已用新描述覆盖」的条数。
+   *
+   * 与 skipped 互斥：同一条要么被跳过，要么被择优覆盖。生产集 5845 条里有
+   * 1093 条是重复条目，此前一律丢弃后到的那份——如果后到包的描述更好，
+   * 这条信息就永久丢了。
+   */
+  improved: number;
   embedded: number;
   siteConfigSeeded: boolean;
 }
@@ -113,13 +147,38 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
 
   let sites = 0;
   let skipped = 0;
+  let improved = 0;
   let embedded = 0;
   const leafIdBySlug = new Map<string, string>();
   const wantsEmbeddings = opts.withEmbeddings ?? true;
 
   for (const s of raw.sites) {
     const dup = await ctx.repo.findSiteByUrl(s.url);
-    if (dup) { skipped++; continue; }
+    if (dup) {
+      /**
+       * 同一 URL 已在库：**择优保留**，不再无条件丢弃后到的那份。
+       *
+       * 背景：29 个 site-pack 共 5845 条，其中 1093 条是重复 URL（同一站点被
+       * 多个垂类包同时收录）。原实现命中即 `skipped++; continue`，等于
+       * 「先到先得」——后到包里那句更完整的描述被永久丢弃，而站点的描述质量
+       * 直接决定它详情页的正文厚度（生产集中位数只有 23 字）。
+       *
+       * 只覆盖 description，**不覆盖分类/标签**：分类归属在包之间来回变会让
+       * 分类页的站点集合抖动（revalidate 窗口内站点从 A 类消失），比描述差
+       * 一点更伤；标签同理，跨包合并会污染标签计数。
+       *
+       * 门槛 `+10` 字：避免「改两个标点」这种无意义写入把 improved 刷虚。
+       */
+      const incoming = (s.description ?? "").trim();
+      const existing = (dup.description ?? "").trim();
+      if (shouldImproveDescription(existing, incoming)) {
+        await ctx.repo.updateSite(dup.id, { description: s.description });
+        improved++;
+      } else {
+        skipped++;
+      }
+      continue;
+    }
     let categoryId = leafIdBySlug.get(s.categorySlug);
     if (!categoryId) {
       const leaf = await ctx.repo.getCategoryBySlug(s.categorySlug);
@@ -135,6 +194,8 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
       url: s.url, title: s.title, description: s.description,
       categoryId, tags: s.tags ?? [], source: "seed",
       iconKey: resolveSiteIcon(s.url, s.title, s.icon),
+      // 轴外移的落地面：授权/场景等不再建类目，改由分面承接（方案 P5）
+      facets: s.facets,
     });
     sites++;
 
@@ -233,7 +294,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   }
 
   await ctx.close();
-  return { categories, registry, sites, collections, plugins, pluginsUpgraded, skipped, embedded, siteConfigSeeded };
+  return { categories, registry, sites, collections, plugins, pluginsUpgraded, skipped, improved, embedded, siteConfigSeeded };
 }
 
 /**

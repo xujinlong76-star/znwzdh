@@ -62,6 +62,7 @@ import { devopsWorkbench } from "./presets/devops-workbench.ts";
 import { seedDataWorkbench } from "./presets/seed-data-workbench.ts";
 import { healthLifeWorkbench } from "./presets/health-life-workbench.ts";
 import { travelPlannerWorkbench } from "./presets/travel-planner-workbench.ts";
+import { aiWorkbench } from "./presets/ai-workbench.ts";
 import { contentCreatorWorkbench, investorWorkbench, studentStudyWorkbench } from "./presets.ts";
 
 // ---- 组合包（bundle）----
@@ -137,6 +138,7 @@ export const allSeedPluginDefs: SeedPluginDef[] = [
   investorWorkbench,
   healthLifeWorkbench,
   travelPlannerWorkbench,
+  aiWorkbench,
   // 组合包
   geekStarterBundle,
   designerStarterBundle,

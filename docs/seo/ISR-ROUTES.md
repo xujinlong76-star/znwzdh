@@ -170,3 +170,50 @@ rm -rf apps/web/.next-isrlive/server/route-cache
 node -e "const y=require('js-yaml'),f=require('fs');const d=y.load(f.readFileSync('.github/workflows/ci.yml','utf8'));
 d.jobs['check-isr-live'].steps.forEach((s,i)=>console.log(i,s.name||s.run&&s.run.split('\n')[0],'cwd='+(s['working-directory']||'.')))"
 ```
+
+## 裁决 5：抽查绿灯不等于收录面完好 —— `--live` 补三层（标签族 / 技术面契约 / sitemap 下限）
+
+三层都源于同一个观察：`--live` 原来只判「sitemap 里抽到的页形态对不对」，
+而**门禁跑不到的东西它一句话也不说**。2026-10-23 在 CI 同构预览（一次性 seed 库 +
+`next start` 产物，`--sample=2`）实测：138 条 `<loc>`（站点 57 / 分类 1 / 标签 1 /
+合集 6 / 插件 64 / 目录 1），抽到 12 页，lastmod 覆盖 128/138=93%。
+
+**5.1 标签族必须有样本，否则是一族永久「跳过」。**
+`MIN_SITES_FOR_TAG_INDEX=10`（`apps/web-overlay/src/lib/seo/thresholds.ts`），而种子库里
+最大的标签只挂 5 个站点 —— `/tags/{slug}` 进不了 sitemap，门禁那一族每轮都打「跳过」，
+既不绿也不红，没人看着。裁决：CI 用 `scripts/seed-isr-fixtures.mjs` 往**一次性预览库**
+补一个挂 15 个站点的标签（`slug=gate-selfcheck`）。该脚本硬要求 `NAVHUB_ISR_FIXTURE_DB=1`，
+不满足就退出码 2 —— 为的是不许误写真实库（它只 INSERT，不删不改已有行）。
+
+**5.2 200 页默认过一遍技术面契约。**
+复用 `scripts/lib/seo-audit.mjs` 的 `analyzeHtml` + `auditPageDetailed`，判据是爬虫
+真正拿到的那份响应体：`title`、`meta description`、`canonical`、OG（`og:type` /
+`og:site_name` / `og:locale` / `og:url` / `og:image`）、`robots`、JSON-LD。
+本地 seo-audit 判的是「跑起来之后」的同一件事的另一种视角，产物门禁判的是构建目录里的
+HTML —— 三处各管一段，缺一处就有中间地带。`links`（内链闭环）默认**不**进 --live：
+它需要多页一起看，单页抽查会造出假红灯；要快跑用 `--no-contract` 出口。
+分页族（`/…/p/N`）按设计是 `noindex` 且不带 JSON-LD，所以可索引性按页判定
+（`expectIndexable = !paged`），只对可索引页要求 og/JSON-LD —— 否则门禁永久红在无关处。
+
+**5.3 sitemap 自己进门禁：族下限 + lastmod 覆盖率。**
+`--sitemap-min-site|category|tag|collection|plugin|directory` 与
+`--sitemap-min-lastmod-ratio`。为什么单独一层：中枢失联时 sitemap 退化成 9 条纯静态条目，
+`/site/*` 归零，但抽到的那几页形态全对 —— 只有族下限会把这件事说破。站点详情归零时
+红灯文案里直接写明「只剩静态条目 = 中枢失联的降级形态」。lastmod 丢失会让搜索引擎
+重估抓取优先级、改动也看不出新鲜度，所以按覆盖率（比例）判而不是按绝对条数。
+
+下限数字全部来自上面那份实测并留余量（CI 里 `--min-checked=10`、`sitemap-min-site=20`、
+`sitemap-min-plugin=10`、`lastmod-ratio=0.8`）；单一种子数据变薄可容忍，
+整条链路失联必须红。
+
+**复核**：
+
+```bash
+# CI 同构预览（本机 scratch 库 + 独立端口，不碰 data/navhub.db）
+node scripts/check-isr-routes.mjs --live --base=http://localhost:3079 --sample=2 \
+  --min-checked=10 --sitemap-min-site=20 --sitemap-min-category=1 --sitemap-min-tag=1 \
+  --sitemap-min-collection=1 --sitemap-min-plugin=10 --sitemap-min-directory=1 \
+  --sitemap-min-lastmod-ratio=0.8
+# 用例（夹具页自带齐契约；stripContract / barePaged / lastmod 三个开关分别造三种红灯）
+node node_modules/vitest/vitest.mjs run scripts/check-isr-routes.test.ts
+```

@@ -362,6 +362,8 @@ describe("check-isr-routes.mjs --live 抽查", () => {
       collapsePagesToBase?: boolean;
       notFoundPages?: boolean;
       duplicateLocation?: boolean;
+      stripContract?: boolean;
+      lastmod?: boolean;
     } = {},
   ): Promise<{ base: string; close: () => Promise<void> }> {
     return new Promise((resolvePromise) => {
@@ -372,7 +374,10 @@ describe("check-isr-routes.mjs --live 抽查", () => {
           res.writeHead(200, { "content-type": "application/xml" });
           res.end(
             `<?xml version="1.0"?><urlset>${paths
-              .map((p) => `<url><loc>${origin}${p}</loc></url>`)
+              .map(
+                (p) =>
+                  `<url><loc>${origin}${p}</loc>${opts.lastmod ? "<lastmod>2026-10-23</lastmod>" : ""}</url>`,
+              )
               .join("")}</urlset>`,
           );
           return;
@@ -415,9 +420,38 @@ describe("check-isr-routes.mjs --live 抽查", () => {
         // 假站用随机端口，所以这个地址必然与当前 base 不同端口。
         const og = opts.bakeLocalAsset
           ? '<meta property="og:image" content="http://localhost:3000/og-default.png"/>'
-          : "";
+          : `<meta property="og:image" content="${origin}/og-default.png"/>`;
         res.writeHead(200, { "content-type": "text/html", "cache-control": "s-maxage=60, stale-while-revalidate=31535940" });
-        res.end(`<html><head><link rel="canonical" href="${canonical}"/>${og}</head><body>ok</body></html>`);
+        // 分页族按设计是 noindex、且不配结构化数据：夹具专门发一份
+        // 「有标题与 canonical、没有 og/JSON-LD」的页，验证门禁不把它判红。
+        if (opts.barePaged && /\/p\/[^/]+$/.test(url.pathname)) {
+          res.end(
+            `<html lang="zh-CN"><head><title>分页夹具</title>` +
+              `<meta name="description" content="非索引分页的夹具页面。"/>` +
+              `<link rel="canonical" href="${canonical}"/>` +
+              `<meta name="robots" content="noindex"/></head><body><h1>分页</h1></body></html>`,
+          );
+          return;
+        }
+        // 默认发一份「技术面契约齐备」的页（title/描述/lang/单个 h1/canonical/
+        // og 全套/一块 JSON-LD）：契约断言默认就开，夹具要是还发空壳，
+        // 每一条既有用例都会红在无关处。`stripContract` 专门用来造残缺页。
+        if (opts.stripContract) {
+          res.end(`<html><head><link rel="canonical" href="${canonical}"/>${og}</head><body>ok</body></html>`);
+          return;
+        }
+        res.end(
+          `<html lang="zh-CN"><head><title>门禁夹具页</title>` +
+            `<meta name="description" content="用于门禁用例的夹具页面。"/>` +
+            `<link rel="canonical" href="${canonical}"/>` +
+            `<meta property="og:type" content="website"/>` +
+            `<meta property="og:site_name" content="NavHub"/>` +
+            `<meta property="og:locale" content="zh_CN"/>` +
+            `<meta property="og:url" content="${canonical}"/>` +
+            `${og}` +
+            `<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"门禁夹具页","url":"${canonical}"}</script>` +
+            `</head><body><h1>门禁夹具</h1>ok</body></html>`,
+        );
       });
       server.listen(0, "127.0.0.1", () => {
         const { port } = server.address() as AddressInfo;
@@ -438,6 +472,8 @@ describe("check-isr-routes.mjs --live 抽查", () => {
       collapsePagesToBase?: boolean;
       notFoundPages?: boolean;
       duplicateLocation?: boolean;
+      stripContract?: boolean;
+      lastmod?: boolean;
     } = {},
   ) {
     const { base, close } = await serve(paths, opts);
@@ -540,5 +576,56 @@ describe("check-isr-routes.mjs --live 抽查", () => {
     expect(out, out).not.toContain("sites,%20/sites");
     expect(out, out).toContain("✓ 跳转页 canonical");
     expect(code).toBe(0);
+  });
+
+  /**
+   * 每页技术面契约（2026-10-23 起默认开启）。
+   * 抽查只看「形态 + s-maxage」时，一页可以 200、带缓存、却没有 og 也没有 JSON-LD，
+   * CI 照样绿灯 —— 那正是 SEO 技术面退化的形状，所以在这里补上。
+   */
+  it("200 页缺技术面契约就红灯", async () => {
+    const { code, out } = await runLive(["/sites"], [], { stripContract: true });
+    expect(code, out).toBe(1);
+    expect(out).toContain("技术面契约");
+    expect(out).toMatch(/缺少 <title>|没有 application\/ld\+json/);
+  });
+
+  it("--no-contract 时跳过契约判定（本地快跑的出口）", async () => {
+    const { code, out } = await runLive(["/sites"], ["--no-contract"], { stripContract: true });
+    expect(out, out).toContain("✓ 线上 ISR 抽查通过");
+    expect(code).toBe(0);
+  });
+
+  it("分页族按 noindex 设计：不要求 og/JSON-LD", async () => {
+    // 实测：`/category/x/p/2` 的快照是 `noindex` 且没有 JSON-LD（设计如此，分页不进索引）。
+    // 若按可索引页要求它，门禁会永久红在无关处；这一条钉住「分页族走非索引契约」。
+    // 夹具里非分页页给齐契约、分页页故意缺 og 与 JSON-LD，整体必须绿。
+    const { code, out } = await runLive(["/category/ai-tools"], ["--sample=1"], {
+      barePaged: true,
+    });
+    expect(out, out).toContain("契约=通过·非索引");
+    expect(code, out).toBe(0);
+  });
+
+  it("sitemap 某族条目低于 --sitemap-min-* 下限就红灯（抽查绿不等于收录面完好）", async () => {
+    const { code, out } = await runLive(["/sites"], ["--sitemap-min-site=5"]);
+    expect(code, out).toBe(1);
+    expect(out).toContain("sitemap 收录面");
+    expect(out).toContain("站点详情只有 0 条，低于下限 5");
+    // 中枢失联时 sitemap 只剩静态条目，抽到的页照样全绿 —— 降级形态必须自己说出来，
+    // 否则下一次红在别处时又要从头猜「是 sitemap 空了还是页面坏了」。
+    expect(out).toContain("中枢失联的降级形态");
+  });
+
+  it("sitemap lastmod 覆盖率低于下限就红灯、达标就绿灯", async () => {
+    const noLastmod = await runLive(["/sites"], ["--sitemap-min-lastmod-ratio=0.5"]);
+    expect(noLastmod.code, noLastmod.out).toBe(1);
+    expect(noLastmod.out).toContain("lastmod 覆盖率");
+
+    const withLastmod = await runLive(["/sites"], ["--sitemap-min-lastmod-ratio=0.5"], {
+      lastmod: true,
+    });
+    expect(withLastmod.out, withLastmod.out).toContain("✓ 线上 ISR 抽查通过");
+    expect(withLastmod.code).toBe(0);
   });
 });

@@ -18,9 +18,16 @@
 # 4. check-isr-live（2026-10-22 新增）:
 #    - CI 内自建预览（migrate + seed 的中枢 + next start 产物）跑 --live 抽查，
 #      覆盖「产物跑起来之后」：必须 200、必须带 s-maxage、旧 ?page=N 必须 30x
-#    - --min-checked=8 兜覆盖率：空 sitemap 时每个族只会打「跳过」，
-#      0 页通过曾经会静默绿灯——那是比红灯更坏的失败。8 是按 2026-10-23 本地
-#      同构复现实测的 11 页定的（见作业内注释），不是拍脑袋
+#    - --min-checked=10 兜覆盖率：空 sitemap 时每个族只会打「跳过」，
+#      0 页通过曾经会静默绿灯——那是比红灯更坏的失败。10 是按 2026-10-23 本地
+#      同构复现实测的 12 页定的（见作业内注释），不是拍脑袋
+#    - --sitemap-min-* 盯 sitemap 自己的收录面：抽查只判「抽到的页形态对不对」，
+#      某族在 sitemap 里整族归零时抽到的页照样全绿；中枢失联降级成 9 条静态条目
+#      也靠这一层红灯（不只看条目总数）
+#    - 200 页默认还过一遍技术面契约（title/description/canonical/OG/JSON-LD）：
+#      读的是爬虫真正拿到的响应体，分页族按 noindex 设计放宽
+#    - 标签族用 scripts/seed-isr-fixtures.mjs 造一个够阈值的标签，否则 /tags/*
+#      在 CI 里永远是「跳过」（种子最大标签只挂 5 个站点 < 阈值 10）
 #    - 就绪探测盯 /site/* 条目：中枢失联时 sitemap 仍有 9 条静态 <loc>，
 #      只看「有没有 <loc>」会误判就绪，门禁随后红在覆盖率上而不是真实原因上
 #    - 此前 --live 只存在于 workflow_dispatch 的 seo-audit-prod，等于每个 PR 都没跑
@@ -187,6 +194,15 @@ jobs:
       # 只会打「跳过」，正是 --min-checked 要拦的静默通过。
       - run: node apps/api/src/migrate.ts
       - run: pnpm seed
+      # 种子库里最大的标签只挂 5 个站点，低于 MIN_SITES_FOR_TAG_INDEX=10，
+      # 于是 /tags/{slug} 永远进不了 sitemap、在门禁里永远打「跳过」—— 一整族是
+      # 永久盲区。这一步往一次性预览库补一个挂满 15 个站点的标签（slug=gate-selfcheck），
+      # 让 /tags/ 真的有样本可抽。脚本自带护栏：必须显式 NAVHUB_ISR_FIXTURE_DB=1，
+      # 否则拒绝运行（防止误写真实库）。
+      - name: 补门禁自检标签（仅一次性 CI 库）
+        run: node scripts/seed-isr-fixtures.mjs
+        env:
+          NAVHUB_ISR_FIXTURE_DB: 1
       # 生产守卫（apps/web/src/lib/auth.config.ts）会拒绝仓库内的开发回退密钥，
       # `next start` 走生产分支 —— 不给 AUTH_SECRET 的话预览站每个请求都是 500，
       # 这个门禁就会红在无关处。密钥只在本次作业的一次性 shell 环境里存在，
@@ -233,11 +249,19 @@ jobs:
         # 中枢没起时 sitemap 仍会给出 9 条纯静态条目、照样含 <loc>，探测会误判就绪，
         # 然后门禁只在 3 页上红——红在无关处，日志里看不出现在这个原因。
         #
-        # --min-checked=8 的标定来自 2026-10-23 的本地同构复现（新 migrate + 新 seed
-        # 库 + next start 产物，--sample=2）：白名单 9 族里实际抽到 11 页
+        # --min-checked=10 的标定来自 2026-10-23 的本地同构复现（新 migrate + 新 seed
+        # 库 + fixture 标签 + next start 产物，--sample=2）：白名单 9 族实际抽到 12 页
         # （首页 1、分类 1+分页 1、站点目录 1+分页 1、插件市场 2、站点详情 2、
-        # 标签 0——种子标签进不了 sitemap、合集 2）。下限取 8 留 3 页余量：
+        # 标签 1（来自上面那个 fixture 标签）、合集 2）。下限取 10 留 2 页余量：
         # 单一种子数据变薄可以容忍，中枢整条链路失联（只剩 9 条静态 ⇒ 3 页）必须红。
+        #
+        # --sitemap-min-* 是另一层：抽查只看「sitemap 里已有的页」形态对不对，sitemap
+        # 自己漏掉一整族时抽到的页照样全绿。下限按同一份实测（站点 57 / 分类 1 /
+        # 标签 1 / 合集 6 / 插件 64 / 目录 1，lastmod 覆盖 93%）留余量；
+        # 站点详情那一条同时就是「中枢失联只剩静态条目」的降级形态红灯。
+        #
+        # 技术面契约（title/description/canonical/OG/JSON-LD）默认开启：断的是
+        # 爬虫真正拿到的那份响应体，和产物门禁、本地 seo-audit 各管一段。
         run: |
           ready=0
           for i in $(seq 1 60); do
@@ -251,19 +275,28 @@ jobs:
             exit 1
           fi
           set +e
-          node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 --min-checked=8 > /tmp/isr-live.log 2>&1
+          node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 \
+            --min-checked=10 \
+            --sitemap-min-site=20 --sitemap-min-category=1 --sitemap-min-tag=1 \
+            --sitemap-min-collection=1 --sitemap-min-plugin=10 --sitemap-min-directory=1 \
+            --sitemap-min-lastmod-ratio=0.8 > /tmp/isr-live.log 2>&1
           rc=$?
           set -e
           cat /tmp/isr-live.log
           if [ "$rc" != "0" ]; then
             # 无 token 时作业日志接口是 403，跨机器只剩 annotations 可读，而且
             # 消息必须「无条件」发：上一版按 grep 匹配行发，门禁自己抛异常时
-            # 一行都不剩，等于白加。这里固定发两条 —— 判据数字 + 输出尾部原文。
+            # 一行都不剩，等于白加。这里固定发三条 —— 判据数字 + 输出尾部原文 + 层级归因。
             printf '::error::ISR 门禁 rc=%s，sitemap 条目 %s，红行 %s 条，覆盖行：%s\n' \
               "$rc" "$smcount" "$(grep -c '^✖' /tmp/isr-live.log || true)" \
               "$(grep -oE '共 [0-9]+ 页|[0-9]+ 页形态正确|只覆盖到 [0-9]+ 页' /tmp/isr-live.log | tr '\n' '/' | sed 's/::/--/g')"
             printf '::error::输出尾部：%s\n' \
               "$(tail -c 600 /tmp/isr-live.log | tr '\n%' '|')"
+            # 再补一条「哪一层红」：收录面族计数原样带出（抽到的页全绿但某族归零，
+            # 只看红行数分辨不出来），顺带报契约红灯的条数。
+            printf '::error::收录面：%s | 契约红灯 %s 条\n' \
+              "$(grep -o '共 [0-9]* 条：[^；]*' /tmp/isr-live.log | head -1 | sed 's/::/--/g')" \
+              "$(grep -c '技术面契约不达标' /tmp/isr-live.log || true)"
             exit "$rc"
           fi
       - name: 失败时留下预览站日志

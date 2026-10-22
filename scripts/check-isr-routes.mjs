@@ -56,12 +56,27 @@
  *    「不可收录」的裁决，没有重复页可谈，所以 canonical 断言只跟着跳转链
  *    走到 200 那一页，走不到就不断言（在 404/308 的响应体里找 canonical 只会
  *    造出假红灯，第一条 CI run 就是这么红的）。
+ *
+ * 2026-10-23 起 `--live` 还管两层：
+ *  - **每页技术面契约**（title/description/canonical/og 全套/robots/JSON-LD）：
+ *    复用 `scripts/lib/seo-audit.mjs` 的 `auditPageDetailed`，规则只有一份。
+ *    CI 自建预览上实测 7 个族全绿，所以默认就判；`--no-contract` 留给本地快跑。
+ *    内链最低要求（kind=`links`）故意不在默认里 —— 那是全量审计的职责。
+ *  - **sitemap 自身的收录面**：族条目下限与 lastmod 覆盖率。抽查只看「sitemap
+ *    里已有的页」，sitemap 少一整族时抽查照样全绿，所以这条要单独判。
+ *    只在实际传了 `--sitemap-min-*` 时才判，不传就只报观察值 —— 生产库和 CI
+ *    小库的量级差两个数量级，把下限写死进代码会变成第二条假红灯。
  */
 
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isBogusLocalOriginAsset, linkHref } from './lib/seo-audit.mjs';
+import {
+  analyzeHtml,
+  auditPageDetailed,
+  isBogusLocalOriginAsset,
+  linkHref,
+} from './lib/seo-audit.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const argv = process.argv.slice(2);
@@ -390,22 +405,66 @@ function localOriginAssetFindings(html, pageUrl) {
   return [...found];
 }
 
-async function sitemapPaths(base) {
+async function fetchSitemapXml(base) {
   const res = await fetch(`${base}/sitemap.xml`, { headers: { 'user-agent': 'NavHub-ISR-Check/1.0' } });
   if (!res.ok) throw new Error(`sitemap.xml HTTP ${res.status}`);
-  const xml = await res.text();
-  // sitemap 里是绝对 URL（origin 来自 NAVHUB_SITE_URL，可能与 --base 不同源），
-  // 统一只取 path 部分再按前缀分族。
-  return [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)]
-    .map((m) => {
-      try {
-        return new URL(m[1]).pathname;
-      } catch {
-        return m[1].split('?')[0];
-      }
-    })
-    .filter((p) => p.startsWith('/'));
+  return res.text();
 }
+
+/** sitemap 里的一条 URL：路径（同源比较用）+ 有没有 lastmod。 */
+function sitemapEntries(xml) {
+  return [...xml.matchAll(/<url>([\s\S]*?)<\/url>/g)].map((m) => {
+    const block = m[1];
+    const loc = /<loc>([^<]+)<\/loc>/.exec(block)?.[1] ?? '';
+    let pathname = loc;
+    try {
+      pathname = new URL(loc).pathname;
+    } catch {
+      pathname = String(loc).split('?')[0];
+    }
+    return {
+      path: pathname.startsWith('/') ? pathname : `/${pathname}`,
+      lastmod: /<lastmod>[^<]+<\/lastmod>/.test(block),
+    };
+  });
+}
+
+function pathsFromSitemapXml(xml) {
+  return sitemapEntries(xml).map((e) => e.path);
+}
+
+/**
+ * 一页快照的「技术面契约」：title / description / canonical / og 全套 / robots /
+ * JSON-LD 结构。判定直接复用审计侧同一个 `auditPageDetailed`，不在门禁里重写规则
+ * ——两处各写一遍必然漂移（本机地址那条以前就是这样）。
+ *
+ * `links`（内链最低要求）**不在默认 kinds 里**：内链面是全量审计的职责，
+ * 抽查 11 页看不出站内结构退化，却会把「本页恰好没链到同类」这种数据形态
+ * 变成门禁红灯。
+ */
+const CONTRACT_KINDS_DEFAULT = ['meta', 'canonical', 'og', 'robots', 'jsonld'];
+
+function contractFindings(html, url, kinds, { expectIndexable = true } = {}) {
+  const page = analyzeHtml(html, url);
+  const issues = auditPageDetailed(page, { expectIndexable }).filter((i) => kinds.has(i.kind));
+  // auditPageDetailed 只校验已有 JSON-LD 的结构；「整族没有结构化数据」要单独判。
+  // 只对期望进索引的页判：分页形态（`/p/{n}`）按设计是 noindex + 不配结构化数据，
+  // 要求它带 JSON-LD 会变成一条永远该红的假红灯。
+  if (expectIndexable && kinds.has('jsonld') && (page.jsonLd ?? []).length === 0) {
+    issues.push({ kind: 'jsonld', message: '没有任何 application/ld+json 区块（结构化数据整族丢失）' });
+  }
+  return issues;
+}
+
+/** sitemap 侧的族下限与 lastmod 覆盖率：只在显式给了下限时才判，否则只报观察值。 */
+const SITEMAP_FAMILIES = [
+  { key: '站点详情', re: /^\/site\//, flag: 'sitemap-min-site' },
+  { key: '分类页', re: /^\/category\//, flag: 'sitemap-min-category' },
+  { key: '标签页', re: /^\/tags\//, flag: 'sitemap-min-tag' },
+  { key: '合集页', re: /^\/collections\//, flag: 'sitemap-min-collection' },
+  { key: '插件详情', re: /^\/marketplace\//, flag: 'sitemap-min-plugin' },
+  { key: '站点目录', re: /^\/sites$/, flag: 'sitemap-min-directory' },
+];
 
 async function checkLive() {
   const base = (valueOf('base') ?? process.env.NAVHUB_SITE_URL ?? 'http://localhost:3000')
@@ -420,14 +479,22 @@ async function checkLive() {
   const perFamily = Math.max(1, Number(valueOf('sample', '2')) || 1);
   const failures = [];
   let checked = 0;
+  const contractOn = !flags.has('--no-contract');
+  const contractKinds = new Set(
+    (valueOf('contract-kinds', CONTRACT_KINDS_DEFAULT.join(',')) || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
 
-  let paths = [];
+  let xml = '';
   try {
-    paths = await sitemapPaths(base);
+    xml = await fetchSitemapXml(base);
   } catch (err) {
     console.error(`✖ 取不到 ${base}/sitemap.xml：${err.message}`);
     return 1;
   }
+  const paths = pathsFromSitemapXml(xml);
 
   for (const entry of WHITELIST) {
     const { route, urlPrefix, paged, exact } = entry;
@@ -461,8 +528,15 @@ async function checkLive() {
       const cached = /s-maxage=\d+/.test(r.cacheControl);
       // 只有拿到正文才有资格谈元信息：404（薄分页的正常裁决）与重定向没有快照可言
       const badAssets = r.status === 200 && r.body ? localOriginAssetFindings(r.body, `${base}${path}`) : [];
+      // 分页族（`/p/{n}`）按设计是 noindex：契约照查（标题/canonical/描述），
+      // 但「可索引页才有的东西」（og 全套、JSON-LD、不得 noindex）不能要求它。
+      const expectIndexable = !paged;
+      const contract =
+        contractOn && r.status === 200 && r.body
+          ? contractFindings(r.body, `${base}${path}`, contractKinds, { expectIndexable })
+          : [];
       console.log(
-        `${okStatus && cached && !badAssets.length ? '✓' : '✖'} ${(paged ? 'ISR 分页' : 'ISR 页面').padEnd(9)} ${path.padEnd(44)} ${r.status}${normalizedBack ? ` → ${pathOf(target)}` : ''} cc=${r.cacheControl || '—'}`,
+        `${okStatus && cached && !badAssets.length && !contract.length ? '✓' : '✖'} ${(paged ? 'ISR 分页' : 'ISR 页面').padEnd(9)} ${path.padEnd(44)} ${r.status}${normalizedBack ? ` → ${pathOf(target)}` : ''} cc=${r.cacheControl || '—'}${r.status === 200 && contractOn ? ` 契约=${contract.length ? `${contract.length} 项` : '通过'}${expectIndexable ? '' : '·非索引'}` : ''}`,
       );
       if (r.status >= 500) failures.push(`${path}：HTTP ${r.status}（5xx 通常是 DYNAMIC_SERVER_USAGE）`);
       else if (!okStatus) failures.push(`${path}：HTTP ${r.status}，期望 ${allow.join('/')}`);
@@ -470,6 +544,11 @@ async function checkLive() {
       else if (badAssets.length) {
         failures.push(
           `${path}：线上响应里带着构建期兜底的本机地址（${badAssets.slice(0, 3).join(' | ')}）——缺 NAVHUB_SITE_URL 时 metadataBase 用 http://localhost:3000 解析，分享图在别人的机器上打不开，canonical/og:url 还会多出一个错域名；配好变量后按需生成一次即可洗掉，永久快照那一族则要靠下一次构建`,
+        );
+      }
+      if (contract.length) {
+        failures.push(
+          `${path}：技术面契约不达标 —— ${contract.map((i) => `${i.kind}:${i.message}`).join(' | ')}`,
         );
       }
     }
@@ -543,6 +622,39 @@ async function checkLive() {
     }
   }
 
+  // sitemap 自身的收录面：族下限 + lastmod 覆盖率。
+  // 为什么单独判：抽查只看「sitemap 里有的页」形态对不对，而 sitemap 自己漏了一整族
+  // （中枢失联只剩 9 条静态条目、或某族取数分页坏掉）时，抽到的页照样全绿 ——
+  // 门禁没跑到和门禁通过是两回事，这里补的就是这一层。
+  const entries = sitemapEntries(xml);
+  const observed = SITEMAP_FAMILIES.map((f) => ({
+    ...f,
+    count: entries.filter((e) => f.re.test(e.path)).length,
+  }));
+  const withLastmod = entries.filter((e) => e.lastmod).length;
+  const ratio = entries.length ? withLastmod / entries.length : 0;
+  console.log(
+    `· ${'sitemap 收录面'.padEnd(9)} 共 ${entries.length} 条：${observed
+      .map((o) => `${o.key} ${o.count}`)
+      .join(' / ')}；lastmod 覆盖 ${withLastmod}/${entries.length}（${(ratio * 100).toFixed(0)}%）`,
+  );
+  for (const o of observed) {
+    const raw = valueOf(o.flag, '0');
+    const min = Number(raw);
+    if (!Number.isFinite(min) || min <= 0) continue;
+    if (o.count < min) {
+      failures.push(
+        `sitemap 里 ${o.key}只有 ${o.count} 条，低于下限 ${min}${o.key === '站点详情' && o.count === 0 ? '（只剩静态条目 = 中枢失联的降级形态，sitemap 没拿到任何站点，抽查抽到的绿不代表收录面完好）' : ''}`,
+      );
+    }
+  }
+  const minRatio = Number(valueOf('sitemap-min-lastmod-ratio', '0'));
+  if (Number.isFinite(minRatio) && minRatio > 0 && ratio < minRatio) {
+    failures.push(
+      `sitemap 的 lastmod 覆盖率 ${(ratio * 100).toFixed(0)}%（${withLastmod}/${entries.length}）低于下限 ${(minRatio * 100).toFixed(0)}%：丢 lastmod 会让搜索引擎重新评估抓取优先级，改动也看不出新鲜度`,
+    );
+  }
+
   // 「一条都没抽查到」不是通过。空 sitemap / 全 5xx / base 指错都会让上面
   // 每个族打一行「跳过」然后走到这里——若不设底，--live 就变成一条永远不会红的守卫，
   // 而 CI 一旦习惯了它的绿灯，这条约束实际上就没人看着了。
@@ -560,7 +672,7 @@ async function checkLive() {
     return 1;
   }
   console.log(
-    `\n✓ 线上 ISR 抽查通过：${checked} 页形态正确且都带 s-maxage，200 页的响应体里没有兜底的本机地址`,
+    `\n✓ 线上 ISR 抽查通过：${checked} 页形态正确、都带 s-maxage，200 页的响应体里没有兜底的本机地址${contractOn ? `，技术面契约（${[...contractKinds].join('/')}）齐备` : ''}`,
   );
   return 0;
 }

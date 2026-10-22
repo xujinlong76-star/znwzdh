@@ -32,6 +32,7 @@ import {
   type HubAdminPluginReview,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
+import { pluginDetailHref } from '@/lib/plugins/detail-href'
 import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
 import { EmptyState } from '@/components/ui/empty-state'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
@@ -470,7 +471,7 @@ export default function AdminPluginsPage() {
                 {/* 审核操作动作栏 */}
                 <div className="flex flex-wrap items-center gap-2 self-end sm:self-center shrink-0 w-full sm:w-auto justify-end">
                   <Link
-                    href={`/marketplace/${encodeURIComponent(item.slug)}`}
+                    href={pluginDetailHref(item.slug, item.status)}
                     target="_blank"
                     className="px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground font-medium rounded-lg hover:bg-muted/60 border border-border/60 transition-colors inline-flex items-center gap-1"
                   >

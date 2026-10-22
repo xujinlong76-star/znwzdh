@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { fetchMyPlugins, type HubPluginItem } from '@/lib/navhub-api'
+import { pluginDetailHref } from '@/lib/plugins/detail-href'
 import { getIdentity } from '@/lib/identity'
 import {
   ArrowLeft,
@@ -157,7 +158,7 @@ export default function MyPluginsPage() {
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link
-                        href={`/marketplace/${encodeURIComponent(plugin.slug)}`}
+                        href={pluginDetailHref(plugin.slug, plugin.status)}
                         className="font-semibold text-sm hover:text-primary transition-colors"
                       >
                         {plugin.name}
@@ -192,7 +193,7 @@ export default function MyPluginsPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
                     <Button asChild size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-                      <Link href={`/marketplace/${encodeURIComponent(plugin.slug)}`}>
+                      <Link href={pluginDetailHref(plugin.slug, plugin.status)}>
                         <Eye className="w-3.5 h-3.5" />
                         预览
                       </Link>

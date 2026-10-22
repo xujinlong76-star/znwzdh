@@ -157,3 +157,28 @@ describe("/api/me/activity（M10 用户可见操作记录）", () => {
     expect(Object.keys(body.items[0]).sort()).toEqual(["action", "at", "target"]);
   });
 });
+
+describe("/api/me/export/bookmarks.html（M9 互操作导出）", () => {
+  it("按收藏夹分组输出 Netscape 格式，可直接导入浏览器", async () => {
+    const cat = await ctx.repo.createCategory({ title: "导出测试" });
+    const site = await ctx.repo.createSite({
+      url: "https://netscape.example.com/",
+      title: "Netscape 站点",
+      categoryId: cat.id,
+    });
+    const folder = await ctx.repo.createFavoriteFolder(USER, "学习资料");
+    await ctx.repo.addFavorite({ userId: USER, siteId: site.id, folderId: folder.id });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/me/export/bookmarks.html",
+      headers: userHeaders(),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(String(res.headers["content-type"])).toContain("text/html");
+    expect(String(res.headers["content-disposition"])).toContain("navhub-bookmarks.html");
+    expect(res.payload).toContain("NETSCAPE-Bookmark-file-1");
+    expect(res.payload).toContain("<H3>学习资料</H3>");
+    expect(res.payload).toContain('HREF="https://netscape.example.com/"');
+  });
+});

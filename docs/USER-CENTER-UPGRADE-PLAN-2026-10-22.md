@@ -5,9 +5,35 @@
 
 ---
 
+## 实施进度（2026-10-22 18:00 更新）
+
+| 项 | 状态 | 提交 |
+|---|---|---|
+| S1 身份授权收口 | ✅ 已落地 | 58f1303 |
+| S2 降级三态 | ✅ 已落地 | 58f1303 |
+| S3 收藏状态全局化 | ✅ 已落地 | 58f1303 |
+| S4 重试同步完整性 | ✅ 已落地 | 58f1303 |
+| S5 写路径幂等与闸门 | ✅ 已落地 | 58f1303 |
+| S6 合并补 settings + 三索引 | ✅ 已落地 | 58f1303 |
+| M2 数据主权闭环 | ✅ 已落地 | 8e9d3fd |
+| M3 工作区明文迁出 E2EE 表 | ✅ 已落地（新表 + 幂等迁移） | 8e9d3fd |
+| M7 无障碍细节（金库密码） | ✅ 已落地 | 8e9d3fd |
+| M8 重接口限流 | ✅ 已落地 | 8e9d3fd |
+| M9 互操作导出（Netscape） | ✅ 已落地（收藏 → 浏览器书签 HTML） | 待提交 |
+| M10 用户可见操作记录 | ✅ 已落地（/api/me/activity） | 8e9d3fd |
+| M11 域文档补齐 | ◐ 本表 + §7 治理已补；wiki 三处漂移待改 | — |
+| M1 同步引擎换代 | ⬜ 未开始（协议级改动：批量+版本+墓碑，需兼容期） | — |
+| M4 身份模型收口 | ⬜ 未开始（email 唯一索引迁移 + OAuth 绑定策略，高风险） | — |
+| M5 `/me` SSR 化 | ⬜ 未开始（服务端壳 + 岛） | — |
+| M6 移动端导航 | ⬜ 未开始（需改全局 layout，当前与并行会话冲突） | — |
+
+> 落地口径：每个批次都跑过钩子全量（S 批 2609 passed；M 批 2625 passed），专项用例随批新增。
+
+---
+
 ## 0. 摘要（TL;DR）
 
-用户中心已经是一个**功能闭环完整**的产品域：登录身份（NextAuth → BFF → 中枢）、收藏与文件夹、搜索历史、画像与信号管理、数据导出/注销、工作区名册、个人 AI 配置、E2EE 金库备份，共 30+ 端点、12 张用户域表、8 个专项测试文件。前端 4 个页面（`/me`、`/me/history`、`/me/data`、`/favorites`）+ 1 个偏好页（`/preferences`）全部 noindex，入口收敛在顶栏图标、页脚与页内子导航。
+用户中心已经是一个**功能闭环完整**的产品域：登录身份（NextAuth → BFF → 中枢）、收藏与文件夹、搜索历史、画像与信号管理、数据导出/注销、工作区名册、个人 AI 配置、E2EE 金库备份，共 30+ 端点、12 张用户域表、17 个相关测试文件 / 183 条用例（前端仅 `favorites-*` 4 个行为测试）。前端 4 个页面（`/me`、`/me/history`、`/me/data`、`/favorites`）+ 1 个偏好页（`/preferences`）全部 noindex，入口收敛在顶栏图标、页脚与页内子导航。
 
 **但它有一个必须先解决的结构性问题**：Web 侧存在**两条互不相通的信任通道**——BFF `/api/me/*`（会话派生身份，可信）与通用代理 `/api/hub/*`（**对客户端自报身份无条件签名**）。后者承载了收藏、历史、画像、金库的**全部读写**，意味着任何登录用户只要把 `anonId` 换成目标身份，就能读写他人数据（主理人已复核：代理转发白名单含 `x-navhub-user-id`/`x-navhub-anon-id`，签名对象就是请求自称值；`/api/me/merge` 的"匿名所有权签名"同样由 BFF 对 body 里的客户端自报值签发）。**签名 ≠ 授权**是整份方案的第一性判断。
 
@@ -27,12 +53,12 @@
 
 | 能力 | 入口 | 实现状态 | 测试 |
 |---|---|---|---|
-| 身份建立与同步 | 全站 `<SessionSync />`（`app/layout.tsx:179`） | ✅ 可用；`POST /api/me/sync` upsert OAuth 用户 | `me-identity.test.ts`、`identity-signature.test.ts` |
+| 身份建立与同步 | 全站 `<SessionSync />`（`app/layout.tsx:183`） | ✅ 可用；`POST /api/me/sync` upsert OAuth 用户 | `me-identity.test.ts`、`identity-signature.test.ts` |
 | 概览面板 | `/me` | ✅ 可用；纯客户端三态（loading/anonymous/ready/error）+ 画像 explain | `me-pages.test.ts`（仅源码字符串） |
 | 搜索历史 | `/me/history` | ✅ 可用；分页 10/50、单删/全清 | `me-pages.test.ts`（仅字符串） |
 | 数据管理 | `/me/data` | ✅ 可用；导出 JSON、注销（`confirm:'DELETE'`） | `me-pages.test.ts`（仅字符串） |
 | 收藏 + 文件夹 + 备注 + 筛选 | `/favorites` | ✅ 可用；本地优先 + 云端权威合并 + 三态空态 | 4 个专项测试（最完整） |
-| E2EE 金库 | `/favorites`（导出/导入） | ⚠️ 仅本地文件；云端金库端点只被首页 DIY 使用 | `vault-and-prefetch.test.ts`（引擎层） |
+| E2EE 金库 | `/favorites`（导出/导入） | ⚠️ 仅本地文件；云端金库端点只被首页 DIY 使用 | `me-data-api.test.ts`、`end-user-identity-plane.test.ts` |
 | 画像与信号 | `/me`、`/preferences` | ✅ 可用；60s 节流聚合 | `profile-view.test.ts` |
 | 个人 AI 配置 | `/preferences` | ✅ 可用；密钥加密信封 | `ai-config-api.test.ts` |
 | 工作区名册 | 工作台页 | ✅ 可用；**数据明文存 `user_vault_sync`** | `workspaces-api.test.ts` |
@@ -83,9 +109,9 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 匿名用户 anon-<uuid> ──► /api/hub/* 代理：identityFromRequest(自称) ──► 签同一个值 ──► 校验通过
 ```
 
-- 签名算法：HMAC-SHA256，hex，常量时间比较，签名对象是 `identityOf` **截断 64 字符后**的原始值（`identity-signature.ts:24-47`）。
-- 硬不变量：任何路由必须 `identityOf` + `identityTrusted` 成对出现，否则签名 hook 覆盖不到（`shared.ts:300-309` 有反例注释）。
-- `identityTrusted` 在配置 secret 时**恒真**（`shared.ts:312`）——其正确性完全依赖"没有旁路身份入口"。
+- 签名算法：HMAC-SHA256，hex，常量时间比较，签名对象是 `identityOf` **截断 64 字符后**的原始值（`identity-signature.ts:25-46`）。
+- 硬不变量：任何路由必须 `identityOf` + `identityTrusted` 成对出现，否则签名 hook 覆盖不到（`shared.ts:300-310` 有反例注释）。
+- `identityTrusted` 在配置 secret 时**恒真**（`shared.ts:311`）——其正确性完全依赖"没有旁路身份入口"。
 - 生产启动仅校验 `identitySecret` 存在且 ≥32 字符（`security-readiness.ts:36-54`）；开发/预发不校验。
 
 ### 1.5 同步与离线策略
@@ -95,11 +121,38 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 - **无版本号/墓碑/批量接口**；唯一带乐观并发控制的是云端金库（409 + ETag），但仅首页 DIY 在用。
 - 离线缓存只有收藏；历史/画像/金库无本地缓存。
 
-### 1.6 质量基线
+### 1.6 质量基线（2026-10-22 14:00 复核）
 
-- 用户中心相关测试 8 个文件，**纯函数与源码字符串守卫为主**；`/me`、`/me/history`、`/me/data` 的**行为**（三态切换、删除链路、分页）零测试。
-- CI 门禁：`scripts/check-syntax`、`tsc`（5 包）、全量 vitest（当前 2481 passed）、`array-caps`/`sql-in-budget`/`bundle-budget`。
-- **PG 侧缺口**：`pg-dialect.e2e.test.ts` 未覆盖 merge / deleteUserData / favorites 并发 / vault 冲突。
+- **测试规模**：用户域直接相关的 **17 个文件 / 183 条用例**（api 7 / web 8 / store 2，见附录 A）。
+  - 后端 7 个文件 90 条，全部是真实 Fastify + SQLite 的行为测试（`me-api` 6、`me-data-api` 11、`workspaces-api` 7、`ai-config-api` 17、`identity-signature` 15、`end-user-identity-plane` 22、`identity-plane-extensions` 12）。
+  - store 2 个文件 8 条，覆盖身份合并与注销事务（`identity-merge` 2、`user-data` 6）。
+  - 前端 8 个文件 85 条中，仅 `favorites-*` 四个是行为/纯函数测试（45 条）；`/me`、`/me/history`、`/me/data` 仍只有源码字符串守卫——`me-pages.test.ts` 自述「刻意检查源码字符串而不是渲染」。全仓 web 测试只有 `highlight`、`latest-request-sites` 两个文件使用 render，且与用户域无关。
+- **E2E 盲区**：Playwright 只有 `e2e/front-pages.spec.ts` 冒烟 `/favorites` 与 `/preferences`；`/me`、`/me/history`、`/me/data` 无 E2E，也没有「匿名 / 持票 / 签名 / 会话」四态矩阵。
+- **身份面守卫（新增）**：`end-user-identity-plane`（22）、`identity-plane-extensions`（12）、`plugin-identity-idor`（25）锁住第二轴；`hub-identity-signature.test.ts`（12）在已提交版本里仍把「客户端自报优先 + slice(0,64)」锁成期望——S1 必须同步改写。撰写时并行会话已在工作树加入 `hub-identity-guard.test.ts`（会话优先 / 匿名域 / 非匿名自称 403），**尚未提交，也未进入质量基线**。
+- **全量基线快照**：880 个套件 / 2,577 条用例；稳定态 **2,561 passed / 15 skipped**。撰写时工作树含并行会话的 tag canonical 改造中间态（1 条守卫红），实施前重新取基线；文中不再引用旧的 2,481。
+- **CI 门禁**（`.github/workflows/ci.yml`）：`typecheck`、`test`（SQLite 全量 vitest）、`test-postgres`（只跑 `pg-dialect.e2e.test.ts` + `rollup-pg.e2e.test.ts`）、`test-web`（vendor → tsc → eslint → build → `check-bundle-budget`）、`check-web-overlay`（含 `sync-core-mirrors --check`、`check-upstream-ref`、`check-extensions`）、`test-e2e`、`docker-smoke`、`audit`。`array-caps` / `sql-in-budget` 是 vitest 用例，不是独立 CI job。
+- **bundle 预算**：`/me*` 不在 `scripts/bundle-budget.json` 的 routes 表，落 `default = 1,270,784 B`（≈1.21 MiB）；`/favorites = 965,632 B`（≈943 KiB）是唯一有专属棘轮的用户中心页，`/me` 比它宽松约 31%。M5 SSR 化后应补 `routes` 条目，且只降不升。
+- **PG 侧缺口**：`pg-dialect.e2e.test.ts` 对 `mergeIdentity` / `deleteUserData` / `addFavorite` / `saveUserVault` / `user_settings` **零命中**；CI 的 `test-postgres` 只覆盖该文件与 rollup，整套用户域在 PG 上无用例。改动这些路径必须新增 PG 测试（需 `NAVHUB_TEST_DATABASE_URL`）。
+
+### 1.7 既有文档与域文档缺口（重要上下文）
+
+- **域文档**：本方案是 `docs/` 下**首份**用户中心域文档（撰写前 `grep -rn "用户中心" docs/` 仅审计报告零星命中，无域文档）。三处 wiki 仍漂移：
+  - `wiki/03-web.md:130-131` 页面表只有 `/favorites`、`/preferences`，缺 `/me`、`/me/history`、`/me/data`；
+  - `wiki/02-api.md:264` 仍写「不引入终端用户鉴权体系」——HMAC 签名、`identityTrusted` 都已落地，口径需改写；
+  - `wiki/05-store.md` 缺 `user_settings`、`identity_aliases`、`identity_merges`、`user_vault_sync` 四张表（`favorites` / `user_profiles` / `search_history` 已有）。
+- **原始分期计划**：`.trae/documents/用户中心第二批改造计划.md`（**未被 git 跟踪**）：第一批「能看」、第二批「能管」；验收是**手工清单**（开关个性化后搜索不再带 personal 通道、导出不含明文密钥、删除后 `/api/me` 返回空概览、两标签页 PUT 旧 version 必须 409），未转成自动化行为测试。建议按 §7.2 迁入 `docs/` 并标注已由本方案接续。
+- **P0 是「预登记」过的**：`docs/acceptance-report.md:503` 明示「收藏夹云端同步的身份由调用方传入（anonId / userId），**未做终端用户鉴权**——多用户公开场景需加 Bearer token」；`docs/security-notes.md:82` 记「仍未覆盖：绕过 Web 代理、直接以无身份调用的路径」；`docs/AUDIT-2026-10-20-PASS3.md` §10.6（491-493 行）把「开放模式身份可自报（≈110 条公共路由）」列为产品口径决策，并记「身份仍是 `slice(0, 64)` 截断而非校验」。**这是当时明示的口径，不是实现失手**。
+- **已落地与在途的相关修复（避免重复设计）**：`9dd2ecf` 已引入 `identityTrusted` / `isAdminScope`，堵住「无票直连 API 自称身份」与「匿名请求携带默认 admin scopes」。S1 的代理侧身份裁决已在并行会话工作树中（`lib/hub-identity-guard.ts`：有会话则用会话身份、无会话只允许 anon 域、非匿名自称 403，并加匿名绑定 cookie），但**未提交**；已提交代码里 **P0-1 仍未修复**——`/api/hub/*` 继续对客户端自报身份签名，`/api/me/merge` 的匿名所有权签名同样如此。S1 的目标是把「签名」升级为「授权」，并与上述在途实现对齐。
+- **工作树事实**：第二批 21 个文件已随 `682aada`（后端）/ `7f3001c`（前端）/ `d068e3b`（BFF 修复）/ `d5034d2`（收藏钩子）提交；身份第二轴在 `9dd2ecf`。撰写时工作树只剩本方案文档与并行会话的 tag canonical / hub 身份守卫改造——**任何实施前必须重新取 `git status` 与全量基线，不要按本文快照直接动手**。
+
+### 1.8 外部产品能力基线（用于定位差距）
+
+1. **组织维度**：成熟产品把标签当一等公民（Raindrop 集合+标签+类型 / Pinboard 纯标签 / 浏览器纯层级）。NavHub 现状只有单一 `favorite_folders`（name≤30 + sort）+ 单条 `note`，无标签、无多集合、无智能视图。
+2. **收藏内检索与排序是默认能力**：NavHub 的 `listFavorites` 无 LIMIT、无检索参数，前端全量拉取后做客户端筛选。
+3. **跨端同步是"增量 + 可判定冲突"**：成熟产品有 per-record 版本/变更游标、墓碑软删、一次同步一个请求；NavHub 是逐条 POST + 集合覆盖 + 无版本无墓碑。
+4. **导入导出是互操作格式**：行业基线可导入/导出浏览器书签 HTML（Netscape 格式）、Pocket、Instapaper。NavHub 导入有（`/import`），**用户级导出只有私有 JSON**，无法搬回浏览器或迁到别家。
+5. **数据主权是自服务闭环**：导出全部数据 + 删除账号 + 删除范围可核对。NavHub 有入口但范围有缺口（P1-6）。
+6. **分享/协作需要"公开集合 + 权限"模型**——NavHub 现状无可见性字段、无公开页，且与 noindex 策略相冲突（列入 Non-goals）。
 
 ---
 
@@ -111,6 +164,9 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 - 位置：`apps/web-overlay/src/lib/hub-proxy.ts:23-35`（转发 `x-navhub-user-id`/`x-navhub-anon-id`）、`app/api/hub/[...path]/route.ts:104-108`（对 `identityFromRequest` 结果签名）、`identity-signature.ts:36-50`（Header 优先取自称值）。
 - 影响：任何持有会话的浏览器把 `?anonId=github:victim` 带进 `/api/hub/api/favorites` 即可读写他人收藏；历史、画像、`/api/vault/sync` 同理。canonical id 形如 `github:<id>`，可从插件作者页等公开面推断。
 - 同类：**`/api/me/merge` 的匿名所有权签名同样失效**——BFF 对 body 里客户端自报的 `anonId` 直接签名（`api/me/route.ts:114-123`），中枢据此放行（`me.ts:153-165`）。签名只证明"BFF 收到了这个字符串"。
+- **前史（必须知道）**：这是**明示过的产品口径**而非实现失手——`docs/acceptance-report.md:499-503` 原文登记「收藏夹云端同步的身份由调用方传入，未做终端用户鉴权」；`security-notes.md:59-90` 记「仍未覆盖：绕过 Web 代理、无身份直连」；PASS3 §10.6.1 记「开放模式身份可自报（≈110 条公共路由）属产品口径决策」。本次升级的本质是把口径从"单机/自托管单用户"推进到"多实例/多端默认安全"。
+- **隐性成本（不改会直接红）**：`apps/web/test/hub-identity-signature.test.ts:33-52` **把当前的"客户端自报优先 + slice(0,64) 截断"锁成了测试**。任何会话优先的修复必须同步改写该测试的期望，并在提交信息中说明口径变更。
+- **撰写时状态（2026-10-22 14:00）**：S1 的代理侧裁决已在并行会话工作树中实现并暂存（`lib/hub-identity-guard.ts`、`hub-identity-guard.test.ts`：有会话用会话身份、无会话仅 anon 域、非匿名自称 403 + 匿名绑定 cookie），**尚未提交**；该文件自述残余风险见本方案 §5.3。合并后本条的「签名 oracle」关闭，但 `/api/me/merge` 的匿名所有权仍需按 cookie 绑定校验，扩展/MCP 的无会话调用也要按「仅 anon 域」回归。
 
 **P0-2｜`/api/users/sync` 的身份绑定靠 username/email 且返回值与后续签名身份不一致**（后端研究）
 - `upsertOauthUser` 先按 username、再按 email 命中就 UPDATE 既有行（`users.ts:53-63`）；`users.email` 无唯一索引。
@@ -146,6 +202,9 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 | P2-9 | 每次进入 `/favorites` 产生 N 次串行 POST | `useFavorites.ts:287-292` |
 | P2-10 | 收藏夹无 `(user_id,name)` 唯一、无 `updated_at`、`sort` 恒 0 | `schema.ts:329-335` |
 | P2-11 | 事件-收藏非原子；清空收藏不写事件 | `favorites.ts:45-109` |
+| P2-12 | 收藏无服务端检索/分页（全量拉取 + 客户端筛选） | `favorites.ts:52-58`；基线产品默认可在集合内检索排序 |
+| P2-13 | 用户级导出只有私有 JSON，无互操作格式（Netscape HTML/Pocket） | `me.ts:79-105`；`/import` 有入口但导出无法回流 |
+| P2-14 | 用户域审计已落库但无用户侧读接口（`user.export` 本身被审计，用户却看不到） | `me.ts:85/122/185`、`audit.ts:24` |
 
 ### 2.4 P3（技术债 / 体验细节）
 
@@ -158,6 +217,10 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 - 三页导航层级不同构（`/favorites` 有面包屑 + 子导航，其余只有返回按钮）。
 - `clearCloudFavorites` 导出但无调用方（无"清空云端收藏"UI）。
 - `/me/history` 的 `no-identity` 分支不可达（`getIdentity()` 恒非空）。
+- **域文档缺失**：`docs/` 里 `grep "用户中心"` = 0 命中；`wiki/03-web.md` 无 `/me*` 三页、`wiki/02-api.md §3.7` 鉴权口径过时、`wiki/05-store.md` 缺 4 张表；分期计划原件 `.trae/documents/用户中心第二批改造计划.md` **未被 git 跟踪**。
+- **令牌能力无法下放**：`api_tokens` 表无 owner/identity 列（`schema.ts:209-225`），要做"用户自建 API 令牌"必须先改 schema + scope 模型。
+- **无任何用户侧通知能力**：全仓 `notification|subscribe` 零命中；`jobs` 的 10 种任务无一面向终端用户（`token_audit` 只写审计日志）。
+- **`/me*` 无 bundle 棘轮**（落 default 1.27MB）且三页零 E2E。
 
 ---
 
@@ -173,7 +236,7 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
   - (a) *中期*：`/api/hub/api/{favorites,search-history,profile,vault,workspaces}` 收敛为 BFF `/api/me/*`（会话派生身份），停止从 query 取身份。
   - (b) *短期*：在 hub 代理 `app/api/hub/[...path]/route.ts` 增加**会话优先策略**——若存在会话，则身份强制取会话 canonical id，**忽略并剥离**客户端自称的 `x-navhub-*`/query `anonId`；无会话时仅允许 `anon-` 前缀身份（匿名域）。
   - (c) **merge 所有权**：BFF 首次为匿名用户下发 `HttpOnly` cookie（如 `navhub_anon_owner`，值 = anonId 的 HMAC）；`POST /api/me/merge` 仅当 body.anonId 与 cookie 校验一致时才签 `x-navhub-anon-signature`。撤销"对任意 body.anonId 直接签名"。
-- **验收标准**：① 新增端到端测试：登录用户 A 以 `?anonId=<B 的身份>` 请求 `/api/hub/api/favorites`，返回 A 自己的数据或 403，**不得返回 B 的数据**；② 同测试覆盖 history/profile/vault；③ merge 在两个浏览器会话间不可窃取（B 的 anonId 无 cookie 时 403）；④ 既有 `identity-signature` / `end-user-identity-plane` / `me-api` 全绿。
+- **验收标准**：① 新增端到端测试：登录用户 A 以 `?anonId=<B 的身份>` 请求 `/api/hub/api/favorites`，返回 A 自己的数据或 403，**不得返回 B 的数据**；② 同测试覆盖 history/profile/vault；③ merge 在两个浏览器会话间不可窃取（B 的 anonId 无 cookie 时 403）；④ 既有 `identity-signature` / `end-user-identity-plane` / `me-api` 全绿；⑤ **同步改写 `hub-identity-signature.test.ts:33-52`**（该测试目前把"客户端自报优先"锁成了期望值），并在提交信息中声明口径变更。
 - **预期收益**：消除越权读写（收藏/历史/画像/金库四处），并让未来所有 `/api/hub/*` 端点自动获得会话保护。
 
 #### S2【P1｜高】降级语义三态化：故障 ≠ 匿名 ≠ 空
@@ -214,6 +277,9 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 | M6 | **移动端与导航一致性** | 中 | 底部导航（复用 footer 预留给 safe-area 的空间）；命令面板加「用户中心/收藏/历史」三条；三页统一面包屑层级 | 移动端可达性；入口一致性 |
 | M7 | **无障碍与骨架细节** | 低 | 裸 `<button>` 补 `aria-label`；`<label htmlFor>` 修正；扩展 `control-names.test.ts` 扫描面（覆盖裸 button 图标按钮）；`/favorites` 双骨架统一 | 审计可过；体验细节 |
 | M8 | **可观测性** | 中 | 用户中心关键路径埋点（同步成功率、merge 成功率、降级率）；`/api/me/export`、`merge`、`favorites` 路由级限流（10–30/min/身份） | 问题可发现；滥用可控 |
+| M9 | **互操作与可检索性** | 中 | ① 用户级导出增加 Netscape HTML（复用 `/api/export/bookmarks.html` 的格式化逻辑，按身份过滤）；② 收藏服务端检索 + 分页（`q`/`folderId`/游标），`listFavorites` 加 LIMIT；③ 收藏夹 `(user_id,name)` 唯一 + `updated_at` | 可搬回浏览器/迁到别家；万级收藏可用 |
+| M10 | **用户可见的操作记录** | 低 | 新增 `GET /api/me/activity`（读 `audit_logs` 按 actor 过滤 + 脱敏），`/me` 增加"最近操作"面板；复用既有 4 类审计事件，不新增写路径 | 数据主权感；导出/注销可追溯 |
+| M11 | **域文档补齐** | 低 | 新增 `docs/wiki/` 用户中心域页（端点/表/信任链/同步语义/红线），修正三处 wiki 漂移，把 `.trae` 计划原件纳入 `docs/`；本方案 §5.1 与之合并为单一"硬约束"真相源 | 降低下次升级的认知成本（当前 `docs/` 零命中） |
 
 ### 3.3 明确不做（Non-goals，本轮）
 
@@ -242,6 +308,9 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 | M6 移动端导航 | 中 | 2 | 无 | 低 |
 | M7 无障碍细节 | 低 | 1 | 无 | 低 |
 | M8 可观测性 | 中 | 1–2 | 无 | 低 |
+| M9 互操作与可检索性 | 中 | 2–3 | M1（游标可复用） | 低 |
+| M10 用户可见操作记录 | 低 | 1 | 审计已就位 | 低（需脱敏口径） |
+| M11 域文档补齐 | 低 | 1 | 无 | 无 |
 
 ---
 
@@ -257,7 +326,12 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 6. **事务**：只用 `repo.withTransaction`；事务内不做远程 IO；长事务阻塞整库读（`mergeIdentity` 是当前最大持有者）。
 7. **同步 null 语义**：`note`/`folderId` 必须"云端 null = 已清除"，新增字段同样；`??` 回退会把用户的清除动作变回来。
 8. **noindex 不能改 Disallow**（爬虫读不到 noindex）；用户中心页均为 client component，metadata 只能由 layout 提供。
-9. **PG 测试缺口**：merge/delete/favorites 并发/vault 冲突无 PG 用例；改动这些必须新增（需 `NAVHUB_TEST_DATABASE_URL`）。
+9. **PG 测试缺口**：`pg-dialect.e2e.test.ts` 对 merge / deleteUserData / favorites 并发 / vault 冲突 / user_settings 零命中；改动这些必须新增 PG 用例（需 `NAVHUB_TEST_DATABASE_URL`）。
+10. **行为锁测试**：`apps/web/test/hub-identity-signature.test.ts:33-52` 在已提交版本里把「客户端自报优先 + slice(0,64)」锁成期望值——S1 必须同步改写该测试。工作树中的 `hub-identity-guard.test.ts` 是 S1 的新锁，提交前不要同时引用两套口径。
+11. **bundle 预算不得上调**（`ci.yml` 的 `test-web` job）；`/me*` 目前落 `default = 1,270,784 B`，无专属棘轮——M5 SSR 化后补 routes 条目，只降不升。
+12. **E2E 盲区**：`/me`、`/me/history`、`/me/data` 零 E2E，也没有登录态/匿名态矩阵（Playwright 只覆盖 `/favorites`、`/preferences` 冒烟）——S2/S3 只能靠新增行为测试证明，别指望 E2E 兜底。
+13. **无通知/订阅能力**：全仓零命中，`jobs` 的 10 种任务无一面向终端用户——任何"到期提醒/同步失败提醒"是净新增，不要误判为已有能力。
+14. **令牌无 owner 列**：`api_tokens` 只有 `id/name/token_hash`，要做用户可自建令牌必须先改 schema + scope 模型（`scope:"admin"` 的 6 条路由需重设计）。
 
 ### 5.2 依赖项
 
@@ -267,6 +341,7 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 | `NAVHUB_TEST_DATABASE_URL`（PG） | 当前 CI 无 PG 实例 | M2/M4 的 PG 用例 |
 | 扩展/MCP 客户端 | 它们直连 `/api/hub/*` 用自称身份；S1(b) 会话优先策略会改变它们的行为（无会话 → 仅 anon 域） | S1 发布前需回归 Raycast/Chrome 扩展 |
 | 并行会话（市场/SEO 工作） | 共享工作区，提交窗口=对方两次 commit 间隙 | 全部改动 |
+| 并行会话（tag canonical / hub 身份守卫） | 撰写时工作树仍有未提交改动（`app/tags/**`、`lib/hub-identity-guard.ts`、`app/api/hub/**`），全量基线含 1 条中间态红 | S1–S6 全部：动手前重取 `git status` 并等对方提交窗口 |
 | 法务/隐私口径 | 注销范围、retention TTL 的产品承诺 | M2 |
 
 ### 5.3 风险登记
@@ -278,6 +353,7 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 | M3 workspaces 迁移不可逆 | 低 | 高 | 迁移前 `navhub.db` 备份 + 只读校验脚本；旧键保留一个版本 |
 | M4 email 唯一索引迁移失败 | 中 | 中 | 迁移前去重报告（只读），冲突账号列入人工处理清单 |
 | 钩子全量测试在共享工作区被他人红灯阻断 | 高 | 低 | 提交前本地跑全量；抓提交窗口（对方 commit 间隙） |
+| **S1 残余：匿名绑定是 TOFU** | 中 | 中 | 首次接触即绑定：攻击者若提前用自己的浏览器冒充受害者的 anonId 请求一次匿名接口，cookie 会被绑到受害者 id 上。缓解：anonId 已从"任何请求可签名"降级为"仅匿名域可签"，且 UUID 不可枚举；下一步可让 BFF 在首次访问时**服务端签发** anonId（HttpOnly），彻底消除 TOFU——排在 M1 之后 |
 | `/me` SSR 化与 SessionSync 时序冲突 | 中 | 中 | 服务端壳读会话 cookie，SessionSync 只做"变更后刷新" |
 
 ---
@@ -290,24 +366,36 @@ NextAuth 会话 ──► canonicalUserId() ──► BFF 签名 ──► 中�
 | W2 | S3 + S4 + S6；M1 设计评审 |
 | W3–4 | M1 实现 + 兼容期；M3 迁移脚本 |
 | W5–6 | M2 + M4（含 PG 用例） |
-| W7–8 | M5 + M6；M7/M8 穿插 |
+| W7–8 | M5 + M6；M9 起步；M7/M8/M10/M11 穿插 |
+
+---
+
+## 7. 治理与接管声明（避免与既有约定冲突）
+
+1. **接管范围**：`docs/seo/SEO-UPGRADE-PLAN-V3-2026-10-21.md:372-380` 的红线 7 曾把 `auth/identity/me/user-center、API routes` 列为"不动并行 WIP"。本方案即该范围的正式接管文档——**用户中心域（`/me*`、`/favorites`、`/preferences`、`routes/{me,favorites,history,profile,identity,vault,workspaces,ai-config,telemetry}.ts`、用户域 store 表）自此以本方案为事实源**；SEO 侧对 `/me*` 的 noindex 结论（不进 sitemap、页面级 noindex、不改 Disallow）作为本方案红线继承。
+2. **与 `.trae` 计划的关系**：`.trae/documents/用户中心第二批改造计划.md` 是本域原始分期计划（未跟踪），"第二批"范围已基本落地；本方案的 S/M 系列是**第三批**（安全授权收口 + 同步引擎 + 数据主权闭环）。建议把该文件迁入 `docs/` 并标注"已由本方案接续"。
+3. **与并行会话的边界**：本方案只覆盖用户中心域；市场/SEO/插件域 WIP 不碰。实施 PR 提交前重新取 `git status`，坚持 pathspec 提交（index 中常驻他人暂存物）。
+4. **口径变更的公开记录**：S1 会改变"身份可自报"的既有产品口径——该口径曾在 `acceptance-report.md:499-503`、`security-notes.md:59-90`、PASS3 §10.6.1 明示。S1 落地时需同步更新这三处文档，并在发布说明中记录破坏性变更（第三方扩展/MCP 直连需改为持会话或使用 anon 域）。
 
 ---
 
 ## 附录 A：验证清单（每个 PR 必跑）
 
 ```bash
-node node_modules/vitest/vitest.mjs run          # 全量（~2480 tests）
+node node_modules/vitest/vitest.mjs run          # 全量（当前 ~2,577 tests；稳定态 2,561 passed / 15 skipped）
 node apps/web/node_modules/typescript/bin/tsc --noEmit -p apps/web/tsconfig.json
 node node_modules/eslint/bin/eslint.js <改动文件>
-# 用户中心专项
+# 用户中心专项（17 文件 / 183 条，见 §1.6）
 node node_modules/vitest/vitest.mjs run \
   apps/api/test/me-api.test.ts apps/api/test/me-data-api.test.ts \
+  apps/api/test/workspaces-api.test.ts apps/api/test/ai-config-api.test.ts \
   apps/api/test/identity-signature.test.ts apps/api/test/end-user-identity-plane.test.ts \
+  apps/api/test/identity-plane-extensions.test.ts \
   apps/web/test/favorites-sync.test.ts apps/web/test/favorites-merge.test.ts \
   apps/web/test/favorites-storage.test.ts apps/web/test/favorites-filter.test.ts \
-  apps/web/test/me-pages.test.ts packages/store/test/identity-merge.test.ts \
-  packages/store/test/user-data.test.ts
+  apps/web/test/me-pages.test.ts apps/web/test/me-identity.test.ts \
+  apps/web/test/profile-view.test.ts apps/web/test/hub-identity-signature.test.ts \
+  packages/store/test/identity-merge.test.ts packages/store/test/user-data.test.ts
 ```
 
 ## 附录 B：本研究的事实来源
@@ -315,5 +403,5 @@ node node_modules/vitest/vitest.mjs run \
 - 前端：`apps/web-overlay/src/app/me/**`、`favorites/**`、`components/user-center/**`、`hooks/useFavorites.ts`、`lib/{hub-proxy,identity-signature,favorites-merge,favorites-storage,vault}.ts`
 - 后端：`apps/api/src/routes/{me,favorites,history,profile,identity,vault,workspaces,telemetry,tokens}.ts`、`apps/api/src/profile-service.ts`
 - 数据层：`packages/store/src/{schema.ts,driver.ts,migrate.ts,repository/*}`
-- 测试：`apps/api/test/*`、`apps/web/test/*`、`packages/store/test/*`（8 个用户中心专项文件）
+- 测试：`apps/api/test/*`、`apps/web/test/*`、`packages/store/test/*`（17 个用户中心专项文件，见附录 A）
 - 主理人复核：hub 代理转发白名单与签名取值（`hub-proxy.ts:23-35`、`api/hub/[...path]/route.ts:104-108`、`identity-signature.ts:36-50`）、merge 所有权签名（`api/me/route.ts:114-123`、`me.ts:153-165`）

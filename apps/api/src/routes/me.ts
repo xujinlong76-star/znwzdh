@@ -129,6 +129,69 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   );
 
   /**
+   * 用户级书签导出（M9 互操作）：收藏 → Netscape 书签 HTML，
+   * 可直接导入 Chrome / Firefox / Safari / Edge；分组按收藏夹还原。
+   * 这是「搬回浏览器」与「迁到别家」的标准格式，私有 JSON 做不到。
+   */
+  app.get(
+    "/api/me/export/bookmarks.html",
+    { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      const identity = identityOf(req as never);
+      if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+      const [favorites, folders] = await Promise.all([
+        ctx.repo.listFavorites(canonical),
+        ctx.repo.listFavoriteFolders(canonical),
+      ]);
+      const sites = await ctx.repo.getSitesByIds(favorites.map((f) => f.siteId));
+      const folderName = new Map(folders.map((f) => [f.id, f.name]));
+
+      const esc = (value: string) =>
+        value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const byFolder = new Map<string, Array<{ url: string; title: string; createdAt: number }>>();
+      for (const fav of favorites) {
+        const site = sites.get(fav.siteId);
+        if (!site) continue; // 软删除站点在 getSitesByIds 已被过滤：没有可导出的地址
+        const key = fav.folderId ? (folderName.get(fav.folderId) ?? "未分组") : "未分组";
+        const list = byFolder.get(key) ?? [];
+        list.push({ url: site.url, title: fav.note || site.title, createdAt: fav.createdAt });
+        byFolder.set(key, list);
+      }
+      const sections = [...byFolder.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0], "zh-CN"))
+        .map(([folder, items]) => {
+          const links = items
+            .map(
+              (item) =>
+                `    <DT><A HREF="${esc(item.url)}" ADD_DATE="${Math.floor(item.createdAt / 1000)}">${esc(item.title)}</A>`,
+            )
+            .join("\n");
+          return `  <DT><H3>${esc(folder)}</H3>\n  <DL><p>\n${links}\n  </DL><p>`;
+        })
+        .join("\n");
+      const html =
+        `<!DOCTYPE NETSCAPE-Bookmark-file-1>\n` +
+        `<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n` +
+        `<TITLE>Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n${sections}\n</DL><p>\n`;
+
+      await ctx.repo.audit({
+        ip: req.ip,
+        actor: canonical,
+        actorKind: "user",
+        action: "user.export",
+        target: canonical,
+        diff: { format: "netscape", favorites: favorites.length },
+      }).catch(() => undefined);
+
+      reply.header("content-type", "text/html; charset=utf-8");
+      reply.header("content-disposition", 'attachment; filename="navhub-bookmarks.html"');
+      return html;
+    },
+  );
+
+  /**
    * 注销：删除该身份的全部个人数据（保留登录账号本身，重新登录后是空账号）。
    * 必须显式确认，避免误触把收藏与历史一次清空。
    */

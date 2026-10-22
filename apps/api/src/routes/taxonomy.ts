@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
-import { badRequest, notFound, parsePagination } from "./shared.ts";
+import { badRequest, parsePagination } from "./shared.ts";
 
 export const taxonomyRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;

@@ -11,8 +11,6 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import {
   runAutonomousHealing,
-  buildWaybackSnapshotUrl,
-  normalizeTargetUrl,
   httpUrl,
   type SiteHealthAuditSummary,
   type SiteHealthAuditIssue,

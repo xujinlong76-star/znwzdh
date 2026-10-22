@@ -15,11 +15,9 @@ import {
   type MinimalOpenApiSpec,
   type P2PMessage,
 } from "@navhub/core";
-import { identityOf } from "./shared.ts";
 import {
   analyzeColorPalette,
   analyzeStackCompatibility,
-  computeGraphCentrality,
   findMatchingArchitectureRecipe,
   findShortestTechPath,
   parseSpeculativeIntent,

@@ -24,7 +24,8 @@ export default [
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' },
       ],
       'no-empty': ['warn', { allowEmptyCatch: true }],
-      'no-console': 'warn',
+      // 与 apps/api 同口径：warn/error/info 是正常日志，只提示调试残留的 console.log。
+      'no-console': ['warn', { allow: ['warn', 'error', 'info'] }],
     },
   },
 ]

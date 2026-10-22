@@ -4,7 +4,6 @@ import {
   exportNetscapeBookmarks,
   exportNavHubBackup,
   validateNavHubBackup,
-  type NavHubColdBackup,
 } from "@navhub/core";
 
 /**

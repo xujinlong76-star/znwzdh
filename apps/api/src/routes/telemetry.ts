@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import type { RetrievalChannel } from "@navhub/core";
-import { refreshUserProfile, resetUserProfile } from "../profile-service.ts";
+import { refreshUserProfile } from "../profile-service.ts";
 import { identityTrusted, identityOf } from "./shared.ts";
 
 import { z } from "zod";

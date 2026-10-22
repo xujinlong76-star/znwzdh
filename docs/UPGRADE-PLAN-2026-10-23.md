@@ -274,7 +274,7 @@
 | P1-3 / P1-5 | ✅ 已完成 | CRDT canonical 与审核事件流决策注释 |
 | P1-11 | ✅ 已完成 | `auth.config.ts` 的 `isAdminAccessAllowed` 成为唯一放行矩阵，`proxy.ts` 与 API 同口径；顺手去掉 `authorized` 里对 `role` 的信任（历史 session 可能带被默认成 admin 的 role） |
 | P1-9 | ✅ 已完成 | `user_workspace_blobs` 补进 `schema.ts` 的 drizzle 定义与导出集 |
-| P1-8 | ✅ 首轮落地 | `apps/api` / `packages/store` 各加 `eslint.config.mjs`（仅 src，三条规则全部 warn），根脚本 `lint:backend`，CI 以 `continue-on-error` 运行。实测 61 / 868 条 warning、0 error；清告警另排 |
+| P1-8 | ✅ 首轮落地（+ 后续清死导入） | `apps/api` / `packages/store` 各加 `eslint.config.mjs`（仅 src，三条规则全部 warn），根脚本 `lint:backend`，CI 以 `continue-on-error` 运行。store 基线 868 → **39**（见 §7.3），api 61 条 `no-console` 未动 |
 | P1-6 | ⛔ 复核后不实施 | 见 §4：7 个端点不存在，其余已有测试 |
 | P1-4 | ✅ 已完成（并行会话） | `recipes.ts` 改走 `getSitesByIds`，`sites-cluster.test.ts` 覆盖两条分支 |
 | P1-1 | ⏸ 暂缓 | 需逐文件判定「源码字符串断言」归属，且目标文件（`/me*`、`/favorites`）正在被并行会话重写；此时改动会与进行中的组件拆分互相踩踏，等其稳定后单独立项 |
@@ -339,26 +339,45 @@ vitest 收尾时会整体删除 `coverage/.tmp`（几百个文件），被本机
    ```
    不清理只是留下 `.tmp` 与上轮残留，两者都在被 gitignore 的 `coverage/` 内，无副作用。
 
-**待办**：改完重跑，把实测数字补到这里。本轮**只出数、不设阈值**。
+**实测结果（2026-10-23，`vitest run --coverage`，3072 条用例 / 248s）**：
+
+| 指标 | 覆盖 / 总数 | 百分比 |
+|---|---|---|
+| 行 lines | 12 053 / 14 360 | **83.93%** |
+| 语句 statements | 13 245 / 16 371 | **80.90%** |
+| 函数 functions | 2 027 / 2 398 | **84.52%** |
+| 分支 branches | 8 825 / 12 909 | **68.36%** |
+
+- 全量用例：**3052 passed / 20 skipped / 0 failed**；`coverage-summary.json` 正常产出，`check-coverage.mjs` 能读到。
+- 统计口径仅 `apps/api/src` + `packages/*/src`（vendored 的 `apps/web` 不计入），与配置注释一致。
+- **未设阈值**：本轮只出数。分支 68% 是最低项，下一轮若要收紧，先看 `packages/store/src/vector/pgvector.ts`（0%）这类真实零覆盖文件，而不是一刀切卡总行数。
+
+> 一次时序 flake 记录：同一命令第一次跑时，唯一失败是 `site-duplicates.test.ts > 同样输入下比参考实现快`（性能断言，未过 3× 阈值）。第二次同命令全绿——coverage 插桩会放大耗时，性能断言在插桩下不稳定。**这不是产品回归**，但后续若把 coverage 放进 CI，建议对该类断言单独排除或用相对基线。
+
 
 ### 7.3 W3 后端 ESLint 的诚实结论
 
 配置能跑，但**现在不能当门禁用**：
 
-| 包 | 基线 |
-|---|---|
-| `apps/api` | **61 条**（0 error，全是 `no-console`，合理、可清） |
-| `packages/store` | **868 条**（0 error，**大量疑似误报**） |
+| 包 | 基线（清理前） | 清理后 |
+|---|---|---|
+| `apps/api` | **61 条**（43 `no-console` + 18 未使用导入） | **24 条**（20 条 `console.log` 调试残留 + 4 条非导入位置的未用变量） |
+| `packages/store` | **868 条**（862 未使用导入 + 6 `no-console`） | **33 条**（全部在 `sites.ts`） |
 
-误报集中在 barrel 文件的再导出：第 41–50 行的 `rowToFavorite` / `rowToFolder` / `rowToJob` / `toPgSql` 等被 `@typescript-eslint/no-unused-vars` 判成「未使用」，但它们是被再导出给其它模块的。
+`no-console` 口径已收紧为「只提示 `console.log`」：服务端的 `console.warn/error/info` 是正常运维输出，不再计噪音（两个包配置一致）。
 
-**结论：store 这份配置要先解决 barrel 再导出的识别（换 parser 服务或改 `ignoreRestSiblings` / 加 barrel 例外），否则 868 条噪音会让门禁形同虚设。** 这一步需要单独排期，不在本轮。
+**此前「大量疑似误报、集中在 barrel 再导出」的判断已被推翻**（2026-10-23 复核）：
 
-> 跑法备忘（ESLint 只装在前端两个包里，用的是 10.13.0，根 `package.json` 没有 eslint）：
-> 必须**在包目录里**跑，因为 flat config 的 basePath 约束在包根：
-> ```
-> cd apps/api && node ../../node_modules/.pnpm/eslint@10.13.0_jiti@2.7.0/node_modules/eslint/bin/eslint.js src
-> ```
+- 抽查 `repository/analytics.ts`、`categories.ts`、`behavior.ts`、`vault.ts` 等文件，`rowToFavorite` / `rowToFolder` / `rowToJob` / `toPgSql` 等被点名的符号在每个文件里**只出现一次**——就在 import 行，正文与 `export` 中都没有引用；`git grep` 全仓也只在真正的使用方（`repository.ts`、`migrate.ts`、`search.ts`）里找到引用。
+- 这些文件不是 barrel：它们是从 `records.ts` / `dialect.ts` 复制过来的大段导入后**没有裁剪**，属真实死导入。误报不会如此整齐地分布在 28 个文件、每个文件 41–43 条。
+
+**已落地的修法**（`b3982bb` + 本批）：用 TypeScript AST 定点剔除 `packages/store` 22 个仓库文件里的 **829 个**未使用具名导入、`apps/api` 8 个文件里的 **14 个**（按字符区间删除，保留其余格式与再导出），`packages/store/src/repository/sites.ts` 因并行会话正在编辑未纳入。验证：`tsc --noEmit` 5 包全过，store 测试 **303 passed**，全量回归 **3052 passed / 0 failed**。
+
+**剩余 57 条的归属**：33 条在 `sites.ts`（等并行会话落定后同法清理）；`apps/api` 20 条是 `console.log` 调试残留（需逐条判断是真调试残留还是启动横幅，不能脚本一刀切）；4 条是非导入位置的未用变量。
+
+> 跑法备忘（ESLint 10.13.0 已作为 `apps/api` / `packages/store` 的 devDependency 安装）：
+> 在仓库根跑 `pnpm run lint:backend` 即可（内部 `pnpm --filter ... run lint`）；flat config 的 basePath 在各自包根。
+
 
 ### 7.4 全量回归的 11 条失败（**与本次改动无关**，待归属方确认）
 

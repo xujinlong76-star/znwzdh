@@ -17,7 +17,6 @@ import {
   executeAutoAuditAndPublish,
   evaluatePluginAudit,
   autoRemediatePluginManifest,
-  type PluginAuditResult,
 } from "../ai-plugin-auditor.ts";
 import {
   validateAndCleanPluginManifest,
@@ -25,15 +24,12 @@ import {
   diffPluginManifests,
   comparePluginVersions,
   type PluginManifest,
-  type PluginStatus,
-  type PluginKind,
 } from "@navhub/core";
 
 import type { AppContext } from "../context.ts";
 import {
   badRequest,
   conflict,
-  created,
   forbidden,
   identityOf,
   isAdminScope,

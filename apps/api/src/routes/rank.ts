@@ -11,7 +11,6 @@ import {
   lorentzDistance,
   poincareToLorentz,
 } from "@navhub/core";
-import { identityOf } from "./shared.ts";
 
 import { privatizeVector, rankItemsWithPrivacy } from "@navhub/core";
 import { parsePagination } from "./shared.ts";

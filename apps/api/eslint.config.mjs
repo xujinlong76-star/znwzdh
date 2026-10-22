@@ -27,7 +27,9 @@ export default [
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none' },
       ],
       'no-empty': ['warn', { allowEmptyCatch: true }],
-      'no-console': 'warn',
+      // 服务端日志是有意为之：只把「调试残留型」的 console.log 留作告警，
+      // warn/error/info 属正常运维输出，不制造噪音。
+      'no-console': ['warn', { allow: ['warn', 'error', 'info'] }],
     },
   },
 ]

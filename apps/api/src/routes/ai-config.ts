@@ -26,8 +26,6 @@ import {
 import {
   validateAndCleanPluginManifest,
   summarizePluginManifest,
-  type PluginManifest,
-  type PluginKind,
 } from "@navhub/core";
 import { identityTrusted, identityOf, unauthorized, resolveCanonicalIdentity } from "./shared.ts";
 import type { AppContext } from "../context.ts";

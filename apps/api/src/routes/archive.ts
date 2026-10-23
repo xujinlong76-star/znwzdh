@@ -9,7 +9,15 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
   /**
    * 获取站点的离线快照
    */
-  app.get("/api/sites/:id/archive", { config: { scope: "public" } }, async (req, reply) => {
+  app.get(
+    "/api/sites/:id/archive",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 60, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
     const { id } = req.params as { id: string };
     const existing = await ctx.repo.getLatestSiteArchive(id);
 
@@ -64,7 +72,15 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
   /**
    * 触发重新捕获并归档离线快照
    */
-  app.post("/api/sites/:id/archive", { config: { scope: "public" } }, async (req, reply) => {
+  app.post(
+    "/api/sites/:id/archive",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 20, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
     const { id } = req.params as { id: string };
     const site = await ctx.repo.getSite(id);
 
@@ -153,6 +169,9 @@ function sanitizeSnapshotHtml(raw: string): string {
     .replace(/<object\b[^<]*(?:(?!<\/object>)<[^<]*)*<\/object>/gi, "")
     .replace(/<embed\b[^<]*(?:(?!<\/embed>)<[^<]*)*<\/embed>/gi, "")
     .replace(/<form\b[^<]*(?:(?!<\/form>)<[^<]*)*<\/form>/gi, "")
+    .replace(/<base\b[^>]*>/gi, "")
+    .replace(/<meta\b[^>]*>/gi, "")
+    .replace(/<link\b[^>]*>/gi, "")
     .replace(/\bon[a-z]+\s*=\s*(["'][^"']*["']|[^\s>]+)/gi, "")
     .replace(/\bhref\s*=\s*(["']\s*javascript:[^"']*["']|\s*javascript:[^\s>]+)/gi, 'href="#"')
     .replace(/\bsrc\s*=\s*(["']\s*javascript:[^"']*["']|\s*javascript:[^\s>]+)/gi, 'src=""')

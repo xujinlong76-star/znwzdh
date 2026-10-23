@@ -18,11 +18,13 @@ import {
   evaluatePluginAudit,
   autoRemediatePluginManifest,
 } from "../ai-plugin-auditor.ts";
+import { randomBytes } from "node:crypto";
 import {
   validateAndCleanPluginManifest,
   summarizePluginManifest,
   diffPluginManifests,
   comparePluginVersions,
+  httpUrl,
   type PluginManifest,
 } from "@navhub/core";
 
@@ -1418,8 +1420,16 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }
   };
 
-  app.delete("/api/plugins/:slug/install", { config: { scope: "public" } }, uninstallHandler);
-  app.post("/api/plugins/:slug/uninstall", { config: { scope: "public" } }, uninstallHandler);
+  app.delete(
+    "/api/plugins/:slug/install",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    uninstallHandler,
+  );
+  app.post(
+    "/api/plugins/:slug/uninstall",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    uninstallHandler,
+  );
 
   /* ------------------------------------------------------------------ *
    * 社区互动：星标与举报
@@ -1481,7 +1491,10 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const reason = (body.reason ?? "").trim();
 
       if (!reason) {
-        return badRequest(reply, "请填写举报理由（不能为空）");
+        return badRequest(reply, "请填写举报理由（不可为空）");
+      }
+      if (reason.length > 500) {
+        return badRequest(reply, "举报理由长度不能超过 500 字");
       }
 
       const identity = pluginIdentity(ctx, req) || undefined;
@@ -1582,7 +1595,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     async (req, reply) => {
       const body = z.object({
         name: z.string().min(1).max(50),
-        url: z.string().url().max(500),
+        url: httpUrl().max(500),
         description: z.string().max(200).optional(),
       }).safeParse(req.body ?? {});
 
@@ -1590,19 +1603,28 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         return badRequest(reply, "参数无效", body.error.issues);
       }
 
-      // 安全校验：防范 SSRF
+      // 安全校验：防止 SSRF
       const cleanUrl = body.data.url.trim();
       const parsedUrl = new URL(cleanUrl);
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        return badRequest(reply, "Taps 源地址必须使用 HTTP 或 HTTPS 协议");
+      }
       const host = parsedUrl.hostname.toLowerCase();
       if (
         host === "localhost" ||
         host === "127.0.0.1" ||
         host === "0.0.0.0" ||
+        host === "::1" ||
         host.startsWith("10.") ||
         host.startsWith("192.168.") ||
-        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
+        host.startsWith("169.254.") ||
+        host.startsWith("100.64.") ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) ||
+        host.endsWith(".local") ||
+        host.endsWith(".internal") ||
+        host.includes("::")
       ) {
-        return badRequest(reply, "禁止添加内网或私有地址作为 Taps 订阅源");
+        return badRequest(reply, "禁止添加私有网络地址或本地回环作为 Taps 插件源");
       }
 
       const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];
@@ -1611,7 +1633,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
 
       const newTap = {
-        id: `tap-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `tap-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`,
         name: body.data.name.trim(),
         url: cleanUrl,
         description: body.data.description?.trim(),
@@ -1624,6 +1646,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       taps.push(newTap);
       await ctx.repo.setSystemState("plugins:taps", taps);
       await ctx.repo.audit({
+        ip: req.ip,
         actor: req.auth.actor,
         actorKind: req.auth.kind,
         action: "plugin.tap_create",
@@ -1648,6 +1671,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
       await ctx.repo.setSystemState("plugins:taps", filtered);
       await ctx.repo.audit({
+        ip: req.ip,
         actor: req.auth.actor,
         actorKind: req.auth.kind,
         action: "plugin.tap_delete",

@@ -325,14 +325,16 @@ export async function reorderSites(repo: Repository, order: Array<{ id: string; 
 }
 
 export async function setSiteTags(repo: Repository, siteId: string, tagNames: string[]): Promise<void> {
-  await repo.run("DELETE FROM site_tags WHERE site_id = ?", [siteId]);
-  for (const raw of tagNames) {
-    const name = raw.trim();
-    if (!name) continue;
-    const slug = slugify(name);
-    const tagId = await repo.upsertTag(name, slug);
-    await repo.run("INSERT INTO site_tags (site_id, tag_id) VALUES (?, ?)", [siteId, tagId]);
-  }
+  return repo.withTransaction(async () => {
+    await repo.run("DELETE FROM site_tags WHERE site_id = ?", [siteId]);
+    for (const raw of tagNames) {
+      const name = raw.trim();
+      if (!name) continue;
+      const slug = slugify(name);
+      const tagId = await repo.upsertTag(name, slug);
+      await repo.run("INSERT INTO site_tags (site_id, tag_id) VALUES (?, ?)", [siteId, tagId]);
+    }
+  });
 }
 
 export async function upsertTag(repo: Repository, name: string, slug: string, group = "topic"): Promise<string> {
@@ -361,23 +363,25 @@ export async function setSiteFacets(
   siteId: string,
   rawFacets: Record<string, string[] | string | null | undefined>,
 ): Promise<void> {
-  await repo.run("DELETE FROM site_facets WHERE site_id = ?", [siteId]);
-  for (const [rawKey, rawVals] of Object.entries(rawFacets)) {
-    const key = rawKey.trim().toLowerCase();
-    if (!key) continue;
-    const values = Array.isArray(rawVals)
-      ? rawVals.map((v) => String(v).trim().toLowerCase()).filter(Boolean)
-      : typeof rawVals === "string" && rawVals.trim()
-        ? [rawVals.trim().toLowerCase()]
-        : [];
-    const deduped = [...new Set(values)];
-    for (const val of deduped) {
-      await repo.run(
-        "INSERT INTO site_facets (site_id, facet_key, facet_value) VALUES (?, ?, ?)",
-        [siteId, key, val],
-      );
+  return repo.withTransaction(async () => {
+    await repo.run("DELETE FROM site_facets WHERE site_id = ?", [siteId]);
+    for (const [rawKey, rawVals] of Object.entries(rawFacets)) {
+      const key = rawKey.trim().toLowerCase();
+      if (!key) continue;
+      const values = Array.isArray(rawVals)
+        ? rawVals.map((v) => String(v).trim().toLowerCase()).filter(Boolean)
+        : typeof rawVals === "string" && rawVals.trim()
+          ? [rawVals.trim().toLowerCase()]
+          : [];
+      const deduped = [...new Set(values)];
+      for (const val of deduped) {
+        await repo.run(
+          "INSERT INTO site_facets (site_id, facet_key, facet_value) VALUES (?, ?, ?)",
+          [siteId, key, val],
+        );
+      }
     }
-  }
+  });
 }
 
 export async function getSiteFacets(repo: Repository, siteId: string): Promise<Record<string, string[]>> {

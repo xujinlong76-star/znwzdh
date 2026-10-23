@@ -46,7 +46,15 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
   /**
    * 提交本地原子操作日志，与云端合流、压缩并返回最新全局状态（带 CAS 乐观锁重试防并发覆盖）
    */
-  app.post("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
+  app.post(
+    "/api/crdt/sync",
+    {
+      config: {
+        scope: "public",
+        rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 60, timeWindow: "1 minute" },
+      },
+    },
+    async (req, reply) => {
     const rawIdentity = identityOf(req as never);
     if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
@@ -54,7 +62,7 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
     const body = z.object({
       operations: z.array(z.object({
-        id: z.string(),
+        id: z.string().min(1).max(100),
         type: z.enum([
           "SET_CATEGORY_PIN",
           "REORDER_CATEGORIES",
@@ -65,10 +73,10 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
           "UPSERT_CUSTOM_SITE",
           "DELETE_CUSTOM_SITE",
         ]),
-        entityId: z.string(),
+        entityId: z.string().min(1).max(200),
         payload: z.unknown(),
-        timestamp: z.number(),
-        clientId: z.string(),
+        timestamp: z.number().finite(),
+        clientId: z.string().min(1).max(100),
       })).max(200),
     }).safeParse(req.body ?? {});
 

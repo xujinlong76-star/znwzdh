@@ -477,6 +477,40 @@ const SITEMAP_FAMILIES = [
   { key: '站点目录', re: /^\/sites$/, flag: 'sitemap-min-directory' },
 ];
 
+/**
+ * 定长散列（FNV-1a 32 位）：只用来把「轮换 key」变成稳定的起始下标。
+ * 不用 Math.random，也不用心跳时间——同一轮 CI 重跑、同一 commit 重跑必须
+ * 抽到同一批页，否则一次偶发网络抖动会被读成「门禁时好时坏」。
+ */
+export function rotateHash(text) {
+  let h = 0x811c9dc5;
+  const s = String(text ?? '');
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/**
+ * 轮换取样：不带 key 时保持旧行为（族内前 count 个，固定样本）；
+ * 带 key 时在「排序后的全集」上按 (hash(key) + hash(salt)) 取起点环形取 count 个。
+ *
+ * 排序是为了让取样与 sitemap 的产出顺序解耦：sitemap 条目顺序一变
+ * （加了一族、换了排序字段），固定 `slice(0, n)` 就会静默换掉整批页，
+ * 轮换也跟着漂移，「这一轮扫的是哪些页」就不再只由 key 决定。
+ * salt 传族前缀，避免每个族都在同一相对位置起跳。
+ */
+export function pickSample(items, count, rotateKey, salt = '') {
+  const pool = [...new Set(items)].sort();
+  const n = Math.max(1, Number(count) || 1);
+  if (!rotateKey || pool.length <= n) return pool.slice(0, n);
+  const start = (rotateHash(rotateKey) + rotateHash(salt)) % pool.length;
+  const out = [];
+  for (let i = 0; i < n; i += 1) out.push(pool[(start + i) % pool.length]);
+  return out;
+}
+
 async function checkLive() {
   const base = (valueOf('base') ?? process.env.NAVHUB_SITE_URL ?? 'http://localhost:3000')
     .trim()
@@ -497,6 +531,14 @@ async function checkLive() {
       .map((s) => s.trim())
       .filter(Boolean),
   );
+  // `--rotate[=KEY]`：族内样本从「永远前 N 个」换成按 key 环形取。
+  // 不给值就用当天 UTC 日期；CI 里给 $GITHUB_SHA ⇒ 同一 commit 可复现、跨 commit 覆盖不同页。
+  const rotateKey = flags.has('--rotate')
+    ? (valueOf('rotate') || new Date().toISOString().slice(0, 10))
+    : null;
+  if (rotateKey) {
+    console.log(`· 轮换取样 key=${rotateKey}（同 key 同结果；去掉 --rotate 则永远取族内前 ${perFamily} 个）`);
+  }
 
   let xml = '';
   try {
@@ -512,12 +554,18 @@ async function checkLive() {
     const all = [...new Set(paths.filter((p) => (exact ? p === urlPrefix : p.startsWith(urlPrefix))))];
     const matching = all.filter((p) => (paged ? /\/p\/[^/]+$/.test(p) : !/\/p\/[^/]+$/.test(p)));
     // 分页页不会进 sitemap（第 2 页起 noindex），但恰恰是它最容易在按需生成时 500。
-    // 没有现成样本时用第一个分类页造一个 /p/2：超出末页的 404 是正确行为，
+    // 没有现成样本时造一个 /p/2：超出末页的 404 是正确行为，
     // 因此这一族只把「5xx」和「没有 s-maxage」判失败。
+    // 造样本时挂在哪个母页上也跟着轮换：永远取第一个分类页的话，
+    // 「按需生成 /p/2」这条支路只在那一个 slug 上被验证过。
     const sample = matching.length
-      ? matching.slice(0, perFamily)
+      ? pickSample(matching, perFamily, rotateKey, `${route}|${urlPrefix}`)
       : paged && all.length
-        ? [`${all.find((p) => !/\/p\/[^/]+$/.test(p)) ?? all[0]}/p/2`]
+        ? [
+            `${(rotateKey
+              ? pickSample(all.filter((p) => !/\/p\/[^/]+$/.test(p)), 1, rotateKey, route)
+              : [all.find((p) => !/\/p\/[^/]+$/.test(p))])[0] ?? all[0]}/p/2`,
+          ]
         : [];
     if (!sample.length) {
       console.log(`– ${route.padEnd(28)} sitemap 里没有 ${urlPrefix}* 样本，跳过`);

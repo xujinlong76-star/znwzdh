@@ -125,22 +125,36 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         // 幂等式恢复站点
         const updatedCats = await ctx.repo.listCategories();
         const defaultCatId = updatedCats[0]?.id || "default";
+        const validCatIds = new Set(updatedCats.map((c) => c.id));
+        const catTitleToId = new Map(updatedCats.map((c) => [c.title, c.id]));
+        const oldIdToNewId = new Map<string, string>();
+        for (const cat of categories) {
+          const matched = catTitleToId.get(cat.title);
+          if (matched) oldIdToNewId.set(cat.id, matched);
+        }
+
         const existingSites = await ctx.repo.raw("SELECT url FROM sites WHERE deleted_at IS NULL");
-        // 去重集合必须覆盖全库：原来用 listSites()（默认只回 100 条）建集合，
-        // 超过 100 条的库里"其实已存在"的网址会被当成新增，撞上 sites_url_idx
-        // 唯一索引 → 恢复请求中途 500，留下半恢复状态。这里只取 url 一列。
         const existingUrls = new Set(
           existingSites.map((s) => String(s.url ?? "").replace(/\/+$/, "").toLowerCase()),
         );
 
         for (const site of sites) {
+          if (!site.url || !/^https?:\/\//i.test(site.url)) continue;
           const norm = (site.url || "").replace(/\/+$/, "").toLowerCase();
           if (norm && !existingUrls.has(norm)) {
+            let targetCatId = defaultCatId;
+            if (site.categoryId) {
+              if (validCatIds.has(site.categoryId)) {
+                targetCatId = site.categoryId;
+              } else if (oldIdToNewId.has(site.categoryId)) {
+                targetCatId = oldIdToNewId.get(site.categoryId)!;
+              }
+            }
             await ctx.repo.createSite({
               title: site.title,
               url: site.url,
               description: site.description || "",
-              categoryId: site.categoryId || defaultCatId,
+              categoryId: targetCatId,
               tags: site.tags || [],
               iconKey: site.icon || null,
             });
@@ -157,6 +171,18 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         message: "备份恢复失败，已整体回滚；请修正备份内容后重试",
       };
     }
+
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: req.auth.actor,
+      actorKind: req.auth.kind,
+      action: "backup.restore",
+      target: "backup",
+      diff: {
+        categories: restoredCategories,
+        sites: restoredSites,
+      },
+    });
 
     return {
       ok: true,

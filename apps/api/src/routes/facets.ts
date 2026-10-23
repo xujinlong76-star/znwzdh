@@ -55,7 +55,14 @@ export const facetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
 
     const body = z
       .object({
-        facets: z.record(z.string(), z.array(z.string()).max(200)),
+        facets: z
+          .record(
+            z.string().min(1).max(50),
+            z.array(z.string().min(1).max(100)).max(50),
+          )
+          .refine((obj) => Object.keys(obj).length <= 50, {
+            message: "最多允许 50 个分面维度",
+          }),
       })
       .safeParse(req.body);
 

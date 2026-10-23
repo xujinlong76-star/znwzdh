@@ -41,7 +41,7 @@ export const healthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    * 现在真实 ping 一次数据库；失败返回 503，让编排层把流量摘走并触发重启。
    * embedding 是可选能力（首次部署要下载模型），不参与就绪判定。
    */
-  app.get("/api/ready", async (_req, reply) => {
+  app.get("/api/ready", async (req, reply) => {
     const started = Date.now();
     let dbOk = false;
     let dbError: string | null = null;
@@ -59,13 +59,17 @@ export const healthRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     } finally {
       if (timer) clearTimeout(timer);
     }
+    if (!dbOk && dbError) {
+      req.log.error({ err: dbError }, "Database readiness probe failed");
+    }
+    const safeDbError = dbError ? (dbError.includes("超时") ? dbError : "数据库连接失败") : null;
     const embeddingReady = ctx.embedding ? ctx.embedding.ready() : false;
     const semantic = Boolean(ctx.embedding && ctx.vectors && embeddingReady);
     if (!dbOk) reply.code(503);
     return {
       ok: dbOk,
       mode: ctx.config.mode,
-      db: { ok: dbOk, latencyMs: Date.now() - started, ...(dbError ? { error: dbError } : {}) },
+      db: { ok: dbOk, latencyMs: Date.now() - started, ...(safeDbError ? { error: safeDbError } : {}) },
       semantic,
       embeddingReady,
       fts: Boolean(ctx.fts),

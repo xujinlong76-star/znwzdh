@@ -166,6 +166,7 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       actor: req.auth.actor,
       actorKind: req.auth.kind,
       action: "job.prune",
+      target: "jobs",
       diff: { olderThanDays, statuses, ...result },
     });
 
@@ -183,28 +184,37 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
     setupSseStream(reply);
     reply.raw.write(": connected\n\n");
 
+    let cleaned = false;
+    let heartbeat: NodeJS.Timeout | null = null;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
+      jobEventBus.off("job", onJob);
+    };
+
     const onJob = (payload: JobEventPayload) => {
       try {
         reply.raw.write(`event: job\ndata: ${JSON.stringify(payload)}\n\n`);
       } catch {
-        // 客户端连接中断容错
+        cleanup();
       }
     };
 
     jobEventBus.on("job", onJob);
 
-    const heartbeat = setInterval(() => {
+    heartbeat = setInterval(() => {
       try {
         reply.raw.write(": ping\n\n");
       } catch {
-        // 心跳容错
+        cleanup();
       }
     }, 15_000);
 
-    req.raw.on("close", () => {
-      clearInterval(heartbeat);
-      jobEventBus.off("job", onJob);
-    });
+    req.raw.on("close", cleanup);
   });
 
   /**

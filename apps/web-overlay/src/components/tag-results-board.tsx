@@ -51,9 +51,14 @@ export function TagResultsBoard({
     if (reloadToken === 0) return
     let cancelled = false
     setLoading(true)
-    void searchSites({ q: '', tag: slug, limit: 100, identity }).then((res) => {
+    void searchSites({ q: '', tag: slug, limit: 100, status: 'active', identity }).then((res) => {
       if (cancelled) return
-      setSites(res.hits.map((h) => h.site).filter((s): s is HubSite => Boolean(s)))
+      // 与 SSR 的 loadTagPage 同口径：只保留 active，别让重试把 broken/pending 放上页面
+      setSites(
+        res.hits
+          .map((h) => h.site)
+          .filter((s): s is HubSite => s !== null && s.status === 'active'),
+      )
       setDegraded(Boolean(res.degraded))
       setLoading(false)
     })

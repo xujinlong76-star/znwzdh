@@ -49,8 +49,11 @@ type TagMeta = { ok: boolean; tag: { name: string; slug: string; description: st
  */
 async function loadTagPage(slug: string) {
   const [res, tagRes] = await Promise.all([
+    // status=active 必须下推到中枢：标签页只展示存活站点，而 limit=100 是硬上限。
+    // 不带这个参数时，broken/pending 会先占掉名额，页面再过滤就可能把本来达标的
+    // 标签误判成薄页（noindex），与 /api/tags 的存活计数、sitemap 门槛不同口径。
     hubGet<{ hits: Array<{ site: HubSite }> }>(
-      '/api/search?q=&tag=' + encodeURIComponent(slug) + '&limit=100',
+      '/api/search?q=&status=active&tag=' + encodeURIComponent(slug) + '&limit=100',
       60,
     ),
     hubGet<TagMeta>('/api/tags/resolve?q=' + encodeURIComponent(slug), 60),

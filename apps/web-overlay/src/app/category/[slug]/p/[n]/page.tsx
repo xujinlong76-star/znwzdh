@@ -4,8 +4,10 @@ import { safeDecodeParam } from '@/lib/server/route-params'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { ogImageUrl } from '@/lib/seo/og-text'
 import { categoryHref, isCategoryUuidRef } from '@/lib/seo/category-url'
+import { categoryPageHasSites } from '@/lib/seo/category-pagination'
 import {
   CategoryBoard,
+  PAGE_SIZE,
   categoryPageName,
   categoryPageUrlKey,
   loadCategoryPage,
@@ -55,6 +57,14 @@ async function resolve(ref: string, n: number) {
   const data = await loadCategoryPage(safeRef, n)
   // 分类不存在 / 已停用 / 这一页没有站点：与第 1 页同一口径
   if (data.categories !== null && (!data.category || !data.qualifies)) notFound()
+  // 中枢抖动时 qualifies 被放宽为 true（避免一次上游故障把整批分页打成 404），
+  // 但任意大页码会撞上 /api/search 的 offset 上限（1000）被 zod 400，
+  // hubGet 把 4xx 也归为 null，于是 /p/18、/p/9999 会渲染 200 空页且可被索引。
+  // 计数可用时按「总页数 + 中枢 offset 上限」判界：超出范围的页码是真 404，不是降级。
+  if (data.degraded && data.category && data.counts) {
+    const total = data.counts.get(data.category.id) ?? 0
+    if (!categoryPageHasSites(n, total, PAGE_SIZE)) notFound()
+  }
   return { safeRef, data }
 }
 

@@ -320,6 +320,8 @@ export interface SearchParams {
   offset?: number
   categoryId?: string
   tag?: string
+  /** 站点状态过滤（可选）；分类/标签浏览页用 active，避免 broken/pending 占分页名额 */
+  status?: 'active' | 'pending' | 'broken' | 'archived'
   /** 身份标识（匿名 anonId 或登录 userId），用于个性化与历史 */
   identity?: string
 }
@@ -330,6 +332,7 @@ export async function searchSites(params: SearchParams, signal?: AbortSignal): P
   if (params.offset) query.set('offset', String(params.offset))
   if (params.categoryId) query.set('categoryId', params.categoryId)
   if (params.tag) query.set('tag', params.tag)
+  if (params.status) query.set('status', params.status)
   // 兼容旧中枢：query 保留 anonId；新中枢优先读 X-Navhub-Anon-Id header（防日志泄漏）
   if (params.identity) query.set('anonId', params.identity)
   try {

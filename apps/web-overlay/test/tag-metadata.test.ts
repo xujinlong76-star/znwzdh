@@ -93,4 +93,16 @@ describe("标签段 metadata 归属（Next title.template 截断修复的结构�
     // 共享 loader 供 metadata 与页面复用（fetch memoization 去重）
     expect(src).toContain("async function loadTagPage");
   });
+
+  it("标签检索把 status=active 下推到中枢（避免 broken 占满 limit 名额）", () => {
+    // 标签页只展示 active，但 limit=100 是硬上限：不在 API 侧过滤时，
+    // broken/pending 会先占名额，active 结果可能被挤到门槛以下而误判薄页。
+    const page = overlayFile("src/app/tags/[slug]/page.tsx");
+    expect(page).toContain("status=active&tag=");
+    expect(page).toContain("&limit=100");
+    // 客户端重试与 SSR 同口径，避免降级重取后把非 active 站点放上页面
+    const board = overlayFile("src/components/tag-results-board.tsx");
+    expect(board).toContain("status: 'active'");
+    expect(board).toContain("s.status === 'active'");
+  });
 });

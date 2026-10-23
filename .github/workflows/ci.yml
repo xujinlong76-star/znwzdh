@@ -374,7 +374,24 @@ jobs:
       - name: 安装 Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
       - name: 执行 Playwright E2E 测试
-        run: pnpm test:e2e
+        run: |
+          set +e
+          pnpm test:e2e 2>&1 | tee /tmp/e2e.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [ "$rc" != "0" ]; then
+            # 红灯必须自带「红在哪条用例」。原因不是偷懒：没有 GitHub token 时
+            # `/actions/jobs/{id}/logs` 恒 403、playwright-report 产物恒 total_count:0，
+            # 跨机器（和下一个会话）只剩 annotations 可读，而 step 自己只会留
+            # 「Process completed with exit code 1.」这一级噪声 —— 于是「哪条用例红了」
+            # 只能靠本地复跑猜，猜不出来就只能干等。
+            # list reporter 在末尾打「N failed」小节，每条是 `spec.ts:line:3 › 标题`，
+            # 直接抽它；解析不到也照样发（无条件发，否则脚本一挂就又回到零信息）。
+            failed=$(awk '/^ *[0-9]+ failed/{f=1;next} f && /^ {4}\[/ {sub(/^ +/, ""); print; next} f { exit }' /tmp/e2e.log | tr '\n' '/')
+            echo "::error::E2E rc=${rc}；失败用例：${failed:-（未解析到，见下方抽样）}"
+            echo "::error::报错抽样：$(grep -m 3 -E 'Error: |expect\(|Test timeout|Target crashed' /tmp/e2e.log | tr '\n' '|')"
+            exit "$rc"
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !cancelled() }}
         with:

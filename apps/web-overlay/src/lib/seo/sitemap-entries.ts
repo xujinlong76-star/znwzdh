@@ -17,9 +17,11 @@ import { MIN_SITES_FOR_CATEGORY_INDEX, MIN_SITES_FOR_TAG_INDEX } from './thresho
 export interface SiteRef {
   id: string
   updatedAt?: number | null
-  /** 分类计数的双指针（建站时父级与子级都挂） */
+  /** 分类计数的双指针（建站时父级与子级都挂；计数只取主指针） */
   categoryId?: string | null
   subCategoryId?: string | null
+  /** 停用站点与 search 一样不对外可见，不能进 sitemap，也不能凑分类达标数 */
+  enabled?: boolean | null
 }
 
 export interface TagRef {
@@ -92,7 +94,7 @@ export function siteEntries(origin: string, sites: SiteRef[]): MetadataRoute.Sit
   const out: MetadataRoute.Sitemap = []
   for (const s of sites ?? []) {
     const id = typeof s?.id === 'string' ? s.id.trim() : ''
-    if (!id || seen.has(id)) continue
+    if (!id || s?.enabled === false || seen.has(id)) continue
     seen.add(id)
     out.push({
       url: `${normOrigin(origin)}/site/${encodeURIComponent(id)}`,
@@ -125,12 +127,14 @@ export function tagEntries(
   return out
 }
 
-/** 分类计数：一级指针与子级指针都要算，同一站点只计一次 */
+/** 分类计数：只按主指针（category_id），与类目页 search、/api/categories/counts 同口径 */
 export function countCategorySites(sites: SiteRef[]): Map<string, number> {
   const counts = new Map<string, number>()
   for (const site of sites ?? []) {
-    // 单主指针：与类目页 search 的 categoryId 过滤、中枢 /api/categories/counts
-    // 完全同口径。副指针（subCategoryId）在浏览侧不可见，计入会让一级根的
+    // 停用站点在 search 里不可见，不能凑分类达标数；否则 sitemap 会提交
+    // 一个实际 404 的分类页。
+    if (site?.enabled === false) continue
+    // 单主指针：副指针（subCategoryId）在浏览侧不可见，计入会让一级根的
     // 子树合计重复计算同根副指针站点（如 jobs-and-career 11 → 13），
     // 产出指向 404 的 sitemap 条目。
     const id = site.categoryId
@@ -144,7 +148,7 @@ export function countCategorySites(sites: SiteRef[]): Map<string, number> {
  *
  * URL 用 slug 形态（`/category/{slug}`）：sitemap 是「告诉爬虫哪批 URL 值得
  * 长期抓」的清单，提交 uuid 等于把 301 前的旧地址再喂一遍。
- * 计数由调用方提供：叶子用 `category_id ∪ sub_category_id` 去重后的自身计数，
+ * 计数由调用方提供：叶子用主指针 `category_id` 的自身计数，
  * **一级根必须传后代聚合值**（`descendantSiteCounts`）——新树站点只挂叶子，
  * 原始计数里每个根都是 0，不聚合就是「18 个根全站缺席」。
  * 详情页对未达标分类直接 404，这里若照单全收就是主动提交死链。

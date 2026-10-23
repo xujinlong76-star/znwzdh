@@ -24,13 +24,15 @@ describe('staticEntries', () => {
 })
 
 describe('countCategorySites', () => {
-  it('只按主指针计数：副指针在浏览侧不可见，计入会超过子叶之和', () => {
+  it('只按主指针计数并跳过停用站点：副指针在浏览侧不可见，计入会超过子叶之和', () => {
     const counts = countCategorySites([
       { id: 'a', categoryId: 'parent', subCategoryId: 'child' },
       { id: 'b', categoryId: 'parent', subCategoryId: 'child' },
       { id: 'c', categoryId: 'parent', subCategoryId: null },
       { id: 'd', categoryId: null, subCategoryId: 'child' },
       { id: 'e', categoryId: '  ', subCategoryId: '' },
+      // 停用站点不算：search 不返回它，计数也不能让它凑达标
+      { id: 'f', categoryId: 'parent', enabled: false },
     ])
     expect(counts.get('parent')).toBe(3)
     expect(counts.has('child')).toBe(false)
@@ -83,12 +85,13 @@ describe('categoryEntries', () => {
 })
 
 describe('siteEntries', () => {
-  it('去重、跳过空 id、id 做 encode', () => {
+  it('去重、跳过空 id 与停用站点、id 做 encode', () => {
     const entries = siteEntries(base, [
       { id: 'alpha', updatedAt: 1_700_000_000_000 },
       { id: 'alpha', updatedAt: 1_700_000_000_000 },
       { id: '  ' },
       { id: '' },
+      { id: 'disabled', enabled: false },
       { id: 'a/b c' },
     ])
     expect(entries.map((e) => e.url)).toEqual([

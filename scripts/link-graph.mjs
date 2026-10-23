@@ -54,6 +54,15 @@ const FROM_DB = (() => {
   const str = String(v)
   return ['none', 'off', 'false', 'true'].includes(str) ? null : str
 })()
+/**
+ * --from-sitemap：用站点自己公布的 sitemap 当「应有页面」分母。
+ *
+ * 为什么必须补这个来源：--from-db=none 时分母只剩 BFS 发现的 URL，
+ * 而 BFS 只可能发现「有入链」的页面 —— 可达率恒为 100%、孤岛恒为 0，
+ * 这两个指标就成了同义反复。sitemap 是发布方对搜索引擎的承诺清单，
+ * 与抓取图独立，才能测出「清单里有、图里走不到」的页面。
+ */
+const FROM_SITEMAP = Boolean(argv['from-sitemap'])
 // 默认 2 而不是 1：710 个 1 站标签按设计渲染成 <span>（不接内链）+ 页面
 // noindex（TAG_LINK_MIN=2，见 components/tag-cloud.tsx）。universe 若仍按
 // minCount=1 统计，它们会被算成孤岛，--check 必红。需要旧口径时显式传
@@ -160,20 +169,62 @@ function extractLinks(html, pageKey) {
   return [...out]
 }
 
-// ---------- 应有页面清单（从库反推） ----------
-async function loadUniverse() {
-  if (!FROM_DB) return new Map()
+// ---------- 应有页面清单（从库 / sitemap 反推） ----------
+
+/**
+ * 拉取并解析 sitemap（支持 sitemap index 一层展开）。
+ *
+ * <loc> 必须与 BASE 同源：normalize 会丢弃异源地址，而空分母会让
+ * 可达率检查变成同义反复，所以「解析出 0 条」必须显式失败而不是静默通过。
+ */
+async function loadSitemapUniverse() {
+  const root = `${BASE}/sitemap.xml`
+  const fetchXml = async (url) => {
+    const res = await fetch(url, {
+      headers: {
+        'user-agent': 'navhub-link-graph/1.0 (+internal IA audit)',
+        accept: 'application/xml,text/xml',
+      },
+    })
+    if (!res.ok) throw new Error(`--from-sitemap 取数失败：${url} 返回 HTTP ${res.status}`)
+    return res.text()
+  }
+  const locsIn = (xml) =>
+    [...xml.matchAll(/<loc>([\s\S]*?)<\/loc>/g)].map((m) => m[1].trim().replace(/&amp;/g, '&'))
+
+  const rootXml = await fetchXml(root)
+  const out = new Set()
+  const add = (loc) => {
+    const key = normalize(loc, BASE)
+    if (key) out.add(key)
+  }
+  if (/<sitemapindex\b/i.test(rootXml)) {
+    for (const child of locsIn(rootXml)) {
+      for (const loc of locsIn(await fetchXml(child))) add(loc)
+    }
+  } else {
+    for (const loc of locsIn(rootXml)) add(loc)
+  }
+  if (out.size === 0) {
+    throw new Error(
+      `--from-sitemap 解析出 0 条 URL（${root} 响应 ${rootXml.length} 字节）。` +
+        '检查 BASE 是否为对外 origin：sitemap 的 <loc> 与 BASE 不同源时会被归一丢弃，' +
+        '而空分母会让可达率检查变成同义反复。',
+    )
+  }
+  return out
+}
+
+/** 从 SQLite 库存反推：数据库里有、但可能没有任何入链的页面。 */
+async function addDbUniverse(add) {
   let DatabaseSync
   try {
     ;({ DatabaseSync } = await import('node:sqlite'))
   } catch {
     console.warn('[warn] node:sqlite 不可用（需 Node >= 22），跳过 --from-db，孤岛统计将只覆盖已被发现的 URL')
-    return new Map()
+    return
   }
   const db = new DatabaseSync(resolve(FROM_DB))
-  const out = new Map()
-  const add = (k) => out.set(k, true)
-
   add('/')
   for (const t of ['/tags', '/collections', '/marketplace', '/hot', '/graph', '/algorithms', '/custom', '/import', '/videos', '/submit']) add(t)
 
@@ -193,6 +244,15 @@ async function loadUniverse() {
     )
     .all(TAG_MIN)) {
     add(`/tags/${encodeURIComponent(r.slug)}`)
+  }
+}
+
+async function loadUniverse() {
+  const out = new Map()
+  const add = (k) => out.set(k, true)
+  if (FROM_DB) await addDbUniverse(add)
+  if (FROM_SITEMAP) {
+    for (const key of await loadSitemapUniverse()) add(key)
   }
   return out
 }
@@ -223,7 +283,10 @@ async function crawl() {
 
   let frontier = ['/']
   let d = 0
-  while (frontier.length && d < MAX_DEPTH && seen.size < MAX_URLS) {
+  // 被 --max-urls 截断时，未入队的 URL 仍会由 edges 计入入链，但永远不会被抓取；
+  // 若静默通过，门禁会拿一份「没走完的图」当全网结论。这里显式记账。
+  let truncated = false
+  while (frontier.length && d < MAX_DEPTH) {
     const next = []
     for (let i = 0; i < frontier.length; i += CONCURRENCY) {
       const batch = frontier.slice(i, i + CONCURRENCY)
@@ -241,24 +304,29 @@ async function crawl() {
         if (t) title.set(key, t[1].trim().slice(0, 120))
         if (html) robots.set(key, extractRobots(html))
         for (const to of links) {
-          if (!seen.has(to) && seen.size < MAX_URLS) {
-            seen.add(to)
-            depth.set(to, d + 1)
-            next.push(to)
+          if (seen.has(to)) continue
+          if (seen.size >= MAX_URLS) {
+            truncated = true
+            continue
           }
+          seen.add(to)
+          depth.set(to, d + 1)
+          next.push(to)
         }
       }
     }
     frontier = next
     d += 1
   }
+  // 待抓取队列没排空且名额已用尽，说明是被上限截断而不是深度耗尽
+  if (frontier.length && seen.size >= MAX_URLS) truncated = true
   // 已发现但未抓取的（超过 max-urls）也要计入"入链"，否则孤岛会被高估
   for (const to of edges.values()) for (const t of to) if (!depth.has(t)) depth.set(t, MAX_DEPTH + 1)
-  return { edges, depth, title, status, robots }
+  return { edges, depth, title, status, robots, truncated }
 }
 
 // ---------- 指标 ----------
-function computeMetrics({ edges, depth, title, status }, universe) {
+function computeMetrics({ edges, depth, title, status, truncated }, universe) {
   const indegree = new Map()
   const outdegree = new Map()
   for (const [from, tos] of edges) {
@@ -320,6 +388,7 @@ function computeMetrics({ edges, depth, title, status }, universe) {
       contentAvgIndegree: +(contentIndegree / Math.max(1, contentUrls.length)).toFixed(3),
       maxOutlinks: Math.max(0, ...outdegree.values()),
       maxOutlinksAt: [...outdegree.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+      crawlTruncated: truncated,
       totalBytes: stats.bytes,
       fetchFailed: stats.failed,
     },
@@ -351,7 +420,7 @@ function printReport(m, probe) {
   const num = (s, n) => String(s).padStart(n)
   console.log('\n=== 链接图总览 ===')
   const t = m.totals
-  console.log(`库存页面          ${num(t.universeSize, 6)}   （--from-db 反推，含未发现的孤岛）`)
+  console.log(`库存页面          ${num(t.universeSize, 6)}   （--from-db / --from-sitemap 反推，含未发现的孤岛）`)
   console.log(`图中 URL          ${num(t.urls, 6)}   （已抓取 ${t.crawled}）`)
   console.log(`孤岛（入链=0）    ${num(t.orphanCount, 6)}   ${t.orphanPct}%`)
   console.log(`内容型页面        ${num(t.contentUrls, 6)}   平均入链 ${t.contentAvgIndegree}`)
@@ -519,6 +588,12 @@ async function assertPagination(graph) {
 function checkThresholds(m, probe, pagination) {
   const t = m.totals
   const fails = []
+  if (t.crawlTruncated) {
+    fails.push(
+      `抓取被 --max-urls=${MAX_URLS} 截断（应有 ${t.urls} 个 URL）：未抓页面既可能拉低可达率，也可能漏掉出链，` +
+        '本次可达率/孤岛不能当作全网结论；请提高上限后重跑',
+    )
+  }
   if (t.contentAvgIndegree < 3.5) fails.push(`内容型页面平均入链 ${t.contentAvgIndegree} < 3.5`)
   if (t.reachablePct < 98) fails.push(`≤${MAX_DEPTH} 跳可达占比 ${t.reachablePct}% < 98%`)
   if (t.orphanCount > 40) fails.push(`孤岛数 ${t.orphanCount} > 40`)
@@ -532,7 +607,10 @@ function checkThresholds(m, probe, pagination) {
 // ---------- main ----------
 const started = Date.now()
 const universe = await loadUniverse()
-console.log(`[universe] ${universe.size} 个库存页面（来自 ${FROM_DB}）`)
+const universeSource =
+  [FROM_DB ? `--from-db=${FROM_DB}` : null, FROM_SITEMAP ? 'sitemap' : null].filter(Boolean).join(' + ') ||
+  '无（分母只剩 BFS 发现的 URL，可达率会虚高）'
+console.log(`[universe] ${universe.size} 个应有页面（来自 ${universeSource}）`)
 const graph = await crawl()
 const metrics = computeMetrics(graph, universe)
 const probe = PROBE ? await probeSoft404() : null

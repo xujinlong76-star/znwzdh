@@ -110,6 +110,8 @@ Node `Headers.get()` 把同名头用 `, ` 拼接的门禁侧假象。所以维�
 
 **做法**：`generateMetadata` 的 `probe.status === 'failed'` 分支输出 `robots: 'noindex, follow'`，
 即「这份快照不可信，但仍顺着内链走」；一个 revalidate 周期后正常快照覆盖、标记自动消失。
+**（2026-10-23 更正：最后这半句只在取数不持续失败时成立 —— 见 5.9。抓取式全量扫描下
+`failed` 会反复重演，壳页集合每轮大幅轮换，坏快照并不会自己收敛掉。）**
 
 **复核**：
 
@@ -292,6 +294,50 @@ CI 里这一条**只提示不阻断**（`::warning::`，红族名单进 annotati
 `shape`/`shapeDiff` —— 脚本原先在模块末尾无条件 `process.exit()`，被测试 import 时
 会连带整个 vitest worker 消失，表现是「0 tests」的假绿。
 
+**5.9 生产口径全量实测：收录面的真问题是自家限流把降级壳写进了缓存。**
+2026-10-23 对着本地 996 站点库 + prod 产物（`next start -p 3079`）把 `seo-audit-prod` 的
+三条命令跑全：① ISR 三层 rc=0（5.6 已记，14 页 `s-maxage=60` 实测）；② `seo-audit.mjs --all`
+全量 1126 页 rc=1；③ `link-graph.mjs --check` rc=0（阈值全过，12 个随机 slug 探测 0 个 200）。
+第二轮的退出码我当场读错了（`echo` 打断了 `PIPESTATUS`），按判据 `issues.length > 0` 应为 1，
+不影响结论。
+
+全量这一轮把结构性的事说清楚了：**canonical 0 / og:image 缺失 0 / JSON-LD 无效 0 / 取数失败 0**
+（三轮独立跑都是 0，1126/1126 页都拿到 200），红的全是同一件事 —— `<h1>` 缺失的集合**包含**
+「出现在 sitemap 却声明 `noindex, follow`」的集合：456（第一轮）/ 704（第二轮）/ 532（第三轮），
+`internalLinkMissing`（459/717/538）与那个「站点详情 - NavHub 导航」被 456 页共享的标题重复组，
+都是同一批页的连带症状。
+
+集合**不是固定的**：第一轮那 456 个壳页到第三轮只剩 274 个还是壳（182 个恢复、258 个新坏）。
+这条同时更正我自己前一轮的判断：当时按单轮取样写下「27 个 `/marketplace/*` 页稳定缺 `<h1>`」，
+暖化后逐个复查（含 `/marketplace/travel-mobility`）是 `h1=1` —— 那 27 个与降级壳同源，
+**不是模板缺口**，是同一批冷生成快照。
+
+机制是实测出来的，不是推测：`/site/[id]` 渲染期直连中枢取数
+（`hubGetProbe('/api/sites/{id}', 60)`），三分法只有中枢**确认 404** 才 `notFound()`，
+其它非 2xx 一律算 `failed` 走降级壳 + `noindex, follow`（裁决 2 选的盖章方案）。
+而中枢注册了**全局按 IP 的 300 req/min**（`apps/api/src/server.ts:146`），web 侧所有 SSR
+取数在部署拓扑上是同一个出口 IP。抓取式扫 1126 页 ≈ 90 秒 ≈ 每分钟 750+ 次取数，
+是额度的 2.5 倍。直接复现：取 60 个刚被判壳的 id，以 8 路并发把同一批重放 8 遍
+（480 请求）→ **185 个 429、0 超时、0 连接错误、总耗时 1.0 秒**。
+所以快照坏掉不是中枢挂了，是我方取数被自家限流挡住了 —— 而**这份降级壳是会被 ISR 缓存的那一份**：
+爬虫在 60s 窗口里抓到的可能就是 `noindex, follow` 的骨架，配合
+`stale-while-revalidate=31535940`，这份壳在 CDN 上理论上能活一年。1126 页的站，
+任一次全站抓取里有 40%～63% 的页处在这个形态。
+CI 里这条永远看不见：预览作业是 57 站点种子 + 14 页抽查，取数量级 10¹，碰不到 300/min；
+只有 prod 口径全量跑才显形。
+
+与 5.7 轮换的相互作用（新的门禁抖动，要会读）：`--rotate` 让每轮抽不同页，抽到当下是壳的页
+就红三项（`<h1>` 0 / noindex / 无 `ld+json`）。实测同一个 key `bravo` 先后两轮
+分别是 rc=1 和 rc=0 —— **取样是确定的，页面当下形态不是**。这不是轮换的 bug，
+但它意味着生产 dispatch 的红必须分两类读：契约退化 vs 上游限流抖动，门禁本身不区分，
+所以 dispatch 红了要先重跑一次才能定性。
+顺带记下契约的一个盲区：壳页那个通用标题「站点详情 - NavHub 导航」在契约里判绿 ——
+契约只查 title 有没有、长度够不够，不查它是否与本页站点名一致；
+456 页共享同一标题这件事只有 `seo-audit` 的 `titleDuplicateGroups` 看得见。
+
+仍未验证的两跳：真实域名的 dispatch，和 CDN/反代对 `cache-control` 的改写；
+再加一条同族的未验证项 —— `trust proxy` 不配时限流会整站共享一桶（`server.ts:100` 自己写了这个前提）。
+
 **复核**：
 
 ```bash
@@ -324,6 +370,22 @@ node scripts/check-isr-routes.mjs --live --base=http://localhost:3079 --sample=2
   --sitemap-min-site=200 --sitemap-min-category=10 --sitemap-min-tag=5 \
   --sitemap-min-collection=2 --sitemap-min-plugin=20 --sitemap-min-directory=1 \
   --sitemap-min-lastmod-ratio=0.9
+# 5.9 的降级壳轮换：全量审计连跑两轮，比较两轮 noindex 集合的交集/新增/恢复
+node scripts/seo-audit.mjs --base=http://localhost:3079 --all --json > .tmp-a1.json
+node scripts/seo-audit.mjs --base=http://localhost:3079 --all --json > .tmp-a2.json
+node -e 'const s=(f)=>new Set(JSON.parse(require("fs").readFileSync(f,"utf8")).issues
+  .filter(i=>String(i.message).startsWith("出现在 sitemap 却声明 noindex")).map(i=>i.scope));
+  const a=s(".tmp-a1.json"),b=s(".tmp-a2.json");
+  console.log({run1:a.size,run2:b.size,仍是壳:[...a].filter(u=>b.has(u)).length,
+  恢复:a.size-[...a].filter(u=>b.has(u)).length,新坏:[...b].filter(u=>!a.has(u)).length})'
+# 429 复现（把刚被判壳的 id 以 8 路并发重放）
+node -e 'const j=JSON.parse(require("fs").readFileSync(".tmp-a1.json","utf8"));
+  const ids=[...new Set(j.issues.filter(i=>String(i.message).startsWith("出现在 sitemap 却声明 noindex"))
+    .map(i=>new URL(i.scope).pathname.split("/").pop()))].slice(0,60);
+  (async()=>{let ok=0,n429=0,paths=[];for(let r=0;r<8;r++)paths.push(...ids);
+   for(let i=0;i<paths.length;i+=8)await Promise.all(paths.slice(i,i+8).map(async id=>{
+    const res=await fetch("http://localhost:8787/api/sites/"+id);res.status===429?n429++:ok++;}));
+   console.log({requests:paths.length,ok,n429})})()'
 ```
 
 环境坑（会伪装成门禁 bug）：这台机器上编辑工具会把 `scripts/*.mjs` 写成 **CRLF**，

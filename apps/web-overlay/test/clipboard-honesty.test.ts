@@ -310,4 +310,19 @@ describe("这次补上的三处静默失败", () => {
     expect(code).not.toContain("navigator.clipboard");
     expect(code).toContain("copyFailureToast(result)");
   });
+
+  it("插件详情徽章弹窗：复制确认落在按钮自身，不只依赖可能被丢弃的 toast", () => {
+    const code = stripComments(overlaySource("src/app/marketplace/[slug]/plugin-detail-view.tsx"));
+    const atLeastTwo = (re: RegExp) => {
+      const count = code.match(re)?.length ?? 0;
+      expect(count, `${re} 出现 ${count} 次`).toBeGreaterThanOrEqual(2);
+    };
+    // 两个按钮都要把 copyText 的结果写入本地反馈
+    atLeastTwo(/reportCopy\(result\)/g);
+    atLeastTwo(/copyFeedback\.state === 'copied'/g);
+    atLeastTwo(/copyFeedback\.state === 'failed'/g);
+    // 失败原因必须可见，且用 role="status" 让辅助技术播报
+    atLeastTwo(/role="status"/g);
+    atLeastTwo(/copyFeedback\.reason/g);
+  });
 });

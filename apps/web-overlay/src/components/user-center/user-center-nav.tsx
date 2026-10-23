@@ -13,10 +13,13 @@ import { cn } from '@/lib/utils'
 
 const ITEMS = [
   { href: '/me', label: '概览' },
+  { href: '/me/account', label: '账号' },
   { href: '/favorites', label: '收藏' },
   { href: '/me/history', label: '搜索历史' },
-  { href: '/me/data', label: '数据与隐私' },
+  { href: '/me/plugins', label: '插件' },
   { href: '/preferences', label: '偏好与 AI' },
+  { href: '/me/settings', label: '设置' },
+  { href: '/me/data', label: '数据与隐私' },
 ] as const
 
 export function UserCenterNav() {

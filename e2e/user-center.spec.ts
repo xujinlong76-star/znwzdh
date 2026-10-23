@@ -73,6 +73,59 @@ test.describe('用户中心：三态', () => {
     await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
     await expect(page.getByText('需要登录后管理云端数据')).toHaveCount(0)
   })
+  test('/me/settings 匿名态：本机设置可编辑，说明登录后同步', async ({ page }) => {
+    await page.goto('/me/settings')
+    await expect(page.getByRole('heading', { name: '设置' })).toBeVisible()
+    await expect(page.getByText('当前为本机匿名身份')).toBeVisible()
+    await expect(page.getByLabel('默认搜索引擎')).toBeVisible()
+    // 匿名态不是故障：不应出现错误重试块
+    await expect(page.getByText('设置暂时取不到')).toHaveCount(0)
+  })
+
+  test('/me/account 匿名态：给登录入口且不渲染资料表单', async ({ page }) => {
+    await page.goto('/me/account')
+    await expect(page.getByRole('heading', { name: '账号与身份' })).toBeVisible()
+    await expect(page.getByText('当前是匿名身份')).toBeVisible()
+    await expect(page.getByRole('link', { name: '登录 / 创建账号' })).toHaveAttribute(
+      'href',
+      '/auth/signin?callbackUrl=/me/account',
+    )
+    await expect(page.getByRole('button', { name: '编辑资料' })).toHaveCount(0)
+  })
+
+  test('/me/account 降级态：会话探测失败显示可重试错误', async ({ page }) => {
+    await page.route('**/api/auth/session', (route) => route.fulfill({ status: 503, body: '{}' }))
+    await page.goto('/me/account')
+    await expect(page.getByText('账号信息暂时取不到')).toBeVisible()
+    await expect(page.getByText('登录状态暂时无法确认，请稍后重试')).toBeVisible()
+    await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
+  })
+
+  test('/me/plugins 匿名态：展示入口并说明计数为 0 的原因', async ({ page }) => {
+    await page.goto('/me/plugins')
+    await expect(page.getByRole('heading', { name: '插件中心' })).toBeVisible()
+    await expect(page.getByRole('link', { name: /已安装插件/ })).toHaveAttribute(
+      'href',
+      '/marketplace/installed',
+    )
+    await expect(page.getByText('当前是匿名身份')).toBeVisible()
+  })
+
+  test('/me/plugins 计数失败：落错误态而不是渲染成 0', async ({ page }) => {
+    // 伪造登录态，再把 /api/me 打挂：插件页必须报错并可重试
+    await page.route('**/api/auth/session', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ user: { id: 'e2e-user' } }),
+      }),
+    )
+    await page.route('**/api/me', (route) => route.fulfill({ status: 503, body: '{}' }))
+    await page.goto('/me/plugins')
+    await expect(page.getByText('插件数据暂时取不到')).toBeVisible()
+    await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
+  })
+
   test('/favorites 匿名态：可以建本地收藏夹并持久化（P2）', async ({ page }) => {
     // 先塞一条本地收藏：收藏夹面板只在有收藏时出现（没有收藏时不需要分组）
     // 只播种、不清空：addInitScript 在每次导航（含 reload）都会跑，

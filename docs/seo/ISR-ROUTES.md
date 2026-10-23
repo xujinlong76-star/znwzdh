@@ -582,6 +582,11 @@ CI 侧的四个前提（写死在作业注释里，2026-10-23 由一次**误判�
    「web 侧没吃到豁免 + 3000 端口 PID」，而不是让阶段 3 替脚手架背锅。
 4. 预检用的页与门禁的 20 页样本会重叠一个，所以 `--min-miss=8` 相对 20 页留了足够余量。
 
+**绿灯也得自证**：这一步成功时同样发一条 `::notice::`，把四个阶段的计数原样带出来。
+读 CI 结论的常用姿势是无 token 的匿名 API（作业日志 403，只有 annotations 可读，见
+「读 CI 结论」一节），所以「步骤 success」本身不构成证据 —— 没有这条 notice，
+下一轮想确认「阶段 3 真的现渲染了 19 页」还得再想办法。
+
 ```bash
 # 单元级（假中枢 + 假前端，逐阶段造反例；9 条用例）
 node node_modules/vitest/vitest.mjs run scripts/check-rate-limit-exemption.test.ts

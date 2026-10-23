@@ -462,6 +462,12 @@ jobs:
             printf '::error::输出尾部：%s\n' "$(tail -c 700 /tmp/rate-limit.log | tr '\n%' '|')"
             exit "$rc"
           fi
+          # 绿灯也要能被外部读到：本机没有 gh、也没有 token，作业日志接口是 403，
+          # annotations 是唯一的出口。少了这一行，「步骤 success」和「四阶段各自真的成立」
+          # 之间就只能靠人信一次 —— 而这条检查的全部意义恰恰是「不靠信」。
+          printf '::notice::限流豁免四阶段成立（额度=40/min，凭据长度=%s）：%s\n' \
+            "${#NAVHUB_INTERNAL_TOKEN}" \
+            "$(grep -oE '阶段 [0-9][^—]*' /tmp/rate-limit.log | head -4 | tr '\n%' '|')"
       - name: 失败时留下预览站日志
         if: ${{ failure() }}
         run: |

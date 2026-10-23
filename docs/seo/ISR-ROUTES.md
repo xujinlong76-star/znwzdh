@@ -112,6 +112,8 @@ Node `Headers.get()` 把同名头用 `, ` 拼接的门禁侧假象。所以维�
 即「这份快照不可信，但仍顺着内链走」；一个 revalidate 周期后正常快照覆盖、标记自动消失。
 **（2026-10-23 更正：最后这半句只在取数不持续失败时成立 —— 见 5.9。抓取式全量扫描下
 `failed` 会反复重演，壳页集合每轮大幅轮换，坏快照并不会自己收敛掉。）**
+**（同日 5.10：`failed` 的常态来源不是中枢挂了，是我方 SSR 取数撞上自家按 IP 限流拿到 429。
+触发面消掉了，所以盖章方案保留下来只对真故障生效 —— 别把它当成「壳已修好」的证据。）**
 
 **复核**：
 
@@ -387,6 +389,99 @@ node -e 'const j=JSON.parse(require("fs").readFileSync(".tmp-a1.json","utf8"));
     const res=await fetch("http://localhost:8787/api/sites/"+id);res.status===429?n429++:ok++;}));
    console.log({requests:paths.length,ok,n429})})()'
 ```
+
+**5.10 修复这条链：SSR 取数带共享凭据走限流豁免，收录面 A/B 实测 414 个壳 → 0。**
+
+路线选择先说清楚：裁决 2 已经证伪「`failed` 不落缓存」（`connection()` → 500），所以剩下的口子
+只有「让 SSR 取数不吃用户侧额度」这一条。做法是三处，缺一不可：
+
+1. `apps/api/src/internal-traffic.ts` —— `isInternalTraffic(headerValue, configuredToken)`：
+   **未配置 `NAVHUB_INTERNAL_TOKEN` 时恒为 false**（零豁免，与修复前逐字一致）；数组头取第一个；
+   先比长度再 `timingSafeEqual`（长度不等时该函数会抛，抛错被上层吞掉就是「放行」）。
+2. `apps/api/src/server.ts` 注册全局限流时挂 `allowList`。选型理由记一下：
+   `@fastify/rate-limit@10.3.0` **没有 `skipFn`**（类型里只有 `keyGenerator`），能表达「豁免」的
+   只有 `allowList`（`index.js:225-233`）；而路由级 `config.rateLimit` 是 `mergeParams` 覆写全局参数，
+   所以全局 `allowList` 对带 per-route `max` 的路由依然生效 —— 不需要逐路由改。
+3. `apps/web-overlay/src/lib/server/hub.ts` —— 只有这条服务端取数路径附带
+   `x-navhub-internal-token`。**浏览器侧的 `/api/hub/*` 代理不许带**（否则全站访客流量整体被标成
+   内部流量，按 IP 限流形同虚设）；这条边界由 `apps/web/test/hub-internal-token.test.ts` 里的
+   源码级断言钉住，不是靠口头约定。
+
+为什么不用「内网 IP 段」当判据：`NAVHUB_TRUST_PROXY=1` 采信 XFF 最左值（那是客户端自报的），
+自报 `X-Forwarded-For: 127.0.0.1` 就能白拿无限额度。凭据没有这个口子。
+凭据也不落日志：pino 的 redact 路径里加了 `req.headers['x-navhub-internal-token']`，
+实测带凭据请求打完之后 api 日志里该 token 出现 **0 次**。
+额度上限顺带显式化成 `NAVHUB_RATE_LIMIT_MAX`（默认 300，test 模式 10000），它是给压测和口径复现用的，
+**不是豁免的替代品**。
+
+部署前提（这条必须写在明面上，否则等于没修）：`NAVHUB_INTERNAL_TOKEN` 要在 **api 与 web 两侧同值**；
+只配一侧等于没配（`apps/api/test/compose-env-parity.test.ts` 钉住三个服务的透传写法）；
+prod 下配置值短于 32 字符直接启动失败（`assertSecurityConstraints` 2b）；
+两侧都不设时行为与修复前逐字一致 —— **线上收录面仍然是 5.9 的形态，直到部署方把这个 env 配上**。
+
+单元级前后对照（scratch 中枢，同一个 1 分钟窗口内连打三发 480 请求 @8 并发）：
+
+| 请求形态 | ok | 429 |
+| --- | --- | --- |
+| 不带凭据（窗口起点） | 300 | 180 |
+| 带 `x-navhub-internal-token` | 480 | 0 |
+| 再打一发不带凭据 | 0 | 480 |
+
+第三行是这组数据的要点：豁免那一发打完之后公共桶**确实已经被抽干**，不是运气好错开了时窗。
+
+收录面 A/B（prod 口径：同一个 `.next-prod-preview` 产物、同一个 1020 站点库的在线快照、
+同一个中枢进程，唯一变量是 web 侧有没有带凭据；库快照用 `better-sqlite3` 的 `backup()`，
+不碰常驻中枢正在写的 `data/navhub.db`）：
+
+| | A：不带凭据（修复前形态） | B：带凭据（修复后形态） |
+| --- | --- | --- |
+| 页数 | 1126 | 1126 |
+| `robotsIssues`（在 sitemap 里却 `noindex`） | 414 | **0** |
+| `pagesWithIssues` | 418 | 9 |
+| `internalLinkMissing` | 418 | 9 |
+| `titleDuplicateGroups` | 1（414 页共享「站点详情 - NavHub 导航」） | 4 |
+| `descriptionTooShort` | 454 | 40 |
+| 耗时 | 136s | 104s |
+
+A 的壳集合与 B 的壳集合交集为 0（B 为空）。A 组这一发的 414 与 5.9 的 456/704/532 是同一量级 ——
+壳集合本来就每轮随限流窗口轮换，**别把绝对数当基线，要看的是「A 有 B 无」这个形状**。
+B 剩下的 9 项**不是壳**：都是
+`站点详情缺少相关 /site/ 站内链接`，那些页有真实 title 与 `<h1>`，是相关推荐为空的内容面问题，
+本轮（只看技术面）不动。这组对照也印证了 5.9 的判断：414 个壳贡献了「描述过短」里的绝大部分，
+以及那一个 414 页共享的标题重复组。
+
+**复测前必须先清的缓存（新坑，能把「复测」变成自欺）**：ISR 快照落盘在
+`<distDir>/server/route-cache/APP_PAGE/**`，**清 `<distDir>/cache` 不够、重启 `next start` 也不够**。
+本轮第一次复测就是被这个骗过去的：首个请求直接 `x-nextjs-cache: STALE`，拿到的还是上一轮的壳。
+A/B 的正确前置是 `rm -rf <distDir>/cache <distDir>/server/route-cache`，并且验证首个请求是 `MISS`。
+这条同时给 5.9 的观察补个解释：所谓「壳会自愈」是第二次请求触发的后台重生成，
+而爬虫通常只看第一眼，且 `stale-while-revalidate=31535940` 会让中间层把第一眼供下去很久。
+
+**复核**：
+
+```bash
+# 限流豁免（含真 429 对照）、compose 透传、web 侧带头与代理边界
+node node_modules/vitest/vitest.mjs run apps/api/test/internal-rate-limit.test.ts \
+  apps/api/test/compose-env-parity.test.ts apps/web/test/hub-internal-token.test.ts
+# 单元级三发对照：scratch 中枢配上 token 后，对 /api/sites 各打 480 请求 @8 并发
+#   顺序必须是 不带 → 带 → 不带，第三发才是「桶确实空着而豁免仍通」的证明
+# 收录面 A/B：同一产物、同一库快照，唯一变量是 web 进程的 NAVHUB_INTERNAL_TOKEN
+cd apps/web && rm -rf .next-prod-preview/cache .next-prod-preview/server/route-cache
+NEXT_DIST_DIR=.next-prod-preview NAVHUB_SITE_URL=http://localhost:3079 \
+  NAVHUB_STORAGE_BASE_URL=http://127.0.0.1:8792 AUTH_SECRET=$S \
+  node node_modules/next/dist/bin/next start -p 3079   # B 组再加 NAVHUB_INTERNAL_TOKEN=$T
+node scripts/seo-audit.mjs --base=http://localhost:3079 --all --json | \
+  node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+  console.log(JSON.stringify(JSON.parse(s).summary))})'
+```
+
+变异自证（非空性）：把 `server.ts` 里的 `ctx.config.internalToken` 换成 `null`、
+把 `hub.ts` 里的 `INTERNAL_TOKEN` 常量换成 `''`，两处回退合计恰好 3 条用例变红
+（豁免集成用例 1 条 + web 带头用例 2 条），恢复后本组 20 条全绿。
+全仓 `vitest run` 在清场单跑时是 302 files / 3114 tests 全绿；**与 `next build` + 1126 页审计并发
+跑的那一次出过 1 条时序红灯**，重跑即绿 —— 这类红要先看当时有没有并行负载，别记成契约退化。
+另：上面 A/B 用 `better-sqlite3` 的 `db.backup()` 在线取库快照，不去动常驻中枢正在写的
+`data/navhub.db`；常驻中枢本身没被这条链碰过。
 
 环境坑（会伪装成门禁 bug）：这台机器上编辑工具会把 `scripts/*.mjs` 写成 **CRLF**，
 而仓库 blob 是 LF（`core.autocrlf=true`）。Node 自己能解析 CRLF 的那份文件，

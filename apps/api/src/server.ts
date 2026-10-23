@@ -146,10 +146,11 @@ export async function buildServer(ctx: AppContext) {
     origin: allowAll ? true : ctx.config.corsOrigins,
     credentials: !allowAll,
   });
-  // 全局按 IP 限流。`allowList` 这一眼看上去像「开后门」，实际是在补一个自己踩自己的洞：
+  // 全局按 IP 限流。`allowList` 第一眼看上去像「开后门」，实际是在补一个自己踩自己的洞：
   // web 层所有 SSR/RSC 取数在部署拓扑上共用一个出口 IP，抓取式扫 1126 个收录页
   // ≈ 750 次/分钟，是 300/min 额度的 2.5 倍 → 429 → 详情页 `hubGetProbe` 判 failed
-  // → 渲染带 `noindex, follow` 的降级壳，而这份壳会被 ISR 缓存（实测见 docs/seo/ISR-ROUTES.md 5.9）。
+  // → 渲染带 `noindex, follow` 的降级壳，而这份壳会被 ISR 缓存（实测见 docs/seo/ISR-ROUTES.md 5.9，
+  // 豁免前后的收录面 A/B 见 5.10）。
   // 判据是共享凭据头 `x-navhub-internal-token`（未配置 NAVHUB_INTERNAL_TOKEN 时恒不豁免）；
   // 不用内网 IP 段做判据，因为 `NAVHUB_TRUST_PROXY=1` 时 XFF 可由客户端自报。
   // 注意：浏览器侧的 /api/hub/* 代理**不许**带这个头 —— 带上等于把全站访客标成内部流量。

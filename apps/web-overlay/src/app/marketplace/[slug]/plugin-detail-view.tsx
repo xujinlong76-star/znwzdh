@@ -56,7 +56,8 @@ import {
   resetTheme,
   getActiveTheme,
 } from '@/lib/plugins/theme-runtime'
-import { copyFailureToast, copyText, type CopyResult } from '@/lib/clipboard'
+import { copyFailureToast, copyText } from '@/lib/clipboard'
+import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
@@ -98,31 +99,6 @@ type DetailTab = 'preview' | 'diff' | 'impact' | 'raw' | 'history' | 'reviews'
 
 const DETAIL_TABS: DetailTab[] = ['preview', 'diff', 'impact', 'raw', 'history', 'reviews']
 
-type CopyFeedback = { state: 'idle' | 'copied' | 'failed'; reason: string | null }
-
-const IDLE_COPY_FEEDBACK: CopyFeedback = { state: 'idle', reason: null }
-
-/**
- * 复制按钮的内联确认。确认不能只靠全局 toast：
- * sonner 1.7.1 的 Toaster 在 useEffect 里才建立订阅、state 初始为 []，
- * 且 store 对迟到订阅者没有回放——订阅建立前发出的 toast 会被静默丢弃。
- * 首屏首次点击实测 3 次里 2 次「剪贴板写成功但界面毫无提示」，
- * 所以成功/失败都要落在按钮自己身上。
- */
-function useCopyFeedback() {
-  const [copyFeedback, setCopyFeedback] = useState<CopyFeedback>(IDLE_COPY_FEEDBACK)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => {
-    if (timer.current) clearTimeout(timer.current)
-  }, [])
-  const reportCopy = useCallback((result: CopyResult) => {
-    setCopyFeedback(result.ok ? { state: 'copied', reason: null } : { state: 'failed', reason: result.reason })
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => setCopyFeedback(IDLE_COPY_FEEDBACK), 2_500)
-  }, [])
-  return { copyFeedback, reportCopy }
-}
-
 export default function PluginDetailView({
   slug,
   initialPlugin = null,
@@ -156,6 +132,8 @@ export default function PluginDetailView({
   const [badgeMetric, setBadgeMetric] = useState<'version' | 'installs' | 'stars' | 'rating'>('version')
   const mdCopy = useCopyFeedback()
   const svgCopy = useCopyFeedback()
+  const shareCopy = useCopyFeedback()
+  const rawCopy = useCopyFeedback()
   const [auditModalOpen, setAuditModalOpen] = useState(false)
   const [auditReport, setAuditReport] = useState<HubPluginAuditReport | null>(null)
 
@@ -273,12 +251,13 @@ export default function PluginDetailView({
     trackPluginEvent('plugin_share', slug)
     const link = `${window.location.origin}${path}`
     const result = await copyText(link)
+    shareCopy.reportCopy(result)
     if (result.ok) {
       toast.success('分享链接已复制', { description: '对方打开即可一键进入安装确认' })
     } else {
       toast.error('复制失败', { description: result.reason })
     }
-  }, [slug])
+  }, [shareCopy, slug])
 
   const loadDetail = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true)
@@ -384,6 +363,7 @@ export default function PluginDetailView({
   const handleCopyRaw = async () => {
     if (!plugin?.manifest) return
     const res = await copyText(JSON.stringify(plugin.manifest, null, 2))
+    rawCopy.reportCopy(res)
     if (res.ok) {
       toast.success('已复制插件 JSON 到剪贴板')
     } else {
@@ -663,12 +643,31 @@ export default function PluginDetailView({
                 <button
                   type="button"
                   onClick={handleShareLink}
-                  aria-label="复制带安装引导的分享链接"
+                  aria-label={
+                    shareCopy.copyFeedback.state === 'copied'
+                      ? '分享链接已复制'
+                      : shareCopy.copyFeedback.state === 'failed'
+                        ? '分享链接复制失败'
+                        : '复制带安装引导的分享链接'
+                  }
+                  title={
+                    shareCopy.copyFeedback.state === 'failed'
+                      ? `复制失败：${shareCopy.copyFeedback.reason}`
+                      : '复制带安装引导的分享链接（自动生成站内短链）'
+                  }
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-border/70 bg-background/70 hover:bg-muted text-foreground transition-all"
-                  title="复制带安装引导的分享链接（自动生成站内短链）"
                 >
                   <Share2 className="w-4 h-4 text-primary" />
-                  <span>分享</span>
+                  <span>
+                    {shareCopy.copyFeedback.state === 'copied'
+                      ? '已复制'
+                      : shareCopy.copyFeedback.state === 'failed'
+                        ? '复制失败'
+                        : '分享'}
+                  </span>
+                  <span role="status" className="sr-only">
+                    {shareCopy.copyFeedback.reason ?? ''}
+                  </span>
                 </button>
 
                 {plugin.isOwner && (
@@ -1423,10 +1422,31 @@ export default function PluginDetailView({
                 <button
                   type="button"
                   onClick={handleCopyRaw}
+                  aria-label={
+                    rawCopy.copyFeedback.state === 'copied'
+                      ? '插件 JSON 已复制'
+                      : rawCopy.copyFeedback.state === 'failed'
+                        ? '插件 JSON 复制失败'
+                        : '复制插件 JSON'
+                  }
+                  title={
+                    rawCopy.copyFeedback.state === 'failed'
+                      ? `复制失败：${rawCopy.copyFeedback.reason}`
+                      : '复制插件 JSON'
+                  }
                   className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md border border-border/60 hover:bg-muted text-foreground transition-colors"
                 >
                   <Copy className="w-3.5 h-3.5" />
-                  <span>复制代码</span>
+                  <span>
+                    {rawCopy.copyFeedback.state === 'copied'
+                      ? '已复制'
+                      : rawCopy.copyFeedback.state === 'failed'
+                        ? '复制失败'
+                        : '复制代码'}
+                  </span>
+                  <span role="status" className="sr-only">
+                    {rawCopy.copyFeedback.reason ?? ''}
+                  </span>
                 </button>
               </div>
               <pre className="text-xs font-mono text-foreground/90 overflow-x-auto p-2 leading-relaxed max-h-[500px]">

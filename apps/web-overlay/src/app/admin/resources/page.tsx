@@ -43,6 +43,7 @@ import {
 } from "@/registry/new-york/ui/form"
 import { Toaster } from "@/registry/new-york/ui/toaster"
 import { copyFailureToast, copyText } from "@/lib/clipboard"
+import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 
 const Icons = {
   loader2: Loader2,
@@ -132,6 +133,9 @@ export default function ResourceManagement() {
 
   const [resources, setResources] = useState<LocalResourceMetadata[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** 最近一次复制目标：按钮本地反馈必须落在被点的那一行，而不是全表 */
+  const [copyTarget, setCopyTarget] = useState<string | null>(null);
+  const { copyFeedback, reportCopy } = useCopyFeedback();
   const [isDialogOpen, setIsDialogOpen] = useState(false); // State to control dialog visibility
   const [uploadProgress, setUploadProgress] = useState(0); // State to track upload progress
   const [isUploading, setIsUploading] = useState(false); // State to track if an upload is in progress
@@ -359,6 +363,8 @@ export default function ResourceManagement() {
   // 取 `.writeText` 会先抛一个同步 TypeError —— `.catch` 接不到，页面一声不吭。
   const copyToClipboard = async (url: string) => {
     const result = await copyText(url);
+    setCopyTarget(url);
+    reportCopy(result);
     if (result.ok) {
       toast({
         title: "成功",
@@ -669,10 +675,24 @@ export default function ResourceManagement() {
                     variant="outline"
                     size="sm"
                     onClick={() => copyToClipboard(resource.items[0].url)}
+                    title={
+                      copyTarget === resource.items[0].url && copyFeedback.state === 'failed'
+                        ? `复制失败：${copyFeedback.reason}`
+                        : '复制链接'
+                    }
                     className="w-full h-6.5 text-xs flex items-center justify-center gap-1 hover:bg-muted"
                   >
                     <Icons.copy className="h-3 w-3" />
-                    复制链接
+                    {copyTarget === resource.items[0].url && copyFeedback.state === 'copied'
+                      ? '已复制'
+                      : copyTarget === resource.items[0].url && copyFeedback.state === 'failed'
+                        ? '复制失败'
+                        : '复制链接'}
+                    {copyTarget === resource.items[0].url && (
+                      <span role="status" className="sr-only">
+                        {copyFeedback.reason ?? ''}
+                      </span>
+                    )}
                   </Button>
                 </div>
               </div>

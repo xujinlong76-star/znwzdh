@@ -189,10 +189,11 @@ describe("各复制入口只在真的成功后才显示成功", () => {
     expect(src).not.toContain("navigator.clipboard");
   });
 
-  it("站点详情页：只有 ok 才显示「已复制」，失败时给失败态", () => {
+  it("站点详情页：只有 ok 才显示「已复制」，失败时给失败态与原因", () => {
     const src = overlaySource("src/components/site-detail-view.tsx");
     expect(src).toContain("await copyText(site.url)");
-    expect(src).toContain("setCopyState(result.ok ? 'copied' : 'failed')");
+    expect(src).toContain("reportCopy(result)");
+    expect(src).toContain("useCopyFeedback");
     expect(src).toContain("复制失败，请手动选中链接复制");
   });
 
@@ -313,16 +314,35 @@ describe("这次补上的三处静默失败", () => {
 
   it("插件详情徽章弹窗：复制确认落在按钮自身，不只依赖可能被丢弃的 toast", () => {
     const code = stripComments(overlaySource("src/app/marketplace/[slug]/plugin-detail-view.tsx"));
-    const atLeastTwo = (re: RegExp) => {
-      const count = code.match(re)?.length ?? 0;
-      expect(count, `${re} 出现 ${count} 次`).toBeGreaterThanOrEqual(2);
-    };
-    // 两个按钮都要把 copyText 的结果写入本地反馈
-    atLeastTwo(/reportCopy\(result\)/g);
-    atLeastTwo(/copyFeedback\.state === 'copied'/g);
-    atLeastTwo(/copyFeedback\.state === 'failed'/g);
+    const count = (re: RegExp) => code.match(re)?.length ?? 0;
+    // 四个复制入口（Markdown / SVG / 分享短链 / 原始清单）都要把结果写入本地反馈
+    expect(count(/reportCopy\(/g), "reportCopy 调用").toBeGreaterThanOrEqual(4);
+    expect(count(/copyFeedback\.state === 'copied'/g)).toBeGreaterThanOrEqual(4);
+    expect(count(/copyFeedback\.state === 'failed'/g)).toBeGreaterThanOrEqual(4);
     // 失败原因必须可见，且用 role="status" 让辅助技术播报
-    atLeastTwo(/role="status"/g);
-    atLeastTwo(/copyFeedback\.reason/g);
+    expect(count(/role="status"/g)).toBeGreaterThanOrEqual(4);
+    expect(count(/copyFeedback\.reason/g)).toBeGreaterThanOrEqual(4);
+  });
+
+  it("按钮本地复制反馈已推广到剩余用户可见入口", () => {
+    // 这些页面以前只有 toast（或只把状态置回 idle），失败原因无处可看
+    const files = [
+      "src/components/site-detail-view.tsx",
+      "src/app/error.tsx",
+      "src/app/admin/tokens/page.tsx",
+      "src/app/admin/resources/page.tsx",
+    ];
+    for (const file of files) {
+      const code = stripComments(overlaySource(file));
+      expect(code, file).toContain("useCopyFeedback");
+      expect(code, file).toContain("reportCopy(");
+      expect(code, file).toContain("copyFeedback.state === 'copied'");
+      expect(code, file).toContain("copyFeedback.reason");
+      expect(code, file).toContain('role="status"');
+    }
+    // 公共 hook 自己也要如实分流成功/失败，不允许只报「已复制」
+    const hook = stripComments(overlaySource("src/hooks/use-copy-feedback.ts"));
+    expect(hook).toContain("result.ok");
+    expect(hook).toContain("reason: result.reason");
   });
 });

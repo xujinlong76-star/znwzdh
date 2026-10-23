@@ -43,6 +43,14 @@ describe('分类页结构', () => {
     expect(board).toContain('/site/${encodeURIComponent(site.id)}')
   })
 
+  it('H1 只渲染分类名，不再硬拼「工具」后缀', () => {
+    // 「AI 工具」这类本身以“工具”结尾的类目会被拼成「AI 工具工具」；
+    // 后缀交给 <title>，H1 用规范名。
+    const board = overlayFile(BOARD)
+    expect(board).not.toContain('{name}工具')
+    expect(board).toMatch(/<h1[^>]*>\s*\{name\}\s*<\/h1>/)
+  })
+
   it('URL 标识是 slug，老 uuid 链接 301 而不是 404', () => {
     const page = overlayFile(ROUTE)
     expect(page).toContain('params: Promise<{ slug: string }>')

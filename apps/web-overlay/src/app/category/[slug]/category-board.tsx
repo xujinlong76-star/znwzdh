@@ -201,7 +201,7 @@ export async function CategoryBoard({
 
           <header className="space-y-2">
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
-              {name}工具
+              {name}
             </h1>
             <p className="text-sm text-muted-foreground">
               {degraded

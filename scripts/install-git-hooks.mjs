@@ -34,6 +34,41 @@ if [ "$NAVHUB_SKIP_PRECOMMIT" = "1" ]; then
   exit 0
 fi
 
+# Node 定位：Trae 的 Agent 工具宿主把 PATH 固定成自己的内部目录，且 PowerShell 以
+# -NoProfile 启动——改注册表、重启 IDE 都不会传导过来，钩子里的 node 会莫名其妙消失。
+# 这里在缺 node 时按常见安装位置补一次 PATH（只影响本次提交），找不到就明确报错，
+# 不静默放行。
+find_node() {
+  command -v node >/dev/null 2>&1 && return 0
+  if command -v cygpath >/dev/null 2>&1 && [ -n "$LOCALAPPDATA" ]; then
+    _navhub_local=$(cygpath -u "$LOCALAPPDATA")
+    for _navhub_dir in "$_navhub_local/hermes/node" "$_navhub_local/Programs/nodejs"; do
+      if [ -x "$_navhub_dir/node.exe" ]; then
+        PATH="$_navhub_dir:$PATH"
+        export PATH
+        return 0
+      fi
+    done
+  fi
+  for _navhub_dir in "/c/Program Files/nodejs" "/usr/local/bin" "/opt/homebrew/bin"; do
+    if [ -x "$_navhub_dir/node" ] || [ -x "$_navhub_dir/node.exe" ]; then
+      PATH="$_navhub_dir:$PATH"
+      export PATH
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! command -v node >/dev/null 2>&1; then
+  if find_node; then
+    echo "[pre-commit] node 不在 PATH，已临时使用 $(command -v node)" >&2
+  else
+    echo "[pre-commit] 未找到 node：请安装 Node.js，或把 node 所在目录加入 PATH" >&2
+    exit 1
+  fi
+fi
+
 node scripts/check-web-overlay.mjs --staged || exit 1
 node scripts/check-extensions.mjs || exit 1
 node scripts/check-upstream-ref.mjs || exit 1

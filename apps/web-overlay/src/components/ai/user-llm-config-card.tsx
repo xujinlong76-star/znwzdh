@@ -205,20 +205,22 @@ export function UserLlmConfigCard() {
 
   return (
     <section className="rounded-md border p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <h2 className="text-sm font-medium flex items-center gap-2">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
+        <h2 className="flex items-center gap-2 text-sm font-medium">
           <Bot className="h-4 w-4 text-primary" />
           AI 模型（个人）
         </h2>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {/* 未加载完成前不显示来源，避免闪现「内置默认」这种误导性文案 */}
           {view && (
-            <Badge variant="outline" className="gap-1.5 text-xs py-1">
+            // 窄屏下徽标必须是可换行的：模型名 + 模型 id + 来源三截排在一行时，
+            // 375px 上会被挤成竖排并顶出卡片（实测）。这里允许换行并让 id 可断词。
+            <Badge variant="outline" className="max-w-full flex-wrap gap-x-1.5 gap-y-1 whitespace-normal py-1 text-xs">
               <span>当前生效：</span>
-              <strong className="text-foreground">
+              <strong className="min-w-0 break-words text-foreground">
                 {view.effective?.name ?? (view.configured ? view.name : view.system.name)}
               </strong>
-              <span className="font-mono text-[10px] text-muted-foreground">
+              <span className="min-w-0 break-all font-mono text-[10px] text-muted-foreground">
                 ({view.effective?.model ?? (view.configured ? view.model : view.system.model)})
               </span>
               <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">

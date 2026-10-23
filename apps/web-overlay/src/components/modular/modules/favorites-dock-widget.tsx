@@ -1,6 +1,7 @@
 'use client'
 
 import { Bookmark, ExternalLink } from 'lucide-react'
+import { SiteFavicon } from '@/components/site-favicon'
 import Link from 'next/link'
 import { useFavorites } from '@/hooks/useFavorites'
 
@@ -40,11 +41,12 @@ export function FavoritesDockWidget() {
                 className="flex items-center gap-2 p-1.5 rounded-lg bg-muted/30 hover:bg-muted/60 border border-border/40 hover:border-primary/40 transition-all group"
               >
                 <div className="w-5 h-5 rounded bg-muted/60 flex items-center justify-center text-xs font-bold text-muted-foreground shrink-0 overflow-hidden">
-                  {site.icon ? (
-                    <img src={site.icon} alt="" loading="lazy" decoding="async" className="w-full h-full object-contain" />
-                  ) : (
-                    site.title.slice(0, 1)
-                  )}
+                  <SiteFavicon
+                    title={site.title}
+                    url={site.href}
+                    icon={site.icon}
+                    className="w-full h-full object-contain"
+                  />
                 </div>
                 <span className="text-xs font-medium text-foreground group-hover:text-primary transition-colors truncate">
                   {site.title}

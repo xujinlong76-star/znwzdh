@@ -115,33 +115,22 @@ function stripComments(source: string): string {
     .join('\n')
 }
 
-describe('组件守卫：时段提示必须挂载之后再算', () => {
+describe('组件接线：时段提示只在挂载后计算（渲染行为由 E2E 断言）', () => {
   const src = readFileSync(COMPONENT, 'utf8')
   const code = stripComments(src)
 
-  it('初始 state 是 null（服务端与客户端首帧必须渲染同一份占位）', () => {
+  // P1-1 分层：`e2e/daypart-hydration.spec.ts` 已经断言了首屏 HTML 只有占位、
+  // 挂载后换成客户端时段、且控制台没有水合报错。这里不再数「new Date() 出现几次」
+  // 这类实现形状（重构拆文件就会误红），只保留「算在 effect 里、渲染体不算」的语义。
+  it('初始 state 是 null，首帧渲染占位提示', () => {
     expect(code).toContain('useState<DaypartHint | null>(null)')
     expect(code).toContain('daypartText(timeHint ?? DAYPART_PLACEHOLDER)')
   })
 
-  it('new Date() 只能出现在 useEffect 里，且代码里只有一处', () => {
-    const stamps = code.match(/new Date\(/g) ?? []
-    expect(stamps.length).toBe(1)
-    expect(code.indexOf('useEffect(')).toBeGreaterThan(-1)
-    expect(code.indexOf('useEffect(')).toBeLessThan(code.indexOf('new Date('))
-    expect(code).toContain('setTimeHint(describeDaypart(new Date().getHours()))')
-  })
-
-  it('渲染体里不再直接取当前小时（这就是原来的 bug）', () => {
-    expect(code).not.toContain('const hour = new Date')
+  it('当前小时只在 useEffect 里取，渲染体不直接调用', () => {
+    expect(code).toMatch(/useEffect\([\s\S]*new Date\(\)\.getHours\(\)/)
     expect(code).not.toMatch(/\{describeDaypart\(/) // 渲染时不许直接调用
-    expect((code.match(/describeDaypart\(/g) ?? []).length).toBe(1)
-  })
-
-  it('剥注释这一步本身是有效的（否则上面三条只是空跑）', () => {
-    expect(stripComments('// new Date()\nconst a = 1')).not.toContain('new Date(')
-    expect(stripComments('/* new Date() */ const b = 2')).not.toContain('new Date(')
-    expect(stripComments('const c = new Date()')).toContain('new Date(')
+    expect(code).not.toContain('const hour = new Date')
   })
 })
 

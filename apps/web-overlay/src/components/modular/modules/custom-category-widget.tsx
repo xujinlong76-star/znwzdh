@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Folder, ExternalLink, Sparkles } from 'lucide-react'
+import { SiteFavicon } from '@/components/site-favicon'
 
 interface CategoryPreset {
   id: string
@@ -89,20 +90,12 @@ export function CustomCategoryWidget({ config }: { config?: Record<string, any> 
             className="flex items-start gap-2.5 p-2 rounded-xl bg-muted/20 hover:bg-muted/50 border border-border/40 hover:border-primary/40 transition-all group"
           >
             <div className="w-7 h-7 rounded-lg bg-background border border-border/60 flex items-center justify-center p-1 shrink-0 group-hover:scale-105 transition-transform overflow-hidden">
-              {site.icon ? (
-                <img
-                  src={site.icon}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  className="w-full h-full object-contain"
-                  onError={(e) => {
-                    ;(e.target as HTMLImageElement).style.display = 'none'
-                  }}
-                />
-              ) : (
-                <span className="text-xs font-bold text-muted-foreground">{site.title.slice(0, 1)}</span>
-              )}
+              <SiteFavicon
+                title={site.title}
+                url={site.href}
+                icon={site.icon}
+                className="w-full h-full object-contain"
+              />
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold text-foreground group-hover:text-primary transition-colors truncate flex items-center gap-1">

@@ -161,13 +161,50 @@ function isThirdPartyIcon(value: string): boolean {
   }
 }
 
+/**
+ * 校验是否属于远端自动生成的 /favicon.ico 盲猜探测地址。
+ * 这类地址来自爬虫或种子数据生成，并非人工上传的品牌图标。
+ * 外部站点普遍开启了 CORP (Cross-Origin-Resource-Policy: same-origin) 拦截，
+ * 在前端直接请求会抛出 ERR_BLOCKED_BY_RESPONSE.NotSameOrigin 403 / 404 / 502 等控制台错误。
+ */
+export function isRemoteRawFavicon(value?: string | null): boolean {
+  if (!value || typeof value !== 'string') return false
+  const trimmed = value.trim()
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return false
+  try {
+    const u = new URL(trimmed)
+    const p = u.pathname.toLowerCase()
+    if (
+      p.endsWith('/favicon.ico') ||
+      p.endsWith('/favicon.png') ||
+      p.endsWith('/favicon.svg') ||
+      p === '/favicon.ico' ||
+      p.includes('favicon')
+    ) {
+      return true
+    }
+    if (p === '/' || p === '') {
+      return true
+    }
+  } catch {
+    return true
+  }
+  return false
+}
+
 export function resolveSiteIcon(
   url?: string,
   title?: string,
   customIcon?: string | null
 ): string {
-  // 自定义 icon 优先，但第三方图标服务除外（见 THIRD_PARTY_ICON_HOSTS 说明）
-  if (customIcon && typeof customIcon === 'string' && customIcon.trim().length > 0 && !isThirdPartyIcon(customIcon.trim())) {
+  // 自定义 icon 优先，但第三方图标服务与远端盲猜 favicon 探测地址除外
+  if (
+    customIcon &&
+    typeof customIcon === 'string' &&
+    customIcon.trim().length > 0 &&
+    !isThirdPartyIcon(customIcon.trim()) &&
+    !isRemoteRawFavicon(customIcon.trim())
+  ) {
     return customIcon.trim()
   }
 
@@ -203,12 +240,10 @@ export function resolveSiteIcon(
     if (lowerTitle.includes('unsplash')) return '/assets/images/logos/unsplash.webp'
     if (lowerTitle.includes('vercel')) return '/assets/images/logos/vercel.webp'
 
-    // 直接取目标站点自己的 favicon，**不走第三方图标服务**。
-    // 历史上这里用 icon.horse：用户体验好一点，但等于把用户的完整浏览记录
-    // （每一个渲染过的域名）实时泄露给一个第三方。图标加载失败时下方还有
-    // 确定性渐变字母徽标兜底，所以这里选择不外泄。
-    // 代价：少数不在根目录提供 favicon 的站点会退化成徽标——可接受。
-    return `https://${hostname}/favicon.ico`
+    // 未命中内置 Logo 且无合法自定义图标时，不向浏览器返回远端裸 /favicon.ico，
+    // 避免浏览器盲发跨域请求触发 CORP (NotSameOrigin) 阻断或 404/502 报错；
+    // 返回空字符串让组件安全回落到确定性渐变字母徽标。
+    return ''
   } catch {
     return ''
   }
@@ -249,8 +284,14 @@ export function SiteFavicon({
   const effectiveIcon = resolveSiteIcon(url, title, icon)
 
   // 3. 判断是否为明确的自定义图标或本地品牌资源
-  const hasCustomIcon = Boolean(icon && typeof icon === 'string' && icon.trim().length > 0 && !isThirdPartyIcon(icon.trim()))
   const isLocalAsset = effectiveIcon.startsWith('/') || effectiveIcon.startsWith('data:')
+  const hasCustomIcon = Boolean(
+    icon &&
+    typeof icon === 'string' &&
+    icon.trim().length > 0 &&
+    !isThirdPartyIcon(icon.trim()) &&
+    !isRemoteRawFavicon(icon.trim())
+  )
 
   // 4. 若此前已知加载失败、或未提供自定义 icon 且无内置 Logo（即属于自动生成的外部 /favicon.ico 盲猜地址）：
   //    外部站点普遍存在缺乏根目录 /favicon.ico、防盗链限制、CORP (NotSameOrigin) 阻断或跨境网络超时；

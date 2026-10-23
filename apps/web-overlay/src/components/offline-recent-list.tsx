@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { History, Trash2 } from "lucide-react"
+import { SiteFavicon } from "@/components/site-favicon"
 import { clearOfflineVisits, readOfflineVisits, type RecentVisit } from "@/lib/offline-recent"
 import { safeHref } from "@/lib/safe-url"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -81,7 +82,12 @@ export function OfflineRecentList() {
           <li key={v.id}>
             <a href={safeHref(v.href)} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-xl border border-border/70 glass-surface p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-muted/60 p-1">
-                {v.icon ? <img src={v.icon} alt="" className="h-full w-full rounded object-contain" /> : <History className="h-5 w-5 text-muted-foreground" />}
+                <SiteFavicon
+                  title={v.title}
+                  url={v.href}
+                  icon={v.icon}
+                  className="h-full w-full rounded object-contain"
+                />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">{v.title}</span>

@@ -119,8 +119,10 @@ describe("入队失败：不能毫无反馈", () => {
 
 describe("守卫不是空跑", () => {
   it("确实读到了真实页面源码", () => {
+    // P1-1 分层：页面能否装载由 e2e/admin-jobs.spec.ts 断言；这里只需证明
+    // 读到的是真实页面而不是空文件/占位（不锁「至少 12000 字符」——拆组件会误红）。
     const src = raw();
-    expect(src.length).toBeGreaterThan(12000);
+    expect(src.length).toBeGreaterThan(2000);
     expect(src).toContain("任务调度与自动化中心");
     expect(src).toMatch(/role="status"/);
   });

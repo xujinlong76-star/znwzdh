@@ -6,6 +6,7 @@ import { Command, CommandList, CommandGroup, CommandItem } from '@/registry/new-
 import { Search, X, ExternalLink } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { highlightParts } from '@/lib/highlight'
+import { SiteFavicon, isRemoteRawFavicon } from '@/components/site-favicon'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
@@ -240,7 +241,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                         className="flex items-center gap-3 py-3 px-3 cursor-pointer hover:bg-accent/50"
                       >
                         <div className="flex-shrink-0 w-8 h-8">
-                          {item.icon && (
+                          {item.icon && !isRemoteRawFavicon(item.icon) ? (
                             <img
                               src={item.icon}
                               alt={`${item.title} icon`}
@@ -254,6 +255,8 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                                 target.style.display = 'none'
                               }}
                             />
+                          ) : (
+                            <SiteFavicon title={item.title} url={item.url} icon={item.icon} className="w-8 h-8 rounded" />
                           )}
                         </div>
                         <div className="flex flex-col flex-1 gap-1 min-w-0">
@@ -284,7 +287,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                             className="flex items-center gap-3 py-3 px-3 cursor-pointer hover:bg-accent/50"
                           >
                             <div className="flex-shrink-0 w-8 h-8">
-                              {item.icon && (
+                              {item.icon && !isRemoteRawFavicon(item.icon) ? (
                                 <img
                                   src={item.icon}
                                   alt={`${item.title} icon`}
@@ -298,6 +301,8 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                                     target.style.display = 'none'
                                   }}
                                 />
+                              ) : (
+                                <SiteFavicon title={item.title} url={item.url} icon={item.icon} className="w-8 h-8 rounded" />
                               )}
                             </div>
                             <div className="flex flex-col flex-1 gap-1 min-w-0">

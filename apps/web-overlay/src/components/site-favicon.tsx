@@ -50,7 +50,10 @@ export function getDeterministicGradient(seed: string): {
   const paletteIndex = hash % PRESET_GRADIENTS.length
   const palette = PRESET_GRADIENTS[paletteIndex]!
   const angleSteps = [135, 45, 120, 160, 90]
-  const angle = angleSteps[(hash >> 4) % angleSteps.length]!
+  // 必须用无符号右移：hash 是 32 位无符号，`>>` 会先转成有符号，
+  // hash ≥ 2^31 时变成负数，负索引取到 undefined，SSR 就渲染出
+  // `linear-gradient(undefineddeg, …)` 这条无效 CSS，图标底色直接丢失。
+  const angle = angleSteps[(hash >>> 4) % angleSteps.length]!
 
   return {
     from: palette.from,

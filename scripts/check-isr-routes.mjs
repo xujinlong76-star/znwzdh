@@ -502,9 +502,13 @@ export function rotateHash(text) {
  * salt 传族前缀，避免每个族都在同一相对位置起跳。
  */
 export function pickSample(items, count, rotateKey, salt = '') {
-  const pool = [...new Set(items)].sort();
   const n = Math.max(1, Number(count) || 1);
-  if (!rotateKey || pool.length <= n) return pool.slice(0, n);
+  const unique = [...new Set(items)];
+  // 不带 key 必须逐字保持旧行为（sitemap 顺序的前 n 个）：
+  // 门禁的「固定样本」语义是既有测试和 CI 绿基线的前提，不能顺手改掉。
+  if (!rotateKey) return unique.slice(0, n);
+  const pool = unique.slice().sort();
+  if (pool.length <= n) return pool;
   const start = (rotateHash(rotateKey) + rotateHash(salt)) % pool.length;
   const out = [];
   for (let i = 0; i < n; i += 1) out.push(pool[(start + i) % pool.length]);
@@ -533,9 +537,13 @@ async function checkLive() {
   );
   // `--rotate[=KEY]`：族内样本从「永远前 N 个」换成按 key 环形取。
   // 不给值就用当天 UTC 日期；CI 里给 $GITHUB_SHA ⇒ 同一 commit 可复现、跨 commit 覆盖不同页。
-  const rotateKey = flags.has('--rotate')
-    ? (valueOf('rotate') || new Date().toISOString().slice(0, 10))
-    : null;
+  // 注意 `flags` 只收「不带 = 的裸 flag」，所以 `--rotate=KEY` 必须同时走 valueOf：
+  // 只看 flags.has 会让带值的写法静默退回固定样本（实测：三个不同 key 抽到同一批页）。
+  const rotateValue = valueOf('rotate');
+  const rotateKey =
+    flags.has('--rotate') || rotateValue !== null
+      ? (rotateValue ?? '').trim() || new Date().toISOString().slice(0, 10)
+      : null;
   if (rotateKey) {
     console.log(`· 轮换取样 key=${rotateKey}（同 key 同结果；去掉 --rotate 则永远取族内前 ${perFamily} 个）`);
   }

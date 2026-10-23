@@ -11,12 +11,20 @@
  *   node scripts/capture-isr-corpus.mjs --base=http://localhost:3000
  *   node scripts/capture-isr-corpus.mjs --base=… --only=site,category,marketplace
  *
+ * `--check`（只读，不写文件）：把「仓库里的语料」和「现在抓一遍的同一族页面」放在
+ * 同一个结构签名 + 同一套契约裁决下比对。语料是会过期的：渲染 head 的代码改了
+ * （多一块 JSON-LD、og 换成逐页图、title 模板变了），旧语料照样让变异自证全绿，
+ * 但那已经不是爬虫今天拿到的页面形状 —— 契约层于是重新变成「自证通过、实际失明」。
+ * 这一条让「过期」可判定，红灯信息直接指出哪个族哪一项漂移。
+ *   node scripts/capture-isr-corpus.mjs --base=… --check
+ *
  * 每个族从 /sitemap.xml 取第一条真实 URL（不硬编码 uuid —— 换库也能重跑）。
  * 只保留 <head> 里爬虫与分享卡要读的部分 + 第一个 <h1>：正文是数据渲染，
  * 放进仓库只会让语料随库里站点变化而漂移，而契约判定的输入不在正文里。
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { sitemapEntries } from './check-isr-routes.mjs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { CONTRACT_KINDS_DEFAULT, contractFindings, sitemapEntries } from './check-isr-routes.mjs';
 
 const valueOf = (name) => {
   const inline = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -27,6 +35,7 @@ const valueOf = (name) => {
 
 const BASE = String(valueOf('base') ?? 'http://localhost:3000').trim().replace(/\/+$/, '');
 const OUT_DIR = String(valueOf('out') ?? 'scripts/fixtures/isr-live-corpus');
+const CHECK = process.argv.includes('--check');
 const ONLY = String(valueOf('only') ?? '')
   .split(',')
   .map((s) => s.trim())
@@ -65,6 +74,64 @@ const note = (path, base) => `<!-- 真实渲染语料（契约层变异自证用
      「本机地址兜底」那条判定上，那是另一条断言的职责。
      再生成：node scripts/capture-isr-corpus.mjs --base=${base} -->`;
 
+/**
+ * head 的「结构签名」：只取会随渲染代码变化的形状量，刻意不看正文文字与字节数。
+ * 字节级 diff 没法用 —— 库里换了个站点、标题多一个字都会红，而那种红不是过期。
+ */
+export function shape(html) {
+  const all = (re) => [...html.matchAll(re)].map((m) => m[0]);
+  const ldTypes = all(/<script type="application\/ld\+json"[^>]*>[\s\S]*?<\/script>/g)
+    .map((block) => {
+      const json = block.replace(/^<script[^>]*>/, '').replace(/<\/script>$/, '');
+      try {
+        const parsed = JSON.parse(json);
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        return list.map((n) => n?.['@type'] ?? '?').sort().join('+');
+      } catch {
+        // 解析不了本身就是要暴露的漂移（真实页面的 ld 一定解析得了）
+        return 'PARSE_FAIL';
+      }
+    })
+    .sort()
+    .join(',');
+  return {
+    title: all(/<title>/g).length,
+    desc: all(/<meta name="description"/g).length,
+    canonical: all(/<link rel="canonical"/g).length,
+    lang: (/<html lang="([^"]*)"/.exec(html) ?? [])[1] ?? '-',
+    og: all(/<meta (?:property|name)="(og:[^"]+)"/g)
+      .map((s) => s.replace(/^<meta (?:property|name)="/, '').replace(/"$/, ''))
+      .sort()
+      .join(','),
+    ldBlocks: all(/<script type="application\/ld\+json"/g).length,
+    ldTypes,
+    h1: all(/<h1\b/g).length,
+    robots: all(/<meta name="robots"[^>]*>/g).join('|'),
+  };
+}
+
+/** 两个签名的差异项（`--check` 的红灯内容）。 */
+export function shapeDiff(a, b) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  const out = [];
+  for (const k of keys) {
+    const left = String(a[k] ?? '-');
+    const right = String(b[k] ?? '-');
+    if (left !== right) out.push(`${k}: 仓库语料=${left || '∅'} → 现抓=${right || '∅'}`);
+  }
+  return out;
+}
+
+const KINDS = () => new Set(CONTRACT_KINDS_DEFAULT);
+
+/** 契约裁决：把语料喂给门禁同一个 `contractFindings`，返回「发现项」的稳定描述。 */
+function verdict(html, url) {
+  return contractFindings(html, url, KINDS(), { expectIndexable: true })
+    .map((i) => `${i.kind}:${i.message}`)
+    .sort()
+    .join(' | ');
+}
+
 async function main() {
   const sm = await fetch(`${BASE}/sitemap.xml`);
   if (!sm.ok) {
@@ -78,6 +145,7 @@ async function main() {
   }
   mkdirSync(OUT_DIR, { recursive: true });
   let written = 0;
+  const drifted = [];
   for (const fam of FAMILIES) {
     if (ONLY.length && !ONLY.includes(fam.name)) continue;
     const hit = entries.find((e) => fam.re.test(e.path));
@@ -91,6 +159,44 @@ async function main() {
       continue;
     }
     const body = stripToContract(await res.text(), hit.path);
+    const file = `${OUT_DIR}/${fam.name}.html`;
+
+    if (CHECK) {
+      if (!existsSync(file)) {
+        drifted.push(`${fam.name}：仓库里没有 ${fam.name}.html，语料缺这一族`);
+        console.log(`✖ ${fam.name.padEnd(20)} 语料文件缺失（${file}）`);
+        continue;
+      }
+      const stored = readFileSync(file, 'utf8');
+      // 现抓的 `body` 只有 head 区块，语料文件却带生成器那层 `<html lang="zh-CN">` 外壳。
+      // 两边必须按同一种包装比，否则 `<html lang>` 这项会常年红在无关处。
+      // （代价：外壳语言是生成器写死的，真实页面换 lang 不会被这一条抓到 —— 那是
+      //  契约层「meta:缺 lang」在 --live 抽查里管的事，不在语料层。）
+      const freshFull = `<!DOCTYPE html>\n<html lang="zh-CN">\n${body}\n</html>\n`;
+      // 两边都按 navhub.example 判：`stripToContract` 会把真实 origin 改写成它，
+      // 现抓的那份同样是改写后的形状 —— 拿 BASE 去判 canonical 会永远红在
+      // 「域名不同」这个跟过期无关的地方。
+      const CORPUS_ORIGIN = 'https://navhub.example';
+      const storedVerdict = verdict(stored, `${CORPUS_ORIGIN}${hit.path}`);
+      const liveVerdict = verdict(freshFull, `${CORPUS_ORIGIN}${hit.path}`);
+      const diffs = shapeDiff(shape(stored), shape(freshFull));
+      const verdictChanged = storedVerdict !== liveVerdict;
+      if (!diffs.length && !verdictChanged) {
+        console.log(`✓ ${fam.name.padEnd(20)} 形状与契约裁决一致（${hit.path}）`);
+        continue;
+      }
+      drifted.push(
+        `${fam.name}：${diffs.length ? diffs.join('；') : ''}${diffs.length && verdictChanged ? '；' : ''}` +
+          `${verdictChanged ? `契约裁决变了 仓库=${storedVerdict || '通过'} → 现抓=${liveVerdict || '通过'}` : ''}`,
+      );
+      console.log(
+        `✖ ${fam.name.padEnd(20)} 语料已过期（${hit.path}）` +
+          (diffs.length ? `\n    ${diffs.join('\n    ')}` : '') +
+          (verdictChanged ? `\n    契约裁决：仓库=${storedVerdict || '通过'} → 现抓=${liveVerdict || '通过'}` : ''),
+      );
+      continue;
+    }
+
     const out = `<!DOCTYPE html>\n<html lang="zh-CN">\n${note(hit.path, BASE)}\n${body}\n</html>\n`;
     writeFileSync(`${OUT_DIR}/${fam.name}.html`, out);
     console.log(
@@ -100,6 +206,17 @@ async function main() {
     );
     written += 1;
   }
+  if (CHECK) {
+    if (drifted.length) {
+      console.error(
+        `✖ 语料基线过期：${drifted.length} 个族的现抓形状/契约裁决与仓库语料不一致 —— ` +
+          `变异自证正在拿旧形状当基准。重跑：node scripts/capture-isr-corpus.mjs --base=${BASE}`,
+      );
+      return 1;
+    }
+    console.log('✓ 语料基线未过期：各族的 head 形状与契约裁决都和现抓一致');
+    return 0;
+  }
   if (!written) {
     console.error('✖ 一个族都没抓到，语料没落盘');
     return 1;
@@ -107,4 +224,19 @@ async function main() {
   return 0;
 }
 
-process.exit(await main());
+// 被 import 时不能自己退进程：测试要拿 shape/shapeDiff 做纯函数断言，
+// 而 process.exit 会连带整个 vitest worker 消失（表现是「0 tests」的假绿）。
+// 仓库路径经过 Windows junction，两边都要 realpath 后再比。
+const canonicalPath = (input) => {
+  let out;
+  try {
+    out = realpathSync(input);
+  } catch {
+    out = input;
+  }
+  return out.replace(/\\/g, '/').toLowerCase();
+};
+const invokedDirectly =
+  Boolean(process.argv[1]) && canonicalPath(process.argv[1]) === canonicalPath(fileURLToPath(import.meta.url));
+
+if (invokedDirectly) process.exit(await main());

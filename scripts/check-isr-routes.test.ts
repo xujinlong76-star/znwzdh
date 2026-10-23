@@ -12,7 +12,8 @@ import { dirname, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { CONTRACT_KINDS_DEFAULT, contractFindings } from "./check-isr-routes.mjs";
+import { CONTRACT_KINDS_DEFAULT, contractFindings, pickSample, rotateHash } from "./check-isr-routes.mjs";
+import { shape, shapeDiff } from "./capture-isr-corpus.mjs";
 
 const SCRIPT = resolve("scripts/check-isr-routes.mjs");
 // 脚本按 apps/web/<NEXT_DIST_DIR> 找产物（与 check-bundle-budget 同一套环境变量）。
@@ -663,6 +664,45 @@ describe("check-isr-routes.mjs --live 抽查", () => {
     expect(out, out).toContain("不可收录形态 0 条");
     expect(code).toBe(0);
   });
+
+  it("--rotate=KEY 真的换页：同 key 可复现，跨 key 覆盖到「固定样本」扫不到的页", async () => {
+    // 这一条专门盯「--rotate 静默失效」。踩过的坑：`flags` 只收不带 `=` 的裸 flag，
+    // 于是 `--rotate=KEY` 走不到取样里，三个不同 key 抽到完全相同的 14 页、依旧绿灯。
+    // 光测纯函数抓不到它（函数本身是对的），必须让命令行穿到取样那一层。
+    // sitemap 里按字典序倒着列 12 个站点页 ⇒ 不轮换时永远取 p11、p10 两个。
+    const sitePaths = Array.from({ length: 12 }, (_, i) => `/site/p${String(i).padStart(2, "0")}`).reverse();
+    const probed = async (key: string | null) => {
+      const args = key === null ? [] : [`--rotate=${key}`];
+      const { code, out } = await runLive(["/", ...sitePaths], [...args, "--sample=2"]);
+      expect(code, out).toBe(0);
+      return [...out.matchAll(/✓ ISR 页面\s+(\S+)/g)].map((m) => m[1]).filter((p) => p.startsWith("/site/"));
+    };
+    const fixed = await probed(null);
+    expect(fixed).toEqual(["/site/p11", "/site/p10"]);
+
+    const alpha = await probed("alpha");
+    expect(await probed("alpha"), "同一 key 两次必须抽到同一批页（CI 重跑要可比对）").toEqual(alpha);
+
+    const seen = new Set<string>([...fixed, ...alpha]);
+    for (const key of ["bravo", "charlie", "delta", "echo", "foxtrot"]) {
+      const pages = await probed(key);
+      expect(pages.every((p) => sitePaths.includes(p)), `key=${key} 抽到了 sitemap 之外的页`).toBe(true);
+      for (const p of pages) seen.add(p);
+    }
+    // 7 个 key 的并集只可能是「永远那两页」（=静默失效）或明显更宽；实测 8 页
+    expect(seen.size, `轮换后仍只覆盖 ${[...seen].join(" ")} —— 取样没有真的轮换`).toBeGreaterThan(3);
+  });
+
+  it("裸 --rotate（不带值）也启用轮换，用当天日期当 key", async () => {
+    const { code, out } = await runLive(["/sites", "/category/ai-tools"], ["--rotate"]);
+    expect(code, out).toBe(0);
+    expect(out).toContain("轮换取样 key=");
+    expect(out).toMatch(/轮换取样 key=\d{4}-\d{2}-\d{2}/);
+
+    const plain = await runLive(["/sites", "/category/ai-tools"]);
+    expect(plain.code, plain.out).toBe(0);
+    expect(plain.out, "不带 --rotate 时不该出现轮换日志（默认仍是固定样本）").not.toContain("轮换取样");
+  });
 });
 
 /**
@@ -761,4 +801,140 @@ describe("契约层变异自证（真实渲染语料）", () => {
     // 全量审计（scripts/seo-audit.mjs）对着整份 sitemap 跑 links，才是这条约束该待的地方。
     expect(CONTRACT_KINDS_DEFAULT).not.toContain("links");
   });
+});
+
+/**
+ * 轮换取样的纯函数层。
+ *
+ * 存在理由：`--live` 的样本决定「这一轮 CI 看得见哪些页」，默认固定取族内前 N 个
+ * 意味着 996 个站点详情页里 994 个的退化永远不会被发现。轮换把覆盖面摊开，
+ * 但必须可复现（重跑、跨 job 比对都靠它）且与 sitemap 产出顺序解耦。
+ */
+describe("check-isr-routes.mjs 轮换取样", () => {
+  const pool = Array.from({ length: 12 }, (_, i) => `/site/p${String(i).padStart(2, "0")}`);
+
+  it("不带 key 时逐字保持旧行为：输入顺序的前 n 个（不排序）", () => {
+    const reversed = pool.slice().reverse();
+    expect(pickSample(reversed, 2, null)).toEqual(["/site/p11", "/site/p10"]);
+    expect(pickSample(reversed, 2, "")).toEqual(["/site/p11", "/site/p10"]);
+  });
+
+  it("同一 key 稳定，且与列表顺序无关（排序解耦）", () => {
+    const a = pickSample(pool, 2, "2026-10-23", "/site/[id]|/site/");
+    const b = pickSample(pool.slice().reverse(), 2, "2026-10-23", "/site/[id]|/site/");
+    expect(b).toEqual(a);
+    // 环形取的是「排序后相邻的两个」，所以两个集合一致，与起点无关
+    expect(new Set(a)).toEqual(new Set(b));
+    expect(a.length).toBe(2);
+    expect(new Set(a).size).toBe(2);
+  });
+
+  it("不同 key 会换页；起点越界时环形回到列表头部", () => {
+    const seen = new Set<string>();
+    for (const key of ["alpha", "bravo", "charlie", "delta", "echo"]) {
+      for (const p of pickSample(pool, 2, key, "/site/")) seen.add(p);
+    }
+    // 5 个 key 只取到固定那 2 页 ⇒ 等于没轮换
+    expect(seen.size).toBeGreaterThan(2);
+    for (const p of seen) expect(pool).toContain(p);
+    // salt 参与散列：同 key 不同族不该总落在同一相对位置
+    expect(
+      JSON.stringify(pickSample(pool, 2, "alpha", "/site/")) ===
+        JSON.stringify(pickSample(pool, 2, "alpha", "/category/")),
+    ).toBe(false);
+  });
+
+  it("族比样本小（或 n 超过总量）时返回全部，不重复、不越界", () => {
+    expect(pickSample(["/sites"], 2, "alpha", "/sites")).toEqual(["/sites"]);
+    expect(pickSample(["/a", "/b", "/c"], 9, "alpha", "")).toEqual(["/a", "/b", "/c"]);
+    expect(pickSample([], 2, "alpha", "")).toEqual([]);
+  });
+
+  it("rotateHash 是确定的 uint32（不用随机数、不用时间）", () => {
+    expect(rotateHash("abc")).toBe(rotateHash("abc"));
+    expect(rotateHash("abc")).not.toBe(rotateHash("abd"));
+    expect(Number.isInteger(rotateHash("x")) && rotateHash("x") >= 0 && rotateHash("x") <= 0xffffffff).toBe(true);
+    expect(rotateHash(undefined)).toBe(rotateHash(""));
+  });
+});
+
+/**
+ * `capture-isr-corpus.mjs --check` 的判据（纯函数层）。
+ *
+ * 语料是会过期的：渲染 head 的代码改了，旧语料照样让变异自证全绿，
+ * 但那已经不是爬虫今天拿到的页面形状。--check 用「结构签名 + 契约裁决」
+ * 判过期，所以这里要证明**每一种过期形态都真的会被签名看见**——
+ * 否则这条和「静默绿」没区别。
+ */
+describe("capture-isr-corpus.mjs --check 的漂移判据", () => {
+  const read = (name: string) => readFileSync(resolve(CORPUS_DIR, name), "utf8");
+
+  const DRIFT_MUTATIONS: Array<{ key: string; field: string; apply: (html: string) => string }> = [
+    { key: "标题整族丢失", field: "title", apply: (h) => h.replace(/<title>[\s\S]*?<\/title>/, "") },
+    { key: "描述丢失", field: "desc", apply: (h) => h.replace(/<meta name="description"[^>]*>/, "") },
+    { key: "canonical 丢失", field: "canonical", apply: (h) => h.replace(/<link rel="canonical"[^>]*>/, "") },
+    {
+      key: "og 图尺寸变体减少",
+      field: "og",
+      apply: (h) => h.replace(/<meta property="og:image:(width|height)"[^>]*>/g, ""),
+    },
+    {
+      key: "JSON-LD 整族丢失",
+      field: "ldBlocks",
+      apply: (h) => h.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/g, ""),
+    },
+    {
+      key: "JSON-LD 只换类型不换数量",
+      field: "ldTypes",
+      // 六族语料都带 BreadcrumbList，用它才不依赖「这一族恰好有 ItemList」
+      apply: (h) => h.replace(/"@type":"BreadcrumbList"/, '"@type":"WebPage"'),
+    },
+    { key: "H1 丢失", field: "h1", apply: (h) => h.replace(/<h1\b[\s\S]*?<\/h1>/, "") },
+    {
+      key: "误挂 noindex",
+      field: "robots",
+      apply: (h) => h.replace("</head>", '<meta name="robots" content="noindex"/></head>'),
+    },
+    { key: "页面语言变了", field: "lang", apply: (h) => h.replace(/<html lang="[^"]*"/, '<html lang="en"') },
+  ];
+
+  it("同一份语料自检：签名零漂移（不然 --check 常年红）", () => {
+    for (const f of readdirSync(CORPUS_DIR)) {
+      const html = read(f);
+      expect(shapeDiff(shape(html), shape(html)), f).toEqual([]);
+    }
+  });
+
+  it("六族形状齐备：title/desc/canonical/h1 各 1、lang 已设、有 og 与 JSON-LD", () => {
+    const files = readdirSync(CORPUS_DIR);
+    expect(files.length).toBeGreaterThanOrEqual(6);
+    for (const f of files) {
+      const s = shape(read(f));
+      expect(s.title, f).toBe(1);
+      expect(s.desc, f).toBe(1);
+      expect(s.canonical, f).toBe(1);
+      expect(s.h1, f).toBe(1);
+      expect(s.lang, f).toBe("zh-CN");
+      expect(s.og, f).toContain("og:image");
+      expect(s.ldBlocks, f).toBeGreaterThan(0);
+      // 真实渲染的 ld+json 一定解析得了：解析失败在签名里是 PARSE_FAIL，
+      // 出现即说明生成器把区块截断了（那是生成器的 bug，不是页面的 bug）。
+      expect(s.ldTypes, f).not.toContain("PARSE_FAIL");
+    }
+  });
+
+  for (const m of DRIFT_MUTATIONS) {
+    it(`语料过期形态「${m.key}」会被签名抓到`, () => {
+      const html = read("site-detail.html");
+      const mutated = m.apply(html);
+      // 变异必须真的改掉字节：没改掉的用例是自欺（和契约层同一套规矩）
+      expect(mutated).not.toBe(html);
+      const diffs = shapeDiff(shape(html), shape(mutated));
+      expect(diffs.length, `${m.field} 没有进签名`).toBeGreaterThan(0);
+      expect(
+        diffs.some((d) => d.startsWith(`${m.field}:`)),
+        `抓到的不是 ${m.field}：${diffs.join(" | ")}`,
+      ).toBe(true);
+    });
+  }
 });

@@ -240,27 +240,95 @@ canonical / og:image / 全部 `ld+json` / 注入 `noindex`）逐个必须被抓�
 （`site=200 category=10 tag=5 collection=2 plugin=20 directory=1 lastmod-ratio=0.9`，
 `--min-checked=8`），既不会因正常增删抖动红，也能在某族整条链路失联时立刻红。
 两点差别要写清楚：① 生产有 16 个达标标签，不需要 5.1 那个门禁自检夹具；
-② 代理实测的服务是 `next dev`，`cache-control: no-store`，所以那一轮「没有 s-maxage」
-14 项全红**是预期的**（dev 没有静态生成这一步），它只验证了契约层与 sitemap 两层；
-s-maxage 那一层仍只有 CI 的 `next start` 预览和真实 dispatch 能实证。
-`seo-audit-prod` 首次 dispatch 若红在「没有 s-maxage」，那是 CDN/反代改写了响应头 ——
-属于要查的真问题，不是门禁 bug。
+② **s-maxage 那一层已经在 prod 口径下实证过了**（同日第二轮）：本地
+`next build`（`NEXT_DIST_DIR=.next-prod-preview`）+ `next start -p 3079`（cwd 必须是
+`apps/web`）起 996 站点库，运行时注入 `NAVHUB_SITE_URL`，`seo-audit-prod` 那一整条命令行
+**rc=0**，14/14 页都带 `s-maxage=60, stale-while-revalidate=31535940`，契约与 sitemap 两层
+同时全绿。早前那轮 `next dev` 代理里 14 项「没有 s-maxage」全红是 dev 无静态生成的预期红，
+已被这一轮取代。**还没被覆盖的只剩一跳**：真实生产 CDN/反代会不会改写或吞掉
+`cache-control` —— 首次 dispatch 若红在那儿，是真问题，不是门禁 bug。
+另两个缺口也照实记：这次跑的是 `localhost:3079`，不是真域名；`AUTH_SECRET` 必须显式给
+（生产守卫拒绝用仓库内开发回退密钥启动，`next start` 会直接 500 在 middleware）。
+
+**5.7 抽查样本按 key 轮换：`--live --rotate[=KEY]`。**
+固定取样的覆盖率是假的。`--sample=2` 时站点详情族永远取 sitemap 里前 2 个页，
+996 个真实收录页里 994 个的技术面契约退化**没有任何一轮 CI 看得见** ——
+门禁看起来在跑，实际是一盏只照两平方米的灯。轮换把起点按 `hash(key)+hash(族前缀)`
+挪到排序后全集的任意位置、环形取 N 个，CI 与生产 dispatch 都传 `--rotate="$GITHUB_SHA"`。
+三条判据（都有用例）：① **同 key 必须同结果** —— 用 FNV-1a 32 位散列，不用
+`Math.random` 也不用时间戳，否则一次网络抖动会被读成「门禁时好时坏」，重跑与跨 job
+比对也失去意义（实测同一 key 两次，14 页输出的 md5 一致）；② **与 sitemap 产出顺序解耦** ——
+轮换在**排序后**的池子上取，sitemap 条目顺序一变（加一族、换排序字段）样本不会跟着整体漂移，
+「这一轮扫了哪些页」只由 key 决定；③ **不带 `--rotate` 时逐字保持旧行为**（族内前 N 个、
+不排序），既有 42 条用例与 CI 绿基线的前提是这个默认档没被动过。
+坑（就是这一条差点变成假绿）：脚本的 `flags` 集合只收**不带 `=` 的裸 flag**，
+第一版用 `flags.has('--rotate')` 判启用，于是 `--rotate=KEY` 完全走不到取样里 ——
+三个不同 key 抽到**完全相同**的 14 页、照样 rc=0。纯函数测试抓不到它（函数本身是对的），
+必须有用例穿过命令行那一层，所以现在「同 key 可复现 + 跨 key 覆盖更宽」是集成用例。
+覆盖率实测（996 站点库，`--sample=2`，12 个 key 一轮）：168 次页面检查 → 86 个不同的页，
+其中站点详情族 17/996；换算下来约 500 轮 CI 扫遍全族。这不等于全覆盖，
+它等于「退化不再注定看不见」，全量口径仍归 `scripts/seo-audit.mjs` 对着整份 sitemap 跑。
+分页样本挂哪个母页也一起轮换：`/…/p/2` 那条支路（按需生成最容易 500）以前永远只在
+第一个分类页上验证。
+
+**5.8 语料基线过期必须可判定：`capture-isr-corpus.mjs --check`。**
+5.5 的变异自证有个没人管的失效模式：**渲染 head 的代码改了，语料没跟着改**。
+旧语料照样让六类变异逐个红、基线照样 0 问题，于是「契约层在真实页面上成立」这句话
+悄悄变成对一份历史快照成立 —— 静默绿换了个入口回来。`--check` 只读不写文件，
+对每个族现抓一遍并和仓库语料比两件事：**结构签名**（title/description/canonical 的数量、
+`<html lang>`、og 属性名集合、`ld+json` 区块数与其中 `@type` 的集合、H1 数、robots 标签原文）
+和**契约裁决**（两边都喂门禁同一个 `contractFindings`，比较发现项集合）。
+签名刻意不看字节数与正文文字：库里换个站点、标题多一个字都会红，那种红不是过期。
+两边都按 `https://navhub.example` 判 canonical —— 现抓的那份同样经过 origin 改写，
+拿 `--base` 去判会永远红在「域名不同」这个无关处（第一版就是这么常年 6 族全红）。
+判据本身也要自证：`scripts/check-isr-routes.test.ts` 的「--check 的漂移判据」对
+9 类过期形态（含「只换 JSON-LD 类型不换数量」这种签名级退化）逐个断言
+`shapeDiff` 非空且归对字段，另断言未变异时 diff 为空 —— 不然这条和静默绿没区别。
+CI 里这一条**只提示不阻断**（`::warning::`，红族名单进 annotation）：CI 种子库 57 个站点，
+「按内容量才出」的模块本就和 996 站点库的快照不同，那是数据形态差异不是代码退化。
+实测（996 库 prod 口径）：6/6 族一致 rc=0；把 site-detail 的一块 `ld+json` 删掉、
+把 category 的 `<title>` 删掉、给 directory 挂个 `noindex`，rc=1 且逐条指到字段。
+配套改造：`capture-isr-corpus.mjs` 尾部加了「被直接执行才 exit」的 realpath 守卫并导出
+`shape`/`shapeDiff` —— 脚本原先在模块末尾无条件 `process.exit()`，被测试 import 时
+会连带整个 vitest worker 消失，表现是「0 tests」的假绿。
 
 **复核**：
 
 ```bash
 # CI 同构预览（本机 scratch 库 + 独立端口，不碰 data/navhub.db）
 node scripts/check-isr-routes.mjs --live --base=http://localhost:3079 --sample=2 \
-  --min-checked=10 --sitemap-min-site=20 --sitemap-min-category=1 --sitemap-min-tag=1 \
+  --min-checked=10 --rotate=2026-10-23 \
+  --sitemap-min-site=20 --sitemap-min-category=1 --sitemap-min-tag=1 \
   --sitemap-min-collection=1 --sitemap-min-plugin=10 --sitemap-min-directory=1 \
   --sitemap-min-lastmod-ratio=0.8
 # 用例（夹具页自带齐契约；stripContract / barePaged / lastmod / extraLocs 四个开关分别造红灯）
 node node_modules/vitest/vitest.mjs run scripts/check-isr-routes.test.ts
 # 刷新真实语料（对着任意跑起来的站点，dev 或 next start 都行）
 node scripts/capture-isr-corpus.mjs --base=http://localhost:3000
-# 生产阈值 rehearsal（本地大库；next dev 下「没有 s-maxage」全红是预期的，看契约与 sitemap 两层）
-node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 --min-checked=8 \
+# 语料是否过期（只读；rc=1 = 变异自证正拿旧形状当基准）
+node scripts/capture-isr-corpus.mjs --base=http://localhost:3079 --check
+# 轮换覆盖：同一 key 两次必须同一批页，不同 key 必须换页
+for k in alpha bravo charlie; do
+  node scripts/check-isr-routes.mjs --live --base=http://localhost:3079 --sample=2 \
+    --min-checked=1 --no-contract --rotate=$k | grep -E '^✓ ISR' | md5sum
+done
+# 生产阈值（prod 口径，不是 dev）：先构建，再以 apps/web 为 cwd 起 next start
+(cd apps/web && NEXT_DIST_DIR=.next-prod-preview NAVHUB_SITE_URL=http://localhost:3079 \
+  NAVHUB_API_URL=http://localhost:8787 node node_modules/next/dist/bin/next build)
+# 注意：生产守卫要求显式 AUTH_SECRET（>=32 字符），否则 next start 会 500 在 middleware。
+(cd apps/web && NEXT_DIST_DIR=.next-prod-preview NAVHUB_SITE_URL=http://localhost:3079 \
+  NAVHUB_API_URL=http://localhost:8787 AUTH_SECRET=$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))') \
+  node node_modules/next/dist/bin/next start -p 3079)
+node scripts/check-isr-routes.mjs --live --base=http://localhost:3079 --sample=2 --min-checked=8 \
+  --rotate=2026-10-23 \
   --sitemap-min-site=200 --sitemap-min-category=10 --sitemap-min-tag=5 \
   --sitemap-min-collection=2 --sitemap-min-plugin=20 --sitemap-min-directory=1 \
   --sitemap-min-lastmod-ratio=0.9
 ```
+
+环境坑（会伪装成门禁 bug）：这台机器上编辑工具会把 `scripts/*.mjs` 写成 **CRLF**，
+而仓库 blob 是 LF（`core.autocrlf=true`）。Node 自己能解析 CRLF 的那份文件，
+`node --check` 也过，但 **vitest 的 SSR transform 会失败**，症状是
+`SyntaxError: Invalid or unexpected token` + 「0 tests」，不带任何行号 ——
+看起来像门禁坏了，其实是行尾。判别：`git diff --stat` 只有几十行、却整片用例不收集，
+就把文件按 LF 重写一遍再跑（`node -e` 一行 `replace(/\r\n/g,'\n')` 即可）。

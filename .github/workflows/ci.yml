@@ -262,6 +262,12 @@ jobs:
         #
         # 技术面契约（title/description/canonical/OG/JSON-LD）默认开启：断的是
         # 爬虫真正拿到的那份响应体，和产物门禁、本地 seo-audit 各管一段。
+        #
+        # --rotate="$GITHUB_SHA"：样本不再永远是「族内前 2 个」。CI 的 seed 库有 57 个
+        # 站点详情，固定取样意味着 55 个页的契约退化永远看不见；按 commit 散列轮换后
+        # 每个 commit 扫不同的一批，跨 commit 累积覆盖。同一个 SHA 永远抽同一批页
+        # （重跑、比对、复现红灯都靠它），日志第一行就打出生效的 key，
+        # 本地 `--rotate=<那个 SHA>` 就能重放那一轮。
         run: |
           ready=0
           for i in $(seq 1 60); do
@@ -277,6 +283,7 @@ jobs:
           set +e
           node scripts/check-isr-routes.mjs --live --base=http://localhost:3000 --sample=2 \
             --min-checked=10 \
+            --rotate="$GITHUB_SHA" \
             --sitemap-min-site=20 --sitemap-min-category=1 --sitemap-min-tag=1 \
             --sitemap-min-collection=1 --sitemap-min-plugin=10 --sitemap-min-directory=1 \
             --sitemap-min-lastmod-ratio=0.8 > /tmp/isr-live.log 2>&1
@@ -298,6 +305,26 @@ jobs:
               "$(grep -o '共 [0-9]* 条：[^；]*' /tmp/isr-live.log | head -1 | sed 's/::/--/g')" \
               "$(grep -c '技术面契约不达标' /tmp/isr-live.log || true)"
             exit "$rc"
+          fi
+      - name: 语料基线是否过期（只提示，不阻断）
+        # 变异自证那 6 份语料是**某天某库**的真实渲染快照；head 形状一变（多一块
+        # JSON-LD、og 换逐页图、title 模板改），旧语料照样让自证全绿，但那已经不是
+        # 爬虫今天拿到的页面 —— 契约层重新变成「自证通过、实际失明」。
+        # 这一条把它做成可判定的：拿同一个预览站现抓一遍，比 shape + 契约裁决。
+        # 刻意**不阻断**：CI 种子库只有 57 个站点，某些「按内容量才出」的模块本来就
+        # 和 996 站点库的快照不同，那是数据形态差异不是代码退化；红了也只发 warning，
+        # 由人决定要不要重抓语料。首次 run 看这条的族名单，噪声大就把口径改成
+        # 「只在 --only=site-detail,category 上比」。
+        run: |
+          set +e
+          node scripts/capture-isr-corpus.mjs --base=http://localhost:3000 --check > /tmp/corpus-check.log 2>&1
+          rc=$?
+          set -e
+          cat /tmp/corpus-check.log
+          if [ "$rc" != "0" ]; then
+            fams=$(grep -oE '^✖ [a-z-]+' /tmp/corpus-check.log | awk '{print $2}' | tr '\n' ',')
+            printf '::warning::ISR 契约语料可能已过期（rc=%s，族=%s）—— 变异自证正拿旧形状当基准；对着跑起来的站点执行 `node scripts/capture-isr-corpus.mjs --base=<origin>`，把 scripts/fixtures/isr-live-corpus/*.html 一起提交\n' \
+              "$rc" "${fams%,}"
           fi
       - name: 失败时留下预览站日志
         if: ${{ failure() }}
@@ -419,21 +446,25 @@ jobs:
       # 线上形态的 ISR 实证 —— 与 check-isr-live 作业跑**同一套三层契约**
       # （抽查页 s-maxage / 本机地址兜底 + 逐页技术面契约 + sitemap 族下限与 lastmod 覆盖率），
       # 只有阈值按生产规模重标定。
-      # 代理口径实测（2026-10-23：本地 996 站点库跑起来的 next dev 服务）：sitemap 1126 条，
-      # 族为 站点 996 / 分类 36 / 标签 16 / 合集 4 / 插件 65 / 目录 1，lastmod 覆盖 98%，
-      # 不可收录形态（/p/{n} 与带 query 的 loc）0 条，抽到的 14 页技术面契约全绿。
-      # 注意 dev 的 cache-control 是 no-store，所以那一轮「没有 s-maxage」14 项全红**是预期的**
-      # （dev 没有静态生成这一步）：这一层只有 CI 的 next start 预览和本次 dispatch 能实证。
-      # 下限取今天实测的 1/5～1/3：低到不会因正常增删抖动而红，又能在「某族整族丢失」
+      # 口径实测（2026-10-23，本地 **prod 模式**复现：`next build` + `next start` 起
+      # 996 站点库，NAVHUB_SITE_URL 运行时注入）：sitemap 1126 条，
+      # 族为 站点 996 / 分类 36 / 标签 16 / 合集 4 / 插件 65 / 目录 1，lastmod 覆盖 1101/1126（98%），
+      # 不可收录形态（/p/{n} 与带 query 的 loc）0 条，抽到的 14 页 **全部带
+      # `s-maxage=60, stale-while-revalidate=31535940`** 且技术面契约全绿 ⇒ 这一层不再只是推断。
+      # 早前用 next dev 做代理测量时「没有 s-maxage」14 项全红，那是 dev 无静态生成导致的
+      # 预期红，已被这一轮 prod 模式复现取代；仍然没被覆盖的只有「生产 CDN/反代会不会
+      # 改写 cache-control」这一跳 —— 若真实 dispatch 红在那儿，是真问题，不是门禁坏了。
+      # 下限取实测的 1/5～1/3：低到不会因正常增删抖动而红，又能在「某族整族丢失」
       # （sitemap 生成侧抛错、取数被截断）时立刻红。
       # 这里不需要 CI 那个「门禁自检标签」：CI 补标签是因为种子库最大标签只有 5 个站点，
       # 够不到 MIN_SITES_FOR_TAG_INDEX=10；生产有 16 个达标标签，天然抽得到样本。
-      # 若首次 dispatch 红在「没有 s-maxage」，那不是门禁坏了 —— 生产 CDN/反代把
-      # cache-control 改写或吞掉，正是这一层要抓出来的真问题。
+      # --rotate="$GITHUB_SHA"：996 个站点详情页不可能每轮全扫，固定样本等于永远只测
+      # 同一批；按 commit 散列轮换把覆盖面摊开，同一 SHA 可复现（日志打 key）。
       - name: ISR 线上抽查（三层契约，生产阈值）
         run: |
           node scripts/check-isr-routes.mjs --live --base="$NAVHUB_SITE_URL" --sample=2 \
             --min-checked=8 \
+            --rotate="$GITHUB_SHA" \
             --sitemap-min-site=200 --sitemap-min-category=10 --sitemap-min-tag=5 \
             --sitemap-min-collection=2 --sitemap-min-plugin=20 --sitemap-min-directory=1 \
             --sitemap-min-lastmod-ratio=0.9

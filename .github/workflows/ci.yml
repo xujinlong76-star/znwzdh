@@ -649,8 +649,14 @@ jobs:
       # 「应有页面」分母改由站点自己的 sitemap 提供（--from-sitemap）——只看 BFS
       # 发现的 URL 会让可达率恒为 100%（入链为 0 的页面根本不会被走到）。
       # max-urls 必须高于 sitemap 条目数（约 1100→图上 2200+），截断会被 --check 判红。
+      # 族下限与 check-isr-routes 共用同一组阈值，挡住「sitemap 整族丢失 → 分母变空 →
+      # 可达率虚假 100%」这第二种同义反复。
       - name: 站内链接图阈值检查
-        run: node scripts/link-graph.mjs --check --from-db=none --from-sitemap --base="$NAVHUB_SITE_URL" --max-urls=4000
+        run: |
+          node scripts/link-graph.mjs --check --from-db=none --from-sitemap \
+            --base="$NAVHUB_SITE_URL" --max-urls=4000 \
+            --sitemap-min-site=200 --sitemap-min-category=10 --sitemap-min-tag=5 \
+            --sitemap-min-collection=2 --sitemap-min-plugin=20 --sitemap-min-directory=1
         env:
           NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

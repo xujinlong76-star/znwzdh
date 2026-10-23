@@ -279,7 +279,14 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
           const check = verifySettingsConsistency(patch, data.settings, localWritten)
           const finalSettings = check.verified ? localWritten : writeLocalUserSettings(check.repairedSettings)
           setLocalPrefs(finalSettings)
-          setOverview({ ...overview, settings: finalSettings })
+          setOverview({
+            ...overview,
+            settings: {
+              ...overview.settings,
+              ...finalSettings,
+              updatedAt: finalSettings.updatedAt ?? overview.settings.updatedAt ?? Date.now(),
+            },
+          })
           setVerifyNotice(
             check.verified
               ? '已保存并通过云端与本机一致性自检'

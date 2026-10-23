@@ -132,6 +132,53 @@ function verdict(html, url) {
     .join(' | ');
 }
 
+/**
+ * canonical / og:url 的路径。跨页比较时这两个字段的路径天然不同，
+ * 但它们各自必须「指向本页」——自指性仍然要单独判，不能被路径抹平一起放过。
+ */
+export function identityPaths(html) {
+  const pick = (tagRe, attr) => {
+    const tag = (html.match(tagRe) ?? [])[0];
+    return tag ? (tag.match(new RegExp(`\\b${attr}="([^"]+)"`, 'i')) ?? [])[1] : null;
+  };
+  const pathOf = (value) => {
+    if (!value) return null;
+    try {
+      return new URL(value, 'https://navhub.example').pathname;
+    } catch {
+      return null;
+    }
+  };
+  return {
+    canonical: pathOf(pick(/<link\b[^>]*\brel="canonical"[^>]*>/i, 'href')),
+    ogUrl: pathOf(pick(/<meta\b[^>]*\bproperty="og:url"[^>]*>/i, 'content')),
+  };
+}
+
+/**
+ * 把页面身份类字段（canonical / og:url）的**路径**对齐成同一个哨兵值（origin 保留）。
+ *
+ * --check 比的是两个不同时刻的页面：仓库语料抓自当时 sitemap 的第一条，现抓的
+ * 是今天的第一条。库一换（CI 每次 seed 的站点 UUID 都是新的）就是两页，
+ * 这两条路径必然不同 —— 那不是渲染形状漂移，是拿 A 页的身份证去核对 B 页。
+ * 路径同一性由 `--live` 负责（逐页断言 canonical == 当前页）；这里只比 head
+ * 结构与契约裁决，所以把路径抹平、把 origin 留着：指到别的域名仍会红。
+ */
+export function neutralizeUrlPaths(html, sentinel = '/__corpus__/sample') {
+  const reset = (tag) =>
+    tag.replace(/(\b(?:href|content)=")([^"]+)(")/i, (m, pre, url, post) => {
+      try {
+        const abs = new URL(url, 'https://navhub.example');
+        return `${pre}${abs.origin}${sentinel}${post}`;
+      } catch {
+        return m;
+      }
+    });
+  return html
+    .replace(/<link\b[^>]*\brel="canonical"[^>]*>/gi, reset)
+    .replace(/<meta\b[^>]*\bproperty="og:url"[^>]*>/gi, reset);
+}
+
 async function main() {
   const sm = await fetch(`${BASE}/sitemap.xml`);
   if (!sm.ok) {
@@ -175,22 +222,38 @@ async function main() {
       const freshFull = `<!DOCTYPE html>\n<html lang="zh-CN">\n${body}\n</html>\n`;
       // 两边都按 navhub.example 判：`stripToContract` 会把真实 origin 改写成它，
       // 现抓的那份同样是改写后的形状 —— 拿 BASE 去判 canonical 会永远红在
-      // 「域名不同」这个跟过期无关的地方。
+      // 「域名不同」这个跟过期无关的地方。路径同样要抹平：两边的页面本来就不是同一页
+      // （见 `neutralizeUrlPaths`），不抹就会把「换了库」常年报成语料过期。
       const CORPUS_ORIGIN = 'https://navhub.example';
-      const storedVerdict = verdict(stored, `${CORPUS_ORIGIN}${hit.path}`);
-      const liveVerdict = verdict(freshFull, `${CORPUS_ORIGIN}${hit.path}`);
+      const SAMPLE_PATH = '/__corpus__/sample';
+      const storedVerdict = verdict(neutralizeUrlPaths(stored), `${CORPUS_ORIGIN}${SAMPLE_PATH}`);
+      const liveVerdict = verdict(neutralizeUrlPaths(freshFull), `${CORPUS_ORIGIN}${SAMPLE_PATH}`);
       const diffs = shapeDiff(shape(stored), shape(freshFull));
       const verdictChanged = storedVerdict !== liveVerdict;
-      if (!diffs.length && !verdictChanged) {
+      // 路径抹平只用于「两页本来就不是同一页」的跨页比较；自指性必须各自成立：
+      // 语料按注释里的来源路径自指，现抓页按本次抽到的路径自指。少了这一步，
+      // 渲染器把 canonical 写成别的页也会被路径抹平吃掉。
+      const storedSource = (stored.match(/来源[\s\S]*?抓 (\S+?)，/) ?? [])[1];
+      const storedIds = identityPaths(stored);
+      const liveIds = identityPaths(freshFull);
+      const identityProblems = [];
+      if (!storedSource) identityProblems.push('语料缺少来源路径注释，无法确认 canonical 自指');
+      else if (storedIds.canonical !== storedSource)
+        identityProblems.push(`语料 canonical 不是自指（${storedIds.canonical} ≠ 来源 ${storedSource}）`);
+      if (liveIds.canonical !== hit.path)
+        identityProblems.push(`现抓页面的 canonical 不是自指（${liveIds.canonical} ≠ ${hit.path}）`);
+      if (!identityProblems.length && !diffs.length && !verdictChanged) {
         console.log(`✓ ${fam.name.padEnd(20)} 形状与契约裁决一致（${hit.path}）`);
         continue;
       }
       drifted.push(
-        `${fam.name}：${diffs.length ? diffs.join('；') : ''}${diffs.length && verdictChanged ? '；' : ''}` +
+        `${fam.name}：${identityProblems.join('；')}${identityProblems.length && (diffs.length || verdictChanged) ? '；' : ''}` +
+          `${diffs.length ? diffs.join('；') : ''}${diffs.length && verdictChanged ? '；' : ''}` +
           `${verdictChanged ? `契约裁决变了 仓库=${storedVerdict || '通过'} → 现抓=${liveVerdict || '通过'}` : ''}`,
       );
       console.log(
         `✖ ${fam.name.padEnd(20)} 语料已过期（${hit.path}）` +
+          (identityProblems.length ? `\n    ${identityProblems.join('\n    ')}` : '') +
           (diffs.length ? `\n    ${diffs.join('\n    ')}` : '') +
           (verdictChanged ? `\n    契约裁决：仓库=${storedVerdict || '通过'} → 现抓=${liveVerdict || '通过'}` : ''),
       );

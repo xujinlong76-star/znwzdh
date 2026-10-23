@@ -13,7 +13,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { CONTRACT_KINDS_DEFAULT, contractFindings, pickSample, rotateHash } from "./check-isr-routes.mjs";
-import { shape, shapeDiff } from "./capture-isr-corpus.mjs";
+import { identityPaths, neutralizeUrlPaths, shape, shapeDiff } from "./capture-isr-corpus.mjs";
 
 const SCRIPT = resolve("scripts/check-isr-routes.mjs");
 // 脚本按 apps/web/<NEXT_DIST_DIR> 找产物（与 check-bundle-budget 同一套环境变量）。
@@ -1025,4 +1025,49 @@ describe("capture-isr-corpus.mjs --check 的漂移判据", () => {
       ).toBe(true);
     });
   }
+});
+
+/**
+ * `--check` 是跨页比较：仓库语料抓自当时 sitemap 的第一条，现抓的是今天的第一条。
+ * 换库（CI 每次 seed 的站点 UUID 都是新的）后两条路径必然不同，旧实现把
+ * 「canonical 指向另一页」判成语料过期 —— 那不是形状漂移，是拿 A 页的身份证核对 B 页。
+ * 修法是把身份字段的路径抹平后再比结构；但「自指」这条不能一起放过。
+ */
+describe("capture-isr-corpus.mjs 跨页比较的路径判据", () => {
+  const html = readFileSync(resolve(CORPUS_DIR, "site-detail.html"), "utf8");
+  const kinds = new Set<string>(CONTRACT_KINDS_DEFAULT);
+
+  it("路径抹平后 canonical 与 og:url 指向同一哨兵，origin 保留", () => {
+    const out = neutralizeUrlPaths(html);
+    expect(out).toContain('rel="canonical" href="https://navhub.example/__corpus__/sample"');
+    expect(out).toMatch(/property="og:url" content="https:\/\/navhub\.example\/__corpus__\/sample"/);
+    // 语料注释里允许出现抓取时的 localhost 来源；判据只看身份标签本身
+    const identityTags = (
+      out.match(/<link\b[^>]*\brel="canonical"[^>]*>|<meta\b[^>]*\bproperty="og:url"[^>]*>/gi) ?? []
+    ).join("\n");
+    expect(identityTags).not.toContain("localhost");
+    expect(identityPaths(out)).toEqual({ canonical: "/__corpus__/sample", ogUrl: "/__corpus__/sample" });
+  });
+
+  it("异域 canonical 不会被抹平：origin 保留，契约裁决照样报不一致", () => {
+    const evil = html.replace(
+      /(<link\b[^>]*\brel="canonical"[^>]*\bhref=")https:\/\/navhub\.example/,
+      "$1https://evil.example",
+    );
+    expect(evil, "语料里没有可替换的 canonical 绝对地址").not.toBe(html);
+    const neutralized = neutralizeUrlPaths(evil);
+    expect(neutralized).toContain("https://evil.example/__corpus__/sample");
+    const found = contractFindings(neutralized, "https://navhub.example/__corpus__/sample", kinds, {
+      expectIndexable: true,
+    });
+    expect(found.length, "异域 canonical 被路径抹平吃掉了").toBeGreaterThan(0);
+    expect(found.map((f) => f.kind)).toContain("og");
+  });
+
+  it("identityPaths 取路径（不是整串 URL），字段缺失时如实为 null", () => {
+    expect(identityPaths(html).canonical).toMatch(/^\/site\//);
+    expect(identityPaths(html).ogUrl).toBe(identityPaths(html).canonical);
+    expect(identityPaths(html.replace(/<link\b[^>]*\brel="canonical"[^>]*>/, "")).canonical).toBeNull();
+    expect(identityPaths(html.replace(/<meta\b[^>]*\bproperty="og:url"[^>]*>/, "")).ogUrl).toBeNull();
+  });
 });

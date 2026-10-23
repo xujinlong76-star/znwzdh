@@ -19,6 +19,15 @@ const CSP_DIRECTIVES = [
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  // 本地开发允许的来源：Next.js 14.2+ 默认阻断非 localhost 的 HMR WebSocket 跨源连接以防御 CSWSH。
+  // 通过 127.0.0.1 访问时，Origin 会被 blockCrossSiteDEV 拦截为 403，此处放行。
+  allowedDevOrigins: [
+    '127.0.0.1',
+    '127.0.0.1:3000',
+    'localhost',
+    'localhost:3000',
+    ...(process.env.NAVHUB_DEV_ORIGINS ? process.env.NAVHUB_DEV_ORIGINS.split(',').map((s) => s.trim()) : []),
+  ],
   // 构建输出目录可用 NEXT_DIST_DIR 覆盖（默认 .next）。
   // 用途：CI / 验证构建不想动现有产物时指定独立目录。
   distDir: process.env.NEXT_DIST_DIR ?? ".next",

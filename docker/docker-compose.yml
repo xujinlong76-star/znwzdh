@@ -93,6 +93,9 @@ services:
       # —— 只能改 compose（就是这一行）。
       # 开启后每个带身份的请求都要 x-navhub-identity-signature = HMAC-SHA256(secret, identity)。
       NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
+      # 限流豁免凭据（与 web 服务必须同值；留空 = 零豁免，行为同历史）。
+      # 见 .env.example 与 docs/seo/ISR-ROUTES.md 5.9：不带它时 web 层 SSR 取数与访客抢同一个 300/min 桶。
+      NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}
     healthcheck:
       # /api/ready 会真实 ping 数据库/存储；/api/health 只证明进程活着，
       # 数据库挂掉时容器仍会显示 healthy（restart 策略也就永远不会触发）。
@@ -168,6 +171,9 @@ services:
       # 带身份的请求 401；只有中枢有、代理没有 = 同样 401（代理不会补签名头）。
       # 留空 = 两侧都不签名/不校验，等于历史行为。
       NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
+      # 与 api 服务同值：web 层服务端取数（lib/server/hub.ts）靠它豁免按 IP 的限流。
+      # 注意：只给服务端直连用；浏览器侧 /api/hub/* 代理带上它等于把全站访客标成内部流量。
+      NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}
 
   postgres:
     image: pgvector/pgvector:pg17
@@ -235,6 +241,8 @@ services:
       NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
       NAVHUB_ADMIN_TOKEN: ${NAVHUB_ADMIN_TOKEN:-}
       NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
+      # 限流豁免凭据（standard 模式同样要有，否则 web 侧 SSR 取数会撞 300/min 桶）
+      NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}
       NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-http://localhost:8788}
       NAVHUB_SESSION_SECRET_PREV: ${NAVHUB_SESSION_SECRET_PREV:-}
       NAVHUB_ALERT_WEBHOOK: ${NAVHUB_ALERT_WEBHOOK:-}

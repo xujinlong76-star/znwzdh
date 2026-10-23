@@ -76,6 +76,8 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_BOOTSTRAP_TOKEN",
     "NAVHUB_ADMIN_TOKEN",
     "NAVHUB_IDENTITY_SECRET",
+    // 限流豁免凭据：中枢这一侧没有它，web 侧发了头也换不到豁免（收录页照样刷成 noindex 壳）
+    "NAVHUB_INTERNAL_TOKEN",
     "NAVHUB_SESSION_SECRET",
     "NAVHUB_SESSION_SECRET_PREV",
     "NAVHUB_TRUST_PROXY",
@@ -87,13 +89,15 @@ const SECURITY_KEYS_BY_SERVICE: Record<string, string[]> = {
     "NAVHUB_BOOTSTRAP_TOKEN",
     "NAVHUB_ADMIN_TOKEN",
     "NAVHUB_IDENTITY_SECRET",
+    // 限流豁免凭据：中枢这一侧没有它，web 侧发了头也换不到豁免（收录页照样刷成 noindex 壳）
+    "NAVHUB_INTERNAL_TOKEN",
     "NAVHUB_SESSION_SECRET",
     "NAVHUB_SESSION_SECRET_PREV",
     "NAVHUB_TRUST_PROXY",
     "NAVHUB_PUBLIC_URL",
     "NAVHUB_ALERT_WEBHOOK",
   ],
-  web: ["NAVHUB_SESSION_SECRET", "NAVHUB_IDENTITY_SECRET"],
+  web: ["NAVHUB_SESSION_SECRET", "NAVHUB_IDENTITY_SECRET", "NAVHUB_INTERNAL_TOKEN"],
 };
 
 describe("docker compose 安全变量透传契约", () => {
@@ -115,6 +119,16 @@ describe("docker compose 安全变量透传契约", () => {
   it("身份签名密钥同时给到中枢与 Web：只配一侧会让所有带身份请求 401", () => {
     expect(envBlocks.get("api")?.has("NAVHUB_IDENTITY_SECRET")).toBe(true);
     expect(envBlocks.get("web")?.has("NAVHUB_IDENTITY_SECRET")).toBe(true);
+  });
+
+  it("限流豁免凭据同时给到中枢与 Web：只配一侧等于没配", () => {
+    // web 侧没配 → 请求不带 x-navhub-internal-token → 收录页照旧撞 300/min，
+    // 429 之后渲染的 noindex 降级壳被 ISR 缓存（docs/seo/ISR-ROUTES.md 5.9）。
+    // 中枢没配 → 带了头也不豁免（fail closed），症状与上面一模一样。
+    for (const service of ["api", "api-standard", "web"]) {
+      expect(envBlocks.get(service)?.get("NAVHUB_INTERNAL_TOKEN"), `${service} 未透传豁免凭据`)
+        .toBe("${NAVHUB_INTERNAL_TOKEN:-}");
+    }
   });
 
   it("凭据类变量不得内置默认值（升级改造方案 P0-1）", () => {

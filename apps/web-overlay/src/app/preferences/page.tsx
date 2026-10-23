@@ -25,9 +25,10 @@ import {
   profileDegradeNotice,
   profileViewState,
 } from '@/lib/profile-view'
-import { Sparkles, RotateCcw, Tag, FolderOpen, History, ArrowLeft } from 'lucide-react'
+import { Sparkles, RotateCcw, Tag, FolderOpen, History, Search, Heart, Clock, ShieldAlert, Bot } from 'lucide-react'
 import { UserLlmConfigCard } from '@/components/ai/user-llm-config-card'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
+import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { EmptyState } from '@/components/ui/empty-state'
 
 interface Profile {
@@ -148,95 +149,56 @@ export default function PreferencesPage() {
   const degrade = loadError === null ? null : profileDegradeNotice(loadError)
 
   return (
-    <Container as="main" id="main-content" className="space-y-6 pt-3 pb-8 sm:pt-4 sm:pb-10">
+    <Container as="main" id="main-content" className="space-y-5 pb-8 pt-3 sm:space-y-6 sm:pb-10 sm:pt-4">
       <UserCenterNav />
-      <div className="relative overflow-hidden rounded-2xl border border-border/70 glass-surface market-hero subtle-mesh p-4 sm:p-6 shadow-xs">
-        <div aria-hidden className="pointer-events-none absolute -right-12 -top-12 w-64 h-64 bg-primary/10 rounded-full blur-3xl" />
-        <div aria-hidden className="pointer-events-none absolute -left-20 bottom-0 w-44 h-44 bg-sky-400/10 rounded-full blur-3xl" />
-        <Sparkles
-          aria-hidden
-          strokeWidth={1}
-          className="pointer-events-none absolute right-5 top-5 hidden sm:block w-16 h-16 text-border/70"
-        />
-        <div className="relative z-10 space-y-3">
-          <div className="flex items-center gap-2">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2.5 py-1 rounded-md bg-background/60 hover:bg-background border border-border/60"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>返回主页</span>
+
+      <CenterPageHeader
+        title="我的偏好"
+        icon={Sparkles}
+        eyebrow="个性化偏好"
+        back={{ href: '/', label: '返回主页' }}
+        description="搜索会根据你的浏览与收藏做轻量个性化重排。这里是系统据你的行为推断出的内容——看得见，才可以控制。"
+        actions={
+          <Button variant="outline" size="sm" asChild className="w-full text-xs sm:w-auto">
+            <Link href="/favorites">
+              <History className="mr-2 h-4 w-4" />
+              搜索历史在收藏页管理
             </Link>
-            <span className="text-border">/</span>
-            <span className="text-xs text-primary font-medium">个性化偏好</span>
-          </div>
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-            <div className="min-w-0 max-w-2xl">
-              <h1 className="flex items-center gap-2.5 text-xl font-semibold tracking-tight sm:text-2xl">
-                <div className="p-1.5 rounded-xl bg-primary/10 text-primary border border-primary/20 shrink-0">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <span className="truncate">我的偏好</span>
-              </h1>
-              <p className="mt-2 text-xs sm:text-sm text-muted-foreground leading-relaxed">
-                搜索会根据你的浏览与收藏做轻量个性化重排。这里是系统据你的行为推断出的内容——
-                看得见，才可以控制。
-              </p>
-            </div>
-            <Button variant="outline" size="sm" asChild className="w-full sm:w-auto shrink-0 text-xs">
-              <Link href="/favorites">
-                <History className="mr-2 h-4 w-4" />
-                搜索历史另在收藏页管理
-              </Link>
-            </Button>
-          </div>
-          <div className="mt-5 pt-4 border-t border-border/50 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary/25 bg-primary/5 text-xs text-primary">
-              <Sparkles className="w-3 h-3" />
-              {view === 'loading'
-                ? '正在读取画像'
-                : view === 'empty'
-                ? '暂无画像'
-                : view === 'degraded'
-                ? '画像暂不可用'
-                : '画像已生成'}
-            </span>
-            {profile && (
-              <>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
-                  搜索 {profile.searchCount} 次
-                </span>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-background/60 text-xs text-muted-foreground">
-                  收藏 {profile.favoriteSiteIds.length} 个
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
+          </Button>
+        }
+      />
 
       {view === 'loading' ? (
         <div aria-busy="true" aria-live="polite" aria-label="正在加载偏好" className="space-y-4">
           <span className="sr-only">加载中…</span>
-          <div className="rounded-xl border border-border/70 bg-card/50 p-5 space-y-3 animate-pulse">
-            <div className="h-4 w-32 rounded bg-muted" />
-            <div className="h-8 w-full rounded bg-muted" />
-            <div className="h-8 w-4/5 rounded bg-muted" />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="space-y-3 rounded-xl border border-border/70 bg-card/50 p-4 last:col-span-2 sm:last:col-span-1">
+                <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+                <div className="h-6 w-24 animate-pulse rounded bg-muted" />
+                <div className="h-2.5 w-20 animate-pulse rounded bg-muted" />
+              </div>
+            ))}
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="rounded-xl border border-border/70 bg-card/50 p-5 space-y-3 animate-pulse">
-                <div className="h-4 w-24 rounded bg-muted" />
-                <div className="h-3 w-full rounded bg-muted" />
-                <div className="h-3 w-2/3 rounded bg-muted" />
+              <div key={i} className="space-y-3 rounded-xl border border-border/70 bg-card/50 p-4 sm:p-5">
+                <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+                <div className="h-7 w-3/5 animate-pulse rounded-full bg-muted" />
+                <div className="h-7 w-2/5 animate-pulse rounded-full bg-muted" />
               </div>
             ))}
+          </div>
+          <div className="space-y-3 rounded-xl border border-border/70 bg-card/50 p-4 sm:p-5">
+            <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-full animate-pulse rounded bg-muted" />
+            <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
           </div>
         </div>
       ) : view === 'degraded' && degrade ? (
         <div className="rounded-xl border border-dashed border-border/70 bg-card/40 p-6 text-center">
-          <p className="text-sm text-muted-foreground">{degrade.message}</p>
-          <p className="text-xs text-muted-foreground mt-2">{degrade.hint}</p>
+          <p className="text-sm font-medium text-foreground">{degrade.message}</p>
+          <p className="mt-2 text-xs text-muted-foreground">{degrade.hint}</p>
           {degrade.retryable && (
             <Button size="sm" variant="outline" className="mt-4" onClick={handleRetry}>
               <RotateCcw className="mr-2 h-4 w-4" />
@@ -257,79 +219,143 @@ export default function PreferencesPage() {
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <section className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 transition-colors hover:border-border">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <FolderOpen className="h-4 w-4 text-primary" />
-              常浏览的类目
-            </h2>
-            <div className="flex flex-wrap gap-2">
-              {profile!.topCategories.map((c) => (
-                <span key={c} className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs">
-                  {catTitles[c] ?? c}
-                </span>
-              ))}
-              {profile!.topCategories.length === 0 && (
-                <span className="text-xs text-muted-foreground">暂无</span>
-              )}
-            </div>
+        <div className="space-y-4 sm:space-y-5">
+          {/* 摘要：把原先挤在头图里的计数拆成可扫读的三块，窄屏 2 列、第三块整行 */}
+          <section aria-label="画像摘要" className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {[
+              { icon: Search, label: '搜索次数', value: profile!.searchCount, hint: '累计参与统计' },
+              { icon: Heart, label: '收藏站点', value: profile!.favoriteSiteIds.length, hint: '参与重排' },
+              { icon: Clock, label: '画像更新', value: new Date(profile!.updatedAt).toLocaleDateString('zh-CN'), hint: '本地时区' },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="min-w-0 rounded-xl border border-border/70 bg-card/60 p-4 last:col-span-2 sm:last:col-span-1"
+              >
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <stat.icon className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+                  {stat.label}
+                </p>
+                <p className="mt-2 break-words text-lg font-semibold tabular-nums">{stat.value}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">{stat.hint}</p>
+              </div>
+            ))}
           </section>
 
-          <section className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 transition-colors hover:border-border">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <Tag className="h-4 w-4 text-primary" />
-              关注的标签
-            </h2>
-            <div className="flex flex-wrap gap-2">
-              {profile!.topTags.map((t) => (
-                <span key={t} className="rounded-full border border-border/60 bg-accent px-3 py-1 text-xs">
-                  {t}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <section className="flex h-full flex-col rounded-xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-border sm:p-5">
+              <h2 className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">
+                <span className="flex min-w-0 items-center gap-2">
+                  <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
+                  常浏览的类目
                 </span>
-              ))}
-              {profile!.topTags.length === 0 && (
-                <span className="text-xs text-muted-foreground">暂无</span>
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-border/70 bg-card/60 p-4 sm:p-5 sm:col-span-2">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <History className="h-4 w-4 text-primary" />
-              最近访问过的站点（{profile!.visitedSiteIds.length}）
-            </h2>
-            <div className="flex flex-wrap gap-2">
-              {profile!.visitedSiteIds.slice(0, 20).map((id) => (
-                <span key={id} className="rounded-full border border-border/60 bg-muted px-3 py-1 text-xs max-w-full truncate inline-block">
-                  {siteTitles[id] ?? id}
+                <span className="shrink-0 text-[11px] font-normal text-muted-foreground">
+                  {profile!.topCategories.length} 个
                 </span>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border/50 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>搜索计数 {profile!.searchCount} 次</span>
-              <span>·</span>
-              <span>收藏 {profile!.favoriteSiteIds.length} 个</span>
-              <span>·</span>
-              <span>更新于 {new Date(profile!.updatedAt).toLocaleString('zh-CN')}</span>
-            </p>
-          </section>
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {profile!.topCategories.map((c) => (
+                  <span
+                    key={c}
+                    title={catTitles[c] ?? c}
+                    className="max-w-full truncate rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs"
+                  >
+                    {catTitles[c] ?? c}
+                  </span>
+                ))}
+                {profile!.topCategories.length === 0 && (
+                  <span className="text-xs text-muted-foreground">暂无</span>
+                )}
+              </div>
+            </section>
 
-          <section className="rounded-xl border border-dashed border-border/70 bg-card/40 p-4 sm:p-5 sm:col-span-2">
-            <h2 className="text-sm font-medium mb-2">重置画像</h2>
-            <p className="text-xs text-muted-foreground mb-3">
-              清除以上偏好与相关行为记录。搜索结果将恢复为纯相关性排序。
-              <strong className="text-foreground"> 收藏夹与搜索历史不会被删除</strong>——那是你主动保存的数据。
-            </p>
-            <Button size="sm" variant="destructive" onClick={handleReset} disabled={resetting} className="w-full sm:w-auto">
-              <RotateCcw className="mr-2 h-4 w-4" />
-              {resetting ? '重置中…' : '重置个性化画像'}
-            </Button>
-          </section>
+            <section className="flex h-full flex-col rounded-xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-border sm:p-5">
+              <h2 className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">
+                <span className="flex min-w-0 items-center gap-2">
+                  <Tag className="h-4 w-4 shrink-0 text-primary" />
+                  关注的标签
+                </span>
+                <span className="shrink-0 text-[11px] font-normal text-muted-foreground">
+                  {profile!.topTags.length} 个
+                </span>
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {profile!.topTags.map((t) => (
+                  <span
+                    key={t}
+                    title={t}
+                    className="max-w-full truncate rounded-full border border-border/60 bg-accent px-3 py-1 text-xs"
+                  >
+                    {t}
+                  </span>
+                ))}
+                {profile!.topTags.length === 0 && (
+                  <span className="text-xs text-muted-foreground">暂无</span>
+                )}
+              </div>
+            </section>
+
+            <section className="flex h-full flex-col rounded-xl border border-border/70 bg-card/60 p-4 sm:col-span-2 sm:p-5">
+              <h2 className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">
+                <span className="flex min-w-0 items-center gap-2">
+                  <History className="h-4 w-4 shrink-0 text-primary" />
+                  最近访问过的站点
+                </span>
+                <span className="shrink-0 text-[11px] font-normal text-muted-foreground">
+                  {profile!.visitedSiteIds.length} 个
+                </span>
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {profile!.visitedSiteIds.slice(0, 20).map((id) => (
+                  <span
+                    key={id}
+                    title={siteTitles[id] ?? id}
+                    className="max-w-full truncate rounded-full border border-border/60 bg-muted px-3 py-1 text-xs"
+                  >
+                    {siteTitles[id] ?? id}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border/50 pt-3 text-[11px] text-muted-foreground">
+                <span>展示最近 {Math.min(20, profile!.visitedSiteIds.length)} 个</span>
+                <span aria-hidden>·</span>
+                <span>更新于 {new Date(profile!.updatedAt).toLocaleString('zh-CN')}</span>
+              </p>
+            </section>
+
+            <section className="rounded-xl border border-destructive/25 bg-destructive/[0.03] p-4 sm:col-span-2 sm:p-5">
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-destructive">
+                <ShieldAlert className="h-4 w-4" />
+                重置画像
+              </h2>
+              <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
+                清除以上偏好与相关行为记录。搜索结果将恢复为纯相关性排序。
+                <strong className="text-foreground"> 收藏夹与搜索历史不会被删除</strong>——那是你主动保存的数据。
+              </p>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleReset}
+                disabled={resetting}
+                className="w-full sm:w-auto"
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                {resetting ? '重置中…' : '重置个性化画像'}
+              </Button>
+            </section>
+          </div>
         </div>
       )}
 
-      <div className="mt-6">
+      <section className="space-y-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <Bot className="h-4 w-4 text-primary" />
+            AI 与扩展
+          </h2>
+          <p className="text-xs text-muted-foreground">模型与密钥配置，只影响本机的增强能力。</p>
+        </div>
         <UserLlmConfigCard />
-      </div>
+      </section>
     </Container>
   )
 }

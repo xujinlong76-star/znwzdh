@@ -22,6 +22,7 @@ import rateLimit from "@fastify/rate-limit";
 import { createHash } from "node:crypto";
 import type { AppContext } from "./context.ts";
 import { assertIdentitySecurity } from "./security-readiness.ts";
+import { INTERNAL_TOKEN_HEADER, isInternalTraffic } from "./internal-traffic.ts";
 import { buildOpenApiDoc, renderDocsHtml, type RouteEntry } from "./openapi.ts";
 import { recordHttpMetric } from "./metrics.ts";
 import { invalidateSnapshotCache } from "./storage.ts";
@@ -108,6 +109,8 @@ export async function buildServer(ctx: AppContext) {
           "req.headers.authorization",
           "req.headers.cookie",
           "req.headers['x-navhub-identity-signature']",
+          // 限流豁免凭据：泄露它等于拿到「不吃按 IP 额度」的通道，绝不能进日志聚合。
+          "req.headers['x-navhub-internal-token']",
           "res.headers['set-cookie']",
         ],
         censor: "[redacted]",
@@ -143,7 +146,22 @@ export async function buildServer(ctx: AppContext) {
     origin: allowAll ? true : ctx.config.corsOrigins,
     credentials: !allowAll,
   });
-  await app.register(rateLimit, { max: process.env.NODE_ENV === "test" ? 10_000 : 300, timeWindow: "1 minute" });
+  // 全局按 IP 限流。`allowList` 这一眼看上去像「开后门」，实际是在补一个自己踩自己的洞：
+  // web 层所有 SSR/RSC 取数在部署拓扑上共用一个出口 IP，抓取式扫 1126 个收录页
+  // ≈ 750 次/分钟，是 300/min 额度的 2.5 倍 → 429 → 详情页 `hubGetProbe` 判 failed
+  // → 渲染带 `noindex, follow` 的降级壳，而这份壳会被 ISR 缓存（实测见 docs/seo/ISR-ROUTES.md 5.9）。
+  // 判据是共享凭据头 `x-navhub-internal-token`（未配置 NAVHUB_INTERNAL_TOKEN 时恒不豁免）；
+  // 不用内网 IP 段做判据，因为 `NAVHUB_TRUST_PROXY=1` 时 XFF 可由客户端自报。
+  // 注意：浏览器侧的 /api/hub/* 代理**不许**带这个头 —— 带上等于把全站访客标成内部流量。
+  await app.register(rateLimit, {
+    max: ctx.config.rateLimitMax,
+    timeWindow: "1 minute",
+    allowList: (req) =>
+      isInternalTraffic(
+        req.headers[INTERNAL_TOKEN_HEADER] as string | string[] | undefined,
+        ctx.config.internalToken
+      ),
+  });
 
   /* ---------------------------- 安全响应头（升级 #7 纵深，不引入 helmet 依赖） ---------------------------- */
 

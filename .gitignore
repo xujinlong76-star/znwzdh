@@ -24,6 +24,7 @@ playwright-report/
 *.tsbuildinfo
 .DS_Store
 Thumbs.db
+.trae/
 
 # --- vendored 上游底座（apps/web）---
 # apps/web 是 NavSphere 的完整副本，通过 `node scripts/vendor-web.mjs` 拉取，

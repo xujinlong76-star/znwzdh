@@ -90,6 +90,21 @@ export interface AppConfig {
    * 不配置时行为与历史版本完全一致（零回归，可灰度）。
    */
   identitySecret: string | null;
+  /**
+   * 我方 Web 层服务端取数的限流豁免凭据（可选，`x-navhub-internal-token`）。
+   *
+   * 只影响限流，不参与鉴权：web 侧所有 SSR/RSC 取数在部署上是同一个出口 IP，
+   * 抓取式扫描会把 300 req/min 的按 IP 额度打穿，429 又让详情页渲染成
+   * 带 `noindex` 的降级壳并被 ISR 缓存（实测见 docs/seo/ISR-ROUTES.md 5.9）。
+   * 不配置时零豁免，与历史行为逐字一致。
+   */
+  internalToken: string | null;
+  /**
+   * 全局按 IP 限流的额度（次/分钟）。默认沿用历史值：测试 10000，其余 300。
+   * 做成可配是因为「内部豁免」与「公网额度」这两件事都得能在部署时调，
+   * 而测试要能在几毫秒内把桶打满（10000 次不可能在单测里跑完）。
+   */
+  rateLimitMax: number;
   /** 凭据签发与生命周期保护策略 */
   tokenPolicy: {
     maxLifetimeDays: number;
@@ -249,6 +264,19 @@ function assertSecurityConstraints(
     throw new Error("standard 模式必须提供 NAVHUB_DATABASE_URL");
   }
 
+  // 2b. 限流豁免凭据一旦配置就必须够长：它换到的是「不吃按 IP 额度」，
+  // 短凭据可被暴力猜中，等于给公网开了一个免限流的后门。
+  if (isProd && config.internalToken && config.internalToken.length < 32) {
+    throw new Error(
+      "生产环境的 NAVHUB_INTERNAL_TOKEN 至少 32 字符（它豁免的是按 IP 限流，弱凭据等于对公网开放免限流通道）"
+    );
+  }
+
+  // 2c. 限流额度必须落在正数：0/负数会让桶永满（整站 429），NaN 会静默放行。
+  if (!Number.isFinite(config.rateLimitMax) || config.rateLimitMax < 1) {
+    throw new Error(`NAVHUB_RATE_LIMIT_MAX 必须是 >=1 的数字，当前 ${config.rateLimitMax}`);
+  }
+
   // 3. 生产公网暴露鉴权守护（防管理后台未授权公开裸奔）
   //
   // 仅靠 publicUrl 判断会有一个致命缺口：未显式配置时默认值是 localhost，
@@ -373,6 +401,9 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
     identitySecret: process.env.NAVHUB_IDENTITY_SECRET || null,
+    internalToken: process.env.NAVHUB_INTERNAL_TOKEN?.trim() || null,
+    // 默认值刻意保持历史口径：只有显式配置才改变限流强度
+    rateLimitMax: num("NAVHUB_RATE_LIMIT_MAX", process.env.NODE_ENV === "test" ? 10_000 : 300),
 
     tokenPolicy: {
       maxLifetimeDays: num("NAVHUB_TOKEN_MAX_LIFETIME_DAYS", 365),

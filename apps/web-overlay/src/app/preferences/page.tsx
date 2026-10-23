@@ -242,7 +242,7 @@ export default function PreferencesPage() {
           </section>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <section className="flex h-full flex-col rounded-xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-border sm:p-5">
+            <section className="flex h-full min-w-0 flex-col rounded-xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-border sm:p-5">
               <h2 className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">
                 <span className="flex min-w-0 items-center gap-2">
                   <FolderOpen className="h-4 w-4 shrink-0 text-primary" />
@@ -268,7 +268,7 @@ export default function PreferencesPage() {
               </div>
             </section>
 
-            <section className="flex h-full flex-col rounded-xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-border sm:p-5">
+            <section className="flex h-full min-w-0 flex-col rounded-xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-border sm:p-5">
               <h2 className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">
                 <span className="flex min-w-0 items-center gap-2">
                   <Tag className="h-4 w-4 shrink-0 text-primary" />
@@ -294,7 +294,7 @@ export default function PreferencesPage() {
               </div>
             </section>
 
-            <section className="flex h-full flex-col rounded-xl border border-border/70 bg-card/60 p-4 sm:col-span-2 sm:p-5">
+            <section className="flex h-full min-w-0 flex-col rounded-xl border border-border/70 bg-card/60 p-4 sm:col-span-2 sm:p-5">
               <h2 className="mb-3 flex items-center justify-between gap-2 text-sm font-semibold">
                 <span className="flex min-w-0 items-center gap-2">
                   <History className="h-4 w-4 shrink-0 text-primary" />
@@ -322,7 +322,7 @@ export default function PreferencesPage() {
               </p>
             </section>
 
-            <section className="rounded-xl border border-destructive/25 bg-destructive/[0.03] p-4 sm:col-span-2 sm:p-5">
+            <section className="min-w-0 rounded-xl border border-destructive/25 bg-destructive/[0.03] p-4 sm:col-span-2 sm:p-5">
               <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-destructive">
                 <ShieldAlert className="h-4 w-4" />
                 重置画像

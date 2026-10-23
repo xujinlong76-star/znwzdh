@@ -58,20 +58,22 @@ export async function listCategoriesPage(
 /**
  * 每个类目的存活站点数（一次聚合，取代调用方「翻 5 页 × 1000 站点再 JS 计数」）。
  *
- * 口径：**单主指针**（`sites.category_id`），`status = 'active'` 且未进回收站。
- * 新树落地后 `sub_category_id` 只是同根下的只读副指针，浏览侧（search 的
- * categoryId 过滤）也只看主指针；把它并集进来会让「一级根 = 子叶计数之和」
- * 重复计算同根副指针站点（实测 jobs-and-career 11 站被算成 13），进而让
- * 首页/sitemap 链向一个按 11 站判定已 404 的类目页。
+ * 口径：**单主指针**（`sites.category_id`），`status = 'active'`、`enabled`
+ * 且未进回收站。新树落地后 `sub_category_id` 只是同根下的只读副指针，浏览侧
+ * （search 的 categoryId 过滤）也只看主指针；把它并集进来会让「一级根 = 子叶
+ * 计数之和」重复计算同根副指针站点（实测 jobs-and-career 11 站被算成 13），
+ * 进而让首页/sitemap 链向一个按 11 站判定已 404 的类目页。
  * broken/pending 不计入：类目页只列 active，坏链算进「达标」会显示 N 个却渲染更少。
+ * 停用站点与 search 的 `enabled = true` 口径对齐：只算 active 但不算 enabled，
+ * 会把停用站点算进达标数，而类目页实际返回更少站点。
  */
 export async function categorySiteCounts(repo: Repository): Promise<Array<{ categoryId: string; sites: number }>> {
   const rows = await repo.raw(
     `SELECT category_id AS categoryid, COUNT(*) AS sites
        FROM sites
-      WHERE deleted_at IS NULL AND status = 'active' AND category_id IS NOT NULL
+      WHERE deleted_at IS NULL AND status = 'active' AND enabled = ? AND category_id IS NOT NULL
       GROUP BY category_id`,
-    [],
+    [true],
   );
   return rows
     .map((r) => ({ categoryId: String(r.categoryid), sites: Number(r.sites ?? 0) }))

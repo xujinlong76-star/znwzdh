@@ -147,7 +147,7 @@ describe("「未分类」是显式系统类目", () => {
 });
 
 describe("categorySiteCounts", () => {
-  it("只按主指针聚合，且只算 active 未删站点", async () => {
+  it("只按主指针聚合，且只算 active、enabled、未删站点", async () => {
     const a = await repo.createCategory({ title: "计数甲" });
     const b = await repo.createCategory({ title: "计数乙" });
     await repo.createSite({ url: "https://count-1.example.com", title: "一", categoryId: a.id });
@@ -155,6 +155,8 @@ describe("categorySiteCounts", () => {
     // 主副指针同类目：只能计一次
     await repo.createSite({ url: "https://count-3.example.com", title: "三", categoryId: a.id, subCategoryId: a.id });
     await repo.createSite({ url: "https://count-4.example.com", title: "四", categoryId: a.id, status: "broken" });
+    // 停用站点：search 的 enabled=true 过滤不会返回它，计数也不能把它算进达标数
+    await repo.createSite({ url: "https://count-4b.example.com", title: "四乙", categoryId: a.id, enabled: false });
     const trashed = await repo.createSite({ url: "https://count-5.example.com", title: "五", categoryId: b.id });
     await repo.deleteSite(trashed.id);
     // 只有副指针（浏览侧 search 不可见）：不得计给 b

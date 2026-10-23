@@ -967,6 +967,36 @@ describe("用户身份同步与搜索历史", () => {
     expect(res.json().role).toBe("user");
   });
 
+  it("凭证登录支持内置静态相对路径头像，并阻断 javascript 伪协议", async () => {
+    const okRes = await app.inject({
+      method: "POST",
+      url: "/api/users/sync",
+      payload: {
+        provider: "credentials",
+        providerId: "admin",
+        username: "NavHub 管理员",
+        email: "admin@navhub.local",
+        avatar: "/assets/images/alogo.webp",
+      },
+    });
+    expect(okRes.statusCode).toBe(200);
+    expect(okRes.json().id).toBe("credentials:admin");
+    expect(okRes.json().avatar).toBe("/assets/images/alogo.webp");
+
+    const badRes = await app.inject({
+      method: "POST",
+      url: "/api/users/sync",
+      payload: {
+        provider: "credentials",
+        providerId: "admin",
+        username: "NavHub 管理员",
+        email: "admin@navhub.local",
+        avatar: "javascript:alert(1)",
+      },
+    });
+    expect(badRes.statusCode).toBe(400);
+  });
+
   it("带 anonId 的搜索会记录历史，可清空", async () => {
     await app.inject({ method: "GET", url: "/api/search?q=" + encodeURIComponent("历史测试") + "&anonId=t-anon" });
     const list = (await app.inject({ method: "GET", url: "/api/search-history?anonId=t-anon" })).json();

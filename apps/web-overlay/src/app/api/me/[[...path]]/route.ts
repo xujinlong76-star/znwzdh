@@ -82,9 +82,9 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
         body: JSON.stringify({
           provider: provider || 'github',
           providerId,
-          username: user.name || user.email || providerId,
-          email: user.email ?? null,
-          avatar: user.image ?? null,
+          username: (user.name || user.email || providerId || 'user').slice(0, 64),
+          email: user.email?.trim() || null,
+          avatar: user.image?.trim() || null,
         }),
         cache: 'no-store',
         signal: AbortSignal.timeout(TIMEOUT_MS),

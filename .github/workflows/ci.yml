@@ -393,8 +393,20 @@ jobs:
             if ! curl -s -o /dev/null --max-time 2 http://127.0.0.1:8787/api/health; then gone=1; break; fi
             sleep 1
           done
+          # SIGTERM 走的是优雅停机：`runner.drain(30_000)` 先等 in-flight 任务跑完，
+          # 这期间 HTTP 服务仍在 listen —— 20s 等待会输给 30s drain（2026-10-23 run
+          # 39927865859 实测：20s 后 pid 仍在、8787 仍应答）。CI 用一次性库，不需要
+          # 等业务收尾，直接 SIGKILL 让端口让开；再等 10s 仍不退出才红。
           if [ "$gone" != "1" ]; then
-            printf '::error::旧中枢 20s 后还在应答 8787（pid=%s）—— 小额度中枢起不来，检查没跑成，不是豁免失效\n' "$(port_owner 8787)"
+            if [ -n "${hub_pid:-}" ]; then kill -9 "$hub_pid" 2>/dev/null || true; fi
+            pgrep -f "apps/api/src/main.ts" 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+            for i in $(seq 1 10); do
+              if ! curl -s -o /dev/null --max-time 2 http://127.0.0.1:8787/api/health; then gone=1; break; fi
+              sleep 1
+            done
+          fi
+          if [ "$gone" != "1" ]; then
+            printf '::error::旧中枢 SIGKILL 后 10s 还在应答 8787（pid=%s）—— 小额度中枢起不来，检查没跑成，不是豁免失效\n' "$(port_owner 8787)"
             exit 1
           fi
           # 中枢：公开额度 40/min（阶段 1 打 60 次必然被穿），凭据与 web 侧同源

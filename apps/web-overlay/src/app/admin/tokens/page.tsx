@@ -36,6 +36,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { copyText } from '@/lib/clipboard'
+import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 
 type MaxScope = 'read' | 'write' | 'admin'
 
@@ -112,7 +113,8 @@ export default function AdminTokensPage() {
 
   // 明文结果（创建 / 轮换共用）
   const [plainResult, setPlainResult] = useState<TokenWithPlaintext | null>(null)
-  const [copied, setCopied] = useState(false)
+  const { copyFeedback, reportCopy, resetCopy } = useCopyFeedback()
+  const copied = copyFeedback.state === 'copied'
 
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -188,7 +190,7 @@ export default function AdminTokensPage() {
         expiresAt: Date.now() + days * 86_400_000,
       })
       setPlainResult(res)
-      setCopied(false)
+      resetCopy()
       setIsCreateOpen(false)
       setNewName('')
       setNewScope('write')
@@ -255,7 +257,7 @@ export default function AdminTokensPage() {
     try {
       const res = await hubSend<TokenWithPlaintext>(`/api/tokens/${encodeURIComponent(t.id)}/rotate`, 'POST', {})
       setPlainResult(res)
-      setCopied(false)
+      resetCopy()
       toast({ title: '轮换成功', description: '旧明文已失效，请立即保存新明文。' })
       void loadTokens()
     } catch (err) {
@@ -316,17 +318,15 @@ export default function AdminTokensPage() {
   const handleCopy = async () => {
     if (!plainResult?.token) return
     const result = await copyText(plainResult.token)
+    reportCopy(result)
     if (!result.ok) {
       // 绝不假装成功：明文只出现一次，复制失败必须让用户知道要手动选中
       toast({
         title: '自动复制失败',
-        description: '请手动选中上方明文并复制（Ctrl/Cmd + C）。关闭后无法再次查看。',
+        description: `${result.reason}。请手动选中上方明文并复制（Ctrl/Cmd + C）。关闭后无法再次查看。`,
         variant: 'destructive',
       })
-      return
     }
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
   }
 
   return (
@@ -666,9 +666,25 @@ export default function AdminTokensPage() {
               size="sm"
               className="w-full h-8 text-xs gap-1.5 font-semibold"
               onClick={handleCopy}
+              title={
+                copyFeedback.state === 'failed' ? `复制失败：${copyFeedback.reason}` : '复制 Token 明文'
+              }
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? '已复制到剪贴板！' : '复制 Token 明文'}</span>
+              {copyFeedback.state === 'copied' ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              <span>
+                {copyFeedback.state === 'copied'
+                  ? '已复制到剪贴板！'
+                  : copyFeedback.state === 'failed'
+                    ? '复制失败，请手动选中'
+                    : '复制 Token 明文'}
+              </span>
+              <span role="status" className="sr-only">
+                {copyFeedback.reason ?? ''}
+              </span>
             </Button>
           </div>
 

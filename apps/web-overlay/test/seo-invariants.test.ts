@@ -76,6 +76,19 @@ describe('私密页索引隔离', () => {
   })
 })
 
+describe('隐藏类目（未分类）', () => {
+  it('分类详情页与深分页都把隐藏类目当 404', () => {
+    for (const rel of ['category/[slug]/page.tsx', 'category/[slug]/p/[n]/page.tsx']) {
+      expect(appFile(rel)).toContain('isHiddenCategory(data.category)')
+    }
+  })
+
+  it('站点详情不链接隐藏类目（避免详情页 → 404 类目页）', () => {
+    const src = readFileSync(join(ROOT, 'src', 'app', 'site', '[id]', 'page.tsx'), 'utf8')
+    expect(src).toContain('!isHiddenCategory(c)')
+  })
+})
+
 describe('sitemap 取数约束', () => {
   it('站点条目必须带 status=active（否则会混入 broken 站点）', () => {
     expect(appFile('sitemap.ts')).toContain('status=active')

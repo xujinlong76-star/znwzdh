@@ -3,7 +3,7 @@ import { notFound, permanentRedirect } from 'next/navigation'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { ogImageUrl } from '@/lib/seo/og-text'
-import { categoryHref, isCategoryUuidRef } from '@/lib/seo/category-url'
+import { categoryHref, isCategoryUuidRef, isHiddenCategory } from '@/lib/seo/category-url'
 import { categoryPageHasSites } from '@/lib/seo/category-pagination'
 import {
   CategoryBoard,
@@ -57,6 +57,8 @@ async function resolve(ref: string, n: number) {
   const data = await loadCategoryPage(safeRef, n)
   // 分类不存在 / 已停用 / 这一页没有站点：与第 1 页同一口径
   if (data.categories !== null && (!data.category || !data.qualifies)) notFound()
+  // 隐藏类目（未分类）没有公开详情页，深分页同样 404
+  if (data.category && isHiddenCategory(data.category)) notFound()
   // 中枢抖动时 qualifies 被放宽为 true（避免一次上游故障把整批分页打成 404），
   // 但任意大页码会撞上 /api/search 的 offset 上限（1000）被 zod 400，
   // hubGet 把 4xx 也归为 null，于是 /p/18、/p/9999 会渲染 200 空页且可被索引。

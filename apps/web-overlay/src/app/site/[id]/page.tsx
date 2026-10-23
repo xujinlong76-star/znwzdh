@@ -10,7 +10,7 @@ import { ogImageUrl } from '@/lib/seo/og-text'
 import { siteMetaDescription } from '@/lib/seo/site-description'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { descendantSiteCounts } from '@/lib/seo/category-totals'
-import { categoryUrlKey } from '@/lib/seo/category-url'
+import { categoryUrlKey, isHiddenCategory } from '@/lib/seo/category-url'
 import type { HubSite } from '@/lib/navhub-api'
 import {
   categoryDisplayName,
@@ -95,7 +95,11 @@ async function loadSiteContext(site: HubSite) {
     loadActiveCategoryCounts(60),
   ])
   const counts = descendantSiteCounts(categories ?? [], rawCounts)
-  const category = categories?.find((c) => c.id === categoryId && c.enabled !== false) ?? null
+  // 隐藏类目（未分类）没有公开详情页：站点详情不能链过去，否则就是一条 404 内链
+  const category =
+    categories?.find(
+      (c) => c.id === categoryId && c.enabled !== false && !isHiddenCategory(c),
+    ) ?? null
   // search 结果保持中枢相关度排序；只做自站/非活跃过滤与截断
   const related = (res?.hits ?? [])
     .map((h) => h.site)

@@ -73,6 +73,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const data = await loadCategoryPage(safeRef, 1)
   // 分类不存在 / 已停用 / 站点数不达标：与页面的 404 口径一致
   if (data.categories !== null && (!data.category || !data.qualifies)) notFound()
+  // 「未分类」是归类失败的兜底桶，不提供公开详情页；站点详情也不会链过来。
+  if (data.category && isHiddenCategory(data.category)) notFound()
 
   const name = categoryPageName(data)
   // canonical 永远写解析后的形态：uuid 入参会被页面 301，元信息不能跟着留旧 URL
@@ -103,6 +105,7 @@ export default async function CategoryDetailPage({ params }: PageProps) {
 
   const data = await loadCategoryPage(safeRef, 1)
   if (data.categories !== null && (!data.category || !data.qualifies)) notFound()
+  if (data.category && isHiddenCategory(data.category)) notFound()
 
   const urlKey = categoryPageUrlKey(data, safeRef)
   // `/category/{uuid}` 是已发出的外链：永久跳到 slug 形态，把权重一次性交出去

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
@@ -206,5 +207,55 @@ describe("check-rate-limit-exemption.mjs", () => {
     expect(code, out).toBe(0);
     expect(out).not.toContain(TOKEN);
     expect(out).toContain(`凭据长度 ${TOKEN.length}`);
+  });
+});
+
+/**
+ * CI 接线本身也要钉住。
+ *
+ * 动机是真实发生过的：一次并行会话把工作区刷回了一份比 #41/#42 更早的基线，
+ * `.github/workflows/ci.yml` 里整个「限流豁免」步骤消失了，而 CI 照样全绿 ——
+ * 步骤没了就没有红灯可归因，等于覆盖被静默删除。脚本有 9 条用例，
+ * 但「这一步有没有被接进作业」没有任何东西在看着。
+ *
+ * 这里只钉四件事，都是踩过的坑（不是代码风格）：
+ *  1) 作业里真的有一跑四阶段检查的步骤（且不是被注释掉）；
+ *  2) `NAVHUB_INTERNAL_TOKEN` 在 `next start` **之前**就写进环境 —— 它是模块顶层常量；
+ *  3) 不再用 `pgrep -f "next/dist/bin/next start"` 杀 web —— Next 改写了 process.title，
+ *     argv 区被覆盖，这个 pattern 一个都匹配不到（上一轮误判红灯的根因）；
+ *  4) 步骤里两层缓存都要清：只清 route-cache 时 Data Cache 还热，SSR 不打中枢，
+ *     阶段 3 就是假绿灯。
+ */
+describe("CI 接线（源码级钉子）", () => {
+  const ci = readFileSync(resolve(".github/workflows/ci.yml"), "utf8");
+  const stepName = "- name: 限流豁免集成检查";
+  const stepStart = ci.indexOf(stepName);
+  const nextStepStart = ci.indexOf("- name: 失败时留下预览站日志", stepStart);
+
+  it("作业里存在「限流豁免集成检查」步骤，并且真的调用四阶段脚本", () => {
+    expect(stepStart, "ci.yml 里找不到限流豁免步骤（覆盖被删了？）").toBeGreaterThan(-1);
+    const step = ci.slice(stepStart, nextStepStart > stepStart ? nextStepStart : undefined);
+    expect(step).toContain("scripts/check-rate-limit-exemption.mjs");
+  });
+
+  it("凭据在 next start 之前写进环境（模块顶层常量只在进程启动时读一次）", () => {
+    const tokenAt = ci.indexOf("NAVHUB_INTERNAL_TOKEN=");
+    const webStartAt = ci.indexOf("node_modules/next/dist/bin/next start -p 3000");
+    expect(tokenAt, "ci.yml 里找不到 NAVHUB_INTERNAL_TOKEN 的写入").toBeGreaterThan(-1);
+    expect(webStartAt, "ci.yml 里找不到启动 Web 产物的命令").toBeGreaterThan(-1);
+    expect(tokenAt, "凭据写晚了：web 启动后才写，进程不会带这个头").toBeLessThan(webStartAt);
+  });
+
+  it("不再用匹配不到 next-server 的 pgrep 杀 web", () => {
+    // 只查可执行行：注释里为了记教训会原样提到这个 pattern，那不是会被执行的代码
+    const codeLines = ci.split("\n").filter((line) => !line.trimStart().startsWith("#"));
+    expect(codeLines.some((line) => line.includes('pgrep -f "next/dist/bin/next start"'))).toBe(false);
+  });
+
+  it("豁免步骤自己不重启 web，且两层缓存都清", () => {
+    const step = ci.slice(stepStart, nextStepStart > stepStart ? nextStepStart : undefined);
+    expect(step).not.toContain("next/dist/bin/next start -p 3000");
+    expect(step).toContain("apps/web/.next/server/route-cache");
+    expect(step).toContain("apps/web/.next/cache/fetch-cache");
   });
 });

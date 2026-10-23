@@ -489,3 +489,74 @@ node scripts/seo-audit.mjs --base=http://localhost:3079 --all --json | \
 `SyntaxError: Invalid or unexpected token` + 「0 tests」，不带任何行号 ——
 看起来像门禁坏了，其实是行尾。判别：`git diff --stat` 只有几十行、却整片用例不收集，
 就把文件按 LF 重写一遍再跑（`node -e` 一行 `replace(/\r\n/g,'\n')` 即可）。
+
+## 裁决 6：红灯要自报「红在哪一层」—— 门禁语义拆分 + 豁免进 CI
+
+5.9/5.10 把降级壳的因果链钉死之后，留下两个新问题，都是「门禁本身可信度」层面的：
+
+**6.1 同一条红灯对应两种相反的修法。** 拆分前，`✖ /site/7：技术面契约不达标 —— og:… | jsonld:…`
+既可能是渲染代码退化（该改代码），也可能是上游一时取不到数据后被 ISR 缓存成壳（该查中枢/限流），
+门禁不重探也不分层，只能靠人猜。裁决：按 `klass` 分三类，各自的重探手段不同 ——
+
+| 类别 | 判据 | 重探 | 红灯标签 |
+| --- | --- | --- | --- |
+| `contract` 契约退化 | title/description/canonical/og/jsonld 缺失或错、本机地址残留、canonical 带 query、sitemap 收录面结构 | **不重探**（确定性，重试只会教人「再跑一次说不定就绿」） | `[契约退化]` |
+| `degraded` 降级壳 | 200 但**本页自己声明 `noindex`**（壳签名）；此时连带的 og/JSON-LD 缺失**合并成一条**并写「连带 N 项」 | 先按响应自带的 `s-maxage` 等到期 → 再打一发「唤醒」触发后台重验证 → 重新取证 | `[降级壳（不是渲染形状问题，先查上游取数）]` |
+| `availability` 可用性 | 非预期状态码、5xx、缺 `s-maxage`、sitemap 取不到 | 直接重问（`--retry-delay-ms`，默认 3000ms） | `[可用性]` |
+
+三条设计约束（都是「不说谎」优先）：
+
+1. **壳必须等到期再取证**：立刻重问拿回的是同一个缓存壳（实测 `s-maxage=60` +
+   `stale-while-revalidate=31535940`），这一发返回 `x-nextjs-cache: STALE` 时**只算唤醒**，
+   正文不能当证据；`STALE` 会写进末次状态，不谎报成「重探后仍红」。
+2. **预算用尽不判自愈**：`--retry-max-wait-ms`（默认 120000）是所有重探**共用**的墙钟，
+   超了就红着并写明「未继续重探（重探总预算 … 已用完）」；拿不到 `s-maxage` 的项（如
+   sitemap 族条目归零，其自身快照周期 300s 起步）标 `retryAfterMs=null` ⇒ 明确打「未重探」，
+   而不是让它蒙混成自愈。
+3. **自愈只留痕不判红**：转绿的项打 `⚠` + 汇总行「重探后自愈 N 项」，并在 CI 里发
+   `::warning::` —— 它是「这一页在缓存窗口内确实以壳示过爬虫」的事实记录，不是被吞掉的错误。
+
+参数：`--retry=N`（默认 2）、`--retry-delay-ms`、`--retry-max-wait-ms`；`--retry=0` 保留旧行为
+（用例里拿它对照，红灯文案会变成「上游可用性·降级 N 项 / 未重探（--retry=0，对照旧行为）」）。
+CI 的 annotation grep 仍然有效：契约红行照旧含 `技术面契约不达标`，壳那一行改含 `降级壳`，
+两者都还在同一条 `✖ …（共 N 页）：契约退化 X 项 / 上游可用性·降级 Y 项` 汇总之下。
+
+用例（夹具用**请求计数**：前 N 次坏、之后好，才能把「会不会自愈」测出来）：
+
+```bash
+node node_modules/vitest/vitest.mjs run scripts/check-isr-routes.test.ts
+# 关键四条：壳等到期转绿⇒判绿+「自愈 1 项」且不报「技术面契约不达标」；
+# 恒壳⇒红灯归因「[降级壳（不是渲染形状问题，先查上游取数）]」+「连带」+「已重探 1 次仍红」；
+# 契约退化即使下一发就变好也判红（不给「再跑一次」留口子）；--retry=0 对照旧行为。
+```
+
+**6.2 豁免只有单测 = 收录面仍然是裸的。** `internal-traffic.ts` / `hub.ts` 的单测证明的是
+「函数认这个头」，不是「收录页因此不再是降级壳」。裁决：`scripts/check-rate-limit-exemption.mjs`
+四阶段集成检查，CI 的 `check-isr-live` 作业末尾**按小额度重启预览栈**再跑
+（生产 300/min，CI 里几十次请求撞不到额度，所以必须显式 `NAVHUB_RATE_LIMIT_MAX=40` 把前提造出来）：
+
+| 阶段 | 断言 | 不成立时说明什么 |
+| --- | --- | --- |
+| 1 空转守卫 | 不带凭据打 60 次中枢**必须出现 429** | 额度没被打穿时，后面所有「没被限流」都是空转证据 ⇒ 直接红灯 |
+| 2 豁免生效 | 同样次数带 `x-navhub-internal-token` ⇒ 0 次 429，且无其他非 2xx | 两侧 env 不一致 / 中枢没重启 / `allowList` 被摘 |
+| 3 收录面形状 | 经 web 抓 20 个 `/site/*`：200 + 有 `<h1>` + 不含 `noindex`，且 ≥8 个 `x-nextjs-cache` 非 HIT | 壳回来就是 5.9 那条链；全 HIT 说明这轮读的是旧快照，豁免有没有用不可知 |
+| 4 安全边界 | 浏览器侧 `/api/hub/*` 代理不带凭据**照样**被限流 | 代理自己附上了头 = 把全站访客标成内部流量（阶段 1 没打穿时这一条显式「跳过」，不谎报通过） |
+
+退出码 0/1/**2**（2 = `NAVHUB_INTERNAL_TOKEN` 缺失：前置不成立不判绿，也不伪装成形状红灯）。
+日志只打凭据**长度**，不打值。
+
+两个 CI 侧的排序坑（都是 5.x 踩过的，这里写死在作业注释里）：
+web 侧凭据是模块顶层常量（`hub.ts:29`），**不重启进程就永远不发这个头**；
+`route-cache` 必须清，否则阶段 3 全是上一轮 `--live` 留下的 HIT。
+以及**先等中枢 `/api/health` 就绪再起 `next start`** —— 反过来的话 web 第一次渲染 sitemap
+时中枢还没起来，会烤出一张只有 9 条静态条目的快照并缓存 300s，就绪探测只等 120s，
+于是红在无关处（裁决 4 的同一个坑，方向相反）。
+
+```bash
+# 单元级（假中枢 + 假前端，逐阶段造反例；9 条用例）
+node node_modules/vitest/vitest.mjs run scripts/check-rate-limit-exemption.test.ts
+# 本地手动跑（需要一份 next start 产物 + 小额度中枢）
+NAVHUB_INTERNAL_TOKEN=$T node scripts/check-rate-limit-exemption.mjs \
+  --api-base=http://127.0.0.1:8791 --web-base=http://localhost:3100 \
+  --public-hammer=60 --pages=20 --min-miss=8
+```

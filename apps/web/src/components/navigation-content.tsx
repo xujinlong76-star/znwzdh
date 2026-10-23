@@ -20,7 +20,15 @@ const ModularCanvas = dynamic(
 )
 const HomeHeroDeck = dynamic(
   () => import('@/components/home-hero-deck').then((m) => m.HomeHeroDeck),
-  { ssr: false }
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="mb-6 sm:mb-8 min-h-[190px] rounded-2xl border border-border/40 bg-card/30 p-4 animate-pulse"
+        aria-hidden="true"
+      />
+    ),
+  }
 )
 const KeyboardShortcutsDialog = dynamic(
   () => import('@/components/keyboard-shortcuts-dialog').then((m) => m.KeyboardShortcutsDialog),

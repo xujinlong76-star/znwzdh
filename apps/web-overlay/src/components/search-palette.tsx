@@ -619,7 +619,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             </span>
                           </div>
                           {rel.note && (
-                            <p className="text-xs text-muted-foreground/90 line-clamp-1 mt-0.5">
+                            <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                               💡 {rel.note}
                             </p>
                           )}

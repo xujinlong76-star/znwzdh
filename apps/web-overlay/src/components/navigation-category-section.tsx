@@ -414,7 +414,7 @@ export function NavigationCategorySection({
                                       <h3 className="text-xs font-semibold text-muted-foreground tracking-wider uppercase">
                                         {subCategory.title}
                                       </h3>
-                                      <span className="text-xs text-muted-foreground/60 font-mono">
+                                      <span className="text-xs text-muted-foreground font-mono">
                                         ({subCategory.items?.length || 0})
                                       </span>
                                     </div>

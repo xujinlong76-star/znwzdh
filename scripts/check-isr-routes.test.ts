@@ -377,9 +377,22 @@ describe("check-isr-routes.mjs --live 抽查", () => {
       lastmod?: boolean;
       /** 直接往 <urlset> 里追加原始 <loc>，用来造「不可收录形态也进了 sitemap」 */
       extraLocs?: string[];
+      /** 「有标题与 canonical、没有 og/JSON-LD」的薄分页形态（裁决 5.2 的夹具） */
+      barePaged?: boolean;
+      /**
+       * 前 N 次对 `/site/*` 的请求返回「200 + 自己声明 noindex + 缺 og/JSON-LD」的降级壳。
+       * 配合 `sMaxage: 0`，可以在不等真时间的前提下验证「壳 → 到期重探 → 转绿」。
+       */
+      shellFirstTimes?: number;
+      /** 前 N 次对 `/site/*` 的请求返回「200、可收录、但契约残缺」的页（模拟契约退化） */
+      thinFirstTimes?: number;
+      /** 页面响应的 s-maxage 秒数（默认 60；测试里要设 0，否则重探会真的等一分钟） */
+      sMaxage?: number;
     } = {},
   ): Promise<{ base: string; close: () => Promise<void> }> {
     return new Promise((resolvePromise) => {
+      // 每条路径被请求了几次（壳/残缺夹具靠它做「前 N 次坏、之后好」的形状）
+      const hits = new Map<string, number>();
       const server = createServer((req, res) => {
         const url = new URL(req.url ?? "/", "http://127.0.0.1");
         if (url.pathname === "/sitemap.xml") {
@@ -436,7 +449,32 @@ describe("check-isr-routes.mjs --live 抽查", () => {
         const og = opts.bakeLocalAsset
           ? '<meta property="og:image" content="http://localhost:3000/og-default.png"/>'
           : `<meta property="og:image" content="${origin}/og-default.png"/>`;
-        res.writeHead(200, { "content-type": "text/html", "cache-control": "s-maxage=60, stale-while-revalidate=31535940" });
+        res.writeHead(200, {
+          "content-type": "text/html",
+          "cache-control": `s-maxage=${opts.sMaxage ?? 60}, stale-while-revalidate=31535940`,
+        });
+        // 壳/残缺夹具：只作用在 `/site/*` 上，前 N 次坏、之后好。
+        // 用请求计数而不是恒定形状，是因为「重探后会不会变」正是这次要分的类 ——
+        // 恒定坏的服务器既证明不了自愈也证明不了没重试。
+        const n = (hits.get(url.pathname) ?? 0) + 1;
+        hits.set(url.pathname, n);
+        const onDetail = /^\/site\//.test(url.pathname);
+        if (onDetail && n <= (opts.shellFirstTimes ?? 0)) {
+          res.end(
+            `<html lang="zh-CN"><head><title>站点详情</title>` +
+              `<meta name="description" content="降级壳夹具页，描述长度是够的。"/>` +
+              `<link rel="canonical" href="${canonical}"/>` +
+              `<meta name="robots" content="noindex, follow"/>` +
+              `</head><body><h1>暂时不可用</h1></body></html>`,
+          );
+          return;
+        }
+        if (onDetail && n <= (opts.thinFirstTimes ?? 0)) {
+          // 可收录（没有 noindex）但整块契约残缺：这是「渲染代码退化」那一类，
+          // 门禁必须**不因为它第二次请求变好了就判绿**。
+          res.end(`<html><head><link rel="canonical" href="${canonical}"/>${og}</head><body>残缺</body></html>`);
+          return;
+        }
         // 分页族按设计是 noindex、且不配结构化数据：夹具专门发一份
         // 「有标题与 canonical、没有 og/JSON-LD」的页，验证门禁不把它判红。
         if (opts.barePaged && /\/p\/[^/]+$/.test(url.pathname)) {
@@ -481,23 +519,19 @@ describe("check-isr-routes.mjs --live 抽查", () => {
   async function runLive(
     paths: string[],
     extra: string[] = [],
-    opts: {
-      canonicalKeepsQuery?: boolean;
-      bakeLocalAsset?: boolean;
-      collapsePagesToBase?: boolean;
-      notFoundPages?: boolean;
-      duplicateLocation?: boolean;
-      stripContract?: boolean;
-      lastmod?: boolean;
-    } = {},
+    opts: Omit<Parameters<typeof serve>[1], "extraLocs"> & { extraLocs?: string[] } = {},
   ) {
     const { base, close } = await serve(paths, opts);
     try {
       // 不能用 spawnSync：它会占满当前线程，假预览站（在同进程里）无法响应，
       // 子进程只能等到 15s 超时——测试会在完全无关的地方失败。
-      const child = spawn(process.execPath, [SCRIPT, "--live", `--base=${base}`, ...extra], {
-        env: { ...process.env, NEXT_DIST_DIR: FIXTURE_DIR_NAME },
-      });
+      // `--retry-delay-ms=10` 放在最后：`valueOf` 取第一个匹配项，所以用例自己
+      // 传的 retry 参数照样生效，这里只是给「没传」的用例兜住真时间。
+      const child = spawn(
+        process.execPath,
+        [SCRIPT, "--live", `--base=${base}`, ...extra, "--retry-delay-ms=10"],
+        { env: { ...process.env, NEXT_DIST_DIR: FIXTURE_DIR_NAME } },
+      );
       let out = "";
       child.stdout.setEncoding("utf8");
       child.stderr.setEncoding("utf8");
@@ -609,6 +643,60 @@ describe("check-isr-routes.mjs --live 抽查", () => {
     const { code, out } = await runLive(["/sites"], ["--no-contract"], { stripContract: true });
     expect(out, out).toContain("✓ 线上 ISR 抽查通过");
     expect(code).toBe(0);
+  });
+
+  /**
+   * 红灯分类（2026-10-23）。
+   *
+   * 起因是 docs/seo/ISR-ROUTES.md 5.9/5.10 实测的那批降级壳：SSR 取数撞自家限流 →
+   * 页渲染成 `noindex` 的壳 → 壳被 ISR 缓存 → 同一条 `✖ … 技术面契约不达标` 既可能
+   * 是渲染代码退化、也可能是上游一时拿不到数据。两者的修法完全相反，
+   * 而旧门禁把它们混在一起、且不重探，于是「红在哪一层」只能靠人猜。
+   * 夹具用请求计数（前 N 次坏、之后好）才能把「会不会自愈」这件事测出来。
+   */
+  it("降级壳（200 但自声明 noindex）等到 s-maxage 过期重探后转绿 ⇒ 判绿并留痕，不报成契约退化", async () => {
+    const { code, out } = await runLive(["/site/1"], ["--retry=2"], {
+      shellFirstTimes: 1,
+      sMaxage: 0,
+    });
+    expect(code, out).toBe(0);
+    expect(out).toContain("自愈 1 项");
+    expect(out).toContain("降级壳");
+    // 关键反向断言：壳连带的 og/JSON-LD 缺失不能伪装成渲染代码退化
+    expect(out).not.toContain("技术面契约不达标");
+  });
+
+  it("重探后仍是壳 ⇒ 红灯，且归因落在上游而不是让人翻渲染代码；连带缺失合并成一条", async () => {
+    const { code, out } = await runLive(["/site/1"], ["--retry=1"], {
+      shellFirstTimes: 99,
+      sMaxage: 0,
+    });
+    expect(code, out).toBe(1);
+    expect(out).toContain("[降级壳（不是渲染形状问题，先查上游取数）]");
+    expect(out).toContain("连带");
+    expect(out).toContain("已重探 1 次仍红");
+    expect(out).not.toContain("[契约退化]");
+  });
+
+  it("契约退化不重探：即使下一发就变好也判红（不给「再跑一次说不定就绿」留口子）", async () => {
+    const { code, out } = await runLive(["/site/1"], ["--retry=2"], {
+      thinFirstTimes: 1,
+      sMaxage: 0,
+    });
+    expect(code, out).toBe(1);
+    expect(out).toContain("[契约退化]");
+    expect(out).toContain("技术面契约不达标");
+    expect(out).not.toContain("自愈");
+  });
+
+  it("--retry=0 回到旧行为：不重探、壳直接判红（留给本地快跑与对照）", async () => {
+    const { code, out } = await runLive(["/site/1"], ["--retry=0"], {
+      shellFirstTimes: 1,
+      sMaxage: 0,
+    });
+    expect(code, out).toBe(1);
+    expect(out).toContain("上游可用性·降级 1 项");
+    expect(out).not.toContain("已重探");
   });
 
   it("分页族按 noindex 设计：不要求 og/JSON-LD", async () => {

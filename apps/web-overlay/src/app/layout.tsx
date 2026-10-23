@@ -55,9 +55,10 @@ export async function generateMetadata(): Promise<Metadata> {
   // 所以下面缺 origin 时直接不输出图。
   // 生产部署仍必须注入 NAVHUB_SITE_URL（否则永远是相对地址，分享卡质量下降）。
   const origin = configuredSiteOrigin();
+  const metadataBase = origin ? new URL(origin) : (process.env.NODE_ENV !== 'production' ? new URL('http://localhost:3000') : undefined);
 
   return {
-    ...(origin ? { metadataBase: new URL(origin) } : {}),
+    ...(metadataBase ? { metadataBase } : {}),
     title: {
       default: siteName,
       template: '%s - ' + siteName,

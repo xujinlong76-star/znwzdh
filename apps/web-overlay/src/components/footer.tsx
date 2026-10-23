@@ -40,9 +40,10 @@ export function Footer({ siteInfo }: FooterProps) {
           <span className="text-border">·</span>
           <Link href="/collections" className="hover:text-foreground transition-colors">精选专题合集</Link>
           <span className="text-border">·</span>
-          <Link href="/custom" className="hover:text-foreground transition-colors text-emerald-600 dark:text-emerald-400 font-medium">模块化工作台</Link>
+          {/* emerald-600 在 12px 白底上只有 3.62:1（AA 需 4.5），700 才达标 */}
+          <Link href="/custom" className="hover:text-foreground transition-colors text-emerald-700 dark:text-emerald-400 font-medium">模块化工作台</Link>
           <span className="text-border">·</span>
-          <Link href="/marketplace" className="hover:text-foreground transition-colors text-rose-600 dark:text-rose-400 font-medium">插件市场</Link>
+          <Link href="/marketplace" className="hover:text-foreground transition-colors text-rose-700 dark:text-rose-400 font-medium">插件市场</Link>
           <span className="text-border">·</span>
           {/* SEO：/videos 与 /submit 此前全站无 SSR 入链（link-graph 最后 2 个
               真实内容页孤岛），补页脚入口后链接图 100% 可达 */}
@@ -50,7 +51,7 @@ export function Footer({ siteInfo }: FooterProps) {
           <span className="text-border">·</span>
           <Link href="/submit" className="hover:text-foreground transition-colors">网站投稿</Link>
         </div>
-        <p className="text-center text-xs text-muted-foreground/80 font-mono">
+        <p className="text-center text-xs text-muted-foreground font-mono">
           &copy; <span suppressHydrationWarning>{currentYear}</span> {title} · AI-Native Cognitive Navigation
         </p>
       </div>

@@ -1078,7 +1078,7 @@ export default function FavoritesPage() {
                         {f.title}
                       </div>
                       {f.description && (
-                        <div className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1">
+                        <div className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1">
                           {f.description}
                         </div>
                       )}

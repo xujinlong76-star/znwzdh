@@ -326,9 +326,74 @@ jobs:
             printf '::warning::ISR 契约语料可能已过期（rc=%s，族=%s）—— 变异自证正拿旧形状当基准；对着跑起来的站点执行 `node scripts/capture-isr-corpus.mjs --base=<origin>`，把 scripts/fixtures/isr-live-corpus/*.html 一起提交\n' \
               "$rc" "${fams%,}"
           fi
+      - name: 限流豁免集成检查（小额度下重启预览栈）
+        # 为什么单独立一条而不是复用上面那轮：豁免的因果链需要一个「公开请求会被打穿」
+        # 的额度才存在（生产 300/min，CI 里几十次请求根本撞不到），所以这里把中枢按
+        # 小额度重启一次，让四阶段各自能真的红。
+        # 顺序很重要：
+        #  1) 先杀掉两侧进程 —— web 侧的凭据是模块顶层常量（lib/server/hub.ts），
+        #     不重启就永远不发这个头；
+        #  2) 等中枢 /api/health 就绪**再起 web** —— 反过来的话，web 第一次渲染
+        #     sitemap 时中枢还没起来，会烤出一张只有 9 条静态条目的快照并缓存 300s，
+        #     就绪探测只等 120s，于是红在无关处（上面那一步已经踩过这个坑一次）；
+        #  3) 清 server/route-cache —— 上一轮 --live 已把这批页渲染进磁盘缓存，
+        #     不清的话这一轮全是 x-nextjs-cache: HIT，等于没在受限中枢面前渲染过；
+        #     /site/[id] 的 generateStaticParams 返回空数组，所以清掉就是真按需生成。
+        # 阶段 3 抽 sitemap 的**尾部**页，与 --live 的族内前几个天然错开，
+        # 所以这一步放在最后：前面的门禁不会被小额度波及，这一步也不会吃到上一轮的缓存。
+        run: |
+          # 一次性凭据只活在本步骤的 shell 里（不写 $GITHUB_ENV，后续步骤用不到它）
+          token=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+          kill $(pgrep -f "apps/api/src/main.ts") $(pgrep -f "next/dist/bin/next start") 2>/dev/null || true
+          sleep 3
+          rm -rf apps/web/.next/server/route-cache
+          rm -f apps/web/.next/server/app/sitemap.xml.body apps/web/.next/server/app/sitemap.xml.meta
+          # 中枢：公开额度 40/min（阶段 1 打 60 次必然被穿），两侧共用同一个一次性凭据
+          PORT=8787 NAVHUB_RATE_LIMIT_MAX=40 NAVHUB_INTERNAL_TOKEN="$token" \
+            nohup node apps/api/src/main.ts > /tmp/hub-limited.log 2>&1 &
+          hub=0
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8787/api/health > /dev/null; then hub=1; break; fi
+            sleep 1
+          done
+          if [ "$hub" != "1" ]; then
+            printf '::error::小额度中枢 60s 内没通过 /api/health（豁免检查没跑成，不是豁免失效）\n'
+            tail -20 /tmp/hub-limited.log || true
+            exit 1
+          fi
+          (cd apps/web && NAVHUB_SITE_URL=http://localhost:3000 NAVHUB_INTERNAL_TOKEN="$token" \
+            nohup node node_modules/next/dist/bin/next start -p 3000 > /tmp/web-limited.log 2>&1 &)
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3000/sitemap.xml | grep -q "<loc>http://localhost:3000/site/"; then ready=1; break; fi
+            sleep 2
+          done
+          if [ "$ready" != "1" ]; then
+            printf '::error::小额度预览站 120s 内没给出带 /site/* 的 sitemap（web 侧取数没走通，检查没跑成）\n'
+            tail -20 /tmp/hub-limited.log /tmp/web-limited.log || true
+            exit 1
+          fi
+          set +e
+          NAVHUB_INTERNAL_TOKEN="$token" \
+            node scripts/check-rate-limit-exemption.mjs \
+            --api-base=http://127.0.0.1:8787 --web-base=http://localhost:3000 \
+            --public-hammer=60 --pages=20 --min-miss=8 > /tmp/rate-limit.log 2>&1
+          rc=$?
+          set -e
+          cat /tmp/rate-limit.log
+          if [ "$rc" != "0" ]; then
+            # 失败时无条件发三条：上一版按 grep 匹配行发，脚本自身抛异常时一行都不剩。
+            # 只报凭据长度，日志里拿不到值。
+            printf '::error::限流豁免检查 rc=%s（1=某阶段不成立，2=缺 NAVHUB_INTERNAL_TOKEN），额度=40/min，凭据长度=%s\n' \
+              "$rc" "${#token}"
+            printf '::error::阶段计数：%s\n' \
+              "$(grep -oE '阶段 [0-9][^—]*' /tmp/rate-limit.log | head -4 | tr '\n%' '|')"
+            printf '::error::输出尾部：%s\n' "$(tail -c 700 /tmp/rate-limit.log | tr '\n%' '|')"
+            exit "$rc"
+          fi
       - name: 失败时留下预览站日志
         if: ${{ failure() }}
-        run: tail -80 /tmp/hub.log /tmp/web.log
+        run: tail -80 /tmp/hub.log /tmp/web.log /tmp/hub-limited.log /tmp/web-limited.log
 
   check-web-overlay:
     timeout-minutes: 15

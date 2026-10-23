@@ -342,7 +342,9 @@ export function ModularCanvas() {
 
   if (!initialized) {
     return (
-      <div className="py-20 flex flex-col items-center justify-center space-y-3 text-muted-foreground">
+      // 与动态 loading 占位保持同高：初始化只差一次 effect，若此处塌回 py-20，
+      // 页脚仍会跟着画布高度跳变，白白多记一次 layout shift。
+      <div className="min-h-[100vh] py-20 flex flex-col items-center justify-center space-y-3 text-muted-foreground">
         <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
         <span className="text-xs font-mono">正在加载自定义模块化排版系统...</span>
       </div>
@@ -369,7 +371,8 @@ export function ModularCanvas() {
                 }`}
               >
                 <span>{b.name}</span>
-                <span className="text-xs font-mono opacity-75">({b.widgets.length})</span>
+                {/* 不要再叠 opacity：muted 前景色本身已是 AA 下限，75% 透明度会把 12px 计数压到 2.91:1 */}
+                <span className="text-xs font-mono">({b.widgets.length})</span>
               </button>
               {isEditing && boards.length > 1 && (
                 <button

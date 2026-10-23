@@ -422,12 +422,12 @@ export function SiteDetailView({
               {/* 正交分面属性胶囊 (Phase 2) */}
               {hasFacets && (
                 <div className="pt-2 flex flex-wrap items-center gap-2 border-t border-border/40 mt-3">
-                  {Object.entries(site.facets!).map(([fKey, vals]) => {
+                  {Object.entries(site.facets!).flatMap(([fKey, vals]) => {
                     const fMeta = FACET_LABELS[fKey] || { label: fKey, icon: Tag }
                     const FIcon = fMeta.icon
-                    return vals.map((v) => (
+                    return vals.map((v, vIdx) => (
                       <span
-                        key={`${fKey}_${v}`}
+                        key={`${fKey}_${v}_${vIdx}`}
                         className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-medium bg-secondary/80 text-secondary-foreground border border-border/60 shadow-2xs"
                       >
                         <FIcon className="w-3 h-3 text-muted-foreground" />
@@ -442,9 +442,9 @@ export function SiteDetailView({
               {/* 话题标签 */}
               {site.tags && site.tags.length > 0 && (
                 <div className="pt-1 flex flex-wrap items-center gap-1.5">
-                  {site.tags.map((t) => (
+                  {site.tags.map((t, tIdx) => (
                     <Link
-                      key={t}
+                      key={`${t}_${tIdx}`}
                       href={'/tags/' + encodeURIComponent(tagSlug(t))}
                       className="text-xs px-2.5 py-0.5 rounded-full bg-muted/80 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
                     >
@@ -585,9 +585,9 @@ export function SiteDetailView({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {alternatives.map((alt) => (
+              {alternatives.map((alt, altIdx) => (
                 <div
-                  key={alt.id}
+                  key={alt.id ? `alt_${alt.id}` : `alt_${altIdx}`}
                   className="rounded-xl border border-border/70 bg-card p-4 hover:border-amber-500/40 transition-all shadow-2xs space-y-2.5"
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -606,7 +606,7 @@ export function SiteDetailView({
                           </span>
                         )}
                         {alt.isFreeOrOpenSource && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
                             <ShieldCheck className="w-2.5 h-2.5" />
                             开源/免费
                           </span>
@@ -623,14 +623,14 @@ export function SiteDetailView({
                     </div>
 
                     <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
-                      <a href={alt.targetUrl} target="_blank" rel="noopener noreferrer">
+                      <a href={alt.targetUrl} target="_blank" rel="noopener noreferrer" aria-label={`访问 ${alt.targetTitle}：${alt.targetUrl}`} title={`访问 ${alt.targetTitle}`}>
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </Button>
                   </div>
 
                   {alt.note && (
-                    <p className="text-xs text-muted-foreground/90 bg-muted/30 p-2 rounded-lg border border-border/40">
+                    <p className="text-xs text-muted-foreground bg-muted/30 p-2 rounded-lg border border-border/40">
                       💡 {alt.note}
                     </p>
                   )}
@@ -652,11 +652,11 @@ export function SiteDetailView({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-              {ecosystemRelations.map((eco) => {
+              {ecosystemRelations.map((eco, ecoIdx) => {
                 const badge = RELATION_TYPE_LABEL[eco.relationType] || { label: eco.relationType, color: 'text-muted-foreground', bg: 'bg-muted' }
                 return (
                   <div
-                    key={eco.id}
+                    key={eco.id ? `eco_${eco.id}` : `eco_${ecoIdx}`}
                     className="rounded-xl border border-border/70 bg-card p-3.5 hover:border-indigo-500/40 transition-all shadow-2xs space-y-2 flex flex-col justify-between"
                   >
                     <div>
@@ -664,7 +664,7 @@ export function SiteDetailView({
                         <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${badge.bg} ${badge.color}`}>
                           {badge.label}
                         </span>
-                        <a href={eco.targetUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">
+                        <a href={eco.targetUrl} target="_blank" rel="noopener noreferrer" aria-label={`访问 ${eco.targetTitle}：${eco.targetUrl}`} title={`访问 ${eco.targetTitle}`} className="text-muted-foreground hover:text-primary">
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       </div>
@@ -706,9 +706,9 @@ export function SiteDetailView({
             </div>
             {initialRelated.length > 0 && (
               <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-                {initialRelated.map((s) => (
+                {initialRelated.map((s, sIdx) => (
                   <li
-                    key={s.id}
+                    key={s.id ? `rel_${s.id}` : `rel_${sIdx}`}
                     className="rounded-xl border border-border/70 bg-card p-3.5 hover:border-sky-500/40 transition-all shadow-2xs"
                   >
                     <div className="flex items-center gap-2">
@@ -772,9 +772,9 @@ export function SiteDetailView({
               <span className="text-xs text-muted-foreground font-mono">{similar.length} 个推荐项</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-              {similar.map((s) => (
+              {similar.map((s, simIdx) => (
                 <div
-                  key={s.id}
+                  key={s.id ? `sim_${s.id}` : `sim_${simIdx}`}
                   className="group relative rounded-xl border border-border/70 glass-surface subtle-mesh p-3.5 transition-all hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 flex flex-col justify-between"
                 >
                   <a href={s.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3">

@@ -128,7 +128,7 @@ export default function HotView({
                     {site.title}
                   </div>
                   {site.description && (
-                    <div className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1">
+                    <div className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1">
                       {site.description}
                     </div>
                   )}

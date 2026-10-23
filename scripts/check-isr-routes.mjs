@@ -71,6 +71,24 @@
  *
  * 契约层自己会不会「静默绿」由 `scripts/fixtures/isr-live-corpus/` 的真实页面
  * 变异自证（用例在 check-isr-routes.test.ts，语料用 `scripts/capture-isr-corpus.mjs` 刷新）。
+ *
+ * 红灯分两类，各自的重探手段不同（2026-10-23；起因是 5.9/5.10 那条「限流 → 降级壳」
+ * —— 同一条 `✖ … 技术面契约不达标` 既可能是渲染代码退化，也可能是上游一时拿不到数据
+ * 后被 ISR 缓存成壳，两者的修复方向完全相反，让人照着红灯去翻渲染链是浪费时间）：
+ *  - **契约退化**（title/description/canonical/og/jsonld 缺失或错、本机地址残留、
+ *    canonical 带 query、sitemap 收录面结构）：确定性，重探不会变，直接红、不重试。
+ *  - **可用性/降级壳**（非预期状态码、5xx、缺 s-maxage、sitemap 取不到；
+ *    以及「200 但本页自己声明 noindex」= 降级壳签名）：值得重探。
+ *    降级壳和普通抖动必须等 differently：壳是**缓存里的那份 HTML**，
+ *    立刻重问只会拿回同一个壳（实测 s-maxage=60 + stale-while-revalidate 一年），
+ *    所以这一类先按响应自带的 `s-maxage` 等到期、再打一发「唤醒」请求触发后台重验证、
+ *    然后重新取证 —— 转绿说明上游只是抖过，仍是壳才是真退化。
+ *    等待上限 `--retry-max-wait-ms`（默认 120s）：超过就**不判自愈**，红着并写明
+ *    「未重探（s-maxage 超上限）」，绝不把没验证过的东西报成恢复。
+ *    `x-nextjs-cache` 在这里是判据：`STALE` 意味着这发只负责唤醒、正文还是旧快照。
+ *  自愈项只打 `⚠`（且 CI 里发 `::warning::`）不判红 —— 但它是「这一页在缓存窗口内
+ *  会以壳示人」的事实记录，不是被吞掉的错误。
+ *  参数：`--retry=N`（默认 2）、`--retry-delay-ms`（默认 3000）、`--retry-max-wait-ms`。
  */
 
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
@@ -354,6 +372,7 @@ async function probe(base, path, { body = false } = {}) {
     const out = {
       status: res.status,
       cacheControl: res.headers.get('cache-control') ?? '',
+      cacheState: res.headers.get('x-nextjs-cache') ?? '',
       location: res.headers.get('location') ?? '',
       contentType: res.headers.get('content-type') ?? '',
       body: '',
@@ -515,6 +534,100 @@ export function pickSample(items, count, rotateKey, salt = '') {
   return out;
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
+
+/** 从 `cache-control` 里读 s-maxage 秒数；没有或读不出返回 null。 */
+function sMaxageMs(cacheControl) {
+  const raw = /s-maxage=(\d+)/.exec(String(cacheControl ?? ''))?.[1];
+  if (!raw) return null;
+  const ms = Number(raw) * 1000;
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** 降级壳的签名：可收录页自己声明了 noindex（5.9 那条链的下游证据）。 */
+const isShellFinding = (i) => i.kind === 'robots' && /noindex/i.test(String(i.message));
+
+/**
+ * 对一页取证并分类。
+ *
+ * 判定规则本身一条没改（仍复用 `contractFindings` / `localOriginAssetFindings`），
+ * 只是多分一层类。分层的理由来自实测：同一条 `✖ … 技术面契约不达标` 既可能是渲染代码
+ * 退化，也可能是上游一时取不到数据后被 ISR 缓存成降级壳（docs/seo/ISR-ROUTES.md 5.9/5.10
+ * 里那批壳，414 页同时缺描述、缺 JSON-LD、还自带 noindex）—— 两者的修复方向完全相反，
+ * 让人照着「jsonld 整族丢失」去翻渲染链是浪费时间。所以**带 noindex 的那一页，
+ * 其余契约缺失一律算壳的后果**，合并成一条 `degraded`，不再逐条报成退化。
+ */
+async function evaluateSample(base, path, { paged, contractOn, contractKinds }) {
+  const r = await probe(base, path, { body: true });
+  const allow = paged ? [200, 404] : [200];
+  // 分页族还有第三种合法裁决：页码归一后不是本页时，页面自己 permanentRedirect
+  // 回归一后的 URL。seed 数据不足一页时（实测：新库 57 个站点、每页 60 个 ⇒
+  // totalPages=1 ⇒ `/sites/p/2` 308 → `/sites`）造的样本必然走这一支。
+  // 它同样是「这条路由活着、且带着 ISR 缓存语义」的证据，不能判失败。
+  const familyBase = path.replace(/\/p\/[^/]+$/, '');
+  const target = paged ? redirectTarget(r.location, base) : null;
+  const normalizedBack =
+    (r.status === 301 || r.status === 308) && target !== null && pathOf(target) === familyBase;
+  const okStatus = allow.includes(r.status) || normalizedBack;
+  const cached = /s-maxage=\d+/.test(r.cacheControl);
+  // 只有拿到正文才有资格谈元信息：404（薄分页的正常裁决）与重定向没有快照可言
+  const badAssets = r.status === 200 && r.body ? localOriginAssetFindings(r.body, `${base}${path}`) : [];
+  // 分页族（`/p/{n}`）按设计是 noindex：契约照查（标题/canonical/描述），
+  // 但「可索引页才有的东西」（og 全套、JSON-LD、不得 noindex）不能要求它。
+  const expectIndexable = !paged;
+  const contract =
+    contractOn && r.status === 200 && r.body
+      ? contractFindings(r.body, `${base}${path}`, contractKinds, { expectIndexable })
+      : [];
+  const shell = expectIndexable && contract.some(isShellFinding);
+  const ok = okStatus && cached && !badAssets.length && !contract.length;
+  const line = `${ok ? '✓' : '✖'} ${(paged ? 'ISR 分页' : 'ISR 页面').padEnd(9)} ${path.padEnd(44)} ${r.status}${
+    normalizedBack ? ` → ${pathOf(target)}` : ''
+  } cc=${r.cacheControl || '—'}${
+    r.status === 200 && contractOn
+      ? ` 契约=${contract.length ? `${contract.length} 项` : '通过'}${expectIndexable ? '' : '·非索引'}`
+      : ''
+  }`;
+
+  const findings = [];
+  if (r.status >= 500)
+    findings.push({
+      klass: 'availability',
+      message: `${path}：HTTP ${r.status}（5xx 通常是 DYNAMIC_SERVER_USAGE）`,
+    });
+  else if (!okStatus)
+    findings.push({ klass: 'availability', message: `${path}：HTTP ${r.status}，期望 ${allow.join('/')}` });
+  else if (!cached)
+    findings.push({
+      klass: 'availability',
+      message: `${path}：没有 s-maxage，说明这一页没走 ISR 缓存`,
+    });
+  else if (badAssets.length)
+    findings.push({
+      klass: 'contract',
+      message: `${path}：线上响应里带着构建期兜底的本机地址（${badAssets.slice(0, 3).join(' | ')}）——缺 NAVHUB_SITE_URL 时 metadataBase 用 http://localhost:3000 解析，分享图在别人的机器上打不开，canonical/og:url 还会多出一个错域名；配好变量后按需生成一次即可洗掉，永久快照那一族则要靠下一次构建`,
+    });
+  if (contract.length) {
+    if (shell) {
+      const collateral = contract.filter((i) => !isShellFinding(i));
+      findings.push({
+        klass: 'degraded',
+        message: `${path}：降级壳（本页自己声明 noindex${
+          collateral.length ? `，连带 ${collateral.length} 项契约缺失：${collateral.map((i) => i.kind).join('/')}` : ''
+        }）—— 这不是渲染代码的形状问题，是上游取数失败被缓存成了壳（5.9 那条限流链就是这么来的）；等到 s-maxage 过期重验证后再取证，转绿即自愈`,
+        retryAfterMs: sMaxageMs(r.cacheControl),
+        cacheState: r.cacheState,
+      });
+    } else {
+      findings.push({
+        klass: 'contract',
+        message: `${path}：技术面契约不达标 —— ${contract.map((i) => `${i.kind}:${i.message}`).join(' | ')}`,
+      });
+    }
+  }
+  return { line, findings, ok, state: r.cacheState };
+}
+
 async function checkLive() {
   const base = (valueOf('base') ?? process.env.NAVHUB_SITE_URL ?? 'http://localhost:3000')
     .trim()
@@ -526,6 +639,7 @@ async function checkLive() {
     return 1;
   }
   const perFamily = Math.max(1, Number(valueOf('sample', '2')) || 1);
+  /** @type {{klass:'contract'|'availability'|'degraded', path:string, message:string, retryAfterMs?:number|null}[]} */
   const failures = [];
   let checked = 0;
   const contractOn = !flags.has('--no-contract');
@@ -548,12 +662,28 @@ async function checkLive() {
     console.log(`· 轮换取样 key=${rotateKey}（同 key 同结果；去掉 --rotate 则永远取族内前 ${perFamily} 个）`);
   }
 
+  // 重探参数（只作用于「可用性/降级壳」两类，契约退化不重试 —— 见文件头分类说明）。
+  // `--retry-max-wait-ms` 是**整个重探阶段共用的墙钟预算**，不是每项的预算：
+  // 一批 10 项各自等 120s 会把 CI 拖成十分钟的红灯。
+  const retryAttempts = Math.max(0, Number(valueOf('retry', '2')) || 0);
+  const retryDelayMs = Math.max(0, Number(valueOf('retry-delay-ms', '3000')) || 0);
+  const retryMaxWaitMs = Math.max(0, Number(valueOf('retry-max-wait-ms', '120000')) || 0);
+
   let xml = '';
-  try {
-    xml = await fetchSitemapXml(base);
-  } catch (err) {
-    console.error(`✖ 取不到 ${base}/sitemap.xml：${err.message}`);
-    return 1;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      xml = await fetchSitemapXml(base);
+      break;
+    } catch (err) {
+      // 清单取不到时整套抽查都没有样本可抽（CI 里常见于 web 刚起来、首屏还在生成）。
+      // 这属于可用性，不重试就等于是把启动竞态报成「收录面坏了」。
+      if (attempt > retryAttempts) {
+        console.error(`✖ 取不到 ${base}/sitemap.xml：${err.message}`);
+        return 1;
+      }
+      console.log(`– 取 ${base}/sitemap.xml 失败（${err.message}），${retryDelayMs}ms 后第 ${attempt + 1} 次尝试`);
+      await sleep(retryDelayMs);
+    }
   }
   const paths = pathsFromSitemapXml(xml);
 
@@ -581,43 +711,13 @@ async function checkLive() {
     }
     for (const path of sample) {
       checked += 1;
-      const r = await probe(base, path, { body: true });
-      const allow = paged ? [200, 404] : [200];
-      // 分页族还有第三种合法裁决：页码归一后不是本页时，页面自己 permanentRedirect
-      // 回归一后的 URL。seed 数据不足一页时（实测：新库 57 个站点、每页 60 个 ⇒
-      // totalPages=1 ⇒ `/sites/p/2` 308 → `/sites`）造的样本必然走这一支。
-      // 它同样是「这条路由活着、且带着 ISR 缓存语义」的证据，不能判失败。
-      const familyBase = path.replace(/\/p\/[^/]+$/, "");
-      const target = paged ? redirectTarget(r.location, base) : null;
-      const normalizedBack =
-        (r.status === 301 || r.status === 308) && target !== null && pathOf(target) === familyBase;
-      const okStatus = allow.includes(r.status) || normalizedBack;
-      const cached = /s-maxage=\d+/.test(r.cacheControl);
-      // 只有拿到正文才有资格谈元信息：404（薄分页的正常裁决）与重定向没有快照可言
-      const badAssets = r.status === 200 && r.body ? localOriginAssetFindings(r.body, `${base}${path}`) : [];
-      // 分页族（`/p/{n}`）按设计是 noindex：契约照查（标题/canonical/描述），
-      // 但「可索引页才有的东西」（og 全套、JSON-LD、不得 noindex）不能要求它。
-      const expectIndexable = !paged;
-      const contract =
-        contractOn && r.status === 200 && r.body
-          ? contractFindings(r.body, `${base}${path}`, contractKinds, { expectIndexable })
-          : [];
-      console.log(
-        `${okStatus && cached && !badAssets.length && !contract.length ? '✓' : '✖'} ${(paged ? 'ISR 分页' : 'ISR 页面').padEnd(9)} ${path.padEnd(44)} ${r.status}${normalizedBack ? ` → ${pathOf(target)}` : ''} cc=${r.cacheControl || '—'}${r.status === 200 && contractOn ? ` 契约=${contract.length ? `${contract.length} 项` : '通过'}${expectIndexable ? '' : '·非索引'}` : ''}`,
-      );
-      if (r.status >= 500) failures.push(`${path}：HTTP ${r.status}（5xx 通常是 DYNAMIC_SERVER_USAGE）`);
-      else if (!okStatus) failures.push(`${path}：HTTP ${r.status}，期望 ${allow.join('/')}`);
-      else if (!cached) failures.push(`${path}：没有 s-maxage，说明这一页没走 ISR 缓存`);
-      else if (badAssets.length) {
-        failures.push(
-          `${path}：线上响应里带着构建期兜底的本机地址（${badAssets.slice(0, 3).join(' | ')}）——缺 NAVHUB_SITE_URL 时 metadataBase 用 http://localhost:3000 解析，分享图在别人的机器上打不开，canonical/og:url 还会多出一个错域名；配好变量后按需生成一次即可洗掉，永久快照那一族则要靠下一次构建`,
-        );
-      }
-      if (contract.length) {
-        failures.push(
-          `${path}：技术面契约不达标 —— ${contract.map((i) => `${i.kind}:${i.message}`).join(' | ')}`,
-        );
-      }
+      const { line, findings } = await evaluateSample(base, path, {
+        paged,
+        contractOn,
+        contractKinds,
+      });
+      console.log(line);
+      for (const f of findings) failures.push({ ...f, path, paged });
     }
   }
 
@@ -648,7 +748,11 @@ async function checkLive() {
       `${ok ? '✓' : '✖'} ${'旧形态归一'.padEnd(9)} ${url.padEnd(44)} ${r.status} loc=${r.location || '—'}`,
     );
     if (!ok) {
-      failures.push(`${url} 没有 30x 到 ${target || '（裸路径）'}（旧收录 URL 会白扔权重）`);
+      failures.push({
+        klass: 'contract',
+        path: url,
+        message: `${url} 没有 30x 到 ${target || '（裸路径）'}（旧收录 URL 会白扔权重）`,
+      });
       continue;
     }
     // 308 的 Location 会把原始 query 一起带过去（配置层 redirects 的行为，实测
@@ -683,9 +787,11 @@ async function checkLive() {
       `${clean ? '✓' : '✖'} ${'跳转页 canonical'.padEnd(9)} ${final.url.padEnd(40)} ${final.page.status} canonical=${canonical || '—'}`,
     );
     if (!clean) {
-      failures.push(
-        `${final.url}：跳转落地页的 canonical ${canonical ? `仍带 query（${canonical}）` : '缺失'}——带参 URL 会变成一条可收录的重复页，旧形态归一的权重交接不再自洽`,
-      );
+      failures.push({
+        klass: 'contract',
+        path: final.url,
+        message: `${final.url}：跳转落地页的 canonical ${canonical ? `仍带 query（${canonical}）` : '缺失'}——带参 URL 会变成一条可收录的重复页，旧形态归一的权重交接不再自洽`,
+      });
     }
   }
 
@@ -714,28 +820,40 @@ async function checkLive() {
       .join(' / ')}；lastmod 覆盖 ${withLastmod}/${entries.length}（${(ratio * 100).toFixed(0)}%）；不可收录形态 ${nonIndexable.length} 条`,
   );
   if (nonIndexable.length) {
-    failures.push(
-      `sitemap 里有 ${nonIndexable.length} 条不可收录形态条目（分页 /p/{n} 或带 query）：${nonIndexable
+    failures.push({
+      klass: 'contract',
+      path: '/sitemap.xml',
+      message: `sitemap 里有 ${nonIndexable.length} 条不可收录形态条目（分页 /p/{n} 或带 query）：${nonIndexable
         .slice(0, 3)
         .map((e) => `${e.path}${e.search}`)
         .join(' | ')} —— 这些页面自己声明 noindex，进 sitemap 就是把重复页递给爬虫收录`,
-    );
+    });
   }
   for (const o of observed) {
     const raw = valueOf(o.flag, '0');
     const min = Number(raw);
     if (!Number.isFinite(min) || min <= 0) continue;
     if (o.count < min) {
-      failures.push(
-        `sitemap 里 ${o.key}只有 ${o.count} 条，低于下限 ${min}${o.key === '站点详情' && o.count === 0 ? '（只剩静态条目 = 中枢失联的降级形态，sitemap 没拿到任何站点，抽查抽到的绿不代表收录面完好）' : ''}`,
-      );
+      // 整族归零是上游信号（中枢失联 → 只剩静态条目），不是本页形状问题：分成
+      // degraded，让人先看上游而不是翻渲染代码。但 sitemap 自己的快照周期远长于
+      // 抽查预算（实测 revalidate 3600s 级），拿不到 s-maxage 就**不谎报自愈**：
+      // retryAfterMs=null 会让重探阶段明确写「未重探」，红灯照旧。
+      const upstream = o.count === 0;
+      failures.push({
+        klass: upstream ? 'degraded' : 'contract',
+        path: '/sitemap.xml',
+        retryAfterMs: null,
+        message: `sitemap 里 ${o.key}只有 ${o.count} 条，低于下限 ${min}${o.key === '站点详情' && o.count === 0 ? '（只剩静态条目 = 中枢失联的降级形态，sitemap 没拿到任何站点，抽查抽到的绿不代表收录面完好）' : ''}`,
+      });
     }
   }
   const minRatio = Number(valueOf('sitemap-min-lastmod-ratio', '0'));
   if (Number.isFinite(minRatio) && minRatio > 0 && ratio < minRatio) {
-    failures.push(
-      `sitemap 的 lastmod 覆盖率 ${(ratio * 100).toFixed(0)}%（${withLastmod}/${entries.length}）低于下限 ${(minRatio * 100).toFixed(0)}%：丢 lastmod 会让搜索引擎重新评估抓取优先级，改动也看不出新鲜度`,
-    );
+    failures.push({
+      klass: 'contract',
+      path: '/sitemap.xml',
+      message: `sitemap 的 lastmod 覆盖率 ${(ratio * 100).toFixed(0)}%（${withLastmod}/${entries.length}）低于下限 ${(minRatio * 100).toFixed(0)}%：丢 lastmod 会让搜索引擎重新评估抓取优先级，改动也看不出新鲜度`,
+    });
   }
 
   // 「一条都没抽查到」不是通过。空 sitemap / 全 5xx / base 指错都会让上面
@@ -749,10 +867,90 @@ async function checkLive() {
     return 1;
   }
 
-  if (failures.length) {
-    console.error(`\n✖ 线上 ISR 抽查未通过（${failures.length} 项 / 共 ${checked} 页）：`);
-    for (const f of failures) console.error(`  - ${f}`);
+  // ---- 重探：只碰「可用性 / 降级壳」，契约退化不重试 ----
+  // 契约退化是确定性的（同一份渲染代码、同一份数据），重试只会把 CI 时间花在
+  // 同一个形状问题上，还顺手教会大家「再跑一次说不定就绿了」。
+  // 可用性抖动重问一次就够；降级壳必须**先等到快照到期**再取证 —— 立刻重问拿回的
+  // 还是同一个缓存里的壳（实测 s-maxage=60 + stale-while-revalidate 一年）。
+  const retriable = failures.filter((f) => f.klass !== 'contract');
+  const hardFailures = failures.filter((f) => f.klass === 'contract');
+  const healed = [];
+  let waitedMs = 0;
+  for (const f of retriable) {
+    f.tries = 0;
+    f.latest = [f];
+    f.note = retryAttempts > 0 ? '未重探' : '未重探（--retry=0，对照旧行为）';
+    if (f.klass === 'degraded' && f.retryAfterMs === null) {
+      f.note = '未重探（这一项拿不到 s-maxage：sitemap 自己的快照周期远超抽查预算）';
+      continue;
+    }
+    for (let attempt = 1; attempt <= retryAttempts; attempt += 1) {
+      const wait = f.klass === 'degraded' ? (f.retryAfterMs ?? 0) + retryDelayMs : retryDelayMs;
+      if (waitedMs + wait > retryMaxWaitMs) {
+        f.note = `未继续重探（重探总预算 ${retryMaxWaitMs}ms 已用完，已等 ${waitedMs}ms）`;
+        break;
+      }
+      waitedMs += wait;
+      if (f.klass === 'degraded') {
+        // 等到期 → 唤醒（这一发返回的仍是旧快照，正文不能当证据）→ 留时间给后台重验证 → 取证
+        await sleep(f.retryAfterMs ?? 0);
+        await probe(base, f.path);
+        await sleep(retryDelayMs);
+      } else {
+        await sleep(retryDelayMs);
+      }
+      const again = await evaluateSample(base, f.path, {
+        paged: f.paged,
+        contractOn,
+        contractKinds,
+      });
+      f.tries = attempt;
+      if (!again.findings.length) {
+        f.state = again.state;
+        healed.push(f);
+        break;
+      }
+      f.latest = again.findings;
+      f.state = again.state;
+      // 仍然是壳，但这一发只拿到 STALE（后台还没重验证完）—— 不算「确认还是坏」，
+      // 下一轮继续等；预算用尽才落红灯，并在消息里写清楚它没被确认过。
+      if (f.klass === 'degraded' && /STALE/i.test(again.state ?? '')) {
+        f.note = '最后一次重探仍拿到 STALE（旧快照），未确认新渲染的形状';
+      } else {
+        f.note = '';
+      }
+    }
+  }
+  const still = retriable.filter((f) => !healed.includes(f));
+
+  if (hardFailures.length || still.length) {
+    console.error(
+      `\n✖ 线上 ISR 抽查未通过（共 ${checked} 页）：契约退化 ${hardFailures.length} 项 / 上游可用性·降级 ${still.length} 项${
+        healed.length ? ` / 重探后自愈 ${healed.length} 项` : ''
+      }：`,
+    );
+    for (const f of hardFailures) console.error(`  - [契约退化] ${f.message}`);
+    for (const f of still) {
+      const label = f.klass === 'degraded' ? '降级壳（不是渲染形状问题，先查上游取数）' : '可用性';
+      const detail = f.latest.map((m) => m.message).join('；');
+      console.error(
+        `  - [${label}] ${detail}${f.tries ? ` —— 已重探 ${f.tries} 次仍红${f.state ? `（末次 x-nextjs-cache=${f.state}）` : ''}` : ` —— ${f.note}`}`,
+      );
+    }
     return 1;
+  }
+
+  if (healed.length) {
+    // 自愈不判红，但必须留痕：这一页在缓存窗口内**确实以降级壳/非 200 示过爬虫**，
+    // 那是上游健康问题（限流、中枢失联），不是可以忽略的噪声。
+    console.warn(`\n⚠ 重探后自愈 ${healed.length} 项（判绿，但上游值得查）：`);
+    for (const f of healed) {
+      const line = `⚠ ${f.path}：首轮 ${f.klass === 'degraded' ? '降级壳' : '可用性异常'}，第 ${f.tries} 次重探转绿${f.state ? `（x-nextjs-cache=${f.state}）` : ''}`;
+      console.warn(`  - ${line}`);
+      if (process.env.GITHUB_ACTIONS === '1') {
+        console.log(`::warning::${line.replace(/::/g, '--').replace(/%/g, '%25')}`);
+      }
+    }
   }
   console.log(
     `\n✓ 线上 ISR 抽查通过：${checked} 页形态正确、都带 s-maxage，200 页的响应体里没有兜底的本机地址${contractOn ? `，技术面契约（${[...contractKinds].join('/')}）齐备` : ''}`,

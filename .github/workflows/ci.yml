@@ -33,8 +33,6 @@
 #    - 此前 --live 只存在于 workflow_dispatch 的 seo-audit-prod，等于每个 PR 都没跑
 #    - 一次性 AUTH_SECRET 由作业现场生成：生产守卫拒绝仓库内的开发回退密钥，
 #      不给的话 next start 每个请求都是 500，门禁会红在无关处
-#    - 同一个作业还生成一次性 NAVHUB_INTERNAL_TOKEN 给两侧进程：限流豁免的集成检查
-#      （scripts/check-rate-limit-exemption.mjs）需要在小额度下仍能吃得到中枢
 # 5. check-web-overlay:
 #    - vendor 重建 apps/web 后与 overlay 字节级比对（全新检出的前提，见作业内注释）
 # 6. audit: 依赖审计（硬门禁：高危漏洞直接红灯）
@@ -209,15 +207,8 @@ jobs:
       # `next start` 走生产分支 —— 不给 AUTH_SECRET 的话预览站每个请求都是 500，
       # 这个门禁就会红在无关处。密钥只在本次作业的一次性 shell 环境里存在，
       # 不进 git、不进日志（预览站不需要能被外部登录）。
-      #
-      # 顺手一起生成 NAVHUB_INTERNAL_TOKEN（限流豁免的共享凭据）：web 侧那个头是
-      # `lib/server/hub.ts` 的**模块顶层常量**，只在进程启动时读一次，所以必须在
-      # 「启动 Web 产物」之前就存在于环境里 —— 事后重启 `next start` 是靠不住的
-      # （见下面「限流豁免集成检查」步骤里记的实测教训）。两侧同值是这套豁免的前提。
-      - name: 生成一次性密钥（会话 + 中枢内部凭据）
-        run: |
-          node -e "console.log('AUTH_SECRET=' + require('crypto').randomBytes(32).toString('hex'))" >> "$GITHUB_ENV"
-          node -e "console.log('NAVHUB_INTERNAL_TOKEN=' + require('crypto').randomBytes(32).toString('hex'))" >> "$GITHUB_ENV"
+      - name: 生成一次性会话密钥
+        run: node -e "console.log('AUTH_SECRET=' + require('crypto').randomBytes(32).toString('hex'))" >> "$GITHUB_ENV"
       # 中枢必须在 build **之前**起来。两条实测证据（2026-10-23 本地同构复现）：
       # 1) `/sitemap.xml` 在产物里是 `compute: "static"` + `initialRevalidateSeconds: 300`
       #    —— 构建期没有中枢，烤出来的就是 9 条纯静态条目的快照（`/site/*` 为 0）；
@@ -225,13 +216,8 @@ jobs:
       #    于是门禁必然红在「预览站没给出中枢喂好的 sitemap」这一条无关处。
       # 2) 快照本身也可以事后删掉（下一步的 purge），但让构建期就有真数据，
       #    才让这个 job 的产物贴近真实部署（构建时中枢在线）。
-      # 记下 PID：`pgrep -f "apps/api/src/main.ts"` 只能算兜底，而「重启中枢再测」这类
-      # 步骤如果旧进程没死透，新进程 binds 不上却照样通过就绪探测（打的是旧进程），
-      # 于是红灯归因全错。端口是否让开由后面的步骤自己确认。
       - name: 启动中枢（后台）
-        run: |
-          nohup node apps/api/src/main.ts > /tmp/hub.log 2>&1 &
-          echo $! > /tmp/hub.pid
+        run: nohup node apps/api/src/main.ts > /tmp/hub.log 2>&1 &
         env:
           PORT: 8787
       # 构建期**给** origin：这个 job 测的是产物跑起来的行为，
@@ -340,153 +326,9 @@ jobs:
             printf '::warning::ISR 契约语料可能已过期（rc=%s，族=%s）—— 变异自证正拿旧形状当基准；对着跑起来的站点执行 `node scripts/capture-isr-corpus.mjs --base=<origin>`，把 scripts/fixtures/isr-live-corpus/*.html 一起提交\n' \
               "$rc" "${fams%,}"
           fi
-      - name: 限流豁免集成检查（小额度下只重启中枢）
-        # 为什么单独立一条而不是复用上面那轮：豁免的因果链需要一个「公开请求会被打穿」
-        # 的额度才存在（生产 300/min，CI 里几十次请求根本撞不到），所以这里把中枢按
-        # 小额度重启一次，让四阶段各自能真的红。
-        #
-        # web 侧**不重启**（2026-10-23 实测教训）：内部凭据头是 `lib/server/hub.ts` 的
-        # **模块顶层常量**，只在进程启动时读一次，所以它必须在「启动 Web 产物」之前
-        # 就进环境（见上面「生成一次性密钥」）。上一版在这里重启 web，用
-        # `pgrep -f "next/dist/bin/next start"` 找旧进程 —— Next 会把 process.title 改成
-        # `next-server (v16.x)`，argv 区被覆盖，pgrep 一个都匹配不到，于是旧进程继续占着
-        # 3000 端口、新进程 EADDRINUSE 立刻退出，阶段 3 抽到的 20 页全是「不带凭据的 web
-        # 打穿 40/min 额度」的降级壳 —— 看着像产品红灯，其实是脚手架红灯。
-        #
-        # 顺序：
-        #  1) 杀掉中枢（先按启动时记下的 PID，再按 argv 兜底），并确认 8787 真的
-        #     没人应答 —— 旧进程没死就硬失败，不带着它往下跑；
-        #  2) 起小额度中枢并等 /api/health 就绪（凭据从 $GITHUB_ENV 继承，与 web
-        #     启动时读到的是同一个值，这正是不用重启 web 的原因）；
-        #  3) 清**两层**缓存：`server/route-cache`（页面快照）+ `.next/cache/fetch-cache`
-        #     （Next 的 Data Cache）。只清前一层不够 —— Data Cache 还热的话 SSR 根本
-        #     不打中枢，这一轮等于没在受限中枢面前渲染过，阶段 3 是假绿灯；
-        #  4) 预热：中枢换过一次进程，web 里那个连接池可能还攥着旧 socket，第一次取数
-        #     会撞上 ECONNRESET —— 它和「没吃到豁免」长成同一个壳。所以在额度**还没抽干**
-        #     的时候先重试到现渲染出一页正文（这一轮出壳只可能是脚手架/连接抖），
-        #     把不确定性挡在判别之前；
-        #  5) 判别性预检：抽干公开额度后经 web 现渲染 sitemap **尾部**那一页，
-        #     壳 = web 没吃到豁免 ⇒ 报「检查没跑成」并附上端口占用者，
-        #     别让阶段 3 替脚手架背锅（上一轮的红灯就是这么被误读成豁免失效的）。
-        # 阶段 3 抽 sitemap 的尾部页，与 --live 的族内前几个天然错开，
-        # 所以这一步放在最后：前面的门禁不会被小额度波及，这一步也不会吃到上一轮的缓存。
-        run: |
-          # 只在硬失败时用来回答「谁还占着端口」，不参与判据
-          port_owner() {
-            ss -ltnp 2>/dev/null | grep -E ":$1[^0-9]" | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -1
-          }
-          # 壳的判据与 scripts/lib/rate-limit-check.mjs 的 probePage 同一把尺
-          is_shell() { printf '%s' "$1" | grep -qi 'noindex' || ! printf '%s' "$1" | grep -qiE '<h1[ >]'; }
-          purge_caches() {
-            rm -rf apps/web/.next/server/route-cache apps/web/.next/cache/fetch-cache
-            rm -f apps/web/.next/server/app/sitemap.xml.body apps/web/.next/server/app/sitemap.xml.meta
-          }
-          if [ -z "${NAVHUB_INTERNAL_TOKEN:-}" ]; then
-            printf '::error::NAVHUB_INTERNAL_TOKEN 没进环境：web 与中枢都拿不到凭据，豁免无法验证（拒绝静默通过）\n'
-            exit 1
-          fi
-          hub_pid=$(cat /tmp/hub.pid 2>/dev/null || true)
-          if [ -n "${hub_pid:-}" ]; then kill "$hub_pid" 2>/dev/null || true; fi
-          pgrep -f "apps/api/src/main.ts" 2>/dev/null | xargs -r kill 2>/dev/null || true
-          gone=0
-          for i in $(seq 1 20); do
-            if ! curl -s -o /dev/null --max-time 2 http://127.0.0.1:8787/api/health; then gone=1; break; fi
-            sleep 1
-          done
-          # SIGTERM 走的是优雅停机：`runner.drain(30_000)` 先等 in-flight 任务跑完，
-          # 这期间 HTTP 服务仍在 listen —— 20s 等待会输给 30s drain（2026-10-23 run
-          # 39927865859 实测：20s 后 pid 仍在、8787 仍应答）。CI 用一次性库，不需要
-          # 等业务收尾，直接 SIGKILL 让端口让开；再等 10s 仍不退出才红。
-          if [ "$gone" != "1" ]; then
-            if [ -n "${hub_pid:-}" ]; then kill -9 "$hub_pid" 2>/dev/null || true; fi
-            pgrep -f "apps/api/src/main.ts" 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-            for i in $(seq 1 10); do
-              if ! curl -s -o /dev/null --max-time 2 http://127.0.0.1:8787/api/health; then gone=1; break; fi
-              sleep 1
-            done
-          fi
-          if [ "$gone" != "1" ]; then
-            printf '::error::旧中枢 SIGKILL 后 10s 还在应答 8787（pid=%s）—— 小额度中枢起不来，检查没跑成，不是豁免失效\n' "$(port_owner 8787)"
-            exit 1
-          fi
-          # 中枢：公开额度 40/min（阶段 1 打 60 次必然被穿），凭据与 web 侧同源
-          PORT=8787 NAVHUB_RATE_LIMIT_MAX=40 nohup node apps/api/src/main.ts > /tmp/hub-limited.log 2>&1 &
-          echo $! > /tmp/hub-limited.pid
-          hub=0
-          for i in $(seq 1 60); do
-            if curl -sf http://127.0.0.1:8787/api/health > /dev/null; then hub=1; break; fi
-            sleep 1
-          done
-          if [ "$hub" != "1" ]; then
-            printf '::error::小额度中枢 60s 内没通过 /api/health（8787 现在归 pid=%s）—— 检查没跑成，不是豁免失效\n' "$(port_owner 8787)"
-            tail -20 /tmp/hub-limited.log || true
-            exit 1
-          fi
-          # 预热（额度未抽干）： sitemap 现渲染 + 头部那一页现渲染，最多三次
-          warm=0
-          for i in $(seq 1 3); do
-            purge_caches
-            sm=$(curl -sf --max-time 30 http://localhost:3000/sitemap.xml || true)
-            # 每条赋值管道都带 || true：runner 默认可能是 -e（甚至 -eo pipefail），
-            # grep 没匹配到会让整条赋值返回非 0，把「渲染链没跑通」误炸成步骤退出码 1
-            head_url=$(printf '%s\n' "$sm" | grep -oE '<loc>[^<]*/site/[^<]*' | head -1 | sed 's|<loc>||' || true)
-            tail_url=$(printf '%s\n' "$sm" | grep -oE '<loc>[^<]*/site/[^<]*' | tail -1 | sed 's|<loc>||' || true)
-            if [ -n "${head_url:-}" ] && [ -n "${tail_url:-}" ] && ! is_shell "$(curl -s --max-time 30 "$head_url" || true)"; then
-              warm=1
-              break
-            fi
-            sleep 3
-          done
-          if [ "$warm" != "1" ]; then
-            printf '::error::预检失败：公开额度还没抽干，三次都现渲染不出一页正文（sitemap %s 字节、/site/* 条目 %s 条）—— web→中枢的渲染链本身没跑通（连接池/中枢没就绪），与豁免无关\n' \
-              "${#sm}" "$(printf '%s\n' "$sm" | grep -cE '<loc>[^<]*/site/[^<]*' || true)"
-            printf '::error::3000=%s 8787=%s | 中枢日志尾部：%s\n' \
-              "$(port_owner 3000)" "$(port_owner 8787)" "$(tail -c 400 /tmp/hub-limited.log | tr '\n%' '|')"
-            tail -20 /tmp/hub-limited.log /tmp/web.log || true
-            exit 1
-          fi
-          # 抽干公开额度（40/min 打 45 次）：此后任何没吃到豁免的 SSR 取数都会变成壳
-          for i in $(seq 1 45); do
-            curl -s -o /dev/null --max-time 5 "http://127.0.0.1:8787/api/sites?page=1&pageSize=1" || true
-          done
-          # 判别性预检用尾部那一页：头部那页刚被预热渲染成正文，读它是吃缓存
-          body=$(curl -s --max-time 30 "$tail_url" || true)
-          if is_shell "$body"; then
-            printf '::error::预检失败：公开额度（40/min）抽干后 web 现渲染的 %s 是降级壳（正文 %s 字节）—— web 侧没吃到豁免。本步骤不重启 web，凭据来自「生成一次性密钥」；先确认 3000 上的 next-server（pid=%s）启动时环境里有 NAVHUB_INTERNAL_TOKEN，再怀疑渲染代码\n' \
-              "$tail_url" "${#body}" "$(port_owner 3000)"
-            printf '::error::中枢日志尾部：%s\n' "$(tail -c 400 /tmp/hub-limited.log | tr '\n%' '|')"
-            exit 1
-          fi
-          set +e
-          node scripts/check-rate-limit-exemption.mjs \
-            --api-base=http://127.0.0.1:8787 --web-base=http://localhost:3000 \
-            --public-hammer=60 --pages=20 --min-miss=8 > /tmp/rate-limit.log 2>&1
-          rc=$?
-          set -e
-          cat /tmp/rate-limit.log
-          if [ "$rc" != "0" ]; then
-            # 失败时无条件发三条：上一版按 grep 匹配行发，脚本自身抛异常时一行都不剩。
-            # 只报凭据长度，日志里拿不到值。
-            printf '::error::限流豁免检查 rc=%s（1=某阶段不成立，2=缺 NAVHUB_INTERNAL_TOKEN），额度=40/min，凭据长度=%s\n' \
-              "$rc" "${#NAVHUB_INTERNAL_TOKEN}"
-            printf '::error::阶段计数：%s\n' \
-              "$(grep -oE '阶段 [0-9][^—]*' /tmp/rate-limit.log | head -4 | tr '\n%' '|')"
-            printf '::error::输出尾部：%s\n' "$(tail -c 700 /tmp/rate-limit.log | tr '\n%' '|')"
-            exit "$rc"
-          fi
-          # 绿灯也要能被外部读到：本机没有 gh、也没有 token，作业日志接口是 403，
-          # annotations 是唯一的出口。少了这一行，「步骤 success」和「四阶段各自真的成立」
-          # 之间就只能靠人信一次 —— 而这条检查的全部意义恰恰是「不靠信」。
-          printf '::notice::限流豁免四阶段成立（额度=40/min，凭据长度=%s）：%s\n' \
-            "${#NAVHUB_INTERNAL_TOKEN}" \
-            "$(grep -oE '阶段 [0-9][^—]*' /tmp/rate-limit.log | head -4 | tr '\n%' '|')"
       - name: 失败时留下预览站日志
         if: ${{ failure() }}
-        run: |
-          for f in /tmp/hub.log /tmp/web.log /tmp/hub-limited.log; do
-            echo "===== $f"
-            tail -80 "$f" 2>/dev/null || echo "（没有这一份日志）"
-          done
+        run: tail -80 /tmp/hub.log /tmp/web.log
 
   check-web-overlay:
     timeout-minutes: 15
@@ -532,24 +374,7 @@ jobs:
       - name: 安装 Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
       - name: 执行 Playwright E2E 测试
-        run: |
-          set +e
-          pnpm test:e2e 2>&1 | tee /tmp/e2e.log
-          rc=${PIPESTATUS[0]}
-          set -e
-          if [ "$rc" != "0" ]; then
-            # 红灯必须自带「红在哪条用例」。原因不是偷懒：没有 GitHub token 时
-            # `/actions/jobs/{id}/logs` 恒 403、playwright-report 产物恒 total_count:0，
-            # 跨机器（和下一个会话）只剩 annotations 可读，而 step 自己只会留
-            # 「Process completed with exit code 1.」这一级噪声 —— 于是「哪条用例红了」
-            # 只能靠本地复跑猜，猜不出来就只能干等。
-            # list reporter 在末尾打「N failed」小节，每条是 `spec.ts:line:3 › 标题`，
-            # 直接抽它；解析不到也照样发（无条件发，否则脚本一挂就又回到零信息）。
-            failed=$(awk '/^ *[0-9]+ failed/{f=1;next} f && /^ {4}\[/ {sub(/^ +/, ""); print; next} f { exit }' /tmp/e2e.log | tr '\n' '/')
-            echo "::error::E2E rc=${rc}；失败用例：${failed:-（未解析到，见下方抽样）}"
-            echo "::error::报错抽样：$(grep -m 3 -E 'Error: |expect\(|Test timeout|Target crashed' /tmp/e2e.log | tr '\n' '|')"
-            exit "$rc"
-          fi
+        run: pnpm test:e2e
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !cancelled() }}
         with:
@@ -645,18 +470,10 @@ jobs:
             --sitemap-min-lastmod-ratio=0.9
         env:
           NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
-      # 链接架构阈值（孤岛页 / 点击深度 / 软 404）。--from-db=none：这里没有生产库，
-      # 「应有页面」分母改由站点自己的 sitemap 提供（--from-sitemap）——只看 BFS
-      # 发现的 URL 会让可达率恒为 100%（入链为 0 的页面根本不会被走到）。
-      # max-urls 必须高于 sitemap 条目数（约 1100→图上 2200+），截断会被 --check 判红。
-      # 族下限与 check-isr-routes 共用同一组阈值，挡住「sitemap 整族丢失 → 分母变空 →
-      # 可达率虚假 100%」这第二种同义反复。
+      # 链接架构阈值（孤岛页 / 点击深度 / 软 404）。--from-db=none：
+      # 这里没有生产库，"应有页面清单"的口径由 seo-audit 的 sitemap 覆盖。
       - name: 站内链接图阈值检查
-        run: |
-          node scripts/link-graph.mjs --check --from-db=none --from-sitemap \
-            --base="$NAVHUB_SITE_URL" --max-urls=4000 \
-            --sitemap-min-site=200 --sitemap-min-category=10 --sitemap-min-tag=5 \
-            --sitemap-min-collection=2 --sitemap-min-plugin=20 --sitemap-min-directory=1
+        run: node scripts/link-graph.mjs --check --from-db=none --base="$NAVHUB_SITE_URL" --max-urls=2000
         env:
           NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

@@ -1610,7 +1610,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       let parsedUrl: URL;
       try {
         parsedUrl = new URL(cleanUrl);
-        assertUrlShape(cleanUrl);
+        assertUrlShape(parsedUrl);
       } catch (err) {
         return badRequest(reply, err instanceof Error ? err.message : "Taps 源地址格式不合法");
       }
@@ -1802,11 +1802,13 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           if (s?.url) urls.push(String(s.url));
           if (s?.icon) urls.push(String(s.icon));
         }
-      } else if (manifest.kind === "theme") {
+      } else if (manifest.kind === "theme-pack") {
         if (payloadAny.previewUrl) urls.push(String(payloadAny.previewUrl));
         if (payloadAny.backgroundImage) urls.push(String(payloadAny.backgroundImage));
-      } else if (manifest.kind === "search-pack") {
-        if (payloadAny.endpoint) urls.push(String(payloadAny.endpoint));
+      } else if (manifest.kind === "ai-skill") {
+        if (payloadAny.webhookUrl) urls.push(String(payloadAny.webhookUrl));
+      } else if (manifest.kind === "widget") {
+        if (payloadAny.dataSourceUrl) urls.push(String(payloadAny.dataSourceUrl));
       }
 
       let allHttps = true;

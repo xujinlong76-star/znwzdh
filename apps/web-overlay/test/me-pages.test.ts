@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * 第二批用户中心的静态守卫：页面存在、可访问性地标、关键接口接线。
+ * 第二批与 4.0 升级用户中心的静态守卫：页面存在、可访问性地标、关键接口接线。
  * 这里刻意检查源码字符串而不是渲染：路由依赖 NextAuth 会话与中枢，
  * 渲染测试需要整套运行时；这些断言保证的是「功能没有被后续改动删掉」。
  *
@@ -26,7 +26,7 @@ function overlayRoot(): string {
 const ROOT = overlayRoot()
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
-describe('用户中心第二批页面', () => {
+describe('用户中心第二批与 4.0 页面', () => {
   it('统一子导航覆盖概览/收藏/历史/数据/偏好并挂在相关页面', () => {
     const nav = read('src/components/user-center/user-center-nav.tsx')
     for (const href of ["'/me'", "'/favorites'", "'/me/history'", "'/me/data'", "'/preferences'"]) {
@@ -47,19 +47,24 @@ describe('用户中心第二批页面', () => {
     expect(src).toContain("HUB_BASE + '/api/me' + suffix")
   })
 
-  it('搜索历史页有地标、分页与删除接线', () => {
+  it('搜索历史页有地标、分页、删除、关键词筛选、重搜与零结果清理接线', () => {
     const src = read('src/app/me/history/page.tsx')
     expect(src).toContain('id="main-content"')
     expect(src).toContain('fetchSearchHistoryPage')
     expect(src).toContain('deleteSearchHistoryItem')
     expect(src).toContain('clearCloudSearchHistory')
     expect(src).toContain('加载更多')
+    expect(src).toContain('筛选搜索历史')
+    expect(src).toContain('handleCleanZeroResults')
+    expect(src).toContain('/?q=')
   })
 
-  it('数据页有导出与二次确认删除', () => {
+  it('数据页有导出、备份恢复导入、按域精细化清理与二次确认删除', () => {
     const src = read('src/app/me/data/page.tsx')
     expect(src).toContain('id="main-content"')
     expect(src).toContain("'/api/me/export'")
+    expect(src).toContain("'/api/me/import'")
+    expect(src).toContain("'/api/me/prune'")
     expect(src).toContain("confirm: 'DELETE'")
     expect(src).toContain("fetch('/api/me'")
     // 删除动作必须受输入框解锁，不能一个按钮直接删
@@ -71,21 +76,29 @@ describe('用户中心第二批页面', () => {
     expect(layout).toContain('robots: { index: false')
   })
 
-  it('概览页接个性化开关、信号清理、多维设置、资料修改与健康自检修复', () => {
-    // M5 把概览页拆成「服务端壳 page.tsx + 客户端岛 me-view.tsx」。
-    // 断言原意不变（这些接线必须还在），只是要跨两个文件找——只看 page.tsx
-    // 会因为代码搬到岛里而误报。
-    const src = ['src/app/me/page.tsx', 'src/app/me/me-view.tsx'].map(read).join('\n')
+  it('概览页接个性化开关、信号清理、多维设置、一键场景预设、DIY/空间/插件面板、资料修改与健康自检修复', () => {
+    const src = [
+      'src/app/me/page.tsx',
+      'src/app/me/me-view.tsx',
+      'src/components/user-center/user-center-hub-panels.tsx',
+    ]
+      .map(read)
+      .join('\n')
     expect(src).toContain('/api/me/settings')
     expect(src).toContain('/api/me/profile')
     expect(src).toContain('/api/me/diagnostics')
+    expect(src).toContain('/api/me/plugins')
+    expect(src).toContain('/api/me/merge')
+    expect(src).toContain('USER_SETTINGS_PRESETS')
+    expect(src).toContain('HomeDiyControlPanel')
+    expect(src).toContain('WorkspacesControlPanel')
+    expect(src).toContain('MyPluginsControlPanel')
+    expect(src).toContain('IdentityMergePanel')
     expect(src).toContain('verifySettingsConsistency')
     expect(src).toContain('runClientStorageDiagnostics')
     expect(src).toContain('clearProfileSignals')
     expect(src).toContain("href=\"/me/history\"")
     expect(src).toContain("href=\"/me/data\"")
-    // 搜索历史入口不再错误地指向收藏页：入口表里必须有一项指向 /me/history
-    // （不锁整行字面量——图标或字段顺序变化不该让守卫变红）
     expect(src).toMatch(/href:\s*'\/me\/history'/)
   })
 

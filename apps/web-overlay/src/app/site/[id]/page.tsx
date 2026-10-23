@@ -1,7 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { hubGetProbe } from '@/lib/server/hub'
-import { hubGet } from '@/lib/server/hub'
 import { safeDecodeParam } from '@/lib/server/route-params'
 import { SiteDetailView } from '@/components/site-detail-view'
 import { Breadcrumbs } from '@/components/breadcrumbs'
@@ -76,60 +75,19 @@ async function loadSite(id: string) {
   return { safeId, probe }
 }
 
-/** 「同分类」区块的取数来源：本分类 → 父分类子树 → 全站兜底 */
-export type RelatedScope = 'category' | 'parent' | 'more'
-
 /**
- * 同分类 / 同类目 / 兜底站点与分类入口（服务端取数，进 SSR HTML）。
+ * 同分类站点与分类入口（服务端取数，进 SSR HTML）。
  *
  * 为什么只信 `counts`：分类页对 < 门槛的分类直接 404，详情页若按 API 返回的
  * 站点数链接，薄分类会变成一条站内死链。counts 取数失败（null）时宁可不链，也不赌。
  * 计数走 `descendantSiteCounts`：站点归属的类目在新树里是叶子（自身计数就够），
  * 但存量数据里还有一批直接挂在一级根上的站点，原始计数读它们是 0，
  * 分类页（按子树展开取站点）却明显可达——口径不一致会让详情页少一条内链。
- *
- * 三级兜底（2026-10-23）：分类只有当前站点 1 条时，同分类区块会整体消失，
- * HTML 里一条 `/site/` 内链都不剩（seo-audit 的「站点详情缺少相关 /site/ 内链」
- * 命中的正是这 9 个页）。父分类子树能覆盖其中 7 个；剩下 2 个（父分类也只有
- * 自己）退回全站清单，保证任何详情页都有可爬的下一层。兜底只补内链，
- * 「浏览全部」入口仍按分类门槛门控——薄分类页是 404。
  */
-async function loadRelatedFromCategory(categoryId: string, excludeId: string): Promise<HubSite[]> {
-  const res = await loadCategorySites(categoryId, RELATED_LIMIT + 1, 0, 300)
-  // search 结果保持中枢相关度排序；只做自站/非活跃过滤与截断
-  return (res?.hits ?? [])
-    .map((h) => h.site)
-    .filter((s): s is HubSite => s !== null && s.id !== excludeId && s.status === 'active')
-    .slice(0, RELATED_LIMIT)
-}
-
-/**
- * 全站兜底清单。用 /api/sites（不是 search）：没有查询词时 search 的相关度
- * 排序没有意义，而 /api/sites 的 sort/weight 顺序稳定，同一份快照可缓存。
- */
-async function loadFallbackSites(excludeId: string): Promise<HubSite[]> {
-  const sites = await hubGet<HubSite[]>(`/api/sites?status=active&limit=${RELATED_LIMIT + 4}`, 300)
-  if (!Array.isArray(sites)) return []
-  return sites
-    .filter((s) => s !== null && s.id !== excludeId && s.status === 'active')
-    .slice(0, RELATED_LIMIT)
-}
-
 async function loadSiteContext(site: HubSite) {
   const categoryId = (site.categoryId ?? '').trim()
-  const empty = {
-    related: [] as HubSite[],
-    category: null,
-    canLinkCategory: false,
-    categoryCount: 0,
-    relatedScope: 'more' as RelatedScope,
-    relatedLabel: null as string | null,
-    relatedCategory: null as { slug: string; title: string; count: number } | null,
-  }
-  if (!categoryId) {
-    // 未分类站点没有分类可展开，直接走全站兜底，否则这里会是内链死胡同
-    return { ...empty, related: await loadFallbackSites(site.id) }
-  }
+  const empty = { related: [] as HubSite[], category: null, canLinkCategory: false, categoryCount: 0 }
+  if (!categoryId) return empty
 
   const [res, categories, rawCounts] = await Promise.all([
     loadCategorySites(categoryId, RELATED_LIMIT + 1, 0, 300),
@@ -142,53 +100,20 @@ async function loadSiteContext(site: HubSite) {
     categories?.find(
       (c) => c.id === categoryId && c.enabled !== false && !isHiddenCategory(c),
     ) ?? null
+  // search 结果保持中枢相关度排序；只做自站/非活跃过滤与截断
   const related = (res?.hits ?? [])
     .map((h) => h.site)
     .filter((s): s is HubSite => s !== null && s.id !== site.id && s.status === 'active')
     .slice(0, RELATED_LIMIT)
   const categoryCount = counts?.get(categoryId) ?? 0
-
-  let relatedScope: RelatedScope = 'category'
-  let relatedLabel: string | null = category && categories ? categoryDisplayName(category, categories) : null
-  const canLinkCategory = Boolean(category) && counts !== null && categoryCount >= MIN_SITES_FOR_CATEGORY_INDEX
-  let relatedCategory = canLinkCategory && category && relatedLabel
-    ? { slug: categoryUrlKey(category), title: relatedLabel, count: categoryCount }
-    : null
-  let finalRelated = related
-
-  if (finalRelated.length === 0 && category?.parentId && categories) {
-    const parent =
-      categories.find((c) => c.id === category.parentId && c.enabled !== false && !isHiddenCategory(c)) ?? null
-    if (parent) {
-      finalRelated = await loadRelatedFromCategory(parent.id, site.id)
-      relatedScope = 'parent'
-      relatedLabel = categoryDisplayName(parent, categories)
-      const parentCount = counts?.get(parent.id) ?? 0
-      relatedCategory =
-        counts !== null && parentCount >= MIN_SITES_FOR_CATEGORY_INDEX
-          ? { slug: categoryUrlKey(parent), title: relatedLabel, count: parentCount }
-          : null
-    }
-  }
-
-  if (finalRelated.length === 0) {
-    finalRelated = await loadFallbackSites(site.id)
-    relatedScope = 'more'
-    relatedLabel = null
-    relatedCategory = null
-  }
-
   return {
-    related: finalRelated,
+    related,
     category:
       category && categories
         ? { id: category.id, slug: categoryUrlKey(category), title: categoryDisplayName(category, categories) }
         : null,
-    canLinkCategory,
+    canLinkCategory: Boolean(category) && counts !== null && categoryCount >= MIN_SITES_FOR_CATEGORY_INDEX,
     categoryCount,
-    relatedScope,
-    relatedLabel,
-    relatedCategory,
   }
 }
 
@@ -268,15 +193,7 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
   const site = probe.status === 'ok' ? probe.data : null
   const context = site
     ? await loadSiteContext(site)
-    : {
-        related: [],
-        category: null,
-        canLinkCategory: false,
-        categoryCount: 0,
-        relatedScope: 'more' as RelatedScope,
-        relatedLabel: null,
-        relatedCategory: null,
-      }
+    : { related: [], category: null, canLinkCategory: false, categoryCount: 0 }
 
   const sitePath = `/site/${encodeURIComponent(safeId)}`
   const crumbs: Crumb[] = [
@@ -297,9 +214,6 @@ export default async function SiteDetailPage({ params }: { params: Promise<{ id:
       category={context.category}
       canLinkCategory={context.canLinkCategory}
       categoryCount={context.categoryCount}
-      relatedScope={context.relatedScope}
-      relatedLabel={context.relatedLabel}
-      relatedCategory={context.relatedCategory}
       breadcrumb={<Breadcrumbs items={crumbs} jsonLd={Boolean(site)} />}
     />
   )

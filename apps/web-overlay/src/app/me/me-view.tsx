@@ -1,10 +1,10 @@
 'use client'
 
 /**
- * 用户中心概览与全量个人设置中枢（身份 + 计数 + 个人资料编辑 + 全景偏好设置 + 自动自检修复）。
+ * 用户中心 4.0 主控台（身份 + 计数 + 个人资料编辑 + 一键场景预设 + 全景偏好设置 + 首页 DIY 工作台直管 + 工作空间 RBAC + 我的插件/星标/评价 + 自动自检修复）。
  *
  * 身份来自 /api/me：Web 侧 BFF 从 NextAuth 会话派生并签名转发，
- * 客户端不需要也不应该自报 userId。未登录时展示匿名状态、登录入口与本机偏好设置。
+ * 客户端不需要也不应该自报 userId。未登录时展示匿名状态、登录入口、本机偏好设置与首页 DIY 直管面板。
  *
  * M5 起这里是「客户端岛」：服务端壳（app/me/page.tsx）在会话可用时把概览
  * 首屏数据作为 `initialOverview` 注入，于是登录用户直接 ready，不再
@@ -27,6 +27,7 @@ import {
   RETENTION_DAY_OPTIONS,
   SEARCH_ENGINE_OPTIONS,
   SPOTLIGHT_SHORTCUT_OPTIONS,
+  USER_SETTINGS_PRESETS,
   normalizeUserSettings,
   readLocalUserSettings,
   runClientStorageDiagnostics,
@@ -41,6 +42,12 @@ import {
   type UserSettingsPatch,
 } from '@/lib/user-settings'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
+import {
+  HomeDiyControlPanel,
+  IdentityMergePanel,
+  MyPluginsControlPanel,
+  WorkspacesControlPanel,
+} from '@/components/user-center/user-center-hub-panels'
 import {
   Activity,
   AlertTriangle,
@@ -87,6 +94,8 @@ type ViewState = 'loading' | 'anonymous' | 'ready' | 'error'
 /** 操作记录的中文映射：未知 action 原样展示，不吞掉新事件 */
 const ACTIVITY_LABELS: Record<string, string> = {
   'user.export': '导出个人数据',
+  'user.import': '从备份导入恢复个人数据',
+  'user.prune': '按域清理云端数据',
   'user.delete': '删除云端个人数据',
   'user.settings_update': '更新个人偏好设置',
   'user.profile_update': '修改个人展示资料',
@@ -195,6 +204,7 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
 
       const res = await fetch('/api/me', { cache: 'no-store' })
       if (res.status === 401) {
+        setAnonId(getAnonId())
         setLocalPrefs(readLocalUserSettings())
         setState('anonymous')
         return
@@ -206,6 +216,7 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
       }
       const data = (await res.json()) as Overview
       setOverview(data)
+      setAnonId(getAnonId())
       setProfileUsername(data.user?.username ?? '')
       setProfileAvatar(data.user?.avatar ?? '')
       const syncedPrefs = writeLocalUserSettings(normalizeUserSettings(data.settings))
@@ -219,6 +230,7 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
   }, [])
 
   useEffect(() => {
+    setAnonId(getAnonId())
     if (initialOverview) {
       const synced = writeLocalUserSettings(normalizeUserSettings(initialOverview.settings))
       setLocalPrefs(synced)
@@ -279,14 +291,7 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
           const check = verifySettingsConsistency(patch, data.settings, localWritten)
           const finalSettings = check.verified ? localWritten : writeLocalUserSettings(check.repairedSettings)
           setLocalPrefs(finalSettings)
-          setOverview({
-            ...overview,
-            settings: {
-              ...overview.settings,
-              ...finalSettings,
-              updatedAt: finalSettings.updatedAt ?? overview.settings.updatedAt ?? Date.now(),
-            },
-          })
+          setOverview({ ...overview, settings: finalSettings })
           setVerifyNotice(
             check.verified
               ? '已保存并通过云端与本机一致性自检'
@@ -435,9 +440,9 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
     <Container as="main" id="main-content" className="space-y-6 pt-3 pb-8 sm:pt-4 sm:pb-10">
       <CenterPageHeader
         title="用户中心"
-        eyebrow="账户与数据"
+        eyebrow="账户与全景管控"
         icon={User}
-        description="账号身份、收藏、历史、个性化偏好与数据管理，从这里统一进入。"
+        description="账号身份、全局导航偏好、首页 DIY 工作台、团队工作空间、插件星标评价与数据主权，从这里一站式管理。"
         actions={
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             <Button
@@ -560,6 +565,23 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
               </h2>
               <span className="text-[11px] text-muted-foreground">保存在当前浏览器，登录后自动同步至云端</span>
             </div>
+
+            {/* 一键场景预设 */}
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {USER_SETTINGS_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  disabled={settingsBusy}
+                  onClick={() => void applySettingsPatch(preset.patch, `已启用「${preset.label}」预设`)}
+                  className="flex flex-col items-start rounded-xl border border-border/60 bg-background/60 p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <span className="text-xs font-semibold text-foreground">{preset.label}</span>
+                  <span className="mt-1 text-[11px] leading-snug text-muted-foreground">{preset.tagline}</span>
+                </button>
+              ))}
+            </div>
+
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-1.5">
                 <label htmlFor="anon-default-search-engine" className="block text-xs font-medium text-foreground">
@@ -689,6 +711,9 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
               </div>
             </div>
           </section>
+
+          {/* 匿名态同样支持直接管理本机首页 DIY 工作台 */}
+          <HomeDiyControlPanel onConfigChanged={(msg) => setVerifyNotice(msg)} />
         </>
       )}
 
@@ -855,7 +880,7 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
                   全局导航、0-RTT 引擎与隐私偏好设置
                 </h2>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  所有修改均实时同步云端并自动触发一致性回读校验，跨设备登录自动生效
+                  支持一键应用情景预设或逐项微调，每次修改均自动触发云端与本机一致性回读核验
                 </p>
               </div>
               <Button
@@ -882,6 +907,22 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
               >
                 恢复默认偏好
               </Button>
+            </div>
+
+            {/* 一键场景预设 */}
+            <div className="mt-3 grid gap-2.5 sm:grid-cols-3">
+              {USER_SETTINGS_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  disabled={settingsBusy}
+                  onClick={() => void applySettingsPatch(preset.patch, `已启用「${preset.label}」预设`)}
+                  className="flex flex-col items-start rounded-xl border border-border/60 bg-background/60 p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                >
+                  <span className="text-xs font-semibold text-foreground">{preset.label}</span>
+                  <span className="mt-1 text-[11px] leading-snug text-muted-foreground">{preset.tagline}</span>
+                </button>
+              ))}
             </div>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -1077,6 +1118,23 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
             </div>
           </section>
 
+          {/* 首页 DIY 工作台直管中心 */}
+          <HomeDiyControlPanel onConfigChanged={(msg) => setVerifyNotice(msg)} />
+
+          {/* 团队与个人工作空间 (Workspaces & RBAC) 直管中心 */}
+          <WorkspacesControlPanel onChanged={() => void refreshActivity()} />
+
+          {/* 我的插件、星标与评价快管中心 */}
+          <MyPluginsControlPanel identity={overview.identity} onCountsChanged={() => void load()} />
+
+          {/* 多端身份与本机匿名数据合并管理 */}
+          <IdentityMergePanel
+            canonicalIdentity={overview.identity}
+            aliases={overview.aliases}
+            currentAnonId={anonId}
+            onMerged={() => void load()}
+          />
+
           <div className="grid gap-4 lg:grid-cols-12">
             <section className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5 lg:col-span-7">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1229,7 +1287,7 @@ export function MeView({ initialOverview }: { initialOverview: Overview | null }
                     >
                       <span className="flex min-w-0 items-center gap-2">
                         <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-                        <span className="truncate">数据导出与删除</span>
+                        <span className="truncate">数据导出、备份恢复与按域清理</span>
                       </span>
                       <ArrowRight
                         className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"

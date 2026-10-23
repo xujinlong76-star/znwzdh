@@ -12,12 +12,13 @@
  */
 
 import { Button } from "@/registry/new-york/ui/button"
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { AlertTriangle, RotateCcw, Home, Copy, Check, RefreshCw, WifiOff, Database, Clock } from 'lucide-react'
 import Link from 'next/link'
 import { crashReportText, describeCrash, type CrashKind } from '@/lib/error-report'
 import { reportClientError } from '@/lib/client-error-report'
 import { copyText } from '@/lib/clipboard'
+import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 
 const ICONS: Record<CrashKind, typeof AlertTriangle> = {
   chunk: Clock,
@@ -36,7 +37,7 @@ export default function Error({
 }) {
   const crash = describeCrash(error, error?.digest)
   const Icon = ICONS[crash.kind]
-  const [copied, setCopied] = useState(false)
+  const { copyFeedback, reportCopy } = useCopyFeedback()
 
   useEffect(() => {
     console.error('Next.js Page Error:', error)
@@ -48,7 +49,7 @@ export default function Error({
     // copyText 永不 reject，返回值即真实结果：失败时把按钮状态还原成"未复制"，
     // 并保留下方可手动选中的详情块作为兜底
     const result = await copyText(crashReportText(crash))
-    setCopied(result.ok)
+    reportCopy(result)
   }
 
   return (
@@ -108,10 +109,24 @@ export default function Error({
               onClick={() => void copyDiagnostics()}
               variant="ghost"
               size="sm"
+              title={copyFeedback.state === 'failed' ? `复制失败：${copyFeedback.reason}` : '复制诊断信息'}
               className="w-full sm:w-auto text-xs rounded-xl gap-1.5"
             >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copied ? '已复制' : '复制诊断信息'}</span>
+              {copyFeedback.state === 'copied' ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              <span>
+                {copyFeedback.state === 'copied'
+                  ? '已复制'
+                  : copyFeedback.state === 'failed'
+                    ? '复制失败'
+                    : '复制诊断信息'}
+              </span>
+              <span role="status" className="sr-only">
+                {copyFeedback.reason ?? ''}
+              </span>
             </Button>
           )}
         </div>

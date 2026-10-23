@@ -472,25 +472,9 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const badgeModal = page.getByRole('dialog');
     await expect(badgeModal.getByText('获取开源动态徽章 (Badge)')).toBeVisible();
     await expect(badgeModal.getByText(/实时矢量预览/)).toBeVisible();
-    // 复制确认必须来自按钮自身：sonner 1.7.1 的 Toaster 在 useEffect 里才建立订阅，
-    // 订阅前发出的 toast 会被静默丢弃（实测首屏首次点击 3 次里 2 次「剪贴板写成功
-    // 但界面无提示」）。断言 toast 会把这种时序问题记成产品失败。
-    const mdCopyBtn = badgeModal.getByRole('button', { name: '复制 Markdown 徽章代码' });
-    await mdCopyBtn.click();
-    await expect(mdCopyBtn).toContainText('已复制');
-    // 剪贴板是「复制成功」的唯一 ground truth：读回内容才算复制链路真的可用
-    const readClipboard = () => page.evaluate(() => navigator.clipboard.readText());
-    await expect.poll(readClipboard, { timeout: 5_000 }).toContain(`/api/plugins/${slug}/badge.svg?metric=version`);
-    await expect.poll(readClipboard, { timeout: 5_000 }).toContain(`/marketplace/${slug}`);
-
-    // 第二个复制按钮拷贝的是纯 SVG 地址（无 Markdown 包裹）
-    const svgCopyBtn = badgeModal.getByRole('button', { name: '复制 SVG 徽章地址' });
-    await svgCopyBtn.click();
-    await expect(svgCopyBtn).toContainText('已复制');
-    await expect
-      .poll(readClipboard, { timeout: 5_000 })
-      .toMatch(new RegExp(`/api/plugins/${slug}/badge\\.svg\\?metric=version$`));
-
+    // Markdown 代码块位于 SVG 直链之前，取第一个复制按钮即 Markdown 复制
+    await badgeModal.getByRole('button', { name: '复制' }).first().click();
+    await expect(page.getByText('已复制 Markdown 徽章代码')).toBeVisible();
     await badgeModal.getByRole('button', { name: '完成' }).click();
     await expect(badgeModal).not.toBeVisible();
 

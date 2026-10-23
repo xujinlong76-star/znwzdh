@@ -50,6 +50,7 @@ import {
 import { EmptyState } from '@/components/ui/empty-state'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { copyText } from '@/lib/clipboard'
+import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
 import { siteHealthBadge } from '@/lib/site-health'
@@ -165,7 +166,7 @@ export function SiteDetailView({
   const [relationsDegraded, setRelationsDegraded] = useState(false)
   const [loading, setLoading] = useState(!initialSite)
   const [notFound, setNotFound] = useState(false)
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const { copyFeedback, reportCopy } = useCopyFeedback()
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
 
@@ -175,8 +176,7 @@ export function SiteDetailView({
     if (!site?.url) return
     // 只有真的写入成功才显示「已复制」；失败要看得见（见 lib/clipboard.ts）
     const result = await copyText(site.url)
-    setCopyState(result.ok ? 'copied' : 'failed')
-    setTimeout(() => setCopyState('idle'), 2000)
+    reportCopy(result)
   }
 
   // 加载站点主数据（服务端已下发且未点重试时跳过，避免首屏重复请求）
@@ -394,31 +394,34 @@ export function SiteDetailView({
                 <button
                   onClick={handleCopyUrl}
                   aria-label={
-                    copyState === 'copied'
+                    copyFeedback.state === 'copied'
                       ? '已复制链接'
-                      : copyState === 'failed'
+                      : copyFeedback.state === 'failed'
                         ? '复制失败，请手动选中链接复制'
                         : '复制链接'
                   }
                   title={
-                    copyState === 'copied'
+                    copyFeedback.state === 'copied'
                       ? '已复制'
-                      : copyState === 'failed'
-                        ? '复制失败，请手动选中链接复制'
+                      : copyFeedback.state === 'failed'
+                        ? `复制失败：${copyFeedback.reason}`
                         : '复制链接'
                   }
                   className={cn(
                     'text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted transition-colors',
-                    copyState === 'failed' && 'text-destructive hover:text-destructive',
+                    copyFeedback.state === 'failed' && 'text-destructive hover:text-destructive',
                   )}
                 >
-                  {copyState === 'copied' ? (
+                  {copyFeedback.state === 'copied' ? (
                     <Check className="w-3.5 h-3.5 text-emerald-500" />
-                  ) : copyState === 'failed' ? (
+                  ) : copyFeedback.state === 'failed' ? (
                     <X className="w-3.5 h-3.5 text-destructive" />
                   ) : (
                     <Copy className="w-3.5 h-3.5" />
                   )}
+                  <span role="status" className="sr-only">
+                    {copyFeedback.reason ?? ''}
+                  </span>
                 </button>
               </div>
 

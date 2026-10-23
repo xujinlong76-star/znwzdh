@@ -40,9 +40,7 @@ import {
   favoriteFilterEmptyMessage,
 } from '@/lib/favorites-filter'
 import { encryptVault, decryptVault, type EncryptedVaultPayload } from '@/lib/vault'
-import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
-import { FavoritesVaultPanels } from '@/components/user-center/favorites-vault-panels'
 import {
   clearCloudFavorites,
   createFavoriteFolder,
@@ -56,6 +54,18 @@ import {
   Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
   RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check, LogIn,
 } from 'lucide-react'
+import dynamic from 'next/dynamic'
+
+// 两个面板都只在用户点开时才需要：金库导入/导出、插件包导出向导。
+// 静态引入会把它们连同依赖拉进 /favorites 的首屏 chunk（首屏预算已超 5 KB）。
+const FavoritesVaultPanels = dynamic(
+  () => import('@/components/user-center/favorites-vault-panels').then((m) => m.FavoritesVaultPanels),
+  { ssr: false },
+)
+const ExportPluginModal = dynamic(
+  () => import('@/components/plugins/export-plugin-modal').then((m) => m.ExportPluginModal),
+  { ssr: false },
+)
 
 /**
  * 本地收藏夹的存储键（P2）。
@@ -769,8 +779,9 @@ export default function FavoritesPage() {
         )}
 
         {/* E2EE 金库面板（P1 抽出为组件：导出 / 解密导入，无自有状态） */}
+        {(showVaultExport || showVaultImport) && (
         <FavoritesVaultPanels
-          mode={showVaultExport ? 'export' : showVaultImport ? 'import' : null}
+          mode={showVaultExport ? 'export' : 'import'}
           onClose={() => {
             setShowVaultExport(false)
             setShowVaultImport(false)
@@ -794,6 +805,7 @@ export default function FavoritesPage() {
           importing={vaultLoading}
           onImport={() => void handleImportVault()}
         />
+        )}
 
         {/* 传统明文 JSON 导入面板 */}
         {showImport && (
@@ -1167,6 +1179,7 @@ export default function FavoritesPage() {
         </div>
 
         {/* 导出为插件市场清单向导弹窗 */}
+        {showPluginExport && (
         <ExportPluginModal
           open={showPluginExport}
           onOpenChange={setShowPluginExport}
@@ -1187,6 +1200,7 @@ export default function FavoritesPage() {
             })),
           }}
         />
+        )}
       </div>
       <Footer />
     </Container>

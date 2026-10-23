@@ -102,6 +102,8 @@ function typeOf(pathname) {
  * 分母非空但图里每个 URL 都有入链，可达率照样 100% —— 这是「空分母」
  * 之外的第二种同义反复。族下限把「某一族整族丢失」变成显式红灯。
  * 只在显式传值时判：生产库与 CI 小库量级差两个数量级，写死下限会造假红灯。
+ * 一经传入即断言（与 check-isr-routes.mjs 的 --sitemap-min-* 同义），不依赖 --check：
+ * 只想要族下限时不必连带接受可达率/入链等全站阈值。
  */
 const SITEMAP_FAMILIES = [
   ['site', 'sitemap-min-site'],
@@ -119,7 +121,11 @@ const SITEMAP_MINS = Object.fromEntries(
   ]),
 )
 if (Object.keys(SITEMAP_MINS).length > 0 && !FROM_SITEMAP) {
-  console.warn('[warn] --sitemap-min-* 需要与 --from-sitemap 一起使用，否则不会有任何断言对象')
+  console.error(
+    '[fatal] --sitemap-min-* 必须与 --from-sitemap 一起使用：没有 sitemap 清单就没有断言对象，' +
+      '「传了下限却什么都没判」的绿是假的',
+  )
+  process.exit(1)
 }
 
 // ---------- URL 归一 ----------
@@ -645,9 +651,6 @@ async function assertPagination(graph) {
 function checkThresholds(m, probe, pagination, sitemapFamilies) {
   const t = m.totals
   const fails = []
-  if (sitemapFamilies === null && Object.keys(SITEMAP_MINS).length > 0) {
-    fails.push('传了 --sitemap-min-* 却没有 --from-sitemap：下限没有任何断言对象，本次绿是假的')
-  }
   if (sitemapFamilies) fails.push(...sitemapFamilies.failures)
   if (t.crawlTruncated) {
     fails.push(
@@ -721,12 +724,15 @@ const payload = {
 writeFileSync(OUT, JSON.stringify(payload, null, 2))
 console.log(`\n已写入 ${OUT}（${(JSON.stringify(payload).length / 1048576).toFixed(1)} MB，${Date.now() - started} ms）`)
 
-if (CHECK) {
-  const fails = checkThresholds(metrics, probe, pagination, sitemapFamilies)
-  if (fails.length) {
-    console.error('\n[check] 未达阈值：')
-    for (const f of fails) console.error('  - ' + f)
-    process.exit(1)
-  }
-  console.log('\n[check] 全部阈值通过')
+// 族下限是显式传入的断言，与 --check 无关：只关心 sitemap 分母完整性时，
+// 不该被迫同时接受可达率/入链那组全站阈值（CI 的小种子库就是要分开跑）。
+const fails = CHECK
+  ? checkThresholds(metrics, probe, pagination, sitemapFamilies)
+  : (sitemapFamilies?.failures ?? [])
+if (fails.length) {
+  console.error(CHECK ? '\n[check] 未达阈值：' : '\n[sitemap] 族下限未达标：')
+  for (const f of fails) console.error('  - ' + f)
+  process.exit(1)
 }
+if (CHECK) console.log('\n[check] 全部阈值通过')
+else if (sitemapFamilies) console.log('\n[sitemap] 族下限全部通过')

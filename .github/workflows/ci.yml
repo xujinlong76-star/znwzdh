@@ -320,6 +320,18 @@ jobs:
               "$(grep -c '技术面契约不达标' /tmp/isr-live.log || true)"
             exit "$rc"
           fi
+      # sitemap 族下限（与上一步 --live 的 --sitemap-min-* 同值）：link-graph 的
+      # --from-sitemap 只保证分母非空，sitemap 若只剩首页，分母非空且可达率仍可能
+      # 100% —— 这是「空分母」之外的第二种同义反复。族下限把它变成显式红灯。
+      # 这里不传 --check：可达率/入链/软 404 那组全站阈值对小种子库不成立，
+      # 而族下限一经传入即断言，两者互不绑架。此前这段逻辑只活在 workflow_dispatch
+      # 的 seo-audit-prod 里，普通 PR 从没执行过。
+      - name: 站内链接图的 sitemap 族下限
+        run: |
+          node scripts/link-graph.mjs --from-sitemap --base=http://localhost:3000 \
+            --max-urls=4000 --no-probe --out=/tmp/link-graph.json \
+            --sitemap-min-site=20 --sitemap-min-category=1 --sitemap-min-tag=1 \
+            --sitemap-min-collection=1 --sitemap-min-plugin=10 --sitemap-min-directory=1
       - name: 语料基线是否过期（只提示，不阻断）
         # 变异自证那 6 份语料是**某天某库**的真实渲染快照；head 形状一变（多一块
         # JSON-LD、og 换逐页图、title 模板改），旧语料照样让自证全绿，但那已经不是

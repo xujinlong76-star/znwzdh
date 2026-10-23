@@ -27,9 +27,9 @@ const ROOT = overlayRoot()
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 
 describe('用户中心第二批页面', () => {
-  it('统一子导航覆盖概览/收藏/历史/数据/偏好并挂在相关页面', () => {
+  it('统一子导航覆盖全部管理分区并挂在相关页面', () => {
     const nav = read('src/components/user-center/user-center-nav.tsx')
-    for (const href of ["'/me'", "'/favorites'", "'/me/history'", "'/me/data'", "'/preferences'"]) {
+    for (const href of ["'/me'", "'/me/account'", "'/favorites'", "'/me/history'", "'/me/plugins'", "'/preferences'", "'/me/settings'", "'/me/data'"]) {
       expect(nav).toContain(href)
     }
     expect(nav).toContain('aria-current')
@@ -71,22 +71,25 @@ describe('用户中心第二批页面', () => {
     expect(layout).toContain('robots: { index: false')
   })
 
-  it('概览页接个性化开关、信号清理、多维设置、资料修改与健康自检修复', () => {
-    // M5 把概览页拆成「服务端壳 page.tsx + 客户端岛 me-view.tsx」。
-    // 断言原意不变（这些接线必须还在），只是要跨两个文件找——只看 page.tsx
-    // 会因为代码搬到岛里而误报。
-    const src = ['src/app/me/page.tsx', 'src/app/me/me-view.tsx'].map(read).join('\n')
-    expect(src).toContain('/api/me/settings')
-    expect(src).toContain('/api/me/profile')
-    expect(src).toContain('/api/me/diagnostics')
-    expect(src).toContain('verifySettingsConsistency')
-    expect(src).toContain('runClientStorageDiagnostics')
-    expect(src).toContain('clearProfileSignals')
-    expect(src).toContain("href=\"/me/history\"")
-    expect(src).toContain("href=\"/me/data\"")
-    // 搜索历史入口不再错误地指向收藏页：入口表里必须有一项指向 /me/history
-    // （不锁整行字面量——图标或字段顺序变化不该让守卫变红）
-    expect(src).toMatch(/href:\s*'\/me\/history'/)
+  it('概览页接个性化开关与信号清理，设置/资料/自检分别落在独立页面', () => {
+    // 本批把 /me 拆成「仪表盘 + /me/settings + /me/account」：
+    // 断言原意不变，只是按职责去对应文件里找接线。
+    const overview = ['src/app/me/page.tsx', 'src/app/me/me-view.tsx'].map(read).join('\n')
+    const dashboard = read('src/components/user-center/dashboard/stats-grid.tsx')
+    const account = read('src/app/me/account/account-view.tsx')
+    const settingsHook = read('src/hooks/use-me-settings.ts')
+
+    expect(overview).toContain('/api/me/settings')
+    expect(overview).toContain('verifySettingsConsistency')
+    expect(overview).toContain('clearProfileSignals')
+    expect(account).toContain('/api/me/profile')
+    expect(account).toContain('/api/me/diagnostics')
+    expect(account).toContain('runClientStorageDiagnostics')
+    expect(settingsHook).toContain('/api/me/settings')
+    expect(settingsHook).toContain('verifySettingsConsistency')
+    expect(dashboard).toContain("'/me/history'")
+    expect(dashboard).toContain("'/me/data'")
+    expect(dashboard).not.toContain("href: '/favorites'\\n                      <Search")
   })
 
   it('偏好页接入身份变更监听且搜索历史入口指向 /me/history', () => {

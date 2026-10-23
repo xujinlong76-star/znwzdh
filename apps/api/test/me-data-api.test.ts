@@ -8,7 +8,7 @@ import { loadConfig } from "../src/config.ts";
 import { signIdentity } from "../src/identity-signature.ts";
 
 /**
- * 第二批用户中心 API：收藏管理、历史分页/删除、设置与信号清理、导出/注销、金库版本冲突。
+ * 第二批与 4.0 用户中心 API：收藏管理、历史分页/删除、设置与信号清理、插件聚合、备份恢复导入、分域清理、导出/注销、金库版本冲突。
  */
 const SECRET = "test-secret-please-rotate";
 const USER = "github:u-data-api";
@@ -161,6 +161,35 @@ describe("设置与画像信号", () => {
     expect(diag.statusCode).toBe(200);
     expect(diag.json().ok).toBe(true);
     expect(Array.isArray(diag.json().checks)).toBe(true);
+  });
+
+  it("GET /api/me/plugins 聚合返回已安装、星标与评价列表", async () => {
+    const res = await data("GET", "/api/me/plugins");
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(Array.isArray(res.json().installed)).toBe(true);
+    expect(Array.isArray(res.json().starred)).toBe(true);
+    expect(Array.isArray(res.json().reviews)).toBe(true);
+  });
+
+  it("POST /api/me/import 支持从备份 JSON 幂等恢复收藏夹、收藏、历史与设置", async () => {
+    const res = await data("POST", "/api/me/import", {
+      favoriteFolders: [{ id: "old-f1", name: "导入夹" }],
+      favorites: [{ siteId, folderId: "old-f1", note: "导入备注" }],
+      searchHistory: { items: [{ query: "导入关键词", resultCount: 5 }] },
+      settings: { defaultSearchEngine: "duckduckgo" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().ok).toBe(true);
+    expect(res.json().favoritesImported).toBeGreaterThanOrEqual(1);
+    expect(res.json().settingsRestored).toBe(true);
+  });
+
+  it("POST /api/me/prune 支持按域精细化清理而保留收藏", async () => {
+    const prune = await data("POST", "/api/me/prune", { domains: ["search_history", "events_profile"] });
+    expect(prune.statusCode).toBe(200);
+    expect(prune.json().ok).toBe(true);
+    expect(await ctx.repo.listFavorites(USER)).toHaveLength(1);
   });
 
   it("DELETE /api/profile/signals/click 清空点击事件", async () => {

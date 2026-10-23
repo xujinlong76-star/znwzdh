@@ -11,6 +11,9 @@
  *  - PATCH  /api/me/settings             更新个人设置（含个性化、搜索引擎、打开方式、卡片密度、0-RTT、快捷键、遥测与历史保留期）
  *  - PATCH  /api/me/profile              更新个人显示资料（昵称 username / 头像 avatar）
  *  - POST   /api/me/diagnostics          执行云端账户数据完整性自检与自动修复
+ *  - GET    /api/me/plugins              聚合当前用户的已安装插件、星标插件与已发表插件评价
+ *  - POST   /api/me/import               从导出的 JSON 备份包一键无损导入恢复收藏夹、收藏、历史与设置
+ *  - POST   /api/me/prune                按域精细化清理云端个人数据（历史/事件画像/金库/CRDT/AI配置）
  *  - GET    /api/me/export               导出全部个人数据（JSON）
  *  - GET    /api/me/export/bookmarks.html 导出浏览器标准 Netscape 书签（HTML）
  *  - GET    /api/me/activity             我的操作记录
@@ -295,7 +298,76 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     },
   );
 
-  /* ------------------------- 数据主权 ------------------------- */
+  /* ------------------------- 我的插件、星标与评价聚合 ------------------------- */
+
+  app.get(
+    "/api/me/plugins",
+    { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      const identity = identityOf(req as never);
+      if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+
+      const [installs, starRows, reviewRows] = await Promise.all([
+        ctx.repo.listPluginInstallsByIdentity(canonical),
+        ctx.repo.raw(
+          `SELECT s.plugin_id, p.slug, p.name, p.description, s.created_at
+           FROM plugin_stars s
+           LEFT JOIN plugins p ON p.id = s.plugin_id
+           WHERE s.identity = ?
+           ORDER BY s.created_at DESC`,
+          [canonical],
+        ),
+        ctx.repo.raw(
+          `SELECT r.id, r.plugin_id, p.slug AS plugin_slug, p.name AS plugin_name,
+                  r.rating, r.title, r.content, r.installed_version, r.status, r.created_at, r.updated_at
+           FROM plugin_reviews r
+           LEFT JOIN plugins p ON p.id = r.plugin_id
+           WHERE r.identity = ?
+           ORDER BY r.created_at DESC
+           LIMIT 200`,
+          [canonical],
+        ),
+      ]);
+
+      return {
+        ok: true,
+        identity: canonical,
+        installed: installs.map((item) => ({
+          pluginId: item.install.pluginId,
+          slug: item.plugin.slug,
+          name: item.plugin.name,
+          description: item.plugin.description ?? "",
+          version: item.install.version,
+          installedAt: item.install.installedAt,
+        })),
+        starred: starRows.map((row) => ({
+          pluginId: String(row.plugin_id),
+          slug: row.slug == null ? null : String(row.slug),
+          name: row.name == null ? String(row.plugin_id) : String(row.name),
+          description: row.description == null ? "" : String(row.description),
+          category: null,
+          starredAt: Number(row.created_at ?? 0),
+        })),
+        reviews: reviewRows.map((row) => ({
+          id: String(row.id),
+          pluginId: String(row.plugin_id),
+          pluginSlug: row.plugin_slug == null ? null : String(row.plugin_slug),
+          pluginName: row.plugin_name == null ? String(row.plugin_id) : String(row.plugin_name),
+          rating: Number(row.rating ?? 5),
+          title: row.title == null ? null : String(row.title),
+          content: row.content == null ? null : String(row.content),
+          installedVersion: String(row.installed_version ?? ""),
+          status: String(row.status ?? "visible"),
+          createdAt: Number(row.created_at ?? 0),
+          updatedAt: Number(row.updated_at ?? 0),
+        })),
+      };
+    },
+  );
+
+  /* ------------------------- 数据主权：导出、导入恢复、按域清理与注销 ------------------------- */
 
   /** 导出全部个人数据（JSON 附件；LLM 密钥已脱敏，金库只带版本元信息） */
   app.get(
@@ -325,6 +397,233 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     reply.header("content-disposition", `attachment; filename="navhub-export-${stamp}.json"`);
     return payload;
   });
+
+  /**
+   * 从导出的 JSON 备份恢复个人数据（解决「有导出无导入」的核心痛点）。
+   * 幂等合并：同名收藏夹自动复用、已有收藏跳过不覆盖、偏好设置合并写回、搜索历史去重导入。
+   */
+  app.post(
+    "/api/me/import",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      const identity = identityOf(req as never);
+      if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+
+      const schema = z.object({
+        favoriteFolders: z
+          .array(
+            z.object({
+              id: z.string().min(1).max(64).optional(),
+              name: z.string().trim().min(1).max(40),
+            }),
+          )
+          .max(100)
+          .optional(),
+        favorites: z
+          .array(
+            z.object({
+              siteId: z.string().min(1).max(64),
+              folderId: z.string().max(64).nullable().optional(),
+              note: z.string().max(200).nullable().optional(),
+            }),
+          )
+          .max(2000)
+          .optional(),
+        searchHistory: z
+          .union([
+            z.object({
+              items: z
+                .array(
+                  z.object({
+                    query: z.string().trim().min(1).max(200),
+                    resultCount: z.number().int().min(0).optional(),
+                  }),
+                )
+                .max(1000)
+                .optional(),
+            }),
+            z
+              .array(
+                z.object({
+                  query: z.string().trim().min(1).max(200),
+                  resultCount: z.number().int().min(0).optional(),
+                }),
+              )
+              .max(1000),
+          ])
+          .optional(),
+        settings: z.record(z.string(), z.unknown()).optional(),
+      });
+
+      const parsed = schema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: "导入的备份 JSON 格式无效", detail: parsed.error.issues };
+      }
+
+      let foldersImported = 0;
+      let favoritesImported = 0;
+      let favoritesSkipped = 0;
+      let searchesImported = 0;
+      let settingsRestored = false;
+
+      // 1. 恢复收藏夹（按名称去重并建立旧 folderId -> 新/现存 folderId 映射）
+      const existingFolders = await ctx.repo.listFavoriteFolders(canonical);
+      const folderByName = new Map(existingFolders.map((f) => [f.name.trim().toLowerCase(), f.id]));
+      const folderIdMap = new Map<string, string>();
+      for (const f of existingFolders) folderIdMap.set(f.id, f.id);
+
+      for (const incomingFolder of parsed.data.favoriteFolders ?? []) {
+        const key = incomingFolder.name.trim().toLowerCase();
+        let targetFolderId = folderByName.get(key);
+        if (!targetFolderId) {
+          const created = await ctx.repo.createFavoriteFolder(canonical, incomingFolder.name.trim());
+          targetFolderId = created.id;
+          folderByName.set(key, targetFolderId);
+          foldersImported += 1;
+        }
+        if (incomingFolder.id) {
+          folderIdMap.set(incomingFolder.id, targetFolderId);
+        }
+      }
+
+      // 2. 恢复收藏（仅导入数据库中存在的合法站点 ID，防止悬空外键）
+      const incomingFavs = parsed.data.favorites ?? [];
+      if (incomingFavs.length > 0) {
+        const siteIds = [...new Set(incomingFavs.map((f) => f.siteId))];
+        const validSites = await ctx.repo.getSitesByIds(siteIds);
+        for (const fav of incomingFavs) {
+          if (!validSites.has(fav.siteId)) {
+            favoritesSkipped += 1;
+            continue;
+          }
+          const mappedFolderId = fav.folderId ? (folderIdMap.get(fav.folderId) ?? null) : null;
+          const res = await ctx.repo.addFavorite({
+            userId: canonical,
+            siteId: fav.siteId,
+            folderId: mappedFolderId,
+            note: fav.note ?? null,
+          });
+          if (res.existed) favoritesSkipped += 1;
+          else favoritesImported += 1;
+        }
+      }
+
+      // 3. 恢复搜索历史（跳过已存在的相同搜索词）
+      const rawHistoryList = Array.isArray(parsed.data.searchHistory)
+        ? parsed.data.searchHistory
+        : (parsed.data.searchHistory?.items ?? []);
+      if (rawHistoryList.length > 0) {
+        const existingHist = await ctx.repo.listSearchHistory(canonical, 200);
+        const existingQueries = new Set(existingHist.map((h) => h.query.trim().toLowerCase()));
+        for (const item of rawHistoryList.slice(0, 200)) {
+          const q = item.query.trim();
+          if (!q || existingQueries.has(q.toLowerCase())) continue;
+          await ctx.repo.recordSearch(canonical, q, Number(item.resultCount ?? 0));
+          existingQueries.add(q.toLowerCase());
+          searchesImported += 1;
+        }
+      }
+
+      // 4. 恢复个人设置
+      if (parsed.data.settings && typeof parsed.data.settings === "object") {
+        const candidate = settingsPatchSchema.safeParse(parsed.data.settings);
+        if (candidate.success) {
+          await ctx.repo.updateUserSettings(canonical, candidate.data);
+          settingsRestored = true;
+        }
+      }
+
+      await ctx.repo.audit({
+        ip: req.ip,
+        actor: canonical,
+        actorKind: "user",
+        action: "user.import",
+        target: canonical,
+        diff: { foldersImported, favoritesImported, favoritesSkipped, searchesImported, settingsRestored },
+      }).catch(() => undefined);
+
+      return {
+        ok: true,
+        identity: canonical,
+        foldersImported,
+        favoritesImported,
+        favoritesSkipped,
+        searchesImported,
+        settingsRestored,
+      };
+    },
+  );
+
+  /**
+   * 按域精细化清理云端个人数据（告别「只能整号删除」的一刀切痛点）。
+   */
+  app.post(
+    "/api/me/prune",
+    { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      const identity = identityOf(req as never);
+      if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+
+      const schema = z.object({
+        domains: z
+          .array(z.enum(["search_history", "events_profile", "vault", "crdt", "llm_config"]))
+          .min(1)
+          .max(5),
+      });
+
+      const parsed = schema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        reply.code(400);
+        return { error: "请选择至少一个要清理的数据域", detail: parsed.error.issues };
+      }
+
+      const pruned: Record<string, number> = {};
+      for (const domain of parsed.data.domains) {
+        if (domain === "search_history") {
+          pruned.search_history = await ctx.repo.runCount(
+            "DELETE FROM search_history WHERE user_id = ?",
+            [canonical],
+          );
+        } else if (domain === "events_profile") {
+          const evCount = await ctx.repo.runCount("DELETE FROM events WHERE identity = ?", [canonical]);
+          const pfCount = await ctx.repo.runCount("DELETE FROM user_profiles WHERE user_id = ?", [canonical]);
+          pruned.events_profile = evCount + pfCount;
+          invalidateProfileThrottle(canonical);
+        } else if (domain === "vault") {
+          pruned.vault = await ctx.repo.runCount(
+            "DELETE FROM user_vault_sync WHERE user_id = ?",
+            [canonical],
+          );
+        } else if (domain === "crdt") {
+          pruned.crdt = await ctx.repo.runCount(
+            "DELETE FROM user_vault_sync WHERE user_id = ?",
+            ["crdt:" + canonical],
+          );
+        } else if (domain === "llm_config") {
+          pruned.llm_config = await ctx.repo.runCount(
+            "DELETE FROM user_llm_configs WHERE identity = ?",
+            [canonical],
+          );
+        }
+      }
+
+      await ctx.repo.audit({
+        ip: req.ip,
+        actor: canonical,
+        actorKind: "user",
+        action: "user.prune",
+        target: canonical,
+        diff: pruned,
+      }).catch(() => undefined);
+
+      return { ok: true, identity: canonical, pruned };
+    },
+  );
 
   /**
    * 我的操作记录：用户可见的数据主权面板（M10）。

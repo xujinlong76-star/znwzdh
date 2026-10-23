@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
 /**
@@ -12,11 +12,12 @@ export const E2E_DB_PATH = resolve(process.cwd(), 'data/e2e/navhub-e2e.db')
 
 /**
  * 每轮 E2E 都从空库开始（与 CI 行为一致：CI 的 test-e2e 作业同样不播种）。
- * 空库是刻意的——用例必须自造数据，不能依赖开发库里的既有内容。
+ *
+ * 注意：**删库不在这里做**。Playwright 先启动 webServer、再跑 globalSetup，
+ * 等这里执行时中枢 API 已经打开了 SQLite 文件；Linux 可以 unlink 打开中的文件，
+ * Windows 会 EBUSY（本地 E2E 因此一直起不来）。重置已挪到
+ * `scripts/e2e-web-server.mjs`（启动 dev-all 之前，带重试）。
  */
 export default function globalSetup() {
   mkdirSync(dirname(E2E_DB_PATH), { recursive: true })
-  for (const suffix of ['', '-journal', '-wal', '-shm']) {
-    rmSync(`${E2E_DB_PATH}${suffix}`, { force: true })
-  }
 }

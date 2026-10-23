@@ -2,6 +2,16 @@ import { defineConfig, devices } from '@playwright/test';
 import { E2E_DB_PATH } from './e2e/global-setup';
 
 /**
+ * 端口可覆盖（与本机常驻的开发服务器错开）：
+ *   NAVHUB_WEB_PORT=3100 NAVHUB_API_PORT=8790 pnpm test:e2e
+ * 默认仍是 3000 / 8787，与 CI 和日常开发一致。
+ * `PLAYWRIGHT_TEST_BASE_URL` 仍可整体覆盖被测地址（webServer 也随之使用它）。
+ */
+const WEB_PORT = Number(process.env.NAVHUB_WEB_PORT || 3000);
+const API_PORT = Number(process.env.NAVHUB_API_PORT || 8787);
+const BASE_URL = process.env.PLAYWRIGHT_TEST_BASE_URL || `http://localhost:${WEB_PORT}`;
+
+/**
  * NavHub Playwright 端到端 (E2E) 自动化测试配置。
  *
  * 覆盖三大核心用户主干旅程：
@@ -25,7 +35,7 @@ export default defineConfig({
   workers: 1, // 单 Worker 避免本地 SQLite 发生并发写入锁争用
   reporter: 'list',
   use: {
-    baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000',
+    baseURL: BASE_URL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     headless: true,
@@ -40,14 +50,23 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'node scripts/dev-all.mjs',
-    url: 'http://localhost:3000',
+    // 包装层先重置 E2E 库再启动 dev-all：Playwright 先起 webServer 后跑 globalSetup，
+    // 重置放在 globalSetup 会在 Windows 上因 API 已打开 SQLite 文件而 EBUSY。
+    command: 'node scripts/e2e-web-server.mjs',
+    url: BASE_URL,
     // 必须独占启动：复用端口上已存在的开发服务器会让用例重新写回开发库。
     // 因此本地跑 E2E 前请先停掉 pnpm dev:all（端口冲突会以明确报错终止，而不是静默污染）。
+    // 若本机确实有常驻开发服务器，改用 NAVHUB_WEB_PORT / NAVHUB_API_PORT 换一套端口。
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
+      NAVHUB_WEB_PORT: String(WEB_PORT),
+      NAVHUB_API_PORT: String(API_PORT),
       NAVHUB_SQLITE_PATH: E2E_DB_PATH,
+      // Next 16 的 dev server 按「输出目录」加单实例锁：本机已有 pnpm dev:all 在跑时，
+      // 换端口也会被判定为「另一个 next dev 已运行」。E2E 用独立输出目录避开这把锁，
+      // 同时不会读到/污染开发服务器的 .next 产物。
+      NEXT_DIST_DIR: '.next-e2e',
       // 举报接口按 IP 限流 5 次/小时；E2E 用不同 XFF 模拟独立举报人，
       // 避免测试重试累计超过配额（仅测试进程生效，生产默认不信任 XFF）。
       NAVHUB_TRUST_PROXY: '1',

@@ -12,7 +12,8 @@ import { z } from "zod";
 import { indexSitesBatch } from "../index-site.ts";
 import { indexPluginsBatch, indexItemFromManifest, removePluginIndex, type IndexPluginItem } from "../index-plugin.ts";
 import { searchPluginsSemantic, similarPlugins } from "../plugins-search.ts";
-import { guardedFetch } from "@navhub/ai";
+import { guardedFetch, assertUrlShape, isBlockedIp } from "@navhub/ai";
+import { isIP } from "node:net";
 import {
   executeAutoAuditAndPublish,
   evaluatePluginAudit,
@@ -25,6 +26,7 @@ import {
   diffPluginManifests,
   comparePluginVersions,
   httpUrl,
+  isSafeUrl,
   type PluginManifest,
 } from "@navhub/core";
 
@@ -1603,26 +1605,21 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         return badRequest(reply, "参数无效", body.error.issues);
       }
 
-      // 安全校验：防止 SSRF
+      // 安全校验：防止 SSRF（协议、凭据、高危内网端口、IPv4/IPv6 映射及 nip.io 泛解析私网域名）
       const cleanUrl = body.data.url.trim();
-      const parsedUrl = new URL(cleanUrl);
-      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
-        return badRequest(reply, "Taps 源地址必须使用 HTTP 或 HTTPS 协议");
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(cleanUrl);
+        assertUrlShape(cleanUrl);
+      } catch (err) {
+        return badRequest(reply, err instanceof Error ? err.message : "Taps 源地址格式不合法");
       }
-      const host = parsedUrl.hostname.toLowerCase();
+      const rawHost = parsedUrl.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+      const safeCheck = isSafeUrl(cleanUrl, false);
       if (
-        host === "localhost" ||
-        host === "127.0.0.1" ||
-        host === "0.0.0.0" ||
-        host === "::1" ||
-        host.startsWith("10.") ||
-        host.startsWith("192.168.") ||
-        host.startsWith("169.254.") ||
-        host.startsWith("100.64.") ||
-        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) ||
-        host.endsWith(".local") ||
-        host.endsWith(".internal") ||
-        host.includes("::")
+        !safeCheck.safe ||
+        (isIP(rawHost) !== 0 && isBlockedIp(rawHost)) ||
+        rawHost.includes("::")
       ) {
         return badRequest(reply, "禁止添加私有网络地址或本地回环作为 Taps 插件源");
       }
@@ -1795,15 +1792,21 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       });
       if (!isVerifiedAuthor) deductions += 10;
 
-      // 2. URL 协议安全性扫描
+      // 2. URL 协议安全性扫描（覆盖全部 4 类插件的外部 URL 字段）
       const urls: string[] = [];
       if (manifest.icon) urls.push(manifest.icon);
       if (manifest.homepage) urls.push(manifest.homepage);
-      if (manifest.kind === "site-pack" && Array.isArray((manifest.payload as any)?.sites)) {
-        for (const s of (manifest.payload as any).sites) {
-          if (s.url) urls.push(s.url);
-          if (s.icon) urls.push(s.icon);
+      const payloadAny = (manifest.payload ?? {}) as Record<string, any>;
+      if (manifest.kind === "site-pack" && Array.isArray(payloadAny.sites)) {
+        for (const s of payloadAny.sites) {
+          if (s?.url) urls.push(String(s.url));
+          if (s?.icon) urls.push(String(s.icon));
         }
+      } else if (manifest.kind === "theme") {
+        if (payloadAny.previewUrl) urls.push(String(payloadAny.previewUrl));
+        if (payloadAny.backgroundImage) urls.push(String(payloadAny.backgroundImage));
+      } else if (manifest.kind === "search-pack") {
+        if (payloadAny.endpoint) urls.push(String(payloadAny.endpoint));
       }
 
       let allHttps = true;
@@ -1812,7 +1815,12 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
       for (const u of urls) {
         const lower = u.trim().toLowerCase();
-        if (lower.startsWith("javascript:") || lower.startsWith("data:") || lower.startsWith("file:")) {
+        if (
+          lower.startsWith("javascript:") ||
+          lower.startsWith("vbscript:") ||
+          lower.startsWith("data:") ||
+          lower.startsWith("file:")
+        ) {
           dangerousScheme = true;
         }
         if (lower.startsWith("http://")) {
@@ -1820,14 +1828,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         }
         try {
           const parsed = new URL(u);
-          const host = parsed.hostname.toLowerCase();
-          if (
-            host === "localhost" ||
-            host === "127.0.0.1" ||
-            host === "0.0.0.0" ||
-            host.startsWith("10.") ||
-            host.startsWith("192.168.")
-          ) {
+          const rawHost = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+          const safeCheck = isSafeUrl(u, false);
+          if (!safeCheck.safe || (isIP(rawHost) !== 0 && isBlockedIp(rawHost))) {
             internalHost = true;
           }
         } catch {

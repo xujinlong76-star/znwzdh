@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, getFileContent } from '@/lib/github'
-import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
+import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const runtime = 'nodejs'
 
@@ -30,13 +30,18 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const session = await auth()
-    if (!session?.user || !getServerGithubToken(session.user.id)) {
-      return new Response('Unauthorized', { status: 401 })
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
     }
 
     const newItem: NavigationSubItem = await request.json()
     const data = await getFileContent('src/navsphere/content/navigation.json') as NavigationData
+
+    const navigation = data.navigationItems.find(item => item.id === id)
+    if (!navigation) {
+      return NextResponse.json({ error: 'Navigation not found' }, { status: 404 })
+    }
 
     const updatedItems = data.navigationItems.map(item => {
       if (item.id === id) {
@@ -52,7 +57,7 @@ export async function POST(
       'src/navsphere/content/navigation.json',
       JSON.stringify({ navigationItems: updatedItems }, null, 2),
       'Add navigation item',
-      getServerGithubToken(session.user.id)!
+      authCheck.githubToken || undefined
     )
 
     return NextResponse.json({ success: true })
@@ -67,9 +72,9 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const session = await auth()
-    if (!session?.user || !getServerGithubToken(session.user.id)) {
-      return new Response('Unauthorized', { status: 401 })
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
     }
 
     const { index, item }: { index: number, item: NavigationSubItem } = await request.json()
@@ -81,6 +86,9 @@ export async function PUT(
     }
 
     const updatedItems = [...(navigation.items || [])]
+    if (!Number.isInteger(index) || index < 0 || index >= updatedItems.length) {
+      return NextResponse.json({ error: 'Invalid item index' }, { status: 400 })
+    }
     updatedItems[index] = item
 
     const updatedNavigations = data.navigationItems.map(nav => {
@@ -97,7 +105,7 @@ export async function PUT(
       'src/navsphere/content/navigation.json',
       JSON.stringify({ navigationItems: updatedNavigations }, null, 2),
       'Update navigation item',
-      getServerGithubToken(session.user.id)!
+      authCheck.githubToken || undefined
     )
 
     return NextResponse.json({ success: true })
@@ -112,9 +120,9 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const session = await auth()
-    if (!session?.user || !getServerGithubToken(session.user.id)) {
-      return new Response('Unauthorized', { status: 401 })
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
     }
 
     const { index } = await request.json()
@@ -125,7 +133,12 @@ export async function DELETE(
       return NextResponse.json({ error: 'Navigation not found' }, { status: 404 })
     }
 
-    const updatedItems = (navigation.items || []).filter((_, i) => i !== index)
+    const currentItems = navigation.items || []
+    if (!Number.isInteger(index) || index < 0 || index >= currentItems.length) {
+      return NextResponse.json({ error: 'Invalid item index' }, { status: 400 })
+    }
+
+    const updatedItems = currentItems.filter((_, i) => i !== index)
     const updatedNavigations = data.navigationItems.map(nav => {
       if (nav.id === id) {
         return {
@@ -140,11 +153,11 @@ export async function DELETE(
       'src/navsphere/content/navigation.json',
       JSON.stringify({ navigationItems: updatedNavigations }, null, 2),
       'Delete navigation item',
-      getServerGithubToken(session.user.id)!
+      authCheck.githubToken || undefined
     )
 
     return NextResponse.json({ success: true })
   } catch (error) {
     return NextResponse.json({ error: 'Failed to delete item' }, { status: 500 })
   }
-} 
+}

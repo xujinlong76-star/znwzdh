@@ -6,10 +6,33 @@ import { uint8ArrayToBase64 } from '@/lib/buffer-utils'
 
 export const runtime = 'nodejs'
 
+const MAX_IMAGE_BASE64_LEN = 7 * 1024 * 1024 // ~5MB binary
 
+function sanitizeRepoPathSegment(input: unknown, fallback: string): string {
+    if (typeof input !== 'string') return fallback
+    const cleaned = input
+        .trim()
+        .replace(/\\/g, '/')
+        .split('/')
+        .map((seg) => seg.replace(/[^a-zA-Z0-9_-]/g, ''))
+        .filter((seg) => seg.length > 0 && seg !== '.' && seg !== '..')
+        .join('/')
+    return cleaned || fallback
+}
+
+function sanitizeFilePrefix(input: unknown, fallback: string): string {
+    if (typeof input !== 'string') return fallback
+    const cleaned = input.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32)
+    return cleaned || fallback
+}
 
 export async function GET() {
     try {
+        const authCheck = await verifyAdminSession()
+        if (!authCheck.ok) {
+            return new Response(authCheck.error, { status: authCheck.status })
+        }
+
         const data = await getFileContent('src/navsphere/content/resource-metadata.json') as ResourceMetadata
         if (!data?.metadata || !Array.isArray(data.metadata)) {
             throw new Error('Invalid data structure');
@@ -28,9 +51,18 @@ export async function POST(request: Request) {
             return new Response(authCheck.error, { status: authCheck.status });
         }
 
-        const { image, folder = 'assets', prefix = 'img' } = await request.json(); // Get the Base64 image, folder and prefix
-        const base64Data = image.split(",")[1]; // Extract the Base64 part
-        const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)); // Convert Base64 to binary
+        const { image, folder = 'assets', prefix = 'img' } = await request.json();
+        if (typeof image !== 'string' || !image.includes(',')) {
+            return NextResponse.json({ error: '无效的图片数据格式' }, { status: 400 });
+        }
+        const base64Data = image.split(",")[1] || '';
+        if (!base64Data || base64Data.length > MAX_IMAGE_BASE64_LEN) {
+            return NextResponse.json({ error: '图片内容为空或超出 5MB 大小限制' }, { status: 413 });
+        }
+
+        const safeFolder = sanitizeRepoPathSegment(folder, 'assets');
+        const safePrefix = sanitizeFilePrefix(prefix, 'img');
+        const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
 
         const token = authCheck.githubToken || process.env.GITHUB_PAT || '';
         if (!token) {
@@ -38,7 +70,7 @@ export async function POST(request: Request) {
         }
 
         // 获取上传结果，包含路径和 commit hash
-        const { path: imageUrl, commitHash } = await uploadImageToGitHub(binaryData, token, folder, prefix);
+        const { path: imageUrl, commitHash } = await uploadImageToGitHub(binaryData, token, safeFolder, safePrefix);
 
         // Handle metadata
         const metadata = await getFileContent('src/navsphere/content/resource-metadata.json') as ResourceMetadata;
@@ -71,15 +103,14 @@ async function uploadImageToGitHub(binaryData: Uint8Array, token: string, folder
     const repo = process.env.GITHUB_REPO!;
     const branch = process.env.GITHUB_BRANCH || 'main'
 
-    // Ensure folder doesn't have leading/trailing slashes for clean path construction
-    const cleanFolder = folder.replace(/^\/+|\/+$/g, '');
-    const path = `/${cleanFolder}/${prefix}_${Date.now()}.png`; // Generate a unique path for the image
+    const cleanFolder = sanitizeRepoPathSegment(folder, 'assets');
+    const cleanPrefix = sanitizeFilePrefix(prefix, 'img');
+    const path = `/${cleanFolder}/${cleanPrefix}_${Date.now()}.png`;
     const githubPath = 'public' + path;
 
     // Convert Uint8Array to Base64
-    const base64String = uint8ArrayToBase64(binaryData); // Use Buffer to convert to Base64
+    const base64String = uint8ArrayToBase64(binaryData);
     const currentFileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${githubPath}?ref=${branch}`
-    // Use fetch to upload the file to GitHub
     const response = await fetch(currentFileUrl, {
         method: 'PUT',
         headers: {
@@ -88,8 +119,8 @@ async function uploadImageToGitHub(binaryData: Uint8Array, token: string, folder
         },
         body: JSON.stringify({
             message: `Upload ${githubPath}`,
-            content: base64String, // Send only the Base64 string
-            branch: branch, // Explicitly specify the branch
+            content: base64String,
+            branch: branch,
         }),
     });
     if (!response.ok) {
@@ -99,9 +130,9 @@ async function uploadImageToGitHub(binaryData: Uint8Array, token: string, folder
     }
 
     const responseData = await response.json();
-    const commitHash = responseData.commit.sha; // 获取 commit hash
+    const commitHash = responseData.commit.sha;
 
-    return { path, commitHash }; // Return the URL of the uploaded image
+    return { path, commitHash };
 }
 
 export async function DELETE(request: Request) {
@@ -132,9 +163,6 @@ export async function DELETE(request: Request) {
             `Delete ${deletedCount} resource(s)`,
             authCheck.githubToken || undefined
         );
-
-        // 注意：这里只是从元数据中删除了引用，实际的图片文件仍然存在于GitHub仓库中
-        // 如果需要删除实际文件，需要额外的GitHub API调用
 
         return NextResponse.json({
             success: true,

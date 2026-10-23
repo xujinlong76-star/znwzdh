@@ -60,6 +60,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
       const adminCheck = await verifyAdminSession()
       if (adminCheck.ok) {
         const delegated =
+          process.env.NAVHUB_ADMIN_TOKEN ||
           process.env.NAVHUB_BOOTSTRAP_TOKEN ||
           process.env.NAVHUB_STORAGE_TOKEN ||
           process.env.NAVHUB_SESSION_SECRET ||

@@ -27,30 +27,8 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       provider: z.string().min(1).default("github"),
       providerId: z.string().min(1),
       username: z.string().min(1).max(64),
-      email: z
-        .string()
-        .max(256)
-        .refine((val) => !val || /^[^\s@]+@[^\s@]+$/.test(val), { message: "邮箱格式不合法" })
-        .nullable()
-        .optional(),
-      avatar: z
-        .string()
-        .max(2048)
-        .refine(
-          (val) => {
-            if (!val) return true;
-            if (val.startsWith("/") && !val.startsWith("//")) return true;
-            try {
-              const u = new URL(val);
-              return u.protocol === "http:" || u.protocol === "https:" || val.startsWith("data:image/");
-            } catch {
-              return false;
-            }
-          },
-          { message: "头像必须是合法的 http(s) 链接或相对静态路径" }
-        )
-        .nullable()
-        .optional(),
+      email: z.email().nullable().optional(),
+      avatar: z.string().url().nullable().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const targetId = body.data.provider + ":" + body.data.providerId;

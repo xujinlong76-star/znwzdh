@@ -323,6 +323,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
   identity TEXT PRIMARY KEY,
   personalization_enabled INTEGER NOT NULL DEFAULT 1,
   favorite_signal_cutoff INTEGER NOT NULL DEFAULT 0,
+  preferences_json TEXT NOT NULL DEFAULT '{}',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -756,6 +757,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
   identity TEXT PRIMARY KEY,
   personalization_enabled INTEGER NOT NULL DEFAULT 1,
   favorite_signal_cutoff BIGINT NOT NULL DEFAULT 0,
+  preferences_json TEXT NOT NULL DEFAULT '{}',
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL
 );

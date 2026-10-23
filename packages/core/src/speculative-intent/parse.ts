@@ -8,8 +8,8 @@
 import type { SpeculativeIntentResult } from './types.ts'
 import { tryParseBase64, tryParseUrlEncoding, tryParseJson, tryDetectHash } from './encoding.ts'
 import { tryParseTimestamp, tryParseCron } from './time.ts'
-import { tryDetectIp, tryParseCurl, tryParseJwt } from './network.ts'
-import { tryParseMath, tryParseColor } from './compute.ts'
+import { tryDetectIp, tryParseCidr, tryParseCurl, tryParseJwt } from './network.ts'
+import { tryParseMath, tryParseColor, tryParseUuidOrUlid, tryParseByteSize } from './compute.ts'
 import { tryParseRegex } from './regex.ts'
 import { tryParseSemver } from './semver.ts'
 import { tryParseHttpStatus } from './http-status.ts'
@@ -24,6 +24,9 @@ export function parseSpeculativeIntent(input: string): SpeculativeIntentResult |
     tryParseCron(q) ||
     tryParseJwt(q) ||
     tryParseCurl(q) ||
+    tryParseCidr(q) ||
+    tryParseUuidOrUlid(q) ||
+    tryParseByteSize(q) ||
     tryParseHttpStatus(q) ||
     tryParseSemver(q) ||
     tryParseRegex(q) ||

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, getFileContent } from '@/lib/github'
 import type { NavigationItem, NavigationData } from '@/types/navigation'
 
@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 
 const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
-async function validateAndSaveVideosData(data: NavigationData, accessToken: string) {
+async function validateAndSaveVideosData(data: NavigationData, accessToken?: string) {
     if (!data || typeof data !== 'object') {
         throw new Error('Invalid videos data')
     }
@@ -51,9 +51,9 @@ export async function PUT(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await auth()
-        if (!session?.user || !getServerGithubToken(session.user.id)) {
-            return new Response('Unauthorized', { status: 401 })
+        const authCheck = await verifyAdminSession()
+        if (!authCheck.ok) {
+            return new Response(authCheck.error, { status: authCheck.status })
         }
 
         const { id } = await params
@@ -65,13 +65,14 @@ export async function PUT(
             return NextResponse.json({ error: 'Item not found' }, { status: 404 })
         }
 
-        // 更新项目
+        // 更新项目并锁定原有 id 不被覆盖
         data.navigationItems[index] = {
             ...data.navigationItems[index],
-            ...updatedItem
+            ...updatedItem,
+            id,
         }
 
-        await validateAndSaveVideosData(data, getServerGithubToken(session.user.id)!)
+        await validateAndSaveVideosData(data, authCheck.githubToken || undefined)
 
         return NextResponse.json({ success: true })
     } catch (error) {
@@ -91,9 +92,9 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await auth()
-        if (!session?.user || !getServerGithubToken(session.user.id)) {
-            return new Response('Unauthorized', { status: 401 })
+        const authCheck = await verifyAdminSession()
+        if (!authCheck.ok) {
+            return new Response(authCheck.error, { status: authCheck.status })
         }
 
         const { id } = await params
@@ -107,7 +108,7 @@ export async function DELETE(
         // 删除项目
         data.navigationItems.splice(index, 1)
 
-        await validateAndSaveVideosData(data, getServerGithubToken(session.user.id)!)
+        await validateAndSaveVideosData(data, authCheck.githubToken || undefined)
 
         return NextResponse.json({ success: true })
     } catch (error) {

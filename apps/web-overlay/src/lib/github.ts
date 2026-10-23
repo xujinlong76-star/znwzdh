@@ -75,7 +75,11 @@ function getAdapter(): StorageAdapter {
           process.env.NAVHUB_STORAGE_BASE_URL ??
           process.env.NEXT_PUBLIC_API_URL ??
           "http://localhost:8787",
-        token: process.env.NAVHUB_STORAGE_TOKEN ?? null,
+        token:
+          process.env.NAVHUB_STORAGE_TOKEN ||
+          process.env.NAVHUB_ADMIN_TOKEN ||
+          process.env.NAVHUB_BOOTSTRAP_TOKEN ||
+          null,
         cooldownMs: cooldownFromEnv(process.env),
         // 读请求进 Next Data Cache（配合路由级 revalidate 变 ISR）；
         // 详见 storage-adapter.ts 里 HttpAdapterOptions.revalidateS 的注释
@@ -86,15 +90,6 @@ function getAdapter(): StorageAdapter {
   }
 
   if (kind === "sqlite") {
-    // 前端不提供同进程直连模式。
-    //
-    // 原因：直连需要把 @navhub/api（也就是整个中枢）打进前端产物，会让构建期
-    // 必须解析该包（实测报 Module not found），而它只在极少数场景下才有意义。
-    // 需要"省掉一次 HTTP 往返"时，正确做法是让中枢与前端跑在同一台机器，
-    // 用 http 适配器指向 127.0.0.1 —— 性能差异可忽略，架构却简单得多。
-    //
-    // sqlite 适配器的实现在 storage-adapter.ts 中保留，供服务端脚本或
-    // 自定义部署使用。
     throw new StorageError(
       "STORAGE_ADAPTER=sqlite 不适用于 Web 前端；请使用 http（推荐）或 github。" +
         "storage-adapter.ts 中的 createSqliteAdapter 可满足其他运行环境的直连需求。",
@@ -156,12 +151,6 @@ function hasMetadataArray(data: unknown): boolean {
 
 /**
  * 按文件类型取构建期内联的基线。
- *
- * 为什么需要基线：中枢返回的空结构（库还没数据）与"读取失败"在渲染层的后果一样 ——
- * 页面会变空。用上游自带的内容兜底，可以让「中枢没起来」「库是空的」这两种情况
- * 依然呈现一个可用的导航页，而不是白屏。
- *
- * 返回 undefined 表示该文件没有基线（例如用户自定义的文档）。
  */
 function baselineFor(name: string): unknown | undefined {
   if (name === "navigation.json" || name === "navigation-default.json") return baselineNavigation;
@@ -171,24 +160,8 @@ function baselineFor(name: string): unknown | undefined {
   return undefined;
 }
 
-/**
- * 内存微缓存：
- * 同一页面渲染中各模块（如 layout.tsx、page.tsx 的 generateMetadata 与 Page 组件）
- * 以及极短时间内的突发并发请求共享读取结果，大幅减少对中枢 HTTP 往返，
- * 将 SSR 页面渲染 TTFB 压至毫秒级。
- *
- * 当发生任何写操作（commitFile）时立即精准失效，保证后台修改后页面秒级最新。
- */
 const contentCache = new Map<string, { data: unknown; expiresAt: number }>();
 const CACHE_TTL_MS = 2500; // 2.5 秒极速微缓存
-/**
- * 失败回退的缓存 TTL：远短于成功路径。
- *
- * 失败也进缓存，是为了吸收同一轮渲染里的并发突发（layout 的
- * generateMetadata 与 page 组件会并发读同一个 site.json）—— 否则每个
- * 并发请求都会各自走一次适配器。TTTL 压到 1 秒，中枢恢复后最多多等这么久，
- * 不会把一次临时故障放大成持续降级。
- */
 const FAILURE_TTL_MS = 1_000;
 
 export function invalidateContentCache(path?: string) {
@@ -199,22 +172,6 @@ export function invalidateContentCache(path?: string) {
   }
 }
 
-/**
- * 读取一个"文件"。签名与原版完全一致，因此 69 处调用点无需修改。
- *
- * 兜底策略（三级，按"是否值得告警"区分）：
- *   1. 中枢返回 null（该文件从未写入过）-> **静默**回退到基线。
- *      这是正常状态而非故障；若也告警，像 videos.json 这种从没存过的文件
- *      会在每个请求上刷一条日志（实测确实如此），把真正的问题淹没。
- *   2. 中枢返回了数据但内容为空      -> 告警后回退（可能是数据异常）。
- *   3. 读取失败（中枢不可达/报错）    -> 分级告警后回退：
- *       - 连接级故障（中枢不可达）：http 适配器的熔断器已在跳闸时按
- *         冷静期窗口 warn 过一次，这里**不再逐请求重复**；否则中枢没起时
- *         每个请求刷一条 console.error，控制台直接被噪声淹没。
- *       - 其余（HTTP 错误、响应畸形、适配器配置错误）：console.error，
- *         这些是"中枢活着但出问题"的真异常。
- * 没有基线的文件返回 {}（与原版一致的宽松语义）。
- */
 export async function getFileContent<T = any>(path: string): Promise<T> {
   const now = Date.now();
   const cachedItem = contentCache.get(path);
@@ -228,18 +185,12 @@ export async function getFileContent<T = any>(path: string): Promise<T> {
   try {
     const data = await getAdapter().read(path);
 
-    // 情况 1：从未写入过 —— 静默回退，不告警
     if (data === null || data === undefined) {
       const res = (baseline ?? {}) as T;
       contentCache.set(path, { data: res, expiresAt: now + CACHE_TTL_MS });
       return res;
     }
 
-    // 情况 2：有数据但为空 —— 告警后回退
-    // 空值判定按文件类型区分：
-    //   - 导航类（navigation / videos）看 navigationItems 是否有元素
-    //   - resource-metadata 看 metadata 数组（调用方会对它执行 .unshift）
-    //   - 其余配置类看对象是否为空
     const looksEmpty =
       name === "navigation.json" || name === "navigation-default.json" || name === "videos.json"
         ? !hasNavigation(data)
@@ -255,26 +206,16 @@ export async function getFileContent<T = any>(path: string): Promise<T> {
     contentCache.set(path, { data, expiresAt: now + CACHE_TTL_MS });
     return data as T;
   } catch (error) {
-    // 情况 3：真正的故障 —— 但按类型分级告警。
-    // 连接级故障（中枢不可达）由 http 适配器的熔断器在跳闸时统一 warn 过
-    // （每个冷静期窗口一条），这里再逐请求刷 error 只会淹没真正的问题。
-    // 只有「中枢活着但出问题」的异常才值得 error 级。
     const hubUnreachable = error instanceof StorageError && error.unreachable;
     if (!hubUnreachable) {
       console.error("[storage] 读取失败，回退到构建期基线:", path, error);
     }
-    // 失败也进微缓存（短 TTL）：吸收同一轮渲染的并发突发，
-    // 并让适配器的连接冷静期有足够覆盖面，避免每个请求各连一次中枢。
     const res = (baseline ?? {}) as T;
     contentCache.set(path, { data: res, expiresAt: Date.now() + FAILURE_TTL_MS });
     return res;
   }
 }
 
-/**
- * 写入一个"文件"。
- * message / _token 仅为兼容原签名而保留，HTTP 与 sqlite 适配器会忽略它们。
- */
 export async function commitFile(
   path: string,
   content: string,
@@ -290,7 +231,6 @@ export async function commitFile(
       return { ok: true, note: result.note, attempts: attempt };
     } catch (error) {
       lastError = error;
-      // 与原版一致的有限退避重试（网络抖动、上游并发冲突）
       if (attempt < retryCount) {
         await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
         continue;

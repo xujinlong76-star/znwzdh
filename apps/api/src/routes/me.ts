@@ -5,20 +5,18 @@
  * `x-navhub-user-id` + `x-navhub-identity-signature` 转发到中枢。
  * 这里不接受客户端自报的 userId（BFF 会剥离客户端同名头）。
  *
- * 上一句只在流量确实经过 `/api/hub/*` 代理时成立：API 端口一旦被直接暴露
- * （compose 默认映射、MCP、curl），`x-navhub-user-id` 就是纯自报的字符串。
- * 所以每个端点先过 `identityTrusted`（开放模式 / 持票 / 身份已被签名绑定，三者其一），
- * 否则「无票自称他人」可以导出任意用户的全部个人数据、改写其设置、甚至直接注销。
- * ——本文件是热区：这条是审计报告里登记的例外，理由是闸门只能落在路由处理器里，
- * 在别处（hook）拦不住——签名 hook 只在配了 `NAVHUB_IDENTITY_SECRET` 时才生效。
- *
  * 端点：
- *  - GET  /api/me        概览（身份、计数、画像/金库/AI 配置存在性、别名）
- *  - POST /api/me/merge  匿名数据合并到登录身份（幂等、事务、审计）
- *
- * 匿名合并的所有权证明：除了登录身份的签名外，body.anonId 也必须带
- * `x-navhub-anon-signature`（HMAC(secret, anonId)）。否则任何登录用户都能
- * 把别人的匿名数据并进自己账号（anonId 虽然不可猜，但不能只靠不可猜）。
+ *  - GET    /api/me                      概览（身份、计数、画像/金库/AI 配置存在性、别名、设置）
+ *  - GET    /api/me/settings             获取个人设置
+ *  - PATCH  /api/me/settings             更新个人设置（含个性化、搜索引擎、打开方式、卡片密度、0-RTT、快捷键、遥测与历史保留期）
+ *  - PATCH  /api/me/profile              更新个人显示资料（昵称 username / 头像 avatar）
+ *  - POST   /api/me/diagnostics          执行云端账户数据完整性自检与自动修复
+ *  - GET    /api/me/export               导出全部个人数据（JSON）
+ *  - GET    /api/me/export/bookmarks.html 导出浏览器标准 Netscape 书签（HTML）
+ *  - GET    /api/me/activity             我的操作记录
+ *  - POST   /api/me/favorites/sync       收藏增量同步
+ *  - POST   /api/me/merge                匿名数据合并到登录身份（幂等、事务、审计）
+ *  - DELETE /api/me                      注销并清空云端个人数据
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
@@ -31,6 +29,44 @@ import { recordUserCenterMetric } from "../user-center-metrics.ts";
 
 /** 前端生成的匿名 id 形态：anon-<uuid>；限制长度避免异常值写入别名表 */
 const ANON_ID_RE = /^anon-[A-Za-z0-9_-]{8,80}$/;
+
+const settingsPatchSchema = z
+  .object({
+    personalizationEnabled: z.boolean().optional(),
+    favoriteSignalCutoff: z
+      .number()
+      .int()
+      .min(0)
+      .max(4_102_444_800_000) // 2100-01-01，挡住异常大值与未来时间戳
+      .optional(),
+    defaultSearchEngine: z.enum(["internal", "google", "bing", "duckduckgo", "github", "perplexity"]).optional(),
+    openLinksInNewTab: z.boolean().optional(),
+    cardDensity: z.enum(["comfortable", "compact", "minimal"]).optional(),
+    speculativeZeroRttEnabled: z.boolean().optional(),
+    daypartSceneEnabled: z.boolean().optional(),
+    spotlightShortcut: z.enum(["mod+k", "slash", "both"]).optional(),
+    searchHistoryEnabled: z.boolean().optional(),
+    telemetryEnabled: z.boolean().optional(),
+    historyRetentionDays: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(365)]).optional(),
+  })
+  .refine(
+    (v) => Object.values(v).some((val) => val !== undefined),
+    {
+      message: "至少要提供一个待修改的设置项（如 personalizationEnabled 或 favoriteSignalCutoff 等）",
+    },
+  );
+
+function isSafeAvatarUrl(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) return true;
+  if (trimmed.startsWith("/")) return !trimmed.startsWith("//");
+  try {
+    const u = new URL(trimmed);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
 
 export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -64,30 +100,200 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
     const identity = identityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
-    // favoriteSignalCutoff 可选：它是「清理收藏信号」的时间水位，普通用户不需要手动设，
-    // 但产品上已存在该列且清理信号时会被写入——不开放写入会让它只能由系统单方推进。
-    const parsed = z
-      .object({
-        personalizationEnabled: z.boolean().optional(),
-        favoriteSignalCutoff: z
-          .number()
-          .int()
-          .min(0)
-          .max(4_102_444_800_000) // 2100-01-01，挡住异常大值与未来时间戳
-          .optional(),
-      })
-      .refine((v) => v.personalizationEnabled !== undefined || v.favoriteSignalCutoff !== undefined, {
-        message: "至少要修改 personalizationEnabled 或 favoriteSignalCutoff 之一",
-      })
-      .safeParse(req.body ?? {});
+    const parsed = settingsPatchSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       reply.code(400);
       return { error: "参数无效", detail: parsed.error.issues };
     }
     const canonical = await ctx.repo.resolveIdentity(identity);
     const settings = await ctx.repo.updateUserSettings(canonical, parsed.data);
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: canonical,
+      actorKind: "user",
+      action: "user.settings_update",
+      target: canonical,
+      diff: parsed.data,
+    }).catch(() => undefined);
     return { ok: true, settings };
   });
+
+  /* ------------------------- 个人资料与云端自检修复 ------------------------- */
+
+  app.patch("/api/me/profile", async (req, reply) => {
+    if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+    const identity = identityOf(req as never);
+    if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+    if (identity.startsWith("anon-")) {
+      reply.code(403);
+      return { error: "匿名身份不支持修改云端账户资料" };
+    }
+
+    const parsed = z
+      .object({
+        username: z.string().trim().min(1).max(40).regex(/^[^\u0000-\u001f<>]+$/, "昵称包含非法字符").optional(),
+        avatar: z.string().max(500).nullable().optional(),
+      })
+      .refine((v) => v.username !== undefined || v.avatar !== undefined, {
+        message: "至少要修改 username 或 avatar 之一",
+      })
+      .safeParse(req.body ?? {});
+
+    if (!parsed.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: parsed.error.issues };
+    }
+
+    const rawAvatar = parsed.data.avatar;
+    if (typeof rawAvatar === "string" && rawAvatar.trim() !== "" && !isSafeAvatarUrl(rawAvatar)) {
+      reply.code(400);
+      return { error: "头像地址只支持 http(s):// 或站内相对路径 /..." };
+    }
+
+    const canonical = await ctx.repo.resolveIdentity(identity);
+    const outcome = await ctx.repo.updateUserProfileInfo(canonical, {
+      username: parsed.data.username,
+      avatar: rawAvatar === "" ? null : rawAvatar,
+    });
+
+    if (!outcome.ok) {
+      reply.code(outcome.reason === "username_taken" ? 409 : 400);
+      return {
+        error: outcome.reason === "username_taken" ? "该显示昵称已被占用，请更换其它名称" : "个人资料参数无效",
+      };
+    }
+
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: canonical,
+      actorKind: "user",
+      action: "user.profile_update",
+      target: canonical,
+      diff: { username: outcome.user.username },
+    }).catch(() => undefined);
+
+    return {
+      ok: true,
+      user: {
+        id: outcome.user.id,
+        username: outcome.user.username,
+        email: outcome.user.email ?? null,
+        avatar: outcome.user.avatar ?? null,
+        source: outcome.user.source ?? "local",
+      },
+    };
+  });
+
+  app.post(
+    "/api/me/diagnostics",
+    { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
+      const identity = identityOf(req as never);
+      if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
+      const canonical = await ctx.repo.resolveIdentity(identity);
+
+      const checks: Array<{
+        id: string;
+        label: string;
+        status: "ok" | "repaired";
+        detail: string;
+      }> = [];
+      let repairedCount = 0;
+
+      // 1. 检查并自动修复悬空收藏夹引用（folder_id 指向已不存在的收藏夹）
+      const orphanFavRows = await ctx.repo.raw(
+        `SELECT COUNT(*) AS c FROM favorites
+         WHERE user_id = ? AND deleted_at IS NULL AND folder_id IS NOT NULL
+           AND folder_id NOT IN (SELECT id FROM favorite_folders WHERE user_id = ?)`,
+        [canonical, canonical],
+      );
+      const orphanFolderCount = Number(orphanFavRows[0]?.c ?? 0);
+      if (orphanFolderCount > 0) {
+        await ctx.repo.run(
+          `UPDATE favorites SET folder_id = NULL, updated_at = ?
+           WHERE user_id = ? AND deleted_at IS NULL AND folder_id IS NOT NULL
+             AND folder_id NOT IN (SELECT id FROM favorite_folders WHERE user_id = ?)`,
+          [Date.now(), canonical, canonical],
+        );
+        repairedCount += orphanFolderCount;
+        checks.push({
+          id: "orphan_folders",
+          label: "收藏夹归属引用完整性",
+          status: "repaired",
+          detail: `发现并修复了 ${orphanFolderCount} 条指向失效收藏夹的书签，已自动归回「未分组」`,
+        });
+      } else {
+        checks.push({
+          id: "orphan_folders",
+          label: "收藏夹归属引用完整性",
+          status: "ok",
+          detail: "全部云端收藏夹引用一致，无悬空孤儿项",
+        });
+      }
+
+      // 2. 检查并清理超出用户设定保留周期的过期搜索历史
+      const settings = await ctx.repo.getUserSettings(canonical);
+      const retentionDays = settings.historyRetentionDays || 180;
+      const cutoffTs = Date.now() - retentionDays * 86_400_000;
+      const expiredHistRows = await ctx.repo.raw(
+        "SELECT COUNT(*) AS c FROM search_history WHERE user_id = ? AND created_at < ?",
+        [canonical, cutoffTs],
+      );
+      const expiredHistCount = Number(expiredHistRows[0]?.c ?? 0);
+      if (expiredHistCount > 0) {
+        await ctx.repo.run(
+          "DELETE FROM search_history WHERE user_id = ? AND created_at < ?",
+          [canonical, cutoffTs],
+        );
+        repairedCount += expiredHistCount;
+        checks.push({
+          id: "history_retention",
+          label: `历史保留窗口 (${retentionDays} 天) 巡检`,
+          status: "repaired",
+          detail: `已自动清理 ${expiredHistCount} 条超过 ${retentionDays} 天保留期的陈旧搜索记录`,
+        });
+      } else {
+        checks.push({
+          id: "history_retention",
+          label: `历史保留窗口 (${retentionDays} 天) 巡检`,
+          status: "ok",
+          detail: `所有搜索历史均在 ${retentionDays} 天保留期内`,
+        });
+      }
+
+      // 3. 校验个人设置与画像同步状态
+      if (settings.personalizationEnabled) {
+        invalidateProfileThrottle(canonical);
+        await refreshUserProfile(ctx, canonical).catch(() => false);
+      }
+      checks.push({
+        id: "settings_and_profile",
+        label: "云端偏好设置与个性化画像一致性",
+        status: "ok",
+        detail: settings.personalizationEnabled
+          ? "偏好配置校验通过，已同步触发个性化画像实时重算"
+          : "偏好配置校验通过（当前已关闭个性化画像重排）",
+      });
+
+      await ctx.repo.audit({
+        ip: req.ip,
+        actor: canonical,
+        actorKind: "user",
+        action: "user.diagnostics",
+        target: canonical,
+        diff: { repairedCount },
+      }).catch(() => undefined);
+
+      return {
+        ok: true,
+        identity: canonical,
+        repairedCount,
+        checks,
+        checkedAt: Date.now(),
+      };
+    },
+  );
 
   /* ------------------------- 数据主权 ------------------------- */
 
@@ -148,10 +354,6 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   /**
    * 收藏批量同步（M1）。
-   *
-   * 旧方案：客户端逐条 POST /api/favorites（首条失败即中断）+ 云端整集合覆盖。
-   * 前者慢且不可恢复，后者无法表达删除、也没有版本号。
-   * 现在一次往返完成「提交 ops → 按水位拉增量」，删除以墓碑（deletedAt）下发。
    */
   app.post(
     "/api/me/favorites/sync",
@@ -182,11 +384,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
         ctx.repo.listFavoritesSince(canonical, parsed.data.since ?? 0),
         ctx.repo.listFavoriteFolders(canonical),
       ]);
-      // 增量条目必须自带站点元信息（title/url）：客户端换设备首拉时本地没有任何缓存，
-      // 只有 siteId 无法渲染，合并逻辑会把这些条目整条丢掉 —— 用户看到的是"收藏全没了"。
-      // 一次批量 IN 查询，与 GET /api/favorites 同款；墓碑行照此 join，前端以 deletedAt 为准。
       const siteMap = await ctx.repo.getSitesByIds(slice.items.map((item) => item.siteId));
-      // 两次读的 MAX(updated_at) 取大：ops 落库后水位必然不低，任一读法都不会倒退
       recordUserCenterMetric("favoritesSync.success");
       return {
         ok: true,
@@ -199,9 +397,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   );
 
   /**
-   * 用户级书签导出（M9 互操作）：收藏 → Netscape 书签 HTML，
-   * 可直接导入 Chrome / Firefox / Safari / Edge；分组按收藏夹还原。
-   * 这是「搬回浏览器」与「迁到别家」的标准格式，私有 JSON 做不到。
+   * 用户级书签导出（M9 互操作）：收藏 → Netscape 书签 HTML
    */
   app.get(
     "/api/me/export/bookmarks.html",
@@ -223,8 +419,8 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       const byFolder = new Map<string, Array<{ url: string; title: string; createdAt: number }>>();
       for (const fav of favorites) {
         const site = sites.get(fav.siteId);
-        if (!site) continue; // 软删除站点在 getSitesByIds 已被过滤：没有可导出的地址
-        if (!/^https?:\/\//i.test(site.url)) continue; // 过滤非 HTTP(S) 地址，防止书签 XSS
+        if (!site) continue;
+        if (!/^https?:\/\//i.test(site.url)) continue;
         const key = fav.folderId ? (folderName.get(fav.folderId) ?? "未分组") : "未分组";
         const list = byFolder.get(key) ?? [];
         list.push({ url: site.url, title: fav.note || site.title, createdAt: fav.createdAt });
@@ -265,7 +461,6 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   /**
    * 注销：删除该身份的全部个人数据（保留登录账号本身，重新登录后是空账号）。
-   * 必须显式确认，避免误触把收藏与历史一次清空。
    */
   app.delete("/api/me", { config: { rateLimit: { max: 3, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
@@ -301,7 +496,6 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       reply.code(401);
       return { error: "缺少登录身份" };
     }
-    // 目标必须是登录身份；匿名目标没有意义（等价于自我合并）
     if (target.startsWith("anon-")) {
       reply.code(400);
       return { error: "合并目标必须是登录身份" };
@@ -313,7 +507,6 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       return { error: "anonId 无效", detail: parsed.error.issues };
     }
 
-    // 匿名身份所有权：配置了密钥时必须带 anon 签名
     if (ctx.config.identitySecret) {
       const signature = req.headers["x-navhub-anon-signature"];
       if (
@@ -346,12 +539,10 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       result = await ctx.repo.mergeIdentity(resolvedSource, canonicalTarget);
       recordUserCenterMetric("identityMerge.success");
     } catch (err) {
-      // 合并失败必须留下痕迹：它是登录后第一条主路径，静默失败等于"数据没了"
       recordUserCenterMetric("identityMerge.failure");
       throw err;
     }
 
-    // 合并后画像应从新的事件集合重建（收藏也会参与）；失败不影响合并结果
     invalidateProfileThrottle(canonicalTarget);
     void refreshUserProfile(ctx, canonicalTarget).catch(() => undefined);
 

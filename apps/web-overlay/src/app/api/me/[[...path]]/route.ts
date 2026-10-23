@@ -26,10 +26,13 @@ const HUB_BASE = (
 ).replace(/\/+$/, '')
 
 const TIMEOUT_MS = 15_000
+/** body 上限 ~1MB，防止代理被超大请求体耗尽进程内存 */
+const MAX_BODY_BYTES = 1024 * 1024
 
-/** 服务间调用凭据：鉴权模式下 /api/users/sync 需要 Bearer token */
+/** 服务间调用凭据：鉴权模式下 /api/users/sync 及无签名密钥时的 /api/me 需要 Bearer token */
 function serviceToken(): string | undefined {
   return (
+    process.env.NAVHUB_ADMIN_TOKEN ||
     process.env.NAVHUB_BOOTSTRAP_TOKEN ||
     process.env.NAVHUB_STORAGE_TOKEN ||
     process.env.NAVHUB_SESSION_SECRET ||
@@ -82,9 +85,9 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
         body: JSON.stringify({
           provider: provider || 'github',
           providerId,
-          username: (user.name || user.email || providerId || 'user').slice(0, 64),
-          email: user.email?.trim() || null,
-          avatar: user.image?.trim() || null,
+          username: user.name || user.email || providerId,
+          email: user.email ?? null,
+          avatar: user.image ?? null,
         }),
         cache: 'no-store',
         signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -108,8 +111,26 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     }
   }
 
+  const hasBody = method !== 'GET' && method !== 'HEAD'
+  if (hasBody) {
+    const declared = Number(request.headers.get('content-length') ?? '')
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      return NextResponse.json(
+        { error: '请求体过大（上限 1MB）' },
+        { status: 413, headers: { 'cache-control': 'no-store' } },
+      )
+    }
+  }
+
   // 合并请求：除登录身份签名外，匿名 id 也要单独签名
-  const rawBody = method === 'GET' || method === 'HEAD' ? undefined : await request.text()
+  const rawBody = hasBody ? await request.text() : undefined
+  if (rawBody && rawBody.length > MAX_BODY_BYTES) {
+    return NextResponse.json(
+      { error: '请求体过大（上限 1MB）' },
+      { status: 413, headers: { 'cache-control': 'no-store' } },
+    )
+  }
+
   const headers: Record<string, string> = {
     accept: 'application/json',
     'x-navhub-user-id': identity,
@@ -148,6 +169,11 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
         // body 不是 JSON 时交给中枢返回 400
       }
     }
+  } else {
+    const token = serviceToken()
+    if (token) {
+      headers['authorization'] = 'Bearer ' + token
+    }
   }
 
   const search = request.nextUrl.search || ''
@@ -167,6 +193,10 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     const responseHeaders: Record<string, string> = {
       'content-type': contentType,
       'cache-control': 'no-store',
+    }
+    const contentDisposition = upstream.headers.get('content-disposition')
+    if (contentDisposition) {
+      responseHeaders['content-disposition'] = contentDisposition
     }
     if (pendingAnonCookie) {
       responseHeaders['set-cookie'] =

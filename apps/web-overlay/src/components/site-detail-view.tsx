@@ -136,6 +136,9 @@ export function SiteDetailView({
   category = null,
   canLinkCategory = false,
   categoryCount = 0,
+  relatedScope = 'category',
+  relatedLabel = null,
+  relatedCategory = null,
   breadcrumb = null,
 }: {
   id: string
@@ -146,6 +149,12 @@ export function SiteDetailView({
   /** 分类站点数达标才链分类页——薄分类路由是 404 */
   canLinkCategory?: boolean
   categoryCount?: number
+  /** 相关站点的取数范围：本分类 / 父分类子树 / 全站兜底 */
+  relatedScope?: 'category' | 'parent' | 'more'
+  /** 相关范围对应的分类名（全站兜底时为 null） */
+  relatedLabel?: string | null
+  /** 「浏览全部」入口：只有站点数达标的相关分类才有公开页 */
+  relatedCategory?: { slug: string; title: string; count: number } | null
   /** 服务端渲染的可见面包屑 + BreadcrumbList JSON-LD */
   breadcrumb?: ReactNode
 }) {
@@ -422,12 +431,12 @@ export function SiteDetailView({
               {/* 正交分面属性胶囊 (Phase 2) */}
               {hasFacets && (
                 <div className="pt-2 flex flex-wrap items-center gap-2 border-t border-border/40 mt-3">
-                  {Object.entries(site.facets!).flatMap(([fKey, vals]) => {
+                  {Object.entries(site.facets!).map(([fKey, vals]) => {
                     const fMeta = FACET_LABELS[fKey] || { label: fKey, icon: Tag }
                     const FIcon = fMeta.icon
-                    return vals.map((v, vIdx) => (
+                    return vals.map((v) => (
                       <span
-                        key={`${fKey}_${v}_${vIdx}`}
+                        key={`${fKey}_${v}`}
                         className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-medium bg-secondary/80 text-secondary-foreground border border-border/60 shadow-2xs"
                       >
                         <FIcon className="w-3 h-3 text-muted-foreground" />
@@ -442,9 +451,9 @@ export function SiteDetailView({
               {/* 话题标签 */}
               {site.tags && site.tags.length > 0 && (
                 <div className="pt-1 flex flex-wrap items-center gap-1.5">
-                  {site.tags.map((t, tIdx) => (
+                  {site.tags.map((t) => (
                     <Link
-                      key={`${t}_${tIdx}`}
+                      key={t}
                       href={'/tags/' + encodeURIComponent(tagSlug(t))}
                       className="text-xs px-2.5 py-0.5 rounded-full bg-muted/80 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
                     >
@@ -585,9 +594,9 @@ export function SiteDetailView({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {alternatives.map((alt, altIdx) => (
+              {alternatives.map((alt) => (
                 <div
-                  key={alt.id ? `alt_${alt.id}` : `alt_${altIdx}`}
+                  key={alt.id}
                   className="rounded-xl border border-border/70 bg-card p-4 hover:border-amber-500/40 transition-all shadow-2xs space-y-2.5"
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -606,7 +615,7 @@ export function SiteDetailView({
                           </span>
                         )}
                         {alt.isFreeOrOpenSource && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                             <ShieldCheck className="w-2.5 h-2.5" />
                             开源/免费
                           </span>
@@ -623,14 +632,14 @@ export function SiteDetailView({
                     </div>
 
                     <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
-                      <a href={alt.targetUrl} target="_blank" rel="noopener noreferrer" aria-label={`访问 ${alt.targetTitle}：${alt.targetUrl}`} title={`访问 ${alt.targetTitle}`}>
+                      <a href={alt.targetUrl} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </Button>
                   </div>
 
                   {alt.note && (
-                    <p className="text-xs text-muted-foreground bg-muted/30 p-2 rounded-lg border border-border/40">
+                    <p className="text-xs text-muted-foreground/90 bg-muted/30 p-2 rounded-lg border border-border/40">
                       💡 {alt.note}
                     </p>
                   )}
@@ -652,11 +661,11 @@ export function SiteDetailView({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-              {ecosystemRelations.map((eco, ecoIdx) => {
+              {ecosystemRelations.map((eco) => {
                 const badge = RELATION_TYPE_LABEL[eco.relationType] || { label: eco.relationType, color: 'text-muted-foreground', bg: 'bg-muted' }
                 return (
                   <div
-                    key={eco.id ? `eco_${eco.id}` : `eco_${ecoIdx}`}
+                    key={eco.id}
                     className="rounded-xl border border-border/70 bg-card p-3.5 hover:border-indigo-500/40 transition-all shadow-2xs space-y-2 flex flex-col justify-between"
                   >
                     <div>
@@ -664,7 +673,7 @@ export function SiteDetailView({
                         <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${badge.bg} ${badge.color}`}>
                           {badge.label}
                         </span>
-                        <a href={eco.targetUrl} target="_blank" rel="noopener noreferrer" aria-label={`访问 ${eco.targetTitle}：${eco.targetUrl}`} title={`访问 ${eco.targetTitle}`} className="text-muted-foreground hover:text-primary">
+                        <a href={eco.targetUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       </div>
@@ -690,8 +699,10 @@ export function SiteDetailView({
           </div>
         )}
 
-        {/* 同分类站点：服务端下发的站内 /site 内链（爬虫可见），
-            与客户端 KNN 外链推荐分开——前者补内链图，后者做发现 */}
+        {/* 相关站点：服务端下发的站内 /site 内链（爬虫可见），
+            与客户端 KNN 外链推荐分开——前者补内链图，后者做发现。
+            分类只有自己 1 条时退回父分类子树或全站清单，避免整块消失后
+            详情页一条可爬的 /site 内链都不剩。 */}
         {(initialRelated.length > 0 || (category && canLinkCategory)) && (
           <section aria-labelledby="related-sites-heading" className="space-y-3.5">
             <div className="flex items-center justify-between gap-2">
@@ -700,15 +711,17 @@ export function SiteDetailView({
                 className="text-sm sm:text-base font-bold flex items-center gap-2 text-foreground"
               >
                 <LayoutGrid className="w-4 h-4 text-sky-500" />
-                <span>同分类站点</span>
+                <span>{relatedScope === 'parent' ? '同类目站点' : relatedScope === 'more' ? '更多站点' : '同分类站点'}</span>
               </h2>
-              {category && <span className="text-xs text-muted-foreground font-mono truncate">{category.title}</span>}
+              {relatedLabel && (
+                <span className="text-xs text-muted-foreground font-mono truncate">{relatedLabel}</span>
+              )}
             </div>
             {initialRelated.length > 0 && (
               <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-                {initialRelated.map((s, sIdx) => (
+                {initialRelated.map((s) => (
                   <li
-                    key={s.id ? `rel_${s.id}` : `rel_${sIdx}`}
+                    key={s.id}
                     className="rounded-xl border border-border/70 bg-card p-3.5 hover:border-sky-500/40 transition-all shadow-2xs"
                   >
                     <div className="flex items-center gap-2">
@@ -749,12 +762,12 @@ export function SiteDetailView({
                 ))}
               </ul>
             )}
-            {category && canLinkCategory && (
+            {relatedCategory && (
               <Link
-                href={`/category/${encodeURIComponent(category.slug)}`}
+                href={`/category/${encodeURIComponent(relatedCategory.slug)}`}
                 className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
               >
-                浏览全部 {categoryCount} 个「{category.title}」站点
+                浏览全部 {relatedCategory.count} 个「{relatedCategory.title}」站点
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             )}
@@ -772,9 +785,9 @@ export function SiteDetailView({
               <span className="text-xs text-muted-foreground font-mono">{similar.length} 个推荐项</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
-              {similar.map((s, simIdx) => (
+              {similar.map((s) => (
                 <div
-                  key={s.id ? `sim_${s.id}` : `sim_${simIdx}`}
+                  key={s.id}
                   className="group relative rounded-xl border border-border/70 glass-surface subtle-mesh p-3.5 transition-all hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 flex flex-col justify-between"
                 >
                   <a href={s.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3">

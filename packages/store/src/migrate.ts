@@ -79,6 +79,7 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 收藏同步换代（M1）：软删墓碑。硬删会让「删除」事件在增量同步里
   // 无处表达——客户端按 updated_at 拉增量时看不见任何痕迹，于是删除永不传播。
   { table: "favorites", column: "deleted_at", sqlite: "INTEGER", pg: "BIGINT" },
+  { table: "user_settings", column: "preferences_json", sqlite: "TEXT NOT NULL DEFAULT '{}'", pg: "TEXT NOT NULL DEFAULT '{}'" },
 ];
 
 /**
@@ -184,8 +185,8 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE UNIQUE INDEX IF NOT EXISTS site_tags_unique_idx ON site_tags(site_id, tag_id)",
     // 用户中心设置（画像开关 / 收藏信号清理水位）：旧库补齐，新库由 driver.ts DDL 建
     db.dialect === "pg"
-      ? "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff BIGINT NOT NULL DEFAULT 0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)"
-      : "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+      ? "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff BIGINT NOT NULL DEFAULT 0, preferences_json TEXT NOT NULL DEFAULT '{}', created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS user_settings (identity TEXT PRIMARY KEY, personalization_enabled INTEGER NOT NULL DEFAULT 1, favorite_signal_cutoff INTEGER NOT NULL DEFAULT 0, preferences_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     // 类目 slug 全局唯一（URL 是 /category/{slug}，不带父级路径）。
     // 部分索引：NULL 不进索引，所以回填窗口里多行 NULL 不冲突。
     // 标题的「每父唯一」索引在 P3 收敛重名后登记（两条部分索引分别覆盖子树与根层：

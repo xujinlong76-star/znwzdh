@@ -48,7 +48,7 @@ export function OnboardingCard() {
   return (
     <section
       aria-label="新手引导"
-      className="fixed bottom-24 sm:bottom-20 inset-x-3 sm:inset-x-auto sm:right-6 sm:max-w-xl z-40 rounded-2xl border border-border/80 bg-background/95 backdrop-blur-md p-4 sm:p-5 shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-300"
+      className="mb-6 rounded-2xl border border-primary/20 bg-primary/[0.04] p-4 sm:p-5 animate-in fade-in slide-in-from-top-1 duration-300"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -128,7 +128,7 @@ export function OnboardingCard() {
       </ol>
 
       <div className="mt-3 flex justify-end">
-        <Button variant="ghost" size="sm" className="h-8 min-h-[32px] px-3 text-xs text-muted-foreground hover:text-foreground" onClick={dismiss}>
+        <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={dismiss}>
           我知道了，不再显示
         </Button>
       </div>

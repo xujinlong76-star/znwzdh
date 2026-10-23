@@ -4,9 +4,7 @@ import { requireAdmin } from '@/lib/admin-guard'
 import { SUBMISSION_LABELS, parseSubmissionFromIssueBody } from '@/types/submission'
 import { getFileContent, commitFile } from '@/lib/github'
 
-export const runtime = 'edge'
-
-
+export const runtime = 'nodejs'
 
 const GITHUB_API = 'https://api.github.com'
 const GITHUB_OWNER = process.env.GITHUB_OWNER!
@@ -18,6 +16,17 @@ const HUB_BASE = (
     process.env.NEXT_PUBLIC_API_URL ??
     'http://localhost:8787'
 ).replace(/\/$/, '')
+
+function hubServiceToken(): string | undefined {
+    return (
+        process.env.NAVHUB_ADMIN_TOKEN ||
+        process.env.NAVHUB_BOOTSTRAP_TOKEN ||
+        process.env.NAVHUB_STORAGE_TOKEN ||
+        process.env.NAVHUB_SESSION_SECRET ||
+        process.env.AUTH_SECRET ||
+        undefined
+    )
+}
 
 function hasGithubChannel(): boolean {
     return Boolean(GITHUB_OWNER && GITHUB_REPO && GITHUB_PAT)
@@ -65,9 +74,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         // 中枢 /api/submissions/:number 会自己反查回 site id；
         // 此前直接拿 number 调 /api/sites/:id 必然 404（审核按钮静默失效）。
         if (!hasGithubChannel()) {
+            const token = hubServiceToken()
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+            }
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`
+            }
             const patchRes = await fetch(`${HUB_BASE}/api/submissions/${encodeURIComponent(issueNumber)}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                headers,
                 body: JSON.stringify({ action, reason }),
             })
             const body = await patchRes.json().catch(() => ({} as Record<string, unknown>))

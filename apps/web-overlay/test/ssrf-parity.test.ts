@@ -4,7 +4,7 @@ import { isBlockedIp as webBlockedIp } from '../src/lib/ssrf-guard'
 
 /**
  * SSRF 防护有两份运行时副本（packages/ai 与 apps/web）。
- * 两份实现可以结构不同，但「哪些地址必须拦」不能漂移。
+ * 两份实现可以结构不同，但「哪些地址必须拦（含非法非 IP 字符串 fail-closed）」不能漂移。
  */
 const IPS = [
   '0.0.0.0',
@@ -37,6 +37,9 @@ const IPS = [
   'ff00::1',
   '100::1',
   '2606:4700::1111',
+  'not-an-ip',
+  'localhost',
+  '',
 ]
 
 describe('SSRF 双副本行为一致', () => {

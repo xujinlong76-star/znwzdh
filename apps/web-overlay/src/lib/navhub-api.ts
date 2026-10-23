@@ -2328,25 +2328,115 @@ export interface SiteOfflineArchive {
 }
 
 export async function fetchKnowledgeMesh(): Promise<{ ok: boolean; mesh: SiteKnowledgeMesh }> {
-  return getJson<{ ok: boolean; mesh: SiteKnowledgeMesh }>('/api/graph/mesh')
+  const raw = await getJson<any>('/api/graph/mesh')
+  if (raw && raw.mesh && Array.isArray(raw.mesh.nodes)) {
+    return { ok: true, mesh: raw.mesh }
+  }
+  if (raw && Array.isArray(raw.nodes)) {
+    return {
+      ok: true,
+      mesh: {
+        nodes: raw.nodes.map((n: any) => ({
+          ...n,
+          label: n.label || n.name || n.id,
+          category: n.category || (n.categoryId ? `cat_${n.categoryId}` : undefined),
+        })),
+        edges: raw.edges || [],
+        stats: raw.stats || { totalNodes: raw.nodes.length, totalEdges: (raw.edges || []).length, categoryCount: 0, siteCount: 0 },
+      },
+    }
+  }
+  return { ok: false, mesh: { nodes: [], edges: [], stats: { totalNodes: 0, totalEdges: 0, categoryCount: 0, siteCount: 0 } } }
 }
 
 export async function findTechGraphPath(start: string, target: string): Promise<{ ok: boolean; path: TechGraphPath; result: TechGraphPath }> {
-  return getJson<{ ok: boolean; path: TechGraphPath; result: TechGraphPath }>(
+  const raw = await getJson<any>(
     `/api/graph/path?start=${encodeURIComponent(start)}&target=${encodeURIComponent(target)}`
   )
+  const payload = raw?.path || raw?.result || raw
+  const normalized: TechGraphPath = {
+    found: Boolean(payload?.found),
+    from: String(payload?.from || payload?.startId || start),
+    to: String(payload?.to || payload?.targetId || target),
+    distance: typeof payload?.distance === 'number' ? payload.distance : 0,
+    steps: Array.isArray(payload?.steps)
+      ? payload.steps.map((s: any) => ({
+          from: String(s.from || s.fromNode?.name || s.fromNode?.id || ''),
+          to: String(s.to || s.toNode?.name || s.toNode?.id || ''),
+          relation: String(s.relation || ''),
+          direction: s.direction === 'incoming' ? 'incoming' : 'outgoing',
+          description: s.description,
+        }))
+      : [],
+  }
+  return { ok: Boolean(raw?.ok ?? true), path: normalized, result: normalized }
 }
 
 export async function fetchSiteDuplicates(): Promise<{ ok: boolean; report: SiteDuplicateReport }> {
-  return getJson<{ ok: boolean; report: SiteDuplicateReport }>('/api/sites/duplicates')
+  const raw = await getJson<any>('/api/sites/duplicates')
+  const base = raw?.report || raw
+  if (base && Array.isArray(base.duplicatePairs)) {
+    const pairs: SiteDuplicatePair[] = base.duplicatePairs.map((p: any) => ({
+      siteA: p.siteA || { id: p.idA, title: p.titleA, url: p.urlA, categoryId: p.categoryA },
+      siteB: p.siteB || { id: p.idB, title: p.titleB, url: p.urlB, categoryId: p.categoryB },
+      similarity: Number(p.similarity) || 0,
+      reason: String(p.reason || ''),
+      suggestedAction:
+        p.suggestedAction ||
+        (p.recommendation === 'merge' ? 'merge_tags' : p.recommendation === 'archive_b' ? 'remove_redundant' : 'keep_both'),
+    }))
+    return {
+      ok: true,
+      report: {
+        scannedCount: Number(base.scannedCount) || 0,
+        duplicatePairs: pairs,
+        highConfidenceCount:
+          typeof base.highConfidenceCount === 'number'
+            ? base.highConfidenceCount
+            : pairs.filter((x) => x.similarity >= 0.85).length,
+      },
+    }
+  }
+  return { ok: false, report: { scannedCount: 0, duplicatePairs: [], highConfidenceCount: 0 } }
+}
+
+function normalizeArchivePayload(raw: any): { ok: boolean; archive: SiteOfflineArchive } {
+  const base = raw?.archive || raw
+  if (!base || typeof base !== 'object' || !base.siteId) {
+    return { ok: false, archive: null as unknown as SiteOfflineArchive }
+  }
+  const htmlContent = String(base.htmlContent || '')
+  const plainText =
+    typeof base.plainText === 'string' && base.plainText.trim()
+      ? base.plainText
+      : String(base.excerpt || htmlContent.replace(/<[^>]+>/g, ' ').trim())
+  return {
+    ok: true,
+    archive: {
+      siteId: String(base.siteId),
+      url: String(base.url || ''),
+      title: String(base.title || ''),
+      capturedAt: Number(base.capturedAt) || Date.now(),
+      contentLength: Number(base.contentLength) || Number(base.byteSize) || plainText.length || htmlContent.length,
+      readTimeMinutes: Number(base.readTimeMinutes) || 1,
+      htmlContent,
+      plainText,
+      meta: base.meta || {
+        description: base.excerpt || undefined,
+        keywords: Array.isArray(base.tags) ? base.tags : [],
+      },
+    },
+  }
 }
 
 export async function fetchSiteArchive(siteId: string): Promise<{ ok: boolean; archive: SiteOfflineArchive }> {
-  return getJson<{ ok: boolean; archive: SiteOfflineArchive }>(`/api/sites/${encodeURIComponent(siteId)}/archive`)
+  const raw = await getJson<any>(`/api/sites/${encodeURIComponent(siteId)}/archive`)
+  return normalizeArchivePayload(raw)
 }
 
 export async function createSiteArchive(siteId: string): Promise<{ ok: boolean; archive: SiteOfflineArchive }> {
-  return sendJson<{ ok: boolean; archive: SiteOfflineArchive }>(`/api/sites/${encodeURIComponent(siteId)}/archive`, 'POST', {})
+  const raw = await sendJson<any>(`/api/sites/${encodeURIComponent(siteId)}/archive`, 'POST', {})
+  return normalizeArchivePayload(raw)
 }
 
 export interface CopilotChatResponse {

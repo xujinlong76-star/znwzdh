@@ -1,6 +1,10 @@
 import type { Repository } from "../repository.ts";
 import { randomUUID } from "node:crypto";
 
+function escapeLikePrefix(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => "\\" + ch);
+}
+
 /**
  * 身份合并与用户中心聚合。
  *
@@ -192,15 +196,15 @@ export async function mergeIdentity(
     }
 
     // 5.5) 个人设置：目标没有就接管；两边都有时保留目标、只把 favoriteSignalCutoff
-    //      取更晚的值（保守：不把源账号已忽略的收藏信号重新算进来）。源行必须删除，
-    //      否则别名已指向 target，这行永远读不到，成为孤儿。
+    //      取更晚的值（保守：不把源账号已忽略的收藏信号重新算进来），并合并扩展偏好（目标优先）。
+    //      源行必须删除，否则别名已指向 target，这行永远读不到，成为孤儿。
     const sourceSettings = await repo.raw(
-      "SELECT favorite_signal_cutoff FROM user_settings WHERE identity = ? LIMIT 1",
+      "SELECT favorite_signal_cutoff, preferences_json FROM user_settings WHERE identity = ? LIMIT 1",
       [source],
     );
     if (sourceSettings[0]) {
       const targetSettings = await repo.raw(
-        "SELECT favorite_signal_cutoff FROM user_settings WHERE identity = ? LIMIT 1",
+        "SELECT favorite_signal_cutoff, preferences_json FROM user_settings WHERE identity = ? LIMIT 1",
         [target],
       );
       if (!targetSettings[0]) {
@@ -210,16 +214,72 @@ export async function mergeIdentity(
           Number(targetSettings[0].favorite_signal_cutoff) || 0,
           Number(sourceSettings[0].favorite_signal_cutoff) || 0,
         );
-        await repo.run("UPDATE user_settings SET favorite_signal_cutoff = ? WHERE identity = ?", [
-          mergedCutoff,
-          target,
-        ]);
+        let sourcePrefs: Record<string, unknown> = {};
+        let targetPrefs: Record<string, unknown> = {};
+        try {
+          sourcePrefs = JSON.parse(String(sourceSettings[0].preferences_json ?? "{}"));
+        } catch {
+          sourcePrefs = {};
+        }
+        try {
+          targetPrefs = JSON.parse(String(targetSettings[0].preferences_json ?? "{}"));
+        } catch {
+          targetPrefs = {};
+        }
+        const mergedPrefsJson = JSON.stringify({ ...sourcePrefs, ...targetPrefs });
+        await repo.run(
+          "UPDATE user_settings SET favorite_signal_cutoff = ?, preferences_json = ? WHERE identity = ?",
+          [mergedCutoff, mergedPrefsJson, target],
+        );
         await repo.run("DELETE FROM user_settings WHERE identity = ?", [source]);
       }
       stats.settingsMoved = true;
     }
 
-    // 6) 工作空间：目前仍存在 vault 的 workspaces:<identity> 键，目标没有才接管
+    // 6) 工作空间：同时覆盖专用表 user_workspace_blobs（workspaces:<id> 与 ws_members:<id>:*）
+    //    及旧表 user_vault_sync 中的历史残留记录。目标没有才接管，避免孤儿数据丢失。
+    const sourceWsBlob = await repo.raw(
+      "SELECT payload FROM user_workspace_blobs WHERE user_id = ? LIMIT 1",
+      ["workspaces:" + source],
+    );
+    if (sourceWsBlob[0]) {
+      const targetKey = "workspaces:" + target;
+      const targetWsBlob = await repo.raw(
+        "SELECT 1 AS ok FROM user_workspace_blobs WHERE user_id = ? LIMIT 1",
+        [targetKey],
+      );
+      if (!targetWsBlob[0]) {
+        await repo.run("UPDATE user_workspace_blobs SET user_id = ? WHERE user_id = ?", [
+          targetKey,
+          "workspaces:" + source,
+        ]);
+      } else {
+        await repo.run("DELETE FROM user_workspace_blobs WHERE user_id = ?", ["workspaces:" + source]);
+      }
+      stats.workspacesMoved = true;
+    }
+
+    const sourceMemberBlobs = await repo.raw(
+      "SELECT user_id, payload, updated_at FROM user_workspace_blobs WHERE user_id LIKE ? ESCAPE '\\'",
+      [escapeLikePrefix("ws_members:" + source + ":") + "%"],
+    );
+    const memberPrefix = "ws_members:" + source + ":";
+    for (const mRow of sourceMemberBlobs) {
+      const oldKey = String(mRow.user_id);
+      const wsId = oldKey.slice(memberPrefix.length);
+      const newKey = "ws_members:" + target + ":" + wsId;
+      const existsTargetMember = await repo.raw(
+        "SELECT 1 AS ok FROM user_workspace_blobs WHERE user_id = ? LIMIT 1",
+        [newKey],
+      );
+      if (!existsTargetMember[0]) {
+        await repo.run("UPDATE user_workspace_blobs SET user_id = ? WHERE user_id = ?", [newKey, oldKey]);
+      } else {
+        await repo.run("DELETE FROM user_workspace_blobs WHERE user_id = ?", [oldKey]);
+      }
+      stats.workspacesMoved = true;
+    }
+
     const sourceWorkspaces = await repo.raw(
       "SELECT payload FROM user_vault_sync WHERE user_id = ? LIMIT 1",
       ["workspaces:" + source],
@@ -241,11 +301,37 @@ export async function mergeIdentity(
       stats.workspacesMoved = true;
     }
 
+    // 6.5) CRDT 排版编辑日志（crdt:<identity>）：目标未有时直接迁入，避免登录后匿名自定义分类丢失
+    const sourceCrdt = await repo.raw(
+      "SELECT 1 AS ok FROM user_vault_sync WHERE user_id = ? LIMIT 1",
+      ["crdt:" + source],
+    );
+    if (sourceCrdt[0]) {
+      const targetCrdt = await repo.raw(
+        "SELECT 1 AS ok FROM user_vault_sync WHERE user_id = ? LIMIT 1",
+        ["crdt:" + target],
+      );
+      if (!targetCrdt[0]) {
+        await repo.run("UPDATE user_vault_sync SET user_id = ? WHERE user_id = ?", [
+          "crdt:" + target,
+          "crdt:" + source,
+        ]);
+      } else {
+        await repo.run("DELETE FROM user_vault_sync WHERE user_id = ?", ["crdt:" + source]);
+      }
+    }
+
     // 7) E2EE 金库：服务端无明文，无法合并；保留源密文并交由前端二选一
     const sourceVault = await repo.raw("SELECT 1 AS ok FROM user_vault_sync WHERE user_id = ? LIMIT 1", [source]);
     stats.vaultNeedsChoice = Boolean(sourceVault[0]);
 
-    // 8) 插件安装/星标/评价：按复合主键去重，新增的活跃记录才调整计数
+    // 8) 插件安装/星标/评价：按复合主键去重，并精确维护 plugins.install_count / star_count 守恒：
+    //    - 源身份当初安装/星标时已对 plugins 表执行过 +1；
+    //    - 若目标尚无该记录（changes > 0）：直接迁入，随后源行删除，活跃总数一增一减保持不变；
+    //    - 若目标已有该记录（changes === 0）：
+    //        * 源与目标均为活跃安装（removed_at IS NULL）：两份活跃安装合并为一份，install_count 减 1；
+    //        * 源为活跃安装、目标曾卸载（removed_at IS NOT NULL）：恢复目标为活跃安装，活跃总数不变；
+    //        * 星标同理：源与目标均已点星时合并为一份，star_count 减 1。
     const installs = await repo.raw("SELECT * FROM plugin_installs WHERE identity = ?", [source]);
     for (const row of installs) {
       const changes = await repo.runCount(
@@ -256,8 +342,24 @@ export async function mergeIdentity(
       );
       if (changes > 0) {
         stats.pluginsMoved++;
-        if (row.removed_at == null) {
-          await repo.run("UPDATE plugins SET install_count = install_count + 1 WHERE id = ?", [row.plugin_id]);
+      } else if (row.removed_at == null) {
+        const targetInstall = (
+          await repo.raw(
+            "SELECT removed_at FROM plugin_installs WHERE plugin_id = ? AND identity = ? LIMIT 1",
+            [row.plugin_id, target],
+          )
+        )[0];
+        if (targetInstall && targetInstall.removed_at != null) {
+          await repo.run(
+            "UPDATE plugin_installs SET version = ?, meta = ?, installed_at = ?, removed_at = NULL WHERE plugin_id = ? AND identity = ?",
+            [row.version, row.meta ?? null, row.installed_at, row.plugin_id, target],
+          );
+          stats.pluginsMoved++;
+        } else {
+          await repo.run(
+            "UPDATE plugins SET install_count = CASE WHEN install_count > 0 THEN install_count - 1 ELSE 0 END WHERE id = ?",
+            [row.plugin_id],
+          );
         }
       }
     }
@@ -273,7 +375,11 @@ export async function mergeIdentity(
       );
       if (changes > 0) {
         stats.starsMoved++;
-        await repo.run("UPDATE plugins SET star_count = star_count + 1 WHERE id = ?", [row.plugin_id]);
+      } else {
+        await repo.run(
+          "UPDATE plugins SET star_count = CASE WHEN star_count > 0 THEN star_count - 1 ELSE 0 END WHERE id = ?",
+          [row.plugin_id],
+        );
       }
     }
     await repo.run("DELETE FROM plugin_stars WHERE identity = ?", [source]);

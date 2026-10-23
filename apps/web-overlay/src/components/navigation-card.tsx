@@ -337,7 +337,7 @@ export function NavigationCard({
                       </div>
 
                       {item.description && (
-                        <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1.5 break-words">
+                        <CardDescription className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1.5 break-words">
                           {item.description}
                         </CardDescription>
                       )}
@@ -512,7 +512,7 @@ export function NavigationCard({
                       )}
                     </div>
                     {item.description && (
-                      <CardDescription className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mt-1 break-words">
+                      <CardDescription className="text-xs text-muted-foreground/90 line-clamp-2 leading-relaxed mt-1 break-words">
                         {item.description}
                       </CardDescription>
                     )}

@@ -9,10 +9,10 @@ import { isIP } from 'node:net'
  *
  * 适用面：任何「用户可控输入 -> 服务端发起请求」的路由（website-metadata 等）。
  * 三层防护：
- *   1. 协议白名单：只允许 http/https（挡 file:// gopher:// javascript: 等）
+ *   1. 协议与形态白名单：只允许 http/https，禁止 URL 内嵌凭据与危险内网端口
  *   2. 解析后校验：先 DNS 解析再逐个检查 IP，挡 127.0.0.1.nip.io 指向内网的情况
- *   3. 重定向逐跳校验：手动跟随跳转，每一跳重新做 DNS + IP 校验
- *      否则 evil.com -> 302 -> 169.254.169.254 即可绕过
+ *   3. 重定向逐跳校验与 DNS 重绑定防护：手动跟随跳转，每一跳重新做 DNS + IP 校验；
+ *      HTTP 请求直连已校验 IP 并锁死 Host 头，HTTPS 请求在建连后二次复核 DNS 解析结果。
  * 另加超时、响应体大小与跳数上限，避免被慢速/超大响应拖死。
  */
 export interface GuardOptions {
@@ -42,6 +42,34 @@ export class SsrfBlockedError extends Error {
 }
 
 export const ALLOWED_PROTOCOLS = new Set(['http:', 'https:'])
+
+/** 明确拒绝的高危内网服务端口（与 packages/ai/src/ssrf.ts 保持一致） */
+export const BLOCKED_PORTS = new Set([
+  21, 22, 23, 25, 110, 111, 135, 139, 143, 445, 512, 513, 514,
+  1433, 1521, 2049, 2375, 2376, 2379, 2380,
+  3306, 3389, 4222, 5432, 5672, 5900, 5984,
+  6379, 6443, 7000, 7001, 9042, 9200, 9300,
+  10250, 10255, 11211, 27017, 27018, 27019,
+])
+
+export function assertUrlShape(url: URL): void {
+  if (!ALLOWED_PROTOCOLS.has(url.protocol)) {
+    throw new SsrfBlockedError(`协议不允许: ${url.protocol}`)
+  }
+  if (url.username || url.password) {
+    throw new SsrfBlockedError('禁止在 URL 中携带认证凭据')
+  }
+  const host = url.hostname.replace(/^\[|\]$/g, '').trim()
+  if (!host) {
+    throw new SsrfBlockedError('URL 缺少有效主机名')
+  }
+  if (url.port) {
+    const port = Number(url.port)
+    if (!Number.isInteger(port) || port < 1 || port > 65535 || BLOCKED_PORTS.has(port)) {
+      throw new SsrfBlockedError(`端口不允许访问: ${url.port}`)
+    }
+  }
+}
 
 function isBlockedIpv4(ip: string): boolean {
   const parts = ip.split('.').map((p) => Number(p))
@@ -125,7 +153,8 @@ function embeddedIpv4(bytes: Uint8Array): string {
 export function isBlockedIp(ip: string): boolean {
   const v = ip.toLowerCase()
   if (isIP(v) === 4) return isBlockedIpv4(v)
-  if (isIP(v) !== 6) return false
+  // 非法 IP 文本一律按 fail-closed 拦截（与 packages/ai/src/ssrf.ts 保持一致）
+  if (isIP(v) !== 6) return true
 
   const b = ipv6ToBytes(v)
   if (!b) return true // 解析不了 → fail closed
@@ -168,17 +197,14 @@ async function lookupWithTimeout(host: string, timeoutMs: number): Promise<Array
   }
 }
 
-/** DNS 解析 + 逐结果 IP 校验（关键：不能只校验 URL 字符串） */
-export async function resolveAndCheck(url: URL, opts: GuardOptions): Promise<void> {
-  if (!ALLOWED_PROTOCOLS.has(url.protocol)) {
-    throw new SsrfBlockedError(`协议不允许: ${url.protocol}`)
-  }
+async function resolveAndCheckAddresses(url: URL, opts: GuardOptions): Promise<string[]> {
+  assertUrlShape(url)
   const host = url.hostname.replace(/^\[|\]$/g, '')
   if (isIP(host)) {
     if (!opts.allowPrivateNetworks && isBlockedIp(host)) {
       throw new SsrfBlockedError(`目标 IP 位于受保护网段: ${host}`)
     }
-    return
+    return [host]
   }
   let records: Array<{ address: string }>
   try {
@@ -189,12 +215,19 @@ export async function resolveAndCheck(url: URL, opts: GuardOptions): Promise<voi
     throw new SsrfBlockedError(`域名解析失败: ${host}`)
   }
   if (!records.length) throw new SsrfBlockedError(`域名无解析结果: ${host}`)
-  if (opts.allowPrivateNetworks) return
-  for (const r of records) {
-    if (isBlockedIp(r.address)) {
-      throw new SsrfBlockedError(`${host} 解析到受保护地址: ${r.address}`)
+  if (!opts.allowPrivateNetworks) {
+    for (const r of records) {
+      if (isBlockedIp(r.address)) {
+        throw new SsrfBlockedError(`${host} 解析到受保护地址: ${r.address}`)
+      }
     }
   }
+  return records.map((r) => r.address)
+}
+
+/** DNS 解析 + 逐结果 IP 校验（关键：不能只校验 URL 字符串） */
+export async function resolveAndCheck(url: URL, opts: GuardOptions): Promise<void> {
+  await resolveAndCheckAddresses(url, opts)
 }
 
 export interface GuardedFetchResult {
@@ -214,13 +247,39 @@ export async function guardedFetch(
   const opts = { ...DEFAULT_GUARD, ...options }
   let current = new URL(rawUrl)
   for (let hop = 0; hop <= opts.maxRedirects; hop++) {
-    await resolveAndCheck(current, opts)
-    const response = await fetch(current.toString(), {
+    const resolvedIps = await resolveAndCheckAddresses(current, opts)
+    const rawHost = current.hostname.replace(/^\[|\]$/g, '')
+    const isLiteralIp = isIP(rawHost) !== 0
+
+    // 防 DNS 重绑定（TOCTOU）：
+    // - HTTP 明文：直接改写请求 URL 为已校验的首个 IP，并通过 Host 头保留原域名
+    // - HTTPS：因 TLS SNI/证书校验需用原域名建连，连接返回后立即二次复核 DNS 解析
+    let fetchTarget = current.toString()
+    const headers: Record<string, string> = {
+      'User-Agent': opts.userAgent,
+      ...(init.headers as Record<string, string> | undefined),
+    }
+    if (!isLiteralIp && current.protocol === 'http:' && resolvedIps[0]) {
+      const pinned = new URL(current.toString())
+      const ip = resolvedIps[0]
+      pinned.hostname = isIP(ip) === 6 ? `[${ip}]` : ip
+      fetchTarget = pinned.toString()
+      if (!headers['Host'] && !headers['host']) {
+        headers['Host'] = current.host
+      }
+    }
+
+    const response = await fetch(fetchTarget, {
       ...init,
       redirect: 'manual',
       signal: AbortSignal.timeout(opts.timeoutMs),
-      headers: { 'User-Agent': opts.userAgent, ...(init.headers || {}) },
+      headers,
     })
+
+    if (!isLiteralIp && current.protocol === 'https:' && !opts.allowPrivateNetworks) {
+      await resolveAndCheckAddresses(current, opts)
+    }
+
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location')
       if (!location) return { response, finalUrl: current.toString() }
@@ -232,6 +291,7 @@ export async function guardedFetch(
     // 体积限制：读前先看 Content-Length，读完再截断一次
     const declared = Number(response.headers.get('content-length') || '0')
     if (declared > opts.maxBytes) {
+      await response.body?.cancel().catch(() => { /* 响应体超限时尽力取消底层流，连接已断开时可安全忽略 */ })
       throw new SsrfBlockedError(`响应体过大: ${declared} 字节`)
     }
     return { response, finalUrl: current.toString() }
@@ -243,7 +303,10 @@ export async function guardedFetch(
 export function isProbablySafeUrl(input: string): boolean {
   try {
     const u = new URL(input)
-    return ALLOWED_PROTOCOLS.has(u.protocol)
+    assertUrlShape(u)
+    const host = u.hostname.replace(/^\[|\]$/g, '')
+    if (isIP(host) !== 0 && isBlockedIp(host)) return false
+    return true
   } catch {
     return false
   }

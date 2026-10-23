@@ -32,13 +32,19 @@ export interface KnowledgeGraphData {
 export interface PathStep {
   fromNode: GraphNode;
   toNode: GraphNode;
+  from: string;
+  to: string;
   relation: string;
+  direction?: 'outgoing' | 'incoming';
+  description?: string;
 }
 
 export interface TechPathResult {
   found: boolean;
   startId: string;
   targetId: string;
+  from: string;
+  to: string;
   distance: number;
   steps: PathStep[];
   nodeChain: GraphNode[];
@@ -70,6 +76,7 @@ export const PRESET_TECH_GRAPH: KnowledgeGraphData = {
     { id: 'redis', name: 'Redis', category: 'Cache', layer: 'database' },
     { id: 'cloudflare', name: 'Cloudflare Workers', category: 'Hosting', layer: 'devops' },
     { id: 'docker', name: 'Docker', category: 'Container', layer: 'devops' },
+    { id: 'k8s', name: 'Kubernetes', category: 'Orchestration', layer: 'devops' },
     { id: 'ollama', name: 'Ollama', category: 'Local LLM', layer: 'ai' },
     { id: 'vllm', name: 'vLLM', category: 'Inference Engine', layer: 'ai' },
     { id: 'langchain', name: 'LangChain', category: 'LLM Framework', layer: 'ai' },
@@ -90,12 +97,43 @@ export const PRESET_TECH_GRAPH: KnowledgeGraphData = {
     { source: 'drizzle', target: 'sqlite', relation: 'queries', weight: 0.2 },
     { source: 'prisma', target: 'postgres', relation: 'queries', weight: 0.2 },
     { source: 'fastify', target: 'docker', relation: 'deploys_on', weight: 0.3 },
+    { source: 'docker', target: 'k8s', relation: 'deploys_on', weight: 0.2 },
     { source: 'fastify', target: 'redis', relation: 'queries', weight: 0.3 },
     { source: 'langchain', target: 'ollama', relation: 'integrates_with', weight: 0.2 },
     { source: 'langchain', target: 'nextjs', relation: 'integrates_with', weight: 0.3 },
     { source: 'vllm', target: 'docker', relation: 'deploys_on', weight: 0.2 },
   ],
 };
+
+const TECH_ID_ALIASES: Record<string, string> = {
+  postgresql: 'postgres',
+  pg: 'postgres',
+  tailwindcss: 'tailwind',
+  'tailwind css': 'tailwind',
+  'next.js': 'nextjs',
+  next: 'nextjs',
+  'vue.js': 'vue',
+  vuejs: 'vue',
+  'nuxt.js': 'nuxt',
+  nuxtjs: 'nuxt',
+  ts: 'typescript',
+  'drizzle orm': 'drizzle',
+  'cloudflare workers': 'cloudflare',
+  workers: 'cloudflare',
+  kubernetes: 'k8s',
+};
+
+function resolveGraphNode(raw: string, graph: KnowledgeGraphData): GraphNode | undefined {
+  const cleaned = raw.trim().toLowerCase();
+  if (!cleaned) return undefined;
+  const canonical = TECH_ID_ALIASES[cleaned] ?? cleaned;
+  for (const n of graph.nodes) {
+    if (n.id.toLowerCase() === canonical || n.name.toLowerCase() === cleaned || n.name.toLowerCase() === canonical) {
+      return n;
+    }
+  }
+  return undefined;
+}
 
 /**
  * 1. 双向最短技术演进链路寻路算法 (Bi-directional Dijkstra)
@@ -105,29 +143,33 @@ export function findShortestTechPath(
   targetId: string,
   graph: KnowledgeGraphData = PRESET_TECH_GRAPH
 ): TechPathResult {
-  const normStart = startId.trim().toLowerCase();
-  const normTarget = targetId.trim().toLowerCase();
-
   const nodeMap = new Map(graph.nodes.map((n) => [n.id.toLowerCase(), n]));
-  const startNode = nodeMap.get(normStart);
-  const targetNode = nodeMap.get(normTarget);
+  const startNode = resolveGraphNode(startId, graph);
+  const targetNode = resolveGraphNode(targetId, graph);
 
   if (!startNode || !targetNode) {
     return {
       found: false,
       startId,
       targetId,
+      from: startId,
+      to: targetId,
       distance: Infinity,
       steps: [],
       nodeChain: [],
     };
   }
 
+  const normStart = startNode.id.toLowerCase();
+  const normTarget = targetNode.id.toLowerCase();
+
   if (normStart === normTarget) {
     return {
       found: true,
       startId,
       targetId,
+      from: startNode.name,
+      to: targetNode.name,
       distance: 0,
       steps: [],
       nodeChain: [startNode],
@@ -139,6 +181,7 @@ export function findShortestTechPath(
     nodeId: string;
     weight: number;
     relation: string;
+    direction: 'outgoing' | 'incoming';
   }
   const adj = new Map<string, AdjItem[]>();
 
@@ -151,13 +194,13 @@ export function findShortestTechPath(
     const t = edge.target.toLowerCase();
     if (!adj.has(s)) adj.set(s, []);
     if (!adj.has(t)) adj.set(t, []);
-    adj.get(s)!.push({ nodeId: t, weight: edge.weight, relation: edge.relation });
-    adj.get(t)!.push({ nodeId: s, weight: edge.weight, relation: `connected_to (${edge.relation})` });
+    adj.get(s)!.push({ nodeId: t, weight: edge.weight, relation: edge.relation, direction: 'outgoing' });
+    adj.get(t)!.push({ nodeId: s, weight: edge.weight, relation: `connected_to (${edge.relation})`, direction: 'incoming' });
   }
 
   // Dijkstra 最短路
   const dist = new Map<string, number>();
-  const prev = new Map<string, { from: string; relation: string }>();
+  const prev = new Map<string, { from: string; relation: string; direction: 'outgoing' | 'incoming' }>();
   const visited = new Set<string>();
 
   for (const n of graph.nodes) {
@@ -186,7 +229,7 @@ export function findShortestTechPath(
       const alt = minD + edge.weight;
       if (alt < (dist.get(edge.nodeId) ?? Infinity)) {
         dist.set(edge.nodeId, alt);
-        prev.set(edge.nodeId, { from: u, relation: edge.relation });
+        prev.set(edge.nodeId, { from: u, relation: edge.relation, direction: edge.direction });
       }
     }
   }
@@ -197,6 +240,8 @@ export function findShortestTechPath(
       found: false,
       startId,
       targetId,
+      from: startNode.name,
+      to: targetNode.name,
       distance: Infinity,
       steps: [],
       nodeChain: [],
@@ -216,7 +261,11 @@ export function findShortestTechPath(
     steps.unshift({
       fromNode,
       toNode,
+      from: fromNode.name,
+      to: toNode.name,
       relation: p.relation,
+      direction: p.direction,
+      description: `${fromNode.name} (${fromNode.category}/${fromNode.layer}) → ${toNode.name} (${toNode.category}/${toNode.layer})`,
     });
     nodeChain.unshift(toNode);
     curr = p.from;
@@ -227,6 +276,8 @@ export function findShortestTechPath(
     found: true,
     startId,
     targetId,
+    from: startNode.name,
+    to: targetNode.name,
     distance: Math.round(finalDist * 100) / 100,
     steps,
     nodeChain,
@@ -295,14 +346,13 @@ export function analyzeStackCompatibility(
   selectedTechIds: string[],
   graph: KnowledgeGraphData = PRESET_TECH_GRAPH
 ): StackCompatibilityReport {
-  const normIds = new Set(selectedTechIds.map((id) => id.trim().toLowerCase()));
+  const resolvedNodes = selectedTechIds
+    .map((id) => resolveGraphNode(id, graph))
+    .filter((n): n is GraphNode => Boolean(n));
+  const normIds = new Set(resolvedNodes.map((n) => n.id.toLowerCase()));
   const nodeMap = new Map(graph.nodes.map((n) => [n.id.toLowerCase(), n]));
 
-  const validNodes = Array.from(normIds)
-    .map((id) => nodeMap.get(id))
-    .filter((n): n is GraphNode => Boolean(n));
-
-  const layersCovered = new Set(validNodes.map((n) => n.layer));
+  const layersCovered = new Set(resolvedNodes.map((n) => n.layer));
   const allLayers: Array<GraphNode['layer']> = ['frontend', 'backend', 'database', 'devops'];
   const missingLayers = allLayers.filter((l) => !layersCovered.has(l));
 

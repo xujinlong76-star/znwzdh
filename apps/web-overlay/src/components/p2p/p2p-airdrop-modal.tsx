@@ -10,30 +10,24 @@
  * 4. 设备雷达自发现：基于轻量心跳广播自动识别同一子网或多标签页内的活动中枢节点。
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Radio,
   Share2,
   Laptop,
   Smartphone,
   Tablet,
-  CheckCircle2,
-  Clock,
-  ArrowRight,
   ShieldCheck,
   X,
   RefreshCw,
-  Send,
   Download,
-  Copy,
   Sparkles,
-  Layers,
   Palette,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { getIdentity } from '@/lib/identity'
+import { FAVORITES_STORAGE_KEY, parseFavorites } from '@/lib/favorites-storage'
 
 interface P2PAirDropModalProps {
   open: boolean
@@ -48,15 +42,66 @@ interface PeerDevice {
   ipHint?: string
 }
 
+interface TransferFavoriteItem {
+  siteId: string
+  title: string
+  href: string
+  icon?: string
+  description?: string
+  note?: string
+  folderId?: string | null
+  createdAt: number
+}
+
 interface AirDropPayload {
   senderId: string
   senderName: string
   type: 'bookmarks' | 'theme' | 'all'
   timestamp: number
   data: {
-    siteCount?: number
+    siteCount: number
+    bookmarks?: TransferFavoriteItem[]
     themeName?: string
+    diyConfigRaw?: string | null
     notes?: string
+  }
+}
+
+const DIY_LAYOUT_STORAGE_KEY = 'navhub:home-diy-layout:v1'
+
+function sanitizeTransferBookmarks(raw: unknown): TransferFavoriteItem[] {
+  if (!Array.isArray(raw)) return []
+  const cleaned: TransferFavoriteItem[] = []
+  for (const item of raw.slice(0, 500)) {
+    if (!item || typeof item !== 'object') continue
+    const rec = item as Record<string, unknown>
+    const siteId = typeof rec.siteId === 'string' ? rec.siteId.trim().slice(0, 128) : ''
+    const title = typeof rec.title === 'string' ? rec.title.trim().slice(0, 200) : ''
+    const href = typeof rec.href === 'string' ? rec.href.trim().slice(0, 1024) : ''
+    if (!siteId || !title || !/^https?:\/\//i.test(href)) continue
+    cleaned.push({
+      siteId,
+      title,
+      href,
+      icon: typeof rec.icon === 'string' && (/^https?:\/\//i.test(rec.icon) || rec.icon.startsWith('/')) ? rec.icon.slice(0, 512) : undefined,
+      description: typeof rec.description === 'string' ? rec.description.slice(0, 500) : undefined,
+      note: typeof rec.note === 'string' ? rec.note.slice(0, 500) : undefined,
+      folderId: typeof rec.folderId === 'string' ? rec.folderId.slice(0, 64) : null,
+      createdAt: typeof rec.createdAt === 'number' && Number.isFinite(rec.createdAt) ? rec.createdAt : Date.now(),
+    })
+  }
+  return cleaned
+}
+
+function readLocalBookmarkList(): TransferFavoriteItem[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY)
+    const parsed = parseFavorites<TransferFavoriteItem>(raw)
+    if (parsed.corrupt) return []
+    return sanitizeTransferBookmarks(parsed.items)
+  } catch {
+    return []
   }
 }
 
@@ -66,6 +111,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
   const [peers, setPeers] = useState<PeerDevice[]>([])
   const [isScanning, setIsScanning] = useState(false)
   const [incomingPayload, setIncomingPayload] = useState<AirDropPayload | null>(null)
+  const [localBookmarkCount, setLocalBookmarkCount] = useState(0)
   const channelRef = useRef<BroadcastChannel | null>(null)
 
   // 初始化本机身份与广播通道
@@ -78,6 +124,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
       localStorage.setItem('navhub_p2p_device_id', storedId)
     }
     setDeviceId(storedId)
+    setLocalBookmarkCount(readLocalBookmarkList().length)
 
     const ua = navigator.userAgent
     let guessedType: 'desktop' | 'mobile' | 'tablet' = 'desktop'
@@ -100,14 +147,13 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
         if (!msg || typeof msg !== 'object') return
 
         if (msg.type === 'PING') {
-          // 收到对端心跳，回应 PONG
           if (msg.senderId !== storedId) {
             setPeers((prev) => {
               const existing = prev.find((p) => p.id === msg.senderId)
               const updated: PeerDevice = {
-                id: msg.senderId,
-                name: msg.senderName,
-                type: msg.deviceType || 'desktop',
+                id: String(msg.senderId).slice(0, 64),
+                name: String(msg.senderName || '局域网终端').slice(0, 64),
+                type: msg.deviceType === 'mobile' || msg.deviceType === 'tablet' ? msg.deviceType : 'desktop',
                 lastSeen: Date.now(),
               }
               if (existing) {
@@ -116,7 +162,6 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
               return [...prev, updated]
             })
 
-            // 回复 PONG
             channel.postMessage({
               type: 'PONG',
               senderId: storedId,
@@ -129,9 +174,9 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
             setPeers((prev) => {
               const existing = prev.find((p) => p.id === msg.senderId)
               const updated: PeerDevice = {
-                id: msg.senderId,
-                name: msg.senderName,
-                type: msg.deviceType || 'desktop',
+                id: String(msg.senderId).slice(0, 64),
+                name: String(msg.senderName || '局域网终端').slice(0, 64),
+                type: msg.deviceType === 'mobile' || msg.deviceType === 'tablet' ? msg.deviceType : 'desktop',
                 lastSeen: Date.now(),
               }
               if (existing) {
@@ -141,8 +186,24 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
             })
           }
         } else if (msg.type === 'AIRDROP_PAYLOAD') {
-          if (msg.targetId === storedId || msg.broadcast) {
-            setIncomingPayload(msg.payload)
+          if ((msg.targetId === storedId || msg.broadcast) && msg.payload && typeof msg.payload === 'object') {
+            const rawPayload = msg.payload as AirDropPayload
+            const cleanBookmarks = sanitizeTransferBookmarks(rawPayload.data?.bookmarks)
+            setIncomingPayload({
+              senderId: String(rawPayload.senderId || '').slice(0, 64),
+              senderName: String(rawPayload.senderName || '未知终端').slice(0, 64),
+              type: rawPayload.type === 'theme' || rawPayload.type === 'all' ? rawPayload.type : 'bookmarks',
+              timestamp: typeof rawPayload.timestamp === 'number' ? rawPayload.timestamp : Date.now(),
+              data: {
+                siteCount: cleanBookmarks.length || Number(rawPayload.data?.siteCount) || 0,
+                bookmarks: cleanBookmarks,
+                themeName: typeof rawPayload.data?.themeName === 'string' ? rawPayload.data.themeName.slice(0, 64) : undefined,
+                diyConfigRaw: typeof rawPayload.data?.diyConfigRaw === 'string' && rawPayload.data.diyConfigRaw.length <= 65536
+                  ? rawPayload.data.diyConfigRaw
+                  : null,
+                notes: typeof rawPayload.data?.notes === 'string' ? rawPayload.data.notes.slice(0, 200) : undefined,
+              },
+            })
           }
         }
       }
@@ -160,6 +221,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
   const triggerScan = useCallback(() => {
     if (!channelRef.current || !deviceId) return
     setIsScanning(true)
+    setLocalBookmarkCount(readLocalBookmarkList().length)
     channelRef.current.postMessage({
       type: 'PING',
       senderId: deviceId,
@@ -188,18 +250,42 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [open, onOpenChange])
 
-  // 发送快传数据给特定对端
+  // 计算待接收快传包的差量预览
+  const incomingDiffStats = useMemo(() => {
+    if (!incomingPayload) return { newCount: 0, existingCount: 0 }
+    const incomingList = incomingPayload.data.bookmarks || []
+    const currentList = readLocalBookmarkList()
+    const currentIds = new Set(currentList.map((b) => b.siteId || b.href))
+    let newCount = 0
+    let existingCount = 0
+    for (const item of incomingList) {
+      if (currentIds.has(item.siteId) || currentIds.has(item.href)) {
+        existingCount++
+      } else {
+        newCount++
+      }
+    }
+    return { newCount, existingCount }
+  }, [incomingPayload])
+
+  // 发送真实快传数据给特定对端
   const handleSendToPeer = (peer: PeerDevice, payloadType: 'bookmarks' | 'theme' | 'all') => {
     if (!channelRef.current) return
+    const bookmarks = readLocalBookmarkList()
+    const currentTheme = typeof window !== 'undefined' ? (localStorage.getItem('theme') || 'system') : 'system'
+    const diyConfigRaw = typeof window !== 'undefined' ? localStorage.getItem(DIY_LAYOUT_STORAGE_KEY) : null
+
     const payload: AirDropPayload = {
       senderId: deviceId,
       senderName: deviceName,
       type: payloadType,
       timestamp: Date.now(),
       data: {
-        siteCount: 16,
-        themeName: 'Geek Cyberpunk',
-        notes: '由 NavHub 隔空投送自动打包',
+        siteCount: bookmarks.length,
+        bookmarks: payloadType === 'theme' ? [] : bookmarks,
+        themeName: currentTheme,
+        diyConfigRaw: payloadType === 'bookmarks' ? null : diyConfigRaw,
+        notes: '由 NavHub 隔空投送自动打包并完成安全脱敏',
       },
     }
 
@@ -210,14 +296,59 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
       payload,
     })
 
-    toast.success(`已向「${peer.name}」发送 ${payloadType === 'bookmarks' ? '收藏夹' : '个性化配置'} 快传包`)
+    toast.success(
+      `已向「${peer.name}」投送 ${
+        payloadType === 'bookmarks' ? `${bookmarks.length} 项本地收藏` : '个性化主题与工作台排版'
+      }`
+    )
   }
 
-  // 接收端接受快传数据
+  // 接收端安全合并快传数据
   const handleAcceptIncoming = () => {
-    if (!incomingPayload) return
-    toast.success(`已成功合并来自「${incomingPayload.senderName}」的跨端配置`)
-    setIncomingPayload(null)
+    if (!incomingPayload || typeof window === 'undefined') return
+    try {
+      let mergedBookmarkCount = 0
+      const incomingBookmarks = sanitizeTransferBookmarks(incomingPayload.data.bookmarks)
+      if (incomingBookmarks.length > 0) {
+        const raw = localStorage.getItem(FAVORITES_STORAGE_KEY)
+        const parsed = parseFavorites<TransferFavoriteItem>(raw)
+        if (!parsed.corrupt) {
+          const existing = sanitizeTransferBookmarks(parsed.items)
+          const seenKeys = new Set(existing.map((b) => b.siteId || b.href))
+          const next = [...existing]
+          for (const item of incomingBookmarks) {
+            const key = item.siteId || item.href
+            if (!seenKeys.has(key)) {
+              seenKeys.add(key)
+              next.unshift(item)
+              mergedBookmarkCount++
+            }
+          }
+          localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next))
+          setLocalBookmarkCount(next.length)
+          window.dispatchEvent(new Event('storage'))
+        }
+      }
+
+      if (incomingPayload.data.diyConfigRaw) {
+        try {
+          const parsedDiy = JSON.parse(incomingPayload.data.diyConfigRaw)
+          if (parsedDiy && typeof parsedDiy === 'object' && !Array.isArray(parsedDiy)) {
+            localStorage.setItem(DIY_LAYOUT_STORAGE_KEY, JSON.stringify(parsedDiy))
+          }
+        } catch {
+          // 忽略畸形 DIY 配置
+        }
+      }
+
+      toast.success(
+        `已成功合并来自「${incomingPayload.senderName}」的跨端配置（新增 ${mergedBookmarkCount} 项收藏）`
+      )
+    } catch {
+      toast.error('合并跨端快传数据失败')
+    } finally {
+      setIncomingPayload(null)
+    }
   }
 
   if (!open) return null
@@ -248,7 +379,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                 </Badge>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                零云端中转 · 局域网点对点毫秒级直连 · 跨端无损协同
+                零云端中转 · 局域网点对点毫秒级直连 · 跨端差量无损协同
               </p>
             </div>
           </div>
@@ -277,7 +408,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                   当前设备: {deviceName}
                 </div>
                 <div className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 truncate">
-                  ID: {deviceId} · 局域网广播就绪
+                  ID: {deviceId} · 本机收藏 {localBookmarkCount} 项 · 局域网广播就绪
                 </div>
               </div>
             </div>
@@ -308,7 +439,8 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                 </span>
               </div>
               <p className="text-xs text-zinc-600 dark:text-zinc-300">
-                包含 {incomingPayload.data.siteCount || 10} 个精选导航站点配置与个性化主题参数。
+                包含 {incomingPayload.data.siteCount} 个收藏站点（预计新增 {incomingDiffStats.newCount} 项，跳过已存在 {incomingDiffStats.existingCount} 项）
+                {incomingPayload.data.themeName ? ` · 主题: ${incomingPayload.data.themeName}` : ''}。
               </p>
               <div className="flex items-center justify-end gap-2 pt-1">
                 <Button
@@ -390,7 +522,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                         className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg gap-1 flex-1 sm:flex-initial text-center justify-center"
                       >
                         <Share2 className="w-3.5 h-3.5 shrink-0" />
-                        <span>隔空快传</span>
+                        <span>隔空快传 ({localBookmarkCount})</span>
                       </Button>
                     </div>
                   </div>
@@ -404,9 +536,9 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 px-4 sm:px-6 py-2.5 sm:py-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 text-xs text-zinc-400">
           <span className="flex items-center gap-1.5 truncate">
             <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span className="truncate">端到端内存隔离 · 零服务端中转数据落盘</span>
+            <span className="truncate">端到端内存隔离 · 差量安全校验 · 零服务端中转落盘</span>
           </span>
-          <span className="font-mono text-[11px] hidden sm:inline shrink-0">P2P v2.0 Local-First</span>
+          <span className="font-mono text-[11px] hidden sm:inline shrink-0">P2P v2.1 Local-First</span>
         </div>
       </div>
     </div>

@@ -23,6 +23,28 @@ interface WebsiteMetadata {
     videoConfig?: VideoConfig
 }
 
+function isDomainOrSubdomain(hostname: string, rootDomain: string): boolean {
+    const h = hostname.toLowerCase()
+    const r = rootDomain.toLowerCase()
+    return h === r || h.endsWith(`.${r}`)
+}
+
+function sanitizeRepoPathSegment(input: string, fallback: string): string {
+    const cleaned = input
+        .trim()
+        .replace(/\\/g, '/')
+        .split('/')
+        .map((seg) => seg.replace(/[^a-zA-Z0-9_-]/g, ''))
+        .filter((seg) => seg.length > 0 && seg !== '.' && seg !== '..')
+        .join('/')
+    return cleaned || fallback
+}
+
+function sanitizeTokenSegment(input: string, fallback: string): string {
+    const cleaned = input.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32)
+    return cleaned || fallback
+}
+
 export async function POST(request: Request) {
     try {
         const authCheck = await verifyAdminSession()
@@ -108,7 +130,7 @@ function isValidUrl(string: string): boolean {
 function extractBilibiliVideoId(url: string): { bvid?: string; aid?: string } | null {
     try {
         const urlObj = new URL(url)
-        if (!urlObj.hostname.includes('bilibili.com')) {
+        if (!isDomainOrSubdomain(urlObj.hostname, 'bilibili.com')) {
             return null
         }
 
@@ -135,9 +157,9 @@ async function fetchBilibiliVideoInfo(videoId: { bvid?: string; aid?: string }):
     try {
         let apiUrl: string
         if (videoId.bvid) {
-            apiUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${videoId.bvid}`
+            apiUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(videoId.bvid)}`
         } else if (videoId.aid) {
-            apiUrl = `https://api.bilibili.com/x/web-interface/view?aid=${videoId.aid}`
+            apiUrl = `https://api.bilibili.com/x/web-interface/view?aid=${encodeURIComponent(videoId.aid)}`
         } else {
             return null
         }
@@ -363,7 +385,7 @@ function extractFavicon(html: string, baseUrl: string): string | null {
 }
 
 async function downloadGoogleFavicon(domain: string, token: string): Promise<string> {
-    const googleFaviconUrl = `https://www.google.com/s2/favicons?sz=128&domain=${domain}`
+    const googleFaviconUrl = `https://www.google.com/s2/favicons?sz=128&domain=${encodeURIComponent(domain)}`
 
     try {
         const response = await fetch(googleFaviconUrl, {
@@ -393,8 +415,16 @@ async function downloadAndUploadIcon(
     prefix: string = 'favicon',
     folder: string = 'assets'
 ): Promise<string> {
-    // 判断是否是 Bilibili CDN 图片
-    const isBilibiliCdn = iconUrl.includes('hdslb.com') || iconUrl.includes('bilibili.com')
+    // 严格校验是否为 Bilibili CDN 域名（避免 URL 子串欺骗）
+    let isBilibiliCdn = false
+    try {
+        const parsedIcon = new URL(iconUrl)
+        isBilibiliCdn =
+            isDomainOrSubdomain(parsedIcon.hostname, 'hdslb.com') ||
+            isDomainOrSubdomain(parsedIcon.hostname, 'bilibili.com')
+    } catch {
+        isBilibiliCdn = false
+    }
 
     // 多种策略尝试下载图片
     const strategies: Array<{ headers: HeadersInit; delay?: number }> = []
@@ -413,7 +443,6 @@ async function downloadAndUploadIcon(
     }
 
     // 通用策略: 完整浏览器模拟
-    // 注意：Referer 从 iconUrl 派生时做 try/catch，避免非法 URL 在策略构造期即抛错
     let safeRefererFallback = ''
     try {
         const u = new URL(iconUrl)
@@ -438,9 +467,6 @@ async function downloadAndUploadIcon(
 
     let lastError: Error | null = null
 
-    // 安全：iconUrl 来自目标页面 HTML（攻击者可控），必须逐跳 SSRF 校验。
-    // 原先 fetch(..., { redirect: 'follow' }) 会自动跟随 302 到内网（169.254.169.254 等），
-    // 现改用 guardedFetch：每跳 DNS 解析 + 私网 IP 拦截 + 跳数/体积上限。
     if (!isProbablySafeUrl(iconUrl)) {
         throw new SsrfBlockedError(`图标 URL 协议不允许: ${iconUrl.slice(0, 128)}`)
     }
@@ -454,7 +480,6 @@ async function downloadAndUploadIcon(
             )
 
             if (response.ok) {
-                // 上限与 maxBytes 对齐：图标不该有 5MB，超出直接截断
                 const { bytes: binaryData } = await readBodyLimited(response, 5 * 1024 * 1024)
 
                 // 上传到 GitHub
@@ -471,14 +496,12 @@ async function downloadAndUploadIcon(
                 console.warn(`Strategy failed with status ${response.status}, trying next strategy...`)
             }
         } catch (error) {
-            // SSRF 拦截直接透出，不再换策略重试（重试只会重复请求内网）
             if (error instanceof SsrfBlockedError) throw error
             lastError = error instanceof Error ? error : new Error('Unknown error')
             console.warn(`Strategy failed with error:`, error)
         }
     }
 
-    // 如果所有策略都失败了，抛出最后一个错误
     throw lastError || new Error('All download strategies failed')
 }
 
@@ -490,7 +513,7 @@ function getFileExtension(url: string): string {
         if (extension && ['png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'webp'].includes(extension)) {
             return extension
         }
-        return 'png' // 默认扩展名
+        return 'png'
     } catch {
         return 'png'
     }
@@ -507,12 +530,12 @@ async function uploadImageToGitHub(
     const repo = process.env.GITHUB_REPO!
     const branch = process.env.GITHUB_BRANCH || 'main'
 
-    // 移除 folder 开头和结尾的斜杠，避免路径错误
-    const cleanFolder = folder.replace(/^\/+|\/+$/g, '')
-    const path = `/${cleanFolder}/${prefix}_${Date.now()}.${extension}`
+    const cleanFolder = sanitizeRepoPathSegment(folder, 'assets')
+    const cleanPrefix = sanitizeTokenSegment(prefix, 'favicon')
+    const cleanExt = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'webp'].includes(extension) ? extension : 'png'
+    const path = `/${cleanFolder}/${cleanPrefix}_${Date.now()}.${cleanExt}`
     const githubPath = 'public' + path
 
-    // Convert Uint8Array to Base64
     const base64String = uint8ArrayToBase64(binaryData)
     const currentFileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${githubPath}?ref=${branch}`
 
@@ -523,7 +546,7 @@ async function uploadImageToGitHub(
             'Accept': 'application/vnd.github.v3+json',
         },
         body: JSON.stringify({
-            message: `Upload ${prefix} ${githubPath}`,
+            message: `Upload ${cleanPrefix} ${githubPath}`,
             content: base64String,
             branch: branch,
         }),

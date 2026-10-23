@@ -12,26 +12,6 @@ import {
  *
  * **绑定策略：只认 provider 身份（`id` = `provider:providerId`）与 username 精确匹配，
  * 不再按 email 兜底绑定。**
- *
- * 为什么删掉 email 兜底：OAuth provider 返回的 email 是「用户声称的」而非
- * 「已证明的」——GitHub 允许账号隐藏真实邮箱、也允许填入未验证地址；同一邮箱
- * 还可能同时属于内置 admin 或另一个真实用户。旧实现「按 username 查不到就按
- * email 查，命中即 UPDATE 该行」，等于把「邮箱字符串相同」当成「同一个人」，
- * 任何人注册一个邮箱相同的 OAuth 账号即可接管既有账号的全部数据（收藏、画像、
- * vault），这是一条完整的账号接管路径，且没有任何提示。
- *
- * id 优先于 username：`provider:providerId` 是 provider 签发的主体标识（OAuth sub），
- * 改名后仍然稳定；而 username 会变。若只按 username 匹配，GitHub 改名后的用户
- * 会带着同一个 id 走 INSERT → 主键冲突 → 登录 500，所以两条都要认（都不涉及 email）。
- *
- * 代价（已知、可接受）：username 与 providerId 双双变化（换账号）会得到新行；历史
- * 上靠 email 绑定起来的那批用户若 username 也不再匹配，可用 `POST /api/me/merge`
- * 把旧 id 的数据归并过来；身份别名表保证旧 anonId 仍可解析。
- *
- * 另外：users.email 现在有部分唯一索引（见 migrate.ts 的 dedupeUserEmails +
- * users_email_unique_idx）。跨 provider 同邮箱（如 Google 与 GitHub 用同一地址）
- * 会撞唯一约束，此时降级为「不写入 email」而不是让登录 500——email 在本系统
- * 只作展示，丢一个字段远比登录失败轻。
  */
 export async function upsertOauthUser(repo: Repository, input: { id?: string; username: string; email?: string | null; avatar?: string | null; source?: string }): Promise<UserRecord> {
   const row = (input.id ? (await repo.raw("SELECT * FROM users WHERE id = ? LIMIT 1", [input.id]))[0] : undefined)
@@ -75,4 +55,48 @@ export async function upsertOauthUser(repo: Repository, input: { id?: string; us
 export async function getUser(repo: Repository, idOrUsername: string): Promise<UserRecord | null> {
   const row = (await repo.raw("SELECT * FROM users WHERE id = ? OR username = ? LIMIT 1", [idOrUsername, idOrUsername]))[0];
   return row ? rowToUser(row) : null;
+}
+
+/**
+ * 更新用户中心个人展示资料（昵称 username / 头像 avatar）。
+ * 若该登录身份尚未在 users 表落行，则按 canonical id 自动初始化一行。
+ */
+export async function updateUserProfileInfo(
+  repo: Repository,
+  identity: string,
+  patch: { username?: string; avatar?: string | null },
+): Promise<{ ok: true; user: UserRecord } | { ok: false; reason: "username_taken" | "invalid_input" }> {
+  const cleanUsername = patch.username !== undefined ? patch.username.trim() : undefined;
+  if (cleanUsername !== undefined && (cleanUsername.length < 1 || cleanUsername.length > 40)) {
+    return { ok: false, reason: "invalid_input" };
+  }
+  if (cleanUsername) {
+    const conflict = (
+      await repo.raw("SELECT id FROM users WHERE username = ? AND id <> ? LIMIT 1", [cleanUsername, identity])
+    )[0];
+    if (conflict) {
+      return { ok: false, reason: "username_taken" };
+    }
+  }
+
+  const existing = (await repo.raw("SELECT * FROM users WHERE id = ? LIMIT 1", [identity]))[0];
+  if (!existing) {
+    const source = identity.includes(":") ? identity.split(":")[0]! : "local";
+    const defaultName = cleanUsername || (identity.includes(":") ? identity.split(":").slice(1).join(":") : identity);
+    await repo.run(
+      "INSERT INTO users (id, username, password_hash, role, email, avatar, source, created_at) VALUES (?,?,?,?,?,?,?,?)",
+      [identity, defaultName, "", "user", null, patch.avatar ?? null, source, Date.now()],
+    );
+  } else {
+    const nextUsername = cleanUsername ?? String(existing.username);
+    const nextAvatar = patch.avatar === undefined ? (existing.avatar == null ? null : String(existing.avatar)) : patch.avatar;
+    await repo.run(
+      "UPDATE users SET username = ?, avatar = ? WHERE id = ?",
+      [nextUsername, nextAvatar, identity],
+    );
+  }
+
+  const updated = (await repo.raw("SELECT * FROM users WHERE id = ? LIMIT 1", [identity]))[0];
+  if (!updated) return { ok: false, reason: "invalid_input" };
+  return { ok: true, user: rowToUser(updated) };
 }

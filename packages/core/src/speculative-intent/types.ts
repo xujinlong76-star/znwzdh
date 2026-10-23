@@ -19,6 +19,9 @@ export type SpeculativeIntentType =
   | 'url_encode'
   | 'hash_detect'
   | 'ip_detect'
+  | 'cidr'
+  | 'uuid'
+  | 'byte_size'
   | 'regex'
   | 'semver'
   | 'http_status';

@@ -1,5 +1,5 @@
 /**
- * 计算/取值族检测器：算术表达式求值、颜色（HEX/RGB）速览。
+ * 计算/取值族检测器：算术表达式求值、颜色（HEX/RGB）速览、UUID/ULID 识别、存储字节换算。
  */
 import type { SpeculativeIntentResult } from './types.ts'
 import { evaluateArithmeticExpression, formatArithmeticResult } from './arithmetic.ts'
@@ -92,4 +92,133 @@ export function tryParseColor(input: string): SpeculativeIntentResult | null {
   }
 
   return null;
+}
+
+/**
+ * UUID (v1/v3/v4/v5/v7) 与 ULID 结构识别及内嵌时间戳提取
+ */
+export function tryParseUuidOrUlid(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+
+  // 1. 标准 UUID 匹配: 8-4-4-4-12
+  const uuidMatch = trimmed.match(/^([0-9a-f]{8})-([0-9a-f]{4})-([1-8][0-9a-f]{3})-([89ab][0-9a-f]{3})-([0-9a-f]{12})$/i);
+  if (uuidMatch) {
+    const normalized = trimmed.toLowerCase();
+    const versionHex = uuidMatch[3]![0]!;
+    const version = Number.parseInt(versionHex, 16);
+    const details: Record<string, string> = {
+      '标准格式': normalized,
+      '无连字符': normalized.replace(/-/g, ''),
+      'UUID 版本': `v${version}`,
+      '变体 (Variant)': 'RFC 4122 / RFC 9562 (DCE 1.1)',
+    };
+
+    let subtitle = `UUID v${version} · 标准 128-bit 唯一标识符`;
+    let preview = `UUID: ${normalized}\n版本: UUID v${version}`;
+
+    // UUIDv7 前 48 bits 为 Unix 毫秒级时间戳
+    if (version === 7) {
+      const hexTs = uuidMatch[1]! + uuidMatch[2]!;
+      const tsMs = Number.parseInt(hexTs, 16);
+      if (Number.isFinite(tsMs) && tsMs > 0) {
+        const iso = new Date(tsMs).toISOString();
+        details['内嵌时间戳'] = `${iso} (${tsMs} ms)`;
+        subtitle = `UUID v7 (时序索引) · 签发于 ${iso}`;
+        preview += `\n内嵌时间: ${iso}`;
+      }
+    }
+
+    return {
+      type: 'uuid',
+      title: `UUID v${version} 唯一标识解析`,
+      subtitle,
+      previewValue: preview,
+      actionLabel: '复制规范 UUID',
+      copyValue: normalized,
+      details,
+    };
+  }
+
+  // 2. Crockford Base32 ULID 匹配 (26 位，首字符 0-7)
+  const ulidMatch = trimmed.match(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/i);
+  if (ulidMatch) {
+    const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    const upper = trimmed.toUpperCase();
+    let timeMs = 0;
+    for (let i = 0; i < 10; i++) {
+      const idx = alphabet.indexOf(upper[i]!);
+      if (idx < 0) return null;
+      timeMs = timeMs * 32 + idx;
+    }
+    const date = new Date(timeMs);
+    if (date.getFullYear() < 1990 || date.getFullYear() > 2100) return null;
+    const iso = date.toISOString();
+    return {
+      type: 'uuid',
+      title: 'ULID 字典序唯一标识解析',
+      subtitle: `128-bit ULID · 签发时间 ${iso}`,
+      previewValue: `ULID: ${upper}\n签发时间 (UTC): ${iso}\nUnix 毫秒: ${timeMs}`,
+      actionLabel: '复制标准 ULID',
+      copyValue: upper,
+      details: {
+        ULID: upper,
+        '内嵌时间 (UTC)': iso,
+        'Unix 毫秒': String(timeMs),
+      },
+    };
+  }
+
+  return null;
+}
+
+/**
+ * 存储容量 / 字节单位即时换算 (e.g., 1048576 bytes, 16 GB, 512 MiB)
+ */
+export function tryParseByteSize(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+  const m = trimmed.match(/^(\d+(?:\.\d+)?)\s*(b|byte|bytes|kb|kib|mb|mib|gb|gib|tb|tib)$/i);
+  if (!m) return null;
+
+  const val = Number.parseFloat(m[1]!);
+  if (!Number.isFinite(val) || val < 0) return null;
+  const unit = m[2]!.toLowerCase();
+
+  const unitMultipliers: Record<string, number> = {
+    b: 1,
+    byte: 1,
+    bytes: 1,
+    kb: 1000,
+    kib: 1024,
+    mb: 1000 ** 2,
+    mib: 1024 ** 2,
+    gb: 1000 ** 3,
+    gib: 1024 ** 3,
+    tb: 1000 ** 4,
+    tib: 1024 ** 4,
+  };
+
+  const bytes = val * (unitMultipliers[unit] ?? 1);
+  const kib = bytes / 1024;
+  const mib = bytes / (1024 ** 2);
+  const gib = bytes / (1024 ** 3);
+  const tib = bytes / (1024 ** 4);
+
+  const fmt = (n: number) => (n >= 100 ? n.toFixed(2) : n >= 1 ? n.toFixed(4).replace(/\.?0+$/, '') : n.toPrecision(3));
+  const preview = `${Math.round(bytes).toLocaleString()} Bytes\n= ${fmt(kib)} KiB | ${fmt(mib)} MiB | ${fmt(gib)} GiB`;
+
+  return {
+    type: 'byte_size',
+    title: '存储容量与字节单位换算',
+    subtitle: `${trimmed} = ${Math.round(bytes).toLocaleString()} Bytes`,
+    previewValue: preview,
+    actionLabel: '复制字节数 (Bytes)',
+    copyValue: String(Math.round(bytes)),
+    details: {
+      Bytes: `${Math.round(bytes).toLocaleString()} B`,
+      'KiB (1024)': `${fmt(kib)} KiB`,
+      'MiB (1024²)': `${fmt(mib)} MiB`,
+      'GiB (1024³)': `${fmt(gib)} GiB`,
+      'TiB (1024⁴)': `${fmt(tib)} TiB`,
+    },
+  };
 }

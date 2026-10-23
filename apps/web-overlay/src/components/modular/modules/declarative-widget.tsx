@@ -66,6 +66,20 @@ interface DeclarativeWidgetProps {
   config?: DeclarativeWidgetConfig
 }
 
+/** 校验微组件取数端点或外链是否安全（仅允许站内单斜杠相对路径或 http/https 协议，阻断 javascript:/data: 伪协议） */
+function isSafeWidgetUrl(raw?: string): boolean {
+  if (!raw || typeof raw !== 'string') return false
+  const trimmed = raw.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return true
+  try {
+    const parsed = new URL(trimmed)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
   const title = config?.title || '声明式微组件'
   const layout = config?.layout || 'kpi-grid'
@@ -86,9 +100,15 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
       return
     }
 
+    if (!isSafeWidgetUrl(endpoint)) {
+      setErrorMsg('不安全的数据源地址已被拦截')
+      return
+    }
+
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
+    const timeoutId = setTimeout(() => ctrl.abort(), 10_000)
     setLoading(true)
     setErrorMsg(null)
 
@@ -103,6 +123,7 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
         setErrorMsg('数据拉取失败')
       }
     } finally {
+      clearTimeout(timeoutId)
       setLoading(false)
     }
   }, [endpoint, items])
@@ -234,31 +255,34 @@ export function DeclarativeWidget({ config }: DeclarativeWidgetProps) {
           </div>
         ) : layout === 'feed-list' ? (
           <div className="space-y-2">
-            {(Array.isArray(data) ? data : []).map((item: DeclarativeWidgetFeedItem, idx: number) => (
-              <a
-                key={idx}
-                href={item.url || '#'}
-                target={item.url ? '_blank' : undefined}
-                rel="noopener noreferrer"
-                className="block p-2 rounded-lg bg-muted/30 hover:bg-accent border border-border/40 hover:border-primary/30 transition-all text-xs group/item"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-foreground group-hover/item:text-primary transition-colors line-clamp-1">
-                    {item.title}
-                  </span>
-                  {item.tag && (
-                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
-                      {item.tag}
-                    </Badge>
+            {(Array.isArray(data) ? data : []).map((item: DeclarativeWidgetFeedItem, idx: number) => {
+              const safeHref = isSafeWidgetUrl(item.url) ? item.url! : '#'
+              return (
+                <a
+                  key={idx}
+                  href={safeHref}
+                  target={safeHref !== '#' ? '_blank' : undefined}
+                  rel="noopener noreferrer"
+                  className="block p-2 rounded-lg bg-muted/30 hover:bg-accent border border-border/40 hover:border-primary/30 transition-all text-xs group/item"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-foreground group-hover/item:text-primary transition-colors line-clamp-1">
+                      {item.title}
+                    </span>
+                    {item.tag && (
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                        {item.tag}
+                      </Badge>
+                    )}
+                  </div>
+                  {item.date && (
+                    <span className="text-[10px] text-muted-foreground mt-0.5 block">
+                      {item.date}
+                    </span>
                   )}
-                </div>
-                {item.date && (
-                  <span className="text-[10px] text-muted-foreground mt-0.5 block">
-                    {item.date}
-                  </span>
-                )}
-              </a>
-            ))}
+                </a>
+              )
+            })}
           </div>
         ) : (
           <div className="h-full flex flex-col items-center justify-center space-y-2">

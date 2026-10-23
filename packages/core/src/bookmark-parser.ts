@@ -105,6 +105,19 @@ export function normalizeBookmarkUrl(rawUrl: string): string {
   }
 }
 
+function sanitizeBookmarkIcon(rawIcon: string | undefined): string | undefined {
+  if (!rawIcon || typeof rawIcon !== 'string') return undefined
+  const trimmed = rawIcon.trim()
+  if (!trimmed) return undefined
+  if (/^data:image\/(png|jpeg|jpg|gif|webp|svg\+xml|x-icon|vnd\.microsoft\.icon);base64,/i.test(trimmed)) {
+    return trimmed.length <= 65536 ? trimmed : undefined
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed.slice(0, 2048)
+  }
+  return undefined
+}
+
 // =========================================================================
 // 2. Netscape Bookmark HTML 解析算法 (Chrome / Edge / Safari / Firefox)
 // =========================================================================
@@ -214,7 +227,7 @@ export function parseNetscapeBookmarksHtml(htmlString: string): ParsedBookmarkFo
         const item: ParsedBookmarkItem = {
           title: title || cleanHref,
           href: cleanHref,
-          icon: iconMatch ? iconMatch[1] : undefined,
+          icon: sanitizeBookmarkIcon(iconMatch ? iconMatch[1] : undefined),
           addDate: parseBookmarkDate(addDateMatch?.[1]),
           categoryTitle: currentFolder.title,
         }
@@ -288,6 +301,7 @@ export function parseOneTabExportText(rawText: string, defaultCategory = 'OneTab
 
     if (url.startsWith('http://') || url.startsWith('https://')) {
       const cleanUrl = normalizeBookmarkUrl(url)
+      if (!cleanUrl) continue
       items.push({
         title: title || cleanUrl,
         href: cleanUrl,
@@ -346,6 +360,7 @@ export function parseMarkdownBookmarks(markdownText: string): ParsedBookmarkFold
 
       if (url) {
         const cleanUrl = normalizeBookmarkUrl(url)
+        if (!cleanUrl) continue
         currentFolder.items.push({
           title: title || cleanUrl,
           href: cleanUrl,
@@ -385,14 +400,21 @@ export function parseUniversalBookmarks(content: string): {
       const parsed = JSON.parse(trimmed)
       // 如果是 NavHub 标准 DIY Config
       if (parsed.customCategories && Array.isArray(parsed.customCategories)) {
-        const folders = parsed.customCategories.map((c: any) => ({
-          title: String(c.title || '自定义分类'),
-          items: (c.items || []).map((i: any) => ({
-            title: String(i.title || i.href),
-            href: normalizeBookmarkUrl(String(i.href || '')),
-            description: i.description ? String(i.description) : undefined,
-          })),
-        }))
+        const folders = parsed.customCategories
+          .map((c: any) => ({
+            title: String(c.title || '自定义分类'),
+            items: (c.items || [])
+              .map((i: any) => {
+                const href = normalizeBookmarkUrl(String(i.href || ''))
+                return {
+                  title: String(i.title || href),
+                  href,
+                  description: i.description ? String(i.description) : undefined,
+                }
+              })
+              .filter((it: { href: string }) => Boolean(it.href)),
+          }))
+          .filter((f: { items: unknown[] }) => f.items.length > 0)
         const total = folders.reduce((acc: number, f: any) => acc + f.items.length, 0)
         return { format: 'json', folders, totalItems: total }
       }

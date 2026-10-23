@@ -852,6 +852,13 @@ export class Repository {
     return usersRepo.getUser(this, idOrUsername);
   }
 
+  async updateUserProfileInfo(
+    identity: string,
+    patch: { username?: string; avatar?: string | null },
+  ): Promise<{ ok: true; user: UserRecord } | { ok: false; reason: "username_taken" | "invalid_input" }> {
+    return usersRepo.updateUserProfileInfo(this, identity, patch);
+  }
+
   /* ------------------------- 身份合并 / 用户中心 ------------------------- */
 
   /** 解析旧 anonId 到合并后的 canonical userId */
@@ -877,7 +884,7 @@ export class Repository {
 
   async updateUserSettings(
     identity: string,
-    patch: { personalizationEnabled?: boolean; favoriteSignalCutoff?: number },
+    patch: settingsRepo.UserSettingsPatch,
   ): Promise<settingsRepo.UserSettingsRecord> {
     return settingsRepo.updateUserSettings(this, identity, patch);
   }

@@ -167,8 +167,8 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       const sites = await ctx.repo.listSites({ limit: 1000, status: "active" });
       const categories = await ctx.repo.listCategories();
 
-      const nodes: SiteKnowledgeNode[] = [];
-      const edges: SiteKnowledgeEdge[] = [];
+      const nodes: Array<SiteKnowledgeNode & { label: string; category?: string; size?: number }> = [];
+      const edges: Array<SiteKnowledgeEdge & { type?: string }> = [];
       const nodeIds = new Set<string>();
 
       // 1. 分类节点（核心天体）
@@ -182,8 +182,10 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
           nodes.push({
             id: catNodeId,
             name: catTitle,
+            label: catTitle,
             type: "category",
             val: 18,
+            size: 18,
             color: "#6366f1", // Indigo
           });
         }
@@ -196,13 +198,17 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
         if (!nodeIds.has(siteNodeId)) {
           nodeIds.add(siteNodeId);
           const clickCount = Number((site as any).clickCount) || 0;
+          const val = Math.max(8, Math.min(16, clickCount + 8));
           nodes.push({
             id: siteNodeId,
             name: site.title,
+            label: site.title,
             type: "site",
             url: site.url,
             categoryId: site.categoryId,
-            val: Math.max(8, Math.min(16, clickCount + 8)),
+            category: site.categoryId ? `cat_${site.categoryId}` : undefined,
+            val,
+            size: val,
             color: "#06b6d4", // Cyan
           });
         }
@@ -213,6 +219,7 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
             source: siteNodeId,
             target: `cat_${site.categoryId}`,
             relation: "belongs_to",
+            type: "belongs_to",
             weight: 2,
           });
         }
@@ -227,6 +234,7 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
               source: siteNodeId,
               target: tagNodeId,
               relation: "has_tag",
+              type: "tagged_with",
               weight: 1,
             });
           }
@@ -241,8 +249,10 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
           nodes.push({
             id: tagNodeId,
             name: tag,
+            label: tag,
             type: "tag",
             val: 6,
+            size: 6,
             color: "#ec4899", // Pink
           });
         }
@@ -260,11 +270,16 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
         },
       };
 
-      return mesh;
+      return {
+        ok: true,
+        mesh,
+        ...mesh,
+      };
     } catch (err: any) {
       app.log.error(err, "Failed to build knowledge mesh");
       reply.code(500);
       return {
+        ok: false,
         error: "INTERNAL_ERROR",
         message: "Failed to build knowledge star mesh",
       };
@@ -279,32 +294,44 @@ export const graphRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     { config: { scope: "public", rateLimit: { max: process.env.NODE_ENV === "test" ? 10_000 : 60, timeWindow: "1 minute" }, cache: { maxAge: 30, etag: true } } },
     async (req, reply) => {
     try {
-      // 与 /api/graph/mesh 同一张公开星图的「冗余分析」页签，取数口径必须一致：
-      // 只比 active，否则待审投稿的标题与 URL 会被公开回显。
-      // （它本质上更像管理面报表；把页签收到 `scope:"read"` 需要同时改
-      //  knowledge-star-map-modal.tsx，那是热区，此处只登记建议。）
       const sites = await ctx.repo.listSites({ limit: 1000, status: "active" });
       const categories = await ctx.repo.listCategories();
       const catMap = new Map<string, string>(
         categories.map((c) => [c.id, (c as any).title || (c as any).name || c.id])
       );
 
-      // 比对逻辑抽到 analyzeDuplicates（导出的纯函数）：便于用参考实现做等值
-      // 回归测试，也让"每对重新解析 URL / 重建词集"这一层成本被彻底消掉。
-      const { pairs: duplicatePairs, truncated } = analyzeDuplicates(sites, catMap);
+      const { pairs: rawPairs, truncated } = analyzeDuplicates(sites, catMap);
+      const duplicatePairs = rawPairs.map((p) => ({
+        ...p,
+        siteA: { id: p.idA, title: p.titleA, url: p.urlA, categoryId: p.categoryA },
+        siteB: { id: p.idB, title: p.titleB, url: p.urlB, categoryId: p.categoryB },
+        suggestedAction:
+          p.recommendation === "merge"
+            ? ("merge_tags" as const)
+            : p.recommendation === "archive_b"
+              ? ("remove_redundant" as const)
+              : ("keep_both" as const),
+      }));
+      const highConfidenceCount = duplicatePairs.filter((p) => p.similarity >= 0.85).length;
 
-      const report: SiteDuplicateReport = {
+      const report = {
         scannedCount: sites.length,
         duplicatePairs,
         potentialSavings: duplicatePairs.length,
+        highConfidenceCount,
         truncated,
       };
 
-      return report;
+      return {
+        ok: true,
+        report,
+        ...report,
+      };
     } catch (err: any) {
       app.log.error(err, "Failed to scan site duplicates");
       reply.code(500);
       return {
+        ok: false,
         error: "INTERNAL_ERROR",
         message: "Failed to scan site duplicates",
       };

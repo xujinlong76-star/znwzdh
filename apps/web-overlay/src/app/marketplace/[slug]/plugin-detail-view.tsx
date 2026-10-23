@@ -56,7 +56,7 @@ import {
   resetTheme,
   getActiveTheme,
 } from '@/lib/plugins/theme-runtime'
-import { copyText } from '@/lib/clipboard'
+import { copyFailureToast, copyText, type CopyResult } from '@/lib/clipboard'
 import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
@@ -98,6 +98,31 @@ type DetailTab = 'preview' | 'diff' | 'impact' | 'raw' | 'history' | 'reviews'
 
 const DETAIL_TABS: DetailTab[] = ['preview', 'diff', 'impact', 'raw', 'history', 'reviews']
 
+type CopyFeedback = { state: 'idle' | 'copied' | 'failed'; reason: string | null }
+
+const IDLE_COPY_FEEDBACK: CopyFeedback = { state: 'idle', reason: null }
+
+/**
+ * 复制按钮的内联确认。确认不能只靠全局 toast：
+ * sonner 1.7.1 的 Toaster 在 useEffect 里才建立订阅、state 初始为 []，
+ * 且 store 对迟到订阅者没有回放——订阅建立前发出的 toast 会被静默丢弃。
+ * 首屏首次点击实测 3 次里 2 次「剪贴板写成功但界面毫无提示」，
+ * 所以成功/失败都要落在按钮自己身上。
+ */
+function useCopyFeedback() {
+  const [copyFeedback, setCopyFeedback] = useState<CopyFeedback>(IDLE_COPY_FEEDBACK)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current)
+  }, [])
+  const reportCopy = useCallback((result: CopyResult) => {
+    setCopyFeedback(result.ok ? { state: 'copied', reason: null } : { state: 'failed', reason: result.reason })
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = setTimeout(() => setCopyFeedback(IDLE_COPY_FEEDBACK), 2_500)
+  }, [])
+  return { copyFeedback, reportCopy }
+}
+
 export default function PluginDetailView({
   slug,
   initialPlugin = null,
@@ -129,6 +154,8 @@ export default function PluginDetailView({
   const [reportModalOpen, setReportModalOpen] = useState(false)
   const [badgeModalOpen, setBadgeModalOpen] = useState(false)
   const [badgeMetric, setBadgeMetric] = useState<'version' | 'installs' | 'stars' | 'rating'>('version')
+  const mdCopy = useCopyFeedback()
+  const svgCopy = useCopyFeedback()
   const [auditModalOpen, setAuditModalOpen] = useState(false)
   const [auditReport, setAuditReport] = useState<HubPluginAuditReport | null>(null)
 
@@ -1522,20 +1549,36 @@ export default function PluginDetailView({
                     <span className="font-medium text-foreground">Markdown 代码</span>
                     <button
                       type="button"
-                      onClick={() => {
+                      aria-label="复制 Markdown 徽章代码"
+                      onClick={async () => {
                         const origin = typeof window !== 'undefined' ? window.location.origin : ''
                         const md = `[![NavHub Plugin](${origin}/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](${origin}/marketplace/${plugin.slug})`
-                        void copyText(md)
-                        toast.success('已复制 Markdown 徽章代码')
+                        const result = await copyText(md)
+                        mdCopy.reportCopy(result)
+                        if (result.ok) toast.success('已复制 Markdown 徽章代码')
+                        else {
+                          const failure = copyFailureToast(result)
+                          toast.error(failure.title, { description: failure.description })
+                        }
                       }}
                       className="text-primary hover:underline flex items-center gap-1 cursor-pointer"
                     >
-                      <Copy className="w-3 h-3" /> 复制
+                      <Copy className="w-3 h-3" />
+                      {mdCopy.copyFeedback.state === 'copied'
+                        ? '已复制'
+                        : mdCopy.copyFeedback.state === 'failed'
+                          ? '复制失败'
+                          : '复制'}
                     </button>
                   </div>
                   <pre className="p-2.5 rounded-lg bg-muted text-[11px] font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all">
                     {`[![NavHub Plugin](https://.../api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](...)`}
                   </pre>
+                  {mdCopy.copyFeedback.state === 'failed' && mdCopy.copyFeedback.reason ? (
+                    <p role="status" className="text-[11px] text-destructive">
+                      {mdCopy.copyFeedback.reason}，请手动选中代码复制
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="space-y-1">
@@ -1543,19 +1586,37 @@ export default function PluginDetailView({
                     <span className="font-medium text-foreground">直接 SVG 地址</span>
                     <button
                       type="button"
-                      onClick={() => {
+                      aria-label="复制 SVG 徽章地址"
+                      onClick={async () => {
                         const origin = typeof window !== 'undefined' ? window.location.origin : ''
-                        void copyText(`${origin}/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric}`)
-                        toast.success('已复制 SVG 链接')
+                        const result = await copyText(
+                          `${origin}/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric}`,
+                        )
+                        svgCopy.reportCopy(result)
+                        if (result.ok) toast.success('已复制 SVG 链接')
+                        else {
+                          const failure = copyFailureToast(result)
+                          toast.error(failure.title, { description: failure.description })
+                        }
                       }}
                       className="text-primary hover:underline flex items-center gap-1 cursor-pointer"
                     >
-                      <Copy className="w-3 h-3" /> 复制
+                      <Copy className="w-3 h-3" />
+                      {svgCopy.copyFeedback.state === 'copied'
+                        ? '已复制'
+                        : svgCopy.copyFeedback.state === 'failed'
+                          ? '复制失败'
+                          : '复制'}
                     </button>
                   </div>
                   <pre className="p-2.5 rounded-lg bg-muted text-[11px] font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all">
                     {`/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric}`}
                   </pre>
+                  {svgCopy.copyFeedback.state === 'failed' && svgCopy.copyFeedback.reason ? (
+                    <p role="status" className="text-[11px] text-destructive">
+                      {svgCopy.copyFeedback.reason}，请手动选中地址复制
+                    </p>
+                  ) : null}
                 </div>
               </div>
 

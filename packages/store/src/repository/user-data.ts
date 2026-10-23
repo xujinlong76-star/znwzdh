@@ -271,6 +271,26 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
     await repo.run("DELETE FROM user_settings WHERE identity = ?", [identity]);
     await repo.run("DELETE FROM identity_aliases WHERE alias = ? OR canonical = ?", [identity, identity]);
     await repo.run("DELETE FROM identity_merges WHERE source = ? OR target = ?", [identity, identity]);
+
+    // 同步扣减活跃插件安装数与星标数，避免重复注册-安装/星标-注销造成计数无限膨胀与失真
+    const activeInstallRows = await repo.raw(
+      "SELECT plugin_id FROM plugin_installs WHERE identity = ? AND removed_at IS NULL",
+      [identity],
+    );
+    for (const row of activeInstallRows) {
+      await repo.run(
+        "UPDATE plugins SET install_count = CASE WHEN install_count > 0 THEN install_count - 1 ELSE 0 END WHERE id = ?",
+        [row.plugin_id],
+      );
+    }
+    const starredRows = await repo.raw("SELECT plugin_id FROM plugin_stars WHERE identity = ?", [identity]);
+    for (const row of starredRows) {
+      await repo.run(
+        "UPDATE plugins SET star_count = CASE WHEN star_count > 0 THEN star_count - 1 ELSE 0 END WHERE id = ?",
+        [row.plugin_id],
+      );
+    }
+
     await repo.run("DELETE FROM plugin_installs WHERE identity = ?", [identity]);
     await repo.run("DELETE FROM plugin_stars WHERE identity = ?", [identity]);
     // 正文属于用户内容：注销后不得继续公开可见（原先整表漏删，评价会留在插件页上）

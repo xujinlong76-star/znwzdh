@@ -14,7 +14,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 
-const dbPath = resolve(process.cwd(), process.env.NAVHUB_E2E_DB || 'data/e2e/navhub-e2e.db')
+const dbPath = resolve(process.cwd(), 'data/e2e/navhub-e2e.db')
 mkdirSync(dirname(dbPath), { recursive: true })
 
 const suffixes = ['', '-journal', '-wal', '-shm']

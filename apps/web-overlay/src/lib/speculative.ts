@@ -2,7 +2,7 @@
  * Speculative Intent Pre-execution Engine (推测意图 0-RTT 原地预执行引擎)
  *
  * 核心设计目标：
- * 当用户在搜索框输入特定技术文本时（Base64、时间戳、RGB/HEX颜色、算术表达式、JSON、URL编码、哈希等），
+ * 当用户在搜索框输入特定技术文本时（Base64、时间戳、RGB/HEX颜色、算术表达式、JSON、URL编码、哈希、CIDR、UUID/ULID、存储字节等），
  * 系统不再仅仅返回外链结果，而是在 0 毫秒内原地预执行并生成即时计算结果（Micro-Widget）。
  */
 
@@ -19,8 +19,12 @@ export type SpeculativeIntentType =
   | 'math'
   | 'json_format'
   | 'url_decode'
+  | 'url_encode'
   | 'hash_detect'
   | 'ip_detect'
+  | 'cidr'
+  | 'uuid'
+  | 'byte_size'
   | 'regex'
   | 'semver'
   | 'http_status';
@@ -195,13 +199,16 @@ function tryParseTimestamp(input: string): SpeculativeIntentResult | null {
 function tryParseColor(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
 
-  // HEX 匹配
+  // HEX 匹配：裸 3 位 hex（如 abc/add/bed）误触发太多短查询，要求 # 前缀或长度>=6
   const hexMatch = trimmed.match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
   if (hexMatch && hexMatch[1]) {
-    let hex = hexMatch[1];
+    const rawHex = hexMatch[1];
+    if (!trimmed.startsWith('#') && rawHex.length === 3) return null;
+    let hex = rawHex;
     if (hex.length === 3) {
       hex = hex.split('').map((c) => c + c).join('');
     }
+    const alpha = hex.length === 8 ? hex.slice(6, 8) : null;
     const r = Number.parseInt(hex.slice(0, 2), 16);
     const g = Number.parseInt(hex.slice(2, 4), 16);
     const b = Number.parseInt(hex.slice(4, 6), 16);
@@ -211,13 +218,14 @@ function tryParseColor(input: string): SpeculativeIntentResult | null {
     return {
       type: 'color',
       title: '颜色即刻速览',
-      subtitle: `${fullHex} · ${rgbStr}`,
+      subtitle: `${fullHex} · ${rgbStr}${alpha ? ` · alpha ${alpha}` : ''}`,
       previewValue: fullHex,
       actionLabel: '复制 HEX 色值',
       copyValue: fullHex,
       details: {
         HEX: fullHex,
         RGB: rgbStr,
+        ...(alpha ? { Alpha: alpha } : {}),
       },
     };
   }
@@ -230,7 +238,6 @@ function tryParseColor(input: string): SpeculativeIntentResult | null {
     const b = Math.min(255, Number.parseInt(rgbMatch[3], 10));
     const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
     return {
-
       type: 'color',
       title: 'RGB 颜色速览',
       subtitle: `${hex} · rgb(${r}, ${g}, ${b})`,
@@ -314,7 +321,7 @@ function tryParseUrlEncoding(input: string): SpeculativeIntentResult | null {
     if (!raw) return null;
     const encoded = encodeURIComponent(raw);
     return {
-      type: 'url_decode',
+      type: 'url_encode',
       title: 'URL 快速编码',
       subtitle: `原始字符: ${raw.slice(0, 30)}`,
       previewValue: encoded,
@@ -367,6 +374,195 @@ function tryDetectHash(input: string): SpeculativeIntentResult | null {
   };
 }
 
+function intToIpv4(num: number): string {
+  return [
+    (num >>> 24) & 255,
+    (num >>> 16) & 255,
+    (num >>> 8) & 255,
+    num & 255,
+  ].join('.');
+}
+
+/**
+ * IPv4 CIDR 子网划分与地址段即时计算
+ */
+function tryParseCidr(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+  const explicit = trimmed.replace(/^cidr:\s*/i, '');
+  const m = explicit.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/);
+  if (!m) return null;
+
+  const octets = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+  const prefix = Number(m[5]);
+  if (octets.some((o) => o < 0 || o > 255) || prefix < 0 || prefix > 32) return null;
+
+  const ipInt = (((octets[0]! << 24) | (octets[1]! << 16) | (octets[2]! << 8) | octets[3]!) >>> 0);
+  const maskInt = prefix === 0 ? 0 : ((0xffffffff << (32 - prefix)) >>> 0);
+  const wildcardInt = (~maskInt) >>> 0;
+  const netInt = (ipInt & maskInt) >>> 0;
+  const bcastInt = (netInt | wildcardInt) >>> 0;
+
+  const networkAddr = intToIpv4(netInt);
+  const broadcastAddr = intToIpv4(bcastInt);
+  const netmask = intToIpv4(maskInt);
+  const wildcard = intToIpv4(wildcardInt);
+
+  const totalAddresses = Math.pow(2, 32 - prefix);
+  let usableCount = totalAddresses;
+  let firstHost = networkAddr;
+  let lastHost = broadcastAddr;
+  if (prefix <= 30) {
+    usableCount = Math.max(0, totalAddresses - 2);
+    firstHost = intToIpv4((netInt + 1) >>> 0);
+    lastHost = intToIpv4((bcastInt - 1) >>> 0);
+  }
+
+  const normalizedCidr = `${networkAddr}/${prefix}`;
+  const preview = `网络地址: ${networkAddr}/${prefix}\n子网掩码: ${netmask} (反掩码: ${wildcard})\n广播地址: ${broadcastAddr}\n可用主机: ${firstHost} ~ ${lastHost} (${usableCount.toLocaleString()} 台)`;
+
+  return {
+    type: 'cidr',
+    title: `CIDR 子网计算: ${normalizedCidr}`,
+    subtitle: `掩码 ${netmask} · 可用主机 ${usableCount.toLocaleString()} 台`,
+    previewValue: preview,
+    actionLabel: '复制子网范围',
+    copyValue: `${firstHost}-${lastHost}`,
+    details: {
+      '标准 CIDR': normalizedCidr,
+      '子网掩码': netmask,
+      '广播地址': broadcastAddr,
+      '可用主机范围': `${firstHost} - ${lastHost}`,
+      '可用主机数': usableCount.toLocaleString(),
+    },
+  };
+}
+
+/**
+ * UUID (v1/v3/v4/v5/v7) 与 ULID 结构识别及内嵌时间戳提取
+ */
+function tryParseUuidOrUlid(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+
+  const uuidMatch = trimmed.match(/^([0-9a-f]{8})-([0-9a-f]{4})-([1-8][0-9a-f]{3})-([89ab][0-9a-f]{3})-([0-9a-f]{12})$/i);
+  if (uuidMatch) {
+    const normalized = trimmed.toLowerCase();
+    const versionHex = uuidMatch[3]![0]!;
+    const version = Number.parseInt(versionHex, 16);
+    const details: Record<string, string> = {
+      '标准格式': normalized,
+      '无连字符': normalized.replace(/-/g, ''),
+      'UUID 版本': `v${version}`,
+      '变体 (Variant)': 'RFC 4122 / RFC 9562 (DCE 1.1)',
+    };
+
+    let subtitle = `UUID v${version} · 标准 128-bit 唯一标识符`;
+    let preview = `UUID: ${normalized}\n版本: UUID v${version}`;
+
+    if (version === 7) {
+      const hexTs = uuidMatch[1]! + uuidMatch[2]!;
+      const tsMs = Number.parseInt(hexTs, 16);
+      if (Number.isFinite(tsMs) && tsMs > 0) {
+        const iso = new Date(tsMs).toISOString();
+        details['内嵌时间戳'] = `${iso} (${tsMs} ms)`;
+        subtitle = `UUID v7 (时序索引) · 签发于 ${iso}`;
+        preview += `\n内嵌时间: ${iso}`;
+      }
+    }
+
+    return {
+      type: 'uuid',
+      title: `UUID v${version} 唯一标识解析`,
+      subtitle,
+      previewValue: preview,
+      actionLabel: '复制规范 UUID',
+      copyValue: normalized,
+      details,
+    };
+  }
+
+  const ulidMatch = trimmed.match(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/i);
+  if (ulidMatch) {
+    const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+    const upper = trimmed.toUpperCase();
+    let timeMs = 0;
+    for (let i = 0; i < 10; i++) {
+      const idx = alphabet.indexOf(upper[i]!);
+      if (idx < 0) return null;
+      timeMs = timeMs * 32 + idx;
+    }
+    const date = new Date(timeMs);
+    if (date.getFullYear() < 1990 || date.getFullYear() > 2100) return null;
+    const iso = date.toISOString();
+    return {
+      type: 'uuid',
+      title: 'ULID 字典序唯一标识解析',
+      subtitle: `128-bit ULID · 签发时间 ${iso}`,
+      previewValue: `ULID: ${upper}\n签发时间 (UTC): ${iso}\nUnix 毫秒: ${timeMs}`,
+      actionLabel: '复制标准 ULID',
+      copyValue: upper,
+      details: {
+        ULID: upper,
+        '内嵌时间 (UTC)': iso,
+        'Unix 毫秒': String(timeMs),
+      },
+    };
+  }
+
+  return null;
+}
+
+/**
+ * 存储容量 / 字节单位即时换算
+ */
+function tryParseByteSize(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+  const m = trimmed.match(/^(\d+(?:\.\d+)?)\s*(b|byte|bytes|kb|kib|mb|mib|gb|gib|tb|tib)$/i);
+  if (!m) return null;
+
+  const val = Number.parseFloat(m[1]!);
+  if (!Number.isFinite(val) || val < 0) return null;
+  const unit = m[2]!.toLowerCase();
+
+  const unitMultipliers: Record<string, number> = {
+    b: 1,
+    byte: 1,
+    bytes: 1,
+    kb: 1000,
+    kib: 1024,
+    mb: 1000 ** 2,
+    mib: 1024 ** 2,
+    gb: 1000 ** 3,
+    gib: 1024 ** 3,
+    tb: 1000 ** 4,
+    tib: 1024 ** 4,
+  };
+
+  const bytes = val * (unitMultipliers[unit] ?? 1);
+  const kib = bytes / 1024;
+  const mib = bytes / (1024 ** 2);
+  const gib = bytes / (1024 ** 3);
+  const tib = bytes / (1024 ** 4);
+
+  const fmt = (n: number) => (n >= 100 ? n.toFixed(2) : n >= 1 ? n.toFixed(4).replace(/\.?0+$/, '') : n.toPrecision(3));
+  const preview = `${Math.round(bytes).toLocaleString()} Bytes\n= ${fmt(kib)} KiB | ${fmt(mib)} MiB | ${fmt(gib)} GiB`;
+
+  return {
+    type: 'byte_size',
+    title: '存储容量与字节单位换算',
+    subtitle: `${trimmed} = ${Math.round(bytes).toLocaleString()} Bytes`,
+    previewValue: preview,
+    actionLabel: '复制字节数 (Bytes)',
+    copyValue: String(Math.round(bytes)),
+    details: {
+      Bytes: `${Math.round(bytes).toLocaleString()} B`,
+      'KiB (1024)': `${fmt(kib)} KiB`,
+      'MiB (1024²)': `${fmt(mib)} MiB`,
+      'GiB (1024³)': `${fmt(gib)} GiB`,
+      'TiB (1024⁴)': `${fmt(tib)} TiB`,
+    },
+  };
+}
+
 /**
  * IP 地址识别
  */
@@ -385,7 +581,11 @@ function tryDetectIp(input: string): SpeculativeIntentResult | null {
         p0 === 10 ||
         (p0 === 172 && p1 >= 16 && p1 <= 31) ||
         (p0 === 192 && p1 === 168) ||
-        p0 === 127;
+        p0 === 127 ||
+        (p0 === 100 && p1 >= 64 && p1 <= 127) ||
+        (p0 === 169 && p1 === 254) ||
+        (p0 === 192 && p1 === 0 && (p2 === 0 || p2 === 2)) ||
+        p0 === 0;
       return {
         type: 'ip_detect',
         title: 'IPv4 地址识别',
@@ -398,11 +598,6 @@ function tryDetectIp(input: string): SpeculativeIntentResult | null {
   }
   return null;
 }
-
-
-/**
- * 主入口：推测性意图解析
- */
 
 /**
  * Cron 表达式解析与自然语言解释
@@ -427,7 +622,6 @@ function tryParseCron(input: string): SpeculativeIntentResult | null {
     const step = hour.slice(2);
     explanation = min === '0' ? `每隔 ${step} 小时执行一次` : `每隔 ${step} 小时的第 ${min} 分执行一次`;
   } else if (/^\d+$/.test(min ?? '') && /^\d+$/.test(hour ?? '') && dom === '*' && mon === '*' && dow === '*') {
-    // 分钟位不一定为 0（如 "30 9 * * *"），此前固定写成 "9:00" 会把时间说错
     const h = String(Number(hour)).padStart(2, '0');
     const m = String(Number(min)).padStart(2, '0');
     explanation = h === '00' && m === '00' ? '每天午夜 00:00 执行一次' : `每天 ${h}:${m} 执行一次`;
@@ -515,15 +709,20 @@ function tryParseCurl(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
   if (!trimmed.startsWith('curl ') && !trimmed.startsWith('curl.exe ')) return null;
 
-  // 简易 URL 匹配
   const urlMatch = trimmed.match(/https?:\/\/[^\s"']+/);
   if (!urlMatch) return null;
   const targetUrl = urlMatch[0];
 
   const methodMatch = trimmed.match(/-X\s+([A-Z]+)/i);
   const method = methodMatch ? (methodMatch[1] || 'GET').toUpperCase() : (trimmed.includes('-d ') || trimmed.includes('--data') ? 'POST' : 'GET');
+  const headerMatches = [...trimmed.matchAll(/(?:-H|--header)\s+["']([^"']+)["']/g)].map((m) => m[1]);
+  const dataMatch = trimmed.match(/(?:-d|--data(?:-raw)?)\s+["']([^"']*)["']/);
+  const headerLines = headerMatches.length
+    ? "\n  headers: { " + headerMatches.map((h) => `"${(h ?? "").split(":")[0]?.trim()}": "${(h ?? "").split(":").slice(1).join(":").trim()}"`).join(", ") + " }"
+    : '\n  headers: { "Content-Type": "application/json" }';
+  const bodyLine = dataMatch?.[1] ? `,\n  body: ${JSON.stringify(dataMatch[1])}` : "";
 
-  const generatedFetch = `fetch("${targetUrl}", {\n  method: "${method}",\n  headers: { "Content-Type": "application/json" }\n})`;
+  const generatedFetch = `fetch("${targetUrl}", {\n  method: "${method}",${headerLines}${bodyLine}\n})`;
 
   return {
     type: 'curl_to_fetch',
@@ -539,11 +738,17 @@ function tryParseCurl(input: string): SpeculativeIntentResult | null {
   };
 }
 
+/** 检测是否存在易引发灾难性回溯（ReDoS）的嵌套量词模式 */
+function hasNestedQuantifierRisk(pattern: string): boolean {
+  return /\([^()]*[+*\}][^()]*\)\s*(?:[+*?]|\{\d+)/.test(pattern);
+}
+
 /**
  * 1. 正则表达式即时匹配与捕获组速览 (Regex Sandbox)
  */
 function tryParseRegex(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
+  if (trimmed.length > 512) return null;
   let pattern = '';
   let flags = '';
   let testText = '';
@@ -582,7 +787,7 @@ function tryParseRegex(input: string): SpeculativeIntentResult | null {
     testText = slashMatch[3] || '';
   }
 
-  if (!pattern) return null;
+  if (!pattern || pattern.length > 256) return null;
 
   try {
     const rx = new RegExp(pattern, flags);
@@ -595,6 +800,16 @@ function tryParseRegex(input: string): SpeculativeIntentResult | null {
     }
 
     if (testText) {
+      if (hasNestedQuantifierRisk(pattern) && testText.length > 24) {
+        return {
+          type: 'regex',
+          title: 'RegExp 回溯风险保护已触发',
+          subtitle: `模式: /${pattern}/${flags}`,
+          previewValue: '⚠️ 检测到嵌套量词模式且测试文本较长，已阻断同步求值以防止主线程灾难性回溯 (ReDoS)。',
+          actionLabel: '复制正则模式',
+          copyValue: `/${pattern}/${flags}`,
+        };
+      }
       const match = rx.exec(testText);
       const isMatch = match !== null;
       const matchedStr = isMatch ? match[0] : '';
@@ -912,13 +1127,17 @@ function tryParseHttpStatus(input: string): SpeculativeIntentResult | null {
 
 export function parseSpeculativeIntent(input: string): SpeculativeIntentResult | null {
   if (!input || input.trim().length === 0) return null;
-  const q = input.trim();
+  let q = input.trim();
+  if (q.length > 5000) q = q.slice(0, 5000);
 
   // 优先级逐层匹配
   return (
     tryParseCron(q) ||
     tryParseJwt(q) ||
     tryParseCurl(q) ||
+    tryParseCidr(q) ||
+    tryParseUuidOrUlid(q) ||
+    tryParseByteSize(q) ||
     tryParseHttpStatus(q) ||
     tryParseSemver(q) ||
     tryParseRegex(q) ||
@@ -926,9 +1145,9 @@ export function parseSpeculativeIntent(input: string): SpeculativeIntentResult |
     tryParseMath(q) ||
     tryParseTimestamp(q) ||
     tryParseJson(q) ||
+    tryDetectHash(q) ||
     tryParseBase64(q) ||
     tryParseUrlEncoding(q) ||
-    tryDetectHash(q) ||
     tryDetectIp(q)
   );
 }

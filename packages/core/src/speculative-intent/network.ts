@@ -1,7 +1,70 @@
 /**
- * 网络族检测器：IPv4 识别、Curl 转 Fetch、JWT 离线解码。
+ * 网络族检测器：IPv4 识别、CIDR 子网掩码计算、Curl 转 Fetch、JWT 离线解码。
  */
 import type { SpeculativeIntentResult } from './types.ts'
+
+function intToIpv4(num: number): string {
+  return [
+    (num >>> 24) & 255,
+    (num >>> 16) & 255,
+    (num >>> 8) & 255,
+    num & 255,
+  ].join('.');
+}
+
+/**
+ * IPv4 CIDR 子网划分与地址段即时计算 (e.g., 192.168.1.0/24, 10.0.0.1/16)
+ */
+export function tryParseCidr(input: string): SpeculativeIntentResult | null {
+  const trimmed = input.trim();
+  const explicit = trimmed.replace(/^cidr:\s*/i, '');
+  const m = explicit.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/);
+  if (!m) return null;
+
+  const octets = [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+  const prefix = Number(m[5]);
+  if (octets.some((o) => o < 0 || o > 255) || prefix < 0 || prefix > 32) return null;
+
+  const ipInt = (((octets[0]! << 24) | (octets[1]! << 16) | (octets[2]! << 8) | octets[3]!) >>> 0);
+  const maskInt = prefix === 0 ? 0 : ((0xffffffff << (32 - prefix)) >>> 0);
+  const wildcardInt = (~maskInt) >>> 0;
+  const netInt = (ipInt & maskInt) >>> 0;
+  const bcastInt = (netInt | wildcardInt) >>> 0;
+
+  const networkAddr = intToIpv4(netInt);
+  const broadcastAddr = intToIpv4(bcastInt);
+  const netmask = intToIpv4(maskInt);
+  const wildcard = intToIpv4(wildcardInt);
+
+  const totalAddresses = Math.pow(2, 32 - prefix);
+  let usableCount = totalAddresses;
+  let firstHost = networkAddr;
+  let lastHost = broadcastAddr;
+  if (prefix <= 30) {
+    usableCount = Math.max(0, totalAddresses - 2);
+    firstHost = intToIpv4((netInt + 1) >>> 0);
+    lastHost = intToIpv4((bcastInt - 1) >>> 0);
+  }
+
+  const normalizedCidr = `${networkAddr}/${prefix}`;
+  const preview = `网络地址: ${networkAddr}/${prefix}\n子网掩码: ${netmask} (反掩码: ${wildcard})\n广播地址: ${broadcastAddr}\n可用主机: ${firstHost} ~ ${lastHost} (${usableCount.toLocaleString()} 台)`;
+
+  return {
+    type: 'cidr',
+    title: `CIDR 子网计算: ${normalizedCidr}`,
+    subtitle: `掩码 ${netmask} · 可用主机 ${usableCount.toLocaleString()} 台`,
+    previewValue: preview,
+    actionLabel: '复制子网范围',
+    copyValue: `${firstHost}-${lastHost}`,
+    details: {
+      '标准 CIDR': normalizedCidr,
+      '子网掩码': netmask,
+      '广播地址': broadcastAddr,
+      '可用主机范围': `${firstHost} - ${lastHost}`,
+      '可用主机数': usableCount.toLocaleString(),
+    },
+  };
+}
 
 /**
  * IP 地址识别

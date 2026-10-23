@@ -370,7 +370,7 @@ export function PluginCard({
             <span>{plugin.name}</span>
             <ExternalLink className="w-3.5 h-3.5 opacity-40 sm:opacity-0 -translate-x-1 transition-all group-hover/title:opacity-100 group-hover/title:translate-x-0" />
           </Link>
-          <p className="text-[13px] text-muted-foreground line-clamp-2 leading-relaxed min-h-[38px] break-words">
+          <p className="text-[13px] text-muted-foreground/90 line-clamp-2 leading-relaxed min-h-[38px] break-words">
             {plugin.description || '暂无描述'}
           </p>
         </div>

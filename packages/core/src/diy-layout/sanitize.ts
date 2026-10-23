@@ -40,6 +40,25 @@ export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: 
       return false;
     } catch { return false; }
   };
+  const isSafeIcon = (ic: unknown): boolean => {
+    if (typeof ic !== 'string' || !ic) return false;
+    if (/^[a-zA-Z0-9_-]{1,64}$/.test(ic)) return true;
+    return isSafeWallpaper(ic);
+  };
+  const sanitizePinnedMap = (input: unknown): Record<string, string[]> => {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+    const out: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(input as Record<string, unknown>).slice(0, 500)) {
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      if (typeof k === 'string' && Array.isArray(v)) {
+        out[k.slice(0, 128)] = v
+          .filter((id): id is string => typeof id === 'string')
+          .map((id) => id.slice(0, 128))
+          .slice(0, 500);
+      }
+    }
+    return out;
+  };
 
   const cleaned = {
     version: 3,
@@ -50,8 +69,12 @@ export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: 
     customWallpaperUrl: isSafeWallpaper(raw.customWallpaperUrl) ? String(raw.customWallpaperUrl).slice(0, 2048) : undefined,
     glassmorphismBlur: Number.isFinite(Number(raw.glassmorphismBlur)) ? Math.max(0, Math.min(30, Number(raw.glassmorphismBlur))) : undefined,
     cardOpacity: Number.isFinite(Number(raw.cardOpacity)) ? Math.max(0.2, Math.min(1, Number(raw.cardOpacity))) : undefined,
-    siteCategoryOverrides: typeof raw.siteCategoryOverrides === 'object' && raw.siteCategoryOverrides !== null
-      ? Object.fromEntries(Object.entries(raw.siteCategoryOverrides as Record<string, unknown>).filter(([k, v]) => typeof k === 'string' && typeof v === 'string').slice(0, 2000))
+    siteCategoryOverrides: typeof raw.siteCategoryOverrides === 'object' && raw.siteCategoryOverrides !== null && !Array.isArray(raw.siteCategoryOverrides)
+      ? Object.fromEntries(
+          Object.entries(raw.siteCategoryOverrides as Record<string, unknown>)
+            .filter(([k, v]) => k !== '__proto__' && k !== 'constructor' && k !== 'prototype' && typeof k === 'string' && typeof v === 'string')
+            .slice(0, 2000)
+        )
       : undefined,
     heroDeckCollapsed: Boolean(raw.heroDeckCollapsed),
     heroDeckWidgets: Array.isArray(raw.heroDeckWidgets) ? (raw.heroDeckWidgets as unknown[]).filter((w) => typeof w === 'string').map((w) => String(w).slice(0, 64)).slice(0, 32) : ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'],
@@ -59,9 +82,7 @@ export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: 
     pinnedCategoryIds: Array.isArray(raw.pinnedCategoryIds) ? (raw.pinnedCategoryIds as unknown[]).filter((x) => typeof x === 'string').map(String).slice(0, 500) : [],
     hiddenCategoryIds: Array.isArray(raw.hiddenCategoryIds) ? (raw.hiddenCategoryIds as unknown[]).filter((x) => typeof x === 'string').map(String).slice(0, 500) : [],
     collapsedCategoryIds: Array.isArray(raw.collapsedCategoryIds) ? (raw.collapsedCategoryIds as unknown[]).filter((x) => typeof x === 'string').map(String).slice(0, 500) : [],
-    pinnedSiteIdsByCategory: typeof raw.pinnedSiteIdsByCategory === 'object' && raw.pinnedSiteIdsByCategory !== null
-      ? raw.pinnedSiteIdsByCategory
-      : {},
+    pinnedSiteIdsByCategory: sanitizePinnedMap(raw.pinnedSiteIdsByCategory),
     customCategories: Array.isArray(raw.customCategories)
       ? raw.customCategories.map((c: any) => ({
           id: String(c.id || `custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
@@ -72,7 +93,7 @@ export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: 
                 id: String(i.id || `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`),
                 title: String(i.title || '').slice(0, 200),
                 href: isSafeHref(i.href) ? String(i.href).slice(0, 2048) : '',
-                icon: i.icon ? String(i.icon).slice(0, 2048) : undefined,
+                icon: isSafeIcon(i.icon) ? String(i.icon).slice(0, 2048) : undefined,
                 description: i.description ? String(i.description).slice(0, 1000) : undefined,
               })).filter((it: { href: string }) => Boolean(it.href)).slice(0, 500)
             : [],

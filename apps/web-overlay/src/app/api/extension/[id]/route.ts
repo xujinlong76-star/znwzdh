@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth, getServerGithubToken } from '@/lib/auth'
+import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, getFileContent } from '@/lib/github'
 import type { NavigationData, NavigationItem } from '@/types/navigation'
 
@@ -11,9 +11,9 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const session = await auth()
-    if (!session?.user || !getServerGithubToken(session.user.id)) {
-      return new Response('Unauthorized', { status: 401 })
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
     }
 
     const updatedItem: NavigationItem = await request.json()
@@ -60,7 +60,7 @@ export async function PUT(
       'src/navsphere/content/navigation.json',
       JSON.stringify({ navigationItems: updatedItems }, null, 2),
       'Update navigation item',
-      getServerGithubToken(session.user.id)!
+      authCheck.githubToken || undefined
     )
 
     return NextResponse.json(mergedItem)

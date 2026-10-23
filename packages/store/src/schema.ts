@@ -423,6 +423,7 @@ export const userSettings = sqliteTable("user_settings", {
   identity: text("identity").primaryKey(),
   personalizationEnabled: integer("personalization_enabled", { mode: "boolean" }).notNull().default(true),
   favoriteSignalCutoff: integer("favorite_signal_cutoff").notNull().default(0),
+  preferencesJson: text("preferences_json").notNull().default("{}"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 });

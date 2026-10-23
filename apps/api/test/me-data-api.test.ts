@@ -115,13 +115,22 @@ describe("搜索历史 API", () => {
 });
 
 describe("设置与画像信号", () => {
-  it("GET /api/me 带设置；PATCH 可关闭个性化", async () => {
+  it("GET /api/me 带设置；PATCH 可关闭个性化与更新扩展偏好", async () => {
     const before = await data("GET", "/api/me");
     expect(before.json().settings.personalizationEnabled).toBe(true);
+    expect(before.json().settings.defaultSearchEngine).toBe("internal");
 
-    const patch = await data("PATCH", "/api/me/settings", { personalizationEnabled: false });
+    const patch = await data("PATCH", "/api/me/settings", {
+      personalizationEnabled: false,
+      defaultSearchEngine: "google",
+      cardDensity: "compact",
+      historyRetentionDays: 30,
+    });
     expect(patch.statusCode).toBe(200);
     expect(patch.json().settings.personalizationEnabled).toBe(false);
+    expect(patch.json().settings.defaultSearchEngine).toBe("google");
+    expect(patch.json().settings.cardDensity).toBe("compact");
+    expect(patch.json().settings.historyRetentionDays).toBe(30);
 
     const explain = await data("GET", "/api/profile?explain=1");
     expect(explain.statusCode).toBe(200);
@@ -147,7 +156,15 @@ describe("设置与画像信号", () => {
     expect(after.json().settings.favoriteSignalCutoff).toBe(stamp);
   });
 
-  it("DELETE /api/profile/signals/click 清空点击事件", async () => {    await ctx.repo.recordEvent("click", { siteId, identity: USER });
+  it("POST /api/me/diagnostics 自动巡检并修复孤儿收藏夹引用", async () => {
+    const diag = await data("POST", "/api/me/diagnostics", {});
+    expect(diag.statusCode).toBe(200);
+    expect(diag.json().ok).toBe(true);
+    expect(Array.isArray(diag.json().checks)).toBe(true);
+  });
+
+  it("DELETE /api/profile/signals/click 清空点击事件", async () => {
+    await ctx.repo.recordEvent("click", { siteId, identity: USER });
     const res = await data("DELETE", "/api/profile/signals/click");
     expect(res.statusCode).toBe(200);
     expect(res.json().removed).toBeGreaterThanOrEqual(1);

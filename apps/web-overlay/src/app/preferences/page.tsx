@@ -25,7 +25,7 @@ import {
   profileDegradeNotice,
   profileViewState,
 } from '@/lib/profile-view'
-import { Sparkles, RotateCcw, Tag, FolderOpen, History, Search, Heart, Clock, ShieldAlert, Bot } from 'lucide-react'
+import { Sparkles, RotateCcw, Tag, FolderOpen, History, Search, Heart, Clock, ShieldAlert, Bot, Settings2 } from 'lucide-react'
 import { UserLlmConfigCard } from '@/components/ai/user-llm-config-card'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
@@ -102,9 +102,20 @@ export default function PreferencesPage() {
   }, [])
 
   useEffect(() => {
-    const id = getIdentity()
-    setIdentity(id)
-    void load(id)
+    const syncAndLoad = () => {
+      const id = getIdentity()
+      setIdentity(id)
+      void load(id)
+    }
+    syncAndLoad()
+    window.addEventListener('navhub_identity_ready', syncAndLoad)
+    window.addEventListener('navhub_identity_changed', syncAndLoad)
+    window.addEventListener('navhub_identity_merged', syncAndLoad)
+    return () => {
+      window.removeEventListener('navhub_identity_ready', syncAndLoad)
+      window.removeEventListener('navhub_identity_changed', syncAndLoad)
+      window.removeEventListener('navhub_identity_merged', syncAndLoad)
+    }
   }, [load])
 
   const handleRetry = () => {
@@ -159,12 +170,20 @@ export default function PreferencesPage() {
         back={{ href: '/', label: '返回主页' }}
         description="搜索会根据你的浏览与收藏做轻量个性化重排。这里是系统据你的行为推断出的内容——看得见，才可以控制。"
         actions={
-          <Button variant="outline" size="sm" asChild className="w-full text-xs sm:w-auto">
-            <Link href="/favorites">
-              <History className="mr-2 h-4 w-4" />
-              搜索历史在收藏页管理
-            </Link>
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Button variant="outline" size="sm" asChild className="w-full text-xs sm:w-auto">
+              <Link href="/me">
+                <Settings2 className="mr-2 h-4 w-4" />
+                全局导航与隐私设置
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild className="w-full text-xs sm:w-auto">
+              <Link href="/me/history">
+                <History className="mr-2 h-4 w-4" />
+                管理搜索历史
+              </Link>
+            </Button>
+          </div>
         }
       />
 
@@ -356,6 +375,8 @@ export default function PreferencesPage() {
         </div>
         <UserLlmConfigCard />
       </section>
+
+      <Footer />
     </Container>
   )
 }

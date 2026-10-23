@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/admin-guard'
+import { sanitizeForwardedFor } from '@/lib/hub-proxy'
 import {
     SubmissionData,
     SubmissionIssue,
@@ -24,6 +25,22 @@ const HUB_BASE = (
 ).replace(/\/$/, '')
 
 /**
+ * 服务端调用中枢管理/读取接口的委托凭据：
+ * 当中枢开启 NAVHUB_AUTH_REQUIRED=true 时，GET /api/submissions 需要至少 read 权限，
+ * 必须携带服务端管理凭据，否则后台投稿管理页在中枢回退通道下会 401 死锁。
+ */
+function hubServiceToken(): string | undefined {
+    return (
+        process.env.NAVHUB_ADMIN_TOKEN ||
+        process.env.NAVHUB_BOOTSTRAP_TOKEN ||
+        process.env.NAVHUB_STORAGE_TOKEN ||
+        process.env.NAVHUB_SESSION_SECRET ||
+        process.env.AUTH_SECRET ||
+        undefined
+    )
+}
+
+/**
  * 是否配置了 GitHub 投稿通道。
  * NavHub 默认部署（STORAGE_ADAPTER=http）没有 GitHub 配置，
  * 上游的「建 Issue」流程会直接失败——因此提供中枢回退：
@@ -33,11 +50,20 @@ function hasGithubChannel(): boolean {
     return Boolean(GITHUB_OWNER && GITHUB_REPO && GITHUB_PAT)
 }
 
-/** 中枢回退：落库为待审核站点 */
-async function submitToHub(data: SubmissionData): Promise<NextResponse> {
+/** 中枢回退：落库为待审核站点（透传清洗后的 X-Forwarded-For 避免全站访客共用同一限流桶） */
+async function submitToHub(data: SubmissionData, request: NextRequest): Promise<NextResponse> {
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+    }
+    const xff = sanitizeForwardedFor(request.headers.get('x-forwarded-for'))
+    if (xff) {
+        headers['x-forwarded-for'] = xff
+    }
+
     const res = await fetch(HUB_BASE + '/api/submissions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        headers,
         body: JSON.stringify({
             title: data.title,
             url: data.url,
@@ -71,8 +97,13 @@ async function getSubmissionsFromHub(status: string): Promise<NextResponse> {
     try {
         const url = new URL(`${HUB_BASE}/api/submissions`)
         url.searchParams.set('status', status)
+        const token = hubServiceToken()
+        const headers: Record<string, string> = { Accept: 'application/json' }
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`
+        }
         const res = await fetch(url.toString(), {
-            headers: { Accept: 'application/json' },
+            headers,
             cache: 'no-store',
         })
         if (!res.ok) {
@@ -101,9 +132,15 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // 验证 URL 格式
+        // 验证 URL 格式（仅允许 http/https 协议，阻断 javascript:/data: 等伪协议）
         try {
-            new URL(data.url)
+            const parsedUrl = new URL(data.url)
+            if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+                return NextResponse.json(
+                    { success: false, message: '仅支持 HTTP 或 HTTPS 网站地址' },
+                    { status: 400 }
+                )
+            }
         } catch {
             return NextResponse.json(
                 { success: false, message: '请输入有效的网站地址' },
@@ -113,7 +150,7 @@ export async function POST(request: NextRequest) {
 
         // NavHub 部署（无 GitHub 配置）走中枢落库
         if (!hasGithubChannel()) {
-            return await submitToHub(data)
+            return await submitToHub(data, request)
         }
 
         // 创建 GitHub Issue

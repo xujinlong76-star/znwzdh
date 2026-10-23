@@ -18,13 +18,10 @@ import {
   ExternalLink,
   RefreshCw,
   X,
-  Type,
-  Palette,
   Clock,
   FileText,
   ShieldCheck,
   Check,
-  Sparkles,
 } from 'lucide-react'
 import {
   fetchSiteArchive,
@@ -138,11 +135,11 @@ export function SiteArchiveReaderModal({
   // SingleFile 离线文件下载 (.html)
   const handleDownloadSingleFile = () => {
     if (!archive) return
-    const blob = new Blob([archive.htmlContent], { type: 'text/html;charset=utf-8' })
+    const blob = new Blob([archive.htmlContent || ''], { type: 'text/html;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${archive.title.replace(/[\/\\?%*:|"<>]/g, '_')}_offline_archive.html`
+    a.download = `${(archive.title || 'site').replace(/[\/\\?%*:|"<>]/g, '_')}_offline_archive.html`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -153,9 +150,10 @@ export function SiteArchiveReaderModal({
   // 复制 Markdown 格式文本
   const handleCopyMarkdown = () => {
     if (!archive) return
+    const bodyText = archive.plainText || (archive as any).excerpt || ''
     const md = `# ${archive.title}\n\n> 来源: ${archive.url}\n> 归档时间: ${new Date(
-      archive.capturedAt
-    ).toLocaleString()}\n\n${archive.plainText}`
+      archive.capturedAt || Date.now()
+    ).toLocaleString()}\n\n${bodyText}`
     copyText(md)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -183,6 +181,13 @@ export function SiteArchiveReaderModal({
     serif: 'font-serif',
     mono: 'font-mono',
   }
+
+  const resolvedLength =
+    archive?.contentLength ?? (archive as any)?.byteSize ?? archive?.plainText?.length ?? archive?.htmlContent?.length ?? 0
+  const resolvedPlainText =
+    archive?.plainText ||
+    (archive as any)?.excerpt ||
+    (archive?.htmlContent ? archive.htmlContent.replace(/<[^>]+>/g, ' ').trim() : '')
 
   return (
     <div
@@ -304,16 +309,16 @@ export function SiteArchiveReaderModal({
             <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-[11px] sm:text-xs">
               <span className="flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5" />
-                预估阅读: {archive.readTimeMinutes} 分钟
+                预估阅读: {archive.readTimeMinutes || 1} 分钟
               </span>
               <span className="hidden min-[380px]:inline">·</span>
               <span className="flex items-center gap-1">
                 <FileText className="w-3.5 h-3.5" />
-                字数容量: {archive.contentLength.toLocaleString()} 字符
+                字数容量: {resolvedLength.toLocaleString()} 字符
               </span>
               <span className="hidden min-[480px]:inline">·</span>
               <span className="hidden min-[480px]:inline">
-                归档时间: {new Date(archive.capturedAt).toLocaleTimeString()}
+                归档时间: {new Date(archive.capturedAt || Date.now()).toLocaleTimeString()}
               </span>
             </div>
 
@@ -368,9 +373,9 @@ export function SiteArchiveReaderModal({
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
                   {archive.title}
                 </h1>
-                {archive.meta?.description && (
+                {(archive.meta?.description || (archive as any)?.excerpt) && (
                   <p className="text-sm opacity-80 italic">
-                    {archive.meta.description}
+                    {archive.meta?.description || (archive as any)?.excerpt}
                   </p>
                 )}
                 <div className="flex items-center gap-2 pt-2 text-xs opacity-60">
@@ -378,7 +383,7 @@ export function SiteArchiveReaderModal({
                   <span>NavHub 离线安全沙箱渲染</span>
                   <span>·</span>
                   <a
-                    href={archive.url}
+                    href={/^https?:\/\//i.test(archive.url) ? archive.url : '#'}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 hover:underline text-indigo-500"
@@ -391,7 +396,7 @@ export function SiteArchiveReaderModal({
 
               {/* 正文段落 */}
               <div className="prose dark:prose-invert max-w-none space-y-4">
-                {archive.plainText.split('\n\n').map((paragraph, pIdx) => {
+                {resolvedPlainText.split('\n\n').map((paragraph: string, pIdx: number) => {
                   const trimmed = paragraph.trim()
                   if (!trimmed) return null
                   if (trimmed.startsWith('# ')) {

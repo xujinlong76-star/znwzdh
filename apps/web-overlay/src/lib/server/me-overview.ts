@@ -29,6 +29,17 @@ const HUB_BASE = (
 /** 比 BFF 的 15s 短：首屏等不起，超时就回落客户端自取 */
 const TIMEOUT_MS = 8_000
 
+function serviceToken(): string | undefined {
+  return (
+    process.env.NAVHUB_ADMIN_TOKEN ||
+    process.env.NAVHUB_BOOTSTRAP_TOKEN ||
+    process.env.NAVHUB_STORAGE_TOKEN ||
+    process.env.NAVHUB_SESSION_SECRET ||
+    process.env.AUTH_SECRET ||
+    undefined
+  )
+}
+
 /**
  * 形状校验：中枢返回 200 但字段缺失（老版本 / 网关占位响应）时按失败处理。
  * 概览渲染会直接读 counts/settings，形状不对宁可让客户端重新取一次。
@@ -49,9 +60,14 @@ export async function fetchMeOverview(identity: string): Promise<Overview | null
       accept: 'application/json',
       'x-navhub-user-id': who,
     }
-    // 与 BFF 一致：未配置密钥时不加签名头，中枢也不校验
+    // 与 BFF 一致：有密钥用签名，无密钥但开启鉴权时回退附带服务端 Bearer token
     const secret = hubIdentitySecret()
-    if (secret) headers['x-navhub-identity-signature'] = await signIdentity(secret, who)
+    if (secret) {
+      headers['x-navhub-identity-signature'] = await signIdentity(secret, who)
+    } else {
+      const token = serviceToken()
+      if (token) headers['authorization'] = 'Bearer ' + token
+    }
 
     const res = await fetch(HUB_BASE + '/api/me', {
       headers,

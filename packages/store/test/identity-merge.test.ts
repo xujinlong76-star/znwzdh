@@ -9,6 +9,8 @@ import { Repository } from "../src/repository.ts";
  *  - 收藏按 (user, site) 去重，目标已有不重复；
  *  - 文件夹/history/events 改归属，源不再残留；
  *  - 源画像删除、别名可解析；
+ *  - user_workspace_blobs 与 crdt:<identity> 同步迁移；
+ *  - 插件 install_count / star_count 在合并时保持严格守恒（不重复 +1、重叠时扣减 1）；
  *  - 重复合并幂等（返回 alreadyMerged 与首次统计）。
  */
 describe("身份合并：匿名数据并入登录身份", () => {
@@ -43,13 +45,27 @@ describe("身份合并：匿名数据并入登录身份", () => {
       favoriteSiteIds: [s1.id],
       searchCount: 1,
     });
+
+    // 造工作空间与 CRDT 排版数据（测试专用表 user_workspace_blobs 与 crdt:<anon> 迁入）
+    const now = Date.now();
+    await repo.run("INSERT INTO user_workspace_blobs (user_id, payload, updated_at) VALUES (?,?,?)", [
+      "workspaces:" + anon,
+      JSON.stringify([{ id: "ws-anon-1", name: "匿名工作台" }]),
+      now,
+    ]);
+    await repo.run("INSERT INTO user_workspace_blobs (user_id, payload, updated_at) VALUES (?,?,?)", [
+      "ws_members:" + anon + ":ws-anon-1",
+      JSON.stringify([{ identity: anon, role: "owner" }]),
+      now,
+    ]);
+    await repo.saveUserVault("crdt:" + anon, JSON.stringify({ ops: ["op-1"] }));
   });
 
   afterAll(async () => {
     await db.close();
   });
 
-  it("合并收藏/文件夹/历史/事件并写别名", async () => {
+  it("合并收藏/文件夹/历史/事件/工作区/CRDT 并写别名", async () => {
     const result = await repo.mergeIdentity(anon, user);
     expect(result.alreadyMerged).toBe(false);
     expect(result.favoritesMoved).toBe(2); // s2 + s3（s1 目标已有）
@@ -57,6 +73,7 @@ describe("身份合并：匿名数据并入登录身份", () => {
     expect(result.foldersMoved).toBe(1);
     expect(result.searchesMoved).toBe(1);
     expect(result.eventsMoved).toBe(1);
+    expect(result.workspacesMoved).toBe(true);
 
     expect(await repo.listFavorites(anon)).toHaveLength(0);
     const merged = await repo.listFavorites(user);
@@ -71,6 +88,15 @@ describe("身份合并：匿名数据并入登录身份", () => {
 
     const eventRows = await repo.raw("SELECT COUNT(*) AS c FROM events WHERE identity = ?", [user]);
     expect(Number(eventRows[0]?.c ?? 0)).toBe(1);
+
+    // 验证 user_workspace_blobs 与 crdt:<identity> 已迁移至目标账号
+    const wsBlobs = await repo.raw("SELECT user_id FROM user_workspace_blobs WHERE user_id LIKE ?", [`%${user}%`]);
+    expect(wsBlobs.map((r) => String(r.user_id)).sort()).toEqual([
+      `workspaces:${user}`,
+      `ws_members:${user}:ws-anon-1`,
+    ]);
+    const crdtTarget = await repo.getUserVault("crdt:" + user);
+    expect(crdtTarget?.payload).toContain("op-1");
 
     expect(await repo.getUserProfile(anon)).toBeNull();
     expect(await repo.resolveIdentity(anon)).toBe(user);

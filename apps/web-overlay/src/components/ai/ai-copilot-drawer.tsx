@@ -47,6 +47,15 @@ const PRESET_PROMPTS = [
   { icon: '🩺', label: '全站健康度与死链自愈', prompt: '帮我诊断当前全站有哪些异常或失效站点，并推荐对应的高活跃平替。' },
 ]
 
+function isSafeMarkdownHref(rawUrl: string): boolean {
+  const trimmed = rawUrl.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('/')) {
+    return !trimmed.startsWith('//')
+  }
+  return /^https?:\/\//i.test(trimmed)
+}
+
 export function AiCopilotDrawer() {
   const [isOpen, setIsOpen] = useState(false)
   const [input, setInput] = useState('')
@@ -170,25 +179,28 @@ export function AiCopilotDrawer() {
     }
   }
 
-  // 简易 Markdown 超链接与排版解析
+  // 安全 Markdown 超链接与排版解析（仅放行 http/https 与站内路径，阻断 javascript:/data: XSS）
   const renderMessageContent = (text: string) => {
     const parts = text.split(/(\[[^\]]+\]\([^)]+\))/g)
     return parts.map((part, idx) => {
       const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
       if (linkMatch) {
         const [, title, url] = linkMatch
-        return (
-          <a
-            key={idx}
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 font-medium text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
-          >
-            <span>{title}</span>
-            <ExternalLink className="h-3 w-3 inline" />
-          </a>
-        )
+        if (url && isSafeMarkdownHref(url)) {
+          return (
+            <a
+              key={idx}
+              href={url.trim()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 font-medium text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
+            >
+              <span>{title}</span>
+              <ExternalLink className="h-3 w-3 inline" />
+            </a>
+          )
+        }
+        return <span key={idx}>{title}</span>
       }
       return <span key={idx}>{part}</span>
     })

@@ -71,18 +71,29 @@ describe('用户中心第二批页面', () => {
     expect(layout).toContain('robots: { index: false')
   })
 
-  it('概览页接个性化开关、信号清理与新入口', () => {
+  it('概览页接个性化开关、信号清理、多维设置、资料修改与健康自检修复', () => {
     // M5 把概览页拆成「服务端壳 page.tsx + 客户端岛 me-view.tsx」。
     // 断言原意不变（这些接线必须还在），只是要跨两个文件找——只看 page.tsx
     // 会因为代码搬到岛里而误报。
     const src = ['src/app/me/page.tsx', 'src/app/me/me-view.tsx'].map(read).join('\n')
     expect(src).toContain('/api/me/settings')
+    expect(src).toContain('/api/me/profile')
+    expect(src).toContain('/api/me/diagnostics')
+    expect(src).toContain('verifySettingsConsistency')
+    expect(src).toContain('runClientStorageDiagnostics')
     expect(src).toContain('clearProfileSignals')
     expect(src).toContain("href=\"/me/history\"")
     expect(src).toContain("href=\"/me/data\"")
     // 搜索历史入口不再错误地指向收藏页：入口表里必须有一项指向 /me/history
     // （不锁整行字面量——图标或字段顺序变化不该让守卫变红）
     expect(src).toMatch(/href:\s*'\/me\/history'/)
+  })
+
+  it('偏好页接入身份变更监听且搜索历史入口指向 /me/history', () => {
+    const src = read('src/app/preferences/page.tsx')
+    expect(src).toContain('href="/me/history"')
+    expect(src).not.toContain('href="/favorites">\n                      <Search')
+    expect(src).toContain('navhub_identity_merged')
   })
 
   it('收藏页接入文件夹和备注管理', () => {

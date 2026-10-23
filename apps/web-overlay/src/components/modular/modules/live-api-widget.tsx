@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Activity, RefreshCw, ExternalLink, Settings, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Activity, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 
 interface LiveApiWidgetProps {
@@ -11,6 +11,23 @@ interface LiveApiWidgetProps {
     jsonKey?: string
     unit?: string
     refreshIntervalSeconds?: number
+  }
+}
+
+const FORBIDDEN_PROTO_KEYS = new Set(['__proto__', 'prototype', 'constructor'])
+
+function isSafeWidgetApiUrl(raw: string): boolean {
+  const trimmed = raw.trim()
+  if (!trimmed) return false
+  // 允许同源相对路径（排除协议相对路径 //evil.com）
+  if (trimmed.startsWith('/')) {
+    return !trimmed.startsWith('//')
+  }
+  try {
+    const parsed = new URL(trimmed)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:'
+  } catch {
+    return false
   }
 }
 
@@ -33,10 +50,16 @@ export function LiveApiWidget({ config }: LiveApiWidgetProps) {
 
   const fetchData = useCallback(async () => {
     if (!apiUrl) return
+    if (!isSafeWidgetApiUrl(apiUrl)) {
+      setErrorMsg('接口地址协议不合法')
+      setStatusOk(false)
+      return
+    }
     // 切配置时 abort 旧请求，避免竞态覆盖
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
+    const timeoutId = setTimeout(() => ctrl.abort(), 10_000)
     setLoading(true)
     setErrorMsg(null)
     try {
@@ -45,14 +68,19 @@ export function LiveApiWidget({ config }: LiveApiWidgetProps) {
         throw new Error(`HTTP ${res.status}`)
       }
       const json = await res.json()
-      
-      // 按点分隔路径提取嵌套字段，例如 'data.metrics.cpu' 或直接 'status'
-      let val: any = json
+
+      // 按点分隔路径安全提取嵌套字段（阻断 __proto__ / constructor 原型链读取）
+      let val: unknown = json
       if (jsonKey && jsonKey.trim()) {
         const parts = jsonKey.trim().split('.')
         for (const p of parts) {
-          if (val && typeof val === 'object' && p in val) {
-            val = val[p]
+          if (
+            val !== null &&
+            typeof val === 'object' &&
+            !FORBIDDEN_PROTO_KEYS.has(p) &&
+            Object.prototype.hasOwnProperty.call(val, p)
+          ) {
+            val = (val as Record<string, unknown>)[p]
           } else {
             val = null
             break
@@ -61,7 +89,7 @@ export function LiveApiWidget({ config }: LiveApiWidgetProps) {
       }
 
       if (val !== null && val !== undefined) {
-        setDataValue(typeof val === 'object' ? JSON.stringify(val) : val)
+        setDataValue(typeof val === 'object' ? JSON.stringify(val) : String(val))
         setStatusOk(true)
       } else {
         setDataValue(JSON.stringify(json).slice(0, 50))
@@ -73,9 +101,10 @@ export function LiveApiWidget({ config }: LiveApiWidgetProps) {
       // 主动取消不计失败、不刷错误态
       if (err?.name === 'AbortError') return
       failuresRef.current += 1
-      setErrorMsg(err.message || '抓取失败')
+      setErrorMsg(err?.message || '抓取失败')
       setStatusOk(false)
     } finally {
+      clearTimeout(timeoutId)
       setLoading(false)
     }
   }, [apiUrl, jsonKey])

@@ -3,8 +3,15 @@
  */
 import type { SpeculativeIntentResult } from './types.ts'
 
+/** 检测是否存在易引发灾难性回溯（ReDoS）的嵌套量词模式，如 (a+)+ 或 ([a-z]*)* */
+function hasNestedQuantifierRisk(pattern: string): boolean {
+  return /\([^()]*[+*\}][^()]*\)\s*(?:[+*?]|\{\d+)/.test(pattern);
+}
+
 export function tryParseRegex(input: string): SpeculativeIntentResult | null {
   const trimmed = input.trim();
+  // 长度上限：防止在搜索框逐击键执行超长正则导致主线程卡死（DoS）
+  if (trimmed.length > 512) return null;
   let pattern = '';
   let flags = '';
   let testText = '';
@@ -44,7 +51,7 @@ export function tryParseRegex(input: string): SpeculativeIntentResult | null {
     testText = slashMatch[3] || '';
   }
 
-  if (!pattern) return null;
+  if (!pattern || pattern.length > 256) return null;
 
   try {
     const rx = new RegExp(pattern, flags);
@@ -57,6 +64,16 @@ export function tryParseRegex(input: string): SpeculativeIntentResult | null {
     }
 
     if (testText) {
+      if (hasNestedQuantifierRisk(pattern) && testText.length > 24) {
+        return {
+          type: 'regex',
+          title: 'RegExp 回溯风险保护已触发',
+          subtitle: `模式: /${pattern}/${flags}`,
+          previewValue: '⚠️ 检测到嵌套量词模式且测试文本较长，已阻断同步求值以防止主线程灾难性回溯 (ReDoS)。',
+          actionLabel: '复制正则模式',
+          copyValue: `/${pattern}/${flags}`,
+        };
+      }
       const match = rx.exec(testText);
       const isMatch = match !== null;
       const matchedStr = isMatch ? match[0] : '';

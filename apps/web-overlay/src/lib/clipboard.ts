@@ -32,6 +32,32 @@ export const CLIPBOARD_UNSUPPORTED =
 /** 环境支持，但这次写入被拒绝（execCommand 兜底同样没成功） */
 export const CLIPBOARD_DENIED = "浏览器拒绝了这次剪贴板写入（页面可能失去焦点，或剪贴板权限被拒）";
 
+/**
+ * Clipboard API 写入的等待上限。
+ *
+ * Chromium 在页面失焦 / 无头环境里可能让 `writeText()` 的 Promise **一直不 settle**
+ * （既不 resolve 也不 reject）。之前这里直接 `await`，于是按钮点击后既不报成功也不报
+ * 失败，UI 静默卡住——E2E 徽章用例实测连续两次 15s 等不到任何 toast（2026-10-23）。
+ * 超时后按失败处理并落入 execCommand 兜底：宁可说失败，也不让用户对着不动的按钮猜。
+ */
+export const CLIPBOARD_WRITE_TIMEOUT_MS = 1_500;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("clipboard write timed out")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 /** 剪贴板 API 是否可用（纯询问，不触发写入） */
 export function clipboardSupported(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -49,10 +75,10 @@ export async function copyText(text: string): Promise<CopyResult> {
   // 首选异步 Clipboard API（安全上下文下才有）
   if (clipboardSupported()) {
     try {
-      await navigator.clipboard.writeText(text);
+      await withTimeout(navigator.clipboard.writeText(text), CLIPBOARD_WRITE_TIMEOUT_MS);
       return { ok: true };
     } catch {
-      // 无权限 / 文档失焦 / 被拒 -> 继续走 execCommand 兜底
+      // 无权限 / 文档失焦 / 被拒 / 挂起超时 -> 继续走 execCommand 兜底
     }
   }
 

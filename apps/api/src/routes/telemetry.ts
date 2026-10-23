@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { RetrievalChannel } from "@navhub/core";
 import { refreshUserProfile } from "../profile-service.ts";
-import { identityTrusted, identityOf } from "./shared.ts";
+import { identityTrusted, identityOf, resolveCanonicalIdentity } from "./shared.ts";
 
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
@@ -45,21 +45,29 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       anonId: z.string().max(64).optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    // 身份必须走 identityOf（header → query → body 的统一入口），不能直接读 body：
-    // 后者绕过身份签名覆盖，认证模式下匿名调用方可写任意 identity 的 click/favorite
-    // 事件，直接污染他人画像（recordEvent 会把 meta.identity 提升为独立列）。
-    const identity = identityOf(req as never);
-    if (identity && !identityTrusted(ctx, req as never)) {
+    const rawIdentity = identityOf(req as never);
+    if (rawIdentity && !identityTrusted(ctx, req as never)) {
       reply.code(401);
       return { error: "需要 Bearer token" };
     }
+    const identity = rawIdentity ? await resolveCanonicalIdentity(ctx, rawIdentity) : null;
+    let telemetryEnabled = true;
+    if (identity) {
+      const settings = await ctx.repo.getUserSettings(identity).catch(() => null);
+      if (settings && settings.telemetryEnabled === false) {
+        telemetryEnabled = false;
+      }
+    }
+
+    const recordedIdentity = telemetryEnabled ? identity : null;
+
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
     await ctx.repo.recordEvent(body.data.kind, {
       siteId: body.data.siteId,
       query: body.data.query,
       categoryId: body.data.categoryId,
-      meta: identity || body.data.pluginSlug
-        ? { ...(identity ? { identity } : {}), ...(body.data.pluginSlug ? { slug: body.data.pluginSlug } : {}) }
+      meta: recordedIdentity || body.data.pluginSlug
+        ? { ...(recordedIdentity ? { identity: recordedIdentity } : {}), ...(body.data.pluginSlug ? { slug: body.data.pluginSlug } : {}) }
         : undefined,
     }).catch(() => undefined);
     if (body.data.kind === "click" && body.data.siteId) {
@@ -77,24 +85,14 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       });
     }
     // 行为变化 -> 刷新个性化画像（节流 60s，失败静默）
-    if (identity && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "unfavorite")) {
-      void refreshUserProfile(ctx, identity);
+    if (recordedIdentity && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "unfavorite")) {
+      void refreshUserProfile(ctx, recordedIdentity);
     }
     return { ok: true };
   });
 
   /* ---------------------------- Web Vitals ---------------------------- */
 
-  /**
-   * 真实用户性能指标（RUM）。
-   *
-   * 与 /api/events 分开的理由：events 的 kind 白名单服务画像与 LinUCB，
-   * 加一个 "vitals" 会污染「点击/收藏」这类行为语义；而且这条链路是
-   * sendBeacon 的 fire-and-forget，不需要也不应该触发画像刷新。
-   *
-   * 隐私：只收指标名、数值、评级与 pathname（不含 query、不含身份）。
-   * 采样：由前端一次性上报，每页最多 5 条；限流沿用全局 300/min。
-   */
   const VITAL_NAMES = ["LCP", "INP", "CLS", "TTFB", "FCP"] as const;
 
   app.post("/api/vitals", { config: { scope: "public" } }, async (req, reply) => {
@@ -108,7 +106,6 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       reply.code(400);
       return { error: "参数无效", detail: body.error.issues };
     }
-    // 遥测失败绝不影响页面：吞掉异常，仍回 204
     await ctx.repo.recordEvent("vitals", { meta: body.data }).catch(() => undefined);
     reply.code(204);
     return null;

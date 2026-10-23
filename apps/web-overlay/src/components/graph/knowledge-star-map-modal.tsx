@@ -22,14 +22,10 @@ import {
   Layers,
   ArrowRight,
   ExternalLink,
-  Sparkles,
   AlertCircle,
   CheckCircle2,
   X,
-  Filter,
-  Maximize2,
   RefreshCw,
-  Info,
 } from 'lucide-react'
 import {
   fetchKnowledgeMesh,
@@ -37,7 +33,6 @@ import {
   fetchSiteDuplicates,
   type SiteKnowledgeMesh,
   type SiteKnowledgeNode,
-  type SiteKnowledgeEdge,
   type TechGraphPath,
   type SiteDuplicateReport,
 } from '@/lib/navhub-api'
@@ -158,9 +153,22 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
     const centerX = width / 2
     const centerY = height / 2
 
-    const categories = mesh.nodes.filter((n) => n.type === 'category')
-    const sites = mesh.nodes.filter((n) => n.type === 'site')
-    const tags = mesh.nodes.filter((n) => n.type === 'tag')
+    const normalizedNodes = mesh.nodes.map((n) => {
+      const raw = n as SiteKnowledgeNode & { name?: string; categoryId?: string }
+      const label = raw.label || raw.name || raw.id
+      const category =
+        raw.category ||
+        (raw.categoryId ? (raw.categoryId.startsWith('cat_') ? raw.categoryId : `cat_${raw.categoryId}`) : undefined)
+      return {
+        ...raw,
+        label,
+        category,
+      }
+    })
+
+    const categories = normalizedNodes.filter((n) => n.type === 'category')
+    const sites = normalizedNodes.filter((n) => n.type === 'site')
+    const tags = normalizedNodes.filter((n) => n.type === 'tag')
 
     // 分类节点均布在内环 (R = 160)
     const catPositions: Record<string, { x: number; y: number }> = {}
@@ -176,7 +184,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
 
     // 站点围绕对应分类环绕 (R = 260 ~ 300)
     const sitePositions: Record<string, { x: number; y: number }> = {}
-    const sitesByCategory: Record<string, SiteKnowledgeNode[]> = {}
+    const sitesByCategory: Record<string, typeof normalizedNodes> = {}
     sites.forEach((site) => {
       const catKey = site.category || 'default'
       if (!sitesByCategory[catKey]) sitesByCategory[catKey] = []
@@ -208,7 +216,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
       }
     })
 
-    return mesh.nodes.map((node) => {
+    return normalizedNodes.map((node) => {
       let pos = { x: centerX, y: centerY }
       if (node.type === 'category' && catPositions[node.id]) pos = catPositions[node.id]
       else if (node.type === 'site' && sitePositions[node.id]) pos = sitePositions[node.id]
@@ -237,7 +245,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
       }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
-        return node.label.toLowerCase().includes(q) || (node.url && node.url.toLowerCase().includes(q))
+        return (node.label || '').toLowerCase().includes(q) || Boolean(node.url && node.url.toLowerCase().includes(q))
       }
       return true
     })
@@ -571,7 +579,6 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                         }}
                         className="cursor-pointer group focus:outline-none"
                       >
-                        {/* 选中高亮光环 */}
                         {isSelected && (
                           <circle
                             r={nodeRadius + 8}
@@ -583,7 +590,6 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                           />
                         )}
 
-                        {/* 节点外圆 */}
                         <circle
                           r={nodeRadius}
                           fill={fillColor}
@@ -592,7 +598,6 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                           opacity={isTag ? 0.7 : 0.9}
                         />
 
-                        {/* 节点文字 */}
                         <text
                           dy={nodeRadius + 14}
                           textAnchor="middle"
@@ -757,10 +762,10 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                             <CheckCircle2 className="w-4 h-4" />
-                            已找到最短演进协同路径（距离: {pathResult.distance} 跳）
+                            已找到最短演进协同路径（距离权重: {pathResult.distance} · 共 {pathResult.steps.length} 跳）
                           </span>
                           <span className="text-xs font-mono text-zinc-400">
-                            {pathResult.from} ➔ {pathResult.to}
+                            {pathResult.from || (pathResult as any).startId} ➔ {pathResult.to || (pathResult as any).targetId}
                           </span>
                         </div>
 
@@ -769,39 +774,44 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                           <div className="relative">
                             <span className="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-indigo-600 ring-4 ring-indigo-100 dark:ring-indigo-950/50" />
                             <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">
-                              {pathResult.from.toUpperCase()} (起点生态)
+                              {String(pathResult.from || (pathResult as any).startId || '').toUpperCase()} (起点生态)
                             </div>
                           </div>
 
-                          {pathResult.steps.map((step, idx) => (
-                            <div key={idx} className="relative pl-2">
-                              <span className="absolute -left-[31px] top-1 w-3.5 h-3.5 rounded-full bg-purple-500 ring-4 ring-purple-100 dark:ring-purple-950/50" />
-                              <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/60 dark:border-zinc-700/60">
-                                <div className="flex items-center gap-2 text-xs font-medium text-purple-600 dark:text-purple-400">
-                                  <span>跳数 #{idx + 1}</span>
-                                  <span>·</span>
-                                  <Badge variant="outline" className="text-[10px] py-0">
-                                    {step.relation}
-                                  </Badge>
+                          {pathResult.steps.map((step, idx) => {
+                            const rawStep = step as typeof step & { fromNode?: { name?: string }; toNode?: { name?: string } }
+                            const stepFrom = rawStep.from || rawStep.fromNode?.name || ''
+                            const stepTo = rawStep.to || rawStep.toNode?.name || ''
+                            return (
+                              <div key={idx} className="relative pl-2">
+                                <span className="absolute -left-[31px] top-1 w-3.5 h-3.5 rounded-full bg-purple-500 ring-4 ring-purple-100 dark:ring-purple-950/50" />
+                                <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200/60 dark:border-zinc-700/60">
+                                  <div className="flex items-center gap-2 text-xs font-medium text-purple-600 dark:text-purple-400">
+                                    <span>跳数 #{idx + 1}</span>
+                                    <span>·</span>
+                                    <Badge variant="outline" className="text-[10px] py-0">
+                                      {step.relation}
+                                    </Badge>
+                                  </div>
+                                  <div className="mt-1 text-sm font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                                    <span>{stepFrom}</span>
+                                    <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+                                    <span className="text-indigo-600 dark:text-indigo-400">{stepTo}</span>
+                                  </div>
+                                  {step.description && (
+                                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                      {step.description}
+                                    </p>
+                                  )}
                                 </div>
-                                <div className="mt-1 text-sm font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
-                                  <span>{step.from}</span>
-                                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
-                                  <span className="text-indigo-600 dark:text-indigo-400">{step.to}</span>
-                                </div>
-                                {step.description && (
-                                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                    {step.description}
-                                  </p>
-                                )}
                               </div>
-                            </div>
-                          ))}
+                            )
+                          })}
 
                           <div className="relative">
                             <span className="absolute -left-[31px] top-1 w-4 h-4 rounded-full bg-emerald-600 ring-4 ring-emerald-100 dark:ring-emerald-950/50" />
                             <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">
-                              {pathResult.to.toUpperCase()} (到达目标)
+                              {String(pathResult.to || (pathResult as any).targetId || '').toUpperCase()} (到达目标)
                             </div>
                           </div>
                         </div>
@@ -856,7 +866,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                       </div>
                       <div>·</div>
                       <div>
-                        高置信度重复: <span className="font-semibold font-mono text-rose-600 dark:text-rose-400">{dedupReport.highConfidenceCount}</span>
+                        高置信度重复: <span className="font-semibold font-mono text-rose-600 dark:text-rose-400">{dedupReport.highConfidenceCount ?? dedupReport.duplicatePairs.filter((p) => p.similarity >= 0.85).length}</span>
                       </div>
                     </div>
 
@@ -868,68 +878,91 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 gap-4">
-                        {dedupReport.duplicatePairs.map((pair, idx) => (
-                          <div
-                            key={idx}
-                            className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 hover:border-indigo-500/40 transition-colors"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Badge
-                                  className={`text-xs ${
-                                    pair.similarity > 0.8
-                                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
-                                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
-                                  }`}
-                                  variant="outline"
-                                >
-                                  相似度 {(pair.similarity * 100).toFixed(0)}%
+                        {dedupReport.duplicatePairs.map((pair, idx) => {
+                          const rawPair = pair as typeof pair & {
+                            idA?: string
+                            titleA?: string
+                            urlA?: string
+                            idB?: string
+                            titleB?: string
+                            urlB?: string
+                            recommendation?: string
+                          }
+                          const titleA = rawPair.siteA?.title || rawPair.titleA || '未知站点 A'
+                          const urlA = rawPair.siteA?.url || rawPair.urlA || ''
+                          const titleB = rawPair.siteB?.title || rawPair.titleB || '未知站点 B'
+                          const urlB = rawPair.siteB?.url || rawPair.urlB || ''
+                          const action =
+                            rawPair.suggestedAction ||
+                            (rawPair.recommendation === 'merge'
+                              ? 'merge_tags'
+                              : rawPair.recommendation === 'archive_b'
+                                ? 'remove_redundant'
+                                : 'keep_both')
+
+                          return (
+                            <div
+                              key={idx}
+                              className="p-5 rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-sm space-y-4 hover:border-indigo-500/40 transition-colors"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Badge
+                                    className={`text-xs ${
+                                      pair.similarity > 0.8
+                                        ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30'
+                                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                                    }`}
+                                    variant="outline"
+                                  >
+                                    相似度 {(pair.similarity * 100).toFixed(0)}%
+                                  </Badge>
+                                  <span className="text-xs text-zinc-500">{pair.reason}</span>
+                                </div>
+                                <Badge variant="secondary" className="text-[10px]">
+                                  建议操作: {action === 'merge_tags' ? '合并标签' : action === 'remove_redundant' ? '剔除冗余' : '保留双向互补'}
                                 </Badge>
-                                <span className="text-xs text-zinc-500">{pair.reason}</span>
                               </div>
-                              <Badge variant="secondary" className="text-[10px]">
-                                建议操作: {pair.suggestedAction === 'merge_tags' ? '合并标签' : pair.suggestedAction === 'remove_redundant' ? '剔除冗余' : '保留双向互补'}
-                              </Badge>
-                            </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40">
-                              <div className="space-y-1">
-                                <div className="text-[10px] uppercase font-mono text-zinc-400">站点 A</div>
-                                <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate">{pair.siteA.title}</div>
-                                <div className="text-[11px] font-mono text-zinc-500 truncate">{pair.siteA.url}</div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/40">
+                                <div className="space-y-1">
+                                  <div className="text-[10px] uppercase font-mono text-zinc-400">站点 A</div>
+                                  <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate">{titleA}</div>
+                                  <div className="text-[11px] font-mono text-zinc-500 truncate">{urlA}</div>
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="text-[10px] uppercase font-mono text-zinc-400">站点 B</div>
+                                  <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate">{titleB}</div>
+                                  <div className="text-[11px] font-mono text-zinc-500 truncate">{urlB}</div>
+                                </div>
                               </div>
-                              <div className="space-y-1">
-                                <div className="text-[10px] uppercase font-mono text-zinc-400">站点 B</div>
-                                <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate">{pair.siteB.title}</div>
-                                <div className="text-[11px] font-mono text-zinc-500 truncate">{pair.siteB.url}</div>
-                              </div>
-                            </div>
 
-                            <div className="flex items-center justify-end gap-2 pt-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  copyText(`${pair.siteA.title} & ${pair.siteB.title}`)
-                                  toast.success('已复制雷同对名称')
-                                }}
-                                className="h-7 text-xs rounded-lg"
-                              >
-                                <Copy className="w-3 h-3 mr-1" />
-                                复制信息
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => {
-                                  toast.success(`已标记合并操作: ${pair.siteA.title} 与 ${pair.siteB.title}`)
-                                }}
-                                className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg"
-                              >
-                                一键融合标签与关联
-                              </Button>
+                              <div className="flex items-center justify-end gap-2 pt-2">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    copyText(`${titleA} (${urlA}) & ${titleB} (${urlB})`)
+                                    toast.success('已复制雷同对名称与 URL')
+                                  }}
+                                  className="h-7 text-xs rounded-lg"
+                                >
+                                  <Copy className="w-3 h-3 mr-1" />
+                                  复制信息
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    toast.success(`已标记合并操作: ${titleA} 与 ${titleB}`)
+                                  }}
+                                  className="h-7 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg"
+                                >
+                                  一键融合标签与关联
+                                </Button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
                   </div>

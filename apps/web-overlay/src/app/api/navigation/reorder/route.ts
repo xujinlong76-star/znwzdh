@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, getFileContent } from '@/lib/github'
-import type { NavigationData, NavigationItem } from '@/types/navigation'
+import type { NavigationData } from '@/types/navigation'
 
 export const runtime = 'nodejs'
 
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
       return new Response(authCheck.error, { status: authCheck.status })
     }
 
-    const { sourceIndex, destinationIndex, itemId } = await request.json()
+    const { sourceIndex, destinationIndex } = await request.json()
 
     // 获取当前导航数据
     const data = await getFileContent('src/navsphere/content/navigation.json') as NavigationData
@@ -22,11 +22,29 @@ export async function POST(request: Request) {
       throw new Error('无效的导航数据')
     }
 
+    const len = data.navigationItems.length
+    if (
+      !Number.isInteger(sourceIndex) ||
+      !Number.isInteger(destinationIndex) ||
+      sourceIndex < 0 ||
+      sourceIndex >= len ||
+      destinationIndex < 0 ||
+      destinationIndex >= len
+    ) {
+      return NextResponse.json(
+        { error: '排序索引越界或格式无效' },
+        { status: 400 }
+      )
+    }
+
     // 创建新的导航项数组副本
     const updatedItems = [...data.navigationItems]
 
     // 找到要移动的项目
     const [movedItem] = updatedItems.splice(sourceIndex, 1)
+    if (!movedItem) {
+      return NextResponse.json({ error: '未找到要移动的导航项' }, { status: 400 })
+    }
 
     // 将项目插入到新位置
     updatedItems.splice(destinationIndex, 0, movedItem)

@@ -27,6 +27,11 @@ interface SearchBarProps {
   siteConfig?: SiteConfig
 }
 
+/** 结果项的链接：一级导航项没有 href，不能直接读 item.url（该字段不存在）。 */
+function itemHref(item: NavigationItem | NavigationSubItem): string | undefined {
+  return 'href' in item && typeof item.href === 'string' ? item.href : undefined
+}
+
 export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: SearchBarProps) {
   const [isFocused, setIsFocused] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
@@ -256,7 +261,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                               }}
                             />
                           ) : (
-                            <SiteFavicon title={item.title} url={item.url} icon={item.icon} className="w-8 h-8 rounded" />
+                            <SiteFavicon title={item.title} url={itemHref(item)} icon={item.icon} className="w-8 h-8 rounded" />
                           )}
                         </div>
                         <div className="flex flex-col flex-1 gap-1 min-w-0">
@@ -302,7 +307,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                                   }}
                                 />
                               ) : (
-                                <SiteFavicon title={item.title} url={item.url} icon={item.icon} className="w-8 h-8 rounded" />
+                                <SiteFavicon title={item.title} url={itemHref(item)} icon={item.icon} className="w-8 h-8 rounded" />
                               )}
                             </div>
                             <div className="flex flex-col flex-1 gap-1 min-w-0">

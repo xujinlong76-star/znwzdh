@@ -85,7 +85,7 @@ export function OfflineRecentList() {
                 <SiteFavicon
                   title={v.title}
                   url={v.href}
-                  icon={v.icon}
+                  icon={v.icon ?? undefined}
                   className="h-full w-full rounded object-contain"
                 />
               </span>

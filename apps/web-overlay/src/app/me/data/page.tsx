@@ -17,6 +17,7 @@ import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
+import { SectionState } from '@/components/user-center/section-state'
 import {
   AlertTriangle,
   Bookmark,
@@ -298,25 +299,15 @@ export default function MeDataPage() {
         description="你的收藏、搜索历史、画像、LLM 配置与金库元信息都归你所有：支持随时导出、从备份一键导入还原、按域精细化清理或彻底注销。"
       />
 
-      {state === 'loading' && (
-        <div className="h-32 animate-pulse rounded-2xl border border-border/70 bg-card/50" aria-busy="true" />
-      )}
+      {state === 'loading' && <SectionState variant="loading" rows={1} rowClassName="h-32" loadingLabel="正在确认登录状态" />}
 
       {state === 'error' && (
-        <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-6" role="alert">
-          <p className="text-sm font-semibold">登录状态暂时无法确认</p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            这通常是网络或会话服务抖动，不代表你的账号有问题。稍后重试即可，数据没有任何变动。
-          </p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full text-xs sm:w-auto"
-            onClick={() => void loadSession()}
-          >
-            重试
-          </Button>
-        </section>
+        <SectionState
+          variant="error"
+          title="登录状态暂时无法确认"
+          description="这通常是网络或会话服务抖动，不代表你的账号有问题。稍后重试即可，数据没有任何变动。"
+          onRetry={() => void loadSession()}
+        />
       )}
 
       {state === 'anonymous' && (

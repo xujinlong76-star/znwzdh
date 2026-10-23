@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
+import { SectionState } from '@/components/user-center/section-state'
 import { useMeOverview } from '@/hooks/use-me-overview'
 import type { Overview } from '@/app/me/me-view'
 import {
@@ -120,22 +121,16 @@ export function AccountView() {
       />
 
       {state === 'loading' && (
-        <div aria-busy="true" className="space-y-4">
-          <div className="h-40 animate-pulse rounded-2xl border border-border/70 bg-card/50" />
-          <div className="h-28 animate-pulse rounded-2xl border border-border/70 bg-card/50" />
-        </div>
+        <SectionState variant="loading" rows={2} rowClassName="h-40" loadingLabel="正在加载账号信息" />
       )}
 
       {state === 'error' && (
-        <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-6" role="alert">
-          <p className="text-sm font-semibold">账号信息暂时取不到</p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {error ?? '这不代表账号异常，稍后重试即可。'}
-          </p>
-          <Button size="sm" variant="outline" className="w-full text-xs sm:w-auto" onClick={() => void reload()}>
-            重试
-          </Button>
-        </section>
+        <SectionState
+          variant="error"
+          title="账号信息暂时取不到"
+          description={error ?? '这不代表账号异常，稍后重试即可。'}
+          onRetry={() => void reload()}
+        />
       )}
 
       {state === 'anonymous' && (

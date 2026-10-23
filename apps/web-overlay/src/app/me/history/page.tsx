@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { copyText } from '@/lib/clipboard'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
+import { SectionState } from '@/components/user-center/section-state'
 import {
   clearCloudSearchHistory,
   deleteSearchHistoryItem,
@@ -224,13 +225,7 @@ export default function SearchHistoryPage() {
         }
       />
 
-      {state === 'loading' && (
-        <div className="space-y-2" aria-busy="true">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-16 animate-pulse rounded-2xl border border-border/70 bg-card/50" />
-          ))}
-        </div>
-      )}
+      {state === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载搜索历史" />}
 
       {state === 'no-identity' && (
         <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-6 text-sm leading-relaxed text-muted-foreground">
@@ -239,30 +234,21 @@ export default function SearchHistoryPage() {
       )}
 
       {state === 'error' && (
-        <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-6" role="alert">
-          <p className="text-sm font-semibold">历史记录暂时取不到</p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            云端暂时不可用，这不代表历史被清空——恢复后记录会原样回来。
-          </p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full text-xs sm:w-auto"
-            onClick={() => void load(identityReady.identity ?? '')}
-          >
-            重试
-          </Button>
-        </section>
+        <SectionState
+          variant="error"
+          title="历史记录暂时取不到"
+          description="云端暂时不可用，这不代表历史被清空——恢复后记录会原样回来。"
+          onRetry={() => void load(identityReady.identity ?? '')}
+        />
       )}
 
       {state === 'ready' && items.length === 0 && (
-        <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-10 text-center">
-          <Search className="mx-auto h-6 w-6 text-muted-foreground" aria-hidden />
-          <p className="mt-2 text-sm font-medium">还没有搜索记录</p>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            在首页搜索框里输入关键词后，这里会出现最近的历史。
-          </p>
-        </section>
+        <SectionState
+          variant="empty"
+          icon={Search}
+          title="还没有搜索记录"
+          description="在首页搜索框里输入关键词后，这里会出现最近的历史。"
+        />
       )}
 
       {state === 'ready' && items.length > 0 && (

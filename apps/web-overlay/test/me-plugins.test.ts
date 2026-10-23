@@ -30,7 +30,8 @@ describe('/me/plugins 插件中心', () => {
 
   it('失败态显式可重试，且不把失败渲染成 0', () => {
     const view = read('src/app/me/plugins/me-plugins-view.tsx')
-    expect(view).toMatch(/state === 'error'[\s\S]{0,600}重试/)
+    expect(view).toContain('variant="error"')
+    expect(view).toContain('onRetry')
     expect(view).toContain('插件数据暂时取不到')
     expect(view).not.toContain('counts?.activePluginInstalls ?? 0')
     expect(view).not.toContain('counts?.authoredPlugins ?? 0')

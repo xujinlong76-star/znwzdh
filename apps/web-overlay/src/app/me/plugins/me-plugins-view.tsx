@@ -11,6 +11,7 @@ import { Container } from '@/components/ui/container'
 import { Button } from '@/components/ui/button'
 import { Footer } from '@/components/footer'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
+import { SectionState } from '@/components/user-center/section-state'
 import { useMeOverview } from '@/hooks/use-me-overview'
 import { ArrowRight, LayoutGrid, Package, PackageCheck, Send, Sparkles, Star } from 'lucide-react'
 
@@ -65,23 +66,16 @@ export function MePluginsView() {
       />
 
       {state === 'loading' && (
-        <div aria-busy="true" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="h-28 animate-pulse rounded-2xl border border-border/70 bg-card/50" />
-          ))}
-        </div>
+        <SectionState variant="loading" rows={4} rowClassName="h-28" loadingLabel="正在加载插件数据" />
       )}
 
       {state === 'error' && (
-        <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-6" role="alert">
-          <p className="text-sm font-semibold">插件数据暂时取不到</p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {error ?? '这不代表你没有安装插件——恢复后计数会回来。'}
-          </p>
-          <Button size="sm" variant="outline" className="w-full text-xs sm:w-auto" onClick={() => void reload()}>
-            重试
-          </Button>
-        </section>
+        <SectionState
+          variant="error"
+          title="插件数据暂时取不到"
+          description={error ?? '这不代表你没有安装插件——恢复后计数会回来。'}
+          onRetry={() => void reload()}
+        />
       )}
 
       {(state === 'ready' || state === 'anonymous') && (

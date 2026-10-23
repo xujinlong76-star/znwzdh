@@ -47,6 +47,8 @@ test.describe('用户中心：三态', () => {
     await expect(page.getByText('历史记录暂时取不到')).toBeVisible()
     await expect(page.getByText('这不代表历史被清空')).toBeVisible()
     await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
+    // 统一状态组件：错误态必须以 alert 地标暴露给读屏
+    await expect(page.getByRole('alert').filter({ hasText: '历史记录暂时取不到' })).toBeVisible()
     // 空态文案只能在「确实成功且为空」时出现
     await expect(page.getByText('还没有搜索记录')).toHaveCount(0)
   })
@@ -71,6 +73,7 @@ test.describe('用户中心：三态', () => {
     await page.goto('/me/data')
     await expect(page.getByText('登录状态暂时无法确认')).toBeVisible()
     await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: '登录状态暂时无法确认' })).toBeVisible()
     await expect(page.getByText('需要登录后管理云端数据')).toHaveCount(0)
   })
   test('/me/settings 匿名态：本机设置可编辑，说明登录后同步', async ({ page }) => {
@@ -99,6 +102,7 @@ test.describe('用户中心：三态', () => {
     await expect(page.getByText('账号信息暂时取不到')).toBeVisible()
     await expect(page.getByText('登录状态暂时无法确认，请稍后重试')).toBeVisible()
     await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: '账号信息暂时取不到' })).toBeVisible()
   })
 
   test('/me/plugins 匿名态：展示入口并说明计数为 0 的原因', async ({ page }) => {
@@ -124,6 +128,7 @@ test.describe('用户中心：三态', () => {
     await page.goto('/me/plugins')
     await expect(page.getByText('插件数据暂时取不到')).toBeVisible()
     await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
+    await expect(page.getByRole('alert').filter({ hasText: '插件数据暂时取不到' })).toBeVisible()
   })
 
   test('/favorites 匿名态：可以建本地收藏夹并持久化（P2）', async ({ page }) => {

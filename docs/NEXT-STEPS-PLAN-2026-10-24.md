@@ -147,3 +147,26 @@
 ## 7. 验收总口径
 
 沿用第四批纪律：全量 vitest 0 失败；tsc 0 错误（归因并行 WIP 的除外）；eslint 0 error；bundle 预算全路由在棘轮内且首页不升；镜像 `check-web-overlay` 一致；视觉改动一律 Playwright 实拍（明暗双主题）验收。
+
+---
+
+## 8. 执行结果（2026-10-25 凌晨收口）
+
+| 项 | 状态 | 落点 |
+| --- | --- | --- |
+| D1 hooks 告警清偿 | ✅ 17→0 | 微任务模式 + resume 状态化 + uSES 挂载检测 + deps 补齐 |
+| D2 vitest 提速 | ✅ 试跑后回滚 | 实测 tap-sync/ai 跨文件污染，配置留档「勿开 isolate:false」 |
+| D3 E2E 助手 | ✅ | e2e/helpers.ts（冷编译预热登录 + 内容就绪等待） |
+| C2 a11y 锁定扩容 | ✅ | 导航未激活项 + 统计芯片 token 进 a11y-contrast |
+| A1 algorithm-lab 拆分 | ✅ 2216→壳294 + 12 面板 | 双安全网（守卫 + 12 区 E2E）拆分前后均绿 |
+| A2 sitelist 拆分 | ✅ 2128→1531 + 弹窗组件 710 + types | E2E 7/7、haystack 小写化预计算 + 等价单测 |
+| B1 扩展收藏写路径 | ✅ | 令牌 write 可选签发 + chrome 扩展 popup/右键收藏 + 面板开关 |
+| B2 MCP 用户域工具 | ✅ | list_favorites / list_search_history / get_profile_summary（94/94） |
+| B3 version 水位 | ✅ | GET /api/favorites/version（11/11） |
+| C1 目的地页状态统一 | ✅ 缺口证伪 | 实测 8/10 页为 SSR + 客户端岛自带降级设计（三处命中皆注释）；按「不为改而改」收窄为无需接入；hot 属并行领地未查 |
+| A3 插件域两巨石 | ⏸ 未执行 | 方案定位即「先补测试再拆、批次后半」；plugin-detail-view 1817 / ai-plugin-studio-modal 1717 留下一批 |
+| D5 backup 接力 | ✅ 并行会话完成 | 1268f91：异步恢复全链路 + insertSitesBulk 显式接 createdAt |
+
+**多会话工作区实况**：本批多次出现并行会话把已验证的暂存内容先行提交（A1 的
+d75b284/f983dc5、B1 的 cbe4674 等）——内容与自测状态一致，只是提交归属交错；
+按 §387 纪律以「内容入库 + 自测留档」为准，未做历史重写。

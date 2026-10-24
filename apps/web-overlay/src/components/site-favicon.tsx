@@ -8,6 +8,11 @@ export interface SiteFaviconProps {
   icon?: string
   useDefaultIcon?: boolean
   className?: string
+  /**
+   * 首屏主图标（如详情页 64px 徽标）传 `true`：`loading="lazy"` 在视口内的图上
+   * 仍会让浏览器推迟一次解码调度，而这张图常常就是该页的 LCP 元素。
+   */
+  eager?: boolean
 }
 
 export const PRESET_GRADIENTS = [
@@ -261,6 +266,7 @@ export function SiteFavicon({
   icon,
   useDefaultIcon = false,
   className = 'w-full h-full object-contain',
+  eager = false,
 }: SiteFaviconProps) {
   const [loadFailed, setLoadFailed] = useState(false)
 
@@ -323,7 +329,8 @@ export function SiteFavicon({
       src={effectiveIcon}
       alt={title ? `${title} 图标` : '站点图标'}
       className={className}
-      loading="lazy"
+      loading={eager ? 'eager' : 'lazy'}
+      fetchPriority={eager ? 'high' : 'auto'}
       decoding="async"
       width={24}
       height={24}

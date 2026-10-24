@@ -56,6 +56,9 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       topCategories: z.array(z.string()).max(50).optional(),
       topTags: z.array(z.string()).max(100).optional(),
       visitedSiteIds: z.array(z.string()).max(200).optional(),
+      // 与 core 的 PersonalizationSignals 同形：schema 少一个字段，zod 会把它静默剥掉，
+      // 画像侧「收藏站点参与重排」（T17）就永远进不了排序器。
+      favoriteSiteIds: z.array(z.string()).max(200).optional(),
     }).optional(),
   });
 
@@ -91,11 +94,14 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     let personalize = input.personalize;
     if (!personalize && identity && personalizationEnabled) {
       const profile = await ctx.repo.getUserProfile(identity);
-      if (profile && (profile.topCategories.length > 0 || profile.topTags.length > 0 || profile.visitedSiteIds.length > 0)) {
+      if (profile && (profile.topCategories.length > 0 || profile.topTags.length > 0 || profile.visitedSiteIds.length > 0 || profile.favoriteSiteIds.length > 0)) {
+        // favoriteSiteIds 此前只采集不消费——preferences 页「收藏站点参与重排」
+        // 的承诺由此兑现（T17），打分档位见 fusion.personalCandidates。
         personalize = {
           topCategories: profile.topCategories,
           topTags: profile.topTags,
           visitedSiteIds: profile.visitedSiteIds,
+          favoriteSiteIds: profile.favoriteSiteIds,
         };
       }
     }

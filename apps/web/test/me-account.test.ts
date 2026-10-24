@@ -32,9 +32,13 @@ describe('/me/account 账号页', () => {
 
   it('匿名态只给登录 CTA，不渲染资料表单', () => {
     const view = read('src/app/me/account/account-view.tsx')
-    expect(view).toContain('当前是匿名身份')
-    expect(view).toContain('/auth/signin?callbackUrl=/me/account')
+    // T1 起匿名提示统一为 AnonymousHint 组件（标题默认值在组件里）
+    const hint = read('src/components/user-center/anonymous-hint.tsx')
     expect(view).toMatch(/state === 'anonymous'/)
+    expect(view).toContain('AnonymousHint')
+    expect(view).toContain('callbackUrl="/me/account"')
+    expect(hint).toContain('当前是匿名身份')
+    expect(hint).toContain('登录 / 创建账号')
   })
 
   it('危险区指向数据与隐私页', () => {

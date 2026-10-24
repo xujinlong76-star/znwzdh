@@ -51,7 +51,11 @@ describe('短描述治理入口', () => {
     // 2026-10-22：短描述判定已下沉到 siteMetaDescription 内部（SITE_DESCRIPTION_MIN
     // 不再出现在页面文件里）；页面侧现在**无条件**解析分类名——它同时用于标题后缀，
     // 是 71 组同标题站点的消歧依据，不能只在描述过短时才取。
-    expect(page).toContain('loadSiteCategoryName(site.categoryId)')
+    expect(page).toContain('categoryNameOf(categories, site.categoryId)')
+    // 2026-10-24：分类表与站点详情并发取（分类表只用于后缀，串行等于在缓存刚过期
+    // 的那一刻给每个详情页快照多压一个往返）。
+    expect(page).toMatch(/Promise\.all\(\[loadSite\(id\), loadCategories\(3600\)\]\)/)
+    expect(page).not.toMatch(/loadSiteCategoryName/)
     expect(page).toMatch(/title = `\$\{site\.title\} · \$\{categoryName \?\? '站点详情'\}`/)
   })
 

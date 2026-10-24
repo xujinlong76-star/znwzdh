@@ -3,6 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import {
   canonicalizeUrl,
   comparePluginVersions,
+  isInternalShortLinkTarget,
   PLUGIN_LIMITS,
   resolveRegistryEntry,
   resolveRegistryLeaf,
@@ -1089,6 +1090,27 @@ export async function uninstallPlugin(
  * 星标 / 举报
  * ------------------------------------------------------------------ */
 
+/**
+ * 星标探测（备份导入重放用）：返回插件是否已被该身份星标；
+ * 插件已不存在时返回 null——「插件没了」和「已经标过」是两个不同的跳过原因。
+ */
+export async function isPluginStarredBySlug(
+  repo: Repository,
+  slug: string,
+  identity: string,
+): Promise<boolean | null> {
+  const plugin = await getPluginBySlug(repo, slug);
+  if (!plugin) return null;
+  const who = identity.trim().slice(0, 120) || "anonymous";
+  const row = (
+    await repo.raw("SELECT 1 AS ok FROM plugin_stars WHERE plugin_id = ? AND identity = ? LIMIT 1", [
+      plugin.id,
+      who,
+    ])
+  )[0];
+  return Boolean(row);
+}
+
 export async function starPlugin(
   repo: Repository,
   slug: string,
@@ -1743,11 +1765,14 @@ export async function getPluginGovernanceAlerts(repo: Repository): Promise<Plugi
  * 分享短链 (Short Links)
  * ------------------------------------------------------------------ */
 
-/** 创建短链；只接受调用方已校验的内部 /marketplace/ 目标 */
+/** 创建短链；目标口径与解析侧完全一致，写入即把关（不依赖调用方先校验） */
 export async function createShortLink(
   repo: Repository,
   input: { target: string; pluginSlug?: string | null },
 ): Promise<ShortLinkRecord> {
+  if (!isInternalShortLinkTarget(input.target)) {
+    throw new Error("短链目标必须是站内 /marketplace/ 路径");
+  }
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = randomUUID().replace(/-/g, "").slice(0, 8);
     try {
@@ -1782,7 +1807,7 @@ export async function resolveShortLink(repo: Repository, code: string): Promise<
   const row = (await repo.raw("SELECT * FROM short_links WHERE code = ? LIMIT 1", [normalized]))[0];
   if (!row) return null;
   const target = String(row.target ?? "");
-  if (!target.startsWith("/marketplace/") || target.startsWith("//")) return null;
+  if (!isInternalShortLinkTarget(target)) return null;
   return {
     code: String(row.code),
     target,

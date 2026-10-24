@@ -35,7 +35,16 @@ describe("TS 7 类型检查门禁（scripts/typecheck.mjs）", () => {
   it("verify 与 pre-commit 复用同一门禁脚本", () => {
     const verify = readFileSync(join(ROOT, "scripts/verify.mjs"), "utf8");
     const hooks = readFileSync(join(ROOT, "scripts/install-git-hooks.mjs"), "utf8");
-    expect(verify).toContain('run("node", ["scripts/typecheck.mjs"])');
+    expect(verify).toContain('run("类型检查", "node", ["scripts/typecheck.mjs"])');
     expect(hooks).toContain("node scripts/typecheck.mjs || exit 1");
+  });
+
+  it("后端 lint 必须在 verify 链里，且门禁不许把跳过说成通过", () => {
+    const verify = readFileSync(join(ROOT, "scripts/verify.mjs"), "utf8");
+    // 只在 CI 单独跑的规则等于没有规则：本地一路绿灯，推上去才红
+    expect(verify).toContain('run("后端 lint", "pnpm", ["lint:backend"])');
+    // 「全部验证项 100% 通过」是旧口径：首屏预算依赖构建产物，本地经常根本没执行这一步
+    expect(verify).not.toContain("全部验证项 100% 通过");
+    expect(verify).toContain("不代表通过");
   });
 });

@@ -33,6 +33,7 @@ import {
   parseScopes,
   scopeSatisfies,
   secureEqual,
+  KNOWN_ROUTE_SCOPES,
   type AuthIdentity,
   type RouteScope,
 } from "./auth.ts";
@@ -275,8 +276,16 @@ export async function buildServer(ctx: AppContext) {
   const routeEntries: RouteEntry[] = [];
   app.addHook("onRoute", (route) => {
     const method = typeof route.method === "string" ? route.method : String(route.method);
-    const scope = ((route.config as { scope?: RouteScope } | undefined)?.scope ?? "public") as RouteScope;
-    routeEntries.push({ method: method.toUpperCase(), url: route.url, scope });
+    const declared = (route.config as { scope?: RouteScope } | undefined)?.scope ?? "public";
+    // 拼错的 scope 不会报错，只会让这条路由从此「人人 403」，
+    // 并且把不存在的权限名印进 /api/openapi.json。启动即抛，别等线上第一次调用。
+    if (!KNOWN_ROUTE_SCOPES.has(declared as string)) {
+      throw new Error(
+        `路由 ${method.toUpperCase()} ${route.url} 声明了未知 scope「${String(declared)}」：` +
+          `只认 ${[...KNOWN_ROUTE_SCOPES].join("/")}。`,
+      );
+    }
+    routeEntries.push({ method: method.toUpperCase(), url: route.url, scope: declared });
   });
 
   app.get("/api/openapi.json", { config: { scope: "public", cache: { maxAge: 60 } } }, async () =>
@@ -358,7 +367,24 @@ export async function buildServer(ctx: AppContext) {
     };
     req.auth = auth;
 
-    if (!ctx.config.authRequired) return;
+    if (!ctx.config.authRequired) {
+      // 开放模式（T20）：虽然不再做 scope 门槛，个人令牌仍要挂 owner——
+      // 用户域路由凭 auth.ownerIdentity 定身份。这里只做一次哈希查表，
+      // 无 Bearer / 静态凭据行为与从前逐字节一致。
+      const openToken = bearerOf(req);
+      if (openToken) {
+        const openRecord = await ctx.repo.findApiTokenByHash(hashToken(openToken));
+        if (openRecord) {
+          auth.actor = openRecord.name;
+          auth.kind = "token";
+          auth.tokenId = openRecord.id;
+          auth.scopes = parseScopes(Array.isArray(openRecord.scopes) ? openRecord.scopes.join(",") : String(openRecord.scopes ?? ""));
+          auth.ownerIdentity = openRecord.ownerIdentity ?? null;
+          void ctx.repo.touchApiToken(openRecord.id).catch(() => undefined);
+        }
+      }
+      return;
+    }
 
     /**
      * 鉴权失败落审计。
@@ -443,6 +469,8 @@ export async function buildServer(ctx: AppContext) {
     auth.kind = "token";
     auth.tokenId = record.id;
     auth.scopes = tokenScopes;
+    // 用户级令牌（T20）：owner 非空 = 个人令牌，用户域路由把它当作该用户的身份
+    auth.ownerIdentity = record.ownerIdentity ?? null;
     void ctx.repo.touchApiToken(record.id).catch(() => undefined);
   });
 
@@ -461,6 +489,9 @@ export async function buildServer(ctx: AppContext) {
    */
   app.addHook("preValidation", async (req, reply) => {
     if (!ctx.config.identitySecret) return;
+    // 用户级令牌（T20）：身份来自 token owner（真实凭据），不走自称头签名链路；
+    // 路由层的 requestIdentityOf 也只认 owner——自称头在这里没有可被信任的路径
+    if ((req as { auth?: { ownerIdentity?: string | null } }).auth?.ownerIdentity) return;
     const identity = identityOf(req as never);
     if (!identity) return;
     const signature = req.headers["x-navhub-identity-signature"];

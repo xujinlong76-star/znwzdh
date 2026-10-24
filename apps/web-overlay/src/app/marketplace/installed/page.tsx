@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { safeWindowOpen } from '@/lib/safe-url'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Button } from '@/components/ui/button'
@@ -338,7 +339,7 @@ export default function InstalledPluginsPage() {
                 <button
                   type="button"
                   key={eng.prefix}
-                  onClick={() => window.open(eng.searchUrl.replace('{q}', ''), '_blank', 'noopener,noreferrer')}
+                  onClick={() => safeWindowOpen(eng.searchUrl.replace('{q}', ''))}
                   className="p-2.5 rounded-lg border border-border/60 bg-background/60 hover:bg-muted/70 hover:border-primary/40 cursor-pointer transition-all flex flex-col gap-1 group text-left"
                   title={`${eng.description ?? eng.name} (点击直达)`}
                 >

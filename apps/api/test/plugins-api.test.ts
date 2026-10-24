@@ -754,6 +754,16 @@ describe("F0 / E1 / E5 / E6 / E4 / E3 / F2 API", () => {
     });
     expect(invalid.statusCode).toBe(400);
 
+    // 前缀字面量过关的三种逃逸：点段规范化、反斜杠、控制字符伪装
+    for (const target of [
+      "/marketplace/../../admin",
+      "/marketplace/..\\..\\evil.example.com",
+      "/marketplace/..\t./admin",
+    ]) {
+      const r = await app.inject({ method: "POST", url: "/api/shortlinks", payload: { target } });
+      expect(r.statusCode, target).toBe(400);
+    }
+
     const missing = await app.inject({ method: "GET", url: "/api/shortlinks/notthere" });
     expect(missing.statusCode).toBe(404);
   });

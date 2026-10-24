@@ -16,7 +16,7 @@
  * 仓库没有安装 `server-only` 包（依赖里没有），用这行说明代替它：
  * 本模块只允许被服务端代码引用，客户端组件不要 import。
  */
-import type { Overview } from '@/app/me/me-view'
+import type { Overview } from '@/lib/me-types'
 import { hubIdentitySecret, signIdentity } from '@/lib/identity-signature'
 
 /** 与 BFF 同源的取值顺序，避免「页面直连」和「BFF 转发」打到不同中枢 */

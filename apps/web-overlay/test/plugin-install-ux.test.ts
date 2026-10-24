@@ -93,3 +93,31 @@ describe("插件详情：分享深链只对未安装用户自动弹窗", () => {
     expect(view).toContain("setDetailSynced(true)")
   })
 })
+
+describe("安装确认里的预设规模：不能把 4 个看板说成 1 个", () => {
+  const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
+  const detail = overlaySource("src/app/marketplace/[slug]/plugin-detail-view.tsx")
+
+  it("摘要缺失（详情接口把 summary 放在响应外层）时按清单 boards 计数", () => {
+    expect(modal).toContain("plugin.manifest?.payload?.boards")
+    expect(modal).toContain("presetBoardCount")
+    expect(modal).toContain("presetWidgetCount")
+    // 旧的 ?? 1 会把任意预设都压成「1 个看板 / 0 个模块」
+    expect(modal).not.toContain("summary?.boardCount ?? 1")
+  })
+
+  it("详情页的「看板数量」指标同样按 payload 兜底", () => {
+    expect(detail).not.toContain("plugin.kind === 'workspace-preset' ? 1 : 0")
+    expect(detail).toContain("Array.isArray(payload?.boards) ? payload.boards.length : 0")
+  })
+})
+
+describe("卸载回执不谎报清理范围", () => {
+  const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
+
+  it("0 个站点时不再说「已清理关联站点」", () => {
+    expect(modal).toContain("没有需要移除的关联站点")
+    expect(modal).toContain("removedSites > 0")
+    expect(modal).not.toContain("`已清理关联站点${res.sitesRemoved")
+  })
+})

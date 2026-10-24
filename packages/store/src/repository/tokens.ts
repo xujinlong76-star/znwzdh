@@ -21,6 +21,8 @@ export async function createApiToken(repo: Repository, input: {
     expiresAt?: number | null;
     /** 明文前缀（不含可还原部分），供列表页区分凭据 */
     tokenPrefix?: string | null;
+    /** 归属用户身份（T20）：非空 = 用户自建个人令牌（用户域以它为身份） */
+    ownerIdentity?: string | null;
   }): Promise<ApiTokenRecord> {
   const id = randomUUID();
   const now = Date.now();
@@ -28,13 +30,14 @@ export async function createApiToken(repo: Repository, input: {
   // 落库也始终是干净的 "read,write,admin" 集合。
   const scopes = normalizeTokenScopes(input.scopes);
   await repo.run(
-    "INSERT INTO api_tokens (id, name, token_hash, scopes, expires_at, created_at, token_prefix) VALUES (?,?,?,?,?,?,?)",
-    [id, input.name, input.tokenHash, scopes, input.expiresAt ?? null, now, input.tokenPrefix ?? null],
+    "INSERT INTO api_tokens (id, name, token_hash, scopes, expires_at, created_at, token_prefix, owner_identity) VALUES (?,?,?,?,?,?,?,?)",
+    [id, input.name, input.tokenHash, scopes, input.expiresAt ?? null, now, input.tokenPrefix ?? null, input.ownerIdentity ?? null],
   );
   return {
     id,
     name: input.name,
     scopes: scopes.split(","),
+    ownerIdentity: input.ownerIdentity ?? null,
     expiresAt: input.expiresAt ?? null,
     lastUsedAt: null,
     createdAt: now,
@@ -42,6 +45,24 @@ export async function createApiToken(repo: Repository, input: {
     rotatedAt: null,
     tokenPrefix: input.tokenPrefix ?? null,
   };
+}
+
+/** 用户自建令牌列表（T20）：只返回自己的、未吊销的 */
+export async function listApiTokensByOwner(repo: Repository, ownerIdentity: string): Promise<ApiTokenRecord[]> {
+  const rows = await repo.raw(
+    "SELECT * FROM api_tokens WHERE owner_identity = ? AND revoked_at IS NULL ORDER BY created_at DESC",
+    [ownerIdentity],
+  );
+  return rows.map(rowToApiToken);
+}
+
+/** 用户吊销自己的令牌：ownership 校验在 SQL 条件里，跨用户 id 无效返回 false */
+export async function revokeApiTokenByOwner(repo: Repository, ownerIdentity: string, id: string): Promise<boolean> {
+  const changes = await repo.runCount(
+    "UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND owner_identity = ? AND revoked_at IS NULL",
+    [Date.now(), id, ownerIdentity],
+  );
+  return changes > 0;
 }
 
 export async function updateApiToken(repo: Repository, id: string, patch: { name?: string; scopes?: string; expiresAt?: number | null }): Promise<ApiTokenRecord | null> {

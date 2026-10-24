@@ -6,9 +6,10 @@
  * 匿名文案与按钮保持原文（E2E 固定断言），只调整外层排版。
  */
 import Link from 'next/link'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ArrowRight, LogIn, User } from 'lucide-react'
-import type { Overview } from '@/app/me/me-view'
+import type { Overview } from '@/lib/me-types'
 
 export function AccountCard({
   user,
@@ -21,6 +22,8 @@ export function AccountCard({
   favoritesCount: number
   anonymous: boolean
 }) {
+  // 头像加载失败（过期/防盗链/CSP 拦截）回落字母头像：裂图比占位更糟
+  const [avatarFailed, setAvatarFailed] = useState(false)
   if (anonymous) {
     return (
       <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 sm:p-6">
@@ -55,12 +58,15 @@ export function AccountCard({
     <section className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          {user?.avatar ? (
+          {user?.avatar && !avatarFailed ? (
             // 头像来源受限（http(s) 或站内路径），这里用原生 img 避免 next/image 域名白名单
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={user.avatar}
               alt=""
+              referrerPolicy="no-referrer"
+              loading="lazy"
+              onError={() => setAvatarFailed(true)}
               className="h-11 w-11 shrink-0 rounded-full border border-border/70 object-cover"
             />
           ) : (

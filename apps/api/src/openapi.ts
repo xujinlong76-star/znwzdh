@@ -34,8 +34,6 @@ export interface RouteEntry {
   scope: RouteScope;
 }
 
-const KNOWN_SCOPES: ReadonlySet<string> = new Set(["public", "read", "write", "admin"]);
-
 /** 端点中文描述（少量人工标注；未标注的走 URL 段推断） */
 const DESCRIPTIONS: Record<string, string> = {
   "GET /api/health": "健康与能力：模式、capabilities、统计",

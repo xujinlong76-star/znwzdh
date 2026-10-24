@@ -89,9 +89,10 @@ test.describe('用户中心：三态', () => {
     await page.goto('/me/account')
     await expect(page.getByRole('heading', { name: '账号与身份' })).toBeVisible()
     await expect(page.getByText('当前是匿名身份')).toBeVisible()
-    await expect(page.getByRole('link', { name: '登录 / 创建账号' })).toHaveAttribute(
-      'href',
-      '/auth/signin?callbackUrl=/me/account',
+    // callbackUrl 的百分号编码形式不是契约：按 URL 语义断言解码后的回跳地址
+    const signinHref = await page.getByRole('link', { name: '登录 / 创建账号' }).getAttribute('href')
+    expect(signinHref && new URL(signinHref, 'http://localhost').searchParams.get('callbackUrl')).toBe(
+      '/me/account',
     )
     await expect(page.getByRole('button', { name: '编辑资料' })).toHaveCount(0)
   })

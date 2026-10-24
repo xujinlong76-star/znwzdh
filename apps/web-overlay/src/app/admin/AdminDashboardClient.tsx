@@ -221,7 +221,7 @@ export function AdminDashboardClient() {
   const [linucb, setLinucb] = useState<LinUCBInfo | null>(null)
   const [searchAi, setSearchAi] = useState<SearchAiOverviewData | null>(null)
   const [security, setSecurity] = useState<SecurityOverviewData | null>(null)
-  const [clientErrors, setClientErrors] = useState<ClientErrorsData | null>(null)
+  const [clientErrors, setClientErrors] = useState<(ClientErrorsData & { loadFailed?: boolean }) | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [sseStatus, setSseStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   // 最近有多少条实时消息解析失败。连接是通的、但数值冻住时，必须能说出来。
@@ -239,8 +239,8 @@ export function AdminDashboardClient() {
         hubGet<SecurityOverviewData>('/api/admin/dashboard/security?hours=24'),
         // 前端错误聚合：单点失败只让这张卡片缺席，不拖垮整块面板
         hubGet<ClientErrorsData>('/api/admin/client-errors').catch(() => {
-          /* 旧版中枢没有这个端点 / 瞬间故障：这张卡片显示「暂无」，其余面板照常 */
-          return null
+          // 旧版中枢没有这个端点 / 瞬间故障：标记 loadFailed，卡片说「没取回」而不是「暂无」
+          return { total: 0, byKind: {}, recent: [], retention: '', loadFailed: true }
         }),
       ])
       if (overviewData) setData(overviewData)
@@ -249,7 +249,7 @@ export function AdminDashboardClient() {
         if (searchAiData.linucb) setLinucb(searchAiData.linucb)
       }
       if (securityData) setSecurity(securityData)
-      setClientErrors(clientErrorData)
+      setClientErrors(clientErrorData ?? { total: 0, byKind: {}, recent: [], retention: '', loadFailed: true })
       setLoadError(null)
     } catch (err) {
       // 以前只 console.error：首屏拉取失败时页面会永远停在「正在加载…」，
@@ -1195,6 +1195,10 @@ export function AdminDashboardClient() {
                 ))}
               </div>
             </>
+          ) : clientErrors?.loadFailed ? (
+            <div className="text-xs text-amber-600 dark:text-amber-400 py-2 text-center">
+              前端错误聚合这次没有取回（中枢不可用，或该版本还没有这个端点）——这里不能读成「没有崩溃被捕获」。
+            </div>
           ) : (
             <div className="text-xs text-muted-foreground py-2 text-center">
               暂无前端错误上报（进程启动以来）

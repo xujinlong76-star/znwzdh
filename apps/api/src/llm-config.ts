@@ -68,6 +68,11 @@ export type LlmFallbackInput = z.infer<typeof LlmFallbackInputSchema>;
 export const SystemLlmConfigInputSchema = LlmProviderInputSchema.extend({
   /** 仅系统级可设：允许内网端点（本地 Ollama） */
   allowPrivateNetwork: z.boolean().optional(),
+  /**
+   * 仅系统级可设：观测大盘折算花费用的单价（¥/1K token）。
+   * 0/省略 = 未配置，大盘据此写「未配置单价」而不是报一个凭空捏的 ¥ 数。
+   */
+  costPer1kTokensRmb: z.number().min(0).max(1000).optional(),
   /** 备用模型池：主模型失败/超时后按顺序尝试（最多 3 个） */
   fallbacks: z.array(LlmFallbackInputSchema).max(3).optional(),
 });
@@ -104,6 +109,8 @@ interface StoredLlmProvider {
   allowPrivateNetwork: boolean;
   /** 深度思考；旧配置没有该字段时按「开」处理（产品默认） */
   thinking?: boolean;
+  /** 观测大盘折算花费的单价（¥/1K token）；未设则回退环境变量 */
+  costPer1kTokensRmb?: number;
   /** 备用模型池（仅系统级配置使用） */
   fallbacks: StoredLlmFallback[];
   updatedAt: number;
@@ -135,6 +142,7 @@ const StoredLlmProviderSchema = z.object({
   maxTokens: z.number().default(1024),
   jsonMode: z.enum(["auto", "response_format", "prompt"]).default("auto"),
   allowPrivateNetwork: z.boolean().default(false),
+  costPer1kTokensRmb: z.number().min(0).max(1000).optional(),
   fallbacks: z.array(StoredLlmFallbackSchema).default([]),
   updatedAt: z.number().default(0),
   updatedBy: z.string().nullable().optional(),
@@ -155,6 +163,8 @@ function envDefaults(config: AppConfig): Omit<StoredLlmProvider, "apiKeyEnc" | "
     maxTokens: config.llm.maxTokens,
     jsonMode: config.llm.jsonMode,
     allowPrivateNetwork: config.llm.allowPrivateNetwork,
+    // 管理端没显式填过单价时，用环境变量的单价兜底；两者都没配就是 0 = 未配置
+    costPer1kTokensRmb: config.costPer1kTokensRmb,
     fallbacks: [],
   };
 }
@@ -241,6 +251,20 @@ async function readStoredUser(ctx: AppContext, identity: string): Promise<Stored
 /* ------------------------------------------------------------------ *
  * 解析链
  * ------------------------------------------------------------------ */
+
+/**
+ * 观测大盘折算花费用的单价（¥/1K token）。
+ *
+ * 口径：管理端显式填的值 > 环境变量 NAVHUB_LLM_COST_PER_1K_TOKENS > 0。
+ * 返回 0 代表「没配」——调用方必须据此回 null，而不是按某个默认报价折算：
+ * 任何写死的单价都会让运维面板上的 ¥ 数变成假账。
+ */
+export async function getLlmCostUnitPriceRmb(ctx: AppContext): Promise<number> {
+  const stored = await readStoredSystem(ctx);
+  // stored 为 null（管理端从没存过配置）时 readStoredSystem 不会兜底环境变量，这里补上
+  const value = stored?.costPer1kTokensRmb ?? ctx.config.costPer1kTokensRmb;
+  return typeof value === "number" && value > 0 ? value : 0;
+}
 
 export type LlmSource = "user" | "system" | "env" | "default";
 
@@ -399,6 +423,8 @@ export interface LlmConfigView {
   allowPrivateNetwork: boolean;
   /** 深度思考（默认开；可在配置页关闭） */
   thinking: boolean;
+  /** 观测大盘折算花费的单价（¥/1K token）；0 = 未配置 */
+  costPer1kTokensRmb: number;
   /** 备用模型池（仅系统级；密钥只回显掩码） */
   fallbacks: LlmFallbackView[];
   updatedAt: number | null;
@@ -423,6 +449,7 @@ function viewOf(stored: StoredLlmProvider, key: string | null, source: "db" | "e
     jsonMode: stored.jsonMode,
     allowPrivateNetwork: stored.allowPrivateNetwork,
     thinking: stored.thinking ?? true,
+    costPer1kTokensRmb: stored.costPer1kTokensRmb ?? 0,
     fallbacks: [],
     updatedAt: stored.updatedAt || null,
     updatedBy: stored.updatedBy,
@@ -439,7 +466,7 @@ export async function getSystemLlmConfigView(ctx: AppContext): Promise<LlmConfig
   const resolved = await resolveLlm(ctx);
   const effective: LlmConfigView["effective"] = {
     source: resolved.source === "user" ? "system" : (resolved.source as "system" | "env" | "default"),
-    name: resolved.provider.name || "Agnes 3.0 Flash",
+    name: resolved.provider.name || AGNES_NAME,
     model: resolved.provider.model,
     baseUrl: resolved.provider.baseUrl,
   };
@@ -550,6 +577,8 @@ export async function saveSystemLlmConfig(
     jsonMode: input.jsonMode ?? base.jsonMode,
     // 产品默认开；显式关掉才落 false
     thinking: input.thinking ?? base.thinking ?? true,
+    // 显式填 0 = 清除单价（大盘回到「未配置」），省略 = 沿用原值
+    costPer1kTokensRmb: input.costPer1kTokensRmb ?? base.costPer1kTokensRmb ?? 0,
     allowPrivateNetwork: allowPrivate,
     fallbacks,
     updatedAt: Date.now(),
@@ -622,7 +651,7 @@ export async function getUserLlmConfigView(ctx: AppContext, identity: string): P
   const resolved = await resolveLlm(ctx, identity);
   const effective: UserLlmConfigView["effective"] = {
     source: resolved.source,
-    name: resolved.provider.name || "Agnes 3.0 Flash",
+    name: resolved.provider.name || AGNES_NAME,
     model: resolved.provider.model,
     baseUrl: resolved.provider.baseUrl,
   };

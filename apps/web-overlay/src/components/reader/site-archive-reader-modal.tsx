@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import {
   BookOpen,
   Download,
@@ -29,6 +30,7 @@ import {
   type SiteOfflineArchive,
 } from '@/lib/navhub-api'
 import { Button } from '@/registry/new-york/ui/button'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import { copyText } from '@/lib/clipboard'
@@ -121,16 +123,13 @@ export function SiteArchiveReaderModal({
     }
   }, [open, site, loadArchive])
 
-  // ESC 键关闭
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && open) {
-        onOpenChange(false)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, onOpenChange])
+  // 浮层公共行为：Esc 关（捕获阶段，不会顺带触发全局快捷键）、点遮罩关、
+  // 锁背景滚动、焦点圈养与还原、role=dialog + 可读名称
+  const { containerProps, scrimProps } = useOverlayBehavior({
+    open,
+    onClose: () => onOpenChange(false),
+    ariaLabel: site ? `网页存档阅读器 · ${site.title}` : '网页存档阅读器',
+  })
 
   // SingleFile 离线文件下载 (.html)
   const handleDownloadSingleFile = () => {
@@ -190,14 +189,14 @@ export function SiteArchiveReaderModal({
     (archive?.htmlContent ? archive.htmlContent.replace(/<[^>]+>/g, ' ').trim() : '')
 
   return (
-    <div
-      role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200"
-      onClick={() => onOpenChange(false)}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className={`relative flex flex-col w-full max-w-4xl h-[90vh] rounded-2xl border shadow-2xl overflow-hidden backdrop-blur-2xl transition-colors duration-300 ${themeClasses[theme]}`}
-        onClick={(e) => e.stopPropagation()}
+        {...scrimProps}
+        className="absolute inset-0 bg-black/60 backdrop-blur-md animate-in fade-in duration-200"
+      />
+      <div
+        {...containerProps}
+        className={`relative flex flex-col w-full max-w-4xl h-[90vh] rounded-2xl border shadow-2xl overflow-hidden backdrop-blur-2xl transition-colors duration-300 outline-none ${themeClasses[theme]}`}
       >
         {/* 顶部工具栏 */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-inherit bg-black/5 dark:bg-white/5 backdrop-blur-md">
@@ -383,7 +382,7 @@ export function SiteArchiveReaderModal({
                   <span>NavHub 离线安全沙箱渲染</span>
                   <span>·</span>
                   <a
-                    href={/^https?:\/\//i.test(archive.url) ? archive.url : '#'}
+                    href={safeHref(archive.url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 hover:underline text-indigo-500"

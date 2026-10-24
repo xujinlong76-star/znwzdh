@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { fetchCollectionDetail, type HubCollection, type HubSite } from '@/lib/navhub-api'
@@ -91,9 +92,12 @@ export default function CollectionDetailView({
               <div className="h-4 w-full rounded bg-muted" />
               <div className="h-4 w-4/5 rounded bg-muted" />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3.5">
+            <div
+              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4"
+              style={{ gap: 'var(--density-grid-gap, 1rem)' }}
+            >
               {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="rounded-xl border border-border/70 bg-card/50 p-3.5 space-y-3 animate-pulse">
+                <div key={i} className="rounded-xl border border-border/70 bg-card/50 p-[var(--density-card-padding,0.875rem)] space-y-3 animate-pulse">
                   <div className="flex items-start gap-2.5">
                     <div className="h-10 w-10 rounded-lg bg-muted shrink-0" />
                     <div className="flex-1 space-y-2">
@@ -182,7 +186,7 @@ export default function CollectionDetailView({
                     key={site.id}
                     className="relative group rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 backdrop-blur-xs transition-all duration-200 hover:-translate-y-0.5 p-[var(--density-card-padding,0.875rem)] flex flex-col justify-between shadow-2xs"
                   >
-                    <a href={site.url} target="_blank" rel="noopener noreferrer" className="block min-w-0 flex-1">
+                    <a href={safeHref(site.url)} target="_blank" rel="noopener noreferrer" className="block min-w-0 flex-1">
                       <div className="flex items-start gap-2.5">
                         <div className="shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                           <SiteFavicon
@@ -215,7 +219,7 @@ export default function CollectionDetailView({
                     </div>
                     <div className="absolute top-2 right-2 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex items-center gap-1">
                       <a
-                        href={site.url}
+                        href={safeHref(site.url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="p-1.5 rounded-md hover:bg-muted text-muted-foreground"

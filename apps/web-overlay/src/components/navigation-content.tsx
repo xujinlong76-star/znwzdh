@@ -56,7 +56,7 @@ import {
   DialogFooter,
 } from '@/registry/new-york/ui/dialog'
 import { Input } from '@/registry/new-york/ui/input'
-import { Plus, Sparkles } from 'lucide-react'
+import { Plus, Tags } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { type WorkspaceId } from '@/components/workspace-filter'
@@ -101,6 +101,8 @@ export function NavigationContent({
   const { containerProps, scrimProps } = useOverlayBehavior({
     open: isSidebarOpen,
     onClose: () => setIsSidebarOpen(false),
+    // 抽屉常驻 DOM，读屏需要一个稳定名称来说明「这是分类导航」
+    ariaLabel: '分类导航抽屉',
   })
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>('all')
   const [isToolsOpen, setIsToolsOpen] = useState(false)
@@ -242,7 +244,7 @@ export function NavigationContent({
     setCustomSiteDesc('')
   }
 
-  // 6. 自定义站点录入时的智能模糊分类归属推荐算法
+  // 6. 自定义站点录入时的关键词重合度分类推荐（本地启发式，界面上要如实标注）
   const categorySuggestion = useMemo(() => {
     if (!customSiteTitle.trim() && !customSiteHref.trim()) return null
     return suggestCategoryForSite(
@@ -529,14 +531,21 @@ export function NavigationContent({
                 />
               </div>
 
-              {/* 智能模糊分类归属推荐卡片 */}
+              {/* 关键词分类推荐卡片：判据是字符串重合，界面上不许冒充 AI */}
               {categorySuggestion && (
                 <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <Sparkles className="w-3.5 h-3.5 text-violet-500 shrink-0" />
-                    <span className="text-muted-foreground truncate">
-                      AI 推荐分类：<strong className="text-foreground">{categorySuggestion.categoryTitle}</strong> ({Math.round(categorySuggestion.confidence * 100)}% 匹配)
-                    </span>
+                    <Tags className="w-3.5 h-3.5 text-violet-500 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-muted-foreground truncate">
+                        按关键词推荐分类：
+                        <strong className="text-foreground">{categorySuggestion.categoryTitle}</strong>
+                        （重合度 {Math.round(categorySuggestion.confidence * 100)}%）
+                      </div>
+                      <div className="text-[11px] text-muted-foreground truncate">
+                        {categorySuggestion.matchReason} · 本地字符串匹配，不是 AI 判断
+                      </div>
+                    </div>
                   </div>
                   {addSiteTargetCatId !== categorySuggestion.categoryId && (
                     <Button

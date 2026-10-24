@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 import { toast } from 'sonner'
 import {
   fetchSiteHealthAuditReport,
@@ -25,6 +26,7 @@ import {
   type HubSiteHealthSummary,
   type HubSiteHealthIssue,
 } from '@/lib/navhub-api'
+import { describeDegrade } from '@/lib/degrade'
 
 interface SiteHealthAuditModalProps {
   open: boolean
@@ -37,7 +39,16 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
   const [healingId, setHealingId] = useState<string | null>(null)
   const [recommendingId, setRecommendingId] = useState<string | null>(null)
   const [aiAlternatives, setAiAlternatives] = useState<Record<string, Array<{ title: string; url: string; reason: string }>>>({})
+  // 每个站点的平替来源说明：额度/未配置/调用失败三种降级都必须写在列表上，
+  // 否则同分类兜底会被读成「AI 精选平替」。
+  const [altNotices, setAltNotices] = useState<Record<string, string>>({})
   const [summary, setSummary] = useState<HubSiteHealthSummary | null>(null)
+  // 浮层公共行为：Esc 关、点遮罩关、锁背景滚动、焦点圈养与还原、role=dialog + 可读名称
+  const { containerProps, scrim } = useOverlayBehavior({
+    open,
+    onClose,
+    ariaLabel: '站点健康自治巡检与无感自愈中枢',
+  })
 
   const loadReport = useCallback(async () => {
     setLoading(true)
@@ -123,12 +134,24 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
           ...prev,
           [issue.siteId]: res.recommendations,
         }))
-        toast.success(`Agnes 3.0 Flash 已生成 ${res.recommendations.length} 个智能平替建议`)
+        const fromModel = res.model && res.model !== 'fallback-heuristics' ? res.model : null
+        if (fromModel) {
+          setAltNotices((prev) => ({ ...prev, [issue.siteId]: '' }))
+          toast.success(`模型 ${fromModel} 已生成 ${res.recommendations.length} 个智能平替建议`)
+        } else {
+          const notice =
+            res.aiDegraded === 'quota'
+              ? `今日 AI 额度已用完${res.quota ? `（${res.quota.metric} ${res.quota.used}/${res.quota.limit}）` : ''}，约 ${Math.max(1, Math.ceil((res.quota?.retryAfterSeconds ?? 0) / 3600))} 小时后恢复。以下结果是同分类高活跃站点兜底，未经模型筛选。`
+              : '本次没有模型参与（未配置密钥或调用失败），以下结果是同分类高活跃站点兜底，未经模型筛选。'
+          setAltNotices((prev) => ({ ...prev, [issue.siteId]: notice }))
+          toast.info(notice)
+        }
       } else {
         toast.info('暂无更高匹配度的替代站点')
       }
-    } catch {
-      toast.error('获取 AI 替代站点失败')
+    } catch (err) {
+      // 超时 / 中枢未起 / 鉴权限流是三件不同的事，统一写成「获取失败」会让人反复重试
+      toast.error(describeDegrade(err, 'AI 平替推荐').message)
     } finally {
       setRecommendingId(null)
     }
@@ -137,8 +160,12 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in-0 duration-200">
-      <div className="relative w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl border border-border/80 bg-card/95 shadow-2xl overflow-hidden backdrop-blur-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {scrim}
+      <div
+        {...containerProps}
+        className="relative w-full max-w-3xl max-h-[85vh] flex flex-col rounded-2xl border border-border/80 bg-card/95 shadow-2xl overflow-hidden backdrop-blur-xl outline-none animate-in fade-in-0 duration-200"
+      >
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-3.5 sm:py-4 border-b border-border/60 bg-muted/20">
           <div className="flex items-center gap-3 min-w-0">
@@ -153,7 +180,7 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
                 </Badge>
               </div>
               <p className="text-[11px] text-muted-foreground mt-0.5 truncate sm:whitespace-normal">
-                实时探活死链、域名失效与 301 重定向，联动 Wayback 时间机器与 Agnes 3.0 Flash 智能推荐平替
+                实时探活死链、域名失效与 301 重定向，联动 Wayback 时间机器与 AI 智能推荐平替
               </p>
             </div>
           </div>
@@ -288,6 +315,12 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
                           <Sparkles className="w-3 h-3 text-purple-500" />
                           <span>候选平替方案：</span>
                         </div>
+                        {altNotices[issue.siteId] && (
+                          <div className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[10px] leading-relaxed text-amber-700 dark:text-amber-400">
+                            <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" aria-hidden="true" />
+                            <span>{altNotices[issue.siteId]}</span>
+                          </div>
+                        )}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {currentAlts.map((alt, i) => (
                             <div

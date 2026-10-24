@@ -43,6 +43,14 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "sites", column: "metadata", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "email", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "avatar", sqlite: "TEXT", pg: "TEXT" },
+  // 会话治理（T8）：sessions 激活为可吊销设备记录（列补齐走 ALTER，存量库平滑升级）
+  { table: "sessions", column: "user_agent", sqlite: "TEXT", pg: "TEXT" },
+  { table: "sessions", column: "revoked_at", sqlite: "INTEGER", pg: "BIGINT" },
+  { table: "sessions", column: "last_seen_at", sqlite: "INTEGER", pg: "BIGINT" },
+  // 用户级 API 令牌（T20）：owner_identity 非空 = 用户自建个人令牌
+  { table: "api_tokens", column: "owner_identity", sqlite: "TEXT", pg: "TEXT" },
+  // 收藏标签（T22）：JSON 字符串数组；契约与上限见 normalizeFavoriteTags
+  { table: "favorites", column: "tags", sqlite: "TEXT", pg: "TEXT" },
   { table: "users", column: "source", sqlite: "TEXT NOT NULL DEFAULT 'local'", pg: "TEXT NOT NULL DEFAULT 'local'" },
   // 任务退避：失败后延迟到 next_run_at 才重新可被认领（见 jobs.ts 的指数退避）
   { table: "jobs", column: "next_run_at", sqlite: "INTEGER", pg: "BIGINT" },
@@ -214,6 +222,12 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
        ON CONFLICT(user_id) DO NOTHING`,
     `DELETE FROM user_vault_sync
        WHERE user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\'`,
+    // 站内通知（T13）：轻量用户消息表
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, read_at BIGINT, created_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, read_at INTEGER, created_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS notifications_identity_created_idx ON notifications(identity, created_at)",
+    "CREATE INDEX IF NOT EXISTS api_tokens_owner_idx ON api_tokens(owner_identity)",
     // 标签概念别名索引
     "CREATE INDEX IF NOT EXISTS tag_aliases_tag_idx ON tag_aliases(tag_id)",
     // 分面属性表与索引 (Taxonomy Phase 2)

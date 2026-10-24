@@ -9,8 +9,9 @@ import { highlightParts } from '@/lib/highlight'
 import { SiteFavicon, isRemoteRawFavicon } from '@/components/site-favicon'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
-import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
+import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { matchSearchShortcut } from '@/lib/plugins/search-pack-runtime'
+import { useExternalLinkTarget } from '@/lib/user-preferences'
 
 interface SearchBarProps {
   navigationData: NavigationData
@@ -36,6 +37,8 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
   const [isFocused, setIsFocused] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  // 站点配置只是默认值：用户中心的「新标签页打开站点」开关决定最终打开方式
+  const linkTarget = useExternalLinkTarget(siteConfig?.navigation?.linkTarget)
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -48,18 +51,14 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // 呼出键（⌘K / 「/」）由 SpotlightModal 一处处理：这里是 /videos 的内联筛选框，
+  // 再挂一个 keydown 只会与弹窗抢同一次按键（详见 search-palette 的同名注释）。
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsFocused(false)
-        inputRef.current?.blur()
-      }
-      
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        inputRef.current?.focus()
-        setIsFocused(true)
-      }
+      if (event.key !== 'Escape') return
+      if (document.activeElement !== inputRef.current) return
+      setIsFocused(false)
+      inputRef.current?.blur()
     }
 
     document.addEventListener('keydown', handleKeyDown)
@@ -116,7 +115,6 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
     // 与 navigation-card 的处理保持一致（那里早就用了 safeHref）。
     const href = safeHref(itemWithHref.href, '')
     if (href && isSafeHttpUrl(href)) {
-      const linkTarget = siteConfig?.navigation?.linkTarget || '_blank'
       if (linkTarget === '_self') {
         // 用 assign 而非给 location.href 赋值：渲染期对宿主对象赋值会被
         // react-hooks/immutability 判为修改外部值，语义等价但更明确。
@@ -146,14 +144,18 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
           ref={inputRef}
           type="search"
           aria-label="搜索导航"
-          placeholder="搜索导航 (按 ⌘K 定位，支持 !gh, !npm, !mdn 直达)..."
+          role="combobox"
+          aria-expanded={showResults}
+          aria-autocomplete="list"
+          aria-controls={showResults ? 'navhub-search-bar-results' : undefined}
+          placeholder="搜索导航 (支持 !gh, !npm, !mdn 直达)..."
           value={searchQuery}
           onChange={(e) => handleInputChange(e.target.value)}
           onFocus={() => setIsFocused(true)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && matchedShortcut.matched && matchedShortcut.directUrl) {
               e.preventDefault()
-              window.open(matchedShortcut.directUrl, '_blank', 'noopener,noreferrer')
+              safeWindowOpen(matchedShortcut.directUrl)
               clearSearch()
             }
           }}
@@ -178,23 +180,16 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
       </div>
 
       {showResults && (
-        <div className="absolute top-full left-0 right-0 mt-2 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[70vh] overflow-hidden">
+        <div id="navhub-search-bar-results" className="absolute top-full left-0 right-0 mt-2 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[70vh] overflow-hidden">
           {matchedShortcut.matched && matchedShortcut.engine && matchedShortcut.directUrl && (
             <div className="p-2 border-b border-border/70 bg-primary/5">
-              <div
-                role="button"
-                tabIndex={0}
+              <button
+                type="button"
                 onClick={() => {
-                  window.open(matchedShortcut.directUrl, '_blank', 'noopener,noreferrer')
+                  safeWindowOpen(matchedShortcut.directUrl)
                   clearSearch()
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    window.open(matchedShortcut.directUrl, '_blank', 'noopener,noreferrer')
-                    clearSearch()
-                  }
-                }}
-                className="flex items-center justify-between p-2.5 rounded-lg bg-background hover:bg-muted/80 border border-primary/20 hover:border-primary/40 cursor-pointer shadow-xs transition-all group"
+                className="w-full text-left flex items-center justify-between p-2.5 rounded-lg bg-background hover:bg-muted/80 border border-primary/20 hover:border-primary/40 cursor-pointer shadow-xs transition-all group"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-primary text-primary-foreground">
@@ -212,7 +207,7 @@ export function SearchBar({ onSearch, searchResults, searchQuery, siteConfig }: 
                 <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0 font-medium group-hover:text-foreground">
                   回车直达 <ExternalLink className="w-3 h-3 text-primary" />
                 </span>
-              </div>
+              </button>
             </div>
           )}
           <Command className="border-0 shadow-none">

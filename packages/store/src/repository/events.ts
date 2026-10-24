@@ -32,6 +32,44 @@ export async function audit(repo: Repository, entry: { actor: string; actorKind?
   }
 }
 
+/**
+ * 按身份的访问历史（T23）：events kind=click 就是按身份的站点浏览流水，
+ * 此前只有画像摘要（visitedSiteIds 50 个）在消费它——数据已在采集，
+ * 这里把它作为用户自己的数据暴露出来（数据主权：看得到才谈得上清理）。
+ */
+export interface VisitItem {
+  id: number;
+  siteId: string;
+  at: number;
+}
+
+export async function listVisitsPage(
+  repo: Repository,
+  identity: string,
+  limit: number,
+  offset: number,
+): Promise<{ items: VisitItem[]; hasMore: boolean }> {
+  const capped = Math.min(Math.max(limit, 1), 50);
+  const rows = await repo.raw(
+    "SELECT id, site_id, created_at FROM events WHERE identity = ? AND kind = 'click' AND site_id IS NOT NULL ORDER BY id DESC LIMIT ? OFFSET ?",
+    [identity, capped + 1, Math.max(0, offset)],
+  );
+  const hasMore = rows.length > capped;
+  const items = (hasMore ? rows.slice(0, capped) : rows).map((r) => ({
+    id: Number(r.id ?? 0),
+    siteId: String(r.site_id),
+    at: Number(r.created_at ?? 0),
+  }));
+  return { items, hasMore };
+}
+
+export async function countVisits(repo: Repository, identity: string): Promise<number> {
+  const row = (
+    await repo.raw("SELECT COUNT(*) AS c FROM events WHERE identity = ? AND kind = 'click' AND site_id IS NOT NULL", [identity])
+  )[0];
+  return Number(row?.c ?? 0);
+}
+
 export async function listAuditLogs(repo: Repository, filter: {
     limit?: number;
     offset?: number;

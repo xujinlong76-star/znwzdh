@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { safeWindowOpen } from '@/lib/safe-url'
 import { Search, ArrowRight } from 'lucide-react'
 
 interface SearchEngine {
@@ -35,10 +36,22 @@ const SEARCH_ENGINES: Record<string, SearchEngine> = {
     icon: '🌐',
     buildUrl: (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}`,
   },
+  mdn: {
+    id: 'mdn',
+    name: 'MDN',
+    icon: '📚',
+    buildUrl: (q) => `https://developer.mozilla.org/zh-CN/search?q=${encodeURIComponent(q)}`,
+  },
 }
 
 export function QuickSearchWidget({ config }: { config?: Record<string, unknown> }) {
-  const defaultEngineKey = (typeof config?.defaultEngine === 'string' ? config.defaultEngine : null) || 'google'
+  const requested = typeof config?.defaultEngine === 'string' ? config.defaultEngine.trim() : ''
+  // 只认自有属性：`constructor` 这类原型链上的键会被 Record 查到，得当成不存在的引擎
+  const isKnown = Object.prototype.hasOwnProperty.call(SEARCH_ENGINES, requested)
+  const unknownEngine = requested !== '' && !isKnown
+  // 只认注册过的引擎：配置里写了不存在的键时高亮会落空（没有一个页签选中），
+  // 而回车又静默走 Google，用户以为默认引擎生效了。
+  const defaultEngineKey = isKnown ? requested : 'google'
   const [selectedEngine, setSelectedEngine] = useState<string>(defaultEngineKey)
   const [query, setQuery] = useState('')
 
@@ -47,7 +60,7 @@ export function QuickSearchWidget({ config }: { config?: Record<string, unknown>
     const trimmed = query.trim()
     if (!trimmed) return
     const engine = SEARCH_ENGINES[selectedEngine] || SEARCH_ENGINES.google
-    window.open(engine.buildUrl(trimmed), '_blank', 'noopener,noreferrer')
+    safeWindowOpen(engine.buildUrl(trimmed))
   }
 
   return (
@@ -97,8 +110,14 @@ export function QuickSearchWidget({ config }: { config?: Record<string, unknown>
       </form>
 
       {/* 底部信息 */}
-      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono">
-        按 Enter 直达新标签页 · 零隐私追踪
+      <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono space-y-0.5">
+        {unknownEngine && (
+          <p className="text-amber-600 dark:text-amber-400 leading-relaxed">
+            配置的默认引擎「{requested}」不存在，已选中 Google。可用值：
+            {Object.keys(SEARCH_ENGINES).join(' / ')}。
+          </p>
+        )}
+        <div>按 Enter 直达新标签页 · 零隐私追踪</div>
       </div>
     </div>
   )

@@ -120,7 +120,21 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
     try {
       const res = await syncPluginTap(id)
       if (res.ok) {
-        toast.success(`同步完成：发现 ${res.fetchedCount} 个条目，成功导入/更新 ${res.importedCount} 个插件`)
+        // 逐因报数：原来只说「发现 N 个、导入/更新 M 个」，既没有更新这条路径，
+        // 也把「不合规 / 重名 / 写库失败 / 被上限截断」全藏进了 N-M 的差里。
+        const breakdown = [`新增 ${res.importedCount} 个`]
+        if (res.skippedDuplicate > 0) breakdown.push(`市场已有同名 ${res.skippedDuplicate} 个`)
+        if (res.rejectedInvalid > 0) breakdown.push(`清单不合规 ${res.rejectedInvalid} 个`)
+        if (res.failedWrite > 0) breakdown.push(`写入失败 ${res.failedWrite} 个`)
+        if (res.truncated) {
+          breakdown.push(`超出单次 ${res.importCap} 条上限，还有 ${res.fetchedCount - res.processedCount} 条没处理，请再次同步`)
+        }
+        const message = `同步完成：订阅源共 ${res.fetchedCount} 条 → ${breakdown.join('、')}`
+        if (res.rejectedInvalid > 0 || res.failedWrite > 0 || res.truncated) {
+          toast.warning(message)
+        } else {
+          toast.success(message)
+        }
         loadTaps()
         onSynced?.()
       }
@@ -223,8 +237,12 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
                   <div className="min-w-0 space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-foreground truncate">{tap.name}</span>
-                      <Badge variant="outline" className="text-[10px] bg-indigo-500/10 text-indigo-600 border-indigo-500/20">
-                        {tap.pluginCount ?? 0} 个插件
+                      <Badge
+                        variant="outline"
+                        title="上次同步后，本源清单里在市场可见的条数（新增 + 已存在同名）；不含清单不合规与写入失败的条目"
+                        className="text-[10px] bg-indigo-500/10 text-indigo-600 border-indigo-500/20"
+                      >
+                        市场内 {tap.pluginCount ?? 0} 个插件
                       </Badge>
                       {tap.lastSyncedAt && (
                         <span className="text-[10px] text-muted-foreground">

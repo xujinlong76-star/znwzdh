@@ -49,7 +49,7 @@ export function RecentActivity({ items }: { items: ActivityItem[] }) {
           最近没有可展示的操作记录。
         </p>
       ) : (
-        <ul className="mt-1 divide-y divide-border/60">
+        <ol className="mt-1 divide-y divide-border/60" aria-label="最近操作列表">
           {items.map((item, index) => (
             <li
               key={`${item.action}-${item.target}-${item.at}-${index}`}
@@ -63,10 +63,10 @@ export function RecentActivity({ items }: { items: ActivityItem[] }) {
                   </p>
                 ) : null}
               </div>
-              <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{relativeTime(item.at)}</span>
+              <time dateTime={new Date(item.at).toISOString()} className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{relativeTime(item.at)}</time>
             </li>
           ))}
-        </ul>
+        </ol>
       )}
     </section>
   )

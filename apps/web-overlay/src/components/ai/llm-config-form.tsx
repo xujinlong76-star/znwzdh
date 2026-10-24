@@ -24,6 +24,11 @@ export interface LlmFormValue {
   /** 深度思考（产品默认开；富化类批量场景可关） */
   thinking: boolean
   allowPrivateNetwork: boolean
+  /**
+   * 观测大盘折算花费的单价（¥/1K token），仅管理端可写。
+   * undefined/0 = 未配置，大盘显示「未配置」而不是猜一个数。
+   */
+  costPer1kTokensRmb?: number
 }
 
 export const JSON_MODE_OPTIONS: Array<{ value: HubJsonMode; label: string }> = [
@@ -40,6 +45,7 @@ export function LlmConfigFields({
   onChange,
   apiKeyMasked,
   showAllowPrivateNetwork = false,
+  showCostPrice = false,
   showEnabled = true,
   disabled = false,
 }: {
@@ -49,6 +55,8 @@ export function LlmConfigFields({
   apiKeyMasked?: string
   /** 管理端可放开内网端点（本地 Ollama）；用户端强制关闭 */
   showAllowPrivateNetwork?: boolean
+  /** 仅管理端：单价是运维者自己的账，个人配置写了也不参与折算 */
+  showCostPrice?: boolean
   showEnabled?: boolean
   disabled?: boolean
 }) {
@@ -241,6 +249,26 @@ export function LlmConfigFields({
           auto：先带 <code>response_format</code>，端点不支持时自动去参重试并记住能力。
         </p>
       </div>
+
+      {showCostPrice && (
+        <div className="space-y-1.5">
+          <Label htmlFor="llm-cost-price">成本单价（元 / 1K tokens）</Label>
+          <Input
+            id="llm-cost-price"
+            type="number"
+            min={0}
+            max={1000}
+            step={0.0001}
+            value={value.costPer1kTokensRmb ?? 0}
+            disabled={disabled}
+            onChange={(e) => set('costPer1kTokensRmb', num(e.target.value, value.costPer1kTokensRmb ?? 0))}
+          />
+          <p className="text-xs text-muted-foreground">
+            仅供效能大盘把 token 消耗折算成金额，不区分输入/输出价。保存后立即生效，无需重启。
+            填 0 = 未配置，大盘直说「未配置」而不是按内置单价放假账；此处填 0 也会压过环境变量里的单价。
+          </p>
+        </div>
+      )}
 
       {/* 深度思考：Agnes 3.0 Flash 的 chat_template_kwargs.enable_thinking。
           默认开（复杂任务质量优先），关掉可显著省 token 与延迟。 */}

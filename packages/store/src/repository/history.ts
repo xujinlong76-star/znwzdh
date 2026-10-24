@@ -62,6 +62,38 @@ export async function deleteSearchHistoryItem(repo: Repository, userId: string, 
   return changes > 0;
 }
 
+/**
+ * 批量删除（T4）：按 id 集合删除，只删属于该身份的行。
+ * 逐条 DELETE 的 N 次往返在零结果清理场景（几十条）明显偏慢且中断无补偿——
+ * 服务端一次往返完成，返回「实际删除数」（不属于该身份的 id 静默不计）。
+ */
+export async function deleteSearchHistoryItems(repo: Repository, userId: string, ids: number[]): Promise<number> {
+  const unique = [...new Set(ids)].filter((id) => Number.isFinite(id) && id > 0);
+  if (unique.length === 0) return 0;
+  // 分块 IN：SQLite 默认变量上限 999，200/批留足余量
+  let removed = 0;
+  for (let i = 0; i < unique.length; i += 200) {
+    const chunk = unique.slice(i, i + 200);
+    const placeholders = chunk.map(() => "?").join(",");
+    const changes = await repo.runCount(
+      `DELETE FROM search_history WHERE user_id = ? AND id IN (${placeholders})`,
+      [userId, ...chunk],
+    );
+    removed += changes;
+  }
+  return removed;
+}
+
+/** 按身份删除早于 cutoff 的历史（T11：用户自设保留期的自动执行），返回删除数 */
+export async function deleteSearchHistoryBefore(repo: Repository, userId: string, cutoff: number): Promise<number> {
+  return repo.runCount("DELETE FROM search_history WHERE user_id = ? AND created_at < ?", [userId, cutoff]);
+}
+
+/** 服务端筛选删除：清理全部零结果记录（result_count = 0），返回删除数 */
+export async function deleteZeroResultSearchHistory(repo: Repository, userId: string): Promise<number> {
+  return repo.runCount("DELETE FROM search_history WHERE user_id = ? AND result_count = 0", [userId]);
+}
+
 /** 导出用：一次取最多 limit 条，并告知是否被截断 */
 export async function getSearchHistoryAll(
   repo: Repository,

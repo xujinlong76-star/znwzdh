@@ -9,7 +9,9 @@
  * 两端数据按 userId 合并（见 useFavorites）。
  */
 
-const ANON_KEY = 'navhub.anonId'
+import { ANON_ID_STORAGE_KEY, USER_ID_STORAGE_KEY } from './identity-keys'
+
+const ANON_KEY = ANON_ID_STORAGE_KEY
 
 /** 取匿名 id；没有则生成并持久化。SSR 阶段返回空串（不读 window）。 */
 export function getAnonId(): string {
@@ -31,7 +33,7 @@ export function getAnonId(): string {
 export function getIdentity(): string {
   if (typeof window === 'undefined') return ''
   try {
-    const user = window.localStorage.getItem('navhub.userId')
+    const user = window.localStorage.getItem(USER_ID_STORAGE_KEY)
     if (user) return user
   } catch {
     // ignore
@@ -45,7 +47,7 @@ export function setIdentity(userId: string): void {
   // 云端同步/作者中心/合并全部按错误归属读写。
   if (!value || value.startsWith('anon-')) return
   try {
-    window.localStorage.setItem('navhub.userId', value)
+    window.localStorage.setItem(USER_ID_STORAGE_KEY, value)
   } catch {
     // ignore
   }
@@ -54,7 +56,7 @@ export function setIdentity(userId: string): void {
 /** 退出登录时清掉登录身份，回落到匿名 id（匿名数据仍然保留） */
 export function clearIdentity(): void {
   try {
-    window.localStorage.removeItem('navhub.userId')
+    window.localStorage.removeItem(USER_ID_STORAGE_KEY)
   } catch {
     // ignore
   }

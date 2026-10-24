@@ -20,7 +20,9 @@ import { ogImageUrl } from '@/lib/seo/og-text'
  * 这是 `/site/{id}` 详情页除 `/sites` 目录外的第二批入链（孤岛 2163 → ≈71
  * 的关键一步）。
  *
- * limit=100 与改版前客户端口径一致（页面无「加载更多」，一次拉全）。
+ * limit=100 是中枢 search 的单次上限（也是「加载更多」缺失下的取数上限）：
+ * 命中数超过 100 时中枢会回报 hasMore，页面据此把「共 N 个站点」改成
+ * 「本页列出 N 个（可能还有更多）」，不给假总数。
  * hubGet 失败返回 null → degraded=true 交给客户端岛出降级提示 + 重试。
  *
  * revalidate=60：369 个标签页每个都直出 50-100 条站点内链（爬虫面）。
@@ -52,7 +54,7 @@ async function loadTagPage(slug: string) {
     // status=active 必须下推到中枢：标签页只展示存活站点，而 limit=100 是硬上限。
     // 不带这个参数时，broken/pending 会先占掉名额，页面再过滤就可能把本来达标的
     // 标签误判成薄页（noindex），与 /api/tags 的存活计数、sitemap 门槛不同口径。
-    hubGet<{ hits: Array<{ site: HubSite }> }>(
+    hubGet<{ hits: Array<{ site: HubSite }>; hasMore?: boolean }>(
       '/api/search?q=&status=active&tag=' + encodeURIComponent(slug) + '&limit=100',
       60,
     ),
@@ -143,6 +145,7 @@ export default async function TagDetailPage({ params }: { params: Promise<{ slug
           slug={canonicalSlug}
           initialSites={sites}
           degraded={res === null}
+          initialTruncated={Boolean(res?.hasMore)}
           tagDescription={tagRes?.tag?.description ?? null}
         />
       </div>

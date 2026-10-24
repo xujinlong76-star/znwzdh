@@ -10,15 +10,17 @@
  *  2. **OpenAI 兼容优先。** Agnes 3.0 Flash、DeepSeek、Ollama、vLLM 都提供
  *     `POST {baseUrl}/chat/completions`；`baseUrl` 允许直接写到 `.../v1`。
  *
- *  3. **JSON 模式自动降级。** 部分兼容实现（含 Agnes 当前文档）未声明
- *     `response_format` 支持。`jsonMode: "auto"` 时先带参请求，遇到
- *     400/422 且错误体指向该参数，则记住「该端点不支持」并立即去参重试。
+ *  3. **不认参数就摘掉再试一次。** `jsonMode: "auto"` 时先带 `response_format`，
+ *     遇到 400/422 且错误体点名该参数，则记住「该端点不支持」并去参重试；
+ *     思维链参数（`thinking` / `chat_template_kwargs`）同理 —— 深度思考是产品
+ *     默认开的，严格的兼容网关会把它判成未知字段，不去参就等于全站 AI 一起挂。
  *
  *  4. **SSRF 把关。** baseUrl 由管理员/用户配置，属于「用户可控输入 ->
  *     服务端发起请求」路径：仅允许 http/https，默认拒绝环回/私网/链路本地，
  *     DNS 解析后按真实 IP 判定（防 127.0.0.1.nip.io 这类绕过）。
  *
- *  5. **不重试业务失败。** 网关只做「JSON 模式去参」这一次技术性重试；
+ *  5. **不重试业务失败。** 网关只做上面两类「去参」技术性重试（每类各一次，
+ *     判定只看字段名）；超时/鉴权/限流/坏响应一律原样抛出，
  *     业务层（如富化）自己的两次尝试与启发式降级保持不变。
  */
 import { DEFAULT_GUARD, assertUrlShape, resolveAndCheck } from "./ssrf.ts";
@@ -66,9 +68,10 @@ export interface ChatOptions {
   tools?: unknown[];
   toolChoice?: unknown;
   /**
-   * 深度思考（Agnes 3.0 Flash 的 chat_template_kwargs.enable_thinking）。
+   * 深度思考（下发 `thinking` 与 vLLM 系的 `chat_template_kwargs.enable_thinking`）。
    * 只在 true 时下发该字段：不支持的服务商收到未知字段可能 400，
    * 而 false 与「不带」在语义上等价（默认不思考）。
+   * 400 点名这些字段时网关会去参重试一次，并把该端点记成「不支持思维链参数」。
    */
   thinking?: boolean;
   signal?: AbortSignal;
@@ -91,6 +94,12 @@ export interface ChatResult {
   latencyMs: number;
   /** 实际采用的 JSON 约束方式，便于调用方判断输出可信度 */
   jsonModeUsed: "response_format" | "prompt" | "none";
+  /**
+   * 思维链参数是否真的下发到了端点。
+   * false = 端点拒收该字段，本次已去参重试：回答仍然可用，但没有推理过程，
+   * 用量记录必须按「未思考」记账，否则大盘的「思考调用数」是虚的。
+   */
+  thinkingApplied?: boolean;
 }
 
 export type LlmErrorCode =
@@ -124,9 +133,19 @@ const MAX_DETAIL_CHARS = 400;
 /** 端点不支持 response_format 的进程级记忆（baseUrl|model -> true） */
 const jsonModeUnsupported = new Set<string>();
 
+/**
+ * 端点不支持思维链参数的进程级记忆。
+ *
+ * `thinking` / `chat_template_kwargs` 是给 Agnes 与 vLLM 系用的，但严格的
+ * OpenAI 兼容网关会把未知字段判成 400。而深度思考是**产品默认开**的：没有这层
+ * 记忆，接上这类网关就等于全站 AI 一起挂，且报错只写「模型返回 HTTP 400」。
+ */
+const thinkingParamUnsupported = new Set<string>();
+
 /** 测试用：清空能力记忆 */
 export function resetLlmCapabilityCache(): void {
   jsonModeUnsupported.clear();
+  thinkingParamUnsupported.clear();
 }
 
 /** baseUrl 归一化为 chat/completions 终点 */
@@ -211,6 +230,24 @@ function looksLikeResponseFormatRejection(detail: string): boolean {
   return RESPONSE_FORMAT_HINT.test(detail);
 }
 
+/**
+ * 「这个端点拒收了思维链字段」的判定：既要点名字段，也要有拒绝措辞。
+ *
+ * 字段判定不能只认 `"thinking"` 这种带引号的形式：错误体是 JSON 原文，
+ * 引号在文本里是 `\"`，紧邻 thinking 的其实是反斜杠。所以按「非字母数字边界」
+ * 取词，并要求同一句话里出现拒绝措辞（unsupported / extra fields / key 等），
+ * 避免把正文里偶然提到 thinking 的其它 400 误判成参数不支持。
+ * 即使误判，去参重试失败时也不会写脏能力记忆（见 chatCompletion）。
+ */
+const THINKING_PARAM_FIELD =
+  /chat[\s_-]?template[\s_-]?kwargs|enable[\s_-]?thinking|(?:^|[^a-z0-9])thinking(?:[^a-z0-9]|$)/i;
+const PARAM_REJECTION_CUE =
+  /unsupported|unrecognized|unexpected|unknown|extra|invalid|not\s+(?:allowed|permitted|supported|recognized|expected)|fields?\b|parameters?\b|props?\b|arguments?\b|keys?\b/i;
+
+function looksLikeThinkingParamRejection(detail: string): boolean {
+  return THINKING_PARAM_FIELD.test(detail) && PARAM_REJECTION_CUE.test(detail);
+}
+
 async function readErrorDetail(res: Response): Promise<string> {
   try {
     const text = await res.text();
@@ -250,7 +287,13 @@ function timeoutSignal(timeoutMs: number, external?: AbortSignal): { signal: Abo
   };
 }
 
-function buildBody(provider: LlmProvider, opts: ChatOptions, useResponseFormat: boolean, stream: boolean): Record<string, unknown> {
+function buildBody(
+  provider: LlmProvider,
+  opts: ChatOptions,
+  useResponseFormat: boolean,
+  stream: boolean,
+  includeThinking = true,
+): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: provider.model,
     messages: opts.messages,
@@ -267,7 +310,7 @@ function buildBody(provider: LlmProvider, opts: ChatOptions, useResponseFormat: 
   }
   // 深度思考：Agnes 官方规范使用 thinking: { type: 'enabled', budget_tokens }，
   // 同时兼容 vLLM 系的 chat_template_kwargs: { enable_thinking: true }
-  if (opts.thinking === true) {
+  if (opts.thinking === true && includeThinking) {
     body.thinking = {
       type: "enabled",
       budget_tokens: Math.min(typeof maxTokens === "number" && maxTokens > 0 ? maxTokens : 2048, 4096),
@@ -288,13 +331,15 @@ async function callOnce(
   provider: LlmProvider,
   opts: ChatOptions,
   useResponseFormat: boolean,
+  includeThinking = true,
 ): Promise<ChatResult> {
   assertProvider(provider);
   const url = chatCompletionsUrl(provider.baseUrl);
   await assertLlmEndpoint(url, provider.allowPrivateNetwork === true);
 
   const baseTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
-  const timeoutMs = opts.thinking ? Math.max(baseTimeout, 60_000) : baseTimeout;
+  // 思维链确实下发时才放宽超时：去参重试走的是普通请求，没必要多等 40 秒
+  const timeoutMs = opts.thinking === true && includeThinking ? Math.max(baseTimeout, 60_000) : baseTimeout;
   const gate = timeoutSignal(timeoutMs, opts.signal);
   const fetchImpl = opts.fetchImpl ?? fetch;
   const startedAt = Date.now();
@@ -306,7 +351,7 @@ async function callOnce(
     const res = await fetchImpl(url, {
       method: "POST",
       headers,
-      body: JSON.stringify(buildBody(provider, opts, useResponseFormat, false)),
+      body: JSON.stringify(buildBody(provider, opts, useResponseFormat, false, includeThinking)),
       signal: gate.signal,
       // LLM 端点不应重定向；禁跟随可避免「302 -> 内网」绕过 SSRF 预检
       redirect: "error",
@@ -350,6 +395,7 @@ async function callOnce(
       usage: normalizeUsage(record.usage),
       latencyMs: Date.now() - startedAt,
       jsonModeUsed: useResponseFormat ? "response_format" : opts.json ? "prompt" : "none",
+      thinkingApplied: opts.thinking === true && includeThinking,
     };
   } catch (err) {
     if (err instanceof LlmError) throw err;
@@ -363,27 +409,44 @@ async function callOnce(
 
 /**
  * 发起一次 chat completions 调用。
- * JSON 模式下按 provider.jsonMode 决定是否带 response_format，并在不支持时自动去参重试一次。
+ *
+ * 网关只做「去参」这一类技术性重试，不重试业务失败（超时/鉴权/限流/坏响应）：
+ * - `response_format`：jsonMode=auto 且端点 400/422 点名不支持时，改走提示词约束；
+ * - 思维链参数：严格 OpenAI 兼容网关会拒收未知字段，而去参后普通回答照常可用。
+ * 两类判定都记进进程级能力缓存，后续调用直接跳过，不再白撞一次 400。
  */
 export async function chatCompletion(provider: LlmProvider, opts: ChatOptions): Promise<ChatResult> {
-  const wantJson = opts.json === true;
   const mode: JsonMode = provider.jsonMode ?? "auto";
-  let useResponseFormat = wantJson && mode !== "prompt" && !jsonModeUnsupported.has(capabilityKey(provider));
+  const key = capabilityKey(provider);
+  let useResponseFormat = opts.json === true && mode !== "prompt" && !jsonModeUnsupported.has(key);
+  let includeThinking = opts.thinking === true && !thinkingParamUnsupported.has(key);
 
-  try {
-    return await callOnce(provider, opts, useResponseFormat);
-  } catch (err) {
-    const rejectByParam =
-      err instanceof LlmError &&
-      useResponseFormat &&
-      mode === "auto" &&
-      (err.status === 400 || err.status === 422) &&
-      looksLikeResponseFormatRejection(err.detail ?? "");
-    if (!rejectByParam) throw err;
-    // 记住该端点不支持，后续直接走「提示词约束」
-    jsonModeUnsupported.add(capabilityKey(provider));
-    useResponseFormat = false;
-    return callOnce(provider, opts, false);
+  for (;;) {
+    try {
+      return await callOnce(provider, opts, useResponseFormat, includeThinking);
+    } catch (err) {
+      const detail = err instanceof LlmError ? (err.detail ?? "") : "";
+      const paramRejected =
+        err instanceof LlmError && (err.status === 400 || err.status === 422);
+      if (!paramRejected) throw err;
+
+      if (useResponseFormat && mode === "auto" && looksLikeResponseFormatRejection(detail)) {
+        // 记住该端点不支持，后续直接走「提示词约束」
+        jsonModeUnsupported.add(key);
+        useResponseFormat = false;
+        continue;
+      }
+      if (includeThinking && looksLikeThinkingParamRejection(detail)) {
+        // 先去参试一次：只有这次真成功了，才有证据说「该端点不支持思维链」。
+        // 反过来（例如 400 其实是提示词过长）不把整个进程的记忆写脏，
+        // 否则全站再也拿不到推理过程，界面上只表现为「伴侣不给思考」。
+        const retried = await callOnce(provider, opts, useResponseFormat, false).catch(() => null);
+        if (!retried) throw err;
+        thinkingParamUnsupported.add(key);
+        return retried;
+      }
+      throw err;
+    }
   }
 }
 
@@ -421,7 +484,11 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
     const res = await fetchImpl(url, {
       method: "POST",
       headers,
-      body: JSON.stringify(buildBody(provider, opts, false, true)),
+      body: JSON.stringify(
+        // 流式无法「先 400 再去参重试」（请求体已经开流），所以只复用非流式调用
+        // 学到的能力记忆：该端点已知不支持思维链参数时，一开始就不带。
+        buildBody(provider, opts, false, true, opts.thinking === true && !thinkingParamUnsupported.has(capabilityKey(provider))),
+      ),
       signal: gate.signal,
       redirect: "error",
     });

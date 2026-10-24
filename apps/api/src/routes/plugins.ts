@@ -3,6 +3,7 @@
  *
  * 遵循 docs/PLUGIN-MARKET-DESIGN-2026-10-19.md 设计规范与 apps/api/test/plugins-api.test.ts 契约：
  * 1. 声明式优先：全量消费 @navhub/core 的 validateAndCleanPluginManifest 纯函数校验；
+ *    写入路径（发布/更新/订阅导入）再叠加模块目录核对，避免装出渲染不出来的空卡；
  * 2. 状态机闭环：pending -> published / rejected / delisted，更新必须重置为 pending；
  * 3. 审计留痕：publish, import, update, review, install, uninstall, report 均记录审计日志；
  * 4. 幂等与防刷：内置细粒度限流，星标/安装均具备去重与幂等保证。
@@ -22,10 +23,12 @@ import {
 import { randomBytes } from "node:crypto";
 import {
   validateAndCleanPluginManifest,
+  validatePluginManifestWithCatalog,
   summarizePluginManifest,
   diffPluginManifests,
   comparePluginVersions,
   httpUrl,
+  isInternalShortLinkTarget,
   isSafeUrl,
   type PluginManifest,
 } from "@navhub/core";
@@ -67,7 +70,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   app.get(
     "/api/plugins",
     { config: { scope: "public", cache: { maxAge: 0 } } },
-    async (req, reply) => {
+    async (req) => {
       const q = req.query as Record<string, string | undefined>;
       const kind = q.kind?.trim();
       const search = q.q?.trim();
@@ -206,7 +209,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   app.get(
     "/api/admin/plugins",
     { config: { scope: "read" } },
-    async (req, reply) => {
+    async (req) => {
       const q = req.query as Record<string, string | undefined>;
       const status = q.status?.trim();
       const kind = q.kind?.trim();
@@ -388,7 +391,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           ? (body as { manifest: unknown }).manifest
           : body;
 
-      const validated = validateAndCleanPluginManifest(manifestInput);
+      const validated = validatePluginManifestWithCatalog(manifestInput);
       if (!validated.ok) {
         reply.code(400);
         return {
@@ -867,7 +870,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const q = req.query as Record<string, string | undefined>;
       const shouldAutoAudit = body.autoAudit === true || q?.autoAudit === "true" || q?.autoAudit === "1";
 
-      const validated = validateAndCleanPluginManifest(manifestInput);
+      const validated = validatePluginManifestWithCatalog(manifestInput);
       if (!validated.ok) {
         reply.code(400);
         return {
@@ -992,7 +995,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     async (req, reply) => {
       const body = (req.body ?? {}) as { manifest?: unknown } & Record<string, unknown>;
       const manifestInput = body.manifest ?? body;
-      const validated = validateAndCleanPluginManifest(manifestInput);
+      const validated = validatePluginManifestWithCatalog(manifestInput);
       if (!validated.ok) {
         return badRequest(reply, "插件清单格式不合法: " + validated.errors.join(", "));
       }
@@ -1028,7 +1031,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     async (req, reply) => {
       const body = (req.body ?? {}) as { manifest?: unknown } & Record<string, unknown>;
       const manifestInput = body.manifest ?? body;
-      const validated = validateAndCleanPluginManifest(manifestInput);
+      const validated = validatePluginManifestWithCatalog(manifestInput);
       if (!validated.ok) {
         return badRequest(reply, "插件清单格式不合法: " + validated.errors.join(", "));
       }
@@ -1070,7 +1073,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       } & Record<string, unknown>;
 
       const manifestInput = body.manifest ?? body;
-      const validated = validateAndCleanPluginManifest(manifestInput);
+      const validated = validatePluginManifestWithCatalog(manifestInput);
       if (!validated.ok) {
         reply.code(400);
         return { error: "插件清单校验失败", errors: validated.errors };
@@ -1139,7 +1142,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     const body = (req.body ?? {}) as { manifest?: unknown } & Record<string, unknown>;
     const manifestInput = body.manifest ?? body;
 
-    const validated = validateAndCleanPluginManifest(manifestInput);
+    const validated = validatePluginManifestWithCatalog(manifestInput);
     if (!validated.ok) {
       reply.code(400);
       return { error: "插件清单格式不合法", errors: validated.errors };
@@ -1185,7 +1188,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const slug = decodeURIComponent((req.params as { slug: string }).slug);
       const body = (req.body ?? {}) as { manifest?: unknown; changelog?: unknown } & Record<string, unknown>;
       const manifestInput = body.manifest ?? body;
-      const validated = validateAndCleanPluginManifest(manifestInput);
+      const validated = validatePluginManifestWithCatalog(manifestInput);
       if (!validated.ok) {
         reply.code(400);
         return { error: "插件清单格式不合法", errors: validated.errors };
@@ -1547,7 +1550,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         // 分享深链保留 ?install=1：接收方落地即弹安装确认（与长链兜底一致）
         target = `/marketplace/${encodeURIComponent(plugin.slug)}${body.install === true ? "?install=1" : ""}`;
       }
-      if (!target.startsWith("/marketplace/") || target.startsWith("//") || target.includes("\\") || target.length > 500) {
+      if (!isInternalShortLinkTarget(target)) {
         return badRequest(reply, "短链目标必须是站内 /marketplace/ 路径");
       }
       try {
@@ -1691,7 +1694,11 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
 
       let fetchedCount = 0;
+      let processedCount = 0;
       let importedCount = 0;
+      let skippedDuplicate = 0;
+      let rejectedInvalid = 0;
+      let failedWrite = 0;
       let truncated = false;
       try {
         const res = await guardedFetch(targetTap.url, { timeoutMs: 8000 });
@@ -1710,6 +1717,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         // 一个「10 万条」的订阅源会把这一个请求变成几小时的后台任务。
         const items = pluginList.slice(0, MAX_TAP_IMPORT_ITEMS);
         truncated = pluginList.length > items.length;
+        processedCount = items.length;
 
         // 已存在的插件名一次取全，代替"每条跑一次 LIKE + limit 5、再要求精确同名"：
         // 前者是 N 次无法走索引的全表 LIKE；后者还会因为同名插件被 5 条上限挤出
@@ -1720,9 +1728,17 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
         const pendingIndex: IndexPluginItem[] = [];
         for (const item of items) {
-          const validated = validateAndCleanPluginManifest(item);
-          if (!validated.ok) continue;
-          if (existingNames.has(validated.manifest.name)) continue;
+          const validated = validatePluginManifestWithCatalog(item);
+          // 每一条被跳过的原因都要计数：以前 `continue` 什么都不留，
+          // 管理员只看到「发现 40 个、导入 3 个」，无从判断剩下 37 个是重复、不合规还是写库失败。
+          if (!validated.ok) {
+            rejectedInvalid += 1;
+            continue;
+          }
+          if (existingNames.has(validated.manifest.name)) {
+            skippedDuplicate += 1;
+            continue;
+          }
 
           try {
             const imported = await ctx.repo.createPlugin({
@@ -1737,7 +1753,8 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             pendingIndex.push(indexItemFromManifest(imported.slug, imported.manifest));
             importedCount++;
           } catch {
-            // 单条导入失败不阻断整批
+            // 单条导入失败不阻断整批，但条数必须报出来
+            failedWrite += 1;
           }
         }
         // 向量化批量做（内部已经吞掉模型不可用的错误，索引可由 reindex 任务重建）
@@ -1747,17 +1764,28 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
 
       targetTap.lastSyncedAt = Date.now();
-      targetTap.pluginCount = fetchedCount;
+      // 徽标上写的是「N 个插件」，那 N 就必须是本源在市场里真的可见的条数。
+      // 用 fetchedCount 等于把「不合规清单 + 重名 + 写库失败」也算成已上架。
+      targetTap.pluginCount = importedCount + skippedDuplicate;
       targetTap.updatedAt = Date.now();
       await ctx.repo.setSystemState("plugins:taps", taps);
 
       return {
         ok: true,
         fetchedCount,
+        /** 实际进入处理流程的条数（= min(fetchedCount, importCap)） */
+        processedCount,
         importedCount,
+        /** 市场里已有同名插件，本源这次没新增 */
+        skippedDuplicate,
+        /** 清单校验不通过（缺字段 / 不在目录 / 名称非法） */
+        rejectedInvalid,
+        /** 校验通过但写库失败 */
+        failedWrite,
         // 清单被处理上限截断时必须说出来：否则调用方看到 importedCount 远小于
         // fetchedCount 会以为订阅源里都是重复项。
         truncated,
+        importCap: MAX_TAP_IMPORT_ITEMS,
         tap: targetTap,
       };
     }
@@ -1868,24 +1896,61 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         }
       }
 
-      const score = typeof parsedNote?.score === "number" ? parsedNote.score : Math.max(0, 100 - deductions);
-      const level: "safe" | "low_risk" | "medium_risk" | "high_risk" =
-        parsedNote?.level ?? (score >= 85 ? "safe" : score >= 60 ? "low_risk" : score >= 40 ? "medium_risk" : "high_risk");
+      /**
+       * 有没有真正的审理报告，决定这份数据能说什么、不能说什么。
+       *
+       * 上面这四项是**确实跑过**的静态检查，扣分本身是真的；假的地方在于
+       * 「100 - 扣分」会被前端当成完整安全分并亮出「安全」徽章，好像合规、
+       * 相关性、外链存活也都测过一样（它们没跑）。所以无报告时：
+       *  - 只给 security 一维，其余显式 null（不是 0，0 是「测了且不及格」）；
+       *  - level 不允许出现 safe，最高只能到 low_risk；
+       *  - decision 固定 pending_review，不再用 status 反推「approve」。
+       */
+      const hasAuditNote = parsedNote !== null && typeof parsedNote.score === "number";
+
+      if (!hasAuditNote) {
+        const staticScore = Math.max(0, 100 - deductions);
+        return {
+          ok: true,
+          report: {
+            slug,
+            score: staticScore,
+            level: staticScore >= 85 ? "low_risk" : staticScore >= 60 ? "medium_risk" : "high_risk",
+            decision: "pending_review",
+            aiRationale: `本次仅完成 ${checks.length} 项静态清单检查（作者签名、协议、伪协议注入、内网穿透），未做模型合规研判与外链探活，结论待人工或 AI 复核。`,
+            dimensionScores: { security: staticScore, availability: null, compliance: null, relevance: null },
+            linkSurvivalRate: null,
+            model: "none",
+            llmReviewed: false,
+            reviewSkipped: "not_audited",
+            scoreBasis: "static_only",
+            verifiedAuthor: isVerifiedAuthor,
+            checks: checks.map((c) => ({ ...c, skipped: false })),
+            auditedAt: plugin.reviewedAt || plugin.updatedAt || Date.now(),
+          },
+        };
+      }
 
       return {
         ok: true,
         report: {
           slug,
-          score,
-          level,
-          decision: parsedNote?.decision || (plugin.status === "published" ? "approve" : plugin.status === "rejected" ? "reject" : undefined),
-          aiRationale: parsedNote?.rationale,
-          dimensionScores: parsedNote?.dimensionScores,
-          linkSurvivalRate: parsedNote?.linkSurvivalRate,
-          model: parsedNote?.model,
+          score: parsedNote.score,
+          level: parsedNote.level,
+          decision: parsedNote.decision ?? "pending_review",
+          aiRationale: parsedNote.rationale,
+          dimensionScores: parsedNote.dimensionScores,
+          linkSurvivalRate: parsedNote.linkSurvivalRate,
+          model: parsedNote.model,
+          llmReviewed: parsedNote.llmReviewed === true,
+          // 旧报告里没有这几个字段，缺省按「不确定 = 保守」解释：说没审理，而不是谎称审过
+          reviewSkipped: parsedNote.reviewSkipped ?? (parsedNote.llmReviewed === true ? null : "error"),
+          // scoreBasis 同理：没有标注时不能冒充「全维度已测」
+          scoreBasis: parsedNote.scoreBasis ?? "static_plus_probe",
+          quota: parsedNote.quota ?? null,
           verifiedAuthor: isVerifiedAuthor,
-          checks,
-          auditedAt: parsedNote?.auditedAt || plugin.reviewedAt || Date.now(),
+          checks: checks.map((c) => ({ ...c, skipped: false })),
+          auditedAt: parsedNote.auditedAt || plugin.reviewedAt || Date.now(),
         },
       };
     }

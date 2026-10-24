@@ -8,7 +8,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Activity, Bot, CheckCircle2, CircleDashed, ShieldCheck, Sparkles, UserCheck } from 'lucide-react'
-import type { Overview } from '@/app/me/me-view'
+import type { Overview } from '@/lib/me-types'
 
 function formatDate(ts: number | null | undefined): string {
   if (!ts) return '—'

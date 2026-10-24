@@ -60,3 +60,61 @@ describe('书签导入器的类目建议', () => {
     expect(SRC).toContain('value={opt.slug}')
   })
 })
+
+/** 只留代码，注释里的「旧版为什么是错的」不算字面量命中 */
+function codeOnly(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+}
+
+const CODE = codeOnly(SRC)
+const API = readFileSync(
+  fileURLToPath(new URL('../../../apps/api/src/routes/sites.ts', import.meta.url)),
+  'utf8',
+)
+
+describe('书签导入的条数台账', () => {
+  /**
+   * 服务端回三个计数，客户端读不到就必须记成「未确认」。
+   * 旧写法是 `data.created ?? chunk.length`：一旦代理回了 HTML 异常页，
+   * 整块 50 条会被当成成功收录，用户看到「导入完成」而库里一条没有。
+   */
+  it('2xx 但读不出条数时计入未确认，而不是当成成功', () => {
+    expect(CODE).toContain("if (data && typeof data.created === 'number')")
+    expect(CODE).toContain('unconfirmedCount += chunk.length')
+    expect(CODE).not.toMatch(/created\s*\?\?\s*chunk\.length/)
+    expect(CODE).not.toMatch(/successCount\s*\+=\s*chunk\.length/)
+  })
+
+  it('未确认既进结果对象也进渲染', () => {
+    expect(CODE).toContain('unconfirmed: number')
+    expect(CODE).toContain('unconfirmed: unconfirmedCount')
+    expect(CODE).toContain('importResult.unconfirmed > 0')
+    expect(CODE).toContain('未能确认')
+  })
+
+  it('有失败或有未确认就不能用成功配色与成功措辞', () => {
+    expect(CODE).toContain('importResult.failed + importResult.unconfirmed > 0')
+    expect(CODE).toContain('没确认收录')
+    // 「导入完成！」只允许出现在三元的是分支里，不能作为无条件标题
+    expect(CODE.match(/导入完成！/g)).toHaveLength(1)
+  })
+
+  it('读的计数字段与服务端返回的键逐一对应', () => {
+    // 只看 batch 处理器之后的文本：返回对象用的是简写键（created, / duplicates,）。
+    const batch = API.slice(API.indexOf('app.post("/api/sites/batch"'))
+    expect(batch.length).toBeGreaterThan(0)
+    for (const field of ['created', 'duplicates', 'categoryDegraded']) {
+      expect(batch, `服务端不再回传 ${field}`).toContain(`${field}`)
+      expect(CODE, `客户端没读 ${field}`).toContain(`data.${field}`)
+    }
+  })
+
+  it('分块大小不超过中枢的单次上限', () => {
+    // 形如 `})).min(1).max(200)`：数组里每项是对象，所以闭合是双括号。
+    const cap = API.match(/\)\)\.min\(1\)\.max\((\d+)\)/)
+    expect(cap, '找不到 /api/sites/batch 的 sites 上限').not.toBeNull()
+    const chunk = CODE.match(/const chunkSize = (\d+)/)
+    expect(chunk, '找不到分块大小').not.toBeNull()
+    expect(Number(chunk![1])).toBeLessThanOrEqual(Number(cap![1]))
+  })
+})

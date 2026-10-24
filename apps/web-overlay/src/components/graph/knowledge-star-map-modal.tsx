@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { safeWindowOpen } from '@/lib/safe-url'
 import {
   Compass,
   Search,
@@ -37,6 +38,7 @@ import {
   type SiteDuplicateReport,
 } from '@/lib/navhub-api'
 import { Button } from '@/registry/new-york/ui/button'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 import { Input } from '@/registry/new-york/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
@@ -133,16 +135,13 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
     }
   }, [open, loadMesh, handleFindPath, loadDuplicates, pathStart, pathTarget])
 
-  // ESC 键退出
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && open) {
-        onOpenChange(false)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, onOpenChange])
+  // 浮层公共行为：Esc 关（捕获阶段，不会同时触发全局快捷键）、点遮罩关、
+  // 锁背景滚动、焦点圈养与还原、role=dialog + 可读名称
+  const { containerProps, scrimProps } = useOverlayBehavior({
+    open,
+    onClose: () => onOpenChange(false),
+    ariaLabelledBy: 'navhub-star-map-modal-title',
+  })
 
   // 计算节点坐标与向心布局
   const layoutNodes = useMemo(() => {
@@ -313,14 +312,14 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
   if (!open) return null
 
   return (
-    <div
-      role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-200"
-      onClick={() => onOpenChange(false)}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
       <div
-        className="relative flex flex-col w-full max-w-6xl h-[92vh] sm:h-[88vh] rounded-2xl border border-white/20 dark:border-white/10 bg-white/95 dark:bg-zinc-950/95 shadow-2xl overflow-hidden backdrop-blur-2xl"
-        onClick={(e) => e.stopPropagation()}
+        {...scrimProps}
+        className="absolute inset-0 bg-black/60 backdrop-blur-md animate-in fade-in duration-200"
+      />
+      <div
+        {...containerProps}
+        className="relative flex flex-col w-full max-w-6xl h-[92vh] sm:h-[88vh] rounded-2xl border border-white/20 dark:border-white/10 bg-white/95 dark:bg-zinc-950/95 shadow-2xl overflow-hidden backdrop-blur-2xl outline-none"
       >
         {/* 顶部标题栏与标签切换 */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-3 sm:px-6 py-3 sm:py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60">
@@ -331,7 +330,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 sm:gap-2">
-                  <h2 className="text-sm sm:text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100 truncate">
+                  <h2 id="navhub-star-map-modal-title" className="text-sm sm:text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100 truncate">
                     全景知识星图与拓扑演进中枢
                   </h2>
                   <Badge variant="outline" className="hidden sm:inline-flex text-[10px] sm:text-xs bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 shrink-0">
@@ -659,7 +658,7 @@ export function KnowledgeStarMapModal({ open, onOpenChange }: KnowledgeStarMapMo
                     {selectedNode.url ? (
                       <Button
                         size="sm"
-                        onClick={() => window.open(selectedNode.url, '_blank', 'noopener,noreferrer')}
+                        onClick={() => safeWindowOpen(selectedNode.url)}
                         className="w-full h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg gap-1.5"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />

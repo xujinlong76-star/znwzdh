@@ -60,7 +60,7 @@ export function EntryGroups() {
                       <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
                       <span className="min-w-0">
                         <span className="block truncate">{label}</span>
-                        <span className="block truncate text-[10px] text-muted-foreground">{hint}</span>
+                        <span aria-hidden className="block truncate text-[10px] text-muted-foreground">{hint}</span>
                       </span>
                     </span>
                     <ArrowRight

@@ -29,7 +29,7 @@
 
 /* app 路由树：一级目录（被 .gitignore 的 apps/web/src/app/* 忽略）+ 二级特殊子树。 */
 @source '../app/{actions,admin,algorithms,auth,category,collections,components,custom,favorites,feed.xml,fonts,graph,hot,import,me,offline,preferences,s,site,sites,styles,submit,tags,types}/**/*.{js,ts,jsx,tsx,mdx}';
-@source '../app/api/{admin,auth,csp-report,extension,favicon,favicon-im,health,hub,me,navigation,resource,site,site-config,submissions,videos,website-metadata}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../app/api/{admin,auth,csp-report,extension,favicon,favicon-im,health,hub,me,navigation,resource,rss,site,site-config,submissions,videos,weather,website-metadata}/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../app/videos/player/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../app/admin/data/**/*.{js,ts,jsx,tsx,mdx}';
 /* `data/` 目录名被 .gitignore 的通配规则剪枝，必须指到目录内部才能扫到 */
@@ -41,9 +41,9 @@
 /* 其余源码目录（registry 为上游 shadcn 副本；lib/modular 是 lib 下被单独忽略的子目录）。 */
 @source '../{config,hooks,navsphere,services,styles,types,utils}/**/*.{js,ts,jsx,tsx,mdx}';
 @source '../lib/modular/**/*.{js,ts,jsx,tsx,mdx}';
-/* lib 下其余被 .gitignore 忽略的子树：seo（SEO 规则与阈值）、server（服务端桥接）。
-   父级通配会被剪枝，必须逐个指到被忽略目录内部。 */
-@source '../lib/{seo,server}/**/*.{js,ts,jsx,tsx,mdx}';
+/* lib 下其余被 .gitignore 忽略的子树：p2p（NavDrop 近场传输台账）、seo（SEO 规则与阈值）、
+   server（服务端桥接）。父级通配会被剪枝，必须逐个指到被忽略目录内部。 */
+@source '../lib/{p2p,seo,server}/**/*.{js,ts,jsx,tsx,mdx}';
 
 @custom-variant dark (&:is(.dark *));
 

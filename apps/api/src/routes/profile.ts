@@ -4,7 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { identityTrusted, identityOf, resolveCanonicalIdentity } from "./shared.ts";
+import {identityTrusted, resolveCanonicalIdentity, requestIdentityOf, userDomainWriteAllowed } from "./shared.ts";
 import { invalidateProfileThrottle, refreshUserProfile, resetUserProfile } from "../profile-service.ts";
 
 import type { AppContext } from "../context.ts";
@@ -23,7 +23,7 @@ export const profileRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
    * `?explain=1` 额外返回窗口内各信号的条数与开关状态，供「为什么是这个结果」展示。
    */
   app.get("/api/profile", async (req, reply) => {
-    const rawIdentity = identityOf(req as never);
+    const rawIdentity = requestIdentityOf(req as never);
     if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     // 身份合并后旧 id 仍可能发请求：读画像也要落到 canonical，否则返回空画像
@@ -54,7 +54,9 @@ export const profileRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
    * 收藏夹与搜索历史保留——那是用户自己的数据，不是被推断的偏好。
    */
   app.delete("/api/profile", async (req, reply) => {
-    const rawIdentity = identityOf(req as never);
+    const rawIdentity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!rawIdentity) { reply.code(400); return { ok: false, error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { ok: false, error: "需要 Bearer token" }; }
     const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
@@ -71,7 +73,9 @@ export const profileRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
   app.delete("/api/profile/signals/:kind", async (req, reply) => {
     const kind = String((req.params as { kind?: string }).kind ?? "");
     if (!SIGNAL_KINDS.has(kind)) { reply.code(400); return { ok: false, error: "kind 只支持 click/search/favorite" }; }
-    const rawIdentity = identityOf(req as never);
+    const rawIdentity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!rawIdentity) { reply.code(400); return { ok: false, error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { ok: false, error: "需要 Bearer token" }; }
     const identity = await resolveCanonicalIdentity(ctx, rawIdentity);

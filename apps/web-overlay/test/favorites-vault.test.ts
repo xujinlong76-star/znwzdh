@@ -1,10 +1,24 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   favoritesToVaultItems,
+  formatVaultRestoreNotice,
   vaultExportFilename,
   vaultItemsToFavorites,
   type VaultMappableFavorite,
 } from '../src/lib/favorites-vault'
+
+const HERE = dirname(fileURLToPath(import.meta.url))
+
+/** 定位并读取 overlay 里的文件；镜像副本（apps/web/test）不会被误当成源 */
+function overlaySource(rel: string): string {
+  const candidates = [resolve(HERE, '..', rel), resolve(HERE, '..', '..', 'web-overlay', rel)]
+  const hit = candidates.find((p) => p.replace(/\\/g, '/').includes('/web-overlay/') && existsSync(p))
+  if (!hit) throw new Error('无法定位 overlay 文件 ' + rel + '（候选：' + candidates.join(' | ') + '）')
+  return readFileSync(hit, 'utf8')
+}
 
 /**
  * 收藏 ↔ E2EE 金库的纯转换（P1）。
@@ -89,5 +103,66 @@ describe('金库条目 → 收藏', () => {
   it('title 缺省时退回 siteId，不渲染空白卡片', () => {
     const restored = vaultItemsToFavorites([{ id: 'fallback', url: 'https://f.example.com' }], NOW)
     expect(restored[0].title).toBe('fallback')
+  })
+})
+
+describe('金库还原的结案陈词', () => {
+  it('全部还原才允许绿色成功，且报实际并入条数', () => {
+    const notice = formatVaultRestoreNotice({ decryptedCount: 3, convertibleCount: 3, restoredCount: 3 })
+    expect(notice.tone).toBe('success')
+    expect(notice.text).toContain('已恢复 3 条私密收藏')
+    expect(notice.text).not.toContain('未能恢复')
+  })
+
+  it('转换阶段丢条目：点名叫缺站点标识或链接，降级为 info', () => {
+    const notice = formatVaultRestoreNotice({ decryptedCount: 4, convertibleCount: 3, restoredCount: 3 })
+    expect(notice.tone).toBe('info')
+    expect(notice.text).toContain('已恢复 3 条私密收藏')
+    expect(notice.text).toContain('1 条缺少站点标识或链接')
+  })
+
+  it('合并阶段被过滤的条目单独点名，不混进「缺链接」', () => {
+    const notice = formatVaultRestoreNotice({ decryptedCount: 3, convertibleCount: 3, restoredCount: 2 })
+    expect(notice.tone).toBe('info')
+    expect(notice.text).toContain('1 条格式不完整')
+    expect(notice.text).not.toContain('缺少站点标识或链接')
+  })
+
+  it('一条都没并入时是 error，不是绿色成功', () => {
+    const notice = formatVaultRestoreNotice({ decryptedCount: 2, convertibleCount: 0, restoredCount: 0 })
+    expect(notice.tone).toBe('error')
+    expect(notice.text).toContain('没有可恢复的收藏')
+    expect(notice.text).toContain('2 条缺少站点标识或链接')
+  })
+
+  it('空金库如实说「没有收藏条目」，不报 0 条成功', () => {
+    const notice = formatVaultRestoreNotice({ decryptedCount: 0, convertibleCount: 0, restoredCount: 0 })
+    expect(notice.tone).toBe('info')
+    expect(notice.text).toContain('没有收藏条目')
+  })
+})
+
+describe('源码守卫：金库还原与导入不许再报「假完整」', () => {
+  it('页面报 importResult.imported，不再拿解密条数当成功条数', () => {
+    const src = overlaySource('src/app/favorites/page.tsx')
+    expect(src).toContain('formatVaultRestoreNotice({')
+    expect(src).toContain('restoredCount: importResult.imported')
+    expect(src).not.toContain('已恢复 ${decryptedItems.length} 条')
+  })
+
+  it('importJson 申报被过滤的残行，普通导入也照实展示', () => {
+    const hook = overlaySource('src/hooks/useFavorites.ts')
+    expect(hook).toContain('const skippedInvalid = incoming.length - accepted.length')
+    expect(hook).toContain('return { ok: true, imported: valid.length, skippedInvalid }')
+    const src = overlaySource('src/app/favorites/page.tsx')
+    expect(src).toContain('result.skippedInvalid > 0')
+  })
+
+  it('/me/data 不再把过滤说成「与现有收藏重复」', () => {
+    const src = overlaySource('src/app/me/data/page.tsx')
+    expect(src).not.toContain('与现有收藏重复，自动跳过')
+    // 备份导入走后端合并：缺站点的条数必须单独点名，重复数只能由总数减去缺站点得出
+    expect(src).toContain('favoritesSkippedMissingSite')
+    expect(src).toContain('favoritesSkipped - importResult.favoritesSkippedMissingSite')
   })
 })

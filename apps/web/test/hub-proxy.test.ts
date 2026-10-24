@@ -2,7 +2,8 @@
  * /api/hub/* 反向代理的 HTTP 语义判定。
  *
  * 这几条判定都直接对应"用户能感知的错误"，且此前都踩过或迟早会踩：
- *   1. 超时上限 —— 卡死的中枢会把前端请求无限期挂住（SSE 必须豁免）；
+ *   1. 超时上限 —— 卡死的中枢会把前端请求无限期挂住（SSE 必须豁免），且长耗时端点
+ *      和普通查询不能共用一个上限：放宽到 120 秒的判据必须是路径段白名单，不能是子串；
  *   2. 缓存头透传 —— 中枢发了 cache-control/etag，代理只透传 content-type，
  *      于是浏览器既拿不到 ETag 做条件请求，也看不到 no-store，只能启发式缓存 JSON；
  *   3. 空体状态码 —— 304/204/205 带 body 构造 Response 会直接抛 TypeError；
@@ -13,11 +14,13 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_AI_UPSTREAM_TIMEOUT_MS,
   DEFAULT_RESPONSE_CACHE_CONTROL,
   DEFAULT_UPSTREAM_TIMEOUT_MS,
   FORWARD_REQUEST_HEADERS,
   MAX_FORWARDED_FOR_ENTRIES,
   createDeadline,
+  isLongRunningPath,
   isNullBodyStatus,
   isStreamingContentType,
   isTextContentType,
@@ -43,6 +46,41 @@ describe("upstreamTimeoutMs", () => {
 
   it("honours an explicit positive override", () => {
     expect(upstreamTimeoutMs("1500")).toBe(1500);
+  });
+
+  // 判据曾经是 `path.includes('ai')`：放宽错了地方，也把真正的 LLM 入口留在 30 秒里。
+  it("长耗时端点按路径段精确命中，不放子串", () => {
+    expect(isLongRunningPath(["copilot", "chat"])).toBe(true);
+    expect(isLongRunningPath("copilot/chat")).toBe(true);
+    expect(isLongRunningPath(["plugins", "web-mcp", "ai-audit"])).toBe(true);
+    expect(isLongRunningPath(["plugins", "pre-audit"])).toBe(true);
+    expect(isLongRunningPath(["plugins", "check-urls"])).toBe(true);
+    expect(isLongRunningPath(["user", "ai", "plugin", "generate"])).toBe(true);
+    expect(isLongRunningPath(["sites", "auto"])).toBe(true);
+    expect(isLongRunningPath(["enrich"])).toBe(true);
+
+    // 单词里含 "ai" 的普通端点不再被放宽（detail / validate 都是这类）
+    expect(isLongRunningPath(["sites", "detail"])).toBe(false);
+    expect(isLongRunningPath(["plugins", "validate"])).toBe(false);
+    expect(isLongRunningPath(["plugins", "web-mcp", "audit"])).toBe(false);
+    expect(isLongRunningPath(["search"])).toBe(false);
+    expect(isLongRunningPath([])).toBe(false);
+  });
+
+  it("copilot 对话拿到大模型上限，普通查询保持 30 秒", () => {
+    expect(upstreamTimeoutMs(undefined, ["copilot", "chat"])).toBe(DEFAULT_AI_UPSTREAM_TIMEOUT_MS);
+    expect(upstreamTimeoutMs(undefined, ["sites", "detail"])).toBe(DEFAULT_UPSTREAM_TIMEOUT_MS);
+    // 显式配置仍然优先
+    expect(upstreamTimeoutMs("8000", ["copilot", "chat"])).toBe(8000);
+  });
+
+  it("代理把超时与连不上分开回报（前端据此说人话）", () => {
+    const route = readFileSync(resolve(ROOT, "src/app/api/hub/[...path]/route.ts"), "utf8");
+    expect(route).toContain("hub_upstream_timeout");
+    expect(route).toContain("hub_upstream_unavailable");
+    expect(route).toContain("retryable: true");
+    // 超时要报出真实等待秒数，不能只说「无响应」
+    expect(route).toMatch(/代理等待 \$\{Math\.round\(timeoutMs \/ 1000\)\} 秒/);
   });
 });
 

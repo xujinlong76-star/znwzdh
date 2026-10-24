@@ -46,9 +46,21 @@ export function parseFavorites<T>(raw: string | null | undefined): FavoritesPars
   return { items: parsed as T[], corrupt: false }
 }
 
-/** 备份键带上时间戳：连续损坏时不会互相覆盖掉更早的那份 */
-export function corruptBackupKey(now: number): string {
-  return `${FAVORITES_STORAGE_KEY}.corrupt.${now}`
+/**
+ * 隔离键的通用形状：`<原键>.corrupt.<时间戳>`。
+ * 带时间戳是为了连续损坏时不互相覆盖掉更早的那份。
+ * 偏好设置等其它本地 blob 也走同一个形状，所以把「基键」参数化，
+ * 避免两处各写一遍字符串拼接而慢慢长成两种格式。
+ * `now` 允许字符串：调用方拿到的 `Date.now()` 在被外部改写过的环境里未必是数字，
+ * 键拼接只认字符串，不该因为类型就崩掉隔离这条路。
+ */
+export function corruptKeyFor(baseKey: string, now: number | string): string {
+  return `${baseKey}.corrupt.${now}`
+}
+
+/** 收藏的隔离键 */
+export function corruptBackupKey(now: number | string): string {
+  return corruptKeyFor(FAVORITES_STORAGE_KEY, now)
 }
 
 /** 给用户看的原因说明。拒绝写入时必须能把话说清楚，而不是点了没反应。 */

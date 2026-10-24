@@ -66,6 +66,22 @@ export interface OverlayBehaviorOptions {
   onClose: () => void
   /** 关闭后是否把焦点还给打开前的元素，默认 true */
   restoreFocus?: boolean
+  /**
+   * 对话框的可读名称（`role="dialog"` 没有名称时，读屏只会念出内容，
+   * 用户不知道"这是哪个弹窗"）。三种给法按优先级：
+   * `ariaLabelledBy`（标题元素 id）> `ariaLabel`（直接给词）> 两者都不给则留空，
+   * 由调用方自己把 `aria-label` 摊在根节点上。
+   */
+  ariaLabel?: string
+  ariaLabelledBy?: string
+  /**
+   * 打开后自动聚焦的元素（搜索弹窗的输入框、配置弹窗的标题框…）。
+   *
+   * 为什么由 hook 来做而不是调用方自己 `useEffect(() => ref.current?.focus())`：
+   * hook 的面板聚焦排在 `requestAnimationFrame` 里，调用方的 effect 在它**之前**执行，
+   * 于是「先聚焦输入框」必然被随后落地的面板聚焦抢走 —— 接入方的自动聚焦看似写了，实际全废。
+   */
+  initialFocusRef?: React.RefObject<HTMLElement | null>
 }
 
 export interface OverlayBehavior {
@@ -83,6 +99,8 @@ export interface OverlayBehavior {
     role: 'dialog'
     'aria-modal': 'true' | 'false'
     'aria-hidden'?: 'true'
+    'aria-label'?: string
+    'aria-labelledby'?: string
     inert?: boolean
     tabIndex: -1
   }
@@ -99,6 +117,9 @@ export function useOverlayBehavior({
   open,
   onClose,
   restoreFocus = true,
+  ariaLabel,
+  ariaLabelledBy,
+  initialFocusRef,
 }: OverlayBehaviorOptions): OverlayBehavior {
   const containerRef = useRef<HTMLDivElement | null>(null)
   // 用 ref 存回调：调用方常常传内联箭头函数，闭包过期会让 Esc 关掉旧状态的浮层
@@ -120,8 +141,12 @@ export function useOverlayBehavior({
     // 焦点还原：记住打开前聚焦的元素，关闭时还回去
     const previouslyFocused = document.activeElement as HTMLElement | null
 
-    // 初始焦点落到面板本身（tabIndex=-1）：既不抢输入框，也让读屏立刻定位到对话框
-    const raf = requestAnimationFrame(() => containerRef.current?.focus({ preventScroll: true }))
+    // 初始焦点：优先落到调用方指定的输入元素，否则落到面板本身（tabIndex=-1）——
+    // 既不抢正文，也让读屏立刻定位到对话框
+    const raf = requestAnimationFrame(() => {
+      const target = initialFocusRef?.current ?? containerRef.current
+      target?.focus({ preventScroll: true })
+    })
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -171,13 +196,16 @@ export function useOverlayBehavior({
         previouslyFocused.focus({ preventScroll: true })
       }
     }
-  }, [open, handleClose, restoreFocus])
+  }, [open, handleClose, restoreFocus, initialFocusRef])
 
   return {
     containerProps: {
       ref: containerRef,
       role: 'dialog',
       'aria-modal': open ? 'true' : 'false',
+      // 名称：labelledby（指向真实标题）优先于 label（直接给词），两者都不给就不写，
+      // 避免 aria-label="" 这种「有属性但没内容」的空名称
+      ...(ariaLabelledBy ? { 'aria-labelledby': ariaLabelledBy } : ariaLabel ? { 'aria-label': ariaLabel } : {}),
       // 关闭态从辅助树与焦点顺序里摘掉（见 interface 注释：这是模态判定的防误报关键）
       ...(open ? {} : { 'aria-hidden': 'true' as const, inert: true }),
       tabIndex: -1,

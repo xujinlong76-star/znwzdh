@@ -117,6 +117,21 @@ describe("接线守则：读不出来就拒绝写入，并且要让用户知道"
     expect(hook).toContain("corruptBackupKey");
   });
 
+  it("重置的备份要回读确认并如实返回，界面不能一律说「已备份」", () => {
+    const body = hook.slice(
+      hook.indexOf("const resetLocal = useCallback"),
+      hook.indexOf("const isFavorite = useCallback"),
+    );
+    expect(body).toContain("{ backedUp: boolean }");
+    // 写完立刻读回来比对：setItem 静默失败时不能宣称已留档
+    expect(body).toMatch(/window\.localStorage\.getItem\(backupKey\) === raw/);
+    expect(body).not.toContain("console.warn");
+
+    const page = read("src/app/favorites/page.tsx");
+    expect(page).toContain("const { backedUp } = favorites.resetLocal()");
+    expect(page).toMatch(/backedUp\s*\?[\s\S]*没能留档/);
+  });
+
   it("云端同步不能把「读不出来」报成「本地 0 条」", () => {
     const body = hook.slice(
       hook.indexOf("export async function syncFavoritesToCloud"),

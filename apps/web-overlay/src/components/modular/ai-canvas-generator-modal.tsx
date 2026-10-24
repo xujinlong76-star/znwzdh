@@ -45,7 +45,12 @@ export function AiCanvasGeneratorModal({
   onApplyLayout,
   availableCategories,
 }: AiCanvasGeneratorModalProps) {
-  const { containerProps, scrim } = useOverlayBehavior({ open: isOpen, onClose })
+  const { containerProps, scrim } = useOverlayBehavior({
+    open: isOpen,
+    onClose,
+    // 名称指向可见标题：没有它，读屏进入这个弹窗时只知道「有个对话框」
+    ariaLabelledBy: 'navhub-ai-canvas-modal-title',
+  })
   const [prompt, setPrompt] = useState(PRESET_PROMPTS[0].prompt)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -90,9 +95,9 @@ export function AiCanvasGeneratorModal({
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm sm:text-base font-bold text-foreground truncate">一句话 AI 生成工作台</h2>
+                <h2 id="navhub-ai-canvas-modal-title" className="text-sm sm:text-base font-bold text-foreground truncate">一句话 AI 生成工作台</h2>
                 <span className="text-[10px] sm:text-[11px] font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 shrink-0">
-                  Agnes 3.0 Flash 智能规划
+                  AI 智能规划
                 </span>
               </div>
               <p className="text-xs text-muted-foreground truncate sm:whitespace-normal">输入工作场景或需求，由大模型为您量身编排 12 栅格微组件组合</p>
@@ -195,6 +200,15 @@ export function AiCanvasGeneratorModal({
                 <div className="p-2.5 rounded-lg bg-background/60 border border-border/50 text-xs text-muted-foreground leading-relaxed">
                   <span className="font-semibold text-foreground">💡 规划思路：</span>
                   {result.layout.rationale}
+                </div>
+              )}
+
+              {/* 模型规划了本站不认识的模块：明说被丢弃的类型，而不是让卡片凭空少掉 */}
+              {result.droppedTypes && result.droppedTypes.length > 0 && (
+                <div className="p-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                  <span className="font-semibold">其中 {result.droppedTypes.length} 类模块本站没有对应卡片，已跳过：</span>
+                  <span className="font-mono ml-1">{result.droppedTypes.join('、')}</span>
+                  <span className="block mt-1 text-muted-foreground">让它改用现有模块重新规划一次，即可补齐这部分排版。</span>
                 </div>
               )}
 

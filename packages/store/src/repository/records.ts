@@ -75,6 +75,20 @@ export interface DashboardOverview {
     walSizeBytes: number | null;
     tableCounts: Record<string, number>;
   };
+  /** 用户域运营视图（T19）：DAU 与收藏分布是「用户中心是否被用起来」的最小指标集 */
+  userCenter: {
+    /** 近 24h 有行为事件（click/search/favorite）的独立身份数 */
+    dau: number;
+    /** 近 7 天每天活跃身份数（含今天，长度 ≤7，旧在前） */
+    dau7d: Array<{ day: string; count: number }>;
+    /** 至少有 1 条未删收藏的身份数 */
+    identitiesWithFavorites: number;
+    /** 人均收藏数（按有收藏的身份算） */
+    avgFavoritesPerIdentity: number | null;
+    /** 收藏数 P50 / P95（按身份聚合） */
+    favoritesP50: number | null;
+    favoritesP95: number | null;
+  };
 }
 
 export interface CategoryDistributionItem {
@@ -141,6 +155,8 @@ export interface FavoriteRecord {
   siteId: string;
   folderId: string | null;
   note: string | null;
+  /** 标签（T22）：最多 8 个、每个 1-24 字符；null = 未打标签 */
+  tags: string[] | null;
   createdAt: number;
   updatedAt: number;
   /** 软删墓碑时间戳；非空即「已删」。增量同步靠它把删除传播给客户端。 */
@@ -186,6 +202,8 @@ export interface ApiTokenRecord {
   id: string;
   name: string;
   scopes: string[];
+  /** 归属用户身份（T20）：非空 = 用户自建的个人令牌，用户域以它为身份；null = 实例级令牌 */
+  ownerIdentity: string | null;
   expiresAt: number | null;
   lastUsedAt: number | null;
   createdAt: number;

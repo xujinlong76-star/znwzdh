@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { fetchNewSites, fetchTrending, type HubSite } from '@/lib/navhub-api'
@@ -113,7 +114,7 @@ export default function HotView({
             <div className="shrink-0 pt-0.5">
               {getRankBadge(i)}
             </div>
-            <a href={site.url} target="_blank" rel="noopener noreferrer" className="block min-w-0 flex-1">
+            <a href={safeHref(site.url)} target="_blank" rel="noopener noreferrer" className="block min-w-0 flex-1">
               <div className="flex items-start gap-2.5">
                 <div className="shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
                   <SiteFavicon
@@ -242,11 +243,14 @@ export default function HotView({
               <div className="h-9 w-56 rounded-xl bg-muted/60 animate-pulse" />
               <div className="h-8 w-8 rounded-lg bg-muted/60 animate-pulse" />
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! gap-4">
+            <div
+              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5!"
+              style={{ gap: 'var(--density-grid-gap, 1rem)' }}
+            >
               {Array.from({ length: 10 }).map((_, i) => (
                 <div
                   key={i}
-                  className="rounded-xl border border-border/70 bg-card/50 p-4 space-y-3 animate-pulse"
+                  className="rounded-xl border border-border/70 bg-card/50 p-[var(--density-card-padding,0.875rem)] space-y-3 animate-pulse"
                 >
                   <div className="flex items-start gap-3">
                     <div className="h-6 w-6 rounded-full bg-muted shrink-0" />

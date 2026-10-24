@@ -21,6 +21,17 @@ export type ApiScope = "read" | "write" | "admin";
 /** 路由级分级：在 ApiScope 之上多一个 public（匿名可用，不参与鉴权） */
 export type RouteScope = "public" | ApiScope;
 
+/**
+ * 合法 scope 的运行时白名单（`RouteScope` 只是编译期类型，`config` 是外部可写的对象，
+ * 类型挡不住 `scope: "adminn"` 这种拼写错误）。
+ *
+ * 为什么必须在注册时挡住：拼错的 scope 在 `scopeSatisfies` 里查不到 rank，
+ * 结果是「所有人都 403」——数据保住了，但这条路由从此没人能用，
+ * 而且只在真实请求时才暴露。启动即抛比请求时静默失效好得多，
+ * 也避免 OpenAPI 文档把一个不存在的 scope 公布出去。
+ */
+export const KNOWN_ROUTE_SCOPES: ReadonlySet<string> = new Set(["public", "read", "write", "admin"]);
+
 /** 一次请求的调用身份；开放模式下为匿名内部身份（沿用原有 actor 语义） */
 export interface AuthIdentity {
   /** 审计用 actor：token 名或 "api"（开放模式） */
@@ -28,6 +39,12 @@ export interface AuthIdentity {
   kind: "token" | "static" | "anonymous";
   tokenId: string | null;
   scopes: ApiScope[];
+  /**
+   * 归属用户身份（T20）：令牌带 owner_identity 时非空。用户域路由据此把该请求
+   * 视为这个用户的身份（token 即身份），忽略客户端自称的身份头——
+   * 未签名头永远不可能覆盖真实凭据。
+   */
+  ownerIdentity: string | null;
 }
 
 /** sha256 十六进制——api_tokens.token_hash 列的存储形态 */
@@ -97,4 +114,5 @@ export const ANONYMOUS_IDENTITY: AuthIdentity = {
   kind: "anonymous",
   tokenId: null,
   scopes: ["read", "write", "admin"],
+  ownerIdentity: null,
 };

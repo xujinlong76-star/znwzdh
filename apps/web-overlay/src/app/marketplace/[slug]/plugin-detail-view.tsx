@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { safeHref, safeWindowOpen } from '@/lib/safe-url'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
@@ -47,7 +48,6 @@ const AiPluginStudioModal = dynamic(
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
-import { useModularLayout } from '@/lib/modular/use-modular-layout'
 import {
   startThemeTryout,
   cancelThemeTryout,
@@ -88,12 +88,15 @@ import {
   MessageSquare,
   Award,
   AlertTriangle,
+  Minus,
   Upload,
   Search,
   Boxes,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { formatLayoutReport } from '@/lib/modular/layout-report'
 import { cn } from '@/lib/utils'
+import { AuditDimensionTile } from '@/components/plugins/audit-dimension-tile'
 
 type DetailTab = 'preview' | 'diff' | 'impact' | 'raw' | 'history' | 'reviews'
 
@@ -185,9 +188,6 @@ export default function PluginDetailView({
     selectTab(DETAIL_TABS[next])
     tabs[next]?.focus()
   }
-
-  // 工作台预设注入钩子
-  const { installWidgetPreset } = useModularLayout()
 
   // 主题免安装试用状态
   const [isThemeApplied, setIsThemeApplied] = useState(false)
@@ -1016,7 +1016,7 @@ export default function PluginDetailView({
                           )}
                         </div>
                         <a
-                          href={site.url}
+                          href={safeHref(site.url)}
                           target="_blank"
                           rel="noreferrer noopener"
                           className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline truncate block"
@@ -1180,7 +1180,7 @@ export default function PluginDetailView({
                           </code>
                           <button
                             type="button"
-                            onClick={() => window.open(eng.searchUrl.replace('{q}', 'NavHub'), '_blank', 'noopener,noreferrer')}
+                            onClick={() => safeWindowOpen(eng.searchUrl.replace('{q}', 'NavHub'))}
                             className="text-xs text-primary hover:underline flex items-center gap-1 shrink-0 font-medium"
                           >
                             测试直达 <ExternalLink className="w-3 h-3" />
@@ -1354,7 +1354,7 @@ export default function PluginDetailView({
                 </div>
                 <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
                   <span className="text-xl font-bold text-foreground block font-mono">
-                    {summary?.boardCount ?? (plugin.kind === 'workspace-preset' ? 1 : 0)}
+                    {summary?.boardCount ?? (plugin.kind === 'workspace-preset' ? (Array.isArray(payload?.boards) ? payload.boards.length : 0) : 0)}
                   </span>
                   <span className="text-xs text-muted-foreground">看板数量</span>
                 </div>
@@ -1501,7 +1501,22 @@ export default function PluginDetailView({
             void loadDetail()
           }}
           onApplyPreset={(preset, mode) => {
-            installWidgetPreset(preset, mode)
+            // 详情页这里必须自己报台账：安装发生在这一页，/custom 画布的浮层用户看不到。
+            // 以前忽略返回值，等于无论模块有没有下线都当「装好了」。
+            void (async () => {
+              const { installWidgetPresetDirect } = await import('@/lib/modular/install-preset-direct')
+              const { report, persisted } = await installWidgetPresetDirect(preset, mode)
+              const notice = formatLayoutReport(report, `工作台预设「${plugin.name}」`)
+              if (report.ok && !persisted) {
+                toast.warning(`${notice.text}，但看板没能保存到本地`, {
+                  description: '浏览器存储不可用，请在允许本地存储的环境重试',
+                })
+              } else if (notice.tone === 'warn') {
+                toast.warning(notice.text)
+              } else {
+                toast.success(notice.text, { description: '到模块化工作台即可看到新看板' })
+              }
+            })()
           }}
         />
 
@@ -1558,7 +1573,11 @@ export default function PluginDetailView({
                 <img
                   src={`/api/plugins/${encodeURIComponent(plugin.slug)}/badge.svg?metric=${badgeMetric}`}
                   alt={`${plugin.name} badge`}
-                  className="h-5 object-contain"
+                  width={160}
+                  height={20}
+                  loading="lazy"
+                  decoding="async"
+                  className="h-5 w-40 max-w-full object-contain"
                 />
               </div>
 
@@ -1669,17 +1688,35 @@ export default function PluginDetailView({
               <div className="py-2 space-y-3">
                 <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/60">
                   <div>
-                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 flex-wrap">
                       <span>综合质量与安全评分</span>
                       {auditReport.decision === 'approve' && (
                         <Badge variant="outline" className="text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
                           AI 严审通过
                         </Badge>
                       )}
+                      {auditReport.decision === 'pending_review' && (
+                        <Badge variant="outline" className="text-[10px] bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30">
+                          待人工复核
+                        </Badge>
+                      )}
+                      {auditReport.decision === 'reject' && (
+                        <Badge variant="outline" className="text-[10px] bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30">
+                          审理未通过
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
                       {auditReport.score} <span className="text-xs font-normal text-muted-foreground">/ 100 分</span>
                     </div>
+                    {/* 分数口径必须说：没跑模型审理时这个分数只覆盖静态清单（+探活），不是「全维度体检」 */}
+                    {auditReport.scoreBasis && auditReport.scoreBasis !== 'full' && (
+                      <div className="text-[10px] text-muted-foreground mt-0.5">
+                        {auditReport.scoreBasis === 'static_plus_probe'
+                          ? '口径：静态沙箱 + 外链探活（AI 合规维度本次未审）'
+                          : '口径：仅静态清单（未做 AI 审理与外链探活）'}
+                      </div>
+                    )}
                   </div>
                   <Badge
                     variant="outline"
@@ -1694,11 +1731,26 @@ export default function PluginDetailView({
                   </Badge>
                 </div>
 
+                {auditReport.reviewSkipped && (
+                  <div role="status" aria-live="polite" className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
+                    <span>
+                      {auditReport.reviewSkipped === 'quota'
+                        ? `AI 审理本次因额度用尽跳过${auditReport.quota ? `（${auditReport.quota.metric} ${auditReport.quota.used}/${auditReport.quota.limit}，约 ${Math.max(1, Math.ceil(auditReport.quota.retryAfterSeconds / 3600))} 小时后恢复）` : ''}，未产生模型结论。`
+                        : auditReport.reviewSkipped === 'unconfigured'
+                          ? '管理端尚未配置可用模型密钥，本条报告没有 AI 合规与相关性结论。'
+                          : auditReport.reviewSkipped === 'not_audited'
+                            ? '这份报告只包含安装时的静态清单检查，尚无 AI 审理记录。'
+                            : 'AI 审理本次调用失败，未产生模型结论；下方合规与相关性两项是空值，不是低分。'}
+                    </span>
+                  </div>
+                )}
+
                 {auditReport.aiRationale && (
                   <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 text-xs space-y-1">
                     <div className="text-[11px] font-semibold text-primary flex items-center gap-1">
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>AI 审查委员会审理意见：</span>
+                      <span>{auditReport.llmReviewed ? 'AI 审查委员会审理意见：' : '本次审理说明（无模型结论）：'}</span>
                     </div>
                     <p className="text-muted-foreground leading-relaxed text-[11px]">
                       {auditReport.aiRationale}
@@ -1708,30 +1760,10 @@ export default function PluginDetailView({
 
                 {auditReport.dimensionScores && (
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div className="p-2 rounded-lg bg-card border border-border/50">
-                      <div className="text-[10px] text-muted-foreground">静态安全沙箱</div>
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
-                        {auditReport.dimensionScores.security} 分
-                      </div>
-                    </div>
-                    <div className="p-2 rounded-lg bg-card border border-border/50">
-                      <div className="text-[10px] text-muted-foreground">外链探活可用率</div>
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
-                        {auditReport.dimensionScores.availability} 分
-                      </div>
-                    </div>
-                    <div className="p-2 rounded-lg bg-card border border-border/50">
-                      <div className="text-[10px] text-muted-foreground">AI 合规反欺诈</div>
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
-                        {auditReport.dimensionScores.compliance} 分
-                      </div>
-                    </div>
-                    <div className="p-2 rounded-lg bg-card border border-border/50">
-                      <div className="text-[10px] text-muted-foreground">语义相关性</div>
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
-                        {auditReport.dimensionScores.relevance} 分
-                      </div>
-                    </div>
+                    <AuditDimensionTile label="静态安全沙箱" value={auditReport.dimensionScores.security} />
+                    <AuditDimensionTile label="外链探活可用率" value={auditReport.dimensionScores.availability} />
+                    <AuditDimensionTile label="AI 合规反欺诈" value={auditReport.dimensionScores.compliance} />
+                    <AuditDimensionTile label="语义相关性" value={auditReport.dimensionScores.relevance} />
                   </div>
                 )}
 
@@ -1739,7 +1771,9 @@ export default function PluginDetailView({
                   <div className="text-xs font-semibold text-muted-foreground">全链路扫描体检项：</div>
                   {auditReport.checks.map((c, i) => (
                     <div key={i} className="p-2.5 rounded-lg border border-border/40 bg-card/60 text-xs flex items-start gap-2.5">
-                      {c.passed ? (
+                      {c.skipped ? (
+                        <Minus className="w-4 h-4 text-muted-foreground/60 shrink-0 mt-0.5" />
+                      ) : c.passed ? (
                         <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                       ) : (
                         <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />

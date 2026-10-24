@@ -187,7 +187,27 @@ export const sessions = sqliteTable("sessions", {
   userId: text("user_id").notNull(),
   expiresAt: integer("expires_at").notNull(),
   createdAt: integer("created_at").notNull().$defaultFn(now),
+  // 会话治理（T8）：此前 sessions 是全库零读写的死表（纯 JWT 无吊销面）。
+  // 激活后：token 存 JWT sid 的 sha256（不落原始 sid），revoked_at 非空即已踢出，
+  // user_agent/last_seen_at 支撑设备列表展示。
+  userAgent: text("user_agent"),
+  revokedAt: integer("revoked_at"),
+  lastSeenAt: integer("last_seen_at"),
 });
+
+/**
+ * 站内通知（T13）：面向终端用户的轻量消息（同步失败、备份超期提醒等）。
+ * 只读消费走 /api/me/notifications；运营触发源写这里。read_at 非空即已读。
+ */
+export const notifications = sqliteTable("notifications", {
+  id: text("id").primaryKey(),
+  identity: text("identity").notNull(),
+  kind: text("kind").notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  readAt: integer("read_at"),
+  createdAt: integer("created_at").notNull().$defaultFn(now),
+}, (t) => [index("notifications_identity_created_idx").on(t.identity, t.createdAt)]);
 
 /** 匿名身份 -> 登录身份的别名；合并后旧 anonId 仍能解析到 canonical id */
 export const identityAliases = sqliteTable("identity_aliases", {
@@ -213,6 +233,8 @@ export const apiTokens = sqliteTable("api_tokens", {
   tokenHash: text("token_hash").notNull(),
   /** 逗号分隔的 scope：read,write,admin */
   scopes: text("scopes").notNull().default("read"),
+  /** 归属用户身份（T20）：非空 = 用户自建个人令牌，用户域以它为身份 */
+  ownerIdentity: text("owner_identity"),
   lastUsedAt: integer("last_used_at"),
   expiresAt: integer("expires_at"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
@@ -318,6 +340,8 @@ export const favorites = sqliteTable("favorites", {
   siteId: text("site_id").notNull(),
   folderId: text("folder_id"),
   note: text("note"),
+  /** 标签（T22）：JSON 字符串数组；null = 未打标签。契约见 repository/favorites.ts normalizeFavoriteTags */
+  tags: text("tags"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
   updatedAt: integer("updated_at").notNull().$defaultFn(now),
 }, (t) => [
@@ -607,7 +631,7 @@ export const llmUsage = sqliteTable("llm_usage", {
 
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
-  users, sessions, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
+  users, sessions, notifications, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, userWorkspaceBlobs, systemStates, taxonomyProposals,
   plugins, pluginInstalls, pluginStars, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
   // 用户域补齐（N11）：此前这四张表没有进入导出，drizzle 工具链拿不到它们，

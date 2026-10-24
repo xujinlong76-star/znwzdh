@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import { useRouter } from 'next/navigation'
 import { Button } from "@/registry/new-york/ui/button"
 import { useToast } from "@/registry/new-york/hooks/use-toast"
@@ -1895,7 +1896,7 @@ export default function SiteListPage() {
                       </TableCell>
                       <TableCell>
                         <a
-                          href={site.url}
+                          href={safeHref(site.url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-500 hover:text-blue-700 hover:underline text-sm truncate block max-w-[230px]"
@@ -1992,7 +1993,7 @@ export default function SiteListPage() {
                     </TableCell>
                     <TableCell>
                       <a
-                        href={site.url}
+                        href={safeHref(site.url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-500 hover:text-blue-700 hover:underline text-sm truncate block max-w-[230px]"

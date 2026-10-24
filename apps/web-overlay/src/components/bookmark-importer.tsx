@@ -78,7 +78,14 @@ export function BookmarkImporter() {
   const [categories, setCategories] = useState<Array<{ slug: string; label: string }>>([])
   const [isParsing, setIsParsing] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
-  const [importResult, setImportResult] = useState<{ success: number; failed: number; duplicate: number; degraded: number } | null>(null)
+  const [importResult, setImportResult] = useState<{
+    success: number
+    failed: number
+    duplicate: number
+    degraded: number
+    /** 服务端返回 2xx 但正文读不出条数（代理异常页 / 字段缺失）：既不能算成功也不能算失败 */
+    unconfirmed: number
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -150,6 +157,7 @@ export function BookmarkImporter() {
     let failedCount = 0
     let duplicateCount = 0
     let degradedCount = 0
+    let unconfirmedCount = 0
 
     // 分块并发批量入库，大幅减少网络往返并避免触发 300/min 限流
     const chunkSize = 50
@@ -170,11 +178,21 @@ export function BookmarkImporter() {
           }),
         })
         if (res.ok) {
-          const data = await res.json().catch(() => ({}))
-          successCount += data.created ?? chunk.length
-          duplicateCount += data.duplicates ?? 0
-          // 传了类目但没挂上（类目不存在 / 是一级根）的条数：不报出来就是静默堆进未分类
-          degradedCount += data.categoryDegraded ?? 0
+          // 2xx 但响应体不是 JSON（代理吞成错误页）：读不出条数就走下面的「未确认」分支，
+          // 这里吞掉异常只是为了不把已成功的批次误判成失败，绝不补 0 冒充零收录。
+          const data = await res.json().catch(() => {
+            return null
+          })
+          if (data && typeof data.created === 'number') {
+            successCount += data.created
+            duplicateCount += data.duplicates ?? 0
+            // 传了类目但没挂上（类目不存在 / 是一级根）的条数：不报出来就是静默堆进未分类
+            degradedCount += data.categoryDegraded ?? 0
+          } else {
+            // 2xx 但读不出条数（代理回了异常页 / 字段缺失）：把整块当成功就是假话，
+            // 记成「未确认」，让用户知道这批既没确认收录也没确认失败，可以重导一次。
+            unconfirmedCount += chunk.length
+          }
         } else {
           failedCount += chunk.length
         }
@@ -183,7 +201,13 @@ export function BookmarkImporter() {
       }
     }
 
-    setImportResult({ success: successCount, failed: failedCount, duplicate: duplicateCount, degraded: degradedCount })
+    setImportResult({
+      success: successCount,
+      failed: failedCount,
+      duplicate: duplicateCount,
+      degraded: degradedCount,
+      unconfirmed: unconfirmedCount,
+    })
     setIsImporting(false)
   }
 
@@ -283,15 +307,30 @@ export function BookmarkImporter() {
 
           {/* 导入结果状态 */}
           {importResult && (
-            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs space-y-1">
+            <div
+              className={
+                importResult.failed + importResult.unconfirmed > 0
+                  ? 'p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 text-xs space-y-1'
+                  : 'p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs space-y-1'
+              }
+            >
               <div className="flex items-center gap-2 font-bold text-sm">
-                <CheckCircle className="w-4 h-4" />
-                <span>导入完成！</span>
+                {importResult.failed + importResult.unconfirmed > 0 ? (
+                  <AlertCircle className="w-4 h-4" />
+                ) : (
+                  <CheckCircle className="w-4 h-4" />
+                )}
+                <span>
+                  {importResult.failed + importResult.unconfirmed > 0 ? '导入结束，但有内容没确认收录' : '导入完成！'}
+                </span>
               </div>
               <p>
                 成功收录 {importResult.success} 个站点
                 {importResult.duplicate > 0 ? `，已存在跳过 ${importResult.duplicate} 个` : ''}
                 {importResult.failed > 0 ? `，失败 ${importResult.failed} 个` : ''}
+                {importResult.unconfirmed > 0
+                  ? `，${importResult.unconfirmed} 个未能确认（服务端返回异常，可重新导入这批）`
+                  : ''}
                 {importResult.degraded > 0
                   ? `；其中 ${importResult.degraded} 个所选分类不存在或是一级分类，已落到「未分类」，请到管理页重新归类`
                   : ''}。

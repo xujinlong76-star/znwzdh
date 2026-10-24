@@ -172,6 +172,8 @@ const HUB_STATUS_HINT: Record<number, string> = {
   429: '请求过于频繁，请稍后再试',
   502: 'NavHub 中枢不可用（连接失败）：请确认 API 服务已启动（默认 :8787）',
   503: 'NavHub 中枢暂时不可用，请稍后再试',
+  // 504 由 /api/hub 代理自己发出（等上游到上限主动掐断）：说「慢」而不是说「坏」
+  504: 'NavHub 中枢响应超时（代理已等到上限主动中断，这次请求确实算得久，可直接重试）',
 }
 
 function hubError(status: number, serverMessage?: string): Error & { status: number } {
@@ -267,13 +269,13 @@ function authHeaders(): Record<string, string> {
 }
 
 /**
- * 匿名身份传递：header 优先、query 兼容。
+ * 匿名身份传递：只走 `X-Navhub-Anon-Id` header。
  *
- * 风险说明：`?anonId=` 会残留在浏览器历史、代理/网关访问日志与 Referer 中，
- * 且易被分享 URL 意外扩散。这里改为优先走 `X-Navhub-Anon-Id` header，
- * query 仅为兼容旧版中枢保留（待中枢确认支持 header 后可移除 query 侧）。
+ * `?anonId=` query 已于 T1 全量下线：它会残留在浏览器历史、代理/网关访问日志
+ * 与 Referer 中，且易被分享 URL 意外扩散。中枢侧仍保留 query 读取一个版本
+ * （identity-signature.ts 的 header 优先逻辑），仅为兼容尚未升级的旧客户端。
  */
-function anonHeaders(identity?: string): Record<string, string> {
+export function anonHeaders(identity?: string): Record<string, string> {
   return identity ? { 'X-Navhub-Anon-Id': identity } : {}
 }
 
@@ -345,9 +347,7 @@ export async function searchSites(params: SearchParams, signal?: AbortSignal): P
 
 /** 点击上报（fire-and-forget，失败静默） */
 export function reportClick(siteId: string, identity?: string): void {
-  // header 优先 + query 兼容（见 anonHeaders 注释）
-  const query = identity ? '?anonId=' + encodeURIComponent(identity) : ''
-  void sendJson('/api/events' + query, 'POST', { kind: 'click', siteId }, undefined, anonHeaders(identity)).catch(() => {
+  void sendJson('/api/events', 'POST', { kind: 'click', siteId }, undefined, anonHeaders(identity)).catch(() => {
     // 点击上报是 fire-and-forget：离线、被拦截、匿名模式都算正常，不该冒泡到页面逻辑
   })
 }
@@ -356,6 +356,68 @@ export function reportClick(siteId: string, identity?: string): void {
 
 export async function fetchTags(onDegraded?: DegradedHandler): Promise<HubTag[]> {
   return degrade([], () => getJson<HubTag[]>('/api/tags?minCount=1&limit=100'), onDegraded)
+}
+
+/* ------------------------------ 类目 ------------------------------ */
+
+/**
+ * 类目行的客户端视图。
+ *
+ * 与 `lib/server/categories.ts` 的 `HubCategory` 是同一份中枢数据的两个形状，
+ * 这里刻意只留展示需要的字段：服务端模块 import 了只有 node 能用的 `hubGet`，
+ * 客户端组件把它拖进浏览器包会直接构建失败。
+ */
+export interface HubCategoryLite {
+  id: string
+  title: string
+  titleEn?: string | null
+  slug?: string | null
+  parentId?: string | null
+  icon?: string | null
+  enabled?: boolean
+  sort?: number
+}
+
+/**
+ * 全量类目树（公开）。
+ *
+ * 返回 `null` 表示中枢取数失败——调用方必须把它和「类目表真的为空」分开，
+ * 否则故障会被渲染成「暂无分类」（同类缺陷见文件顶部的 `degrade` 注释）。
+ */
+export async function fetchCategories(onDegraded?: DegradedHandler): Promise<HubCategoryLite[] | null> {
+  return degrade(
+    null,
+    async () => {
+      const data = await getJson<HubCategoryLite[]>('/api/categories')
+      // 非数组（中枢异常时可能返回错误对象）按故障处理，不能让 .filter 抛给 UI
+      if (!Array.isArray(data)) throw new Error('类目响应格式异常')
+      return data
+    },
+    onDegraded,
+  )
+}
+
+/**
+ * 类目 → 存活站点数（`categoryId` 为类目 **id**，不是 slug）。
+ *
+ * 口径是单个类目自身：站点只挂叶子，一级根恒为 0。
+ * 返回 `null` 同样表示取数失败（此时调用方不该把全部类目当 0 站）。
+ */
+export async function fetchCategoryCounts(onDegraded?: DegradedHandler): Promise<Map<string, number> | null> {
+  return degrade(
+    null,
+    async () => {
+      const res = await getJson<{ counts?: Array<{ categoryId?: string; sites?: number }> }>('/api/categories/counts')
+      if (!res || !Array.isArray(res.counts)) throw new Error('类目计数响应格式异常')
+      const map = new Map<string, number>()
+      for (const row of res.counts) {
+        const id = typeof row?.categoryId === 'string' ? row.categoryId.trim() : ''
+        if (id) map.set(id, Number(row?.sites) || 0)
+      }
+      return map
+    },
+    onDegraded,
+  )
 }
 
 /* ------------------------------ 榜单 ------------------------------ */
@@ -380,6 +442,55 @@ export async function fetchNewSites(limit = 20, onDegraded?: DegradedHandler): P
     },
     onDegraded,
   )
+}
+
+/** 双曲平替推理的单条命中 */
+export interface HubHyperbolicHit {
+  site: HubSite
+  /** 洛伦兹双曲面上的测地距离（越大越不像平替） */
+  geodesicDistance: number
+  /** 同层级平替得分 */
+  alternativeScore: number
+  sameCategory: boolean
+}
+
+export interface HubHyperbolicPayload {
+  hits: HubHyperbolicHit[]
+  /**
+   * 口径声明，不是装饰：
+   *   `lorentz-hyperboloid` = 真实 BGE 向量投到双曲球后算的测地距离
+   *   `lorentz-heuristic`   = 没有向量，按同分类 + 标签 Jaccard 构造投影坐标（估算）
+   *   `none` / `missing_site` = 端点内部异常 / 站点已不存在
+   * 把启发式估算得分显示成语义结论，等于把未知当已知，所以调用方必须原样呈现。
+   */
+  manifold: string
+  semanticAvailable: boolean
+}
+
+/**
+ * 双曲空间平替推理（`/api/rank/alternatives/:siteId`）。
+ * 返回 `null` 表示中枢不可用（与「算得出但一个候选都没有」区分开）。
+ */
+export async function fetchHyperbolicAlternatives(
+  siteId: string,
+  limit = 6,
+  onDegraded?: DegradedHandler,
+): Promise<HubHyperbolicPayload | null> {
+  try {
+    const data = await getJson<HubHyperbolicPayload>(
+      '/api/rank/alternatives/' + encodeURIComponent(siteId) + '?limit=' + limit,
+    )
+    if (!data || !Array.isArray(data.hits)) throw new Error('双曲平替响应格式异常')
+    return {
+      hits: data.hits,
+      manifold: typeof data.manifold === 'string' ? data.manifold : 'none',
+      semanticAvailable: data.semanticAvailable === true,
+    }
+  } catch (error) {
+    if (isNotFound(error)) return { hits: [], manifold: 'missing_site', semanticAvailable: false }
+    notifyDegraded(onDegraded, error)
+    return null
+  }
 }
 
 /**
@@ -421,6 +532,8 @@ export interface HubFavorite {
   siteId: string
   folderId: string | null
   note: string | null
+  /** 标签（T22）：服务端已归一（≤8 个、各 ≤24 字符）；null = 未打标签 */
+  tags?: string[] | null
   createdAt: number
   site: HubSite | null
 }
@@ -443,7 +556,7 @@ export async function listFavorites(identity: string, onDegraded?: DegradedHandl
     { items: [], folders: [] },
     () =>
       getJson<HubFavoritesPayload>(
-        '/api/favorites?anonId=' + encodeURIComponent(identity),
+        '/api/favorites',
         undefined,
         anonHeaders(identity),
       ),
@@ -471,6 +584,8 @@ export interface FavoriteSyncOp {
   siteId: string
   folderId?: string | null
   note?: string | null
+  /** 标签（T22）：add 全量覆盖；update 显式传入才写；null = 清除 */
+  tags?: string[] | null
   /** 客户端发生时间；省略则由服务端取当前时间（LWW 依据） */
   at?: number
 }
@@ -507,7 +622,7 @@ export async function addFavorite(identity: string, siteId: string, onDegraded?:
   return degrade(
     false,
     async () => {
-      await sendJson('/api/favorites?anonId=' + encodeURIComponent(identity), 'POST', { siteId }, undefined, anonHeaders(identity))
+      await sendJson('/api/favorites', 'POST', { siteId }, undefined, anonHeaders(identity))
       return true
     },
     onDegraded,
@@ -518,7 +633,7 @@ export async function removeFavorite(identity: string, siteId: string, onDegrade
   return degrade(
     false,
     async () => {
-      await sendJson('/api/favorites/' + encodeURIComponent(siteId) + '?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
+      await sendJson('/api/favorites/' + encodeURIComponent(siteId), 'DELETE', undefined, undefined, anonHeaders(identity))
       return true
     },
     onDegraded,
@@ -529,14 +644,14 @@ export async function removeFavorite(identity: string, siteId: string, onDegrade
 export async function updateFavoriteMeta(
   identity: string,
   siteId: string,
-  patch: { folderId?: string | null; note?: string | null },
+  patch: { folderId?: string | null; note?: string | null; tags?: string[] | null },
   onDegraded?: DegradedHandler,
 ): Promise<boolean> {
   return degrade(
     false,
     async () => {
       await sendJson(
-        '/api/favorites/' + encodeURIComponent(siteId) + '?anonId=' + encodeURIComponent(identity),
+        '/api/favorites/' + encodeURIComponent(siteId),
         'PATCH',
         patch,
         undefined,
@@ -553,7 +668,7 @@ export async function clearCloudFavorites(identity: string, onDegraded?: Degrade
   return degrade(
     false,
     async () => {
-      await sendJson('/api/favorites?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
+      await sendJson('/api/favorites', 'DELETE', undefined, undefined, anonHeaders(identity))
       return true
     },
     onDegraded,
@@ -563,7 +678,7 @@ export async function clearCloudFavorites(identity: string, onDegraded?: Degrade
 export async function createFavoriteFolder(identity: string, name: string, onDegraded?: DegradedHandler): Promise<HubFavoriteFolder | null> {
   return degrade<HubFavoriteFolder | null>(null, () =>
     sendJson<HubFavoriteFolder>(
-      '/api/favorites/folders?anonId=' + encodeURIComponent(identity),
+      '/api/favorites/folders',
       'POST',
       { name },
       undefined,
@@ -581,7 +696,7 @@ export async function updateFavoriteFolder(
     false,
     async () => {
       await sendJson(
-        '/api/favorites/folders/' + encodeURIComponent(folderId) + '?anonId=' + encodeURIComponent(identity),
+        '/api/favorites/folders/' + encodeURIComponent(folderId),
         'PATCH',
         patch,
         undefined,
@@ -598,7 +713,7 @@ export async function deleteFavoriteFolder(identity: string, folderId: string, o
     false,
     async () => {
       await sendJson(
-        '/api/favorites/folders/' + encodeURIComponent(folderId) + '?anonId=' + encodeURIComponent(identity),
+        '/api/favorites/folders/' + encodeURIComponent(folderId),
         'DELETE',
         undefined,
         undefined,
@@ -615,7 +730,7 @@ export async function deleteFavoriteFolder(identity: string, folderId: string, o
 export async function fetchSearchHistory(identity: string, limit = 8, onDegraded?: DegradedHandler): Promise<string[]> {
   return degrade([], async () => {
     const data = await getJson<{ items: Array<{ query: string }> }>(
-      '/api/search-history?anonId=' + encodeURIComponent(identity) + '&limit=' + limit,
+      '/api/search-history?limit=' + limit,
       undefined,
       anonHeaders(identity),
     )
@@ -641,7 +756,7 @@ export async function fetchSearchHistoryPage(
     { items: [], hasMore: false, nextOffset: offset },
     () =>
       getJson<{ items: HubSearchHistoryItem[]; hasMore: boolean; nextOffset: number }>(
-        '/api/search-history?anonId=' + encodeURIComponent(identity) + '&limit=' + limit + '&offset=' + offset,
+        '/api/search-history?limit=' + limit + '&offset=' + offset,
         undefined,
         anonHeaders(identity),
       ),
@@ -654,7 +769,7 @@ export async function deleteSearchHistoryItem(identity: string, id: number, onDe
     false,
     async () => {
       await sendJson(
-        '/api/search-history/' + id + '?anonId=' + encodeURIComponent(identity),
+        '/api/search-history/' + id,
         'DELETE',
         undefined,
         undefined,
@@ -670,8 +785,68 @@ export async function clearCloudSearchHistory(identity: string, onDegraded?: Deg
   return degrade(
     false,
     async () => {
-      await sendJson('/api/search-history?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
+      await sendJson('/api/search-history', 'DELETE', undefined, undefined, anonHeaders(identity))
       return true
+    },
+    onDegraded,
+  )
+}
+
+/**
+ * 批量清理零结果记录（T4）：服务端一次往返完成筛选与删除，
+ * 替代此前「逐条 DELETE 串行循环」。返回实际删除条数；失败返回 null。
+ */
+export async function batchCleanZeroResultSearchHistory(
+  identity: string,
+  onDegraded?: DegradedHandler,
+): Promise<number | null> {
+  return degrade<number | null>(
+    null,
+    async () => {
+      const res = await sendJson(
+        '/api/search-history/batch-delete',
+        'POST',
+        { filter: 'zero_results' },
+        undefined,
+        anonHeaders(identity),
+      ) as { removed?: number }
+      return typeof res?.removed === 'number' ? res.removed : null
+    },
+    onDegraded,
+  )
+}
+
+/* --------------------------- 访问历史（T23） --------------------------- */
+
+export interface HubVisitItem {
+  id: number
+  siteId: string
+  at: number
+  site: { id: string; title: string; url: string; description: string | null } | null
+}
+
+/**
+ * 访问历史分页（/api/me/visits 走 BFF 会话身份，不需要自报 anonId）。
+ * 降级返回 null：调用方据此区分「确实没有访问记录」与「云端取不到」。
+ */
+export async function fetchVisitsPage(
+  options: { limit?: number; offset?: number } = {},
+  onDegraded?: DegradedHandler,
+): Promise<{ items: HubVisitItem[]; total: number; hasMore: boolean; nextOffset: number } | null> {
+  const limit = options.limit ?? 20
+  const offset = options.offset ?? 0
+  return degrade(
+    null,
+    async () => {
+      const data = await getJson<{ items?: HubVisitItem[]; total?: number; hasMore?: boolean; nextOffset?: number }>(
+        '/api/me/visits?limit=' + limit + '&offset=' + offset,
+      )
+      return {
+        items: Array.isArray(data.items) ? data.items : [],
+        total: Number(data.total ?? 0),
+        hasMore: Boolean(data.hasMore),
+        nextOffset: Number(data.nextOffset ?? offset),
+      }
     },
     onDegraded,
   )
@@ -700,7 +875,7 @@ export interface HubProfileExplain {
 export async function fetchProfileExplain(identity: string, onDegraded?: DegradedHandler): Promise<HubProfileExplain | null> {
   return degrade<HubProfileExplain | null>(null, () =>
     getJson<HubProfileExplain>(
-      '/api/profile?explain=1&anonId=' + encodeURIComponent(identity),
+      '/api/profile?explain=1',
       undefined,
       anonHeaders(identity),
     ), onDegraded)
@@ -716,7 +891,7 @@ export async function clearProfileSignals(
     false,
     async () => {
       await sendJson(
-        '/api/profile/signals/' + kind + '?anonId=' + encodeURIComponent(identity),
+        '/api/profile/signals/' + kind,
         'DELETE',
         undefined,
         undefined,
@@ -740,7 +915,7 @@ export interface CloudVaultData {
 export async function fetchCloudVault(identity: string, onDegraded?: DegradedHandler): Promise<CloudVaultData | null> {
   return degrade<CloudVaultData | null>(null, async () => {
     const data = await getJson<{ ok: boolean; vault: CloudVaultData | null }>(
-      '/api/vault/sync?anonId=' + encodeURIComponent(identity),
+      '/api/vault/sync',
       undefined,
       anonHeaders(identity),
     )
@@ -773,7 +948,7 @@ export async function saveCloudVault(
   try {
     const body: Record<string, unknown> = { payload }
     if (typeof expectedVersion === 'number') body.version = expectedVersion
-    const res = await fetch(hubUrl('/api/vault/sync?anonId=' + encodeURIComponent(identity)), {
+    const res = await fetch(hubUrl('/api/vault/sync'), {
       method: 'PUT',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...authHeaders(), ...anonHeaders(identity) },
       body: JSON.stringify(body),
@@ -805,7 +980,7 @@ export async function saveCloudVault(
 
 export async function deleteCloudVault(identity: string, onDegraded?: DegradedHandler): Promise<boolean> {
   try {
-    await sendJson('/api/vault/sync?anonId=' + encodeURIComponent(identity), 'DELETE', undefined, undefined, anonHeaders(identity))
+    await sendJson('/api/vault/sync', 'DELETE', undefined, undefined, anonHeaders(identity))
     return true
   } catch (error) {
     notifyDegraded(onDegraded, error)
@@ -1036,12 +1211,11 @@ export async function fetchInstalledPlugins(
   onDegraded?: DegradedHandler,
 ): Promise<{ items: HubPluginInstalledItem[]; total: number }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return degrade<{ items: HubPluginInstalledItem[]; total: number }>(
     { items: [], total: 0 },
     () =>
       getJson<{ items: HubPluginInstalledItem[]; total: number }>(
-        `/api/plugins/installed${qs}`,
+        `/api/plugins/installed`,
         undefined,
         effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
       ),
@@ -1055,10 +1229,9 @@ export async function fetchPluginDetail(
   onDegraded?: DegradedHandler,
 ): Promise<{ plugin: HubPluginItem; summary: any } | null> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   try {
     return await getJson<{ plugin: HubPluginItem; summary: any }>(
-      `/api/plugins/${encodeURIComponent(slug)}${qs}`,
+      `/api/plugins/${encodeURIComponent(slug)}`,
       undefined,
       effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
     )
@@ -1132,7 +1305,7 @@ export async function publishPlugin(
   if (shouldAutoAudit) params.set('autoAudit', 'true')
   const qs = params.toString() ? `?${params.toString()}` : ''
   return sendJson<HubPluginItem & { audit?: HubPluginAuditReport }>(
-    `/api/plugins${qs}`,
+    `/api/plugins`,
     'POST',
     { manifest, autoAudit: shouldAutoAudit },
     undefined,
@@ -1146,9 +1319,8 @@ export async function runAiPluginAudit(
   identity?: string
 ): Promise<{ success: boolean; plugin: HubPluginItem; audit: HubPluginAuditReport }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson<{ success: boolean; plugin: HubPluginItem; audit: HubPluginAuditReport }>(
-    `/api/plugins/${encodeURIComponent(slug)}/ai-audit${qs}`,
+    `/api/plugins/${encodeURIComponent(slug)}/ai-audit`,
     'POST',
     {},
     undefined,
@@ -1165,7 +1337,6 @@ export async function fetchMyPlugins(
   const sp = new URLSearchParams()
   if (params.limit) sp.set('limit', String(params.limit))
   if (params.offset) sp.set('offset', String(params.offset))
-  if (effectiveIdentity) sp.set('anonId', effectiveIdentity)
   const qs = sp.toString() ? `?${sp.toString()}` : ''
   return degrade<HubPluginsResponse>(
     { items: [], total: 0, limit: params.limit ?? 24, offset: params.offset ?? 0 },
@@ -1223,7 +1394,7 @@ export async function submitPluginVersion(
   if (shouldAutoAudit) params.set('autoAudit', 'true')
   const qs = params.toString() ? `?${params.toString()}` : ''
   return sendJson<HubPluginItem & { audit?: HubPluginAuditReport }>(
-    `/api/plugins/${encodeURIComponent(slug)}/versions${qs}`,
+    `/api/plugins/${encodeURIComponent(slug)}/versions`,
     'POST',
     { manifest, changelog, autoAudit: shouldAutoAudit },
     undefined,
@@ -1237,9 +1408,8 @@ export async function preAuditPlugin(
   identity?: string
 ): Promise<{ ok: boolean; audit: HubPluginAuditReport; summary: any }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson<{ ok: boolean; audit: HubPluginAuditReport; summary: any }>(
-    `/api/plugins/pre-audit${qs}`,
+    `/api/plugins/pre-audit`,
     'POST',
     { manifest },
     undefined,
@@ -1253,9 +1423,8 @@ export async function autoFixPlugin(
   identity?: string
 ): Promise<{ ok: boolean; manifest: any; changes: string[]; audit: HubPluginAuditReport; summary: any }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson<{ ok: boolean; manifest: any; changes: string[]; audit: HubPluginAuditReport; summary: any }>(
-    `/api/plugins/auto-fix${qs}`,
+    `/api/plugins/auto-fix`,
     'POST',
     { manifest },
     undefined,
@@ -1306,9 +1475,8 @@ export async function installPlugin(
   identity?: string,
 ): Promise<{ success: boolean; alreadyInstalled: boolean; plugin: HubPluginItem; applied: any }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson(
-    `/api/plugins/${encodeURIComponent(slug)}/install${qs}`,
+    `/api/plugins/${encodeURIComponent(slug)}/install`,
     'POST',
     {},
     undefined,
@@ -1340,9 +1508,8 @@ export async function starPlugin(
   identity?: string,
 ): Promise<{ success: boolean; starred: boolean; starCount: number }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson(
-    `/api/plugins/${encodeURIComponent(slug)}/star${qs}`,
+    `/api/plugins/${encodeURIComponent(slug)}/star`,
     'POST',
     {},
     undefined,
@@ -1355,9 +1522,8 @@ export async function unstarPlugin(
   identity?: string,
 ): Promise<{ success: boolean; starred: boolean; starCount: number }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson(
-    `/api/plugins/${encodeURIComponent(slug)}/star${qs}`,
+    `/api/plugins/${encodeURIComponent(slug)}/star`,
     'DELETE',
     undefined,
     undefined,
@@ -1371,9 +1537,8 @@ export async function reportPlugin(
   identity?: string,
 ): Promise<{ success: boolean; reportCount: number }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson(
-    `/api/plugins/${encodeURIComponent(slug)}/report${qs}`,
+    `/api/plugins/${encodeURIComponent(slug)}/report`,
     'POST',
     { reason },
     undefined,
@@ -1482,7 +1647,7 @@ export async function fetchPluginReviews(
       limit: params.limit ?? 20,
       offset: params.offset ?? 0,
     },
-    () => getJson(`/api/plugins/${encodeURIComponent(slug)}/reviews${qs}`),
+    () => getJson(`/api/plugins/${encodeURIComponent(slug)}/reviews`),
     onDegraded,
   )
 }
@@ -1587,7 +1752,7 @@ export async function fetchAdminPluginReviews(
   const qs = sp.toString() ? `?${sp.toString()}` : ''
   return degrade(
     { items: [] as HubAdminPluginReview[], total: 0, limit: params.limit ?? 30, offset: params.offset ?? 0 },
-    () => getJson(`/api/admin/plugin-reviews${qs}`),
+    () => getJson(`/api/admin/plugin-reviews`),
     onDegraded,
   )
 }
@@ -1703,6 +1868,8 @@ export interface HubLlmConfigView {
   jsonMode: HubJsonMode
   allowPrivateNetwork: boolean
   thinking?: boolean
+  /** 观测大盘折算花费的单价（¥/1K token）；0 = 未配置，大盘写「未配置单价」 */
+  costPer1kTokensRmb?: number
   fallbacks: HubLlmFallbackView[]
   updatedAt: number | null
   updatedBy: string | null
@@ -1755,6 +1922,8 @@ export interface HubLlmConfigInput {
   maxTokens?: number
   jsonMode?: HubJsonMode
   allowPrivateNetwork?: boolean
+  /** 观测大盘折算花费的单价（¥/1K token）；填 0 = 清除，大盘回落到「未配置单价」 */
+  costPer1kTokensRmb?: number
   /** 备用模型池（整表替换；最多 3 个） */
   fallbacks?: HubLlmFallbackInput[]
 }
@@ -1796,7 +1965,7 @@ function identityHeaders(identity: string): Record<string, string> {
 
 export async function fetchUserLlmConfig(identity: string): Promise<{ config: HubUserLlmConfigView }> {
   return getJson(
-    '/api/user/ai/config?anonId=' + encodeURIComponent(identity),
+    '/api/user/ai/config',
     undefined,
     identityHeaders(identity),
   )
@@ -1807,7 +1976,7 @@ export async function saveUserLlmConfig(
   input: HubLlmConfigInput,
 ): Promise<{ config: HubUserLlmConfigView }> {
   return sendJson(
-    '/api/user/ai/config?anonId=' + encodeURIComponent(identity),
+    '/api/user/ai/config',
     'PUT',
     input,
     undefined,
@@ -1817,7 +1986,7 @@ export async function saveUserLlmConfig(
 
 export async function deleteUserLlmConfig(identity: string): Promise<{ config: HubUserLlmConfigView }> {
   return sendJson(
-    '/api/user/ai/config?anonId=' + encodeURIComponent(identity),
+    '/api/user/ai/config',
     'DELETE',
     undefined,
     undefined,
@@ -1830,7 +1999,7 @@ export async function testUserLlmConfig(
   input: HubLlmConfigInput,
 ): Promise<{ result: HubLlmTestResult }> {
   return sendJson(
-    '/api/user/ai/config/test?anonId=' + encodeURIComponent(identity),
+    '/api/user/ai/config/test',
     'POST',
     input,
     undefined,
@@ -1861,7 +2030,7 @@ export async function chatWithUserLlm(
   thinking?: boolean,
 ): Promise<HubAiChatResult> {
   return sendJson(
-    '/api/user/ai/chat?anonId=' + encodeURIComponent(identity),
+    '/api/user/ai/chat',
     'POST',
     {
       messages,
@@ -1894,6 +2063,11 @@ export interface HubAiCanvasGenerateResult {
   }
   model: string
   latencyMs: number
+  /**
+   * 模型规划了但本部署没有对应卡片的模块类型（已丢弃、不会出现在 layout.widgets 里）。
+   * 后端只返回这个字段时前端必须说出来：否则用户只会觉得「AI 少给我排了几张卡」。
+   */
+  droppedTypes?: string[]
 }
 
 /** 一句话自然语言规划并生成模块化工作台画布 */
@@ -1903,7 +2077,7 @@ export async function generateAiCanvas(
   categories?: string[],
 ): Promise<HubAiCanvasGenerateResult> {
   return sendJson(
-    '/api/user/ai/canvas/generate?anonId=' + encodeURIComponent(identity),
+    '/api/user/ai/canvas/generate',
     'POST',
     { prompt, ...(categories ? { categories } : {}) },
     undefined,
@@ -1980,19 +2154,38 @@ export interface HubPluginAuditReport {
     name: string
     passed: boolean
     detail: string
+    /** 这一项本次根本没跑：不等于通过，也不等于失败 */
+    skipped?: boolean
   }>
   auditedAt: number
-  decision?: 'approve' | 'reject'
+  decision?: 'approve' | 'reject' | 'pending_review'
   aiRationale?: string
+  /**
+   * null = 该维度未测量；0 = 测了且不及格。渲染时两者必须分开，
+   * 否则「AI 没审」会被显示成「合规 0 分」这种更吓人的假信息。
+   */
   dimensionScores?: {
     security: number
-    availability: number
-    compliance: number
-    relevance: number
+    availability: number | null
+    compliance: number | null
+    relevance: number | null
   }
-  linkSurvivalRate?: number
+  linkSurvivalRate?: number | null
   suggestions?: string[]
   model?: string
+  /** 模型是否真的给出了合规/相关性结论 */
+  llmReviewed?: boolean
+  /** 模型审理被跳过的原因；not_audited = 这份报告只有静态清单 */
+  reviewSkipped?: 'quota' | 'unconfigured' | 'error' | 'not_audited' | null
+  /** 分数口径：full=四维齐全；static_plus_probe=模型缺席；static_only=连探活也没跑 */
+  scoreBasis?: 'full' | 'static_plus_probe' | 'static_only'
+  quota?: {
+    scope: string
+    metric: string
+    limit: number
+    used: number
+    retryAfterSeconds: number
+  } | null
 }
 
 /** 获取已配置的远程插件市场订阅源列表 */
@@ -2015,18 +2208,26 @@ export async function deletePluginTap(id: string): Promise<{ ok: boolean }> {
 }
 
 /** 同步指定的远程插件市场订阅源 */
-export async function syncPluginTap(id: string): Promise<{
+export interface PluginTapSyncResult {
   ok: boolean
+  /** 订阅源清单里的条目总数 */
   fetchedCount: number
+  /** 真正进入处理流程的条数（被 importCap 截断时小于 fetchedCount） */
+  processedCount: number
   importedCount: number
+  /** 市场里已有同名插件：本源这次没有新增 */
+  skippedDuplicate: number
+  /** 清单校验不通过被拒收 */
+  rejectedInvalid: number
+  /** 校验通过但写库失败 */
+  failedWrite: number
+  truncated: boolean
+  importCap: number
   tap: HubPluginTap
-}> {
-  return sendJson<{
-    ok: boolean
-    fetchedCount: number
-    importedCount: number
-    tap: HubPluginTap
-  }>(`/api/plugins/taps/${encodeURIComponent(id)}/sync`, 'POST')
+}
+
+export async function syncPluginTap(id: string): Promise<PluginTapSyncResult> {
+  return sendJson<PluginTapSyncResult>(`/api/plugins/taps/${encodeURIComponent(id)}/sync`, 'POST')
 }
 
 /** 获取插件的全自动代码与外链安全扫描报告 */
@@ -2067,6 +2268,21 @@ export interface HubAiInvocationLog {
   error?: string
 }
 
+/** 额度档位的一根计量条：limit=0 表示该档未启用 */
+export interface HubAiQuotaMeter {
+  limit: number
+  /** null = 这一档整体用量测不出来（单身份档是按人分别限的，合并总数无意义） */
+  used: number | null
+}
+
+/** 24 小时滚动额度闸门的实时状态，来自主中枢配置与 llm_usage 明细 */
+export interface HubAiQuotaSnapshot {
+  windowHours: number
+  identity: { calls: HubAiQuotaMeter; tokens: HubAiQuotaMeter }
+  anonymous: { calls: HubAiQuotaMeter; tokens: HubAiQuotaMeter }
+  system: { calls: HubAiQuotaMeter; tokens: HubAiQuotaMeter }
+}
+
 export interface HubAiObservabilityResponse {
   hasData?: boolean
   window: string
@@ -2080,8 +2296,15 @@ export interface HubAiObservabilityResponse {
   totalTokens: number
   promptTokens: number
   completionTokens: number
-  estimatedCostRmb: number
-  activeModel: string
+  /**
+   * 只有在管理端显式配了 `NAVHUB_LLM_COST_PER_1K_TOKENS` 时才有数值。
+   * 以前这里无条件按一个凭空写的单价折算，面板上的 ¥ 数不可信也不可变。
+   */
+  estimatedCostRmb: number | null
+  costUnitPriceRmb?: number | null
+  /** 当前真正生效的模型名；没配到就回 null，由界面写「未采集到模型名」 */
+  activeModel: string | null
+  quota?: HubAiQuotaSnapshot | null
   byScenario: HubAiScenarioStat[]
   hourlyTrend: HubAiHourlyTrendPoint[]
   recentLogs: HubAiInvocationLog[]
@@ -2241,14 +2464,33 @@ export async function applySiteHealingAction(data: {
 export async function recommendSiteAlternatives(siteId: string): Promise<{
   ok: boolean
   siteId: string
+  /** 真实模型名，或哨兵 `fallback-heuristics`（本次是同类活跃站点兜底，没有模型参与） */
   model: string
   recommendations: Array<{ title: string; url: string; reason: string }>
+  aiDegraded?: 'quota' | 'error'
+  degradedReason?: string
+  quota?: {
+    scope: string
+    metric: string
+    limit: number
+    used: number
+    retryAfterSeconds: number
+  } | null
 }> {
   return sendJson<{
     ok: boolean
     siteId: string
     model: string
     recommendations: Array<{ title: string; url: string; reason: string }>
+    aiDegraded?: 'quota' | 'error'
+    degradedReason?: string
+    quota?: {
+      scope: string
+      metric: string
+      limit: number
+      used: number
+      retryAfterSeconds: number
+    } | null
   }>(`/api/sites/${encodeURIComponent(siteId)}/recommend-alternative`, 'POST', {})
 }
 
@@ -2443,9 +2685,26 @@ export interface CopilotChatResponse {
   ok: boolean
   reply: string
   reasoningContent?: string
+  /**
+   * 真实模型名，或哨兵 `local-heuristic-match`（本次由站内关键词匹配兜底，
+   * 没有模型参与）。UI 显示来源时必须用它，不能再配一句「AI 已回答」。
+   */
   model: string
   suggestions: string[]
   error?: string
+  /**
+   * 降级原因：quota=今日额度用尽 / unconfigured=未配置模型 / error=模型调用失败。
+   * 有值时 `model` 必为 local-heuristic-match。
+   */
+  degraded?: 'quota' | 'unconfigured' | 'error'
+  /** degraded=quota 时的额度明细（恢复时间来自后端窗口，不是前端猜） */
+  quota?: {
+    scope: 'identity' | 'anonymous' | 'system'
+    metric: 'calls' | 'tokens'
+    limit: number
+    used: number
+    retryAfterSeconds: number
+  } | null
 }
 
 export async function sendCopilotChat(
@@ -2483,9 +2742,8 @@ export interface AiPluginGenerateResponse {
 
 export async function generateAiPlugin(params: AiPluginGenerateParams): Promise<AiPluginGenerateResponse> {
   const effectiveIdentity = typeof window !== 'undefined' ? getIdentity() : undefined
-  const qs = effectiveIdentity ? `?anonId=${encodeURIComponent(effectiveIdentity)}` : ''
   return sendJson<AiPluginGenerateResponse>(
-    `/api/user/ai/plugin/generate${qs}`,
+    `/api/user/ai/plugin/generate`,
     'POST',
     params,
     undefined,

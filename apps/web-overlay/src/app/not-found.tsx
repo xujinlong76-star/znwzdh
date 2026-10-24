@@ -1,11 +1,28 @@
 'use client'
 
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 import { Button } from "@/registry/new-york/ui/button"
 import { Compass, Home, Flame, Tags, Layers, Share2, Star, type LucideIcon } from 'lucide-react'
-import { SearchPalette } from '@/components/search-palette'
 import { RECOVERY_LINKS, type RecoveryIcon } from '@/lib/recovery-links'
+
+/**
+ * not-found 边界挂在每条路由的客户端树里；静态引入检索面板会让整块
+ * SearchPalette（946 行，含收藏/偏好/语义/对比等）随全站首屏一起下发。
+ * 面板只在 404 真正渲染时才需要，这里按需加载；SSR 首帧仍由服务端渲染，
+ * 客户端补块期间的占位保持固定高度，避免 CLS 与「搜索框凭空出现」。
+ */
+const SearchPalette = dynamic(
+  () => import('@/components/search-palette').then((m) => m.SearchPalette),
+  {
+    loading: () => (
+      <div className="h-11 rounded-xl border border-border/60 bg-muted/30" aria-busy="true">
+        <span className="sr-only">正在加载搜索面板…</span>
+      </div>
+    ),
+  }
+)
 
 /**
  * 404 页 = 恢复入口，不是终止页。

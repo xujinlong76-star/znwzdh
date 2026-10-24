@@ -16,13 +16,22 @@
  * 这里把「显示什么」收敛成一个可测的判定：模式 + 标题 + 提示 + 出口动作。
  */
 
-export type SearchPanelActionKind = 'retry' | 'clear' | 'browse-tags' | 'browse-hot'
+import { externalSearchEngineName, externalSearchUrl, type SearchEngineId } from './user-settings'
+
+export type SearchPanelActionKind =
+  | 'retry'
+  | 'clear'
+  | 'browse-tags'
+  | 'browse-hot'
+  | 'external-search'
 
 export interface SearchPanelAction {
   kind: SearchPanelActionKind
   label: string
   /** 站内跳转动作的目标（retry / clear 没有 href） */
   href?: string
+  /** true = href 是站外地址，必须渲染成 <a target="_blank">，不能用 <Link> 做客户端路由 */
+  external?: boolean
 }
 
 /** hidden = 不需要提示块（有结果，或还在检索中） */
@@ -48,13 +57,34 @@ export interface SearchPanelInput {
   query: string
   /** 是否命中了投机意图 / 技术对比 / 架构配方等即时微组件 */
   hasWidgetResult: boolean
+  /** 用户中心里的「默认搜索引擎」，决定零结果时给哪一个站外出口 */
+  searchEngine?: SearchEngineId
+}
+
+/**
+ * 站外出口只在用户显式选了外部引擎时出现（`internal` → null）。
+ * 顺带一条真实收益：降级态下用户依然有路可走，而不是干等检索服务恢复。
+ */
+function externalAction(engine: SearchEngineId | undefined, query: string): SearchPanelAction | null {
+  if (!engine) return null
+  const url = externalSearchUrl(engine, query)
+  if (!url) return null
+  const name = externalSearchEngineName(engine)
+  return {
+    kind: 'external-search',
+    label: `用 ${name} 搜索「${query.trim()}」`,
+    href: url,
+    external: true,
+  }
 }
 
 export function planSearchPanel(input: SearchPanelInput): SearchPanelPlan {
-  const { loading, degraded, hitCount, query, hasWidgetResult } = input
+  const { loading, degraded, hitCount, query, hasWidgetResult, searchEngine } = input
 
   // 检索中 / 有结果：都不需要提示块（降级横幅由调用方渲染在结果上方）
   if (loading || hitCount > 0) return { mode: 'hidden', title: '', hint: '', actions: [] }
+
+  const external = externalAction(searchEngine, query)
 
   // 降级且零结果：绝不能说「没有匹配」——我们根本没能问成功
   if (degraded) {
@@ -62,7 +92,7 @@ export function planSearchPanel(input: SearchPanelInput): SearchPanelPlan {
       mode: 'outage',
       title: '检索服务暂时不可用',
       hint: '已切到降级检索，暂时无法确认是否有匹配结果。可以重试，或先浏览分类。',
-      actions: [RETRY, BROWSE_TAGS, BROWSE_HOT],
+      actions: [RETRY, ...(external ? [external] : []), BROWSE_TAGS, BROWSE_HOT],
     }
   }
 
@@ -73,6 +103,6 @@ export function planSearchPanel(input: SearchPanelInput): SearchPanelPlan {
     hint: hasWidgetResult
       ? '上方卡片是根据这句话即时生成的；导航检索没有匹配，可以换更短的关键词。'
       : '试试拼音首字母（如 zgtqw）或描述你的需求',
-    actions: [CLEAR, BROWSE_TAGS, BROWSE_HOT],
+    actions: [CLEAR, ...(external ? [external] : []), BROWSE_TAGS, BROWSE_HOT],
   }
 }

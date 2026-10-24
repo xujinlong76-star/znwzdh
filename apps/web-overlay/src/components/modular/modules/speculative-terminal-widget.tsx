@@ -1,46 +1,49 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Zap, CornerDownLeft, Copy, Check } from 'lucide-react'
 import { parseSpeculativeIntent } from '@/lib/speculative'
 import { evaluateArithmeticExpression, formatArithmeticResult } from '@/lib/arithmetic'
 import { copyText } from '@/lib/clipboard'
+import { useUserPreference } from '@/lib/user-preferences'
 
 export function SpeculativeTerminalWidget() {
   const [expr, setExpr] = useState('2^10 * 8')
-  const [output, setOutput] = useState('8192')
-  const [badgeText, setBadgeText] = useState('算术即刻计算')
   const [copied, setCopied] = useState(false)
+  /**
+   * 结果从「state + 事件里算」改成「由输入和开关派生」：
+   * 用户关掉 0-RTT 意图推断后，这一屏必须立刻重算。以前只在 onChange 里算，
+   * 关开关不动作，界面上还留着上一次推断出来的 HEX/CIDR —— 等于开关白关。
+   */
+  const zeroRttEnabled = useUserPreference('speculativeZeroRttEnabled')
 
-  const evaluateExpr = (input: string) => {
-    setExpr(input)
-    const trimmed = input.trim()
-    if (!trimmed) {
-      setOutput('')
-      setBadgeText('端侧即时')
-      return
+  const { output, badgeText } = useMemo(() => {
+    const trimmed = expr.trim()
+    if (!trimmed) return { output: '', badgeText: '端侧即时' }
+
+    // 1. 零 eval 的 0-RTT 推测意图引擎（算式、HEX/RGB、CIDR、UUIDv7、时间戳、字节换算等）
+    if (zeroRttEnabled) {
+      const intent = parseSpeculativeIntent(trimmed)
+      if (intent) {
+        const firstLine = intent.previewValue.split('\n')[0] || intent.previewValue
+        return {
+          output: firstLine.length > 48 ? firstLine.slice(0, 48) + '...' : firstLine,
+          badgeText: intent.title,
+        }
+      }
     }
 
-    // 1. 优先通过零 eval 的 0-RTT 推测意图引擎解析（支持算式、HEX/RGB、CIDR、UUIDv7、时间戳、字节换算等）
-    const intent = parseSpeculativeIntent(trimmed)
-    if (intent) {
-      setBadgeText(intent.title)
-      const firstLine = intent.previewValue.split('\n')[0] || intent.previewValue
-      setOutput(firstLine.length > 48 ? firstLine.slice(0, 48) + '...' : firstLine)
-      return
-    }
-
-    // 2. 纯数字或简单算术表达式兜底（完全基于递归下降解析器，零 Function/eval，严格兼容生产环境 CSP）
+    // 2. 纯数字或简单算术表达式兜底（递归下降解析器，零 Function/eval，兼容生产 CSP）
     const mathVal = evaluateArithmeticExpression(trimmed)
-    if (mathVal !== null) {
-      setBadgeText('算术即刻计算')
-      setOutput(formatArithmeticResult(mathVal))
-      return
-    }
+    if (mathVal !== null) return { output: formatArithmeticResult(mathVal), badgeText: '算术即刻计算' }
 
-    setBadgeText('等待有效表达式')
-    setOutput('输入算式、#HEX、CIDR 或时间戳...')
-  }
+    return {
+      output: zeroRttEnabled
+        ? '输入算式、#HEX、CIDR 或时间戳...'
+        : '当前只算算术；在用户中心打开「0-RTT 意图推断」后支持 #HEX、CIDR、时间戳。',
+      badgeText: zeroRttEnabled ? '等待有效表达式' : '仅算术（意图推断已关闭）',
+    }
+  }, [expr, zeroRttEnabled])
 
   const handleCopy = () => {
     if (!output) return
@@ -67,8 +70,12 @@ export function SpeculativeTerminalWidget() {
             aria-label="输入算式、CIDR、UUID 或 HEX 色值"
             type="text"
             value={expr}
-            onChange={(e) => evaluateExpr(e.target.value)}
-            placeholder="算式 / #HEX / 192.168.1.0/24 / 16 GB..."
+            onChange={(e) => setExpr(e.target.value)}
+            placeholder={
+              zeroRttEnabled
+                ? '算式 / #HEX / 192.168.1.0/24 / 16 GB...'
+                : '算式（意图推断已关闭，用户中心可开启）...'
+            }
             className="w-full text-base sm:text-xs font-mono px-2.5 py-1.5 rounded-lg border border-border/70 bg-background outline-none pr-7 focus:border-amber-500/50"
           />
           <CornerDownLeft className="w-3.5 h-3.5 text-muted-foreground absolute right-2 top-1/2 -translate-y-1/2 opacity-60" />
@@ -96,7 +103,7 @@ export function SpeculativeTerminalWidget() {
             <button
               key={demo}
               type="button"
-              onClick={() => evaluateExpr(demo)}
+              onClick={() => setExpr(demo)}
               className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-muted/50 hover:bg-muted text-muted-foreground transition-colors"
             >
               {demo}
@@ -107,6 +114,7 @@ export function SpeculativeTerminalWidget() {
 
       <div className="pt-1 text-xs text-muted-foreground/70 text-center font-mono">
         零 Eval 安全沙箱 · 0ms 端侧直出
+        {zeroRttEnabled ? '' : ' · 意图推断已关闭'}
       </div>
     </div>
   )

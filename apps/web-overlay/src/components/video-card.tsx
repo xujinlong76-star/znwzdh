@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { safeWindowOpen } from '@/lib/safe-url'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { PlayCircle } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
@@ -42,7 +43,7 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
             setIsOpen(true)
         } else if (item.href) {
             // noopener：外站拿到 window.opener 就能反向跳转我们的标签页（reverse tabnabbing）
-            window.open(item.href, '_blank', 'noopener,noreferrer')
+            safeWindowOpen(item.href)
         }
     }
 

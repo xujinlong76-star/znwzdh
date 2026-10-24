@@ -3,6 +3,7 @@
 export const runtime = 'edge'
 
 import { useState, useEffect } from 'react'
+import { safeWindowOpen } from '@/lib/safe-url'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from "@/registry/new-york/ui/button"
 import { useToast } from "@/registry/new-york/hooks/use-toast"
@@ -369,7 +370,7 @@ export default function VideoItemsPage() {
                                     variant="ghost"
                                     size="icon"
                                     className="h-8 w-8"
-                                    onClick={() => window.open(item.href, '_blank', 'noopener,noreferrer')}
+                                    onClick={() => safeWindowOpen(item.href)}
                                     title="访问链接"
                                 >
                                     <Icons.globe className="h-4 w-4" />

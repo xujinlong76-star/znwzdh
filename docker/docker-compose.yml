@@ -47,6 +47,30 @@ services:
       NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.deepseek.com}
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
       NAVHUB_LLM_MODEL: ${NAVHUB_LLM_MODEL:-deepseek-chat}
+      # .env.example 承诺过的其余 LLM 调参项必须一起透传，否则「照文档写了却没效果」。
+      # 尤其 NAVHUB_LLM_ALLOW_PRIVATE：本地 Ollama/llama.cpp 没有 API Key，
+      # 不透传它就只能得到「尚未配置可用的模型密钥」，对自托管用户是条死路。
+      NAVHUB_LLM_NAME: ${NAVHUB_LLM_NAME:-}
+      NAVHUB_LLM_TIMEOUT_MS: ${NAVHUB_LLM_TIMEOUT_MS:-}
+      NAVHUB_LLM_MAX_TOKENS: ${NAVHUB_LLM_MAX_TOKENS:-}
+      NAVHUB_LLM_TEMPERATURE: ${NAVHUB_LLM_TEMPERATURE:-}
+      NAVHUB_LLM_JSON_MODE: ${NAVHUB_LLM_JSON_MODE:-}
+      NAVHUB_LLM_THINKING: ${NAVHUB_LLM_THINKING:-}
+      NAVHUB_LLM_ALLOW_PRIVATE: ${NAVHUB_LLM_ALLOW_PRIVATE:-}
+      # 大盘折算花费用的单价（¥/1K token）；不透传就等于管理员永远只能看到「未配置」
+      NAVHUB_LLM_COST_PER_1K_TOKENS: ${NAVHUB_LLM_COST_PER_1K_TOKENS:-}
+      # LLM 额度闸门（三档 × 次数/Token，语义见 .env.example）。
+      # 这里一律 `${VAR:-}` 而不是写死数字兜底：compose 里写死会让 .env 的同名项
+      # 在「有人删掉自己那行」时被这里的值悄悄接管；空串由 config.ts 的 num() 读成
+      # 「未配置」，仍旧落到代码默认值。
+      NAVHUB_LLM_QUOTA_IDENTITY_CALLS: ${NAVHUB_LLM_QUOTA_IDENTITY_CALLS:-}
+      NAVHUB_LLM_QUOTA_IDENTITY_TOKENS: ${NAVHUB_LLM_QUOTA_IDENTITY_TOKENS:-}
+      NAVHUB_LLM_QUOTA_ANON_CALLS: ${NAVHUB_LLM_QUOTA_ANON_CALLS:-}
+      NAVHUB_LLM_QUOTA_ANON_TOKENS: ${NAVHUB_LLM_QUOTA_ANON_TOKENS:-}
+      NAVHUB_LLM_QUOTA_SYSTEM_CALLS: ${NAVHUB_LLM_QUOTA_SYSTEM_CALLS:-}
+      NAVHUB_LLM_QUOTA_SYSTEM_TOKENS: ${NAVHUB_LLM_QUOTA_SYSTEM_TOKENS:-}
+      # 显式关掉整个闸门才允许生产环境六档全 0（config.ts 会为此拒绝启动）
+      NAVHUB_LLM_QUOTA_DISABLED: ${NAVHUB_LLM_QUOTA_DISABLED:-}
       # 不设公开可查的默认值（升级改造方案 P0-1）：未显式提供时由
       # entrypoint.sh 生成随机值并持久化到 /data/.session-secret，
       # api 与 web 共享同一份；显式设置则优先生效。
@@ -228,6 +252,25 @@ services:
       NAVHUB_EMBEDDING_ENDPOINT: ${NAVHUB_EMBEDDING_ENDPOINT:-https://hf-mirror.com}
       NAVHUB_LLM_BASE_URL: ${NAVHUB_LLM_BASE_URL:-https://api.deepseek.com}
       NAVHUB_LLM_API_KEY: ${NAVHUB_LLM_API_KEY:-}
+      # 与 api 服务同一组 LLM 透传（语义见 api 服务里的注释）。这里此前只给了
+      # BASE_URL/API_KEY，却漏了 MODEL：standard 模式会拿 deepseek 的端点配上
+      # 代码默认的 agnes-3.0-flash 模型名，请求必然 invalid model。
+      NAVHUB_LLM_MODEL: ${NAVHUB_LLM_MODEL:-deepseek-chat}
+      NAVHUB_LLM_NAME: ${NAVHUB_LLM_NAME:-}
+      NAVHUB_LLM_TIMEOUT_MS: ${NAVHUB_LLM_TIMEOUT_MS:-}
+      NAVHUB_LLM_MAX_TOKENS: ${NAVHUB_LLM_MAX_TOKENS:-}
+      NAVHUB_LLM_TEMPERATURE: ${NAVHUB_LLM_TEMPERATURE:-}
+      NAVHUB_LLM_JSON_MODE: ${NAVHUB_LLM_JSON_MODE:-}
+      NAVHUB_LLM_THINKING: ${NAVHUB_LLM_THINKING:-}
+      NAVHUB_LLM_ALLOW_PRIVATE: ${NAVHUB_LLM_ALLOW_PRIVATE:-}
+      NAVHUB_LLM_COST_PER_1K_TOKENS: ${NAVHUB_LLM_COST_PER_1K_TOKENS:-}
+      NAVHUB_LLM_QUOTA_IDENTITY_CALLS: ${NAVHUB_LLM_QUOTA_IDENTITY_CALLS:-}
+      NAVHUB_LLM_QUOTA_IDENTITY_TOKENS: ${NAVHUB_LLM_QUOTA_IDENTITY_TOKENS:-}
+      NAVHUB_LLM_QUOTA_ANON_CALLS: ${NAVHUB_LLM_QUOTA_ANON_CALLS:-}
+      NAVHUB_LLM_QUOTA_ANON_TOKENS: ${NAVHUB_LLM_QUOTA_ANON_TOKENS:-}
+      NAVHUB_LLM_QUOTA_SYSTEM_CALLS: ${NAVHUB_LLM_QUOTA_SYSTEM_CALLS:-}
+      NAVHUB_LLM_QUOTA_SYSTEM_TOKENS: ${NAVHUB_LLM_QUOTA_SYSTEM_TOKENS:-}
+      NAVHUB_LLM_QUOTA_DISABLED: ${NAVHUB_LLM_QUOTA_DISABLED:-}
       # 不设公开可查的默认值（升级改造方案 P0-1）：未显式提供时由
       # entrypoint.sh 生成随机值并持久化到 /data/.session-secret，
       # api 与 web 共享同一份；显式设置则优先生效。

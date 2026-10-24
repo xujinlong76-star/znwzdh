@@ -27,7 +27,7 @@
     "/admin/videos/[id]/categories/[categoryId]/items": 966656,
     "/favorites": 965632,
     "/me": 901120,
-    "/me/data": 892928,
+    "/me/data": 893802,
     "/me/history": 880640,
     "/admin/stats": 961536,
     "/admin/categories": 961536,

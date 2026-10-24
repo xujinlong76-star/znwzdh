@@ -22,12 +22,12 @@ const ctx = await createContext(config);
 // 返回值是「本次实际补齐的列」（空 = 已是最新）。
 const added = await migrateColumns(ctx.db);
 
-console.log("[migrate] 模式 " + config.mode + "，数据库 " + (config.mode === "lite" ? config.sqlitePath : "(postgresql)"));
+console.info("[migrate] 模式 " + config.mode + "，数据库 " + (config.mode === "lite" ? config.sqlitePath : "(postgresql)"));
 if (added.length === 0) {
-  console.log("[migrate] schema 已是最新，无需迁移");
+  console.info("[migrate] schema 已是最新，无需迁移");
 } else {
-  for (const a of added) console.log("[migrate] 已添加列: " + a);
+  for (const a of added) console.info("[migrate] 已添加列: " + a);
 }
-console.log("[migrate] 完成，耗时 " + (Date.now() - t0) + " ms");
+console.info("[migrate] 完成，耗时 " + (Date.now() - t0) + " ms");
 
 await ctx.close();

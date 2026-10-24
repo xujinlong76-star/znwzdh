@@ -5,7 +5,7 @@
  * 1. GET  /api/admin/audit/report - 获取全站健康度评分、异常站点诊断与同生态替代建议列表
  * 2. POST /api/admin/audit/scan   - 触发一次站点自治巡检并生成诊断报告
  * 3. POST /api/admin/audit/apply  - 一键采纳自愈建议（Wayback 镜像修复或替代站点平替）
- * 4. POST /api/sites/:id/recommend-alternative - 调用 Agnes 3.0 Flash 生成精选替代品
+ * 4. POST /api/sites/:id/recommend-alternative - 用当前配置的大模型生成精选替代品（模型名以响应 model 字段为准）
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
@@ -18,6 +18,8 @@ import {
 import { indexSite } from "../index-site.ts";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
+import { checkLlmQuota } from "../llm-quota.ts";
+import { identityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -201,9 +203,24 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
   });
 
   /**
-   * 4. 调用 Agnes 3.0 Flash 针对失效站点生成精选替代品
+   * 4. 用当前配置的模型针对失效站点生成精选替代品
+   *
+   * 这里不写死模型名：实际用了谁由 `llm.provider.model` 如实带回，
+   * 没接上可用 provider 时统一报 `fallback-heuristics`，绝不冒充「模型跑过了」。
+   *
+   * 这是一条 `scope:"read"` 的**会花钱**的路由：改造前它没有 rateLimit、
+   * 用 `resolveLlm(ctx)` 直接吃系统 key、用量记成 `identity:null`，而且整段
+   * try/catch 把失败（包括额度、鉴权、超时）统统吞成一次「看起来成功的」
+   * 启发式返回。现在三件事一起修：身份过第二轴、进额度闸门、降级必须写明原因。
+   *
+   * 降级不是失败：同分类的活跃站点本来就是可用答案，所以额度耗尽时仍回 200
+   * 平替列表，只是 `aiDegraded` 与 `retryAfterSeconds` 要如实带上，
+   * 前端才不会把「今天到顶了」渲染成「模型坏了」。
    */
-  app.post("/api/sites/:id/recommend-alternative", { config: { scope: "read" } }, async (req, reply) => {
+  app.post(
+    "/api/sites/:id/recommend-alternative",
+    { config: { scope: "read", rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     const { id } = req.params as { id: string };
     const site = await ctx.repo.getSite(id);
     if (!site) {
@@ -219,8 +236,28 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       reason: `同属于分类【${site.categoryId}】的高活跃度替代站点`,
     }));
 
+    const identity = identityTrusted(ctx, req as never) ? identityOf(req as never) : null;
+    const quota = await checkLlmQuota(ctx, identity);
+    if (!quota.ok) {
+      return {
+        ok: true,
+        siteId: site.id,
+        model: "fallback-heuristics",
+        recommendations: fallbackList,
+        aiDegraded: "quota" as const,
+        quota: {
+          scope: quota.error.scope,
+          metric: quota.error.metric,
+          limit: quota.error.limit,
+          used: quota.error.used,
+          retryAfterSeconds: Math.max(1, Math.ceil(quota.error.retryAfterMs / 1000)),
+        },
+      };
+    }
+
+    let degradedReason: string | null = null;
     try {
-      const llm = await resolveLlm(ctx);
+      const llm = await resolveLlm(ctx, identity);
       if (llmProviderReady(llm.provider)) {
         const safeTitle = (site.title || "").replace(/[\r\n]/g, " ").slice(0, 100);
         const safeUrl = (site.url || "").replace(/[\r\n]/g, "").slice(0, 200);
@@ -235,6 +272,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
 
         const res = await callLlm(ctx, llm, {
           scenario: "health_audit",
+          identity,
           messages: [{ role: "user", content: prompt }],
           temperature: 0.3,
           maxTokens: 600,
@@ -258,10 +296,16 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
               recommendations: parsed.data.slice(0, 3),
             };
           }
+          // 模型回了但结构不可用：这也是一次降级，不能与「模型不可用」混为一谈
+          degradedReason = "invalid-model-output";
+        } else {
+          degradedReason = "empty-model-output";
         }
+      } else {
+        degradedReason = "llm-not-configured";
       }
-    } catch {
-      // 容错降级
+    } catch (err) {
+      degradedReason = err instanceof Error ? err.name.toLowerCase() : "unknown";
     }
 
     return {
@@ -269,6 +313,8 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       siteId: site.id,
       model: "fallback-heuristics",
       recommendations: fallbackList,
+      aiDegraded: "error" as const,
+      ...(degradedReason ? { degradedReason } : {}),
     };
   });
 };

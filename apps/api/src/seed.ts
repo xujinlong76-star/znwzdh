@@ -286,7 +286,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
         await indexPluginsBatch(ctx, [indexItemFromManifest(def.slug, validated.manifest)]);
       }
       pluginsUpgraded++;
-      console.log(`[seed] 插件升级: ${def.slug} ${existing.version} -> ${validated.manifest.version}`);
+      console.info(`[seed] 插件升级: ${def.slug} ${existing.version} -> ${validated.manifest.version}`);
       continue;
     } catch (err) {
       console.warn("[seed] 插件导入跳过: " + def.slug, err);

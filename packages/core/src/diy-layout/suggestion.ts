@@ -1,13 +1,24 @@
 /**
- * 关键词与 Jaccard 相似度智能分类推荐算法 (Fuzzy Category Auto-Classifier)。
+ * 关键词重合度分类推荐（**纯启发式，不是 AI**）Fuzzy Category Auto-Classifier。
+ *
+ * 判据只有「分类名 / 分词是否出现在标题+描述+URL 里」，没有模型。所以 confidence
+ * 的口径是重合度得分，天花板 0.85：曾经用 Math.min(0.99, ...) 配合界面上的
+ * 「AI 推荐分类（99% 匹配）」，把字符串包含判断包装成模型置信度。
+ * 与 apps/web-overlay/src/lib/modular/diy-presets.ts 的同名实现保持同口径。
  */
 
 export interface CategorySuggestion {
   categoryId: string
   categoryTitle: string
-  confidence: number // 0.0 ~ 1.0
+  /** 关键词重合度得分（0.3~0.85），不是概率 */
+  confidence: number
   matchReason: string
+  /** 判定来源：目前是纯关键词启发式，未来接真模型时这里会是 'llm' */
+  method: 'keyword'
 }
+
+/** 启发式得分的天花板：字符串包含判断永远不该自称 100% */
+const KEYWORD_SCORE_CEILING = 0.85
 
 /**
  * 依据站点标题、URL 和描述，智能推荐最贴切的归属分类
@@ -63,8 +74,9 @@ export function suggestCategoryForSite<TCat extends { id: string; title: string 
     return {
       categoryId: bestCat.id,
       categoryTitle: bestCat.title,
-      confidence: Number(Math.min(0.99, maxScore).toFixed(2)),
+      confidence: Number(Math.min(KEYWORD_SCORE_CEILING, maxScore).toFixed(2)),
       matchReason: reason,
+      method: 'keyword',
     }
   }
 

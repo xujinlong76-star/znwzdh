@@ -142,6 +142,10 @@ describe("订阅源同步的同名去重", () => {
     hoisted.body = tapPayload(["去重测试"]);
     const body = await sync();
     expect(body.importedCount).toBe(0);
+    // 「没导入」的原因现在要说得出口：这条是重名，不是清单不合规、也不是写库失败
+    expect(body.skippedDuplicate).toBe(1);
+    expect(body.rejectedInvalid).toBe(0);
+    expect(body.failedWrite).toBe(0);
 
     const rows = await ctx.repo.listPlugins({ q: "去重测试", limit: 50 });
     const exact = rows.items.filter((p: { name: string }) => p.name === "去重测试");
@@ -153,7 +157,66 @@ describe("订阅源同步的同名去重", () => {
     hoisted.body = tapPayload(["包内重名", "包内重名", "包内重名"]);
     const body = await sync();
     expect(body.importedCount).toBe(1);
+    expect(body.skippedDuplicate).toBe(2);
     const rows = await ctx.repo.listPlugins({ q: "包内重名", limit: 20 });
     expect(rows.items.filter((p: { name: string }) => p.name === "包内重名")).toHaveLength(1);
+  });
+});
+
+describe("订阅源同步的条数台账", () => {
+  /** 每条被处理的清单都必须落到某一个去向，不许有「凭空消失」的条目 */
+  function expectLedgerBalances(body: any) {
+    expect(body.importedCount + body.skippedDuplicate + body.rejectedInvalid + body.failedWrite).toBe(
+      body.processedCount,
+    );
+    expect(body.processedCount).toBeLessThanOrEqual(body.fetchedCount);
+  }
+
+  it("上限截断的尾巴是可数的：fetched - processed 就是没处理的条数", async () => {
+    hoisted.body = tapPayload(["台账甲", "台账乙", "台账丙", "台账丁", "台账戊", "台账己", "台账庚"]);
+    const body = await sync();
+    expect(body.fetchedCount).toBe(7);
+    expect(body.processedCount).toBe(body.importCap);
+    expect(body.truncated).toBe(true);
+    expect(body.importCap).toBe(5); // 由服务端回传，界面不许自己写死
+    expect(body.fetchedCount - body.processedCount).toBe(2);
+    expectLedgerBalances(body);
+  });
+
+  it("清单不合规单独计数，不再和「重名」混成一个差值", async () => {
+    const [valid] = JSON.parse(tapPayload(["台账合法"]));
+    const bogus = JSON.stringify([
+      valid,
+      { manifestVersion: 1, kind: "theme", name: "" }, // 名称为空 → 校验不通过
+      "not-a-manifest-at-all", // 连对象都不是 → 校验不通过
+    ]);
+    hoisted.body = bogus;
+    const body = await sync();
+    expect(body.processedCount).toBe(3);
+    expect(body.importedCount).toBe(1);
+    expect(body.rejectedInvalid).toBe(2);
+    expectLedgerBalances(body);
+  });
+
+  it("tap.pluginCount 说的是市场里可见的条数，不是「抓到多少条」", async () => {
+    hoisted.body = tapPayload(["计数源甲", "计数源乙", "计数源丙"]);
+    const first = await sync();
+    expect(first.importedCount).toBe(3);
+    expect(first.tap.pluginCount).toBe(3);
+
+    // 再同步一次：一条都没新增，但本源在市场里仍然占着 3 个位置
+    hoisted.body = tapPayload(["计数源甲", "计数源乙", "计数源丙", "计数源丁"]);
+    const second = await sync();
+    expect(second.importedCount).toBe(1);
+    expect(second.skippedDuplicate).toBe(3);
+    expect(second.tap.pluginCount).toBe(4);
+    // 缺陷版这里是 fetchedCount(=4 条清单) / 上一次同步会写成抓到的条数，
+    // 管理员看到的「N 个插件」与市场里真正由本源带来的条数无关。
+    expect(second.tap.pluginCount).toBe(second.importedCount + second.skippedDuplicate);
+    expectLedgerBalances(second);
+
+    // 落盘的订阅源记录与响应一致（列表接口读的就是这份）
+    const taps = await ctx.repo.getSystemState<any[]>("plugins:taps");
+    expect(taps.find((t) => t.id === "tap-1").pluginCount).toBe(4);
   });
 });

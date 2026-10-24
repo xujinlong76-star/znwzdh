@@ -12,13 +12,15 @@
  *    它们是用户自己的数据，不是被推断的偏好）
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
-import { hubGet, hubSend, type HubSite } from '@/lib/navhub-api'
+import { hubGet, hubSend, type HubSite,
+  anonHeaders,
+} from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import {
   PROFILE_EMPTY_MESSAGE,
@@ -27,6 +29,7 @@ import {
 } from '@/lib/profile-view'
 import { Sparkles, RotateCcw, Tag, FolderOpen, History, Search, Heart, Clock, ShieldAlert, Bot, Settings2 } from 'lucide-react'
 import { UserLlmConfigCard } from '@/components/ai/user-llm-config-card'
+import { LlmUsageCard } from '@/components/ai/llm-usage-card'
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -78,26 +81,46 @@ export default function PreferencesPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<unknown>(null)
   const [resetting, setResetting] = useState(false)
+  /** 同一身份的在飞请求（事件风暴去重）与最后一次请求的身份（迟到响应丢弃） */
+  const inflightRef = useRef<string | null>(null)
+  const latestIdRef = useRef<string | null>(null)
 
   const load = useCallback(async (id: string) => {
     if (!id) return
+    // 事件风暴去重：SessionSync 一趟最多派发 3 个身份事件（ready/changed/merged），
+    // 三个都绑到同一个 load，等于同一份画像被请求 2-3 次，每次还串带两跳标题补全。
+    if (inflightRef.current === id) return
+    inflightRef.current = id
+    latestIdRef.current = id
     try {
       const data = await hubGet<{ profile: Profile | null }>(
-        '/api/profile?anonId=' + encodeURIComponent(id),
+        '/api/profile',
+        undefined,
+        anonHeaders(id),
       )
+      if (latestIdRef.current !== id) return
       setLoadError(null)
       setProfile(data.profile)
       if (data.profile) {
-        setCatTitles(await loadCategoryTitles(data.profile.topCategories))
-        setSiteTitles(await loadSiteTitles(data.profile.visitedSiteIds))
+        // 类目名与站点名互不依赖：串行 await 让画像页多等一个完整往返
+        const [cats, sites] = await Promise.all([
+          loadCategoryTitles(data.profile.topCategories),
+          loadSiteTitles(data.profile.visitedSiteIds),
+        ])
+        if (latestIdRef.current !== id) return
+        setCatTitles(cats)
+        setSiteTitles(sites)
       }
     } catch (error) {
       // 中枢不可用时降级为「无画像」，但**必须记下错误**：
       // 否则界面会把「没取到」说成「你没有画像」（见 lib/profile-view.ts）
+      if (latestIdRef.current !== id) return
       setProfile(null)
       setLoadError(error)
     } finally {
-      setLoading(false)
+      if (inflightRef.current === id) inflightRef.current = null
+      // 迟到的旧身份响应不该关掉新身份请求的 loading
+      if (latestIdRef.current === id) setLoading(false)
     }
   }, [])
 
@@ -130,8 +153,11 @@ export default function PreferencesPage() {
     setResetting(true)
     try {
       const res = await hubSend<{ ok: boolean; eventsRemoved: number; profileCleared: boolean }>(
-        '/api/profile?anonId=' + encodeURIComponent(identity),
+        '/api/profile',
         'DELETE',
+        undefined,
+        undefined,
+        anonHeaders(identity),
       )
       if (res.ok) {
         setProfile(null)
@@ -374,6 +400,8 @@ export default function PreferencesPage() {
           <p className="text-xs text-muted-foreground">模型与密钥配置，只影响本机的增强能力。</p>
         </div>
         <UserLlmConfigCard />
+        {/* T21：额度常态可见——此前只有撞上 429 才知道还剩多少 */}
+        <LlmUsageCard />
       </section>
 
       <Footer />

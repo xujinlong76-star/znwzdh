@@ -10,12 +10,49 @@ import { httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl } from "@navhu
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
-import { identityOf } from "./shared.ts";
+import { checkLlmQuota } from "../llm-quota.ts";
+import { identityOf, identityTrusted } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
 
 export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
+
+  /**
+   * 富化用的身份与额度。
+   *
+   * 两个口径都必须走这里，原因是历史上各错过一次：
+   *  1. **第二轴**。`identityOf` 是调用方**自称**的身份；没过 `identityTrusted`
+   *     就把它交给 `resolveLlm`，等价于「自称 `github:<别人>` 就能解出那个人存的
+   *     个人 API Key 跑这次富化」，而且用量记在别人账上（ copilot 同一段教训）。
+   *  2. **单次取值**。`identityOf(req)` 调两次（一次取 key、一次记账）在理论上
+   *     可以拿到不同值——花的是 A 的 key、记的是 B 的账。收成一份。
+   *
+   * 额度不足时**不报错**：`enrichUrl` 的元数据抽取本来就能出标题/描述/图标，
+   * 只是少了 AI 归纳的分类与标签。降级成「只用抓取」比拒绝整次提交有用得多，
+   * 前提是响应里如实标出 `aiSkipped`。
+   */
+  async function enrichBudget(req: {
+    query: Record<string, unknown>;
+    body: unknown;
+    headers?: Record<string, string | undefined>;
+    auth?: { kind?: string };
+  }): Promise<{ identity: string | null; llmBlocked: boolean; quotaInfo: Record<string, unknown> | null }> {
+    const identity = identityTrusted(ctx, req as never) ? identityOf(req as never) : null;
+    const quota = await checkLlmQuota(ctx, identity);
+    if (quota.ok) return { identity, llmBlocked: false, quotaInfo: null };
+    return {
+      identity,
+      llmBlocked: true,
+      quotaInfo: {
+        scope: quota.error.scope,
+        metric: quota.error.metric,
+        limit: quota.error.limit,
+        used: quota.error.used,
+        retryAfterSeconds: Math.max(1, Math.ceil(quota.error.retryAfterMs / 1000)),
+      },
+    };
+  }
 
   /* ---------------------------- AI 富化 ---------------------------- */
 
@@ -24,16 +61,19 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
     const categories = await ctx.repo.listCategories();
-    const resolved = await resolveLlm(ctx, identityOf(req as never));
+    const budget = await enrichBudget(req as never);
+    const resolved = await resolveLlm(ctx, budget.identity);
     const result = await enrichUrl(body.data.url, {
       llm: enrichLlmOf(resolved),
       guard: ctx.config.fetch,
       knownCategories: categories.map((c) => c.title),
-      onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identityOf(req as never)),
+      // 额度到顶：只用抓取，不碰模型（也就不再产生花费）
+      heuristicOnly: budget.llmBlocked,
+      onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
     });
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
     await ctx.repo.recordEvent("enrich", { meta: { url: body.data.url, provenance: result.provenance } }).catch(() => undefined);
-    return result;
+    return budget.llmBlocked ? { ...result, aiSkipped: "quota" as const, quota: budget.quotaInfo } : result;
   });
 
   /** 一步到位：抓取 + 富化 + 入库（AI 自动入库的核心接口） */
@@ -50,12 +90,14 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     if (dup) { return { created: false, reason: "已存在", site: dup }; }
 
     const categories = await ctx.repo.listCategories();
-    const resolved = await resolveLlm(ctx, identityOf(req as never));
+    const budget = await enrichBudget(req as never);
+    const resolved = await resolveLlm(ctx, budget.identity);
     const enriched = await enrichUrl(body.data.url, {
       llm: enrichLlmOf(resolved),
       guard: ctx.config.fetch,
       knownCategories: categories.map((c) => c.title),
-      onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identityOf(req as never)),
+      heuristicOnly: budget.llmBlocked,
+      onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
     });
 
     // 分类解析：调用方指定 -> 富化建议匹配已有类目 -> 落「未分类」并产类目缺口提案
@@ -92,9 +134,15 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       ? await ctx.repo.recordCategoryGap({ title: gapTitle, siteId: site.id, siteUrl: site.url, source: "AI 富化", ambiguousCategoryIds })
       : null;
     await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance, categoryGap: categoryGap?.proposalId ?? null } });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance, categoryGap: categoryGap?.proposalId ?? null, aiSkipped: budget.llmBlocked ? "quota" : null } });
     reply.code(201);
-    return { created: true, site, enrichment: enriched, categoryGap };
+    return {
+      created: true,
+      site,
+      enrichment: enriched,
+      categoryGap,
+      ...(budget.llmBlocked ? { aiSkipped: "quota" as const, quota: budget.quotaInfo } : {}),
+    };
   });
 
 };

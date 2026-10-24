@@ -20,7 +20,15 @@ const PAGE_FILES = [
   'src/app/me/data/page.tsx',
   'src/app/me/account/account-view.tsx',
   'src/app/me/plugins/me-plugins-view.tsx',
+  // T5 收敛：概览与设置页的 loading/error 也接入统一组件
+  'src/app/me/me-view.tsx',
+  'src/components/user-center/me-settings-view.tsx',
 ]
+
+// favorites 页是有意例外：其加载骨架与卡片网格内容形状相符（v1 方案自己的
+// 「骨架与内容形状相符」纪律），且已具备同等 a11y 语义（aria-busy/live + sr-only），
+// 强改成分行骨架反而违背形状一致原则。
+const EXCEPTIONS = ['src/app/favorites/page.tsx']
 
 describe('SectionState 统一状态组件', () => {
   it('组件存在，并带 loading / error / empty 三态语义', () => {
@@ -40,6 +48,14 @@ describe('SectionState 统一状态组件', () => {
       const src = read(rel)
       expect(src, `${rel} 必须引入 SectionState`).toContain("from '@/components/user-center/section-state'")
       expect(src, `${rel} 必须使用 error 态`).toContain('variant="error"')
+    }
+  })
+
+  it('例外清单里的页面也必须满足 a11y 语义（只是不必用统一组件）', () => {
+    for (const rel of EXCEPTIONS) {
+      const src = read(rel)
+      expect(src, `${rel} 必须保留 aria-busy`).toContain('aria-busy="true"')
+      expect(src, `${rel} 必须保留读屏文案`).toContain('sr-only')
     }
   })
 

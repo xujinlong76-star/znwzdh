@@ -20,11 +20,44 @@ import {
  * - 读列表（listFavorites）过滤墓碑；增量拉取（listFavoritesSince）**包含**墓碑。
  */
 
+/** 标签契约（T22）：最多 8 个、每个 1-24 字符（trim 后），去重；空集 = null（未打标签） */
+export const FAVORITE_TAGS_MAX = 8;
+export const FAVORITE_TAG_MAX_LEN = 24;
+
+/** 返回 JSON 存储串或 null；非法形状一律收敛成 null（调用方无需再判） */
+export function normalizeFavoriteTags(input: unknown): string | null {
+  if (!Array.isArray(input)) return null;
+  const seen = new Set<string>();
+  for (const raw of input) {
+    if (typeof raw !== "string") continue;
+    const tag = raw.trim().slice(0, FAVORITE_TAG_MAX_LEN);
+    if (!tag) continue;
+    seen.add(tag);
+    if (seen.size >= FAVORITE_TAGS_MAX) break;
+  }
+  return seen.size > 0 ? JSON.stringify([...seen]) : null;
+}
+
+/** 库里的 JSON 串 → 数组（读取侧）；坏数据返回 null */
+export function parseFavoriteTagsJson(raw: unknown): string[] | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    const tags = parsed.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+    return tags.length > 0 ? tags : null;
+  } catch {
+    return null;
+  }
+}
+
 export type FavoriteOp = {
   op: "add" | "update" | "remove";
   siteId: string;
   folderId?: string | null;
   note?: string | null;
+  /** 标签（T22）：add = 全量覆盖；update 仅在显式传入时写；null = 清除（同步 null 语义） */
+  tags?: string[] | null;
   /** 客户端事件时间戳；缺省为服务端 now。用于 LWW 冲突判定 */
   at?: number;
 };
@@ -125,14 +158,14 @@ export async function listFavoritesPage(
   };
 }
 
-export async function addFavorite(repo: Repository, input: { userId: string; siteId: string; folderId?: string | null; note?: string | null }): Promise<{ favorite: FavoriteRecord; existed: boolean }> {
+export async function addFavorite(repo: Repository, input: { userId: string; siteId: string; folderId?: string | null; note?: string | null; tags?: string[] | null }): Promise<{ favorite: FavoriteRecord; existed: boolean }> {
   const id = randomUUID();
   const now = Date.now();
   // 幂等写入：并发双写靠 UNIQUE(user_id, site_id) 兜底，不再「先查后插」——
   // 先查后插在双写竞态下会撞唯一索引抛 500（本可返回 existed:true）。
   const changes = await repo.runCount(
-    "INSERT INTO favorites (id, user_id, site_id, folder_id, note, created_at, updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(user_id, site_id) DO NOTHING",
-    [id, input.userId, input.siteId, input.folderId ?? null, input.note ?? null, now, now],
+    "INSERT INTO favorites (id, user_id, site_id, folder_id, note, tags, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(user_id, site_id) DO NOTHING",
+    [id, input.userId, input.siteId, input.folderId ?? null, input.note ?? null, normalizeFavoriteTags(input.tags), now, now],
   );
   let row = (await repo.raw(
     "SELECT * FROM favorites WHERE user_id = ? AND site_id = ? LIMIT 1",
@@ -218,13 +251,14 @@ export async function applyFavoriteOps(
         // 否则「先删后加」的另一端无法得知删除发生过）。
         if (op.op === "update") continue;
         await repo.run(
-          "INSERT INTO favorites (id, user_id, site_id, folder_id, note, created_at, updated_at, deleted_at) VALUES (?,?,?,?,?,?,?,?)",
+          "INSERT INTO favorites (id, user_id, site_id, folder_id, note, tags, created_at, updated_at, deleted_at) VALUES (?,?,?,?,?,?,?,?,?)",
           [
             randomUUID(),
             userId,
             op.siteId,
             op.op === "add" ? op.folderId ?? null : null,
             op.op === "add" ? op.note ?? null : null,
+            op.op === "add" ? normalizeFavoriteTags(op.tags) : null,
             at,
             at,
             op.op === "remove" ? at : null,
@@ -247,8 +281,8 @@ export async function applyFavoriteOps(
       const params: unknown[] = [];
       if (op.op === "add") {
         // add 是"全量覆盖"语义：清墓碑并写全字段（没传就是 null）
-        sets.push("deleted_at = NULL", "folder_id = ?", "note = ?");
-        params.push(op.folderId ?? null, op.note ?? null);
+        sets.push("deleted_at = NULL", "folder_id = ?", "note = ?", "tags = ?");
+        params.push(op.folderId ?? null, op.note ?? null, normalizeFavoriteTags(op.tags));
       } else {
         // update 是"局部补丁"语义：只改传入的字段，未传的保持原值
         if (op.folderId !== undefined) {
@@ -258,6 +292,10 @@ export async function applyFavoriteOps(
         if (op.note !== undefined) {
           sets.push("note = ?");
           params.push(op.note);
+        }
+        if (op.tags !== undefined) {
+          sets.push("tags = ?");
+          params.push(normalizeFavoriteTags(op.tags));
         }
       }
       sets.push("updated_at = ?");
@@ -283,9 +321,15 @@ export async function listFavoriteFolders(repo: Repository, userId: string): Pro
 export async function createFavoriteFolder(repo: Repository, userId: string, name: string): Promise<FavoriteFolderRecord> {
   const id = randomUUID();
   const now = Date.now();
+  // 追加到队尾而不是恒写 0：sort 是拖拽/上移下移重排的依据，
+  // 恒 0 会让所有夹子同权、顺序退化为创建序（T16 修复）。
+  const maxRow = (
+    await repo.raw("SELECT MAX(sort) AS m FROM favorite_folders WHERE user_id = ?", [userId])
+  )[0];
+  const sort = Number(maxRow?.m ?? 0) + 1;
   await repo.run(
     "INSERT INTO favorite_folders (id, user_id, name, sort, created_at) VALUES (?,?,?,?,?)",
-    [id, userId, name.trim(), 0, now],
+    [id, userId, name.trim(), sort, now],
   );
   const row = (await repo.raw("SELECT * FROM favorite_folders WHERE id = ?", [id]))[0];
   if (!row) throw new Error("创建收藏夹后无法读回");
@@ -318,7 +362,7 @@ export async function updateFavorite(
   repo: Repository,
   userId: string,
   siteId: string,
-  patch: { folderId?: string | null; note?: string | null },
+  patch: { folderId?: string | null; note?: string | null; tags?: string[] | null },
 ): Promise<FavoriteUpdateResult> {
   const row = (await repo.raw(
     "SELECT * FROM favorites WHERE user_id = ? AND site_id = ? AND deleted_at IS NULL LIMIT 1",
@@ -343,6 +387,11 @@ export async function updateFavorite(
   if (patch.note !== undefined) {
     sets.push("note = ?");
     params.push(patch.note);
+  }
+  // 标签（T22）：显式传入才写（undefined = 不变；null = 清除）
+  if (patch.tags !== undefined) {
+    sets.push("tags = ?");
+    params.push(normalizeFavoriteTags(patch.tags));
   }
   if (sets.length === 0) return { ok: true, favorite: rowToFavorite(row) };
 

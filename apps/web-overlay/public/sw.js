@@ -17,11 +17,12 @@ if (self.location.hostname === 'localhost' || self.location.hostname === '127.0.
   })
   // 本地开发直接放行，不做任何 fetch 拦截
 } else {
-  const CACHE = 'navhub-v4'
+  const CACHE = 'navhub-v5'
   const SHELL = [
     '/',
     '/offline',
     '/favorites',
+    '/me',
     '/algorithms',
     '/icons/icon-192.png',
     '/icons/icon-512.png',

@@ -18,6 +18,7 @@ import {
   loadActiveCategoryCounts,
   loadCategories,
   loadCategorySites,
+  type HubCategory,
 } from '@/lib/server/categories'
 
 /**
@@ -192,18 +193,24 @@ async function loadSiteContext(site: HubSite) {
   }
 }
 
-async function loadSiteCategoryName(categoryId: string | null | undefined): Promise<string | null> {
+/**
+ * 标题后缀用的分类名（纯函数：分类表由调用方并发取好，不再串行等第二个 RTT）。
+ *
+ * 取不到（无分类 / 分类被停用 / 分类表降级）一律返回 null，调用方退回「站点详情」，
+ * 绝不编造分类名。
+ */
+function categoryNameOf(categories: HubCategory[] | null | undefined, categoryId: string | null | undefined): string | null {
   const id = (categoryId ?? '').trim()
-  if (!id) return null
-  const categories = await loadCategories(3600)
-  if (!categories) return null
+  if (!id || !categories) return null
   const category = categories.find((c) => c.id === id && c.enabled !== false)
   return category ? categoryDisplayName(category, categories) : null
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params
-  const { safeId, probe } = await loadSite(id)
+  // 站点与分类表并发取：分类表是全站共享的长缓存（3600s），先等站点再等它，
+  // 等于在缓存刚过期那一刻给每个详情页快照多压一个往返。
+  const [{ safeId, probe }, categories] = await Promise.all([loadSite(id), loadCategories(3600)])
   if (!safeId) notFound()
   if (probe.status === 'miss') notFound()
 
@@ -242,7 +249,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
    *
    * 取不到分类时退回原后缀，绝不编造分类名。
    */
-  const categoryName = await loadSiteCategoryName(site.categoryId)
+  const categoryName = categoryNameOf(categories, site.categoryId)
   const title = `${site.title} · ${categoryName ?? '站点详情'}`
   const description = siteMetaDescription(site, categoryName)
   return {

@@ -12,6 +12,8 @@ import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
 import { CheckCircle2, Loader2, Settings2 } from 'lucide-react'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
+import { AnonymousHintInline } from '@/components/user-center/anonymous-hint'
+import { SectionState } from '@/components/user-center/section-state'
 import { SettingsPanel } from '@/components/user-center/settings-panel'
 import { useMeSettings } from '@/hooks/use-me-settings'
 import type { UserSettingsPatch } from '@/lib/user-settings'
@@ -69,28 +71,22 @@ export function MeSettingsView() {
       )}
 
       {state === 'loading' && (
-        <div aria-busy="true" aria-live="polite" className="space-y-4">
-          <div className="h-48 animate-pulse rounded-2xl border border-border/70 bg-card/50" />
-          <div className="h-24 animate-pulse rounded-2xl border border-border/70 bg-card/50" />
-        </div>
+        <SectionState variant="loading" rows={3} loadingLabel="正在加载偏好设置" />
       )}
 
       {state === 'error' && (
-        <section className="space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-6" role="alert">
-          <p className="text-sm font-semibold">设置暂时取不到</p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {error ?? '云端暂时不可用，这不代表设置被清空——恢复后原样回来。'}
-          </p>
-          <Button size="sm" variant="outline" className="w-full text-xs sm:w-auto" onClick={() => void controller.reload()}>
-            重试
-          </Button>
-        </section>
+        <SectionState
+          variant="error"
+          title="设置暂时取不到"
+          description={error ?? '云端暂时不可用，这不代表设置被清空——恢复后原样回来。'}
+          onRetry={() => void controller.reload()}
+        />
       )}
 
       {state === 'anonymous' && (
-        <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 text-xs leading-relaxed text-muted-foreground sm:p-5">
+        <AnonymousHintInline>
           当前为本机匿名身份：设置只保存在这个浏览器。登录后会自动把本机偏好同步到云端。
-        </section>
+        </AnonymousHintInline>
       )}
 
       {(state === 'ready' || state === 'anonymous') && (

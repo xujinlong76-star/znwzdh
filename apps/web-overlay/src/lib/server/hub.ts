@@ -64,13 +64,22 @@ export type HubProbe<T> = { status: 'ok'; data: T } | { status: 'miss' } | { sta
  * hubGet 把两者都折叠成 null，用它做存在性判定会把中枢抖动误伤成 404。
  *
  * 口径与 navhub-api 的 isNotFound 对齐（客户端侧早有同样的三分法）。
+ *
+ * `timeoutMs > 0` 用于「探针」这类**必须在有界时间内有结论**的调用：中枢 TCP 连上
+ * 但不回包时，没有超时的 fetch 会把探针一起挂死（运维看到的不是 degraded 而是无响应）。
+ * 默认 0 = 不加超时，页面取数路径行为与历史逐字一致。
  */
-export async function hubGetProbe<T>(path: string, revalidate = 0): Promise<HubProbe<T>> {
+export async function hubGetProbe<T>(
+  path: string,
+  revalidate = 0,
+  timeoutMs = 0,
+): Promise<HubProbe<T>> {
   try {
     const init: RequestInit & { next?: { revalidate: number } } = {
       headers: { ...BASE_HEADERS },
     }
     if (revalidate > 0) init.next = { revalidate }
+    if (timeoutMs > 0) init.signal = AbortSignal.timeout(timeoutMs)
     const res = await fetch(`${HUB_BASE}${path}`, init)
     if (res.status === 404) return { status: 'miss' }
     if (!res.ok) return { status: 'failed' }

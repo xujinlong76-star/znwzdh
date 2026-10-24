@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import type { NavigationData, NavigationItem, NavigationSubItem, NavigationCategory } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { ModeToggle } from '@/components/mode-toggle'
@@ -277,7 +278,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                         </span>
                                         {selectedVideo.href && (
                                             <a
-                                                href={selectedVideo.href}
+                                                href={safeHref(selectedVideo.href)}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="text-xs text-primary hover:underline"

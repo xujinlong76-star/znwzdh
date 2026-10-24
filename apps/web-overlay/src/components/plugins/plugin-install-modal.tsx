@@ -97,6 +97,19 @@ export function PluginInstallModal({
   if (!plugin) return null
 
   const summary = plugin.summary
+  // 详情接口把 summary 放在响应外层，plugin 上没有 summary。此时若回退成 1/0，
+  // 会把「4 个看板 / 22 个模块」说成「1 个 / 0 个」——安装确认属于承诺范围，
+  // 摘要缺失时按清单实际结构计数。
+  const presetBoards: Array<{ widgets?: unknown[] }> | null =
+    plugin.kind === 'workspace-preset' && Array.isArray(plugin.manifest?.payload?.boards)
+      ? plugin.manifest.payload.boards
+      : null
+  const presetBoardCount = summary?.boardCount ?? presetBoards?.length ?? 0
+  const presetWidgetCount =
+    summary?.widgetCount ??
+    (presetBoards
+      ? presetBoards.reduce((n, board) => n + (Array.isArray(board?.widgets) ? board.widgets.length : 0), 0)
+      : 0)
   // D1 更新链路：已安装且市场版本更高时，本弹窗以「更新」语义呈现
   // （执行通道不变——重装即升级，服务端幂等增量，只增不删）
   const isUpdate =
@@ -216,12 +229,21 @@ export function PluginInstallModal({
           unregisterSearchPackEngines(plugin.slug)
         }
 
-        toast.success(`已卸载「${plugin.name}」`, {
-          description:
-            removeSites
-              ? `已清理关联站点${res.sitesRemoved > 0 ? `（${res.sitesRemoved} 个站点已移至回收站）` : ''}${res.categoriesRemoved ? `，并同步删除 ${res.categoriesRemoved} 个网址分类` : ''}`
-              : '站点数据已保留在您的实例中',
-        })
+        // 卸载的是主题/预设/引擎包时根本没有关联站点；以前只要是 removeSites
+        // 就写「已清理关联站点」，0 个站点也照报。按实际结果说话。
+        const removedSites = res.sitesRemoved ?? 0
+        const removedCategories = res.categoriesRemoved ?? 0
+        const uninstallDescription =
+          removedSites > 0
+            ? `已清理关联站点（${removedSites} 个站点已移至回收站）` +
+              (removedCategories ? `，并同步删除 ${removedCategories} 个网址分类` : '')
+            : removedCategories > 0
+              ? `未移除站点，已同步删除 ${removedCategories} 个网址分类`
+              : removeSites
+                ? '没有需要移除的关联站点'
+                : '站点数据已保留在您的实例中'
+
+        toast.success(`已卸载「${plugin.name}」`, { description: uninstallDescription })
       }
 
       onOpenChange(false)
@@ -300,8 +322,8 @@ export function PluginInstallModal({
                     <span>工作台看板预设</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    包含 <strong className="text-foreground">{summary?.boardCount ?? 1}</strong> 个看板布局和{' '}
-                    <strong className="text-foreground">{summary?.widgetCount ?? 0}</strong> 个实用小组件。
+                    包含 <strong className="text-foreground">{presetBoardCount}</strong> 个看板布局和{' '}
+                    <strong className="text-foreground">{presetWidgetCount}</strong> 个实用小组件。
                   </p>
                   <div className="space-y-1.5 pt-1">
                     <div className="text-xs font-medium text-foreground block">导入模式：</div>

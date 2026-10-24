@@ -163,11 +163,19 @@ const config = {
         token.role = (user as { role?: string }).role
         token.sub = user.id || token.sub || 'admin'
       }
+      // 会话治理（T8）：sid 是设备吊销的锚点。JWT 无状态，服务端只存 sid 的
+      // sha256——用户在 /me/account 踢出某 sid 后，BFF 校验会让该设备 401。
+      if (!token.sid) token.sid = globalThis.crypto.randomUUID()
       return token
     },
     async session({ session, token }) {
       if (session?.user && token.sub) {
         ;(session.user as { id?: string }).id = token.sub
+        // sid 只在 BFF（服务端）与吊销校验中使用：挂 session 顶层而不是 user 上，
+        // 避免被当成用户资料透传给任意客户端组件。
+        if (typeof token.sid === 'string') {
+          ;(session as { sessionSid?: string }).sessionSid = token.sid
+        }
         if (typeof token.role === 'string') {
           ;(session.user as { role?: string }).role = token.role
         }

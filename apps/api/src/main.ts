@@ -67,22 +67,22 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 await app.listen({ port: config.port, host: config.host });
 
 // 启动横幅：把"能不能用 AI"这类关键信息直接打出来，便于排障
-console.log("=".repeat(64));
-console.log("NavHub 已启动");
-console.log("  监听    http://" + config.host + ":" + config.port);
-console.log("  模式    " + config.mode);
-console.log("  语义检索 " + (ctx.capabilities.semantic ? "可用" : "不可用"));
-console.log("  全文检索 " + (ctx.capabilities.fts ? "可用" : "不可用"));
-console.log("  LLM 富化 " + (ctx.capabilities.llm ? "可用" : "不可用（降级为启发式）"));
-console.log("  任务队列 " + (runner ? "已启动（" + Math.round(runner.interval / 1000) + "s 轮询，单实例锁；失败指数退避重试 " + MAX_JOB_ATTEMPTS + " 次）" : "已关闭（NAVHUB_JOBS_ENABLED=0）"));
-console.log("  任务告警 " + (config.alertWebhook ? "webhook 已配置" : "未配置（仅 console.error）"));
+console.info("=".repeat(64));
+console.info("NavHub 已启动");
+console.info("  监听    http://" + config.host + ":" + config.port);
+console.info("  模式    " + config.mode);
+console.info("  语义检索 " + (ctx.capabilities.semantic ? "可用" : "不可用"));
+console.info("  全文检索 " + (ctx.capabilities.fts ? "可用" : "不可用"));
+console.info("  LLM 富化 " + (ctx.capabilities.llm ? "可用" : "不可用（降级为启发式）"));
+console.info("  任务队列 " + (runner ? "已启动（" + Math.round(runner.interval / 1000) + "s 轮询，单实例锁；失败指数退避重试 " + MAX_JOB_ATTEMPTS + " 次）" : "已关闭（NAVHUB_JOBS_ENABLED=0）"));
+console.info("  任务告警 " + (config.alertWebhook ? "webhook 已配置" : "未配置（仅 console.error）"));
 // 身份签名默认关闭，且关掉之后没有任何提示：收藏/历史/画像/私有草稿这些
 // 「按身份隔离」的数据，实际隔离强度只是一个可自报的字符串。横幅把它显式化。
-console.log(
+console.info(
   "  身份签名 " +
     (config.identitySecret
       ? "已启用（带 userId/anonId 的请求必须携带 x-navhub-identity-signature）"
       : "未启用（NAVHUB_IDENTITY_SECRET 为空 → 任何请求可自称任意身份）"),
 );
-for (const n of ctx.capabilities.notes) console.log("  · " + n);
-console.log("=".repeat(64));
+for (const n of ctx.capabilities.notes) console.info("  · " + n);
+console.info("=".repeat(64));

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/registry/new-york/ui/button'
 import { Layers, ExternalLink, Copy, Check, ArrowRight, Terminal, X } from 'lucide-react'
@@ -53,7 +54,7 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
               </div>
               <div className="flex items-center gap-2">
                 <a
-                  href={layer.recommended.url}
+                  href={safeHref(layer.recommended.url)}
                   target="_blank"
                   rel="noreferrer"
                   className="font-bold text-primary hover:underline flex items-center gap-1"
@@ -74,7 +75,7 @@ export function ArchitectureRecipeCard({ recipe }: ArchitectureRecipeCardProps) 
                 {layer.alternatives.map((alt) => (
                   <a
                     key={alt.id}
-                    href={alt.url}
+                    href={safeHref(alt.url)}
                     target="_blank"
                     rel="noreferrer"
                     className="hover:text-foreground underline decoration-dotted"

@@ -19,7 +19,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Input } from '@/registry/new-york/ui/input'
 import { Command, CommandList, CommandItem } from '@/registry/new-york/ui/command'
-import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download } from 'lucide-react'
+import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
   searchSites,
@@ -39,10 +39,11 @@ import { useFavorites } from '@/hooks/useFavorites'
 import { useToast } from '@/components/ui/use-toast'
 import type { SiteConfig } from '@/types/site'
 import { parseSpeculativeIntent } from '@/lib/speculative'
+import { spotlightHotkeyHint, useExternalLinkTarget, useUserPreferences } from '@/lib/user-preferences'
 import { parseTechComparisonQuery } from '@/lib/comparison'
 import { findMatchingArchitectureRecipe } from '@/lib/architecture-recipe'
 import { SiteFavicon } from '@/components/site-favicon'
-import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
+import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { getModifierKey } from '@/lib/platform'
 
 
@@ -101,12 +102,15 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   /** 统一搜索：同一关键词同时召回插件市场条目 */
   const [pluginHits, setPluginHits] = useState<HubPluginSearchResponse | null>(null)
   const [pluginLoading, setPluginLoading] = useState(false)
+  /** 插件子检索请求失败：与「插件市场真的没有匹配」区分，不能让失败静默变成空分区 */
+  const [pluginFailed, setPluginFailed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [degraded, setDegraded] = useState(false)
   const [semanticAvailable, setSemanticAvailable] = useState(true)
-  /** 分页：召回池是否还有余量 / 追加页加载中 */
+  /** 分页：召回池是否还有余量 / 追加页加载中 / 追加页请求失败（失败≠到底） */
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [moreFailed, setMoreFailed] = useState(false)
   /** 零结果兜底：推荐词 / 热门词 / 放宽提示（仅零结果时有值） */
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [popular, setPopular] = useState<string[]>([])
@@ -147,7 +151,16 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const identity = useMemo(() => getIdentity(), [])
   const favorites = useFavorites()
   const { toast } = useToast()
-  const speculativeResult = useMemo(() => parseSpeculativeIntent(query), [query])
+  const preferences = useUserPreferences()
+  /**
+   * 「0-RTT 推测意图即时计算」开关决定要不要原地算：关掉后不再产出算式 / CIDR /
+   * UUIDv7 / 时间戳 / 色值 / cron / base64 这类即时结果卡。
+   * 此前这条设置在全仓无人读取 —— 用户关掉它，卡片照出，界面在说假话。
+   */
+  const speculativeResult = useMemo(
+    () => (preferences.speculativeZeroRttEnabled ? parseSpeculativeIntent(query) : null),
+    [preferences.speculativeZeroRttEnabled, query],
+  )
   const comparisonMatrix = useMemo(() => parseTechComparisonQuery(query), [query])
   const architectureRecipe = useMemo(() => findMatchingArchitectureRecipe(query), [query])
 
@@ -177,18 +190,16 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     return () => document.removeEventListener('mousedown', onDown)
   }, [])
 
-  /* ⌘K / Ctrl+K 聚焦，Esc 关闭 */
+  /* 呼出键归 SpotlightModal 一处处理（它是超级控制台唯一的入口，没有别的按钮能开它）。
+     原来这里也挂一个 keydown 抢焦点：同一次 ⌘K 既开弹窗又聚焦内联框，
+     第二个按键还会把刚开的弹窗 toggle 掉 —— 用户看到的是快捷键失灵。
+     内联面板只保留「在自己有焦点时 Esc 收起」。 */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setIsFocused(false)
-        inputRef.current?.blur()
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        inputRef.current?.focus()
-        setIsFocused(true)
-      }
+      if (e.key !== 'Escape') return
+      if (document.activeElement !== inputRef.current) return
+      setIsFocused(false)
+      inputRef.current?.blur()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -207,7 +218,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     setHits([])
     setPluginHits(null)
     setPluginLoading(false)
+    setPluginFailed(false)
     setHasMore(false)
+    setMoreFailed(false)
     setSuggestions([])
     setPopular([])
     setRelationHits([])
@@ -233,16 +246,19 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       abortRef.current = controller
       // 统一搜索：插件召回与站点召回并行，插件失败不影响站点结果
       setPluginLoading(true)
+      setPluginFailed(false)
       void searchPlugins({ q, limit: 5 })
         .then((res) => {
           if (controller.signal.aborted || activeQueryRef.current !== q) return
           setPluginHits(res)
           setPluginLoading(false)
+          setPluginFailed(false)
         })
         .catch(() => {
           if (controller.signal.aborted || activeQueryRef.current !== q) return
           setPluginHits(null)
           setPluginLoading(false)
+          setPluginFailed(true)
         })
       void searchSites({ q, limit: 12, categoryId, identity }, controller.signal)
         .then((res) => {
@@ -280,6 +296,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     const q = query.trim()
     if (!q || loadingMore) return
     setLoadingMore(true)
+    setMoreFailed(false)
     const controller = new AbortController()
     moreAbortRef.current = controller
     void searchSites({ q, limit: 12, offset: offsetRef.current, categoryId, identity }, controller.signal)
@@ -294,7 +311,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         if (res.hits.length === 0) setHasMore(false)
       })
       .catch(() => {
-        if (!controller.signal.aborted) setHasMore(false)
+        if (controller.signal.aborted) return
+        // 请求失败 ≠ 召回池到底：以前这里把 hasMore 置 false，按钮从此消失，
+        // 一次瞬间故障就把后面的结果永久封住，而且没有任何说明。
+        setMoreFailed(true)
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoadingMore(false)
@@ -315,11 +335,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     // browse-* 由 <Link> 渲染，走客户端路由，不发生整页刷新
   }, [])
 
+  // 打开方式听用户中心的开关，站点配置只当默认值
+  const linkTarget = useExternalLinkTarget(siteConfig?.navigation?.linkTarget)
+
   const openSite = useCallback((hit: HubSearchHit) => {
     const site = hit.site
     if (!site) return
     reportClick(site.id, identity)
-    const target = siteConfig?.navigation?.linkTarget || '_blank'
     // site.url 来自后端检索结果（源头是站点库），同样过安全闸：
     // 非 http(s) 一律不跳，避免 javascript: 之类的脏数据直达执行
     const url = safeHref(site.url, '')
@@ -333,11 +355,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       href: url,
       icon: site.iconKey ?? null,
     })
-    if (target === '_self') window.location.href = url
-    else window.open(url, target, 'noopener,noreferrer')
+    if (linkTarget === '_self') window.location.href = url
+    else window.open(url, linkTarget, 'noopener,noreferrer')
     setQuery('')
     setIsFocused(false)
-  }, [identity, siteConfig])
+  }, [identity, linkTarget])
 
   const showResults = isFocused && query.trim().length > 0
   /**
@@ -362,6 +384,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       excludedTerms.length > 0 ||
       Object.keys(inferredFacets).length > 0
     ),
+    searchEngine: preferences.defaultSearchEngine,
   })
 
   return (
@@ -371,6 +394,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         <Input aria-label={placeholder}
           data-search-input
           ref={inputRef}
+          role="combobox"
+          aria-expanded={isFocused}
+          aria-autocomplete="list"
+          aria-controls={showResults ? 'navhub-search-results-panel' : isFocused ? 'navhub-search-suggest-panel' : undefined}
           placeholder={placeholder}
           value={query}
           onChange={(e) => { setQuery(e.target.value); setIsFocused(true) }}
@@ -384,8 +411,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
               <X className="h-3 w-3" />
             </Button>
           )}
-          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 sm:flex shadow-2xs" title={modKey + '+K 快速搜索'}>
-            <span>{modKey}</span><span>K</span>
+          <kbd className="hidden h-5 select-none items-center gap-0.5 rounded-md border border-border/50 bg-muted/60 px-1.5 font-mono text-xs font-semibold text-muted-foreground opacity-100 sm:flex shadow-2xs" title={spotlightHotkeyHint(preferences.spotlightShortcut, modKey) + ' 呼出超级搜索'}>
+            {/* 徽标必须与真正生效的呼出键一致：选了「仅 /」还显示 ⌘K 就是在骗用户 */}
+            <span>{spotlightHotkeyHint(preferences.spotlightShortcut, modKey)}</span>
           </kbd>
         </div>
       </div>
@@ -397,12 +425,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         {loading
           ? '正在检索'
           : query.trim()
-            ? (hits.length > 0 ? '找到 ' + hits.length + ' 条结果' : '没有找到匹配结果')
+            ? degraded && hits.length === 0
+              ? // 读屏同样不能把「没问成功」说成「没有找到」
+                '检索服务暂时不可用，本次没有取回站点结果'
+              : hits.length > 0 || pluginItems.length > 0
+                ? `找到 ${hits.length + pluginItems.length} 条结果`
+                : '没有找到匹配结果'
             : ''}
       </p>
 
       {isFocused && !query.trim() && (
-        <div className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
+        <div id="navhub-search-suggest-panel" className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto divide-y divide-border/60 animate-in fade-in-50 zoom-in-95 duration-150">
           {recentDegraded && recent.length === 0 && (
             <div className="px-3.5 py-2 text-xs text-muted-foreground flex items-center gap-1.5 bg-muted/40">
               <Clock className="h-3 w-3" /> 最近搜索暂时不可用（服务未响应）
@@ -506,12 +539,16 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       )}
 
       {showResults && (
-        <div className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+        <div id="navhub-search-results-panel" className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
           <Command className="border-0 shadow-none flex-1 overflow-hidden" shouldFilter={false}>
             <CommandList className="max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto">
-              {degraded && hits.length > 0 && (
+              {degraded && panel.mode !== 'outage' && (
                 <div className="px-3 py-2 text-xs text-amber-600 dark:text-amber-400 border-b flex items-center justify-between gap-2">
-                  <span>检索服务暂时不可用，已降级；下面结果可能不完整。</span>
+                  <span>
+                    {hits.length > 0
+                      ? '检索服务暂时不可用，已降级；下面结果可能不完整。'
+                      : '站点检索这次没能问成功，下面的结果不保证覆盖；插件结果不受影响。'}
+                  </span>
                   <button
                     className="underline underline-offset-2 hover:no-underline shrink-0"
                     onClick={() => setRetryToken((n) => n + 1)}
@@ -634,7 +671,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                           )}
                           {rel.sourceSite && (
                             <Button asChild size="sm" variant="default" className="h-7 text-xs px-2.5">
-                              <a href={rel.sourceSite.url} target="_blank" rel="noopener noreferrer">
+                              <a href={safeHref(rel.sourceSite.url)} target="_blank" rel="noopener noreferrer">
                                 直达
                               </a>
                             </Button>
@@ -708,6 +745,18 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   </div>
                 </div>
               )}
+              {pluginFailed && pluginItems.length === 0 && (
+                <div className="px-3.5 py-2 text-[11px] text-amber-600 dark:text-amber-400 border-b flex items-center gap-1.5">
+                  <Store className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  <span>插件结果本次没有取回（不是插件市场没有匹配），站点结果不受影响。</span>
+                  <button
+                    className="underline underline-offset-2 hover:no-underline shrink-0"
+                    onClick={() => setRetryToken((n) => n + 1)}
+                  >
+                    重试
+                  </button>
+                </div>
+              )}
               {panel.mode !== 'hidden' ? (
                 <div className="py-6 px-3 text-center">
                   <div className="text-muted-foreground text-sm">{panel.title}</div>
@@ -760,10 +809,22 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   {panel.actions.length > 0 && (
                     <div className="mt-4 flex flex-wrap justify-center gap-2">
                       {panel.actions.map((action) =>
-                        action.href ? (
+                        action.external ? (
+                          <a
+                            key={action.kind}
+                            href={safeHref(action.href ?? '', '')}
+                            target={linkTarget}
+                            rel="noopener noreferrer nofollow"
+                            onClick={() => setIsFocused(false)}
+                            className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:bg-accent transition-colors inline-flex items-center gap-1"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            {action.label}
+                          </a>
+                        ) : action.href ? (
                           <Link
                             key={action.kind}
-                            href={action.href}
+                            href={safeHref(action.href)}
                             onClick={() => setIsFocused(false)}
                             className="text-xs px-2.5 py-1 rounded-full border border-border text-muted-foreground hover:bg-accent transition-colors"
                           >
@@ -825,7 +886,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                             </span>
                           )}
                           {channels.map((c) => (
-                            <span key={c} className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                            <span
+                              key={c}
+                              className="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground"
+                              title={c === 'personal' ? '来自你近 30 天的点击与收藏偏好（可在「偏好设置」查看或清理画像）' : undefined}
+                            >
                               {CHANNEL_LABELS[c] ?? c}
                             </span>
                           ))}
@@ -863,8 +928,17 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     onClick={loadMore}
                     disabled={loadingMore}
                   >
-                    {loadingMore ? '加载中…' : `加载更多（已显示 ${hits.length} 条）`}
+                    {loadingMore
+                      ? '加载中…'
+                      : moreFailed
+                        ? `再试一次（已显示 ${hits.length} 条）`
+                        : `加载更多（已显示 ${hits.length} 条）`}
                   </button>
+                  {moreFailed && (
+                    <p className="pt-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                      下一页没加载成功（请求失败，不是没有更多了）。已显示的 {hits.length} 条仍然可用，点上面按钮可再试。
+                    </p>
+                  )}
                 </div>
               )}
             </CommandList>

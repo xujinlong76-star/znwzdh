@@ -323,6 +323,57 @@ describe('首页次世代 DIY 排版与核心算法引擎全景测试 (DIY Core 
     expect(validateAndCleanDIYConfig(validRaw).valid).toBe(true)
   })
 
+  it('清洗台账：上限截断与非法项都要被数出来（导入侧不许再谎报「全量还原」）', () => {
+    const clean = validateAndCleanDIYConfig({ viewMode: 'classic', categoryOrder: ['a', 'b'] })
+    expect(clean.dropped).toBe(0)
+    expect(clean.notes).toEqual([])
+
+    const order = validateAndCleanDIYConfig({ viewMode: 'classic', categoryOrder: ['a', 5, '__proto__'] })
+    expect(order.config.categoryOrder).toEqual(['a'])
+    expect(order.dropped).toBe(2)
+    expect(order.notes.join('\n')).toContain('分类顺序')
+
+    // 以前 customCategories 里混进 null 会直接 c.id 抛错，炸掉整次导入
+    const withNull = validateAndCleanDIYConfig({
+      viewMode: 'classic',
+      customCategories: [null, { id: 'c1', title: 't', items: null }],
+    })
+    expect(withNull.valid).toBe(true)
+    expect(withNull.config.customCategories).toHaveLength(2)
+
+    const badHref = validateAndCleanDIYConfig({
+      viewMode: 'classic',
+      customCategories: [
+        {
+          id: 'c1',
+          title: 't',
+          items: [
+            { id: 'i1', title: 'ok', href: 'https://example.com' },
+            { id: 'i2', title: 'x', href: 'javascript:alert(1)' },
+          ],
+        },
+      ],
+    })
+    expect(badHref.config.customCategories[0].items).toHaveLength(1)
+    expect(badHref.dropped).toBe(1)
+    expect(badHref.notes.join('\n')).toContain('链接协议不安全')
+
+    // 枚举回退只进 notes，不冒充「丢弃条数」
+    const enumFallback = validateAndCleanDIYConfig({ viewMode: 'zen' })
+    expect(enumFallback.config.viewMode).toBe('hybrid')
+    expect(enumFallback.dropped).toBe(0)
+    expect(enumFallback.notes.join('\n')).toContain('不在支持列表')
+
+    // 危险键只会被丢弃，不许碰到结果对象的原型链
+    const hostile = validateAndCleanDIYConfig({
+      viewMode: 'classic',
+      pinnedSiteIdsByCategory: JSON.parse('{"__proto__":["polluted"],"cat-a":["s1",42]}'),
+    })
+    expect(Object.getPrototypeOf(hostile.config.pinnedSiteIdsByCategory)).toBe(Object.prototype)
+    expect(Object.keys(hostile.config.pinnedSiteIdsByCategory)).toEqual(['cat-a'])
+    expect(hostile.dropped).toBe(2)
+  })
+
   it('时间旅行撤销/重做算法引擎 (Time-Travel Layout History Engine)', () => {
     const s0 = { categoryOrder: ['a', 'b', 'c'] }
     let history = createLayoutHistory(s0)

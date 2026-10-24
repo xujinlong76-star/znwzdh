@@ -26,6 +26,8 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
     const { containerProps, scrimProps } = useOverlayBehavior({
       open: isSidebarOpen,
       onClose: () => setIsSidebarOpen(false),
+      // 抽屉常驻 DOM，读屏需要一个稳定名称来说明「这是频道导航」
+      ariaLabel: '频道导航抽屉',
     })
     const [searchQuery, setSearchQuery] = useState('')
 

@@ -58,7 +58,10 @@ const SITE_LIST_PAGES = [
 describe("站点列表页必须有搜索入口", () => {
   it.each(PAGES_WITH_SEARCH)("%s 渲染 SearchPalette", (rel) => {
     const src = overlaySource(rel);
-    expect(src).toContain("import { SearchPalette } from '@/components/search-palette'");
+    // 允许按需加载（not-found 边界在每条路由的初始树里，见 not-found.test.ts）
+    expect(src).toMatch(
+      /import\('@\/components\/search-palette'\)|import \{ SearchPalette \} from '@\/components\/search-palette'/,
+    );
     expect(src).toMatch(/<SearchPalette/);
   });
 

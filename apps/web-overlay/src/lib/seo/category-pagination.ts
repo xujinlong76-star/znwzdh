@@ -13,6 +13,34 @@
  */
 export const CATEGORY_PAGE_SEARCH_MAX_OFFSET = 1000
 
+/**
+ * 这一页的 offset 请求本身是否还成立（不看总数、不看中枢状态）。
+ *
+ * 与 `categoryPageHasSites` 的分工：那个判「这一页有没有站点」，需要总数；
+ * 这个只判「这一页请不存在请求都发不出去」。超过中枢 offset 上限的页码
+ * （PAGE_SIZE=60 时是第 18 页起）**任何情况下**都是 404 —— 哪怕计数也取不到，
+ * 也不能按「上游抖动」渲染成 200 空页：那会让爬虫收录一批永远为空的分页。
+ */
+export function categoryPageOffsetIsReachable(
+  page: number,
+  pageSize: number,
+  maxOffset: number = CATEGORY_PAGE_SEARCH_MAX_OFFSET,
+): boolean {
+  if (!Number.isSafeInteger(page) || page < 1) return false
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1) return false
+  if (!Number.isSafeInteger(maxOffset) || maxOffset < 0) return false
+  return (page - 1) * pageSize <= maxOffset
+}
+
+/** 在 offset 上限内最多能翻到第几页（用于文案与 sitemap 预算） */
+export function maxReachableCategoryPage(
+  pageSize: number,
+  maxOffset: number = CATEGORY_PAGE_SEARCH_MAX_OFFSET,
+): number {
+  if (!Number.isSafeInteger(pageSize) || pageSize < 1) return 0
+  return Math.floor(maxOffset / pageSize) + 1
+}
+
 export function categoryPageHasSites(
   page: number,
   total: number,

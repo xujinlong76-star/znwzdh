@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { isInternalShortLinkTarget } from '@/lib/shortlink-target'
 
 /**
  * 站内短链：/s/<code> → /marketplace/<slug>
  *
  * 解析走中枢 GET /api/shortlinks/:code（同时累计点击数）；目标在入库与
- * 解析两处都强制校验为 /marketplace/ 内部路径，服务端再校验一次，
+ * 解析两处都强制校验为 /marketplace/ 内部路径，这里再校验一次，
  * 防止脏数据造成开放重定向。
  */
 
@@ -31,9 +32,7 @@ export async function GET(
     if (!res.ok) return invalid
     const data = (await res.json()) as { target?: unknown }
     const target = typeof data.target === 'string' ? data.target : ''
-    if (!target.startsWith('/marketplace/') || target.startsWith('//') || target.includes('\\')) {
-      return invalid
-    }
+    if (!isInternalShortLinkTarget(target)) return invalid
     return NextResponse.redirect(new URL(target, request.url), 302)
   } catch {
     return invalid

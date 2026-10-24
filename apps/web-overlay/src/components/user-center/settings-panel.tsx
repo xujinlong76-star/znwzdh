@@ -109,6 +109,11 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
               </option>
             ))}
           </select>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            {value.defaultSearchEngine === 'internal'
+              ? '站内检索没命中时不再自动跳转站外，只给重试与分类入口。'
+              : '站内搜索没命中时，结果面板会给出用该引擎搜索这句话的直达入口。'}
+          </p>
         </div>
 
         <div className="space-y-1.5">
@@ -128,6 +133,9 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
               </option>
             ))}
           </select>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            与首页右上角的密度切换按钮是同一份设置，改一处两处同步。
+          </p>
         </div>
 
         <div className="space-y-1.5">
@@ -149,6 +157,9 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
               </option>
             ))}
           </select>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            输入框里打「/」永远是正文，只有从非输入态按下才算呼出。
+          </p>
         </div>
 
         <div className="space-y-1.5">
@@ -176,14 +187,14 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <ToggleRow
           title="新标签页打开站点"
-          hint="点击导航卡片时默认在新标签页打开外部链接"
+          hint="打开导航卡片、搜索结果与零结果站外直达时的目标窗口；关闭后在原标签页跳转"
           enabled={value.openLinksInNewTab}
           busy={busy}
           onToggle={() => onChange({ openLinksInNewTab: !value.openLinksInNewTab })}
         />
         <ToggleRow
           title="0-RTT 推测意图即时计算"
-          hint="输入算式、CIDR、UUIDv7、时间戳或色值 0ms 原地计算"
+          hint="输入算式、CIDR、UUIDv7、时间戳或色值 0ms 原地计算；关闭后搜索面板与工作台终端只做纯算术"
           enabled={value.speculativeZeroRttEnabled}
           busy={busy}
           onToggle={() => onChange({ speculativeZeroRttEnabled: !value.speculativeZeroRttEnabled })}
@@ -191,7 +202,7 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
         />
         <ToggleRow
           title="全天候时段场景流推荐"
-          hint="按晨间 / 日间 / 夜间智能切换高频工作台场景流"
+          hint="按当前时段在筛选行给出一枚场景建议；只建议，不会自己换掉整屏工作台"
           enabled={value.daypartSceneEnabled}
           busy={busy}
           onToggle={() => onChange({ daypartSceneEnabled: !value.daypartSceneEnabled })}

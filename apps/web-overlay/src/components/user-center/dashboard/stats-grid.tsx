@@ -6,7 +6,7 @@
  */
 import Link from 'next/link'
 import { ArrowRight, Heart, Plug, Search, Sparkles, Star, User } from 'lucide-react'
-import type { Overview } from '@/app/me/me-view'
+import type { Overview } from '@/lib/me-types'
 
 const STAT_ITEMS: Array<{
   key: keyof Overview['counts']
@@ -26,14 +26,15 @@ const STAT_ITEMS: Array<{
 export function StatsGrid({ counts }: { counts: Overview['counts'] }) {
   return (
     <section aria-label="用户数据概览" className="grid grid-cols-2 gap-3 md:grid-cols-3">
-      {STAT_ITEMS.map((item) => {
+      {STAT_ITEMS.map((item, index) => {
         const Icon = item.icon
         const value = counts[item.key]
         return (
           <Link
             key={item.key}
             href={item.href}
-            className="group flex flex-col justify-between gap-3 rounded-2xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            // 7 项计数在 2 列布局下最后一项会落单：让末项横跨两列填满整行
+            className={`group flex flex-col justify-between gap-3 rounded-2xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${index === STAT_ITEMS.length - 1 ? 'col-span-2 md:col-span-3' : ''}`}
           >
             <div className="flex items-start justify-between gap-2">
               <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">

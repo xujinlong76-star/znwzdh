@@ -9,6 +9,7 @@
  *     挂住的 embedding 请求）把前端请求无限期挂住 —— 用户看到永远转圈，
  *     Node 侧每条悬挂请求还占着连接。仓库既有约定就是"网络调用必须有上限"
  *     （scripts/vendor-web.mjs 的 AbortSignal.timeout、Dockerfile 的 curl --max-time）。
+ *     上限分两档：默认 30 秒，`isLongRunningPath` 列出的大模型/探活端点 120 秒。
  *     SSE 例外：事件流是**长连接**，拿到响应头后必须解除定时器，否则推流会被掐断。
  *  2. **缓存语义**：中枢的只读路由声明了 `cache: { maxAge, etag }` 并据此发
  *     `cache-control` / `etag`，但代理此前只透传 `content-type` —— 浏览器既拿不到
@@ -46,7 +47,32 @@ export const DEFAULT_UPSTREAM_TIMEOUT_MS = 30_000
 /** 复杂 AI 规划/生成场景响应上限，可用 NAVHUB_AI_TIMEOUT_MS 覆盖（毫秒） */
 export const DEFAULT_AI_UPSTREAM_TIMEOUT_MS = 120_000
 
-/** 解析超时配置：非法/缺省时回落到默认值，不放大也不缩小到 0。对于 AI 规划类长耗时接口自动放宽超时 */
+/**
+ * 长耗时端点白名单 —— **逐段精确匹配**。
+ *
+ * 上一版的判据是 `pathStr.includes('ai')`，两处都错：
+ *  - 放宽错了地方：任何单词里含 `ai` 的路径（`sites/detail`、`plugins/validate`…）
+ *    都被放到 120 秒，等于把卡死的普通查询也一起挂两分钟；
+ *  - 收紧了真正需要时间的地方：真正的对话入口 `copilot/chat` 一个 `ai` 都不含，
+ *    仍按 30 秒掐断 —— 用户问一句话只看到「中枢无响应」，而那其实是代理提前 abort。
+ * 所以这里按**路径段**列举已知会打大模型 / 并发探活的端点，宁可漏列（走默认 30 秒）
+ * 也不要靠子串猜。
+ */
+const LONG_RUNNING_ROOTS = new Set(['copilot', 'enrich'])
+const LONG_RUNNING_PLUGIN_ACTIONS = new Set(['ai-audit', 'pre-audit', 'auto-fix', 'check-urls'])
+
+export function isLongRunningPath(path: string[] | string): boolean {
+  const segments = (Array.isArray(path) ? path : path.split('/')).filter(Boolean)
+  if (segments.length === 0) return false
+  if (LONG_RUNNING_ROOTS.has(segments[0])) return true
+  if (segments[0] === 'sites' && segments[1] === 'auto') return true
+  // `/plugins/:slug/ai-audit` 的动作在末段，`/plugins/pre-audit` 在第二段 → 统一看是否命中动作名
+  if (segments[0] === 'plugins' && LONG_RUNNING_PLUGIN_ACTIONS.has(segments[segments.length - 1])) return true
+  // 精确的 `ai` 段：/user/ai/config、/admin/ai/config、/user/ai/plugin/generate
+  return segments.includes('ai')
+}
+
+/** 解析超时配置：非法/缺省时回落到默认值，不放大也不缩小到 0。长耗时端点自动放宽超时 */
 export function upstreamTimeoutMs(
   raw: string | undefined = process.env.NAVHUB_HUB_TIMEOUT_MS,
   path?: string[] | string,
@@ -54,8 +80,7 @@ export function upstreamTimeoutMs(
   const n = Number(raw)
   if (Number.isFinite(n) && n > 0) return n
 
-  const pathStr = Array.isArray(path) ? path.join('/') : (path ?? '')
-  if (pathStr.includes('ai') || pathStr.includes('plugin/generate')) {
+  if (path !== undefined && isLongRunningPath(path)) {
     const aiTimeout = Number(process.env.NAVHUB_AI_TIMEOUT_MS)
     return Number.isFinite(aiTimeout) && aiTimeout > 0 ? aiTimeout : DEFAULT_AI_UPSTREAM_TIMEOUT_MS
   }

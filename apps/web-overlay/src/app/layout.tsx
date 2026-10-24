@@ -13,6 +13,7 @@ import { WebVitalsReporter } from '@/components/web-vitals-reporter'
 import { OfflineBanner } from '@/components/offline-banner'
 import MobileNav from '@/components/mobile-nav'
 import { SessionSync } from '@/components/user-center/session-sync'
+import { DENSITY_PREPAINT_SCRIPT } from '@/lib/density-bootstrap'
 import { getFileContent } from '@/lib/github'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { DEFAULT_OG_IMAGE, normalizeBrandName } from '@/lib/seo/metadata'
@@ -116,6 +117,10 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning data-scroll-behavior="smooth" className={inter.variable}>
       <head>
+        {/* 水合前把用户存的卡片密度写进 <html data-density>：密度变量决定整片网格的间距，
+            等 DensityProvider 的 effect 再落就变成「先按默认档画一屏、水合后集体重排」。
+            必须排在 head 最前，样式表之前。 */}
+        <script id="density-prepaint" dangerouslySetInnerHTML={{ __html: DENSITY_PREPAINT_SCRIPT }} />
         {/* 浏览器插件隔离护盾：阻断宿主浏览器第三方插件（如 QoderWork 等）产生的无害通讯断开报错 */}
         <script
           dangerouslySetInnerHTML={{

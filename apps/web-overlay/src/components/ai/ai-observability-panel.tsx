@@ -3,8 +3,9 @@
 /**
  * AI 模型效能与 Token 遥测大盘 (AI Observability & Telemetry Panel)
  *
- * 聚合展示系统默认大模型（Agnes 3.0 Flash）及备用模型池的实时运行效能、
- * 响应时延（Avg / P95）、Token 消耗总量与预估花费、24小时时序走势和各业务场景调用分布。
+ * 聚合展示当前生效模型的实时运行效能、响应时延（Avg / P95）、Token 消耗总量与
+ * 预估花费、按小时分桶的调用走势、各业务场景调用分布，以及 24 小时滚动额度闸门的余量。
+ * 所有读数来自 `/api/admin/ai/observability`：测不到的项目写「未配置 / 未采集」，不填默认值。
  */
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -28,6 +29,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   fetchAdminAiObservability,
   type HubAiObservabilityResponse,
+  type HubAiQuotaMeter,
 } from '@/lib/navhub-api'
 
 const TIME_WINDOWS = [
@@ -35,6 +37,37 @@ const TIME_WINDOWS = [
   { label: '最近 7 天', value: '7d' },
   { label: '最近 30 天', value: '30d' },
 ]
+
+/** 走势按「本地小时的第几小时」分桶，所以 7/30 天窗口是同小时的跨天合计，不是连续时间轴 */
+const TREND_CAPTION: Record<string, string> = {
+  '1d': '过去 24 小时每小时的调用频次（柱状高度）与平均时延（悬浮查看）',
+  '7d': '最近 7 天按小时归并的调用频次（同一小时跨天合计，非连续时间轴）',
+  '30d': '最近 30 天按小时归并的调用频次（同一小时跨天合计，非连续时间轴）',
+}
+
+const QUOTA_TIERS = [
+  { key: 'identity', title: '单身份档', desc: '登录用户与带匿名标识的访客，每人各自计数' },
+  { key: 'anonymous', title: '无身份合池', desc: '取不到身份的请求（含后台批量任务）合并计数' },
+  { key: 'system', title: '运维 key 预算', desc: '系统密钥的实际消耗上限，用户自带 key 不计入' },
+] as const
+
+/**
+ * 额度条文案：limit=0 是「这一档没启用」，used=null 是「这一档整体用量测不出来」。
+ * 两者都不能渲染成 0 —— 0 会被读成「一次都没用」，而真实含义完全不同。
+ */
+function quotaMeterText(meter: HubAiQuotaMeter | undefined, unit: '次' | 'tokens'): string {
+  if (!meter || meter.limit <= 0) return '未启用'
+  if (meter.used === null || meter.used === undefined) {
+    return `上限 ${meter.limit.toLocaleString()} ${unit}（按人分别计量）`
+  }
+  return `${meter.used.toLocaleString()} / ${meter.limit.toLocaleString()} ${unit}`
+}
+
+function quotaFillPercent(meter: HubAiQuotaMeter | undefined): number | null {
+  if (!meter || meter.limit <= 0) return null
+  if (meter.used === null || meter.used === undefined) return null
+  return Math.min(100, Math.round((meter.used / meter.limit) * 100))
+}
 
 export function AiObservabilityPanel() {
   const [data, setData] = useState<HubAiObservabilityResponse | null>(null)
@@ -72,7 +105,8 @@ export function AiObservabilityPanel() {
               AI 效能与 Token 遥测大盘
             </h2>
             <Badge variant="outline" className="text-xs bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20">
-              Agnes 3.0 Flash 实时中枢
+              {/* 大盘解的是「当前生效的那个模型」，名字必须来自接口而不是写死的厂商名 */}
+              {data?.activeModel ? `${data.activeModel} 实时中枢` : '实时中枢'}
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
@@ -187,7 +221,7 @@ export function AiObservabilityPanel() {
           </div>
         </div>
 
-        {/* 卡片 4：折合资费与可用性 */}
+        {/* 卡片 4：折合资费（仅在运维配置了真实单价时才给数） */}
         <div className="rounded-xl border bg-card p-4 shadow-sm space-y-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>预估折合资费</span>
@@ -195,16 +229,93 @@ export function AiObservabilityPanel() {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-foreground">
-              {data ? `¥${data.estimatedCostRmb}` : '--'}
+              {data?.estimatedCostRmb !== null && data?.estimatedCostRmb !== undefined
+                ? `¥${data.estimatedCostRmb}`
+                : '未配置'}
             </span>
-            <span className="text-xs text-muted-foreground">RMB</span>
+            {data?.estimatedCostRmb !== null && data?.estimatedCostRmb !== undefined && (
+              <span className="text-xs text-muted-foreground">RMB</span>
+            )}
           </div>
+          {/* 单价没配就直说：报一个凭空写的 ¥ 数只会让运维者按假账做决策 */}
           <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-            <span>SLA 可用率 99.8% 高可用</span>
+            {data?.costUnitPriceRmb ? (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                <span>单价 ¥{data.costUnitPriceRmb}/1K tokens（总消耗折算，不区分输入输出）</span>
+              </>
+            ) : (
+              <span>
+                尚未填写单价：在「模型参数与备用池配置」的成本单价（或
+                <code className="mx-1">NAVHUB_LLM_COST_PER_1K_TOKENS</code>）设好后才能折算
+              </span>
+            )}
           </div>
         </div>
       </div>
+
+      {/* 24 小时滚动额度闸门：撞上限的请求会拿到 429 + 恢复时间，界面必须能看到余量 */}
+      {data?.quota && (
+        <div className="rounded-xl border bg-card p-4 shadow-sm space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Zap className="h-4 w-4 text-amber-500" />
+              AI 额度闸门（{data.quota.windowHours} 小时滚动窗口）
+            </h3>
+            <span className="text-[11px] text-muted-foreground">
+              上限由 NAVHUB_LLM_QUOTA_* 配置，改完需重启中枢
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {QUOTA_TIERS.map((tier) => {
+              const tierState = data.quota?.[tier.key]
+              const calls = tierState?.calls
+              const tokens = tierState?.tokens
+              const percent = quotaFillPercent(tokens?.limit ? tokens : calls)
+              const allDisabled =
+                (!calls || calls.limit <= 0) && (!tokens || tokens.limit <= 0)
+              return (
+                <div key={tier.key} className="rounded-lg border bg-muted/30 p-3 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-foreground">{tier.title}</span>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] ${
+                        allDisabled
+                          ? 'text-muted-foreground'
+                          : percent !== null && percent >= 90
+                            ? 'bg-destructive/10 text-destructive border-destructive/20'
+                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                      }`}
+                    >
+                      {allDisabled ? '未启用' : percent === null ? '按人计量' : percent >= 90 ? '接近上限' : '有余量'}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">{tier.desc}</p>
+                  <div className="text-[11px] font-mono text-muted-foreground space-y-0.5">
+                    <div>次数: {quotaMeterText(calls, '次')}</div>
+                    <div>Token: {quotaMeterText(tokens, 'tokens')}</div>
+                  </div>
+                  {percent !== null && (
+                    <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          percent >= 90 ? 'bg-destructive' : 'bg-amber-500'
+                        }`}
+                        style={{ width: `${Math.max(2, percent)}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            超额请求不会被静默丢弃：中枢回 429 与恢复时间，能给出本地结果的场景（伴侣问答、平替推荐、元数据富化）
+            自动降级并在界面上标明「未经模型生成」，只能靠模型完成的场景（工作台生成、插件工坊）明确报错。
+          </p>
+        </div>
+      )}
 
       {/* 真实遥测说明引导 */}
       {data && (!data.hasData || data.totalCalls === 0) && (
@@ -226,10 +337,10 @@ export function AiObservabilityPanel() {
             <div>
               <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                 <BarChart3 className="h-4 w-4 text-indigo-500" />
-                过去 24 小时调用负载与时延趋势
+                调用负载与时延趋势
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                每小时调用频次（柱状高度）与平均时延毫秒数（浅色顶标）
+                {TREND_CAPTION[data?.window ?? '1d'] ?? TREND_CAPTION['1d']}
               </p>
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -314,15 +425,24 @@ export function AiObservabilityPanel() {
           <div className="rounded-lg border bg-muted/30 p-3 mt-4 space-y-1">
             <div className="flex items-center justify-between text-xs font-medium">
               <span>当前主服务模型</span>
-              <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
-                运行中
+              <Badge
+                variant="outline"
+                className={
+                  data?.activeModel?.trim()
+                    ? 'text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                    : 'text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
+                }
+              >
+                {data?.activeModel?.trim() ? '已解析' : '未配置'}
               </Badge>
             </div>
             <p className="text-xs font-mono text-muted-foreground">
-              {data?.activeModel || 'agnes-3.0-flash'}
+              {/* 「当前主服务模型」是运维读数：没采到就不能填一个默认厂商名，
+                  否则管理员换了模型，大盘仍显示老的那一个，读数从此不可信 */}
+              {data?.activeModel?.trim() || '未采集到模型名'}
             </p>
             <p className="text-[11px] text-muted-foreground">
-              原生支持 512K 超长上下文与结构化 JSON 规划
+              名称取自管理端此刻生效的配置；上下文长度、JSON 模式等能力以该端点实测为准，本面板不做假设。
             </p>
           </div>
         </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import { Button } from "@/registry/new-york/ui/button"
 import { Input } from "@/registry/new-york/ui/input"
 import { Textarea } from "@/registry/new-york/ui/textarea"
@@ -130,7 +131,7 @@ export function SubmissionForm({ navigationData }: SubmissionFormProps) {
                             {result.message}
                             {result.issueUrl && (
                                 <a
-                                    href={result.issueUrl}
+                                    href={safeHref(result.issueUrl)}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="ml-2 underline font-semibold hover:no-underline"

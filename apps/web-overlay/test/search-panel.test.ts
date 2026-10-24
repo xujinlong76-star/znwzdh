@@ -113,8 +113,26 @@ describe("search-palette 源码：竞态与矛盾文案的回归守卫", () => {
     expect(src).not.toContain("{hits.length === 0 && !loading ? (");
   });
 
-  it("降级横幅只在确实有结果时出现（零结果交给 outage 提示块）", () => {
-    expect(src).toContain("{degraded && hits.length > 0 && (");
+  it("降级横幅覆盖 outage 之外的全部模式（零站点结果也要说明，交给横幅而非静默空列表）", () => {
+    expect(src).toContain("{degraded && panel.mode !== 'outage' && (");
+    // 横幅按「有没有站点结果」分两套文案：有结果是「可能不完整」，没有是「这次没问成功」
+    expect(src).toContain("下面结果可能不完整");
+    expect(src).toContain("站点检索这次没能问成功");
+  });
+
+  it("「加载更多」失败不等于召回池到底（按钮不能因一次网络故障永久消失）", () => {
+    // catch 里只能置 moreFailed；置 hasMore=false 就是把「没拉到」说成「没有了」
+    expect(src).toContain("setMoreFailed(true)");
+    expect(src).toContain("再试一次（已显示 ${hits.length} 条）");
+    // 精确取 loadMore 的 catch 块：置 hasMore=false 就是把「没拉到」说成「没有了」
+    const moreCatch = src.match(/\.catch\(\(\) => \{[^}]*setMoreFailed\(true\)[^}]*\}\)/)
+    expect(moreCatch).not.toBeNull()
+    expect(moreCatch?.[0]).not.toContain("setHasMore(false)");
+  });
+
+  it("插件子检索失败单独说明（不冒充「插件市场没有匹配」）", () => {
+    expect(src).toContain("pluginFailed && pluginItems.length === 0");
+    expect(src).toContain("插件结果本次没有取回");
   });
 
   it("新查询会清空旧结果与旧提示（不再让旧结果冒充新查询的答案）", () => {

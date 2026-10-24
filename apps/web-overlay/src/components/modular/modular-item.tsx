@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect, useId } from 'react'
 import { createPortal } from 'react-dom'
 import type { WidgetInstance } from '@/types/modular'
 import { WIDGET_REGISTRY } from '@/lib/modular/registry'
@@ -68,6 +68,8 @@ function ModularItemImpl({
   const itemRef = useRef<HTMLDivElement>(null)
   const sizeBtnRef = useRef<HTMLButtonElement | null>(null)
   const sizeMenuRef = useRef<HTMLDivElement | null>(null)
+  // 每张卡片各一份 id：aria-controls 不能指到一个可能同时存在多个的同名 id
+  const sizeMenuId = useId()
   const [sizeMenuPos, setSizeMenuPos] = useState<{ top: number; left: number } | null>(null)
 
   /**
@@ -136,6 +138,49 @@ function ModularItemImpl({
     document.addEventListener('keydown', onKeyDown, true)
     return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [showSizeMenu])
+
+  /**
+   * 尺寸菜单是 portal 到 body 的 role="menu"：DOM 顺序里它排在文档末尾，
+   * 所以从触发按钮按 Tab 根本进不来。打开时把焦点直接交给第一项，
+   * 关闭时再还给触发按钮；↑↓/Home/End 在项之间移动，Tab 在菜单内圈养。
+   *
+   * 只在本轮开合里聚焦一次（sizeMenuPos 会随滚动持续变化，
+   * 否则每滚一格焦点就被抢回第一项）。
+   */
+  const sizeMenuFocusedRef = useRef(false)
+  useEffect(() => {
+    if (!showSizeMenu) {
+      if (sizeMenuFocusedRef.current) {
+        sizeMenuFocusedRef.current = false
+        sizeBtnRef.current?.focus()
+      }
+      return
+    }
+    if (sizeMenuFocusedRef.current) return
+    const first = sizeMenuRef.current?.querySelector<HTMLElement>('[role^="menuitem"]')
+    if (first) {
+      sizeMenuFocusedRef.current = true
+      first.focus()
+    }
+  }, [showSizeMenu, sizeMenuPos])
+
+  const handleSizeMenuKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') return // 交给上面的 document 捕获监听，避免两套口径
+    const items = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([disabled])'),
+    )
+    if (items.length === 0) return
+    const current = items.indexOf(document.activeElement as HTMLElement)
+    const focusItem = (next: number) => {
+      e.preventDefault()
+      items[(next + items.length) % items.length]?.focus()
+    }
+    if (e.key === 'ArrowDown') focusItem(current + 1)
+    else if (e.key === 'ArrowUp') focusItem(current - 1)
+    else if (e.key === 'Home') focusItem(0)
+    else if (e.key === 'End') focusItem(items.length - 1)
+    else if (e.key === 'Tab') focusItem(current + (e.shiftKey ? -1 : 1))
+  }
 
   // 缩放手柄拖拽状态（必须在任何提前 return 之前声明，保证 hook 顺序稳定）
   const isResizingRef = useRef(false)
@@ -355,7 +400,11 @@ function ModularItemImpl({
             <div className="relative">
               <button
                 ref={sizeBtnRef}
+                type="button"
                 onClick={() => setShowSizeMenu(!showSizeMenu)}
+                aria-haspopup="menu"
+                aria-expanded={showSizeMenu}
+                aria-controls={showSizeMenu ? sizeMenuId : undefined}
                 className="px-1.5 py-0.5 rounded text-xs bg-background/80 hover:bg-background border border-border/60 text-muted-foreground flex items-center gap-1"
                 title="调整网格尺寸"
               >
@@ -368,15 +417,22 @@ function ModularItemImpl({
                 createPortal(
                   <div
                     ref={sizeMenuRef}
+                    id={sizeMenuId}
                     role="menu"
                     aria-label="调整模块尺寸"
+                    tabIndex={-1}
+                    onKeyDown={handleSizeMenuKeyDown}
                     style={{ position: 'fixed', top: sizeMenuPos.top, left: sizeMenuPos.left }}
                     className="z-[120] w-28 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-xl p-1.5 flex flex-col gap-1 animate-in fade-in zoom-in-95"
                   >
-                    <div className="text-xs text-muted-foreground px-1 pb-1 border-b">选择宽度跨度</div>
+                    <div role="presentation" className="text-xs text-muted-foreground px-1 pb-1 border-b">选择宽度跨度</div>
+                    <div role="group" aria-label="宽度跨度" className="flex flex-col gap-1">
                     {COL_PRESETS.map((preset) => (
                       <button
                         key={preset.value}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={colSpan === preset.value}
                         onClick={() => {
                           onResize(widget.id, preset.value)
                           setShowSizeMenu(false)
@@ -391,11 +447,15 @@ function ModularItemImpl({
                         <span className="text-xs font-mono opacity-60">{preset.value}格</span>
                       </button>
                     ))}
-                    <div className="text-xs text-muted-foreground px-1 pt-1 border-t">高度跨度</div>
-                    <div className="flex items-center gap-1">
+                    </div>
+                    <div role="presentation" className="text-xs text-muted-foreground px-1 pt-1 border-t">高度跨度</div>
+                    <div role="group" aria-label="高度跨度" className="flex items-center gap-1">
                       {[1, 2, 3].map((r) => (
                         <button
                           key={r}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={rowSpan === r}
                           onClick={() => {
                             onResize(widget.id, colSpan, r)
                             setShowSizeMenu(false)

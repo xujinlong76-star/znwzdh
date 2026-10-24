@@ -20,6 +20,7 @@ const ITEMS = [
   { href: '/preferences', label: '偏好与 AI' },
   { href: '/me/settings', label: '设置' },
   { href: '/me/data', label: '数据与隐私' },
+  { href: '/me/notifications', label: '通知' },
 ] as const
 
 export function UserCenterNav() {
@@ -29,7 +30,9 @@ export function UserCenterNav() {
   return (
     <nav
       aria-label="用户中心导航"
-      className="flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      // 右缘渐隐遮罩：横向滚动可继续的视觉暗示（滚动条已隐藏，无暗示时
+      // 窄屏用户不知道右侧还有一半入口）
+      className="relative flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_85%,transparent_100%)]"
     >
       {ITEMS.map((item) => {
         const active = item.href === '/me' ? pathname === '/me' : pathname === item.href || pathname.startsWith(item.href + '/')

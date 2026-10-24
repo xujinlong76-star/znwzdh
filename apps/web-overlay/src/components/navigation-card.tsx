@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-url'
 import { tagSlug } from '@/lib/seo/tag-slug'
 import { recordOfflineVisit } from '@/lib/offline-recent'
+import { useExternalLinkTarget } from '@/lib/user-preferences'
 
 interface NavigationCardProps {
   item: NavigationSubItem
@@ -50,7 +51,8 @@ export function NavigationCard({
   onToggleSelect,
 }: NavigationCardProps) {
   const { toast } = useToast()
-  const linkTarget = siteConfig?.navigation?.linkTarget || '_blank'
+  // 站点配置只是默认值：用户中心「新标签页打开站点」开关必须真的决定打开方式。
+  const linkTarget = useExternalLinkTarget(siteConfig?.navigation?.linkTarget)
 
   /**
    * 多选模式下卡片点击**不导航**，只切换选中。

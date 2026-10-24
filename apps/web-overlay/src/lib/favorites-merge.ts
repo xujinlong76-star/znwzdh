@@ -18,6 +18,8 @@ export interface CloudFavoriteLike {
   siteId: string
   folderId: string | null
   note: string | null
+  /** 标签（T22）：云端权威；null = 已清除（与 note 同语义） */
+  tags?: string[] | null
   createdAt: number
   site: CloudFavoriteSiteLike | null
 }
@@ -29,6 +31,7 @@ export interface LocalFavoriteLike {
   icon?: string
   description?: string
   note?: string
+  tags?: string[]
   folderId?: string | null
   createdAt: number
 }
@@ -54,6 +57,7 @@ export function mergeCloudFavorites<T extends LocalFavoriteLike>(
       description: remote.site?.description ?? cached?.description,
       // 云端权威字段：null 就是「已清除」，不能回退本地
       note: remote.note ?? undefined,
+      tags: remote.tags ?? undefined,
       folderId: remote.folderId,
       createdAt: remote.createdAt || cached?.createdAt || Date.now(),
     } as T)

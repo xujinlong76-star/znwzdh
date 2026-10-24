@@ -49,6 +49,9 @@ import * as profilesRepo from "./repository/profiles.ts";
 import * as vaultRepo from "./repository/vault.ts";
 import * as workspaceBlobRepo from "./repository/workspace-blobs.ts";
 import * as historyRepo from "./repository/history.ts";
+import * as sessionsRepo from "./repository/sessions.ts";
+import type { SessionDeviceRecord } from "./repository/sessions.ts";
+import * as notificationsRepo from "./repository/notifications.ts";
 import * as usersRepo from "./repository/users.ts";
 import * as tokensRepo from "./repository/tokens.ts";
 import * as collectionsRepo from "./repository/collections.ts";
@@ -66,6 +69,10 @@ import * as userDataRepo from "./repository/user-data.ts";
 export * from "./repository/records.ts";
 export { bindSqlite, normalizeTokenScopes, slugify, toPgSql } from "./repository/dialect.ts";
 export { TOKEN_TOUCH_THROTTLE_MS } from "./repository/tokens.ts";
+// 导入侧的条数上限要跟导出侧对齐，否则合法备份会被自己的上限拒掉
+export { EXPORT_HISTORY_LIMIT, EXPORT_FAVORITES_LIMIT, EXPORT_SCHEMA_VERSION } from "./repository/user-data.ts";
+export type { SessionDeviceRecord } from "./repository/sessions.ts";
+export type { NotificationRecord } from "./repository/notifications.ts";
 /**
  * 数据库访问闸门（读写锁）。
  *
@@ -549,6 +556,20 @@ export class Repository {
     return eventsRepo.recordEvent(this, kind, payload);
   }
 
+  /** 按身份的访问历史分页（T23：events kind=click），新在前 */
+  async listVisitsPage(
+    identity: string,
+    limit: number,
+    offset: number,
+  ): Promise<{ items: eventsRepo.VisitItem[]; hasMore: boolean }> {
+    return eventsRepo.listVisitsPage(this, identity, limit, offset);
+  }
+
+  /** 该身份的访问历史总条数（T23） */
+  async countVisits(identity: string): Promise<number> {
+    return eventsRepo.countVisits(this, identity);
+  }
+
   async audit(entry: { actor: string; actorKind?: string; action: string; target?: string; diff?: unknown; ip?: string }): Promise<void> {
     return eventsRepo.audit(this, entry);
   }
@@ -601,6 +622,16 @@ export class Repository {
   /** 聚合窗口内用量（总量/成功率/p50/p95/按场景/按来源/真实小时分桶） */
   async aggregateLlmUsage(options: { since: number; until?: number; maxRows?: number }) {
     return llmUsageRepo.aggregateLlmUsage(this, options);
+  }
+
+  /** 窗口内用量合计（次数/token/失败数/最早一条）——额度闸门用，不拉明细 */
+  async sumLlmUsage(options: {
+    since: number;
+    until?: number;
+    identity?: string | null;
+    excludeUserSource?: boolean;
+  }) {
+    return llmUsageRepo.sumLlmUsage(this, options);
   }
 
   /** 最近 N 条调用明细（新→旧） */
@@ -682,7 +713,7 @@ export class Repository {
     return favoritesRepo.listFavoritesPage(this, userId, query);
   }
 
-  async addFavorite(input: { userId: string; siteId: string; folderId?: string | null; note?: string | null }): Promise<{ favorite: FavoriteRecord; existed: boolean }> {
+  async addFavorite(input: { userId: string; siteId: string; folderId?: string | null; note?: string | null; tags?: string[] | null }): Promise<{ favorite: FavoriteRecord; existed: boolean }> {
     return favoritesRepo.addFavorite(this, input);
   }
 
@@ -833,8 +864,82 @@ export class Repository {
     return historyRepo.deleteSearchHistoryItem(this, userId, id);
   }
 
+  /** 批量删除历史（T4）：按 id 集合，只删该身份的行，返回实际删除数 */
+  async deleteSearchHistoryItems(userId: string, ids: number[]): Promise<number> {
+    return historyRepo.deleteSearchHistoryItems(this, userId, ids);
+  }
+
+  /** 服务端筛选删除全部零结果历史（T4），返回删除数 */
+  async deleteZeroResultSearchHistory(userId: string): Promise<number> {
+    return historyRepo.deleteZeroResultSearchHistory(this, userId);
+  }
+
+  /** 按身份删除早于 cutoff 的历史（T11 保留期自动化），返回删除数 */
+  async deleteSearchHistoryBefore(userId: string, cutoff: number): Promise<number> {
+    return historyRepo.deleteSearchHistoryBefore(this, userId, cutoff);
+  }
+
+  /** 显式设置了非默认历史保留期的用户（T11） */
+  async listCustomHistoryRetention(): Promise<Array<{ identity: string; retentionDays: number }>> {
+    return settingsRepo.listCustomHistoryRetention(this);
+  }
+
   async clearSearchHistory(userId: string): Promise<void> {
     return historyRepo.clearSearchHistory(this, userId);
+  }
+
+  /* --------------------------- 会话治理（T8） --------------------------- */
+
+  /** BFF 每次代理 /api/me/* 时惰性登记会话活跃（幂等 upsert） */
+  async upsertSessionActivity(input: { token: string; userId: string; userAgent?: string | null; expiresAt: number }): Promise<void> {
+    return sessionsRepo.upsertSessionActivity(this, input);
+  }
+
+  /** 会话是否已被用户踢出；无行 = 旧会话/未路过 BFF → 未吊销（fail-open） */
+  async isSessionRevoked(token: string): Promise<boolean> {
+    return sessionsRepo.isSessionRevoked(this, token);
+  }
+
+  /** 设备列表：未吊销且未过期的会话，按最近活跃排序 */
+  async listSessionDevices(userId: string): Promise<SessionDeviceRecord[]> {
+    return sessionsRepo.listSessionDevices(this, userId);
+  }
+
+  /** 踢出设备；跨用户 token 无效返回 false */
+  async revokeSessionDevice(userId: string, token: string): Promise<boolean> {
+    return sessionsRepo.revokeSessionDevice(this, userId, token);
+  }
+
+  /* --------------------------- 站内通知（T13） --------------------------- */
+
+  async createNotification(input: { identity: string; kind: string; title: string; body?: string | null }) {
+    return notificationsRepo.createNotification(this, input);
+  }
+
+  /** 同 kind 通知的去重窗口（触发源据此降噪） */
+  async hasRecentNotification(identity: string, kind: string, withinMs: number): Promise<boolean> {
+    return notificationsRepo.hasRecentNotification(this, identity, kind, withinMs);
+  }
+
+  async listNotificationsPage(
+    identity: string,
+    limit: number,
+    offset: number,
+    unreadOnly: boolean,
+  ): Promise<{ items: notificationsRepo.NotificationRecord[]; hasMore: boolean }> {
+    return notificationsRepo.listNotificationsPage(this, identity, limit, offset, unreadOnly);
+  }
+
+  async countUnreadNotifications(identity: string): Promise<number> {
+    return notificationsRepo.countUnreadNotifications(this, identity);
+  }
+
+  async markNotificationRead(identity: string, id: string): Promise<boolean> {
+    return notificationsRepo.markNotificationRead(this, identity, id);
+  }
+
+  async markAllNotificationsRead(identity: string): Promise<number> {
+    return notificationsRepo.markAllNotificationsRead(this, identity);
   }
 
   async countSearchHistory(userId: string): Promise<number> {
@@ -854,8 +959,8 @@ export class Repository {
 
   async updateUserProfileInfo(
     identity: string,
-    patch: { username?: string; avatar?: string | null },
-  ): Promise<{ ok: true; user: UserRecord } | { ok: false; reason: "username_taken" | "invalid_input" }> {
+    patch: { username?: string; avatar?: string | null; email?: string | null },
+  ): Promise<{ ok: true; user: UserRecord } | { ok: false; reason: "username_taken" | "email_taken" | "invalid_input" }> {
     return usersRepo.updateUserProfileInfo(this, identity, patch);
   }
 
@@ -913,8 +1018,20 @@ export class Repository {
     expiresAt?: number | null;
     /** 明文前缀（不含可还原部分），供列表页区分凭据 */
     tokenPrefix?: string | null;
+    /** 归属用户身份（T20）：非空 = 用户自建个人令牌 */
+    ownerIdentity?: string | null;
   }): Promise<ApiTokenRecord> {
     return tokensRepo.createApiToken(this, input);
+  }
+
+  /** 用户自建令牌列表（T20）：只返回自己的、未吊销的 */
+  async listApiTokensByOwner(ownerIdentity: string): Promise<ApiTokenRecord[]> {
+    return tokensRepo.listApiTokensByOwner(this, ownerIdentity);
+  }
+
+  /** 用户吊销自己的令牌（ownership 校验在 SQL 条件里） */
+  async revokeApiTokenByOwner(ownerIdentity: string, id: string): Promise<boolean> {
+    return tokensRepo.revokeApiTokenByOwner(this, ownerIdentity, id);
   }
 
   async updateApiToken(id: string, patch: { name?: string; scopes?: string; expiresAt?: number | null }): Promise<ApiTokenRecord | null> {
@@ -1172,6 +1289,11 @@ export class Repository {
 
   async starPlugin(slug: string, identity: string): Promise<{ starred: boolean; starCount: number }> {
     return pluginsRepo.starPlugin(this, slug, identity);
+  }
+
+  /** 备份导入重放用：null=插件不存在，boolean=是否已星标 */
+  async isPluginStarredBySlug(slug: string, identity: string): Promise<boolean | null> {
+    return pluginsRepo.isPluginStarredBySlug(this, slug, identity);
   }
 
   async unstarPlugin(slug: string, identity: string): Promise<{ starred: boolean; starCount: number }> {

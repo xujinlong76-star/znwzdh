@@ -74,7 +74,7 @@ describe('用户中心第二批页面', () => {
   it('概览页接个性化开关与信号清理，设置/资料/自检分别落在独立页面', () => {
     // 本批把 /me 拆成「仪表盘 + /me/settings + /me/account」：
     // 断言原意不变，只是按职责去对应文件里找接线。
-    const overview = ['src/app/me/page.tsx', 'src/app/me/me-view.tsx'].map(read).join('\n')
+    const overview = ['src/app/me/page.tsx', 'src/app/me/me-view.tsx', 'src/lib/me-settings-save.ts'].map(read).join('\n')
     const dashboard = read('src/components/user-center/dashboard/stats-grid.tsx')
     const account = read('src/app/me/account/account-view.tsx')
     const settingsHook = read('src/hooks/use-me-settings.ts')
@@ -100,7 +100,8 @@ describe('用户中心第二批页面', () => {
   })
 
   it('收藏页接入文件夹和备注管理', () => {
-    const src = read('src/app/favorites/page.tsx')
+    // T14 拆分后：夹子 CRUD/重排/迁移在 hook，页面保留渲染与卡片级操作
+    const src = ['src/app/favorites/page.tsx', 'src/hooks/use-favorites-folder-manager.ts'].map(read).join(' ')
     expect(src).toContain('createFavoriteFolder')
     expect(src).toContain('updateFavoriteFolder')
     expect(src).toContain('updateFavoriteMeta')

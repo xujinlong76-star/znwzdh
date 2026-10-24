@@ -15,8 +15,11 @@
  *    - 校验插件标题、图标、描述与收录内容的实质匹配度，过滤垃圾 SEO 关键词堆砌，保障生态水准。
  *
  * 决策闭环：
- *    - 综合得分 >= 75 分且零严重安全隐患 -> decision: 'approve' -> 自动晋级为 published 并建立向量/全文双索引；
- *    - 综合得分 < 75 分或触发安全红线 -> decision: 'reject' -> 输出针对性整改指引。
+ *    - 四维齐备、综合得分 >= 75 且零严重安全隐患 -> decision: 'approve' -> 自动晋级为 published 并建立向量/全文双索引；
+ *    - 触发安全红线、模型明确驳回、探活全死或得分不足 -> decision: 'reject' -> 输出针对性整改指引；
+ *    - 模型未参与本次审理（额度/未配置/调用失败）-> decision: 'pending_review'：
+ *      合规与相关性维度记为 null（不补假分），加权得分按实测温权重重归一，
+ *      插件状态不变（新提交留在 pending 排队），缺席原因如实写进审核备注交人工收口。
  */
 import { guardedFetch } from "@navhub/ai";
 import {
@@ -25,6 +28,7 @@ import {
 } from "@navhub/core";
 import type { AppContext } from "./context.ts";
 import { llmProviderReady, resolveLlm } from "./llm-config.ts";
+import { checkLlmQuota } from "./llm-quota.ts";
 import { callLlm } from "./llm-usage.ts";
 import { indexPluginsBatch, indexItemFromManifest, removePluginIndex } from "./index-plugin.ts";
 import type { PluginRecord } from "@navhub/store";
@@ -33,25 +37,42 @@ export interface AuditCheckItem {
   name: string;
   passed: boolean;
   detail: string;
+  /** 本次没跑这一项（模型缺席等）：既不是通过也不是不通过 */
+  skipped?: boolean;
 }
 
 export interface PluginAuditResult {
   slug: string;
-  decision: "approve" | "reject";
+  /**
+   * `pending_review`：静态红线与探活都没抓到问题，但**模型没有参与本次审理**
+   * （额度用尽 / 未配置 / 调用失败）—— 缺证据时不替作者做「通过」的决定，
+   * 也不伪造一个「驳回」。历史写法是让假的 95 分顶成 approve，
+   * 等于「审查维度缺席反而更容易上架」。
+   */
+  decision: "approve" | "reject" | "pending_review";
   score: number;
   level: "safe" | "low_risk" | "medium_risk" | "high_risk";
   rationale: string;
   dimensionScores: {
     security: number;
     availability: number;
-    compliance: number;
-    relevance: number;
+    /** null = 本次未经模型审理（不是 0 分，更不是满分） */
+    compliance: number | null;
+    relevance: number | null;
   };
   linkSurvivalRate: number;
   checks: AuditCheckItem[];
   suggestions: string[];
   auditedAt: number;
   model: string;
+  /** 本次审理是否真的有模型参与 */
+  llmReviewed: boolean;
+  /** 模型缺席的原因，UI 据此给作者一句真话 */
+  reviewSkipped: "quota" | "unconfigured" | "error" | null;
+  /** 得分覆盖了哪些维度：full=四维；static_plus_probe=只有静态安全与探活 */
+  scoreBasis: "full" | "static_plus_probe";
+  /** reviewSkipped==="quota" 时的额度明细 */
+  quota?: { scope: string; metric: string; limit: number; used: number; retryAfterSeconds: number } | null;
 }
 
 /** 提取清单内所有外部链接与图标 */
@@ -379,10 +400,19 @@ export async function evaluatePluginAudit(
   // ------------------------------------------------------------------
   // 维度 3: AI 认知合规与内容质量多维审理 (LLM Evaluation, 45 分)
   // ------------------------------------------------------------------
-  let complianceScore = 95;
-  let relevanceScore = 95;
-  let aiRationale = "插件规划条理清晰，结构完全符合生态标准，外链与功能组件真实可用，已通过安全合规研判。";
-  let auditModel = "rule-heuristic-engine";
+  /**
+   * 模型没跑 = null，不给初值分。
+   * 旧写法把 `complianceScore/relevanceScore` 起在 95，并预置一句
+   * 「已通过安全合规研判」的评语：没配密钥、额度用光、调用超时都会落在这对假分上，
+   * 加权后照样 >= 75 自动上架。也就是说「最该人工盯的时候最容易过审」。
+   */
+  let complianceScore: number | null = null;
+  let relevanceScore: number | null = null;
+  let aiRationale = "";
+  let auditModel = "none";
+  let llmReviewed = false;
+  let reviewSkipped: "quota" | "unconfigured" | "error" = "unconfigured";
+  let quotaDetail: PluginAuditResult["quota"] = null;
   /**
    * 模型明确驳回时不能被分数覆盖。
    * 提示词要求模型给出 decision，但旧实现只取了两个分数、把 decision 丢掉：
@@ -392,10 +422,25 @@ export async function evaluatePluginAudit(
    */
   let llmRejected = false;
 
+  // 烧的是运维者/作者自己的 key，就要先过额度闸门；被拒时连模型都不碰。
+  const auditQuota = await checkLlmQuota(ctx, options.identity || null);
+  if (!auditQuota.ok) {
+    reviewSkipped = "quota";
+    quotaDetail = {
+      scope: auditQuota.error.scope,
+      metric: auditQuota.error.metric,
+      limit: auditQuota.error.limit,
+      used: auditQuota.error.used,
+      retryAfterSeconds: Math.max(1, Math.ceil(auditQuota.error.retryAfterMs / 1000)),
+    };
+  }
+
   try {
-    const resolved = await resolveLlm(ctx, options.identity || "system");
-    if (llmProviderReady(resolved?.provider)) {
-      auditModel = resolved.provider.model || "agnes-3.0-flash";
+    // `|| "system"` 是旧的写法：把字面量 "system" 当身份传给 resolveLlm，
+    // 等于先去找「身份恰好叫 system 的那个人配置」，找不到才回系统层。
+    // 空身份直接传 null，语义就是「走系统/env 层」。
+    const resolved = reviewSkipped === "quota" ? null : await resolveLlm(ctx, options.identity || null);
+    if (resolved && llmProviderReady(resolved.provider)) {
       const sampleSites = extractedUrls.slice(0, 10).join("\n- ");
       const auditPrompt = [
         "你代表 NavHub 开放生态应用审查委员会（NavHub App Review Board）。",
@@ -438,6 +483,9 @@ export async function evaluatePluginAudit(
         json: true,
         timeoutMs: 15_000,
       });
+      // 报模型名要报真的：以前写 `resolved.provider.model || "agnes-3.0-flash"`，
+      // 管理端只填了名字没填 model 时，报告会自称跑过一个并不存在的模型。
+      auditModel = chatRes.model || resolved.provider.model || "unknown-model";
 
       const parsed = JSON.parse(chatRes.content.match(/\{[\s\S]*\}/)?.[0] || chatRes.content);
       if (parsed && typeof parsed === "object" && parsed.decision === "reject") {
@@ -457,61 +505,102 @@ export async function evaluatePluginAudit(
           if (typeof s === "string" && s.trim()) suggestions.push(s.trim());
         }
       }
+      // 「调用成功」不等于「审理发生」：两个维度都拿到分才算。
+      // 旧实现在这里不检查，模型回一句散文也能带着 95 的假初值过审。
+      llmReviewed = complianceScore !== null && relevanceScore !== null;
+      if (!llmReviewed) reviewSkipped = "error";
     }
-  } catch (llmErr) {
-    // LLM 调用超时或未配置时，走确定性高质量启发式规则
-    auditModel = "agnes-heuristic-v2";
-    if (probeRes.survivalRate < 0.5) {
-      complianceScore -= 20;
-      relevanceScore -= 15;
-    }
-    aiRationale = `基于静态安全沙箱与实时网络探针严审：外链存活率 ${(probeRes.survivalRate * 100).toFixed(0)}%，架构规范合规。`;
+  } catch {
+    // 模型层任何异常都不能补分：缺维度就让它缺着，由 pending_review 交人工。
+    reviewSkipped = "error";
+    llmReviewed = false;
+  }
+  if (!llmReviewed) {
+    // 探活结论是真实测出来的，可以写；合规/相关性不能冒充「已严审」。
+    const reason =
+      reviewSkipped === "quota"
+        ? `今日 AI 审理额度已用完（${quotaDetail?.metric ?? "calls"}：${quotaDetail?.used ?? 0}/${quotaDetail?.limit ?? 0}，约 ${Math.max(1, Math.ceil((quotaDetail?.retryAfterSeconds ?? 0) / 3600))} 小时后恢复）`
+        : reviewSkipped === "error"
+          ? "模型审理调用失败或返回了不可解析的结论"
+          : "管理端未配置可用的模型密钥";
+    aiRationale = `${reason}：本次仅覆盖静态安全沙箱与外链探活（外链存活率 ${(probeRes.survivalRate * 100).toFixed(0)}%），合规与相关性维度未审理，转人工复核。`;
   }
 
   checks.push({
     name: "AI 伦理合规与反欺诈 (Compliance & Anti-Fraud)",
-    passed: complianceScore >= 70,
-    detail: complianceScore >= 70 ? "未发现钓鱼伪装、恶意重定向或违规内容" : "疑似包含低俗信息或存在仿冒品牌欺诈风险",
+    passed: llmReviewed && complianceScore !== null && complianceScore >= 70,
+    skipped: !llmReviewed,
+    detail: !llmReviewed
+      ? "本次未经模型审理，合规维度未覆盖（不等于通过）"
+      : complianceScore! >= 70
+        ? "未发现钓鱼伪装、恶意重定向或违规内容"
+        : "疑似包含低俗信息或存在仿冒品牌欺诈风险",
   });
 
   checks.push({
     name: "语义一致性与质量精选 (Semantic Coherence)",
-    passed: relevanceScore >= 70,
-    detail: relevanceScore >= 70 ? "插件名称、描述与收录站点高度吻合，内容精选优质" : "描述与收录站点相关性较弱或存在关键词堆砌",
+    passed: llmReviewed && relevanceScore !== null && relevanceScore >= 70,
+    skipped: !llmReviewed,
+    detail: !llmReviewed
+      ? "本次未经模型审理，相关性维度未覆盖（不等于通过）"
+      : relevanceScore! >= 70
+        ? "插件名称、描述与收录站点高度吻合，内容精选优质"
+        : "描述与收录站点相关性较弱或存在关键词堆砌",
   });
 
   // ------------------------------------------------------------------
   // 维度 4: 综合决策加权算法 (Weighted Scoring & Decision)
   // ------------------------------------------------------------------
   // Security (30%) + Availability (25%) + Compliance (25%) + Relevance (20%)
-  const totalScore = Math.max(
-    0,
-    Math.min(
-      100,
-      Math.round(
-        securityScore * 0.3 +
-        availabilityScore * 0.25 +
-        complianceScore * 0.25 +
-        relevanceScore * 0.2
-      )
-    )
-  );
+  // 模型缺席时后两项没测到，必须按**实测温权重**归一，而不是用假分补齐：
+  // 「没跑的检查」不能伪装成「跑过且得高分」，也不能反过来当 0 分冤枉作者。
+  const measured: Array<[number | null, number]> = [
+    [securityScore, 0.3],
+    [availabilityScore, 0.25],
+    [complianceScore, 0.25],
+    [relevanceScore, 0.2],
+  ];
+  let weighted = 0;
+  let measuredWeight = 0;
+  for (const [value, weight] of measured) {
+    if (value === null) continue;
+    weighted += value * weight;
+    measuredWeight += weight;
+  }
+  const totalScore = measuredWeight > 0 ? Math.max(0, Math.min(100, Math.round(weighted / measuredWeight))) : 0;
+  const scoreBasis: PluginAuditResult["scoreBasis"] =
+    complianceScore !== null && relevanceScore !== null ? "full" : "static_plus_probe";
 
+  // 「安全」这一档要有全部四维背书才敢写；缺合规审理时最高只能到 low_risk，
+  // 否则等于用两次静态检查的名义给出四维结论。
   const level: "safe" | "low_risk" | "medium_risk" | "high_risk" =
-    totalScore >= 85 ? "safe" : totalScore >= 70 ? "low_risk" : totalScore >= 50 ? "medium_risk" : "high_risk";
+    totalScore >= 85 ? (llmReviewed ? "safe" : "low_risk") : totalScore >= 70 ? "low_risk" : totalScore >= 50 ? "medium_risk" : "high_risk";
 
-  // 审批决策条件：
-  // 1. 无严重安全注入威胁 (hasCriticalSecurityViolation === false)
-  // 2. 模型未明确驳回（一票否决，见 llmRejected 注释）
-  // 3. 综合得分 >= 75
-  // 4. 探活存活率 >= 50%
-  const approved =
-    !hasCriticalSecurityViolation &&
-    !llmRejected &&
-    totalScore >= 75 &&
-    (probeRes.total === 0 || probeRes.survivalRate >= 0.5);
+  // 三种结论必须分得开：
+  //   reject        —— 有**负面证据**（安全红线 / 模型驳回 / 得分不足 / 死链为主）
+  //   pending_review —— 没有负面证据，但**也没有合规证据**（模型没参与）
+  //   approve       —— 四维齐备且达标
+  // 把第二种写成 approve 就是「审查缺席 = 更容易上架」；写成 reject 又在
+  // 冤枉作者（并没有任何东西证明这个插件有问题）。
+  const hasNegativeEvidence =
+    hasCriticalSecurityViolation ||
+    llmRejected ||
+    totalScore < 75 ||
+    (probeRes.total > 0 && probeRes.survivalRate < 0.5);
 
-  const decision: "approve" | "reject" = approved ? "approve" : "reject";
+  const decision: PluginAuditResult["decision"] = hasNegativeEvidence
+    ? "reject"
+    : llmReviewed
+      ? "approve"
+      : "pending_review";
+
+  if (!llmReviewed) {
+    suggestions.push(
+      decision === "pending_review"
+        ? "本次未经模型审理，插件将留在待审队列等待人工复核；管理员可在模型恢复后重跑 AI 严审。"
+        : "模型审理缺席，审核结论仅基于静态安全与外链探活两个维度。",
+    );
+  }
 
   return {
     slug,
@@ -530,6 +619,10 @@ export async function evaluatePluginAudit(
     suggestions: Array.from(new Set(suggestions)),
     auditedAt: Date.now(),
     model: auditModel,
+    llmReviewed,
+    reviewSkipped: llmReviewed ? null : reviewSkipped,
+    scoreBasis,
+    quota: reviewSkipped === "quota" ? quotaDetail : null,
   };
 }
 
@@ -561,8 +654,25 @@ export async function executeAutoAuditAndPublish(
     dimensionScores: auditRes.dimensionScores,
     linkSurvivalRate: auditRes.linkSurvivalRate,
     model: auditRes.model,
+    llmReviewed: auditRes.llmReviewed,
+    reviewSkipped: auditRes.reviewSkipped,
+    scoreBasis: auditRes.scoreBasis,
+    quota: auditRes.quota ?? null,
     auditedAt: auditRes.auditedAt,
   });
+
+  if (auditRes.decision === "pending_review") {
+    /**
+     * 模型缺席时**不改插件状态**，只把缺席结论如实写进审核备注：
+     *  - 新提交/新版本留在 pending，人工复核队列里看得见（缺席不等于通过）；
+     *  - 已上架的保持 published —— 我们这边模型抖动/额度用光不该把市场上
+     *    已经过审的内容成片打下来（那会让「运维者没钱了」变成用户事故）。
+     * 这里不调 reviewPlugin：它只接受 pending/delisted/quarantined → 目标态，
+     * 对 published 会直接抛错。
+     */
+    const updated = await ctx.repo.recordPluginAuditNote(plugin.slug, auditNoteJson, auditRes.auditedAt);
+    return { plugin: updated, audit: auditRes };
+  }
 
   if (auditRes.decision === "approve") {
     // 已上架插件复审通过：状态本来就该是 published，而 reviewPlugin('approve')

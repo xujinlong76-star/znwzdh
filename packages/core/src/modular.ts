@@ -2,6 +2,8 @@
  * 模块化前端系统核心协议与布局计算算法 (Modular Layout Core Engine)
  */
 
+import { validateAndCleanPluginManifest, type PluginManifestValidation } from './plugin-manifest.ts'
+
 export type WidgetCategory = 'tools' | 'efficiency' | 'analytics' | 'content' | 'ai'
 
 export interface WidgetConfigSchemaItem {
@@ -48,7 +50,8 @@ export interface ModularPresetTemplateData {
 }
 
 /**
- * 8 大内置业务模块纯元数据清单
+ * 内置模块的元数据清单：前端卡片注册表（apps/web-overlay/src/lib/modular/registry.ts）
+ * 的键必须与这里一一对应，API 侧的合法类型、AI 规划提示词都由这里派生。
  */
 export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
   'clock-pomodoro': {
@@ -81,8 +84,9 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
   },
   'trending-radar': {
     type: 'trending-radar',
-    title: '全网技术飙升热榜',
-    description: '聚合全网热度最高与 GitHub Star 增长最快的前沿开源项目。',
+    title: '站内热度榜',
+    description:
+      '按本站自己的访问与收藏加权排序：热度指数 = log1p(近 7 天访问) + 1.5·log1p(收藏) − 0.1·站点天数（中枢 recompute_rank 任务产出）。不是 GitHub Star 增长榜；中枢不可用时回退到明确标注的演示数据。',
     category: 'analytics',
     icon: 'TrendingUp',
     defaultColSpan: 5,
@@ -91,12 +95,13 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
     maxColSpan: 8,
     minRowSpan: 1,
     maxRowSpan: 3,
-    badge: '实时流',
+    badge: '站内实测',
   },
   'hyperbolic-radar': {
     type: 'hyperbolic-radar',
-    title: '双曲平替与开源雷达',
-    description: 'Poincaré 双曲几何距离平替算法，一键查找商业 SaaS 最佳平替。',
+    title: '双曲平替雷达',
+    description:
+      '输入产品名，用中枢 /api/rank/alternatives 的洛伦兹双曲投影算近邻平替与得分；无向量时走同分类+标签启发式，卡片会标明口径，不给编造的对比数字。',
     category: 'ai',
     icon: 'GitCompare',
     defaultColSpan: 4,
@@ -105,7 +110,22 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
     maxColSpan: 8,
     minRowSpan: 1,
     maxRowSpan: 3,
-    badge: '平替算法',
+    badge: '双曲投影',
+    configSchema: [
+      {
+        key: 'site',
+        label: '预查产品名',
+        type: 'text',
+        defaultValue: '',
+        description: '卡片打开时自动检索这个词；留空则等你输入',
+      },
+      {
+        key: 'limit',
+        label: '候选数量（3-8）',
+        type: 'number',
+        defaultValue: 4,
+      },
+    ],
   },
   'speculative-terminal': {
     type: 'speculative-terminal',
@@ -165,8 +185,9 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
   },
   'custom-category': {
     type: 'custom-category',
-    title: '精选分类导航聚合',
-    description: '嵌入指定技术分类（AI工具/开发框架/设计素材等）的精选站点卡片集合。',
+    title: '中枢分类精选站点',
+    description:
+      '按中枢类目实时检索该分类下的存活站点卡片；页签取站点数最多的叶子类目，取不到数据时明确报错而不是回落到内置示例。',
     category: 'content',
     icon: 'Folder',
     defaultColSpan: 6,
@@ -179,14 +200,16 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
     configSchema: [
       {
         key: 'categoryId',
-        label: '默认展示技术分类',
-        type: 'select',
-        defaultValue: 'ai',
-        options: [
-          { label: '🤖 AI 与大模型', value: 'ai' },
-          { label: '💻 前端与工程化', value: 'dev' },
-          { label: '⚡ 效率与灵感', value: 'tools' },
-        ],
+        label: '类目标识',
+        type: 'text',
+        defaultValue: '',
+        description: '填类目 slug（如 ai-tools）、id 或唯一标题；留空则自动选中枢里存活站点最多的叶子类目',
+      },
+      {
+        key: 'limit',
+        label: '显示站点数（3-12）',
+        type: 'number',
+        defaultValue: 6,
       },
     ],
   },
@@ -214,6 +237,7 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
           { label: 'GitHub 代码仓库', value: 'github' },
           { label: 'npm 包检索', value: 'npm' },
           { label: 'Bing 必应搜索', value: 'bing' },
+          { label: 'MDN 文档检索', value: 'mdn' },
         ],
       },
     ],
@@ -221,7 +245,7 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
   'github-heatmap': {
     type: 'github-heatmap',
     title: 'GitHub 提交热力足迹',
-    description: '展示 52 周开源贡献方格矩阵，记录连续打卡天数与年度提交热度。',
+    description: '读取指定账号的 GitHub 公开事件，画近 13 周真实提交热力与连续打卡；取不到数据时明确标注，不编提交记录。',
     category: 'analytics',
     icon: 'GitCommit',
     defaultColSpan: 6,
@@ -234,21 +258,21 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
     configSchema: [
       {
         key: 'username',
-        label: 'GitHub 账号用户名',
+        label: 'GitHub 用户名',
         type: 'text',
-        defaultValue: 'torvalds',
-        description: '输入公开的 GitHub 用户名以生成贡献活跃度',
+        defaultValue: '',
+        description: '留空则不取数（不预填他人账号）',
       },
       {
         key: 'theme',
-        label: '热力图颜色主题',
+        label: '色板',
         type: 'select',
         defaultValue: 'emerald',
         options: [
-          { label: '翡翠极光绿 (Emerald)', value: 'emerald' },
-          { label: '日落琥珀橙 (Amber)', value: 'amber' },
-          { label: '赛博霓虹紫 (Purple)', value: 'purple' },
-          { label: '冰晶天青蓝 (Cyan)', value: 'cyan' },
+          { label: '翠绿', value: 'emerald' },
+          { label: '琥珀', value: 'amber' },
+          { label: '紫罗兰', value: 'purple' },
+          { label: '青色', value: 'cyan' },
         ],
       },
     ],
@@ -256,7 +280,8 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
   'weather-clock': {
     type: 'weather-clock',
     title: '实时天气与环境气象',
-    description: '端侧环境温度、空气质量指数、湿度与多日天气预测胶囊。',
+    description:
+      '由服务端 /api/weather 代取 Open-Meteo 的实况气温、体感、湿度、风力与近三日预报，空气指数单独取自空气质量上游；取不到时明确报错或标注旧观测，不用写死的示例温度冒充实时。',
     category: 'efficiency',
     icon: 'CloudSun',
     defaultColSpan: 4,
@@ -269,18 +294,19 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
     configSchema: [
       {
         key: 'city',
-        label: '城市位置',
+        label: '城市',
         type: 'select',
         defaultValue: 'shanghai',
+        description: '城市为内置坐标表（只支持下列城市），换城市不需要填地址',
         options: [
-          { label: '北京 (Beijing)', value: 'beijing' },
-          { label: '上海 (Shanghai)', value: 'shanghai' },
-          { label: '广州 (Guangzhou)', value: 'guangzhou' },
-          { label: '深圳 (Shenzhen)', value: 'shenzhen' },
-          { label: '杭州 (Hangzhou)', value: 'hangzhou' },
-          { label: '成都 (Chengdu)', value: 'chengdu' },
-          { label: '东京 (Tokyo)', value: 'tokyo' },
-          { label: '旧金山 (San Francisco)', value: 'sf' },
+          { label: '北京', value: 'beijing' },
+          { label: '上海', value: 'shanghai' },
+          { label: '广州', value: 'guangzhou' },
+          { label: '深圳', value: 'shenzhen' },
+          { label: '杭州', value: 'hangzhou' },
+          { label: '成都', value: 'chengdu' },
+          { label: '东京', value: 'tokyo' },
+          { label: '旧金山', value: 'sf' },
         ],
       },
       {
@@ -288,6 +314,7 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
         label: '温度单位',
         type: 'select',
         defaultValue: 'celsius',
+        description: '卡上按钮只是本卡临时切换，要长期生效改这里',
         options: [
           { label: '摄氏度 (°C)', value: 'celsius' },
           { label: '华氏度 (°F)', value: 'fahrenheit' },
@@ -298,7 +325,8 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
   'iframe-embed': {
     type: 'iframe-embed',
     title: '沙箱应用与网页画板嵌入',
-    description: '安全内嵌白板工具、在线画图、API 调试器或任意自定义 Web 应用。',
+    description:
+      '内嵌白板、在线画图或自己部署的 Web 应用；沙箱不含同源与顶层跳转权限。注意 Google、GitHub 等站点会用 X-Frame-Options 拒绝被内嵌，卡上会明确提示。',
     category: 'tools',
     icon: 'ExternalLink',
     defaultColSpan: 8,
@@ -311,19 +339,130 @@ export const BUILTIN_WIDGET_CATALOG: Record<string, ModularWidgetMeta> = {
     configSchema: [
       {
         key: 'url',
-        label: '嵌入网址 URL',
+        label: '嵌入地址',
         type: 'text',
-        defaultValue: 'https://excalidraw.com',
-        description: '请输入支持 iframe 嵌入的安全 HTTPS 页面链接',
+        defaultValue: '',
+        description: '填完整 http(s) 地址；留空用预设白板。伪协议与非 http(s) 一律拒绝内嵌。',
       },
       {
         key: 'allowFullscreen',
-        label: '允许全屏扩展',
+        label: '允许嵌入页全屏',
         type: 'boolean',
         defaultValue: true,
+        description: '视频/白板类站点需要全屏时保持开启；纯预览可以关掉。',
       },
     ],
   },
+  'live-api': {
+    type: 'live-api',
+    title: 'REST 动态接口遥测',
+    description: '低代码轮询任意外部 REST/JSON API 接口，实时提取并监控关键数据指标。',
+    category: 'tools',
+    icon: 'Activity',
+    defaultColSpan: 4,
+    defaultRowSpan: 1,
+    minColSpan: 3,
+    maxColSpan: 8,
+    minRowSpan: 1,
+    maxRowSpan: 2,
+    badge: '低代码动态流',
+    configSchema: [
+      { key: 'title', label: '监控项名称', type: 'text', defaultValue: 'REST 接口动态遥测' },
+      {
+        key: 'apiUrl',
+        label: '请求接口地址 (URL)',
+        type: 'text',
+        defaultValue: '/api/hub/health',
+        description: '支持同源接口或允许 CORS 的公开 JSON API',
+      },
+      { key: 'jsonKey', label: '提取字段路径 (JSONPath)', type: 'text', defaultValue: 'status', description: '如 status 或 data.count' },
+      { key: 'unit', label: '数值单位 (可选)', type: 'text', defaultValue: '', description: '如 ms, %, 个' },
+      { key: 'refreshIntervalSeconds', label: '轮询间隔 (秒)', type: 'number', defaultValue: 30 },
+    ],
+  },
+  'rss-feed': {
+    type: 'rss-feed',
+    title: '自定义 RSS/Atom 订阅',
+    description:
+      '由服务端代取指定订阅源并解析条目（绕开浏览器 CORS）。必须自己填订阅地址；未填时卡片只说明如何配置，不展示示例新闻。',
+    category: 'content',
+    icon: 'Rss',
+    defaultColSpan: 5,
+    defaultRowSpan: 2,
+    minColSpan: 4,
+    maxColSpan: 8,
+    minRowSpan: 1,
+    maxRowSpan: 3,
+    badge: '订阅源',
+    configSchema: [
+      {
+        key: 'feedUrl',
+        label: '订阅地址',
+        type: 'text',
+        defaultValue: '',
+        description: 'RSS 2.0 / Atom / RDF 均可，需公网可访问的 http(s) 地址；内网与元数据地址会被 SSRF 防护拒绝。',
+      },
+      { key: 'title', label: '专栏标题', type: 'text', defaultValue: '', description: '留空则显示源自己的标题。' },
+      { key: 'limit', label: '显示条数上限', type: 'number', defaultValue: 8 },
+    ],
+  },
+  'declarative-widget': {
+    type: 'declarative-widget',
+    title: '声明式微组件沙箱',
+    description: '通过安全声明式 JSON Schema 渲染 KPI 指标、状态指示器与动态内容流，0 代码安全隔离。',
+    category: 'tools',
+    icon: 'Layers',
+    defaultColSpan: 4,
+    defaultRowSpan: 2,
+    minColSpan: 3,
+    maxColSpan: 8,
+    minRowSpan: 1,
+    maxRowSpan: 3,
+    badge: '0-Eval 沙箱',
+  },
+}
+
+/** 模块类型名清单（保持目录插入顺序，便于直接进提示词或错误文案） */
+export const WIDGET_TYPE_NAMES: readonly string[] = Object.keys(BUILTIN_WIDGET_CATALOG)
+
+/**
+ * 找出插件载荷里本部署没有对应卡片的模块类型（按出现顺序去重）。
+ *
+ * 清单校验（plugin-manifest.ts）只认 type 的**字面格式**——它必须零依赖，
+ * 因为前端有一份字节级镜像；于是 `type: 'clock'` 这种「格式合法、卡片不存在」
+ * 的载荷能一路通过校验，安装后只是画布上一个渲染不出来的空位。
+ * 这道核对交给持有模块目录的调用方（市场写入边界、AI 规划返回处）。
+ */
+export function findUnknownWorkspaceWidgetTypes(input: unknown): string[] {
+  if (!input || typeof input !== 'object') return []
+  const payload = (input as { payload?: unknown }).payload
+  const boards = (payload as { boards?: unknown } | undefined)?.boards
+  if (!Array.isArray(boards)) return []
+  const unknown: string[] = []
+  for (const board of boards) {
+    const widgets = (board as { widgets?: unknown } | undefined)?.widgets
+    if (!Array.isArray(widgets)) continue
+    for (const widget of widgets) {
+      const type = typeof (widget as { type?: unknown } | undefined)?.type === 'string'
+        ? String((widget as { type: string }).type).trim()
+        : ''
+      if (!type || BUILTIN_WIDGET_CATALOG[type]) continue
+      if (!unknown.includes(type)) unknown.push(type)
+    }
+  }
+  return unknown
+}
+
+/**
+ * core 清单校验 + 模块目录核对的联合入口，插件写入边界（发布/更新/AI 生成）应当用它。
+ * 校验失败时把目录错误并进已有错误一起返回，作者一次就能看全问题。
+ */
+export function validatePluginManifestWithCatalog(input: unknown): PluginManifestValidation {
+  const validated = validateAndCleanPluginManifest(input)
+  const unknownTypes = findUnknownWorkspaceWidgetTypes(validated.ok ? validated.manifest : input)
+  if (unknownTypes.length === 0) return validated
+  const detail = `工作台预设的模块类型在本部署没有对应卡片：${unknownTypes.join('、')}。合法类型：${WIDGET_TYPE_NAMES.join(' / ')}`
+  return validated.ok ? { ok: false, errors: [detail] } : { ok: false, errors: [...validated.errors, detail] }
 }
 
 /**

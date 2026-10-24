@@ -29,7 +29,7 @@ export function QuickActions() {
               <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden />
               <span className="min-w-0">
                 <span className="block truncate font-medium">{label}</span>
-                <span className="block truncate text-[11px] text-muted-foreground">{hint}</span>
+                <span className="block truncate text-[11px] text-muted-foreground" aria-hidden>{hint}</span>
               </span>
             </span>
             <ArrowRight

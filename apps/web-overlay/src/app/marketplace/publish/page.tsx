@@ -255,10 +255,10 @@ export default function PluginPublishPage() {
               {
                 name: '极速效率看板',
                 widgets: [
-                  { type: 'clock', colSpan: 4, rowSpan: 1 },
-                  { type: 'search', colSpan: 8, rowSpan: 1 },
-                  { type: 'favorites', colSpan: 6, rowSpan: 2 },
-                  { type: 'quick-notes', colSpan: 6, rowSpan: 2 },
+                  { type: 'clock-pomodoro', colSpan: 4, rowSpan: 1 },
+                  { type: 'quick-search', colSpan: 8, rowSpan: 1 },
+                  { type: 'favorites-dock', colSpan: 6, rowSpan: 2 },
+                  { type: 'markdown-notes', colSpan: 6, rowSpan: 2 },
                 ],
               },
             ],

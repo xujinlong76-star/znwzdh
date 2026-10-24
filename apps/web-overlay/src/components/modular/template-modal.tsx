@@ -12,7 +12,12 @@ interface TemplateModalProps {
 }
 
 export function TemplateModal({ isOpen, onClose, onApplyTemplate }: TemplateModalProps) {
-  const { containerProps, scrim } = useOverlayBehavior({ open: isOpen, onClose })
+  const { containerProps, scrim } = useOverlayBehavior({
+    open: isOpen,
+    onClose,
+    // 对话框名称指向可见标题：读屏打开时先念「套用官方预设模版」，而不是只念内容
+    ariaLabelledBy: 'navhub-template-modal-title',
+  })
 
   if (!isOpen) return null
 
@@ -30,7 +35,7 @@ export function TemplateModal({ isOpen, onClose, onApplyTemplate }: TemplateModa
               <LayoutTemplate className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-foreground">套用官方预设模版</h2>
+              <h2 id="navhub-template-modal-title" className="text-base font-bold text-foreground">套用官方预设模版</h2>
               <p className="text-xs text-muted-foreground">根据你的角色偏好快速切换最佳模块组合</p>
             </div>
           </div>

@@ -54,12 +54,26 @@ async function loadMarketPluginList(query: URLSearchParams): Promise<HubPluginsR
   if (!first) return null
   const items = [...first.items]
   const total = first.total
-  while (items.length < total && items.length < MARKET_SSR_LIMIT) {
-    const nextQuery = new URLSearchParams(query)
-    nextQuery.set('offset', String(items.length))
-    const next = await hubGet<HubPluginsResponse>('/api/plugins?' + nextQuery.toString(), 60)
-    if (!next || next.items.length === 0) break
-    items.push(...next.items)
+  // 还缺几块一次并发发起（300 条封顶 = 最多再两块）：offset 只由固定页大小决定，
+  // 不依赖上一块的返回内容，串行 await 等于给市场页首屏白加两个中枢往返。
+  // 第一块就没装满页 = 中枢已经没有更多了，不再按 total 补发（补发会按错位 offset 取回重复项）。
+  const wanted = Math.min(total, MARKET_SSR_LIMIT)
+  const offsets: number[] = []
+  if (items.length >= MARKET_LIST_PAGE_SIZE) {
+    for (let offset = items.length; offset < wanted; offset += MARKET_LIST_PAGE_SIZE) offsets.push(offset)
+  }
+  const blocks = await Promise.all(
+    offsets.map((offset) => {
+      const nextQuery = new URLSearchParams(query)
+      nextQuery.set('offset', String(offset))
+      return hubGet<HubPluginsResponse>('/api/plugins?' + nextQuery.toString(), 60)
+    }),
+  )
+  // 按块序拼接，遇到失败/空块即停：宁可少种几条内链，也不要在种子列表里留空洞
+  for (const block of blocks) {
+    if (!block || block.items.length === 0) break
+    items.push(...block.items)
+    if (items.length >= MARKET_SSR_LIMIT) break
   }
   return { items, total }
 }

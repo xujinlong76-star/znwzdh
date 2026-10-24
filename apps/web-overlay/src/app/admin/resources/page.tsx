@@ -1,6 +1,7 @@
 'use client'
 
 import { EmptyState } from '@/components/ui/empty-state'
+import { safeHref } from '@/lib/safe-url'
 import { useEffect, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -652,7 +653,7 @@ export default function ResourceManagement() {
                   {/* 图片遮罩层和预览按钮 - 进一步缩小 */}
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
                     <a
-                      href={resource.items[0].url}
+                      href={safeHref(resource.items[0].url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="bg-white/10 backdrop-blur-sm text-white px-2 py-0.5 rounded-full 

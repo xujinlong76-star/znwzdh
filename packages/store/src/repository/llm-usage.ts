@@ -7,6 +7,7 @@
  *
  *   - 写入：每次模型调用一条（成功与失败都记，失败记 error_code）；
  *   - 聚合：总量 / 成功率 / p50 / p95 / 按场景 / 按来源 / 真实小时分桶；
+ *   - 合计：`sumLlmUsage` 只回三个标量，是额度闸门每次调用前的读路径；
  *   - 清理：按 retention 删除旧行（与 events 的保留策略一致）。
  *
  * 身份只存调用方传入的标识（匿名 anonId 或登录 userId），与 events 表口径一致；
@@ -234,6 +235,66 @@ export async function aggregateLlmUsage(
       .sort((a, b) => b.count - a.count),
     hourly,
     firstAt,
+  };
+}
+
+/**
+ * 窗口内的用量合计（次数 / token / 失败数），供额度闸门使用。
+ *
+ * 与 `aggregateLlmUsage` 的分工：那个要分场景、分来源、小时分桶，给面板看；
+ * 这里只要三个标量，且必须在**每次模型调用前**跑，所以走单条聚合 SQL、
+ * 不拉明细行（明细拉回来再在 JS 里加，等于给额度检查加一次全窗口扫描）。
+ *
+ * `identity` 三态：
+ *   - 传字符串 -> 只算这个身份（登录 userId / 匿名 anonId 都是字符串）；
+ *   - 显式传 null -> 只算 `identity IS NULL` 的行（任务队列、巡检等无归属流量，
+ *     它们共用同一个池，所以这一档天然是「合池」而非「每人」）；
+ *   - 不传（undefined）-> 全窗口合计，用于保护运维者那把系统 key 的总预算。
+ *
+ * `excludeUserSource` 只算 `source <> 'user'` 的行：即**花运维者 key** 的那部分。
+ * 用户自带密钥（source='user'）不计入全局预算，否则一个人配了 key 就把全站额度吃掉。
+ *
+ * `firstAt` 是窗口内最早一条的时间：滚动额度下它决定什么时候腾出空间，
+ * 服务端据此给 `Retry-After`（给「now+24h」会让用户白等半天）。
+ */
+export interface LlmUsageTotals {
+  calls: number;
+  tokens: number;
+  errorCalls: number;
+  firstAt: number | null;
+}
+
+export async function sumLlmUsage(
+  repo: Repository,
+  options: { since: number; until?: number; identity?: string | null; excludeUserSource?: boolean },
+): Promise<LlmUsageTotals> {
+  const since = options.since;
+  const until = options.until ?? Date.now();
+  const args: unknown[] = [since, until];
+  // ok 在 PostgreSQL 是 BOOLEAN、在 SQLite 是 0/1：`CASE WHEN ok` 对两个方言都成立，
+  // `ok = 0` 只在 SQLite 成立（详见 recordLlmUsage 里的同类注释）。
+  let sql =
+    "SELECT COUNT(*) AS calls, COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS tokens, " +
+    "SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS errs, MIN(created_at) AS first_at FROM llm_usage " +
+    "WHERE created_at >= ? AND created_at <= ?";
+  if (options.identity !== undefined) {
+    if (options.identity === null) sql += " AND identity IS NULL";
+    else {
+      sql += " AND identity = ?";
+      args.push(String(options.identity).slice(0, 64));
+    }
+  }
+  if (options.excludeUserSource) {
+    sql += " AND source <> 'user'";
+  }
+  const rows = await repo.raw(sql, args);
+  const row = rows[0] ?? {};
+  const firstAt = num(row.first_at);
+  return {
+    calls: num(row.calls),
+    tokens: num(row.tokens),
+    errorCalls: num(row.errs),
+    firstAt: firstAt > 0 ? firstAt : null,
   };
 }
 

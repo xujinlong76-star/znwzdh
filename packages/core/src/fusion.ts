@@ -110,7 +110,8 @@ export function personalCandidates(
   const catSet = new Set(signals.topCategories ?? []);
   const tagSet = new Set(signals.topTags ?? []);
   const visited = new Set(signals.visitedSiteIds ?? []);
-  if (catSet.size === 0 && tagSet.size === 0 && visited.size === 0) return [];
+  const favorited = new Set(signals.favoriteSiteIds ?? []);
+  if (catSet.size === 0 && tagSet.size === 0 && visited.size === 0 && favorited.size === 0) return [];
 
   const scored: Array<{ siteId: string; affinity: number }> = [];
   for (const site of sites.values()) {
@@ -119,6 +120,8 @@ export function personalCandidates(
     const tagHits = site.tags.filter((t) => tagSet.has(t)).length;
     if (tagHits > 0) affinity += Math.min(0.3, 0.15 * tagHits);
     if (visited.has(site.siteId)) affinity += 0.2;
+    // 收藏是比「点过」更强的偏好表达：+0.3，与 visited 拉开档位但不超过类目命中
+    if (favorited.has(site.siteId)) affinity += 0.3;
     if (affinity > 0) scored.push({ siteId: site.siteId, affinity });
   }
   if (scored.length === 0) return [];

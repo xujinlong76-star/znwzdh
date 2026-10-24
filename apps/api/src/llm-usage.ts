@@ -82,7 +82,9 @@ export async function callLlm(
         completionTokens: res.usage?.completionTokens,
         latencyMs,
         ok: true,
-        thinking,
+        // 端点拒收思维链参数时会去参重试；记账必须按「实际下发」而不是「请求了」，
+        // 否则大盘的「思考调用数」把没思考的调用也算进去了。
+        thinking: res.thinkingApplied ?? thinking,
       });
 
       return res;

@@ -15,6 +15,7 @@
  */
 
 import { useEffect, useState, useMemo } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { FavoriteButton } from '@/components/favorite-button'
 import { Button } from '@/components/ui/button'
@@ -30,17 +31,24 @@ export function TagResultsBoard({
   slug,
   initialSites,
   degraded: initialDegraded,
+  initialTruncated = false,
   tagDescription,
 }: {
   slug: string
   initialSites: HubSite[]
   degraded: boolean
+  /**
+   * 本标签收录超出单次取数上限（100）：页面列出的是前 100 个，不是全部。
+   * 不传这个标记，hero 上的「共 N 个站点」就是在报假总数。
+   */
+  initialTruncated?: boolean
   /** 标签自身描述（≥5 站标签已由 scripts/tag-descriptions.mjs 回填）；null 时 hero 用通用文案 */
   tagDescription?: string | null
 }) {
   const [sites, setSites] = useState<HubSite[]>(initialSites)
   const [loading, setLoading] = useState(false)
   const [degraded, setDegraded] = useState(initialDegraded)
+  const [truncated, setTruncated] = useState(initialTruncated)
   const identity = useMemo(() => getIdentity(), [])
   const [reloadToken, setReloadToken] = useState(0)
 
@@ -60,6 +68,7 @@ export function TagResultsBoard({
           .filter((s): s is HubSite => s !== null && s.status === 'active'),
       )
       setDegraded(Boolean(res.degraded))
+      setTruncated(Boolean(res.hasMore))
       setLoading(false)
     })
     return () => {
@@ -87,7 +96,7 @@ export function TagResultsBoard({
                 </div>
                 <span>「{slug}」相关站点</span>
                 <span className="text-xs font-mono font-normal text-muted-foreground px-2.5 py-0.5 rounded-full bg-muted border border-border/60">
-                  共 {sites.length} 个站点
+                  {truncated ? `本页列出 ${sites.length} 个站点（可能还有更多）` : `共 ${sites.length} 个站点`}
                 </span>
               </h1>
               <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
@@ -179,7 +188,7 @@ export function TagResultsBoard({
               className="relative group rounded-xl border border-border/70 glass-surface subtle-mesh p-4 transition-all duration-200 hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 flex flex-col justify-between"
             >
               <a
-                href={site.url}
+                href={safeHref(site.url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`访问 ${site.title} 官网（新窗口打开）`}
@@ -220,6 +229,18 @@ export function TagResultsBoard({
             </div>
           ))}
         </div>
+      )}
+
+      {truncated && !degraded && (
+        // 取数上限截断时必须说出来：否则用户翻到底以为「这个标签就这些站点」，
+        // 而后面还有 —— 页面上没有任何一条通道能到达它们。
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          本页最多列出 100 个站点，「{slug}」还有更多收录没有显示在这里。可以用上面的搜索框换关键词继续找，或到
+          <Link href="/sites" className="underline underline-offset-2 hover:no-underline mx-1">
+            全部站点目录
+          </Link>
+          按收录顺序浏览。
+        </p>
       )}
     </div>
   )

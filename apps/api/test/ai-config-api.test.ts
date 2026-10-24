@@ -21,6 +21,7 @@ const ADMIN = "/api/admin/ai/config";
 const ADMIN_TEST = "/api/admin/ai/config/test";
 const USER = "/api/user/ai/config";
 const CHAT = "/api/user/ai/chat";
+const OBSERVABILITY = "/api/admin/ai/observability?window=24h";
 
 /** 公网 IP 字面量：SSRF 校验无需 DNS，也不会真的发请求（除非显式测试连通性） */
 const PUBLIC_URL = "http://93.184.216.34/v1";
@@ -459,12 +460,52 @@ describe("用户级配置（个人设置）", () => {
     expect(body.totalTokens).toBeGreaterThan(0);
     expect(body.promptTokens).toBeGreaterThan(0);
     expect(body.completionTokens).toBeGreaterThan(0);
-    expect(body.estimatedCostRmb).toBeGreaterThanOrEqual(0);
-    expect(body.activeModel).toBeDefined();
+    // 单价没配 = 折算不出来，必须写 null；硬编一个 ¥ 数就是给运维放假账
+    expect(body.estimatedCostRmb).toBeNull();
+    expect(body.costUnitPriceRmb).toBeNull();
+    expect(body.activeModel).toBe("agnes-3.0-flash");
     expect(Array.isArray(body.byScenario)).toBe(true);
     expect(Array.isArray(body.hourlyTrend)).toBe(true);
     expect(body.hourlyTrend.length).toBe(24);
     expect(Array.isArray(body.recentLogs)).toBe(true);
+  });
+
+  it("额度闸门读数：limit=0 是「未启用」，按人计量档 used 为 null", async () => {
+    const res = await app.inject({ method: "GET", url: OBSERVABILITY });
+    expect(res.statusCode).toBe(200);
+    const quota = res.json().quota;
+    expect(quota.windowHours).toBe(24);
+    // 测试配置把 NAVHUB_LLM_QUOTA_* 全置 0 → 三档都未启用，但读数结构必须在
+    for (const tier of ["identity", "anonymous", "system"]) {
+      expect(quota[tier].calls.limit).toBe(0);
+      expect(quota[tier].tokens.limit).toBe(0);
+    }
+    // 单身份档按人分别计量，大盘拿不到「这一档总共用了多少」
+    expect(quota.identity.calls.used).toBeNull();
+    expect(quota.identity.tokens.used).toBeNull();
+    expect(typeof quota.anonymous.calls.used).toBe("number");
+    expect(typeof quota.system.calls.used).toBe("number");
+  });
+
+  it("配置成本单价后大盘才折算花费（不区分输入输出）", async () => {
+    const save = await app.inject({
+      method: "PUT",
+      url: ADMIN,
+      payload: { baseUrl: PUBLIC_URL, model: "agnes-3.0-flash", costPer1kTokensRmb: 0.01 },
+    });
+    expect(save.statusCode).toBe(200);
+    expect(save.json().config.costPer1kTokensRmb).toBe(0.01);
+
+    try {
+      const body = (await app.inject({ method: "GET", url: OBSERVABILITY })).json();
+      expect(body.costUnitPriceRmb).toBe(0.01);
+      expect(typeof body.estimatedCostRmb).toBe("number");
+      expect(body.estimatedCostRmb).toBe(
+        Number(((body.totalTokens / 1000) * 0.01).toFixed(4)),
+      );
+    } finally {
+      await app.inject({ method: "POST", url: `${ADMIN}/reset` });
+    }
   });
 });
 

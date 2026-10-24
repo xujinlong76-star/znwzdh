@@ -18,11 +18,14 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { BookmarkPlus, Command, Star, X, ArrowRight } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import { getModifierKey } from '@/lib/platform'
+import { spotlightHotkeyHint, useSpotlightShortcutMode } from '@/lib/user-preferences'
 
 const STORAGE_KEY = 'navhub:onboarding:v1'
 
 export function OnboardingCard() {
   const [visible, setVisible] = useState(false)
+  const shortcutHint = spotlightHotkeyHint(useSpotlightShortcutMode(), getModifierKey())
 
   useEffect(() => {
     // 必须等挂载后再读 localStorage：服务端渲染时没有它，
@@ -92,8 +95,7 @@ export function OnboardingCard() {
             2. 用键盘搜索
           </div>
           <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
-            按 <kbd className="rounded border px-1">⌘K</kbd> 或{' '}
-            <kbd className="rounded border px-1">/</kbd> 唤起；支持拼音（qdjb）与自然语言。
+            按 <kbd className="rounded border px-1">{shortcutHint}</kbd> 唤起；支持拼音（qdjb）与自然语言。
           </p>
           <Button
             size="sm"

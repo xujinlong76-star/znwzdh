@@ -32,7 +32,7 @@ describe("PWA: 离线阅读接线", () => {
     const sw = overlaySource("public/sw.js")
     expect(sw).toContain("'/offline'")
     expect(sw).toContain("precacheOfflineAssets")
-    expect(sw).toContain("navhub-v4")
+    expect(sw).toContain("navhub-v5")
   })
 
   it("离线提示可以跳到离线阅读页", () => {

@@ -13,7 +13,9 @@
  * /me 页面显示待处理状态。未登录时清掉陈旧 userId，回落到匿名身份。
  */
 import { useEffect } from 'react'
+import { probeClientSession } from '@/lib/client-session'
 import { clearIdentity, getAnonId, getIdentity, setIdentity } from '@/lib/identity'
+import { USER_ID_STORAGE_KEY } from '@/lib/identity-keys'
 import { canonicalUserId } from '@/lib/me-identity'
 
 export function SessionSync() {
@@ -35,10 +37,12 @@ export function SessionSync() {
       }
 
       try {
-        const res = await fetch('/api/auth/session', { cache: 'no-store' })
-        if (!res.ok) return
-        const session = (await res.json()) as { user?: { id?: string } }
-        if (!session?.user?.id) {
+        const probe = await probeClientSession()
+        // 取不到会话 ≠ 未登录：网络中断 / 非 2xx / 正文坏了都保持本机身份，
+        // 否则一次抖动就会把已同步的 userId 清掉，用户「掉回匿名」并重新触发合并
+        if (probe.kind !== 'ok') return
+        const session = probe.session
+        if (!session.user?.id) {
           clearIdentity()
           return
         }
@@ -51,7 +55,7 @@ export function SessionSync() {
         let identity = expected
         let storedUserId: string | null = null
         try {
-          storedUserId = window.localStorage.getItem('navhub.userId')
+          storedUserId = window.localStorage.getItem(USER_ID_STORAGE_KEY)
         } catch {
           storedUserId = null
         }

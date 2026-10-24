@@ -8,6 +8,7 @@ import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { categoryItemListLd, itemListLd } from '@/lib/seo/json-ld'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
 import { descendantSiteCounts } from '@/lib/seo/category-totals'
+import { maxReachableCategoryPage } from '@/lib/seo/category-pagination'
 import { categoryHref, categoryUrlKey } from '@/lib/seo/category-url'
 import { tagSlug } from '@/lib/seo/tag-slug'
 import type { HubSite } from '@/lib/navhub-api'
@@ -181,6 +182,13 @@ export async function CategoryBoard({
   // 向前渲染未来页码会把用户/爬虫送到尚未确认存在的第 N 页（404）。
   const from = Math.max(1, requested - MAX_PAGE_LINKS + 1)
 
+  // 中枢 /api/search 的 offset 上限决定了「最深能翻到第几页」（PAGE_SIZE=60 时是 17 页）。
+  // 再往后的页码在 `/category/{slug}/p/{n}` 里已被硬挡成 404，所以这里既不能把
+  // 「下一页」链过去（等于造一个死链），也要如实告诉用户剩下的站点走哪条路。
+  const deepestPage = maxReachableCategoryPage(PAGE_SIZE)
+  const totalInCategory = categoryPageTotal(data)
+  const hasSitesBeyondDeepestPage = totalInCategory > deepestPage * PAGE_SIZE
+
   return (
     <>
       <Container as="main" id="main-content">
@@ -209,6 +217,18 @@ export async function CategoryBoard({
                 : category?.description ??
                   `本页列出「${name}」分类下的 ${sites.length} 个站点，可进入详情查看简介、标签与同类推荐。`}
             </p>
+            {hasSitesBeyondDeepestPage && !degraded ? (
+              // 不说这句，用户翻到最后一页会以为「这个分类就只有这些站点」，
+              // 而实际上后面还有——只是翻页机制到不了。给一条能走通的路。
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                本分类共收录 {totalInCategory} 个站点，翻页最深只到第 {deepestPage} 页（约 {deepestPage * PAGE_SIZE} 个）。
+                想看剩下的，可以用页内搜索、{isRootPage ? '下面的子分类' : '同组的其他分类'}或
+                <Link href="/tags" className="underline underline-offset-2 hover:no-underline">
+                  按标签浏览
+                </Link>
+                。
+              </p>
+            ) : null}
             <nav aria-label="站内目录" className="flex flex-wrap items-center gap-3 text-xs pt-1">
               <Link href="/category" className="text-primary hover:underline">
                 全部分类
@@ -306,7 +326,7 @@ export async function CategoryBoard({
                   {n}
                 </Link>
               ))}
-              {res?.hasMore ? (
+              {res?.hasMore && requested < deepestPage ? (
                 <Link
                   href={categoryHref(urlKey, requested + 1)}
                   className="px-3 py-1.5 text-xs rounded-md border border-border/70 hover:bg-muted/50"

@@ -11,13 +11,17 @@
  *
  * 匹配规则（刻意保持可预测）：
  *   - 关键词按空白拆成多个词，**每个词**都要命中（AND），词之间可跨字段；
- *   - 命中范围：标题 / 链接 / 描述，均不区分大小写（中文直接子串匹配）；
+ *   - 命中范围：标题 / 链接 / 描述 / 备注 / 标签，均不区分大小写（中文直接子串匹配）；
  *   - 空关键词 = 不过滤，并且**原样返回入参数组**（引用不变，避免无谓重渲染）。
  */
 export interface FilterableFavorite {
   title: string
   href: string
   description?: string
+  /** 备注与标题/链接/描述同入检索范围（T16）：用户写的备注恰恰是检索线索 */
+  note?: string
+  /** 标签（T22）同入检索范围 */
+  tags?: string[]
 }
 
 /** 把用户输入拆成检索词：去空白、转小写、去重、丢掉空串 */
@@ -33,7 +37,7 @@ export function parseFavoriteQuery(query: string): string[] {
 export function matchesFavoriteQuery(item: FilterableFavorite, query: string): boolean {
   const terms = parseFavoriteQuery(query)
   if (terms.length === 0) return true
-  const haystack = [item.title, item.href, item.description ?? '']
+  const haystack = [item.title, item.href, item.description ?? '', item.note ?? '', (item.tags ?? []).join(' ')]
     .join(' ')
     .toLowerCase()
   return terms.every((term) => haystack.includes(term))

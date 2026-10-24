@@ -308,6 +308,31 @@ export function identityAllowed(ctx: AppContext, req: { auth?: { kind?: string }
  * 反例：不要用它替换「写进程级共享状态」这类路由的闸门（`POST /api/tools/synthesize`、
  * `POST /api/p2p/signal`），那些要求的确实是持票。
  */
+/**
+ * 请求的**有效**身份（T20）：用户级令牌的 owner 优先，其次既有自称链路。
+ *
+ * 为什么不改 identityOf：签名 hook 在 preValidation 阶段用 identityOf 判定
+ * 「要不要验签」——把 owner 混进去会让无签名的令牌请求被误判为需要验签。
+ * 这里只在**业务取数**时使用（签名校验之后），时序红线与 resolveCanonicalIdentity 相同。
+ */
+export function requestIdentityOf(req: { auth?: { ownerIdentity?: string | null } }): string | null {
+  const owner = (req as { auth?: { ownerIdentity?: string | null } }).auth?.ownerIdentity;
+  if (owner) return owner;
+  return identityOf(req as never);
+}
+
+/**
+ * 用户域写路径守卫（T20）：会话/BFF 流程不受影响（无 owner 恒放行，闸门仍由
+ * identityTrusted + 签名承担）；个人令牌写自己的数据必须持 write scope——
+ * 自建令牌 v1 只发 read，让「误把令牌贴进不可信环境」的爆炸半径停在只读。
+ */
+export function userDomainWriteAllowed(req: { auth?: { kind?: string; scopes?: string[]; ownerIdentity?: string | null } }): boolean {
+  const auth = (req as { auth?: { kind?: string; scopes?: string[]; ownerIdentity?: string | null } }).auth;
+  if (!auth?.ownerIdentity) return true;
+  const scopes = auth.scopes ?? [];
+  return scopes.includes("write") || scopes.includes("admin");
+}
+
 export function identityTrusted(ctx: AppContext, req: { auth?: { kind?: string } }): boolean {
   if (ctx.config.identitySecret) return true;
   return identityAllowed(ctx, req);

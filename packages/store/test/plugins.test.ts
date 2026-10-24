@@ -1021,4 +1021,26 @@ describe("E4/E3 漏斗、治理与 F2 短链", () => {
     expect(await repo.resolveShortLink("eviltest")).toBeNull();
     expect(await repo.resolveShortLink("missing1")).toBeNull();
   });
+
+  it("短链：字面前缀过关但规范化后跑路的 target，写入与读回都拦", async () => {
+    // 三条都是「startsWith('/marketplace/') === true」的逃逸形态，
+    // 只判前缀的旧实现会全部放行。
+    const escapes = [
+      "/marketplace/../../admin",
+      "/marketplace/x/../../../api/users",
+      "/marketplace/..\\..\\evil.example",
+    ];
+    for (const target of escapes) {
+      await expect(repo.createShortLink({ target })).rejects.toThrow(/marketplace/);
+      const code = `esc${target.length}`;
+      await repo.run("INSERT INTO short_links (code, target, plugin_slug, clicks, created_at) VALUES (?,?,?,?,?)", [
+        code,
+        target,
+        null,
+        0,
+        Date.now(),
+      ]);
+      expect(await repo.resolveShortLink(code), target).toBeNull();
+    }
+  });
 });

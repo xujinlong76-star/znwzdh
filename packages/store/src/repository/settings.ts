@@ -112,6 +112,33 @@ export function parseExtendedPreferences(raw: unknown): ExtendedUserPreferences 
   };
 }
 
+/**
+ * 列出「显式设置了历史保留期」的用户（T11）：
+ * LIKE 预筛 + 应用层 JSON 解析，双方言通用（json_extract 语法分叉不值得）。
+ * 只返回解析出的 (identity, retentionDays)；无设置 / 坏 JSON 一律跳过——
+ * 自动清理必须以用户显式选择为准，绝不按缺省值动手。
+ */
+export async function listCustomHistoryRetention(
+  repo: Repository,
+): Promise<Array<{ identity: string; retentionDays: number }>> {
+  const rows = await repo.raw(
+    "SELECT user_id, preferences_json FROM user_settings WHERE preferences_json LIKE '%historyRetentionDays%'",
+  );
+  const out: Array<{ identity: string; retentionDays: number }> = [];
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(String(row.preferences_json ?? "{}")) as { historyRetentionDays?: unknown };
+      const days = Number(parsed.historyRetentionDays);
+      if (Number.isFinite(days) && days > 0 && days !== 180) {
+        out.push({ identity: String(row.user_id), retentionDays: Math.trunc(days) });
+      }
+    } catch {
+      // 坏 JSON：跳过该用户，不因自动清理解析失败而中断整轮任务
+    }
+  }
+  return out;
+}
+
 export async function getUserSettings(repo: Repository, identity: string): Promise<UserSettingsRecord> {
   const row = (
     await repo.raw(

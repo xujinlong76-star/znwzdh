@@ -39,6 +39,8 @@ export interface LocalFavorite {
   icon?: string
   description?: string
   note?: string
+  /** 标签（T22）：≤8 个、各 ≤24 字符（写入端截断归一）；undefined = 未打标签 */
+  tags?: string[]
   /** 云端收藏夹 id（匿名/离线时为空，登录后由云端元数据合并） */
   folderId?: string | null
   createdAt: number
@@ -87,14 +89,24 @@ export interface FavoritesApi {
   toggle: (site: Omit<LocalFavorite, 'createdAt'>) => Promise<boolean>
   remove: (siteId: string) => void
   /** 收藏管理：更新本地缓存的文件夹/备注（云端写入由调用方 best-effort 处理） */
-  updateMeta: (siteId: string, patch: { folderId?: string | null; note?: string | null }) => boolean
+  updateMeta: (siteId: string, patch: { folderId?: string | null; note?: string | null; tags?: string[] | null }) => boolean
+  /** 删除收藏夹后批量置空 folderId（一次持久化 + 一次脏标记，T16） */
+  clearFolderForItems: (siteIds: string[]) => boolean
   /** 登录同步成功后用云端列表整体替换本地（云端是事实源，避免删除被本地缓存复活） */
   replaceAll: (items: LocalFavorite[]) => boolean
   clear: () => void
-  /** 用户显式重置：先把读不出来的原数据备份到旁边，再写空列表 */
-  resetLocal: () => void
+  /**
+   * 用户显式重置：先把读不出来的原数据备份到隔离键，再写空列表。
+   * 返回值说明备份到底成没成 —— 调用方要照着它措辞，不能一律说「已备份」
+   * （配额满时原数据其实没留住，那句承诺会让用户以为还能找回）。
+   */
+  resetLocal: () => { backedUp: boolean }
   exportJson: () => string
-  importJson: (json: string) => { ok: boolean; imported: number; error?: string }
+  /**
+   * `skippedInvalid`：被过滤掉的格式不完整条目数（缺 siteId/href）。
+   * 调用方必须把它报出来——否则「已导入 N 条」会把静默丢弃说成完整成功。
+   */
+  importJson: (json: string) => { ok: boolean; imported: number; skippedInvalid: number; error?: string }
 }
 
 /* ---------------------------- 模块级共享状态 ---------------------------- */
@@ -169,13 +181,22 @@ export function useFavorites(): FavoritesApi {
   )
 
   /** 用户显式重置：原数据先备份到 `.corrupt.<时间戳>`，再落到空列表 */
-  const resetLocal = useCallback(() => {
+  const resetLocal = useCallback((): { backedUp: boolean } => {
+    let backedUp = false
     try {
       const raw = window.localStorage.getItem(KEY)
-      if (raw) window.localStorage.setItem(corruptBackupKey(Date.now()), raw)
-    } catch (err) {
-      // 备份写不进去（配额满）也要继续重置，但把这件事说出来，别让它静默
-      console.warn('收藏原数据备份失败；重置后原数据可能无法找回', err)
+      if (raw) {
+        const backupKey = corruptBackupKey(Date.now())
+        window.localStorage.setItem(backupKey, raw)
+        // 回读比对：setItem 在配额满时会抛（或静默失败），只按“调用过了”就宣称已备份，
+        // 就是替用户把一个找不回数据的决定说成安全的。
+        backedUp = window.localStorage.getItem(backupKey) === raw
+      } else {
+        // 本来就没有原文（存储里是空的）：没什么可备份的，重置依然是安全的
+        backedUp = true
+      }
+    } catch {
+      backedUp = false
     }
     // 重置意味着本地记录被丢弃：游标也必须一起清，否则下次增量会从「旧水位」
     // 开始，被清空的那段云端数据永远拉不回来（重拉全量是幂等的）。
@@ -190,6 +211,7 @@ export function useFavorites(): FavoritesApi {
     // 重置 = 本地记录整体丢弃：脏标记一起清（游标上面已经清了，下次同步重拉全量，
     // 拉回来的内容就是云端事实源，没有「待推」可言）
     clearDirty()
+    return { backedUp }
   }, [])
 
   const isFavorite = useCallback((siteId: string) => items.some((i) => i.siteId === siteId), [items])
@@ -226,20 +248,54 @@ export function useFavorites(): FavoritesApi {
     if (identity) void removeFavorite(identity, siteId)
   }, [persist])
 
-  const updateMeta = useCallback((siteId: string, patch: { folderId?: string | null; note?: string | null }) => {
+  const updateMeta = useCallback((siteId: string, patch: { folderId?: string | null; note?: string | null; tags?: string[] | null }) => {
     const current = sharedFavorites
     if (!current.some((i) => i.siteId === siteId)) return false
     const next = current.map((i) => {
       if (i.siteId !== siteId) return i
       const merged: LocalFavorite = { ...i }
       if (patch.folderId !== undefined) merged.folderId = patch.folderId
-      // note 允许显式传 null（清空备注），落盘统一成 undefined 保持旧数据形状
-      if (patch.note !== undefined) merged.note = patch.note ?? undefined
+      // note 允许显式传 null（清空备注），落盘统一成 undefined 保持旧数据形状；
+      // ≤200 字是云端契约，超长在写入端就截断（输入框另有 maxLength 双保险）
+      if (patch.note !== undefined) {
+        const note = patch.note ?? undefined
+        merged.note = note && note.length > 200 ? note.slice(0, 200) : note
+      }
+      // 标签（T22）：null = 清除；数组做与云端同口径的归一（≤8 个、各 ≤24 字符、去重）
+      if (patch.tags !== undefined) {
+        const tags = patch.tags ?? undefined
+        if (!tags || tags.length === 0) {
+          merged.tags = undefined
+        } else {
+          const seen = new Set<string>()
+          for (const raw of tags) {
+            if (typeof raw !== 'string') continue
+            const tag = raw.trim().slice(0, 24)
+            if (!tag) continue
+            seen.add(tag)
+            if (seen.size >= 8) break
+          }
+          merged.tags = seen.size > 0 ? [...seen] : undefined
+        }
+      }
       return merged
     })
     const ok = persist(next)
     // 文件夹 / 备注也是待推变更：页面会 best-effort 直连云端，失败时批量同步是兜底通道
     if (ok) markDirty([siteId])
+    return ok
+  }, [persist])
+
+  /**
+   * 删除收藏夹后批量置空 folderId（T16）：一次 persist + 一次脏标记，
+   * 替代此前「逐条 updateMeta」的 N 次全量序列化（每次 persist 都把整份收藏
+   * 重新写一遍 localStorage，条数多时是 O(N²) 字节写入）。
+   */
+  const clearFolderForItems = useCallback((siteIds: string[]): boolean => {
+    const ids = new Set(siteIds)
+    const next = sharedFavorites.map((i) => (ids.has(i.siteId) ? { ...i, folderId: null } : i))
+    const ok = persist(next)
+    if (ok && ids.size > 0) markDirty([...ids])
     return ok
   }, [persist])
 
@@ -265,12 +321,32 @@ export function useFavorites(): FavoritesApi {
 
   const importJson = useCallback((json: string) => {
     // 存储读不出来时导入同样是写入：先拦住，并把原因作为错误返回（页面会显示）
-    if (storageBlocked) return { ok: false, imported: 0, error: storageBlocked }
+    if (storageBlocked) return { ok: false, imported: 0, skippedInvalid: 0, error: storageBlocked }
     try {
       const parsed = JSON.parse(json)
       const incoming: LocalFavorite[] = Array.isArray(parsed) ? parsed : parsed?.items
-      if (!Array.isArray(incoming)) return { ok: false, imported: 0, error: '格式不正确' }
-      const valid = incoming.filter((i) => i && typeof i.siteId === 'string' && typeof i.href === 'string')
+      if (!Array.isArray(incoming)) return { ok: false, imported: 0, skippedInvalid: 0, error: '格式不正确' }
+      const accepted = incoming.filter((i) => i && typeof i.siteId === 'string' && typeof i.href === 'string')
+      const skippedInvalid = incoming.length - accepted.length
+      const valid = accepted
+        // note 契约 ≤200 字（云端与服务端 zod 同口径）：导入文件可能带更长的
+        // 历史备注，落库前截断，避免同步时才被服务端兜底截断造成两端不一致。
+        // 显式标注返回类型：否则 map 出来的对象把 note 变成「必填的 string|undefined」，
+        // 下面 merge 云端条目（note 可选）时就对不上类型了。
+        // 标签（T22）：导入文件可能带超限标签，落库前归一（≤8 个、各 ≤24 字符）
+        .map((i): LocalFavorite => {
+          const note = typeof i.note === 'string' && i.note.length > 200 ? i.note.slice(0, 200) : i.note
+          if (!Array.isArray(i.tags) || i.tags.length === 0) return { ...i, note, tags: undefined }
+          const seen = new Set<string>()
+          for (const raw of i.tags) {
+            if (typeof raw !== 'string') continue
+            const tag = raw.trim().slice(0, 24)
+            if (!tag) continue
+            seen.add(tag)
+            if (seen.size >= 8) break
+          }
+          return { ...i, note, tags: seen.size > 0 ? [...seen] : undefined }
+        })
       const merged = [...valid]
       for (const ex of sharedFavorites) {
         if (!merged.some((i) => i.siteId === ex.siteId)) merged.push(ex)
@@ -279,13 +355,13 @@ export function useFavorites(): FavoritesApi {
       // 导入进来的条目都是待推变更：云端多半没有它们（换设备导入的场景），
       // 或本地这份是更新版——不进脏集合的话同步永远不会推
       markDirty(valid.map((i) => i.siteId))
-      return { ok: true, imported: valid.length }
+      return { ok: true, imported: valid.length, skippedInvalid }
     } catch (err) {
-      return { ok: false, imported: 0, error: err instanceof Error ? err.message : '解析失败' }
+      return { ok: false, imported: 0, skippedInvalid: 0, error: err instanceof Error ? err.message : '解析失败' }
     }
   }, [persist, storageBlocked])
 
-  return { items, ready, storageBlocked, isFavorite, toggle, remove, updateMeta, replaceAll, clear, resetLocal, exportJson, importJson }
+  return { items, ready, storageBlocked, isFavorite, toggle, remove, updateMeta, clearFolderForItems, replaceAll, clear, resetLocal, exportJson, importJson }
 }
 
 /** 同步游标：仅记录「一次成功同步之后」的版本，失败时绝不推进 */
@@ -479,6 +555,7 @@ export function applyFavoriteDelta(
       icon: cached?.icon,
       description: remote.site?.description ?? cached?.description,
       note: remote.note ?? undefined,
+      tags: remote.tags ?? undefined,
       folderId: remote.folderId,
       createdAt: remote.createdAt || cached?.createdAt || Date.now(),
     }
@@ -602,7 +679,8 @@ export async function syncFavoritesToCloud(): Promise<CloudSyncResult> {
         op: 'add',
         siteId: f.siteId,
         folderId: f.folderId ?? null,
-        note: f.note ?? null,
+        note: f.note && f.note.length > 200 ? f.note.slice(0, 200) : f.note ?? null,
+        tags: f.tags ?? null,
         at: f.createdAt,
       })
     }

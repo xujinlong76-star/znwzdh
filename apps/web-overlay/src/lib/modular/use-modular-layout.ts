@@ -6,17 +6,15 @@ import { WIDGET_REGISTRY, PRESET_TEMPLATES, createWidgetInstance } from './regis
 import { sanitizeWidgetInstances } from './sanitize'
 import { backupCorruptPayload } from './workspace-storage'
 import { STORAGE_KEY } from './layout-storage'
+import type { Board, LayoutImportReport, PresetInstallInput } from './layout-import-plan'
+import { planLayoutImport, planPresetInstall } from './layout-import-plan'
+
+export type { Board } from './layout-import-plan'
 
 export { STORAGE_KEY }
 const LEGACY_STORAGE_KEY = 'navhub_modular_layout_v1'
 /** 撤销栈深度上限：一次拖拽/缩放只算一步，25 步足够回退整段编辑 */
 const HISTORY_LIMIT = 25
-
-export interface Board {
-  id: string
-  name: string
-  widgets: WidgetInstance[]
-}
 
 interface StoredWorkspaceState {
   version: number
@@ -446,59 +444,31 @@ export function useModularLayout() {
   }, [boards, activeBoardId])
 
   // 15. 导入多看板 JSON
-  const importLayoutJson = useCallback((jsonStr: string) => {
-    const isKnownType = (type: string) => Boolean(WIDGET_REGISTRY[type])
-    try {
-      const parsed = JSON.parse(jsonStr)
-      // 过滤已被删除/改名的模块类型：与加载逻辑同源（sanitizeWidgetInstances），
-      // 否则无效类型会渲染成"删不掉的僵尸卡片"（ModularItem 另有降级兜底）
-      if (parsed.boards && Array.isArray(parsed.boards) && parsed.boards.length > 0) {
-        const boardsToImport: Board[] = parsed.boards
-          .filter((b: unknown) => Boolean(b) && typeof b === 'object')
-          .map((b: Board) => ({
-            id: String(b.id || `imported-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
-            name: String(b.name || '导入看板'),
-            widgets: sanitizeWidgetInstances<WidgetInstance>(b.widgets, isKnownType),
-          }))
-          .filter((b: Board) => b.widgets.length > 0)
-        if (boardsToImport.length === 0) return false
-        const prevBoards = boardsRef.current
-        const newHistory = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), prevBoards]
-        historyRef.current = newHistory
-        futureRef.current = []
-        boardsRef.current = boardsToImport
-        setHistory(newHistory)
-        setFuture([])
-        setBoards(boardsToImport)
-        const firstImported = boardsToImport[0]
-        setActiveBoardId(
-          boardsToImport.some((b) => b.id === parsed.activeBoardId)
-            ? String(parsed.activeBoardId)
-            : firstImported?.id || 'default'
-        )
-        return true
-      }
-      // 兼容单看板导入
-      if (parsed.widgets && Array.isArray(parsed.widgets)) {
-        const widgetsToImport = sanitizeWidgetInstances<WidgetInstance>(parsed.widgets, isKnownType)
-        if (widgetsToImport.length === 0) return false
-        const nextBoards: Board[] = [
-          ...boardsRef.current,
-          {
-            id: `imported-${Date.now()}`,
-            name: `导入看板 (${new Date().toLocaleDateString('zh-CN')})`,
-            widgets: widgetsToImport,
-          },
-        ]
-        boardsRef.current = nextBoards
-        setBoards(nextBoards)
-        return true
-      }
-    } catch {
-      // 导入文本不是合法 JSON（或结构认不出来）：返回 false，
-      // 调用方据此提示「格式不正确」—— 这不是静默吞掉，而是失败经由返回值上报
+  /**
+   * 导入工作台 JSON，并如实申报「装了多少、丢了多少、为什么丢」。
+   *
+   * 为什么返回值不是 boolean：净化会剔掉下线的模块类型，整块被剔空的看板也会丢掉，
+   * 这些都不体现在布尔值里。调用方只有一个 true 时就只能写「已成功还原」，
+   * 而用户以为拿回了 6 个看板 40 个模块，实际画布上只剩 2 个 —— 谎报全量。
+   */
+  const importLayoutJson = useCallback((jsonStr: string): LayoutImportReport => {
+    const plan = planLayoutImport(jsonStr, (type) => Boolean(WIDGET_REGISTRY[type]))
+    // 一条都没剩下时**不动 state**：把画布清空比什么都不做更糟
+    if (!plan.report.ok) return plan.report
+
+    const prevBoards = boardsRef.current
+    const nextBoards = plan.mode === 'replace' ? plan.boards : [...prevBoards, ...plan.boards]
+    if (plan.mode === 'replace') {
+      const newHistory = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), prevBoards]
+      historyRef.current = newHistory
+      futureRef.current = []
+      setHistory(newHistory)
+      setFuture([])
     }
-    return false
+    boardsRef.current = nextBoards
+    setBoards(nextBoards)
+    if (plan.activeBoardId) setActiveBoardId(plan.activeBoardId)
+    return plan.report
   }, [])
 
   // 16. 智能紧凑网格重排
@@ -544,43 +514,21 @@ export function useModularLayout() {
   }, [updateCurrentWidgets])
 
   // 17. 插件市场工作台预设安装 (Plugin Preset Installer)
+  /**
+   * 安装 workspace-preset（插件市场清单 payload 或 AI 生成的布局）。
+   *
+   * payload 是**外部输入**：远端 tap 的清单、AI 返回的布局都可能带着已下线的模块类型，
+   * 甚至带着 `null` 条目。以前这里既会静默剔空（然后调用方报「安装成功」），
+   * 也会在 `w.type` 上直接抛 TypeError。现在逐因计数，并且认不出结构时不动 state。
+   */
   const installWidgetPreset = useCallback(
-    (
-      preset?: {
-        boards?: Array<{
-          name?: string
-          widgets?: Array<Record<string, unknown>>
-        }>
-      } | null,
-      mode: 'append' | 'replace' = 'append'
-    ) => {
-      if (!preset || !Array.isArray(preset.boards) || preset.boards.length === 0) return false
-      const isKnownType = (type: string) => Boolean(WIDGET_REGISTRY[type])
-      const newBoards: Board[] = preset.boards
-        .map((b: { name?: string; widgets?: Array<Record<string, unknown>> }, bIdx: number) => {
-          const instances: WidgetInstance[] = (b.widgets || []).map(
-            (w: Record<string, unknown>, wIdx: number) => ({
-              id: `widget-preset-${Date.now()}-${bIdx}-${wIdx}`,
-              type: String(w.type ?? ''),
-              customTitle: typeof w.customTitle === 'string' ? w.customTitle : undefined,
-              colSpan: typeof w.colSpan === 'number' ? w.colSpan : 4,
-              rowSpan: typeof w.rowSpan === 'number' ? w.rowSpan : 1,
-              config: typeof w.config === 'object' && w.config !== null ? (w.config as Record<string, unknown>) : {},
-              createdAt: Date.now(),
-            })
-          )
-          return {
-            id: `board-preset-${Date.now()}-${bIdx}`,
-            name: b.name || `预设看板 ${bIdx + 1}`,
-            widgets: sanitizeWidgetInstances<WidgetInstance>(instances, isKnownType),
-          }
-        })
-        .filter((b: Board) => b.widgets.length > 0)
-
-      if (newBoards.length === 0) return false
+    (preset?: PresetInstallInput | null, mode: 'append' | 'replace' = 'append'): LayoutImportReport => {
+      const plan = planPresetInstall(preset, (type) => Boolean(WIDGET_REGISTRY[type]))
+      const report = plan.report
+      if (!report.ok) return report
 
       const prevBoards = boardsRef.current
-      const nextBoards = mode === 'replace' ? newBoards : [...prevBoards, ...newBoards]
+      const nextBoards = mode === 'replace' ? plan.boards : [...prevBoards, ...plan.boards]
 
       const newHistory = [...historyRef.current.slice(-(HISTORY_LIMIT - 1)), prevBoards]
       historyRef.current = newHistory
@@ -589,10 +537,11 @@ export function useModularLayout() {
       setHistory(newHistory)
       setFuture([])
       setBoards(nextBoards)
-      if (newBoards[0]) {
-        setActiveBoardId(newBoards[0].id)
+      if (plan.boards[0]) {
+        // 切到这批里的第一个新看板（append 模式下 nextBoards[0] 是旧看板，不是用户想看的）
+        setActiveBoardId(plan.boards[0].id)
       }
-      return true
+      return report
     },
     []
   )

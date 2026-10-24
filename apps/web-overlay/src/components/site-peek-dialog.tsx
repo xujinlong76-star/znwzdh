@@ -14,7 +14,7 @@ import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriang
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { safeHref, safeSrc, isSafeHttpUrl } from '@/lib/safe-url'
+import { isSafeHttpUrl, safeHref, safeSrc, safeWindowOpen } from '@/lib/safe-url'
 import { buildWaybackSnapshotUrl } from '@/lib/wayback-resolver'
 import { siteHealthBadge } from '@/lib/site-health'
 
@@ -114,7 +114,7 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                 title="调取 Internet Archive Wayback 历史归档快照"
                 onClick={() => {
                   const snap = buildWaybackSnapshotUrl(item.href)
-                  if (snap) window.open(snap, '_blank', 'noopener,noreferrer')
+                  if (snap) safeWindowOpen(snap)
                 }}
               >
                 <History className="w-3.5 h-3.5" />
@@ -254,7 +254,7 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
                 className="h-7 px-2.5 text-xs gap-1.5 border-rose-500/40 bg-background/80 hover:bg-rose-500/15 text-rose-700 dark:text-rose-300 font-medium"
                 onClick={() => {
                   const snap = buildWaybackSnapshotUrl(item.href)
-                  if (snap) window.open(snap, '_blank', 'noopener,noreferrer')
+                  if (snap) safeWindowOpen(snap)
                 }}
               >
                 <History className="w-3.5 h-3.5" />

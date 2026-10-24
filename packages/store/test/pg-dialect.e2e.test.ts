@@ -304,6 +304,68 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
   });
 });
 
+describe.skipIf(!ctx)("跨方言：用户域（T9）与 SQLite 一致", () => {
+  it("mergeIdentity 迁移收藏/历史/设置并写别名；别名解析可跟随", async () => {
+    if (!ctx) return;
+    const repo = ctx.repo;
+    const anon = "anon-99999999-9999-9999-9999-999999999901";
+    const target = "github:pg-merge-target";
+    await repo.addFavorite({ userId: anon, siteId: "pg-merge-site-1" });
+    await repo.recordSearch(anon, "pg 合并前的搜索", 3);
+    await repo.updateUserSettings(anon, { defaultSearchEngine: "bing" });
+
+    const stats = await repo.mergeIdentity(anon, target);
+    expect(stats.favoritesMoved).toBeGreaterThanOrEqual(1);
+
+    // 旧 id 解析到新 id，数据在新 id 下可见
+    expect(await repo.resolveIdentity(anon)).toBe(target);
+    const favs = await repo.listFavorites(target);
+    expect(favs.some((f) => f.siteId === "pg-merge-site-1")).toBe(true);
+    const settings = await repo.getUserSettings(target);
+    expect(settings.defaultSearchEngine).toBe("bing");
+    const history = await repo.listSearchHistory(target, 10);
+    expect(history.some((h) => h.query === "pg 合并前的搜索")).toBe(true);
+
+    // 清理：注销覆盖（同时验证 deleteUserData 在 PG 上可用）
+    await repo.deleteUserData(target);
+    expect(await repo.listFavorites(target)).toHaveLength(0);
+  });
+
+  it("addFavorite 幂等：并发/重复双写不 500，existed 语义正确", async () => {
+    if (!ctx) return;
+    const repo = ctx.repo;
+    const user = "github:pg-fav-dup";
+    const first = await repo.addFavorite({ userId: user, siteId: "pg-fav-dup-site" });
+    expect(first.existed).toBe(false);
+    const second = await repo.addFavorite({ userId: user, siteId: "pg-fav-dup-site" });
+    expect(second.existed).toBe(true);
+    expect(await repo.listFavorites(user)).toHaveLength(1);
+  });
+
+  it("saveUserVault 版本 CAS：旧版本写 409 语义（conflict），新版本可写", async () => {
+    if (!ctx) return;
+    const repo = ctx.repo;
+    const user = "github:pg-vault-cas";
+    const saved = await repo.saveUserVault({ userId: user, payload: "v1-payload" });
+    expect(saved.version).toBe(1);
+    const conflict = await repo.saveUserVaultIfUnchanged({ userId: user, payload: "stale", expectedVersion: 1 });
+    expect(conflict.conflict).toBe(true);
+    const ok = await repo.saveUserVaultIfUnchanged({ userId: user, payload: "v2-payload", expectedVersion: 1 });
+    expect(ok.conflict).toBeFalsy();
+    expect(ok.version).toBe(2);
+  });
+
+  it("user_settings per-field 合并（T10 语义）在 PG 上成立", async () => {
+    if (!ctx) return;
+    const repo = ctx.repo;
+    const user = "github:pg-settings-merge";
+    await repo.updateUserSettings(user, { defaultSearchEngine: "bing" });
+    const after = await repo.updateUserSettings(user, { historyRetentionDays: 30 });
+    expect(after.defaultSearchEngine).toBe("bing");
+    expect(after.historyRetentionDays).toBe(30);
+  });
+});
+
 describe("连接前置条件", () => {
   it("未配置或连不上时明确说明（不是悄悄跳过）", () => {
     if (!DATABASE_URL) {

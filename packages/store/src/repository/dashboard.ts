@@ -98,6 +98,50 @@ export async function dashboardOverview(repo: Repository): Promise<DashboardOver
       zeroResults: zeroResults24h,
     },
     storage: storageMetrics,
+    userCenter: await userCenterMetrics(repo),
+  };
+}
+
+/**
+ * 用户域运营指标（T19）：DAU / 7 日活跃 / 收藏分布。
+ * events.identity 独立列让 DAU 是一条聚合 SQL；收藏分布按身份 GROUP 后在
+ * 应用层算分位（SQLite 的 percentile 无内置函数，双方言下应用层分位最省事）。
+ */
+async function userCenterMetrics(repo: Repository) {
+  const since24h = Date.now() - 86_400_000;
+  const dauRow = (
+    await repo.raw(
+      "SELECT COUNT(DISTINCT identity) AS c FROM events WHERE identity IS NOT NULL AND created_at >= ?",
+      [since24h],
+    )
+  )[0];
+
+  // 7 日 DAU：按 UTC 天聚合（运营口径，切日以 UTC 为准并如实展示 day 字符串）
+  const since7d = Date.now() - 7 * 86_400_000;
+  const dauRows = await repo.raw(
+    "SELECT CAST(created_at / 86400000 AS INTEGER) AS day_bucket, COUNT(DISTINCT identity) AS c " +
+      "FROM events WHERE identity IS NOT NULL AND created_at >= ? GROUP BY day_bucket ORDER BY day_bucket ASC",
+    [since7d],
+  );
+  const dayStr = (bucket: number) => new Date(bucket * 86_400_000).toISOString().slice(0, 10);
+  const dau7d = dauRows.map((r) => ({ day: dayStr(Number(r.day_bucket)), count: Number(r.c ?? 0) }));
+
+  const favRows = await repo.raw(
+    "SELECT user_id, COUNT(*) AS c FROM favorites WHERE deleted_at IS NULL GROUP BY user_id",
+  );
+  const counts = favRows.map((r) => Number(r.c ?? 0)).sort((a, b) => a - b);
+  const identitiesWithFavorites = counts.length;
+  const sum = counts.reduce((acc, n) => acc + n, 0);
+  const pick = (q: number): number | null =>
+    counts.length === 0 ? null : counts[Math.min(counts.length - 1, Math.floor(q * counts.length))] ?? null;
+
+  return {
+    dau: Number(dauRow?.c ?? 0),
+    dau7d,
+    identitiesWithFavorites,
+    avgFavoritesPerIdentity: identitiesWithFavorites > 0 ? Math.round((sum / identitiesWithFavorites) * 10) / 10 : null,
+    favoritesP50: pick(0.5),
+    favoritesP95: pick(0.95),
   };
 }
 

@@ -4,7 +4,6 @@ import type {
   SiteKnowledgeMesh,
   SiteKnowledgeNode,
   SiteKnowledgeEdge,
-  SiteDuplicateReport,
   SiteDuplicatePair,
 } from "@navhub/core";
 

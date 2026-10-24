@@ -2,7 +2,7 @@ import { auth } from '@/lib/auth'
 import { canonicalUserId } from '@/lib/me-identity'
 import { fetchMeOverview } from '@/lib/server/me-overview'
 import { MeView } from './me-view'
-import type { Overview } from './me-view'
+import type { Overview } from '@/lib/me-types'
 
 /**
  * 用户中心概览（服务端壳）。

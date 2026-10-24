@@ -1,6 +1,7 @@
 'use client'
 
 import { Bookmark, ExternalLink } from 'lucide-react'
+import { safeHref } from '@/lib/safe-url'
 import { SiteFavicon } from '@/components/site-favicon'
 import Link from 'next/link'
 import { useFavorites } from '@/hooks/useFavorites'
@@ -35,7 +36,7 @@ export function FavoritesDockWidget() {
             {items.map((site) => (
               <a
                 key={site.siteId}
-                href={site.href}
+                href={safeHref(site.href)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 p-1.5 rounded-lg bg-muted/30 hover:bg-muted/60 border border-border/40 hover:border-primary/40 transition-all group"

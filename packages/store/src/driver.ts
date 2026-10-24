@@ -178,8 +178,15 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users(username);
 
 CREATE TABLE IF NOT EXISTS sessions (
-  token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL
+  token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL,
+  user_agent TEXT, revoked_at INTEGER, last_seen_at INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
+  body TEXT, read_at INTEGER, created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS notifications_identity_created_idx ON notifications(identity, created_at);
 
 -- 匿名身份 -> 登录身份的别名（合并后旧 anonId 仍可解析到 canonical userId，
 -- 避免旧标签页/其它设备带着旧 id 继续读写孤儿数据）
@@ -203,7 +210,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS identity_merges_pair_idx ON identity_merges(so
 
 CREATE TABLE IF NOT EXISTS api_tokens (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL,
-  scopes TEXT NOT NULL DEFAULT 'read', last_used_at INTEGER, expires_at INTEGER, created_at INTEGER NOT NULL,
+  scopes TEXT NOT NULL DEFAULT 'read', owner_identity TEXT, last_used_at INTEGER, expires_at INTEGER, created_at INTEGER NOT NULL,
   revoked_at INTEGER, rotated_at INTEGER, token_prefix TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_idx ON api_tokens(token_hash);
@@ -262,6 +269,7 @@ CREATE TABLE IF NOT EXISTS favorites (
   site_id TEXT NOT NULL,
   folder_id TEXT,
   note TEXT,
+  tags TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER
@@ -616,8 +624,15 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_idx ON users(username);
 
 CREATE TABLE IF NOT EXISTS sessions (
-  token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at BIGINT NOT NULL, created_at BIGINT NOT NULL
+  token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at BIGINT NOT NULL, created_at BIGINT NOT NULL,
+  user_agent TEXT, revoked_at BIGINT, last_seen_at BIGINT
 );
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
+  body TEXT, read_at BIGINT, created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS notifications_identity_created_idx ON notifications(identity, created_at);
 
 CREATE TABLE IF NOT EXISTS identity_aliases (
   alias TEXT PRIMARY KEY,
@@ -638,7 +653,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS identity_merges_pair_idx ON identity_merges(so
 
 CREATE TABLE IF NOT EXISTS api_tokens (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL,
-  scopes TEXT NOT NULL DEFAULT 'read', last_used_at BIGINT, expires_at BIGINT, created_at BIGINT NOT NULL,
+  scopes TEXT NOT NULL DEFAULT 'read', owner_identity TEXT, last_used_at BIGINT, expires_at BIGINT, created_at BIGINT NOT NULL,
   revoked_at BIGINT, rotated_at BIGINT, token_prefix TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_idx ON api_tokens(token_hash);
@@ -696,6 +711,7 @@ CREATE TABLE IF NOT EXISTS favorites (
   site_id TEXT NOT NULL,
   folder_id TEXT,
   note TEXT,
+  tags TEXT,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   deleted_at BIGINT

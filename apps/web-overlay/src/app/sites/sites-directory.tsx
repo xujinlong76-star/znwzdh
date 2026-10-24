@@ -9,7 +9,7 @@ import type { HubSite } from '@/lib/navhub-api'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
 import { SiteFavicon } from '@/components/site-favicon'
-import { Globe } from 'lucide-react'
+import { AlertTriangle, Globe } from 'lucide-react'
 
 /**
  * 全站站点目录（`/sites`）的服务端取数与主体视图，由第 1 页与 `/sites/p/{n}` 共用。
@@ -33,8 +33,10 @@ const MAX_PAGE_LINKS = 5
 export type SitesPageData = {
   all: HubSite[]
   totalPages: number
-  /** 取数没取完（触到分块上限，或中途某一块失败）：此时的 all 不是全量 */
-  incomplete: boolean
+  /** 取到分块上限、后面还有没取到的数据：此时的 all 不是全量 */
+  truncated: boolean
+  /** 某一块请求失败（中枢不可用）：all 可能是空或半截，绝不能说成「共收录 N 个」 */
+  failed: boolean
 }
 
 export async function loadSitesPage(): Promise<SitesPageData> {
@@ -48,7 +50,8 @@ export async function loadSitesPage(): Promise<SitesPageData> {
   return {
     all: catalog.items,
     totalPages: Math.max(1, Math.ceil(catalog.items.length / SITES_PAGE_SIZE)),
-    incomplete: catalog.truncated || catalog.failed,
+    truncated: catalog.truncated,
+    failed: catalog.failed,
   }
 }
 
@@ -78,7 +81,7 @@ export function sitesPageDescription(page: number): string {
 }
 
 export async function SitesDirectory({ requested, data }: { requested: number; data: SitesPageData }) {
-  const { all, totalPages, incomplete } = data
+  const { all, totalPages, truncated, failed } = data
   // 归一只认 sitesNormalizedPage 这一处：路由的 canonical/308 与这里的渲染必须同值，
   // 否则「元信息说第 2 页、正文渲染第 3 页」这类断档没人兜得住。
   const current = sitesNormalizedPage(requested, totalPages)
@@ -120,11 +123,17 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
               全部站点目录
             </h1>
             <p className="text-sm text-muted-foreground">
-              {incomplete
-                ? // 取数没取完时不能写「共收录 N 个」：那个 N 是已取到的条数，不是总数。
-                  // 如实说「已列出前 N 个」，并给出分类页这条不依赖整表的路径。
-                  `本站已列出前 ${all.length} 个站点（收录总数超出本次取数上限），当前第 ${current} / ${totalPages} 页，每页 ${SITES_PAGE_SIZE} 个；也可以按分类浏览完整目录。`
-                : `本站共收录 ${all.length} 个站点，当前第 ${current} / ${totalPages} 页，每页 ${SITES_PAGE_SIZE} 个。`}
+              {failed
+                ? // 「没取回」和「库里没东西」是两件事：写成一个，用户就以为站点被删了。
+                  // 这里不报「共收录 N 个」，也不假装是取数上限截断。
+                  `目录数据这次没能从 NavHub 中枢取回${
+                    all.length > 0 ? `，只列出已经取回的 ${all.length} 个站点` : ''
+                  }。这不代表站点被删除或下架——稍后重新加载本页即可，也可以先按分类或标签浏览。`
+                : truncated
+                  ? // 取数没取完时不能写「共收录 N 个」：那个 N 是已取到的条数，不是总数。
+                    // 如实说「已列出前 N 个」，并给出分类页这条不依赖整表的路径。
+                    `本站已列出前 ${all.length} 个站点（收录总数超出本次取数上限），当前第 ${current} / ${totalPages} 页，每页 ${SITES_PAGE_SIZE} 个；也可以按分类浏览完整目录。`
+                  : `本站共收录 ${all.length} 个站点，当前第 ${current} / ${totalPages} 页，每页 ${SITES_PAGE_SIZE} 个。`}
             </p>
             {/* 枢纽互链：目录页同时是「按主题逛」的入口，与页脚入口互补不重复 */}
             <nav aria-label="站内目录" className="flex flex-wrap items-center gap-3 text-xs pt-1">
@@ -179,6 +188,9 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
             ))}
           </ul>
 
+          {/* 取数失败时 totalPages 是按半截集合算出来的，页码链接会把用户送到
+              并不存在的页（或静默夹到别的页）；只有一页时也无需分页条。 */}
+          {!failed && totalPages > 1 ? (
           <nav aria-label="站点目录分页" className="flex flex-wrap items-center gap-2 pt-2">
             {from > 1 ? (
               <Link
@@ -219,8 +231,24 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
               </Link>
             ) : null}
           </nav>
+          ) : null}
 
-          {items.length === 0 ? (
+          {failed ? (
+            // 空列表 + 失败：必须留一个「这不是没数据」的落点，否则用户只会看到一片空白
+            <div
+              role="status"
+              className="rounded-xl border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-400 flex flex-wrap items-center gap-x-2 gap-y-1"
+            >
+              <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden />
+              <span>站点列表本次没能加载出来（中枢没响应或返回异常），不是本站没有收录。</span>
+              <a
+                href={sitesPageHref(1)}
+                className="underline underline-offset-2 hover:no-underline font-medium"
+              >
+                重新加载目录
+              </a>
+            </div>
+          ) : items.length === 0 ? (
             <p className="text-sm text-muted-foreground flex items-center gap-2">
               <Globe className="w-4 h-4" aria-hidden />
               暂无可展示的站点。

@@ -23,7 +23,16 @@ export function WidgetConfigModal({
   const [configValues, setConfigValues] = useState<Record<string, unknown>>({})
   const [customTitle, setCustomTitle] = useState('')
   const titleInputRef = useRef<HTMLInputElement | null>(null)
-  const { containerProps, scrim } = useOverlayBehavior({ open: isOpen, onClose })
+  // 早于 hook 取一次模块定义：对话框名称要在渲染第一帧就在场（def 在提前 return 之后才取）
+  const defForLabel = widget ? WIDGET_REGISTRY[widget.type] : undefined
+  const { containerProps, scrim } = useOverlayBehavior({
+    open: isOpen,
+    onClose,
+    // 名称带上是哪个模块：读屏只念「配置模块参数」时，同时开着两个模块的配置弹窗就分不出来
+    ariaLabel: defForLabel ? `配置模块参数 · ${defForLabel.title}` : '配置模块参数',
+    // 打开即聚焦标题输入框：改标题是这个弹窗最高频的操作
+    initialFocusRef: titleInputRef,
+  })
 
   useEffect(() => {
     if (widget) {
@@ -31,11 +40,6 @@ export function WidgetConfigModal({
       setCustomTitle(widget.customTitle || '')
     }
   }, [widget])
-
-  // 打开即聚焦标题输入框：改标题是这个弹窗最高频的操作
-  useEffect(() => {
-    if (isOpen) titleInputRef.current?.focus()
-  }, [isOpen])
 
   if (!isOpen || !widget) return null
 

@@ -1,15 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Sparkles, Code2, Palette, Bot, Compass, Coffee } from 'lucide-react'
+import { useMemo } from 'react'
+import { Sparkles, Code2, Palette, Bot, Compass, Coffee, ArrowRight } from 'lucide-react'
 import {
   DAYPART_PLACEHOLDER,
   daypartText,
   describeDaypart,
-  type DaypartHint,
+  recommendDaypartWorkspace,
+  useClientHour,
+  type DaypartWorkspaceId,
 } from '@/lib/daypart'
+import { useUserPreference } from '@/lib/user-preferences'
 
-export type WorkspaceId = 'all' | 'dev' | 'design' | 'ai' | 'efficiency'
+export type WorkspaceId = DaypartWorkspaceId
 
 interface WorkspaceConfig {
   id: WorkspaceId
@@ -33,16 +36,23 @@ interface WorkspaceFilterProps {
 }
 
 export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterProps) {
+  const daypartSceneEnabled = useUserPreference('daypartSceneEnabled')
   // 时段提示只能等挂载之后再算。
   // 首页是服务端渲染的，服务端时区（CI / 容器通常是 UTC）与用户时区不一样，
   // 在渲染体里直接取 new Date().getHours() 会让「服务端写进 HTML 的那句话」
   // 与「客户端首帧算出来的那句话」对不上 —— React 判定水合不匹配，
   // 丢掉服务端 HTML 重渲染并在控制台报错。
-  // 首帧两边都渲染 DAYPART_PLACEHOLDER（不含时间信息，因此不会说错话）。
-  const [timeHint, setTimeHint] = useState<DaypartHint | null>(null)
-  useEffect(() => {
-    setTimeHint(describeDaypart(new Date().getHours()))
-  }, [])
+  // useClientHour() 在服务端恒为 null，首帧两边都渲染 DAYPART_PLACEHOLDER（不含时间信息，因此不会说错话）。
+  const hour = useClientHour()
+  const daypart = useMemo(() => {
+    if (hour === null || !daypartSceneEnabled) return null
+    return { hint: describeDaypart(hour), suggested: recommendDaypartWorkspace(hour) }
+  }, [hour, daypartSceneEnabled])
+
+  const suggestedWorkspace =
+    daypart?.suggested && daypart.suggested !== active
+      ? WORKSPACES.find((ws) => ws.id === daypart.suggested) ?? null
+      : null
 
   return (
     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 py-2.5 border-b border-border/40">
@@ -72,13 +82,38 @@ export function WorkspaceFilter({ active, onChange, counts }: WorkspaceFilterPro
         })}
       </div>
 
+      {/* 「全天候时段场景流推荐」开关必须真的改变这一行：
+          开启 → 给出当前时段建议的场景，点一下就切过去（未经用户同意不自动换整屏）；
+          关闭 → 明说已关闭，而不是继续显示一句按时间算出来的提示。 */}
       <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
-        <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/40">
-          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span className="font-semibold text-foreground text-xs">
-            {daypartText(timeHint ?? DAYPART_PLACEHOLDER)}
-          </span>
-        </div>
+        {daypartSceneEnabled ? (
+          suggestedWorkspace ? (
+            <button
+              type="button"
+              onClick={() => onChange(suggestedWorkspace.id)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors cursor-pointer"
+              title={`切换到「${suggestedWorkspace.label}」`}
+            >
+              <Sparkles className="w-3.5 h-3.5" aria-hidden />
+              <span className="font-semibold">{daypartText(daypart?.hint ?? DAYPART_PLACEHOLDER)}</span>
+              <span className="flex items-center gap-0.5">
+                {suggestedWorkspace.label}
+                <ArrowRight className="w-3 h-3" aria-hidden />
+              </span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/40">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span className="font-semibold text-foreground text-xs">
+                {daypartText(daypart?.hint ?? DAYPART_PLACEHOLDER)}
+              </span>
+            </div>
+          )
+        ) : (
+          <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-muted/40 border border-border/40 text-muted-foreground">
+            <span className="text-xs">时段场景推荐已关闭</span>
+          </div>
+        )}
         <span className="text-xs text-muted-foreground/80">自适应工作区</span>
       </div>
     </div>

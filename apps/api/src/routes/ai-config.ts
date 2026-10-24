@@ -14,6 +14,7 @@ import {
   LlmProviderInputSchema,
   SystemLlmConfigInputSchema,
   deleteUserLlmConfig,
+  getLlmCostUnitPriceRmb,
   getSystemLlmConfigView,
   getUserLlmConfigView,
   llmProviderReady,
@@ -24,10 +25,13 @@ import {
   testLlmProvider,
 } from "../llm-config.ts";
 import {
-  validateAndCleanPluginManifest,
+  validatePluginManifestWithCatalog,
   summarizePluginManifest,
+  BUILTIN_WIDGET_CATALOG,
+  WIDGET_TYPE_NAMES,
 } from "@navhub/core";
 import { identityTrusted, identityOf, unauthorized, resolveCanonicalIdentity } from "./shared.ts";
+import { checkLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
 import type { AppContext } from "../context.ts";
 
 export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -100,17 +104,22 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.get("/api/admin/ai/observability", { config: { scope: "admin" } }, async (req) => {
     const q = (req.query ?? {}) as Record<string, string>;
     const windowDays = q.window === "7d" ? 7 : q.window === "30d" ? 30 : 1;
-    const since = Date.now() - windowDays * 24 * 3600 * 1000;
+    // 区间上界取查询开始的那一瞬间：聚合要扫全表，若不固定 until，请求返回前新落库的
+    // 调用会只进总额、不进任何时间分桶，大盘尾部凭空少一段。
+    const now = Date.now();
+    const since = now - windowDays * 24 * 3600 * 1000;
 
-    const agg = await ctx.repo.aggregateLlmUsage({ since });
+    const agg = await ctx.repo.aggregateLlmUsage({ since, until: now });
     const recent = await ctx.repo.listRecentLlmUsage(20);
 
     const SCENARIO_NAMES: Record<string, string> = {
       ai_chat: "AI Web Copilot 对话",
-      copilot: "Agnes 3.0 Flash 伴侣",
+      copilot: "智能导航伴侣对话",
       ai_canvas_generate: "自然语言工作台规划生成",
       canvas: "自然语言工作台规划生成",
       ai_config_test: "模型连通性探测",
+      plugin_generate: "AI 插件工坊生成",
+      plugin_audit: "插件合规审理",
       enrich: "站点智能元数据富化",
       health_audit: "站点自治健康巡检",
       job_enrich: "后台元数据批量刷新",
@@ -148,7 +157,21 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     }));
 
     const resolved = await resolveLlm(ctx);
-    const estimatedCostRmb = Number(((agg.totalTokens / 1000) * 0.001).toFixed(4));
+    // 单价必须由运维者显式给出（管理端配置优先，其次环境变量）：以前这里硬编码
+    // 0.001 元/1K token，既不是任何厂商的报价，也不区分 prompt/completion，
+    // 等于在运维面板上放假账。
+    const unitPrice = await getLlmCostUnitPriceRmb(ctx);
+    const estimatedCostRmb =
+      unitPrice > 0 ? Number(((agg.totalTokens / 1000) * unitPrice).toFixed(4)) : null;
+
+    // 额度闸门：三档里只有「无身份合池」与「运维 key」能整体计量，
+    // 单身份档是按人分别限的，聚合出一个总数没有意义 → used 留 null。
+    const quotaSince = now - 24 * 3600 * 1000;
+    const [systemPool, anonymousPool] = await Promise.all([
+      ctx.repo.sumLlmUsage({ since: quotaSince, excludeUserSource: true }),
+      ctx.repo.sumLlmUsage({ since: quotaSince, identity: null }),
+    ]);
+    const qc = ctx.config.llmQuota;
 
     return {
       window: `${windowDays}d`,
@@ -164,7 +187,23 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       completionTokens: agg.completionTokens,
       thinkingCalls: agg.thinkingCalls,
       estimatedCostRmb,
-      activeModel: resolved.provider.model || "agnes-3.0-flash",
+      costUnitPriceRmb: unitPrice > 0 ? unitPrice : null,
+      activeModel: resolved.provider.model?.trim() || null,
+      quota: {
+        windowHours: 24,
+        identity: {
+          calls: { limit: qc.identityDailyCalls, used: null },
+          tokens: { limit: qc.identityDailyTokens, used: null },
+        },
+        anonymous: {
+          calls: { limit: qc.anonymousDailyCalls, used: anonymousPool.calls },
+          tokens: { limit: qc.anonymousDailyTokens, used: anonymousPool.tokens },
+        },
+        system: {
+          calls: { limit: qc.systemDailyCalls, used: systemPool.calls },
+          tokens: { limit: qc.systemDailyTokens, used: systemPool.tokens },
+        },
+      },
       byScenario,
       hourlyTrend,
       recentLogs,
@@ -283,6 +322,9 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         return { error: "参数无效", detail: body.error.issues };
       }
 
+      const quota = await checkLlmQuota(ctx, identity);
+      if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
+
       const resolved = await resolveLlm(ctx, identity);
       if (!llmProviderReady(resolved.provider)) {
         reply.code(400);
@@ -349,22 +391,35 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     categories: z.array(z.string().max(100)).max(30).optional(),
   });
 
-  const VALID_WIDGET_TYPES = new Set([
-    "clock",
-    "quick-search",
-    "favorites-dock",
-    "quick-tools",
-    "notes",
-    "metrics",
-    "trending",
-    "rss-feed",
-    "github-heatmap",
-    "weather",
-    "custom-category",
-    "hyperbolic-radar",
-    "speculative-terminal",
-    "iframe",
-  ]);
+  /**
+   * 合法模块类型以 core 的模块目录为唯一真相。
+   *
+   * 此前这里手写了一份 14 项清单，其中 6 项（clock / notes / metrics / trending /
+   * weather / iframe）是早已改名的旧标识，而前端真正认识的 trending-radar、
+   * markdown-notes、system-metrics、weather-clock、iframe-embed、clock-pomodoro、
+   * live-api、declarative-widget 全部缺失。模型按提示词里的旧名输出后，
+   * 卡片会被下面的 `.filter(VALID_WIDGET_TYPES.has(...))` 静默丢掉——
+   * 用户只看到「AI 生成的排版比规划的少几张」，没有任何错误线索。
+   */
+  const VALID_WIDGET_TYPES = new Set(Object.keys(BUILTIN_WIDGET_CATALOG));
+
+  /**
+   * 提示词里的组件清单同样由 core 模块目录派生。
+   * 手写清单正是上一轮漂移的源头：模型被教了 6 个前端根本不认识的类型名。
+   */
+  function widgetCatalogPromptLines(): string[] {
+    return Object.values(BUILTIN_WIDGET_CATALOG).map((meta) => {
+      const span = `建议 colSpan ${meta.minColSpan}~${meta.maxColSpan}、rowSpan ${meta.minRowSpan}~${meta.maxRowSpan}`;
+      const schema = meta.configSchema ?? [];
+      if (schema.length === 0) {
+        return `  - ${meta.type}：${meta.title}。${meta.description}${span}，无需配置（config 传 {}）。`;
+      }
+      const config = schema
+        .map((item) => `${item.key}（${item.label}${item.description ? `：${item.description}` : ""}）`)
+        .join("；");
+      return `  - ${meta.type}：${meta.title}。${meta.description}${span}，配置字段 ${config}。`;
+    });
+  }
 
   function extractJson(text: string): string {
     const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
@@ -394,6 +449,9 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         return { error: "参数无效", detail: body.error.issues };
       }
 
+      const quota = await checkLlmQuota(ctx, identity);
+      if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
+
       const resolved = await resolveLlm(ctx, identity);
       if (!llmProviderReady(resolved.provider)) {
         reply.code(400);
@@ -405,7 +463,13 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       if (knownCategories.length === 0) {
         try {
           const list = await ctx.repo.listCategories();
-          knownCategories = list.map((c) => c.title);
+          const hasChild = new Set(list.map((c) => c.parentId).filter((id): id is string => Boolean(id)));
+          // 站点只挂叶子类目：给模型推荐根类目等于推荐一张恒为 0 的空卡。
+          // 卡片按 slug → id → 唯一标题解析，slug 是跨环境最稳的标识。
+          knownCategories = list
+            .filter((c) => c.enabled !== false && !hasChild.has(c.id))
+            .map((c) => (typeof c.slug === "string" && c.slug.trim() ? c.slug.trim() : c.id))
+            .slice(0, 40);
         } catch {
           // 尽力而为
         }
@@ -415,20 +479,15 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         "你是一名顶级个人工作台与生产力仪表盘架构师。",
         "用户希望根据自然语言需求规划一个「模块化工作台画布（Modular Canvas）」。",
         "工作台采用 12 列栅格系统（桌面端），每行宽度总和应尽量配比为 12 或填满视窗。",
-        "支持的微组件类型（type）清单如下：",
-        "  - clock: 极简时钟与日期（建议 colSpan: 3~4, rowSpan: 1~2）",
-        "  - quick-search: 聚合多引擎搜索框（建议 colSpan: 6~12, rowSpan: 1~2）",
-        "  - favorites-dock: 核心高频收藏底座（建议 colSpan: 4~8, rowSpan: 2~3）",
-        "  - quick-tools: 效率小工具卡片（建议 colSpan: 4~6, rowSpan: 2~3）",
-        "  - notes: 即时随手记便签（建议 colSpan: 3~6, rowSpan: 2~3）",
-        "  - metrics: 站点健康度与运营指标（建议 colSpan: 3~6, rowSpan: 1~2）",
-        "  - trending: 热门探索趋势（建议 colSpan: 4~8, rowSpan: 2~4）",
-        "  - rss-feed: RSS 动态资讯订阅源（建议 colSpan: 4~8, rowSpan: 2~4）",
-        "  - github-heatmap: GitHub 贡献热力图（建议 colSpan: 6~12, rowSpan: 2~3）",
-        "  - weather: 实时天气卡片（建议 colSpan: 3~4, rowSpan: 1~2）",
-        "  - custom-category: 指定分类网址卡片（建议 colSpan: 4~8, rowSpan: 2~4，config: { category: \"分类名\" }）",
+        "支持的微组件类型（type）清单如下，type 必须逐字取自下划线标识，不要自创或翻译：",
+        ...widgetCatalogPromptLines(),
         "",
-        knownCategories.length > 0 ? `可用的分类名候选项有：${knownCategories.slice(0, 15).join("、")}` : "",
+        knownCategories.length > 0
+          ? `custom-category 卡片的 config.categoryId 请从以下中枢类目标识中挑选（均为叶子类目，留空则自动选站点最多的类目）：${knownCategories.join("、")}`
+          : "custom-category 卡片的 config.categoryId 留空即可，卡片会自动选中枢里存活站点最多的叶子类目。",
+        "",
+        "只规划上面清单里真实存在的类型；一张卡片需要外部输入（如 RSS 地址、GitHub 账号、内嵌网址）而用户没给时，" +
+          "仍要输出该卡片，但把对应 config 字段留空字符串——卡片会明确提示用户如何配置，不会展示示例数据。",
         "",
         "请严格输出 JSON 格式（不要包含任何多余文字或注释），结构如下：",
         "{",
@@ -479,28 +538,37 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
 
         const rawWidgets = Array.isArray(parsed.widgets) ? parsed.widgets : [];
         const now = Date.now();
-        const widgets = rawWidgets
-          .filter((w: any) => w && typeof w === "object" && VALID_WIDGET_TYPES.has(String(w.type)))
-          .map((w: any, index: number) => {
-            const colSpan = Math.min(12, Math.max(1, Number(w.colSpan) || 4));
-            const rowSpan = Math.min(4, Math.max(1, Number(w.rowSpan) || 2));
-            return {
-              id: `ai-widget-${now}-${index + 1}`,
-              type: String(w.type),
-              customTitle: typeof w.customTitle === "string" ? w.customTitle.trim() : undefined,
-              colSpan,
-              rowSpan,
-              config: typeof w.config === "object" && w.config !== null ? w.config : {},
-              createdAt: now,
-            };
-          });
+        const legalWidgets = rawWidgets.filter(
+          (w: any) => w && typeof w === "object" && VALID_WIDGET_TYPES.has(String(w.type)),
+        );
+        // 丢掉非法类型时留下名字：静默丢卡只会让用户以为模型「规划得少」
+        const droppedTypes = Array.from(
+          new Set(
+            rawWidgets
+              .filter((w: any) => w && typeof w === "object" && !VALID_WIDGET_TYPES.has(String(w.type)))
+              .map((w: any) => String(w.type).trim() || "(空类型)"),
+          ),
+        ).slice(0, 12);
+        const widgets = legalWidgets.map((w: any, index: number) => {
+          const colSpan = Math.min(12, Math.max(1, Number(w.colSpan) || 4));
+          const rowSpan = Math.min(4, Math.max(1, Number(w.rowSpan) || 2));
+          return {
+            id: `ai-widget-${now}-${index + 1}`,
+            type: String(w.type),
+            customTitle: typeof w.customTitle === "string" ? w.customTitle.trim() : undefined,
+            colSpan,
+            rowSpan,
+            config: typeof w.config === "object" && w.config !== null ? w.config : {},
+            createdAt: now,
+          };
+        });
 
         // 如果模型返回的组件列表全非法，至少提供一个通用保底组件
         if (widgets.length === 0) {
           widgets.push(
             { id: `ai-widget-${now}-1`, type: "quick-search", customTitle: "快捷搜索", colSpan: 12, rowSpan: 1, config: {}, createdAt: now },
             { id: `ai-widget-${now}-2`, type: "favorites-dock", customTitle: "常用收藏", colSpan: 8, rowSpan: 2, config: {}, createdAt: now },
-            { id: `ai-widget-${now}-3`, type: "notes", customTitle: "备忘随手记", colSpan: 4, rowSpan: 2, config: {}, createdAt: now },
+            { id: `ai-widget-${now}-3`, type: "markdown-notes", customTitle: "备忘随手记", colSpan: 4, rowSpan: 2, config: {}, createdAt: now },
           );
         }
 
@@ -516,6 +584,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         return {
           success: true,
           layout,
+          droppedTypes,
           model: result.model,
           usage: result.usage,
           latencyMs: result.latencyMs,
@@ -559,6 +628,9 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         reply.code(400);
         return { error: "参数无效", detail: body.error.issues };
       }
+
+      const quota = await checkLlmQuota(ctx, identity);
+      if (!quota.ok) return replyQuotaBlocked(reply, quota.error);
 
       const resolved = await resolveLlm(ctx, identity);
       if (!llmProviderReady(resolved.provider)) {
@@ -610,7 +682,8 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         "  - site-pack: { categories?: [{ title, description? }], sites: [{ url: '必须为有效的 https:// 绝对地址', title: '站点名称', description: '功能描述（简明，≤30字）', category: '所属分类', tags: ['标签'] }] }，站点数量精选 5~8 个核心站点。",
         "  - theme: { accent?: 'violet' | 'emerald' | 'amber' | 'rose', tokens?: { '--radius': '0.75rem', '--primary': '262 83% 58%' } }",
         "  - search-pack: { engines: [{ name: '引擎名称', prefix: '!前缀（如 !gh、!npm，必须以!开头）', searchUrl: '必须包含 {q} 占位符的有效 https 链接，例如 https://github.com/search?q={q}', icon: '图标', description: '描述' }] }",
-        "  - workspace-preset: { boards: [{ name: '看板名称', widgets: [{ type: 'quick-search'|'favorites-dock'|'quick-tools'|'notes'|'clock'|'weather', customTitle: '自定义标题', colSpan: 4, rowSpan: 2, config: {} }] }] }",
+        `  - workspace-preset: { boards: [{ name: '看板名称', widgets: [{ type: '模块标识，只能逐字取这些真实类型之一：${WIDGET_TYPE_NAMES.join(" / ")}', customTitle: '自定义标题', colSpan: 4, rowSpan: 2, config: {} }] }] }`,
+        "    工作台模块的 config 字段：写外部输入型模块（rss-feed 要 feedUrl、github-heatmap 要 username、iframe-embed 要 url、live-api 要 apiUrl、custom-category 要 categoryId、hyperbolic-radar 要 site）时，用户没给值就留空字符串——卡片会明确提示怎么配置；其他模块 config 传 {} 即可。",
         "  - bundle: { items: [{ slug: '已有插件slug', kind: 'site-pack'|'search-pack'|'theme' }] }",
         "",
         knownCategories.length > 0 ? `全站已有分类参考：${knownCategories.join("、")}` : "",
@@ -698,7 +771,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           }
         }
 
-        const validated = validateAndCleanPluginManifest(rawManifest);
+        const validated = validatePluginManifestWithCatalog(rawManifest);
         if (!validated.ok) {
           reply.code(400);
           return {

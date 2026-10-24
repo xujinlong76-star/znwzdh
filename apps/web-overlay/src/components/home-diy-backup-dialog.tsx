@@ -39,6 +39,7 @@ import { Textarea } from '@/registry/new-york/ui/textarea'
 import { useToast } from '@/components/ui/use-toast'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import type { ShareLinkOutcome } from '@/lib/diy-share-link'
+import type { HomeDiyImportResult } from '@/lib/modular/home-diy-io'
 import { cn } from '@/lib/utils'
 
 export interface HomeDIYBackupDialogProps {
@@ -47,11 +48,13 @@ export interface HomeDIYBackupDialogProps {
   /* ---- 由 useHomeDIY 注入（组件不持有 DIY 状态） ---- */
   exportPresetToUrlHash: () => ShareLinkOutcome
   exportDIYConfig: () => string
-  importDIYConfig: (json: string) => { ok: boolean; message: string }
+  importDIYConfig: (json: string) => HomeDiyImportResult
   exportEncryptedDIYConfig: (passphrase: string) => Promise<string>
-  importEncryptedDIYConfig: (json: string, passphrase: string) => Promise<{ ok: boolean; message: string }>
+  importEncryptedDIYConfig: (json: string, passphrase: string) => Promise<HomeDiyImportResult>
   syncToCloudVault: (passphrase: string, expectedVersion?: number) => Promise<{ success: boolean; version?: number; conflict?: boolean; error?: string }>
-  syncFromCloudVault: (passphrase: string) => Promise<{ success: boolean; error?: string }>
+  syncFromCloudVault: (
+    passphrase: string,
+  ) => Promise<{ success: boolean; error?: string; dropped: number; notes: string[]; summary?: string }>
   checkCloudVaultStatus: () => Promise<{ hasCloudVault: boolean; updatedAt?: number; version?: number }>
 }
 
@@ -142,8 +145,10 @@ export function HomeDIYBackupDialog({
       const res = await syncFromCloudVault(vaultPassphrase.trim())
       if (res.success) {
         toast({
-          title: '🎉 成功从云端金库拉取并还原配置',
-          description: '排版偏好、专属私人分类与置顶站点已全量还原！',
+          // 清洗带白名单和上限，「全量还原」是没法保证的断言：只说实际还原了多少、丢了多少
+          title: res.dropped > 0 ? '☁️ 已还原，但部分内容被丢弃' : '☁️ 成功从云端金库拉取并还原配置',
+          description: res.summary ?? '排版偏好、专属私人分类与置顶站点已还原。',
+          variant: res.dropped > 0 ? 'destructive' : 'default',
         })
         onOpenChange(false)
       } else {
@@ -247,7 +252,11 @@ export function HomeDIYBackupDialog({
   const handleImportSubmit = () => {
     if (!importJsonText.trim()) return
     const res = importDIYConfig(importJsonText.trim())
-    toast({ title: res.ok ? '🎉 导入成功' : '导入失败', description: res.message })
+    toast({
+      title: !res.ok ? '导入失败' : res.dropped > 0 ? '⚠️ 已导入，但部分内容被丢弃' : '🎉 导入成功',
+      description: res.message,
+      variant: !res.ok || res.dropped > 0 ? 'destructive' : 'default',
+    })
     if (res.ok) {
       onOpenChange(false)
       setImportJsonText('')
@@ -269,9 +278,9 @@ export function HomeDIYBackupDialog({
     try {
       const res = await importEncryptedDIYConfig(importJsonText.trim(), vaultPassphrase.trim())
       toast({
-        title: res.ok ? '🎉 解密恢复成功' : '解密恢复失败',
+        title: !res.ok ? '解密恢复失败' : res.dropped > 0 ? '⚠️ 已还原，但部分内容被丢弃' : '🎉 解密恢复成功',
         description: res.message,
-        variant: res.ok ? 'default' : 'destructive',
+        variant: !res.ok || res.dropped > 0 ? 'destructive' : 'default',
       })
       if (res.ok) {
         onOpenChange(false)

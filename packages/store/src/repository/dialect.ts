@@ -210,10 +210,24 @@ export function rowToFavorite(row: Record<string, any>): FavoriteRecord {
     siteId: String(row.site_id),
     folderId: row.folder_id ?? null,
     note: row.note ?? null,
+    // 标签（T22）：JSON 数组；坏数据按「未打标签」处理（不因一行坏 JSON 打不开列表）
+    tags: parseFavoriteTags(row.tags),
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
     deletedAt: row.deleted_at == null ? null : Number(row.deleted_at),
   };
+}
+
+function parseFavoriteTags(raw: unknown): string[] | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const tags = parsed.filter((t): t is string => typeof t === "string" && t.trim().length > 0);
+    return tags.length > 0 ? tags : null;
+  } catch {
+    return null;
+  }
 }
 
 export function rowToFolder(row: Record<string, any>): FavoriteFolderRecord {
@@ -282,6 +296,7 @@ export function rowToApiToken(row: Record<string, any>): ApiTokenRecord {
     id: String(row.id),
     name: String(row.name),
     scopes: String(row.scopes ?? "read").split(",").map((s: string) => s.trim()).filter(Boolean),
+    ownerIdentity: row.owner_identity == null ? null : String(row.owner_identity),
     expiresAt: row.expires_at == null ? null : Number(row.expires_at),
     lastUsedAt: row.last_used_at == null ? null : Number(row.last_used_at),
     createdAt: Number(row.created_at ?? 0),

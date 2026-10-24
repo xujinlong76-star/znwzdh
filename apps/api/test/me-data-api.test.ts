@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EXPORT_HISTORY_LIMIT } from "@navhub/store";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
@@ -12,6 +13,7 @@ import { signIdentity } from "../src/identity-signature.ts";
  */
 const SECRET = "test-secret-please-rotate";
 const USER = "github:u-data-api";
+const IMPORTER = "github:u-import-honesty";
 const ANON = "anon-33333333-3333-3333-3333-333333333333";
 
 const base = {
@@ -47,6 +49,15 @@ function data(
   headers: Record<string, string> = userHeaders(),
 ) {
   return app.inject({ method, url, headers, payload: payload as never });
+}
+
+/** 以另一个身份调用（归属隔离用例） */
+function other(
+  method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
+  url: string,
+  payload?: unknown,
+) {
+  return data(method, url, payload, signedHeaders("github:other-batch"));
 }
 
 beforeAll(async () => {
@@ -111,6 +122,38 @@ describe("搜索历史 API", () => {
 
     const missing = await data("DELETE", "/api/search-history/999999");
     expect(missing.statusCode).toBe(404);
+  });
+
+  it("batch-delete：zero_results 服务端筛选 + ids 归属过滤 + 超限 400（T4）", async () => {
+    // 2 条零结果 + 2 条有命中；再给别的身份造 1 条零结果验证隔离
+    await ctx.repo.recordSearch(USER, "零结果 a", 0);
+    await ctx.repo.recordSearch(USER, "零结果 b", 0);
+    await ctx.repo.recordSearch(USER, "命中 c", 5);
+    await ctx.repo.recordSearch("github:other-batch", "别人的零结果", 0);
+
+    const byFilter = await data("POST", "/api/search-history/batch-delete", { filter: "zero_results" });
+    expect(byFilter.statusCode).toBe(200);
+    // 上面分页用例留下的「历史 0」（resultCount=0）也算零结果：2 新 + 1 旧 = 3
+    expect(byFilter.json().removed).toBe(3);
+    const after = await data("GET", "/api/search-history?limit=50");
+    expect(after.json().items.every((i: { resultCount: number }) => i.resultCount > 0)).toBe(true);
+
+    // ids 路径：删自己的 + 混入他人的 id → 只删自己的
+    const page = await data("GET", "/api/search-history?limit=1");
+    const mine = page.json().items[0]!.id as number;
+    const otherPage = await other("GET", "/api/search-history?limit=1");
+    const otherId = otherPage.json().items[0]!.id as number;
+    const byIds = await data("POST", "/api/search-history/batch-delete", { ids: [mine, otherId] });
+    expect(byIds.statusCode).toBe(200);
+    expect(byIds.json().removed).toBe(1);
+
+    const tooMany = await data("POST", "/api/search-history/batch-delete", {
+      ids: Array.from({ length: 201 }, (_, i) => i + 1),
+    });
+    expect(tooMany.statusCode).toBe(400);
+
+    const neither = await data("POST", "/api/search-history/batch-delete", {});
+    expect(neither.statusCode).toBe(400);
   });
 });
 
@@ -214,6 +257,253 @@ describe("设置与画像信号", () => {
   it("非法 kind -> 400", async () => {
     const res = await data("DELETE", "/api/profile/signals/bogus");
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("备份导入：恢复多少就报多少", () => {
+  const importer = () => signedHeaders(IMPORTER);
+  // /api/me/import 有每身份每分钟 10 次的限流；这里测的是恢复语义，
+  // 用独立来源地址给每次请求换一个新的计数桶，免得把限流当成断言失败。
+  let importSeq = 0;
+  const importBackup = (payload: unknown, headers = importer()) =>
+    app.inject({
+      method: "POST",
+      url: "/api/me/import",
+      remoteAddress: `10.77.${Math.floor(importSeq / 200)}.${(importSeq++ % 200) + 3}`,
+      headers,
+      payload: payload as never,
+    });
+  // 断言「库里真的多了几条」：次数按导入前的基线算，免得受同组前序用例写入的记录影响
+  const historyCount = async () => (await ctx.repo.listSearchHistory(IMPORTER, EXPORT_HISTORY_LIMIT)).length;
+
+  it("干净备份：跳过/截断/设置错误全部如实归零，并回传上限供界面使用", async () => {
+    const res = await importBackup({
+      favoriteFolders: [{ id: "old-f1", name: "诚实导入夹" }],
+      favorites: [{ siteId, folderId: "old-f1", note: "导入备注" }],
+      searchHistory: { items: [{ query: "诚实关键词", resultCount: 3 }] },
+      settings: { defaultSearchEngine: "bing" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.foldersImported).toBe(1);
+    expect(body.favoritesImported).toBe(1);
+    expect(body.favoritesSkipped).toBe(0);
+    expect(body.favoritesSkippedMissingSite).toBe(0);
+    expect(body.searchesImported).toBe(1);
+    expect(body.searchesTruncated).toBe(0);
+    expect(body.nextHistoryOffset).toBeNull();
+    expect(body.settingsRestored).toBe(true);
+    expect(body.settingsError).toBeNull();
+    expect(body.backupHistoryTruncated).toBe(false);
+    // 上限由服务端回传，界面不许自己写死
+    expect(body.historyImportCap).toBeGreaterThan(0);
+    expect(body.historyExportLimit).toBe(EXPORT_HISTORY_LIMIT);
+    expect(body.historyExportLimit).toBeGreaterThan(body.historyImportCap);
+
+    // 设置确实落库
+    const settings = await data("GET", "/api/me/settings", undefined, importer());
+    expect(settings.json().settings.defaultSearchEngine).toBe("bing");
+  });
+
+  it("两种「跳过」分开计数：站点已下架 ≠ 你已经收藏过", async () => {
+    const res = await importBackup({
+      favoriteFolders: [{ id: "old-f1", name: "诚实导入夹" }],
+      favorites: [
+        { siteId, folderId: "old-f1" },
+        { siteId: "site-has-been-removed" },
+      ],
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.foldersImported).toBe(0);
+    expect(body.favoritesImported).toBe(0);
+    expect(body.favoritesSkipped).toBe(2);
+    expect(body.favoritesSkippedMissingSite).toBe(1);
+    // 混在一个数里时用户无从判断「再收藏一次就好」还是「站点真的没了」
+    expect(body.favoritesSkipped - body.favoritesSkippedMissingSite).toBe(1);
+  });
+
+  it("超出单次上限的历史：写入按上限、剩余条数与续导起点都回传", async () => {
+    const total = 260;
+    const before = await historyCount();
+    const items = Array.from({ length: total }, (_, i) => ({ query: `批量历史-${i}`, resultCount: i }));
+    const res = await importBackup({ searchHistory: { items } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.searchesImported).toBe(body.historyImportCap);
+    expect(body.searchesSkippedDuplicate).toBe(0);
+    expect(body.searchesTruncated).toBe(total - body.historyImportCap);
+    expect(body.nextHistoryOffset).toBe(body.historyImportCap);
+
+    // 库里确实只多了 cap 条：截断是写入边界，不是提示文案
+    expect(await historyCount()).toBe(before + body.historyImportCap);
+  });
+
+  it("按 nextHistoryOffset 续导：窗口真的往前推，导完后不再申报截断", async () => {
+    const total = 260;
+    const before = await historyCount();
+    const items = Array.from({ length: total }, (_, i) => ({ query: `续导历史-${i}`, resultCount: i }));
+    const first = (await importBackup({ searchHistory: { items } })).json();
+
+    const res = await importBackup({ searchHistory: { items }, searchHistoryOffset: first.nextHistoryOffset });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // 续导拿到的必须是后半批，而不是把前 200 条去重一遍后报「0 条导入 + 依然截断」
+    expect(body.searchesImported).toBe(total - first.historyImportCap);
+    expect(body.searchesTruncated).toBe(0);
+    expect(body.nextHistoryOffset).toBeNull();
+    expect(await historyCount()).toBe(before + total);
+
+    // 重复提交同一份备份：一条也不会写两遍，并且界面拿得到「为什么是 0 条」
+    const again = await importBackup({ searchHistory: { items } });
+    expect(again.json().searchesImported).toBe(0);
+    expect(again.json().searchesSkippedDuplicate).toBe(again.json().historyImportCap);
+    expect(await historyCount()).toBe(before + total);
+  });
+
+  it("备份自身被导出侧截断过时，接口把这件事带回来", async () => {
+    const res = await importBackup({
+      searchHistory: { items: [{ query: "截断备份里的关键词" }], truncated: true },
+    });
+    expect(res.json().backupHistoryTruncated).toBe(true);
+    expect(res.json().historyExportLimit).toBe(EXPORT_HISTORY_LIMIT);
+
+    // 数组形态的旧备份没有这个标记，不得凭空报 true
+    const legacy = await importBackup({ searchHistory: [{ query: "旧格式关键词" }] });
+    expect(legacy.statusCode).toBe(200);
+    expect(legacy.json().backupHistoryTruncated).toBe(false);
+  });
+
+  it("设置校验失败要回传原因，而不是静默丢掉", async () => {
+    const res = await importBackup({
+      favoriteFolders: [{ id: "old-f2", name: "设置失败也要说" }],
+      settings: { defaultSearchEngine: "yahoo" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.settingsRestored).toBe(false);
+    expect(typeof body.settingsError).toBe("string");
+    expect(body.settingsError.length).toBeGreaterThan(0);
+    expect(body.foldersImported).toBe(1);
+
+    // 其余部分照常恢复，但设置没被写坏
+    const settings = await data("GET", "/api/me/settings", undefined, importer());
+    expect(settings.json().settings.defaultSearchEngine).toBe("bing");
+
+    const empty = await importBackup({ settings: {} });
+    expect(empty.json().settingsRestored).toBe(false);
+    expect(empty.json().settingsError).toContain("至少");
+  });
+
+  it("条数超限的 400 点名是哪个字段；达到导出上限的备份不再被整份拒收", async () => {
+    const tooManyFolders = Array.from({ length: 1001 }, (_, i) => ({ id: `f-${i}`, name: `夹-${i}` }));
+    const rejected = await importBackup({ favoriteFolders: tooManyFolders });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json().error).toContain("favoriteFolders");
+
+    // 这是本轮修的真缺陷：导入上限原本低于导出上限，
+    // 用户拿一份「刚好导满」的合法备份来恢复会被整份 400，收藏与设置一起导不进来。
+    const atExportLimit = Array.from({ length: EXPORT_HISTORY_LIMIT }, (_, i) => ({ query: `上限-${i}` }));
+    const accepted = await importBackup(
+      {
+        favoriteFolders: [{ id: "old-f3", name: "满额备份" }],
+        searchHistory: { items: atExportLimit, truncated: true },
+        settings: { telemetryEnabled: false },
+      },
+    );
+    expect(accepted.statusCode).toBe(200);
+    const body = accepted.json();
+    expect(body.foldersImported).toBe(1);
+    expect(body.searchesImported).toBe(body.historyImportCap);
+    expect(body.searchesTruncated).toBe(EXPORT_HISTORY_LIMIT - body.historyImportCap);
+    expect(body.settingsRestored).toBe(true);
+  });
+
+  it("身份未受信仍然 401（新增字段不改变鉴权边界）", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/me/import",
+      headers: { "x-navhub-user-id": IMPORTER },
+      payload: { favoriteFolders: [] } as never,
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+describe("备份导入 T2：星标/评价重放 + 格式版本判别", () => {
+  // 与上一组同法：/api/me/import 限流 10/min/来源，逐次换地址拿新桶
+  let t2Seq = 500;
+  const t2Import = (payload: unknown) =>
+    app.inject({
+      method: "POST",
+      url: "/api/me/import",
+      remoteAddress: `10.88.0.${(t2Seq++ % 200) + 3}`,
+      headers: signedHeaders(IMPORTER),
+      payload: payload as never,
+    });
+  const themeManifest = (name: string) => ({
+    manifestVersion: 1,
+    kind: "theme" as const,
+    name,
+    description: "T2 导入重放测试用主题",
+    version: "1.0.0",
+    payload: { accent: "violet" },
+  });
+
+  beforeAll(async () => {
+    await ctx.repo.createPlugin(
+      { manifest: themeManifest("T2 已安装主题"), slug: "t2-installed-theme", status: "published", source: "seed", author: "测试" },
+      { actor: "test", actorKind: "system" },
+    );
+    await ctx.repo.createPlugin(
+      { manifest: themeManifest("T2 未安装主题"), slug: "t2-not-installed-theme", status: "published", source: "seed", author: "测试" },
+      { actor: "test", actorKind: "system" },
+    );
+    // 评价门禁要求活跃安装：只给第一个插件装上
+    await ctx.repo.installPlugin("t2-installed-theme", IMPORTER);
+  });
+
+  it("星标重放：导入/备份内重复/插件缺失分开计数", async () => {
+    const res = await t2Import({
+      pluginStars: [
+        { slug: "t2-installed-theme" },
+        { slug: "t2-installed-theme" },
+        { slug: "no-such-plugin" },
+      ],
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.starsImported).toBe(1);
+    expect(body.starsSkippedDuplicate).toBe(1);
+    expect(body.starsSkippedMissing).toBe(1);
+  });
+
+  it("评价重放：遵守「已安装才可评」门禁，未安装/缺失如实跳过", async () => {
+    const res = await t2Import({
+      pluginReviews: [
+        { slug: "t2-installed-theme", rating: 5, title: "好用", content: "导入恢复的评价" },
+        { slug: "t2-not-installed-theme", rating: 4 },
+        { slug: "no-such-plugin", rating: 3 },
+      ],
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.reviewsImported).toBe(1);
+    expect(body.reviewsSkippedNotInstalled).toBe(1);
+    expect(body.reviewsSkippedMissing).toBe(1);
+  });
+
+  it("备份 schemaVersion 比当前服务新 -> 400 并点名版本", async () => {
+    const res = await t2Import({ schemaVersion: 99, favorites: [] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain("v99");
+  });
+
+  it("导出带 schemaVersion=1 与收藏截断口径，往返上限同源", async () => {
+    const res = await data("GET", "/api/me/export");
+    expect(res.statusCode).toBe(200);
+    expect(res.json().schemaVersion).toBe(1);
+    expect(res.json().favoritesTruncated).toBe(false);
   });
 });
 

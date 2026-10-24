@@ -164,13 +164,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function HomePage() {
-  const { navigationData, siteData } = await getData();
   // WebSite 结构化数据：全站唯一入口页挂一份即可。
   // 不写 potentialAction（没有 /search 页面），不写 aggregateRating（没有评价体系）。
   // origin 只读配置：首页带 revalidate，一旦回退到 headers() 就会在构建期落成 ƒ、
   // 60s 缓存静默作废（缺配置的正确降级是「这份 JSON-LD 不输出」，地址保持相对）。
   const origin = configuredSiteOrigin();
-  const directoryLinks = await loadDirectoryLinks();
+  // 导航数据与目录带互不依赖：串行 await 等于在白送一个中枢往返的 TTFB，
+  // 而首页是爬虫面第一入口（getData 内部已并行，loadDirectoryLinks 内部也已并行）。
+  const [{ navigationData, siteData }, directoryLinks] = await Promise.all([getData(), loadDirectoryLinks()]);
 
   return (
     <>

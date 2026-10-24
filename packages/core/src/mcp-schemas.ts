@@ -30,13 +30,49 @@ export function httpUrl(label = "必须是 http(s) 绝对地址") {
     .string()
     .url(label)
     .refine((value) => {
+      // 控制字符这一行正常情况下够不到：`.url()` 已按 WHATWG 口径剥掉 Tab/LF/CR，
+      // 传进来的就是浏览器会用的那个串。留着是为了 zod 一改规范化行为时，
+      // `java\nscript:` 这类变体不会悄悄变成放行。
+      // userinfo：`https://显示名@真实域` 的权威域是后面那个，是钓鱼的常用显示手法。
+      if (/[\u0000-\u001f\u007f]/.test(value)) return false;
       try {
-        const protocol = new URL(value).protocol;
-        return protocol === "http:" || protocol === "https:";
+        const u = new URL(value);
+        if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+        if (u.username || u.password) return false;
+        return true;
       } catch {
         return false;
       }
     }, label);
+}
+
+/** 短链目标的最大长度：与 POST /api/shortlinks 的入库上限保持一致 */
+export const MAX_SHORTLINK_TARGET_LENGTH = 500;
+
+/**
+ * 短链 `/s/<code>` 允许跳转的唯一目标：站内 `/marketplace/` 路径。
+ *
+ * 光看字面前缀不够，有三个真实逃逸口：
+ *   - 控制字符：浏览器解析前会删掉 Tab/LF/CR，`/\t/marketplace/x` 到我们手里是
+ *     站内路径、到浏览器手里是协议相对地址 `//evil.com`。
+ *   - 反斜杠：Windows/IE 兼容口径把 `\` 当 `/`，`/\marketplace` 同样变成站外。
+ *   - 点段：`/marketplace/../../admin` 前缀过关，但规范化后落在 `/admin`；
+ *     放在 `new URL()` 之后判断，才能和浏览器真正打开的路径对齐。
+ * 入库（POST /api/shortlinks）、读回（resolveShortLink）与跳转（Next /s/[code]）
+ * 三处共用这一个口径；apps/web 不依赖 @navhub/core，那一份只能在
+ * `src/app/s/[code]/route.ts` 里保持同构，由 test/shortlink-target.test.ts 锁住。
+ */
+export function isInternalShortLinkTarget(target: string): boolean {
+  if (!target || target.length > MAX_SHORTLINK_TARGET_LENGTH) return false;
+  if (/[\u0000-\u001f\u007f]/.test(target)) return false;
+  if (!target.startsWith("/marketplace/") || target.startsWith("//")) return false;
+  if (target.includes("\\")) return false;
+  try {
+    const resolved = new URL(target, "http://navhub.internal");
+    return resolved.origin === "http://navhub.internal" && resolved.pathname.startsWith("/marketplace/");
+  } catch {
+    return false;
+  }
 }
 
 export type McpScope = "read" | "write" | "admin";

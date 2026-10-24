@@ -11,6 +11,7 @@ import { Container } from '@/components/ui/container'
 import { Button } from '@/components/ui/button'
 import { Footer } from '@/components/footer'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
+import { AnonymousHintInline } from '@/components/user-center/anonymous-hint'
 import { SectionState } from '@/components/user-center/section-state'
 import { useMeOverview } from '@/hooks/use-me-overview'
 import { ArrowRight, LayoutGrid, Package, PackageCheck, Send, Sparkles, Star } from 'lucide-react'
@@ -81,9 +82,9 @@ export function MePluginsView() {
       {(state === 'ready' || state === 'anonymous') && (
         <>
           {state === 'anonymous' && (
-            <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 text-xs leading-relaxed text-muted-foreground sm:p-5">
+            <AnonymousHintInline>
               当前是匿名身份：插件安装记录保存在本机，登录后自动同步到云端。下方计数按 0 展示。
-            </section>
+            </AnonymousHintInline>
           )}
 
           <section aria-label="插件入口" className="grid grid-cols-1 gap-3 sm:grid-cols-2">

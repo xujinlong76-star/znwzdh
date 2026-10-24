@@ -17,7 +17,10 @@ import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { copyText } from '@/lib/clipboard'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { SectionState } from '@/components/user-center/section-state'
+import { fetchVisitsPage, clearProfileSignals, type HubVisitItem } from '@/lib/navhub-api'
+import { safeHref } from '@/lib/safe-url'
 import {
+  batchCleanZeroResultSearchHistory,
   clearCloudSearchHistory,
   deleteSearchHistoryItem,
   fetchSearchHistoryPage,
@@ -29,6 +32,33 @@ type ViewState = 'loading' | 'ready' | 'error' | 'no-identity'
 type ResultFilterMode = 'all' | 'with-results' | 'zero-results'
 
 const PAGE_SIZE = 20
+
+/** 离线快照键（T24）：只存最近一页（≤20 条）+ 时间戳，会话级过期不设、随新数据覆盖 */
+const HISTORY_SNAPSHOT_KEY = 'navhub.search_history.cache.v1'
+const HISTORY_SNAPSHOT_MAX = 20
+
+function writeHistorySnapshot(items: HubSearchHistoryItem[]): void {
+  try {
+    window.localStorage.setItem(
+      HISTORY_SNAPSHOT_KEY,
+      JSON.stringify({ at: Date.now(), items: items.slice(0, HISTORY_SNAPSHOT_MAX) }),
+    )
+  } catch {
+    // 隐私模式写不进：快照是尽力而为的增强，不构成功能承诺
+  }
+}
+
+function readHistorySnapshot(): { at: number; items: HubSearchHistoryItem[] } | null {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_SNAPSHOT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { at?: number; items?: HubSearchHistoryItem[] }
+    if (!Array.isArray(parsed.items) || typeof parsed.at !== 'number') return null
+    return { at: parsed.at, items: parsed.items }
+  } catch {
+    return null
+  }
+}
 
 function formatTime(ts: number): string {
   if (!ts) return ''
@@ -57,6 +87,18 @@ export default function SearchHistoryPage() {
   const [filterMode, setFilterMode] = useState<ResultFilterMode>('all')
   const [cleaningZero, setCleaningZero] = useState(false)
 
+  /* ---------------- 访问历史 tab（T23） ---------------- */
+  const [tab, setTab] = useState<'searches' | 'visits'>('searches')
+  const [visitState, setVisitState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [visits, setVisits] = useState<HubVisitItem[]>([])
+  const [visitTotal, setVisitTotal] = useState(0)
+  const [visitHasMore, setVisitHasMore] = useState(false)
+  const [visitNextOffset, setVisitNextOffset] = useState(0)
+  const [visitBusy, setVisitBusy] = useState(false)
+  const [confirmClearVisits, setConfirmClearVisits] = useState(false)
+  /** 非空 = 当前展示的是离线快照（时间戳用于如实标注） */
+  const [offlineSnapshotAt, setOfflineSnapshotAt] = useState<number | null>(null)
+
   const load = useCallback(async (id: string) => {
     setIdentity(id)
     if (!id) {
@@ -64,6 +106,7 @@ export default function SearchHistoryPage() {
       return
     }
     setState('loading')
+    setOfflineSnapshotAt(null)
     // 降级 ≠ 空：取数失败必须落 error（带重试），不能渲染成「还没有搜索记录」——
     // 后者会让用户以为历史被清空。fetchSearchHistoryPage 的 degrade 回调正是为此存在。
     let degraded = false
@@ -71,13 +114,25 @@ export default function SearchHistoryPage() {
       degraded = true
     })
     if (degraded) {
-      setState('error')
+      // 离线快照（T24）：本机有最近的首页快照时展示它，并明确标注「这是快照」——
+      // 有标注的旧数据好过一行错误；没有快照才落纯 error 态。
+      const snapshot = readHistorySnapshot()
+      if (snapshot) {
+        setItems(snapshot.items)
+        setHasMore(false)
+        setNextOffset(0)
+        setOfflineSnapshotAt(snapshot.at)
+        setState('ready')
+      } else {
+        setState('error')
+      }
       return
     }
     setItems(page.items)
     setHasMore(page.hasMore)
     setNextOffset(page.nextOffset)
     setState('ready')
+    writeHistorySnapshot(page.items)
   }, [])
 
   useEffect(() => {
@@ -100,7 +155,7 @@ export default function SearchHistoryPage() {
   }, [identity, loadingMore, nextOffset])
 
   const removeItem = useCallback(async (id: number) => {
-    if (!identity) return
+    if (!identity || offlineSnapshotAt) return
     setDeletingId(id)
     const ok = await deleteSearchHistoryItem(identity, id)
     setDeletingId(null)
@@ -147,27 +202,72 @@ export default function SearchHistoryPage() {
   const handleCleanZeroResults = useCallback(async () => {
     if (!identity || zeroResultItems.length === 0 || cleaningZero) return
     setCleaningZero(true)
-    let removedCount = 0
-    const removedIds = new Set<number>()
     try {
-      for (const item of zeroResultItems) {
-        const ok = await deleteSearchHistoryItem(identity, item.id)
-        if (ok) {
-          removedCount += 1
-          removedIds.add(item.id)
-        }
+      // T4：服务端一次往返完成筛选删除（此前是逐条 DELETE 串行循环）
+      const removed = await batchCleanZeroResultSearchHistory(identity)
+      if (removed === null) {
+        toast({
+          title: '清理失败',
+          description: '云端暂不可用，请稍后重试。',
+          variant: 'destructive',
+        })
+        return
       }
-      if (removedIds.size > 0) {
-        setItems((prev) => prev.filter((i) => !removedIds.has(i.id)))
-      }
+      // 已加载列表里的零结果条目按服务端口径移除（服务端删的可能比当前页更多）
+      setItems((prev) => prev.filter((i) => i.resultCount !== 0))
       toast({
-        title: `已清理 ${removedCount} 条零结果无效搜索记录`,
+        title: `已清理 ${removed} 条零结果无效搜索记录`,
         description: '保留了全部有效命中的搜索历史。',
       })
     } finally {
       setCleaningZero(false)
     }
-  }, [cleaningZero, identity, toast, zeroResultItems])
+  }, [cleaningZero, identity, toast, zeroResultItems.length])
+
+  const loadVisits = useCallback(async (offset: number) => {
+    if (visitBusy) return
+    if (offset === 0) setVisitState('loading')
+    setVisitBusy(true)
+    let degraded = false
+    const page = await fetchVisitsPage({ limit: 20, offset }, () => {
+      degraded = true
+    })
+    setVisitBusy(false)
+    if (degraded || page === null) {
+      // 降级 ≠ 空：首次加载失败落 error（带重试），加载更多失败保持原列表
+      if (offset === 0) setVisitState('error')
+      else setVisitHasMore(true)
+      return
+    }
+    setVisits((prev) => (offset === 0 ? page.items : [...prev, ...page.items]))
+    setVisitTotal(page.total)
+    setVisitHasMore(page.hasMore)
+    setVisitNextOffset(page.nextOffset)
+    setVisitState('ready')
+  }, [visitBusy])
+
+  // 切到访问 tab 时首次加载；身份变化后回 idle（下次切入按新身份取）
+  useEffect(() => {
+    if (tab !== 'visits') return
+    if (visitState === 'idle') void loadVisits(0)
+  }, [tab, visitState, loadVisits])
+
+  const clearVisits = useCallback(async () => {
+    if (!identity || visitBusy) return
+    setVisitBusy(true)
+    const ok = await clearProfileSignals(identity, 'click')
+    setVisitBusy(false)
+    setConfirmClearVisits(false)
+    if (!ok) {
+      toast({ title: '清空访问记录失败', description: '云端暂不可用，请稍后重试', variant: 'destructive' })
+      return
+    }
+    setVisits([])
+    setVisitTotal(0)
+    setVisitHasMore(false)
+    setVisitNextOffset(0)
+    toast({ title: '访问记录已清空', description: '画像已按剩余行为重建；收藏与搜索历史不受影响。' })
+  }, [identity, toast, visitBusy])
 
   const handleCopyQuery = useCallback(
     async (queryText: string) => {
@@ -225,7 +325,132 @@ export default function SearchHistoryPage() {
         }
       />
 
+      {/* 双 tab（T23）：搜索历史 / 访问历史。访问历史来自服务端 click 流水，
+          与搜索历史一样都是「用户自己的行为数据」。 */}
+      <div role="tablist" aria-label="历史类型" className="flex w-full gap-1.5 sm:w-auto">
+        {(
+          [
+            ['searches', '搜索历史'],
+            ['visits', '访问历史'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              tab === key
+                ? 'border-primary/40 bg-primary/10 text-primary'
+                : 'border-border/60 bg-background/60 text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {state === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载搜索历史" />}
+
+      {tab === 'searches' && offlineSnapshotAt && state === 'ready' && (
+        <p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2 text-[11px] leading-relaxed text-amber-800 dark:text-amber-200">
+          云端暂时取不到，正在展示本机离线快照（截至 {new Date(offlineSnapshotAt).toLocaleString('zh-CN', { hour12: false })}）。这不是实时数据，联网后重试可获取最新记录。
+        </p>
+      )}
+
+      {/* 匿名身份也有云端历史（绑定本浏览器身份）：如实说明归属，避免「这是谁的记录」的疑惑 */}
+      {state === 'ready' && identity.startsWith('anon-') && (
+        <p className="rounded-xl border border-dashed border-border/70 bg-card/50 px-3.5 py-2 text-[11px] leading-relaxed text-muted-foreground">
+          当前为匿名身份：这些历史绑定本浏览器的匿名标识，只用于「最近搜索」与画像；登录后会自动合并到账号。
+        </p>
+      )}
+
+      {tab === 'visits' && state === 'ready' && (
+        <>
+          {visitState === 'loading' && <SectionState variant="loading" rows={4} loadingLabel="正在加载访问历史" />}
+
+          {visitState === 'error' && (
+            <SectionState
+              variant="error"
+              title="访问记录暂时取不到"
+              description="云端暂时不可用，这不代表记录被清空——恢复后会原样回来。"
+              onRetry={() => void loadVisits(0)}
+            />
+          )}
+
+          {visitState === 'ready' && (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] text-muted-foreground">
+                  共 {visitTotal} 条站点访问记录（用于画像与「最近访问」，不含搜索词）。
+                </p>
+                {visits.length > 0 && (
+                  <Button
+                    variant={confirmClearVisits ? 'destructive' : 'outline'}
+                    size="sm"
+                    className="w-full text-xs sm:w-auto"
+                    disabled={visitBusy}
+                    onClick={() => void clearVisits()}
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    {confirmClearVisits ? '确认清空访问记录' : '清空访问记录'}
+                  </Button>
+                )}
+              </div>
+
+              {visits.length === 0 ? (
+                <SectionState
+                  variant="empty"
+                  icon={History}
+                  title="还没有站点访问记录"
+                  description="浏览站点后这里会按时间列出最近访问（只记录站点点击，不含搜索内容）。"
+                />
+              ) : (
+                <>
+                  <ul className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/70 bg-card/60">
+                    {visits.map((v) => (
+                      <li key={v.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          {v.site ? (
+                            <a
+                              href={safeHref(v.site.url)}
+                              target="_blank"
+                              rel="noopener noreferrer nofollow"
+                              className="block truncate text-xs font-medium hover:text-primary hover:underline"
+                              title={v.site.title}
+                            >
+                              {v.site.title}
+                            </a>
+                          ) : (
+                            <span className="block truncate text-xs font-medium text-muted-foreground" title="站点已不在库">
+                              （站点已不在中枢）
+                            </span>
+                          )}
+                          {v.site?.url && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{v.site.url}</p>}
+                        </div>
+                        <time
+                          dateTime={new Date(v.at).toISOString()}
+                          className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
+                        >
+                          {formatTime(v.at)}
+                        </time>
+                      </li>
+                    ))}
+                  </ul>
+                  {visitHasMore && (
+                    <div className="flex justify-center pt-1">
+                      <Button variant="outline" size="sm" className="text-xs" disabled={visitBusy} onClick={() => void loadVisits(visitNextOffset)}>
+                        {visitBusy ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+                        加载更多
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </>
+      )}
 
       {state === 'no-identity' && (
         <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-6 text-sm leading-relaxed text-muted-foreground">
@@ -242,7 +467,7 @@ export default function SearchHistoryPage() {
         />
       )}
 
-      {state === 'ready' && items.length === 0 && (
+      {tab === 'searches' && state === 'ready' && items.length === 0 && (
         <SectionState
           variant="empty"
           icon={Search}
@@ -251,7 +476,7 @@ export default function SearchHistoryPage() {
         />
       )}
 
-      {state === 'ready' && items.length > 0 && (
+      {tab === 'searches' && state === 'ready' && items.length > 0 && (
         <>
           {/* 检索与状态筛选工具栏 */}
           <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/60 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -282,6 +507,7 @@ export default function SearchHistoryPage() {
                   size="sm"
                   variant={filterMode === mode ? 'default' : 'outline'}
                   className="h-7 text-[11px]"
+                  aria-pressed={filterMode === mode}
                   onClick={() => setFilterMode(mode)}
                 >
                   {label}

@@ -17,7 +17,10 @@ import { useToast } from '@/components/ui/use-toast'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { SectionState } from '@/components/user-center/section-state'
 import { useMeOverview } from '@/hooks/use-me-overview'
-import type { Overview } from '@/app/me/me-view'
+import type { Overview } from '@/lib/me-types'
+import { AnonymousHint } from '@/components/user-center/anonymous-hint'
+import { SessionDevicesPanel } from '@/components/user-center/session-devices-panel'
+import { ApiTokensPanel } from '@/components/user-center/api-tokens-panel'
 import {
   runClientStorageDiagnostics,
   type DiagnosticCheckItem,
@@ -30,6 +33,7 @@ export function AccountView() {
   const [editing, setEditing] = useState(false)
   const [username, setUsername] = useState('')
   const [avatar, setAvatar] = useState('')
+  const [email, setEmail] = useState('')
   const [saving, setSaving] = useState(false)
   const [diagRunning, setDiagRunning] = useState(false)
   const [diagChecks, setDiagChecks] = useState<DiagnosticCheckItem[] | null>(null)
@@ -38,6 +42,7 @@ export function AccountView() {
   const startEdit = useCallback((data: Overview) => {
     setUsername(data.user?.username ?? '')
     setAvatar(data.user?.avatar ?? '')
+    setEmail(data.user?.email ?? '')
     setEditing(true)
   }, [])
 
@@ -53,7 +58,12 @@ export function AccountView() {
       const res = await fetch('/api/me/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: trimmedName, avatar: avatar.trim() || null }),
+        body: JSON.stringify({
+          username: trimmedName,
+          avatar: avatar.trim() || null,
+          // 邮箱留空 = 解绑；格式校验交给服务端 zod（409 冲突会带可读原因）
+          email: email.trim() || null,
+        }),
         cache: 'no-store',
       })
       let data: { ok?: boolean; user?: Overview['user']; error?: string } = {}
@@ -75,7 +85,7 @@ export function AccountView() {
     } finally {
       setSaving(false)
     }
-  }, [avatar, overview, reload, saving, toast, username])
+  }, [avatar, email, overview, reload, saving, toast, username])
 
   const runDiagnostics = useCallback(async () => {
     if (diagRunning || !overview) return
@@ -134,20 +144,12 @@ export function AccountView() {
       )}
 
       {state === 'anonymous' && (
-        <section className="space-y-3 rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 sm:p-6">
-          <p className="text-sm font-semibold">当前是匿名身份</p>
-          <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
-            匿名数据只保存在本机浏览器；登录后会自动合并到账号，并支持跨设备同步。
-          </p>
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            <Button asChild size="sm" className="w-full text-xs sm:w-auto">
-              <Link href="/auth/signin?callbackUrl=/me/account">登录 / 创建账号</Link>
-            </Button>
-            <Button asChild variant="outline" size="sm" className="w-full text-xs sm:w-auto">
-              <Link href="/favorites">查看本机收藏</Link>
-            </Button>
-          </div>
-        </section>
+        <AnonymousHint
+          description="匿名数据只保存在本机浏览器；登录后会自动合并到账号，并支持跨设备同步。"
+          callbackUrl="/me/account"
+          secondaryHref="/favorites"
+          secondaryLabel="查看本机收藏"
+        />
       )}
 
       {state === 'ready' && overview && (
@@ -217,6 +219,22 @@ export function AccountView() {
                     placeholder="https://example.com/avatar.png"
                     className="h-9 text-xs"
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="account-email" className="block text-xs font-medium text-muted-foreground">
+                    邮箱（留空即解绑）
+                  </label>
+                  <Input
+                    id="account-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="h-9 text-xs"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    邮箱只用于账号识别与找回参考；当前部署未配置邮件服务，不做验证回执。
+                  </p>
                 </div>
                 <div className="flex gap-2 sm:col-span-2">
                   <Button size="sm" className="text-xs" disabled={saving} onClick={() => void saveProfile()}>
@@ -316,6 +334,12 @@ export function AccountView() {
               </div>
             )}
           </section>
+
+          {/* 登录设备管理（T8 会话治理） */}
+          <SessionDevicesPanel />
+
+          {/* 个人 API 令牌（T20） */}
+          <ApiTokensPanel />
 
           <section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 sm:p-5">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive">

@@ -277,6 +277,8 @@ export interface PersonalizationSignals {
   topCategories?: Id[];
   topTags?: string[];
   visitedSiteIds?: Id[];
+  /** 收藏过的站点清单（画像采集已久，此前从未参与排序——T17 补上消费方） */
+  favoriteSiteIds?: Id[];
 }
 
 /** 参与个性化打分所需的最小站点信息 */

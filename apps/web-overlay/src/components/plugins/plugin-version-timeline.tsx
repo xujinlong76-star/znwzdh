@@ -1,17 +1,30 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import {
   fetchPluginVersions,
   fetchPluginVersionDetail,
   type HubPluginVersionItem,
   type HubPluginVersionDetail,
 } from '@/lib/navhub-api'
-import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
 import { copyText } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
 import { History, GitCommit, ShieldCheck, ChevronRight, FileCode, Check, Copy } from 'lucide-react'
 import { toast } from 'sonner'
+
+// 差异面板只在展开版本时出现，静态引入会把整个 diff 渲染器塞进详情页首屏 chunk
+const PluginDiffView = dynamic(
+  () => import('@/components/plugins/plugin-diff-view').then((m) => m.PluginDiffView),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-16 items-center justify-center rounded-lg border border-border/60 bg-muted/20" aria-busy="true">
+        <span className="sr-only">正在加载版本差异…</span>
+      </div>
+    ),
+  },
+)
 
 interface PluginVersionTimelineProps {
   slug: string

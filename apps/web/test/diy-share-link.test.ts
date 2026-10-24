@@ -193,7 +193,10 @@ describe('分享入口：分享失败必须说出来', () => {
     const hookAndStorage = hook + storage
     expect(/const importPresetFromUrlHash\s*=/.test(hookAndStorage)).toBe(false)
     expect(/^\s*importPresetFromUrlHash,?\s*$/m.test(hookAndStorage)).toBe(false)
-    expect(/if \(applyHomeDiyShareHash\(\)\) return/.test(storage)).toBe(true)
+    expect(/const share = applyHomeDiyShareHash\(\)/.test(storage)).toBe(true)
+    expect(/if \(share\.applied\) return/.test(storage)).toBe(true)
+    // 链接里被白名单/上限吃掉的内容必须挂到用户看得见的横幅上，不能只 console.warn
+    expect(/if \(share\.warning\) commitSharedState\(\{ storageWarning: share\.warning \}\)/.test(storage)).toBe(true)
   })
 
   it('导出类型是「带原因的结果」，不再是可能为空的字符串', () => {

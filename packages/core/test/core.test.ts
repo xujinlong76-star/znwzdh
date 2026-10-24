@@ -160,6 +160,22 @@ describe("个性化通道（personalCandidates）", () => {
   it("可以限制候选数量，避免偏好通道喧宾夺主", () => {
     expect(personalCandidates(sites, signals, { limit: 1 })).toHaveLength(1);
   });
+
+  it("收藏信号参与打分且档位高于「访问过」（T17）", () => {
+    // 给 life-1 只加收藏信号 → 它也能进入 personal 通道
+    const out = personalCandidates(sites, { ...signals, favoriteSiteIds: ["life-1"] });
+    expect(out.map((c) => c.siteId)).toContain("life-1");
+
+    // ai-2（类目+标签+收藏=1.0）应排在 ai-1（类目+标签+访问=0.95）之前：收藏档位更高
+    const ranked = personalCandidates(sites, { topCategories: ["cat-ai"], topTags: ["ai"], favoriteSiteIds: ["ai-2"], visitedSiteIds: ["ai-1"] });
+    expect(ranked[0]!.siteId).toBe("ai-2");
+    expect(ranked[1]!.siteId).toBe("ai-1");
+  });
+
+  it("只有收藏信号（无类目/标签/访问）也能产生候选", () => {
+    const out = personalCandidates(sites, { favoriteSiteIds: ["life-1"] });
+    expect(out.map((c) => c.siteId)).toEqual(["life-1"]);
+  });
 });
 
 describe("个性化与相关性的关系（关键安全性质）", () => {

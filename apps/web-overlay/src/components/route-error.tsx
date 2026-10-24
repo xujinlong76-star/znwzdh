@@ -38,13 +38,16 @@ export function RouteError({
     reportClientError({ message: error?.message ?? String(error), digest: error?.digest })
 
   return (
-    <div className="container mx-auto px-4 py-16 max-w-xl" role="alert">
-      <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-6 space-y-4 text-center">
+    // 页面自己的 <main id="main-content"> 会被这段兜底整体替换：
+    // 不在这儿把地标补回来，「跳到主内容」的跳过链接就指向一个不存在的锚点。
+    // tabIndex={-1} 让它可被程序聚焦，跳过链接点下去焦点真的会落进来。
+    <main id="main-content" tabIndex={-1} className="container mx-auto px-4 py-16 max-w-xl outline-none">
+      <div role="alert" aria-labelledby="route-error-title" className="rounded-2xl border border-destructive/25 bg-destructive/5 p-6 space-y-4 text-center">
         <div className="mx-auto w-12 h-12 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive flex items-center justify-center">
           <AlertTriangle className="w-6 h-6" />
         </div>
         <div className="space-y-1">
-          <h2 className="text-base font-semibold">
+          <h2 id="route-error-title" className="text-base font-semibold">
             {scope ? scope + '加载失败' : '这部分内容加载失败'}
           </h2>
           <p className="text-sm font-medium">{crash.title}</p>
@@ -68,6 +71,6 @@ export function RouteError({
           </Button>
         </div>
       </div>
-    </div>
+    </main>
   )
 }

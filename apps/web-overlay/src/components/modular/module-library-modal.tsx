@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef } from 'react'
 import { WIDGET_REGISTRY } from '@/lib/modular/registry'
 import {
   X,
@@ -59,12 +59,14 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCat, setSelectedCat] = useState('all')
   const searchInputRef = useRef<HTMLInputElement | null>(null)
-  const { containerProps, scrim } = useOverlayBehavior({ open: isOpen, onClose })
-
-  // 打开即聚焦搜索框：这个弹窗的主任务就是搜索
-  useEffect(() => {
-    if (isOpen) searchInputRef.current?.focus()
-  }, [isOpen])
+  const { containerProps, scrim } = useOverlayBehavior({
+    open: isOpen,
+    onClose,
+    // 名称指向可见标题，读屏打开时立刻知道进的是模块库
+    ariaLabelledBy: 'navhub-module-library-modal-title',
+    // 打开即聚焦搜索框：这个弹窗的主任务就是搜索（交给 hook，自己 focus 会被面板聚焦抢走）
+    initialFocusRef: searchInputRef,
+  })
 
   if (!isOpen) return null
 
@@ -90,7 +92,7 @@ export function ModuleLibraryModal({ isOpen, onClose, onAddModule }: ModuleLibra
               <LayoutGrid className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-foreground">添加独立功能模块</h2>
+              <h2 id="navhub-module-library-modal-title" className="text-base font-bold text-foreground">添加独立功能模块</h2>
               <p className="text-xs text-muted-foreground">从模块库选择并添加至你的自定义排版工作台</p>
             </div>
           </div>

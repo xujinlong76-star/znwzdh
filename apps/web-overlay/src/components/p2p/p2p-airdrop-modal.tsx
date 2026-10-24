@@ -1,16 +1,21 @@
 'use client'
 
 /**
- * 局域网 WebRTC / BroadcastChannel P2P 零中转快传与协作中枢
+ * 同浏览器跨标签页的零中转快传中枢（NavDrop）
  *
- * 核心特性：
- * 1. 零云端依赖：基于浏览器 WebRTC DataChannel 与 BroadcastChannel 实现同局域网设备瞬时握手；
- * 2. 隔空投送 (NavDrop)：支持一键将本地收藏夹、自定义排版、插件清单与主题无损快传到周围设备；
- * 3. 差量合并与安全审查：接收端在落地前提供结构化 Diff 预览与安全过滤，杜绝脏数据注入；
- * 4. 设备雷达自发现：基于轻量心跳广播自动识别同一子网或多标签页内的活动中枢节点。
+ * 实现方式只有一条通道：`BroadcastChannel`。它的真实边界是
+ * **同一浏览器、同一来源的多个标签页／窗口**——不是局域网，也没有 WebRTC
+ * （全站没有 `RTCPeerConnection`／`iceServers`，早先的「局域网点对点直连」「手机也能收」
+ * 是把做不到的能力写在标题上，用户拿手机试半天只会静默失败）。
+ * 跨设备因此只能走「数据页导出备份 → 新设备导入」，界面上照实指路。
+ *
+ * 数据边界全部收在 `@/lib/p2p/airdrop-transfer`：单次条数上限、字段长度、
+ * 逐因台账（超上限／脏记录／缺字段／截断），以及「本地收藏读不出来」这一独立状态。
+ * 本组件只做存储 IO 与渲染，措辞一律照台账切换。
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useTheme } from 'next-themes'
 import {
   Radio,
   Share2,
@@ -23,11 +28,37 @@ import {
   Download,
   Sparkles,
   Palette,
+  AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
-import { FAVORITES_STORAGE_KEY, parseFavorites } from '@/lib/favorites-storage'
+import { FAVORITES_STORAGE_KEY, corruptBackupKey } from '@/lib/favorites-storage'
+import {
+  DIY_CONFIG_LIMIT,
+  FAVORITES_ROLLBACK_FAILED_HINT,
+  FAVORITES_WRITE_FAILED_HINT,
+  MAX_TRANSFER_BOOKMARKS,
+  buildIncomingReport,
+  buildLocalBookmarkInventory,
+  checkSendFeasibility,
+  corruptInventory,
+  countFavoriteDelta,
+  formatIncomingSummary,
+  formatMergeNotice,
+  formatSendNotice,
+  indexFavorites,
+  isTransferableTheme,
+  mergeBookmarkLists,
+  type AirDropPayload,
+  type AirDropPayloadType,
+  type IncomingReport,
+  type LocalBookmarkInventory,
+  type MergeResult,
+  type NoticeTone,
+  type TransferableTheme,
+} from '@/lib/p2p/airdrop-transfer'
 
 interface P2PAirDropModalProps {
   open: boolean
@@ -42,77 +73,32 @@ interface PeerDevice {
   ipHint?: string
 }
 
-interface TransferFavoriteItem {
-  siteId: string
-  title: string
-  href: string
-  icon?: string
-  description?: string
-  note?: string
-  folderId?: string | null
-  createdAt: number
-}
-
-interface AirDropPayload {
-  senderId: string
-  senderName: string
-  type: 'bookmarks' | 'theme' | 'all'
-  timestamp: number
-  data: {
-    siteCount: number
-    bookmarks?: TransferFavoriteItem[]
-    themeName?: string
-    diyConfigRaw?: string | null
-    notes?: string
-  }
-}
-
 const DIY_LAYOUT_STORAGE_KEY = 'navhub:home-diy-layout:v1'
 
-function sanitizeTransferBookmarks(raw: unknown): TransferFavoriteItem[] {
-  if (!Array.isArray(raw)) return []
-  const cleaned: TransferFavoriteItem[] = []
-  for (const item of raw.slice(0, 500)) {
-    if (!item || typeof item !== 'object') continue
-    const rec = item as Record<string, unknown>
-    const siteId = typeof rec.siteId === 'string' ? rec.siteId.trim().slice(0, 128) : ''
-    const title = typeof rec.title === 'string' ? rec.title.trim().slice(0, 200) : ''
-    const href = typeof rec.href === 'string' ? rec.href.trim().slice(0, 1024) : ''
-    if (!siteId || !title || !/^https?:\/\//i.test(href)) continue
-    cleaned.push({
-      siteId,
-      title,
-      href,
-      icon: typeof rec.icon === 'string' && (/^https?:\/\//i.test(rec.icon) || rec.icon.startsWith('/')) ? rec.icon.slice(0, 512) : undefined,
-      description: typeof rec.description === 'string' ? rec.description.slice(0, 500) : undefined,
-      note: typeof rec.note === 'string' ? rec.note.slice(0, 500) : undefined,
-      folderId: typeof rec.folderId === 'string' ? rec.folderId.slice(0, 64) : null,
-      createdAt: typeof rec.createdAt === 'number' && Number.isFinite(rec.createdAt) ? rec.createdAt : Date.now(),
-    })
+function readLocalInventory(): LocalBookmarkInventory {
+  if (typeof window === 'undefined') return buildLocalBookmarkInventory(null)
+  try {
+    return buildLocalBookmarkInventory(localStorage.getItem(FAVORITES_STORAGE_KEY))
+  } catch {
+    // 存储本身不可用（隐私模式／配额）：按「条数未知」处理，不能伪造成「你没有收藏」
+    return corruptInventory(true)
   }
-  return cleaned
 }
 
-function readLocalBookmarkList(): TransferFavoriteItem[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY)
-    const parsed = parseFavorites<TransferFavoriteItem>(raw)
-    if (parsed.corrupt) return []
-    return sanitizeTransferBookmarks(parsed.items)
-  } catch {
-    return []
-  }
+function toneToToast(tone: NoticeTone) {
+  return tone === 'error' ? toast.error : tone === 'warn' ? toast.warning : toast.success
 }
 
 export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
+  const { setTheme } = useTheme()
   const [deviceId, setDeviceId] = useState('')
   const [deviceName, setDeviceName] = useState('')
   const [peers, setPeers] = useState<PeerDevice[]>([])
   const [isScanning, setIsScanning] = useState(false)
-  const [incomingPayload, setIncomingPayload] = useState<AirDropPayload | null>(null)
-  const [localBookmarkCount, setLocalBookmarkCount] = useState(0)
+  const [incoming, setIncoming] = useState<IncomingReport | null>(null)
+  const [inventory, setInventory] = useState<LocalBookmarkInventory>(() => buildLocalBookmarkInventory(null))
   const channelRef = useRef<BroadcastChannel | null>(null)
+  const deviceTypeRef = useRef<'desktop' | 'mobile' | 'tablet'>('desktop')
 
   // 初始化本机身份与广播通道
   useEffect(() => {
@@ -124,11 +110,11 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
       localStorage.setItem('navhub_p2p_device_id', storedId)
     }
     setDeviceId(storedId)
-    setLocalBookmarkCount(readLocalBookmarkList().length)
+    setInventory(readLocalInventory())
 
     const ua = navigator.userAgent
     let guessedType: 'desktop' | 'mobile' | 'tablet' = 'desktop'
-    let defaultName = '极客工作台 (Mac/PC)'
+    let defaultName = '本机工作台'
     if (/iPad|Tablet/i.test(ua)) {
       guessedType = 'tablet'
       defaultName = '便携平板终端'
@@ -136,7 +122,24 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
       guessedType = 'mobile'
       defaultName = '移动智能终端'
     }
+    // 原来 PING 硬写 deviceType: 'desktop'，手机端在对方列表里一律显示成电脑图标
+    deviceTypeRef.current = guessedType
     setDeviceName(defaultName)
+
+    const upsertPeer = (msg: { senderId?: unknown; senderName?: unknown; deviceType?: unknown }) => {
+      const id = String(msg.senderId ?? '').slice(0, 64)
+      if (!id || id === storedId) return
+      const rawName = String(msg.senderName ?? '').trim()
+      const updated: PeerDevice = {
+        id,
+        name: (rawName || '同浏览器标签页').slice(0, 64),
+        type: msg.deviceType === 'mobile' || msg.deviceType === 'tablet' ? msg.deviceType : 'desktop',
+        lastSeen: Date.now(),
+      }
+      setPeers((prev) =>
+        prev.some((p) => p.id === id) ? prev.map((p) => (p.id === id ? updated : p)) : [...prev, updated]
+      )
+    }
 
     try {
       const channel = new BroadcastChannel('navhub_p2p_airdrop_channel')
@@ -147,68 +150,27 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
         if (!msg || typeof msg !== 'object') return
 
         if (msg.type === 'PING') {
-          if (msg.senderId !== storedId) {
-            setPeers((prev) => {
-              const existing = prev.find((p) => p.id === msg.senderId)
-              const updated: PeerDevice = {
-                id: String(msg.senderId).slice(0, 64),
-                name: String(msg.senderName || '局域网终端').slice(0, 64),
-                type: msg.deviceType === 'mobile' || msg.deviceType === 'tablet' ? msg.deviceType : 'desktop',
-                lastSeen: Date.now(),
-              }
-              if (existing) {
-                return prev.map((p) => (p.id === msg.senderId ? updated : p))
-              }
-              return [...prev, updated]
-            })
-
-            channel.postMessage({
-              type: 'PONG',
-              senderId: storedId,
-              senderName: defaultName,
-              deviceType: guessedType,
-            })
-          }
+          if (msg.senderId === storedId) return
+          upsertPeer(msg)
+          channel.postMessage({
+            type: 'PONG',
+            senderId: storedId,
+            senderName: defaultName,
+            deviceType: guessedType,
+          })
         } else if (msg.type === 'PONG') {
-          if (msg.senderId !== storedId) {
-            setPeers((prev) => {
-              const existing = prev.find((p) => p.id === msg.senderId)
-              const updated: PeerDevice = {
-                id: String(msg.senderId).slice(0, 64),
-                name: String(msg.senderName || '局域网终端').slice(0, 64),
-                type: msg.deviceType === 'mobile' || msg.deviceType === 'tablet' ? msg.deviceType : 'desktop',
-                lastSeen: Date.now(),
-              }
-              if (existing) {
-                return prev.map((p) => (p.id === msg.senderId ? updated : p))
-              }
-              return [...prev, updated]
-            })
-          }
+          upsertPeer(msg)
         } else if (msg.type === 'AIRDROP_PAYLOAD') {
-          if ((msg.targetId === storedId || msg.broadcast) && msg.payload && typeof msg.payload === 'object') {
-            const rawPayload = msg.payload as AirDropPayload
-            const cleanBookmarks = sanitizeTransferBookmarks(rawPayload.data?.bookmarks)
-            setIncomingPayload({
-              senderId: String(rawPayload.senderId || '').slice(0, 64),
-              senderName: String(rawPayload.senderName || '未知终端').slice(0, 64),
-              type: rawPayload.type === 'theme' || rawPayload.type === 'all' ? rawPayload.type : 'bookmarks',
-              timestamp: typeof rawPayload.timestamp === 'number' ? rawPayload.timestamp : Date.now(),
-              data: {
-                siteCount: cleanBookmarks.length || Number(rawPayload.data?.siteCount) || 0,
-                bookmarks: cleanBookmarks,
-                themeName: typeof rawPayload.data?.themeName === 'string' ? rawPayload.data.themeName.slice(0, 64) : undefined,
-                diyConfigRaw: typeof rawPayload.data?.diyConfigRaw === 'string' && rawPayload.data.diyConfigRaw.length <= 65536
-                  ? rawPayload.data.diyConfigRaw
-                  : null,
-                notes: typeof rawPayload.data?.notes === 'string' ? rawPayload.data.notes.slice(0, 200) : undefined,
-              },
-            })
-          }
+          if (msg.targetId !== storedId && !msg.broadcast) return
+          // 外部（同浏览器另一端）来的包：整份过 buildIncomingReport，
+          // 少发、脏记录、截断、排版超长全部记在台账里，界面照台账说话
+          const report = buildIncomingReport(msg.payload)
+          if (!report) return
+          setIncoming(report)
         }
       }
     } catch {
-      // BroadcastChannel 不可用环境降级
+      // BroadcastChannel 不可用环境降级：界面会显示「通道不可用」而不是假装在扫描
     }
 
     return () => {
@@ -219,14 +181,14 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
 
   // 广播扫描对端
   const triggerScan = useCallback(() => {
+    setInventory(readLocalInventory())
     if (!channelRef.current || !deviceId) return
     setIsScanning(true)
-    setLocalBookmarkCount(readLocalBookmarkList().length)
     channelRef.current.postMessage({
       type: 'PING',
       senderId: deviceId,
       senderName: deviceName,
-      deviceType: 'desktop',
+      deviceType: deviceTypeRef.current,
     })
     setTimeout(() => {
       setIsScanning(false)
@@ -239,41 +201,54 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
     }
   }, [open, triggerScan])
 
-  // ESC 键退出
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && open) {
-        onOpenChange(false)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [open, onOpenChange])
+  // 浮层公共行为：Esc 关（捕获阶段）、点遮罩关、锁背景滚动、焦点圈养与还原、role=dialog + 名称
+  const { containerProps, scrimProps } = useOverlayBehavior({
+    open,
+    onClose: () => onOpenChange(false),
+    ariaLabelledBy: 'navhub-p2p-airdrop-modal-title',
+  })
 
-  // 计算待接收快传包的差量预览
-  const incomingDiffStats = useMemo(() => {
-    if (!incomingPayload) return { newCount: 0, existingCount: 0 }
-    const incomingList = incomingPayload.data.bookmarks || []
-    const currentList = readLocalBookmarkList()
-    const currentIds = new Set(currentList.map((b) => b.siteId || b.href))
-    let newCount = 0
-    let existingCount = 0
-    for (const item of incomingList) {
-      if (currentIds.has(item.siteId) || currentIds.has(item.href)) {
-        existingCount++
-      } else {
-        newCount++
-      }
-    }
-    return { newCount, existingCount }
-  }, [incomingPayload])
+  // 计算待接收快传包的差量预览（与合并共用判定，预览与落地不会两个口径）
+  const incomingDiff = useMemo(() => {
+    if (!incoming) return { newCount: 0, existingCount: 0 }
+    return countFavoriteDelta(indexFavorites(inventory.ledger.items), incoming.payload.data.bookmarks ?? [])
+  }, [incoming, inventory])
+
+  const incomingSummary = useMemo(
+    () => (incoming ? formatIncomingSummary({ report: incoming, newCount: incomingDiff.newCount, existingCount: incomingDiff.existingCount }) : null),
+    [incoming, incomingDiff]
+  )
+
+  const sendableCount = inventory.ledger.items.length
+  const canSend = !inventory.corrupt && sendableCount > 0
 
   // 发送真实快传数据给特定对端
-  const handleSendToPeer = (peer: PeerDevice, payloadType: 'bookmarks' | 'theme' | 'all') => {
-    if (!channelRef.current) return
-    const bookmarks = readLocalBookmarkList()
-    const currentTheme = typeof window !== 'undefined' ? (localStorage.getItem('theme') || 'system') : 'system'
-    const diyConfigRaw = typeof window !== 'undefined' ? localStorage.getItem(DIY_LAYOUT_STORAGE_KEY) : null
+  const handleSendToPeer = (peer: PeerDevice, payloadType: AirDropPayloadType) => {
+    if (!channelRef.current || typeof window === 'undefined') {
+      toast.error('快传通道不可用：当前浏览器没有 BroadcastChannel，只能同浏览器标签页之间直连。')
+      return
+    }
+    const latest = readLocalInventory()
+    setInventory(latest)
+    let currentTheme = 'system'
+    let diyConfigRaw: string | null = null
+    try {
+      currentTheme = localStorage.getItem('theme') || 'system'
+      diyConfigRaw = localStorage.getItem(DIY_LAYOUT_STORAGE_KEY)
+    } catch {
+      // 读不到就按「没有」处理，后面的台账会如实说明少了什么
+    }
+
+    const check = checkSendFeasibility({ payloadType, inventory: latest, diyConfigRaw, themeName: currentTheme })
+    if (check?.kind === 'block') {
+      toast.error(check.text)
+      return
+    }
+    const carriesBookmarks = payloadType !== 'theme'
+    const carriesDiy = payloadType !== 'bookmarks'
+    const diyIncluded = carriesDiy && !!diyConfigRaw && diyConfigRaw.length <= DIY_CONFIG_LIMIT
+    const items = carriesBookmarks ? latest.ledger.items : []
+    const themeIncluded = carriesDiy && isTransferableTheme(currentTheme)
 
     const payload: AirDropPayload = {
       senderId: deviceId,
@@ -281,11 +256,14 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
       type: payloadType,
       timestamp: Date.now(),
       data: {
-        siteCount: bookmarks.length,
-        bookmarks: payloadType === 'theme' ? [] : bookmarks,
-        themeName: currentTheme,
-        diyConfigRaw: payloadType === 'bookmarks' ? null : diyConfigRaw,
-        notes: '由 NavHub 隔空投送自动打包并完成安全脱敏',
+        siteCount: items.length,
+        // 申报本机总数：对端因此能算出「这一包少了几项」，而不是只看包内条数
+        declaredTotal: latest.corrupt ? null : latest.storedCount,
+        bookmarks: items,
+        themeName: themeIncluded ? currentTheme : undefined,
+        diyConfigRaw: diyIncluded ? diyConfigRaw : null,
+        diyDeclared: carriesDiy,
+        notes: `由 NavHub NavDrop 打包：本机收藏 ${latest.storedCount} 项，本次随包 ${items.length} 项`,
       },
     }
 
@@ -296,72 +274,166 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
       payload,
     })
 
-    toast.success(
-      `已向「${peer.name}」投送 ${
-        payloadType === 'bookmarks' ? `${bookmarks.length} 项本地收藏` : '个性化主题与工作台排版'
-      }`
-    )
+    const notice = formatSendNotice({
+      peerName: peer.name,
+      ledger: latest.ledger,
+      carriesBookmarks,
+      sentBookmarks: items.length,
+      sentDiy: diyIncluded,
+      sentTheme: themeIncluded,
+    })
+    if (check?.kind === 'warn') toast.warning(`${check.text}（${notice.text}）`)
+    else toneToToast(notice.tone)(notice.text)
   }
 
   // 接收端安全合并快传数据
   const handleAcceptIncoming = () => {
-    if (!incomingPayload || typeof window === 'undefined') return
-    try {
-      let mergedBookmarkCount = 0
-      const incomingBookmarks = sanitizeTransferBookmarks(incomingPayload.data.bookmarks)
-      if (incomingBookmarks.length > 0) {
-        const raw = localStorage.getItem(FAVORITES_STORAGE_KEY)
-        const parsed = parseFavorites<TransferFavoriteItem>(raw)
-        if (!parsed.corrupt) {
-          const existing = sanitizeTransferBookmarks(parsed.items)
-          const seenKeys = new Set(existing.map((b) => b.siteId || b.href))
-          const next = [...existing]
-          for (const item of incomingBookmarks) {
-            const key = item.siteId || item.href
-            if (!seenKeys.has(key)) {
-              seenKeys.add(key)
-              next.unshift(item)
-              mergedBookmarkCount++
-            }
-          }
-          localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next))
-          setLocalBookmarkCount(next.length)
-          window.dispatchEvent(new Event('storage'))
-        }
-      }
+    if (!incoming || typeof window === 'undefined') return
+    const report = incoming
+    const local = readLocalInventory()
+    setInventory(local)
+    setIncoming(null)
 
-      if (incomingPayload.data.diyConfigRaw) {
+    if (local.corrupt) {
+      // 本地读不出来时绝不写回：旧实现会跳过合并却照样 toast「已成功合并」
+      if (!local.unavailableRaw) {
+        // 把坏数据挪进隔离键（与 useFavorites 同一形状），键还在、数据还在，可事后备份
         try {
-          const parsedDiy = JSON.parse(incomingPayload.data.diyConfigRaw)
-          if (parsedDiy && typeof parsedDiy === 'object' && !Array.isArray(parsedDiy)) {
-            localStorage.setItem(DIY_LAYOUT_STORAGE_KEY, JSON.stringify(parsedDiy))
-          }
+          const rawNow = localStorage.getItem(FAVORITES_STORAGE_KEY)
+          if (rawNow !== null) localStorage.setItem(corruptBackupKey(Date.now()), rawNow)
         } catch {
-          // 忽略畸形 DIY 配置
+          // 隔离也写不进去：只能如实告诉用户数据仍在原键里
         }
       }
-
-      toast.success(
-        `已成功合并来自「${incomingPayload.senderName}」的跨端配置（新增 ${mergedBookmarkCount} 项收藏）`
+      toneToToast('error')(
+        formatMergeNotice({
+          senderName: report.payload.senderName,
+          ledger: report.ledger,
+          merge: null,
+          localCorrupt: true,
+          unavailableRaw: local.unavailableRaw,
+          diyApplied: false,
+          diyRejectedReason: null,
+          appliedTheme: null,
+          rejectedTheme: null,
+          nothingUsable: false,
+        }).text
       )
-    } catch {
-      toast.error('合并跨端快传数据失败')
-    } finally {
-      setIncomingPayload(null)
+      return
     }
+
+    let rawBefore: string | null = null
+    try {
+      rawBefore = localStorage.getItem(FAVORITES_STORAGE_KEY)
+    } catch {
+      // 读不到原值：写失败时无法回滚，下面按「状态未知」处理
+    }
+
+    let merge: MergeResult | null = null
+    let writeFailed = false
+    let rollbackFailed = false
+    let diyApplied = false
+    let diyRejectedReason: 'malformed' | 'oversize' | 'write-failed' | null = null
+    let appliedTheme: TransferableTheme | null = null
+    let rejectedTheme: string | null = null
+
+    const incomingBookmarks = report.payload.data.bookmarks ?? []
+    if (report.payload.type !== 'theme' && incomingBookmarks.length > 0) {
+      const candidate = mergeBookmarkLists(local.ledger.items, incomingBookmarks)
+      if (candidate.added > 0) {
+        try {
+          localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(candidate.next))
+          merge = candidate
+          setInventory(buildLocalBookmarkInventory(JSON.stringify(candidate.next)))
+          window.dispatchEvent(new Event('storage'))
+        } catch {
+          writeFailed = true
+          try {
+            // 写坏就地回滚：宁可保留合并前的列表，也不留下半截结果
+            if (rawBefore === null) localStorage.removeItem(FAVORITES_STORAGE_KEY)
+            else localStorage.setItem(FAVORITES_STORAGE_KEY, rawBefore)
+          } catch {
+            rollbackFailed = true
+            setInventory(corruptInventory())
+          }
+        }
+      } else {
+        merge = candidate
+      }
+    }
+
+    const rawDiy = report.payload.data.diyConfigRaw
+    if (report.payload.type !== 'bookmarks' && rawDiy) {
+      if (rawDiy.length > DIY_CONFIG_LIMIT) {
+        diyRejectedReason = 'oversize'
+      } else {
+        let parsedDiy: unknown = null
+        let parsed = true
+        try {
+          parsedDiy = JSON.parse(rawDiy)
+        } catch {
+          parsed = false
+          diyRejectedReason = 'malformed'
+        }
+        if (parsed) {
+          if (parsedDiy && typeof parsedDiy === 'object' && !Array.isArray(parsedDiy)) {
+            try {
+              localStorage.setItem(DIY_LAYOUT_STORAGE_KEY, JSON.stringify(parsedDiy))
+              diyApplied = true
+            } catch {
+              // 解析得出来却写不进去：这是存储问题，不能报成「排版内容不合法」
+              diyRejectedReason = 'write-failed'
+            }
+          } else {
+            diyRejectedReason = 'malformed'
+          }
+        }
+      }
+    }
+
+    // 只有「主题/全部」包才允许改本机配色：点「投送收藏」不该顺手换肤
+    const incomingTheme = report.payload.type === 'bookmarks' ? undefined : report.payload.data.themeName
+    if (incomingTheme) {
+      if (isTransferableTheme(incomingTheme)) {
+        setTheme(incomingTheme)
+        appliedTheme = incomingTheme
+      } else {
+        rejectedTheme = incomingTheme
+      }
+    }
+
+    if (writeFailed) {
+      toast.error(rollbackFailed ? FAVORITES_ROLLBACK_FAILED_HINT : FAVORITES_WRITE_FAILED_HINT)
+      return
+    }
+
+    const nothingUsable = !diyApplied && appliedTheme === null && (merge === null || merge.added === 0)
+    const notice = formatMergeNotice({
+      senderName: report.payload.senderName,
+      ledger: report.ledger,
+      merge,
+      localCorrupt: false,
+      unavailableRaw: false,
+      diyApplied,
+      diyRejectedReason,
+      appliedTheme,
+      rejectedTheme,
+      nothingUsable,
+    })
+    toneToToast(notice.tone)(notice.text)
   }
 
   if (!open) return null
 
   return (
-    <div
-      role="presentation"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4 animate-in fade-in duration-200"
-      onClick={() => onOpenChange(false)}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="relative flex flex-col w-full max-w-2xl rounded-2xl border border-white/20 dark:border-white/10 bg-white/95 dark:bg-zinc-950/95 shadow-2xl overflow-hidden backdrop-blur-2xl"
-        onClick={(e) => e.stopPropagation()}
+        {...scrimProps}
+        className="absolute inset-0 bg-black/60 backdrop-blur-md animate-in fade-in duration-200"
+      />
+      <div
+        {...containerProps}
+        className="relative flex flex-col w-full max-w-2xl rounded-2xl border border-white/20 dark:border-white/10 bg-white/95 dark:bg-zinc-950/95 shadow-2xl overflow-hidden backdrop-blur-2xl outline-none"
       >
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60">
@@ -371,15 +443,15 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
-                  NavDrop 局域网隔空快传
+                <h3 id="navhub-p2p-airdrop-modal-title" className="font-semibold text-base text-zinc-900 dark:text-zinc-100">
+                  NavDrop 跨标签页快传
                 </h3>
                 <Badge variant="outline" className="text-[10px] bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30">
-                  WebRTC P2P
+                  同浏览器直连
                 </Badge>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                零云端中转 · 局域网点对点毫秒级直连 · 跨端差量无损协同
+                零云端中转 · 同一浏览器的标签页／窗口之间直连；换设备请用「数据」页导出备份再导入
               </p>
             </div>
           </div>
@@ -398,7 +470,13 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
         {/* 主体交互区 */}
         <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 overflow-y-auto max-h-[75vh]">
           {/* 本机状态卡片 */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-900/40">
+          <div
+            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:p-4 rounded-xl border ${
+              inventory.corrupt
+                ? 'bg-amber-500/10 border-amber-500/30'
+                : 'bg-blue-50/60 dark:bg-blue-950/20 border-blue-200/60 dark:border-blue-900/40'
+            }`}
+          >
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
                 <Laptop className="w-4 h-4" />
@@ -408,7 +486,9 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                   当前设备: {deviceName}
                 </div>
                 <div className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 truncate">
-                  ID: {deviceId} · 本机收藏 {localBookmarkCount} 项 · 局域网广播就绪
+                  {inventory.corrupt
+                    ? `ID: ${deviceId} · 本机收藏读不出来（条数未知），已暂停读写`
+                    : `ID: ${deviceId} · 本机收藏 ${inventory.storedCount} 项，可投送 ${sendableCount} 项`}
                 </div>
               </div>
             </div>
@@ -418,7 +498,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
               variant="outline"
               onClick={triggerScan}
               disabled={isScanning}
-              aria-label="扫描周围在线设备"
+              aria-label="扫描同浏览器的其他标签页"
               className="h-8 text-xs rounded-lg gap-1.5 w-full sm:w-auto shrink-0"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
@@ -427,26 +507,45 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
           </div>
 
           {/* 接收到的待处理快传请求 */}
-          {incomingPayload && (
-            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-3 animate-in slide-in-from-top-2">
+          {incoming && incomingSummary && (
+            <div
+              className={`p-4 rounded-xl border space-y-3 animate-in slide-in-from-top-2 ${
+                incomingSummary.tone === 'warn'
+                  ? 'bg-amber-500/10 border-amber-500/30'
+                  : 'bg-emerald-500/10 border-emerald-500/30'
+              }`}
+              role={incomingSummary.tone === 'warn' ? 'alert' : 'status'}
+            >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4" />
-                  收到来自「{incomingPayload.senderName}」的隔空投送
+                <span
+                  className={`text-xs font-semibold flex items-center gap-1.5 ${
+                    incomingSummary.tone === 'warn'
+                      ? 'text-amber-700 dark:text-amber-300'
+                      : 'text-emerald-700 dark:text-emerald-300'
+                  }`}
+                >
+                  {incomingSummary.tone === 'warn' ? (
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                  ) : (
+                    <Sparkles className="w-4 h-4" />
+                  )}
+                  收到来自「{incoming.payload.senderName}」的快传
                 </span>
                 <span className="text-[10px] font-mono text-zinc-400">
-                  {new Date(incomingPayload.timestamp).toLocaleTimeString()}
+                  {new Date(incoming.payload.timestamp).toLocaleTimeString()}
                 </span>
               </div>
-              <p className="text-xs text-zinc-600 dark:text-zinc-300">
-                包含 {incomingPayload.data.siteCount} 个收藏站点（预计新增 {incomingDiffStats.newCount} 项，跳过已存在 {incomingDiffStats.existingCount} 项）
-                {incomingPayload.data.themeName ? ` · 主题: ${incomingPayload.data.themeName}` : ''}。
-              </p>
+              <p className="text-xs text-zinc-600 dark:text-zinc-300">{incomingSummary.text}。</p>
+              {inventory.corrupt && (
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  本机收藏现在读不出来，接受会被拦下 —— 原数据不会被这份快传覆盖。
+                </p>
+              )}
               <div className="flex items-center justify-end gap-2 pt-1">
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => setIncomingPayload(null)}
+                  onClick={() => setIncoming(null)}
                   className="h-7 text-xs rounded-md"
                 >
                   忽略丢弃
@@ -454,6 +553,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                 <Button
                   size="sm"
                   onClick={handleAcceptIncoming}
+                  disabled={inventory.corrupt}
                   className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-md"
                 >
                   <Download className="w-3.5 h-3.5 mr-1" />
@@ -463,19 +563,22 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
             </div>
           )}
 
-          {/* 周围发现的对端设备列表 */}
+          {/* 同浏览器发现的对端标签页 */}
           <div className="space-y-3">
             <div className="flex items-center justify-between text-xs text-zinc-500">
-              <span className="font-semibold text-zinc-700 dark:text-zinc-300">周围在线设备 ({peers.length})</span>
-              <span>同一局域网内自动感应</span>
+              <span className="font-semibold text-zinc-700 dark:text-zinc-300">已握手的标签页 ({peers.length})</span>
+              <span>同一浏览器的其他标签页</span>
             </div>
 
             {peers.length === 0 ? (
               <div className="p-8 text-center rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 space-y-2">
                 <Radio className="w-8 h-8 text-zinc-300 dark:text-zinc-700 mx-auto animate-pulse" />
-                <p className="text-xs text-zinc-500">正在局域网雷达寻呼中...</p>
+                <p className="text-xs text-zinc-500">
+                  {channelRef.current ? '正在等待同浏览器的其他标签页应答...' : '当前浏览器不支持 BroadcastChannel，快传通道不可用'}
+                </p>
                 <p className="text-[11px] text-zinc-400">
-                  在同一 WiFi 或另一浏览器标签页中打开 NavHub，两端将自动瞬时握手。
+                  在<b>同一个浏览器的另一个标签页或窗口</b>打开 NavHub，两端才会握手。
+                  手机、别的浏览器或隐身窗口都收不到 —— 跨设备请去「数据」页导出备份，再到新设备导入。
                 </p>
               </div>
             ) : (
@@ -501,7 +604,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                         </div>
                         <div className="text-[11px] font-mono text-zinc-400 truncate">
-                          {peer.id} · 局域网直连
+                          {peer.id} · 同浏览器直连
                         </div>
                       </div>
                     </div>
@@ -514,15 +617,26 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                         className="h-8 text-xs rounded-lg gap-1 flex-1 sm:flex-initial text-center justify-center"
                       >
                         <Palette className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                        <span>投送主题</span>
+                        <span>主题+排版</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleSendToPeer(peer, 'all')}
+                        disabled={!canSend}
+                        className="h-8 text-xs rounded-lg gap-1 flex-1 sm:flex-initial text-center justify-center"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+                        <span>全部</span>
                       </Button>
                       <Button
                         size="sm"
                         onClick={() => handleSendToPeer(peer, 'bookmarks')}
+                        disabled={!canSend}
                         className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg gap-1 flex-1 sm:flex-initial text-center justify-center"
                       >
                         <Share2 className="w-3.5 h-3.5 shrink-0" />
-                        <span>隔空快传 ({localBookmarkCount})</span>
+                        <span>投送收藏 ({sendableCount})</span>
                       </Button>
                     </div>
                   </div>
@@ -536,9 +650,13 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 px-4 sm:px-6 py-2.5 sm:py-3 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 text-xs text-zinc-400">
           <span className="flex items-center gap-1.5 truncate">
             <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
-            <span className="truncate">端到端内存隔离 · 差量安全校验 · 零服务端中转落盘</span>
+            <span className="truncate">
+              {inventory.ledger.omitted > 0
+                ? `本机 ${inventory.ledger.omitted} 项收藏不合格或超出单次上限，不会随包发出`
+                : `单次最多 ${MAX_TRANSFER_BOOKMARKS} 项 · 落盘前逐条校验 · 不经服务端`}
+            </span>
           </span>
-          <span className="font-mono text-[11px] hidden sm:inline shrink-0">P2P v2.1 Local-First</span>
+          <span className="font-mono text-[11px] hidden sm:inline shrink-0">NavDrop v2.2 Local-First</span>
         </div>
       </div>
     </div>

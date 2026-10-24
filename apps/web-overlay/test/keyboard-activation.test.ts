@@ -11,7 +11,8 @@
  * 2. **部分 `window.open` 没带 noopener**。导航站打开的是用户提交的第三方站点，
  *    没有 noopener 时新页面拿到 `window.opener`，可以反过来把我们的标签页跳到钓鱼页
  *    （reverse tabnabbing）。代码里多数调用点已经写了 `'noopener,noreferrer'`，
- *    这里把剩下的补齐并**全仓扫描**防止回归。
+ *    这里把剩下的补齐并**全仓扫描**防止回归。补齐的方式是收敛到
+ *    `safeWindowOpen`：features 由闸门硬编码，调用方传不进去。
  *
  * 后续：#53 让拓扑图节点变成可聚焦的 role="button"（见 graph-keyboard.test.ts），
  * 这一版把「管理端表格行与选项行」也补齐。补完之后全仓只剩两处「只有鼠标」的写法，
@@ -129,9 +130,15 @@ describe("点击即操作的元素必须是真按钮", () => {
     expect(/<div\s+onClick=\{\(\) => handleCopy\(b64Output\)\}/.test(text)).toBe(false);
   });
 
-  it("视频卡片打开外链时也走 noopener（不是只改 window.open 的其它调用点）", () => {
+  it("视频卡片打开外链走 safeWindowOpen，noopener 由闸门硬编码（调用方没有旋钮）", () => {
     const text = overlaySource("src/components/video-card.tsx");
-    expect(text).toContain("window.open(item.href, '_blank', 'noopener,noreferrer')");
+    expect(text).toContain("safeWindowOpen(item.href)");
+    expect(text).not.toContain("window.open(");
+    const guard = overlaySource("src/lib/safe-url.ts");
+    expect(guard).toContain("window.open(target, '_blank', 'noopener,noreferrer')");
+    // 保护必须是结构性的：helper 不接 features 参数，调用方传不进「少写一个 noopener」的串，
+    // 三十个调用点也就不需要逐个复查。
+    expect(guard).toMatch(/export function safeWindowOpen\(\s*value\?: string \| null\s*\)/);
   });
 });
 
@@ -260,38 +267,9 @@ const MOUSE_ONLY_ALLOWLIST: MouseOnlyAllowlistEntry[] = [
       "浮层打开时在 document 捕获阶段监听 keydown，Esc 走 entry.close() 关掉最上层浮层，" +
       "面板带 role='dialog' + tabIndex=-1 供读屏与焦点定位。遮罩 aria-hidden，本就不在辅助树里。",
   },
-  {
-    file: "src/components/search/spotlight-modal.tsx",
-    marker: /fixed inset-0 z-50 bg-background\/80/,
-    evidence: ["e.key === 'Escape' && open", "onKeyDown={handleKeyDown}", "handleSelectCurrent()"],
-    why:
-      "Spotlight 弹层「点遮罩空白处关闭」只服务鼠标；键盘等价入口是全局 Esc 监听" +
-      "（e.key === 'Escape' 直接收起浮层），面板本体还挂了 onKeyDown 处理上下键与回车。",
-  },
-  {
-    file: "src/components/search/spotlight-modal.tsx",
-    marker: /key=\{cmd\.id\}\s+onClick=\{\(\) => cmd\.handler\(\)\}/,
-    evidence: ["if (e.key === 'ArrowDown')", "else if (e.key === 'ArrowUp')", "else if (e.key === 'Enter')", "handleSelectCurrent()"],
-    why:
-      "指令行的整行 onClick 只方便鼠标；键盘走面板 handleKeyDown：↑/↓ 移动 selectedIndex、" +
-      "Enter 调 handleSelectCurrent() 执行当前指令（焦点始终留在搜索框）。",
-  },
-  {
-    file: "src/components/search/spotlight-modal.tsx",
-    marker: /key=\{hit\.siteId\}/,
-    evidence: ["if (e.key === 'ArrowDown')", "else if (e.key === 'Enter')", "handleSelectCurrent()"],
-    why:
-      "站点结果行的整行 onClick 只方便鼠标；键盘走同一份 handleKeyDown：↑/↓ 选中、" +
-      "Enter 由 handleSelectCurrent() 打开（与鼠标点行走同一条代码路径）。",
-  },
-  {
-    file: "src/components/search/spotlight-modal.tsx",
-    marker: /key=\{plugin\.slug\}/,
-    evidence: ["if (e.key === 'ArrowDown')", "else if (e.key === 'Enter')", "handleSelectCurrent()"],
-    why:
-      "插件结果行的整行 onClick 只方便鼠标；键盘等价入口同上（↑/↓ + Enter，" +
-      "由 handleSelectCurrent() 分发到插件跳转）。",
-  },
+  // Spotlight 的三种结果行以前靠白名单说明「键盘走 ↑/↓ + Enter」。
+  // 现在它们是真列表语义（role=option + aria-selected + 搜索框的 aria-activedescendant），
+  // 不再是「只有鼠标」的写法，改由文末的 describe 直接断言这套接线。
 ];
 
 describe("全仓扫描：能点的地方键盘也要能到", () => {
@@ -385,5 +363,44 @@ describe("这一版补齐的管理端两处", () => {
     expect(rows.length).toBeGreaterThanOrEqual(3);
     // 每一处 hover 才显形的地方，都必须同时支持 focus-within
     expect(focused.length).toBe(rows.length);
+  });
+});
+
+describe("超级控制台（Spotlight）：对话框语义与「当前行」的申报", () => {
+  const text = overlaySource("src/components/search/spotlight-modal.tsx");
+
+  it("浮层走公共原语：遮罩是兄弟节点，面板带 role=dialog 与初始焦点交接", () => {
+    expect(text).toContain("useOverlayBehavior");
+    expect(text).toMatch(/\{\.\.\.containerProps\}/);
+    expect(text).toMatch(/\{\.\.\.scrimProps\}\s+className="absolute inset-0/);
+    // 焦点交给原语（rAF 里落地），自己再 setTimeout 抢焦点只会互相覆盖
+    expect(text).not.toContain("setTimeout(() => inputRef.current?.focus()");
+    expect(text).toMatch(/initialFocusRef: inputRef/);
+    // Esc 的唯一实现留在原语里，本文件不再叠一份
+    expect(text).not.toMatch(/e\.key === 'Escape' && open/);
+  });
+
+  it("↑/↓ 选中的行用 aria-activedescendant 申报：三套列表共用一份扁平编号", () => {
+    expect(text).toMatch(/const optionIdOf = \(index: number\) => `spotlight-option-\$\{index\}`/);
+    expect(text).toMatch(/aria-activedescendant=\{activeOptionId\}/);
+    expect(text).toMatch(/role="combobox"/);
+    // 三个列表各自有 id，且 aria-controls 指向「当前选中行所在的那个」
+    for (const id of ["spotlight-cmd-listbox", "spotlight-site-listbox", "spotlight-plugin-listbox"]) {
+      expect(text).toContain(`id="${id}"`);
+    }
+    expect(text).toMatch(/aria-controls=\{hasListbox \? listboxId : undefined\}/);
+    // 行的 id 与 aria-selected 三处齐全，编号方案与 selectedIndex 一致
+    expect(text).toMatch(/id=\{optionIdOf\(idx\)\}\s+role="option"\s+aria-selected=\{isSelected\}/);
+    expect(text).toMatch(/id=\{optionIdOf\(itemIndex\)\}\s+role="option"\s+aria-selected=\{isSelected\}/);
+    expect((text.match(/role="option"/g) || []).length).toBe(3);
+    // 极客工具面板没有可选行，此时不能声称控制着某个列表
+    expect(text).toMatch(/const hasListbox = totalItemCount > 0 && !\(isCommandMode && isGeekToolActive\)/);
+  });
+
+  it("结果行里 hover 才显形的快捷动作，键盘聚焦时同样显形", () => {
+    const hidden = text.match(/sm:group-hover:opacity-100/g) || [];
+    const revealed = text.match(/sm:group-focus-within:opacity-100/g) || [];
+    expect(hidden.length).toBeGreaterThanOrEqual(2);
+    expect(revealed.length).toBe(hidden.length);
   });
 });

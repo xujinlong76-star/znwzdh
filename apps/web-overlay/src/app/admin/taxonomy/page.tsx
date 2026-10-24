@@ -29,6 +29,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { hubGet, hubSend } from '@/lib/navhub-api'
+import { describeLoadFailure } from '@/lib/admin-load-failure'
 
 interface TaxonomyProposal {
   id: string
@@ -114,6 +115,9 @@ export default function AdminTaxonomyPage() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   // category_gap 采纳时由审核人选定父级：一级根的数量是编辑决策，不由提案决定
   const [roots, setRoots] = useState<CategoryOption[]>([])
+  /** 一级类目没加载出来：下拉只剩占位项，采纳会点不动，必须说明原因并给重试 */
+  const [rootsError, setRootsError] = useState<string | null>(null)
+  const [rootsRetryToken, setRootsRetryToken] = useState(0)
   const [gapParent, setGapParent] = useState<Record<string, string>>({})
 
   const showFeedback = (type: 'success' | 'error', message: string) => {
@@ -145,10 +149,24 @@ export default function AdminTaxonomyPage() {
 
   useEffect(() => {
     // 只取根：/api/categories/page 有界，避免整棵树进浏览器包
+    let cancelled = false
+    setRootsError(null)
     hubGet<{ items: CategoryOption[] }>('/api/categories/page?parentId=null&limit=500')
-      .then((res) => setRoots((res.items ?? []).filter((c) => c.id !== 'cat-uncategorized')))
-      .catch(() => setRoots([]))
-  }, [])
+      .then((res) => {
+        if (cancelled) return
+        setRoots((res.items ?? []).filter((c) => c.id !== 'cat-uncategorized'))
+      })
+      .catch((err) => {
+        if (cancelled) return
+        // 失败不能只清空选项：那样下拉框看起来就是「本站还没有一级类目」，
+        // 管理员会以为类目被删了，而实际只是这一次请求没成功
+        setRoots([])
+        setRootsError(describeLoadFailure(err, '一级类目'))
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [rootsRetryToken])
 
   const handleRunAudit = async () => {
     setAuditing(true)
@@ -502,6 +520,7 @@ export default function AdminTaxonomyPage() {
                   {proposal.status === 'pending' ? (
                     <div className="flex flex-col items-end gap-2 self-end md:self-center">
                       {proposal.kind === 'category_gap' && (
+                        <div className="flex flex-col items-end gap-1">
                         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <span>挂到</span>
                           <select
@@ -518,6 +537,21 @@ export default function AdminTaxonomyPage() {
                             ))}
                           </select>
                         </label>
+                        {rootsError && roots.length === 0 ? (
+                          // 下拉框空着 ≠ 没有类目：不说明，管理员只会以为类目被删了，
+                          // 或者反复点「采纳」却等按钮变亮
+                          <p className="flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                            <span>{rootsError}</span>
+                            <button
+                              type="button"
+                              className="underline underline-offset-2 hover:no-underline"
+                              onClick={() => setRootsRetryToken((n) => n + 1)}
+                            >
+                              重试
+                            </button>
+                          </p>
+                        ) : null}
+                        </div>
                       )}
                       <div className="flex items-center gap-2">
                         <Button

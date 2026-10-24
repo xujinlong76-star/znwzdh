@@ -99,8 +99,18 @@ describe("not-found.tsx：把「可以搜索」兑现，并给出成组出口", 
   const src = overlayFile("src/app/not-found.tsx");
 
   it("嵌入真实的搜索面板（回归：文案说可以搜索，页面上却没有搜索框）", () => {
-    expect(src).toContain("import { SearchPalette } from '@/components/search-palette'");
+    expect(src).toMatch(
+      /import\('@\/components\/search-palette'\)|import \{ SearchPalette \} from '@\/components\/search-palette'/,
+    );
     expect(src).toContain("<SearchPalette");
+  });
+
+  it("检索面板按需加载，不随 not-found 边界进入每条路由的首屏", () => {
+    // not-found 在每条路由的客户端树里：静态引入会把 946 行的检索面板
+    // 塞进全站初始 chunk（2026-10-24 实测模板/作者页因此超预算）。
+    expect(src).toContain("import('@/components/search-palette')");
+    expect(src).toMatch(/dynamic\(/);
+    expect(src).not.toContain("import { SearchPalette } from '@/components/search-palette'");
   });
 
   it("明确告诉用户是哪个路径没找到", () => {

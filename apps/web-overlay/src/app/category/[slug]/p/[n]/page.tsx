@@ -4,7 +4,7 @@ import { safeDecodeParam } from '@/lib/server/route-params'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { ogImageUrl } from '@/lib/seo/og-text'
 import { categoryHref, isCategoryUuidRef, isHiddenCategory } from '@/lib/seo/category-url'
-import { categoryPageHasSites } from '@/lib/seo/category-pagination'
+import { categoryPageHasSites, categoryPageOffsetIsReachable } from '@/lib/seo/category-pagination'
 import {
   CategoryBoard,
   PAGE_SIZE,
@@ -54,6 +54,11 @@ function parsePageSegment(raw: string | undefined): number | null {
 async function resolve(ref: string, n: number) {
   const safeRef = safeDecodeParam(ref)
   if (!safeRef) notFound()
+  // 深页码先过「请求本身成不成立」这道闸：中枢 /api/search 的 offset 上限是 1000，
+  // PAGE_SIZE=60 时第 18 页起一定被 zod 挡成 400，hubGet 再把 4xx 归为 null。
+  // 这种页不是「上游抖动」，是根本不存在的页 —— 无论计数取不取得到都必须 404，
+  // 否则 /p/18、/p/9999 会渲染成可被索引的 200 空页。
+  if (!categoryPageOffsetIsReachable(n, PAGE_SIZE)) notFound()
   const data = await loadCategoryPage(safeRef, n)
   // 分类不存在 / 已停用 / 这一页没有站点：与第 1 页同一口径
   if (data.categories !== null && (!data.category || !data.qualifies)) notFound()

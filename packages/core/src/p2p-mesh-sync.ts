@@ -1,10 +1,16 @@
 /**
- * WebRTC DataChannel 点对点分布式书签共识流 (P2P Mesh Sync Protocol)
+ * 传输无关的点对点书签共识协议 (P2P Mesh Sync Protocol)
  *
  * 核心设计目标：
- * 基于本地 CRDT 状态向量引擎，构建去中心化 P2P 网格共识通道。
- * 支持局域网/互联网多设备无中心直连，在离线重连、网络分区下
+ * 基于本地 CRDT 状态向量引擎，构建无中心共识通道：离线重连、网络分区下
  * 自动交换 Delta 增量并在数学上确定性收敛。
+ *
+ * 边界要说清楚：本文件只实现**协议层**，不实现任何网络传输。
+ * `P2PTransport` 是插槽，全仓目前只有一个真实实现
+ * `createBroadcastChannelTransport`——它只在**同一浏览器同源**的标签页/窗口之间转发。
+ * WebRTC DataChannel 与 WebSocket 从未接上（全站没有 `RTCPeerConnection`），
+ * 所以「跨设备／局域网／互联网直连」在本仓不成立；跨设备请走导出备份。
+ * 谁接入新 Transport，谁才有资格改这段描述。
  */
 import {
   CrdtStore,

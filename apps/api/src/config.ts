@@ -122,11 +122,41 @@ export interface AppConfig {
   /** Webhook 投递超时（毫秒，内部限制于 1s~30s 范围） */
   alertTimeoutMs: number;
   /**
+   * 模型单价（人民币 / 1K token），供观测大盘估算花费。0 = 未配置。
+   *
+   * 以前大盘直接按 `totalTokens * 0.001` 报一个 ¥ 数：那个单价是凭空写的，
+   * 既不是任何厂商的报价，也不区分 prompt/completion，等于在运维面板上放假账。
+   * 现在没配单价就回 null，由界面明说「未配置单价」。
+   */
+  costPer1kTokensRmb: number;
+  /**
    * 停用「孤儿插件类目」启动清扫。
    * 类目树迁移（scripts/taxonomy-migrate.mjs）窗口必须置 1：
    * 新树叶子在回填站点前暂无存活引用，正好落在该清扫的删除条件里。
    */
   skipOrphanCleanup: boolean;
+  /**
+   * LLM 每日额度（24h 滚动窗口，单位：次 / token）。0 = 关闭该档。
+   *
+   * 为什么必须有：`llm_usage` 以前只写不读，全站没有任何上限对照 —— 公共站上
+   * 一段脚本慢慢刷 `/api/enrich`、`/api/copilot/chat`、`recommend-alternative`
+   * 就能把运维者那把系统 key 的花费打穿，按 IP 的 rateLimit 只挡频率、挡不住
+   * 一天内的持续消耗。详见 `llm-quota.ts`。
+   *
+   * 默认值给的是「正常单人/小团队一天用不到」的量级：闸门存在的意义是
+   * 「无上限」这件事本身不可接受，而不是要限制正常使用。
+   */
+  llmQuota: {
+    /** 单个身份（登录 userId / 带 anonId 的匿名访客） */
+    identityDailyCalls: number;
+    identityDailyTokens: number;
+    /** 无身份流量（identity IS NULL：任务队列、未带 anonId 的请求）合池 */
+    anonymousDailyCalls: number;
+    anonymousDailyTokens: number;
+    /** 运维者 key 的总预算（只数 source ≠ 'user' 的消耗） */
+    systemDailyCalls: number;
+    systemDailyTokens: number;
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -277,6 +307,39 @@ function assertSecurityConstraints(
     throw new Error(`NAVHUB_RATE_LIMIT_MAX 必须是 >=1 的数字，当前 ${config.rateLimitMax}`);
   }
 
+  // 2d. LLM 额度必须是 >=0 的整数。闸门把 0 读成「关闭该档」，于是负数或 NaN
+  // （典型来源：环境变量写成 `NAVHUB_LLM_QUOTA_IDENTITY_CALLS=` 或 `30O` 打错字）
+  // 会被 clampNonNegative 静默吞成 0 —— 「配置打错一个字符」= 烧钥防护整个失效，
+  // 而且没有任何日志。这类闸门不能靠「配错就当作没配」活着。
+  for (const [key, value] of Object.entries(config.llmQuota)) {
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error(`LLM 额度 ${key} 必须是 >=0 的整数（0 = 关闭该档），当前收到 ${String(value)}`);
+    }
+  }
+
+  // 3b. 生产环境不允许把全部 LLM 额度一起关掉。
+  //
+  // 三档全 0 意味着「闸门形同不存在」，而生产站正是匿名流量能摸到系统 key 的
+  // 那种部署。要关闸门得有意识地关（显式 NAVHUB_LLM_QUOTA_DISABLED=1），
+  // 不能让「六个变量都没配」这种默认状态长成无上限。
+  if (isProd && !process.env.NAVHUB_LLM_QUOTA_DISABLED?.trim()) {
+    const q = config.llmQuota;
+    const allDisabled =
+      q.identityDailyCalls === 0 &&
+      q.identityDailyTokens === 0 &&
+      q.anonymousDailyCalls === 0 &&
+      q.anonymousDailyTokens === 0 &&
+      q.systemDailyCalls === 0 &&
+      q.systemDailyTokens === 0;
+    if (allDisabled) {
+      throw new Error(
+        "生产环境不允许同时关闭全部 LLM 额度档位（六个 NAVHUB_LLM_QUOTA_* 全为 0）：" +
+          "这等于对匿名流量开放无上限的系统密钥消耗。" +
+          "确需自管额度时显式设置 NAVHUB_LLM_QUOTA_DISABLED=1。"
+      );
+    }
+  }
+
   // 3. 生产公网暴露鉴权守护（防管理后台未授权公开裸奔）
   //
   // 仅靠 publicUrl 判断会有一个致命缺口：未显式配置时默认值是 localhost，
@@ -331,11 +394,14 @@ function assertSecurityConstraints(
  * 测试/嵌入式装配用的覆盖项：四个子配置允许「部分字段」覆盖，
  * 其余顶层字段保持 Partial。这样新增配置项不会强迫所有调用点同步补齐。
  */
-export type ConfigOverrides = Partial<Omit<AppConfig, "llm" | "embedding" | "fetch" | "tokenPolicy">> & {
+export type ConfigOverrides = Partial<
+  Omit<AppConfig, "llm" | "embedding" | "fetch" | "tokenPolicy" | "llmQuota">
+> & {
   llm?: Partial<AppConfig["llm"]>;
   embedding?: Partial<AppConfig["embedding"]>;
   fetch?: Partial<AppConfig["fetch"]>;
   tokenPolicy?: Partial<AppConfig["tokenPolicy"]>;
+  llmQuota?: Partial<AppConfig["llmQuota"]>;
 };
 
 export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
@@ -345,6 +411,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
   }
 
   const isProd = (process.env.NODE_ENV ?? "") === "production";
+  const isTest = (process.env.NODE_ENV ?? "") === "test";
   const allowInsecurePublic = bool("NAVHUB_ALLOW_INSECURE_PUBLIC", false);
 
   const base: AppConfig = {
@@ -416,6 +483,18 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
 
     alertWebhook: process.env.NAVHUB_ALERT_WEBHOOK?.trim() || null,
     alertTimeoutMs: num("NAVHUB_ALERT_TIMEOUT_MS", 5_000),
+    costPer1kTokensRmb: num("NAVHUB_LLM_COST_PER_1K_TOKENS", 0),
+
+    // 测试环境默认全 0（关闭闸门）：单测要能在毫秒级构造「额度耗尽」的场景，
+    // 靠真实默认值不可能跑到上限；关闭后由 llm-quota.test.ts 显式注入上限。
+    llmQuota: {
+      identityDailyCalls: num("NAVHUB_LLM_QUOTA_IDENTITY_CALLS", isTest ? 0 : 300),
+      identityDailyTokens: num("NAVHUB_LLM_QUOTA_IDENTITY_TOKENS", isTest ? 0 : 1_500_000),
+      anonymousDailyCalls: num("NAVHUB_LLM_QUOTA_ANON_CALLS", isTest ? 0 : 60),
+      anonymousDailyTokens: num("NAVHUB_LLM_QUOTA_ANON_TOKENS", isTest ? 0 : 300_000),
+      systemDailyCalls: num("NAVHUB_LLM_QUOTA_SYSTEM_CALLS", isTest ? 0 : 5_000),
+      systemDailyTokens: num("NAVHUB_LLM_QUOTA_SYSTEM_TOKENS", isTest ? 0 : 4_000_000),
+    },
 
     skipOrphanCleanup: bool("NAVHUB_SKIP_ORPHAN_CLEANUP", false),
   };
@@ -427,6 +506,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     llm: { ...base.llm, ...(overrides.llm ?? {}) },
     fetch: { ...base.fetch, ...(overrides.fetch ?? {}) },
     tokenPolicy: { ...base.tokenPolicy, ...(overrides.tokenPolicy ?? {}) },
+    llmQuota: { ...base.llmQuota, ...(overrides.llmQuota ?? {}) },
   };
   assertSecurityConstraints(finalConfig, isProd, allowInsecurePublic);
 

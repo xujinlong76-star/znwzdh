@@ -43,16 +43,30 @@ function serviceToken(): string | undefined {
 
 type Ctx = { params: Promise<{ path?: string[] }> }
 
+/** 会话治理（T8）：库与列表只认 sid 的 sha256，原始 sid 不出 Web 服务端 */
+async function hashSid(sid: string): Promise<string> {
+  const { createHash } = await import('node:crypto')
+  return createHash('sha256').update(sid).digest('hex')
+}
+
 async function currentUser() {
   const session = await auth()
   const user = session?.user as
     | { id?: string; provider?: string; name?: string | null; email?: string | null; image?: string | null }
     | undefined
-  return { user, identity: canonicalUserId(user) }
+  // 会话治理（T8）：sid 用于设备吊销核对与会话活跃登记（只留在服务端）
+  const sessionSid = (session as { sessionSid?: string } | null)?.sessionSid
+  const expires = Date.parse(String(session?.expires ?? ''))
+  return {
+    user,
+    identity: canonicalUserId(user),
+    sessionSid: typeof sessionSid === 'string' ? sessionSid : undefined,
+    sessionExpiresAt: Number.isFinite(expires) && expires > 0 ? expires : undefined,
+  }
 }
 
 async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
-  const { user, identity } = await currentUser()
+  const { user, identity, sessionSid, sessionExpiresAt } = await currentUser()
   if (!user || !identity) {
     return NextResponse.json({ error: '未登录' }, { status: 401, headers: { 'cache-control': 'no-store' } })
   }
@@ -135,6 +149,9 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     accept: 'application/json',
     'x-navhub-user-id': identity,
   }
+  // 协商缓存（T18）：把浏览器的 If-None-Match 透传给中枢，304 才有发生的可能
+  const ifNoneMatch = request.headers.get('if-none-match')
+  if (ifNoneMatch) headers['if-none-match'] = ifNoneMatch
   if (rawBody !== undefined) headers['content-type'] = 'application/json'
 
   const secret = hubIdentitySecret()
@@ -176,6 +193,60 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     }
   }
 
+  // 会话治理（T8）：登记活跃 + 核对吊销（一次往返）。
+  // - revoked → 401：被踢出的设备从下一个请求起失去 /api/me/* 全部能力；
+  // - 核对失败（中枢抖动）fail-open：无法确认 ≠ 已吊销，可用性优先；
+  // - 没有 sid（老会话 / 非会话身份）跳过。
+  if (sessionSid) {
+    try {
+      const checkRes = await fetch(HUB_BASE + '/api/me/sessions/check', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          sid: sessionSid,
+          userAgent: request.headers.get('user-agent') ?? null,
+          ...(sessionExpiresAt ? { expiresAt: sessionExpiresAt } : {}),
+        }),
+        cache: 'no-store',
+        signal: AbortSignal.timeout(Math.min(TIMEOUT_MS, 5000)),
+      })
+      if (checkRes.ok) {
+        const verdict = (await checkRes.json()) as { revoked?: boolean }
+        if (verdict.revoked) {
+          return NextResponse.json(
+            { error: '会话已被踢出，请重新登录' },
+            { status: 401, headers: { 'cache-control': 'no-store' } },
+          )
+        }
+      }
+    } catch {
+      // fail-open：核对通道故障不阻断主请求
+    }
+  }
+
+  // 设备列表特判（T8）：hub 只认 sidHash，由 BFF 标记「当前设备」
+  if (path[0] === 'sessions' && method === 'GET' && path.length === 1) {
+    const upstreamList = await fetch(HUB_BASE + '/api/me/sessions', {
+      method: 'GET',
+      headers,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+    const listText = await upstreamList.text()
+    if (!upstreamList.ok) {
+      return new NextResponse(listText || '{}', {
+        status: upstreamList.status,
+        headers: { 'content-type': upstreamList.headers.get('content-type') ?? 'application/json', 'cache-control': 'no-store' },
+      })
+    }
+    let body: Record<string, unknown> = {}
+    try { body = JSON.parse(listText) as Record<string, unknown> } catch { body = {} }
+    return NextResponse.json(
+      { ...body, currentSidHash: sessionSid ? await hashSid(sessionSid) : null },
+      { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } },
+    )
+  }
+
   const search = request.nextUrl.search || ''
   const suffix = path.length > 0 ? '/' + path.join('/') : ''
   const target = HUB_BASE + '/api/me' + suffix + search
@@ -190,10 +261,15 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
     })
     const text = await upstream.text()
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
+    // 协商缓存（T18）：中枢声明了 etag 的 GET 响应，透传 etag 并以
+    // private, no-cache 取代一刀切的 no-store——浏览器可存但每次再验证，
+    // 304 时省掉整份概览聚合与传输。未声明 etag 的响应维持 no-store 安全默认。
+    const upstreamEtag = upstream.headers.get('etag')
     const responseHeaders: Record<string, string> = {
       'content-type': contentType,
-      'cache-control': 'no-store',
+      'cache-control': upstreamEtag ? 'private, no-cache' : 'no-store',
     }
+    if (upstreamEtag) responseHeaders['etag'] = upstreamEtag
     const contentDisposition = upstream.headers.get('content-disposition')
     if (contentDisposition) {
       responseHeaders['content-disposition'] = contentDisposition
@@ -202,6 +278,10 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
       responseHeaders['set-cookie'] =
         `${ANON_COOKIE}=${pendingAnonCookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000` +
         (process.env.NODE_ENV === 'production' ? '; Secure' : '')
+    }
+    // 304 不能带 body：原样回传状态与 etag，浏览器用自己的缓存副本
+    if (upstream.status === 304) {
+      return new NextResponse(null, { status: 304, headers: responseHeaders })
     }
     return new NextResponse(text || '{}', {
       status: upstream.status,

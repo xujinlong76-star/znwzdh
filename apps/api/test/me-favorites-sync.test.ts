@@ -172,4 +172,30 @@ describe("POST /api/me/favorites/sync", () => {
     });
     expect(tooMany.statusCode).toBe(400);
   });
+
+  it("超长备注（>200 字）逐条截断同步，不阻断整批（T15）", async () => {
+    const now = Date.now();
+    const longNote = "长".repeat(250);
+    const res = await sync(USER, {
+      ops: [
+        { op: "add", siteId: siteB, note: longNote, at: now + 100 },
+        { op: "add", siteId: siteA, note: "正常备注", at: now + 101 },
+      ],
+    });
+    // 一条脏数据不允许让整批 400——那会卡死客户端的重试链路
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as SyncBody & { truncatedNotes: number };
+    expect(body.ok).toBe(true);
+    expect(body.applied).toBe(2);
+    expect(body.truncatedNotes).toBe(1);
+    const long = body.items.find((i) => i.siteId === siteB);
+    expect(long?.note).toBe("长".repeat(200));
+  });
+
+  it("备注超过结构上限（>2000 字）仍整批 400：那是客户端 bug，不是用户内容", async () => {
+    const res = await sync(USER, {
+      ops: [{ op: "add", siteId: siteA, note: "x".repeat(2001), at: Date.now() }],
+    });
+    expect(res.statusCode).toBe(400);
+  });
 });

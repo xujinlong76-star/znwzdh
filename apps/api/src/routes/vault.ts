@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { identityTrusted, identityOf, resolveCanonicalIdentity } from "./shared.ts";
+import {identityTrusted, resolveCanonicalIdentity, requestIdentityOf, userDomainWriteAllowed } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
 
@@ -18,7 +18,7 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
    * 读云端密文金库。服务端零知识存储，永不触碰明文。
    */
   app.get("/api/vault/sync", async (req, reply) => {
-    const rawIdentity = identityOf(req as never);
+    const rawIdentity = requestIdentityOf(req as never);
     if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     // 身份合并后的旧 id 必须解析到 canonical：否则金库看起来「丢了」
@@ -35,7 +35,9 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
    * 不带时保持旧行为（无条件覆盖），兼容已有扩展与旧客户端。
    */
   app.put("/api/vault/sync", async (req, reply) => {
-    const rawIdentity = identityOf(req as never);
+    const rawIdentity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     // 写入同样落 canonical：旧 id 推上来的密文不能另起一行
@@ -95,7 +97,9 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
    * 清除云端金库。
    */
   app.delete("/api/vault/sync", async (req, reply) => {
-    const rawIdentity = identityOf(req as never);
+    const rawIdentity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const identity = await resolveCanonicalIdentity(ctx, rawIdentity);

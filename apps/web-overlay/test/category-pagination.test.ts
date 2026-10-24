@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { categoryPageHasSites } from '../src/lib/seo/category-pagination'
+import {
+  CATEGORY_PAGE_SEARCH_MAX_OFFSET,
+  categoryPageHasSites,
+  categoryPageOffsetIsReachable,
+  maxReachableCategoryPage,
+} from '../src/lib/seo/category-pagination'
 
 /**
  * 分类分页深度边界（2026-10-23 实测回归锁）。
@@ -31,5 +36,55 @@ describe('categoryPageHasSites', () => {
     expect(categoryPageHasSites(1.5, 66, 60)).toBe(false)
     expect(categoryPageHasSites(1, Number.NaN, 60)).toBe(false)
     expect(categoryPageHasSites(1, 66, 0)).toBe(false)
+  })
+})
+
+/**
+ * 「请求本身是否合法」的判定（不依赖计数）。
+ *
+ * categoryPageHasSites 只在计数可用时才拿来做 404 判断，因此深页码在计数缺失时
+ * 仍会渲染成降级页。这个函数不看计数，专门回答「offset 会不会被中枢拒掉」：
+ * 越界的页码要在取数之前就 notFound()，否则产出的是一张请求必然 400 的 200 页。
+ */
+describe('categoryPageOffsetIsReachable', () => {
+  it('offset 落在上限内可达，越界不可达（与计数无关）', () => {
+    expect(categoryPageOffsetIsReachable(1, 60)).toBe(true)
+    expect(categoryPageOffsetIsReachable(17, 60)).toBe(true) // offset 960 <= 1000
+    expect(categoryPageOffsetIsReachable(18, 60)).toBe(false) // offset 1020 > 1000
+    expect(categoryPageOffsetIsReachable(9999, 60)).toBe(false)
+  })
+
+  it('非法页码/容量/上限一律不可达', () => {
+    expect(categoryPageOffsetIsReachable(0, 60)).toBe(false)
+    expect(categoryPageOffsetIsReachable(-1, 60)).toBe(false)
+    expect(categoryPageOffsetIsReachable(1.5, 60)).toBe(false)
+    expect(categoryPageOffsetIsReachable(Number.NaN, 60)).toBe(false)
+    expect(categoryPageOffsetIsReachable(1, 0)).toBe(false)
+    expect(categoryPageOffsetIsReachable(1, 60, -1)).toBe(false)
+  })
+})
+
+/** 最深可达页：分页器与「下一页」链接都靠它收敛，不能链向必然 404 的页 */
+describe('maxReachableCategoryPage', () => {
+  it('给出最后一个 offset 仍在上限内的页码', () => {
+    expect(maxReachableCategoryPage(60)).toBe(Math.floor(1000 / 60) + 1)
+    expect(maxReachableCategoryPage(60)).toBe(17)
+    expect(maxReachableCategoryPage(100)).toBe(11)
+    expect(maxReachableCategoryPage(1001)).toBe(1)
+  })
+
+  it('容量非法时返回 0（调用方据此不渲染任何分页链接）', () => {
+    expect(maxReachableCategoryPage(0)).toBe(0)
+    expect(maxReachableCategoryPage(-5)).toBe(0)
+    expect(maxReachableCategoryPage(2.5)).toBe(0)
+  })
+
+  it('与可达性判定同口径：最深页可达、下一页不可达', () => {
+    for (const pageSize of [12, 24, 60, 100]) {
+      const deepest = maxReachableCategoryPage(pageSize)
+      expect(categoryPageOffsetIsReachable(deepest, pageSize)).toBe(true)
+      expect(categoryPageOffsetIsReachable(deepest + 1, pageSize)).toBe(false)
+    }
+    expect(CATEGORY_PAGE_SEARCH_MAX_OFFSET).toBe(1000)
   })
 })

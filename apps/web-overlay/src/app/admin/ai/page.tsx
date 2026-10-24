@@ -69,6 +69,7 @@ function emptyForm(): LlmFormValue {
     jsonMode: 'auto',
     thinking: true,
     allowPrivateNetwork: false,
+    costPer1kTokensRmb: 0,
   }
 }
 
@@ -106,6 +107,7 @@ export default function AdminAiPage() {
         jsonMode: c.jsonMode,
         thinking: c.thinking ?? true,
         allowPrivateNetwork: c.allowPrivateNetwork,
+        costPer1kTokensRmb: c.costPer1kTokensRmb ?? 0,
       })
       setApiKeyMasked(c.hasApiKey ? c.apiKeyMasked : '')
       setFallbacks(
@@ -150,6 +152,7 @@ export default function AdminAiPage() {
       jsonMode: form.jsonMode,
       thinking: form.thinking,
       allowPrivateNetwork: form.allowPrivateNetwork,
+      costPer1kTokensRmb: form.costPer1kTokensRmb ?? 0,
       ...(extraApiKey && form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {}),
       fallbacks: fallbacks.map((fb) => ({
         ...(fb.id ? { id: fb.id } : {}),
@@ -342,6 +345,7 @@ export default function AdminAiPage() {
           onChange={setForm}
           apiKeyMasked={apiKeyMasked}
           showAllowPrivateNetwork
+          showCostPrice
         />
 
         <div className="border-t pt-5 space-y-4">

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { safeWindowOpen } from '@/lib/safe-url'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ExternalLink, Sparkles, Zap, ArrowLeft, Search, ZoomIn, ZoomOut, RefreshCw } from 'lucide-react'
@@ -604,7 +605,7 @@ export function EcosystemGraph() {
 
             <Button
               className="w-full text-xs h-9 gap-1.5 shadow-xs font-medium"
-              onClick={() => window.open(selectedNode.url, '_blank', 'noopener,noreferrer')}
+              onClick={() => safeWindowOpen(selectedNode.url)}
             >
               <span>立即直达官方主站</span>
               <ExternalLink className="w-3.5 h-3.5" />

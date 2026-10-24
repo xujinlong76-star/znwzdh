@@ -4,9 +4,11 @@
  * 数据主权 4.0：云端资产全景清点 / 导出全部个人数据 / 从 JSON 备份导入恢复 / 按域精细化清理 / 注销并删除全部云端数据。
  *
  * 所有动作均走 BFF `/api/me/*`（会话签名身份），不接受客户端自报 userId。
- * 解决两大痛点：
+ * 解决三大痛点：
  *  1. 过去「只能导出 JSON，不能导入恢复」：新增 `/api/me/import` 备份文件上传与粘贴还原；
- *  2. 过去「想清部分数据只能整号删除」：新增 `/api/me/prune` 分域精细化清理（搜索历史/行为画像/金库/CRDT/AI配置）。
+ *  2. 过去「想清部分数据只能整号删除」：新增 `/api/me/prune` 分域精细化清理（搜索历史/行为画像/金库/CRDT/AI配置）；
+ *  3. 过去「自检说原文已留档，但界面里没有任何地方能看到它」：新增 <QuarantineZone />，
+ *     本机隔离副本在这里列出、展开对照、下载、并回收藏或显式删除。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -16,7 +18,28 @@ import { Input } from '@/components/ui/input'
 import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
+import { probeClientSession } from '@/lib/client-session'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
+import { AnonymousHint } from '@/components/user-center/anonymous-hint'
+import dynamic from 'next/dynamic'
+
+// 隔离区只在「本机收藏/设置出现过坏数据」时才有用，对多数访问者是死重：
+// 按需加载（首屏预算只降不升的硬约束，T6/T14 拆分的第一块）。
+const QuarantineZone = dynamic(
+  () => import('@/components/user-center/quarantine-zone').then((m) => m.QuarantineZone),
+  { ssr: false, loading: () => <div className="h-24 animate-pulse rounded-2xl border border-border/70 bg-card/50" aria-busy="true" /> },
+)
+
+// 书签导入是低频操作：按钮与解析器一起按需加载（T2/T16，不占数据页首屏预算）
+const ImportResumeBanner = dynamic(
+  () => import('@/components/user-center/import-resume-banner').then((m) => m.ImportResumeBanner),
+  { ssr: false },
+)
+
+const BookmarkImportButton = dynamic(
+  () => import('@/components/user-center/bookmark-import-button').then((m) => m.BookmarkImportButton),
+  { ssr: false },
+)
 import { SectionState } from '@/components/user-center/section-state'
 import {
   AlertTriangle,
@@ -98,9 +121,68 @@ export default function MeDataPage() {
     foldersImported: number
     favoritesImported: number
     favoritesSkipped: number
+    /** 其中因「站点已不在中枢」而恢复不了的条数 */
+    favoritesSkippedMissingSite: number
     searchesImported: number
+    /** 本次窗口里账户已存在、自动跳过的条数（解释「0 条导入」到底为什么） */
+    searchesSkippedDuplicate: number
+    /** 备份里有、但本次没导的历史条数（逐条写入，单次有上限） */
+    searchesTruncated: number
+    historyImportCap: number
     settingsRestored: boolean
+    settingsError: string | null
+    /** 备份文件在导出那一刻就已经不完整 */
+    backupHistoryTruncated: boolean
+    historyExportLimit: number
+    /** 服务端给的续导起点；null = 备份里的历史已全部导完 */
+    nextHistoryOffset: number | null
+    /** 插件星标/评价重放计数（T2 导入导出对称化） */
+    starsImported: number
+    starsSkippedDuplicate: number
+    starsSkippedMissing: number
+    reviewsImported: number
+    reviewsSkippedNotInstalled: number
+    reviewsSkippedMissing: number
+    reviewsSkippedInvalid: number
   } | null>(null)
+  // 续导要把同一份备份再发一次，所以原文得留在内存里（不进 state 免得触发重渲染）。
+  // T2 起同时落一份到 sessionStorage（会话级）：刷新页面不再丢续导进度，
+  // 关标签页即清，不留长期明文备份。
+  const lastBackupRef = useRef<Record<string, unknown> | null>(null)
+  const RESUME_KEY = 'navhub.import.resume.v1'
+  const [resumeInfo, setResumeInfo] = useState<{ remaining: number; offset: number } | null>(null)
+
+  const persistResume = useCallback((payload: Record<string, unknown>, remaining: number, offset: number) => {
+    lastBackupRef.current = payload
+    try {
+      if (remaining > 0) {
+        window.sessionStorage.setItem(RESUME_KEY, JSON.stringify({ payload, remaining, offset }))
+        setResumeInfo({ remaining, offset })
+      } else {
+        window.sessionStorage.removeItem(RESUME_KEY)
+        setResumeInfo(null)
+      }
+    } catch {
+      // sessionStorage 不可写（隐私模式）：退回内存续导，刷新即丢——老行为
+    }
+  }, [])
+
+  // 刷新后恢复续导上下文（只在登录态就绪时提示，避免匿名访客看到无意义入口）
+  useEffect(() => {
+    if (state !== 'ready') return
+    try {
+      const raw = window.sessionStorage.getItem(RESUME_KEY)
+      if (!raw) return
+      const parsed = JSON.parse(raw) as { payload?: Record<string, unknown>; remaining?: number; offset?: number }
+      if (parsed?.payload && typeof parsed.remaining === 'number' && parsed.remaining > 0) {
+        lastBackupRef.current = parsed.payload
+        setResumeInfo({ remaining: parsed.remaining, offset: Number(parsed.offset ?? 0) })
+      }
+    } catch {
+      // 坏数据直接清掉，不让一次解析失败卡住导入区
+      try { window.sessionStorage.removeItem(RESUME_KEY) } catch { /* 忽略 */ }
+    }
+  }, [state])
 
   // 按域精细化清理状态
   const [confirmPruneDomain, setConfirmPruneDomain] = useState<PruneDomain | null>(null)
@@ -121,33 +203,16 @@ export default function MeDataPage() {
   // 只有"服务端明确返回无 user"才是 anonymous。
   const loadSession = useCallback(async () => {
     setState('loading')
-    try {
-      const res = await fetch('/api/auth/session', { cache: 'no-store' })
-      if (!res.ok) {
-        setState('error')
-        return
-      }
-      // 与 me-view 同一口径：NextAuth 未登录返回字面量 null（200），那是「没有会话」的
-      // 正常回答；只有**解析抛错**才是故障。把 null 当故障会让匿名访客看到错误态。
-      let parsed: unknown
-      try {
-        parsed = await res.json()
-      } catch {
-        parsed = undefined
-      }
-      if (parsed === undefined) {
-        setState('error')
-        return
-      }
-      const session = (parsed ?? {}) as { user?: { id?: string } }
-      if (session.user?.id) {
-        setState('ready')
-        void loadSummary()
-      } else {
-        setState('anonymous')
-      }
-    } catch {
+    const probe = await probeClientSession()
+    if (probe.kind !== 'ok') {
       setState('error')
+      return
+    }
+    if (probe.session.user?.id) {
+      setState('ready')
+      void loadSummary()
+    } else {
+      setState('anonymous')
     }
   }, [loadSummary])
 
@@ -181,24 +246,16 @@ export default function MeDataPage() {
     }
   }, [toast])
 
-  const handleImportBackup = useCallback(
-    async (rawText: string) => {
-      const trimmed = rawText.trim()
-      if (!trimmed || importing) return
+  const submitImport = useCallback(
+    async (payload: Record<string, unknown>, offset: number) => {
       setImporting(true)
       setError(null)
       setImportResult(null)
       try {
-        let parsedPayload: unknown
-        try {
-          parsedPayload = JSON.parse(trimmed)
-        } catch {
-          throw new Error('备份文件不是合法的 JSON 格式，请检查文件内容')
-        }
         const res = await fetch('/api/me/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(parsedPayload),
+          body: JSON.stringify(offset > 0 ? { ...payload, searchHistoryOffset: offset } : payload),
           cache: 'no-store',
         })
         const data = (await res.json().catch(() => ({}))) as {
@@ -206,24 +263,78 @@ export default function MeDataPage() {
           foldersImported?: number
           favoritesImported?: number
           favoritesSkipped?: number
+          favoritesSkippedMissingSite?: number
           searchesImported?: number
+          searchesSkippedDuplicate?: number
+          searchesTruncated?: number
+          historyImportCap?: number
           settingsRestored?: boolean
+          settingsError?: string | null
+          backupHistoryTruncated?: boolean
+          historyExportLimit?: number
+          nextHistoryOffset?: number | null
+          starsImported?: number
+          starsSkippedDuplicate?: number
+          starsSkippedMissing?: number
+          reviewsImported?: number
+          reviewsSkippedNotInstalled?: number
+          reviewsSkippedMissing?: number
+          reviewsSkippedInvalid?: number
           error?: string
         }
         if (!res.ok || !data.ok) {
           throw new Error(data.error || '导入恢复失败')
         }
-        setImportResult({
+        const result = {
           foldersImported: Number(data.foldersImported ?? 0),
           favoritesImported: Number(data.favoritesImported ?? 0),
           favoritesSkipped: Number(data.favoritesSkipped ?? 0),
+          favoritesSkippedMissingSite: Number(data.favoritesSkippedMissingSite ?? 0),
           searchesImported: Number(data.searchesImported ?? 0),
+          searchesSkippedDuplicate: Number(data.searchesSkippedDuplicate ?? 0),
+          searchesTruncated: Number(data.searchesTruncated ?? 0),
+          historyImportCap: Number(data.historyImportCap ?? 200),
           settingsRestored: Boolean(data.settingsRestored),
-        })
+          settingsError: typeof data.settingsError === 'string' ? data.settingsError : null,
+          backupHistoryTruncated: Boolean(data.backupHistoryTruncated),
+          historyExportLimit: Number(data.historyExportLimit ?? 5000),
+          nextHistoryOffset:
+            typeof data.nextHistoryOffset === 'number' && Number.isFinite(data.nextHistoryOffset)
+              ? data.nextHistoryOffset
+              : null,
+          starsImported: Number(data.starsImported ?? 0),
+          starsSkippedDuplicate: Number(data.starsSkippedDuplicate ?? 0),
+          starsSkippedMissing: Number(data.starsSkippedMissing ?? 0),
+          reviewsImported: Number(data.reviewsImported ?? 0),
+          reviewsSkippedNotInstalled: Number(data.reviewsSkippedNotInstalled ?? 0),
+          reviewsSkippedMissing: Number(data.reviewsSkippedMissing ?? 0),
+          reviewsSkippedInvalid: Number(data.reviewsSkippedInvalid ?? 0),
+        }
+        setImportResult(result)
+        // 续导上下文按结果刷新：导完即清，没导完则更新剩余数与起点（sessionStorage 兜刷新）
+        persistResume(payload, result.searchesTruncated, result.nextHistoryOffset ?? 0)
         setImportJsonText('')
+        // 恢复类操作最怕「其实没恢复全但看着像成功」：只要有任何跳过/截断就不许再报「成功」
+        const lost =
+          result.favoritesSkippedMissingSite + result.searchesTruncated + (result.settingsError ? 1 : 0)
         toast({
-          title: '云端备份已成功导入恢复',
-          description: `新增收藏 ${data.favoritesImported ?? 0} 条、收藏夹 ${data.foldersImported ?? 0} 个、搜索历史 ${data.searchesImported ?? 0} 条。`,
+          title: lost > 0 ? '备份已导入，但有内容没能恢复' : '云端备份已导入',
+          description:
+            `新增收藏 ${result.favoritesImported} 条、收藏夹 ${result.foldersImported} 个、搜索历史 ${result.searchesImported} 条` +
+            (result.starsImported + result.reviewsImported > 0
+              ? `、插件星标 ${result.starsImported} 个、评价 ${result.reviewsImported} 条`
+              : '') +
+            (result.favoritesSkippedMissingSite > 0
+              ? `；${result.favoritesSkippedMissingSite} 条收藏对应的站点已不在中枢，未能恢复`
+              : '') +
+            (result.searchesTruncated > 0
+              ? `；${result.searchesTruncated} 条历史超出单次 ${result.historyImportCap} 条上限，点结果里的「继续导入剩余」接着导`
+              : '') +
+            (result.settingsError ? `；偏好设置未能恢复：${result.settingsError}` : '') +
+            (result.backupHistoryTruncated
+              ? `；提醒：这份备份在导出时历史就已截断（上限 ${result.historyExportLimit} 条），更早的记录不在文件里`
+              : ''),
+          variant: lost > 0 ? 'destructive' : 'default',
         })
         void loadSummary()
       } catch (err) {
@@ -232,7 +343,30 @@ export default function MeDataPage() {
         setImporting(false)
       }
     },
-    [importing, loadSummary, toast],
+    [loadSummary, toast],
+  )
+
+  const handleImportBackup = useCallback(
+    async (rawText: string) => {
+      const trimmed = rawText.trim()
+      if (!trimmed || importing) return
+      let parsedPayload: unknown
+      try {
+        parsedPayload = JSON.parse(trimmed)
+      } catch {
+        setImportResult(null)
+        setError('备份文件不是合法的 JSON 格式，请检查文件内容')
+        return
+      }
+      if (!parsedPayload || typeof parsedPayload !== 'object' || Array.isArray(parsedPayload)) {
+        setImportResult(null)
+        setError('备份文件顶层不是对象，无法识别为 NavHub 导出的备份 JSON')
+        return
+      }
+      lastBackupRef.current = parsedPayload as Record<string, unknown>
+      await submitImport(parsedPayload as Record<string, unknown>, 0)
+    },
+    [importing, submitImport],
   )
 
   const handlePruneDomain = useCallback(
@@ -299,6 +433,10 @@ export default function MeDataPage() {
         description="你的收藏、搜索历史、画像、LLM 配置与金库元信息都归你所有：支持随时导出、从备份一键导入还原、按域精细化清理或彻底注销。"
       />
 
+      {/* 本机隔离区：巡检承诺「原文已整份留档、可在这里对照找回」，这一节就是那个出口。
+          放在登录态判断之外 —— 匿名访客的坏数据同样只在本机，登录后云端也帮不上。 */}
+      <QuarantineZone />
+
       {state === 'loading' && <SectionState variant="loading" rows={1} rowClassName="h-32" loadingLabel="正在确认登录状态" />}
 
       {state === 'error' && (
@@ -311,15 +449,11 @@ export default function MeDataPage() {
       )}
 
       {state === 'anonymous' && (
-        <section className="space-y-3 rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 sm:p-6">
-          <p className="text-sm font-semibold">需要登录后管理云端数据</p>
-          <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
-            匿名数据只保存在本机浏览器；登录后可导出、导入恢复与按域清理云端数据，也能把本机匿名数据合并到账号。
-          </p>
-          <Button asChild size="sm" className="w-full text-xs sm:w-auto">
-            <Link href="/auth/signin?callbackUrl=/me/data">登录 / 创建账号</Link>
-          </Button>
-        </section>
+        <AnonymousHint
+          title="需要登录后管理云端数据"
+          description="匿名数据只保存在本机浏览器；登录后可导出、导入恢复与按域清理云端数据，也能把本机匿名数据合并到账号。"
+          callbackUrl="/me/data"
+        />
       )}
 
       {state === 'deleted' && (
@@ -431,17 +565,76 @@ export default function MeDataPage() {
               <span className="text-[11px] text-muted-foreground">幂等合并，不覆盖已有收藏</span>
             </div>
             <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted-foreground">
-              选择或粘贴通过上方「下载 JSON」导出的 <code className="font-mono">navhub-export-*.json</code> 文件，即可一键恢复收藏夹分组、收藏站点、搜索历史与个人偏好设置。
+              选择或粘贴通过上方「下载 JSON」导出的 <code className="font-mono">navhub-export-*.json</code> 文件，即可合并恢复收藏夹分组、收藏站点、搜索历史与个人偏好设置：已存在的内容不会被覆盖，
+              搜索历史受中枢逐条写入限制，单次最多恢复一部分，剩余条数会在结果里说明并提供「继续导入剩余」按钮。
             </p>
 
             {importResult && (
-              <div className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-700 dark:text-emerald-300">
-                <p className="font-semibold">备份导入恢复完成：</p>
-                <p className="mt-0.5 text-[11px]">
-                  新增收藏夹 {importResult.foldersImported} 个 · 新增收藏 {importResult.favoritesImported} 条（跳过已存在或失效站点 {importResult.favoritesSkipped} 条）· 导入搜索历史 {importResult.searchesImported} 条
-                  {importResult.settingsRestored ? ' · 已同步恢复个人偏好设置' : ''}
+              <div
+                className={
+                  importResult.favoritesSkippedMissingSite + importResult.searchesTruncated > 0
+                    ? 'mt-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2.5 text-xs text-amber-800 dark:text-amber-200'
+                    : 'mt-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-xs text-emerald-700 dark:text-emerald-300'
+                }
+              >
+                <p className="font-semibold">
+                  {importResult.favoritesSkippedMissingSite + importResult.searchesTruncated > 0
+                    ? '备份导入完成，但以下数据没能恢复：'
+                    : '备份导入恢复完成：'}
                 </p>
+                <p className="mt-0.5 text-[11px]">
+                  新增收藏夹 {importResult.foldersImported} 个 · 新增收藏 {importResult.favoritesImported} 条（已存在跳过{' '}
+                  {importResult.favoritesSkipped - importResult.favoritesSkippedMissingSite} 条）· 导入搜索历史{' '}
+                  {importResult.searchesImported} 条
+                  {importResult.favoritesSkippedMissingSite > 0
+                    ? ` · ${importResult.favoritesSkippedMissingSite} 条收藏的站点已不在中枢，无法恢复`
+                    : ''}
+                  {importResult.searchesSkippedDuplicate > 0
+                    ? ` · 其中 ${importResult.searchesSkippedDuplicate} 条账户里已有，未重复写入`
+                    : ''}
+                  {importResult.searchesTruncated > 0
+                    ? ` · ${importResult.searchesTruncated} 条历史超出单次 ${importResult.historyImportCap} 条上限，用下方「继续导入剩余」接着导`
+                    : ''}
+                  {importResult.starsImported + importResult.starsSkippedDuplicate + importResult.starsSkippedMissing > 0
+                    ? ` · 插件星标恢复 ${importResult.starsImported} 个（已标过跳过 ${importResult.starsSkippedDuplicate}、插件已不存在 ${importResult.starsSkippedMissing}）`
+                    : ''}
+                  {importResult.reviewsImported + importResult.reviewsSkippedNotInstalled + importResult.reviewsSkippedMissing + importResult.reviewsSkippedInvalid > 0
+                    ? ` · 插件评价恢复 ${importResult.reviewsImported} 条（未安装该插件跳过 ${importResult.reviewsSkippedNotInstalled}、插件不存在 ${importResult.reviewsSkippedMissing}、内容无效 ${importResult.reviewsSkippedInvalid}）`
+                    : ''}
+                  {importResult.settingsError
+                    ? ` · 偏好设置未能恢复：${importResult.settingsError}`
+                    : importResult.settingsRestored
+                      ? ' · 已同步恢复个人偏好设置'
+                      : ''}
+                  {importResult.backupHistoryTruncated
+                    ? ` · 注意：这份备份导出时历史就已截断（上限 ${importResult.historyExportLimit} 条），更早的记录不在文件里`
+                    : ''}
+                </p>
+                {importResult.nextHistoryOffset !== null && lastBackupRef.current && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 text-xs"
+                    disabled={importing}
+                    onClick={() => void submitImport(lastBackupRef.current!, importResult.nextHistoryOffset!)}
+                  >
+                    {importing ? (
+                      <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="mr-2 h-3.5 w-3.5" />
+                    )}
+                    继续导入剩余 {importResult.searchesTruncated} 条搜索历史
+                  </Button>
+                )}
               </div>
+            )}
+
+            {resumeInfo && lastBackupRef.current && (
+              <ImportResumeBanner
+                remaining={resumeInfo.remaining}
+                busy={importing}
+                onResume={() => void submitImport(lastBackupRef.current!, resumeInfo.offset)}
+              />
             )}
 
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -474,6 +667,7 @@ export default function MeDataPage() {
                 {importing ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Upload className="mr-2 h-3.5 w-3.5" />}
                 选择备份 JSON 文件恢复
               </Button>
+              <BookmarkImportButton favorites={favorites} />
               <Input
                 aria-label="粘贴备份 JSON 内容"
                 value={importJsonText}

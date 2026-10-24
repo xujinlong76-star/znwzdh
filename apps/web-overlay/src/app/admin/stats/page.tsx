@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Activity, ArrowRight, Clock, ExternalLink, Flame, PlusCircle, RefreshCw, Search, Sparkles, TrendingUp } from 'lucide-react'
+import { Activity, ArrowRight, Clock, ExternalLink, Flame, PlusCircle, RefreshCw, Search, Sparkles, TrendingUp, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -35,6 +35,87 @@ interface HealthTrendPoint {
 /**
  * 成功率与响应延迟趋势图：双轴 SVG 折线
  */
+/**
+ * 用户中心运营卡（T19）：把已建成但无人消费的指标端点接到界面。
+ * - favoritesSync / identityMerge / dataSovereignty：产品链路健康（进程内计数，重启清零）
+ * - DAU / 收藏分布：来自 dashboardOverview 的 userCenter 块（库级聚合，持久）
+ */
+interface UserCenterOps {
+  userCenter: {
+    favoritesSync: { success: number; failure: number; failureRetryable: number; opsSubmitted: number; sharded: number }
+    identityMerge: { success: number; alreadyMerged: number; failure: number }
+    dataSovereignty: Record<string, number>
+  }
+}
+
+function UserCenterOpsCard() {
+  const [ops, setOps] = useState<UserCenterOps['userCenter'] | null>(null)
+  const [err, setErr] = useState<unknown>(null)
+  useEffect(() => {
+    void (async () => {
+      try {
+        const data = await hubGet<UserCenterOps>('/api/hub/admin/user-center/metrics')
+        setOps(data?.userCenter ?? null)
+      } catch (e) {
+        setErr(e)
+      }
+    })()
+  }, [])
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <User className="h-4 w-4 text-primary" aria-hidden /> 用户中心链路（进程内计数，重启清零）
+        </CardTitle>
+        <CardDescription>
+          收藏同步 / 身份合并 / 数据主权操作的成败计数；持久趋势见 audit_logs。
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {err ? (
+          <p className="text-xs text-muted-foreground" role="alert">
+            用户中心指标没能加载出来：{describeDegrade(err).message}
+          </p>
+        ) : !ops ? (
+          <p className="text-xs text-muted-foreground" aria-busy="true">加载中…</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+            <div className="rounded-lg border bg-background/50 p-2.5">
+              <p className="text-muted-foreground">同步成功 / 失败</p>
+              <p className="mt-1 text-base font-semibold">
+                {ops.favoritesSync.success} / {ops.favoritesSync.failure + ops.favoritesSync.failureRetryable}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                ops {ops.favoritesSync.opsSubmitted} · 分片 {ops.favoritesSync.sharded}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-background/50 p-2.5">
+              <p className="text-muted-foreground">身份合并</p>
+              <p className="mt-1 text-base font-semibold">{ops.identityMerge.success}</p>
+              <p className="text-[11px] text-muted-foreground">
+                幂等跳过 {ops.identityMerge.alreadyMerged} · 失败 {ops.identityMerge.failure}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-background/50 p-2.5">
+              <p className="text-muted-foreground">导出（JSON/书签）</p>
+              <p className="mt-1 text-base font-semibold">
+                {(ops.dataSovereignty.exportJson ?? 0) + (ops.dataSovereignty.exportBookmarks ?? 0)}
+              </p>
+            </div>
+            <div className="rounded-lg border bg-background/50 p-2.5">
+              <p className="text-muted-foreground">注销 / 操作记录</p>
+              <p className="mt-1 text-base font-semibold">
+                {ops.dataSovereignty.deleteAccount ?? 0} / {ops.dataSovereignty.activityRead ?? 0}
+              </p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 function HealthTrendChart({ points }: { points: HealthTrendPoint[] }) {
   const w = 680
   const h = 180
@@ -253,6 +334,8 @@ export default function AdminStatsPage() {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
+      {/* T19：用户中心链路指标（此前端点无人消费） */}
+      <UserCenterOpsCard />
       {/* 头部与时间窗口控制器 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b">
         <div>

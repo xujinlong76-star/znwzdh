@@ -158,3 +158,98 @@ describe("docker compose 安全变量透传契约", () => {
     }
   });
 });
+
+/**
+ * LLM 配置面透传契约。
+ *
+ * 2026-10-23 补这一档的原因：`config.ts` 会读 9 个 `NAVHUB_LLM_*` 调参项与 7 个
+ * 额度项，`.env.example` 也全部写了说明，但 compose 只透传 BASE_URL / API_KEY /
+ * （仅 lite）MODEL。后果分两种，都只能改 compose 才能解开：
+ *  - `api-standard` 没有 MODEL → 用 `.env` 里的 deepseek 端点配代码默认的
+ *    `agnes-3.0-flash` 模型名，请求必然 invalid model；
+ *  - `NAVHUB_LLM_ALLOW_PRIVATE` 进不了容器 → 本地 Ollama/llama.cpp（无 API Key）
+ *    在 Docker 部署里永远得到「尚未配置可用的模型密钥」，等于文档承诺的能力做不到。
+ */
+const QUOTA_KEYS = [
+  "NAVHUB_LLM_QUOTA_IDENTITY_CALLS",
+  "NAVHUB_LLM_QUOTA_IDENTITY_TOKENS",
+  "NAVHUB_LLM_QUOTA_ANON_CALLS",
+  "NAVHUB_LLM_QUOTA_ANON_TOKENS",
+  "NAVHUB_LLM_QUOTA_SYSTEM_CALLS",
+  "NAVHUB_LLM_QUOTA_SYSTEM_TOKENS",
+  "NAVHUB_LLM_QUOTA_DISABLED",
+];
+
+const LLM_KEYS_BY_SERVICE: Record<string, string[]> = {
+  api: [
+    "NAVHUB_LLM_BASE_URL",
+    "NAVHUB_LLM_API_KEY",
+    "NAVHUB_LLM_MODEL",
+    "NAVHUB_LLM_NAME",
+    "NAVHUB_LLM_TIMEOUT_MS",
+    "NAVHUB_LLM_MAX_TOKENS",
+    "NAVHUB_LLM_TEMPERATURE",
+    "NAVHUB_LLM_JSON_MODE",
+    "NAVHUB_LLM_THINKING",
+    "NAVHUB_LLM_ALLOW_PRIVATE",
+    // 大盘折算花费的单价：不透传就只能永远显示「未配置单价」，配了也不生效
+    "NAVHUB_LLM_COST_PER_1K_TOKENS",
+    ...QUOTA_KEYS,
+  ],
+  "api-standard": [
+    "NAVHUB_LLM_BASE_URL",
+    "NAVHUB_LLM_API_KEY",
+    "NAVHUB_LLM_MODEL",
+    "NAVHUB_LLM_NAME",
+    "NAVHUB_LLM_TIMEOUT_MS",
+    "NAVHUB_LLM_MAX_TOKENS",
+    "NAVHUB_LLM_TEMPERATURE",
+    "NAVHUB_LLM_JSON_MODE",
+    "NAVHUB_LLM_THINKING",
+    "NAVHUB_LLM_ALLOW_PRIVATE",
+    // 大盘折算花费的单价：不透传就只能永远显示「未配置单价」，配了也不生效
+    "NAVHUB_LLM_COST_PER_1K_TOKENS",
+    ...QUOTA_KEYS,
+  ],
+};
+
+describe("docker compose LLM 配置透传契约", () => {
+  it("中枢两个服务都活跃透传全部 LLM 调参项与额度项", () => {
+    for (const [service, keys] of Object.entries(LLM_KEYS_BY_SERVICE)) {
+      const block = envBlocks.get(service);
+      expect(block, `compose 里找不到服务 ${service} 的 environment 块`).toBeTruthy();
+      for (const key of keys) {
+        expect(
+          block!.has(key),
+          `${service} 未透传 ${key}（.env 里写了也进不了容器）${
+            commentedBlocks.get(service)?.has(key) ? "；当前是被注释掉的一行" : ""
+          }`
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("活跃透传的 LLM 变量在 .env.example 必须有文档", () => {
+    const example = readFileSync(ENV_EXAMPLE, "utf8");
+    const documented = new Set(
+      [...example.matchAll(/^#?\s*(NAVHUB_[A-Z0-9_]+)=/gm)].map((m) => m[1])
+    );
+    for (const keys of Object.values(LLM_KEYS_BY_SERVICE)) {
+      for (const key of keys) {
+        expect(documented.has(key), `.env.example 缺少 ${key} 的说明`).toBe(true);
+      }
+    }
+  });
+
+  it("额度项一律空值透传：compose 里写死数字会悄悄接管「没配 .env」的部署", () => {
+    // config.ts 的 num() 把空串读成「未配置」→ 落回代码默认值；
+    // 而 compose 写 `${KEY:-300}` 时，删掉自己 .env 那行的人会静默换上一个他没选过的上限。
+    for (const service of Object.keys(LLM_KEYS_BY_SERVICE)) {
+      for (const key of QUOTA_KEYS) {
+        expect(envBlocks.get(service)?.get(key), `${service} 的 ${key} 应空值透传`).toBe(
+          `\${${key}:-}`
+        );
+      }
+    }
+  });
+});

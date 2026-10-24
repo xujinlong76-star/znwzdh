@@ -11,8 +11,8 @@
  *
  * 这里钉两件事：
  *   1. 纯函数 describeDaypart 的边界（含与旧文案逐字一致）；
- *   2. 组件必须「挂载之后再算」：初始 state 为 null、new Date() 只出现在
- *      useEffect 里、渲染体不再直接取小时。
+ *   2. 组件必须「只有客户端才算得到小时」：时钟读取收在 useClientHour 里，
+ *      服务端快照恒为 null，组件不再自己 new Date()，也不再往 effect 里塞 setState。
  *
  * 端到端那一层（服务端 HTML 里绝不能出现任何时段文案）在 e2e/daypart-hydration.spec.ts。
  */
@@ -116,21 +116,33 @@ function stripComments(source: string): string {
 }
 
 describe('组件接线：时段提示只在挂载后计算（渲染行为由 E2E 断言）', () => {
-  const src = readFileSync(COMPONENT, 'utf8')
-  const code = stripComments(src)
+  const code = stripComments(readFileSync(COMPONENT, 'utf8'))
+  const daypartCode = stripComments(readFileSync(resolve(ROOT, 'src', 'lib', 'daypart.ts'), 'utf8'))
 
   // P1-1 分层：`e2e/daypart-hydration.spec.ts` 已经断言了首屏 HTML 只有占位、
   // 挂载后换成客户端时段、且控制台没有水合报错。这里不再数「new Date() 出现几次」
-  // 这类实现形状（重构拆文件就会误红），只保留「算在 effect 里、渲染体不算」的语义。
-  it('初始 state 是 null，首帧渲染占位提示', () => {
-    expect(code).toContain('useState<DaypartHint | null>(null)')
-    expect(code).toContain('daypartText(timeHint ?? DAYPART_PLACEHOLDER)')
+  // 这类实现形状（重构拆文件就会误红），只保留「客户端才算、服务端拿不到」的语义。
+  it('小时数一律经 useClientHour 取，组件不自己碰时钟', () => {
+    expect(code).toContain('useClientHour()')
+    expect(code).not.toContain('new Date')
   })
 
-  it('当前小时只在 useEffect 里取，渲染体不直接调用', () => {
-    expect(code).toMatch(/useEffect\([\s\S]*new Date\(\)\.getHours\(\)/)
-    expect(code).not.toMatch(/\{describeDaypart\(/) // 渲染时不许直接调用
-    expect(code).not.toContain('const hour = new Date')
+  it('拿不到小时数时渲染占位提示，而不是瞎猜一个时段', () => {
+    expect(code).toContain('daypartText(daypart?.hint ?? DAYPART_PLACEHOLDER)')
+  })
+
+  it('useClientHour 的服务端快照恒为 null（水合两边首帧一致）', () => {
+    expect(daypartCode).toMatch(/useSyncExternalStore\(\s*noopSubscribe,\s*\(\)\s*=>\s*new Date\(\)\.getHours\(\),\s*\(\)\s*=>\s*null\s*\)/)
+  })
+
+  it('时段文案不许在渲染体里按小时直接算（只能经 useClientHour 的客户端值）', () => {
+    expect(code).not.toMatch(/\{describeDaypart\(/)
+    expect(daypartCode).not.toMatch(/^const .*describeDaypart\(/m)
+  })
+
+  it('关掉推荐开关时这一行必须改口径，不能继续报按时间算出来的提示', () => {
+    expect(code).toMatch(/hour === null \|\| !daypartSceneEnabled[\s\S]*?return null/)
+    expect(code).toContain('时段场景推荐已关闭')
   })
 })
 

@@ -48,7 +48,7 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    * 站点无关（不含任何身份字段），每次请求都要走一遍向量检索 + 批量取站点，
    * 因此给最短的一档缓存：60s + ETag。降级/不可用的空结果最多也只错 60s。
    */
-  app.get("/api/rank/similar/:siteId", { config: { cache: { maxAge: 60, etag: true } } }, async (req, reply) => {
+  app.get("/api/rank/similar/:siteId", { config: { cache: { maxAge: 60, etag: true } } }, async (req) => {
     const { siteId } = req.params as { siteId: string };
     const q = (req.query ?? {}) as Record<string, string>;
     const { limit } = parsePagination(q, { defaultLimit: 6, maxLimit: 20 });

@@ -351,7 +351,9 @@ async function tryLlm(
         promptTokens: result.usage.promptTokens,
         completionTokens: result.usage.completionTokens,
         latencyMs: result.latencyMs,
-        thinking: llm.thinking,
+        // 按「参数是否真的下发」记账：端点拒收思维链时网关会去参重试，
+        // 这次调用其实没思考，记成 llm.thinking 会把后台的思考调用数虚增。
+        thinking: result.thinkingApplied === true,
       });
       const parsed = EnrichmentSchema.safeParse(JSON.parse(stripCodeFence(result.content)));
       if (!parsed.success) {

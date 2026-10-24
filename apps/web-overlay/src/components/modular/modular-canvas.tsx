@@ -24,11 +24,13 @@ import {
   Undo2,
   Redo2,
   Palette,
-  Package
+  Package,
+  AlertTriangle
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { DensityToggle } from '@/components/density-toggle'
 import { takeStagedWorkspacePreset } from '@/lib/plugins/preset-staging'
+import { formatLayoutReport, type NoticeTone } from '@/lib/modular/layout-report'
 import { ExportPluginModal } from '@/components/plugins/export-plugin-modal'
 import {
   ITEM_INDEX_ATTR,
@@ -78,10 +80,30 @@ export function ModularCanvas() {
   const [configTargetWidget, setConfigTargetWidget] = useState<any | null>(null)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const [exportNotice, setExportNotice] = useState<string | null>(null)
+  const [exportNotice, setExportNotice] = useState<{ text: string; tone: NoticeTone } | null>(null)
   const [isCreatingBoard, setIsCreatingBoard] = useState(false)
   const [newBoardName, setNewBoardName] = useState('')
   const [canvasBg, setCanvasBg] = useState<'dots' | 'grid' | 'aurora' | 'clean'>('dots')
+
+  /**
+   * 浮层提示：措辞之外还带配色，导入这类「可能少了一部分」的结果必须用 warn。
+   * 定时器收进 ref：连续两次提示时，前一次的 timeout 不能把后一条刚冒出来的
+   * 告警提前抹掉（原来每个调用点各挂一个 setTimeout，重叠时长的确会串）。
+   */
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showNotice = useCallback((text: string, tone: NoticeTone = 'ok', ms = 2500) => {
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
+    setExportNotice({ text, tone })
+    noticeTimerRef.current = setTimeout(() => {
+      setExportNotice(null)
+      noticeTimerRef.current = null
+    }, ms)
+  }, [])
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current)
+    }
+  }, [])
 
   // reorderWidgets 的 ref 镜像：handleDragEnd 通过函数式 setState 嵌套读取最新值，
   // 避免 useCallback 依赖 reorderWidgets（其引用随 activeBoardId 变化，会破坏 memo）
@@ -108,13 +130,12 @@ export function ModularCanvas() {
     if (!initialized) return
     const staged = takeStagedWorkspacePreset()
     if (!staged) return
-    const ok = installWidgetPreset(staged.payload, staged.mode ?? 'append')
-    setExportNotice(
-      ok
-        ? `已从插件市场安装「${staged.name}」，可切换新看板查看`
-        : `「${staged.name}」没有当前可用的模块（类型可能已下线）`,
-    )
-  }, [initialized, installWidgetPreset])
+    // 逐因措辞：装了 3 个看板却只留下 1 个时，不能只说「安装成功」
+    const report = installWidgetPreset(staged.payload, staged.mode ?? 'append')
+    const notice = formatLayoutReport(report, `插件「${staged.name}」`)
+    // 「可切换看板查看」只在真有新看板时才有意义，失败时留着只会误导
+    showNotice(report.ok ? `${notice.text}，可切换看板查看` : notice.text, notice.tone, 5000)
+  }, [initialized, installWidgetPreset, showNotice])
 
   // 画布背景风格切换
   const handleSelectBg = (bg: 'dots' | 'grid' | 'aurora' | 'clean') => {
@@ -292,8 +313,7 @@ export function ModularCanvas() {
     createBoard(newBoardName)
     setNewBoardName('')
     setIsCreatingBoard(false)
-    setExportNotice(`已创建并激活新看板「${newBoardName}」`)
-    setTimeout(() => setExportNotice(null), 2500)
+    showNotice(`已创建并激活新看板「${newBoardName}」`)
   }
 
   // 导出 JSON
@@ -307,8 +327,8 @@ export function ModularCanvas() {
     a.click()
     // 延迟回收：个别浏览器（旧 Safari）下载是异步读取 blob 的，立即 revoke 会截断文件
     setTimeout(() => URL.revokeObjectURL(url), 1000)
-    setExportNotice('全部工作台看板配置已导出为 JSON')
-    setTimeout(() => setExportNotice(null), 2500)
+    // 报条数而不是「全部」：导入侧会剔掉下线的模块，用户需要知道这次带走的是几个看板
+    showNotice(`已导出 ${boards.length} 个看板的配置`)
   }
 
   // 一键导出为工作台预设插件清单向导 (workspace-preset)
@@ -327,13 +347,9 @@ export function ModularCanvas() {
       const reader = new FileReader()
       reader.onload = (event) => {
         const text = String(event.target?.result || '')
-        const ok = importLayoutJson(text)
-        if (ok) {
-          setExportNotice('工作台配置已成功还原！')
-        } else {
-          setExportNotice('导入失败：无效的布局文件格式')
-        }
-        setTimeout(() => setExportNotice(null), 2500)
+        // 台账直接进措辞：剔掉了几个模块、几个看板被清空，都必须说得出数
+        const notice = formatLayoutReport(importLayoutJson(text), '工作台配置')
+        showNotice(notice.text, notice.tone, 5000)
       }
       reader.readAsText(file)
     }
@@ -541,7 +557,7 @@ export function ModularCanvas() {
                 variant="outline"
                 className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-purple-500/30 text-purple-600 dark:text-purple-400 hover:bg-purple-500/10 shadow-xs"
                 onClick={() => setIsAiGenOpen(true)}
-                title="一句话让 Agnes 3.0 Flash 智能规划专属工作台"
+                title="一句话让 AI 智能规划专属工作台"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>AI 智能规划</span>
@@ -553,8 +569,9 @@ export function ModularCanvas() {
                 className="h-8 px-2.5 text-xs rounded-xl gap-1.5 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10"
                 onClick={() => {
                   compactLayout()
-                  setExportNotice('已完成 12 栅格智能紧凑重排，消除了多余空间碎片！')
-                  setTimeout(() => setExportNotice(null), 2500)
+                  // 只报「重排了几个模块」：单个模块时 compactLayout 是空操作，
+                  // 「消除了多余空间碎片」这种断言没法验证，也不该写。
+                  showNotice(`已按 12 栅格重排当前 ${widgets.length} 个模块`)
                 }}
                 title="自动紧凑排版：根据 12 栅格行容器贪心重排，消除空隙"
               >
@@ -624,11 +641,22 @@ export function ModularCanvas() {
         </div>
       </div>
 
-      {/* 提示消息浮层 */}
+      {/* 提示消息浮层：导入/安装的告警必须是琥珀色，绿色只留给一条没丢的结果 */}
       {exportNotice && (
-        <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-center gap-2 animate-in fade-in duration-150">
-          <Sparkles className="w-4 h-4" />
-          <span>{exportNotice}</span>
+        <div
+          className={
+            exportNotice.tone === 'warn'
+              ? 'p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-2 animate-in fade-in duration-150'
+              : 'p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs flex items-start gap-2 animate-in fade-in duration-150'
+          }
+          role={exportNotice.tone === 'warn' ? 'alert' : 'status'}
+        >
+          {exportNotice.tone === 'warn' ? (
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          ) : (
+            <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
+          )}
+          <span>{exportNotice.text}</span>
         </div>
       )}
 
@@ -731,7 +759,7 @@ export function ModularCanvas() {
         isOpen={isAiGenOpen}
         onClose={() => setIsAiGenOpen(false)}
         onApplyLayout={(layout, mode) => {
-          installWidgetPreset(
+          const report = installWidgetPreset(
             {
               boards: [
                 {
@@ -748,8 +776,10 @@ export function ModularCanvas() {
             },
             mode === 'replace' ? 'replace' : 'append',
           )
-          setExportNotice(`已成功套用 AI 规划工作台「${layout.title}」！`)
-          setTimeout(() => setExportNotice(null), 3000)
+          // AI 会编出注册表里根本没有的模块类型，以前一律报「已成功套用」；
+          // 现在按台账说：一个都没落地就是「导入失败」，不是成功。
+          const notice = formatLayoutReport(report, `AI 规划「${layout.title || '工作台'}」`)
+          showNotice(notice.text, notice.tone, 5000)
         }}
       />
 

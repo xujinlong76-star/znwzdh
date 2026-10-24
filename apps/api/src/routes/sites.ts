@@ -11,7 +11,8 @@ import { enrichUrl } from "@navhub/ai";
 import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
-import { badRequest, clampFacets, identityOf } from "./shared.ts";
+import { checkLlmQuota } from "../llm-quota.ts";
+import { badRequest, clampFacets, identityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -81,12 +82,17 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       const dup = await ctx.repo.findSiteByUrl(url);
       if (dup) { reply.code(409); return { error: "该网址已存在", siteId: dup.id, site: dup, created: false, reason: "已存在" }; }
       const categories = await ctx.repo.listCategories();
-      const resolved = await resolveLlm(ctx, identityOf(req as never));
+      // 身份必须过第二轴（否则「自称别人」= 花别人的 key、记别人的账），
+      // 并且这一次写库前的富化也要受额度闸门约束：额度到顶就只用抓取结果。
+      const identity = identityTrusted(ctx, req as never) ? identityOf(req as never) : null;
+      const quota = await checkLlmQuota(ctx, identity);
+      const resolved = await resolveLlm(ctx, identity);
       const enriched = await enrichUrl(url, {
         llm: enrichLlmOf(resolved),
         guard: ctx.config.fetch,
         knownCategories: categories.map((c) => c.title),
-        onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identityOf(req as never)),
+        heuristicOnly: !quota.ok,
+        onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identity),
       });
       const suggested = enriched.suggestedCategory ?? "";
       const resolution = suggested

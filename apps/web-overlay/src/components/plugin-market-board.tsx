@@ -170,13 +170,22 @@ export function PluginMarketBoard({
       if (append) setLoadingMore(true)
       else setLoading(true)
       if (!append) setNotice(null)
-      const onDegraded = (error: unknown) => setNotice(describeDegrade(error, '插件市场'))
+      let failed = false
+      const onDegraded = (error: unknown) => {
+        failed = true
+        setNotice(describeDegrade(error, '插件市场'))
+      }
       const res = await fetchPlugins(
         { kind: kind || undefined, q: q || undefined, sort, limit: PAGE_SIZE, offset },
         onDegraded,
       )
-      setItems((prev) => (append ? [...prev, ...res.items] : res.items))
-      setTotal(res.total)
+      // 追加页失败时 res 是降级兜底（items 空、total 0），不能拿它覆盖现有状态：
+      // 一次瞬间故障会把「共 N 个」改成 0、加载更多按钮随之消失，后面的页再也到不了，
+      // 而列表里明明还留着前面那些插件。失败就保持原样，让用户重试。
+      if (!(append && failed)) {
+        setItems((prev) => (append ? [...prev, ...res.items] : res.items))
+        setTotal(res.total)
+      }
       if (append) setLoadingMore(false)
       else setLoading(false)
     },

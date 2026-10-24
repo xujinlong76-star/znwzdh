@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -14,6 +15,7 @@ import { Footer } from '@/components/footer'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FavoriteButton } from '@/components/favorite-button'
+import { SiteFavicon } from '@/components/site-favicon'
 import {
   readSyncStatus,
   syncFavoritesToCloud,
@@ -22,17 +24,15 @@ import {
   type FavoritesSyncStatus,
   type LocalFavorite,
 } from '@/hooks/useFavorites'
+import { useFavoritesFolderManager } from '@/hooks/use-favorites-folder-manager'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
+import { parseLocalFolders, serializeLocalFolders, type LocalFolder } from '@/lib/favorites-folders'
 import {
-  addLocalFolder,
-  parseLocalFolders,
-  planFolderUpload,
-  removeLocalFolder,
-  renameLocalFolder,
-  serializeLocalFolders,
-  type LocalFolder,
-} from '@/lib/favorites-folders'
-import { favoritesToVaultItems, vaultExportFilename, vaultItemsToFavorites } from '@/lib/favorites-vault'
+  favoritesToVaultItems,
+  formatVaultRestoreNotice,
+  vaultExportFilename,
+  vaultItemsToFavorites,
+} from '@/lib/favorites-vault'
 import { describeSyncBanner, shouldOfferRetry, type SyncBannerInput } from '@/lib/favorites-sync-copy'
 import {
   filterFavorites,
@@ -43,17 +43,13 @@ import { encryptVault, decryptVault, type EncryptedVaultPayload } from '@/lib/va
 import { UserCenterNav } from '@/components/user-center/user-center-nav'
 import {
   clearCloudFavorites,
-  createFavoriteFolder,
-  deleteFavoriteFolder,
   listFavorites,
-  updateFavoriteFolder,
   updateFavoriteMeta,
   type HubFavoriteFolder,
 } from '@/lib/navhub-api'
 import {
-  Shield, KeyRound, Download, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
-  RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check, LogIn,
-} from 'lucide-react'
+  Shield, KeyRound, CheckCircle2, AlertTriangle, EyeOff,
+  RefreshCw, CloudOff, Search, X, Package, Folder, FolderPlus, Pencil, Trash2, Check, LogIn, ChevronUp, ChevronDown, Tag } from 'lucide-react'
 import dynamic from 'next/dynamic'
 
 // 两个面板都只在用户点开时才需要：金库导入/导出、插件包导出向导。
@@ -117,12 +113,11 @@ export default function FavoritesPage() {
     typeof window === 'undefined' ? [] : readLocalFolders(),
   )
   const [activeFolder, setActiveFolder] = useState<string>('all')
-  const [newFolderName, setNewFolderName] = useState('')
-  const [folderBusy, setFolderBusy] = useState(false)
-  const [editingFolder, setEditingFolder] = useState<string | null>(null)
-  const [editingName, setEditingName] = useState('')
   const [noteEditor, setNoteEditor] = useState<string | null>(null)
   const [noteDraft, setNoteDraft] = useState('')
+  // 标签编辑器（T22）：逗号分隔输入，保存时归一（≤8 个、各 ≤24 字符）
+  const [tagEditor, setTagEditor] = useState<string | null>(null)
+  const [tagDraft, setTagDraft] = useState('')
   const [manageBusy, setManageBusy] = useState(false)
   // 排序与渐进渲染（N8）：收藏上千条时「一屏渲染全部」会让首屏明显变慢，
   // 这里先排好序，再只渲染前若干条，其余按需加载。
@@ -140,7 +135,13 @@ export default function FavoritesPage() {
     // 排序是纯本地操作（收藏已在内存里），不引入服务端分页——本地优先是收藏页的根基，
     // 为排序把数据源改成接口会破坏离线可用性。
     const sorted = [...byFolder]
-    if (sortBy === 'title') sorted.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'))
+    if (sortBy === 'title') {
+      sorted.sort((a, b) => a.title.localeCompare(b.title, 'zh-CN'))
+    } else {
+      // 「最近收藏」必须显式按时间戳排：数组现状依赖「toggle unshift + 云端 DESC」
+      // 的隐式约定，明文导入 / 金库恢复后顺序不再可信。
+      sorted.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    }
     return sorted
   }, [filteredFavorites, activeFolder, sortBy])
   /** 渐进渲染：只渲染前 visibleCount 条，避免上千个 DOM 同时进场 */
@@ -150,6 +151,16 @@ export default function FavoritesPage() {
     favorites.items.length,
     favoriteQuery,
   )
+
+  /** 夹计数一次性算好（O(条数)），替代渲染期每个夹 filter 一遍（O(条数×夹数)） */
+  const folderCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const f of favorites.items) {
+      if (!f.folderId) continue
+      counts.set(f.folderId, (counts.get(f.folderId) ?? 0) + 1)
+    }
+    return counts
+  }, [favorites.items])
 
   // 零知识 E2EE 金库状态
   const [showVaultExport, setShowVaultExport] = useState(false)
@@ -191,7 +202,6 @@ export default function FavoritesPage() {
       }
       return true
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [favorites],
   )
 
@@ -246,8 +256,6 @@ export default function FavoritesPage() {
         await migrateLocalFolders(result.cloudFolders, result.nextItems)
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runCloudSync, favorites.ready, identityReady.ready, identityReady.identity])
 
   /**
@@ -257,90 +265,27 @@ export default function FavoritesPage() {
    * 渲染层不关心来源——这是"匿名也能分组"能成立的关键：不是给匿名用户另做一套 UI，
    * 而是让同一套 UI 有两个数据源。
    */
+  // 夹子管理（T14 拆分）：CRUD/重排/迁移逻辑在 hooks/use-favorites-folder-manager
+  const folderManager = useFavoritesFolderManager({
+    cloudIdentity,
+    folders,
+    setFolders,
+    localFolders,
+    setLocalFolders,
+    activeFolder,
+    setActiveFolder,
+    favorites,
+    report: (note, status) => {
+      setSyncNote(note)
+      setSyncStatus(status)
+    },
+  })
+  const { newFolderName, setNewFolderName, folderBusy, editingFolder, setEditingFolder, editingName, setEditingName, refreshFolders, addFolder, saveFolderName, removeFolder, moveFolder, migrateLocalFolders } = folderManager
+
   const visibleFolders = useMemo<Array<{ id: string; name: string }>>(
     () => (cloudIdentity ? folders : localFolders),
     [cloudIdentity, folders, localFolders],
   )
-
-  /** 收藏夹操作统一入口：刷新列表并给出失败提示 */
-  const refreshFolders = useCallback(async () => {
-    if (!cloudIdentity) return
-    const data = await listFavorites(cloudIdentity)
-    setFolders(data.folders)
-  }, [cloudIdentity])
-
-  const addFolder = useCallback(async () => {
-    const name = newFolderName.trim()
-    if (!name || folderBusy) return
-
-    // 匿名 / 离线：建本地夹子（P2）。失败只可能是重名或空名，属于用户可自纠的输入问题
-    if (!cloudIdentity) {
-      const result = addLocalFolder(localFolders, name, Date.now())
-      if (!result.ok) {
-        setSyncNote(result.error)
-        setSyncStatus('error')
-        return
-      }
-      setLocalFolders(result.folders)
-      setNewFolderName('')
-      return
-    }
-
-    setFolderBusy(true)
-    const folder = await createFavoriteFolder(cloudIdentity, name)
-    setFolderBusy(false)
-    if (!folder) {
-      setSyncNote('创建收藏夹失败：云端暂不可用')
-      setSyncStatus('error')
-      return
-    }
-    setNewFolderName('')
-    await refreshFolders()
-  }, [cloudIdentity, folderBusy, localFolders, newFolderName, refreshFolders])
-
-  const saveFolderName = useCallback(async (folderId: string) => {
-    const name = editingName.trim()
-    setEditingFolder(null)
-    if (!name) return
-
-    if (!cloudIdentity) {
-      setLocalFolders((prev) => renameLocalFolder(prev, folderId, name))
-      return
-    }
-
-    const ok = await updateFavoriteFolder(cloudIdentity, folderId, { name })
-    if (!ok) {
-      setSyncNote('重命名收藏夹失败：云端暂不可用')
-      setSyncStatus('error')
-      return
-    }
-    setFolders((prev) => prev.map((f) => (f.id === folderId ? { ...f, name } : f)))
-  }, [cloudIdentity, editingName])
-
-  const removeFolder = useCallback(async (folderId: string) => {
-    // 本地夹子：只移除分组本身，条目保留（与云端语义一致）
-    if (!cloudIdentity) {
-      setLocalFolders((prev) => removeLocalFolder(prev, folderId).folders)
-      favorites.items
-        .filter((f) => f.folderId === folderId)
-        .forEach((f) => favorites.updateMeta(f.siteId, { folderId: null }))
-      if (activeFolder === folderId) setActiveFolder('all')
-      return
-    }
-
-    const ok = await deleteFavoriteFolder(cloudIdentity, folderId)
-    if (!ok) {
-      setSyncNote('删除收藏夹失败：云端暂不可用')
-      setSyncStatus('error')
-      return
-    }
-    // 云端会把该文件夹下的收藏置空，本地同步去掉 folderId
-    favorites.items
-      .filter((f) => f.folderId === folderId)
-      .forEach((f) => favorites.updateMeta(f.siteId, { folderId: null }))
-    setFolders((prev) => prev.filter((f) => f.id !== folderId))
-    if (activeFolder === folderId) setActiveFolder('all')
-  }, [activeFolder, cloudIdentity, favorites])
 
   /**
    * 清空云端收藏（N3 接线）：两步确认，成功后连本地缓存一起清掉。
@@ -368,43 +313,6 @@ export default function FavoritesPage() {
     setSyncStatus('success')
   }, [cloudIdentity, confirmClearCloud, favorites, manageBusy])
 
-  /**
-   * 本地收藏夹上云（P2 收尾）：登录同步成功后调用。
-   *
-   * 步骤：按名称把本地夹子合并到云端（同名复用、异名新建）→ 把本地条目里的
-   * folderId 重映射到云端 id → 清空本地表。
-   *
-   * 两个容易错的点：
-   *  - 重映射必须走 `updateMeta`（逐条置脏），**不能**用 `replaceAll`：后者会清掉
-   *    全部脏标记，把还没推送成功的收藏变更一起丢掉；
-   *  - 条目不从 `favorites.items` 读：那可能是同步前的旧闭包。用同步结果里的
-   *    `nextItems`（已经是云端合并后的新列表），否则重映射会作用在过期数据上。
-   */
-  const migrateLocalFolders = useCallback(
-    async (remoteFolders: HubFavoriteFolder[], nextItems: LocalFavorite[]) => {
-      if (!cloudIdentity || localFolders.length === 0) return
-      const { mapping, toCreate } = planFolderUpload(localFolders, remoteFolders)
-      for (const folder of toCreate) {
-        const created = await createFavoriteFolder(cloudIdentity, folder.name)
-        if (created) mapping.set(folder.id, created.id)
-      }
-      let remapped = 0
-      for (const item of nextItems) {
-        const mapped = item.folderId ? mapping.get(item.folderId) : undefined
-        if (mapped && mapped !== item.folderId) {
-          favorites.updateMeta(item.siteId, { folderId: mapped })
-          remapped += 1
-        }
-      }
-      if (mapping.size > 0) {
-        setLocalFolders([])
-        setSyncNote(`已把 ${mapping.size} 个本机收藏夹合并到云端` + (remapped > 0 ? `，${remapped} 条收藏的分组已更新` : ''))
-        setSyncStatus('success')
-      }
-    },
-    [cloudIdentity, favorites, localFolders],
-  )
-
   const assignFolder = useCallback(async (siteId: string, folderId: string | null) => {
     favorites.updateMeta(siteId, { folderId })
     if (!cloudIdentity) return
@@ -431,6 +339,27 @@ export default function FavoritesPage() {
     }
   }, [cloudIdentity, favorites, noteDraft])
 
+  /** 保存标签（T22）：逗号/空格分隔输入 → 归一 → 本机 + 云端（失败申报） */
+  const saveTags = useCallback(async (siteId: string) => {
+    const tags = tagDraft
+      .split(/[,，\s]+/)
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .slice(0, 8)
+      .map((t) => t.slice(0, 24))
+    const deduped = [...new Set(tags)]
+    favorites.updateMeta(siteId, { tags: deduped.length > 0 ? deduped : null })
+    setTagEditor(null)
+    if (!cloudIdentity) return
+    setManageBusy(true)
+    const ok = await updateFavoriteMeta(cloudIdentity, siteId, { tags: deduped.length > 0 ? deduped : null })
+    setManageBusy(false)
+    if (!ok) {
+      setSyncNote('保存标签失败：云端暂不可用，已保存在本机')
+      setSyncStatus('error')
+    }
+  }, [cloudIdentity, favorites, tagDraft])
+
   const handleExportPlain = () => {
     const blob = new Blob([favorites.exportJson()], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -449,8 +378,18 @@ export default function FavoritesPage() {
   const handleImportPlain = () => {
     const result = favorites.importJson(importText)
     if (result.ok) {
-      setSyncNote('已导入 ' + result.imported + ' 条书签')
-      setSyncStatus('success')
+      if (result.skippedInvalid > 0) {
+        // 被过滤掉的残行不能藏在「已导入 N 条」背后
+        setSyncNote(
+          result.imported > 0
+            ? `已导入 ${result.imported} 条书签；另有 ${result.skippedInvalid} 条缺少站点标识或链接，未导入`
+            : `没有可导入的书签：${result.skippedInvalid} 条都缺少站点标识或链接`,
+        )
+        setSyncStatus(result.imported > 0 ? 'info' : 'error')
+      } else {
+        setSyncNote('已导入 ' + result.imported + ' 条书签')
+        setSyncStatus('success')
+      }
       setImportText('')
       setShowImport(false)
     } else {
@@ -535,16 +474,24 @@ export default function FavoritesPage() {
 
       const decryptedItems = await decryptVault(parsedPayload, importPassphrase)
 
-      // 还原为 LocalFavorite 格式（纯转换在 lib/favorites-vault，缺 url 的条目会被丢弃）
+      // 还原为 LocalFavorite 格式（纯转换在 lib/favorites-vault，缺 id/url 的条目会被丢弃）
       const localItems = vaultItemsToFavorites(decryptedItems, Date.now())
 
       const importResult = favorites.importJson(JSON.stringify({ version: 1, items: localItems }))
       if (importResult.ok) {
-        setSyncNote(`🔓 零知识金库解密成功！已恢复 ${decryptedItems.length} 条私密收藏`)
-        setSyncStatus('success')
-        setShowVaultImport(false)
-        setImportPassphrase('')
-        setImportVaultPayload('')
+        // 报「实际并入」而不是「解密到多少」：转换阶段出局的残行必须点名
+        const notice = formatVaultRestoreNotice({
+          decryptedCount: decryptedItems.length,
+          convertibleCount: localItems.length,
+          restoredCount: importResult.imported,
+        })
+        setSyncNote(notice.text)
+        setSyncStatus(notice.tone)
+        if (notice.tone !== 'error') {
+          setShowVaultImport(false)
+          setImportPassphrase('')
+          setImportVaultPayload('')
+        }
       } else {
         throw new Error(importResult.error ?? '合并入库失败')
       }
@@ -651,6 +598,18 @@ export default function FavoritesPage() {
                 >
                   导入 JSON
                 </Button>
+                {/* Netscape 书签互操作（M9 服务端已建成、此处补 UI 入口，T16）：
+                    仅登录态展示——端点按云端收藏渲染，匿名调用只会得到 401 */}
+                {cloudIdentity && (
+                  <a
+                    href="/api/me/export/bookmarks.html"
+                    download
+                    className="inline-flex h-8 items-center rounded-lg px-2 text-xs text-muted-foreground hover:bg-accent"
+                    title="导出为浏览器可导入的 Netscape 书签 HTML"
+                  >
+                    书签 HTML
+                  </a>
+                )}
                 {/* 导出为插件属于「发布到市场」，不是数据管理动作：标注清楚去向 */}
                 <Button
                   variant="ghost"
@@ -731,18 +690,27 @@ export default function FavoritesPage() {
             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <div className="space-y-2">
               <p>{favorites.storageBlocked}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs rounded-lg"
-                onClick={() => {
-                  favorites.resetLocal()
-                  setSyncNote('已先把原数据备份到浏览器存储，并以空列表重置本地收藏')
-                  setSyncStatus('info')
-                }}
-              >
-                先备份原数据，再重置本地收藏
-              </Button>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs rounded-lg"
+                  onClick={() => {
+                    const { backedUp } = favorites.resetLocal()
+                    setSyncNote(
+                      backedUp
+                        ? '已把原数据整份留档到本机隔离区，并以空列表重置本地收藏'
+                        : '已按空列表重置本地收藏，但原文没能留档（浏览器存储写不进去），原数据可能无法找回',
+                    )
+                    setSyncStatus(backedUp ? 'info' : 'error')
+                  }}
+                >
+                  先备份原数据，再重置本地收藏
+                </Button>
+                <Button asChild variant="ghost" size="sm" className="h-7 text-xs rounded-lg">
+                  <Link href="/me/data">查看本机隔离区</Link>
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -848,7 +816,7 @@ export default function FavoritesPage() {
                 全部 {favorites.items.length}
               </button>
               {visibleFolders.map((folder) => {
-                const count = favorites.items.filter((f) => f.folderId === folder.id).length
+                const count = folderCounts.get(folder.id) ?? 0
                 const active = activeFolder === folder.id
                 return (
                   <span key={folder.id} className="inline-flex items-center gap-1">
@@ -884,6 +852,24 @@ export default function FavoritesPage() {
                         </button>
                         {active && (
                           <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-1 text-muted-foreground"
+                              aria-label="上移收藏夹"
+                              onClick={() => void moveFolder(folder.id, -1)}
+                            >
+                              <ChevronUp className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-1 text-muted-foreground"
+                              aria-label="下移收藏夹"
+                              onClick={() => void moveFolder(folder.id, 1)}
+                            >
+                              <ChevronDown className="h-3 w-3" />
+                            </Button>
                             <Button
                               size="sm"
                               variant="ghost"
@@ -1065,25 +1051,10 @@ export default function FavoritesPage() {
                 key={f.siteId}
                 className="group relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 p-3.5 flex flex-col justify-between"
               >
-                <a href={f.href} target="_blank" rel="noopener noreferrer" className="block min-w-0">
+                <a href={safeHref(f.href)} target="_blank" rel="noopener noreferrer" className="block min-w-0">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 w-10 h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
-                      {f.icon ? (
-                        <img
-                          src={f.icon}
-                          alt=""
-                          loading="lazy"
-                          decoding="async"
-                          className="w-full h-full object-contain rounded-xs"
-                          onError={(e) => {
-                            ;(e.target as HTMLImageElement).style.display = 'none'
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-full rounded bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
-                          {f.title.slice(0, 1)}
-                        </div>
-                      )}
+                      <SiteFavicon title={f.title} url={f.href} icon={f.icon} className="w-full h-full object-contain rounded-xs" />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors truncate pr-8">
@@ -1123,6 +1094,9 @@ export default function FavoritesPage() {
                           }}
                           placeholder="备注"
                           aria-label="收藏备注"
+                          // ≤200 字是云端契约（服务端 zod 同口径）：输入端先拦，
+                          // 超长备注曾让整批收藏同步被一条脏数据卡死
+                          maxLength={200}
                           className="h-7 text-[11px]"
                           autoFocus
                         />
@@ -1146,6 +1120,53 @@ export default function FavoritesPage() {
                     )}
                     {f.note && noteEditor !== f.siteId && (
                       <span className="basis-full truncate text-[11px] text-muted-foreground">{f.note}</span>
+                    )}
+                    {tagEditor === f.siteId ? (
+                      <span className="flex min-w-0 flex-1 items-center gap-1">
+                        <Input
+                          value={tagDraft}
+                          onChange={(e) => setTagDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void saveTags(f.siteId)
+                            if (e.key === 'Escape') setTagEditor(null)
+                          }}
+                          placeholder="标签（逗号分隔，最多 8 个）"
+                          aria-label="收藏标签"
+                          className="h-7 text-[11px]"
+                          autoFocus
+                        />
+                        <Button size="sm" variant="ghost" className="h-7 px-1" aria-label="保存标签" onClick={() => void saveTags(f.siteId)}>
+                          <Check className="h-3.5 w-3.5" />
+                        </Button>
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-1.5 text-[11px] text-muted-foreground"
+                        onClick={() => {
+                          setTagEditor(f.siteId)
+                          setTagDraft((f.tags ?? []).join(', '))
+                        }}
+                      >
+                        <Tag className="mr-1 h-3 w-3" />
+                        {f.tags?.length ? '改标签' : '标签'}
+                      </Button>
+                    )}
+                    {f.tags && f.tags.length > 0 && tagEditor !== f.siteId && (
+                      <span className="basis-full flex flex-wrap gap-1">
+                        {f.tags.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary transition-colors hover:bg-primary/20"
+                            onClick={() => setFavoriteQuery(tag)}
+                            title={`筛选含「${tag}」的收藏`}
+                          >
+                            #{tag}
+                          </button>
+                        ))}
+                      </span>
                     )}
                 </div>
                 <div className="absolute top-2 right-2">

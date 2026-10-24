@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { identityTrusted, identityOf, parseIntParam, resolveCanonicalIdentity } from "./shared.ts";
+import {identityTrusted, parseIntParam, resolveCanonicalIdentity, requestIdentityOf, userDomainWriteAllowed } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
 
@@ -23,6 +23,8 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     siteId: z.string().min(1),
     folderId: z.string().nullable().optional(),
     note: z.string().max(200).nullable().optional(),
+    // 标签（T22）：数组形状在这里校验，元素级清洗/上限在 normalizeFavoriteTags
+    tags: z.array(z.string()).max(8).nullable().optional(),
   });
 
 
@@ -43,7 +45,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     "/api/favorites",
     { config: { rateLimit: { max: 240, timeWindow: "1 minute" } } },
     async (req, reply) => {
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -84,7 +86,9 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     "/api/favorites",
     { config: { rateLimit: { max: 600, timeWindow: "1 minute" } } },
     async (req, reply) => {
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -97,6 +101,7 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       siteId: body.data.siteId,
       folderId: body.data.folderId ?? null,
       note: body.data.note ?? null,
+      tags: body.data.tags ?? null,
     });
     await ctx.repo.recordEvent("favorite", { siteId: body.data.siteId, meta: { identity: canonical } }).catch(() => undefined);
     reply.code(existed ? 200 : 201);
@@ -108,7 +113,9 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     { config: { rateLimit: { max: 600, timeWindow: "1 minute" } } },
     async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -125,15 +132,18 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    */
   app.patch("/api/favorites/:siteId", async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
     const body = z.object({
       folderId: z.string().min(1).nullable().optional(),
       note: z.string().max(200).nullable().optional(),
-    }).refine((v) => v.folderId !== undefined || v.note !== undefined, {
-      message: "至少要修改 folderId 或 note 之一",
+      tags: z.array(z.string()).max(8).nullable().optional(),
+    }).refine((v) => v.folderId !== undefined || v.note !== undefined || v.tags !== undefined, {
+      message: "至少要修改 folderId、note 或 tags 之一",
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
@@ -148,7 +158,9 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
 
   /** 清空云端收藏（本地缓存由前端同步清掉） */
   app.delete("/api/favorites", async (req, reply) => {
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -157,12 +169,23 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   });
 
   app.post("/api/favorites/folders", async (req, reply) => {
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
     const body = z.object({ name: z.string().min(1).max(30) }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
+    // 同名去重（T16）：库里没有 (user_id,name) 唯一约束，直接建会产生重名夹；
+    // 备份导入按名称复用既有夹，这里与导入语义对齐——同名返回既有夹并标记 existed。
+    const normalizedName = body.data.name.trim().toLowerCase();
+    const existing = (await ctx.repo.listFavoriteFolders(canonical)).find(
+      (f) => f.name.trim().toLowerCase() === normalizedName,
+    );
+    if (existing) {
+      return { ...existing, existed: true };
+    }
     const folder = await ctx.repo.createFavoriteFolder(canonical, body.data.name);
     reply.code(201);
     return folder;
@@ -170,7 +193,9 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
 
   app.delete("/api/favorites/folders/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -181,7 +206,9 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   /** 收藏夹改名 / 排序（收藏管理页拖拽重排与重命名共用） */
   app.patch("/api/favorites/folders/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
+    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
+    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);

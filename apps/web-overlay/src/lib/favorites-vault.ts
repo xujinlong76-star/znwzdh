@@ -69,3 +69,52 @@ export function vaultExportFilename(now: number): string {
   const day = new Date(now).toISOString().slice(0, 10)
   return `navhub-vault-${day}.navhub.vault`
 }
+
+/** 与收藏页 syncStatus 的三态一致：信息（部分完成）不能借用绿色或红色 */
+export type VaultRestoreTone = 'success' | 'info' | 'error'
+
+export interface VaultRestoreCounts {
+  /** 解密出来的原始条数（外部文件可能夹带残行） */
+  decryptedCount: number
+  /** 转换后可用于渲染的条数（缺 id/url 的条目在这一步出局） */
+  convertibleCount: number
+  /** 实际并入本地收藏的条数（importJson 返回的 imported） */
+  restoredCount: number
+}
+
+/**
+ * 金库还原的结案陈词。
+ *
+ * 措辞铁律：成功文案只能报「真正并入的条数」。此前这里报的是解密条数——
+ * 一个缺 url 的残行会让「已恢复 N 条」比实际多，而界面上没有任何地方提到它。
+ * 两个缺口分开点名：缺站点标识/链接（转换阶段出局）与格式不完整（合并阶段出局），
+ * 修法不同，不能合并成一句「部分失败」。
+ */
+export function formatVaultRestoreNotice(counts: VaultRestoreCounts): {
+  text: string
+  tone: VaultRestoreTone
+} {
+  const unusable = Math.max(0, counts.decryptedCount - counts.convertibleCount)
+  const rejected = Math.max(0, counts.convertibleCount - counts.restoredCount)
+  const gaps: string[] = []
+  if (unusable > 0) gaps.push(`${unusable} 条缺少站点标识或链接`)
+  if (rejected > 0) gaps.push(`${rejected} 条格式不完整`)
+
+  if (counts.decryptedCount === 0) {
+    return { text: '金库解密成功，但文件里没有收藏条目', tone: 'info' }
+  }
+  if (counts.restoredCount === 0) {
+    // 一条都没进去就不是「部分成功」：绿色横幅会把失败说成完成
+    return {
+      text: `金库解密成功，但${gaps.length ? gaps.join('、') : '所有条目都未通过合并校验'}，没有可恢复的收藏`,
+      tone: 'error',
+    }
+  }
+  if (gaps.length === 0) {
+    return { text: `🔓 零知识金库解密成功！已恢复 ${counts.restoredCount} 条私密收藏`, tone: 'success' }
+  }
+  return {
+    text: `🔓 金库解密成功：已恢复 ${counts.restoredCount} 条私密收藏；另有 ${gaps.join('、')}，未能恢复`,
+    tone: 'info',
+  }
+}

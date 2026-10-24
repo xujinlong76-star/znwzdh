@@ -411,14 +411,25 @@ export function mergeDIYLayoutConfigs(
 }
 
 /**
- * 8. 智能模糊分类归属推荐算法
+ * 8. 关键词重合度分类推荐（**本地启发式，不是 AI**）
+ *
+ * 这里唯一的判据是「分类名/分词是否出现在标题+描述+URL 里」，没有模型、没有语料。
+ * 因此 confidence 的口径是**重合度得分**，上限 0.85：曾经用 `Math.min(0.99, …)`
+ * 配合界面上的「AI 推荐分类（99% 匹配）」，把一个字符串包含判断包装成模型置信度，
+ * 用户会以为后端真的做了语义理解，从而不再核对就采纳错误的归类。
  */
 export interface CategorySuggestion {
   categoryId: string
   categoryTitle: string
+  /** 关键词重合度得分（0.3~0.85），不是概率 */
   confidence: number
   matchReason: string
+  /** 判定来源：目前是纯关键词启发式，未来接真模型时这里会是 'llm' */
+  method: 'keyword'
 }
+
+/** 启发式得分的天花板：字符串包含判断永远不该自称 100% */
+const KEYWORD_SCORE_CEILING = 0.85
 
 export function suggestCategoryForSite<TCat extends { id: string; title: string }>(
   site: { title: string; href?: string; description?: string },
@@ -469,8 +480,9 @@ export function suggestCategoryForSite<TCat extends { id: string; title: string 
     return {
       categoryId: bestCat.id,
       categoryTitle: bestCat.title,
-      confidence: Number(Math.min(0.99, maxScore).toFixed(2)),
+      confidence: Number(Math.min(KEYWORD_SCORE_CEILING, maxScore).toFixed(2)),
       matchReason: reason,
+      method: 'keyword',
     }
   }
 
@@ -591,34 +603,190 @@ function cleanSiteHref(v: unknown): string {
   return SAFE_HREF_RE.test(s) ? s : ''
 }
 
-function cleanIdList(v: unknown, max = 500): string[] {
-  if (!Array.isArray(v)) return []
-  return v.filter((x) => typeof x === 'string' && SAFE_ID_RE.test(x)).slice(0, max)
+/** 这些键即使能通过 SAFE_ID_RE，也绝不能当作普通 id 写进结果对象（否则改到原型链上） */
+const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+function isSafeIdKey(k: string): boolean {
+  return !UNSAFE_OBJECT_KEYS.has(k) && SAFE_ID_RE.test(k)
 }
 
-function cleanOverrides(v: unknown): Record<string, string> {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
-  const out: Record<string, string> = {}
-  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    if (Object.keys(out).length >= 500) break
-    if (typeof val !== 'string') continue
-    if (SAFE_ID_RE.test(k) && SAFE_ID_RE.test(val)) out[k] = val
+/**
+ * 清洗台账：白名单与上限本来就会吃掉内容，重点是「吃掉多少、为什么」必须能被调用方说出来。
+ * 以前的实现只返回 {valid, config}，导入方于是只能写「已全量还原」——这是假话。
+ */
+export interface DropLedger {
+  dropped: number
+  notes: string[]
+  claim(count: number, note: string): void
+  note(text: string): void
+}
+
+function createDropLedger(): DropLedger {
+  return {
+    dropped: 0,
+    notes: [],
+    claim(count: number, note: string) {
+      if (!(count > 0)) return
+      this.dropped += count
+      this.notes.push(note)
+    },
+    note(text: string) {
+      this.notes.push(text)
+    },
   }
+}
+
+function cleanIdList(v: unknown, ledger: DropLedger, label: string, max = 500): string[] {
+  if (!Array.isArray(v)) return []
+  const kept = v.filter((x): x is string => typeof x === 'string' && isSafeIdKey(x))
+  const invalid = v.length - kept.length
+  ledger.claim(invalid, `${label}：${invalid} 个 id 不在白名单，已丢弃`)
+  const out = kept.slice(0, max)
+  const overflow = kept.length - out.length
+  ledger.claim(overflow, `${label}：超出 ${max} 个上限，截断 ${overflow} 个`)
   return out
 }
 
-export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: any; error?: string } {
+function cleanOverrides(v: unknown, ledger: DropLedger, max = 500): Record<string, string> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  const entries = Object.entries(v as Record<string, unknown>)
+  const out: Record<string, string> = {}
+  for (const [k, val] of entries) {
+    if (Object.keys(out).length >= max) break
+    if (typeof val !== 'string') continue
+    if (!isSafeIdKey(k) || !isSafeIdKey(val)) continue
+    out[k] = val
+  }
+  const accepted = entries.filter(
+    ([k, val]) => typeof val === 'string' && isSafeIdKey(k) && isSafeIdKey(val as string),
+  ).length
+  ledger.claim(entries.length - accepted, `站点分类重映射：${entries.length - accepted} 条键值不在白名单，已丢弃`)
+  const overflow = Math.max(0, accepted - max)
+  ledger.claim(overflow, `站点分类重映射：超出 ${max} 条上限，截断 ${overflow} 条`)
+  return out
+}
+
+/**
+ * 校验并清洗外部导入的 DIY 配置。
+ *
+ * 返回带台账：dropped = 被丢弃/截断的用户内容条数，notes = 逐条人话原因。
+ * 导入方必须在界面里把这两项说出来，不许再宣称「全量还原」。
+ */
+export interface DIYSanitizeResult {
+  valid: boolean
+  config?: any
+  error?: string
+  dropped: number
+  notes: string[]
+}
+
+export function validateAndCleanDIYConfig(raw: any): DIYSanitizeResult {
+  const ledger = createDropLedger()
   if (!raw || typeof raw !== 'object') {
-    return { valid: false, error: '导入的配置文件不是合法的 JSON 对象' }
+    return { valid: false, error: '导入的配置文件不是合法的 JSON 对象', dropped: 0, notes: ledger.notes }
   }
 
   if (typeof raw.viewMode !== 'string' && typeof raw.version !== 'number') {
-    return { valid: false, error: '缺失必要的 DIY 配置元数据 (viewMode/version)' }
+    return { valid: false, error: '缺失必要的 DIY 配置元数据 (viewMode/version)', dropped: 0, notes: ledger.notes }
   }
 
   const validViewModes = ['hybrid', 'classic', 'workbench']
   const validCardModes = ['compact', 'standard', 'rich']
   const validCanvasBgs = ['mesh', 'dots', 'grid', 'aurora', 'clean']
+
+  // 枚举回退不是「丢条目」，但用户选的模式被换掉了，同样得说
+  if (typeof raw.viewMode === 'string' && !validViewModes.includes(raw.viewMode)) {
+    ledger.note(`视图模式「${String(raw.viewMode).slice(0, 32)}」不在支持列表，已回退 hybrid`)
+  }
+  if (raw.cardDisplayMode != null && !validCardModes.includes(raw.cardDisplayMode)) {
+    ledger.note(`卡片样式「${String(raw.cardDisplayMode).slice(0, 32)}」不在支持列表，已回退 standard`)
+  }
+  if (raw.canvasBackground != null && !validCanvasBgs.includes(raw.canvasBackground)) {
+    ledger.note(`画布背景「${String(raw.canvasBackground).slice(0, 32)}」不在支持列表，已回退 mesh`)
+  }
+
+  const heroDeckWidgets = (() => {
+    if (!Array.isArray(raw.heroDeckWidgets)) return ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools']
+    const kept = (raw.heroDeckWidgets as unknown[]).filter((w): w is string => typeof w === 'string' && isSafeIdKey(w))
+    const invalid = raw.heroDeckWidgets.length - kept.length
+    ledger.claim(invalid, `首屏小组件：${invalid} 个 id 不在白名单，已丢弃`)
+    const out = kept.slice(0, 32)
+    const overflow = kept.length - out.length
+    ledger.claim(overflow, `首屏小组件：超出 32 个上限，截断 ${overflow} 个`)
+    return out
+  })()
+
+  const pinnedSiteIdsByCategory = (() => {
+    if (typeof raw.pinnedSiteIdsByCategory !== 'object' || raw.pinnedSiteIdsByCategory === null || Array.isArray(raw.pinnedSiteIdsByCategory)) return {}
+    const entries = Object.entries(raw.pinnedSiteIdsByCategory as Record<string, unknown>)
+    const out: Record<string, string[]> = {}
+    let droppedIds = 0
+    let skippedKeys = 0
+    for (const [k, v] of entries) {
+      if (!isSafeIdKey(k) || !Array.isArray(v)) {
+        skippedKeys += 1
+        continue
+      }
+      const kept = (v as unknown[]).filter((x): x is string => typeof x === 'string' && isSafeIdKey(x))
+      droppedIds += v.length - kept.length
+      const capped = kept.slice(0, 500)
+      droppedIds += kept.length - capped.length
+      out[k] = capped
+    }
+    ledger.claim(skippedKeys, `分类置顶：${skippedKeys} 个分类键非法，已丢弃`)
+    ledger.claim(droppedIds, `分类置顶：${droppedIds} 个站点 id 非法或超出 500 上限，已丢弃`)
+    return out
+  })()
+
+  const wallpaperRaw = (raw as any).customWallpaperUrl ?? (raw as any).wp
+  const customWallpaperUrl = cleanWallpaperUrl(wallpaperRaw)
+  if (!customWallpaperUrl && typeof wallpaperRaw === 'string' && wallpaperRaw.trim()) {
+    ledger.claim(1, '自定义壁纸：地址不在 http/https/相对路径/data:image 白名单，已忽略')
+  }
+
+  const customCategories = Array.isArray(raw.customCategories)
+    ? (() => {
+        const list = raw.customCategories as any[]
+        const kept = list.slice(0, 100)
+        ledger.claim(list.length - kept.length, `自定义分类：超出 100 个上限，截断 ${list.length - kept.length} 个`)
+        const usedIds = new Set<string>()
+        return kept.map((c: any) => {
+          const rawItems = Array.isArray(c?.items) ? (c.items as any[]) : []
+          let unsafeItems = 0
+          const mapped = rawItems
+            .map((i: any) => {
+              const href = cleanSiteHref(i?.href)
+              // 非法 href 直接丢弃该站点（不收录 javascript:/data:text/html 等）
+              if (!href) {
+                unsafeItems += 1
+                return null
+              }
+              return {
+                id: i && isSafeIdKey(String(i.id || '')) ? String(i.id) : `item_${Date.now()}`,
+                title: String(i.title || '').slice(0, 128),
+                href,
+                icon: i.icon ? String(i.icon).slice(0, 512) : undefined,
+                description: i.description ? String(i.description).slice(0, 512) : undefined,
+              }
+            })
+            .filter(Boolean)
+          ledger.claim(unsafeItems, `自定义分类站点：${unsafeItems} 条链接协议不安全，已丢弃`)
+          const capped = mapped.slice(0, 500)
+          ledger.claim(mapped.length - capped.length, `自定义分类站点：单个分类超出 500 条上限，截断 ${mapped.length - capped.length} 条`)
+          const rawId = c && isSafeIdKey(String(c.id || '')) ? String(c.id) : ''
+          const fallbackId = `custom_${Date.now()}_${usedIds.size}`
+          const id = rawId && !usedIds.has(rawId) ? rawId : fallbackId
+          usedIds.add(id)
+          return {
+            id,
+            title: String(c?.title || '自定义分类').slice(0, 64),
+            icon: String(c?.icon || 'FolderHeart').slice(0, 64),
+            items: capped,
+            createdAt: Number(c?.createdAt) || Date.now(),
+          }
+        })
+      })()
+    : []
 
   const cleaned = {
     version: 3,
@@ -627,59 +795,30 @@ export function validateAndCleanDIYConfig(raw: any): { valid: boolean; config?: 
     canvasBackground: validCanvasBgs.includes(raw.canvasBackground) ? raw.canvasBackground : 'mesh',
     accentColor: typeof raw.accentColor === 'string' ? raw.accentColor : 'default',
     heroDeckCollapsed: Boolean(raw.heroDeckCollapsed),
-    heroDeckWidgets: Array.isArray(raw.heroDeckWidgets) ? (raw.heroDeckWidgets as unknown[]).filter((w): w is string => typeof w === 'string' && SAFE_ID_RE.test(w)).slice(0, 32) : ['quick-search', 'clock-pomodoro', 'favorites-dock', 'quick-tools'],
+    heroDeckWidgets,
     enableAdaptiveRanking: Boolean(raw.enableAdaptiveRanking),
     enableTemporalRanking: Boolean(raw.enableTemporalRanking),
     enableKeyboardNav: raw.enableKeyboardNav !== false,
-    categoryOrder: cleanIdList(raw.categoryOrder),
-    pinnedCategoryIds: cleanIdList(raw.pinnedCategoryIds),
-    hiddenCategoryIds: cleanIdList(raw.hiddenCategoryIds),
-    collapsedCategoryIds: cleanIdList(raw.collapsedCategoryIds),
-    pinnedSiteIdsByCategory: (() => {
-      if (typeof raw.pinnedSiteIdsByCategory !== 'object' || raw.pinnedSiteIdsByCategory === null || Array.isArray(raw.pinnedSiteIdsByCategory)) return {}
-      const out: Record<string, string[]> = {}
-      for (const [k, v] of Object.entries(raw.pinnedSiteIdsByCategory as Record<string, unknown>)) {
-        if (!SAFE_ID_RE.test(k) || !Array.isArray(v)) continue
-        out[k] = (v as unknown[]).filter((x): x is string => typeof x === 'string' && SAFE_ID_RE.test(x)).slice(0, 500)
-      }
-      return out
-    })(),
+    categoryOrder: cleanIdList(raw.categoryOrder, ledger, '分类顺序'),
+    pinnedCategoryIds: cleanIdList(raw.pinnedCategoryIds, ledger, '置顶分类'),
+    hiddenCategoryIds: cleanIdList(raw.hiddenCategoryIds, ledger, '隐藏分类'),
+    collapsedCategoryIds: cleanIdList(raw.collapsedCategoryIds, ledger, '折叠分类'),
+    pinnedSiteIdsByCategory,
     // 跨分类重映射：键值均为内部 id，白名单外直接丢弃（防原型污染与非法注入）
-    siteCategoryOverrides: cleanOverrides((raw as any).siteCategoryOverrides),
+    siteCategoryOverrides: cleanOverrides((raw as any).siteCategoryOverrides, ledger),
     // 自定义壁纸：仅 http/https、/ 开头相对路径、data:image/(png|jpeg|webp);base64,，否则置空不渲染
-    customWallpaperUrl: cleanWallpaperUrl((raw as any).customWallpaperUrl ?? (raw as any).wp),
+    customWallpaperUrl,
     glassmorphismBlur: typeof raw.glassmorphismBlur === 'number' || typeof (raw as any).gb === 'number'
       ? Math.min(30, Math.max(0, Number(typeof raw.glassmorphismBlur === 'number' ? raw.glassmorphismBlur : (raw as any).gb)))
       : 12,
     cardOpacity: typeof raw.cardOpacity === 'number' || typeof (raw as any).co_op === 'number'
       ? Math.min(1, Math.max(0.2, Number(typeof raw.cardOpacity === 'number' ? raw.cardOpacity : (raw as any).co_op)))
       : 0.9,
-    customCategories: Array.isArray(raw.customCategories)
-      ? raw.customCategories.slice(0, 100).map((c: any) => ({
-          id: c && SAFE_ID_RE.test(String(c.id || '')) ? String(c.id) : `custom_${Date.now()}`,
-          title: String(c?.title || '自定义分类').slice(0, 64),
-          icon: String(c?.icon || 'FolderHeart').slice(0, 64),
-          items: Array.isArray(c.items)
-            ? c.items.slice(0, 500).map((i: any) => {
-                const href = cleanSiteHref(i?.href)
-                // 非法 href 直接丢弃该站点（不收录 javascript:/data:text/html 等）
-                if (!href) return null
-                return {
-                  id: i && SAFE_ID_RE.test(String(i.id || '')) ? String(i.id) : `item_${Date.now()}`,
-                  title: String(i.title || '').slice(0, 128),
-                  href,
-                  icon: i.icon ? String(i.icon).slice(0, 512) : undefined,
-                  description: i.description ? String(i.description).slice(0, 512) : undefined,
-                }
-              }).filter(Boolean)
-            : [],
-          createdAt: Number(c?.createdAt) || Date.now(),
-        }))
-      : [],
+    customCategories,
     updatedAt: Date.now(),
   }
 
-  return { valid: true, config: cleaned }
+  return { valid: true, config: cleaned, dropped: ledger.dropped, notes: ledger.notes }
 }
 
 // =========================================================================

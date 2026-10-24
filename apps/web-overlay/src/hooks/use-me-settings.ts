@@ -8,6 +8,7 @@
  * 保证「显示的值」与「真正落盘的值」一致。
  */
 import { useCallback, useEffect, useState } from 'react'
+import { isNetworkSessionFailure, probeClientSession } from '@/lib/client-session'
 import {
   DEFAULT_USER_SETTINGS,
   normalizeUserSettings,
@@ -44,26 +45,18 @@ export function useMeSettings(): MeSettingsController {
     setState('loading')
     setError(null)
     try {
-      const sessionRes = await fetch('/api/auth/session', { cache: 'no-store' })
-      // 会话探测失败 ≠ 匿名：非 2xx / 解析失败都按「暂时无法确认」处理
-      if (!sessionRes.ok) {
-        setError('登录状态暂时无法确认，请稍后重试')
+      // 会话探测失败 ≠ 匿名：网络 / HTTP / 解析三类各自决定文案，未知一律按「暂时无法确认」
+      const probe = await probeClientSession()
+      if (probe.kind !== 'ok') {
+        setError(
+          isNetworkSessionFailure(probe)
+            ? '网络不可用，未能加载设置'
+            : '登录状态暂时无法确认，请稍后重试',
+        )
         setState('error')
         return
       }
-      let parsed: unknown
-      try {
-        parsed = await sessionRes.json()
-      } catch {
-        parsed = undefined
-      }
-      if (parsed === undefined) {
-        setError('登录状态暂时无法确认，请稍后重试')
-        setState('error')
-        return
-      }
-      const session = (parsed ?? {}) as { user?: { id?: string } }
-      if (!session.user?.id) {
+      if (!probe.session.user?.id) {
         setSettings(readLocalUserSettings())
         setState('anonymous')
         return

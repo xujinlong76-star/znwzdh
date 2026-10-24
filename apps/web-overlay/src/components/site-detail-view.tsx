@@ -54,6 +54,7 @@ import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { SiteFavicon } from '@/components/site-favicon'
 import { siteHealthBadge } from '@/lib/site-health'
+import { safeHref } from '@/lib/safe-url'
 import { cn } from '@/lib/utils'
 
 const RELATION_TYPE_LABEL: Record<string, { label: string; color: string; bg: string }> = {
@@ -359,6 +360,7 @@ export function SiteDetailView({
                 title={site.title}
                 url={site.url}
                 icon={site.iconKey ?? undefined}
+                eager
                 className="w-full h-full object-contain rounded-xl"
               />
             </div>
@@ -384,7 +386,7 @@ export function SiteDetailView({
 
               <div className="flex items-center gap-2">
                 <a
-                  href={site.url}
+                  href={safeHref(site.url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs sm:text-sm text-primary hover:underline break-all font-mono"
@@ -472,7 +474,7 @@ export function SiteDetailView({
           <div className="pt-4 border-t border-border/50 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <Button asChild size="sm" className="h-9 text-xs px-4 gap-1.5 shadow-xs font-semibold">
-                <a href={site.url} target="_blank" rel="noopener noreferrer">
+                <a href={safeHref(site.url)} target="_blank" rel="noopener noreferrer">
                   <span>立即直达官方主站</span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
@@ -625,7 +627,7 @@ export function SiteDetailView({
                         )}
                       </div>
                       <a
-                        href={alt.targetUrl}
+                        href={safeHref(alt.targetUrl)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-muted-foreground hover:text-primary font-mono truncate block mt-0.5"
@@ -635,7 +637,7 @@ export function SiteDetailView({
                     </div>
 
                     <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground">
-                      <a href={alt.targetUrl} target="_blank" rel="noopener noreferrer">
+                      <a href={safeHref(alt.targetUrl)} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </Button>
@@ -676,7 +678,7 @@ export function SiteDetailView({
                         <span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${badge.bg} ${badge.color}`}>
                           {badge.label}
                         </span>
-                        <a href={eco.targetUrl} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">
+                        <a href={safeHref(eco.targetUrl)} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-primary">
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       </div>
@@ -752,7 +754,7 @@ export function SiteDetailView({
                         </div>
                       </Link>
                       <a
-                        href={s.url}
+                        href={safeHref(s.url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         aria-label={`访问 ${s.title} 官网`}
@@ -793,7 +795,7 @@ export function SiteDetailView({
                   key={s.id}
                   className="group relative rounded-xl border border-border/70 glass-surface subtle-mesh p-3.5 transition-all hover:shadow-md hover:border-primary/40 hover:-translate-y-0.5 flex flex-col justify-between"
                 >
-                  <a href={s.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3">
+                  <a href={safeHref(s.url)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3">
                     <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-muted/60 border border-border/50 p-1 flex items-center justify-center overflow-hidden">
                       <SiteFavicon
                         title={s.title}

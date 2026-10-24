@@ -423,7 +423,9 @@ export function hydrateHomeDiy(): void {
   sharedHydrated = true
   const storage = safeLocalStorage()
   if (!storage) return
-  if (applyHomeDiyShareHash()) return
+  const share = applyHomeDiyShareHash()
+  if (share.warning) commitSharedState({ storageWarning: share.warning })
+  if (share.applied) return
   let raw: string | null = null
   try {
     raw = storage.getItem(STORAGE_KEY)
@@ -520,12 +522,12 @@ export function migrateLegacyHomeDiyConfig(storage: HomeDiyStorage): HomeDIYConf
 
 /**
  * 处理 `#diy=` 免登分享链接（不可信输入：统一走 validateAndCleanDIYConfig + 4KB 上限）。
- * 成功即落盘生效并返回 true。
+ * 成功即落盘生效；warning 非空表示链接里有内容被白名单/上限吃掉，必须让用户看到。
  */
-export function applyHomeDiyShareHash(): boolean {
-  if (typeof window === 'undefined') return false
+export function applyHomeDiyShareHash(): { applied: boolean; warning: string | null } {
+  if (typeof window === 'undefined') return { applied: false, warning: null }
   const hash = window.location.hash || ''
-  if (!hash.startsWith('#diy=')) return false
+  if (!hash.startsWith('#diy=')) return { applied: false, warning: null }
   const clearHash = () => {
     try {
       window.history.replaceState(null, '', window.location.pathname + window.location.search)
@@ -539,7 +541,7 @@ export function applyHomeDiyShareHash(): boolean {
     if (b64.length > HASH_SHARE_MAX_BYTES) {
       console.warn('[diy] 分享 hash 超过 4KB 上限，已忽略')
       clearHash()
-      return false
+      return { applied: false, warning: '分享链接超过 4KB 上限，已整条忽略，沿用本地排版。' }
     }
     const json = decodeURIComponent(atob(b64))
     if (json.length > HASH_SHARE_MAX_BYTES) throw new Error('decoded payload too large')
@@ -565,7 +567,7 @@ export function applyHomeDiyShareHash(): boolean {
     if (!check.valid || !check.config) {
       console.warn('[diy] 分享 hash 校验失败，已忽略:', check.error)
       clearHash()
-      return false
+      return { applied: false, warning: `分享链接未能应用：${check.error || '配置不合法'}，已沿用本地排版。` }
     }
     const imported: HomeDIYConfig = {
       ...DEFAULT_CONFIG,
@@ -578,12 +580,21 @@ export function applyHomeDiyShareHash(): boolean {
     // 导入即生效并落盘（与旧行为一致）；撤销历史重置为导入后的状态
     writeHomeDiyState(imported, createLayoutHistory(imported))
     clearHash()
-    return true
+    // 分享链接只有 4KB，超限/非法内容被悄悄吃掉时，接收方完全看不出来：这里申报
+    let warning: string | null = null
+    if (check.notes.length > 0) {
+      const head =
+        check.dropped > 0 ? `${check.dropped} 项内容被丢弃或截断` : '部分设置值不在支持列表，已回退默认'
+      const shown = check.notes.slice(0, 3).join('；')
+      const more = check.notes.length > 3 ? ` 等 ${check.notes.length} 项` : ''
+      warning = `分享链接已应用，但${head}：${shown}${more}`
+    }
+    return { applied: true, warning }
   } catch (e) {
-    // 失败 quiet：清掉 hash 后回落默认配置，不抛错不 toast（避免「打开链接即报错」）
+    // 失败 quiet：清掉 hash 后回落默认配置，不抛错（避免「打开链接即报错」）
     console.warn('[diy] 分享 hash 解析失败，已忽略', e)
     clearHash()
-    return false
+    return { applied: false, warning: '分享链接解析失败，已沿用本地排版。' }
   }
 }
 

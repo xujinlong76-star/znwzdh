@@ -80,6 +80,176 @@ const STATUS_TABS = [
   { key: 'delisted', label: '已下架' },
 ] as const
 
+/** 预警类的展示口径：chip 文案 + 完整 Tailwind 类（拼类名会在构建时被裁剪，必须写全） */
+const GOVERNANCE_KIND_META: Record<HubPluginGovernanceAlert['kind'], { label: string; chip: string }> = {
+  pending_sla: {
+    label: '待审超 SLA',
+    chip: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
+  },
+  reported: {
+    label: '插件被举报',
+    chip: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
+  },
+  review_reported: {
+    label: '评价被举报',
+    chip: 'bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/30',
+  },
+}
+
+/**
+ * 预警按类计数（纯函数，可单测）。
+ *
+ * 面板头部必须报「哪一类有几条」：只报总数的话，管理员看到「3 条预警」无法
+ * 判断是「3 个投稿压了两天没审」还是「3 次举报」——前者要清队列，后者要下架。
+ */
+export function groupGovernanceAlerts(alerts: HubPluginGovernanceAlert[]) {
+  const counts = { pending_sla: 0, reported: 0, review_reported: 0 }
+  for (const alert of alerts) {
+    if (alert.kind in counts) counts[alert.kind] += 1
+  }
+  return counts
+}
+
+/**
+ * 转化率文案（纯函数，可单测）。
+ *
+ * 分母为 0 时不能报「0.0%」：那是「没采到埋点」，不是「没人转化」。把缺数据渲染成
+ * 一个看起来真实的比率，管理员会按它去改市场文案与推荐位——返回 null 让调用方出
+ * 「不可用」提示。
+ */
+export function funnelConversionSummary(funnel: HubPluginFunnel): string | null {
+  if (!Number.isFinite(funnel.totals.views) || funnel.totals.views <= 0) return null
+  const pct = (v: number) => `${(Math.max(0, Math.min(1, v)) * 100).toFixed(1)}%`
+  return `浏览→点击 ${pct(funnel.conversion.viewToClick)} · 点击→安装 ${pct(
+    funnel.conversion.clickToInstall,
+  )} · 浏览→安装 ${pct(funnel.conversion.viewToInstall)}`
+}
+
+function FunnelPanel({ funnel }: { funnel: HubPluginFunnel }) {
+  const summary = funnelConversionSummary(funnel)
+  const last7 = funnel.series.slice(-7)
+  const peakViews = Math.max(1, ...last7.map((d) => d.views))
+  const cells = [
+    { key: 'views', label: '详情页浏览', value: funnel.totals.views, icon: Eye, tone: 'text-sky-600 dark:text-sky-400' },
+    { key: 'clicks', label: '安装点击', value: funnel.totals.installClicks, icon: MousePointerClick, tone: 'text-violet-600 dark:text-violet-400' },
+    { key: 'installs', label: '安装成功', value: funnel.totals.installs, icon: Download, tone: 'text-emerald-600 dark:text-emerald-400' },
+    { key: 'uninstalls', label: '卸载点击', value: funnel.totals.uninstalls, icon: RotateCcw, tone: 'text-muted-foreground' },
+  ]
+  return (
+    <section aria-label="插件市场漏斗" className="rounded-2xl border border-border/80 bg-card/60 p-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Gauge className="w-4 h-4 text-primary" aria-hidden />
+          <h2 className="text-sm font-semibold text-foreground">近 {funnel.days} 天市场漏斗</h2>
+        </div>
+        <span className="text-[11px] font-mono text-muted-foreground">
+          {summary ?? '浏览埋点为 0，转化率不可用'}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {cells.map((cell) => (
+          <div key={cell.key} className="rounded-xl border border-border/60 bg-background/40 p-3">
+            <div className={`flex items-center gap-1.5 text-[11px] ${cell.tone}`}>
+              <cell.icon className="w-3.5 h-3.5" aria-hidden />
+              <span>{cell.label}</span>
+            </div>
+            <div className="text-lg font-bold font-mono text-foreground pt-0.5">{cell.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {last7.some((d) => d.views > 0 || d.installs > 0) && (
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground">近 7 天按日（条长按当日浏览量归一）：</p>
+          <div className="space-y-1">
+            {last7.map((day) => (
+              <div key={day.date} className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
+                <span className="w-20 shrink-0">{day.date.slice(5)}</span>
+                <span className="h-2 rounded-full bg-sky-500/40" style={{ width: `${Math.round((day.views / peakViews) * 40) + 2}%` }} aria-hidden />
+                <span className="tabular-nums">浏览 {day.views}</span>
+                <span className="tabular-nums">安装 {day.installs}</span>
+                {day.reports > 0 && <span className="tabular-nums text-rose-600 dark:text-rose-400">举报 {day.reports}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function GovernancePanel({
+  alerts,
+  failed,
+  generatedAt,
+  onFocus,
+}: {
+  alerts: HubPluginGovernanceAlert[]
+  failed: boolean
+  generatedAt: number
+  onFocus: (alert: HubPluginGovernanceAlert) => void
+}) {
+  const counts = groupGovernanceAlerts(alerts)
+  return (
+    <section aria-label="插件治理预警" className="rounded-2xl border border-border/80 bg-card/60 p-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <MessageSquareWarning className="w-4 h-4 text-amber-500" aria-hidden />
+          <h2 className="text-sm font-semibold text-foreground">治理预警</h2>
+          {!failed && alerts.length > 0 && (
+            <span className="text-[11px] font-mono text-muted-foreground">
+              超 SLA {counts.pending_sla} · 插件举报 {counts.reported} · 评价举报 {counts.review_reported}
+            </span>
+          )}
+        </div>
+        <span className="text-[11px] font-mono text-muted-foreground">
+          {/* generatedAt===0 是中枢没答上来，不是「没有预警」；两种状态不能共用一个空态 */}
+          {failed ? '预警数据本次未取回' : `生成于 ${new Date(generatedAt).toLocaleString('zh-CN')}`}
+        </span>
+      </div>
+
+      {failed ? (
+        <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+          预警聚合这次没能从中枢取回。这里显示为空，不代表没有压了两天待审的投稿，也不代表没有累计举报。
+        </p>
+      ) : alerts.length === 0 ? (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          当前没有触发阈值的预警：待审投稿均未超过 48 小时，也没有累计 3 次以上的插件或评价举报。
+        </p>
+      ) : (
+        <>
+          <ul className="space-y-1.5">
+            {alerts.slice(0, 12).map((alert, idx) => {
+              const meta = GOVERNANCE_KIND_META[alert.kind] ?? { label: alert.kind, chip: 'bg-muted text-muted-foreground border-border/40' }
+              return (
+                <li
+                  key={`${alert.kind}:${alert.slug}:${idx}`}
+                  className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-background/40 px-3 py-2"
+                >
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${meta.chip}`}>{meta.label}</span>
+                  <span className="text-xs font-medium text-foreground truncate max-w-[240px]">{alert.name}</span>
+                  <span className="text-[11px] text-muted-foreground">{alert.detail}</span>
+                  <button
+                    type="button"
+                    onClick={() => onFocus(alert)}
+                    className="ml-auto text-[11px] px-2 py-0.5 rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                  >
+                    在队列中定位
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          {alerts.length > 12 && (
+            <p className="text-[11px] text-muted-foreground">只列出按严重度排序的前 12 条（本次共 {alerts.length} 条）。</p>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
 export default function AdminPluginsPage() {
   const [plugins, setPlugins] = useState<HubPluginItem[]>([])
   const [telemetry, setTelemetry] = useState<HubPluginTelemetryMetrics | null>(null)
@@ -92,6 +262,13 @@ export default function AdminPluginsPage() {
   const [pendingCount, setPendingCount] = useState<number>(0)
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
+  // 「没拉到」与「拉到但队列空」是两件事：合并渲染会让管理员以为待审清单被清空了
+  const [listFailed, setListFailed] = useState(false)
+  // generatedAt === 0 表示这次预警聚合没成功；>0 时它是真实的服务端生成时刻
+  const [governanceGeneratedAt, setGovernanceGeneratedAt] = useState(0)
+  const [reviewsFailed, setReviewsFailed] = useState(false)
+  const [reviewsTotal, setReviewsTotal] = useState(0)
+  const [reviewNoteDrafts, setReviewNoteDrafts] = useState<Record<string, string>>({})
 
   const [activeStatus, setActiveStatus] = useState<string>('pending')
   const [search, setSearch] = useState('')
@@ -135,6 +312,7 @@ export default function AdminPluginsPage() {
   const loadList = useCallback(async () => {
     setLoading(true)
     setNotice(null)
+    setListFailed(false)
     try {
       const [res, telem, funnelRes, governanceRes] = await Promise.all([
         fetchAdminPlugins(
@@ -153,21 +331,22 @@ export default function AdminPluginsPage() {
           // 漏斗转化指标请求失败时静默降级为 null，不阻塞插件列表与管理操作
           return null
         }),
-        fetchPluginGovernance().catch(() => {
-          // 治理预警请求失败时静默降级为空报警列表，不阻断主列表渲染
-          return { alerts: [], generatedAt: 0 }
-        }),
+        // fetchPluginGovernance 内部已 degrade：失败回落到 { alerts: [], generatedAt: 0 }。
+        // generatedAt === 0 是「这次没算出来」的唯一可靠信号，不能读成「没有预警」。
+        fetchPluginGovernance(),
       ])
       setPlugins(res.items)
       if (telem) setTelemetry(telem)
       setFunnel(funnelRes)
       setGovernance(governanceRes.alerts)
+      setGovernanceGeneratedAt(governanceRes.generatedAt)
       if (res.pending !== undefined) {
         setPendingCount(res.pending)
       }
     } catch {
-      // 接口异常时降级为空列表，notice 已在回调中提示
+      // 主列表请求失败：置空但记下 failed，EmptyState 不能说「所有插件已处理完毕」
       setPlugins([])
+      setListFailed(true)
     } finally {
       setLoading(false)
     }
@@ -176,6 +355,82 @@ export default function AdminPluginsPage() {
   useEffect(() => {
     void loadList()
   }, [loadList])
+
+  /**
+   * 评价治理队列（/api/admin/plugin-reviews）。
+   *
+   * 这块数据以前只有 import、从没被调用：治理预警里的「评价被举报 N 次」在管理台
+   * 没有可处置的入口，只能直接改库。degrade 的回落值 `{items:[],total:0}` 与
+   * 「真的没有评价」同形，所以用 onDegraded 单独记 failed，不复用主列表的 notice。
+   */
+  const loadReviews = useCallback(async () => {
+    setReviewsLoading(true)
+    setReviewsFailed(false)
+    try {
+      const res = await fetchAdminPluginReviews({ status: reviewStatus, limit: 20 }, () =>
+        setReviewsFailed(true),
+      )
+      setAdminReviews(res.items)
+      setReviewsTotal(res.total)
+    } catch {
+      setAdminReviews([])
+      setReviewsFailed(true)
+    } finally {
+      setReviewsLoading(false)
+    }
+  }, [reviewStatus])
+
+  useEffect(() => {
+    void loadReviews()
+  }, [loadReviews])
+
+  /** 编辑精选开关 + 位次（市场首页「编辑精选」栏的唯一数据源） */
+  const handleToggleFeatured = async (plugin: HubPluginItem) => {
+    const next = !plugin.featured
+    const rank = Number.isFinite(rankDrafts[plugin.slug]) ? rankDrafts[plugin.slug] : plugin.featuredRank ?? 0
+    setActionLoading(true)
+    try {
+      await setPluginFeatured(plugin.slug, next, rank)
+      setPlugins((prev) =>
+        prev.map((p) => (p.slug === plugin.slug ? { ...p, featured: next, featuredRank: rank } : p)),
+      )
+      toast.success(next ? `已把「${plugin.name}」加入编辑精选` : `已把「${plugin.name}」移出编辑精选`)
+    } catch (err) {
+      toast.error('精选设置失败', {
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  /** 隐藏/恢复评价：隐藏后即时退出公开列表与评分统计 */
+  const handleModerateReview = async (review: HubAdminPluginReview, action: 'hide' | 'restore') => {
+    if (action === 'hide' && !confirm(`确定要隐藏「${review.pluginName}」的这条评价吗？隐藏后不再计入公开评分与评价列表。`)) {
+      return
+    }
+    const note = reviewNoteDrafts[review.id]?.trim()
+    setActionLoading(true)
+    try {
+      await moderatePluginReview(review.id, action, note || undefined)
+      toast.success(action === 'hide' ? '评价已隐藏' : '评价已恢复公开')
+      setReviewNoteDrafts((prev) => {
+        if (!(review.id in prev)) return prev
+        const next = { ...prev }
+        delete next[review.id]
+        return next
+      })
+      void loadReviews()
+      // 隐藏的评价会立刻改变插件的评分与举报计数，主列表要跟着刷新
+      void loadList()
+    } catch (err) {
+      toast.error('评价处置失败', {
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   // 通过审核 (上架)
   const handleApprove = async (plugin: HubPluginItem) => {
@@ -403,6 +658,21 @@ export default function AdminPluginsPage() {
           </div>
         )}
 
+        {/* 市场漏斗：浏览 → 安装点击 → 安装成功（近 30 天埋点） */}
+        {funnel && <FunnelPanel funnel={funnel} />}
+
+        {/* 治理预警：待审超 SLA / 插件被举报 / 评价被举报 */}
+        <GovernancePanel
+          alerts={governance}
+          failed={governanceGeneratedAt === 0}
+          generatedAt={governanceGeneratedAt}
+          onFocus={(alert) => {
+            const tab = STATUS_TABS.find((t) => t.key === alert.status)
+            if (tab) setActiveStatus(tab.key)
+            setSearch(alert.slug)
+          }}
+        />
+
         {/* 降级提示 */}
         {notice && <HubDegradedNotice notice={notice} onRetry={loadList} />}
 
@@ -514,6 +784,42 @@ export default function AdminPluginsPage() {
                   )}
 
                   {item.status === 'published' && (
+                    <div className="inline-flex items-center gap-1">
+                      <label className="sr-only" htmlFor={`featured-rank-${item.slug}`}>
+                        「{item.name}」的精选位次
+                      </label>
+                      <input
+                        id={`featured-rank-${item.slug}`}
+                        type="number"
+                        min={0}
+                        max={9999}
+                        value={rankDrafts[item.slug] ?? item.featuredRank ?? 0}
+                        onChange={(e) => {
+                          const v = Number(e.target.value)
+                          setRankDrafts((prev) => ({ ...prev, [item.slug]: Number.isFinite(v) ? v : 0 }))
+                        }}
+                        disabled={!item.featured || actionLoading}
+                        title={item.featured ? '位次越大越靠前（同分按发布时间）' : '设为精选后可编辑位次'}
+                        className="w-16 px-1.5 py-1 text-[11px] font-mono rounded-lg border border-border/60 bg-background text-foreground disabled:opacity-50 focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleToggleFeatured(item)}
+                        disabled={actionLoading}
+                        className={cn(
+                          'inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors',
+                          item.featured
+                            ? 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20'
+                            : 'border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60',
+                        )}
+                      >
+                        <Crown className="w-3.5 h-3.5" aria-hidden />
+                        <span>{item.featured ? '取消精选' : '设为精选'}</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {item.status === 'published' && (
                     <button
                       type="button"
                       onClick={() => handleDelist(item)}
@@ -539,6 +845,26 @@ export default function AdminPluginsPage() {
               </div>
             ))}
           </div>
+        ) : listFailed ? (
+          <div
+            role="status"
+            className="rounded-2xl border border-amber-500/40 bg-amber-500/5 px-4 py-5 text-xs text-amber-700 dark:text-amber-400 space-y-2"
+          >
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden />
+              <span className="font-medium">
+                插件队列这次没能从中枢取回（连接失败或返回异常）。这里显示为空，不代表待审插件已被处理完或数据被删除。
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadList()}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-amber-500/40 bg-background/70 hover:bg-background font-medium text-foreground transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" aria-hidden />
+              <span>重新加载队列</span>
+            </button>
+          </div>
         ) : (
           <EmptyState
             icon={PackageCheck}
@@ -546,6 +872,127 @@ export default function AdminPluginsPage() {
             description="当前队列为空，所有插件已处理完毕。"
           />
         )}
+
+        {/* 评价治理：隐藏/恢复公开评价（被举报评价的唯一处置入口） */}
+        <section aria-label="评价治理" className="rounded-2xl border border-border/80 bg-card/60 p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <MessageSquareWarning className="w-4 h-4 text-primary" aria-hidden />
+              <h2 className="text-sm font-semibold text-foreground">评价治理</h2>
+              <div className="inline-flex items-center gap-1 rounded-lg border border-border/60 p-0.5">
+                {(['visible', 'hidden'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setReviewStatus(tab)}
+                    aria-pressed={reviewStatus === tab}
+                    className={cn(
+                      'px-2 py-0.5 text-[11px] font-medium rounded-md transition-colors',
+                      reviewStatus === tab ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {tab === 'visible' ? '展示中' : '已隐藏'}
+                  </button>
+                ))}
+              </div>
+              {!reviewsFailed && (
+                <span className="text-[11px] font-mono text-muted-foreground">共 {reviewsTotal} 条</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadReviews()}
+              disabled={reviewsLoading}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-md border border-border/60 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" aria-hidden />
+              <span>刷新</span>
+            </button>
+          </div>
+
+          {reviewsLoading ? (
+            <div className="space-y-1.5">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-14 rounded-xl border border-border/40 bg-muted/20 animate-pulse" />
+              ))}
+            </div>
+          ) : reviewsFailed ? (
+            <p role="status" className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+              评价列表这次没能从中枢取回。这里显示为空，不代表评价被清空，也不代表没有待处理举报。
+            </p>
+          ) : adminReviews.length === 0 ? (
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {reviewStatus === 'visible'
+                ? '当前没有展示中的评价。'
+                : '当前没有被隐藏的评价——社区举报可以在这里处置，也可以直接在下方的插件列表里查看举报数。'}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {adminReviews.map((review) => (
+                <li key={review.id} className="rounded-xl border border-border/60 bg-background/40 p-3 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <Link
+                      href={pluginDetailHref(review.pluginSlug)}
+                      target="_blank"
+                      className="font-medium text-foreground hover:text-primary hover:underline underline-offset-2"
+                    >
+                      {review.pluginName}
+                    </Link>
+                    <span className="font-mono text-muted-foreground">★ {review.rating}/5</span>
+                    {(review.reportCount ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1 font-bold px-1.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                        <Flag className="w-3 h-3" aria-hidden />
+                        <span>举报 {review.reportCount}</span>
+                      </span>
+                    )}
+                    <span className="text-muted-foreground">
+                      v{review.installedVersion} · {new Date(review.createdAt).toLocaleString('zh-CN')}
+                    </span>
+                    {review.status === 'hidden' && (
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        处置于 {review.moderatedAt ? new Date(review.moderatedAt).toLocaleString('zh-CN') : '未知时间'}
+                      </span>
+                    )}
+                  </div>
+                  {(review.title || review.content) && (
+                    <p className="text-xs text-foreground leading-relaxed line-clamp-3">
+                      {review.title && <strong className="mr-1">{review.title}</strong>}
+                      <span className="text-muted-foreground">{review.content}</span>
+                    </p>
+                  )}
+                  {review.status === 'hidden' && review.moderationNote && (
+                    <p className="text-[11px] text-muted-foreground">隐藏理由：{review.moderationNote}</p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {review.status !== 'hidden' && (
+                      <input
+                        aria-label={`隐藏「${review.pluginName}」这条评价的理由`}
+                        value={reviewNoteDrafts[review.id] ?? ''}
+                        onChange={(e) => setReviewNoteDrafts((prev) => ({ ...prev, [review.id]: e.target.value }))}
+                        placeholder="隐藏理由（可选，留痕用）"
+                        maxLength={200}
+                        className="flex-1 min-w-[180px] px-2 py-1 text-[11px] rounded-md border border-border/60 bg-background text-foreground placeholder:text-muted-foreground/60 focus:outline-hidden focus:ring-2 focus:ring-primary/40"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleModerateReview(review, review.status === 'hidden' ? 'restore' : 'hide')}
+                      disabled={actionLoading}
+                      className={cn(
+                        'px-2.5 py-1 text-[11px] font-medium rounded-md border transition-colors',
+                        review.status === 'hidden'
+                          ? 'border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10'
+                          : 'border-destructive/30 text-destructive hover:bg-destructive/10',
+                      )}
+                    >
+                      {review.status === 'hidden' ? '恢复公开' : '隐藏评价'}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         {/* 驳回理由输入弹窗 */}
         <Dialog open={rejectModalOpen} onOpenChange={setRejectModalOpen}>

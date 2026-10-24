@@ -31,6 +31,16 @@ function escapeLikePrefix(value: string): string {
 /** 导出时单身份最多带上的搜索历史条数，避免超大账号把响应撑爆 */
 export const EXPORT_HISTORY_LIMIT = 5000;
 
+/**
+ * 导出时单身份最多带上的收藏条数。必须与导入端 favorites 的 zod 上限同源：
+ * 历史域曾修过「导出无上限、导入有上限」的往返不对称（超限的合法备份整份 400），
+ * 收藏域按同一修法对齐（T2）。
+ */
+export const EXPORT_FAVORITES_LIMIT = 20000;
+
+/** 当前导出格式版本。导入端据此判别「备份比服务新」的向前兼容场景。 */
+export const EXPORT_SCHEMA_VERSION = 1;
+
 export interface ExportedLlmConfig {
   model: string;
   baseUrl: string;
@@ -41,10 +51,14 @@ export interface ExportedLlmConfig {
 }
 
 export interface UserDataExport {
+  /** 备份格式版本（导入端向前兼容判别用；见 EXPORT_SCHEMA_VERSION） */
+  schemaVersion: number;
   exportedAt: number;
   identity: string;
   user: UserRecord | null;
   favorites: FavoriteRecord[];
+  /** 备份里的收藏是否达到了 EXPORT_FAVORITES_LIMIT（与历史域同语义） */
+  favoritesTruncated: boolean;
   favoriteFolders: FavoriteFolderRecord[];
   searchHistory: { items: SearchHistoryItem[]; truncated: boolean };
   profile: UserProfileRecord | null;
@@ -136,11 +150,17 @@ export async function exportUserData(repo: Repository, identity: string): Promis
     ),
   ]);
 
+  // 收藏截断与历史同语义：导出端先声明上限，导入端的 zod 上限与之同源
+  const favoritesTruncated = favorites.length > EXPORT_FAVORITES_LIMIT;
+  const favoritesCapped = favoritesTruncated ? favorites.slice(0, EXPORT_FAVORITES_LIMIT) : favorites;
+
   return {
+    schemaVersion: EXPORT_SCHEMA_VERSION,
     exportedAt: Date.now(),
     identity,
     user,
-    favorites,
+    favorites: favoritesCapped,
+    favoritesTruncated,
     favoriteFolders: folders,
     searchHistory: history,
     profile,
@@ -297,6 +317,8 @@ export async function deleteUserData(repo: Repository, identity: string): Promis
     await repo.run("DELETE FROM plugin_reviews WHERE identity = ?", [identity]);
     // 会话与用量：会话直接删；用量保留聚合价值但抹掉身份（可逆性为零，等同匿名化）
     await repo.run("DELETE FROM sessions WHERE user_id = ?", [identity]);
+    await repo.run("DELETE FROM notifications WHERE identity = ?", [identity]);
+    await repo.run("DELETE FROM api_tokens WHERE owner_identity = ?", [identity]);
     await repo.run("UPDATE llm_usage SET identity = NULL WHERE identity = ?", [identity]);
     // 本人名下的工作区记录（workspaces:<id> 与成员名册）。其他成员的工作区不受影响。
     // 新表为主；同时清 vault 里的历史残留（迁移失败/未跑到的部署也能删干净）。

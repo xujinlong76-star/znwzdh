@@ -18,6 +18,7 @@ import { EventEmitter } from "node:events";
 import { enrichUrl } from "@navhub/ai";
 import { enrichLlmOf, resolveLlm } from "./llm-config.ts";
 import { createEnrichUsageCallback } from "./llm-usage.ts";
+import { checkLlmQuota } from "./llm-quota.ts";
 import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatrol, sanitizeIconUrl } from "@navhub/core";
 import {
   bindSqlite,
@@ -60,9 +61,9 @@ export function shouldMarkBroken(
   return priorConsecutiveFailures + 1 >= threshold;
 }
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit"];
 
 /** data_retention 任务的参数：mode 决定走哪条路，apply 决定是否真的动手 */
 export interface DataRetentionPayload {
@@ -116,6 +117,9 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   // 数据治理默认只做 rollup 的 dry-run：自动化可以先"看见"，不该先"动手"。
   // 确认过输出后再把 payload 改成 { mode: "rollup", apply: true }（或手动触发一次）。
   { kind: "data_retention", intervalMs: 86_400_000, payload: { mode: "rollup", apply: false, maxDays: 30, telemetryDays: 90 } },
+  // 用户数据质量巡检（T24）：只统计与上报，不修复不删除——
+  // 修复动作属于用户自检（POST /api/me/diagnostics 自动修）或运维决策。
+  { kind: "user_data_audit", intervalMs: 86_400_000 },
 ];
 
 const LOCK_KEY = "lock:job-runner";
@@ -189,6 +193,7 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   taxonomy_audit: { cron: "DAILY3AM", timeoutMs: 300_000, maxConcurrency: 1 },
   data_retention: { cron: "DAILY4AM", timeoutMs: 600_000, maxConcurrency: 1 },
   plugin_governance: { cron: "X4H", timeoutMs: 120_000, maxConcurrency: 1 },
+  user_data_audit: { cron: "DAILY5AM", timeoutMs: 300_000, maxConcurrency: 1 },
 };
 
 /** 标准 5 段 cron 字面量（与 DEFAULT_SCHEDULES 别名一一对应，集中存放避免块注释提前闭合） */
@@ -199,6 +204,7 @@ const CRON_EXPRS = {
   X4H: "0 \u002a/4 \u002a \u002a \u002a",
   DAILY3AM: "0 3 \u002a \u002a \u002a",
   DAILY4AM: "0 4 \u002a \u002a \u002a",
+  DAILY5AM: "0 5 * * *",
 } as const;
 
 /**
@@ -564,6 +570,9 @@ export class JobRunner {
         case "plugin_governance":
           await this.runPluginGovernance();
           break;
+        case "user_data_audit":
+          await this.runUserDataAudit();
+          break;
         default:
           throw new Error("未知任务类型: " + kind);
       }
@@ -738,11 +747,19 @@ export class JobRunner {
     const site = await this.ctx.repo.getSite(payload.siteId);
     if (!site) throw new Error("站点不存在: " + payload.siteId);
 
-    const resolved = payload.llm ? await resolveLlm(this.ctx) : null;
+    /**
+     * 后台任务同样要过额度闸门：它烧的是运维者那把系统 key，而且一次批量重刷
+     * 能连发几十次模型调用，`payload.llm` 一旦被人循环投递就是无上限消耗。
+     * 额度以 null 身份计（与 `job_enrich` 用量的 identity 列同为 NULL 对齐），
+     * 被拒时降级成启发式抓取 —— 标题/描述/icon 照样拿得到，只是没有 AI 润色。
+     */
+    const quota = await checkLlmQuota(this.ctx, null);
+    const useLlm = payload.llm === true && quota.ok;
+    const resolved = useLlm ? await resolveLlm(this.ctx) : null;
     const enriched = await enrichUrl(site.url, {
       llm: resolved ? enrichLlmOf(resolved) : undefined,
       guard: this.ctx.config.fetch,
-      heuristicOnly: !payload.llm,
+      heuristicOnly: !useLlm,
       onLlmCall: resolved ? createEnrichUsageCallback(this.ctx, resolved.source, null, "job_enrich") : undefined,
     });
     // 只覆盖「空值或超期（>30 天）字段」——刷新不该把人工精修的内容冲掉
@@ -761,7 +778,12 @@ export class JobRunner {
       await this.ctx.repo.updateSite(site.id, patch as never);
       await indexSite(this.ctx, site.id, (patch.title as string) ?? site.title, (patch.description as string) ?? site.description ?? null, site.url);
     }
-    await this.ctx.repo.recordEvent("refetch", { siteId: site.id, meta: { provenance: enriched.provenance } }).catch(() => undefined);
+    await this.ctx.repo
+      .recordEvent("refetch", {
+        siteId: site.id,
+        meta: { provenance: enriched.provenance, aiSkipped: payload.llm === true && !quota.ok ? "quota" : null },
+      })
+      .catch(() => undefined);
   }
 
   /** 重算热度分：近 7 天点击 + 近 7 天收藏 − 年龄惩罚 */
@@ -1003,6 +1025,80 @@ export class JobRunner {
     console.warn(`[jobs] plugin_governance: ${alerts.length} 条告警待处理`);
   }
 
+  /**
+   * 用户数据质量巡检（T24）：全库统计「孤儿收藏夹引用 / 站点已不存在的收藏」，
+   * 只写审计与行为事件，不修复不删除。检测逻辑与 /api/me/diagnostics 的自动修复
+   * 同源；批量同步通道按设计允许站点缺失行（本地 href 兜底渲染），这里是把它们
+   * 从「静默存在」变成「可被看见」。
+   */
+  private async runUserDataAudit(): Promise<void> {
+    const danglingFolderRefs = Number(
+      (
+        await this.ctx.repo.raw(
+          "SELECT COUNT(*) AS c FROM favorites WHERE deleted_at IS NULL AND folder_id IS NOT NULL AND folder_id NOT IN (SELECT id FROM favorite_folders)",
+        )
+      )[0]?.c ?? 0,
+    );
+    const favoritesMissingSite = Number(
+      (
+        await this.ctx.repo.raw(
+          "SELECT COUNT(*) AS c FROM favorites WHERE deleted_at IS NULL AND site_id NOT IN (SELECT id FROM sites)",
+        )
+      )[0]?.c ?? 0,
+    );
+    const summary: Record<string, number | string> = { danglingFolderRefs, favoritesMissingSite };
+    // 备份超期提醒（T13）：有收藏但 30 天内没有导出过的身份 → 一条通知（7 天去重）。
+    // 「先看见再动」同样适用：这里只提醒，不代替用户导出。
+    try {
+      const BATCH = 500;
+      const owners = await this.ctx.repo.raw(
+        "SELECT DISTINCT user_id FROM favorites WHERE deleted_at IS NULL LIMIT ?",
+        [BATCH],
+      );
+      const now3 = Date.now();
+      const THIRTY_DAYS = 30 * 86_400_000;
+      const SEVEN_DAYS = 7 * 86_400_000;
+      let reminded = 0;
+      for (const row of owners) {
+        const identity = String(row.user_id);
+        const lastExport = (
+          await this.ctx.repo.raw(
+            "SELECT MAX(created_at) AS m FROM audit_logs WHERE action = 'user.export' AND target = ?",
+            [identity],
+          )
+        )[0];
+        const lastAt = Number(lastExport?.m ?? 0);
+        if (lastAt > now3 - THIRTY_DAYS) continue;
+        if (await this.ctx.repo.hasRecentNotification(identity, "backup_due", SEVEN_DAYS)) continue;
+        await this.ctx.repo.createNotification({
+          identity,
+          kind: "backup_due",
+          title: "该备份数据了",
+          body: "你的收藏已经超过 30 天没有导出备份。到「用户中心 → 数据与隐私」一键导出 JSON 或加密金库，防患于未然。",
+        });
+        reminded += 1;
+      }
+      if (reminded > 0) {
+        summary.backupReminders = reminded;
+      }
+    } catch (err) {
+      // 提醒失败不影响巡检主结论
+      summary.backupRemindersError = String((err as Error)?.message ?? "unknown");
+    }
+
+    await this.ctx.repo.audit({
+      actor: "system:user_data_audit",
+      actorKind: "system",
+      action: "user_data.audit",
+      target: "global",
+      diff: summary,
+    }).catch(() => undefined);
+    await this.ctx.repo.recordEvent("user_data_audit", { meta: summary }).catch(() => undefined);
+    if (danglingFolderRefs > 0 || favoritesMissingSite > 0) {
+      console.warn(`[jobs] user_data_audit: 孤儿夹引用 ${danglingFolderRefs}，站点缺失收藏 ${favoritesMissingSite}（只报不动）`);
+    }
+  }
+
   private async runDataRetention(payload: DataRetentionPayload = {}): Promise<void> {
     const mode = payload.mode === "cleanup" ? "cleanup" : "rollup";
     if (mode === "cleanup" && payload.apply === true) {
@@ -1061,6 +1157,35 @@ export class JobRunner {
       llmUsage: await this.ctx.repo.pruneLlmUsage(since),
     };
 
+    // T11 保留期自动化：只执行**用户显式设置**的历史保留期（30/90/365 天）。
+    // 默认 180 天的全局口径不变——仍走 CLI / cleanup dry-run；这里动手的每一行
+    // 都对应用户在 /me/settings 里亲手选过的周期（设置页的「自动保留」承诺由此兑现）。
+    try {
+      const custom = await this.ctx.repo.listCustomHistoryRetention();
+      let usersAffected = 0;
+      let rowsDeleted = 0;
+      const now2 = Date.now();
+      for (const { identity, retentionDays } of custom) {
+        const cutoff = now2 - retentionDays * 86_400_000;
+        const deleted = await this.ctx.repo.deleteSearchHistoryBefore(identity, cutoff);
+        if (deleted > 0) {
+          usersAffected += 1;
+          rowsDeleted += deleted;
+          await this.ctx.repo.audit({
+            actor: "system:data_retention",
+            actorKind: "system",
+            action: "user.search_history_expired",
+            target: identity,
+            diff: { retentionDays, deleted },
+          }).catch(() => undefined);
+        }
+      }
+      summary.userRetention = { usersAffected, rowsDeleted };
+    } catch (err) {
+      // 保留期执行失败不阻断整轮任务：汇总里如实记录，下一轮再试
+      summary.userRetention = { error: String((err as Error)?.message ?? "unknown") };
+    }
+
     // 留一条行为事件：运维在事件流里能看到"这轮会动多少行 / 动了多少行"
     await this.ctx.repo.recordEvent("data_retention", { meta: summary }).catch(() => undefined);
   }
@@ -1102,7 +1227,7 @@ export class JobRunner {
       .map(([kind, count]) => `${kind}:${count}`)
       .join(" / ");
     // 日报口径：一行里同时出现总数与分类型分布，运营不必再点进队列才知道「今天多了什么」
-    console.log(
+    console.info(
       `[navhub-taxonomy-audit] 审计完成：${res.proposalsCount} 条提案（${byKind || "无"}）`,
     );
     // dryRun 是演练，不落审计日志，避免污染运营时间线

@@ -25,6 +25,11 @@ function overlaySource(rel: string): string {
   return readFileSync(hit, 'utf8')
 }
 
+/** T14 起夹管理逻辑在 hook：页面 + hook 联合文本 */
+function favoritesPageWithManager(): string {
+  return overlaySource('src/app/favorites/page.tsx') + ' ' + overlaySource('src/hooks/use-favorites-folder-manager.ts')
+}
+
 describe('本地收藏夹（P2）', () => {
   it('纯函数模块存在且被测试覆盖', () => {
     expect(existsSync(resolve(HERE, '..', 'src/lib/favorites-folders.ts')) ||
@@ -50,14 +55,14 @@ describe('本地收藏夹（P2）', () => {
   })
 
   it('建 / 改 / 删三条路径都有本地分支', () => {
-    const page = overlaySource('src/app/favorites/page.tsx')
+    const page = favoritesPageWithManager()
     expect(page).toMatch(/addLocalFolder\(localFolders/)
     expect(page).toMatch(/renameLocalFolder\(prev, folderId, name\)/)
     expect(page).toMatch(/removeLocalFolder\(prev, folderId\)/)
   })
 
   it('登录同步成功后把本地夹子按名称合并上云', () => {
-    const page = overlaySource('src/app/favorites/page.tsx')
+    const page = favoritesPageWithManager()
     expect(page).toContain('planFolderUpload')
     expect(page).toContain('migrateLocalFolders')
     // 必须在同步成功且拿到云端夹子之后才迁移

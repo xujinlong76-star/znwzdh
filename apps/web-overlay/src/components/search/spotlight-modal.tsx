@@ -8,7 +8,7 @@
  * 2. 多重交互模式：
  *    - 普通输入：四路召回 + RRF (Reciprocal Rank Fusion) 混合检索 + 插件市场跨模态并行召回；
  *    - `>` 前缀：系统快捷指令控制台（一键换肤、工作台直达、AI 抽屉唤起、数据快照导出等）；
- *    - `?` 或 `ai ` 前缀：直达 Agnes 3.0 Flash 512K AI 问答与书签整理；
+ *    - `?` 或 `ai ` 前缀：直达 AI 问答与书签整理（具体模型以中枢回报为准）；
  * 3. 死链时间机器（Wayback Machine）快照一键自愈。
  */
 
@@ -52,7 +52,15 @@ import {
 import { Input } from '@/registry/new-york/ui/input'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { useOverlayBehavior } from '@/components/ui/overlay'
 import { SiteFavicon } from '@/components/site-favicon'
+import {
+  useExternalLinkTarget,
+  useSpotlightShortcutMode,
+  useUserPreference,
+  spotlightHotkeyMatches,
+} from '@/lib/user-preferences'
+import { externalSearchEngineName, externalSearchUrl } from '@/lib/user-settings'
 import { toast } from 'sonner'
 import {
   searchSites,
@@ -65,7 +73,8 @@ import {
 } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
 import { getModifierKey } from '@/lib/platform'
-import { safeHref, isSafeHttpUrl } from '@/lib/safe-url'
+import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
+import { recordOfflineVisit } from '@/lib/offline-recent'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import { applyThemeTokens } from '@/lib/plugins/theme-runtime'
 
@@ -128,6 +137,12 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
   const [archiveSite, setArchiveSite] = useState<{ id: string; title: string; url: string; description?: string | null } | null>(null)
   const [archiveReaderOpen, setArchiveReaderOpen] = useState(false)
   const [modKey, setModKey] = useState<string>('⌘')
+  const shortcutMode = useSpotlightShortcutMode()
+  const searchEngine = useUserPreference('defaultSearchEngine')
+  /** 站点召回通道是否失败（区别于「真的没有结果」） */
+  const [sitesUnavailable, setSitesUnavailable] = useState(false)
+  /** 重试令牌：只给「再问一次同一个词」用，不改查询文本 */
+  const [searchNonce, setSearchNonce] = useState(0)
   useEffect(() => {
     setModKey(getModifierKey())
   }, [])
@@ -137,15 +152,57 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
   const abortRef = useRef<AbortController | null>(null)
   const identity = useMemo(() => getIdentity(), [])
 
-  // 1. 全局快捷键监听 (Cmd+K / Ctrl+K) 与自定义事件唤起
+  /**
+   * 浮层行为走公共原语：Esc、点遮罩、锁背景滚动、焦点圈养与还原、role=dialog。
+   * 以前这里只有一条 window 上的 Esc 监听：背景照样滚、Tab 能一路走出面板落到正文，
+   * 读屏软件也根本不认为这是一个对话框。
+   */
+  const { containerProps, scrimProps } = useOverlayBehavior({
+    open,
+    onClose: () => setOpen(false),
+    ariaLabel: '全局超级搜索与系统指令控制台',
+    initialFocusRef: inputRef,
+  })
+
+  /**
+   * 打开站点的方式同样听用户中心的「新标签页打开站点」偏好。
+   * 超级控制台是全站入口最全的地方，以前这里写死 `_blank`：
+   * 用户在全局设置里关掉新标签页，只影响首页卡片，从这里打开照样弹新窗口。
+   */
+  const linkTarget = useExternalLinkTarget()
+  const openSite = useCallback(
+    (site: { id: string; title?: string | null; url: string; iconKey?: string | null }) => {
+      const url = safeHref(site.url, '')
+      // 先过安全闸再上报：给一个根本打不开的脏 URL 记一次点击，会污染热度信号
+      if (!url || !isSafeHttpUrl(url)) return
+      reportClick(site.id, identity)
+      // 与首页卡片、内联搜索共用同一份离线「最近访问」：从 ⌘K 打开的站点
+      // 断网后也要能在本地列表里找到，否则超级控制台这条路径就漏了快照。
+      recordOfflineVisit({
+        id: site.id,
+        title: site.title ?? site.url,
+        href: url,
+        icon: site.iconKey ?? null,
+      })
+      if (linkTarget === '_self') window.location.href = url
+      else window.open(url, '_blank', 'noopener,noreferrer')
+    },
+    [identity, linkTarget],
+  )
+
+  /** 站外出口：只有用户在「默认搜索引擎」里显式选了外部引擎才出现 */
+  const externalSearchHref = externalSearchUrl(searchEngine, query)
+  const externalSearchName = externalSearchEngineName(searchEngine)
+
+  // 1. 全局快捷键监听（呼出键听用户中心的「搜索快捷键」偏好）与自定义事件唤起
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      // Esc 不在这里处理：useOverlayBehavior 在 document 捕获阶段拦下它，
+      // 既能叠在别的浮层上（只关最上层），又不会漏给全局快捷键。
+      if (spotlightHotkeyMatches(e, shortcutMode)) {
         // 如果焦点在其他复杂编辑器中，仍允许唤起超级控制台
         e.preventDefault()
         setOpen((prev) => !prev)
-      } else if (e.key === 'Escape' && open) {
-        setOpen(false)
       }
     }
 
@@ -169,12 +226,11 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
       window.removeEventListener('open-spotlight', handleCustomOpen)
       window.removeEventListener('open-site-health-audit', handleHealthAuditOpen)
     }
-  }, [open])
+  }, [shortcutMode])
 
-  // 2. 聚焦输入框与加载历史记录
+  // 2. 加载历史记录（初始焦点由 useOverlayBehavior 的 initialFocusRef 交接）
   useEffect(() => {
     if (open) {
-      setTimeout(() => inputRef.current?.focus(), 50)
       fetchSearchHistory(identity)
         .then((items) => {
           if (Array.isArray(items)) setRecentQueries(items.slice(0, 8))
@@ -387,10 +443,10 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
     },
     {
       id: 'cmd-airdrop',
-      title: 'NavDrop 局域网隔空快传 (Local P2P)',
-      description: '基于 WebRTC 与局域网广播向周围设备无损快传书签与配置',
+      title: 'NavDrop 跨标签页快传 (Local First)',
+      description: '在同一浏览器的标签页之间直连书签、主题与工作台排版；跨设备请改用导出备份',
       icon: Radio,
-      category: '局域网协同',
+      category: '本地协同',
       handler: () => {
         setOpen(false)
         setAirdropOpen(true)
@@ -409,7 +465,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
         setOpen(false)
       },
     },
-  ], [router])
+  ], [router, modKey])
 
   // 过滤当前指令
   const filteredCommands = useMemo(() => {
@@ -435,6 +491,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
     if (!trimmed) {
       setHits([])
       setPluginHits(null)
+      setSitesUnavailable(false)
       setLoading(false)
       return
     }
@@ -445,9 +502,12 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
 
     setLoading(true)
     const timer = setTimeout(() => {
+      let siteSearchFailed = false
       Promise.all([
         searchSites({ q: trimmed, limit: 8, identity }, ac.signal).catch(() => {
-          // 并发召回允许单路失败：按「该路无结果」交给下面的 ?? [] 消费
+          // 站点召回失败必须留痕：以前直接当成「这一路没有结果」，
+          // 于是检索服务挂掉时用户看到的是「未找到相关站点」——谎报。
+          siteSearchFailed = true
           return null
         }),
         searchPlugins({ q: trimmed, limit: 3 }).catch(() => {
@@ -458,6 +518,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
         if (!ac.signal.aborted) {
           setHits(sitesRes?.hits ?? [])
           setPluginHits(pluginsRes)
+          setSitesUnavailable(siteSearchFailed)
           setLoading(false)
           setSelectedIndex(0)
         }
@@ -468,7 +529,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
       clearTimeout(timer)
       ac.abort()
     }
-  }, [query, isCommandMode, isAiMode, identity])
+  }, [query, isCommandMode, isAiMode, identity, searchNonce])
 
   // 6. 复制链接
   const handleCopy = useCallback(async (url: string, id: string, e: React.MouseEvent) => {
@@ -503,7 +564,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
         )
       } else {
         toast.info(res.message || '未在 Wayback 找到历史快照，建议点击即时归档保存')
-        if (res.saveUrl) window.open(res.saveUrl, '_blank', 'noopener,noreferrer')
+        if (res.saveUrl) safeWindowOpen(res.saveUrl)
       }
     } catch {
       toast.error('时间机器自愈请求失败，请稍后重试')
@@ -532,8 +593,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
     if (selectedIndex < totalSiteHits) {
       const hit = hits[selectedIndex]
       if (hit?.site?.url) {
-        reportClick(hit.siteId, identity)
-        window.open(safeHref(hit.site.url, '#'), '_blank', 'noopener,noreferrer')
+        openSite(hit.site)
         setOpen(false)
       }
     } else {
@@ -544,7 +604,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
         router.push(`/marketplace/${encodeURIComponent(plugin.slug)}`)
       }
     }
-  }, [isCommandMode, isAiMode, filteredCommands, selectedIndex, cleanAiPrompt, hits, pluginHits, identity, router])
+  }, [isCommandMode, isAiMode, filteredCommands, selectedIndex, cleanAiPrompt, hits, pluginHits, router, openSite])
 
   // 9. 键盘导航 (上下箭头 / 回车)
   const totalItemCount = useMemo(() => {
@@ -566,16 +626,31 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
     }
   }
 
+  /**
+   * 焦点始终留在搜索框，所以当前行只能通过 aria-activedescendant 告诉读屏。
+   * 三种模式的行 id 共用一套扁平编号：指令行是 0..n、站点行是 0..n、
+   * 插件行是 hits.length + idx —— 与 selectedIndex 的定义完全一致。
+   */
+  const optionIdOf = (index: number) => `spotlight-option-${index}`
+  const activeOptionId = totalItemCount > 0 ? optionIdOf(selectedIndex) : undefined
+  // 极客微工具面板里没有可选行（selectedIndex 走的是指令列表），此时不能声称控制着某个列表
+  const hasListbox = totalItemCount > 0 && !(isCommandMode && isGeekToolActive)
+  /** 当前选中行落在哪个列表：指令 / 站点 / 插件（插件行编号从 hits.length 起） */
+  const listboxId = isCommandMode
+    ? 'spotlight-cmd-listbox'
+    : selectedIndex < hits.length
+      ? 'spotlight-site-listbox'
+      : 'spotlight-plugin-listbox'
+
   return (
     <>
       {open && (
-        <div
-          className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-start justify-center pt-[max(env(safe-area-inset-top,0px),0.5rem)] sm:pt-[10vh] px-2 sm:px-4 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] animate-in fade-in-0 duration-150"
-          onClick={() => setOpen(false)}
-        >
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-[max(env(safe-area-inset-top,0px),0.5rem)] sm:pt-[10vh] px-2 sm:px-4 pb-[max(env(safe-area-inset-bottom,0px),0.5rem)] animate-in fade-in-0 duration-150">
+          {/* 遮罩是面板的兄弟节点而不是包裹层：包裹层带 aria-hidden 会让读屏把对话框一起跳过 */}
+          <div {...scrimProps} className="absolute inset-0 bg-background/80 backdrop-blur-md" />
       <div
-        className="w-full max-w-2xl bg-card/95 border border-border/80 shadow-2xl rounded-2xl overflow-hidden glass-surface flex flex-col max-h-[88dvh] sm:max-h-[75vh]"
-        onClick={(e) => e.stopPropagation()}
+        {...containerProps}
+        className="relative z-10 w-full max-w-2xl bg-card/95 border border-border/80 shadow-2xl rounded-2xl overflow-hidden glass-surface flex flex-col max-h-[88dvh] sm:max-h-[75vh] outline-none"
         onKeyDown={handleKeyDown}
       >
         {/* 顶部搜索框区域 */}
@@ -594,11 +669,16 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
             <Input
               ref={inputRef}
               aria-label="全局超级搜索与系统指令"
+              role="combobox"
+              aria-expanded={hasListbox}
+              aria-controls={hasListbox ? listboxId : undefined}
+              aria-autocomplete="list"
+              aria-activedescendant={activeOptionId}
               placeholder={
                 isCommandMode
                   ? '输入指令（如 canvas, copilot, theme, backup...）'
                   : isAiMode
-                  ? '输入任何问题，回车直达 Agnes 3.0 Flash 512K 深度推理...'
+                  ? '输入任何问题，回车直达 AI 深度问答...'
                   : '搜索站点、插件、输入 > 进入指令模式、输入 ? 询问 AI...'
               }
               value={query}
@@ -644,8 +724,8 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
             isGeekToolActive ? (
               <GeekMicroTools query={query} onSelectSample={(sample) => setQuery(sample)} />
             ) : (
-              <div className="space-y-1">
-                <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+              <div role="listbox" id="spotlight-cmd-listbox" aria-label="系统快捷指令" className="space-y-1">
+                <div role="presentation" className="px-3 py-1.5 text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
                   <Zap className="w-3.5 h-3.5 text-amber-500" />
                   <span>系统控制台快捷指令 & 极客微工具</span>
                 </div>
@@ -661,6 +741,9 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
                       <div
                         key={cmd.id}
                         onClick={() => cmd.handler()}
+                        id={optionIdOf(idx)}
+                        role="option"
+                        aria-selected={isSelected}
                         className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${
                           isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted/50 text-foreground'
                         }`}
@@ -691,7 +774,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
               <div className="p-4 rounded-xl border border-purple-500/20 bg-purple-500/5 space-y-3">
                 <div className="flex items-center gap-2 text-xs font-semibold text-purple-700 dark:text-purple-300">
                   <Sparkles className="w-4 h-4 text-purple-500" />
-                  <span>Agnes 3.0 Flash 512K 生产力问答</span>
+                  <span>AI 生产力问答</span>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   {cleanAiPrompt
@@ -841,7 +924,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
                         <Radio className="w-4 h-4 text-cyan-500" />
                         <div>
                           <div className="text-xs font-medium">NavDrop 快传</div>
-                          <div className="text-[10px] text-muted-foreground">局域网 P2P</div>
+                          <div className="text-[10px] text-muted-foreground">同浏览器直连</div>
                         </div>
                       </button>
                       <button
@@ -865,8 +948,8 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
 
               {/* 站点检索结果列表 (RRF 混合召回) */}
               {hits.length > 0 && (
-                <div className="space-y-1">
-                  <div className="px-3 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between">
+                <div role="listbox" id="spotlight-site-listbox" aria-label={`站点检索结果，共 ${hits.length} 条`} className="space-y-1">
+                  <div role="presentation" className="px-3 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <Layers className="w-3.5 h-3.5" />
                       <span>导航站点（RRF 混合多通道排序）</span>
@@ -885,10 +968,12 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
                       <div
                         key={hit.siteId}
                         onClick={() => {
-                          reportClick(hit.siteId, identity)
-                          window.open(safeHref(site.url, '#'), '_blank', 'noopener,noreferrer')
+                          openSite(site)
                           setOpen(false)
                         }}
+                        id={optionIdOf(idx)}
+                        role="option"
+                        aria-selected={isSelected}
                         className={`group flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-colors ${
                           isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted/40 text-foreground'
                         }`}
@@ -925,6 +1010,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
                               return (
                                 <span
                                   key={ch}
+                                  title={ch === 'personal' ? '来自你近 30 天的点击与收藏偏好（可在「偏好设置」查看或清理画像）' : undefined}
                                   className={`text-[10px] px-1.5 py-0.2 rounded-full border font-medium ${meta.className}`}
                                 >
                                   {meta.label}
@@ -954,7 +1040,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
 
                           <button
                             type="button"
-                            className="p-1 rounded-md text-muted-foreground hover:text-foreground opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                            className="p-1.5 -m-0.5 rounded-md text-muted-foreground hover:text-foreground focus-visible:opacity-100 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity"
                             title="离线纯净阅读快照"
                             aria-label={`离线纯净阅读 ${site.title}`}
                             onClick={(e) => {
@@ -968,7 +1054,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
 
                           <button
                             type="button"
-                            className="p-1 rounded-md text-muted-foreground hover:text-foreground opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
+                            className="p-1.5 -m-0.5 rounded-md text-muted-foreground hover:text-foreground focus-visible:opacity-100 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity"
                             title="复制网址"
                             aria-label={`复制网址 ${site.url}`}
                             onClick={(e) => handleCopy(site.url, site.id, e)}
@@ -986,7 +1072,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
 
               {/* 插件市场并行召回 */}
               {pluginHits && pluginHits.items.length > 0 && (
-                <div className="pt-2 border-t border-border/40 space-y-1">
+                <div role="listbox" id="spotlight-plugin-listbox" aria-label={`插件检索结果，共 ${pluginHits.items.length} 条`} className="pt-2 border-t border-border/40 space-y-1">
                   <div className="px-3 py-1 text-xs font-semibold text-muted-foreground flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <Store className="w-3.5 h-3.5 text-rose-500" />
@@ -1014,6 +1100,9 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
                           setOpen(false)
                           router.push(`/marketplace/${encodeURIComponent(plugin.slug)}`)
                         }}
+                        id={optionIdOf(itemIndex)}
+                        role="option"
+                        aria-selected={isSelected}
                         className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-colors ${
                           isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted/40 text-foreground'
                         }`}
@@ -1040,15 +1129,55 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
                 </div>
               )}
 
-              {/* 零结果提示 */}
+              {/* 零结果提示：「没搜到」和「没搜成」是两句话，不能混着说 */}
               {!loading && query.trim() && hits.length === 0 && (!pluginHits || pluginHits.items.length === 0) && (
                 <div className="py-12 text-center space-y-2">
-                  <div className="text-xs text-muted-foreground">
-                    未找到与 “<span className="text-foreground font-medium">{query}</span>” 相关的站点或插件
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">
-                    提示：输入 <span className="font-mono text-primary">&gt;</span> 可执行系统控制指令，或输入 <span className="font-mono text-primary">?</span> 呼出 AI 助手
-                  </div>
+                  {sitesUnavailable ? (
+                    <>
+                      <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        <span>站点检索请求失败，暂时无法确认有没有匹配结果</span>
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => setSearchNonce((n) => n + 1)}
+                          className="text-[11px] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted/60 transition-colors"
+                        >
+                          重试
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs text-muted-foreground">
+                        未找到与 “<span className="text-foreground font-medium">{query}</span>” 相关的站点或插件
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        提示：输入 <span className="font-mono text-primary">&gt;</span> 可执行系统控制指令，或输入 <span className="font-mono text-primary">?</span> 呼出 AI 助手
+                      </div>
+                    </>
+                  )}
+                  {externalSearchHref && (
+                    <div>
+                      <a
+                        href={externalSearchHref}
+                        target={linkTarget}
+                        rel="noopener noreferrer nofollow"
+                        onClick={() => setOpen(false)}
+                        className="text-[11px] px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors inline-flex items-center gap-1"
+                      >
+                        <ExternalLink className="h-3 w-3" aria-hidden />
+                        <span>用 {externalSearchName} 搜索「{query.trim()}」</span>
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* 站点通道挂了但插件有结果：说清「下面不完整」，不要让用户以为整站就这些 */}
+              {!loading && sitesUnavailable && hits.length === 0 && !!pluginHits && pluginHits.items.length > 0 && (
+                <div className="px-3 py-2 text-[11px] text-amber-600 dark:text-amber-400">
+                  站点检索通道暂时不可用，以下只有插件结果。
                 </div>
               )}
             </>
@@ -1101,7 +1230,7 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
         />
       )}
 
-      {/* NavDrop 局域网隔空快传 */}
+      {/* NavDrop 跨标签页快传（BroadcastChannel，仅同一浏览器） */}
       {airdropOpen && <P2PAirDropModal open={airdropOpen} onOpenChange={setAirdropOpen} />}
     </>
   )

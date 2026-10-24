@@ -14,6 +14,47 @@ import type { HomeDIYConfig } from './home-diy-storage'
 
 export type HomeDiyPersist = (updater: (prev: HomeDIYConfig) => HomeDIYConfig) => void
 
+/** 还原结果：message 已经带上「还原了什么 / 丢掉了什么」，调用方直接展示即可 */
+export interface HomeDiyImportResult {
+  ok: boolean
+  message: string
+  /** 被白名单或上限吃掉的用户内容条数（0 且 notes 为空才谈得上全量） */
+  dropped: number
+  notes: string[]
+  /** 「还原了什么」的小结，不含成功/失败语气，供其它入口复用 */
+  summary?: string
+}
+
+function summarizeDiyCounts(config: any): string {
+  const cats = Array.isArray(config?.customCategories) ? config.customCategories : []
+  const siteCount = cats.reduce(
+    (n: number, c: any) => n + (Array.isArray(c?.items) ? c.items.length : 0),
+    0,
+  )
+  const listCount = ['categoryOrder', 'pinnedCategoryIds', 'hiddenCategoryIds', 'collapsedCategoryIds'].reduce(
+    (n: number, k: string) => n + (Array.isArray(config?.[k]) ? config[k].length : 0),
+    0,
+  )
+  const widgetCount = Array.isArray(config?.heroDeckWidgets) ? config.heroDeckWidgets.length : 0
+  return `自定义分类 ${cats.length} 个（站点 ${siteCount} 条）、分类排序/显隐 ${listCount} 项、首屏小组件 ${widgetCount} 个`
+}
+
+/**
+ * 把清洗台账翻成给用户看的一句话。
+ * 「全量还原」是无法验证的断言：清洗本身带白名单和上限，只有 dropped===0 且 notes 为空才谈得上全量。
+ */
+export function describeDiyRestoreReport(config: any, report: { dropped: number; notes: string[] }): string {
+  const counts = summarizeDiyCounts(config)
+  if (!report.notes.length) return `${counts}，未发现被丢弃的内容`
+  const shown = report.notes.slice(0, 3).join('；')
+  const more = report.notes.length > 3 ? ` 等 ${report.notes.length} 项` : ''
+  const head =
+    report.dropped > 0
+      ? `${report.dropped} 条内容因白名单或上限被丢弃/截断`
+      : '部分设置值不在支持列表，已回退默认'
+  return `${counts}；${head}：${shown}${more}`
+}
+
 export function exportDIYConfig(config: HomeDIYConfig): string {
   return JSON.stringify(config, null, 2)
 }
@@ -21,17 +62,24 @@ export function exportDIYConfig(config: HomeDIYConfig): string {
 export function importDIYConfig(
   jsonString: string,
   persist: HomeDiyPersist,
-): { ok: boolean; message: string } {
+): HomeDiyImportResult {
   try {
     const parsed = JSON.parse(jsonString)
     const res = validateAndCleanDIYConfig(parsed)
     if (!res.valid || !res.config) {
-      return { ok: false, message: res.error || '无效的配置格式' }
+      return { ok: false, message: res.error || '无效的配置格式', dropped: 0, notes: res.notes }
     }
     persist(() => ({ ...(res.config as HomeDIYConfig), updatedAt: Date.now() }))
-    return { ok: true, message: '配置已成功导入并生效！' }
+    const summary = describeDiyRestoreReport(res.config, res)
+    return {
+      ok: true,
+      message: `配置已导入并生效：${summary}`,
+      dropped: res.dropped,
+      notes: res.notes,
+      summary,
+    }
   } catch (e: any) {
-    return { ok: false, message: `JSON 解析失败: ${e.message || '格式错误'}` }
+    return { ok: false, message: `JSON 解析失败: ${e.message || '格式错误'}`, dropped: 0, notes: [] }
   }
 }
 
@@ -47,21 +95,28 @@ export async function importEncryptedDIYConfig(
   encryptedJsonStr: string,
   passphrase: string,
   persist: HomeDiyPersist,
-): Promise<{ ok: boolean; message: string }> {
+): Promise<HomeDiyImportResult> {
   try {
     const parsed = JSON.parse(encryptedJsonStr)
     if (!parsed.cipherTextBase64 || !parsed.ivHex || !parsed.saltHex) {
-      return { ok: false, message: '无效的零知识金库密文包格式' }
+      return { ok: false, message: '无效的零知识金库密文包格式', dropped: 0, notes: [] }
     }
     const decrypted = await decryptGenericPayload<HomeDIYConfig>(parsed, passphrase)
     const res = validateAndCleanDIYConfig(decrypted)
     if (!res.valid || !res.config) {
-      return { ok: false, message: res.error || '解密数据校验失败' }
+      return { ok: false, message: res.error || '解密数据校验失败', dropped: 0, notes: res.notes }
     }
     persist(() => ({ ...(res.config as HomeDIYConfig), updatedAt: Date.now() }))
-    return { ok: true, message: '🎉 零知识金库验证成功，排版与专属配置已全量还原！' }
+    const summary = describeDiyRestoreReport(res.config, res)
+    return {
+      ok: true,
+      message: `零知识金库解密成功，配置已还原：${summary}`,
+      dropped: res.dropped,
+      notes: res.notes,
+      summary,
+    }
   } catch (e: any) {
-    return { ok: false, message: e.message || '解密失败：主密码不匹配或密文已被篡改' }
+    return { ok: false, message: e.message || '解密失败：主密码不匹配或密文已被篡改', dropped: 0, notes: [] }
   }
 }
 
@@ -98,23 +153,37 @@ export async function syncToCloudVault(
 export async function syncFromCloudVault(
   passphrase: string,
   persist: HomeDiyPersist,
-): Promise<{ success: boolean; error?: string; updatedAt?: number }> {
+): Promise<{
+  success: boolean
+  error?: string
+  updatedAt?: number
+  dropped: number
+  notes: string[]
+  /** 还原内容小结（条数 + 丢弃申报），界面直接展示 */
+  summary?: string
+}> {
   if (!passphrase) {
-    return { success: false, error: '请输入解密主密码' }
+    return { success: false, error: '请输入解密主密码', dropped: 0, notes: [] }
   }
   const identity = getIdentity()
   if (!identity) {
-    return { success: false, error: '无法获取用户身份标识' }
+    return { success: false, error: '无法获取用户身份标识', dropped: 0, notes: [] }
   }
   const cloudRecord = await fetchCloudVault(identity)
   if (!cloudRecord || !cloudRecord.payload) {
-    return { success: false, error: '云端暂未查询到该身份的备份金库' }
+    return { success: false, error: '云端暂未查询到该身份的备份金库', dropped: 0, notes: [] }
   }
   const res = await importEncryptedDIYConfig(cloudRecord.payload, passphrase, persist)
   if (!res.ok) {
-    return { success: false, error: res.message || '云端金库解密校验失败' }
+    return { success: false, error: res.message || '云端金库解密校验失败', dropped: res.dropped, notes: res.notes }
   }
-  return { success: true, updatedAt: cloudRecord.updatedAt }
+  return {
+    success: true,
+    updatedAt: cloudRecord.updatedAt,
+    dropped: res.dropped,
+    notes: res.notes,
+    summary: res.summary,
+  }
 }
 
 export async function checkCloudVaultStatus(): Promise<{

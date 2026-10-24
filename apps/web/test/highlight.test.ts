@@ -33,17 +33,17 @@ function hits(text: string, query: string): string[] {
 }
 
 /**
- * 定位 overlay 里的 search-bar.tsx。
+ * 定位 overlay 里的源码文件。
  * 测试文件有两份（overlay 源 + apps/web 里的镜像），相对路径不同，
  * 因此按「路径里必须含 web-overlay」消歧 —— 镜像副本若误指向 apps/web/src，
  * 就会去校验上游底座那份文件，断言失去意义。
  */
-function overlaySearchBar(): string {
-  const candidates = ["../src/components/search-bar.tsx", "../../web-overlay/src/components/search-bar.tsx"].map(
-    (rel) => fileURLToPath(new URL(rel, import.meta.url)),
+function overlaySource(rel: string): string {
+  const candidates = [`../${rel}`, `../../web-overlay/${rel}`].map(
+    (p) => fileURLToPath(new URL(p, import.meta.url)),
   );
   const hit = candidates.find((p) => p.replace(/\\/g, "/").includes("/web-overlay/") && existsSync(p));
-  if (!hit) throw new Error("无法定位 overlay 的 search-bar.tsx（候选：" + candidates.join(" | ") + "）");
+  if (!hit) throw new Error("无法定位 overlay 的 " + rel + "（候选：" + candidates.join(" | ") + "）");
   return hit;
 }
 
@@ -137,7 +137,8 @@ describe("highlightParts：正则元字符不许把渲染打崩", () => {
 });
 
 describe("search-bar.tsx：高亮实现必须走安全路径", () => {
-  const source = readFileSync(overlaySearchBar(), "utf8");
+  const source = readFileSync(overlaySource("src/components/search-bar.tsx"), "utf8");
+  const hotkeyOwner = readFileSync(overlaySource("src/lib/user-preferences.ts"), "utf8");
 
   it("复用 @/lib/highlight 的 highlightParts", () => {
     expect(source).toContain("import { highlightParts } from '@/lib/highlight'");
@@ -149,9 +150,14 @@ describe("search-bar.tsx：高亮实现必须走安全路径", () => {
     expect(source).not.toMatch(/new RegExp\(\s*[a-zA-Z_$]*searchQuery/);
   });
 
-  it("⌘K / Ctrl+K 快捷键对大小写不敏感（Caps Lock 下也要能用）", () => {
-    expect(source).toMatch(/event\.key\.toLowerCase\(\)\s*===\s*'k'/);
-    expect(source).not.toMatch(/event\.key\s*===\s*'k'/);
+  it("⌘K / Ctrl+K 对大小写不敏感（Caps Lock 下也要能用）——判据只有一个主人", () => {
+    // 呼出键的主人改到了 spotlightHotkeyMatches（内联搜索框再挂一份 keydown
+    // 会与超级控制台弹窗抢同一次按键：既开弹窗又抢焦点）。所以大小写的断言
+    // 跟着搬到主人身上，同时钉住「search-bar 不再自己抢 ⌘K」。
+    expect(hotkeyOwner).toMatch(/key\.toLowerCase\(\)\s*===\s*'k'/);
+    expect(hotkeyOwner).not.toMatch(/event\.key\s*===\s*'k'/);
+    expect(source).not.toMatch(/toLowerCase\(\)\s*===\s*'k'/);
+    expect(source).not.toMatch(/key\s*===\s*'k'/);
   });
 
   it("搜索输入与清空按钮有可访问名称", () => {

@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -36,6 +37,7 @@ import {
   type HubPluginItem,
   type HubPluginAuditReport,
 } from '@/lib/navhub-api'
+import { AuditDimensionTile } from './audit-dimension-tile'
 import {
   type PluginKind,
   type PluginManifest,
@@ -119,7 +121,7 @@ export function AiPluginStudioModal({
   const [manifest, setManifest] = useState<PluginManifest | null>(initialManifest || null)
   const [rationale, setRationale] = useState('')
   const [reasoningContent, setReasoningContent] = useState<string | undefined>()
-  const [generationModel, setGenerationModel] = useState<string>('agnes-3.0-flash')
+  const [generationModel, setGenerationModel] = useState<string | null>(null)
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
   const [history, setHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string; timestamp: number }>>([])
 
@@ -299,7 +301,7 @@ export function AiPluginStudioModal({
         setManifest(res.manifest)
         setRationale(res.rationale || '已根据您的需求规划完成')
         setReasoningContent(res.reasoningContent)
-        setGenerationModel(res.model || 'agnes-3.0-flash')
+        setGenerationModel(res.model?.trim() || null)
         setLatencyMs(res.latencyMs || null)
         setHistory((prev) => [
           ...prev,
@@ -518,7 +520,7 @@ export function AiPluginStudioModal({
                   AI 智能插件工坊 (AI Plugin Studio)
                 </DialogTitle>
                 <Badge variant="outline" className="text-[10px] font-mono border-primary/30 text-primary bg-primary/5">
-                  Agnes 3.0 Flash 驱动
+                  {generationModel ? `${generationModel} 驱动` : 'AI 驱动 · 模型以中枢回报为准'}
                 </Badge>
               </div>
               <DialogDescription className="text-xs text-muted-foreground">
@@ -650,7 +652,7 @@ export function AiPluginStudioModal({
                   <Sparkles className="h-3 w-3 text-primary animate-spin" />
                   <span>
                     {enableThinking
-                      ? 'Agnes 3.0 Flash 正在深度思考规划中（通常需 10~25 秒）...'
+                      ? '正在深度思考规划中（通常需 10~25 秒）...'
                       : '正在极速生成插件清单（通常仅需 1~3 秒）...'}
                   </span>
                 </div>
@@ -684,7 +686,7 @@ export function AiPluginStudioModal({
                       )}
                     >
                       <div className="text-[10px] text-muted-foreground font-mono mb-0.5">
-                        {h.role === 'user' ? '用户需求' : 'Agnes 3.0 Flash 规划'}
+                        {h.role === 'user' ? '用户需求' : 'AI 规划'}
                       </div>
                       <p>{h.content}</p>
                     </div>
@@ -833,7 +835,7 @@ export function AiPluginStudioModal({
                     <Loader2 className="h-5 w-5 text-primary animate-spin absolute -bottom-1 -right-1" />
                   </div>
                   <div>
-                    <h4 className="text-sm font-semibold">Agnes 3.0 Flash 正在深度思考规划中...</h4>
+                    <h4 className="text-sm font-semibold">AI 正在深度思考规划中...</h4>
                     <p className="text-xs text-muted-foreground mt-1 max-w-sm">
                       正在根据 NavHub 全站生态知识库严选站点、编排结构并执行 100% 声明式 Schema 校验。
                     </p>
@@ -973,7 +975,7 @@ export function AiPluginStudioModal({
                               </div>
                               <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[10px]">
                                 <a
-                                  href={site.url}
+                                  href={safeHref(site.url)}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="text-primary hover:underline flex items-center gap-1 font-mono truncate max-w-[200px]"
@@ -1137,7 +1139,7 @@ export function AiPluginStudioModal({
                               <span className="text-primary">{previewUrl}</span>
                             </div>
                             <a
-                              href={previewUrl}
+                              href={safeHref(previewUrl)}
                               target="_blank"
                               rel="noreferrer"
                               className="text-primary hover:underline flex items-center gap-1 font-medium whitespace-nowrap"
@@ -1400,38 +1402,24 @@ export function AiPluginStudioModal({
                           <span className="text-xs font-bold text-foreground">AI 智能预检多维严审评分</span>
                           <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/30 font-mono">
                             {preAuditReport.score}分 · {preAuditReport.level.toUpperCase()}级
+                            {preAuditReport.decision === 'pending_review' && ' · 待复核'}
                           </Badge>
                         </div>
                         <span className="text-[10px] text-muted-foreground font-mono">
-                          审查模型: {preAuditReport.model}
+                          {/* model=none 说明这次没有模型参与，不能写成「审查模型」 */}
+                          {preAuditReport.llmReviewed
+                            ? `审查模型: ${preAuditReport.model}`
+                            : preAuditReport.model && preAuditReport.model !== 'none'
+                              ? `尝试的模型: ${preAuditReport.model}（未产出结论）`
+                              : '本次无模型参与：仅静态沙箱 + 外链探活'}
                         </span>
                       </div>
 
                       <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                        <div className="p-2 rounded-lg bg-background/80 border border-border/60">
-                          <div className="text-[10px] text-muted-foreground">静态安全 (30%)</div>
-                          <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                            {preAuditReport.dimensionScores?.security}分
-                          </div>
-                        </div>
-                        <div className="p-2 rounded-lg bg-background/80 border border-border/60">
-                          <div className="text-[10px] text-muted-foreground">外链探活 (25%)</div>
-                          <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                            {preAuditReport.dimensionScores?.availability}分
-                          </div>
-                        </div>
-                        <div className="p-2 rounded-lg bg-background/80 border border-border/60">
-                          <div className="text-[10px] text-muted-foreground">AI 合规 (25%)</div>
-                          <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                            {preAuditReport.dimensionScores?.compliance}分
-                          </div>
-                        </div>
-                        <div className="p-2 rounded-lg bg-background/80 border border-border/60">
-                          <div className="text-[10px] text-muted-foreground">语义相关 (20%)</div>
-                          <div className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                            {preAuditReport.dimensionScores?.relevance}分
-                          </div>
-                        </div>
+                        <AuditDimensionTile label="静态安全 (30%)" value={preAuditReport.dimensionScores?.security} className="p-2 text-center bg-background/80 border-border/60" />
+                        <AuditDimensionTile label="外链探活 (25%)" value={preAuditReport.dimensionScores?.availability} className="p-2 text-center bg-background/80 border-border/60" />
+                        <AuditDimensionTile label="AI 合规 (25%)" value={preAuditReport.dimensionScores?.compliance} className="p-2 text-center bg-background/80 border-border/60" />
+                        <AuditDimensionTile label="语义相关 (20%)" value={preAuditReport.dimensionScores?.relevance} className="p-2 text-center bg-background/80 border-border/60" />
                       </div>
 
                       <p className="text-[11px] text-muted-foreground leading-relaxed">
@@ -1571,7 +1559,11 @@ export function AiPluginStudioModal({
                         )}
                       </div>
                       <p className="text-[11px] text-muted-foreground mt-0.5 max-w-xl">
-                        {publishedPlugin.audit?.aiRationale || '所有外链探活正常，声明式规范合规，已自动建立向量与全文双索引。'}
+                        {/* 审理缺席时不能再补一句「外链全部正常、双索引已建立」：那是替没人确认的事签字 */}
+                        {publishedPlugin.audit?.aiRationale ??
+                          (publishedPlugin.audit
+                            ? '本次审理未返回文字结论；下方显示「未测」的维度代表本次没有测量，不是低分。'
+                            : '上架结果已提交，审计结论以插件详情页为准。')}
                       </p>
                     </div>
                   </div>
@@ -1604,30 +1596,10 @@ export function AiPluginStudioModal({
 
                 {publishedPlugin.audit?.dimensionScores && (
                   <div className="grid grid-cols-2 min-[420px]:grid-cols-4 gap-2 pt-1 border-t border-emerald-500/20 text-[11px]">
-                    <div className="p-1.5 rounded-lg bg-background/60 border border-border/50 text-center">
-                      <div className="text-[10px] text-muted-foreground">静态安全沙箱</div>
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                        {publishedPlugin.audit.dimensionScores.security}分
-                      </div>
-                    </div>
-                    <div className="p-1.5 rounded-lg bg-background/60 border border-border/50 text-center">
-                      <div className="text-[10px] text-muted-foreground">外链探活可用率</div>
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                        {publishedPlugin.audit.dimensionScores.availability}分
-                      </div>
-                    </div>
-                    <div className="p-1.5 rounded-lg bg-background/60 border border-border/50 text-center">
-                      <div className="text-[10px] text-muted-foreground">AI 合规反欺诈</div>
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                        {publishedPlugin.audit.dimensionScores.compliance}分
-                      </div>
-                    </div>
-                    <div className="p-1.5 rounded-lg bg-background/60 border border-border/50 text-center">
-                      <div className="text-[10px] text-muted-foreground">语义相关性</div>
-                      <div className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                        {publishedPlugin.audit.dimensionScores.relevance}分
-                      </div>
-                    </div>
+                    <AuditDimensionTile label="静态安全沙箱" value={publishedPlugin.audit.dimensionScores.security} className="p-1.5 text-center bg-background/60" />
+                    <AuditDimensionTile label="外链探活可用率" value={publishedPlugin.audit.dimensionScores.availability} className="p-1.5 text-center bg-background/60" />
+                    <AuditDimensionTile label="AI 合规反欺诈" value={publishedPlugin.audit.dimensionScores.compliance} className="p-1.5 text-center bg-background/60" />
+                    <AuditDimensionTile label="语义相关性" value={publishedPlugin.audit.dimensionScores.relevance} className="p-1.5 text-center bg-background/60" />
                   </div>
                 )}
               </div>
@@ -1639,8 +1611,15 @@ export function AiPluginStudioModal({
                 {manifest && (
                   <>
                     <span className="flex items-center gap-1 font-mono text-[11px]">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      <span>{generationModel}</span>
+                      <span
+                        className={
+                          generationModel
+                            ? 'h-1.5 w-1.5 rounded-full bg-emerald-500'
+                            : 'h-1.5 w-1.5 rounded-full bg-muted-foreground/40'
+                        }
+                      />
+                      {/* 中枢没回报模型名时不许顶一个默认厂商名：那等于替别人认领这份产物的出处 */}
+                      <span>{generationModel ?? '中枢未回报模型名'}</span>
                     </span>
                     {latencyMs && <span>· 耗时 {latencyMs}ms</span>}
                   </>

@@ -70,6 +70,9 @@ overrides:
   nanoid@<4: 3.3.18
   sharp: '>=0.35.5'
   undici: '>=7.29.1'
+  # body-parser <2.4.0 的高危 DoS（生产依赖）：express@5.3.0（经 MCP SDK）仍解析到
+  # 2.3.0，而 ci.yml 的 `audit --prod --audit-level high` 因此变红。统一到修复版。
+  body-parser: '>=2.4.0'
   next: 16.4.2
   tinypool: '>=2.1.2'
   postcss: '>=8.4.31'

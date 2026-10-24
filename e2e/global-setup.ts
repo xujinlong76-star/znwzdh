@@ -8,7 +8,16 @@ import { dirname, resolve } from 'node:path'
  * 此前 Playwright 的 webServer 直接启动 scripts/dev-all.mjs（写死开发库），
  * 导致开发库被 e2e-* 残留污染、真实种子插件反而进不去。
  */
-export const E2E_DB_PATH = resolve(process.cwd(), 'data/e2e/navhub-e2e.db')
+/**
+ * 默认路径不变（CI 与 `playwright test` 都用它）。
+ * 可用 `NAVHUB_E2E_DB_PATH` 覆盖——本机多会话并行时，两个 E2E 进程会同时
+ * 重置同一个库：先启动的那个跑到一半，后启动的把库删了重来，表现为
+ * 「API 异常退出 / 用例成片失败」，而报错完全不指向真正的冲突方。
+ * `scripts/e2e-local.mjs` 用它指向独立库，与独立输出目录同理。
+ */
+export const E2E_DB_PATH = process.env.NAVHUB_E2E_DB_PATH
+  ? resolve(process.cwd(), process.env.NAVHUB_E2E_DB_PATH)
+  : resolve(process.cwd(), 'data/e2e/navhub-e2e.db')
 
 /**
  * 每轮 E2E 都从空库开始（与 CI 行为一致：CI 的 test-e2e 作业同样不播种）。

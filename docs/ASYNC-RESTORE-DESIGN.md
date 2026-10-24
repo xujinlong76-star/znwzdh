@@ -15,6 +15,10 @@
 > - 完成态是 **`done`**，不是 `completed`；
 > - `jobId` 不进 `payload`（入队时才生成），由 `process()` 注入；
 > - status 不返回 `result`（任务不持久化结果），只返回 `progress` + `error` + `retryable`。
+>
+> 📌 **2026-10-25 深度审阅**：[`ASYNC-RESTORE-REVIEW-2026-10-25.md`](ASYNC-RESTORE-REVIEW-2026-10-25.md)。
+> 结论是「结构正确、可用，但**任务重试会产生重复站点行**」——方案的幂等论证只在
+> 请求级成立。后续 11 项改进（A1–A11）按优先级排在那份文档里。
 
 ---
 
@@ -41,14 +45,20 @@
 
 1. 恢复**不再占用 HTTP 请求时长**，无论多少条都不会因超时失败；
 2. 调用方能**看到进度**（处理到第几条 / 是否在跑）；
-3. 失败可归因（哪一批、什么原因），且**不留半套数据**；
+3. 失败可归因（哪一片、什么原因），且**状态如实**（留下了几片就说几片）；
 4. 与现有同步端点**共存**，不破坏任何调用方。
+
+> ⚠️ 目标 3 的初稿写的是「不留半套数据」，**与分片方案直接矛盾**（选分片的前提就是
+> 承认失败时可能留下前几片）。已按实现改正。完整的问题分析见
+> [`ASYNC-RESTORE-REVIEW-2026-10-25.md`](ASYNC-RESTORE-REVIEW-2026-10-25.md)。
 
 ### 1.4 明确不做
 
 - 不改 `insertSitesBulk` / `createdAt` 等存储语义（那是另一条线）；
-- 不做断点续传（恢复本身幂等，重跑即可，收益不值复杂度）；
-- 不改前端 admin 页面（当前**没有恢复入口**，见 §7）。
+- 不做断点续传（恢复本身幂等，重跑即可，收益不值复杂度）。
+
+> 已过期：初稿这一节还写了「不改前端 admin 页面」——前端 `/admin/data/restore`
+> 已经做完了（选文件 → 预演 → 勾选 → 执行/后台进度），见 §7。
 
 ---
 
@@ -57,10 +67,14 @@
 ### 2.1 提交恢复任务
 
 ```
-POST /api/backup/restore/async?dryRun=false
+POST /api/backup/restore/async
 Content-Type: application/json
 <与同步端点完全相同的备份包>
 ```
+
+> 实现与初稿的两处差异：端点**不接受** `dryRun` 参数（预演另有 `?dryRun=true` 的
+> 同步端点，异步提交必然是真写）；202 响应**没有** `stagedBytes`，返回的是
+> `skipped` 与 `message`。
 
 - `scope: admin`、`rateLimit: max 10 / 1 minute`（比同步端点更严：每次都会产生持久化任务）；
 - 备份包校验、URL 规整、分类计划计算**全部在请求内完成**（这几步是毫秒级，见实测的 388 ms 预演）；
@@ -71,10 +85,15 @@ Content-Type: application/json
   "ok": true,
   "jobId": "01j...",
   "accepted": { "categories": 12, "sites": 50000 },
-  "stagedBytes": 1887436,
-  "statusUrl": "/api/backup/restore/status/01j..."
+  "skipped": { "duplicateCategories": 0, "invalidUrls": 0, "duplicateUrls": 0 },
+  "statusUrl": "/api/backup/restore/status/01j...",
+  "message": "已入队：将恢复 12 个分类与 50000 个站点（进度见 statusUrl）"
 }
 ```
+
+> 未实现（初稿 §6 的设计）：响应里的 `asyncRecommended` 字段**从未加上**。
+> 实际的切换方式是前端按「预演算出的将写入站点数 > 5000」自行决定走哪个端点，
+> 后端不提示。这比后端提示更直接，但意味着 curl 调用方需要自己判断。
 
 **为什么校验必须在请求内**：把一份非法备份入队，用户要等到任务跑起来才知道「版本号不对」。校验是廉价的，错误应该立即返回 400。
 
@@ -152,16 +171,23 @@ data/restore-staging/<uuid>.json    # 规范化后的条目（不是原始上传
 ```ts
 // apps/api/src/jobs.ts
 case "backup_restore":
-  await this.runBackupRestore((payload ?? {}) as { stagingPath?: string; jobId?: string });
+  // jobId 由 process() 注入，不来自 payload（入队时才生成）
+  await this.runBackupRestore((payload ?? {}) as { stagingPath?: string }, jobId);
   break;
 
-private async runBackupRestore(payload: { stagingPath?: string; jobId?: string }): Promise<void> {
-  const { stagingPath, jobId } = payload;
-  if (!stagingPath || !jobId) throw new Error("backup_restore 缺少 stagingPath / jobId");
+private async runBackupRestore(payload: { stagingPath?: string }, jobId: string): Promise<void> {
+  const { stagingPath } = payload;
+  if (!stagingPath) throw new Error("backup_restore 缺少 stagingPath");
 
   // 1) 读 staging（不存在 = 已被处理或过期，按失败上报而不是静默成功）
   const raw = await readFile(stagingPath, "utf8");
   const plan = JSON.parse(raw) as { categories: PlannedCategory[]; sites: PlannedSite[] };
+
+  // 1.5) staging 里的站点必须都已解析出 categoryId——端点入队前就该做完。
+  //      任务侧不做「兜底塞进未分类」：一条脏数据静默改变用户的分类结构，
+  //      比明确失败更难发现。
+  const missing = plan.sites.find((s) => !s.categoryId);
+  if (missing) throw new Error(`staging 里有站点缺少 categoryId（例如 ${missing.url}）`);
 
   // 2) 分片提交：每 2000 条一个事务
   //    为什么分片而不是单事务：单事务 5 万条要持写锁 30 秒以上，
@@ -174,12 +200,17 @@ private async runBackupRestore(payload: { stagingPath?: string; jobId?: string }
     await this.ctx.repo.withTransaction(async () => {
       await this.ctx.repo.insertSitesBulk(slice.map(toInput), { hydrate: false });
     });
+    // ⚠️ done 记的是「本片条数」，不是实际插入条数，且**本片不去重**——
+    // 重试时会把已提交的片再插一遍。这是已知缺口，修复方案见审阅文档 A1。
     done += slice.length;
     await this.ctx.repo.updateJobProgress(jobId, { done, total: plan.sites.length });
   }
 
   // 3) 收尾：入队 reindex（语义检索补齐）+ 清理 staging
-  await this.ctx.repo.enqueueJob("reindex", { vectors: true });
+  if (plan.sites.length > 0) {
+    await this.ctx.repo.enqueueJob("reindex", { vectors: true });
+  }
+  // 只有成功才走到这里：失败时 staging 保留，供复盘与重跑
   await unlink(stagingPath).catch(() => undefined);
 }
 ```
@@ -189,10 +220,17 @@ private async runBackupRestore(payload: { stagingPath?: string; jobId?: string }
 | | 单事务 | 分片（2000/片） |
 |---|---|---|
 | 原子性 | 全有全无 | 失败时可能留下前几片 |
-| 写锁时长 | 30 秒+ | 每片约 1.5 秒 |
+| 写锁时长 | 30 秒+（外推） | 每片约 1.5 秒（**未实测**，见下） |
 | 失败恢复 | 重跑整包 | 重跑整包（幂等，已导入的跳过） |
 
-选分片：**写锁时长是可用性问题，幂等性可以兜住原子性**。但必须保证：
+> ⚠️ 「每片约 1.5 秒」是估的，没有基准数据。现有唯一实测点是「2100 条跨两片 9 秒」，
+> 折算单片约 4.5 秒——是文档值的 3 倍。2000 这个片大小也从未做过 knee 测量。
+> 这两个数字都待 A11（分片基准）补齐，别把它当事实引用。
+
+选分片：**写锁时长是可用性问题，幂等性可以兜住原子性**——但这句话只在
+**请求级**成立，任务重试级不成立（见 §8 验收第 5 条的说明与审阅文档 R1）。
+
+必须保证：
 
 1. `insertSitesBulk` 的 URL 去重是真的幂等（已验证：`findExistingSiteUrls` 只认 `deleted_at IS NULL`）；
 2. 失败时**不删** staging（否则重跑没数据）；
@@ -234,7 +272,7 @@ ALTER TABLE jobs ADD COLUMN progress_total INTEGER NOT NULL DEFAULT 0;
 |---|---|
 | 备份包非法 | 请求内 400，**不入队** |
 | staging 写入失败 | 500，不入队（磁盘满 / 权限） |
-| 任务执行抛错 | job 记 `failed` + `reason`（复用 `classifyRestoreError`），staging 保留 24h |
+| 任务执行抛错 | job 记 `failed` + `reason`（复用 `classifyRestoreError`），staging 保留（清理由 `sweepStaleStaging` 在下次提交时顺手做，见 §3） |
 | 任务超时（`timeoutMs`） | 由 JobRunner 标记失败并放行下一轮（既有语义：超时后僵尸 handler 可能仍在跑，见 `jobs.ts` 注释） |
 | 进程被杀 | 任务停留在 `running`，**最多 15 分钟**后被 `reapStaleJobs` 回收重试（判定 `updated_at < now-15min`）；staging 仍在，重跑幂等 |
 
@@ -244,30 +282,39 @@ ALTER TABLE jobs ADD COLUMN progress_total INTEGER NOT NULL DEFAULT 0;
 
 ## 6. 与同步端点的关系
 
-保留 `POST /api/backup/restore`（同步），并在响应里加一个提示字段：
+保留 `POST /api/backup/restore`（同步），作为「小备份的快速通道」
+（`LONG_RUNNING_ROOTS` 已给到 120 秒）。不强制切换——已有脚本/CI 依赖同步语义。
 
-```json
-{ "ok": true, ..., "asyncRecommended": true }
-```
-
-规则：条目数 > `NAVHUB_RESTORE_ASYNC_THRESHOLD`（默认 5000）时 `asyncRecommended: true`。不强制切换——已有脚本/CI 依赖同步语义，破坏它们不值当。
-
-同步端点保持现状（`LONG_RUNNING_ROOTS` 已给到 120 秒），作为「小备份的快速通道」。
+> 未实现：初稿计划给同步响应加 `asyncRecommended` 字段来提示调用方。**没有做**，
+> 也不打算做：唯一的调用方是管理端，它在**预演之后**就知道条数，自己判断即可，
+> 多一个服务端字段只是多一处要维护的口径。
+>
+> 实际切换规则（前端）：`preview.wouldRestore.sites > 5000` 时走异步，否则同步。
+> 用「预演算出的将写入条数」而不是包里的原始条数——重复率高的包实际只写很少，
+> 推给后台任务是浪费。
 
 ---
 
-## 7. 前端（当前没有入口）
+## 7. 前端（已实现）
 
-`grep -r "backup/restore" apps/web-overlay/src` 的结果为空——**admin 冷备目前只能手工 curl**。这本身是一个独立缺口。
+初稿在这里写的是「当前没有入口，只能手工 curl」——那个缺口已经补上了：
+`/admin/data/restore`（选文件 → 预演 → 勾选确认 → 执行/后台进度）。
 
-异步化之后补一个最小页面 `/admin/data/restore`：
+实际行为（与初稿设想的三处不同）：
 
-1. 选文件 → 预演（现有 `dryRun=true`）→ 显示「将新增 N 分类 / M 站点」；
-2. 确认 → `POST .../async` → 拿到 jobId；
-3. 每 2 秒轮询 status，展示 `done/total` 进度条；
-4. 完成 → 跳转 `/admin/sitelist` 并提示「已恢复 N 条，语义索引正在后台重建」。
+1. 选文件 → 本地解析并显示分类数/站点数/导出时间/大小 → 点「预演」才发请求；
+2. 预演结果给出将新增与跳过项；**必须先勾选确认**才能执行；
+3. 站点数 > 5000 时自动提交 `.../async`，展示 `done/total` 进度条；
+4. 轮询间隔 **1.5 秒**（初稿写 2 秒），终态自动停；
+5. 「转到后台，先离开本页」停止轮询但**不中断任务**；jobId 存 sessionStorage，
+   刷新/换标签回来能接上（24 小时内）；
+6. 完成后**不跳转**（初稿设想跳 `/admin/sitelist`）——原地展示结果，
+   避免用户被带走后不知道刚才做了什么。
 
-轮询要有上限（例如 10 分钟）与「继续在后台跑」的出口——长任务不应该把标签页钉死。
+未做（初稿提议过）：轮询的 10 分钟上限与退避。见审阅文档 A9。
+
+失败措辞刻意与同步路径不同：后台任务说「已写入 N 条后失败，这些会保留」，
+**不说**「已整体回滚」——分片提交回不去。
 
 ---
 
@@ -279,24 +326,32 @@ ALTER TABLE jobs ADD COLUMN progress_total INTEGER NOT NULL DEFAULT 0;
 2. 非法备份返回 400，且**没有**创建任务与 staging（断言两张表/目录都无变化）；
 3. 任务跑完：站点数正确、`reindex` 任务已入队、staging 文件已删除；
 4. 中途抛错：job 为 `failed`、`reason` 正确、staging **保留**、已提交分片不丢；
-5. 重跑同一备份：第二次 `skipped` 全命中，不产生重复站点（幂等）；
-6. 进度：运行中 `progress.done` 单调不减，`completed` 时 `done === total`；
-7. `GET status` 对非发起者返回 404（不泄漏 job 存在性）；
+5. 重跑同一备份：第二次 `skipped` 全命中，不产生重复站点（**请求级**幂等）；
+6. 进度：运行中 `progress.done` 单调不减，`done`（终态）时 `done === total`；
+7. `GET status` 对非 admin 被 scope 拦截（403），对不存在的 id 返回 404
+   （初稿写的「非发起者 404」不成立：job 行没有 owner，权限是 admin-only）；
 8. 1 万条端到端 < 30 秒且请求本身 < 1 秒（核心指标：**请求时长与数据量解耦**）。
+
+> 第 5 条有个**未被覆盖的缺口**，也是本次审阅最重要的发现：
+> 「请求级幂等」成立（重新提交会重跑 `planRestore`），但**任务重试级不成立**——
+> 重试是从 `i=0` 重放冻结的 staging，而 `insertSitesBulk` 不去重、
+> `sites.url` 无唯一约束，于是已提交的分片会被再插一遍。
+> 分析与修复方案见 [`ASYNC-RESTORE-REVIEW-2026-10-25.md`](ASYNC-RESTORE-REVIEW-2026-10-25.md) 的 R1/A1。
 
 ---
 
-## 9. 工作量与顺序
+## 9. 工作量与顺序（全部已完成）
 
 | 步骤 | 文件 | 规模 |
 |---|---|---|
 | 1. `jobs` 加两列 + `updateJobProgress` | `migrate.ts` / `repository/jobs.ts` | 小 |
 | 2. `backup_restore` 任务 | `jobs.ts` | 中 |
 | 3. staging 读写 + 两个端点 | `routes/backup.ts` | 中 |
-| 4. 测试（上表 8 条） | `apps/api/test/backup-async*.test.ts` | 中 |
+| 4. 测试 | `apps/api/test/backup-async*.test.ts` / `backup-restore-job.test.ts` | 中 |
 | 5. admin 页面 | `app/admin/data/restore/page.tsx` | 中 |
 
-前 4 步完成即可用于生产（用 curl 触发）；第 5 步是体验补齐。
+这一节保留是作为「当时怎么拆的」的记录。后续改进不在这里追加——
+见 [`ASYNC-RESTORE-REVIEW-2026-10-25.md`](ASYNC-RESTORE-REVIEW-2026-10-25.md) 的 A1–A11。
 
 ---
 

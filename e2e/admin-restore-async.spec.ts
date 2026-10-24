@@ -136,13 +136,30 @@ async function gotoPage(page: Page) {
   await expect(page.getByRole('heading', { name: '恢复冷备' })).toBeVisible({ timeout: 120_000 })
 }
 
+/**
+ * 选文件并等本地解析摘要出现。
+ *
+ * 为什么要重试：`setInputFiles` 只是给 input 赋值并派发 change，**React 还没 hydrate
+ * 时没有任何监听器接收它**——文件"选上了"但页面毫无反应，且**不报错**。
+ * 用共享的 loginViaAdmin 后登录变快，这个窗口就从"几乎不会遇到"变成了每次都撞上。
+ * 所以这里显式重试，而不是靠 waitForTimeout 赌一个毫秒数。
+ */
 async function prepare(page: Page) {
-  await page.locator('#backup-file').setInputFiles({
-    name: 'e2e-async-backup.nhbak.json',
-    mimeType: 'application/json',
-    buffer: Buffer.from(JSON.stringify(BACKUP), 'utf8'),
-  })
-  await expect(page.getByText('e2e-async-backup.nhbak.json')).toBeVisible()
+  const input = page.locator('#backup-file')
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await input.setInputFiles({
+      name: 'e2e-async-backup.nhbak.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(BACKUP), 'utf8'),
+    })
+    const ok = await page
+      .getByText('e2e-async-backup.nhbak.json')
+      .waitFor({ state: 'visible', timeout: 3_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (ok) break
+    if (attempt === 4) throw new Error('选择文件后页面始终没显示文件名（hydration 未接管 input）')
+  }
   await page.getByRole('button', { name: /预演（不写库）/ }).click()
   await expect(page.getByText('预演结果')).toBeVisible({ timeout: 10_000 })
 }

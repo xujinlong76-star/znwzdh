@@ -86,6 +86,19 @@ L4 还有额外固定成本：需要独占端口（`scripts/e2e-local.mjs` 自�
    自查手段：在 handler 里 `console.log`，或断言「本用例应产生 N 次调用」。
 7. **PG 用例本地 skip 是正常的**（无 `NAVHUB_TEST_DATABASE_URL`），由 CI 的
    test-postgres 作业执行。新增 PG 用例时在 PR 描述里注明「仅 CI 验证」。
+8. **`setInputFiles` 必须重试**：它只是给 input 赋值并派发 change，**React 还没 hydrate
+   时没有监听器接收**——文件"选上了"、页面毫无反应，而且**不报错**，等到断言文件名
+   时才超时，报错完全指不到 hydration。写成"设值 → 等结果 → 失败再设一次（≤5 次）"。
+   登录流程越快（复用 `loginViaAdmin` 后），这个窗口越容易撞上。
+9. **并发会话的 E2E 必须隔离三样**：端口、Next 输出目录、数据库文件。
+   只隔离端口不够——两个进程会重置同一个 `data/e2e/navhub-e2e.db`，
+   后启动的删掉先启动的库，表现为「API 异常退出、用例成片红」，报错看不到真正的冲突方。
+   `node scripts/e2e-local.mjs` 默认已隔离全部三项（可用 `NAVHUB_E2E_DIST_DIR` /
+   `NAVHUB_E2E_DB_PATH` / `NAVHUB_E2E_SERVER_TIMEOUT` 覆盖）；直接跑 `playwright test`
+   仍是共用配置，多会话时不要用它。
+10. **内存不够会让 Next dev 直接崩**（退出码 `3221226505` / `2147483651`），
+    报错是 `Timed out waiting ... webServer`，看起来像启动慢。本机同时跑两套 E2E
+    基本必崩：先确认没有别人的 Playwright 在跑（`Win32_Process` 里看命令行），再启动。
 
 ## 5. 提交前的成本预算
 

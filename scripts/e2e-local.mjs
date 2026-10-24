@@ -81,6 +81,10 @@ const child = spawn(process.execPath, ['node_modules/@playwright/test/cli.js', .
     // 会报「Another next dev server is already running」（而不是端口冲突，很难猜）。
     // 固定后缀让本机多次运行能复用编译缓存。
     NAVHUB_E2E_DIST_DIR: process.env.NAVHUB_E2E_DIST_DIR || '.next-e2e-local',
+    // 独立库文件：与输出目录同理。默认库是所有 E2E 进程共用的，两个会话同时跑时
+    // 后启动的那个会删掉先启动那个正在用的库（表现为「API 异常退出、用例成片红」，
+    // 报错看不到真正的冲突方）。端口和输出目录都隔离了，库不隔离等于白做。
+    NAVHUB_E2E_DB_PATH: process.env.NAVHUB_E2E_DB_PATH || 'data/e2e/navhub-e2e-local.db',
   },
 })
 

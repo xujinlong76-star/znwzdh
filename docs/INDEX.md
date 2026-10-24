@@ -20,6 +20,7 @@
 |---|---|---|
 | 备份、恢复、演练 | [`BACKUP-RUNBOOK.md`](BACKUP-RUNBOOK.md) | 现行 |
 | 恢复的异步化设计（为什么分批、为什么 staging 落文件） | [`ASYNC-RESTORE-DESIGN.md`](ASYNC-RESTORE-DESIGN.md) | 现行 |
+| 恢复方案的深度审阅与后续 11 项改进（A1–A11） | [`ASYNC-RESTORE-REVIEW-2026-10-25.md`](ASYNC-RESTORE-REVIEW-2026-10-25.md) | 现行 |
 | 写测试：该写守卫还是 E2E | [`TESTING-CONVENTIONS.md`](TESTING-CONVENTIONS.md) | 现行 |
 | 上/回滚 CSP | [`CSP-ROLLOUT.md`](CSP-ROLLOUT.md) | 现行 |
 | 接 Prometheus 指标 | [`OBSERVABILITY.md`](OBSERVABILITY.md) | 现行 |

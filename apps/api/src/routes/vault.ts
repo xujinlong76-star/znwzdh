@@ -112,7 +112,9 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       target: "vault",
       diff: { hadVault: Boolean(existing), version: existing?.version ?? null },
     });
-    return { ok: true };
+    // 回执只说这次调用做了什么：deleted=false 表示云端本来就没有备份。
+    // 客户端若一律说「已删除你的云端备份」，用户会以为自己拥有一份其实从未存在的备份。
+    return { ok: true, deleted: Boolean(existing) };
   });
 
 };

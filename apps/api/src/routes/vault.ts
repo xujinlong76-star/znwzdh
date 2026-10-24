@@ -82,7 +82,19 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
+    // 删除前先读现状：审计要能回答「真删到了东西吗」，而不是只记一次调用。
+    const existing = await ctx.repo.getUserVault(identity);
     await ctx.repo.deleteUserVault(identity);
+    // 金库是硬删且不可撤销，属于 /me/activity 必须能看到的动作；
+    // 审计写入失败不影响主操作（仓储 audit() 自带 try/catch）。
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: identity,
+      actorKind: "user",
+      action: "vault.delete",
+      target: "vault",
+      diff: { hadVault: Boolean(existing), version: existing?.version ?? null },
+    });
     return { ok: true };
   });
 

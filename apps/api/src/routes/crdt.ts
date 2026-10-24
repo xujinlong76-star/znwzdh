@@ -147,7 +147,28 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const identity = await resolveCanonicalIdentity(ctx, rawIdentity);
-    await ctx.repo.deleteUserVault("crdt:" + identity);
+    const crdtKey = "crdt:" + identity;
+    // 删除前先读现状：审计记录要能区分「删掉了 N 条操作」与「本来就没有日志」。
+    const existing = await ctx.repo.getUserVault(crdtKey);
+    let deletedOperations: number | null = 0;
+    if (existing?.payload) {
+      try {
+        const parsed = JSON.parse(existing.payload) as { operations?: unknown };
+        deletedOperations = Array.isArray(parsed.operations) ? parsed.operations.length : null;
+      } catch {
+        deletedOperations = null;
+      }
+    }
+    await ctx.repo.deleteUserVault(crdtKey);
+    // 与金库删除同口径：不可逆动作必须出现在「我的操作记录」里。
+    await ctx.repo.audit({
+      ip: req.ip,
+      actor: identity,
+      actorKind: "user",
+      action: "crdt.delete",
+      target: "crdt",
+      diff: { hadLog: Boolean(existing), operations: deletedOperations },
+    });
     return { ok: true };
   });
 

@@ -55,10 +55,15 @@ export const DEFAULT_AI_UPSTREAM_TIMEOUT_MS = 120_000
  *    都被放到 120 秒，等于把卡死的普通查询也一起挂两分钟；
  *  - 收紧了真正需要时间的地方：真正的对话入口 `copilot/chat` 一个 `ai` 都不含，
  *    仍按 30 秒掐断 —— 用户问一句话只看到「中枢无响应」，而那其实是代理提前 abort。
- * 所以这里按**路径段**列举已知会打大模型 / 并发探活的端点，宁可漏列（走默认 30 秒）
- * 也不要靠子串猜。
+ * 所以这里按**路径段**列举已知会打大模型 / 并发探活 / 全库读写的端点，
+ * 宁可漏列（走默认 30 秒）也不要靠子串猜。
+ *
+ * `backup`（export / restore）与 `me/{import,export}` 是**全库读写**：
+ * 实测 1 万站点恢复 7.4 秒，5 万条上限线性外推约 37 秒，超过默认 30 秒。
+ * 后果不是「慢」而是**假失败**：代理先 504，中枢实际上已经提交事务，
+ * 用户以为失败而重试（恢复幂等，但会白等一次）。
  */
-const LONG_RUNNING_ROOTS = new Set(['copilot', 'enrich'])
+const LONG_RUNNING_ROOTS = new Set(['copilot', 'enrich', 'backup'])
 const LONG_RUNNING_PLUGIN_ACTIONS = new Set(['ai-audit', 'pre-audit', 'auto-fix', 'check-urls'])
 
 export function isLongRunningPath(path: string[] | string): boolean {
@@ -66,6 +71,10 @@ export function isLongRunningPath(path: string[] | string): boolean {
   if (segments.length === 0) return false
   if (LONG_RUNNING_ROOTS.has(segments[0])) return true
   if (segments[0] === 'sites' && segments[1] === 'auto') return true
+  // 全库导入/导出：`me` 根下绝大多数端点都是毫秒级，只认这两个动作
+  if (segments[0] === 'me' && (segments[1] === 'import' || segments[1] === 'export')) return true
+  // 批量写入：上限 200 条、每条都要算索引字段并做向量化，属于秒级端点
+  if (segments[0] === 'sites' && segments[1] === 'batch') return true
   // `/plugins/:slug/ai-audit` 的动作在末段，`/plugins/pre-audit` 在第二段 → 统一看是否命中动作名
   if (segments[0] === 'plugins' && LONG_RUNNING_PLUGIN_ACTIONS.has(segments[segments.length - 1])) return true
   // 精确的 `ai` 段：/user/ai/config、/admin/ai/config、/user/ai/plugin/generate

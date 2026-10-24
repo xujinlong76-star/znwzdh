@@ -331,6 +331,15 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         categories: restoredCategories,
         sites: restoredSites,
       },
+      /**
+       * 实测耗时随条目线性增长（1 万条约 7.4 秒，SQLite 本地）。
+       * 5 万条上限按此外推约 37 秒，**超过 BFF 代理的 30 秒读超时**——
+       * 调用方会看到 504，但数据其实已经落库。把耗时回传出去，
+       * 让「这次恢复为什么超时」变成可解释的事实，而不是靠猜。
+       */
+      durationMs: Date.now() - startedAt,
+      /** 异步补索引任务的入口提示：语义检索在 reindex 跑完后才完整 */
+      reindexQueued: restoredSites > 0,
     };
     },
   );

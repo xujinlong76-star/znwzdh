@@ -22,6 +22,9 @@
 | E8 | 巡检增补三项（悬空关联 / 向量缺口 / 向量残留） | 可观测 | 把恢复与批量写入的静默后果变成审计数字 |
 | E9 | `/admin/sitelist` 归属索引 + 筛选缓存 | 性能 | 6400 站点筛选 8.60ms → 4.85ms（**1.8x**），且弹窗等无关状态不再重算 |
 | E10 | PG 侧批量路径用例（4 例） | 测试 | 本轮新增的批量函数首次获得跨方言覆盖（CI 执行） |
+| E11 | 更正 pre-commit「不可用」的误判 | 记录 | hook 实测 41 文件 / 349 用例 / 124 秒 / 退出码 0；真实原因是调用超时 |
+| E12 | BFF 长耗时路径扩容 + 恢复响应回传耗时 | 可用性 | 5 万条恢复约 37 秒，原 30 秒超时会造成「504 但数据已写入」 |
+| E13 | `/admin/sitelist` E2E 4 例 | 测试 | 为后续组件拆分建立运行级安全网（本地未验证，CI 执行） |
 
 ---
 
@@ -239,21 +242,89 @@ skipped 的 28 条 = 4 条 PG 批量用例（无 `NAVHUB_TEST_DATABASE_URL`）+ 
 
 ---
 
-## 6. 未执行项与原因
+## 6. 第三轮：门禁诊断、容量压测与 E2E 安全网（E11–E13）
+
+### E11 更正：pre-commit 并非「本机不可用」
+
+前两批提交我都用了 `NAVHUB_SKIP_PRECOMMIT=1`，并在 commit message 里写「hook 选择器在本机被 SIGTERM」。**这个结论是错的，本轮已证伪。**
+
+实测：给 `packages/store/src/repository/embeddings.ts` 加一行注释并暂存，直接运行 `.git/hooks/navhub-precommit-tests.mjs`：
+
+```
+Test Files  40 passed | 1 skipped (41)
+     Tests  321 passed | 28 skipped (349)
+  Duration  124.17s
+EXIT=0
+```
+
+hook 完全正常。真实原因是我调用 `git commit` 时**没给 Bash 工具显式 timeout**，默认 120 秒先到了；hook 需要 124 秒（单棵测试根）到 10 分钟（两棵）。进程被外部 SIGTERM，看起来像「脚本无输出就退出」。
+
+影响：前两批的提交门禁实际是被跳过的。虽然我在 message 里声明了手动等价检查（且那些检查确实全过），但**「hook 坏了」这个判断本身是错的**，不该留在记录里。
+
+修正动作：
+- 本文件前两批相关表述已在 §3/§7 注明；
+- 后续提交一律显式给 `timeout ≥ 600000ms`，不再使用逃生口；
+- 已写入项目记忆，避免下次重犯。
+
+**顺带确认 hook 的真实代价**：改一个 store 文件 → 跑 41 个测试文件 124 秒；改一个 api 文件 → `apps/api/test` 整棵；同时改 api 与 web → 两棵，约 10 分钟。这是「改一处跑一棵树」的粗粒度路由，慢但安全，暂不改。
+
+### E12 备份恢复容量压测
+
+用完整 HTTP 端点（`POST /api/backup/restore`）跑，不是直接调仓储：
+
+| 规模 | 备份包 | 预演 | 实际恢复 | 每千条 | 落库 |
+|---|---:|---:|---:|---:|---|
+| 10,000 条 | 1.80 MB | 388 ms | **7,379 ms** | 738 ms | 10,000 站点 / 20,000 标签关联 / reindex 任务 1 |
+
+幂等重跑（同样载荷）：295 ms（全部被判重复，不写库）。
+
+**发现一个真实的可用性缺陷**：按此线性外推，5 万条上限约 **37 秒**，而 BFF 代理与前端客户端的读超时都是 **30 秒**。后果不是「慢」而是**假失败**——代理先 504，中枢实际上已经提交事务，用户以为失败而重试（恢复幂等，但白等一次）。
+
+**改法（两处）**
+
+1. `apps/web-overlay/src/lib/hub-proxy.ts`：把 `backup`、`me/{import,export}`、`sites/batch` 纳入 `LONG_RUNNING_ROOTS`（走 120 秒上限）。这是**已有机制**的扩充，不是新造开关；`me` 只认 `import`/`export` 两个动作，`me/settings` 仍是 30 秒。
+2. `apps/api/src/routes/backup.ts`：响应回传 `durationMs` 与 `reindexQueued`，让「这次恢复为什么慢/为什么超时」变成可解释的事实。
+
+**瓶颈未完全定位**：曾怀疑拼音/FTS 索引字段计算（`buildIndexFields` 每站点一次），用纯 ASCII 标题对照实验证伪——英文反而更慢（8,721 ms vs 7,379 ms），说明不是拼音。剩余怀疑是 sites 表索引维护与多值 INSERT 的参数绑定开销，未继续深挖（7.4 秒/万条已可用，继续优化属独立课题）。
+
+### E13 `/admin/sitelist` 的 E2E 安全网
+
+**为什么需要**：本轮把归属查找与筛选抽成纯函数后，单测能钉住语义，**钉不住接线**——如果有人把 `filteredSites` 改回旧实现，单测依旧全绿。仓里已有的 `sitelist-*` 守卫都是源码字符串断言，同样测不出「跑起来对不对」。
+
+**为什么不能用组件测试**：`vitest.config.ts` 的 `environment` 是 `node`，全仓没有 jsdom / happy-dom / RTL（已核对根依赖）。`apps/web` 又是 vendored 目录，加测试依赖会越界。
+
+**改用 Playwright**（既有先例 `admin-navigation.spec.ts` 同款管理员旁路 + 只 mock GET），新增 `e2e/admin-sitelist.spec.ts` 4 例：
+
+1. 搜索跨 name / href / description，清空恢复全部；
+2. 无命中显示「未找到匹配的站点」而非「暂无站点」（诚实区分）；
+3. 分类筛选把子分类站点归并到父分类；
+4. 「无子分类」同时包含主分类站点与未归类站点。
+
+**本地未完成验证**：本机同时跑着两套开发栈（:3000/:8787、:3100），E2E 端口按配置换到 3199/8899 后，API 与 Web 都起来了（`Ready in 2.8s`），但 Playwright 的 `webServer` 等待在 120 秒内没等到首个页面可访问——首次编译叠加上并行会话的 CPU 占用。这是**环境负载**问题，不是用例缺陷，但意味着这 4 例的选择器只经过静态核对、未经过运行验证，风险等级高于其他改动。
+
+**副作用（已处理）**：跑一次 E2E 会让 Next dev 把 `.next-e2e/types/**/*.ts` 写进 `apps/web/tsconfig.json`，于是 `check-web-overlay` 报 1 个漂移。overlay 一侧本来就有 `.next*/types` 通配覆盖，Next 追加的是冗余精确路径；提交前已把 `apps/web/tsconfig.json` 恢复为 overlay 版本。**跑过 E2E 之后，提交前务必重跑 `check-web-overlay`。**
+
+---
+
+## 7. 未执行项与原因
 
 | 项 | 状态 | 原因 |
 |---|---|---|
 | 用户中心视觉/布局改动 | 未动 | 并行会话正在编辑 9 个文件（mtime 15:57–15:59，内容为 sticky 子导航、玻璃卡片、图标芯片）。按纪律不覆盖。 |
 | `check-web-overlay` 的 `tsconfig.json` 漂移 | 未动 | 该漂移在本轮开始前就存在（overlay 与 vendored 底座内容不一致），不属于我的改动范围；`--fix` 会连带镜像并行会话的 WIP。 |
-| 巨型组件**整体拆分**（`algorithm-lab` 2216 行、`sitelist` 2147 行） | 部分执行 | 已把 `sitelist` 的归属查找与筛选抽成独立纯函数模块（E9）+ 14 例测试；**组件本身未拆**。理由：2100 行单组件内 50+ 个 state 与回调紧耦合，抽 hook 无法用现有守卫证明行为等价，属独立批次。 |
+| 巨型组件**整体拆分**（`algorithm-lab` 2216 行、`sitelist` 2147 行） | 部分执行 | 已抽纯函数模块（E9）+ 14 例单测 + 4 例 E2E（E13）；**组件本身未拆**。理由：2100 行单组件内 50+ 个 state 与回调紧耦合，抽 hook 无法用现有守卫证明行为等价，属独立批次。 |
 | 前端触控目标 / a11y 补强 | 未执行 | 复核发现 guard 体系已相当完整（`keyboard-activation` / `graph-keyboard` / `a11y-contrast` 三道扫描），`/favorites` 已无 `h-6/h-7` 裸尺寸。没有找到确证的缺口，不做「为改而改」。 |
 | 插件星标导入批量 | 未执行 | 导入条数为几十级，N 次查询不构成量级问题；且现有实现用 `err.message.includes()` 判分支，改造需先做结构化错误，属技术债而非缺陷。 |
 | 小写化字段预计算 | 未执行 | 能把 `/admin/sitelist` 筛选再压一半，但需在 `sites` 多处 `setSites` 分支维护派生缓存，属独立改造（见 §5 E9）。 |
-| PG 批量用例的本地执行 | 未执行 | 无 `NAVHUB_TEST_DATABASE_URL`，docker 不可用。用例已写，由 CI test-postgres 执行——**这是本轮唯一未在本地跑过的改动面**。 |
+| 恢复性能瓶颈定位 | 部分 | 已证伪「拼音计算是瓶颈」（ASCII 对照反而更慢）；剩余怀疑是索引维护与多值 INSERT 绑定开销，未深挖——7.4 秒/万条已可用。 |
+| PG 批量用例的本地执行 | 未执行 | 无 `NAVHUB_TEST_DATABASE_URL`，docker 不可用。由 CI test-postgres 执行。 |
+| E2E 4 例的本地执行 | 未完成 | 本机两套并行开发栈 + Next 单实例锁 + 首次编译，`webServer` 120 秒内未就绪（Web 本身已 `Ready in 2.8s`）。用例选择器只经静态核对，**风险等级高于本轮其他改动**。 |
+
+> 两条「未本地验证」的改动（PG 4 例、E2E 4 例）都集中在 CI 侧。若 CI 报红，优先看这两处，而不是回滚业务改动。
 
 ---
 
-## 7. 回滚
+## 8. 回滚
 
 改动分两批。
 
@@ -282,6 +353,16 @@ apps/api/test/backup-observability.test.ts              # 新增
 apps/api/test/user-data-audit-job.test.ts               # 新增
 ```
 
-回滚方式：`git revert <commit>`。无 schema 变更、无 API 契约破坏（409 只**新增** `reason` 字段；审计 `diff` 只新增键）。旧调用路径（`findSiteByUrl` / `saveEmbedding` / `createSite`）未被修改，仍可用。
+**第三批（E11–E13，本次提交）**
+
+```
+apps/api/src/routes/backup.ts            # 响应加 durationMs / reindexQueued
+apps/web-overlay/src/lib/hub-proxy.ts    # 长耗时路径扩容（backup / me.{import,export} / sites.batch）
+apps/web-overlay/test/hub-proxy.test.ts  # 对应断言
+e2e/admin-sitelist.spec.ts               # 新增（4 例，CI 验证）
+docs/UPGRADE-EXECUTION-2026-10-24.md     # 报告
+```
+
+回滚方式：`git revert <commit>`。无 schema 变更、无 API 契约破坏（响应只**新增** `durationMs` / `reindexQueued`；409 只新增 `reason`；审计 `diff` 只新增键）。旧调用路径（`findSiteByUrl` / `saveEmbedding` / `createSite`）未被修改，仍可用。
 
 `apps/web` 下的镜像副本不计入 git（vendored，`.gitignore` 排除），回滚后由 `vendor-web.mjs` + overlay 回放重建。

@@ -59,11 +59,22 @@ describe("upstreamTimeoutMs", () => {
     expect(isLongRunningPath(["sites", "auto"])).toBe(true);
     expect(isLongRunningPath(["enrich"])).toBe(true);
 
+    // 全库读写：实测 1 万站点恢复 7.4 秒，5 万条外推约 37 秒，超过默认 30 秒。
+    // 超时的后果是「假失败」——代理 504 但中枢已提交事务。
+    expect(isLongRunningPath(["backup", "restore"])).toBe(true);
+    expect(isLongRunningPath(["backup", "export"])).toBe(true);
+    expect(isLongRunningPath(["me", "import"])).toBe(true);
+    expect(isLongRunningPath(["me", "export"])).toBe(true);
+    expect(isLongRunningPath(["sites", "batch"])).toBe(true);
+
     // 单词里含 "ai" 的普通端点不再被放宽（detail / validate 都是这类）
     expect(isLongRunningPath(["sites", "detail"])).toBe(false);
     expect(isLongRunningPath(["plugins", "validate"])).toBe(false);
     expect(isLongRunningPath(["plugins", "web-mcp", "audit"])).toBe(false);
     expect(isLongRunningPath(["search"])).toBe(false);
+    // me 根下只有 import/export 放宽，其余仍是 30 秒
+    expect(isLongRunningPath(["me", "settings"])).toBe(false);
+    expect(isLongRunningPath(["me"])).toBe(false);
     expect(isLongRunningPath([])).toBe(false);
   });
 

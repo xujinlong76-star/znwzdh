@@ -58,7 +58,15 @@ export default defineConfig({
     // 因此本地跑 E2E 前请先停掉 pnpm dev:all（端口冲突会以明确报错终止，而不是静默污染）。
     // 若本机确实有常驻开发服务器，改用 NAVHUB_WEB_PORT / NAVHUB_API_PORT 换一套端口。
     reuseExistingServer: false,
-    timeout: 120_000,
+    /**
+     * 冷启动等待上限。
+     *
+     * 120 秒在 CI（Linux + 预热）够用，但在本机不够：Next 16 用 turbopack 首次
+     * 编译 `.next-e2e`，叠加同机器上另一套开发栈的 CPU 占用，实测会超过 120 秒，
+     * 表现为「Web 已经 Ready 但 webServer 等待超时」——错误信息完全指不到真正原因。
+     * 因此允许按环境放宽；默认值不变，CI 行为不变。
+     */
+    timeout: Number(process.env.NAVHUB_E2E_SERVER_TIMEOUT || 120_000),
     env: {
       NAVHUB_WEB_PORT: String(WEB_PORT),
       NAVHUB_API_PORT: String(API_PORT),

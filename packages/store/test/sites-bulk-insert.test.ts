@@ -101,4 +101,30 @@ describe("insertSitesBulk", () => {
   it("空输入是 no-op", async () => {
     await expect(repo.insertSitesBulk([])).resolves.toEqual({ count: 0, sites: [] });
   });
+
+  it("createdAt 按调用方给的原值落库（备份恢复要保住原始收录时间）", async () => {
+    const originalCreatedAt = Date.UTC(2023, 4, 17, 8, 30);
+    const { sites } = await repo.insertSitesBulk([
+      {
+        id: "bulk-created-at",
+        url: "https://bulk-created-at.example.com",
+        title: "保时间",
+        categoryId,
+        createdAt: originalCreatedAt,
+      },
+      {
+        id: "bulk-created-default",
+        url: "https://bulk-created-default.example.com",
+        title: "不传就用当前",
+        categoryId,
+      },
+    ]);
+    const byId = new Map(sites.map((site) => [site.id, site]));
+    expect(byId.get("bulk-created-at")!.createdAt).toBe(originalCreatedAt);
+    // 不传时回落本批时间，不能是 0 / undefined
+    const nowSite = byId.get("bulk-created-default")!;
+    expect(nowSite.createdAt).toBeGreaterThan(0);
+    // updated_at 恒为本批时间，不跟随 createdAt
+    expect(byId.get("bulk-created-at")!.updatedAt).toBeGreaterThanOrEqual(originalCreatedAt);
+  });
 });

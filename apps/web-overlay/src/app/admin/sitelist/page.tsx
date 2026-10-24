@@ -153,7 +153,9 @@ export default function SiteListPage() {
         !isFetchingAddMetadata &&
         newSite.url !== lastFetchedAddUrl.current) {
         lastFetchedAddUrl.current = newSite.url
-        fetchWebsiteMetadata(newSite.url, false, true)
+        // forceUpdate=false：自动抓取只填空，不能覆盖用户已经输入的名称/描述。
+        // 只有用户点右侧刷新按钮（下面 1269 行那处）才是「我确认要覆盖」。
+        fetchWebsiteMetadata(newSite.url, false, false)
       }
     }, 1000) // 延迟1秒执行，避免频繁请求
 
@@ -172,7 +174,8 @@ export default function SiteListPage() {
         // 只有当URL与原始URL不同时才自动获取
         if (editSite.url !== editingSite.url) {
           lastFetchedEditUrl.current = editSite.url
-          fetchWebsiteMetadata(editSite.url, true, true)
+          // 同上：自动抓取只填空，不覆盖用户已编辑的内容
+          fetchWebsiteMetadata(editSite.url, true, false)
         }
       }
     }, 1000)
@@ -973,15 +976,28 @@ export default function SiteListPage() {
 
       const metadata = await response.json()
 
-      // 根据forceUpdate决定是否覆盖已有信息
+      /**
+       * 自动抓取只在**真的拿到内容**时覆盖，不能拿空值回填。
+       *
+       * 真实缺陷（E2E 测出来的）：自动抓取走 forceUpdate=true，原实现无条件
+       * `updates.name = metadata.title`。抓不到标题的站点很常见——JS 渲染页、
+       * 反爬拦截、超时降级都会返回空字符串，于是：
+       *
+       *   用户填 URL → 1 秒后自动抓取 → 用户正在输入的名称被清空；
+       *   或用户已填好名称 → 保存时后端收到空标题 → 校验报「请填写必填字段」。
+       *
+       * 表现成「表单校验不让我提交」，查半天才发现是自动抓取把内容抹掉了。
+       * 空值不是「最新信息」，只是「没拿到」，必须保留用户已填的内容。
+       */
       const updates: Partial<{ name: string; description: string; icon: string }> = {}
-      if (forceUpdate || !site.name) {
-        updates.name = metadata.title
+      const fetchedTitle = typeof metadata.title === 'string' ? metadata.title.trim() : ''
+      if ((forceUpdate || !site.name) && fetchedTitle) {
+        updates.name = fetchedTitle
       }
       if (forceUpdate || !site.description) {
-        if (typeof metadata.description === 'string') {
-          updates.description = metadata.description.trim().slice(0, 160)
-        }
+        const fetchedDescription =
+          typeof metadata.description === 'string' ? metadata.description.trim().slice(0, 160) : ''
+        if (fetchedDescription) updates.description = fetchedDescription
       }
       if ((forceUpdate || !site.icon) && metadata.icon) {
         updates.icon = metadata.icon
@@ -994,9 +1010,23 @@ export default function SiteListPage() {
           description: "已自动获取网站信息"
         })
       } else {
+        /**
+         * 区分「拿到的和现有一样」与「根本没拿到」。
+         *
+         * 前者说「已是最新」是对的；后者（空标题 + 空描述 + 无图标）如果也说
+         * 「已是最新」，用户会以为抓取成功了、只是内容没变——实际上这个站点的
+         * 元信息一直是空的，得手动填。两种情况的下一步动作完全不同。
+         */
+        const fetchedAnything = Boolean(
+          fetchedTitle ||
+          (typeof metadata.description === 'string' && metadata.description.trim()) ||
+          metadata.icon,
+        )
         toast({
           title: "提示",
-          description: "网站信息已是最新，无需更新"
+          description: fetchedAnything
+            ? "网站信息已是最新，无需更新"
+            : "未获取到网站信息，请手动填写名称、描述与图标"
         })
       }
     } catch (error) {

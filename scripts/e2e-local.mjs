@@ -74,6 +74,9 @@ const child = spawn(process.execPath, ['node_modules/@playwright/test/cli.js', .
     // 已设了 PLAYWRIGHT_TEST_BASE_URL（指向某个运行中的站点），它会优先于端口，
     // 那就变成「对着别人的服务器跑用例」——这里清掉，保证测的是本次启动的进程。
     PLAYWRIGHT_TEST_BASE_URL: '',
+    // 本机冷启动（turbopack 首次编译 + 另一套开发栈抢 CPU）常常超过配置默认的
+    // 120 秒；CI 上不会走到这里（它直接用 `playwright test`）。可用同名环境变量覆盖。
+    NAVHUB_E2E_SERVER_TIMEOUT: process.env.NAVHUB_E2E_SERVER_TIMEOUT || '300000',
   },
 })
 

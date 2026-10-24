@@ -19,14 +19,20 @@ mkdirSync(dirname(dbPath), { recursive: true })
 
 const suffixes = ['', '-journal', '-wal', '-shm']
 let lastError = null
-for (let attempt = 0; attempt < 20; attempt++) {
+/**
+ * 30 次 × 500ms ≈ 15 秒。
+ *
+ * 原来是 20 × 300ms = 6 秒：Windows 上被强杀的 API 释放文件句柄可能正好卡在
+ * 6 秒边界，实测等 6 秒再删就能成功——说明重试窗口给短了，不是「删不掉」。
+ */
+for (let attempt = 0; attempt < 30; attempt++) {
   try {
     for (const suffix of suffixes) rmSync(`${dbPath}${suffix}`, { force: true })
     lastError = null
     break
   } catch (err) {
     lastError = err
-    await new Promise((r) => setTimeout(r, 300))
+    await new Promise((r) => setTimeout(r, 500))
   }
 }
 if (lastError) {

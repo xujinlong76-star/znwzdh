@@ -296,7 +296,7 @@ export class Repository {
    * 语义与 createSite 的「新建」分支对齐，不处理软删 id 复活。
    */
   async insertSitesBulk(
-    inputs: Array<SiteInput & { id: string }>,
+    inputs: Array<SiteInput & { id: string; createdAt?: number }>,
     options: { hydrate?: boolean } = {},
   ): Promise<{ count: number; sites: Site[] }> {
     return sitesRepo.insertSitesBulk(this, inputs, options);

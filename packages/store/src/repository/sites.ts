@@ -287,7 +287,18 @@ export async function createSiteWithId(repo: Repository, input: SiteInput & { id
  */
 export async function insertSitesBulk(
   repo: Repository,
-  inputs: Array<SiteInput & { id: string }>,
+  inputs: Array<SiteInput & {
+    id: string;
+    /**
+     * 原始创建时间（毫秒）。缺省写当前时刻。
+     *
+     * 备份包带 `createdAt`，恢复时若丢掉它，所有站点的 `created_at` 都会变成
+     * 恢复时刻——「最新收录」「按创建时间排序」在恢复后整片失真，而页面上
+     * 看不出任何异常（时间列全都一样，像是同一天批量导入的）。
+     * 这里显式接住，由调用方决定是否沿用原值。
+     */
+    createdAt?: number;
+  }>,
   options: {
     /**
      * 是否回读完整 Site 列表（默认 true）。
@@ -340,7 +351,10 @@ export async function insertSitesBulk(
         input.subCategoryId ?? null, input.iconKey ?? null, input.status ?? "active",
         input.enabled === false ? 0 : 1, input.sort ?? 0, 0, input.featured ? 1 : 0,
         input.source ?? "manual", index.ftsTokens, index.pinyinFull, index.pinyinInitials,
-        packMetadata(input), now, now,
+        packMetadata(input),
+        // created_at 用调用方给的原值（恢复场景），缺省才取本批时间
+        input.createdAt ?? now,
+        now,
       );
     }
     await repo.run(

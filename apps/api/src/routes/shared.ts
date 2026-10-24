@@ -254,6 +254,34 @@ export function submissionNumber(id: string): number {
  * 非法 slug 被记进错误率指标，还会污染告警。这里失败时回退原文，
  * 让后续查库自然走到 404。
  */
+/**
+ * 调用方是否可以看见「未发布（pending）」与「已归档（archived）」站点。
+ *
+ * 背景：`GET /api/sites` 是 `scope:"read"`，鉴权模式下任何 read 令牌都能调。
+ * 原实现不做区分，于是只读集成方也能拉到全部待审/已下架站点——那是编辑
+ * 工作面的中间态，不属于数据面消费者的可见范围。
+ *
+ * 口径：
+ *  - 开放模式（`authRequired=false`，个人/NAS 默认）保持原样：本机即管理面；
+ *  - 路由自身声明 admin → 可见；
+ *  - `kind:"static"`（管理令牌 / 会话特权）→ 可见；
+ *  - 用户级 `token` → 只有 scope 含 admin 才可见；
+ *  - 匿名与会话 → 不可见。
+ */
+export function canSeeUnpublishedSites(
+  ctx: AppContext,
+  req: { routeOptions?: { config?: { scope?: string } }; auth?: { kind?: string; scopes?: string[] } },
+): boolean {
+  if (!ctx.config.authRequired) return true;
+  const scope = req.routeOptions?.config?.scope ?? "public";
+  if (scope === "admin") return true;
+  const auth = req.auth;
+  if (!auth) return false;
+  if (auth.kind === "static") return true;
+  if (auth.kind === "token") return (auth.scopes ?? []).includes("admin");
+  return false;
+}
+
 export function safeDecodeParam(raw: string): string {
   try {
     return decodeURIComponent(raw);

@@ -22,6 +22,18 @@ export async function loginViaAdmin(page: Page): Promise<void> {
     const bypassBtn = page.getByRole('button', { name: /以管理员身份一键进入/ });
     await expect(bypassBtn).toBeVisible({ timeout: 30_000 });
     await bypassBtn.click();
+    /**
+     * 冷编译时服务端 action 会排队：点下去之后 URL 可能几十秒不动，
+     * 只等标题会把「点了没反应」和「还在编译」混为一谈。先等 URL 离开
+     * signin，确实没动再点一次——避免全量套件里那一两次偶发失败。
+     */
+    const navigated = await page
+      .waitForURL((url) => !url.pathname.startsWith('/auth/signin'), { timeout: 60_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!navigated && (await bypassBtn.isVisible().catch(() => false))) {
+      await bypassBtn.click();
+    }
     await expect(
       page.locator('main#main-content h1').filter({ hasText: 'API Token 访问凭据管理' }),
     ).toBeVisible({ timeout: 120_000 });

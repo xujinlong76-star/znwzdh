@@ -27,11 +27,17 @@ import {
 } from "./dialect.ts";
 import { chunkList, inPredicate, SQL_IN_CHUNK } from "../sql-in.ts";
 
-export async function listSites(repo: Repository, filter: { categoryId?: string; status?: SiteStatus; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {
+export async function listSites(repo: Repository, filter: { categoryId?: string; status?: SiteStatus; excludeStatuses?: SiteStatus[]; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {
   const where: string[] = ["s.deleted_at IS NULL"];
   const params: unknown[] = [];
   if (filter.categoryId) { where.push("s.category_id = ?"); params.push(filter.categoryId); }
   if (filter.status) { where.push("s.status = ?"); params.push(filter.status); }
+  // 数据面最小化：把编辑工作面的中间态（pending/archived）排除在只读集成之外。
+  // 用 <> 逐条排除而不是 NOT IN：要排除的状态最多两个，不必引入分片复杂度。
+  for (const status of filter.excludeStatuses ?? []) {
+    where.push("s.status <> ?");
+    params.push(status);
+  }
   if (filter.source) { where.push("s.source = ?"); params.push(filter.source); }
   // 默认 limit 100、上限 1000：无限制的全表扫是慢查询主因；调用方需显式传 limit 覆盖。
   const limit = Math.min(Math.max(filter.limit ?? 100, 1), 1000);

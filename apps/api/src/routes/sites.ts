@@ -12,7 +12,7 @@ import { indexSite, indexSitesBatch } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
-import { badRequest, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
+import { badRequest, canSeeUnpublishedSites, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -39,9 +39,22 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     const offset = Math.max(0, Number(q.offset) || 0);
     const facetFilter = clampFacets(q.facets);
     if (facetFilter.error) return badRequest(reply, "参数无效", facetFilter.error);
+    const requestedStatus = parseStatusFilter(q.status);
+    /**
+     * 数据面最小化：只读集成方看不到 pending / archived。
+     *
+     * 待审与已归档是编辑工作面的中间态（可能还没上线、或已下架），
+     * 不属于 read 令牌应有的可见范围。显式指定这两种状态时返回空集
+     * 而不是报错：调用方无权知道它们是否存在，404/403 会反过来泄露存在性。
+     */
+    const maySeeUnpublished = canSeeUnpublishedSites(ctx, req as never);
+    if (!maySeeUnpublished && requestedStatus && requestedStatus !== "active" && requestedStatus !== "broken") {
+      return [];
+    }
     return ctx.repo.listSites({
       categoryId: typeof q.categoryId === "string" ? q.categoryId : undefined,
-      status: parseStatusFilter(q.status),
+      status: requestedStatus,
+      excludeStatuses: maySeeUnpublished ? undefined : ["pending", "archived"],
       source: typeof q.source === "string" ? q.source : undefined,
       facets: facetFilter.facets,
       limit,

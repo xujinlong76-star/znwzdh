@@ -248,7 +248,7 @@ export class Repository {
 
   /* ------------------------- 站点 ------------------------- */
 
-  async listSites(filter: { categoryId?: string; status?: SiteStatus; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {
+  async listSites(filter: { categoryId?: string; status?: SiteStatus; excludeStatuses?: SiteStatus[]; limit?: number; offset?: number; source?: string; facets?: Record<string, string[]> } = {}): Promise<Site[]> {
     return sitesRepo.listSites(this, filter);
   }
 

@@ -65,9 +65,26 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     if (!result.ok) {
       reply.code(409);
       if (result.current) reply.header("etag", `"${result.current.version}"`);
+      /**
+       * current === null 有两种完全不同的成因，不能合并成同一句话：
+       *  - 云端金库被另一台设备清除（或已在别处注销）→ 本地版本号指向一份**已经不存在的**备份；
+       *  - 云端仍有金库但版本号被推进 → 真正的「多端并发写冲突」。
+       * 旧实现统一回「已被其它设备更新」，前者会被引向「先拉取最新」——而云端根本没有
+       * 可拉取的内容，用户会在空循环里反复失败（WCAG 3.3.1 错误识别 / 3.3.3 纠正建议）。
+       */
+      if (!result.current) {
+        return {
+          error: "云端金库已被清除：本机版本号对应的云端备份已不存在",
+          code: "VAULT_CLEARED",
+          current: null,
+          hint: "如确认以本机配置重建云端金库，请以 version=0 重新推送",
+        };
+      }
       return {
         error: "版本冲突：云端金库已被其它设备更新",
+        code: "VERSION_CONFLICT",
         current: result.current,
+        hint: "请先从云端拉取并合并最新内容，再以返回的版本号重新推送",
       };
     }
     reply.header("etag", `"${result.version}"`);

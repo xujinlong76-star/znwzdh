@@ -3,92 +3,30 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { safeHref } from '@/lib/safe-url'
 import {
-  buildSiteCategoryIndex,
-  buildSiteHaystacks,
-  filterSitesByIndex,
-  siteCategoryInfo,
-  type SiteCategoryLike,
+  buildSiteCategoryIndex, buildSiteHaystacks, filterSitesByIndex, siteCategoryInfo, type SiteCategoryLike
 } from '@/lib/admin/sitelist-index'
-import { useRouter } from 'next/navigation'
 import { Button } from "@/registry/new-york/ui/button"
 import { useToast } from "@/registry/new-york/hooks/use-toast"
 import { Icons } from "@/components/icons"
 import { EmptyState } from '@/components/ui/empty-state'
-import { Input } from "@/registry/new-york/ui/input"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogDescription,
-  DialogFooter,
-} from "@/registry/new-york/ui/dialog"
+  Input } from "@/registry/new-york/ui/input"
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/registry/new-york/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/registry/new-york/ui/table"
 import { Checkbox } from "@/registry/new-york/ui/checkbox"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/registry/new-york/ui/alert-dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/registry/new-york/ui/select"
-import { Label } from "@/registry/new-york/ui/label"
-import { Switch } from "@/registry/new-york/ui/switch"
-import { Textarea } from "@/registry/new-york/ui/textarea"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/registry/new-york/ui/tooltip"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/registry/new-york/ui/select"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/registry/new-york/ui/tooltip"
 
-import { NavigationSubItem, NavigationItem } from '@/types/navigation'
+import { NavigationSubItem,
+  NavigationItem
+} from '@/types/navigation'
 import { moveItem } from '@/lib/navigation-tree'
 import { describeDegrade } from '@/lib/degrade'
+import { SitelistDialogs } from './sitelist-dialogs'
+import type { Category, Site, SubCategory } from './types'
 import { Package } from 'lucide-react'
 
-interface SubCategory {
-  id: string
-  title: string
-  icon?: string
-  items: NavigationSubItem[]
-}
-
-interface Category {
-  id: string
-  title: string
-  icon?: string
-  items: NavigationSubItem[]
-  subCategories?: SubCategory[]
-}
-
-interface Site {
-  id: string
-  name: string
-  url: string
-  description?: string
-  createdAt: string
-  updatedAt: string
-}
+// 共享类型已抽到 ./types（SubCategory / Category / Site）
 
 export default function SiteListPage() {
   const { toast } = useToast()
@@ -141,48 +79,6 @@ export default function SiteListPage() {
   })
 
 
-  useEffect(() => {
-    fetchSites()
-  }, [])
-
-  // 监听添加站点URL变化，自动获取网站信息
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (newSite.url &&
-        isValidUrl(newSite.url) &&
-        showAddDialog &&
-        !isFetchingAddMetadata &&
-        newSite.url !== lastFetchedAddUrl.current) {
-        lastFetchedAddUrl.current = newSite.url
-        // forceUpdate=false：自动抓取只填空，不能覆盖用户已经输入的名称/描述。
-        // 只有用户点右侧刷新按钮（下面 1269 行那处）才是「我确认要覆盖」。
-        fetchWebsiteMetadata(newSite.url, false, false)
-      }
-    }, 1000) // 延迟1秒执行，避免频繁请求
-
-    return () => clearTimeout(timeoutId)
-  }, [newSite.url, showAddDialog])
-
-  // 监听编辑站点URL变化，自动获取网站信息
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      if (editSite.url &&
-        isValidUrl(editSite.url) &&
-        showEditDialog &&
-        editingSite &&
-        !isFetchingEditMetadata &&
-        editSite.url !== lastFetchedEditUrl.current) {
-        // 只有当URL与原始URL不同时才自动获取
-        if (editSite.url !== editingSite.url) {
-          lastFetchedEditUrl.current = editSite.url
-          // 同上：自动抓取只填空，不覆盖用户已编辑的内容
-          fetchWebsiteMetadata(editSite.url, true, false)
-        }
-      }
-    }, 1000)
-
-    return () => clearTimeout(timeoutId)
-  }, [editSite.url, showEditDialog, editingSite])
 
 
 
@@ -951,7 +847,7 @@ export default function SiteListPage() {
     try {
       new URL(string)
       return true
-    } catch (_) {
+    } catch {
       return false
     }
   }
@@ -1105,6 +1001,84 @@ export default function SiteListPage() {
 
   const degradeNotice = loadError ? describeDegrade(loadError) : null
 
+
+  useEffect(() => {
+    fetchSites()
+  }, [])
+
+  // 监听添加站点URL变化，自动获取网站信息
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (newSite.url &&
+        isValidUrl(newSite.url) &&
+        showAddDialog &&
+        !isFetchingAddMetadata &&
+        newSite.url !== lastFetchedAddUrl.current) {
+        lastFetchedAddUrl.current = newSite.url
+        // forceUpdate=false：自动抓取只填空，不能覆盖用户已经输入的名称/描述。
+        // 只有用户点右侧刷新按钮（下面 1269 行那处）才是「我确认要覆盖」。
+        fetchWebsiteMetadata(newSite.url, false, false)
+      }
+    }, 1000) // 延迟1秒执行，避免频繁请求
+
+    return () => clearTimeout(timeoutId)
+  }, [newSite.url, showAddDialog])
+
+  // 监听编辑站点URL变化，自动获取网站信息
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (editSite.url &&
+        isValidUrl(editSite.url) &&
+        showEditDialog &&
+        editingSite &&
+        !isFetchingEditMetadata &&
+        editSite.url !== lastFetchedEditUrl.current) {
+        // 只有当URL与原始URL不同时才自动获取
+        if (editSite.url !== editingSite.url) {
+          lastFetchedEditUrl.current = editSite.url
+          // 同上：自动抓取只填空，不覆盖用户已编辑的内容
+          fetchWebsiteMetadata(editSite.url, true, false)
+        }
+      }
+    }, 1000)
+
+    return () => clearTimeout(timeoutId)
+  }, [editSite.url, showEditDialog, editingSite])
+
+  // 弹窗组件的透传集合（见 sitelist-dialogs.tsx：标识符与页面同名）
+  const onAddDialogOpenChange = (open: boolean) => {
+    if (open) {
+      // 与拆分前的 DialogTrigger 行为一致：打开即重置表单（自动抓取去重水位也复位）
+      setNewSite({
+        name: '',
+        url: '',
+        description: '',
+        icon: '',
+        useDefaultIcon: false,
+        categoryId: '',
+        subCategoryId: ''
+      })
+      lastFetchedAddUrl.current = ''
+      setShowAddDialog(true)
+    } else if (!isAddingSubmitting) {
+      setShowAddDialog(false)
+    }
+  }
+
+  const dialogProps = {
+    sites, filteredSites, navigationData, selectedSites, degradeNotice,
+    newSite, setNewSite, editSite, setEditSite, editingSite, deletingSite,
+    showAddDialog, onAddDialogOpenChange, setShowAddDialog, showEditDialog, setShowEditDialog,
+    showDeleteSiteDialog, setShowDeleteSiteDialog, showDeleteDialog, setShowDeleteDialog,
+    showMoveDialog, setShowMoveDialog,
+    moveTargetCategoryId, setMoveTargetCategoryId, moveTargetSubCategoryId, setMoveTargetSubCategoryId,
+    isAddingSubmitting, isEditingSubmitting, isUploadingAddIcon, isUploadingEditIcon,
+    isFetchingAddMetadata, isFetchingEditMetadata, isBatchDeleting, isBatchMoving,
+    handleAddSite, handleEditSite, handleDeleteSite, handleBatchDelete, handleBatchMove,
+    handleSelectOne, handleIconUpload, fetchWebsiteMetadata,
+    fetchSites, isValidUrl, DescriptionCell, getSiteCategoryInfo,
+  }
+
   return (
     <TooltipProvider>
       <div className="space-y-4">
@@ -1222,9 +1196,8 @@ export default function SiteListPage() {
               导出插件包
             </Button>
 
-            <Dialog open={showAddDialog} onOpenChange={(open) => {
-              if (open) {
-                // 重置表单
+            <Button
+              onClick={() => {
                 setNewSite({
                   name: '',
                   url: '',
@@ -1236,537 +1209,14 @@ export default function SiteListPage() {
                 })
                 lastFetchedAddUrl.current = ''
                 setShowAddDialog(true)
-              } else if (!isAddingSubmitting) {
-                setShowAddDialog(false)
-              }
-            }}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Icons.plus className="mr-2 h-4 w-4" />
-                  添加站点
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[460px] max-h-[85dvh] flex flex-col p-4 sm:p-6">
-                <DialogHeader className="pr-8 sm:pr-6">
-                  <DialogTitle>添加站点</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-1">
-                  <div className="grid gap-2">
-                    <Label htmlFor="url">站点链接 *</Label>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      <div className="relative flex-1">
-                        <Input
-                          id="url"
-                          value={newSite.url}
-                          onChange={(e) => setNewSite({ ...newSite, url: e.target.value })}
-                          placeholder="输入网站链接，将自动获取网站信息"
-                          disabled={isAddingSubmitting}
-                        />
-                        {isFetchingAddMetadata && (
-                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                            <Icons.loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                          </div>
-                        )}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={!newSite.url || !isValidUrl(newSite.url) || isFetchingAddMetadata || isAddingSubmitting}
-                        onClick={() => fetchWebsiteMetadata(newSite.url, false, true)}
-                      >
-                        {isFetchingAddMetadata ? (
-                          <Icons.loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Icons.refresh className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      输入完整的网站链接后，系统将自动获取网站标题、描述和图标
-                    </div>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="name">站点名称 *</Label>
-                    <Input
-                      id="name"
-                      value={newSite.name}
-                      onChange={(e) => setNewSite({ ...newSite, name: e.target.value })}
-                      placeholder="站点名称（可自动获取）"
-                      disabled={isAddingSubmitting}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="icon">站点图标</Label>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      <div className="flex-1 relative">
-                        <Input
-                          id="icon"
-                          value={newSite.icon}
-                          onChange={(e) => setNewSite({ ...newSite, icon: e.target.value })}
-                          placeholder="图标URL（可自动获取）"
-                          disabled={isAddingSubmitting}
-                        />
-                        {newSite.icon && (
-                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                            <img
-                              src={newSite.icon}
-                              alt="图标预览"
-                              className="w-4 h-4 object-contain"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement
-                                target.style.display = 'none'
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="relative"
-                        disabled={isAddingSubmitting || isUploadingAddIcon}
-                        onClick={() => {
-                          const fileInput = document.getElementById('add-icon-upload')
-                          fileInput?.click()
-                        }}
-                      >
-                        {isUploadingAddIcon ? (
-                          <>
-                            <Icons.loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            上传中...
-                          </>
-                        ) : (
-                          <>
-                            <Icons.upload className="mr-2 h-4 w-4" />
-                            上传图片
-                          </>
-                        )}
-                        <input
-                          id="add-icon-upload"
-                          aria-label="上传图标文件"
-                          type="file"
-                          accept="image/*"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0]
-                            if (file) {
-                              await handleIconUpload(file, false)
-                              // 清空文件输入
-                              const fileInput = document.getElementById('add-icon-upload') as HTMLInputElement
-                              if (fileInput) {
-                                fileInput.value = ''
-                              }
-                            }
-                          }}
-                          className="hidden"
-                        />
-                      </Button>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      系统会自动获取网站图标，也可手动输入URL或上传本地图片
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <Label>使用默认图标</Label>
-                      <div className="text-xs text-muted-foreground">
-                        忽略图标URL，使用首字母色块
-                      </div>
-                    </div>
-                    <Switch
-                      checked={newSite.useDefaultIcon}
-                      onCheckedChange={(checked) => setNewSite({ ...newSite, useDefaultIcon: checked })}
-                      disabled={isAddingSubmitting}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="category">分类 *</Label>
-                    <Select
-                      value={newSite.categoryId}
-                      onValueChange={(value) => {
-                        setNewSite({ ...newSite, categoryId: value, subCategoryId: '' })
-                      }}
-                      disabled={isAddingSubmitting}
-                    >
-                      <SelectTrigger aria-label="选择分类">
-                        <SelectValue placeholder="选择分类" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {navigationData.map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
-                            {category.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {newSite.categoryId && navigationData.find(cat => cat.id === newSite.categoryId)?.subCategories && (
-                    <div className="grid gap-2">
-                      <Label htmlFor="subcategory">子分类</Label>
-                      <Select
-                        value={newSite.subCategoryId || "none"}
-                        onValueChange={(value) => setNewSite({ ...newSite, subCategoryId: value === "none" ? "" : value })}
-                        disabled={isAddingSubmitting}
-                      >
-                        <SelectTrigger aria-label="选择子分类（可选）">
-                          <SelectValue placeholder="选择子分类（可选）" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">无子分类</SelectItem>
-                          {navigationData
-                            .find(cat => cat.id === newSite.categoryId)
-                            ?.subCategories?.map((subCategory) => (
-                              <SelectItem key={subCategory.id} value={subCategory.id}>
-                                {subCategory.title}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                  <div className="grid gap-2">
-                    <Label htmlFor="description">描述</Label>
-                    <Textarea
-                      id="description"
-                      value={newSite.description}
-                      onChange={(e) => setNewSite({ ...newSite, description: e.target.value })}
-                      placeholder="输入站点描述（可选，建议 20-160 字）"
-                      className="resize-none"
-                      maxLength={160}
-                      disabled={isAddingSubmitting}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {newSite.description.trim().length === 0
-                        ? '待补全：建议填写 20-160 字；过短时详情页会用站点名与分类兜底。'
-                        : newSite.description.trim().length < 20
-                          ? `待补全：当前 ${newSite.description.trim().length} 字，建议至少 20 字。`
-                          : `${newSite.description.trim().length}/160 字`}
-                    </p>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowAddDialog(false)}
-                    disabled={isAddingSubmitting}
-                  >
-                    取消
-                  </Button>
-                  <Button onClick={handleAddSite} disabled={isAddingSubmitting}>
-                    {isAddingSubmitting && (
-                      <Icons.loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    {isAddingSubmitting ? "添加中..." : "添加站点"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+              }}
+            >
+              <Icons.plus className="mr-2 h-4 w-4" />
+              添加站点
+            </Button>
 
-            {/* 编辑站点对话框 */}
-            <Dialog open={showEditDialog} onOpenChange={(open) => {
-              if (!open && !isEditingSubmitting) {
-                setShowEditDialog(false)
-              }
-            }}>
-              <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[460px] max-h-[85dvh] flex flex-col p-4 sm:p-6">
-                <DialogHeader className="pr-8 sm:pr-6">
-                  <DialogTitle>编辑站点</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4 overflow-y-auto flex-1 pr-1">
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-url">站点链接 *</Label>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      <div className="relative flex-1">
-                        <Input
-                          id="edit-url"
-                          value={editSite.url}
-                          onChange={(e) => setEditSite({ ...editSite, url: e.target.value })}
-                          placeholder="输入网站链接，将自动获取网站信息"
-                          disabled={isEditingSubmitting}
-                        />
-                        {isFetchingEditMetadata && (
-                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                            <Icons.loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                          </div>
-                        )}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={!editSite.url || !isValidUrl(editSite.url) || isFetchingEditMetadata || isEditingSubmitting}
-                        onClick={() => fetchWebsiteMetadata(editSite.url, true, true)}
-                      >
-                        {isFetchingEditMetadata ? (
-                          <Icons.loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Icons.refresh className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      输入完整的网站链接后，系统将自动获取网站标题、描述和图标
-                    </div>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-name">站点名称 *</Label>
-                    <Input
-                      id="edit-name"
-                      value={editSite.name}
-                      onChange={(e) => setEditSite({ ...editSite, name: e.target.value })}
-                      placeholder="站点名称（可自动获取）"
-                      disabled={isEditingSubmitting}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-icon">站点图标</Label>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                      <div className="flex-1 relative">
-                        <Input
-                          id="edit-icon"
-                          value={editSite.icon}
-                          onChange={(e) => setEditSite({ ...editSite, icon: e.target.value })}
-                          placeholder="图标URL（可自动获取）"
-                          disabled={isEditingSubmitting}
-                        />
-                        {editSite.icon && (
-                          <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                            <img
-                              src={editSite.icon}
-                              alt="图标预览"
-                              className="w-4 h-4 object-contain"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement
-                                target.style.display = 'none'
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="relative"
-                        disabled={isEditingSubmitting || isUploadingEditIcon}
-                        onClick={() => {
-                          const fileInput = document.getElementById('edit-icon-upload')
-                          fileInput?.click()
-                        }}
-                      >
-                        {isUploadingEditIcon ? (
-                          <>
-                            <Icons.loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            上传中...
-                          </>
-                        ) : (
-                          <>
-                            <Icons.upload className="mr-2 h-4 w-4" />
-                            上传图片
-                          </>
-                        )}
-                        <input
-                          id="edit-icon-upload"
-                          aria-label="替换图标文件"
-                          type="file"
-                          accept="image/*"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0]
-                            if (file) {
-                              await handleIconUpload(file, true)
-                              // 清空文件输入
-                              const fileInput = document.getElementById('edit-icon-upload') as HTMLInputElement
-                              if (fileInput) {
-                                fileInput.value = ''
-                              }
-                            }
-                          }}
-                          className="hidden"
-                        />
-                      </Button>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      系统会自动获取网站图标，也可手动输入URL或上传本地图片
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border p-3">
-                    <div className="space-y-0.5">
-                      <Label>使用默认图标</Label>
-                      <div className="text-xs text-muted-foreground">
-                        忽略图标URL，使用首字母色块
-                      </div>
-                    </div>
-                    <Switch
-                      checked={editSite.useDefaultIcon}
-                      onCheckedChange={(checked) => setEditSite({ ...editSite, useDefaultIcon: checked })}
-                      disabled={isEditingSubmitting}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-category">分类 *</Label>
-                    <Select
-                      value={editSite.categoryId}
-                      onValueChange={(value) => {
-                        setEditSite({ ...editSite, categoryId: value, subCategoryId: '' })
-                      }}
-                      disabled={isEditingSubmitting}
-                    >
-                      <SelectTrigger aria-label="选择分类">
-                        <SelectValue placeholder="选择分类" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {navigationData.map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
-                            {category.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {editSite.categoryId && navigationData.find(cat => cat.id === editSite.categoryId)?.subCategories && (
-                    <div className="grid gap-2">
-                      <Label htmlFor="edit-subcategory">子分类</Label>
-                      <Select
-                        value={editSite.subCategoryId || "none"}
-                        onValueChange={(value) => setEditSite({ ...editSite, subCategoryId: value === "none" ? "" : value })}
-                        disabled={isEditingSubmitting}
-                      >
-                        <SelectTrigger aria-label="选择子分类（可选）">
-                          <SelectValue placeholder="选择子分类（可选）" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">无子分类</SelectItem>
-                          {navigationData
-                            .find(cat => cat.id === editSite.categoryId)
-                            ?.subCategories?.map((subCategory) => (
-                              <SelectItem key={subCategory.id} value={subCategory.id}>
-                                {subCategory.title}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                  <div className="grid gap-2">
-                    <Label htmlFor="edit-description">描述</Label>
-                    <Textarea
-                      id="edit-description"
-                      value={editSite.description}
-                      onChange={(e) => setEditSite({ ...editSite, description: e.target.value })}
-                      placeholder="输入站点描述（可选，建议 20-160 字）"
-                      className="resize-none"
-                      maxLength={160}
-                      disabled={isEditingSubmitting}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {editSite.description.trim().length === 0
-                        ? '待补全：建议填写 20-160 字；过短时详情页会用站点名与分类兜底。'
-                        : editSite.description.trim().length < 20
-                          ? `待补全：当前 ${editSite.description.trim().length} 字，建议至少 20 字。`
-                          : `${editSite.description.trim().length}/160 字`}
-                    </p>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowEditDialog(false)}
-                    disabled={isEditingSubmitting}
-                  >
-                    取消
-                  </Button>
-                  <Button onClick={handleEditSite} disabled={isEditingSubmitting}>
-                    {isEditingSubmitting && (
-                      <Icons.loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    {isEditingSubmitting ? "更新中..." : "更新站点"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+            <SitelistDialogs {...dialogProps} />
 
-            {/* 批量移动对话框 */}
-            <Dialog open={showMoveDialog} onOpenChange={(open) => {
-              if (!open && !isBatchMoving) {
-                setShowMoveDialog(false)
-              }
-            }}>
-              <DialogContent className="w-[calc(100%-2rem)] sm:max-w-[460px] max-h-[85dvh] overflow-y-auto p-4 sm:p-6">
-                <DialogHeader className="pr-8 sm:pr-6">
-                  <DialogTitle>批量移动站点</DialogTitle>
-                  <DialogDescription>
-                    将选中的 {selectedSites.length} 个站点移动到指定分类
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="move-category">目标分类 *</Label>
-                    <Select
-                      value={moveTargetCategoryId}
-                      onValueChange={(value) => {
-                        setMoveTargetCategoryId(value)
-                        setMoveTargetSubCategoryId('')
-                      }}
-                      disabled={isBatchMoving}
-                    >
-                      <SelectTrigger aria-label="选择分类">
-                        <SelectValue placeholder="选择分类" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {navigationData.map((category) => (
-                          <SelectItem key={category.id} value={category.id}>
-                            {category.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {moveTargetCategoryId && navigationData.find(cat => cat.id === moveTargetCategoryId)?.subCategories && (
-                    <div className="grid gap-2">
-                      <Label htmlFor="move-subcategory">目标子分类</Label>
-                      <Select
-                        value={moveTargetSubCategoryId || "none"}
-                        onValueChange={(value) => setMoveTargetSubCategoryId(value === "none" ? "" : value)}
-                        disabled={isBatchMoving}
-                      >
-                        <SelectTrigger aria-label="选择子分类（可选）">
-                          <SelectValue placeholder="选择子分类（可选）" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">无子分类</SelectItem>
-                          {navigationData
-                            .find(cat => cat.id === moveTargetCategoryId)
-                            ?.subCategories?.map((subCategory) => (
-                              <SelectItem key={subCategory.id} value={subCategory.id}>
-                                {subCategory.title}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowMoveDialog(false)}
-                    disabled={isBatchMoving}
-                  >
-                    取消
-                  </Button>
-                  <Button onClick={handleBatchMove} disabled={isBatchMoving || !moveTargetCategoryId}>
-                    {isBatchMoving && (
-                      <Icons.loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    {isBatchMoving ? "移动中..." : "确认移动"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
 
 
 
@@ -2074,59 +1524,8 @@ export default function SiteListPage() {
             }
           />
         )}
-
-        <AlertDialog open={showDeleteDialog} onOpenChange={(open) => {
-          if (!open && !isBatchDeleting) {
-            setShowDeleteDialog(false)
-          }
-        }}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>确认删除</AlertDialogTitle>
-              <AlertDialogDescription>
-                确定要删除选中的 {selectedSites.length} 个站点吗？删除会移入回收站（/admin/trash），可在那里恢复或彻底清除。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isBatchDeleting}>取消</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleBatchDelete}
-                disabled={isBatchDeleting}
-                className="bg-red-600 hover:bg-red-700"
-              >
-                {isBatchDeleting ? (
-                  <>
-                    <Icons.loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    删除中...
-                  </>
-                ) : (
-                  '删除'
-                )}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {/* 删除单个站点对话框 */}
-        <AlertDialog open={showDeleteSiteDialog} onOpenChange={setShowDeleteSiteDialog}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>确认删除站点</AlertDialogTitle>
-              <AlertDialogDescription>
-                确定要删除站点 &ldquo;{deletingSite?.name}&rdquo; 吗？删除会移入回收站（/admin/trash），可在那里恢复或彻底清除。
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>取消</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={handleDeleteSite}
-                className="bg-red-600 hover:bg-red-700"
-              >
-                删除
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+          </div>
+        </div>
       </div>
     </TooltipProvider>
   )

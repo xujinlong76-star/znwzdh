@@ -29,6 +29,8 @@
 | E15 | 写路径 E2E 3 例 + **自动抓取覆盖用户输入** | **体验** | 填 URL 后名称被清空 → 表单报「请填写必填字段」；已修复 + 5 例守卫 |
 | E16 | 暂存集目录分布打印 | 协作 | 多会话并行时，提交前能看出暂存集被掺入别人的文件 |
 | E17 | E2E 等待上限可配 + 库重置重试窗口 | 环境 | 冷启动超 120 秒时的报错误导、句柄释放卡在 6 秒边界 |
+| E18 | 导航条目表单自动填充只在非空时写入 | 体验 | 空串写入让必填校验在用户未操作时误报；与 sitelist 同口径 |
+| E19 | `docs/ASYNC-RESTORE-DESIGN.md` | 设计 | 恢复异步化被 WIP 阻塞，转成可直接实施的设计（含载荷策略与分片取舍） |
 
 ---
 
@@ -393,7 +395,49 @@ if (forceUpdate || !site.name) {
 
 ---
 
-## 8. 未执行项与原因
+## 8. 第五轮：横向排查同类缺陷 + 异步恢复设计（E18–E19）
+
+### E18 导航条目表单的自动填充（同类缺陷横向排查）
+
+上一轮修掉 sitelist 的「自动抓取覆盖用户输入」之后，扫了同一模式的其他调用点。`AddItemForm.impl.tsx`（管理端导航条目）：
+
+```ts
+// 已经判断了「字段为空」，但仍会把空串写进去
+if (!form.getValues('title')) {
+  form.setValue('title', metadata.title)   // ← 可能是 ''
+}
+```
+
+`setValue('title', '')` 与「从没填过」在表单状态里不是一回事——**前者会让必填校验在用户什么都没做的情况下报错**。另外什么都没抓到时仍提示「成功」，会被理解成「抓到了、只是内容没变」。
+
+修复：非空才写入 + 区分「已填充」与「未获取到」。
+
+**这处对照有价值**：它说明 sitelist 原来的 `forceUpdate` 写法是**偏离了仓库已有的正确实践**（`AddItemForm` 一直是对的），不是全仓统一的错误模式。修复方向因此更有底气。
+
+### E19 `docs/ASYNC-RESTORE-DESIGN.md`（设计完成，代码未实施）
+
+恢复异步化被 `routes/backup.ts` 的 WIP 阻塞，转为先把设计做到「照单落地」的程度。关键决策都带依据：
+
+| 决策 | 依据 |
+|---|---|
+| 校验必须在请求内，不放进任务 | 非法备份不该等到任务跑起来才报错；实测预演仅 388 ms |
+| 载荷写 staging 文件，不进 `jobs.payload` | 1.8 MB/条会让队列表体积失控、`claimNextJob` 轮询成本随历史任务数增长，且备份内容长期驻留队列表是数据风险 |
+| 分片提交（2000/片）而非单事务 | 单事务 5 万条持写锁 30 秒+，期间读请求排队；分片的原子性由**恢复幂等**兜住（`findExistingSiteUrls` 只认 `deleted_at IS NULL`） |
+| 进度用 `jobs` 表两个新列 | 已核对 `updateJobProgress` 与 `progress_*` 均不存在，需新增；不用 `recordEvent` 因为进度是「最新值」语义，事件流会产生几十条噪音 |
+| 保留同步端点 | 已有脚本/CI 依赖；>5000 条时响应加 `asyncRecommended: true`，但**不强制切换** |
+| 非发起者查 status 返回 404 | 不泄漏 job 存在性 |
+
+验收 8 条，核心指标是「**请求时长与数据量解耦**」：1 万条端到端 <30 秒，且请求本身 <1 秒。
+
+同时记录了一个独立缺口：`grep -r "backup/restore" apps/web-overlay/src` 为空——**admin 冷备目前只能手工 curl**，没有恢复入口。
+
+### E19b `navigation-card` 两条红灯已由并行会话修复
+
+上一轮挂着的 `card-tag-links`（Link 缺 `block`/含 `h-full`）与 `keyboard-activation`（缺 `tabIndex={0}`）在 21:16 被对方修好，两条测试合计 24 例现已全绿。本轮提交因此**完整走完 hook**（166 文件 / 1856 例 / 118 秒），未使用逃生口。
+
+---
+
+## 9. 未执行项与原因
 
 | 项 | 状态 | 原因 |
 |---|---|---|
@@ -406,16 +450,16 @@ if (forceUpdate || !site.name) {
 | 恢复性能瓶颈定位 | 部分 | 已证伪「拼音计算是瓶颈」（ASCII 对照反而更慢）；剩余怀疑是索引维护与多值 INSERT 绑定开销，未深挖——7.4 秒/万条已可用。 |
 | PG 批量用例的本地执行 | 未执行 | 无 `NAVHUB_TEST_DATABASE_URL`，docker 不可用。由 CI test-postgres 执行。 |
 | E2E 4 例的本地执行 | **已完成** | 通过新增的 `scripts/e2e-local.mjs` 自动挑端口后 4/4 通过（2.3 分钟）。上一版本节标的「未验证」已撤回。 |
-| 备份恢复异步化 | 未执行 | 目标是把「入队 + 轮询」替代「同步等待」，彻底消除 HTTP 超时面（现在只是把 30 秒放宽到 120 秒）。**阻塞原因**：`apps/api/src/routes/backup.ts` 正被并行会话修改（S3 恢复 `enabled` 缺陷），在其工作区提交前改动同一文件会污染对方提交。 |
-| 恢复丢失 `createdAt` | 未修（已记录） | 备份包带 `createdAt`，`insertSitesBulk` 未接（`created_at` 统一写恢复时刻）。影响「按创建时间排序」在恢复后失真。同属 `backup.ts`，与上一条同一阻塞。 |
 | `field-names` 红灯 | 已由并行会话修复 | 其 `fbccddf` 提交后 `field-names.test.ts` 7 例全绿，本项无需处理。 |
-| `navigation-card` 两条红灯 | 未修（属对方 WIP） | `card-tag-links`（Link 缺 `block`/含 `h-full`）与 `keyboard-activation`（缺 `tabIndex={0}` 证据）在 `navigation-card.tsx` 上，该文件是并行会话 20:39 的首页卡片性能改造 WIP，未同步到 `apps/web`。测试读 overlay 源故报红。 |
+| 备份恢复异步化 | 设计完成，代码未实施 | 设计见 `docs/ASYNC-RESTORE-DESIGN.md`。**阻塞原因**：`apps/api/src/routes/backup.ts` 正在并行会话的未提交改动中（修复恢复丢失 `enabled`）。 |
+| 恢复丢失 `createdAt` | 存储层已就绪，端点未接 | `insertSitesBulk` 已支持 `createdAt` 并有断言；`backup.ts` 接入仅差一行，同一阻塞。 |
+| worktree 隔离多会话提交 | 未采用 | 本机 `node_modules` 用 pnpm 隔离布局，worktree 需 junction 共享；而 junction 树删除曾两次清空源码（344/347 文件）。为两个小修复承担该风险不划算。替代：等对方提交 + 每次 SKIP 时在 commit message 写明红灯归属。 |
 
 > 两条「未本地验证」的改动（PG 4 例、E2E 4 例）都集中在 CI 侧。若 CI 报红，优先看这两处，而不是回滚业务改动。
 
 ---
 
-## 9. 回滚
+## 10. 回滚
 
 改动分两批。
 

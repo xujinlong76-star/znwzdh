@@ -169,24 +169,28 @@ export default function MeDataPage() {
       }
     } catch {
       // sessionStorage 不可写（隐私模式）：退回内存续导，刷新即丢——老行为
+      setResumeInfo(remaining > 0 ? { remaining, offset } : null)
     }
   }, [])
 
   // 刷新后恢复续导上下文（只在登录态就绪时提示，避免匿名访客看到无意义入口）
   useEffect(() => {
     if (state !== 'ready') return
-    try {
-      const raw = window.sessionStorage.getItem(RESUME_KEY)
-      if (!raw) return
-      const parsed = JSON.parse(raw) as { payload?: Record<string, unknown>; remaining?: number; offset?: number }
-      if (parsed?.payload && typeof parsed.remaining === 'number' && parsed.remaining > 0) {
-        lastBackupRef.current = parsed.payload
-        setResumeInfo({ remaining: parsed.remaining, offset: Number(parsed.offset ?? 0) })
+    // 读 sessionStorage 放微任务：effect 同步段不触碰 setState（set-state-in-effect）
+    void Promise.resolve().then(() => {
+      try {
+        const raw = window.sessionStorage.getItem(RESUME_KEY)
+        if (!raw) return
+        const parsed = JSON.parse(raw) as { payload?: Record<string, unknown>; remaining?: number; offset?: number }
+        if (parsed?.payload && typeof parsed.remaining === 'number' && parsed.remaining > 0) {
+          lastBackupRef.current = parsed.payload
+          setResumeInfo({ remaining: parsed.remaining, offset: Number(parsed.offset ?? 0) })
+        }
+      } catch {
+        // 坏数据直接清掉，不让一次解析失败卡住导入区
+        try { window.sessionStorage.removeItem(RESUME_KEY) } catch { /* 忽略 */ }
       }
-    } catch {
-      // 坏数据直接清掉，不让一次解析失败卡住导入区
-      try { window.sessionStorage.removeItem(RESUME_KEY) } catch { /* 忽略 */ }
-    }
+    })
   }, [state])
 
   // 按域精细化清理状态
@@ -222,7 +226,8 @@ export default function MeDataPage() {
   }, [loadSummary])
 
   useEffect(() => {
-    void loadSession()
+    // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
+    void Promise.resolve().then(loadSession)
   }, [loadSession])
 
   const handleExport = useCallback(async () => {
@@ -348,7 +353,7 @@ export default function MeDataPage() {
         setImporting(false)
       }
     },
-    [loadSummary, toast],
+    [loadSummary, persistResume, toast],
   )
 
   const handleImportBackup = useCallback(
@@ -607,7 +612,7 @@ export default function MeDataPage() {
                     ? ` · 注意：这份备份导出时历史就已截断（上限 ${importResult.historyExportLimit} 条），更早的记录不在文件里`
                     : ''}
                 </p>
-                {importResult.nextHistoryOffset !== null && lastBackupRef.current && (
+                {importResult.nextHistoryOffset !== null && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -626,7 +631,7 @@ export default function MeDataPage() {
               </div>
             )}
 
-            {resumeInfo && lastBackupRef.current && (
+            {resumeInfo && (
               <ImportResumeBanner
                 remaining={resumeInfo.remaining}
                 busy={importing}

@@ -71,7 +71,8 @@ export default function NotificationsPage() {
   }, [])
 
   useEffect(() => {
-    void load(0)
+    // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
+    void Promise.resolve().then(() => load(0))
   }, [load])
 
   const markRead = useCallback(

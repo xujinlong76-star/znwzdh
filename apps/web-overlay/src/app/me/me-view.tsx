@@ -145,7 +145,8 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
 
   useEffect(() => {
     if (state !== 'ready') return
-    void refreshActivity()
+    // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
+    void Promise.resolve().then(refreshActivity)
   }, [state, refreshActivity])
 
   /**
@@ -173,7 +174,7 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
     } finally {
       setSettingsBusy(false)
     }
-  }, [overview, settingsBusy, state, toast])
+  }, [overview, settingsBusy, state, toast, updateSettings])
 
   const clearSignal = useCallback(async (kind: 'click' | 'search' | 'favorite') => {
     if (!overview) return

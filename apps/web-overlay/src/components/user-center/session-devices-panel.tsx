@@ -44,7 +44,6 @@ export function SessionDevicesPanel() {
   const [confirmToken, setConfirmToken] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    setLoadError(false)
     try {
       const res = await fetch('/api/me/sessions', { cache: 'no-store' })
       if (!res.ok) {
@@ -55,6 +54,8 @@ export function SessionDevicesPanel() {
       const data = (await res.json()) as { devices?: SessionDevice[]; currentSidHash?: string | null }
       setDevices(Array.isArray(data.devices) ? data.devices : [])
       setCurrentSidHash(typeof data.currentSidHash === 'string' ? data.currentSidHash : null)
+      // 重试成功在这里清错误位（不能在函数头同步清：effect 同步段不允许 setState）
+      setLoadError(false)
     } catch {
       setLoadError(true)
       setDevices(null)
@@ -62,7 +63,9 @@ export function SessionDevicesPanel() {
   }, [])
 
   useEffect(() => {
-    void load()
+    // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect），
+    // 语义只差一个 microtask，加载态仍先于首帧数据渲染
+    void Promise.resolve().then(load)
   }, [load])
 
   const revoke = useCallback(

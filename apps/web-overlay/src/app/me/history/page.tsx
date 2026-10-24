@@ -136,9 +136,10 @@ export default function SearchHistoryPage() {
   }, [])
 
   useEffect(() => {
-    // 等身份就绪再取数：登录/合并/退出都会改变 identity，从而自动重取
+    // 等身份就绪再取数：登录/合并/退出都会改变 identity，从而自动重取。
+    // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
     if (!identityReady.ready) return
-    void load(identityReady.identity ?? '')
+    void Promise.resolve().then(() => load(identityReady.identity ?? ''))
   }, [load, identityReady.ready, identityReady.identity])
 
   const loadMore = useCallback(async () => {
@@ -164,7 +165,7 @@ export default function SearchHistoryPage() {
       return
     }
     setItems((prev) => prev.filter((i) => i.id !== id))
-  }, [identity, toast])
+  }, [identity, offlineSnapshotAt, toast])
 
   const clearAll = useCallback(async () => {
     if (!identity) return
@@ -249,7 +250,8 @@ export default function SearchHistoryPage() {
   // 切到访问 tab 时首次加载；身份变化后回 idle（下次切入按新身份取）
   useEffect(() => {
     if (tab !== 'visits') return
-    if (visitState === 'idle') void loadVisits(0)
+    // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
+    if (visitState === 'idle') void Promise.resolve().then(() => loadVisits(0))
   }, [tab, visitState, loadVisits])
 
   const clearVisits = useCallback(async () => {

@@ -33,6 +33,9 @@ export default defineConfig({
     hookTimeout: 60_000,
     pool: "forks",
     maxWorkers: 3,
+    // 注：勿开 isolate:false。实测（2026-10-24）会引入跨文件污染——
+    // tap-sync-import 与 packages/ai 在共享进程下互相干扰翻红，隔离开启即全绿。
+    // 提速诉求见 docs/NEXT-STEPS-PLAN-2026-10-24.md D2（已试并回滚）。
     execArgv: ["--max-old-space-size=4096"],
     coverage: {
       // 覆盖率只统计本仓库自己维护的后端与核心包源码：

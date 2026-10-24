@@ -54,7 +54,8 @@ export function ApiTokensPanel() {
   }, [])
 
   useEffect(() => {
-    void load()
+    // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
+    void Promise.resolve().then(load)
   }, [load])
 
   const create = useCallback(async () => {

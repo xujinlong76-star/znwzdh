@@ -7,7 +7,6 @@
  * 登录态写云端，匿名态写本机（登录后 SessionSync 会同步到云端）。
  */
 import { Container } from '@/components/ui/container'
-import { Button } from '@/components/ui/button'
 import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
 import { CheckCircle2, Loader2, Settings2 } from 'lucide-react'

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { loginViaAdmin } from './helpers';
 
 /**
  * 用户中心登录态旅程（T12）：补上此前只有匿名态的盲区。
@@ -6,16 +7,8 @@ import { expect, test, type Page } from '@playwright/test';
  * 登录复用 admin-token.spec 验证过的路径：先到 /admin/tokens 走开发快捷通道
  * （服务端渲染的管理页可见 = 会话 cookie 确凿生效），再导航到目标页——
  * 直接在 /me 的回调变体上点旁路按钮在本环境不可靠（2026-10-24 实测）。
+ * loginViaAdmin 已抽到 e2e/helpers.ts（含冷编译预热，45s→120s 预算，D3）。
  */
-async function loginViaAdmin(page: Page): Promise<void> {
-  await page.goto('/admin/tokens', { waitUntil: 'domcontentloaded' });
-  if (page.url().includes('/auth/signin')) {
-    const bypassBtn = page.getByRole('button', { name: /以管理员身份一键进入/ });
-    await expect(bypassBtn).toBeVisible({ timeout: 10_000 });
-    await bypassBtn.click();
-    await expect(page.locator('main#main-content h1').filter({ hasText: 'API Token 访问凭据管理' })).toBeVisible({ timeout: 45_000 });
-  }
-}
 
 test.describe('用户中心：登录态', () => {
   test('登录后 /me 概览进入 ready 态（统计卡与入口组可见）', async ({ page }) => {

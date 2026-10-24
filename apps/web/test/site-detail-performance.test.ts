@@ -60,7 +60,9 @@ describe("站点详情性能", () => {
     const sized = searchBar.match(/width=\{32\}[\s\S]{0,40}height=\{32\}/g) ?? [];
     expect(sized.length).toBe(2);
 
-    const pluginDetail = overlayFile("src/app/marketplace/[slug]/plugin-detail-view.tsx");
+    const pluginDetail = ["plugin-detail-view.tsx", "detail-tab-panels.tsx", "detail-modals.tsx"]
+      .map((f) => overlayFile(`src/app/marketplace/[slug]/${f}`))
+      .join(String.fromCharCode(10));
     expect(pluginDetail).toContain("width={16}");
     expect(pluginDetail).toContain("height={16}");
   });

@@ -164,7 +164,8 @@
 | B2 MCP 用户域工具 | ✅ | list_favorites / list_search_history / get_profile_summary（94/94） |
 | B3 version 水位 | ✅ | GET /api/favorites/version（11/11） |
 | C1 目的地页状态统一 | ✅ 缺口证伪 | 实测 8/10 页为 SSR + 客户端岛自带降级设计（三处命中皆注释）；按「不为改而改」收窄为无需接入；hot 属并行领地未查 |
-| A3 插件域两巨石 | ⏸ 未执行 | 方案定位即「先补测试再拆、批次后半」；plugin-detail-view 1817 / ai-plugin-studio-modal 1717 留下一批 |
+| A3.1 plugin-detail-view 拆分 | ✅ 1817→壳981+面板554+弹窗390 | E2E 七例基线 7/7→拆分后 7/7 + 结构守卫 5 例 |
+| A3.2 ai-plugin-studio-modal | ⏸ 缓拆（实证） | 自由标识符 68 个（A3.1 仅 31/45）；三 tab 中仅 sandbox 有 E2E 路径，json/health 无行为锁——按「先补测试再拆」纪律，需先建向导级测试再动 |
 | D5 backup 接力 | ✅ 并行会话完成 | 1268f91：异步恢复全链路 + insertSitesBulk 显式接 createdAt |
 
 **多会话工作区实况**：本批多次出现并行会话把已验证的暂存内容先行提交（A1 的

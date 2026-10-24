@@ -19,6 +19,15 @@ function overlaySource(rel: string): string {
   return readFileSync(hit, 'utf8')
 }
 
+/** 详情页家族联合源（A3.1 拆分后守卫锁的是整个特性的源码意图，不单壳文件） */
+function detailFamily(): string {
+  const parts = [overlaySource('src/app/marketplace/[slug]/plugin-detail-view.tsx')]
+  for (const extra of ['detail-tab-panels.tsx', 'detail-modals.tsx']) {
+    try { parts.push(overlaySource(`src/app/marketplace/[slug]/${extra}`)) } catch { /* 拆分前文件不存在时忽略 */ }
+  }
+  return parts.join(String.fromCharCode(10))
+}
+
 describe('插件版本差异面板按需加载', () => {
   const src = overlaySource('src/components/plugins/plugin-version-timeline.tsx')
 
@@ -49,7 +58,7 @@ describe('插件版本差异面板按需加载', () => {
  * 预设安装只在用户点「应用预设」时发生，注册表必须留在异步块里。
  */
 describe('详情页预设安装不再把模块注册表拉进首屏', () => {
-  const view = overlaySource('src/app/marketplace/[slug]/plugin-detail-view.tsx')
+  const view = detailFamily()
   const direct = overlaySource('src/lib/modular/install-preset-direct.ts')
 
   it('详情页不静态引入 useModularLayout', () => {

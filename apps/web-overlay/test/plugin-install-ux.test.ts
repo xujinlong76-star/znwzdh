@@ -13,11 +13,21 @@ import { describe, expect, it } from "vitest"
 const HERE = dirname(fileURLToPath(import.meta.url))
 
 function overlaySource(rel: string): string {
+
   const candidates = [resolve(HERE, "..", rel), resolve(HERE, "..", "..", "web-overlay", rel)]
   const hit = candidates.find((p) => p.replace(/\\/g, "/").includes("/web-overlay/") && existsSync(p))
   if (!hit) throw new Error("无法定位 overlay 文件 " + rel)
   return readFileSync(hit, "utf8")
 }
+/** 详情页家族联合源（A3.1 拆分后守卫锁整个特性，不单壳文件） */
+function detailFamily(): string {
+  const parts = [overlaySource('src/app/marketplace/[slug]/plugin-detail-view.tsx')]
+  for (const extra of ['detail-tab-panels.tsx', 'detail-modals.tsx']) {
+    try { parts.push(overlaySource(`src/app/marketplace/[slug]/${extra}`)) } catch { /* 拆分前不存在则忽略 */ }
+  }
+  return parts.join(String.fromCharCode(10))
+}
+
 
 describe("安装弹窗：跨包重复预览与耗时反馈", () => {
   const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
@@ -85,7 +95,7 @@ describe("插件卡片与市场弹窗：已安装插件的卸载/管理联动", 
 })
 
 describe("插件详情：分享深链只对未安装用户自动弹窗", () => {
-  const view = overlaySource("src/app/marketplace/[slug]/plugin-detail-view.tsx")
+  const view = detailFamily()
 
   it("等客户端带身份刷新完成后再决定是否弹窗（SSR 首屏没有 installed）", () => {
     expect(view).toContain("detailSynced")
@@ -96,7 +106,7 @@ describe("插件详情：分享深链只对未安装用户自动弹窗", () => {
 
 describe("安装确认里的预设规模：不能把 4 个看板说成 1 个", () => {
   const modal = overlaySource("src/components/plugins/plugin-install-modal.tsx")
-  const detail = overlaySource("src/app/marketplace/[slug]/plugin-detail-view.tsx")
+  const detail = detailFamily()
 
   it("摘要缺失（详情接口把 summary 放在响应外层）时按清单 boards 计数", () => {
     expect(modal).toContain("plugin.manifest?.payload?.boards")

@@ -42,8 +42,18 @@ function overlayFile(rel: string): string {
 }
 
 function codeOnly(source: string): string {
+
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 }
+/** 详情页家族联合源（A3.1 拆分后守卫锁整个特性，不单壳文件） */
+function detailFamily(): string {
+  const parts = [overlayFile('src/app/marketplace/[slug]/plugin-detail-view.tsx')]
+  for (const extra of ['detail-tab-panels.tsx', 'detail-modals.tsx']) {
+    try { parts.push(overlayFile(`src/app/marketplace/[slug]/${extra}`)) } catch { /* 拆分前不存在则忽略 */ }
+  }
+  return parts.join(String.fromCharCode(10))
+}
+
 
 const KNOWN_TYPES = ['clock', 'weather']
 const isKnownType = (type: string) => KNOWN_TYPES.includes(type)
@@ -287,7 +297,7 @@ describe('formatLayoutReport：措辞只能照着台账说', () => {
 describe('接线：台账必须真的被界面读出来', () => {
   const hook = codeOnly(overlayFile('src/lib/modular/use-modular-layout.ts'))
   const canvas = codeOnly(overlayFile('src/components/modular/modular-canvas.tsx'))
-  const detail = codeOnly(overlayFile('src/app/marketplace/[slug]/plugin-detail-view.tsx'))
+  const detail = codeOnly(detailFamily())
 
   it('hook 把 state 变更挡在 ok 之后（失败一律不动画布）', () => {
     expect(hook).toContain('const plan = planLayoutImport(jsonStr, (type) => Boolean(WIDGET_REGISTRY[type]))')

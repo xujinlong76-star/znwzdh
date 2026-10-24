@@ -71,12 +71,22 @@ function listSources(dir: string, out: string[] = []): string[] {
  * （比如说明为什么要封装它），那些不该被当成「直接使用了 API」。
  */
 function stripComments(source: string): string {
+
   const noBlock = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
   return noBlock
     .split(/\r?\n/)
     .map((line) => (line.trim().startsWith("//") ? " ".repeat(line.length) : line))
     .join("\n");
 }
+/** 详情页家族联合源（A3.1 拆分后守卫锁整个特性，不单壳文件） */
+function detailFamily(): string {
+  const parts = [overlaySource('src/app/marketplace/[slug]/plugin-detail-view.tsx')]
+  for (const extra of ['detail-tab-panels.tsx', 'detail-modals.tsx']) {
+    try { parts.push(overlaySource(`src/app/marketplace/[slug]/${extra}`)) } catch { /* 拆分前不存在则忽略 */ }
+  }
+  return parts.join(String.fromCharCode(10))
+}
+
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -313,7 +323,7 @@ describe("这次补上的三处静默失败", () => {
   });
 
   it("插件详情徽章弹窗：复制确认落在按钮自身，不只依赖可能被丢弃的 toast", () => {
-    const code = stripComments(overlaySource("src/app/marketplace/[slug]/plugin-detail-view.tsx"));
+    const code = stripComments(detailFamily());
     const count = (re: RegExp) => code.match(re)?.length ?? 0;
     // 四个复制入口（Markdown / SVG / 分享短链 / 原始清单）都要把结果写入本地反馈
     expect(count(/reportCopy\(/g), "reportCopy 调用").toBeGreaterThanOrEqual(4);

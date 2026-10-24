@@ -161,15 +161,20 @@ export function ApiTokensPanel() {
             const confirming = confirmId === t.id
             return (
               <li key={t.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-medium">
-                    {t.name}
-                    {t.tokenPrefix && <span className="ml-2 font-mono text-[11px] text-muted-foreground">{t.tokenPrefix}…</span>}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {t.scopes.join(',')} · 创建于 {formatDate(t.createdAt)}
-                    {t.lastUsedAt ? ` · 最近使用 ${formatDate(t.lastUsedAt)}` : ' · 从未使用'}
-                  </p>
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground">
+                    <KeyRound className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium">
+                      {t.name}
+                      {t.tokenPrefix && <span className="ml-2 font-mono text-[11px] text-muted-foreground">{t.tokenPrefix}…</span>}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {t.scopes.join(',')} · 创建于 {formatDate(t.createdAt)}
+                      {t.lastUsedAt ? ` · 最近使用 ${formatDate(t.lastUsedAt)}` : ' · 从未使用'}
+                    </p>
+                  </div>
                 </div>
                 <Button
                   size="sm"

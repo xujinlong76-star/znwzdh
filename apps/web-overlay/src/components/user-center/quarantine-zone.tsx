@@ -25,7 +25,7 @@ import {
   readQuarantineBytes,
   type QuarantineCopy,
 } from '@/lib/user-settings'
-import { Archive, Download, Eye, Loader2, RotateCcw, Trash2, X } from 'lucide-react'
+import { Archive, Download, Eye, FileWarning, Loader2, RotateCcw, Trash2, X } from 'lucide-react'
 
 /** 内联预览的字符上限：原文可能是几 MB，直接塞进 DOM 会把页面卡死 */
 const PREVIEW_CHARS = 4000
@@ -191,15 +191,20 @@ export function QuarantineZone() {
           return (
             <li key={copy.key} className="px-3 py-2.5">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="break-words text-xs font-medium">{baseKeyLabel(copy.baseKey)}原文副本</p>
-                  <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                    {formatSavedAt(copy.savedAt)} · {copy.chars.toLocaleString()} 字符 ·{' '}
-                    <span className="break-all font-mono">{copy.key}</span>
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {copy.restorable ? '可解析：能直接并回本机收藏' : '仅存档：这份原文仍解析不出来，只能下载后人工处理'}
-                  </p>
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300">
+                    <FileWarning className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="break-words text-xs font-medium">{baseKeyLabel(copy.baseKey)}原文副本</p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                      {formatSavedAt(copy.savedAt)} · {copy.chars.toLocaleString()} 字符 ·{' '}
+                      <span className="break-all font-mono">{copy.key}</span>
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {copy.restorable ? '可解析：能直接并回本机收藏' : '仅存档：这份原文仍解析不出来，只能下载后人工处理'}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
                   <Button

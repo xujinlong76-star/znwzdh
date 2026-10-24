@@ -130,14 +130,27 @@ export function SessionDevicesPanel() {
             const confirming = confirmToken === d.token
             return (
               <li key={d.token} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-medium">
-                    {isCurrent ? '当前设备 · ' : ''}
-                    {summarizeAgent(d.userAgent)}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    最近活跃 {formatTime(d.lastSeenAt)} · 登录于 {formatTime(d.createdAt)}
-                  </p>
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                      isCurrent ? 'bg-primary/10 text-primary' : 'bg-muted/70 text-muted-foreground'
+                    }`}
+                  >
+                    <MonitorSmartphone className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 truncate text-xs font-medium">
+                      <span className="truncate">{summarizeAgent(d.userAgent)}</span>
+                      {isCurrent && (
+                        <span className="shrink-0 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                          当前设备
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      最近活跃 {formatTime(d.lastSeenAt)} · 登录于 {formatTime(d.createdAt)}
+                    </p>
+                  </div>
                 </div>
                 <Button
                   size="sm"

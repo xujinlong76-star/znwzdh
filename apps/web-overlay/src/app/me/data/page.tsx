@@ -44,14 +44,19 @@ import { SectionState } from '@/components/user-center/section-state'
 import {
   AlertTriangle,
   Bookmark,
+  Bot,
   CheckCircle2,
   Database,
   Download,
   Eraser,
+  FolderHeart,
+  Heart,
+  History,
   Loader2,
   ShieldCheck,
   Trash2,
   Upload,
+  Zap,
 } from 'lucide-react'
 
 type ViewState = 'loading' | 'anonymous' | 'ready' | 'deleted' | 'error'
@@ -495,32 +500,24 @@ export default function MeDataPage() {
                 <span className="text-[11px] text-muted-foreground">实时统计当前账号名下存量</span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
-                <div className="rounded-xl border border-border/60 bg-background/50 px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">云端收藏</p>
-                  <p className="mt-0.5 text-base font-semibold tabular-nums">{summary.counts.favorites}</p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/50 px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">收藏夹分组</p>
-                  <p className="mt-0.5 text-base font-semibold tabular-nums">{summary.counts.folders}</p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/50 px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">搜索历史</p>
-                  <p className="mt-0.5 text-base font-semibold tabular-nums">{summary.counts.searches}</p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/50 px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">近 30 天事件</p>
-                  <p className="mt-0.5 text-base font-semibold tabular-nums">{summary.counts.recentEvents}</p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/50 px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">E2EE 金库</p>
-                  <p className="mt-0.5 text-xs font-semibold">
-                    {summary.vault.exists ? `v${summary.vault.version ?? 1}` : '未创建'}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/50 px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">个人 AI 配置</p>
-                  <p className="mt-0.5 text-xs font-semibold">{summary.llmConfig.exists ? '已配置' : '跟随系统'}</p>
-                </div>
+                {(
+                  [
+                    { label: '云端收藏', value: summary.counts.favorites, icon: Heart, chip: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
+                    { label: '收藏夹分组', value: summary.counts.folders, icon: FolderHeart, chip: 'bg-orange-500/10 text-orange-700 dark:text-orange-300' },
+                    { label: '搜索历史', value: summary.counts.searches, icon: History, chip: 'bg-sky-500/10 text-sky-700 dark:text-sky-300' },
+                    { label: '近 30 天事件', value: summary.counts.recentEvents, icon: Zap, chip: 'bg-primary/10 text-primary' },
+                    { label: 'E2EE 金库', value: summary.vault.exists ? `v${summary.vault.version ?? 1}` : '未创建', icon: ShieldCheck, chip: 'bg-violet-500/10 text-violet-700 dark:text-violet-300' },
+                    { label: '个人 AI 配置', value: summary.llmConfig.exists ? '已配置' : '跟随系统', icon: Bot, chip: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' },
+                  ] as const
+                ).map(({ label, value, icon: Icon, chip }) => (
+                  <div key={label} className="rounded-xl border border-border/60 bg-background/50 px-3 py-2.5 transition-colors hover:border-primary/40">
+                    <span className={`mb-1.5 flex h-6 w-6 items-center justify-center rounded-md ${chip}`}>
+                      <Icon className="h-3.5 w-3.5" aria-hidden />
+                    </span>
+                    <p className="text-[11px] text-muted-foreground">{label}</p>
+                    <p className="mt-0.5 text-sm font-semibold tabular-nums">{value}</p>
+                  </div>
+                ))}
               </div>
             </section>
           )}

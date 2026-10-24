@@ -199,6 +199,29 @@ describe("设置与画像信号", () => {
     expect(after.json().settings.favoriteSignalCutoff).toBe(stamp);
   });
 
+  it("GET /api/me/settings 对「从未保存过」的身份给 updatedAt=0，PATCH 后转正", async () => {
+    // 前端 use-me-settings 的「本机匿名偏好先上云，别被默认值冲掉」判定完全依赖这条契约：
+    // updatedAt === 0 ⇔ user_settings 里还没有这一行。这里把它钉住，防止服务端改成
+    // 「无行也回 Date.now()」而让本机偏好在登录后被默认值静默覆盖。
+    const fresh = signedHeaders("github:u-settings-never-saved");
+    const before = await data("GET", "/api/me/settings", undefined, fresh);
+    expect(before.statusCode).toBe(200);
+    expect(before.json().settings.updatedAt).toBe(0);
+
+    const patch = await data(
+      "PATCH",
+      "/api/me/settings",
+      { defaultSearchEngine: "bing", cardDensity: "compact" },
+      fresh,
+    );
+    expect(patch.statusCode).toBe(200);
+    expect(patch.json().settings.updatedAt).toBeGreaterThan(0);
+
+    const after = await data("GET", "/api/me/settings", undefined, fresh);
+    expect(after.json().settings.updatedAt).toBeGreaterThan(0);
+    expect(after.json().settings.defaultSearchEngine).toBe("bing");
+  });
+
   it("POST /api/me/diagnostics 自动巡检并修复孤儿收藏夹引用", async () => {
     const diag = await data("POST", "/api/me/diagnostics", {});
     expect(diag.statusCode).toBe(200);

@@ -4,7 +4,8 @@
  * 「设置」页：全局导航 / 0-RTT / 历史保留 / 遥测等偏好的唯一编辑入口。
  *
  * 数据逻辑在 `hooks/use-me-settings.ts`；本组件只负责四态渲染与反馈。
- * 登录态写云端，匿名态写本机（登录后 SessionSync 会同步到云端）。
+ * 登录态写云端，匿名态写本机；登录后的首次读取会把本机这一份补交到云端
+ * （见 use-me-settings 的 `updatedAt === 0` 分支），本机改动失败时在这里常驻提示并可重试。
  */
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
@@ -20,7 +21,7 @@ import type { UserSettingsPatch } from '@/lib/user-settings'
 export function MeSettingsView() {
   const { toast } = useToast()
   const controller = useMeSettings()
-  const { state, settings, busy, notice, error } = controller
+  const { state, settings, busy, notice, error, saveError } = controller
 
   const handleChange = async (patch: UserSettingsPatch, successTitle?: string) => {
     const ok = await controller.patch(patch)
@@ -28,7 +29,20 @@ export function MeSettingsView() {
       toast({ title: successTitle ?? '偏好设置已保存并校验通过' })
       return
     }
-    toast({ title: '设置保存失败', description: '中枢暂不可用，请稍后重试', variant: 'destructive' })
+    toast({
+      title: '设置保存失败',
+      description: saveError ?? '这次改动没有保存上，当前显示的仍是原值',
+      variant: 'destructive',
+    })
+  }
+
+  const handleRetrySave = async () => {
+    const ok = await controller.retrySave()
+    if (ok) {
+      toast({ title: '已重试成功，偏好设置已保存' })
+      return
+    }
+    toast({ title: '仍然没保存上', description: '原因见页面内的失败提示，稍后可再重试', variant: 'destructive' })
   }
 
   const handleRestore = async () => {
@@ -37,7 +51,11 @@ export function MeSettingsView() {
       toast({ title: '已恢复默认导航偏好设置' })
       return
     }
-    toast({ title: '恢复失败', description: '中枢暂不可用，请稍后重试', variant: 'destructive' })
+    toast({
+      title: '恢复失败',
+      description: saveError ?? '这次改动没有保存上，当前显示的仍是原值',
+      variant: 'destructive',
+    })
   }
 
   return (
@@ -65,6 +83,22 @@ export function MeSettingsView() {
             className="text-[11px] underline underline-offset-2 opacity-80 hover:opacity-100"
           >
             知道了
+          </button>
+        </div>
+      )}
+
+      {saveError && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-3.5 py-2 text-xs text-destructive"
+        >
+          <span>{saveError}</span>
+          <button
+            type="button"
+            onClick={() => void handleRetrySave()}
+            className="shrink-0 text-[11px] font-medium underline underline-offset-2"
+          >
+            重试保存
           </button>
         </div>
       )}

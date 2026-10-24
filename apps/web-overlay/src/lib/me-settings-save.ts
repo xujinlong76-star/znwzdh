@@ -21,6 +21,20 @@ export interface SettingsSaveResult {
   notice: string
 }
 
+/**
+ * 登录后首次读取时，是否先把本机这一份交上去。
+ *
+ * `updatedAt === 0` 是服务端既有契约（user_settings 无行时 getUserSettings 返回 0），
+ * 代表「云端还没有你的设置」；此时若本机在匿名期存过设置，就必须先上云，
+ * 否则云端默认值会把本机设置静默冲掉，界面上「登录后同步到云端」的承诺也落空。
+ */
+export function shouldUploadLocalSettingsFirst(
+  cloud: Pick<UserSettingsModel, 'updatedAt'>,
+  local: Pick<UserSettingsModel, 'updatedAt'>,
+): boolean {
+  return cloud.updatedAt === 0 && local.updatedAt > 0
+}
+
 /** 云端路径：PATCH /api/me/settings → 回读校验。失败抛错（网络 / 非 2xx）。 */
 export async function saveSettingsPatchToCloud(patch: UserSettingsPatch): Promise<SettingsSaveResult> {
   const res = await fetch('/api/me/settings', {

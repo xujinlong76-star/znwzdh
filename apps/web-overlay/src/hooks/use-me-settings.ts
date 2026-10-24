@@ -6,9 +6,14 @@
  * 从 `app/me/me-view.tsx` 等价搬运：登录态走 `PATCH /api/me/settings` 并回读校验，
  * 匿名态写本机 localStorage；两条路径都执行 `verifySettingsConsistency`，
  * 保证「显示的值」与「真正落盘的值」一致。
+ *
+ * 匿名期的本机偏好不会凭空上云：登录后的首次读取若发现云端还没有行
+ * （`updatedAt === 0` 是服务端既有契约），就把本机这一份 PATCH 上去，
+ * 兑现「登录后同步到云端」而不是用默认值冲掉本机设置。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { isNetworkSessionFailure, probeClientSession } from '@/lib/client-session'
+import { saveSettingsPatchToCloud, shouldUploadLocalSettingsFirst } from '@/lib/me-settings-save'
 import {
   DEFAULT_USER_SETTINGS,
   normalizeUserSettings,
@@ -28,10 +33,20 @@ export interface MeSettingsController {
   /** 保存后的自检结论（成功才出现）；失败时为 null */
   notice: string | null
   error: string | null
+  /** 云端保存失败的原因（本机路径不会失败到需要它）；成功后清空 */
+  saveError: string | null
   dismissNotice: () => void
   reload: () => Promise<void>
   patch: (patch: UserSettingsPatch) => Promise<boolean>
+  /** 重发上一次没保存上的改动；没有待重发项时返回 false */
+  retrySave: () => Promise<boolean>
   restoreDefaults: () => Promise<boolean>
+}
+
+function describeSaveFailure(err: unknown): string {
+  const reason =
+    err instanceof TypeError ? '网络不可用' : err instanceof Error && err.message ? err.message : '保存请求未完成'
+  return `${reason}：这次改动没有保存上，当前显示的仍是原值`
 }
 
 export function useMeSettings(): MeSettingsController {
@@ -40,6 +55,8 @@ export function useMeSettings(): MeSettingsController {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [lastFailedPatch, setLastFailedPatch] = useState<UserSettingsPatch | null>(null)
 
   const load = useCallback(async () => {
     setState('loading')
@@ -62,10 +79,17 @@ export function useMeSettings(): MeSettingsController {
         return
       }
 
+      // 必须在任何「写本机」之前取快照：ready 路径会用云端结果覆盖 localStorage，
+      // 覆盖之后再判断「匿名期攒下了什么」就太晚了。
+      const localBefore = readLocalUserSettings()
+
       const res = await fetch('/api/me/settings', { cache: 'no-store' })
       if (res.status === 401) {
-        setSettings(readLocalUserSettings())
-        setState('anonymous')
+        // 会话里明确有 user.id，设置服务却拒绝 → 这不是匿名。压平成 anonymous
+        // 会让后续改动静默只落本机，用户以为已经在云上。
+        setSettings(localBefore)
+        setError('已登录，但设置服务拒绝了这次请求（401）。请稍后重试或重新登录。')
+        setState('error')
         return
       }
       if (!res.ok) {
@@ -74,7 +98,22 @@ export function useMeSettings(): MeSettingsController {
         return
       }
       const data = (await res.json()) as { settings?: unknown }
-      setSettings(writeLocalUserSettings(normalizeUserSettings(data.settings)))
+      const cloud = normalizeUserSettings(data.settings)
+      if (shouldUploadLocalSettingsFirst(cloud, localBefore)) {
+        // 云端还没有这一行，而本机在匿名期存过设置 → 先上云，别用默认值冲掉本机。
+        try {
+          const migrated = await saveSettingsPatchToCloud(localBefore)
+          setSettings(migrated.finalSettings)
+          setState('ready')
+          setNotice('已把你在本机保存的偏好同步到云端，换设备登录后会跟随。')
+        } catch {
+          setSettings(localBefore)
+          setError('云端还没有你的设置，本机这一份没能同步上去，暂时只在这台设备生效。')
+          setState('error')
+        }
+        return
+      }
+      setSettings(writeLocalUserSettings(cloud))
       setState('ready')
     } catch {
       setError('网络不可用，未能加载设置')
@@ -90,6 +129,8 @@ export function useMeSettings(): MeSettingsController {
     async (patchValue: UserSettingsPatch): Promise<boolean> => {
       setBusy(true)
       setNotice(null)
+      setSaveError(null)
+      setLastFailedPatch(null)
       try {
         if (state === 'ready') {
           const res = await fetch('/api/me/settings', {
@@ -98,7 +139,9 @@ export function useMeSettings(): MeSettingsController {
             body: JSON.stringify(patchValue),
             cache: 'no-store',
           })
-          if (!res.ok) throw new Error('设置保存失败')
+          if (!res.ok) {
+            throw new Error(res.status === 401 ? '登录状态已失效' : `云端返回 ${res.status}`)
+          }
           const data = (await res.json()) as { settings?: unknown }
           const cloudSettings = (data.settings ?? {}) as Partial<UserSettingsModel>
           const localWritten = writeLocalUserSettings(normalizeUserSettings(cloudSettings))
@@ -123,7 +166,10 @@ export function useMeSettings(): MeSettingsController {
         setSettings(finalSettings)
         setNotice('已保存至本机并通过完整性自检')
         return true
-      } catch {
+      } catch (err) {
+        // 不吞错：如实说明为什么没保存上，并留住这一次改动供「重试」重发
+        setSaveError(describeSaveFailure(err))
+        setLastFailedPatch(patchValue)
         return false
       } finally {
         setBusy(false)
@@ -131,6 +177,12 @@ export function useMeSettings(): MeSettingsController {
     },
     [state],
   )
+
+  const retrySave = useCallback(async (): Promise<boolean> => {
+    const pending = lastFailedPatch
+    if (!pending) return false
+    return patch(pending)
+  }, [lastFailedPatch, patch])
 
   const restoreDefaults = useCallback(
     () =>
@@ -154,9 +206,11 @@ export function useMeSettings(): MeSettingsController {
     busy,
     notice,
     error,
+    saveError,
     dismissNotice: () => setNotice(null),
     reload: load,
     patch,
+    retrySave,
     restoreDefaults,
   }
 }

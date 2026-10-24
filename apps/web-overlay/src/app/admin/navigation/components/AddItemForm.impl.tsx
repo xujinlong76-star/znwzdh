@@ -99,21 +99,43 @@ export function AddItemForm({ onSubmit, onCancel, defaultValues }: AddItemFormPr
 
       const metadata = await response.json()
 
-      // 只在字段为空时自动填充
-      if (!form.getValues('title')) {
-        form.setValue('title', metadata.title)
+      /**
+       * 只在字段为空时自动填充，且**空值不写入**（与 sitelist 的修复同口径）。
+       *
+       * 原实现虽然判断了 `!getValues('title')`，但仍会把空串写进去：
+       * `setValue('title', '')` 与「从没填过」在表单状态里不是一回事——
+       * 后者会让必填校验在用户什么都没做的情况下报错，且 `defaultValues`
+       * 的「未触碰」语义也被破坏。另外，什么都没抓到时不能提示「成功」。
+       */
+      const fetchedTitle = typeof metadata.title === 'string' ? metadata.title.trim() : ''
+      const fetchedDescription = typeof metadata.description === 'string' ? metadata.description.trim() : ''
+      let filled = 0
+      if (!form.getValues('title') && fetchedTitle) {
+        form.setValue('title', fetchedTitle)
+        filled += 1
       }
-      if (!form.getValues('description')) {
-        form.setValue('description', metadata.description)
+      if (!form.getValues('description') && fetchedDescription) {
+        form.setValue('description', fetchedDescription)
+        filled += 1
       }
       if (!form.getValues('icon') && metadata.icon) {
         form.setValue('icon', metadata.icon)
+        filled += 1
       }
 
-      toast({
-        title: "成功",
-        description: "已自动获取网站信息"
-      })
+      toast(
+        filled > 0
+          ? {
+              title: "成功",
+              description: "已自动获取网站信息",
+            }
+          : {
+              // 抓不到内容的站点很常见（JS 渲染页 / 反爬 / 超时降级），
+              // 此时说「成功」会让人以为只是内容没变
+              title: "提示",
+              description: "未获取到网站信息，请手动填写",
+            },
+      )
     } catch (error) {
       console.error('Failed to fetch website metadata:', error)
       toast({

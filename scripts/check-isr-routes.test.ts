@@ -44,9 +44,27 @@ const ALL_ROUTES = [
 /** 没有动态段的静态路径：Next 把它们写进 prerender.routes 而不是 dynamicRoutes */
 const STATIC_PATHS = new Set(["/", "/sites"]);
 
+/**
+ * 重置 fixture 产物目录的**单个文件**，而不是整棵目录树。
+ *
+ * 为什么不在每次用例前后 `rmSync(dir, { recursive: true })`：
+ * 1. 宿主环境（如 WorkBuddy）的批量删除护栏按「单轮删除条目数」计数，
+ *    阈值 50；这棵 fixture 树有 60+ 个条目，直接 rmSync 会被拦成测试失败——
+ *    而那失败与门禁逻辑无关，是环境噪音。
+ * 2. 整树删除本身也不是必需的：这里只有一个产物文件，覆盖写即等价。
+ * 3. fixture 目录名带 pid，且 `apps/web/*` 在 .gitignore 内，残留不污染仓库。
+ */
+function resetFixtureFile(file: string) {
+  try {
+    rmSync(file, { force: true });
+  } catch {
+    // 文件不存在是正常态；其它删除失败也不影响后续覆盖写
+  }
+}
+
 function writeManifest(routes: string[]) {
-  rmSync(FIXTURE_DIST, { recursive: true, force: true });
   const file = resolve(FIXTURE_DIST, "prerender-manifest.json");
+  resetFixtureFile(file);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(
     file,
@@ -113,7 +131,11 @@ const STATIC_SRCS = [
  */
 function writeSources(badRel?: string, staticBadRel?: string): string {
   const root = SRC_FIXTURE_ROOT;
-  rmSync(root, { recursive: true, force: true });
+  /**
+   * 不删根目录：下面会对**全部白名单文件逐个重写**，同名覆盖本身就是幂等重置。
+   * 删整树既没必要（条目 30+ 会撞宿主环境的批量删除护栏），也会让
+   * 「上一条用例的 badRel」与「本条用例」之间多一次无意义的 IO。
+   */
   for (const rel of new Set([...SRCS, ...STATIC_SRCS])) {
     let body =
       "export const revalidate = 60\n// 说明：签名里只要出现 searchParams 就会抛 DYNAMIC_SERVER_USAGE\nexport default async function P({ params }: any) {\n  return params\n}\n";
@@ -133,8 +155,8 @@ function writeSources(badRel?: string, staticBadRel?: string): string {
 }
 
 afterEach(() => {
-  rmSync(FIXTURE_DIST, { recursive: true, force: true });
-  rmSync(SRC_FIXTURE_ROOT, { recursive: true, force: true });
+  // 只清单个产物文件；源码 fixture 靠下一条用例的全量覆盖写重置（见 writeSources）。
+  resetFixtureFile(resolve(FIXTURE_DIST, "prerender-manifest.json"));
 });
 
 describe("check-isr-routes.mjs", () => {

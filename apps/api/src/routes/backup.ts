@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { randomUUID } from "node:crypto";
 import type { AppContext } from "../context.ts";
 import {
   exportNetscapeBookmarks,
@@ -215,18 +216,29 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           restoredCategories++;
         }
 
-        // 幂等式恢复站点（计划里已按 URL 去重）
-        for (const { site, targetCatId } of plannedSites) {
-          await ctx.repo.createSite({
+        /**
+         * 站点批量插入：原实现逐条 createSite，单条约 6~12 次往返
+         * （getDeletedSite + INSERT + 每标签 upsert + 回读），5 万条上限下
+         * 就是 30 万次以上的往返，全部压在同一个写事务里——实际表现是
+         * 恢复几千条就超时，而超时又会触发整体回滚，用户看到的是「备份恢复失败」。
+         *
+         * insertSitesBulk 把往返降到「唯一标签数 + ceil(N/40) + ceil(N/500)」。
+         * 事务边界仍在外层：任一批失败都整体回滚，与既有 409 语义一致。
+         */
+        const inserted = await ctx.repo.insertSitesBulk(
+          plannedSites.map(({ site, targetCatId }) => ({
+            id: randomUUID(),
             title: site.title,
             url: site.url,
             description: site.description || "",
             categoryId: targetCatId,
             tags: site.tags || [],
             iconKey: site.icon || null,
-          });
-          restoredSites++;
-        }
+          })),
+          // 恢复只需要条数：不回读 5 万条完整 Site 记录
+          { hydrate: false },
+        );
+        restoredSites = inserted.count;
       });
     } catch (err) {
       req.log.error({ err }, "备份恢复失败，事务已回滚");

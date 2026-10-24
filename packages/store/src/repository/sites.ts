@@ -160,6 +160,45 @@ export async function findSiteByUrl(repo: Repository, url: string): Promise<Site
   return row ? rowToSite(row) : null;
 }
 
+/**
+ * 批量 URL 存在性检查（批量导入/恢复的去重前置）。
+ *
+ * 单条 `findSiteByUrl` 每次 1 次往返；`/api/sites/batch` 的上限是 200 条，
+ * 逐条判定就是 200 次查询压在同一个事务里。这里把每条 URL 的三个变体
+ * （原样 / canonical / canonical 的斜杠反例）合并成按片 IN 查询，
+ * 语义与 `findSiteByUrl` 严格一致：只认未软删的行，三变体任一命中都算已存在。
+ *
+ * 返回集合同时包含**原始写法与 canonical 写法**：调用方既可能拿原文比对，
+ * 也可能先 canonicalize 再比对，两种键都要能命中，否则会把重复站点当新站插入。
+ */
+export async function findExistingSiteUrls(repo: Repository, urls: string[]): Promise<Set<string>> {
+  const probe = new Set<string>();
+  for (const raw of urls) {
+    if (!raw) continue;
+    const canonical = canonicalizeUrl(raw);
+    probe.add(raw);
+    probe.add(canonical);
+    probe.add(canonical.endsWith("/") ? canonical.slice(0, -1) : canonical + "/");
+  }
+  const found = new Set<string>();
+  if (probe.size === 0) return found;
+  for (const chunk of chunkList([...probe])) {
+    if (chunk.length === 0) continue;
+    const pred = inPredicate("url", chunk);
+    const rows = await repo.raw(
+      `SELECT url FROM sites WHERE ${pred.sql} AND deleted_at IS NULL`,
+      pred.params,
+    );
+    for (const row of rows) {
+      const value = String(row.url ?? "");
+      if (!value) continue;
+      found.add(value);
+      found.add(canonicalizeUrl(value));
+    }
+  }
+  return found;
+}
+
 export async function createSite(repo: Repository, input: SiteInput): Promise<Site> {
   return repo.createSiteWithId({ ...input, id: randomUUID() });
 }
@@ -228,6 +267,123 @@ export async function createSiteWithId(repo: Repository, input: SiteInput & { id
   if (!created) throw new Error("创建站点后无法读回");
   return created;
   });
+}
+
+/**
+ * 批量插入站点（备份恢复 / 大批量导入专用）。
+ *
+ * 与 `createSite` 的差异是**刻意收窄**的，不是通用替代品：
+ * - 只走「新建」路径，不处理软删 id 复活（调用方生成新 UUID，不会与软删行相撞）；
+ * - 不处理 facets / relations（恢复场景只携带 tags）；
+ * - 不做单条回读，改为最后一次 `getSitesByIds` 分片回读。
+ *
+ * 必须与 `createSite` 等价的部分：fts/pinyin 索引字段、metadata 打包、
+ * status/enabled/sort/featured/source 默认值。任何一处漂移都会让「恢复出来的站点
+ * 搜得到但索引字段不同」——这种缺陷很难在 UI 上察觉，只能靠测试钉住。
+ *
+ * 性能差异（为什么值得单独一条路径）：`/api/backup/restore` 的上限是 5 万站点，
+ * 逐条 `createSite` 每条要经过 getDeletedSite + INSERT + setSiteTags(每 tag 2~3 查)
+ * + getSite 回读，合计约 6~12 次往返；5 万条就是 30 万次以上。
+ */
+export async function insertSitesBulk(
+  repo: Repository,
+  inputs: Array<SiteInput & { id: string }>,
+  options: {
+    /**
+     * 是否回读完整 Site 列表（默认 true）。
+     *
+     * 备份恢复只需条数：5 万条回读要 100 次分片查询，每条还要解 metadata/tags，
+     * 而返回值最终只被取 `.length`。这类「为了计数而整表回读」是批量路径上
+     * 最容易被忽略的浪费，所以给调用方一个显式开关，而不是让它自己 slice。
+     */
+    hydrate?: boolean;
+  } = {},
+): Promise<{ count: number; sites: Site[] }> {
+  if (inputs.length === 0) return { count: 0, sites: [] };
+  const now = Date.now();
+
+  /**
+   * 标签解析：先把所有唯一 name 映射到 tag id（upsert 幂等），
+   * 避免「每条站点各自 upsert 同一批标签」造成的重复查询。
+   */
+  const uniqueTagNames = new Set<string>();
+  for (const input of inputs) {
+    for (const raw of input.tags ?? []) {
+      const name = raw.trim();
+      if (name) uniqueTagNames.add(name);
+    }
+  }
+  const tagIdByName = new Map<string, string>();
+  for (const name of uniqueTagNames) {
+    tagIdByName.set(name, await repo.upsertTag(name, slugify(name)));
+  }
+
+  /**
+   * 站点行：多值 INSERT。sites 表 19 列 → 每行 19 个绑定参数，
+   * 40 行 = 760 参数，对 SQLite 老构建的 999 上限留出余量。
+   */
+  const SITE_INSERT_CHUNK = 40;
+  for (let i = 0; i < inputs.length; i += SITE_INSERT_CHUNK) {
+    const slice = inputs.slice(i, i + SITE_INSERT_CHUNK);
+    const values: string[] = [];
+    const params: unknown[] = [];
+    for (const input of slice) {
+      const index = buildIndexFields({
+        title: input.title ?? input.url,
+        description: input.description,
+        url: input.url,
+        tags: input.tags,
+      });
+      values.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      params.push(
+        input.id, input.url, input.title ?? input.url, input.description ?? null, input.categoryId,
+        input.subCategoryId ?? null, input.iconKey ?? null, input.status ?? "active",
+        input.enabled === false ? 0 : 1, input.sort ?? 0, 0, input.featured ? 1 : 0,
+        input.source ?? "manual", index.ftsTokens, index.pinyinFull, index.pinyinInitials,
+        packMetadata(input), now, now,
+      );
+    }
+    await repo.run(
+      `INSERT INTO sites (
+         id, url, title, description, category_id, sub_category_id, icon_key, status, enabled, sort,
+         weight, featured, source, fts_tokens, pinyin_full, pinyin_initials, metadata, created_at, updated_at
+       ) VALUES ${values.join(",")}`,
+      params,
+    );
+  }
+
+  /**
+   * 站点-标签关联：同样批量。这里**按 (site_id, tag_id) 去重**——`setSiteTags`
+   * 不去重，重复 tag 会撞唯一约束；恢复包里的 tags 来自用户导出，完全可能有重复。
+   * 去重是更宽容的行为，且与「标签是集合」的语义一致。
+   */
+  const links = new Map<string, [string, string]>();
+  for (const input of inputs) {
+    for (const raw of input.tags ?? []) {
+      const name = raw.trim();
+      if (!name) continue;
+      const tagId = tagIdByName.get(name);
+      if (!tagId) continue;
+      links.set(input.id + "\u0000" + tagId, [input.id, tagId]);
+    }
+  }
+  const LINK_CHUNK = 400; // 每行 2 个参数 → 800，仍在 999 以内
+  const linkRows = [...links.values()];
+  for (let i = 0; i < linkRows.length; i += LINK_CHUNK) {
+    const slice = linkRows.slice(i, i + LINK_CHUNK);
+    await repo.run(
+      `INSERT INTO site_tags (site_id, tag_id) VALUES ${slice.map(() => "(?,?)").join(",")}`,
+      slice.flat(),
+    );
+  }
+
+  if (options.hydrate === false) return { count: inputs.length, sites: [] };
+
+  const byId = await getSitesByIds(repo, inputs.map((input) => input.id));
+  const sites = inputs
+    .map((input) => byId.get(input.id))
+    .filter((site): site is Site => site !== undefined);
+  return { count: sites.length, sites };
 }
 
 export async function updateSite(repo: Repository, id: string, patch: Partial<SiteInput>): Promise<Site | null> {

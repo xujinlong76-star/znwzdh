@@ -8,7 +8,7 @@ import { z } from "zod";
 
 import { canonicalizeUrl, httpUrl, resolveCategoryTitleSuggestion, sanitizeIconUrl, SiteCreateBody, UNCATEGORIZED_CATEGORY_ID } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
-import { indexSite } from "../index-site.ts";
+import { indexSite, indexSitesBatch } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
@@ -295,15 +295,23 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     let degraded = 0;
     const createdSites: Array<Awaited<ReturnType<typeof ctx.repo.createSite>>> = [];
 
+    /**
+     * 去重前置：一次 IN 查询拿到全部已存在 URL，替代循环里 200 次 findSiteByUrl。
+     *
+     * 必须在事务**外**取（只读，不需要写锁）；批次内部重复由 `known` 集合就地补登，
+     * 与原实现「第二条被前一条已插入的行挡下」的语义一致。
+     */
+    const known = await ctx.repo.findExistingSiteUrls(body.data.sites.map((s) => s.url));
+
     // DB 写入包事务（去重检查 + 创建原子提交）；向量索引在提交后补做，避免长事务持有写锁。
     await ctx.repo.withTransaction(async () => {
     for (const item of body.data.sites) {
       const cleanUrl = canonicalizeUrl(item.url);
-      const dup = await ctx.repo.findSiteByUrl(cleanUrl);
-      if (dup) {
+      if (known.has(cleanUrl) || known.has(item.url)) {
         duplicates++;
         continue;
       }
+      known.add(cleanUrl);
       const resolved = item.categoryId ? attachable.get(item.categoryId) : undefined;
       if (item.categoryId && !resolved) degraded++;
       const categoryId = resolved ?? fallback;
@@ -319,8 +327,25 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       created++;
     }
     });
-    for (const site of createdSites) {
-      await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
+
+    /**
+     * 向量索引批量重建：原实现逐条 `await indexSite`，200 条就是 200 次
+     * ONNX 推理往返 + 200 个事务。indexSitesBatch 内部走 encodeBatch，且自带
+     * 失败降级（只记 capabilities.notes，不让主写入失败），这里按片喂给它。
+     * 片大小 32 是推理批与单条失败影响面的折中：一片失败最多丢 32 条的向量，
+     * 而这些站点仍可被 exact/fts/pinyin 通道检索到。
+     */
+    const INDEX_CHUNK = 32;
+    for (let i = 0; i < createdSites.length; i += INDEX_CHUNK) {
+      await indexSitesBatch(
+        ctx,
+        createdSites.slice(i, i + INDEX_CHUNK).map((site) => ({
+          id: site.id,
+          title: site.title,
+          description: site.description ?? null,
+          url: site.url,
+        })),
+      );
     }
 
     await ctx.repo.audit({

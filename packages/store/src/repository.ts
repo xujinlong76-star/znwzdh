@@ -278,12 +278,28 @@ export class Repository {
     return sitesRepo.findSiteByUrl(this, url);
   }
 
+  /** 批量 URL 去重：一次 IN 查询替代 N 次 findSiteByUrl（批量导入/恢复用）。 */
+  async findExistingSiteUrls(urls: string[]): Promise<Set<string>> {
+    return sitesRepo.findExistingSiteUrls(this, urls);
+  }
+
   async createSite(input: SiteInput): Promise<Site> {
     return sitesRepo.createSite(this, input);
   }
 
   async createSiteWithId(input: SiteInput & { id: string }): Promise<Site> {
     return sitesRepo.createSiteWithId(this, input);
+  }
+
+  /**
+   * 批量插入站点（备份恢复专用）：多值 INSERT + 批量标签 + 可选回读。
+   * 语义与 createSite 的「新建」分支对齐，不处理软删 id 复活。
+   */
+  async insertSitesBulk(
+    inputs: Array<SiteInput & { id: string }>,
+    options: { hydrate?: boolean } = {},
+  ): Promise<{ count: number; sites: Site[] }> {
+    return sitesRepo.insertSitesBulk(this, inputs, options);
   }
 
   async updateSite(id: string, patch: Partial<SiteInput>): Promise<Site | null> {
@@ -469,6 +485,13 @@ export class Repository {
 
   async saveEmbedding(siteId: string, model: string, vector: Float32Array): Promise<void> {
     return embeddingsRepo.saveEmbedding(this, siteId, model, vector);
+  }
+
+  /** 批量向量写入：一条多值 UPSERT，替代 N 次 saveEmbedding 往返。 */
+  async saveEmbeddingsBatch(
+    records: Array<{ siteId: string; model: string; vector: Float32Array }>,
+  ): Promise<void> {
+    return embeddingsRepo.saveEmbeddingsBatch(this, records);
   }
 
   async savedEmbeddings(filter?: {

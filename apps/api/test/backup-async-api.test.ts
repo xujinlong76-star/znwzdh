@@ -13,7 +13,7 @@
  *   5. 端到端：async → tick → 站点入库、staging 删除、status 变 done。
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildServer } from "../src/server.ts";
@@ -215,5 +215,40 @@ describe("GET /api/backup/restore/status/:jobId", () => {
     expect(status.progress).toEqual({ done: 3, total: 3 });
     expect(status.finishedAt).toBeTruthy();
     expect(status.retryable).toBe(false);
+  });
+
+  /**
+   * 残留 staging 的清理。
+   *
+   * 失败的恢复故意保留 staging（可复盘/可重跑），但如果不清理就是永久堆积：
+   * 每份最多约 4MB。设计文档曾写「由 data_retention 清理」，而那个清理从未存在——
+   * 这条用例锁住「提交时会顺手删掉 24 小时前的残留」这个真实机制。
+   */
+  it("提交异步恢复时清掉过期 staging，保留刚失败的（可能马上要重跑）", async () => {
+    mkdirSync(stagingDir, { recursive: true });
+    const stale = join(stagingDir, "stale-25h.json");
+    const fresh = join(stagingDir, "fresh-1h.json");
+    writeFileSync(stale, "{}", "utf8");
+    writeFileSync(fresh, "{}", "utf8");
+    const now = Date.now();
+    utimesSync(stale, new Date(now - 25 * 3600_000), new Date(now - 25 * 3600_000));
+    utimesSync(fresh, new Date(now - 3600_000), new Date(now - 3600_000));
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/backup/restore/async",
+      payload: backupPayload([
+        { id: "sweep-1", title: "清理用例站点", url: "https://sweep-1.example.com" },
+      ]),
+    });
+    expect(res.statusCode).toBe(202);
+
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    // 本次请求自己的 staging 必须还在（任务要读它）
+    const jobId = (res.json() as Record<string, string>).jobId;
+    const rows = await ctx.repo.raw("SELECT payload FROM jobs WHERE id = ?", [jobId]);
+    const own = String(JSON.parse(String(rows[0]!.payload)).stagingPath as string);
+    expect(existsSync(own)).toBe(true);
   });
 });

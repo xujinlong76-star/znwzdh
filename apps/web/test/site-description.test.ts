@@ -61,9 +61,11 @@ describe('短描述治理入口', () => {
 
   it('后台新增/编辑站点提供 160 字上限与「待补全」提示', () => {
     const admin = read('../src/app/admin/sitelist/page.tsx')
-    expect(admin.match(/maxLength=\{160\}/g)).toHaveLength(2)
-    expect(admin.match(/待补全/g)).toHaveLength(4)
-    expect(admin).toContain('description: newSite.description.trim().slice(0, 160)')
-    expect(admin).toContain('description: editSite.description.trim().slice(0, 160)')
+    const dialogs = read('../src/app/admin/sitelist/sitelist-dialogs.tsx')
+    const all = admin + '\n' + dialogs
+    expect(all.match(/maxLength=\{160\}/g)).toHaveLength(2)
+    expect(all.match(/待补全/g)).toHaveLength(4)
+    expect(all).toContain('description: newSite.description.trim().slice(0, 160)')
+    expect(all).toContain('description: editSite.description.trim().slice(0, 160)')
   })
 })

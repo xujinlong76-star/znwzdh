@@ -17,13 +17,13 @@
  * 用户可能只是想看看包里是什么。给一个显式按钮更符合预期，也避免误触。
  */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, DatabaseBackup, FileJson, Loader2, ShieldCheck } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/registry/new-york/ui/checkbox'
-import { hubSend } from '@/lib/navhub-api'
+import { hubGet, hubSend } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
 
 /** 冷备包最小结构（够判断「这是不是一个 NavHub 备份」即可，完整校验在服务端） */
@@ -49,6 +49,75 @@ interface RestoreResult {
   reindexQueued?: boolean
 }
 
+/** POST /api/backup/restore/async 的 202 响应 */
+interface AsyncAccepted {
+  jobId: string
+  accepted: { categories: number; sites: number }
+  skipped: DryRunResult['skipped']
+  statusUrl: string
+  message: string
+}
+
+/** 与服务端 jobs.status 对齐（是 `done`，不是 `completed`） */
+type JobStatus = 'pending' | 'running' | 'retrying' | 'done' | 'failed' | 'cancelled'
+
+/** 前端持有的任务视图：比服务端多存了「当初计划写多少」，失败时才能说清进度 */
+interface JobState {
+  jobId: string
+  categories: number
+  sites: number
+  status: JobStatus
+  progress: { done: number; total: number }
+  error: string | null
+  retryable: boolean
+  startedAt: number
+  finishedAt: number | null
+}
+
+/** 后台恢复任务的进度快照（GET /api/backup/restore/status/:jobId） */
+interface JobStatusPayload {
+  jobId: string
+  status: JobStatus
+  progress: { done: number; total: number }
+  startedAt: number
+  finishedAt: number | null
+  error: string | null
+  retryable: boolean
+}
+
+/**
+ * 站点数超过这个阈值就改走后台任务。
+ *
+ * 依据是实测：同步端点在 SQLite 上 1 万条约 7.4 秒，5 万条上限外推约 37 秒，
+ * 超过 BFF 代理的 30 秒读超时——那次失败最恶劣（504 但数据其实已落库，
+ * 用户以为失败、实际已改）。5000 条约 4 秒，留足余量。
+ */
+const ASYNC_THRESHOLD = 5000
+
+/** 进度轮询间隔。任务每 2000 条上报一次，1.5 秒足够跟上且不刷爆日志。 */
+const POLL_INTERVAL_MS = 1500
+
+const TERMINAL_STATUS: ReadonlySet<JobStatus> = new Set<JobStatus>(['done', 'failed', 'cancelled'])
+
+const STATUS_TEXT: Record<JobStatus, string> = {
+  pending: '排队中（等待任务执行器认领）',
+  running: '执行中',
+  retrying: '等待重试',
+  done: '已完成',
+  failed: '失败',
+  cancelled: '已取消',
+}
+
+/**
+ * 把 jobId 存进 sessionStorage，让「关掉页面再回来」还能接着看同一个任务的进度。
+ *
+ * 用 sessionStorage 而非 localStorage：恢复进度属于这一次操作，跨标签页/跨天
+ * 复用同一份记录只会让人误会「上次那个任务还在跑」。任务本身在服务端，
+ * 丢掉这条记录不影响执行，只影响能不能在界面上接着看。
+ */
+const JOB_STORAGE_KEY = 'navhub.restore.job.v1'
+const JOB_TTL_MS = 24 * 60 * 60 * 1000
+
 /** 服务端只回错误类别（不回原始报错，避免泄漏备份里的具体值） */
 const REASON_TEXT: Record<string, string> = {
   duplicate_key: '备份里有重复的主键（同一分类或站点出现了多次）',
@@ -69,6 +138,59 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
+interface PersistedJob {
+  jobId: string
+  categories: number
+  sites: number
+  startedAt: number
+}
+
+/** sessionStorage 在隐私模式/服务端渲染下都可能不可用——静默失败，不打断恢复 */
+function persistJob(job: JobState): void {
+  try {
+    const payload: PersistedJob = {
+      jobId: job.jobId,
+      categories: job.categories,
+      sites: job.sites,
+      startedAt: job.startedAt,
+    }
+    sessionStorage.setItem(JOB_STORAGE_KEY, JSON.stringify(payload))
+  } catch {
+    /* 存不下只影响「刷新后继续看」，不影响任务本身 */
+  }
+}
+
+function clearPersistedJob(): void {
+  try {
+    sessionStorage.removeItem(JOB_STORAGE_KEY)
+  } catch {
+    /* 同上 */
+  }
+}
+
+function readPersistedJob(): PersistedJob | null {
+  try {
+    const raw = sessionStorage.getItem(JOB_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<PersistedJob>
+    if (typeof parsed.jobId !== 'string' || !parsed.jobId) return null
+    const startedAt = typeof parsed.startedAt === 'number' ? parsed.startedAt : 0
+    // 超过 TTL 的记录多半指向早已被清理的任务，留着只会换来一个 404
+    if (!startedAt || Date.now() - startedAt > JOB_TTL_MS) {
+      clearPersistedJob()
+      return null
+    }
+    return {
+      jobId: parsed.jobId,
+      categories: Number(parsed.categories ?? 0),
+      sites: Number(parsed.sites ?? 0),
+      startedAt,
+    }
+  } catch {
+    return null
+  }
+}
+
 type Busy = 'preview' | 'restore' | null
 
 export default function RestoreBackupPage() {
@@ -79,16 +201,33 @@ export default function RestoreBackupPage() {
   const [preview, setPreview] = useState<DryRunResult | null>(null)
   const [result, setResult] = useState<RestoreResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /**
+   * 错误发生在哪一步，决定标题怎么说。
+   *
+   * 原来只有一句「恢复失败，已整体回滚」——但预演失败与异步提交失败时**一条都没写**，
+   * 说「已回滚」会让人以为数据被改过又撤销，反而去查库里有没有脏数据。
+   */
+  const [errorKind, setErrorKind] = useState<'preview' | 'submit' | 'sync' | null>(null)
   const [failureReason, setFailureReason] = useState<string | null>(null)
   const [confirmed, setConfirmed] = useState(false)
   const [busy, setBusy] = useState<Busy>(null)
+  /** 后台恢复任务（仅站点数 > ASYNC_THRESHOLD 时产生） */
+  const [job, setJob] = useState<JobState | null>(null)
+  /** 是否正在盯着这个任务。「继续在后台跑」把它关掉，任务本身不受影响 */
+  const [watching, setWatching] = useState(false)
+  /** 轮询失败与任务失败是两件事：前者是「看不到进度」，后者是「恢复死了」 */
+  const [pollError, setPollError] = useState<string | null>(null)
 
   const resetDownstream = useCallback(() => {
     setPreview(null)
     setResult(null)
     setError(null)
+    setErrorKind(null)
     setFailureReason(null)
     setConfirmed(false)
+    setJob(null)
+    setWatching(false)
+    setPollError(null)
   }, [])
 
   const handleFile = useCallback(
@@ -128,12 +267,14 @@ export default function RestoreBackupPage() {
     if (!backup) return
     setBusy('preview')
     setError(null)
+    setErrorKind(null)
     setFailureReason(null)
     setResult(null)
     try {
       const data = await hubSend<DryRunResult>('/api/backup/restore?dryRun=true', 'POST', backup)
       setPreview(data)
     } catch (err) {
+      setErrorKind('preview')
       setError(describeDegrade(err).message)
     } finally {
       setBusy(null)
@@ -144,13 +285,53 @@ export default function RestoreBackupPage() {
     if (!backup || !preview || !confirmed) return
     setBusy('restore')
     setError(null)
+    setErrorKind(null)
     setFailureReason(null)
+    setPollError(null)
+    setResult(null)
+    setJob(null)
+
+    /**
+     * 大包走后台任务。判据是**预演算出的站点数**而不是备份包里的原始条数：
+     * 一个 2 万条的包里可能 1.9 万条都是已存在的重复 URL，实际写入只有 1000 条，
+     * 那种情况走同步反而更快、也不会超时。
+     */
+    if (preview.wouldRestore.sites > ASYNC_THRESHOLD) {
+      try {
+        const data = await hubSend<AsyncAccepted>('/api/backup/restore/async', 'POST', backup)
+        const next: JobState = {
+          jobId: data.jobId,
+          categories: data.accepted.categories,
+          sites: data.accepted.sites,
+          status: 'pending',
+          progress: { done: 0, total: data.accepted.sites },
+          error: null,
+          retryable: false,
+          startedAt: Date.now(),
+          finishedAt: null,
+        }
+        setJob(next)
+        persistJob(next)
+        setWatching(true)
+      } catch (err) {
+        // 走到这里说明请求内校验就失败了（非法包/超限/落盘失败），一条都没写
+        setErrorKind('submit')
+        setError(describeDegrade(err).message)
+        const reason = (err as { payload?: { reason?: string } })?.payload?.reason
+        setFailureReason(reason ? reasonText(reason) : null)
+      } finally {
+        setBusy(null)
+      }
+      return
+    }
+
     try {
       const data = await hubSend<RestoreResult>('/api/backup/restore?dryRun=false', 'POST', backup)
       setResult(data)
     } catch (err) {
       // 409 上带的是「类别」而不是原始报错，尽量把它翻成人话
       const message = describeDegrade(err).message
+      setErrorKind('sync')
       setError(message)
       const reason = (err as { payload?: { reason?: string } })?.payload?.reason
       setFailureReason(reason ? reasonText(reason) : null)
@@ -159,6 +340,75 @@ export default function RestoreBackupPage() {
     }
   }, [backup, preview, confirmed])
 
+  const jobActive = job !== null && !TERMINAL_STATUS.has(job.status)
+  /** 只在「有任务、未终态、且用户在盯着」时轮询；三者任一变化都会让 effect 重新评估 */
+  const pollingJobId = job && jobActive && watching ? job.jobId : null
+
+  /**
+   * 进度轮询。
+   *
+   * 依赖刻意只用 pollingJobId：状态更新（pending → running → done）不改变 jobId，
+   * 所以 effect 不会因为「进度变了」而重建定时器——那样会让间隔漂移，也会
+   * 在每次 setJob 后多发一次请求。终态时 pollingJobId 变成 null，effect 自然清理。
+   */
+  useEffect(() => {
+    if (!pollingJobId) return
+    let stopped = false
+    let inFlight = false
+    const tick = async () => {
+      if (stopped || inFlight) return
+      inFlight = true
+      try {
+        const data = await hubGet<JobStatusPayload>(`/api/backup/restore/status/${pollingJobId}`)
+        if (stopped) return
+        setPollError(null)
+        setJob((prev) =>
+          prev && prev.jobId === data.jobId
+            ? {
+                ...prev,
+                status: data.status,
+                progress: data.progress,
+                error: data.error,
+                retryable: data.retryable,
+                finishedAt: data.finishedAt,
+              }
+            : prev,
+        )
+        // 成功才清记录：失败要留着，刷新后还能看到「上次恢复死在哪一步」
+        if (data.status === 'done') clearPersistedJob()
+      } catch (err) {
+        // 轮询失败不代表任务失败——可能只是这一秒网络抖了，下一轮继续
+        if (!stopped) setPollError(describeDegrade(err).message)
+      } finally {
+        inFlight = false
+      }
+    }
+    void tick()
+    const timer = setInterval(() => void tick(), POLL_INTERVAL_MS)
+    return () => {
+      stopped = true
+      clearInterval(timer)
+    }
+  }, [pollingJobId])
+
+  /** 刷新/换标签回来时接上同一个任务（任务在服务端，前端只是重新开始看） */
+  useEffect(() => {
+    const saved = readPersistedJob()
+    if (!saved) return
+    setJob({
+      jobId: saved.jobId,
+      categories: saved.categories,
+      sites: saved.sites,
+      status: 'pending',
+      progress: { done: 0, total: saved.sites },
+      error: null,
+      retryable: false,
+      startedAt: saved.startedAt,
+      finishedAt: null,
+    })
+    setWatching(true)
+  }, [])
+
   const exportedAtText = useMemo(() => {
     if (!backup?.exportedAt) return null
     const date = new Date(backup.exportedAt)
@@ -166,8 +416,10 @@ export default function RestoreBackupPage() {
     return date.toLocaleString('zh-CN')
   }, [backup])
 
-  const canPreview = Boolean(backup) && busy === null
-  const canRestore = Boolean(backup && preview && confirmed) && busy === null
+  // 后台任务未结束时禁止开新恢复：两个恢复并发写同一个库，谁赢谁输说不清
+  const canPreview = Boolean(backup) && busy === null && !jobActive
+  const canRestore = Boolean(backup && preview && confirmed) && busy === null && !jobActive
+  const willUseAsync = Boolean(preview && preview.wouldRestore.sites > ASYNC_THRESHOLD)
 
   return (
     <div className="container mx-auto max-w-3xl space-y-6 px-4 py-8">
@@ -187,7 +439,10 @@ export default function RestoreBackupPage() {
         <div className="space-y-1 text-sm">
           <p className="font-medium text-amber-700 dark:text-amber-500">这是整库写操作</p>
           <p className="text-muted-foreground">
-            已有 URL 会被跳过（不会覆盖），但新增条目会直接落库。中途失败会整体回滚，不留半套数据。
+            已有 URL 会被跳过（不会覆盖），但新增条目会直接落库。5000 条以内走单个事务，
+            失败整体回滚；超过 5000 条改走后台任务分批提交，中断时
+            <strong>已写入的分片会保留</strong>
+            ——重跑会跳过已存在的 URL，可以安全重试。
           </p>
         </div>
       </div>
@@ -206,10 +461,17 @@ export default function RestoreBackupPage() {
               id="backup-file"
               type="file"
               accept=".json,application/json"
+              disabled={jobActive}
               onChange={(event) => void handleFile(event.target.files?.[0])}
-              className="block w-full cursor-pointer rounded-md border border-border bg-background p-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm"
+              className="block w-full cursor-pointer rounded-md border border-border bg-background p-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
+
+          {jobActive && (
+            <p className="text-sm text-muted-foreground">
+              后台任务执行中，完成后再开始新的恢复（两个恢复同时写同一个库会让结果不可预期）。
+            </p>
+          )}
 
           {parseError && (
             <p className="text-sm text-destructive" role="alert">
@@ -304,11 +566,16 @@ export default function RestoreBackupPage() {
                 ) : (
                   <DatabaseBackup className="mr-2 h-4 w-4" aria-hidden />
                 )}
-                {busy === 'restore' ? '恢复中…（大包可能需要几十秒）' : '执行恢复'}
+                {busy === 'restore'
+                  ? willUseAsync
+                    ? '提交任务…'
+                    : '恢复中…'
+                  : '执行恢复'}
               </Button>
-              {preview.wouldRestore.sites > 5000 && (
+              {willUseAsync && (
                 <p className="text-xs text-muted-foreground">
-                  条目超过 5000 时，请求可能接近代理超时上限；若失败请重试（恢复是幂等的，已导入的会被跳过）。
+                  {preview.wouldRestore.sites} 条超过 {ASYNC_THRESHOLD}，将提交后台任务：
+                  请求立刻返回，本页显示实时进度；关掉页面也不会中断执行，回到本页可继续查看。
                 </p>
               )}
             </div>
@@ -316,12 +583,28 @@ export default function RestoreBackupPage() {
         </Card>
       )}
 
+      {job && (
+        <JobProgress
+          job={job}
+          watching={watching}
+          pollError={pollError}
+          canRetry={canRestore}
+          onKeepRunning={() => setWatching(false)}
+          onResume={() => setWatching(true)}
+          onRetry={() => void runRestore()}
+        />
+      )}
+
       {error && (
         <Card className="border-destructive/40">
           <CardContent className="space-y-2 pt-6">
             <p className="flex items-center gap-2 text-sm font-medium text-destructive" role="alert">
               <AlertTriangle className="h-4 w-4" aria-hidden />
-              恢复失败，已整体回滚
+              {errorKind === 'sync'
+                ? '恢复失败，已整体回滚'
+                : errorKind === 'submit'
+                  ? '任务未创建，未写入任何数据'
+                  : '预演失败，未写入任何数据'}
             </p>
             <p className="text-sm text-muted-foreground">{error}</p>
             {failureReason && <p className="text-sm text-muted-foreground">原因：{failureReason}</p>}
@@ -380,5 +663,141 @@ function Stat({
         {value}
       </div>
     </div>
+  )
+}
+
+/**
+ * 后台恢复任务的进度卡。
+ *
+ * 三处措辞刻意与同步路径不同：
+ *   1. 失败时**不说**「已整体回滚」——异步是分片提交，已写入的分片是真实存在的；
+ *   2. 未知终态时说「任务在服务端」而不是「连接已断开」，避免让人重复提交；
+ *   3. 进度条在 total 未知时显示不定态，不假装 0%。
+ */
+function JobProgress({
+  job,
+  watching,
+  pollError,
+  canRetry,
+  onKeepRunning,
+  onResume,
+  onRetry,
+}: {
+  job: JobState
+  watching: boolean
+  pollError: string | null
+  canRetry: boolean
+  onKeepRunning: () => void
+  onResume: () => void
+  onRetry: () => void
+}) {
+  const total = job.progress.total || job.sites
+  const done = job.progress.done
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
+  const isDone = job.status === 'done'
+  const isFailed = job.status === 'failed' || job.status === 'cancelled'
+  const isActive = !isDone && !isFailed
+  const elapsedMs = job.finishedAt && job.startedAt ? job.finishedAt - job.startedAt : null
+
+  return (
+    <Card className={isDone ? 'border-emerald-500/40' : isFailed ? 'border-destructive/40' : undefined}>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          3 · 后台恢复
+          <span className="font-mono text-xs font-normal text-muted-foreground">
+            {job.jobId.slice(0, 8)}
+          </span>
+        </CardTitle>
+        <CardDescription>{STATUS_TEXT[job.status]}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1.5">
+          <div
+            className="h-2 w-full overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-label="恢复进度"
+            aria-valuemin={0}
+            aria-valuemax={total}
+            aria-valuenow={done}
+            aria-valuetext={total > 0 ? `${done} / ${total} 条` : '准备中'}
+          >
+            <div
+              className={isFailed ? 'h-full bg-destructive' : 'h-full bg-primary transition-all'}
+              style={{ width: total > 0 ? `${pct}%` : '0%' }}
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {total > 0 ? (
+              <>
+                已写入 <span className="font-medium text-foreground">{done}</span> / {total} 条
+                （{pct}%）
+              </>
+            ) : (
+              '正在准备恢复计划…'
+            )}
+          </p>
+        </div>
+
+        {pollError && isActive && (
+          <p className="text-xs text-amber-700 dark:text-amber-500" role="status">
+            进度查询失败：{pollError}。任务仍在服务端执行，稍后自动重试。
+          </p>
+        )}
+
+        {isActive && !watching && (
+          <p className="text-sm text-muted-foreground">
+            已转后台运行，本页不再刷新。任务结束后回到本页仍可查看结果。
+          </p>
+        )}
+
+        {isDone && (
+          <div className="space-y-3">
+            <p className="flex items-center gap-2 text-sm font-medium text-emerald-700 dark:text-emerald-500">
+              <CheckCircle2 className="h-4 w-4" aria-hidden />
+              成功恢复 {job.categories} 个分类与 {done} 个站点
+            </p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <Stat label="新增分类" value={job.categories} />
+              <Stat label="新增站点" value={done} tone="primary" />
+              <Stat label="耗时" value={elapsedMs ? `${(elapsedMs / 1000).toFixed(1)}s` : '—'} muted />
+            </div>
+            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
+              语义索引正在后台重建；在此之前，新恢复的站点可通过全文与拼音检索命中。
+            </p>
+          </div>
+        )}
+
+        {isFailed && (
+          <div className="space-y-2">
+            <p className="flex items-center gap-2 text-sm font-medium text-destructive" role="alert">
+              <AlertTriangle className="h-4 w-4" aria-hidden />
+              恢复中断：已写入 {done} 条后失败
+            </p>
+            {job.error && <p className="text-sm text-muted-foreground">{job.error}</p>}
+            <p className="text-sm text-muted-foreground">
+              后台恢复是分批提交的，<strong>已写入的那 {done} 条会保留</strong>（不会回滚）。重跑会跳过已存在的
+              URL，可以直接重试，不会产生重复数据。
+            </p>
+          </div>
+        )}
+
+        {isActive && watching && (
+          <Button variant="outline" size="sm" onClick={onKeepRunning}>
+            转到后台，先离开本页
+          </Button>
+        )}
+        {isActive && !watching && (
+          <Button variant="outline" size="sm" onClick={onResume}>
+            继续查看进度
+          </Button>
+        )}
+        {isFailed && job.retryable && canRetry && (
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            重跑（跳过已存在的 URL）
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   )
 }

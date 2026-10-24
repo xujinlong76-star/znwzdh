@@ -890,7 +890,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   /**
    * 自建个人令牌：扩展 / Raycast / MCP 等外部客户端第一次可以持「自己的」凭据
-   * 读写（v1 只读）自己的用户域数据——收藏/历史/画像/金库在路由层把 owner
+   * 读写（默认只读；创建时显式勾选可获 write）自己的用户域数据——收藏/历史/画像/金库在路由层把 owner
    * 令牌解析为该用户身份（requestIdentityOf），自称头不可能覆盖真实凭据。
    * 明文只在创建响应里出现一次，库里只有 sha256。
    */
@@ -900,7 +900,11 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     if (identity.startsWith("anon-")) { reply.code(403); return { error: "匿名身份不支持创建 API 令牌" }; }
     const body = z
-      .object({ name: z.string().trim().min(1).max(40) })
+      .object({
+        name: z.string().trim().min(1).max(40),
+        /** B1：write 需显式勾选（默认仍只读）；合法集合固定 read/read+write */
+        write: z.boolean().optional(),
+      })
       .safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
@@ -910,8 +914,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     const record = await ctx.repo.createApiToken({
       name: body.data.name,
       tokenHash: hashToken(raw),
-      // v1 只读：写自己的用户域数据需要 write scope，自建通道暂不发（详见 T20 方案）
-      scopes: "read",
+      // 默认只读；write:true 时发 read+write（收藏写路径 B1：令牌误贴进不可信
+      // 环境的爆炸半径 = 只能写自己的收藏/历史，站点域仍按实例级 scope 鉴权）
+      scopes: body.data.write ? "read,write" : "read",
       tokenPrefix: tokenPrefixOf(raw),
       ownerIdentity: canonical,
     });

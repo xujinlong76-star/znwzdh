@@ -61,7 +61,7 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 24 个只读工具与 13 个写工具", () => {
+  it("包含 27 个只读工具与 13 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
@@ -77,13 +77,16 @@ describe("工具清单", () => {
       "get_alternatives",
       "get_architecture_recipe",
       "get_federated_recommendations",
+      "get_profile_summary",
       "get_site",
       "get_stats",
       "get_trending",
       "list_categories",
       "list_collections",
+      "list_favorites",
       "list_jobs",
       "list_plugins",
+      "list_search_history",
       "list_tags",
       "resolve_wayback",
       "search_plugins",
@@ -732,5 +735,26 @@ describe("插件市场工具", () => {
     const res = await handlers.install_plugin({ slug: pending.slug }, FULL);
     expect(res.isError).toBe(true);
     expect(text(res)).toContain("不可安装");
+  });
+});
+
+describe("用户域只读工具（B2：收藏、搜索历史、画像）", () => {
+  const USER = "github:u-mcp-test";
+  const USER_TC = { actor: "mcp:u-mcp-test", scopes: ["read"] as any[], has: () => true, ownerIdentity: USER };
+
+  it("实例级令牌（ownerIdentity 为空）调用时被明确拒绝", async () => {
+    await expect(handlers.list_favorites({}, READONLY)).rejects.toThrow(/用户级个人令牌/);
+    await expect(handlers.list_search_history({}, READONLY)).rejects.toThrow(/用户级个人令牌/);
+    await expect(handlers.get_profile_summary({}, READONLY)).rejects.toThrow(/用户级个人令牌/);
+  });
+
+  it("带 ownerIdentity 正常读取用户收藏与搜索历史", async () => {
+    await ctx.repo.recordSearch(USER, "TypeScript", 1);
+    const history = payload(await handlers.list_search_history({ limit: 10 }, USER_TC));
+    expect(history.owner).toBe(USER);
+    expect(history.items.some((i: any) => i.query === "TypeScript")).toBe(true);
+
+    const profile = payload(await handlers.get_profile_summary({}, USER_TC));
+    expect(profile.owner).toBe(USER);
   });
 });

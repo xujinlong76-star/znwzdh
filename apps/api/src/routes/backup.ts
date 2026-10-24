@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { AppContext } from "../context.ts";
 import {
@@ -135,6 +135,43 @@ export async function planRestore(
     plannedSites,
     skipped: { duplicateCategories, invalidUrls, duplicateUrls },
   };
+}
+
+/**
+ * 残留 staging 的保留时长。
+ *
+ * 失败的恢复**故意不删** staging（运维要能拿它复盘或直接重跑），代价是它会一直躺着：
+ * 每份最多约 4MB。原来设计文档写「由 data_retention 清理」，但那个清理从未实现，
+ * 等于承诺了一个不存在的机制。这里改成在每次提交异步恢复时顺手扫一遍，
+ * 24 小时前的文件删掉——不依赖定时任务，也不引入新的配置项。
+ *
+ * 为什么不删「刚失败」的文件：用户很可能立刻点「重跑」，那时镜像里的计划还得用。
+ */
+const STAGING_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** 清掉过期 staging，返回删除数量；任何一步失败都只跳过，不影响本次恢复 */
+export async function sweepStaleStaging(dir: string, now = Date.now()): Promise<number> {
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    // 目录还不存在（第一次恢复）：没有可清的东西
+    return 0;
+  }
+  let removed = 0;
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    const path = join(dir, name);
+    try {
+      const info = await stat(path);
+      if (now - info.mtimeMs <= STAGING_TTL_MS) continue;
+      await unlink(path);
+      removed += 1;
+    } catch {
+      // 并发请求已经删掉 / 权限问题：跳过，不打断主流程
+    }
+  }
+  return removed;
 }
 
 export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -431,6 +468,8 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
        * 任务侧因此不需要再碰分类映射逻辑，也就能拒绝「categoryId 为空」的脏数据。
        */
       const stagingDir = resolve(process.env.NAVHUB_RESTORE_STAGING_DIR || "data/restore-staging");
+      // 顺手清理过期残留（失败重跑用的文件）；不 await 进主路径，也不让它影响结果
+      await sweepStaleStaging(stagingDir).catch(() => 0);
       const stagingPath = join(stagingDir, `${randomUUID()}.json`);
       try {
         await mkdir(stagingDir, { recursive: true });

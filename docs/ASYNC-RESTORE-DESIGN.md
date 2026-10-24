@@ -1,13 +1,15 @@
-# 备份恢复异步化 · 设计（待实施）
+# 备份恢复异步化 · 设计（已实现）
 
-> 状态：**已实现（任务侧 + 两个端点 + 测试），仅前端轮询未做**
+> 状态：**全链路已实现**（任务侧 + 两个端点 + 端点测试 + 管理端进度轮询）
 >
 > - 已落地：`jobs` 两列（含 `COLUMN_ALTERS` 补列）、`JobKind.backup_restore`、
 >   `runBackupRestore`（分片 2000、staging 读取、进度上报、成功后删文件）、
 >   `repo.updateJobProgress`、`planRestore`（同步/异步共用计划计算）、
 >   `POST /api/backup/restore/async`、`GET /api/backup/restore/status/:jobId`。
-> - 测试：任务侧 4 例（含 2100 条跨分片）、端点侧 6 例（含端到端 status=done）。
-> - 未做：管理端的「后台进度」轮询 UI（当前 `/admin/data/restore` 走同步端点）。
+> - 测试：任务侧 4 例（含 2100 条跨分片）、端点侧 6 例（含端到端 status=done）、
+>   前端守卫 15 例、E2E 7 例（同步 3 + 异步 4）。
+> - 前端：`/admin/data/restore` 在**预演算出的站点数 > 5000** 时自动走后台任务，
+>   展示 `done/total` 进度、可「转到后台」离开页面，刷新后从 sessionStorage 接回。
 >
 > 实现过程中与本文档的差异（以代码为准）：
 > - 完成态是 **`done`**，不是 `completed`；
@@ -97,8 +99,12 @@ GET /api/backup/restore/status/:jobId
 > ⚠️ 状态枚举以 `JobRecord.status` 为准：完成态是 **`done`**，不是 `completed`
 > （本文件初稿写错过一次，实现时被测试抓到）。
 
-- 只允许**发起者或 admin** 查询（job 记录 owner identity）；
-- `done` 后 24 小时内可查，之后返回 `410 Gone`。
+- 权限：端点要求 `scope: "admin"`。**比初稿写的「发起者或 admin」更严**——job 行没有
+  记录 owner identity，任何 admin 都能查任何恢复任务；jobId 是 UUID，不可枚举。
+  要真做到「只有发起者能查」，得给 jobs 加 owner 列（本次没做，收益不抵复杂度）；
+- 可查期：任务行**不会自动过期**。`pruneJobs` 只在手动调用 `POST /api/jobs/prune` 时
+  删除 7 天前的 `done` / `failed` / `cancelled` 行。所以不存在初稿写的「24 小时后
+  410 Gone」——行没了就是 404。前端不要假设一个固定可查窗口。
 
 ---
 
@@ -113,17 +119,27 @@ GET /api/backup/restore/status/:jobId
 **方案：staging 文件**
 
 ```
-data/restore-staging/<jobId>.json     # 规范化后的条目（不是原始上传体）
-data/restore-staging/<jobId>.meta.json # { accepted, uploadedBy, createdAt }
+data/restore-staging/<uuid>.json    # 规范化后的条目（不是原始上传体）
 ```
 
+- 文件名是**随机 UUID，不含 jobId**。jobId 在入队时才生成，而文件要先写才轮得到入队——
+  顺序决定了名字不可能带 jobId。**代价**：任何「按 jobId 拼文件名去断言文件是否存在」的
+  测试都会恒真（这是实际踩过的坑，第一版测试因此假通过）。要拿真实路径只能读
+  `jobs.payload.stagingPath`。
 - 路径由 `NAVHUB_RESTORE_STAGING_DIR` 覆盖（默认 `data/restore-staging`）；
 - `jobs.payload` 只放 `{ stagingPath }`（< 200 字节）。**jobId 不进 payload**——
   入队那一刻才生成 id，写进 payload 必然要多一趟「入队后改 payload」；
   `JobRunner.process(kind, payload, jobId, attempts)` 本来就带 id，
   任务直接用它上报进度（已实现的 `runBackupRestore(payload, jobId)` 就是这么取的）；
-- 任务成功后**立即删除** staging 文件；失败保留供复盘/重跑，由 `data_retention` 清理；
-- 写入用 `writeFileSync` + `fsync`，入队成功后才返回 202——否则任务可能读到半截文件。
+- 任务成功后**立即删除** staging；失败保留供复盘/重跑；
+- **过期清理**：最初写「由 `data_retention` 清理」，但那个清理从未实现——等于文档
+  承诺了一个不存在的机制，失败恢复的 staging 会永久堆积（每份最多约 4MB）。
+  现在改为**每次提交异步恢复时顺手扫一遍**，删掉 mtime 超过 24 小时的文件
+  （`sweepStaleStaging`）。不依赖定时任务，也不新增配置项；刚失败的文件不会被删，
+  因为用户很可能立刻点「重跑」；
+- 写入用 `await writeFile`（异步，不阻塞事件循环）。**没有**显式 `fsync`：
+  进程崩溃丢掉的是「这次恢复」，不会产生脏数据（任务还没入队或已被回收）；
+  真要做到掉电安全，代价是每次恢复多一次 fsync 系统调用，收益不抵。
 
 **多实例注意**：staging 目录必须是共享存储（PG 部署下通常是同一挂载卷）。若部署在多机且无共享卷，改用 `staging` 表（`BLOB`）+ 任务读表，二选一，**不要混用**。
 

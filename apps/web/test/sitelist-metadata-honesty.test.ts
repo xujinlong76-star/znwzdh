@@ -32,6 +32,8 @@ function overlaySource(rel: string): string {
 }
 
 const PAGE = overlaySource("src/app/admin/sitelist/page.tsx");
+const DIALOGS = overlaySource("src/app/admin/sitelist/sitelist-dialogs.tsx");
+const SITELIST_ALL = PAGE + "\n" + DIALOGS;
 
 describe("站点列表：自动获取元信息的诚实性", () => {
   it("自动抓取（URL change 触发的两处）必须传 forceUpdate=false", () => {
@@ -41,8 +43,8 @@ describe("站点列表：自动获取元信息的诚实性", () => {
   });
 
   it("手动点刷新/重新获取时才允许覆盖（forceUpdate=true 仍然存在）", () => {
-    // 两个按钮各一处：添加与编辑。若哪天被一并改成 false，用户就没有显式覆盖入口了
-    const manualCalls = PAGE.match(/onClick=\{\(\) => fetchWebsiteMetadata\([^)]*true\)\}/g) ?? [];
+    // 两个按钮各一处：添加与编辑（弹窗组件已抽到 sitelist-dialogs.tsx）。若哪天被一并改成 false，用户就没有显式覆盖入口了
+    const manualCalls = SITELIST_ALL.match(/onClick=\{\(\) => fetchWebsiteMetadata\([^)]*true\)\}/g) ?? [];
     expect(manualCalls.length).toBe(2);
   });
 

@@ -13,6 +13,7 @@
  * 不去断言 toast 文案——那属于另一层，且 toast 有两份 DOM 容易 strict 冲突。
  */
 import { test, expect, type Page } from '@playwright/test'
+import { loginViaAdmin } from './helpers'
 
 const BACKUP = {
   version: '1.0',
@@ -81,18 +82,10 @@ async function mockRestore(page: Page): Promise<() => Captured[]> {
 }
 
 async function gotoPage(page: Page) {
-  await page.goto('/admin/data/restore')
-  await page.waitForLoadState('domcontentloaded')
-  if (page.url().includes('/auth/signin') || page.url().includes('/login')) {
-    const bypassBtn = page.getByRole('button', { name: /以管理员身份一键进/ })
-    await expect(bypassBtn).toBeVisible({ timeout: 15_000 })
-    await bypassBtn.click()
-    await page.waitForURL(
-      (url: URL) => !url.pathname.startsWith('/auth/signin') && !url.pathname.startsWith('/login'),
-      { timeout: 30_000 },
-    )
-  }
-  await expect(page.getByRole('heading', { name: '恢复冷备' })).toBeVisible({ timeout: 30_000 })
+  // 与 admin-restore-async 同口径：会话交给共享助手（含冷编译预热与重试点击）
+  await loginViaAdmin(page)
+  await page.goto('/admin/data/restore', { waitUntil: 'domcontentloaded' })
+  await expect(page.getByRole('heading', { name: '恢复冷备' })).toBeVisible({ timeout: 120_000 })
 }
 
 async function pickBackup(page: Page) {

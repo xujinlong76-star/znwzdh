@@ -243,6 +243,12 @@ export interface JobRecord {
   updatedAt: number;
   /** 下次可被认领的时间（退避中任务的 pending 到点时间；NULL = 立即可认领） */
   nextRunAt: number | null;
+  /**
+   * 长任务进度（异步恢复等）。0/0 = 未上报过，不是「进度 0%」——
+   * 调用方要区分「还没开始报」与「刚开始」，否则一进页面就显示一个假的 0%。
+   */
+  progressDone: number;
+  progressTotal: number;
 }
 
 export interface TagWithCount {

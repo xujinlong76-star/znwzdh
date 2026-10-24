@@ -276,6 +276,8 @@ export function rowToJob(row: Record<string, any>): JobRecord {
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
     nextRunAt: row.next_run_at === null || row.next_run_at === undefined ? null : Number(row.next_run_at),
+    progressDone: Number(row.progress_done ?? 0),
+    progressTotal: Number(row.progress_total ?? 0),
   };
 }
 

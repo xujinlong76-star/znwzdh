@@ -27,6 +27,11 @@ export interface ColumnAlter {
 
 /** 全量列迁移清单。新增列时在这里登记一行即可，两个方言都会生效。 */
 export const COLUMN_ALTERS: ColumnAlter[] = [
+  // 任务进度（异步恢复等长任务用）：存「最新值」而不是事件流。
+  // 老库必须靠这两条 ALTER 才能拿到列——只改 CREATE TABLE 的话，
+  // 表已存在的部署永远停在缺列状态，而读取端会把缺失读成 0（看起来像「没开始」）。
+  { table: "jobs", column: "progress_done", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
+  { table: "jobs", column: "progress_total", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   { table: "categories", column: "source", sqlite: "TEXT", pg: "TEXT" },
   // 类目 URL 标识（/category/{slug}）。可空：历史行由 migrateCategorySlugs 回填，
   // 回填失败时读路径退回 id，不影响可用性。

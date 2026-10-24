@@ -74,7 +74,12 @@ export default defineConfig({
       // Next 16 的 dev server 按「输出目录」加单实例锁：本机已有 pnpm dev:all 在跑时，
       // 换端口也会被判定为「另一个 next dev 已运行」。E2E 用独立输出目录避开这把锁，
       // 同时不会读到/污染开发服务器的 .next 产物。
-      NEXT_DIST_DIR: '.next-e2e',
+      // Next 16 按「输出目录」加单实例锁：同一目录只能有一个 next dev。
+      // 本机常有第二个 E2E（别的会话 / 上一次残留）占着默认目录，于是报
+      // 「Another next dev server is already running」而不是端口冲突——这个错误
+      // 完全指不到「是输出目录撞了」。本地入口（scripts/e2e-local.mjs）会传一个
+      // 独立目录名，与 CI/其他会话的 .next-e2e 分开；CI 不传，行为不变。
+      NEXT_DIST_DIR: process.env.NAVHUB_E2E_DIST_DIR || '.next-e2e',
       // 举报接口按 IP 限流 5 次/小时；E2E 用不同 XFF 模拟独立举报人，
       // 避免测试重试累计超过配额（仅测试进程生效，生产默认不信任 XFF）。
       NAVHUB_TRUST_PROXY: '1',

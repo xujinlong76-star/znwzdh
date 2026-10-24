@@ -7,6 +7,33 @@ import {
   rowToJob,
 } from "./dialect.ts";
 
+/**
+ * 上报长任务进度（异步恢复等）。
+ *
+ * 两条刻意的约束：
+ *
+ * 1. **只写 running 的任务**。已完成/失败的任务不该再被进度写回，否则 status
+ *    接口会看到「completed 但 progress 还在变」这种自相矛盾的状态。
+ * 2. **顺带刷新 updated_at**。`JobRunner` 的僵尸判定就是看 updated_at
+ *    （`< now-15min`），进度心跳顺带延长了存活期——长任务因此不需要额外的
+ *    「我在跑」信号。
+ *
+ * 不返回影响行数：调用方（任务自身）已经知道自己该不该报进度，
+ * 为一次 UPDATE 再补一次 SELECT 不划算。
+ */
+export async function updateJobProgress(
+  repo: Repository,
+  id: string,
+  progress: { done: number; total: number },
+): Promise<void> {
+  const done = Math.max(0, Math.floor(progress.done));
+  const total = Math.max(0, Math.floor(progress.total));
+  await repo.run(
+    "UPDATE jobs SET progress_done = ?, progress_total = ?, updated_at = ? WHERE id = ? AND status = 'running'",
+    [done, total, Date.now(), id],
+  );
+}
+
 export async function enqueueJob(repo: Repository, kind: string, payload: unknown): Promise<string> {
   const id = randomUUID();
   const now = Date.now();

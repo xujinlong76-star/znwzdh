@@ -1,8 +1,15 @@
 # 备份恢复异步化 · 设计（待实施）
 
-> 状态：**设计完成，代码未实施**
-> 阻塞原因：`apps/api/src/routes/backup.ts` 当前在并行会话的未提交改动中（修复「恢复丢失 `enabled`」）。
-> 本文档的目标是让实施变成「照单落地」，而不是重新讨论方案。
+> 状态：**任务侧已实现，端点未实施**
+>
+> - 已落地：`jobs` 两列（`progress_done` / `progress_total`，含 `COLUMN_ALTERS` 补列）、
+>   `JobKind.backup_restore`、`runBackupRestore`（分片 2000、staging 读取、进度上报、
+>   成功后删文件）、`repo.updateJobProgress`、4 例任务测试（含 2100 条跨分片）。
+> - 未落地：两个 HTTP 端点、staging 写入、status 的 owner 校验、前端轮询。
+> - 阻塞原因：`apps/api/src/routes/backup.ts` 当前在并行会话的未提交改动中
+>   （修复「恢复丢失 `enabled`」）。
+>
+> 本文档的目标是让剩余部分变成「照单落地」，而不是重新讨论方案。
 
 ---
 
@@ -75,17 +82,20 @@ GET /api/backup/restore/status/:jobId
 ```json
 {
   "jobId": "01j...",
-  "status": "running",          // pending | running | completed | failed
+  "status": "running",          // pending | running | done | failed | retrying | cancelled
   "progress": { "done": 12000, "total": 50000 },
   "startedAt": 1792836000000,
   "finishedAt": null,
-  "result": null,               // completed 时：{ categories, sites, durationMs, reindexQueued }
+  "result": null,               // done 时：{ categories, sites, durationMs, reindexQueued }
   "error": null                 // failed 时：{ reason, message, failedAt }
 }
 ```
 
+> ⚠️ 状态枚举以 `JobRecord.status` 为准：完成态是 **`done`**，不是 `completed`
+> （本文件初稿写错过一次，实现时被测试抓到）。
+
 - 只允许**发起者或 admin** 查询（job 记录 owner identity）；
-- `completed` 后 24 小时内可查（与 `data_retention` 的审计保留一致），之后返回 `410 Gone`。
+- `done` 后 24 小时内可查，之后返回 `410 Gone`。
 
 ---
 
@@ -105,8 +115,11 @@ data/restore-staging/<jobId>.meta.json # { accepted, uploadedBy, createdAt }
 ```
 
 - 路径由 `NAVHUB_RESTORE_STAGING_DIR` 覆盖（默认 `data/restore-staging`）；
-- `jobs.payload` 只放 `{ stagingPath, jobId }`（< 200 字节）；
-- 任务成功后**立即删除** staging 文件；失败保留 24 小时便于复盘，由 `data_retention` 清理；
+- `jobs.payload` 只放 `{ stagingPath }`（< 200 字节）。**jobId 不进 payload**——
+  入队那一刻才生成 id，写进 payload 必然要多一趟「入队后改 payload」；
+  `JobRunner.process(kind, payload, jobId, attempts)` 本来就带 id，
+  任务直接用它上报进度（已实现的 `runBackupRestore(payload, jobId)` 就是这么取的）；
+- 任务成功后**立即删除** staging 文件；失败保留供复盘/重跑，由 `data_retention` 清理；
 - 写入用 `writeFileSync` + `fsync`，入队成功后才返回 202——否则任务可能读到半截文件。
 
 **多实例注意**：staging 目录必须是共享存储（PG 部署下通常是同一挂载卷）。若部署在多机且无共享卷，改用 `staging` 表（`BLOB`）+ 任务读表，二选一，**不要混用**。

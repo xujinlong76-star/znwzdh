@@ -1149,6 +1149,11 @@ export class Repository {
     return jobsRepo.enqueueJob(this, kind, payload);
   }
 
+  /** 长任务进度上报（只对 running 生效，同时刷新 updated_at 供僵尸判定） */
+  async updateJobProgress(id: string, progress: { done: number; total: number }): Promise<void> {
+    return jobsRepo.updateJobProgress(this, id, progress);
+  }
+
   async claimNextJob(): Promise<JobRecord | null> {
     return jobsRepo.claimNextJob(this);
   }

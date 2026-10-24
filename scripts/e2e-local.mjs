@@ -77,6 +77,10 @@ const child = spawn(process.execPath, ['node_modules/@playwright/test/cli.js', .
     // 本机冷启动（turbopack 首次编译 + 另一套开发栈抢 CPU）常常超过配置默认的
     // 120 秒；CI 上不会走到这里（它直接用 `playwright test`）。可用同名环境变量覆盖。
     NAVHUB_E2E_SERVER_TIMEOUT: process.env.NAVHUB_E2E_SERVER_TIMEOUT || '300000',
+    // 独立输出目录：Next 16 按输出目录加单实例锁，与别的会话共用 .next-e2e 时
+    // 会报「Another next dev server is already running」（而不是端口冲突，很难猜）。
+    // 固定后缀让本机多次运行能复用编译缓存。
+    NAVHUB_E2E_DIST_DIR: process.env.NAVHUB_E2E_DIST_DIR || '.next-e2e-local',
   },
 })
 

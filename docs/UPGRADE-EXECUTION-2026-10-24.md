@@ -487,7 +487,57 @@ expected [ '/admin/data/restore' ] to deeply equal []
 
 ---
 
-## 10. 未执行项与原因
+## 10. 第七轮：异步恢复任务侧、gitignore 收窄、恢复页 E2E（E23–E26）
+
+### E23 `.gitignore`：把 `data/` 收窄成逐条列出
+
+**问题**：`data/` 按任意层级匹配，会把 `app/**/data/**` 这类**真实路由目录**静默吞掉。已踩两次（`/me/data` 的 loading.tsx、`/admin/data/restore` 的 page.tsx），两次都是靠「新文件 add 不了」才发现——属于最难自查的一类缺陷。
+
+**收窄**：改成 `/data/` + `/apps/api/data/` 两条显式路径，并删掉两条 `!/apps/.../data/` 反排除（不再需要）。
+
+**审计依据**：仓库里所有 `data` 目录只有三类——仓库根（本地库/备份）、`apps/api/data`（运行期库 + e2e）、`.next*/.../app/**/data`（构建产物，已被 `.next/` 与 `apps/web/*` 覆盖）。所以收窄只影响这两个运行期目录，行为不变。
+
+验证：`check-ignore` 确认两处运行期目录仍被忽略、两个路由目录已放行；`git status` 未暴露此前被吞的遗漏文件。
+
+### E24 异步恢复：任务侧全部落地（端点仍缺）
+
+按设计文档实现，`backup.ts` 那半分仍等并行会话让路：
+
+| 项 | 内容 |
+|---|---|
+| `jobs` 表 | `progress_done` / `progress_total`（DDL × 2 方言 + `COLUMN_ALTERS` 两条——**三处都要改**，只改 DDL 老库拿不到） |
+| `JobRecord` | 加两字段 + `rowToJob` 映射；`0/0` 表示「还没上报过」，不是「0%」 |
+| `repo.updateJobProgress` | 只写 `running` 的任务（避免 completed 后进度还在变），同时刷新 `updated_at` 兼作心跳 |
+| `JobKind` | `backup_restore`，调度声明为 `cron: "MANUAL"`，**刻意不进 `DEFAULT_CRON_SCHEDULES`** |
+| `runBackupRestore` | 读 staging → 校验 categoryId → 建分类 → 2000/片写入（每片一个事务）→ 进度 → 入队 reindex → 删 staging |
+
+**实现中被测试抓到的两处设计错误**：
+
+1. 状态枚举写成 `completed`，实际是 **`done`**（`JobRecord.status`）。
+2. `payload.jobId` 在入队时**拿不到**（`enqueueJob` 才生成 id）。改为由 `process(kind, payload, jobId, attempts)` 注入，`payload` 只放 `stagingPath`——少一趟「入队后改 payload」的写。
+
+**4 例任务测试**（不依赖端点，直接构造 staging）：正常路径（分类/站点入库、staging 删除、reindex 入队、进度到 total）、staging 缺失必须失败、缺 categoryId 时**一条都不写**（校验在建分类之前）、2100 条跨两片（9 秒，含拼音索引计算）。
+
+### E25 恢复页面的真实交互 E2E
+
+`e2e/admin-restore.spec.ts` 3 例：预演 → 勾选 → 执行（断言两处 query 不同、勾选是硬门槛、请求体是完整备份包）、跳过项如实展示、失败态展示「已整体回滚」+ reason 译文。
+
+**调试中踩的一个坑值得记**：第一版 3 例全挂，页面显示「耗时 0.0s」而 mock 返回 1234——说明**请求根本没走 mock**。原因是前端的 `hubUrl()` 会把 `/api/backup/restore` 归一成 `/api/hub/backup/restore`，而我的 mock 写的是 `**/api/backup/restore**`（少了 `/hub` 段）。于是请求打到真实后端，真实恢复了 1 分类 3 站点，文案恰好与 mock 相同，**看起来像 mock 生效**。
+
+这类「假绿/假红」最难判：文案对、结构对，只有耗时数字不对。修 mock 后 3 例 43.6 秒通过。
+
+### E26 E2E 输出目录隔离
+
+跑 E2E 时报 `Another next dev server is already running`（而不是端口冲突）——Next 16 按**输出目录**加单实例锁，与别的会话共用 `.next-e2e` 就会撞。
+
+- `playwright.config.ts`：`NEXT_DIST_DIR` 支持 `NAVHUB_E2E_DIST_DIR` 覆盖（默认仍 `.next-e2e`，CI 行为不变）；
+- `scripts/e2e-local.mjs`：默认传 `.next-e2e-local`，与 CI/其他会话分开，固定后缀保留编译缓存。
+
+同时 `e2e-web-server.mjs` 的「库被占用」排查提示在实战中生效了（输出 netstat/taskkill 三步）。
+
+---
+
+## 11. 未执行项与原因
 
 | 项 | 状态 | 原因 |
 |---|---|---|
@@ -509,7 +559,7 @@ expected [ '/admin/data/restore' ] to deeply equal []
 
 ---
 
-## 11. 回滚
+## 12. 回滚
 
 改动分两批。
 

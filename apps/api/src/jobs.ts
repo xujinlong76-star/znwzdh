@@ -15,6 +15,8 @@
  */
 
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
+import { readFile, unlink } from "node:fs/promises";
 import { enrichUrl } from "@navhub/ai";
 import { enrichLlmOf, resolveLlm } from "./llm-config.ts";
 import { createEnrichUsageCallback } from "./llm-usage.ts";
@@ -61,9 +63,9 @@ export function shouldMarkBroken(
   return priorConsecutiveFailures + 1 >= threshold;
 }
 
-export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit";
+export type JobKind = "health_check" | "refetch_metadata" | "recompute_rank" | "reindex" | "site_self_healing" | "token_audit" | "purge_trash" | "taxonomy_audit" | "data_retention" | "plugin_governance" | "user_data_audit" | "backup_restore";
 
-export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit"];
+export const JOB_KINDS: JobKind[] = ["health_check", "refetch_metadata", "recompute_rank", "reindex", "site_self_healing", "token_audit", "purge_trash", "taxonomy_audit", "data_retention", "plugin_governance", "user_data_audit", "backup_restore"];
 
 /** data_retention 任务的参数：mode 决定走哪条路，apply 决定是否真的动手 */
 export interface DataRetentionPayload {
@@ -194,6 +196,15 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   data_retention: { cron: "DAILY4AM", timeoutMs: 600_000, maxConcurrency: 1 },
   plugin_governance: { cron: "X4H", timeoutMs: 120_000, maxConcurrency: 1 },
   user_data_audit: { cron: "DAILY5AM", timeoutMs: 300_000, maxConcurrency: 1 },
+  /**
+   * 备份恢复：**手动触发，绝不自动调度**。
+   *
+   * cron 只是声明值（真正入队看 DEFAULT_CRON_SCHEDULES），而本 kind 刻意不在那个
+   * 列表里——否则每天会自动跑一次恢复，把库改回备份状态。`cronDue("MANUAL")`
+   * 因为不是 5 段表达式而恒返回 false，即使有人误把它加进 cron 列表也会静默不触发。
+   * 预算按 5 万条 + 分片写锁给到 30 分钟。
+   */
+  backup_restore: { cron: "MANUAL", timeoutMs: 1_800_000, maxConcurrency: 1 },
 };
 
 /** 标准 5 段 cron 字面量（与 DEFAULT_SCHEDULES 别名一一对应，集中存放避免块注释提前闭合） */
@@ -572,6 +583,11 @@ export class JobRunner {
           break;
         case "user_data_audit":
           await this.runUserDataAudit();
+          break;
+        case "backup_restore":
+          // jobId 由 Runner 注入而不是放在 payload 里：入队时还拿不到 id（enqueueJob
+          // 才生成），把 id 写进 payload 必然要「入队后再改 payload」这一趟额外写。
+          await this.runBackupRestore((payload ?? {}) as { stagingPath?: string }, jobId);
           break;
         default:
           throw new Error("未知任务类型: " + kind);
@@ -992,6 +1008,108 @@ export class JobRunner {
     const ms = days * 86_400_000;
     const purged = await this.ctx.repo.purgeExpiredDeletedSites(ms);
     await this.ctx.repo.recordEvent("purge_trash", { meta: { days, purged } }).catch(() => undefined);
+  }
+
+  /**
+   * 备份恢复（异步）：从 staging 文件读规范化后的计划，分片写入。
+   *
+   * 为什么分片而不是单事务：单事务 5 万条会持写锁 30 秒以上，期间所有读请求
+   * 排队。分片的代价是「失败时可能已提交前几片」——由**恢复本身的幂等性**兜住
+   * （`insertSitesBulk` 的 URL 去重只认 `deleted_at IS NULL`，重跑会跳过已导入的）。
+   *
+   * staging 的读取放在任务里而不是请求里：请求内只做校验与写文件，
+   * 这样请求时长与数据量解耦（这正是异步化的目的）。
+   *
+   * 失败时**不删** staging：运维要能拿它复盘或直接重跑（JobRunner 会按退避重试）。
+   */
+  private async runBackupRestore(payload: { stagingPath?: string }, jobId: string): Promise<void> {
+    const { stagingPath } = payload;
+    if (!stagingPath) {
+      throw new Error("backup_restore 缺少 stagingPath（端点应在入队前把规范化计划落到 staging 文件）");
+    }
+
+    interface StagedSite {
+      url: string;
+      title?: string;
+      description?: string | null;
+      categoryId?: string | null;
+      tags?: string[];
+      iconKey?: string | null;
+      enabled?: boolean;
+      createdAt?: number;
+    }
+    interface StagedPlan {
+      categories?: Array<{ id: string; title: string; description?: string | null; sort?: number }>;
+      sites?: StagedSite[];
+    }
+
+    let plan: StagedPlan;
+    try {
+      plan = JSON.parse(await readFile(stagingPath, "utf8")) as StagedPlan;
+    } catch (err) {
+      // 文件不在 = 已被处理过或过期清理；明确失败，不要当成功（否则 status 会谎报完成）
+      throw new Error("读取恢复 staging 失败（可能已被处理或过期）：" + String((err as Error)?.message ?? "unknown"));
+    }
+
+    const categories = plan.categories ?? [];
+    const sites = plan.sites ?? [];
+
+    /**
+     * 分类必须先建，且 categoryId 必须已由端点解析成真实 id。
+     * 任务侧不做「兜底塞进未分类」——那会让一条脏数据静默改变用户的分类结构，
+     * 而恢复这种操作应该「要么正确，要么明确失败」。
+     */
+    const missingCategory = sites.find((site) => !site.categoryId);
+    if (missingCategory) {
+      throw new Error(`staging 里有站点缺少 categoryId（例如 ${missingCategory.url}）：端点应在入队前完成分类解析`);
+    }
+
+    for (const category of categories) {
+      await this.ctx.repo.createCategory({
+        id: category.id,
+        title: category.title,
+        description: category.description ?? null,
+        sort: category.sort ?? 0,
+      });
+    }
+
+    const CHUNK = 2000;
+    let done = 0;
+    for (let i = 0; i < sites.length; i += CHUNK) {
+      const slice = sites.slice(i, i + CHUNK);
+      await this.ctx.repo.withTransaction(async () => {
+        await this.ctx.repo.insertSitesBulk(
+          slice.map((site) => ({
+            // 新 UUID：恢复不保留原 id（原 id 可能已被软删行占用，撞主键会让整片失败）
+            id: randomUUID(),
+            url: site.url,
+            title: site.title,
+            description: site.description ?? null,
+            categoryId: site.categoryId as string,
+            tags: site.tags ?? [],
+            iconKey: site.iconKey ?? null,
+            // 停用态必须原样恢复，否则恢复会把隐藏内容批量上线
+            enabled: site.enabled !== false,
+            status: (site.enabled === false ? "archived" : "active") as "active" | "archived",
+            createdAt: site.createdAt,
+          })),
+          { hydrate: false },
+        );
+      });
+      done += slice.length;
+      await this.ctx.repo.updateJobProgress(jobId, { done, total: sites.length });
+    }
+
+    // 恢复只写 sites/site_tags，不建向量：入队 reindex 补语义索引
+    if (sites.length > 0) {
+      await this.ctx.repo.enqueueJob("reindex", { vectors: true });
+    }
+
+    // 成功才删 staging（失败保留供重跑/复盘）
+    await unlink(stagingPath).catch(() => undefined);
+    await this.ctx.repo
+      .recordEvent("backup_restore", { meta: { categories: categories.length, sites: sites.length } })
+      .catch(() => undefined);
   }
 
   /**

@@ -31,6 +31,9 @@
 | E17 | E2E 等待上限可配 + 库重置重试窗口 | 环境 | 冷启动超 120 秒时的报错误导、句柄释放卡在 6 秒边界 |
 | E18 | 导航条目表单自动填充只在非空时写入 | 体验 | 空串写入让必填校验在用户未操作时误报；与 sitelist 同口径 |
 | E19 | `docs/ASYNC-RESTORE-DESIGN.md` | 设计 | 恢复异步化被 WIP 阻塞，转成可直接实施的设计（含载荷策略与分片取舍） |
+| E27 | 异步恢复的两个端点 + `planRestore` 共用计划 | 功能 | 请求时长与数据量解耦；6 例端点测试 |
+| E28 | 复核测试稳定性 | 质量 | `apps/api/test` 连跑两次全绿（87 文件 / 827 例） |
+| E29 | E2E mock 路径约定 | 文档 | 写错 mock 会打到真实后端且文案一致（假绿） |
 
 ---
 
@@ -537,7 +540,52 @@ expected [ '/admin/data/restore' ] to deeply equal []
 
 ---
 
-## 11. 未执行项与原因
+## 11. 第八轮：异步恢复端点、测试稳定性复核（E27–E29）
+
+### E27 异步恢复的两个端点
+
+`backup.ts` 回到干净状态后落地：
+
+```ts
+POST /api/backup/restore/async      → 202 + jobId + statusUrl
+GET  /api/backup/restore/status/:id → { status, progress, error, retryable }
+```
+
+**先在请求内做完四件事**（不能推给任务）：结构校验、条目上限、计划计算、staging 落盘。这样非法备份立刻 400，而不是让用户等任务跑起来才看到错。
+
+**关键重构**：把计划计算抽成 `planRestore(ctx, categories, sites)`，同步与异步共用。不只是省代码——异步任务必须按**同一套判定**写库，否则「预演说 100 条、真写 87 条」的偏差会一直存在。重构后 6 个 backup 测试文件 28 例全过，证明同步端点行为未变。
+
+**为什么 jobId 不进 payload**：入队那一刻才生成 id，写进 payload 必然多一趟「入队后改 payload」。`process(kind, payload, jobId, attempts)` 本来就带 id。
+
+**status 只认 `backup_restore`**：其它 kind 一律 404，避免这个端点变成「任意任务状态查询器」（任务 payload 里可能有内部路径）。
+
+**6 例端点测试**：202 + staging/job/审计三处都产生、非法备份不留 job 与 staging、超限 413、非 restore 任务 404、端到端（async → tick → 入库 + staging 删除 + status=done）。
+
+测试里踩到两个真实细节：
+
+1. **staging 文件名是随机 UUID，不含 jobId**。我最初断言 `files.some(f => f.includes(jobId))` 恒真——「文件已删除」的断言会**假通过**。改为从 job payload 读真实路径再断言 `existsSync`。
+2. **413 用例撞的是 bodyLimit 而不是条目上限**。`backupPayload` 会把 description/categoryId/tags 补全，50001 条约 5MB，先触发 4MB 请求体上限（返回 `Request body is too large`）。改用最小结构（约 2.6MB）才真正测到 `BACKUP_TOO_LARGE`。
+
+> 顺带确认二者的关系：`RESTORE_MAX_SITES = 50000` 与 `bodyLimit = 4MB` 在实践中**同时生效**，50001 条最小结构约 2.6MB，所以条目上限是可触发的（不是形同虚设）。
+
+### E28 测试稳定性：已由并行会话修复，本轮只做复核
+
+上一轮记录的「`apps/api/test` 整棵随机 8/2 个失败、单跑全过」在本轮**不再复现**：
+
+```
+Test Files  86 passed (86)
+     Tests  821 passed (821)
+```
+
+并行会话的 `ddae1fe chore(quality): … vitest 隔离试跑留档` 处理了这个问题。本轮连跑两次均全绿，故该项从「待定位」改为「已由他方修复，已复核」。教训：多会话下同一问题可能两边同时开工，先核对 HEAD 再动手。
+
+### E29 E2E mock 路径约定
+
+把上一轮踩的坑写进 `docs/TESTING-CONVENTIONS.md`：mock 必须用 `**/api/hub/<path>**`。写错的后果不是「测试挂掉」，而是请求真的执行了、真实响应与 mock 文案一致，页面「看起来正常」——本轮只有耗时数字（`0.0s` vs 1234）暴露了它。
+
+---
+
+## 12. 未执行项与原因
 
 | 项 | 状态 | 原因 |
 |---|---|---|
@@ -561,7 +609,7 @@ expected [ '/admin/data/restore' ] to deeply equal []
 
 ---
 
-## 12. 回滚
+## 13. 回滚
 
 改动分两批。
 

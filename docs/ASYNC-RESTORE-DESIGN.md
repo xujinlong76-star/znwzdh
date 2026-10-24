@@ -1,15 +1,18 @@
 # 备份恢复异步化 · 设计（待实施）
 
-> 状态：**任务侧已实现，端点未实施**
+> 状态：**已实现（任务侧 + 两个端点 + 测试），仅前端轮询未做**
 >
-> - 已落地：`jobs` 两列（`progress_done` / `progress_total`，含 `COLUMN_ALTERS` 补列）、
->   `JobKind.backup_restore`、`runBackupRestore`（分片 2000、staging 读取、进度上报、
->   成功后删文件）、`repo.updateJobProgress`、4 例任务测试（含 2100 条跨分片）。
-> - 未落地：两个 HTTP 端点、staging 写入、status 的 owner 校验、前端轮询。
-> - 阻塞原因：`apps/api/src/routes/backup.ts` 当前在并行会话的未提交改动中
->   （修复「恢复丢失 `enabled`」）。
+> - 已落地：`jobs` 两列（含 `COLUMN_ALTERS` 补列）、`JobKind.backup_restore`、
+>   `runBackupRestore`（分片 2000、staging 读取、进度上报、成功后删文件）、
+>   `repo.updateJobProgress`、`planRestore`（同步/异步共用计划计算）、
+>   `POST /api/backup/restore/async`、`GET /api/backup/restore/status/:jobId`。
+> - 测试：任务侧 4 例（含 2100 条跨分片）、端点侧 6 例（含端到端 status=done）。
+> - 未做：管理端的「后台进度」轮询 UI（当前 `/admin/data/restore` 走同步端点）。
 >
-> 本文档的目标是让剩余部分变成「照单落地」，而不是重新讨论方案。
+> 实现过程中与本文档的差异（以代码为准）：
+> - 完成态是 **`done`**，不是 `completed`；
+> - `jobId` 不进 `payload`（入队时才生成），由 `process()` 注入；
+> - status 不返回 `result`（任务不持久化结果），只返回 `progress` + `error` + `retryable`。
 
 ---
 

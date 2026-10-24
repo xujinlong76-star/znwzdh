@@ -66,7 +66,25 @@ L4 还有额外固定成本：需要独占端口（`scripts/e2e-local.mjs` 自�
    ```
 5. **E2E 断言「发了什么」，不断言「显示了什么」**。写路径的事实在请求体里；
    toast 文案有两份 DOM（可见 + `aria-live`），`getByText` 会 strict 冲突，用 `.first()`。
-6. **PG 用例本地 skip 是正常的**（无 `NAVHUB_TEST_DATABASE_URL`），由 CI 的
+6. **mock 路径必须带 `/api/hub` 前缀**。
+
+   前端不是直接打 `/api/xxx`：`hubUrl()` 会把 `/api/backup/restore` 归一成
+   `/api/hub/backup/restore`（`BASE = '/api/hub'`）。所以
+
+   ```ts
+   // ❌ 不匹配：请求打到真实后端，测试变成「在真实环境里跑操作」
+   await page.route('**/api/backup/restore**', handler)
+   // ✅
+   await page.route('**/api/hub/backup/restore**', handler)
+   ```
+
+   写错的后果比「测试挂掉」严重得多：请求真的执行了，而**真实响应往往和 mock
+   文案一模一样**（因为 mock 就是照着后端文案写的）。表现是页面「看起来正常」，
+   只有某个数字不对（本轮实测：耗时显示 `0.0s` 而 mock 返回 1234 才暴露）。
+   这类假绿会让人以为 mock 生效，实际在污染数据。
+
+   自查手段：在 handler 里 `console.log`，或断言「本用例应产生 N 次调用」。
+7. **PG 用例本地 skip 是正常的**（无 `NAVHUB_TEST_DATABASE_URL`），由 CI 的
    test-postgres 作业执行。新增 PG 用例时在 PR 描述里注明「仅 CI 验证」。
 
 ## 5. 提交前的成本预算

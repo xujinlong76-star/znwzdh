@@ -1,10 +1,13 @@
 import type { FastifyPluginAsync } from "fastify";
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type { AppContext } from "../context.ts";
 import {
   exportNetscapeBookmarks,
   exportNavHubBackup,
   validateNavHubBackup,
+  type NavHubColdBackup,
 } from "@navhub/core";
 
 /**
@@ -42,6 +45,96 @@ export function classifyRestoreError(err: unknown): "duplicate_key" | "foreign_k
   if (/NOT NULL|not-null|非空/i.test(message)) return "not_null";
   if (/no such (table|column)|does not exist|不存在/i.test(message)) return "schema";
   return "unknown";
+}
+
+export interface RestorePlan {
+  /** 需要新建的分类（已按标题去重） */
+  plannedCategories: NavHubColdBackup["categories"];
+  /** 需要新建的站点及其落库分类 */
+  plannedSites: Array<{ site: NavHubColdBackup["sites"][number]; targetCatId: string }>;
+  skipped: { duplicateCategories: number; invalidUrls: number; duplicateUrls: number };
+}
+
+/**
+ * 计算「这个备份包会新增什么」。同步端点与异步端点共用这一份。
+ *
+ * 判定口径与旧实现逐条等价：分类按标题幂等（备份内同标题只算一次）、站点按
+ * URL 归一化去重、非 http(s) 链接跳过、分类 ID 先认现有库再走标题映射再回退默认类目。
+ *
+ * 抽出来的理由不只是「两个端点复用」：异步化要求**校验与计划在请求内完成**
+ * （非法备份不该等到任务跑起来才报错），而计划又必须与实际写入用同一套判定，
+ * 否则预演说 100 条、真写 87 条这种偏差会一直存在。
+ */
+export async function planRestore(
+  ctx: AppContext,
+  categories: NavHubColdBackup["categories"],
+  sites: NavHubColdBackup["sites"],
+): Promise<RestorePlan> {
+  const existingCats = await ctx.repo.listCategories();
+  const existingCatTitles = new Set(existingCats.map((c) => c.title));
+  const validCatIds = new Set(existingCats.map((c) => c.id));
+  const catTitleToId = new Map(existingCats.map((c) => [c.title, c.id]));
+
+  const plannedCategories: NavHubColdBackup["categories"] = [];
+  let duplicateCategories = 0;
+  for (const cat of categories) {
+    if (existingCatTitles.has(cat.title)) {
+      duplicateCategories++;
+      continue;
+    }
+    existingCatTitles.add(cat.title);
+    plannedCategories.push(cat);
+    validCatIds.add(cat.id);
+    catTitleToId.set(cat.title, cat.id);
+  }
+
+  const oldIdToNewId = new Map<string, string>();
+  for (const cat of categories) {
+    const matched = catTitleToId.get(cat.title);
+    if (matched) oldIdToNewId.set(cat.id, matched);
+  }
+  // 空库恢复时旧实现是在建完分类后才取「第一个类目」：这里用计划里的第一条保持等价。
+  const defaultCatId = existingCats[0]?.id || plannedCategories[0]?.id || "default";
+
+  const existingSites = await ctx.repo.raw("SELECT url FROM sites WHERE deleted_at IS NULL");
+  const existingUrls = new Set(
+    existingSites.map((s) => String(s.url ?? "").replace(/\/+$/, "").toLowerCase()),
+  );
+
+  const plannedSites: Array<{ site: NavHubColdBackup["sites"][number]; targetCatId: string }> = [];
+  let invalidUrls = 0;
+  let duplicateUrls = 0;
+  for (const site of sites) {
+    if (!site.url || !/^https?:\/\//i.test(site.url)) {
+      invalidUrls++;
+      continue;
+    }
+    const norm = site.url.replace(/\/+$/, "").toLowerCase();
+    if (!norm) {
+      invalidUrls++;
+      continue;
+    }
+    if (existingUrls.has(norm)) {
+      duplicateUrls++;
+      continue;
+    }
+    existingUrls.add(norm);
+    let targetCatId = defaultCatId;
+    if (site.categoryId) {
+      if (validCatIds.has(site.categoryId)) {
+        targetCatId = site.categoryId;
+      } else if (oldIdToNewId.has(site.categoryId)) {
+        targetCatId = oldIdToNewId.get(site.categoryId)!;
+      }
+    }
+    plannedSites.push({ site, targetCatId });
+  }
+
+  return {
+    plannedCategories,
+    plannedSites,
+    skipped: { duplicateCategories, invalidUrls, duplicateUrls },
+  };
 }
 
 export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -131,69 +224,12 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     let restoredSites = 0;
 
     /**
-     * 计划计算：dryRun 与真写共用同一份「会不会新增」的判定，避免预演与实际不一致。
-     * 判定口径与旧实现逐条等价：分类按标题幂等（备份内同标题只算一次）、站点按
-     * URL 归一化去重、非 http(s) 链接跳过、分类 ID 先认现有库再走标题映射再回退默认类目。
+     * 计划计算：dryRun 与真写共用同一份「会不会新增」的判定（见 planRestore），
+     * 避免预演与实际不一致。
      */
-    const existingCats = await ctx.repo.listCategories();
-    const existingCatTitles = new Set(existingCats.map((c) => c.title));
-    const validCatIds = new Set(existingCats.map((c) => c.id));
-    const catTitleToId = new Map(existingCats.map((c) => [c.title, c.id]));
-
-    const plannedCategories: typeof categories = [];
-    let duplicateCategories = 0;
-    for (const cat of categories) {
-      if (existingCatTitles.has(cat.title)) {
-        duplicateCategories++;
-        continue;
-      }
-      existingCatTitles.add(cat.title);
-      plannedCategories.push(cat);
-      validCatIds.add(cat.id);
-      catTitleToId.set(cat.title, cat.id);
-    }
-
-    const oldIdToNewId = new Map<string, string>();
-    for (const cat of categories) {
-      const matched = catTitleToId.get(cat.title);
-      if (matched) oldIdToNewId.set(cat.id, matched);
-    }
-    // 空库恢复时旧实现是在建完分类后才取「第一个类目」：这里用计划里的第一条保持等价。
-    const defaultCatId = existingCats[0]?.id || plannedCategories[0]?.id || "default";
-
-    const existingSites = await ctx.repo.raw("SELECT url FROM sites WHERE deleted_at IS NULL");
-    const existingUrls = new Set(
-      existingSites.map((s) => String(s.url ?? "").replace(/\/+$/, "").toLowerCase()),
-    );
-
-    const plannedSites: Array<{ site: (typeof sites)[number]; targetCatId: string }> = [];
-    let invalidUrls = 0;
-    let duplicateUrls = 0;
-    for (const site of sites) {
-      if (!site.url || !/^https?:\/\//i.test(site.url)) {
-        invalidUrls++;
-        continue;
-      }
-      const norm = site.url.replace(/\/+$/, "").toLowerCase();
-      if (!norm) {
-        invalidUrls++;
-        continue;
-      }
-      if (existingUrls.has(norm)) {
-        duplicateUrls++;
-        continue;
-      }
-      existingUrls.add(norm);
-      let targetCatId = defaultCatId;
-      if (site.categoryId) {
-        if (validCatIds.has(site.categoryId)) {
-          targetCatId = site.categoryId;
-        } else if (oldIdToNewId.has(site.categoryId)) {
-          targetCatId = oldIdToNewId.get(site.categoryId)!;
-        }
-      }
-      plannedSites.push({ site, targetCatId });
-    }
+    const plan = await planRestore(ctx, categories, sites);
+    const { plannedCategories, plannedSites } = plan;
+    const { duplicateCategories, invalidUrls, duplicateUrls } = plan.skipped;
 
     /** 预演最多列举 20 条样例：足够 admin 确认「是不是这个包」，又不会把响应撑大。 */
     const PREVIEW_SAMPLE = 20;
@@ -351,6 +387,140 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       /** 异步补索引任务的入口提示：语义检索在 reindex 跑完后才完整 */
       reindexQueued: restoredSites > 0,
     };
+    },
+  );
+
+  /**
+   * 异步恢复：提交任务，立刻返回 202。
+   *
+   * 存在的理由是「请求时长与数据量解耦」：同步端点在 5 万条上限下要 37 秒以上，
+   * 超过 BFF 的读超时，调用方会看到 504 而事务其实已经提交——那是最糟的一种失败
+   * （用户以为失败、数据已变）。异步化之后请求本身只做校验与落盘，耗时与条目数无关。
+   *
+   * 请求内**必须**完成的四件事（不能推给任务）：
+   *   1. 备份包结构校验——非法包要立刻 400，而不是让用户等任务跑起来才看到错；
+   *   2. 条目上限检查——同同步端点；
+   *   3. 计划计算（planRestore）——异步任务要按同一套判定写库，否则预演与真写会分叉；
+   *   4. staging 落盘——任务只读文件，不碰原始上传体。
+   */
+  app.post(
+    "/api/backup/restore/async",
+    { config: { scope: "admin", rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const body = req.body as any;
+      const jsonStr = typeof body === "string" ? body : JSON.stringify(body);
+      const validation = validateNavHubBackup(jsonStr);
+      if (!validation.valid || !validation.backup) {
+        reply.code(400);
+        return { error: "INVALID_BACKUP", message: validation.error || "无效的备份文件" };
+      }
+
+      const { categories, sites } = validation.backup;
+      if (categories.length > RESTORE_MAX_CATEGORIES || sites.length > RESTORE_MAX_SITES) {
+        reply.code(413);
+        return {
+          error: "BACKUP_TOO_LARGE",
+          message: `备份条目过多：分类 ${categories.length}/${RESTORE_MAX_CATEGORIES}，站点 ${sites.length}/${RESTORE_MAX_SITES}`,
+        };
+      }
+
+      const plan = await planRestore(ctx, categories, sites);
+
+      /**
+       * staging 文件：只放**已解析**的计划（categoryId 已换成真实 id），
+       * 任务侧因此不需要再碰分类映射逻辑，也就能拒绝「categoryId 为空」的脏数据。
+       */
+      const stagingDir = resolve(process.env.NAVHUB_RESTORE_STAGING_DIR || "data/restore-staging");
+      const stagingPath = join(stagingDir, `${randomUUID()}.json`);
+      try {
+        await mkdir(stagingDir, { recursive: true });
+        await writeFile(
+          stagingPath,
+          JSON.stringify({
+            categories: plan.plannedCategories,
+            sites: plan.plannedSites.map(({ site, targetCatId }) => ({ ...site, categoryId: targetCatId })),
+          }),
+          "utf8",
+        );
+      } catch (err) {
+        req.log.error({ err }, "写入恢复 staging 失败");
+        reply.code(500);
+        return { error: "STAGING_WRITE_FAILED", message: "无法暂存恢复计划（磁盘或权限问题），未创建任务" };
+      }
+
+      let jobId: string;
+      try {
+        jobId = await ctx.repo.enqueueJob("backup_restore", { stagingPath });
+      } catch (err) {
+        req.log.error({ err }, "入队恢复任务失败");
+        reply.code(500);
+        return { error: "ENQUEUE_FAILED", message: "恢复任务入队失败，未执行任何写入" };
+      }
+
+      void ctx.repo
+        .audit({
+          ip: req.ip,
+          actor: req.auth.actor,
+          actorKind: req.auth.kind,
+          action: "backup.restore_queued",
+          target: "backup",
+          diff: {
+            jobId,
+            plannedCategories: plan.plannedCategories.length,
+            plannedSites: plan.plannedSites.length,
+            skipped: plan.skipped,
+          },
+        })
+        .catch(() => undefined);
+
+      reply.code(202);
+      return {
+        ok: true,
+        jobId,
+        accepted: { categories: plan.plannedCategories.length, sites: plan.plannedSites.length },
+        skipped: plan.skipped,
+        statusUrl: `/api/backup/restore/status/${jobId}`,
+        message: `已入队：将恢复 ${plan.plannedCategories.length} 个分类与 ${plan.plannedSites.length} 个站点（进度见 statusUrl）`,
+      };
+    },
+  );
+
+  /**
+   * 查询异步恢复进度。
+   *
+   * 只认 `backup_restore` 类型的任务：其它任务的 id 一律 404，避免这个端点变成
+   * 「任意任务状态查询器」（任务 payload 里可能有内部路径）。
+   *
+   * 状态枚举以 JobRecord.status 为准（`done`，不是 `completed`）。进程被杀时任务会
+   * 在 `running` 停留最多 15 分钟才被 reapStaleJobs 回收——这里如实报 running，
+   * 不做「超过 N 分钟就推断失败」的猜测。
+   */
+  app.get(
+    "/api/backup/restore/status/:jobId",
+    { config: { scope: "admin" } },
+    async (req, reply) => {
+      const { jobId } = req.params as { jobId: string };
+      const rows = await ctx.repo.raw(
+        "SELECT id, kind, status, error, progress_done, progress_total, created_at, updated_at FROM jobs WHERE id = ? LIMIT 1",
+        [jobId],
+      );
+      const row = rows[0];
+      if (!row || String(row.kind) !== "backup_restore") {
+        reply.code(404);
+        return { error: "NOT_FOUND", message: "任务不存在（或不是恢复任务）" };
+      }
+      const status = String(row.status ?? "pending");
+      const finished = status === "done" || status === "failed" || status === "cancelled";
+      return {
+        jobId: String(row.id),
+        status,
+        progress: { done: Number(row.progress_done ?? 0), total: Number(row.progress_total ?? 0) },
+        startedAt: Number(row.created_at ?? 0),
+        finishedAt: finished ? Number(row.updated_at ?? 0) : null,
+        error: row.error == null ? null : String(row.error),
+        /** 完成后 staging 保留与否取决于成功/失败：成功已删，失败保留供重跑 */
+        retryable: status === "failed" || status === "retrying",
+      };
     },
   );
 };

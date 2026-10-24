@@ -7,79 +7,15 @@
  */
 import { useState, useMemo } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/registry/new-york/ui/card'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/registry/new-york/ui/tabs'
 import { Button } from '@/registry/new-york/ui/button'
-import { Input } from '@/registry/new-york/ui/input'
 import { Badge } from '@/components/ui/badge'
-import {
-  Cpu,
-  Orbit,
-  ShieldCheck,
-  ShieldAlert,
-  Zap,
-  ArrowRight,
-  Sparkles,
-  RefreshCw,
-  Check,
-  CheckCircle2,
-  Layers,
-  ArrowLeft,
-  Lock,
-  Unlock,
-  Network,
-  Palette,
-  Bot,
-  Send,
-  Radio,
-  Share2,
-  Wrench,
-  Sliders,
-  Activity,
-} from 'lucide-react'
-import Link from 'next/link'
-import {
-  parseSpeculativeIntent,
-} from '@/lib/speculative'
-import {
-  encryptVault,
-  decryptVault,
-  type EncryptedVaultPayload,
-  type VaultItem,
-} from '@/lib/vault'
-import {
-  findShortestTechPath,
-  analyzeStackCompatibility,
-  PRESET_TECH_GRAPH,
-} from '@/lib/knowledge-graph'
-import {
-  analyzeVisualFingerprint,
-} from '@/lib/visual-fingerprint'
-import {
-  getWebMcpBridge,
-  type JsonRpcResponse,
-} from '@/lib/webmcp-bridge'
-import {
-  privatizeVector,
-  rankItemsWithPrivacy,
-  type CandidateItem,
-} from '@/lib/federated-recommendation'
-import {
-  compileSpeculationRules,
-  renderSpeculationRulesScript,
-  generateFallbackLinkTags,
-  type SpeculationCandidate,
-} from '@/lib/speculative-prerender'
-import {
-  isSafeUrl,
-  synthesizeRestTool,
-  synthesizeSiteSearchTool,
-  parseOpenApiToSpecs,
-} from '@/lib/dynamic-tool-synthesizer'
-import {
-  CrdtStore,
-  compareVectorClocks,
-  type VectorClock,
-} from '@/lib/crdt-sync'
+import { ArrowRight, Sparkles, Network } from 'lucide-react'
+import { type EncryptedVaultPayload, type VaultItem } from '@/lib/vault'
+import { findShortestTechPath, analyzeStackCompatibility, PRESET_TECH_GRAPH } from '@/lib/knowledge-graph'
+import { type JsonRpcResponse } from '@/lib/webmcp-bridge'
+import { type CandidateItem } from '@/lib/federated-recommendation'
+import { type SpeculationCandidate } from '@/lib/speculative-prerender'
+import { type VectorClock } from '@/lib/crdt-sync'
 
 
 export function GraphPanel() {

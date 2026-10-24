@@ -307,7 +307,16 @@ hook 完全正常。真实原因是我调用 `git commit` 时**没给 Bash 工�
 1. `scripts/e2e-local.mjs`：从 3200/8900 起扫一对**同时空闲**的端口（Web 与 API 都要能绑上），再交给 Playwright。刻意不自动杀进程——占用端口的可能是别人正在用的开发栈，按端口猜测并 kill 的代价太高；只打印端口，由人决定。同时清掉外部继承的 `PLAYWRIGHT_TEST_BASE_URL`，避免「对着别人的服务器跑用例」。
 2. `scripts/e2e-web-server.mjs`：库重置失败时给出可执行的排查三步（`netstat -ano` 找 PID → `taskkill` → 复验），并明确「只清 E2E 端口，别动 :3000/:8787」。
 
-用法：`pnpm e2e:local`（或 `node scripts/e2e-local.mjs e2e/admin-sitelist.spec.ts`）。
+用法：`node scripts/e2e-local.mjs e2e/admin-sitelist.spec.ts`（参数原样转发给 Playwright）。
+
+> 刻意**没有**把它注册进 `package.json` 的 `scripts`：`package.json` 在 pre-commit hook 的
+> `GLOBAL_FILES` 清单里，改它会让每次提交都跑全量测试（实测约 10.7 分钟）。为一行别名
+> 付这个代价不划算，直接调脚本同样方便。
+
+> **提交归属说明（跨会话并发）**：本节的 `scripts/e2e-local.mjs`、`scripts/e2e-web-server.mjs`
+> 改动与本文件的大部分内容，被并行会话的提交 `4a3fc4e`（message 为「共享状态组件对齐设计语言」）
+> 一并带走——对方用了全量暂存。内容完整、测试通过，但 `git log` 上这份脚本挂在一个视觉改动
+> 的 commit 下。如需追溯，以本文件为准；不建议为此改写历史（对方可能仍在工作）。
 
 **副作用（已处理）**：跑一次 E2E 会让 Next dev 把 `.next-e2e/types/**/*.ts` 写进 `apps/web/tsconfig.json`，于是 `check-web-overlay` 报 1 个漂移。overlay 一侧本来就有 `.next*/types` 通配覆盖，Next 追加的是冗余精确路径；提交前已把 `apps/web/tsconfig.json` 恢复为 overlay 版本。**跑过 E2E 之后，提交前务必重跑 `check-web-overlay`。**
 

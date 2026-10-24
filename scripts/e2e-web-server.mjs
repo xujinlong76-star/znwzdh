@@ -32,6 +32,23 @@ for (let attempt = 0; attempt < 20; attempt++) {
 if (lastError) {
   console.error(`[e2e] 无法重置 E2E 数据库（可能仍有进程占用）：${dbPath}`)
   console.error(lastError.message)
+  /**
+   * 给出可执行的排查路径，而不是只报「被占用」。
+   *
+   * 实测最常见的成因：上一轮 E2E 被强杀（Ctrl+C 没传导到子进程 / 代理超时），
+   * `e2e-web-server.mjs` 的 API 子进程仍在监听 E2E 端口并持有这个库文件。
+   * 此时重跑永远失败，而错误信息只说「可能仍有进程占用」，不知道下一步做什么。
+   */
+  const apiPort = Number(process.env.NAVHUB_API_PORT || 8787)
+  console.error('')
+  console.error('[e2e] 排查步骤：')
+  console.error(`  1) netstat -ano | findstr :${apiPort}      找到占用 E2E API 端口的 PID`)
+  console.error('  2) taskkill /PID <pid> /F                  只杀那个进程')
+  console.error(`  3) 确认端口已空：netstat -ano | findstr :${apiPort}`)
+  console.error('')
+  console.error('[e2e] 注意：只清理 E2E 端口的进程。常驻开发栈通常占用 :3000 / :8787，')
+  console.error('[e2e] 动它会打断正在使用页面的其他人；换端口跑更安全：')
+  console.error('[e2e]   node scripts/e2e-local.mjs            （自动挑一对空闲端口）')
   process.exit(1)
 }
 

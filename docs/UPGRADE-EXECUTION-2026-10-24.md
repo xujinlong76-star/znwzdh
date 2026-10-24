@@ -300,7 +300,14 @@ hook 完全正常。真实原因是我调用 `git commit` 时**没给 Bash 工�
 3. 分类筛选把子分类站点归并到父分类；
 4. 「无子分类」同时包含主分类站点与未归类站点。
 
-**本地未完成验证**：本机同时跑着两套开发栈（:3000/:8787、:3100），E2E 端口按配置换到 3199/8899 后，API 与 Web 都起来了（`Ready in 2.8s`），但 Playwright 的 `webServer` 等待在 120 秒内没等到首个页面可访问——首次编译叠加上并行会话的 CPU 占用。这是**环境负载**问题，不是用例缺陷，但意味着这 4 例的选择器只经过静态核对、未经过运行验证，风险等级高于其他改动。
+**本地验证：4 例已全部通过（2.3 分钟）。** 上一版本节写的是「本地未跑通、选择器仅静态核对、风险等级最高」，该结论已被推翻——跑不通的原因纯粹是**环境**（两套并行开发栈占着 3000/3100）。
+
+修复环境的两处改动（本轮新增）：
+
+1. `scripts/e2e-local.mjs`：从 3200/8900 起扫一对**同时空闲**的端口（Web 与 API 都要能绑上），再交给 Playwright。刻意不自动杀进程——占用端口的可能是别人正在用的开发栈，按端口猜测并 kill 的代价太高；只打印端口，由人决定。同时清掉外部继承的 `PLAYWRIGHT_TEST_BASE_URL`，避免「对着别人的服务器跑用例」。
+2. `scripts/e2e-web-server.mjs`：库重置失败时给出可执行的排查三步（`netstat -ano` 找 PID → `taskkill` → 复验），并明确「只清 E2E 端口，别动 :3000/:8787」。
+
+用法：`pnpm e2e:local`（或 `node scripts/e2e-local.mjs e2e/admin-sitelist.spec.ts`）。
 
 **副作用（已处理）**：跑一次 E2E 会让 Next dev 把 `.next-e2e/types/**/*.ts` 写进 `apps/web/tsconfig.json`，于是 `check-web-overlay` 报 1 个漂移。overlay 一侧本来就有 `.next*/types` 通配覆盖，Next 追加的是冗余精确路径；提交前已把 `apps/web/tsconfig.json` 恢复为 overlay 版本。**跑过 E2E 之后，提交前务必重跑 `check-web-overlay`。**
 
@@ -318,8 +325,10 @@ hook 完全正常。真实原因是我调用 `git commit` 时**没给 Bash 工�
 | 小写化字段预计算 | 未执行 | 能把 `/admin/sitelist` 筛选再压一半，但需在 `sites` 多处 `setSites` 分支维护派生缓存，属独立改造（见 §5 E9）。 |
 | 恢复性能瓶颈定位 | 部分 | 已证伪「拼音计算是瓶颈」（ASCII 对照反而更慢）；剩余怀疑是索引维护与多值 INSERT 绑定开销，未深挖——7.4 秒/万条已可用。 |
 | PG 批量用例的本地执行 | 未执行 | 无 `NAVHUB_TEST_DATABASE_URL`，docker 不可用。由 CI test-postgres 执行。 |
-| E2E 4 例的本地执行 | 未完成 | 本机两套并行开发栈 + Next 单实例锁 + 首次编译，`webServer` 120 秒内未就绪（Web 本身已 `Ready in 2.8s`）。用例选择器只经静态核对，**风险等级高于本轮其他改动**。 |
-| `field-names` 红灯（并行会话引入） | 未修 | 本轮第三次提交时 hook 真实跑完并拦下：`user-center/settings-panel.tsx` 新增的 `<select>` 无可访问名。该文件在并行会话的活跃 WIP 中（提交 `1c37044` 已带入部分改动，工作区仍在编辑），按纪律不覆盖。**当前 HEAD 可能带此红灯，需由编辑该文件的会话收口，或授权我补 `aria-label`。** |
+| E2E 4 例的本地执行 | **已完成** | 通过新增的 `scripts/e2e-local.mjs` 自动挑端口后 4/4 通过（2.3 分钟）。上一版本节标的「未验证」已撤回。 |
+| 备份恢复异步化 | 未执行 | 目标是把「入队 + 轮询」替代「同步等待」，彻底消除 HTTP 超时面（现在只是把 30 秒放宽到 120 秒）。**阻塞原因**：`apps/api/src/routes/backup.ts` 正被并行会话修改（S3 恢复 `enabled` 缺陷），在其工作区提交前改动同一文件会污染对方提交。 |
+| 恢复丢失 `createdAt` | 未修（已记录） | 备份包带 `createdAt`，`insertSitesBulk` 未接（`created_at` 统一写恢复时刻）。影响「按创建时间排序」在恢复后失真。同属 `backup.ts`，与上一条同一阻塞。 |
+| `field-names` 红灯 | 已由并行会话修复 | 其 `fbccddf` 提交后 `field-names.test.ts` 7 例全绿，本项无需处理。 |
 
 > 两条「未本地验证」的改动（PG 4 例、E2E 4 例）都集中在 CI 侧。若 CI 报红，优先看这两处，而不是回滚业务改动。
 

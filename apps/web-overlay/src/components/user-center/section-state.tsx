@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { LucideIcon } from 'lucide-react'
+import { TriangleAlert, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -13,6 +13,9 @@ import { cn } from '@/lib/utils'
  *   - empty：只陈述「确实没有」，不带任何故障措辞。
  *
  * 纯展示组件，不发起请求；重试由调用方传入。
+ *
+ * 视觉（美化批次）：错误态加琥珀警示芯片并拆出「图标 + 文本」两栏；
+ * 空态图标收进圆角芯片，与统计卡/入口卡同一套语言。
  */
 export type SectionStateVariant = 'loading' | 'error' | 'empty'
 
@@ -53,7 +56,11 @@ export function SectionState({
       <div className={cn('space-y-2', className)} aria-busy="true" aria-live="polite">
         <span className="sr-only">{loadingLabel}</span>
         {Array.from({ length: rows }).map((_, i) => (
-          <div key={i} className={cn('animate-pulse rounded-2xl border border-border/70 bg-card/50', rowClassName)} />
+          <div
+            key={i}
+            className={cn('animate-pulse rounded-2xl border border-border/70 bg-card/50', rowClassName)}
+            style={{ animationDelay: `${i * 120}ms` }}
+          />
         ))}
       </div>
     )
@@ -63,12 +70,19 @@ export function SectionState({
     return (
       <section
         role="alert"
-        className={cn('space-y-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-6', className)}
+        className={cn('rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-6', className)}
       >
-        {title ? <p className="text-sm font-semibold">{title}</p> : null}
-        {description ? <p className="text-xs leading-relaxed text-muted-foreground">{description}</p> : null}
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300">
+            <TriangleAlert className="h-4 w-4" aria-hidden />
+          </span>
+          <div className="min-w-0 space-y-1">
+            {title ? <p className="text-sm font-semibold">{title}</p> : null}
+            {description ? <p className="text-xs leading-relaxed text-muted-foreground">{description}</p> : null}
+          </div>
+        </div>
         {(onRetry || action) && (
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             {onRetry && (
               <Button size="sm" variant="outline" className="w-full text-xs sm:w-auto" onClick={onRetry}>
                 {retryLabel}
@@ -85,12 +99,16 @@ export function SectionState({
     <section
       className={cn('rounded-2xl border border-dashed border-border/70 bg-card/50 p-8 text-center sm:p-10', className)}
     >
-      {Icon ? <Icon className="mx-auto h-6 w-6 text-muted-foreground" aria-hidden /> : null}
-      {title ? <p className="mt-2 text-sm font-medium">{title}</p> : null}
+      {Icon ? (
+        <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl bg-muted/70 text-muted-foreground">
+          <Icon className="h-5 w-5" aria-hidden />
+        </span>
+      ) : null}
+      {title ? <p className="mt-3 text-sm font-medium">{title}</p> : null}
       {description ? (
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
       ) : null}
-      {action ? <div className="mt-3 flex justify-center">{action}</div> : null}
+      {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
     </section>
   )
 }

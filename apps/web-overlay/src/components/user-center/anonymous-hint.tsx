@@ -8,6 +8,7 @@
  * 文案由调用方按页面语境传入。
  */
 import Link from 'next/link'
+import { LogIn } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export function AnonymousHint({
@@ -26,10 +27,17 @@ export function AnonymousHint({
   secondaryLabel?: string
 }) {
   return (
-    <section className="space-y-3 rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 sm:p-6">
-      <p className="text-sm font-semibold">{title}</p>
-      <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">{description}</p>
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+    <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 sm:p-6">
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          <LogIn className="h-4 w-4" aria-hidden />
+        </span>
+        <div className="min-w-0 space-y-1">
+          <p className="text-sm font-semibold">{title}</p>
+          <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <Button asChild size="sm" className="w-full text-xs sm:w-auto">
           <Link href={`/auth/signin?callbackUrl=${encodeURIComponent(callbackUrl)}`}>登录 / 创建账号</Link>
         </Button>

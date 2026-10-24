@@ -196,7 +196,7 @@ describe("第四轮安全与逻辑缺陷守卫", () => {
 
     const res = await app.inject({
       method: "POST",
-      url: "/api/backup/restore",
+      url: "/api/backup/restore?dryRun=false",
       payload: backupData,
     });
     expect(res.statusCode).toBe(200);

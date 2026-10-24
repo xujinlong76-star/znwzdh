@@ -70,11 +70,26 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   });
 
   /**
-   * 校验并还原冷备灾备数据包
+   * 校验并还原冷备灾备数据包。
+   *
+   * 运行语义对齐 POST /api/sites/bulk：**dryRun 默认 true**，先返回「将新增多少
+   * 分类/站点」，确认后再以 dryRun=false 真写。恢复是 admin 触发的全量写事务，
+   * 写下去就改整库内容；默认预演让 admin 不必靠猜决定要不要执行。
+   * dryRun 可写在 query（`?dryRun=false`，字符串或 JSON 载荷都适用）或对象载荷字段里。
    */
-  app.post("/api/backup/restore", { config: { scope: "admin" } }, async (req, reply) => {
+  app.post(
+    "/api/backup/restore",
+    { config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (req, reply) => {
     const body = req.body as any;
     const jsonStr = typeof body === "string" ? body : JSON.stringify(body);
+    /** 只有显式 false / "false" / 0 才落库；缺省、true、乱填一律按预演处理（安全侧默认）。 */
+    const flagFromQuery = (req.query as Record<string, unknown> | undefined)?.dryRun;
+    const flagFromBody = body && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>).dryRun
+      : undefined;
+    const rawFlag = flagFromQuery ?? flagFromBody;
+    const dryRun = !(rawFlag === false || rawFlag === "false" || rawFlag === "0" || rawFlag === 0);
     const validation = validateNavHubBackup(jsonStr);
 
     if (!validation.valid || !validation.backup) {
@@ -98,6 +113,90 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     let restoredSites = 0;
 
     /**
+     * 计划计算：dryRun 与真写共用同一份「会不会新增」的判定，避免预演与实际不一致。
+     * 判定口径与旧实现逐条等价：分类按标题幂等（备份内同标题只算一次）、站点按
+     * URL 归一化去重、非 http(s) 链接跳过、分类 ID 先认现有库再走标题映射再回退默认类目。
+     */
+    const existingCats = await ctx.repo.listCategories();
+    const existingCatTitles = new Set(existingCats.map((c) => c.title));
+    const validCatIds = new Set(existingCats.map((c) => c.id));
+    const catTitleToId = new Map(existingCats.map((c) => [c.title, c.id]));
+
+    const plannedCategories: typeof categories = [];
+    let duplicateCategories = 0;
+    for (const cat of categories) {
+      if (existingCatTitles.has(cat.title)) {
+        duplicateCategories++;
+        continue;
+      }
+      existingCatTitles.add(cat.title);
+      plannedCategories.push(cat);
+      validCatIds.add(cat.id);
+      catTitleToId.set(cat.title, cat.id);
+    }
+
+    const oldIdToNewId = new Map<string, string>();
+    for (const cat of categories) {
+      const matched = catTitleToId.get(cat.title);
+      if (matched) oldIdToNewId.set(cat.id, matched);
+    }
+    // 空库恢复时旧实现是在建完分类后才取「第一个类目」：这里用计划里的第一条保持等价。
+    const defaultCatId = existingCats[0]?.id || plannedCategories[0]?.id || "default";
+
+    const existingSites = await ctx.repo.raw("SELECT url FROM sites WHERE deleted_at IS NULL");
+    const existingUrls = new Set(
+      existingSites.map((s) => String(s.url ?? "").replace(/\/+$/, "").toLowerCase()),
+    );
+
+    const plannedSites: Array<{ site: (typeof sites)[number]; targetCatId: string }> = [];
+    let invalidUrls = 0;
+    let duplicateUrls = 0;
+    for (const site of sites) {
+      if (!site.url || !/^https?:\/\//i.test(site.url)) {
+        invalidUrls++;
+        continue;
+      }
+      const norm = site.url.replace(/\/+$/, "").toLowerCase();
+      if (!norm) {
+        invalidUrls++;
+        continue;
+      }
+      if (existingUrls.has(norm)) {
+        duplicateUrls++;
+        continue;
+      }
+      existingUrls.add(norm);
+      let targetCatId = defaultCatId;
+      if (site.categoryId) {
+        if (validCatIds.has(site.categoryId)) {
+          targetCatId = site.categoryId;
+        } else if (oldIdToNewId.has(site.categoryId)) {
+          targetCatId = oldIdToNewId.get(site.categoryId)!;
+        }
+      }
+      plannedSites.push({ site, targetCatId });
+    }
+
+    /** 预演最多列举 20 条样例：足够 admin 确认「是不是这个包」，又不会把响应撑大。 */
+    const PREVIEW_SAMPLE = 20;
+    if (dryRun) {
+      return {
+        ok: true,
+        dryRun: true,
+        wouldRestore: {
+          categories: plannedCategories.length,
+          sites: plannedSites.length,
+        },
+        skipped: { duplicateCategories, invalidUrls, duplicateUrls },
+        sample: {
+          categories: plannedCategories.slice(0, PREVIEW_SAMPLE).map((c) => c.title),
+          sites: plannedSites.slice(0, PREVIEW_SAMPLE).map(({ site }) => site.url),
+        },
+        message: `预演：将新增 ${plannedCategories.length} 个分类与 ${plannedSites.length} 个站点（未落库；确认后以 dryRun=false 执行）`,
+      };
+    }
+
+    /**
      * 全量恢复必须是一个事务：旧实现逐条 createCategory/createSite，第 N 条撞唯一索引
      * 或校验失败时，前 N-1 条已经落库，调用方拿到 500 却留下一半新数据——
      * “重试一次”会把剩余部分补上，看起来像成功，但缺失/重复已经无法自动判定。
@@ -105,62 +204,28 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
      */
     try {
       await ctx.repo.withTransaction(async () => {
-        // 幂等式恢复分类
-        const existingCats = await ctx.repo.listCategories();
-        const existingCatTitles = new Set(existingCats.map((c) => c.title));
-
-        for (const cat of categories) {
-          if (!existingCatTitles.has(cat.title)) {
-            await ctx.repo.createCategory({
-              id: cat.id,
-              title: cat.title,
-              description: cat.description || null,
-              sort: cat.sort || 0,
-            });
-            restoredCategories++;
-            existingCatTitles.add(cat.title);
-          }
+        // 幂等式恢复分类（计划里已按标题去重）
+        for (const cat of plannedCategories) {
+          await ctx.repo.createCategory({
+            id: cat.id,
+            title: cat.title,
+            description: cat.description || null,
+            sort: cat.sort || 0,
+          });
+          restoredCategories++;
         }
 
-        // 幂等式恢复站点
-        const updatedCats = await ctx.repo.listCategories();
-        const defaultCatId = updatedCats[0]?.id || "default";
-        const validCatIds = new Set(updatedCats.map((c) => c.id));
-        const catTitleToId = new Map(updatedCats.map((c) => [c.title, c.id]));
-        const oldIdToNewId = new Map<string, string>();
-        for (const cat of categories) {
-          const matched = catTitleToId.get(cat.title);
-          if (matched) oldIdToNewId.set(cat.id, matched);
-        }
-
-        const existingSites = await ctx.repo.raw("SELECT url FROM sites WHERE deleted_at IS NULL");
-        const existingUrls = new Set(
-          existingSites.map((s) => String(s.url ?? "").replace(/\/+$/, "").toLowerCase()),
-        );
-
-        for (const site of sites) {
-          if (!site.url || !/^https?:\/\//i.test(site.url)) continue;
-          const norm = (site.url || "").replace(/\/+$/, "").toLowerCase();
-          if (norm && !existingUrls.has(norm)) {
-            let targetCatId = defaultCatId;
-            if (site.categoryId) {
-              if (validCatIds.has(site.categoryId)) {
-                targetCatId = site.categoryId;
-              } else if (oldIdToNewId.has(site.categoryId)) {
-                targetCatId = oldIdToNewId.get(site.categoryId)!;
-              }
-            }
-            await ctx.repo.createSite({
-              title: site.title,
-              url: site.url,
-              description: site.description || "",
-              categoryId: targetCatId,
-              tags: site.tags || [],
-              iconKey: site.icon || null,
-            });
-            restoredSites++;
-            existingUrls.add(norm);
-          }
+        // 幂等式恢复站点（计划里已按 URL 去重）
+        for (const { site, targetCatId } of plannedSites) {
+          await ctx.repo.createSite({
+            title: site.title,
+            url: site.url,
+            description: site.description || "",
+            categoryId: targetCatId,
+            tags: site.tags || [],
+            iconKey: site.icon || null,
+          });
+          restoredSites++;
         }
       });
     } catch (err) {
@@ -192,5 +257,6 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         sites: restoredSites,
       },
     };
-  });
+    },
+  );
 };

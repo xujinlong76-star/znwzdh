@@ -86,7 +86,7 @@ describe("备份/书签导出必须覆盖全库（不受 listSites 默认 100 �
     const exportRes = await app.inject({ method: "GET", url: "/api/export/backup.json" });
     expect(exportRes.statusCode).toBe(200);
 
-    const res = await app.inject({ method: "POST", url: "/api/backup/restore", payload: exportRes.json() });
+    const res = await app.inject({ method: "POST", url: "/api/backup/restore?dryRun=false", payload: exportRes.json() });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.ok).toBe(true);

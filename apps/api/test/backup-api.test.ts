@@ -114,7 +114,7 @@ describe("Dimension 2: Data Sovereignty & Backup API", () => {
 
     const res = await app.inject({
       method: "POST",
-      url: "/api/backup/restore",
+      url: "/api/backup/restore?dryRun=false",
       payload,
     });
 
@@ -127,7 +127,7 @@ describe("Dimension 2: Data Sovereignty & Backup API", () => {
     // 验证再次恢复相同数据时幂等不重复创建
     const res2 = await app.inject({
       method: "POST",
-      url: "/api/backup/restore",
+      url: "/api/backup/restore?dryRun=false",
       payload,
     });
     expect(res2.statusCode).toBe(200);
@@ -156,7 +156,7 @@ describe("Dimension 2: Data Sovereignty & Backup API", () => {
       ],
     };
 
-    const res = await app.inject({ method: "POST", url: "/api/backup/restore", payload });
+    const res = await app.inject({ method: "POST", url: "/api/backup/restore?dryRun=false", payload });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toBe("RESTORE_FAILED");
 

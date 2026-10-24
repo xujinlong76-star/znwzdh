@@ -10,10 +10,6 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/reg
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { RefreshCw, CheckCircle2, Share2 } from 'lucide-react'
-import { type EncryptedVaultPayload, type VaultItem } from '@/lib/vault'
-import { type JsonRpcResponse } from '@/lib/webmcp-bridge'
-import { type CandidateItem } from '@/lib/federated-recommendation'
-import { type SpeculationCandidate } from '@/lib/speculative-prerender'
 import { CrdtStore, compareVectorClocks, type VectorClock } from '@/lib/crdt-sync'
 
 

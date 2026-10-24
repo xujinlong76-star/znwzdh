@@ -10,12 +10,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/reg
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Palette } from 'lucide-react'
-import { type EncryptedVaultPayload, type VaultItem } from '@/lib/vault'
 import { analyzeVisualFingerprint } from '@/lib/visual-fingerprint'
-import { type JsonRpcResponse } from '@/lib/webmcp-bridge'
-import { type CandidateItem } from '@/lib/federated-recommendation'
-import { type SpeculationCandidate } from '@/lib/speculative-prerender'
-import { type VectorClock } from '@/lib/crdt-sync'
 
 
 export function VisualPanel() {

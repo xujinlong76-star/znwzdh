@@ -11,11 +11,7 @@ import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/registry/new-york/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { CheckCircle2, Bot, Send } from 'lucide-react'
-import { type EncryptedVaultPayload, type VaultItem } from '@/lib/vault'
 import { getWebMcpBridge, type JsonRpcResponse } from '@/lib/webmcp-bridge'
-import { type CandidateItem } from '@/lib/federated-recommendation'
-import { type SpeculationCandidate } from '@/lib/speculative-prerender'
-import { type VectorClock } from '@/lib/crdt-sync'
 
 // 时间取值收敛到模块作用域：把 impure 调用留在组件体外，
 // 避免 react-hooks/purity 判为渲染期副作用。

@@ -31,11 +31,6 @@ import { FederatedPanel } from './algorithm-lab/federated-panel'
 import { SpeculationPanel } from './algorithm-lab/speculation-panel'
 import { SynthesizerPanel } from './algorithm-lab/synthesizer-panel'
 import { MeshPanel } from './algorithm-lab/mesh-panel'
-import { type EncryptedVaultPayload, type VaultItem } from '@/lib/vault'
-import { type JsonRpcResponse } from '@/lib/webmcp-bridge'
-import { type CandidateItem } from '@/lib/federated-recommendation'
-import { type SpeculationCandidate } from '@/lib/speculative-prerender'
-import { type VectorClock } from '@/lib/crdt-sync'
 
 /**
  * 算法实验室壳：Hero 展板 + 12 实验区 tab 导航。各实验区的状态与逻辑

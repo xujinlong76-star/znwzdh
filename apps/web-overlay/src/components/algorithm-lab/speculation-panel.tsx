@@ -10,16 +10,12 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/reg
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Zap, CheckCircle2 } from 'lucide-react'
-import { type EncryptedVaultPayload, type VaultItem } from '@/lib/vault'
-import { type JsonRpcResponse } from '@/lib/webmcp-bridge'
-import { type CandidateItem } from '@/lib/federated-recommendation'
 import {
   compileSpeculationRules,
   renderSpeculationRulesScript,
   generateFallbackLinkTags,
   type SpeculationCandidate
 } from '@/lib/speculative-prerender'
-import { type VectorClock } from '@/lib/crdt-sync'
 
 
 export function SpeculationPanel() {

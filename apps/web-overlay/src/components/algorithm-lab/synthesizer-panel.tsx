@@ -11,17 +11,12 @@ import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/registry/new-york/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { ShieldAlert, CheckCircle2, Wrench } from 'lucide-react'
-import { type EncryptedVaultPayload, type VaultItem } from '@/lib/vault'
-import { type JsonRpcResponse } from '@/lib/webmcp-bridge'
-import { type CandidateItem } from '@/lib/federated-recommendation'
-import { type SpeculationCandidate } from '@/lib/speculative-prerender'
 import {
   isSafeUrl,
   synthesizeRestTool,
   synthesizeSiteSearchTool,
   parseOpenApiToSpecs
 } from '@/lib/dynamic-tool-synthesizer'
-import { type VectorClock } from '@/lib/crdt-sync'
 
 
 export function SynthesizerPanel() {

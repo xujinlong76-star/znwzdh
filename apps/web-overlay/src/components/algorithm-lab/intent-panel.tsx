@@ -12,11 +12,6 @@ import { Input } from '@/registry/new-york/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Zap, Sparkles } from 'lucide-react'
 import { parseSpeculativeIntent } from '@/lib/speculative'
-import { type EncryptedVaultPayload, type VaultItem } from '@/lib/vault'
-import { type JsonRpcResponse } from '@/lib/webmcp-bridge'
-import { type CandidateItem } from '@/lib/federated-recommendation'
-import { type SpeculationCandidate } from '@/lib/speculative-prerender'
-import { type VectorClock } from '@/lib/crdt-sync'
 
 
 export function IntentPanel() {

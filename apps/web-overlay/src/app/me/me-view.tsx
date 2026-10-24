@@ -23,7 +23,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { useFavorites } from '@/hooks/useFavorites'
 import { useMeOverview } from '@/hooks/use-me-overview'
 import { getAnonId } from '@/lib/identity'
-import { saveSettingsPatchLocal, saveSettingsPatchToCloud } from '@/lib/me-settings-save'
+import { saveSettingsPatchLocal, saveSettingsPatchToCloud, shouldUploadLocalSettingsFirst } from '@/lib/me-settings-save'
 import type { MeOverview } from '@/lib/me-types'
 import {
   clearProfileSignals,
@@ -95,13 +95,27 @@ function SettingsSummary({ settings, local }: { settings: UserSettingsModel; loc
 export function MeView({ initialOverview }: { initialOverview: MeOverview | null }) {
   const favorites = useFavorites()
   const { toast } = useToast()
-  const { state, overview, error, anonId, reload, updateSettings } = useMeOverview({ initialOverview })
+  const {
+    state,
+    overview,
+    error,
+    anonId,
+    settingsNotice,
+    settingsError,
+    dismissSettingsNotice,
+    reload,
+    updateSettings,
+  } = useMeOverview({ initialOverview })
   const [explain, setExplain] = useState<HubProfileExplain | null>(null)
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [activity, setActivity] = useState<ActivityItem[]>([])
-  const [localPrefs, setLocalPrefs] = useState<UserSettingsModel>(() =>
-    initialOverview?.settings ? normalizeUserSettings(initialOverview.settings) : readLocalUserSettings(),
-  )
+  const [localPrefs, setLocalPrefs] = useState<UserSettingsModel>(() => {
+    const local = readLocalUserSettings()
+    const cloud = initialOverview?.settings ? normalizeUserSettings(initialOverview.settings) : null
+    // 与 lib/me-settings-save 同一条判定：云端还没有这一行时，本机这一份才是用户真实的偏好，
+    // 不能拿服务端默认值当「你的设置」显示（也不能写回本机）。
+    return cloud && !shouldUploadLocalSettingsFirst(cloud, local) ? cloud : local
+  })
   const [verifyNotice, setVerifyNotice] = useState<string | null>(null)
 
   // 身份事件（合并 / 切换）触发的重取做 inflight 去重：
@@ -224,6 +238,38 @@ export function MeView({ initialOverview }: { initialOverview: MeOverview | null
           >
             知道了
           </button>
+        </div>
+      )}
+
+      {settingsNotice && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2 text-xs text-emerald-700 dark:text-emerald-300"
+        >
+          <span className="flex items-center gap-1.5 font-medium">
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {settingsNotice}
+          </span>
+          <button
+            type="button"
+            onClick={() => dismissSettingsNotice()}
+            className="text-[11px] underline underline-offset-2 opacity-80 hover:opacity-100"
+          >
+            知道了
+          </button>
+        </div>
+      )}
+
+      {settingsError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3.5 py-2 text-xs text-amber-800 dark:text-amber-200"
+        >
+          <span className="min-w-0 font-medium">{settingsError}</span>
+          <Button variant="outline" size="sm" className="text-xs" onClick={() => void reloadOnce()}>
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+            重试同步
+          </Button>
         </div>
       )}
 

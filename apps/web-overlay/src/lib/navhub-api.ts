@@ -1965,6 +1965,57 @@ export function trackVaultEvent(
   }
 }
 
+/**
+ * 「本机偏好 → 云端」交接的埋点字典（run45）。
+ *
+ * 只有被尝试过的交接才上报：云端已经有行是正常运行时，每次都发会把漏斗
+ * 分母灌成噪声、也违反自己的遥测最小化承诺。
+ * kind / outcome 同样必须与 telemetry.ts 的白名单逐字一致（不在名单里的 kind 直接 400）。
+ */
+export const SETTINGS_HANDOFF_TELEMETRY_KINDS = ['settings_handoff'] as const
+
+export const SETTINGS_HANDOFF_TELEMETRY_OUTCOMES = ['success', 'failed'] as const
+
+/** 失败成因：断网（请求没发出去）与中枢非 2xx 是两种纠正动作，不能同形 */
+export const SETTINGS_HANDOFF_CODES = ['network_unavailable', 'hub_error'] as const
+
+export type SettingsHandoffTelemetryKind = (typeof SETTINGS_HANDOFF_TELEMETRY_KINDS)[number]
+export type SettingsHandoffTelemetryOutcome = (typeof SETTINGS_HANDOFF_TELEMETRY_OUTCOMES)[number]
+export type SettingsHandoffCode = (typeof SETTINGS_HANDOFF_CODES)[number]
+
+/** 运行期词表视图，供守卫测试与服务端白名单逐项比对 */
+export const settingsHandoffTelemetryVocabulary = {
+  kinds: SETTINGS_HANDOFF_TELEMETRY_KINDS,
+  outcomes: SETTINGS_HANDOFF_TELEMETRY_OUTCOMES,
+  codes: SETTINGS_HANDOFF_CODES,
+}
+
+export function trackSettingsHandoffEvent(
+  outcome: SettingsHandoffTelemetryOutcome,
+  code?: SettingsHandoffCode,
+): void {
+  if (typeof window === 'undefined') return
+  const identity = getIdentity()
+  const body = JSON.stringify({
+    kind: 'settings_handoff' as SettingsHandoffTelemetryKind,
+    outcome,
+    ...(code ? { code } : {}),
+    anonId: identity,
+  })
+  try {
+    void fetch(hubUrl('/api/events'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...anonHeaders(identity) },
+      body,
+      keepalive: true,
+    }).catch(() => {
+      // 埋点失败不改变交接事实（同 trackVaultEvent 口径）
+    })
+  } catch {
+    // 静默
+  }
+}
+
 /** 任意清单比对接口 */
 export async function diffPluginManifestsApi(
   baseManifest: unknown,

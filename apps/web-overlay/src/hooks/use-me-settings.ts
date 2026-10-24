@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { isNetworkSessionFailure, probeClientSession } from '@/lib/client-session'
-import { saveSettingsPatchToCloud, shouldUploadLocalSettingsFirst } from '@/lib/me-settings-save'
+import { hydrateSettingsFromCloud } from '@/lib/me-settings-save'
 import {
   DEFAULT_USER_SETTINGS,
   normalizeUserSettings,
@@ -99,21 +99,16 @@ export function useMeSettings(): MeSettingsController {
       }
       const data = (await res.json()) as { settings?: unknown }
       const cloud = normalizeUserSettings(data.settings)
-      if (shouldUploadLocalSettingsFirst(cloud, localBefore)) {
-        // 云端还没有这一行，而本机在匿名期存过设置 → 先上云，别用默认值冲掉本机。
-        try {
-          const migrated = await saveSettingsPatchToCloud(localBefore)
-          setSettings(migrated.finalSettings)
-          setState('ready')
-          setNotice('已把你在本机保存的偏好同步到云端，换设备登录后会跟随。')
-        } catch {
-          setSettings(localBefore)
-          setError('云端还没有你的设置，本机这一份没能同步上去，暂时只在这台设备生效。')
-          setState('error')
-        }
+      // 判定、上云、文案与埋点只有一份实现（lib/me-settings-save），
+      // 概览钩子走的是同一个函数 —— 两个页面的口径不允许再各自漂移。
+      const hydrated = await hydrateSettingsFromCloud(cloud, localBefore)
+      setSettings(hydrated.settings)
+      if (hydrated.error) {
+        setError(hydrated.error)
+        setState('error')
         return
       }
-      setSettings(writeLocalUserSettings(cloud))
+      setNotice(hydrated.notice)
       setState('ready')
     } catch {
       setError('网络不可用，未能加载设置')

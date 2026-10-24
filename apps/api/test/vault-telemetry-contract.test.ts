@@ -8,6 +8,8 @@
  *      早晚有人把密文片段或分类名塞进 reason 里；
  *   3. telemetryEnabled=false 时事件照记、身份必须落 NULL。
  *      这一条是整份埋点承诺里唯一用户可见的部分，漂了就是撒谎。
+ * run45 起同一份契约也覆盖 settings_handoff（登录后偏好交接）：白名单是唯一真相源，
+ * 少登记一个 kind，对应那条链路的所有埋点就会被 400 静默丢掉。
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -81,6 +83,18 @@ describe("vault_* 事件被白名单接受", () => {
     await post({ kind: "vault_sync", outcome: "failed", code: "hub_error" });
     const meta = JSON.parse(String((await lastEvent("vault_sync")).meta));
     expect(Object.keys(meta).sort()).toEqual(["code", "identity", "outcome"]);
+  });
+
+  // run45：登录后「本机偏好 → 云端」交接沿用同一份白名单。客户端判定完全依赖
+  // 这里是否登记该 kind —— 没登记就是每条交接都被 400 静默丢掉，客户端测不出来。
+  it("settings_handoff 也在白名单内（success / failed 两种结局都收）", async () => {
+    for (const [outcome, code] of [["success", undefined], ["failed", "hub_error"]] as const) {
+      const res = await post({ kind: "settings_handoff", outcome, ...(code ? { code } : {}) });
+      expect(res.statusCode).toBe(200);
+      const meta = JSON.parse(String((await lastEvent("settings_handoff")).meta));
+      expect(meta.outcome).toBe(outcome);
+      expect(Object.keys(meta).sort()).toEqual(code ? ["code", "identity", "outcome"] : ["identity", "outcome"]);
+    }
   });
 });
 

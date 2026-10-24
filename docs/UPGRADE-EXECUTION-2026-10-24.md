@@ -554,6 +554,8 @@ expected [ '/admin/data/restore' ] to deeply equal []
 | 备份恢复异步化 | 设计完成，代码未实施 | 设计见 `docs/ASYNC-RESTORE-DESIGN.md`。**阻塞原因**：`apps/api/src/routes/backup.ts` 正在并行会话的未提交改动中（修复恢复丢失 `enabled`）。 |
 | 恢复丢失 `createdAt` | 存储层已就绪，端点未接 | `insertSitesBulk` 已支持 `createdAt` 并有断言；`backup.ts` 接入仅差一行，同一阻塞。 |
 | worktree 隔离多会话提交 | 未采用 | 本机 `node_modules` 用 pnpm 隔离布局，worktree 需 junction 共享；而 junction 树删除曾两次清空源码（344/347 文件）。为两个小修复承担该风险不划算。替代：等对方提交 + 每次 SKIP 时在 commit message 写明红灯归属。 |
+| **`apps/api/test` 存在不稳定失败** | 已记录，未修 | 第七轮提交时 hook 报 8 失败（3 文件），复跑同一套只有 2 失败，单独跑 `user-center-metrics.test.ts` 3 例全过。表现为**测试间污染**（失败集中在 user-center 审计计数，单跑无法复现），与本次改动链路无关。属既有的 flaky 面，需要在独立批次里定位共享状态（典型来源：跨文件复用同一临时库路径、或审计表计数依赖执行顺序）。**不当作已解决。** |
+| 异步恢复的两个 HTTP 端点 | 未实施 | 任务侧已全部落地并测试（E24）。端点（`POST .../async`、`GET status`）与 staging 写入都在 `routes/backup.ts`，该文件仍在并行会话的未提交改动中。 |
 
 > 两条「未本地验证」的改动（PG 4 例、E2E 4 例）都集中在 CI 侧。若 CI 报红，优先看这两处，而不是回滚业务改动。
 

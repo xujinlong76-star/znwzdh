@@ -84,6 +84,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
     syncToCloudVault,
     syncFromCloudVault,
     checkCloudVaultStatus,
+    clearCloudVault,
     canUndo,
     canRedo,
     undo,
@@ -794,6 +795,7 @@ export function HomeDIYToolbar({ allCategoryIds, categoryTitleMap, categories = 
         syncToCloudVault={syncToCloudVault}
         syncFromCloudVault={syncFromCloudVault}
         checkCloudVaultStatus={checkCloudVaultStatus}
+        clearCloudVault={clearCloudVault}
       />
 
       {/* 新建专属分类对话框 */}

@@ -1013,13 +1013,38 @@ export async function saveCloudVault(
   }
 }
 
-export async function deleteCloudVault(identity: string, onDegraded?: DegradedHandler): Promise<boolean> {
+/**
+ * 删除云端金库的回执。
+ *
+ * 服务端（DELETE /api/vault/sync）已经区分「真删掉一份」与「云端本来就没有」，
+ * 旧实现把任何 2xx 一律折成 true，于是 UI 能对从未存在过的备份宣称「已删除」——
+ * 用户会以为自己拥有一份其实没有的备份。这里把事实原样穿上来。
+ */
+export type CloudVaultDeleteOutcome =
+  | { ok: true; deleted: boolean }
+  | { ok: false; status?: number; error: string }
+
+export async function deleteCloudVault(
+  identity: string,
+  onDegraded?: DegradedHandler,
+): Promise<CloudVaultDeleteOutcome> {
   try {
-    await sendJson('/api/vault/sync', 'DELETE', undefined, undefined, anonHeaders(identity))
-    return true
+    const body = await sendJson<{ ok?: boolean; deleted?: boolean }>(
+      '/api/vault/sync',
+      'DELETE',
+      undefined,
+      undefined,
+      anonHeaders(identity),
+    )
+    return { ok: true, deleted: body.deleted === true }
   } catch (error) {
     notifyDegraded(onDegraded, error)
-    return false
+    const status = (error as { status?: number })?.status
+    return {
+      ok: false,
+      status,
+      error: error instanceof Error ? error.message : '删除云端金库失败',
+    }
   }
 }
 

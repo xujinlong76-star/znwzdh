@@ -200,8 +200,23 @@ export async function checkCloudVaultStatus(): Promise<{
   return { hasCloudVault: true, updatedAt: cloudRecord.updatedAt, version: cloudRecord.version }
 }
 
-export async function clearCloudVault(): Promise<boolean> {
+/**
+ * 删除云端金库的结果 —— 四种事实必须可分辨。
+ *
+ * 旧实现返回 boolean：无身份、请求失败、云端本来就没有备份全都塌成 false，
+ * 而任意 2xx 又塌成 true，于是 UI 既可能谎报「已删除」，也可能让真删除与网络故障
+ * 共用同一句失败文案。调用方据此只能说实话，不能猜。
+ */
+export type CloudVaultClearResult =
+  | { kind: 'deleted' }
+  | { kind: 'absent' }
+  | { kind: 'no-identity' }
+  | { kind: 'failed'; status?: number; error: string }
+
+export async function clearCloudVault(): Promise<CloudVaultClearResult> {
   const identity = getIdentity()
-  if (!identity) return false
-  return await deleteCloudVault(identity)
+  if (!identity) return { kind: 'no-identity' }
+  const res = await deleteCloudVault(identity)
+  if (!res.ok) return { kind: 'failed', status: res.status, error: res.error }
+  return res.deleted ? { kind: 'deleted' } : { kind: 'absent' }
 }

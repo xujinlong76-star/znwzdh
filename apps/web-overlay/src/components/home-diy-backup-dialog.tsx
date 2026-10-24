@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Cloud,
   CloudDownload,
+  CloudOff,
   CloudUpload,
   Copy,
   Download,
@@ -26,6 +27,16 @@ import {
   Upload,
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/registry/new-york/ui/alert-dialog'
 import {
   Dialog,
   DialogContent,
@@ -39,7 +50,7 @@ import { Textarea } from '@/registry/new-york/ui/textarea'
 import { useToast } from '@/components/ui/use-toast'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import type { ShareLinkOutcome } from '@/lib/diy-share-link'
-import type { HomeDiyImportResult } from '@/lib/modular/home-diy-io'
+import type { CloudVaultClearResult, HomeDiyImportResult } from '@/lib/modular/home-diy-io'
 import { cn } from '@/lib/utils'
 
 export interface HomeDIYBackupDialogProps {
@@ -56,6 +67,8 @@ export interface HomeDIYBackupDialogProps {
     passphrase: string,
   ) => Promise<{ success: boolean; error?: string; dropped: number; notes: string[]; summary?: string }>
   checkCloudVaultStatus: () => Promise<{ hasCloudVault: boolean; updatedAt?: number; version?: number }>
+  /** 永久删除中枢云端金库；四种结果（真删 / 本来没有 / 无身份 / 失败）必须原样可分辨 */
+  clearCloudVault: () => Promise<CloudVaultClearResult>
 }
 
 interface CloudVaultMeta {
@@ -75,6 +88,7 @@ export function HomeDIYBackupDialog({
   syncToCloudVault,
   syncFromCloudVault,
   checkCloudVaultStatus,
+  clearCloudVault,
 }: HomeDIYBackupDialogProps) {
   const { toast } = useToast()
   const [backupTab, setBackupTab] = useState<'plain' | 'e2ee'>('plain')
@@ -82,6 +96,8 @@ export function HomeDIYBackupDialog({
   const [isDecrypting, setIsDecrypting] = useState(false)
   const [isSyncingCloud, setIsSyncingCloud] = useState(false)
   const [cloudVaultMeta, setCloudVaultMeta] = useState<CloudVaultMeta | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [isDeletingCloud, setIsDeletingCloud] = useState(false)
   const [importJsonText, setImportJsonText] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -127,6 +143,50 @@ export function HomeDIYBackupDialog({
       }
     } finally {
       setIsSyncingCloud(false)
+    }
+  }
+
+  /**
+   * 永久删除中枢云端金库。
+   *
+   * 回执按四种事实分别措辞：把「云端本来没有」说成「已删除」，用户会以为自己
+   * 拥有过一份其实从未存在的备份；把「请求失败」说成同一句也是撒谎（服务端删了
+   * 或没删都可能）。服务端 DELETE 已返回 deleted:boolean，这里只是把事实穿上来。
+   * 金库表无软删列（见 store/driver.ts 的 user_vault_sync），删除不可撤销，
+   * 因此不给假 Undo —— 恢复路径是重新「加密同步至云端」。
+   */
+  const handleCloudDelete = async () => {
+    setIsDeletingCloud(true)
+    try {
+      const res = await clearCloudVault()
+      if (res.kind === 'deleted') {
+        setCloudVaultMeta({ hasCloudVault: false })
+        toast({
+          title: '🗑️ 云端金库已永久删除',
+          description: '中枢上那份端侧加密的 DIY 备份已不存在。本机排版未受影响；需要重新漫游时点「加密同步至云端」即可重建。',
+        })
+      } else if (res.kind === 'absent') {
+        setCloudVaultMeta({ hasCloudVault: false })
+        toast({
+          title: '云端本来就没有备份',
+          description: '本次请求没有删除任何数据——你此前可能已删除过，或从未同步成功。',
+        })
+      } else if (res.kind === 'no-identity') {
+        toast({
+          title: '未取到本机身份，已取消删除',
+          description: '中枢按身份定位金库，取不到身份时不会发起任何请求。请检查浏览器是否允许本地存储（隐私模式会导致身份丢失）。',
+          variant: 'destructive',
+        })
+      } else {
+        toast({
+          title: `☁️ 云端删除失败${typeof res.status === 'number' ? `（HTTP ${res.status}）` : ''}`,
+          description: `${res.error}。云端那份备份仍在，未做任何改动；可稍后重试。`,
+          variant: 'destructive',
+        })
+      }
+      setDeleteConfirmOpen(false)
+    } finally {
+      setIsDeletingCloud(false)
     }
   }
 
@@ -307,6 +367,7 @@ export function HomeDIYBackupDialog({
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100%-2rem)] sm:max-w-xl max-h-[85dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
@@ -465,6 +526,24 @@ export function HomeDIYBackupDialog({
                   <span>从云端拉取解密</span>
                 </Button>
               </div>
+
+              {cloudVaultMeta?.hasCloudVault ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setDeleteConfirmOpen(true)}
+                  disabled={isDeletingCloud || isSyncingCloud}
+                  aria-busy={isDeletingCloud}
+                  className="w-full text-xs gap-1.5 border-red-500/35 text-red-600 dark:text-red-400 hover:bg-red-500/10"
+                >
+                  <CloudOff className="w-3.5 h-3.5" />
+                  <span>{isDeletingCloud ? '删除中...' : '永久删除云端备份'}</span>
+                </Button>
+              ) : (
+                <p className="text-[11px] leading-relaxed text-muted-foreground pt-0.5">
+                  云端暂无备份：设置主密码后点「加密同步至云端」建立第一份，之后这里会出现删除入口。
+                </p>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -535,5 +614,42 @@ export function HomeDIYBackupDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+      {/*
+        删除确认做成根级兄弟而不是嵌在 Dialog 内：Radix 两层模态叠加时，
+        Esc 只关最顶层、关闭后焦点回到触发按钮，都靠层级栈管理；DOM 上平级最稳。
+        Cancel 排在 Action 前，初始焦点因此落在「取消」而不是破坏性按钮上。
+      */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={(next) => { if (!isDeletingCloud) setDeleteConfirmOpen(next) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>永久删除云端金库备份？</AlertDialogTitle>
+            <AlertDialogDescription>
+              将删除中枢上这份端侧加密的 DIY 备份
+              {typeof cloudVaultMeta?.version === 'number' ? `（版本 v${cloudVaultMeta.version}` : '（版本未知'}
+              {cloudVaultMeta?.updatedAt
+                ? `，更新于 ${new Date(cloudVaultMeta.updatedAt).toLocaleString()}）`
+                : '）'}
+              。本机排版与已导出的文件不受影响。此操作不可撤销——金库表没有软删列，
+              想重新漫游需要再次点「加密同步至云端」建立新备份。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingCloud}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // 阻止默认关闭：删除是异步的，结果没回来就让对话框消失会看不出发生了什么
+                e.preventDefault()
+                void handleCloudDelete()
+              }}
+              disabled={isDeletingCloud}
+              aria-busy={isDeletingCloud}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isDeletingCloud ? '删除中...' : '永久删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

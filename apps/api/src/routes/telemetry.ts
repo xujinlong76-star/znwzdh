@@ -20,13 +20,28 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
 
   /**
    * 事件上报（前端点击/收藏等行为）。
-   * kind 白名单：防止脏 kind 污染画像聚合与统计。
+   * kind 白名单：防止脏 kind 污染画像聚合与统计 —— 这里就是事件字典的唯一真相源，
+   * 客户端的联合类型必须与之逐字一致（守卫测试两侧同断言）。
    * click 事件联动 visit_count（热度排序的原始信号）。
+   *
+   * vault_*（首页 DIY 云端金库面）：此前这条链路零埋点 —— 实测 events 791 行里
+   * kind LIKE '%vault%'|'%diy%'|'%backup%'|'%conflict%'|'%p2p%' 命中 0 行、
+   * user_vault_sync 0 行，所以「有没有人真的在用云端金库」「有多少人撞到 VAULT_CLEARED」
+   * 都无从回答。分支不拆成多个 kind（同一行为在不同版本叫法不一致会让漏斗对不齐），
+   * 而是 kind + outcome + code 三段：outcome 是有界枚举（成败本身），
+   * code 是原因码（长度受限，禁止塞内容/密码/条数）。
    */
   const EVENT_KINDS = [
     "click", "favorite", "unfavorite", "impression", "dismiss",
     // 插件市场漏斗（浏览 → 安装点击 → 安装成功/卸载在服务端路由补记）
     "plugin_view", "plugin_install_click", "plugin_uninstall_click", "plugin_share",
+    // 云端金库漏斗：对表（分母）/ 推送 / 拉取解密 / 永久删除
+    "vault_status", "vault_sync", "vault_pull", "vault_delete",
+  ] as const;
+
+  /** outcome 词表（有界）：每条分支的成败，与各 kind 组合后仍能一笔画出漏斗 */
+  const EVENT_OUTCOMES = [
+    "success", "failed", "conflict", "empty", "deleted", "absent", "no_identity",
   ] as const;
 
   app.post("/api/events", async (req, reply) => {
@@ -40,6 +55,10 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       channel: z.enum(["exact", "fts", "pinyin", "semantic", "personal"]).optional(),
       dwellSeconds: z.number().min(0).max(3600).optional(),
       interactionType: z.enum(["click", "copy", "bounce"]).optional(),
+      /** 业务分支结果（vault_* 必带；其余 kind 可选） */
+      outcome: z.enum(EVENT_OUTCOMES).optional(),
+      /** 原因码：conflict 的成因、HTTP 状态、失败类别。长度受限，不是内容字段 */
+      code: z.string().max(32).optional(),
       /** 身份标识（登录 userId 或匿名 anonId），用于归属画像聚合 */
       userId: z.string().max(64).optional(),
       anonId: z.string().max(64).optional(),
@@ -61,14 +80,21 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
 
     const recordedIdentity = telemetryEnabled ? identity : null;
 
+    const meta =
+      recordedIdentity || body.data.pluginSlug || body.data.outcome || body.data.code
+        ? {
+            ...(recordedIdentity ? { identity: recordedIdentity } : {}),
+            ...(body.data.pluginSlug ? { slug: body.data.pluginSlug } : {}),
+            ...(body.data.outcome ? { outcome: body.data.outcome } : {}),
+            ...(body.data.code ? { code: body.data.code } : {}),
+          }
+        : undefined;
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
     await ctx.repo.recordEvent(body.data.kind, {
       siteId: body.data.siteId,
       query: body.data.query,
       categoryId: body.data.categoryId,
-      meta: recordedIdentity || body.data.pluginSlug
-        ? { ...(recordedIdentity ? { identity: recordedIdentity } : {}), ...(body.data.pluginSlug ? { slug: body.data.pluginSlug } : {}) }
-        : undefined,
+      meta,
     }).catch(() => undefined);
     if (body.data.kind === "click" && body.data.siteId) {
       await ctx.repo.bumpVisit(body.data.siteId).catch(() => undefined);

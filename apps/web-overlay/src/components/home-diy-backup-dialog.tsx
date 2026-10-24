@@ -57,6 +57,8 @@ import type {
   CloudVaultSyncResult,
   HomeDiyImportResult,
 } from '@/lib/modular/home-diy-io'
+import { vaultPullOutcome, vaultStatusOutcome } from '@/lib/modular/home-diy-io'
+import { trackVaultEvent, type VaultResultCode } from '@/lib/navhub-api'
 import { cn } from '@/lib/utils'
 
 export interface HomeDIYBackupDialogProps {
@@ -71,8 +73,20 @@ export interface HomeDIYBackupDialogProps {
   syncToCloudVault: (passphrase: string, expectedVersion?: number) => Promise<CloudVaultSyncResult>
   syncFromCloudVault: (
     passphrase: string,
-  ) => Promise<{ success: boolean; error?: string; dropped: number; notes: string[]; summary?: string }>
-  checkCloudVaultStatus: () => Promise<{ hasCloudVault: boolean; updatedAt?: number; version?: number }>
+  ) => Promise<{
+    success: boolean
+    error?: string
+    dropped: number
+    notes: string[]
+    summary?: string
+    code?: VaultResultCode
+  }>
+  checkCloudVaultStatus: () => Promise<{
+    hasCloudVault: boolean
+    updatedAt?: number
+    version?: number
+    code: VaultResultCode
+  }>
   /** 永久删除中枢云端金库；四种结果（真删 / 本来没有 / 无身份 / 失败）必须原样可分辨 */
   clearCloudVault: () => Promise<CloudVaultClearResult>
 }
@@ -81,6 +95,7 @@ interface CloudVaultMeta {
   hasCloudVault: boolean
   updatedAt?: number
   version?: number
+  code?: VaultResultCode
 }
 
 export function HomeDIYBackupDialog({
@@ -116,6 +131,9 @@ export function HomeDIYBackupDialog({
     if (open && backupTab === 'e2ee') {
       void checkCloudVaultStatus().then((meta) => {
         setCloudVaultMeta(meta)
+        // 漏斗分母：只在进这个面板时对表一次并上报。
+        // 推送/删除成功后的复查只是刷版本号，再报一次会把同一个用户数成两个入口。
+        trackVaultEvent('vault_status', vaultStatusOutcome(meta.code), meta.code)
         // 重新对表后，上一轮的冲突引导就过期了：让用户基于最新版本号再决定
         setVaultConflict(null)
       })
@@ -145,6 +163,7 @@ export function HomeDIYBackupDialog({
       const res = await syncToCloudVault(vaultPassphrase.trim(), expected)
       if (res.success) {
         setVaultConflict(null)
+        trackVaultEvent('vault_sync', 'success')
         toast({
           title: '☁️ 已加密同步至中枢云端',
           description: `DIY 配置已安全保存至云端金库 (版本 v${res.version})。`,
@@ -154,6 +173,7 @@ export function HomeDIYBackupDialog({
       } else if (res.conflict) {
         const kind: CloudVaultConflictKind = res.conflictKind ?? 'version-conflict'
         setVaultConflict({ kind, currentVersion: res.currentVersion ?? null })
+        trackVaultEvent('vault_sync', 'conflict', res.code ?? (kind === 'vault-cleared' ? 'vault_cleared' : 'version_conflict'))
         toast({
           // 两种成因分别措辞：合成一句会把「云端已被清除」的用户引向拉取空内容
           title: kind === 'vault-cleared' ? '云端金库已被清除' : '云端金库已被其它设备更新',
@@ -161,6 +181,7 @@ export function HomeDIYBackupDialog({
           variant: 'destructive',
         })
       } else {
+        trackVaultEvent('vault_sync', 'failed', res.code ?? 'hub_error')
         toast({ title: '云端同步失败', description: res.error, variant: 'destructive' })
       }
     } finally {
@@ -183,23 +204,27 @@ export function HomeDIYBackupDialog({
       const res = await clearCloudVault()
       if (res.kind === 'deleted') {
         setCloudVaultMeta({ hasCloudVault: false })
+        trackVaultEvent('vault_delete', 'deleted')
         toast({
           title: '🗑️ 云端金库已永久删除',
           description: '中枢上那份端侧加密的 DIY 备份已不存在。本机排版未受影响；需要重新漫游时点「加密同步至云端」即可重建。',
         })
       } else if (res.kind === 'absent') {
         setCloudVaultMeta({ hasCloudVault: false })
+        trackVaultEvent('vault_delete', 'absent')
         toast({
           title: '云端本来就没有备份',
           description: '本次请求没有删除任何数据——你此前可能已删除过，或从未同步成功。',
         })
       } else if (res.kind === 'no-identity') {
+        trackVaultEvent('vault_delete', 'no_identity', 'no_identity')
         toast({
           title: '未取到本机身份，已取消删除',
           description: '中枢按身份定位金库，取不到身份时不会发起任何请求。请检查浏览器是否允许本地存储（隐私模式会导致身份丢失）。',
           variant: 'destructive',
         })
       } else {
+        trackVaultEvent('vault_delete', 'failed', 'hub_error')
         toast({
           title: `☁️ 云端删除失败${typeof res.status === 'number' ? `（HTTP ${res.status}）` : ''}`,
           description: `${res.error}。云端那份备份仍在，未做任何改动；可稍后重试。`,
@@ -226,6 +251,7 @@ export function HomeDIYBackupDialog({
     try {
       const res = await syncFromCloudVault(vaultPassphrase.trim())
       if (res.success) {
+        trackVaultEvent('vault_pull', 'success')
         toast({
           // 清洗带白名单和上限，「全量还原」是没法保证的断言：只说实际还原了多少、丢了多少
           title: res.dropped > 0 ? '☁️ 已还原，但部分内容被丢弃' : '☁️ 成功从云端金库拉取并还原配置',
@@ -234,6 +260,9 @@ export function HomeDIYBackupDialog({
         })
         onOpenChange(false)
       } else {
+        // 「云端没有备份」是漏斗里的空结果，不是失败：两者混在一起就分不清
+        // 「没人同步过」和「同步过但拉不下来」
+        trackVaultEvent('vault_pull', vaultPullOutcome(false, res.code), res.code ?? 'hub_error')
         toast({ title: '云端拉取或解密校验失败', description: res.error, variant: 'destructive' })
       }
     } finally {

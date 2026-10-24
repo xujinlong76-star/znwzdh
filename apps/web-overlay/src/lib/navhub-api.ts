@@ -1888,6 +1888,83 @@ export function trackPluginEvent(
   })
 }
 
+/**
+ * 云端金库漏斗（首页 DIY）埋点的事件字典。
+ *
+ * 数组是唯一的声明处，类型从它派生 —— 这样守卫测试既能在运行期跟服务端白名单逐字对，
+ * 也不会有「类型加了一个值、数组忘了加」这种两边各自漂移的空间。
+ *
+ * kind / outcome 必须与 telemetry.ts 的 EVENT_KINDS / EVENT_OUTCOMES 逐字一致：
+ * 那里是白名单（不在名单里的 kind 直接 400），分支不拆成多个 kind，
+ * 同一行为的不同结局用 outcome + code 表达，漏斗才连得上。
+ *
+ * code 有界且不含任何内容信息 —— 金库是端侧零知识加密，
+ * 任何「顺手带上的字段」都会把隐私承诺变成口头承诺；服务端只限长度（max 32），
+ * 这里的联合类型才是编译期那道闸。
+ */
+export const VAULT_TELEMETRY_KINDS = ['vault_status', 'vault_sync', 'vault_pull', 'vault_delete'] as const
+
+export const VAULT_TELEMETRY_OUTCOMES = [
+  'success',
+  'failed',
+  'conflict',
+  'empty',
+  'deleted',
+  'absent',
+  'no_identity',
+] as const
+
+export const VAULT_RESULT_CODES = [
+  'has_vault',
+  'no_vault',
+  'check_failed',
+  'vault_cleared',
+  'version_conflict',
+  'hub_error',
+  'encrypt_failed',
+  'decrypt_failed',
+  'passphrase_rejected',
+  'invalid_cipher_package',
+  'validation_failed',
+  'invalid_json',
+  'no_identity',
+] as const
+
+export type VaultTelemetryKind = (typeof VAULT_TELEMETRY_KINDS)[number]
+export type VaultTelemetryOutcome = (typeof VAULT_TELEMETRY_OUTCOMES)[number]
+export type VaultResultCode = (typeof VAULT_RESULT_CODES)[number]
+
+/** 运行期词表视图，供守卫测试逐项与服务端白名单比对 */
+export const vaultTelemetryVocabulary = {
+  kinds: VAULT_TELEMETRY_KINDS,
+  outcomes: VAULT_TELEMETRY_OUTCOMES,
+  codes: VAULT_RESULT_CODES,
+}
+
+export function trackVaultEvent(
+  kind: VaultTelemetryKind,
+  outcome: VaultTelemetryOutcome,
+  code?: VaultResultCode,
+): void {
+  if (typeof window === 'undefined') return
+  const identity = getIdentity()
+  const body = JSON.stringify({ kind, outcome, ...(code ? { code } : {}), anonId: identity })
+  try {
+    // 身份优先走 header（shared.ts 的 identityOf 是 Header 优先、body 回退）；
+    // 金库动作不是页面卸载，用 fetch(keepalive) 比 sendBeacon 更能带上 header。
+    void fetch(hubUrl('/api/events'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...anonHeaders(identity) },
+      body,
+      keepalive: true,
+    }).catch(() => {
+      // 埋点失败绝不冒泡：金库操作本身已经成功/失败，这一层不改变任何事实
+    })
+  } catch {
+    // 构造请求即失败（极端环境）：静默，与 reportClick / trackPluginEvent 同口径
+  }
+}
+
 /** 任意清单比对接口 */
 export async function diffPluginManifestsApi(
   baseManifest: unknown,

@@ -22,8 +22,8 @@ import {
 export function SynthesizerPanel() {
   /* --- 模块 11：动态 WebMCP 工具合成器与 SSRF 沙箱状态 --- */
   const [synthToolType, setSynthToolType] = useState<'rest' | 'site_search' | 'openapi'>('rest')
-  const [synthRestUrl, setSynthRestUrl] = useState<string>('https://api.github.com/repos/{owner}/{repo}')
-  const [synthRestMethod, setSynthRestMethod] = useState<'GET' | 'POST'>('GET')
+  const [synthRestUrl] = useState<string>('https://api.github.com/repos/{owner}/{repo}')
+  const [synthRestMethod] = useState<'GET' | 'POST'>('GET')
   const [ssrfTestUrl, setSsrfTestUrl] = useState<string>('http://169.254.169.254/latest/meta-data')
   const ssrfVerdict = useMemo(() => isSafeUrl(ssrfTestUrl), [ssrfTestUrl])
 

@@ -17,7 +17,7 @@ export function FederatedPanel() {
   /* --- 模块 9：客户端联邦协同与本地差分隐私 (LDP) 状态 --- */
   const [fedEpsilon, setFedEpsilon] = useState<number>(1.0)
   const [fedPersonalWeight, setFedPersonalWeight] = useState<number>(0.6)
-  const [localFeatureVector, setLocalFeatureVector] = useState<number[]>([0.9, 0.8, 0.3, 0.2, 0.7])
+  const [localFeatureVector] = useState<number[]>([0.9, 0.8, 0.3, 0.2, 0.7])
   const [noisyVector, setNoisyVector] = useState<number[]>([])
   const [globalFedVector] = useState<number[]>([0.7, 0.95, 0.6, 0.4, 0.8])
 

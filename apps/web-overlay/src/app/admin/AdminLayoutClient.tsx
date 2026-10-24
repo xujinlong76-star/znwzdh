@@ -31,6 +31,7 @@ import {
   Star,
   Package,
   Bot,
+  DatabaseBackup,
 } from "lucide-react"
 import { cn } from '@/lib/utils'
 import {
@@ -176,6 +177,17 @@ const menuItems = [
     title: "数据管理",
     href: "/admin/data",
     icon: Database
+  },
+  {
+    /**
+     * 冷备恢复单独占一项，而不是塞进「数据管理」的 subItems：
+     * 后者是上游页面、点一下直接跳转；改成 subItems 会把它的行为从「跳转」
+     * 变成「展开」，连带影响高亮逻辑（`pathname === item.href`）。
+     * 恢复是低频但高风险的入口，独立一项也更容易在菜单里被找到。
+     */
+    title: "冷备恢复",
+    href: "/admin/data/restore",
+    icon: DatabaseBackup
   },
   {
     title: "站点设置",

@@ -168,14 +168,31 @@ private async runBackupRestore(payload: { stagingPath?: string; jobId?: string }
 
 ### 4.2 进度上报
 
-`jobs` 表加两列（`migrate.ts` 走既有「表存在但缺列」的补列逻辑）：
+`jobs` 表加两列：
 
 ```sql
 ALTER TABLE jobs ADD COLUMN progress_done INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE jobs ADD COLUMN progress_total INTEGER NOT NULL DEFAULT 0;
 ```
 
-不用 `recordEvent` 记进度：事件表是按时间追加的，5 万条会产生几十条噪音，而进度是「最新值」语义。
+**实施注意（已核实机制）**：补列不是「自动比对 schema」，而是清单驱动——
+`packages/store/src/migrate.ts` 的 `COLUMN_ALTERS` 数组 + `migrateColumns()` 逐条判存在。
+所以必须加**三处**：`driver.ts` 的 `DDL_SQLITE` / `DDL_PG` 的 `CREATE TABLE`、以及
+`COLUMN_ALTERS` 里两条（`sqlite` 与 `pg` 两种写法）。只改 DDL 的话老库永远拿不到新列。
+
+不用 `recordEvent` 记进度：事件表是按时间追加的，5 万条会产生几十条噪音，而进度是
+「最新值」语义。
+
+### 4.3 心跳与僵尸判定（已核实）
+
+`JobRunner` 的执行中心跳是 60 秒（`JOB_HEARTBEAT_DEFAULT_MS`），
+`reapStaleJobs` 的僵尸判定是 `updated_at < now - 15min`。两条推论：
+
+1. **本任务不会误判**：5 万条约 40 秒，远小于 15 分钟；
+2. **但进程被杀后，任务会在 `running` 状态停留最多 15 分钟**才会被回收重试。
+   所以 `GET status` 在进程刚死的窗口里只能如实报 `running`——**不要**在客户端
+   自己加「超过 N 分钟就报失败」的推断，那会和真实状态打架。前端提示写
+   「仍在运行，若长时间无进展请联系管理员」即可。
 
 ---
 
@@ -186,8 +203,8 @@ ALTER TABLE jobs ADD COLUMN progress_total INTEGER NOT NULL DEFAULT 0;
 | 备份包非法 | 请求内 400，**不入队** |
 | staging 写入失败 | 500，不入队（磁盘满 / 权限） |
 | 任务执行抛错 | job 记 `failed` + `reason`（复用 `classifyRestoreError`），staging 保留 24h |
-| 任务超时（`timeoutMs`） | 由 JobRunner 标记失败；已提交的分片保留，重跑幂等 |
-| 进程被杀 | 任务锁过期后由别的实例认领（既有 `claimNextJob` 语义）；staging 仍在，可重跑 |
+| 任务超时（`timeoutMs`） | 由 JobRunner 标记失败并放行下一轮（既有语义：超时后僵尸 handler 可能仍在跑，见 `jobs.ts` 注释） |
+| 进程被杀 | 任务停留在 `running`，**最多 15 分钟**后被 `reapStaleJobs` 回收重试（判定 `updated_at < now-15min`）；staging 仍在，重跑幂等 |
 
 `classifyRestoreError` 已是纯函数（`duplicate_key` / `foreign_key` / `not_null` / `schema` / `unknown`），直接复用。
 

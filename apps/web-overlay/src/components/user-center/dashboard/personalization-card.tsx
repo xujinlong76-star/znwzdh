@@ -31,7 +31,7 @@ export function PersonalizationCard({
   onClearSignal: (kind: 'click' | 'search' | 'favorite') => void
 }) {
   return (
-    <section className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
+    <section className="flex h-full flex-col rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 text-sm font-semibold">

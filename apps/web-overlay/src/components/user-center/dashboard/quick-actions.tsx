@@ -3,6 +3,9 @@
 /**
  * 快捷操作：只做跳转，不在概览里直接写数据。
  * 破坏性动作（清空历史 / 删除数据）保留各自页面里的二次确认，避免误触。
+ *
+ * 视觉（美化批次）：图标入芯片、卡片悬停上浮——与统计卡同一套交互语言，
+ * 「概览页所有可点的东西都会轻轻抬起来」。
  */
 import Link from 'next/link'
 import { ArrowRight, Download, Heart, Search, Sparkles } from 'lucide-react'
@@ -23,17 +26,19 @@ export function QuickActions() {
           <Link
             key={href}
             href={href}
-            className="group flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/50 px-3 py-2.5 text-xs transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="group flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-background/50 px-3 py-3 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <span className="flex min-w-0 items-center gap-2">
-              <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" aria-hidden />
+            <span className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+                <Icon className="h-4 w-4" aria-hidden />
+              </span>
               <span className="min-w-0">
                 <span className="block truncate font-medium">{label}</span>
                 <span className="block truncate text-[11px] text-muted-foreground" aria-hidden>{hint}</span>
               </span>
             </span>
             <ArrowRight
-              className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+              className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-all group-hover:translate-x-0.5 group-hover:text-primary"
               aria-hidden
             />
           </Link>

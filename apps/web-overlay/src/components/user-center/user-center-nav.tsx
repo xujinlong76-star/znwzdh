@@ -6,6 +6,9 @@
  * 第二批之后用户数据分散在 /me、/favorites、/me/history、/me/data、/preferences，
  * 各页此前只有零散的「返回用户中心」链接，入口不一致。这里用一条导航把它们收拢，
  * 当前页高亮；不改变任何既有 URL（避免旧链接失效）。
+ *
+ * 视觉（美化批次）：玻璃胶囊容器 + 选中实心胶囊；窄屏仍横向滚动（折行会让
+ * 点击目标挤在一起），滚动条隐藏、右缘渐隐暗示可继续滑动。
  */
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
@@ -30,9 +33,7 @@ export function UserCenterNav() {
   return (
     <nav
       aria-label="用户中心导航"
-      // 右缘渐隐遮罩：横向滚动可继续的视觉暗示（滚动条已隐藏，无暗示时
-      // 窄屏用户不知道右侧还有一半入口）
-      className="relative flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_right,black_85%,transparent_100%)]"
+      className="relative flex flex-nowrap items-center gap-1 overflow-x-auto rounded-2xl border border-border/60 bg-card/70 p-1.5 shadow-sm backdrop-blur-md [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-md:[mask-image:linear-gradient(to_right,black_88%,transparent_100%)]"
     >
       {ITEMS.map((item) => {
         const active = item.href === '/me' ? pathname === '/me' : pathname === item.href || pathname.startsWith(item.href + '/')
@@ -42,11 +43,12 @@ export function UserCenterNav() {
             href={item.href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+              'shrink-0 whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-medium transition-all duration-200',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
               active
-                ? 'border-primary/40 bg-primary/10 text-primary'
-                : 'border-border/60 bg-background/60 text-muted-foreground hover:border-border hover:bg-muted/40 hover:text-foreground',
+                ? 'bg-primary text-primary-foreground shadow-sm'
+                // 未激活项用 foreground/70（muted-foreground 实测 ~3:1，低于正文 AA）：可扫视但不牺牲对比
+                : 'text-foreground/70 hover:bg-muted/60 hover:text-foreground',
             )}
           >
             {item.label}

@@ -4,6 +4,8 @@
  * 概览页的账号卡：登录态展示资料摘要，匿名态给出登录与查看本机收藏。
  *
  * 匿名文案与按钮保持原文（E2E 固定断言），只调整外层排版。
+ * 视觉（美化批次）：卡内加一道从主色到青色的极淡渐变底光；头像带主色描边环；
+ * 身份来源用等宽小胶囊呈现，让「你是谁/以什么身份登录」一眼可读。
  */
 import Link from 'next/link'
 import { useState } from 'react'
@@ -24,9 +26,10 @@ export function AccountCard({
 }) {
   // 头像加载失败（过期/防盗链/CSP 拦截）回落字母头像：裂图比占位更糟
   const [avatarFailed, setAvatarFailed] = useState(false)
+
   if (anonymous) {
     return (
-      <section className="rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 sm:p-6">
+      <section className="relative overflow-hidden rounded-2xl border border-dashed border-border/70 bg-card/50 p-4 sm:p-6">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <LogIn className="h-4 w-4" aria-hidden />
@@ -55,30 +58,44 @@ export function AccountCard({
   const initial = name.slice(0, 1).toUpperCase()
 
   return (
-    <section className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
+    <section className="relative overflow-hidden rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5">
+      {/* 底光：只做氛围，从左上淡淡铺开，不与内容争注意力 */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/[0.06] via-transparent to-sky-400/[0.06]"
+      />
+      <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3.5">
           {user?.avatar && !avatarFailed ? (
             // 头像来源受限（http(s) 或站内路径），这里用原生 img 避免 next/image 域名白名单
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={user.avatar}
               alt=""
               referrerPolicy="no-referrer"
               loading="lazy"
               onError={() => setAvatarFailed(true)}
-              className="h-11 w-11 shrink-0 rounded-full border border-border/70 object-cover"
+              className="h-12 w-12 shrink-0 rounded-full border border-border/70 bg-background object-cover ring-2 ring-primary/15"
             />
           ) : (
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-sm font-semibold text-primary">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-gradient-to-br from-primary/15 to-primary/5 text-sm font-semibold text-primary ring-2 ring-primary/10">
               {initial || <User className="h-4 w-4" aria-hidden />}
             </span>
           )}
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold" title={name}>
-              {name}
-            </h2>
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={user?.email ?? undefined}>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="truncate text-sm font-semibold" title={name}>
+                {name}
+              </h2>
+              {user?.source && (
+                <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  {user.source}
+                </span>
+              )}
+            </div>
+            <p
+              className="mt-0.5 truncate text-[11px] text-muted-foreground"
+              title={`${user?.email ?? '未绑定邮箱'} · 身份 ${user?.id ?? '—'}…`}
+            >
               {user?.email ?? '未绑定邮箱'} · 身份 {user?.id?.slice(0, 10) ?? '—'}…
             </p>
           </div>

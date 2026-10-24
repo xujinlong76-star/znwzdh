@@ -28,6 +28,22 @@ const EXPORT_MAX_SITES = Math.max(100, Number(process.env.NAVHUB_EXPORT_MAX_SITE
 const RESTORE_MAX_CATEGORIES = 2_000;
 const RESTORE_MAX_SITES = 50_000;
 
+/**
+ * 把恢复失败的原始错误归成可上报的类别。
+ *
+ * 只回类别、不回 message：数据库报错里常带着具体值（重复的 URL、约束名），
+ * 那是用户数据，不该出现在 HTTP 响应里；但「是重复键还是外键」对修正备份
+ * 是决定性信息，所以必须有，且要跨方言识别（SQLite 与 PG 的措辞完全不同）。
+ */
+export function classifyRestoreError(err: unknown): "duplicate_key" | "foreign_key" | "not_null" | "schema" | "unknown" {
+  const message = String((err as Error)?.message ?? err ?? "");
+  if (/UNIQUE constraint|duplicate key|PRIMARY KEY|主键/i.test(message)) return "duplicate_key";
+  if (/FOREIGN KEY|foreign key|外键/i.test(message)) return "foreign_key";
+  if (/NOT NULL|not-null|非空/i.test(message)) return "not_null";
+  if (/no such (table|column)|does not exist|不存在/i.test(message)) return "schema";
+  return "unknown";
+}
+
 export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -91,6 +107,7 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       : undefined;
     const rawFlag = flagFromQuery ?? flagFromBody;
     const dryRun = !(rawFlag === false || rawFlag === "false" || rawFlag === "0" || rawFlag === 0);
+    const startedAt = Date.now();
     const validation = validateNavHubBackup(jsonStr);
 
     if (!validation.valid || !validation.backup) {
@@ -241,10 +258,36 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         restoredSites = inserted.count;
       });
     } catch (err) {
-      req.log.error({ err }, "备份恢复失败，事务已回滚");
+      /**
+       * 失败也要留痕。原实现只在日志里打一行，审计表空白——运维事后无法回答
+       * 「这次恢复失败发生在什么时候、备份有多大、是重复键还是外键」。
+       *
+       * 对外只回**错误类别**不回原始 message：PG/SQLite 的报错里可能带着
+       * 具体值与约束名（例如重复的 URL），那属于用户数据，不该出现在响应里。
+       */
+      const reason = classifyRestoreError(err);
+      req.log.error({ err, reason }, "备份恢复失败，事务已回滚");
+      try {
+        await ctx.repo.audit({
+          ip: req.ip,
+          actor: req.auth.actor,
+          actorKind: req.auth.kind,
+          action: "backup.restore_failed",
+          target: "backup",
+          diff: {
+            reason,
+            durationMs: Date.now() - startedAt,
+            plannedCategories: plannedCategories.length,
+            plannedSites: plannedSites.length,
+          },
+        });
+      } catch {
+        // 审计尽力而为：审计本身失败不能盖住「恢复失败」这个主信息
+      }
       reply.code(409);
       return {
         error: "RESTORE_FAILED",
+        reason,
         message: "备份恢复失败，已整体回滚；请修正备份内容后重试",
       };
     }
@@ -258,8 +301,28 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       diff: {
         categories: restoredCategories,
         sites: restoredSites,
+        // 耗时与跳过项：判断「恢复变慢了」还是「备份里本来就有重复」的依据
+        durationMs: Date.now() - startedAt,
+        skipped: { duplicateCategories, invalidUrls, duplicateUrls },
       },
     });
+
+    /**
+     * 恢复完成后补建检索索引。
+     *
+     * 恢复只写 sites / site_tags 行，**不建向量**（原来也没有建）——于是恢复出来的
+     * 站点能靠 exact/fts/pinyin 命中，语义通道却要等下一个定时 reindex（cron 每 4 小时）
+     * 才可用。5 万条全量重建不能塞进恢复请求（会超时），所以入队让 JobRunner 异步做。
+     *
+     * 入队失败不影响恢复结果：数据已经落库，定时任务仍会在下一轮补上。
+     */
+    if (restoredSites > 0) {
+      try {
+        await ctx.repo.enqueueJob("reindex", { vectors: true });
+      } catch (err) {
+        req.log.warn({ err }, "恢复后入队索引重建失败（数据已恢复，等待定时 reindex 补齐）");
+      }
+    }
 
     return {
       ok: true,

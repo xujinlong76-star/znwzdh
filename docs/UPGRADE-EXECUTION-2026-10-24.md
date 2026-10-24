@@ -17,6 +17,11 @@
 | E3 | `insertSitesBulk` + 备份恢复批量化 | 性能 | 500 条：749ms → 61ms（**12.3x**） |
 | E4 | 恢复路径取消全量回读（`hydrate: false`） | 性能 | 5 万条上限省去 100 次分片大查询 |
 | E5 | ISR 门禁测试 fixture 幂等化 | 测试 | 基线 **52 个失败** → 0 |
+| E6 | 备份恢复可观测化（耗时/跳过/失败分类/审计） | 可观测 | 失败可追、变慢可测、响应不泄漏原始报错 |
+| E7 | 恢复后入队 `reindex` | 正确性 | 修掉「恢复完立刻搜，语义通道为空」 |
+| E8 | 巡检增补三项（悬空关联 / 向量缺口 / 向量残留） | 可观测 | 把恢复与批量写入的静默后果变成审计数字 |
+| E9 | `/admin/sitelist` 归属索引 + 筛选缓存 | 性能 | 6400 站点筛选 8.60ms → 4.85ms（**1.8x**），且弹窗等无关状态不再重算 |
+| E10 | PG 侧批量路径用例（4 例） | 测试 | 本轮新增的批量函数首次获得跨方言覆盖（CI 执行） |
 
 ---
 
@@ -133,48 +138,126 @@ fixture 改为幂等覆盖：
 
 | 门禁 | 结果 |
 |---|---|
-| `check-syntax` | 1025 文件 / 0 错误 |
+| `check-syntax` | 1030 文件 / 0 错误 |
 | `typecheck`（5 包，TS 7.0.2） | 通过 |
+| `apps/web` 独立 `tsc --noEmit` | 通过（前端改动含新模块与页面） |
 | `check:bundle` | 69 条路由全部在预算内（首页 1041/1115 KB 最紧） |
+| `check-web-overlay` | **0 漂移**、625 个覆盖层文件一致 |
+| `eslint`（改动文件） | 0 errors（剩余 8 个 warning 均为既有：exhaustive-deps ×2、immutability、未使用 `_`） |
 | 全量 vitest | 见 §4 |
-| `check-web-overlay` | 1 个漂移，**判定为并行会话未同步**，未代为 `--fix` |
+
+**一次真实拦截**：首轮全量跑出 `tw-source-coverage` 红灯——新增的 `apps/web-overlay/src/lib/admin/` 不在 Tailwind `@source` 列表里。该守卫检查「被 .gitignore 忽略的源码文件必须真的进入扫描集」，vendored 的 `src/lib` 整目录被忽略，所以新目录必须显式登记。已按守卫意图补 `lib/{admin,p2p,seo,server}`，未绕过。
 
 ---
 
 ## 4. 全量测试
 
 ```
- Test Files  343 passed | 1 skipped (344)
-      Tests  3782 passed | 24 skipped (3806)
-   Duration  323.80s
+ Test Files  346 passed | 1 skipped (347)
+      Tests  3804 passed | 28 skipped (3832)
+   Duration  644.29s
 ```
 
-| 时点 | 结果 |
-|---|---|
-| 改动前基线 | `1 failed | 339 passed`（文件），`52 failed | 3718 passed`（用例） |
-| 改动后 | `343 passed | 1 skipped`（文件），`3782 passed`（用例），**0 失败** |
+| 时点 | 文件 | 用例 |
+|---|---|---|
+| 本轮开始前基线 | `1 failed | 339 passed` | `52 failed | 3718 passed` |
+| 第一批后（`f08cdd1`） | `343 passed | 1 skipped` | `3782 passed | 0 failed` |
+| 第二批后（本次提交） | `346 passed | 1 skipped` | `3804 passed | 0 failed` |
 
-1 个 skipped 文件是 `pg-dialect.e2e.test.ts`（未设 `NAVHUB_TEST_DATABASE_URL`，CI 的 test-postgres 作业会跑）。
+两批合计用例净增 86 条：38 条新增回归（12 + 6 + 2 + 14 + 4 PG skip），52 条从失败转为通过。
 
-用例净增 64 条：12 条新增回归（3 个新文件）+ 52 条从失败转为通过。
+skipped 的 28 条 = 4 条 PG 批量用例（无 `NAVHUB_TEST_DATABASE_URL`）+ 24 条既有 PG 用例，全部由 CI 的 test-postgres 作业执行。
 
 ---
 
-## 5. 未执行项与原因
+## 5. 第二轮：可观测性、跨方言与前端筛选（E6–E10）
+
+### E6 备份恢复可观测化
+
+**问题**：恢复是「一次请求改整库内容」的操作，此前只有两处外部可观测面——成功时一条只含条数的审计、失败时一行日志。三个盲区：
+
+1. **失败不可追**：审计表空白，运维无法回答「什么时候失败、备份多大、什么原因」；
+2. **耗时不可测**：没有 `durationMs`，变慢只能靠用户抱怨；
+3. **错误不可读**：409 只有一句笼统文案，无法区分「备份里 id 重复」还是「外键坏了」。
+
+**改法**
+
+- 成功审计增加 `durationMs` 与结构化 `skipped`（重复分类 / 非法 URL / 重复 URL）；
+- 失败写 `backup.restore_failed` 审计（`reason` + `durationMs` + 计划条数）；
+- 新增 `classifyRestoreError()`：跨方言识别 `duplicate_key` / `foreign_key` / `not_null` / `schema` / `unknown`；
+- 409 响应回 `reason` 而**不回原始 message**——数据库报错里常带具体值（重复的 URL、约束名），那属于用户数据。
+
+### E7 恢复后入队 `reindex`
+
+**问题（既有缺陷，非本轮引入）**：恢复只写 `sites` / `site_tags`，**不建向量**。于是恢复出来的站点能靠 exact / fts / pinyin 命中，语义通道却要等下一个定时 `reindex`（cron 每 4 小时）才可用。备份恢复后立刻搜，语义结果是缺的。
+
+**改法**：恢复成功且 `restoredSites > 0` 时 `enqueueJob("reindex", { vectors: true })`。5 万条全量重建不能塞进恢复请求（会超时），交给 JobRunner 异步做；入队失败不影响恢复结果（数据已落库，定时任务仍会补）。
+
+### E8 巡检增补三项
+
+`user_data_audit` 原本只查两类用户侧问题（悬空夹引用、收藏缺站点）。新增站点侧三项，全部「只报不动」：
+
+| 指标 | 含义 |
+|---|---|
+| `orphanSiteTags` | `site_tags` 指向已不存在的站点或标签（批量写入标签解析失败、物理清理漏删） |
+| `sitesMissingEmbedding` | 有站点但无向量——**这正是恢复后的状态**，用来验证 E7 是否生效 |
+| `orphanEmbeddings` | 向量指向已不存在的站点 |
+
+向量两项只在 `config.embedding.enabled` 为真时统计：lite 模式默认关闭，关闭时「每条都缺」是预期状态，报出来只会变成每日噪音。判据用 `config.enabled` 而非 `ctx.embedding` 是否存在——service 对象在关闭时仍会被构造（供 `/api/health` 如实上报能力）。
+
+### E9 `/admin/sitelist` 归属索引 + 筛选缓存
+
+**问题（实测，非推断）**
+
+三个查找函数各自遍历「分类 × 子分类 × items」，而每行渲染会调用 4 次（筛选 2 次 + 两个单元格各一次 `getSiteCategoryInfo`，每次内部再遍历一遍）。
+
+基准（8400 行同构数据：6400 站点 / 40 分类 / 每分类 40 主项 + 3×40 子项）：
+
+| 实现 | 单次筛选 |
+|---|---:|
+| 线性查找（原） | 8.60 ms |
+| 索引查找（新） | 4.85 ms |
+
+**诚实结论：只有 1.8x，不是数量级提升。** 原因是瓶颈在字符串匹配（6400 站点 × 3 字段 `toLowerCase` + `includes`），分类查找原本的占比被高估了。索引把查找降到 O(1)，但整体收益被字符串成本压住。
+
+因此叠加第二层：`filteredSites` 用 `useMemo` 按五元依赖缓存。页面还有对话框开关、上传进度、表单草稿等十余个状态，原实现每次渲染都重算筛选——打开一个弹窗也要付 5ms。这层的收益不体现在单次基准里，而体现在交互时的无效重算消除。
+
+**未做**：预计算小写化字段（把 `toLowerCase` 从每次筛选移到数据加载）。它能把 4.85ms 再压一半，但需要在 `sites` 更新时维护派生缓存，与现有「`sites` 由多个 CRUD 分支直接 `setSites`」的写法冲突，属独立改造。
+
+**语义等价**：抽取时踩到一个真实的漂移点——原查找函数在**找不到时返回空串**（不是 `undefined`），所以「未归类站点」会被 `none` 子分类筛选命中。用 `?? ''` 保持，并写进测试。
+
+### E10 PG 侧批量路径用例
+
+本轮新增的三个函数是「5 万条恢复」的承载者，此前只在 SQLite 验证。补 4 例（`pg-dialect.e2e.test.ts`）：
+
+1. `findExistingSiteUrls` 三变体命中 + 软删排除；
+2. `insertSitesBulk` 45 条多值 INSERT + 重复标签去重 + `hydrate` 两种模式；
+3. **原子性**：事务内 `insertSitesBulk` 后抛错，条数与事务前一致；
+4. `saveEmbeddingsBatch` 150 条跨分片 UPSERT（PG 的 `BYTEA` + `ON CONFLICT`）。
+
+**本地无法执行**（无 `NAVHUB_TEST_DATABASE_URL`，docker 不可用），由 CI 的 test-postgres 作业执行。这是本轮唯一「未在本地验证」的改动面，已在 §7 单列。
+
+---
+
+## 6. 未执行项与原因
 
 | 项 | 状态 | 原因 |
 |---|---|---|
-| 用户中心视觉/布局改动 | 未动 | 并行会话正在编辑 7 个文件（mtime 15:57–15:59，内容为 sticky 子导航、玻璃卡片、图标芯片）。按纪律不覆盖。 |
-| `check-web-overlay` 漂移修复 | 未动 | 漂移来自上述并行会话的半成品改动；代为 `--fix` 会把半成品镜像进 vendored 目录。 |
-| 巨型组件拆分（`algorithm-lab` 2216 行、`sitelist` 2147 行） | 未执行 | 属结构性重构，需独立批次 + 行为对照测试；与本轮「可验证缺陷」目标不同档。 |
+| 用户中心视觉/布局改动 | 未动 | 并行会话正在编辑 9 个文件（mtime 15:57–15:59，内容为 sticky 子导航、玻璃卡片、图标芯片）。按纪律不覆盖。 |
+| `check-web-overlay` 的 `tsconfig.json` 漂移 | 未动 | 该漂移在本轮开始前就存在（overlay 与 vendored 底座内容不一致），不属于我的改动范围；`--fix` 会连带镜像并行会话的 WIP。 |
+| 巨型组件**整体拆分**（`algorithm-lab` 2216 行、`sitelist` 2147 行） | 部分执行 | 已把 `sitelist` 的归属查找与筛选抽成独立纯函数模块（E9）+ 14 例测试；**组件本身未拆**。理由：2100 行单组件内 50+ 个 state 与回调紧耦合，抽 hook 无法用现有守卫证明行为等价，属独立批次。 |
 | 前端触控目标 / a11y 补强 | 未执行 | 复核发现 guard 体系已相当完整（`keyboard-activation` / `graph-keyboard` / `a11y-contrast` 三道扫描），`/favorites` 已无 `h-6/h-7` 裸尺寸。没有找到确证的缺口，不做「为改而改」。 |
 | 插件星标导入批量 | 未执行 | 导入条数为几十级，N 次查询不构成量级问题；且现有实现用 `err.message.includes()` 判分支，改造需先做结构化错误，属技术债而非缺陷。 |
+| 小写化字段预计算 | 未执行 | 能把 `/admin/sitelist` 筛选再压一半，但需在 `sites` 多处 `setSites` 分支维护派生缓存，属独立改造（见 §5 E9）。 |
+| PG 批量用例的本地执行 | 未执行 | 无 `NAVHUB_TEST_DATABASE_URL`，docker 不可用。用例已写，由 CI test-postgres 执行——**这是本轮唯一未在本地跑过的改动面**。 |
 
 ---
 
-## 6. 回滚
+## 7. 回滚
 
-全部改动集中在 5 个文件 + 3 个测试文件，无 schema 变更、无 API 契约变更：
+改动分两批。
+
+**第一批（E1–E5，已提交 `f08cdd1`）**
 
 ```
 packages/store/src/repository/sites.ts        # findExistingSiteUrls / insertSitesBulk
@@ -186,4 +269,19 @@ apps/api/src/index-site.ts                    # 复用 saveEmbeddingsBatch
 scripts/check-isr-routes.test.ts              # fixture 幂等化
 ```
 
-回滚方式：`git revert <commit>`。新增函数均为纯增量，旧调用路径（`findSiteByUrl` / `saveEmbedding` / `createSite`）未被修改，仍可用。
+**第二批（E6–E10，本次提交）**
+
+```
+apps/api/src/routes/backup.ts                 # 审计 / 错误分类 / 入队 reindex
+apps/api/src/jobs.ts                          # 巡检三项
+packages/store/test/pg-dialect.e2e.test.ts    # PG 批量用例
+apps/web-overlay/src/lib/admin/sitelist-index.ts        # 新增（事实源）
+apps/web-overlay/src/app/admin/sitelist/page.tsx        # 改用索引 + useMemo
+apps/web-overlay/test/sitelist-index.test.ts            # 新增
+apps/api/test/backup-observability.test.ts              # 新增
+apps/api/test/user-data-audit-job.test.ts               # 新增
+```
+
+回滚方式：`git revert <commit>`。无 schema 变更、无 API 契约破坏（409 只**新增** `reason` 字段；审计 `diff` 只新增键）。旧调用路径（`findSiteByUrl` / `saveEmbedding` / `createSite`）未被修改，仍可用。
+
+`apps/web` 下的镜像副本不计入 git（vendored，`.gitignore` 排除），回滚后由 `vendor-web.mjs` + overlay 回放重建。

@@ -1047,6 +1047,48 @@ export class JobRunner {
       )[0]?.c ?? 0,
     );
     const summary: Record<string, number | string> = { danglingFolderRefs, favoritesMissingSite };
+
+    /**
+     * 站点侧的完整性核对（2026-10-24 增补）。
+     *
+     * 这三项是备份恢复与批量导入的「静默后果」：恢复只写 sites / site_tags，
+     * 不建向量；批量写入如果标签解析失败就会留下悬空关联。它们都不影响页面
+     * 渲染，所以只会在「搜不到」「点开是空类目」这种间接抱怨里暴露。
+     *
+     * 只报不动：与现有巡检口径一致，清理交给运营决定。
+     */
+    // 悬空关联：关联行指向已不存在的站点或标签
+    summary.orphanSiteTags = Number(
+      (
+        await this.ctx.repo.raw(
+          `SELECT COUNT(*) AS c FROM site_tags st
+           WHERE NOT EXISTS (SELECT 1 FROM sites s WHERE s.id = st.site_id)
+              OR NOT EXISTS (SELECT 1 FROM tags t WHERE t.id = st.tag_id)`,
+        )
+      )[0]?.c ?? 0,
+    );
+    // 向量缺口只在启用本地 embedding 时有意义：lite 模式默认关闭，
+    // 关闭时「每条都缺」是预期状态，报出来只会变成每日噪音。
+    // 判据用 config.enabled 而不是 `ctx.embedding` 是否存在：service 对象在关闭时
+    // 仍会被构造（供 /api/health 如实上报能力），非 null 不代表真的会写向量。
+    if (this.ctx.embedding && this.ctx.config.embedding.enabled) {
+      summary.sitesMissingEmbedding = Number(
+        (
+          await this.ctx.repo.raw(
+            `SELECT COUNT(*) AS c FROM sites s
+             WHERE s.deleted_at IS NULL
+               AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.site_id = s.id)`,
+          )
+        )[0]?.c ?? 0,
+      );
+      summary.orphanEmbeddings = Number(
+        (
+          await this.ctx.repo.raw(
+            "SELECT COUNT(*) AS c FROM embeddings e WHERE NOT EXISTS (SELECT 1 FROM sites s WHERE s.id = e.site_id)",
+          )
+        )[0]?.c ?? 0,
+      );
+    }
     // 备份超期提醒（T13）：有收藏但 30 天内没有导出过的身份 → 一条通知（7 天去重）。
     // 「先看见再动」同样适用：这里只提醒，不代替用户导出。
     try {

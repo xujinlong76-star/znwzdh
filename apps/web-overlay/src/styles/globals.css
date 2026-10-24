@@ -43,7 +43,7 @@
 @source '../lib/modular/**/*.{js,ts,jsx,tsx,mdx}';
 /* lib 下其余被 .gitignore 忽略的子树：p2p（NavDrop 近场传输台账）、seo（SEO 规则与阈值）、
    server（服务端桥接）。父级通配会被剪枝，必须逐个指到被忽略目录内部。 */
-@source '../lib/{p2p,seo,server}/**/*.{js,ts,jsx,tsx,mdx}';
+@source '../lib/{admin,p2p,seo,server}/**/*.{js,ts,jsx,tsx,mdx}';
 
 @custom-variant dark (&:is(.dark *));
 

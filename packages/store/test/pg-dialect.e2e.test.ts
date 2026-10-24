@@ -364,6 +364,130 @@ describe.skipIf(!ctx)("跨方言：用户域（T9）与 SQLite 一致", () => {
     expect(after.defaultSearchEngine).toBe("bing");
     expect(after.historyRetentionDays).toBe(30);
   });
+
+  /**
+   * 批量路径（2026-10-24 性能改造）的跨方言验证。
+   *
+   * 这三个函数是「备份恢复 5 万条」的承载者，却只在 SQLite 上验证过。
+   * PG 侧的差异点很具体：多值 INSERT 的参数占位符（? → $1..$n）、
+   * BYTEA 绑定、以及事务内批量语句失败后的回滚边界。
+   */
+  it("findExistingSiteUrls：三变体命中 + 软删行排除（PG 的多值 IN）", async () => {
+    if (!ctx) return;
+    const repo = ctx.repo;
+    const target = await repo.createSite({
+      url: "https://pg-batch-dup.example.com/", title: "PG 批量去重", categoryId: catId,
+    });
+
+    // 库内是带斜杠的写法，用三种入参探：原文 / 无斜杠 / 归一后
+    const found = await repo.findExistingSiteUrls([
+      "https://pg-batch-dup.example.com/",
+      "https://pg-batch-dup.example.com",
+      "https://pg-batch-unique.example.com",
+    ]);
+    expect(found.has("https://pg-batch-dup.example.com/")).toBe(true);
+    expect(found.has("https://pg-batch-dup.example.com")).toBe(true);
+    expect(found.has("https://pg-batch-unique.example.com")).toBe(false);
+
+    // 软删后不再算「已存在」（允许重新导入，与 findSiteByUrl 同口径）
+    await repo.deleteSite(target.id);
+    const afterDelete = await repo.findExistingSiteUrls(["https://pg-batch-dup.example.com"]);
+    expect(afterDelete.has("https://pg-batch-dup.example.com")).toBe(false);
+    await repo.purgeSite(target.id);
+  });
+
+  it("insertSitesBulk：多值 INSERT + 标签批量 + hydrate:false（PG 占位符与 BYTEA 无关，但 INSERT 形态不同）", async () => {
+    if (!ctx) return;
+    const repo = ctx.repo;
+    const inputs = Array.from({ length: 45 }, (_, i) => ({
+      id: `pg-bulk-${i}`,
+      url: `https://pg-bulk-${i}.example.com`,
+      title: `PG 批量站点 ${i}`,
+      description: `描述 ${i}`,
+      categoryId: catId,
+      // 重复标签必须被去重，否则 site_tags 唯一约束会让整批失败
+      tags: ["批量", "批量", `批${i % 3}`],
+    }));
+
+    const result = await repo.insertSitesBulk(inputs, { hydrate: false });
+    expect(result.count).toBe(45);
+    expect(result.sites).toHaveLength(0);
+
+    const rows = await repo.raw(
+      "SELECT COUNT(*) AS c FROM sites WHERE url LIKE ? AND deleted_at IS NULL",
+      ["https://pg-bulk-%"],
+    );
+    expect(Number(rows[0]?.c ?? 0)).toBe(45);
+
+    // 抽查字段与标签（多值 INSERT 最容易在这里错位）
+    const one = await repo.getSite("pg-bulk-7");
+    expect(one).not.toBeNull();
+    expect(one!.title).toBe("PG 批量站点 7");
+    expect(one!.status).toBe("active");
+    expect(one!.tags).toContain("批量");
+
+    // 回读模式也必须可用（调用方需要完整对象时）
+    const hydrated = await repo.insertSitesBulk([
+      { id: "pg-bulk-hydrate", url: "https://pg-bulk-hydrate.example.com", title: "回读", categoryId: catId },
+    ]);
+    expect(hydrated.sites).toHaveLength(1);
+    expect(hydrated.sites[0]!.id).toBe("pg-bulk-hydrate");
+  });
+
+  it("insertSitesBulk 的原子性：事务内失败整体回滚（备份恢复 409 语义的地基）", async () => {
+    if (!ctx) return;
+    const repo = ctx.repo;
+    const before = await repo.raw(
+      "SELECT COUNT(*) AS c FROM sites WHERE url LIKE ?",
+      ["https://pg-bulk-rollback-%"],
+    );
+
+    await expect(
+      repo.withTransaction(async () => {
+        await repo.insertSitesBulk(
+          Array.from({ length: 12 }, (_, i) => ({
+            id: `pg-bulk-rb-${i}`,
+            url: `https://pg-bulk-rollback-${i}.example.com`,
+            title: `回滚 ${i}`,
+            categoryId: catId,
+          })),
+          { hydrate: false },
+        );
+        throw new Error("模拟第 N 条失败");
+      }),
+    ).rejects.toThrow("模拟第 N 条失败");
+
+    const after = await repo.raw(
+      "SELECT COUNT(*) AS c FROM sites WHERE url LIKE ?",
+      ["https://pg-bulk-rollback-%"],
+    );
+    expect(Number(after[0]?.c ?? 0)).toBe(Number(before[0]?.c ?? 0));
+  });
+
+  it("saveEmbeddingsBatch：一条多值 UPSERT 跨分片写入（PG 的 bytea + ON CONFLICT）", async () => {
+    if (!ctx) return;
+    const repo = ctx.repo;
+    const records = Array.from({ length: 150 }, (_, i) => ({
+      siteId: `pg-emb-${i}`,
+      model: "pg-batch-model",
+      vector: Float32Array.from({ length: 8 }, (_, k) => i + k / 10),
+    }));
+    await repo.saveEmbeddingsBatch(records);
+
+    const rows = await repo.raw(
+      "SELECT COUNT(*) AS c FROM embeddings WHERE model = ?",
+      ["pg-batch-model"],
+    );
+    expect(Number(rows[0]?.c ?? 0)).toBe(150);
+
+    // 覆盖语义：同一 site_id 再写不新增行
+    await repo.saveEmbeddingsBatch([{ siteId: "pg-emb-0", model: "pg-batch-model", vector: new Float32Array(8) }]);
+    const again = await repo.raw(
+      "SELECT COUNT(*) AS c FROM embeddings WHERE model = ?",
+      ["pg-batch-model"],
+    );
+    expect(Number(again[0]?.c ?? 0)).toBe(150);
+  });
 });
 
 describe("连接前置条件", () => {

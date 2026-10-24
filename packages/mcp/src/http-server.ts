@@ -106,7 +106,7 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
     if (allowInsecure && token === "") {
       // 调试模式：放行全部只读能力（仍拒绝写/管理）。警告日志见 http.ts 启动时输出。
       const list: McpScope[] = ["read"];
-      return { actor: "mcp:insecure", scopes: list, has: (s) => scopeSatisfies(list, s) };
+      return { actor: "mcp:insecure", scopes: list, has: (s) => scopeSatisfies(list, s), ownerIdentity: null };
     }
 
     const header = req.headers.authorization ?? "";
@@ -117,7 +117,7 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
     // 1) 静态引导 token（内存比对，视同 admin）——与 REST 的 NAVHUB_BOOTSTRAP_TOKEN 同性质
     if (token !== "" && secureEqual(bearer, token)) {
       const list = [...new Set<McpScope>(scopes)];
-      return { actor, scopes: list, has: (s) => scopeSatisfies(list, s) };
+      return { actor, scopes: list, has: (s) => scopeSatisfies(list, s), ownerIdentity: null };
     }
 
     // 2) 查 api_tokens 表（与 REST 同源同逻辑；findApiTokenByHash 已过滤吊销与过期）：
@@ -129,7 +129,8 @@ export function createMcpHttpServer(opts: McpHttpOptions): Server {
       const tableScopes = parseScopes(record.scopes.join(","));
       if (tableScopes.length === 0) return null;
       const list = [...new Set<McpScope>(tableScopes as McpScope[])];
-      return { actor: "mcp:" + record.name, scopes: list, has: (s) => scopeSatisfies(list, s) };
+      // 用户级个人令牌带 owner_identity：用户域工具（list_favorites 等）据此限定可见范围
+      return { actor: "mcp:" + record.name, scopes: list, has: (s) => scopeSatisfies(list, s), ownerIdentity: record.ownerIdentity };
     } catch {
       // DB 查询失败（如只读打开）——不让整条 MCP 链路崩掉，退回未授权
       return null;

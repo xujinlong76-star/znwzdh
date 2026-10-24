@@ -21,6 +21,7 @@ import { pluginHandlers } from "./handlers/plugins.ts";
 import { bind, makeIndexSite, makeWithIdempotency, type HandlerDeps } from "./handlers/shared.ts";
 import { siteHandlers } from "./handlers/sites.ts";
 import { stateSyncHandlers } from "./handlers/state-sync.ts";
+import { userCenterHandlers } from "./handlers/user-center.ts";
 
 export type { ToolResult } from "./handlers/shared.ts";
 
@@ -38,6 +39,7 @@ export function createHandlers(ctx: AppContext) {
     ...bind(algorithmHandlers, deps),
     ...bind(discoveryHandlers, deps),
     ...bind(stateSyncHandlers, deps),
+    ...bind(userCenterHandlers, deps),
     ...bind(developerToolHandlers, deps),
     ...bind(pluginHandlers, deps),
   };

@@ -206,6 +206,20 @@ export const ListJobsInput = z.object({
   limit: z.number().int().min(1).max(100).default(20).describe("返回条数上限"),
 });
 
+export const ListFavoritesInput = z.object({
+  /** 只看某个收藏夹（folderId）；缺省 = 全部收藏 */
+  folder: z.string().min(1).optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+  offset: z.number().int().min(0).default(0),
+});
+
+export const ListSearchHistoryInput = z.object({
+  limit: z.number().int().min(1).max(200).default(20),
+  offset: z.number().int().min(0).default(0),
+});
+
+export const GetProfileSummaryInput = z.object({});
+
 export const ListCollectionsInput = z.object({
   all: z.boolean().default(false).describe("true 时包含已停用专题（默认只看启用中的）"),
 });
@@ -379,6 +393,9 @@ export const MCP_INPUT_SCHEMAS: Record<string, ZodSchemaLike> = {
   run_job: RunJobInput,
   list_jobs: ListJobsInput,
   list_collections: ListCollectionsInput,
+  list_favorites: ListFavoritesInput,
+  list_search_history: ListSearchHistoryInput,
+  get_profile_summary: GetProfileSummaryInput,
   get_architecture_recipe: GetArchitectureRecipeInput,
   compare_technologies: CompareTechnologiesInput,
   heal_broken_site: HealBrokenSiteInput,
@@ -607,6 +624,21 @@ export const MCP_TOOL_DEFS: ToolDefinition[] = [
     name: "list_jobs",
     description: "查询后台任务队列（可按状态过滤，按创建时间倒序）。run_job 只负责入队、执行是异步的：用本工具确认任务是否已执行、失败原因是什么。",
     scope: "read", inputSchema: ListJobsInput, mutating: false,
+  },
+  {
+    name: "list_favorites",
+    description: "列出**令牌归属用户自己的**收藏站点（支持按收藏夹过滤与分页）。用户域只读工具：只有带 owner_identity 的个人令牌可用，实例级令牌会被拒绝。",
+    scope: "read", inputSchema: ListFavoritesInput, mutating: false,
+  },
+  {
+    name: "list_search_history",
+    description: "列出**令牌归属用户自己的**最近搜索记录（按时间倒序分页）。用户域只读工具：只有带 owner_identity 的个人令牌可用。",
+    scope: "read", inputSchema: ListSearchHistoryInput, mutating: false,
+  },
+  {
+    name: "get_profile_summary",
+    description: "读取**令牌归属用户自己的**个性化画像摘要（常逛类目 / 关注标签 / 收藏与搜索计数）。用户域只读工具：只有带 owner_identity 的个人令牌可用。",
+    scope: "read", inputSchema: GetProfileSummaryInput, mutating: false,
   },
   {
     name: "list_collections",

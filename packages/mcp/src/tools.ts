@@ -22,6 +22,11 @@ export interface ToolContext {
   actor: string;
   scopes: McpScope[];
   has(scope: McpScope): boolean;
+  /**
+   * 归属用户身份（B2 用户域工具）：个人令牌（api_tokens.owner_identity）非空，
+   * 实例级令牌 / 静态引导 token 为 null。用户域工具据此限定数据可见范围。
+   */
+  ownerIdentity?: string | null;
 }
 
 export class McpAuthError extends Error {
@@ -84,10 +89,16 @@ import {
   ExchangeP2pMeshInput,
   GetAlternativesInput,
   ResolveWaybackInput,
+  ListFavoritesInput,
+  ListSearchHistoryInput,
+  GetProfileSummaryInput,
 } from "@navhub/core";
 
 export {
   MAX_BATCH_ITEMS,
+  ListFavoritesInput,
+  ListSearchHistoryInput,
+  GetProfileSummaryInput,
   SearchSitesInput,
   GetSiteInput,
   ListCategoriesInput,

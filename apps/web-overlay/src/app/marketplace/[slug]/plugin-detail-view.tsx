@@ -10,7 +10,6 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { safeHref, safeWindowOpen } from '@/lib/safe-url'
 import Link from 'next/link'
 import { Container } from '@/components/ui/container'
 import { Footer } from '@/components/footer'
@@ -23,64 +22,36 @@ import {
   createPluginShortLink,
   trackPluginEvent,
   type HubPluginItem,
-  type HubPluginAuditReport,
+  type HubPluginAuditReport
 } from '@/lib/navhub-api'
-import {
-  pluginKindLabel,
-  PLUGIN_MANIFEST_FILE_SUFFIX,
-  comparePluginVersions,
-} from '@/lib/plugins/plugin-manifest'
+import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX, comparePluginVersions } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
-import { KIND_ICONS, KIND_TONES } from '@/lib/plugins/kind-meta'
-import { PluginInstallModal } from '@/components/plugins/plugin-install-modal'
-import { PluginUrlAuditBadge } from '@/components/plugins/plugin-url-audit-badge'
-import { PluginReportModal } from '@/components/plugins/plugin-report-modal'
-import { PluginDiffView } from '@/components/plugins/plugin-diff-view'
-import { PluginSimilar } from '@/components/plugins/plugin-similar'
-import { PluginVersionTimeline } from '@/components/plugins/plugin-version-timeline'
-import { PluginReviewSection } from '@/components/plugins/plugin-review-section'
-import dynamic from 'next/dynamic'
+import type { DetailTab } from './detail-shared'
 
-const AiPluginStudioModal = dynamic(
-  () => import('@/components/plugins/ai-plugin-studio-modal').then((m) => m.AiPluginStudioModal),
-  { ssr: false }
-)
+const DETAIL_TABS: DetailTab[] = ['preview', 'diff', 'impact', 'raw', 'history', 'reviews']
+import { DetailTabPanels } from './detail-tab-panels'
+import { DetailModals } from './detail-modals'
+import { PluginUrlAuditBadge } from '@/components/plugins/plugin-url-audit-badge'
+import { PluginSimilar } from '@/components/plugins/plugin-similar'
+
 import { getIdentity } from '@/lib/identity'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
-import {
-  startThemeTryout,
-  cancelThemeTryout,
-  isThemeInTryout,
-  setActiveTheme,
-  resetTheme,
-  getActiveTheme,
-} from '@/lib/plugins/theme-runtime'
-import { copyFailureToast, copyText } from '@/lib/clipboard'
+import { startThemeTryout, cancelThemeTryout, isThemeInTryout, getActiveTheme } from '@/lib/plugins/theme-runtime'
+import { copyText } from '@/lib/clipboard'
 import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { Badge } from '@/components/ui/badge'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import {
   ArrowLeft,
-  Globe,
-  LayoutGrid,
   Palette,
   Star,
   Download,
   Check,
   Flag,
   FileJson,
-  Copy,
   ExternalLink,
   ShieldCheck,
   Sparkles,
-  Layers,
   Info,
   RotateCcw,
   Share2,
@@ -88,19 +59,12 @@ import {
   MessageSquare,
   Award,
   AlertTriangle,
-  Minus,
-  Upload,
-  Search,
-  Boxes,
+  Upload
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatLayoutReport } from '@/lib/modular/layout-report'
 import { cn } from '@/lib/utils'
-import { AuditDimensionTile } from '@/components/plugins/audit-dimension-tile'
 
-type DetailTab = 'preview' | 'diff' | 'impact' | 'raw' | 'history' | 'reviews'
 
-const DETAIL_TABS: DetailTab[] = ['preview', 'diff', 'impact', 'raw', 'history', 'reviews']
 
 export default function PluginDetailView({
   slug,
@@ -133,8 +97,6 @@ export default function PluginDetailView({
   const [reportModalOpen, setReportModalOpen] = useState(false)
   const [badgeModalOpen, setBadgeModalOpen] = useState(false)
   const [badgeMetric, setBadgeMetric] = useState<'version' | 'installs' | 'stars' | 'rating'>('version')
-  const mdCopy = useCopyFeedback()
-  const svgCopy = useCopyFeedback()
   const shareCopy = useCopyFeedback()
   const rawCopy = useCopyFeedback()
   const [auditModalOpen, setAuditModalOpen] = useState(false)
@@ -190,8 +152,9 @@ export default function PluginDetailView({
   }
 
   // 主题免安装试用状态
-  const [isThemeApplied, setIsThemeApplied] = useState(false)
   const [inTryout, setInTryout] = useState(false)
+  // 值由 loadDetail 异步回填；拆分后仅剩写入方（读取方随 hero 区迁出后已无人消费）
+  const [, setIsThemeApplied] = useState(false)
   const [studioModalOpen, setStudioModalOpen] = useState(false)
 
   useEffect(() => {
@@ -427,11 +390,6 @@ export default function PluginDetailView({
 
   const manifest = plugin.manifest
   const payload = manifest.payload
-  const hasUpgrade = Boolean(
-    plugin.installed &&
-    plugin.installedVersion &&
-    comparePluginVersions(plugin.version, plugin.installedVersion) > 0
-  )
 
   return (
     <Container as="main" id="main-content">
@@ -979,835 +937,41 @@ export default function PluginDetailView({
           </div>
 
           {/* 选项卡 1：内容明细与预览 */}
-          {activeTab === 'preview' && (
-            <div
-              role="tabpanel"
-              id="plugin-tabpanel-preview"
-              aria-labelledby="plugin-tab-preview"
-              className="space-y-6"
-            >
-              {/* site-pack 网址包明细展示 */}
-              {plugin.kind === 'site-pack' && payload?.sites && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      <Globe className="w-4 h-4 text-sky-500" />
-                      <span>包含站点列表 ({payload.sites.length})</span>
-                    </h3>
-                    <span className="text-xs text-muted-foreground">
-                      包含 {payload.categories?.length ?? 0} 个类目
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {payload.sites.map((site: any, idx: number) => (
-                      <div
-                        key={idx}
-                        className="rounded-xl border border-border/70 bg-card/60 p-3.5 space-y-2 hover:border-border transition-colors"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-xs text-foreground truncate">
-                            {site.title}
-                          </span>
-                          {site.category && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-muted text-muted-foreground shrink-0">
-                              {site.category}
-                            </span>
-                          )}
-                        </div>
-                        <a
-                          href={safeHref(site.url)}
-                          target="_blank"
-                          rel="noreferrer noopener"
-                          className="text-[11px] text-sky-600 dark:text-sky-400 hover:underline truncate block"
-                        >
-                          {site.url}
-                        </a>
-                        {site.description && (
-                          <p className="text-[11px] text-muted-foreground line-clamp-2">
-                            {site.description}
-                          </p>
-                        )}
-                        {site.tags && site.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 pt-1">
-                            {site.tags.map((t: string) => (
-                              <span
-                                key={t}
-                                className="text-[9px] px-1 py-0.5 rounded bg-muted/40 text-muted-foreground"
-                              >
-                                #{t}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* workspace-preset 看板预设明细展示 */}
-              {plugin.kind === 'workspace-preset' && payload?.boards && (
-                <div className="space-y-4">
-                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <LayoutGrid className="w-4 h-4 text-emerald-500" />
-                    <span>预设看板结构 ({payload.boards.length})</span>
-                  </h3>
-                  <div className="space-y-4">
-                    {payload.boards.map((b: any, bIdx: number) => (
-                      <div
-                        key={bIdx}
-                        className="rounded-2xl border border-border/70 bg-card/60 p-5 space-y-3"
-                      >
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-semibold text-xs text-foreground">{b.name}</h4>
-                          <span className="text-[11px] text-muted-foreground font-mono">
-                            {b.widgets?.length ?? 0} 个小组件
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                          {b.widgets?.map((w: any, wIdx: number) => (
-                            <div
-                              key={wIdx}
-                              className="rounded-xl border border-border/50 bg-background/60 p-2.5 text-xs space-y-1"
-                            >
-                              <div className="flex items-center justify-between text-muted-foreground">
-                                <span className="font-medium text-foreground">
-                                  {w.title || w.type}
-                                </span>
-                                <span className="font-mono text-[10px]">{w.type}</span>
-                              </div>
-                              <div className="text-[10px] text-muted-foreground">
-                                占用网格：{w.colSpan ?? 4} 列 × {w.rowSpan ?? 1} 行
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* theme 主题调色板展示 */}
-              {plugin.kind === 'theme' && payload && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      <Palette className="w-4 h-4 text-violet-500" />
-                      <span>主题色板与变量定义</span>
-                    </h3>
-                    {payload.accent && (
-                      <Badge variant="outline" className="text-xs">
-                        强调色系: {payload.accent}
-                      </Badge>
-                    )}
-                  </div>
-
-                  {payload.tokens && Object.keys(payload.tokens).length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                      {Object.entries(payload.tokens).map(([k, v]) => (
-                        <div
-                          key={k}
-                          className="rounded-xl border border-border/60 bg-card/60 p-3.5 space-y-2 flex items-center justify-between"
-                        >
-                          <div className="space-y-0.5">
-                            <span className="font-mono text-xs text-foreground block">{k}</span>
-                            <span className="font-mono text-[10px] text-muted-foreground block">
-                              hsl({String(v)})
-                            </span>
-                          </div>
-                          <div
-                            className="w-8 h-8 rounded-lg border border-border/80 shadow-2xs shrink-0"
-                            style={{ backgroundColor: `hsl(${String(v)})` }}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">未覆盖任何自定义色彩变量</p>
-                  )}
-                </div>
-              )}
-
-              {/* search-pack 搜索引擎配置展示 */}
-              {plugin.kind === 'search-pack' && payload?.engines && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      <Search className="w-4 h-4 text-sky-500" />
-                      <span>包含的快捷搜索引擎 ({payload.engines.length})</span>
-                    </h3>
-                    <span className="text-xs text-muted-foreground">在主搜索框键入前缀即可触发</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {payload.engines.map((eng: any) => (
-                      <div
-                        key={eng.prefix}
-                        className="p-4 rounded-xl border border-border/70 bg-card/60 space-y-2 hover:border-border transition-all"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            {eng.icon && (
-                              <img
-                                src={eng.icon}
-                                alt={eng.name}
-                                width={16}
-                                height={16}
-                                loading="lazy"
-                                decoding="async"
-                                className="w-4 h-4 rounded-xs shrink-0 object-contain"
-                                onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
-                              />
-                            )}
-                            <span className="text-sm font-semibold text-foreground truncate">
-                              {eng.name}
-                            </span>
-                          </div>
-                          <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-primary/10 text-primary shrink-0">
-                            {eng.prefix}
-                          </span>
-                        </div>
-                        {eng.description && (
-                          <p className="text-xs text-muted-foreground line-clamp-1">
-                            {eng.description}
-                          </p>
-                        )}
-                        <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2 text-xs">
-                          <code className="text-[11px] text-muted-foreground font-mono truncate max-w-[200px]">
-                            {eng.searchUrl}
-                          </code>
-                          <button
-                            type="button"
-                            onClick={() => safeWindowOpen(eng.searchUrl.replace('{q}', 'NavHub'))}
-                            className="text-xs text-primary hover:underline flex items-center gap-1 shrink-0 font-medium"
-                          >
-                            测试直达 <ExternalLink className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* bundle 组合包成员清单 */}
-              {plugin.kind === 'bundle' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                      <Boxes className="w-4 h-4 text-amber-500" />
-                      <span>
-                        组合包成员 ({summary?.bundleItemCount ?? plugin.bundleItems?.length ?? 0})
-                      </span>
-                    </h3>
-                    <span className="text-xs text-muted-foreground">一次安装，按清单顺序复用市场安装管道</span>
-                  </div>
-
-                  {plugin.bundleReady === false && (
-                    <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 flex items-start gap-2 text-xs text-destructive">
-                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                      <span>
-                        部分成员当前不可用（下架/隔离/删除或类型变更），组合包已暂停安装；卸载仅解除组合关系，不会级联移除成员。
-                      </span>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {(plugin.bundleItems ?? []).map((item) => {
-                      const MemberIcon = (KIND_ICONS as Record<string, typeof Boxes>)[item.kind] ?? Boxes
-                      const memberTone = (KIND_TONES as Record<string, string>)[item.kind] ?? ''
-                      const metric = item.summary
-                        ? item.kind === 'site-pack'
-                          ? `${item.summary.siteCount ?? 0} 个站点 · ${item.summary.categoryCount ?? 0} 个类目`
-                          : item.kind === 'search-pack'
-                            ? `${item.summary.engineCount ?? 0} 个搜索引擎`
-                            : `${item.summary.themeTokenCount ?? 0} 项主题变量`
-                        : null
-                      const body = (
-                        <>
-                          <div className="flex items-center justify-between gap-2 min-w-0">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {item.icon ? (
-                                <span className="text-lg shrink-0">{item.icon}</span>
-                              ) : (
-                                <MemberIcon className="w-4 h-4 shrink-0 text-muted-foreground" />
-                              )}
-                              <span className="text-sm font-semibold text-foreground truncate">
-                                {item.name ?? item.slug}
-                              </span>
-                            </div>
-                            <Badge variant="outline" className={cn('text-[10px] shrink-0', memberTone)}>
-                              {pluginKindLabel(item.kind as Parameters<typeof pluginKindLabel>[0])}
-                            </Badge>
-                          </div>
-                          {item.available ? (
-                            <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                              <span className="truncate">{metric}</span>
-                              <span className="font-mono shrink-0">v{item.version}</span>
-                            </div>
-                          ) : (
-                            <p className="text-[11px] text-destructive flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3 shrink-0" />
-                              <span>{item.reason ?? '当前不可用'}</span>
-                            </p>
-                          )}
-                        </>
-                      )
-                      return item.available ? (
-                        <Link
-                          key={item.slug}
-                          href={`/marketplace/${encodeURIComponent(item.slug)}`}
-                          className="p-4 rounded-xl border border-border/70 bg-card/60 space-y-2 hover:border-primary/40 hover:bg-card transition-all"
-                        >
-                          {body}
-                        </Link>
-                      ) : (
-                        <div
-                          key={item.slug}
-                          className="p-4 rounded-xl border border-destructive/30 bg-destructive/5 space-y-2"
-                        >
-                          {body}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 选项卡：版本变更对比 */}
-          {activeTab === 'diff' && (
-            <div
-              role="tabpanel"
-              id="plugin-tabpanel-diff"
-              aria-labelledby="plugin-tab-diff"
-              className="rounded-3xl border border-border/80 glass-surface p-6 sm:p-8 space-y-4 shadow-xs"
-            >
-              <div className="space-y-1">
-                <h3 className="text-base font-semibold text-foreground">版本升级变动明细</h3>
-                <p className="text-xs text-muted-foreground">
-                  详细比对已安装版本与市场最新版本的站点、分类、小组件及主题样式调整。
-                </p>
-              </div>
-              <PluginDiffView diff={plugin.upgradeDiff} />
-            </div>
-          )}
-
-          {/* 选项卡 2：影响评估 */}
-          {activeTab === 'impact' && (
-            <div
-              role="tabpanel"
-              id="plugin-tabpanel-impact"
-              aria-labelledby="plugin-tab-impact"
-              className="rounded-2xl border border-border/70 bg-card/60 p-6 space-y-4"
-            >
-              <h3 className="text-sm font-semibold text-foreground">安装影响评估</h3>
-              {plugin.kind === 'bundle' && bundleTotals ? (
-                <>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-                    <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
-                      <span className="text-xl font-bold text-foreground block font-mono">
-                        {summary?.bundleItemCount ?? plugin.bundleItems?.length ?? 0}
-                      </span>
-                      <span className="text-xs text-muted-foreground">成员插件</span>
-                    </div>
-                    <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
-                      <span className="text-xl font-bold text-foreground block font-mono">
-                        {bundleTotals.sites}
-                      </span>
-                      <span className="text-xs text-muted-foreground">新增站点（可用成员）</span>
-                    </div>
-                    <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
-                      <span className="text-xl font-bold text-foreground block font-mono">
-                        {bundleTotals.engines}
-                      </span>
-                      <span className="text-xs text-muted-foreground">直达引擎（可用成员）</span>
-                    </div>
-                    <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
-                      <span className="text-xl font-bold text-foreground block font-mono">
-                        {bundleTotals.tokens}
-                      </span>
-                      <span className="text-xs text-muted-foreground">主题变量（需手动启用）</span>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    组合包不包含可执行代码，也不做级联卸载：站点/搜索引擎按等价 URL 去重增量导入；主题类成员仅登记安装，
-                    请在「已安装」页显式启用。
-                  </p>
-                </>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
-                <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
-                  <span className="text-xl font-bold text-foreground block font-mono">
-                    {summary?.siteCount ?? 0}
-                  </span>
-                  <span className="text-xs text-muted-foreground">新增站点</span>
-                </div>
-                <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
-                  <span className="text-xl font-bold text-foreground block font-mono">
-                    {summary?.categoryCount ?? 0}
-                  </span>
-                  <span className="text-xs text-muted-foreground">新增分类</span>
-                </div>
-                <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
-                  <span className="text-xl font-bold text-foreground block font-mono">
-                    {summary?.boardCount ?? (plugin.kind === 'workspace-preset' ? (Array.isArray(payload?.boards) ? payload.boards.length : 0) : 0)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">看板数量</span>
-                </div>
-                <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
-                  <span className="text-xl font-bold text-foreground block font-mono">
-                    {summary?.themeTokenCount ?? (plugin.kind === 'theme' ? Object.keys(payload?.tokens || {}).length : 0)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">色彩变量</span>
-                </div>
-                <div className="p-4 rounded-xl bg-muted/40 border border-border/40">
-                  <span className="text-xl font-bold text-foreground block font-mono">
-                    {summary?.engineCount ?? (plugin.kind === 'search-pack' ? (payload?.engines?.length || 0) : 0)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">直达引擎</span>
-                </div>
-              </div>
-              )}
-
-              {summary?.enginePrefixes && summary.enginePrefixes.length > 0 && (
-                <div className="pt-2 space-y-1.5">
-                  <h4 className="text-xs font-medium text-foreground">包含的直达前缀：</h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {summary.enginePrefixes.map((p: string) => (
-                      <span
-                        key={p}
-                        className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-primary/10 text-primary"
-                      >
-                        {p}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {summary?.hosts && summary.hosts.length > 0 && (
-                <div className="pt-2 space-y-1.5">
-                  <h4 className="text-xs font-medium text-foreground">主要站点域名：</h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {summary.hosts.map((h: string) => (
-                      <span
-                        key={h}
-                        className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-muted/60 text-muted-foreground"
-                      >
-                        {h}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 选项卡 3：清单源码 */}
-          {activeTab === 'raw' && (
-            <div
-              role="tabpanel"
-              id="plugin-tabpanel-raw"
-              aria-labelledby="plugin-tab-raw"
-              className="relative rounded-2xl border border-border/70 bg-card/60 p-4 space-y-2"
-            >
-              <div className="flex items-center justify-between pb-2 border-b border-border/50">
-                <span className="text-xs font-mono text-muted-foreground">
-                  {plugin.slug}{PLUGIN_MANIFEST_FILE_SUFFIX}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCopyRaw}
-                  aria-label={
-                    rawCopy.copyFeedback.state === 'copied'
-                      ? '插件 JSON 已复制'
-                      : rawCopy.copyFeedback.state === 'failed'
-                        ? '插件 JSON 复制失败'
-                        : '复制插件 JSON'
-                  }
-                  title={
-                    rawCopy.copyFeedback.state === 'failed'
-                      ? `复制失败：${rawCopy.copyFeedback.reason}`
-                      : '复制插件 JSON'
-                  }
-                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-md border border-border/60 hover:bg-muted text-foreground transition-colors"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>
-                    {rawCopy.copyFeedback.state === 'copied'
-                      ? '已复制'
-                      : rawCopy.copyFeedback.state === 'failed'
-                        ? '复制失败'
-                        : '复制代码'}
-                  </span>
-                  <span role="status" className="sr-only">
-                    {rawCopy.copyFeedback.reason ?? ''}
-                  </span>
-                </button>
-              </div>
-              <pre className="text-xs font-mono text-foreground/90 overflow-x-auto p-2 leading-relaxed max-h-[500px]">
-                {JSON.stringify(plugin.manifest, null, 2)}
-              </pre>
-            </div>
-          )}
-
-          {/* 选项卡 4：版本演进时间轴 */}
-          {activeTab === 'history' && (
-            <div role="tabpanel" id="plugin-tabpanel-history" aria-labelledby="plugin-tab-history">
-              <PluginVersionTimeline slug={plugin.slug} currentVersion={plugin.version} />
-            </div>
-          )}
-
-          {/* 选项卡 5：真实用户评价 */}
-          {activeTab === 'reviews' && (
-            <div role="tabpanel" id="plugin-tabpanel-reviews" aria-labelledby="plugin-tab-reviews">
-            <PluginReviewSection
-              slug={plugin.slug}
-              isInstalled={Boolean(plugin.installed)}
-              installedVersion={plugin.installedVersion}
-              initialReviews={
-                plugin.reviewStats
-                  ? {
-                      slug: plugin.slug,
-                      stats: plugin.reviewStats,
-                      myReview: plugin.myReview ?? null,
-                      items: [],
-                      total: plugin.reviewStats.reviewCount,
-                      limit: 20,
-                      offset: 0,
-                    }
-                  : null
-              }
-            />
-            </div>
-          )}
+        <DetailTabPanels
+          activeTab={activeTab}
+          plugin={plugin!}
+          summary={summary}
+          bundleTotals={bundleTotals}
+          payload={payload}
+          rawCopy={rawCopy}
+          handleCopyRaw={handleCopyRaw}
+        />
         </div>
 
         {/* 相似插件（语义近邻；语义未就绪时不渲染） */}
         <PluginSimilar slug={plugin.slug} />
 
-        {/* 安装 / 卸载确认弹窗 */}
-        <PluginInstallModal
-          plugin={plugin}
+        <DetailModals
+          plugin={plugin!}
           identity={identity}
-          mode={modalMode}
-          open={installModalOpen}
-          onOpenChange={setInstallModalOpen}
-          onSuccess={() => {
-            void loadDetail()
-          }}
-          onApplyPreset={(preset, mode) => {
-            // 详情页这里必须自己报台账：安装发生在这一页，/custom 画布的浮层用户看不到。
-            // 以前忽略返回值，等于无论模块有没有下线都当「装好了」。
-            void (async () => {
-              const { installWidgetPresetDirect } = await import('@/lib/modular/install-preset-direct')
-              const { report, persisted } = await installWidgetPresetDirect(preset, mode)
-              const notice = formatLayoutReport(report, `工作台预设「${plugin.name}」`)
-              if (report.ok && !persisted) {
-                toast.warning(`${notice.text}，但看板没能保存到本地`, {
-                  description: '浏览器存储不可用，请在允许本地存储的环境重试',
-                })
-              } else if (notice.tone === 'warn') {
-                toast.warning(notice.text)
-              } else {
-                toast.success(notice.text, { description: '到模块化工作台即可看到新看板' })
-              }
-            })()
-          }}
+          loading={loading}
+          manifest={manifest}
+          modalMode={modalMode}
+          installModalOpen={installModalOpen}
+          setInstallModalOpen={setInstallModalOpen}
+          reportModalOpen={reportModalOpen}
+          setReportModalOpen={setReportModalOpen}
+          badgeModalOpen={badgeModalOpen}
+          setBadgeModalOpen={setBadgeModalOpen}
+          badgeMetric={badgeMetric}
+          setBadgeMetric={setBadgeMetric}
+          auditModalOpen={auditModalOpen}
+          setAuditModalOpen={setAuditModalOpen}
+          auditReport={auditReport}
+          studioModalOpen={studioModalOpen}
+          setStudioModalOpen={setStudioModalOpen}
+          loadDetail={() => void loadDetail()}
         />
-
-        {/* 违规举报弹窗 */}
-        <PluginReportModal
-          slug={plugin.slug}
-          pluginName={plugin.name}
-          open={reportModalOpen}
-          onOpenChange={setReportModalOpen}
-        />
-
-        {/* 动态 SVG 徽章获取弹窗 */}
-        <Dialog open={badgeModalOpen} onOpenChange={setBadgeModalOpen}>
-          <DialogContent className="w-full max-w-lg p-6 space-y-5">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-base">
-                  <Award className="w-5 h-5 text-primary" />
-                  获取开源动态徽章 (Badge)
-                </DialogTitle>
-                <DialogDescription className="text-xs leading-relaxed">
-                  实时展示插件版本、累计安装量或评分。可直接嵌入 GitHub README、个人博客或文档中，支持矢量高清自适应。
-                </DialogDescription>
-              </DialogHeader>
-
-              {/* 指标切换 */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-muted-foreground">指标维度：</span>
-                {(
-                  [
-                    { key: 'version', label: '当前版本' },
-                    { key: 'installs', label: '累计安装量' },
-                    { key: 'stars', label: '星标计数' },
-                    { key: 'rating', label: '综合评分' },
-                  ] as const
-                ).map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setBadgeMetric(tab.key)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                      badgeMetric === tab.key
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted/60 text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* 实时预览 */}
-              <div className="p-4 rounded-xl border border-border/60 bg-muted/20 flex flex-col items-center justify-center gap-2">
-                <span className="text-xs text-muted-foreground">实时矢量预览：</span>
-                <img
-                  src={`/api/plugins/${encodeURIComponent(plugin.slug)}/badge.svg?metric=${badgeMetric}`}
-                  alt={`${plugin.name} badge`}
-                  width={160}
-                  height={20}
-                  loading="lazy"
-                  decoding="async"
-                  className="h-5 w-40 max-w-full object-contain"
-                />
-              </div>
-
-              {/* 代码片段复制 */}
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-foreground">Markdown 代码</span>
-                    <button
-                      type="button"
-                      aria-label="复制 Markdown 徽章代码"
-                      onClick={async () => {
-                        const origin = typeof window !== 'undefined' ? window.location.origin : ''
-                        const md = `[![NavHub Plugin](${origin}/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](${origin}/marketplace/${plugin.slug})`
-                        const result = await copyText(md)
-                        mdCopy.reportCopy(result)
-                        if (result.ok) toast.success('已复制 Markdown 徽章代码')
-                        else {
-                          const failure = copyFailureToast(result)
-                          toast.error(failure.title, { description: failure.description })
-                        }
-                      }}
-                      className="text-primary hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <Copy className="w-3 h-3" />
-                      {mdCopy.copyFeedback.state === 'copied'
-                        ? '已复制'
-                        : mdCopy.copyFeedback.state === 'failed'
-                          ? '复制失败'
-                          : '复制'}
-                    </button>
-                  </div>
-                  <pre className="p-2.5 rounded-lg bg-muted text-[11px] font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all">
-                    {`[![NavHub Plugin](https://.../api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](...)`}
-                  </pre>
-                  {mdCopy.copyFeedback.state === 'failed' && mdCopy.copyFeedback.reason ? (
-                    <p role="status" className="text-[11px] text-destructive">
-                      {mdCopy.copyFeedback.reason}，请手动选中代码复制
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-foreground">直接 SVG 地址</span>
-                    <button
-                      type="button"
-                      aria-label="复制 SVG 徽章地址"
-                      onClick={async () => {
-                        const origin = typeof window !== 'undefined' ? window.location.origin : ''
-                        const result = await copyText(
-                          `${origin}/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric}`,
-                        )
-                        svgCopy.reportCopy(result)
-                        if (result.ok) toast.success('已复制 SVG 链接')
-                        else {
-                          const failure = copyFailureToast(result)
-                          toast.error(failure.title, { description: failure.description })
-                        }
-                      }}
-                      className="text-primary hover:underline flex items-center gap-1 cursor-pointer"
-                    >
-                      <Copy className="w-3 h-3" />
-                      {svgCopy.copyFeedback.state === 'copied'
-                        ? '已复制'
-                        : svgCopy.copyFeedback.state === 'failed'
-                          ? '复制失败'
-                          : '复制'}
-                    </button>
-                  </div>
-                  <pre className="p-2.5 rounded-lg bg-muted text-[11px] font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all">
-                    {`/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric}`}
-                  </pre>
-                  {svgCopy.copyFeedback.state === 'failed' && svgCopy.copyFeedback.reason ? (
-                    <p role="status" className="text-[11px] text-destructive">
-                      {svgCopy.copyFeedback.reason}，请手动选中地址复制
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-2">
-                <Button size="sm" onClick={() => setBadgeModalOpen(false)}>
-                  完成
-                </Button>
-              </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* 全自动代码沙盒安全审计弹窗 */}
-        <Dialog open={auditModalOpen} onOpenChange={setAuditModalOpen}>
-          <DialogContent className="max-w-md p-5 glass-surface border-border/80 shadow-2xl rounded-2xl">
-            <DialogHeader className="space-y-1 pb-2 border-b border-border/50">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <div>
-                  <DialogTitle className="text-base font-bold">全自动代码沙盒安全体检报告</DialogTitle>
-                  <DialogDescription className="text-xs text-muted-foreground">
-                    由 NavHub 全自动静态代码与外链沙盒审计引擎实时生成
-                  </DialogDescription>
-                </div>
-              </div>
-            </DialogHeader>
-
-            {auditReport ? (
-              <div className="py-2 space-y-3">
-                <div className="flex items-center justify-between p-3 rounded-xl bg-muted/40 border border-border/60">
-                  <div>
-                    <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5 flex-wrap">
-                      <span>综合质量与安全评分</span>
-                      {auditReport.decision === 'approve' && (
-                        <Badge variant="outline" className="text-[10px] bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-                          AI 严审通过
-                        </Badge>
-                      )}
-                      {auditReport.decision === 'pending_review' && (
-                        <Badge variant="outline" className="text-[10px] bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/30">
-                          待人工复核
-                        </Badge>
-                      )}
-                      {auditReport.decision === 'reject' && (
-                        <Badge variant="outline" className="text-[10px] bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-500/30">
-                          审理未通过
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 font-mono">
-                      {auditReport.score} <span className="text-xs font-normal text-muted-foreground">/ 100 分</span>
-                    </div>
-                    {/* 分数口径必须说：没跑模型审理时这个分数只覆盖静态清单（+探活），不是「全维度体检」 */}
-                    {auditReport.scoreBasis && auditReport.scoreBasis !== 'full' && (
-                      <div className="text-[10px] text-muted-foreground mt-0.5">
-                        {auditReport.scoreBasis === 'static_plus_probe'
-                          ? '口径：静态沙箱 + 外链探活（AI 合规维度本次未审）'
-                          : '口径：仅静态清单（未做 AI 审理与外链探活）'}
-                      </div>
-                    )}
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      'text-xs font-semibold px-2.5 py-1',
-                      auditReport.level === 'safe'
-                        ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30'
-                        : 'bg-amber-500/10 text-amber-600 border-amber-500/30'
-                    )}
-                  >
-                    {auditReport.level === 'safe' ? '安全等级：优良 (Safe)' : '安全等级：关注 (Notice)'}
-                  </Badge>
-                </div>
-
-                {auditReport.reviewSkipped && (
-                  <div role="status" aria-live="polite" className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
-                    <span>
-                      {auditReport.reviewSkipped === 'quota'
-                        ? `AI 审理本次因额度用尽跳过${auditReport.quota ? `（${auditReport.quota.metric} ${auditReport.quota.used}/${auditReport.quota.limit}，约 ${Math.max(1, Math.ceil(auditReport.quota.retryAfterSeconds / 3600))} 小时后恢复）` : ''}，未产生模型结论。`
-                        : auditReport.reviewSkipped === 'unconfigured'
-                          ? '管理端尚未配置可用模型密钥，本条报告没有 AI 合规与相关性结论。'
-                          : auditReport.reviewSkipped === 'not_audited'
-                            ? '这份报告只包含安装时的静态清单检查，尚无 AI 审理记录。'
-                            : 'AI 审理本次调用失败，未产生模型结论；下方合规与相关性两项是空值，不是低分。'}
-                    </span>
-                  </div>
-                )}
-
-                {auditReport.aiRationale && (
-                  <div className="p-3 rounded-xl bg-primary/5 border border-primary/20 text-xs space-y-1">
-                    <div className="text-[11px] font-semibold text-primary flex items-center gap-1">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>{auditReport.llmReviewed ? 'AI 审查委员会审理意见：' : '本次审理说明（无模型结论）：'}</span>
-                    </div>
-                    <p className="text-muted-foreground leading-relaxed text-[11px]">
-                      {auditReport.aiRationale}
-                    </p>
-                  </div>
-                )}
-
-                {auditReport.dimensionScores && (
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <AuditDimensionTile label="静态安全沙箱" value={auditReport.dimensionScores.security} />
-                    <AuditDimensionTile label="外链探活可用率" value={auditReport.dimensionScores.availability} />
-                    <AuditDimensionTile label="AI 合规反欺诈" value={auditReport.dimensionScores.compliance} />
-                    <AuditDimensionTile label="语义相关性" value={auditReport.dimensionScores.relevance} />
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold text-muted-foreground">全链路扫描体检项：</div>
-                  {auditReport.checks.map((c, i) => (
-                    <div key={i} className="p-2.5 rounded-lg border border-border/40 bg-card/60 text-xs flex items-start gap-2.5">
-                      {c.skipped ? (
-                        <Minus className="w-4 h-4 text-muted-foreground/60 shrink-0 mt-0.5" />
-                      ) : c.passed ? (
-                        <Check className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                      ) : (
-                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                      )}
-                      <div className="min-w-0">
-                        <div className="font-medium text-foreground">{c.name}</div>
-                        <div className="text-[11px] text-muted-foreground leading-relaxed mt-0.5">{c.detail}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="text-[10px] text-muted-foreground/70 text-center pt-1">
-                  体检时间：{new Date(auditReport.auditedAt).toLocaleString()} · SHA-256 签名无害化校验
-                </div>
-              </div>
-            ) : (
-              <div className="py-6 text-center text-xs text-muted-foreground">加载安全报告中...</div>
-            )}
-          </DialogContent>
-        </Dialog>
-
-        {studioModalOpen && plugin && (
-          <AiPluginStudioModal
-            open={studioModalOpen}
-            onOpenChange={setStudioModalOpen}
-            initialManifest={plugin.manifest}
-            initialSlug={plugin.slug}
-            onPublished={() => {
-              setStudioModalOpen(false)
-              void loadDetail()
-            }}
-          />
-        )}
 
         {/* 底部导航 */}
         <Footer />

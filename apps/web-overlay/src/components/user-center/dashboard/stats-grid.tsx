@@ -41,7 +41,7 @@ export function StatsGrid({ counts }: { counts: Overview['counts'] }) {
             key={item.key}
             href={item.href}
             // 7 项计数在 2 列布局下最后一项会落单：让末项横跨两列填满整行
-            className={`group flex flex-col justify-between gap-3.5 rounded-2xl border border-border/70 bg-card/60 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${index === STAT_ITEMS.length - 1 ? 'col-span-2 md:col-span-3' : ''}`}
+            className={`group flex flex-col justify-between gap-3.5 rounded-2xl border border-border/70 bg-card/60 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-md dark:hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${index === STAT_ITEMS.length - 1 ? 'col-span-2 md:col-span-3' : ''}`}
           >
             <div className="flex items-start justify-between gap-2">
               <span className="flex min-w-0 items-center gap-2.5">

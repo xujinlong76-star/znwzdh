@@ -19,7 +19,29 @@ import {
   type UserSettingsModel,
   type UserSettingsPatch,
 } from '@/lib/user-settings'
-import { Settings2, Zap } from 'lucide-react'
+import { Settings2, Zap, ChevronDown } from 'lucide-react'
+import type { ComponentProps } from 'react'
+
+/**
+ * 原生 select 的轻量皮肤：保留原生语义与键盘行为，仅统一为设计语言
+ * （appearance-none + 自绘箭头 + focus ring）。原生灰盒控件在整套
+ * 圆角卡片风格里会显得像漏网之鱼。
+ */
+function SettingsSelect({ className, label, ...rest }: ComponentProps<'select'> & { label: string }) {
+  return (
+    <span className="relative block">
+      <select
+        {...rest}
+        aria-label={label}
+        className={`h-9 w-full appearance-none rounded-lg border border-border bg-background pl-2.5 pr-8 text-sm text-foreground shadow-xs transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60 ${className ?? ''}`}
+      />
+      <ChevronDown
+        className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+        aria-hidden
+      />
+    </span>
+  )
+}
 
 interface SettingsPanelProps {
   value: UserSettingsModel
@@ -84,7 +106,7 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
             修改后立即保存并回读校验；登录状态下跨设备生效
           </p>
         </div>
-        <Button variant="outline" size="sm" className="text-xs" disabled={busy} onClick={onRestoreDefaults}>
+        <Button variant="outline" size="sm" className="shrink-0 text-xs" disabled={busy} onClick={onRestoreDefaults}>
           恢复默认偏好
         </Button>
       </div>
@@ -94,21 +116,21 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
           <label htmlFor={`${idPrefix}-default-search-engine`} className="block text-xs font-medium text-foreground">
             默认搜索引擎
           </label>
-          <select
+          <SettingsSelect
             id={`${idPrefix}-default-search-engine`}
+            label="默认搜索引擎"
             value={value.defaultSearchEngine}
             disabled={busy}
             onChange={(e) =>
               onChange({ defaultSearchEngine: e.target.value as SearchEngineId }, '默认搜索引擎已更新')
             }
-            className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs"
           >
             {SEARCH_ENGINE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
-          </select>
+          </SettingsSelect>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             {value.defaultSearchEngine === 'internal'
               ? '站内检索没命中时不再自动跳转站外，只给重试与分类入口。'
@@ -120,19 +142,19 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
           <label htmlFor={`${idPrefix}-card-density`} className="block text-xs font-medium text-foreground">
             导航卡片展示密度
           </label>
-          <select
+          <SettingsSelect
             id={`${idPrefix}-card-density`}
+            label="导航卡片展示密度"
             value={value.cardDensity}
             disabled={busy}
             onChange={(e) => onChange({ cardDensity: e.target.value as CardDensityMode }, '卡片展示密度已更新')}
-            className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs"
           >
             {CARD_DENSITY_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
-          </select>
+          </SettingsSelect>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             与首页右上角的密度切换按钮是同一份设置，改一处两处同步。
           </p>
@@ -142,21 +164,21 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
           <label htmlFor={`${idPrefix}-spotlight-shortcut`} className="block text-xs font-medium text-foreground">
             全局搜索唤醒快捷键
           </label>
-          <select
+          <SettingsSelect
             id={`${idPrefix}-spotlight-shortcut`}
+            label="全局搜索唤醒快捷键"
             value={value.spotlightShortcut}
             disabled={busy}
             onChange={(e) =>
               onChange({ spotlightShortcut: e.target.value as SpotlightShortcutMode }, '搜索快捷键偏好已更新')
             }
-            className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs"
           >
             {SPOTLIGHT_SHORTCUT_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
-          </select>
+          </SettingsSelect>
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             输入框里打「/」永远是正文，只有从非输入态按下才算呼出。
           </p>
@@ -166,21 +188,21 @@ export function SettingsPanel({ value, busy, idPrefix, onChange, onRestoreDefaul
           <label htmlFor={`${idPrefix}-history-retention`} className="block text-xs font-medium text-foreground">
             搜索历史保留周期
           </label>
-          <select
+          <SettingsSelect
             id={`${idPrefix}-history-retention`}
+            label="搜索历史保留周期"
             value={value.historyRetentionDays}
             disabled={busy}
             onChange={(e) =>
               onChange({ historyRetentionDays: Number(e.target.value) as HistoryRetentionDays }, '历史保留周期已更新')
             }
-            className="h-9 w-full rounded-lg border border-border bg-background px-2.5 text-xs"
           >
             {RETENTION_DAY_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
             ))}
-          </select>
+          </SettingsSelect>
         </div>
       </div>
 

@@ -58,7 +58,7 @@ export function EntryGroups() {
                 <li key={href}>
                   <Link
                     href={href}
-                    className="group flex items-center justify-between gap-2.5 rounded-xl border border-border/60 bg-background/50 px-2.5 py-2 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="group flex items-center justify-between gap-2.5 rounded-xl border border-border/60 bg-background/50 px-2.5 py-2 text-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-sm dark:hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <span className="flex min-w-0 items-center gap-2.5">
                       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">

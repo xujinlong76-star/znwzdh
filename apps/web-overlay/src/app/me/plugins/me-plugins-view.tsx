@@ -20,13 +20,24 @@ export function MePluginsView() {
   const { state, overview, error, reload } = useMeOverview()
 
   const counts = overview?.counts
-  const cards = [
+  // 卡片语言与概览统计卡一致：专属色相芯片 + 悬浮微抬升；投稿是行动入口而非计数，
+  // 用 cta 文案占住数字位，避免四张卡出现“缺一角”的节奏断层
+  const cards: Array<{
+    href: string
+    title: string
+    hint: string
+    icon: typeof PackageCheck
+    count: number | undefined
+    chip: string
+    cta?: string
+  }> = [
     {
       href: '/marketplace/installed',
       title: '已安装插件',
       hint: '主题、搜索包、网址包；升级与卸载',
       icon: PackageCheck,
       count: counts?.activePluginInstalls,
+      chip: 'bg-violet-500/10 text-violet-700 dark:text-violet-300',
     },
     {
       href: '/marketplace/mine',
@@ -34,6 +45,7 @@ export function MePluginsView() {
       hint: '版本、审核状态与更新',
       icon: Sparkles,
       count: counts?.authoredPlugins,
+      chip: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
     },
     {
       href: '/marketplace',
@@ -41,6 +53,7 @@ export function MePluginsView() {
       hint: '在插件市场里查看已星标内容',
       icon: Star,
       count: counts?.pluginStars,
+      chip: 'bg-amber-500/10 text-amber-700 dark:text-amber-300',
     },
     {
       href: '/submit',
@@ -48,8 +61,10 @@ export function MePluginsView() {
       hint: '提交后进入审核队列',
       icon: Send,
       count: undefined,
+      chip: 'bg-sky-500/10 text-sky-700 dark:text-sky-300',
+      cta: '立即投稿',
     },
-  ] as const
+  ]
 
   return (
     <Container as="main" id="main-content" className="space-y-5 pb-8 pt-3 sm:space-y-6 sm:pb-10 sm:pt-4">
@@ -88,25 +103,32 @@ export function MePluginsView() {
           )}
 
           <section aria-label="插件入口" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {cards.map(({ href, title, hint, icon: Icon, count }) => (
+            {cards.map(({ href, title, hint, icon: Icon, count, chip, ...rest }) => (
               <Link
                 key={href}
                 href={href}
-                className="group flex flex-col justify-between gap-3 rounded-2xl border border-border/70 bg-card/60 p-4 transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5"
+                className="group flex flex-col justify-between gap-3 rounded-2xl border border-border/70 bg-card/60 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:shadow-md dark:hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
-                    <Icon className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                    <span className="truncate">{title}</span>
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${chip}`}>
+                      <Icon className="h-4 w-4" aria-hidden />
+                    </span>
+                    <span className="truncate text-sm font-medium">{title}</span>
                   </span>
                   <ArrowRight
-                    className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+                    className="h-4 w-4 shrink-0 text-border transition-all group-hover:translate-x-0.5 group-hover:text-primary"
                     aria-hidden
                   />
                 </div>
                 <p className="text-[11px] leading-relaxed text-muted-foreground">{hint}</p>
-                {typeof count === 'number' && (
+                {typeof count === 'number' ? (
                   <p className="text-2xl font-semibold leading-none tracking-tight tabular-nums">{count}</p>
+                ) : (
+                  <p className="text-xs font-medium text-primary">
+                    {rest.cta}
+                    <span aria-hidden className="ml-1 inline-block transition-transform group-hover:translate-x-0.5">→</span>
+                  </p>
                 )}
               </Link>
             ))}

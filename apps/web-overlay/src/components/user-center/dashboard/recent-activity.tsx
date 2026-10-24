@@ -63,7 +63,7 @@ export function RecentActivity({ items }: { items: ActivityItem[] }) {
                 className={
                   index === 0
                     ? 'absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-primary ring-4 ring-primary/15'
-                    : 'absolute -left-[17.5px] top-2 h-1.5 w-1.5 rounded-full bg-border'
+                    : 'absolute -left-[17.5px] top-2 h-1.5 w-1.5 rounded-full bg-border dark:bg-muted-foreground/45'
                 }
               />
               <div className="min-w-0">

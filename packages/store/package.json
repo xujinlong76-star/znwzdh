@@ -24,10 +24,10 @@
   },
   "devDependencies": {
     "eslint": "10.13.0",
-    "typescript-eslint": "8.71.2",
+    "typescript-eslint": "8.72.0",
     "drizzle-kit": "0.31.11",
-    "@types/better-sqlite3": "7.6.13",
-    "@types/pg": "8.15.5",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/pg": "8.23.1",
     "typescript": "5.9.3"
   }
 }

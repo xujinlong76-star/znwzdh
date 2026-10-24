@@ -273,7 +273,14 @@ export const ClusterSitesInput = z.object({
 });
 
 export const SyncCrdtOperationsInput = z.object({
-  userId: z.string().describe("用户身份 ID (如 anon_xxx 或 user_xxx)"),
+  userId: z.string().optional().describe(
+    "已废弃：服务端只按令牌归属人（api_tokens.owner_identity）落库，不接受调用方自称的身份；" +
+    "传了且不匹配会被明确拒绝，不再静默写入他人命名空间",
+  ),
+  expectedVersion: z.number().int().min(0).optional().describe(
+    "可选：客户端最后看到的云端版本号。带上时只做一次带前置条件的写入，冲突即返回 current 版本；" +
+    "省略时服务端按刚读到的版本合流并在并发冲突时重试"
+  ),
   operations: z.array(z.object({
     id: z.string(),
     type: z.enum([

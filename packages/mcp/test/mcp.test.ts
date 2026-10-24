@@ -24,6 +24,12 @@ const READONLY: ToolContext = {
   actor: "mcp:readonly", scopes: ["read"],
   has: (s: McpScope) => s === "read",
 };
+/** 个人令牌（带归属人）：CRDT 同步这类个人数据写工具只认这个身份 */
+const CRDT_OWNER: ToolContext = {
+  actor: "mcp:crdt-owner", scopes: ["read", "write"],
+  has: (s: McpScope) => s === "read" || s === "write",
+  ownerIdentity: "mcp_crdt_user",
+};
 
 function text(res: { content: Array<{ text: string }> }): string {
   return res.content.map((c) => c.text).join("");
@@ -481,7 +487,7 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
       ],
     }, READONLY)).rejects.toThrow();
 
-    // 2. 具备写权限调用
+    // 2. 具备写权限调用：落库键必须是令牌归属人，不能再由入参 userId 决定
     const res = await handlers.sync_crdt_operations({
       userId: "mcp_crdt_user",
       operations: [
@@ -502,13 +508,87 @@ describe("次世代 Agentic 工具：架构配方与选型对比", () => {
           clientId: "mcp_client",
         },
       ],
-    }, FULL);
+    }, CRDT_OWNER);
 
     const body = payload(res);
     expect(body.merged).toBe(true);
+    expect(body.owner).toBe("mcp_crdt_user");
     expect(body.clientCount).toBe(2);
     expect(body.state.pinnedCategoryIds).toContain("cat_fe");
     expect(body.state.customCategories[0].title).toBe("跨端移动开发");
+
+    // 3. 跨身份：令牌归属人 ≠ 入参 userId ⇒ 明确拒绝，且不碰别人的行
+    const crossRes = await handlers.sync_crdt_operations({
+      userId: "mcp_someone_else",
+      operations: [
+        {
+          id: "op_mcp_3",
+          type: "SET_CATEGORY_PIN",
+          entityId: "cat_other",
+          payload: { isPinned: true },
+          timestamp: 3000,
+          clientId: "mcp_client",
+        },
+      ],
+    }, CRDT_OWNER);
+    const crossBody = payload(crossRes);
+    expect(crossBody.merged).toBe(false);
+    expect(crossBody.rejected).toBe("identity-mismatch");
+    expect(crossBody.hint).toContain("令牌归属人");
+    const otherVault = await ctx.repo.getUserVault("crdt:mcp_someone_else");
+    expect(otherVault).toBeNull();
+
+    // 4. 实例级 / 静态引导令牌（无 ownerIdentity）：拒绝，不允许写任何人的排版
+    await expect(handlers.sync_crdt_operations({
+      operations: [
+        {
+          id: "op_mcp_4",
+          type: "SET_CATEGORY_PIN",
+          entityId: "cat_fe",
+          payload: { isPinned: true },
+          timestamp: 4000,
+          clientId: "mcp_client",
+        },
+      ],
+    }, FULL)).rejects.toThrow(/用户级个人令牌/);
+
+    // 5. 带 expectedVersion 且云端已更新 ⇒ 冲突返回现状，绝不覆盖
+    const stale = payload(await handlers.sync_crdt_operations({
+      expectedVersion: 999,
+      operations: [
+        {
+          id: "op_mcp_5",
+          type: "SET_CATEGORY_PIN",
+          entityId: "cat_late",
+          payload: { isPinned: true },
+          timestamp: 5000,
+          clientId: "mcp_client",
+        },
+      ],
+    }, CRDT_OWNER));
+    expect(stale.merged).toBe(false);
+    expect(stale.conflict).toBe(true);
+    expect(typeof stale.currentVersion).toBe("number");
+    // 冲突那一次必须一个字节都没写进去：日志里没有 op_mcp_5，版本也没被推进
+    const vaultAfterConflict = await ctx.repo.getUserVault("crdt:mcp_crdt_user");
+    expect(vaultAfterConflict?.payload).not.toContain("op_mcp_5");
+    expect(vaultAfterConflict?.version).toBe(stale.currentVersion);
+
+    const afterConflict = payload(await handlers.sync_crdt_operations({
+      operations: [
+        {
+          id: "op_mcp_6",
+          type: "SET_CATEGORY_PIN",
+          entityId: "cat_late",
+          payload: { isPinned: true },
+          timestamp: 6000,
+          clientId: "mcp_client",
+        },
+      ],
+    }, CRDT_OWNER));
+    expect(afterConflict.merged).toBe(true);
+    expect(afterConflict.version).toBe(stale.currentVersion + 1);
+    expect(afterConflict.state.pinnedCategoryIds).toContain("cat_late");
   });
 
   it("evaluate_developer_intent 秒级解析开发者输入语义意图", async () => {

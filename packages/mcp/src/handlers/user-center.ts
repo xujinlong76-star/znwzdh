@@ -15,20 +15,13 @@ import {
   requireScope,
   type ToolContext,
 } from "../tools.ts";
-import { ok, type HandlerDeps } from "./shared.ts";
-
-function requireOwner(tc: ToolContext): string {
-  if (!tc.ownerIdentity) {
-    throw new Error("此工具要求用户级个人令牌（api_tokens.owner_identity）；实例级令牌无法读取个人数据");
-  }
-  return tc.ownerIdentity;
-}
+import { ok, requireOwnerIdentity, type HandlerDeps } from "./shared.ts";
 
 export const userCenterHandlers = {
   async list_favorites(deps: HandlerDeps, args: unknown, tc: ToolContext) {
     const { ctx } = deps;
     requireScope(tc, "read");
-    const owner = requireOwner(tc);
+    const owner = requireOwnerIdentity(tc);
     const input = ListFavoritesInput.parse(args ?? {});
     // 收藏量级（人均几十到几百）取全量后在内存过滤分页；上库分页留给量级真到的那天
     const all = await ctx.repo.listFavorites(owner);
@@ -45,7 +38,7 @@ export const userCenterHandlers = {
   async list_search_history(deps: HandlerDeps, args: unknown, tc: ToolContext) {
     const { ctx } = deps;
     requireScope(tc, "read");
-    const owner = requireOwner(tc);
+    const owner = requireOwnerIdentity(tc);
     const input = ListSearchHistoryInput.parse(args ?? {});
     const page = await ctx.repo.listSearchHistoryPage(owner, input.limit, input.offset);
     return ok({ owner, hasMore: page.hasMore, items: page.items });
@@ -54,7 +47,7 @@ export const userCenterHandlers = {
   async get_profile_summary(deps: HandlerDeps, args: unknown, tc: ToolContext) {
     const { ctx } = deps;
     requireScope(tc, "read");
-    const owner = requireOwner(tc);
+    const owner = requireOwnerIdentity(tc);
     GetProfileSummaryInput.parse(args ?? {});
     const profile = await ctx.repo.getUserProfile(owner);
     if (!profile) {

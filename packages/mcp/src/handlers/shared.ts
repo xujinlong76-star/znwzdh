@@ -42,6 +42,20 @@ export interface HandlerDeps {
   indexSite: (id: string, title: string, description: string | null, url: string) => Promise<void>;
 }
 
+/**
+ * 个人数据工具的归属校验：数据范围 = 令牌归属人（tc.ownerIdentity），不是调用方传参。
+ *
+ * 为什么单列：只要还有一个 handler 用入参当身份，「持 write 令牌即可改写任意人
+ * 的个人数据」就是全仓的通用漏洞，而不是某个工具的单点问题。
+ * 实例级 / 静态引导令牌（ownerIdentity 为 null）一律拒绝——它们是给站点管理用的。
+ */
+export function requireOwnerIdentity(tc: ToolContext): string {
+  if (!tc.ownerIdentity) {
+    throw new Error("此工具要求用户级个人令牌（api_tokens.owner_identity）；实例级令牌无法读写个人数据");
+  }
+  return tc.ownerIdentity;
+}
+
 export function makeWithIdempotency(ctx: AppContext): HandlerDeps["withIdempotency"] {
   return async function withIdempotency(key, compute) {
     if (!key) return ok(await compute());

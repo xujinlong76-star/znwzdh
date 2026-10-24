@@ -382,6 +382,10 @@ if (forceUpdate || !site.name) {
 
 只想改 docs 却看到 `apps/api:12`，提交前就能发现。生成源是 `scripts/install-git-hooks.mjs`（hook 本体是生成物，改它没用）。
 
+**结构性限制（值得记下来）**：暂存集分布只能防「我的文件被别人带走」，防不了反过来的情况——hook 跑测试时**读的是工作区文件**，因此会跑到别人未提交的改动。本轮三次提交里，有两次的 hook 红灯来自并行会话的 WIP（`settings-panel.tsx` 的 `select`、`navigation-card.tsx` 的 `tabIndex` 与 `Link className`）。
+
+这不是 hook 的缺陷，而是「多会话共享工作区 + 测试读工作区」的必然结果。可靠的解法只有两个：在独立 worktree 里提交，或接受「红灯先归因、再决定是否跳过」。我选了后者，并在每次 `NAVHUB_SKIP_PRECOMMIT=1` 的 commit message 里写清红灯归属与已通过的自测项——**逃生口可以被使用，但不能被用来掩盖红灯**。
+
 ### E17 E2E 环境两处硬化
 
 - `playwright.config.ts` 的 webServer 等待上限改为可覆盖（`NAVHUB_E2E_SERVER_TIMEOUT`，默认仍 120 秒）。本机冷启动超过 120 秒时，原报错是「Timed out waiting 120000ms from config.webServer」，完全指不到「Web 其实已经 Ready」。`e2e-local.mjs` 默认给 300 秒。
@@ -405,6 +409,7 @@ if (forceUpdate || !site.name) {
 | 备份恢复异步化 | 未执行 | 目标是把「入队 + 轮询」替代「同步等待」，彻底消除 HTTP 超时面（现在只是把 30 秒放宽到 120 秒）。**阻塞原因**：`apps/api/src/routes/backup.ts` 正被并行会话修改（S3 恢复 `enabled` 缺陷），在其工作区提交前改动同一文件会污染对方提交。 |
 | 恢复丢失 `createdAt` | 未修（已记录） | 备份包带 `createdAt`，`insertSitesBulk` 未接（`created_at` 统一写恢复时刻）。影响「按创建时间排序」在恢复后失真。同属 `backup.ts`，与上一条同一阻塞。 |
 | `field-names` 红灯 | 已由并行会话修复 | 其 `fbccddf` 提交后 `field-names.test.ts` 7 例全绿，本项无需处理。 |
+| `navigation-card` 两条红灯 | 未修（属对方 WIP） | `card-tag-links`（Link 缺 `block`/含 `h-full`）与 `keyboard-activation`（缺 `tabIndex={0}` 证据）在 `navigation-card.tsx` 上，该文件是并行会话 20:39 的首页卡片性能改造 WIP，未同步到 `apps/web`。测试读 overlay 源故报红。 |
 
 > 两条「未本地验证」的改动（PG 4 例、E2E 4 例）都集中在 CI 侧。若 CI 报红，优先看这两处，而不是回滚业务改动。
 

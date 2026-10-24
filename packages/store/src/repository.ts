@@ -769,6 +769,11 @@ export class Repository {
   }
 
   /** 增量拉取收藏（含墓碑）+ 水位 */
+  /** 轻量水位查询（B3 多端一致性轮询） */
+  async getFavoritesVersion(userId: string): Promise<number> {
+    return favoritesRepo.getFavoritesVersion(this, userId);
+  }
+
   async listFavoritesSince(userId: string, since: number): Promise<favoritesRepo.FavoriteSyncSlice> {
     return favoritesRepo.listFavoritesSince(this, userId, since);
   }

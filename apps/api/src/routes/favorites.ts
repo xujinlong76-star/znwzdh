@@ -41,6 +41,25 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    * 身份先解析别名（canonical）：合并后旧 id 仍可能从扩展 / 旧标签页打进来，
    * 不解析就会读到"空收藏"并在旧 id 上写孤儿行。
    */
+  /**
+   * 收藏变更水位（B3 多端一致性轮询）：
+   * 只返回当前 MAX(updated_at)（与增量同步的 version 同一口径），不拉任何行。
+   * 供多标签页 / 扩展做低成本变更探测（1/5 成本的 SSE 替代，见升级方案 T18.3）；
+   * 写路径都会刷新 updated_at，因此水位不前进 = 云端无变化。
+   */
+  app.get(
+    "/api/favorites/version",
+    { config: { rateLimit: { max: 600, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const identity = requestIdentityOf(req as never);
+      if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
+      if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
+      const canonical = await resolveCanonicalIdentity(ctx, identity);
+      const version = await ctx.repo.getFavoritesVersion(canonical);
+      return { identity: canonical, version };
+    },
+  );
+
   app.get(
     "/api/favorites",
     { config: { rateLimit: { max: 240, timeWindow: "1 minute" } } },

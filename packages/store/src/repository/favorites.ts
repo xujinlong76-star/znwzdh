@@ -214,6 +214,16 @@ export async function listFavoritesSince(
   return { items, version };
 }
 
+/** 轻量水位查询（B3 多端一致性轮询）：只取 MAX(updated_at)，不拉行 */
+export async function getFavoritesVersion(repo: Repository, userId: string): Promise<number> {
+  const rows = await repo.raw(
+    "SELECT MAX(updated_at) AS v FROM favorites WHERE user_id = ?",
+    [userId],
+  );
+  const v = Number(rows[0]?.v ?? 0);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
+
 /** 当前同步水位：MAX(updated_at)；空表 / 时钟回拨时退回 since，游标不后退 */
 async function currentVersion(repo: Repository, userId: string, since: number): Promise<number> {
   const row = (await repo.raw(

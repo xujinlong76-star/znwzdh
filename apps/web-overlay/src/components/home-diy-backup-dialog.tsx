@@ -21,6 +21,7 @@ import {
   Copy,
   Download,
   Lock,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Unlock,
@@ -50,7 +51,12 @@ import { Textarea } from '@/registry/new-york/ui/textarea'
 import { useToast } from '@/components/ui/use-toast'
 import { copyFailureToast, copyText } from '@/lib/clipboard'
 import type { ShareLinkOutcome } from '@/lib/diy-share-link'
-import type { CloudVaultClearResult, HomeDiyImportResult } from '@/lib/modular/home-diy-io'
+import type {
+  CloudVaultClearResult,
+  CloudVaultConflictKind,
+  CloudVaultSyncResult,
+  HomeDiyImportResult,
+} from '@/lib/modular/home-diy-io'
 import { cn } from '@/lib/utils'
 
 export interface HomeDIYBackupDialogProps {
@@ -62,7 +68,7 @@ export interface HomeDIYBackupDialogProps {
   importDIYConfig: (json: string) => HomeDiyImportResult
   exportEncryptedDIYConfig: (passphrase: string) => Promise<string>
   importEncryptedDIYConfig: (json: string, passphrase: string) => Promise<HomeDiyImportResult>
-  syncToCloudVault: (passphrase: string, expectedVersion?: number) => Promise<{ success: boolean; version?: number; conflict?: boolean; error?: string }>
+  syncToCloudVault: (passphrase: string, expectedVersion?: number) => Promise<CloudVaultSyncResult>
   syncFromCloudVault: (
     passphrase: string,
   ) => Promise<{ success: boolean; error?: string; dropped: number; notes: string[]; summary?: string }>
@@ -98,18 +104,30 @@ export function HomeDIYBackupDialog({
   const [cloudVaultMeta, setCloudVaultMeta] = useState<CloudVaultMeta | null>(null)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeletingCloud, setIsDeletingCloud] = useState(false)
+  const [vaultConflict, setVaultConflict] = useState<{
+    kind: CloudVaultConflictKind
+    currentVersion: number | null
+  } | null>(null)
   const [importJsonText, setImportJsonText] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 切换至 E2EE 或打开备份弹窗时自动拉取云端金库元信息
   useEffect(() => {
     if (open && backupTab === 'e2ee') {
-      void checkCloudVaultStatus().then(setCloudVaultMeta)
+      void checkCloudVaultStatus().then((meta) => {
+        setCloudVaultMeta(meta)
+        // 重新对表后，上一轮的冲突引导就过期了：让用户基于最新版本号再决定
+        setVaultConflict(null)
+      })
     }
   }, [open, backupTab, checkCloudVaultStatus])
 
-  // 云端金库一键加密同步推送
-  const handleCloudUpload = async () => {
+  /**
+   * 推送金库。expectedOverride 只给「以 v0 重建」这条引导用：
+   * 云端已被清除时，先查状态得到 hasCloudVault:false 本来就会算出 0，
+   * 但显式传入可避免这里的推断再次吞掉服务端已经说清的那个动作。
+   */
+  const handleCloudUpload = async (expectedOverride?: number) => {
     if (!vaultPassphrase.trim() || vaultPassphrase.length < 6) {
       toast({
         title: '请输入 6 位以上的主密码',
@@ -123,9 +141,10 @@ export function HomeDIYBackupDialog({
       // 先取云端当前版本，作为本次写入的前置条件：多端同时编辑时避免静默覆盖
       const before = await checkCloudVaultStatus()
       setCloudVaultMeta(before)
-      const expected = before.hasCloudVault ? before.version : 0
+      const expected = expectedOverride ?? (before.hasCloudVault ? before.version : 0)
       const res = await syncToCloudVault(vaultPassphrase.trim(), expected)
       if (res.success) {
+        setVaultConflict(null)
         toast({
           title: '☁️ 已加密同步至中枢云端',
           description: `DIY 配置已安全保存至云端金库 (版本 v${res.version})。`,
@@ -133,8 +152,11 @@ export function HomeDIYBackupDialog({
         const status = await checkCloudVaultStatus()
         setCloudVaultMeta(status)
       } else if (res.conflict) {
+        const kind: CloudVaultConflictKind = res.conflictKind ?? 'version-conflict'
+        setVaultConflict({ kind, currentVersion: res.currentVersion ?? null })
         toast({
-          title: '云端金库已被其它设备更新',
+          // 两种成因分别措辞：合成一句会把「云端已被清除」的用户引向拉取空内容
+          title: kind === 'vault-cleared' ? '云端金库已被清除' : '云端金库已被其它设备更新',
           description: res.error,
           variant: 'destructive',
         })
@@ -508,7 +530,7 @@ export function HomeDIYBackupDialog({
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-0.5">
                 <Button
                   size="sm"
-                  onClick={handleCloudUpload}
+                  onClick={() => void handleCloudUpload()}
                   disabled={!vaultPassphrase.trim() || isSyncingCloud}
                   className="flex-1 text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white"
                 >
@@ -526,6 +548,62 @@ export function HomeDIYBackupDialog({
                   <span>从云端拉取解密</span>
                 </Button>
               </div>
+
+              {vaultConflict ? (
+                <div
+                  role="status"
+                  className="rounded-lg border border-violet-500/30 bg-violet-500/5 p-2.5 space-y-2"
+                >
+                  <div className="flex items-start gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-violet-600 dark:text-violet-400" />
+                    <p className="text-[11px] leading-relaxed text-foreground min-w-0">
+                      {vaultConflict.kind === 'vault-cleared'
+                        ? '云端那份备份已不存在，「从云端拉取」不会拿到任何内容。要恢复漫游，以本机当前排版重建即可，新版本从 v0 起计。'
+                        : typeof vaultConflict.currentVersion === 'number'
+                          ? `云端已是第 v${vaultConflict.currentVersion} 版，由其它设备写入。直接覆盖会丢掉那一版的内容。`
+                          : '云端内容比本机所依据的版本更新（中枢未回传版本号）。直接覆盖会丢掉别人那一版的内容。'}
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    {vaultConflict.kind === 'vault-cleared' ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleCloudUpload(0)}
+                        disabled={!vaultPassphrase.trim() || isSyncingCloud}
+                        className="flex-1 text-xs gap-1.5 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
+                      >
+                        <CloudUpload className="w-3.5 h-3.5" />
+                        <span>{isSyncingCloud ? '重建中...' : '以本机排版重建（从 v0 开始）'}</span>
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleCloudDownload()}
+                        disabled={!vaultPassphrase.trim() || isSyncingCloud}
+                        className="flex-1 text-xs gap-1.5 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
+                      >
+                        <CloudDownload className="w-3.5 h-3.5" />
+                        <span>先拉取云端最新一版</span>
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setVaultConflict(null)}
+                      className="flex-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      稍后处理
+                    </Button>
+                  </div>
+                  {!vaultPassphrase.trim() && (
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      先在上方输入加密主密码，该操作才可用。
+                    </p>
+                  )}
+                </div>
+              ) : null}
 
               {cloudVaultMeta?.hasCloudVault ? (
                 <Button

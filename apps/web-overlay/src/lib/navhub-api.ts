@@ -958,13 +958,26 @@ export async function fetchCloudVault(identity: string, onDegraded?: DegradedHan
   }, onDegraded)
 }
 
+/**
+ * 服务端 PUT /api/vault/sync 在 409 里给的机读码。
+ *
+ * 两种成因的纠正动作相反，不能合并成一句「被其它设备更新」：
+ *  - VAULT_CLEARED：云端那份已被清除（或在别处注销），本机版本号指向不存在的备份 → 拉取是空循环，正确动作是以 version=0 重建；
+ *  - VERSION_CONFLICT：云端仍有内容且版本被推进 → 正确动作是先拉取再合并推送。
+ */
+export type VaultConflictCode = 'VAULT_CLEARED' | 'VERSION_CONFLICT'
+
 export interface VaultSaveOutcome {
   ok: boolean
   version?: number
   updatedAt?: number
   /** 云端版本与 expectedVersion 不一致（409） */
   conflict?: boolean
+  /** 409 的成因；旧中枢不给 code 时缺省，由调用方按 current 回退判别 */
+  code?: VaultConflictCode
   current?: { version: number; updatedAt: number } | null
+  /** 服务端原文的纠正建议（WCAG 3.3.3：知道怎么纠正就必须给出做法） */
+  hint?: string
   error?: string
 }
 
@@ -994,10 +1007,15 @@ export async function saveCloudVault(
     const text = await res.text()
     const parsed = (text ? JSON.parse(text) : {}) as Record<string, unknown>
     if (res.status === 409) {
+      const rawCode = typeof parsed.code === 'string' ? parsed.code : undefined
       return {
         ok: false,
         conflict: true,
+        // 只认这两个字面量：中枢将来新增码时宁可退回「按 current 判别」，
+        // 也不能把未知原因硬塞进已知话术分支。
+        code: rawCode === 'VAULT_CLEARED' || rawCode === 'VERSION_CONFLICT' ? rawCode : undefined,
         current: (parsed.current as { version: number; updatedAt: number } | null | undefined) ?? null,
+        hint: typeof parsed.hint === 'string' ? parsed.hint : undefined,
         error: typeof parsed.error === 'string' ? parsed.error : '云端金库版本冲突',
       }
     }

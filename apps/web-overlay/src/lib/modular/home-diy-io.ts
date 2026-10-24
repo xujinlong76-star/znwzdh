@@ -120,11 +120,32 @@ export async function importEncryptedDIYConfig(
   }
 }
 
+/**
+ * 409 的两种成因 —— 服务端用 code 区分，客户端不得再折叠。
+ *
+ * 旧实现把两者压成同一句「云端金库已被其它设备更新，请先从云端拉取」，
+ * 而「云端已被清除」时拉取根本拿不到东西（服务端确实没有），用户会在
+ * 推送失败 → 拉取为空 → 再推送失败的环里空转（WCAG 3.3.1 / 3.3.3）。
+ */
+export type CloudVaultConflictKind = 'vault-cleared' | 'version-conflict'
+
+export interface CloudVaultSyncResult {
+  success: boolean
+  version?: number
+  conflict?: boolean
+  conflictKind?: CloudVaultConflictKind
+  /** 冲突时云端当前版本；vault-cleared 为 null（真的没有内容可拉） */
+  currentVersion?: number | null
+  error?: string
+  /** 下一步做法：优先用服务端 hint，缺失时按 kind 生成本地引导 */
+  suggestion?: string
+}
+
 export async function syncToCloudVault(
   config: HomeDIYConfig,
   passphrase: string,
   expectedVersion?: number,
-): Promise<{ success: boolean; version?: number; conflict?: boolean; error?: string }> {
+): Promise<CloudVaultSyncResult> {
   if (!passphrase || passphrase.length < 6) {
     return { success: false, error: '主密码长度至少需 6 位' }
   }
@@ -138,10 +159,30 @@ export async function syncToCloudVault(
   }
   const res = await saveCloudVault(identity, encrypted, expectedVersion)
   if (res.conflict) {
+    // 无 code 的旧中枢按 current 回退：current 为空即「云端没有这份备份」
+    const kind: CloudVaultConflictKind =
+      res.code === 'VAULT_CLEARED'
+        ? 'vault-cleared'
+        : res.code === 'VERSION_CONFLICT'
+          ? 'version-conflict'
+          : res.current
+            ? 'version-conflict'
+            : 'vault-cleared'
     return {
       success: false,
       conflict: true,
-      error: '云端金库已被其它设备更新。请先「从云端拉取」确认最新内容，再重新推送，避免覆盖别人的修改。',
+      conflictKind: kind,
+      currentVersion: res.current?.version ?? null,
+      error:
+        res.error ||
+        (kind === 'vault-cleared'
+          ? '云端金库已被清除：本机版本号对应的云端备份已不存在'
+          : '版本冲突：云端金库已被其它设备更新'),
+      suggestion:
+        res.hint ||
+        (kind === 'vault-cleared'
+          ? '确认以本机当前排版重建云端金库即可，新版本会从 v0 开始计。'
+          : '先点「从云端拉取解密」确认最新内容，再重新推送，避免覆盖别人的修改。'),
     }
   }
   if (!res.ok) {

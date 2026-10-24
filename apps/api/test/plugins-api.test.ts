@@ -831,3 +831,15 @@ describe("F0 / E1 / E5 / E6 / E4 / E3 / F2 API", () => {
   });
 });
 
+
+describe("畸形 URL 编码不得变成 500", () => {
+  it("GET /api/plugins/%25 → 404（安全解码回退，而不是 URIError 冒泡）", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins/%25" });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("GET /api/plugins/%25/audit → 404", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins/%25/audit" });
+    expect(res.statusCode).toBe(404);
+  });
+});

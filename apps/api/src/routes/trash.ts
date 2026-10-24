@@ -41,12 +41,34 @@ export const trashRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       }
     }
 
-    let site = await ctx.repo.restoreSite(id);
-    if (fallbackCatId && site) {
-      site = await ctx.repo.updateSite(id, { categoryId: fallbackCatId });
+    /**
+     * 恢复 + 类目回退必须在同一事务里。
+     *
+     * 原实现两步分提交：恢复成功、改类目失败时留下「已恢复但仍挂在已删类目」
+     * 的半恢复状态；随后又对可能为 null 的 site 强解引用（`site!.id`），
+     * 并发删除会让这里抛 TypeError → 500。现在先判空再索引。
+     */
+    let site = null as Awaited<ReturnType<typeof ctx.repo.restoreSite>>;
+    try {
+      site = await ctx.repo.withTransaction(async () => {
+        const restored = await ctx.repo.restoreSite(id);
+        if (!restored) return null;
+        if (fallbackCatId) {
+          return await ctx.repo.updateSite(id, { categoryId: fallbackCatId });
+        }
+        return restored;
+      });
+    } catch (err) {
+      req.log.error({ err, id }, "回收站恢复失败，事务已回滚");
+      reply.code(409);
+      return { error: "恢复失败：同网址或分类约束冲突，请刷新后重试" };
+    }
+    if (!site) {
+      reply.code(404);
+      return { error: "站点已不存在（可能已被并发永久删除）" };
     }
     // 向量在软删期间保留，恢复即生效；保险起见重建一次（幂等）
-    await indexSite(ctx, site!.id, site!.title, site!.description ?? null, site!.url);
+    await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
     await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.restore", target: id });
     return site;
   });

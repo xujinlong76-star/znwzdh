@@ -236,7 +236,7 @@ const MOUSE_ONLY_ALLOWLIST: MouseOnlyAllowlistEntry[] = [
       '真按钮（<button type="button" aria-expanded>）。',
   },
   {
-    file: "src/components/algorithm-lab.tsx",
+    file: "src/components/algorithm-lab/hyperbolic-panel.tsx",
     marker: /setSelectedTech\(/,
     evidence: ["TECH_NODES.map((node) => (", "onClick={() => setSelectedTech(node.id)}"],
     why:
@@ -247,11 +247,18 @@ const MOUSE_ONLY_ALLOWLIST: MouseOnlyAllowlistEntry[] = [
   {
     file: "src/components/navigation-card.tsx",
     marker: /onPeek\?\.\(item\)/,
-    evidence: ["tabIndex={0}", "e.code === 'Space'", "onPeek?.(item)", 'title="速览与行动"'],
+    evidence: [
+      "ref={linkRef}",
+      "e.code === 'Space'",
+      "onPeek?.(item)",
+      "e.key === 'ArrowRight'",
+      'title="速览与行动"',
+    ],
     why:
       "「快照自愈」徽标在卡片链接内部（<a> 里嵌 <button> 属于非法 HTML）；" +
-      "它的动作有键盘入口：卡片根节点 tabIndex={0} + handleKeyDown 的 Space→onPeek，" +
-      "以及同卡片里的 <Button title=\"速览与行动\">。",
+      "它的动作有键盘入口：主链接上的 Space→onPeek，→ 进入操作区后可达 " +
+      "「速览与行动」按钮。2026-10-24 起卡片改为单一 Tab 入口（根节点不再 tabIndex=0），" +
+      "证据随之从根节点迁移到主链接。",
   },
   {
     file: "src/components/ui/overlay.tsx",

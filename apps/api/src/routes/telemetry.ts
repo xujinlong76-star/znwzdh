@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { RetrievalChannel } from "@navhub/core";
 import { refreshUserProfile } from "../profile-service.ts";
-import { identityTrusted, identityOf, resolveCanonicalIdentity } from "./shared.ts";
+import { identityTrusted, requestIdentityOf, resolveCanonicalIdentity } from "./shared.ts";
 
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
@@ -45,7 +45,7 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       anonId: z.string().max(64).optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
-    const rawIdentity = identityOf(req as never);
+    const rawIdentity = requestIdentityOf(req as never);
     if (rawIdentity && !identityTrusted(ctx, req as never)) {
       reply.code(401);
       return { error: "需要 Bearer token" };

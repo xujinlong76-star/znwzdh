@@ -110,3 +110,12 @@ describe("源码守卫：真的挂上了，且监听器与定时器都收干净"
     expect(src).toContain('aria-live="polite"');
   });
 });
+
+describe("源码守卫：移动端不能压住底部导航", () => {
+  it("提示条在移动端抬到 h-14 底栏之上（否则 z-60 会拦截底栏点击）", () => {
+    const src = overlaySource("src/components/offline-banner.tsx");
+    expect(src).toContain("bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))]");
+    // 桌面端仍贴底，不需要让出底栏空间
+    expect(src).toContain("sm:bottom-[calc(1rem+env(safe-area-inset-bottom,0px))]");
+  });
+});

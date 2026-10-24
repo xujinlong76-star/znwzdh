@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRef } from 'react'
 import { Card, CardHeader, CardTitle, CardDescription } from '@/registry/new-york/ui/card'
 import type { NavigationSubItem } from '@/types/navigation'
 import { SiteFavicon } from '@/components/site-favicon'
@@ -35,6 +36,8 @@ interface NavigationCardProps {
   selectable?: boolean
   selected?: boolean
   onToggleSelect?: (siteId: string) => void
+  /** 指向页面里唯一的键盘操作说明元素（sr-only），避免每张卡各渲染一份 */
+  keyboardHintId?: string
 }
 
 export function NavigationCard({
@@ -49,6 +52,7 @@ export function NavigationCard({
   selectable = false,
   selected = false,
   onToggleSelect,
+  keyboardHintId,
 }: NavigationCardProps) {
   const { toast } = useToast()
   // 站点配置只是默认值：用户中心「新标签页打开站点」开关必须真的决定打开方式。
@@ -99,10 +103,51 @@ export function NavigationCard({
   // 提取首个平替
   const topAlternative = item.relations?.find((r) => r.relationType === 'alternative')
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  /**
+   * 卡片的键盘模型：**整卡只有一个 Tab 停留点**（主链接）。
+   *
+   * 原实现给卡片根节点 tabIndex=0，加上主链接、置顶、速览、工作台、收藏
+   * 五个按钮，一张卡有 6 个停留点——千站首页要按约 6000 次 Tab 才能走完，
+   * 键盘用户实际上到不了页尾。现在：
+   *   - 主链接是唯一 Tab 停留点（Enter 打开，Space 速览）；
+   *   - → 键进入卡片操作区，操作区内 ←/→ 切换、Esc 回到主链接；
+   *   - 操作按钮 tabIndex=-1，仍可被读屏浏览模式访问，也保留鼠标行为。
+   * 这是 WAI-ARIA 复合控件（toolbar/grid）的常规做法：一个入口 + 方向键内部导航。
+   */
+  const linkRef = useRef<HTMLAnchorElement>(null)
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLAnchorElement>) => {
     if (e.key === ' ' || e.code === 'Space') {
       e.preventDefault()
       onPeek?.(item)
+      return
+    }
+    if (e.key === 'ArrowRight') {
+      const card = (e.currentTarget as HTMLElement).closest('[data-navhub-site-id]')
+      const first = card?.querySelector<HTMLElement>('[data-card-action]')
+      if (first) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+  }
+
+  /** 操作区内方向键导航：←/→ 移动，Esc 回到主链接 */
+  const handleActionsKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const actions = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>('[data-card-action]'),
+    )
+    const index = actions.indexOf(document.activeElement as HTMLElement)
+    if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      actions[index + 1 < actions.length ? index + 1 : 0]?.focus()
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      if (index <= 0) linkRef.current?.focus()
+      else actions[index - 1]?.focus()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      linkRef.current?.focus()
     }
   }
 
@@ -151,14 +196,12 @@ export function NavigationCard({
       <Tooltip>
           <TooltipTrigger asChild>
             <div
-              tabIndex={0}
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
-              onKeyDown={handleKeyDown}
               draggable={isDraggable}
               onDragStart={handleDragStart}
               className={cn(
-                "group relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
+                "nav-card-deferred group relative flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-xs transition-all duration-150 transform hover:-translate-y-0.25 focus:outline-none focus:ring-1.5 focus:ring-primary/40",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
                 selectionClass
@@ -170,7 +213,11 @@ export function NavigationCard({
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
                 onClick={handleLinkClick}
-                className="flex items-center gap-2 min-w-0 flex-1"
+                ref={linkRef}
+                onKeyDown={handleKeyDown}
+                aria-keyshortcuts="Space ArrowRight"
+                aria-describedby={keyboardHintId}
+                className="flex items-center gap-2 min-w-0 flex-1 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
               >
                 <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover:scale-105">
                   <SiteFavicon
@@ -212,9 +259,11 @@ export function NavigationCard({
               </Link>
 
               {/* 紧凑操作按钮 */}
-              <div className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+              <div className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity" onKeyDown={handleActionsKeyDown}>
                 {onTogglePinInCategory && (
                   <Button
+                  tabIndex={-1}
+                  data-card-action=""
                     variant="ghost"
                     size="icon"
                     className={cn(
@@ -229,6 +278,8 @@ export function NavigationCard({
                   </Button>
                 )}
                 <Button
+                  tabIndex={-1}
+                  data-card-action=""
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground"
@@ -243,6 +294,8 @@ export function NavigationCard({
                   <Eye className="w-3 h-3" />
                 </Button>
                 <Button
+                  tabIndex={-1}
+                  data-card-action=""
                   variant="ghost"
                   size="icon"
                   className="hidden sm:inline-flex h-6 w-6 rounded-md text-muted-foreground hover:text-emerald-500"
@@ -253,6 +306,8 @@ export function NavigationCard({
                   <Pin className="w-3 h-3" />
                 </Button>
                 <FavoriteButton
+                  tabIndex={-1}
+                  cardAction
                   site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
                 />
               </div>
@@ -272,14 +327,12 @@ export function NavigationCard({
       <Tooltip>
           <TooltipTrigger asChild>
             <Card
-              tabIndex={0}
               data-navhub-site-id={item.id}
               data-navhub-selected={selected ? 'true' : undefined}
-              onKeyDown={handleKeyDown}
               draggable={isDraggable}
               onDragStart={handleDragStart}
               className={cn(
-                "group @container relative overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
+                "nav-card-deferred group @container relative overflow-hidden rounded-xl border border-border/80 hover:border-primary/50 bg-card/90 dark:bg-card/50 backdrop-blur-xs depth-card hover:shadow-lg dark:hover:shadow-primary/10 nav-card-glow transition-all duration-200 transform hover:-translate-y-1 focus:outline-none focus:ring-2 focus:ring-primary/40 before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-gradient-to-r before:from-primary/40 before:via-accent/60 before:to-primary/30",
                 isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
                 isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/70 hover:ring-1 hover:ring-primary/40",
                 selectionClass
@@ -298,7 +351,11 @@ export function NavigationCard({
                 rel="noopener noreferrer"
                 data-prefetch-target="true"
                 onClick={handleLinkClick}
-                className="block"
+                ref={linkRef}
+                onKeyDown={handleKeyDown}
+                aria-keyshortcuts="Space ArrowRight"
+                aria-describedby={keyboardHintId}
+                className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
               >
                 <CardHeader className="p-4 sm:p-5">
                   <div className="flex items-start gap-3.5">
@@ -389,9 +446,11 @@ export function NavigationCard({
               </div>
 
               {/* 操作区：右上角悬浮药丸胶囊 */}
-              <div className="absolute top-2 right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150">
+              <div className="absolute top-2 right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
                 {onTogglePinInCategory && (
                   <Button
+                  tabIndex={-1}
+                  data-card-action=""
                     variant="ghost"
                     size="icon"
                     className={cn(
@@ -406,6 +465,8 @@ export function NavigationCard({
                   </Button>
                 )}
                 <Button
+                  tabIndex={-1}
+                  data-card-action=""
                   variant="ghost"
                   size="icon"
                   className="h-7 w-7 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -420,6 +481,8 @@ export function NavigationCard({
                   <Eye className="w-3.5 h-3.5" />
                 </Button>
                 <Button
+                  tabIndex={-1}
+                  data-card-action=""
                   variant="ghost"
                   size="icon"
                   className="hidden sm:inline-flex h-7 w-7 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
@@ -430,6 +493,8 @@ export function NavigationCard({
                   <Pin className="w-3.5 h-3.5" />
                 </Button>
                 <FavoriteButton
+                  tabIndex={-1}
+                  cardAction
                   site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
                 />
               </div>
@@ -448,14 +513,12 @@ export function NavigationCard({
     <Tooltip>
         <TooltipTrigger asChild>
           <Card
-            tabIndex={0}
             data-navhub-site-id={item.id}
             data-navhub-selected={selected ? 'true' : undefined}
-            onKeyDown={handleKeyDown}
             draggable={isDraggable}
             onDragStart={handleDragStart}
             className={cn(
-              "group @container relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
+              "nav-card-deferred group @container relative overflow-hidden rounded-xl border border-border/70 hover:border-primary/40 bg-card/85 dark:bg-card/45 backdrop-blur-xs depth-card hover:shadow-md dark:hover:shadow-primary/5 nav-card-glow transition-all duration-200 transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-primary/40",
               isPinnedInCategory && "ring-1 ring-amber-500/40 bg-amber-500/4 border-amber-500/30",
               isDraggable && "cursor-grab active:cursor-grabbing hover:border-primary/60 hover:ring-1 hover:ring-primary/30",
               selectionClass
@@ -474,7 +537,11 @@ export function NavigationCard({
               rel="noopener noreferrer"
               data-prefetch-target="true"
               onClick={handleLinkClick}
-              className="block h-full"
+              ref={linkRef}
+              onKeyDown={handleKeyDown}
+              aria-keyshortcuts="Space ArrowRight"
+              aria-describedby={keyboardHintId}
+              className="block h-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
             >
               <CardHeader className="p-[var(--density-card-padding,0.875rem)]">
                 <div className="flex items-start gap-2.5 @[280px]:gap-3">
@@ -548,9 +615,11 @@ export function NavigationCard({
             </Link>
 
             {/* 操作区：右上角悬浮药丸胶囊 */}
-            <div className="absolute top-1.5 right-1.5 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150">
+            <div className="absolute top-1.5 right-1.5 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
               {onTogglePinInCategory && (
                 <Button
+                  tabIndex={-1}
+                  data-card-action=""
                   variant="ghost"
                   size="icon"
                   className={cn(
@@ -565,6 +634,8 @@ export function NavigationCard({
                 </Button>
               )}
               <Button
+                  tabIndex={-1}
+                  data-card-action=""
                 variant="ghost"
                 size="icon"
                 className="h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -579,6 +650,8 @@ export function NavigationCard({
                 <Eye className="w-3.5 h-3.5" />
               </Button>
               <Button
+                  tabIndex={-1}
+                  data-card-action=""
                 variant="ghost"
                 size="icon"
                 className="hidden sm:inline-flex h-6.5 w-6.5 rounded-full text-muted-foreground hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
@@ -589,6 +662,8 @@ export function NavigationCard({
                 <Pin className="w-3.5 h-3.5" />
               </Button>
               <FavoriteButton
+                tabIndex={-1}
+                cardAction
                 site={{ siteId: item.id, title: item.title, href: item.href, icon: item.icon, description: item.description }}
               />
             </div>

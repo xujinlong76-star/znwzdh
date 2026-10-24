@@ -7,7 +7,7 @@ import { z } from "zod";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
 import { callLlm } from "../llm-usage.ts";
-import { identityOf, identityTrusted } from "./shared.ts";
+import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 const chatSchema = z.object({
@@ -54,7 +54,7 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
      * `resolveLlm` 就去解**那个人**存的个人 API Key 跑这次对话」——白烧他人配额，
      * 用量还记到他人账上。过不了的调用方降级用系统级配置，功能不中断。
      */
-    const identity = identityTrusted(ctx, req as never) ? identityOf(req as never) : null;
+    const identity = identityTrusted(ctx, req as never) ? requestIdentityOf(req as never) : null;
     const llm = await resolveLlm(ctx, identity);
 
     /**

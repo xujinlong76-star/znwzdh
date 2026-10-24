@@ -251,6 +251,16 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             categoryId: targetCatId,
             tags: site.tags || [],
             iconKey: site.icon || null,
+            /**
+             * 停用态必须原样恢复。
+             *
+             * 原实现只传 7 个字段，insertSitesBulk 的缺省值是 enabled=true / status=active，
+             * 于是一份含「停用/待上线」站点的冷备恢复后，它们全部变成公开可见——
+             * 备份恢复反而成了把隐藏内容批量上线的通道。冷备里没有 status 字段，
+             * 用 enabled=false 映射为 archived，语义与「停用即不对外」一致。
+             */
+            enabled: site.enabled !== false,
+            status: site.enabled === false ? "archived" : "active",
           })),
           // 恢复只需要条数：不回读 5 万条完整 Site 记录
           { hydrate: false },

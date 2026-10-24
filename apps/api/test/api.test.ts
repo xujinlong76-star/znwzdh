@@ -1134,6 +1134,22 @@ describe("投稿审核收编中枢（GET/PATCH /api/submissions）", () => {
     expect(rejectAudit.items.some((a: any) => a.target === created.id)).toBe(true);
   });
 
+  it("审核接口不能改写非投稿站点（UUID 直传）", async () => {
+    // 普通手工站点：source=manual，不该出现在审核队列里
+    const manual = (await app.inject({
+      method: "POST", url: "/api/sites",
+      payload: { url: "https://example.com/manual-not-submission", title: "手工站点", categoryId: "cat-ai" },
+    })).json();
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/submissions/" + manual.id,
+      payload: { action: "reject", reason: "越权尝试" },
+    });
+    expect(res.statusCode).toBe(404);
+    // 状态必须原样保留，不能被审核接口顺手归档
+    expect((await app.inject({ method: "GET", url: "/api/sites/" + manual.id })).json().status).toBe("active");
+  });
+
   it("无效 number / 无效 action 分别 404 / 400", async () => {
     const missing = await app.inject({ method: "PATCH", url: "/api/submissions/999999999", payload: { action: "approve" } });
     expect(missing.statusCode).toBe(404);

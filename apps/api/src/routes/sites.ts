@@ -12,7 +12,7 @@ import { indexSite, indexSitesBatch } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
-import { badRequest, clampFacets, identityOf, identityTrusted } from "./shared.ts";
+import { badRequest, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -84,7 +84,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       const categories = await ctx.repo.listCategories();
       // 身份必须过第二轴（否则「自称别人」= 花别人的 key、记别人的账），
       // 并且这一次写库前的富化也要受额度闸门约束：额度到顶就只用抓取结果。
-      const identity = identityTrusted(ctx, req as never) ? identityOf(req as never) : null;
+      const identity = identityTrusted(ctx, req as never) ? requestIdentityOf(req as never) : null;
       const quota = await checkLlmQuota(ctx, identity);
       const resolved = await resolveLlm(ctx, identity);
       const enriched = await enrichUrl(url, {

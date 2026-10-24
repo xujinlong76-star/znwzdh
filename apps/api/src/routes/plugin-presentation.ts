@@ -4,7 +4,7 @@
  * 从 routes/plugins.ts 抽出的纯函数：徽章 SVG 渲染、身份提取、公共序列化。
  * 它们不依赖 Fastify 实例，抽离后可单测、也让路由文件只保留「端点编排」。
  */
-import { identityOf, identityTrusted } from "./shared.ts";
+import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export function escapeXml(unsafe: string): string {
@@ -85,7 +85,7 @@ export function extractPluginIdentity(req: PluginIdentityRequest): string | null
   // 且截 120 字符，而 hook 校验的是 identityOf（Header → Query → Body，截 64）：
   // 「头里签攻击者自己的身份、body 里塞受害者身份」能通过签名校验，却以受害者身份
   // 执行安装/评价/`/api/plugins/mine`（他人私有草稿会整批读出）。
-  return identityOf(req as never);
+  return requestIdentityOf(req as never);
 }
 
 /**

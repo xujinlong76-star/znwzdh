@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import type { NavigationData, NavigationSubItem } from '@/types/navigation'
@@ -20,7 +20,27 @@ const ModularCanvas = dynamic(
 )
 const HomeHeroDeck = dynamic(
   () => import('@/components/home-hero-deck').then((m) => m.HomeHeroDeck),
-  { ssr: false }
+  {
+    ssr: false,
+    /**
+     * 同高骨架。展板默认展开（4 张 min-h-[160px] 卡片 + 标题条），
+     * 没有占位时首帧分类区贴顶、水合后整页下移约 200px——用户点到的
+     * 可能是「刚被推下去」的另一张卡。骨架尺寸与真实展板对齐，不产生 CLS。
+     */
+    loading: () => (
+      <div className="mb-6 sm:mb-8 space-y-3" aria-hidden>
+        <div className="h-5 w-40 rounded-md bg-muted/60 animate-pulse" />
+        <div className="grid grid-cols-12 gap-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="col-span-12 sm:col-span-6 lg:col-span-3 min-h-[160px] rounded-2xl border border-border/60 bg-muted/30 animate-pulse"
+            />
+          ))}
+        </div>
+      </div>
+    ),
+  }
 )
 const KeyboardShortcutsDialog = dynamic(
   () => import('@/components/keyboard-shortcuts-dialog').then((m) => m.KeyboardShortcutsDialog),
@@ -107,7 +127,23 @@ export function NavigationContent({
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceId>('all')
   const [isToolsOpen, setIsToolsOpen] = useState(false)
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false)
-  const [peekItem, setPeekItem] = useState<NavigationSubItem | null>(null)
+  /**
+   * 速览弹窗的上下文：除了站点本身，还要记住它来自哪个分类——
+   * 弹窗里的「置顶」需要 categoryId 才能落到正确的分类。
+   */
+  const [peek, setPeek] = useState<{ item: NavigationSubItem; categoryId?: string } | null>(null)
+  /** 打开速览前的焦点：关闭弹窗后必须还回去，否则键盘用户被丢回页面顶部 */
+  const peekReturnFocusRef = useRef<HTMLElement | null>(null)
+  const openPeek = useCallback((item: NavigationSubItem | null, categoryId?: string) => {
+    peekReturnFocusRef.current = document.activeElement as HTMLElement | null
+    setPeek(item ? { item, categoryId } : null)
+  }, [])
+  const restorePeekFocus = useCallback(() => {
+    const el = peekReturnFocusRef.current
+    peekReturnFocusRef.current = null
+    // 弹窗卸载是异步的，焦点归还要等一帧，否则会被 Radix 的卸载流程覆盖
+    if (el && document.contains(el)) requestAnimationFrame(() => el.focus())
+  }, [])
 
   // 添加自定义网址到专属分类状态
   const [addSiteTargetCatId, setAddSiteTargetCatId] = useState<string | null>(null)
@@ -127,6 +163,8 @@ export function NavigationContent({
     customCategories,
     addSiteToCustomCategory,
     siteCategoryOverrides,
+    pinnedSiteIdsByCategory,
+    togglePinSiteInCategory,
     customWallpaperUrl,
     glassmorphismBlur,
   } = useHomeDIY()
@@ -226,12 +264,30 @@ export function NavigationContent({
       return
     }
 
-    addSiteToCustomCategory(addSiteTargetCatId, {
+    const outcome = addSiteToCustomCategory(addSiteTargetCatId, {
       id: createCustomSiteId(),
       title: customSiteTitle.trim(),
       href: normalized.href,
       description: customSiteDesc.trim() || undefined,
     })
+
+    if (outcome === 'failed') {
+      // 写盘失败时不能关弹窗、更不能清输入：用户至少还能把内容复制走
+      toast({
+        title: '这一下没能保存',
+        description: '浏览器拒绝写入本地存储（可能是隐私模式或空间已满）。站点只在当前页面生效，刷新后会消失。',
+        variant: 'destructive',
+      })
+      return
+    }
+    if (outcome === 'duplicate') {
+      toast({
+        title: '站点已在分类里',
+        description: `「${customSiteTitle.trim()}」没有重复添加。`,
+      })
+      setAddSiteTargetCatId(null)
+      return
+    }
 
     toast({
       title: '✨ 自定义站点已添加',
@@ -300,6 +356,10 @@ export function NavigationContent({
           backdropFilter: `blur(${glassmorphismBlur || 0}px)`
         } : undefined}
       >
+        {/* 卡片键盘模型说明：所有卡片通过 aria-describedby 指向这一条 */}
+        <p id="navhub-card-keyboard-hint" className="sr-only">
+          站点卡片：按空格打开速览与微动作；按右方向键进入卡片操作区，左右方向键切换，Esc 返回卡片。
+        </p>
         {/* SEO 与无障碍可访问性首要标题（通过 sr-only 视觉隐藏，供屏幕阅读器与搜索引擎建立层级大纲） */}
         <h1 className="sr-only">
           {siteData.basic.title} - {siteData.basic.description || 'AI 原生智能网址导航与研发效率中枢'}
@@ -399,7 +459,8 @@ export function NavigationContent({
                     setDropCategoryTarget={setDropCategoryTarget}
                     setDragOverCustomCatId={setDragOverCustomCatId}
                     setAddSiteTargetCatId={setAddSiteTargetCatId}
-                    setPeekItem={setPeekItem}
+                    setPeekItem={openPeek}
+                    keyboardHintId="navhub-card-keyboard-hint"
                     toggleSelectOne={toggleSelectOne}
                   />
                 ))}
@@ -429,7 +490,23 @@ export function NavigationContent({
         <Footer siteInfo={siteData} />
 
         {/* 4.0 弹窗：空格键沙箱速览与行动视窗 */}
-        <SitePeekDialog item={peekItem} open={!!peekItem} onOpenChange={(open) => !open && setPeekItem(null)} />
+        <SitePeekDialog
+          item={peek?.item ?? null}
+          open={!!peek}
+          onOpenChange={(open) => !open && setPeek(null)}
+          onCloseAutoFocus={() => restorePeekFocus()}
+          categoryId={peek?.categoryId}
+          isPinnedInCategory={
+            peek?.categoryId
+              ? (pinnedSiteIdsByCategory[peek.categoryId] ?? []).includes(peek.item.id)
+              : false
+          }
+          onTogglePinInCategory={
+            peek?.categoryId
+              ? (siteId) => togglePinSiteInCategory(peek.categoryId!, siteId)
+              : undefined
+          }
+        />
 
         {/* 4.0 弹窗：内置开发者微工具抽屉 */}
         <QuickToolsDrawer open={isToolsOpen} onOpenChange={setIsToolsOpen} />
@@ -455,18 +532,38 @@ export function NavigationContent({
                 toast({ title: '⚠️ 没有可收录的站点', description: '选中的站点网址不合法。' })
                 return
               }
+              let added = 0
+              let duplicate = 0
+              let failed = 0
               for (const site of usable) {
-                addSiteToCustomCategory(categoryId, {
+                const outcome = addSiteToCustomCategory(categoryId, {
                   id: createCustomSiteId(),
                   title: site.title,
                   href: site.href,
                   description: site.description,
                 })
+                if (outcome === 'added') added++
+                else if (outcome === 'duplicate') duplicate++
+                else failed++
               }
-              toast({
-                title: '✨ 已收录 ' + usable.length + ' 个站点',
-                description: '已批量加入所选专属分类。',
-              })
+              // 批量路径同样不能只说好话：失败与重复要如实计数
+              if (failed > 0) {
+                toast({
+                  title: `只收录了 ${added} 个`,
+                  description: `${failed} 个没能写入本地存储（隐私模式或空间已满），刷新后会丢失；${duplicate} 个已在分类中。`,
+                  variant: 'destructive',
+                })
+              } else if (duplicate > 0) {
+                toast({
+                  title: `已收录 ${added} 个站点`,
+                  description: duplicate > 0 ? `另有 ${duplicate} 个已在所选分类中，未重复添加。` : undefined,
+                })
+              } else {
+                toast({
+                  title: '✨ 已收录 ' + added + ' 个站点',
+                  description: '已批量加入所选专属分类。',
+                })
+              }
               clearSelection()
             }}
             onBatchPinToWorkbench={() => {

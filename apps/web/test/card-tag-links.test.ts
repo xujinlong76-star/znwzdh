@@ -71,7 +71,8 @@ describe("卡片 #tag 内链化（rich 模式）", () => {
     // 只取 <Link 开标签的属性区——否则会误伤 CardHeader 里 favicon 的
     // `w-full h-full`（object-contain 图标）与注释文字里的 h-full
     const linkTag = richSrc.slice(richSrc.lastIndexOf("<Link", cardLinkOpen), richSrc.indexOf(">", cardLinkOpen));
-    expect(linkTag).toContain('className="block"');
+    // 允许附加焦点环等工具类；关键约束是「block 且不带 h-full」
+    expect(linkTag).toContain('className="block');
     expect(linkTag).not.toContain("h-full");
   });
 

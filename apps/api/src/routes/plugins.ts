@@ -34,11 +34,11 @@ import {
 } from "@navhub/core";
 
 import type { AppContext } from "../context.ts";
-import {
+import { safeDecodeParam,
   badRequest,
   conflict,
   forbidden,
-  identityOf,
+  requestIdentityOf,
   isAdminScope,
   identityTrusted,
   notFound,
@@ -347,7 +347,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public" } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识 (identity/anonId)");
       }
@@ -468,7 +468,19 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         }
       });
 
-      const results = await Promise.all(tasks);
+      /**
+       * 分批并发（每批 5 个）。
+       *
+       * 原实现一次 Promise.all 放 30 个出网请求：路由限流 30 次/分钟，
+       * 单 IP 每分钟就能打出约 900 个连接，既可做反射探测，也会挤占
+       * 健康巡检与富化的连接池。批内并发保留「一批走完再下一批」的
+       * 背压，总耗时上限仍在 30/5 × 3.5s 的可接受区间。
+       */
+      const FETCH_CONCURRENCY = 5;
+      const results: Awaited<(typeof tasks)[number]>[] = [];
+      for (let i = 0; i < tasks.length; i += FETCH_CONCURRENCY) {
+        results.push(...(await Promise.all(tasks.slice(i, i + FETCH_CONCURRENCY))));
+      }
       const okCount = results.filter((r) => r.ok).length;
       return {
         success: true,
@@ -489,7 +501,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public" } },
     async (req, reply) => {
       const rawSlug = (req.params as { slug: string }).slug;
-      const slug = decodeURIComponent(rawSlug);
+      const slug = safeDecodeParam(rawSlug);
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
 
@@ -578,7 +590,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public", cache: { maxAge: 300, etag: true } } },
     async (req, reply) => {
       const rawSlug = (req.params as { slug: string }).slug;
-      const slug = decodeURIComponent(rawSlug);
+      const slug = safeDecodeParam(rawSlug);
       const q = req.query as Record<string, string | undefined>;
       const metric = q.metric?.toLowerCase().trim() || "version";
       const customLabel = q.label?.trim() || "navhub";
@@ -618,7 +630,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public", cache: { maxAge: 0 } } },
     async (req, reply) => {
       const rawSlug = (req.params as { slug: string }).slug;
-      const slug = decodeURIComponent(rawSlug);
+      const slug = safeDecodeParam(rawSlug);
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin || plugin.status !== "published") {
         return notFound(reply, `插件未上架或不存在: ${slug}`);
@@ -781,7 +793,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       // 旧的 `body.identity` 优先正是 `identity-plugin-impersonation.test.ts` 记过的那类
       // 破口：签自己的头 + body 塞受害者身份，校验通过却以受害者身份落评价，
       // 而评价还要求「活跃安装」，等于顺手把受害者的安装记录也用了。
-      const identity = String(identityOf(req as never) ?? callerAuth?.actor ?? "").trim();
+      const identity = String(requestIdentityOf(req as never) ?? callerAuth?.actor ?? "").trim();
 
       if (!identity) {
         return badRequest(reply, "缺少用户身份标识");
@@ -948,7 +960,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "public", rateLimit: { max: 20, timeWindow: "1 hour" } } },
     async (req, reply) => {
       const rawSlug = (req.params as { slug: string }).slug;
-      const slug = decodeURIComponent(rawSlug);
+      const slug = safeDecodeParam(rawSlug);
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
 
@@ -1086,7 +1098,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
 
       const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
-      const actorName = callerAuth?.actor || identityOf(req as never) || "admin";
+      const actorName = callerAuth?.actor || requestIdentityOf(req as never) || "admin";
       const actorKind = callerAuth?.kind || "token";
 
       try {
@@ -1111,7 +1123,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
         let installResult = null;
         if (body.installNow) {
-          const identity = identityOf(req as never) || "admin";
+          const identity = requestIdentityOf(req as never) || "admin";
           installResult = await ctx.repo.installPlugin(imported.slug, identity, {
             actor: actorName,
             actorKind,

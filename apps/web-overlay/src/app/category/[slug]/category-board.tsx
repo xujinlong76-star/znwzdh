@@ -4,6 +4,7 @@ import { Footer } from '@/components/footer'
 import { Breadcrumbs } from '@/components/breadcrumbs'
 import { JsonLd } from '@/components/json-ld'
 import { SiteFavicon } from '@/components/site-favicon'
+import { SearchPalette } from '@/components/search-palette'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { categoryItemListLd, itemListLd } from '@/lib/seo/json-ld'
 import { MIN_SITES_FOR_CATEGORY_INDEX } from '@/lib/seo/thresholds'
@@ -222,7 +223,7 @@ export async function CategoryBoard({
               // 而实际上后面还有——只是翻页机制到不了。给一条能走通的路。
               <p className="text-xs text-amber-700 dark:text-amber-400">
                 本分类共收录 {totalInCategory} 个站点，翻页最深只到第 {deepestPage} 页（约 {deepestPage * PAGE_SIZE} 个）。
-                想看剩下的，可以用页内搜索、{isRootPage ? '下面的子分类' : '同组的其他分类'}或
+                想看剩下的，可以用下面的搜索、{isRootPage ? '下面的子分类' : '同组的其他分类'}或
                 <Link href="/tags" className="underline underline-offset-2 hover:no-underline">
                   按标签浏览
                 </Link>
@@ -247,6 +248,11 @@ export async function CategoryBoard({
               </Link>
             </nav>
           </header>
+
+          {/* 分类页此前没有任何搜索入口，却在「翻不到更后面」的提示里让用户
+              「用页内搜索」——指着一个不存在的控件。这里挂全站搜索面板：
+              分类翻页有深度上限，搜索是唯一能真正找到长尾站点的路径。 */}
+          <SearchPalette placeholder="没找到想要的？搜索全部站点（中文 / 拼音 / 语义）" />
 
           {origin && indexable ? (
             // 根页的结构化数据列**子分类页**（它是目录，不是终点）；

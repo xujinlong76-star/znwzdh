@@ -10,8 +10,9 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { SiteFavicon } from '@/components/site-favicon'
-import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit, History } from 'lucide-react'
+import { ExternalLink, Star, Sparkles, Zap, ArrowRight, Eye, Search, AlertTriangle, Orbit, History, Pin } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
+import { FavoriteButton } from '@/components/favorite-button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { isSafeHttpUrl, safeHref, safeSrc, safeWindowOpen } from '@/lib/safe-url'
@@ -22,9 +23,30 @@ interface SitePeekDialogProps {
   item: NavigationSubItem | null
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * 该条目在首页所属的分类。只有从首页卡片打开时才有值；
+   * 其它入口（标签页/专题页）没有分类上下文，置顶动作就不出现。
+   */
+  categoryId?: string
+  isPinnedInCategory?: boolean
+  onTogglePinInCategory?: (siteId: string) => void
+  /**
+   * 关闭时接管焦点归还。Radix 默认把焦点还给 DialogTrigger，本仓库的速览
+   * 没有 Trigger（由卡片键盘触发），默认行为会把焦点丢到 body；
+   * 交给调用方按需还原到触发它的那张卡片上。
+   */
+  onCloseAutoFocus?: (event: Event) => void
 }
 
-export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps) {
+export function SitePeekDialog({
+  item,
+  open,
+  onOpenChange,
+  categoryId,
+  isPinnedInCategory = false,
+  onTogglePinInCategory,
+  onCloseAutoFocus,
+}: SitePeekDialogProps) {
   const [actionInputs, setActionInputs] = useState<Record<string, string>>({})
   const [showIframe, setShowIframe] = useState(false)
   const [hyperbolicAlts, setHyperbolicAlts] = useState<Array<{
@@ -72,8 +94,16 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
   const healthBadge = siteHealthBadge(item.health)
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setShowIframe(false) }}>
-      <DialogContent className="w-[calc(100%-2rem)] max-w-2xl max-h-[calc(100dvh-2.5rem)] overflow-y-auto p-4 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        onOpenChange(o)
+        if (!o) setShowIframe(false)
+      }}
+    >
+      <DialogContent
+        onCloseAutoFocus={onCloseAutoFocus}
+        className="w-[calc(100%-2rem)] max-w-2xl max-h-[calc(100dvh-2.5rem)] overflow-y-auto p-4 sm:p-7 glass-surface subtle-mesh border-border/80 shadow-2xl rounded-2xl">
         <DialogHeader className="space-y-3 pb-3 border-b border-border/50 pr-8 sm:pr-10">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
             <div className="flex items-center gap-3.5 min-w-0">
@@ -107,6 +137,34 @@ export function SitePeekDialog({ item, open, onOpenChange }: SitePeekDialogProps
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              {/**
+                * 键盘/读屏用户的等价入口：卡片上的置顶、收藏按钮已退出 Tab 序列
+                * （整卡只保留主链接一个停留点），必须在这里给出同样的动作，
+                * 否则「方向键进操作区」对只用读屏浏览模式的用户仍是断头路。
+                */}
+              {onTogglePinInCategory && categoryId ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={isPinnedInCategory}
+                  className="gap-1.5 h-8.5 px-3 shadow-2xs font-medium text-xs border-border/70"
+                  title={isPinnedInCategory ? '取消当前分类置顶' : '置顶到当前分类首位'}
+                  onClick={() => onTogglePinInCategory(item.id)}
+                >
+                  <Pin className={isPinnedInCategory ? 'w-3.5 h-3.5 fill-amber-500 text-amber-500' : 'w-3.5 h-3.5'} />
+                  <span className="hidden sm:inline">{isPinnedInCategory ? '取消置顶' : '置顶'}</span>
+                </Button>
+              ) : null}
+              <FavoriteButton
+                site={{
+                  siteId: item.id,
+                  title: item.title,
+                  href: item.href,
+                  icon: item.icon,
+                  description: item.description,
+                }}
+                className="h-8.5 w-8.5 rounded-lg border border-border/70 bg-background/60"
+              />
               <Button
                 variant="outline"
                 size="sm"

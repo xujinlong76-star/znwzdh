@@ -47,6 +47,30 @@ export default function HotView({
     degraded ? { message: '榜单数据暂时不可用：服务未启动或网络不可达。', retryable: true } : null,
   )
   const [reloadToken, setReloadToken] = useState(0)
+  /**
+   * 榜单页签写进 URL（?tab=new）：点开站点再返回、刷新、分享链接都能停在同一榜。
+   * 原来 defaultValue 只存在 Radix 内部，返回即回到「访问量榜」。
+   */
+  const [tab, setTab] = useState<'trending' | 'new'>('trending')
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const t = new URLSearchParams(window.location.search).get('tab')
+      setTab(t === 'new' ? 'new' : 'trending')
+    }
+    syncFromUrl()
+    window.addEventListener('popstate', syncFromUrl)
+    return () => window.removeEventListener('popstate', syncFromUrl)
+  }, [])
+  const changeTab = (value: string) => {
+    const nextTab = value === 'new' ? 'new' : 'trending'
+    setTab(nextTab)
+    const params = new URLSearchParams(window.location.search)
+    if (nextTab === 'new') params.set('tab', 'new')
+    else params.delete('tab')
+    const qs = params.toString()
+    const next = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash
+    window.history.replaceState(window.history.state, '', next)
+  }
 
   const reload = () => setReloadToken((n) => n + 1)
 
@@ -269,7 +293,7 @@ export default function HotView({
             </div>
           </div>
         ) : (
-          <Tabs defaultValue="trending" className="space-y-4">
+          <Tabs value={tab} onValueChange={changeTab} className="space-y-4">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <TabsList className="p-1 rounded-xl bg-muted/40 border border-border/50">
                 <TabsTrigger value="trending" className="text-xs sm:text-sm gap-1.5 rounded-lg">

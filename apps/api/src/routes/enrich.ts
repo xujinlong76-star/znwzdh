@@ -11,7 +11,7 @@ import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
-import { identityOf, identityTrusted } from "./shared.ts";
+import { requestIdentityOf, identityTrusted } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
 
@@ -25,7 +25,7 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    *  1. **第二轴**。`identityOf` 是调用方**自称**的身份；没过 `identityTrusted`
    *     就把它交给 `resolveLlm`，等价于「自称 `github:<别人>` 就能解出那个人存的
    *     个人 API Key 跑这次富化」，而且用量记在别人账上（ copilot 同一段教训）。
-   *  2. **单次取值**。`identityOf(req)` 调两次（一次取 key、一次记账）在理论上
+   *  2. **单次取值**。`requestIdentityOf(req)` 调两次（一次取 key、一次记账）在理论上
    *     可以拿到不同值——花的是 A 的 key、记的是 B 的账。收成一份。
    *
    * 额度不足时**不报错**：`enrichUrl` 的元数据抽取本来就能出标题/描述/图标，
@@ -38,7 +38,7 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     headers?: Record<string, string | undefined>;
     auth?: { kind?: string };
   }): Promise<{ identity: string | null; llmBlocked: boolean; quotaInfo: Record<string, unknown> | null }> {
-    const identity = identityTrusted(ctx, req as never) ? identityOf(req as never) : null;
+    const identity = identityTrusted(ctx, req as never) ? requestIdentityOf(req as never) : null;
     const quota = await checkLlmQuota(ctx, identity);
     if (quota.ok) return { identity, llmBlocked: false, quotaInfo: null };
     return {

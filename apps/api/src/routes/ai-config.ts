@@ -30,7 +30,7 @@ import {
   BUILTIN_WIDGET_CATALOG,
   WIDGET_TYPE_NAMES,
 } from "@navhub/core";
-import { identityTrusted, identityOf, unauthorized, resolveCanonicalIdentity } from "./shared.ts";
+import { identityTrusted, requestIdentityOf, unauthorized, resolveCanonicalIdentity } from "./shared.ts";
 import { checkLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
 import type { AppContext } from "../context.ts";
 
@@ -213,7 +213,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   /* ------------------------------ 用户端 ------------------------------ */
 
   app.get("/api/user/ai/config", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) {
       reply.code(400);
       return { error: "缺少 userId 或 anonId" };
@@ -223,7 +223,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   });
 
   app.put("/api/user/ai/config", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) {
       reply.code(400);
       return { error: "缺少 userId 或 anonId" };
@@ -244,7 +244,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   });
 
   app.delete("/api/user/ai/config", { config: { scope: "public" } }, async (req, reply) => {
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) {
       reply.code(400);
       return { error: "缺少 userId 或 anonId" };
@@ -258,7 +258,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     "/api/user/ai/config/test",
     { config: { scope: "public", rateLimit: { max: 5, timeWindow: "1 minute" } } },
     async (req, reply) => {
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) {
         reply.code(400);
         return { error: "缺少 userId 或 anonId" };
@@ -309,7 +309,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     "/api/user/ai/chat",
     { config: { scope: "public", rateLimit: { max: 10, timeWindow: "1 minute" } } },
     async (req, reply) => {
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) {
         reply.code(400);
         return { error: "缺少 userId 或 anonId" };
@@ -436,7 +436,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     "/api/user/ai/canvas/generate",
     { config: { scope: "public", rateLimit: { max: 5, timeWindow: "1 minute" } } },
     async (req, reply) => {
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) {
         reply.code(400);
         return { error: "缺少 userId 或 anonId" };
@@ -615,7 +615,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     "/api/user/ai/plugin/generate",
     { config: { scope: "public", rateLimit: { max: 10, timeWindow: "1 minute" } } },
     async (req, reply) => {
-      const rawIdentity = identityOf(req as never);
+      const rawIdentity = requestIdentityOf(req as never);
       if (!rawIdentity) {
         reply.code(400);
         return { error: "缺少 userId 或 anonId" };

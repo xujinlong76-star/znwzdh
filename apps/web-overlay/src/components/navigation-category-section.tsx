@@ -43,7 +43,9 @@ export interface NavigationCategorySectionProps {
   setDropCategoryTarget: (target: DropCategoryTarget | null) => void
   setDragOverCustomCatId: (id: string | null) => void
   setAddSiteTargetCatId: (id: string | null) => void
-  setPeekItem: (item: NavigationSubItem | null) => void
+  setPeekItem: (item: NavigationSubItem | null, categoryId?: string) => void
+  /** 卡片键盘操作说明的 DOM id（页面级只渲染一份） */
+  keyboardHintId?: string
   toggleSelectOne: (siteId: string) => void
 }
 
@@ -63,6 +65,7 @@ export function NavigationCategorySection({
   setDragOverCustomCatId,
   setAddSiteTargetCatId,
   setPeekItem,
+  keyboardHintId,
   toggleSelectOne,
 }: NavigationCategorySectionProps) {
   const { toast } = useToast()
@@ -185,17 +188,27 @@ export function NavigationCategorySection({
                                   })
                                   return
                                 }
-                                addSiteToCustomCategory(category.id, {
+                                const outcome = addSiteToCustomCategory(category.id, {
                                   id: createCustomSiteId(),
                                   title: card.title,
                                   href: card.href,
                                   description: card.description || undefined,
                                   icon: card.icon || undefined,
                                 })
-                                toast({
-                                  title: '📥 拖拽收录成功',
-                                  description: `已成功将站点「${card.title}」收录进专属分类「${category.title}」！`,
-                                })
+                                if (outcome === 'failed') {
+                                  toast({
+                                    title: '这一下没能保存',
+                                    description: '浏览器拒绝写入本地存储（隐私模式或空间已满），刷新后这条收录会消失。',
+                                    variant: 'destructive',
+                                  })
+                                } else if (outcome === 'duplicate') {
+                                  toast({ title: 'ℹ️ 站点已存在', description: `「${card.title}」已在「${category.title}」中。` })
+                                } else {
+                                  toast({
+                                    title: '📥 拖拽收录成功',
+                                    description: `已成功将站点「${card.title}」收录进专属分类「${category.title}」！`,
+                                  })
+                                }
                                 return
                               } else if (isEditingLayout && card.id && card.sourceCategoryId !== category.id) {
                                 reclassifySite(card.id, category.id)
@@ -229,17 +242,27 @@ export function NavigationCategorySection({
                                   })
                                   return
                                 }
-                                addSiteToCustomCategory(category.id, {
+                                const outcome = addSiteToCustomCategory(category.id, {
                                   id: createCustomSiteId(),
                                   title: card.title,
                                   href: card.href,
                                   description: card.description || undefined,
                                   icon: card.icon || undefined,
                                 })
-                                toast({
-                                  title: '📥 拖拽收录成功',
-                                  description: `已成功将站点「${card.title}」收录进专属分类「${category.title}」！`,
-                                })
+                                if (outcome === 'failed') {
+                                  toast({
+                                    title: '这一下没能保存',
+                                    description: '浏览器拒绝写入本地存储（隐私模式或空间已满），刷新后这条收录会消失。',
+                                    variant: 'destructive',
+                                  })
+                                } else if (outcome === 'duplicate') {
+                                  toast({ title: 'ℹ️ 站点已存在', description: `「${card.title}」已在「${category.title}」中。` })
+                                } else {
+                                  toast({
+                                    title: '📥 拖拽收录成功',
+                                    description: `已成功将站点「${card.title}」收录进专属分类「${category.title}」！`,
+                                  })
+                                }
                               }
                             }
                           } catch (err) {
@@ -374,7 +397,8 @@ export function NavigationCategorySection({
                                     key={item.id}
                                     item={item}
                                     siteConfig={siteData}
-                                    onPeek={setPeekItem}
+                                    onPeek={(item) => setPeekItem(item, category.id)}
+                                    keyboardHintId={keyboardHintId}
                                     cardDisplayMode={cardDisplayMode}
                                     isPinnedInCategory={categoryPinnedItemIds.includes(item.id)}
                                     onTogglePinInCategory={(siteId) => togglePinSiteInCategory(category.id, siteId)}
@@ -427,7 +451,8 @@ export function NavigationCategorySection({
                                           key={item.id}
                                           item={item}
                                           siteConfig={siteData}
-                                          onPeek={setPeekItem}
+                                          onPeek={(item) => setPeekItem(item, subCategory.id)}
+                                          keyboardHintId={keyboardHintId}
                                           cardDisplayMode={cardDisplayMode}
                                           isPinnedInCategory={subPinnedItemIds.includes(item.id)}
                                           onTogglePinInCategory={(siteId) => togglePinSiteInCategory(subCategory.id, siteId)}

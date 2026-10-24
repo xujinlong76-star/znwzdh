@@ -61,7 +61,13 @@ describe.skipIf(!client)("跨方言：rollup 在 PostgreSQL 上与 SQLite 行为
     // 上一轮若中途崩了，先清干净再建（schema 级隔离，不碰 public）
     await client.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
     await client.query(`CREATE SCHEMA ${SCHEMA}`);
-    await client.query(`SET search_path TO ${SCHEMA}`);
+    /**
+     * public 必须留在 search_path 里：pg_trgm 若已由 DBA 装在 public，
+     * DDL 的 CREATE EXTENSION IF NOT EXISTS 是 no-op，扩展对象仍在 public；
+     * 只留 rollup_e2e 会让 gin_trgm_ops 找不到（本地/共享实例上必现，
+     * CI 的一次性库因为扩展恰好建在 rollup_e2e 才侥幸绿）。
+     */
+    await client.query(`SET search_path TO ${SCHEMA}, public`);
     // 复用 driver 的真 PG DDL：events/audit_logs 的列与生产一致（含 identity）
     const { DDL } = await import(pathToFileURL(path.join(process.cwd(), "packages/store/src/driver.ts")).href);
     await client.query(DDL.pg);

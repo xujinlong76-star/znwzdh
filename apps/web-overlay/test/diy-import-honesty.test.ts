@@ -378,3 +378,27 @@ describe('分享链接接收侧：被吃掉的内容挂到横幅上', () => {
     expect(snap.storageWarning).toContain('自定义壁纸')
   })
 })
+
+describe('收录站点：写盘失败不能报成功', () => {
+  const read = (rel: string) => readFileSync(resolve(HERE, '..', rel), 'utf8')
+
+  it('addSiteToCustomCategory 返回 added / duplicate / failed 三态', () => {
+    const src = read('src/lib/modular/use-home-diy.ts')
+    expect(src).toContain("'added' | 'duplicate' | 'failed'")
+    expect(src).toContain('if (!result.ok) return')
+    // persistConfig 必须把落盘结果交回调用方（原实现直接丢弃）
+    expect(src).toContain('return result')
+  })
+
+  it('单条收录与批量收录都按真实结果提示', () => {
+    const src = read('src/components/navigation-content.tsx')
+    expect(src).toContain("if (outcome === 'failed')")
+    expect(src).toContain('这一下没能保存')
+    expect(src).toContain('let failed = 0')
+  })
+
+  it('拖拽收录同样区分失败与重复', () => {
+    const src = read('src/components/navigation-category-section.tsx')
+    expect(src).toContain("if (outcome === 'failed')")
+  })
+})

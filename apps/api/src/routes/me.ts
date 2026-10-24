@@ -29,7 +29,7 @@ import { generateToken, hashToken, tokenPrefixOf } from "../auth.ts";
 import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION } from "@navhub/store";
 
 import type { AppContext } from "../context.ts";
-import { identityOf, identityTrusted } from "./shared.ts";
+import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import { verifyIdentitySignature } from "../identity-signature.ts";
 import { invalidateProfileThrottle, refreshUserProfile } from "../profile-service.ts";
 import { recordUserCenterMetric } from "../user-center-metrics.ts";
@@ -93,7 +93,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 0, etag: true } } },
     async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) {
       reply.code(401);
       return { error: "缺少登录身份" };
@@ -110,7 +110,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   app.get("/api/me/settings", async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
     return { ok: true, settings: await ctx.repo.getUserSettings(canonical) };
@@ -118,7 +118,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   app.patch("/api/me/settings", async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const parsed = settingsPatchSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -142,7 +142,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   app.patch("/api/me/profile", async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     if (identity.startsWith("anon-")) {
       reply.code(403);
@@ -218,7 +218,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
       const canonical = await ctx.repo.resolveIdentity(identity);
 
@@ -331,7 +331,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
       const canonical = await ctx.repo.resolveIdentity(identity);
 
@@ -401,7 +401,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
     async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
     const payload = await ctx.repo.exportUserData(canonical);
@@ -434,7 +434,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
       const canonical = await ctx.repo.resolveIdentity(identity);
 
@@ -740,7 +740,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
       const canonical = await ctx.repo.resolveIdentity(identity);
 
@@ -815,7 +815,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
       const canonical = await ctx.repo.resolveIdentity(identity);
       const query = z
@@ -861,7 +861,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 300, timeWindow: "1 minute" } } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
       const body = z
         .object({
@@ -896,7 +896,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
    */
   app.post("/api/me/tokens", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     if (identity.startsWith("anon-")) { reply.code(403); return { error: "匿名身份不支持创建 API 令牌" }; }
     const body = z
@@ -928,7 +928,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   app.get("/api/me/tokens", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
     const tokens = await ctx.repo.listApiTokensByOwner(canonical);
@@ -948,7 +948,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   app.delete("/api/me/tokens/:id", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const id = String((req.params as { id: string }).id || "");
     if (!id || id.length > 64) { reply.code(400); return { error: "id 无效" }; }
@@ -971,7 +971,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   /** 通知列表：默认含已读；?unread=1 只看未读。附带未读数供面板角标。 */
   app.get("/api/me/notifications", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
     const query = z
@@ -1000,7 +1000,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   /** 单条已读：幂等（已读的再标一次不计入返回值） */
   app.post("/api/me/notifications/:id/read", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const id = String((req.params as { id: string }).id || "");
     if (!id || id.length > 64) { reply.code(400); return { error: "id 无效" }; }
@@ -1012,7 +1012,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   /** 全部已读 */
   app.post("/api/me/notifications/read-all", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
     const marked = await ctx.repo.markAllNotificationsRead(canonical);
@@ -1022,7 +1022,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   /** 设备列表：未吊销且未过期的会话（库里只有 sidHash，展示端不需要知道原文） */
   app.get("/api/me/sessions", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const canonical = await ctx.repo.resolveIdentity(identity);
     const devices = await ctx.repo.listSessionDevices(canonical);
@@ -1032,7 +1032,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
   /** 踢出设备：按 sidHash，跨用户无效 404 */
   app.delete("/api/me/sessions/:id", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     const id = String((req.params as { id: string }).id || "");
     if (!/^[a-f0-9]{64}$/.test(id)) { reply.code(400); return { error: "会话 id 无效" }; }
@@ -1060,7 +1060,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
       const canonical = await ctx.repo.resolveIdentity(identity);
       const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -1085,7 +1085,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
       const canonical = await ctx.repo.resolveIdentity(identity);
       const q = (req.query ?? {}) as Record<string, string>;
@@ -1109,7 +1109,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
       const parsed = z.object({
         ops: z.array(z.object({
@@ -1204,7 +1204,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
     async (req, reply) => {
       if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-      const identity = identityOf(req as never);
+      const identity = requestIdentityOf(req as never);
       if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
       const canonical = await ctx.repo.resolveIdentity(identity);
       const [favorites, folders] = await Promise.all([
@@ -1264,7 +1264,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
    */
   app.delete("/api/me", { config: { rateLimit: { max: 3, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const identity = identityOf(req as never);
+    const identity = requestIdentityOf(req as never);
     if (!identity) { reply.code(401); return { error: "缺少登录身份" }; }
     if (identity.startsWith("anon-")) {
       reply.code(403);
@@ -1291,7 +1291,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
 
   app.post("/api/me/merge", { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } }, async (req, reply) => {
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "身份未受信：需要 Bearer token 或有效的身份签名" }; }
-    const target = identityOf(req as never);
+    const target = requestIdentityOf(req as never);
     if (!target) {
       reply.code(401);
       return { error: "缺少登录身份" };

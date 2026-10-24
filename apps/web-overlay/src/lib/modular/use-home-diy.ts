@@ -97,8 +97,16 @@ export function useHomeDIY() {
     })
   }, [])
 
+  /**
+   * 落盘并把结果回传给调用方。
+   *
+   * 原实现直接丢弃 HomeDiyWriteResult：隐私模式/配额满时写入失败，调用方
+   * 仍然弹「已成功收录」，刷新后站点消失——这是最伤信任的一类假成功。
+   */
   const persistConfig = useCallback((updater: (prev: HomeDIYConfig) => HomeDIYConfig) => {
-    publishToOtherTabs(commitHomeDiyConfig(updater))
+    const result = commitHomeDiyConfig(updater)
+    publishToOtherTabs(result)
+    return result
   }, [publishToOtherTabs])
 
   // 3.1 接收远端标签页的改动：按插槽 LWW 合并，绝不整表覆盖
@@ -287,19 +295,36 @@ export function useHomeDIY() {
   }, [persistConfig])
 
   // 19. 添加站点到自建专属分类
-  const addSiteToCustomCategory = useCallback((categoryId: string, site: CustomCategoryItem) => {
-    persistConfig((prev) => {
-      const nextCats = prev.customCategories.map((cat) => {
-        if (cat.id !== categoryId) return cat
-        if (cat.items.some((i) => i.id === site.id || i.href === site.href)) return cat
-        return {
-          ...cat,
-          items: [site, ...cat.items],
-        }
+  /**
+   * 把站点收录进自建分类。
+   *
+   * 返回值是调用方弹提示的唯一依据：
+   *  - `added`：真的写进了分类；
+   *  - `duplicate`：分类里已有同 id / 同 href 的条目（不是失败，但不该说「已添加」）；
+   *  - `failed`：写盘失败（隐私模式 / 配额满），改动只在内存里，刷新即消失。
+   */
+  const addSiteToCustomCategory = useCallback(
+    (categoryId: string, site: CustomCategoryItem): 'added' | 'duplicate' | 'failed' => {
+      let outcome: 'added' | 'duplicate' = 'added'
+      const result = persistConfig((prev) => {
+        const nextCats = prev.customCategories.map((cat) => {
+          if (cat.id !== categoryId) return cat
+          if (cat.items.some((i) => i.id === site.id || i.href === site.href)) {
+            outcome = 'duplicate'
+            return cat
+          }
+          return {
+            ...cat,
+            items: [site, ...cat.items],
+          }
+        })
+        return { ...prev, customCategories: nextCats, updatedAt: Date.now() }
       })
-      return { ...prev, customCategories: nextCats, updatedAt: Date.now() }
-    })
-  }, [persistConfig])
+      if (!result.ok) return 'failed'
+      return outcome
+    },
+    [persistConfig],
+  )
 
   // 20. 从自建分类移除站点
   const removeSiteFromCustomCategory = useCallback((categoryId: string, siteId: string) => {

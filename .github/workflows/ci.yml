@@ -131,7 +131,9 @@ jobs:
       # 两个 e2e 套件共用同一实例但各自独占 schema，可并行：
       #   pg-dialect —— Repository 断言跨方言一致（public schema）
       #   rollup-pg   —— 数据治理 rollup 的 $n 占位符 / ON CONFLICT / COUNT(DISTINCT)（rollup_e2e schema）
-      - run: pnpm exec vitest run packages/store/test/pg-dialect.e2e.test.ts packages/store/test/rollup-pg.e2e.test.ts
+      # 用带环境守卫的入口：NAVHUB_TEST_DATABASE_URL 缺失时直接失败，
+      # 而不是让两个套件整体 skip 后仍然绿灯（2026-10-24 实测过这个假绿）。
+      - run: pnpm test:pg:suite
       # 标准模式 12 项真实数据库方言基准检验（同样只认 NAVHUB_TEST_DATABASE_URL）
       - run: pnpm test:pg
 

@@ -17,7 +17,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { canonicalizeUrl, type SitePackPayload } from "@navhub/core";
 import type { AppContext } from "../context.ts";
-import { badRequest, notFound } from "./shared.ts";
+import { safeDecodeParam, badRequest, notFound } from "./shared.ts";
 
 /**
  * 单条 SQL 的最大占位符数。

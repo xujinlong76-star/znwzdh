@@ -60,6 +60,15 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
       "DELETE FROM site_tags", "DELETE FROM tags", "DELETE FROM sites", "DELETE FROM categories",
       "DELETE FROM audit_logs", "DELETE FROM events", "DELETE FROM health_checks", "DELETE FROM jobs",
       "DELETE FROM user_profiles",
+      /**
+       * 用户域也必须清：本套件里既有「首次写入 existed=false」「vault 从 v1 开始」
+       * 这类依赖初始状态的断言，也有 LWW 墓碑计数。上一轮残留会让第二次运行
+       * 出现「expected true to be false」这类假失败——本地重复跑永远红，
+       * 只有 CI 的一次性 PG 服务是绿的，等于把幂等缺陷藏起来了。
+       */
+      "DELETE FROM favorites", "DELETE FROM favorite_folders", "DELETE FROM search_history",
+      "DELETE FROM user_vault_sync", "DELETE FROM identity_aliases", "DELETE FROM identity_merges",
+      "DELETE FROM user_settings",
     ]) await ctx.db.pg!.query(sql);
 
     const cat = await ctx.repo.createCategory({ id: catId, title: "PG 方言类目" });
@@ -305,6 +314,18 @@ describe.skipIf(!ctx)("跨方言：PostgreSQL 核心行为与 SQLite 一致", ()
 });
 
 describe.skipIf(!ctx)("跨方言：用户域（T9）与 SQLite 一致", () => {
+  /**
+   * 本 describe 复用第一个 describe 建的类目，但不能假设它一定存在：
+   * 单跑本文件时 beforeAll 顺序虽固定，跳过/过滤执行时未必。显式 ensure 一次，
+   * 同时修掉此前 `catId is not defined` 的作用域错误（CI 上必红）。
+   */
+  const catId = "pg-e2e-cat";
+  beforeAll(async () => {
+    if (!ctx) return;
+    const existing = await ctx.repo.getCategory(catId);
+    if (!existing) await ctx.repo.createCategory({ id: catId, title: "PG 方言类目" });
+  });
+
   it("mergeIdentity 迁移收藏/历史/设置并写别名；别名解析可跟随", async () => {
     if (!ctx) return;
     const repo = ctx.repo;
@@ -346,11 +367,16 @@ describe.skipIf(!ctx)("跨方言：用户域（T9）与 SQLite 一致", () => {
     if (!ctx) return;
     const repo = ctx.repo;
     const user = "github:pg-vault-cas";
-    const saved = await repo.saveUserVault({ userId: user, payload: "v1-payload" });
+    const saved = await repo.saveUserVault(user, "v1-payload");
     expect(saved.version).toBe(1);
-    const conflict = await repo.saveUserVaultIfUnchanged({ userId: user, payload: "stale", expectedVersion: 1 });
+    /**
+     * 冲突要用**真正过期的前置版本**来构造：保存后云端已是 v1，
+     * 再拿 expectedVersion=1 写入是合法覆盖，不会冲突。
+     * 这里用 0（客户端以为云端没有金库）代表另一端基于旧快照写入。
+     */
+    const conflict = await repo.saveUserVaultIfUnchanged(user, "stale", 0);
     expect(conflict.conflict).toBe(true);
-    const ok = await repo.saveUserVaultIfUnchanged({ userId: user, payload: "v2-payload", expectedVersion: 1 });
+    const ok = await repo.saveUserVaultIfUnchanged(user, "v2-payload", 1);
     expect(ok.conflict).toBeFalsy();
     expect(ok.version).toBe(2);
   });
@@ -432,6 +458,27 @@ describe.skipIf(!ctx)("跨方言：用户域（T9）与 SQLite 一致", () => {
     ]);
     expect(hydrated.sites).toHaveLength(1);
     expect(hydrated.sites[0]!.id).toBe("pg-bulk-hydrate");
+
+    /**
+     * 停用态透传（2026-10-24 备份恢复修复的 PG 侧回归）。
+     *
+     * 冷备恢复把 `enabled` 映射成 `enabled=false + status=archived`。
+     * PG 的 BOOLEAN 绑定与 SQLite 的 0/1 不同，必须验证读回的不是字符串
+     * "false"、也没有被缺省值 true 覆盖。
+     */
+    const hidden = await repo.insertSitesBulk([
+      {
+        id: "pg-bulk-hidden",
+        url: "https://pg-bulk-hidden.example.com",
+        title: "停用站点",
+        categoryId: catId,
+        enabled: false,
+        status: "archived",
+      },
+    ]);
+    expect(hidden.sites).toHaveLength(1);
+    expect(hidden.sites[0]!.enabled).toBe(false);
+    expect(hidden.sites[0]!.status).toBe("archived");
   });
 
   it("insertSitesBulk 的原子性：事务内失败整体回滚（备份恢复 409 语义的地基）", async () => {

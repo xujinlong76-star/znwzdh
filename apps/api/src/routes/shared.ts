@@ -245,6 +245,23 @@ export function submissionNumber(id: string): number {
 /**
  * 从请求提取终端用户身份标示（Header 优先，Query/Body 兼容回退）
  */
+/**
+ * 安全解码路径参数。
+ *
+ * Fastify 已对 `:param` 做过一次 URL 解码；路由里再 `decodeURIComponent` 一次
+ * 是为了兼容「客户端把 slug 编了两遍」的历史调用。但畸形输入（例如 `%`）会让
+ * decodeURIComponent 抛 URIError，冒到框架层变成 500——一个本该是 404 的
+ * 非法 slug 被记进错误率指标，还会污染告警。这里失败时回退原文，
+ * 让后续查库自然走到 404。
+ */
+export function safeDecodeParam(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export function identityOf(req: {
   query: Record<string, unknown>;
   body: unknown;

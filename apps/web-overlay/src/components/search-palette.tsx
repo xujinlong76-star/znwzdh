@@ -98,6 +98,16 @@ interface SearchPaletteProps {
 export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导航…（中文 / 拼音 / 语义）' }: SearchPaletteProps) {
   const [query, setQuery] = useState('')
   const [isFocused, setIsFocused] = useState(false)
+  /**
+   * 键盘高亮项索引。
+   *
+   * 输入框在 <Command> 之外（搜索框在顶部，结果面板在其下方），cmdk 的
+   * keydown 监听挂在 Command 根节点上，键盘事件从输入框冒泡不到那里——
+   * 结果就是「能打字、不能选」：↑↓/Enter 完全无反应，Tab 只会跳到每行的
+   * 收藏星标。这里自己维护一条扁平列表（插件在前、站点在后，与 DOM 顺序一致），
+   * 并用 aria-activedescendant 把高亮项告知读屏。
+   */
+  const [activeIndex, setActiveIndex] = useState(-1)
   const [hits, setHits] = useState<HubSearchHit[]>([])
   /** 统一搜索：同一关键词同时召回插件市场条目 */
   const [pluginHits, setPluginHits] = useState<HubPluginSearchResponse | null>(null)
@@ -368,6 +378,72 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
    * 也保证零结果一定给出出口，并且不因命中微组件就隐瞒「导航检索为空」。
    */
   const pluginItems = pluginHits?.items ?? []
+
+  /**
+   * 键盘可导航项：与渲染顺序严格一致（插件分区在站点命中之前）。
+   * 站点命中里 site 为空的脏数据不渲染，也不进导航列表——否则索引会错位。
+   */
+  const navItems = useMemo(() => {
+    if (!showResults) return [] as Array<{ id: string; kind: 'plugin' | 'site' }>
+    const items: Array<{ id: string; kind: 'plugin' | 'site' }> = []
+    for (const p of pluginItems) items.push({ id: `plugin-${p.id}`, kind: 'plugin' })
+    for (const h of hits) {
+      if (h.site) items.push({ id: `site-${h.siteId}`, kind: 'site' })
+    }
+    return items
+  }, [showResults, pluginItems, hits])
+
+  const navIndexById = useMemo(() => {
+    const map = new Map<string, number>()
+    navItems.forEach((item, index) => map.set(item.id, index))
+    return map
+  }, [navItems])
+
+  // 查询词或结果集变化后，旧高亮可能指向另一条站点：归零比「跳到第 5 条」更可预期
+  useEffect(() => {
+    setActiveIndex(-1)
+  }, [query])
+
+  useEffect(() => {
+    if (activeIndex >= navItems.length) setActiveIndex(-1)
+  }, [activeIndex, navItems.length])
+
+  /** 把高亮项滚进可视区（结果面板自身可滚动，浏览器默认只滚外层） */
+  useEffect(() => {
+    if (activeIndex < 0) return
+    const el = document.getElementById(`navhub-search-opt-${activeIndex}`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex])
+
+  const onSearchKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!showResults) return
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (navItems.length === 0) return
+        e.preventDefault()
+        setActiveIndex((prev) => {
+          if (e.key === 'ArrowDown') return prev < 0 ? 0 : (prev + 1) % navItems.length
+          return prev <= 0 ? navItems.length - 1 : prev - 1
+        })
+        return
+      }
+      if (e.key === 'Enter' && activeIndex >= 0) {
+        // 交给真实元素处理：站点行是 CommandItem（onSelect 打开），插件行是 Link（路由跳转）
+        const el = document.getElementById(`navhub-search-opt-${activeIndex}`)
+        if (el) {
+          e.preventDefault()
+          el.click()
+        }
+        return
+      }
+      if (e.key === 'Escape') {
+        setIsFocused(false)
+        inputRef.current?.blur()
+      }
+    },
+    [showResults, navItems.length, activeIndex],
+  )
+
   const panel = planSearchPanel({
     loading: loading || pluginLoading,
     degraded,
@@ -398,6 +474,10 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
           aria-expanded={isFocused}
           aria-autocomplete="list"
           aria-controls={showResults ? 'navhub-search-results-panel' : isFocused ? 'navhub-search-suggest-panel' : undefined}
+          aria-activedescendant={
+            activeIndex >= 0 && navItems.length > 0 ? `navhub-search-opt-${activeIndex}` : undefined
+          }
+          onKeyDown={onSearchKeyDown}
           placeholder={placeholder}
           value={query}
           onChange={(e) => { setQuery(e.target.value); setIsFocused(true) }}
@@ -703,9 +783,14 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     {pluginItems.map((p) => (
                       <Link
                         key={p.id}
+                        id={`navhub-search-opt-${navIndexById.get('plugin-' + p.id) ?? -1}`}
+                        data-nav-item="plugin"
+                        aria-current={navIndexById.get('plugin-' + p.id) === activeIndex ? 'true' : undefined}
                         href={`/marketplace/${encodeURIComponent(p.slug)}`}
                         onClick={() => setIsFocused(false)}
-                        className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-accent/50 transition-colors"
+                        className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 transition-colors ${
+                          navIndexById.get('plugin-' + p.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                        }`}
                       >
                         <span className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/15 flex items-center justify-center shrink-0">
                           <Store className="h-4 w-4 text-primary" />
@@ -855,8 +940,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     <CommandItem
                       key={hit.siteId}
                       value={site.title}
+                      id={`navhub-search-opt-${navIndexById.get('site-' + site.id) ?? -1}`}
+                      data-nav-item="site"
+                      aria-selected={navIndexById.get('site-' + site.id) === activeIndex}
                       onSelect={() => openSite(hit)}
-                      className="flex items-center gap-3 py-3 px-3 cursor-pointer hover:bg-accent/50"
+                      className={`flex items-center gap-3 py-3 px-3 cursor-pointer ${
+                        navIndexById.get('site-' + site.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                      }`}
                     >
                       <div className="flex-shrink-0 w-8 h-8 rounded-md p-1 bg-muted/60 dark:bg-muted/30 border border-border/50 flex items-center justify-center">
                         <SiteFavicon
@@ -920,6 +1010,24 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                     </CommandItem>
                   )
                 })
+              )}
+              {/* 键盘提示：能力存在但没人知道，等于不存在（桌面端才显示） */}
+              {(hits.length > 0 || pluginItems.length > 0) && (
+                <div className="hidden sm:flex items-center gap-3 border-t border-border/60 bg-muted/20 px-3 py-1.5 text-[10px] text-muted-foreground">
+                  <span className="inline-flex items-center gap-1">
+                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↑</kbd>
+                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">↓</kbd>
+                    选择
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Enter</kbd>
+                    打开
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <kbd className="rounded border border-border/70 bg-background px-1 font-mono">Esc</kbd>
+                    关闭
+                  </span>
+                </div>
               )}
               {showResults && hits.length > 0 && hasMore && (
                 <div className="p-2 border-t">

@@ -19,7 +19,7 @@ import { indexSite } from "../index-site.ts";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
-import { identityOf, identityTrusted } from "./shared.ts";
+import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -236,7 +236,7 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
       reason: `同属于分类【${site.categoryId}】的高活跃度替代站点`,
     }));
 
-    const identity = identityTrusted(ctx, req as never) ? identityOf(req as never) : null;
+    const identity = identityTrusted(ctx, req as never) ? requestIdentityOf(req as never) : null;
     const quota = await checkLlmQuota(ctx, identity);
     if (!quota.ok) {
       return {

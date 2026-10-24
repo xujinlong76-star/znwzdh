@@ -40,6 +40,7 @@ function skip(label, reason) {
 // 语法解析门禁放最前：秒级，先把「少一个括号」这类错误挡在 tsc 之前。
 run("语法解析", "node", ["scripts/check-syntax.mjs"]);
 run("覆盖层同步", "node", ["scripts/check-web-overlay.mjs"]);
+run("CI 合并门禁", "node", ["scripts/check-ci-gate.mjs"]);
 run("core 镜像一致", "node", ["scripts/sync-core-mirrors.mjs", "--check"]);
 run("扩展校验", "node", ["scripts/check-extensions.mjs"]);
 // 后端 lint 已是硬门禁（error + --max-warnings 0），必须进这条链：

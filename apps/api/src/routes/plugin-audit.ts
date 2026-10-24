@@ -22,7 +22,7 @@ import {
   type UrlProber,
 } from "../plugin-audit.ts";
 import type { AppContext } from "../context.ts";
-import { badRequest, notFound } from "./shared.ts";
+import { safeDecodeParam, badRequest, notFound } from "./shared.ts";
 
 /** 单次体检抽样上限（防滥用：一次打几百条外部请求会伤人也伤己） */
 const MAX_SAMPLE = 200

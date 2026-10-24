@@ -87,6 +87,11 @@ describe("cron 调度语义", () => {
     for (const k of kinds) {
       expect(DEFAULT_SCHEDULES[k].timeoutMs).toBeGreaterThan(0);
       expect(DEFAULT_SCHEDULES[k].maxConcurrency).toBeGreaterThanOrEqual(1);
+      if (DEFAULT_SCHEDULES[k].cron === "MANUAL") {
+        // 手动任务（如 backup_restore）：绝不自动调度，cronDue 必须判 false
+        expect(cronDue(scheduleCronOf(k))).toBe(false);
+        continue;
+      }
       const expr = scheduleCronOf(k);
       // 别名没登记时 scheduleCronOf 会原样吐出别名（1 段），cronDue 从此恒 false
       expect(expr.split(" ").length, `${k} 的 cron 别名 "${DEFAULT_SCHEDULES[k].cron}" 未在 CRON_EXPRS 登记`).toBe(5);

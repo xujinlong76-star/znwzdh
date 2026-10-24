@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { identityTrusted, identityOf, resolveCanonicalIdentity } from "./shared.ts";
+import { identityTrusted, requestIdentityOf, resolveCanonicalIdentity } from "./shared.ts";
 import {
   compactOperationLogs,
   mergeOperationLogs,
@@ -24,7 +24,7 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    * 拉取当前身份的 CRDT 操作日志与最新折叠状态
    */
   app.get("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
-    const rawIdentity = identityOf(req as never);
+    const rawIdentity = requestIdentityOf(req as never);
     if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     // 合并后旧 id 仍会从旧标签页发来：不解析就会读到一个空日志
@@ -55,7 +55,7 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       },
     },
     async (req, reply) => {
-    const rawIdentity = identityOf(req as never);
+    const rawIdentity = requestIdentityOf(req as never);
     if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     // 写入落 canonical：否则会在 `crdt:<旧id>` 另起一行孤儿日志
@@ -143,7 +143,7 @@ export const crdtRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    * 清除 CRDT 漫游日志
    */
   app.delete("/api/crdt/sync", { config: { scope: "public" } }, async (req, reply) => {
-    const rawIdentity = identityOf(req as never);
+    const rawIdentity = requestIdentityOf(req as never);
     if (!rawIdentity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const identity = await resolveCanonicalIdentity(ctx, rawIdentity);

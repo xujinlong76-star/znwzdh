@@ -27,6 +27,7 @@ import {
 import { useFavoritesFolderManager } from '@/hooks/use-favorites-folder-manager'
 import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { parseLocalFolders, serializeLocalFolders, type LocalFolder } from '@/lib/favorites-folders'
+import { buildFavoritesSearch, parseFavoritesFilters } from '@/lib/favorites-url'
 import {
   favoritesToVaultItems,
   formatVaultRestoreNotice,
@@ -123,6 +124,35 @@ export default function FavoritesPage() {
   // 这里先排好序，再只渲染前若干条，其余按需加载。
   const [sortBy, setSortBy] = useState<'created' | 'title'>('created')
   const [visibleCount, setVisibleCount] = useState(60)
+  /**
+   * 筛选条件同步到地址栏。
+   *
+   * 只在挂载后读一次 URL（避免 SSR/CSR 首帧不一致），之后每次变化 replaceState：
+   * 不触发服务端导航，但返回、刷新、复制链接都能还原同一视图。
+   */
+  const [filtersReady, setFiltersReady] = useState(false)
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const parsed = parseFavoritesFilters(window.location.search)
+      setFavoriteQuery(parsed.q)
+      setActiveFolder(parsed.folder)
+      setSortBy(parsed.sort)
+    }
+    syncFromUrl()
+    setFiltersReady(true)
+    window.addEventListener('popstate', syncFromUrl)
+    return () => window.removeEventListener('popstate', syncFromUrl)
+  }, [])
+
+  useEffect(() => {
+    if (!filtersReady) return
+    const next =
+      window.location.pathname +
+      buildFavoritesSearch({ q: favoriteQuery, folder: activeFolder, sort: sortBy }) +
+      window.location.hash
+    const current = window.location.pathname + window.location.search + window.location.hash
+    if (next !== current) window.history.replaceState(window.history.state, '', next)
+  }, [filtersReady, favoriteQuery, activeFolder, sortBy])
 
   /** 只过滤本页已加载的收藏；空关键词原样返回，不做无谓的重渲染 */
   const filteredFavorites = useMemo(

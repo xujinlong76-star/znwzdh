@@ -126,6 +126,10 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
     // 优先按真实 siteId 匹配；若未匹配且传入的是纯数字编号，回退按 djb2 哈希编号查找
     let site = await ctx.repo.getSite(number);
     if (!site || site.source !== "submission") {
+      // 关键：非投稿站点必须显式清空。原实现只在「纯数字」分支里重新赋值，
+      // UUID 形态的普通站点会原样留在 site 里，随后被 updateSite 改写状态——
+      // 任何 write 令牌都能借审核接口下架/强行上架任意站点。
+      site = null;
       const wanted = Number(number);
       if (Number.isFinite(wanted)) {
         const candidates = await ctx.repo.listSites({ source: "submission", limit: 1000 });

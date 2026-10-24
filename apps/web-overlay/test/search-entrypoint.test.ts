@@ -31,6 +31,8 @@ function overlaySource(rel: string): string {
 const PAGES_WITH_SEARCH = [
   "src/components/navigation-toolbar.tsx",
   "src/app/not-found.tsx",
+  // 分类 hub：翻页有深度上限，搜索是长尾站点的唯一出口
+  "src/app/category/[slug]/category-board.tsx",
 ];
 
 /**
@@ -51,6 +53,7 @@ const ISLAND_SEARCH_PAGES = [
 /** 这一批是站点列表页，提示文案必须点明「全部站点」（RSC 化后都在岛里）。 */
 const SITE_LIST_PAGES = [
   "src/app/hot/hot-view.tsx",
+  "src/app/category/[slug]/category-board.tsx",
   "src/components/tag-results-board.tsx",
   "src/app/collections/[slug]/collection-detail-view.tsx",
 ];

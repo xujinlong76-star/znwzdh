@@ -7,7 +7,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
 import type { AppContext } from "../context.ts";
-import { badRequest, notFound } from "./shared.ts";
+import { safeDecodeParam, badRequest, notFound } from "./shared.ts";
 
 export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -172,7 +172,7 @@ export const tagRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
   app.delete("/api/tags/:id/aliases/:alias", { config: { scope: "write" } }, async (req, reply) => {
     const { id, alias } = req.params as { id: string; alias: string };
     try {
-      const decodedAlias = decodeURIComponent(alias);
+      const decodedAlias = safeDecodeParam(alias);
       await ctx.repo.removeTagAlias(decodedAlias, id);
       await ctx.repo.audit({
         ip: req.ip,

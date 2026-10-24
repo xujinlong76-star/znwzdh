@@ -92,6 +92,27 @@ export interface SiteFilterState {
 }
 
 /**
+ * 预计算每个站点的搜索串（name/url/description 连接后整体小写化一次）。
+ *
+ * 筛选热路径的剩余开销：原实现每次查询对每个站点的 3 个字段逐个 toLowerCase
+ * （500 站点 × 每敲一个字符 = 1500 次字符串分配）。站点集合只在拉取/保存后变化，
+ * 把小写化结果缓存成 siteId -> haystack，按键时只做 includes。
+ *
+ * 连接符用 NUL：name/url/description 理论上可含换行，查询词不可能含 NUL，
+ * 用 \0 连接保证「跨字段拼接出假命中」不可能发生（与逐字段语义严格等价）。
+ */
+export function buildSiteHaystacks<T extends SiteFilterInput>(sites: T[]): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const site of sites) {
+    map.set(
+      site.id,
+      `${site.name}\u0000${site.url}\u0000${site.description ?? ''}`.toLowerCase(),
+    )
+  }
+  return map
+}
+
+/**
  * 按索引筛选站点。
  *
  * 返回 boolean 而不是三态：原实现里 `matchesSearch` 在 description 缺失时可能是
@@ -106,6 +127,7 @@ export function filterSitesByIndex<T extends SiteFilterInput>(
   sites: T[],
   state: SiteFilterState,
   index: SiteCategoryIndex,
+  haystacks?: Map<string, string>,
 ): T[] {
   const query = state.query.trim().toLowerCase()
   const hasQuery = query.length > 0
@@ -113,11 +135,16 @@ export function filterSitesByIndex<T extends SiteFilterInput>(
 
   return sites.filter((site) => {
     if (hasQuery) {
-      const haystack = [site.name, site.url, site.description]
-      const hit = haystack.some(
-        (value) => typeof value === 'string' && value.toLowerCase().includes(query),
-      )
-      if (!hit) return false
+      const precomputed = haystacks?.get(site.id)
+      if (precomputed !== undefined) {
+        if (!precomputed.includes(query)) return false
+      } else {
+        const haystack = [site.name, site.url, site.description]
+        const hit = haystack.some(
+          (value) => typeof value === 'string' && value.toLowerCase().includes(query),
+        )
+        if (!hit) return false
+      }
     }
 
     if (categoryFilter !== 'all' && (index.categoryOf.get(site.id) ?? '') !== categoryFilter) {

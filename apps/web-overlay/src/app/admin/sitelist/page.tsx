@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { safeHref } from '@/lib/safe-url'
 import {
   buildSiteCategoryIndex,
+  buildSiteHaystacks,
   filterSitesByIndex,
   siteCategoryInfo,
   type SiteCategoryLike,
@@ -335,9 +336,12 @@ export default function SiteListPage() {
    * 原实现每次渲染都重算一遍筛选（6400 站点约 5ms），打开一个弹窗也要付这个成本。
    * 依赖只留「会改变筛选结果」的五项，其余状态变化不再触发。
    */
+  // 小写化预计算：站点集合只在拉取/保存后变化，搜索按键不再对全站点重复 toLowerCase
+  const siteHaystacks = useMemo(() => buildSiteHaystacks(sites), [sites])
+
   const filteredSites = useMemo(
-    () => filterSitesByIndex(sites, { query: searchQuery, categoryFilter, subCategoryFilter }, categoryIndex),
-    [sites, searchQuery, categoryFilter, subCategoryFilter, categoryIndex]
+    () => filterSitesByIndex(sites, { query: searchQuery, categoryFilter, subCategoryFilter }, categoryIndex, siteHaystacks),
+    [sites, searchQuery, categoryFilter, subCategoryFilter, categoryIndex, siteHaystacks]
   )
 
   // 键盘快捷键支持

@@ -34,6 +34,8 @@ export function ApiTokensPanel() {
   const { toast } = useToast()
   const [tokens, setTokens] = useState<OwnedToken[] | null>(null)
   const [name, setName] = useState('')
+  // B1：默认只读；勾选后创建 read+write（扩展「收藏当前页」需要写权限）
+  const [writeAllowed, setWriteAllowed] = useState(false)
   const [creating, setCreating] = useState(false)
   const [revealed, setRevealed] = useState<{ raw: string; name: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -66,7 +68,7 @@ export function ApiTokensPanel() {
       const res = await fetch('/api/me/tokens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trimmed }),
+        body: JSON.stringify({ name: trimmed, write: writeAllowed }),
         cache: 'no-store',
       })
       const data = (await res.json().catch(() => ({}))) as { token?: string; error?: string }
@@ -81,7 +83,7 @@ export function ApiTokensPanel() {
     } finally {
       setCreating(false)
     }
-  }, [creating, load, name, toast])
+  }, [creating, load, name, toast, writeAllowed])
 
   const revoke = useCallback(
     async (id: string) => {
@@ -149,6 +151,16 @@ export function ApiTokensPanel() {
           placeholder="令牌名称（如：Raycast 扩展）"
           className="h-9 flex-1 text-xs"
         />
+        <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground" title="写入权限用于浏览器扩展的「收藏当前页」；只读令牌泄露后也无法改动你的数据">
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 accent-primary"
+            checked={writeAllowed}
+            aria-label="允许令牌写入（收藏当前页等）"
+            onChange={(e) => setWriteAllowed(e.target.checked)}
+          />
+          允许写入
+        </label>
         <Button size="sm" className="w-full text-xs sm:w-auto" disabled={creating || !name.trim()} onClick={() => void create()}>
           {creating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1.5 h-3.5 w-3.5" />}
           创建令牌

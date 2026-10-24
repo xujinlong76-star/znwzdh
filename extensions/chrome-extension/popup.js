@@ -296,6 +296,67 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
+// 4.5 收藏当前页到自己的账号（B1）：个人令牌（write）即身份，
+// 站点不存在时先经 /api/sites/auto 登记目录，再 POST /api/favorites
+const favBtn = document.getElementById("fav-btn");
+const favHint = document.getElementById("fav-hint");
+
+function setFavHint(text, tone) {
+  if (!favHint) return;
+  favHint.textContent = text;
+  favHint.style.color = tone === "err" ? "#f87171" : tone === "ok" ? "#34d399" : "#94a3b8";
+  favHint.style.display = "block";
+}
+
+if (favBtn) {
+  favBtn.addEventListener("click", async () => {
+    if (!currentTab || !currentTab.url) return;
+    const token = await getToken();
+    if (!token) {
+      setFavHint("请先在下方填入个人令牌（/me/account 创建，勾选写入权限）", "err");
+      return;
+    }
+    favBtn.disabled = true;
+    favBtn.textContent = "收藏中...";
+    try {
+      const apiBase = await getApiBase();
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+
+      // 1) 确保站点在目录里（已存在会返回 dup，不重复建）
+      const autoRes = await fetch(`${apiBase}/api/sites/auto`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ url: currentTab.url }),
+      });
+      if (autoRes.status === 401) { setFavHint("❌ 401：令牌无效", "err"); return; }
+      if (autoRes.status === 403) { setFavHint("❌ 令牌只读：请到 /me/account 创建勾选「写入」的令牌", "err"); return; }
+      const autoData = await autoRes.json().catch(() => ({}));
+      const siteId = autoData.site && autoData.site.id;
+      if (!siteId) { setFavHint("❌ 站点登记失败：" + (autoData.error || autoData.reason || "未知原因"), "err"); return; }
+
+      // 2) 收藏到自己名下（existed 如实反馈）
+      const favRes = await fetch(`${apiBase}/api/favorites`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ siteId }),
+      });
+      if (favRes.status === 403) { setFavHint("❌ 令牌只读：请到 /me/account 创建勾选「写入」的令牌", "err"); return; }
+      if (!favRes.ok && favRes.status !== 200) {
+        const err = await favRes.json().catch(() => ({}));
+        setFavHint("❌ 收藏失败：" + (err.error || favRes.status), "err");
+        return;
+      }
+      const favData = await favRes.json().catch(() => ({}));
+      setFavHint(favData.existed ? "已在收藏里（未重复添加）" : "✅ 已收藏", "ok");
+    } catch {
+      setFavHint("❌ 网络异常，中枢未响应", "err");
+    } finally {
+      favBtn.disabled = false;
+      favBtn.textContent = "⭐ 收藏当前页到我的账号";
+    }
+  });
+}
+
 // 5. 加载热门插件
 async function loadFeaturedPlugins() {
   if (!featuredPlugins || !pluginList) return;

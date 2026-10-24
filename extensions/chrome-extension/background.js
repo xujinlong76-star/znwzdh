@@ -74,3 +74,53 @@ function escapeXml(unsafe) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
 }
+
+
+// ---------------------------------------------------------------------------
+// 右键「收藏到 NavHub」（B1）：与 popup 的收藏按钮同一套两步链路
+// ---------------------------------------------------------------------------
+async function getToken() {
+  const store = await chrome.storage.local.get(["navhub_api_token"]);
+  return String(store.navhub_api_token || "").trim();
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: "navhub-favorite",
+    title: "⭐ 收藏到 NavHub",
+    contexts: ["page"],
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== "navhub-favorite" || !tab || !tab.url) return;
+  const token = await getToken();
+  const apiBase = await getApiUrl();
+  const badge = (text, color) => {
+    chrome.action.setBadgeText({ text });
+    chrome.action.setBadgeBackgroundColor({ color });
+    setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2500);
+  };
+  if (!token) { badge("配置", "#f59e0b"); return; }
+  try {
+    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    const autoRes = await fetch(`${apiBase}/api/sites/auto`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ url: tab.url }),
+    });
+    if (autoRes.status === 401 || autoRes.status === 403) { badge("401", "#ef4444"); return; }
+    const autoData = await autoRes.json().catch(() => ({}));
+    const siteId = autoData.site && autoData.site.id;
+    if (!siteId) { badge("失败", "#ef4444"); return; }
+    const favRes = await fetch(`${apiBase}/api/favorites`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ siteId }),
+    });
+    if (favRes.status === 403) { badge("只读", "#f59e0b"); return; }
+    badge(favRes.ok ? "已藏" : "失败", favRes.ok ? "#10b981" : "#ef4444");
+  } catch {
+    badge("离线", "#ef4444");
+  }
+});

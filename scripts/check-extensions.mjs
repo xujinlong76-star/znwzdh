@@ -134,6 +134,41 @@ if (!existsSync(raycastPkgPath)) {
   }
 }
 
+// ---- 3. 搜索请求必须携带凭据（源码级钉子） ----
+// 搜索行为事件（events.search / zero_result）按请求身份归属，服务端走
+// requestIdentityOf 从 Authorization 取令牌。扩展的搜索请求一旦丢掉这个头，
+// 不会报错、建议列表照常显示 —— 只是所有扩展用户的搜索行为静默变成匿名，
+// 「删除全部个人数据 / 导出」再也圈不到它们。这类回归没有运行时信号，
+// 只能钉源码：每个 /api/search? 请求的 fetch 选项窗口里必须能读到 Authorization。
+const SEARCH_CREDENTIAL_FILES = [
+  { file: join(chromeDir, 'background.js'), label: 'Chrome background.js' },
+  { file: join(chromeDir, 'popup.js'), label: 'Chrome popup.js' },
+]
+{
+  const errorsBefore = errors
+  for (const { file, label } of SEARCH_CREDENTIAL_FILES) {
+    if (!existsSync(file)) {
+      logError(`${label} 不存在，无法校验搜索凭据`)
+      continue
+    }
+    const source = readFileSync(file, 'utf-8')
+    const matches = [...source.matchAll(/\/api\/search\?/g)]
+    if (matches.length === 0) {
+      logError(`${label} 里找不到 /api/search 请求（搜索入口被删或换了端点？）`)
+      continue
+    }
+    for (const match of matches) {
+      // 只认 fetch 选项窗口内的 Authorization：同文件其他请求（收藏/投稿）带的头不算
+      const options = source.slice(match.index, match.index + 400)
+      if (!/Authorization/.test(options)) {
+        const line = source.slice(0, match.index).split('\n').length
+        logError(`${label}:${line} 的 /api/search 请求没有携带 Authorization —— 搜索行为会静默退化成匿名`)
+      }
+    }
+  }
+  if (errors === errorsBefore) logOk('Chrome 扩展搜索请求凭据校验通过')
+}
+
 if (errors > 0) {
   console.error(`\n❌ [extensions-check] 校验失败，共发现 ${errors} 处异常。`)
   process.exit(1)

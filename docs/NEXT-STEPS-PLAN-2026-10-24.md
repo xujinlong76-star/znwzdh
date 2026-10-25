@@ -180,8 +180,19 @@ d75b284/f983dc5、B1 的 cbe4674 等）——内容与自测状态一致，只�
 | --- | --- | --- |
 | D2 深研（isolate:false） | ✅ 结论收口 | 两轮全量实测：vi.mock 模块缓存与 process.env 改动按 worker 持久（vitest#4894 类），失败组合随调度随机不可收敛；**isolate 维持关闭**；11 个 vi.mock 文件补 afterAll(vi.resetModules) 卫生 + 2 处显式 env 改动补复位（无论隔离与否都正确）；重启该优化前先建 mock/env 卫生 lint 规则 |
 | C3 暗色冒烟守卫 | ✅ | e2e/dark-mode-smoke.spec.ts：WCAG 亮度计算真断言（dark < 0.5 / light > 0.5 双向锁） |
-| A3.3 发布页拆分（1120 行） | ⏸ 时间盒回滚 | 实证：步骤 1/2 为注释定界的自平衡块可安全抽出；**步骤 3 与表单尾部/包裹层闭合纠缠**（提交按钮、`</form>`、条件闭合跨块）；heredoc 补丁在此环境反复踩转义坑（必须用 Write 写脚本）；作为第七批首选项，建议以「步骤 1+2 先行、步骤 3 随表单整体抽出」切入 |
+| A3.3 发布页拆分（1120 行） | ✅ 1120→壳784+面板371 | 修正方案「步骤 1+2 先行」落地：注释定界的自平衡兄弟块抽出；发布向导 E2E（覆盖拆分页全流程）通过；步骤 3 纠缠留壳有实证 |
 
 **多会话实况**：本轮多次观察到并行会话在 beautify/巨型组件改造上的持续推进
 （backup 恢复可取消、search 身份归属、plugin-install-modal WIP 等）；
 field-names / silent-catch / rsc-boundary 守卫的余红经逐一归属核查均为其 WIP。
+
+---
+
+## 10. 第七批执行（2026-10-25 下午）
+
+| 项 | 状态 | 落点 |
+| --- | --- | --- |
+| A3.3 发布页拆分 | ✅ 1120→壳784+面板371 | 见上表 A3.3 行（第六批表格内同步更新）；发布向导 E2E 通过 |
+| mock 卫生制度化 | ✅ | mock-hygiene 守卫三条规则（跨模块 mock 必带 resetModules / env 改写必带 afterAll / exempt 豁免）；修正「补丁误打镜像被同步覆写」的回归——卫生必须落在 overlay 真源 |
+| 通知中心 v2 | ⏸ 维持非目标 | 需真实触发量数据 |
+| 沉积观察 | — | 五巨石全部瘦身完毕（algorithm-lab/sitelist/plugin-detail/ai-studio/publish）；并行会话持续在 backup/search/plugin-install-modal 上推进 |

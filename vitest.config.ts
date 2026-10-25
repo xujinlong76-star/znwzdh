@@ -33,9 +33,13 @@ export default defineConfig({
     hookTimeout: 60_000,
     pool: "forks",
     maxWorkers: 3,
-    // 注：勿开 isolate:false。实测（2026-10-24）会引入跨文件污染——
-    // tap-sync-import 与 packages/ai 在共享进程下互相干扰翻红，隔离开启即全绿。
-    // 提速诉求见 docs/NEXT-STEPS-PLAN-2026-10-24.md D2（已试并回滚）。
+    // isolate:false 经两轮深研后维持关闭（2026-10-25）：
+    //  - 收益实测 457s→149s，但跨文件污染源不止两处——vi.mock 的模块缓存与
+    //    process.env 改动按 worker 持久，失败组合随 worker 调度随机，无法稳定收敛；
+    //  - 已对全部 vi.mock 使用文件补 afterAll(vi.resetModules) 卫生（11 文件），
+    //    两处显式 env 改动补复位——这些修复无论隔离与否都正确，予以保留；
+    //  - 若未来要重启此优化：先建「vi.mock/env 改动必须 afterAll 清理」的
+    //    lint 规则，再按 worker 分组灰度。详见 docs/NEXT-STEPS-PLAN D2。
     execArgv: ["--max-old-space-size=4096"],
     coverage: {
       // 覆盖率只统计本仓库自己维护的后端与核心包源码：

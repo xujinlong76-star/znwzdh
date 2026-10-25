@@ -39,6 +39,7 @@ export interface DetailModalsProps {
   auditReport: HubPluginAuditReport | null
   studioModalOpen: boolean
   setStudioModalOpen: (v: boolean) => void
+  studioInitialManifest?: any
   loadDetail: () => void
 }
 
@@ -60,6 +61,7 @@ export function DetailModals(props: DetailModalsProps) {
     auditReport,
     studioModalOpen,
     setStudioModalOpen,
+    studioInitialManifest,
     loadDetail,
   } = props
   // 徽章弹窗的两枚复制反馈（与壳里 shareCopy/rawCopy 同一模式）
@@ -377,8 +379,8 @@ export function DetailModals(props: DetailModalsProps) {
           <AiPluginStudioModal
             open={studioModalOpen}
             onOpenChange={setStudioModalOpen}
-            initialManifest={plugin.manifest}
-            initialSlug={plugin.slug}
+            initialManifest={studioInitialManifest || plugin.manifest}
+            initialSlug={studioInitialManifest ? `${plugin.slug}-remix` : plugin.slug}
             onPublished={() => {
               setStudioModalOpen(false)
               void loadDetail()

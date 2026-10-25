@@ -22,6 +22,9 @@ import { pluginDetailHref } from '@/lib/plugins/detail-href'
 import { getIdentity } from '@/lib/identity'
 import {
   ArrowLeft,
+  GitFork,
+  Download,
+  Star,
   CheckCircle2,
   Clock3,
   Eye,
@@ -87,6 +90,18 @@ export default function MyPluginsPage() {
     return base
   }, [items])
 
+  const metrics = useMemo(() => {
+    let installs = 0
+    let stars = 0
+    let remixes = 0
+    for (const item of items) {
+      installs += item.installCount || 0
+      stars += item.starCount || 0
+      remixes += item.remixCount || 0
+    }
+    return { installs, stars, remixes }
+  }, [items])
+
   return (
     <Container as="main" id="main-content">
       <div className="py-6 sm:py-10 space-y-6">
@@ -124,6 +139,46 @@ export default function MyPluginsPage() {
             <span className="text-muted-foreground ml-auto">共 {total} 个</span>
           </div>
         </div>
+
+        {/* 创作者生态漏斗与影响力大盘 (Creator Funnel) */}
+        {items.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-2xl border border-border/70 bg-card/60 p-4 space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Download className="w-3.5 h-3.5 text-emerald-500" />
+                <span>总安装次数</span>
+              </div>
+              <div className="text-2xl font-bold font-mono text-foreground pt-0.5">{metrics.installs}</div>
+              <p className="text-[10px] text-muted-foreground">累计生态被采纳量</p>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-card/60 p-4 space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Star className="w-3.5 h-3.5 text-amber-500" />
+                <span>总星标收藏</span>
+              </div>
+              <div className="text-2xl font-bold font-mono text-foreground pt-0.5">{metrics.stars}</div>
+              <p className="text-[10px] text-muted-foreground">社区认可度</p>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-card/60 p-4 space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <GitFork className="w-3.5 h-3.5 text-violet-500" />
+                <span>衍生二创数</span>
+              </div>
+              <div className="text-2xl font-bold font-mono text-foreground pt-0.5">{metrics.remixes}</div>
+              <p className="text-[10px] text-muted-foreground">二创繁荣度</p>
+            </div>
+            <div className="rounded-2xl border border-border/70 bg-card/60 p-4 space-y-1">
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Sparkles className="w-3.5 h-3.5 text-primary" />
+                <span>上架成功率</span>
+              </div>
+              <div className="text-2xl font-bold font-mono text-foreground pt-0.5">
+                {items.length > 0 ? `${Math.round((counts.published / items.length) * 100)}%` : '0%'}
+              </div>
+              <p className="text-[10px] text-muted-foreground">{counts.published} / {items.length} 审核通过</p>
+            </div>
+          </div>
+        )}
 
         {notice && (
           <HubDegradedNotice notice={notice} onRetry={() => setReloadToken((n) => n + 1)} subject="作者中心" />

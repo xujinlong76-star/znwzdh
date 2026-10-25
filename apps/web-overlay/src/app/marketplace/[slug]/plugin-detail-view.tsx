@@ -43,6 +43,7 @@ import { useCopyFeedback } from '@/hooks/use-copy-feedback'
 import { Badge } from '@/components/ui/badge'
 import {
   ArrowLeft,
+  GitFork,
   Palette,
   Star,
   Download,
@@ -156,6 +157,20 @@ export default function PluginDetailView({
   // 值由 loadDetail 异步回填；拆分后仅剩写入方（读取方随 hero 区迁出后已无人消费）
   const [, setIsThemeApplied] = useState(false)
   const [studioModalOpen, setStudioModalOpen] = useState(false)
+  const [studioInitialManifest, setStudioInitialManifest] = useState<any>(undefined)
+
+  const handleRemix = () => {
+    if (!plugin?.manifest) return
+    const remixManifest = {
+      ...plugin.manifest,
+      slug: `${plugin.slug}-remix`,
+      name: `${plugin.name} (Remix)`,
+      version: '1.0.0',
+      forkedFrom: plugin.slug,
+    }
+    setStudioInitialManifest(remixManifest)
+    setStudioModalOpen(true)
+  }
 
   useEffect(() => {
     if (plugin?.kind === 'theme') {
@@ -478,6 +493,24 @@ export default function PluginDetailView({
                     协议: {plugin.license}
                   </span>
                 )}
+                {plugin.forkedFromSlug && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <GitFork className="w-3.5 h-3.5 text-violet-500" />
+                    <span>衍生自</span>
+                    <Link
+                      href={`/marketplace/${encodeURIComponent(plugin.forkedFromSlug)}`}
+                      className="text-primary hover:underline font-medium"
+                    >
+                      {plugin.forkedFromSlug}
+                    </Link>
+                  </span>
+                )}
+                {plugin.remixCount ? (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1 font-mono">
+                    <GitFork className="w-3 h-3 text-muted-foreground" />
+                    <span>{plugin.remixCount} 衍生</span>
+                  </span>
+                ) : null}
                 {plugin.author && (
                   <span className="text-xs text-muted-foreground">
                     作者:{' '}
@@ -586,6 +619,16 @@ export default function PluginDetailView({
                   <Star className={cn('w-4 h-4', starred && 'fill-current text-amber-500')} />
                   <span>{starred ? '已星标' : '星标'}</span>
                   <span className="font-mono ml-0.5 text-[11px]">{starCount}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRemix}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-border/70 bg-background/70 hover:bg-muted text-foreground transition-all"
+                  title="以此插件为蓝本进行二次创作与定制"
+                >
+                  <GitFork className="w-4 h-4 text-violet-500" />
+                  <span>衍生创作</span>
                 </button>
 
                 <button

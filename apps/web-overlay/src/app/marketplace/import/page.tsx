@@ -20,7 +20,7 @@ import { getIdentity } from '@/lib/identity'
 import { importPlugin, installPlugin } from '@/lib/navhub-api'
 import { setActiveTheme } from '@/lib/plugins/theme-runtime'
 import { stageWorkspacePreset } from '@/lib/plugins/preset-staging'
-import { ArrowLeft, FileUp, Loader2, Upload } from 'lucide-react'
+import { ArrowLeft, FileUp, Loader2, Upload, Globe } from 'lucide-react'
 
 export default function MarketplaceImportPage() {
   const { toast } = useToast()
@@ -32,6 +32,31 @@ export default function MarketplaceImportPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{ slug: string; name: string; installed: boolean } | null>(null)
+  const [remoteUrl, setRemoteUrl] = useState('')
+  const [fetchingUrl, setFetchingUrl] = useState(false)
+
+  const handleFetchRemoteUrl = async () => {
+    let url = remoteUrl.trim()
+    if (!url) return
+    if (url.includes('github.com/') && url.includes('/blob/')) {
+      url = url.replace('github.com/', 'raw.githubusercontent.com/').replace('/blob/', '/')
+    }
+    setFetchingUrl(true)
+    setError(null)
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status} 读取失败`)
+      const text = await res.text()
+      JSON.parse(text)
+      setJsonText(text)
+      setFileName(url.split('/').pop() || 'remote-plugin.json')
+      toast({ title: '清单读取成功', description: '已成功获取远程清单并填入，请检查后上架' })
+    } catch (err: any) {
+      setError(err?.message || '无法从指定 URL 读取有效 JSON 清单')
+    } finally {
+      setFetchingUrl(false)
+    }
+  }
 
   const onPickFile = async (file: File | null | undefined) => {
     if (!file) return
@@ -137,6 +162,33 @@ export default function MarketplaceImportPage() {
               />
             </label>
             {fileName && <span className="text-xs text-muted-foreground font-mono">{fileName}</span>}
+          </div>
+
+          {/* GitHub / Remote URL Import */}
+          <div className="p-3.5 rounded-xl border border-border/60 bg-background/50 space-y-2">
+            <span className="text-xs font-medium text-foreground block">
+              或从 GitHub / 远程 URL 直接抓取清单
+            </span>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={remoteUrl}
+                onChange={(e) => setRemoteUrl(e.target.value)}
+                placeholder="https://raw.githubusercontent.com/.../plugin.json 或 GitHub 文件链接"
+                className="flex-1 h-8.5 rounded-md border border-input bg-background px-2.5 text-xs font-mono"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={fetchingUrl || !remoteUrl.trim()}
+                onClick={handleFetchRemoteUrl}
+                className="h-8.5 text-xs px-3 shrink-0"
+              >
+                {fetchingUrl ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Globe className="w-3.5 h-3.5 mr-1" />}
+                读取清单
+              </Button>
+            </div>
           </div>
 
           <details className="text-xs text-muted-foreground">

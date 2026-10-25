@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { createServer } from "node:http";
 import {
   DEFAULT_GUARD,
@@ -24,6 +24,12 @@ import {
 vi.mock("node:dns/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:dns/promises")>();
   return { ...actual, lookup: vi.fn(() => new Promise(() => {})) };
+});
+
+// isolate:false 卫生（D2）：上面的 DNS mock 实例会驻留 worker 的模块缓存，
+// 不清理会把同 worker 后续文件的 DNS 查询全部挂死（tap-sync-import 曾 6 连败）。
+afterAll(() => {
+  vi.resetModules();
 });
 
 const BT = String.fromCharCode(96);

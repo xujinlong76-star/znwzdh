@@ -19,8 +19,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const hoisted = vi.hoisted(() => {
+  // isolate:false 卫生（D2）：记住原值以便恢复，避免泄漏给同 worker 的后续文件
+  const prevMax = process.env.NAVHUB_TAP_IMPORT_MAX;
   process.env.NAVHUB_TAP_IMPORT_MAX = "5"; // 处理上限压到 5，测试不必造 500 条
-  return { body: "[]", calls: 0 };
+  return { body: "[]", calls: 0, prevMax };
 });
 
 vi.mock("@navhub/ai", async (importOriginal) => {
@@ -90,6 +92,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // isolate:false 卫生（D2）：环境变量复位 + 清除本文件的 @navhub/ai mock 模块缓存
+  if (hoisted.prevMax === undefined) delete process.env.NAVHUB_TAP_IMPORT_MAX;
+  else process.env.NAVHUB_TAP_IMPORT_MAX = hoisted.prevMax;
+  vi.resetModules();
   if (app) await app.close();
   if (ctx) await ctx.close();
   try {

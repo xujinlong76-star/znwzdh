@@ -6,6 +6,8 @@
  */
 'use client'
 
+import { useState } from 'react'
+
 import { AlertTriangle, Boxes, Copy, ExternalLink, Globe, LayoutGrid, Palette, Search } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
@@ -41,6 +43,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
     rawCopy,
     handleCopyRaw,
   } = props
+  const [testSearchQuery, setTestSearchQuery] = useState('NavHub')
   return (
     <>
           {activeTab === 'preview' && (
@@ -110,18 +113,23 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                 </div>
               )}
 
-              {/* workspace-preset 看板预设明细展示 */}
+              {/* workspace-preset 看板预设明细展示与 Bento 沙箱 */}
               {plugin.kind === 'workspace-preset' && payload?.boards && (
                 <div className="space-y-4">
-                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <LayoutGrid className="w-4 h-4 text-emerald-500" />
-                    <span>预设看板结构 ({payload.boards.length})</span>
-                  </h3>
-                  <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <LayoutGrid className="w-4 h-4 text-emerald-500" />
+                      <span>预设看板结构与 Bento 空间预览 ({payload.boards.length})</span>
+                    </h3>
+                    <span className="text-xs text-muted-foreground">
+                      基于 12 栅格真实布局比例
+                    </span>
+                  </div>
+                  <div className="space-y-5">
                     {payload.boards.map((b: any, bIdx: number) => (
                       <div
                         key={bIdx}
-                        className="rounded-2xl border border-border/70 bg-card/60 p-5 space-y-3"
+                        className="rounded-2xl border border-border/70 bg-card/60 p-4 sm:p-5 space-y-3"
                       >
                         <div className="flex items-center justify-between">
                           <h4 className="font-semibold text-xs text-foreground">{b.name}</h4>
@@ -129,23 +137,53 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                             {b.widgets?.length ?? 0} 个小组件
                           </span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                          {b.widgets?.map((w: any, wIdx: number) => (
-                            <div
-                              key={wIdx}
-                              className="rounded-xl border border-border/50 bg-background/60 p-2.5 text-xs space-y-1"
-                            >
-                              <div className="flex items-center justify-between text-muted-foreground">
-                                <span className="font-medium text-foreground">
-                                  {w.title || w.type}
-                                </span>
-                                <span className="font-mono text-[10px]">{w.type}</span>
+
+                        {/* 交互式 Mini Bento 沙箱网格 */}
+                        <div className="grid grid-cols-12 gap-2.5 p-3.5 rounded-xl bg-muted/20 border border-border/50">
+                          {b.widgets?.map((w: any, wIdx: number) => {
+                            const colSpan = Math.min(12, Math.max(1, w.colSpan ?? 4))
+                            const colClass =
+                              colSpan >= 12
+                                ? 'col-span-12'
+                                : colSpan >= 8
+                                ? 'col-span-12 sm:col-span-8'
+                                : colSpan >= 6
+                                ? 'col-span-12 sm:col-span-6'
+                                : colSpan >= 4
+                                ? 'col-span-6 sm:col-span-4'
+                                : 'col-span-6 sm:col-span-3'
+
+                            return (
+                              <div
+                                key={wIdx}
+                                className={cn(
+                                  colClass,
+                                  'rounded-xl border border-border/60 bg-background/80 p-3 text-xs space-y-2 shadow-2xs hover:border-emerald-500/50 transition-colors'
+                                )}
+                              >
+                                <div className="flex items-center justify-between text-muted-foreground">
+                                  <span className="font-semibold text-foreground truncate">
+                                    {w.title || w.type}
+                                  </span>
+                                  <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-muted">
+                                    {w.type}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                                  <span className="px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">
+                                    {colSpan} 列
+                                  </span>
+                                  <span>×</span>
+                                  <span className="px-1 py-0.5 rounded bg-muted font-mono">
+                                    {w.rowSpan ?? 1} 行
+                                  </span>
+                                </div>
+                                <div className="h-6 rounded-md bg-muted/40 border border-border/30 flex items-center justify-center text-[10px] text-muted-foreground/60 font-mono">
+                                  Mini Bento Preview
+                                </div>
                               </div>
-                              <div className="text-[10px] text-muted-foreground">
-                                占用网格：{w.colSpan ?? 4} 列 × {w.rowSpan ?? 1} 行
-                              </div>
-                            </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       </div>
                     ))}
@@ -197,12 +235,22 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
               {/* search-pack 搜索引擎配置展示 */}
               {plugin.kind === 'search-pack' && payload?.engines && (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
                       <Search className="w-4 h-4 text-sky-500" />
                       <span>包含的快捷搜索引擎 ({payload.engines.length})</span>
                     </h3>
-                    <span className="text-xs text-muted-foreground">在主搜索框键入前缀即可触发</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground hidden sm:inline">试用测试词:</span>
+                      <input
+                        type="text"
+                        aria-label="试用搜索词"
+                        value={testSearchQuery}
+                        onChange={(e) => setTestSearchQuery(e.target.value)}
+                        placeholder="输入搜索词测试跳转..."
+                        className="h-7 px-2.5 rounded-lg border border-border/60 bg-background text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-primary w-40"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -244,7 +292,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                           </code>
                           <button
                             type="button"
-                            onClick={() => safeWindowOpen(eng.searchUrl.replace('{q}', 'NavHub'))}
+                            onClick={() => safeWindowOpen(eng.searchUrl.replace('{q}', encodeURIComponent(testSearchQuery || 'NavHub')))}
                             className="text-xs text-primary hover:underline flex items-center gap-1 shrink-0 font-medium"
                           >
                             测试直达 <ExternalLink className="w-3 h-3" />

@@ -11,7 +11,7 @@
  *   2. 失败结果进微缓存（短 TTL），同一轮渲染的并发突发不会各连一次中枢。
  * 而「中枢活着但报错」（HTTP 500）依然必须 console.error —— 真异常要可见。
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // github.ts 顶层 import 了 @/lib/auth（next-auth v5 beta）。http 适配器的
 // 读写路径完全不碰 auth()（只有 github 适配器的写路径用），而 next-auth
@@ -94,4 +94,11 @@ describe("中枢活着但返回 500（真异常）", () => {
     expect(error).toHaveBeenCalledTimes(1);
     expect(error.mock.calls[0][0]).toContain("[storage] 读取失败");
   });
+});
+
+// env 卫生（D2）：恢复本文件改写的环境变量，避免驻留同 worker 的后续文件
+afterAll(() => {
+  delete process.env.STORAGE_ADAPTER;
+  delete process.env.NAVHUB_STORAGE_BASE_URL;
+  delete process.env.NAVHUB_STORAGE_COOLDOWN_MS;
 });

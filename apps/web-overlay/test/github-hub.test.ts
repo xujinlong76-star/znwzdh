@@ -49,6 +49,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  vi.resetModules(); // mock 卫生：清除本文件的模块 mock 缓存
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 

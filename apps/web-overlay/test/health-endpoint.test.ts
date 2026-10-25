@@ -9,7 +9,7 @@
  *  4. 中枢基址、模式、能力位、Node 版本只给内部 token 调用方；没配 token 时零豁免。
  */
 import { readFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ROUTE_SOURCE = readFileSync(new URL("../src/app/api/health/route.ts", import.meta.url), "utf8");
 
@@ -178,4 +178,9 @@ describe("/api/health：运行时与探针语义", () => {
     expect(((await res.json()) as Record<string, any>).status).toBe("degraded");
     expect(spy).toHaveBeenCalled();
   });
+});
+
+// env 卫生（D2）：恢复本文件改写的环境变量，避免驻留同 worker 的后续文件
+afterAll(() => {
+  delete process.env.NAVHUB_INTERNAL_TOKEN;
 });

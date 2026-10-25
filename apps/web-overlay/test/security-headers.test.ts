@@ -11,7 +11,7 @@
  * 这里直接调 `headers()` 验证三种开关组合下的产物，而不是读源码猜。
  */
 import { createRequire } from "node:module";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 
@@ -138,4 +138,12 @@ describe("HSTS 只在明确 https 时下发", () => {
     const headers = await loadHeaders();
     expect(find(headers, "Strict-Transport-Security")?.value).toBe("max-age=15552000");
   });
+});
+
+// env 卫生（D2）：恢复本文件改写的环境变量，避免驻留同 worker 的后续文件
+afterAll(() => {
+  delete process.env.NAVHUB_CSP;
+  delete process.env.NAVHUB_CSP_REPORT_ONLY;
+  delete process.env.NAVHUB_CSP_REPORT_URI;
+  delete process.env.NAVHUB_PUBLIC_URL;
 });

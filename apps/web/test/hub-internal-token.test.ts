@@ -9,7 +9,7 @@
  * 这个文件同时钉住边界：浏览器侧的 `/api/hub/*` 代理**不许**附带这个头 ——
  * 附上了等于把全站访客流量都标成内部流量，按 IP 的限流形同虚设。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,4 +106,9 @@ describe("豁免头的边界", () => {
     const src = readFileSync(resolve(HERE, "..", "src/lib/navhub-api.ts"), "utf8");
     expect(src.includes("x-navhub-internal-token")).toBe(false);
   });
+});
+
+// env 卫生（D2）：恢复本文件改写的环境变量，避免驻留同 worker 的后续文件
+afterAll(() => {
+  delete process.env.NAVHUB_INTERNAL_TOKEN;
 });

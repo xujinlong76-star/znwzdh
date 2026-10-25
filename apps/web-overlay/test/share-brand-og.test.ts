@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -113,4 +113,9 @@ describe("源码钉子", () => {
     expect(overlayFile("src/lib/seo/metadata.ts")).toContain("configuredSiteOrigin() ? image : null");
     expect(overlayFile("src/app/layout.tsx")).toMatch(/\.\.\.\(origin \? \{ images:/);
   });
+});
+
+// mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
+afterAll(() => {
+  vi.resetModules();
 });

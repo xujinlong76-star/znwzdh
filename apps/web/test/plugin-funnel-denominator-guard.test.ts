@@ -21,7 +21,7 @@
  *      /install（新增了入口却绕过包装 = 又丢掉分母），也不得自行发 click 类型。
  * 镜像到 apps/web/test 后由根 vitest 执行。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -256,4 +256,9 @@ describe('绕道钉子：接口路径与 click 类型只允许出现在包装函
       expect(list, `服务端未登记 kind：${kind}`).toContain(kind);
     }
   });
+});
+
+// mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
+afterAll(() => {
+  vi.resetModules();
 });

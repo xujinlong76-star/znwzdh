@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { lookupMock } = vi.hoisted(() => ({ lookupMock: vi.fn() }))
 
@@ -36,3 +36,8 @@ describe('ssrf-guard DNS 边界', () => {
     expect(isBlockedIp('2606:4700::1111')).toBe(false)
   })
 })
+
+// mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
+afterAll(() => {
+  vi.resetModules();
+});

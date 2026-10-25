@@ -23,7 +23,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { describeDiyRestoreReport, importDIYConfig, importEncryptedDIYConfig, syncFromCloudVault } from '@/lib/modular/home-diy-io'
 import {
   applyHomeDiyShareHash,
@@ -402,3 +402,8 @@ describe('收录站点：写盘失败不能报成功', () => {
     expect(src).toContain("if (outcome === 'failed')")
   })
 })
+
+// mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
+afterAll(() => {
+  vi.resetModules();
+});

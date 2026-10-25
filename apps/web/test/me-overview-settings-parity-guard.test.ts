@@ -19,7 +19,7 @@
  *   4. 埋点词表两侧一致（服务端不在名单里的 kind 直接 400），正文只有 kind/outcome/code/anonId。
  * 镜像到 apps/web/test 后由根 vitest 执行。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -284,3 +284,8 @@ describe('概览页接线：把结果说给人看', () => {
     expect(saveLib).toContain('已把你在本机保存的偏好同步到云端')
   })
 })
+
+// mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
+afterAll(() => {
+  vi.resetModules();
+});

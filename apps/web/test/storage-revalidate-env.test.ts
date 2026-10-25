@@ -4,7 +4,7 @@
  * 与 cooldownFromEnv 同一契约：脏环境值一律回退默认 60，绝不抛错——
  * 取数链路在模块加载期抛错会让首屏直接 500。置 0 = 禁用缓存（实时读）。
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from 'vitest';
 
 // github.ts 顶层 import 了 @/lib/auth（next-auth v5 beta），Node ESM 下缺
  // "next/server" 扩展名会解析失败；按接口外形 mock 掉，聚焦本纯函数。
@@ -40,4 +40,9 @@ describe("revalidateFromEnv", () => {
     expect(revalidateFromEnv({ NAVHUB_STORAGE_REVALIDATE_S: "Infinity" })).toBe(60);
     expect(revalidateFromEnv({ NAVHUB_STORAGE_REVALIDATE_S: "NaN" })).toBe(60);
   });
+});
+
+// mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
+afterAll(() => {
+  vi.resetModules();
 });

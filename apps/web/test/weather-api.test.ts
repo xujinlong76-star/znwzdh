@@ -6,7 +6,7 @@
  *
  * DNS 被桩成公网 IP：SSRF 防护的三层校验照跑，但不依赖测试机的解析结果。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock("node:dns/promises", () => ({
   lookup: vi.fn(async () => [{ address: "93.184.216.34" }]),
@@ -227,4 +227,9 @@ describe("/api/weather：城市表就是唯一的出网面", () => {
     expect(limited!.ok).toBe(false);
     expect(limited!.message).toContain("过于频繁");
   });
+});
+
+// mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
+afterAll(() => {
+  vi.resetModules();
 });

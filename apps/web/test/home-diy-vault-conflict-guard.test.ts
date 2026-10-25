@@ -10,7 +10,7 @@
  * 以及弹窗必须按 kind 分别给可执行动作（重建 v0 / 先拉取）。
  * 镜像到 apps/web/test 后由根 vitest 执行。
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -155,4 +155,9 @@ describe('弹窗分流（源码级钉子）', () => {
     expect(io).not.toContain("error: '云端金库已被其它设备更新。请先「从云端拉取」确认最新内容，再重新推送，避免覆盖别人的修改。'");
     expect(io).toContain("CloudVaultConflictKind");
   });
+});
+
+// mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
+afterAll(() => {
+  vi.resetModules();
 });

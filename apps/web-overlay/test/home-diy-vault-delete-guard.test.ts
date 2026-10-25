@@ -10,7 +10,7 @@
  * 本文件锁住：四态分流、失败带 status、无身份绝不发请求，以及弹窗源码不得把
  * absent/failed 渲染成成功话术（镜像到 apps/web/test 后由根 vitest 执行）。
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -132,4 +132,9 @@ describe('删除入口与话术（源码级钉子）', () => {
     // 破坏性确认：Cancel 必须排在 Action 前，初始焦点才不会落在「永久删除」上
     expect(dialog.indexOf('<AlertDialogCancel')).toBeLessThan(dialog.indexOf('<AlertDialogAction'));
   });
+});
+
+// mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
+afterAll(() => {
+  vi.resetModules();
 });

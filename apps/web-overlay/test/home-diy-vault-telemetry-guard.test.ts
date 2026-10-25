@@ -15,7 +15,7 @@
  *   4. 隐私：埋点正文只有 kind/outcome/code/anonId，密文、条数、主密码一律不上。
  * 镜像到 apps/web/test 后由根 vitest 执行。
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -430,4 +430,9 @@ describe('弹窗上报点（源码级钉子）', () => {
     expect(derived).toContain('云端状态未知');
     expect(derived).toContain('尚未与云端对表');
   });
+});
+
+// mock 卫生（D2）：清除本文件的模块 mock 缓存，避免驻留同 worker 的后续文件
+afterAll(() => {
+  vi.resetModules();
 });

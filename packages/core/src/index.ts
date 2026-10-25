@@ -35,6 +35,7 @@ export * from "./federated-recommendation.ts";
 export * from "./semantic-clustering.ts";
 export * from "./dynamic-tool-synthesizer.ts";
 export * from "./facets.ts";
+export * from "./search-limits.ts";
 export * from "./relations.ts";
 export * from "./taxonomy-governance.ts";
 export * from "./taxonomy-rules.ts";

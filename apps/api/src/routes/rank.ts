@@ -12,7 +12,7 @@ import {
   poincareToLorentz,
 } from "@navhub/core";
 
-import { privatizeVector, rankItemsWithPrivacy } from "@navhub/core";
+import { MAX_SEARCH_QUERY_LENGTH, privatizeVector, rankItemsWithPrivacy } from "@navhub/core";
 import { badRequest, parsePagination } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
@@ -180,7 +180,7 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
    * 入参是有上限的查询词，不再让任意长度的 query 进入特征提取。
    */
   app.get("/api/search/linucb", { config: { scope: "admin" } }, async (req, reply) => {
-    const parsed = z.object({ q: z.string().max(256).default("react") }).safeParse(req.query ?? {});
+    const parsed = z.object({ q: z.string().max(MAX_SEARCH_QUERY_LENGTH).default("react") }).safeParse(req.query ?? {});
     if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
     return ctx.search.getLinUCBStatus(parsed.data.q);
   });

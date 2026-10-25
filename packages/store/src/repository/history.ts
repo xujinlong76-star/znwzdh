@@ -1,8 +1,14 @@
+import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
 import type { Repository } from "../repository.ts";
 
 export async function recordSearch(repo: Repository, userId: string, query: string, resultCount: number): Promise<void> {
   const q = query.trim();
   if (!q) return;
+  // 最后一道形状守卫：REST / 导入都先过 schema，正常路径到不了这里。
+  // 到了说明新增了未设上限的调用方，宁可显式失败也不静默截断用户数据。
+  if (q.length > MAX_SEARCH_QUERY_LENGTH) {
+    throw new Error(`搜索历史查询词超长：${q.length} > ${MAX_SEARCH_QUERY_LENGTH}（调用方应在入口处限制）`);
+  }
   // id 自增：同毫秒的多条记录也能按插入顺序稳定排序
   await repo.run(
     "INSERT INTO search_history (user_id, query, result_count, created_at) VALUES (?,?,?,?)",

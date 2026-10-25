@@ -17,6 +17,7 @@ import {
   FACET_MAX_VALUE_LENGTH,
   FACET_MAX_VALUES_PER_KEY,
 } from "./facets.ts";
+import { MAX_SEARCH_QUERY_LENGTH } from "./search-limits.ts";
 
 /** 批量写入的硬上限，防止单次调用造成不可控影响 */
 export const MAX_BATCH_ITEMS = 100;
@@ -98,7 +99,7 @@ export const SiteFacetsInput = z
 export const FacetFilterInput = z.union([SiteFacetsInput, z.string().max(FACET_MAX_JSON_LENGTH)]);
 
 export const SearchSitesInput = z.object({
-  query: z.string().describe("检索关键词，支持中文、拼音、首字母与语义检索"),
+  query: z.string().max(MAX_SEARCH_QUERY_LENGTH).describe("检索关键词，支持中文、拼音、首字母与语义检索"),
   limit: z.number().int().min(1).max(50).default(10).describe("返回条数上限"),
   categoryId: z.string().optional().describe("限定类目（含其子类目）"),
   tag: z.string().optional().describe("限定标签"),

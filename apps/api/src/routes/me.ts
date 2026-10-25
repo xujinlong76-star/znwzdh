@@ -26,6 +26,7 @@ import { z } from "zod";
 import { createHash } from "node:crypto";
 import { generateToken, hashToken, tokenPrefixOf } from "../auth.ts";
 
+import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
 import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION } from "@navhub/store";
 
 import type { AppContext } from "../context.ts";
@@ -491,7 +492,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
               items: z
                 .array(
                   z.object({
-                    query: z.string().trim().min(1).max(200),
+                    // 与 /api/search、导出侧同口径：导出能产出的最长查询词必须能导回来，
+                    // 否则一条 201~256 字的历史会让整份备份 400（收藏、设置连坐）
+                    query: z.string().trim().min(1).max(MAX_SEARCH_QUERY_LENGTH),
                     resultCount: z.number().int().min(0).optional(),
                   }),
                 )
@@ -503,7 +506,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
             z
               .array(
                 z.object({
-                  query: z.string().trim().min(1).max(200),
+                  query: z.string().trim().min(1).max(MAX_SEARCH_QUERY_LENGTH),
                   resultCount: z.number().int().min(0).optional(),
                 }),
               )

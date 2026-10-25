@@ -893,6 +893,18 @@ describe("SQLite 集成：导航增强能力", () => {
     expect((await repo.listSearchHistory("u1")).length).toBe(0);
   });
 
+  it("查询词长度全链路同源：256 字可入库，257 字显式拒绝且不落行", async () => {
+    const max = "长".repeat(256);
+    await repo.recordSearch("u-limit", max, 1);
+    const items = await repo.listSearchHistory("u-limit", 10);
+    expect(items.length).toBe(1);
+    expect(items[0]!.query.length).toBe(256);
+
+    // 不做静默截断：超长说明调用方漏了入口校验，必须响亮失败
+    await expect(repo.recordSearch("u-limit", "长".repeat(257), 1)).rejects.toThrow(/256/);
+    expect((await repo.listSearchHistory("u-limit", 10)).length).toBe(1);
+  });
+
   /* ------------------------- 终端用户 ------------------------- */
 
   it("OAuth 用户 upsert：按 username 归一，不再按 email 绑定", async () => {

@@ -4,6 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
 import { recordSearchChannels, recordSearchWriteFailure } from "../metrics.ts";
 import { refreshUserProfile } from "../profile-service.ts";
 import { badRequest, clampFacets, FACET_MAX_JSON_LENGTH, identityTrusted, requestIdentityOf } from "./shared.ts";
@@ -29,7 +30,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   /* -------------------------------- 搜索 -------------------------------- */
 
   const searchBody = z.object({
-    q: z.string().max(256).default(""),
+    q: z.string().max(MAX_SEARCH_QUERY_LENGTH).default(""),
     categoryId: z.string().max(64).optional(),
     tags: z
       .union([z.array(z.string().max(40)).max(20), z.string().max(400)])

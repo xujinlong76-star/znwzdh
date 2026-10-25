@@ -179,6 +179,14 @@ describe("facets 是对外承诺过的维度，必须真的生效", () => {
     const site = payload(await handlers.get_site({ idOrUrl: "https://facets.example/free" }, A));
     await expect(handlers.update_site({ id: site.id, facets: tooMany }, A)).rejects.toThrow(/200/);
   });
+
+  it("search_sites 的查询词上限与 REST 同源：257 字被契约挡下，256 字放行", async () => {
+    await expect(handlers.search_sites({ query: "长".repeat(257) }, A)).rejects.toThrow(/256/);
+    // 上限本身不误伤合法查询：256 字能走到检索引擎（结果可以为空）
+    const res = await handlers.search_sites({ query: "长".repeat(256), limit: 5 }, A);
+    expect(res.isError).toBeFalsy();
+    expect(payload(res).count).toBe(0);
+  });
 });
 
 describe("batch_import 与 health_check 的边界", () => {

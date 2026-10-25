@@ -12,7 +12,7 @@
  *   2. 零知识 E2EE：PBKDF2(100k) 派生密钥的 AES-256-GSM 密文复制 / 下载 / 解密还原；
  *   3. 中枢云端金库：端侧加密后直传，新设备同主密码一键拉取。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Cloud,
   CloudDownload,
@@ -33,6 +33,9 @@ import {
   VAULT_REBUILD_ACTION_LABEL,
   VAULT_REBUILD_FIRST_VERSION,
   VAULT_REBUILD_VERSION_COPY,
+  cloudPullFailureNotice,
+  cloudVaultBadgeLabel,
+  mergeCloudVaultMeta,
 } from '@/lib/modular/vault-copy'
 import {
   AlertDialog,
@@ -72,6 +75,7 @@ import {
   vaultStatusOutcome,
 } from '@/lib/modular/home-diy-io'
 import { trackVaultEvent, type VaultResultCode } from '@/lib/navhub-api'
+import { newRequestGate, settleLatest } from '@/lib/latest-request'
 import { cn } from '@/lib/utils'
 
 export interface HomeDIYBackupDialogProps {
@@ -129,7 +133,15 @@ export function HomeDIYBackupDialog({
   const [vaultPassphrase, setVaultPassphrase] = useState('')
   const [isDecrypting, setIsDecrypting] = useState(false)
   const [isSyncingCloud, setIsSyncingCloud] = useState(false)
+  const [isPullingCloud, setIsPullingCloud] = useState(false)
   const [cloudVaultMeta, setCloudVaultMeta] = useState<CloudVaultMeta | null>(null)
+  /** 对表进行中的请求数：布尔会被过期请求的 finally 提前关掉 */
+  const [checkingCount, setCheckingCount] = useState(0)
+  /** 拉取失败的原因码；独立于徽章，因为它承载的是「这次操作没成功」 */
+  const [vaultPullFailure, setVaultPullFailure] = useState<VaultResultCode | null>(null)
+  const [cloudMetaGate] = useState(() => newRequestGate())
+  const cloudBusy = isSyncingCloud || isPullingCloud
+  const isCheckingCloud = checkingCount > 0
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isDeletingCloud, setIsDeletingCloud] = useState(false)
   const [vaultConflict, setVaultConflict] = useState<{
@@ -144,21 +156,59 @@ export function HomeDIYBackupDialog({
   const [vaultPushRefusal, setVaultPushRefusal] = useState<VaultPushRefusalReason | null>(null)
   const [importJsonText, setImportJsonText] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const passphraseInputRef = useRef<HTMLInputElement>(null)
 
-  // 切换至 E2EE 或打开备份弹窗时自动拉取云端金库元信息
-  useEffect(() => {
-    if (open && backupTab === 'e2ee') {
-      void checkCloudVaultStatus().then((meta) => {
-        setCloudVaultMeta(meta)
-        // 漏斗分母：只在进这个面板时对表一次并上报。
-        // 推送/删除成功后的复查只是刷版本号，再报一次会把同一个用户数成两个入口。
-        trackVaultEvent('vault_status', vaultStatusOutcome(meta.code), meta.code)
-        // 重新对表后，上一轮的冲突引导就过期了：让用户基于最新版本号再决定
+  /**
+   * 对表结果落库：一次失败不该抹掉上次已知的版本号。
+   * 徽章据此说「上次对表 vN」，删除入口仍按 check_failed 隐藏（见 cloudVaultPresent）。
+   */
+  const rememberCloudMeta = useCallback((next: CloudVaultMeta) => {
+    setCloudVaultMeta((prev) => mergeCloudVaultMeta(prev, next))
+  }, [])
+
+  /**
+   * 与云端对表（进面板 / 重试 / 推送前 / 推送成功后复查都走这里）。
+   *
+   * settleLatest 保证先发的慢响应不会覆盖后发的结论；用计数而不是布尔，
+   * 是为了让过期请求的 finally 不会提前关掉新请求的忙态。
+   * countAsEntry 只在进入 E2EE 面板时传 true —— vault_status 的分母按入口计。
+   */
+  const refreshCloudVaultMeta = useCallback(
+    async (countAsEntry = false) => {
+      setCheckingCount((n) => n + 1)
+      try {
+        const out = await settleLatest(cloudMetaGate, () => checkCloudVaultStatus())
+        if (out.status === 'stale') return undefined
+        // 成功与降级都保证 code 存在：后面的 resolveVaultPushPrecondition 依赖这一点
+        const meta = out.status === 'value' ? out.value : { hasCloudVault: false as const, code: 'check_failed' as const }
+        rememberCloudMeta(meta)
+        // 重新对表后，上一轮的冲突/拒绝引导就过期了：让用户基于最新事实再决定
         setVaultConflict(null)
         setVaultPushRefusal(null)
-      })
+        if (countAsEntry) {
+          trackVaultEvent('vault_status', vaultStatusOutcome(meta.code), meta.code)
+        }
+        return meta
+      } finally {
+        setCheckingCount((n) => Math.max(0, n - 1))
+      }
+    },
+    [checkCloudVaultStatus, cloudMetaGate, rememberCloudMeta],
+  )
+
+  // 切换至 E2EE 或打开备份弹窗时自动对表一次；离开时作废在途响应
+  useEffect(() => {
+    if (!open || backupTab !== 'e2ee') return
+    void refreshCloudVaultMeta(true)
+    return () => {
+      cloudMetaGate.invalidate()
     }
-  }, [open, backupTab, checkCloudVaultStatus])
+  }, [open, backupTab, refreshCloudVaultMeta, cloudMetaGate])
+
+  // 重开面板或切 tab：上一次拉取的失败提示已经过期，不能挂在新上下文里
+  useEffect(() => {
+    setVaultPullFailure(null)
+  }, [open, backupTab])
 
   /**
    * 推送金库。expectedOverride 只给「以 version=0（期望云端为空）重建」这条引导用：
@@ -180,10 +230,11 @@ export function HomeDIYBackupDialog({
       return
     }
     setIsSyncingCloud(true)
+    setVaultPullFailure(null)
     try {
-      // 先取云端当前版本，作为本次写入的前置条件：多端同时编辑时避免静默覆盖
-      const before = await checkCloudVaultStatus()
-      setCloudVaultMeta(before)
+      // 先取云端当前版本，作为本次写入的前置条件：多端同时编辑时避免静默覆盖。
+      // 走同一道对表闸门；若这次结果已被更晚的一次取代，就按「没查到」拒绝发起写入。
+      const before = (await refreshCloudVaultMeta()) ?? { hasCloudVault: false, code: 'check_failed' as const }
       const precondition =
         typeof expectedOverride === 'number'
           ? ({ kind: 'ready', expectedVersion: expectedOverride } as const)
@@ -206,8 +257,8 @@ export function HomeDIYBackupDialog({
           title: '☁️ 已加密同步至中枢云端',
           description: `DIY 配置已安全保存至云端金库 (版本 v${res.version})。`,
         })
-        const status = await checkCloudVaultStatus()
-        setCloudVaultMeta(status)
+        // 复查只刷新版本号，不再计入 vault_status 分母
+        await refreshCloudVaultMeta()
       } else if (res.conflict) {
         const kind: CloudVaultConflictKind = res.conflictKind ?? 'version-conflict'
         setVaultConflict({ kind, currentVersion: res.currentVersion ?? null })
@@ -234,8 +285,8 @@ export function HomeDIYBackupDialog({
    * 每次点重试都上报会把同一个人重复计数（同上一条钉子）。
    */
   const handleRetryStatusCheck = async () => {
-    const meta = await checkCloudVaultStatus()
-    setCloudVaultMeta(meta)
+    const meta = await refreshCloudVaultMeta()
+    if (!meta) return
     const precondition = resolveVaultPushPrecondition(meta)
     if (precondition.kind === 'refused') {
       setVaultPushRefusal(precondition.reason)
@@ -302,7 +353,13 @@ export function HomeDIYBackupDialog({
     }
   }
 
-  // 从云端金库一键拉取并解密还原
+  /**
+   * 从云端金库一键拉取并解密还原。
+   *
+   * 失败不再弹一句泛化 toast：不同 code 的下一步完全不同（重试 / 建立第一份 /
+   * 换主密码 / 改用本地导出），统一文案等于把「密码错」和「中枢挂了」说成同一件事。
+   * 持久错误块按 code 分流（见 cloudPullFailureNotice）。
+   */
   const handleCloudDownload = async () => {
     if (!vaultPassphrase.trim()) {
       toast({
@@ -312,7 +369,8 @@ export function HomeDIYBackupDialog({
       })
       return
     }
-    setIsSyncingCloud(true)
+    setIsPullingCloud(true)
+    setVaultPullFailure(null)
     try {
       const res = await syncFromCloudVault(vaultPassphrase.trim())
       if (res.success) {
@@ -327,11 +385,12 @@ export function HomeDIYBackupDialog({
       } else {
         // 「云端没有备份」是漏斗里的空结果，不是失败：两者混在一起就分不清
         // 「没人同步过」和「同步过但拉不下来」
-        trackVaultEvent('vault_pull', vaultPullOutcome(false, res.code), res.code ?? 'hub_error')
-        toast({ title: '云端拉取或解密校验失败', description: res.error, variant: 'destructive' })
+        const code = res.code ?? 'hub_error'
+        setVaultPullFailure(code)
+        trackVaultEvent('vault_pull', vaultPullOutcome(false, code), code)
       }
     } finally {
-      setIsSyncingCloud(false)
+      setIsPullingCloud(false)
     }
   }
 
@@ -483,25 +542,23 @@ export function HomeDIYBackupDialog({
   }
 
   /**
-   * 云端事实 → 徽章文案（run46）。
+   * 云端事实 → 徽章文案（run46/run68）。
    *
-   * 四种状态各自成句：未对表 / 有备份 / 确实没有 / 没查到。旧实现只看 hasCloudVault，
-   * 于是中枢故障时说「云端暂无备份」，连「还没查过」也说「云端暂无备份」——
-   * 用户据此判定「再推一次就好」，等于把故障读成自己的数据不存在。
+   * 四类事实各自成句：对表中 / 有备份 / 确实没有 / 没查到（含上次已知版本）。
+   * 文案本身抽在 vault-copy.ts 以纯函数测试；这里只负责喂当前事实。
+   * check_failed 时即便上次查到过备份也隐藏删除入口：此刻的事实不足以决定删哪一份。
    */
-  const cloudVaultPresent = !!cloudVaultMeta?.hasCloudVault
+  const cloudVaultPresent = !!cloudVaultMeta?.hasCloudVault && cloudVaultMeta.code !== 'check_failed'
   const cloudVaultKnownAbsent = !!cloudVaultMeta && !cloudVaultMeta.hasCloudVault && cloudVaultMeta.code === 'no_vault'
-  const cloudBadgeLabel = !cloudVaultMeta
-    ? '尚未与云端对表'
-    : cloudVaultPresent
-      ? typeof cloudVaultMeta.version === 'number'
-        ? `云端金库 v${cloudVaultMeta.version}`
-        : '云端有备份（版本号未知）'
-      : cloudVaultMeta.code === 'check_failed'
-        ? '云端状态未知：对表失败'
-        : cloudVaultMeta.code === 'no_identity'
-          ? '未取到本机身份'
-          : '云端暂无备份'
+  const cloudBadgeLabel = cloudVaultBadgeLabel(cloudVaultMeta, isCheckingCloud)
+  const cloudPullNotice = vaultPullFailure ? cloudPullFailureNotice(vaultPullFailure) : null
+  const cloudActionHint = !vaultPassphrase.trim()
+    ? '先在上方输入金库主密码，「加密同步至云端」与「从云端拉取解密」才会可用。'
+    : isPullingCloud
+      ? '正在从云端拉取并逐条还原，完成前同步与删除不可用。'
+      : isSyncingCloud
+        ? '正在与云端同步或对表，完成前拉取与删除不可用。'
+        : '端侧加密后直传中枢存储，服务端零知识（无法获知内容）。新设备输入相同主密码即可一键拉取还原。'
   const cloudAbsentHint = cloudVaultKnownAbsent
     ? '云端暂无备份：设置主密码后点「加密同步至云端」建立第一份，之后这里会出现删除入口。'
     : cloudVaultMeta === null
@@ -622,10 +679,15 @@ export function HomeDIYBackupDialog({
                 金库主密码 (Passphrase) *
               </label>
               <Input id="diy-vault-passphrase"
+                ref={passphraseInputRef}
                 type="password"
                 placeholder="输入加密主密码 (加解密需保持一致)..."
                 value={vaultPassphrase}
-                onChange={(e) => setVaultPassphrase(e.target.value)}
+                onChange={(e) => {
+                  setVaultPassphrase(e.target.value)
+                  // 改了密码，上一条「主密码不对」的结论就不再适用
+                  setVaultPullFailure(null)
+                }}
               />
             </div>
 
@@ -636,31 +698,32 @@ export function HomeDIYBackupDialog({
                   <Cloud className="w-4 h-4 text-violet-500" />
                   <span>NavHub 中枢云端金库同步</span>
                 </div>
-                {cloudVaultPresent ? (
-                  <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-medium">
-                    {cloudBadgeLabel}
-                  </span>
-                ) : (
-                  <span
-                    className={cn(
-                      'text-[11px]',
-                      cloudVaultKnownAbsent || cloudVaultMeta === null
+                <span
+                  role="status"
+                  aria-live="polite"
+                  aria-busy={isCheckingCloud}
+                  className={cn(
+                    'text-[11px]',
+                    cloudVaultPresent
+                      ? 'text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-medium'
+                      : cloudVaultKnownAbsent || cloudVaultMeta === null
                         ? 'text-muted-foreground'
                         : 'text-amber-600 dark:text-amber-400',
-                    )}
-                  >
-                    {cloudBadgeLabel}
-                  </span>
-                )}
+                  )}
+                >
+                  {cloudBadgeLabel}
+                </span>
               </div>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                端侧加密后直传中枢存储，服务端零知识（无法获知内容）。新设备输入相同主密码即可一键拉取还原。
+              <p id="cloud-action-hint" className="text-[11px] text-muted-foreground leading-relaxed">
+                {cloudActionHint}
               </p>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-0.5">
                 <Button
                   size="sm"
                   onClick={() => void handleCloudUpload()}
-                  disabled={!vaultPassphrase.trim() || isSyncingCloud}
+                  disabled={!vaultPassphrase.trim() || cloudBusy}
+                  aria-busy={isSyncingCloud}
+                  aria-describedby="cloud-action-hint"
                   className="flex-1 text-xs gap-1.5 bg-violet-600 hover:bg-violet-700 text-white"
                 >
                   <CloudUpload className="w-3.5 h-3.5" />
@@ -670,13 +733,80 @@ export function HomeDIYBackupDialog({
                   size="sm"
                   variant="outline"
                   onClick={handleCloudDownload}
-                  disabled={!vaultPassphrase.trim() || isSyncingCloud}
+                  disabled={!vaultPassphrase.trim() || cloudBusy}
+                  aria-busy={isPullingCloud}
+                  aria-describedby="cloud-action-hint"
                   className="flex-1 text-xs border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
                 >
                   <CloudDownload className="w-3.5 h-3.5" />
-                  <span>从云端拉取解密</span>
+                  <span>{isPullingCloud ? '拉取中...' : '从云端拉取解密'}</span>
                 </Button>
               </div>
+
+              {cloudPullNotice ? (
+                <div role="alert" className="rounded-lg border border-red-500/35 bg-red-500/5 p-2.5 space-y-2">
+                  <div className="flex items-start gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-600 dark:text-red-400" />
+                    <div className="text-[11px] leading-relaxed min-w-0 space-y-0.5">
+                      <p className="font-semibold text-foreground">{cloudPullNotice.title}</p>
+                      <p className="text-muted-foreground">{cloudPullNotice.description}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    {cloudPullNotice.action === 'retry' ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleCloudDownload()}
+                        disabled={!vaultPassphrase.trim() || cloudBusy}
+                        className="flex-1 text-xs gap-1.5 border-red-500/35 text-red-700 dark:text-red-400 hover:bg-red-500/10"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>{cloudPullNotice.actionLabel ?? '重试拉取'}</span>
+                      </Button>
+                    ) : cloudPullNotice.action === 'create-first' ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleCloudUpload()}
+                        disabled={!vaultPassphrase.trim() || cloudBusy}
+                        className="flex-1 text-xs gap-1.5 border-red-500/35 text-red-700 dark:text-red-400 hover:bg-red-500/10"
+                      >
+                        <CloudUpload className="w-3.5 h-3.5" />
+                        <span>{cloudPullNotice.actionLabel ?? '加密同步至云端'}</span>
+                      </Button>
+                    ) : cloudPullNotice.action === 'fix-passphrase' ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => passphraseInputRef.current?.focus()}
+                        className="flex-1 text-xs gap-1.5 border-red-500/35 text-red-700 dark:text-red-400 hover:bg-red-500/10"
+                      >
+                        <Unlock className="w-3.5 h-3.5" />
+                        <span>重新输入主密码</span>
+                      </Button>
+                    ) : cloudPullNotice.action === 'use-local-export' ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex-1 text-xs gap-1.5 border-red-500/35 text-red-700 dark:text-red-400 hover:bg-red-500/10"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>选择密文文件</span>
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setVaultPullFailure(null)}
+                      className="flex-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      知道了
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
 
               {vaultConflict ? (
                 <div
@@ -699,7 +829,7 @@ export function HomeDIYBackupDialog({
                         size="sm"
                         variant="outline"
                         onClick={() => void handleCloudUpload(0)}
-                        disabled={!vaultPassphrase.trim() || isSyncingCloud}
+                        disabled={!vaultPassphrase.trim() || cloudBusy}
                         className="flex-1 text-xs gap-1.5 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
                       >
                         <CloudUpload className="w-3.5 h-3.5" />
@@ -710,7 +840,7 @@ export function HomeDIYBackupDialog({
                         size="sm"
                         variant="outline"
                         onClick={() => void handleCloudDownload()}
-                        disabled={!vaultPassphrase.trim() || isSyncingCloud}
+                        disabled={!vaultPassphrase.trim() || cloudBusy}
                         className="flex-1 text-xs gap-1.5 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
                       >
                         <CloudDownload className="w-3.5 h-3.5" />
@@ -747,7 +877,7 @@ export function HomeDIYBackupDialog({
                       size="sm"
                       variant="outline"
                       onClick={() => void handleRetryStatusCheck()}
-                      disabled={isSyncingCloud}
+                      disabled={cloudBusy}
                       className="flex-1 text-xs gap-1.5 border-amber-500/35 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
@@ -770,7 +900,7 @@ export function HomeDIYBackupDialog({
                   size="sm"
                   variant="outline"
                   onClick={() => setDeleteConfirmOpen(true)}
-                  disabled={isDeletingCloud || isSyncingCloud}
+                  disabled={isDeletingCloud || cloudBusy}
                   aria-busy={isDeletingCloud}
                   className="w-full text-xs gap-1.5 border-red-500/35 text-red-600 dark:text-red-400 hover:bg-red-500/10"
                 >

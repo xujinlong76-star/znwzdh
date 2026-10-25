@@ -259,9 +259,28 @@ export async function syncFromCloudVault(
   if (!identity) {
     return { success: false, error: '无法获取用户身份标识', dropped: 0, notes: [], code: 'no_identity' }
   }
-  const cloudRecord = await fetchCloudVault(identity)
+  // fetchCloudVault 的降级兜底把网络/5xx 也返回 null；不传回调就分不清
+  // 「云端确实没有」和「这次没查到」，界面会把中枢故障说成备份不存在。
+  let degraded = false
+  const cloudRecord = await fetchCloudVault(identity, () => {
+    degraded = true
+  })
   if (!cloudRecord || !cloudRecord.payload) {
-    return { success: false, error: '云端暂未查询到该身份的备份金库', dropped: 0, notes: [], code: 'no_vault' }
+    return degraded
+      ? {
+          success: false,
+          error: '这次没查到云端状态（网络或中枢异常），云端是否仍有备份未知',
+          dropped: 0,
+          notes: [],
+          code: 'check_failed',
+        }
+      : {
+          success: false,
+          error: '云端确实没有该身份的备份金库',
+          dropped: 0,
+          notes: [],
+          code: 'no_vault',
+        }
   }
   const res = await importEncryptedDIYConfig(cloudRecord.payload, passphrase, persist)
   if (!res.ok) {

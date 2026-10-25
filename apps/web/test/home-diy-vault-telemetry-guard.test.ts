@@ -355,7 +355,7 @@ describe('弹窗上报点（源码级钉子）', () => {
   });
 
   it('上报顺序：先落事件再弹 toast —— 界面崩了也不该丢掉这次观测', () => {
-    const syncBlock = dialog.slice(dialog.indexOf('const res = await syncToCloudVault'), dialog.indexOf('const status = await checkCloudVaultStatus'));
+    const syncBlock = dialog.slice(dialog.indexOf('const res = await syncToCloudVault'), dialog.indexOf('const handleRetryStatusCheck'));
     expect(syncBlock.indexOf('trackVaultEvent')).toBeLessThan(syncBlock.indexOf('toast({'));
   });
 
@@ -404,12 +404,12 @@ describe('弹窗上报点（源码级钉子）', () => {
     expect([...io.matchAll(/title:\s*'([^']*本轮未写入云端)'/g)].length).toBe(3);
   });
 
-  it('徽章里 check_failed 那一支不得断言「没有备份」', () => {
-    const badge = dialog.slice(dialog.indexOf('const cloudBadgeLabel'), dialog.indexOf('const cloudAbsentHint'));
-    const at = badge.indexOf("code === 'check_failed'");
-    expect(at, '徽章已退回只看 hasCloudVault').toBeGreaterThanOrEqual(0);
-    expect(badge.slice(at, at + 90)).toContain('云端状态未知');
-    expect(badge.slice(at, at + 90)).not.toContain('云端暂无备份');
+  it('徽章文案来自唯一纯函数，check_failed 那一支不得断言「没有备份」', async () => {
+    const { cloudVaultBadgeLabel } = await import('../src/lib/modular/vault-copy');
+    expect(dialog).toContain('cloudVaultBadgeLabel(cloudVaultMeta, isCheckingCloud)');
+    // 先成功得到 v3、再对表失败：徽章只能说「状态未知（上次对表 vN）」
+    expect(cloudVaultBadgeLabel({ hasCloudVault: true, version: 3, code: 'check_failed' })).toBe('云端状态未知（上次对表 v3）');
+    expect(cloudVaultBadgeLabel({ hasCloudVault: false, code: 'check_failed' })).not.toContain('暂无备份');
   });
 
   it('删除成功/本来没有 都要落 code=no_vault，否则删完反倒报「状态未知」', () => {
@@ -420,15 +420,17 @@ describe('弹窗上报点（源码级钉子）', () => {
     }
   });
 
-  it('「云端暂无备份」这类肯定句必须排在 code=no_vault 判定之后（否则就是无条件谎报）', () => {
-    const derived = dialog.slice(dialog.indexOf('const cloudVaultPresent'), dialog.indexOf('  return ('));
-    const gate = derived.indexOf("code === 'no_vault'");
+  it('「云端暂无备份」这类肯定句必须排在 code=no_vault 判定之后（否则就是无条件谎报）', async () => {
+    const { cloudVaultBadgeLabel } = await import('../src/lib/modular/vault-copy');
+    // 用最后一个 `  return (` 定位组件根 JSX：effect 的 cleanup 里也有 `return () =>`
+    const derived = dialog.slice(dialog.indexOf('const cloudVaultPresent'), dialog.lastIndexOf('  return ('));
+    const gate = derived.indexOf("cloudVaultMeta.code === 'no_vault'");
     expect(gate, '未先确认「云端真的没有」就不得断言没有备份').toBeGreaterThanOrEqual(0);
     for (const m of [...derived.matchAll(/云端暂无备份/g)]) {
       expect(m.index, '「云端暂无备份」出现在 no_vault 判定之前').toBeGreaterThan(gate);
     }
-    expect(derived).toContain('云端状态未知');
-    expect(derived).toContain('尚未与云端对表');
+    expect(cloudVaultBadgeLabel(null)).toBe('尚未与云端对表');
+    expect(cloudVaultBadgeLabel({ hasCloudVault: false, code: 'check_failed' })).toContain('云端状态未知');
   });
 });
 

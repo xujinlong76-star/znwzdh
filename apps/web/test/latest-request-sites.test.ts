@@ -145,6 +145,9 @@ const SITES = [
   { file: 'app/admin/tags/page.tsx', fn: 'load' },
   { file: 'app/admin/facets/page.tsx', fn: 'loadSamples' },
   { file: 'app/admin/stats/page.tsx', fn: 'load' },
+  // 金库面板的对表也会并发（进面板 / 重试 / 推送前 / 推送后复查）：
+  // 先发的慢响应会把后发的结论盖掉，和新请求的忙态互相踩。
+  { file: 'components/home-diy-backup-dialog.tsx', fn: 'refreshCloudVaultMeta' },
 ]
 
 describe('守卫工具本身是对的（否则守卫只是空跑）', () => {

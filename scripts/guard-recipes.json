@@ -1,0 +1,39 @@
+{
+  "$comment": [
+    "守卫反向验证配方。每条都由 `node scripts/verify-guard.mjs --all` 执行：",
+    "把 file 里的 from 改成 to（故意破坏规则）→ 跑 test → 断言真的变红 → 自动还原。",
+    "",
+    "收录标准（严格，否则清单会腐烂）：",
+    "  1. 这条守卫**曾经失效过**，或者一旦失效后果严重且不易察觉；",
+    "  2. 破坏方式是一段可控的文本替换（不改结构、不造随机数据）；",
+    "  3. expectOutput 能唯一定位到那条断言——没有它，「红了」可能与你改的那段无关。",
+    "     注意：vitest 会把长断言消息**截断**（`...to include 'apps/api/test/backup-restore-job.test…'`），",
+    "     所以要给截断点之前的片段；给完整路径会永远匹配不上，表现为「无法归因」的假警报。",
+    "     还要避开「测试名里也有的词」——那种词在通过时也会出现，失去区分力。",
+    "",
+    "不要为了凑数加配方：每条都要跑一次测试，清单越长越没人跑。"
+  ],
+  "recipes": [
+    {
+      "name": "通道耗时按各通道自身墙钟计量",
+      "why": "旧实现把整批 await 同值记给 fts/pinyin/semantic。这条断言用「与基线比」而非绝对毫秒，回归时会连报三段诊断。",
+      "file": "packages/store/src/search.ts",
+      "from": "        ftsMs,",
+      "to": "        ftsMs: semanticMs,",
+      "test": "packages/store/test/store.test.ts",
+      "grep": "通道耗时",
+      "expectOutput": "不应包含 semantic 的等待"
+    },
+    {
+      "name": "选测器复数归一（jobs → backup-restore-job）",
+      "why": "阈值要求单数 >=4 时，jobs.ts 收不到 backup-restore-job.test.ts —— 而那正是改 jobs.ts 最该跑的一条。漏选不报错，只会少跑。",
+      "file": "scripts/install-git-hooks.mjs",
+      "from": "singular.length >= 3",
+      "to": "singular.length >= 4",
+      "test": "scripts/precommit-select.test.ts",
+      "grep": "复数归一回归",
+      "expectOutput": "apps/api/test/backup-restore-job",
+      "afterRestore": "node scripts/install-git-hooks.mjs"
+    }
+  ]
+}

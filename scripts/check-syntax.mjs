@@ -103,7 +103,8 @@ const explicit = args.filter((a) => !a.startsWith("--"));
 const files = args.includes("--staged")
   ? collectStagedFiles()
   : explicit.length > 0
-    ? explicit.map((f) => resolve(f)).filter((f) => existsSync(f))
+    ? // 显式传参也要过扩展名：否则把 .json/.md 传进来会被当 TS 解析并误报语法错
+      explicit.map((f) => resolve(f)).filter((f) => existsSync(f) && TS_EXT.test(f))
     : collectDefaultFiles();
 
 /**

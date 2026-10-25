@@ -37,6 +37,36 @@ function skip(label, reason) {
   skipped.push({ label, reason });
 }
 
+/**
+ * 临时目录残留：**只提示，不阻断**。
+ *
+ * 为什么不做成门禁：这是本机环境问题，不是代码问题；而且 CI 容器用完即弃，
+ * 不存在跨 job 累积——放进 CI 只会永远绿。做成一行常驻提示的目的是「让它可见」：
+ * 这类垃圾没人看就没人管。2026-10-25 一次清出 820MB / 796 个目录（最早 6 天前）。
+ *
+ * 不设阈值：设了就会「要么天天响（变噪音）、要么永远不响（等于没有）」，
+ * 而一行数字本身不吵。
+ *
+ * 放在**最前面**而不是末尾：verify 是顺序执行、任一步失败即退出，
+ * 放末尾的话只要前面有一步红（例如覆盖层漂移），这条提示就永远看不到。
+ */
+(() => {
+  const r = spawnSync(process.execPath, ["scripts/clean-temp-probes.mjs", "--json"], { encoding: "utf8" });
+  if (r.status !== 0) return; // 工具缺失/出错都不该影响 verify
+  const line = String(r.stdout ?? "").trim().split("\n").pop() ?? "";
+  try {
+    const info = JSON.parse(line);
+    if (info.matched > 0) {
+      const mb = Math.round(info.bytes / 1024 / 1024);
+      console.log(
+        `[verify] 临时目录残留 ${info.matched} 个 / ${mb}MB —— 清理：node scripts/clean-temp-probes.mjs（先看清单，再加 --apply）`,
+      );
+    }
+  } catch {
+    // 解析失败就算了：这是提示，不值得让 verify 报错
+  }
+})();
+
 // 语法解析门禁放最前：秒级，先把「少一个括号」这类错误挡在 tsc 之前。
 run("语法解析", "node", ["scripts/check-syntax.mjs"]);
 run("覆盖层同步", "node", ["scripts/check-web-overlay.mjs"]);

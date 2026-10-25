@@ -16,7 +16,7 @@ import { walkAndCopy } from "./walk-copy.mjs";
 const roots = [];
 
 function makeRoot() {
-  const dir = mkdtempSync(join(tmpdir(), "walk-copy-"));
+  const dir = mkdtempSync(join(tmpdir(), "navhub-walk-copy-"));
   roots.push(dir);
   return dir;
 }

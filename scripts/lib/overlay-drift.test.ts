@@ -14,7 +14,7 @@ import { diffOverlay, findOwnedOrphans, isBinary, isExcluded, sameContent, walkT
 const roots: string[] = [];
 
 function makeRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), "overlay-drift-"));
+  const dir = mkdtempSync(join(tmpdir(), "navhub-overlay-drift-"));
   roots.push(dir);
   return dir;
 }

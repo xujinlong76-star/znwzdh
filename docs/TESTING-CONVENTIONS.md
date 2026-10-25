@@ -232,6 +232,18 @@ node scripts/verify-guard.mjs \
 `--expect-output` 不是可选项而是纪律：**没有它，「红了」可能与你改的那段无关**。
 安全：`--file` 工作区有改动时拒绝执行（避免覆盖并行会话的改动），崩溃/Ctrl-C 都会还原。
 
+**一次跑完全部登记过的配方**：`npm run verify:guards`（读 `scripts/guard-recipes.json`）。
+
+配方只收「曾经失效过」或「失效后果严重且不易察觉」的守卫，每条都要跑一次测试，
+所以清单要短。`scripts/guard-recipes.test.ts` 做**静态校验**（文件存在、`from` 恰好出现一次、
+`expectOutput` 不过长），能在秒级发现「配方腐烂」——那和「守卫失效」是两件事，
+只有 `verify:guards` 才能发现后者。
+
+配方里的 `expectOutput` 有个坑：**vitest 会截断长断言消息**
+（实测 `...to include 'apps/api/test/backup-restore-job.test…'`），
+所以要给截断点之前的片段；给完整路径会永远匹配不上，表现为「无法归因」的假警报。
+另外别选「测试名里也有的词」——那种词在通过时也出现，失去区分力。
+
 ### `clean-temp-probes.mjs` —— 清理探针残留
 
 `mkdtempSync(join(tmpdir(), "navhub-xxx-"))` 的产物在测试被 kill / 探针忘删 / 进程崩溃时会残留。
@@ -252,6 +264,23 @@ node scripts/clean-temp-probes.mjs --min-age-min 1440 --apply --force   # 只删
    确认无关要加 `--force`；
 4. 目录里**含符号链接就整目录跳过**——本机有过 junction 递归删除清空源码的事故
    （2026-10-19，344 文件），宁可少清一个，不做赌博。
+
+`--json` 给 `verify.mjs` 用（只输出一行摘要）：`pnpm verify` 开头会打一行
+「临时目录残留 N 个 / X MB」。不设阈值的原因是「设了要么天天响、要么永远不响」，
+而一行数字本身不吵。也**不放 CI**：容器用完即弃，不存在跨 job 累积，检查只会永远绿。
+
+**前缀约定（新增代码必须遵守）**：任何 `mkdtempSync` 的前缀都要以 `navhub-` 开头。
+
+```ts
+// ✅ 清理工具认得
+mkdtempSync(join(tmpdir(), "navhub-canon-"))
+// ❌ 会变成永久垃圾
+mkdtempSync(join(tmpdir(), "canon-"))
+```
+
+2026-10-25 全仓扫过一遍：125 处 `mkdtempSync` 里有 2 处是 `overlay-drift-` 与
+`walk-copy-`（已统一）。这两个的残留永远不会被认领——**这是唯一需要人工守的规则**，
+因为工具无法从名字猜出「一个 `tmp.abc123` 是谁建的」。
 
 ### 其余两个
 

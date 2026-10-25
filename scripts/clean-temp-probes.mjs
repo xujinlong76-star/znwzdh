@@ -37,6 +37,7 @@
  * node scripts/clean-temp-probes.mjs --apply          # 真删
  * node scripts/clean-temp-probes.mjs --root /tmp/x    # 换个根（自检用）
  * node scripts/clean-temp-probes.mjs --min-age-min 0  # 连刚建的也算（自检用）
+ * node scripts/clean-temp-probes.mjs --json           # 机器可读摘要（verify.mjs 用）
  * ```
  */
 import { lstatSync, readdirSync, rmSync, statSync } from "node:fs";
@@ -62,6 +63,7 @@ function parseArgs(argv) {
     };
     if (k === "--apply") out.apply = true;
     else if (k === "--force") out.force = true;
+    else if (k === "--json") out.json = true;
     else if (k === "--root") out.root = next();
     else if (k === "--min-age-min") out.minAgeMin = Number(next());
     else {
@@ -170,6 +172,22 @@ for (const e of entries) {
   else matched.push(item);
 }
 
+const totalBytes = matched.reduce((a, m) => a + m.bytes, 0);
+
+if (args.json) {
+  console.log(
+    JSON.stringify({
+      root,
+      matched: matched.length,
+      bytes: totalBytes,
+      skippedNew: skippedNew.length,
+      skippedLink: skippedLink.length,
+      unrecognizedTmp: others.length,
+    }),
+  );
+  process.exit(0);
+}
+
 console.log(`\n扫描根：${root}`);
 console.log(`可选清理 ${matched.length} 个：`);
 for (const m of matched) console.log(`  · ${m.name}  ${fmtSize(m.bytes)}  ${fmtAge(m.ageMs)} 未动`);
@@ -184,8 +202,6 @@ if (skippedLink.length > 0) {
 if (others.length > 0) {
   console.log(`\n未识别 ${others.length} 个 \`tmp.*\`（\`mktemp -d\` 的产物，无法证明归属，不予处理）`);
 }
-
-const totalBytes = matched.reduce((a, m) => a + m.bytes, 0);
 
 /**
  * 「有测试正在跑」的判定：存在 `--min-age-min` 内被改动过的目录。

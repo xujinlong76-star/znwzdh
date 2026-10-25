@@ -25,6 +25,12 @@
  *   --expect-output "不应包含 semantic 的等待"
  * ```
  *
+ * 也可以一次跑完全部登记过的配方：
+ *
+ * ```bash
+ * node scripts/verify-guard.mjs --all      # 读 scripts/guard-recipes.json
+ * ```
+ *
  * ## 判定（这是它比「跑一下看看」严格的地方）
  *
  * | 结果 | 退出码 | 含义 |
@@ -45,6 +51,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
 /**
@@ -85,6 +92,7 @@ function parseArgs(argv) {
       case "--expect-output": out.expectOutput = next(); break;
       case "--cmd": out.cmd = next(); break;
       case "--allow-dirty": out.allowDirty = true; break;
+      case "--all": out.all = true; break;
       default:
         fail(`未知参数：${key}\n  可用：--file --from --to --test --grep --expect-output --cmd --allow-dirty`);
     }
@@ -93,6 +101,67 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv.slice(2));
+
+/**
+ * `--all`：按 `scripts/guard-recipes.json` 逐条跑。
+ *
+ * 每条都用**子进程**执行本脚本（而不是内联调用）：这样每条都有独立的还原作用域，
+ * 一条失败不会让后面的配方带着脏文件继续跑。
+ *
+ * `afterRestore` 是「还原后的额外动作」。它存在的原因很具体：
+ * 改坏 `install-git-hooks.mjs` 时，测试会在 beforeAll 里**重装钩子**，
+ * 于是 `.git/hooks/` 里留下了坏版本——只还原源码不重装，钩子就一直是坏的。
+ */
+if (args.all) {
+  const recipesPath = resolve("scripts/guard-recipes.json");
+  if (!existsSync(recipesPath)) fail(`找不到配方文件：${recipesPath}`);
+  const parsed = JSON.parse(readFileSync(recipesPath, "utf8"));
+  const recipes = Array.isArray(parsed.recipes) ? parsed.recipes : [];
+  if (recipes.length === 0) fail("配方文件里没有 recipes（或不是数组）");
+
+  const selfPath = fileURLToPath(import.meta.url);
+  const failures = [];
+  for (const [i, r] of recipes.entries()) {
+    console.log(`\n${"=".repeat(64)}`);
+    console.log(`[guards] ${i + 1}/${recipes.length} ${r.name ?? r.file}`);
+    if (r.why) console.log(`[guards] 守的是：${r.why}`);
+    console.log("=".repeat(64));
+
+    const childArgs = [selfPath, "--file", r.file, "--from", r.from, "--to", r.to];
+    if (r.test) childArgs.push("--test", r.test);
+    if (r.grep) childArgs.push("--grep", r.grep);
+    if (r.expectOutput) childArgs.push("--expect-output", r.expectOutput);
+    if (r.cmd) childArgs.push("--cmd", r.cmd);
+
+    const started = Date.now();
+    const res = spawnSync(process.execPath, childArgs, { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+    const ms = Date.now() - started;
+    process.stdout.write(res.stdout ?? "");
+    process.stderr.write(res.stderr ?? "");
+
+    if (r.afterRestore) {
+      // 无论这条成功还是失败都执行：还原后的环境必须回到可用状态
+      const fix = spawnSync(r.afterRestore, { shell: true, encoding: "utf8" });
+      if (fix.status !== 0) {
+        console.error(`[guards] ⚠ afterRestore 失败（${r.afterRestore}）：${(fix.stderr ?? "").trim()}`);
+      }
+    }
+
+    if (res.status !== 0) failures.push({ name: r.name ?? r.file, code: res.status });
+    else console.log(`[guards] ✓ ${r.name ?? r.file} 有效（${(ms / 1000).toFixed(1)}s）`);
+  }
+
+  console.log(`\n${"=".repeat(64)}`);
+  if (failures.length > 0) {
+    console.error(`[guards] ✗ ${failures.length}/${recipes.length} 条配方未通过：`);
+    for (const f of failures) console.error(`  · ${f.name}（exit ${f.code}）`);
+    console.error(`[guards] 说明：这表示「这条守卫挡不住它声称要挡的回归」，不是环境问题。\n`);
+    process.exit(2);
+  }
+  console.log(`[guards] ✓ ${recipes.length} 条配方全部有效\n`);
+  process.exit(0);
+}
+
 if (!args.file) fail("缺少 --file（要改坏的源文件）");
 if (!args.from) fail("缺少 --from（原文片段）");
 if (args.to === undefined) fail("缺少 --to（替换成什么；可以是空串）");

@@ -109,6 +109,7 @@ function parseArgs(argv) {
       case "--allow-dirty": out.allowDirty = true; break;
       case "--all": out.all = true; break;
       case "--append": out.append = next(); break;
+      case "--patch": out.patch = next(); break;
       default:
         fail(`未知参数：${key}\n  可用：--file --from --to --test --grep --expect-output --cmd --allow-dirty`);
     }
@@ -146,7 +147,9 @@ if (args.all) {
     const childArgs =
       r.mode === "append"
         ? [selfPath, "--file", r.file, "--append", r.content]
-        : [selfPath, "--file", r.file, "--from", r.from, "--to", r.to];
+        : r.patch
+          ? [selfPath, "--file", r.file, "--patch", r.patch]
+          : [selfPath, "--file", r.file, "--from", r.from, "--to", r.to];
     if (r.test) childArgs.push("--test", r.test);
     if (r.grep) childArgs.push("--grep", r.grep);
     if (r.expectOutput) childArgs.push("--expect-output", r.expectOutput);
@@ -183,10 +186,14 @@ if (args.all) {
 
 if (!args.file) fail("缺少 --file（要改坏的源文件）");
 if (args.append !== undefined) {
-  if (args.from !== undefined || args.to !== undefined) {
-    fail("--append 与 --from/--to 不能混用：一个是「新增」，一个是「替换」");
+  if (args.from !== undefined || args.to !== undefined || args.patch !== undefined) {
+    fail("--append 与 --from/--to/--patch 不能混用：一个是「新增」，一个是「替换」");
   }
   if (String(args.append).trim() === "") fail("--append 内容不能为空");
+} else if (args.patch !== undefined) {
+  if (args.from !== undefined || args.to !== undefined) {
+    fail("--patch 与 --from/--to 不能混用：patch 是多段替换");
+  }
 } else {
   if (!args.from) fail("缺少 --from（原文片段），或用 --append 追加一行");
   if (args.to === undefined) fail("缺少 --to（替换成什么；可以是空串）");
@@ -210,9 +217,23 @@ if (!args.allowDirty) {
 
 /** 2) 读取 + 构造变体（append 模式不碰原文，只在末尾追加一行） */
 const original = readFileSync(file, "utf8");
+/**
+ * **匹配时归一化行尾，写回时恢复原样。**
+ *
+ * 本仓 `core.autocrlf=true`，且有 89 个 `.ts` 是以 CRLF 存储的。若直接按原文匹配，
+ * 用 LF 写成的 `--from`／patch 片段在 CRLF 文件里永远匹配不上——而且报错是
+ * 「找不到片段」，看起来像「源码变了」，实际只是行尾不同。
+ *
+ * 归一化后匹配、替换完再转回原行尾：既让片段书写与行尾无关，
+ * 又保证还原时字节级一致（备份是原样，还原也必须是原样）。
+ */
+const fileEol = original.includes("\r\n") ? "\r\n" : "\n";
+const originalLf = fileEol === "\r\n" ? original.replace(/\r\n/g, "\n") : original;
 const isAppend = args.append !== undefined;
-const occurrences = isAppend ? 0 : original.split(args.from).length - 1;
-if (!isAppend) {
+const isPatch = args.patch !== undefined;
+/** 只有单段模式才需要「片段唯一」检查；patch 模式的每段单独检查 */
+const occurrences = isAppend || isPatch ? 0 : originalLf.split(args.from).length - 1;
+if (!isAppend && !isPatch) {
   if (occurrences === 0) {
     fail(
       `在 ${args.file} 里找不到 --from 片段：\n  ${JSON.stringify(args.from)}\n` +
@@ -224,10 +245,45 @@ if (!isAppend) {
   }
 }
 
-const mutated = isAppend
-  ? `${original.replace(/\r?\n?$/, "\n")}${args.append}\n`
-  : original.replace(args.from, args.to);
-if (mutated === original) fail("改动后内容没有变化（--to 与 --from 相同？）");
+/**
+ * 构造变体。
+ *
+ * 三种模式：
+ *   · `--append`  → 末尾追加一行
+ *   · `--patch`   → **多段**替换（JSON 文件），段与段之间可以互相依赖
+ *   · `--from/--to` → 单段替换
+ *
+ * 多段是必需的：有些回归要同时改「SQL」与「调用参数」才能模拟出来
+ * （例如把 `duration_ms = ?` 改成 `? - created_at` 的同时把参数从 `durationMs`
+ * 换成 `now`）。只改一处会得到编译错误，而不是目标行为。
+ */
+let mutated;
+if (isAppend) {
+  mutated = `${original.replace(/\r?\n?$/, "\n")}${args.append}\n`;
+} else if (isPatch) {
+  const patchPath = resolve(args.patch);
+  if (!existsSync(patchPath)) fail(`找不到 patch 文件：${args.patch}`);
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(patchPath, "utf8"));
+  } catch (err) {
+    fail(`patch 文件不是合法 JSON：${args.patch}（${err?.message ?? err}）`);
+  }
+  const replaces = Array.isArray(parsed.replaces) ? parsed.replaces : [];
+  if (replaces.length === 0) fail(`patch 文件里没有 replaces 数组：${args.patch}`);
+  mutated = originalLf;
+  for (const [i, r] of replaces.entries()) {
+    const count = mutated.split(r.from).length - 1;
+    if (count === 0) fail(`patch 第 ${i + 1} 段找不到 from 片段：\n  ${JSON.stringify(r.from)}`);
+    if (count > 1) fail(`patch 第 ${i + 1} 段的 from 片段出现 ${count} 次，无法确定替换哪一处`);
+    mutated = mutated.replace(r.from, r.to);
+  }
+} else {
+  mutated = originalLf.replace(args.from, args.to);
+}
+if (mutated === originalLf) fail("改动后内容没有变化（--to 与 --from 相同？）");
+/** 转回原行尾再写盘：还原与提交都不应顺手改动行尾 */
+const mutatedWithEol = fileEol === "\r\n" ? mutated.replace(/\n/g, "\r\n") : mutated;
 
 /** 3) 备份 + 注册还原（三条路径都覆盖：正常、异常、Ctrl-C） */
 const BAK = backupPathFor(file);
@@ -255,7 +311,7 @@ process.on("uncaughtException", (err) => {
 });
 
 /** 4) 改坏并跑测试 */
-writeFileSync(file, mutated, "utf8");
+writeFileSync(file, mutatedWithEol, "utf8");
 const testFiles = args.test ? [args.test] : [];
 const cmdText =
   args.cmd ??
@@ -267,7 +323,9 @@ console.log(`\n[verify-guard] 已改坏：${relative(process.cwd(), file)}`);
 console.log(
   isAppend
     ? `[verify-guard] 追加：${JSON.stringify(args.append)}`
-    : `[verify-guard] ${JSON.stringify(args.from)} → ${JSON.stringify(args.to)}`,
+    : isPatch
+      ? `[verify-guard] 多段替换（patch）：${args.patch}`
+      : `[verify-guard] ${JSON.stringify(args.from)} → ${JSON.stringify(args.to)}`,
 );
 console.log(`[verify-guard] 执行：${cmdText}\n`);
 

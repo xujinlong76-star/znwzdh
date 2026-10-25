@@ -55,6 +55,9 @@ describe("配方文件结构", () => {
       if (r.mode === "append") {
         // 新增型破坏：不需要 from/to，但必须有 content
         expect(r.content, `${r.name} 是 append 模式但缺 content`).toBeTruthy();
+      } else if (r.patch) {
+        // 多段替换：patch 文件必须存在
+        expect(existsSync(resolve(ROOT, String(r.patch))), `${r.name} 的 patch 文件不存在：${r.patch}`).toBe(true);
       } else {
         expect(r.from, `${r.name} 缺 from（非 append 模式必须给 from/to）`).toBeTruthy();
         expect(typeof r.to, `${r.name} 缺 to（可以是空串，但不能 undefined）`).toBe("string");
@@ -76,14 +79,33 @@ describe("配方仍指向存在的代码（这条不跑测试，只查文件与�
     (_name, r) => {
       const file = resolve(ROOT, String(r.file));
       expect(existsSync(file), `源文件不存在：${r.file}`).toBe(true);
+      const raw = readFileSync(file, "utf8");
+      /**
+       * 行尾归一化后再匹配。
+       *
+       * 本仓有 89 个 `.ts` 以 CRLF 存储，用 LF 写成的片段在它们里面匹配不上——
+       * 而报错是「找不到片段」，看起来像「源码被改了」，实际只是行尾不同。
+       * verify-guard 本身已经这么做了（它要真的去替换），这里必须一致，
+       * 否则静态校验会对 CRLF 文件误报「配方腐烂」。
+       */
+      const text = raw.replace(/\r\n/g, "\n");
       if (r.mode === "append") {
         // append 模式只要求「目标文件里还没有这段内容」——否则追加会变成重复
         // （那段内容本来就在的话，测试可能仍然通过，于是「守卫有效」会被误判）
-        const text = readFileSync(file, "utf8");
         expect(text.includes(String(r.content)), `${r.file} 里已存在 append 内容，会重复追加`).toBe(false);
         return;
       }
-      const text = readFileSync(file, "utf8");
+      if (r.patch) {
+        const patch = JSON.parse(readFileSync(resolve(ROOT, String(r.patch)), "utf8")) as {
+          replaces?: Array<{ from: string; to: string }>;
+        };
+        expect(Array.isArray(patch.replaces) && patch.replaces.length > 0, `${r.patch} 里没有 replaces`).toBe(true);
+        for (const [i, rep] of (patch.replaces ?? []).entries()) {
+          const count = text.split(rep.from).length - 1;
+          expect(count, `patch 第 ${i + 1} 段的 from 在 ${r.file} 里出现 ${count} 次（必须恰好 1 次）`).toBe(1);
+        }
+        return;
+      }
       const count = text.split(String(r.from)).length - 1;
       expect(count, `--from 在 ${r.file} 里出现 ${count} 次（必须恰好 1 次）`).toBe(1);
     },

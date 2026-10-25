@@ -1,0 +1,17 @@
+{
+  "$comment": [
+    "多段替换：模拟「duration_ms 把排队等待也算进去」的旧行为。",
+    "",
+    "为什么必须同时改两段：SQL 写成 `duration_ms = ? - created_at` 而参数仍传 `durationMs`，",
+    "算出来是个大负数——那测的是「参数传错」而不是「含排队」。两段一起改才等于旧语义：",
+    "duration_ms = 完成时刻 - 入队时刻 = 排队 + 执行。",
+    "",
+    "这条守卫守的是：排障时不能把「在队列里等了多久」当成「跑了多久」。"
+  ],
+  "replaces": [
+    {
+      "from": "duration_ms = ? WHERE id = ? AND status = 'running' RETURNING id\",\n    [error ? \"failed\" : \"done\", error ?? null, now, durationMs, id],",
+      "to": "duration_ms = ? - created_at WHERE id = ? AND status = 'running' RETURNING id\",\n    [error ? \"failed\" : \"done\", error ?? null, now, now, id],"
+    }
+  ]
+}

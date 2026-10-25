@@ -52,6 +52,15 @@
       "content": "export const __kbProbe = () => <div onClick={() => {}}>仅用于反向验证</div>;",
       "test": "apps/web/test/keyboard-activation.test.ts",
       "expectOutput": "admin/data/restore/page.tsx"
+    },
+    {
+      "name": "duration_ms 必须只记执行耗时，不含排队等待",
+      "why": "排障时若把「在队列里等了多久」当成「跑了多久」，就会去优化错的任务（2026-10-25 踩过：把 reindex 的时间算进恢复，得出高 30 倍的错误结论）。这条守卫就是那个口径的锁。",
+      "patch": "scripts/guard-patches/duration-includes-queue.json",
+      "file": "packages/store/src/repository/jobs.ts",
+      "test": "apps/api/test/backup-restore-job.test.ts",
+      "grep": "记录本次执行耗时",
+      "expectOutput": "to be greater than or equal to 250"
     }
   ]
 }

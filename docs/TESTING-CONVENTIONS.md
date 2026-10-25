@@ -117,6 +117,12 @@ L4 还有额外固定成本：需要独占端口（`scripts/e2e-local.mjs` 自�
 | `NAVHUB_SKIP_PRECOMMIT=1` | 跳过全部检查（要在 commit message 里写明原因） |
 | `NAVHUB_PRECOMMIT_SCOPE=all` | 强制全量（收窄失效），确认「跨模块没被改坏」时用 |
 | `NAVHUB_PRECOMMIT_E2E=1` | 跑完 vitest 再跑**本次暂存的** Playwright 用例；没暂存 spec 就跳过 |
+| `NAVHUB_PRECOMMIT_DRYRUN=1` | 只打印将运行哪些文件（`DRYRUN_FILES=[...]`），不真跑 |
+| `NAVHUB_PRECOMMIT_FILES=a,b` | 覆盖「暂存集」，供自检注入（正常提交别设） |
+
+选测器本身有测试：`scripts/precommit-select.test.ts` 固定了「改动 → 选中哪些文件」，
+其中一条专门锁 `jobs.ts → 必须包含 backup-restore-job.test.ts`（复数归一回归）。
+改选测逻辑后先跑它，别靠人肉核对。
 
 钩子完整输出落盘在 `.git/navhub-precommit.log`。**失败要引用日志里的文件名与行号**，
 不要只写「有 1 例失败」——上一轮就是这么丢掉线索的。

@@ -38,7 +38,10 @@ const CHUNKS = arg("chunks", "1000,2000,5000,10000")
 interface Sample {
   chunk: number;
   sites: number;
+  /** 恢复任务自身耗时（jobs.created_at → updated_at） */
   totalMs: number;
+  /** 整个 tick（含结束后入队的 reindex），仅用于提示，不参与结论 */
+  tickMs: number;
   chunks: number;
   perChunkMs: number;
   maxLagMs: number;
@@ -119,7 +122,7 @@ async function runOnce(ctx: AppContext, dir: string, sites: number, chunk: numbe
   const runner = new JobRunner(ctx, { enableCron: false });
   await runner.tick();
   clearInterval(progressTimer);
-  const totalMs = Date.now() - startedAt;
+  const tickMs = Date.now() - startedAt;
   const maxLagMs = lag.stop();
   await ctx.repo.run(
     "DELETE FROM jobs WHERE kind IN ('reindex') AND status IN ('pending', 'running', 'retrying')",
@@ -134,13 +137,24 @@ async function runOnce(ctx: AppContext, dir: string, sites: number, chunk: numbe
     (await ctx.repo.raw("SELECT COUNT(*) AS c FROM sites WHERE url LIKE ?", [`https://bench-${tag}-%`]))[0]!
       .c,
   );
+  /**
+   * 只算**恢复任务自身**的时长，不把 tick 总时长当成分片耗时。
+   *
+   * 曾经踩的坑：`runner.tick()` 会把恢复结束时入队的 `reindex` 一起跑掉，
+   * 于是「10k 条恢复 56 秒」其实是「恢复 1.7 秒 + 全库重建索引 54.8 秒」。
+   * 分片基准必须只测分片本身，否则结论会指向完全错误的地方
+   * （去优化分片大小，而真凶是索引重建）。
+   */
+  const jobRow = (await ctx.repo.raw("SELECT created_at, updated_at FROM jobs WHERE id = ?", [jobId]))[0]!;
+  const restoreMs = Number(jobRow.updated_at) - Number(jobRow.created_at);
   const chunks = Math.ceil(sites / chunk);
   return {
     chunk,
     sites,
-    totalMs,
+    totalMs: restoreMs,
+    tickMs,
     chunks,
-    perChunkMs: Math.round(totalMs / chunks),
+    perChunkMs: Math.round(restoreMs / chunks),
     maxLagMs,
     rows,
   };
@@ -192,8 +206,9 @@ async function main(): Promise<void> {
     const sample = await withFreshDb(`c${chunk}`, USE_INDEX, (ctx, dir) => runOnce(ctx, dir, SITES, chunk));
     samples.push(sample);
     console.log(
-      `chunk=${String(chunk).padStart(5)}  ${sample.chunks} 片  总耗时 ${(sample.totalMs / 1000).toFixed(2)}s  ` +
-        `单片均值 ${sample.perChunkMs}ms  最大事件循环延迟 ${sample.maxLagMs}ms  写入 ${sample.rows} 行`,
+      `chunk=${String(chunk).padStart(5)}  ${sample.chunks} 片  恢复自身 ${(sample.totalMs / 1000).toFixed(2)}s  ` +
+        `单片均值 ${sample.perChunkMs}ms  最大事件循环延迟 ${sample.maxLagMs}ms  写入 ${sample.rows} 行  ` +
+        `（tick 总计 ${(sample.tickMs / 1000).toFixed(2)}s，含 reindex）`,
     );
   }
 

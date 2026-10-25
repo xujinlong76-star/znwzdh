@@ -270,14 +270,25 @@ export function backoffMs(attempt: number): number {
 /**
  * 恢复任务的分片大小。
  *
- * 默认 2000。可用 `NAVHUB_RESTORE_CHUNK` 覆盖——**这个开关只为基准测试存在**
- * （`scripts/bench-restore-chunk.ts` 要对比不同片大小的耗时与阻塞），生产不要设它。
- * 小于 100 视为误配并回落默认值：片太小会让「每片一个事务」的收益消失，
- * 变成几乎逐条提交。
+ * 默认 **1000**（原 2000）。依据 `scripts/bench-restore-chunk.ts` 实测
+ * （`sites(url)` 索引已修、`getSite` 已改走主键之后）：
+ *
+ * | 片大小 | 10k 恢复自身 | 30k 恢复自身 |
+ * |---:|---:|---:|
+ * | 1000 | **2.49s** | **5.89s** |
+ * | 2000 | 3.21s | 9.66s |
+ * | 5000 | 3.56s | 15.23s |
+ *
+ * 片越小反而越快：每片的固定成本（事务提交、去重查询 12 趟）远小于
+ * 「一条 INSERT 语句塞 1000 行时的索引维护代价」。同时片越小，
+ * 事件循环的单次阻塞越短（进度条更顺、取消更快生效）。
+ *
+ * 可用 `NAVHUB_RESTORE_CHUNK` 覆盖——这个开关主要为基准测试保留，生产不要设它。
+ * 小于 100 视为误配并回落默认值：片太小会让「每片一个事务」的收益消失。
  */
 export function restoreChunkSize(): number {
-  const raw = Number(process.env.NAVHUB_RESTORE_CHUNK ?? 2000);
-  if (!Number.isFinite(raw) || raw < 100) return 2000;
+  const raw = Number(process.env.NAVHUB_RESTORE_CHUNK ?? 1000);
+  if (!Number.isFinite(raw) || raw < 100) return 1000;
   return Math.floor(raw);
 }
 

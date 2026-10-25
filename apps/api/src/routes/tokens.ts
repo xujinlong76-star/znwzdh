@@ -95,7 +95,7 @@ export const tokenRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
     const scopes = parseScopes(body.data.scopes);
-    if (scopes.length === 0) { reply.code(400); return { error: "scopes 至少要有一个有效值（read / write / admin）" }; }
+    if (scopes.length === 0) { reply.code(400); return { error: "scopes 至少要有一个有效值（read / favorites / write / admin）" }; }
     const expiry = resolveExpiry(body.data.expiresAt);
     if (expiry.error) { reply.code(400); return { error: expiry.error }; }
 
@@ -146,7 +146,7 @@ export const tokenRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     if (body.data.scopes !== undefined && parseScopes(body.data.scopes).length === 0) {
-      reply.code(400); return { error: "scopes 至少要有一个有效值（read / write / admin）" };
+      reply.code(400); return { error: "scopes 至少要有一个有效值（read / favorites / write / admin）" };
     }
     // 省略 expiresAt = 保留原有效期（编辑名称不该顺带改期）；
     // 显式传值（含 null）才过策略

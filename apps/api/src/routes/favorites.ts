@@ -106,8 +106,8 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     { config: { rateLimit: { max: 600, timeWindow: "1 minute" } } },
     async (req, reply) => {
     const identity = requestIdentityOf(req as never);
-    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
-    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+    // 个人令牌写守卫（T20）：read 令牌只读；favorites 档可写收藏域；write/admin 全量
+    if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -133,8 +133,8 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
     const identity = requestIdentityOf(req as never);
-    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
-    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+    // 个人令牌写守卫（T20）：read 令牌只读；favorites 档可写收藏域；write/admin 全量
+    if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -152,8 +152,8 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.patch("/api/favorites/:siteId", async (req, reply) => {
     const { siteId } = req.params as { siteId: string };
     const identity = requestIdentityOf(req as never);
-    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
-    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+    // 个人令牌写守卫（T20）：read 令牌只读；favorites 档可写收藏域；write/admin 全量
+    if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -178,8 +178,8 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   /** 清空云端收藏（本地缓存由前端同步清掉） */
   app.delete("/api/favorites", async (req, reply) => {
     const identity = requestIdentityOf(req as never);
-    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
-    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+    // 个人令牌写守卫（T20）：read 令牌只读；favorites 档可写收藏域；write/admin 全量
+    if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -189,8 +189,8 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
 
   app.post("/api/favorites/folders", async (req, reply) => {
     const identity = requestIdentityOf(req as never);
-    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
-    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+    // 个人令牌写守卫（T20）：read 令牌只读；favorites 档可写收藏域；write/admin 全量
+    if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -213,8 +213,8 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.delete("/api/favorites/folders/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const identity = requestIdentityOf(req as never);
-    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
-    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+    // 个人令牌写守卫（T20）：read 令牌只读；favorites 档可写收藏域；write/admin 全量
+    if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);
@@ -226,8 +226,8 @@ export const favoriteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
   app.patch("/api/favorites/folders/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     const identity = requestIdentityOf(req as never);
-    // 个人令牌写守卫（T20）：自建令牌 v1 只发 read，写自己的数据需 write scope
-    if (!userDomainWriteAllowed(req as never)) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
+    // 个人令牌写守卫（T20）：read 令牌只读；favorites 档可写收藏域；write/admin 全量
+    if (!userDomainWriteAllowed(req as never, "favorites")) { reply.code(403); return { error: "当前令牌为只读，无法执行写操作" }; }
     if (!identity) { reply.code(400); return { error: "缺少 userId 或 anonId" }; }
     if (!identityTrusted(ctx, req as never)) { reply.code(401); return { error: "需要 Bearer token" }; }
     const canonical = await resolveCanonicalIdentity(ctx, identity);

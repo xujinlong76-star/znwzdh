@@ -1,8 +1,9 @@
 'use client'
 
 /**
- * 个人 API 令牌面板（T20）：自建只读令牌，供扩展 / Raycast / MCP 等外部客户端
- * 以「你的身份」读取收藏 / 历史 / 画像 / 金库。明文只在创建响应里出现一次。
+ * 个人 API 令牌面板（T20）：自建令牌供扩展 / Raycast / MCP 等外部客户端
+ * 以「你的身份」访问收藏 / 历史 / 画像 / 金库。三档：只读 / 收藏写入 / 完整写入。
+ * 明文只在创建响应里出现一次。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,20 @@ interface OwnedToken {
   lastUsedAt: number | null
 }
 
+type TokenPermission = 'read' | 'favorites' | 'write'
+
+const PERMISSION_HINT: Record<TokenPermission, string> = {
+  read: '只读：读取收藏、历史、画像与金库',
+  favorites: '收藏写入：额外允许收藏增删改（浏览器扩展「收藏当前页」）',
+  write: '完整写入：额外允许历史、资料、设置、金库与清理/注销等全部用户域写',
+}
+
+function scopeLabel(scopes: string[]): string {
+  if (scopes.includes('write') || scopes.includes('admin')) return '完整写入'
+  if (scopes.includes('favorites')) return '收藏写入'
+  return '只读'
+}
+
 function formatDate(ts: number | null): string {
   if (!ts) return '—'
   try {
@@ -34,8 +49,8 @@ export function ApiTokensPanel() {
   const { toast } = useToast()
   const [tokens, setTokens] = useState<OwnedToken[] | null>(null)
   const [name, setName] = useState('')
-  // B1：默认只读；勾选后创建 read+write（扩展「收藏当前页」需要写权限）
-  const [writeAllowed, setWriteAllowed] = useState(false)
+  // P1 按域收敛：默认只读；收藏写入给扩展「收藏当前页」；完整写入需用户显式选择
+  const [permission, setPermission] = useState<TokenPermission>('read')
   const [creating, setCreating] = useState(false)
   const [revealed, setRevealed] = useState<{ raw: string; name: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -68,7 +83,7 @@ export function ApiTokensPanel() {
       const res = await fetch('/api/me/tokens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trimmed, write: writeAllowed }),
+        body: JSON.stringify({ name: trimmed, permission }),
         cache: 'no-store',
       })
       const data = (await res.json().catch(() => ({}))) as { token?: string; error?: string }
@@ -83,7 +98,7 @@ export function ApiTokensPanel() {
     } finally {
       setCreating(false)
     }
-  }, [creating, load, name, toast, writeAllowed])
+  }, [creating, load, name, permission, toast])
 
   const revoke = useCallback(
     async (id: string) => {
@@ -112,7 +127,7 @@ export function ApiTokensPanel() {
           <KeyRound className="h-4 w-4 shrink-0 text-primary" aria-hidden />
           个人 API 令牌
         </h2>
-        <span className="text-[11px] text-muted-foreground">只读权限 · 供扩展等外部客户端读取你的数据</span>
+        <span className="text-[11px] text-muted-foreground">按需授权 · 只读 / 收藏写入 / 完整写入</span>
       </div>
 
       {/* 明文一次性展示 */}
@@ -151,15 +166,17 @@ export function ApiTokensPanel() {
           placeholder="令牌名称（如：Raycast 扩展）"
           className="h-9 flex-1 text-xs"
         />
-        <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground" title="写入权限用于浏览器扩展的「收藏当前页」；只读令牌泄露后也无法改动你的数据">
-          <input
-            type="checkbox"
-            className="h-3.5 w-3.5 accent-primary"
-            checked={writeAllowed}
-            aria-label="允许令牌写入（收藏当前页等）"
-            onChange={(e) => setWriteAllowed(e.target.checked)}
-          />
-          允许写入
+        <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground" title={PERMISSION_HINT[permission]}>
+          <select
+            aria-label="令牌权限"
+            value={permission}
+            onChange={(e) => setPermission(e.target.value as TokenPermission)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-xs"
+          >
+            <option value="read">只读</option>
+            <option value="favorites">收藏写入</option>
+            <option value="write">完整写入</option>
+          </select>
         </label>
         <Button size="sm" className="w-full text-xs sm:w-auto" disabled={creating || !name.trim()} onClick={() => void create()}>
           {creating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1.5 h-3.5 w-3.5" />}
@@ -184,7 +201,7 @@ export function ApiTokensPanel() {
                       {t.tokenPrefix && <span className="ml-2 font-mono text-[11px] text-muted-foreground">{t.tokenPrefix}…</span>}
                     </p>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {t.scopes.join(',')} · 创建于 {formatDate(t.createdAt)}
+                      {scopeLabel(t.scopes)} · 创建于 {formatDate(t.createdAt)}
                       {t.lastUsedAt ? ` · 最近使用 ${formatDate(t.lastUsedAt)}` : ' · 从未使用'}
                     </p>
                   </div>

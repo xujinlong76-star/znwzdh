@@ -16,9 +16,13 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyRequest } from "fastify";
 
-export type ApiScope = "read" | "write" | "admin";
+export type ApiScope = "read" | "favorites" | "write" | "admin";
 
-/** 路由级分级：在 ApiScope 之上多一个 public（匿名可用，不参与鉴权） */
+/**
+ * 路由级分级：在 ApiScope 之上多一个 public（匿名可用，不参与鉴权）。
+ * favorites 只作用于用户域写面（收藏/收藏夹），不用于路由级 scope——
+ * 路由级要求仍只有 read/write/admin。
+ */
 export type RouteScope = "public" | ApiScope;
 
 /**
@@ -73,14 +77,17 @@ export function parseScopes(raw: string | null | undefined): ApiScope[] {
   if (!raw) return [];
   const out: ApiScope[] = [];
   for (const s of raw.split(",").map((x) => x.trim().toLowerCase())) {
-    if (s === "read" || s === "write" || s === "admin") out.push(s);
+    if (s === "read" || s === "favorites" || s === "write" || s === "admin") out.push(s);
   }
   return [...new Set(out)];
 }
 
-/** admin ⊇ write ⊇ read：持 admin 视同持全部，持 write 视同持 read */
+/**
+ * admin ⊇ write ⊇ read：持 admin 视同持全部，持 write 视同持 read。
+ * favorites 与 read 同级：它只加用户域收藏写权限，不提升实例级路由门槛。
+ */
 export function scopeSatisfies(scopes: ApiScope[], required: ApiScope): boolean {
-  const rank: Record<ApiScope, number> = { read: 1, write: 2, admin: 3 };
+  const rank: Record<ApiScope, number> = { read: 1, favorites: 1, write: 2, admin: 3 };
   const have = scopes.reduce((m, s) => Math.max(m, rank[s]), 0);
   return have >= rank[required];
 }

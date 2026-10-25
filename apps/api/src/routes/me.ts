@@ -86,17 +86,25 @@ function isSafeAvatarUrl(raw: string): boolean {
 export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
-  // 用户域写面第二轴：只读个人令牌不得调用 /api/me/* 的任何非读方法。
+  // 用户域写面第二轴：只读个人令牌不得调用 /api/me/* 的任何非读方法；
+  // favorites 档额外允许收藏批量同步（/api/me/favorites/sync），其余写面仍需 write。
   // 插件级 onRequest 默认拒绝，新增写路由自动继承；逐 handler 补守卫正是本缺口
   // 曾经出现的原因。放在 onRequest 而非 preHandler：坏 JSON 在 body 解析阶段就会
   // 400，preHandler 来不及拒绝，会把授权失败伪装成参数错误。
   // 会话/BFF/签名身份无 owner，userDomainWriteAllowed 恒放行。
   app.addHook("onRequest", async (req, reply) => {
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;
-    if (userDomainWriteAllowed(req as never)) return;
+    const path = (req.url ?? "").split("?")[0];
+    const domain = path === "/api/me/favorites/sync" ? "favorites" : "write";
+    if (userDomainWriteAllowed(req as never, domain)) return;
+    const scopes = (req as { auth?: { scopes?: string[] } }).auth?.scopes ?? [];
+    const favoritesOnly =
+      scopes.includes("favorites") && !scopes.includes("write") && !scopes.includes("admin");
     // 必须 return 这个 Reply：异步钩子里裸 send 只发响应不停链，处理器随后照跑
     // （实测：403 返回的同时设置/数据仍被改写）。
-    return reply.code(403).send({ error: "当前令牌为只读，无法执行写操作" });
+    return reply
+      .code(403)
+      .send({ error: favoritesOnly ? "当前令牌仅可写收藏，无法执行该操作" : "当前令牌为只读，无法执行写操作" });
   });
 
   // 协商缓存（T18）：maxAge=0 + etag = 「private, no-cache」+ ETag/304。
@@ -918,7 +926,9 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     const body = z
       .object({
         name: z.string().trim().min(1).max(40),
-        /** B1：write 需显式勾选（默认仍只读）；合法集合固定 read/read+write */
+        /** 权限档位（P1 按域收敛）：read=只读；favorites=只读+收藏写；write=全部用户域写 */
+        permission: z.enum(["read", "favorites", "write"]).optional(),
+        /** 兼容旧客户端：write:true 等价 permission=write（permission 显式给定时优先） */
         write: z.boolean().optional(),
       })
       .safeParse(req.body ?? {});
@@ -926,13 +936,14 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     const canonical = await ctx.repo.resolveIdentity(identity);
     const count = (await ctx.repo.listApiTokensByOwner(canonical)).length;
     if (count >= 10) { reply.code(409); return { error: "个人令牌数量已达上限（10 条），请先吊销不用的令牌" }; }
+    const permission = body.data.permission ?? (body.data.write ? "write" : "read");
     const raw = generateToken();
     const record = await ctx.repo.createApiToken({
       name: body.data.name,
       tokenHash: hashToken(raw),
-      // 默认只读；write:true 时发 read+write（收藏写路径 B1：令牌误贴进不可信
-      // 环境的爆炸半径 = 只能写自己的收藏/历史，站点域仍按实例级 scope 鉴权）
-      scopes: body.data.write ? "read,write" : "read",
+      // 三档：read / read+favorites（只写收藏域）/ read+write（全部用户域写）。
+      // 存量令牌不受影响；write 令牌不再被描述为「只能收藏」。
+      scopes: permission === "write" ? "read,write" : permission === "favorites" ? "read,favorites" : "read",
       tokenPrefix: tokenPrefixOf(raw),
       ownerIdentity: canonical,
     });

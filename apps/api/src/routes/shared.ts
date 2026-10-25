@@ -336,16 +336,23 @@ export function requestIdentityOf(req: { auth?: { ownerIdentity?: string | null 
   return identityOf(req as never);
 }
 
+/** 用户域写权限的域：favorites 只放开收藏/收藏夹，write 覆盖全部用户域写面 */
+export type UserDomainWriteScope = "favorites" | "write";
+
 /**
  * 用户域写路径守卫（T20）：会话/BFF 流程不受影响（无 owner 恒放行，闸门仍由
- * identityTrusted + 签名承担）；个人令牌写自己的数据必须持 write scope——
- * 自建令牌 v1 只发 read，让「误把令牌贴进不可信环境」的爆炸半径停在只读。
+ * identityTrusted + 签名承担）；个人令牌写自己的数据按域判权——
+ * write/admin 覆盖全部用户域，favorites 只覆盖收藏域，read 一律只读。
  */
-export function userDomainWriteAllowed(req: { auth?: { kind?: string; scopes?: string[]; ownerIdentity?: string | null } }): boolean {
+export function userDomainWriteAllowed(
+  req: { auth?: { kind?: string; scopes?: string[]; ownerIdentity?: string | null } },
+  domain: UserDomainWriteScope = "write",
+): boolean {
   const auth = (req as { auth?: { kind?: string; scopes?: string[]; ownerIdentity?: string | null } }).auth;
   if (!auth?.ownerIdentity) return true;
   const scopes = auth.scopes ?? [];
-  return scopes.includes("write") || scopes.includes("admin");
+  if (scopes.includes("write") || scopes.includes("admin")) return true;
+  return domain === "favorites" && scopes.includes("favorites");
 }
 
 export function identityTrusted(ctx: AppContext, req: { auth?: { kind?: string } }): boolean {

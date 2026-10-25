@@ -67,7 +67,7 @@ export function slugify(input: string): string {
  * store 是更底层的模块，任何调用方（REST / MCP / 脚本）写入都走这一道，防大写/非法 scope 落库。
  */
 export function normalizeTokenScopes(raw: string | null | undefined): string {
-  const valid = new Set(["read", "write", "admin"]);
+  const valid = new Set(["read", "favorites", "write", "admin"]);
   const out: string[] = [];
   for (const s of (raw ?? "").split(",").map((x) => x.trim().toLowerCase())) {
     if (valid.has(s) && !out.includes(s)) out.push(s);

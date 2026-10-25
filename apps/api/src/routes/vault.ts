@@ -79,7 +79,7 @@ export const vaultRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
           error: "云端金库已被清除：本机版本号对应的云端备份已不存在",
           code: "VAULT_CLEARED",
           current: null,
-          hint: "如确认以本机配置重建云端金库，请以 version=0 重新推送",
+          hint: "如确认以本机配置重建云端金库，请以 version=0（表示期望云端为空）重新推送；重建后的第一版是 v1",
         };
       }
       return {

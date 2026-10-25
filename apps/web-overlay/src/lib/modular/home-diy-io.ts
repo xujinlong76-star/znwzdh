@@ -15,6 +15,7 @@ import {
   type VaultTelemetryOutcome,
 } from '@/lib/navhub-api'
 import { validateAndCleanDIYConfig } from '@/lib/modular/diy-presets'
+import { VAULT_REBUILD_VERSION_COPY } from '@/lib/modular/vault-copy'
 import { decryptGenericPayload, encryptGenericPayload } from '@/lib/vault'
 import type { HomeDIYConfig } from './home-diy-storage'
 
@@ -218,11 +219,13 @@ export async function syncToCloudVault(
         (kind === 'vault-cleared'
           ? '云端金库已被清除：本机版本号对应的云端备份已不存在'
           : '版本冲突：云端金库已被其它设备更新'),
+      // 服务端 hint 面向 API 调用方（教它传 version=0），不原样当用户文案：
+      // 用户需要知道的是「重建后是第几版」，而不是内部哨兵值。
       suggestion:
-        res.hint ||
-        (kind === 'vault-cleared'
-          ? '确认以本机当前排版重建云端金库即可，新版本会从 v0 开始计。'
-          : '先点「从云端拉取解密」确认最新内容，再重新推送，避免覆盖别人的修改。'),
+        kind === 'vault-cleared'
+          ? `确认以本机当前排版重建云端金库即可：${VAULT_REBUILD_VERSION_COPY}。`
+          : res.hint ||
+            '先点「从云端拉取解密」确认最新内容，再重新推送，避免覆盖别人的修改。',
     }
   }
   if (!res.ok) {

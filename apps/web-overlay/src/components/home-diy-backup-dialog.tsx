@@ -30,6 +30,11 @@ import {
 } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
+  VAULT_REBUILD_ACTION_LABEL,
+  VAULT_REBUILD_FIRST_VERSION,
+  VAULT_REBUILD_VERSION_COPY,
+} from '@/lib/modular/vault-copy'
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -156,7 +161,7 @@ export function HomeDIYBackupDialog({
   }, [open, backupTab, checkCloudVaultStatus])
 
   /**
-   * 推送金库。expectedOverride 只给「以 v0 重建」这条引导用：
+   * 推送金库。expectedOverride 只给「以 version=0（期望云端为空）重建」这条引导用：
    * 云端已被清除时，先查状态得到 hasCloudVault:false 本来就会算出 0，
    * 但显式传入可避免这里的推断再次吞掉服务端已经说清的那个动作。
    *
@@ -243,7 +248,7 @@ export function HomeDIYBackupDialog({
       title: precondition.expectedVersion === 0 ? '已确认云端没有备份' : `已确认云端金库 v${precondition.expectedVersion}`,
       description:
         precondition.expectedVersion === 0
-          ? '现在点「加密同步至云端」会建立第一份备份（新版本从 v1 起计）。'
+          ? `现在点「加密同步至云端」会建立第一份备份（新版本从 v${VAULT_REBUILD_FIRST_VERSION} 起计）。`
           : '现在点「加密同步至云端」会以 v' + precondition.expectedVersion + ' 作为前置条件：云端若被别的设备改过，会提示冲突而不是覆盖。',
     })
   }
@@ -682,7 +687,7 @@ export function HomeDIYBackupDialog({
                     <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-violet-600 dark:text-violet-400" />
                     <p className="text-[11px] leading-relaxed text-foreground min-w-0">
                       {vaultConflict.kind === 'vault-cleared'
-                        ? '云端那份备份已不存在，「从云端拉取」不会拿到任何内容。要恢复漫游，以本机当前排版重建即可，新版本从 v0 起计。'
+                        ? `云端那份备份已不存在，「从云端拉取」不会拿到任何内容。要恢复漫游，以本机当前排版重建即可，${VAULT_REBUILD_VERSION_COPY}。`
                         : typeof vaultConflict.currentVersion === 'number'
                           ? `云端已是第 v${vaultConflict.currentVersion} 版，由其它设备写入。直接覆盖会丢掉那一版的内容。`
                           : '云端内容比本机所依据的版本更新（中枢未回传版本号）。直接覆盖会丢掉别人那一版的内容。'}
@@ -698,7 +703,7 @@ export function HomeDIYBackupDialog({
                         className="flex-1 text-xs gap-1.5 border-violet-500/30 text-violet-600 dark:text-violet-400 hover:bg-violet-500/10"
                       >
                         <CloudUpload className="w-3.5 h-3.5" />
-                        <span>{isSyncingCloud ? '重建中...' : '以本机排版重建（从 v0 开始）'}</span>
+                        <span>{isSyncingCloud ? '重建中...' : VAULT_REBUILD_ACTION_LABEL}</span>
                       </Button>
                     ) : (
                       <Button

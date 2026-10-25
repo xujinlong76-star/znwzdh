@@ -63,7 +63,12 @@ describe("云端金库 409 原因分流", () => {
     expect(body.code).toBe("VAULT_CLEARED");
     expect(body.current).toBeNull();
     expect(body.error).toContain("已被清除");
+    // hint 面向 API 调用方：既要说清 version=0 是前置条件，也要说清重建产物是 v1，
+    // 否则调用方会把 0 当成「第一版」回显给用户（客户端文案曾经就这么错过）。
     expect(body.hint).toContain("version=0");
+    expect(body.hint).toContain("期望云端为空");
+    expect(body.hint).toContain("第一版是 v1");
+    expect(body.hint).not.toContain("从 v0");
     // 没有 current 就不该回 etag：回了会暗示「有版本可对齐」
     expect(res.headers.etag).toBeUndefined();
   });

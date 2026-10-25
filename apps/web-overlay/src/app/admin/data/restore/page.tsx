@@ -55,6 +55,17 @@ interface AsyncAccepted {
   accepted: { categories: number; sites: number }
   skipped: DryRunResult['skipped']
   statusUrl: string
+  retryAfterMs?: number
+  message: string
+}
+
+/**
+ * 无事可做时端点返回 200（不是 202 + 一个 0/0 的任务）。
+ * 依据 RFC 9110 §15.3.3：工作已经完成或根本没有工作时，应当返回 200/201。
+ */
+interface NothingToDo {
+  nothingToDo: true
+  skipped: DryRunResult['skipped']
   message: string
 }
 
@@ -81,6 +92,8 @@ interface JobStatusPayload {
   progress: { done: number; total: number }
   startedAt: number
   finishedAt: number | null
+  /** 服务端建议的下次轮询间隔（未终态才给）；用于让轮询节奏由服务端指挥 */
+  retryAfterMs?: number | null
   error: string | null
   retryable: boolean
 }
@@ -96,6 +109,15 @@ const ASYNC_THRESHOLD = 5000
 
 /** 进度轮询间隔。任务每 2000 条上报一次，1.5 秒足够跟上且不刷爆日志。 */
 const POLL_INTERVAL_MS = 1500
+
+/** 轮询上限：服务端给的建议值、以及出错退避的上限（避免长任务把间隔拉到几分钟） */
+const POLL_MAX_INTERVAL_MS = 5000
+
+/**
+ * 盯一个任务最多盯多久。超过就转后台——长任务不该把标签页钉死。
+ * 注意这不代表任务失败：任务在服务端，用户回来还能接着看。
+ */
+const POLL_DEADLINE_MS = 10 * 60_000
 
 const TERMINAL_STATUS: ReadonlySet<JobStatus> = new Set<JobStatus>(['done', 'failed', 'cancelled'])
 
@@ -130,6 +152,22 @@ const REASON_TEXT: Record<string, string> = {
 function reasonText(reason: unknown): string {
   if (typeof reason !== 'string') return REASON_TEXT.unknown
   return REASON_TEXT[reason] ?? `未知错误（${reason}）`
+}
+
+/**
+ * 取服务端给的「人话」。
+ *
+ * 中枢的错误体是 `{ error: 机器码, message: 人话 }`，而共享客户端只保留 `error`，
+ * 于是 409 会显示成 `CONFLICT_RESTORE_RUNNING`——信息量为零，还像系统故障。
+ * `hubError` 已经把整个响应体放进了 `payload`，这里从 payload 取 message。
+ *
+ * 放在页面侧而不是改共享客户端：那会影响所有 admin 页的错误文案，是一次需要
+ * 单独验证的改动，而且那个文件正被另一个会话改着。
+ */
+function serverMessage(err: unknown, fallback: string): string {
+  const payload = (err as { payload?: { message?: unknown } })?.payload
+  const text = typeof payload?.message === 'string' ? payload.message.trim() : ''
+  return text || fallback
 }
 
 function formatBytes(bytes: number): string {
@@ -217,6 +255,8 @@ export default function RestoreBackupPage() {
   const [watching, setWatching] = useState(false)
   /** 轮询失败与任务失败是两件事：前者是「看不到进度」，后者是「恢复死了」 */
   const [pollError, setPollError] = useState<string | null>(null)
+  /** 自动转后台时的说明（手动转后台不需要这句话，用户知道自己点了什么） */
+  const [pollNotice, setPollNotice] = useState<string | null>(null)
 
   const resetDownstream = useCallback(() => {
     setPreview(null)
@@ -228,6 +268,7 @@ export default function RestoreBackupPage() {
     setJob(null)
     setWatching(false)
     setPollError(null)
+    setPollNotice(null)
   }, [])
 
   const handleFile = useCallback(
@@ -275,7 +316,7 @@ export default function RestoreBackupPage() {
       setPreview(data)
     } catch (err) {
       setErrorKind('preview')
-      setError(describeDegrade(err).message)
+      setError(serverMessage(err, describeDegrade(err).message))
     } finally {
       setBusy(null)
     }
@@ -298,13 +339,22 @@ export default function RestoreBackupPage() {
      */
     if (preview.wouldRestore.sites > ASYNC_THRESHOLD) {
       try {
-        const data = await hubSend<AsyncAccepted>('/api/backup/restore/async', 'POST', backup)
+        const data = await hubSend<AsyncAccepted | NothingToDo>('/api/backup/restore/async', 'POST', backup)
+        /**
+         * 无事可做：端点返回 200 而不是建一个 0/0 的任务。
+         * 这里直接展示服务端的说明，不进入进度卡——否则用户会盯着一个永远不动的进度条。
+         */
+        if ('nothingToDo' in data && data.nothingToDo) {
+          setResult({ message: data.message, restored: { categories: 0, sites: 0 } })
+          return
+        }
+        const accepted = data as AsyncAccepted
         const next: JobState = {
-          jobId: data.jobId,
-          categories: data.accepted.categories,
-          sites: data.accepted.sites,
+          jobId: accepted.jobId,
+          categories: accepted.accepted.categories,
+          sites: accepted.accepted.sites,
           status: 'pending',
-          progress: { done: 0, total: data.accepted.sites },
+          progress: { done: 0, total: accepted.accepted.sites },
           error: null,
           retryable: false,
           startedAt: Date.now(),
@@ -313,12 +363,13 @@ export default function RestoreBackupPage() {
         setJob(next)
         persistJob(next)
         setWatching(true)
+        setPollNotice(null)
       } catch (err) {
-        // 走到这里说明请求内校验就失败了（非法包/超限/落盘失败），一条都没写
+        // 走到这里说明请求内就被拒了（非法包/超限/磁盘/已有任务在跑），一条都没写
         setErrorKind('submit')
-        setError(describeDegrade(err).message)
-        const reason = (err as { payload?: { reason?: string } })?.payload?.reason
-        setFailureReason(reason ? reasonText(reason) : null)
+        setError(serverMessage(err, describeDegrade(err).message))
+        const payload = (err as { payload?: { reason?: string } })?.payload
+        setFailureReason(payload?.reason ? reasonText(payload.reason) : null)
       } finally {
         setBusy(null)
       }
@@ -330,7 +381,7 @@ export default function RestoreBackupPage() {
       setResult(data)
     } catch (err) {
       // 409 上带的是「类别」而不是原始报错，尽量把它翻成人话
-      const message = describeDegrade(err).message
+      const message = serverMessage(err, describeDegrade(err).message)
       setErrorKind('sync')
       setError(message)
       const reason = (err as { payload?: { reason?: string } })?.payload?.reason
@@ -345,19 +396,30 @@ export default function RestoreBackupPage() {
   const pollingJobId = job && jobActive && watching ? job.jobId : null
 
   /**
-   * 进度轮询。
+   * 进度轮询（自调度 setTimeout，不是 setInterval）。
    *
-   * 依赖刻意只用 pollingJobId：状态更新（pending → running → done）不改变 jobId，
-   * 所以 effect 不会因为「进度变了」而重建定时器——那样会让间隔漂移，也会
-   * 在每次 setJob 后多发一次请求。终态时 pollingJobId 变成 null，effect 自然清理。
+   * 三个刻意的选择：
+   *   1. 依赖只用 pollingJobId：状态更新（pending → running → done）不改变 jobId，
+   *      effect 不会因为「进度变了」而重建定时器；终态时它变成 null，自然清理。
+   *   2. 间隔由服务端指挥（`retryAfterMs`，来自 `Retry-After`），取不到就用 1.5 秒；
+   *      出错时翻倍退避——网络抖一下不该立刻再来一次。
+   *   3. 有 10 分钟上限：到点自动转后台。长任务不该把标签页钉死，
+   *      而「还在盯着」本身没有价值——任务在服务端，回来还能看。
    */
   useEffect(() => {
     if (!pollingJobId) return
     let stopped = false
-    let inFlight = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let delay = POLL_INTERVAL_MS
+    const deadline = Date.now() + POLL_DEADLINE_MS
+
     const tick = async () => {
-      if (stopped || inFlight) return
-      inFlight = true
+      if (stopped) return
+      if (Date.now() > deadline) {
+        setWatching(false)
+        setPollNotice('已连续轮询 10 分钟仍未结束，已转为后台运行。任务不受影响，回到本页可继续查看进度。')
+        return
+      }
       try {
         const data = await hubGet<JobStatusPayload>(`/api/backup/restore/status/${pollingJobId}`)
         if (stopped) return
@@ -376,18 +438,23 @@ export default function RestoreBackupPage() {
         )
         // 成功才清记录：失败要留着，刷新后还能看到「上次恢复死在哪一步」
         if (data.status === 'done') clearPersistedJob()
+        const suggested = Number(data.retryAfterMs ?? POLL_INTERVAL_MS)
+        delay = Number.isFinite(suggested)
+          ? Math.min(Math.max(POLL_INTERVAL_MS, suggested), POLL_MAX_INTERVAL_MS)
+          : POLL_INTERVAL_MS
       } catch (err) {
-        // 轮询失败不代表任务失败——可能只是这一秒网络抖了，下一轮继续
-        if (!stopped) setPollError(describeDegrade(err).message)
-      } finally {
-        inFlight = false
+        // 轮询失败不代表任务失败——可能只是这一秒网络抖了，退避后继续
+        if (stopped) return
+        setPollError(describeDegrade(err).message)
+        delay = Math.min(delay * 2, POLL_MAX_INTERVAL_MS)
       }
+      if (!stopped) timer = setTimeout(() => void tick(), delay)
     }
+
     void tick()
-    const timer = setInterval(() => void tick(), POLL_INTERVAL_MS)
     return () => {
       stopped = true
-      clearInterval(timer)
+      if (timer) clearTimeout(timer)
     }
   }, [pollingJobId])
 
@@ -588,9 +655,16 @@ export default function RestoreBackupPage() {
           job={job}
           watching={watching}
           pollError={pollError}
+          pollNotice={pollNotice}
           canRetry={canRestore}
-          onKeepRunning={() => setWatching(false)}
-          onResume={() => setWatching(true)}
+          onKeepRunning={() => {
+            setWatching(false)
+            setPollNotice(null)
+          }}
+          onResume={() => {
+            setWatching(true)
+            setPollNotice(null)
+          }}
           onRetry={() => void runRestore()}
         />
       )}
@@ -678,6 +752,7 @@ function JobProgress({
   job,
   watching,
   pollError,
+  pollNotice,
   canRetry,
   onKeepRunning,
   onResume,
@@ -686,6 +761,7 @@ function JobProgress({
   job: JobState
   watching: boolean
   pollError: string | null
+  pollNotice: string | null
   canRetry: boolean
   onKeepRunning: () => void
   onResume: () => void
@@ -729,7 +805,7 @@ function JobProgress({
           <p className="text-sm text-muted-foreground">
             {total > 0 ? (
               <>
-                已写入 <span className="font-medium text-foreground">{done}</span> / {total} 条
+                已处理 <span className="font-medium text-foreground">{done}</span> / {total} 条
                 （{pct}%）
               </>
             ) : (
@@ -746,7 +822,7 @@ function JobProgress({
 
         {isActive && !watching && (
           <p className="text-sm text-muted-foreground">
-            已转后台运行，本页不再刷新。任务结束后回到本页仍可查看结果。
+            {pollNotice ?? '已转后台运行，本页不再刷新。任务结束后回到本页仍可查看结果。'}
           </p>
         )}
 
@@ -772,11 +848,11 @@ function JobProgress({
           <div className="space-y-2">
             <p className="flex items-center gap-2 text-sm font-medium text-destructive" role="alert">
               <AlertTriangle className="h-4 w-4" aria-hidden />
-              恢复中断：已写入 {done} 条后失败
+              恢复中断：已处理 {done} 条后失败
             </p>
             {job.error && <p className="text-sm text-muted-foreground">{job.error}</p>}
             <p className="text-sm text-muted-foreground">
-              后台恢复是分批提交的，<strong>已写入的那 {done} 条会保留</strong>（不会回滚）。重跑会跳过已存在的
+              后台恢复是分批提交的，<strong>已写入的那部分会保留</strong>（不会回滚）。重跑会跳过已存在的
               URL，可以直接重试，不会产生重复数据。
             </p>
           </div>

@@ -10,7 +10,7 @@
  *   1. 阈值分支真的走到 `POST /restore/async`，而不是仍然同步提交；
  *   2. 轮询真的在跑（进度条数字会变），终态会停（不再打 status 端点）；
  *   3. 「转到后台」真的停轮询（用请求计数验证，不看文案）；
- *   4. 失败态同时给出「已写入 N 条」与「这些会保留」。
+ *   4. 失败态同时给出「已处理 N 条」与「已写入的会保留」。
  *
  * 只 mock 传输层，断言请求与页面事实，不断言 toast。
  */
@@ -94,8 +94,9 @@ async function mockAsync(
       }
       calls.asyncPosts.push({ url, body })
 
-      if (options.asyncStatus && options.asyncStatus >= 400) {
-        await route.fulfill({ status: options.asyncStatus, json: options.asyncBody ?? {} })
+      if (options.asyncBody !== undefined) {
+        // 自定义响应：400（提交被拒）/ 409（已有任务在跑）/ 200（无事可做）
+        await route.fulfill({ status: options.asyncStatus ?? 200, json: options.asyncBody })
         return
       }
       await route.fulfill({
@@ -184,7 +185,7 @@ test.describe('恢复冷备：后台任务路径', () => {
 
     // 任务卡出现，第一轮轮询（立即执行）拿到 running 2000/6000
     await expect(page.getByText('3 · 后台恢复')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText(/已写入\s*2000\s*\/\s*6000\s*条/)).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/已处理\s*2000\s*\/\s*6000\s*条/)).toBeVisible({ timeout: 10_000 })
 
     // 第二轮轮询拿到 done → 成功态
     await expect(page.getByText('成功恢复 1 个分类与 6000 个站点')).toBeVisible({ timeout: 15_000 })
@@ -202,7 +203,7 @@ test.describe('恢复冷备：后台任务路径', () => {
     expect(calls().statusHits).toBe(hitsAtDone)
   })
 
-  test('失败态说清「已写入 N 条会保留」，绝不声称回滚', async ({ page }) => {
+  test('失败态说清「已处理 N 条、已写入的会保留」，绝不声称回滚', async ({ page }) => {
     await mockAsync(page, {
       steps: [
         { status: 'running', done: 2000, total: 6000 },
@@ -215,9 +216,9 @@ test.describe('恢复冷备：后台任务路径', () => {
     await page.locator('#confirm-restore').click()
     await page.getByRole('button', { name: '执行恢复' }).click()
 
-    await expect(page.getByText(/恢复中断：已写入\s*2000\s*条后失败/)).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText(/恢复中断：已处理\s*2000\s*条后失败/)).toBeVisible({ timeout: 20_000 })
     // 关键：分片已提交，不能说回滚。用具体措辞定位，避免与页首横幅的同句重复命中
-    await expect(page.getByText(/已写入的那 2000 条会保留/)).toBeVisible()
+    await expect(page.getByText(/已写入的那部分会保留/)).toBeVisible()
     await expect(page.getByText('恢复失败，已整体回滚')).toHaveCount(0)
     // 可重试时要给出口
     await expect(page.getByRole('button', { name: /重跑（跳过已存在的 URL）/ })).toBeVisible()
@@ -241,8 +242,7 @@ test.describe('恢复冷备：后台任务路径', () => {
     await expect(page.getByText('3 · 后台恢复')).toHaveCount(0)
   })
 
-  test('「转到后台」真的停轮询（用请求计数验证，不看文案）', async ({ page }) => {
-    const calls = await mockAsync(page, {
+  test('「转到后台」真的停轮询（用请求计数验证，不看文案）', async ({ page }) => {    const calls = await mockAsync(page, {
       // 一直 running：这样只有 watching 关掉才能停
       steps: [{ status: 'running', done: 1000, total: 6000 }],
     })
@@ -252,7 +252,7 @@ test.describe('恢复冷备：后台任务路径', () => {
     await page.locator('#confirm-restore').click()
     await page.getByRole('button', { name: '执行恢复' }).click()
 
-    await expect(page.getByText(/已写入\s*1000\s*\/\s*6000\s*条/)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(/已处理\s*1000\s*\/\s*6000\s*条/)).toBeVisible({ timeout: 15_000 })
 
     await page.getByRole('button', { name: /转到后台，先离开本页/ }).click()
     await expect(page.getByText(/已转后台运行/)).toBeVisible()
@@ -267,5 +267,57 @@ test.describe('恢复冷备：后台任务路径', () => {
     await expect
       .poll(() => calls().statusHits, { timeout: 10_000 })
       .toBeGreaterThan(before)
+  })
+
+  /**
+   * 无事可做：端点返回 200（不是 202 + 一个 0/0 的任务）。
+   * 页面若照旧进入进度卡，用户会盯着一个永远不动的进度条等下去。
+   */
+  test('备份已全部存在时直接给出说明，不显示进度卡', async ({ page }) => {
+    await mockAsync(page, {
+      steps: [{ status: 'pending', done: 0, total: 0 }],
+      asyncStatus: 200,
+      asyncBody: {
+        ok: true,
+        nothingToDo: true,
+        skipped: { duplicateCategories: 1, invalidUrls: 0, duplicateUrls: 6000 },
+        message: '无需恢复：1 个分类与 6000 条已存在的站点全部命中跳过',
+      },
+    })
+
+    await gotoPage(page)
+    await prepare(page)
+    await page.locator('#confirm-restore').click()
+    await page.getByRole('button', { name: '执行恢复' }).click()
+
+    await expect(page.getByText(/无需恢复：1 个分类与 6000 条/)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText('3 · 后台恢复')).toHaveCount(0)
+  })
+
+  /**
+   * 并发冲突：后端 409 说明「已有任务在跑」。
+   * 这不是失败——一条都没写。文案必须说清「任务未创建」，否则用户会去查库。
+   */
+  test('已有恢复在跑时，页面如实说「任务未创建」而不是「失败已回滚」', async ({ page }) => {
+    await mockAsync(page, {
+      steps: [{ status: 'running', done: 1000, total: 6000 }],
+      asyncStatus: 409,
+      asyncBody: {
+        error: 'CONFLICT_RESTORE_RUNNING',
+        jobId: 'running-job-1',
+        statusUrl: '/api/backup/restore/status/running-job-1',
+        message: '已有恢复任务在进行（running，1000/6000 条），完成或失败后再提交',
+      },
+    })
+
+    await gotoPage(page)
+    await prepare(page)
+    await page.locator('#confirm-restore').click()
+    await page.getByRole('button', { name: '执行恢复' }).click()
+
+    await expect(page.getByText('任务未创建，未写入任何数据')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(/已有恢复任务在进行/)).toBeVisible()
+    // 不能复用同步路径那句「已整体回滚」——这里一条都没写，谈不上回滚
+    await expect(page.getByText('恢复失败，已整体回滚')).toHaveCount(0)
   })
 })

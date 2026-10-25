@@ -179,4 +179,69 @@ describe("backup_restore 任务", () => {
     expect(Number(progress[0]!.total)).toBe(2100);
     expect(Number(progress[0]!.done)).toBe(2100);
   });
+
+  /**
+   * 重试幂等：同一份计划被跑第二遍（模拟失败后 JobRunner 重试）。
+   *
+   * 这条覆盖两个**叠加**的缺陷，缺任何一个都会让「重试」变成灾难：
+   *   1. 分类：`createCategory` 有同级同名检查，第二次直接抛错——于是带分类的
+   *      备份在第一次失败后，剩下两次自动重试全部卡在第一步；
+   *   2. 站点：`insertSitesBulk` 是裸 INSERT 且 `sites.url` 无唯一约束，
+   *      不去重就会把已写入的分片再插一遍，静默产生重复行。
+   */
+  it("同一 staging 跑两遍：分类不撞名、站点不重复（重试幂等）", async () => {
+    await ctx.repo.run("DELETE FROM sites WHERE url LIKE 'https://job-retry-%'");
+    await ctx.repo.run("DELETE FROM categories WHERE id = 'job-retry-cat'");
+    const plan = {
+      categories: [{ id: "job-retry-cat", title: "重试幂等分类" }],
+      sites: [
+        { url: "https://job-retry-1.example.com", title: "重试一", categoryId: "job-retry-cat" },
+        { url: "https://job-retry-2.example.com", title: "重试二", categoryId: "job-retry-cat" },
+      ],
+    };
+    const stagingPath = await writeStaging("retry", plan);
+
+    const first = await runJob(stagingPath);
+    expect(first.status).toBe("done");
+
+    // 模拟「失败重试」：任务成功会删 staging，重写回同一份计划再跑一次
+    writeFileSync(stagingPath, JSON.stringify(plan), "utf8");
+    const second = await runJob(stagingPath);
+    expect(second.status).toBe("done");
+    expect(second.error).toBeNull();
+
+    const count = await ctx.repo.raw(
+      "SELECT COUNT(*) AS c FROM sites WHERE url LIKE 'https://job-retry-%' AND deleted_at IS NULL",
+    );
+    // 关键断言：2 条，不是 4 条
+    expect(Number(count[0]!.c)).toBe(2);
+  });
+
+  it("断点续跑：progress_done=2000 时只处理剩余 100 条（不从头重放）", async () => {
+    await ctx.repo.run("DELETE FROM sites WHERE url LIKE 'https://job-resume-%'");
+    const sites = Array.from({ length: 2100 }, (_, i) => ({
+      url: `https://job-resume-${i}.example.com`,
+      title: `续跑站点 ${i}`,
+      categoryId: "job-cat-1",
+    }));
+    const stagingPath = await writeStaging("resume", { categories: [], sites });
+
+    const id = await ctx.repo.enqueueJob("backup_restore", { stagingPath });
+    // 预置「上一轮已处理 2000 条」（分片边界对齐），模拟被中断后重试
+    await ctx.repo.run("UPDATE jobs SET progress_done = 2000 WHERE id = ?", [id]);
+
+    const runner = new JobRunner(ctx, { enableCron: false });
+    await runner.tick();
+
+    const row = (await ctx.repo.raw("SELECT status, progress_done AS done FROM jobs WHERE id = ?", [id]))[0]!;
+    expect(String(row.status)).toBe("done");
+    expect(Number(row.done)).toBe(2100);
+
+    const count = await ctx.repo.raw(
+      "SELECT COUNT(*) AS c FROM sites WHERE url LIKE 'https://job-resume-%' AND deleted_at IS NULL",
+    );
+    // 前 2000 条被跳过（续跑），只写了最后 100 条。
+    // 若续跑失效，这里会是 2100 —— 那正是「重试白跑一遍」的证据。
+    expect(Number(count[0]!.c)).toBe(100);
+  });
 });

@@ -4,6 +4,7 @@ import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { AppContext } from "../context.ts";
 import {
+  canonicalizeUrl,
   exportNetscapeBookmarks,
   exportNavHubBackup,
   validateNavHubBackup,
@@ -97,8 +98,18 @@ export async function planRestore(
   const defaultCatId = existingCats[0]?.id || plannedCategories[0]?.id || "default";
 
   const existingSites = await ctx.repo.raw("SELECT url FROM sites WHERE deleted_at IS NULL");
+  /**
+   * 归一化必须与写入路径同口径（`canonicalizeUrl`）。
+   *
+   * 原实现是 `replace(/\/+$/, "").toLowerCase()`：它会把**路径**也小写化，
+   * 而 `findExistingSiteUrls` 用的是 `canonicalizeUrl`（只小写 hostname、
+   * 去默认端口、剥追踪参数）。两套口径的后果是「预演说这条已存在、真写又插进去」
+   * 这类错位——现在写入侧也按 URL 过滤，口径不一致会直接表现为重复行。
+   */
   const existingUrls = new Set(
-    existingSites.map((s) => String(s.url ?? "").replace(/\/+$/, "").toLowerCase()),
+    existingSites
+      .map((s) => canonicalizeUrl(String(s.url ?? "")))
+      .filter((u) => u.length > 0),
   );
 
   const plannedSites: Array<{ site: NavHubColdBackup["sites"][number]; targetCatId: string }> = [];
@@ -109,7 +120,7 @@ export async function planRestore(
       invalidUrls++;
       continue;
     }
-    const norm = site.url.replace(/\/+$/, "").toLowerCase();
+    const norm = canonicalizeUrl(site.url);
     if (!norm) {
       invalidUrls++;
       continue;
@@ -150,7 +161,12 @@ export async function planRestore(
 const STAGING_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** 清掉过期 staging，返回删除数量；任何一步失败都只跳过，不影响本次恢复 */
-export async function sweepStaleStaging(dir: string, now = Date.now()): Promise<number> {
+export async function sweepStaleStaging(
+  dir: string,
+  now = Date.now(),
+  /** 仍被非终态任务引用的文件，必须保留（否则那份任务重跑时读不到计划） */
+  keep: ReadonlySet<string> = new Set(),
+): Promise<number> {
   let names: string[];
   try {
     names = await readdir(dir);
@@ -162,6 +178,7 @@ export async function sweepStaleStaging(dir: string, now = Date.now()): Promise<
   for (const name of names) {
     if (!name.endsWith(".json")) continue;
     const path = join(dir, name);
+    if (keep.has(resolve(path))) continue;
     try {
       const info = await stat(path);
       if (now - info.mtimeMs <= STAGING_TTL_MS) continue;
@@ -172,6 +189,63 @@ export async function sweepStaleStaging(dir: string, now = Date.now()): Promise<
     }
   }
   return removed;
+}
+
+/** 僵尸判定与 `reapStaleJobs` 同口径：超过这么久没有心跳，视为执行者已死 */
+const ACTIVE_JOB_STALE_MS = 15 * 60 * 1000;
+
+interface ActiveRestoreJob {
+  jobId: string;
+  status: string;
+  done: number;
+  total: number;
+  /** 退避中任务的「下次可重试时刻」；其它状态为 null */
+  retryAt: number | null;
+}
+
+/**
+ * 找出仍在进行的恢复任务（供并发守卫与 staging 保护共用）。
+ *
+ * 为什么不加 `ORDER BY created_at` 取最新：同一时刻只应该有一个，
+ * 若历史遗留了多个（旧数据），报出任意一个都能正确拒绝新请求。
+ */
+async function findActiveRestoreJob(ctx: AppContext): Promise<ActiveRestoreJob | null> {
+  const rows = await ctx.repo.raw(
+    `SELECT id, status, progress_done, progress_total, updated_at, next_run_at FROM jobs
+     WHERE kind = 'backup_restore' AND status IN ('pending', 'running', 'retrying')
+     ORDER BY updated_at DESC LIMIT 1`,
+  );
+  const row = rows[0];
+  if (!row) return null;
+  const heartbeat = Number(row.updated_at ?? 0);
+  if (Date.now() - heartbeat > ACTIVE_JOB_STALE_MS) return null;
+  return {
+    jobId: String(row.id),
+    status: String(row.status ?? "pending"),
+    done: Number(row.progress_done ?? 0),
+    total: Number(row.progress_total ?? 0),
+    retryAt: row.next_run_at == null ? null : Number(row.next_run_at),
+  };
+}
+
+/** 收集仍在进行的恢复任务所引用的 staging 绝对路径 */
+async function collectActiveStagingPaths(ctx: AppContext): Promise<Set<string>> {
+  const rows = await ctx.repo.raw(
+    `SELECT payload FROM jobs
+     WHERE kind = 'backup_restore' AND status IN ('pending', 'running', 'retrying')`,
+  );
+  const paths = new Set<string>();
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(String(row.payload ?? "{}")) as { stagingPath?: unknown };
+      if (typeof parsed.stagingPath === "string" && parsed.stagingPath) {
+        paths.add(resolve(parsed.stagingPath));
+      }
+    } catch {
+      // payload 坏了就不保护；扫不到路径总比让整次恢复失败好
+    }
+  }
+  return paths;
 }
 
 export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -464,12 +538,60 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const plan = await planRestore(ctx, categories, sites);
 
       /**
+       * 一条都不会写时，不该建任务。
+       *
+       * 依据 HTTP 语义（RFC 9110 §15.3.3 与通行实践）：工作已经完成或无事可做时
+       * 应当返回 200/201，而不是 202 + 一个永远停在 `total=0` 的任务。
+       * 之前的表现是：提交一份全部已存在的备份 → 创建任务 → 前端进度条卡在
+       * 「正在准备恢复计划…」→ 最后报「成功恢复 0 个站点」，用户不知道发生了什么。
+       */
+      if (plan.plannedCategories.length === 0 && plan.plannedSites.length === 0) {
+        return {
+          ok: true,
+          nothingToDo: true,
+          skipped: plan.skipped,
+          message: `无需恢复：${plan.skipped.duplicateCategories} 个分类与 ${plan.skipped.duplicateUrls} 条已存在的站点全部命中跳过`,
+        };
+      }
+
+      /**
+       * 并发守卫：同一时刻只允许一个恢复任务。
+       *
+       * 前端虽然禁用了按钮，但那只是界面约束——绕过页面直接 curl 两次，
+       * 两组分片会交错写入同一个库，谁赢谁输说不清，而且都建立在同一份
+       * 「哪些 URL 已存在」的快照上。
+       *
+       * 只把 15 分钟内有心跳的任务当作活跃：与 `reapStaleJobs` 同口径。
+       * 否则一个进程被杀的僵尸任务会把恢复入口锁死 15 分钟以上。
+       */
+      const active = await findActiveRestoreJob(ctx);
+      if (active) {
+        const retryIn =
+          active.retryAt && active.retryAt > Date.now()
+            ? Math.max(1, Math.round((active.retryAt - Date.now()) / 1000))
+            : null;
+        reply.code(409);
+        return {
+          error: "CONFLICT_RESTORE_RUNNING",
+          jobId: active.jobId,
+          statusUrl: `/api/backup/restore/status/${active.jobId}`,
+          retryAt: active.retryAt,
+          message:
+            `已有恢复任务在进行（${active.status}，${active.done}/${active.total} 条）` +
+            (retryIn ? `，约 ${retryIn} 秒后会自动重试` : '') +
+            '。完成或失败后再提交，避免两组分片交错写入',
+        };
+      }
+
+      /**
        * staging 文件：只放**已解析**的计划（categoryId 已换成真实 id），
        * 任务侧因此不需要再碰分类映射逻辑，也就能拒绝「categoryId 为空」的脏数据。
        */
       const stagingDir = resolve(process.env.NAVHUB_RESTORE_STAGING_DIR || "data/restore-staging");
-      // 顺手清理过期残留（失败重跑用的文件）；不 await 进主路径，也不让它影响结果
-      await sweepStaleStaging(stagingDir).catch(() => 0);
+      // 顺手清理过期残留：非终态任务还引用着的文件必须留住，否则那份任务重跑时
+      // 读不到 staging，会以「可重试」的状态永久失败。
+      const keep = await collectActiveStagingPaths(ctx);
+      await sweepStaleStaging(stagingDir, Date.now(), keep).catch(() => 0);
       const stagingPath = join(stagingDir, `${randomUUID()}.json`);
       try {
         await mkdir(stagingDir, { recursive: true });
@@ -512,13 +634,23 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         })
         .catch(() => undefined);
 
+      const statusUrl = `/api/backup/restore/status/${jobId}`;
+      /**
+       * `Location` 与 `Retry-After` 不是 RFC 对 202 的强制要求（RFC 9110 §15.3.3
+       * 只要求「指向一个状态监视地址」），但已是通行的异步模式实践：
+       * 前者让 curl / Agent 这类调用方不必解析 body 就能跟进，后者让服务端
+       * 能指挥轮询节奏，而不是让每个客户端都写死一个间隔。
+       */
       reply.code(202);
+      reply.header("Location", statusUrl);
+      reply.header("Retry-After", "2");
       return {
         ok: true,
         jobId,
         accepted: { categories: plan.plannedCategories.length, sites: plan.plannedSites.length },
         skipped: plan.skipped,
-        statusUrl: `/api/backup/restore/status/${jobId}`,
+        statusUrl,
+        retryAfterMs: 2000,
         message: `已入队：将恢复 ${plan.plannedCategories.length} 个分类与 ${plan.plannedSites.length} 个站点（进度见 statusUrl）`,
       };
     },
@@ -550,12 +682,19 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
       const status = String(row.status ?? "pending");
       const finished = status === "done" || status === "failed" || status === "cancelled";
+      /**
+       * 未终态时给 `Retry-After`：让轮询节奏由服务端指挥，而不是每个客户端
+       * 自己写死一个间隔。同时放进 body（`retryAfterMs`）——浏览器端读响应头
+       * 需要绕一层，body 字段让前端不必为此改 API 客户端。
+       */
+      if (!finished) reply.header("Retry-After", "2");
       return {
         jobId: String(row.id),
         status,
         progress: { done: Number(row.progress_done ?? 0), total: Number(row.progress_total ?? 0) },
         startedAt: Number(row.created_at ?? 0),
         finishedAt: finished ? Number(row.updated_at ?? 0) : null,
+        retryAfterMs: finished ? null : 2000,
         error: row.error == null ? null : String(row.error),
         /** 完成后 staging 保留与否取决于成功/失败：成功已删，失败保留供重跑 */
         retryable: status === "failed" || status === "retrying",

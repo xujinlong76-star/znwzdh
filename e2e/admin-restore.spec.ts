@@ -206,7 +206,8 @@ test.describe('恢复冷备：真实交互', () => {
     await page.locator('#confirm-restore').click()
     await page.getByRole('button', { name: '执行恢复' }).click()
 
-    await expect(page.getByText('恢复失败，已整体回滚')).toBeVisible({ timeout: 15_000 })
+    // exact: 服务端 message 里也含「已整体回滚」，不用精确匹配会命中两处（strict 冲突）
+    await expect(page.getByText('恢复失败，已整体回滚', { exact: true })).toBeVisible({ timeout: 15_000 })
     // reason 必须翻成人话，而不是把 duplicate_key 原样丢给用户
     await expect(page.getByText(/备份里有重复的主键/)).toBeVisible()
     await expect(page.getByText('成功恢复', { exact: false })).toHaveCount(0)

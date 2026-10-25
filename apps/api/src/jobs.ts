@@ -17,6 +17,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { readFile, unlink } from "node:fs/promises";
+import { canonicalizeUrl } from "@navhub/core";
 import { enrichUrl } from "@navhub/ai";
 import { enrichLlmOf, resolveLlm } from "./llm-config.ts";
 import { createEnrichUsageCallback } from "./llm-usage.ts";
@@ -264,6 +265,21 @@ export function cronDue(cron: string, now: Date = new Date()): boolean {
 export function backoffMs(attempt: number): number {
   const exp = Math.pow(2, Math.max(0, attempt - 1));
   return Math.min(BACKOFF_BASE_MS * exp, BACKOFF_CAP_MS);
+}
+
+/**
+ * 判断候选 URL 是否已在库里（配合 `repo.findExistingSiteUrls` 用）。
+ *
+ * 口径必须与那支函数的探针集合一致：它除了原文和 canonical 形态，还会探
+ * `canonical ± "/"`，并且返回的集合里同时装着库中原始写法与 canonical 写法。
+ * 所以三种键都要试——少试一种就会把重复站点当新站插进去，而这正是要防的。
+ */
+export function stagedUrlExists(found: ReadonlySet<string>, url: string): boolean {
+  if (!url) return true; // 空 URL 属于「不该写入」，按已存在处理最安全
+  const canonical = canonicalizeUrl(url);
+  if (found.has(url) || found.has(canonical)) return true;
+  const alternate = canonical.endsWith("/") ? canonical.slice(0, -1) : canonical + "/";
+  return found.has(alternate);
 }
 
 export interface JobRunnerOptions {
@@ -1064,7 +1080,17 @@ export class JobRunner {
       throw new Error(`staging 里有站点缺少 categoryId（例如 ${missingCategory.url}）：端点应在入队前完成分类解析`);
     }
 
+    /**
+     * 分类按 id 幂等：重试时这些分类已经存在，直接跳过。
+     *
+     * 不这样做的后果比「多建一次」严重得多：`createCategory` 会先做同级同名检查，
+     * 第二次必然抛「同级下已存在名为 X 的类目」——于是**任何带分类的备份在第一次
+     * 失败之后，剩下两次自动重试都会卡在第一步**，根本没机会走到站点写入。
+     * 这也是为什么「重试幂等」必须先于「站点去重」修，否则改了后者也验证不到。
+     */
+    const existingCategoryIds = new Set((await this.ctx.repo.listCategories()).map((c) => c.id));
     for (const category of categories) {
+      if (existingCategoryIds.has(category.id)) continue;
       await this.ctx.repo.createCategory({
         id: category.id,
         title: category.title,
@@ -1074,30 +1100,67 @@ export class JobRunner {
     }
 
     const CHUNK = 2000;
-    let done = 0;
-    for (let i = 0; i < sites.length; i += CHUNK) {
+
+    /**
+     * 断点续跑：`progress_done` 记的是「已处理的计划条数」，按分片对齐后从这里继续。
+     *
+     * 从 0 重来在正确性上已经安全（下一段的分片级去重会跳掉已存在的），
+     * 但白跑几十秒没有意义，而且会让重试期间的用户看到进度从 100% 退回 0%。
+     */
+    const progressRows = await this.ctx.repo.raw(
+      "SELECT progress_done FROM jobs WHERE id = ? LIMIT 1",
+      [jobId],
+    );
+    const doneBefore = Math.max(0, Number(progressRows[0]?.progress_done ?? 0));
+    const startIndex = Math.min(sites.length, doneBefore - (doneBefore % CHUNK));
+
+    let processed = startIndex;
+    // 先把 total 报上去：否则前端在第一批写完之前只能显示「正在准备恢复计划」
+    await this.ctx.repo.updateJobProgress(jobId, { done: processed, total: sites.length });
+
+    for (let i = startIndex; i < sites.length; i += CHUNK) {
       const slice = sites.slice(i, i + CHUNK);
-      await this.ctx.repo.withTransaction(async () => {
-        await this.ctx.repo.insertSitesBulk(
-          slice.map((site) => ({
-            // 新 UUID：恢复不保留原 id（原 id 可能已被软删行占用，撞主键会让整片失败）
-            id: randomUUID(),
-            url: site.url,
-            title: site.title,
-            description: site.description ?? null,
-            categoryId: site.categoryId as string,
-            tags: site.tags ?? [],
-            iconKey: site.iconKey ?? null,
-            // 停用态必须原样恢复，否则恢复会把隐藏内容批量上线
-            enabled: site.enabled !== false,
-            status: (site.enabled === false ? "archived" : "active") as "active" | "archived",
-            createdAt: site.createdAt,
-          })),
-          { hydrate: false },
-        );
-      });
-      done += slice.length;
-      await this.ctx.repo.updateJobProgress(jobId, { done, total: sites.length });
+
+      /**
+       * 分片级去重：写入前按 URL 过滤掉库里已有的。
+       *
+       * 这是「重试不会写出重复站点」的唯一保证。staging 是**请求时算出的冻结快照**，
+       * 而任务可能因为失败被重放（`MAX_JOB_ATTEMPTS = 3`），也可能在「预演 → 执行」
+       * 之间被别人插入了同一个 URL。`insertSitesBulk` 是裸 `INSERT`，`sites.url`
+       * 又没有唯一约束——不去重就会静默写出重复行：不报错、不拦截，
+       * 用户只会在导航页看到两张一样的卡片，而且此后任何恢复都会把它们判成「已存在」
+       * 而永久保留。
+       */
+      const existingUrls = await this.ctx.repo.findExistingSiteUrls(slice.map((site) => site.url));
+      const fresh =
+        existingUrls.size === 0 ? slice : slice.filter((site) => !stagedUrlExists(existingUrls, site.url));
+
+      if (fresh.length > 0) {
+        await this.ctx.repo.withTransaction(async () => {
+          await this.ctx.repo.insertSitesBulk(
+            fresh.map((site) => ({
+              // 新 UUID：恢复不保留原 id（原 id 可能已被软删行占用，撞主键会让整片失败）
+              id: randomUUID(),
+              url: site.url,
+              title: site.title,
+              description: site.description ?? null,
+              categoryId: site.categoryId as string,
+              tags: site.tags ?? [],
+              iconKey: site.iconKey ?? null,
+              // 停用态必须原样恢复，否则恢复会把隐藏内容批量上线
+              enabled: site.enabled !== false,
+              status: (site.enabled === false ? "archived" : "active") as "active" | "archived",
+              createdAt: site.createdAt,
+            })),
+            { hydrate: false },
+          );
+        });
+      }
+
+      // 进度记「已处理」而不是「已写入」：续跑要对齐分片边界，而实际写入数
+      // 可能因去重略少于本片条数（并发插入或重放已提交分片时）。
+      processed = i + slice.length;
+      await this.ctx.repo.updateJobProgress(jobId, { done: processed, total: sites.length });
     }
 
     // 恢复只写 sites/site_tags，不建向量：入队 reindex 补语义索引

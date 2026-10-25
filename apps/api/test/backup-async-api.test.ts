@@ -252,3 +252,146 @@ describe("GET /api/backup/restore/status/:jobId", () => {
     expect(existsSync(own)).toBe(true);
   });
 });
+
+/**
+ * 并发、契约头、零增量、归一化一致性。
+ *
+ * 这一组都要求在「没有进行中任务」的干净状态下开始——每条用例自己先清场，
+ * 否则上一条留下的 pending 任务会被并发守卫拦成 409，失败原因会变得莫名其妙。
+ */
+describe("异步恢复：并发守卫、契约头与零增量", () => {
+  async function resetRestoreJobs(): Promise<void> {
+    await ctx.repo.run("DELETE FROM jobs WHERE kind = 'backup_restore'");
+  }
+
+  /**
+   * 端点带 `rateLimit: max 10 / 1min`（按 IP）。这一组用例的提交次数会超过 10 次，
+   * 而所有 `app.inject` 默认共用 127.0.0.1 —— 于是会撞 429，失败原因看着像业务错。
+   * 每个请求换一个来源 IP：限流本来就是按 IP 计数的，这样测到的仍是真实逻辑。
+   */
+  let ipSeq = 0;
+  async function submit(sites: Array<{ id: string; title: string; url: string }>) {
+    ipSeq += 1;
+    return app.inject({
+      method: "POST",
+      url: "/api/backup/restore/async",
+      remoteAddress: `10.9.0.${(ipSeq % 250) + 1}`,
+      payload: backupPayload(sites),
+    });
+  }
+
+  it("已有进行中的恢复 → 409，且不产生第二个任务", async () => {
+    await resetRestoreJobs();
+    const first = await submit([{ id: "c1", title: "并发一", url: "https://conflict-1.example.com" }]);
+    expect(first.statusCode).toBe(202);
+    const firstJobId = (first.json() as Record<string, any>).jobId;
+
+    const second = await submit([{ id: "c2", title: "并发二", url: "https://conflict-2.example.com" }]);
+    expect(second.statusCode).toBe(409);
+    const body = second.json() as Record<string, any>;
+    expect(body.error).toBe("CONFLICT_RESTORE_RUNNING");
+    // 要把「正在跑的是谁」告诉调用方，否则只能干等
+    expect(body.jobId).toBe(firstJobId);
+    expect(String(body.statusUrl)).toContain(firstJobId);
+
+    const count = await ctx.repo.raw("SELECT COUNT(*) AS c FROM jobs WHERE kind = 'backup_restore'");
+    expect(Number(count[0]!.c)).toBe(1);
+  });
+
+  it("僵尸任务不算活跃：心跳超过 15 分钟不再阻塞新提交", async () => {
+    await resetRestoreJobs();
+    const staleAt = Date.now() - 20 * 60_000;
+    await ctx.repo.run(
+      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+      ["stale-running", "backup_restore", "{}", "running", 1, staleAt, staleAt],
+    );
+
+    const res = await submit([{ id: "z1", title: "僵尸放行", url: "https://stale-ok.example.com" }]);
+    // 与 reapStaleJobs 同口径：15 分钟没心跳视为执行者已死，否则入口会被锁死
+    expect(res.statusCode).toBe(202);
+  });
+
+  it("202 带 Location 与 Retry-After；status 未终态带、终态不带", async () => {
+    await resetRestoreJobs();
+    const res = await submit([{ id: "h1", title: "契约头", url: "https://headers-1.example.com" }]);
+    expect(res.statusCode).toBe(202);
+    const jobId = (res.json() as Record<string, any>).jobId;
+    expect(String(res.headers.location)).toContain(jobId);
+    expect(res.headers["retry-after"]).toBe("2");
+
+    const pending = await app.inject({ method: "GET", url: `/api/backup/restore/status/${jobId}` });
+    expect(pending.statusCode).toBe(200);
+    expect(pending.headers["retry-after"]).toBe("2");
+    expect((pending.json() as Record<string, any>).retryAfterMs).toBe(2000);
+
+    await new JobRunner(ctx, { enableCron: false }).tick();
+    const done = await app.inject({ method: "GET", url: `/api/backup/restore/status/${jobId}` });
+    expect(done.headers["retry-after"]).toBeUndefined();
+    expect((done.json() as Record<string, any>).retryAfterMs).toBeNull();
+  });
+
+  it("备份已全部存在 → 200 + nothingToDo，不建任务（不是 202 + 空任务）", async () => {
+    await resetRestoreJobs();
+    const payload = [{ id: "n1", title: "零增量", url: "https://nothing-1.example.com" }];
+    const first = await submit(payload);
+    expect(first.statusCode).toBe(202);
+    await new JobRunner(ctx, { enableCron: false }).tick();
+
+    const jobsBefore = await ctx.repo.raw("SELECT COUNT(*) AS c FROM jobs WHERE kind = 'backup_restore'");
+    const again = await submit(payload);
+    // RFC 9110 与通行实践：无事可做时应当 200，而不是 202 一个永远 0/0 的任务
+    expect(again.statusCode).toBe(200);
+    const body = again.json() as Record<string, any>;
+    expect(body.nothingToDo).toBe(true);
+    expect(body.jobId).toBeUndefined();
+
+    const jobsAfter = await ctx.repo.raw("SELECT COUNT(*) AS c FROM jobs WHERE kind = 'backup_restore'");
+    expect(Number(jobsAfter[0]!.c)).toBe(Number(jobsBefore[0]!.c));
+  });
+
+  it("URL 归一化与写入侧同口径：尾斜杠差异算重复，不算新站", async () => {
+    await resetRestoreJobs();
+    await submit([{ id: "s1", title: "归一化", url: "https://norm.example.com/x" }]);
+    await new JobRunner(ctx, { enableCron: false }).tick();
+
+    // 同一地址换个写法：过去 planRestore 与 findExistingSiteUrls 口径不同，
+    // 会出现「预演当重复、写入当新站」或反之
+    const res = await submit([{ id: "s2", title: "归一化加斜杠", url: "https://norm.example.com/x/" }]);
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as Record<string, any>;
+    expect(body.nothingToDo).toBe(true);
+    expect(body.skipped.duplicateUrls).toBe(1);
+  });
+
+  it("过期 staging 若仍被非终态任务引用，不会被清理", async () => {
+    await resetRestoreJobs();
+    mkdirSync(stagingDir, { recursive: true });
+    const referenced = join(stagingDir, "referenced-old.json");
+    writeFileSync(referenced, "{}", "utf8");
+    const old = Date.now() - 30 * 3600_000;
+    utimesSync(referenced, new Date(old), new Date(old));
+
+    // 僵尸 running（超过 15 分钟心跳）：守卫会放行，但 staging 仍必须保护
+    await ctx.repo.run(
+      "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+      [
+        "protect-staging",
+        "backup_restore",
+        JSON.stringify({ stagingPath: referenced }),
+        "running",
+        1,
+        old,
+        old,
+      ],
+    );
+
+    const res = await submit([{ id: "p1", title: "保护 staging", url: "https://protect-1.example.com" }]);
+    expect(res.statusCode).toBe(202);
+
+    // 文件被删的话，那个任务一旦被回收重跑就会「读不到 staging」永久失败，
+    // 而状态接口仍说 retryable —— 用户会一直重试一直失败
+    expect(existsSync(referenced)).toBe(true);
+    rmSync(referenced, { force: true });
+    await resetRestoreJobs();
+  });
+});

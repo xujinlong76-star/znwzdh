@@ -31,6 +31,18 @@ function overlaySource(rel: string): string {
 const PAGE_PATH = "src/app/admin/data/restore/page.tsx";
 const PAGE = overlaySource(PAGE_PATH);
 
+/**
+ * 剥掉注释后的源码。
+ *
+ * 守卫断言「不能出现 X」时必须用它：注释里为了解释「为什么不用 setInterval」
+ * 会真的写出 `setInterval`，直接对全文断言就会自己把自己判红——本仓已经在
+ * `sitelist-metadata-honesty` 上踩过一次（TESTING-CONVENTIONS 第 4 条）。
+ */
+const CODE_ONLY = PAGE.replace(/\/\*[\s\S]*?\*\//g, "")
+  .split("\n")
+  .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+  .join("\n");
+
 describe("恢复页面：结构与端点契约", () => {
   it("是客户端组件（要读本地文件与状态）", () => {
     expect(PAGE.startsWith("'use client'")).toBe(true);
@@ -109,7 +121,31 @@ describe("异步恢复：阈值、轮询与措辞", () => {
 
   it("轮询在终态自行停止，不无限打服务端", () => {
     expect(PAGE).toMatch(/!TERMINAL_STATUS\.has\(job\.status\)[\s\S]{0,80}pollingJobId/);
-    expect(PAGE).toContain("clearInterval");
+    expect(PAGE).toContain("clearTimeout");
+    // 自调度而不是固定 setInterval：间隔要能被服务端改、能被错误退避
+    expect(CODE_ONLY).not.toContain("setInterval");
+  });
+
+  it("轮询节奏由服务端指挥，且出错退避、有 10 分钟上限", () => {
+    // Retry-After（body 里的 retryAfterMs）优先于本地默认间隔
+    expect(PAGE).toContain("retryAfterMs");
+    expect(PAGE).toContain("POLL_MAX_INTERVAL_MS");
+    expect(PAGE).toMatch(/delay \* 2/);
+    expect(PAGE).toContain("POLL_DEADLINE_MS");
+    // 到点转后台而不是报失败——任务还在服务端跑
+    expect(PAGE).toMatch(/setWatching\(false\)[\s\S]{0,120}setPollNotice/);
+  });
+
+  it("无事可做时走 200 分支，不建 0/0 的进度卡", () => {
+    // RFC 9110：工作已完成或无需执行时应 200，而不是 202 + 空任务
+    expect(PAGE).toContain("nothingToDo");
+    expect(PAGE).toMatch(/'nothingToDo' in data/);
+  });
+
+  it("进度措辞是「已处理」而不是「已写入」（跳过的不算写入）", () => {
+    expect(PAGE).toContain("已处理");
+    // 旧措辞会高报：分片级去重会跳过一部分，processed ≠ inserted
+    expect(PAGE).not.toMatch(/已写入 <span/);
   });
 
   it("后台任务未结束时禁止再开一次恢复（两个恢复并发写同一库）", () => {
@@ -125,11 +161,7 @@ describe("异步恢复：阈值、轮询与措辞", () => {
 
   it("JSX 文本里不能出现 markdown 星号（会渲染成字面 ** 给用户看）", () => {
     // 同一个缺陷本轮犯了两次（横幅与失败说明各一处），而它在代码 review 里
-    // 几乎看不出来——只有跑起来看页面才发现。注释里的 ** 不算。
-    const codeOnly = PAGE.replace(/\/\*[\s\S]*?\*\//g, "")
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-      .join("\n");
-    expect(codeOnly).not.toContain("**");
+    // 几乎看不出来——只有跑起来看页面才发现。注释里的 ** 不算（用 CODE_ONLY）。
+    expect(CODE_ONLY).not.toContain("**");
   });
 });

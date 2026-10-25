@@ -310,6 +310,19 @@ export async function buildServer(ctx: AppContext) {
     maxAge: number;
     /** 生成 ETag 并处理 If-None-Match → 304 */
     etag?: boolean;
+    /**
+     * 参与缓存键的请求头，写进响应的 `Vary`。
+     *
+     * 为什么必须有：`private, max-age` 只挡住共享代理，**浏览器自己的私有缓存照旧按 URL 复用**。
+     * 而中枢的身份可以从 Header 传入（`identityOf`：`x-navhub-user-id` / `x-navhub-anon-id` /
+     * `Authorization`），Header 不改变 URL —— 于是同一台机器上的两个人（家庭电脑、网吧、
+     * 退出后又登录的同一浏览器）在 maxAge 窗口内会拿到彼此的**个性化响应**，服务端却完全看不见。
+     * 声明了 `vary` 之后，缓存必须逐字段相等才允许复用（RFC 9110 §12.5.5）。
+     *
+     * 累加而非覆盖：CORS 钩子已写 `Vary: Origin`、压缩层已写 `Vary: Accept-Encoding`
+     * （见 http-compression.ts:105-109 的同款约束），覆盖掉就等于把别人的隔离声明删了。
+     */
+    vary?: string[];
   }
 
   /**
@@ -328,8 +341,16 @@ export async function buildServer(ctx: AppContext) {
       return payload;
     }
     // private：避免共享代理（CDN/nginx）把不同用户/不同 token 的响应串在一起。
-    // TTL 只省浏览器端重复请求，不牺牲隔离性。
+    // 但「不牺牲隔离性」只对共享缓存成立：浏览器私有缓存按 URL 复用，带身份头的那一路
+    // 不改 URL ⇒ 必须靠下面的 vary 把身份字段纳入缓存键，否则同机两个用户互换个性化结果。
     reply.header("cache-control", policy.maxAge > 0 ? "private, max-age=" + policy.maxAge : "private, no-cache");
+
+    if (policy.vary?.length) {
+      const existing = String(reply.getHeader("vary") ?? "").trim();
+      const parts = existing ? existing.split(",").map((v) => v.trim()) : [];
+      const add = policy.vary.filter((h) => !parts.some((p) => p.toLowerCase() === h.toLowerCase()));
+      if (add.length) reply.header("vary", [...parts, ...add].join(", "));
+    }
 
     if (!policy.etag || typeof payload !== "string") return payload;
     const etag = '"' + createHash("sha1").update(payload).digest("base64url") + '"';

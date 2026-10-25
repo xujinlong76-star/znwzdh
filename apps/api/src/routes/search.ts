@@ -11,6 +11,18 @@ import { badRequest, identityTrusted, requestIdentityOf } from "./shared.ts";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
 
+/**
+ * 搜索响应的缓存键必须包含的字段（写进 `Vary`，见 server.ts 的 CachePolicy.vary）。
+ *
+ * 为什么搜索特别需要：`/api/search` 是全站唯一「响应内容按身份变化、却允许被缓存 20 秒」的
+ * 公开 GET —— 命中个性化时（`personalize` 来自 user_profiles 的类目/标签/收藏/访问）
+ * 甲与乙的排序不同。身份可以只走 Header（web 端经 hub 代理就是 `X-Navhub-Anon-Id` + 签名头，
+ * 扩展与脚本可带 `Authorization`），Header 不改变 URL ⇒ 不声明 Vary 时，同一浏览器上
+ * 「登录前 / 登录后」或「甲 / 乙」搜同一个词会直接复用彼此的个性化结果，服务端毫无察觉。
+ * query 里的 `userId/anonId` 会改变 URL，天然分键，不必列进来。
+ */
+const SEARCH_VARY = ["x-navhub-anon-id", "x-navhub-user-id", "authorization", "cookie"];
+
 export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
 
@@ -62,7 +74,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }).optional(),
   });
 
-  app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true } } }, async (req, reply) => {
+  app.get("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" }, cache: { maxAge: 20, etag: true, vary: SEARCH_VARY } } }, async (req, reply) => {
     const parsed = searchBody.safeParse(req.query ?? {});
     if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
     const facetFilter = clampFacets(parsed.data.facets);

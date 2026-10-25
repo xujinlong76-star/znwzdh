@@ -205,6 +205,63 @@ CRLF 无害，而全仓重写行尾会制造一场没人想 review 的 diff。
 
 ---
 
+## 4.8 诊断与卫生工具（`scripts/` 下）
+
+四个工具都是从「本轮踩了坑、下次不想再踩」里长出来的。用法尽量保持一条命令。
+
+### `verify-guard.mjs` —— 守卫反向验证
+
+**测试通过有两种可能**：规则真的成立，或断言根本没在检查东西。后者在本仓已发生多次
+（选测器只改日志、`field-names` 主干一直红、钩子提示被条件短路）。判断方法只有一个：
+**故意改坏源码，确认对应测试真的变红**。
+
+```bash
+node scripts/verify-guard.mjs \
+  --file packages/store/src/search.ts \
+  --from "        ftsMs," --to "        ftsMs: semanticMs," \
+  --test packages/store/test/store.test.ts --grep "通道耗时" \
+  --expect-output "不应包含 semantic 的等待"
+```
+
+| 结果 | 退出码 | 含义 |
+|---|---|---|
+| 测试失败 + 输出命中 `--expect-output` | 0 | 守卫有效 |
+| 测试通过 | 2 | **空守卫**：改坏了都不红 |
+| 测试失败但诊断串对不上 | 2 | 无法归因（可能是编译错误/别的用例挂了） |
+
+`--expect-output` 不是可选项而是纪律：**没有它，「红了」可能与你改的那段无关**。
+安全：`--file` 工作区有改动时拒绝执行（避免覆盖并行会话的改动），崩溃/Ctrl-C 都会还原。
+
+### `clean-temp-probes.mjs` —— 清理探针残留
+
+`mkdtempSync(join(tmpdir(), "navhub-xxx-"))` 的产物在测试被 kill / 探针忘删 / 进程崩溃时会残留。
+2026-10-25 实测积到 **1116 个 / 1.4GB**（最早 6 天前）。
+
+```bash
+node scripts/clean-temp-probes.mjs                          # 只报告（默认）
+node scripts/clean-temp-probes.mjs --apply                  # 真删
+node scripts/clean-temp-probes.mjs --min-age-min 1440 --apply --force   # 只删 24h 前的
+```
+
+三条保护：
+
+1. **默认 dry-run**，要删必须显式 `--apply`；
+2. 只认 `navhub-` / `probe-` 前缀，**不碰 `tmp.*`**（无法证明归属）；
+3. **存在 `--min-age-min` 内的「新鲜」目录时拒绝 `--apply`**——那是「有测试正在跑」的
+   直接证据（实测：4 个 vitest 进程跑着时，同时存在 8~9 个 30 分钟内的目录）。
+   确认无关要加 `--force`；
+4. 目录里**含符号链接就整目录跳过**——本机有过 junction 递归删除清空源码的事故
+   （2026-10-19，344 文件），宁可少清一个，不做赌博。
+
+### 其余两个
+
+| 工具 | 用途 |
+|---|---|
+| `explain.mjs` | 一条 SQL 的查询计划 + 耗时 + `--try-index` 前后对照。排查「加了索引就快了但不知道为什么」时用 |
+| `fix-line-endings.mjs` | 把文件转 LF（见 §4.7） |
+
+---
+
 ## 5. 提交前的成本预算
 
 | 改动范围 | hook 选中的测试 | 耗时（收窄后实测） |

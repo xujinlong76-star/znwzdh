@@ -6,6 +6,17 @@
 # （2026-10-25 实测，为此花了近 20 分钟）。
 #
 # 因此只对 .mjs/.mts 显式声明 LF（scripts/check-syntax.mjs 会检查这一点）。
-# 不把 *.ts 也纳入：.ts 走 esbuild，CRLF 无害，全仓重写行尾的收益不值那个风险。
+#
+# 为什么不把 *.ts 也纳入（2026-10-25 实测数据，后人不必重查）：
+#   · git 里以 CRLF 存储的 .ts/.tsx 有 89 个（`git grep -l -P '\r$' -- '*.ts' '*.tsx'`）；
+#   · 纳入 eol=lf 必须 `git add --renormalize .`，那是 89 个文件的**全行 diff**，
+#     语义零变化却让 review 失效；
+#   · 其中至少 3 个（routes/plugins.ts、lib/navhub-api.ts、e2e/helpers.ts）当时正被
+#     并行会话修改，renormalize 会直接冲突；
+#   · 而 .ts 走 esbuild transform，CRLF 被正常处理（实测：CRLF 的 .test.ts 在 vitest
+#     里正常运行），隐患目前为零。
+#
+# 重新评估的触发条件：若出现「.ts 被 vite 以原生 ESM 加载」（不经 esbuild）的场景，
+# 或本仓不再有并行会话，再考虑一次性 renormalize。
 *.mjs text eol=lf
 *.mts text eol=lf

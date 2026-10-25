@@ -104,7 +104,7 @@ export const pluginOverlapRoutes: FastifyPluginAsync<{ ctx: AppContext }> = asyn
     "/api/plugins/:slug/overlap",
     { config: { scope: "public", rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (req, reply) => {
-      const slug = decodeURIComponent((req.params as { slug: string }).slug);
+      const slug = safeDecodeParam((req.params as { slug: string }).slug);
       const plugin = await ctx.repo.getPluginBySlug(slug);
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
       if (plugin.manifest.kind !== "site-pack") {

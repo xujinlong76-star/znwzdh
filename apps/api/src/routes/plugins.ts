@@ -321,7 +321,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     "/api/plugins/:slug/featured",
     { config: { scope: "write" } },
     async (req, reply) => {
-      const slug = decodeURIComponent((req.params as { slug: string }).slug);
+      const slug = safeDecodeParam((req.params as { slug: string }).slug);
       const body = (req.body ?? {}) as { featured?: unknown; rank?: unknown };
       if (typeof body.featured !== "boolean") return badRequest(reply, "featured 必须为布尔值");
       const rank = typeof body.rank === "number" && Number.isFinite(body.rank) ? body.rank : 0;
@@ -1197,7 +1197,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     "/api/plugins/:slug/versions",
     { config: { scope: "public", rateLimit: { max: 10, timeWindow: "1 hour" } } },
     async (req, reply) => {
-      const slug = decodeURIComponent((req.params as { slug: string }).slug);
+      const slug = safeDecodeParam((req.params as { slug: string }).slug);
       const body = (req.body ?? {}) as { manifest?: unknown; changelog?: unknown } & Record<string, unknown>;
       const manifestInput = body.manifest ?? body;
       const validated = validatePluginManifestWithCatalog(manifestInput);

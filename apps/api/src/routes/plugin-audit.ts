@@ -106,7 +106,7 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
    * 结果**不落库**（体检是即时快照，避免引入新表），但会写一条审计留痕。
    */
   app.post("/api/plugins/:slug/audit", { config: { scope: "write" } }, async (req, reply) => {
-    const slug = decodeURIComponent((req.params as { slug: string }).slug)
+    const slug = safeDecodeParam((req.params as { slug: string }).slug)
     const plugin = await ctx.repo.getPluginBySlug(slug)
     if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
     if (plugin.manifest.kind !== "site-pack") {
@@ -174,7 +174,7 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     "/api/plugins/:slug/url-health",
     { config: { scope: "public", rateLimit: { max: 120, timeWindow: "1 minute" } } },
     async (req, reply) => {
-      const slug = decodeURIComponent((req.params as { slug: string }).slug)
+      const slug = safeDecodeParam((req.params as { slug: string }).slug)
       const plugin = await ctx.repo.getPluginBySlug(slug)
       if (!plugin) return notFound(reply, `插件不存在: ${slug}`)
 

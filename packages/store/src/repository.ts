@@ -1163,7 +1163,7 @@ export class Repository {
     return jobsRepo.claimNextJob(this);
   }
 
-  async completeJob(id: string, error?: string | null, opts: { retryAt?: number | null; exhausted?: boolean } | null = null): Promise<boolean> {
+  async completeJob(id: string, error?: string | null, opts: { retryAt?: number | null; exhausted?: boolean; durationMs?: number } | null = null): Promise<boolean> {
     return jobsRepo.completeJob(this, id, error, opts);
   }
 
@@ -1271,6 +1271,10 @@ export class Repository {
     return pluginsRepo.getPluginBySlug(this, slug);
   }
 
+  async getPluginsBySlugs(slugs: string[]): Promise<pluginsRepo.PluginRecord[]> {
+    return pluginsRepo.getPluginsBySlugs(this, slugs);
+  }
+
   async listPlugins(filter: pluginsRepo.PluginListFilter = {}): Promise<{ items: pluginsRepo.PluginRecord[]; total: number }> {
     return pluginsRepo.listPlugins(this, filter);
   }
@@ -1304,8 +1308,12 @@ export class Repository {
     return pluginsRepo.recordPluginAuditNote(this, slug, note, at);
   }
 
-  async installPlugin(slug: string, identity: string, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginInstallResult> {
-    return pluginsRepo.installPlugin(this, slug, identity, actor);
+  async installPlugin(slug: string, identity: string, actor?: pluginsRepo.PluginActor, options?: pluginsRepo.PluginInstallOptions): Promise<pluginsRepo.PluginInstallResult> {
+    return pluginsRepo.installPlugin(this, slug, identity, actor, options);
+  }
+
+  async quarantinePlugin(slug: string, reason: string, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginRecord> {
+    return pluginsRepo.quarantinePlugin(this, slug, reason, actor);
   }
 
   async getPluginBundleMembers(plugin: pluginsRepo.PluginRecord): Promise<pluginsRepo.PluginBundleMember[]> {
@@ -1399,6 +1407,10 @@ export class Repository {
 
   async reportPluginReview(slug: string, reviewId: string, reason: string, reporterIdentity: string | null, actor?: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginReviewRecord> {
     return pluginsRepo.reportPluginReview(this, slug, reviewId, reason, reporterIdentity, actor);
+  }
+
+  async replyPluginReview(reviewId: string, replyText: string, actor: pluginsRepo.PluginActor): Promise<pluginsRepo.PluginReviewRecord> {
+    return pluginsRepo.replyPluginReview(this, reviewId, replyText, actor);
   }
 
   async getPluginFunnel(days = 30): Promise<pluginsRepo.PluginFunnelMetrics> {

@@ -308,6 +308,39 @@ describe("backup_restore 任务", () => {
     rmSync(stagingPath, { force: true });
   });
 
+  /**
+   * 执行耗时的语义：只算 handler 本身，不含排队等待。
+   *
+   * 这条不是「性能测试」，而是锁口径——排查「哪个任务慢」时如果用的是
+   * `updated_at - created_at`，一个在队列里躺了三分钟的任务会被误判成执行慢，
+   * 于是去优化错的对象（本轮就因此绕了一大圈）。
+   */
+  it("记录本次执行耗时，且不含排队等待", async () => {
+    const stagingPath = await writeStaging("duration", {
+      categories: [],
+      sites: [{ url: "https://job-duration-1.example.com", title: "耗时用例", categoryId: "job-cat-1" }],
+    });
+    const id = await ctx.repo.enqueueJob("backup_restore", { stagingPath });
+    // 故意让它在队列里躺一会儿：这段等待不能算进 duration_ms
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    await new JobRunner(ctx, { enableCron: false }).tick();
+
+    const row = (
+      await ctx.repo.raw(
+        "SELECT status, duration_ms, created_at, updated_at FROM jobs WHERE id = ?",
+        [id],
+      )
+    )[0]!;
+    expect(String(row.status)).toBe("done");
+    const duration = Number(row.duration_ms);
+    const wall = Number(row.updated_at) - Number(row.created_at);
+    expect(duration).toBeGreaterThan(0);
+    expect(wall).toBeGreaterThanOrEqual(300); // 排队时间确实体现在 wall 上
+    expect(duration).toBeLessThan(wall); // 而 duration 不含它
+    expect(duration).toBeLessThan(300);
+  });
+
   it("cancelJob 支持退避中的任务（否则用户只能干等重试窗口）", async () => {
     const id = await ctx.repo.enqueueJob("backup_restore", { stagingPath: join(dir, "none.json") });
     await ctx.repo.run("UPDATE jobs SET status = 'retrying' WHERE id = ?", [id]);

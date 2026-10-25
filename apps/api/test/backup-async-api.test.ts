@@ -363,6 +363,36 @@ describe("异步恢复：并发守卫、契约头与零增量", () => {
     expect(body.skipped.duplicateUrls).toBe(1);
   });
 
+  /**
+   * 大包必须真能提进来。
+   *
+   * 全局 bodyLimit 是 4MB，而备份包约 187 字节/站点 → 4MB 只够约 2.1 万条。
+   * 于是「最多 5 万条」这条声明在真实数据上达不到，用户拿到的是传输层 413，
+   * 而不是我们那条「备份条目过多」的说明。这里用一份 5MB+ 的包锁住放宽后的行为。
+   */
+  it("超过全局 4MB 的备份包仍可提交（恢复端点单独放宽到 16MB）", async () => {
+    await resetRestoreJobs();
+    const big = Array.from({ length: 35000 }, (_, i) => ({
+      id: `big-${i}`,
+      title: `大包站点 ${i}`,
+      url: `https://big-${i}.example.com`,
+      description: "用于把体积顶到 4MB 以上的描述文本。".repeat(4),
+    }));
+    const payload = backupPayload(big);
+    const bytes = Buffer.byteLength(JSON.stringify(payload), "utf8");
+    expect(bytes).toBeGreaterThan(4 * 1024 * 1024);
+
+    const res = await submit(big);
+    expect(res.statusCode).toBe(202);
+    const body = res.json() as Record<string, any>;
+    expect(body.accepted.sites).toBe(35000);
+
+    // 收尾：这份 staging 有 5MB+，不能留在测试目录里
+    const rows = await ctx.repo.raw("SELECT payload FROM jobs WHERE id = ?", [body.jobId]);
+    const stagingPath = String(JSON.parse(String(rows[0]!.payload)).stagingPath as string);
+    rmSync(stagingPath, { force: true });
+  });
+
   it("取消后的任务：status 报 cancelled + retryable，且不再发 Retry-After", async () => {
     await resetRestoreJobs();
     const res = await submit([{ id: "x1", title: "取消用例", url: "https://cancel-1.example.com" }]);

@@ -32,6 +32,8 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 表已存在的部署永远停在缺列状态，而读取端会把缺失读成 0（看起来像「没开始」）。
   { table: "jobs", column: "progress_done", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   { table: "jobs", column: "progress_total", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
+  // 单次执行耗时：排查「这次 tick 为什么慢」时，不必再靠二分猜是哪个任务。
+  { table: "jobs", column: "duration_ms", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   { table: "categories", column: "source", sqlite: "TEXT", pg: "TEXT" },
   // 类目 URL 标识（/category/{slug}）。可空：历史行由 migrateCategorySlugs 回填，
   // 回填失败时读路径退回 id，不影响可用性。
@@ -83,12 +85,19 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   { table: "plugins", column: "featured", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "BOOLEAN NOT NULL DEFAULT FALSE" },
   { table: "plugins", column: "featured_rank", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   { table: "plugins", column: "pending_changelog", sqlite: "TEXT", pg: "TEXT" },
+  { table: "plugins", column: "pending_version", sqlite: "TEXT", pg: "TEXT" },
+  { table: "plugins", column: "pending_manifest", sqlite: "TEXT", pg: "TEXT" },
+  { table: "plugins", column: "author_verified", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "BOOLEAN NOT NULL DEFAULT FALSE" },
+  { table: "plugins", column: "forked_from_slug", sqlite: "TEXT", pg: "TEXT" },
+  { table: "plugins", column: "remix_count", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   // 评价治理：默认 visible；举报计数用于治理面板排序
   { table: "plugin_reviews", column: "status", sqlite: "TEXT NOT NULL DEFAULT 'visible'", pg: "TEXT NOT NULL DEFAULT 'visible'" },
   { table: "plugin_reviews", column: "report_count", sqlite: "INTEGER NOT NULL DEFAULT 0", pg: "INTEGER NOT NULL DEFAULT 0" },
   { table: "plugin_reviews", column: "moderation_note", sqlite: "TEXT", pg: "TEXT" },
   { table: "plugin_reviews", column: "moderated_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "plugin_reviews", column: "moderated_by", sqlite: "TEXT", pg: "TEXT" },
+  { table: "plugin_reviews", column: "author_reply", sqlite: "TEXT", pg: "TEXT" },
+  { table: "plugin_reviews", column: "author_replied_at", sqlite: "INTEGER", pg: "BIGINT" },
   // 收藏同步换代（M1）：软删墓碑。硬删会让「删除」事件在增量同步里
   // 无处表达——客户端按 updated_at 拉增量时看不见任何痕迹，于是删除永不传播。
   { table: "favorites", column: "deleted_at", sqlite: "INTEGER", pg: "BIGINT" },
@@ -269,6 +278,10 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS plugin_stars (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, created_at BIGINT NOT NULL, PRIMARY KEY (plugin_id, identity))"
       : "CREATE TABLE IF NOT EXISTS plugin_stars (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (plugin_id, identity))",
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS plugin_reports (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, ip TEXT, reason TEXT NOT NULL DEFAULT '', created_at BIGINT NOT NULL, PRIMARY KEY (plugin_id, identity))"
+      : "CREATE TABLE IF NOT EXISTS plugin_reports (plugin_id TEXT NOT NULL, identity TEXT NOT NULL, ip TEXT, reason TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, PRIMARY KEY (plugin_id, identity))",
+    "CREATE INDEX IF NOT EXISTS plugin_reports_plugin_idx ON plugin_reports(plugin_id)",
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS plugin_versions (id TEXT PRIMARY KEY, plugin_id TEXT NOT NULL, version TEXT NOT NULL, manifest TEXT NOT NULL, changelog TEXT, checksum TEXT NOT NULL, published_at BIGINT NOT NULL, created_at BIGINT NOT NULL, UNIQUE(plugin_id, version))"
       : "CREATE TABLE IF NOT EXISTS plugin_versions (id TEXT PRIMARY KEY, plugin_id TEXT NOT NULL, version TEXT NOT NULL, manifest TEXT NOT NULL, changelog TEXT, checksum TEXT NOT NULL, published_at INTEGER NOT NULL, created_at INTEGER NOT NULL, UNIQUE(plugin_id, version))",

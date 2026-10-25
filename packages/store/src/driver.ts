@@ -244,7 +244,10 @@ CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, id DESC);
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT, status TEXT NOT NULL DEFAULT 'pending',
   attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-  next_run_at INTEGER, progress_done INTEGER NOT NULL DEFAULT 0, progress_total INTEGER NOT NULL DEFAULT 0
+  next_run_at INTEGER, progress_done INTEGER NOT NULL DEFAULT 0, progress_total INTEGER NOT NULL DEFAULT 0,
+  -- 本次执行的耗时（毫秒）。created_at→updated_at 含排队等待，用它算「跑了多久」会把
+  -- 「在队列里等了 3 分钟」也算进执行时间；这一列只记 handler 本身的耗时。
+  duration_ms INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_next_run_idx ON jobs(status, next_run_at);
@@ -375,6 +378,11 @@ CREATE TABLE IF NOT EXISTS plugins (
   review_note TEXT,
   reviewed_at INTEGER,
   pending_changelog TEXT,
+  pending_version TEXT,
+  pending_manifest TEXT,
+  author_verified INTEGER NOT NULL DEFAULT 0,
+  forked_from_slug TEXT,
+  remix_count INTEGER NOT NULL DEFAULT 0,
   source TEXT NOT NULL DEFAULT 'user',
   install_count INTEGER NOT NULL DEFAULT 0,
   star_count INTEGER NOT NULL DEFAULT 0,
@@ -409,6 +417,16 @@ CREATE TABLE IF NOT EXISTS plugin_stars (
   PRIMARY KEY (plugin_id, identity)
 );
 
+CREATE TABLE IF NOT EXISTS plugin_reports (
+  plugin_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  ip TEXT,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (plugin_id, identity)
+);
+CREATE INDEX IF NOT EXISTS plugin_reports_plugin_idx ON plugin_reports(plugin_id);
+
 CREATE TABLE IF NOT EXISTS plugin_versions (
   id TEXT PRIMARY KEY,
   plugin_id TEXT NOT NULL,
@@ -435,6 +453,8 @@ CREATE TABLE IF NOT EXISTS plugin_reviews (
   moderation_note TEXT,
   moderated_at INTEGER,
   moderated_by TEXT,
+  author_reply TEXT,
+  author_replied_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE(plugin_id, identity)
@@ -686,7 +706,8 @@ CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, id DESC);
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT, status TEXT NOT NULL DEFAULT 'pending',
   attempts INTEGER NOT NULL DEFAULT 0, error TEXT, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL,
-  next_run_at BIGINT, progress_done INTEGER NOT NULL DEFAULT 0, progress_total INTEGER NOT NULL DEFAULT 0
+  next_run_at BIGINT, progress_done INTEGER NOT NULL DEFAULT 0, progress_total INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status);
 CREATE INDEX IF NOT EXISTS jobs_next_run_idx ON jobs(status, next_run_at);
@@ -817,6 +838,11 @@ CREATE TABLE IF NOT EXISTS plugins (
   review_note TEXT,
   reviewed_at BIGINT,
   pending_changelog TEXT,
+  pending_version TEXT,
+  pending_manifest TEXT,
+  author_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  forked_from_slug TEXT,
+  remix_count INTEGER NOT NULL DEFAULT 0,
   source TEXT NOT NULL DEFAULT 'user',
   install_count INTEGER NOT NULL DEFAULT 0,
   star_count INTEGER NOT NULL DEFAULT 0,
@@ -851,6 +877,16 @@ CREATE TABLE IF NOT EXISTS plugin_stars (
   PRIMARY KEY (plugin_id, identity)
 );
 
+CREATE TABLE IF NOT EXISTS plugin_reports (
+  plugin_id TEXT NOT NULL,
+  identity TEXT NOT NULL,
+  ip TEXT,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (plugin_id, identity)
+);
+CREATE INDEX IF NOT EXISTS plugin_reports_plugin_idx ON plugin_reports(plugin_id);
+
 CREATE TABLE IF NOT EXISTS plugin_versions (
   id TEXT PRIMARY KEY,
   plugin_id TEXT NOT NULL,
@@ -877,6 +913,8 @@ CREATE TABLE IF NOT EXISTS plugin_reviews (
   moderation_note TEXT,
   moderated_at BIGINT,
   moderated_by TEXT,
+  author_reply TEXT,
+  author_replied_at INTEGER,
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   UNIQUE(plugin_id, identity)

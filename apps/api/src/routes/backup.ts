@@ -33,6 +33,16 @@ const RESTORE_MAX_CATEGORIES = 2_000;
 const RESTORE_MAX_SITES = 50_000;
 
 /**
+ * 恢复端点专用的 body 上限（16MB）。
+ *
+ * 全局 bodyLimit 是 4MB，而备份包实测约 **187 字节/站点**：4MB 只够约 2.1 万条，
+ * 于是「最多 5 万条」这条声明在真实数据上根本达不到（用户会收到传输层的 413，
+ * 而不是我们那条「备份条目过多」的说明）。16MB 覆盖 5 万条（约 9.27MB）并留余量。
+ * 只对这两个恢复端点放宽，其余接口仍走全局 4MB。
+ */
+const RESTORE_BODY_LIMIT_BYTES = 16 * 1024 * 1024;
+
+/**
  * 把恢复失败的原始错误归成可上报的类别。
  *
  * 只回类别、不回 message：数据库报错里常带着具体值（重复的 URL、约束名），
@@ -300,7 +310,12 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   app.post(
     "/api/backup/restore",
-    { config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    {
+      config: { scope: "admin", rateLimit: { max: 30, timeWindow: "1 minute" } },
+      // 备份包天然很大：实测约 187 字节/站，5 万条约 9.27MB，而全局 bodyLimit 是 4MB。
+      // 不放宽的话「条目上限 5 万」这条声明永远达不到——请求会先在传输层被 413 掉。
+      bodyLimit: RESTORE_BODY_LIMIT_BYTES,
+    },
     async (req, reply) => {
     const body = req.body as any;
     const jsonStr = typeof body === "string" ? body : JSON.stringify(body);
@@ -516,7 +531,10 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    */
   app.post(
     "/api/backup/restore/async",
-    { config: { scope: "admin", rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    {
+      config: { scope: "admin", rateLimit: { max: 10, timeWindow: "1 minute" } },
+      bodyLimit: RESTORE_BODY_LIMIT_BYTES,
+    },
     async (req, reply) => {
       const body = req.body as any;
       const jsonStr = typeof body === "string" ? body : JSON.stringify(body);
@@ -672,7 +690,7 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     async (req, reply) => {
       const { jobId } = req.params as { jobId: string };
       const rows = await ctx.repo.raw(
-        "SELECT id, kind, status, error, progress_done, progress_total, created_at, updated_at FROM jobs WHERE id = ? LIMIT 1",
+        "SELECT id, kind, status, error, progress_done, progress_total, created_at, updated_at, duration_ms FROM jobs WHERE id = ? LIMIT 1",
         [jobId],
       );
       const row = rows[0];
@@ -694,6 +712,11 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         progress: { done: Number(row.progress_done ?? 0), total: Number(row.progress_total ?? 0) },
         startedAt: Number(row.created_at ?? 0),
         finishedAt: finished ? Number(row.updated_at ?? 0) : null,
+        /**
+         * 本次执行耗时（毫秒，不含排队等待）。`finishedAt - startedAt` 含排队，
+         * 任务在队列里等过就看不准；这一列才是「跑了多久」。
+         */
+        durationMs: Number(row.duration_ms ?? 0),
         retryAfterMs: finished ? null : 2000,
         error: row.error == null ? null : String(row.error),
         /** 完成后 staging 保留与否取决于成功/失败：成功已删，失败保留供重跑 */

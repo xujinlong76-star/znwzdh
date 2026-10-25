@@ -76,21 +76,32 @@ export async function claimNextJob(repo: Repository): Promise<JobRecord | null> 
   });
 }
 
-export async function completeJob(repo: Repository, id: string, error?: string | null, opts: { retryAt?: number | null; exhausted?: boolean } | null = null): Promise<boolean> {
+export async function completeJob(
+  repo: Repository,
+  id: string,
+  error?: string | null,
+  opts: { retryAt?: number | null; exhausted?: boolean; durationMs?: number } | null = null,
+): Promise<boolean> {
   const now = Date.now();
+  /**
+   * 本次执行耗时。与 `updated_at - created_at` 的区别：后者含**排队等待**——
+   * 一个在队列里躺了 3 分钟才被认领的任务，用它算出来是 180 秒，看着像执行很慢。
+   * 排查「tick 为什么慢」时必须用这一列，否则会去优化错的任务。
+   */
+  const durationMs = Math.max(0, Math.floor(opts?.durationMs ?? 0));
   // CAS 到 running：任务被取消 / 被 reaper 回收 / 已被另一个实例接管后，
   // 迟到的执行结果不得再改写终态。旧实现无条件 UPDATE，一个跑超时的 handler
   // 醒来后能把 cancelled 覆盖成 done，甚至把别人重跑后的 failed 改回 done。
   if (error && !opts?.exhausted && opts?.retryAt) {
     const rows = await repo.raw(
-      "UPDATE jobs SET status = 'pending', error = ?, next_run_at = ?, updated_at = ? WHERE id = ? AND status = 'running' RETURNING id",
-      [error, opts.retryAt, now, id],
+      "UPDATE jobs SET status = 'pending', error = ?, next_run_at = ?, updated_at = ?, duration_ms = ? WHERE id = ? AND status = 'running' RETURNING id",
+      [error, opts.retryAt, now, durationMs, id],
     );
     return rows.length > 0;
   }
   const rows = await repo.raw(
-    "UPDATE jobs SET status = ?, error = ?, next_run_at = NULL, updated_at = ? WHERE id = ? AND status = 'running' RETURNING id",
-    [error ? "failed" : "done", error ?? null, now, id],
+    "UPDATE jobs SET status = ?, error = ?, next_run_at = NULL, updated_at = ?, duration_ms = ? WHERE id = ? AND status = 'running' RETURNING id",
+    [error ? "failed" : "done", error ?? null, now, durationMs, id],
   );
   return rows.length > 0;
 }

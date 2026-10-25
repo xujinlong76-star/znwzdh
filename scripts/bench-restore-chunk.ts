@@ -30,6 +30,8 @@ function arg(name: string, fallback: string): string {
 
 const SITES = Number(arg("sites", "10000"));
 const USE_INDEX = arg("index", "0") === "1";
+/** 重复次数：这台机器的单次测量波动能到 2 倍，结论必须用中位数 */
+const REPS = Math.max(1, Number(arg("reps", "1")) || 1);
 const CHUNKS = arg("chunks", "1000,2000,5000,10000")
   .split(",")
   .map((n) => Number(n.trim()))
@@ -44,7 +46,10 @@ interface Sample {
   tickMs: number;
   chunks: number;
   perChunkMs: number;
+  /** 整个 tick 期间的最大延迟（含 reindex，仅供参考） */
   maxLagMs: number;
+  /** 恢复任务运行期间的最大延迟——这才是「恢复会不会卡住页面」的答案 */
+  restoreLagMs: number;
   rows: number;
 }
 
@@ -108,6 +113,25 @@ async function runOnce(ctx: AppContext, dir: string, sites: number, chunk: numbe
   );
   const jobId = await ctx.repo.enqueueJob("backup_restore", { stagingPath });
   const lag = startLagProbe();
+  /**
+   * 延迟探针要在**恢复任务结束**时停，而不是 tick 结束时停。
+   *
+   * 恢复成功会顺手入队 `reindex`，tick 会把它一起跑掉；如果把整段 tick 的延迟
+   * 都算成「恢复期间的阻塞」，量出来的是 reindex 的阻塞（上轮就是这么把
+   * 300ms 与 3.3s 混在一起的）。这里用一个小轮询盯住恢复任务的状态。
+   */
+  let restoreMaxLag: number | null = null;
+  const watcher = setInterval(() => {
+    void ctx.repo
+      .raw("SELECT status FROM jobs WHERE id = ?", [jobId])
+      .then((rows) => {
+        const st = String(rows[0]?.status ?? "");
+        if (restoreMaxLag === null && (st === "done" || st === "failed" || st === "cancelled")) {
+          restoreMaxLag = lag.stop();
+        }
+      })
+      .catch(() => undefined);
+  }, 25);
   const startedAt = Date.now();
   const progressTimer = setInterval(() => {
     void ctx.repo
@@ -123,7 +147,10 @@ async function runOnce(ctx: AppContext, dir: string, sites: number, chunk: numbe
   await runner.tick();
   clearInterval(progressTimer);
   const tickMs = Date.now() - startedAt;
+  clearInterval(watcher);
+  // 恢复早已结束（watcher 已停过探针）时，这次调用返回同一个值（stop 幂等）
   const maxLagMs = lag.stop();
+  const restoreLagMs = restoreMaxLag ?? maxLagMs;
   await ctx.repo.run(
     "DELETE FROM jobs WHERE kind IN ('reindex') AND status IN ('pending', 'running', 'retrying')",
   );
@@ -145,8 +172,14 @@ async function runOnce(ctx: AppContext, dir: string, sites: number, chunk: numbe
    * 分片基准必须只测分片本身，否则结论会指向完全错误的地方
    * （去优化分片大小，而真凶是索引重建）。
    */
-  const jobRow = (await ctx.repo.raw("SELECT created_at, updated_at FROM jobs WHERE id = ?", [jobId]))[0]!;
-  const restoreMs = Number(jobRow.updated_at) - Number(jobRow.created_at);
+  const jobRow = (
+    await ctx.repo.raw("SELECT duration_ms, created_at, updated_at FROM jobs WHERE id = ?", [jobId])
+  )[0]!;
+  /**
+   * 用 `duration_ms`（handler 自身耗时）而不是 `updated_at - created_at`：
+   * 后者含排队等待，任务在队列里等过就会被算成「执行慢」。
+   */
+  const restoreMs = Number(jobRow.duration_ms) || Number(jobRow.updated_at) - Number(jobRow.created_at);
   const chunks = Math.ceil(sites / chunk);
   return {
     chunk,
@@ -156,6 +189,7 @@ async function runOnce(ctx: AppContext, dir: string, sites: number, chunk: numbe
     chunks,
     perChunkMs: Math.round(restoreMs / chunks),
     maxLagMs,
+    restoreLagMs,
     rows,
   };
 }
@@ -200,14 +234,32 @@ async function withFreshDb<T>(label: string, useIndex: boolean, fn: (ctx: AppCon
   }
 }
 
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? Math.round((sorted[mid - 1]! + sorted[mid]!) / 2) : sorted[mid]!;
+}
+
 async function main(): Promise<void> {
   const samples: Sample[] = [];
   for (const chunk of CHUNKS) {
-    const sample = await withFreshDb(`c${chunk}`, USE_INDEX, (ctx, dir) => runOnce(ctx, dir, SITES, chunk));
+    const runs: Sample[] = [];
+    for (let rep = 0; rep < REPS; rep += 1) {
+      // 每次重复都用全新空库：表里已有行会让去重查询变贵，混在一起就测不出片大小的影响
+      runs.push(await withFreshDb(`c${chunk}r${rep}`, USE_INDEX, (ctx, dir) => runOnce(ctx, dir, SITES, chunk)));
+    }
+    const sample: Sample = {
+      ...runs[0]!,
+      totalMs: median(runs.map((r) => r.totalMs)),
+      tickMs: median(runs.map((r) => r.tickMs)),
+      perChunkMs: median(runs.map((r) => r.perChunkMs)),
+      maxLagMs: median(runs.map((r) => r.maxLagMs)),
+      restoreLagMs: median(runs.map((r) => r.restoreLagMs)),
+    };
     samples.push(sample);
     console.log(
       `chunk=${String(chunk).padStart(5)}  ${sample.chunks} 片  恢复自身 ${(sample.totalMs / 1000).toFixed(2)}s  ` +
-        `单片均值 ${sample.perChunkMs}ms  最大事件循环延迟 ${sample.maxLagMs}ms  写入 ${sample.rows} 行  ` +
+        `单片均值 ${sample.perChunkMs}ms  恢复期最大延迟 ${sample.restoreLagMs}ms（整个 tick ${sample.maxLagMs}ms）写入 ${sample.rows} 行  ` +
         `（tick 总计 ${(sample.tickMs / 1000).toFixed(2)}s，含 reindex）`,
     );
   }

@@ -90,6 +90,8 @@ export interface JobEventPayload {
   status: "pending" | "running" | "completed" | "failed" | "retrying" | "cancelled";
   attempts?: number;
   error?: string | null;
+  /** 本次执行耗时（不含排队等待）；只有任务真正跑过才有 */
+  durationMs?: number;
   timestamp: number;
 }
 
@@ -273,15 +275,15 @@ export function backoffMs(attempt: number): number {
  * 默认 **1000**（原 2000）。依据 `scripts/bench-restore-chunk.ts` 实测
  * （`sites(url)` 索引已修、`getSite` 已改走主键之后）：
  *
- * | 片大小 | 10k 恢复自身 | 30k 恢复自身 |
+ * | 片大小 | 10k（3 次中位） | 30k（3 次中位） |
  * |---:|---:|---:|
- * | 1000 | **2.49s** | **5.89s** |
- * | 2000 | 3.21s | 9.66s |
- * | 5000 | 3.56s | 15.23s |
+ * | 1000 | 2.16s | **8.86s** |
+ * | 2000 | **1.78s** | 10.44s |
+ * | 5000 | 2.07s | — |
  *
- * 片越小反而越快：每片的固定成本（事务提交、去重查询 12 趟）远小于
- * 「一条 INSERT 语句塞 1000 行时的索引维护代价」。同时片越小，
- * 事件循环的单次阻塞越短（进度条更顺、取消更快生效）。
+ * 两个量级差异都在 ±20% 内，没有压倒性的赢家。选 1000 的理由是**单次阻塞更短**
+ * （30k：1.9s vs 3.0s，直接影响进度条与取消的响应）与更大库上的表现更好，
+ * 不是吞吐。别用单次跑分去推翻它——这台机器单次测量能差 2 倍。
  *
  * 可用 `NAVHUB_RESTORE_CHUNK` 覆盖——这个开关主要为基准测试保留，生产不要设它。
  * 小于 100 视为误配并回落默认值：片太小会让「每片一个事务」的收益消失。
@@ -590,6 +592,12 @@ export class JobRunner {
           }, this.jobHeartbeatMs)
         : null;
     if (jobHeartbeat && typeof jobHeartbeat.unref === "function") jobHeartbeat.unref();
+    /**
+     * 计时起点：**从认领之后算**，不含排队等待。
+     * 一次 tick 会连续消费多个任务，用 tick 的总时长去看「谁慢」永远看不出结论——
+     * 上一轮就因为把 reindex 的时间算进恢复，得出了错误 30 倍的结论。
+     */
+    const attemptStartedAt = Date.now();
     try {
       switch (kind) {
         case "health_check":
@@ -633,13 +641,23 @@ export class JobRunner {
         default:
           throw new Error("未知任务类型: " + kind);
       }
-      const applied = await this.ctx.repo.completeJob(jobId, null);
+      const durationMs = Date.now() - attemptStartedAt;
+      const applied = await this.ctx.repo.completeJob(jobId, null, { durationMs });
       if (applied) {
+        /**
+         * 超过 10 秒就留一行日志。
+         * 排查「这次 tick 为什么慢」时，这行日志比任何事后推测都直接：
+         * 它同时给出 kind、耗时与 jobId，不必再去二分。
+         */
+        if (durationMs >= 10_000) {
+          console.warn("[navhub-job] 长任务完成", { jobId, kind, durationMs });
+        }
         jobEventBus.emitJobUpdate({
           jobId,
           kind,
           status: "completed",
           attempts,
+          durationMs,
           timestamp: Date.now(),
         });
       } else {
@@ -652,8 +670,12 @@ export class JobRunner {
       // attempts 来自 claimNextJob（已 +1），耗尽后落 failed 终态。
       const exhausted = attempts >= MAX_JOB_ATTEMPTS;
       const retryAt = exhausted ? null : Date.now() + backoffMs(attempts);
+      const durationMs = Date.now() - attemptStartedAt;
+      if (durationMs >= 10_000) {
+        console.warn("[navhub-job] 长任务失败", { jobId, kind, durationMs, error: message });
+      }
       const applied = await this.ctx.repo
-        .completeJob(jobId, message, { retryAt, exhausted })
+        .completeJob(jobId, message, { retryAt, exhausted, durationMs })
         .catch(() => false);
       if (!applied) {
         console.warn("[navhub-job] 失败回写被忽略（任务已不在 running）", { jobId, kind, error: message });
@@ -665,6 +687,7 @@ export class JobRunner {
         status: exhausted ? "failed" : "retrying",
         attempts,
         error: message,
+        durationMs,
         timestamp: Date.now(),
       });
       if (exhausted) {

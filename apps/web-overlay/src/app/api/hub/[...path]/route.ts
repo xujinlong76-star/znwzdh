@@ -41,6 +41,22 @@ const HUB_BASE = (
 /** body 上限 ~1MB，防止代理被大体拖死 */
 const MAX_BODY_BYTES = 1024 * 1024
 
+/**
+ * 冷备恢复的专用上限（16MB）。
+ *
+ * 1MB 是给普通接口的护栏，但恢复包天然很大：实测约 **187 字节/站**，1MB 只够
+ * 约 5,400 条。而页面在「预演算出 >5000 条」时才转后台任务——也就是说
+ * **大包在到达中枢之前就被这里拒了**，异步恢复这条路在界面上几乎走不到
+ * （用户只会看到一个 413「请求体过大」）。
+ * 16MB 覆盖中枢声明的 5 万条上限（实测 50,000 条约 9.27MB）并留余量。
+ * 只对恢复路径放宽：其余接口仍按 1MB 守着。
+ */
+const RESTORE_MAX_BODY_BYTES = 16 * 1024 * 1024
+
+function bodyLimitFor(cleanPath: string[]): number {
+  return cleanPath[0] === 'backup' && cleanPath[1] === 'restore' ? RESTORE_MAX_BODY_BYTES : MAX_BODY_BYTES
+}
+
 async function forward(request: NextRequest, path: string[]): Promise<Response> {
   const url = new URL(request.url)
   const cleanPath = path[0] === 'api' ? path.slice(1) : path
@@ -86,19 +102,20 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const hasBody = method !== 'GET' && method !== 'HEAD'
   // 先看声明长度：request.text() 会把整个请求体读进内存，事后再判 1MB 上限
   // 等于先让任意大包把进程内存打满（chunked 无 content-length 时靠下面的兜底）。
+  const bodyLimit = bodyLimitFor(cleanPath)
   if (hasBody) {
     const declared = Number(request.headers.get('content-length') ?? '')
-    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    if (Number.isFinite(declared) && declared > bodyLimit) {
       return NextResponse.json(
-        { error: '请求体过大（上限 1MB）' },
+        { error: `请求体过大（上限 ${Math.round(bodyLimit / 1024 / 1024)}MB）` },
         { status: 413, headers: { 'cache-control': 'no-store' } },
       )
     }
   }
   const rawBody = hasBody ? await request.text() : undefined
-  if (rawBody && rawBody.length > MAX_BODY_BYTES) {
+  if (rawBody && rawBody.length > bodyLimit) {
     return NextResponse.json(
-      { error: '请求体过大（上限 1MB）' },
+      { error: `请求体过大（上限 ${Math.round(bodyLimit / 1024 / 1024)}MB）` },
       { status: 413, headers: { 'cache-control': 'no-store' } },
     )
   }

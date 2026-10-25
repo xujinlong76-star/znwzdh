@@ -13,7 +13,7 @@ import {
 } from "@navhub/core";
 
 import { privatizeVector, rankItemsWithPrivacy } from "@navhub/core";
-import { parsePagination } from "./shared.ts";
+import { badRequest, parsePagination } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
 export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -171,10 +171,18 @@ export const rankRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
     }
   });
 
-  /** 在线 Discounted-LinUCB 检索模型状态探针 */
-  app.get("/api/search/linucb", { config: { scope: "public" } }, async (req) => {
-    const q = (req.query ?? {}) as Record<string, string>;
-    return ctx.search.getLinUCBStatus(q.q || "react");
+  /**
+   * 在线 Discounted-LinUCB 检索模型状态探针。
+   *
+   * 这是运维/调试面而不是数据面：返回的权重演化只给管理端看，原始 A/b 矩阵
+   * 是排序器的内部状态（OWASP API5:2023 功能级授权：管理功能不能因为路径看起来
+   * 像公开检索就匿名开放）。因此 scope 定为 admin，载荷也只回摘要指标。
+   * 入参是有上限的查询词，不再让任意长度的 query 进入特征提取。
+   */
+  app.get("/api/search/linucb", { config: { scope: "admin" } }, async (req, reply) => {
+    const parsed = z.object({ q: z.string().max(256).default("react") }).safeParse(req.query ?? {});
+    if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
+    return ctx.search.getLinUCBStatus(parsed.data.q);
   });
 
   /**

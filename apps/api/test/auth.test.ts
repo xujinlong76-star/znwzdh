@@ -101,6 +101,20 @@ describe("开放模式（默认，authRequired=false）", () => {
     expect(rows[0]?.actor).toBe("api");
     expect(rows[0]?.actor_kind).toBe("anonymous");
   });
+
+  it("linucb 探针在开放模式匿名可用，但只回摘要（不回 A/b 矩阵）", async () => {
+    const res = await openApp.inject({ method: "GET", url: "/api/search/linucb?q=react" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.model).toBeUndefined();
+    expect(body.arms.exact.bNorm).toBeTypeOf("number");
+    expect(body.predictedWeights.exact).toBeTypeOf("number");
+  });
+
+  it("linucb 探针的 q 超过 256 字符返回 400", async () => {
+    const res = await openApp.inject({ method: "GET", url: "/api/search/linucb?q=" + "x".repeat(257) });
+    expect(res.statusCode).toBe(400);
+  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -133,6 +147,10 @@ describe("鉴权模式：拒绝未授权访问", () => {
   it("错误格式的 Authorization 头返回 401", async () => {
     const res = await authApp.inject({ method: "GET", url: "/api/sites", headers: { authorization: "Basic abc" } });
     expect(res.statusCode).toBe(401);
+  });
+
+  it("linucb 探针无 token 返回 401（不再是 public 路由）", async () => {
+    expect((await as(null, "GET", "/api/search/linucb")).statusCode).toBe(401);
   });
 });
 
@@ -194,6 +212,18 @@ describe("鉴权模式：scope 含义（admin ⊇ write ⊇ read）", () => {
 
   it("GET /api/storage 受 read 保护", async () => {
     expect((await as(readTok, "GET", "/api/storage?path=" + encodeURIComponent("src/navsphere/content/site.json"))).statusCode).toBe(200);
+  });
+
+  it("linucb 探针是 admin 面：read/write 403，admin 200", async () => {
+    for (const tok of [readTok, writeTok]) {
+      const res = await as(tok, "GET", "/api/search/linucb");
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error).toContain("admin");
+    }
+    const ok = await as(adminTok, "GET", "/api/search/linucb?q=react");
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().model).toBeUndefined();
+    expect(ok.json().dimension).toBe(5);
   });
 });
 

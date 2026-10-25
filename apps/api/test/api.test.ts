@@ -1354,6 +1354,8 @@ describe("OpenAPI 文档", () => {
     expect((doc.paths["/api/health"].get.security)).toEqual([]);
     // read：站点列表
     expect((doc.paths["/api/sites"].get.security)).toEqual([{ bearerAuth: [] }]);
+    // admin：linucb 调试探针会暴露排序器内部状态，不得再以 public 入册
+    expect((doc.paths["/api/search/linucb"].get.security)).toEqual([{ bearerAuth: [] }]);
     // write：提交类站点
     expect((doc.paths["/api/sites"].post.security).length).toBe(1);
     // path 参数被提取（:id → {id}）

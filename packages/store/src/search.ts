@@ -240,12 +240,17 @@ export class SearchEngine {
   }
 
   /**
-   * 获取当前在线 LinUCB 模型快照与针对指定查询词的预测动态权重
+   * 获取当前在线 LinUCB 模型快照与针对指定查询词的预测动态权重。
+   *
+   * 只回摘要（维度/探索系数/各臂的 b 范数与权重估值），不回原始 A/b 矩阵：
+   * 调用方是管理端探针，矩阵属于排序器内部状态，没有展示需求。
    */
   getLinUCBStatus(sampleQuery = "react"): {
     feedbackCount: number;
+    dimension: number;
+    alpha: number;
     predictedWeights: Record<RetrievalChannel, number>;
-    model: LinUCBModel;
+    arms: Record<RetrievalChannel, { bNorm: number; bSum: number; weightEstimate: number }>;
   } {
     const basePriors: Record<RetrievalChannel, number> = {
       exact: DEFAULT_WEIGHTS.exact ?? 1.4,
@@ -254,10 +259,13 @@ export class SearchEngine {
       semantic: DEFAULT_WEIGHTS.semantic ?? 1.15,
       personal: DEFAULT_WEIGHTS.personal ?? 0.3,
     };
+    const telemetry = this.getLinUCBTelemetry();
     return {
-      feedbackCount: this.feedbackCount,
+      feedbackCount: telemetry.feedbackCount,
+      dimension: telemetry.dimension,
+      alpha: telemetry.alpha,
       predictedWeights: predictArmWeights(this.linucbModel, sampleQuery, basePriors),
-      model: this.linucbModel,
+      arms: telemetry.arms,
     };
   }
 

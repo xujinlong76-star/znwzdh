@@ -261,6 +261,15 @@ node scripts/verify-guard.mjs \
 
 **一次跑完全部登记过的配方**：`npm run verify:guards`（读 `scripts/guard-recipes.json`）。
 
+当前登记 4 条（每条都是「曾经失效过」或「失效后果严重且不易察觉」的）：
+
+| 配方 | 守的是什么 |
+|---|---|
+| 通道耗时按各通道自身墙钟计量 | 旧实现把整批 await 同值记给三通道 |
+| 选测器复数归一（jobs → backup-restore-job） | 阈值写错导致关键测试被漏跑 |
+| field-names：新增的无名控件必须被抓住 | 这条守卫曾长期失效（主干就有违规），修好后必须锁住 |
+| keyboard-activation：只有鼠标能点的元素必须逐条登记 | 键盘/读屏用户无法操作，且不报错 |
+
 配方只收「曾经失效过」或「失效后果严重且不易察觉」的守卫，每条都要跑一次测试，
 所以清单要短。`scripts/guard-recipes.test.ts` 做**静态校验**（文件存在、`from` 恰好出现一次、
 `expectOutput` 不过长），能在秒级发现「配方腐烂」——那和「守卫失效」是两件事，
@@ -330,6 +339,27 @@ mkdtempSync(join(tmpdir(), "canon-"))
 
 > 上表是「收窄生效」时的样子。词干没命中就回退整棵，所以最坏情况仍等于收窄前。
 > 想强制全量：`NAVHUB_PRECOMMIT_SCOPE=all`。
+
+### `pnpm verify` 的两档
+
+| 命令 | 内容 | 实测耗时 |
+|---|---|---|
+| `pnpm verify` | 语法/覆盖层/CI 门禁/core 镜像/扩展/lint/typecheck/首屏预算 | 约 1–7 分钟（见下） |
+| `pnpm verify:full` | 上述 + **全量测试**（400+ 文件） | **20 分钟以上** |
+
+**为什么要拆**：2026-10-25 实测全量测试跑到 22 分 38 秒仍未结束，
+结果就是「没人跑 `pnpm verify`」——那等于全量门禁不存在，比跑得慢更糟。
+拆开后默认档给出可信结论，全量档留给专门安排时间的场合。
+
+两条纪律：
+
+1. **全量档不能与其它任务并行**。机器满载会让墙钟型断言假红
+   （已实测：`backup-restore-job` 的耗时用例在并发下误报）。
+2. **默认档也会打印每一步耗时**。不打印的话「哪一步慢」只能靠猜——
+   拆两档时我预估默认档 1–2 分钟，实测 405 秒，差 3 倍，
+   而真正的大头根本不是 typecheck（只占 20 秒）。
+
+`pnpm verify:all` = `verify --full` + lint + playwright，语义不变（仍然含全量）。
 
 `package.json` / `tsconfig.base.json` / `vitest.config.ts` 在 `GLOBAL_FILES` 里，
 改动它们会跑**全量**（~9 分钟）。为一行 npm 别名改 `package.json` 不划算。

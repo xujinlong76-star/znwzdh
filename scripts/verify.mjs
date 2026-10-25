@@ -6,6 +6,20 @@
  * 输出铁律：结尾只报「跑了几项、跳了几项、没覆盖什么」，不报「100% 通过」。
  * 首屏预算这类依赖构建产物的步骤，本地经常跳过；把它算进「通过」等于
  * 用一条绿灯掩盖一个没测的事实——CI 与人都会据此认为覆盖面比实际更大。
+ *
+ * ## 两档（2026-10-25 起）
+ *
+ * | 命令 | 内容 | 耗时 |
+ * |---|---|---|
+ * | `node scripts/verify.mjs` | 语法/覆盖层/CI 门禁/镜像/扩展/lint/typecheck/首屏预算 | 约 1–2 分钟 |
+ * | `node scripts/verify.mjs --full` | 上述 + **全量测试**（400+ 文件） | **20 分钟以上** |
+ *
+ * 为什么拆：全量测试实测跑到 22 分 38 秒仍未结束（`maxWorkers: 3`），
+ * 结果就是「没人跑 `pnpm verify`」——那等于全量门禁不存在，比跑得慢更糟。
+ * 拆开之后默认档能在 2 分钟内给出可信结论，全量档留给「专门安排时间」的场合。
+ *
+ * ⚠️ 全量档**不能与其它任务并行**：机器满载会让墙钟型断言假红
+ * （已实测：`backup-restore-job` 的耗时用例在并发下误报）。
  */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -94,7 +108,20 @@ if (existsSync(`${webDist}/build-manifest.json`) || existsSync(`${webDist}/app-b
   skip("首屏预算", `未找到 ${webDist} 构建产物（先运行 pnpm --filter navsphere build 才会检查）`);
 }
 
-run("全量测试", "pnpm", ["exec", "vitest", "run"]);
+/**
+ * 全量测试：只有 `--full` 才跑。
+ *
+ * 用 `skip()` 而不是静默略过——`skip` 会进最后的「未执行」清单，
+ * 明确告诉读者「这一项本次没有发生，不代表通过」。这正是这个脚本的输出铁律。
+ */
+if (process.argv.includes("--full")) {
+  run("全量测试", "pnpm", ["exec", "vitest", "run"]);
+} else {
+  skip(
+    "全量测试",
+    "默认档不含（400+ 文件，实测 20 分钟以上且不能并行）。要跑：node scripts/verify.mjs --full",
+  );
+}
 
 console.log(`\n[verify] ----------------------------------------------------`);
 console.log(`[verify] 通过 ${passed.length} 项：${passed.join("、")}`);
@@ -103,6 +130,10 @@ if (skipped.length > 0) {
   for (const s of skipped) console.log(`  - ${s.label}：${s.reason}`);
 }
 console.log(
-  `[verify] 未覆盖：前端 tsc / eslint / next build、Playwright e2e（本地用 pnpm verify:web 与 pnpm test:e2e 补跑）\n`,
+  `[verify] 未覆盖：前端 tsc / eslint / next build、Playwright e2e（本地用 pnpm verify:web 与 pnpm test:e2e 补跑）`,
 );
+if (!process.argv.includes("--full")) {
+  console.log(`[verify] 未覆盖：全量测试（本次为默认档；用 pnpm verify:full 跑，约 20 分钟以上，勿与其它任务并行）`);
+}
+console.log("");
 console.log(`✅ [verify] 上述 ${passed.length} 项全部退出码 0${skipped.length > 0 ? `（另有 ${skipped.length} 项未执行）` : ""}。`);

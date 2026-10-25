@@ -43,6 +43,15 @@
       "content": "export const __a11yProbe = () => <input placeholder=\"仅用于反向验证\" />;",
       "test": "apps/web/test/field-names.test.ts",
       "expectOutput": "admin/data/restore/page.tsx"
+    },
+    {
+      "name": "keyboard-activation：只有鼠标能点的元素必须逐条登记",
+      "why": "这条守卫扫描全仓的 onClick（非表单控件标签），要求每一处都在白名单里说明「键盘怎么做同一件事」。漏登记 = 键盘/读屏用户无法操作该元素，而它不会以任何形式报错。",
+      "mode": "append",
+      "file": "apps/web-overlay/src/app/admin/data/restore/page.tsx",
+      "content": "export const __kbProbe = () => <div onClick={() => {}}>仅用于反向验证</div>;",
+      "test": "apps/web/test/keyboard-activation.test.ts",
+      "expectOutput": "admin/data/restore/page.tsx"
     }
   ]
 }

@@ -41,8 +41,9 @@
     "backup": "node scripts/backup.mjs",
     "prepare": "node scripts/install-git-hooks.mjs",
     "verify": "node scripts/verify.mjs",
+    "verify:full": "node scripts/verify.mjs --full",
     "verify:web": "node scripts/vendor-web.mjs && pnpm --filter navsphere exec tsc --noEmit && pnpm --filter navsphere exec eslint .",
-    "verify:all": "node scripts/verify.mjs && pnpm lint && playwright test",
+    "verify:all": "node scripts/verify.mjs --full && pnpm lint && playwright test",
     "verify:guards": "node scripts/verify-guard.mjs --all"
   },
   "devDependencies": {

@@ -132,6 +132,21 @@ test.describe('用户中心：三态', () => {
     await expect(page.getByRole('alert').filter({ hasText: '插件数据暂时取不到' })).toBeVisible()
   })
 
+  test('/me/workspaces 匿名态：可查看空间并提示登录后邀请', async ({ page }) => {
+    await page.goto('/me/workspaces')
+    await expect(page.getByRole('heading', { name: '工作空间' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '新建空间' }).first()).toBeVisible()
+    await expect(page.getByText('工作空间暂时取不到')).toHaveCount(0)
+  })
+
+  test('/me/vault 匿名态：零知识说明与空态，不谎称有备份', async ({ page }) => {
+    await page.goto('/me/vault')
+    await expect(page.getByRole('heading', { name: '云端金库' })).toBeVisible()
+    await expect(page.getByText(/主密码不离开本机/)).toBeVisible()
+    await expect(page.getByText('云端还没有金库备份')).toBeVisible()
+    await expect(page.getByText('云端金库暂时取不到')).toHaveCount(0)
+  })
+
   test('/favorites 匿名态：可以建本地收藏夹并持久化（P2）', async ({ page }) => {
     // 先塞一条本地收藏：收藏夹面板只在有收藏时出现（没有收藏时不需要分组）
     // 只播种、不清空：addInitScript 在每次导航（含 reload）都会跑，

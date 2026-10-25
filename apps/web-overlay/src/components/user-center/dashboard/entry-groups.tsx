@@ -9,7 +9,7 @@
  * 图标芯片染色，与概览页其它可点元素同一套交互语言。
  */
 import Link from 'next/link'
-import { ArrowRight, Bot, Download, FolderHeart, Package, Search, Settings2, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, Bot, Download, FolderHeart, KeyRound, Package, Search, Settings2, ShieldCheck, Sparkles, Users } from 'lucide-react'
 
 const GROUPS = [
   {
@@ -23,6 +23,7 @@ const GROUPS = [
     title: '扩展',
     items: [
       { href: '/me/plugins', label: '插件中心', hint: '已安装 / 我发布 / 投稿', icon: Package },
+      { href: '/me/workspaces', label: '工作空间', hint: '团队协作与成员角色', icon: Users },
       { href: '/custom', label: '模块化工作台', hint: '拖拽与缩放首页模块', icon: Sparkles },
     ],
   },
@@ -37,6 +38,7 @@ const GROUPS = [
     title: '数据',
     items: [
       { href: '/me/account', label: '账号与身份', hint: '资料、匿名合并、自检', icon: ShieldCheck },
+      { href: '/me/vault', label: '云端金库', hint: 'E2EE 密文状态与删除', icon: KeyRound },
       { href: '/me/data', label: '导出与删除', hint: 'JSON / 书签 / 云端删除', icon: Download },
     ],
   },

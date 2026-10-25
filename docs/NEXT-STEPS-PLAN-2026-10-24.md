@@ -228,3 +228,14 @@ field-names / silent-catch / rsc-boundary 守卫的余红经逐一归属核查�
 | plugin-market 全量复跑 | ✅ 登录步已修 | 3 败均推进到 admin 审核 toast——admin/plugins 仍在并行未提交清单（27 文件）；发布向导用例（覆盖拆分页）持续通过 |
 | 登录旁路水合竞态 | ✅ 已修 | enterAdminArea 两轮点击重试（SSR 按钮可见≠已挂载）；9/9 消费方回归 |
 | isolate:false 重开评估 | ✅ 维持关闭（新证据） | 全仓清点：mock identity 的文件实为 5 个（含 plugin-funnel-denominator-guard），另有 9 个文件不 mock 却导入 navhub-api——doMock 方案会让后来者吃到先来者的 mock 缓存（反向污染）。重开成本 > 250s 收益，§12 决策维持 |
+
+---
+
+## 14. 第十批执行（2026-10-26）
+
+| 项 | 状态 | 落点 |
+| --- | --- | --- |
+| plugin-market E2E 接手修复 | ✅ 7/7×2 轮 | 并行会话 3bca1f8 插件域大改（admin/plugins 186 行重构、四路挂载取数、#搜索增强 标签）未跑本 E2E 致 main 红 4 例；三类根因逐例修复：搜索按钮 strict 违例加 exact、审核 toast 瞬态换持久效果断言（离开状态列表）、两处水合竞态补等待/补击/goto 兜底；本批只动 spec 层 |
+| 验证纪律 | — | 三轮迭代：每轮失败快照定位 → 修复 → 复跑；连续两轮 7/7 后提交 |
+
+**遗留收窄**：至本批，全部 E2E 套件在 main 上自持（不再依赖并行会话修复）。

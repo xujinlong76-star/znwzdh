@@ -3,10 +3,10 @@
  *
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { recordSearchChannels } from "../metrics.ts";
 import { refreshUserProfile } from "../profile-service.ts";
-import { badRequest } from "./shared.ts";
+import { badRequest, identityTrusted, requestIdentityOf } from "./shared.ts";
 
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
@@ -67,7 +67,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
     const facetFilter = clampFacets(parsed.data.facets);
     if (facetFilter.error) return badRequest(reply, "参数无效", facetFilter.error);
-    return runSearch(parsed.data, facetFilter.facets);
+    return runSearch(parsed.data, facetFilter.facets, req);
   });
 
   app.post("/api/search", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req, reply) => {
@@ -75,20 +75,59 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     if (!parsed.success) return badRequest(reply, "参数无效", parsed.error.issues);
     const facetFilter = clampFacets(parsed.data.facets);
     if (facetFilter.error) return badRequest(reply, "参数无效", facetFilter.error);
-    return runSearch(parsed.data, facetFilter.facets);
+    return runSearch(parsed.data, facetFilter.facets, req);
   });
 
-  async function runSearch(input: z.infer<typeof searchBody>, facets?: Record<string, string[]>) {
+  async function runSearch(
+    input: z.infer<typeof searchBody>,
+    facets?: Record<string, string[]>,
+    req?: FastifyRequest,
+  ) {
     // 个性化信号服务端解析：身份 -> resolveIdentity -> user_profiles -> personalize。
     const rawIdentity = input.userId ?? input.anonId ?? null;
     const identity = rawIdentity ? await ctx.repo.resolveIdentity(rawIdentity) : null;
     let personalizationEnabled = true;
     let searchHistoryEnabled = true;
+    let telemetryEnabled = true;
     if (identity) {
       const userSettings = await ctx.repo.getUserSettings(identity);
       personalizationEnabled = userSettings.personalizationEnabled;
       searchHistoryEnabled = userSettings.searchHistoryEnabled !== false;
+      telemetryEnabled = userSettings.telemetryEnabled !== false;
       if (personalizationEnabled) void refreshUserProfile(ctx, identity);
+    }
+
+    /**
+     * 事件归属身份：search / zero_result 两行要写进 events.identity。
+     *
+     * 为什么必须写：注销与导出都按这一列圈定范围（user-data.ts:148/248/285）。
+     * 此前这两条从不带身份 —— 实测本机库 141 行 search、4 行 zero_result 全部
+     * identity=NULL，于是用户「删除全部个人数据」删不掉自己的搜索行为，导出里
+     * 也看不见它（承诺比实现大），零结果榜也无法按人排重。
+     *
+     * 三条口径缺一不可：
+     *  1) 取法走 requestIdentityOf（与 preValidation 验签用的同一个 identityOf，
+     *     优先级 Header→Query→Body），不复用上面只看 Body/Query 的 rawIdentity：
+     *     两者不一致时后者是「没被背书过的自称」，写进可删除列等于给别人名下塞行。
+     *  2) 只有 identityTrusted 为真才归属（配了签名密钥时能走到这里的身份都已验签；
+     *     开放模式本来就可信），否则宁留 NULL。
+     *  3) 关掉遥测的用户不留身份 —— 与 /api/events 同一口径（telemetry.ts:78-86），
+     *     否则「关掉遥测」只关了一半。
+     */
+    let attributedIdentity: string | null = null;
+    if (req && identityTrusted(ctx, req as never)) {
+      const rawEventIdentity = requestIdentityOf(req as never);
+      if (rawEventIdentity) {
+        const canonical =
+          rawEventIdentity === rawIdentity ? identity : await ctx.repo.resolveIdentity(rawEventIdentity);
+        if (canonical) {
+          const optedOut =
+            canonical === identity
+              ? !telemetryEnabled
+              : (await ctx.repo.getUserSettings(canonical)).telemetryEnabled === false;
+          if (!optedOut) attributedIdentity = canonical;
+        }
+      }
     }
 
     let personalize = input.personalize;
@@ -131,13 +170,17 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     let relationHits: unknown[] = [];
     if (q) {
       if (isFirstPage) {
-        await ctx.repo.recordEvent("search", { query: q }).catch(() => undefined);
+        await ctx.repo
+          .recordEvent("search", { query: q, identity: attributedIdentity ?? undefined })
+          .catch(() => undefined);
       }
       if (q.length >= 2) {
         relationHits = await ctx.repo.findRelationsByQuery(q, 3).catch(() => []);
       }
       if (result.hits.length === 0 && isFirstPage) {
-        await ctx.repo.recordEvent("zero_result", { query: q }).catch(() => undefined);
+        await ctx.repo
+          .recordEvent("zero_result", { query: q, identity: attributedIdentity ?? undefined })
+          .catch(() => undefined);
         const [top, zero] = await Promise.all([
           ctx.repo.topQueries(180, 30),
           ctx.repo.zeroResultQueries(180, 30),

@@ -1,0 +1,11 @@
+# ESM 脚本必须用 LF 行尾。
+#
+# 本机 core.autocrlf=true，默认会在 checkout 时把所有文本文件转成 CRLF。
+# 而 CRLF 的 .mjs 被 vite 加载时会报 `SyntaxError: Invalid or unexpected token`，
+# **不带行号**、指向 importer 而非真凶，且 `node --check` 与 esbuild 都通过
+# （2026-10-25 实测，为此花了近 20 分钟）。
+#
+# 因此只对 .mjs/.mts 显式声明 LF（scripts/check-syntax.mjs 会检查这一点）。
+# 不把 *.ts 也纳入：.ts 走 esbuild，CRLF 无害，全仓重写行尾的收益不值那个风险。
+*.mjs text eol=lf
+*.mts text eol=lf

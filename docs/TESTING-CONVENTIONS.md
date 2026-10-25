@@ -173,6 +173,36 @@ node scripts/safe-commit.mjs --msg-file .m.txt --dry-run -- <path...>   # 只看
 **它解决不了的情况**：同一个文件里混着两个人的改动。那时要改设计绕开（例如把逻辑放到
 调用方一侧），**不要**用切 hunk 的方式提交半个文件——半成品进历史更难收拾。
 
+钩子在检测到「没走脚本」（`GIT_INDEX_FILE` 未设）时会打一行提示，提醒本次提交可能带上
+别人的暂存内容。它不是拦截——直接 `git commit` 在单人场景下完全正常。
+
+---
+
+## 4.7 行尾：`.mjs` 必须 LF（会被 vite 惩罚）
+
+本机 `core.autocrlf=true`，默认会把 checkout 出来的文本文件转成 CRLF。对 `.ts` 无害
+（走 esbuild），但**对 `.mjs` 致命**：
+
+```
+vite 加载 CRLF 的 .mjs →
+  SyntaxError: Invalid or unexpected token     ← 不带行号
+  指向 importer 而不是真凶
+而 node --check 通过、esbuild transform 通过   ← 两种常规自检都发现不了
+```
+
+2026-10-25 实测踩到，为此花了近 20 分钟（报错完全不提行尾）。
+
+三道防线：
+
+| 层 | 机制 |
+|---|---|
+| checkout | `.gitattributes` 声明 `*.mjs text eol=lf`——clone 出来就是 LF |
+| 本地门禁 | `check-syntax.mjs` 拒绝 CRLF 的 `.mjs`（默认扫 scripts、`--staged` 扫暂存、显式传参也查） |
+| 修复工具 | `node scripts/fix-line-endings.mjs [files...]` 一键转 LF（无参数时修 scripts 下所有） |
+
+`*` 只对 `.mjs`/`.mts` 声明 LF。**不要**顺手把 `*.ts` 也纳入——`.ts` 走 esbuild，
+CRLF 无害，而全仓重写行尾会制造一场没人想 review 的 diff。
+
 ---
 
 ## 5. 提交前的成本预算

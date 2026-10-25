@@ -309,9 +309,30 @@ describe("SQLite 集成：FTS5 + sqlite-vec + 混合检索", () => {
     const t = r.channelTimings!;
     expect(t.skippedSemantic).toBe(false);
     expect(t.semanticMs).toBeGreaterThanOrEqual(30);
-    expect(t.ftsMs).toBeLessThan(30);
-    expect(t.pinyinMs).toBeLessThan(30);
-    expect(t.exactMs).toBeLessThan(30);
+
+    /**
+     * 判据从「绝对值 < 30ms」改成「与基线的差值 < 30ms」。
+     *
+     * 原来的写法把「本机查一次要多久」当成了前提：高负载下 exactMs 实测 75ms
+     * （而 30ms 这个数字的本意是「必须小于注入的 40ms 等待」），于是这条断言
+     * 在 CI/并行开发时会随机假红——本轮就因为它在提交前被挡了一次，
+     * 单独复跑 68/68 又全绿。
+     *
+     * 差值判据与机器速度无关：自身慢，基线与慢版一起慢，差值仍接近 0；
+     * 而旧实现（把整批 await 同值记给三通道）会让差值 ≈ 40ms，照样被抓。
+     */
+    const baseEngine = new SearchEngine({ db, fts, vectors, embed: async () => rnd(99) });
+    const base = (await baseEngine.search({ q: "zzzznomatch", limit: 5 })).channelTimings!;
+    for (const [name, slowMs, baseMs] of [
+      ["fts", t.ftsMs, base.ftsMs],
+      ["pinyin", t.pinyinMs, base.pinyinMs],
+      ["exact", t.exactMs, base.exactMs],
+    ] as Array<[string, number, number]>) {
+      expect(
+        slowMs - baseMs,
+        `${name}Ms 不应包含 semantic 的等待（慢版 ${slowMs}ms vs 基线 ${baseMs}ms）`,
+      ).toBeLessThan(30);
+    }
   });
 
   it("类目过滤包含子类目", async () => {

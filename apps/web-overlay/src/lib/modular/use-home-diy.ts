@@ -386,7 +386,7 @@ export function useHomeDIY() {
   )
 
   const syncToCloudVault = useCallback(
-    (passphrase: string, expectedVersion?: number) => syncToCloudVaultPure(config, passphrase, expectedVersion),
+    (passphrase: string, expectedVersion: number) => syncToCloudVaultPure(config, passphrase, expectedVersion),
     [config],
   )
 

@@ -177,10 +177,16 @@ export interface CloudVaultSyncResult {
 export async function syncToCloudVault(
   config: HomeDIYConfig,
   passphrase: string,
-  expectedVersion?: number,
+  expectedVersion: number,
 ): Promise<CloudVaultSyncResult> {
   if (!passphrase || passphrase.length < 6) {
     return { success: false, error: '主密码长度至少需 6 位', code: 'passphrase_rejected' }
+  }
+  // 前置条件缺失时 PUT /api/vault/sync 的契约是「无条件覆盖」（兼容旧客户端），
+  // 所以这里的参数只能是明确的非负整数：0 表示「已确认云端没有备份」。
+  // 一旦放行为 undefined，多端场景就是静默丢掉别人那一版。
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+    return { success: false, error: '推送前需先与云端对表并取得版本号，本轮未发起写入', code: 'version_unknown' }
   }
   const encrypted = await exportEncryptedDIYConfig(config, passphrase)
   if (!encrypted) {
@@ -279,7 +285,8 @@ export async function syncFromCloudVault(
  * 「没有备份」和「没查到」是两件事：fetchCloudVault 走的是中枢客户端的降级兜底，
  * 网络故障与中枢 5xx 同样返回 null。旧实现把两者都报成 hasCloudVault:false，
  * 于是 UI 会在中枢挂掉时宣称「云端还没有你的备份」，用户据此重复推送。
- * 这里用降级回调把故障单独分成 check_failed，埋点才有可用的分母。
+ * 这里用降级回调把故障单独分成 check_failed，埋点才有可用的分母；
+ * 界面侧（徽章、删除区、推送引导块）自 run46 起同样按 code 分支，不再只看 hasCloudVault。
  */
 export async function checkCloudVaultStatus(): Promise<{
   hasCloudVault: boolean
@@ -318,6 +325,82 @@ export async function clearCloudVault(): Promise<CloudVaultClearResult> {
   const res = await deleteCloudVault(identity)
   if (!res.ok) return { kind: 'failed', status: res.status, error: res.error }
   return res.deleted ? { kind: 'deleted' } : { kind: 'absent' }
+}
+
+/**
+ * 推送前置条件：只有「查到有备份」和「查到确实没有」两种事实可以据此写入。
+ *
+ * 三种事实各自的做法不能混：
+ *  - has_vault + 有限版本号 → expectedVersion=version，服务端只在云端仍是这一版时才覆盖（等价 If-Match）；
+ *  - no_vault（真的没有）→ expectedVersion=0，第一份备份从 v1 起计；
+ *  - check_failed / no_identity（没查到）→ 拒绝本轮写入。
+ *
+ * 「没查到」为什么不能照旧折成 0：服务端版本从 1 起计，0 会被 409 挡下，所以不会静默覆盖，
+ * 但它换来的是假的「云端金库已被其它设备更新」冲突提示与假的 conflict 埋点，
+ * 用户据此反复推送、运营侧把中枢故障读成多端竞争。
+ *
+ * 真正能毁数据的是 hasCloudVault:true 配缺失的 version：三元表达式会算出 undefined，
+ * saveCloudVault 的 `if (typeof expectedVersion === 'number')` 因此不写 body.version，
+ * 而 PUT /api/vault/sync 对「不带前置条件」的契约就是无条件覆盖（routes/vault.ts 原文）。
+ * 所以版本号不可信同样拒绝，绝不放行成 undefined。
+ */
+export type VaultPushRefusalReason = 'status_check_failed' | 'identity_missing' | 'cloud_version_unknown'
+
+export type VaultPushPrecondition =
+  | { kind: 'ready'; expectedVersion: number }
+  | { kind: 'refused'; reason: VaultPushRefusalReason }
+
+export function resolveVaultPushPrecondition(status: {
+  hasCloudVault: boolean
+  version?: number
+  code: VaultResultCode
+}): VaultPushPrecondition {
+  if (status.code === 'no_identity') return { kind: 'refused', reason: 'identity_missing' }
+  if (status.code === 'check_failed') return { kind: 'refused', reason: 'status_check_failed' }
+  if (status.hasCloudVault) {
+    const version = status.version
+    if (typeof version !== 'number' || !Number.isInteger(version) || version < 0) {
+      return { kind: 'refused', reason: 'cloud_version_unknown' }
+    }
+    return { kind: 'ready', expectedVersion: version }
+  }
+  if (status.code !== 'no_vault') return { kind: 'refused', reason: 'status_check_failed' }
+  return { kind: 'ready', expectedVersion: 0 }
+}
+
+/** 拒绝原因 → 有界埋点码（词表两侧一致，服务端只认长度上限） */
+export function vaultPushRefusalCode(reason: VaultPushRefusalReason): VaultResultCode {
+  if (reason === 'identity_missing') return 'no_identity'
+  if (reason === 'cloud_version_unknown') return 'version_unknown'
+  return 'check_failed'
+}
+
+/**
+ * 拒绝原因 → 界面文案（WCAG 3.3.1 说清哪一步出错 + 3.3.3 给出纠正做法）。
+ *
+ * 三条的纠正动作各不相同：故障是重试对表、身份是查本地存储、版本未知是先拉取，
+ * 合成一句「同步失败」等于把三种人引向同一个死胡同。
+ */
+export function vaultPushRefusalNotice(reason: VaultPushRefusalReason): { title: string; description: string } {
+  if (reason === 'identity_missing') {
+    return {
+      title: '没取到本机身份，本轮未写入云端',
+      description:
+        '中枢按身份定位金库，取不到身份时不能确定要覆盖谁的备份，因此本轮没有发起任何写入。隐私模式或禁用本地存储会导致身份丢失；恢复后点「重试对表」再同步。',
+    }
+  }
+  if (reason === 'cloud_version_unknown') {
+    return {
+      title: '云端版本号缺失，本轮未写入云端',
+      description:
+        '对表查到云端有备份，但中枢没有回传版本号。缺版本号的写入请求等于「无条件覆盖」，会静默丢掉其它设备刚保存的那一版，因此本轮没有发起写入。先点「从云端拉取解密」确认内容，再重新对表同步。',
+    }
+  }
+  return {
+    title: '云端状态没查到，本轮未写入云端',
+    description:
+      '这次对表失败（中枢不可达或返回异常），因此无法确定云端是否已有备份。为避免覆盖别人的内容，本轮没有发起写入；本机排版未受影响。稍后点「重试对表」再同步。',
+  }
 }
 
 /**

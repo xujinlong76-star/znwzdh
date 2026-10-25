@@ -28,9 +28,11 @@ const {
   checkCloudVaultStatus,
   clearCloudVault,
   importEncryptedDIYConfig,
+  resolveVaultPushPrecondition,
   syncToCloudVault,
   syncFromCloudVault,
   vaultPullOutcome,
+  vaultPushRefusalCode,
   vaultStatusOutcome,
 } = await import('../src/lib/modular/home-diy-io');
 
@@ -281,6 +283,61 @@ describe('推送/拉取/删除的分支码', () => {
   });
 });
 
+describe('推送前置条件：三种不可信事实一律拒绝发起写入（run46）', () => {
+  it('查到有备份 → 用云端版本号做前置条件（等价 If-Match）', () => {
+    expect(resolveVaultPushPrecondition({ hasCloudVault: true, version: 4, code: 'has_vault' })).toEqual({
+      kind: 'ready',
+      expectedVersion: 4,
+    });
+  });
+
+  it('确认云端没有备份 → expectedVersion=0 照写不误（否则第一份备份永远建不起来）', () => {
+    expect(resolveVaultPushPrecondition({ hasCloudVault: false, code: 'no_vault' })).toEqual({
+      kind: 'ready',
+      expectedVersion: 0,
+    });
+  });
+
+  it('对表失败（check_failed）⇒ 拒绝：旧实现折成 0，换来的是假的「已被其它设备更新」冲突', () => {
+    expect(resolveVaultPushPrecondition({ hasCloudVault: false, code: 'check_failed' })).toEqual({
+      kind: 'refused',
+      reason: 'status_check_failed',
+    });
+  });
+
+  it('取不到身份 ⇒ 拒绝，且与对表失败分成两个原因（纠正动作不同）', () => {
+    expect(resolveVaultPushPrecondition({ hasCloudVault: false, code: 'no_identity' })).toEqual({
+      kind: 'refused',
+      reason: 'identity_missing',
+    });
+  });
+
+  it('有备份但版本号缺失/非整数 ⇒ 拒绝：这是唯一能真正毁数据的路径', () => {
+    // hasCloudVault:true + version:undefined 会让 expected 塌成 undefined，
+    // 请求体因此不带 version，而中枢对「不带前置条件」的契约就是无条件覆盖。
+    expect(resolveVaultPushPrecondition({ hasCloudVault: true, code: 'has_vault' })).toEqual({
+      kind: 'refused',
+      reason: 'cloud_version_unknown',
+    });
+    expect(resolveVaultPushPrecondition({ hasCloudVault: true, version: NaN, code: 'has_vault' }).kind).toBe('refused');
+    expect(resolveVaultPushPrecondition({ hasCloudVault: true, version: 2.5, code: 'has_vault' }).kind).toBe('refused');
+  });
+
+  it('拒绝原因各自映射到一个有界埋点码（可发现性：故障不进冲突分母）', () => {
+    expect(vaultPushRefusalCode('status_check_failed')).toBe('check_failed');
+    expect(vaultPushRefusalCode('identity_missing')).toBe('no_identity');
+    expect(vaultPushRefusalCode('cloud_version_unknown')).toBe('version_unknown');
+  });
+
+  it('前置条件不是有限数字时，syncToCloudVault 一个 PUT 都不发', async () => {
+    stubFetch(() => ({ status: 200, body: { ok: true, version: 9 } }));
+    const res = await syncToCloudVault({ version: 3, customCategories: [] } as any, 'sup3rsecret', undefined as never);
+    expect(res.success).toBe(false);
+    expect(res.code).toBe('version_unknown');
+    expect(vaultCalls.filter((c) => c.method === 'PUT')).toHaveLength(0);
+  });
+});
+
 describe('弹窗上报点（源码级钉子）', () => {
   const dialog = readFileSync(overlayFile('src/components/home-diy-backup-dialog.tsx'), 'utf8');
 
@@ -316,5 +373,61 @@ describe('弹窗上报点（源码级钉子）', () => {
     for (const call of dialog.matchAll(/trackVaultEvent\(([^)]*)\)/g)) {
       expect(call[1]).not.toMatch(/payload|passphrase|encrypted|cipher/i);
     }
+  });
+
+  it('推送的 expected 只能来自唯一口径，旧的「hasCloudVault ? version : 0」不得回来', () => {
+    const uploadBlock = dialog.slice(dialog.indexOf('const handleCloudUpload'), dialog.indexOf('const handleRetryStatusCheck'));
+    expect(uploadBlock).toContain('resolveVaultPushPrecondition(before)');
+    expect(uploadBlock).not.toContain('before.hasCloudVault ? before.version : 0');
+  });
+
+  it('被拒绝时不发写入：拒绝分支在 syncToCloudVault 之前 return', () => {
+    const uploadBlock = dialog.slice(dialog.indexOf('const handleCloudUpload'), dialog.indexOf('const handleRetryStatusCheck'));
+    const refusalAt = uploadBlock.indexOf("precondition.kind === 'refused'");
+    const writeAt = uploadBlock.indexOf('await syncToCloudVault');
+    expect(refusalAt).toBeGreaterThanOrEqual(0);
+    expect(writeAt).toBeGreaterThan(refusalAt);
+    expect(uploadBlock.slice(refusalAt, writeAt)).toContain('return');
+  });
+
+  it('对表结果不可信时给出具体纠正动作，并如实说明「本轮未写入云端」', () => {
+    const io = readFileSync(overlayFile('src/lib/modular/home-diy-io.ts'), 'utf8');
+    // 钉整段 JSX 而不是裸串：文件里的注释也写着 role="alert"，只查串会被注释顶掉
+    expect(dialog).toContain('<div role="alert" className="rounded-lg border border-amber-500/35');
+    expect(dialog).toContain('<span>重试对表</span>');
+    // 冲突引导块保持静态 role="status"：同一个节点不得在 status/alert 之间切换（SC 4.1.3）
+    expect(dialog).toContain('role="status"');
+    // 三条拒绝文案都必须先说清「没写」，否则用户以为已经上云（run43/45 同一条铁律）
+    for (const notice of io.matchAll(/title:\s*'([^']*本轮未写入云端)'/g)) {
+      expect(notice[1]).toContain('本轮未写入云端');
+    }
+    expect([...io.matchAll(/title:\s*'([^']*本轮未写入云端)'/g)].length).toBe(3);
+  });
+
+  it('徽章里 check_failed 那一支不得断言「没有备份」', () => {
+    const badge = dialog.slice(dialog.indexOf('const cloudBadgeLabel'), dialog.indexOf('const cloudAbsentHint'));
+    const at = badge.indexOf("code === 'check_failed'");
+    expect(at, '徽章已退回只看 hasCloudVault').toBeGreaterThanOrEqual(0);
+    expect(badge.slice(at, at + 90)).toContain('云端状态未知');
+    expect(badge.slice(at, at + 90)).not.toContain('云端暂无备份');
+  });
+
+  it('删除成功/本来没有 都要落 code=no_vault，否则删完反倒报「状态未知」', () => {
+    const writes = dialog.match(/setCloudVaultMeta\(\{ hasCloudVault: false[^)]*\}\)/g) ?? [];
+    expect(writes.length, '删除后的状态回填处数不符').toBe(2);
+    for (const w of writes) {
+      expect(w, `未对表就断言云端没有备份：${w}`).toContain("code: 'no_vault'");
+    }
+  });
+
+  it('「云端暂无备份」这类肯定句必须排在 code=no_vault 判定之后（否则就是无条件谎报）', () => {
+    const derived = dialog.slice(dialog.indexOf('const cloudVaultPresent'), dialog.indexOf('  return ('));
+    const gate = derived.indexOf("code === 'no_vault'");
+    expect(gate, '未先确认「云端真的没有」就不得断言没有备份').toBeGreaterThanOrEqual(0);
+    for (const m of [...derived.matchAll(/云端暂无备份/g)]) {
+      expect(m.index, '「云端暂无备份」出现在 no_vault 判定之前').toBeGreaterThan(gate);
+    }
+    expect(derived).toContain('云端状态未知');
+    expect(derived).toContain('尚未与云端对表');
   });
 });

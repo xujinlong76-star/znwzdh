@@ -21,6 +21,7 @@ import {
   Copy,
   Download,
   Lock,
+  RefreshCw,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
@@ -56,8 +57,15 @@ import type {
   CloudVaultConflictKind,
   CloudVaultSyncResult,
   HomeDiyImportResult,
+  VaultPushRefusalReason,
 } from '@/lib/modular/home-diy-io'
-import { vaultPullOutcome, vaultStatusOutcome } from '@/lib/modular/home-diy-io'
+import {
+  resolveVaultPushPrecondition,
+  vaultPullOutcome,
+  vaultPushRefusalCode,
+  vaultPushRefusalNotice,
+  vaultStatusOutcome,
+} from '@/lib/modular/home-diy-io'
 import { trackVaultEvent, type VaultResultCode } from '@/lib/navhub-api'
 import { cn } from '@/lib/utils'
 
@@ -70,7 +78,7 @@ export interface HomeDIYBackupDialogProps {
   importDIYConfig: (json: string) => HomeDiyImportResult
   exportEncryptedDIYConfig: (passphrase: string) => Promise<string>
   importEncryptedDIYConfig: (json: string, passphrase: string) => Promise<HomeDiyImportResult>
-  syncToCloudVault: (passphrase: string, expectedVersion?: number) => Promise<CloudVaultSyncResult>
+  syncToCloudVault: (passphrase: string, expectedVersion: number) => Promise<CloudVaultSyncResult>
   syncFromCloudVault: (
     passphrase: string,
   ) => Promise<{
@@ -123,6 +131,12 @@ export function HomeDIYBackupDialog({
     kind: CloudVaultConflictKind
     currentVersion: number | null
   } | null>(null)
+  /**
+   * 本轮推送被拒绝的原因（对表没查到 / 没身份 / 云端版本号缺失）。
+   * 只在用户点了「加密同步至云端」之后出现：后台自动对表失败由徽章如实显示，
+   * 不该在没有人操作时抢读屏（role="alert" 是强提醒）。
+   */
+  const [vaultPushRefusal, setVaultPushRefusal] = useState<VaultPushRefusalReason | null>(null)
   const [importJsonText, setImportJsonText] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -136,6 +150,7 @@ export function HomeDIYBackupDialog({
         trackVaultEvent('vault_status', vaultStatusOutcome(meta.code), meta.code)
         // 重新对表后，上一轮的冲突引导就过期了：让用户基于最新版本号再决定
         setVaultConflict(null)
+        setVaultPushRefusal(null)
       })
     }
   }, [open, backupTab, checkCloudVaultStatus])
@@ -144,6 +159,11 @@ export function HomeDIYBackupDialog({
    * 推送金库。expectedOverride 只给「以 v0 重建」这条引导用：
    * 云端已被清除时，先查状态得到 hasCloudVault:false 本来就会算出 0，
    * 但显式传入可避免这里的推断再次吞掉服务端已经说清的那个动作。
+   *
+   * 其余情况一律先与云端对表，再由 resolveVaultPushPrecondition 判定本轮能否写入：
+   * 「没查到」「没身份」「有备份但版本号缺失」三种都拒绝发起写入。
+   * 前两种只是把故障伪装成冲突（用户会反复推送），第三种更糟：请求体不带 version 时
+   * 中枢的契约就是无条件覆盖，别人的那一版会静默消失。
    */
   const handleCloudUpload = async (expectedOverride?: number) => {
     if (!vaultPassphrase.trim() || vaultPassphrase.length < 6) {
@@ -159,8 +179,21 @@ export function HomeDIYBackupDialog({
       // 先取云端当前版本，作为本次写入的前置条件：多端同时编辑时避免静默覆盖
       const before = await checkCloudVaultStatus()
       setCloudVaultMeta(before)
-      const expected = expectedOverride ?? (before.hasCloudVault ? before.version : 0)
-      const res = await syncToCloudVault(vaultPassphrase.trim(), expected)
+      const precondition =
+        typeof expectedOverride === 'number'
+          ? ({ kind: 'ready', expectedVersion: expectedOverride } as const)
+          : resolveVaultPushPrecondition(before)
+      if (precondition.kind === 'refused') {
+        setVaultPushRefusal(precondition.reason)
+        // 用 failed + 原因码，不新开 outcome：词表两侧集合被契约用例钉成完全相等，
+        // 为一个客户端分支去扩服务端枚举不值得；成因本来就由 code 承载。
+        trackVaultEvent('vault_sync', 'failed', vaultPushRefusalCode(precondition.reason))
+        const notice = vaultPushRefusalNotice(precondition.reason)
+        toast({ title: notice.title, description: notice.description, variant: 'destructive' })
+        return
+      }
+      setVaultPushRefusal(null)
+      const res = await syncToCloudVault(vaultPassphrase.trim(), precondition.expectedVersion)
       if (res.success) {
         setVaultConflict(null)
         trackVaultEvent('vault_sync', 'success')
@@ -190,6 +223,33 @@ export function HomeDIYBackupDialog({
   }
 
   /**
+   * 「重试对表」：本轮推送被拒绝时唯一的纠正动作。
+   *
+   * 只重新确认云端事实并据此刷新引导，不报 vault_status —— 那个分母按「进入面板」计一次，
+   * 每次点重试都上报会把同一个人重复计数（同上一条钉子）。
+   */
+  const handleRetryStatusCheck = async () => {
+    const meta = await checkCloudVaultStatus()
+    setCloudVaultMeta(meta)
+    const precondition = resolveVaultPushPrecondition(meta)
+    if (precondition.kind === 'refused') {
+      setVaultPushRefusal(precondition.reason)
+      const notice = vaultPushRefusalNotice(precondition.reason)
+      toast({ title: notice.title, description: notice.description, variant: 'destructive' })
+      return
+    }
+    setVaultPushRefusal(null)
+    toast({
+      title: precondition.expectedVersion === 0 ? '已确认云端没有备份' : `已确认云端金库 v${precondition.expectedVersion}`,
+      description:
+        precondition.expectedVersion === 0
+          ? '现在点「加密同步至云端」会建立第一份备份（新版本从 v1 起计）。'
+          : '现在点「加密同步至云端」会以 v' + precondition.expectedVersion + ' 作为前置条件：云端若被别的设备改过，会提示冲突而不是覆盖。',
+    })
+  }
+
+
+  /**
    * 永久删除中枢云端金库。
    *
    * 回执按四种事实分别措辞：把「云端本来没有」说成「已删除」，用户会以为自己
@@ -203,14 +263,14 @@ export function HomeDIYBackupDialog({
     try {
       const res = await clearCloudVault()
       if (res.kind === 'deleted') {
-        setCloudVaultMeta({ hasCloudVault: false })
+        setCloudVaultMeta({ hasCloudVault: false, code: 'no_vault' })
         trackVaultEvent('vault_delete', 'deleted')
         toast({
           title: '🗑️ 云端金库已永久删除',
           description: '中枢上那份端侧加密的 DIY 备份已不存在。本机排版未受影响；需要重新漫游时点「加密同步至云端」即可重建。',
         })
       } else if (res.kind === 'absent') {
-        setCloudVaultMeta({ hasCloudVault: false })
+        setCloudVaultMeta({ hasCloudVault: false, code: 'no_vault' })
         trackVaultEvent('vault_delete', 'absent')
         toast({
           title: '云端本来就没有备份',
@@ -417,6 +477,34 @@ export function HomeDIYBackupDialog({
     reader.readAsText(file)
   }
 
+  /**
+   * 云端事实 → 徽章文案（run46）。
+   *
+   * 四种状态各自成句：未对表 / 有备份 / 确实没有 / 没查到。旧实现只看 hasCloudVault，
+   * 于是中枢故障时说「云端暂无备份」，连「还没查过」也说「云端暂无备份」——
+   * 用户据此判定「再推一次就好」，等于把故障读成自己的数据不存在。
+   */
+  const cloudVaultPresent = !!cloudVaultMeta?.hasCloudVault
+  const cloudVaultKnownAbsent = !!cloudVaultMeta && !cloudVaultMeta.hasCloudVault && cloudVaultMeta.code === 'no_vault'
+  const cloudBadgeLabel = !cloudVaultMeta
+    ? '尚未与云端对表'
+    : cloudVaultPresent
+      ? typeof cloudVaultMeta.version === 'number'
+        ? `云端金库 v${cloudVaultMeta.version}`
+        : '云端有备份（版本号未知）'
+      : cloudVaultMeta.code === 'check_failed'
+        ? '云端状态未知：对表失败'
+        : cloudVaultMeta.code === 'no_identity'
+          ? '未取到本机身份'
+          : '云端暂无备份'
+  const cloudAbsentHint = cloudVaultKnownAbsent
+    ? '云端暂无备份：设置主密码后点「加密同步至云端」建立第一份，之后这里会出现删除入口。'
+    : cloudVaultMeta === null
+      ? '还没与云端对过表：切到本页时会自动对表，确认云端确实没有备份后，这里会给出建立第一份的引导。'
+      : cloudVaultMeta.code === 'no_identity'
+        ? '没取到本机身份：中枢按身份定位金库，取不到身份时无法确定要删哪一份，因此删除入口暂不显示。隐私模式或禁用本地存储会导致身份丢失；云端内容（若有）未被改动。'
+        : '云端状态未知：这次对表没成功，因此删除入口暂不显示。云端那份备份（如果有）未被改动；点「加密同步至云端」会先重新对表。'
+
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -543,13 +631,20 @@ export function HomeDIYBackupDialog({
                   <Cloud className="w-4 h-4 text-violet-500" />
                   <span>NavHub 中枢云端金库同步</span>
                 </div>
-                {cloudVaultMeta?.hasCloudVault ? (
+                {cloudVaultPresent ? (
                   <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-medium">
-                    云端金库 v{cloudVaultMeta.version}
+                    {cloudBadgeLabel}
                   </span>
                 ) : (
-                  <span className="text-[10px] text-muted-foreground">
-                    云端暂无备份
+                  <span
+                    className={cn(
+                      'text-[11px]',
+                      cloudVaultKnownAbsent || cloudVaultMeta === null
+                        ? 'text-muted-foreground'
+                        : 'text-amber-600 dark:text-amber-400',
+                    )}
+                  >
+                    {cloudBadgeLabel}
                   </span>
                 )}
               </div>
@@ -634,7 +729,38 @@ export function HomeDIYBackupDialog({
                 </div>
               ) : null}
 
-              {cloudVaultMeta?.hasCloudVault ? (
+              {vaultPushRefusal ? (
+                <div role="alert" className="rounded-lg border border-amber-500/35 bg-amber-500/5 p-2.5 space-y-2">
+                  <div className="flex items-start gap-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                    <p className="text-[11px] leading-relaxed text-foreground min-w-0">
+                      {vaultPushRefusalNotice(vaultPushRefusal).description}
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleRetryStatusCheck()}
+                      disabled={isSyncingCloud}
+                      className="flex-1 text-xs gap-1.5 border-amber-500/35 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>重试对表</span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setVaultPushRefusal(null)}
+                      className="flex-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      稍后处理
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {cloudVaultPresent ? (
                 <Button
                   size="sm"
                   variant="outline"
@@ -648,7 +774,7 @@ export function HomeDIYBackupDialog({
                 </Button>
               ) : (
                 <p className="text-[11px] leading-relaxed text-muted-foreground pt-0.5">
-                  云端暂无备份：设置主密码后点「加密同步至云端」建立第一份，之后这里会出现删除入口。
+                  {cloudAbsentHint}
                 </p>
               )}
             </div>

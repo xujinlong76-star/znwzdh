@@ -1928,6 +1928,7 @@ export const VAULT_RESULT_CODES = [
   'validation_failed',
   'invalid_json',
   'no_identity',
+  'version_unknown',
 ] as const
 
 export type VaultTelemetryKind = (typeof VAULT_TELEMETRY_KINDS)[number]

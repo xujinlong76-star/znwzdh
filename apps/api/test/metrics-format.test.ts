@@ -271,6 +271,7 @@ describe("Prometheus 指标格式", () => {
       navhub_search_channel_avg_ms gauge
       navhub_search_planner_total counter
       navhub_search_semantic_skipped_total counter
+      navhub_search_suggestions_degraded_total counter
       navhub_search_write_failures_total counter
       navhub_sites gauge
       navhub_tags_total gauge

@@ -260,6 +260,25 @@ export function getSearchWriteFailureStats(): Record<SearchWriteComponent, numbe
   };
 }
 
+/* ---------------- 检索建议读失败观测（run59） ---------------- */
+
+/**
+ * 建议读侧（topQueries / zeroResultQueries）失败次数。
+ *
+ * 与写失败分开：读失败不改变检索命中，只是建议区退化为空；混进
+ * search_write_failures_total 会让「数据没写进去」与「建议没读出来」
+ * 同形，而两者的排查方向完全不同。无标签，恒导出 0。
+ */
+let searchSuggestionsDegraded = 0;
+
+export function recordSearchSuggestionsDegraded(): void {
+  searchSuggestionsDegraded++;
+}
+
+export function getSearchSuggestionsDegradedCount(): number {
+  return searchSuggestionsDegraded;
+}
+
 /** DB 统计加重询，避免 Prometheus 高频抓取把 COUNT 打满（5s 内复用；缓存为模块级，跨请求生效） */
 let statsCache: { at: number; value: Awaited<ReturnType<AppContext["repo"]["stats"]>> } | null = null;
 async function cachedStats(ctx: AppContext) {
@@ -353,6 +372,14 @@ export async function renderMetrics(ctx: AppContext): Promise<string> {
     "检索写入失败次数（事件/零结果/历史/通道观测；失败≠空，主链路已降级继续）",
     "counter",
     SEARCH_WRITE_COMPONENTS.map((c) => `navhub_search_write_failures_total{component="${c}"} ${writeFailures[c]}`),
+  );
+
+  // 检索建议读失败：独立于写失败；恒导出 0，区分「没有降级」与「序列不存在」
+  metric(
+    "navhub_search_suggestions_degraded_total",
+    "搜索建议读失败降级次数（建议区为空，检索命中不受影响）",
+    "counter",
+    [`navhub_search_suggestions_degraded_total ${getSearchSuggestionsDegradedCount()}`],
   );
 
   return out.join("\n") + "\n";

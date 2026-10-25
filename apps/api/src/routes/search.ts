@@ -5,7 +5,7 @@
  */
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
-import { recordSearchChannels, recordSearchWriteFailure } from "../metrics.ts";
+import { recordSearchChannels, recordSearchSuggestionsDegraded, recordSearchWriteFailure } from "../metrics.ts";
 import { refreshUserProfile } from "../profile-service.ts";
 import { badRequest, clampFacets, FACET_MAX_JSON_LENGTH, identityTrusted, requestIdentityOf } from "./shared.ts";
 
@@ -174,6 +174,8 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     let suggestions: string[] = [];
     let popular: string[] = [];
     let relationHits: unknown[] = [];
+    /** 建议读侧失败：hits 已经算出，不能因为「附加信息」读不出来而整单 5xx */
+    let suggestionsDegraded = false;
     if (q) {
       if (isFirstPage && !isProbe) {
         await ctx.repo
@@ -191,10 +193,17 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             .recordEvent("zero_result", { query: q, identity: attributedIdentity ?? undefined })
             .catch(() => recordSearchWriteFailure("event_zero_result"));
         }
-        const [top, zero] = await Promise.all([
+        // 建议是附加信息：任一读失败都不该连坐已经算出的 hits（此前 Promise.all
+        // 会把一次「无结果」变成 500）。两读各自降级为空，并用独立 counter 留痕——
+        // 与写入失败分开，否则「没写进去」和「没读出来」在运维面上同形。
+        const [topRead, zeroRead] = await Promise.allSettled([
           ctx.repo.topQueries(180, 30),
           ctx.repo.zeroResultQueries(180, 30),
         ]);
+        suggestionsDegraded = topRead.status === "rejected" || zeroRead.status === "rejected";
+        if (suggestionsDegraded) recordSearchSuggestionsDegraded();
+        const top = topRead.status === "fulfilled" ? topRead.value : [];
+        const zero = zeroRead.status === "fulfilled" ? zeroRead.value : [];
         const zeroSet = new Set(zero.map((z) => z.query));
         suggestions = top.filter((t) => !zeroSet.has(t.query) && t.query !== q).slice(0, 5).map((t) => t.query);
         popular = top.filter((t) => !zeroSet.has(t.query)).slice(0, 8).map((t) => t.query);
@@ -208,6 +217,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       hits,
       items: hits,
       ...(result.hits.length === 0 && q && isFirstPage ? { suggestions, popular } : {}),
+      ...(suggestionsDegraded ? { suggestionsDegraded: true } : {}),
       ...(relationHits.length > 0 ? { relationHits } : {}),
     };
   }

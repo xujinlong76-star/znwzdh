@@ -11,22 +11,14 @@
  * 5. 一键直通插件市场：调用 /api/plugins 自动建立作者归属并提交上架审核。
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
-import { safeHref } from '@/lib/safe-url'
-import Link from 'next/link'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   generateAiPlugin,
   publishPlugin,
@@ -35,51 +27,30 @@ import {
   autoFixPlugin,
   checkPluginUrls,
   type HubPluginItem,
-  type HubPluginAuditReport,
+  type HubPluginAuditReport
 } from '@/lib/navhub-api'
 import { AuditDimensionTile } from './audit-dimension-tile'
-import {
-  type PluginKind,
-  type PluginManifest,
-  type SitePackPayload,
-  type ThemePayload,
-  type SearchPackPayload,
-  type WorkspacePresetPayload,
-  type BundlePayload,
-  THEME_ACCENTS,
-} from '@/lib/plugins/plugin-manifest'
-import { copyText } from '@/lib/clipboard'
+import { type PluginKind, type PluginManifest } from '@/lib/plugins/plugin-manifest'
 import {
   Sparkles,
   Send,
   Loader2,
-  CheckCircle2,
-  AlertCircle,
-  ExternalLink,
-  Copy,
   Download,
-  Search,
-  Globe,
-  Palette,
-  Layers,
   FileCode2,
   Activity,
-  RotateCcw,
   Sliders,
   Wand2,
   Eye,
   ArrowRight,
   ShieldCheck,
-  Check,
-  Info,
-  GitCompare,
-  Plus,
-  Minus,
-  Filter,
-  Code2,
+  Check
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { applyMetaEdits, computeManifestDiff, extractManifestUrls } from '@/lib/plugins/studio-derived'
+import { StudioSandboxPanel } from './studio-sandbox-panel'
+import { StudioJsonPanel } from './studio-json-panel'
+import { StudioHealthPanel } from './studio-health-panel'
 
 export interface AiPluginStudioModalProps {
   open: boolean
@@ -119,7 +90,7 @@ export function AiPluginStudioModal({
 
   // 生成产物与思维链状态
   const [manifest, setManifest] = useState<PluginManifest | null>(initialManifest || null)
-  const [rationale, setRationale] = useState('')
+  const [, setRationale] = useState('')
   const [reasoningContent, setReasoningContent] = useState<string | undefined>()
   const [generationModel, setGenerationModel] = useState<string | null>(null)
   const [latencyMs, setLatencyMs] = useState<number | null>(null)
@@ -148,7 +119,7 @@ export function AiPluginStudioModal({
   const [preAuditing, setPreAuditing] = useState(false)
   const [preAuditReport, setPreAuditReport] = useState<HubPluginAuditReport | null>(null)
   const [autoFixing, setAutoFixing] = useState(false)
-  const [autoFixLogs, setAutoFixLogs] = useState<string[]>([])
+  const [, setAutoFixLogs] = useState<string[]>([])
 
   // 提交发布状态
   const [publishing, setPublishing] = useState(false)
@@ -210,67 +181,11 @@ export function AiPluginStudioModal({
     toast.success('✨ 提示词已优化扩写！结构、分类与规范已全方位补强。')
   }
 
-  // 计算版本前后变更清单 (Diff Inspector)
-  const manifestDiff = useMemo(() => {
-    if (!manifest || !previousManifest) return null
-
-    const prevSites: Array<{ title: string; url: string; category?: string }> =
-      previousManifest.kind === 'site-pack' ? (previousManifest.payload as SitePackPayload).sites || [] : []
-    const currSites: Array<{ title: string; url: string; category?: string }> =
-      manifest.kind === 'site-pack' ? (manifest.payload as SitePackPayload).sites || [] : []
-
-    const prevSiteMap = new Map(prevSites.map((s) => [s.url.trim().toLowerCase(), s]))
-    const currSiteMap = new Map(currSites.map((s) => [s.url.trim().toLowerCase(), s]))
-
-    const addedSites = currSites.filter((s) => !prevSiteMap.has(s.url.trim().toLowerCase()))
-    const removedSites = prevSites.filter((s) => !currSiteMap.has(s.url.trim().toLowerCase()))
-
-    const prevEngines =
-      previousManifest.kind === 'search-pack' ? (previousManifest.payload as SearchPackPayload).engines || [] : []
-    const currEngines =
-      manifest.kind === 'search-pack' ? (manifest.payload as SearchPackPayload).engines || [] : []
-    const prevEngPrefixes = new Set(prevEngines.map((e) => e.prefix))
-    const currEngPrefixes = new Set(currEngines.map((e) => e.prefix))
-    const addedEngines = currEngines.filter((e) => !prevEngPrefixes.has(e.prefix))
-    const removedEngines = prevEngines.filter((e) => !currEngPrefixes.has(e.prefix))
-
-    const prevTags = new Set(previousManifest.tags || [])
-    const currTags = new Set(manifest.tags || [])
-    const addedTags = (manifest.tags || []).filter((t) => !prevTags.has(t))
-    const removedTags = (previousManifest.tags || []).filter((t) => !currTags.has(t))
-
-    const versionChange =
-      previousManifest.version !== manifest.version
-        ? { from: previousManifest.version, to: manifest.version }
-        : undefined
-    const nameChange =
-      previousManifest.name !== manifest.name
-        ? { from: previousManifest.name, to: manifest.name }
-        : undefined
-
-    const hasChanges = Boolean(
-      addedSites.length > 0 ||
-        removedSites.length > 0 ||
-        addedEngines.length > 0 ||
-        removedEngines.length > 0 ||
-        addedTags.length > 0 ||
-        removedTags.length > 0 ||
-        versionChange ||
-        nameChange
-    )
-
-    return {
-      hasChanges,
-      addedSites,
-      removedSites,
-      addedEngines,
-      removedEngines,
-      addedTags,
-      removedTags,
-      versionChange,
-      nameChange,
-    }
-  }, [manifest, previousManifest])
+  // 计算版本前后变更清单 (Diff Inspector)：纯逻辑已抽到 studio-derived（可单测）
+  const manifestDiff = useMemo(
+    () => computeManifestDiff(previousManifest, manifest),
+    [manifest, previousManifest],
+  )
 
   // 执行生成（首次或多轮增量）
   const handleGenerate = async (customPrompt?: string, targetKind?: PluginKind | 'auto') => {
@@ -334,45 +249,20 @@ export function AiPluginStudioModal({
   const handleApplyMetaEdits = () => {
     if (!manifest) return
     setPreviousManifest(manifest)
-    const updated: PluginManifest = {
-      ...manifest,
-      name: editName.trim() || manifest.name,
-      description: editDescription.trim(),
-      author: editAuthor.trim() || manifest.author,
-      version: editVersion.trim() || manifest.version,
-      tags: editTags
-        .split(/[,，\s]+/)
-        .map((t) => t.trim())
-        .filter(Boolean),
-    }
-    setManifest(updated)
+    setManifest(
+      applyMetaEdits(manifest, {
+        name: editName,
+        description: editDescription,
+        author: editAuthor,
+        version: editVersion,
+        tags: editTags,
+      }),
+    )
     toast.success('元数据已更新')
   }
 
-  // 提取清单内所有外部 URL
-  const extractedUrls = useMemo(() => {
-    if (!manifest) return []
-    const urls: string[] = []
-    if (manifest.kind === 'site-pack') {
-      const payload = manifest.payload as SitePackPayload
-      if (Array.isArray(payload.sites)) {
-        for (const s of payload.sites) {
-          if (s.url) urls.push(s.url)
-        }
-      }
-    } else if (manifest.kind === 'search-pack') {
-      const payload = manifest.payload as SearchPackPayload
-      if (Array.isArray(payload.engines)) {
-        for (const e of payload.engines) {
-          if (e.searchUrl) {
-            // 将 {q} 替换为测试词后提取域名检测
-            urls.push(e.searchUrl.replace(/\{q\}/g, 'navhub'))
-          }
-        }
-      }
-    }
-    return Array.from(new Set(urls)).slice(0, 30)
-  }, [manifest])
+  // 探活目标提取：纯逻辑已抽到 studio-derived（去重、{q} 替换、30 条封顶）
+  const extractedUrls = useMemo(() => extractManifestUrls(manifest), [manifest])
 
   // 执行一键死链体检
   const handleCheckUrls = async () => {
@@ -857,680 +747,41 @@ export function AiPluginStudioModal({
                 </div>
               )}
 
+              {/* Tab 1-3：三个面板已拆出（见 ./studio-*-panel.tsx），门控条件保持不变 */}
               {!generating && manifest && activeTab === 'sandbox' && (
-                <div className="space-y-5">
-                  {/* 插件头部展示卡 */}
-                  <div className="p-4 rounded-xl border border-border bg-card shadow-sm space-y-2">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="text-3xl p-2 rounded-xl bg-muted/50 border border-border/80">
-                          {manifest.icon || '📦'}
-                        </span>
-                        <div>
-                          <h3 className="text-base font-bold text-foreground flex items-center gap-2">
-                            <span>{manifest.name}</span>
-                            <Badge variant="outline" className="text-[10px]">
-                              {manifest.kind}
-                            </Badge>
-                          </h3>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {manifest.description}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right text-[11px] text-muted-foreground">
-                        <div>作者：{manifest.author}</div>
-                        <div>许可证：{manifest.license || 'MIT'}</div>
-                      </div>
-                    </div>
-
-                    {manifest.tags && manifest.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 pt-1">
-                        {manifest.tags.map((tag, idx) => (
-                          <span
-                            key={idx}
-                            className="text-[10px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground"
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 1. site-pack 网址包真实卡片网格 */}
-                  {manifest.kind === 'site-pack' && (() => {
-                    const payload = manifest.payload as SitePackPayload
-                    const sites = payload.sites || []
-                    const categories = payload.categories || []
-                    const displaySites =
-                      sitePackCategoryFilter === 'all'
-                        ? sites
-                        : sites.filter((s) => s.category === sitePackCategoryFilter)
-
-                    return (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
-                          <span>包含站点清单 ({sites.length} 个)</span>
-                          <span>支持点击直达外链体验</span>
-                        </div>
-
-                        {/* 分类快捷筛选 Pills */}
-                        {categories.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pb-0.5">
-                            <button
-                              type="button"
-                              onClick={() => setSitePackCategoryFilter('all')}
-                              className={cn(
-                                'text-[11px] px-2.5 py-0.5 rounded-full border transition-all cursor-pointer',
-                                sitePackCategoryFilter === 'all'
-                                  ? 'bg-primary text-primary-foreground border-primary font-medium shadow-2xs'
-                                  : 'bg-muted/50 text-muted-foreground hover:text-foreground border-border/60'
-                              )}
-                            >
-                              全部 ({sites.length})
-                            </button>
-                            {categories.map((c, ci) => {
-                              const count = sites.filter((s) => s.category === c.title).length
-                              return (
-                                <button
-                                  key={ci}
-                                  type="button"
-                                  onClick={() => setSitePackCategoryFilter(c.title)}
-                                  className={cn(
-                                    'text-[11px] px-2.5 py-0.5 rounded-full border transition-all cursor-pointer',
-                                    sitePackCategoryFilter === c.title
-                                      ? 'bg-primary text-primary-foreground border-primary font-medium shadow-2xs'
-                                      : 'bg-muted/50 text-muted-foreground hover:text-foreground border-border/60'
-                                  )}
-                                >
-                                  {c.title} ({count})
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {displaySites.map((site, idx) => (
-                            <div
-                              key={idx}
-                              className="p-3 rounded-xl border border-border bg-card/60 hover:border-primary/40 hover:shadow-md transition-all flex flex-col justify-between gap-2"
-                            >
-                              <div>
-                                <div className="flex items-center justify-between">
-                                  <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                                    <Globe className="h-3.5 w-3.5 text-primary" />
-                                    <span>{site.title}</span>
-                                  </h4>
-                                  {site.category && (
-                                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4">
-                                      {site.category}
-                                    </Badge>
-                                  )}
-                                </div>
-                                <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">
-                                  {site.description || '实用网络工具与服务'}
-                                </p>
-                              </div>
-                              <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[10px]">
-                                <a
-                                  href={safeHref(site.url)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-primary hover:underline flex items-center gap-1 font-mono truncate max-w-[200px]"
-                                >
-                                  <span>{site.url.replace(/^https?:\/\//, '')}</span>
-                                  <ExternalLink className="h-2.5 w-2.5 flex-shrink-0" />
-                                </a>
-                                {site.tags && site.tags.length > 0 && (
-                                  <div className="flex gap-1">
-                                    {site.tags.slice(0, 2).map((t, ti) => (
-                                      <span key={ti} className="text-muted-foreground/80">
-                                        #{t}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {/* 2. theme 外观主题试衣间 */}
-                  {manifest.kind === 'theme' && (() => {
-                    const payload = manifest.payload as ThemePayload
-                    const accent = payload.accent || 'violet'
-                    return (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
-                          <span>主题色卡与实时控件样例预览</span>
-                          <Button
-                            size="sm"
-                            variant={liveThemeActive ? 'default' : 'outline'}
-                            onClick={() => setLiveThemeActive(!liveThemeActive)}
-                            className="h-7 text-xs gap-1.5 cursor-pointer"
-                          >
-                            <Palette className="h-3.5 w-3.5" />
-                            <span>{liveThemeActive ? '✓ 正在试穿此皮肤 (点击还原)' : '👗 工坊即时试穿此皮肤'}</span>
-                          </Button>
-                        </div>
-                        <div
-                          className="p-5 rounded-2xl border border-border bg-card space-y-4 transition-all duration-300"
-                          style={liveThemeActive && payload.tokens ? (payload.tokens as unknown as React.CSSProperties) : undefined}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <span className="text-xs font-medium">主强调色 (Accent)：</span>
-                              <Badge className="capitalize font-mono px-2.5 py-1 text-xs">
-                                {accent}
-                              </Badge>
-                            </div>
-                            {payload.tokens?.['--radius'] && (
-                              <span className="text-xs text-muted-foreground font-mono">
-                                圆角设定：{payload.tokens['--radius']}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3 pt-2">
-                            <div className="p-3 rounded-xl border border-border bg-background space-y-2">
-                              <span className="text-[11px] font-medium text-muted-foreground">按钮样例</span>
-                              <div className="flex gap-2">
-                                <Button size="sm" className="h-7 text-xs">
-                                  主要操作
-                                </Button>
-                                <Button size="sm" variant="outline" className="h-7 text-xs">
-                                  次要按钮
-                                </Button>
-                              </div>
-                            </div>
-
-                            <div className="p-3 rounded-xl border border-border bg-background space-y-2">
-                              <span className="text-[11px] font-medium text-muted-foreground">输入框与徽章</span>
-                              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                                <Input readOnly value="样例输入框效果" aria-label="主题预览样例输入框" className="h-7 text-xs" />
-                                <Badge variant="secondary" className="h-7 px-2">Tag</Badge>
-                              </div>
-                            </div>
-                          </div>
-
-                          {payload.tokens && (
-                            <div className="text-[11px] font-mono text-muted-foreground bg-muted/40 p-2 rounded-lg">
-                              CSS Tokens: {JSON.stringify(payload.tokens)}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {/* 3. search-pack 多引擎搜索栏交互 */}
-                  {manifest.kind === 'search-pack' && (() => {
-                    const payload = manifest.payload as SearchPackPayload
-                    const engines = payload.engines || []
-                    // 检测用户是否在前缀中直接输入了快捷指令 (例如 !gh react 或 @bilibili vue)
-                    const matchedEngineIndex = engines.findIndex(
-                      (eng) => eng.prefix && searchTestQuery.trim().toLowerCase().startsWith(eng.prefix.toLowerCase() + ' ')
-                    )
-                    const activeEngineIdx = matchedEngineIndex !== -1
-                      ? matchedEngineIndex
-                      : (selectedEngineIndex < engines.length ? selectedEngineIndex : 0)
-                    const currentEngine = engines[activeEngineIdx] || engines[0]
-                    const actualQuery = matchedEngineIndex !== -1
-                      ? searchTestQuery.trim().slice(engines[matchedEngineIndex].prefix.length).trim()
-                      : searchTestQuery
-                    const previewUrl = currentEngine
-                      ? currentEngine.searchUrl.replace(/\{q\}/g, encodeURIComponent(actualQuery || 'navhub'))
-                      : ''
-
-                    return (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span className="font-semibold">多引擎聚合搜索栏交互测试</span>
-                          {matchedEngineIndex !== -1 && (
-                            <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/30">
-                              ⚡ 自动识别前缀指令 [{engines[matchedEngineIndex].prefix}]
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="p-5 rounded-2xl border border-border bg-card space-y-3 shadow-sm">
-                          {/* 引擎切换 Chips */}
-                          <div className="flex flex-wrap gap-1.5">
-                            {engines.map((eng, idx) => (
-                              <button
-                                key={idx}
-                                type="button"
-                                onClick={() => setSelectedEngineIndex(idx)}
-                                className={cn(
-                                  'text-xs px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1.5',
-                                  activeEngineIdx === idx
-                                    ? 'bg-primary text-primary-foreground border-primary shadow-sm font-medium'
-                                    : 'bg-background hover:bg-muted text-foreground border-border'
-                                )}
-                              >
-                                <span>{eng.icon || '🔍'}</span>
-                                <span>{eng.name}</span>
-                                <span className="text-[10px] opacity-70 font-mono">{eng.prefix}</span>
-                              </button>
-                            ))}
-                          </div>
-
-                          {/* 搜索测试输入 */}
-                          <div className="relative">
-                            <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-2.5" />
-                            <Input
-                              id="ai-studio-search-test-query"
-                              aria-label="实时验证搜索 URL 占位符关键词"
-                              value={searchTestQuery}
-                              onChange={(e) => setSearchTestQuery(e.target.value)}
-                              placeholder={`支持前缀触发 (如: ${engines[0]?.prefix || '!gh'} react) 或直接输入关键词...`}
-                              className="pl-9 h-9 text-xs"
-                            />
-                          </div>
-
-                          {/* 实时生成的跳转目标 */}
-                          <div className="text-[11px] p-2.5 rounded-lg bg-muted/60 border border-border flex items-center justify-between">
-                            <div className="truncate mr-2 font-mono text-muted-foreground">
-                              <span>跳转目标：</span>
-                              <span className="text-primary">{previewUrl}</span>
-                            </div>
-                            <a
-                              href={safeHref(previewUrl)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-primary hover:underline flex items-center gap-1 font-medium whitespace-nowrap"
-                            >
-                              <span>试跳</span>
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })()}
-
-                  {/* 4. workspace-preset 工作台预设 */}
-                  {manifest.kind === 'workspace-preset' && (() => {
-                    const payload = manifest.payload as WorkspacePresetPayload
-                    const boards = payload.boards || []
-                    return (
-                      <div className="space-y-4">
-                        <div className="text-xs font-semibold text-muted-foreground">
-                          工作台看板与微组件排布
-                        </div>
-                        {boards.map((b, bi) => (
-                          <div key={bi} className="p-4 rounded-xl border border-border bg-card space-y-3">
-                            <h4 className="text-xs font-bold text-foreground">看板：{b.name}</h4>
-                            <div className="grid grid-cols-12 gap-2">
-                              {b.widgets.map((w, wi) => (
-                                <div
-                                  key={wi}
-                                  style={{ gridColumn: `span ${w.colSpan || 4}` }}
-                                  className="p-3 rounded-lg border border-border/80 bg-background/80 text-xs space-y-1"
-                                >
-                                  <div className="font-semibold text-primary">{w.customTitle || w.type}</div>
-                                  <div className="text-[10px] text-muted-foreground font-mono">
-                                    {w.colSpan}列 × {w.rowSpan}行
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  })()}
-                </div>
+                <StudioSandboxPanel
+                  manifest={manifest}
+                  generating={generating}
+                  liveThemeActive={liveThemeActive}
+                  setLiveThemeActive={setLiveThemeActive}
+                  searchTestQuery={searchTestQuery}
+                  setSearchTestQuery={setSearchTestQuery}
+                  selectedEngineIndex={selectedEngineIndex}
+                  setSelectedEngineIndex={setSelectedEngineIndex}
+                  sitePackCategoryFilter={sitePackCategoryFilter}
+                  setSitePackCategoryFilter={setSitePackCategoryFilter}
+                />
               )}
-
-              {/* Tab 2: 声明式 JSON 检查器 与 演进 Diff */}
               {!generating && manifest && activeTab === 'json' && (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2.5">
-                    <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-lg">
-                      <button
-                        type="button"
-                        onClick={() => setActiveJsonSubTab('source')}
-                        className={cn(
-                          'px-3 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5',
-                          activeJsonSubTab === 'source'
-                            ? 'bg-background text-foreground shadow-xs font-semibold'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        <Code2 className="h-3.5 w-3.5" />
-                        <span>清单源码 (JSON)</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveJsonSubTab('diff')}
-                        className={cn(
-                          'px-3 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1.5',
-                          activeJsonSubTab === 'diff'
-                            ? 'bg-background text-foreground shadow-xs font-semibold'
-                            : 'text-muted-foreground hover:text-foreground'
-                        )}
-                      >
-                        <GitCompare className="h-3.5 w-3.5" />
-                        <span>版本演进对比 (Diff)</span>
-                        {manifestDiff?.hasChanges && (
-                          <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                        )}
-                      </button>
-                    </div>
-
-                    {activeJsonSubTab === 'source' ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => copyText(JSON.stringify(manifest, null, 2))}
-                        className="h-7 text-xs gap-1"
-                      >
-                        <Copy className="h-3 w-3" />
-                        <span>复制 JSON</span>
-                      </Button>
-                    ) : (
-                      <div className="text-[11px] text-muted-foreground font-mono">
-                        {previousManifest ? `对比: v${previousManifest.version} ➔ v${manifest.version}` : '首次生成版本'}
-                      </div>
-                    )}
-                  </div>
-
-                  {activeJsonSubTab === 'source' && (
-                    <div className="space-y-2">
-                      <div className="text-xs text-muted-foreground">
-                        100% 声明式清单规范 (PluginManifest Schema v1.0)
-                      </div>
-                      <pre className="p-4 rounded-xl border border-border bg-muted/40 font-mono text-[11px] leading-relaxed text-foreground overflow-x-auto max-h-[500px]">
-                        {JSON.stringify(manifest, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-
-                  {activeJsonSubTab === 'diff' && (
-                    <div className="space-y-3">
-                      {!previousManifest ? (
-                        <div className="p-6 rounded-2xl border border-dashed border-border text-center space-y-2 bg-muted/20">
-                          <GitCompare className="h-8 w-8 mx-auto text-muted-foreground/60" />
-                          <div className="text-xs font-bold text-foreground">
-                            当前为首个生成版本 (v{manifest.version})
-                          </div>
-                          <p className="text-[11px] text-muted-foreground max-w-md mx-auto">
-                            当您在工坊右下角进行自然语言增量补充（例如“追加 2 个 AI 工具”）、编辑元数据或执行 AI 一键智能修复后，此处将自动为您精确比对出实体与属性的增删改动差量！
-                          </p>
-                        </div>
-                      ) : !manifestDiff!.hasChanges ? (
-                        <div className="p-6 rounded-2xl border border-dashed border-border text-center space-y-2 bg-muted/20">
-                          <CheckCircle2 className="h-8 w-8 mx-auto text-emerald-500" />
-                          <div className="text-xs font-bold text-foreground">
-                            清单内容与上一版本一致（无实体增删差异）
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {/* 变更汇总统计卡片 */}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            {manifestDiff!.versionChange && (
-                              <div className="p-2.5 rounded-xl border border-primary/20 bg-primary/5 text-xs">
-                                <span className="text-[10px] text-muted-foreground block">版本递增</span>
-                                <span className="font-mono font-bold text-primary">
-                                  {manifestDiff!.versionChange!.from} ➔ {manifestDiff!.versionChange!.to}
-                                </span>
-                              </div>
-                            )}
-                            {manifestDiff!.addedSites.length > 0 && (
-                              <div className="p-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-xs">
-                                <span className="text-[10px] text-muted-foreground block">新增站点实体</span>
-                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                  +{manifestDiff!.addedSites.length} 个
-                                </span>
-                              </div>
-                            )}
-                            {manifestDiff!.removedSites.length > 0 && (
-                              <div className="p-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 text-xs">
-                                <span className="text-[10px] text-muted-foreground block">移除站点实体</span>
-                                <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
-                                  -{manifestDiff!.removedSites.length} 个
-                                </span>
-                              </div>
-                            )}
-                            {manifestDiff!.addedEngines.length > 0 && (
-                              <div className="p-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-xs">
-                                <span className="text-[10px] text-muted-foreground block">新增搜索引擎</span>
-                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                                  +{manifestDiff!.addedEngines.length} 个
-                                </span>
-                              </div>
-                            )}
-                            {manifestDiff!.addedTags.length > 0 && (
-                              <div className="p-2.5 rounded-xl border border-blue-500/20 bg-blue-500/5 text-xs">
-                                <span className="text-[10px] text-muted-foreground block">新增标签</span>
-                                <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
-                                  +{manifestDiff!.addedTags.length} 个
-                                </span>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* 详细增删列表 */}
-                          <div className="space-y-2">
-                            {manifestDiff!.addedSites.map((site, sIdx) => (
-                              <div
-                                key={sIdx}
-                                className="p-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 flex items-start justify-between text-xs"
-                              >
-                                <div className="space-y-1">
-                                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                                    <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white text-[10px] px-1.5 py-0 h-4 flex items-center gap-0.5">
-                                      <Plus className="h-2.5 w-2.5" /> 新增
-                                    </Badge>
-                                    <span className="font-semibold text-foreground">{site.title}</span>
-                                    {site.category && (
-                                      <span className="text-[10px] text-muted-foreground font-medium">
-                                        [{site.category}]
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-[11px] text-muted-foreground font-mono truncate max-w-[450px]">
-                                    {site.url}
-                                  </div>
-                                </div>
-                                <span className="text-emerald-600 font-mono text-[11px] font-medium">+1 site</span>
-                              </div>
-                            ))}
-
-                            {manifestDiff!.removedSites.map((site, sIdx) => (
-                              <div
-                                key={sIdx}
-                                className="p-2.5 rounded-xl border border-rose-500/30 bg-rose-500/5 flex items-start justify-between text-xs opacity-75"
-                              >
-                                <div className="space-y-1">
-                                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0 h-4 flex items-center gap-0.5">
-                                      <Minus className="h-2.5 w-2.5" /> 移除
-                                    </Badge>
-                                    <span className="line-through text-muted-foreground">{site.title}</span>
-                                  </div>
-                                  <div className="text-[11px] text-muted-foreground line-through font-mono truncate max-w-[450px]">
-                                    {site.url}
-                                  </div>
-                                </div>
-                                <span className="text-rose-600 font-mono text-[11px] font-medium">-1 site</span>
-                              </div>
-                            ))}
-
-                            {manifestDiff!.addedEngines.map((eng, eIdx) => (
-                              <div
-                                key={eIdx}
-                                className="p-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 flex items-start justify-between text-xs"
-                              >
-                                <div className="space-y-1">
-                                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                                    <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white text-[10px] px-1.5 py-0 h-4">
-                                      + 引擎
-                                    </Badge>
-                                    <span className="font-semibold text-foreground">{eng.name}</span>
-                                    <span className="text-[10px] font-mono text-muted-foreground">{eng.prefix}</span>
-                                  </div>
-                                  <div className="text-[11px] text-muted-foreground font-mono truncate max-w-[450px]">
-                                    {eng.searchUrl}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                <StudioJsonPanel
+                  manifest={manifest}
+                  manifestDiff={manifestDiff}
+                  previousManifest={previousManifest}
+                  activeJsonSubTab={activeJsonSubTab}
+                  setActiveJsonSubTab={setActiveJsonSubTab}
+                  generating={generating}
+                />
               )}
-
-              {/* Tab 3: 自动化体检中心 */}
               {!generating && manifest && activeTab === 'health' && (
-                <div className="space-y-4">
-                  {/* AI 提交前预检报告雷达面板 */}
-                  {preAuditReport && (
-                    <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                          <ShieldCheck className="h-4 w-4 text-primary" />
-                          <span className="text-xs font-bold text-foreground">AI 智能预检多维严审评分</span>
-                          <Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/30 font-mono">
-                            {preAuditReport.score}分 · {preAuditReport.level.toUpperCase()}级
-                            {preAuditReport.decision === 'pending_review' && ' · 待复核'}
-                          </Badge>
-                        </div>
-                        <span className="text-[10px] text-muted-foreground font-mono">
-                          {/* model=none 说明这次没有模型参与，不能写成「审查模型」 */}
-                          {preAuditReport.llmReviewed
-                            ? `审查模型: ${preAuditReport.model}`
-                            : preAuditReport.model && preAuditReport.model !== 'none'
-                              ? `尝试的模型: ${preAuditReport.model}（未产出结论）`
-                              : '本次无模型参与：仅静态沙箱 + 外链探活'}
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                        <AuditDimensionTile label="静态安全 (30%)" value={preAuditReport.dimensionScores?.security} className="p-2 text-center bg-background/80 border-border/60" />
-                        <AuditDimensionTile label="外链探活 (25%)" value={preAuditReport.dimensionScores?.availability} className="p-2 text-center bg-background/80 border-border/60" />
-                        <AuditDimensionTile label="AI 合规 (25%)" value={preAuditReport.dimensionScores?.compliance} className="p-2 text-center bg-background/80 border-border/60" />
-                        <AuditDimensionTile label="语义相关 (20%)" value={preAuditReport.dimensionScores?.relevance} className="p-2 text-center bg-background/80 border-border/60" />
-                      </div>
-
-                      <p className="text-[11px] text-muted-foreground leading-relaxed">
-                        {preAuditReport.aiRationale}
-                      </p>
-
-                      {preAuditReport.suggestions && preAuditReport.suggestions.length > 0 && (
-                        <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] space-y-1">
-                          <div className="font-semibold text-amber-700 dark:text-amber-300 flex items-center justify-between">
-                            <span className="flex items-center gap-1">
-                              <AlertCircle className="h-3 w-3" />
-                              <span>AI 优化整改建议 ({preAuditReport.suggestions.length}条)：</span>
-                            </span>
-                            <button
-                              type="button"
-                              onClick={handleAutoFix}
-                              disabled={autoFixing}
-                              className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-800 dark:text-amber-200 transition-colors font-medium flex items-center gap-1"
-                            >
-                              <Sparkles className="h-2.5 w-2.5" />
-                              <span>点击一键自动修复</span>
-                            </button>
-                          </div>
-                          <ul className="list-disc list-inside space-y-0.5 text-muted-foreground pl-1">
-                            {preAuditReport.suggestions.map((s, idx) => (
-                              <li key={idx}>{s}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="p-4 rounded-xl border border-border bg-card space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                          <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                          <span>全清单连通性与死链嗅探体检</span>
-                        </h4>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          受限出网安全沙箱并发探活，防止提交失效死链到插件市场。
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        disabled={checkingUrls || extractedUrls.length === 0}
-                        onClick={handleCheckUrls}
-                        className="h-7 text-xs gap-1.5"
-                      >
-                        {checkingUrls ? (
-                          <>
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            <span>正在并发检测...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Activity className="h-3 w-3" />
-                            <span>一键开始检测 ({extractedUrls.length}个链接)</span>
-                          </>
-                        )}
-                      </Button>
-                    </div>
-
-                    {urlCheckResults && (
-                      <div className="grid grid-cols-3 gap-2 pt-2 text-center text-xs">
-                        <div className="p-2 rounded-lg bg-muted/50 border border-border">
-                          <div className="text-lg font-bold">{urlCheckResults.total}</div>
-                          <div className="text-[10px] text-muted-foreground">检测总数</div>
-                        </div>
-                        <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
-                          <div className="text-lg font-bold">{urlCheckResults.okCount}</div>
-                          <div className="text-[10px]">健康正常</div>
-                        </div>
-                        <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400">
-                          <div className="text-lg font-bold">{urlCheckResults.failedCount}</div>
-                          <div className="text-[10px]">异常或超时</div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {urlCheckResults && (
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-medium text-muted-foreground">详细探活日志：</span>
-                      <div className="space-y-1 max-h-64 overflow-y-auto">
-                        {urlCheckResults.results.map((r, i) => (
-                          <div
-                            key={i}
-                            className={cn(
-                              'px-3 py-1.5 rounded-lg border text-xs flex items-center justify-between font-mono',
-                              r.ok
-                                ? 'bg-emerald-500/5 border-emerald-500/20 text-foreground'
-                                : 'bg-rose-500/5 border-rose-500/20 text-rose-600 dark:text-rose-400'
-                            )}
-                          >
-                            <span className="truncate max-w-[400px]">{r.url}</span>
-                            <div className="flex items-center gap-2 flex-shrink-0">
-                              <span>{r.ok ? `HTTP ${r.status || 200}` : (r.error || '失败')}</span>
-                              {r.ok ? (
-                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                              ) : (
-                                <AlertCircle className="h-3.5 w-3.5 text-rose-500" />
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <StudioHealthPanel
+                  extractedUrls={extractedUrls}
+                  urlCheckResults={urlCheckResults}
+                  checkingUrls={checkingUrls}
+                  handleCheckUrls={handleCheckUrls}
+                  preAuditReport={preAuditReport}
+                  autoFixing={autoFixing}
+                  handleAutoFix={handleAutoFix}
+                />
               )}
             </div>
 

@@ -162,7 +162,7 @@ async function getJson<T>(path: string, signal?: AbortSignal, extraHeaders?: Rec
  *
  * 曾经这里只有 'hub ' + status（如 "hub 502"）——用户看到这串代号完全
  * 无法行动（502 是中枢没起、被防火墙挡了、还是崩了？）。现在的策略：
- *   1. 优先透出服务端的 error 字段——中枢的 400/409 都带中文可读原因；
+ *   1. 优先透出服务端的 `message`（人话），没有才回退 `error`（机器码）；
  *   2. 服务端没给消息时，按状态码给出下一步行动指引。
  */
 const HUB_STATUS_HINT: Record<number, string> = {
@@ -222,7 +222,7 @@ async function hubServerMessage(res: Response): Promise<HubServerErrorDetail> {
   try {
     const text = await res.text()
     if (!text.trim()) return {}
-    const parsed = JSON.parse(text) as { error?: unknown; detail?: unknown; [key: string]: unknown }
+    const parsed = JSON.parse(text) as { error?: unknown; message?: unknown; detail?: unknown; [key: string]: unknown }
     const payload = parsed as Record<string, unknown>
     if (Array.isArray(parsed.detail) && parsed.detail.length > 0) {
       const first = parsed.detail[0] as { path?: unknown; message?: unknown }
@@ -230,6 +230,17 @@ async function hubServerMessage(res: Response): Promise<HubServerErrorDetail> {
       if (typeof first.message === 'string') {
         return { message: '参数无效' + where + '：' + first.message, payload }
       }
+    }
+    /**
+     * 优先 `message`（人话）再 `error`（机器码）。
+     *
+     * 中枢的错误体约定是 `{ error: "SOME_CODE", message: "中文原因" }`。
+     * 只取 `error` 时，用户看到的是 `CONFLICT_RESTORE_RUNNING` 这种字符串——
+     * 信息量为零，而且容易被当成系统故障而不是「等一会儿再来」。
+     * 老接口里有直接把中文写进 `error` 的，靠下面的回退仍然命中。
+     */
+    if (typeof parsed.message === 'string' && parsed.message.trim()) {
+      return { message: parsed.message.trim(), payload }
     }
     if (typeof parsed.error === 'string' && parsed.error.trim()) {
       return { message: parsed.error, payload }

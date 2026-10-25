@@ -120,7 +120,9 @@ describe("异步恢复：阈值、轮询与措辞", () => {
   });
 
   it("轮询在终态自行停止，不无限打服务端", () => {
-    expect(PAGE).toMatch(/!TERMINAL_STATUS\.has\(job\.status\)[\s\S]{0,80}pollingJobId/);
+    // 拆成两条精确断言而不是「跨 N 个字符」：中间插一个函数就会把窗口挤爆
+    expect(PAGE).toMatch(/const jobActive = job !== null && !TERMINAL_STATUS\.has\(job\.status\)/);
+    expect(PAGE).toMatch(/const pollingJobId = job && jobActive && watching \? job\.jobId : null/);
     expect(PAGE).toContain("clearTimeout");
     // 自调度而不是固定 setInterval：间隔要能被服务端改、能被错误退避
     expect(CODE_ONLY).not.toContain("setInterval");
@@ -148,9 +150,19 @@ describe("异步恢复：阈值、轮询与措辞", () => {
     expect(PAGE).not.toMatch(/已写入 <span/);
   });
 
-  it("后台任务未结束时禁止再开一次恢复（两个恢复并发写同一库）", () => {
-    expect(PAGE).toMatch(/disabled=\{jobActive\}/);
+  it("后台任务未结束时禁止再开一次恢复（两个恢复并发写同一库）", () => {    expect(PAGE).toMatch(/disabled=\{jobActive\}/);
     expect(PAGE).toMatch(/const canRestore = [\s\S]{0,120}!jobActive/);
+  });
+
+  it("可以取消运行中的任务，且取消与失败分开措辞", () => {
+    // 取消走既有的 job 取消端点，不自造新接口
+    expect(PAGE).toContain("/api/jobs/");
+    expect(PAGE).toContain("cancelRunningJob");
+    expect(PAGE).toContain("取消任务");
+    // 取消是用户主动的，不能复用「中断/失败」的说法
+    expect(PAGE).toMatch(/const isCancelled = job\.status === 'cancelled'/);
+    expect(PAGE).toMatch(/const isFailed = job\.status === 'failed'/);
+    expect(PAGE).toContain("已取消");
   });
 
   it("刷新/换标签后能接上同一个任务（任务在服务端，前端只是重新看）", () => {
@@ -163,5 +175,26 @@ describe("异步恢复：阈值、轮询与措辞", () => {
     // 同一个缺陷本轮犯了两次（横幅与失败说明各一处），而它在代码 review 里
     // 几乎看不出来——只有跑起来看页面才发现。注释里的 ** 不算（用 CODE_ONLY）。
     expect(CODE_ONLY).not.toContain("**");
+  });
+});
+
+/**
+ * 错误文案来源：共享客户端必须「人话优先」。
+ *
+ * 恢复页的 409 曾经显示成 `CONFLICT_RESTORE_RUNNING`——中枢明明回了
+ * `message: "已有恢复任务在进行（running，1000/6000 条）"`。这条守卫锁住优先级顺序，
+ * 避免以后有人为了「透出机器码」把顺序改回去（那对用户没有任何信息量）。
+ */
+describe("错误文案：message 优先于 error", () => {
+  it("hubServerMessage 先看 message，再回退 error", () => {
+    const api = overlaySource("src/lib/navhub-api.ts");
+    const start = api.indexOf("async function hubServerMessage");
+    expect(start).toBeGreaterThan(-1);
+    const scope = api.slice(start, start + 1600);
+    const messageAt = scope.indexOf("parsed.message");
+    const errorAt = scope.indexOf("parsed.error");
+    expect(messageAt).toBeGreaterThan(-1);
+    expect(errorAt).toBeGreaterThan(-1);
+    expect(messageAt).toBeLessThan(errorAt);
   });
 });

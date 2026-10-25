@@ -154,22 +154,6 @@ function reasonText(reason: unknown): string {
   return REASON_TEXT[reason] ?? `未知错误（${reason}）`
 }
 
-/**
- * 取服务端给的「人话」。
- *
- * 中枢的错误体是 `{ error: 机器码, message: 人话 }`，而共享客户端只保留 `error`，
- * 于是 409 会显示成 `CONFLICT_RESTORE_RUNNING`——信息量为零，还像系统故障。
- * `hubError` 已经把整个响应体放进了 `payload`，这里从 payload 取 message。
- *
- * 放在页面侧而不是改共享客户端：那会影响所有 admin 页的错误文案，是一次需要
- * 单独验证的改动，而且那个文件正被另一个会话改着。
- */
-function serverMessage(err: unknown, fallback: string): string {
-  const payload = (err as { payload?: { message?: unknown } })?.payload
-  const text = typeof payload?.message === 'string' ? payload.message.trim() : ''
-  return text || fallback
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
@@ -257,6 +241,8 @@ export default function RestoreBackupPage() {
   const [pollError, setPollError] = useState<string | null>(null)
   /** 自动转后台时的说明（手动转后台不需要这句话，用户知道自己点了什么） */
   const [pollNotice, setPollNotice] = useState<string | null>(null)
+  /** 取消请求在途：按钮置灰，避免连点发出多个取消 */
+  const [cancelling, setCancelling] = useState(false)
 
   const resetDownstream = useCallback(() => {
     setPreview(null)
@@ -316,7 +302,7 @@ export default function RestoreBackupPage() {
       setPreview(data)
     } catch (err) {
       setErrorKind('preview')
-      setError(serverMessage(err, describeDegrade(err).message))
+      setError(describeDegrade(err).message)
     } finally {
       setBusy(null)
     }
@@ -367,7 +353,7 @@ export default function RestoreBackupPage() {
       } catch (err) {
         // 走到这里说明请求内就被拒了（非法包/超限/磁盘/已有任务在跑），一条都没写
         setErrorKind('submit')
-        setError(serverMessage(err, describeDegrade(err).message))
+        setError(describeDegrade(err).message)
         const payload = (err as { payload?: { reason?: string } })?.payload
         setFailureReason(payload?.reason ? reasonText(payload.reason) : null)
       } finally {
@@ -381,7 +367,7 @@ export default function RestoreBackupPage() {
       setResult(data)
     } catch (err) {
       // 409 上带的是「类别」而不是原始报错，尽量把它翻成人话
-      const message = serverMessage(err, describeDegrade(err).message)
+      const message = describeDegrade(err).message
       setErrorKind('sync')
       setError(message)
       const reason = (err as { payload?: { reason?: string } })?.payload?.reason
@@ -392,6 +378,27 @@ export default function RestoreBackupPage() {
   }, [backup, preview, confirmed])
 
   const jobActive = job !== null && !TERMINAL_STATUS.has(job.status)
+
+  /**
+   * 请求取消当前任务。
+   *
+   * 不把状态直接改成 cancelled：服务端只在**分片边界**停下（一个分片是一个事务，
+   * 中途喊停没有意义），所以真实停下的时刻要由 status 端点告诉我们。
+   * 这里只提示「已提交」，下一轮轮询会把终态带回来。
+   */
+  const cancelRunningJob = useCallback(async () => {
+    if (!job) return
+    setCancelling(true)
+    setPollError(null)
+    try {
+      await hubSend(`/api/jobs/${job.jobId}/cancel`, 'POST')
+      setPollNotice('取消请求已提交，任务会在当前分片写完时停下；已写入的数据会保留。')
+    } catch (err) {
+      setPollError(describeDegrade(err).message)
+    } finally {
+      setCancelling(false)
+    }
+  }, [job])
   /** 只在「有任务、未终态、且用户在盯着」时轮询；三者任一变化都会让 effect 重新评估 */
   const pollingJobId = job && jobActive && watching ? job.jobId : null
 
@@ -656,6 +663,7 @@ export default function RestoreBackupPage() {
           watching={watching}
           pollError={pollError}
           pollNotice={pollNotice}
+          cancelling={cancelling}
           canRetry={canRestore}
           onKeepRunning={() => {
             setWatching(false)
@@ -665,6 +673,7 @@ export default function RestoreBackupPage() {
             setWatching(true)
             setPollNotice(null)
           }}
+          onCancel={() => void cancelRunningJob()}
           onRetry={() => void runRestore()}
         />
       )}
@@ -743,36 +752,42 @@ function Stat({
 /**
  * 后台恢复任务的进度卡。
  *
- * 三处措辞刻意与同步路径不同：
+ * 四处措辞刻意与同步路径不同：
  *   1. 失败时**不说**「已整体回滚」——异步是分片提交，已写入的分片是真实存在的；
- *   2. 未知终态时说「任务在服务端」而不是「连接已断开」，避免让人重复提交；
- *   3. 进度条在 total 未知时显示不定态，不假装 0%。
+ *   2. 取消与失败分开说：取消是用户主动的，不该显示「中断/失败」；
+ *   3. 未知终态时说「任务在服务端」而不是「连接已断开」，避免让人重复提交；
+ *   4. 进度条在 total 未知时显示不定态，不假装 0%。
  */
 function JobProgress({
   job,
   watching,
   pollError,
   pollNotice,
+  cancelling,
   canRetry,
   onKeepRunning,
   onResume,
+  onCancel,
   onRetry,
 }: {
   job: JobState
   watching: boolean
   pollError: string | null
   pollNotice: string | null
+  cancelling: boolean
   canRetry: boolean
   onKeepRunning: () => void
   onResume: () => void
+  onCancel: () => void
   onRetry: () => void
 }) {
   const total = job.progress.total || job.sites
   const done = job.progress.done
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0
   const isDone = job.status === 'done'
-  const isFailed = job.status === 'failed' || job.status === 'cancelled'
-  const isActive = !isDone && !isFailed
+  const isCancelled = job.status === 'cancelled'
+  const isFailed = job.status === 'failed'
+  const isActive = !isDone && !isFailed && !isCancelled
   const elapsedMs = job.finishedAt && job.startedAt ? job.finishedAt - job.startedAt : null
 
   return (
@@ -844,6 +859,19 @@ function JobProgress({
           </div>
         )}
 
+        {isCancelled && (
+          <div className="space-y-2">
+            <p className="flex items-center gap-2 text-sm font-medium text-amber-700 dark:text-amber-500">
+              <AlertTriangle className="h-4 w-4" aria-hidden />
+              已取消：在已处理 {done} 条时停下
+            </p>
+            <p className="text-sm text-muted-foreground">
+              取消只终止后续分片，<strong>已写入的那部分会保留</strong>。重跑会跳过已存在的 URL，
+              可以接着补完，不会产生重复数据。
+            </p>
+          </div>
+        )}
+
         {isFailed && (
           <div className="space-y-2">
             <p className="flex items-center gap-2 text-sm font-medium text-destructive" role="alert">
@@ -858,21 +886,33 @@ function JobProgress({
           </div>
         )}
 
-        {isActive && watching && (
-          <Button variant="outline" size="sm" onClick={onKeepRunning}>
-            转到后台，先离开本页
-          </Button>
-        )}
-        {isActive && !watching && (
-          <Button variant="outline" size="sm" onClick={onResume}>
-            继续查看进度
-          </Button>
-        )}
-        {isFailed && job.retryable && canRetry && (
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            重跑（跳过已存在的 URL）
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {isActive && watching && (
+            <Button variant="outline" size="sm" onClick={onKeepRunning}>
+              转到后台，先离开本页
+            </Button>
+          )}
+          {isActive && !watching && (
+            <Button variant="outline" size="sm" onClick={onResume}>
+              继续查看进度
+            </Button>
+          )}
+          {isActive && (
+            /**
+             * 取消不弹二次确认：任务可重跑、已写入的也会保留，误触的代价只是重跑一次；
+             * 而弹确认框会让「想停就停」这件事变慢，反而鼓励用户直接关页面。
+             * 文案里写明「已写入的会保留」，避免用户以为取消等于撤销。
+             */
+            <Button variant="outline" size="sm" onClick={onCancel} disabled={cancelling}>
+              {cancelling ? '取消中…' : '取消任务（已写入的会保留）'}
+            </Button>
+          )}
+          {(isFailed || isCancelled) && job.retryable && canRetry && (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              重跑（跳过已存在的 URL）
+            </Button>
+          )}
+        </div>
       </CardContent>
     </Card>
   )

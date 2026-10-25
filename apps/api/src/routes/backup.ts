@@ -697,7 +697,7 @@ export const backupRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         retryAfterMs: finished ? null : 2000,
         error: row.error == null ? null : String(row.error),
         /** 完成后 staging 保留与否取决于成功/失败：成功已删，失败保留供重跑 */
-        retryable: status === "failed" || status === "retrying",
+        retryable: status === "failed" || status === "retrying" || status === "cancelled",
       };
     },
   );

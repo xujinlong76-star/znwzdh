@@ -33,6 +33,8 @@
 | URL 归一化 | `planRestore` 与写入侧统一用 `canonicalizeUrl` | 原先两套口径，会「预演当重复、真写当新站」 |
 | staging 清理 | 提交时扫过期文件，**跳过仍被非终态任务引用的** | 删掉的话那份任务重跑读不到计划，报 retryable 却永远失败 |
 | 前端轮询 | 自调度 `setTimeout`，读 `retryAfterMs`，出错翻倍退避，10 分钟转后台 | 长任务不该高频轮询，也不该钉死标签页 |
+| 取消 | `POST /api/jobs/:id/cancel`（支持 pending/running/retrying）；任务在分片边界停下，`completeJob` 的 CAS 保证终态不被覆写 | 取消只在事务边界有意义；已写入的分片保留 |
+| 事件循环让出 | 每片开头 `await new Promise(r => setImmediate(r))` | `better-sqlite3` 同步驱动：不让出的话，整片期间进度查询与取消请求都进不来 |
 
 ---
 

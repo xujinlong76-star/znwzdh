@@ -244,4 +244,75 @@ describe("backup_restore 任务", () => {
     // 若续跑失效，这里会是 2100 —— 那正是「重试白跑一遍」的证据。
     expect(Number(count[0]!.c)).toBe(100);
   });
+
+  /**
+   * 取消：停在分片边界，不中断事务、不覆写终态。
+   *
+   * 两条性质同时被验证：
+   *   1. 取消后**不再写新分片**（否则界面说已取消、库还在变，用户会立刻重新提交）；
+   *   2. `completeJob` 的 CAS（`WHERE status='running'`）不会把 cancelled 改回 done——
+   *      否则「取消」只是延迟生效的假动作。
+   */
+  it("取消后停在分片边界：不再写新分片、状态保持 cancelled、staging 保留", async () => {
+    await ctx.repo.run("DELETE FROM sites WHERE url LIKE 'https://job-cancel-%'");
+    // 清掉遗留的可认领任务：否则 tick 会先跑它们，我这条可能还没开始就被取消（测试变成看运气）
+    await ctx.repo.run(
+      "DELETE FROM jobs WHERE kind IN ('backup_restore', 'reindex') AND status IN ('pending', 'retrying')",
+    );
+    const sites = Array.from({ length: 3000 }, (_, i) => ({
+      url: `https://job-cancel-${i}.example.com`,
+      title: `取消站点 ${i}`,
+      categoryId: "job-cat-1",
+    }));
+    const stagingPath = await writeStaging("cancel", { categories: [], sites });
+
+    const id = await ctx.repo.enqueueJob("backup_restore", { stagingPath });
+    const runner = new JobRunner(ctx, { enableCron: false });
+    const running = runner.tick();
+
+    /**
+     * 等第一片写完（progress_done=2000）再取消。
+     *
+     * 为什么现在能确定性做到：任务在每片开头 `setImmediate` 让出事件循环，
+     * 定时器（这里的轮询）先于 check 阶段执行，所以「片尾上报 → 轮询发现 → 取消 →
+     * 下一片开头读到 cancelled」这个顺序是稳定的。
+     * 没有那次让出时，同步驱动会把事件循环独占整片，轮询根本没机会跑。
+     */
+    const deadline = Date.now() + 60_000;
+    let done = 0;
+    while (Date.now() < deadline) {
+      const row = (await ctx.repo.raw("SELECT progress_done FROM jobs WHERE id = ?", [id]))[0];
+      done = Number(row?.progress_done ?? 0);
+      if (done >= 2000) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(done).toBeGreaterThanOrEqual(2000);
+
+    await ctx.repo.cancelJob(id);
+    await running;
+
+    const row = (
+      await ctx.repo.raw("SELECT status, progress_done AS done FROM jobs WHERE id = ?", [id])
+    )[0]!;
+    // completeJob 的 CAS（WHERE status='running'）不会把它改回 done
+    expect(String(row.status)).toBe("cancelled");
+
+    const count = await ctx.repo.raw(
+      "SELECT COUNT(*) AS c FROM sites WHERE url LIKE 'https://job-cancel-%' AND deleted_at IS NULL",
+    );
+    const written = Number(count[0]!.c);
+    expect(written).toBeLessThan(3000); // 第三片没写
+    expect(written).toBeGreaterThan(0); // 已提交的分片保留（取消不等于撤销）
+    // staging 必须留着：retryJob 允许把 cancelled 重新排队，删了那次重试必然失败
+    expect(existsSync(stagingPath)).toBe(true);
+    rmSync(stagingPath, { force: true });
+  });
+
+  it("cancelJob 支持退避中的任务（否则用户只能干等重试窗口）", async () => {
+    const id = await ctx.repo.enqueueJob("backup_restore", { stagingPath: join(dir, "none.json") });
+    await ctx.repo.run("UPDATE jobs SET status = 'retrying' WHERE id = ?", [id]);
+    await ctx.repo.cancelJob(id);
+    const row = (await ctx.repo.raw("SELECT status FROM jobs WHERE id = ?", [id]))[0]!;
+    expect(String(row.status)).toBe("cancelled");
+  });
 });

@@ -135,8 +135,14 @@ export async function getJob(repo: Repository, id: string): Promise<JobRecord | 
 
 export async function cancelJob(repo: Repository, id: string): Promise<boolean> {
   const now = Date.now();
+  /**
+   * 允许取消 `retrying`：退避中的任务仍会被重新认领执行，不取消就只是「等它再来一次」。
+   * 恢复任务的最长退避是 4 分钟、共 3 次尝试，不支持取消意味着用户最多要干等 7 分钟。
+   *
+   * 不允许取消 `done` / `failed`：那是历史结果，改状态会让「谁在什么时候成功过」失真。
+   */
   await repo.run(
-    "UPDATE jobs SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('pending', 'running')",
+    "UPDATE jobs SET status = 'cancelled', updated_at = ? WHERE id = ? AND status IN ('pending', 'running', 'retrying')",
     [now, id],
   );
   return true;

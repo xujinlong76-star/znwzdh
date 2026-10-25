@@ -58,7 +58,13 @@ interface StatusStep {
  */
 async function mockAsync(
   page: Page,
-  options: { steps: StatusStep[]; asyncStatus?: number; asyncBody?: unknown },
+  options: {
+    steps: StatusStep[]
+    asyncStatus?: number
+    asyncBody?: unknown
+    /** 覆盖某次轮询的返回（用于「取消后变 cancelled」这类状态跃迁） */
+    statusOverride?: () => StatusStep | null
+  },
 ): Promise<() => AsynCalls> {
   const calls: AsynCalls = { asyncPosts: [], statusHits: 0 }
   let stepIndex = 0
@@ -69,7 +75,8 @@ async function mockAsync(
 
     if (url.includes('/restore/status/')) {
       calls.statusHits += 1
-      const step = options.steps[Math.min(stepIndex, options.steps.length - 1)]!
+      const step =
+        options.statusOverride?.() ?? options.steps[Math.min(stepIndex, options.steps.length - 1)]!
       stepIndex += 1
       await route.fulfill({
         json: {
@@ -267,6 +274,46 @@ test.describe('恢复冷备：后台任务路径', () => {
     await expect
       .poll(() => calls().statusHits, { timeout: 10_000 })
       .toBeGreaterThan(before)
+  })
+
+  /**
+   * 取消：走既有 job 取消端点，页面不谎报「失败」，并且终态显示「已取消」。
+   *
+   * 取消的产品语义是「停在分片边界」——已写入的分片保留，所以文案必须是
+   * 「已取消」而不是「中断/失败」，也不能说回滚。
+   */
+  test('取消任务：请求真的发出去，终态显示「已取消」而不是失败', async ({ page }) => {
+    let cancelled = false
+    let cancelRequests = 0
+    await page.route('**/api/hub/jobs/**', async (route) => {
+      cancelled = true
+      cancelRequests += 1
+      await route.fulfill({ json: { ok: true, status: 'cancelled' } })
+    })
+
+    await mockAsync(page, {
+      steps: [{ status: 'running', done: 1000, total: 6000 }],
+      statusOverride: () => (cancelled ? { status: 'cancelled', done: 1000, total: 6000 } : null),
+    })
+
+    await gotoPage(page)
+    await prepare(page)
+    await page.locator('#confirm-restore').click()
+    await page.getByRole('button', { name: '执行恢复' }).click()
+
+    await expect(page.getByText(/已处理\s*1000\s*\/\s*6000\s*条/)).toBeVisible({ timeout: 15_000 })
+    await page.getByRole('button', { name: /取消任务/ }).click()
+
+    /**
+     * 断言「请求真的发出去了」用请求计数，不用「取消请求已提交」这句提示：
+     * 那句是过渡态，下一次轮询（1.5 秒）就会拿到终态并把整块提示换掉，
+     * 断言它等于在赌一个几十毫秒的窗口——本轮就是这么假红的。
+     */
+    await expect.poll(() => cancelRequests, { timeout: 10_000 }).toBe(1)
+    await expect(page.getByText(/已取消：在已处理\s*1000\s*条时停下/)).toBeVisible({ timeout: 15_000 })
+    // 取消不是失败：不能出现失败态的红字，也不能说回滚
+    await expect(page.getByText(/恢复中断/)).toHaveCount(0)
+    await expect(page.getByText('恢复失败，已整体回滚')).toHaveCount(0)
   })
 
   /**

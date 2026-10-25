@@ -363,6 +363,23 @@ describe("异步恢复：并发守卫、契约头与零增量", () => {
     expect(body.skipped.duplicateUrls).toBe(1);
   });
 
+  it("取消后的任务：status 报 cancelled + retryable，且不再发 Retry-After", async () => {
+    await resetRestoreJobs();
+    const res = await submit([{ id: "x1", title: "取消用例", url: "https://cancel-1.example.com" }]);
+    expect(res.statusCode).toBe(202);
+    const jobId = (res.json() as Record<string, any>).jobId;
+
+    await ctx.repo.cancelJob(jobId);
+    const status = await app.inject({ method: "GET", url: `/api/backup/restore/status/${jobId}` });
+    expect(status.statusCode).toBe(200);
+    const body = status.json() as Record<string, any>;
+    expect(body.status).toBe("cancelled");
+    // 取消后应当允许重跑（retryJob 接受 cancelled），否则用户只能重新选文件
+    expect(body.retryable).toBe(true);
+    // 终态不再诱导轮询
+    expect(status.headers["retry-after"]).toBeUndefined();
+  });
+
   it("过期 staging 若仍被非终态任务引用，不会被清理", async () => {
     await resetRestoreJobs();
     mkdirSync(stagingDir, { recursive: true });

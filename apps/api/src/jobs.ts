@@ -1071,6 +1071,28 @@ export class JobRunner {
     const sites = plan.sites ?? [];
 
     /**
+     * 取消检查：只在分片边界做。
+     *
+     * 取消（`POST /api/jobs/:id/cancel`）把 `jobs.status` 改成 `cancelled`，但执行中的
+     * 函数不会自己停下来——不检查就会「界面显示已取消，实际还在往库里写」，
+     * 而用户看到已取消会立刻重新提交，正好制造两组分片并发写。
+     *
+     * 为什么只在分片边界查：分片是不可中断的最小单位（一个事务），
+     * 中途喊停没有意义；每片查一次的成本是一条按主键的 SELECT，可以忽略。
+     *
+     * 取消后**不删 staging**：`retryJob` 允许把 cancelled 的任务重新排队，
+     * 删了文件那次重试就必然失败。残留由 `sweepStaleStaging` 按 24 小时清。
+     */
+    const isCancelled = async (): Promise<boolean> => {
+      const rows = await this.ctx.repo.raw("SELECT status FROM jobs WHERE id = ? LIMIT 1", [jobId]);
+      return String(rows[0]?.status ?? "") === "cancelled";
+    };
+    if (await isCancelled()) {
+      console.info("[navhub-job] 恢复任务在执行前已被取消，未写入任何数据", { jobId });
+      return;
+    }
+
+    /**
      * 分类必须先建，且 categoryId 必须已由端点解析成真实 id。
      * 任务侧不做「兜底塞进未分类」——那会让一条脏数据静默改变用户的分类结构，
      * 而恢复这种操作应该「要么正确，要么明确失败」。
@@ -1119,6 +1141,25 @@ export class JobRunner {
     await this.ctx.repo.updateJobProgress(jobId, { done: processed, total: sites.length });
 
     for (let i = startIndex; i < sites.length; i += CHUNK) {
+      /**
+       * 让出一次事件循环。
+       *
+       * `better-sqlite3` 是**同步**驱动：一片 2000 条会把事件循环独占几秒。
+       * 在这几秒里，跑在同一个进程里的 HTTP 处理完全停摆——
+       *   · 前端的进度查询会卡住（用户看到的是「进度条不动」而不是慢）；
+       *   · 取消请求根本进不来（即使下面的检查写了也永远读不到 cancelled）。
+       * `setImmediate` 落在 check 阶段，正好在「上一个分片写完」与「下一个分片开始」之间，
+       * 让待处理的定时器（轮询）与 IO（取消请求）先跑一轮。
+       */
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      if (await isCancelled()) {
+        console.info("[navhub-job] 恢复任务已取消，停在分片边界", {
+          jobId,
+          processed,
+          total: sites.length,
+        });
+        return;
+      }
       const slice = sites.slice(i, i + CHUNK);
 
       /**

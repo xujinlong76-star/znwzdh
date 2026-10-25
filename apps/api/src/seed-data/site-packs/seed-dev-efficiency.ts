@@ -226,7 +226,7 @@ export const seedDevEfficiency: SeedPluginDef = {
         { url: "https://cursor.com/", title: "Cursor", description: "AI 原生的代码编辑器，能理解整个代码库，用自然语言生成与重构项目代码。", category: "AI 编码助手与 Prompt 工具", subCategory: "编码助手", tags: ["AI", "编辑器"] },
         { url: "https://www.anthropic.com/claude-code", title: "Claude Code", description: "运行在终端里的智能编码代理，能读写仓库、执行命令并完成多步开发任务。", category: "AI 编码助手与 Prompt 工具", subCategory: "编码代理", tags: ["AI", "终端"] },
         { url: "https://lingma.aliyun.com/", title: "通义灵码", description: "阿里云推出的 AI 编码助手，支持代码补全与问答，中文语境与国产生态友好。", category: "AI 编码助手与 Prompt 工具", subCategory: "编码助手", tags: ["AI", "国产"] },
-        { url: "https://windsurf.com/", title: "Windsurf", description: "面向开发者的 AI 编辑器，具备代理式编码能力，可自主完成跨文件的代码改动。", category: "AI 编码助手与 Prompt 工具", subCategory: "编码助手", tags: ["AI", "编辑器"] },
+        { url: "https://windsurf.ai/", title: "Windsurf", description: "面向开发者的 AI 编辑器，具备代理式编码能力，可自主完成跨文件的代码改动。", category: "AI 编码助手与 Prompt 工具", subCategory: "编码助手", tags: ["AI", "编辑器"] },
         { url: "https://www.tabnine.com/", title: "Tabnine", description: "注重代码隐私的 AI 补全工具，支持私有化部署，适合合规要求较高的团队。", category: "AI 编码助手与 Prompt 工具", subCategory: "编码助手", tags: ["AI", "隐私"] },
         { url: "https://www.continue.dev/", title: "Continue", description: "开源的 IDE AI 助手，可自由切换模型与上下文，方便构建可定制的编码助手。", category: "AI 编码助手与 Prompt 工具", subCategory: "编码助手", tags: ["AI", "开源"] },
         { url: "https://aider.chat/", title: "Aider", description: "终端里的 AI 结对编程工具，直接修改本地仓库并自动生成规范的 Git 提交。", category: "AI 编码助手与 Prompt 工具", subCategory: "编码代理", tags: ["AI", "Git"] },

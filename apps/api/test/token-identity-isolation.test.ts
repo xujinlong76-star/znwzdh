@@ -60,7 +60,9 @@ beforeAll(async () => {
     method: "POST",
     url: "/api/me/tokens",
     headers: { ...headersFor(OWNER), "content-type": "application/json" },
-    payload: { name: "隔离回归令牌" },
+    // 注销用例要用令牌删自己的账号；只读令牌会被 /api/me 写守卫 403。
+    // 本文件测的是「自报头不能改身份」，故显式签发 write 令牌，保留原断言强度。
+    payload: { name: "隔离回归令牌", write: true },
   });
   expect(created.statusCode).toBe(200);
   token = created.json().token as string;

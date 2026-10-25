@@ -44,7 +44,7 @@ export const aiToolsArsenal: SeedPluginDef = {
         { title: "AI 教育与企业落地", description: "AI 课程、训练营与企业落地学习资源" },
       ],
       sites: [
-        { url: "https://chat.openai.com/", title: "ChatGPT", description: "OpenAI 通用对话助手，插件与高级数据分析能力完备。", category: "大模型对话助手", subCategory: "海外", tags: ["OpenAI", "对话"] },
+        { url: "https://chatgpt.com/", title: "ChatGPT", description: "OpenAI 通用对话助手，插件与高级数据分析能力完备。", category: "大模型对话助手", subCategory: "海外", tags: ["OpenAI", "对话"] },
         { url: "https://claude.ai/", title: "Claude", description: "Anthropic 对话助手，长文写作与代码理解口碑突出。", category: "大模型对话助手", subCategory: "海外", tags: ["Anthropic", "长文本"] },
         { url: "https://gemini.google.com/", title: "Google Gemini", description: "谷歌多模态助手，与搜索和 Workspace 深度整合。", category: "大模型对话助手", subCategory: "海外", tags: ["Google", "多模态"] },
         { url: "https://www.perplexity.ai/", title: "Perplexity", description: "带引用的 AI 搜索式对话，答案可溯源。", category: "大模型对话助手", subCategory: "海外", tags: ["AI 搜索", "引用"] },
@@ -73,7 +73,7 @@ export const aiToolsArsenal: SeedPluginDef = {
         { url: "https://paperswithcode.com/", title: "Papers with Code", description: "论文与实现代码对应检索，跟进 SOTA 最高效。", category: "模型与数据集社区", subCategory: "论文代码", tags: ["论文", "SOTA"] },
         { url: "https://github.com/features/copilot", title: "GitHub Copilot", description: "主流代码补全助手，编辑器内实时生成与解释代码。", category: "AI 编程助手", subCategory: "代码补全", tags: ["Copilot", "补全"] },
         { url: "https://www.cursor.com/", title: "Cursor", description: "AI 优先的代码编辑器，跨文件重构与对话改码体验好。", category: "AI 编程助手", subCategory: "AI IDE", tags: ["编辑器", "AI IDE"] },
-        { url: "https://windsurf.com/", title: "Windsurf", description: "AI 代理式编辑器，自动完成多步工程改动。", category: "AI 编程助手", subCategory: "AI IDE", tags: ["编辑器", "代理"] },
+        { url: "https://windsurf.ai/", title: "Windsurf", description: "AI 代理式编辑器，自动完成多步工程改动。", category: "AI 编程助手", subCategory: "AI IDE", tags: ["编辑器", "代理"] },
         { url: "https://codeium.com/", title: "Codeium", description: "免费额度较大的代码补全与聊天工具，多编辑器支持。", category: "AI 编程助手", subCategory: "代码补全", tags: ["补全", "免费额度"] },
         { url: "https://www.tabnine.com/", title: "Tabnine", description: "老牌 AI 代码补全，支持私有化与团队模型。", category: "AI 编程助手", subCategory: "代码补全", tags: ["补全", "企业"] },
         { url: "https://aws.amazon.com/q/developer/", title: "Amazon Q Developer", description: "亚马逊开发者助手，AWS 场景与代码转换能力强。", category: "AI 编程助手", subCategory: "云厂商", tags: ["AWS", "云开发"] },

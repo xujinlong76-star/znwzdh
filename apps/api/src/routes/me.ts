@@ -30,7 +30,7 @@ import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
 import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION } from "@navhub/store";
 
 import type { AppContext } from "../context.ts";
-import { requestIdentityOf, identityTrusted } from "./shared.ts";
+import { requestIdentityOf, identityTrusted, userDomainWriteAllowed } from "./shared.ts";
 import { verifyIdentitySignature } from "../identity-signature.ts";
 import { invalidateProfileThrottle, refreshUserProfile } from "../profile-service.ts";
 import { recordUserCenterMetric } from "../user-center-metrics.ts";
@@ -85,6 +85,19 @@ function isSafeAvatarUrl(raw: string): boolean {
 
 export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
+
+  // 用户域写面第二轴：只读个人令牌不得调用 /api/me/* 的任何非读方法。
+  // 插件级 onRequest 默认拒绝，新增写路由自动继承；逐 handler 补守卫正是本缺口
+  // 曾经出现的原因。放在 onRequest 而非 preHandler：坏 JSON 在 body 解析阶段就会
+  // 400，preHandler 来不及拒绝，会把授权失败伪装成参数错误。
+  // 会话/BFF/签名身份无 owner，userDomainWriteAllowed 恒放行。
+  app.addHook("onRequest", async (req, reply) => {
+    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;
+    if (userDomainWriteAllowed(req as never)) return;
+    // 必须 return 这个 Reply：异步钩子里裸 send 只发响应不停链，处理器随后照跑
+    // （实测：403 返回的同时设置/数据仍被改写）。
+    return reply.code(403).send({ error: "当前令牌为只读，无法执行写操作" });
+  });
 
   // 协商缓存（T18）：maxAge=0 + etag = 「private, no-cache」+ ETag/304。
   // 概览是多表聚合（计数/设置/别名），被 /me、/me/account、/me/settings 复用；

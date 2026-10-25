@@ -26,6 +26,7 @@ import { ageInDays, trendScore, auditPageHealth, runAutonomousHealing, planPatro
 import {
   bindSqlite,
   toPgSql,
+  chunkList,
   DEFAULT_RETENTION_TARGETS,
   DEFAULT_ROLLUP_TARGETS,
   runRetention,
@@ -288,6 +289,20 @@ export function backoffMs(attempt: number): number {
  * 可用 `NAVHUB_RESTORE_CHUNK` 覆盖——这个开关主要为基准测试保留，生产不要设它。
  * 小于 100 视为误配并回落默认值：片太小会让「每片一个事务」的收益消失。
  */
+/**
+ * 恢复后「增量重建索引」的条数上限。超过就退回全量重建。
+ *
+ * 默认 5000。这个数字是「payload 大小」与「省下的工作量」的折中：
+ *    · 5000 个 UUID ≈ 185KB 塞进 `jobs.payload`，尚可接受；
+ *    · 而 5000 / 50001 时增量只比全量省不到 10%，多一层分支不值当。
+ * 可用 `NAVHUB_REINDEX_INCREMENTAL_MAX` 覆盖（基准测试与极端场景用）。
+ */
+export function reindexIncrementalMax(): number {
+  const raw = Number(process.env.NAVHUB_REINDEX_INCREMENTAL_MAX ?? 5000);
+  if (!Number.isFinite(raw) || raw < 0) return 5000;
+  return Math.floor(raw);
+}
+
 export function restoreChunkSize(): number {
   const raw = Number(process.env.NAVHUB_RESTORE_CHUNK ?? 1000);
   if (!Number.isFinite(raw) || raw < 100) return 1000;
@@ -897,7 +912,19 @@ export class JobRunner {
    * 重建索引：siteId 指定单个；否则全站。vectors=false 只重建拼音/FTS（快）。
    * targets 缺省 = ["sites"]（向后兼容）；包含 "plugins" 时同时重建插件语义向量。
    */
-  private async runReindex(payload: { siteId?: string; vectors?: boolean; targets?: Array<"sites" | "plugins"> }): Promise<void> {
+  private async runReindex(payload: {
+    siteId?: string;
+    /**
+     * 只重建这些站点的索引（恢复任务用）。
+     *
+     * 为什么需要：全量 reindex 是 O(全库)，而恢复只动了库里的一个子集
+     * （全新库）或几条（增量补录）。50k 库上全量要 148 秒，占「恢复 5 万条」
+     * 完整体验的 87%——而其中绝大多数工作与本次恢复无关。
+     */
+    siteIds?: string[];
+    vectors?: boolean;
+    targets?: Array<"sites" | "plugins">;
+  }): Promise<void> {
     const targets: Array<"sites" | "plugins"> =
       Array.isArray(payload.targets) && payload.targets.length > 0 ? payload.targets : ["sites"];
     if (targets.includes("plugins")) {
@@ -910,7 +937,31 @@ export class JobRunner {
     // 分面两个关联子查询，重建索引根本用不到。
     type ReindexRow = { id: string; title: string; description: string | null; url: string };
     const sites: ReindexRow[] = [];
-    if (payload.siteId) {
+    if (Array.isArray(payload.siteIds) && payload.siteIds.length > 0) {
+      /**
+       * 按 id 批量取数。分块是因为 SQLite 的绑定变量上限（999），
+       * `chunkList` 的 500 是仓库里既有的安全口径。
+       *
+       * `deleted_at IS NULL` 不能省：传进来的 id 可能在入队之后被删了，
+       * 给已删除的站点重建索引只会把死数据塞回检索结果里。
+       */
+      for (const part of chunkList(payload.siteIds)) {
+        const rows = await this.ctx.repo.raw(
+          `SELECT id, title, description, url FROM sites WHERE deleted_at IS NULL AND id IN (${part
+            .map(() => "?")
+            .join(",")}) ORDER BY id`,
+          part,
+        );
+        for (const r of rows) {
+          sites.push({
+            id: String(r.id),
+            title: String(r.title ?? ""),
+            description: r.description == null ? null : String(r.description),
+            url: String(r.url ?? ""),
+          });
+        }
+      }
+    } else if (payload.siteId) {
       const one = await this.ctx.repo.getSite(payload.siteId);
       if (one) sites.push({ id: one.id, title: one.title, description: one.description ?? null, url: one.url });
     } else {
@@ -1172,6 +1223,19 @@ export class JobRunner {
     const CHUNK = restoreChunkSize();
 
     /**
+     * 本次真正插入的站点 id（分片提交成功后才记录）。
+     *
+     * 收尾时把它交给 `reindex`，让索引只重建这一批——全量重建是 O(全库)，
+     * 而恢复动的往往只是子集。50k 库上全量要 148 秒，占「恢复 5 万条」
+     * 完整体验的 87%，其中绝大多数工作与本次恢复无关。
+     *
+     * 为什么不在 `insertSitesBulk` 的返回值里取：它在 `hydrate: false` 时
+     * 直接返回 `{ count, sites: [] }`（不为恢复场景多查一遍库），
+     * 而 id 本来就是这里生成的，顺手记下来比让仓储层回查便宜。
+     */
+    const insertedIds: string[] = [];
+
+    /**
      * 断点续跑：`progress_done` 记的是「已处理的计划条数」，按分片对齐后从这里继续。
      *
      * 从 0 重来在正确性上已经安全（下一段的分片级去重会跳掉已存在的），
@@ -1225,25 +1289,25 @@ export class JobRunner {
         existingUrls.size === 0 ? slice : slice.filter((site) => !stagedUrlExists(existingUrls, site.url));
 
       if (fresh.length > 0) {
+        const rows = fresh.map((site) => ({
+          // 新 UUID：恢复不保留原 id（原 id 可能已被软删行占用，撞主键会让整片失败）
+          id: randomUUID(),
+          url: site.url,
+          title: site.title,
+          description: site.description ?? null,
+          categoryId: site.categoryId as string,
+          tags: site.tags ?? [],
+          iconKey: site.iconKey ?? null,
+          // 停用态必须原样恢复，否则恢复会把隐藏内容批量上线
+          enabled: site.enabled !== false,
+          status: (site.enabled === false ? "archived" : "active") as "active" | "archived",
+          createdAt: site.createdAt,
+        }));
         await this.ctx.repo.withTransaction(async () => {
-          await this.ctx.repo.insertSitesBulk(
-            fresh.map((site) => ({
-              // 新 UUID：恢复不保留原 id（原 id 可能已被软删行占用，撞主键会让整片失败）
-              id: randomUUID(),
-              url: site.url,
-              title: site.title,
-              description: site.description ?? null,
-              categoryId: site.categoryId as string,
-              tags: site.tags ?? [],
-              iconKey: site.iconKey ?? null,
-              // 停用态必须原样恢复，否则恢复会把隐藏内容批量上线
-              enabled: site.enabled !== false,
-              status: (site.enabled === false ? "archived" : "active") as "active" | "archived",
-              createdAt: site.createdAt,
-            })),
-            { hydrate: false },
-          );
+          await this.ctx.repo.insertSitesBulk(rows, { hydrate: false });
         });
+        // 事务提交成功才记：回滚的话这些 id 在库里根本不存在
+        for (const row of rows) insertedIds.push(row.id);
       }
 
       // 进度记「已处理」而不是「已写入」：续跑要对齐分片边界，而实际写入数
@@ -1252,9 +1316,42 @@ export class JobRunner {
       await this.ctx.repo.updateJobProgress(jobId, { done: processed, total: sites.length });
     }
 
-    // 恢复只写 sites/site_tags，不建向量：入队 reindex 补语义索引
+    /**
+     * 收尾：为**本次写入的站点**补索引（恢复只写 sites/site_tags，不建向量）。
+     *
+     * 三种情况分开处理，因为它们的正确性与代价完全不同：
+     *
+     *   1. `insertedIds` 为空 —— 本次一条都没写（重跑、或全是已存在的）。
+     *      不入队。以前无条件入队一次全库 reindex，5 万条的库上要白跑 148 秒。
+     *   2. 条数 ≤ 阈值 —— 增量：只重建这批 id。
+     *   3. 条数 > 阈值 —— 退回全量。增量此时已经覆盖库里大半，省不下多少，
+     *      而 payload 里塞几万个 id 反而是负担（阈值可配，见 reindexIncrementalMax）。
+     *
+     * ⚠️ **断点续跑时强制全量**：`startIndex > 0` 说明上一次尝试已经写过
+     * `startIndex` 条却失败了。那批站点从未被索引（reindex 只在任务成功后才入队），
+     * 而它们的 id 已经随失败进程丢失（staging 里存的是计划，不是生成的 UUID）。
+     * 只重建本次写入的 id 会**留下一批没有索引的站点**——而且不会有任何报错。
+     *
+     * ⚠️ 行为变化：全量 reindex 过去还顺带修复了历史脏行（早期写入时
+     * fts_tokens/拼音过期的那批）。增量不做这件事，因为它不是恢复的职责。
+     * 需要全库修复时显式入队：`POST /api/jobs {kind:"reindex", payload:{vectors:true}}`。
+     */
     if (sites.length > 0) {
-      await this.ctx.repo.enqueueJob("reindex", { vectors: true });
+      const resuming = startIndex > 0;
+      if (insertedIds.length === 0) {
+        console.info("[navhub-job] 本次恢复没有新增站点，跳过 reindex", { jobId });
+      } else if (resuming) {
+        console.info("[navhub-job] 断点续跑，改为全量 reindex（前置尝试写入的站点 id 已丢失）", {
+          jobId,
+          resumedFrom: startIndex,
+          insertedNow: insertedIds.length,
+        });
+        await this.ctx.repo.enqueueJob("reindex", { vectors: true });
+      } else if (insertedIds.length <= reindexIncrementalMax()) {
+        await this.ctx.repo.enqueueJob("reindex", { siteIds: insertedIds, vectors: true });
+      } else {
+        await this.ctx.repo.enqueueJob("reindex", { vectors: true });
+      }
     }
 
     // 成功才删 staging（失败保留供重跑/复盘）

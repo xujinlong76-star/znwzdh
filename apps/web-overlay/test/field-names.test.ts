@@ -25,7 +25,7 @@
  * 本测试把规则钉死在 **0 处违规**（没有白名单），并自带反向用例保证扫描器不是空跑。
  */
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -134,6 +134,37 @@ function allTsx(dir: string): string[] {
   return out;
 }
 
+/**
+ * 只扫指定文件（pre-commit 用，见 `NAVHUB_A11Y_SCOPE`）。
+ *
+ * 为什么这条规则可以按文件收窄，而 `keyboard-activation` 不行：
+ * 「一个控件有没有可访问名」只取决于**它所在的那个文件**（aria-label / label 关联 /
+ * FormField 上下文都在同文件内判定），所以只看本次改动的文件在语义上是完备的——
+ * 不会漏判我引入的问题。而 `keyboard-activation` 有跨文件的白名单一致性约束
+ * （「白名单每条必须还对应一处真实命中」），只看子集会把别人的白名单判成过期，
+ * 制造假失败。
+ *
+ * 收窄的代价写在这里：**别人文件里既有的违规不会被我的提交发现**。
+ * 那不是我的提交引入的，而且 CI 会跑全量。这里换的是「并行开发时不再互相阻塞」。
+ */
+const REPO_ROOT = process.cwd();
+const SCOPE_RAW = (process.env.NAVHUB_A11Y_SCOPE ?? "").trim();
+/** null 表示不收窄（跑全量） */
+const SCOPED_FILES: string[] | null = (() => {
+  if (!SCOPE_RAW) return null;
+  const srcRoot = join(ROOT, "src").replace(/\\/g, "/");
+  const picked = SCOPE_RAW.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => (isAbsolute(s) ? s : resolve(REPO_ROOT, s)))
+    .map((s) => s.replace(/\\/g, "/"))
+    // 只认 overlay 源码树里的 .tsx：镜像（apps/web/src）里的同名文件
+    // 与 overlay 内容一致，但行号可能漂移，统一按 overlay 判
+    .filter((s) => s.endsWith(".tsx") && s.startsWith(srcRoot + "/") && existsSync(s));
+  // 一个都没落进 overlay 源码树 → 说明这次没改前端，别把门禁变成空跑
+  return picked.length > 0 ? picked : null;
+})();
+
 describe("扫描器本身是对的（否则守卫只是空跑）", () => {
   it("抓得住：只有 placeholder 的输入框", () => {
     const bad = 'export const X = () => <Input placeholder="搜索站点..." />';
@@ -178,16 +209,21 @@ describe("扫描器本身是对的（否则守卫只是空跑）", () => {
 });
 
 describe("全仓库的表单控件都得有可访问名", () => {
-  const files = allTsx(join(ROOT, "src"));
+  const files = SCOPED_FILES ?? allTsx(join(ROOT, "src"));
 
-  it("确实扫到了源码（不是扫了空目录）", () => {
+  /**
+   * 以下两条是**统计性**断言（扫到多少文件、规则被用了多少次），
+   * 收窄后数字必然变小，它们会假失败——所以按是否收窄跳过。
+   * 「0 处违规」那条不受影响：它对子集同样成立才是真的成立。
+   */
+  it.runIf(SCOPED_FILES === null)("确实扫到了源码（不是扫了空目录）", () => {
     expect(files.length).toBeGreaterThan(80);
     const all = files.map((f) => f.replace(/\\/g, "/")).join("\n");
     expect(all).toContain("/app/admin/sitelist/page.tsx");
     expect(all).toContain("/components/quick-tools-drawer.tsx");
   });
 
-  it("规则确实被大量使用（防止有人删控件来「通过」测试）", () => {
+  it.runIf(SCOPED_FILES === null)("规则确实被大量使用（防止有人删控件来「通过」测试）", () => {
     let named = 0;
     for (const f of files) {
       const src = readFileSync(f, "utf8");
@@ -200,7 +236,7 @@ describe("全仓库的表单控件都得有可访问名", () => {
     expect(named).toBeGreaterThanOrEqual(85);
   });
 
-  it("0 处没有可访问名的控件", () => {
+  it(`0 处没有可访问名的控件${SCOPED_FILES ? `（仅检查本次改动的 ${files.length} 个文件）` : ""}`, () => {
     const problems: string[] = [];
     for (const f of files) {
       const src = readFileSync(f, "utf8");

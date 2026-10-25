@@ -1,0 +1,168 @@
+/**
+ * `scripts/safe-commit.mjs` 的自检。
+ *
+ * 它存在的理由是多会话并行开发时反复踩的两次坑：
+ *   1. 对方 `git add -A && git commit` 把我的工作区改动一并提交（3 次）；
+ *   2. 我 `git add` 之后、`git commit` 之前对方提交过，索引被动过 → 我的提交落空（2 次）。
+ *
+ * 这两件事都不报错、也不留痕迹，只能靠流程约束。所以工具本身必须有测试：
+ *
+ *   · 纯函数：`git status --porcelain` 的解析（重命名、带空格路径）；
+ *   · **集成**：在一个临时 git 仓库里真跑一次，验证「索引里有别人的暂存内容时，
+ *     pathspec 提交不会把它带上」——这是这个工具唯一的核心保证，纯函数测不到。
+ */
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+const ROOT = process.cwd();
+const SCRIPT = resolve(ROOT, "scripts", "safe-commit.mjs");
+
+/**
+ * 脚本是 `.mjs`，没有类型声明。用动态 import 取两个纯函数。
+ *
+ * 放在 beforeAll 而不是顶层 await：本仓的 vitest 配置下，测试文件的顶层 await
+ * 会以 `SyntaxError: Invalid or unexpected token` 的形式失败——
+ * 报错里不带行号，排查成本远高于改成 beforeAll。
+ */
+type SafeCommitModule = {
+  parseStatus: (s: string) => Array<{ status: string; path: string }>;
+  diffSets: (a: string[], b: string[]) => { missing: string[]; extra: string[] };
+};
+let mod: SafeCommitModule;
+
+beforeAll(async () => {
+  // @ts-expect-error —— .mjs 无类型声明
+  mod = (await import("./safe-commit.mjs")) as SafeCommitModule;
+});
+
+describe("parseStatus：porcelain 解析", () => {
+  it("普通修改与新增", () => {
+    expect(mod.parseStatus(" M apps/a.ts\nA  apps/b.ts\n")).toEqual([
+      { status: " M", path: "apps/a.ts" },
+      { status: "A ", path: "apps/b.ts" },
+    ]);
+  });
+
+  it("重命名取新路径（old -> new）", () => {
+    const got = mod.parseStatus("R  old/a.ts -> new/a.ts");
+    expect(got).toHaveLength(1);
+    expect(got[0]!.path).toBe("new/a.ts");
+  });
+
+  it("含空格的路径（被引号包着）", () => {
+    expect(mod.parseStatus(' M "docs/a b.md"')[0]!.path).toBe("docs/a b.md");
+  });
+
+  it("空输出不产生条目", () => {
+    expect(mod.parseStatus("")).toEqual([]);
+    expect(mod.parseStatus("\n\n")).toEqual([]);
+  });
+});
+
+describe("diffSets：提交内容与预期比对", () => {
+  it("完全一致时两项都为空", () => {
+    expect(mod.diffSets(["a", "b"], ["b", "a"])).toEqual({ missing: [], extra: [] });
+  });
+
+  it("漏提交与混入别人的改动都能分辨", () => {
+    expect(mod.diffSets(["a", "b"], ["a", "c"])).toEqual({ missing: ["b"], extra: ["c"] });
+  });
+});
+
+/**
+ * 集成：临时仓库里真跑一次。
+ *
+ * 场景刻意做成「索引里有别人的暂存内容 + 我的工作区有改动」——
+ * 这正是并行会话里最容易出事的状态。
+ */
+describe("集成：pathspec 隔离", () => {
+  let repo: string;
+
+  /**
+   * 所有 git 调用都必须在**干净环境**里跑。
+   *
+   * `safe-commit.mjs` 给提交用的子进程注入 `GIT_INDEX_FILE`，而钩子跑测试时会
+   * 继承这个变量 —— 于是测试里的 git 会去操作**主仓库的独立索引**而不是临时仓库。
+   * 这会让本测试在钩子里失败、在手动执行时通过（本轮就是这样：手动 8/8 绿，
+   * 钩子里 2 例红）。凡是并发/隔离类的测试，都要显式清掉这类环境变量。
+   */
+  const cleanEnv = () => {
+    const env = { ...process.env };
+    delete env.GIT_INDEX_FILE;
+    delete env.GIT_DIR;
+    delete env.GIT_WORK_TREE;
+    return env;
+  };
+
+  const git = (args: string[], cwd = repo) =>
+    execFileSync("git", args, { cwd, encoding: "utf8", env: cleanEnv() }).replace(/\s+$/, "");
+
+  beforeAll(() => {
+    repo = mkdtempSync(join(tmpdir(), "navhub-safe-commit-"));
+    git(["init", "-q"], repo);
+    git(["config", "user.email", "test@example.com"], repo);
+    git(["config", "user.name", "Test"], repo);
+    git(["config", "commit.gpgsign", "false"], repo);
+    writeFileSync(join(repo, "mine.ts"), "export const a = 1;\n");
+    writeFileSync(join(repo, "theirs.ts"), "export const b = 1;\n");
+    git(["add", "."], repo);
+    git(["commit", "-q", "-m", "init"], repo);
+  });
+
+  afterAll(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  it("只提交我指定的路径，别人的暂存内容留在索引里", () => {
+    // 我改 mine.ts；「别人」改 theirs.ts 并已暂存
+    writeFileSync(join(repo, "mine.ts"), "export const a = 2;\n");
+    writeFileSync(join(repo, "theirs.ts"), "export const b = 2;\n");
+    git(["add", "theirs.ts"], repo);
+
+    writeFileSync(join(repo, ".msg"), "feat: 只提交 mine\n");
+    const out = execFileSync(
+      process.execPath,
+      [SCRIPT, "--msg-file", ".msg", "--", "mine.ts"],
+      { cwd: repo, encoding: "utf8", env: cleanEnv() },
+    );
+
+    expect(out).toContain("提交内容与预期完全一致");
+
+    // 提交里只有 mine.ts
+    const committed = git(["show", "--name-only", "--format=", "HEAD"]).split("\n").filter(Boolean);
+    expect(committed).toEqual(["mine.ts"]);
+
+    /**
+     * 别人的改动仍在共享索引里、工作区没被动过。
+     *
+     * 同时锁住一件容易漏的事：提交后 mine.ts 在**共享索引**里必须已同步到新 HEAD
+     * （`git status` 干净）。否则它会以「已暂存的旧内容」留着，
+     * 下一次不带 paths 的 `git commit` 会把旧内容提交回去 —— 等于回退这次提交。
+     */
+    expect(git(["diff", "--cached", "--name-only"])).toBe("theirs.ts");
+    expect(git(["status", "--porcelain", "--", "theirs.ts"])).toBe("M  theirs.ts");
+    expect(git(["status", "--porcelain", "--", "mine.ts"])).toBe("");
+  });
+
+  it("路径没有任何变更时快速失败，而不是造出空提交", () => {
+    const before = git(["rev-parse", "HEAD"]);
+    writeFileSync(join(repo, ".msg2"), "chore: 空\n");
+    let failed = false;
+    try {
+      execFileSync(process.execPath, [SCRIPT, "--msg-file", ".msg2", "--", "mine.ts"], {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: "pipe",
+        env: cleanEnv(),
+      });
+    } catch (err) {
+      failed = true;
+      expect(String((err as { stderr?: string }).stderr)).toContain("没有任何变更");
+    }
+    expect(failed).toBe(true);
+    expect(git(["rev-parse", "HEAD"])).toBe(before);
+  });
+});

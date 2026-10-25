@@ -349,3 +349,129 @@ describe("backup_restore 任务", () => {
     expect(String(row.status)).toBe("cancelled");
   });
 });
+
+/**
+ * 收尾的 reindex：**只重建本次写入的站点**。
+ *
+ * 为什么值得单独一组测试：全量 reindex 是 O(全库)，而恢复动的往往只是子集。
+ * 50k 库上全量要 148 秒，占「恢复 5 万条」完整体验的 87%。改成增量后
+ * 最常见的两种场景（补录几条、重跑无新增）从「分钟级尾巴」变成「零」。
+ *
+ * 代价是三条分支各自有不同的正确性前提，必须逐条锁住：
+ *   · 零增量不入队（否则白跑全库）；
+ *   · 小批量走增量（省时间）；
+ *   · **断点续跑强制全量**（前置失败尝试写入的 id 已随进程丢失，
+ *     只重建本次的会留下一批没索引的站点，且不报错）。
+ */
+describe("收尾 reindex：按需增量", () => {
+  /** 取最近一条 reindex 任务的 payload */
+  async function lastReindexPayload(): Promise<Record<string, unknown> | null> {
+    const rows = await ctx.repo.raw(
+      "SELECT payload FROM jobs WHERE kind = 'reindex' ORDER BY created_at DESC LIMIT 1",
+    );
+    if (!rows[0]?.payload) return null;
+    return JSON.parse(String(rows[0].payload)) as Record<string, unknown>;
+  }
+
+  async function countReindexJobs(): Promise<number> {
+    const rows = await ctx.repo.raw("SELECT COUNT(*) AS c FROM jobs WHERE kind = 'reindex'");
+    return Number(rows[0]!.c);
+  }
+
+  it("新增站点 → 入队增量 reindex，带上这批 id", async () => {
+    await ctx.repo.run("DELETE FROM jobs WHERE kind = 'reindex'");
+    await ctx.repo.run("DELETE FROM sites WHERE url LIKE 'https://inc-%'");
+    const stagingPath = await writeStaging("inc", {
+      categories: [],
+      sites: Array.from({ length: 3 }, (_, i) => ({
+        url: `https://inc-${i}.example.com`,
+        title: `增量 ${i}`,
+        categoryId: "job-cat-1",
+      })),
+    });
+
+    const id = await ctx.repo.enqueueJob("backup_restore", { stagingPath });
+    await new JobRunner(ctx, { enableCron: false }).tick();
+
+    const job = (await ctx.repo.raw("SELECT status FROM jobs WHERE id = ?", [id]))[0]!;
+    expect(String(job.status)).toBe("done");
+
+    expect(await countReindexJobs()).toBe(1);
+    const payload = await lastReindexPayload();
+    const siteIds = payload?.siteIds as string[];
+    expect(Array.isArray(siteIds)).toBe(true);
+    expect(siteIds).toHaveLength(3);
+    // 传的必须是真实入库的 id，不是计划里的 URL 或旧 id
+    const inDb = await ctx.repo.raw(
+      "SELECT COUNT(*) AS c FROM sites WHERE id IN (?,?,?) AND deleted_at IS NULL",
+      siteIds,
+    );
+    expect(Number(inDb[0]!.c)).toBe(3);
+  });
+
+  it("重跑同一份 staging（全已存在）→ 不再入队 reindex", async () => {
+    await ctx.repo.run("DELETE FROM jobs WHERE kind = 'reindex'");
+    const stagingPath = await writeStaging("inc-noop", {
+      categories: [],
+      sites: Array.from({ length: 3 }, (_, i) => ({
+        // 与上一条用例相同的 URL：去重后全部跳过
+        url: `https://inc-${i}.example.com`,
+        title: `增量 ${i}`,
+        categoryId: "job-cat-1",
+      })),
+    });
+
+    const id = await ctx.repo.enqueueJob("backup_restore", { stagingPath });
+    await new JobRunner(ctx, { enableCron: false }).tick();
+
+    const job = (await ctx.repo.raw("SELECT status FROM jobs WHERE id = ?", [id]))[0]!;
+    expect(String(job.status)).toBe("done");
+    // 一条都没写，索引也没变，没必要跑全库
+    expect(await countReindexJobs()).toBe(0);
+  });
+
+  it("断点续跑 → 强制全量（前置尝试写入的 id 已丢失）", async () => {
+    await ctx.repo.run("DELETE FROM jobs WHERE kind = 'reindex'");
+    await ctx.repo.run("DELETE FROM sites WHERE url LIKE 'https://resume-idx-%'");
+    const total = 2100;
+    const stagingPath = await writeStaging("resume-idx", {
+      categories: [],
+      sites: Array.from({ length: total }, (_, i) => ({
+        url: `https://resume-idx-${i}.example.com`,
+        title: `续跑 ${i}`,
+        categoryId: "job-cat-1",
+      })),
+    });
+    // 伪造「上一次已处理 2000 条后失败」：那 2000 条的 id 无从得知，
+    // 所以只能全量重建，否则它们永远没有索引。
+    await ctx.repo.run("DELETE FROM sites WHERE url LIKE 'https://resume-idx-%'");
+    const id = await ctx.repo.enqueueJob("backup_restore", { stagingPath });
+    await ctx.repo.run("UPDATE jobs SET progress_done = 2000 WHERE id = ?", [id]);
+
+    await new JobRunner(ctx, { enableCron: false }).tick();
+
+    const payload = await lastReindexPayload();
+    expect(payload).not.toBeNull();
+    // 全量的标志：payload 里没有 siteIds
+    expect(payload!.siteIds).toBeUndefined();
+    expect(payload!.vectors).toBe(true);
+  });
+
+  it("reindex 带 siteIds 时只处理这些站点（不是全库）", async () => {
+    await ctx.repo.run("DELETE FROM jobs WHERE kind = 'reindex'");
+    await ctx.repo.run("DELETE FROM events WHERE kind = 'reindex'");
+    const rows = await ctx.repo.raw(
+      "SELECT id FROM sites WHERE deleted_at IS NULL ORDER BY id LIMIT 2",
+    );
+    const ids = rows.map((r) => String(r.id));
+    expect(ids.length).toBe(2);
+
+    await ctx.repo.enqueueJob("reindex", { siteIds: ids, vectors: false });
+    await new JobRunner(ctx, { enableCron: false }).tick();
+
+    const ev = await ctx.repo.raw("SELECT meta FROM events WHERE kind = 'reindex' LIMIT 1");
+    expect(ev[0]).toBeTruthy();
+    // 库里站点远多于 2 条；事件里的 sites 必须是 2，证明没退化成全量
+    expect(Number(JSON.parse(String(ev[0]!.meta)).sites)).toBe(2);
+  });
+});

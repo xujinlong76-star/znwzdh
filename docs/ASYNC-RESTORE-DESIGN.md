@@ -260,6 +260,36 @@ private async runBackupRestore(payload: { stagingPath?: string }, jobId: string)
 2. 失败时**不删** staging（否则重跑没数据）；
 3. 状态接口明确报 `failed` + `reason`，前端提示「已导入 N 条，重试将跳过它们」。
 
+### 4.2 进度上报
+
+`jobs` 表加两列：
+
+```sql
+ALTER TABLE jobs ADD COLUMN progress_done INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE jobs ADD COLUMN progress_total INTEGER NOT NULL DEFAULT 0;
+```
+
+**实施注意（已核实机制）**：补列不是「自动比对 schema」，而是清单驱动——
+`packages/store/src/migrate.ts` 的 `COLUMN_ALTERS` 数组 + `migrateColumns()` 逐条判存在。
+所以必须加**三处**：`driver.ts` 的 `DDL_SQLITE` / `DDL_PG` 的 `CREATE TABLE`、以及
+`COLUMN_ALTERS` 里两条（`sqlite` 与 `pg` 两种写法）。只改 DDL 的话老库永远拿不到新列。
+
+不用 `recordEvent` 记进度：事件表是按时间追加的，5 万条会产生几十条噪音，而进度是
+「最新值」语义。
+
+### 4.3 心跳与僵尸判定（已核实）
+
+`JobRunner` 的执行中心跳是 60 秒（`JOB_HEARTBEAT_DEFAULT_MS`），
+`reapStaleJobs` 的僵尸判定是 `updated_at < now - 15min`。两条推论：
+
+1. **本任务不会误判**：5 万条约 40 秒，远小于 15 分钟；
+2. **但进程被杀后，任务会在 `running` 状态停留最多 15 分钟**才会被回收重试。
+   所以 `GET status` 在进程刚死的窗口里只能如实报 `running`——**不要**在客户端
+   自己加「超过 N 分钟就报失败」的推断，那会和真实状态打架。前端提示写
+   「仍在运行，若长时间无进展请联系管理员」即可。
+
+---
+
 ### 4.4 分片基准（2026-10-25，`scripts/bench-restore-chunk.ts`）
 
 复现：
@@ -292,20 +322,7 @@ node --experimental-strip-types scripts/bench-restore-chunk.ts --sites=30000 --c
 > 教训：**基准里每出现一个下游副作用（入队、级联、后台任务）都要摘出计时；
 > 每个结论都要有重复次数。**
 
-### 4.6 下一步：把 reindex 变成「只重建本次写入的站点」
-
-现状：恢复成功无条件 `enqueueJob("reindex", { vectors: true })`——**全库重建**。
-50k 库上这是 148 秒，而本次恢复只动了其中一部分（甚至 0 条，当全部已存在时）。
-
-代价表（10k 库）：恢复 1.8s + reindex 4.0s；50k 库：恢复 22.6s + reindex 148.7s。
-reindex 的占比从 69% 涨到 87%——**库越大，恢复的尾巴越长**。
-
-方案（未实施）：给 `reindex` 支持 `{ siteIds?: string[] }`，恢复时只传本次实际插入的 id。
-需要处理：分片写入时收集 id（`insertSitesBulk` 返回 `sites`），跨分片累加后随任务入队。
-风险：任务 payload 会变大（5 万 id ≈ 2MB）——所以更好的做法是写一张 `pending_reindex`
-表或复用 staging 文件路径，任务按文件读 id。
-
-### 4.5 顺带修掉的 O(n²)### 4.5 顺带修掉的 O(n²)：`getSite` 的 OR 查询
+### 4.5 顺带修掉的 O(n²)：`getSite` 的 OR 查询
 
 `getSite(idOrUrl)` 原本是一条 SQL：
 
@@ -332,35 +349,39 @@ WHERE (s.id = ? OR s.url = ?) AND s.deleted_at IS NULL LIMIT 1
 修法：拆成两次查询——先按主键，未命中再按 url（带 `deleted_at IS NULL` 正好命中
 `sites_url_idx` 部分唯一索引）。**不要合并回 OR**，注释已写在源码里。
 
-### 4.2 进度上报
+### 4.6 收尾的 reindex：只重建本次写入的站点（已实施）
 
-`jobs` 表加两列：
+改造前：恢复成功无条件 `enqueueJob("reindex", { vectors: true })`——**全库重建**。
+50k 库上这是 148 秒，而本次恢复只动了其中一部分（甚至 0 条，当全部已存在时）。
 
-```sql
-ALTER TABLE jobs ADD COLUMN progress_done INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE jobs ADD COLUMN progress_total INTEGER NOT NULL DEFAULT 0;
-```
+改造后（`reindex` 支持 `{ siteIds?: string[] }`），恢复任务按三种情况分流：
 
-**实施注意（已核实机制）**：补列不是「自动比对 schema」，而是清单驱动——
-`packages/store/src/migrate.ts` 的 `COLUMN_ALTERS` 数组 + `migrateColumns()` 逐条判存在。
-所以必须加**三处**：`driver.ts` 的 `DDL_SQLITE` / `DDL_PG` 的 `CREATE TABLE`、以及
-`COLUMN_ALTERS` 里两条（`sqlite` 与 `pg` 两种写法）。只改 DDL 的话老库永远拿不到新列。
+| 本次实际写入 | 收尾动作 | 依据 |
+|---|---|---|
+| 0 条（重跑 / 全已存在） | **不入队** | 索引没变，全库重建纯属白跑 |
+| 1 – 5000 条 | 增量（只重建这批 id） | 省下的时间最多，payload ≈ 185KB 可接受 |
+| > 5000 条 | 全量 | 已覆盖库里大半，省不下多少；几万个 id 反而是负担 |
+| **断点续跑**（`startIndex > 0`） | **强制全量** | 见下 |
 
-不用 `recordEvent` 记进度：事件表是按时间追加的，5 万条会产生几十条噪音，而进度是
-「最新值」语义。
+**断点续跑为什么必须全量**：`startIndex > 0` 说明上一次尝试已经写过 `startIndex` 条却失败了。
+那批站点从未被索引（`reindex` 只在任务成功后才入队），而它们的 id 已随失败进程丢失
+（staging 里存的是计划，不是任务生成的 UUID）。只重建本次写入的 id 会**留下一批没有
+索引的站点，而且不报错**——这种「安静的残缺」比慢更糟。
 
-### 4.3 心跳与僵尸判定（已核实）
+实测对照（5 万条库上补录 100 条，用 `NAVHUB_REINDEX_INCREMENTAL_MAX=0` 强制全量作对照）：
 
-`JobRunner` 的执行中心跳是 60 秒（`JOB_HEARTBEAT_DEFAULT_MS`），
-`reapStaleJobs` 的僵尸判定是 `updated_at < now - 15min`。两条推论：
+| 口径 | 恢复自身 | 收尾 reindex | 总墙钟 |
+|---|---:|---:|---:|
+| 全量（改动前行为） | 94ms | **65,852ms** | 65.97s |
+| **增量（改动后）** | 78ms | **108ms** | **0.19s** |
 
-1. **本任务不会误判**：5 万条约 40 秒，远小于 15 分钟；
-2. **但进程被杀后，任务会在 `running` 状态停留最多 15 分钟**才会被回收重试。
-   所以 `GET status` 在进程刚死的窗口里只能如实报 `running`——**不要**在客户端
-   自己加「超过 N 分钟就报失败」的推断，那会和真实状态打架。前端提示写
-   「仍在运行，若长时间无进展请联系管理员」即可。
+**约 350 倍**。这也说明「恢复 5 万条要 3 分钟」里真正属于恢复的只有 22 秒，
+其余全是与本次写入无关的全库重建。
 
----
+> ⚠️ 行为变化：全量 reindex 过去还顺带修复了历史脏行（早期写入时 fts_tokens/拼音过期的那批）。
+> 增量不做这件事，因为它不是恢复的职责。需要全库修复时显式入队：
+> `POST /api/jobs {"kind":"reindex","payload":{"vectors":true}}`（scope: write）。
+> 这条已写进源码注释与 RUNBOOK，避免后来者以为「恢复会顺便把索引洗干净」。
 
 ## 5. 失败语义
 

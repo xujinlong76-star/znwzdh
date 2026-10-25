@@ -172,6 +172,9 @@ export default function MarketplaceImportPage() {
             <div className="flex gap-2">
               <input
                 type="url"
+                // 可访问名取上方那行可见文字（"或从 GitHub / 远程 URL 直接抓取清单"）：
+                // placeholder 是**示例**而不是名字，读屏进去只会念「编辑框」。
+                aria-label="清单文件的远程 URL 或 GitHub 链接"
                 value={remoteUrl}
                 onChange={(e) => setRemoteUrl(e.target.value)}
                 placeholder="https://raw.githubusercontent.com/.../plugin.json 或 GitHub 文件链接"

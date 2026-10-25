@@ -232,6 +232,33 @@ node scripts/verify-guard.mjs \
 `--expect-output` 不是可选项而是纪律：**没有它，「红了」可能与你改的那段无关**。
 安全：`--file` 工作区有改动时拒绝执行（避免覆盖并行会话的改动），崩溃/Ctrl-C 都会还原。
 
+破坏方式有两种，按守卫的形态选：
+
+| 模式 | 用法 | 适合 |
+|---|---|---|
+| **替换**（默认） | `--from` / `--to` | 改坏一段已有的逻辑（如把 `ftsMs` 记成 `semanticMs`） |
+| **追加** | `--append '<一行代码>'` | **新增**一个违规——给「扫全仓源码」型守卫用 |
+
+`--append` 存在的理由很具体：`field-names`、`keyboard-activation` 这类守卫检查的是
+「整个 src 里有没有违规」，破坏方式是**多出一个违规**而不是改掉某段逻辑，
+`from`/`to` 表达不了。实测（往恢复页追加一个只有 placeholder 的 `<input>`）：
+
+```bash
+node scripts/verify-guard.mjs \
+  --file apps/web-overlay/src/app/admin/data/restore/page.tsx \
+  --append 'export const __a11yProbe = () => <input placeholder="仅用于反向验证" />;' \
+  --test apps/web/test/field-names.test.ts \
+  --expect-output "admin/data/restore/page.tsx"
+```
+
+两条约束：
+
+1. 追加内容必须**自包含**（不新增 import）。否则测试会因编译错误而红，
+   与你想验证的断言无关，`--expect-output` 会判成「无法归因」——这是设计如此。
+2. `expectOutput` 要选**只在失败时出现**的串。上面用 `admin/data/restore/page.tsx`
+   而不是断言消息里的「没有可访问名」——因为测试名就叫「0 处没有可访问名的控件」，
+   那个词在通过时也会出现，失去区分力。
+
 **一次跑完全部登记过的配方**：`npm run verify:guards`（读 `scripts/guard-recipes.json`）。
 
 配方只收「曾经失效过」或「失效后果严重且不易察觉」的守卫，每条都要跑一次测试，

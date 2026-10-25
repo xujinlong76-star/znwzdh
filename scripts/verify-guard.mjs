@@ -25,6 +25,21 @@
  *   --expect-output "不应包含 semantic 的等待"
  * ```
  *
+ * 有些守卫的破坏方式不是「替换一段文本」，而是「**新增**一个违规」——
+ * 例如 `field-names`（扫全仓，检查每个表单控件有没有可访问名）。
+ * 那种用 `--append`：往目标文件末尾加一行代码。
+ *
+ * ```bash
+ * node scripts/verify-guard.mjs \
+ *   --file apps/web-overlay/src/app/admin/data/restore/page.tsx \
+ *   --append 'export const __probe = () => <input placeholder="探针" />;' \
+ *   --test apps/web/test/field-names.test.ts \
+ *   --expect-output "这些控件没有可访问名"
+ * ```
+ *
+ * 追加的内容必须**自包含**（不新增 import）：否则测试会因编译错误而红，
+ * 那与你想验证的断言无关，`--expect-output` 会把它判成「无法归因」——这是设计如此。
+ *
  * 也可以一次跑完全部登记过的配方：
  *
  * ```bash
@@ -93,6 +108,7 @@ function parseArgs(argv) {
       case "--cmd": out.cmd = next(); break;
       case "--allow-dirty": out.allowDirty = true; break;
       case "--all": out.all = true; break;
+      case "--append": out.append = next(); break;
       default:
         fail(`未知参数：${key}\n  可用：--file --from --to --test --grep --expect-output --cmd --allow-dirty`);
     }
@@ -127,7 +143,10 @@ if (args.all) {
     if (r.why) console.log(`[guards] 守的是：${r.why}`);
     console.log("=".repeat(64));
 
-    const childArgs = [selfPath, "--file", r.file, "--from", r.from, "--to", r.to];
+    const childArgs =
+      r.mode === "append"
+        ? [selfPath, "--file", r.file, "--append", r.content]
+        : [selfPath, "--file", r.file, "--from", r.from, "--to", r.to];
     if (r.test) childArgs.push("--test", r.test);
     if (r.grep) childArgs.push("--grep", r.grep);
     if (r.expectOutput) childArgs.push("--expect-output", r.expectOutput);
@@ -163,8 +182,15 @@ if (args.all) {
 }
 
 if (!args.file) fail("缺少 --file（要改坏的源文件）");
-if (!args.from) fail("缺少 --from（原文片段）");
-if (args.to === undefined) fail("缺少 --to（替换成什么；可以是空串）");
+if (args.append !== undefined) {
+  if (args.from !== undefined || args.to !== undefined) {
+    fail("--append 与 --from/--to 不能混用：一个是「新增」，一个是「替换」");
+  }
+  if (String(args.append).trim() === "") fail("--append 内容不能为空");
+} else {
+  if (!args.from) fail("缺少 --from（原文片段），或用 --append 追加一行");
+  if (args.to === undefined) fail("缺少 --to（替换成什么；可以是空串）");
+}
 if (!args.test && !args.cmd) fail("缺少 --test（要跑的测试文件）或 --cmd（自定义命令）");
 
 const file = resolve(args.file);
@@ -182,21 +208,26 @@ if (!args.allowDirty) {
   }
 }
 
-/** 2) 读取 + 断言片段存在 */
+/** 2) 读取 + 构造变体（append 模式不碰原文，只在末尾追加一行） */
 const original = readFileSync(file, "utf8");
-const occurrences = original.split(args.from).length - 1;
-if (occurrences === 0) {
-  fail(
-    `在 ${args.file} 里找不到 --from 片段：\n  ${JSON.stringify(args.from)}\n` +
-      `  片段必须与源码逐字符一致（含缩进与逗号）。`,
-  );
-}
-if (occurrences > 1) {
-  fail(`--from 片段在文件中出现 ${occurrences} 次，无法确定替换哪一处。请给出更长的上下文。`);
+const isAppend = args.append !== undefined;
+const occurrences = isAppend ? 0 : original.split(args.from).length - 1;
+if (!isAppend) {
+  if (occurrences === 0) {
+    fail(
+      `在 ${args.file} 里找不到 --from 片段：\n  ${JSON.stringify(args.from)}\n` +
+        `  片段必须与源码逐字符一致（含缩进与逗号）。`,
+    );
+  }
+  if (occurrences > 1) {
+    fail(`--from 片段在文件中出现 ${occurrences} 次，无法确定替换哪一处。请给出更长的上下文。`);
+  }
 }
 
-const mutated = original.replace(args.from, args.to);
-if (mutated === original) fail("替换后内容没有变化（--to 与 --from 相同？）");
+const mutated = isAppend
+  ? `${original.replace(/\r?\n?$/, "\n")}${args.append}\n`
+  : original.replace(args.from, args.to);
+if (mutated === original) fail("改动后内容没有变化（--to 与 --from 相同？）");
 
 /** 3) 备份 + 注册还原（三条路径都覆盖：正常、异常、Ctrl-C） */
 const BAK = backupPathFor(file);
@@ -233,7 +264,11 @@ const cmdText =
   );
 
 console.log(`\n[verify-guard] 已改坏：${relative(process.cwd(), file)}`);
-console.log(`[verify-guard] ${JSON.stringify(args.from)} → ${JSON.stringify(args.to)}`);
+console.log(
+  isAppend
+    ? `[verify-guard] 追加：${JSON.stringify(args.append)}`
+    : `[verify-guard] ${JSON.stringify(args.from)} → ${JSON.stringify(args.to)}`,
+);
 console.log(`[verify-guard] 执行：${cmdText}\n`);
 
 const res = args.cmd

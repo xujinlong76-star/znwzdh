@@ -23,6 +23,10 @@ const RECIPES_PATH = resolve(ROOT, "scripts", "guard-recipes.json");
 interface Recipe {
   name?: string;
   why?: string;
+  /** "append" 表示「往文件末尾加一行」；缺省是「替换 from → to」 */
+  mode?: "append";
+  /** append 模式下要追加的那一行（必须自包含，不加新 import） */
+  content?: string;
   file?: string;
   from?: string;
   to?: string;
@@ -48,8 +52,13 @@ describe("配方文件结构", () => {
       // name 要能一眼看出守的是什么，不是 "recipe-1"
       expect(String(r.name).length, `第 ${i + 1} 条的 name 太短`).toBeGreaterThan(6);
       expect(r.file, `${r.name} 缺 file`).toBeTruthy();
-      expect(r.from, `${r.name} 缺 from`).toBeTruthy();
-      expect(typeof r.to, `${r.name} 缺 to（可以是空串，但不能 undefined）`).toBe("string");
+      if (r.mode === "append") {
+        // 新增型破坏：不需要 from/to，但必须有 content
+        expect(r.content, `${r.name} 是 append 模式但缺 content`).toBeTruthy();
+      } else {
+        expect(r.from, `${r.name} 缺 from（非 append 模式必须给 from/to）`).toBeTruthy();
+        expect(typeof r.to, `${r.name} 缺 to（可以是空串，但不能 undefined）`).toBe("string");
+      }
       // 至少要能跑：要么给 test，要么给 cmd
       expect(Boolean(r.test) || Boolean(r.cmd), `${r.name} 既没有 test 也没有 cmd`).toBe(true);
     }
@@ -67,6 +76,13 @@ describe("配方仍指向存在的代码（这条不跑测试，只查文件与�
     (_name, r) => {
       const file = resolve(ROOT, String(r.file));
       expect(existsSync(file), `源文件不存在：${r.file}`).toBe(true);
+      if (r.mode === "append") {
+        // append 模式只要求「目标文件里还没有这段内容」——否则追加会变成重复
+        // （那段内容本来就在的话，测试可能仍然通过，于是「守卫有效」会被误判）
+        const text = readFileSync(file, "utf8");
+        expect(text.includes(String(r.content)), `${r.file} 里已存在 append 内容，会重复追加`).toBe(false);
+        return;
+      }
       const text = readFileSync(file, "utf8");
       const count = text.split(String(r.from)).length - 1;
       expect(count, `--from 在 ${r.file} 里出现 ${count} 次（必须恰好 1 次）`).toBe(1);

@@ -34,6 +34,15 @@
       "grep": "复数归一回归",
       "expectOutput": "apps/api/test/backup-restore-job",
       "afterRestore": "node scripts/install-git-hooks.mjs"
+    },
+    {
+      "name": "field-names：新增的无名控件必须被抓住",
+      "why": "这条守卫曾长期失效——主干上就有一条违规（marketplace/import 的输入框），于是每次提交只能 SKIP 绕过，门禁等于没有。修掉之后「0 违规」才真正成立，必须锁住。",
+      "mode": "append",
+      "file": "apps/web-overlay/src/app/admin/data/restore/page.tsx",
+      "content": "export const __a11yProbe = () => <input placeholder=\"仅用于反向验证\" />;",
+      "test": "apps/web/test/field-names.test.ts",
+      "expectOutput": "admin/data/restore/page.tsx"
     }
   ]
 }

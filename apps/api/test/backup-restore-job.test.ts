@@ -337,8 +337,18 @@ describe("backup_restore 任务", () => {
     const wall = Number(row.updated_at) - Number(row.created_at);
     expect(duration).toBeGreaterThan(0);
     expect(wall).toBeGreaterThanOrEqual(300); // 排队时间确实体现在 wall 上
-    expect(duration).toBeLessThan(wall); // 而 duration 不含它
-    expect(duration).toBeLessThan(300);
+    /**
+     * 关键性质用**差值**判断，不用绝对毫秒。
+     *
+     * 原来这里还有一条 `expect(duration).toBeLessThan(300)`——本意是「不含那 300ms 排队」，
+     * 但它隐含了「执行本身远快于 300ms」这个前提。全量并发（maxWorkers=3、机器满载）下
+     * 恢复一条站点就要几百毫秒，于是 duration 超过 300 而假红（2026-10-25 `pnpm verify`
+     * 实测）。而它其实**正确**地不含排队。
+     *
+     * `wall - duration` 才是不变量：wall ≈ 300（排队）+ duration，所以差值 ≥ 250 就证明
+     * 「duration 没把排队算进来」，与机器快慢无关。旧实现（duration = wall）时差值为 0，照样抓得住。
+     */
+    expect(wall - duration).toBeGreaterThanOrEqual(250);
   });
 
   it("cancelJob 支持退避中的任务（否则用户只能干等重试窗口）", async () => {

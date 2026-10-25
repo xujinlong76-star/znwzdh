@@ -22,7 +22,14 @@ chrome.omnibox.onInputChanged.addListener(async (text, suggest) => {
 
   try {
     const apiBase = await getApiUrl();
-    const res = await fetch(`${apiBase}/api/search?q=${encodeURIComponent(text.trim())}&limit=6`);
+    // 带上已配置的个人令牌：/api/search 里的事件归属走 requestIdentityOf（Header→Query→Body），
+    // 令牌有效时命中的是 auth.ownerIdentity（服务端校验过的真实身份），与 web 端同口径；
+    // 令牌无效/过期时，public 路由按「与不带 token 一致」当匿名处理（server.ts 的鉴权钩子），
+    // 所以这里不会因为多带一个头而把建议列表打成空。
+    const token = await getToken();
+    const res = await fetch(`${apiBase}/api/search?q=${encodeURIComponent(text.trim())}&limit=6`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
     if (!res.ok) return;
 
     const data = await res.json();

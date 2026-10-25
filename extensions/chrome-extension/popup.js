@@ -179,7 +179,13 @@ searchInput.addEventListener("input", (e) => {
   debounceTimer = setTimeout(async () => {
     try {
       const apiBase = await getApiBase();
-      const res = await fetch(`${apiBase}/api/search?q=${encodeURIComponent(q)}&limit=5`);
+      // 与收藏/投稿同一口径带上个人令牌：有效时服务端按 auth.ownerIdentity 归属这条搜索行为
+      // （/api/search 的事件归属用 requestIdentityOf，令牌优先于任何自称头）；
+      // 无效或没配令牌时 public 路由当匿名处理，行为与改动前一致。
+      const token = await getToken();
+      const res = await fetch(`${apiBase}/api/search?q=${encodeURIComponent(q)}&limit=5`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       if (!res.ok) return;
       const data = await res.json();
       renderResults(data.hits || data.items || []);

@@ -30,6 +30,9 @@ export const siteHandlers = {
     const input = SearchSitesInput.parse(args ?? {});
     // facets 在 schema 里是对外承诺过的过滤维度（MCP inputSchema / OpenAPI 都从那份契约生成），
     // 漏传等于"文档说能筛、实际静默不过滤"，Agent 会拿到超集还以为是结果。
+    // 直连检索引擎、不走 /api/search：机器面不写 search/zero_result 行为事件、
+    // 不进搜索历史、也不做个性化加权（Agent 的一次查询不等于人的兴趣信号）。
+    // 跨端口径是刻意的，改动前先确认「零结果榜」和「搜索历史」不会因此漏掉或虚增。
     const result = await ctx.search.search({ q: input.query, limit: input.limit, categoryId: input.categoryId, tag: input.tag, facets: input.facets });
     const byId = await ctx.repo.getSitesByIds(result.hits.map((h) => h.siteId));
     const results = result.hits.map((h) => {

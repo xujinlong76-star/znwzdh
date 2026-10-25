@@ -61,7 +61,8 @@ test('AI 工坊：JSON 清单 / 元数据微调与 Diff / 自动化体检 / 启�
   await page.goto('/marketplace', { waitUntil: 'domcontentloaded' });
   await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible({ timeout: 60_000 });
   await page.getByLabel('搜索插件').fill(name);
-  await page.getByRole('button', { name: '搜索' }).click();
+  // 热门标签「搜索增强」也是 button，子串匹配会命中两个；与 plugin-market.spec 同口径精确匹配
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
   await expect(page.getByText(name, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
   await page.getByRole('link', { name: new RegExp(name) }).first().click();
   await awaitContentReady(page, page.getByRole('heading', { level: 1 }).filter({ hasText: name }));

@@ -206,3 +206,15 @@ field-names / silent-catch / rsc-boundary 守卫的余红经逐一归属核查�
 | A3.3 步骤 3 抽出 | ✅ 784→582 | publish-payload-step.tsx（步骤3+提交行整体抽出，纠缠以「连同提交行」化解）；工坊向导 + 发布向导 E2E 通过；全链路用例败在 admin/plugins（并行 WIP），非本页 |
 | 隔离重启 lint 化评估 | ✅ 结论：守卫即基线 | mock-hygiene vitest 守卫已在同一 CI 门禁内阻断回归（三条规则 + exempt 通道）；eslint 规则会以更弱的上下文重复同一机制，不建 |
 | 五巨石治理 | ✅ 全部完成 | algorithm-lab 2216→294+12面板 / sitelist 2128→1531 / plugin-detail 1817→981+944 / ai-studio 1719→970+798 / publish 1120→582+371+186 |
+
+---
+
+## 12. 第八批执行（2026-10-25 深夜）
+
+| 项 | 状态 | 落点 |
+| --- | --- | --- |
+| D2 灰度实验（isolate:false 终审） | ✅ 结论 closed | overlay 侧完整卫生下受控实验：失败从 8 文件降到实质 1 个污染受害者（home-diy-vault-delete-guard）——四个兄弟守卫 mock 同一模块 ../src/lib/identity，共享 worker 下 mock 实例互通，resetModules 无法治理；**isolate:false 永久关闭**，因果链完整入档 |
+| D3 完整收口 | ✅ d4c8c98 | 四个 spec 的登录副本统一到 helpers（enterAdminArea/gotoAdminPage）；基线对照抓出并修复 waitForURL 'load' 慢等待（commit 级），三套件 6/6 且 4.6min→52s |
+
+**验证纪律示范**：迁移后 2 败 → git stash 基线对照（原版 4/4）→ 快照定位
+（waitForURL 吞预算）→ 修复 → 6/6 + 消费者回归 5/5。不靠猜。

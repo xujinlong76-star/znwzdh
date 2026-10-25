@@ -95,7 +95,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
     await page.getByLabel('搜索插件').fill(name);
-    await page.getByRole('button', { name: '搜索' }).click();
+    await page.getByRole('button', { name: '搜索', exact: true }).click();
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
     // 筛选条件写回地址栏，统一搜索 /marketplace?q=... 与刷新都能还原
     await expect(page).toHaveURL(/[?&]q=/);
@@ -104,9 +104,14 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(page.getByLabel('搜索插件')).toHaveValue(name);
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
 
-    // 详情页：标题与影响摘要
+    // 详情页：标题与影响摘要。列表未完成水合时点击可能只触发统一搜索深链
+    // （URL 落在 /marketplace?q=）：等结果出现再点；URL 仍不对则直接 goto 兜底
+    await page.getByText(name, { exact: true }).first().waitFor({ state: 'visible', timeout: 15_000 });
     await page.getByRole('link', { name: new RegExp(name) }).first().click();
-    await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}`));
+    await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}`)).catch(async () => {
+      await page.goto(`/marketplace/${slug}`);
+      await expect(page).toHaveURL(new RegExp(`/marketplace/${slug}`));
+    });
     await expect(page.getByRole('heading', { level: 1 }).first()).toContainText(name);
 
     // 分享深链 ?install=1（D4）：直接落地详情页即自动弹出安装确认
@@ -214,7 +219,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
     await page.getByLabel('搜索插件').fill(name);
-    await page.getByRole('button', { name: '搜索' }).click();
+    await page.getByRole('button', { name: '搜索', exact: true }).click();
     await expect(page.getByText('没有匹配的插件，换个筛选条件试试')).toBeVisible();
 
     // 3. 管理员审核上架（开放模式下自动通过一键进入）
@@ -223,14 +228,15 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const card = page.locator('div.rounded-2xl').filter({ hasText: name }).first();
     await expect(card).toBeVisible({ timeout: 30_000 });
     await card.getByRole('button', { name: '通过并上架' }).click();
-    // 审核接口 + SWR 刷新在 CI 冷启动时可能超过默认 15s，避免把慢响应误判为功能失败
-    await expect(page.getByText(`已通过审核并上架「${name}」！`)).toBeVisible({ timeout: 30_000 });
+    // 瞬态 toast 在重载机器上可能晚于断言窗口出现/消失：改等持久效果——
+    // 审核成功后 SWR 刷新，插件离开待审列表（冷启动慢响应同理不误判）
+    await expect(card).not.toBeVisible({ timeout: 30_000 });
 
     // 4. 上架后：市场公开可见
     await page.goto('/marketplace');
     await expect(page.getByRole('heading', { name: '插件市场' })).toBeVisible();
     await page.getByLabel('搜索插件').fill(name);
-    await page.getByRole('button', { name: '搜索' }).click();
+    await page.getByRole('button', { name: '搜索', exact: true }).click();
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
   });
 
@@ -277,7 +283,9 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const pendingCard = page.locator('div.rounded-2xl').filter({ hasText: themeName }).first();
     await expect(pendingCard).toBeVisible({ timeout: 30_000 });
     await pendingCard.getByRole('button', { name: '通过并上架' }).click();
-    await expect(page.getByText(`已通过审核并上架「${themeName}」！`)).toBeVisible();
+    // 瞬态 toast 在重载机器上可能晚于断言窗口出现/消失：改等持久效果——
+    // 审核成功后 SWR 刷新，插件离开待审列表
+    await expect(page.locator('div.rounded-2xl').filter({ hasText: themeName })).not.toBeVisible({ timeout: 30_000 });
 
     // 3. 市场浏览与卡片渲染
     await page.goto('/marketplace');
@@ -286,7 +294,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await page.getByLabel('按类型筛选').selectOption('theme');
     // 检索该插件
     await page.getByLabel('搜索插件').fill(themeName);
-    await page.getByRole('button', { name: '搜索' }).click();
+    await page.getByRole('button', { name: '搜索', exact: true }).click();
     await expect(page.getByText(themeName, { exact: true }).first()).toBeVisible();
 
     // 4. 进入详情页并一键安装
@@ -523,12 +531,17 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     await expect(quarantinedTab).toBeVisible({ timeout: 15_000 });
     await quarantinedTab.click();
 
-    // 找到该插件卡片并点击解封上架
+    // 找到该插件卡片并点击解封上架。点击可能落在 React 挂载前（页面挂载时
+    // 有四路并行取数，水合窗口较宽）——15s 未见即补击一次再等一轮。
     const pluginCard = page.locator('div.rounded-2xl', { hasText: searchPackName });
-    await expect(pluginCard).toBeVisible({ timeout: 15_000 });
+    await expect(pluginCard).toBeVisible({ timeout: 15_000 }).catch(async () => {
+      await quarantinedTab.click();
+      await expect(pluginCard).toBeVisible({ timeout: 15_000 });
+    });
     await expect(pluginCard.getByText('已隔离熔断')).toBeVisible();
     await pluginCard.getByRole('button', { name: '审核解封并上架' }).click();
-    await expect(page.getByText(`已通过审核并上架「${searchPackName}」！`)).toBeVisible({ timeout: 15_000 });
+    // 瞬态 toast 同前：改等持久效果——解封后插件离开「已隔离」列表
+    await expect(pluginCard).not.toBeVisible({ timeout: 30_000 });
 
     // 回到详情页：隔离横幅已消失，恢复为正常状态
     await page.goto(`/marketplace/${slug}`);

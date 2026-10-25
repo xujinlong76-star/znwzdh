@@ -80,9 +80,24 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     facets?: Record<string, string[]>,
     req?: FastifyRequest,
   ) {
-    // 个性化信号服务端解析：身份 -> resolveIdentity -> user_profiles -> personalize。
-    const rawIdentity = input.userId ?? input.anonId ?? null;
-    const identity = rawIdentity ? await ctx.repo.resolveIdentity(rawIdentity) : null;
+    /**
+     * 请求的有效身份：**一个** identity 同时服务个性化、搜索历史与事件归属。
+     *
+     * 取法：requestIdentityOf（与 preValidation 验签同一条 identityOf 链路：
+     * 用户级令牌 owner 优先，其次 Header→Query→Body）。不能再用
+     * `input.userId ?? input.anonId`：那只看 Body/Query，带签名 Header 或持票的
+     * 调用方会被 Body 里的自称顶掉——同一次请求「按 A 的画像重排、把行为记进
+     * B 的可删除列」，而只带 Header 的调用方则完全拿不到个性化。
+     * 没有 req 的内部调用才退回入参。
+     *
+     * 闸门：与事件归属同一条 identityTrusted。鉴权模式下的匿名自称既不读画像
+     * （否则可借排序结果反推他人偏好）、也不写历史；开放模式 / 有效签名 / 持票
+     * 调用不受影响。
+     */
+    const requestRawIdentity = req ? requestIdentityOf(req as never) : null;
+    const rawIdentity = requestRawIdentity ?? input.userId ?? input.anonId ?? null;
+    const identityUsable = !req || identityTrusted(ctx, req as never);
+    const identity = rawIdentity && identityUsable ? await ctx.repo.resolveIdentity(rawIdentity) : null;
     let personalizationEnabled = true;
     let searchHistoryEnabled = true;
     let telemetryEnabled = true;
@@ -102,30 +117,11 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
      * identity=NULL，于是用户「删除全部个人数据」删不掉自己的搜索行为，导出里
      * 也看不见它（承诺比实现大），零结果榜也无法按人排重。
      *
-     * 三条口径缺一不可：
-     *  1) 取法走 requestIdentityOf（与 preValidation 验签用的同一个 identityOf，
-     *     优先级 Header→Query→Body），不复用上面只看 Body/Query 的 rawIdentity：
-     *     两者不一致时后者是「没被背书过的自称」，写进可删除列等于给别人名下塞行。
-     *  2) 只有 identityTrusted 为真才归属（配了签名密钥时能走到这里的身份都已验签；
-     *     开放模式本来就可信），否则宁留 NULL。
-     *  3) 关掉遥测的用户不留身份 —— 与 /api/events 同一口径（telemetry.ts:78-86），
-     *     否则「关掉遥测」只关了一半。
+     * 与上面的 identity 同源（取法 + 可信闸门都已合并），这里只多一道遥测闸门：
+     * 关掉遥测的用户不留身份 —— 与 /api/events 同一口径（telemetry.ts:78-86）。
+     * 没有 req 的内部调用不写归属（没有可归属的 HTTP 请求）。
      */
-    let attributedIdentity: string | null = null;
-    if (req && identityTrusted(ctx, req as never)) {
-      const rawEventIdentity = requestIdentityOf(req as never);
-      if (rawEventIdentity) {
-        const canonical =
-          rawEventIdentity === rawIdentity ? identity : await ctx.repo.resolveIdentity(rawEventIdentity);
-        if (canonical) {
-          const optedOut =
-            canonical === identity
-              ? !telemetryEnabled
-              : (await ctx.repo.getUserSettings(canonical)).telemetryEnabled === false;
-          if (!optedOut) attributedIdentity = canonical;
-        }
-      }
-    }
+    const attributedIdentity = req && identity && telemetryEnabled ? identity : null;
 
     /**
      * HEAD 只探测元信息，不是一次用户搜索。

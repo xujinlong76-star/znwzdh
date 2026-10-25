@@ -35,20 +35,11 @@ function sitePackManifest(name: string, stamp: string) {
   };
 }
 
-async function gotoAdmin(page: any, path: string) {
-  await page.goto(path);
-  await page.waitForLoadState('domcontentloaded');
-  // 管理页受保护时会重定向到登录页：走开放模式「一键进入」并在点击后等待回跳完成
-  if (page.url().includes('/auth/signin') || page.url().includes('/login')) {
-    const bypassBtn = page.getByRole('button', { name: /以管理员身份一键进入/ });
-    await expect(bypassBtn).toBeVisible({ timeout: 15_000 });
-    await bypassBtn.click();
-    await page.waitForURL(
-      (url: URL) =>
-        !url.pathname.startsWith('/auth/signin') && !url.pathname.startsWith('/login'),
-      { timeout: 30_000 },
-    );
-  }
+// 登录收口到 helpers（D3）：原内联副本与 enterAdminArea 语义逐字等价（登录旁路 + 回跳等待），
+// 薄转发保留本文件 4 处调用点不动
+import { enterAdminArea } from './helpers';
+async function gotoAdmin(page: import('@playwright/test').Page, path: string) {
+  await enterAdminArea(page, path, { timeout: 30_000 });
 }
 
 /**

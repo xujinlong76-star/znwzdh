@@ -55,3 +55,46 @@ export async function awaitContentReady(
   }
   if (settleMs > 0) await page.waitForTimeout(settleMs);
 }
+
+/**
+ * 进入管理区（登录旁路 + 回跳等待），不等待任何页面内容。
+ * admin-token / admin-dashboard / admin-jobs / plugin-market 四个 spec 此前
+ * 各写一份内联副本，D3 收口统一到这里。
+ *
+ * 与 loginViaAdmin 同源的强化：bypass 按钮给足冷编译预算——
+ * 10s/15s 在本机 dev 首编译时不够，报错完全不指因。
+ */
+export async function enterAdminArea(
+  page: Page,
+  path: string,
+  { timeout = 120_000 }: { timeout?: number } = {},
+): Promise<void> {
+  await page.goto(path, { waitUntil: 'domcontentloaded' });
+  if (page.url().includes('/auth/signin') || page.url().includes('/login')) {
+    const bypassBtn = page.getByRole('button', { name: /以管理员身份一键进入/ });
+    await expect(bypassBtn).toBeVisible({ timeout: 30_000 });
+    await bypassBtn.click();
+    // 跳转确认用 commit 而非默认 load：重载机器上 signin→callback 的完整 load
+    // 等待会吞掉测试预算（实测 90s 级超时）；到达断言交给调用方的标题等待。
+    await page.waitForURL(
+      (url) => !url.pathname.startsWith('/auth/signin') && !url.pathname.startsWith('/login'),
+      { timeout, waitUntil: 'commit' },
+    );
+  }
+}
+
+/**
+ * 进入管理页并等待其专属主标题（enterAdminArea 的组合便捷封装）。
+ * 标题定位收窄到 main#main-content：Next 16 流式水合会在 body 级暂存容器
+ * （#S:*）里短暂保留同一份内容，裸 h1 会撞 Playwright 严格模式双元素竞态。
+ */
+export async function gotoAdminPage(
+  page: Page,
+  path: string,
+  heading: string | RegExp,
+  { timeout = 120_000 }: { timeout?: number } = {},
+): Promise<void> {
+  await enterAdminArea(page, path, { timeout });
+  const h1 = page.locator('main#main-content h1');
+  await expect(typeof heading === 'string' ? h1.filter({ hasText: heading }) : h1.filter(heading)).toBeVisible({ timeout });
+}

@@ -1,18 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { gotoAdminPage } from './helpers';
 
 test.describe('核心旅程 3：管理端 API Token 签发与生命周期管理', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/admin/tokens');
-    await page.waitForLoadState('domcontentloaded');
-    if (page.url().includes('/auth/signin')) {
-      const bypassBtn = page.getByRole('button', { name: /以管理员身份一键进入/ });
-      await expect(bypassBtn).toBeVisible({ timeout: 10_000 });
-      await bypassBtn.click();
-    }
-    // 等待已成功进入管理页且页面主标题呈现（留足 Next.js 首次编译路由裕量）
-    // 收窄到可见主内容区：Next 16 流式水合会在 body 级暂存容器（#S:*）里短暂保留同一份内容，
-    // 裸 h1 选择器会撞上 Playwright 严格模式的双元素竞态（2026-10-19 E2E 复跑定位）。
-    await expect(page.locator('main#main-content h1').filter({ hasText: 'API Token 访问凭据管理' })).toBeVisible({ timeout: 45_000 });
+    // 登录与标题等待收口到 helpers（D3）：注释与竞态规避见 gotoAdminPage
+    await gotoAdminPage(page, '/admin/tokens', 'API Token 访问凭据管理');
     // 等待 React 水合就绪且 Token 列表加载完成
     await expect(page.locator('text=正在加载 Token 列表…')).not.toBeVisible({ timeout: 25_000 });
   });

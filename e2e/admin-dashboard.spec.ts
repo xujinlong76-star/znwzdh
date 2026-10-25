@@ -1,18 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { gotoAdminPage } from './helpers';
 
 test.describe('管理端控制台与运营洞察看板 E2E 测试', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/admin');
-    await page.waitForLoadState('domcontentloaded');
-    if (page.url().includes('/auth/signin')) {
-      const bypassBtn = page.getByRole('button', { name: /以管理员身份一键进入/ });
-      await expect(bypassBtn).toBeVisible({ timeout: 10_000 });
-      await bypassBtn.click();
-    }
-    // 等待已成功进入控制台且主标题呈现
-    // 收窄到可见主内容区：Next 16 流式水合会在 body 级暂存容器（#S:*）里短暂保留同一份内容，
-    // 裸 h1 选择器会撞上 Playwright 严格模式的双元素竞态（2026-10-19 E2E 复跑定位）。
-    await expect(page.locator('main#main-content h1').filter({ hasText: '运营与监控中枢' })).toBeVisible({ timeout: 45_000 });
+    await gotoAdminPage(page, '/admin', '运营与监控中枢');
   });
 
   test('控制台首页展示 6 大核心 KPI、系统轻量态势与 SSE 状态', async ({ page }) => {
@@ -46,17 +37,7 @@ test.describe('管理端控制台与运营洞察看板 E2E 测试', () => {
   });
 
   test('运营洞察看板页面支持时间窗口切换与趋势折线渲染', async ({ page }) => {
-    await page.goto('/admin/stats');
-    await page.waitForLoadState('domcontentloaded');
-    if (page.url().includes('/auth/signin')) {
-      const bypassBtn = page.getByRole('button', { name: /以管理员身份一键进入/ });
-      await expect(bypassBtn).toBeVisible({ timeout: 10_000 });
-      await bypassBtn.click();
-    }
-
-    // 收窄到可见主内容区：Next 16 流式水合会在 body 级暂存容器（#S:*）里短暂保留同一份内容，
-    // 裸 h1 选择器会撞上 Playwright 严格模式的双元素竞态（2026-10-19 E2E 复跑定位）。
-    await expect(page.locator('main#main-content h1').filter({ hasText: '运营与搜索洞察看板' })).toBeVisible({ timeout: 30_000 });
+    await gotoAdminPage(page, '/admin/stats', '运营与搜索洞察看板');
 
     // 验证时间跨度选择器存在
     await expect(page.getByRole('button', { name: '近 7 天' })).toBeVisible();

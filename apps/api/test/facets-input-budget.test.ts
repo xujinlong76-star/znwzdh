@@ -16,29 +16,37 @@ import { join } from "node:path";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
-import { FACET_MAX_KEYS, FACET_MAX_VALUES_PER_KEY } from "../src/routes/shared.ts";
+import {
+  FACET_MAX_KEYS,
+  FACET_MAX_KEY_LENGTH,
+  FACET_MAX_VALUES_PER_KEY,
+  FACET_MAX_VALUE_LENGTH,
+} from "../src/routes/shared.ts";
 
 let dir: string;
 let ctx: AppContext;
 let app: Awaited<ReturnType<typeof buildServer>>;
+let freeSiteId: string;
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-facet-budget-"));
   const config = loadConfig({
     mode: "lite",
     sqlitePath: join(dir, "api.db"),
+    auth: { enabled: false },
     embedding: { enabled: false },
   });
   ctx = await createContext(config);
   app = await buildServer(ctx);
 
   const cat = await ctx.repo.createCategory({ title: "预算测试分类" });
-  await ctx.repo.createSite({
+  const freeSite = await ctx.repo.createSite({
     url: "https://facet-budget-a.example.com",
     title: "免费站点",
     categoryId: cat.id,
     facets: { pricing: ["free"] },
   });
+  freeSiteId = freeSite.id;
   await ctx.repo.createSite({
     url: "https://facet-budget-b.example.com",
     title: "付费站点",
@@ -128,5 +136,116 @@ describe("facets 入参预算", () => {
       url: `/api/sites?facets=${encodeURIComponent(JSON.stringify({ pricing: ["free"] }))}`,
     });
     expect(ok.json().length).toBe(1);
+  });
+});
+
+describe("facets 预算三处统一（存储写入 / 列表过滤 / 检索过滤）", () => {
+  it("17 个键：/api/sites 与 /api/search 同一份预算，都必须放行", async () => {
+    // 17 = 旧 /api/search 上限（16）之上、新统一上限（20）之内的第一个值
+    const seventeen: Record<string, string[]> = {};
+    for (let i = 0; i < 17; i++) seventeen[`k${i}`] = ["v"];
+    const encoded = encodeURIComponent(JSON.stringify(seventeen));
+
+    const list = await app.inject({ method: "GET", url: `/api/sites?facets=${encoded}` });
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toHaveLength(0);
+
+    // 检索侧对「过滤后零结果」有放宽兜底（fallback:"filter"）：这里断言的是
+    // 条件被当成过滤器接受了（修复前是 400），而不是要求它返回零条。
+    const search = await app.inject({ method: "GET", url: `/api/search?q=%E7%AB%99%E7%82%B9&facets=${encoded}` });
+    expect(search.statusCode).toBe(200);
+    expect(search.json().fallback).toBe("filter");
+  });
+
+  it("GET /api/search 的 JSON 字符串 facets 真的参与过滤（修复前被 zod 直接 400）", async () => {
+    const free = await app.inject({
+      method: "GET",
+      url: `/api/search?q=%E7%AB%99%E7%82%B9&facets=${encodeURIComponent(JSON.stringify({ pricing: ["free"] }))}`,
+    });
+    expect(free.statusCode).toBe(200);
+    expect(free.json().hits.map((h: { site: { title: string } }) => h.site.title)).toEqual(["免费站点"]);
+
+    const paid = await app.inject({
+      method: "GET",
+      url: `/api/search?q=%E7%AB%99%E7%82%B9&facets=${encodeURIComponent(JSON.stringify({ pricing: ["paid"] }))}`,
+    });
+    expect(paid.json().hits.map((h: { site: { title: string } }) => h.site.title)).toEqual(["付费站点"]);
+  });
+
+  it("取值全为空串：两个端点都 400，不再静默返回未过滤结果", async () => {
+    const list = await app.inject({
+      method: "GET",
+      url: `/api/sites?facets=${encodeURIComponent(JSON.stringify({ pricing: [""] }))}`,
+    });
+    expect(list.statusCode).toBe(400);
+    expect(String(list.json().detail)).toContain("pricing");
+
+    const search = await app.inject({
+      method: "POST",
+      url: "/api/search",
+      payload: { q: "站点", facets: { pricing: ["  "] } },
+    });
+    expect(search.statusCode).toBe(400);
+  });
+
+  it("键名 / 取值长度边界：50 与 100 放行，51 与 101 回 400", async () => {
+    const longKey = "k".repeat(FACET_MAX_KEY_LENGTH);
+    const longValue = "v".repeat(FACET_MAX_VALUE_LENGTH);
+    const ok = await app.inject({
+      method: "GET",
+      url: `/api/sites?facets=${encodeURIComponent(JSON.stringify({ [longKey]: [longValue] }))}`,
+    });
+    expect(ok.statusCode).toBe(200);
+
+    for (const bad of [
+      { ["k".repeat(FACET_MAX_KEY_LENGTH + 1)]: ["v"] },
+      { pricing: ["v".repeat(FACET_MAX_VALUE_LENGTH + 1)] },
+    ]) {
+      const res = await app.inject({
+        method: "GET",
+        url: `/api/sites?facets=${encodeURIComponent(JSON.stringify(bad))}`,
+      });
+      expect(res.statusCode, JSON.stringify(bad).slice(0, 60)).toBe(400);
+    }
+  });
+
+  it("写入口 PUT /api/sites/:id/facets 与查询同源：20 维放行，21 维 400，201 值 400", async () => {
+    const twenty: Record<string, string[]> = {};
+    for (let i = 0; i < FACET_MAX_KEYS; i++) twenty[`d${i}`] = ["v"];
+    const ok = await app.inject({
+      method: "PUT",
+      url: `/api/sites/${freeSiteId}/facets`,
+      payload: { facets: twenty },
+    });
+    expect(ok.statusCode).toBe(200);
+
+    const tooManyDims = { ...twenty, extra: ["v"] };
+    const dims = await app.inject({
+      method: "PUT",
+      url: `/api/sites/${freeSiteId}/facets`,
+      payload: { facets: tooManyDims },
+    });
+    expect(dims.statusCode).toBe(400);
+
+    // 修复前写入侧单键最多 50 个值，比查询侧允许的还小 —— 写进去的词表
+    // 查询端能收，但用户根本无法通过 PUT 维护超过 50 个取值的维度。
+    const tooManyValues = {
+      pricing: Array.from({ length: FACET_MAX_VALUES_PER_KEY + 1 }, (_, i) => `v${i}`),
+    };
+    const values = await app.inject({
+      method: "PUT",
+      url: `/api/sites/${freeSiteId}/facets`,
+      payload: { facets: tooManyValues },
+    });
+    expect(values.statusCode).toBe(400);
+
+    const atLimit = await app.inject({
+      method: "PUT",
+      url: `/api/sites/${freeSiteId}/facets`,
+      payload: {
+        facets: { pricing: Array.from({ length: FACET_MAX_VALUES_PER_KEY }, (_, i) => `v${i}`) },
+      },
+    });
+    expect(atLimit.statusCode).toBe(200);
   });
 });

@@ -176,3 +176,107 @@ export function normalizeFacets(
 
   return out;
 }
+
+/* ------------------------------------------------------------------ *
+ * 分面条件预算（存储写入与查询过滤共用一份）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 同一份预算同时约束「写进 site_facets 的内容」与「查询时提交的条件」。
+ * 分开定两份的后果实测过：存储允许 50 个维度、过滤只认 16 个，
+ * 于是同一份条件在 /api/sites 通过、在 /api/search 却 400。
+ */
+export const FACET_MAX_KEYS = 20;
+export const FACET_MAX_VALUES_PER_KEY = 200;
+export const FACET_MAX_KEY_LENGTH = 50;
+export const FACET_MAX_VALUE_LENGTH = 100;
+/**
+ * facets 以 JSON 字符串形态提交时的整体长度上限。
+ *
+ * 必须大于「合法内容的理论上限」，否则字符串形态会比对象形态更严：
+ * 20 键 × 200 值 × 100 字符 ≈ 413KB，取 500KB 只拦病态大小。
+ * 定这个上限的目的不是限制内容，而是在 `JSON.parse` 之前挡住超大输入
+ * （解析分配发生在校验之前，见 CVE-2026-77354 的同类放大）。
+ */
+export const FACET_MAX_JSON_LENGTH = 500_000;
+
+export interface FacetFilterResult {
+  facets?: Record<string, string[]>;
+  error?: string;
+}
+
+/**
+ * 归一化并校验 `facets` 条件（HTTP query/body 与 MCP 工具共用这一份实现）。
+ *
+ * 为什么必须统一在契约层：
+ *  - 存储侧的 `filterSiteIdsByFacets` 按「键数」发查询、按「每键值数」拼 IN；
+ *    没有预算时一条查询串就能放大成上千个绑定参数（同类攻击见 OpenAPI deepObject
+ *    稀疏索引导致内存放大的 CVE-2026-77354）。
+ *  - 语义必须显式：以前「键存在但取值全为空串」被静默折叠成「没传过滤」，
+ *    客户端以为在筛选、实际拿到未过滤的全量；非法 JSON 同样被吞掉。
+ *    这两种都回 error，由调用方转 400 / 工具错误，不能回错数据。
+ *
+ * 接受三种形态并归一化：
+ *  - `{ pricing: ["free", "freemium"] }`（body / MCP）
+ *  - `{ pricing: "free,freemium" }`（query string 常见写法，逗号分隔）
+ *  - `'{"pricing":["free"]}'`（整段 JSON 字符串；Fastify 默认 query parser
+ *    不解析 `facets[pricing]` 这种方括号嵌套，JSON 串是可移植的写法）
+ */
+export function clampFacetFilter(input: unknown): FacetFilterResult {
+  if (input === undefined || input === null) return {};
+  let source: unknown = input;
+  if (typeof source === "string") {
+    const trimmed = source.trim();
+    if (!trimmed) return {};
+    if (trimmed.length > FACET_MAX_JSON_LENGTH) {
+      return { error: `facets 长度超过上限 (${FACET_MAX_JSON_LENGTH} 字符)` };
+    }
+    try {
+      source = JSON.parse(trimmed);
+    } catch {
+      return { error: "facets 必须是合法的 JSON 对象" };
+    }
+  }
+  if (Array.isArray(source) || typeof source !== "object" || source === null) {
+    return { error: "facets 必须是 { 键: 值或值数组 } 形态的对象" };
+  }
+  const entries = Object.entries(source as Record<string, unknown>);
+  if (entries.length > FACET_MAX_KEYS) {
+    return { error: `facets 最多 ${FACET_MAX_KEYS} 个键，收到 ${entries.length} 个` };
+  }
+  const facets: Record<string, string[]> = {};
+  for (const [rawKey, rawValue] of entries) {
+    const key = rawKey.trim();
+    if (!key) continue;
+    if (key.length > FACET_MAX_KEY_LENGTH) {
+      return { error: `facet 键名过长（最多 ${FACET_MAX_KEY_LENGTH} 字符）：${key.slice(0, 12)}…` };
+    }
+    const rawValues = Array.isArray(rawValue)
+      ? rawValue
+      : typeof rawValue === "string"
+        ? rawValue.split(",")
+        : [rawValue];
+    const values: string[] = [];
+    for (const v of rawValues) {
+      // 只接受纯量：`String(null)`/`String({})` 会拼出 'null'、'[object Object]'
+      // 一起绑进 SQL。静默丢弃同样糟——客户端以为条件生效，其实已经消失。
+      if (typeof v !== "string" && typeof v !== "number") {
+        return { error: `facets.${key} 的值必须是字符串或数字` };
+      }
+      const normalized = String(v).trim().toLowerCase();
+      if (!normalized) continue;
+      if (normalized.length > FACET_MAX_VALUE_LENGTH) {
+        return { error: `facets.${key} 的取值过长（最多 ${FACET_MAX_VALUE_LENGTH} 字符）` };
+      }
+      values.push(normalized);
+    }
+    if (values.length === 0) {
+      return { error: `facets.${key} 没有有效取值（空字符串不算过滤条件）` };
+    }
+    if (values.length > FACET_MAX_VALUES_PER_KEY) {
+      return { error: `facets.${key} 最多 ${FACET_MAX_VALUES_PER_KEY} 个值，收到 ${values.length} 个` };
+    }
+    facets[key.toLowerCase()] = [...new Set(values)];
+  }
+  return { facets };
+}

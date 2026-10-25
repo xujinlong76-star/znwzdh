@@ -10,6 +10,13 @@
  */
 
 import { z } from "zod";
+import {
+  FACET_MAX_JSON_LENGTH,
+  FACET_MAX_KEY_LENGTH,
+  FACET_MAX_KEYS,
+  FACET_MAX_VALUE_LENGTH,
+  FACET_MAX_VALUES_PER_KEY,
+} from "./facets.ts";
 
 /** 批量写入的硬上限，防止单次调用造成不可控影响 */
 export const MAX_BATCH_ITEMS = 100;
@@ -77,12 +84,25 @@ export function isInternalShortLinkTarget(target: string): boolean {
 
 export type McpScope = "read" | "write" | "admin";
 
+/** 站点分面内容（写入）预算：与查询过滤共用 core 的同一份常量 */
+export const SiteFacetsInput = z
+  .record(
+    z.string().min(1).max(FACET_MAX_KEY_LENGTH),
+    z.array(z.string().min(1).max(FACET_MAX_VALUE_LENGTH)).max(FACET_MAX_VALUES_PER_KEY),
+  )
+  .refine((obj) => Object.keys(obj).length <= FACET_MAX_KEYS, {
+    message: `facets 最多 ${FACET_MAX_KEYS} 个键`,
+  });
+
+/** 查询过滤额外接受整段 JSON 字符串（与 REST GET 的可移植写法同口径，预算由 clampFacetFilter 统一） */
+export const FacetFilterInput = z.union([SiteFacetsInput, z.string().max(FACET_MAX_JSON_LENGTH)]);
+
 export const SearchSitesInput = z.object({
   query: z.string().describe("检索关键词，支持中文、拼音、首字母与语义检索"),
   limit: z.number().int().min(1).max(50).default(10).describe("返回条数上限"),
   categoryId: z.string().optional().describe("限定类目（含其子类目）"),
   tag: z.string().optional().describe("限定标签"),
-  facets: z.record(z.string(), z.array(z.string())).optional().describe("限定分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
+  facets: FacetFilterInput.optional().describe("限定分面属性（如 { pricing: ['free'], platform: ['web'] }）；最多 20 个键、每键 200 个值"),
 });
 
 export const GetSiteInput = z.object({
@@ -132,7 +152,7 @@ export const CreateSiteInput = z.object({
   description: z.string().optional().describe("描述；留空则自动抓取"),
   categoryId: z.string().optional().describe("子类目（叶子）id，不能传一级根；留空则按 AI 建议自动归类"),
   tags: z.array(z.string()).max(8).optional().describe("标签"),
-  facets: z.record(z.string(), z.array(z.string())).optional().describe("分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
+  facets: SiteFacetsInput.optional().describe("分面属性（如 { pricing: ['free'], platform: ['web'] }）；最多 20 个键、每键 200 个值"),
   enrich: z.boolean().default(true).describe("是否自动抓取元数据并用 AI 富化"),
   idempotencyKey: z.string().optional().describe("幂等键；重复调用不会重复创建"),
 });
@@ -143,7 +163,7 @@ export const UpdateSiteInput = z.object({
   description: z.string().optional(),
   categoryId: z.string().optional().describe("目标子类目（叶子）id，不能传一级根"),
   tags: z.array(z.string()).max(8).optional(),
-  facets: z.record(z.string(), z.array(z.string())).optional().describe("分面属性（如 { pricing: ['free'], platform: ['web'] }）"),
+  facets: SiteFacetsInput.optional().describe("分面属性（如 { pricing: ['free'], platform: ['web'] }）；最多 20 个键、每键 200 个值"),
   featured: z.boolean().optional(),
 });
 

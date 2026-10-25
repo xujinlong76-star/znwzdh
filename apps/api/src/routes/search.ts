@@ -6,7 +6,7 @@
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { recordSearchChannels } from "../metrics.ts";
 import { refreshUserProfile } from "../profile-service.ts";
-import { badRequest, identityTrusted, requestIdentityOf } from "./shared.ts";
+import { badRequest, clampFacets, FACET_MAX_JSON_LENGTH, identityTrusted, requestIdentityOf } from "./shared.ts";
 
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
@@ -28,28 +28,6 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
   /* -------------------------------- 搜索 -------------------------------- */
 
-  /** 分面输入预算：最多 16 个分面键、每键最多 16 个值、键值 ≤64 字符，防止超大分面条件把 SQL IN 撑爆 */
-  function clampFacets(raw: unknown): { facets?: Record<string, string[]>; error?: string } {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-    const entries = Object.entries(raw as Record<string, unknown>);
-    if (entries.length > 16) return { error: "facets 键数量超过上限 (16)" };
-    const out: Record<string, string[]> = {};
-    for (const [key, val] of entries) {
-      if (!key || key.length > 64) return { error: "facet 键名过长" };
-      const list = Array.isArray(val) ? val : typeof val === "string" ? val.split(",") : [];
-      if (list.length > 16) return { error: `facet "${key}" 取值数量超过上限 (16)` };
-      const cleaned: string[] = [];
-      for (const item of list) {
-        const s = String(item ?? "").trim();
-        if (!s) continue;
-        if (s.length > 64) return { error: `facet "${key}" 取值过长` };
-        cleaned.push(s);
-      }
-      if (cleaned.length > 0) out[key] = cleaned;
-    }
-    return { facets: Object.keys(out).length > 0 ? out : undefined };
-  }
-
   const searchBody = z.object({
     q: z.string().max(256).default(""),
     categoryId: z.string().max(64).optional(),
@@ -61,7 +39,14 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     limit: z.coerce.number().int().min(1).max(100).optional(),
     offset: z.coerce.number().int().min(0).max(1000).optional(),
     mode: z.enum(["hybrid", "keyword", "semantic"]).optional(),
-    facets: z.record(z.string(), z.union([z.array(z.string()), z.string()])).optional(),
+    // 对象形态（POST body / qs）与整段 JSON 字符串（GET query；Fastify 默认
+    // query parser 不解析 facets[pricing] 的方括号嵌套）都收，预算由 clampFacets 统一。
+    facets: z
+      .union([
+        z.record(z.string(), z.union([z.array(z.string()), z.string()])),
+        z.string().max(FACET_MAX_JSON_LENGTH),
+      ])
+      .optional(),
     userId: z.string().max(64).optional(),
     anonId: z.string().max(64).optional(),
     personalize: z.object({

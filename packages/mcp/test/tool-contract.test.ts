@@ -142,6 +142,43 @@ describe("facets 是对外承诺过的维度，必须真的生效", () => {
     const unfiltered = payload(await handlers.search_sites({ query: "分面检索靶标", limit: 20 }, A));
     expect(unfiltered.results.length).toBeGreaterThan(filtered.results.length);
   });
+
+  it("search_sites 的分面预算与 REST 同源：对象形态超 20 键被契约挡下", async () => {
+    const tooMany: Record<string, string[]> = {};
+    for (let i = 0; i <= 20; i++) tooMany[`k${i}`] = ["v"];
+    // 修复前 SearchSitesInput 是裸 z.record：21 键也能过，条件被直接送进 IN 查询
+    await expect(handlers.search_sites({ query: "靶标", facets: tooMany }, A)).rejects.toThrow(/20/);
+  });
+
+  it("search_sites 的字符串形态同样过预算与归一化（handler 侧 clamp）", async () => {
+    // 字符串分支在 schema 里只限长度，键数/空取值由 clampFacetFilter 处理：
+    // 21 键必须变成工具错误，而不是绕过预算继续查询
+    const tooMany: Record<string, string[]> = {};
+    for (let i = 0; i <= 20; i++) tooMany[`k${i}`] = ["v"];
+    const rejected = await handlers.search_sites({ query: "靶标", facets: JSON.stringify(tooMany) }, A);
+    expect(rejected.isError).toBe(true);
+    expect(textOf(rejected)).toContain("最多 20 个键");
+
+    // 空取值同样报错（旧版会被静默折叠成「没有过滤」，Agent 拿到全量结果）
+    const empty = await handlers.search_sites({ query: "靶标", facets: '{"pricing":[""]}' }, A);
+    expect(empty.isError).toBe(true);
+    expect(textOf(empty)).toContain("pricing");
+
+    // 合法字符串形态等价于对象形态
+    const filtered = payload(await handlers.search_sites({ query: "分面检索靶标", limit: 20, facets: '{"pricing":"free"}' }, A));
+    expect(filtered.results.length).toBeGreaterThan(0);
+    expect(filtered.results.every((r: any) => String(r.url).startsWith("https://facets.example/free"))).toBe(true);
+  });
+
+  it("create_site / update_site 的分面写入与查询同一预算", async () => {
+    const tooMany = { pricing: Array.from({ length: 201 }, (_, i) => `v${i}`) };
+    await expect(handlers.create_site({
+      url: "https://facets.example/too-many", title: "超预算", categoryId: "c1", enrich: false, facets: tooMany,
+    }, A)).rejects.toThrow(/200/);
+
+    const site = payload(await handlers.get_site({ idOrUrl: "https://facets.example/free" }, A));
+    await expect(handlers.update_site({ id: site.id, facets: tooMany }, A)).rejects.toThrow(/200/);
+  });
 });
 
 describe("batch_import 与 health_check 的边界", () => {

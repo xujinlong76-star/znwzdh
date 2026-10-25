@@ -5,7 +5,7 @@
  */
 import { enrichUrl, guardedFetch } from "@navhub/ai";
 import { enrichLlmOf, resolveLlm } from "@navhub/api";
-import { auditPageHealth, resolveCategoryTitleSuggestion, UNCATEGORIZED_CATEGORY_ID } from "@navhub/core";
+import { auditPageHealth, clampFacetFilter, resolveCategoryTitleSuggestion, UNCATEGORIZED_CATEGORY_ID } from "@navhub/core";
 import {
   BatchImportInput,
   CreateSiteInput,
@@ -28,12 +28,17 @@ export const siteHandlers = {
     const { ctx } = deps;
     requireScope(tc, "read");
     const input = SearchSitesInput.parse(args ?? {});
+    // 机器面同样要过预算：schema 的 .max() 挡住超量数组，这里再把字符串形态与
+    // 空取值归一化（与 REST 的 clampFacets 是同一份实现），否则 MCP 会绕过
+    // /api/search 的 20 键 / 200 值预算，直接把任意大的条件送进 IN 查询。
+    const facetFilter = clampFacetFilter(input.facets);
+    if (facetFilter.error) return fail("参数无效：" + facetFilter.error);
     // facets 在 schema 里是对外承诺过的过滤维度（MCP inputSchema / OpenAPI 都从那份契约生成），
     // 漏传等于"文档说能筛、实际静默不过滤"，Agent 会拿到超集还以为是结果。
     // 直连检索引擎、不走 /api/search：机器面不写 search/zero_result 行为事件、
     // 不进搜索历史、也不做个性化加权（Agent 的一次查询不等于人的兴趣信号）。
     // 跨端口径是刻意的，改动前先确认「零结果榜」和「搜索历史」不会因此漏掉或虚增。
-    const result = await ctx.search.search({ q: input.query, limit: input.limit, categoryId: input.categoryId, tag: input.tag, facets: input.facets });
+    const result = await ctx.search.search({ q: input.query, limit: input.limit, categoryId: input.categoryId, tag: input.tag, facets: facetFilter.facets });
     const byId = await ctx.repo.getSitesByIds(result.hits.map((h) => h.siteId));
     const results = result.hits.map((h) => {
       const site = byId.get(h.siteId);

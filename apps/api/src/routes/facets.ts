@@ -6,7 +6,13 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { CONTROLLED_FACETS } from "@navhub/core";
+import {
+  CONTROLLED_FACETS,
+  FACET_MAX_KEYS,
+  FACET_MAX_KEY_LENGTH,
+  FACET_MAX_VALUES_PER_KEY,
+  FACET_MAX_VALUE_LENGTH,
+} from "@navhub/core";
 import type { AppContext } from "../context.ts";
 import { badRequest, notFound } from "./shared.ts";
 
@@ -53,15 +59,19 @@ export const facetRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
     const site = await ctx.repo.getSite(id);
     if (!site) return notFound(reply, "站点不存在");
 
+    // 写入预算与查询过滤同源（packages/core/facets.ts）：存储允许什么，
+    // /api/search 就必须接受什么，否则同一份条件在两个端点一过一拒。
     const body = z
       .object({
         facets: z
           .record(
-            z.string().min(1).max(50),
-            z.array(z.string().min(1).max(100)).max(50),
+            z.string().min(1).max(FACET_MAX_KEY_LENGTH),
+            z
+              .array(z.string().min(1).max(FACET_MAX_VALUE_LENGTH))
+              .max(FACET_MAX_VALUES_PER_KEY),
           )
-          .refine((obj) => Object.keys(obj).length <= 50, {
-            message: "最多允许 50 个分面维度",
+          .refine((obj) => Object.keys(obj).length <= FACET_MAX_KEYS, {
+            message: `最多允许 ${FACET_MAX_KEYS} 个分面维度`,
           }),
       })
       .safeParse(req.body);

@@ -6,6 +6,7 @@ import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { sanitizeSnapshotHtml } from "../src/routes/archive.ts";
+import { FACET_MAX_KEYS } from "../src/routes/shared.ts";
 
 let dir: string;
 let ctx: AppContext;
@@ -53,9 +54,9 @@ afterAll(async () => {
 
 describe("第四轮安全与逻辑缺陷守卫", () => {
   it("PUT /api/sites/:id/facets 限制分面键值长度与数量防数据库膨胀", async () => {
-    // 超过 50 个分面键
+    // 超过分面维度预算（与查询过滤同源，见 packages/core/facets.ts）
     const tooManyFacets: Record<string, string[]> = {};
-    for (let i = 0; i < 55; i++) {
+    for (let i = 0; i <= FACET_MAX_KEYS; i++) {
       tooManyFacets[`key_${i}`] = ["val"];
     }
 

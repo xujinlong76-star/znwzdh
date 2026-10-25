@@ -1,5 +1,7 @@
 'use client'
 
+import dynamic from 'next/dynamic'
+
 /**
  * 管理台插件市场审核与治理页面 (Admin Plugin Review & Governance Console)
  *
@@ -25,11 +27,15 @@ import {
   diffPluginManifestsApi,
   fetchPluginVersions,
   fetchPluginVersionDetail,
+  fetchOfficialSeedStatus,
+  syncOfficialSeedCatalog,
   type HubPluginItem,
   type HubPluginTelemetryMetrics,
   type HubPluginFunnel,
   type HubPluginGovernanceAlert,
   type HubAdminPluginReview,
+  type HubSeedCatalogStatus,
+  type HubSeedSyncResult,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { pluginDetailHref } from '@/lib/plugins/detail-href'
@@ -48,10 +54,13 @@ import {
 } from '@/components/ui/dialog'
 import {
   ArrowLeft,
+  Radio,
   ShieldCheck,
   Check,
   X,
   AlertTriangle,
+  Loader2,
+  RefreshCw,
   Globe,
   LayoutGrid,
   Palette,
@@ -250,6 +259,10 @@ function GovernancePanel({
   )
 }
 
+const PluginTapsModal = dynamic(
+  () => import('@/components/plugins/plugin-taps-modal').then((m) => m.PluginTapsModal),
+  { ssr: false }
+)
 export default function AdminPluginsPage() {
   const [plugins, setPlugins] = useState<HubPluginItem[]>([])
   const [telemetry, setTelemetry] = useState<HubPluginTelemetryMetrics | null>(null)
@@ -278,6 +291,11 @@ export default function AdminPluginsPage() {
   const [rejectPluginItem, setRejectPluginItem] = useState<HubPluginItem | null>(null)
   const [rejectNote, setRejectNote] = useState('')
   const [actionLoading, setActionLoading] = useState(false)
+  const [tapsModalOpen, setTapsModalOpen] = useState(false)
+  const [seedStatus, setSeedStatus] = useState<HubSeedCatalogStatus | null>(null)
+  const [syncingSeed, setSyncingSeed] = useState(false)
+  const [syncResult, setSyncResult] = useState<HubSeedSyncResult | null>(null)
+  const [syncModalOpen, setSyncModalOpen] = useState(false)
 
   // 清单审查与差异对比弹窗
   const [auditModalOpen, setAuditModalOpen] = useState(false)
@@ -314,7 +332,7 @@ export default function AdminPluginsPage() {
     setNotice(null)
     setListFailed(false)
     try {
-      const [res, telem, funnelRes, governanceRes] = await Promise.all([
+      const [res, telem, funnelRes, governanceRes, sStatus] = await Promise.all([
         fetchAdminPlugins(
           {
             status: activeStatus,
@@ -334,9 +352,14 @@ export default function AdminPluginsPage() {
         // fetchPluginGovernance 内部已 degrade：失败回落到 { alerts: [], generatedAt: 0 }。
         // generatedAt === 0 是「这次没算出来」的唯一可靠信号，不能读成「没有预警」。
         fetchPluginGovernance(),
+        fetchOfficialSeedStatus().catch(() => {
+          // 种子状态是辅助信息：失败时返回 null，由界面按「未取到」展示，不影响插件列表
+          return null
+        }),
       ])
       setPlugins(res.items)
       if (telem) setTelemetry(telem)
+      if (sStatus) setSeedStatus(sStatus)
       setFunnel(funnelRes)
       setGovernance(governanceRes.alerts)
       setGovernanceGeneratedAt(governanceRes.generatedAt)
@@ -448,6 +471,21 @@ export default function AdminPluginsPage() {
     }
   }
 
+  const handleSyncOfficialCatalog = async () => {
+    setSyncingSeed(true)
+    try {
+      const res = await syncOfficialSeedCatalog()
+      setSyncResult(res)
+      setSyncModalOpen(true)
+      toast.success(`官方资源同步完成：新增 ${res.summary.added} 个，更新 ${res.summary.updated} 个`)
+      void loadList()
+    } catch (err) {
+      toast.error('同步官方资源库失败: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSyncingSeed(false)
+    }
+  }
+
   // 下架
   const handleDelist = async (plugin: HubPluginItem) => {
     if (!confirm(`确定要下架插件「${plugin.name}」吗？下架后市场公开列表将不再展示。`)) {
@@ -512,13 +550,73 @@ export default function AdminPluginsPage() {
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>返回管理后台</span>
           </Link>
-          <Link
-            href="/marketplace"
-            className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
-          >
-            <span>访问插件市场前端</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={syncingSeed}
+              onClick={handleSyncOfficialCatalog}
+              className="inline-flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 hover:text-amber-700 transition-colors px-2.5 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30"
+              title="一键将代码库最新官方插件库同步至本站（增量无损）"
+            >
+              {syncingSeed ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              <span>同步官方资源库</span>
+              {seedStatus?.hasAvailableUpdates && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setTapsModalOpen(true)}
+              className="inline-flex items-center gap-1.5 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors px-2.5 py-1 rounded-md bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30"
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span>Taps 订阅源管理</span>
+            </button>
+            <Link
+              href="/marketplace"
+              className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+            >
+              <span>访问插件市场前端</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
+
+        {/* 官方资源库状态与热同步面板 */}
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-2xs">
+          <div className="flex items-start gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-foreground">NavHub 官方插件资源库</span>
+                <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30">
+                  v{seedStatus?.catalogVersion ?? '2026.10'}
+                </Badge>
+                {seedStatus?.hasAvailableUpdates ? (
+                  <Badge className="text-[10px] bg-amber-500 text-white">发现新资源</Badge>
+                ) : (
+                  <Badge variant="secondary" className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">已就绪</Badge>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                代码库内置收录 {seedStatus?.totalCatalog ?? 64} 个官方精选插件（当前已就绪 {seedStatus?.upToDateCount ?? 0} 个）。
+                一键无损同步将自动导入新增包并升级已有包，绝不破坏用户的自建站点与配置。
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <button
+              type="button"
+              disabled={syncingSeed}
+              onClick={handleSyncOfficialCatalog}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-colors font-medium shadow-xs disabled:opacity-50"
+            >
+              {syncingSeed ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              <span>{syncingSeed ? '正在同步...' : '立即无损同步'}</span>
+            </button>
+          </div>
         </div>
 
         {/* 头部面板 */}
@@ -1167,8 +1265,80 @@ export default function AdminPluginsPage() {
           </DialogContent>
         </Dialog>
 
+        {/* 官方资源同步结果弹窗 */}
+        <Dialog open={syncModalOpen} onOpenChange={setSyncModalOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Sparkles className="w-5 h-5 text-amber-500" />
+                <span>官方插件资源同步完成</span>
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                NavHub 已完成与代码库最新官方资源目录的增量同步。
+              </DialogDescription>
+            </DialogHeader>
+
+            {syncResult && (
+              <div className="space-y-3 py-2 text-xs">
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="p-2.5 rounded-xl bg-muted/40 border border-border/50">
+                    <div className="text-lg font-bold text-foreground">{syncResult.summary.total}</div>
+                    <div className="text-[10px] text-muted-foreground">总目录数</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                    <div className="text-lg font-bold">{syncResult.summary.added}</div>
+                    <div className="text-[10px]">新增入库</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-600 dark:text-sky-400">
+                    <div className="text-lg font-bold">{syncResult.summary.updated}</div>
+                    <div className="text-[10px]">版本升级</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-muted/40 border border-border/50 text-muted-foreground">
+                    <div className="text-lg font-bold">{syncResult.summary.upToDate}</div>
+                    <div className="text-[10px]">已是最新</div>
+                  </div>
+                </div>
+
+                {syncResult.details.length > 0 && (
+                  <div className="max-h-48 overflow-y-auto rounded-xl border border-border/60 bg-muted/20 p-2 space-y-1.5 font-mono text-[11px]">
+                    {syncResult.details.map((d, i) => (
+                      <div key={i} className="flex items-center justify-between py-0.5 px-1">
+                        <span className="truncate max-w-[200px] text-foreground">{d.slug}</span>
+                        <span className={
+                          d.action === 'added' ? 'text-emerald-500 font-bold' :
+                          d.action === 'updated' ? 'text-sky-500 font-bold' :
+                          'text-muted-foreground'
+                        }>
+                          {d.action === 'added' ? `+ 新增 v${d.version}` :
+                           d.action === 'updated' ? `↑ 升级 v${d.version}` :
+                           '• 已是最新'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <DialogFooter>
+              <button
+                type="button"
+                onClick={() => setSyncModalOpen(false)}
+                className="px-3 py-1.5 rounded-xl bg-primary text-primary-foreground text-xs font-medium hover:opacity-90"
+              >
+                知道了
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* 底部导航 */}
         <Footer />
+        <PluginTapsModal
+          open={tapsModalOpen}
+          onOpenChange={setTapsModalOpen}
+          onSynced={() => void loadList()}
+        />
       </div>
     </Container>
   )

@@ -502,6 +502,15 @@ export const plugins = sqliteTable("plugins", {
   reviewedAt: integer("reviewed_at"),
   /** 作者提交新版本时填写的变更说明；审核通过后写入版本历史并清空 */
   pendingChangelog: text("pending_changelog"),
+  /** 双轨制 (Shadow Release)：在售版本继续服务，新版本在待审中暂存 */
+  pendingVersion: text("pending_version"),
+  pendingManifest: text("pending_manifest"),
+  /** 认证作者标记（仅管理员或受信任发布者可赋权） */
+  authorVerified: integer("author_verified", { mode: "boolean" }).notNull().default(false),
+  /** 衍生自哪个插件（Remix 来源） */
+  forkedFromSlug: text("forked_from_slug"),
+  /** 被衍生创作（Remix）次数统计 */
+  remixCount: integer("remix_count").notNull().default(0),
   source: text("source").notNull().default("user"),
   installCount: integer("install_count").notNull().default(0),
   starCount: integer("star_count").notNull().default(0),
@@ -542,6 +551,18 @@ export const pluginStars = sqliteTable("plugin_stars", {
   primaryKey({ columns: [t.pluginId, t.identity] }),
 ]);
 
+/** 插件举报记录（复合主键去重，杜绝女巫单人秒刷下架） */
+export const pluginReports = sqliteTable("plugin_reports", {
+  pluginId: text("plugin_id").notNull(),
+  identity: text("identity").notNull(),
+  ip: text("ip"),
+  reason: text("reason").notNull().default(""),
+  createdAt: integer("created_at").notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.pluginId, t.identity] }),
+  index("plugin_reports_plugin_idx").on(t.pluginId),
+]);
+
 /**
  * 插件版本快照（审核通过时落一条；同版本唯一）。
  * 表由 migrate.ts / driver.ts 的幂等 DDL 创建，这里补 Drizzle 声明保持 schema 单一事实源。
@@ -574,6 +595,8 @@ export const pluginReviews = sqliteTable("plugin_reviews", {
   moderationNote: text("moderation_note"),
   moderatedAt: integer("moderated_at"),
   moderatedBy: text("moderated_by"),
+  authorReply: text("author_reply"),
+  authorRepliedAt: integer("author_replied_at"),
   createdAt: integer("created_at").notNull(),
   updatedAt: integer("updated_at").notNull(),
 }, (t) => [
@@ -633,7 +656,7 @@ export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
   users, sessions, notifications, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, userWorkspaceBlobs, systemStates, taxonomyProposals,
-  plugins, pluginInstalls, pluginStars, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
+  plugins, pluginInstalls, pluginStars, pluginReports, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
   // 用户域补齐（N11）：此前这四张表没有进入导出，drizzle 工具链拿不到它们，
   // 「schema 是单一事实源」名不副实——迁移脚本与 DDL 各写一份，drift 无从校验。
   identityAliases, identityMerges, userLlmConfigs, userSettings,

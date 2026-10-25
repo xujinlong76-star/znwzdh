@@ -22,6 +22,7 @@ import type { AppContext } from "./context.ts";
 export interface PluginSearchOptions {
   q: string;
   kind?: string;
+  tag?: string;
   limit?: number;
 }
 
@@ -48,7 +49,7 @@ function toSearchItem(p: PluginRecord, score?: number | null): PluginSearchItem 
 export interface PluginSearchResult {
   items: PluginSearchItem[];
   total: number;
-  mode: "semantic" | "keyword";
+  mode: "semantic" | "keyword" | "hybrid";
   degraded: boolean;
 }
 
@@ -120,21 +121,49 @@ export async function searchPluginsSemantic(
   }
 
   if (hits && hits.slugs.length > 0) {
-    const hydrated = (
-      await Promise.all(hits.slugs.map((slug) => ctx.repo.getPluginBySlug(slug)))
-    ).filter(
-      (p): p is PluginRecord =>
-        Boolean(p) && p!.status === "published" && (!opts.kind || p!.kind === opts.kind),
-    );
+    const keywordRes = await ctx.repo.listPlugins({
+      status: "published",
+      kind: opts.kind || undefined,
+      tag: opts.tag || undefined,
+      q,
+      sort: "popular",
+      limit: limit * 2,
+      offset: 0,
+    });
+
+    const rrfScores = new Map<string, number>();
+    const k = 60;
+    hits.slugs.forEach((slug, rank) => {
+      rrfScores.set(slug, (rrfScores.get(slug) ?? 0) + 1.0 / (k + rank + 1));
+    });
+    keywordRes.items.forEach((item, rank) => {
+      rrfScores.set(item.slug, (rrfScores.get(item.slug) ?? 0) + 1.0 / (k + rank + 1));
+    });
+
+    const allSlugs = Array.from(rrfScores.keys());
+    const rawList = await ctx.repo.getPluginsBySlugs(allSlugs);
+    const bySlug = new Map(rawList.map((p) => [p.slug, p]));
+
+    allSlugs.sort((a, b) => (rrfScores.get(b) ?? 0) - (rrfScores.get(a) ?? 0));
+
+    const hydrated: PluginRecord[] = [];
+    for (const slug of allSlugs) {
+      const p = bySlug.get(slug);
+      if (p && p.status === "published" && (!opts.kind || p.kind === opts.kind)) {
+        hydrated.push(p);
+      }
+    }
+
     const items = hydrated
       .slice(0, limit)
-      .map((p) => toSearchItem(p, hits.scoreBySlug.get(p.slug) ?? null));
+      .map((p) => toSearchItem(p, hits!.scoreBySlug.get(p.slug) ?? null));
     return { items, total: items.length, mode: "semantic", degraded: false };
   }
 
   const res = await ctx.repo.listPlugins({
     status: "published",
     kind: opts.kind || undefined,
+    tag: opts.tag || undefined,
     q: q || undefined,
     sort: "popular",
     limit,
@@ -160,33 +189,74 @@ export async function similarPlugins(
   const self = await ctx.repo.getPluginBySlug(slug);
   if (!self) return { items: [], total: 0, degraded: false };
 
+  // 1. 协同过滤召回：查询同时安装了此插件的用户还安装了哪些插件 (Co-occurrence)
+  let coInstallSlugs: string[] = [];
+  try {
+    const coRows = await ctx.repo.raw(
+      `SELECT p.slug, COUNT(DISTINCT i2.identity) as co_count
+       FROM plugin_installs i1
+       JOIN plugin_installs i2 ON i1.identity = i2.identity AND i1.plugin_id != i2.plugin_id
+       JOIN plugins p ON p.id = i2.plugin_id
+       WHERE i1.plugin_id = ? AND i1.removed_at IS NULL AND i2.removed_at IS NULL AND p.status = 'published'
+       GROUP BY p.slug
+       ORDER BY co_count DESC
+       LIMIT ?`,
+      [self.id, n * 2]
+    );
+    coInstallSlugs = (coRows || []).map((r: any) => String(r.slug)).filter((s: string) => s && s !== slug);
+  } catch {
+    coInstallSlugs = [];
+  }
+
+  // 2. 向量语义召回
   let vec = await ctx.repo.getPluginEmbedding(slug);
   if (!vec && ctx.embedding?.ready()) {
     await indexPlugin(ctx, indexItemFromManifest(self.slug, self.manifest));
     vec = await ctx.repo.getPluginEmbedding(slug);
   }
-  if (!vec) {
-    if (ctx.embedding && !ctx.embedding.ready()) kickWarmup(ctx);
-    return { items: [], total: 0, degraded: true };
+
+  let vectorSlugs: string[] = [];
+  if (vec) {
+    try {
+      const matches = await ctx.pluginVectors.search(vec, n * 3 + 1);
+      const seen = new Set<string>([slug]);
+      for (const m of matches) {
+        const s = pluginSlugFromVectorId(m.siteId);
+        if (!s || seen.has(s)) continue;
+        seen.add(s);
+        vectorSlugs.push(s);
+      }
+    } catch (err) {
+      ctx.capabilities.notes.push("相似插件向量检索异常：" + msg(err));
+    }
+  } else if (ctx.embedding && !ctx.embedding.ready()) {
+    kickWarmup(ctx);
   }
 
-  try {
-    const matches = await ctx.pluginVectors.search(vec, n * 3 + 1);
-    const seen = new Set<string>([slug]);
-    const slugs: string[] = [];
-    for (const m of matches) {
-      const s = pluginSlugFromVectorId(m.siteId);
-      if (!s || seen.has(s)) continue;
-      seen.add(s);
-      slugs.push(s);
-    }
-    const hydrated = (
-      await Promise.all(slugs.map((s) => ctx.repo.getPluginBySlug(s)))
-    ).filter((p): p is PluginRecord => Boolean(p) && p!.status === "published");
-    const items = hydrated.slice(0, n).map((p) => toSearchItem(p));
-    return { items, total: items.length, degraded: false };
-  } catch (err) {
-    ctx.capabilities.notes.push("相似插件检索失败：" + msg(err));
-    return { items: [], total: 0, degraded: true };
+  // 3. 混合融合：若两者皆无，则返回空
+  if (vectorSlugs.length === 0 && coInstallSlugs.length === 0) {
+    return { items: [], total: 0, degraded: !vec };
   }
+
+  // RRF 排名融合 (k = 60)
+  const rrfScores = new Map<string, number>();
+  const k = 60;
+  vectorSlugs.forEach((s, rank) => {
+    rrfScores.set(s, (rrfScores.get(s) ?? 0) + 1.0 / (k + rank + 1));
+  });
+  coInstallSlugs.forEach((s, rank) => {
+    rrfScores.set(s, (rrfScores.get(s) ?? 0) + 1.2 / (k + rank + 1)); // 协同过滤稍微赋更高置信度
+  });
+
+  const candidateSlugs = Array.from(rrfScores.keys());
+  candidateSlugs.sort((a, b) => (rrfScores.get(b) ?? 0) - (rrfScores.get(a) ?? 0));
+
+  const rawList = await ctx.repo.getPluginsBySlugs(candidateSlugs);
+  const bySlug = new Map(rawList.map((p) => [p.slug, p]));
+  const hydrated = candidateSlugs
+    .map((s) => bySlug.get(s))
+    .filter((p): p is PluginRecord => Boolean(p) && p!.status === "published");
+
+  const items = hydrated.slice(0, n).map((p) => toSearchItem(p));
+  return { items, total: items.length, degraded: !vec && coInstallSlugs.length > 0 ? false : !vec };
 }

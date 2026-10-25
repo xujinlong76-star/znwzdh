@@ -71,6 +71,10 @@ export interface PluginCreateInput {
   status?: PluginStatus;
   /** 显式指定 slug（导入迁移用）；缺省由名称生成并对冲突去重 */
   slug?: string;
+  /** 认证作者标记 */
+  authorVerified?: boolean;
+  /** 衍生自哪个插件（Remix 来源） */
+  forkedFromSlug?: string | null;
 }
 
 export interface PluginListFilter {
@@ -83,10 +87,14 @@ export interface PluginListFilter {
   ownerKey?: string;
   /** 我的插件：内部归属身份 */
   ownerIdentity?: string;
-  /** new（默认）| popular | stars | updated | rating */
+  /** new（默认）| popular | stars | updated | rating | trending */
   sort?: string;
   limit?: number;
   offset?: number;
+  /** 是否只查含有待审新版本的已发布插件 */
+  hasPendingVersion?: boolean;
+  /** 标签过滤 */
+  tag?: string;
 }
 
 /** 作者公开页 key：身份不可逆哈希，避免把匿名 id / userId 暴露在 URL 里 */
@@ -195,6 +203,11 @@ function rowToPlugin(row: Record<string, any>): PluginRecord {
     reviewNote: row.review_note == null ? null : String(row.review_note),
     reviewedAt: row.reviewed_at == null ? null : Number(row.reviewed_at),
     pendingChangelog: row.pending_changelog == null ? null : String(row.pending_changelog),
+    pendingVersion: row.pending_version == null ? null : String(row.pending_version),
+    pendingManifest: parseJson<PluginManifest | null>(row.pending_manifest, null),
+    authorVerified: row.author_verified === true || Number(row.author_verified ?? 0) === 1,
+    forkedFromSlug: row.forked_from_slug == null ? null : String(row.forked_from_slug),
+    remixCount: Number(row.remix_count ?? 0),
     source: String(row.source ?? "user"),
     installCount: Number(row.install_count ?? 0),
     starCount: Number(row.star_count ?? 0),
@@ -341,12 +354,17 @@ export async function createPlugin(
   const ownerIdentity = input.ownerIdentity?.trim().slice(0, 120) || null;
   const ownerKey = ownerIdentity ? pluginOwnerKey(ownerIdentity) : null;
   const featuredDefault = repo.db.dialect === "pg" ? "FALSE" : "0";
+  const isVerified = Boolean(input.authorVerified) || source === "seed" || ownerIdentity === "seed" || ownerIdentity === "official";
+  const authorVerifiedVal = repo.db.dialect === "pg" ? isVerified : isVerified ? 1 : 0;
+  const forkedFromSlug = input.forkedFromSlug ?? manifest.forkedFrom ?? null;
+
   await repo.run(
     `INSERT INTO plugins (
        id, slug, kind, name, description, icon, tags, author, author_kind, owner_identity, owner_key,
        license, homepage, version, manifest, status, review_note, reviewed_at, source,
+       author_verified, forked_from_slug,
        install_count, star_count, report_count, featured, featured_rank, created_at, updated_at, published_at
-     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,0,${featuredDefault},0,?,?,?)`,
+     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,0,${featuredDefault},0,?,?,?)`,
     [
       randomUUID(),
       slug,
@@ -367,11 +385,20 @@ export async function createPlugin(
       null,
       null,
       source,
+      authorVerifiedVal,
+      forkedFromSlug,
       now,
       now,
       status === "published" ? now : null,
     ],
   );
+  if (forkedFromSlug) {
+    try {
+      await repo.run("UPDATE plugins SET remix_count = remix_count + 1 WHERE slug = ?", [forkedFromSlug]);
+    } catch {
+      // 溯源计数更新失败不影响创建
+    }
+  }
   const created = await getPluginBySlug(repo, slug);
   if (!created) throw new Error("创建插件后无法读回");
   if (status === "published") {
@@ -389,8 +416,35 @@ export async function createPlugin(
 }
 
 export async function getPluginBySlug(repo: Repository, slug: string): Promise<PluginRecord | null> {
-  const rows = await repo.raw("SELECT * FROM plugins WHERE slug = ? LIMIT 1", [slug]);
+  const rows = await repo.raw(
+    `SELECT p.*, COALESCE(r.avg_rating, 0) AS rating_avg, COALESCE(r.review_count, 0) AS review_count
+       FROM plugins p
+       LEFT JOIN (
+         SELECT plugin_id, AVG(rating) AS avg_rating, COUNT(*) AS review_count
+         FROM plugin_reviews WHERE status = 'visible' GROUP BY plugin_id
+       ) r ON r.plugin_id = p.id
+       WHERE p.slug = ? LIMIT 1`,
+    [slug],
+  );
   return rows[0] ? rowToPlugin(rows[0]) : null;
+}
+
+/** 批量获取插件记录并一次性聚合评分，消除搜索与推荐回路中的 N+1 查询 */
+export async function getPluginsBySlugs(repo: Repository, slugs: string[]): Promise<PluginRecord[]> {
+  const unique = Array.from(new Set(slugs.filter(Boolean)));
+  if (unique.length === 0) return [];
+  const placeholders = unique.map(() => "?").join(", ");
+  const rows = await repo.raw(
+    `SELECT p.*, COALESCE(r.avg_rating, 0) AS rating_avg, COALESCE(r.review_count, 0) AS review_count
+       FROM plugins p
+       LEFT JOIN (
+         SELECT plugin_id, AVG(rating) AS avg_rating, COUNT(*) AS review_count
+         FROM plugin_reviews WHERE status = 'visible' GROUP BY plugin_id
+       ) r ON r.plugin_id = p.id
+       WHERE p.slug IN (${placeholders})`,
+    unique,
+  );
+  return rows.map(rowToPlugin);
 }
 
 export async function listPlugins(
@@ -425,6 +479,13 @@ export async function listPlugins(
     wheres.push("p.owner_identity = ?");
     params.push(filter.ownerIdentity);
   }
+  if (filter.tag) {
+    wheres.push("p.tags LIKE ? ESCAPE '!'");
+    params.push(containsLike(`"${filter.tag}"`));
+  }
+  if (filter.hasPendingVersion) {
+    wheres.push("p.pending_version IS NOT NULL");
+  }
   const whereClause = wheres.length > 0 ? " WHERE " + wheres.join(" AND ") : "";
   const countRow = (await repo.raw(`SELECT COUNT(*) AS cnt FROM plugins p${whereClause}`, params))[0];
   const total = Number(countRow?.cnt ?? 0);
@@ -447,8 +508,8 @@ export async function listPlugins(
             : filter.sort === "updated"
               ? "p.updated_at DESC"
               : filter.sort === "trending"
-              ? "(p.install_count * 3 + p.star_count * 5 - p.report_count * 10) DESC, COALESCE(p.published_at, p.created_at) DESC"
-              : "COALESCE(p.published_at, p.created_at) DESC, p.created_at DESC";
+                ? `((p.install_count * 3 + p.star_count * 5 - p.report_count * 10 + 1.0) / ((${Date.now()} - COALESCE(p.published_at, p.created_at)) / 86400000.0 + 2.0)) DESC, COALESCE(p.published_at, p.created_at) DESC`
+                : "COALESCE(p.published_at, p.created_at) DESC, p.created_at DESC";
   // 列表一次性带出评分聚合，避免前端/详情页 N+1；LEFT JOIN 只扫 visible 评价。
   const rows = await repo.raw(
     `SELECT p.*, COALESCE(r.avg_rating, 0) AS rating_avg, COALESCE(r.review_count, 0) AS review_count
@@ -553,25 +614,40 @@ export async function submitPluginVersion(
     throw new Error(`新版本号必须大于当前版本 ${existing.version}`);
   }
   const now = Date.now();
-  await repo.run(
-    `UPDATE plugins SET name = ?, description = ?, icon = ?, tags = ?, license = ?, homepage = ?,
-       version = ?, manifest = ?, status = 'pending', review_note = NULL, reviewed_at = NULL,
-       pending_changelog = ?, published_at = NULL, updated_at = ?
-     WHERE slug = ?`,
-    [
-      manifest.name,
-      manifest.description,
-      manifest.icon ?? null,
-      JSON.stringify(manifest.tags ?? []),
-      manifest.license ?? null,
-      manifest.homepage ?? null,
-      manifest.version,
-      JSON.stringify(manifest),
-      changelog?.trim().slice(0, 2000) || null,
-      now,
-      slug,
-    ],
-  );
+  if (existing.status === "published") {
+    // 双轨制 Shadow Release：已发布版本保持 published 在售与搜索有效，新版本在待审字段暂存
+    await repo.run(
+      `UPDATE plugins SET pending_version = ?, pending_manifest = ?, pending_changelog = ?, updated_at = ?
+       WHERE slug = ?`,
+      [
+        manifest.version,
+        JSON.stringify(manifest),
+        changelog?.trim().slice(0, 2000) || null,
+        now,
+        slug,
+      ],
+    );
+  } else {
+    await repo.run(
+      `UPDATE plugins SET name = ?, description = ?, icon = ?, tags = ?, license = ?, homepage = ?,
+         version = ?, manifest = ?, status = 'pending', review_note = NULL, reviewed_at = NULL,
+         pending_changelog = ?, pending_version = NULL, pending_manifest = NULL, published_at = NULL, updated_at = ?
+       WHERE slug = ?`,
+      [
+        manifest.name,
+        manifest.description,
+        manifest.icon ?? null,
+        JSON.stringify(manifest.tags ?? []),
+        manifest.license ?? null,
+        manifest.homepage ?? null,
+        manifest.version,
+        JSON.stringify(manifest),
+        changelog?.trim().slice(0, 2000) || null,
+        now,
+        slug,
+      ],
+    );
+  }
   const updated = await getPluginBySlug(repo, slug);
   if (!updated) throw new Error("提交版本后无法读回");
   await repo.audit({
@@ -579,9 +655,24 @@ export async function submitPluginVersion(
     actorKind: actor?.actorKind ?? "owner",
     action: "plugin.version.submit",
     target: slug,
-    diff: { from: existing.version, to: manifest.version, changelog: changelog?.trim().slice(0, 500) ?? null },
+    diff: {
+      from: existing.version,
+      to: manifest.version,
+      shadowPending: existing.status === "published",
+      changelog: changelog?.trim().slice(0, 500) ?? null,
+    },
     ip: actor?.ip,
   });
+  if (existing.status === "published") {
+    return {
+      ...updated,
+      version: manifest.version,
+      manifest,
+      status: "pending",
+      publishedAt: null,
+      pendingChangelog: changelog?.trim().slice(0, 2000) || null,
+    };
+  }
   return updated;
 }
 
@@ -625,38 +716,88 @@ export async function reviewPlugin(
 ): Promise<PluginRecord> {
   const existing = await getPluginBySlug(repo, slug);
   if (!existing) throw new Error(`插件不存在：${slug}`);
-  let status: PluginStatus;
+  let status: PluginStatus = existing.status;
+  const now = Date.now();
+
   if (action === "approve") {
-    if (existing.status !== "pending" && existing.status !== "delisted" && existing.status !== "quarantined") {
-      throw new Error(`插件当前状态为 ${existing.status}，只有 pending/delisted/quarantined 可以通过`);
+    if (existing.status === "published") {
+      // 审核通过已发布插件的待审新版本 (Shadow Release)
+      if (!existing.pendingVersion || !existing.pendingManifest) {
+        throw new Error(`插件当前状态为 ${existing.status}，只有 pending/delisted/quarantined 可以通过`);
+      }
+      const newManifest = existing.pendingManifest;
+      await assertBundleManifestReferences(repo, newManifest, slug);
+      const changelog = existing.pendingChangelog?.trim() || note || "新版本审核通过";
+
+      await repo.run(
+        `UPDATE plugins SET
+           name = ?, description = ?, icon = ?, tags = ?, license = ?, homepage = ?,
+           version = ?, manifest = ?,
+           pending_version = NULL, pending_manifest = NULL, pending_changelog = NULL,
+           review_note = ?, reviewed_at = ?, updated_at = ?
+         WHERE slug = ?`,
+        [
+          newManifest.name,
+          newManifest.description,
+          newManifest.icon ?? null,
+          JSON.stringify(newManifest.tags ?? []),
+          newManifest.license ?? null,
+          newManifest.homepage ?? null,
+          existing.pendingVersion,
+          JSON.stringify(newManifest),
+          note,
+          now,
+          now,
+          slug,
+        ],
+      );
+      await recordPluginVersion(repo, existing.id, newManifest, changelog, now);
+    } else {
+      if (existing.status !== "pending" && existing.status !== "delisted" && existing.status !== "quarantined") {
+        throw new Error(`插件当前状态为 ${existing.status}，只有 pending/delisted/quarantined 可以通过`);
+      }
+      status = "published";
+      await assertBundleManifestReferences(repo, existing.manifest, slug);
+      const changelog = existing.pendingChangelog?.trim() || note || "审核通过并上架";
+      await repo.run(
+        `UPDATE plugins SET status = ?, review_note = ?, reviewed_at = ?, published_at = ?,
+           pending_version = NULL, pending_manifest = NULL, pending_changelog = NULL, updated_at = ?
+         WHERE slug = ?`,
+        [status, note, now, now, now, slug],
+      );
+      await recordPluginVersion(repo, existing.id, existing.manifest, changelog, now);
     }
-    status = "published";
   } else if (action === "reject") {
-    status = "rejected";
+    if (existing.status === "published" && existing.pendingVersion) {
+      await repo.run(
+        `UPDATE plugins SET pending_version = NULL, pending_manifest = NULL, pending_changelog = NULL,
+           review_note = ?, reviewed_at = ?, updated_at = ?
+         WHERE slug = ?`,
+        [note ? `新版本提交被驳回：${note}` : "新版本提交被驳回", now, now, slug],
+      );
+    } else {
+      status = "rejected";
+      await repo.run(
+        "UPDATE plugins SET status = ?, review_note = ?, reviewed_at = ?, updated_at = ? WHERE slug = ?",
+        [status, note, now, now, slug],
+      );
+    }
   } else {
     status = "delisted";
+    await repo.run(
+      "UPDATE plugins SET status = ?, review_note = ?, reviewed_at = ?, updated_at = ? WHERE slug = ?",
+      [status, note, now, now, slug],
+    );
   }
-  // 上架前重新校验组合包引用：成员可能在待审期间被下架/隔离。
-  if (action === "approve") {
-    await assertBundleManifestReferences(repo, existing.manifest, slug);
-  }
-  const now = Date.now();
-  const changelog = existing.pendingChangelog?.trim() || note || "审核通过并上架";
-  await repo.run(
-    "UPDATE plugins SET status = ?, review_note = ?, reviewed_at = ?, published_at = ?, pending_changelog = NULL, updated_at = ? WHERE slug = ?",
-    [status, note, now, action === "approve" ? now : existing.publishedAt, now, slug],
-  );
+
   const updated = await getPluginBySlug(repo, slug);
   if (!updated) throw new Error("审核后无法读回");
-  if (action === "approve") {
-    await recordPluginVersion(repo, existing.id, existing.manifest, changelog, now);
-  }
   await repo.audit({
     actor: actor?.actor ?? "admin",
     actorKind: actor?.actorKind,
     action: action === "delist" ? "plugin.delist" : `plugin.review.${action}`,
     target: slug,
-    diff: { from: existing.status, to: status, note },
+    diff: { from: existing.status, to: updated.status, note },
     ip: actor?.ip,
   });
   return updated;
@@ -790,25 +931,41 @@ export async function listPluginInstallsByIdentity(
   return items;
 }
 
+export interface PluginInstallOptions {
+  version?: string;
+  selectedSites?: string[];
+}
+
 export async function installPlugin(
   repo: Repository,
   slug: string,
   identity: string,
   actor?: PluginActor,
+  options?: PluginInstallOptions,
 ): Promise<PluginInstallResult> {
   const plugin = await getPluginBySlug(repo, slug);
   if (!plugin) throw new Error(`插件不存在：${slug}`);
   if (plugin.status !== "published") {
     throw new Error(`插件状态为 ${plugin.status}，只有已上架（published）插件可以安装`);
   }
+  let targetManifest = plugin.manifest;
+  let targetVersion = plugin.version;
+  if (options?.version && options.version !== plugin.version) {
+    const vSnapshot = await getPluginVersion(repo, plugin.id, options.version);
+    if (!vSnapshot) {
+      throw new Error(`找不到版本 ${options.version} 的历史快照`);
+    }
+    targetManifest = vSnapshot.manifest;
+    targetVersion = vSnapshot.version;
+  }
   const who = identity.trim().slice(0, 120) || "anonymous";
   const applied: PluginInstallApplied = { sitesAdded: 0, sitesSkipped: 0, categoriesCreated: 0, createdSiteIds: [] };
 
-  if (plugin.kind === "bundle") {
+  if (targetManifest.kind === "bundle") {
     // 单层组合包：先全量预检，再按清单顺序复用 installPlugin。
     // 不在同一事务里包住多个成员（site-pack 自身使用事务）；预检后失败只会留下
     // 已成功的幂等安装，重试可补齐，绝不回滚/删除用户已有数据。
-    const members = await resolveBundleMembers(repo, plugin);
+    const members = await resolveBundleMembers(repo, { ...plugin, manifest: targetManifest });
     const bundleItems: PluginBundleInstallItem[] = [];
     const completed: string[] = [];
     for (const member of members) {
@@ -849,8 +1006,11 @@ export async function installPlugin(
     applied.bundleItems = bundleItems;
   }
 
-  if (plugin.kind === "site-pack") {
-    const payload = plugin.manifest.payload as SitePackPayload;
+  if (targetManifest.kind === "site-pack") {
+    const payload = targetManifest.payload as SitePackPayload;
+    const sitesToInstall = Array.isArray(options?.selectedSites) && options!.selectedSites!.length > 0
+      ? payload.sites.filter((s) => options!.selectedSites!.includes(s.url))
+      : payload.sites;
     await repo.withTransaction(async () => {
       // 只认权威树：安装不再凭空造类目行。`plugin:*` 类目既是 106 个平铺根的成因，
       // 也是「卸载/启动清扫把新树叶子一起吃掉」的反噬入口——不造行，反噬路径自动消失。
@@ -903,7 +1063,7 @@ export async function installPlugin(
       let uncategorizedId: string | null = null;
       // 单分类包（旧夹具常见写法）：站点不重复写 category，包声明的那一个就是默认桶
       const defaultTitle = payload.categories?.length === 1 ? (payload.categories[0]?.title ?? "").trim() : "";
-      for (const site of payload.sites) {
+      for (const site of sitesToInstall) {
         if (await siteUrlExists(repo, site.url)) {
           applied.sitesSkipped++;
           continue;
@@ -967,24 +1127,24 @@ export async function installPlugin(
     });
   }
 
-  if (plugin.kind === "search-pack") {
-    const payload = plugin.manifest.payload as any;
+  if (targetManifest.kind === "search-pack") {
+    const payload = targetManifest.payload as any;
     applied.enginesAdded = Array.isArray(payload?.engines) ? payload.engines.length : 0;
   }
 
   const now = Date.now();
   const existingInstall = await getPluginInstall(repo, plugin.id, who);
   const wasActive = !!existingInstall && existingInstall.removedAt === null;
-  const meta = JSON.stringify({ ...applied, manifest: plugin.manifest });
+  const meta = JSON.stringify({ ...applied, manifest: targetManifest });
   if (existingInstall) {
     await repo.run(
       "UPDATE plugin_installs SET version = ?, meta = ?, installed_at = ?, removed_at = NULL WHERE plugin_id = ? AND identity = ?",
-      [plugin.version, meta, now, plugin.id, who],
+      [targetVersion, meta, now, plugin.id, who],
     );
   } else {
     await repo.run(
       "INSERT INTO plugin_installs (plugin_id, identity, version, meta, installed_at, removed_at) VALUES (?,?,?,?,?,NULL)",
-      [plugin.id, who, plugin.version, meta, now],
+      [plugin.id, who, targetVersion, meta, now],
     );
   }
   if (!wasActive) {
@@ -998,7 +1158,7 @@ export async function installPlugin(
     action: "plugin.install",
     target: slug,
     diff: {
-      version: plugin.version,
+      version: targetVersion,
       sitesAdded: applied.sitesAdded,
       sitesSkipped: applied.sitesSkipped,
       categoriesCreated: applied.categoriesCreated,
@@ -1029,40 +1189,49 @@ export async function uninstallPlugin(
   let removedCategories = 0;
   // 组合包只解绑自身，不级联卸载成员，也不删除成员带来的站点/主题/预设。
   if (options.removeSites && plugin.kind === "site-pack") {
-    // 1. 只软删「来源仍是该插件」的站点（用户改过的来源已变，不会被误伤）；进回收站可恢复
-    const rows = await repo.raw("SELECT id FROM sites WHERE source = ? AND deleted_at IS NULL", [`plugin:${slug}`]);
-    for (const row of rows) {
-      await repo.deleteSite(String(row.id));
-      removedSites++;
-    }
-
-    // 2. 同步清理该插件创建的网址分类与子分类
-    const pluginCats = await repo.raw(
-      "SELECT id, parent_id FROM categories WHERE source = ?",
-      [`plugin:${slug}`]
+    // 检查是否有其他身份依然活跃安装此插件；若有，绝不可级联删除共享站点与分类！
+    const otherActiveInstalls = await repo.raw(
+      "SELECT 1 FROM plugin_installs WHERE plugin_id = ? AND identity != ? AND removed_at IS NULL LIMIT 1",
+      [plugin.id, who],
     );
-    // 子分类排在前面优先清理，避免外键或 anchor 约束问题
-    pluginCats.sort((a: any, b: any) => {
-      const aIsChild = a.parent_id ? 1 : 0;
-      const bIsChild = b.parent_id ? 1 : 0;
-      return bIsChild - aIsChild;
-    });
+    const hasOtherActiveInstalls = otherActiveInstalls.length > 0;
 
-    for (const cat of pluginCats) {
-      // 检查是否有非本插件来源的站点。回收站里的站点也算引用：直接 DELETE 分类
-      // 会在恢复站点时把它扔进「未分类」（schema 没有外键，甚至留下悬空 category_id）。
-      // 本插件来源的站点在上一步已软删、且用户明确要求 removeSites，不阻止清理。
-      const otherSites = await repo.raw(
-        "SELECT 1 AS ok FROM sites WHERE (category_id = ? OR sub_category_id = ?) AND source != ? LIMIT 1",
-        [cat.id, cat.id, `plugin:${slug}`],
+    if (!hasOtherActiveInstalls) {
+      // 1. 只软删「来源仍是该插件」的站点（用户改过的来源已变，不会被误伤）；进回收站可恢复
+      const rows = await repo.raw("SELECT id FROM sites WHERE source = ? AND deleted_at IS NULL", [`plugin:${slug}`]);
+      for (const row of rows) {
+        await repo.deleteSite(String(row.id));
+        removedSites++;
+      }
+
+      // 2. 同步清理该插件创建的网址分类与子分类
+      const pluginCats = await repo.raw(
+        "SELECT id, parent_id FROM categories WHERE source = ?",
+        [`plugin:${slug}`]
       );
-      if (otherSites.length > 0) {
-        // 用户数据（含回收站）仍引用该分类，保留并把 source 转为 api，避免误删
-        await repo.run("UPDATE categories SET source = 'api', updated_at = ? WHERE id = ?", [Date.now(), cat.id]);
-      } else {
-        // 只有本插件的站点引用，彻底删除分类
-        await repo.deleteCategory(String(cat.id));
-        removedCategories++;
+      // 子分类排在前面优先清理，避免外键或 anchor 约束问题
+      pluginCats.sort((a: any, b: any) => {
+        const aIsChild = a.parent_id ? 1 : 0;
+        const bIsChild = b.parent_id ? 1 : 0;
+        return bIsChild - aIsChild;
+      });
+
+      for (const cat of pluginCats) {
+        // 检查是否有非本插件来源的站点。回收站里的站点也算引用：直接 DELETE 分类
+        // 会在恢复站点时把它扔进「未分类」（schema 没有外键，甚至留下悬空 category_id）。
+        // 本插件来源的站点在上一步已软删、且用户明确要求 removeSites，不阻止清理。
+        const otherSites = await repo.raw(
+          "SELECT 1 AS ok FROM sites WHERE (category_id = ? OR sub_category_id = ?) AND source != ? LIMIT 1",
+          [cat.id, cat.id, `plugin:${slug}`],
+        );
+        if (otherSites.length > 0) {
+          // 用户数据（含回收站）仍引用该分类，保留并把 source 转为 api，避免误删
+          await repo.run("UPDATE categories SET source = 'api', updated_at = ? WHERE id = ?", [Date.now(), cat.id]);
+        } else {
+          // 只有本插件的站点引用，彻底删除分类
+          await repo.deleteCategory(String(cat.id));
+          removedCategories++;
+        }
       }
     }
   }
@@ -1167,10 +1336,34 @@ export async function reportPlugin(
   const plugin = await getPluginBySlug(repo, slug);
   if (!plugin) throw new Error(`插件不存在：${slug}`);
   const reason = input.reason.trim().slice(0, 500) || "（未填写理由）";
-  const reportCount = plugin.reportCount + 1;
-  const shouldQuarantine = reportCount >= 3 && plugin.status === "published";
-  const nextStatus: PluginStatus = shouldQuarantine ? "quarantined" : plugin.status;
+  const identity = (input.identity || actor?.actor || actor?.ip || "anonymous").trim().slice(0, 120);
+  const ip = actor?.ip ?? null;
   const now = Date.now();
+
+  let isNewReport = true;
+  try {
+    const existing = await repo.raw(
+      "SELECT 1 FROM plugin_reports WHERE plugin_id = ? AND identity = ? LIMIT 1",
+      [plugin.id, identity],
+    );
+    if (existing.length > 0) {
+      isNewReport = false;
+    } else {
+      await repo.run(
+        "INSERT INTO plugin_reports (plugin_id, identity, ip, reason, created_at) VALUES (?, ?, ?, ?, ?)",
+        [plugin.id, identity, ip, reason, now],
+      );
+    }
+  } catch {
+    // 降级保护：表异常时不阻断计数
+  }
+
+  let reportCount = plugin.reportCount;
+  if (isNewReport) {
+    reportCount = plugin.reportCount + 1;
+  }
+  const shouldQuarantine = isNewReport && reportCount >= 3 && plugin.status === "published";
+  const nextStatus: PluginStatus = shouldQuarantine ? "quarantined" : plugin.status;
 
   if (shouldQuarantine) {
     await repo.run(
@@ -1184,23 +1377,52 @@ export async function reportPlugin(
       target: slug,
       diff: { from: plugin.status, to: nextStatus, reportCount, reason },
     });
-  } else {
+  } else if (isNewReport) {
     await repo.run("UPDATE plugins SET report_count = ?, updated_at = ? WHERE id = ?", [reportCount, now, plugin.id]);
   }
 
   await repo.recordEvent("plugin_report", {
     identity: input.identity,
-    meta: { slug, reason, quarantined: shouldQuarantine },
+    meta: { slug, reason, reportCount, deduplicated: !isNewReport, quarantined: shouldQuarantine },
   });
+
   await repo.audit({
     actor: actor?.actor ?? input.identity ?? "anonymous",
-    actorKind: actor?.actorKind,
+    actorKind: actor?.actorKind ?? "identity",
     action: "plugin.report",
     target: slug,
-    diff: { reason, reportCount, quarantined: shouldQuarantine },
+    diff: { reason, reportCount, isNewReport, quarantined: shouldQuarantine },
     ip: actor?.ip,
   });
+
   return { reportCount, status: nextStatus, quarantined: shouldQuarantine };
+}
+
+/** 管理员/治理系统人工执行隔离处置 */
+export async function quarantinePlugin(
+  repo: Repository,
+  slug: string,
+  reason: string,
+  actor?: PluginActor,
+): Promise<PluginRecord> {
+  const plugin = await getPluginBySlug(repo, slug);
+  if (!plugin) throw new Error(`插件不存在：${slug}`);
+  const now = Date.now();
+  await repo.run(
+    "UPDATE plugins SET status = 'quarantined', review_note = ?, updated_at = ? WHERE id = ?",
+    [`人工隔离处置：${reason}`, now, plugin.id],
+  );
+  await repo.audit({
+    actor: actor?.actor ?? "admin",
+    actorKind: actor?.actorKind ?? "admin",
+    action: "plugin.quarantine",
+    target: slug,
+    diff: { from: plugin.status, to: "quarantined", reason },
+    ip: actor?.ip,
+  });
+  const updated = await getPluginBySlug(repo, slug);
+  if (!updated) throw new Error("隔离后无法读回");
+  return updated;
 }
 
 export async function hasUserStarredPlugin(
@@ -1420,6 +1642,8 @@ function rowToPluginReview(row: Record<string, any>): PluginReviewRecord {
     moderationNote: row.moderation_note == null ? null : String(row.moderation_note),
     moderatedAt: row.moderated_at == null ? null : Number(row.moderated_at),
     moderatedBy: row.moderated_by == null ? null : String(row.moderated_by),
+    authorReply: row.author_reply == null ? null : String(row.author_reply),
+    authorRepliedAt: row.author_replied_at == null ? null : Number(row.author_replied_at),
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
   };
@@ -1820,3 +2044,41 @@ export async function resolveShortLink(repo: Repository, code: string): Promise<
   };
 }
 
+
+export async function replyPluginReview(
+  repo: Repository,
+  reviewId: string,
+  replyText: string,
+  actor: PluginActor,
+): Promise<PluginReviewRecord> {
+  const row = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? LIMIT 1", [reviewId]))[0];
+  if (!row) throw new Error(`评价不存在：${reviewId}`);
+  const pluginRow = (await repo.raw("SELECT * FROM plugins WHERE id = ? LIMIT 1", [row.plugin_id]))[0];
+  if (!pluginRow) throw new Error("关联插件不存在");
+  const plugin = rowToPlugin(pluginRow);
+
+  const actorIdentity = actor.actor;
+  const isAdmin = actor.actorKind === "admin";
+  if (!isAdmin && plugin.ownerIdentity !== actorIdentity) {
+    throw new Error("只有插件作者或系统管理员才能回复此评价");
+  }
+
+  const now = Date.now();
+  const cleanReply = replyText.trim().slice(0, 1000);
+  await repo.run(
+    "UPDATE plugin_reviews SET author_reply = ?, author_replied_at = ?, updated_at = ? WHERE id = ?",
+    [cleanReply, now, now, reviewId],
+  );
+
+  await repo.audit({
+    actor: actor.actor,
+    actorKind: actor.actorKind,
+    action: "plugin.review.reply",
+    target: plugin.slug,
+    diff: { reviewId, reply: cleanReply },
+  });
+
+  const updatedRow = (await repo.raw("SELECT * FROM plugin_reviews WHERE id = ? LIMIT 1", [reviewId]))[0];
+  if (!updatedRow) throw new Error("无法读回回复后的评价记录");
+  return rowToPluginReview(updatedRow);
+}

@@ -171,6 +171,7 @@ export interface PluginManifest {
   license?: string
   version: string
   tags?: string[]
+  forkedFrom?: string
   payload: SitePackPayload | WorkspacePresetPayload | ThemePayload | SearchPackPayload | BundlePayload
 }
 
@@ -220,6 +221,7 @@ const WIDGET_TYPE_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/
 const HSL_TRIPLE_PATTERN = /^(\d{1,3}(?:\.\d+)?)\s+(\d{1,3}(?:\.\d+)?)%\s+(\d{1,3}(?:\.\d+)?)%$/
 const RADIUS_PATTERN = /^(\d(?:\.\d{1,2})?)rem$/
 const FORBIDDEN_CONFIG_KEYS = ['__proto__', 'constructor', 'prototype']
+const INVISIBLE_OR_BIDI_PATTERN = /[\u00AD\u200B\u200C\u202A-\u202E\u2060\u2066-\u2069\uFEFF\uE000-\uF8FF]|(?<!\p{Extended_Pictographic})\u200D|\u200D(?!\p{Extended_Pictographic})/u
 
 function isAbsoluteHttpUrl(value: string): boolean {
   try {
@@ -265,6 +267,10 @@ function readString(
   }
   if (v.length > max) {
     errors.push(`${path} 超过 ${max} 字符上限`)
+    return undefined
+  }
+  if (INVISIBLE_OR_BIDI_PATTERN.test(v)) {
+    errors.push(`${path} 包含高危不可见或双向控制字符（GlassWorm 防护拦截）`)
     return undefined
   }
   return v
@@ -727,6 +733,7 @@ export function validateAndCleanPluginManifest(input: unknown): PluginManifestVa
     : readHttpUrl(raw.homepage, 'homepage', errors)
   const license = readString(raw.license, PLUGIN_LIMITS.maxLicense, 'license', errors)
   const tags = readStringList(raw.tags, 'tags', errors, PLUGIN_LIMITS.maxTags, PLUGIN_LIMITS.maxTagChars)
+  const forkedFrom = readString(raw.forkedFrom, 80, 'forkedFrom', errors)
 
   if (raw.payload === null || typeof raw.payload !== 'object' || Array.isArray(raw.payload)) {
     errors.push('payload 必须是对象')
@@ -762,6 +769,7 @@ export function validateAndCleanPluginManifest(input: unknown): PluginManifestVa
   if (homepage) manifest.homepage = homepage
   if (license) manifest.license = license
   if (tags) manifest.tags = tags
+  if (forkedFrom) manifest.forkedFrom = forkedFrom
 
   return { ok: true, manifest, warnings }
 }

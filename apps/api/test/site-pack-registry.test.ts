@@ -38,8 +38,9 @@ const packs = seedPluginDefs()
   .filter((d) => d.manifest.kind === "site-pack");
 
 describe("站点包 → registry 解析", () => {
-  it("站点包数量就是 29（少了说明有包没注册）", () => {
-    expect(packs.length).toBe(29);
+  it("站点包数量达标（当前已扩容至 34 个，不得低于 29 个）", () => {
+    expect(packs.length).toBeGreaterThanOrEqual(29);
+    expect(packs.length).toBe(34);
   });
 
   it("每条站点引用的分类都能解析到叶子", () => {

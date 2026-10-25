@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,9 @@ import {
   addPluginTap,
   deletePluginTap,
   syncPluginTap,
+  fetchPublicPluginTaps,
   type HubPluginTap,
+  type HubFeaturedTapItem,
 } from '@/lib/navhub-api'
 import {
   Radio,
@@ -36,6 +39,7 @@ import {
   ShieldCheck,
   Layers,
   Loader2,
+  Sparkles,
 } from 'lucide-react'
 
 interface PluginTapsModalProps {
@@ -49,6 +53,9 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
   const [loading, setLoading] = useState(false)
   const [syncingId, setSyncingId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [unauthorized, setUnauthorized] = useState(false)
+  const [featuredTaps, setFeaturedTaps] = useState<HubFeaturedTapItem[]>([])
+  const [subscribingUrl, setSubscribingUrl] = useState<string | null>(null)
 
   // 新增表单状态
   const [name, setName] = useState('')
@@ -57,13 +64,37 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
 
   const loadTaps = async () => {
     setLoading(true)
+    setUnauthorized(false)
     try {
       const res = await fetchPluginTaps()
       if (res.ok) {
         setTaps(res.items || [])
+        if (res.featuredTaps) setFeaturedTaps(res.featuredTaps)
       }
-    } catch {
-      toast.error('加载 Taps 订阅源列表失败')
+    } catch (err: any) {
+      // 降级：尝试拉取公开可读源及精选推荐列表
+      try {
+        const publicRes = await fetchPublicPluginTaps()
+        if (publicRes.ok) {
+          setTaps(publicRes.items || [])
+          if (publicRes.featuredTaps) setFeaturedTaps(publicRes.featuredTaps)
+        }
+      } catch {
+        // ignore
+      }
+      const msg = String(err?.message || err || '')
+      if (
+        msg.includes('401') ||
+        msg.includes('403') ||
+        msg.includes('Unauthorized') ||
+        msg.includes('Forbidden') ||
+        msg.includes('未登录') ||
+        msg.includes('权限')
+      ) {
+        setUnauthorized(true)
+      } else {
+        toast.error('加载 Taps 订阅源列表失败')
+      }
     } finally {
       setLoading(false)
     }
@@ -115,6 +146,25 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
     }
   }
 
+
+  const handleQuickSubscribe = async (feat: HubFeaturedTapItem) => {
+    setSubscribingUrl(feat.url)
+    try {
+      const res = await addPluginTap({ name: feat.name, url: feat.url, description: feat.description })
+      toast.success(`已添加「${feat.name}」，正在拉取远端清单...`)
+      if (res?.tap?.id) {
+        await syncPluginTap(res.tap.id)
+        toast.success(`「${feat.name}」同步完成！`)
+      }
+      await loadTaps()
+      onSynced?.()
+    } catch (err: any) {
+      toast.error('订阅推荐源失败: ' + (err?.message || String(err)))
+    } finally {
+      setSubscribingUrl(null)
+    }
+  }
+
   const handleSync = async (id: string) => {
     setSyncingId(id)
     try {
@@ -123,6 +173,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
         // 逐因报数：原来只说「发现 N 个、导入/更新 M 个」，既没有更新这条路径，
         // 也把「不合规 / 重名 / 写库失败 / 被上限截断」全藏进了 N-M 的差里。
         const breakdown = [`新增 ${res.importedCount} 个`]
+        if (res.updatedCount && res.updatedCount > 0) breakdown.push(`更新升级 ${res.updatedCount} 个`)
         if (res.skippedDuplicate > 0) breakdown.push(`市场已有同名 ${res.skippedDuplicate} 个`)
         if (res.rejectedInvalid > 0) breakdown.push(`清单不合规 ${res.rejectedInvalid} 个`)
         if (res.failedWrite > 0) breakdown.push(`写入失败 ${res.failedWrite} 个`)
@@ -161,6 +212,29 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
             </div>
           </div>
         </DialogHeader>
+
+        {unauthorized && (
+          <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs space-y-2 text-amber-900 dark:text-amber-200">
+            <div className="flex items-center gap-2 font-semibold">
+              <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>需要管理员权限</span>
+            </div>
+            <p className="leading-relaxed text-muted-foreground text-[11px]">
+              第三方插件市场订阅源 (Taps) 是全站级别的插件源配置，同步后插件将直接进入全站插件目录。
+              为保证系统与生态安全，仅系统管理员可配置或执行源同步。
+            </p>
+            <div className="pt-1">
+              <Link
+                href="/admin/plugins"
+                onClick={() => onOpenChange(false)}
+                className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline font-medium"
+              >
+                <span>前往系统管理后台</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* 添加新源表单 */}
         <form onSubmit={handleAdd} className="mt-4 p-4 rounded-xl border border-border/60 bg-muted/20 space-y-3">
@@ -289,16 +363,73 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
           )}
         </div>
 
-        {/* 预设推荐 Taps */}
-        <div className="mt-4 p-3 rounded-xl bg-muted/40 border border-border/40 text-xs space-y-2">
-          <div className="font-semibold text-muted-foreground flex items-center gap-1.5">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-            <span>安全指引与公共订阅推荐</span>
+        {/* 官方精选推荐源 Featured Taps */}
+        {featuredTaps.length > 0 && (
+          <div className="mt-5 space-y-3 pt-4 border-t border-border/50">
+            <div className="flex items-center justify-between px-1">
+              <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>官方精选推荐源 (Featured Taps)</span>
+              </div>
+              <span className="text-[11px] text-muted-foreground">精选高质量社区生态扩展</span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5">
+              {featuredTaps.map((feat) => {
+                const isSubscribed = taps.some((t) => t.url.toLowerCase() === feat.url.toLowerCase())
+                const isSubscribing = subscribingUrl === feat.url
+                return (
+                  <div
+                    key={feat.id}
+                    className="p-3 rounded-xl border border-border/70 bg-muted/20 hover:bg-muted/40 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-foreground truncate">{feat.name}</span>
+                        <Badge variant="secondary" className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20">
+                          精选
+                        </Badge>
+                        {feat.author && (
+                          <span className="text-[10px] text-muted-foreground">by {feat.author}</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                        {feat.description}
+                      </p>
+                    </div>
+
+                    <div className="shrink-0 self-end sm:self-auto">
+                      {isSubscribed ? (
+                        <Badge variant="outline" className="text-[11px] py-1 px-2.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>已订阅</span>
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          disabled={isSubscribing || unauthorized}
+                          onClick={() => handleQuickSubscribe(feat)}
+                          className="h-7.5 text-xs px-3 gap-1.5"
+                        >
+                          {isSubscribing ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Plus className="w-3 h-3" />
+                          )}
+                          <span>一键订阅</span>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            NavHub 远程 Taps 遵循安全沙盒原则，全量导入过程由 SSRF 防护守护。
-            建议仅订阅来自受信组织或个人的源，安装前可通过插件详情页查看全自动安全扫描评分。
-          </p>
+        )}
+
+        <div className="mt-4 p-3 rounded-xl bg-muted/30 border border-border/40 text-[11px] text-muted-foreground flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+          <span>NavHub 远程 Taps 全量导入流程由 SSRF 防护守护，并经过全自动安全沙盒扫描。</span>
         </div>
       </DialogContent>
     </Dialog>

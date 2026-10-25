@@ -470,6 +470,39 @@ export function PluginMarketBoard({
           )}
         </div>
 
+        {/* 热门标签筛选云 (Tag Facets) */}
+        <div className="flex flex-wrap items-center gap-1.5 text-xs -mt-2">
+          <span className="text-[11px] text-muted-foreground flex items-center gap-1 mr-1">
+            <Sparkles className="w-3 h-3 text-primary" />
+            热门标签:
+          </span>
+          {['开发工具', 'AI效率', '设计灵感', '自托管', '搜索增强', '极简生活', '精选常用'].map((tag) => {
+            const isSelected = q === tag
+            return (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => {
+                  if (isSelected) {
+                    setQ('')
+                    setQInput('')
+                  } else {
+                    setQ(tag)
+                    setQInput(tag)
+                  }
+                }}
+                className={`px-2 py-0.5 rounded-md text-[11px] transition-all ${
+                  isSelected
+                    ? 'bg-primary/20 text-primary font-semibold border border-primary/40'
+                    : 'bg-muted/50 hover:bg-muted text-muted-foreground hover:text-foreground border border-border/40'
+                }`}
+              >
+                #{tag}
+              </button>
+            )
+          })}
+        </div>
+
         {/* 当前筛选条件：与地址栏同步，便于一键清除和分享 */}
         {(q || kind) && (
           <div className="flex flex-wrap items-center gap-2 text-xs -mt-2">

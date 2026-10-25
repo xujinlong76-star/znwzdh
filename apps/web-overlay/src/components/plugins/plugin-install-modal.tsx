@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   type HubPluginItem,
@@ -20,7 +20,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { resolveInstallAction } from '@/lib/plugins/install-state'
-import { Globe, LayoutGrid, Palette, Boxes, AlertTriangle, Check, Trash2, Download } from 'lucide-react'
+import { Globe, LayoutGrid, Palette, Boxes, AlertTriangle, Check, Trash2, Download, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { setActiveTheme, resetTheme } from '@/lib/plugins/theme-runtime'
 import {
@@ -53,6 +53,7 @@ export function PluginInstallModal({
   const [presetMode, setPresetMode] = useState<'append' | 'replace'>('append')
   /** 安装耗时（每 100ms 刷新一次），让「点了没反应」变成「看得见在处理」 */
   const [elapsedMs, setElapsedMs] = useState(0)
+  const [selectedUrls, setSelectedUrls] = useState<Set<string> | null>(null)
   /**
    * 安装前重复预览（P0-2）：这一包里有多少条已经在本地库里了。
    *
@@ -62,6 +63,29 @@ export function PluginInstallModal({
   const [overlapResult, setOverlapResult] = useState<
     { slug: string; unique: number; existing: number; fresh: number } | null
   >(null)
+
+  const externalDomains = useMemo(() => {
+    if (!plugin) return []
+    const domains = new Set<string>()
+    if (plugin.kind === 'site-pack' && Array.isArray(plugin.manifest?.payload?.sites)) {
+      for (const s of plugin.manifest.payload.sites) {
+        try {
+          if (s.url) domains.add(new URL(s.url).hostname)
+        } catch {
+          // 忽略非法站点 URL 解析失败，外部域名统计仅作展示
+        }
+      }
+    } else if (plugin.kind === 'search-pack' && Array.isArray(plugin.manifest?.payload?.engines)) {
+      for (const e of plugin.manifest.payload.engines) {
+        try {
+          if (e.searchUrl) domains.add(new URL(e.searchUrl).hostname)
+        } catch {
+          // 忽略非法搜索引擎 URL 解析失败，外部域名统计仅作展示
+        }
+      }
+    }
+    return Array.from(domains)
+  }, [plugin])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // 只在「打开 + 网址包 + 非卸载」时取预览
@@ -136,7 +160,8 @@ export function PluginInstallModal({
       if (mode !== 'uninstall') {
         // 1. 服务端状态登记与 site-pack 增量写库
         //    bundle 由服务端逐个成员复用同一条安装管道（预检失败即拒绝，无半安装）
-        const res = await installPlugin(plugin.slug, effectiveIdentity)
+        const installOpts = selectedUrls ? { selectedSites: Array.from(selectedUrls) } : undefined
+        const res = await installPlugin(plugin.slug, effectiveIdentity, installOpts)
 
         // 2. 客户端工作台预设消费（组合包不含 workspace-preset，此分支不会被 bundle 命中）
         if (plugin.kind === 'workspace-preset' && onApplyPreset) {
@@ -312,6 +337,63 @@ export function PluginInstallModal({
                     ) : null}
                     <li>遵循等价 URL 去重原则，绝不覆盖您已存在的同名或同地址站点</li>
                   </ul>
+
+                  {Array.isArray(plugin.manifest?.payload?.sites) && plugin.manifest.payload.sites.length > 0 && (() => {
+                    const rawSites = plugin.manifest.payload.sites as Array<{ url: string; title?: string; category?: string }>
+                    const currentSelected = selectedUrls ?? new Set(rawSites.map((s) => s.url))
+                    return (
+                      <details className="pt-1 text-xs">
+                        <summary className="cursor-pointer text-sky-600 dark:text-sky-400 font-medium select-none hover:underline">
+                          自定义站点勾选（已选 {currentSelected.size} / {rawSites.length}）
+                        </summary>
+                        <div className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-border/60 bg-background/60 p-2 space-y-1">
+                          <div className="flex items-center justify-between pb-1 border-b border-border/40 text-[10px] text-muted-foreground">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedUrls(new Set(rawSites.map((s) => s.url)))}
+                              className="hover:text-foreground font-medium"
+                            >
+                              全选
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedUrls(new Set())}
+                              className="hover:text-foreground font-medium"
+                            >
+                              全不选
+                            </button>
+                          </div>
+                          {rawSites.map((s) => {
+                            const isChecked = currentSelected.has(s.url)
+                            return (
+                              <label
+                                key={s.url}
+                                className="flex items-center gap-2 p-1 rounded hover:bg-muted/50 cursor-pointer text-xs"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    const next = new Set(currentSelected)
+                                    if (e.target.checked) next.add(s.url)
+                                    else next.delete(s.url)
+                                    setSelectedUrls(next)
+                                  }}
+                                  className="rounded border-border"
+                                />
+                                <span className="truncate flex-1 text-[11px] text-foreground">{s.title || s.url}</span>
+                                {s.category && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded bg-muted text-muted-foreground shrink-0">
+                                    {s.category}
+                                  </span>
+                                )}
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </details>
+                    )
+                  })()}
                 </div>
               )}
 
@@ -444,6 +526,64 @@ export function PluginInstallModal({
             </div>
           )}
         </div>
+
+        {/* 装前安全与数据透明度营养成分表 (Nutrition Label) */}
+        {mode !== 'uninstall' && (
+          <div className="rounded-xl border border-border/80 bg-muted/30 p-3 space-y-2 text-xs">
+            <div className="flex items-center justify-between text-muted-foreground">
+              <div className="flex items-center gap-1.5 font-medium text-foreground">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                <span>安全与隐私透明度 (Nutrition Label)</span>
+              </div>
+              <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono">
+                100% 声明式沙箱
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-0.5 text-[11px]">
+              <div className="p-2 rounded-lg bg-background/60 border border-border/40 space-y-0.5">
+                <span className="text-muted-foreground block text-[10px]">代码执行权限</span>
+                <span className="font-medium text-emerald-600 dark:text-emerald-400">零脚本 · 零任意执行</span>
+              </div>
+              <div className="p-2 rounded-lg bg-background/60 border border-border/40 space-y-0.5">
+                <span className="text-muted-foreground block text-[10px]">数据写入作用域</span>
+                <span className="font-medium text-foreground">
+                  {plugin.kind === 'site-pack'
+                    ? '书签分类 (只增不删)'
+                    : plugin.kind === 'theme'
+                    ? '外观样式变量'
+                    : plugin.kind === 'workspace-preset'
+                    ? '本地看板布局'
+                    : '快捷搜索拦截'}
+                </span>
+              </div>
+            </div>
+
+            {externalDomains.length > 0 && (
+              <div className="pt-0.5 space-y-1">
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span>涉及外部网络域 ({externalDomains.length})</span>
+                  <span className="text-muted-foreground/70">同源数据沙箱隔离</span>
+                </div>
+                <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
+                  {externalDomains.slice(0, 6).map((domain) => (
+                    <span
+                      key={domain}
+                      className="text-[10px] px-1.5 py-0.2 rounded-md bg-background border border-border/60 text-muted-foreground font-mono"
+                    >
+                      {domain}
+                    </span>
+                  ))}
+                  {externalDomains.length > 6 && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-background border border-border/60 text-muted-foreground">
+                      +{externalDomains.length - 6} 更多
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <DialogFooter className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-2">
           {mode === 'uninstall' ? (

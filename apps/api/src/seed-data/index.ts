@@ -45,16 +45,27 @@ import { foodDrinkPack } from "./site-packs/food-drink.ts";
 import { sportsOutdoorPack } from "./site-packs/sports-outdoor.ts";
 import { agricultureRuralPack } from "./site-packs/agriculture-rural.ts";
 import { lifeCarePack } from "./site-packs/life-care.ts";
+import { aiAgenticCoding } from "./site-packs/ai-agentic-coding.ts";
+import { mcpEcosystemArsenal } from "./site-packs/mcp-ecosystem-arsenal.ts";
+import { openModelsLocalInference } from "./site-packs/open-models-local-inference.ts";
+import { homelabSelfhostedPro } from "./site-packs/homelab-selfhosted-pro.ts";
+import { indieHackerGlobalSaas } from "./site-packs/indie-hacker-global-saas.ts";
 
-// ---- 搜索引擎包（search-pack）×3 ----
+// ---- 搜索引擎包（search-pack）----
 import { devSearchArsenal } from "./search-packs/dev-search-arsenal.ts";
 import { academicSearchArsenal, cnSearchArsenal } from "./search-packs.ts";
+import { aiDeepSearchPack } from "./search-packs/ai-deep-search-pack.ts";
+import { codeSearchPack } from "./search-packs/code-search-pack.ts";
 
 // ---- 主题（theme）----
 import { draculaDark } from "./themes/dracula-dark.ts";
 import { seedDuskCompass } from "./themes/seed-dusk-compass.ts";
 import { auroraEmerald } from "./themes/aurora-emerald.ts";
 import { sunlitAmber } from "./themes/sunlit-amber.ts";
+import { catppuccinMocha } from "./themes/catppuccin-mocha.ts";
+import { oledPureBlack } from "./themes/oled-pure-black.ts";
+import { nordicGlacier } from "./themes/nordic-glacier.ts";
+import { macSonomaGlass } from "./themes/mac-sonoma-glass.ts";
 import { gruvboxRetroTheme, nordFrostTheme, paperLatteTheme, forestPineTheme, oceanDeepTheme, sakuraMistTheme } from "./themes.ts";
 
 // ---- 工作台预设（workspace-preset）----
@@ -74,6 +85,7 @@ import { fullstackProBundle } from "./bundles/fullstack-pro-bundle.ts";
 import { geekStarterBundle } from "./bundles/geek-starter-bundle.ts";
 import { familyLifeBundle } from "./bundles/family-life-bundle.ts";
 import { legalProBundle } from "./bundles/legal-pro-bundle.ts";
+import { aiAgenticFutureBundle } from "./bundles/ai-agentic-future-bundle.ts";
 import {
   creatorBundle,
   gamerBundle,
@@ -115,15 +127,26 @@ export const allSeedPluginDefs: SeedPluginDef[] = [
   agricultureRuralPack,
   lifeCarePack,
   govPublicServicePack,
+  aiAgenticCoding,
+  mcpEcosystemArsenal,
+  openModelsLocalInference,
+  homelabSelfhostedPro,
+  indieHackerGlobalSaas,
   // 搜索引擎包
   devSearchArsenal,
   cnSearchArsenal,
   academicSearchArsenal,
+  aiDeepSearchPack,
+  codeSearchPack,
   // 主题
   draculaDark,
   seedDuskCompass,
   auroraEmerald,
   sunlitAmber,
+  catppuccinMocha,
+  oledPureBlack,
+  nordicGlacier,
+  macSonomaGlass,
   nordFrostTheme,
   gruvboxRetroTheme,
   paperLatteTheme,
@@ -140,6 +163,7 @@ export const allSeedPluginDefs: SeedPluginDef[] = [
   travelPlannerWorkbench,
   aiWorkbench,
   // 组合包
+  aiAgenticFutureBundle,
   geekStarterBundle,
   designerStarterBundle,
   fullstackProBundle,

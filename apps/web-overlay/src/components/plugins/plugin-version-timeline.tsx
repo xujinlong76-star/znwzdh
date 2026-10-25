@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import {
+  installPlugin,
   fetchPluginVersions,
   fetchPluginVersionDetail,
   type HubPluginVersionItem,
@@ -10,7 +11,7 @@ import {
 } from '@/lib/navhub-api'
 import { copyText } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
-import { History, GitCommit, ShieldCheck, ChevronRight, FileCode, Check, Copy } from 'lucide-react'
+import { History, GitCommit, ShieldCheck, ChevronRight, FileCode, Check, Copy, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 
 // 差异面板只在展开版本时出现，静态引入会把整个 diff 渲染器塞进详情页首屏 chunk
@@ -38,6 +39,21 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
   const [versionDetail, setVersionDetail] = useState<HubPluginVersionDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [copiedHash, setCopiedHash] = useState<string | null>(null)
+  const [installingVersion, setInstallingVersion] = useState<string | null>(null)
+
+  const handleInstallVersion = async (targetVersion: string) => {
+    setInstallingVersion(targetVersion)
+    try {
+      const res = await installPlugin(slug, undefined, { version: targetVersion })
+      if (res.success) {
+        toast.success(`已成功生效/回滚至版本 v${targetVersion}`)
+      }
+    } catch (err: any) {
+      toast.error(err?.message || `安装版本 v${targetVersion} 失败`)
+    } finally {
+      setInstallingVersion(null)
+    }
+  }
 
   useEffect(() => {
     let unmounted = false
@@ -188,22 +204,39 @@ export function PluginVersionTimeline({ slug, currentVersion }: PluginVersionTim
                   </p>
                 )}
 
-                {/* 查看详情切换按钮 */}
-                <div className="mt-3 pt-2 border-t border-border/40 flex items-center justify-between">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleInspect(v.version)}
-                    className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    <FileCode className="h-3.5 w-3.5 mr-1" />
-                    {isExpanded ? '收起版本快照' : '比对与查看清单'}
-                    <ChevronRight
-                      className={`h-3.5 w-3.5 ml-1 transition-transform ${
-                        isExpanded ? 'rotate-90' : ''
-                      }`}
-                    />
-                  </Button>
+                                {/* 查看详情与版本回滚/安装 */}
+                <div className="mt-3 pt-2 border-t border-border/40 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleInspect(v.version)}
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <FileCode className="h-3.5 w-3.5 mr-1" />
+                      {isExpanded ? '收起快照' : '查看清单差异'}
+                      <ChevronRight
+                        className={`h-3.5 w-3.5 ml-1 transition-transform ${
+                          isExpanded ? 'rotate-90' : ''
+                        }`}
+                      />
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={installingVersion === v.version}
+                      onClick={() => handleInstallVersion(v.version)}
+                      className="h-7 px-2 text-xs text-primary hover:bg-primary/5 border-primary/30"
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1" />
+                      {installingVersion === v.version
+                        ? '处理中...'
+                        : isCurrent
+                        ? '重装此版本'
+                        : '安装/回滚此版本'}
+                    </Button>
+                  </div>
                   <span className="text-[10px] text-muted-foreground/50 font-mono">
                     ID: {v.id.slice(0, 8)}
                   </span>

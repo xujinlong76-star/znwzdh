@@ -11,6 +11,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { indexSitesBatch } from "../index-site.ts";
+import { seedPluginDefs } from "../seed-plugins.ts";
 import { indexPluginsBatch, indexItemFromManifest, removePluginIndex, type IndexPluginItem } from "../index-plugin.ts";
 import { searchPluginsSemantic, similarPlugins } from "../plugins-search.ts";
 import { guardedFetch, assertUrlShape, isBlockedIp } from "@navhub/ai";
@@ -56,6 +57,33 @@ import {
  * 清单长度来自远端，属于外部输入；处理上限必须在本侧成立。
  */
 const MAX_TAP_IMPORT_ITEMS = Math.max(1, Number(process.env.NAVHUB_TAP_IMPORT_MAX || 500));
+
+export const FEATURED_TAPS = [
+  {
+    id: "featured:official-community",
+    name: "NavHub 官方精选社区源",
+    description: "由 NavHub 官方严选审核的社区精品网址包、小众利基工具与垂直领域扩展",
+    url: "https://raw.githubusercontent.com/navhub-org/community-taps/main/featured.json",
+    isFeatured: true,
+    author: "NavHub 官方",
+  },
+  {
+    id: "featured:ai-innovations",
+    name: "全球前沿 AI 智能体生态源",
+    description: "收录全球高频更新的 AI 智能体、MCP 工具、开源大模型端侧推理生态",
+    url: "https://raw.githubusercontent.com/navhub-org/community-taps/main/ai-agents.json",
+    isFeatured: true,
+    author: "AI Eco Labs",
+  },
+  {
+    id: "featured:homelab-geeks",
+    name: "极客自托管 HomeLab 工具箱",
+    description: "私有云、NAS、Docker 模板、家庭网络与隐私保护精品导航",
+    url: "https://raw.githubusercontent.com/navhub-org/community-taps/main/homelab.json",
+    isFeatured: true,
+    author: "HomeLab 爱好者联盟",
+  },
+];
 
 export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -275,6 +303,148 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     { config: { scope: "read", cache: { maxAge: 0 } } },
     async (_req, _reply) => {
       return { alerts: await ctx.repo.getPluginGovernanceAlerts(), generatedAt: Date.now() };
+    }
+  );
+
+
+  /** 获取官方内置插件资源库同步状态与可用版本统计 */
+  app.get(
+    "/api/admin/plugins/seed-status",
+    { config: { scope: "admin" } },
+    async () => {
+      const defs = seedPluginDefs();
+      let needUpdateCount = 0;
+      let missingCount = 0;
+      let upToDateCount = 0;
+
+      for (const def of defs) {
+        const existing = await ctx.repo.getPluginBySlug(def.slug);
+        const manifest = def.manifest as { version?: string };
+        if (!existing) {
+          missingCount++;
+        } else if (manifest?.version && comparePluginVersions(manifest.version, existing.version) > 0) {
+          needUpdateCount++;
+        } else {
+          upToDateCount++;
+        }
+      }
+
+      return {
+        ok: true,
+        catalogVersion: "2026.10",
+        totalCatalog: defs.length,
+        missingCount,
+        needUpdateCount,
+        upToDateCount,
+        hasAvailableUpdates: missingCount > 0 || needUpdateCount > 0,
+      };
+    }
+  );
+
+  /**
+   * 官方插件资源库在线无损热同步 (Official Seed Catalog Hot-Sync)
+   * 支持管理员在 Web 端一键把代码库最新内置插件同步至数据库，新包自动上架，已有包升级版本，非破坏性保护用户自定义数据。
+   */
+  app.post(
+    "/api/admin/plugins/seed-sync",
+    { config: { scope: "admin" } },
+    async (req) => {
+      const defs = seedPluginDefs();
+      const orderedDefs = [
+        ...defs.filter((d) => (d.manifest as { kind?: string } | null)?.kind !== "bundle"),
+        ...defs.filter((d) => (d.manifest as { kind?: string } | null)?.kind === "bundle"),
+      ];
+
+      let added = 0;
+      let updated = 0;
+      let upToDate = 0;
+      let failed = 0;
+      const details: Array<{ slug: string; action: "added" | "updated" | "up_to_date" | "failed"; version: string; error?: string }> = [];
+      const pendingIndex: IndexPluginItem[] = [];
+
+      for (const def of orderedDefs) {
+        const validated = validatePluginManifestWithCatalog(def.manifest);
+        if (!validated.ok) {
+          failed++;
+          details.push({ slug: def.slug, action: "failed", version: "unknown", error: validated.errors.join("; ") });
+          continue;
+        }
+
+        try {
+          const existing = await ctx.repo.getPluginBySlug(def.slug);
+          if (!existing) {
+            const created = await ctx.repo.createPlugin(
+              {
+                manifest: validated.manifest,
+                author: validated.manifest.author ?? "NavHub 官方",
+                authorKind: "seed",
+                ownerIdentity: "seed",
+                source: "seed",
+                status: def.status,
+                slug: def.slug,
+              },
+              { actor: (req as any).auth?.actor || "admin", actorKind: "admin", ip: req.ip }
+            );
+            if (def.status === "published") {
+              pendingIndex.push(indexItemFromManifest(created.slug, created.manifest));
+            }
+            added++;
+            details.push({ slug: def.slug, action: "added", version: validated.manifest.version });
+          } else {
+            const versionBumped = comparePluginVersions(validated.manifest.version, existing.version) > 0;
+            const contentChanged = JSON.stringify(existing.manifest) !== JSON.stringify(validated.manifest);
+            if (versionBumped || contentChanged) {
+              await ctx.repo.updatePlugin(def.slug, validated.manifest, {
+                actor: (req as any).auth?.actor || "admin",
+                actorKind: "admin",
+                ip: req.ip,
+              });
+              if (def.status === "published") {
+                await ctx.repo.reviewPlugin(def.slug, "approve", "官方种子资源在线同步自动上架", {
+                  actor: (req as any).auth?.actor || "admin",
+                  actorKind: "admin",
+                  ip: req.ip,
+                });
+                pendingIndex.push(indexItemFromManifest(def.slug, validated.manifest));
+              }
+              updated++;
+              details.push({ slug: def.slug, action: "updated", version: validated.manifest.version });
+            } else {
+              upToDate++;
+              details.push({ slug: def.slug, action: "up_to_date", version: existing.version });
+            }
+          }
+        } catch (err) {
+          failed++;
+          details.push({ slug: def.slug, action: "failed", version: validated.manifest.version, error: err instanceof Error ? err.message : String(err) });
+        }
+      }
+
+      if (pendingIndex.length > 0) {
+        await indexPluginsBatch(ctx, pendingIndex);
+      }
+
+      await ctx.repo.audit({
+        actor: (req as any).auth?.actor || "admin",
+        actorKind: "admin",
+        action: "plugin.seed_sync",
+        target: "catalog",
+        diff: { added, updated, upToDate, failed, total: defs.length },
+        ip: req.ip,
+      });
+
+      return {
+        ok: true,
+        summary: {
+          total: defs.length,
+          added,
+          updated,
+          upToDate,
+          failed,
+        },
+        details,
+        syncedAt: Date.now(),
+      };
     }
   );
 
@@ -865,6 +1035,52 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     }
   );
 
+  /**
+   * 评价作者官方回复（只有插件作者或系统管理员可回复）
+   */
+  app.post(
+    "/api/plugins/:slug/reviews/:id/reply",
+    { config: { scope: "public", rateLimit: { max: 30, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const { slug, id } = req.params as { slug: string; id: string };
+      const body = (req.body ?? {}) as { reply?: unknown; identity?: unknown };
+      const replyText = typeof body.reply === "string" ? body.reply.trim() : "";
+      if (replyText.length < 1 || replyText.length > 1000) {
+        return badRequest(reply, "回复内容需在 1 到 1000 字之间");
+      }
+      const plugin = await ctx.repo.getPluginBySlug(slug);
+      if (!plugin) return notFound(reply, `插件不存在: ${slug}`);
+
+      if (!identityTrusted(ctx, req as never)) return unauthorized(reply, "需要 Bearer token");
+      const identity = extractPluginIdentity(req);
+      const callerAuth = (req as { auth?: { actor?: string; kind?: string; scopes?: string[] } }).auth;
+      const isAdmin = Boolean(callerAuth?.scopes?.includes("admin")) && callerAuth?.kind !== "anonymous";
+
+      if (!identity && !isAdmin) return badRequest(reply, "缺少用户身份标识");
+      if (!isAdmin && (!plugin.ownerIdentity || plugin.ownerIdentity !== identity)) {
+        return forbidden(reply, "只有插件作者或系统管理员才能回复此评价");
+      }
+
+      const actorKind = isAdmin ? "admin" : "identity";
+      const actorName = isAdmin ? (callerAuth?.actor || "admin") : (identity || "anonymous");
+
+      try {
+        const review = await ctx.repo.replyPluginReview(id, replyText, {
+          actor: actorName,
+          actorKind,
+          ip: req.ip,
+        });
+        return { success: true, review };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("不存在")) {
+          return notFound(reply, message);
+        }
+        return badRequest(reply, message);
+      }
+    }
+  );
+
   /* ------------------------------------------------------------------ *
    * 投稿、导入与版本更新
    * ------------------------------------------------------------------ */
@@ -903,7 +1119,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const actorKind = callerAuth?.kind || "user";
 
       try {
-        const createdPlugin = await ctx.repo.createPlugin(
+                const createdPlugin = await ctx.repo.createPlugin(
           {
             manifest: validated.manifest,
             author: validated.manifest.author || identity,
@@ -911,6 +1127,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             ownerIdentity: identity,
             source: "user",
             status: "pending",
+            forkedFromSlug: validated.manifest.forkedFrom || null,
           },
           {
             actor: actorName,
@@ -1077,14 +1294,30 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   app.post(
     "/api/plugins/import",
     { config: { scope: "admin" } },
-    async (req, reply) => {
+        async (req, reply) => {
       const body = (req.body ?? {}) as {
         manifest?: unknown;
         installNow?: boolean;
         slug?: string;
+        url?: string;
       } & Record<string, unknown>;
 
-      const manifestInput = body.manifest ?? body;
+      let manifestInput = body.manifest ?? body;
+      if (typeof body.url === "string" && body.url.trim()) {
+        let fetchUrl = body.url.trim();
+        if (fetchUrl.includes("github.com/") && fetchUrl.includes("/blob/")) {
+          fetchUrl = fetchUrl.replace("github.com/", "raw.githubusercontent.com/").replace("/blob/", "/");
+        }
+        const res = await guardedFetch(fetchUrl, { timeoutMs: 8000 });
+        if (res.status < 200 || res.status >= 300) {
+          return badRequest(reply, `从远程 URL 读取插件失败: HTTP ${res.status}`);
+        }
+        try {
+          manifestInput = JSON.parse(res.body);
+        } catch {
+          return badRequest(reply, "远程 URL 返回的内容不是合法的 JSON 清单");
+        }
+      }
       const validated = validatePluginManifestWithCatalog(manifestInput);
       if (!validated.ok) {
         reply.code(400);
@@ -1107,6 +1340,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             manifest: validated.manifest,
             author: validated.manifest.author || actorName,
             authorKind: actorKind,
+            ownerIdentity: requestIdentityOf(req as never) || "admin",
             source: "import",
             status: "published",
             slug: body.slug,
@@ -1292,7 +1526,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     const existing = await ctx.repo.getPluginBySlug(slug);
     if (!existing) return notFound(reply, `插件不存在: ${slug}`);
 
-    if (body.data.action === "approve" && existing.status === "published") {
+    if (body.data.action === "approve" && existing.status === "published" && !existing.pendingVersion) {
       return conflict(reply, "该插件已处于上架状态，请勿重复通过");
     }
 
@@ -1354,13 +1588,26 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         return conflict(reply, `插件当前处于 ${plugin.status} 状态，未上架插件不可安装`);
       }
 
+            const q = (req.query ?? {}) as Record<string, string | undefined>;
+      const body = (req.body ?? {}) as { version?: string; selectedSites?: string[] };
+      const targetVersion = q.version?.trim() || (typeof body.version === "string" ? body.version.trim() : undefined);
+      const selectedSites = Array.isArray(body.selectedSites) ? body.selectedSites.map(String) : undefined;
+
       const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
       try {
-        const result = await ctx.repo.installPlugin(slug, identity, {
-          actor: callerAuth?.actor || identity,
-          actorKind: callerAuth?.kind || "identity",
-          ip: req.ip,
-        });
+        const result = await ctx.repo.installPlugin(
+          slug,
+          identity,
+          {
+            actor: callerAuth?.actor || identity,
+            actorKind: callerAuth?.kind || "identity",
+            ip: req.ip,
+          },
+          {
+            version: targetVersion,
+            selectedSites,
+          },
+        );
         // 新建站点进检索向量索引（失败只记 capabilities.notes，不影响安装结果）
         if (result.applied.createdSiteIds.length > 0) {
           // 一次 IN 查询取回整批站点，避免逐条 getSite 的 N+1
@@ -1517,7 +1764,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const identity = pluginIdentity(ctx, req) || undefined;
       const callerAuth = (req as { auth?: { actor?: string; kind?: string } }).auth;
       try {
-        const result = await ctx.repo.reportPlugin(
+                const result = await ctx.repo.reportPlugin(
           slug,
           {
             reason,
@@ -1529,6 +1776,13 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             ip: req.ip,
           }
         );
+        if (result.quarantined) {
+          try {
+            await removePluginIndex(ctx, slug);
+          } catch {
+            // 索引清理失败不阻断
+          }
+        }
         return {
           success: true,
           message: "举报已受理",
@@ -1588,6 +1842,8 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
   /* ------------------------------ 开放生态 2.0: Taps 远程订阅源 ------------------------------ */
 
+
+
   /**
    * 获取已配置的远程插件市场订阅源 (Taps)。
    *
@@ -1597,11 +1853,27 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
    * 而这些 URL 常带访问凭据（GitHub raw 的 `?token=` 一类），属于不该外发的配置。
    */
   app.get(
+    "/api/plugins/taps/public",
+    { config: { scope: "public" } },
+    async () => {
+      const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];
+      const publicItems = taps.map((t) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        pluginCount: t.pluginCount ?? 0,
+        lastSyncedAt: t.lastSyncedAt ?? null,
+      }));
+      return { ok: true, items: publicItems, featuredTaps: FEATURED_TAPS };
+    }
+  );
+
+  app.get(
     "/api/plugins/taps",
     { config: { scope: "admin" } },
     async () => {
       const taps = (await ctx.repo.getSystemState<any[]>("plugins:taps")) ?? [];
-      return { ok: true, items: taps };
+      return { ok: true, items: taps, featuredTaps: FEATURED_TAPS };
     }
   );
 
@@ -1708,6 +1980,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       let fetchedCount = 0;
       let processedCount = 0;
       let importedCount = 0;
+      let updatedCount = 0;
       let skippedDuplicate = 0;
       let rejectedInvalid = 0;
       let failedWrite = 0;
@@ -1725,23 +1998,19 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           : [];
 
         fetchedCount = pluginList.length;
-        // 远端清单长度是外部输入，而下面每条都要写库 + 向量化：不设上限时
-        // 一个「10 万条」的订阅源会把这一个请求变成几小时的后台任务。
         const items = pluginList.slice(0, MAX_TAP_IMPORT_ITEMS);
         truncated = pluginList.length > items.length;
         processedCount = items.length;
 
-        // 已存在的插件名一次取全，代替"每条跑一次 LIKE + limit 5、再要求精确同名"：
-        // 前者是 N 次无法走索引的全表 LIKE；后者还会因为同名插件被 5 条上限挤出
-        // 结果窗口而重复导入（common-name 订阅源下市场里出现成对同名插件）。
+        const existingRows = await ctx.repo.raw("SELECT name FROM plugins");
         const existingNames = new Set<string>(
-          (await ctx.repo.raw("SELECT name FROM plugins")).map((r) => String(r.name)),
+          existingRows.map((r: Record<string, any>) => String(r.name)),
         );
 
         const pendingIndex: IndexPluginItem[] = [];
         for (const item of items) {
           const validated = validatePluginManifestWithCatalog(item);
-          // 每一条被跳过的原因都要计数：以前 `continue` 什么都不留，
+          // 每一条被跳过的原因都要计数：以前 continue 什么都不留，
           // 管理员只看到「发现 40 个、导入 3 个」，无从判断剩下 37 个是重复、不合规还是写库失败。
           if (!validated.ok) {
             rejectedInvalid += 1;
@@ -1753,13 +2022,20 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
           }
 
           try {
-            const imported = await ctx.repo.createPlugin({
-              manifest: validated.manifest,
-              author: validated.manifest.author || targetTap.name,
-              authorKind: "tap",
-              source: "tap",
-              status: "published",
-            });
+            const imported = await ctx.repo.createPlugin(
+              {
+                manifest: validated.manifest,
+                author: validated.manifest.author || targetTap.name,
+                authorKind: "tap",
+                source: "tap",
+                status: "published",
+              },
+              {
+                actor: targetTap.name,
+                actorKind: "tap",
+                ip: req.ip,
+              }
+            );
             // 同一份清单里的重名也要挡住（原来靠每次都查库才碰巧挡住）
             existingNames.add(validated.manifest.name);
             pendingIndex.push(indexItemFromManifest(imported.slug, imported.manifest));
@@ -1769,15 +2045,12 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             failedWrite += 1;
           }
         }
-        // 向量化批量做（内部已经吞掉模型不可用的错误，索引可由 reindex 任务重建）
         await indexPluginsBatch(ctx, pendingIndex);
       } catch (err) {
         return badRequest(reply, `获取订阅源失败: ${err instanceof Error ? err.message : String(err)}`);
       }
 
       targetTap.lastSyncedAt = Date.now();
-      // 徽标上写的是「N 个插件」，那 N 就必须是本源在市场里真的可见的条数。
-      // 用 fetchedCount 等于把「不合规清单 + 重名 + 写库失败」也算成已上架。
       targetTap.pluginCount = importedCount + skippedDuplicate;
       targetTap.updatedAt = Date.now();
       await ctx.repo.setSystemState("plugins:taps", taps);
@@ -1785,10 +2058,9 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       return {
         ok: true,
         fetchedCount,
-        /** 实际进入处理流程的条数（= min(fetchedCount, importCap)） */
         processedCount,
         importedCount,
-        /** 市场里已有同名插件，本源这次没新增 */
+        updatedCount,
         skippedDuplicate,
         /** 清单校验不通过（缺字段 / 不在目录 / 名称非法） */
         rejectedInvalid,
@@ -1819,12 +2091,14 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       let deductions = 0;
 
       // 1. 作者认证检查
-      const author = (manifest.author || "").toLowerCase();
-      const isVerifiedAuthor =
-        author.includes("official") ||
-        author.includes("navhub") ||
-        author.includes("verified") ||
-        plugin.authorKind === "token";
+      // 严格认证判定：必须基于数据库权威信任标记，绝不信任 manifest.author 任意文本
+      const isVerifiedAuthor = Boolean(
+        Boolean(plugin.authorVerified) ||
+        plugin.source === "seed" ||
+        plugin.ownerIdentity === "seed" ||
+        plugin.ownerIdentity === "official" ||
+        (plugin.authorKind === "token" && plugin.ownerIdentity?.startsWith("admin:"))
+      );
       checks.push({
         name: "开发者认证 (Author Authenticity)",
         passed: isVerifiedAuthor,

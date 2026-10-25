@@ -525,5 +525,34 @@ describe('版本升级差异对比 (diffPluginManifests)', () => {
     expect(diff.bundleItemsAdded).toEqual(['dracula-dark', 'new-theme'])
     expect(diff.bundleItemsRemoved).toEqual(['dracula-dark', 'dev-search-arsenal'])
   })
+
+  it('GlassWorm 防御：严格拦截包含零宽字符或 Bidi 控制符的恶意清单', () => {
+    // 注入零宽空格 \u200B
+    const withZeroWidth = {
+      ...validSitePack,
+      name: 'AI\u200B工具集',
+    }
+    const res1 = validateAndCleanPluginManifest(withZeroWidth)
+    expect(res1.ok).toBe(false)
+    expect(res1.errors.some((e) => e.includes('GlassWorm'))).toBe(true)
+
+    // 注入 Bidi RLO 双向欺骗控制符 \u202E
+    const withBidi = {
+      ...validSitePack,
+      description: '正常介绍\u202E反转欺骗',
+    }
+    const res2 = validateAndCleanPluginManifest(withBidi)
+    expect(res2.ok).toBe(false)
+    expect(res2.errors.some((e) => e.includes('GlassWorm'))).toBe(true)
+
+    // 注入私用区字符 PUA \uE001
+    const withPua = {
+      ...validSitePack,
+      author: 'Official\uE001Hacker',
+    }
+    const res3 = validateAndCleanPluginManifest(withPua)
+    expect(res3.ok).toBe(false)
+    expect(res3.errors.some((e) => e.includes('GlassWorm'))).toBe(true)
+  })
 })
 

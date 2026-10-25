@@ -1220,6 +1220,10 @@ export interface HubPluginItem {
   /** 组合包全部成员可用时为 true；任一成员失效则安装 fail closed */
   bundleReady?: boolean
   isOwner?: boolean
+  authorVerified?: boolean
+  forkedFromSlug?: string | null
+  remixCount?: number
+  pendingVersion?: string | null
   aiAudit?: {
     score: number
     level: string
@@ -1562,14 +1566,17 @@ export async function reviewPlugin(
 export async function installPlugin(
   slug: string,
   identity?: string,
+  options?: { version?: string; selectedSites?: string[] },
 ): Promise<{ success: boolean; alreadyInstalled: boolean; plugin: HubPluginItem; applied: any }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  // 分母在请求前计一次：失败与「已安装」也是真实意图，否则分子（服务端只在真正新增时发）会超过分母。
   trackPluginEvent('plugin_install_click', slug, effectiveIdentity)
+  const qs = new URLSearchParams()
+  if (options?.version) qs.set('version', options.version)
+  const qsStr = qs.toString() ? `?${qs.toString()}` : ''
   return sendJson(
-    `/api/plugins/${encodeURIComponent(slug)}/install`,
+    `/api/plugins/${encodeURIComponent(slug)}/install${qsStr}`,
     'POST',
-    {},
+    options?.selectedSites ? { selectedSites: options.selectedSites } : {},
     undefined,
     effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
   )
@@ -1699,6 +1706,9 @@ export interface HubPluginReviewItem {
   moderationNote?: string | null
   moderatedAt?: number | null
   moderatedBy?: string | null
+  /** 作者官方回复（仅插件作者可写；服务端按作者身份校验） */
+  authorReply?: string | null
+  authorRepliedAt?: number | null
   createdAt: number
   updatedAt: number
 }
@@ -1761,6 +1771,22 @@ export async function submitPluginReview(
 }
 
 /** 举报评价（进入治理队列，不自动隐藏） */
+/** 作者官方回复评价 */
+export async function replyPluginReview(
+  reviewId: string,
+  reply: string,
+  identity?: string,
+): Promise<{ ok: boolean; review: HubPluginReviewItem }> {
+  const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  return sendJson<{ ok: boolean; review: HubPluginReviewItem }>(
+    `/api/plugins/reviews/${encodeURIComponent(reviewId)}/reply`,
+    'POST',
+    { reply },
+    undefined,
+    effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
+  )
+}
+
 export async function reportPluginReview(
   slug: string,
   reviewId: string,
@@ -2409,9 +2435,61 @@ export interface HubPluginAuditReport {
   } | null
 }
 
-/** 获取已配置的远程插件市场订阅源列表 */
-export async function fetchPluginTaps(): Promise<{ ok: boolean; items: HubPluginTap[] }> {
-  return getJson<{ ok: boolean; items: HubPluginTap[] }>('/api/plugins/taps')
+export interface HubFeaturedTapItem {
+  id: string
+  name: string
+  description: string
+  url: string
+  isFeatured?: boolean
+  author?: string
+}
+
+export interface HubSeedCatalogStatus {
+  ok: boolean
+  catalogVersion: string
+  totalCatalog: number
+  missingCount: number
+  needUpdateCount: number
+  upToDateCount: number
+  hasAvailableUpdates: boolean
+}
+
+export interface HubSeedSyncResult {
+  ok: boolean
+  summary: {
+    total: number
+    added: number
+    updated: number
+    upToDate: number
+    failed: number
+  }
+  details: Array<{
+    slug: string
+    action: "added" | "updated" | "up_to_date" | "failed"
+    version: string
+    error?: string
+  }>
+  syncedAt: number
+}
+
+/** 获取已配置的远程插件市场订阅源列表（附带官方推荐源） */
+export async function fetchPluginTaps(): Promise<{ ok: boolean; items: HubPluginTap[]; featuredTaps?: HubFeaturedTapItem[] }> {
+  return getJson<{ ok: boolean; items: HubPluginTap[]; featuredTaps?: HubFeaturedTapItem[] }>('/api/plugins/taps')
+}
+
+/** 公开获取可读的 Taps 与官方推荐精选源（不依赖管理员权限） */
+export async function fetchPublicPluginTaps(): Promise<{ ok: boolean; items: HubPluginTap[]; featuredTaps?: HubFeaturedTapItem[] }> {
+  return getJson<{ ok: boolean; items: HubPluginTap[]; featuredTaps?: HubFeaturedTapItem[] }>('/api/plugins/taps/public')
+}
+
+/** 获取官方插件资源库同步状态 */
+export async function fetchOfficialSeedStatus(): Promise<HubSeedCatalogStatus> {
+  return getJson<HubSeedCatalogStatus>('/api/admin/plugins/seed-status')
+}
+
+/** 一键增量无损同步官方最新插件资源库 */
+export async function syncOfficialSeedCatalog(): Promise<HubSeedSyncResult> {
+  return sendJson<HubSeedSyncResult>('/api/admin/plugins/seed-sync', 'POST')
 }
 
 /** 添加远程插件市场订阅源 */
@@ -2436,6 +2514,8 @@ export interface PluginTapSyncResult {
   /** 真正进入处理流程的条数（被 importCap 截断时小于 fetchedCount） */
   processedCount: number
   importedCount: number
+  /** 远程版本更新同步条数 */
+  updatedCount?: number
   /** 市场里已有同名插件：本源这次没有新增 */
   skippedDuplicate: number
   /** 清单校验不通过被拒收 */

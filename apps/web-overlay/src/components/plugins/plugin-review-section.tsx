@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   fetchPluginReviews,
+  replyPluginReview,
   reportPluginReview,
   submitPluginReview,
   type HubPluginReviewsResponse,
@@ -33,6 +34,7 @@ interface PluginReviewSectionProps {
   slug: string
   isInstalled: boolean
   installedVersion?: string | null
+  isOwner?: boolean
   initialReviews?: HubPluginReviewsResponse | null
 }
 
@@ -40,6 +42,7 @@ export function PluginReviewSection({
   slug,
   isInstalled,
   installedVersion,
+  isOwner = false,
   initialReviews,
 }: PluginReviewSectionProps) {
   const [data, setData] = useState<HubPluginReviewsResponse>(
@@ -66,6 +69,30 @@ export function PluginReviewSection({
   const [reportingId, setReportingId] = useState<string | null>(null)
   const [reportReason, setReportReason] = useState('')
   const [reportSubmitting, setReportSubmitting] = useState(false)
+  const [replyingId, setReplyingId] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState('')
+  const [replySubmitting, setReplySubmitting] = useState(false)
+
+  const handleSendAuthorReply = async (reviewId: string) => {
+    if (!replyText.trim()) return
+    setReplySubmitting(true)
+    try {
+      const res = await replyPluginReview(reviewId, replyText.trim())
+      if (res.ok) {
+        toast.success('作者回复已发布')
+        setReplyingId(null)
+        setReplyText('')
+        setData((prev) => ({
+          ...prev,
+          items: prev.items.map((it) => (it.id === reviewId ? { ...it, ...res.review } : it)),
+        }))
+      }
+    } catch (err: any) {
+      toast.error(err?.message || '回复发布失败')
+    } finally {
+      setReplySubmitting(false)
+    }
+  }
 
   // 刷新评价列表（首屏 / 提交后回到第一页）
   const loadReviews = useCallback(async () => {
@@ -353,6 +380,65 @@ export function PluginReviewSection({
                     举报
                   </button>
                 </div>
+
+                                {/* 作者官方回复展示 */}
+                {rev.authorReply && (
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-1 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-primary flex items-center gap-1.5 text-xs">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        作者官方回复
+                      </span>
+                      {rev.authorRepliedAt && (
+                        <span className="text-[10px] text-muted-foreground font-mono">
+                          {new Date(rev.authorRepliedAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap text-[11px]">
+                      {rev.authorReply}
+                    </p>
+                  </div>
+                )}
+
+                {/* 作者写回复输入框 */}
+                {replyingId === rev.id && (
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                    <p className="text-[11px] text-foreground font-medium flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-primary" />
+                      作为插件作者发表回复：
+                    </p>
+                    <Textarea
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      placeholder="解释说明、反馈感谢或同步新版本修复进展 (1-1000 字)..."
+                      aria-label="作者回复内容"
+                      maxLength={1000}
+                      rows={2}
+                      className="text-xs bg-background resize-none"
+                    />
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px]"
+                        onClick={() => setReplyingId(null)}
+                      >
+                        取消
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={replySubmitting || !replyText.trim()}
+                        className="h-7 text-[11px]"
+                        onClick={() => handleSendAuthorReply(rev.id)}
+                      >
+                        {replySubmitting ? '正在提交...' : '确认发送回复'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {reportingId === rev.id && (
                   <div className="rounded-lg border border-rose-500/20 bg-rose-500/5 p-3 space-y-2">

@@ -317,6 +317,15 @@ export interface PluginRecord {
   reviewedAt: number | null;
   /** 待审核版本的变更说明（内部字段；通过/驳回后清空） */
   pendingChangelog?: string | null;
+  /** 双轨制 (Shadow Release)：在售版本继续服务，新版本在待审中暂存 */
+  pendingVersion?: string | null;
+  pendingManifest?: PluginManifest | null;
+  /** 认证作者标记 */
+  authorVerified?: boolean;
+  /** 衍生自哪个插件（Remix 来源） */
+  forkedFromSlug?: string | null;
+  /** 被衍生创作（Remix）次数统计 */
+  remixCount?: number;
   source: string;
   installCount: number;
   starCount: number;
@@ -360,6 +369,15 @@ export interface PluginVersionRecord {
   createdAt: number;
 }
 
+/** 插件举报记录（去重审计用） */
+export interface PluginReportRecord {
+  pluginId: string;
+  identity: string;
+  ip?: string | null;
+  reason: string;
+  createdAt: number;
+}
+
 /** 插件真实评价记录 */
 export interface PluginReviewRecord {
   id: string;
@@ -375,6 +393,8 @@ export interface PluginReviewRecord {
   moderationNote: string | null;
   moderatedAt: number | null;
   moderatedBy: string | null;
+  authorReply?: string | null;
+  authorRepliedAt?: number | null;
   createdAt: number;
   updatedAt: number;
 }

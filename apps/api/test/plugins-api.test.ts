@@ -332,6 +332,33 @@ describe("插件市场 API 全链路", () => {
     const getBody = getRes.json();
     expect(getBody.total).toBe(1);
     expect(getBody.myReview?.title).toBe("十分好用");
+    // 非作者回复报 400（无权回复）
+    const reviewId = okBody.review.id;
+    const forbidReply = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${slug}/reviews/${reviewId}/reply`,
+      payload: { reply: "谢谢支持", identity: "stranger-user" },
+    });
+    expect(forbidReply.statusCode).toBe(403);
+
+    // 作者官方回复（或管理员回复）成功
+    const okReply = await app.inject({
+      method: "POST",
+      url: `/api/plugins/${slug}/reviews/${reviewId}/reply`,
+      payload: { reply: "感谢您的认可！后续将持续更新～", identity: "admin" },
+    });
+    expect(okReply.statusCode).toBe(200);
+    const replyBody = okReply.json();
+    expect(replyBody.success).toBe(true);
+    expect(replyBody.review.authorReply).toBe("感谢您的认可！后续将持续更新～");
+    expect(replyBody.review.authorRepliedAt).toBeGreaterThan(0);
+
+    // 再次查评价列表，包含官方回复
+    const getRes2 = await app.inject({ method: "GET", url: `/api/plugins/${slug}/reviews` });
+    expect(getRes2.statusCode).toBe(200);
+    const item = getRes2.json().items[0];
+    expect(item.authorReply).toBe("感谢您的认可！后续将持续更新～");
+    expect(item.authorRepliedAt).toBeGreaterThan(0);
 
     // 详情接口也附带 reviewStats
     const detailRes = await app.inject({
@@ -828,6 +855,38 @@ describe("F0 / E1 / E5 / E6 / E4 / E3 / F2 API", () => {
     expect(Array.isArray(report.checks)).toBe(true);
     expect(report.checks.some((c: { name: string }) => c.name.includes("HTTPS"))).toBe(true);
     expect(report.checks.some((c: { name: string }) => c.name.includes("代码注入"))).toBe(true);
+  });
+
+  it("官方资源库热同步与 Taps 推荐源网络：seed-status、seed-sync 与 public taps", async () => {
+    // 1. 公开端点返回 featuredTaps 推荐列表
+    const publicTaps = await app.inject({ method: "GET", url: "/api/plugins/taps/public" });
+    expect(publicTaps.statusCode).toBe(200);
+    const pBody = publicTaps.json();
+    expect(pBody.ok).toBe(true);
+    expect(Array.isArray(pBody.featuredTaps)).toBe(true);
+    expect(pBody.featuredTaps.length).toBeGreaterThanOrEqual(3);
+    expect(pBody.featuredTaps[0].url).toContain("raw.githubusercontent.com");
+
+    // 2. 检查官方种子库状态
+    const statusRes = await app.inject({ method: "GET", url: "/api/admin/plugins/seed-status" });
+    expect(statusRes.statusCode).toBe(200);
+    const sBody = statusRes.json();
+    expect(sBody.ok).toBe(true);
+    expect(sBody.totalCatalog).toBeGreaterThan(0);
+
+    // 3. 执行一次无损增量同步
+    const syncRes = await app.inject({ method: "POST", url: "/api/admin/plugins/seed-sync" });
+    expect(syncRes.statusCode).toBe(200);
+    const syncBody = syncRes.json();
+    expect(syncBody.ok).toBe(true);
+    expect(syncBody.summary.total).toBe(sBody.totalCatalog);
+    expect(syncBody.summary.added + syncBody.summary.updated + syncBody.summary.upToDate).toBe(sBody.totalCatalog);
+    expect(syncBody.summary.failed).toBe(0);
+
+    // 4. 再次检查，全部处于 up-to-date
+    const statusRes2 = await app.inject({ method: "GET", url: "/api/admin/plugins/seed-status" });
+    expect(statusRes2.json().hasAvailableUpdates).toBe(false);
+    expect(statusRes2.json().upToDateCount).toBe(sBody.totalCatalog);
   });
 });
 

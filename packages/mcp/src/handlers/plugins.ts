@@ -6,7 +6,7 @@
  * 以增量去重方式写库，并补建检索向量索引（模型不可用时静默跳过，
  * 只影响语义检索，不影响安装结果）。
  */
-import { summarizePluginManifest, validateAndCleanPluginManifest } from "@navhub/core";
+import { summarizePluginManifest, validateAndCleanPluginManifest, validatePluginManifestWithCatalog } from "@navhub/core";
 import { indexSitesBatch, removePluginIndex, searchPluginsSemantic } from "@navhub/api";
 import {
   InstallPluginInput,
@@ -114,11 +114,10 @@ export const pluginHandlers = {
           actorKind: "token",
         });
 
-        // 与 REST 路由同口径：新建站点补向量索引（失败不影响安装结果）
+        // 与 REST 路由同口径：新建站点补向量索引（批量查询，消除 N+1）
         if (result.applied.createdSiteIds.length > 0) {
-          const sites = (
-            await Promise.all(result.applied.createdSiteIds.map((id) => ctx.repo.getSite(id)))
-          )
+          const siteMap = await ctx.repo.getSitesByIds(result.applied.createdSiteIds);
+          const sites = Array.from(siteMap.values())
             .filter((s): s is NonNullable<typeof s> => !!s)
             .map((s) => ({ id: s.id, title: s.title, description: s.description ?? null, url: s.url }));
           await indexSitesBatch(ctx, sites);
@@ -156,12 +155,21 @@ export const pluginHandlers = {
     const { ctx } = deps;
     requireScope(tc, "write");
     const input = UpdatePluginInput.parse(args ?? {});
-    const validated = validateAndCleanPluginManifest(input.manifest);
+    const validated = validatePluginManifestWithCatalog(input.manifest);
     if (!validated.ok) {
       return fail("插件清单校验失败: " + validated.errors.join("; "));
     }
 
     try {
+      const plugin = await ctx.repo.getPluginBySlug(input.slug);
+      if (!plugin) return fail(`插件不存在: ${input.slug}`);
+      const isAdmin = tc.has("admin");
+      const actorIdentity = tc.ownerIdentity ?? ("mcp:" + tc.actor);
+      const isOwner = Boolean(plugin.ownerIdentity && (plugin.ownerIdentity === actorIdentity || plugin.ownerIdentity === tc.actor));
+      if (!isAdmin && !isOwner) {
+        return fail("越权拦截：只有插件作者或管理员可以更新插件版本");
+      }
+
       return await deps.withIdempotency(input.idempotencyKey, async () => {
         const actor = { actor: "mcp:" + tc.actor, actorKind: "token" };
         // 规则统一收敛在 store：pending/rejected 允许同版本修正；已上架必须严格递增。
@@ -171,13 +179,16 @@ export const pluginHandlers = {
           input.changelog ?? null,
           actor,
         );
-        await removePluginIndex(ctx, input.slug);
+        if (updated.status !== "published") {
+          await removePluginIndex(ctx, input.slug);
+        }
         return {
           success: true,
           slug: updated.slug,
-          version: updated.version,
+          version: updated.pendingVersion ?? updated.version,
           status: updated.status,
-          summary: summarizePluginManifest(updated.manifest),
+          hasPendingVersion: Boolean(updated.pendingVersion),
+          summary: summarizePluginManifest(updated.pendingManifest ?? updated.manifest),
           reviewHint: "已进入待审队列；通过后版本历史会记录本次变更",
         };
       });

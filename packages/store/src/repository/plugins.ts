@@ -988,7 +988,9 @@ export async function installPlugin(
     );
   }
   if (!wasActive) {
-    await repo.run("UPDATE plugins SET install_count = ? WHERE id = ?", [plugin.installCount + 1, plugin.id]);
+    // 相对自增，不能写「读到的快照 + 1」：plugin 是函数开头读的、这行又在事务外，
+    // 两个身份并发首装会各自读到同一个 N 再写回 N+1，丢掉一次安装（星标计数早已是这种写法）。
+    await repo.run("UPDATE plugins SET install_count = install_count + 1 WHERE id = ?", [plugin.id]);
   }
   await repo.audit({
     actor: actor?.actor ?? who,
@@ -1069,8 +1071,9 @@ export async function uninstallPlugin(
     plugin.id,
     who,
   ]);
-  await repo.run("UPDATE plugins SET install_count = ? WHERE id = ?", [
-    Math.max(0, plugin.installCount - 1),
+  // 同上：卸载与安装可能并发，用 SQL 内的条件递减代替「快照 - 1」，
+  // 既不会覆盖并发的自增，也不会因两次并发卸载把计数减成负数。
+  await repo.run("UPDATE plugins SET install_count = CASE WHEN install_count > 0 THEN install_count - 1 ELSE 0 END WHERE id = ?", [
     plugin.id,
   ]);
   await repo.audit({

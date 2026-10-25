@@ -73,13 +73,22 @@ export async function enterAdminArea(
   if (page.url().includes('/auth/signin') || page.url().includes('/login')) {
     const bypassBtn = page.getByRole('button', { name: /以管理员身份一键进入/ });
     await expect(bypassBtn).toBeVisible({ timeout: 30_000 });
-    await bypassBtn.click();
-    // 跳转确认用 commit 而非默认 load：重载机器上 signin→callback 的完整 load
-    // 等待会吞掉测试预算（实测 90s 级超时）；到达断言交给调用方的标题等待。
-    await page.waitForURL(
-      (url) => !url.pathname.startsWith('/auth/signin') && !url.pathname.startsWith('/login'),
-      { timeout, waitUntil: 'commit' },
-    );
+    // 水合竞态：domcontentloaded 后按钮已由 SSR 渲染可见，但 React 尚未挂载
+    // 点击行为——点了等于没点（实测 waitForURL 只观察到一条「跳去 signin」的
+    // 导航后静止）。短窗探测 + 二次点击兜底；跳转确认用 commit 而非 load
+    // （重载机器上完整 load 会吞测试预算）。
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await bypassBtn.click();
+      const left = await page
+        .waitForURL(
+          (url) => !url.pathname.startsWith('/auth/signin') && !url.pathname.startsWith('/login'),
+          { timeout: 15_000, waitUntil: 'commit' },
+        )
+        .then(() => true)
+        .catch(() => false);
+      if (left) return;
+    }
+    throw new Error(`登录旁路两次点击后仍未离开登录页：${path}`);
   }
 }
 

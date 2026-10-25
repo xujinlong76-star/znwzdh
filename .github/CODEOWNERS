@@ -1,0 +1,60 @@
+# NavHub CODEOWNERS — 按 monorepo 目录分配审查责任
+#
+# 当前状态（2026-10-25）：只提交文件，**未在分支保护里启用 Require review from Code Owners**。
+# 原因：少人仓库启用强制审查会锁死合并（作者无法自我 approve），而锁死的门禁必然被绕过。
+# 启用条件：常驻审查者 ≥2 人，且完成一次反向验收（改 .github/workflows/ci.yml 的 PR 未获
+# owner approve 时 Merge 必须被禁用）。详见 docs/CODE-REVIEW.md §5 与 docs/GATES-OPERATIONS.md §7。
+#
+# ⚠️ 下面的 @navhub/* 是**占位名**，必须替换为真实 GitHub 账号/团队后才会生效。
+# 语法：<pattern> <owner...>；同一路径后者覆盖前者。
+
+# 默认：任意改动至少一名核心维护者
+*                                   @navhub/core-maintainers
+
+# ── 后端 API：端点契约 / 鉴权 / 事务（高风险）──
+/apps/api/src/server.ts             @navhub/backend-owners
+/apps/api/src/routes/               @navhub/backend-owners
+/apps/api/src/auth.ts               @navhub/backend-owners
+/apps/api/src/migrate.ts            @navhub/backend-owners @navhub/store-owners
+/apps/api/test/                     @navhub/backend-owners
+
+# ── 存储层：SQL 方言 / 迁移（跨方言陷阱高发）──
+/packages/store/                    @navhub/store-owners
+/packages/store/src/migrate.ts      @navhub/store-owners @navhub/backend-owners
+/packages/store/src/driver.ts       @navhub/store-owners
+
+# ── 前端覆盖层：a11y / 设计系统 / 路由 ──
+/apps/web-overlay/src/              @navhub/frontend-owners
+/apps/web-overlay/src/styles/globals.css  @navhub/frontend-owners
+/apps/web-overlay/test/             @navhub/frontend-owners
+/apps/web/                          @navhub/frontend-owners
+
+# ── 其他工作区包 ──
+/packages/core/                     @navhub/core-owners
+/packages/ai/                       @navhub/ai-owners
+/packages/mcp/                      @navhub/ai-owners
+/packages/sdk/                      @navhub/core-owners
+
+# ── 门禁脚本：自身正确性（假绿 = 阻塞）──
+/scripts/                           @navhub/quality-owners
+/scripts/check-*.mjs                @navhub/quality-owners
+/scripts/install-git-hooks.mjs      @navhub/quality-owners
+/scripts/run-pg-suite.mjs           @navhub/quality-owners @navhub/store-owners
+
+# ── E2E ──
+/e2e/                               @navhub/quality-owners
+/playwright.config.ts               @navhub/quality-owners
+
+# ── CI / 配置（GLOBAL_FILES）──
+/.github/                           @navhub/core-maintainers @navhub/quality-owners
+/package.json                       @navhub/core-maintainers
+/pnpm-lock.yaml                     @navhub/core-maintainers
+/pnpm-workspace.yaml                @navhub/core-maintainers
+/vitest.config.ts                   @navhub/quality-owners
+/tsconfig.base.json                 @navhub/core-maintainers
+/types/                             @navhub/core-maintainers
+/docker/                            @navhub/core-maintainers
+/Dockerfile                         @navhub/core-maintainers
+
+# ── 文档 ──
+/docs/                              @navhub/docs-owners

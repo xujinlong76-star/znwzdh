@@ -87,6 +87,7 @@ if (!process.env.AUTH_SECRET) {
 
 export const authConfig = {
   secret: authSecret,
+  trustHost: true,
   providers: [],
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {

@@ -101,7 +101,7 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
           )}
             <div className="flex flex-col">
             <span className="leading-tight font-semibold text-foreground">{siteInfo.basic.title}</span>
-            <span className="text-xs text-muted-foreground/80 font-mono font-normal">AI-Native Hub</span>
+            <span className="text-xs text-muted-foreground font-mono font-normal">AI-Native Hub</span>
           </div>
         </Link>
 

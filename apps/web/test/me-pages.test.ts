@@ -29,7 +29,7 @@ const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8')
 describe('用户中心第二批页面', () => {
   it('统一子导航覆盖全部管理分区并挂在相关页面', () => {
     const nav = read('src/components/user-center/user-center-nav.tsx')
-    for (const href of ["'/me'", "'/me/account'", "'/favorites'", "'/me/history'", "'/me/plugins'", "'/preferences'", "'/me/settings'", "'/me/data'"]) {
+    for (const href of ["'/me'", "'/me/account'", "'/me/workspaces'", "'/favorites'", "'/me/history'", "'/me/plugins'", "'/preferences'", "'/me/settings'", "'/me/vault'", "'/me/data'", "'/me/notifications'"]) {
       expect(nav).toContain(href)
     }
     expect(nav).toContain('aria-current')

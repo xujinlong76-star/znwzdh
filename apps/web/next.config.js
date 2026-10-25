@@ -164,6 +164,8 @@ const nextConfig = {
   // next build 失败。Turbopack 的缓存机制不同，不存在该 Windows 问题，
   // 故整体移除而非迁移到 turbopack 配置项。
   experimental: {
+    // 限制页面构建并发 Worker 数（默认 os.cpus()-1 在多核机器拉起 7+ 个进程易导致 OOM）
+    cpus: Number(process.env.NEXT_BUILD_CPUS ?? 2),
     serverActions: {
       allowedOrigins: ["localhost", "newkit.site"],
     },

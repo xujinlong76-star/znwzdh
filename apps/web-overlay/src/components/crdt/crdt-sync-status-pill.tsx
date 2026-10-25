@@ -42,12 +42,21 @@ export function CrdtSyncStatusPill() {
     }
   }
 
+  const labelText =
+    status === 'synced'
+      ? peerCount > 1
+        ? `${peerCount} 标签页协同中`
+        : '多端协同已就绪'
+      : status === 'syncing'
+      ? '合流中…'
+      : '离线就绪'
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <button
           type="button"
-          aria-label="查看多端 CRDT 协同状态"
+          aria-label={`${labelText} - 查看多端协同状态`}
           className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/80 px-2.5 py-1 text-xs text-muted-foreground transition-all hover:bg-muted/80 hover:text-foreground shadow-sm"
         >
           {status === 'synced' ? (
@@ -62,13 +71,7 @@ export function CrdtSyncStatusPill() {
           )}
 
           <span className="text-[11px] font-medium hidden sm:inline">
-            {status === 'synced'
-              ? peerCount > 1
-                ? `${peerCount} 标签页协同中`
-                : '多端协同已就绪'
-              : status === 'syncing'
-              ? '合流中…'
-              : '离线就绪'}
+            {labelText}
           </span>
         </button>
       </DialogTrigger>

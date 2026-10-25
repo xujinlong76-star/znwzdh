@@ -427,9 +427,13 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         })
         return
       }
-      if (e.key === 'Enter' && activeIndex >= 0) {
+      if (e.key === 'Enter') {
+        if (navItems.length === 0) return
+        // 没有高亮项时回车 = 打开第一条结果。原实现在 activeIndex === -1（默认态）
+        // 直接忽略，「输完词直接回车」这个最常见的动作等于完全没反应。
+        const target = activeIndex >= 0 ? activeIndex : 0
         // 交给真实元素处理：站点行是 CommandItem（onSelect 打开），插件行是 Link（路由跳转）
-        const el = document.getElementById(`navhub-search-opt-${activeIndex}`)
+        const el = document.getElementById(`navhub-search-opt-${target}`)
         if (el) {
           e.preventDefault()
           el.click()

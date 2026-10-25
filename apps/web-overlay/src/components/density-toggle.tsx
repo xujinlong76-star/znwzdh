@@ -10,28 +10,29 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/registry/new-york/ui/dropdown-menu'
-import { useDensity, type ContentDensity } from './density-provider'
+import { canonicalDensityLabel, useDensity, type ContentDensity } from './density-provider'
 
 export function DensityToggle({ className }: { className?: string }) {
   const { density, setDensity, densityLabel } = useDensity()
 
+  // 行标题用规范表原文（与设置页下拉逐字一致），百分比并入描述行
   const items: Array<{ id: ContentDensity; label: string; desc: string; icon: React.ReactNode }> = [
     {
       id: 'dense',
-      label: '极客密排 (75%)',
-      desc: '紧凑高效，单屏展示海量站点',
+      label: canonicalDensityLabel('dense'),
+      desc: '75% · 紧凑高效，单屏展示海量站点',
       icon: <Rows3 className="w-4 h-4 text-cyan-500" />,
     },
     {
       id: 'comfortable',
-      label: '舒适平衡 (100%)',
-      desc: '标准间距，平衡呼吸感与屏效',
+      label: canonicalDensityLabel('comfortable'),
+      desc: '100% · 标准间距，平衡呼吸感与屏效',
       icon: <LayoutGrid className="w-4 h-4 text-primary" />,
     },
     {
       id: 'spacious',
-      label: '画廊沉浸 (125%)',
-      desc: '宽幅留白，适合大屏与触控展板',
+      label: canonicalDensityLabel('spacious'),
+      desc: '125% · 宽幅留白，适合大屏与触控展板',
       icon: <Maximize2 className="w-4 h-4 text-indigo-500" />,
     },
   ]

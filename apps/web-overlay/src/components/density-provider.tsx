@@ -10,6 +10,7 @@ import {
   updateUserPreferences,
   type ContentDensity,
 } from '@/lib/user-preferences'
+import { CARD_DENSITY_OPTIONS } from '@/lib/user-settings'
 
 export type { ContentDensity }
 
@@ -20,19 +21,34 @@ interface DensityContextValue {
   densityLabel: string
 }
 
+/**
+ * 档位界面文案的唯一出处是 user-settings 的 CARD_DENSITY_OPTIONS（设置页下拉用的就是它）。
+ * 此前首页切换菜单在这里另写一套「极客密排/舒适平衡/画廊沉浸」，与设置页的
+ * 「紧凑密排/舒适/宽松沉浸」对不上号 —— 同一设置两套名字，用户两边对照时必然困惑。
+ */
+export function canonicalDensityLabel(density: ContentDensity): string {
+  const mode = cardDensityOf(density)
+  return CARD_DENSITY_OPTIONS.find((option) => option.value === mode)?.label ?? '舒适 (默认)'
+}
+
+/** 触发器 tooltip / aria 用的短标签：去掉括注（「舒适 (默认)」→「舒适」） */
+function shortDensityLabel(density: ContentDensity): string {
+  return canonicalDensityLabel(density).split(' (')[0]
+}
+
 const DENSITY_META: Record<ContentDensity, { label: string; description: string; next: ContentDensity }> = {
   dense: {
-    label: '极客密排',
+    label: shortDensityLabel('dense'),
     description: '75% 间距压缩，高屏效比，适合极客多屏作业',
     next: 'comfortable',
   },
   comfortable: {
-    label: '舒适平衡',
+    label: shortDensityLabel('comfortable'),
     description: '100% 黄金间隙，层次清晰，官方推荐默认',
     next: 'spacious',
   },
   spacious: {
-    label: '画廊沉浸',
+    label: shortDensityLabel('spacious'),
     description: '125% 宽幅留白，宽屏展陈，适合平板与大屏触控',
     next: 'dense',
   },
@@ -80,7 +96,7 @@ export function DensityProvider({ children }: { children: React.ReactNode }) {
     density,
     setDensity,
     cycleDensity,
-    densityLabel: DENSITY_META[density]?.label ?? '舒适平衡',
+    densityLabel: DENSITY_META[density]?.label ?? '舒适',
   }
 
   return (
@@ -100,7 +116,7 @@ export function useDensity() {
         updateUserPreferences({ cardDensity: cardDensityOf(next) })
       },
       cycleDensity: () => {},
-      densityLabel: '舒适平衡',
+      densityLabel: '舒适',
     }
   }
   return ctx

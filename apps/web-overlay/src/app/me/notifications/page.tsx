@@ -50,6 +50,16 @@ export default function NotificationsPage() {
     if (offset === 0) setState('loading')
     try {
       const res = await fetch('/api/me/notifications?limit=' + PAGE_SIZE + '&offset=' + offset, { cache: 'no-store' })
+      if (res.status === 401) {
+        // 匿名无通知（见顶部注释）：通知挂在登录身份上，未登录就是空列表，不是云端故障。
+        // 此前 401 落进 !res.ok 的 error 分支，匿名用户每次进页都看到「通知暂时取不到」。
+        setItems(offset === 0 ? [] : [])
+        setUnread(0)
+        setHasMore(false)
+        setNextOffset(offset)
+        setState('ready')
+        return
+      }
       if (!res.ok) {
         if (offset === 0) setState('error')
         return

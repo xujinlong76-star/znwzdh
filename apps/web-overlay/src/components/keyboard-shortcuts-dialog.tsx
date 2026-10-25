@@ -10,12 +10,14 @@ import {
 } from '@/registry/new-york/ui/dialog'
 import { Command, Keyboard, Sparkles } from 'lucide-react'
 import { useHomeDIY, type HomeViewMode, type CanvasBackground } from '@/lib/modular/use-home-diy'
-import { useDensity } from '@/components/density-provider'
+import { canonicalDensityLabel, useDensity } from '@/components/density-provider'
 import { useToast } from '@/components/ui/use-toast'
 
 interface KeyboardShortcutsDialogProps {
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  /** T 键的键盘入口：工具箱状态在 NavigationContent 手里，经这里接线 */
+  onOpenTools?: () => void
 }
 
 const SHORTCUT_GROUPS = [
@@ -42,7 +44,7 @@ const SHORTCUT_GROUPS = [
   },
 ]
 
-export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcutsDialogProps) {
+export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: KeyboardShortcutsDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false)
   const isControlled = typeof open === 'boolean'
   const isOpen = isControlled ? open : internalOpen
@@ -118,6 +120,13 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcut
         toggleEditingLayout()
       }
 
+      // 按 T 打开开发者微工具箱。指南里一直宣传这个键，但处理分支此前从未实现，
+      // 按 T 永远没反应 —— 广告了不存在的功能比没有这个功能更糟。
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault()
+        onOpenTools?.()
+      }
+
       // 按 D 循环切换密度
       if (e.key === 'd' || e.key === 'D') {
         e.preventDefault()
@@ -125,8 +134,9 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcut
         const nextIndex = (order.indexOf(density as any) + 1) % order.length
         const next = order[nextIndex]
         setDensity(next)
+        // 文案与设置页/首页菜单同源（canonicalDensityLabel），不再另写一套叫法
         toast({
-          title: `内容密度已切换: ${next === 'dense' ? '极简紧凑 (0.75x)' : next === 'spacious' ? '宽松呼吸 (1.25x)' : '舒适标准 (1.0x)'}`,
+          title: `内容密度已切换: ${canonicalDensityLabel(next)}`,
         })
       }
 
@@ -145,7 +155,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcut
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, setIsOpen, setViewMode, toggleEditingLayout, density, setDensity, canvasBackground, setCanvasBackground, toast])
+  }, [isOpen, setIsOpen, setViewMode, toggleEditingLayout, density, setDensity, canvasBackground, setCanvasBackground, toast, onOpenTools])
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>

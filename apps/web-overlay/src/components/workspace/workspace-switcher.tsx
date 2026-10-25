@@ -58,9 +58,9 @@ const ROLE_BADGES: Record<
   HubWorkspaceRole,
   { label: string; icon: typeof Shield; color: string }
 > = {
-  owner: { label: '空间所有者', icon: Crown, color: 'text-amber-500 bg-amber-500/10 border-amber-500/20' },
-  maintainer: { label: '空间管理员', icon: Shield, color: 'text-indigo-500 bg-indigo-500/10 border-indigo-500/20' },
-  member: { label: '协作成员', icon: UserCheck, color: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' },
+  owner: { label: '空间所有者', icon: Crown, color: 'text-amber-700 dark:text-amber-400 bg-amber-500/10 border-amber-500/20' },
+  maintainer: { label: '空间管理员', icon: Shield, color: 'text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 border-indigo-500/20' },
+  member: { label: '协作成员', icon: UserCheck, color: 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/20' },
   viewer: { label: '只读访客', icon: Eye, color: 'text-muted-foreground bg-muted border-border' },
 }
 
@@ -226,7 +226,7 @@ export function WorkspaceSwitcher() {
           <Button
             variant="ghost"
             size="sm"
-            aria-label="选择工作空间与团队"
+            aria-label={`${activeWs.name} - 选择工作空间与团队`}
             className="h-8 gap-2 px-2.5 text-xs text-foreground hover:bg-accent/60 transition-colors border border-transparent hover:border-border/60"
           >
             {activeWs.type === 'personal' ? (

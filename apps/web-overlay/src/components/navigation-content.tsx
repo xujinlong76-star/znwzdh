@@ -512,7 +512,12 @@ export function NavigationContent({
         <QuickToolsDrawer open={isToolsOpen} onOpenChange={setIsToolsOpen} />
 
         {/* 4.0 弹窗：快捷键指南与 Maestro 监听 */}
-        <KeyboardShortcutsDialog open={isShortcutsOpen} onOpenChange={setIsShortcutsOpen} />
+        {/* T 键打开微工具箱的键盘入口由这里接线 */}
+        <KeyboardShortcutsDialog
+          open={isShortcutsOpen}
+          onOpenChange={setIsShortcutsOpen}
+          onOpenTools={() => setIsToolsOpen(true)}
+        />
 
         {/* 多选批量操作坞：选中任意卡片后自底部升起（批量导出 / 复制 / 置顶） */}
         {selectionMode && (

@@ -1,0 +1,200 @@
+# 门禁集成与运维（现行）
+
+> 状态：**现行**。
+> 本文管「检查放哪一层、改了 CI 要动哪几处、红了怎么查、发版前查什么」。
+> 审查流程见 [`CODE-REVIEW.md`](CODE-REVIEW.md)；测试准入准出与覆盖率见 [`TESTING-STRATEGY.md`](TESTING-STRATEGY.md)；
+> 分支保护的网页端操作与验收见 [`CI-BRANCH-PROTECTION.md`](CI-BRANCH-PROTECTION.md)。
+
+---
+
+## 1. 分层接入表
+
+原则：秒级检查左移到 `pre-commit`，分钟级进 `pnpm verify`，需要干净环境 / 构建产物 / 服务容器的进 CI；同一检查只在一层「硬」，其他层只提示。
+
+| 检查 | 落点 | 理由 | 耗时 |
+|---|---|---|---|
+| 提交信息规范（Conventional Commits） | **`commit-msg` 钩子**（由 `scripts/install-git-hooks.mjs` 生成） | 原始 message 只有本地拿得到；CI 看到的是 PR 标题/压缩后信息，拦不住 | <1s |
+| 跳钩子三行声明 | **`commit-msg` 钩子**（同一入口） | 与上一条同源，一次解析 | <1s |
+| 覆盖率门禁 | **CI `test-sqlite`**（判定）；`pnpm verify` 只出数 | 覆盖率必须基于全量测试；pre-commit 是暂存区子集，算覆盖率是假数字 | 见 §4 |
+| PR 模板必填校验 | 阶段 1：只落模板（零 CI 改动）；阶段 2（可选）：`pr-hygiene` 作业读 `github.event.pull_request.body` | 先看两周遵守率再上硬门禁 | 0s / <1min |
+| 锁文件一致性 | 已有 `pnpm install --frozen-lockfile` | 无需新增 | — |
+| overlay 双镜像 / 扩展 / 上游 ref / 语法 / typecheck / 选测 | 已有 `pre-commit` | 已在跑，保持 | 30s–6min |
+| 全量测试 + 7 项门禁 | 已有 `pnpm verify` | 已在跑，保持 | 见 §4 |
+
+---
+
+## 2. 改 CI 的「五处联动」+ 第 6 处文档
+
+> **适用范围（重要）**：只在**新增 / 删除 / 改名 CI 作业**时全套适用。
+> 改既有作业的 `steps`（例如给 `test-sqlite` 加覆盖率）**不碰聚合闸门**，只需同步 timeout 与文档。
+
+新增作业时按序完成：
+
+1. `ci.yml`：作业定义本身（`timeout-minutes` / `runs-on` / `steps`）。
+2. `ci.yml`：`ci-passed.needs` 数组加入作业名。
+3. `ci.yml`：`ci-passed` 评估脚本加 `[ "${{ needs.<job>.result }}" != "success" ] ||` 分支 + 一行 `echo` 结果。
+   （只加 `needs` 不加读取 = 该作业失败被静默忽略，`check-ci-gate.mjs` 第 2 项校验的正是这个。）
+4. `scripts/check-ci-gate.mjs`：`REQUIRED_JOBS` 数组加入作业名。
+5. `apps/web/test/ci-gate.test.ts`：
+   - 正向用例的作业数同步；
+   - 反向用例里 `needs` 的**精确字符串**必须同步（不同步会因 `expect(broken).not.toBe(src)` 变红，这是故意的「强制提醒」，不要改用正则绕过）；
+   - 为新作业补一条「删掉它必须变红」的反向用例。
+6. `docs/CI-BRANCH-PROTECTION.md`：聚合树、示例输出、作业数同步。
+
+验证命令（本地按序）：
+
+```bash
+node scripts/check-ci-gate.mjs
+node node_modules/vitest/vitest.mjs run apps/web/test/ci-gate.test.ts
+pnpm verify
+```
+
+CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge 被禁用。
+
+**两条硬约束**：
+
+- `ci-passed` 把 **`skipped` 也算失败**。任何「只在 PR 事件跑」的新作业必须设计成 push 事件下也 success（内部判空 `exit 0`），否则 push 到 main 永久红。
+- `seo-audit-prod` **故意不在 `needs` 里**：它带 `if: github.event_name == 'workflow_dispatch' && vars.NAVHUB_SITE_URL != ''`，PR 下必然 skipped，加进去会让每个 PR 永久红。不要「顺手补全」。
+
+---
+
+## 3. 当前门禁全景
+
+`ci.yml` 共 **10 个作业定义**：
+
+| 作业 | 是否进聚合 | 作用 |
+|---|---|---|
+| `test-sqlite` | ✅ | typecheck + 后端 lint（`continue-on-error`）+ vendor + 全量 vitest + build |
+| `test-postgres` | ✅ | pgvector 服务容器 + `test:pg:suite` + `test:pg` |
+| `test-web` | ✅ | vendor + tsc + eslint + `next build` + 首屏预算 + ISR 路由门禁 |
+| `check-web-overlay` | ✅ | 语法 + vendor + overlay 字节比对 + core 镜像 + 上游 ref + 扩展 |
+| `check-isr-live` | ✅ | CI 内自建预览跑 ISR 三层契约抽查（`--rotate` 按 SHA 轮换样本） |
+| `test-e2e` | ✅ | Playwright 全量（失败时解析失败用例名发 annotation） |
+| `docker-smoke` | ✅ | api / web 镜像构建 |
+| `audit` | ✅ | `pnpm audit` 高危硬门禁（含 `--prod`） |
+| `seo-audit-prod` | ❌（故意） | 仅 `workflow_dispatch` + 有 `NAVHUB_SITE_URL` 时跑 |
+| `ci-passed` | — | 聚合闸门，分支保护唯一必经项 |
+
+`REQUIRED_JOBS` = 8（上表前 8 个）。改这个数字必须同时改 §2 的五处。
+
+---
+
+## 4. 时长预算
+
+### 4.1 本机实测（2026-10-25，重要）
+
+| 场景 | 实测 | 说明 |
+|---|---|---|
+| 全量 vitest（4210 tests / 396 files，无覆盖率） | **27 分 26 秒** | 3 failed / 4179 passed / 28 skipped；耗时主要来自 396 个 worker 的启动开销（约 3.8s/文件） |
+| 全量 vitest + 覆盖率（`json-summary`） | 见 `TESTING-STRATEGY.md` §3 的 W0 记录 | v8 插桩会增加 15–40% |
+| 单个 `scripts/check-ci-gate.test.ts`（3 tests） | 119 秒 | 该测试会 spawn 子进程，不代表普通单测 |
+
+**结论：不要用「9 分钟」估算全量。** `TESTING-CONVENTIONS.md` §5 的 9 分钟是历史值，当前套件已增长到 4210 个测试；任何涉及全量的 timeout、成本判断都必须以实测为准。
+
+### 4.2 CI 作业 timeout 现状
+
+| 作业 | timeout | 估计实际（未实测） | 长尾原因 |
+|---|---|---|---|
+| `test-sqlite` | 20m | 10–14m（Linux，未含覆盖率） | typecheck + 全量 vitest + build 串行 |
+| `test-postgres` | 20m | 8–12m | pgvector 冷启动 + 两套件 |
+| `test-web` | 25m | 12–18m | `next build` 是最大单项 |
+| `check-web-overlay` | 15m | 6–8m | vendor 重建 + 5 项比对 |
+| `check-isr-live` | 30m | 18–25m | install + vendor + build + 双进程 + 限流四阶段 |
+| `test-e2e` | 30m | 15–25m | playwright install + 全量 spec |
+| `docker-smoke` | 30m | 8–15m | 两次 build，无层缓存时最坏 |
+| `audit` | 10m | 2–3m | 依赖 npmjs 网络 |
+
+### 4.3 覆盖率接入的前置条件（基于实测的修正）
+
+原计划「直接给 `test-sqlite` 加 `--coverage`，timeout 20m→25m」。实测后修正为：
+
+1. **先确认套件是绿的**。2026-10-25 全量运行有 3 个失败（`backend-lint-gate` / `backup-restore-job` 的 470ms<300ms 时序断言 / `metrics-format` 的指标快照），在红灯套件上设覆盖率基线没有意义。
+2. **先在 CI 实测 `test-sqlite` 时长**（Linux runner 与本机差异大）。若加覆盖率后 >22m，拆独立 `coverage` 作业——但那是新增作业，必须走 §2 全套五处联动。
+3. 阶段 A 允许 `continue-on-error: true` 观察两周，但**不要**在 PR 上长期挂一个每轮多花几分钟、又不阻断的步骤；观察期结束就转硬门禁或撤掉。
+
+### 4.4 优化建议（按收益）
+
+1. `docker-smoke` 加 `cache-from/cache-to: type=gha`：冷构建 8–15m 可降到 3–5m，零联动成本。
+2. 不做 vitest `--shard` 拆片：`test-sqlite` 未接近 timeout，拆片只增加 runner 分钟数。
+3. `check-isr-live` 短期不动：拆「限流豁免」会新增作业，须走五处联动，风险高于收益。
+4. 若全量继续变慢，优先查 worker 启动开销（`isolate: false` 已被证明会引入跨文件污染，不能开；见 `vitest.config.ts` 注释）。
+
+---
+
+## 5. 红灯归因 runbook
+
+通用第一步：**先看红在哪一步**（作业页里红色步骤名），再看 annotation（无 token 时作业日志接口 403，annotation 是跨机器唯一可读通道）。本地复现优先 `pnpm verify`（覆盖 7 项里的 5 项）。
+
+| 作业 | 第一反应 | 假红 / 归因陷阱 |
+|---|---|---|
+| `test-sqlite` | 按步骤定位：typecheck → lint:backend（`continue-on-error`，不会红）→ vendor → vitest → build。`Cannot find package '@/lib/auth'` = 忘了 `node scripts/vendor-web.mjs`；build 红 = 声明导出/入口路径坏 | `lint:backend` 是 warning 级，红了也不是它 |
+| `test-postgres` | 先看是 `test:pg:suite` 还是 `test:pg` 红。suite 报「未设置 `NAVHUB_TEST_DATABASE_URL` —— 拒绝执行」= **作业配置坏了**，不是代码；有 URL 仍红 = 真跨方言缺陷 | 把变量设成 `DATABASE_URL` 是死变量，套件整体 skip → 假绿，绝不能这样「修」 |
+| `test-web` | 按步骤序：tsc → eslint（warning 不卡）→ `next build` → bundle budget → `check-isr-routes`。budget 红**不许上调** `scripts/bundle-budget.json`；ISR 红 = 某收录型路由从 ● 退化成 ƒ，或页面签名读了 `searchParams` | `next.config` 的 `ignoreBuildErrors` 只影响 build，不影响 tsc 步骤 |
+| `check-web-overlay` | 报错会列出不一致文件：先问「是不是直接改了 `apps/web`」。事实源是 `apps/web-overlay/`，改 overlay 后重跑 `node scripts/vendor-web.mjs`；再查 `sync-core-mirrors --check` 与 `check-upstream-ref` | `apps/web` 是 gitignore 生成物，全新检出必须 vendor 后才能比对 |
+| `check-isr-live` | 读 3 条 `::error::` 做三层归因：①判据数字（rc / sitemap 条目数 / 红行数）②输出尾部 600 字符 ③收录面族计数。族整族归零但抽到的页全绿 = sitemap 生成侧问题；`120s 内没有 /site/*` = 中枢失联或 seed 空，看 `tail /tmp/hub.log /tmp/web.log` | 限流阶段 `rc=2` = 缺 `NAVHUB_INTERNAL_TOKEN`；「预检失败…是降级壳」= web 没吃到豁免，先查 3000 端口占用者，别怀疑业务代码；**不要**重启 web 来「修」（凭据是模块顶层常量，只在启动时读一次） |
+| `test-e2e` | 读 annotation 的「失败用例：」清单与「报错抽样」，本地 `node scripts/e2e-local.mjs -- <spec> --grep "<标题>"` 单跑；下载 `playwright-report` 产物 | 全量共享 server，超时类红灯先看是否被前一个 spec 拖慢，不一定是断言错 |
+| `docker-smoke` | 看是 API 还是 Web 镜像红。API：`--frozen-lockfile` 安装阶段（原生编译依赖 / `prepare` 钩子）；Web：上游底座拉取失败 | 不要因网络抖动删 `--frozen-lockfile` |
+| `audit` | 必须 `--registry=https://registry.npmjs.org`；已知例外 `GHSA-vfj7-8cjw-p6xm`（braces，dev-only）用 `--ignore` | 改 `.npmrc` 或去掉 `--registry` 会得到假红 |
+| 覆盖率（新增） | 退出码 **2 = 找不到产物**（查 `reportsDirectory` / 清理开关 / `--max-age`）；**1 = 真低于阈值**（`--zero 20` 定位文件） | 禁止在同一 PR 里下调阈值；要么补测，要么单独 PR 说明 |
+
+---
+
+## 6. 部署前 Go/No-Go
+
+全部勾选才允许 `docker compose up -d`；任一项 No-Go 即停。
+
+### Go（发布前）
+
+- [ ] 部署 commit 的 `ci-passed` 为 success（不是「最近一次大概绿」）。
+- [ ] 发布机 `pnpm verify` 绿 + `pnpm verify:web` 绿（前端门禁不在 verify 里）。
+- [ ] 镜像用 **SHA 打 tag**：`docker build -f docker/Dockerfile.api -t navhub/api:<sha> .`（当前 compose 写死 `navhub/api:0.1.0`，建议改 `${NAVHUB_IMAGE_TAG:-0.1.0}`，否则回滚无镜像可退）。
+- [ ] `node scripts/check-upstream-ref.mjs` 通过（vendor 脚本 / Dockerfile / UPSTREAM.md 三处同源）。
+- [ ] 备份：`node scripts/backup.mjs`（默认保留 35 份），输出含 `integrity_check=ok`。
+      **注意：`backup.mjs` 仅支持 SQLite；PG 部署需 `pg_dump`，当前无脚本（已知缺口）。**
+- [ ] 数据兼容性：确认迁移无破坏性变更（drop/rename 列、改类型）；有则先备份 + 书面 sign-off + 准备回滚脚本。
+- [ ] 环境变量：`NAVHUB_SESSION_SECRET` / `NAVHUB_IDENTITY_SECRET` / `NAVHUB_INTERNAL_TOKEN` 两侧同值；`NAVHUB_AUTH_REQUIRED=1` 时 `NAVHUB_IDENTITY_SECRET` 需 ≥32 字符。
+
+### 部署顺序（不可颠倒）
+
+1. `node apps/api/src/migrate.ts`（**CWD 必须是仓库根**——`NAVHUB_SQLITE_PATH` 默认 cwd 相对 `./data/navhub.db`）。
+2. `pnpm seed`（seed 不建表；空库先 seed 只会得到空 sitemap）。
+3. 起 API，等 `curl -fsS http://127.0.0.1:8787/api/ready` 通过（不是 `/api/health`，后者不 ping 数据库）。
+4. 起 Web，验证 `/` 与 `/sitemap.xml` 含 `/site/*` 条目。
+
+### 回滚
+
+- 镜像：`NAVHUB_IMAGE_TAG=<上一 SHA> docker compose up -d`（依赖 SHA tag）。
+- 数据：停容器 → 替换 `data/navhub.db`（或卷内 `/data/navhub.db`）→ 删 `-wal` / `-shm` → 起容器。**不要**在容器运行时直接覆盖 db 文件。
+- 回滚后验证：`/api/ready` 200 + 抽查 3 个页面 200 + 登录可用。
+
+---
+
+## 7. 分支保护（差异项）
+
+网页端操作步骤与验收方法见 [`CI-BRANCH-PROTECTION.md`](CI-BRANCH-PROTECTION.md) §2。本节只列**流程要求新增的差异项**：
+
+| 选项 | 建议 | 理由 |
+|---|---|---|
+| Required approvals | 1 | 小团队可合并；核心路径靠 CODEOWNERS 抬到 2（启用后） |
+| Dismiss stale approvals on new commits | 勾选 | 防止「审的是旧代码」 |
+| Require review from Code Owners | **暂不勾选** | 少人仓库会锁死合并；≥2 名常驻审查者再开 |
+| Require linear history | 勾选 | 禁 merge commit，统一 squash/rebase |
+| Require conversation resolution | 勾选 | 审查意见必须闭环 |
+| Do not allow bypassing | 勾选 | 管理员也不能绕过；事故时临时关规则并留记录 |
+
+验收（两步，都要做）：
+
+1. 沿用现有 PG 红验收：临时让 `test-postgres` 红 → 确认 `ci-passed` 红、Merge 禁用。
+2. CODEOWNERS 验收（启用强制后）：改 `/.github/workflows/ci.yml` 的 PR，未获 owner approve 时 Merge 必须禁用。
+
+---
+
+## 8. 可观测性
+
+- **Annotation 三级**：
+  - `::error::` 只用于阻断性失败。固定三段：①门禁名 + rc + 关键数字 ②输出尾部（≤600 字符，`tr '\n%' '|'` 压成单行）③分层归因。**无条件发送**——不要按 `grep` 匹配行发，脚本自己抛异常时会一行不剩。
+  - `::warning::` 用于不阻断的漂移（语料过期、lint 告警）。
+  - `::notice::` 用于绿灯留证据（如限流豁免四阶段计数），否则「步骤 success」和「检查真的成立」无法区分。
+- **安全红线**：annotation 里只许出现凭据**长度**（`${#NAVHUB_INTERNAL_TOKEN}`），永不打值。
+- **Artifact**：一律 `retention-days: 14` + `if-no-files-found: ignore`；覆盖率上传 `coverage-summary.json`（`if: always()`）。
+- **失败日志**：长驻进程作业末尾加 `if: ${{ failure() }}` 的 `tail -80`（`check-isr-live` 模式）。不要在失败时用 `pgrep -f "next start"` 找进程（Next 会改 `process.title`），要记 PID 文件；CI 一次性环境直接 SIGKILL（SIGTERM 的 30s drain 会超过等待窗口）。

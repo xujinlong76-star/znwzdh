@@ -100,15 +100,44 @@ L4 还有额外固定成本：需要独占端口（`scripts/e2e-local.mjs` 自�
     报错是 `Timed out waiting ... webServer`，看起来像启动慢。本机同时跑两套 E2E
     基本必崩：先确认没有别人的 Playwright 在跑（`Win32_Process` 里看命令行），再启动。
 
+## 4.5 pre-commit 钩子的选测口径（2026-10-25 起）
+
+钩子不再「改一个文件就跑整棵目录」，而是**先收窄**：
+
+1. 改动文件 → 测试根（`apps/api` → `apps/api/test`，`packages/store` → `packages/store/test`…）；
+2. 在根内按**词干匹配**收窄：改动文件的文件名/父目录名（≥4 字符、非通用词）出现在测试文件名里就选中
+   （`plugins` → `plugin`，复数已归一）；文件名没命中再看**测试内容**是否提到该词;
+3. 都没命中就**回退整棵**——宁可多跑，不可漏跑（跨模块影响由 CI 全量兜底）；
+4. 任何 `apps/web*/src` 改动都会**额外**跑全仓扫描门禁（`field-names`、`keyboard-activation`）。
+
+实测：改 `apps/api/src/routes/backup.ts` 从 93 个测试文件降到 8 个（约 40 秒）。
+
+| 环境变量 | 作用 |
+|---|---|
+| `NAVHUB_SKIP_PRECOMMIT=1` | 跳过全部检查（要在 commit message 里写明原因） |
+| `NAVHUB_PRECOMMIT_SCOPE=all` | 强制全量（收窄失效），确认「跨模块没被改坏」时用 |
+| `NAVHUB_PRECOMMIT_E2E=1` | 跑完 vitest 再跑**本次暂存的** Playwright 用例；没暂存 spec 就跳过 |
+
+钩子完整输出落盘在 `.git/navhub-precommit.log`。**失败要引用日志里的文件名与行号**，
+不要只写「有 1 例失败」——上一轮就是这么丢掉线索的。
+
+> 已知取舍：收窄只保证「名字相关」的测试会跑。改 `backup.ts` 却破坏了某个名字里没有
+> `backup` 的用例时，钩子会放过它，由 CI 全量兜住。这是刻意换来的速度。
+
+---
+
 ## 5. 提交前的成本预算
 
-| 改动范围 | hook 选中的测试 | 耗时 |
+| 改动范围 | hook 选中的测试 | 耗时（收窄后实测） |
 |---|---|---|
 | 只改 docs | 无（SKIP） | ~30 秒（typecheck） |
-| 改 `packages/store/**` | `packages/store/test` | ~124 秒 |
-| 改 `apps/api/**` | `apps/api/test` | ~3 分钟 |
-| 改 `apps/web-overlay/**` | `apps/web/test` | ~2.5 分钟 |
-| 同时改 api + overlay | 两棵 | **~5–6 分钟** |
+| 改 `apps/api/src/routes/backup.ts` | 8 个 `backup-*.test.ts` | **~40 秒**（收窄前是整棵 93 文件 / 3 分钟） |
+| 改 `packages/store/**` | `packages/store/test` | ~124 秒（未收窄时） |
+| 改 `apps/web-overlay/src/app/admin/data/restore/page.tsx` | `restore-page-guard` + 两个全仓门禁 | ~5 秒 |
+| 命中不了词干（如 `page.tsx` 在通用目录） | 回退整棵 | 同收窄前 |
+
+> 上表是「收窄生效」时的样子。词干没命中就回退整棵，所以最坏情况仍等于收窄前。
+> 想强制全量：`NAVHUB_PRECOMMIT_SCOPE=all`。
 
 `package.json` / `tsconfig.base.json` / `vitest.config.ts` 在 `GLOBAL_FILES` 里，
 改动它们会跑**全量**（~9 分钟）。为一行 npm 别名改 `package.json` 不划算。

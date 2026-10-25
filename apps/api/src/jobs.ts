@@ -268,6 +268,20 @@ export function backoffMs(attempt: number): number {
 }
 
 /**
+ * 恢复任务的分片大小。
+ *
+ * 默认 2000。可用 `NAVHUB_RESTORE_CHUNK` 覆盖——**这个开关只为基准测试存在**
+ * （`scripts/bench-restore-chunk.ts` 要对比不同片大小的耗时与阻塞），生产不要设它。
+ * 小于 100 视为误配并回落默认值：片太小会让「每片一个事务」的收益消失，
+ * 变成几乎逐条提交。
+ */
+export function restoreChunkSize(): number {
+  const raw = Number(process.env.NAVHUB_RESTORE_CHUNK ?? 2000);
+  if (!Number.isFinite(raw) || raw < 100) return 2000;
+  return Math.floor(raw);
+}
+
+/**
  * 判断候选 URL 是否已在库里（配合 `repo.findExistingSiteUrls` 用）。
  *
  * 口径必须与那支函数的探针集合一致：它除了原文和 canonical 形态，还会探
@@ -1121,7 +1135,7 @@ export class JobRunner {
       });
     }
 
-    const CHUNK = 2000;
+    const CHUNK = restoreChunkSize();
 
     /**
      * 断点续跑：`progress_done` 记的是「已处理的计划条数」，按分片对齐后从这里继续。

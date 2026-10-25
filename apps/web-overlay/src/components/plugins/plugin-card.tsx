@@ -115,7 +115,6 @@ export function PluginCard({
   const handleAction = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    trackPluginEvent(targetMode === 'uninstall' ? 'plugin_uninstall_click' : 'plugin_install_click', plugin.slug)
 
     // 有确认弹窗时统一走弹窗，并精确传递当前动作语义（升级 / 卸载 / 安装），
     // 彻底解决已安装状态下重复弹出安装确认框的交互 BUG

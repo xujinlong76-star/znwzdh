@@ -1553,6 +1553,8 @@ export async function installPlugin(
   identity?: string,
 ): Promise<{ success: boolean; alreadyInstalled: boolean; plugin: HubPluginItem; applied: any }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  // 分母在请求前计一次：失败与「已安装」也是真实意图，否则分子（服务端只在真正新增时发）会超过分母。
+  trackPluginEvent('plugin_install_click', slug, effectiveIdentity)
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}/install`,
     'POST',
@@ -1568,6 +1570,7 @@ export async function uninstallPlugin(
   removeSites = true,
 ): Promise<{ success: boolean; uninstalled: boolean; sitesRemoved: number; categoriesRemoved?: number }> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
+  trackPluginEvent('plugin_uninstall_click', slug, effectiveIdentity)
   const qs = new URLSearchParams()
   if (effectiveIdentity) qs.set('anonId', effectiveIdentity)
   if (removeSites) qs.set('removeSites', 'true')
@@ -1863,16 +1866,16 @@ export async function createPluginShortLink(
 export function trackPluginEvent(
   kind: 'plugin_view' | 'plugin_install_click' | 'plugin_uninstall_click' | 'plugin_share',
   slug: string,
+  identity?: string,
 ): void {
   if (typeof window === 'undefined') return
-  const identity = getIdentity()
-  const body = JSON.stringify({ kind, pluginSlug: slug, anonId: identity })
+  const body = JSON.stringify({ kind, pluginSlug: slug, anonId: identity || getIdentity() })
   // 必须走同源代理前缀 /api/hub/*；裸 /api/events 在 Next 应用里没有对应路由
   const url = hubUrl('/api/events')
   try {
     if (navigator.sendBeacon) {
-      navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }))
-      return
+      // 返回 false 表示载荷被浏览器丢弃（配额/大小），不能当成功；落到下面的 fetch 兜底。
+      if (navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }))) return
     }
   } catch {
     // 落到 fetch 兜底

@@ -196,3 +196,13 @@ field-names / silent-catch / rsc-boundary 守卫的余红经逐一归属核查�
 | mock 卫生制度化 | ✅ | mock-hygiene 守卫三条规则（跨模块 mock 必带 resetModules / env 改写必带 afterAll / exempt 豁免）；修正「补丁误打镜像被同步覆写」的回归——卫生必须落在 overlay 真源 |
 | 通知中心 v2 | ⏸ 维持非目标 | 需真实触发量数据 |
 | 沉积观察 | — | 五巨石全部瘦身完毕（algorithm-lab/sitelist/plugin-detail/ai-studio/publish）；并行会话持续在 backup/search/plugin-install-modal 上推进 |
+
+---
+
+## 11. 第七批收尾（2026-10-25 晚）
+
+| 项 | 状态 | 落点 |
+| --- | --- | --- |
+| A3.3 步骤 3 抽出 | ✅ 784→582 | publish-payload-step.tsx（步骤3+提交行整体抽出，纠缠以「连同提交行」化解）；工坊向导 + 发布向导 E2E 通过；全链路用例败在 admin/plugins（并行 WIP），非本页 |
+| 隔离重启 lint 化评估 | ✅ 结论：守卫即基线 | mock-hygiene vitest 守卫已在同一 CI 门禁内阻断回归（三条规则 + exempt 通道）；eslint 规则会以更弱的上下文重复同一机制，不建 |
+| 五巨石治理 | ✅ 全部完成 | algorithm-lab 2216→294+12面板 / sitelist 2128→1531 / plugin-detail 1817→981+944 / ai-studio 1719→970+798 / publish 1120→582+371+186 |

@@ -218,3 +218,13 @@ field-names / silent-catch / rsc-boundary 守卫的余红经逐一归属核查�
 
 **验证纪律示范**：迁移后 2 败 → git stash 基线对照（原版 4/4）→ 快照定位
 （waitForURL 吞预算）→ 修复 → 6/6 + 消费者回归 5/5。不靠猜。
+
+---
+
+## 13. 第九批执行（2026-10-26 凌晨）
+
+| 项 | 状态 | 落点 |
+| --- | --- | --- |
+| plugin-market 全量复跑 | ✅ 登录步已修 | 3 败均推进到 admin 审核 toast——admin/plugins 仍在并行未提交清单（27 文件）；发布向导用例（覆盖拆分页）持续通过 |
+| 登录旁路水合竞态 | ✅ 已修 | enterAdminArea 两轮点击重试（SSR 按钮可见≠已挂载）；9/9 消费方回归 |
+| isolate:false 重开评估 | ✅ 维持关闭（新证据） | 全仓清点：mock identity 的文件实为 5 个（含 plugin-funnel-denominator-guard），另有 9 个文件不 mock 却导入 navhub-api——doMock 方案会让后来者吃到先来者的 mock 缓存（反向污染）。重开成本 > 250s 收益，§12 决策维持 |

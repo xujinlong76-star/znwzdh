@@ -130,6 +130,18 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       }
     }
 
+    /**
+     * HEAD 只探测元信息，不是一次用户搜索。
+     *
+     * Fastify 的 exposeHeadRoutes 默认开启（server.ts:127），HEAD 因而复用本处理器；
+     * 于是「探一下长度/etag」的请求会：写一行 events.search、可能写一行 zero_result，
+     * 并往**个人搜索历史**（search_history：可导出、可删除、UI 里也展示）塞一条用户
+     * 根本没搜过的词。热榜与零结果榜按行数计次（topQueries / zeroResultQueries），
+     * 预取与探活灌进来的行会直接改变用户看到的「大家在搜什么」。
+     * 归属、个性化、响应本身照旧算——只关掉「记账」这一段。
+     */
+    const isProbe = req?.method === "HEAD";
+
     let personalize = input.personalize;
     if (!personalize && identity && personalizationEnabled) {
       const profile = await ctx.repo.getUserProfile(identity);
@@ -169,7 +181,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     let popular: string[] = [];
     let relationHits: unknown[] = [];
     if (q) {
-      if (isFirstPage) {
+      if (isFirstPage && !isProbe) {
         await ctx.repo
           .recordEvent("search", { query: q, identity: attributedIdentity ?? undefined })
           .catch(() => undefined);
@@ -178,9 +190,13 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         relationHits = await ctx.repo.findRelationsByQuery(q, 3).catch(() => []);
       }
       if (result.hits.length === 0 && isFirstPage) {
-        await ctx.repo
-          .recordEvent("zero_result", { query: q, identity: attributedIdentity ?? undefined })
-          .catch(() => undefined);
+        // 只关掉「写零结果行」这一段；建议/热门仍照算，
+        // 否则 HEAD 与 GET 的 payload 不同 → 同一 URL 的 ETag 会不一致（RFC 9110 §9.3.2 要求 HEAD 的头与 GET 相同）。
+        if (!isProbe) {
+          await ctx.repo
+            .recordEvent("zero_result", { query: q, identity: attributedIdentity ?? undefined })
+            .catch(() => undefined);
+        }
         const [top, zero] = await Promise.all([
           ctx.repo.topQueries(180, 30),
           ctx.repo.zeroResultQueries(180, 30),
@@ -189,7 +205,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         suggestions = top.filter((t) => !zeroSet.has(t.query) && t.query !== q).slice(0, 5).map((t) => t.query);
         popular = top.filter((t) => !zeroSet.has(t.query)).slice(0, 8).map((t) => t.query);
       }
-      if (identity && isFirstPage && searchHistoryEnabled) {
+      if (identity && isFirstPage && searchHistoryEnabled && !isProbe) {
         await ctx.repo.recordSearch(identity, q, result.hits.length).catch(() => undefined);
       }
     }

@@ -233,6 +233,32 @@ export function getSearchPlannerStats(): {
   };
 }
 
+/* ---------------- 检索写入失败观测（run54） ---------------- */
+
+/**
+ * 降级写入的失败计数：事件 / 零结果 / 历史 / 通道观测。
+ *
+ * 为什么不能只 `.catch(() => undefined)`：写入失败与「这次搜索本来就没数据」
+ * 在响应和后续读数里完全同形——HTTP 200、库里没有行，运维无法区分
+ * 「用户没搜」与「搜了但没记上」。这里只记固定四类（有界基数），
+ * 主链路仍降级继续，但失败可通过 /api/metrics 的 counter 速率看见。
+ */
+export type SearchWriteComponent = "event_search" | "event_zero_result" | "history" | "channels";
+const SEARCH_WRITE_COMPONENTS: SearchWriteComponent[] = ["event_search", "event_zero_result", "history", "channels"];
+const searchWriteFailures = new Map<SearchWriteComponent, number>();
+
+export function recordSearchWriteFailure(component: SearchWriteComponent): void {
+  searchWriteFailures.set(component, (searchWriteFailures.get(component) ?? 0) + 1);
+}
+
+export function getSearchWriteFailureStats(): Record<SearchWriteComponent, number> {
+  return {
+    event_search: searchWriteFailures.get("event_search") ?? 0,
+    event_zero_result: searchWriteFailures.get("event_zero_result") ?? 0,
+    history: searchWriteFailures.get("history") ?? 0,
+    channels: searchWriteFailures.get("channels") ?? 0,
+  };
+}
 
 /** DB 统计加重询，避免 Prometheus 高频抓取把 COUNT 打满（5s 内复用；缓存为模块级，跨请求生效） */
 let statsCache: { at: number; value: Awaited<ReturnType<AppContext["repo"]["stats"]>> } | null = null;
@@ -319,6 +345,15 @@ export async function renderMetrics(ctx: AppContext): Promise<string> {
     `navhub_search_channel_avg_ms{channel="pinyin"} ${planner.avgMs.pinyin}`,
     `navhub_search_channel_avg_ms{channel="semantic"} ${planner.avgMs.semantic}`,
   ]);
+
+  // 检索写入失败：四类固定组件全量暴露（含 0），避免「没有序列」与「没失败」混淆
+  const writeFailures = getSearchWriteFailureStats();
+  metric(
+    "navhub_search_write_failures_total",
+    "检索写入失败次数（事件/零结果/历史/通道观测；失败≠空，主链路已降级继续）",
+    "counter",
+    SEARCH_WRITE_COMPONENTS.map((c) => `navhub_search_write_failures_total{component="${c}"} ${writeFailures[c]}`),
+  );
 
   return out.join("\n") + "\n";
 }

@@ -4,7 +4,7 @@
  * 由 server.ts 单体按域拆分而来（升级改造方案 P1-3，行为与原实现逐字节一致）。
  */
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
-import { recordSearchChannels } from "../metrics.ts";
+import { recordSearchChannels, recordSearchWriteFailure } from "../metrics.ts";
 import { refreshUserProfile } from "../profile-service.ts";
 import { badRequest, clampFacets, FACET_MAX_JSON_LENGTH, identityTrusted, requestIdentityOf } from "./shared.ts";
 
@@ -159,7 +159,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
     });
     const timings = result.channelTimings;
     if (timings) {
-      try { recordSearchChannels(timings, result.planner === "early-exit" ? "early-exit" : "full"); } catch { /* 观测不影响主链路 */ }
+      try { recordSearchChannels(timings, result.planner === "early-exit" ? "early-exit" : "full"); } catch { recordSearchWriteFailure("channels"); }
     }
     const siteIds = [...new Set(result.hits.map((h) => h.siteId))];
     const siteMap = await ctx.repo.getSitesByIds(siteIds);
@@ -177,7 +177,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       if (isFirstPage && !isProbe) {
         await ctx.repo
           .recordEvent("search", { query: q, identity: attributedIdentity ?? undefined })
-          .catch(() => undefined);
+          .catch(() => recordSearchWriteFailure("event_search"));
       }
       if (q.length >= 2) {
         relationHits = await ctx.repo.findRelationsByQuery(q, 3).catch(() => []);
@@ -188,7 +188,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         if (!isProbe) {
           await ctx.repo
             .recordEvent("zero_result", { query: q, identity: attributedIdentity ?? undefined })
-            .catch(() => undefined);
+            .catch(() => recordSearchWriteFailure("event_zero_result"));
         }
         const [top, zero] = await Promise.all([
           ctx.repo.topQueries(180, 30),
@@ -199,7 +199,7 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
         popular = top.filter((t) => !zeroSet.has(t.query)).slice(0, 8).map((t) => t.query);
       }
       if (identity && isFirstPage && searchHistoryEnabled && !isProbe) {
-        await ctx.repo.recordSearch(identity, q, result.hits.length).catch(() => undefined);
+        await ctx.repo.recordSearch(identity, q, result.hits.length).catch(() => recordSearchWriteFailure("history"));
       }
     }
     return {

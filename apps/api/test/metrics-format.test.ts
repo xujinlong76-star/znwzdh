@@ -23,7 +23,7 @@ const API_ROOT = resolve(HERE, "..");
 
 const ALLOWED_TYPES = new Set(["counter", "gauge", "summary"]);
 /** 新增标签必须显式更新这里——这是防止「原始 URL / 用户输入进标签」的最后一道闸。 */
-const ALLOWED_LABELS = new Set(["method", "route", "status", "name", "channel", "decision", "mode", "node"]);
+const ALLOWED_LABELS = new Set(["method", "route", "status", "name", "channel", "decision", "mode", "node", "component"]);
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 /**
  * Prometheus 约定 `_total` 留给 counter，但这两个「规模计数」是历史已发布的 gauge 名。
@@ -271,6 +271,7 @@ describe("Prometheus 指标格式", () => {
       navhub_search_channel_avg_ms gauge
       navhub_search_planner_total counter
       navhub_search_semantic_skipped_total counter
+      navhub_search_write_failures_total counter
       navhub_sites gauge
       navhub_tags_total gauge
       navhub_up gauge"

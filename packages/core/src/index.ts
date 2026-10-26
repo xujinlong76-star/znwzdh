@@ -28,6 +28,7 @@ export * from "./client-vector-search.ts";
 export * from "./p2p-mesh-sync.ts";
 export * from "./speculative-prerender.ts";
 export * from "./autonomous-healing.ts";
+export * from "./url-deep-diagnose.ts";
 export * from "./knowledge-graph.ts";
 export * from "./visual-fingerprint.ts";
 export * from "./webmcp-bridge.ts";

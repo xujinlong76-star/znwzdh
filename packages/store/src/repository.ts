@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {
   type Category,
   type Collection,
+  type CollectionKind,
+  type CollectionSiteItem,
   type Site,
   type SiteRelation,
   type SiteStatus,
@@ -1103,11 +1105,11 @@ export class Repository {
     slug: string;
     title: string;
     description?: string | null;
-    kind?: "topic" | "geo" | "roadmap";
+    kind?: CollectionKind;
     icon?: string | null;
     sort?: number;
     enabled?: boolean;
-    sites?: string[];
+    sites?: Array<string | { site: string; note?: string | null; sort?: number }>;
   }): Promise<Collection> {
     return collectionsRepo.upsertCollection(this, input);
   }
@@ -1120,8 +1122,63 @@ export class Repository {
     return collectionsRepo.getCollectionBySlug(this, slug);
   }
 
-  async listCollectionSites(slug: string): Promise<Site[]> {
+  async getCollectionById(id: string): Promise<Collection | null> {
+    return collectionsRepo.getCollectionById(this, id);
+  }
+
+  async updateCollection(
+    id: string,
+    patch: {
+      slug?: string;
+      title?: string;
+      description?: string | null;
+      kind?: CollectionKind;
+      icon?: string | null;
+      sort?: number;
+      enabled?: boolean;
+    },
+  ): Promise<Collection | null> {
+    return collectionsRepo.updateCollection(this, id, patch);
+  }
+
+  async deleteCollection(id: string): Promise<boolean> {
+    return collectionsRepo.deleteCollection(this, id);
+  }
+
+  async listCollectionSites(slug: string): Promise<CollectionSiteItem[]> {
     return collectionsRepo.listCollectionSites(this, slug);
+  }
+
+  async listCollectionItemsDetail(collectionId: string): Promise<collectionsRepo.CollectionItemDetail[]> {
+    return collectionsRepo.listCollectionItemsDetail(this, collectionId);
+  }
+
+  async addCollectionItem(
+    collectionId: string,
+    siteId: string,
+    note?: string | null,
+    sort?: number,
+  ): Promise<void> {
+    return collectionsRepo.addCollectionItem(this, collectionId, siteId, note, sort);
+  }
+
+  async updateCollectionItem(
+    collectionId: string,
+    siteId: string,
+    patch: { note?: string | null; sort?: number },
+  ): Promise<boolean> {
+    return collectionsRepo.updateCollectionItem(this, collectionId, siteId, patch);
+  }
+
+  async removeCollectionItem(collectionId: string, siteId: string): Promise<boolean> {
+    return collectionsRepo.removeCollectionItem(this, collectionId, siteId);
+  }
+
+  async listSiteCollections(
+    siteId: string,
+    onlyEnabled = true,
+  ): Promise<Array<Collection & { collectionNote: string | null; collectionSort: number }>> {
+    return collectionsRepo.listSiteCollections(this, siteId, onlyEnabled);
   }
 
 

@@ -48,7 +48,13 @@ interface SeedShape {
   /** 只剩兜底类目：整棵树由 CATEGORY_REGISTRY 播种，种子清单不再声明层级 */
   categories: Array<{ id: string; title: string; slug?: string; icon?: string; description?: string; sort?: number; source?: string }>;
   sites: Array<{ url: string; title: string; description: string; categorySlug: string; tags?: string[]; icon?: string; facets?: Record<string, string[]> }>;
-  collections?: Array<{ slug: string; title: string; kind: string; description: string; sites: string[] }>;
+  collections?: Array<{
+    slug: string;
+    title: string;
+    kind: string;
+    description: string;
+    sites: Array<string | { site: string; note?: string; sort?: number }>;
+  }>;
 }
 
 /** 只读"库里是否真的存过站点配置"，不触发默认值回退 */
@@ -214,6 +220,22 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
   let collections = 0;
   for (const col of raw.collections ?? []) {
     try {
+      const existing = await ctx.repo.getCollectionBySlug(col.slug);
+      if (existing) {
+        const currentSites = await ctx.repo.listCollectionSites(col.slug);
+        if (currentSites.length === 0 && col.sites && col.sites.length > 0) {
+          for (const s of col.sites) {
+            const siteRef = typeof s === "string" ? s : s.site;
+            const note = typeof s === "object" && s.note ? s.note : undefined;
+            const sort = typeof s === "object" && typeof s.sort === "number" ? s.sort : undefined;
+            const site = await ctx.repo.getSite(siteRef);
+            if (site) {
+              await ctx.repo.addCollectionItem(existing.id, site.id, note, sort);
+            }
+          }
+        }
+        continue;
+      }
       await ctx.repo.upsertCollection({
         slug: col.slug,
         title: col.title,

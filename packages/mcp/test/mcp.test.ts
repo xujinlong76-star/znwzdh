@@ -67,7 +67,7 @@ afterAll(async () => {
 });
 
 describe("工具清单", () => {
-  it("包含 27 个只读工具与 13 个写工具", () => {
+  it("包含 28 个只读工具与 13 个写工具", () => {
     const read = TOOL_DEFS.filter((t) => !t.mutating);
     const write = TOOL_DEFS.filter((t) => t.mutating);
     expect(read.map((t) => t.name).sort()).toEqual([
@@ -82,6 +82,7 @@ describe("工具清单", () => {
       "find_tech_path",
       "get_alternatives",
       "get_architecture_recipe",
+      "get_collection",
       "get_federated_recommendations",
       "get_profile_summary",
       "get_site",
@@ -302,6 +303,27 @@ describe("Phase 4 新工具", () => {
 
     const all = payload(await handlers.list_collections({ all: true }, READONLY));
     expect(slugs(all)).toContain("legacy-topic");
+  });
+
+  it("get_collection 返回专题详情、收录站点与推荐理由", async () => {
+    await ctx.repo.upsertCollection({
+      slug: "ai-mcp-test",
+      title: "AI MCP 测试专题",
+      sites: ["https://weather.com.cn"],
+    });
+    const col = await ctx.repo.getCollectionBySlug("ai-mcp-test");
+    const site = await ctx.repo.findSiteByUrl("https://weather.com.cn");
+    if (col && site) {
+      await ctx.repo.addCollectionItem(col.id, site.id, "国内天气权威站点", 0);
+    }
+
+    const res = payload(await handlers.get_collection({ slug: "ai-mcp-test" }, READONLY));
+    expect(res.collection.title).toBe("AI MCP 测试专题");
+    expect(res.count).toBe(1);
+    expect(res.sites[0].collectionNote).toBe("国内天气权威站点");
+
+    const notFoundRes = await handlers.get_collection({ slug: "not-exist" }, READONLY);
+    expect(notFoundRes.isError).toBe(true);
   });
 
   it("refresh_site 入队任务并落审计", async () => {

@@ -336,6 +336,7 @@ export function rowToCollection(row: Record<string, any>): Collection {
     icon: row.icon ?? null,
     sort: Number(row.sort ?? 0),
     enabled: Boolean(row.enabled),
+    siteCount: row.site_count !== undefined && row.site_count !== null ? Number(row.site_count) : undefined,
     createdAt: Number(row.created_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
   };

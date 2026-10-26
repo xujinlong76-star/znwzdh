@@ -12,7 +12,12 @@ import { allSeedPluginDefs } from "../src/seed-data/index.ts";
 
 interface SeedShape {
   sites: Array<{ url: string; facets?: Record<string, string[]> }>;
-  collections: Array<{ slug: string; title: string; description: string; sites: string[] }>;
+  collections: Array<{
+    slug: string;
+    title: string;
+    description: string;
+    sites: Array<string | { site: string }>;
+  }>;
 }
 
 const raw = JSON.parse(
@@ -23,7 +28,9 @@ describe("P5 轴外移：落到合集与分面，而不是新建类目", () => {
   it("每个合集的站点引用都能在种子站点里找到（否则导入时被静默跳过）", () => {
     const urls = new Set(raw.sites.map((s) => s.url));
     for (const collection of raw.collections) {
-      const missing = collection.sites.filter((url) => !urls.has(url));
+      const missing = collection.sites
+        .map((entry) => (typeof entry === "string" ? entry : entry.site))
+        .filter((url) => !urls.has(url));
       expect(missing, `合集「${collection.title}」引用了不存在的站点：${missing.join(", ")}`).toEqual([]);
       expect(collection.sites.length, `合集「${collection.title}」站点过少`).toBeGreaterThanOrEqual(3);
     }

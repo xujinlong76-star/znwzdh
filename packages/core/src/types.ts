@@ -210,6 +210,7 @@ export interface Collection {
   icon?: string | null;
   sort: number;
   enabled: boolean;
+  siteCount?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -218,6 +219,10 @@ export interface CollectionItem {
   siteId: Id;
   sort: number;
   note?: string | null;
+}
+export interface CollectionSiteItem extends Site {
+  collectionNote?: string | null;
+  collectionSort?: number;
 }
 
 export interface TagDimension {

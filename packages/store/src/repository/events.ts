@@ -100,3 +100,132 @@ export async function listAuditActions(repo: Repository, limit = 50): Promise<st
   );
   return rows.map((r) => String(r.action));
 }
+
+/** copilot 事件读取窗口最多回溯的行数：管理端要的是比率，不是全表扫描 */
+export const COPILOT_EVENT_READ_CAP = 5000;
+
+/**
+ * 「放弃前等待时长」分位数取样上限：只从 copilot_cancel 的 waited_ms 里取，
+ * 与 COPILOT_EVENT_READ_CAP 分开，避免把整窗口的行数当成样本量。
+ */
+const WAIT_SAMPLE_CAP = 1000;
+
+export interface CopilotEventSummary {
+  windowDays: number;
+  scanned: number;
+  truncated: boolean;
+  asks: number;
+  cancels: number;
+  /** cancels / (asks + cancels)，保留 3 位小数；无样本时为 null */
+  cancelRate: number | null;
+  /** 停止键落在调模型之前还是之后——pre_llm 多说明用户等不到首字 */
+  cancelStage: { pre_llm: number; llm: number };
+  /** 放弃前等待时长（ms），来自 copilot_cancel 的 waited_ms */
+  waitMs: { p50: number | null; p95: number | null; max: number | null };
+  /** 兜底应答占比（meta.degraded 非空即未经大模型） */
+  degraded: number;
+  degradedBy: Array<{ reason: string; count: number }>;
+  quotaLimited: number;
+  thinkingBy: Array<{ thinking: string; count: number }>;
+}
+
+function percentile(sorted: number[], q: number): number | null {
+  if (sorted.length === 0) return null;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1));
+  return sorted[idx] ?? null;
+}
+
+function tallyTop(counter: Map<string, number>, limit: number): Array<{ key: string; count: number }> {
+  return [...counter.entries()]
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+    .slice(0, limit);
+}
+
+/**
+ * copilot 遥测的读取侧：把 events 里 kind=copilot / copilot_cancel 的两行
+ * 折成管理端能直接展示的比率。meta 是 JSON 文本，跨方言（SQLite / PostgreSQL）
+ * 不做 JSON 抽取，统一取回后在内存里解析——读取窗口本身已按 COPILOT_EVENT_READ_CAP 封顶。
+ */
+export async function copilotEventSummary(
+  repo: Repository,
+  days: number,
+): Promise<CopilotEventSummary> {
+  const windowDays = Math.min(Math.max(Math.round(days) || 1, 1), 90);
+  const since = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+  const rows = await repo.raw(
+    "SELECT kind, meta FROM events WHERE kind IN ('copilot', 'copilot_cancel') AND created_at >= ? ORDER BY id DESC LIMIT ?",
+    [since, COPILOT_EVENT_READ_CAP + 1],
+  );
+  const truncated = rows.length > COPILOT_EVENT_READ_CAP;
+  const scanned = truncated ? rows.slice(0, COPILOT_EVENT_READ_CAP) : rows;
+
+  let asks = 0;
+  let cancels = 0;
+  const cancelStage = { pre_llm: 0, llm: 0 };
+  let degraded = 0;
+  let quotaLimited = 0;
+  const degradedBy = new Map<string, number>();
+  const thinkingBy = new Map<string, number>();
+  const waits: number[] = [];
+
+  for (const row of scanned) {
+    const kind = String(row.kind ?? "");
+    let meta: Record<string, unknown> = {};
+    const rawMeta = row.meta;
+    if (typeof rawMeta === "string" && rawMeta) {
+      try {
+        const parsed = JSON.parse(rawMeta);
+        if (parsed && typeof parsed === "object") meta = parsed as Record<string, unknown>;
+      } catch {
+        // 历史脏行：解析失败只说明这一行没有维度，不该让整块面板 500
+      }
+    } else if (rawMeta && typeof rawMeta === "object") {
+      meta = rawMeta as Record<string, unknown>;
+    }
+
+    const thinking = meta.thinking == null ? "unknown" : String(meta.thinking);
+    thinkingBy.set(thinking, (thinkingBy.get(thinking) ?? 0) + 1);
+    if (meta.quota_limited === true) quotaLimited += 1;
+
+    if (kind === "copilot_cancel") {
+      cancels += 1;
+      const stage = String(meta.stage ?? "");
+      if (stage === "pre_llm" || stage === "llm") cancelStage[stage] += 1;
+      const waited = Number(meta.waited_ms);
+      if (Number.isFinite(waited) && waited >= 0) waits.push(waited);
+      continue;
+    }
+
+    asks += 1;
+    const reason = meta.degraded;
+    if (reason != null && reason !== "" && reason !== "null") {
+      degraded += 1;
+      const key = String(reason);
+      degradedBy.set(key, (degradedBy.get(key) ?? 0) + 1);
+    }
+  }
+
+  const total = asks + cancels;
+  waits.sort((a, b) => a - b);
+  const waitSample = waits.slice(0, WAIT_SAMPLE_CAP);
+
+  return {
+    windowDays,
+    scanned: scanned.length,
+    truncated,
+    asks,
+    cancels,
+    cancelRate: total > 0 ? Math.round((cancels / total) * 1000) / 1000 : null,
+    cancelStage,
+    waitMs: {
+      p50: percentile(waitSample, 0.5),
+      p95: percentile(waitSample, 0.95),
+      max: waitSample.length ? (waitSample[waitSample.length - 1] ?? null) : null,
+    },
+    degraded,
+    degradedBy: tallyTop(degradedBy, 8).map(({ key, count }) => ({ reason: key, count })),
+    quotaLimited,
+    thinkingBy: tallyTop(thinkingBy, 5).map(({ key, count }) => ({ thinking: key, count })),
+  };
+}

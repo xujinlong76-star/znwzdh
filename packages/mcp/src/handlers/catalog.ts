@@ -5,11 +5,12 @@ import {
   GetTrendingInput,
   ListCategoriesInput,
   ListCollectionsInput,
+  GetCollectionInput,
   ListTagsInput,
   requireScope,
   type ToolContext,
 } from "../tools.ts";
-import { ok, type Handler, type HandlerDeps } from "./shared.ts";
+import { ok, fail, type Handler, type HandlerDeps } from "./shared.ts";
 
 export const catalogHandlers = {
   async list_categories(deps: HandlerDeps, args: unknown, tc: ToolContext) {
@@ -74,5 +75,20 @@ export const catalogHandlers = {
     const input = ListCollectionsInput.parse(args ?? {});
     const collections = await ctx.repo.listCollections(!input.all);
     return ok({ count: collections.length, collections });
+  },
+
+  /**
+   * 读取单个专题详情（含条目与推荐理由）。
+   */
+  async get_collection(deps: HandlerDeps, args: unknown, tc: ToolContext) {
+    const { ctx } = deps;
+    requireScope(tc, "read");
+    const input = GetCollectionInput.parse(args ?? {});
+    const collection = await ctx.repo.getCollectionBySlug(input.slug);
+    if (!collection) {
+      return fail("专题不存在: " + input.slug);
+    }
+    const sites = await ctx.repo.listCollectionSites(input.slug);
+    return ok({ collection, count: sites.length, sites });
   },
 } satisfies Record<string, Handler>;

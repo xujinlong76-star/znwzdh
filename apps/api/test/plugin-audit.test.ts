@@ -117,6 +117,29 @@ describe("存活但拒绝爬虫（401/403/405/412/429）不计入不可达", () 
     expect(s.blocked).toBe(0);
     expect(s.broken).toBe(1);
   })
+
+  it("疑似域名停放/软404/劫持（suspicious=true）：单独列出且不计入健康 ok", () => {
+    const s = summarizeProbes([
+      { url: "https://healthy.example/", ok: true, status: 200 },
+      {
+        url: "https://parked.example/",
+        ok: false,
+        status: 200,
+        suspicious: true,
+        suspiciousReason: "检测到域名出售停放关键词 [domain for sale]",
+        extractedTitle: "Domain For Sale",
+        shannonEntropy: 2.1,
+        matchedKeywords: ["domain for sale"],
+      },
+    ]);
+    expect(s.total).toBe(2);
+    expect(s.ok).toBe(1);
+    expect(s.suspicious).toBe(1);
+    expect(s.broken).toBe(0);
+    expect(s.suspiciousItems).toHaveLength(1);
+    expect(s.suspiciousItems[0].title).toBe("Domain For Sale");
+    expect(s.suspiciousItems[0].matchedKeywords).toEqual(["domain for sale"]);
+  })
 })
 
 describe("失败原因归类：区分「我们的探针限制」与「站点真挂」", () => {

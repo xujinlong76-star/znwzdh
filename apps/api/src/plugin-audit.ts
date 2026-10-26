@@ -48,15 +48,23 @@ export interface UrlProbeResult {
   error?: string
   /** 不可达时的原因归类（见 ProbeFailureKind） */
   failureKind?: ProbeFailureKind
+  /** 疑似停放页 / 软 404 / 异常劫持（2xx/3xx 但内容异常） */
+  suspicious?: boolean
+  suspiciousReason?: string
+  extractedTitle?: string
+  shannonEntropy?: number
+  matchedKeywords?: string[]
 }
 
 /** 一个插件包的体检汇总（列表/徽标/报告三处共用同一口径） */
 export interface PluginAuditSummary {
   total: number
-  /** 正常响应（2xx/3xx） */
+  /** 正常响应（2xx/3xx 且无停放/软404劫持特征） */
   ok: number
   /** 存活但拒绝爬虫（401/403/405/412/429），**计入可达** */
   blocked: number
+  /** 疑似停放页 / 软 404 / 极低信息熵劫持（HTTP 200 但实际不可用） */
+  suspicious: number
   /** 真不可达：DNS/连接失败、超时、5xx、其它 4xx */
   broken: number
   redirected: number
@@ -70,21 +78,30 @@ export interface PluginAuditSummary {
   brokenItems: Array<{ url: string; status?: number; error?: string; failureKind?: ProbeFailureKind }>
   /** 存活但拒绝爬虫的明细（单独列出，便于分辨「站点没问题、是爬虫被挡」） */
   blockedItems: Array<{ url: string; status?: number }>
+  /** 疑似域名停放、软 404 或低信息熵空壳页明细 */
+  suspiciousItems: Array<{
+    url: string
+    status?: number
+    title?: string
+    reason?: string
+    shannonEntropy?: number
+    matchedKeywords?: string[]
+  }>
   /** 不可达原因分布（区分「探针限制」与「站点真挂」的依据） */
   brokenByReason: Record<ProbeFailureKind, number>
 }
 
 /**
- * 体检默认参数：单包抽样 30 条、并发 6、单条兜底超时 8s、重定向上限 6 跳。
+ * 体检默认参数：单包抽样 30 条、并发 12、单条兜底超时 4s、重定向上限 6 跳。
  *
- * timeoutMs 从 5s 放宽到 8s、maxRedirects 从 3 提到 6：全市场首轮报告证明 5s/3 跳
- * 会把「国内大站响应慢」「站点跳转多」误判成不可达（maoyan.com、5i5j.com 等）。
- * 探针应当有耐心，报告才能反映「用户能不能打开」而不是「我们等不等得起」。
+ * 优化（2026-10-26 治理 504 网关超时）：
+ * 单条 4s 超时足以判定站点可达性与首包 HTML 状态；并发从 6 提至 12，
+ * 即使整包 30 条全部挂死也能在 3 批内（< 12 秒）迅速收敛，彻底杜绝网关 30 秒超时（504 Gateway Timeout）。
  */
 export const PLUGIN_AUDIT_DEFAULTS = {
   sample: 30,
-  concurrency: 6,
-  timeoutMs: 8_000,
+  concurrency: 12,
+  timeoutMs: 4_000,
   maxRedirects: 6,
 } as const
 
@@ -147,10 +164,12 @@ export function sampleUrls(urls: readonly string[], limit: number): string[] {
 export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditSummary {
   let ok = 0
   let blocked = 0
+  let suspicious = 0
   let broken = 0
   let redirected = 0
   const brokenItems: PluginAuditSummary['brokenItems'] = []
   const blockedItems: PluginAuditSummary['blockedItems'] = []
+  const suspiciousItems: PluginAuditSummary['suspiciousItems'] = []
   const brokenByReason: PluginAuditSummary['brokenByReason'] = {
     timeout: 0,
     'redirect-limit': 0,
@@ -160,6 +179,20 @@ export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditS
     other: 0,
   }
   for (const p of probes) {
+    // 疑似停放页 / 软 404 / 劫持：不计入真实 ok，单独归入 suspicious
+    if (p.suspicious) {
+      suspicious++
+      suspiciousItems.push({
+        url: p.url,
+        status: p.status,
+        title: p.extractedTitle,
+        reason: p.suspiciousReason,
+        shannonEntropy: p.shannonEntropy,
+        matchedKeywords: p.matchedKeywords,
+      })
+      if (p.finalUrl && normalizeAuditUrl(p.finalUrl) !== normalizeAuditUrl(p.url)) redirected++
+      continue
+    }
     if (p.ok) {
       ok++
       if (p.finalUrl && normalizeAuditUrl(p.finalUrl) !== normalizeAuditUrl(p.url)) redirected++
@@ -185,11 +218,13 @@ export function summarizeProbes(probes: readonly UrlProbeResult[]): PluginAuditS
     total,
     ok,
     blocked,
+    suspicious,
     broken,
     redirected,
     reachability: total === 0 ? null : Math.round((reachable / total) * 1000) / 1000,
     brokenItems,
     blockedItems,
+    suspiciousItems,
     brokenByReason,
   }
 }

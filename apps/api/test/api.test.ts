@@ -905,6 +905,93 @@ describe("标签与专题", () => {
     const missing = await app.inject({ method: "GET", url: "/api/collections/nope" });
     expect(missing.statusCode).toBe(404);
   });
+
+  it("精选专题完整管理闭环：创建 / 改名 / 批注条目 / 站点反向索引 / 启停 / 删除", async () => {
+    // 准备一个站点
+    const siteRes = await app.inject({
+      method: "POST",
+      url: "/api/sites",
+      payload: { url: "https://example.com/col-test-site", title: "专题测试站点", categoryId: "cat-ai" },
+    });
+    const siteId = siteRes.json().id;
+
+    // 创建专题
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/collections",
+      payload: {
+        slug: "test-roadmap",
+        title: "测试学习路线",
+        kind: "roadmap",
+        description: "专题测试简介",
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const colId = created.json().id;
+    expect(colId).toBeTruthy();
+
+    // 查全部列表
+    const allList = await app.inject({ method: "GET", url: "/api/collections?all=1" });
+    expect(allList.statusCode).toBe(200);
+    expect(allList.json().some((c: any) => c.slug === "test-roadmap")).toBe(true);
+
+    // 添加站点并附带策展理由 note
+    const addItem = await app.inject({
+      method: "POST",
+      url: `/api/collections/${colId}/items`,
+      payload: { siteId, note: "核心推荐：入门第一站", sort: 0 },
+    });
+    expect(addItem.statusCode).toBe(200);
+
+    // 查公开详情：站点应携带 collectionNote
+    const detail = await app.inject({ method: "GET", url: "/api/collections/test-roadmap" });
+    expect(detail.statusCode).toBe(200);
+    const body = detail.json();
+    expect(body.collection.title).toBe("测试学习路线");
+    expect(body.sites.length).toBe(1);
+    expect(body.sites[0].id).toBe(siteId);
+    expect(body.sites[0].collectionNote).toBe("核心推荐：入门第一站");
+
+    // 站点反向查询所属专题
+    const siteCols = await app.inject({ method: "GET", url: `/api/sites/${siteId}/collections` });
+    expect(siteCols.statusCode).toBe(200);
+    expect(siteCols.json().some((c: any) => c.id === colId)).toBe(true);
+
+    // 管理端查 by-id
+    const byId = await app.inject({ method: "GET", url: `/api/collections/by-id/${colId}` });
+    expect(byId.statusCode).toBe(200);
+    expect(byId.json().items.length).toBe(1);
+    expect(byId.json().items[0].note).toBe("核心推荐：入门第一站");
+
+    // 修改条目批注
+    const patchItem = await app.inject({
+      method: "PATCH",
+      url: `/api/collections/${colId}/items/${siteId}`,
+      payload: { note: "进阶推荐：架构必读", sort: 1 },
+    });
+    expect(patchItem.statusCode).toBe(200);
+
+    // 停用专题
+    const patchCol = await app.inject({
+      method: "PATCH",
+      url: `/api/collections/${colId}`,
+      payload: { enabled: false },
+    });
+    expect(patchCol.statusCode).toBe(200);
+    expect(patchCol.json().enabled).toBe(false);
+
+    // 公开访问停用专题应 404
+    const pubAfterDisable = await app.inject({ method: "GET", url: "/api/collections/test-roadmap" });
+    expect(pubAfterDisable.statusCode).toBe(404);
+
+    // 删除专题
+    const del = await app.inject({ method: "DELETE", url: `/api/collections/${colId}` });
+    expect(del.statusCode).toBe(200);
+
+    // 再次查已不存在
+    const byIdAfterDel = await app.inject({ method: "GET", url: `/api/collections/by-id/${colId}` });
+    expect(byIdAfterDel.statusCode).toBe(404);
+  });
 });
 
 describe("收藏夹", () => {
@@ -986,6 +1073,35 @@ describe("用户身份同步与搜索历史", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().id).toBe("github:u-001");
     expect(res.json().role).toBe("user");
+  });
+
+  // P5 守护：身份同步的「核心键严格 / 展示字段幂等」边界。
+  // 背景（P1）：BFF /api/me/sync 曾把会话里的脏展示字段原样透传，username>64 或
+  // email 非标准就让中枢 400，每个带 SessionSync 的页面都刷红错。修复后：
+  //  ① 核心键 providerId 缺失 → 仍必须 400（身份事实不能模糊）；
+  //  ② 超长 username / 非标准 email / 空 providerId 之外 → 幂等降级为 200，不阻断同步。
+  it("users/sync：缺 providerId 仍 400（核心键不可缺）", async () => {
+    const res = await app.inject({
+      method: "POST", url: "/api/users/sync",
+      payload: { provider: "github", username: "x", email: "a@b.com" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("users/sync：超长 username + 非标准 email 幂等降级为 200（不再刷 400）", async () => {
+    const res = await app.inject({
+      method: "POST", url: "/api/users/sync",
+      payload: {
+        providerId: "u-p1-guard",
+        username: "x".repeat(200),
+        email: "not-an-email",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().id).toBe("github:u-p1-guard");
+    // 展示字段幂等降级：email 非标准 → 归一为 null；username 截断到 64
+    expect(res.json().email ?? null).toBe(null);
+    expect(String(res.json().username ?? "")).toHaveLength(64);
   });
 
   it("带 anonId 的搜索会记录历史，可清空", async () => {

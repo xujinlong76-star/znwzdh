@@ -202,6 +202,11 @@ export const ListTagsInput = z.object({
   limit: z.number().int().min(1).max(200).default(50).describe("返回条数上限"),
 });
 
+/** 标签别名归一化解析（GET /api/tags/resolve?q=...）的 query 契约 */
+export const ResolveTagInput = z.object({
+  q: z.string().min(1).describe("要解析的标签名 / 别名 / 拼音，必填"),
+});
+
 export const RefreshSiteInput = z.object({
   idOrUrl: z.string().describe("站点 id 或完整网址"),
   llm: z.boolean().default(false).describe("是否用 LLM 富化（默认 false，只走启发式，不消耗额度）"),
@@ -243,6 +248,10 @@ export const GetProfileSummaryInput = z.object({});
 
 export const ListCollectionsInput = z.object({
   all: z.boolean().default(false).describe("true 时包含已停用专题（默认只看启用中的）"),
+});
+
+export const GetCollectionInput = z.object({
+  slug: z.string().describe("专题 slug 标识符（如 agentic-ai / frontend-starter）"),
 });
 
 export const DeleteSiteInput = z.object({
@@ -421,6 +430,7 @@ export const MCP_INPUT_SCHEMAS: Record<string, ZodSchemaLike> = {
   run_job: RunJobInput,
   list_jobs: ListJobsInput,
   list_collections: ListCollectionsInput,
+  get_collection: GetCollectionInput,
   list_favorites: ListFavoritesInput,
   list_search_history: ListSearchHistoryInput,
   get_profile_summary: GetProfileSummaryInput,
@@ -554,6 +564,7 @@ export const REST_SCHEMA_BINDINGS: Record<string, { schema: ZodSchemaLike; in: "
   "POST /api/sites/alternatives": { schema: GetAlternativesInput, in: "body" },
   "POST /api/wayback": { schema: ResolveWaybackInput, in: "body" },
   "GET /api/tags": { schema: ListTagsInput, in: "query" },
+  "GET /api/tags/resolve": { schema: ResolveTagInput, in: "query" },
   "GET /api/plugins/search": { schema: SearchPluginsInput, in: "query" },
   "GET /api/rank/trending": { schema: GetTrendingInput, in: "query" },
 };
@@ -672,6 +683,11 @@ export const MCP_TOOL_DEFS: ToolDefinition[] = [
     name: "list_collections",
     description: "列出精选专题（合集）及其条目数与排序，默认只返回启用中的专题。适合回答「有哪些专题推荐」。",
     scope: "read", inputSchema: ListCollectionsInput, mutating: false,
+  },
+  {
+    name: "get_collection",
+    description: "按 slug 获取精选专题详情及其收录的站点列表与推荐理由（note）。适合深入推荐或查看专题内容。",
+    scope: "read", inputSchema: GetCollectionInput, mutating: false,
   },
   {
     name: "get_architecture_recipe",

@@ -698,12 +698,36 @@
       "kind": "topic",
       "description": "从自主型智能体 Agent、级联推理 IDE 到高吞吐大模型推理引擎",
       "sites": [
-        "https://github.com/cline/cline",
-        "https://windsurf.ai",
-        "https://github.com/vllm-project/vllm",
-        "https://github.com/langchain-ai/langgraph",
-        "https://cursor.com",
-        "https://ollama.com"
+        {
+          "site": "https://cursor.com",
+          "note": "AI 原生代码编辑器标杆，支持多文件协同编辑与智能索引",
+          "sort": 0
+        },
+        {
+          "site": "https://windsurf.ai",
+          "note": "Codeium 打造的 Cascade 协同心流 IDE，支持主动感知与工具调用",
+          "sort": 1
+        },
+        {
+          "site": "https://github.com/cline/cline",
+          "note": "VS Code 开源 Autonomous Coding Agent，直接操作终端与文件系统",
+          "sort": 2
+        },
+        {
+          "site": "https://ollama.com",
+          "note": "本地大语言模型快速运行环境，一键部署并提供 OpenAI 兼容 API",
+          "sort": 3
+        },
+        {
+          "site": "https://github.com/vllm-project/vllm",
+          "note": "高并发 PagedAttention 推理加速框架，生产环境大模型部署首选",
+          "sort": 4
+        },
+        {
+          "site": "https://github.com/langchain-ai/langgraph",
+          "note": "基于循环计算图构建状态化、支持人机回环的 Multi-Agent 工作流",
+          "sort": 5
+        }
       ]
     },
     {
@@ -723,10 +747,26 @@
       "kind": "roadmap",
       "description": "零基础到能独立做项目",
       "sites": [
-        "https://developer.mozilla.org/zh-CN",
-        "https://www.runoob.com",
-        "https://roadmap.sh",
-        "https://github.com/trending"
+        {
+          "site": "https://developer.mozilla.org/zh-CN",
+          "note": "阶段 1：掌握 Web 标准与 HTML/CSS/JS 语言核心文档",
+          "sort": 0
+        },
+        {
+          "site": "https://www.runoob.com",
+          "note": "阶段 2：菜鸟教程快速通读语法与基础实例速查",
+          "sort": 1
+        },
+        {
+          "site": "https://roadmap.sh",
+          "note": "阶段 3：参考社区完整的现代前端技能树进行知识盲区查漏补缺",
+          "sort": 2
+        },
+        {
+          "site": "https://github.com/trending",
+          "note": "阶段 4：关注 GitHub 趋势榜最新开源项目实战演练",
+          "sort": 3
+        }
       ]
     },
     {
@@ -735,11 +775,31 @@
       "kind": "topic",
       "description": "配色、图标、字体、抠图一站备齐",
       "sites": [
-        "https://figma.com",
-        "https://iconify.design",
-        "https://coolors.co",
-        "https://fonts.google.com",
-        "https://www.remove.bg"
+        {
+          "site": "https://figma.com",
+          "note": "现代团队协同设计与高保真原型标准工具",
+          "sort": 0
+        },
+        {
+          "site": "https://iconify.design",
+          "note": "收录超 20 万+ 开源矢量图标库，支持各类前端框架即时复制",
+          "sort": 1
+        },
+        {
+          "site": "https://coolors.co",
+          "note": "超高速配色灵感生成器，支持色盲辅助与导出多种格式",
+          "sort": 2
+        },
+        {
+          "site": "https://fonts.google.com",
+          "note": "Google 官方免费开源商用字体知识库",
+          "sort": 3
+        },
+        {
+          "site": "https://www.remove.bg",
+          "note": "高精度一键 AI 自动抠图与背景擦除工具",
+          "sort": 4
+        }
       ]
     },
     {
@@ -748,16 +808,31 @@
       "kind": "topic",
       "description": "「开源」不再是一个类目：这里按 facets.pricing=open_source 承接，付费模式是分面属性而不是分类轴",
       "sites": [
-        "https://ollama.com",
-        "https://github.com/vllm-project/vllm",
-        "https://github.com/cline/cline",
-        "https://github.com/langchain-ai/langgraph",
-        "https://bun.sh",
-        "https://fastify.dev",
-        "https://orm.drizzle.team",
-        "https://kubernetes.io",
-        "https://iconify.design",
-        "https://excalidraw.com"
+        {
+          "site": "https://excalidraw.com",
+          "note": "手绘风格虚拟白板，无限画布与实时协作",
+          "sort": 0
+        },
+        {
+          "site": "https://bun.sh",
+          "note": "高性能全合一 JavaScript 运行时与包管理器，现代平替 Node.js / npm",
+          "sort": 1
+        },
+        {
+          "site": "https://fastify.dev",
+          "note": "低开销、高性能 Node.js Web 框架，Express 的现代化高吞吐替代",
+          "sort": 2
+        },
+        {
+          "site": "https://orm.drizzle.team",
+          "note": "轻量极速、类型安全的 TypeScript ORM",
+          "sort": 3
+        },
+        {
+          "site": "https://ollama.com",
+          "note": "私有化部署开源大模型平替云端闭源模型",
+          "sort": 4
+        }
       ]
     },
     {

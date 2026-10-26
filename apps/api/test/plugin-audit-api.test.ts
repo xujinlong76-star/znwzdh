@@ -169,3 +169,282 @@ describe("GET /api/plugins/:slug/url-health（详情页徽标的数据源）", (
     expect(miss.statusCode).toBe(404);
   })
 })
+
+describe("GET /api/plugins/url-health/summary", () => {
+  it("批量汇总所有包的最近一次体检结果", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins/url-health/summary" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.summaries).toBeDefined();
+    expect(body.summaries["health-done-pack"]).toBeDefined();
+    expect(body.summaries["health-done-pack"].declared).toBe(2);
+  });
+});
+
+describe("POST /api/plugins/:slug/ai-heal", () => {
+  it("针对死链与疑似停放生成自愈诊断与替代方案", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/health-done-pack/ai-heal",
+      payload: {
+        brokenUrls: ["https://127.0.0.1/p1"],
+        suspiciousUrls: ["https://127.0.0.1/p2"],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.slug).toBe("health-done-pack");
+    expect(body.diagnoses).toHaveLength(2);
+    expect(body.diagnoses[0].waybackUrl).toContain("web.archive.org");
+    expect(body.diagnoses[1].kind).toBe("suspicious");
+  });
+
+  it("支持 autoApply=true 傻瓜式一键全自动匹配垂类权威标杆并去重采纳最优平替更新 Manifest", async () => {
+    await seedPack("news-media-cn-test", "中文新闻资讯与深度阅读测试包", [
+      "https://127.0.0.1/dead-news-1",
+      "https://127.0.0.1/dead-news-2",
+    ]);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/news-media-cn-test/ai-heal",
+      payload: {
+        brokenUrls: ["https://127.0.0.1/dead-news-1", "https://127.0.0.1/dead-news-2"],
+        autoApply: true,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.autoApplied).toBeDefined();
+    expect(body.autoApplied.replacedCount).toBe(2);
+
+    const updated = await ctx.repo.getPluginBySlug("news-media-cn-test");
+    const sites = (updated?.manifest.payload as any).sites;
+    expect(sites).toHaveLength(2);
+    expect(sites[0].url).not.toContain("127.0.0.1");
+    expect(sites[1].url).not.toContain("127.0.0.1");
+    // 确保两条平替 URL 自动去重不重复
+    expect(sites[0].url).not.toBe(sites[1].url);
+  });
+});
+
+describe("POST /api/plugins/:slug/apply-health-fix", () => {
+  it("一键剔除死链并持久化更新 Manifest", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/health-done-pack/apply-health-fix",
+      payload: {
+        removeUrls: ["https://127.0.0.1/p1"],
+        replaceUrls: [{ oldUrl: "https://127.0.0.1/p2", newUrl: "https://example.com/clean", newTitle: "净网替换站" }],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(body.removedCount).toBe(1);
+    expect(body.replacedCount).toBe(1);
+    expect(body.remainingSites).toBe(1);
+
+    const plugin = await ctx.repo.getPluginBySlug("health-done-pack");
+    const sites = (plugin?.manifest.payload as any).sites;
+    expect(sites).toHaveLength(1);
+    expect(sites[0].url).toBe("https://example.com/clean");
+    expect(sites[0].title).toBe("净网替换站");
+  });
+});
+
+describe("治愈后不得伪造健康度（stale 语义）", () => {
+  beforeAll(async () => {
+    await seedPack("deep-stale-pack", "深检与待复检测试包", ["https://127.0.0.1/d1", "https://127.0.0.1/d2"]);
+  });
+
+  it("apply-health-fix 之后读取到 stale：健康计数全为 null，不写假快照", async () => {
+    const fix = await app.inject({
+      method: "POST",
+      url: "/api/plugins/deep-stale-pack/apply-health-fix",
+      payload: { removeUrls: ["https://127.0.0.1/d1"] },
+    });
+    expect(fix.statusCode).toBe(200);
+    expect(fix.json().stale).toBe(true);
+
+    const health = await app.inject({ method: "GET", url: "/api/plugins/deep-stale-pack/url-health" });
+    expect(health.statusCode).toBe(200);
+    const body = health.json();
+    expect(body.checked).toBe(true);
+    expect(body.stale).toBe(true);
+    // 这四项是本轮修复的核心：旧实现会写 reachability=1 / okCount=min(n,30)
+    expect(body.reachability).toBeNull();
+    expect(body.okCount).toBeNull();
+    expect(body.brokenCount).toBeNull();
+    expect(body.declared).toBe(1);
+    expect(body.caveat).toContain("没有有效的健康度数据");
+  });
+
+  it("批量快照同样把 stale 包置为无有效计数（不能回退到旧快照）", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins/url-health/summary" });
+    const entry = res.json().summaries["deep-stale-pack"];
+    expect(entry.stale).toBe(true);
+    expect(entry.auditedAt).toBeNull();
+    expect(entry.reachability).toBeNull();
+    expect(entry.okCount).toBeNull();
+  });
+});
+
+describe("POST /api/plugins/:slug/url-deep-diagnose", () => {
+  it("包外 URL 被拒（否则这个端点等于任意 URL 探活器）", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/deep-stale-pack/url-deep-diagnose",
+      payload: { url: "https://example.com/not-in-pack" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().message ?? res.json().error ?? "").toContain("不属于");
+  });
+
+  it("私网目标给出 SSRF 证据，而不是误判成「域名过期」", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/deep-stale-pack/url-deep-diagnose",
+      payload: { url: "https://127.0.0.1/d2" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.diagnosis.verdict).toBe("unreachable");
+    expect(body.diagnosis.evidence.some((e: any) => String(e.detail).includes("SSRF"))).toBe(true);
+    // DNS 解析是成功的，只是落在私网；不能记成 expired-domain
+    expect(body.diagnosis.verdict).not.toBe("expired-domain");
+  });
+
+  it("任何结论都带齐六层证据（缺层是 skip，不是缺失）", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/deep-stale-pack/url-deep-diagnose",
+      payload: { url: "https://127.0.0.1/d2" },
+    });
+    const layers = res.json().diagnosis.evidence.map((e: any) => e.layer);
+    for (const layer of ["url", "dns", "redirect", "http", "content", "wayback"]) {
+      expect(layers, `缺少 ${layer} 层`).toContain(layer);
+    }
+    // 未采集内容层：必须是 skip，不能伪装成 pass
+    const content = res.json().diagnosis.evidence.find((e: any) => e.layer === "content");
+    expect(content.status).toBe("skip");
+  });
+});
+
+describe("GET /api/plugins/:slug/url-health/history", () => {
+  it("stale 记录不参与趋势；真实体检后才产生有效点", async () => {
+    const before = await app.inject({ method: "GET", url: "/api/plugins/deep-stale-pack/url-health/history?limit=10" });
+    expect(before.statusCode).toBe(200);
+    const b = before.json();
+    expect(b.trend).toBe("insufficient");
+    expect(b.points).toHaveLength(0);
+    // 治愈写入的 stale 记录被跳过了 —— 这正是它不该污染趋势的证据
+    expect(b.skippedStale).toBeGreaterThan(0);
+
+    const audit = await app.inject({ method: "POST", url: "/api/plugins/deep-stale-pack/audit", payload: { limit: 2 } });
+    expect(audit.statusCode).toBe(200);
+
+    const after = await app.inject({ method: "GET", url: "/api/plugins/deep-stale-pack/url-health/history?limit=10" });
+    const a = after.json();
+    expect(a.points.length).toBe(1);
+    expect(a.points[0].reachability).toBe(0); // 私网全部不可达
+    expect(a.trend).toBe("insufficient"); // 单点无法判趋势，不能用 0 冒充「恶化」
+  });
+});
+
+describe("ai-heal 的 autoApply 写分支必须要求写权限", () => {
+  const authDir = mkdtempSync(join(tmpdir(), "navhub-audit-auth-"));
+  const BOOTSTRAP = "boot-audit-please-rotate";
+  let authCtx: AppContext;
+  let authApp: Awaited<ReturnType<typeof buildServer>>;
+
+  async function mint(name: string, scopes: string): Promise<string> {
+    const res = await authApp.inject({
+      method: "POST",
+      url: "/api/tokens",
+      payload: { name, scopes } as never,
+      headers: { authorization: "Bearer " + BOOTSTRAP },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json().token as string;
+  }
+
+  beforeAll(async () => {
+    const config = loadConfig({
+      mode: "lite",
+      sqlitePath: join(authDir, "audit-auth.db"),
+      embedding: { enabled: false },
+      authRequired: true,
+      bootstrapToken: BOOTSTRAP,
+    });
+    authCtx = await createContext(config);
+    authApp = await buildServer(authCtx);
+    await authApp.ready();
+    await authCtx.repo.createPlugin(
+      {
+        manifest: packManifest("鉴权测试网址包", ["https://127.0.0.1/s1", "https://127.0.0.1/s2"]),
+        slug: "auth-heal-pack",
+        status: "published",
+        source: "seed",
+        author: "测试",
+      },
+      { actor: "test", actorKind: "system" },
+    );
+  });
+
+  afterAll(async () => {
+    await authApp?.close();
+    await authCtx?.close();
+    rmSync(authDir, { recursive: true, force: true });
+  });
+
+  it("只读令牌带 autoApply → 403，且清单版本未被改动", async () => {
+    const readToken = await mint("只读体检令牌", "read");
+    const before = await authCtx.repo.getPluginBySlug("auth-heal-pack");
+
+    const res = await authApp.inject({
+      method: "POST",
+      url: "/api/plugins/auth-heal-pack/ai-heal",
+      payload: { brokenUrls: ["https://127.0.0.1/s1"], autoApply: true } as never,
+      headers: { authorization: "Bearer " + readToken },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe("forbidden_scope");
+
+    const after = await authCtx.repo.getPluginBySlug("auth-heal-pack");
+    expect(after?.manifest.version).toBe(before?.manifest.version);
+    expect((after?.manifest.payload as any).sites).toHaveLength(2);
+  });
+
+  it("只读令牌不带 autoApply 仍可诊断（读语义不被连坐），且诊断标注未实测", async () => {
+    const readToken = await mint("只读诊断令牌", "read");
+    const res = await authApp.inject({
+      method: "POST",
+      url: "/api/plugins/auth-heal-pack/ai-heal",
+      payload: { brokenUrls: ["https://127.0.0.1/s1"] } as never,
+      headers: { authorization: "Bearer " + readToken },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.autoApplied).toBeUndefined();
+    // 调用方声称的坏链没有实测证据：结论必须标 UNVERIFIED，不能借用 404 的措辞
+    expect(body.diagnoses[0].evidence.source).toBe("client-claimed");
+    expect(body.diagnoses[0].cause).toBe("UNVERIFIED");
+  });
+
+  it("包外 URL 被丢弃并回传（不能用任意 URL 诱导模型）", async () => {
+    const readToken = await mint("只读诊断令牌2", "read");
+    const res = await authApp.inject({
+      method: "POST",
+      url: "/api/plugins/auth-heal-pack/ai-heal",
+      payload: { brokenUrls: ["https://evil.example/x", "https://127.0.0.1/s2"] } as never,
+      headers: { authorization: "Bearer " + readToken },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ignoredUrls).toContain("https://evil.example/x");
+    expect(body.diagnoses.every((d: any) => d.url !== "https://evil.example/x")).toBe(true);
+  });
+});

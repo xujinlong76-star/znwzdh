@@ -295,8 +295,9 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
     file: "src/app/auth/signin/page.tsx",
     kind: "location",
     expr: "callbackUrl",
-    why: "callbackUrl 由 normalizeCallbackUrl 强制同源并收敛为 path+search+hash",
-    evidence: ["const callbackUrl = normalizeCallbackUrl(", "res?.ok"],
+    why:
+      "callbackUrl 由 normalizeCallbackUrl 强制同源并收敛为 path+search+hash，且只在 isSignInSuccess(res) 判定登录真成功后才赋值给 location.href",
+    evidence: ["const callbackUrl = normalizeCallbackUrl(", "if (isSignInSuccess(res)) {"],
   },
   // ---- 站内路径：值只由一个构造点生成，生成时就完成编码 ----
   {

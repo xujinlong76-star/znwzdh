@@ -1,0 +1,110 @@
+{
+  "base": "http://127.0.0.1:3213",
+  "login": {
+    "ok": true,
+    "status": 302,
+    "hasSessionCookie": true,
+    "user": {
+      "name": "本地管理员",
+      "email": "admin@navhub.local",
+      "image": "/assets/images/alogo.webp",
+      "id": "admin",
+      "role": "admin",
+      "provider": "credentials"
+    },
+    "error": null
+  },
+  "pages": [
+    {
+      "url": "/preferences",
+      "status": 200,
+      "shot": "deliverables\\web-audit\\shots\\auth-preferences.png",
+      "textLen": 579,
+      "bodyHint": "跳到主要内容 概览 账号 工作空间 收藏 搜索历史 插件 偏好与 AI 设置 金库 数据与隐私 通知 返回主页 个性化偏好 我的偏好 搜索会根据你的浏览与收藏做轻量个性化重排。这里是系统据你的行为推断出的内容——看得见，才可以控制。 全局导航与隐私设置 管理搜索历史 加载中… AI 与扩展 模型与密钥配置，只",
+      "error": null
+    },
+    {
+      "url": "/me/notifications",
+      "status": 200,
+      "shot": "deliverables\\web-audit\\shots\\auth-me-notifications.png",
+      "textLen": 293,
+      "bodyHint": "跳到主要内容 概览 账号 工作空间 收藏 搜索历史 插件 偏好与 AI 设置 金库 数据与隐私 通知 用户中心 通知 同步失败、备份提醒等站内消息。通知只发给你自己的身份，不含营销内容。 还没有通知 出现同步失败、备份超期等情况时，这里会收到提醒。 主页 · 用户中心 · 我的收藏 (E2EE) · 技术生态图",
+      "error": null
+    },
+    {
+      "url": "/me/workspaces",
+      "status": 200,
+      "shot": "deliverables\\web-audit\\shots\\auth-me-workspaces.png",
+      "textLen": 654,
+      "bodyHint": "跳到主要内容 概览 账号 工作空间 收藏 搜索历史 插件 偏好与 AI 设置 金库 数据与隐私 通知 用户中心 协作 工作空间 个人空间与团队空间、成员角色（所有者 / 管理员 / 成员 / 只读）都在这里管理。 新建空间 个人私有空间 个人空间 · 1 位成员 您的专属私密导航空间，仅本人可见 所有者 全",
+      "error": null
+    },
+    {
+      "url": "/me",
+      "status": 200,
+      "shot": "deliverables\\web-audit\\shots\\auth-me.png",
+      "textLen": 1405,
+      "bodyHint": "跳到主要内容 概览 账号 工作空间 收藏 搜索历史 插件 偏好与 AI 设置 金库 数据与隐私 通知 账户与数据 用户中心 账号身份、收藏、历史、插件、个性化偏好与数据管理，从这里统一进入。 刷新 已把你在本机保存的偏好同步到云端，换设备登录后会跟随。 知道了 本地管理员 local admin@navhub",
+      "error": null
+    }
+  ],
+  "endpoints": {
+    "llm-usage": [
+      {
+        "page": "/preferences",
+        "status": 200,
+        "url": "/api/me/llm-usage"
+      }
+    ],
+    "notifications": [
+      {
+        "page": "/me/notifications",
+        "status": 200,
+        "url": "/api/me/notifications?limit=20&offset=0"
+      }
+    ],
+    "workspace-members": [
+      {
+        "page": "/me/workspaces",
+        "status": 200,
+        "url": "/api/hub/workspaces/ws-personal/members"
+      }
+    ]
+  },
+  "badResponses": [],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "anonymousContrast": {
+    "page": "/me/notifications",
+    "protectedRequests": 0,
+    "urls": []
+  },
+  "summary": {
+    "loginOk": true,
+    "user": "admin",
+    "endpoints": {
+      "llm-usage": {
+        "calls": 1,
+        "statuses": [
+          200
+        ]
+      },
+      "notifications": {
+        "calls": 1,
+        "statuses": [
+          200
+        ]
+      },
+      "workspace-members": {
+        "calls": 1,
+        "statuses": [
+          200
+        ]
+      }
+    },
+    "badResponses": 0,
+    "consoleErrors": 0,
+    "pageErrors": 0,
+    "anonProtectedRequests": 0
+  }
+}

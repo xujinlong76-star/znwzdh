@@ -60,7 +60,8 @@ export default function AdminPluginHealthPage() {
               <h1 className="text-2xl font-bold tracking-tight">插件网址智能体检与 AI 自愈</h1>
             </div>
             <p className="text-xs sm:text-sm text-muted-foreground max-w-2xl">
-              针对全市场网址包执行真实探活、L2 文本级信息熵与停放防劫持研判，并联动后端大模型与 Wayback Machine 历史镜像输出自愈平替方案。
+              针对全市场网址包执行真实探活、L2 文本级信息熵与停放防劫持研判；坏链由后端大模型给出平替方案
+              （模型不可用时自动降级为平台生态基准），并附 Wayback 历史快照入口供人工核对。
             </p>
           </div>
         </div>

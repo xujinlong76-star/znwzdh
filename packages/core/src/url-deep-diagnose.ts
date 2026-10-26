@@ -55,6 +55,14 @@ export interface DeepProbeObservations {
   redirects?: string[];
   /** 响应体样本（截断后的前若干 KB） */
   bodySample?: string;
+  /**
+   * 样本是否被采集上限截断。
+   *
+   * 必须单独传：从 `bodySample` 自身看不出它是不是完整的（16KB 的响应和
+   * 被截到 16KB 的 1MB 响应长得一样）。内容层对「正文太短」的判断只在完整
+   * 响应时成立——截断时那只是「还没读到正文」，不是「页面没有正文」。
+   */
+  truncated?: boolean;
   /** 连接层错误信息（原始） */
   error?: string;
   /** 失败原因归类，与 plugin-audit 的 ProbeFailureKind 同口径 */
@@ -134,6 +142,18 @@ function safeHost(url: string | undefined): string | null {
 function isParkingHost(hostname: string): boolean {
   const h = hostname.toLowerCase()
   return PARKING_HOSTS.some((p) => h === p || h.endsWith("." + p))
+}
+
+/**
+ * 响应能否按文本解析（决定内容级检测是否成立）。
+ *
+ * 未声明 Content-Type 时按文本处理：大量小站/老站不返回这个头，
+ * 一律跳过会让内容检测在最需要它的地方反而失效。
+ */
+export function isTextualContentType(contentType: string | null | undefined): boolean {
+  if (!contentType) return true
+  const ct = contentType.toLowerCase()
+  return ct.includes("html") || ct.includes("xml") || ct.startsWith("text/")
 }
 
 /** 单个证据 → 置信度增量（只在结论方向一致时累加） */
@@ -318,8 +338,16 @@ export function diagnoseUrlDeep(obs: DeepProbeObservations): DeepDiagnosis {
   let contentStatus: DeepLayerStatus = "skip"
   let contentVerdict: DeepVerdict | null = null
   const body = obs.bodySample
-  if (typeof body === "string" && body.length > 0) {
-    const health = auditPageHealth(rawUrl, body)
+  /**
+   * 正文检测只对可解析为文本的响应有意义。
+   *
+   * PDF/图片/压缩包的字节被 TextDecoder 解成大量 U+FFFD 之后，字符分布极其集中，
+   * Shannon 熵会低到 2.0 以下——于是「下载直链」被判定成「域名停放」。
+   * 这是纯误判，而且后果是把这个站点标为可疑并可能被替换掉。
+   */
+  const textual = isTextualContentType(obs.contentType)
+  if (typeof body === "string" && body.length > 0 && textual) {
+    const health = auditPageHealth(rawUrl, body, undefined, undefined, { truncated: obs.truncated === true })
     contentFacts = {
       shannonEntropy: health.shannonEntropy,
       textLength: health.textLength,
@@ -335,8 +363,25 @@ export function diagnoseUrlDeep(obs: DeepProbeObservations): DeepDiagnosis {
       contentVerdict = "soft-404"
       pushEvidence(evidence, "content", "fail", health.reason)
     } else if (health.status === "THIN_CONTENT") {
-      contentStatus = "warn"
-      pushEvidence(evidence, "content", "warn", health.reason)
+      /**
+       * 截断状态下的 THIN 不算结论。
+       *
+       * 实测：nextjs.org 前 8192 字符里正文只有 134 个，gov.cn 有 5048 个——
+       * 同一个 60 字符阈值，两个都是正常站点，差别只在前 8KB 有多少 inline CSS。
+       * 被上限截断时「正文太少」只说明没读到，不说明没有，所以降为 skip 并写清原因。
+       */
+      if (obs.truncated === true) {
+        contentStatus = "skip"
+        pushEvidence(
+          evidence,
+          "content",
+          "skip",
+          `响应在采集上限处被截断（已读 ${health.textLength} 字正文），正文量无法判定`,
+        )
+      } else {
+        contentStatus = "warn"
+        pushEvidence(evidence, "content", "warn", health.reason)
+      }
     } else {
       contentStatus = "pass"
       pushEvidence(
@@ -346,6 +391,15 @@ export function diagnoseUrlDeep(obs: DeepProbeObservations): DeepDiagnosis {
         `内容正常：正文 ${health.textLength} 字，信息熵 ${health.shannonEntropy.toFixed(2)}`,
       )
     }
+  } else if (typeof body === "string" && body.length > 0) {
+    // 有响应体但不是可解析文本（PDF/图片/压缩包）：内容级判定不成立，
+    // 硬跑会把二进制乱码的低熵误读成「停放页」。如实标 skip 并说明原因。
+    pushEvidence(
+      evidence,
+      "content",
+      "skip",
+      `响应类型 ${obs.contentType ?? "未知"} 不是可解析文本，跳过正文检测（下载直链常被误判为停放页）`,
+    )
   } else {
     pushEvidence(evidence, "content", "skip", "未采集响应体，跳过内容级防劫持检测")
   }
@@ -364,7 +418,7 @@ export function diagnoseUrlDeep(obs: DeepProbeObservations): DeepDiagnosis {
       pushEvidence(evidence, "wayback", "pass", `最近归档年份 ${obs.waybackLatestYear}`)
     }
   } else {
-    pushEvidence(evidence, "wayback", "skip", "未查询 Wayback 归档")
+    pushEvidence(evidence, "wayback", "skip", "未查询 Wayback 归档（可用下方「查看历史快照」链接按需查看）")
   }
 
   // ── 7. 结论 ───────────────────────────────────────────────────
@@ -419,7 +473,7 @@ const MISSING_LAYER_REASONS: Record<DeepLayer, string> = {
   redirect: "未建立连接，未观察到重定向",
   http: "未获得 HTTP 响应",
   content: "未采集响应体，跳过内容级检测",
-  wayback: "未查询 Wayback 归档",
+  wayback: "未查询 Wayback 归档（可用下方「查看历史快照」链接按需查看）",
 }
 
 const LAYER_ORDER: DeepLayer[] = ["url", "dns", "redirect", "http", "content", "wayback"]
@@ -481,10 +535,20 @@ export interface ReachabilityTrend {
  * 阈值 0.005/次 的意思是「连续 20 次体检才变化 10 个百分点」，低于此视为稳定。
  */
 export function computeReachabilityTrend(points: readonly ReachabilityPoint[]): ReachabilityTrend {
-  const valid = points.filter(
-    (p): p is { at: number; reachability: number } =>
-      typeof p.reachability === "number" && Number.isFinite(p.reachability),
-  )
+  const valid = points
+    .filter(
+      (p): p is { at: number; reachability: number } =>
+        typeof p.reachability === "number" && Number.isFinite(p.reachability),
+    )
+    /**
+     * 必须按时间正序排。
+     *
+     * 斜率是拿「数组下标」当 x 轴算的，方向完全取决于入参顺序；而体检历史几乎总是
+     * 从 audit_logs 倒序查出来的（ORDER BY id DESC）。调用方某次忘了 reverse，
+     * 「持续变好」会被算成「持续变差」——而且结果看起来一样合理，没人会发现。
+     * 排序放在这里比在每个调用方写 reverse 可靠。
+     */
+    .sort((a, b) => a.at - b.at)
   if (valid.length < 2) {
     return { trend: "insufficient", slope: 0, delta: 0, points: valid.length }
   }

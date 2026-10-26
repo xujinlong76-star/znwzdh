@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeReachabilityTrend,
   diagnoseUrlDeep,
+  isTextualContentType,
   registrableDomain,
   type DeepProbeObservations,
 } from "../src/url-deep-diagnose.ts";
@@ -166,6 +167,83 @@ describe("内容层：停放页与软 404", () => {
     const warn = d.evidence.find((e) => e.layer === "http" && e.status === "warn")
     expect(warn?.detail).toContain("application/pdf")
   })
+
+  /**
+   * 截断感知。
+   *
+   * 起因是一次实测：10 个真实站点按 8KB 采集，nextjs.org 前 8192 字符里正文只有 134 个，
+   * gov.cn 有 5048 个——同样过 THIN_CONTENT 的 60 字阈值，差别只在前 8KB 里塞了多少 inline CSS。
+   * 所以「正文少」在截断状态里根本不是证据，只是还没读到。
+   */
+  it("响应被截断时，正文过少只记 skip 并说明原因，不下「内容匮乏」的结论", () => {
+    const thinHtml = '<html><head><title>loading</title></head><body><div id="root"></div></body></html>'
+    const truncated = diagnoseUrlDeep({
+      ...base,
+      bodySample: thinHtml,
+      truncated: true,
+    })
+    const layer = truncated.evidence.find((e) => e.layer === "content")
+    expect(layer?.status).toBe("skip")
+    expect(layer?.detail).toContain("截断")
+
+    // 同一个 HTML，若响应是完整的，那才是真的薄 → warn
+    const complete = diagnoseUrlDeep({ ...base, bodySample: thinHtml })
+    expect(complete.evidence.find((e) => e.layer === "content")?.status).toBe("warn")
+  })
+
+  it("截断只削弱「正文少」这一条，多个停放词命中仍照常判 fail", () => {
+    // 注意：`domain is for sale` 并不包含关键词 `domain for sale`（多个 is），
+    // 这里必须用真正命中 ≥2 个关键词的样本，否则测的是「1 个词 + 短正文」那条弱规则。
+    const parked =
+      "<html><body>This domain for sale. Inquire about this domain today. Additional filler text for length.</body></html>"
+    const d = diagnoseUrlDeep({ ...base, bodySample: parked, truncated: true })
+    expect(d.verdict).toBe("parked")
+    expect(d.evidence.find((e) => e.layer === "content")?.status).toBe("fail")
+  })
+
+  /**
+   * 单个关键词 + 截断，不再判停放。
+   *
+   * 实测背景：MDN 的「403 Forbidden」说明页正文只有 150 字（前 8KB 几乎全是标记与脚本），
+   * 命中 1 个 `forbidden`，旧规则据此判「疑似停放」——文档页被当成域名出售页。
+   * 判据是：能超过 8KB HTML 的页面不可能是「一页域名出售」，正文长度在截断样本上不代表内容量。
+   */
+  it("单个关键词 + 响应截断，不判停放（避免把技术文档当停放页）", () => {
+    const docpage =
+      "<html><body>HTTP 403 Forbidden 表示服务器理解了请求但拒绝执行。" +
+      "常见原因包括身份验证失败、权限不足、来源 IP 被限制、防盗链策略，以及访问控制列表拦截。" +
+      "处理方式是检查凭据与授权配置。</body></html>"
+    const d = diagnoseUrlDeep({ ...base, bodySample: docpage, truncated: true })
+    expect(d.verdict).not.toBe("parked")
+    expect(d.evidence.find((e) => e.layer === "content")?.status).not.toBe("fail")
+  })
+
+  /**
+   * 下载直链的误判路径。
+   *
+   * PDF/图片的字节经 TextDecoder 解码后是大量 U+FFFD，字符分布高度集中，
+   * Shannon 熵必然很低 —— 如果照常跑正文检测，就会得出「疑似域名停放」。
+   * 一个正常的 PDF 下载被标成停放页，随后还会被自动替换掉。
+   */
+  it("PDF 等非文本响应不做正文判定，不能因低熵被判成停放", () => {
+    const binaryish = "%PDF-1.4\n" + "\uFFFD".repeat(400)
+    const d = diagnoseUrlDeep({ ...base, contentType: "application/pdf", bodySample: binaryish })
+    expect(d.verdict).not.toBe("parked")
+    const layer = d.evidence.find((e) => e.layer === "content")
+    expect(layer?.status).toBe("skip")
+    expect(layer?.detail).toContain("不是可解析文本")
+  })
+
+  it("isTextualContentType：未声明按文本处理，二进制类型一律跳过", () => {
+    expect(isTextualContentType(undefined)).toBe(true)
+    expect(isTextualContentType(null)).toBe(true)
+    expect(isTextualContentType("text/html; charset=utf-8")).toBe(true)
+    expect(isTextualContentType("application/xhtml+xml")).toBe(true)
+    expect(isTextualContentType("text/plain")).toBe(true)
+    expect(isTextualContentType("application/pdf")).toBe(false)
+    expect(isTextualContentType("image/png")).toBe(false)
+    expect(isTextualContentType("application/zip")).toBe(false)
+  })
 });
 
 describe("重定向层", () => {
@@ -291,5 +369,25 @@ describe("可达率趋势：斜率而非首尾差", () => {
     ])
     expect(t.points).toBe(2)
     expect(t.trend).toBe("improving")
+  })
+
+  /**
+   * 斜率以下标为 x 轴，方向完全取决于入参顺序。
+   * 体检历史是从 audit_logs 倒序查出来的，调用方漏了 reverse 就会把
+   * 「持续恶化」读成「持续改善」——而且两种结论看起来同样合理，不会被发现。
+   */
+  it("倒序传入也得出同一方向（排序由函数自己保证）", () => {
+    const ascending = [
+      { at: 1, reachability: 0.9 },
+      { at: 2, reachability: 0.8 },
+      { at: 3, reachability: 0.7 },
+    ]
+    const descending = [...ascending].reverse()
+    const a = computeReachabilityTrend(ascending)
+    const d = computeReachabilityTrend(descending)
+    expect(a.trend).toBe("degrading")
+    expect(d.trend).toBe("degrading")
+    expect(d.slope).toBeCloseTo(a.slope, 4)
+    expect(d.delta).toBeCloseTo(a.delta, 4)
   })
 });

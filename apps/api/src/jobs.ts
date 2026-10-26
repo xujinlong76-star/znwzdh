@@ -779,7 +779,7 @@ export class JobRunner {
         let reason: string | null = null;
 
         if (healthy && res.body) {
-          const audit = auditPageHealth(site!.url, res.body);
+          const audit = auditPageHealth(site!.url, res.body, undefined, undefined, { truncated: res.truncated });
           if (audit.status === "SUSPICIOUS_PARKED" || audit.status === "SOFT_404") {
             healthy = false;
             reason = `伪健康识别: ${audit.reason}`;

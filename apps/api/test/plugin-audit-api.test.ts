@@ -219,6 +219,16 @@ describe("POST /api/plugins/:slug/ai-heal", () => {
     expect(body.ok).toBe(true);
     expect(body.autoApplied).toBeDefined();
     expect(body.autoApplied.replacedCount).toBe(2);
+    /*
+      removedUrls 必须始终是数组（本例全是替换 → 空数组）。
+      调用方靠 items.map(oldUrl) + removedUrls 推导「哪些真的被处理了」；
+      若剔除项无处可查，前端只能把提报过的死链统统标成已解决。
+    */
+    expect(body.autoApplied.removedUrls).toEqual([]);
+    expect(body.autoApplied.items.map((i: any) => i.oldUrl).sort()).toEqual([
+      "https://127.0.0.1/dead-news-1",
+      "https://127.0.0.1/dead-news-2",
+    ]);
 
     const updated = await ctx.repo.getPluginBySlug("news-media-cn-test");
     const sites = (updated?.manifest.payload as any).sites;
@@ -330,6 +340,20 @@ describe("POST /api/plugins/:slug/url-deep-diagnose", () => {
     // 未采集内容层：必须是 skip，不能伪装成 pass
     const content = res.json().diagnosis.evidence.find((e: any) => e.layer === "content");
     expect(content.status).toBe("skip");
+  });
+
+  it("被安全策略拦下时，延迟是 null 而不是「0ms 秒回」", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/plugins/deep-stale-pack/url-deep-diagnose",
+      payload: { url: "https://127.0.0.1/d2" },
+    });
+    expect(res.statusCode).toBe(200);
+    const { observed } = res.json();
+    // 压根没发起 HTTP 连接。写 0 会让界面显示「延迟 0ms」，读起来像「瞬间响应」。
+    expect(observed.latencyMs).toBeNull();
+    expect(observed.status).toBeNull();
+    expect(observed.bodyBytes).toBe(0);
   });
 });
 
@@ -446,5 +470,31 @@ describe("ai-heal 的 autoApply 写分支必须要求写权限", () => {
     const body = res.json();
     expect(body.ignoredUrls).toContain("https://evil.example/x");
     expect(body.diagnoses.every((d: any) => d.url !== "https://evil.example/x")).toBe(true);
+  });
+
+  it("只读令牌带 autoAudit（无明细）→ 403：不能把服务端当批量探活器", async () => {
+    const readToken = await mint("只读探活令牌", "read");
+    const res = await authApp.inject({
+      method: "POST",
+      url: "/api/plugins/auth-heal-pack/ai-heal",
+      payload: { autoAudit: true, sampleLimit: 200 } as never,
+      headers: { authorization: "Bearer " + readToken },
+    });
+    // 与 POST /:slug/audit 同为「对整包发起 N 次外链探活」，门槛必须一致
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe("forbidden_scope");
+  });
+
+  it("包外 URL 全部被过滤、又开了 autoAudit → 仍然 403（口径在过滤之后）", async () => {
+    const readToken = await mint("只读探活令牌2", "read");
+    const res = await authApp.inject({
+      method: "POST",
+      url: "/api/plugins/auth-heal-pack/ai-heal",
+      // 明细非空，但全是包外地址 → 过滤后为空 → 实际会走 autoAudit 分支
+      payload: { brokenUrls: ["https://evil.example/a"], autoAudit: true } as never,
+      headers: { authorization: "Bearer " + readToken },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe("forbidden_scope");
   });
 });

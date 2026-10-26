@@ -134,7 +134,7 @@ export interface ReplacementCandidate {
   latencyMs?: number
   source?: 'ai' | 'catalog' | 'search'
   /** 探活四档：verified 才是真通过；blocked 无法验证内容；suspicious 是停放页 */
-  grade?: 'verified' | 'blocked' | 'suspicious' | 'dead'
+  grade?: 'verified' | 'blocked' | 'unverified' | 'suspicious' | 'dead'
   gradeReason?: string
   confidence?: CandidateConfidence
 }
@@ -186,7 +186,8 @@ export interface DeepDiagnoseResult {
     finalUrl: string | null
     contentType: string | null
     redirects: string[]
-    latencyMs: number
+    /** null = 根本没发起 HTTP 连接（例如被安全策略拦下），不是「0ms 秒回」 */
+    latencyMs: number | null
     dnsOk?: boolean
     bodyBytes: number
   }
@@ -236,6 +237,8 @@ export interface AiHealResult {
       verified?: boolean
       confidence?: CandidateConfidence
     }>
+    /** 实际被剔除的 URL（items 只装替换项，剔除的原来无处可查） */
+    removedUrls?: string[]
   }
   /** 不属于本包、被后端拒绝处理的 URL */
   ignoredUrls?: string[]
@@ -292,6 +295,8 @@ const AUTO_APPLY_REASON_LABELS: Record<string, string> = {
 const CANDIDATE_GRADE_META: Record<string, { label: string; className: string }> = {
   verified: { label: '实测可达', className: 'text-emerald-600 border-emerald-500/40 bg-emerald-500/10' },
   blocked: { label: '拒绝爬虫·未验证', className: 'text-sky-600 border-sky-500/40 bg-sky-500/10' },
+  // 超时/连接中断只说明「这次没测到」，不能写成「不可达」——那是把没测准说成确认下线
+  unverified: { label: '未能验证', className: 'text-slate-600 border-slate-400/40 bg-slate-500/10' },
   suspicious: { label: '疑似停放', className: 'text-amber-600 border-amber-500/40 bg-amber-500/10' },
   dead: { label: '不可达', className: 'text-rose-600 border-rose-500/40 bg-rose-500/10' },
 }
@@ -334,7 +339,9 @@ function getHealthBadge(
   stale = false,
 ): { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' } {
   if (stale) return { label: '待复检', variant: 'outline' }
-  if (rate === null || rate === undefined) return { label: '从未体检', variant: 'outline' }
+  // 与筛选按钮同一口径：null 既可能是没体检过，也可能是体检了但样本为 0（total=0），
+  // 一律说「从未体检」会把后者说错，也会和「无有效数据」的筛选语义打架。
+  if (rate === null || rate === undefined) return { label: '无有效数据', variant: 'outline' }
   const percent = Math.round(rate * 100)
   if (percent >= 90 && brokenCount === 0 && suspiciousCount === 0) {
     return { label: `${percent}% 健康`, variant: 'default' }
@@ -343,6 +350,18 @@ function getHealthBadge(
     return { label: `${percent}% 需关注`, variant: 'secondary' }
   }
   return { label: `${percent}% 异常`, variant: 'destructive' }
+}
+
+/**
+ * 从 autoApplied 推导「真的被处理掉的 URL」。
+ *
+ * 不能直接用提报列表：后端只为「找到通过实测的候选」的站点做替换，
+ * 找不到候选的死链会原样留在清单里。若按提报列表标记「已解决」，
+ * 没修好的死链会在界面上一并消失——这正是本次要根治的「用推算冒充实测」。
+ */
+function appliedUrlsOf(auto: AiHealResult['autoApplied']): string[] {
+  if (!auto) return []
+  return [...(auto.items ?? []).map((it) => it.oldUrl), ...(auto.removedUrls ?? [])]
 }
 
 /** 一键复制按钮组件 */
@@ -684,9 +703,16 @@ const PackRowItem = memo(function PackRowItem({
 
               <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground border-t pt-1.5">
                 <span>HTTP {deepResult.observed.status ?? '—'}</span>
-                <span>延迟 {deepResult.observed.latencyMs}ms</span>
+                {/* null 时不能写「延迟 0ms」：那是「没连过」，不是「秒回」 */}
+                <span>
+                  {deepResult.observed.latencyMs === null
+                    ? '未发起连接'
+                    : `延迟 ${deepResult.observed.latencyMs}ms`}
+                </span>
                 <span>重定向 {deepResult.observed.redirects.length} 跳</span>
-                <span>采样 {deepResult.observed.bodyBytes} 字节</span>
+                {deepResult.observed.bodyBytes > 0 && (
+                  <span>采样 {deepResult.observed.bodyBytes} 字节</span>
+                )}
                 <a
                   href={safeHref(deepResult.waybackUrl)}
                   target="_blank"
@@ -699,11 +725,29 @@ const PackRowItem = memo(function PackRowItem({
 
               {deepResult.diagnosis.actions.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
-                  {deepResult.diagnosis.actions.map((action) => (
-                    <Badge key={action.id} variant="secondary" className="text-[10px] font-normal">
-                      {action.label}
-                    </Badge>
-                  ))}
+                  {/*
+                    archive 建议必须可点：它给的是「去查历史快照」这个动作，
+                    渲染成不可点的徽标等于给了一个按不动的按钮，用户只能自己往上找链接。
+                    其余 kind（replace/remove/manual）是待确认的处置建议，不能一键执行，保持徽标。
+                  */}
+                  {deepResult.diagnosis.actions.map((action) =>
+                    action.kind === 'archive' ? (
+                      <a
+                        key={action.id}
+                        href={safeHref(deepResult.waybackUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 rounded border border-border/70 bg-background px-1.5 py-0.5 text-[10px] font-normal hover:bg-muted/40"
+                      >
+                        {action.label}
+                        <ExternalLink className="h-2.5 w-2.5" />
+                      </a>
+                    ) : (
+                      <Badge key={action.id} variant="secondary" className="text-[10px] font-normal">
+                        {action.label}
+                      </Badge>
+                    )
+                  )}
                 </div>
               )}
             </div>
@@ -745,6 +789,15 @@ const PackRowItem = memo(function PackRowItem({
                 <span className="text-muted-foreground">（{reasonSummary(auditResult.brokenByReason)}）</span>
               )}
             </div>
+          ) : snap?.stale ? (
+            /*
+              刷新页面后 results 是空的，但 history 里那条 stale 会带回「待复检」。
+              此时若沿用「尚未运行过抽样体检」，同一块区域会同时出现
+              「清单被改过、没有有效测量值」和「还没体检过」两句互相矛盾的话。
+            */
+            <p className="text-muted-foreground">
+              清单在上次体检后被修改过，当前没有可用的测量值；请重新体检取回真实数字。
+            </p>
           ) : (
             <p className="text-muted-foreground">该网址包尚未运行过抽样体检，请点击「抽样体检」或「一键自动平替」开始探测。</p>
           )}
@@ -752,26 +805,65 @@ const PackRowItem = memo(function PackRowItem({
           {/* 历史趋势：按需加载，stale 包不显示（它没有有效测量值） */}
           {snap && !snap.stale && (
             <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              {trend ? (
+              {/*
+                三种状态必须分开，不能共用一套渲染：
+                  1) 没有有效测量值 —— 画空柱图会被读成「连续 0 次体检」，要说清楚；
+                  2) 有数据 —— null 点单独用中性灰，绝不能落进 rose（恶化语义）；
+                  3) 还没加载 —— 给按钮。
+                reachability 为 null 表示「这次没有分母」（total=0），不是「0% 可达」。
+              */}
+              {trend && trend.validPoints === 0 ? (
                 <>
-                  <span className="text-muted-foreground">近 {trend.points.length} 次体检</span>
+                  <span className="text-muted-foreground">
+                    {trend.points.length === 0 ? '暂无体检历史' : '历史记录里没有有效测量值'}
+                    {trend.skippedStale > 0 ? `（已排除 ${trend.skippedStale} 条待复检记录）` : ''}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-1.5 text-[10px] gap-1"
+                    disabled={isTrendLoading}
+                    onClick={() => onLoadTrend(pack.slug)}
+                    aria-label={`重新加载 ${pack.name} 的体检历史趋势`}
+                  >
+                    {isTrendLoading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <History className="h-3 w-3" />
+                    )}
+                    重新加载
+                  </Button>
+                </>
+              ) : trend ? (
+                <>
+                  <span className="text-muted-foreground">近 {trend.validPoints} 次有效体检</span>
                   <div
                     className="flex items-end gap-0.5 h-6"
                     role="img"
-                    aria-label={`可达率趋势：${TREND_META[trend.trend]?.label ?? trend.trend}，共 ${trend.points.length} 个数据点`}
+                    aria-label={`可达率趋势：${TREND_META[trend.trend]?.label ?? trend.trend}，共 ${trend.validPoints} 个有效数据点`}
                   >
-                    {trend.points.map((point) => {
-                      const rate = point.reachability ?? 0
+                    {trend.points.map((point, pointIdx) => {
+                      const pct =
+                        point.reachability === null ? null : Math.round(point.reachability * 100)
+                      const tone =
+                        pct === null
+                          ? 'bg-muted-foreground/25'
+                          : pct >= 90
+                            ? 'bg-emerald-500'
+                            : pct >= 70
+                              ? 'bg-amber-400'
+                              : 'bg-rose-500'
                       return (
                         <div
-                          key={point.at}
-                          className={`w-1.5 rounded-sm ${
-                            rate >= 0.9 ? 'bg-emerald-500' : rate >= 0.7 ? 'bg-amber-400' : 'bg-rose-500'
-                          }`}
-                          style={{ height: `${Math.max(8, Math.round(rate * 100))}%` }}
-                          title={`${formatRelativeTime(point.at)}：${
-                            point.reachability === null ? '无数据' : `${Math.round(point.reachability * 100)}%`
-                          }`}
+                          /* at 是毫秒时间戳，同毫秒两次写入会撞 key，带上下标兜底 */
+                          key={`${point.at}-${pointIdx}`}
+                          className={`w-1.5 rounded-sm ${tone}`}
+                          style={{ height: pct === null ? '8%' : `${Math.max(8, pct)}%` }}
+                          title={
+                            pct === null
+                              ? `${formatRelativeTime(point.at)}：本次无有效测量值`
+                              : `${formatRelativeTime(point.at)}：${pct}%`
+                          }
                         />
                       )
                     })}
@@ -1612,6 +1704,25 @@ export function PluginUrlHealthPanel() {
           },
         }
       })
+      /**
+       * 清单被改写后，旧的深检证据与趋势缓存立刻过期。
+       *
+       * 不清理会出现本功能最自相矛盾的一种界面：横幅写着「健康度待复检（没有有效测量值）」，
+       * 下面却挂着修复前那份「确认不可达」的六层证据，旁边还是修复前的趋势柱——
+       * 用户没法判断眼前这些结论说的是旧 URL 还是新 URL。
+       */
+      setDeepResults((prev) => {
+        if (!(slug in prev)) return prev
+        const next = { ...prev }
+        delete next[slug]
+        return next
+      })
+      setTrendResults((prev) => {
+        if (!(slug in prev)) return prev
+        const next = { ...prev }
+        delete next[slug]
+        return next
+      })
     },
     [],
   )
@@ -1680,6 +1791,8 @@ export function PluginUrlHealthPanel() {
   /** 加载某包的历史趋势（最多取 12 次体检，足够看方向） */
   const loadTrend = useCallback(async (slug: string) => {
     setTrendLoading(slug)
+    // 与其他操作一致：先清掉上一条错误，否则「重试成功」后旧报错还挂在页面上
+    setError(null)
     try {
       const res = await hubGet<HealthTrendResult>(
         `/plugins/${encodeURIComponent(slug)}/url-health/history?limit=12`,
@@ -1833,7 +1946,12 @@ export function PluginUrlHealthPanel() {
             const names = healRes.autoApplied.items.slice(0, 3).map((it) => it.newTitle).join('、')
             markPackUrlsHealed(
               pack.slug,
-              [...brokenUrls, ...suspiciousUrls],
+              /*
+                只标记后端实际处理过的 URL。按 [...brokenUrls, ...suspiciousUrls] 标记
+                会把「没找到合格候选、仍留在清单里」的死链也标成已解决——界面上一片
+                「已修复」，实际死链还在。
+              */
+              appliedUrlsOf(healRes.autoApplied),
               healRes.autoApplied.replacedCount,
               healRes.autoApplied.removedCount,
               healRes.autoApplied.remainingSites,
@@ -2080,7 +2198,8 @@ export function PluginUrlHealthPanel() {
         if (healRes.autoApplied && (healRes.autoApplied.replacedCount > 0 || healRes.autoApplied.removedCount > 0)) {
           markPackUrlsHealed(
             slug,
-            [...brokenUrls, ...suspiciousUrls],
+            // 同上：只标真正处理掉的，未找到候选的死链必须继续显示为待处理
+            appliedUrlsOf(healRes.autoApplied),
             healRes.autoApplied.replacedCount,
             healRes.autoApplied.removedCount,
             healRes.autoApplied.remainingSites,

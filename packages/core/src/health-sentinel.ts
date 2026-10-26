@@ -311,7 +311,26 @@ export interface HealthAuditResult {
   textLength: number;
   matchedParkingKeywords: string[];
   minHammingDistance?: number;
+  /** 本次判定是否建立在「被截断的响应体」之上（true 时正文长度类结论不可信） */
+  truncated?: boolean;
   reason: string;
+}
+
+/**
+ * 内容判定的可选事实。
+ *
+ * 为什么需要它（实测缺陷）：采集器只读前 8KB，而判定逻辑里
+ * 「命中 1 个停放关键词且正文 < 300 字」→ 判疑似停放。
+ * 在截断的响应上，正文长度是**采集宽度**而不是**页面内容量**，于是
+ * MDN 的「403 Forbidden」说明页（正文 150 字）被判成了疑似停放的域名页。
+ *
+ * 反过来说，能超过 8KB HTML 的页面不可能是「一页域名出售」——
+ * 截断本身就是「这站有大量标记」的证据。所以截断时只保留强证据
+ * （≥2 个关键词、视觉哈希吻合），不再用正文长度做加权。
+ */
+export interface HealthAuditOptions {
+  /** 响应体是否被截断（只采集到前若干 KB） */
+  truncated?: boolean;
 }
 
 /**
@@ -321,12 +340,14 @@ export function auditPageHealth(
   url: string,
   htmlContent: string,
   perceptualHash?: string,
-  knownBadHashes?: string[]
+  knownBadHashes?: string[],
+  options?: HealthAuditOptions
 ): HealthAuditResult {
   const plainText = stripHtmlToText(htmlContent);
   const textLength = plainText.length;
   const entropy = calculateShannonEntropy(plainText);
   const lowerText = plainText.toLowerCase();
+  const truncated = options?.truncated === true;
 
   // 1. 命中停放/404关键词
   const matchedKeywords = DOMAIN_PARKING_KEYWORDS.filter((kw) => lowerText.includes(kw));
@@ -345,13 +366,19 @@ export function auditPageHealth(
       confidence: 0.95,
       shannonEntropy: entropy,
       textLength,
+      truncated,
       matchedParkingKeywords: matchedKeywords,
       minHammingDistance: minDistance,
       reason: `视觉感知哈希与已知停放模板高度吻合 (汉明距离: ${minDistance})`,
     };
   }
 
-  if (matchedKeywords.length >= 2 || (matchedKeywords.length === 1 && textLength < 300)) {
+  /**
+   * 「1 个关键词 + 正文短」这条加权只在**整页都读到**时成立。
+   * 截断时 textLength 反映的是采集宽度，不是页面内容量——MDN 的 403 说明页
+   * （正文 150 字）就是这样被误判成停放页的，而能超过 8KB 的页面不可能是域名出售页。
+   */
+  if (matchedKeywords.length >= 2 || (matchedKeywords.length === 1 && textLength < 300 && !truncated)) {
     const is404 = matchedKeywords.some((k) => k.includes('404') || k.includes('未找到'));
     return {
       url,
@@ -359,6 +386,7 @@ export function auditPageHealth(
       confidence: 0.9,
       shannonEntropy: entropy,
       textLength,
+      truncated,
       matchedParkingKeywords: matchedKeywords,
       minHammingDistance: minDistance,
       reason: `检测到停放或404特征关键词: [${matchedKeywords.join(', ')}]`,
@@ -369,22 +397,31 @@ export function auditPageHealth(
     return {
       url,
       status: 'THIN_CONTENT',
-      confidence: 0.75,
+      // 截断时不能断言「内容匮乏」：正文可能全在未采集的后半段
+      confidence: truncated ? 0.4 : 0.75,
       shannonEntropy: entropy,
       textLength,
+      truncated,
       matchedParkingKeywords: matchedKeywords,
       minHammingDistance: minDistance,
-      reason: `页面内容极度匮乏 (有效字符仅 ${textLength})`,
+      reason: truncated
+        ? `响应被截断，仅采集到 ${textLength} 个有效字符，不足以判断内容是否匮乏`
+        : `页面内容极度匮乏 (有效字符仅 ${textLength})`,
     };
   }
 
-  if (entropy < 2.0 && textLength > 100) {
+  /**
+   * 低信息熵只在整页可读时才算证据：截断样本可能只截到导航与脚本，
+   * 字符分布天然集中，据此判「疑似停放」是拿缺失证据下结论。
+   */
+  if (entropy < 2.0 && textLength > 100 && !truncated) {
     return {
       url,
       status: 'SUSPICIOUS_PARKED',
       confidence: 0.7,
       shannonEntropy: entropy,
       textLength,
+      truncated,
       matchedParkingKeywords: matchedKeywords,
       minHammingDistance: minDistance,
       reason: `文本信息熵极低 (${entropy} < 2.0)，疑似空白或重复模板页面`,
@@ -397,6 +434,7 @@ export function auditPageHealth(
     confidence: 0.95,
     shannonEntropy: entropy,
     textLength,
+    truncated,
     matchedParkingKeywords: [],
     minHammingDistance: minDistance,
     reason: `页面文本与信息熵正常 (${entropy})，未检出劫持特征`,

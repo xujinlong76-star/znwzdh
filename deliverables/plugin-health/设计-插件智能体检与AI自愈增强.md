@@ -322,3 +322,77 @@ NAVHUB_VERIFY_PASSWORD=<临时口令> \
 
 - **不要用 `next dev` 跑这份回归**：本机同时存在多个 dev 实例共用 `apps/web/.next`，互相把对方的写入当成变更，页面会陷入 Fast Refresh 全量重载（实测 2 分钟导航 104 次），任何点击都报「元素已卸载」。生产模式没有这个循环。
 - **不要在满载机器上再起 dev 实例**：16GB 机器上已有 6 个 Next 进程时，第 7 个会在编译期 OOM（`Fatal JavaScript out of memory`）。生产构建 + `next start` 的内存占用小得多。
+
+---
+
+## 九、第二轮自动排查（2026-10-27 02:30）
+
+第一轮交付后按「继续自动查找问题修复」再做一轮**静态审查 + 真实网络实证**。这一轮不重复跑已绿的测试，只找**测试覆盖不到的运行时边界**。三处都是先量化再改，避免凭直觉改代码。
+
+### 9.1 C1：候选超时被写成「不可达」
+
+| 项 | 内容 |
+|---|---|
+| 位置 | `apps/api/src/routes/plugin-audit.ts` → `probeCandidateUrl` 的 catch 分支 |
+| 触发 | 平替候选在 2.5 秒内没有响应（超时、连接被重置、DNS 抖动） |
+| 根因 | catch 分支统一 `grade: "dead"`，并把 `err.message` 原样当原因 |
+| 影响 | ① 界面把「这次没测到」显示成「不可达」，等于宣称站点已确认下线；② 运营看到的是一句 `This operation was aborted`，既看不懂也分不清该重试还是该放弃。这与本仓既有口径「慢 ≠ 死」以及深检层「超时置信度仅 0.5」直接矛盾 |
+| 修法 | 新增第五档 `unverified`（未能验证），排序在 blocked 与 suspicious 之间、可达性计 0；新增 `classifyProbeFailure()` 按错误形状分类：域名不解析/端口拒绝/证书无效/跳转成环/SSRF 拒绝 → `dead`，超时与连接中断 → `unverified`，并给出可执行的中文原因 |
+| 反向验证 | 把超时分支改回 `dead` → 恰好 2 条超时用例变红，其余 7 条不受影响；恢复即绿 |
+
+### 9.2 C2：8KB 截断被当成完整页面判定内容
+
+| 项 | 内容 |
+|---|---|
+| 位置 | `packages/core/src/health-sentinel.ts` → `auditPageHealth`；消费方 4 处 |
+| 触发 | 页面 HTML 超过 8KB（采集器只读前 8KB），且命中 1 个停放关键词、正文不足 300 字 |
+| 根因 | 判定函数不知道响应被截断，而「1 个关键词 + 正文短」这条加权把 **textLength** 当成页面内容量——它其实是**采集宽度** |
+| 实测 | MDN「403 Forbidden」说明页（正文 150 字）判 **SUSPICIOUS_PARKED**；「404 Not Found」说明页判 **SOFT_404**。两页都是完全正常的文档页 |
+| 影响 | 技术文档类站点被标「疑似停放」，进而可能被自动平替掉——用正常站替换正常站 |
+| 修法 | `auditPageHealth` 增加第 5 个参数 `{ truncated }`；截断时① 关闭「1 个关键词 + 正文短」这条弱规则，② 关闭低熵规则，③ 正文极短时不再断言「内容极度匮乏」并把置信度从 0.75 降到 0.4。强证据（≥2 个关键词、视觉哈希）不受影响 |
+| 判据 | 能超过 8KB HTML 的页面不可能是「一页域名出售」，截断本身就是「这站有大量标记」的反证 |
+| 实测复验 | MDN 403/404 三页 + http.cat 全部转为 **HEALTHY** |
+
+同一处还有一条被架空的阈值：主探活器原本写的是
+
+```ts
+if (health.status === "SUSPICIOUS_PARKED" || health.status === "SOFT_404" ||
+    (matchedKeywords && matchedKeywords.length > 0)) { suspicious = true }
+```
+
+最后那个条件只要命中**任意一个**关键词就判可疑，把 `auditPageHealth` 里「≥2 个关键词才算」的阈值整体废掉。已删除，只认 `health.status`。
+
+### 9.3 C3：一处实验性结论被自己推翻
+
+第一轮怀疑「截断导致正文少 → 香农熵跌破 2.0 → 误判停放」，于是先写实证脚本测 10 个真实站点再接代码：
+
+```
+status chars textLen entropy kw health        trunc  url
+200    8002  5048    5.0366  0  HEALTHY       true   gov.cn
+200    8192  134     4.6928  0  HEALTHY       true   nextjs.org
+200    8192  35      3.9544  0  THIN_CONTENT  true   vercel.com
+```
+
+熵值在 3.95–5.78 之间，**没有跌破 2.0**——这条路径不存在，低熵规则只是顺手加固（`&& !truncated`），并不是本次真正的问题。真正的误判来自关键词弱规则和主探活器的额外条件。**结论：先测再改，避免为想象中的缺陷改动生产代码。**
+
+### 9.4 本轮改动文件
+
+| 文件 | 改动 |
+|---|---|
+| `packages/core/src/health-sentinel.ts` | 新增 `HealthAuditOptions`（`truncated`）、结果字段 `truncated`、两条规则加截断门禁、THIN_CONTENT 置信度分级 |
+| `packages/core/src/url-deep-diagnose.ts` | 内容层把 `obs.truncated` 传入判定 |
+| `apps/api/src/routes/plugin-audit.ts` | 新增 `unverified` 档与 `classifyProbeFailure`；主探活与候选探活都传 `truncated`；删除「任意关键词即可疑」的放大条件 |
+| `apps/api/src/jobs.ts`、`packages/mcp/src/handlers/sites.ts` | 巡逻任务与 MCP 体检同样传入 `truncated` |
+| `apps/web-overlay/src/components/plugins/plugin-url-health-panel.tsx` | 新增「未能验证」徽标与类型 |
+| `packages/core/test/health-sentinel-truncation.test.ts` | 新增 5 例（含真实站点的等价样本） |
+| `apps/api/test/candidate-probe-classify.test.ts` | 新增 9 例（纯函数，不触网） |
+| `packages/core/test/url-deep-diagnose.test.ts` | 修正一处样本（`domain is for sale` 并不包含关键词 `domain for sale`），并补「单关键词 + 截断不判停放」 |
+
+### 9.5 验证记录
+
+- `packages/core/test` 全量 + 审计相关 + `packages/mcp/test`：**639 例全绿**
+- 新测试单独跑：`health-sentinel-truncation` 5/5、`candidate-probe-classify` 9/9
+- 前端契约与 a11y 门禁（面板契约 / keyboard-activation / clipboard-honesty / field-names / url-hygiene）：**84 例全绿**
+- 类型检查：5/5 包通过
+- 真实网络复验：MDN 403/404 与 http.cat 由误判转为 HEALTHY
+

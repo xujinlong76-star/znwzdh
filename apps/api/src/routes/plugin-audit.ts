@@ -20,6 +20,7 @@ import {
   computeReachabilityTrend,
   diagnoseBrokenCause,
   diagnoseUrlDeep,
+  isTextualContentType,
   validateAndCleanPluginManifest,
   type DeepProbeObservations,
   type SitePackPayload,
@@ -99,16 +100,26 @@ function createGuardedProber(): UrlProber {
       let matchedKeywords: string[] | undefined
       const title = res.body ? extractHtmlTitle(res.body) : undefined
 
-      if (isHttpOk && res.body && res.body.length > 0) {
+      /**
+       * 内容级检测只对可解析为文本的响应成立。
+       *
+       * PDF/图片/压缩包的字节被解码成大量 U+FFFD，字符分布高度集中，Shannon 熵
+       * 轻松掉到 2.0 以下——于是「下载直链」被判成「疑似域名停放」。
+       * 非文本响应一律跳过，保持 suspicious=false，等 HTTP 层的 Content-Type warn 说明。
+       */
+      if (isHttpOk && res.body && res.body.length > 0 && isTextualContentType(res.contentType)) {
         try {
-          const health = auditPageHealth(url, res.body)
+          const health = auditPageHealth(url, res.body, undefined, undefined, { truncated: res.truncated })
           shannonEntropy = health.shannonEntropy
           matchedKeywords = health.matchedParkingKeywords
-          if (
-            health.status === "SUSPICIOUS_PARKED" ||
-            health.status === "SOFT_404" ||
-            (matchedKeywords && matchedKeywords.length > 0)
-          ) {
+          /**
+           * 只认 `health.status`：不再额外用「命中任意一个关键词」放大判定。
+           *
+           * 历史实现里这里还有 `|| matchedKeywords.length > 0`，等于把
+           * `auditPageHealth` 里「≥2 个关键词才算」的阈值整体架空——
+           * 一个技术文档页只要正文出现过 forbidden 就被判「疑似停放」。
+           */
+          if (health.status === "SUSPICIOUS_PARKED" || health.status === "SOFT_404") {
             suspicious = true
             suspiciousReason = health.reason
           }
@@ -211,7 +222,15 @@ function diagnoseFromEvidence(
   return diagnoseBrokenCause(evidence.status, evidence.error ?? evidence.failureKind)
 }
 
-type CandidateGrade = "verified" | "blocked" | "suspicious" | "dead"
+/**
+ * 候选定的四档 + 一档「未能验证」。
+ *
+ * `unverified` 是刻意存在的：超时、连接被重置这类失败只说明「这次没测到」，
+ * 不等于站点已死。历史实现把它们和 404 一起写成 `dead`（界面「不可达」），
+ * 违反本项目既有口径「慢 ≠ 死、超时属于不可判定」，也让运营误以为该站点已确认下线。
+ */
+type CandidateGrade = "verified" | "blocked" | "unverified" | "suspicious" | "dead"
+
 
 interface CandidateProbe {
   grade: CandidateGrade
@@ -222,11 +241,68 @@ interface CandidateProbe {
   reason?: string
 }
 
+/** 候选探活的超时上限：候选只需证明「能打开且内容正常」，2.5 秒足够，不必等满正式体检的时长 */
+const CANDIDATE_PROBE_TIMEOUT_MS = 2500
+
+/**
+ * 探活失败原因分类：把底层英文错误翻成运营看得懂、且不夸大结论的中文。
+ *
+ * 为什么必须分类（历史缺陷）：catch 分支直接把 `err.message` 当原因，
+ * 运营看到的是 `This operation was aborted` / `fetch failed` —— 既看不懂，
+ * 也分不出「慢」和「死」。更严重的是超时被和 404 一起判成 dead（界面写「不可达」），
+ * 把「这次没测到」说成了「站点已确认下线」。
+ *
+ * 判定口径与全仓一致：只有拿到了明确的失败证据（域名不解析、端口拒绝、证书无效、
+ * 跳转成环、SSRF 拒绝）才判 dead；超时/连接中断一律 unverified。
+ */
+export function classifyProbeFailure(
+  url: string,
+  err: unknown,
+  elapsedMs: number,
+  timeoutMs: number,
+): { grade: CandidateGrade; reason: string } {
+  const raw = err instanceof Error ? err.message : String(err)
+  const msg = raw.toLowerCase()
+
+  // 自己抛的中文错误先判：语义明确，不需要再猜
+  if (raw.includes("DNS 解析失败") || raw.includes("DNS 无结果") || msg.includes("enotfound") || msg.includes("eai_again")) {
+    return { grade: "dead", reason: "域名无法解析（域名可能已过期或不存在）" }
+  }
+  if (raw.includes("重定向次数超过")) {
+    return { grade: "dead", reason: "重定向次数过多，浏览器同样会报错" }
+  }
+  if (raw.includes("受保护网段") || raw.includes("禁止访问该端口") || raw.includes("仅允许 http")) {
+    return { grade: "dead", reason: "目标指向内网或非法地址，已拒绝探测" }
+  }
+  if (msg.includes("certificate") || msg.includes("ssl") || msg.includes("tls") || msg.includes("self-signed")) {
+    return { grade: "dead", reason: "HTTPS 证书无效，浏览器会拦截" }
+  }
+  if (msg.includes("econnrefused")) {
+    return { grade: "dead", reason: "连接被拒绝（目标端口无服务）" }
+  }
+
+  const isTimeout =
+    elapsedMs >= timeoutMs * 0.95 || msg.includes("timeout") || msg.includes("timedout") || msg.includes("aborted")
+  if (isTimeout) {
+    return {
+      grade: "unverified",
+      reason: `${(timeoutMs / 1000).toFixed(1)} 秒内未响应（慢不等于死，建议稍后复检）`,
+    }
+  }
+
+  /**
+   * 其余（连接被重置、socket hang up、底层 fetch failed）都可能是网络抖动或对端限速，
+   * 一律不下「已死」的结论。原始文本不再外露（含内部 URL），只留服务端日志。
+   */
+  console.warn(`[plugin-audit] 候选探活未判定 url=${url} err=${raw.slice(0, 200)}`)
+  return { grade: "unverified", reason: "连接中断，未能确认可达性" }
+}
+
 async function probeCandidateUrl(url: string): Promise<CandidateProbe> {
   const started = Date.now()
   try {
     const res = await guardedFetch(url, {
-      timeoutMs: 2500,
+      timeoutMs: CANDIDATE_PROBE_TIMEOUT_MS,
       // 2KB 不足以做信息熵判断（停放页的「域名出售」区块常在页面尾部），提到 8KB
       maxBytes: 8 * 1024,
       maxRedirects: 3,
@@ -239,23 +315,39 @@ async function probeCandidateUrl(url: string): Promise<CandidateProbe> {
     if (res.status >= 400) {
       return { grade: "dead", ok: false, status: res.status, latencyMs: elapsed, reason: `HTTP ${res.status}` }
     }
-    if (res.body) {
-      const health = auditPageHealth(url, res.body)
+    // 非文本响应（PDF/图片/压缩包）不做正文判定：二进制乱码的低熵会被读成停放页
+    if (res.body && isTextualContentType(res.contentType)) {
+      const health = auditPageHealth(url, res.body, undefined, undefined, { truncated: res.truncated })
+      // 停放词与软 404 的命中本身就是证据，截断不会凭空造出这些词，所以照常判。
       if (health.status === "SUSPICIOUS_PARKED" || health.status === "SOFT_404") {
         return { grade: "suspicious", ok: false, status: res.status, latencyMs: elapsed, reason: health.reason }
       }
-      if (health.status === "THIN_CONTENT") {
+      /**
+       * THIN_CONTENT 只在「整页都读到了」时才算证据。
+       *
+       * 现代站点前 8KB 常被 inline CSS / modulepreload 占满——实测 nextjs.org 的
+       * 前 8192 字符里正文只有 134 个，gov.cn 有 5048 个，同一阈值下命运完全不同。
+       * 响应被截断时判「正文太少」，等于拿缺失证据当结论：正常站被判成空壳候选，
+       * 然后被静默排除。这里宁可不下结论，只把「内容未判」如实带出去。
+       */
+      if (health.status === "THIN_CONTENT" && !res.truncated) {
         return { grade: "suspicious", ok: false, status: res.status, latencyMs: elapsed, reason: health.reason }
+      }
+      if (health.status === "THIN_CONTENT") {
+        return {
+          grade: "verified",
+          ok: true,
+          status: res.status,
+          latencyMs: elapsed,
+          reason: "响应被截断，内容级判定已跳过（无法确认正文量）",
+        }
       }
     }
     return { grade: "verified", ok: true, status: res.status, latencyMs: elapsed }
   } catch (err) {
-    return {
-      grade: "dead",
-      ok: false,
-      latencyMs: Date.now() - started,
-      reason: err instanceof Error ? err.message.slice(0, 120) : String(err).slice(0, 120),
-    }
+    const elapsed = Date.now() - started
+    const { grade, reason } = classifyProbeFailure(url, err, elapsed, CANDIDATE_PROBE_TIMEOUT_MS)
+    return { grade, ok: false, latencyMs: elapsed, reason }
   }
 }
 
@@ -270,12 +362,19 @@ interface CandidateConfidence {
 const GRADE_REACHABILITY: Record<CandidateGrade, number> = {
   verified: 100,
   blocked: 60, // 站点活着，但被 WAF 挡住，无法验证内容
+  unverified: 0, // 没测到就不声称可达
   suspicious: 0,
   dead: 0,
 }
 
-/** 排序权重：先按档位（verified > blocked > suspicious > dead），档内再比可信度 */
-const GRADE_RANK: Record<CandidateGrade, number> = { verified: 3, blocked: 2, suspicious: 1, dead: 0 }
+/** 排序权重：先按档位（verified > blocked > unverified > suspicious > dead），档内再比可信度 */
+const GRADE_RANK: Record<CandidateGrade, number> = {
+  verified: 4,
+  blocked: 3,
+  unverified: 2,
+  suspicious: 1,
+  dead: 0,
+}
 
 function rankCandidate(c: StructuredReplacementCandidate): number {
   return (GRADE_RANK[c.grade ?? "dead"] ?? 0) * 1000 + (c.confidence?.total ?? 0)
@@ -820,6 +919,25 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
 
       // 若请求开启 autoAudit 且未传明细，后端自动先行执行一次实时抽样探活
       if (rawBroken.length === 0 && rawSuspicious.length === 0 && body.autoAudit) {
+        /**
+         * 权限必须与 POST /:slug/audit 对齐。
+         *
+         * 两者对服务端做的是同一件事：对整包清单发起最多 MAX_SAMPLE(200) 次外链探活。
+         * 但那边要求 write，这边原本只要 read —— 于是只读令牌可以把它当免费探活器用，
+         * 配合 20 次/分钟限流，最坏是每分钟 4000 次出站请求，出口 IP 很快会被目标站拉黑。
+         *
+         * 校验放在这里而不是入口，是为了与「过滤包外 URL 之后是否还需要自动体检」同口径：
+         * 若在入口按 body.brokenUrls.length 判断，传一批包外 URL 就能绕过。
+         */
+        const scopes = req.auth?.scopes ?? []
+        if (!scopes.includes("write") && !scopes.includes("admin")) {
+          return reply.code(403).send({
+            ok: false,
+            error: "forbidden_scope",
+            message:
+              "autoAudit 会由服务端对整包发起抽样探活，需要 write 或 admin 权限；只读调用请先自行体检，再把 brokenUrls / suspiciousUrls 传进来",
+          })
+        }
         // 参数顺序必须是 (value, fallback, min, max)：此前写成 (value, 1, 200, 30)
         // 导致 Math.min(30, Math.max(200, n)) 恒等于 30 —— sampleLimit 完全失效。
         const limit = clampInt(body.sampleLimit, PLUGIN_AUDIT_DEFAULTS.sample, 1, MAX_SAMPLE)
@@ -989,10 +1107,19 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         const seenUpdated = new Set<string>()
         let removedCount = 0
         let replacedCount = 0
+        /**
+         * 实际被剔除的 URL。
+         *
+         * items 只装替换项，剔除的站点在里面没有位置——于是调用方拿不到
+         * 「哪些真的被处理了」，只能把提报过的死链全部当成已修复。
+         * 只收真正命中的（toRemove 里的 URL 理论上都在清单内，但仍以循环命中为准）。
+         */
+        const removedUrls: string[] = []
 
         for (const site of originalSites) {
           if (toRemove.has(site.url)) {
             removedCount++
+            removedUrls.push(site.url)
             continue
           }
           const rep = replaceMap.get(site.url)
@@ -1113,6 +1240,8 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
           remainingSites: updatedSites.length,
           version: updated.manifest.version,
           items: Array.from(replaceMap.values()),
+          /* 让调用方能精确标记「哪些死链真的处理掉了」，而不是把提报过的一律标为已解决 */
+          removedUrls,
         }
       }
 
@@ -1641,7 +1770,17 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
           dnsOk = true
           precheckError = "目标是受保护网段（私网/回环），已按安全策略拒绝访问"
           precheckKind = "ssrf-blocked"
-        } else if (reason === "dns-failure" || reason === "dns-empty" || reason === "dns-timeout") {
+        } else if (reason === "dns-failure" || reason === "dns-empty") {
+          /**
+           * 解析不出地址就直接收工：guardedFetch 内部会再解析一次，结果必然相同，
+           * 只是把 5s 超时白等一遍（用户看到的是一次 8s 的转圈）。
+           * dnsOk=false 会让判定层的 DNS 分支直接给出 expired-domain。
+           */
+          dnsOk = false
+          precheckError = "域名当前解析不出任何地址"
+          precheckKind = "dns-failure"
+        } else if (reason === "dns-timeout") {
+          // 超时可能只是瞬时拥塞，仍让 HTTP 链路再试一次，但保留 dnsOk=false 的初判
           dnsOk = false
         } else if (reason === "blocked-port") {
           precheckError = "该端口被安全策略禁止探测"
@@ -1662,7 +1801,7 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
           ok: true,
           slug,
           diagnosis,
-          observed: { status: null, finalUrl: null, contentType: null, redirects: [], latencyMs: 0, dnsOk, bodyBytes: 0 },
+          observed: { status: null, finalUrl: null, contentType: null, redirects: [], latencyMs: null, dnsOk, bodyBytes: 0 },
           waybackUrl: buildWaybackSnapshotUrl(targetUrl),
           caveat: REACHABILITY_CAVEAT,
         }
@@ -1682,6 +1821,7 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         observations.contentType = res.contentType
         observations.redirects = res.redirects
         observations.bodySample = res.body
+        observations.truncated = res.truncated
         observations.latencyMs = Date.now() - started
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
@@ -1713,7 +1853,12 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
           redirects: observations.redirects ?? [],
           latencyMs: observations.latencyMs ?? 0,
           dnsOk,
-          bodyBytes: observations.bodySample ? observations.bodySample.length : 0,
+          /**
+           * bodyBytes 必须是字节数，不能写 bodySample.length——那是「字符数」，
+           * 中文页面两者差约 3 倍，界面又直接标成「字节」，属于明摆着的假数据。
+           * 它决定用户能否判断「16KB 是否被截断」，所以口径必须真实。
+           */
+          bodyBytes: observations.bodySample ? Buffer.byteLength(observations.bodySample, "utf8") : 0,
         },
         waybackUrl: buildWaybackSnapshotUrl(targetUrl),
         caveat: REACHABILITY_CAVEAT,

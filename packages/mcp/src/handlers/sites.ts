@@ -259,7 +259,7 @@ export const siteHandlers = {
         let ok = res.status >= 200 && res.status < 400;
         let reason: string | null = null;
         if (ok && res.body) {
-          const audit = auditPageHealth(site.url, res.body);
+          const audit = auditPageHealth(site.url, res.body, undefined, undefined, { truncated: res.truncated });
           if (audit.status === "SUSPICIOUS_PARKED" || audit.status === "SOFT_404") {
             ok = false;
             reason = "伪健康识别: " + audit.reason;

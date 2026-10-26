@@ -141,6 +141,8 @@ const TREND_RESULT = {
     { at: now - 2 * 86_400_000, reachability: 0.9, declared: 200, sampled: 30, ok: 25, blocked: 2, suspicious: 1, broken: 2 },
     { at: now - 1 * 86_400_000, reachability: 0.88, declared: 200, sampled: 30, ok: 24, blocked: 2, suspicious: 2, broken: 2 },
     { at: now - 2 * 3_600_000, reachability: 0.9, declared: 200, sampled: 30, ok: 25, blocked: 2, suspicious: 1, broken: 2 },
+    // 无测量值的点：柱子必须是灰色「无数据」，不能被画成 0%（红色恶化语义）
+    { at: now - 90 * 60_000, reachability: null, declared: 200, sampled: 0, ok: null, blocked: null, suspicious: null, broken: null },
   ],
   trend: 'degrading',
   slope: -0.012,
@@ -182,9 +184,13 @@ const DEEP_RESULT = {
     finalUrl: 'https://parked.example.com/',
     contentType: 'text/html; charset=utf-8',
     redirects: ['https://parked.example.com/'],
-    latencyMs: 320,
+    /*
+      延迟与采样字节给 null，是为了验证「没测到就说没测到」：
+      旧渲染会把 null 打成「延迟 0ms / 采样 0 字节」，看起来像真的测出了 0。
+    */
+    latencyMs: null,
     dnsOk: true,
-    bodyBytes: 16_384,
+    bodyBytes: 0,
   },
   waybackUrl: 'https://web.archive.org/web/2024/https://dead.example.com/a',
   caveat: '本结论只覆盖这一次实测，不代表该站点长期状态。',
@@ -230,6 +236,20 @@ const HEAL_RESULT = {
           grade: 'suspicious',
           confidence: { total: 21, reachability: 100, contentHealth: 0, domainFit: 50 },
         },
+        {
+          /*
+            超时档：必须显示「未能验证」而不是「不可达」。
+            这是本轮修的缺陷——把「这次没测到」写成「站点已确认下线」，
+            与全仓「慢 ≠ 死」的口径冲突。
+          */
+          title: '候选丁（响应超时）',
+          qualityScore: 60,
+          url: 'https://candidate-d.example.net/',
+          reason: '2.5 秒内未响应（慢不等于死，建议稍后复检）',
+          grade: 'unverified',
+          gradeReason: '2.5 秒内未响应（慢不等于死，建议稍后复检）',
+          confidence: { total: 38, reachability: 0, contentHealth: 0, domainFit: 85 },
+        },
       ],
     },
   ],
@@ -237,7 +257,7 @@ const HEAL_RESULT = {
   autoApplied: {
     applied: false,
     reason: 'no-verified-candidate',
-    detail: '3 个候选里只有 1 个通过内容校验，但已存在同域站点，未自动替换',
+    detail: '4 个候选里只有 1 个通过内容校验，但已存在同域站点，未自动替换',
     replacedCount: 0,
     removedCount: 0,
     remainingSites: 200,
@@ -431,7 +451,16 @@ try {
     ['URL 结构', 'DNS', '重定向', 'HTTP', '内容', '归档'].every((label) => deepText.includes(label)),
     deepText.replace(/\n/g, ' | ').slice(0, 150),
   )
-  check('深检：观测值显示 HTTP 200 与采样字节', /HTTP 200/.test(deepText) && /采样 16384 字节/.test(deepText))
+  check(
+    '深检：HTTP 200 照常显示；未发起连接时写「未发起连接」而不是「延迟 0ms」',
+    /HTTP 200/.test(deepText) && /未发起连接/.test(deepText) && !/延迟 0ms/.test(deepText),
+    deepText.match(/未发起连接|延迟 \d+ms/)?.[0] ?? '',
+  )
+  check(
+    '深检：未采集响应体时不显示「采样 0 字节」这种假观测',
+    !/采样 0 字节/.test(deepText),
+    deepText.match(/采样[^\s]{0,10}/)?.[0] ?? '',
+  )
   check('深检：给出 Wayback 历史快照入口', deepText.includes('查看历史快照'))
   check('深检：未查的层明确标「未查询 Wayback 归档」而不是省略', deepText.includes('未查询 Wayback 归档'))
   check('深检：动作建议以徽标呈现', deepText.includes('替换为同类目可用站点'))
@@ -459,6 +488,12 @@ try {
   check('候选：实测通过的候选标「实测可达」', healText.includes('实测可达'))
   check('候选：拒绝爬虫的候选标「拒绝爬虫·未验证」', healText.includes('拒绝爬虫·未验证'))
   check('候选：停放候选标「疑似停放」', healText.includes('疑似停放'))
+  check('候选：超时候选标「未能验证」而不是「不可达」', healText.includes('未能验证'))
+  check(
+    '候选：超时不得被说成「不可达」（慢 ≠ 死）',
+    !/不可达/.test(healText),
+    `文本含「不可达」=${/不可达/.test(healText)}`,
+  )
   // 可信度分解放在 title 属性里（悬浮可见、不占版面），innerText 读不到，必须读属性
   const confidenceTitle = await brokenDetail
     .locator('[title*="合成可信度"]')

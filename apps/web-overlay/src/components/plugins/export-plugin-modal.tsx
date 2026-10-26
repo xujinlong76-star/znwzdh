@@ -70,7 +70,7 @@ export function ExportPluginModal({
   const [name, setName] = useState(defaultName)
   const [slug, setSlug] = useState(defaultSlug || slugify(defaultName))
   const [version, setVersion] = useState('1.0.0')
-  const [author, setAuthor] = useState(defaultAuthor || 'NavHub 贡献者')
+  const [author, setAuthor] = useState(defaultAuthor || '山羊胡贡献者')
   const [description, setDescription] = useState(defaultDescription || '')
   const [tagsInput, setTagsInput] = useState(defaultTags.join(', '))
   const [publishing, setPublishing] = useState(false)
@@ -98,7 +98,7 @@ export function ExportPluginModal({
     name: name.trim() || '未命名插件',
     slug: slug.trim() || slugify(name),
     version: version.trim() || '1.0.0',
-    description: description.trim() || '由 NavHub 用户工作区导出的声明式插件。',
+    description: description.trim() || '由 山羊胡用户工作区导出的声明式插件。',
     author: author.trim() || '匿名贡献者',
     authorKind: 'user' as const,
     license: 'MIT',
@@ -208,7 +208,7 @@ export function ExportPluginModal({
               </span>
             </div>
             <span className="text-[11px] font-mono text-muted-foreground">
-              规范标准: NavHub Plugin Spec 1.0
+              规范标准: 山羊胡 Plugin Spec 1.0
             </span>
           </div>
 
@@ -335,7 +335,7 @@ export function ExportPluginModal({
             ) : (
               <div className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>清单符合 NavHub 纯声明式 JSON 架构，校验 100% 通过</span>
+                <span>清单符合 山羊胡纯声明式 JSON 架构，校验 100% 通过</span>
               </div>
             )}
           </div>

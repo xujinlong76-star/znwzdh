@@ -50,7 +50,7 @@ chrome.omnibox.onInputChanged.addListener(async (text, suggest) => {
 
     suggest(suggestions);
   } catch (err) {
-    console.warn("[NavHub Extension] 搜索失败:", err);
+    console.warn("[山羊胡 Extension] 搜索失败:", err);
   }
 });
 
@@ -94,7 +94,7 @@ async function getToken() {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "navhub-favorite",
-    title: "⭐ 收藏到 NavHub",
+    title: "⭐ 收藏到 山羊胡",
     contexts: ["page"],
   });
 });

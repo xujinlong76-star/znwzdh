@@ -64,7 +64,7 @@ describe('/sites 站点目录：失败 ≠ 截断 ≠ 空', () => {
     const headerAt = src.indexOf('{failed')
     expect(headerAt).toBeGreaterThan(-1)
     const headerBlock = src.slice(headerAt, src.indexOf(': truncated'))
-    expect(headerBlock).toContain('目录数据这次没能从 NavHub 中枢取回')
+    expect(headerBlock).toContain('目录数据这次没能从 山羊胡中枢取回')
     expect(headerBlock).not.toContain('共收录')
     expect(src).toContain('已列出前')
   })

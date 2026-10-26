@@ -124,14 +124,14 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
     if (now >= unreachableUntil) {
       console.warn(
         cooldownMs > 0
-          ? "[storage] NavHub 中枢不可达（" +
+          ? "[storage] 山羊胡中枢不可达（" +
               base +
               "）：" +
               reason +
               "。已进入 " +
               Math.round(cooldownMs / 1000) +
               " 秒连接冷静期，期间读取回退构建期基线（未启动中枢时此为预期状态，不是故障）。"
-          : "[storage] NavHub 中枢不可达（" +
+          : "[storage] 山羊胡中枢不可达（" +
               base +
               "）：" +
               reason +
@@ -139,14 +139,14 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
       );
     }
     unreachableUntil = now + cooldownMs;
-    throw new StorageError("NavHub 中枢不可达（" + base + "）：" + reason, undefined, true);
+    throw new StorageError("山羊胡中枢不可达（" + base + "）：" + reason, undefined, true);
   }
 
   /** 冷静期内不发新连接，直接以连接级错误快速失败 */
   function throwIfCoolingDown(): void {
     if (Date.now() < unreachableUntil) {
       throw new StorageError(
-        "NavHub 中枢不可达（" + base + "，连接冷静期内，跳过连接尝试）",
+        "山羊胡中枢不可达（" + base + "，连接冷静期内，跳过连接尝试）",
         undefined,
         true,
       );
@@ -157,7 +157,7 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
   function noteSuccess(): void {
     if (unreachableUntil !== 0) {
       unreachableUntil = 0;
-      console.info("[storage] NavHub 中枢连接已恢复（" + base + "）");
+      console.info("[storage] 山羊胡中枢连接已恢复（" + base + "）");
     }
   }
 

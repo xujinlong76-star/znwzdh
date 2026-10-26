@@ -120,7 +120,7 @@ const providers: NextAuthConfig['providers'] = [
           if (allowedDefaults.includes(rawPassword) || (!rawPassword && (isDev || !authRequired))) {
             return {
               id: 'admin',
-              name: username || 'NavHub 管理员',
+              name: username || '山羊胡管理员',
               email: 'admin@navhub.local',
               image: '/assets/images/alogo.webp',
               role: 'admin',

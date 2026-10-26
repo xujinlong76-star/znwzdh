@@ -379,7 +379,7 @@ export function SiteArchiveReaderModal({
                 )}
                 <div className="flex items-center gap-2 pt-2 text-xs opacity-60">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>NavHub 离线安全沙箱渲染</span>
+                  <span>山羊胡离线安全沙箱渲染</span>
                   <span>·</span>
                   <a
                     href={safeHref(archive.url)}

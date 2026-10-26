@@ -338,7 +338,7 @@ export default function AdminTokensPage() {
             <span>API Token 访问凭据管理</span>
           </h1>
           <p className="text-xs text-muted-foreground mt-1">
-            用于 MCP Agent（Claude Desktop / Cursor）、浏览器扩展及外部程序调用 NavHub API 的安全密钥。
+            用于 MCP Agent（Claude Desktop / Cursor）、浏览器扩展及外部程序调用 山羊胡 API 的安全密钥。
           </p>
         </div>
         <Button size="sm" onClick={() => setIsCreateOpen(true)} className="gap-1.5 shadow-xs font-semibold">

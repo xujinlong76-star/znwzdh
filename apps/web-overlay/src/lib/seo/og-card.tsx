@@ -16,7 +16,7 @@ const HERO_WRAP_LEN = 22
 
 /** 卡片上的品牌词：site.json 的标题常含中文，过滤后为空则退回产品名 */
 export async function ogBrandLabel(): Promise<string> {
-  return ogAscii(await loadBrandName(), 24) || 'NavHub'
+  return ogAscii(await loadBrandName(), 24) || 'Shanyanghu'
 }
 
 export interface OgCardProps {

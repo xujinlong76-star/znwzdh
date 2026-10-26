@@ -130,7 +130,7 @@ export function VisualPanel() {
                 style={{ backgroundColor: visualBg, color: visualText, borderColor: visualPalette[0] || '#334155' }}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold tracking-tight">NavHub 实时色卡沙盒预览</span>
+                  <span className="text-sm font-bold tracking-tight">山羊胡实时色卡沙盒预览</span>
                   <div className="flex gap-1.5">
                     {visualPalette.map((c, i) => (
                       <span key={i} className="px-2 py-0.5 rounded text-[10px] font-mono border" style={{ backgroundColor: c, color: visualBg }}>

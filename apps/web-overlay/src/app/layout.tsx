@@ -81,7 +81,7 @@ export async function generateMetadata(): Promise<Metadata> {
     appleWebApp: {
       capable: true,
       statusBarStyle: 'default',
-      title: 'NavHub',
+      title: '山羊胡',
     },
     icons: {
       // 默认指向真实存在的 PWA 图标：public/ 下没有 favicon.ico（曾 404 刷屏），用 icon-192 兜底

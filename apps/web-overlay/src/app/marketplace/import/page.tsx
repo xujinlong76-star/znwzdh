@@ -142,7 +142,7 @@ export default function MarketplaceImportPage() {
             导入插件文件
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 leading-relaxed">
-            选择或粘贴来自其他 NavHub 实例的
+            选择或粘贴来自其他 山羊胡实例的
             <code className="mx-1 px-1 py-0.5 rounded bg-muted/70 text-[11px] font-mono">.navhub-plugin.json</code>
             文件。导入的插件会直接上架到本机市场（同名插件已存在时会被拒绝，不会覆盖）。
           </p>

@@ -429,7 +429,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
 
         <div className="mt-4 p-3 rounded-xl bg-muted/30 border border-border/40 text-[11px] text-muted-foreground flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
-          <span>NavHub 远程 Taps 全量导入流程由 SSRF 防护守护，并经过全自动安全沙盒扫描。</span>
+          <span>山羊胡远程 Taps 全量导入流程由 SSRF 防护守护，并经过全自动安全沙盒扫描。</span>
         </div>
       </DialogContent>
     </Dialog>

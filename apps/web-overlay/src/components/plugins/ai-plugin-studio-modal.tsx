@@ -154,7 +154,7 @@ export function AiPluginStudioModal({
     if (manifest) {
       setEditName(manifest.name)
       setEditDescription(manifest.description || '')
-      setEditAuthor(manifest.author || 'NavHub 创作者')
+      setEditAuthor(manifest.author || '山羊胡创作者')
       setEditVersion(manifest.version || '1.0.0')
       setEditTags((manifest.tags || []).join(', '))
     }
@@ -727,7 +727,7 @@ export function AiPluginStudioModal({
                   <div>
                     <h4 className="text-sm font-semibold">AI 正在深度思考规划中...</h4>
                     <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-                      正在根据 NavHub 全站生态知识库严选站点、编排结构并执行 100% 声明式 Schema 校验。
+                      正在根据 山羊胡全站生态知识库严选站点、编排结构并执行 100% 声明式 Schema 校验。
                     </p>
                   </div>
                 </div>

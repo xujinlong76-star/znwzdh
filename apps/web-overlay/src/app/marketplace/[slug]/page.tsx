@@ -73,7 +73,7 @@ export async function generateMetadata({
       // 约定——不显式写 imageUrl，og:image 会退回工厂默认的 /og-default.png，
       // 动态卡变成永远没人请求的死路由（2026-10-22 实测）。
       imageUrl: ogImageUrl(canonical),
-      imageAlt: `${plugin.name} · NavHub 插件市场`,
+      imageAlt: `${plugin.name} · 山羊胡插件市场`,
     })),
   }
 }

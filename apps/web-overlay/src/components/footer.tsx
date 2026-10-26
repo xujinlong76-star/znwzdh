@@ -13,7 +13,7 @@ export function Footer({ siteInfo }: FooterProps) {
   const currentYear = new Date().getFullYear()
   // 新增页面（/tags /hot /favorites）不传 siteInfo 时用默认品牌名，
   // 避免为了一个页脚把整站配置异步加载进每个新页面。
-  const title = siteInfo?.basic?.title ?? 'NavHub'
+  const title = siteInfo?.basic?.title ?? '山羊胡'
 
   return (
     <footer className="border-t border-border/40 pt-8 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8 bg-muted/10 mt-auto">

@@ -18,7 +18,7 @@ async function loadPluginMeta(slug: string): Promise<{ name: string; description
   const plugin = probe.data.plugin
   return {
     name: plugin.name.slice(0, 60),
-    description: (plugin.description || 'NavHub 插件市场：声明式插件，一键安装即用。').slice(0, 160),
+    description: (plugin.description || '山羊胡插件市场：声明式插件，一键安装即用。').slice(0, 160),
   }
 }
 

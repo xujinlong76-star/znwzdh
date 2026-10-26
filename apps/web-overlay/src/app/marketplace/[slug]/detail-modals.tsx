@@ -170,7 +170,7 @@ export function DetailModals(props: DetailModalsProps) {
                       aria-label="复制 Markdown 徽章代码"
                       onClick={async () => {
                         const origin = typeof window !== 'undefined' ? window.location.origin : ''
-                        const md = `[![NavHub Plugin](${origin}/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](${origin}/marketplace/${plugin.slug})`
+                        const md = `[![山羊胡 Plugin](${origin}/api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](${origin}/marketplace/${plugin.slug})`
                         const result = await copyText(md)
                         mdCopy.reportCopy(result)
                         if (result.ok) toast.success('已复制 Markdown 徽章代码')
@@ -190,7 +190,7 @@ export function DetailModals(props: DetailModalsProps) {
                     </button>
                   </div>
                   <pre className="p-2.5 rounded-lg bg-muted text-[11px] font-mono text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all">
-                    {`[![NavHub Plugin](https://.../api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](...)`}
+                    {`[![山羊胡 Plugin](https://.../api/plugins/${plugin.slug}/badge.svg?metric=${badgeMetric})](...)`}
                   </pre>
                   {mdCopy.copyFeedback.state === 'failed' && mdCopy.copyFeedback.reason ? (
                     <p role="status" className="text-[11px] text-destructive">
@@ -257,7 +257,7 @@ export function DetailModals(props: DetailModalsProps) {
                 <div>
                   <DialogTitle className="text-base font-bold">全自动代码沙盒安全体检报告</DialogTitle>
                   <DialogDescription className="text-xs text-muted-foreground">
-                    由 NavHub 全自动静态代码与外链沙盒审计引擎实时生成
+                    由 山羊胡全自动静态代码与外链沙盒审计引擎实时生成
                   </DialogDescription>
                 </div>
               </div>

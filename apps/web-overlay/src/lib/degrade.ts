@@ -61,7 +61,7 @@ function rawMessage(error: unknown): string {
  * hubError 生成的 message 本身已经是可读中文（见 navhub-api.ts 的 HUB_STATUS_HINT），
  * 所以优先透出它，只在信息缺失时补默认文案；`retryable` 依据状态码判断。
  */
-export function describeDegrade(error: unknown, subject = "NavHub 中枢"): DegradeNotice {
+export function describeDegrade(error: unknown, subject = "山羊胡中枢"): DegradeNotice {
   if (isAbort(error)) {
     return { message: "请求超时或被中断，未取回最新数据。", retryable: true }
   }

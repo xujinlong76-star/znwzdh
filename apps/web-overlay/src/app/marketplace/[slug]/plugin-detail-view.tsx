@@ -439,7 +439,7 @@ export default function PluginDetailView({
               <h4 className="font-bold">⚠️ 该插件已被系统自动隔离体检 (Quarantined)</h4>
               <p className="text-xs mt-1 text-destructive/90 leading-relaxed">
                 因累计收到多次社区用户违规举报，系统已自动触发安全熔断机制，暂停普通访客一键安装。
-                NavHub 管理员审核确认安全后将恢复上架。
+                山羊胡管理员审核确认安全后将恢复上架。
               </p>
             </div>
           </div>

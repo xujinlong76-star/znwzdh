@@ -237,13 +237,13 @@ describe("标题里不许再出现品牌名（根 layout 是唯一来源）", ()
     expect(appFile("page.tsx")!).toContain("siteData.basic.title");
   });
 
-  it("除根 layout 外，任何字面量 title / description 都不含 NavHub 或 NavSphere", () => {
+  it("任何字面量 title / description 都不含品牌名（NavHub / NavSphere / 山羊胡 / Shanyanghu）", () => {
     const offenders = literals
       .flatMap((s) => [
         { file: s.file, field: "title", value: s.title },
         { file: s.file, field: "description", value: s.description },
       ])
-      .filter((x) => typeof x.value === "string" && /NavHub|NavSphere/i.test(x.value))
+      .filter((x) => typeof x.value === "string" && /NavHub|NavSphere|山羊胡|Shanyanghu/i.test(x.value))
       .map((x) => `${x.file} :: ${x.field} = ${x.value}`);
     expect(offenders).toEqual([]);
   });

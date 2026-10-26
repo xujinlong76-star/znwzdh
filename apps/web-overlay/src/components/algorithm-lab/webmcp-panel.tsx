@@ -24,7 +24,7 @@ const perfNow = () => performance.now()
 export function WebMcpPanel() {
   /* --- 模块 8：端侧 WebMCP 网桥状态 --- */
   const [mcpToolName, setMcpToolName] = useState('navhub_system_info')
-  const [mcpArgMsg, setMcpArgMsg] = useState('Hello from NavHub In-Browser Agent!')
+  const [mcpArgMsg, setMcpArgMsg] = useState('Hello from 山羊胡 In-Browser Agent!')
   const [mcpResponse, setMcpResponse] = useState<JsonRpcResponse | null>(null)
   const [mcpLatency, setMcpLatency] = useState<number | null>(null)
 

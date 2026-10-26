@@ -71,7 +71,7 @@ export default function SearchNavHub() {
     <List
       isLoading={isLoading}
       onSearchTextChange={setSearchText}
-      searchBarPlaceholder="输入自然语言、拼音或英文搜索 NavHub 网址..."
+      searchBarPlaceholder="输入自然语言、拼音或英文搜索 山羊胡网址..."
       throttle
     >
       <List.Section title={searchText ? `搜索结果 (${visible.length})` : "输入关键词开始检索"}>
@@ -95,7 +95,7 @@ export default function SearchNavHub() {
                   <Action.CopyToClipboard content={`[${site.title}](${site.url})`} title="复制 Markdown 超链接" />
                   <Action.OpenInBrowser
                     url={preferences.webUrl || "http://localhost:3000"}
-                    title="打开 NavHub 完整站"
+                    title="打开 山羊胡完整站"
                     icon={Icon.Compass}
                   />
                   <Action.OpenInBrowser

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "NavHub 智能导航随身助手",
+  "name": "山羊胡智能导航随身助手",
   "version": "1.1.0",
-  "description": "基于 NavHub 的下一代智能网址导航扩展：地址栏 nh 极速语义搜索、一键收录与收藏当前网页、平替雷达直达。",
+  "description": "基于 山羊胡的下一代智能网址导航扩展：地址栏 nh 极速语义搜索、一键收录与收藏当前网页、平替雷达直达。",
   "permissions": [
     "activeTab",
     "tabs",
@@ -17,7 +17,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "NavHub 随身导航"
+    "default_title": "山羊胡随身导航"
   },
   "icons": {
     "16": "icons/icon16.png",

@@ -52,7 +52,7 @@ export function webSiteLd(origin: string, name: string, description?: string | n
   return {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: cleanName || 'NavHub',
+    name: cleanName || '山羊胡',
     url: absUrl(origin, '/'),
     inLanguage: 'zh-CN',
     ...(cleanDesc ? { description: cleanDesc.slice(0, 300) } : {}),
@@ -78,7 +78,7 @@ export function organizationLd(
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: cleanName || 'NavHub',
+    name: cleanName || '山羊胡',
     url: absUrl(origin, '/'),
     logo: absUrl(origin, logo),
     ...(cleanDesc ? { description: cleanDesc.slice(0, 300) } : {}),
@@ -194,7 +194,7 @@ export function softwareApplicationLd(origin: string, plugin: PluginRef): Record
   return {
     '@context': 'https://schema.org',
     '@type': 'SoftwareApplication',
-    name: name || 'NavHub 插件',
+    name: name || '山羊胡插件',
     ...(desc ? { description: desc.slice(0, 300) } : {}),
     applicationCategory: 'WebApplication',
     ...(slug ? { url: absUrl(origin, `/marketplace/${encodeURIComponent(slug)}`) } : {}),
@@ -220,7 +220,7 @@ export function profilePageLd(
     inLanguage: 'zh-CN',
     mainEntity: {
       '@type': 'Person',
-      name: name || 'NavHub 插件作者',
+      name: name || '山羊胡插件作者',
       ...(path ? { url: absUrl(origin, path) } : {}),
       ...(desc ? { description: desc.slice(0, 300) } : {}),
     },

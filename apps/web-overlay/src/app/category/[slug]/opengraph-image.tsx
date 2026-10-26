@@ -21,7 +21,7 @@ import { loadActiveCategoryCounts, loadCategories } from '@/lib/server/categorie
 
 export const size = OG_IMAGE_SIZE
 export const contentType = OG_IMAGE_CONTENT_TYPE
-export const alt = 'NavHub 分类分享卡片'
+export const alt = '山羊胡分类分享卡片'
 
 async function loadCardData(ref: string) {
   const [categories, rawCounts] = await Promise.all([

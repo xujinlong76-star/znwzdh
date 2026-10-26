@@ -312,7 +312,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                           </code>
                           <button
                             type="button"
-                            onClick={() => safeWindowOpen(eng.searchUrl.replace('{q}', encodeURIComponent(testSearchQuery || 'NavHub')))}
+                            onClick={() => safeWindowOpen(eng.searchUrl.replace('{q}', encodeURIComponent(testSearchQuery || '山羊胡')))}
                             className="text-xs text-primary hover:underline flex items-center gap-1 shrink-0 font-medium"
                           >
                             测试直达 <ExternalLink className="w-3 h-3" />

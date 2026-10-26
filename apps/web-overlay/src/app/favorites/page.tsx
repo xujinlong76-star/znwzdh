@@ -499,7 +499,7 @@ export default function FavoritesPage() {
     try {
       const parsedPayload = JSON.parse(importVaultPayload) as EncryptedVaultPayload
       if (!parsedPayload.cipherTextBase64 || !parsedPayload.saltHex || !parsedPayload.ivHex) {
-        throw new Error('不是合法的 NavHub E2EE 加密金库文件')
+        throw new Error('不是合法的 山羊胡 E2EE 加密金库文件')
       }
 
       const decryptedItems = await decryptVault(parsedPayload, importPassphrase)
@@ -1236,7 +1236,7 @@ export default function FavoritesPage() {
           onOpenChange={setShowPluginExport}
           kind="site-pack"
           defaultName="我的精选收藏包"
-          defaultDescription={`包含 ${favorites.items.length} 个优质网站的精选收藏包，由 NavHub 用户本地一键导出。`}
+          defaultDescription={`包含 ${favorites.items.length} 个优质网站的精选收藏包，由 山羊胡用户本地一键导出。`}
           defaultTags={['收藏', '网址包', '精选']}
           payload={{
             categories: [

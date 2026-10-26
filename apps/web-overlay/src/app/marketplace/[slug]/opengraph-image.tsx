@@ -19,7 +19,7 @@ import { ogBrandLabel, ogShareCard } from '@/lib/seo/og-card'
 
 export const size = OG_IMAGE_SIZE
 export const contentType = OG_IMAGE_CONTENT_TYPE
-export const alt = 'NavHub 插件市场分享卡片'
+export const alt = '山羊胡插件市场分享卡片'
 
 const KIND_EN: Record<string, string> = {
   'site-pack': 'SITE PACK',
@@ -72,7 +72,7 @@ export default async function OpenGraphImage({ params }: { params: Promise<{ slu
       hero: data?.asciiName ?? safeSlug.slice(0, 42),
       metaLine: data
         ? `v${data.version} · ${data.statLine} · ${data.installs} installs`
-        : 'declarative plugins for NavHub',
+        : 'declarative plugins for Shanyanghu',
       footnote: 'Declarative & auditable — no arbitrary code execution',
       cta: 'One-click install',
     }),

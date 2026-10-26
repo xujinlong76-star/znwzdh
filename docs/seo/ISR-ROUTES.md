@@ -306,7 +306,7 @@ CI 里这一条**只提示不阻断**（`::warning::`，红族名单进 annotati
 全量这一轮把结构性的事说清楚了：**canonical 0 / og:image 缺失 0 / JSON-LD 无效 0 / 取数失败 0**
 （三轮独立跑都是 0，1126/1126 页都拿到 200），红的全是同一件事 —— `<h1>` 缺失的集合**包含**
 「出现在 sitemap 却声明 `noindex, follow`」的集合：456（第一轮）/ 704（第二轮）/ 532（第三轮），
-`internalLinkMissing`（459/717/538）与那个「站点详情 - NavHub 导航」被 456 页共享的标题重复组，
+`internalLinkMissing`（459/717/538）与那个「站点详情 - 山羊胡」被 456 页共享的标题重复组，
 都是同一批页的连带症状。
 
 集合**不是固定的**：第一轮那 456 个壳页到第三轮只剩 274 个还是壳（182 个恢复、258 个新坏）。
@@ -333,7 +333,7 @@ CI 里这条永远看不见：预览作业是 57 站点种子 + 14 页抽查，�
 分别是 rc=1 和 rc=0 —— **取样是确定的，页面当下形态不是**。这不是轮换的 bug，
 但它意味着生产 dispatch 的红必须分两类读：契约退化 vs 上游限流抖动，门禁本身不区分，
 所以 dispatch 红了要先重跑一次才能定性。
-顺带记下契约的一个盲区：壳页那个通用标题「站点详情 - NavHub 导航」在契约里判绿 ——
+顺带记下契约的一个盲区：壳页那个通用标题「站点详情 - 山羊胡」在契约里判绿 ——
 契约只查 title 有没有、长度够不够，不查它是否与本页站点名一致；
 456 页共享同一标题这件事只有 `seo-audit` 的 `titleDuplicateGroups` 看得见。
 
@@ -439,7 +439,7 @@ prod 下配置值短于 32 字符直接启动失败（`assertSecurityConstraints
 | `robotsIssues`（在 sitemap 里却 `noindex`） | 414 | **0** |
 | `pagesWithIssues` | 418 | 9 |
 | `internalLinkMissing` | 418 | 9 |
-| `titleDuplicateGroups` | 1（414 页共享「站点详情 - NavHub 导航」） | 4 |
+| `titleDuplicateGroups` | 1（414 页共享「站点详情 - 山羊胡」） | 4 |
 | `descriptionTooShort` | 454 | 40 |
 | 耗时 | 136s | 104s |
 

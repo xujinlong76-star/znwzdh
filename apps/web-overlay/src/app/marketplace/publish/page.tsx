@@ -196,7 +196,7 @@ export default function PluginPublishPage() {
             categories: [{ title: '常用工具' }],
             sites: [
               {
-                title: 'NavHub',
+                title: '山羊胡',
                 url: 'https://navhub.local',
                 description: '现代极客私有化导航中枢',
                 category: '常用工具',

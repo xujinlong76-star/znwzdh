@@ -360,7 +360,7 @@ export interface FullTextStore {
 | `SqliteFtsStore` | `sites.fts_tokens`（`hanToTokens` 输出） | FTS5 虚拟表 `unicode61` | 查询期用 `buildFtsQuery()` 生成 `MATCH` 表达式 |
 | `PgFtsStore` | 同一份 CJK 二元分词语料 | **tsvector + GIN 表达式索引** + `pg_trgm` | `pgTokens(text)` 生成 PG 侧语料 |
 
-> **语料一致**是关键：`standard` 模式的 PostgreSQL 全文通道**仍使用 NavHub 的 CJK 二元分词**，而不是 PG 自带的中文分词——保证两种模式的召回行为一致。
+> **语料一致**是关键：`standard` 模式的 PostgreSQL 全文通道**仍使用 山羊胡的 CJK 二元分词**，而不是 PG 自带的中文分词——保证两种模式的召回行为一致。
 
 ## 8. 向量存储（`vector/`）
 

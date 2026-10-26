@@ -87,7 +87,7 @@ export default function BrowsePlugins() {
     } catch (err) {
       await showToast({
         style: Toast.Style.Failure,
-        title: "无法连接 NavHub 插件市场",
+        title: "无法连接 山羊胡插件市场",
         message: err instanceof Error ? err.message : String(err),
       });
       setPlugins([]);
@@ -199,7 +199,7 @@ export default function BrowsePlugins() {
                 <ActionPanel>
                   <Action.OpenInBrowser url={detailUrl} title="在浏览器打开详情" />
                   <Action
-                    title="一键安装到本地 NavHub"
+                    title="一键安装到本地 山羊胡"
                     icon={Icon.Download}
                     onAction={() => handleInstall(item)}
                   />

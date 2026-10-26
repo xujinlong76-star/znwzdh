@@ -44,7 +44,7 @@ async function setStore(items) {
   try {
     await chrome.storage.local.set(items);
   } catch (err) {
-    console.warn("[NavHub] 存储失败:", err);
+    console.warn("[山羊胡] 存储失败:", err);
   }
 }
 
@@ -281,7 +281,7 @@ saveBtn.addEventListener("click", async () => {
         saveBtn.style.background = "#10b981";
       }
       setTimeout(() => {
-        saveBtn.textContent = "AI 富化并收录到 NavHub";
+        saveBtn.textContent = "AI 富化并收录到 山羊胡";
         saveBtn.style.background = "";
         saveBtn.disabled = false;
       }, 2500);
@@ -409,7 +409,7 @@ async function loadFeaturedPlugins() {
     }
     featuredPlugins.style.display = "block";
   } catch (err) {
-    console.warn("[NavHub] 热门插件加载失败:", err);
+    console.warn("[山羊胡] 热门插件加载失败:", err);
   }
 }
 

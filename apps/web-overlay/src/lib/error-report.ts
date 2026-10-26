@@ -124,7 +124,7 @@ export function describeCrash(error: unknown, digest?: string): CrashInfo {
 
 /** 拼出一段可直接粘贴到反馈里的诊断文本（不含任何隐私数据） */
 export function crashReportText(info: CrashInfo): string {
-  const lines = ['[NavHub 崩溃反馈]', '类型：' + info.badge, '说明：' + info.title]
+  const lines = ['[山羊胡崩溃反馈]', '类型：' + info.badge, '说明：' + info.title]
   if (info.digest) lines.push('编号：' + info.digest)
   if (info.detail) lines.push('详情：' + info.detail)
   // SSR / 测试环境下没有 window，就不写空行

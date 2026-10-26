@@ -1,4 +1,4 @@
-# NavHub 全景架构与核心代码工程 Wiki 全集
+# 山羊胡全景架构与核心代码工程 Wiki 全集
 
 > 本文档由系统自动化梳理并汇总，涵盖系统整体架构、各子包模块职责、核心算法数学推导、Bento-Flow DIY 排版、存储设计、安全合规与部署运维指南。
 
@@ -21,8 +21,8 @@
 ## 1. 项目定位与系统架构全景
 
 ### 1.1 核心愿景
-NavHub 是一款专为开发者和技术团队打造的 **AI 原生网址导航系统与知识工作台 (Developer Knowledge OS)**。
-不同于传统的静态目录或泛用的空白仪表盘，NavHub 将**海量技术导航沉淀**、**五路异构智能检索**、**端侧 0-RTT 语法推测解析**与**模块化 Bento-Flow 工作台**深度融为一体。
+山羊胡是一款专为开发者和技术团队打造的 **AI 原生网址导航系统与知识工作台 (Developer Knowledge OS)**。
+不同于传统的静态目录或泛用的空白仪表盘，山羊胡将**海量技术导航沉淀**、**五路异构智能检索**、**端侧 0-RTT 语法推测解析**与**模块化 Bento-Flow 工作台**深度融为一体。
 
 ### 1.2 拓扑分层图
 ```
@@ -63,7 +63,7 @@ NavHub 是一款专为开发者和技术团队打造的 **AI 原生网址导航�
 ## 2. API 服务中枢架构 (`apps/api`)
 
 ### 2.1 存储接缝架构
-NavHub 前端持久化通过替换 NavSphere 历史的 2 个 JSON 文件读写函数（`getFileContent` 与 `commitFile`），实现全站 69 处业务调用点零改动即可整体无缝切换至底层真实数据库。
+山羊胡前端持久化通过替换 NavSphere 历史的 2 个 JSON 文件读写函数（`getFileContent` 与 `commitFile`），实现全站 69 处业务调用点零改动即可整体无缝切换至底层真实数据库。
 * `STORAGE_ADAPTER=http`：前端走同源 BFF 代理 `/api/hub/*` 转发中枢，由服务端自动注入 `NAVHUB_STORAGE_TOKEN`，保障生产公开访问安全。
 * `STORAGE_ADAPTER=github`：兼容原版行为，数据直接提交到用户自己的私有 GitHub 仓库。
 
@@ -80,7 +80,7 @@ NavHub 前端持久化通过替换 NavSphere 历史的 2 个 JSON 文件读写�
 ## 3. 前端与 Bento-Flow 工作台 (`apps/web-overlay` & `apps/web`)
 
 ### 3.1 覆盖层镜像机制
-NavHub 采用自研 `apps/web-overlay` 作为前端事实源，通过 `node scripts/check-web-overlay.mjs` 实现 120 个覆盖层文件与 `apps/web` 保持 100% 镜像一致。
+山羊胡采用自研 `apps/web-overlay` 作为前端事实源，通过 `node scripts/check-web-overlay.mjs` 实现 120 个覆盖层文件与 `apps/web` 保持 100% 镜像一致。
 
 ### 3.2 Bento-Flow 核心能力
 1. **跨分类卡片自由拖拽重组**：在排版模式下，站点卡片携带 `siteId` 与源分类 ID，可直接拖入任意目标分类标题，底层通过 `siteCategoryOverrides` 字典完成响应式分类迁移。

@@ -112,7 +112,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title,
       description,
       // 中枢没答上来时不指动态卡（卡片拿不到真实站点数，默认品牌卡更诚实）
-      ...(res === null ? {} : { imageUrl: ogImageUrl(canonical), imageAlt: `${name} · NavHub 标签` }),
+      ...(res === null ? {} : { imageUrl: ogImageUrl(canonical), imageAlt: `${name} · 山羊胡标签` }),
     })),
     ...(indexable ? {} : { robots: { index: false, follow: true } }),
   }

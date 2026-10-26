@@ -61,8 +61,8 @@ const MAX_TAP_IMPORT_ITEMS = Math.max(1, Number(process.env.NAVHUB_TAP_IMPORT_MA
 export const FEATURED_TAPS = [
   {
     id: "featured:official-community",
-    name: "NavHub 官方精选社区源",
-    description: "由 NavHub 官方严选审核的社区精品网址包、小众利基工具与垂直领域扩展",
+    name: "山羊胡官方精选社区源",
+    description: "由 山羊胡官方严选审核的社区精品网址包、小众利基工具与垂直领域扩展",
     url: "https://raw.githubusercontent.com/navhub-org/community-taps/main/featured.json",
     isFeatured: true,
     author: "NavHub 官方",
@@ -763,7 +763,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       const slug = safeDecodeParam(rawSlug);
       const q = req.query as Record<string, string | undefined>;
       const metric = q.metric?.toLowerCase().trim() || "version";
-      const customLabel = q.label?.trim() || "navhub";
+      const customLabel = q.label?.trim() || "山羊胡";
 
       reply.header("Content-Type", "image/svg+xml; charset=utf-8");
 

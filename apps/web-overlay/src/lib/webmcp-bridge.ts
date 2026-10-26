@@ -193,7 +193,7 @@ export class WebMcpBridge {
     this.registerTool(
       {
         name: 'navhub_system_info',
-        description: 'Returns NavHub runtime architecture capabilities',
+        description: 'Returns 山羊胡 runtime architecture capabilities',
         inputSchema: {
           type: 'object',
           properties: {},

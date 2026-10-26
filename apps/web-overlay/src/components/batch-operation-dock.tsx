@@ -67,7 +67,7 @@ export function BatchOperationDock({
   const handleCopyMarkdown = async () => {
     try {
       const md = batchExportSitesToMarkdown(selectedSites, {
-        categoryTitle: `NavHub 批量导读书签 (${count}项)`,
+        categoryTitle: `山羊胡批量导读书签 (${count}项)`,
       })
       const result = await copyText(md)
       if (!result.ok) throw new Error(result.reason)
@@ -87,7 +87,7 @@ export function BatchOperationDock({
   // 2. 下载 Markdown 文件
   const handleDownloadMarkdown = () => {
     const md = batchExportSitesToMarkdown(selectedSites, {
-      categoryTitle: `NavHub 批量导读书签 (${count}项)`,
+      categoryTitle: `山羊胡批量导读书签 (${count}项)`,
     })
     const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)

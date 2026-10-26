@@ -11,7 +11,7 @@ import type { Category, Site } from "./types.ts";
 
 export interface NavHubColdBackup {
   version: "1.0";
-  generator: "NavHub 2026 Sovereign Backup Engine";
+  generator: "山羊胡 2026 Sovereign Backup Engine";
   exportedAt: number;
   categories: Array<{
     id: string;
@@ -124,7 +124,7 @@ export function exportNetscapeBookmarks(categories: Category[], sites: Site[]): 
 export function exportNavHubBackup(categories: Category[], sites: Site[]): string {
   const backup: NavHubColdBackup = {
     version: "1.0",
-    generator: "NavHub 2026 Sovereign Backup Engine",
+    generator: "山羊胡 2026 Sovereign Backup Engine",
     exportedAt: Date.now(),
     categories: categories.map((c) => ({
       id: c.id,

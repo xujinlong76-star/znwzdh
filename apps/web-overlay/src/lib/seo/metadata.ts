@@ -18,13 +18,13 @@ export const DEFAULT_OG_IMAGE = {
   url: '/og-default.png',
   width: 1200,
   height: 630,
-  alt: 'NavHub 导航',
+  alt: '山羊胡',
 } as const
 
 const SITE_PATH = 'src/navsphere/content/site.json'
 
 /** 中枢/后台没配品牌名时用的口径统一值 */
-export const FALLBACK_BRAND = 'NavHub 导航'
+export const FALLBACK_BRAND = '山羊胡'
 
 /**
  * 品牌名收敛：上游基线数据里的 `NavSphere导航` 不接受。

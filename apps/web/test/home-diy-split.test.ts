@@ -54,7 +54,7 @@ describe("home-diy 拆分后的接线", () => {
     const s = dialog();
     expect(s).toContain("明文 JSON 备份与迁移");
     expect(s).toContain("零知识 E2EE 金库加密");
-    expect(s).toContain("NavHub 中枢云端金库同步");
+    expect(s).toContain("山羊胡中枢云端金库同步");
     expect(s).toContain("const handleCloudUpload");
     expect(s).toContain("const handleDecryptImportSubmit");
     expect(s).toContain("export function HomeDIYBackupDialog");

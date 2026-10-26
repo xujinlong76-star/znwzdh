@@ -44,7 +44,7 @@ afterEach(() => {
 
 describe("品牌名收敛", () => {
   it("上游品牌与空值一律回落到统一口径", () => {
-    expect(FALLBACK_BRAND).toBe("NavHub 导航");
+    expect(FALLBACK_BRAND).toBe("山羊胡");
     expect(normalizeBrandName("NavSphere导航")).toBe(FALLBACK_BRAND);
     expect(normalizeBrandName(" NavSphere 导航 ")).toBe(FALLBACK_BRAND);
     expect(normalizeBrandName("navsphere")).toBe(FALLBACK_BRAND);

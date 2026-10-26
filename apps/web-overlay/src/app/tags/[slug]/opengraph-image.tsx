@@ -18,7 +18,7 @@ import type { HubSite } from '@/lib/navhub-api'
 
 export const size = OG_IMAGE_SIZE
 export const contentType = OG_IMAGE_CONTENT_TYPE
-export const alt = 'NavHub 标签分享卡片'
+export const alt = '山羊胡标签分享卡片'
 
 type TagMeta = { ok?: boolean; tag?: { name?: string; slug?: string } | null }
 
@@ -54,7 +54,7 @@ export default async function OpenGraphImage({ params }: { params: Promise<{ slu
       kindPill: 'TAG',
       // 纯中文标签（`大模型`）过滤后无可渲染字符：主标题改放站点数，
       // 统计行同时换成不带数字的一句，避免「3 SITES / 3 curated sites」重复。
-      hero: asciiName || (data ? `${data.count} SITES` : 'NavHub'),
+      hero: asciiName || (data ? `${data.count} SITES` : 'Shanyanghu'),
       metaLine: data
         ? asciiName
           ? `${data.count} curated sites under this tag`

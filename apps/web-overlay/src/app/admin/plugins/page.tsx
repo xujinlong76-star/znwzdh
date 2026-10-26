@@ -590,7 +590,7 @@ export default function AdminPluginsPage() {
             </div>
             <div className="space-y-0.5">
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-foreground">NavHub 官方插件资源库</span>
+                <span className="font-semibold text-foreground">山羊胡官方插件资源库</span>
                 <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30">
                   v{seedStatus?.catalogVersion ?? '2026.10'}
                 </Badge>
@@ -1274,7 +1274,7 @@ export default function AdminPluginsPage() {
                 <span>官方插件资源同步完成</span>
               </DialogTitle>
               <DialogDescription className="text-xs">
-                NavHub 已完成与代码库最新官方资源目录的增量同步。
+                山羊胡已完成与代码库最新官方资源目录的增量同步。
               </DialogDescription>
             </DialogHeader>
 

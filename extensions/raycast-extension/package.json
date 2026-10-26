@@ -1,47 +1,47 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "navhub",
-  "title": "NavHub 智能导航",
-  "description": "全局快捷键秒搜 NavHub 网址导航库，支持本地离线向量语义与拼音混合检索",
+  "title": "山羊胡智能导航",
+  "description": "全局快捷键秒搜 山羊胡网址导航库，支持本地离线向量语义与拼音混合检索",
   "icon": "icon.png",
   "author": "navhub",
   "license": "MIT",
   "commands": [
     {
       "name": "search-navhub",
-      "title": "Search NavHub",
-      "subtitle": "NavHub 智能检索",
-      "description": "全局极速搜索 NavHub 站点、平替与动作",
+      "title": "Search 山羊胡",
+      "subtitle": "山羊胡智能检索",
+      "description": "全局极速搜索 山羊胡站点、平替与动作",
       "mode": "view"
     },
     {
       "name": "browse-plugins",
-      "title": "Browse NavHub Plugins",
+      "title": "Browse 山羊胡 Plugins",
       "subtitle": "插件市场与生态扩展",
-      "description": "全局浏览、筛选与一键安装 NavHub 精选插件包、主题与工作台预设",
+      "description": "全局浏览、筛选与一键安装 山羊胡精选插件包、主题与工作台预设",
       "mode": "view"
     }
   ],
   "preferences": [
     {
       "name": "apiUrl",
-      "title": "NavHub API 地址",
-      "description": "NavHub 后端 API 地址，默认 http://127.0.0.1:8787",
+      "title": "山羊胡 API 地址",
+      "description": "山羊胡后端 API 地址，默认 http://127.0.0.1:8787",
       "type": "textfield",
       "required": false,
       "default": "http://127.0.0.1:8787"
     },
     {
       "name": "apiToken",
-      "title": "NavHub API Token",
+      "title": "山羊胡 API Token",
       "description": "管理后台生成的 API Token（收录/写操作需要，只读搜索可留空）",
       "type": "password",
       "required": false
     },
     {
       "name": "webUrl",
-      "title": "NavHub 完整站地址",
-      "description": "“打开 NavHub 完整站”动作的目标地址",
+      "title": "山羊胡完整站地址",
+      "description": "“打开 山羊胡完整站”动作的目标地址",
       "type": "textfield",
       "required": false,
       "default": "http://localhost:3000"

@@ -311,7 +311,7 @@ scopes 支持过期（`expires_at` 过期即视为无效）；`last_used_at` 每
 | POST | `/api/enrich` | 仅抓取 + 富化（不入库），返回 `provenance` | 20/min |
 | POST | `/api/sites/auto` | **一步到位**：抓取 + 富化 + 分类解析 + 入库（`source: "ai"`） | 15/min |
 
-> **收编意义**：审核队列原走 Next 自己的 `/api/submissions/[number]` 路由（GitHub 通道），NavHub 回退通道此前直接拿 hash number 调 `/api/sites/:id` → **必然 404，审核按钮静默失效**。现在两端统一走中枢的 GET/PATCH，审核动作**落审计**（此前无审计）。
+> **收编意义**：审核队列原走 Next 自己的 `/api/submissions/[number]` 路由（GitHub 通道），山羊胡回退通道此前直接拿 hash number 调 `/api/sites/:id` → **必然 404，审核按钮静默失效**。现在两端统一走中枢的 GET/PATCH，审核动作**落审计**（此前无审计）。
 > hash 规则两端必须一致：中枢 `submissionNumber()` 与前端 `hashNumericId()` 同为 djb2 变体（`((hash<<5)-hash)+ch`），有测试锁定（见 `投稿审核收编中枢` describe）。
 
 `/api/sites/auto` 的分类解析链：调用方指定 → 富化建议**唯一**匹配已有类目（标题或 SKOS altLabel）→ 否则落「未分类」并记一条 `category_gap` 提案。
@@ -466,7 +466,7 @@ VIDEOS_PATH           = "src/navsphere/content/videos.json"
 
 ### 4.4 NsItem 扩展字段
 
-NavSphere 站点项在 NavHub 侧扩展了 4.0 动态特性（见 [types.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/types.ts#L113-L151) 的 `Site`）：
+NavSphere 站点项在 山羊胡侧扩展了 4.0 动态特性（见 [types.ts](file:///c:/Users/许进龙/Desktop/web/packages/core/src/types.ts#L113-L151) 的 `Site`）：
 `tags[]`、`actions[]`（深链微动作）、`relations[]`（生态/替代品）、`liveMetrics`（GitHub Star / 版本 / license）、`workspaces[]`（场景工作台）、`health`。
 
 ## 5. jobs.ts —— 任务队列

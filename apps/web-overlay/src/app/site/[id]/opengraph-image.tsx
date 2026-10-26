@@ -19,7 +19,7 @@ import type { HubSite } from '@/lib/navhub-api'
 
 export const size = OG_IMAGE_SIZE
 export const contentType = OG_IMAGE_CONTENT_TYPE
-export const alt = 'NavHub 站点分享卡片'
+export const alt = '山羊胡站点分享卡片'
 
 async function loadCardData(id: string) {
   const probe = await hubGetProbe<HubSite>('/api/sites/' + encodeURIComponent(id), 60)
@@ -50,12 +50,12 @@ export default async function OpenGraphImage({ params }: { params: Promise<{ id:
       brand,
       sectionLabel: 'SITE DIRECTORY',
       kindPill: data?.categoryPill ?? 'SITE',
-      hero: hero || 'NavHub',
+      hero: hero || 'Shanyanghu',
       subline: site && hero !== host && host ? host : null,
       metaLine: site
         ? tagCount > 0
-          ? `${tagCount} tags curated on NavHub`
-          : 'Curated entry on NavHub'
+          ? `${tagCount} tags curated on Shanyanghu`
+          : 'Curated entry on Shanyanghu'
         : 'curated links & categories',
       footnote: 'Reviewed, categorized and cross-linked',
       cta: 'Visit site',

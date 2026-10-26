@@ -102,7 +102,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
         ? {}
         : {
             imageUrl: ogImageUrl(categoryHref(urlKey, 1)),
-            imageAlt: `「${name}」分类 · NavHub`,
+            imageAlt: `「${name}」分类 · 山羊胡`,
           }),
     })),
     ...(!data.degraded ? { robots: { index: false, follow: true } } : {}),

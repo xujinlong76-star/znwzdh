@@ -17,7 +17,7 @@ import type { HubCollection, HubSite } from '@/lib/navhub-api'
 
 export const size = OG_IMAGE_SIZE
 export const contentType = OG_IMAGE_CONTENT_TYPE
-export const alt = 'NavHub 专题分享卡片'
+export const alt = '山羊胡专题分享卡片'
 
 const KIND_EN: Record<string, string> = {
   topic: 'TOPIC',
@@ -50,11 +50,11 @@ export default async function OpenGraphImage({ params }: { params: Promise<{ slu
       brand,
       sectionLabel: 'CURATED COLLECTION',
       kindPill: kind,
-      hero: asciiHero || (data ? `${data.count} SITES` : 'NavHub'),
+      hero: asciiHero || (data ? `${data.count} SITES` : 'Shanyanghu'),
       metaLine: data
         ? asciiHero
           ? `${data.count} hand-picked sites in this collection`
-          : 'a curated collection on NavHub'
+          : 'a curated collection on Shanyanghu'
         : 'hand-picked site collections',
       footnote: 'Editorially curated, ordered by hand',
       cta: 'View collection',

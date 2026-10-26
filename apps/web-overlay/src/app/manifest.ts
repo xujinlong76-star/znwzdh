@@ -9,8 +9,8 @@ import type { MetadataRoute } from 'next'
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'NavHub 导航',
-    short_name: 'NavHub',
+    name: '山羊胡',
+    short_name: '山羊胡',
     description: 'AI 原生的网址导航 —— 支持中文语义检索、拼音与关键词混合召回',
     start_url: '/',
     scope: '/',

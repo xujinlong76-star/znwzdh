@@ -545,7 +545,7 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
       if (backupVersion > EXPORT_SCHEMA_VERSION) {
         reply.code(400);
         return {
-          error: `备份格式版本较新（v${backupVersion}），当前服务只支持 v${EXPORT_SCHEMA_VERSION}；请先升级 NavHub 再导入这份备份。`,
+          error: `备份格式版本较新（v${backupVersion}），当前服务只支持 v${EXPORT_SCHEMA_VERSION}；请先升级 山羊胡再导入这份备份。`,
         };
       }
 

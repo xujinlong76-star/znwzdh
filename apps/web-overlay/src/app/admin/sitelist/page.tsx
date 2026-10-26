@@ -187,7 +187,7 @@ export default function SiteListPage() {
       manifestVersion: 1,
       kind: 'site-pack',
       name: '系统站点全量包',
-      description: `包含 ${packedSites.length} 个站点的完整导航包，由 NavHub 管理后台一键导出。`,
+      description: `包含 ${packedSites.length} 个站点的完整导航包，由 山羊胡管理后台一键导出。`,
       icon: '🌐',
       author: '系统管理员',
       license: 'MIT',

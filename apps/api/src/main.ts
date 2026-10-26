@@ -68,7 +68,7 @@ await app.listen({ port: config.port, host: config.host });
 
 // 启动横幅：把"能不能用 AI"这类关键信息直接打出来，便于排障
 console.info("=".repeat(64));
-console.info("NavHub 已启动");
+console.info("山羊胡已启动");
 console.info("  监听    http://" + config.host + ":" + config.port);
 console.info("  模式    " + config.mode);
 console.info("  语义检索 " + (ctx.capabilities.semantic ? "可用" : "不可用"));

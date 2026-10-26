@@ -404,7 +404,7 @@ async function upsertSite(
  */
 export const DEFAULT_SITE_CONFIG = {
   basic: {
-    title: "NavHub 导航",
+    title: "山羊胡",
     description: "AI 原生的网址导航 —— 支持中文语义检索、拼音与关键词混合召回",
     keywords: "网址导航,导航站,AI 导航,语义检索,书签",
   },

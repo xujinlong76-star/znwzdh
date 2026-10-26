@@ -333,7 +333,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
 
       // 组装消息：安全注入系统角色指引（客户端无法伪造 system 角色）
       const systemPromptParts = [
-        "你是一名高效的个人生产力与导航专家（NavHub Web Copilot）。你的任务是协助用户管理收藏、规划工作台、推荐优质技术工具与回答日常问题。",
+        "你是一名高效的个人生产力与导航专家（山羊胡 Web Copilot）。你的任务是协助用户管理收藏、规划工作台、推荐优质技术工具与回答日常问题。",
         "请使用条理清晰、友好且专业的中文回答，重要链接和工具名称请加粗或使用 Markdown 格式。",
       ];
       if (body.data.context?.categories?.length) {
@@ -658,10 +658,10 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         "你是一名顶级导航生态架构师与插件设计师。",
         isIncremental
           ? "【增量修饰微调模式】：用户提供了一份已有的插件清单 (existingManifest)，本次任务是在保持该清单合理结构的基础上，根据用户的修改指令进行针对性增量修改或扩充（例如添加新站点、修改主题强调色、调整版本号、修改名称描述等）。"
-          : "【全新插件规划模式】：用户希望根据自然语言需求规划并生成一份 100% 声明式的 NavHub 插件清单 (PluginManifest)。",
+          : "【全新插件规划模式】：用户希望根据自然语言需求规划并生成一份 100% 声明式的 山羊胡插件清单 (PluginManifest)。",
         `目标插件类型 (kind)：${body.data.kind === "auto" ? "由你根据用户意图判断最合适的类型（site-pack / theme / search-pack / workspace-preset / bundle），并在 manifest.kind 中指定" : body.data.kind}`,
         "",
-        "【NavHub 声明式规范约束】：",
+        "【山羊胡声明式规范约束】：",
         "1. 顶级结构必须为：",
         "{",
         '  "rationale": "简要设计理念与规划理由（1-2句话）",',

@@ -2,14 +2,14 @@
 
 ## 1. 项目定位
 
-**NavHub** 是一款 AI 原生的网址导航系统，四条核心能力：
+**山羊胡** 是一款 AI 原生的网址导航系统，四条核心能力：
 
 1. **本地中文语义检索**——ONNX 本地 embedding（`bge-small-zh-v1.5`），不外发数据
 2. **拼音 / 关键词混合召回**——五路通道 RRF 融合
 3. **AI 自动富化入库**——抓取网页 → LLM 抽取标题/描述/标签/分类（缺 Key 时降级启发式）
 4. **MCP Server**——让 AI Agent 通过标准协议直接读写导航数据
 
-底座来自 [NavSphere](https://github.com/tianyaxiang/NavSphere)（MIT），NavHub 在它的**存储接缝**上做替换与扩展，而非重写。
+底座来自 [NavSphere](https://github.com/tianyaxiang/NavSphere)（MIT），山羊胡在它的**存储接缝**上做替换与扩展，而非重写。
 
 ## 2. 整体架构图
 
@@ -97,12 +97,12 @@ getFileContent(path)              -> 读 JSON
 commitFile(path, content, ...)    -> 写 JSON
 ```
 
-数据落在 3 个文件（`navigation.json` / `site.json` / `resource-metadata.json`），共 **69 处调用点**。NavHub **不改那 69 处**，只把这两个函数的实现换成「按 `STORAGE_ADAPTER` 选择后端」：
+数据落在 3 个文件（`navigation.json` / `site.json` / `resource-metadata.json`），共 **69 处调用点**。山羊胡 **不改那 69 处**，只把这两个函数的实现换成「按 `STORAGE_ADAPTER` 选择后端」：
 
 | 适配器 | 数据存哪 | 适用 |
 | --- | --- | --- |
 | `github` | 你自己的 GitHub 仓库（原版行为） | 零成本、无需服务器 |
-| `http` | NavHub 中枢（**默认**） | 自建，获得 AI 检索能力 |
+| `http` | 山羊胡中枢（**默认**） | 自建，获得 AI 检索能力 |
 | `sqlite` | 同进程直连数据库 | 单机部署（**不适用于 Web 前端**，仅 API 侧） |
 
 服务端对应实现是 [storage.ts](file:///c:/Users/许进龙/Desktop/web/apps/api/src/storage.ts)：把 JSON 文件语义翻译成数据库语义。

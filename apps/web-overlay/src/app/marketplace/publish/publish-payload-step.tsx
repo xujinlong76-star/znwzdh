@@ -81,7 +81,7 @@ export function PublishPayloadStep(props: PublishPayloadStepProps) {
                   {validationResult.ok ? (
                     <>
                       <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                      <span>预检校验通过！该清单完全符合 NavHub 规范</span>
+                      <span>预检校验通过！该清单完全符合 山羊胡规范</span>
                     </>
                   ) : (
                     <>

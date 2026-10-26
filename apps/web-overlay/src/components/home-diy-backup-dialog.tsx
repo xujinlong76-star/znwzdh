@@ -654,7 +654,7 @@ export function HomeDIYBackupDialog({
                 导入明文 JSON 配置文本：
               </label>
               <Textarea id="diy-import-plain"
-                placeholder="粘贴已备份的 NavHub DIY JSON 配置代码..."
+                placeholder="粘贴已备份的 山羊胡 DIY JSON 配置代码..."
                 value={importJsonText}
                 onChange={(e) => setImportJsonText(e.target.value)}
                 className="font-mono text-xs h-32 resize-none"
@@ -696,7 +696,7 @@ export function HomeDIYBackupDialog({
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
                   <Cloud className="w-4 h-4 text-violet-500" />
-                  <span>NavHub 中枢云端金库同步</span>
+                  <span>山羊胡中枢云端金库同步</span>
                 </div>
                 <span
                   role="status"

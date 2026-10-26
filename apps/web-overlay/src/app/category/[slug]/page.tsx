@@ -93,7 +93,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title,
       description,
       // 降级时不指动态卡：分类表/计数没取到，卡片只能出通用构图
-      ...(data.degraded ? {} : { imageUrl: ogImageUrl(canonical), imageAlt: `「${name}」分类 · NavHub` }),
+      ...(data.degraded ? {} : { imageUrl: ogImageUrl(canonical), imageAlt: `「${name}」分类 · 山羊胡` }),
     })),
   }
 }

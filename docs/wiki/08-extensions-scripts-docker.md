@@ -4,7 +4,7 @@
 
 ### 1.1 Chrome 扩展（`extensions/chrome-extension/`）
 
-[manifest.json](file:///c:/Users/许进龙/Desktop/web/extensions/chrome-extension/manifest.json) —— **Manifest V3**，名称「NavHub 智能导航随身助手」
+[manifest.json](file:///c:/Users/许进龙/Desktop/web/extensions/chrome-extension/manifest.json) —— **Manifest V3**，名称「山羊胡智能导航随身助手」
 
 | 项 | 值 |
 | --- | --- |
@@ -31,7 +31,7 @@
 | preference `apiUrl` | 默认 `http://127.0.0.1:8787`（可配置） |
 | 检索 | `GET {apiBase}/api/search?q=...&limit=12` |
 | 结果动作 | 打开站点 / 打开 `http://localhost:3000` |
-| 前置条件 | NavHub 后端 API 处于运行状态 |
+| 前置条件 | 山羊胡后端 API 处于运行状态 |
 
 两个扩展都**直连中枢 REST API**（不经过 Web 前端代理），因此需要 CORS 放行（`NAVHUB_CORS_ORIGINS` 默认 `*`）。
 
@@ -41,7 +41,7 @@
 | --- | --- | --- |
 | [run.mjs](file:///c:/Users/许进龙/Desktop/web/scripts/run.mjs) | Node | **pnpm 定位器**：优先找 DSH 内置 runtime（`~/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/pnpm/bin/pnpm.mjs`），找不到则回退 PATH 里的 `pnpm`。用法 `node scripts/run.mjs <pnpm args>` |
 | [run.ps1](file:///c:/Users/许进龙/Desktop/web/scripts/run.ps1) | PS 5.1 | 同上的 PowerShell 版。**用点源执行** `. ./scripts/run.ps1 install`（保留退出码）。**文件内刻意只用 ASCII**——Windows PowerShell 5.1 按 ANSI 读 `.ps1`，中文会导致解析失败 |
-| [vendor-web.mjs](file:///c:/Users/许进龙/Desktop/web/scripts/vendor-web.mjs) / `.ps1` | Node / PS | **拉取 NavSphere 底座到 `apps/web`** 并注入 NavHub 存储适配器。用脚本而非 checked-in 副本——保持仓库聚焦 NavHub 自有代码，更新上游只需一条命令 |
+| [vendor-web.mjs](file:///c:/Users/许进龙/Desktop/web/scripts/vendor-web.mjs) / `.ps1` | Node / PS | **拉取 NavSphere 底座到 `apps/web`** 并注入 山羊胡存储适配器。用脚本而非 checked-in 副本——保持仓库聚焦 山羊胡自有代码，更新上游只需一条命令 |
 | [sync-web-overlay.mjs](file:///c:/Users/许进龙/Desktop/web/scripts/sync-web-overlay.mjs) | Node | **反向同步**：下载上游 tarball 逐文件 diff，把「与上游不同或上游没有」的文件精确同步进 `apps/web-overlay`（唯一事实源）。规则：本地有/上游没有→新增；内容不同→更新；**内容一致→从 overlay 删除** |
 | [check-web-overlay.mjs](file:///c:/Users/许进龙/Desktop/web/scripts/check-web-overlay.mjs) | Node | 检查 `apps/web` 与 `apps/web-overlay` 的**一致性漂移**——改了 `apps/web` 忘了同步，重新 vendor 或构建镜像时改动会丢。把漂移变成显式失败（CI 可加） |
 | [gen-pwa-icons.mjs](file:///c:/Users/许进龙/Desktop/web/scripts/gen-pwa-icons.mjs) | Node | 从 SVG **栅格化**生成 PWA 图标（品牌色 + 首字母「N」，与站内 LetterAvatar 视觉一致）。输出 `icon-{192,512}.png`、`icon-maskable-512.png`、`apple-touch-icon.png`。**为什么不用现有 `logo.webp`**：只有 80x80，放大到 512 会模糊 |

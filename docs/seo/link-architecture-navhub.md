@@ -1,4 +1,4 @@
-# NavHub 内链架构与信息架构设计（连乐桥 · 链接策略）
+# 山羊胡内链架构与信息架构设计（连乐桥 · 链接策略）
 
 > 数据口径：本地 :3000 实测 SSR HTML + `data/navhub.db` 直查。所有数字可复现（脚本见 §8）。
 
@@ -25,12 +25,12 @@
 - 代码层指向 `/site/` 的引用仅 3 处，全部不产出有效入链：`search-palette.tsx:630`、`site/[id]/page.tsx:459/534`、`admin/stats/page.tsx:455`（robots 禁抓）。**根因不是「没数据」，是「数据错了」**：`site_relations` 表确实 0 行，但 `/api/hub/sites/{id}/relations` 从 `packages/core/src/ecosystem.ts` 的 **17 个 URL/关键词键**实时匹配（种子 25 条目）。两个缺陷叠加：① **`targetSiteId` 100% 缺失** → `site/[id]:457/:533` 的 `alt.targetSiteId ? <Link> : <span>` 恒走 span，内链 0 条；② **键是 host 级**，`"github.com"` 一个键命中 **76 个 active 站点**（Cline / vLLM / Qwen 2.5 / LangGraph …），实测 `hey`（HTTP 压测 CLI）的平替是「GitLab：私有化部署的代码托管平台」——**7.5%（76/1013）的站点在被错误陈述平替**，全站 98 站（9.7%）被种子命中、其中 88 站（8.7%）落在多站共享键上。所以平替区块当前是**错误内容**，不是空内容。
 
 **两个比"孤岛"更致命的缺陷**
-1. **重复 title**：`/site/{id}` 的 title 恒为 `站点详情 - NavHub 导航`（1020 份完全相同），description 恒为 `站点简介、相似推荐与生态关联`，`<h1>` 数量 = **0**；`/tags/{slug}` 的 title 恒为 `标签详情`（1080 份相同，不含标签名）。
+1. **重复 title**：`/site/{id}` 的 title 恒为 `站点详情 - 山羊胡`（1020 份完全相同），description 恒为 `站点简介、相似推荐与生态关联`，`<h1>` 数量 = **0**；`/tags/{slug}` 的 title 恒为 `标签详情`（1080 份相同，不含标签名）。
 2. **无限软 404 空间**：`/site/abc`、`/site/99999999`、`/tags/zzz-xxx`、`/collections/zzz-xxx` 全部返回 **HTTP 200**（实测）；标签名/别名双形态同样 200（`/tags/AI%20编程` 与 `/tags/ai-编程` 均 200，328 个标签受影响）。这是抓取预算黑洞，优先级高于孤岛治理。
 
 ## 2. 孤岛治理：卡片双模式（不牺牲"点卡直达"）
 
-**2.1 为什么不能把外链改内链中转** —— 导航站的核心价值是**一跳直达**。"首页 → NavHub → 详情页 → 目标站"变成两跳，跳出率必然上升，且 1020 条内链的权重收益远小于体验损失。所以：**外链保持，内链以"不争抢主点击"的方式叠加**。
+**2.1 为什么不能把外链改内链中转** —— 导航站的核心价值是**一跳直达**。"首页 → 山羊胡 → 详情页 → 目标站"变成两跳，跳出率必然上升，且 1020 条内链的权重收益远小于体验损失。所以：**外链保持，内链以"不争抢主点击"的方式叠加**。
 
 ### 2.2 双模式 DOM 设计（拉伸链接 + 分层 z-index）
 核心技巧：`<a>` 不能嵌套，因此**取消外层 `<a>` 包裹**，改为「整卡拉伸外链（z-0）+ 站内入口（z-10）作为兄弟节点」：
@@ -172,7 +172,7 @@ export function Breadcrumbs({ items, origin }: { items: Crumb[]; origin: string 
 **hydration 两个风险点与规避**
 1. **`origin` 绝不从 `window.location` 读**。SSR 时为空、CSR 时有值 → 若 origin 参与可见 DOM 会直接 mismatch。方案：`origin` 由页面从 `headers()` 推导后作为 props 下传（复用 `sitemap.ts` 里 `siteOrigin()` 的写法）。JSON-LD 走 `dangerouslySetInnerHTML`，React 不比对，天然安全；但**可见 DOM 只用相对 href**，恒等。
 2. **客户端页面（`'use client'`）不要用异步数据决定"渲染几段"**。`items` 数量在 SSR 首帧与 hydration 首帧必须一致。`/site/{id}` 现在标题来自 `fetchSite` → 首帧为空。正确做法（也是根治方案）：
-   **把 `app/site/[id]/page.tsx` 拆成 RSC 壳 + 客户端交互区**：`page.tsx` 用 `await fetchSite(id)` 取数据 → `generateMetadata` 输出 `{title}: ${site.title} - NavHub` 与真实 description → 渲染 `<h1>`、`<Breadcrumbs>`、内链列表；`site-detail-client.tsx` 只保留收藏/复制/平替筛选等交互。**这一步同时消灭 1020 个重复 title、0 个 h1、0 条 SSR 内链**，是整个项目 ROI 最高的改动。`/tags/{slug}` 同理：slug 来自 `useParams()`（SSR 有值，安全），但站点列表来自 fetch → 列表容器改为 RSC 侧渲染前 20 条，客户端只负责"加载更多"。
+   **把 `app/site/[id]/page.tsx` 拆成 RSC 壳 + 客户端交互区**：`page.tsx` 用 `await fetchSite(id)` 取数据 → `generateMetadata` 输出 `{title}: ${site.title} - 山羊胡` 与真实 description → 渲染 `<h1>`、`<Breadcrumbs>`、内链列表；`site-detail-client.tsx` 只保留收藏/复制/平替筛选等交互。**这一步同时消灭 1020 个重复 title、0 个 h1、0 条 SSR 内链**，是整个项目 ROI 最高的改动。`/tags/{slug}` 同理：slug 来自 `useParams()`（SSR 有值，安全），但站点列表来自 fetch → 列表容器改为 RSC 侧渲染前 20 条，客户端只负责"加载更多"。
 
 ## 6. 链接预算与爬虫效率
 

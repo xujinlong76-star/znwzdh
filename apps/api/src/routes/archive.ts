@@ -68,7 +68,7 @@ export const archiveRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
         </div>
         <section class="mt-4">
           <h2>关于 ${escapeHtml(site.title)}</h2>
-          <p>该文档快照由 NavHub Local-First 离线文档归档引擎于 ${new Date().toLocaleString()} 自动生成并存证。</p>
+          <p>该文档快照由 山羊胡 Local-First 离线文档归档引擎于 ${new Date().toLocaleString()} 自动生成并存证。</p>
           <p>支持断网离线无损查阅、SingleFile HTML 导出与纯文本 Markdown 提取。</p>
         </section>
       </article>

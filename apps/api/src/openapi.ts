@@ -210,7 +210,7 @@ export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
   return {
     openapi: "3.1.0",
     info: {
-      title: "NavHub 中枢 API",
+      title: "山羊胡中枢 API",
       version: "0.1.0",
       description:
         "导航站中枢（Fastify）。**自动生成**自 Fastify 路由表——路由增删时本文档同步变化，不存在手写清单漂移。" +

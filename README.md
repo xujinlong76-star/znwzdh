@@ -1,4 +1,4 @@
-# NavHub 4.0 - 次世代 AI 开发者智能导航与知识工作台
+# 山羊胡 4.0 - 次世代 AI 开发者智能导航与知识工作台
 
 <p align="center">
   <b>AI 原生混合检索</b> · <b>Bento-Flow 自由排版工作台</b> · <b>时序衰减自适应算法</b> · <b>0-RTT 原地推测执行</b> · <b>全生态 Agent MCP Server</b>
@@ -8,7 +8,7 @@
 
 ## 🌟 项目概览 (Overview)
 
-**NavHub** 是一款专为极客与工程研发团队打造的 **AI 原生网址导航系统与开发者知识工作台 (Next-Gen Developer Knowledge OS)**。
+**山羊胡** 是一款专为极客与工程研发团队打造的 **AI 原生网址导航系统与开发者知识工作台 (Next-Gen Developer Knowledge OS)**。
 
 系统在成熟的前端基底上进行了深度的架构重构与能力跃升：突破了传统网址导航单向展示、割裂静态的局限，融合了**五路混合召回智能检索**、**Bento-Flow 模块化自适应画布**、**双曲几何平替推理**与**端侧 0-RTT 语法微解析器**，并向外部 AI Agent（Claude / Cursor / Raycast）提供标准 MCP 工具协议，实现从静态收藏夹到个人智能工作台的跨越。
 
@@ -57,7 +57,7 @@
 
 ## 🏗️ 架构拓扑 (Architecture Topology)
 
-NavHub 采用清晰的 pnpm Workspace Monorepo 组织结构，前后端通过契约严密解耦：
+山羊胡采用清晰的 pnpm Workspace Monorepo 组织结构，前后端通过契约严密解耦：
 
 ```
 navhub/
@@ -132,7 +132,7 @@ pnpm test
 
 ## 🐳 Docker 生产容器化部署 (Deployment)
 
-NavHub 提供了多阶段构建的轻量镜像，不依赖宿主机复杂的构建环境。
+山羊胡提供了多阶段构建的轻量镜像，不依赖宿主机复杂的构建环境。
 
 ```bash
 cd docker
@@ -185,5 +185,5 @@ docker compose --profile standard up -d
 
 ## 📜 许可证 (License)
 
-* NavHub 核心自研模块与算法库遵循 [MIT License](LICENSE)。
+* 山羊胡核心自研模块与算法库遵循 [MIT License](LICENSE)。
 * 前端基底派生自开源项目 NavSphere（MIT），严格保留其原始版权声明。

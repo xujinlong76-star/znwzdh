@@ -76,7 +76,7 @@ describe("Dimension 2: Data Sovereignty & Backup API", () => {
 
     const backup = JSON.parse(res.body);
     expect(backup.version).toBe("1.0");
-    expect(backup.generator).toContain("NavHub");
+    expect(backup.generator).toContain("山羊胡");
     expect(backup.stats.categoryCount).toBeGreaterThanOrEqual(1);
     expect(backup.stats.siteCount).toBeGreaterThanOrEqual(1);
     expect(backup.categories.some((c: any) => c.title === "云原生与架构")).toBe(true);

@@ -3,7 +3,7 @@
 > package 名 `navsphere`（**不是** `@navhub/web`），Next.js 15 App Router + React 18.2 + Tailwind CSS 4。
 > 派生自 [NavSphere](https://github.com/tianyaxiang/NavSphere)（MIT），通过 **vendoring + overlay** 机制跟进上游。
 
-## 1. 与 NavHub 的关系：一条接缝、两个函数
+## 1. 与 山羊胡的关系：一条接缝、两个函数
 
 ```
 NavSphere 前端（69 处调用点，零改动）
@@ -160,7 +160,7 @@ function hubUrl(path: string): string {
 
 | 分组 | 路由 | 说明 |
 | --- | --- | --- |
-| **中枢代理** | `/api/hub/[...path]` | ★ 转发到 NavHub 中枢（见 §2） |
+| **中枢代理** | `/api/hub/[...path]` | ★ 转发到 山羊胡中枢（见 §2） |
 | 认证 | `/api/auth/[...nextauth]` | next-auth v5 |
 | NavSphere 业务 | `/api/navigation*`（含 `reorder` / `restore` / `check-default` / `[id]` / `[id]/items` / `[id]/categories`）、`/api/site`、`/api/site-config`、`/api/home/*`、`/api/videos*`、`/api/resource*`、`/api/extension/[id]` | 走 `getFileContent/commitFile` → StorageAdapter |
 | 工具 | `/api/favicon`、`/api/favicon-im`、`/api/website-metadata`、`/api/health`、`/api/search`、`/api/submissions` | |
@@ -234,7 +234,7 @@ apps/web-overlay    ← NavHub 自有文件的唯一事实源（自研部分）
 
 - 上游 ref `main`，commit `6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a`，vendored at `2026-10-12T15:50:42.169Z`
 - **Re-vendor**：`node scripts/vendor-web.mjs`
-- NavHub 自有文件（不得被上游覆盖）：`src/lib/storage-adapter.ts`（存储接缝）
+- 山羊胡自有文件（不得被上游覆盖）：`src/lib/storage-adapter.ts`（存储接缝）
 
 ### 6.2 三个脚本
 

@@ -126,7 +126,7 @@ export async function SitesDirectory({ requested, data }: { requested: number; d
               {failed
                 ? // 「没取回」和「库里没东西」是两件事：写成一个，用户就以为站点被删了。
                   // 这里不报「共收录 N 个」，也不假装是取数上限截断。
-                  `目录数据这次没能从 NavHub 中枢取回${
+                  `目录数据这次没能从 山羊胡中枢取回${
                     all.length > 0 ? `，只列出已经取回的 ${all.length} 个站点` : ''
                   }。这不代表站点被删除或下架——稍后重新加载本页即可，也可以先按分类或标签浏览。`
                 : truncated

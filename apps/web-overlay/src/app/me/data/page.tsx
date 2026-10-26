@@ -370,7 +370,7 @@ export default function MeDataPage() {
       }
       if (!parsedPayload || typeof parsedPayload !== 'object' || Array.isArray(parsedPayload)) {
         setImportResult(null)
-        setError('备份文件顶层不是对象，无法识别为 NavHub 导出的备份 JSON')
+        setError('备份文件顶层不是对象，无法识别为 山羊胡导出的备份 JSON')
         return
       }
       lastBackupRef.current = parsedPayload as Record<string, unknown>

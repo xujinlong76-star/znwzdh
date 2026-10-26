@@ -60,7 +60,7 @@ export function AlgorithmLab() {
               </Link>
               <span className="text-border">/</span>
               <Badge variant="outline" className="text-primary border-primary/40 bg-primary/5 text-xs px-2.5 py-0.5 font-medium">
-                NavHub 5.0+ 算法实验室
+                山羊胡 5.0+ 算法实验室
               </Badge>
             </div>
 

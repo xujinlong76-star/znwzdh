@@ -144,7 +144,7 @@ describe("describeCrash：每类都要给出「该做什么」", () => {
 describe("crashReportText：可复制的诊断文本", () => {
   it("含类型与说明，并在有编号 / 详情时带上它们", () => {
     const text = crashReportText(describeCrash(new Error("boom"), "abc123"));
-    expect(text.startsWith("[NavHub 崩溃反馈]")).toBe(true);
+    expect(text.startsWith("[山羊胡崩溃反馈]")).toBe(true);
     expect(text).toContain("类型：运行时异常");
     expect(text).toContain("编号：abc123");
     expect(text).toContain("详情：boom");

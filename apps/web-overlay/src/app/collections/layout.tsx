@@ -22,7 +22,7 @@ const SITE_PATH = 'src/navsphere/content/site.json'
 
 export async function generateMetadata(): Promise<Metadata> {
   const site = await getFileContent<{ basic?: { title?: string } }>(SITE_PATH)
-  const siteName = site?.basic?.title ?? 'NavHub'
+  const siteName = site?.basic?.title ?? '山羊胡'
   return {
     title: { default: '合集', template: '%s - ' + siteName },
     description: '按主题整理的站点合集',

@@ -69,9 +69,9 @@ describe('webSiteLd', () => {  it('输出最小合法 WebSite（含 name/url/inL
     expect(ld2.description).toBeUndefined()
   })
 
-  it('name 为空时回退 NavHub，不输出空 name', () => {
+  it('name 为空时回退山羊胡，不输出空 name', () => {
     const ld = webSiteLd(ORIGIN, '   ') as Record<string, unknown>
-    expect(ld.name).toBe('NavHub')
+    expect(ld.name).toBe('山羊胡')
   })
 })
 
@@ -95,7 +95,7 @@ describe('organizationLd', () => {
 
   it('description 超长截断、空值省略；name 空回退', () => {
     const ld = organizationLd(ORIGIN, '  ', '/icons/icon-512.png', 'x'.repeat(500)) as Record<string, unknown>
-    expect(ld.name).toBe('NavHub')
+    expect(ld.name).toBe('山羊胡')
     expect((ld.description as string).length).toBe(300)
     const ld2 = organizationLd(ORIGIN, 'NavHub', '/icons/icon-512.png', '  ') as Record<string, unknown>
     expect(ld2.description).toBeUndefined()
@@ -217,9 +217,9 @@ describe('softwareApplicationLd', () => {
     expect(ld2.description).toBeUndefined()
   })
 
-  it('name 为空回退 NavHub 插件，slug 为空省略 url', () => {
+  it('name 为空回退山羊胡插件，slug 为空省略 url', () => {
     const ld = softwareApplicationLd(ORIGIN, { slug: '', name: '  ' }) as Record<string, unknown>
-    expect(ld.name).toBe('NavHub 插件')
+    expect(ld.name).toBe('山羊胡插件')
     expect(ld.url).toBeUndefined()
   })
 })
@@ -251,7 +251,7 @@ describe('profilePageLd', () => {
   it('name 为空回退默认作者名，description 超长截断', () => {
     const ld = profilePageLd(ORIGIN, { name: '  ', path: '/x', description: 'y'.repeat(500) })
     const person = ld.mainEntity as Record<string, unknown>
-    expect(person.name).toBe('NavHub 插件作者')
+    expect(person.name).toBe('山羊胡插件作者')
     expect((person.description as string).length).toBe(300)
   })
 })

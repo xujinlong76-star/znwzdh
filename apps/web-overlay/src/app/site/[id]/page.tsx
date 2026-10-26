@@ -261,7 +261,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
       title,
       description,
       imageUrl: ogImageUrl(canonical),
-      imageAlt: `${site.title} · NavHub 站点详情`,
+      imageAlt: `${site.title} · 山羊胡站点详情`,
     })),
   }
 }

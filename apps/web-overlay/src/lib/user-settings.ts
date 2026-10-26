@@ -58,7 +58,7 @@ export const DEFAULT_USER_SETTINGS: UserSettingsModel = {
 }
 
 export const SEARCH_ENGINE_OPTIONS = [
-  { value: 'internal', label: '站内聚合搜索 (NavHub)' },
+  { value: 'internal', label: '站内聚合搜索 (山羊胡)' },
   { value: 'google', label: 'Google 谷歌' },
   { value: 'bing', label: 'Bing 必应' },
   { value: 'duckduckgo', label: 'DuckDuckGo 隐私检索' },

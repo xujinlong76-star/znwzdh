@@ -228,3 +228,97 @@ confidence: {
 3. API 新端点（深检、历史）
 4. 前端接入（stale / 深检 / 趋势 / 失败原因）
 5. 深度验证（类型、单测、a11y、真实浏览器）
+
+---
+
+## 八、实施结果（2026-10-27 00:10）
+
+### 8.1 新增与改动文件
+
+| 文件 | 性质 | 说明 |
+|---|---|---|
+| `packages/core/src/url-deep-diagnose.ts` | 新增 | 分层判定纯函数（`diagnoseUrlDeep`）+ 趋势最小二乘（`computeReachabilityTrend`）+ 主域抽取 |
+| `packages/core/src/index.ts` | 改动 | 导出上述模块 |
+| `packages/core/test/url-deep-diagnose.test.ts` | 新增 | 26 例，锁住每类 verdict、证据层级、置信度边界、趋势判据 |
+| `apps/api/src/routes/plugin-audit.ts` | 改动 | D1–D7 修复 + 两个新端点 |
+| `apps/api/test/plugin-audit-api.test.ts` | 改动 | 新增 9 例（stale 3 / 深检 3 / 历史 1 / 鉴权 3），总数 11 → 20 |
+| `apps/web-overlay/src/components/plugins/plugin-url-health-panel.tsx` | 改动 | 待复检徽标与横幅、深检入口与证据链面板、历史趋势迷你图、候选四档与可信度、失败原因 |
+| `apps/web/src/components/plugins/plugin-url-health-panel.tsx` | 同步 | overlay 的镜像副本 |
+| `deliverables/plugin-health/ui-regression.mjs` | 新增 | 真实浏览器回归（33 条断言），拦截 `/api/hub/**` 固定六种状态 |
+| `deliverables/plugin-health/screenshots/plugin-health-deep-and-heal.png` | 新增 | 回归过程的整页截图（待复检 + 深检 + 趋势 + 四档候选同屏） |
+
+### 8.2 缺陷修复对照
+
+| 编号 | 修法 | 回归防线 |
+|---|---|---|
+| D1 越权写 | `autoApply` 前校验 `scopes` 含 write/admin，否则 403 `forbidden_scope` | 只读令牌 + autoApply → 403 且清单版本不变（**反向验证：去掉校验即变红**） |
+| D2 伪造健康 | 治愈后写 `stale: true`（同一 `plugin_url_audit` action），读取端点返回 `reachability/okCount = null` | 3 例断言全为 null（**反向验证：改成 `stale: false` 后 3 例全红**） |
+| D3 参数错位 | `clampInt(body.sampleLimit, DEFAULTS.sample, 1, MAX_SAMPLE)` | 代码层修正，注释说明错位后的实际运算 |
+| D4 假诊断 | 新增 `UrlEvidence` 与 `diagnoseFromEvidence`；`autoAudit` 保留 `brokenItems` 的 status/failureKind；调用方声称的 URL 标 `UNVERIFIED` | 断言 `cause === 'UNVERIFIED'` 且 `evidence.source === 'client-claimed'` |
+| D5 静默失败 | `autoApplied` 增加 `applied/reason/detail`，四类原因枚举 | 前端徽标区分「已应用」与「未应用：原因」 |
+| D6 候选不判内容 | `probeCandidateUrl` 提至 8KB + `auditPageHealth`，产出 verified/blocked/suspicious/dead 四档；`autoApply` 只采纳 verified | 候选渲染显示四档徽标 + 可信度三项分解 |
+| D7 注入与外泄 | 清单字段压平换行、截断、JSON 定界并把 `<` 转义为 `\u003c`；降级文案改为分类化，原文写服务端日志 | prompt 不再直接拼接作者可控字段 |
+
+### 8.3 新增能力
+
+1. **`POST /api/plugins/:slug/url-deep-diagnose`**：六层证据（URL/DNS/重定向/HTTP/内容/归档），默认只诊断本包内 URL，包外需 `allowExternal: true`。DNS 预检区分「解析失败」与「解析成功但落在私网」——后者不判 `expired-domain`（这是本次实现中修正的一处易错点）。
+2. **`GET /api/plugins/:slug/url-health/history`**：按时间正序的体检点 + 斜率趋势，`stale` 记录被排除并计数（`skippedStale`）。
+3. **证据链补齐**：判定在「连不上」处早返回时，`finish()` 会把未采集的层补成 `skip` 并固定层序 —— 任何结论都是完整六层，杜绝「没查」被读成「没问题」。
+
+### 8.4 验证记录
+
+**A. 静态与单测**
+
+- 类型检查：5/5 包通过（`node scripts/typecheck.mjs`，20.6s）。
+- 单测：`url-deep-diagnose.test.ts` 26/26；`plugin-audit-api.test.ts` 20/20；`plugin-audit.test.ts` 15/15；面板契约测试 11/11；a11y 门禁 `keyboard-activation` + `clipboard-honesty` 44/44。
+- 反向验证：权限校验、stale 语义各做一次「拆掉即红、恢复即绿」。
+- `field-names` 与 `url-hygiene` 的剩余红灯来自**并行会话正在开发的 `admin/videos` 与 `collections` 文件**，不在本次改动范围。
+
+**B. 真实浏览器回归（`deliverables/plugin-health/ui-regression.mjs`）**
+
+生产模式（`next build` + `next start`）跑 Chromium，`/api/hub/**` 全部拦截成固定桩，验证六种状态下界面是否「说实话」。结果 **33/33 通过**。
+
+| 场景 | 关键断言 | 结果 |
+|---|---|---|
+| 待复检 | 徽标显示「待复检」；横幅写明「健康度待复检」「不会用推算值填补」；本行**不出现**「真健康」与任何百分比 | 通过 |
+| 深检证据链 | 结论「域名停放 / 广告占位」、置信度 90%、URL/DNS/重定向/HTTP/内容/归档六层齐备、HTTP 200 + 采样 16384 字节、Wayback 入口、**未查的层显示「未查询 Wayback 归档」而非省略** | 通过 |
+| 历史趋势 | `role="img"` + aria-label「可达率趋势：近期恶化，共 6 个数据点」、`-7 个百分点`、「已排除 1 条待复检记录」 | 通过 |
+| 候选四档 | 「实测可达」/「拒绝爬虫·未验证」/「疑似停放」三档徽标；可信度分解在 `title` 中（可达性 100 × 0.5 + 内容健康 88 × 0.3 + 领域匹配 85 × 0.2 = 92） | 通过 |
+| 诚实性 | client-claimed 标「结论未实测」；`applied:false` 显示「未应用：无实测通过的平替」；包外 URL 有「不属于本包，已跳过诊断」提示 | 通过 |
+| 运行时 | 无 JS 异常 / pageerror；`/api/hub/*` 无 4xx/5xx | 通过 |
+
+唯一一条 502 是 `/api/me/sync`（后台同步打向独立 API 进程，该进程在本轮验证时未启动），属环境事实，已在脚本里单独归类打印，不计为面板缺陷。
+
+**C. 回归过程中发现并修掉的三处「只在真实浏览器里才暴露」的问题**
+
+1. **`ignoredUrls` 只进类型、从未渲染**：后端已经会拒绝包外 URL 并回传清单，前端却什么也不显示——用户只能看到「AI 说没问题」。已补提示块（最多列 5 条）。
+2. **待复检时健康微条画成全零空条**：看起来像「0 个健康」，与「没有测量值」是两回事。已改为 `snap && !snap.stale` 才渲染。
+3. **可信度分解只挂在「质量分」徽标上**：该徽标仅当 `qualityScore` 是数字才渲染，而 AI 直出的候选常常没有质量分，刚算好的可信度就没人看得见。已把分解挂到候选行本身。
+
+同时给行与抽屉补了 `data-testid`（`pack-row-<slug>` / `pack-detail-<slug>`）：原先按文案过滤 `div` 定位单行会命中整个列表容器，导致「点错行」「读错块」——回归脚本自身的假失败正是这么来的。
+
+### 8.5 已知边界
+
+- 深度取证不单独做 TLS 握手与证书链解析（`guardedFetch` 不暴露响应头与证书），因此「证书过期」类问题只能归入 `connect` 失败，不会给出证书细节。这是刻意取舍：不猜。
+- Wayback 层目前恒为 `skip`（只返回快照链接供人工点开），未做归档年份查询；避免为一条体检引入额外外部 API 依赖。
+- 历史趋势依赖 `audit_logs` 保留策略；若将来做日志归档，需同步调整 `skippedStale` 口径。
+
+### 8.6 如何复跑这份验证
+
+```bash
+# 1) 生产构建（独立输出目录，避免踩到并行会话的 .next）
+cd apps/web && NEXT_DIST_DIR=.next-uibuild3 node node_modules/next/dist/bin/next build
+
+# 2) 起服务（生产模式下 bypass 快捷登录按设计关闭，必须给管理口令）
+NEXT_DIST_DIR=.next-uibuild3 NAVHUB_ADMIN_PASSWORD=<临时口令> \
+  node node_modules/next/dist/bin/next start -p 3452
+
+# 3) 跑回归（33 条断言，约 40 秒；--shot 会存整页截图）
+NAVHUB_VERIFY_PASSWORD=<临时口令> \
+  node deliverables/plugin-health/ui-regression.mjs --base http://localhost:3452 --shot
+```
+
+两条环境经验（本次踩过，写下来免得重踩）：
+
+- **不要用 `next dev` 跑这份回归**：本机同时存在多个 dev 实例共用 `apps/web/.next`，互相把对方的写入当成变更，页面会陷入 Fast Refresh 全量重载（实测 2 分钟导航 104 次），任何点击都报「元素已卸载」。生产模式没有这个循环。
+- **不要在满载机器上再起 dev 实例**：16GB 机器上已有 6 个 Next 进程时，第 7 个会在编译期 OOM（`Fatal JavaScript out of memory`）。生产构建 + `next start` 的内存占用小得多。

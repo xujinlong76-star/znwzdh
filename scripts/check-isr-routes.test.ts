@@ -13,7 +13,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { CONTRACT_KINDS_DEFAULT, contractFindings, pickSample, rotateHash } from "./check-isr-routes.mjs";
-import { shape, shapeDiff } from "./capture-isr-corpus.mjs";
+import { corpusSourcePath, shape, shapeDiff, verdict } from "./capture-isr-corpus.mjs";
 
 const SCRIPT = resolve("scripts/check-isr-routes.mjs");
 // 脚本按 apps/web/<NEXT_DIST_DIR> 找产物（与 check-bundle-budget 同一套环境变量）。
@@ -925,6 +925,44 @@ describe("capture-isr-corpus.mjs --check 的漂移判据", () => {
       const html = read(f);
       expect(shapeDiff(shape(html), shape(html)), f).toEqual([]);
     }
+  });
+
+  const CORPUS_ORIGIN = "https://navhub.example";
+
+  it("语料按「自己记录的路径」判：六族契约裁决都干净（--check 不因取样轮转假红）", () => {
+    for (const f of readdirSync(CORPUS_DIR)) {
+      const html = read(f);
+      const own = corpusSourcePath(html);
+      // 生成器注释里的路径是 --check 唯一自洽的判据来源；解析不到就说明注释格式变了
+      expect(own, f).not.toBeNull();
+      expect(verdict(html, `${CORPUS_ORIGIN}${own}`), f).toBe("");
+    }
+  });
+
+  it("拿别的条目判同一份语料必出假阳性 ⇒ 钉住这条判据不是白加的", () => {
+    const html = read("site-detail.html");
+    const own = corpusSourcePath(html);
+    expect(own, "site-detail 语料里没解析出来源路径").toMatch(/^\/site\//);
+    // sitemap 每轮抽到的 uuid 会变：用「今天的条目」判「仓库里那份」，
+    // canonical 一定对不上 —— 这正是 run79 里 6 族假红 2 族的成因。
+    const other = "/site/00000000-0000-4000-8000-000000000000";
+    expect(other).not.toBe(own);
+    const falsePositive = verdict(html, `${CORPUS_ORIGIN}${other}`);
+    expect(falsePositive).toContain("canonical");
+    expect(verdict(html, `${CORPUS_ORIGIN}${own}`)).toBe("");
+  });
+
+  it("源码级钉子：--check 判仓库语料用的是它自己的路径，不是今天的条目", () => {
+    // 上面两条钉的是纯函数；这一条钉接线本身 —— 没有它，把 storedVerdict 改回
+    // hit.path 一样能让全套用例全绿，而那正是 6 族假红的成因。
+    const src = readFileSync(resolve("scripts/capture-isr-corpus.mjs"), "utf8");
+    const checkBranch = src.slice(src.indexOf("if (CHECK) {"));
+    expect(checkBranch, "找不到 --check 分支").not.toBe(src);
+    expect(checkBranch).toContain("const storedPath = corpusSourcePath(stored)");
+    expect(checkBranch).toContain("verdict(stored, `${CORPUS_ORIGIN}${storedPath}`)");
+    expect(checkBranch).not.toContain("verdict(stored, `${CORPUS_ORIGIN}${hit.path}`)");
+    // 取样轮转必须显式说出来，否则读日志的人会以为路径对不上是真漂移
+    expect(checkBranch).toContain("取样轮转，不影响判定");
   });
 
   it("六族形状齐备：title/desc/canonical/h1 各 1、lang 已设、有 og 与 JSON-LD", () => {

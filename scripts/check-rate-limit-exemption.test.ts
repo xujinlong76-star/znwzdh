@@ -181,6 +181,13 @@ describe("check-rate-limit-exemption.mjs", () => {
     const { code, out } = await run({ publicLimit: 5 }, { cacheHitAll: true });
     expect(code, out).toBe(1);
     expect(out).toContain("证据不足");
+    // 归因必须指向本轮取证确认「还活着」的来源。磁盘侧两层缓存的清理早已在 CI 步骤里
+    // 落地并被上面的钉子测试锁住，再把排查指向它只会让人重复做已经做过的事 ——
+    // 那正是 run79 里这条红灯被误读成「豁免失效」的原因。
+    expect(out).toContain("检查没跑成");
+    expect(out).toContain("next-server 进程自己的内存路由缓存");
+    expect(out).toContain("pgrep");
+    expect(out).not.toContain("CI 侧需要先清 server/route-cache");
   });
 
   it("浏览器侧 /api/hub 代理被标成内部流量 ⇒ 安全边界红灯", async () => {

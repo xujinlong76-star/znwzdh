@@ -124,8 +124,24 @@ export function shapeDiff(a, b) {
 
 const KINDS = () => new Set(CONTRACT_KINDS_DEFAULT);
 
+/**
+ * 语料里自己记录的抓取路径（生成器注释里的「来源：对着 … 跑起来的站点抓 /site/&lt;uuid&gt;，」）。
+ *
+ * `--check` 必须拿语料自己的路径去判它。sitemap 每轮抽到的条目会变（同一族里换了个
+ * 站点就是另一个 uuid），而 canonical/og:url 是写死在语料里的：用「今天的条目」判
+ * 「仓库里那份」，contractFindings 必然报「canonical 与 URL 不一致」——那是取样轮转，
+ * 不是语料过期。run79 实测 6 个族里 2 个就是这样假红的。
+ *
+ * 轮转不会掩盖真过期：形状签名（shape）与 URL 无关，路由长相由 FAMILIES 的正则
+ * 和 --live 抽查各自钉住，都不依赖这一条。
+ */
+export function corpusSourcePath(html) {
+  const m = /跑起来的站点抓 (\/[^\s，]*)，/.exec(html);
+  return m ? m[1] : null;
+}
+
 /** 契约裁决：把语料喂给门禁同一个 `contractFindings`，返回「发现项」的稳定描述。 */
-function verdict(html, url) {
+export function verdict(html, url) {
   return contractFindings(html, url, KINDS(), { expectIndexable: true })
     .map((i) => `${i.kind}:${i.message}`)
     .sort()
@@ -177,12 +193,15 @@ async function main() {
       // 现抓的那份同样是改写后的形状 —— 拿 BASE 去判 canonical 会永远红在
       // 「域名不同」这个跟过期无关的地方。
       const CORPUS_ORIGIN = 'https://navhub.example';
-      const storedVerdict = verdict(stored, `${CORPUS_ORIGIN}${hit.path}`);
+      const storedPath = corpusSourcePath(stored) ?? hit.path;
+      const rotated = storedPath !== hit.path;
+      const storedVerdict = verdict(stored, `${CORPUS_ORIGIN}${storedPath}`);
       const liveVerdict = verdict(freshFull, `${CORPUS_ORIGIN}${hit.path}`);
       const diffs = shapeDiff(shape(stored), shape(freshFull));
       const verdictChanged = storedVerdict !== liveVerdict;
+      const where = `现抓=${hit.path} 语料=${storedPath}${rotated ? '（取样轮转，不影响判定）' : ''}`;
       if (!diffs.length && !verdictChanged) {
-        console.log(`✓ ${fam.name.padEnd(20)} 形状与契约裁决一致（${hit.path}）`);
+        console.log(`✓ ${fam.name.padEnd(20)} 形状与契约裁决一致（${where}）`);
         continue;
       }
       drifted.push(
@@ -190,7 +209,7 @@ async function main() {
           `${verdictChanged ? `契约裁决变了 仓库=${storedVerdict || '通过'} → 现抓=${liveVerdict || '通过'}` : ''}`,
       );
       console.log(
-        `✖ ${fam.name.padEnd(20)} 语料已过期（${hit.path}）` +
+        `✖ ${fam.name.padEnd(20)} 语料已过期（${where}）` +
           (diffs.length ? `\n    ${diffs.join('\n    ')}` : '') +
           (verdictChanged ? `\n    契约裁决：仓库=${storedVerdict || '通过'} → 现抓=${liveVerdict || '通过'}` : ''),
       );

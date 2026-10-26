@@ -94,7 +94,11 @@ async function main() {
     if (pages.miss < opts.minMiss) {
       failures.push(
         `阶段 3 证据不足：${pages.total} 页里只有 ${pages.miss} 页走了真·重渲染（非 x-nextjs-cache: HIT），低于下限 ${opts.minMiss} —— ` +
-          `全 HIT 意味着这一轮读的是旧快照，没在受限的中枢面前重新生成过，豁免有没有用不可知（CI 侧需要先清 server/route-cache）`,
+          `全 HIT 意味着这一轮读的是旧快照，没在受限的中枢面前重新生成过，豁免有没有用不可知。` +
+          `但这条红灯归因是「检查没跑成」，不是「豁免失效」：磁盘侧 server/route-cache 与 cache/fetch-cache 在 CI 里已经清过（并有钉子测试锁住那一步）， ` +
+          `还能给 HIT 的只剩两个来源 —— 正在运行的 next-server 进程自己的内存路由缓存（该步骤刻意不重启 web），` +
+          `或同一轮 job 更早的步骤已在 revalidate 有效期内渲染过同一批页。` +
+          `处置二选一：按启动时记录的 PID 重启 web（pgrep -f "next/dist/bin/next start" 匹配不到 next-server，process.title 被改写过），或等 revalidate 到期后重探`,
       );
     }
   }

@@ -69,6 +69,26 @@ const getData = cache(async () => {
 const DIRECTORY_CATEGORY_LINKS = 8;
 
 /**
+ * 首页每组的首屏卡片数（渐进披露，2026-10-26）。
+ *
+ * 实测：首页 1008 张卡、未压缩 HTML 6.9MB，而 `scripts/html-budget.mjs` 的预算是
+ * 4096KB；单卡 6.2KB 里 class 属性占 3.0KB、内联 SVG 占 1.9KB —— 靠「精简卡片」
+ * 省不出预算，只能减少首屏卡数。改为每组首屏 6 张后 HTML 约 3.6MB，其余卡片点
+ * 「展开全部」在客户端即时揭示（数据本来就在 props 里，展开不发请求、没有加载态）。
+ *
+ * `NAVHUB_HOME_CARDS_PER_GROUP` 可覆盖；传 0 即恢复全量 SSR 的旧行为。
+ */
+const HOME_CARDS_PER_GROUP_DEFAULT = 6;
+
+function homeCardsPerGroup(): number {
+  const raw = process.env.NAVHUB_HOME_CARDS_PER_GROUP?.trim();
+  if (!raw) return HOME_CARDS_PER_GROUP_DEFAULT;
+  const parsed = Number(raw);
+  // 非法值退回默认：不让一个错字的配置把首页变成空壳
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : HOME_CARDS_PER_GROUP_DEFAULT;
+}
+
+/**
  * 首页 → 分类 hub 的入口数据。
  *
  * 实测（2026-10-21）：首页模板里 0 条 `/category` 链接，分类页只能靠
@@ -179,6 +199,7 @@ export default async function HomePage() {
         navigationData={navigationData}
         siteData={siteData}
         directoryLinks={directoryLinks}
+        cardsPerGroup={homeCardsPerGroup()}
       />
       {origin ? (
         <>

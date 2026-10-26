@@ -1,0 +1,113 @@
+{
+  "steps": [
+    {
+      "name": "首页搜索-输入",
+      "ok": true,
+      "detail": "输入\"代码\"后建议项数量=12"
+    },
+    {
+      "name": "首页搜索-触发",
+      "ok": true,
+      "detail": "当前URL=/"
+    },
+    {
+      "name": "分类页-打开站点详情",
+      "ok": true,
+      "detail": "点击卡片跳转 /site/385c18b1-aa13-4a5c-a18c-be3fb3f9b51d -> /site/385c18b1-aa13-4a5c-a18c-be3fb3f9b51d"
+    },
+    {
+      "name": "分类页-分页",
+      "ok": true,
+      "detail": "访问第2页 URL=/category/ai-tools/p/2"
+    },
+    {
+      "name": "偏好设置-切换控件",
+      "ok": true,
+      "detail": "点击开关/按钮数量=1"
+    },
+    {
+      "name": "偏好设置-状态变化",
+      "ok": true,
+      "detail": "before=\"light | \" after=\"light | \""
+    },
+    {
+      "name": "提交表单-填写与提交",
+      "ok": true,
+      "detail": "输入框数量=4"
+    },
+    {
+      "name": "市场详情-安装按钮",
+      "ok": true,
+      "detail": "找到并点击安装类按钮=true; 点击后URL=/marketplace/ai-agentic-coding"
+    },
+    {
+      "name": "自定义-进入编辑模式",
+      "ok": true,
+      "detail": "已点击编辑/排版按钮"
+    },
+    {
+      "name": "自定义-拖拽卡片",
+      "ok": true,
+      "detail": "执行了一次拖拽"
+    },
+    {
+      "name": "鉴权重定向-/me",
+      "ok": true,
+      "detail": "到达URL=/me; 命中登录页=false"
+    },
+    {
+      "name": "鉴权重定向-/favorites",
+      "ok": true,
+      "detail": "到达URL=/favorites; 命中登录页=false"
+    },
+    {
+      "name": "鉴权重定向-/admin",
+      "ok": true,
+      "detail": "到达URL=/auth/signin?callbackUrl=http%3A%2F%2Flocalhost%3A3212%2Fadmin; 命中登录页=true"
+    },
+    {
+      "name": "弹窗扫描",
+      "ok": true,
+      "detail": "未发现明显可触发弹窗的按钮"
+    }
+  ],
+  "consoleErrors": [],
+  "consoleWarnings": [],
+  "pageErrors": [],
+  "failedRequests": [
+    "[fetch] http://127.0.0.1:3212/marketplace?q=%E4%BB%A3%E7%A0%81&_rsc=5CB68i4pnAekjehf :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/marketplace?q=%E4%BB%A3%E7%A0%81&_rsc=tXyZJ52UQVBCVsD3 :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/marketplace?_rsc=5CB68i4pnAekjehf :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/marketplace?_rsc=OwvWfz5CIC6mGO_- :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/videos?_rsc=6LzX5gjdvrsd93qh :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/submit?_rsc=4UcLZZqAnr-OEkCs :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/marketplace?_rsc=3N5N6-vrRCdpgc88 :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/submit?_rsc=3N5N6-vrRCdpgc88 :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/videos?_rsc=okTUfhu63MlnaIGW :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/submit?_rsc=91W7Qlcado_wYUBL :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/submit?_rsc=FxBtJYv2Olv4RuXt :: net::ERR_ABORTED",
+    "[fetch] http://127.0.0.1:3212/me?_rsc=0KYjIJzSQndkILTu :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/office-productivity?_rsc=8mu-9PhRaVScQBoq :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/design-and-creative?_rsc=8mu-9PhRaVScQBoq :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/developer-resources?_rsc=8mu-9PhRaVScQBoq :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/devops-and-security?_rsc=8mu-9PhRaVScQBoq :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/backend-and-cloud?_rsc=8mu-9PhRaVScQBoq :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/frontend-development?_rsc=8mu-9PhRaVScQBoq :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/ai-tools?_rsc=8mu-9PhRaVScQBoq :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/tags?_rsc=hzvyQEdmHvs_FImb :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/sites?_rsc=Zb6eDJ-s9cXQrbEN :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category?_rsc=uUsP229qrvN_nXvM :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/hot?_rsc=vEPOR1jZviVUl158 :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/?_rsc=8nTjltbQWvg6NcbE :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/?_rsc=yIp22O3xgPPxC28X :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/devops-and-security?_rsc=5CB68i4pnAekjehf :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/backend-and-cloud?_rsc=5CB68i4pnAekjehf :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/frontend-development?_rsc=5CB68i4pnAekjehf :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category/ai-tools?_rsc=5CB68i4pnAekjehf :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/tags?_rsc=5CB68i4pnAekjehf :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/sites?_rsc=5CB68i4pnAekjehf :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/category?_rsc=5CB68i4pnAekjehf :: net::ERR_ABORTED",
+    "[other] http://127.0.0.1:3212/hot?_rsc=5CB68i4pnAekjehf :: net::ERR_ABORTED"
+  ],
+  "badResponses": []
+}

@@ -108,12 +108,18 @@ interface NavigationContentProps {
   siteData: SiteConfig
   /** 服务端生成的达标分类入口（首页目录带）；中枢失败时为空数组 */
   directoryLinks?: DirectoryLink[]
+  /**
+   * 每组首屏渲染的卡片数（超出部分点「展开全部」客户端揭示）。
+   * 由服务端按 NAVHUB_HOME_CARDS_PER_GROUP 注入；<=0 表示不限制。
+   */
+  cardsPerGroup?: number
 }
 
 export function NavigationContent({
   navigationData,
   siteData,
   directoryLinks = [],
+  cardsPerGroup = 0,
 }: NavigationContentProps) {
   const { toast } = useToast()
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -462,6 +468,7 @@ export function NavigationContent({
                     setPeekItem={openPeek}
                     keyboardHintId="navhub-card-keyboard-hint"
                     toggleSelectOne={toggleSelectOne}
+                    cardsPerGroup={cardsPerGroup}
                   />
                 ))}
 

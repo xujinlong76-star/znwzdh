@@ -12,6 +12,7 @@ import { Footer } from '@/components/footer'
 import { useToast } from '@/components/ui/use-toast'
 import { CenterPageHeader } from '@/components/user-center/center-page-header'
 import { SectionState } from '@/components/user-center/section-state'
+import { useIdentityReady } from '@/hooks/useIdentityReady'
 import { Bell, CheckCheck } from 'lucide-react'
 
 interface NotificationItem {
@@ -38,6 +39,7 @@ function formatTime(ts: number): string {
 
 export default function NotificationsPage() {
   const { toast } = useToast()
+  const identityReady = useIdentityReady()
   const [state, setState] = useState<ViewState>('loading')
   const [items, setItems] = useState<NotificationItem[]>([])
   const [unread, setUnread] = useState(0)
@@ -81,9 +83,23 @@ export default function NotificationsPage() {
   }, [])
 
   useEffect(() => {
+    // 身份未就绪先不动：此刻既不知道是否登录，也不该冒然打受保护接口。
+    if (!identityReady.ready) return
+    if (identityReady.isAnonymous) {
+      // 匿名无通知（通知挂在登录身份上）：直接呈现空态，**不发请求**，
+      // 从源头消除 /api/me/notifications 的 401 控制台噪声。
+      void Promise.resolve().then(() => {
+        setItems([])
+        setUnread(0)
+        setHasMore(false)
+        setNextOffset(0)
+        setState('ready')
+      })
+      return
+    }
     // 取数放微任务：effect 同步段不触碰 setState（set-state-in-effect）
     void Promise.resolve().then(() => load(0))
-  }, [load])
+  }, [load, identityReady.ready, identityReady.isAnonymous])
 
   const markRead = useCallback(
     async (id: string) => {

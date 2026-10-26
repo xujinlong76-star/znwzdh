@@ -122,7 +122,15 @@ export default function WorkspacesPage() {
   }, [])
 
   const loadMembers = useCallback(async (id: string) => {
-    if (!id) return
+    // 成员列表是登录账号的私有数据：匿名访客无权访问 /api/workspaces/:id/members，
+    // 未登录时强行拉取只会稳定拿到 401，并在控制台刷噪声、弹出「暂时取不到」的误导提示。
+    // 匿名态直接跳过（界面已给出「登录后邀请协作者」入口），从源头消除该 401。
+    if (!id || identityReady.isAnonymous) {
+      setMembers([])
+      setPermissions({})
+      setMembersLoading(false)
+      return
+    }
     setMembersLoading(true)
     try {
       const res = await fetchWorkspaceMembers(id)
@@ -136,12 +144,12 @@ export default function WorkspacesPage() {
     } finally {
       setMembersLoading(false)
     }
-  }, [toast])
+  }, [toast, identityReady.isAnonymous])
 
   useEffect(() => {
-    if (!active?.id) return
+    if (!active?.id || identityReady.isAnonymous) return
     void loadMembers(active.id)
-  }, [active?.id, loadMembers])
+  }, [active?.id, identityReady.isAnonymous, loadMembers])
 
   const handleCreate = useCallback(async () => {
     const name = newName.trim()

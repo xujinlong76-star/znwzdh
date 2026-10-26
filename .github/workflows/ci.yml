@@ -673,6 +673,17 @@ jobs:
             --sitemap-min-collection=2 --sitemap-min-plugin=20 --sitemap-min-directory=1
         env:
           NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
+      # 首页 HTML 预算（解压后字节数）。**只能挂在这个作业，不能挂 PR 门禁**：
+      # 预算的分母是内容量，PR 里的种子库只有几十个站点，量出来永远 2MB 以下，
+      # 挂上去等于加一条必然绿灯的假门禁；这里才是唯一带真实站点库的运行环境。
+      # 阈值来历（2026-10-26 实测，约 1000 站点）：每组首屏 6 张渐进披露后 3556KB，
+      # 改造前 6856KB；4096 留约 15% 余量给正常增删。超阈即说明又有整块数据被塞回首屏 HTML。
+      # 若内容量真的翻倍而超阈，请在**同一个提交**里上调本值并在注释里写清新的分母，
+      # 不要只改数字——数字是这条哨兵唯一的语义。
+      - name: 首页 HTML 预算（解压后，真实数据）
+        run: node scripts/html-budget.mjs --url="$NAVHUB_SITE_URL" --max-kb=4096
+        env:
+          NAVHUB_SITE_URL: ${{ vars.NAVHUB_SITE_URL }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ always() }}
         with:

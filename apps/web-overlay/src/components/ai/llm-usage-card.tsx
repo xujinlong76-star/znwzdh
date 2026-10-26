@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Gauge } from 'lucide-react'
+import { getSession } from 'next-auth/react'
 
 interface LlmUsagePayload {
   ok: boolean
@@ -63,10 +64,23 @@ function UsageRow({ label, used, limit }: { label: string; used: number; limit: 
 
 export function LlmUsageCard() {
   const [usage, setUsage] = useState<LlmUsagePayload | null>(null)
-
+  // 用量是登录用户的私有数据：匿名访客无权访问 /api/me/llm-usage，未登录时强行
+  // 拉取只会稳定拿到 401，并在控制台刷「Failed to load resource」噪声（preferences、
+  // /me、/favorites、/me/workspaces 打开即触发）。
+  // 这里用 getSession() 命令式判定登录态——它不依赖 <SessionProvider> 上下文，
+  // 可避免部分渲染子树缺失 Provider 时 useSession 直接抛错导致整卡崩溃；也只在
+  // 确认已登录后才发用量请求，从源头消除匿名 401 噪声。
   useEffect(() => {
     let alive = true
     void (async () => {
+      let authed = false
+      try {
+        const session = await getSession()
+        authed = Boolean(session)
+      } catch {
+        authed = false
+      }
+      if (!alive || !authed) return
       try {
         const res = await fetch('/api/me/llm-usage', { cache: 'no-store' })
         if (!res.ok) return

@@ -1,0 +1,91 @@
+{
+  "checks": [
+    {
+      "name": "home-search-ui",
+      "ok": true,
+      "suggCount": 1,
+      "suggSample": [
+        ""
+      ],
+      "apiResp": {
+        "status": 200,
+        "hits": 12
+      }
+    },
+    {
+      "name": "search-endpoint-hub",
+      "ok": true,
+      "status": 200,
+      "hits": 5
+    },
+    {
+      "name": "preferences-401",
+      "ok": true,
+      "badResponses": [],
+      "consoleErrors": []
+    },
+    {
+      "name": "auth-/me",
+      "ok": true,
+      "finalUrl": "/me",
+      "hitSignin": false,
+      "badResponses": []
+    },
+    {
+      "name": "auth-/favorites",
+      "ok": true,
+      "finalUrl": "/favorites",
+      "hitSignin": false,
+      "badResponses": []
+    },
+    {
+      "name": "auth-/me/workspaces",
+      "ok": true,
+      "finalUrl": "/me/workspaces",
+      "hitSignin": false,
+      "badResponses": []
+    },
+    {
+      "name": "graph-console",
+      "ok": true,
+      "consoleErrors": [],
+      "pageErrors": []
+    },
+    {
+      "name": "marketplace-detail-load",
+      "ok": true,
+      "status": 200,
+      "loadMs": 1936,
+      "bad": []
+    },
+    {
+      "name": "notifications-anonymous",
+      "ok": true,
+      "meNotificationsRequests": 0,
+      "badNew": [],
+      "emptyStateShown": true
+    }
+  ],
+  "consoleErrors": [
+    "[http://127.0.0.1:3000/] Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "[http://127.0.0.1:3000/] Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "[http://127.0.0.1:3000/] Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "[http://127.0.0.1:3000/] Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "[http://127.0.0.1:3000/] Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "[http://127.0.0.1:3000/] Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "[http://127.0.0.1:3000/] Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "[http://127.0.0.1:3000/] Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+  ],
+  "pageErrors": [],
+  "failed": [],
+  "bad": [
+    "502 http://127.0.0.1:3000/api/hub/workspaces",
+    "502 http://127.0.0.1:3000/api/hub/crdt/sync?userId=anon-47bd3362-7aff-43a9-8a25-d23b4da3394a",
+    "502 http://127.0.0.1:3000/api/hub/workspaces",
+    "502 http://127.0.0.1:3000/api/hub/crdt/sync?userId=anon-47bd3362-7aff-43a9-8a25-d23b4da3394a",
+    "502 http://127.0.0.1:3000/api/hub/crdt/sync?userId=anon-47bd3362-7aff-43a9-8a25-d23b4da3394a",
+    "502 http://127.0.0.1:3000/api/hub/workspaces",
+    "502 http://127.0.0.1:3000/api/hub/crdt/sync?userId=anon-47bd3362-7aff-43a9-8a25-d23b4da3394a",
+    "502 http://127.0.0.1:3000/api/hub/workspaces"
+  ]
+}

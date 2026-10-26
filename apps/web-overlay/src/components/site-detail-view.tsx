@@ -456,15 +456,29 @@ export function SiteDetailView({
               {/* 话题标签 */}
               {site.tags && site.tags.length > 0 && (
                 <div className="pt-1 flex flex-wrap items-center gap-1.5">
-                  {site.tags.map((t) => (
-                    <Link
-                      key={t}
-                      href={'/tags/' + encodeURIComponent(tagSlug(t))}
-                      className="text-xs px-2.5 py-0.5 rounded-full bg-muted/80 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
-                    >
-                      #{t}
-                    </Link>
-                  ))}
+                  {site.tags.map((t) => {
+                    const chipClass =
+                      'text-xs px-2.5 py-0.5 rounded-full bg-muted/80 border border-border/50 transition-colors'
+                    // 非 active 站点（broken/pending/archived）的标签不会被计入标签页的存活站点数，
+                    // 因此 `/tags/<slug>` 会走 notFound() 变成真 404。详情页仍可访问这类站点，
+                    // 这里把标签降级为纯文本，避免把用户送进 404（实测 CodePen / Grok 两例）。
+                    if (site.status && site.status !== 'active') {
+                      return (
+                        <span key={t} className={cn(chipClass, 'cursor-default')}>
+                          #{t}
+                        </span>
+                      )
+                    }
+                    return (
+                      <Link
+                        key={t}
+                        href={'/tags/' + encodeURIComponent(tagSlug(t))}
+                        className={cn(chipClass, 'hover:bg-primary/10 hover:text-primary')}
+                      >
+                        #{t}
+                      </Link>
+                    )
+                  })}
                 </div>
               )}
             </div>

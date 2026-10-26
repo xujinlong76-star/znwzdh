@@ -20,6 +20,19 @@ import type { HubPluginItem } from '@/lib/navhub-api'
 import { pluginKindLabel, PLUGIN_MANIFEST_FILE_SUFFIX } from '@/lib/plugins/plugin-manifest'
 import { KIND_ICONS, KIND_TONES } from '@/lib/plugins/kind-meta'
 import type { DetailTab } from './detail-shared'
+
+/**
+ * 引擎图标有两种合法形态：图片 URL（http(s)/站内绝对路径/data:image）或 emoji 短文本
+ * （种子数据里的搜索引擎包全部用 emoji，见 packages/core 的清单契约：icon ≤8 字符、禁远程地址）。
+ *
+ * 历史 bug：直接把 emoji 塞进 `<img src>`，浏览器会按**当前路径**解析成相对地址，
+ * 于是在 `/marketplace/code-and-package-search-pack` 上产生
+ * `/marketplace/%F0%9F%94%8E` 之类的请求并 404（一次详情页 6 条）。
+ */
+function isImageIcon(value: string): boolean {
+  const v = value.trim()
+  return /^(https?:\/\/|\/|data:image\/|blob:)/i.test(v)
+}
 import type { useCopyFeedback } from '@/hooks/use-copy-feedback'
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- 壳里 summary/manifest/payload 本就是 any（hub 聚合形状逐版本演进），拆分不做形状收紧 */
@@ -261,7 +274,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                       >
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
-                            {eng.icon && (
+                            {eng.icon && (isImageIcon(eng.icon) ? (
                               <img
                                 src={eng.icon}
                                 alt={eng.name}
@@ -272,7 +285,14 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
                                 className="w-4 h-4 rounded-xs shrink-0 object-contain"
                                 onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
                               />
-                            )}
+                            ) : (
+                              <span
+                                aria-hidden="true"
+                                className="w-4 shrink-0 text-center text-sm leading-none"
+                              >
+                                {eng.icon}
+                              </span>
+                            ))}
                             <span className="text-sm font-semibold text-foreground truncate">
                               {eng.name}
                             </span>

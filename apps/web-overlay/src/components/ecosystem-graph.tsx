@@ -120,6 +120,15 @@ export function EcosystemGraph() {
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
   const nodeRefs = useRef(new Map<string, SVGGElement>())
 
+  // SSR/CSR 水合：节点坐标由浮点运算得出，服务端与客户端的 Number 字符串化尾差
+  // 会让 React 抛出「hydrated but some attributes didn't match」告警（/graph 控制台实测）。
+  // 图谱本就是纯客户端交互可视化，首屏服务端只渲染外壳与说明文案（SEO 内容），
+  // 坐标相关的 SVG 推迟到挂载后再渲染——既消除水合告警，也不损失任何可索引内容。
+  const [graphMounted, setGraphMounted] = useState(false)
+  useEffect(() => {
+    setGraphMounted(true)
+  }, [])
+
   // 初始化带有圆周布局的节点坐标
   const [nodes, setNodes] = useState<GraphNode[]>(() => {
     const width = 900
@@ -454,6 +463,7 @@ export function EcosystemGraph() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
       >
+        {graphMounted ? (
         <svg
           className="w-full h-full"
           viewBox="0 0 900 600"
@@ -569,6 +579,11 @@ export function EcosystemGraph() {
             })}
           </g>
         </svg>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-sm text-muted-foreground">
+            图谱加载中…
+          </div>
+        )}
 
         {/* 右侧节点详情抽屉 */}
         {selectedNode && (

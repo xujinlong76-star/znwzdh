@@ -6,7 +6,7 @@
  * 负责分类标题、折叠/置顶/排序控件、一级与二级站点的拖拽/收录/多选。
  * 共享状态直接走 useHomeDIY()，拖拽目标等跨区块 UI 状态由父组件注入。
  */
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { NavigationCard } from '@/components/navigation-card'
 import { CategoryInSituControls } from '@/components/category-in-situ-controls'
 import { ChevronDown, Pin, Plus, Sparkles } from 'lucide-react'
@@ -47,6 +47,11 @@ export interface NavigationCategorySectionProps {
   /** 卡片键盘操作说明的 DOM id（页面级只渲染一份） */
   keyboardHintId?: string
   toggleSelectOne: (siteId: string) => void
+  /**
+   * 每组（直属站点 / 每个二级分类）首屏渲染的卡片数，超出部分渐进披露。
+   * <=0 或未传 = 不限制（恢复全量 SSR 的旧行为）。
+   */
+  cardsPerGroup?: number
 }
 
 export function NavigationCategorySection({
@@ -67,6 +72,7 @@ export function NavigationCategorySection({
   setPeekItem,
   keyboardHintId,
   toggleSelectOne,
+  cardsPerGroup = 0,
 }: NavigationCategorySectionProps) {
   const { toast } = useToast()
   const {
@@ -125,6 +131,62 @@ export function NavigationCategorySection({
       }),
     [category.subCategories, pinnedSiteIdsByCategory, isAdaptiveRankingEnabled]
   )
+
+  /**
+   * 渐进披露（首页 HTML 预算，2026-10-26）。
+   *
+   * 背景：首页把全部站点卡片一次性 SSR 进 HTML，实测 1008 张卡、未压缩 6.9MB，
+   * 而项目哨兵 scripts/html-budget.mjs 的预算是 4096KB。单卡约 6.2KB，其中 class
+   * 属性 3.0KB、内联 SVG 1.9KB —— 靠「精简卡片」省不出预算，只能减少首屏卡数。
+   *
+   * 折中：每组只 SSR 前 N 张，其余点「展开全部」在**客户端即时**揭示。
+   * 数据本来就在 props 里（RSC 序列化只占 0.4MB），展开不发请求、没有加载态；
+   * 初始态服务端与客户端一致（都收起），不产生 hydration 分叉。
+   */
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+  const limit = cardsPerGroup > 0 ? cardsPerGroup : Number.POSITIVE_INFINITY
+  /** 排版编辑与多选是「要对全部卡片动手」的模式：此时不截断，否则用户找不到被折叠的卡 */
+  const forceFull = isEditingLayout || selectionMode
+
+  const directGroup = useMemo(() => {
+    const all = sortedDirectItems as any[]
+    if (forceFull || expandedGroups.__direct__ || all.length <= limit) return { items: all }
+    return { items: all.slice(0, limit) }
+  }, [sortedDirectItems, forceFull, expandedGroups, limit])
+
+  const subGroups = useMemo(
+    () =>
+      sortedSubCategories.map((entry) => {
+        const all = entry.sortedSubItems as any[]
+        const expanded = forceFull || Boolean(expandedGroups[entry.subCategory.id])
+        return {
+          ...entry,
+          items: expanded || all.length <= limit ? all : all.slice(0, limit),
+        }
+      }),
+    [sortedSubCategories, forceFull, expandedGroups, limit]
+  )
+
+  /**
+   * 「展开全部 / 收起」开关。占满整行（col-span-full），避免在半行末尾留空。
+   * 只在「确实被截断」的组出现；切到排版/多选模式时整组直接全量展示，开关隐藏。
+   */
+  const renderGroupToggle = (key: string, total: number) => {
+    if (forceFull || !Number.isFinite(limit) || total <= limit) return null
+    const expanded = Boolean(expandedGroups[key])
+    return (
+      <button
+        type="button"
+        onClick={() => setExpandedGroups((prev) => ({ ...prev, [key]: !prev[key] }))}
+        aria-expanded={expanded}
+        data-group-toggle={key}
+        className="col-span-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/70 bg-muted/30 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary cursor-pointer"
+      >
+        <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', expanded && 'rotate-180')} />
+        <span>{expanded ? '收起' : `展开全部 ${total} 个`}</span>
+      </button>
+    )
+  }
 
   return (
                     <section
@@ -392,7 +454,7 @@ export function NavigationCategorySection({
                                 className={cn(gridColumnsClass, "transition-all duration-200")}
                                 style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                               >
-                                {sortedDirectItems.map((item: any) => (
+                                {directGroup.items.map((item: any) => (
                                   <NavigationCard
                                     key={item.id}
                                     item={item}
@@ -425,12 +487,14 @@ export function NavigationCategorySection({
                                     <span>添加自定义网址</span>
                                   </button>
                                 )}
+
+                                {renderGroupToggle('__direct__', sortedDirectItems.length)}
                               </div>
                             )}
 
                             {/* 二级分类及其站点 */}
-                            {sortedSubCategories.length > 0 &&
-                              sortedSubCategories.map(({ subCategory, subPinnedItemIds, sortedSubItems }) => {
+                            {subGroups.length > 0 &&
+                              subGroups.map(({ subCategory, subPinnedItemIds, sortedSubItems, items }) => {
                                 return (
                                   <div key={subCategory.id} id={subCategory.id} className="space-y-3 pt-2">
                                     <div className="flex items-center gap-2 pb-0.5 pt-1">
@@ -446,7 +510,7 @@ export function NavigationCategorySection({
                                       className={cn(gridColumnsClass, "transition-all duration-200")}
                                       style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                     >
-                                      {sortedSubItems.map((item: any) => (
+                                      {items.map((item: any) => (
                                         <NavigationCard
                                           key={item.id}
                                           item={item}
@@ -463,6 +527,7 @@ export function NavigationCategorySection({
                                           onToggleSelect={toggleSelectOne}
                                         />
                                       ))}
+                                      {renderGroupToggle(subCategory.id, sortedSubItems.length)}
                                     </div>
                                   </div>
                                 )

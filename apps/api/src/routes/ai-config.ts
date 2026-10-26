@@ -658,7 +658,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         "你是一名顶级导航生态架构师与插件设计师。",
         isIncremental
           ? "【增量修饰微调模式】：用户提供了一份已有的插件清单 (existingManifest)，本次任务是在保持该清单合理结构的基础上，根据用户的修改指令进行针对性增量修改或扩充（例如添加新站点、修改主题强调色、调整版本号、修改名称描述等）。"
-          : "【全新插件规划模式】：用户希望根据自然语言需求规划并生成一份 100% 声明式的 山羊胡插件清单 (PluginManifest)。",
+          : "【全新插件规划模式】：用户希望根据自然语言需求规划并生成一份 100% 声明式的山羊胡插件清单 (PluginManifest)。",
         `目标插件类型 (kind)：${body.data.kind === "auto" ? "由你根据用户意图判断最合适的类型（site-pack / theme / search-pack / workspace-preset / bundle），并在 manifest.kind 中指定" : body.data.kind}`,
         "",
         "【山羊胡声明式规范约束】：",
@@ -735,7 +735,7 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           rawManifest.version = "1.0.0";
         }
         if (typeof rawManifest.description !== "string" || !rawManifest.description.trim()) {
-          rawManifest.description = "由 Agnes 3.0 Flash 规划生成的 山羊胡声明式插件";
+          rawManifest.description = "由 Agnes 3.0 Flash 规划生成的山羊胡声明式插件";
         }
         if (typeof rawManifest.author !== "string" || !rawManifest.author.trim()) {
           rawManifest.author = identity !== "anonymous" ? identity : "山羊胡创作者";

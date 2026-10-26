@@ -89,11 +89,11 @@ export function extractFaviconMonogram(title: string, url?: string): string {
         return host[0]!.toUpperCase()
       }
     } catch {
-      // 地址解析不出来就落到下面的默认首字母：这个函数承诺「永远返回一个字母」
+      // 地址解析不出来就落到下面的默认首字母：这个函数承诺「永远返回一个字符」
     }
   }
 
-  return 'N'
+  return '山'
 }
 
 export const LOCAL_LOGO_MAP: Record<string, string> = {

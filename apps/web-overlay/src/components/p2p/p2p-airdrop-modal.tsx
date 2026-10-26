@@ -263,7 +263,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
         themeName: themeIncluded ? currentTheme : undefined,
         diyConfigRaw: diyIncluded ? diyConfigRaw : null,
         diyDeclared: carriesDiy,
-        notes: `由 山羊胡 NavDrop 打包：本机收藏 ${latest.storedCount} 项，本次随包 ${items.length} 项`,
+        notes: `由山羊胡 NavDrop 打包：本机收藏 ${latest.storedCount} 项，本次随包 ${items.length} 项`,
       },
     }
 
@@ -577,7 +577,7 @@ export function P2PAirDropModal({ open, onOpenChange }: P2PAirDropModalProps) {
                   {channelRef.current ? '正在等待同浏览器的其他标签页应答...' : '当前浏览器不支持 BroadcastChannel，快传通道不可用'}
                 </p>
                 <p className="text-[11px] text-zinc-400">
-                  在<b>同一个浏览器的另一个标签页或窗口</b>打开 山羊胡，两端才会握手。
+                  在<b>同一个浏览器的另一个标签页或窗口</b>打开山羊胡，两端才会握手。
                   手机、别的浏览器或隐身窗口都收不到 —— 跨设备请去「数据」页导出备份，再到新设备导入。
                 </p>
               </div>

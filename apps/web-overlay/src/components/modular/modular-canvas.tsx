@@ -789,7 +789,7 @@ export function ModularCanvas() {
         onOpenChange={setIsExportPluginOpen}
         kind="workspace-preset"
         defaultName={currentBoard ? `${currentBoard.name} 看板预设` : '我的工作台预设'}
-        defaultDescription={`包含 ${boards.length} 个看板的工作台预设配置，由 山羊胡工作台一键导出。`}
+        defaultDescription={`包含 ${boards.length} 个看板的工作台预设配置，由山羊胡工作台一键导出。`}
         defaultTags={['工作台', '预设', '看板']}
         payload={{
           boards: boards.map((b) => ({

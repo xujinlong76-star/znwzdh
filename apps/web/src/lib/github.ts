@@ -107,7 +107,7 @@ function getAdapter(): StorageAdapter {
   if (!owner || !repo) {
     throw new StorageError(
       "STORAGE_ADAPTER=github 时必须配置 GITHUB_OWNER 与 GITHUB_REPO；" +
-        "若想使用 山羊胡中枢，请设置 STORAGE_ADAPTER=http",
+        "若想使用山羊胡中枢，请设置 STORAGE_ADAPTER=http",
     );
   }
   cached = createStorageAdapter({

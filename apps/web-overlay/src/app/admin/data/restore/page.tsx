@@ -274,7 +274,7 @@ export default function RestoreBackupPage() {
         if (!parsed || typeof parsed !== 'object') throw new Error('不是有效的 JSON 对象')
         if (!Array.isArray(parsed.categories) || !Array.isArray(parsed.sites)) {
           // 与服务端同一条判据：缺数组就是错的包，别让它走到预演
-          throw new Error('缺少 categories 或 sites 数组，可能不是 山羊胡冷备包')
+          throw new Error('缺少 categories 或 sites 数组，可能不是山羊胡冷备包')
         }
         setBackup({
           version: typeof parsed.version === 'string' ? parsed.version : undefined,

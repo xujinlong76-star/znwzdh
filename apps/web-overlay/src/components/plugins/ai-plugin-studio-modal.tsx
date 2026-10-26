@@ -727,7 +727,7 @@ export function AiPluginStudioModal({
                   <div>
                     <h4 className="text-sm font-semibold">AI 正在深度思考规划中...</h4>
                     <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-                      正在根据 山羊胡全站生态知识库严选站点、编排结构并执行 100% 声明式 Schema 校验。
+                      正在根据山羊胡全站生态知识库严选站点、编排结构并执行 100% 声明式 Schema 校验。
                     </p>
                   </div>
                 </div>

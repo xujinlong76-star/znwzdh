@@ -62,7 +62,7 @@ export const FEATURED_TAPS = [
   {
     id: "featured:official-community",
     name: "山羊胡官方精选社区源",
-    description: "由 山羊胡官方严选审核的社区精品网址包、小众利基工具与垂直领域扩展",
+    description: "由山羊胡官方严选审核的社区精品网址包、小众利基工具与垂直领域扩展",
     url: "https://raw.githubusercontent.com/navhub-org/community-taps/main/featured.json",
     isFeatured: true,
     author: "山羊胡官方",

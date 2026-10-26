@@ -257,7 +257,7 @@ export function DetailModals(props: DetailModalsProps) {
                 <div>
                   <DialogTitle className="text-base font-bold">全自动代码沙盒安全体检报告</DialogTitle>
                   <DialogDescription className="text-xs text-muted-foreground">
-                    由 山羊胡全自动静态代码与外链沙盒审计引擎实时生成
+                    由山羊胡全自动静态代码与外链沙盒审计引擎实时生成
                   </DialogDescription>
                 </div>
               </div>

@@ -410,7 +410,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
 
     const exportDialog = page.getByRole('dialog');
     await expect(exportDialog.getByText('导出为标准插件清单 (Export to Plugin)')).toBeVisible({ timeout: 15_000 });
-    await expect(exportDialog.getByText(/清单符合 山羊胡纯声明式 JSON 架构/)).toBeVisible();
+    await expect(exportDialog.getByText(/清单符合山羊胡纯声明式 JSON 架构/)).toBeVisible();
 
     // 复制 JSON
     await exportDialog.getByRole('button', { name: '复制 JSON' }).click();

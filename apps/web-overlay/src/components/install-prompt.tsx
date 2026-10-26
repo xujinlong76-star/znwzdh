@@ -92,7 +92,7 @@ export function InstallPrompt() {
         <div className="flex items-start gap-2.5">
           <Download className="mt-0.5 h-4 w-4 text-primary" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">把 山羊胡装到桌面</p>
+            <p className="text-sm font-semibold">把山羊胡装到桌面</p>
             <p className="mt-0.5 text-xs text-muted-foreground">像 App 一样打开，离线也能看最近访问。</p>
             <div className="mt-2.5 flex items-center gap-2">
               <button onClick={install} className="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">安装</button>

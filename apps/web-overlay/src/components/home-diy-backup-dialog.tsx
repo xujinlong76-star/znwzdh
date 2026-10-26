@@ -654,7 +654,7 @@ export function HomeDIYBackupDialog({
                 导入明文 JSON 配置文本：
               </label>
               <Textarea id="diy-import-plain"
-                placeholder="粘贴已备份的 山羊胡 DIY JSON 配置代码..."
+                placeholder="粘贴已备份的山羊胡 DIY JSON 配置代码..."
                 value={importJsonText}
                 onChange={(e) => setImportJsonText(e.target.value)}
                 className="font-mono text-xs h-32 resize-none"

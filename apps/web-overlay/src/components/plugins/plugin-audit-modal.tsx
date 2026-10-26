@@ -36,7 +36,7 @@ export function PluginAuditModal({ open, onOpenChange, plugin }: PluginAuditModa
             <div>
               <DialogTitle className="text-base font-bold">AI 智能严审认证报告</DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
-                插件「{plugin.name}」已通过 山羊胡全自动代码沙盒与合规性审查
+                插件「{plugin.name}」已通过山羊胡全自动代码沙盒与合规性审查
               </DialogDescription>
             </div>
           </div>

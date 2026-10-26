@@ -90,6 +90,14 @@ export async function callLlm(
       return res;
     } catch (err) {
       lastError = err;
+      /**
+       * 调用方已经取消 ⇒ 立刻停：
+       * ① 不再打备用模型池（此前会接着最多 3 个 provider、每个再等 60 秒，
+       *    用户按下「停止」之后中枢还在花钱）；
+       * ② 不写 ok:false 的用量行——取消不是模型坏，记进来会把
+       *    「用户等太久放弃」算进大盘失败率，让真实故障被稀释。
+       */
+      if (opts.signal?.aborted) break;
       const latencyMs = Date.now() - startedAt;
       const errorCode = err instanceof LlmError ? err.code : "unknown";
 

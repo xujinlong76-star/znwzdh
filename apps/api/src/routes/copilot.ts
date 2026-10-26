@@ -2,13 +2,34 @@
  * Agnes 3.0 Flash AI Web Copilot 伴侣路由
  * 提供全站意图理解、工具智能推荐、对话式导航与问答
  */
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
 import { callLlm } from "../llm-usage.ts";
 import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
+
+/**
+ * 把「客户端半路挂断」翻译成 AbortSignal，供 `callLlm` 中断模型调用。
+ *
+ * 为什么判据是 `writableEnded`：node http 的 `'close'` 在**响应正常写完**时同样触发
+ * （见 Node 文档 event-close_2），只看 close 会把每一次成功回答都记成取消。
+ * 摘监听器挂在 `'finish'` 上，避免 keep-alive 连接反复复用 reply.raw 时累积监听器。
+ */
+export function bindReplyAbort(reply: FastifyReply): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const onClose = () => {
+    if (!reply.raw.writableEnded) controller.abort();
+  };
+  const cleanup = () => {
+    reply.raw.off("close", onClose);
+    reply.raw.off("finish", cleanup);
+  };
+  reply.raw.on("close", onClose);
+  reply.raw.on("finish", cleanup);
+  return { signal: controller.signal, cleanup };
+}
 
 const chatSchema = z.object({
   message: z.string().min(1, "消息内容不能为空").max(8000, "消息过长"),
@@ -48,6 +69,12 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     }
 
     const { message, thinking, history = [], context = {} } = parsed.data;
+    /**
+     * 取消链路的中枢这一跳：浏览器 fetch 的 signal 到代理为止（代理把断连转成
+     * 对中枢的请求取消），这里再把它接到 reply.raw 上，模型调用才真能停。
+     */
+    const { signal: clientSignal } = bindReplyAbort(reply);
+    const startedAt = Date.now();
     /**
      * 自报身份必须先过第二轴（见 `shared.ts` 的 `identityTrusted`）。
      * 本路由是 `scope:"public"`：不过闸门就等价于「任何人自称 `github:<别人>`，
@@ -89,12 +116,14 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
      * 刻意保持小体积（百级 token）：系统提示词每次对话都要全量发送。
      */
     let personalBlock = "";
+    let telemetryEnabled = true;
     if (identity) {
       const [profile, folders, settings] = await Promise.all([
         ctx.repo.getUserProfile(identity).catch(() => null),
         ctx.repo.listFavoriteFolders(identity).catch(() => []),
         ctx.repo.getUserSettings(identity).catch(() => null),
       ]);
+      telemetryEnabled = settings?.telemetryEnabled !== false;
       const parts: string[] = [];
       if (profile && (profile.topCategories.length > 0 || profile.topTags.length > 0)) {
         parts.push(
@@ -118,6 +147,39 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
           "\n";
       }
     }
+
+    /**
+     * 事件归属身份：与 `/api/search`（search.ts:128）、`/api/events`（telemetry.ts:78-86）
+     * 同一口径——注销与导出按 `events.identity` 圈范围，关遥测的用户不留身份。
+     */
+    const attributedIdentity = identity && telemetryEnabled ? identity : null;
+
+    /**
+     * copilot 的用户面记账（此前实测 `events kind='copilot'` 恒 0 行：这条主路径在
+     * 后台事件面板里完全隐形，「用户到底等了多久」无法量化）。
+     *
+     * 只记维度、**不记问题原文**：message 最长 8000 字符且是自由文本，写进 events
+     * 等于新开一个可导出、可被管理端看到的原文存储，而大盘要的是档位、时延与降级原因。
+     */
+    const recordCopilot = (
+      kind: "copilot" | "copilot_cancel",
+      dims: { degraded?: string | null; model?: string | null; replyChars?: number; stage?: "pre_llm" | "llm" },
+    ) => {
+      void ctx.repo
+        .recordEvent(kind, {
+          identity: attributedIdentity ?? undefined,
+          meta: {
+            thinking: thinking ?? null,
+            degraded: dims.degraded ?? null,
+            model: dims.model ?? null,
+            reply_chars: dims.replyChars ?? 0,
+            waited_ms: Date.now() - startedAt,
+            quota_limited: quotaInfo !== null,
+            ...(dims.stage ? { stage: dims.stage } : {}),
+          },
+        })
+        .catch(() => undefined);
+    };
 
     const catNames = categories.map((c) => c.title).slice(0, 15).join("、");
     const siteSummaries = sites
@@ -170,6 +232,7 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
           temperature: 0.6,
           maxTokens: 1200,
           thinking,
+          signal: clientSignal,
         });
 
         if (res.content) {
@@ -180,11 +243,14 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
             .map((l) => l.replace(/^💡\s*/, "").trim())
             .slice(0, 3);
 
+          const model = res.model || llm.provider.model;
+          recordCopilot("copilot", { model, replyChars: res.content.length });
+
           return {
             ok: true,
             reply: res.content,
             reasoningContent: res.reasoningContent,
-            model: res.model || llm.provider.model,
+            model,
             suggestions:
               suggestions.length > 0
                 ? suggestions
@@ -193,7 +259,20 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
         }
       }
     } catch {
-      // 容错降级进入本地启发式推荐
+      // 容错降级进入本地启发式推荐；「用户已取消」不在这里冒充「模型坏了」，
+      // 由下面的取消闸门统一拦。
+    }
+
+    /**
+     * 取消闸门（必须在兜底之前）：客户端已经不等了就别再产出答案。
+     * 此前这条路径会把站内关键词匹配的结果当一次正常回答写完并记账，
+     * 「用户按了停止」在大盘里长成「降级答案成功」，取消率永远量不出来。
+     */
+    if (clientSignal.aborted) {
+      const reachedLlm = quotaInfo === null && llmProviderReady(llm.provider);
+      recordCopilot("copilot_cancel", { stage: reachedLlm ? "llm" : "pre_llm" });
+      reply.code(499);
+      return { ok: false, error: "请求已取消", code: "client_closed" };
     }
 
     // 本地启发式智能应答兜底
@@ -222,6 +301,8 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
     } else {
       replyText += `山羊胡当前已收录丰富的开发、设计与极客工具生态。建议您可以通过顶部分类 **${catNames || "综合分类"}** 进一步探索，或使用 Spotlight 极客沙箱进行全库模糊寻路。`;
     }
+
+    recordCopilot("copilot", { degraded, model: "local-heuristic-match", replyChars: replyText.length });
 
     return {
       ok: true,

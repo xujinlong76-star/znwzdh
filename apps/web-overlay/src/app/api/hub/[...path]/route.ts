@@ -204,6 +204,12 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   // 上游必须有上限：卡死的中枢不能把前端请求无限期挂住（SSE 在拿到响应头后解除，见下）
   const timeoutMs = upstreamTimeoutMs(undefined, cleanPath)
   const deadline = createDeadline(timeoutMs)
+  /**
+   * 客户端断开也要能掐断上游。`createDeadline` 只认自己的定时器，且 hub-proxy.ts
+   * 此刻正被并行会话改（本轮不碰它），所以在这里并一路 `request.signal`：
+   * 没有这一路，用户按「停止」之后代理还会把中枢连接白占满整个期限（copilot 是 120 秒）。
+   */
+  const upstreamSignal = AbortSignal.any([deadline.signal, request.signal])
 
   try {
     const upstream = await fetch(target, {
@@ -211,7 +217,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
       headers,
       body,
       cache: 'no-store',
-      signal: deadline.signal,
+      signal: upstreamSignal,
     })
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
     // 流式响应透传（如 SSE 实时推流）：不可调用 .text() 阻塞缓冲，直接透传 body 流
@@ -250,8 +256,19 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     // 中枢返回空体时给 {}，避免前端 JSON.parse 炸裂
     return finish(new NextResponse(text || '{}', { status: upstream.status, headers: responseHeaders }))
   } catch (error) {
-    // 超时与"中枢没起来"要能分辨：前者是 504（外部依赖慢），后者是 502（连不上）
+    /**
+     * 三态分不开就会说谎：合并信号后 `deadline.signal.aborted` 不再等价于「等到期限」——
+     * 用户按「停止」也会走到这里，此前一律记成 504 + console.error，
+     * 等于把一次正常取消写成一条上游故障。
+     */
+    const clientGone = request.signal.aborted
+    if (clientGone) {
+      console.info('[hub proxy] client closed before upstream answered:', cleanPath.join('/'))
+      // 已经没有人接收这个响应体，不再拼 JSON，也不走 finish()（没有 cookie 要补的人）
+      return new NextResponse(null, { status: 499, headers: { 'cache-control': 'no-store' } })
+    }
     const timedOut = deadline.signal.aborted
+    // 超时与"中枢没起来"要能分辨：前者是 504（外部依赖慢），后者是 502（连不上）
     console.error('[hub proxy] upstream ' + (timedOut ? 'timeout' : 'unavailable') + ':', error)
     return finish(
       NextResponse.json(

@@ -90,3 +90,6 @@ apps/web/src/app/api/home/site/*
 # SEO 巡检临时产物与一次性调试脚本（非交付物，避免误入版本库）
 .seo-tmp/
 /parity-check.tmp.mjs
+
+# --- 本地 GUI 真人模式测试证据（会话产物，不入库）---
+gui-test-screenshots/

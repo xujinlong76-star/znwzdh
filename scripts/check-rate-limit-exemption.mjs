@@ -12,15 +12,21 @@
  * 用法（CI 里在预览站上跑，见 .github/workflows/ci.yml 的「限流豁免」步骤）：
  *   NAVHUB_INTERNAL_TOKEN=… node scripts/check-rate-limit-exemption.mjs \
  *     --api-base=http://127.0.0.1:8787 --web-base=http://localhost:3000
+ *   # 只调形状不逼再生：--revalidate-grace=0；CI 默认 grace=75（> revalidate=60）settle=5
  *
  * 四个阶段，每一个都对应一条「如果不成立就没法相信绿灯」的前提：
  *  1. **空转守卫**：不带凭据猛打中枢，必须真的出现 429。
  *     额度没被打穿时后面所有「没被限流」都不说明豁免有用 —— 所以这里直接红灯，
  *     而不是让整套检查变成一条永远不会响的守卫。
  *  2. **豁免生效**：同样次数带上 `x-navhub-internal-token`，必须 0 次 429。
- *  3. **收录面形状**：经 web 层抓 N 个 `/site/{id}`，每个都要 200 + 有 `<h1>` +
- *     不含 `noindex`，且其中至少 `--min-miss` 个是 `x-nextjs-cache` 非 HIT
- *     （全是 HIT 只说明吃了旧快照，没在小额度下真重渲染过）。
+ *  3. **收录面形状**：经 web 抓 N 个 `/site/{id}`，每个都要 200 + 有 `<h1>` +
+ *     不含 `noindex`，且其中至少 `--min-miss` 个是 `x-nextjs-cache` 非 HIT。
+ *  3b. **真·重渲染复探**（首趟全 HIT 时自动进入）：等 `--revalidate-grace` 秒过掉
+ *     ISR 窗口，先把按 IP 的公开额度重新打满，再复探同一批页 —— 一趟里同步产出（MISS）
+ *     算证据；只给 STALE 的等 `--revalidate-settle` 秒看它有没有回到 HIT。
+ *     这一步的存在理由：CI 刻意不重启 web，磁盘两层缓存清了也可能被进程内缓存兜住，
+ *     而「过期后一直给旧快照」正是 SSR 取数被 429 挡住时 Next 的保旧行为
+ *     —— 只有把额度维持在耗尽状态，这一阶段才真的在考豁免。
  *  4. **边界**：浏览器侧的 `/api/hub/*` 代理必须**照样**被限流。
  *     代理要是把这个头附带上了，等于把全站访客标成内部流量，按 IP 的限流形同虚设
  *     —— 这条红线只靠单测钉住太薄，这里用真实代理路径再钉一次。
@@ -29,7 +35,7 @@
  * 不打印 token 本身（只打印长度），日志里拿不到凭据。
  */
 
-import { argvParse, hammer, probePage, summarizeStatuses } from './lib/rate-limit-check.mjs';
+import { argvParse, countRegenerated, hammer, probePage, probeSet, sleep, summarizeStatuses } from './lib/rate-limit-check.mjs';
 
 const HEADER = 'x-navhub-internal-token';
 
@@ -82,6 +88,57 @@ async function main() {
   } else if (pages.sitemapPaths === 0) {
     failures.push(`阶段 3 没跑到：${opts.webBase}/sitemap.xml 里没有 /site/* 条目（中枢失联或 seed 空）`);
   } else {
+    // 重渲染证据不够时先跑 3b（它可能新产出壳），再统一判形状 —— 顺序反了就会
+    // 把「3b 复探才现形的壳」漏报成「这一轮没壳」。
+    if (pages.miss < opts.minMiss) {
+      if (opts.graceSec <= 0) {
+        failures.push(
+          `阶段 3 证据不足：${pages.total} 页里只有 ${pages.miss} 页走了真·重渲染（非 x-nextjs-cache: HIT），低于下限 ${opts.minMiss}，` +
+            `且 --revalidate-grace=0 关掉了复探 ⇒ 这一条不可判（不谎报为通过）。` +
+            `全 HIT 的来源只剩两个：正在运行的 next-server 进程内缓存，或同一轮 job 更早的步骤已在 revalidate 有效期内渲染过同一批页`,
+        );
+      } else {
+        // ---- 阶段 3b：等过 revalidate 窗口、把公开额度重新打满，再逼一次真·重渲染 ----
+        // 只清磁盘两层缓存不够：CI 刻意不重启 web，进程内缓存照样给 HIT。
+        // 让这一页「不得不再生成」的唯一在界手段就是让它的缓存过期，
+        // 并在再生发生的那一刻把按 IP 的公开额度维持在耗尽状态。
+        const paths = pages.sample ?? [];
+        console.log(
+          `– 阶段 3b 首趟只有 ${pages.miss}/${opts.minMiss} 页重渲染：等 ${opts.graceSec}s 过 revalidate 窗口，` +
+            `再把公开额度打满 ${opts.hammer} 次后复探 ${paths.length} 页`,
+        );
+        await sleep(opts.graceSec * 1000);
+        const exhaust = await hammer(publicPath, { count: opts.hammer, headers: {} });
+        console.log(
+          `· 阶段 3b 复探前打满公开额度 → ${summarizeStatuses(exhaust.statuses)}（429 首次在第 ${exhaust.first429At ?? '从未'} 次）`,
+        );
+        const first = await probeSet(opts, paths);
+        const staleOnly = first.filter((r) => /^STALE$/i.test(r.cacheState)).map((r) => r.path);
+        let second = [];
+        if (staleOnly.length) {
+          await sleep(opts.settleSec * 1000);
+          second = await probeSet(opts, staleOnly);
+        }
+        const regen = countRegenerated(first, second);
+        pages.shells += regen.shells;
+        pages.miss += regen.ok;
+        console.log(
+          `· 阶段 3b 复探 → 触发再生=${regen.ok + regen.keptStale} 同步/后台成功=${regen.ok} 过期后仍在给旧快照=${regen.keptStale} 壳=${regen.shells}`,
+        );
+        if (pages.miss < opts.minMiss) {
+          failures.push(
+            regen.keptStale > 0
+              ? `阶段 3/3b 证据不足：复探逼出 ${regen.ok + regen.keptStale} 页过期，但只有 ${regen.ok} 页真的再生成成功（下限 ${opts.minMiss}）—— ` +
+                  `${regen.keptStale} 页在额度已被公开请求打满的那一刻没能再生、继续给旧快照。` +
+                  `Next 的行为是「后台再生失败则保留旧数据」，所以这一条红在 SSR 取数被 429 挡住的失败形状上，不是取证本身没执行：` +
+                  `查 web 的 lib/server/hub.ts 是否真的带上 ${opts.tokenEnv}（以及 ${opts.tokenEnv} 两侧是否一致）`
+              : `阶段 3/3b 证据不足：等 ${opts.graceSec}s 后复探 ${paths.length} 页仍全 HIT（成功再生 ${regen.ok}，下限 ${opts.minMiss}）—— ` +
+                  `revalidate 窗口没起作用，说明这一轮读的既不是磁盘缓存也不是到期快照：` +
+                  `收录页的 revalidate 被改大了？还是这些页根本没走 ISR（generateStaticParams/构建期预渲染变了形状？）`,
+          );
+        }
+      }
+    }
     if (pages.shells) {
       failures.push(
         `阶段 3 不成立：${pages.shells} 页是降级壳（200 但自己声明 noindex，或 200 但正文没有 <h1>）—— 就是 5.9 那条链的产物形状：SSR 取数失败被缓存成壳。` +
@@ -90,16 +147,6 @@ async function main() {
     }
     if (pages.badStatus) {
       failures.push(`阶段 3 不成立：${pages.badStatus} 页不是 200（${pages.badStatusList.join(' | ')}）`);
-    }
-    if (pages.miss < opts.minMiss) {
-      failures.push(
-        `阶段 3 证据不足：${pages.total} 页里只有 ${pages.miss} 页走了真·重渲染（非 x-nextjs-cache: HIT），低于下限 ${opts.minMiss} —— ` +
-          `全 HIT 意味着这一轮读的是旧快照，没在受限的中枢面前重新生成过，豁免有没有用不可知。` +
-          `但这条红灯归因是「检查没跑成」，不是「豁免失效」：磁盘侧 server/route-cache 与 cache/fetch-cache 在 CI 里已经清过（并有钉子测试锁住那一步）， ` +
-          `还能给 HIT 的只剩两个来源 —— 正在运行的 next-server 进程自己的内存路由缓存（该步骤刻意不重启 web），` +
-          `或同一轮 job 更早的步骤已在 revalidate 有效期内渲染过同一批页。` +
-          `处置二选一：按启动时记录的 PID 重启 web（pgrep -f "next/dist/bin/next start" 匹配不到 next-server，process.title 被改写过），或等 revalidate 到期后重探`,
-      );
     }
   }
 

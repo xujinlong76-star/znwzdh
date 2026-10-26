@@ -13,6 +13,11 @@ const DEFAULTS = {
   pages: '20',
   minMiss: '8',
   timeout: '15000',
+  // 首趟全是 HIT 时，等过 revalidate 窗口再逼一次真·重渲染（秒）。0 = 关闭复探。
+  // 默认 75 > 收录页的 revalidate=60（site/[id]/page.tsx:52），留出时钟抖动。
+  grace: '75',
+  // STALE 只是「触发了后台再生」，成没成功要等一等再看（秒）。
+  settle: '5',
 };
 
 export function argvParse(argv) {
@@ -24,6 +29,13 @@ export function argvParse(argv) {
     const n = Number(valueOf(name) ?? dflt);
     return Number.isFinite(n) && n > 0 ? n : Number(dflt);
   };
+  // 允许显式 0 的数值项（0 在这里是「关掉这一步」的语义，不是缺省）
+  const numZero = (name, dflt) => {
+    const raw = valueOf(name);
+    if (raw === null) return Number(dflt);
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : Number(dflt);
+  };
   const trim = (s) => String(s).replace(/\/+$/, '');
   return {
     apiBase: trim(valueOf('api-base') ?? DEFAULTS.apiBase),
@@ -33,8 +45,12 @@ export function argvParse(argv) {
     pages: num('pages', DEFAULTS.pages),
     minMiss: num('min-miss', DEFAULTS.minMiss),
     timeoutMs: num('timeout', DEFAULTS.timeout),
+    graceSec: numZero('revalidate-grace', DEFAULTS.grace),
+    settleSec: numZero('revalidate-settle', DEFAULTS.settle),
   };
 }
+
+export const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 async function fetchOnce(url, { headers = {}, method = 'GET', timeoutMs = 15000 } = {}) {
   const controller = new AbortController();
@@ -129,6 +145,7 @@ export async function probePage(opts) {
   // 取尾部而非头部：CI 的 --live 门禁固定抽族内前几个（不带 --rotate 时），
   // 尾部那些页更可能还没被任何一轮缓存命中过，才是真正的「现渲染」。
   const sample = paths.slice(-Math.min(opts.pages, paths.length));
+  out.sample = sample;
   for (const path of sample) {
     const r = await fetchOnce(`${opts.webBase}${path}`, { timeoutMs: opts.timeoutMs });
     out.total += 1;
@@ -143,4 +160,53 @@ export async function probePage(opts) {
     }
   }
   return out;
+}
+
+/**
+ * 对**已知**的一批路径复探一次，逐页留底（阶段 3b 的状态机判据要用页与页之间的对照）。
+ * 判壳的尺和 probePage 同一把，不另立标准。
+ */
+export async function probeSet(opts, paths) {
+  const out = [];
+  for (const path of paths) {
+    const r = await fetchOnce(`${opts.webBase}${path}`, { timeoutMs: opts.timeoutMs });
+    out.push({
+      path,
+      status: r.status,
+      cacheState: r.cacheState,
+      shell: r.status === 200 && (/noindex/i.test(r.body) || !/<h1[\s>]/i.test(r.body)),
+    });
+  }
+  return out;
+}
+
+/**
+ * 阶段 3b 的判据：把「过期后到底有没有再生成成功」读成一个数。
+ *
+ * Next 的 ISR 在 revalidate 到期后先给旧快照（STALE）并**在后台**再生，
+ * 而后台再生失败时旧数据原样保留 —— 所以只看一趟头部分不清
+ * 「豁免真的在取数路径上起了作用」和「取数被 429 挡住、一直在保旧」。
+ * 因此：一趟里同步产出（MISS/无头部）算证据；只触发（STALE）的要等一等再看，
+ * 复探回到 HIT 才算再生成功；仍是 STALE/MISS 空的就是失败。
+ */
+export function countRegenerated(first, second) {
+  const again = new Map((second ?? []).map((r) => [r.path, r]));
+  let ok = 0;
+  let keptStale = 0;
+  let shells = 0;
+  for (const r of first) {
+    if (/^(HIT)$/i.test(r.cacheState)) continue; // 没过期 ⇒ 这一页没参与再生
+    if (r.shell) shells += 1;
+    if (!/^(STALE)$/i.test(r.cacheState)) {
+      ok += 1; // MISS / PRODUCED / 空：同步重渲染，直接就是证据
+      continue;
+    }
+    const next = again.get(r.path);
+    if (next && /^HIT$/i.test(next.cacheState)) ok += 1;
+    else {
+      keptStale += 1;
+      if (next?.shell) shells += 1;
+    }
+  }
+  return { ok, keptStale, shells };
 }

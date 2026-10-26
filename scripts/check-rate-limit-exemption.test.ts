@@ -24,6 +24,13 @@ type ApiOpts = {
   ignoreToken?: boolean;
   /** true = 谁都不挡（模拟豁免放宽到 IP 段，或凭据被判给了公开请求） */
   exemptEveryone?: boolean;
+  /**
+   * 额度窗口毫秒（对齐真实中枢：`@fastify/rate-limit` 是 300/分钟、allowList 不计入）。
+   * 省略 = 窗口无穷大（单调计数器），只够判「有没有被挡」；
+   * 阶段 3b 必须给它有限值，否则「等过 revalidate 的这段时间额度自己恢复了」这件事
+   * 在夹具里不存在，复探前打满额度的那一次锤击就没东西可承重。
+   */
+  windowMs?: number;
 };
 
 type WebOpts = {
@@ -35,18 +42,37 @@ type WebOpts = {
   cacheHitAll?: boolean;
   /** true = 浏览器侧 /api/hub 代理自己附带内部凭据（边界违规） */
   proxyLeak?: boolean;
+  /**
+   * true = 详情页走一个真的 ISR 状态机：每页记「上次产出时间」，超过
+   * `isrRevalidateMs` 就返回 STALE 并**在后台**再生一次（后台再生会真的去取假中枢）。
+   * 这是唯一能在不重启前端的前提下区分「豁免接进了 SSR 取数」和「过期后一直保旧快照」的形状。
+   */
+  isr?: boolean;
+  /** isr 模式的 revalidate 毫秒（默认 900：要大于 settle、小于 grace+settle，状态机才分得出两趟） */
+  isrRevalidateMs?: number;
+  /** false = SSR 取数不带凭据（模拟豁免没接进 web 的服务端取数层） */
+  isrSsrCarriesToken?: boolean;
 };
 
 function serveFakeApi(opts: ApiOpts): Promise<{ base: string; close: () => Promise<void> }> {
   return new Promise((resolvePromise) => {
+    const windowMs = opts.windowMs ?? Number.POSITIVE_INFINITY;
     let publicSeen = 0;
+    let windowStart = Date.now();
     const server = createServer((req, res) => {
       const headers = req.headers;
       const token = Array.isArray(headers["x-navhub-internal-token"])
         ? headers["x-navhub-internal-token"][0]
         : headers["x-navhub-internal-token"];
       const exempt = Boolean(token) && token.trim() === TOKEN && !opts.ignoreToken;
-      publicSeen += 1;
+      if (!exempt) {
+        // allowList 命中时 @fastify/rate-limit 根本不计数，这里也对齐
+        if (Date.now() - windowStart >= windowMs) {
+          windowStart = Date.now();
+          publicSeen = 0;
+        }
+        publicSeen += 1;
+      }
       const limited = !opts.exemptEveryone && !exempt && publicSeen > (opts.publicLimit ?? 5);
       if (limited) {
         res.writeHead(429, { "content-type": "application/json" });
@@ -69,6 +95,23 @@ function serveFakeApi(opts: ApiOpts): Promise<{ base: string; close: () => Promi
 function serveFakeWeb(apiBase: string, opts: WebOpts): Promise<{ base: string; close: () => Promise<void> }> {
   return new Promise((resolvePromise) => {
     const total = opts.sites ?? 12;
+    // ---- isr 状态机（阶段 3b 的对照面）----
+    const rvMs = opts.isrRevalidateMs ?? 900;
+    const bornAt = Date.now();
+    const states = new Map<string, { producedAt: number; shell: boolean }>();
+    const inFlight = new Set<string>();
+    for (let i = 1; i <= total; i += 1) states.set(String(i), { producedAt: bornAt, shell: false });
+    const backgroundRegen = (key: string) => {
+      // 成功才把「上次产出时间」推进；失败时旧条目原样留着 —— 这就是 Next 的保旧行为，
+      // 也正是要靠复探第二趟才看得见的区别。
+      fetch(`${apiBase}/api/sites?page=1&pageSize=1`, {
+        headers: opts.isrSsrCarriesToken === false ? {} : { "x-navhub-internal-token": TOKEN },
+      })
+        .then((r) => {
+          if (r.ok) states.set(key, { producedAt: Date.now(), shell: opts.shells === true });
+        })
+        .catch(() => undefined);
+    };
     const server = createServer(async (req, res) => {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
       if (url.pathname === "/sitemap.xml") {
@@ -81,6 +124,27 @@ function serveFakeWeb(apiBase: string, opts: WebOpts): Promise<{ base: string; c
       }
       const detail = /^\/site\/(\d+)$/.exec(url.pathname);
       if (detail) {
+        if (opts.isr) {
+          const st = states.get(detail[1])!;
+          const expired = Date.now() - st.producedAt > rvMs;
+          if (expired && !inFlight.has(detail[1])) {
+            inFlight.add(detail[1]);
+            backgroundRegen(detail[1]);
+            // 后台再生是异步的：这一趟必须先给旧快照（STALE），成败留给第二趟读
+            setTimeout(() => inFlight.delete(detail[1]), 0);
+          }
+          res.writeHead(200, {
+            "content-type": "text/html",
+            "cache-control": "s-maxage=60, stale-while-revalidate=31535940",
+            "x-nextjs-cache": expired ? "STALE" : "HIT",
+          });
+          res.end(
+            st.shell
+              ? `<html lang="zh-CN"><head><title>站点详情</title><meta name="robots" content="noindex, follow"/></head><body>稍后再试</body></html>`
+              : `<html lang="zh-CN"><head><title>某站点 - NavHub</title></head><body><h1>某站点</h1></body></html>`,
+          );
+          return;
+        }
         // 「壳」在中枢侧只是 429，在爬虫侧才是可观察的形状 —— 这里直接给形状
         res.writeHead(200, {
           "content-type": "text/html",
@@ -128,6 +192,10 @@ async function run(api: ApiOpts, web: WebOpts, extra: string[] = [], env: Record
         "--public-hammer=8",
         "--pages=12",
         "--min-miss=5",
+        ...extra,
+        // 默认关掉 3b 的等待（用例不睡 75 秒）；要测 3b 的用例自己在 extra 里给
+        // --revalidate-grace/--revalidate-settle —— argvParse 取第一个匹配项，所以必须排在后面。
+        "--revalidate-grace=0",
         ...extra,
       ],
       { env: { ...process.env, NAVHUB_INTERNAL_TOKEN: env.token === "" ? "" : TOKEN, ...env } },
@@ -177,17 +245,52 @@ describe("check-rate-limit-exemption.mjs", () => {
     expect(out).toContain("先查中枢健康");
   });
 
-  it("全是缓存 HIT ⇒ 证据不足红灯（没在受限中枢面前重渲染过，豁免有没有用不可知）", async () => {
+  it("全是缓存 HIT 且关掉了复探 ⇒ 证据不足红灯（不许拿旧快照冒充验证过）", async () => {
     const { code, out } = await run({ publicLimit: 5 }, { cacheHitAll: true });
     expect(code, out).toBe(1);
     expect(out).toContain("证据不足");
-    // 归因必须指向本轮取证确认「还活着」的来源。磁盘侧两层缓存的清理早已在 CI 步骤里
-    // 落地并被上面的钉子测试锁住，再把排查指向它只会让人重复做已经做过的事 ——
-    // 那正是 run79 里这条红灯被误读成「豁免失效」的原因。
-    expect(out).toContain("检查没跑成");
-    expect(out).toContain("next-server 进程自己的内存路由缓存");
-    expect(out).toContain("pgrep");
+    expect(out).toContain("关掉了复探");
+    expect(out).toContain("不谎报为通过");
+    // 归因只准指向「还活着」的来源：磁盘两层缓存早已在 CI 步骤里落地并被钉子测试锁住
+    expect(out).toContain("next-server 进程内缓存");
     expect(out).not.toContain("CI 侧需要先清 server/route-cache");
+    // grace=0 必须真的跳过复探：跑了复探就不是「这一条不可判」，而是另一套取证
+    expect(out).not.toContain("阶段 3b");
+  });
+
+  it("复探能逼出真再生 ⇒ 3b 自证通过，豁免确实作用在 SSR 取数路径上", async () => {
+    // 假前端是个真的 ISR 状态机：首趟全 HIT（快照没到期）→ 等过 revalidate →
+    // 检查先把公开额度打满再复探 → 每页给 STALE 并后台向**已耗尽额度**的中枢取数。
+    // 带凭据 ⇒ 取数成功 ⇒ 第二趟回到 HIT ⇒ 这才叫「在受限中枢面前重新生成过」。
+    const { code, out } = await run(
+      { publicLimit: 5, windowMs: 1200 },
+      { isr: true },
+      ["--revalidate-grace=1.5", "--revalidate-settle=0.4"],
+    );
+    expect(code, out).toBe(0);
+    expect(out).toContain("阶段 3b 复探");
+    expect(out).toContain("同步/后台成功=12");
+    expect(out).toContain("限流豁免集成检查通过");
+    // 三条红灯分支各自的签名词不许出现在绿灯里：出现即说明计数或分支写反了
+    expect(out).not.toContain("没能再生、继续给旧快照");
+    expect(out).not.toContain("仍全 HIT");
+  });
+
+  it("过期后一直给旧快照（SSR 取数没带凭据）⇒ 红灯归因到取数层，不许混进另外两条分支", async () => {
+    // windowMs 必须有界：假中枢的额度要能在等 revalidate 的那段时间里自己恢复，
+    // 否则「复探前重新打满额度」这一步没有东西可承重（真实中枢是 300/分钟的窗口）。
+    const { code, out } = await run(
+      { publicLimit: 5, windowMs: 1200 },
+      { isr: true, isrSsrCarriesToken: false },
+      ["--revalidate-grace=1.5", "--revalidate-settle=0.4"],
+    );
+    expect(code, out).toBe(1);
+    expect(out).toContain("没能再生、继续给旧快照");
+    expect(out).toContain("lib/server/hub.ts");
+    // 「仍全 HIT」是 revalidate 窗口没起作用那条的签名，「关掉了复探」是 grace=0 那条的签名；
+    // 这里快照明明过期了，归因混进任一条都会把人引开真正的取数层。
+    expect(out).not.toContain("仍全 HIT");
+    expect(out).not.toContain("关掉了复探");
   });
 
   it("浏览器侧 /api/hub 代理被标成内部流量 ⇒ 安全边界红灯", async () => {

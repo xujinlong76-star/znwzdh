@@ -6,6 +6,7 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { copilotEventSummary } from "@navhub/store";
 import type { AppContext } from "../context.ts";
 import { getHttpMetricsSummary } from "../metrics.ts";
 import { getUserCenterMetrics } from "../user-center-metrics.ts";
@@ -203,6 +204,21 @@ export const statsRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, 
       }));
 
       return { days, points, total: series.length };
+    }
+  );
+
+  /**
+   * AI 副驾遥测消费端：copilot / copilot_cancel 两类事件折成取消率与
+   * 「放弃前等待时长」分位数。此前这两类 kind 全仓只有写入、没有读取，
+   * 取消行为记进库以后没有任何出口能看到。
+   */
+  app.get(
+    "/api/admin/copilot/events",
+    { config: { scope: "read", cache: { maxAge: 10 } } },
+    async (req) => {
+      const days = parseTimeWindow(req.query as Record<string, unknown>, "days", 7, 1, 90);
+      const summary = await copilotEventSummary(ctx.repo, days);
+      return summary;
     }
   );
 

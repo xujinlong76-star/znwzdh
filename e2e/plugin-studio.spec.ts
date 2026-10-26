@@ -52,6 +52,17 @@ test('AI 工坊：JSON 清单 / 元数据微调与 Diff / 自动化体检 / 启�
 
   // 2) 管理员审核上架（与全链路用例同一通道）
   await page.goto('/admin/plugins', { waitUntil: 'domcontentloaded' });
+  /**
+   * 先等列表页标题，再等卡片。
+   *
+   * 这条用例在 CI 上红的时候，pendingCard 的 45s 超时把两种完全不同的故障
+   * 说成同一种：next dev 冷编译没出来 / 列表 GET 被上游 30s 静默打断后降级成空数组。
+   * 标题是纯本地渲染，卡片依赖那次 GET —— 把前者单独断言出来，
+   * 红灯至少能指明断链在哪一段（本轮不改后台列表的降级逻辑，它正被并行会话修改）。
+   */
+  await expect(page.getByRole('heading', { level: 1, name: '插件市场审核管理' })).toBeVisible({
+    timeout: 60_000,
+  });
   const pendingCard = page.locator('div.rounded-2xl').filter({ hasText: name }).first();
   await expect(pendingCard).toBeVisible({ timeout: 45_000 });
   await pendingCard.getByRole('button', { name: '通过并上架' }).click();

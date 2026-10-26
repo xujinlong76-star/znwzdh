@@ -28,9 +28,36 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
   fetchAdminAiObservability,
+  hubGet,
   type HubAiObservabilityResponse,
   type HubAiQuotaMeter,
 } from '@/lib/navhub-api'
+
+/**
+ * `/api/admin/copilot/events` 的返回形状。
+ *
+ * 没有走 `fetchAdminXxx` 那一层：那批函数住在 navhub-api.ts 里，本轮刻意不碰它，
+ * 直接用同一份 `hubGet`（它就是 getJson 的具名导出）拿同一套鉴权头与错误口径。
+ */
+interface HubCopilotEventSummary {
+  windowDays: number
+  scanned: number
+  truncated: boolean
+  asks: number
+  cancels: number
+  cancelRate: number | null
+  cancelStage: { pre_llm: number; llm: number }
+  waitMs: { p50: number | null; p95: number | null; max: number | null }
+  degraded: number
+  degradedBy: Array<{ reason: string; count: number }>
+  quotaLimited: number
+  thinkingBy: Array<{ thinking: string; count: number }>
+}
+
+function waitMsText(ms: number | null): string {
+  if (ms === null) return '未采集'
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`
+}
 
 const TIME_WINDOWS = [
   { label: '最近 24 小时', value: '24h' },
@@ -74,10 +101,23 @@ export function AiObservabilityPanel() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [timeWindow, setTimeWindow] = useState('24h')
+  const [copilot, setCopilot] = useState<HubCopilotEventSummary | null>(null)
+  const [copilotError, setCopilotError] = useState<string | null>(null)
 
   const loadMetrics = useCallback(async () => {
     setLoading(true)
     setError(null)
+    // 取消读数与大盘读数各自独立失败：copilot 事件读不到不该把整块模型大盘抹掉
+    const days = timeWindow === '30d' ? 30 : timeWindow === '7d' ? 7 : 1
+    void hubGet<HubCopilotEventSummary>(`/api/admin/copilot/events?days=${days}`)
+      .then((s) => {
+        setCopilot(s)
+        setCopilotError(null)
+      })
+      .catch((err: unknown) => {
+        setCopilot(null)
+        setCopilotError(err instanceof Error ? err.message : String(err))
+      })
     try {
       const res = await fetchAdminAiObservability(timeWindow)
       setData(res)
@@ -328,6 +368,63 @@ export function AiObservabilityPanel() {
           </div>
         </div>
       )}
+
+      {/* AI 副驾取消读数：kind=copilot / copilot_cancel 此前全仓只写不读，取消行为落库后没有出口 */}
+      <div className="rounded-xl border bg-card p-5 shadow-sm space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-amber-500 shrink-0" />
+            <h3 className="text-sm font-semibold">AI 副驾取消与放弃前等待</h3>
+          </div>
+          {copilot && (
+            <Badge variant="outline" className="text-[11px]">
+              最近 {copilot.windowDays} 天 · 读取 {copilot.scanned} 条
+              {copilot.truncated ? '（超出读取上限，已截断）' : ''}
+            </Badge>
+          )}
+        </div>
+        {copilotError && !copilot && (
+          <p className="text-xs text-muted-foreground">取消读数暂不可用：{copilotError}</p>
+        )}
+        {copilot && (
+          <>
+            <div className="grid gap-4 sm:grid-cols-4">
+              <div>
+                <p className="text-[11px] text-muted-foreground">完成应答</p>
+                <p className="text-lg font-semibold tabular-nums">{copilot.asks.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">按了停止</p>
+                <p className="text-lg font-semibold tabular-nums">{copilot.cancels.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">取消率</p>
+                <p className="text-lg font-semibold tabular-nums">
+                  {copilot.cancelRate === null ? '无样本' : `${(copilot.cancelRate * 100).toFixed(1)}%`}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">放弃前等待（P50 / P95）</p>
+                <p className="text-lg font-semibold tabular-nums">
+                  {waitMsText(copilot.waitMs.p50)} / {waitMsText(copilot.waitMs.p95)}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              停止发生在调模型前 {copilot.cancelStage.pre_llm} 次、调模型后 {copilot.cancelStage.llm} 次；
+              最长一次等了 {waitMsText(copilot.waitMs.max)}。
+              兜底应答 {copilot.degraded} 次
+              {copilot.degradedBy.length > 0
+                ? `（${copilot.degradedBy
+                    .slice(0, 3)
+                    .map((d) => `${d.reason}×${d.count}`)
+                    .join('、')}）`
+                : ''}
+              ，撞额度闸门 {copilot.quotaLimited} 次。
+            </p>
+          </>
+        )}
+      </div>
 
       {/* 中部图表区：24小时走势 + 业务场景分布 */}
       <div className="grid gap-6 lg:grid-cols-3">

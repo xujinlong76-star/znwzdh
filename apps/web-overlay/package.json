@@ -85,7 +85,7 @@
     "shadcn": "^2.10.0",
     "sharp": "^0.34.5",
     "tailwindcss": "4.1.12",
-    "typescript": "5.9.3"
+    "typescript": "7.0.2"
   },
   "//pnpm": "pnpm 11 起不再读 package.json 的 pnpm 字段（会打印 ignored 警告）。本项目的 overrides 与 allowBuilds 已迁到同目录 pnpm-workspace.yaml——Docker 里 apps/web 是独立安装的，读不到仓库根的配置。",
   "browser": {

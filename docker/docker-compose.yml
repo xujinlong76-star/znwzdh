@@ -17,6 +17,12 @@
 #     standard 部署还要设 NAVHUB_MODE=standard 与 NAVHUB_MCP_DATABASE_URL=...，
 #     否则 MCP 读的是 /data/navhub.db 而不是 Postgres（两边数据会分叉）。
 #
+# 生产身份闸门（security-readiness.ts）：容器内固定 NODE_ENV=production。
+#   内网 / NAS 开放模式（未配 NAVHUB_IDENTITY_SECRET）：首次启动需设
+#     NAVHUB_ALLOW_UNSIGNED_IDENTITY=1（显式承认「任何请求可自称 userId/anonId」）。
+#   公网部署：设 NAVHUB_AUTH_REQUIRED=1 + NAVHUB_IDENTITY_SECRET（≥32 字符）。
+#   两者都不满足时中枢拒绝启动（fail-closed），错误信息会给出这两条修复路径。
+#
 # 说明：
 #  - embedding 模型在首次启动时下载到 /data/models（约 24MB，来自 hf-mirror）。
 #    完全离线部署：把模型目录预先挂载到 /data/models。
@@ -117,6 +123,11 @@ services:
       # —— 只能改 compose（就是这一行）。
       # 开启后每个带身份的请求都要 x-navhub-identity-signature = HMAC-SHA256(secret, identity)。
       NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
+      # 生产身份签名总闸（security-readiness.ts）：容器固定 NODE_ENV=production，
+      # 未配 NAVHUB_IDENTITY_SECRET 时必须显式设 1 承认「任何请求可自称 userId/anonId」，
+      # 否则中枢拒绝启动（fail-closed）。个人 / NAS 内网部署：设 NAVHUB_ALLOW_UNSIGNED_IDENTITY=1；
+      # 公网部署请改用 NAVHUB_AUTH_REQUIRED=1 + ≥32 字符密钥（推荐）。
+      NAVHUB_ALLOW_UNSIGNED_IDENTITY: ${NAVHUB_ALLOW_UNSIGNED_IDENTITY:-0}
       # 限流豁免凭据（与 web 服务必须同值；留空 = 零豁免，行为同历史）。
       # 见 .env.example 与 docs/seo/ISR-ROUTES.md 5.9：不带它时 web 层 SSR 取数与访客抢同一个 300/min 桶。
       NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}
@@ -277,13 +288,16 @@ services:
       NAVHUB_SESSION_SECRET: ${NAVHUB_SESSION_SECRET:-}
       # 同 api：8787 直接 publish，默认可伪造 XFF 不参与限流分桶（详见 api 服务注释）
       NAVHUB_TRUST_PROXY: ${NAVHUB_TRUST_PROXY:-0}
-      # 以下四项与 api 服务保持同一组透传（语义见 api 服务里的注释）。
+      # 以下五项与 api 服务保持同一组透传（语义见 api 服务里的注释）。
       # 这里漏一项，standard 模式就等于「鉴权/引导凭据/身份签名/公网 fail-closed 全都配不上」，
       # 只能改 compose 文件本身。
       NAVHUB_AUTH_REQUIRED: ${NAVHUB_AUTH_REQUIRED:-0}
       NAVHUB_BOOTSTRAP_TOKEN: ${NAVHUB_BOOTSTRAP_TOKEN:-}
       NAVHUB_ADMIN_TOKEN: ${NAVHUB_ADMIN_TOKEN:-}
       NAVHUB_IDENTITY_SECRET: ${NAVHUB_IDENTITY_SECRET:-}
+      # 与 api 同一道生产身份签名总闸（语义见 api 服务）；standard 模式漏透传
+      # 会导致内网开放模式无法显式 opt-out，只能改 compose 本身。
+      NAVHUB_ALLOW_UNSIGNED_IDENTITY: ${NAVHUB_ALLOW_UNSIGNED_IDENTITY:-0}
       # 限流豁免凭据（standard 模式同样要有，否则 web 侧 SSR 取数会撞 300/min 桶）
       NAVHUB_INTERNAL_TOKEN: ${NAVHUB_INTERNAL_TOKEN:-}
       NAVHUB_PUBLIC_URL: ${NAVHUB_PUBLIC_URL:-http://localhost:8788}

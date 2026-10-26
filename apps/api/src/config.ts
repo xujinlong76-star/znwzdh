@@ -91,6 +91,12 @@ export interface AppConfig {
    */
   identitySecret: string | null;
   /**
+   * 生产开放模式显式承认「身份未签名」（默认 false）。
+   * NODE_ENV=production 且 authRequired=false 时，identitySecret 为空且本项未开
+   * ⇒ 中枢拒绝启动（见 security-readiness.ts）；内网 / NAS 部署可显式设 1 退回历史行为。
+   */
+  allowUnsignedIdentity: boolean;
+  /**
    * 我方 Web 层服务端取数的限流豁免凭据（可选，`x-navhub-internal-token`）。
    *
    * 只影响限流，不参与鉴权：web 侧所有 SSR/RSC 取数在部署上是同一个出口 IP，
@@ -468,6 +474,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
     identitySecret: process.env.NAVHUB_IDENTITY_SECRET || null,
+    allowUnsignedIdentity: bool("NAVHUB_ALLOW_UNSIGNED_IDENTITY", false),
     internalToken: process.env.NAVHUB_INTERNAL_TOKEN?.trim() || null,
     // 默认值刻意保持历史口径：只有显式配置才改变限流强度
     rateLimitMax: num("NAVHUB_RATE_LIMIT_MAX", process.env.NODE_ENV === "test" ? 10_000 : 300),

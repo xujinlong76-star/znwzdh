@@ -46,7 +46,7 @@ test('AI 工坊：JSON 清单 / 元数据微调与 Diff / 自动化体检 / 启�
   await page.getByLabel('作者称谓').fill('E2E 工坊助手');
   await page.getByLabel('内容载荷 JSON').fill(payloadJson(stamp));
   await page.getByRole('button', { name: '预检校验' }).click();
-  await expect(page.getByText('预检校验通过！该清单完全符合 山羊胡规范')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('预检校验通过！该清单完全符合山羊胡规范')).toBeVisible({ timeout: 30_000 });
   await page.getByRole('button', { name: '立即提交审核' }).click();
   await expect(page.getByRole('heading', { name: '投稿发布成功！' })).toBeVisible({ timeout: 30_000 });
 

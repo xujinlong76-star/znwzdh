@@ -271,7 +271,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
 
     // 预检校验
     await page.getByRole('button', { name: '预检校验' }).click();
-    await expect(page.getByText('预检校验通过！该清单完全符合 山羊胡规范')).toBeVisible();
+    await expect(page.getByText('预检校验通过！该清单完全符合山羊胡规范')).toBeVisible();
 
     // 提交发布
     await page.getByRole('button', { name: '立即提交审核' }).click();

@@ -16,7 +16,7 @@ export const learnGrowthArsenal: SeedPluginDef = {
     description:
       "面向终身学习者的完整导航（20 大分类 / 约 206 个站点）：综合课程平台、编程与计算机基础、数学算法、外语学习、阅读与知识管理、考试学历提升、职场技能、兴趣与儿童教育、学习方法工具、教育资讯，从在校到职场充电一条链覆盖。",
     icon: "📚",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["学习", "课程", "考试", "自我提升"],

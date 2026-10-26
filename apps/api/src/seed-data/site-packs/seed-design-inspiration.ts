@@ -16,7 +16,7 @@ export const seedDesignInspiration: SeedPluginDef = {
     description:
       "面向视觉/UI/产品设计师的完整导航（20 大分类 / 约 201 个站点）：灵感社区、网页评审、UI 与组件资源、图标插画、字体排版、配色工具、图片视频素材、原型协作、设计系统规范、3D 与动效、AI 设计工具、资讯学习，导入即是一份可长期使用的设计导航。",
     icon: "🎨",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "2.0.0",
     tags: ["设计", "灵感", "配色", "UI", "素材"],

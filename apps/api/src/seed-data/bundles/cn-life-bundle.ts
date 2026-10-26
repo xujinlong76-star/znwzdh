@@ -16,7 +16,7 @@ export const cnLifeBundle: SeedPluginDef = {
     description:
       "把导航站变成中文家庭门户：中文生活综合导航（日常办事入口）+ 学习与自我提升包（充电学习）+ 购物电商、医疗健康、旅行出行、政务民生四个高频场景包，加中文生活检索与极客检索两套搜索包，配暖阳琥珀与纸质拿铁两套浅色主题，适合家庭或办公共用首页。",
     icon: "🏠",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.1.0",
     tags: ["中文", "生活", "学习", "组合包"],

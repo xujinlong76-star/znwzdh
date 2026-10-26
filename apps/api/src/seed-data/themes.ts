@@ -17,7 +17,7 @@ export const nordFrostTheme: SeedPluginDef = {
     description:
       "移植 Nord 色调体系（20 项变量全覆盖）：极夜蓝底 + 霜青强调色 + 柔和前景，整站卡片、弹层、输入框与聚焦环同步换肤。冷调低饱和，长时间阅读与编码都不刺眼。",
     icon: "❄️",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["主题", "深色", "Nord", "冷调"],
@@ -59,7 +59,7 @@ export const gruvboxRetroTheme: SeedPluginDef = {
     description:
       "移植 Gruvbox 复古配色（20 项变量全覆盖）：暖棕深底 + 姜黄强调色 + 米色文字，终端时代的怀旧质感与现代卡片布局共存，护眼且辨识度高。",
     icon: "🟤",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["主题", "深色", "Gruvbox", "复古"],
@@ -101,7 +101,7 @@ export const paperLatteTheme: SeedPluginDef = {
     description:
       "浅色纸感主题（20 项变量全覆盖）：米白底 + 深墨文字 + 拿铁暖强调色，卡片阴影轻、圆角大，白天在明亮环境或投屏演示时比深色主题更清晰。",
     icon: "📄",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["主题", "浅色", "纸感", "日间"],
@@ -143,7 +143,7 @@ export const forestPineTheme: SeedPluginDef = {
     description:
       "自然系深色主题（20 项变量全覆盖）：针叶绿底 + 苔藓绿强调色 + 冷灰绿文字，饱和度低、层次柔和，适合长时间阅读与轻办公，视觉上比纯黑更护眼。",
     icon: "🌲",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["主题", "深色", "自然", "护眼"],
@@ -185,7 +185,7 @@ export const oceanDeepTheme: SeedPluginDef = {
     description:
       "深海系深色主题（20 项变量全覆盖）：午夜蓝底 + 海面蓝强调色 + 冷白文字，圆角偏大、卡片对比清晰，适合夜间长时间浏览与数据密集型看板。",
     icon: "🌊",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["主题", "深色", "海洋", "夜间"],
@@ -227,7 +227,7 @@ export const sakuraMistTheme: SeedPluginDef = {
     description:
       "浅色柔粉主题（20 项变量全覆盖）：樱花粉白底 + 深梅文字 + 胭脂粉强调色，整体明度高、对比温和，适合白天与投屏演示，也适合做个人主页这类偏生活化的场景。",
     icon: "🌸",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["主题", "浅色", "柔粉", "日间"],

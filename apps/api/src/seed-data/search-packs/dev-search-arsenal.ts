@@ -16,7 +16,7 @@ export const devSearchArsenal: SeedPluginDef = {
     description:
       "40 个高频技术检索源一次装齐：在主搜索框用 !gh、!npm、!mdn、!so、!rs、!k8s、!tf、!nuget、!cve 等前缀即可跨代码托管、包仓库、官方文档、社区问答与漏洞数据库直达检索，覆盖前端、后端、云原生、安全与 AI 生态。",
     icon: "🔍",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "2.1.0",
     tags: ["搜索", "极客", "GitHub", "npm", "MDN", "云原生", "工具"],

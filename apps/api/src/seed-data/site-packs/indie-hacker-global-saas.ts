@@ -15,7 +15,7 @@ export const indieHackerGlobalSaas: SeedPluginDef = {
     "name": "独立黑客出海与全球 SaaS 武器库",
     "description": "2026 前沿独立黑客 (Indie Hacker) 出海与全球微型 SaaS 商业化全景武器库（20 大分类 / 202 个精选站点）：系统覆盖全球多币种支付结汇、合规法务、全栈开发元框架、身份验证、全球化 SEO 营销、埋点分析与出海远程社区。",
     "icon": "🚀",
-    "author": "NavHub 官方",
+    "author": "山羊胡官方",
     "license": "MIT",
     "version": "1.0.0",
     "tags": [

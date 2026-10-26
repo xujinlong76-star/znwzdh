@@ -16,7 +16,7 @@ export const designerStarterBundle: SeedPluginDef = {
     description:
       "设计师的一体化开局：设计师灵感导航（130+ 素材与工具站点）+ 前端武器库（落地页与作品集）+ 自媒体运营增长包与运营营销包（作品集与宣发）+ 影音娱乐包（视频与配乐素材），加极客与中文两套检索包，配暖阳琥珀浅色与极光青深色皮肤。一次安装即可开箱即用。",
     icon: "🎨",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["设计", "起步包", "组合", "灵感"],

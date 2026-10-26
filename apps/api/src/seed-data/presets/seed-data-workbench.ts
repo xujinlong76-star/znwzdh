@@ -16,7 +16,7 @@ export const seedDataWorkbench: SeedPluginDef = {
     description:
       "面向技术趋势观察者与数据同学的三看板布局（共 17 个模块）：数据洞察、极客速查、沉淀复盘。热榜雷达、中枢监控、速查终端、双曲雷达与专注时钟一次到位。",
     icon: "📊",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "2.0.0",
     tags: ["工作台", "看板", "效率", "数据"],

@@ -16,7 +16,7 @@ export const aiToolsArsenal: SeedPluginDef = {
     description:
       "面向 AI 应用开发者与效率用户的完整导航（20 大分类 / 约 209 个站点）：大模型对话、模型与数据集社区、AI 编程助手、图像视频生成、音频语音、写作办公、AI 搜索与知识、向量库与 RAG、智能体自动化、提示词资源、评测榜单、论文资讯。",
     icon: "🤖",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["AI", "大模型", "LLM", "效率"],

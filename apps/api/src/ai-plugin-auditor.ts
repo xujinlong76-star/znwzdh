@@ -737,7 +737,7 @@ export function autoRemediatePluginManifest(manifest: PluginManifest): {
       cloned.description = trimmed;
     }
   } else {
-    cloned.description = `${cloned.name} - 为 NavHub 打造的声明式精选套件`;
+    cloned.description = `${cloned.name} - 为山羊胡打造的声明式精选套件`;
     changes.push(`补全默认插件描述信息`);
   }
 

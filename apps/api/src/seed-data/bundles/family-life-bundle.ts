@@ -19,7 +19,7 @@ export const familyLifeBundle: SeedPluginDef = {
     description:
       "以一个家庭为单位的一次性配置：宠物与育儿全场景包（含宠物医疗、领养、母婴、孕期、早教、亲子场馆与儿童安全）+ 医疗健康 + 教育学习 + 购物电商 + 旅行出行 + 政务民生办事，再配中文生活检索包与三套柔和主题。装完即可当家庭共用首页。",
     icon: "👨‍👩‍👧",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["家庭", "亲子", "宠物", "生活", "组合包"],

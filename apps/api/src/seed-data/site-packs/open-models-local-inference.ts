@@ -15,7 +15,7 @@ export const openModelsLocalInference: SeedPluginDef = {
     "name": "开源大模型与本地私有化推理包",
     "description": "2026 前沿开源大模型与本地私有化推理全景武器库（19 大分类 / 195 个精选站点）：涵盖 DeepSeek、Qwen、Llama 等开源权重、Ollama 与 vLLM 本地推理引擎、端侧量化工具、GPU 显卡算力调优与私有化合规部署方案。",
     "icon": "🦙",
-    "author": "NavHub 官方",
+    "author": "山羊胡官方",
     "license": "Apache-2.0",
     "version": "1.0.0",
     "tags": [

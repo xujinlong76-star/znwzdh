@@ -16,7 +16,7 @@ export const devopsWorkbench: SeedPluginDef = {
     description:
       "面向运维架构师与 SRE 的三看板布局（共 18 个模块）：集群全景监控、故障应急响应、值班复盘台。全部组件取自前端注册表，安装即可用，覆盖指标监控、热榜情报、诊断工具、应急终端与复盘速记。",
     icon: "🛠️",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "2.0.0",
     tags: ["运维", "SRE", "监控", "工作台"],

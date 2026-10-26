@@ -16,7 +16,7 @@ export const draculaDark: SeedPluginDef = {
     description:
       "完整移植经典 Dracula 配色体系（20 项变量全覆盖）：深蓝黑底 + 粉紫霓虹强调色 + 高对比前景，整站卡片、弹层、输入框、聚焦环与圆角同步换肤，深夜长时间编码不刺眼。",
     icon: "🧛",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "2.0.0",
     tags: ["主题", "深色", "Dracula", "赛博朋克"],

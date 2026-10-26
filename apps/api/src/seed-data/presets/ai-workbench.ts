@@ -17,7 +17,7 @@ export const aiWorkbench: SeedPluginDef = {
     description:
       "面向 AI 应用开发者与重度用户的四看板布局（共 22 个模块）：模型与情报、提示词与交付、智能体与复盘、学习与评测。把模型速查、热榜、接口探测、提示词库与同类工具雷达收进一屏，装完即用。",
     icon: "🤖",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["工作台", "AI", "智能体", "模型"],

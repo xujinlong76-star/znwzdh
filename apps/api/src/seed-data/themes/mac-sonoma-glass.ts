@@ -12,7 +12,7 @@ export const macSonomaGlass: SeedPluginDef = {
     name: "macOS Sonoma 毛玻璃晶透主题",
     description: "向 Apple macOS 现代桌面美学致敬的毛玻璃晶透主题（20 项变量全覆盖）：超精细圆角、微晶半透明亚克力卡片质感与活力系统天蓝强调色，完美契合 Mac 桌面审美。",
     icon: "🪟",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["主题","macOS","毛玻璃","晶透","现代"],

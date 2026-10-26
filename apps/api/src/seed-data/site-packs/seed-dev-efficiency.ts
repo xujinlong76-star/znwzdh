@@ -16,7 +16,7 @@ export const seedDevEfficiency: SeedPluginDef = {
     description:
       "全栈工程师的日常效率导航（20 大分类 / 约 213 个站点）：代码托管、问答社区、官方文档、在线 IDE、编码小工具、接口调试、数据库工具、命令行速查、学习课程、算法面试、安全合规、项目协作，安装后导航站直接变成一台开发工作站。",
     icon: "⚡",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "2.0.0",
     tags: ["开发", "效率", "工具", "全栈"],

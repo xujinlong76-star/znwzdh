@@ -16,7 +16,7 @@ export const aiPowerBundle: SeedPluginDef = {
     description:
       "AI 工作流一体化开局：AI 与大模型工具包（120 个 AI 站点）+ 前端武器库（便于落地 AI 应用）+ 后端与云原生工程包（推理服务与部署）+ 开发者效率精选 + 软件效率工具包，加极客检索与学术文献两套搜索包（查文档与论文），配极光青与德古拉两套深色皮肤。",
     icon: "🧠",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["AI", "效率", "组合包"],

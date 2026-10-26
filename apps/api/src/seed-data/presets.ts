@@ -20,7 +20,7 @@ export const contentCreatorWorkbench: SeedPluginDef = {
     description:
       "面向自媒体与内容创作者的三看板布局（共 12 个模块）：选题与灵感、素材与产出、数据复盘。安装即用，把「找选题 → 写稿 → 拍素材 → 看数据」串在同一个工作台上。",
     icon: "✍️",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["工作台", "创作者", "内容", "自媒体"],
@@ -83,7 +83,7 @@ export const studentStudyWorkbench: SeedPluginDef = {
     description:
       "面向学生与自学者的三看板布局（共 12 个模块）：今日学习、课程与资料、复习与沉淀。番茄钟、笔记、资料速查与学术订阅一次就位，装完即可开始自习。",
     icon: "📖",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["工作台", "学习", "自习", "学生"],
@@ -146,7 +146,7 @@ export const investorWorkbench: SeedPluginDef = {
     description:
       "面向个人投资者与研究者的三看板布局（共 12 个模块）：市场全景、研究与盯盘、复盘与资讯。行情面板、财经热榜、数据源入口与复盘笔记集中在一屏，减少来回切页。",
     icon: "📊",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["工作台", "投资", "财经", "研究"],

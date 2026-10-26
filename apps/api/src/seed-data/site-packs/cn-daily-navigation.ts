@@ -16,7 +16,7 @@ export const cnDailyNavigation: SeedPluginDef = {
     description:
       "面向国内日常场景的门户级导航（20 大分类 / 约 208 个站点）：新闻资讯、视频影音、音乐音频、社交社区、购物电商、出行交通、政务办事、金融理财、医疗健康、教育考试、求职招聘、房产家居、工具查询、美食生活，覆盖从看新闻到办证件的高频入口。",
     icon: "🇨🇳",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["中文", "生活", "导航", "门户"],

@@ -16,7 +16,7 @@ export const backendCloudArsenal: SeedPluginDef = {
     description:
       "面向后端与云原生工程师的完整导航（20 大分类 / 约 223 个站点）：语言运行时、后端框架、数据库存储、消息队列、容器编排、IaC 与云厂商、可观测性、CI/CD、网关治理、安全密钥、测试压测、架构学习，从写代码到上线运维一条链覆盖。",
     icon: "☁️",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["后端", "云原生", "Kubernetes", "运维"],

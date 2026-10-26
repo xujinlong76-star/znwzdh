@@ -16,7 +16,7 @@ export const creatorOpsArsenal: SeedPluginDef = {
     description:
       "面向内容创作者与运营同学的实战导航（20 大分类 / 约 215 个站点）：排版编辑、图片设计、视频剪辑、热点数据平台、私域社群、电商带货、舆情分析、广告投放、协作效率、变现平台，从选题到变现一条链配齐。",
     icon: "📈",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["自媒体", "运营", "增长", "内容创作"],

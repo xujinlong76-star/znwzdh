@@ -15,7 +15,7 @@ export const aiAgenticCoding: SeedPluginDef = {
     "name": "AI Agentic 编码与自动化开发包",
     "description": "2026 前沿 AI 智能体开发武器库（20 大分类 / 210+ 精选站点）：全面覆盖 AI IDE、Agent 框架、RAG 向量库、模型微调、评测基准、全栈框架、DevOps 与安全工具，助你极速构建自主编程智能体。",
     "icon": "⚡",
-    "author": "NavHub 官方",
+    "author": "山羊胡官方",
     "license": "MIT",
     "version": "1.0.0",
     "tags": [

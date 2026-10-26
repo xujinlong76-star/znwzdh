@@ -12,7 +12,7 @@ export const catppuccinMocha: SeedPluginDef = {
     name: "Catppuccin Mocha 极客主题",
     description: "经典 Catppuccin Mocha 极客深色调色盘（20 项变量全覆盖）：以温润舒缓的暗褐黑为底，搭配摩卡淡紫与粉桃强调色，色彩平衡柔和且层次分明，专为长时间专注编码设计。",
     icon: "☕",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["主题","深色","Catppuccin","Mocha","极客"],

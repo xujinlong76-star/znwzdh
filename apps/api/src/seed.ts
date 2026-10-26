@@ -271,7 +271,7 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
         const created = await ctx.repo.createPlugin(
           {
             manifest: validated.manifest,
-            author: validated.manifest.author ?? "NavHub 官方",
+            author: validated.manifest.author ?? "山羊胡官方",
             authorKind: "seed",
             source: "seed",
             status: def.status,

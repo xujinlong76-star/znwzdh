@@ -19,7 +19,7 @@ export const cnSearchArsenal: SeedPluginDef = {
     description:
       "39 个中文高频检索源一次装齐：用 !xhs、!weibo、!db、!tb、!jd、!dianping、!meituan、!dy、!bl、!damai、!lagou 等前缀直达社交、电商、点评、票务演出、招聘求职、视频与出行平台，覆盖从查口碑、比价、找攻略到订票、求职、查企业的日常检索链路，与开发者检索包前缀完全错开、可同时安装。",
     icon: "🧭",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.1.0",
     tags: ["搜索", "中文", "生活", "电商", "本地生活"],
@@ -79,7 +79,7 @@ export const academicSearchArsenal: SeedPluginDef = {
     description:
       "38 个学术检索源一次装齐：!gs、!arxiv、!pubmed、!ieee、!acm、!s2、!cnki、!wanfang、!cqvip、!patents、!zenodo、!espacenet、!wb 等前缀覆盖预印本、机构库、期刊数据库、专利、国家标准与统计经济数据；写论文、查综述、找数据时不必再逐个站点翻找。",
     icon: "🎓",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.1.0",
     tags: ["搜索", "学术", "论文", "文献", "数据"],

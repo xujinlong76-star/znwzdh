@@ -15,7 +15,7 @@ export const mcpEcosystemArsenal: SeedPluginDef = {
     "name": "MCP 协议与智能体工具库生态包",
     "description": "2026 前沿 Model Context Protocol (MCP) 标准与智能体连接生态全景导航（19 大分类 / 198 个精选站点）：系统收录官方协议规范、多语言 SDK、全网 MCP 市场目录、数据库与文件系统 Server、DevOps 与安全工具，助你构建无所不能的工具连接型智能体。",
     "icon": "🔌",
-    "author": "NavHub 官方",
+    "author": "山羊胡官方",
     "license": "MIT",
     "version": "1.0.0",
     "tags": [

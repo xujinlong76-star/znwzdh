@@ -16,7 +16,7 @@ export const fullstackProBundle: SeedPluginDef = {
     description:
       "全栈开发者的完整配置：前端武器库 + 后端与云原生工程包 + 开发者效率精选 + AI 与大模型工具包 + 软件效率工具包 + 设计师灵感导航，加极客检索与学术文献两套搜索包与两套深色主题，覆盖前端、后端、云原生、AI 与设计素材，一次安装成型。",
     icon: "🚀",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "2.0.0",
     tags: ["全栈", "组合包", "效率", "开发"],

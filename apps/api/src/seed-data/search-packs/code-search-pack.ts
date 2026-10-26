@@ -9,7 +9,7 @@ export const codeSearchPack: SeedPluginDef = {
     "name": "全栈代码生态与依赖仓库搜索引擎包",
     "description": "38 个全栈代码与依赖仓库检索源一次装齐：在主搜索框用 !grep、!sgcode、!ghcode、!smithery、!jsr、!crates、!cve、!snyk 等前缀一键直达全球代码语义搜索、MCP 工具市场、官方依赖库与安全漏洞数据库。",
     "icon": "📦",
-    "author": "NavHub 官方",
+    "author": "山羊胡官方",
     "license": "MIT",
     "version": "1.0.0",
     "tags": [

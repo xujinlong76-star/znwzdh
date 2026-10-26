@@ -20,7 +20,7 @@ export const petFamilyParentingPack: SeedPluginDef = {
     description:
       "覆盖「养宠 + 养娃」两条家庭主线（18 大分类 / 约 198 个站点）：宠物社区、宠物医疗、领养救助、用品电商、训练行为、品种百科、保险与出行服务；母婴平台、孕期产后、婴幼儿护理、儿童医疗、育儿科普、早教启蒙、亲子场馆、儿童读物、家校衔接、儿童安全、家庭关系心理。只收官方机构与主流权威站点。",
     icon: "🐾",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["宠物", "母婴", "育儿", "家庭", "亲子", "生活"],

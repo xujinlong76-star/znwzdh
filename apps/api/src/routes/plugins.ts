@@ -65,7 +65,7 @@ export const FEATURED_TAPS = [
     description: "由 山羊胡官方严选审核的社区精品网址包、小众利基工具与垂直领域扩展",
     url: "https://raw.githubusercontent.com/navhub-org/community-taps/main/featured.json",
     isFeatured: true,
-    author: "NavHub 官方",
+    author: "山羊胡官方",
   },
   {
     id: "featured:ai-innovations",
@@ -376,7 +376,7 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             const created = await ctx.repo.createPlugin(
               {
                 manifest: validated.manifest,
-                author: validated.manifest.author ?? "NavHub 官方",
+                author: validated.manifest.author ?? "山羊胡官方",
                 authorKind: "seed",
                 ownerIdentity: "seed",
                 source: "seed",

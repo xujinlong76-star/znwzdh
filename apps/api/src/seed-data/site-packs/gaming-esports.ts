@@ -17,7 +17,7 @@ export const gamingEsportsPack: SeedPluginDef = {
     description:
       "面向玩家与游戏从业者的专业级游戏导航（18 大分类 / 约 199 个站点）：从 Steam、Epic、PlayStation、Xbox、Nintendo 等主流平台与商店，到 TapTap、米游社等手游渠道与云游戏服务；从 IGN、游民星空等评测媒体，到 Wiki 攻略、玩家社区与电竞赛事。再延伸至游戏引擎与开发工具、美术素材、独立发行、MOD 创作与销量数据，并补充直播平台与比价折扣追踪，串起「买游戏 → 看评测 → 查攻略 → 追赛事 → 做游戏」的完整链路，导入即是一份可直接长期使用的游戏导航。",
     icon: "🎮",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["游戏", "电竞", "主机", "玩家", "手游", "MOD"],

@@ -735,10 +735,10 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           rawManifest.version = "1.0.0";
         }
         if (typeof rawManifest.description !== "string" || !rawManifest.description.trim()) {
-          rawManifest.description = "由 Agnes 3.0 Flash 规划生成的 NavHub 声明式插件";
+          rawManifest.description = "由 Agnes 3.0 Flash 规划生成的 山羊胡声明式插件";
         }
         if (typeof rawManifest.author !== "string" || !rawManifest.author.trim()) {
-          rawManifest.author = identity !== "anonymous" ? identity : "NavHub 创作者";
+          rawManifest.author = identity !== "anonymous" ? identity : "山羊胡创作者";
         }
         if (typeof rawManifest.license !== "string" || !rawManifest.license.trim()) {
           rawManifest.license = "MIT";

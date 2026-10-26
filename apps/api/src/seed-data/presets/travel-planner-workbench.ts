@@ -16,7 +16,7 @@ export const travelPlannerWorkbench: SeedPluginDef = {
     description:
       "面向自由行与出行规划人群的四看板布局（共 22 个模块）：行程规划、目的地情报、行前准备、旅途复盘。覆盖天气、订票入口、地图嵌入、签证速查与花费复盘，把「定行程 → 查情报 → 备清单 → 写游记」串在同一个工作台上，安装即用。",
     icon: "🧭",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["工作台", "旅行", "行程", "天气", "攻略"],

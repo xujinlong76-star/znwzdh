@@ -12,7 +12,7 @@ export const nordicGlacier: SeedPluginDef = {
     name: "北欧冰川极简冷灰主题",
     description: "源自北欧斯堪的纳维亚半岛的极简冰川清爽冷灰调（20 项变量全覆盖）：冰川幽蓝冷灰背景配以微霜青强调色，卡片边框轻薄如薄冰，呈现现代高端极简美学质感。",
     icon: "❄️",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["主题","冷色","北欧","冰川","清爽"],

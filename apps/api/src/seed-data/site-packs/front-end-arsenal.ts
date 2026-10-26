@@ -16,7 +16,7 @@ export const frontEndArsenal: SeedPluginDef = {
     description:
       "前端工程师的完整装备库（19 大分类 / 203 个精选站点）：核心框架与元框架、构建工程化、CSS 与样式方案、组件库体系、状态管理、测试质量、性能优化、动效交互、图标字体素材、规范与标准、调试工具、社区资讯，导入即是一份可长期使用的前端导航。",
     icon: "⚡",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "2.0.0",
     tags: ["前端", "开发", "React", "Vue", "CSS", "工程化"],

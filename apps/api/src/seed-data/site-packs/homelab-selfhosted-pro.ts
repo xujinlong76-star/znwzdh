@@ -15,7 +15,7 @@ export const homelabSelfhostedPro: SeedPluginDef = {
     "name": "极客 HomeLab 与自托管服务专业包",
     "description": "2026 前沿极客 HomeLab 与自托管 (Self-Hosted) 旗舰级导航包（19 大分类 / 192 个精选站点）：汇聚开源微服务器 OS、轻量容器管理面板、自建私人影音库、自托管网盘与知识库、自动化智能家居、私有网络穿透与安全备份体系。",
     "icon": "🏠",
-    "author": "NavHub 官方",
+    "author": "山羊胡官方",
     "license": "GPL-3.0",
     "version": "1.0.0",
     "tags": [

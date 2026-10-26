@@ -16,7 +16,7 @@ export const creatorGrowthBundle: SeedPluginDef = {
     description:
       "自媒体与运营的一体化开局：自媒体运营增长包（选题/设计/剪辑/投放/变现）+ 运营营销增长包 + AI 与大模型工具包（AI 提效创作）+ 前端武器库（落地页与作品集）+ 设计师灵感导航与影音娱乐包（素材与配乐），加中文生活检索包与暖阳琥珀、纸质拿铁两套浅色皮肤，从选题到分发一次成型。",
     icon: "🚀",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["创作者", "运营", "增长", "组合包"],

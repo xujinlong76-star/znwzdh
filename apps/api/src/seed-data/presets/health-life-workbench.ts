@@ -16,7 +16,7 @@ export const healthLifeWorkbench: SeedPluginDef = {
     description:
       "面向健身与健康管理人群的四看板布局（共 21 个模块）：每日作息、运动训练、饮食管理、心情与复盘。覆盖作息节律、运动打卡热力、营养换算与习惯记录，把「看状态 → 练一场 → 记一餐 → 做复盘」串在同一个工作台上，安装即用。",
     icon: "🥗",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["工作台", "健康", "运动", "饮食", "作息"],

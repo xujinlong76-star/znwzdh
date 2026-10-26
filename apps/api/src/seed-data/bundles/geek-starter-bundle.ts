@@ -16,7 +16,7 @@ export const geekStarterBundle: SeedPluginDef = {
     description:
       "极客一站到底的开局包：前端武器库 + 开发者效率精选 + 后端与云原生工程包 + AI 与大模型工具包 + 软件效率工具包，加极客检索与学术文献两套搜索包与两套深色皮肤，约 400 个专业站点与 50 个 !前缀 检索源一次到位，主题可在「已安装」页切换启用。单层组合、不含可执行代码，卸载不级联。",
     icon: "🧩",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "2.0.0",
     tags: ["起步包", "组合", "极客", "开发"],

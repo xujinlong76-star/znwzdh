@@ -9,7 +9,7 @@ export const aiDeepSearchPack: SeedPluginDef = {
     "name": "AI 深度研究与前沿模型搜索引擎包",
     "description": "38 个前沿 AI 模型与深度研究引擎一次装齐：在主搜索框用 !ppx、!felo、!gsp、!phind、!sci、!kimi、!deepseek、!qwen 等前缀直接向对话模型、学术引用网络、前沿预印本与算力社区发起定向穿透检索。",
     "icon": "🔬",
-    "author": "NavHub 官方",
+    "author": "山羊胡官方",
     "license": "MIT",
     "version": "1.0.0",
     "tags": [

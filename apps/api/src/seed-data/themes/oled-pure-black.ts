@@ -12,7 +12,7 @@ export const oledPureBlack: SeedPluginDef = {
     name: "OLED 纯黑极致省电主题",
     description: "专为 OLED / Mini-LED 屏幕优化的纯黑极致省电主题（20 项变量全覆盖）：背景绝对零度真黑 #000000 像素级关闭发光，搭配超高对比度微蓝白文字与电光青聚焦环，深夜视网膜零负担。",
     icon: "🌑",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["主题","深色","OLED","纯黑","极简"],

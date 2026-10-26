@@ -17,7 +17,7 @@ export const mediaEntertainmentPack: SeedPluginDef = {
     description:
       "面向国内影音娱乐爱好者的专业级导航（18 大分类 / 约 193 个站点）：从长视频平台、短视频社区到在线音乐与播客有声书，从动漫二次元、影视评分到直播与弹幕字幕社区，再到电台广播、演出票务与线下娱乐。既收录 B 站、爱奇艺、腾讯视频、网易云音乐、QQ 音乐等国内主流平台，也补充 Spotify、Netflix、YouTube 等海外流媒体，并配套音频工具、音效素材与视频剪辑创作工具，构成「看 → 听 → 追番 → 评分 → 创作」的完整内容消费与生产链路。",
     icon: "🎬",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "1.0.0",
     tags: ["影音", "娱乐", "视频", "音乐", "动漫", "直播", "播客", "工具"],

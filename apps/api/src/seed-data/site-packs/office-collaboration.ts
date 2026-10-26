@@ -19,7 +19,7 @@ export const officeCollaborationPack: SeedPluginDef = {
     description:
       "面向职场人与团队协作的完整导航（18 大分类 / 约 193 个站点）：办公套件、在线文档、笔记知识库、即时沟通、视频会议、项目管理、研发敏捷、思维导图、白板流程图、表单问卷、网盘云存储、文件传输、日历日程、待办专注、效率启动器、截图录屏、PDF 转换、扫描与电子签名，覆盖「写文档 → 开会 → 排期 → 归档 → 签署」的完整办公链路。",
     icon: "🗂️",
-    author: "NavHub 官方",
+    author: "山羊胡官方",
     license: "MIT",
     version: "2.0.0",
     tags: ["办公", "协作", "效率", "职场", "团队"],

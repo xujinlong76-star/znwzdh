@@ -19,6 +19,7 @@ import {
   OAUTH_BROKEN,
   PASSWORD_MISMATCH,
   describeSignInFailure,
+  isSignInSuccess,
 } from "../src/lib/signin-failure";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -150,6 +151,29 @@ describe("失败必须有话说（不许静默）", () => {
       const blamesServer = notice.message.includes("未正确配置") || notice.message.includes("无法连接");
       expect(blamesPassword && blamesServer, `${label} 同时怪了密码和服务端：${notice.message}`).toBe(false);
     }
+  });
+});
+
+describe("成功判定：HTTP 200 也可能是失败", () => {
+  // 真实缺陷：next-auth v5 对凭证失败仍回 HTTP 200，失败码只在 res.error 里。
+  // 页面只判 res.ok，于是「密码错」被当成成功跳转，再被代理弹回登录页，
+  // 错误提示丢失，用户只看到页面刷新了一下。
+  it("CredentialsSignin 即使 ok=true 也判失败", () => {
+    expect(isSignInSuccess({ ok: true, status: 200, error: "CredentialsSignin" })).toBe(false);
+  });
+
+  it("只有 ok=true 且没有 error 才算成功", () => {
+    expect(isSignInSuccess({ ok: true, status: 200 })).toBe(true);
+    expect(isSignInSuccess({ ok: false, status: 401 })).toBe(false);
+    expect(isSignInSuccess({})).toBe(false);
+    expect(isSignInSuccess(null)).toBe(false);
+    expect(isSignInSuccess(undefined)).toBe(false);
+  });
+
+  it("登录页两个入口都用同一判定，不再只看 res.ok", () => {
+    const src = pageSource();
+    expect(src).not.toContain("if (res?.ok)");
+    expect((src.match(/isSignInSuccess\(res\)/g) || []).length).toBe(2);
   });
 });
 

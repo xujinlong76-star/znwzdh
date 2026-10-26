@@ -7,7 +7,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
 import type { AppContext } from "../context.ts";
-import { identityAllowed } from "./shared.ts";
+import { identityAllowed, isSafeAvatarUrl } from "./shared.ts";
 import { verifyIdentitySignature } from "../identity-signature.ts";
 
 export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
@@ -28,7 +28,13 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       providerId: z.string().min(1),
       username: z.string().min(1).max(64),
       email: z.email().nullable().optional(),
-      avatar: z.string().url().nullable().optional(),
+      // 站内相对路径也要收：本地登录会话的头像就是 /assets/images/alogo.webp。
+      avatar: z
+        .string()
+        .max(500)
+        .refine((v) => v.trim() === "" || isSafeAvatarUrl(v), "头像地址只支持 http(s):// 或站内相对路径 /...")
+        .nullable()
+        .optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const targetId = body.data.provider + ":" + body.data.providerId;
@@ -49,7 +55,7 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       id: targetId,
       username: body.data.username,
       email: body.data.email ?? null,
-      avatar: body.data.avatar ?? null,
+      avatar: body.data.avatar && body.data.avatar.trim() !== "" ? body.data.avatar.trim() : null,
       source: body.data.provider === "credentials" ? "local" : "github",
     });
     return user;

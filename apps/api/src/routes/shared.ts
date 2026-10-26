@@ -260,6 +260,19 @@ export function safeDecodeParam(raw: string): string {
   }
 }
 
+/** 头像地址安全闸：http(s) 绝对地址或站内相对路径（/...，不得是协议相对的 //） */
+export function isSafeAvatarUrl(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) return true;
+  if (trimmed.startsWith("/")) return !trimmed.startsWith("//");
+  try {
+    const u = new URL(trimmed);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 export function identityOf(req: {
   query: Record<string, unknown>;
   body: unknown;

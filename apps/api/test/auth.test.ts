@@ -731,4 +731,25 @@ describe("identity 路由收紧（鉴权开启后拒绝纯匿名调用）", () =
     expect(syn.statusCode).toBe(200);
     expect(syn.json().registered).toBe(true);
   });
+
+  it("鉴权模式：users/sync 接受站内相对头像，仍拒绝协议相对与伪协议", async () => {
+    // 本地登录会话的 session.image 就是 /assets/images/alogo.webp；
+    // 只认 z.url() 时 BFF 每次 /api/me/sync 都 400，控制台还会持续刷错。
+    const raw = await mintToken("头像同步", "read");
+    const headers = { authorization: "Bearer " + raw };
+    const ok = await authApp.inject({
+      method: "POST", url: "/api/users/sync", headers,
+      payload: { provider: "credentials", providerId: "avatar-relative", username: "相对头像", avatar: "/assets/images/alogo.webp" },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().avatar).toBe("/assets/images/alogo.webp");
+
+    for (const avatar of ["//evil.example.com/a.png", "javascript:alert(1)", "data:image/png;base64,AAAA"]) {
+      const bad = await authApp.inject({
+        method: "POST", url: "/api/users/sync", headers,
+        payload: { provider: "credentials", providerId: "avatar-bad", username: "坏头像", avatar },
+      });
+      expect(bad.statusCode, avatar).toBe(400);
+    }
+  });
 });

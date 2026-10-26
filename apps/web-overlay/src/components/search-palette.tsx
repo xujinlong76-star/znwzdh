@@ -18,7 +18,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'rea
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { Input } from '@/registry/new-york/ui/input'
-import { Command, CommandList, CommandItem } from '@/registry/new-york/ui/command'
+import { Command, CommandList } from '@/registry/new-york/ui/command'
 import { Search, X, Star, Clock, Loader2, Sparkles, Layers, GitCompare, Zap, ArrowRight, GitFork, Store, Download, ExternalLink } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import {
@@ -149,6 +149,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   /** 重试计数：增长即重新发起同一查询（降级时的出口） */
   const [retryToken, setRetryToken] = useState(0)
   const searchRef = useRef<HTMLDivElement>(null)
+  const resultsPanelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   /** 当前查询的权威值：用来丢弃「已经过期的追加页」响应 */
@@ -408,12 +409,16 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     if (activeIndex >= navItems.length) setActiveIndex(-1)
   }, [activeIndex, navItems.length])
 
+  /** 按扁平索引找真实行（插件是 Link、站点是 cmdk Item，二者 id 生成方式不同） */
+  const findOptionElement = useCallback((index: number) => {
+    return resultsPanelRef.current?.querySelector<HTMLElement>(`[data-nav-index="${index}"]`) ?? null
+  }, [])
+
   /** 把高亮项滚进可视区（结果面板自身可滚动，浏览器默认只滚外层） */
   useEffect(() => {
     if (activeIndex < 0) return
-    const el = document.getElementById(`navhub-search-opt-${activeIndex}`)
-    el?.scrollIntoView({ block: 'nearest' })
-  }, [activeIndex])
+    findOptionElement(activeIndex)?.scrollIntoView({ block: 'nearest' })
+  }, [activeIndex, navItems.length, findOptionElement])
 
   const onSearchKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -432,8 +437,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         // 没有高亮项时回车 = 打开第一条结果。原实现在 activeIndex === -1（默认态）
         // 直接忽略，「输完词直接回车」这个最常见的动作等于完全没反应。
         const target = activeIndex >= 0 ? activeIndex : 0
-        // 交给真实元素处理：站点行是 CommandItem（onSelect 打开），插件行是 Link（路由跳转）
-        const el = document.getElementById(`navhub-search-opt-${target}`)
+        // 交给真实元素处理：站点行是 role=option 的 div（onClick 打开），插件行是 Link（路由跳转）
+        const el = findOptionElement(target)
         if (el) {
           e.preventDefault()
           el.click()
@@ -445,7 +450,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
         inputRef.current?.blur()
       }
     },
-    [showResults, navItems.length, activeIndex],
+    [showResults, navItems.length, activeIndex, findOptionElement],
   )
 
   const panel = planSearchPanel({
@@ -623,7 +628,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       )}
 
       {showResults && (
-        <div id="navhub-search-results-panel" className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
+        <div id="navhub-search-results-panel" ref={resultsPanelRef} className="fixed inset-x-3 top-[calc(3.75rem+max(env(safe-area-inset-top,0px),0px))] sm:absolute sm:inset-x-auto sm:top-full sm:left-0 sm:right-0 mt-0 sm:mt-2.5 bg-background/95 backdrop-blur-md border border-border/80 rounded-xl shadow-2xl z-50 max-h-[min(75vh,calc(100dvh-120px))] flex flex-col overflow-hidden animate-in fade-in-50 zoom-in-95 duration-150">
           <Command className="border-0 shadow-none flex-1 overflow-hidden" shouldFilter={false}>
             <CommandList className="max-h-[min(75vh,calc(100dvh-120px))] overflow-y-auto">
               {degraded && panel.mode !== 'outage' && (
@@ -788,6 +793,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       <Link
                         key={p.id}
                         id={`navhub-search-opt-${navIndexById.get('plugin-' + p.id) ?? -1}`}
+                        data-nav-index={navIndexById.get('plugin-' + p.id) ?? -1}
                         data-nav-item="plugin"
                         aria-current={navIndexById.get('plugin-' + p.id) === activeIndex ? 'true' : undefined}
                         href={`/marketplace/${encodeURIComponent(p.slug)}`}
@@ -941,13 +947,14 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                   const channels = Object.keys(hit.contributions ?? {})
                   const faved = favorites.isFavorite(site.id)
                   return (
-                    <CommandItem
+                    <div
                       key={hit.siteId}
-                      value={site.title}
                       id={`navhub-search-opt-${navIndexById.get('site-' + site.id) ?? -1}`}
+                      role="option"
+                      data-nav-index={navIndexById.get('site-' + site.id) ?? -1}
                       data-nav-item="site"
                       aria-selected={navIndexById.get('site-' + site.id) === activeIndex}
-                      onSelect={() => openSite(hit)}
+                      onClick={() => openSite(hit)}
                       className={`flex items-center gap-3 py-3 px-3 cursor-pointer ${
                         navIndexById.get('site-' + site.id) === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
                       }`}
@@ -1011,7 +1018,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       >
                         <Star className={'h-4 w-4 ' + (faved ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground')} />
                       </button>
-                    </CommandItem>
+                    </div>
                   )
                 })
               )}

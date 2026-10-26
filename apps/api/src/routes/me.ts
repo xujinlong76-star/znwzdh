@@ -30,7 +30,7 @@ import { MAX_SEARCH_QUERY_LENGTH } from "@navhub/core";
 import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION } from "@navhub/store";
 
 import type { AppContext } from "../context.ts";
-import { requestIdentityOf, identityTrusted, userDomainWriteAllowed } from "./shared.ts";
+import { requestIdentityOf, identityTrusted, userDomainWriteAllowed, isSafeAvatarUrl } from "./shared.ts";
 import { verifyIdentitySignature } from "../identity-signature.ts";
 import { invalidateProfileThrottle, refreshUserProfile } from "../profile-service.ts";
 import { recordUserCenterMetric } from "../user-center-metrics.ts";
@@ -70,18 +70,6 @@ const settingsPatchSchema = z
       message: "至少要提供一个待修改的设置项（如 personalizationEnabled 或 favoriteSignalCutoff 等）",
     },
   );
-
-function isSafeAvatarUrl(raw: string): boolean {
-  const trimmed = raw.trim();
-  if (!trimmed) return true;
-  if (trimmed.startsWith("/")) return !trimmed.startsWith("//");
-  try {
-    const u = new URL(trimmed);
-    return u.protocol === "https:" || u.protocol === "http:";
-  } catch {
-    return false;
-  }
-}
 
 export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;

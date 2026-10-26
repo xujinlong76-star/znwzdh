@@ -236,6 +236,27 @@ describe("检索接口", () => {
     }
   });
 
+  it("tag 参数过滤生效，未知标签返回空集而不是全站", async () => {
+    // 标签页 / tags OG 图走 GET /api/search?tag=<slug>；该参数曾不在 zod schema 里，
+    // 被静默剥掉后标签页会渲染全站前 100 条，未知标签也因此无法 404。
+    const tagRes = await app.inject({
+      method: "GET",
+      url: "/api/search?q=&status=active&tag=" + encodeURIComponent("天气") + "&limit=100",
+    });
+    expect(tagRes.statusCode).toBe(200);
+    const titles = tagRes.json().hits.map((h: any) => h.site?.title);
+    expect(titles).toContain("中国天气网");
+    expect(titles).not.toContain("GitHub Copilot");
+
+    const unknown = await app.inject({
+      method: "GET",
+      url: "/api/search?q=&status=active&tag=" + encodeURIComponent("no-such-tag") + "&limit=100",
+    });
+    expect(unknown.statusCode).toBe(200);
+    expect(unknown.json().hits).toEqual([]);
+    expect(unknown.json().hasMore).toBe(false);
+  });
+
   /* ---- 分页 ---- */
 
   it("offset 分页：拼接结果与一次取全一致，且 hasMore 正确透传", async () => {

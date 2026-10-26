@@ -59,6 +59,17 @@ const UNKNOWN_FAILURE =
   "登录失败，但没有收到具体原因（服务端可能未按预期返回）。请重试一次；若持续出现，请检查后台认证配置。";
 
 /**
+ * 一次 signIn 结果是否真的成功。
+ *
+ * next-auth v5 的坑：凭证校验失败时 HTTP 仍是 200（`res.ok === true`），失败
+ * 只体现在 `res.error`（如 `CredentialsSignin`）。只判 `ok` 会把失败当成功，
+ * 跳去受保护路由再被代理弹回登录页——错误提示就此丢失，用户只看到「点了没反应」。
+ */
+export function isSignInSuccess(result?: SignInResultLike | null): boolean {
+  return Boolean(result?.ok && !result.error)
+}
+
+/**
  * 把一次失败的登录请求翻译成一句「用户据此能行动」的话。
  *
  * 判定顺序刻意如此：先排除「根本不是用户输入的问题」（网络 / 5xx / Configuration），

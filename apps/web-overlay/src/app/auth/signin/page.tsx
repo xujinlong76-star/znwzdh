@@ -18,7 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { ShieldCheck, KeyRound, ArrowLeft, AlertCircle, Sparkles, Lock, User } from 'lucide-react'
-import { NETWORK_FAILURE_STATUS, describeSignInFailure } from '@/lib/signin-failure'
+import { NETWORK_FAILURE_STATUS, describeSignInFailure, isSignInSuccess } from '@/lib/signin-failure'
 import { normalizeCallbackUrl } from '@/lib/safe-callback'
 
 function SignInContent() {
@@ -68,7 +68,7 @@ function SignInContent() {
         redirect: false,
       })
 
-      if (res?.ok) {
+      if (isSignInSuccess(res)) {
         window.location.href = callbackUrl
         return
       }
@@ -96,7 +96,7 @@ function SignInContent() {
         redirect: false,
       })
 
-      if (res?.ok) {
+      if (isSignInSuccess(res)) {
         window.location.href = callbackUrl
       } else {
         setIsBypassLoading(false)

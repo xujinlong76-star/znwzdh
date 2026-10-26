@@ -32,6 +32,9 @@ export const searchRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
   const searchBody = z.object({
     q: z.string().max(MAX_SEARCH_QUERY_LENGTH).default(""),
     categoryId: z.string().max(64).optional(),
+    // 标签页 / og 图直接传 tag=<slug>：SearchQuery 只有单数 tag，
+    // 缺这一项时 zod 静默剥掉，标签页会退化成「全站前 100 条」。
+    tag: z.string().max(40).optional(),
     tags: z
       .union([z.array(z.string().max(40)).max(20), z.string().max(400)])
       .optional()

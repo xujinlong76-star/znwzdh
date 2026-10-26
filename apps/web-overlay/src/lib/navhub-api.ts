@@ -3011,13 +3011,20 @@ export interface CopilotChatResponse {
 export async function sendCopilotChat(
   message: string,
   history?: Array<{ role: string; content: string }>,
-  options?: { thinking?: boolean },
+  options?: { thinking?: boolean; signal?: AbortSignal },
 ): Promise<CopilotChatResponse> {
-  return sendJson<CopilotChatResponse>('/api/copilot/chat', 'POST', {
-    message,
-    history,
-    ...(options?.thinking !== undefined ? { thinking: options.thinking } : {}),
-  })
+  // signal 是给「用户中途停止」用的：sendJson 早已支持（:254），此前这里没透传，
+  // 抽屉只能干等到底。中枢侧是否随之断开见 copilot 取消链路（run82 只做到前端）。
+  return sendJson<CopilotChatResponse>(
+    '/api/copilot/chat',
+    'POST',
+    {
+      message,
+      history,
+      ...(options?.thinking !== undefined ? { thinking: options.thinking } : {}),
+    },
+    options?.signal,
+  )
 }
 
 export interface AiPluginGenerateParams {

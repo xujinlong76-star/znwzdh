@@ -27,6 +27,7 @@ import {
   ArrowRight,
   ExternalLink,
   Loader2,
+  Square,
   Wand2,
 } from 'lucide-react'
 import { sendCopilotChat, type CopilotChatResponse } from '@/lib/navhub-api'
@@ -44,6 +45,11 @@ interface ChatMessage {
   suggestions?: string[]
   degraded?: CopilotChatResponse['degraded']
   quota?: CopilotChatResponse['quota']
+  /**
+   * 一键重试要带的原始提问。只有「重试有意义」的失败/取消才写这个字段
+   * （鉴权与额度用尽类重试没用），渲染层据此决定要不要出按钮。
+   */
+  retryText?: string
   timestamp: number
 }
 
@@ -69,7 +75,9 @@ function degradedNotice(msg: Pick<ChatMessage, 'degraded' | 'quota'>): string | 
     return '管理端尚未配置可用的模型密钥，以下结果由站内关键词匹配给出。'
   }
   if (msg.degraded === 'error') {
-    return '模型这次调用失败，已降级为站内关键词匹配，可直接重试。'
+    // 以前这句结尾是一句空口承诺，却没有对应的按钮。
+    // 现在重试是消息下方那颗真控件（带 retryText 才渲染），这里只交代事实。
+    return '模型这次调用失败，以下结果由站内关键词匹配给出，未经模型生成。'
   }
   return null
 }
@@ -85,6 +93,11 @@ export function AiCopilotDrawer() {
   // 中枢真正回报的模型名（首次回答前为空）。标题栏只在这一种来源下才报模型，
   // 否则管理员换模型后界面会一直替原厂商名字说谎。
   const [assistantModel, setAssistantModel] = useState<string | null>(null)
+  // 已等待秒数：只用于肉眼可见的进度，不进读屏播报（每秒播报会把语音缓冲挤爆）
+  const [elapsedMs, setElapsedMs] = useState(0)
+  // 读屏播报只报阶段变化（开始/停止/失败/完成），容器常驻 DOM 才符合 WCAG 4.1.3
+  const [statusMessage, setStatusMessage] = useState('')
+  const abortRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -159,6 +172,14 @@ export function AiCopilotDrawer() {
     setMessages((prev) => [...prev, userMsg])
     setInput('')
     setLoading(true)
+    setElapsedMs(0)
+    setStatusMessage(enableThinking ? '正在深度思考，可随时停止' : '正在检索全站并组织回答')
+
+    // 一次请求一个控制器：停止按钮、关抽屉、卸载都走这一路 abort
+    const controller = new AbortController()
+    abortRef.current = controller
+    const startedAt = Date.now()
+    const tick = setInterval(() => setElapsedMs(Date.now() - startedAt), 1000)
 
     try {
       const history = messages.slice(-6).map((m) => ({
@@ -166,7 +187,10 @@ export function AiCopilotDrawer() {
         content: m.content,
       }))
 
-      const res = await sendCopilotChat(content, history, { thinking: enableThinking })
+      const res = await sendCopilotChat(content, history, {
+        thinking: enableThinking,
+        signal: controller.signal,
+      })
       if (res.ok && res.reply) {
         const realModel = res.model?.trim() && res.model.trim() !== LOCAL_MATCH_MODEL ? res.model.trim() : undefined
         const assistantMsg: ChatMessage = {
@@ -179,11 +203,14 @@ export function AiCopilotDrawer() {
           model: res.model?.trim() || undefined,
           degraded: res.degraded,
           quota: res.quota ?? undefined,
+          // 模型这次没答上、用站内匹配兜了底：这一类重试有意义，给出口
+          retryText: res.degraded === 'error' ? content : undefined,
           suggestions: res.suggestions,
           timestamp: Date.now(),
         }
         setMessages((prev) => [...prev, assistantMsg])
         if (realModel) setAssistantModel(realModel)
+        setStatusMessage(`回答已生成${realModel ? `，由模型 ${realModel} 给出` : ''}`)
       } else {
         const assistantMsg: ChatMessage = {
           id: `bot-${Date.now()}`,
@@ -192,28 +219,63 @@ export function AiCopilotDrawer() {
           // 必须把它显示出来：一句「服务无响应」会把「你去配置一下就好」变成死路。
           content:
             res.error?.trim() ||
-            '智能问答这次没拿到答复：请求已到达中枢，但中枢没有返回内容。可以直接重试。',
+            '智能问答这次没拿到答复：请求已到达中枢，但中枢没有返回内容。',
+          // 额度用尽 / 未配置密钥这两类重试不会改变结果，不给重试按钮（§8 禁用态要能解释）
+          retryText: res.degraded && res.degraded !== 'error' ? undefined : content,
           timestamp: Date.now(),
         }
         setMessages((prev) => [...prev, assistantMsg])
+        setStatusMessage('这次没有拿到答复')
       }
     } catch (err) {
+      if (controller.signal.aborted) {
+        // 用户自己按了停止/关了抽屉：这不是故障，也不能骗用户说「模型答完了」。
+        // 代理与中枢各有期限，前端 abort 只保证本端不再等待，上游可能还在收尾。
+        const stopMsg: ChatMessage = {
+          id: `bot-${Date.now()}`,
+          role: 'assistant',
+          content: '已停止本次回答：本机不再等待，中枢侧最多还会跑到代理期限（120 秒）。',
+          retryText: content,
+          timestamp: Date.now(),
+        }
+        setMessages((prev) => [...prev, stopMsg])
+        setStatusMessage('已停止本次回答')
+        return
+      }
       // 区分「代理等到超时主动掐断」「中枢没起来」「鉴权/限流」：
       // 三者对用户是三种不同的行动，原来统一写成「网络连接异常」。
       const notice = describeDegrade(err, '智能问答中枢')
       const errMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         role: 'assistant',
-        content: notice.retryable
-          ? `${notice.message} 本次提问没有产生答复，可直接重试。`
-          : notice.message,
+        content: notice.retryable ? `${notice.message}` : notice.message,
+        retryText: notice.retryable ? content : undefined,
         timestamp: Date.now(),
       }
       setMessages((prev) => [...prev, errMsg])
+      setStatusMessage(notice.retryable ? '本次回答失败，可点重试再问一次' : '本次回答失败')
     } finally {
+      clearInterval(tick)
+      abortRef.current = null
       setLoading(false)
     }
   }
+
+  // 停止 = 真的掐断这次 fetch（不是只把转圈藏起来）
+  const stopGenerating = useCallback(() => {
+    abortRef.current?.abort()
+  }, [])
+
+  // 关抽屉 / 组件卸载：进行中请求一律中断，别留一个看不还在烧配额的调用
+  useEffect(() => {
+    if (!isOpen) abortRef.current?.abort()
+  }, [isOpen])
+  useEffect(
+    () => () => {
+      abortRef.current?.abort()
+    },
+    []
+  )
 
   // 安全 Markdown 超链接与排版解析（仅放行 http/https 与站内路径，阻断 javascript:/data: XSS）
   const renderMessageContent = (text: string) => {
@@ -323,7 +385,7 @@ export function AiCopilotDrawer() {
           </div>
 
           {/* 消息滚动区域 */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4" aria-busy={loading}>
             {messages.length === 0 ? (
               <div className="h-full flex flex-col justify-center items-center text-center px-4 py-8 space-y-6">
                 <div className="h-16 w-16 rounded-2xl bg-gradient-to-tr from-primary/20 via-primary/10 to-transparent border border-primary/20 flex items-center justify-center shadow-inner">
@@ -409,6 +471,27 @@ export function AiCopilotDrawer() {
 
                     <div className="whitespace-pre-wrap">{renderMessageContent(m.content)}</div>
 
+                    {/*
+                      把 retryable 变成动作：以前失败只有一句话，用户得自己把问题重打一遍。
+                      只有携带 retryText 的消息（可重试失败 / 用户主动停止）才出这颗按钮，
+                      额度用尽与未配置密钥这类「重试没用」的分支不给假出口。
+                    */}
+                    {m.role === 'assistant' && m.retryText && (
+                      <div className="pt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSend(m.retryText)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 transition-colors"
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          <span>重试这次提问</span>
+                        </button>
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[10rem]" title={m.retryText}>
+                          原文：{m.retryText}
+                        </span>
+                      </div>
+                    )}
+
                     {/* 逐条来源：额度中途耗尽时，历史消息与最新消息的生成方式并不相同 */}
                     {m.role === 'assistant' && !m.degraded && m.model && m.model !== LOCAL_MATCH_MODEL && (
                       <p className="pt-1.5 text-[10px] text-muted-foreground">由模型 {m.model} 生成</p>
@@ -462,22 +545,47 @@ export function AiCopilotDrawer() {
               ))
             )}
 
-            {/* 加载中的思考指示器 */}
+            {/*
+              加载指示器：以前是一个静态转圈 + 一句固定文案，对可能跑两分钟的请求
+              既看不出「在算」还是「卡死」，也没有出路。现在给秒数 + 真中断按钮。
+              秒数只给肉眼（aria-hidden），读屏由下面的 role="status" 报阶段变化——
+              每秒都塞进 live region 会把语音缓冲挤爆，反而什么都听不清。
+            */}
             {loading && (
-              <div className="flex gap-2.5 justify-start">
+              <div className="flex gap-2.5 justify-start items-start">
                 <div className="h-7 w-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-primary mt-0.5">
                   <Sparkles className="h-3.5 w-3.5 animate-spin" />
                 </div>
-                <div className="bg-muted/60 border border-border/80 rounded-2xl rounded-tl-sm px-4 py-3 text-xs text-muted-foreground flex items-center gap-2">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                <div className="bg-muted/60 border border-border/80 rounded-2xl rounded-tl-sm px-4 py-3 text-xs text-muted-foreground flex flex-col gap-2 min-h-[3.25rem] justify-center">
                   <span>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary inline-block mr-1 align-[-2px]" aria-hidden="true" />
                     {enableThinking
-                      ? '正在展开深度思维链推理并检索全站知识库...'
-                      : '正在检索全站并组织回答...'}
+                      ? '正在展开深度思维链推理并检索全站知识库'
+                      : '正在检索全站并组织回答'}
+                    <span aria-hidden="true">
+                      {elapsedMs >= 1000 ? ` · 已等待 ${Math.floor(elapsedMs / 1000)}s` : '...'}
+                    </span>
+                    {elapsedMs >= 10_000 ? '（深度思考可能更久，可随时停止）' : ''}
                   </span>
+                  <button
+                    type="button"
+                    onClick={stopGenerating}
+                    className="self-start inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border border-border bg-background text-foreground hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <Square className="h-3 w-3" />
+                    <span>停止</span>
+                  </button>
                 </div>
               </div>
             )}
+
+            {/*
+              常驻读屏播报区（WCAG 2.2 SC 4.1.3 / ARIA22）：容器必须在变化前就在 DOM 里，
+              所以它不在 loading 分支内，只随阶段更新文字。
+            */}
+            <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+              {statusMessage}
+            </div>
 
             <div ref={messagesEndRef} />
           </div>
@@ -494,6 +602,7 @@ export function AiCopilotDrawer() {
               <textarea
                 ref={inputRef}
                 aria-label="输入你的问题或需求"
+                aria-describedby={loading ? 'copilot-busy-hint' : undefined}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -503,10 +612,14 @@ export function AiCopilotDrawer() {
                   }
                 }}
                 rows={2}
-                placeholder="询问任何工具或需求... (Enter 发送)"
-                disabled={loading}
+                placeholder={loading ? '生成中可继续改问法，上一问结束前不会发出' : '询问任何工具或需求... (Enter 发送)'}
                 className="w-full resize-none bg-transparent px-3 py-2 text-base sm:text-xs text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
               />
+              {loading && (
+                <p id="copilot-busy-hint" className="px-3 pb-1 text-[10px] text-muted-foreground">
+                  本次回答还在生成，发送与 Enter 暂时不生效：点气泡里的「停止」可立即中断并改问法。
+                </p>
+              )}
               <div className="flex items-center justify-between px-2 py-1 text-[10px] text-muted-foreground border-t border-border/40">
                 <div className="flex items-center gap-2">
                   <button
@@ -531,6 +644,7 @@ export function AiCopilotDrawer() {
                   type="submit"
                   size="sm"
                   disabled={!input.trim() || loading}
+                  title={loading ? '上一问仍在生成：点回答气泡里的「停止」可立即中断' : undefined}
                   className="h-6 px-2.5 rounded-lg text-[11px] gap-1 shadow-sm"
                 >
                   <span>发送</span>

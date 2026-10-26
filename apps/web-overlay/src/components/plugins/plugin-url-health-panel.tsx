@@ -88,6 +88,8 @@ export interface HistoricalSummary {
 
 export interface AuditResult {
   slug: string
+  /** 实时探活结果本身不带体检时间，与历史快照联合消费时可能由上层补齐 */
+  auditedAt?: number | null
   declared: number
   sampled: number
   okCount: number
@@ -1601,10 +1603,13 @@ export function PluginUrlHealthPanel() {
         const cur = prev[slug]
         if (!cur || !cur.diagnoses) return prev
         return {
-          ...cur,
-          diagnoses: cur.diagnoses.map((d) =>
-            healedSet.has(d.url.trim().toLowerCase()) ? { ...d, resolved: true } : d,
-          ),
+          ...prev,
+          [slug]: {
+            ...cur,
+            diagnoses: cur.diagnoses.map((d) =>
+              healedSet.has(d.url.trim().toLowerCase()) ? { ...d, resolved: true } : d,
+            ),
+          },
         }
       })
     },

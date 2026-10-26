@@ -80,6 +80,13 @@ import { archiveRoutes } from "./routes/archive.ts";
 import { backupRoutes } from "./routes/backup.ts";
 import { copilotRoutes } from "./routes/copilot.ts";
 
+declare module "fastify" {
+  interface FastifyInstance {
+    /** 注册期 onRoute 收集的完整路由表（只读快照，与 /api/openapi.json 同源） */
+    routeInventory: readonly RouteEntry[];
+  }
+}
+
 
 /**
  * 鉴权失败审计的节流窗口：同一 IP + 同一失败动作，在这个间隔内只记一条。
@@ -579,6 +586,10 @@ export async function buildServer(ctx: AppContext) {
       requestId: (req as unknown as { requestId?: string }).requestId ?? req.id,
     });
   });
+
+  // 路由表只读快照：授权测试据此派生「用户域私有读面」清单，
+  // 新增私有读路由自动进入 401/200 矩阵，不再依赖人手同步 URL 列表。
+  app.decorate("routeInventory", Object.freeze(routeEntries.map((entry) => Object.freeze({ ...entry }))));
 
   return app;
 }

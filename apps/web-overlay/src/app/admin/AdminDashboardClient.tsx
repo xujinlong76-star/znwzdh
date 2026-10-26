@@ -416,9 +416,9 @@ export function AdminDashboardClient() {
       system: 'NavHub Observability Snapshot',
       overview: data.overview,
       metrics24h: data.metrics24h,
-      traffic: trafficStats,
-      capabilities,
-      slowRoutes,
+      traffic: data.runtime,
+      capabilities: data.capabilities,
+      slowRoutes: data.runtime.topSlowRoutes,
       telemetry: {
         sseStatus,
         sseParseFailures,

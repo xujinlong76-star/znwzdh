@@ -404,7 +404,8 @@ async function upsertSite(
  */
 export const DEFAULT_SITE_CONFIG = {
   basic: {
-    title: "山羊胡",
+    // 留「导航」作类目描述词：seo-audit 的 <title> ≥4 字符底线与 e2e 标题断言都依赖它
+    title: "山羊胡导航",
     description: "AI 原生的网址导航 —— 支持中文语义检索、拼音与关键词混合召回",
     keywords: "网址导航,导航站,AI 导航,语义检索,书签",
   },

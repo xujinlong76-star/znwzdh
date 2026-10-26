@@ -413,7 +413,7 @@ export function AdminDashboardClient() {
     if (!data) return
     const report = {
       exportedAt: new Date().toISOString(),
-      system: 'NavHub Observability Snapshot',
+      system: '山羊胡 Observability Snapshot',
       overview: data.overview,
       metrics24h: data.metrics24h,
       traffic: data.runtime,
@@ -553,7 +553,7 @@ export function AdminDashboardClient() {
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                NavHub 全链路运行态势 · 实时吞吐、站点健康与自动化自愈网格
+                山羊胡全链路运行态势 · 实时吞吐、站点健康与自动化自愈网格
               </p>
             </div>
           </div>

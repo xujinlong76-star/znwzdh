@@ -77,7 +77,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title: col.title,
       description,
       imageUrl: ogImageUrl(canonical),
-      imageAlt: `${col.title} · NavHub 专题`,
+      imageAlt: `${col.title} · 山羊胡专题`,
     })),
   }
 }

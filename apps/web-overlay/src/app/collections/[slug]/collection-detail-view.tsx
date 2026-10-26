@@ -85,7 +85,7 @@ export default function CollectionDetailView({
     const html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
 <!-- This is an automatically generated file. -->
 <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
-<TITLE>${collection.title} - NavHub 专题书签</TITLE>
+<TITLE>${collection.title} - 山羊胡专题书签</TITLE>
 <H1>${collection.title}</H1>
 <DL><p>
     <DT><H3 ADD_DATE="${now}" LAST_MODIFIED="${now}">${collection.title}</H3>

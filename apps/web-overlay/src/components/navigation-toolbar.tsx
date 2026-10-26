@@ -77,7 +77,7 @@ export function NavigationToolbar({
         <div className="sticky top-0 bg-background/85 dark:bg-background/80 backdrop-blur-md z-30 px-3 sm:px-6 pt-[max(env(safe-area-inset-top,0px),0px)] border-b border-border/40 shadow-2xs">
           <div className="flex h-14 items-center justify-between gap-1.5 sm:gap-3">
             <div className="flex-1 min-w-0 max-w-xl">
-              {/* NavHub 混合检索引擎 */}
+              {/* 山羊胡混合检索引擎 */}
               <SearchPalette siteConfig={siteConfig} />
             </div>
             <div className="flex items-center gap-1 shrink-0">

@@ -125,10 +125,10 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
       .map((s) => `[${s.title}](${s.url})（${s.description || "实用站点"}）`)
       .join("\n- ");
 
-    const systemPrompt = `你是 Agnes 3.0 Flash，NavHub 的智慧导航伴侣（AI Web Copilot）。
+    const systemPrompt = `你是 Agnes 3.0 Flash，山羊胡的智慧导航伴侣（AI Web Copilot）。
 你具备全站资源理解、意图感知与精准工具链推荐能力。
 
-【NavHub 现场知识背景】：
+【山羊胡现场知识背景】：
 - 全站包含主要分类：${catNames || "开发运维、前端技术、AI 工具、设计灵感、效率办公"}
 - 收录的部分精选站点：
 - ${siteSummaries || "[GitHub](https://github.com)（开源代码托管）"}
@@ -214,13 +214,13 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
     }
     let replyText = `${preamble}针对您的提问 **「${message}」**：\n\n`;
     if (fallbackSites.length > 0) {
-      replyText += `已在当前 NavHub 知识库为您匹配到以下核心工具：\n\n`;
+      replyText += `已在当前 山羊胡知识库为您匹配到以下核心工具：\n\n`;
       for (const s of fallbackSites) {
         replyText += `- [${s.title}](${s.url})：${s.description || "实用高效工具"}\n`;
       }
       replyText += `\n您可以直接点击上方链接直达，或通过快捷键 \`Cmd+K\` 启动全局即时穿梭检索。`;
     } else {
-      replyText += `NavHub 当前已收录丰富的开发、设计与极客工具生态。建议您可以通过顶部分类 **${catNames || "综合分类"}** 进一步探索，或使用 Spotlight 极客沙箱进行全库模糊寻路。`;
+      replyText += `山羊胡当前已收录丰富的开发、设计与极客工具生态。建议您可以通过顶部分类 **${catNames || "综合分类"}** 进一步探索，或使用 Spotlight 极客沙箱进行全库模糊寻路。`;
     }
 
     return {

@@ -259,8 +259,8 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
           error: timedOut
             ? // 说清楚是「代理等到 120 秒主动掐断」而不是「中枢无响应」：
               // 前者告诉用户这次确实算了很久、可以重试，后者会把慢说成坏。
-              `NavHub 中枢响应超时（代理等待 ${Math.round(timeoutMs / 1000)} 秒后中断，不是中枢坏了）`
-            : 'NavHub 中枢不可用',
+              `山羊胡中枢响应超时（代理等待 ${Math.round(timeoutMs / 1000)} 秒后中断，不是中枢坏了）`
+            : '山羊胡中枢不可用',
           code: timedOut ? 'hub_upstream_timeout' : 'hub_upstream_unavailable',
           retryable: true,
           timeoutMs,

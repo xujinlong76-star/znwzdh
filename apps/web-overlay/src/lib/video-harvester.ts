@@ -20,21 +20,6 @@ export interface ResolvedVideoInfo {
 }
 
 /**
- * 清理并格式化时长（秒转 MM:SS 或 HH:MM:SS）
- */
-export function formatDuration(durationSec?: number): string {
-  if (!durationSec || durationSec <= 0) return ''
-  const hours = Math.floor(durationSec / 3600)
-  const minutes = Math.floor((durationSec % 3600) / 60)
-  const seconds = durationSec % 60
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-  }
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`
-}
-
-/**
  * 智能解析单一视频 URL（支持 Bilibili 与 YouTube）
  */
 export async function resolveVideoUrl(rawUrl: string): Promise<ResolvedVideoInfo> {

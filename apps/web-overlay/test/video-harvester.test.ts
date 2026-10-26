@@ -6,10 +6,10 @@ vi.mock('@/lib/github', () => ({
 }))
 
 import {
-  formatDuration,
   calculateQualityScore,
   calculateFreshnessScore,
 } from '../src/lib/video-harvester'
+import { formatDuration } from '../src/lib/video-format'
 
 describe('video-harvester 核心工具函数单测', () => {
   describe('formatDuration 时长格式化', () => {

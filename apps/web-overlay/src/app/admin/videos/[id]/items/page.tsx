@@ -24,7 +24,7 @@ import { Skeleton } from "@/registry/new-york/ui/skeleton"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/registry/new-york/ui/select"
 import { Badge } from "@/registry/new-york/ui/badge"
 import { describeDegrade } from '@/lib/degrade'
-import { formatDuration } from '@/lib/video-harvester'
+import { formatDuration } from '@/lib/video-format'
 import { Pin, PinOff, Sparkles, Loader2 } from 'lucide-react'
 
 interface EditingItem {

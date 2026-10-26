@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { PlayCircle } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
-import { formatDuration } from '@/lib/video-harvester'
+import { formatDuration } from '@/lib/video-format'
 import Image from 'next/image'
 
 interface VideoCardProps {

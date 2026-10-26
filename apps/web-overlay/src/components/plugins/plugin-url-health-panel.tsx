@@ -789,15 +789,6 @@ const PackRowItem = memo(function PackRowItem({
                 <span className="text-muted-foreground">（{reasonSummary(auditResult.brokenByReason)}）</span>
               )}
             </div>
-          ) : snap?.stale ? (
-            /*
-              刷新页面后 results 是空的，但 history 里那条 stale 会带回「待复检」。
-              此时若沿用「尚未运行过抽样体检」，同一块区域会同时出现
-              「清单被改过、没有有效测量值」和「还没体检过」两句互相矛盾的话。
-            */
-            <p className="text-muted-foreground">
-              清单在上次体检后被修改过，当前没有可用的测量值；请重新体检取回真实数字。
-            </p>
           ) : (
             <p className="text-muted-foreground">该网址包尚未运行过抽样体检，请点击「抽样体检」或「一键自动平替」开始探测。</p>
           )}

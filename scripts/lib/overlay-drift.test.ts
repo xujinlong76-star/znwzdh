@@ -1,8 +1,17 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { diffOverlay, findOwnedOrphans, isBinary, isExcluded, sameContent, walkTree } from "./overlay-drift.mjs";
+import {
+  diffOverlay,
+  findOwnedOrphans,
+  isBinary,
+  isExcluded,
+  normBuildInjectedConfig,
+  sameContent,
+  walkTree,
+} from "./overlay-drift.mjs";
 
 /**
  * 覆盖层漂移闸门的单测。
@@ -213,5 +222,104 @@ describe("findOwnedOrphans", () => {
     expect(findOwnedOrphans(["package.json", "UPSTREAM.md"], overlay)).toEqual([]);
     // 被 git 跟踪但属于排除规则的文件（生成物）不算自研漏同步
     expect(findOwnedOrphans(["tsconfig.tsbuildinfo", "node_modules/x/y.js"], overlay)).toEqual([]);
+  });
+});
+
+describe("构建期就地改写的 tsconfig 归一", () => {
+  /** Next 写 tsconfig 时的真实形状：带注释、include 每项一行 */
+  const OVERLAY_TSCONFIG = `{
+  // next 会在这里追加类型目录
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "next-env.d.ts",
+    ".next/types/**/*.ts",
+    ".next-e2e/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
+`;
+
+  /** 同一份配置被另一轮 NEXT_DIST_DIR=.next-verify87 的构建就地改写后的 apps/web 侧 */
+  const VENDED_TSCONFIG = `{
+  // next 会在这里追加类型目录
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    "paths": { "@/*": ["./src/*"] }
+  },
+"include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "next-env.d.ts",
+    ".next/types/**/*.ts",
+    ".next-e2e/dev/types/**/*.ts",
+    ".next-verify87/types/**/*.ts",
+    ".next-verify87/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
+`;
+
+  function diffWith(overlayText: string, targetText: string) {
+    const overlay = makeTree(makeRoot(), { "tsconfig.json": overlayText, "src/lib/a.ts": "a\n" });
+    const target = makeTree(makeRoot(), { "tsconfig.json": targetText, "src/lib/a.ts": "a\n" });
+    return diffOverlay({ overlayDir: overlay, targetDir: target });
+  }
+
+  it("多出 .next* 生成项（含 include 行缩进被改写）不算漂移", () => {
+    const r = diffWith(OVERLAY_TSCONFIG, VENDED_TSCONFIG);
+    expect(r.drifted).toEqual([]);
+    expect(r.missing).toEqual([]);
+  });
+
+  it("连续多项生成项与「唯一一项就是生成项」都能吃掉", () => {
+    const solo = OVERLAY_TSCONFIG.replace(
+      '    ".next-e2e/dev/types/**/*.ts"\n',
+      '    ".next-e2e/dev/types/**/*.ts",\n    ".next-uibuild6/types/**/*.ts"',
+    );
+    expect(diffWith(solo, VENDED_TSCONFIG + "\n").drifted).toEqual([]);
+    const onlyGen = '{\n  "include": [\n    ".next-verify87/types/**/*.ts"\n  ]\n}\n';
+    expect(diffWith('{\n  "include": []\n}\n', onlyGen).drifted).toEqual([]);
+  });
+
+  it("非 .next 的 include 差异仍算漂移（归一不是放行）", () => {
+    const lost = VENDED_TSCONFIG.replace('    "**/*.tsx",\n', "");
+    const r = diffWith(OVERLAY_TSCONFIG, lost);
+    expect(r.drifted.map((d) => d.rel)).toEqual(["tsconfig.json"]);
+    expect(r.drifted[0].kind).toContain("已归一构建生成项");
+  });
+
+  it("compilerOptions 或注释本身的差异仍算漂移", () => {
+    expect(diffWith(OVERLAY_TSCONFIG, VENDED_TSCONFIG.replace('"strict": true', '"strict": false')).drifted.length).toBe(1);
+    expect(diffWith(OVERLAY_TSCONFIG, VENDED_TSCONFIG.replace("// next 会在这里追加类型目录", "// 改过的注释")).drifted.length).toBe(1);
+  });
+
+  it("归一只对 tsconfig.json 生效，别的路径里的 .next 字样照旧严格", () => {
+    const overlay = makeTree(makeRoot(), { "src/lib/a.json": '{"paths": [".next-x", "keep"]}\n' });
+    const target = makeTree(makeRoot(), { "src/lib/a.json": '{"paths": ["keep"]}\n' });
+    const r = diffOverlay({ overlayDir: overlay, targetDir: target });
+    expect(r.drifted.map((d) => d.rel)).toEqual(["src/lib/a.json"]);
+    expect(r.drifted[0].kind).toContain("CRLF 归一");
+  });
+
+  it("钉住本机现况：overlay 与 vendored tsconfig 只差生成项", () => {
+    const root = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
+    const a = join(root, "apps", "web-overlay", "tsconfig.json");
+    const b = join(root, "apps", "web", "tsconfig.json");
+    const once = normBuildInjectedConfig("tsconfig.json", readFileSync(a))!;
+    // 归一必须幂等：再归一一次不变，才说明正则没啃掉生成项以外的内容
+    expect(normBuildInjectedConfig("tsconfig.json", Buffer.from(once, "utf8"))).toBe(once);
+    if (!existsSync(b)) return; // CI 的根测试不 vendor apps/web
+    expect(once).toBe(normBuildInjectedConfig("tsconfig.json", readFileSync(b)));
   });
 });

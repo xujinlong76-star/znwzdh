@@ -63,6 +63,58 @@ export function sameContent(a, b) {
 }
 
 /**
+ * 构建期会被就地改写的配置文件（相对 overlay/target 的路径）。
+ *
+ * 为什么 tsconfig.json 要特殊处理：apps/web/tsconfig.json 是 gitignored 的 vendored 副本，
+ * next dev / next build 会往它的 include 数组里追加「本次 DIST_DIR 对应的类型目录」。
+ * 本轮实测（2026-10-27 02:05）：overlay 侧 include 的最后一项是 .next-e2e 的 dev/types，
+ * apps/web 侧多出 4 项——.next-verify87 与 .next-uibuild6 各自的 types 与 dev/types，
+ * 都是其它会话用 NEXT_DIST_DIR 跑构建留下的；外加 include 这一行的缩进也被改写。
+ *
+ * 这不是源码漂移，但 scripts/verify.mjs:86 跑的是整树比对且不认「局部」：
+ * 只要本地跑过一次带自定义 DIST_DIR 的构建，pnpm verify 就永远是红的，
+ * 而长红的闸门真正的代价是逼人 --fix 覆盖别人的工作树、或者干脆跳过门禁。
+ *
+ * 归一只做两件有界的事，其余差异一律照旧算漂移：
+ *   1) 丢弃 include 里指向 `.next*` 的生成项（与 isExcluded 对路径段的口径一致：
+ *      .next / .next-e2e / .next-verify87 这类目录本身就不进镜像比对）；
+ *   2) 折叠空白（Next 重写时会改缩进、也会在删除项后留下换行差异）。
+ * 注释本身仍然参与比对，所以「改了 compilerOptions / 改了非生成项 / 改了注释」都会被抓出来。
+ */
+const BUILD_INJECTED_CONFIGS = new Set(["tsconfig.json"]);
+
+/** 该路径是否属于「构建会就地改写」的配置文件 */
+export function isBuildInjectedConfig(rel) {
+  return BUILD_INJECTED_CONFIGS.has(rel.replaceAll("\\", "/"));
+}
+
+/** 指向 .next* 生成目录的字符串项（数组里独占一项，可跨行） */
+const GENERATED_ENTRY_WITH_COMMA = /"\.next[^"]*"\s*,/g;
+const GENERATED_ENTRY_TRAILING = /,?\s*"\.next[^"]*"/;
+const GENERATED_ENTRY_SOLO = /\[\s*"\.next[^"]*"\s*\]/g;
+
+/**
+ * @param {string} rel 相对 overlay 的 posix 路径
+ * @param {Buffer|string} buf 文件内容
+ * @returns {string|null} 归一后的文本；null 表示该文件不做归一（按严格文本比对）
+ */
+export function normBuildInjectedConfig(rel, buf) {
+  if (!isBuildInjectedConfig(rel)) return null;
+  let text = normText(buf);
+  // 反复删除「带尾随逗号的生成项」直到不动点，处理连续多项的情况
+  for (let prev; prev !== text; ) {
+    prev = text;
+    text = text.replace(GENERATED_ENTRY_WITH_COMMA, "");
+  }
+  text = text.replace(GENERATED_ENTRY_SOLO, "[]");
+  // 数组最后一项是生成项：连同它前面的逗号一起去掉
+  while (GENERATED_ENTRY_TRAILING.test(text)) {
+    text = text.replace(GENERATED_ENTRY_TRAILING, "");
+  }
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/**
  * 递归列出目录里的文件（相对 base 的 posix 路径），跳过排除规则命中的项。
  * @param {string} dir
  * @param {{base?: string, exclude?: (rel: string) => boolean}} [options]
@@ -109,12 +161,18 @@ export function diffOverlay({ overlayDir, targetDir, docFiles = ["README.md"], r
     }
     const a = readFile(join(overlayDir, rel));
     const b = readFile(targetPath);
-    if (!sameContent(a, b)) {
+    const binary = isBinary(a) || isBinary(b);
+    const left = binary ? null : normBuildInjectedConfig(rel, a);
+    const right = binary ? null : normBuildInjectedConfig(rel, b);
+    const same = binary ? sha256(a) === sha256(b) : (left ?? normText(a)) === (right ?? normText(b));
+    if (!same) {
       drifted.push({
         rel,
-        kind: isBinary(a) || isBinary(b)
+        kind: binary
           ? `二进制不一致（sha256 overlay=${sha256(a).slice(0, 12)}… web=${sha256(b).slice(0, 12)}…）`
-          : "文本内容漂移（已做 CRLF 归一，仍不一致）",
+          : left === null
+            ? "文本内容漂移（已做 CRLF 归一，仍不一致）"
+            : "文本内容漂移（已归一构建生成项与空白，仍不一致）",
       });
     }
   }

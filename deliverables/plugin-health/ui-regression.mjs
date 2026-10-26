@@ -485,14 +485,28 @@ try {
   )
   check('平替：点「仅预览平替候选」后诊断方案出现', healShown)
   const healText = healShown ? await brokenDetail.innerText() : ''
-  check('候选：实测通过的候选标「实测可达」', healText.includes('实测可达'))
-  check('候选：拒绝爬虫的候选标「拒绝爬虫·未验证」', healText.includes('拒绝爬虫·未验证'))
-  check('候选：停放候选标「疑似停放」', healText.includes('疑似停放'))
-  check('候选：超时候选标「未能验证」而不是「不可达」', healText.includes('未能验证'))
+  /*
+    档位断言只能看「候选行」，不能看整个抽屉：
+    抽屉里还有「确认不可达死链清单（共 N 条）」标题（activeTab 为 issues/broken 时都渲染），
+    拿整抽屉文本判「不得出现不可达」会稳定假红；同理「疑似停放」在指标行也有同名字样，
+    整抽屉包含它也无法证明候选徽标真的标对了。
+    候选行的 title 带「合成可信度：…」（面板里给每行挂的可信度分解），据此精确切块。
+  */
+  const candidateText = healShown
+    ? (await brokenDetail
+        .locator('li[title*="合成可信度"]')
+        .allInnerTexts()
+        .catch(() => [])).join(' | ')
+    : ''
+  check('候选：四行候选都带可信度分解（切块锚点有效）', healShown && candidateText.length > 0, `候选区块长度 ${candidateText.length}`)
+  check('候选：实测通过的候选标「实测可达」', candidateText.includes('实测可达'))
+  check('候选：拒绝爬虫的候选标「拒绝爬虫·未验证」', candidateText.includes('拒绝爬虫·未验证'))
+  check('候选：停放候选标「疑似停放」', candidateText.includes('疑似停放'))
+  check('候选：超时候选标「未能验证」而不是「不可达」', candidateText.includes('未能验证'))
   check(
     '候选：超时不得被说成「不可达」（慢 ≠ 死）',
-    !/不可达/.test(healText),
-    `文本含「不可达」=${/不可达/.test(healText)}`,
+    candidateText.length > 0 && !/不可达/.test(candidateText),
+    `候选区块含「不可达」=${/不可达/.test(candidateText)}`,
   )
   // 可信度分解放在 title 属性里（悬浮可见、不占版面），innerText 读不到，必须读属性
   const confidenceTitle = await brokenDetail

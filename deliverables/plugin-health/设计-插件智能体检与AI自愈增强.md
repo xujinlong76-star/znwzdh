@@ -396,3 +396,53 @@ status chars textLen entropy kw health        trunc  url
 - 类型检查：5/5 包通过
 - 真实网络复验：MDN 403/404 与 http.cat 由误判转为 HEALTHY
 
+
+---
+
+## 十章 第三轮：生产产物上的真实浏览器验收（2026-10-27）
+
+前两轮都只在单测与开发库层面验证，面板的 37 条断言中另有 2 条是第二轮新增、从未端到端跑过。本章把它们送到生产产物上跑一遍。
+
+### 10.1 为什么要换到生产产物
+
+`next dev` 在本机跑不了这类回归：多个会话共用 `apps/web/.next`，互相把对方的写入当变更，实测 2 分钟内触发 104 次 Fast Refresh 全量重载，所有点击都报 `element was detached`。改用独立 `NEXT_DIST_DIR` 的生产构建 + `next start`，并且**起服务前先探端口空闲**（否则 `next start` 会静默落到别的会话的 dev 实例上，症状是 HTML 里出现 `.next-userflow\dev\` 路径）。
+
+### 10.2 结果
+
+```
+NEXT_DIST_DIR=.next-uibuild8 next build        # 2m21s，exit 0
+NEXT_DIST_DIR=.next-uibuild8 next start -p 3453
+NAVHUB_VERIFY_PASSWORD=… node deliverables/plugin-health/ui-regression.mjs --base http://localhost:3453 --shot
+
+{"total":37,"passed":37,"failed":0}
+```
+
+两条本轮新增的断言实测输出：
+
+| 断言 | 实测证据 |
+|---|---|
+| 深检：未发起连接时写「未发起连接」而不是「延迟 0ms」 | 面板文本取到 `未发起连接` |
+| 候选：超时候选标「未能验证」而不是「不可达」 | 候选区块含「不可达」= false；同时 `实测可达` / `拒绝爬虫·未验证` / `疑似停放` / `未能验证` 四档齐现 |
+
+生产模式的登录按设计关闭了 `bypass` 快捷通道，验证实例自带 `NAVHUB_ADMIN_PASSWORD` 走口令表单，不影响其他会话的 `:3000/:3100/:3200/:3400/:3001` 实例。
+
+### 10.3 验收过程中发现的两处问题
+
+**（1）回归脚本自身会假红：`!/不可达/` 判错了范围。** 候选四档的断言原先取整个抽屉的 `innerText`，而抽屉里在 `activeTab === 'issues' | 'broken'` 时还会渲染「确认不可达死链清单（共 N 条）」标题（面板 :1072）——抽样体检一跑就出现，于是「超时不得被说成不可达」这条断言**必然红灯**，红的原因却与候选档位无关。同理「疑似停放」在指标行也有同名字样，整抽屉包含它并不能证明候选徽标标对了。
+
+修法是把断言切块到候选行：候选行的 `title` 带「合成可信度：…」（面板 :1379 给每行挂的可信度分解），用 `li[title*="合成可信度"]` 取 `allInnerTexts()`，并新增一条前置断言「四行候选都带可信度分解（切块锚点有效）」——锚点失效时先报锚点，不会把空文本误判成「没有不可达」。**教训：断言「某处不得出现某词」时，必须先证明取到的文本块恰好是那一处。**
+
+**（2）我上一轮写了一段永远跑不到的分支，被并行会话修掉。** `fe1bb82` 给行内加「清单被改过、健康度待复检」的第三分支时，把它挂在了 `snap ? … : snap?.stale ? …` 的 else 上——走到那里 `snap` 必为假值，`snap?.stale` 恒 `undefined`，前端门禁 tsc 直接报 TS2339（`Property 'stale' does not exist on type 'never'`）。核查后确认这段是死代码且不影响输出：刷新页面后 `snap` 回退到 `history[pack.slug]`（面板 :2973 `snap={results[pack.slug] || history[pack.slug]}`），stale 由 `/plugins/url-health/summary` 的 history 条目带回来，由 :757 的琥珀卡片渲染。已接受该删除，并以此为据补跑生产构建验收。
+
+### 10.4 本轮改动的文件
+
+| 文件 | 改动 |
+|---|---|
+| `deliverables/plugin-health/ui-regression.mjs` | 候选档位断言切块到候选行；新增切块锚点自检；`不可达` 判定不再覆盖整抽屉 |
+| `apps/web-overlay/src/components/plugins/plugin-url-health-panel.tsx` | 无（`27e95d8` 已摘除死分支，本轮只做核查） |
+
+### 10.5 验证记录
+- 生产构建 `next build`：exit 0，2m21s
+- 真实浏览器回归：**37/37**
+- 控制台 JS 异常：0；`/api/hub/*` 4xx/5xx：0
+- overlay 与 `apps/web` 一致性：707 文件，rc=0

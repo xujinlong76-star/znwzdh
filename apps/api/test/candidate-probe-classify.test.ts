@@ -13,7 +13,7 @@
  * 这些断言不触网：分类是纯函数，只吃「耗时 + 异常」。
  */
 import { describe, expect, it } from "vitest";
-import { classifyProbeFailure } from "../src/routes/plugin-audit.ts";
+import { classifyProbeFailure, classifyProbeStatus } from "../src/routes/plugin-audit.ts";
 
 const TIMEOUT = 2500;
 
@@ -74,5 +74,48 @@ describe("候选探活失败分类：慢 ≠ 死", () => {
     const r = classifyProbeFailure("http://127.0.0.1/", new Error("目标是受保护网段: 127.0.0.1"), 10, TIMEOUT);
     expect(r.grade).toBe("dead");
     expect(r.reason).toContain("拒绝探测");
+  });
+});
+
+/**
+ * 状态码这一半同样锁口径：**5xx ≠ 站点已死**。
+ *
+ * 原本的实现是 `if (res.status >= 400) return dead`，于是一个只是暂时过载的
+ * 503 站点会被写成「不可达（站点已确认下线）」，并在候选排序里掉到停放页之后
+ * （GRADE_RANK: unverified 2 > suspicious 1 > dead 0）。
+ * 503 恰恰证明域名和端口都在应答——这不是死，是「这一刻不好用」。
+ */
+describe("候选探活状态码分类：5xx 不等于站点已死", () => {
+  it("503 判「未能验证」而不是「不可达」", () => {
+    const r = classifyProbeStatus(503);
+    expect(r?.grade).toBe("unverified");
+    expect(r?.reason).toContain("服务端暂时不可用");
+    expect(r?.reason).toContain("不等于站点已死");
+    expect(r?.reason).not.toContain("不可达");
+  });
+
+  it.each([500, 502, 504])("%i 同样只算「未能验证」", (code) => {
+    expect(classifyProbeStatus(code)?.grade).toBe("unverified");
+  });
+
+  it("408 请求超时也不判死", () => {
+    expect(classifyProbeStatus(408)?.grade).toBe("unverified");
+  });
+
+  it.each([404, 410, 451])("%i 才是「不可达」——页面确定不存在", (code) => {
+    const r = classifyProbeStatus(code);
+    expect(r?.grade).toBe("dead");
+    expect(r?.reason).toContain("不存在");
+  });
+
+  it("400 只是「请求被拒绝」，同样不下死亡结论", () => {
+    const r = classifyProbeStatus(400);
+    expect(r?.grade).toBe("unverified");
+    expect(r?.reason).toContain("未能确认可用性");
+  });
+
+  it("1xx–3xx 不是失败，返回 null 交回调用方继续做内容判定", () => {
+    expect(classifyProbeStatus(200)).toBeNull();
+    expect(classifyProbeStatus(301)).toBeNull();
   });
 });

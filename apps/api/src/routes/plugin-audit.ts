@@ -298,6 +298,36 @@ export function classifyProbeFailure(
   return { grade: "unverified", reason: "连接中断，未能确认可达性" }
 }
 
+/**
+ * HTTP 状态码 → 候选档位（纯函数，供契约测试）。
+ *
+ * 历史缺陷：这里原本是 `if (res.status >= 400) return dead`，把 5xx 一起算成
+ * 「不可达 / 站点已确认下线」。可 503 恰恰说明域名与端口都在应答——站点活着，
+ * 只是此刻过载或维护；把它标死，等于让一个临时出问题的高质量站点被永久排除，
+ * 与全仓既有的三分类口径（只有页面确定不存在才判失效）直接冲突。
+ *
+ * 现在的口径：
+ *   - 404 / 410 / 451：页面确定不存在（451 是「因法律原因不可用」）→ dead
+ *   - 5xx / 408：服务端暂时不可用 → unverified，由人决定要不要稍后复检
+ *   - 其余 4xx：请求被目标拒绝（多为风控），同样不足以断言下线 → unverified
+ *   - 1xx–3xx：不是失败，返回 null 由调用方继续做内容判定
+ *
+ * 档位变化不影响自动平替：`autoApply` 只认 verified，这两档都不会被自动采纳。
+ */
+export function classifyProbeStatus(status: number): { grade: CandidateGrade; reason: string } | null {
+  if (status < 400) return null;
+  if (status === 404 || status === 410 || status === 451) {
+    return { grade: "dead", reason: `HTTP ${status}：页面不存在或已下线` };
+  }
+  if (status >= 500 || status === 408) {
+    return {
+      grade: "unverified",
+      reason: `HTTP ${status}：服务端暂时不可用，未能确认可用性（不等于站点已死）`,
+    };
+  }
+  return { grade: "unverified", reason: `HTTP ${status}：请求被目标拒绝，未能确认可用性` };
+}
+
 async function probeCandidateUrl(url: string): Promise<CandidateProbe> {
   const started = Date.now()
   try {
@@ -312,8 +342,10 @@ async function probeCandidateUrl(url: string): Promise<CandidateProbe> {
     if (isBlockedByBotStatus(res.status)) {
       return { grade: "blocked", ok: false, status: res.status, latencyMs: elapsed, reason: `HTTP ${res.status}：拒绝爬虫，无法验证内容` }
     }
-    if (res.status >= 400) {
-      return { grade: "dead", ok: false, status: res.status, latencyMs: elapsed, reason: `HTTP ${res.status}` }
+    // 404 才算「页面不存在」；5xx/408 只是此刻不可用，不能写成「不可达」
+    const statusVerdict = classifyProbeStatus(res.status)
+    if (statusVerdict) {
+      return { grade: statusVerdict.grade, ok: false, status: res.status, latencyMs: elapsed, reason: statusVerdict.reason }
     }
     // 非文本响应（PDF/图片/压缩包）不做正文判定：二进制乱码的低熵会被读成停放页
     if (res.body && isTextualContentType(res.contentType)) {

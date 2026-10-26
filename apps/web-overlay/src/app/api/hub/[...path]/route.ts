@@ -63,6 +63,21 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   const normalizedBase = HUB_BASE.endsWith('/api') ? HUB_BASE.slice(0, -4) : HUB_BASE
   const target = normalizedBase + '/api/' + cleanPath.join('/') + url.search
 
+  // 管理面隧道守卫（安全边界）：/api/hub/admin/* 是中枢管理 API 经 web 域名的
+  // 唯一公网入口——此前匿名访客可经此隧道直达中枢管理接口（hub 开放模式下
+  // 匿名拥有全部 scope），web 侧 /api/admin/* 的 requireAdmin 只护住了 GitHub
+  // 读写，护不住这条隧道。这里强制管理员会话；已登录管理员在下方自动注入
+  // 服务端管理凭据，行为不变。
+  if (cleanPath[0] === 'admin') {
+    const gate = await verifyAdminSession()
+    if (!gate.ok) {
+      return NextResponse.json(
+        { error: gate.reason ?? '需要管理员身份' },
+        { status: gate.status ?? 403 },
+      )
+    }
+  }
+
   const headers: Record<string, string> = { Accept: 'application/json' }
   for (const h of FORWARD_REQUEST_HEADERS) {
     const v = request.headers.get(h)

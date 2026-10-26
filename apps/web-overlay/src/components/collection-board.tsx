@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * 精选专题列表的客户端岛（hero + 统计 + 合集卡片网格）。
+ * 精选专题列表的客户端岛（hero + 统计 + 筛选 + 合集卡片网格）。
  *
  * 为什么拆：合集卡片的 `/collections/{slug}` 内链必须进 **SSR HTML**。
  * 改版前整页是客户端组件、useEffect 才取数，爬虫首轮看不到任何详情
@@ -20,10 +20,11 @@ import Link from 'next/link'
 import { fetchCollections, type HubCollection } from '@/lib/navhub-api'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
 import { HubDegradedNotice } from '@/components/hub-degraded-notice'
-import { ArrowLeft, Layers, Compass, MapPin, Route, ArrowUpRight } from 'lucide-react'
+import { ArrowLeft, Layers, Compass, MapPin, Route, ArrowUpRight, Search } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 const KIND_META: Record<string, { label: string; icon: typeof Compass }> = {
   topic: { label: '主题', icon: Compass },
@@ -42,6 +43,8 @@ export function CollectionBoard({
   /** 「站长正在策划中」和「中枢挂了」必须分开说，否则用户会以为站长没做事 */
   const [notice, setNotice] = useState<DegradeNotice | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
+  const [activeKind, setActiveKind] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const reload = () => setReloadToken((n) => n + 1)
 
@@ -69,6 +72,20 @@ export function CollectionBoard({
     const kinds = new Set(cols.map((c) => c.kind)).size
     return { coveredSites, kinds, hasCounts: counted.length > 0 }
   }, [cols])
+
+  const filteredCols = useMemo(() => {
+    return cols.filter((c) => {
+      if (activeKind !== 'all' && c.kind !== activeKind) return false
+      if (searchQuery.trim()) {
+        const q = searchQuery.trim().toLowerCase()
+        const titleMatch = c.title.toLowerCase().includes(q)
+        const descMatch = (c.description ?? '').toLowerCase().includes(q)
+        const slugMatch = c.slug.toLowerCase().includes(q)
+        if (!titleMatch && !descMatch && !slugMatch) return false
+      }
+      return true
+    })
+  }, [cols, activeKind, searchQuery])
 
   return (
     <>
@@ -131,6 +148,56 @@ export function CollectionBoard({
 
       {notice && <HubDegradedNotice notice={notice} onRetry={reload} />}
 
+      {/* 筛选与快速检索栏 */}
+      {!loading && cols.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+            <button
+              type="button"
+              onClick={() => setActiveKind('all')}
+              className={'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ' +
+                (activeKind === 'all'
+                  ? 'bg-violet-500 text-white shadow-xs'
+                  : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted')}
+            >
+              全部 ({cols.length})
+            </button>
+            {(['topic', 'roadmap', 'geo'] as const).map((kind) => {
+              const meta = KIND_META[kind]
+              const count = cols.filter((c) => c.kind === kind).length
+              if (count === 0) return null
+              const Icon = meta.icon
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => setActiveKind(kind)}
+                  className={'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ' +
+                    (activeKind === kind
+                      ? 'bg-violet-500 text-white shadow-xs'
+                      : 'bg-muted/60 text-muted-foreground hover:text-foreground hover:bg-muted')}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{meta.label}</span>
+                  <span className="text-[10px] opacity-80">({count})</span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="搜索专题"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="快速过滤专题名称或简介…"
+              className="pl-8 h-8 text-xs bg-background/80"
+            />
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div aria-busy="true" aria-live="polite" aria-label="正在加载精选专题" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <span className="sr-only">正在加载精选专题…</span>
@@ -162,9 +229,16 @@ export function CollectionBoard({
             </Button>
           }
         />
+      ) : filteredCols.length === 0 ? (
+        <div className="py-12 text-center space-y-2">
+          <p className="text-sm text-muted-foreground">没有找到匹配「{searchQuery}」的专题</p>
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => { setSearchQuery(''); setActiveKind('all'); }}>
+            清除筛选条件
+          </Button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
-          {cols.map((c) => {
+          {filteredCols.map((c) => {
             const meta = KIND_META[c.kind] ?? KIND_META.topic!
             const Icon = meta.icon
             return (

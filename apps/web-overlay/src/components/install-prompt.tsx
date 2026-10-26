@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from "react"
+import { usePathname } from "next/navigation"
 import { Download, X } from "lucide-react"
 import {
   INSTALL_DISMISS_KEY,
@@ -16,10 +17,14 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>
 }
 export function InstallPrompt() {
+  const pathname = usePathname()
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
   const [visible, setVisible] = useState(false)
+  const isAdmin = Boolean(pathname?.startsWith("/admin"))
 
   useEffect(() => {
+    // 管理后台页面专注系统管理，不拦截或弹出 PWA 桌面端安装提示
+    if (isAdmin) return
     try {
       const counted = sessionStorage.getItem("navhub:install-counted")
       const visitsRaw = localStorage.getItem(INSTALL_VISIT_KEY)
@@ -36,6 +41,10 @@ export function InstallPrompt() {
         setVisible(shouldOfferInstall({ visits, dismissedUntil, now: Date.now(), standalone, canPrompt }))
 
       const onPrompt = (e: Event) => {
+        // 仅当用户真正满足展示安装横幅资格时，才 preventDefault 并接管提示；
+        // 避免在不满足展示条件时盲目 preventDefault 导致浏览器抛出 "Banner not shown: preventDefault called" 告警
+        const canOffer = shouldOfferInstall({ visits, dismissedUntil, now: Date.now(), standalone, canPrompt: true })
+        if (!canOffer) return
         e.preventDefault()
         setDeferred(e as BeforeInstallPromptEvent)
         offer(true)
@@ -55,7 +64,7 @@ export function InstallPrompt() {
     } catch {
       // 隐私模式 / 存储被禁用：安装提示是增强，不阻断页面
     }
-  }, [])
+  }, [isAdmin])
 
   const install = async () => {
     if (!deferred) return

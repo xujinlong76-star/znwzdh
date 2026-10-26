@@ -139,9 +139,12 @@ describe("og:image 与 canonical 同源", () => {
     expect(src).not.toContain("imageUrl: ogImageUrl(canonical)");
   });
 
-  it("工厂在 imageUrl 缺省时才退回静态品牌卡", () => {
+  it("工厂按 imageUrl > 后台默认分享图 > 静态品牌卡的顺序回退", () => {
     const src = overlayFile("src/lib/seo/metadata.ts");
-    expect(src).toContain("input.imageUrl || DEFAULT_OG_IMAGE.url");
+    // 顺序即优先级：逐页动态图 → 后台「默认分享大图」→ 构建期内置图
+    expect(src).toMatch(
+      /const image = input\.imageUrl\s*\?[\s\S]*?: configuredImage\s*\?[\s\S]*?: \{[\s\S]*?url: DEFAULT_OG_IMAGE\.url/,
+    );
     // 未配置 origin 时宁可不出图，也不把 localhost 烤进分享卡
     expect(src).toContain("const shareImage = configuredSiteOrigin() ? image : null");
     // og 与 twitter 必须同一张图：twitter 只写默认图会让两平台预览不一致

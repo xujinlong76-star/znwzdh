@@ -14,7 +14,8 @@ import { OfflineBanner } from '@/components/offline-banner'
 import MobileNav from '@/components/mobile-nav'
 import { SessionSync } from '@/components/user-center/session-sync'
 import { DENSITY_PREPAINT_SCRIPT } from '@/lib/density-bootstrap'
-import { getFileContent } from '@/lib/github'
+import { readSiteSettings } from '@/lib/site-config-source'
+import { resolveDefaultTheme } from '@/lib/site-settings'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { DEFAULT_OG_IMAGE, normalizeBrandName } from '@/lib/seo/metadata'
 import type { Metadata, Viewport } from 'next'
@@ -27,19 +28,17 @@ const inter = {
   variable: '',
 }
 
-/** 与页面层保持一致的路径常量 */
-const SITE_PATH = 'src/navsphere/content/site.json'
-
 /**
  * NavHub 改动：站点名改为读取中枢的站点配置。
  *
  * 上游在这里硬编码了 'NavSphere'，导致所有子页面的 <title> 都被追加 " - NavSphere"，
  * 与中枢里的品牌名（NavHub 导航）不一致 —— 用户看到的是两个品牌混在一起。
- * 改成从 getFileContent 读取后，标题里的品牌名与后台配置保持单一来源。
+ * 改成从站点配置读取后，标题里的品牌名与后台配置保持单一来源。
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const site = await getFileContent<{ basic?: { title?: string }; appearance?: { favicon?: string } }>(SITE_PATH);
-  const siteName = normalizeBrandName(site?.basic?.title);
+  const settings = await readSiteSettings();
+  const siteName = normalizeBrandName(settings.basic.title);
+  const shareImage = settings.basic.ogImage;
   // canonical / OG 相对地址的解析基准。
   //
   // 这里刻意用 configuredSiteOrigin()（只读 NAVHUB_SITE_URL，绝不碰 headers()）
@@ -56,6 +55,10 @@ export async function generateMetadata(): Promise<Metadata> {
   // 所以下面缺 origin 时直接不输出图。
   // 生产部署仍必须注入 NAVHUB_SITE_URL（否则永远是相对地址，分享卡质量下降）。
   const origin = configuredSiteOrigin();
+  // 后台配了「默认分享大图」就用它，没配回退构建期内置图；两者都只在有 origin 时输出
+  const shareImageCard = shareImage
+    ? { url: shareImage, alt: siteName }
+    : { ...DEFAULT_OG_IMAGE, alt: siteName };
 
   return {
     ...(origin ? { metadataBase: new URL(origin) } : {}),
@@ -70,22 +73,23 @@ export async function generateMetadata(): Promise<Metadata> {
       locale: 'zh_CN',
       // 1200×630 大图卡：512 方图只能进 summary 小卡，分享预览面积不足
       // 缺 origin 时不输出（见上方注释）：相对地址会被 Next 绝对化成 localhost:3000。
-      ...(origin ? { images: [{ ...DEFAULT_OG_IMAGE, alt: siteName }] } : {}),
+      ...(origin ? { images: [shareImageCard] } : {}),
     },
     twitter: {
       card: 'summary_large_image',
-      ...(origin ? { images: [{ url: DEFAULT_OG_IMAGE.url, alt: siteName }] } : {}),
+      ...(origin ? { images: [{ url: shareImage ?? DEFAULT_OG_IMAGE.url, alt: siteName }] } : {}),
     },
     // PWA：manifest 由 app/manifest.ts 自动注入
     manifest: '/manifest.webmanifest',
     appleWebApp: {
       capable: true,
       statusBarStyle: 'default',
-      title: '山羊胡',
+      // 原来是硬编码 '山羊胡'：后台改品牌名后 iOS「添加到主屏幕」仍是旧名
+      title: siteName,
     },
     icons: {
       // 默认指向真实存在的 PWA 图标：public/ 下没有 favicon.ico（曾 404 刷屏），用 icon-192 兜底
-      icon: site?.appearance?.favicon ?? '/icons/icon-192.png',
+      icon: settings.appearance.favicon || '/icons/icon-192.png',
     },
   };
 }
@@ -103,11 +107,23 @@ export const viewport: Viewport = {
   ],
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  // 站点设置里两个「以前能存不能生效」的字段：默认主题与链接打开方式。
+  // generateMetadata 已经读同一份配置（进程内 2.5s 缓存 + Next Data Cache），
+  // 这里不会多打一次中枢。
+  const settings = await readSiteSettings()
+  // 注入给客户端消费方（页脚 / 超级控制台）的视图：品牌名在这里收敛一次，
+  // 客户端组件不必再 import 服务端的 seo 模块。
+  const siteView = {
+    brand: normalizeBrandName(settings.basic.title),
+    linkTarget: settings.navigation.linkTarget,
+    footerText: settings.footer?.text,
+    icp: settings.footer?.icp,
+  }
   // 安全：GA_ID 会内插进 dangerouslySetInnerHTML 与 script src，必须白名单。
   // 非法值（如攻击者通过环境注入 `"'><script>`）直接不注入，避免存储型 XSS。
   const rawGaId = process.env.GA_ID
@@ -207,11 +223,11 @@ export default function RootLayout({
         <WebVitalsReporter />
         <ThemeProvider
           attribute="class"
-          defaultTheme="system"
+          defaultTheme={resolveDefaultTheme(settings)}
           enableSystem
           disableTransitionOnChange
         >
-          <Providers>
+          <Providers site={siteView}>
             {children}
           </Providers>
           {/* 移动端底部导航（sm 以下可见；footer 已预留安全区，勿再加负 margin） */}

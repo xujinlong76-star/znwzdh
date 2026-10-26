@@ -1,5 +1,7 @@
+'use client'
+
 import Link from 'next/link'
-import { Icons } from '@/components/icons'
+import { useSiteViewModel } from '@/components/site-view-context'
 import type { SiteConfig } from '@/types/site'
 
 interface FooterProps {
@@ -11,9 +13,13 @@ export function Footer({ siteInfo }: FooterProps) {
   // 可能算出不同年份 → 水合不匹配。加 suppressHydrationWarning 让 React 以
   // 客户端值为准，不必把整个页脚改成客户端组件。
   const currentYear = new Date().getFullYear()
-  // 新增页面（/tags /hot /favorites）不传 siteInfo 时用默认品牌名，
-  // 避免为了一个页脚把整站配置异步加载进每个新页面。
-  const title = siteInfo?.basic?.title ?? '山羊胡'
+  // 品牌名 / 页脚文案 / 备案号统一取自根布局注入的站点视图：
+  // 这三个字段只有后台能改，若继续依赖调用方传 siteInfo，33 处挂载里有一半传的是
+  // undefined（/tags /hot /favorites…），改设置对它们永远是空转。
+  const site = useSiteViewModel()
+  const title = site?.brand || siteInfo?.basic?.title || '山羊胡'
+  const footerText = site?.footerText
+  const icp = site?.icp
 
   return (
     <footer className="border-t border-border/40 pt-8 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:pb-8 bg-muted/10 mt-auto">
@@ -51,9 +57,28 @@ export function Footer({ siteInfo }: FooterProps) {
           <span className="text-border">·</span>
           <Link href="/submit" className="hover:text-foreground transition-colors">网站投稿</Link>
         </div>
-        <p className="text-center text-xs text-muted-foreground font-mono">
-          &copy; <span suppressHydrationWarning>{currentYear}</span> {title} · AI-Native Cognitive Navigation
-        </p>
+        <div className="flex flex-col items-center gap-1.5 md:items-end">
+          <p className="text-center text-xs text-muted-foreground font-mono md:text-right">
+            &copy; <span suppressHydrationWarning>{currentYear}</span> {title} · AI-Native Cognitive Navigation
+          </p>
+          {/* 后台「页脚文案」：纯文本渲染，绝不 dangerouslySetInnerHTML —— 这个字段由
+              后台写入、所有访客页面输出，是天然的存储型 XSS 面。 */}
+          {footerText && (
+            <p className="max-w-[46rem] text-center text-xs leading-relaxed text-muted-foreground md:text-right">
+              {footerText}
+            </p>
+          )}
+          {icp && (
+            <a
+              href="https://beian.miit.gov.cn/"
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {icp}
+            </a>
+          )}
+        </div>
       </div>
     </footer>
   )

@@ -64,7 +64,7 @@ export const DEFAULT_AI_UPSTREAM_TIMEOUT_MS = 120_000
  * 用户以为失败而重试（恢复幂等，但会白等一次）。
  */
 const LONG_RUNNING_ROOTS = new Set(['copilot', 'enrich', 'backup'])
-const LONG_RUNNING_PLUGIN_ACTIONS = new Set(['ai-audit', 'pre-audit', 'auto-fix', 'check-urls'])
+const LONG_RUNNING_PLUGIN_ACTIONS = new Set(['ai-audit', 'pre-audit', 'auto-fix', 'check-urls', 'ai-heal'])
 
 export function isLongRunningPath(path: string[] | string): boolean {
   const segments = (Array.isArray(path) ? path : path.split('/')).filter(Boolean)

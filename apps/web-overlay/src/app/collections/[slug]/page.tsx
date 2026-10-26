@@ -10,7 +10,7 @@ import { configuredSiteOrigin } from '@/lib/seo/origin'
 import { itemListLd } from '@/lib/seo/json-ld'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 import { ogImageUrl } from '@/lib/seo/og-text'
-import type { HubCollection, HubSite } from '@/lib/navhub-api'
+import type { HubCollection, HubCollectionDetailSite } from '@/lib/navhub-api'
 import CollectionDetailView from './collection-detail-view'
 
 /**
@@ -35,7 +35,7 @@ export async function generateStaticParams() {
   return []
 }
 
-type CollectionDetail = { collection: HubCollection; sites: HubSite[] }
+type CollectionDetail = { collection: HubCollection; sites: HubCollectionDetailSite[] }
 
 /** generateMetadata 与页面共用；同请求内 fetch memoization 去重 */
 async function loadCollection(slug: string) {

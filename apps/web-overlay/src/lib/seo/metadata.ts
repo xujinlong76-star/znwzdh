@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { getFileContent } from '@/lib/github'
+import { readSiteSettings } from '@/lib/site-config-source'
 import { configuredSiteOrigin } from '@/lib/seo/origin'
 
 /**
@@ -59,7 +60,7 @@ export interface PageShareMetadata {
     url: string
     title?: string
     description?: string
-    images?: Array<{ url: string; width: number; height: number; alt: string }>
+    images?: Array<{ url: string; alt: string; width?: number; height?: number }>
   }
   twitter: {
     card: 'summary_large_image'
@@ -87,12 +88,24 @@ export async function pageShareMetadata(input: {
   const siteName = await loadBrandName()
   // 品牌名本身可能已含「导航」，再拼后缀会得到「NavHub 导航 导航」
   const alt = input.imageAlt?.trim() || siteName
-  const image = {
-    url: input.imageUrl || DEFAULT_OG_IMAGE.url,
-    width: DEFAULT_OG_IMAGE.width,
-    height: DEFAULT_OG_IMAGE.height,
-    alt,
-  }
+  // 优先级：逐页动态图 > 后台「默认分享大图」> 构建期内置图。
+  // 后台自定义图的真实尺寸服务端不知道，所以只带 URL，不谎报 1200×630。
+  const configuredImage = (await readSiteSettings()).basic.ogImage
+  const image = input.imageUrl
+    ? {
+        url: input.imageUrl,
+        width: DEFAULT_OG_IMAGE.width,
+        height: DEFAULT_OG_IMAGE.height,
+        alt,
+      }
+    : configuredImage
+      ? { url: configuredImage, alt }
+      : {
+          url: DEFAULT_OG_IMAGE.url,
+          width: DEFAULT_OG_IMAGE.width,
+          height: DEFAULT_OG_IMAGE.height,
+          alt,
+        }
   // 缺 NAVHUB_SITE_URL 时**不输出 og:image**，而不是输出相对地址。
   // Next 会用 metadataBase 把 og:image 绝对化，metadataBase 缺席时它的兜底值是
   // `http://localhost:3000` —— 于是分享图被烤成别人机器上的地址。

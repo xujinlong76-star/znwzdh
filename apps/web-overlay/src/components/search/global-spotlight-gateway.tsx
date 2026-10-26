@@ -19,7 +19,11 @@ const SpotlightModal = dynamic(
  * 呼出键取用户中心的「搜索快捷键」偏好：写死 ⌘K 会让选了「仅 /」的用户
  * 无论怎么按都呼不出（该设置此前在全仓没有任何消费者）。
  */
-export function GlobalSpotlightGateway() {
+export function GlobalSpotlightGateway({
+  siteLinkTarget,
+}: {
+  siteLinkTarget?: string | null
+} = {}) {
   const [mounted, setMounted] = useState(false)
   const shortcutMode = useSpotlightShortcutMode()
 
@@ -40,5 +44,5 @@ export function GlobalSpotlightGateway() {
     }
   }, [mounted, shortcutMode])
 
-  return mounted ? <SpotlightModal initialOpen /> : null
+  return mounted ? <SpotlightModal initialOpen siteLinkTarget={siteLinkTarget} /> : null
 }

@@ -80,10 +80,24 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
       return NextResponse.json({ error: 'Method Not Allowed' }, { status: 405 })
     }
     const [provider, ...rest] = identity.split(':')
-    const providerId = identity.includes(':') ? rest.join(':') : identity
+    // providerId 理论上必非空（canonicalUserId 才生成 identity），但异常会话下
+    // 可能得到 "github:" 这种空前缀。空值会让中枢 users/sync 直接 400，导致每个
+    // 带该组件的页面都刷红错——这里兜底成一个稳定的本地占位，保证同步幂等可用。
+    const providerId = (identity.includes(':') ? rest.join(':') : identity).trim() || 'local'
     const token = serviceToken()
     const secret = hubIdentitySecret()
     const targetUserId = `${provider || 'github'}:${providerId}`
+    // 中枢 users/sync 的 zod 契约：username ≤64、email 必须合法或 null、avatar 必须
+    // 是 http(s):// 或站内 /... 。会话里 user.name 可能超长、user.email 可能不是标准
+    // 邮箱、user.image 可能缺省——任一不合都让 BFF 在转发前清洗成合法值，避免把 400
+    // 透传给浏览器（身份同步是「尽力而为」的 upsert，不该污染全局 console）。
+    const validEmail = typeof user.email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email)
+      ? user.email
+      : null
+    const username = String(user.name || user.email || providerId).slice(0, 64)
+    const avatar = typeof user.image === 'string' && user.image.trim() !== ''
+      ? (user.image as string).slice(0, 500)
+      : null
     const syncHeaders: Record<string, string> = {
       'content-type': 'application/json',
       ...(token ? { authorization: 'Bearer ' + token } : {}),
@@ -99,9 +113,9 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
         body: JSON.stringify({
           provider: provider || 'github',
           providerId,
-          username: user.name || user.email || providerId,
-          email: user.email ?? null,
-          avatar: user.image ?? null,
+          username,
+          email: validEmail,
+          avatar,
         }),
         cache: 'no-store',
         signal: AbortSignal.timeout(TIMEOUT_MS),

@@ -1,0 +1,265 @@
+{
+  "navigationItems": [
+    {
+      "id": "cat_ai_engineering",
+      "title": "AI 与大模型工程",
+      "icon": "Bot",
+      "description": "收录大模型、Cursor 智能编程、MCP 协议、AI Agent 及本地大模型实战深度教程",
+      "enabled": true,
+      "harvestPolicy": {
+        "enabled": true,
+        "keywords": [
+          "Cursor 教程",
+          "MCP 协议",
+          "DeepSeek 本地部署",
+          "AI Agent 开发",
+          "Claude 提示词工程"
+        ],
+        "syncSiteHotTrends": true,
+        "platforms": [
+          "bilibili",
+          "youtube"
+        ],
+        "maxItems": 12,
+        "minQualityScore": 65,
+        "minDurationSec": 180,
+        "freshnessHalfLifeDays": 60,
+        "autoReplaceOutdated": true
+      },
+      "items": [
+        {
+          "id": "video_cursor_mastery",
+          "title": "Cursor 从入门到全栈实战：结合 Claude 打造十倍效能工程师",
+          "href": "https://www.bilibili.com/video/BV1MmUSB5Efw",
+          "description": "系统讲解 Cursor 编辑器的 Rules 配置、Composer 模式与大模型代码生成最佳实践。",
+          "icon": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80",
+          "enabled": true,
+          "videoConfig": {
+            "type": "bilibili",
+            "bvid": "BV1MmUSB5Efw",
+            "p": 1,
+            "author": "AI全栈探索者",
+            "durationSec": 1540,
+            "publishedAt": "2025-01-10T10:00:00Z",
+            "harvestedAt": 1736503200000,
+            "qualityScore": 92,
+            "freshnessScore": 90,
+            "sourceType": "manual",
+            "pinned": true,
+            "stats": {
+              "views": 185000,
+              "likes": 12400,
+              "coins": 5800,
+              "favorites": 15200,
+              "danmaku": 980
+            }
+          }
+        },
+        {
+          "id": "video_mcp_architecture",
+          "title": "Model Context Protocol (MCP) 架构原理解析与自建服务实操",
+          "href": "https://www.bilibili.com/video/BV1pM411i7a1",
+          "description": "剖析 Anthropic MCP 协议标准、Client/Server 通信机制与生产级 Tool 注册演练。",
+          "icon": "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?w=800&auto=format&fit=crop&q=80",
+          "enabled": true,
+          "videoConfig": {
+            "type": "bilibili",
+            "bvid": "BV1pM411i7a1",
+            "p": 1,
+            "author": "架构师视界",
+            "durationSec": 2180,
+            "publishedAt": "2025-02-15T14:30:00Z",
+            "harvestedAt": 1739629800000,
+            "qualityScore": 95,
+            "freshnessScore": 95,
+            "sourceType": "manual",
+            "pinned": true,
+            "stats": {
+              "views": 94000,
+              "likes": 8900,
+              "coins": 4500,
+              "favorites": 11200,
+              "danmaku": 640
+            }
+          }
+        }
+      ],
+      "subCategories": []
+    },
+    {
+      "id": "cat_fullstack_architecture",
+      "title": "现代全栈与架构演进",
+      "icon": "Layers",
+      "description": "涵盖 Next.js、React 19、TypeScript 高级类型系统与现代全栈 Web 开发",
+      "enabled": true,
+      "harvestPolicy": {
+        "enabled": true,
+        "keywords": [
+          "Next.js 全栈",
+          "React 19 特性",
+          "TypeScript 进阶",
+          "Tailwind CSS",
+          "Node.js 架构"
+        ],
+        "syncSiteHotTrends": true,
+        "platforms": [
+          "bilibili",
+          "youtube"
+        ],
+        "maxItems": 12,
+        "minQualityScore": 65,
+        "minDurationSec": 240,
+        "freshnessHalfLifeDays": 90,
+        "autoReplaceOutdated": true
+      },
+      "items": [
+        {
+          "id": "video_nextjs_fullstack",
+          "title": "Next.js 15 App Router 全栈生产级工程化实践指南",
+          "href": "https://www.bilibili.com/video/BV1ADzkBoEDS",
+          "description": "深入 Server Components、Server Actions、流式渲染与分层状态管理最佳范式。",
+          "icon": "https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&auto=format&fit=crop&q=80",
+          "enabled": true,
+          "videoConfig": {
+            "type": "bilibili",
+            "bvid": "BV1ADzkBoEDS",
+            "p": 1,
+            "author": "前端巅峰",
+            "durationSec": 2840,
+            "publishedAt": "2024-11-20T09:00:00Z",
+            "harvestedAt": 1732093200000,
+            "qualityScore": 90,
+            "freshnessScore": 88,
+            "sourceType": "manual",
+            "pinned": true,
+            "stats": {
+              "views": 210000,
+              "likes": 16500,
+              "coins": 9200,
+              "favorites": 23000,
+              "danmaku": 1500
+            }
+          }
+        }
+      ],
+      "subCategories": []
+    },
+    {
+      "id": "cat_devops_cloud",
+      "title": "云原生与 DevOps 实战",
+      "icon": "Terminal",
+      "description": "Docker 容器编排、Kubernetes 集群运维、CI/CD 流水线与 Cloudflare 边缘计算",
+      "enabled": true,
+      "harvestPolicy": {
+        "enabled": true,
+        "keywords": [
+          "Docker 入门到进阶",
+          "Kubernetes 实战",
+          "GitHub Actions CI/CD",
+          "Cloudflare Workers",
+          "Linux 运维"
+        ],
+        "syncSiteHotTrends": false,
+        "platforms": [
+          "bilibili",
+          "youtube"
+        ],
+        "maxItems": 12,
+        "minQualityScore": 60,
+        "minDurationSec": 300,
+        "freshnessHalfLifeDays": 120,
+        "autoReplaceOutdated": true
+      },
+      "items": [
+        {
+          "id": "video_docker_k8s_guide",
+          "title": "从零构建现代化 Docker + K8s 自动化部署体系",
+          "href": "https://www.bilibili.com/video/BV1og4y1q7M4",
+          "description": "企业级容器化交付流程：镜像多阶段构建、Helm 部署与监控告警闭环。",
+          "icon": "https://images.unsplash.com/photo-1607799279861-4dd421887fb3?w=800&auto=format&fit=crop&q=80",
+          "enabled": true,
+          "videoConfig": {
+            "type": "bilibili",
+            "bvid": "BV1og4y1q7M4",
+            "p": 1,
+            "author": "云原生探秘",
+            "durationSec": 3200,
+            "publishedAt": "2024-10-15T08:00:00Z",
+            "harvestedAt": 1728979200000,
+            "qualityScore": 88,
+            "freshnessScore": 82,
+            "sourceType": "manual",
+            "pinned": true,
+            "stats": {
+              "views": 140000,
+              "likes": 11000,
+              "coins": 6200,
+              "favorites": 17800,
+              "danmaku": 890
+            }
+          }
+        }
+      ],
+      "subCategories": []
+    },
+    {
+      "id": "cat_tools_indie",
+      "title": "开源神器与独立开发",
+      "icon": "Sparkles",
+      "description": "极客效率工具、开源明星项目架构演进、独立开发产品出海与自动化盈利变现",
+      "enabled": true,
+      "harvestPolicy": {
+        "enabled": true,
+        "keywords": [
+          "独立开发",
+          "开源项目",
+          "效率神器",
+          "出海实战",
+          "产品增长"
+        ],
+        "syncSiteHotTrends": true,
+        "platforms": [
+          "bilibili",
+          "youtube"
+        ],
+        "maxItems": 12,
+        "minQualityScore": 60,
+        "minDurationSec": 200,
+        "freshnessHalfLifeDays": 90,
+        "autoReplaceOutdated": true
+      },
+      "items": [
+        {
+          "id": "video_indie_hacker_launch",
+          "title": "独立开发者出海 0 到 1：产品打磨、Stripe 支付接入与冷启动获客",
+          "href": "https://www.bilibili.com/video/BV1pM411i7a1",
+          "description": "实战拆解独立开发者的技术选型、SEO 策略、海外支付合规与第一批付费用户获取。",
+          "icon": "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&auto=format&fit=crop&q=80",
+          "enabled": true,
+          "videoConfig": {
+            "type": "bilibili",
+            "bvid": "BV1pM411i7a1",
+            "p": 1,
+            "author": "独立创客志",
+            "durationSec": 2450,
+            "publishedAt": "2024-12-05T11:00:00Z",
+            "harvestedAt": 1733396400000,
+            "qualityScore": 91,
+            "freshnessScore": 89,
+            "sourceType": "manual",
+            "pinned": true,
+            "stats": {
+              "views": 165000,
+              "likes": 13800,
+              "coins": 7400,
+              "favorites": 19200,
+              "danmaku": 1120
+            }
+          }
+        }
+      ],
+      "subCategories": []
+    }
+  ],
+  "replacementHistory": []
+}

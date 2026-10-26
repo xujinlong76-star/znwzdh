@@ -10,6 +10,7 @@ import { Button } from "@/registry/new-york/ui/button"
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
+import { formatDuration } from '@/lib/video-harvester'
 
 interface VideoPlayerPageProps {
     navigationData: NavigationData
@@ -90,7 +91,14 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
 
         if (videoConfig.type === 'bilibili') {
             const { bvid, aid, cid, p = 1 } = videoConfig
-            const src = `//player.bilibili.com/player.html?isOutside=true&aid=${aid}&bvid=${bvid}&cid=${cid}&p=${p}&autoplay=1`
+            const queryParams: string[] = ['isOutside=true', `p=${p}`, 'autoplay=1']
+            if (bvid) {
+                queryParams.push(`bvid=${bvid}`)
+            } else if (aid) {
+                queryParams.push(`aid=${aid}`)
+                if (cid) queryParams.push(`cid=${cid}`)
+            }
+            const src = `//player.bilibili.com/player.html?${queryParams.join('&')}`
 
             return (
                 <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl">
@@ -267,21 +275,36 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                     </p>
                                 )}
                                 {selectedVideo.videoConfig && (
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-3 text-xs">
                                         <span className={cn(
-                                            "px-2 py-0.5 text-xs font-medium rounded",
+                                            "px-2 py-0.5 font-medium rounded",
                                             selectedVideo.videoConfig.type === 'bilibili'
                                                 ? "bg-pink-500/10 text-pink-500"
                                                 : "bg-red-500/10 text-red-500"
                                         )}>
                                             {selectedVideo.videoConfig.type === 'bilibili' ? 'Bilibili' : 'YouTube'}
                                         </span>
+                                        {selectedVideo.videoConfig.author && (
+                                            <span className="text-muted-foreground">
+                                                创作者: <strong className="font-medium text-foreground">{selectedVideo.videoConfig.author}</strong>
+                                            </span>
+                                        )}
+                                        {selectedVideo.videoConfig.durationSec ? (
+                                            <span className="text-muted-foreground font-mono">
+                                                时长: {formatDuration(selectedVideo.videoConfig.durationSec)}
+                                            </span>
+                                        ) : null}
+                                        {selectedVideo.videoConfig.publishedAt && (
+                                            <span className="text-muted-foreground">
+                                                发布时间: {new Date(selectedVideo.videoConfig.publishedAt).toLocaleDateString()}
+                                            </span>
+                                        )}
                                         {selectedVideo.href && (
                                             <a
                                                 href={safeHref(selectedVideo.href)}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-xs text-primary hover:underline"
+                                                className="text-primary hover:underline ml-auto"
                                             >
                                                 在原站打开 →
                                             </a>

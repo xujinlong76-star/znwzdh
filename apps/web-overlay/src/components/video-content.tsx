@@ -109,15 +109,26 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
         }),
     }), [navigationData])
 
-    /** 首屏第一张封面：优先加载，其余保持懒加载 */
-    const firstItemId = useMemo(() => {
+    /** 首屏前 4 张封面：预加载以压低 LCP，其余保持懒加载 */
+    const eagerItemIds = useMemo(() => {
+        const ids = new Set<string>()
+        let count = 0
         for (const category of visibleNavigationData.navigationItems) {
-            const first = category.subCategories?.length
-                ? category.subCategories[0]?.items?.[0]
-                : category.items?.[0]
-            if (first) return first.id
+            const allItems = [
+                ...(category.items || []),
+                ...(category.subCategories || []).flatMap(s => s.items || [])
+            ]
+            for (const item of allItems) {
+                if (count < 4) {
+                    ids.add(item.id)
+                    count++
+                } else {
+                    break
+                }
+            }
+            if (count >= 4) break
         }
-        return null
+        return ids
     }, [visibleNavigationData])
 
     /** 视频页概览计数：与侧边栏同一份数据，禁用项不计 */
@@ -287,7 +298,7 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                                                      style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                                  >
                                                      {(subCategory.items || []).map((item) => (
-                                                         <VideoCard key={item.id} item={item} siteConfig={siteData} priority={item.id === firstItemId} />
+                                                         <VideoCard key={item.id} item={item} siteConfig={siteData} priority={eagerItemIds.has(item.id)} />
                                                      ))}
                                                  </div>
                                              </div>
@@ -298,7 +309,7 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                                             style={{ gap: 'var(--density-grid-gap, 1rem)' }}
                                         >
                                             {(category.items || []).map((item) => (
-                                                <VideoCard key={item.id} item={item} siteConfig={siteData} priority={item.id === firstItemId} />
+                                                <VideoCard key={item.id} item={item} siteConfig={siteData} priority={eagerItemIds.has(item.id)} />
                                             ))}
                                         </div>
                                     )}

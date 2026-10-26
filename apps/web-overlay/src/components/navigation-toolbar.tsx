@@ -29,6 +29,7 @@ import {
   Upload,
   Cpu,
   LayoutGrid,
+  Layers,
   Compass,
   Store,
   CheckSquare,
@@ -169,6 +170,12 @@ export function NavigationToolbar({
                   <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold px-2 py-1">
                     全景与发现
                   </DropdownMenuLabel>
+                  <DropdownMenuItem asChild>
+                    <Link href="/collections" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
+                      <Layers className="h-4 w-4 text-violet-500 shrink-0" />
+                      <span className="font-medium text-foreground">精选专题合集</span>
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href="/tags" className="flex items-center gap-2.5 px-2 py-1.5 text-xs rounded-md cursor-pointer hover:bg-accent">
                       <Tags className="h-4 w-4 text-indigo-500 shrink-0" />

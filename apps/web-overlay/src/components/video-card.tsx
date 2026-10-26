@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { PlayCircle } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
+import { formatDuration } from '@/lib/video-harvester'
 import Image from 'next/image'
 
 interface VideoCardProps {
@@ -52,7 +53,14 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
 
         if (videoConfig.type === 'bilibili') {
             const { bvid, aid, cid, p = 1 } = videoConfig
-            const src = `//player.bilibili.com/player.html?isOutside=true&aid=${aid}&bvid=${bvid}&cid=${cid}&p=${p}&autoplay=1`
+            const queryParams: string[] = ['isOutside=true', `p=${p}`, 'autoplay=1']
+            if (bvid) {
+                queryParams.push(`bvid=${bvid}`)
+            } else if (aid) {
+                queryParams.push(`aid=${aid}`)
+                if (cid) queryParams.push(`cid=${cid}`)
+            }
+            const src = `//player.bilibili.com/player.html?${queryParams.join('&')}`
 
             return (
                 <div className="w-full aspect-video">
@@ -88,21 +96,25 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
 
     // 获取平台标识
     const getPlatformBadge = () => {
-        if (videoConfig?.type === 'bilibili') {
-            return (
-                <span className="absolute top-2 left-2 px-2 py-0.5 text-xs font-medium bg-pink-500/90 text-white rounded-md backdrop-blur-sm">
-                    bilibili
-                </span>
-            )
-        }
-        if (videoConfig?.type === 'youtube') {
-            return (
-                <span className="absolute top-2 left-2 px-2 py-0.5 text-xs font-medium bg-red-600/90 text-white rounded-md backdrop-blur-sm">
-                    YouTube
-                </span>
-            )
-        }
-        return null
+        return (
+            <div className="absolute top-2 left-2 flex items-center gap-1.5 z-10">
+                {videoConfig?.type === 'bilibili' && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-pink-500/90 text-white rounded-md backdrop-blur-sm">
+                        bilibili
+                    </span>
+                )}
+                {videoConfig?.type === 'youtube' && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-red-600/90 text-white rounded-md backdrop-blur-sm">
+                        YouTube
+                    </span>
+                )}
+                {videoConfig?.sourceType === 'auto_trend' && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/90 text-white rounded-md backdrop-blur-sm">
+                        🔥 热点
+                    </span>
+                )}
+            </div>
+        )
     }
 
     return (
@@ -128,7 +140,9 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                                 alt=""
                                 fill
                                 priority={priority}
+                                loading={priority ? "eager" : "lazy"}
                                 sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                                referrerPolicy="no-referrer"
                                 className={`object-cover transition-all duration-500 
                                            group-hover:scale-105 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
                                 onLoad={() => setImageLoaded(true)}
@@ -156,6 +170,13 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                     {/* 平台标识 */}
                     {getPlatformBadge()}
 
+                    {/* 时长角标 */}
+                    {videoConfig?.durationSec ? (
+                        <span className="absolute bottom-2 right-2 px-1.5 py-0.5 text-[11px] font-mono font-medium bg-black/75 text-white rounded backdrop-blur-xs z-10">
+                            {formatDuration(videoConfig.durationSec)}
+                        </span>
+                    ) : null}
+
                     {/* 渐变遮罩 - 底部 */}
                     <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-black/60 to-transparent" />
                 </div>
@@ -168,6 +189,19 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                                    group-hover:text-primary transition-colors duration-200">
                         {item.title}
                     </span>
+
+                    {videoConfig?.author && (
+                        <div className="text-[11px] text-muted-foreground/80 flex items-center justify-between">
+                            <span className="truncate">{videoConfig.author}</span>
+                            {videoConfig.stats?.views ? (
+                                <span className="shrink-0 font-mono">
+                                    {videoConfig.stats.views > 10000
+                                        ? `${(videoConfig.stats.views / 10000).toFixed(1)}万次观看`
+                                        : `${videoConfig.stats.views}次观看`}
+                                </span>
+                            ) : null}
+                        </div>
+                    )}
 
                     {item.description && (
                         <p className="text-xs text-muted-foreground line-clamp-1">

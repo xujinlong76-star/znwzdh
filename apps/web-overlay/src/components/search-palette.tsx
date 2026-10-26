@@ -26,9 +26,11 @@ import {
   searchPlugins,
   reportClick,
   fetchSearchHistory,
+  fetchCollections,
   type HubSearchHit,
   type HubSiteRelation,
   type HubPluginSearchResponse,
+  type HubCollection,
 } from '@/lib/navhub-api'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { recordOfflineVisit } from '@/lib/offline-recent'
@@ -114,6 +116,28 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [pluginLoading, setPluginLoading] = useState(false)
   /** 插件子检索请求失败：与「插件市场真的没有匹配」区分，不能让失败静默变成空分区 */
   const [pluginFailed, setPluginFailed] = useState(false)
+  const [allCollections, setAllCollections] = useState<HubCollection[]>([])
+
+  useEffect(() => {
+    if (isFocused && allCollections.length === 0) {
+      void fetchCollections().then((cols) => {
+        if (cols) setAllCollections(cols)
+      })
+    }
+  }, [isFocused, allCollections.length])
+
+  const matchedCollections = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    return allCollections
+      .filter(
+        (c) =>
+          c.title.toLowerCase().includes(q) ||
+          (c.description && c.description.toLowerCase().includes(q)) ||
+          c.slug.toLowerCase().includes(q),
+      )
+      .slice(0, 3)
+  }, [allCollections, query])
   const [loading, setLoading] = useState(false)
   const [degraded, setDegraded] = useState(false)
   const [semanticAvailable, setSemanticAvailable] = useState(true)
@@ -772,6 +796,46 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                 </div>
               )}
               {/* 统一搜索：插件市场命中（语义/关键词由 /api/plugins/search 返回） */}
+              {/* 精选专题匹配推荐 */}
+              {matchedCollections.length > 0 && (
+                <div className="border-b border-border/70 bg-violet-500/5 p-2.5">
+                  <div className="flex items-center justify-between px-1 mb-2">
+                    <span className="text-xs font-semibold text-violet-600 dark:text-violet-400 flex items-center gap-1.5">
+                      <Layers className="h-3.5 w-3.5" />
+                      精选专题推荐
+                    </span>
+                    <Link
+                      href="/collections"
+                      onClick={() => setIsFocused(false)}
+                      className="text-[11px] text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      查看全部专题 →
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {matchedCollections.map((col) => (
+                      <Link
+                        key={col.id}
+                        href={`/collections/${encodeURIComponent(col.slug)}`}
+                        onClick={() => setIsFocused(false)}
+                        className="flex items-center gap-2 p-2 rounded-lg border border-violet-500/20 bg-card hover:bg-violet-500/10 transition-colors"
+                      >
+                        <Layers className="h-4 w-4 text-violet-500 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-semibold text-foreground truncate">{col.title}</div>
+                          {col.description && (
+                            <div className="text-[10px] text-muted-foreground truncate">{col.description}</div>
+                          )}
+                        </div>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-600 dark:text-violet-400 shrink-0 font-medium">
+                          {col.kind === 'roadmap' ? '路线图' : '专题'}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {pluginItems.length > 0 && (
                 <div className="border-b border-border/60">
                   <div className="px-3.5 py-2 flex items-center justify-between gap-2 bg-primary/5">

@@ -32,8 +32,7 @@ export async function generateMetadata(): Promise<Metadata> {
     // 点击行为是站内弹窗播放或无播放配置时直达原站，不是「进入站内播放页」
     description: '按分类浏览收录的视频与教程，支持站内弹窗播放或直达原站',
     alternates: { canonical: '/videos' },
-    // 视频库仍是占位内容：先不参与收录（follow 保留内链权重），
-    // 同时已从 sitemap 移除；内容补齐后再放开。
+    // 视频库仍是占位内容：保持 noindex,follow 并留在 sitemap 之外（I4 收录策略）
     robots: { index: false, follow: true },
     ...(await pageShareMetadata({
       url: '/videos',

@@ -38,14 +38,17 @@ import {
   Laptop,
   Box,
   Globe,
+  Layers,
   X,
 } from 'lucide-react'
 import {
   fetchSite,
   fetchSimilar,
   fetchSiteRelations,
+  fetchSiteCollections,
   type HubSite,
   type HubSiteRelation,
+  type HubCollection,
 } from '@/lib/navhub-api'
 import { EmptyState } from '@/components/ui/empty-state'
 import { describeDegrade, type DegradeNotice } from '@/lib/degrade'
@@ -163,6 +166,7 @@ export function SiteDetailView({
   const [site, setSite] = useState<HubSite | null>(initialSite)
   const [similar, setSimilar] = useState<HubSite[]>([])
   const [relations, setRelations] = useState<HubSiteRelation[]>([])
+  const [collections, setCollections] = useState<Array<HubCollection & { collectionNote: string | null }>>([])
   /** 关系网络降级：中枢不可用时 relations 静默为空，需与「确实没有关系」区分 */
   const [relationsDegraded, setRelationsDegraded] = useState(false)
   const [loading, setLoading] = useState(!initialSite)
@@ -228,6 +232,18 @@ export function SiteDetailView({
       if (cancelled) return
       setRelationsDegraded(failed)
       if (res?.all) setRelations(res.all)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [id, site, reloadToken])
+
+  // 加载收录该站点的精选专题
+  useEffect(() => {
+    if (!id || !site) return
+    let cancelled = false
+    void fetchSiteCollections(id).then((cols) => {
+      if (!cancelled) setCollections(cols ?? [])
     })
     return () => {
       cancelled = true
@@ -716,6 +732,55 @@ export function SiteDetailView({
               })}
             </div>
           </div>
+        )}
+
+        {/* 精选专题反向链接 (Collections Ingestion) */}
+        {collections.length > 0 && (
+          <section aria-labelledby="site-collections-heading" className="space-y-3.5">
+            <div className="flex items-center justify-between">
+              <h2
+                id="site-collections-heading"
+                className="text-sm sm:text-base font-bold flex items-center gap-2 text-foreground"
+              >
+                <Layers className="w-4 h-4 text-violet-500" />
+                <span>收录于精选专题</span>
+              </h2>
+              <Link href="/collections" className="text-xs text-muted-foreground hover:text-primary">
+                浏览全部专题 →
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {collections.map((col) => (
+                <Link
+                  key={col.id}
+                  href={`/collections/${encodeURIComponent(col.slug)}`}
+                  className="rounded-xl border border-border/70 bg-card p-3.5 hover:border-violet-500/40 transition-all shadow-2xs space-y-2 flex flex-col justify-between group"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <span className="text-xs font-semibold text-violet-600 dark:text-violet-400 group-hover:text-primary transition-colors flex items-center gap-1.5 truncate">
+                        <Layers className="w-3.5 h-3.5 shrink-0" />
+                        {col.title}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold border bg-violet-50 dark:bg-violet-950/40 border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 shrink-0">
+                        {col.kind === 'roadmap' ? '路线图' : col.kind === 'geo' ? '地域' : '专题'}
+                      </span>
+                    </div>
+                    {col.collectionNote ? (
+                      <p className="text-xs text-amber-800 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded p-1.5 line-clamp-2 leading-relaxed">
+                        💡 策展说明：{col.collectionNote}
+                      </p>
+                    ) : col.description ? (
+                      <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                        {col.description}
+                      </p>
+                    ) : null}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* 相关站点：服务端下发的站内 /site 内链（爬虫可见），

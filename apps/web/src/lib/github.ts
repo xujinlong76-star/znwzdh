@@ -62,30 +62,35 @@ export function revalidateFromEnv(env: Record<string, string | undefined>): numb
   return Math.floor(n);
 }
 
+/** http 适配器的配置；revalidateS 抽成参数，供「实时读」第二条链路复用 */
+function httpAdapterConfig(revalidateS: number) {
+  return {
+    kind: "http" as const,
+    http: {
+      // 服务端渲染走容器内地址；可在部署时用 NAVHUB_STORAGE_BASE_URL 覆盖
+      baseUrl:
+        process.env.NAVHUB_STORAGE_BASE_URL ??
+        process.env.NEXT_PUBLIC_API_URL ??
+        "http://localhost:8787",
+      token:
+        process.env.NAVHUB_STORAGE_TOKEN ||
+        process.env.NAVHUB_ADMIN_TOKEN ||
+        process.env.NAVHUB_BOOTSTRAP_TOKEN ||
+        null,
+      cooldownMs: cooldownFromEnv(process.env),
+      // 读请求进 Next Data Cache（配合路由级 revalidate 变 ISR）；
+      // 详见 storage-adapter.ts 里 HttpAdapterOptions.revalidateS 的注释
+      revalidateS,
+    },
+  };
+}
+
 function getAdapter(): StorageAdapter {
   if (cached) return cached;
   const kind = resolveAdapterKind(process.env);
 
   if (kind === "http") {
-    cached = createStorageAdapter({
-      kind,
-      http: {
-        // 服务端渲染走容器内地址；可在部署时用 NAVHUB_STORAGE_BASE_URL 覆盖
-        baseUrl:
-          process.env.NAVHUB_STORAGE_BASE_URL ??
-          process.env.NEXT_PUBLIC_API_URL ??
-          "http://localhost:8787",
-        token:
-          process.env.NAVHUB_STORAGE_TOKEN ||
-          process.env.NAVHUB_ADMIN_TOKEN ||
-          process.env.NAVHUB_BOOTSTRAP_TOKEN ||
-          null,
-        cooldownMs: cooldownFromEnv(process.env),
-        // 读请求进 Next Data Cache（配合路由级 revalidate 变 ISR）；
-        // 详见 storage-adapter.ts 里 HttpAdapterOptions.revalidateS 的注释
-        revalidateS: revalidateFromEnv(process.env),
-      },
-    });
+    cached = createStorageAdapter(httpAdapterConfig(revalidateFromEnv(process.env)));
     return cached;
   }
 
@@ -119,6 +124,27 @@ function getAdapter(): StorageAdapter {
     },
   });
   return cached;
+}
+
+/**
+ * 「绕过一切缓存」的读链路，只给写前的 read-modify-write 用。
+ *
+ * 为什么默认链路不够：`getFileContent` 有两层缓存（2.5s 进程内 + Next Data Cache
+ * 默认 60s）。后台分 tab 保存时，若合并基准取自缓存，第二次保存拿到的是第一次
+ * 保存**之前**的现值，整坨覆盖就会把刚写进去的字段抹掉——实测连续保存「分享图 +
+ * 页脚备案 + 导航设置」后，中枢里只剩最后一个 tab 的字段。
+ * `revalidateS: 0` 让读请求不带 `next.revalidate`，route handler 里即 no-store。
+ */
+let cachedFresh: StorageAdapter | null = null;
+
+export async function readStorageFresh<T = unknown>(path: string): Promise<T | null> {
+  if (resolveAdapterKind(process.env) !== "http") {
+    // github/sqlite 等其它后端没有 Data Cache 这一层，清掉进程内微缓存即可
+    invalidateContentCache(path);
+    return (await getAdapter().read(path)) as T | null;
+  }
+  if (!cachedFresh) cachedFresh = createStorageAdapter(httpAdapterConfig(0));
+  return (await cachedFresh.read(path)) as T | null;
 }
 
 /** 内容文件的 basename */
@@ -160,7 +186,7 @@ function baselineFor(name: string): unknown | undefined {
   return undefined;
 }
 
-const contentCache = new Map<string, { data: unknown; expiresAt: number }>();
+const contentCache = new Map<string, { data: unknown; expiresAt: number; degraded: boolean }>();
 const CACHE_TTL_MS = 2500; // 2.5 秒极速微缓存
 const FAILURE_TTL_MS = 1_000;
 
@@ -172,11 +198,18 @@ export function invalidateContentCache(path?: string) {
   }
 }
 
-export async function getFileContent<T = any>(path: string): Promise<T> {
+/**
+ * 与 getFileContent 同源，只是额外报告「这次是不是降级数据」。
+ *
+ * 为什么需要这个出口：getFileContent 的兜底是**有意**的（中枢抖动时前台照常渲染），
+ * 但对写路径是陷阱——管理员看到的是基线值，保存下去就把中枢里的真实配置覆盖了。
+ * 站点设置后台必须先知道降级，再决定让不让保存。
+ */
+export async function getFileContentWithStatus<T = any>(path: string): Promise<{ data: T; degraded: boolean }> {
   const now = Date.now();
   const cachedItem = contentCache.get(path);
   if (cachedItem && cachedItem.expiresAt > now) {
-    return cachedItem.data as T;
+    return { data: cachedItem.data as T, degraded: cachedItem.degraded };
   }
 
   const name = basename(path);
@@ -187,8 +220,8 @@ export async function getFileContent<T = any>(path: string): Promise<T> {
 
     if (data === null || data === undefined) {
       const res = (baseline ?? {}) as T;
-      contentCache.set(path, { data: res, expiresAt: now + CACHE_TTL_MS });
-      return res;
+      contentCache.set(path, { data: res, expiresAt: now + CACHE_TTL_MS, degraded: true });
+      return { data: res, degraded: true };
     }
 
     const looksEmpty =
@@ -200,20 +233,24 @@ export async function getFileContent<T = any>(path: string): Promise<T> {
 
     if (baseline !== undefined && looksEmpty) {
       console.warn("[storage] 中枢返回了数据但内容为空，回退到构建期基线:", path);
-      contentCache.set(path, { data: baseline, expiresAt: now + CACHE_TTL_MS });
-      return baseline as T;
+      contentCache.set(path, { data: baseline, expiresAt: now + CACHE_TTL_MS, degraded: true });
+      return { data: baseline as T, degraded: true };
     }
-    contentCache.set(path, { data, expiresAt: now + CACHE_TTL_MS });
-    return data as T;
+    contentCache.set(path, { data, expiresAt: now + CACHE_TTL_MS, degraded: false });
+    return { data: data as T, degraded: false };
   } catch (error) {
     const hubUnreachable = error instanceof StorageError && error.unreachable;
     if (!hubUnreachable) {
       console.error("[storage] 读取失败，回退到构建期基线:", path, error);
     }
     const res = (baseline ?? {}) as T;
-    contentCache.set(path, { data: res, expiresAt: Date.now() + FAILURE_TTL_MS });
-    return res;
+    contentCache.set(path, { data: res, expiresAt: Date.now() + FAILURE_TTL_MS, degraded: true });
+    return { data: res, degraded: true };
   }
+}
+
+export async function getFileContent<T = any>(path: string): Promise<T> {
+  return (await getFileContentWithStatus<T>(path)).data;
 }
 
 export async function commitFile(

@@ -1099,16 +1099,30 @@ export async function fetchCollections(onDegraded?: DegradedHandler): Promise<Hu
 }
 
 /** 专题详情：404 = 专题确实不存在（不触发降级回调）；5xx / 网络失败触发 */
+export interface HubCollectionDetailSite extends HubSite {
+  collectionNote?: string | null
+  collectionSort?: number
+}
+
+/** 专题详情：404 = 专题确实不存在（不触发降级回调）；5xx / 网络失败触发 */
 export async function fetchCollectionDetail(
   slug: string,
   onDegraded?: DegradedHandler,
-): Promise<{ collection: HubCollection; sites: HubSite[] } | null> {
+): Promise<{ collection: HubCollection; sites: HubCollectionDetailSite[] } | null> {
   try {
-    return await getJson<{ collection: HubCollection; sites: HubSite[] }>('/api/collections/' + encodeURIComponent(slug))
+    return await getJson<{ collection: HubCollection; sites: HubCollectionDetailSite[] }>('/api/collections/' + encodeURIComponent(slug))
   } catch (error) {
     if (!isNotFound(error)) notifyDegraded(onDegraded, error)
     return null
   }
+}
+
+/** 站点所属精选专题列表 */
+export async function fetchSiteCollections(
+  siteId: string,
+  onDegraded?: DegradedHandler,
+): Promise<Array<HubCollection & { collectionNote: string | null }>> {
+  return degrade([], () => getJson<Array<HubCollection & { collectionNote: string | null }>>('/api/sites/' + encodeURIComponent(siteId) + '/collections'), onDegraded)
 }
 
 /* ------------------------------ 实体关系与知识图谱 ------------------------------ */

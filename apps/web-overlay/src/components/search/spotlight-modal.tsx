@@ -120,7 +120,13 @@ interface CommandAction {
   handler: () => void
 }
 
-export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean } = {}) {
+export function SpotlightModal({
+  initialOpen = false,
+  siteLinkTarget,
+}: {
+  initialOpen?: boolean
+  siteLinkTarget?: string | null
+} = {}) {
   const router = useRouter()
   const [open, setOpen] = useState(initialOpen)
   const [query, setQuery] = useState('')
@@ -165,11 +171,13 @@ export function SpotlightModal({ initialOpen = false }: { initialOpen?: boolean 
   })
 
   /**
-   * 打开站点的方式同样听用户中心的「新标签页打开站点」偏好。
+   * 打开站点的方式同样听用户中心的「新标签页打开站点」偏好，
+   * 站点默认值由根布局把后台「链接打开方式」透传进来。
    * 超级控制台是全站入口最全的地方，以前这里写死 `_blank`：
-   * 用户在全局设置里关掉新标签页，只影响首页卡片，从这里打开照样弹新窗口。
+   * 用户在全局设置里关掉新标签页，只影响首页卡片，从这里打开照样弹新窗口；
+   * 管理员把站点默认改成 `_self` 也管不到这里。
    */
-  const linkTarget = useExternalLinkTarget()
+  const linkTarget = useExternalLinkTarget(siteLinkTarget)
   const openSite = useCallback(
     (site: { id: string; title?: string | null; url: string; iconKey?: string | null }) => {
       const url = safeHref(site.url, '')

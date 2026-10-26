@@ -35,7 +35,20 @@ export function processNavigationSubItem(item: NavigationSubItemRaw): Navigation
             bvid: item.videoConfig.bvid,
             aid: item.videoConfig.aid,
             cid: item.videoConfig.cid,
-            p: item.videoConfig.p
+            p: item.videoConfig.p,
+            author: item.videoConfig.author,
+            authorUrl: item.videoConfig.authorUrl,
+            durationSec: item.videoConfig.durationSec,
+            publishedAt: item.videoConfig.publishedAt,
+            harvestedAt: item.videoConfig.harvestedAt,
+            lastVerifiedAt: item.videoConfig.lastVerifiedAt,
+            qualityScore: item.videoConfig.qualityScore,
+            freshnessScore: item.videoConfig.freshnessScore,
+            sourceType: item.videoConfig.sourceType,
+            trendKeyword: item.videoConfig.trendKeyword,
+            pinned: item.videoConfig.pinned,
+            healthStatus: item.videoConfig.healthStatus,
+            stats: item.videoConfig.stats,
         }
     }
 
@@ -49,8 +62,6 @@ export function processNavigationSubItem(item: NavigationSubItemRaw): Navigation
         enabled: item.enabled,
         // 2026-10-21 放行 tags：navigation.json 的条目一直带着（导航站自己的
         // taxonomy），此前白名单裁掉它，首页 rich 卡片 #tag 芯片永远没数据。
-        // 只放行 tags——relations/actions/liveMetrics/health 仍裁掉（首页管线
-        // 没有增补来源，放了也是 undefined，保持现状）。
         tags: item.tags,
         videoConfig
     }
@@ -59,15 +70,18 @@ export function processNavigationSubItem(item: NavigationSubItemRaw): Navigation
 export function processNavigationData(navigationDataRaw: NavigationDataRaw): NavigationData {
     const processedItems = navigationDataRaw.navigationItems.map(category => ({
         ...category,
+        harvestPolicy: category.harvestPolicy,
         items: category.items?.map(processNavigationSubItem),
         subCategories: category.subCategories?.map(sub => ({
             ...sub,
+            harvestPolicy: sub.harvestPolicy,
             items: sub.items?.map(processNavigationSubItem)
         }))
     }))
 
     return {
-        navigationItems: processedItems as NavigationItem[]
+        navigationItems: processedItems as NavigationItem[],
+        replacementHistory: navigationDataRaw.replacementHistory,
     }
 }
 
@@ -92,7 +106,8 @@ export function filterNavigationData(navigationData: NavigationData): Navigation
         }) as NavigationItem[]
 
     return {
-        navigationItems: filteredItems
+        navigationItems: filteredItems,
+        replacementHistory: navigationData.replacementHistory,
     }
 }
 

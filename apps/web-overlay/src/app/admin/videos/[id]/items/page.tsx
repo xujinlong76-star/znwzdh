@@ -24,6 +24,8 @@ import { Skeleton } from "@/registry/new-york/ui/skeleton"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/registry/new-york/ui/select"
 import { Badge } from "@/registry/new-york/ui/badge"
 import { describeDegrade } from '@/lib/degrade'
+import { formatDuration } from '@/lib/video-harvester'
+import { Pin, PinOff, Sparkles, Loader2 } from 'lucide-react'
 
 interface EditingItem {
     index: number
@@ -79,6 +81,54 @@ export default function VideoItemsPage() {
     // 页面会渲染成「视频分类不存在」—— 把故障说成「这个分类真的没有」
     const [loadError, setLoadError] = useState<unknown>(null)
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+    const [isHarvesting, setIsHarvesting] = useState(false)
+
+    const handleRunCategoryHarvest = async () => {
+        if (!params?.id) return
+        setIsHarvesting(true)
+        try {
+            const response = await fetch('/api/videos/harvest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    categoryId: params.id,
+                    dryRun: false
+                })
+            })
+            if (!response.ok) throw new Error('采集失败')
+            const data = await response.json()
+            await fetchNavigation()
+            toast({
+                title: '采集与轮换完成',
+                description: `新增 ${data.report?.totalAddedCount || 0} 个，淘汰替换 ${data.report?.totalReplacedCount || 0} 个`
+            })
+        } catch (err) {
+            toast({
+                title: '采集失败',
+                description: (err as Error).message || '网络请求失败',
+                variant: 'destructive'
+            })
+        } finally {
+            setIsHarvesting(false)
+        }
+    }
+
+    const toggleItemPin = async (index: number, item: NavigationSubItem) => {
+        const currentlyPinned = Boolean(item.videoConfig?.pinned)
+        const updatedItem: NavigationSubItem = {
+            ...item,
+            videoConfig: {
+                ...item.videoConfig,
+                type: item.videoConfig?.type || 'bilibili',
+                pinned: !currentlyPinned
+            }
+        }
+        await updateItem(index, updatedItem)
+        toast({
+            title: !currentlyPinned ? '已锁定防替换' : '已解除锁定',
+            description: !currentlyPinned ? '该视频将免于全自动优胜劣汰轮换' : '该视频将参与正常保鲜度轮换'
+        })
+    }
 
     useEffect(() => {
         if (!params?.id) {
@@ -300,25 +350,37 @@ export default function VideoItemsPage() {
                         </SelectContent>
                     </Select>
                 </div>
-                <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                    <DialogTrigger asChild>
-                        <Button>
-                            <Icons.plus className="mr-2 h-4 w-4" />
-                            添加视频
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
-                        <DialogHeader>
-                            <DialogTitle>添加视频</DialogTitle>
-                        </DialogHeader>
-                        <AddVideoItemForm
-                            onSubmit={async (values) => {
-                                await addItem(values)
-                            }}
-                            onCancel={() => setIsAddDialogOpen(false)}
-                        />
-                    </DialogContent>
-                </Dialog>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isHarvesting}
+                        onClick={handleRunCategoryHarvest}
+                        className="gap-1.5 text-xs h-9 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                    >
+                        {isHarvesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                        <span>{isHarvesting ? '采集中...' : '分类自动采集'}</span>
+                    </Button>
+                    <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+                        <DialogTrigger asChild>
+                            <Button className="h-9">
+                                <Icons.plus className="mr-2 h-4 w-4" />
+                                添加视频
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-2xl">
+                            <DialogHeader>
+                                <DialogTitle>添加视频</DialogTitle>
+                            </DialogHeader>
+                            <AddVideoItemForm
+                                onSubmit={async (values) => {
+                                    await addItem(values)
+                                }}
+                                onCancel={() => setIsAddDialogOpen(false)}
+                            />
+                        </DialogContent>
+                    </Dialog>
+                </div>
             </div>
 
             {navigation?.items && navigation.items.length > 0 ? (
@@ -344,19 +406,58 @@ export default function VideoItemsPage() {
                                     )}
                                 </div>
                                 <div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                         <span className="font-medium leading-none">{item.title}</span>
                                         {!item.enabled && (
                                             <Badge variant="secondary" className="text-xs">已禁用</Badge>
                                         )}
                                         {item.videoConfig && (
-                                            <Badge variant="outline" className="text-xs h-5 px-2">
+                                            <Badge variant="outline" className="text-xs h-5 px-1.5">
                                                 {item.videoConfig.type === 'bilibili' ? 'Bilibili' : 'YouTube'}
                                             </Badge>
                                         )}
+                                        {item.videoConfig?.pinned ? (
+                                            <Badge variant="outline" className="text-[11px] h-5 px-1.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30">
+                                                📌 锁定防替换
+                                            </Badge>
+                                        ) : (
+                                            <Badge variant="outline" className="text-[11px] h-5 px-1.5 text-muted-foreground">
+                                                自动轮换
+                                            </Badge>
+                                        )}
+                                        {item.videoConfig?.freshnessScore !== undefined && (
+                                            <Badge
+                                                variant="outline"
+                                                className={`text-[11px] h-5 px-1.5 ${
+                                                    item.videoConfig.freshnessScore >= 75
+                                                        ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                                                        : item.videoConfig.freshnessScore >= 50
+                                                        ? 'text-amber-600 dark:text-amber-400 border-amber-500/30'
+                                                        : 'text-red-500 border-red-500/30'
+                                                }`}
+                                            >
+                                                保鲜 {item.videoConfig.freshnessScore}分
+                                            </Badge>
+                                        )}
+                                        {item.videoConfig?.sourceType === 'auto_trend' && (
+                                            <Badge variant="outline" className="text-[11px] h-5 px-1.5 text-amber-600 border-amber-500/30">
+                                                🔥 热点
+                                            </Badge>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1 flex-wrap">
+                                        {item.videoConfig?.author && (
+                                            <span>UP主: <strong className="text-foreground font-normal">{item.videoConfig.author}</strong></span>
+                                        )}
+                                        {item.videoConfig?.durationSec ? (
+                                            <span>时长: {formatDuration(item.videoConfig.durationSec)}</span>
+                                        ) : null}
+                                        {item.videoConfig?.publishedAt && (
+                                            <span>发布: {new Date(item.videoConfig.publishedAt).toLocaleDateString()}</span>
+                                        )}
                                     </div>
                                     {item.description && (
-                                        <div className="text-xs text-muted-foreground mt-1 line-clamp-1 max-w-[220px] sm:max-w-[400px]">
+                                        <div className="text-xs text-muted-foreground mt-1 line-clamp-1 max-w-[220px] sm:max-w-[450px]">
                                             {item.description}
                                         </div>
                                     )}
@@ -366,6 +467,15 @@ export default function VideoItemsPage() {
                                 </div>
                             </div>
                             <div className="flex items-center gap-1 self-end sm:self-center shrink-0">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={`h-8 w-8 ${item.videoConfig?.pinned ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}
+                                    onClick={() => toggleItemPin(index, item)}
+                                    title={item.videoConfig?.pinned ? "已锁定（点击解锁）" : "未锁定（点击锁定防替换）"}
+                                >
+                                    {item.videoConfig?.pinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
+                                </Button>
                                 <Button
                                     variant="ghost"
                                     size="icon"

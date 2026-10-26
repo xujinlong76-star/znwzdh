@@ -1,4 +1,40 @@
 // Raw types for JSON data (before validation)
+export interface VideoStats {
+  views?: number
+  likes?: number
+  coins?: number
+  favorites?: number
+  danmaku?: number
+}
+
+export interface VideoHarvestPolicy {
+  enabled: boolean
+  keywords: string[]
+  syncSiteHotTrends?: boolean
+  platforms?: ('bilibili' | 'youtube')[]
+  maxItems?: number
+  minQualityScore?: number
+  minDurationSec?: number
+  maxDurationSec?: number
+  freshnessHalfLifeDays?: number
+  autoReplaceOutdated?: boolean
+}
+
+export interface VideoReplacementRecord {
+  id: string
+  timestamp: number
+  categoryId: string
+  categoryTitle: string
+  subCategoryId?: string
+  subCategoryTitle?: string
+  oldItem: NavigationSubItem
+  newItem: NavigationSubItem
+  reason: 'broken' | 'year_outdated' | 'freshness_decay' | 'hot_superseded' | 'manual_replace'
+  scoreDiff: number
+  trendKeyword?: string
+  rolledBack?: boolean
+}
+
 export interface VideoConfigRaw {
   type: string
   videoId?: string
@@ -6,6 +42,19 @@ export interface VideoConfigRaw {
   aid?: string
   cid?: string
   p?: number
+  author?: string
+  authorUrl?: string
+  durationSec?: number
+  publishedAt?: string | number
+  harvestedAt?: number
+  lastVerifiedAt?: number
+  qualityScore?: number
+  freshnessScore?: number
+  sourceType?: 'manual' | 'auto_trend' | 'auto_topic'
+  trendKeyword?: string
+  pinned?: boolean
+  healthStatus?: 'healthy' | 'outdated' | 'broken'
+  stats?: VideoStats
 }
 
 export interface NavigationSubItemRaw {
@@ -19,9 +68,6 @@ export interface NavigationSubItemRaw {
   videoConfig?: VideoConfigRaw
   /**
    * 站点标签（导航站自己的 taxonomy，与 hub 的 tags 同源）。
-   * 2026-10-21 补：此前 Raw 类型没有这个字段，processNavigationSubItem
-   * 的白名单把它裁掉，首页 rich 卡片的 #tag 芯片永远拿不到数据
-   * （Batch C 内链化的前置修复）。navigation.json 的条目一直带着 tags。
    */
   tags?: string[]
 }
@@ -80,6 +126,19 @@ export interface VideoConfig {
   aid?: string
   cid?: string
   p?: number
+  author?: string
+  authorUrl?: string
+  durationSec?: number
+  publishedAt?: string | number
+  harvestedAt?: number
+  lastVerifiedAt?: number
+  qualityScore?: number
+  freshnessScore?: number
+  sourceType?: 'manual' | 'auto_trend' | 'auto_topic'
+  trendKeyword?: string
+  pinned?: boolean
+  healthStatus?: 'healthy' | 'outdated' | 'broken'
+  stats?: VideoStats
 }
 
 export interface NavigationCategoryRaw {
@@ -90,6 +149,7 @@ export interface NavigationCategoryRaw {
   parentId?: string
   items?: NavigationSubItemRaw[]
   enabled?: boolean
+  harvestPolicy?: VideoHarvestPolicy
 }
 
 export interface NavigationItemRaw {
@@ -100,10 +160,12 @@ export interface NavigationItemRaw {
   items?: NavigationSubItemRaw[]
   subCategories?: NavigationCategoryRaw[]
   enabled?: boolean
+  harvestPolicy?: VideoHarvestPolicy
 }
 
 export interface NavigationDataRaw {
   navigationItems: NavigationItemRaw[]
+  replacementHistory?: VideoReplacementRecord[]
 }
 
 export interface NavigationCategory {
@@ -114,6 +176,7 @@ export interface NavigationCategory {
   parentId?: string
   items?: NavigationSubItem[]
   enabled?: boolean
+  harvestPolicy?: VideoHarvestPolicy
 }
 
 export interface NavigationItem {
@@ -124,10 +187,12 @@ export interface NavigationItem {
   items?: NavigationSubItem[]
   subCategories?: NavigationCategory[]
   enabled?: boolean
+  harvestPolicy?: VideoHarvestPolicy
 }
 
 export interface NavigationData {
   navigationItems: NavigationItem[]
+  replacementHistory?: VideoReplacementRecord[]
 }
 
 export interface ResourceItem {

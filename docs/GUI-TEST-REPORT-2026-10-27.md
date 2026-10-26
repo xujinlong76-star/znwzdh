@@ -71,3 +71,25 @@ BFF 对匿名返回 401，通知页把非 2xx 一律当「云端暂时不可用�
 - 收藏页「批量导出 / 固定工作台」两钮未实际执行（对全量选择是重写入，超出测试安全边界；单选路径的导出三选项已验证）。
 - `/offline` 仅离线可达，无 GUI 入口，未覆盖。
 - 自动化滚轮命令在本站（`scroll-behavior` 平滑 + 万节点长页）收敛超 30s，真人滚轮无影响，属自动化手势合成差异。
+
+## 八、后端全功能测试轮（2026-10-27 补充）
+
+### 方法
+`apps/api` 共 256 个路由（GET 112 / POST 96 / DELETE 26 / PATCH 15 / PUT 7）。GET 全量扫描（59 个去重路径逐个未认证请求）+ 核心写流程按前端真实调用方式走通 + 管理面 fail-closed 验证。
+
+### 结果
+- **0 个 5xx**；12 个 404 均为不存在资源的正确 404；5 个 401 为身份守卫正常；0 限流误伤。
+- 写流程抽查：投稿空体 400（校验文案正确）、非法 slug 404、vault/history 路由方法与守卫符合设计。
+- 管理面：web 侧 `/api/admin/*` 已有 `requireAdmin` 统一守卫（fail-closed）。
+
+### BUG-7（安全，已修）：`/api/hub/admin/*` 隧道未设防
+`/api/hub/*` BFF 是中枢管理 API 经 web 域名的唯一公网入口。hub 开放模式（`NAVHUB_AUTH_REQUIRED` 默认 0）下匿名拥有全部 scope，匿名 POST `/api/admin/maintenance/checkpoint` 实证可执行（`{"ok":true}`）——直连 8787 即绕过 web 侧 `requireAdmin` 守卫。
+**修复**：`/api/hub/[...path]/route.ts` 对 `admin` 目标强制 `verifyAdminSession`；已登录管理员的凭据注入行为不变（overlay + 本地镜像双侧）。
+**部署提醒**：公网部署按 `docker/docker-compose.yml` 注释设 `NAVHUB_AUTH_REQUIRED=1` + ≥32 字符 `NAVHUB_IDENTITY_SECRET`。
+
+### 已知设计（非缺陷）
+开放模式默认全开是自托管单用户场景的既定选择（server.ts T20 注释）；收紧路径 = 部署环境变量，已有文档。
+
+### 验证
+- admin 系 E2E 23/24 通过；唯一失败 `admin-dashboard` 首屏断言为**既有 flaky**（门禁加入前的全量跑同样失败；失败时 SSE 数据已加载，断言依赖实时遥测形状）。
+- 本轮 HTTP 探针未发现任何 5xx 或新增缺口；管理隧道加固已提交 `b8c0ef3`（推送待网络恢复）。

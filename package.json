@@ -16,7 +16,7 @@
     "dev": "node apps/api/src/main.ts",
     "dev:all": "node scripts/dev-all.mjs",
     "dev:web": "node scripts/run.mjs --filter navsphere dev",
-    "test": "vitest run",
+    "test": "vitest run --reporter=default --reporter=./scripts/vitest-github-reporter.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "coverage": "vitest run --coverage && node scripts/check-coverage.mjs",

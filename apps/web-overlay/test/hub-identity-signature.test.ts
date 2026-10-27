@@ -9,13 +9,56 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { hubIdentitySecret, identityFromRequest, signIdentity } from '../src/lib/identity-signature'
+import {
+  hubIdentitySecret,
+  identityFromRequest,
+  identitySignatureHeaders,
+  signIdentity,
+  signIdentityV2,
+} from '../src/lib/identity-signature'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 /** overlay 与 apps/web 两份布局下都指向包根 */
 const ROOT = resolve(HERE, '..')
 const SECRET = 'test-secret-please-rotate'
 const VECTOR_ALICE = '8091d0f3cb74f22698ca395cb5d7e16896a2a6d1a18dbd102e1148c18836b7a1'
+/** HMAC-SHA256(secret, JSON.stringify(["github:alice", 1700000000, "abcdefghijklmnop"])) */
+const VECTOR_V2 = '72364c04ae727e48196f6ef3a48036dca52f0113e1b6f5871ab68fcd71c24a34'
+
+describe('signIdentityV2：时间戳与 nonce 一起进 MAC（重放防护）', () => {
+  it('载荷格式与中枢一致：[identity, ts, nonce] 的规范 JSON', async () => {
+    expect(await signIdentityV2(SECRET, 'github:alice', 1700000000, 'abcdefghijklmnop')).toBe(VECTOR_V2)
+  })
+
+  it('identitySignatureHeaders 下发 v1 + v2 三件套（ts 按秒、nonce 合规）', async () => {
+    const h = await identitySignatureHeaders(SECRET, 'github:alice', 'x-navhub-identity', 1_700_000_000_000)
+    expect(h['x-navhub-identity-ts']).toBe('1700000000')
+    expect(h['x-navhub-identity-nonce']).toMatch(/^[A-Za-z0-9_-]{16,64}$/)
+    expect(h['x-navhub-identity-signature']).toBe(VECTOR_ALICE)
+    expect(h['x-navhub-identity-signature-v2']).toBe(
+      await signIdentityV2(SECRET, 'github:alice', 1700000000, h['x-navhub-identity-nonce']),
+    )
+    expect(h['x-navhub-identity-signature-v2']).not.toBe(h['x-navhub-identity-signature'])
+  })
+
+  it('anon 前缀自成一套头，不与登录身份头撞名', async () => {
+    const headers = await identitySignatureHeaders(SECRET, 'anon-1', 'x-navhub-anon', 1_700_000_000_000)
+    expect(Object.keys(headers).sort()).toEqual([
+      'x-navhub-anon-nonce',
+      'x-navhub-anon-signature',
+      'x-navhub-anon-signature-v2',
+      'x-navhub-anon-ts',
+    ])
+  })
+
+  it('每次调用 nonce 都不同（同一秒内也不复用）', async () => {
+    const now = 1_700_000_000_000
+    const a = await identitySignatureHeaders(SECRET, 'github:alice', 'x-navhub-identity', now)
+    const b = await identitySignatureHeaders(SECRET, 'github:alice', 'x-navhub-identity', now)
+    expect(a['x-navhub-identity-nonce']).not.toBe(b['x-navhub-identity-nonce'])
+    expect(a['x-navhub-identity-signature-v2']).not.toBe(b['x-navhub-identity-signature-v2'])
+  })
+})
 
 describe('signIdentity：与中枢共用同一向量', () => {
   it('HMAC-SHA256(secret, github:alice) 与中枢实现逐字节一致', async () => {
@@ -105,9 +148,12 @@ describe('hubIdentitySecret：未配置时必须完全不影响行为', () => {
 describe('接线：代理必须真的把签名加上', () => {
   const src = readFileSync(resolve(ROOT, 'src/app/api/hub/[...path]/route.ts'), 'utf8')
 
-  it('从环境读取密钥，并写 x-navhub-identity-signature', () => {
+  it('从环境读取密钥，并写身份签名头（v1+v2 双发）', () => {
     expect(src).toContain('hubIdentitySecret()')
-    expect(src).toContain("headers['x-navhub-identity-signature']")
+    // 2026-10-27：单写 v1 改成 identitySignatureHeaders 双发
+    // （v2 = HMAC(secret, [identity, ts, nonce])，中枢据此做重放防护）
+    expect(src).toContain('identitySignatureHeaders(identitySecret, resolvedIdentity)')
+    expect(src).toContain('Object.assign(headers,')
   })
 
   it('签名取值走 identityFromRequest 并带入请求头（header-only 身份不能丢）', () => {
@@ -119,7 +165,7 @@ describe('接线：代理必须真的把签名加上', () => {
     // 2026-10-22 口径变更：会话优先，客户端自称的非匿名身份一律拒绝。
     // 详细用例见 hub-identity-guard.test.ts。
     expect(src).toContain('resolveHubIdentity(')
-    expect(src).toMatch(/signIdentity\(identitySecret, resolvedIdentity\)/)
-    expect(src).not.toMatch(/signIdentity\(identitySecret, identity\)/)
+    expect(src).toMatch(/identitySignatureHeaders\(identitySecret, resolvedIdentity\)/)
+    expect(src).not.toMatch(/identitySignatureHeaders\(identitySecret, identity\)/)
   })
 })

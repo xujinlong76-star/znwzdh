@@ -626,7 +626,27 @@ B7 分页、B8 LLM 缓存、C1–C6。
 | B5 | 写失败不再吞成成功：`ai-autonomous-harvest` / `webhook-harvest` 的 `commitFile` 失败直接 500 + `retryable: true` | 源码守卫 |
 | B9 | 采集并发化：关键词池 + 并发 3 + 25s 总预算；每关键词独立计数（修掉跨关键词 `break` 导致的超额采集）；失败原因进 `degradedKeywords` | `video-scoring-guard.test.ts`、源码守卫 |
 
-### 12.3 仍未实施（保留为待办）
+### 12.3 为解除提交阻塞而做的 a11y 整改
+
+`apps/web-overlay/` 的任何改动都会让 pre-commit 选测 `apps/web/test` **整棵测试根**
+（`.git/hooks/navhub-precommit-tests.mjs` 的 `ROUTES`）。该树当时有 8 例全仓守卫红灯，
+它们全部落在视频模块：
+
+| 守卫 | 存量问题 | 修法 |
+|---|---|---|
+| `clipboard-honesty` | 10 个组件直摸 `navigator.clipboard`，其中 3 处无条件 `setCopied(true)`（非安全上下文下凭空报喜） | 一律改走 `lib/clipboard` 的 `copyText`，只有 `result.ok` 才显示「已复制」 |
+| `field-names` | 35 处 `<input>/<select>/<textarea>` 无 `aria-label`，也无 label 关联 | 逐个命名（「人声增益」「片段起始时间」「静音跳过阈值（分贝）」…） |
+| `label-association` | 4 处 `<label>` 紧邻控件但无 `htmlFor` | 加 `htmlFor` + 控件 `id`，并移除重复 aria-label 避免覆盖标签文本 |
+| `keyboard-activation` | `video-card` 根节点是 `<div role="button">`；3 处 `div onClick` 无键盘入口 | 主点击区改真 `<button type="button">`（右上角操作按钮移出，避免非法嵌套）；闪卡补 `aria-pressed`、热力图补 `role="slider"` + ←/→/Home/End、幻灯片补 `role="button"` + Enter/Space |
+| `silent-catch` | 6 处空 `catch {}` 未说明理由 | 补理由（离线状态探测、mediaSession 清理、全屏请求、localStorage 配额），零行为变更 |
+| `tw-source-coverage` | `app/api/{cron,media,og}`、`app/videos/{feed.xml,sitemap.xml}`、`src/contexts` 被 `.gitignore` 父级剪枝，独有工具类不生成 | `globals.css` 补 3 条 `@source` |
+
+**`video-card` 的结构改动值得单独记一笔**：把它改成 `<button>` 会与内部的
+「稍后再看 / 离线缓存」按钮形成嵌套 `<button>` —— 非法 HTML，浏览器会重排 DOM 并触发
+hydration 告警。代码里 267 行那句注释「button 只允许 phrasing content」说明前人已经
+踩过这个坑并退回 `div role="button"`。正确解法是把操作按钮移到主按钮**之外**的兄弟节点。
+
+### 12.4 仍未实施（保留为待办）
 
 | 编号 | 原因 |
 |---|---|
@@ -637,15 +657,29 @@ B7 分页、B8 LLM 缓存、C1–C6。
 | C1 候选池转可配置资产 | 需要 DB 迁移与新表 |
 | A8 全量类型检查进 CI | `apps/web-overlay` 当前有 **21555** 个既有类型错误（`plugin-url-health-panel.tsx` 单文件 618 个），直接打开 `ignoreBuildErrors` 会全红。建议先按目录增量收敛（`lib/video-*` 已清零） |
 
-### 12.4 验证记录
+### 12.5 验证记录
 
 | 检查 | 结果 |
 |---|---|
 | `apps/web/test/video*` + 新增守卫 | **18 文件 / 220 例全绿**（基线为 14 文件 176 例，其中 2 例红） |
-| 前端全量 `apps/web/test` | 212 文件 / 2398 例：**2390 通过 / 8 失败**；8 条均为全仓 UI 扫描守卫（clipboard / field-names / keyboard-activation / label-association / silent-catch / tw-source），失败文件均为**并行会话改动的 UI 组件**，不在本次改动范围 |
+| 前端全量 `apps/web/test` | **212 文件 / 2398 例全绿**（整改前为 2390 通过 / 8 失败） |
 | 中枢全量 `apps/api/test` | **112 文件 / 1093 例全绿** |
 | `apps/api` 类型检查 | 通过（0 错误） |
 | `apps/web-overlay` 类型检查（`lib/video-*` / `lib/webhook-*` / `api/videos/**`） | 0 代码错误（剩余 49 条均为 overlay 无 `node_modules` 导致的 `Cannot find module 'next/server'` 环境性报错） |
 | `scripts/check-syntax.mjs` | 1357 文件 / 0 错误 |
 | `scripts/check-web-overlay.mjs` | 863 文件一致 |
 | 锁守卫反向验证 | 回退为 `releaseLock(task.id)` 后 2 条断言变红，恢复后转绿 |
+
+### 12.6 提交记录
+
+| commit | 内容 |
+|---|---|
+| `295a5ef0` | `feat(api)`：`PUT /api/storage` 支持 `ifVersion`（409 冲突）+ `GET /api/storage/version` |
+| `c4fc505e` | `docs(video)`：本报告 + `.github/workflows/video-harvest.yml` |
+| `de9a442a` | `fix(video)`：P0/P1 后端修复（20 文件）——鉴权、真 HMAC、cron fail-closed、路径、探活三态、保字段、去伪造、锁 owner、并发化、ifVersion 重放、类型契约 |
+| `07d88fe8` | `fix(a11y)`：a11y 整改（34 文件）+ overlay 前端层首次纳入版本控制（115 文件） |
+| `cb6d04ca` | `test(video)`：4 个新守卫 + 5 个既有测试对齐真实契约（9 文件） |
+
+> overlay 目录长期半跟踪（`src/lib` 58 个、`src/components` 48 个文件从未进过索引），
+> 因此 `07d88fe8` 的 115 个文件里大部分是**首次纳入**而非本次改动。`src/app`
+> （含并行会话改动的 admin 页）与 `videos.json`（内容数据变更）未包含。

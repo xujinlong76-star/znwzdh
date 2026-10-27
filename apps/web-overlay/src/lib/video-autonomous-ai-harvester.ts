@@ -352,7 +352,9 @@ export class AutonomousAIHarvesterController {
 
     const updatedCategories = currentData.navigationItems.map(cat => ({
       ...cat,
-      items: [...cat.items],
+      // items 在 NavigationItem 上是可选的：裸展开会在缺字段的分类上抛
+      // "undefined is not iterable"（tsc 也一直报 TS2488，被 ignoreBuildErrors 掩盖）
+      items: [...(cat.items || [])],
     }))
 
     for (const topic of CURATED_TRENDING_TOPICS) {

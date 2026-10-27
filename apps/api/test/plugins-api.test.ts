@@ -7,10 +7,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { validateAndCleanPluginManifest } from "@navhub/core";
+import { validateAndCleanPluginManifest, type PluginManifest } from "@navhub/core";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
+import { seedPluginDefs } from "../src/seed-plugins.ts";
 
 let dir: string;
 let ctx: AppContext;
@@ -890,6 +891,50 @@ describe("F0 / E1 / E5 / E6 / E4 / E3 / F2 API", () => {
   });
 });
 
+
+describe("种子热同步的内容判等（键序不是变更）", () => {
+  /** 递归反转对象键序；数组顺序与值都不动 —— 语义完全相同的另一种写法 */
+  function reverseKeysDeep(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(reverseKeysDeep);
+    if (value !== null && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      const out: Record<string, unknown> = {};
+      for (const key of Object.keys(record).reverse()) out[key] = reverseKeysDeep(record[key]);
+      return out;
+    }
+    return value;
+  }
+
+  it("库内清单键序被打乱后仍是 up_to_date（否则每次同步都把整批插件刷成待审）", async () => {
+    const target = seedPluginDefs().find((d) => d.manifest.kind === "site-pack");
+    expect(target, "种子目录里没有 site-pack，无法构造这条用例").toBeTruthy();
+    const slug = target!.slug;
+
+    // 自给自足：单独跑本用例（-t）时前面的同步用例会被跳过，库里还没有种子
+    let before = await ctx.repo.getPluginBySlug(slug);
+    if (!before) {
+      await app.inject({ method: "POST", url: "/api/admin/plugins/seed-sync" });
+      before = await ctx.repo.getPluginBySlug(slug);
+    }
+    expect(before).not.toBeNull();
+    const reordered = reverseKeysDeep(before!.manifest) as PluginManifest;
+
+    // 先证明这确实是一次「字节不同、语义相同」的改写：否则后面的断言等于空转
+    expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(before!.manifest));
+
+    await ctx.repo.run("UPDATE plugins SET manifest = ? WHERE slug = ?", [JSON.stringify(reordered), slug]);
+    try {
+      const res = await app.inject({ method: "POST", url: "/api/admin/plugins/seed-sync" });
+      expect(res.statusCode).toBe(200);
+      const detail = (res.json().details as Array<{ slug: string; action: string }>).find((d) => d.slug === slug);
+      // 旧实现用 JSON.stringify 比字节，这里会是 updated：触发 updatePlugin（回待审）
+      // + reviewPlugin + 重新入索引，等于每次同步都把整批插件刷一遍。
+      expect(detail?.action).toBe("up_to_date");
+    } finally {
+      await ctx.repo.run("UPDATE plugins SET manifest = ? WHERE slug = ?", [JSON.stringify(before!.manifest), slug]);
+    }
+  });
+});
 
 describe("畸形 URL 编码不得变成 500", () => {
   it("GET /api/plugins/%25 → 404（安全解码回退，而不是 URIError 冒泡）", async () => {

@@ -28,6 +28,7 @@ import {
   summarizePluginManifest,
   diffPluginManifests,
   comparePluginVersions,
+  canonicalJsonStringify,
   httpUrl,
   isInternalShortLinkTarget,
   isSafeUrl,
@@ -392,7 +393,11 @@ export const pluginRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
             details.push({ slug: def.slug, action: "added", version: validated.manifest.version });
           } else {
             const versionBumped = comparePluginVersions(validated.manifest.version, existing.version) > 0;
-            const contentChanged = JSON.stringify(existing.manifest) !== JSON.stringify(validated.manifest);
+            // 比内容而非比字节：清单键序不是承诺过的不变量（自由结构的 config/tokens
+            // 保留源对象键序，清理函数跨版本重建时字段顺序也会变），
+            // JSON.stringify 会把语义相同的清单判成 updated（重置待审 + 重新入索引）。
+            const contentChanged =
+              canonicalJsonStringify(existing.manifest) !== canonicalJsonStringify(validated.manifest);
             if (versionBumped || contentChanged) {
               await ctx.repo.updatePlugin(def.slug, validated.manifest, {
                 actor: (req as any).auth?.actor || "admin",

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { hashSiteId } from "@navhub/store";
 import { siteEmbeddingText } from "@navhub/ai";
-import { comparePluginVersions, resolveSiteIcon, validateAndCleanPluginManifest } from "@navhub/core";
+import { comparePluginVersions, resolveSiteIcon, validateAndCleanPluginManifest, canonicalJsonStringify } from "@navhub/core";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
 import { indexPluginsBatch, indexItemFromManifest } from "./index-plugin.ts";
@@ -295,7 +295,9 @@ export async function runSeed(opts: { withEmbeddings?: boolean } = {}): Promise<
         continue;
       }
       const versionBumped = comparePluginVersions(validated.manifest.version, existing.version) > 0;
-      const contentChanged = JSON.stringify(existing.manifest) !== JSON.stringify(validated.manifest);
+      // 与后台「在线同步种子插件」同一口径：键序不同不等于内容变了。
+      const contentChanged =
+        canonicalJsonStringify(existing.manifest) !== canonicalJsonStringify(validated.manifest);
       if (!versionBumped && !contentChanged) continue;
       await ctx.repo.updatePlugin(def.slug, validated.manifest, { actor: "seed", actorKind: "system" });
       if (def.status === "published") {

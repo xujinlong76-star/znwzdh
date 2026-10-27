@@ -723,3 +723,67 @@ hydration 告警。代码里 267 行那句注释「button 只允许 phrasing con
 | `f068b26b` | 修复分类条目裸展开（1 文件） |
 
 验证基线：`apps/web/test` **213 文件 / 2413 例全绿**；`check-syntax` 1362 文件 0 错误；overlay 一致性 869 文件。
+
+---
+
+## 14. 第三轮：13.2「不做」三项的实际处理
+
+### 14.1 A8 类型门禁 —— 改用「作用域化」而非直接开门禁
+
+全仓 21553 个既有错误不可能一次清零，所以做了 `scripts/typecheck-video-scope.mjs`：
+只对**已经清零的 16 个视频模块**断言 0 错误。新文件进清单的前提是自己先做到 0 错误；
+已列入的退化立刻红 —— 这正好能防住 `HarvestRunReport` 那种「类型不存在却一路绿灯」。
+
+- 排除 `app/api/**`：overlay 无 `node_modules`，`next/server` 解析不到（TS2307），
+  那是环境问题；route 的类型由 `apps/web` 构建时兜住。
+- 反向验证：向 `video-identity.ts` 注入 `const x: number = "a"` 后门禁报错退出 1，
+  恢复后转绿。
+- 顺带清掉清单内 8 个错误，其中两处是真缺陷：
+  - `VideoConfig.type` 缺 `'custom'` → `video-deadlink-sweeper` 里 `config.type || 'custom'`
+    的兜底分支永远不可达，等于「非 B 站/YouTube 内容无处可放」；`sourceType` 缺 `'webhook'`。
+  - `webhook-notifier` 的飞书卡片仍读 `report.dryRun` / `report.totalRotated`（都不存在）
+    → `undefined > 0` 为 false，「有替换」的通知永远走蓝色模板。改为
+    `totalReplacedCount`，并给报告补上真实的 `dryRun`。
+- 用法：`node scripts/typecheck-video-scope.mjs` 或 `pnpm typecheck:video`。
+
+### 14.2 C6 关系表 —— 基础设施落地，不切换事实源
+
+新增三张表（两种方言各一份 DDL）+ `repository/videos.ts` 的六个原语：
+`replaceVideoCatalog` / `listVideoItems` / `getVideoItem` / `countVideoItems` /
+`logVideoReplacement` / `listVideoReplacements`。
+
+设计要点：
+- 列只放可过滤/可排序字段（platform、external_id、health_status、quality_score…）；
+  章节树与逐句字幕放 `payload`，避免「查一个健康状态要解析几十 KB」。
+- 唯一索引是 `(platform, external_id) WHERE external_id IS NOT NULL` ——
+  外部 ID 只在同平台内唯一，这正是「只比 bvid 就判重」会出错的地方。
+- 全量替换在事务内完成，中途失败不留「分类已删、条目没写」的半截状态。
+
+**没有切换读写**：JSON 仍是唯一事实源，表是影子副本。切换需要「数据导入 + 双写过渡 +
+读路径灰度 + 回滚方案」四件事，在当前 16 条规模下收益不足以承担风险。前置条件已就绪。
+
+### 14.3 B3 完整版 —— 明确不做，以及为什么
+
+「迁到中枢 `jobs.ts`」的真实含义是**把采集执行搬到中枢**，因为 `jobs` 的 JobRunner
+在中枢进程里。但采集逻辑（B 站 wbi 签名、YouTube oEmbed、轮播淘汰算法）在 Next 应用里，
+搬过去等于跨应用重构，且会失去 Next 侧的类型与测试覆盖。
+
+真正合理的分工是「采集留在 Next，中枢只提供任务登记与锁」—— 那正是 B3 渐进版
+（快照 + `hydrate`）在做的事，只是存储从 KV 文档换成了 `jobs` 表。换成 `jobs` 表的收益是
+「跨副本可见 + 复用既有 lease 机制」，代价是改 `video-task-queue` 的全部方法签名
+（现在测试大量依赖同步 API）。在当前规模下不值得。
+
+### 14.4 第三轮提交
+
+| commit | 内容 |
+|---|---|
+| `66071cbb` | A8：作用域化类型门禁 + 清单内 8 个错误清零（7 文件） |
+| `2ecabc43` | C6：视频关系表 DDL + 仓储原语 + 10 例测试（5 文件，含 935 行） |
+
+验证：`apps/web/test` 213 文件 / 2413 例；`packages/store/test` 48 文件 / 355 例；
+`apps/api/test` 112 文件 / 1093 例；`packages/store` tsc 0 错误；
+`node scripts/typecheck-video-scope.mjs` 16 模块 0 错误。
+
+> 附带：`packages/store/src/data-inventory.ts`（既有模块，6.7KB）一直被 `index.ts`
+> 导出但从未进索引，pre-commit 的依赖检查因此拦下 C6 提交 —— store 包与 overlay
+> 一样存在「半跟踪」，这次一并补齐。

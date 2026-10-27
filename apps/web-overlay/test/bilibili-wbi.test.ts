@@ -56,6 +56,23 @@ describe('getMixinKey', () => {
     const b = getMixinKey('a'.repeat(32), 'b'.repeat(32))
     expect(a).toBe(b)
   })
+
+  it('对上社区公开的官方样例：mixinKey 必须完全一致', () => {
+    // 这个向量出自 bilibili-API-collect 的 WBI 文档（多份独立实现引用同一组值）：
+    //   img_key  = 7cd084941338484aae1ad9425b84077c
+    //   sub_key  = 4932caff0ff746eab6f01bf08b70ac45
+    //   mixin_key= ea1db124af3c7062474693fa704f4ff8
+    //
+    // 为什么这条最重要：本机连不上 api.bilibili.com（连接被重置，http=000），
+    // 无法用真实请求验证「服务端是否接受这个签名」。这组样例是唯一能离线确认
+    // 「置换表 64 个数字一个不差 + 取位逻辑正确」的锚点 —— 一旦表被误改，
+    // 上面那些「确定性 / 长度 / 前三位」的断言全都仍会通过，只有这条会红。
+    const key = getMixinKey(
+      '7cd084941338484aae1ad9425b84077c',
+      '4932caff0ff746eab6f01bf08b70ac45',
+    )
+    expect(key).toBe('ea1db124af3c7062474693fa704f4ff8')
+  })
 })
 
 describe('signWbiQuery', () => {

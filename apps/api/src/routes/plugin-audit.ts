@@ -769,6 +769,52 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
    * 批量读取所有插件的最近一次体检快照（工作台秒级预载用）。
    */
   /**
+   * 批量形态：扩展启动时要知道「我装的这些包现在健康吗」，逐个请求 /health 是 N 次往返。
+   *
+   * 一次取最近 500 条审计记录，按 slug 取最新一条（与 /url-health/summary 同一取数口径），
+   * 上限 50 个 slug——再多就该用分页而不是把响应撑大。
+   */
+  app.get(
+    "/api/plugins/health",
+    { config: { scope: "read", rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const query = request.query as { slugs?: string } | undefined
+      const slugs = String(query?.slugs ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .slice(0, 50)
+      if (slugs.length === 0) return reply.code(400).send({ ok: false, error: "bad_request", message: "缺少 slugs" })
+
+      const rows = await ctx.repo.raw(
+        `SELECT target, created_at, diff FROM audit_logs
+         WHERE action = 'audit.plugin_url_audit'
+         ORDER BY id DESC LIMIT 500`,
+      )
+      const wanted = new Set(slugs)
+      const seen = new Map<string, { created_at?: number; diff?: unknown }>()
+      for (const row of rows as Array<{ target?: string; created_at?: number; diff?: unknown }>) {
+        const slug = String(row.target || "")
+        if (!wanted.has(slug) || seen.has(slug)) continue;
+        seen.set(slug, row)
+      }
+
+      const items = slugs.map((slug) => {
+        const row = seen.get(slug)
+        if (!row) return { slug, state: deriveHealthPanelState(null), auditedAt: null }
+        let diff: Record<string, unknown> = {}
+        try {
+          diff = (typeof row.diff === "string" ? JSON.parse(row.diff) : row.diff) as Record<string, unknown> || {}
+        } catch {
+          diff = {}
+        }
+        return { slug, state: deriveHealthPanelState(diff as never), auditedAt: row.created_at ?? null }
+      })
+      return { ok: true, items }
+    },
+  )
+
+  /**
    * 只读健康结论：给 Chrome 扩展 / Raycast / MCP 用，避免各自再翻译一遍判定。
    * 与面板共用 core 的 `deriveHealthPanelState`，两边不可能说两套话。
    */

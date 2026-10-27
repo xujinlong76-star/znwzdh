@@ -9,6 +9,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { runVideoHarvestAndRotation, type VideoHarvestReport } from './video-harvester'
+import { commitFile, readStorageFresh } from '@/lib/github'
 
 export interface VideoHarvestProgress {
   percent: number
@@ -42,12 +43,39 @@ export interface VideoHarvestLock {
 }
 
 // 内存态全局单例任务与锁存储
+/** 任务快照的存储路径（中枢 KV 文档） */
+const TASKS_SNAPSHOT_PATH = 'data/video-harvest-tasks.json'
+
+interface TasksSnapshot {
+  version: 1
+  tasks: VideoHarvestTask[]
+  /** 持久化时仍在生效的锁；过期后 hydrate 会丢弃 */
+  lock: VideoHarvestLock | null
+  savedAt: number
+}
+
 class VideoTaskQueueStore {
   private static instance: VideoTaskQueueStore
   private tasks = new Map<string, VideoHarvestTask>()
   private taskOrder: string[] = []
   private currentLock: VideoHarvestLock | null = null
   private readonly DEFAULT_LOCK_TTL_MS = 5 * 60 * 1000 // 5 分钟租约
+
+  /**
+   * 持久化相关状态。
+   *
+   * 为什么需要：任务与锁全在内存，进程重启（含 Serverless 冷启动）后管理端
+   * `/api/videos/harvest/task` 直接返回空 —— 运维看不到「上次采集是成功还是失败」。
+   * 这里把任务快照写成一个 KV 文档，并在读取前懒加载回来。
+   *
+   * 边界（不要误解为分布式队列）：
+   *   - 写是**防抖 + fire-and-forget**，丢一次不影响正确性（只是历史少一条）；
+   *   - 多副本同时写会互相覆盖，快照只用于「看历史」，不用于互斥；
+   *   - 真正的跨实例互斥仍依赖中枢的 `ifVersion`（采集写盘那条链路）。
+   */
+  private hydrated = false
+  private persisting = false
+  private persistTimer: ReturnType<typeof setTimeout> | null = null
 
   private constructor() {}
 
@@ -150,11 +178,83 @@ class VideoTaskQueueStore {
     }
     this.tasks.set(id, task)
     this.taskOrder.unshift(id)
+    this.schedulePersist()
     if (this.taskOrder.length > 50) {
       const removedId = this.taskOrder.pop()
       if (removedId) this.tasks.delete(removedId)
     }
     return task
+  }
+
+  /**
+   * 懒加载任务快照，只跑一次。路由在返回状态前 `await` 它。
+   *
+   * 上一次进程死掉时留下的 `running` / `pending` 任务在这里改判为 `failed`：
+   * 否则管理端会永远显示「正在采集」，而实际早已没有进程在跑。
+   */
+  public async hydrate(): Promise<void> {
+    if (this.hydrated) return
+    this.hydrated = true
+    try {
+      const raw = (await readStorageFresh<TasksSnapshot>(TASKS_SNAPSHOT_PATH)) as TasksSnapshot | null
+      if (!raw || raw.version !== 1 || !Array.isArray(raw.tasks)) return
+      const now = Date.now()
+      for (const t of raw.tasks) {
+        if (!t || typeof t.id !== 'string') continue
+        if (t.status === 'running' || t.status === 'pending') {
+          t.status = 'failed'
+          t.error = t.error || '进程重启，任务中断'
+          t.completedAt = t.completedAt ?? now
+          t.progress = { ...t.progress, stage: '任务中断（进程重启）' }
+        }
+        this.tasks.set(t.id, t)
+        if (!this.taskOrder.includes(t.id)) this.taskOrder.push(t.id)
+      }
+      this.taskOrder.sort(
+        (a, b) => (this.tasks.get(b)?.createdAt ?? 0) - (this.tasks.get(a)?.createdAt ?? 0),
+      )
+      if (this.taskOrder.length > 50) {
+        for (const removed of this.taskOrder.splice(50)) this.tasks.delete(removed)
+      }
+      // 过期锁不恢复：否则一次异常退出会让采集被锁 5 分钟
+      if (raw.lock && raw.lock.expiresAt > now) this.currentLock = raw.lock
+    } catch {
+      // 快照不可用（首次运行 / 中枢不可达）：静默降级为纯内存态
+    }
+  }
+
+  /** 防抖写快照：采集过程中 progress 会高频更新，不能每次都打中枢 */
+  private schedulePersist(): void {
+    if (this.persistTimer) return
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null
+      void this.persistNow()
+    }, 400)
+  }
+
+  private async persistNow(): Promise<void> {
+    if (this.persisting) return
+    this.persisting = true
+    try {
+      const snapshot: TasksSnapshot = {
+        version: 1,
+        tasks: this.taskOrder
+          .slice(0, 20)
+          .map(id => this.tasks.get(id))
+          .filter((t): t is VideoHarvestTask => Boolean(t)),
+        lock: this.currentLock,
+        savedAt: Date.now(),
+      }
+      await commitFile(
+        TASKS_SNAPSHOT_PATH,
+        JSON.stringify(snapshot, null, 2),
+        'chore(video): 采集任务快照',
+      )
+    } catch {
+      // 快照写失败不影响采集本身：它只服务于「看历史」
+    } finally {
+      this.persisting = false
+    }
   }
 
   public getTask(id: string): VideoHarvestTask | undefined {
@@ -179,6 +279,7 @@ class VideoTaskQueueStore {
     const t = this.tasks.get(id)
     if (t) {
       t.progress = { ...t.progress, ...progress }
+      this.schedulePersist()
     }
   }
 
@@ -187,6 +288,7 @@ class VideoTaskQueueStore {
     if (t) {
       t.status = 'running'
       t.startedAt = Date.now()
+      this.schedulePersist()
     }
   }
 
@@ -206,6 +308,7 @@ class VideoTaskQueueStore {
         harvestedCount: report.totalHarvestedCount,
         replacedCount: report.totalReplacedCount
       }
+      this.schedulePersist()
     }
   }
 
@@ -219,6 +322,7 @@ class VideoTaskQueueStore {
         ...t.progress,
         stage: `任务失败: ${error}`
       }
+      this.schedulePersist()
     }
   }
 }

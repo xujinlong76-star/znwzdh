@@ -3,6 +3,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 vi.mock('@/lib/github', () => ({
   getFileContent: vi.fn(),
   commitFile: vi.fn(),
+  // video-task-queue 的 hydrate() 需要它；不补会让 import 到 undefined
+  readStorageFresh: vi.fn().mockResolvedValue(null),
+  getStorageVersion: vi.fn().mockResolvedValue(null),
 }))
 
 // Node 环境模拟 localStorage

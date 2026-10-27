@@ -503,6 +503,70 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 CREATE INDEX IF NOT EXISTS llm_usage_time_idx ON llm_usage(created_at);
 CREATE INDEX IF NOT EXISTS llm_usage_scenario_idx ON llm_usage(scenario, created_at);
 CREATE INDEX IF NOT EXISTS llm_usage_source_idx ON llm_usage(source, created_at);
+
+/* ------------------------- 视频库（关系化） -------------------------
+ * 为什么单独建表：videos.json 是「整包文档」模型，只能整体读写，
+ * 无法按条查询、分页、审计单条变更，也挡不住两个写入口互相覆盖。
+ * 这三张表是 C6 的基础设施：**当前仍以 JSON 为事实源**，表是可选的影子副本
+ * （由 replaceVideoCatalog 全量同步），切换读写需要单独一轮灰度。
+ *
+ * 列只放「可查询/可排序」的字段；完整 videoConfig（章节、字幕等大字段）
+ * 落在 payload 里，避免为了查一个健康状态去解析几十 KB 的章节树。
+ * ------------------------------------------------------------------ */
+CREATE TABLE IF NOT EXISTS video_categories (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  icon TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0,
+  harvest_policy TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS video_items (
+  id TEXT PRIMARY KEY,
+  category_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  href TEXT NOT NULL,
+  description TEXT,
+  icon TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0,
+  platform TEXT,
+  external_id TEXT,
+  author TEXT,
+  duration_sec INTEGER,
+  published_at TEXT,
+  quality_score INTEGER,
+  freshness_score INTEGER,
+  health_status TEXT,
+  source_type TEXT,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  payload TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS video_items_category_idx ON video_items(category_id, sort);
+CREATE INDEX IF NOT EXISTS video_items_health_idx ON video_items(health_status);
+-- 跨平台唯一：外部 ID 只在同一平台内唯一（B 站的 BV 与 YouTube 的 11 位 ID 是两套空间）
+CREATE UNIQUE INDEX IF NOT EXISTS video_items_external_idx
+  ON video_items(platform, external_id) WHERE external_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS video_replacements (
+  id TEXT PRIMARY KEY,
+  category_id TEXT NOT NULL,
+  category_title TEXT,
+  old_item TEXT NOT NULL DEFAULT '{}',
+  new_item TEXT NOT NULL DEFAULT '{}',
+  reason TEXT,
+  score_diff INTEGER,
+  trend_keyword TEXT,
+  rolled_back INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS video_replacements_category_idx ON video_replacements(category_id, created_at);
 `;
 
 const DDL_PG = `
@@ -963,6 +1027,70 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 CREATE INDEX IF NOT EXISTS llm_usage_time_idx ON llm_usage(created_at);
 CREATE INDEX IF NOT EXISTS llm_usage_scenario_idx ON llm_usage(scenario, created_at);
 CREATE INDEX IF NOT EXISTS llm_usage_source_idx ON llm_usage(source, created_at);
+
+/* ------------------------- 视频库（关系化） -------------------------
+ * 为什么单独建表：videos.json 是「整包文档」模型，只能整体读写，
+ * 无法按条查询、分页、审计单条变更，也挡不住两个写入口互相覆盖。
+ * 这三张表是 C6 的基础设施：**当前仍以 JSON 为事实源**，表是可选的影子副本
+ * （由 replaceVideoCatalog 全量同步），切换读写需要单独一轮灰度。
+ *
+ * 列只放「可查询/可排序」的字段；完整 videoConfig（章节、字幕等大字段）
+ * 落在 payload 里，避免为了查一个健康状态去解析几十 KB 的章节树。
+ * ------------------------------------------------------------------ */
+CREATE TABLE IF NOT EXISTS video_categories (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT,
+  icon TEXT,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  sort INTEGER NOT NULL DEFAULT 0,
+  harvest_policy TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS video_items (
+  id TEXT PRIMARY KEY,
+  category_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  href TEXT NOT NULL,
+  description TEXT,
+  icon TEXT,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  sort INTEGER NOT NULL DEFAULT 0,
+  platform TEXT,
+  external_id TEXT,
+  author TEXT,
+  duration_sec INTEGER,
+  published_at TEXT,
+  quality_score INTEGER,
+  freshness_score INTEGER,
+  health_status TEXT,
+  source_type TEXT,
+  pinned BOOLEAN NOT NULL DEFAULT FALSE,
+  payload TEXT NOT NULL DEFAULT '{}',
+  created_at BIGINT NOT NULL,
+  updated_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS video_items_category_idx ON video_items(category_id, sort);
+CREATE INDEX IF NOT EXISTS video_items_health_idx ON video_items(health_status);
+-- 跨平台唯一：外部 ID 只在同一平台内唯一（B 站的 BV 与 YouTube 的 11 位 ID 是两套空间）
+CREATE UNIQUE INDEX IF NOT EXISTS video_items_external_idx
+  ON video_items(platform, external_id) WHERE external_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS video_replacements (
+  id TEXT PRIMARY KEY,
+  category_id TEXT NOT NULL,
+  category_title TEXT,
+  old_item TEXT NOT NULL DEFAULT '{}',
+  new_item TEXT NOT NULL DEFAULT '{}',
+  reason TEXT,
+  score_diff INTEGER,
+  trend_keyword TEXT,
+  rolled_back BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS video_replacements_category_idx ON video_replacements(category_id, created_at);
 `;
 
 export const DDL = { sqlite: DDL_SQLITE, pg: DDL_PG } as const;

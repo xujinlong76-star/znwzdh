@@ -770,7 +770,7 @@ const PackRowItem = memo(function PackRowItem({
                 替换与剔除之后没有有效的测量值，系统不会用推算值填补
               </span>
             </div>
-          ) : panelState.kind === "verified" || panelState.kind === "no-data" ? (
+          ) : snap && (panelState.kind === "verified" || panelState.kind === "no-data") ? (
             <div className="flex flex-wrap items-center gap-3 text-muted-foreground border-b pb-2.5">
               <span>声明 {snap.declared ?? '--'} 条</span>
               <span>抽样 {snap.sampled ?? '--'} 条</span>

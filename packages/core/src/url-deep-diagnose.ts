@@ -13,7 +13,8 @@
  *   - 失败原因归类沿用 `ProbeFailureKind` 的口径（timeout / redirect-limit / ssrf-blocked /
  *     connect / http-error / other），保证深度报告与列表徽标说的是同一件事。
  */
-import { auditPageHealth } from "./health-sentinel.ts";
+import { auditPageHealth } from "./health-sentinel.ts"
+import { classifyProbeStatus, outcomeToHttpVerdict } from "./probe-policy.ts";
 
 /** 深度取证的可能结论。顺序即优先级（靠前者覆盖靠后者） */
 export type DeepVerdict =
@@ -92,8 +93,10 @@ export interface DeepDiagnosis {
   };
 }
 
-/** 「存活但拒绝爬虫」的状态码（与 plugin-audit.ts 的 BLOCKED_BY_BOT_STATUSES 保持一致） */
-const BOT_BLOCKED_STATUSES = new Set([401, 403, 405, 412, 418, 429]);
+/**
+ * 「存活但拒绝爬虫」的状态码已迁到 `probe-policy.ts`（唯一事实源）。
+ * 本文件不再保留一份副本——保留副本正是两周内两次口径漂移的根因。
+ */
 
 /**
  * 已知的域名停放 / 域名交易服务。
@@ -301,7 +304,17 @@ export function diagnoseUrlDeep(obs: DeepProbeObservations): DeepDiagnosis {
     ])
   }
 
-  if (status >= 500) {
+  /**
+   * HTTP 层结论不再在这里自行判断，而是读 `probe-policy` 的同一张表。
+   *
+   * 以前这三段（5xx / 机器人拦截 / 其它 4xx）是本文件独有的一套判定，
+   * 与候选探活各自演化，出现过「候选说不可达、深检说服务端异常」的自相矛盾。
+   * 现在两边都只是把 `ProbeOutcome.kind` 翻译成本层词汇。
+   */
+  const httpOutcome = classifyProbeStatus(status)
+  const httpVerdict = httpOutcome ? outcomeToHttpVerdict(httpOutcome.kind) : null
+
+  if (httpVerdict === "server-error") {
     pushEvidence(evidence, "http", "fail", `服务端返回 HTTP ${status}`)
     return finish(rawUrl, "server-error", 0.72, `站点服务端异常（HTTP ${status}），可能维护或过载`, evidence, [
       { id: "retry", label: "观察是否自动恢复", kind: "manual" },
@@ -309,12 +322,12 @@ export function diagnoseUrlDeep(obs: DeepProbeObservations): DeepDiagnosis {
     ])
   }
 
-  if (BOT_BLOCKED_STATUSES.has(status)) {
+  if (httpVerdict === "bot-blocked") {
     pushEvidence(evidence, "http", "warn", `HTTP ${status}：站点存活但拒绝爬虫 UA`)
     return finish(rawUrl, "bot-blocked", 0.6, "站点可用，仅拒绝了自动化访问（不应视为死链）", evidence, [])
   }
 
-  if (status >= 400) {
+  if (httpVerdict === "http-error") {
     const gone = status === 410
     pushEvidence(evidence, "http", "fail", `HTTP ${status}${gone ? "（已永久移除）" : ""}`)
     return finish(

@@ -10,7 +10,11 @@
  *
  * 为什么把探活函数做成参数注入：这里不 import 任何网络实现，测试可注入假探活器，
  * 在无网络环境下把并发上限、超时兜底、分类口径全部锁住（仓库纪律：纯逻辑可测）。
+ *
+ * 唯一的外部依赖是 `@navhub/core` 的 `probe-policy`（纯函数、不触网）：
+ * 「什么状态码算拒绝爬虫」这类口径必须与候选探活、深检层共用一份，否则必然漂移。
  */
+import { isBotBlockedStatus } from "@navhub/core"
 
 /**
  * 失败原因归类：让报告能区分「我们的探针限制」与「站点真挂」。
@@ -106,23 +110,17 @@ export const PLUGIN_AUDIT_DEFAULTS = {
 } as const
 
 /**
- * 「存活但拒绝爬虫」的状态码集合。
+ * 「存活但拒绝爬虫」的状态码集合 —— **定义已迁到 `@navhub/core` 的 `probe-policy`**。
  *
- * 401 未授权 / 403 禁止 / 405 方法不允许 / 412 前置条件失败 / 429 限流 / 418 茶壶 ——
- * 共同点是「服务端活着、有 WAF/风控在应答」，与 DNS 失败、连接拒绝、超时、5xx 有本质区别。
- * 只看状态码无法区分「站点挂了」与「站点挡我」，所以这两类必须分开统计。
- *
- * 418（I'm a teapot）为什么算：它本是愚人节协议，但 Cloudflare/Akamai 一类 WAF 常拿它当
- * 「我识别出你是爬虫」的回应 —— 实测 shop.lululemon.com / www.underarmour.com 就返回 418，
- * 而这两个品牌官网在浏览器里完全正常。这是同类误杀的第三次出现（403 → 412 → 418）。
- *
- * 400 为什么**不**算：请求格式错误与风控拦截都会返回 400，无法从状态码区分，
- * 宁可把它留在「不可达」里等人工复核，也不为了好看把可能真坏掉的站点判活。
+ * 这里保留同名导出，是为了不打断既有 import（含测试与 MCP 处理器）；
+ * 但判定逻辑只有一份，改口径请改 core，不要在这个文件里另起炉灶。
+ * 历史教训：本仓曾有三套判定（抽样体检 / 候选探活 / 深检），漂移出
+ * 「超时判死」「5xx 判死」两次事故。
  */
-export const BLOCKED_BY_BOT_STATUSES = [401, 403, 405, 412, 418, 429] as const
+export { BOT_BLOCKED_STATUSES as BLOCKED_BY_BOT_STATUSES } from "@navhub/core"
 
 export function isBlockedByBotStatus(status: number | undefined): boolean {
-  return status !== undefined && (BLOCKED_BY_BOT_STATUSES as readonly number[]).includes(status)
+  return status !== undefined && isBotBlockedStatus(status)
 }
 
 /** 归一化 URL：协议/主机小写、去尾斜杠、去 hash —— 判「是否重定向」时用 */

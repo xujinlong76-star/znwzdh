@@ -17,11 +17,15 @@ import { DEFAULT_GUARD, guardedFetch, resolveAndCheck } from "@navhub/ai";
 import {
   auditPageHealth,
   buildWaybackSnapshotUrl,
+  classifyProbeError as classifyErrorOutcome,
+  classifyProbeStatus as classifyStatusOutcome,
   computeReachabilityTrend,
   diagnoseBrokenCause,
   diagnoseUrlDeep,
   isTextualContentType,
+  outcomeToCandidateGrade,
   validateAndCleanPluginManifest,
+  type CandidateGrade as CoreCandidateGrade,
   type DeepProbeObservations,
   type SitePackPayload,
 } from "@navhub/core";
@@ -229,7 +233,11 @@ function diagnoseFromEvidence(
  * 不等于站点已死。历史实现把它们和 404 一起写成 `dead`（界面「不可达」），
  * 违反本项目既有口径「慢 ≠ 死、超时属于不可判定」，也让运营误以为该站点已确认下线。
  */
-type CandidateGrade = "verified" | "blocked" | "unverified" | "suspicious" | "dead"
+/**
+ * 候选档位。**类型与判定都来自 `@navhub/core` 的 `probe-policy`**：
+ * 以前这里是本文件自己的一套实现，与深检层各自演化，才出现了「5xx 判死」这类漂移。
+ */
+type CandidateGrade = CoreCandidateGrade
 
 
 interface CandidateProbe {
@@ -245,15 +253,11 @@ interface CandidateProbe {
 const CANDIDATE_PROBE_TIMEOUT_MS = 2500
 
 /**
- * 探活失败原因分类：把底层英文错误翻成运营看得懂、且不夸大结论的中文。
+ * 探活异常 → 候选档位（薄包装）。
  *
- * 为什么必须分类（历史缺陷）：catch 分支直接把 `err.message` 当原因，
- * 运营看到的是 `This operation was aborted` / `fetch failed` —— 既看不懂，
- * 也分不出「慢」和「死」。更严重的是超时被和 404 一起判成 dead（界面写「不可达」），
- * 把「这次没测到」说成了「站点已确认下线」。
- *
- * 判定口径与全仓一致：只有拿到了明确的失败证据（域名不解析、端口拒绝、证书无效、
- * 跳转成环、SSRF 拒绝）才判 dead；超时/连接中断一律 unverified。
+ * 判定逻辑已收拢到 `@navhub/core` 的 `probe-policy.ts`（唯一事实源）；
+ * 这里只负责把结论翻译成候选档位，保证与深检层、抽样体检说的是同一件事。
+ * 保留函数签名是因为它是纯函数契约测试的入口。
  */
 export function classifyProbeFailure(
   url: string,
@@ -261,71 +265,21 @@ export function classifyProbeFailure(
   elapsedMs: number,
   timeoutMs: number,
 ): { grade: CandidateGrade; reason: string } {
-  const raw = err instanceof Error ? err.message : String(err)
-  const msg = raw.toLowerCase()
-
-  // 自己抛的中文错误先判：语义明确，不需要再猜
-  if (raw.includes("DNS 解析失败") || raw.includes("DNS 无结果") || msg.includes("enotfound") || msg.includes("eai_again")) {
-    return { grade: "dead", reason: "域名无法解析（域名可能已过期或不存在）" }
-  }
-  if (raw.includes("重定向次数超过")) {
-    return { grade: "dead", reason: "重定向次数过多，浏览器同样会报错" }
-  }
-  if (raw.includes("受保护网段") || raw.includes("禁止访问该端口") || raw.includes("仅允许 http")) {
-    return { grade: "dead", reason: "目标指向内网或非法地址，已拒绝探测" }
-  }
-  if (msg.includes("certificate") || msg.includes("ssl") || msg.includes("tls") || msg.includes("self-signed")) {
-    return { grade: "dead", reason: "HTTPS 证书无效，浏览器会拦截" }
-  }
-  if (msg.includes("econnrefused")) {
-    return { grade: "dead", reason: "连接被拒绝（目标端口无服务）" }
-  }
-
-  const isTimeout =
-    elapsedMs >= timeoutMs * 0.95 || msg.includes("timeout") || msg.includes("timedout") || msg.includes("aborted")
-  if (isTimeout) {
-    return {
-      grade: "unverified",
-      reason: `${(timeoutMs / 1000).toFixed(1)} 秒内未响应（慢不等于死，建议稍后复检）`,
-    }
-  }
-
-  /**
-   * 其余（连接被重置、socket hang up、底层 fetch failed）都可能是网络抖动或对端限速，
-   * 一律不下「已死」的结论。原始文本不再外露（含内部 URL），只留服务端日志。
-   */
-  console.warn(`[plugin-audit] 候选探活未判定 url=${url} err=${raw.slice(0, 200)}`)
-  return { grade: "unverified", reason: "连接中断，未能确认可达性" }
+  const outcome = classifyErrorOutcome(err, { elapsedMs, timeoutMs, url })
+  return { grade: outcomeToCandidateGrade(outcome.kind), reason: outcome.reason }
 }
 
 /**
- * HTTP 状态码 → 候选档位（纯函数，供契约测试）。
+ * HTTP 状态码 → 候选档位（薄包装，判定在 core 的 `classifyProbeStatus`）。
  *
- * 历史缺陷：这里原本是 `if (res.status >= 400) return dead`，把 5xx 一起算成
- * 「不可达 / 站点已确认下线」。可 503 恰恰说明域名与端口都在应答——站点活着，
- * 只是此刻过载或维护；把它标死，等于让一个临时出问题的高质量站点被永久排除，
- * 与全仓既有的三分类口径（只有页面确定不存在才判失效）直接冲突。
- *
- * 现在的口径：
- *   - 404 / 410 / 451：页面确定不存在（451 是「因法律原因不可用」）→ dead
- *   - 5xx / 408：服务端暂时不可用 → unverified，由人决定要不要稍后复检
- *   - 其余 4xx：请求被目标拒绝（多为风控），同样不足以断言下线 → unverified
- *   - 1xx–3xx：不是失败，返回 null 由调用方继续做内容判定
- *
- * 档位变化不影响自动平替：`autoApply` 只认 verified，这两档都不会被自动采纳。
+ * 口径表见 `packages/core/src/probe-policy.ts`：404/410/451 才算 dead，
+ * 5xx/408 与其余 4xx 都是 unverified（「这一课没测准 / 此刻不可用」≠「站点已死」）。
+ * 1xx–3xx 返回 null，交回调用方继续做内容判定。
  */
 export function classifyProbeStatus(status: number): { grade: CandidateGrade; reason: string } | null {
-  if (status < 400) return null;
-  if (status === 404 || status === 410 || status === 451) {
-    return { grade: "dead", reason: `HTTP ${status}：页面不存在或已下线` };
-  }
-  if (status >= 500 || status === 408) {
-    return {
-      grade: "unverified",
-      reason: `HTTP ${status}：服务端暂时不可用，未能确认可用性（不等于站点已死）`,
-    };
-  }
-  return { grade: "unverified", reason: `HTTP ${status}：请求被目标拒绝，未能确认可用性` };
+  const outcome = classifyStatusOutcome(status)
+  if (!outcome) return null
+  return { grade: outcomeToCandidateGrade(outcome.kind), reason: outcome.reason }
 }
 
 async function probeCandidateUrl(url: string): Promise<CandidateProbe> {
@@ -339,10 +293,8 @@ async function probeCandidateUrl(url: string): Promise<CandidateProbe> {
       userAgent: AUDIT_USER_AGENT,
     })
     const elapsed = Date.now() - started
-    if (isBlockedByBotStatus(res.status)) {
-      return { grade: "blocked", ok: false, status: res.status, latencyMs: elapsed, reason: `HTTP ${res.status}：拒绝爬虫，无法验证内容` }
-    }
-    // 404 才算「页面不存在」；5xx/408 只是此刻不可用，不能写成「不可达」
+    // 401/403/… 的机器人拦截、5xx、其余 4xx 全部由 core 的同一张表判定，
+    // 本文件不再自己写一遍顺序（顺序写错就会把 WAF 拦截算成「请求被拒绝」）。
     const statusVerdict = classifyProbeStatus(res.status)
     if (statusVerdict) {
       return { grade: statusVerdict.grade, ok: false, status: res.status, latencyMs: elapsed, reason: statusVerdict.reason }

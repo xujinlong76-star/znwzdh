@@ -67,8 +67,8 @@ test('AI 工坊：JSON 清单 / 元数据微调与 Diff / 自动化体检 / 启�
   await expect(pendingCard).toBeVisible({ timeout: 45_000 });
   await pendingCard.getByRole('button', { name: '通过并上架' }).click();
   // 瞬态 toast 在重载机器上可能晚于断言窗口出现/消失：改等持久效果——
-  // 审核成功后 SWR 刷新，插件离开待审列表（与 plugin-market.spec 同口径）
-  await expect(page.locator('div.rounded-2xl').filter({ hasText: name })).not.toBeVisible({ timeout: 30_000 });
+  // 审核成功后 SWR 刷新，插件离开待审列表（与 plugin-market.spec 同口径，含 .first()）
+  await expect(pendingCard).not.toBeVisible({ timeout: 30_000 });
 
   // 3) 详情页 → 打开工坊（isOwner 门控的入口，归属校验顺带被此断言覆盖）
   await page.goto('/marketplace', { waitUntil: 'domcontentloaded' });

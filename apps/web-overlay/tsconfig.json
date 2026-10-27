@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
-    "target": "es2017",
+    // 与仓库根 tsconfig.base.json 的 target 对齐。
+    // 原来是 Next 模板默认的 es2017，而 lib/video-slide-detector.ts 用了 BigInt 字面量
+    // （0n / 1n）做 64 位感知哈希 —— 低于 ES2020 时 tsc 直接报 TS2737（7 处）。
+    // 应用本身只跑在现代浏览器与 Node 18+ 上，es2017 只是模板残留，不是真实约束。
+    "target": "ES2022",
     "lib": [
       "dom",
       "dom.iterable",

@@ -55,7 +55,8 @@ export function resolveAvailableMirrors(videoConfig: VideoConfig): VideoMirrorSo
   }
 
   // Sort by priority ascending (0 = highest priority)
-  return sources.sort((a, b) => a.priority - b.priority)
+  // priority 现在是可选字段（数据侧可以不填），缺失按最低优先级 10 处理
+  return sources.sort((a, b) => (a.priority ?? 10) - (b.priority ?? 10))
 }
 
 /**
@@ -82,14 +83,17 @@ export async function probeSourceHealth(
 ): Promise<{ healthy: boolean; latencyMs: number; error?: string }> {
   const start = Date.now()
   try {
+    // id 是线路自身标识（如 primary-bilibili-BV1xx），sourceId 才是稿件 ID；
+    // 两者都可能缺一侧，这里按 sourceId -> id -> href 依次兜底，避免探测到 undefined。
+    const sourceId = source.sourceId ?? source.id
     let probeUrl = ''
     if (source.platform === 'bilibili') {
       // Use media proxy or public bilibili favicon/head probe
-      probeUrl = `https://www.bilibili.com/video/${source.sourceId}`
+      probeUrl = `https://www.bilibili.com/video/${sourceId}`
     } else if (source.platform === 'youtube') {
-      probeUrl = `https://www.youtube.com/watch?v=${source.sourceId}`
+      probeUrl = `https://www.youtube.com/watch?v=${sourceId}`
     } else {
-      probeUrl = source.sourceId
+      probeUrl = source.href || sourceId
     }
 
     const controller = new AbortController()

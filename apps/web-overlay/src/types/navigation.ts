@@ -69,7 +69,20 @@ export function chapterStartSec(chapter: VideoChapter): number {
 export interface VideoMirrorSource {
   platform: 'bilibili' | 'youtube' | 'custom'
   id: string
-  href: string
+  /**
+   * 播放地址。**可选**：`resolveAvailableMirrors()` 从不填它 —— 播放器用
+   * `platform` + `sourceId` 现拼 URL（见 video-player-page 的 sourceId 读取）。
+   * 声明成必填会逼调用方造一个假 URL，那正是「类型与实现长期分叉」的来源。
+   */
+  href?: string
+  /** 平台内的稿件 ID（B 站 BV / YouTube 11 位）。线路探测与播放源都读它 */
+  sourceId?: string
+  /** 线路展示名，如「Bilibili 主线路」 */
+  label?: string
+  /** 切换优先级，0 最高；缺失按 10 处理 */
+  priority?: number
+  /** 是否直链流（非平台播放器） */
+  isDirectStream?: boolean
   title?: string
   author?: string
 }

@@ -6,6 +6,7 @@
  */
 
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
+import { chapterStartSec } from '@/types/navigation'
 
 export interface ConceptGraphNode {
   id: string
@@ -107,7 +108,7 @@ export function buildConceptGraphFromVideos(data: NavigationData): ConceptGraphT
           jumpTarget: {
             bvid,
             title: item.title,
-            seekSec: ch.startTime,
+            seekSec: chapterStartSec(ch),
             chapterTitle: ch.title,
           },
         })

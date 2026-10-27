@@ -1,4 +1,5 @@
 import type { VideoChapter, VideoDanmakuItem } from '@/types/navigation'
+import { chapterStartSec } from '@/types/navigation'
 
 export interface SpriteConfig {
   spriteUrl: string
@@ -70,7 +71,7 @@ export function generateEngagementHeatmap(params: {
 
   // 1. Chapter boundaries & code blocks increase engagement
   chapters.forEach((ch) => {
-    const centerIdx = Math.floor((ch.startTime / validDuration) * samplesCount)
+    const centerIdx = Math.floor((chapterStartSec(ch) / validDuration) * samplesCount)
     const weightBonus = ch.codeSnippet ? 0.7 : 0.4
     const radius = ch.codeSnippet ? 6 : 4
 
@@ -113,7 +114,7 @@ export function generateEngagementHeatmap(params: {
 
     let label: string | undefined
     if (isPeak) {
-      const matchingCh = chapters.find(c => Math.abs(c.startTime - timeSec) < step * 2)
+      const matchingCh = chapters.find(c => Math.abs(chapterStartSec(c) - timeSec) < step * 2)
       if (matchingCh) {
         label = matchingCh.codeSnippet ? `高能代码实操: ${matchingCh.title}` : matchingCh.title
       }

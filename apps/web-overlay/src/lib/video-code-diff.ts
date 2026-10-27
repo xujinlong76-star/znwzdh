@@ -1,4 +1,5 @@
 import type { VideoChapter } from '@/types/navigation'
+import { chapterStartSec } from '@/types/navigation'
 
 export interface CodeDiffLine {
   type: 'add' | 'del' | 'remove' | 'context' | 'normal'
@@ -131,7 +132,8 @@ export function extractCodeMilestones(
 
     const milestone: VideoCodeMilestone = {
       id: ch.id || `ms-${i + 1}-${ch.startTime}`,
-      timeSec: ch.startTime,
+      // startTime / timeSec 两套字段并存（见 VideoChapter），统一走 chapterStartSec
+      timeSec: chapterStartSec(ch),
       title: ch.title,
       language: lang,
       filePath: `src/solution_${i + 1}.${ext}`,

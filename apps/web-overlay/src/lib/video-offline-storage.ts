@@ -145,7 +145,10 @@ export async function decryptChunkData(
   key: CryptoKey
 ): Promise<ArrayBuffer> {
   return await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    // TS 5.7 起 Uint8Array 带 ArrayBufferLike 泛型参数，而 BufferSource 要求
+    // ArrayBuffer 底座的视图。这里的 iv 由 crypto.subtle.encrypt 产出，运行期
+    // 形状本就符合要求，属于类型层面的收窄而非真实转换。
+    { name: 'AES-GCM', iv: iv as unknown as BufferSource },
     key,
     encrypted
   )

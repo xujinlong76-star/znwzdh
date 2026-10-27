@@ -3,7 +3,7 @@
  * 视频模块的**作用域化**类型门禁。
  *
  * 为什么不能直接打开 `apps/web-overlay/next.config.js` 的 `ignoreBuildErrors`：
- * 该目录当前有 **21553** 个既有类型错误（`plugin-url-health-panel.tsx` 单文件 618 个），
+ * 该目录当前有 **21518** 个既有类型错误（`plugin-url-health-panel.tsx` 单文件 618 个），
  * 一次打开必然全红，团队只能再关回去 —— 门禁变成摆设。
  *
  * 这里的做法是「按目录增量收敛」的第一步：只对**已经清零的模块**断言 0 错误。
@@ -47,6 +47,18 @@ const SCOPE = [
   'src/lib/webhook-notifier.ts',
   'src/lib/cron-auth.ts',
   'src/lib/bilibili-wbi.ts',
+  // 第二批（A8 扩展）：这 7 个模块原来是 29 处类型分叉的所在地 ——
+  // VideoMirrorSource 缺 sourceId/label/priority/isDirectStream（13 处）、
+  // VideoChapter.startTime 变可选后未做空值处理（4 处）、
+  // FlashcardItem 与 VideoQuizQuestion 字段错配（4 处）、BigInt 字面量目标版本（7 处）、
+  // Uint8Array 的 ArrayBufferLike 泛型收窄（1 处）。
+  'src/lib/video-failover.ts',
+  'src/lib/video-slide-detector.ts',
+  'src/lib/video-spaced-repetition.ts',
+  'src/lib/video-scrubber-filmstrip.ts',
+  'src/lib/video-offline-storage.ts',
+  'src/lib/video-concept-graph-navigator.ts',
+  'src/lib/video-code-diff.ts',
 ]
 
 if (process.argv.includes('--list')) {
@@ -64,12 +76,19 @@ const ENV_NOISE = /Cannot find module 'next(\/[^']*)?'/
 
 let output = ''
 try {
-  output = execFileSync(process.execPath, [TSC, '-p', join(OVERLAY, 'tsconfig.json'), '--noEmit'], {
-    cwd: ROOT,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    maxBuffer: 64 * 1024 * 1024,
-  })
+  // `--incremental false` 是必需的：overlay 的 tsconfig 开着 `incremental` 且会写出
+  // `apps/web-overlay/tsconfig.tsbuildinfo`。实测过同一个改动在**陈旧缓存**下会被判成
+  // 「仍有 7 处错误」，而全量重算是 0 —— 门禁要么假红要么假绿，两种都不能接受。
+  output = execFileSync(
+    process.execPath,
+    [TSC, '-p', join(OVERLAY, 'tsconfig.json'), '--noEmit', '--incremental', 'false'],
+    {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  )
 } catch (err) {
   // tsc 有错误时以非零退出，错误内容在 stdout/stderr 里
   output = `${err.stdout ?? ''}${err.stderr ?? ''}`

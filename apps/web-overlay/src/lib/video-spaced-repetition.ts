@@ -1,5 +1,6 @@
 import type { VideoStudyNote } from '@/lib/video-frame-clipper'
 import type { VideoQuizQuestion } from '@/lib/video-quiz-generator'
+import { quizCorrectIndex } from '@/lib/video-quiz-generator'
 
 export interface FlashcardItem {
   id: string
@@ -96,13 +97,16 @@ export function generateFlashcardsFromNotes(
       videoTitle: note.videoTitle || '关键要点',
       timeSec: note.timeSec,
       question: `⏱️ ${timeStr} 知识卡：${note.videoTitle || '关键技术总结'}`,
-      answer: note.userNote,
+      // answer 是必填：笔记可能只有截图 OCR 文本或代码片段，按内容丰度兜底
+      answer: note.userNote ?? note.ocrText ?? note.codeSnippet ?? '',
       explanation: note.codeSnippet ? `关联代码演练：\n${note.codeSnippet.slice(0, 100)}...` : undefined,
       repetitions: 0,
       easinessFactor: 2.5,
       easeFactor: 2.5,
       intervalDays: 1,
-      createdAt: note.createdAt || now,
+      // note.createdAt 是 ISO 字符串，而 FlashcardItem.createdAt 是毫秒数；
+      // 直接 || 会把字符串塞进 number 字段（解析失败时回落到当前时间）
+      createdAt: Date.parse(note.createdAt) || now,
       nextReviewTimestamp: now,
       nextReviewDate: now,
     }
@@ -119,14 +123,16 @@ export function generateFlashcardsFromQuizzes(
 ): FlashcardItem[] {
   const now = Date.now()
   return quizzes.map((q) => {
-    const correctOpt = q.options.find(o => o.isCorrect)?.label || '查看详解'
+    // options 是字符串数组（见 VideoQuizQuestion）。此前按 { isCorrect, label }
+    // 对象读，永远取不到 —— 所有自测题闪卡的答案都是「查看详解」。
+    const correctOpt = q.options[quizCorrectIndex(q)] ?? '查看详解'
     return {
       id: `card-quiz-${q.id}`,
       videoId,
       sourceVideoId: videoId,
       videoTitle,
       timeSec: 0,
-      question: `【自测题】${q.title}`,
+      question: `【自测题】${q.question}`,
       answer: `正确答案：${correctOpt}`,
       explanation: q.explanation,
       repetitions: 0,

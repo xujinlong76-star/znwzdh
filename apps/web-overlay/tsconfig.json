@@ -32,6 +32,14 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      // 前端只映射**纯函数子模块**，不映射整包 barrel：core 的 index 会 re-export
+      // 带 node:fs 的实现，整包映射会把 Node 内置模块拖进前端包（turbopack 直接
+      // 报 "does not support external modules (node:fs/promises)"）。
+      // apps/web 是 vendored 底座、package.json 无该依赖，不映射则 tsc/next build
+      // 双双 TS2307 —— 2026-10-27 main 的 5 个 CI 作业同时红即此因。
+      "@navhub/core/health-state": [
+        "../../packages/core/src/health-state.ts"
       ]
     }
   },

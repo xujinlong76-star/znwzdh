@@ -6,4 +6,4 @@
  *   2. 后端只读健康 API 用的是同一个函数，「面板 vs 接口」不可能说两套话。
  * （vitest 已为 `@navhub/core` 配了指向源码的 alias，测试环境也能解析。）
  */
-export { deriveHealthPanelState, type HealthPanelState, type HealthSnapshotLike } from "@navhub/core"
+export { deriveHealthPanelState, type HealthPanelState, type HealthSnapshotLike } from "@navhub/core/health-state"

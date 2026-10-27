@@ -937,3 +937,131 @@ mixin_key = ea1db124af3c7062474693fa704f4ff8
 > **该 shell 里没有 `pnpm`**（`'pnpm' 不是内部或外部命令`），不是 lint 本身的问题。
 > 已按 `lint:backend` 的实际命令（`eslint . --max-warnings 0`）在
 > `apps/api` 与 `packages/store` 分别复跑，两者 exit 0。
+
+---
+
+## 16. 第五轮：性能三项 + 33 项清单逐条对账
+
+### 16.1 P1-16 `/videos` 从 `force-dynamic` 改成 ISR
+
+改造前：
+
+```ts
+export const dynamic = 'force-dynamic'
+async function getData() { /* 每次请求两次 getFileContent */ }
+```
+
+`getFileContent` 的读链路本来就带 Next Data Cache（`revalidateFromEnv`，默认 60s），
+`force-dynamic` 把这一层**整个废掉** —— 每个请求都要打一次中枢，而读到的东西最多只差
+60 秒。同类的 `/hot` 早就用的 `revalidate = 60`，没有道理一半 ISR 一半动态。
+
+改成：
+
+- `export const revalidate = 60`（与 `NAVHUB_STORAGE_REVALIDATE_S` 默认值对齐）；
+- `getData` 用 React `cache()` 包一层：`generateMetadata` 与页面组件各调一次，
+  合并成**同一请求内一次读取**。Data Cache 命中时本来也不贵，但两条链路各自 await
+  会让首字节多等一轮调度；一旦适配器冷却降级，重复调用就是双倍失败重试。
+
+元信息不会「固化在构建产物里」：`generateMetadata` 在每次再生成时都会重跑。
+遗留口径：若把 `NAVHUB_STORAGE_REVALIDATE_S` 设为 0（要求改完立刻可见），
+页面仍会有 60s 的 ISR 窗口 —— Next 要求 `revalidate` 是静态字面量，读不了环境变量。
+
+### 16.2 P2-30 替换历史上限从「静默丢弃」改成「可观测丢弃」
+
+原来是一行裸的 `slice(0, 100)`：第 101 条起**静默消失**，运营想回滚两周前的替换时
+才发现记录没了，日志里也没有任何痕迹。
+
+现在抽成 `capReplacementHistory()` + `REPLACEMENT_HISTORY_LIMIT`，丢弃时打日志并带上
+条数，注释里写清三条：为什么必须有上限（每条内嵌 oldItem/newItem，单条 6–10KB，
+整包参与每次读取）、为什么必须告警、以及「完整历史在 `video_replacements` 表里
+（C6），所以永久丢失只在纯 `json` 模式下成立」。
+
+**落地说明**：这段改动在 `lib/video-harvester.ts`，而同一文件里并行会话正在做
+「替换历史外置到独立文件」（`appendReplacementHistory` + 不截断的权威副本）。
+对方的外置方案其实**比容量上限更彻底** —— 内联数组受限、独立文件不截断，
+两者配合才完整。因此这两处必须一起提交，本轮的提交不单独带上 `video-harvester.ts`。
+
+### 16.3 P2-33 搜索倒排索引改为懒构建
+
+`buildVideoSearchIndex(navigationData)` 原来在**每次进页面**时都跑一遍
+（遍历全部分类/子分类/条目、拆 CJK bigram、累计词频），而绝大多数访问只浏览不搜索。
+
+改成 `hasQuery` 为真时才建。依赖用布尔 `hasQuery` 而不是 `searchQuery`：
+一次搜索会话里它从 false 变 true 后不再翻转，因此「输入框反复增删字符」不会重复构建。
+
+### 16.4 P1-18 明确不做，以及触发条件
+
+「`video-content.tsx` 全量 `map` 渲染，无分页/虚拟化」。当前视频库 **16 条**，
+首屏 DOM 与 RSC 体积都没有问题。这一项不动，理由与触发条件写清楚：
+
+- 触发条件：某个分类条目数 > 60，或整库 > 200；
+- 届时的做法不是加虚拟列表（会破坏 SEO 内链与 Ctrl+F），而是复用首页已经验证过的
+  **渐进披露**（每组首屏 N 张 + 「展开全部」客户端揭示，零请求），
+  它已经有现成的守卫测试（`deliverables/web-audit/verify-progressive-disclosure.mjs`）。
+
+### 16.5 两项复核结论（不改代码）
+
+| 编号 | 原文结论 | 复核结果 |
+|---|---|---|
+| P1-17 | 服务端 `getStorage()` 返回 `null`，冷启动即失效 → 每次播放打一次 Gemini | `getVideoAISummary` 的调用方是 `video-player-page` 与 `VideoPlayerContext`（都是客户端组件），走的是浏览器 localStorage 缓存。服务端那条路径根本不存在 —— 原文把「lib 里有个 Map 兜底」误当成服务端链路。真问题是同目录的死路由，已由 A6 删除 |
+| P2-28 | `parseDurationToSeconds(durationStr?: string)` 内部判 `typeof === 'number'`，与签名矛盾 | 抽取 `video-scoring.ts` 时签名已改为 `string \| number`，两条路径（B 站 `"MM:SS"` 与 view 接口的 number）都覆盖 |
+
+### 16.6 33 项清单逐条对账
+
+> 原文编号并非严格连续（`P1-5` 夹在 `P0-4` 与 `P0-6` 之间）。这里按实际存在的 33 项核对。
+
+| 编号 | 问题 | 状态 | 落点 |
+|---|---|---|---|
+| P0-1 | 自主采集接口完全无鉴权 | 已修 | §12.1 A1 |
+| P0-2 | Webhook 签名是伪实现且可绕过 | 已修 | §12.1 A2 |
+| P0-3 | Cron 端点 fail-open | 已修 | §12.1 A3（`cron-auth.ts`） |
+| P0-4 | LLM 摘要接口无鉴权且是死代码 | 已修 | §12.1 A6（删除） |
+| P1-5 | 审计/回滚读接口无鉴权 | 已修 | `api/videos/history` 已加 `verifyAdminSession` |
+| P0-6 | 健康巡检写错目标文件 | 已修 | §12.1 A3 |
+| P0-7 | 一次探测失败即永久删除 | 已修 | §12.1 A4（三态 + 默认不删）；并行会话又加了「连续失败 2 次」阈值 |
+| P0-8 | 单条增删改清空替换历史 | 已修 | §12.1 A5 |
+| P1-9 | 租约锁 owner 不匹配 | 已修 | §12.2 B1 |
+| P1-10 | 「分布式租约锁」是内存单例 | 部分 | §12.2 B1（`renewLock` 续租）+ B3 渐进版；真正的跨实例租约见 §14.3 的取舍 |
+| P1-11 | 后台任务在 Serverless 不可靠 | 部分 | §12.2 B3（快照 + `hydrate`）；完整版迁 `jobs` 表明确不做（§14.3） |
+| P1-12 | 读-改-写无并发控制 | 已修 | §12.2 B4（`ifVersion` + 409 + 整体重放） |
+| P1-13 | 写失败被吞成成功 | 已修 | §12.2 B5 |
+| P1-14 | 类型契约断链被构建配置放行 | 已修 | §12.1 A8 + §15.1（29 处清零，门禁 23 模块） |
+| P1-15 | 列表无分页、无字段裁剪 | 已修 | §13.1 B7 |
+| **P1-16** | `force-dynamic` + 同请求两次取数 | **已修** | §16.1 |
+| P1-17 | 服务端摘要缓存缺失 | 复核不改 | §16.5 |
+| P1-18 | 全量 `map` 渲染无虚拟化 | 明确不做 | §16.4（阈值 + 渐进披露方案） |
+| P2-19 | 关键词串行采集 | 已修 | §12.2 B9（并发 3 + 25s 预算） |
+| P2-20 | 探活串行 | 已修 | §13.1 C3（并发 6） |
+| P0-21 | 候选池是 12 条硬编码 | 已修 | §13.1 C1（外部化 JSON 资产） |
+| P0-22 | 播放量/点赞是随机数 | 已修 | §12.1 A7 |
+| P0-23 | 伪造发布时间 | 已修 | §12.1 A7 |
+| P0-24 | 「AI 审核」是正则与模板 | 已修 | §13.1 C2（文案降级为「规则初筛」+ 修中文误杀；不再声称 AI） |
+| P0-25 | 没有任何调度器触发采集 | 已修 | §12.2 B2（`.github/workflows/video-harvest.yml`） |
+| P1-26 | `/hot` 与视频热点是两套热度 | 已修 | §13.1 C2（文案）+ §15.5（`/hot` 复核无伪数据） |
+| P2-27 | 死字段 + 控制器每请求新建 | 已修 | §13.1 C5 |
+| P2-28 | `parseDurationToSeconds` 签名矛盾 | 已修 | §16.5（抽取时改 `string \| number`） |
+| P2-29 | 全 `console.warn`，无指标 | 已修 | §13.1 C4（运行期指标）+ 并行会话的 `videoLog` 结构化 |
+| **P2-30** | 替换历史硬截断 100 条 | **已修**（随并行会话的历史外置同批落地） | §16.2 |
+| P2-31 | 非 B 站来源塞同一个假 BV 号 | 已修 | §13.1 C5 |
+| P2-32 | 全库共用同一张 Unsplash 封面 | 已修 | §13.1 C5 |
+| **P2-33** | 客户端倒排索引全量重建 | **已修** | §16.3 |
+
+统计：**已修 28 项、部分修 2 项（P1-10 / P1-11，均有明确取舍记录）、复核不改 1 项
+（P1-17）、明确不做 1 项（P1-18，带触发条件）、待并行会话落地 1 项（P0-7 的阈值增强）**。
+
+### 16.7 与并行会话的交界（必须知道）
+
+本轮收尾时检测到另一个会话正在同一批文件上活跃编辑（`video-library-store.ts`、
+`video-log.ts`、`video-pagination.ts`、`video-write-guard.ts` 四个新文件尚未入索引，
+`video-deadlink-sweeper.ts` 在 40 秒前刚被改过）。他们做的是 P1-5 的读接口收敛、
+P2-29 的结构化日志、以及「连续失败两次才删」的阈值增强 —— 并且**引用了本轮的
+`capReplacementHistory`**，说明两边在互相叠加。
+
+因此本轮的 `§16.1`–`§16.3` 三项改动在文件层面已就位并通过 `typecheck:video`
+（23 模块 0 错误）与视频测试（19 文件），但**提交要等对方收尾**：pre-commit 会跑
+`apps/web/test` 整棵根，而当前工作区里有两个由对方 WIP 引起的红灯
+（`video-health-tristate` 仍按「一次失败即删」断言、`video-library-store.ts` 有两处
+未写理由的空 `catch`）。这两条都不属于本轮改动范围，硬改会覆盖对方正在写的文件。
+
+处理原则（与 §12.3 一致）：**不修别人的业务分支、不把别人的 WIP 混进自己的提交**，
+等对方完成后只提交自己那几个文件。

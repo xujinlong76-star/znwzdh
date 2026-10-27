@@ -106,27 +106,30 @@ describe('sweepVideoHealth — 删除策略', () => {
   })
 
   it('即使显式开启 autoPrune，unverified 也不进删除候选', async () => {
-    const data = navData([
-      videoItem('dead1', 'BV1aaaaaaaaa'),
-      videoItem('flaky1', 'BV1bbbbbbbbb'),
-    ])
-    const { report, updatedData } = await sweepVideoHealth(data, {
-      autoPrune: true,
-      prober: async (item) => ({
-        videoId: item.id,
-        title: item.title,
-        platform: 'bilibili',
-        healthy: false,
-        state: item.id === 'dead1' ? 'dead' : 'unverified',
-        reason: 'test',
-        latencyMs: 1,
-      }),
+    const prober = async (item: NavigationSubItem) => ({
+      videoId: item.id,
+      title: item.title,
+      platform: 'bilibili' as const,
+      healthy: false,
+      state: item.id === 'dead1' ? ('dead' as const) : ('unverified' as const),
+      reason: 'test',
+      latencyMs: 1,
     })
 
-    expect(report.brokenCount).toBe(1)
-    expect(report.unverifiedCount).toBe(1)
-    const remaining = updatedData.navigationItems[0].items ?? []
-    // 只删 dead，保留 unverified
+    const first = await sweepVideoHealth(
+      navData([videoItem('dead1', 'BV1aaaaaaaaa'), videoItem('flaky1', 'BV1bbbbbbbbb')]),
+      { autoPrune: true, prober }
+    )
+    expect(first.report.brokenCount).toBe(1)
+    expect(first.report.unverifiedCount).toBe(1)
+
+    // 跑第二轮再断言结果，而不是只看第一轮 —— 因为「删不删」的口径可能变
+    // （见 video-deadlink-sweeper：删除候选现在是「连续失败达阈值」，一次失败只标记）。
+    // 两种口径下最终状态一致：旧口径第一轮就删掉 dead1，第二轮只剩 flaky1 可探；
+    // 新口径第二轮把 dead1 的连击数推到阈值后才删。这样本用例守的是
+    // 「unverified 不该被删」这件事本身，不绑定具体阈值实现。
+    const second = await sweepVideoHealth(first.updatedData, { autoPrune: true, prober })
+    const remaining = second.updatedData.navigationItems[0].items ?? []
     expect(remaining.map(i => i.id)).toEqual(['flaky1'])
   })
 

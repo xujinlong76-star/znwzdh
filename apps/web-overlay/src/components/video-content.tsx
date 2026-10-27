@@ -34,13 +34,22 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
     })
     const [searchQuery, setSearchQuery] = useState('')
 
-    // 构建视频 CJK 倒排索引
-    const searchIndex = useMemo(() => buildVideoSearchIndex(navigationData), [navigationData])
+    // 构建视频 CJK 倒排索引。
+    //
+    // **只在真的搜索时才建**：绝大多数访问只浏览不搜索，而建索引是「每次进页面」都付的成本
+    // （遍历全部分类/子分类/条目、拆 CJK bigram、累计词频）。
+    // 依赖里用 hasQuery 而不是 searchQuery：布尔值在一次搜索会话里从 false 变 true 后不再翻转，
+    // 所以「输入框反复增删字符」不会重复构建（索引本身仍按 navigationData 记忆化）。
+    const hasQuery = searchQuery.trim().length > 0
+    const searchIndex = useMemo(
+        () => (hasQuery ? buildVideoSearchIndex(navigationData) : null),
+        [hasQuery, navigationData]
+    )
 
     // 基于 BM25 与时效质量加权的智能检索（支持 CJK Bigram、同义词扩展与热度排序）
     const searchResults = useMemo(() => {
         const query = searchQuery.trim()
-        if (!query) return []
+        if (!query || !searchIndex) return []
 
         const rankedResults = searchVideoIndex(searchIndex, query, navigationData.navigationItems)
 

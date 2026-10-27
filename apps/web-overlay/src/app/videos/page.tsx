@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { VideoContent } from '@/components/video-content'
 import { Metadata } from 'next/types'
 import { ScrollToTop } from '@/components/ScrollToTop'
@@ -8,20 +9,36 @@ import { pageShareMetadata } from '@/lib/seo/metadata'
 /**
  * NavHub 改动：数据改为从中枢异步读取（原为 import 构建期静态 JSON），
  * 使视频导航内容与站点配置都来自数据库；中枢不可用时回退到构建期基线。
- * force-dynamic 是必需的 —— 否则元信息会被固化在构建产物里（首页踩过这个坑）。
+ *
+ * 为什么从 `force-dynamic` 改成 ISR（revalidate = 60）：
+ *   - `getFileContent` 的读链路本来就带 Next Data Cache（`revalidateFromEnv`，默认 60s），
+ *     `force-dynamic` 把这一层缓存整个废掉 —— 每个请求都要打一次中枢，
+ *     而读到的东西最多只差 60 秒；
+ *   - `/hot` 早就用的是 `revalidate = 60`，同类页面（内容由后台策划、`noindex`）
+ *     没有理由一半 ISR 一半动态；
+ *   - 元信息不会「固化在构建产物里」：`generateMetadata` 在每次再生成时都会重跑。
+ *
+ * 注意：这里的 60 与 `NAVHUB_STORAGE_REVALIDATE_S` 的默认值对齐。若把该环境变量
+ * 设为 0（关掉数据缓存、要求后台改完立刻可见），页面仍会有 60s 的 ISR 窗口 ——
+ * Next 要求 `revalidate` 是静态字面量，无法读环境变量。
  */
-export const dynamic = 'force-dynamic'
+export const revalidate = 60
 
 const VIDEOS_PATH = 'src/navsphere/content/videos.json'
 const SITE_PATH = 'src/navsphere/content/site.json'
 
-async function getData() {
+/**
+ * `generateMetadata` 与页面组件各调一次，用 React 的 `cache` 合并成**同一请求内一次读取**。
+ * （Data Cache 命中时本来也不贵，但两条链路各自 await 会让首字节多等一轮微任务调度，
+ * 且一旦适配器冷却降级，重复调用就是双倍失败重试。）
+ */
+const getData = cache(async () => {
   const [videosRaw, siteRaw] = await Promise.all([
     getFileContent(VIDEOS_PATH),
     getFileContent(SITE_PATH),
   ])
   return getProcessedData(videosRaw as never, siteRaw as never)
-}
+})
 
 export async function generateMetadata(): Promise<Metadata> {
   const { siteData } = await getData()

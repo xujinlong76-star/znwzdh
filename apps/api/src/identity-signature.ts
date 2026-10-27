@@ -110,8 +110,14 @@ function macEquals(expectedHex: string, provided: string | undefined): boolean {
  */
 export class IdentityReplayGuard {
   private readonly seen = new Map<string, number>();
+  // 不能用 TypeScript 参数属性（constructor(private readonly x)）：中枢由
+  // `node apps/api/src/main.ts` 直接跑，Node 的 strip-only 模式遇到参数属性会
+  // ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX，整进程起不来（CI 的 ISR/E2E 作业同源）。
+  private readonly maxEntries: number;
 
-  constructor(private readonly maxEntries = 20_000) {}
+  constructor(maxEntries = 20_000) {
+    this.maxEntries = maxEntries;
+  }
 
   /** 首次出现返回 true（放行）；已见过返回 false（判定为重放） */
   accept(key: string, nowMs: number, ttlMs: number): boolean {

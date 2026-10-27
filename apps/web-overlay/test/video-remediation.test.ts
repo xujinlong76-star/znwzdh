@@ -11,6 +11,7 @@ import type { NavigationData, NavigationItem, NavigationSubItem } from "@/types/
 import { isVersionConflict } from "@/lib/video-write-guard";
 import { decodeVideoCursor, encodeVideoCursor, pageCategoryByCursor } from "@/lib/video-pagination";
 import { PRUNE_AFTER_CONSECUTIVE_FAILURES, sweepVideoHealth } from "@/lib/video-deadlink-sweeper";
+import { MAX_CACHED_VIDEOS, selectEvicted } from "@/lib/video-cache-manager";
 
 function item(id: string, harvestedAt: number, extra: Partial<NavigationSubItem> = {}): NavigationSubItem {
   return {
@@ -143,5 +144,31 @@ describe("A2 死链删除需要连续失败", () => {
     });
     expect(res.updatedData.navigationItems[0].items).toHaveLength(1);
     expect(res.updatedData.navigationItems[0].items?.[0].videoConfig?.healthStatus).toBe("unverified");
+  });
+});
+
+describe("C1 离线缓存容量", () => {
+  const entry = (id: string) => ({
+    videoId: id,
+    title: id,
+    cachedAt: Date.now(),
+    sizeBytes: 1024,
+    isCompleted: true,
+    sourceUrl: `https://example.com/${id}`,
+  });
+
+  it("未超上限时不淘汰", () => {
+    expect(selectEvicted([entry("a"), entry("b")], 2)).toEqual([]);
+  });
+
+  it("超上限时返回被挤出清单的条目（用于联动删除 CacheStorage）", () => {
+    const manifest = Array.from({ length: MAX_CACHED_VIDEOS + 3 }, (_, i) => entry(`v${i}`));
+    const evicted = selectEvicted(manifest);
+    expect(evicted).toHaveLength(3);
+    expect(evicted.map((e) => e.videoId)).toEqual([`v${MAX_CACHED_VIDEOS}`, `v${MAX_CACHED_VIDEOS + 1}`, `v${MAX_CACHED_VIDEOS + 2}`]);
+  });
+
+  it("上限可注入（便于不同配额档位复用同一逻辑）", () => {
+    expect(selectEvicted([entry("a"), entry("b"), entry("c")], 1).map((e) => e.videoId)).toEqual(["b", "c"]);
   });
 });

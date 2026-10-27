@@ -20,6 +20,20 @@ export interface PrefetchCandidate {
 const CACHE_MANIFEST_KEY = 'devops_video_cache_manifest_v1'
 
 /**
+ * 离线清单的容量上限。
+ *
+ * 清单与**真实缓存条目**必须一起淘汰：原实现只 `slice(0, 50)` 截断清单，
+ * 被挤掉的视频其 CacheStorage 响应仍留在磁盘上（清单里已看不见、却继续占配额），
+ * 用户清缓存时也无从选择——这是「越用越占空间」的根因。
+ */
+export const MAX_CACHED_VIDEOS = 50
+
+/** 纯函数：给定清单与上限，返回应被淘汰的条目（便于单测，不依赖 CacheStorage） */
+export function selectEvicted(manifest: VideoCacheItem[], limit = MAX_CACHED_VIDEOS): VideoCacheItem[] {
+  return manifest.length > limit ? manifest.slice(limit) : []
+}
+
+/**
  * Checks if CacheStorage & StorageManager APIs are accessible in current runtime.
  */
 export function isStorageAvailable(): boolean {
@@ -52,9 +66,29 @@ export function recordCachedVideoItem(item: VideoCacheItem): void {
     } else {
       manifest.unshift(item)
     }
-    localStorage.setItem(CACHE_MANIFEST_KEY, JSON.stringify(manifest.slice(0, 50)))
+    const evicted = selectEvicted(manifest)
+    localStorage.setItem(CACHE_MANIFEST_KEY, JSON.stringify(manifest.slice(0, MAX_CACHED_VIDEOS)))
+    // 清单与缓存条目联动淘汰：不 await，避免写清单被网络删除拖慢
+    if (evicted.length > 0) void evictCachedResponses(evicted.map(e => e.videoId))
   } catch {
     // Ignore storage quota errors
+  }
+}
+
+/**
+ * 删除若干视频在 CacheStorage 里的响应（与 clearVideoCache 同一套键匹配规则）。
+ * 失败静默：淘汰是尽力而为，不能因为一个条目删不掉就让「记录清单」失败。
+ */
+async function evictCachedResponses(videoIds: string[]): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window) || videoIds.length === 0) return
+  try {
+    const keys = await caches.keys()
+    for (const k of keys) {
+      if (!k.includes('video-stream') && !k.includes('devops-videos')) continue
+      if (videoIds.some(id => k.includes(id))) await caches.delete(k)
+    }
+  } catch {
+    // 尽力而为：配额/权限异常不应冒泡到调用方
   }
 }
 

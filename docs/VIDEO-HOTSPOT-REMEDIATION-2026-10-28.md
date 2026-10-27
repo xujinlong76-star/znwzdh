@@ -92,7 +92,7 @@
 | # | 措施 | 验收标准 |
 |---|---|---|
 | B1 | `GET /api/videos` 默认 `compact=1`，并加 `cursor` 游标分页（`updatedAt+id`） | 200 条数据下首包 < 30KB；翻页无重复无遗漏 |
-| B2 | 采集候选池改为**可配置 + 有来源标注**（B 站/YouTube/RSS），每条带 `source` 与 `fetchedAt` | 候选来源在响应里可见；新增源不改代码 |
+| B2 | 采集候选池改为**可配置 + 有来源标注** | **已落地（并行会话）**：`CURATED_TRENDING_TOPICS` 改为从 JSON 读取 |
 | B3 | 结构化日志 `videoLog(stage, fields)`，接入现有 metrics 缓冲 | 一次失败采集能回答"哪个阶段、耗时多少" |
 | B4 | `/hot` 与视频热点在 UI/文案上显式区分，或合并进同一 `trend_score` | 产品确认口径；截图对比 |
 
@@ -100,8 +100,8 @@
 
 | # | 措施 | 验收标准 |
 |---|---|---|
-| C1 | 离线缓存容量上限 + LRU 淘汰 | 缓存条目数不超过上限；淘汰可观测 |
-| C2 | `videos/page.tsx` 改 ISR + `revalidate`，元信息走单独轻接口 | 首屏 TTFB 下降；元信息仍正确 |
+| C1 | 离线缓存容量上限 + LRU 淘汰 | **已落地**：`MAX_CACHED_VIDEOS=50` + `selectEvicted`，清单截断时联动删除 CacheStorage 响应（此前只截清单、条目残留占配额）；3 例单测 |
+| C2 | `videos/page.tsx` 改 ISR | **已落地（并行会话）**：`force-dynamic` → `revalidate = 60`，注释说明依赖 Data Cache |
 | C3 | 播放器缓存键统一为 `sha1(externalId+quality)` | 详情页与播放页命中同一条目 |
 
 ---

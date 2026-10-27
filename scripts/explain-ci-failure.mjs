@@ -109,10 +109,20 @@ function createClient(token) {
   return { api, fetchJobLog };
 }
 
+/** `head_sha` 只认完整提交号：短号先在本仓库解析，解析不了按原样传（让 API 去报错） */
+function resolveCommitSha(sha) {
+  if (!sha || /^[0-9a-f]{40}$/i.test(sha)) return sha;
+  try {
+    return execFileSync("git", ["rev-parse", "--verify", sha + "^{commit}"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || sha;
+  } catch {
+    return sha;
+  }
+}
+
 async function resolveRun(client, { repo, runId, sha, branch }) {
   if (runId) return client.api(`/repos/${repo}/actions/runs/${runId}`);
   const query = sha
-    ? `head_sha=${encodeURIComponent(sha)}`
+    ? `head_sha=${encodeURIComponent(resolveCommitSha(sha))}`
     : `branch=${encodeURIComponent(branch)}&event=push`;
   const data = await client.api(`/repos/${repo}/actions/runs?${query}&per_page=1`);
   const run = data?.workflow_runs?.[0];

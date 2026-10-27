@@ -69,6 +69,8 @@ describe("classifyFailure：按根因优先级分层", () => {
 
   it("断言失败是运行时层", () => {
     expect(classifyFailure("FAIL packages/core/test/a.test.ts > x\nAssertionError: expected 1 to be 2").layer).toBe("运行时");
+    // 注解正文里没有 AssertionError 前缀，只有断言文案
+    expect(classifyFailure("expected false to be true // Object.is equality").layer).toBe("运行时");
   });
 
   it("认不出来就是未知，不硬猜", () => {
@@ -194,6 +196,64 @@ describe("summarizeJob：一个 job 一行归因头", () => {
     expect(row.firstError).toBe("pnpm test exited 1");
     expect(row.notes ?? row.tail).toBeDefined();
     expect(row.layer).toBe("运行时");
+  });
+
+  it("注解优先于日志：测试里刻意打的错误日志不冒充根因", () => {
+    // 真实案例：日志先出现测试注入的 simulated audit failure，真失败在注解里
+    const row = summarizeJob(job, {
+      logText: "[navhub] 审计写入失败（主操作结果不受影响）: Error: simulated audit failure\nAssertionError: expected false to be true",
+      annotations: [
+        { annotation_level: "failure", path: ".github", start_line: 657, message: "Process completed with exit code 1." },
+        {
+          annotation_level: "failure",
+          path: "packages/store/test/migrate-dialect.test.ts",
+          start_line: 56,
+          title: "pg：部分唯一索引与身份索引都下发了",
+          message: "expected false to be true // Object.is equality",
+        },
+        { annotation_level: "notice", path: ".github", start_line: 1, message: "runner 镜像迁移提醒" },
+      ],
+    });
+    expect(row.firstError).toBe(
+      "packages/store/test/migrate-dialect.test.ts:56 · pg：部分唯一索引与身份索引都下发了 · expected false to be true // Object.is equality",
+    );
+    expect(row.layer).toBe("运行时");
+    expect(row.annotationCount).toBe(3);
+  });
+
+  it("注解里只有包装/通知时退回日志，不把 exit code 当归因头", () => {
+    const row = summarizeJob(job, {
+      logText: "src/x.ts(3,1): error TS2307: Cannot find module '@/lib/x'",
+      annotations: [
+        { annotation_level: "failure", path: ".github", start_line: 1, message: "Process completed with exit code 1." },
+        { annotation_level: "notice", path: ".github", start_line: 2, message: "runner 提醒" },
+      ],
+    });
+    expect(row.firstError).toContain("error TS2307");
+    expect(row.layer).toBe("构建");
+  });
+
+  it("有注解时栈帧从注解所指文件的段落取，不拿别的文件的帧", () => {
+    const logText = [
+      "    at Repository.authCtx.repo.audit (/repo/apps/api/test/auth.test.ts:443:46)",
+      " ❯ packages/store/test/migrate-dialect.test.ts (5 tests | 1 failed) 16ms",
+      " FAIL  packages/store/test/migrate-dialect.test.ts > migrateSiteIndexes > pg：部分唯一索引",
+      "AssertionError: expected false to be true",
+      " ❯ packages/store/test/migrate-dialect.test.ts:56:106",
+    ].join("\n");
+    const row = summarizeJob(job, {
+      logText,
+      annotations: [
+        {
+          annotation_level: "failure",
+          path: "packages/store/test/migrate-dialect.test.ts",
+          start_line: 56,
+          title: "pg：部分唯一索引",
+          message: "expected false to be true",
+        },
+      ],
+    });
+    expect(row.stackLine).toContain("migrate-dialect.test.ts:56:106");
   });
 
   it("聚合 job 归到汇总层，不把上游的字眼当根因", () => {

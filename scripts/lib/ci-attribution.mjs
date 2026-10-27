@@ -84,7 +84,16 @@ const RULES = [
   },
   {
     layer: "运行时",
-    patterns: [/\bAssertionError\b/g, /^\s*FAIL\s+\S+/gm, /\bexpect\(/g, /Test Files\s+\d+/g, /✕/g],
+    patterns: [
+      /\bAssertionError\b/g,
+      /^\s*FAIL\s+\S+/gm,
+      /\bexpect\(/g,
+      // 断言文案（Vitest 的 `::error` 注解正文只有这一句，没有 AssertionError 前缀）
+      /expected\s+.+?\s+to\s+(?:be|equal|contain|match|throw|have)/g,
+      /\bObject\.is equality\b/g,
+      /Test Files\s+\d+/g,
+      /✕/g,
+    ],
   },
 ];
 
@@ -129,6 +138,8 @@ const WRAPPER_ERROR =
  */
 const ESBUILD_ERROR = /^\s*✘\s*\[ERROR\]\s?(.+)$/;
 const LOCATION_ONLY = /^\s*([^\s:]+:\d+:\d+):\s*$/;
+/** 栈帧两种写法：Node 的 `at fn (...)`、Vitest 的 `❯ file:line:col`（结果行的 `❯ file (n tests)` 不是帧） */
+const STACK_LINE = /^\s*(?:at\s+\S+|❯\s+\S+:\d+:\d+)/;
 
 function isWrapper(line) {
   return WRAPPER_ERROR.test(line.replace(WORKFLOW_ERROR, "").trim());
@@ -181,7 +192,7 @@ export function extractAttribution(logText, { maxTail = 12 } = {}) {
   let stackLine = "";
   if (firstErrorIndex !== -1) {
     for (let i = firstErrorIndex + 1; i < Math.min(content.length, firstErrorIndex + 40); i++) {
-      if (/^\s+at\s+\S+/.test(content[i])) {
+      if (STACK_LINE.test(content[i])) {
         stackLine = content[i].trim();
         break;
       }
@@ -221,35 +232,90 @@ export function failingStep(job) {
   return last?.name ?? "";
 }
 
+function firstLine(text) {
+  return String(text ?? "").trim().split(/\r?\n/)[0].trim();
+}
+
+/**
+ * 能当归因头用的注解：失败级别 + 非包装文案。
+ * 通知（runner 的镜像迁移提醒之类）与 `Process completed with exit code 1.`
+ * 都是噪音，留在里面会把归因头带偏。
+ */
+export function usableAnnotations(annotations) {
+  return (Array.isArray(annotations) ? annotations : []).filter((a) => {
+    if (!a || a.annotation_level === "notice") return false;
+    const message = firstLine(a.message);
+    return message !== "" && !isWrapper(message);
+  });
+}
+
+/** `路径:行 · 用例名 · 首行错误`——三样都有时才拼，缺的留空 */
+function annotationHead(annotation) {
+  const message = firstLine(annotation.message);
+  const title = String(annotation.title ?? "").trim();
+  const line = annotation.line ?? annotation.start_line;
+  const location = annotation.path ? annotation.path + (Number.isFinite(line) ? ":" + line : "") : "";
+  return [location, title, message].filter(Boolean).join(" · ");
+}
+
+/**
+ * 注解锚定的栈帧：从日志里注解所指文件那一行之后找。
+ * 直接复用「第一处错误之后的 at」会取到别的测试/别的文件的帧（真实 run 里取到过）。
+ */
+function stackNearPath(logText, annotation) {
+  const path = String(annotation?.path ?? "").trim();
+  if (!path) return "";
+  const lines = cleanLogLines(logText);
+  const at = lines.findIndex((line) => line.includes(path));
+  if (at === -1) return "";
+  if (STACK_LINE.test(lines[at])) return lines[at].trim();
+  for (let i = at + 1; i < Math.min(lines.length, at + 40); i++) {
+    if (STACK_LINE.test(lines[i])) return lines[i].trim();
+  }
+  return "";
+}
+
 /**
  * 单个 job 的归因行。
  *
- * 文本来源有两处，合并分类：
- *   - annotations（注释）是工具主动标注的，先于日志；
- *   - 日志兜底所有没有注释的 job（tsc / next build / docker）。
+ * 文本来源有两处，优先级不同：
+ *   - annotations（注解）是工具主动标注的——失败用例带文件/行号/用例名，最精确；
+ *   - 日志兜底所有没有注解的 job（tsc / next build / docker）。
+ *
+ * 为什么注解必须**先于**日志：日志里混着测试自己打的错误（例如
+ * `[navhub] 审计写入失败: Error: simulated audit failure` 是刻意的失败注入），
+ * 按行序取第一处错误会把它当成根因。真实 run 里踩过——归因头指向了模拟错误，
+ * 而真正的失败用例在注解里。
  */
 export function summarizeJob(job, { logText = "", annotations = [] } = {}) {
-  const annotationText = annotations
+  const usable = usableAnnotations(annotations);
+  const annotationText = usable
     .map((a) => [a.title, a.message, a.raw_details].filter(Boolean).join(" "))
     .join("\n");
-  const combined = annotationText + "\n" + logText;
   const aggregate = AGGREGATE_JOB.test(String(job?.name ?? ""));
-  const { layer, signals } = aggregate
-    ? { layer: "汇总", signals: ["上游 job 失败"] }
-    : classifyFailure(combined);
+  let layer;
+  let signals;
+  if (aggregate) {
+    layer = "汇总";
+    signals = ["上游 job 失败"];
+  } else {
+    ({ layer, signals } = classifyFailure(annotationText));
+    // 注解太泛（如只有一句 "Process completed"）时再让日志说话
+    if (layer === "未知") ({ layer, signals } = classifyFailure(annotationText + "\n" + logText));
+  }
   const { firstError, stackLine, tail } = extractAttribution(logText);
-  const primaryAnnotation = annotations[0];
+  const head = usable.length > 0 ? annotationHead(usable[0]) : "";
   return {
     id: job?.id ?? null,
     name: job?.name ?? "(unknown job)",
     conclusion: job?.conclusion ?? "unknown",
     step: failingStep(job),
     layer,
-    firstError: firstError || primaryAnnotation?.message || "",
-    stackLine,
+    firstError: head || firstError,
+    stackLine: head ? stackNearPath(logText, usable[0]) : stackLine,
     tail,
     signals,
-    annotationCount: annotations.length,
+    annotationCount: Array.isArray(annotations) ? annotations.length : 0,
   };
 }
 

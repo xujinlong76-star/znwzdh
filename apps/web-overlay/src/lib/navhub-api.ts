@@ -173,10 +173,10 @@ const HUB_STATUS_HINT: Record<number, string> = {
   409: '冲突：同名凭据已存在，或未吊销凭据已达上限',
   413: '请求体过大',
   429: '请求过于频繁，请稍后再试',
-  502: 'NavHub 中枢不可用（连接失败）：请确认 API 服务已启动（默认 :8787）',
-  503: 'NavHub 中枢暂时不可用，请稍后再试',
+  502: '山羊胡中枢不可用（连接失败）：请确认 API 服务已启动（默认 :8787）',
+  503: '山羊胡中枢暂时不可用，请稍后再试',
   // 504 由 /api/hub 代理自己发出（等上游到上限主动掐断）：说「慢」而不是说「坏」
-  504: 'NavHub 中枢响应超时（代理已等到上限主动中断，这次请求确实算得久，可直接重试）',
+  504: '山羊胡中枢响应超时（代理已等到上限主动中断，这次请求确实算得久，可直接重试）',
 }
 
 function hubError(
@@ -186,7 +186,7 @@ function hubError(
 ): Error & { status: number; payload?: Record<string, unknown> } {
   const msg = serverMessage && serverMessage.trim()
     ? serverMessage.trim()
-    : HUB_STATUS_HINT[status] ?? ('NavHub 中枢返回 HTTP ' + status)
+    : HUB_STATUS_HINT[status] ?? ('山羊胡中枢返回 HTTP ' + status)
   const err = new Error(msg) as Error & { status: number; payload?: Record<string, unknown> }
   err.status = status
   /**

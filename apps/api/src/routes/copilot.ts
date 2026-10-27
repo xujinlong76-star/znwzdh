@@ -306,7 +306,7 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
     }
     let replyText = `${preamble}针对您的提问 **「${message}」**：\n\n`;
     if (fallbackSites.length > 0) {
-      replyText += `已在当前 山羊胡知识库为您匹配到以下核心工具：\n\n`;
+      replyText += `已在当前山羊胡知识库为您匹配到以下核心工具：\n\n`;
       for (const s of fallbackSites) {
         replyText += `- [${s.title}](${s.url})：${s.description || "实用高效工具"}\n`;
       }

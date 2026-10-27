@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
-import { getFileContent, commitFile } from '@/lib/github'
+import { getFileContent } from '@/lib/github'
+import { mutateVideoLibrary } from '@/lib/video-library-store'
 import type { NavigationData } from '@/types/navigation'
 import {
   getAutonomousHarvesterController,
@@ -85,22 +86,34 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}))
     const { dryRun = false, forceCategory } = body
 
-    const currentData = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
     // 单例：每次 new 会让 controller.logs（管理端的「AI 思考过程」）每轮从零开始
     const controller = getAutonomousHarvesterController()
 
-    const { updatedData, report } = await controller.runCycle(currentData, {
-      dryRun: Boolean(dryRun),
-      forceCategory: typeof forceCategory === 'string' ? forceCategory : undefined,
-    })
+    /**
+     * 采集周期会读全库做去重与配额判断，写回是整包覆盖 —— 必须带版本号。
+     * 这里把「读 + 算 + 写」整体放进 mutate：冲突时重读重放，避免把
+     * 同期管理端的编辑或另一轮采集整批抹掉。
+     * dryRun 与「本轮没新增」都不落盘（skip），但仍把 report 返回给管理端。
+     */
+    const outcome = await mutateVideoLibrary(
+      async (data) => {
+        const { updatedData, report } = await controller.runCycle(data, {
+          dryRun: Boolean(dryRun),
+          forceCategory: typeof forceCategory === 'string' ? forceCategory : undefined,
+        })
+        return {
+          next: updatedData,
+          result: { report },
+          skip: Boolean(dryRun) || report.newCourses.length === 0,
+        }
+      },
+      '[AI Harvest] Autonomous harvest cycle'
+    )
 
-    if (!dryRun && report.newCourses.length > 0) {
-      // 写失败必须让调用方知道：此前这里是 catch + console.warn 后继续返回 success，
-      // 运营看到「处理成功」而库里没有内容。
-      await commitFile(
-        VIDEOS_FILE_PATH,
-        JSON.stringify(updatedData, null, 2),
-        `[AI Harvest] Autonomous harvest cycle added ${report.newCourses.length} courses`
+    if (!outcome.ok) {
+      return NextResponse.json(
+        { code: 409, success: false, message: '视频库正在被并发修改，请稍后重试', retryable: true },
+        { status: 409 }
       )
     }
 
@@ -108,7 +121,7 @@ export async function POST(request: Request) {
       code: 0,
       success: true,
       data: {
-        report,
+        report: outcome.result.report,
       },
     })
   } catch (error) {

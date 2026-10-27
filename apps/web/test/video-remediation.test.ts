@@ -1,0 +1,147 @@
+/**
+ * 视频库整改的回归守卫（对应 docs/VIDEO-HOTSPOT-REMEDIATION-2026-10-28.md 的 A1/A2/B1）。
+ *
+ * 这三条都是「不加断言就会悄悄退化」的类型：
+ *   · A1 并发：冲突判定一旦失效，写路径会退回 last-write-wins，且**没有任何报错**；
+ *   · A2 删除：阈值写错（比如 >= 1）会让「一次网络抖动永久删内容」复现；
+ *   · B1 游标：排序键不是全序时，翻页会在两次请求间重复/漏项。
+ */
+import { describe, expect, it } from "vitest";
+import type { NavigationData, NavigationItem, NavigationSubItem } from "@/types/navigation";
+import { isVersionConflict } from "@/lib/video-write-guard";
+import { decodeVideoCursor, encodeVideoCursor, pageCategoryByCursor } from "@/lib/video-pagination";
+import { PRUNE_AFTER_CONSECUTIVE_FAILURES, sweepVideoHealth } from "@/lib/video-deadlink-sweeper";
+
+function item(id: string, harvestedAt: number, extra: Partial<NavigationSubItem> = {}): NavigationSubItem {
+  return {
+    id,
+    title: id,
+    description: "",
+    href: `https://example.com/${id}`,
+    videoConfig: { type: "bilibili", bvid: `BV${id}`, harvestedAt },
+    ...extra,
+  } as NavigationSubItem;
+}
+
+function category(id: string, items: NavigationSubItem[]): NavigationItem {
+  return { id, title: id, description: "", href: "", items } as NavigationItem;
+}
+
+function data(cats: NavigationItem[]): NavigationData {
+  return { navigationItems: cats } as NavigationData;
+}
+
+describe("A1 版本冲突判定", () => {
+  it("识别 StorageError 的 409 与文案变体", () => {
+    expect(isVersionConflict({ status: 409, message: "conflict" })).toBe(true);
+    expect(isVersionConflict(new Error("409 Conflict"))).toBe(true);
+    expect(isVersionConflict(new Error("version conflict: expected 3"))).toBe(true);
+    expect(isVersionConflict(new Error("版本冲突"))).toBe(true);
+  });
+
+  it("非冲突错误不得被当成冲突（否则会无限重放）", () => {
+    expect(isVersionConflict(new Error("ECONNREFUSED"))).toBe(false);
+    expect(isVersionConflict({ status: 500 })).toBe(false);
+    expect(isVersionConflict(null)).toBe(false);
+    expect(isVersionConflict("409")).toBe(false);
+  });
+});
+
+describe("B1 游标分页", () => {
+  const cat = category("cat", [item("a", 100), item("b", 300), item("c", 200), item("d", 400), item("e", 50)]);
+
+  it("游标可往返，非法输入返回 null", () => {
+    const cursor = { harvestedAt: 123, id: "x:y" };
+    expect(decodeVideoCursor(encodeVideoCursor(cursor))).toEqual(cursor);
+    expect(decodeVideoCursor("not-base64!!")).toBeNull();
+    expect(decodeVideoCursor("")).toBeNull();
+    expect(decodeVideoCursor(null)).toBeNull();
+  });
+
+  it("按 harvestedAt 降序分页，最后一页 nextCursor 为 null", () => {
+    const first = pageCategoryByCursor(cat, null, 2);
+    expect(first.category.items.map((i) => i.id)).toEqual(["d", "b"]);
+    expect(first.nextCursor).toEqual({ harvestedAt: 300, id: "b" });
+
+    const second = pageCategoryByCursor(cat, first.nextCursor, 2);
+    expect(second.category.items.map((i) => i.id)).toEqual(["c", "a"]);
+    expect(second.nextCursor).toEqual({ harvestedAt: 100, id: "a" });
+
+    const third = pageCategoryByCursor(cat, second.nextCursor, 2);
+    expect(third.category.items.map((i) => i.id)).toEqual(["e"]);
+    expect(third.nextCursor).toBeNull();
+  });
+
+  it("翻页途中插入新条目：已翻过的页不重复、不遗漏（offset 分页做不到）", () => {
+    const first = pageCategoryByCursor(cat, null, 2);
+    expect(first.category.items.map((i) => i.id)).toEqual(["d", "b"]);
+
+    // 模拟并发写入：新增一条最新的
+    const withNew = category("cat", [...cat.items, item("f", 500)]);
+    const second = pageCategoryByCursor(withNew, first.nextCursor, 2);
+
+    // 关键断言：第二页不应把 d/b 再来一次
+    expect(second.category.items.map((i) => i.id)).toEqual(["c", "a"]);
+  });
+
+  it("同 harvestedAt 时按 id 全序，不会在两次请求间换位", () => {
+    const tie = category("cat", [item("m", 100), item("n", 100), item("o", 100)]);
+    const p1 = pageCategoryByCursor(tie, null, 1);
+    const p2 = pageCategoryByCursor(tie, p1.nextCursor, 1);
+    const p3 = pageCategoryByCursor(tie, p2.nextCursor, 1);
+    expect([p1, p2, p3].map((p) => p.category.items[0].id)).toEqual(["m", "n", "o"]);
+  });
+});
+
+describe("A2 死链删除需要连续失败", () => {
+  const deadProber = async () => ({ state: "dead" as const, reason: "HTTP 404" });
+
+  it("阈值必须是 2：一次失败只标记，不删", async () => {
+    expect(PRUNE_AFTER_CONSECUTIVE_FAILURES).toBe(2);
+
+    const first = await sweepVideoHealth(data([category("cat", [item("v1", 1)])]), {
+      prober: deadProber,
+      autoPrune: true,
+    });
+
+    const cat = first.updatedData.navigationItems[0];
+    expect(cat.items).toHaveLength(1); // 仍在库
+    expect(cat.items?.[0].videoConfig?.healthStatus).toBe("broken");
+    expect(cat.items?.[0].videoConfig?.failStreak).toBe(1);
+  });
+
+  it("连续第二次失败才删除，且计数累计到 2", async () => {
+    const first = await sweepVideoHealth(data([category("cat", [item("v1", 1)])]), {
+      prober: deadProber,
+      autoPrune: true,
+    });
+    const second = await sweepVideoHealth(first.updatedData, { prober: deadProber, autoPrune: true });
+
+    expect(second.updatedData.navigationItems[0].items).toHaveLength(0);
+  });
+
+  it("中间恢复健康会清零计数（避免「历史失败」累积成误删）", async () => {
+    const first = await sweepVideoHealth(data([category("cat", [item("v1", 1)])]), {
+      prober: deadProber,
+      autoPrune: true,
+    });
+    const healthy = await sweepVideoHealth(first.updatedData, {
+      prober: async () => ({ state: "healthy" as const }),
+      autoPrune: true,
+    });
+    expect(healthy.updatedData.navigationItems[0].items?.[0].videoConfig?.failStreak).toBe(0);
+
+    // 再失败一次：计数从 0 开始，仍然不能删
+    const again = await sweepVideoHealth(healthy.updatedData, { prober: deadProber, autoPrune: true });
+    expect(again.updatedData.navigationItems[0].items).toHaveLength(1);
+  });
+
+  it("unverified（探测不确定）永远不进删除候选", async () => {
+    const res = await sweepVideoHealth(data([category("cat", [item("v1", 1)])]), {
+      prober: async () => ({ state: "unverified" as const, reason: "超时" }),
+      autoPrune: true,
+    });
+    expect(res.updatedData.navigationItems[0].items).toHaveLength(1);
+    expect(res.updatedData.navigationItems[0].items?.[0].videoConfig?.healthStatus).toBe("unverified");
+  });
+});

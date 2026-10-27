@@ -118,6 +118,8 @@ export interface VideoConfigRaw {
   publishedAt?: string | number
   harvestedAt?: number
   lastVerifiedAt?: number
+  /** 连续探测失败次数：达到阈值才允许自动删除（见 video-deadlink-sweeper） */
+  failStreak?: number
   qualityScore?: number
   freshnessScore?: number
   sourceType?: 'manual' | 'auto_trend' | 'auto_topic' | 'webhook'
@@ -217,6 +219,8 @@ export interface VideoConfig {
   trendKeyword?: string
   pinned?: boolean
   healthStatus?: 'healthy' | 'outdated' | 'broken' | 'unverified'
+  /** 连续探测失败次数：达到阈值才允许自动删除（见 video-deadlink-sweeper） */
+  failStreak?: number
   stats?: VideoStats
   chapters?: VideoChapter[]
   mirrors?: VideoMirrorSource[]

@@ -1,18 +1,20 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
-import { getFileContent } from '@/lib/github'
 import { rollbackReplacement } from '@/lib/video-harvester'
-import type { NavigationData } from '@/types/navigation'
+import { readReplacementHistory } from '@/lib/video-library-store'
 
 export const runtime = 'nodejs'
 
-const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
-
 export async function GET() {
   try {
-    const data = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
+    // 替换历史含旧条目全文与回滚入口，属于管理面数据：此前无鉴权即可读。
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
+    }
+
     return NextResponse.json({
-      history: data.replacementHistory || []
+      history: await readReplacementHistory()
     })
   } catch (error) {
     console.error('Failed to get replacement history:', error)

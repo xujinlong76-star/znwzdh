@@ -40,16 +40,16 @@
 | P0-3 | Cron 端点 fail-open | **已闭合** | 同上，密钥缺失即拒绝，不再回落默认值 |
 | P0-4 | LLM 摘要接口无鉴权 | 需复核 | 本轮未逐行核对 `video-ai-summary` 的调用面 |
 | P0-6 | 健康巡检写错目标文件 | 需复核 | 本轮未复核写入路径常量 |
-| P0-7 | 一次探测失败即永久删除 | **未闭合** | `video-deadlink-sweeper.ts:290-296`：`brokenIds` 直接 `filter` 出列；无 `failStreak` / 二次确认 |
+| P0-7 | 一次探测失败即永久删除 | **已闭合（本轮）** | 新增 `PRUNE_AFTER_CONSECUTIVE_FAILURES = 2` + `videoConfig.failStreak`；单次失败只标记 `broken`，连续两次才进删除候选；恢复健康即清零 |
 | P0-8 | 单条增删改清空替换历史 | 需复核 | 本轮未复核 `[id]/route.ts` 的 history 处理 |
 | P1-9/10 | 租约锁 owner 不匹配 / 内存单例 | 需复核 | 本轮未复核锁实现 |
 | P1-11 | 后台任务在 Serverless 不可靠 | **未闭合**（结构性） | 采集仍依赖请求触发 + `.github/workflows/video-harvest.yml` 定时；进程内状态不跨实例 |
-| P1-12 | 读-改-写无并发控制 | **未闭合**（最优先） | 存储层已有 `ifVersion`，但 `videos/route.ts:39`、`webhook-harvest:130`、`[id]/route.ts:15`、`ai-autonomous-harvest:99` 均未传版本 |
+| P1-12 | 读-改-写无并发控制 | **已闭合（本轮）** | 新增 `lib/video-library-store.ts` 的 `mutateVideoLibrary`（每轮重读 + `ifVersion` + 冲突重放）；四处写路径全部接入，冲突返回 409 |
 | P1-13 | 写失败被吞成成功 | **已闭合** | `webhook-harvest/route.ts:130` 的 `commitFile` 不再 catch 后继续返回成功 |
-| P1-15 | `GET /api/videos` 全量无裁剪 | **部分闭合** | `route.ts:64-74` 新增 `compact` / `categoryId` / `limit` + `stripHeavyFields`；仍无游标分页，`compact` 需前端显式传 |
+| P1-15 | `GET /api/videos` 全量无裁剪 | **已闭合（本轮）** | `compact`/`categoryId`/`limit`/`offset` + 新增 `cursor`（`X-Next-Cursor`），游标锚在 `harvestedAt+id` 上，翻页期间插入新条目不会重复/漏项 |
 | P1-16 | `videos/page.tsx` `force-dynamic` | **未闭合** | `app/videos/page.tsx:13` 仍 `force-dynamic`（注释说明为元信息正确性，属有意取舍） |
 | P1-17 | 摘要缓存退化为进程内 Map | 需复核 | 本轮未复核 |
-| P2-30 | `replacementHistory` 硬截断 100 | **未闭合** | `video-harvester.ts:643` `slice(0, 100)` |
+| P2-30 | `replacementHistory` 硬截断 100 | **部分闭合（本轮）** | 新增独立文件 `video-replacements.json`（不截断）作为权威副本；内联仍保留上限以控制 videos.json 体积 |
 
 > 说明：标"需复核"的 7 项，本轮未取得足够证据，**不臆断为已修**。建议按第 4 节的验收清单逐条补证据。
 
@@ -116,6 +116,21 @@
 | B3 结构化日志 | 故障定位从「翻日志猜」到「按 stage 聚合」 | 本轮 CI 排查耗时即为反例 |
 
 ---
+
+## 5.1 本轮已实施（代码已落地，含回归用例）
+
+| 项 | 落地内容 | 验证 |
+|---|---|---|
+| A1 并发控制 | `lib/video-library-store.ts`：`mutateVideoLibrary` 每轮**重读**最新数据、取 `getStorageVersion`、写入带 `ifVersion`、409 时重放（最多 3 次）；四处写路径（整包保存 / 单条增删改 / webhook / 自主采集）全部接入，冲突统一返回 409 + `retryable` | `video-remediation.test.ts` 的「版本冲突判定」4 例 |
+| A2 删除二次确认 | `PRUNE_AFTER_CONSECUTIVE_FAILURES = 2`；`videoConfig.failStreak` 累加/清零；只有 `streak >= 2` 才进删除候选 | 「死链删除需要连续失败」4 例（含 unverified 永不删除） |
+| A3 历史不截断 | `lib/video-library-store.ts` 的 `appendReplacementHistory` 写 `video-replacements.json`；`/api/videos/history` 优先读该文件，回退内联 | 通过 `readReplacementHistory` 的读路径 + 类型检查 |
+| B1 游标分页 | `lib/video-pagination.ts`：`encode/decodeVideoCursor`、`pageCategoryByCursor`；`X-Next-Cursor` 响应头；`harvestedAt desc, id asc` 全序 | 「游标分页」4 例（含翻页中途插入的稳定性） |
+| B3 结构化日志 | `lib/video-log.ts`：`videoLog(stage, fields, level)` + `startVideoTimer`；死链巡检已落一条 `probe` 汇总（探测数/健康/失败/待删） | 类型检查 + 巡检用例覆盖调用路径 |
+| P1-5 读接口鉴权 | `GET /api/videos/history` 加 `verifyAdminSession()`（历史含旧条目全文与回滚入口） | 与写接口同口径 |
+
+**设计取舍（明确记录）**：
+- 游标分页只在 `categoryId` 下生效。跨分类的稳定游标需要 `(categoryId, harvestedAt, id)` 复合键，而当前前端是「按分类进入」的交互，收益不抵复杂度。
+- `appendReplacementHistory` 失败只告警不回滚：主数据已落盘，回滚记录是审计用途，不能因为它让采集整体失败。
 
 ## 6. 本轮未验证 / 风险声明
 

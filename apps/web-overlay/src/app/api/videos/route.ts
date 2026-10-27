@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
-import { commitFile, getFileContent } from '@/lib/github'
+import { getFileContent } from '@/lib/github'
+import {
+    decodeVideoCursor,
+    encodeVideoCursor,
+    pageCategoryByCursor,
+    type VideoCursor,
+} from '@/lib/video-pagination'
+import { mutateVideoLibrary } from '@/lib/video-library-store'
 import type { NavigationItem, NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const runtime = 'nodejs'
@@ -38,6 +45,7 @@ function pageCategory(cat: NavigationItem, offset: number, limit: number): Navig
     })),
   }
 }
+
 
 function parseCount(raw: string | null): number | undefined {
   if (raw === null) return undefined
@@ -85,9 +93,23 @@ export async function GET(request: Request) {
 
         const totalItems = countItems(categories)
 
+        const cursor = decodeVideoCursor(searchParams.get('cursor'))
+        const pageSize = limit ?? 20
+
         let selected = categoryId ? categories.filter(c => c.id === categoryId) : categories
         if (compact) selected = selected.map(compactCategory)
-        if (limit !== undefined) selected = selected.map(c => pageCategory(c, offset, limit))
+
+        let nextCursor: VideoCursor | null = null
+        if (cursor && categoryId) {
+            // 游标模式：只在单分类内分页（跨分类的游标需要复合键，收益不抵复杂度）
+            selected = selected.map(c => {
+                const paged = pageCategoryByCursor(c, cursor, pageSize)
+                if (paged.nextCursor) nextCursor = paged.nextCursor
+                return paged.category
+            })
+        } else if (limit !== undefined) {
+            selected = selected.map(c => pageCategory(c, offset, limit))
+        }
 
         return NextResponse.json(
             { ...data, navigationItems: selected },
@@ -95,6 +117,7 @@ export async function GET(request: Request) {
                 headers: {
                     'X-Total-Items': String(totalItems),
                     'X-Returned-Items': String(countItems(selected)),
+                    ...(nextCursor ? { 'X-Next-Cursor': encodeVideoCursor(nextCursor) } : {}),
                 },
             },
         )
@@ -106,30 +129,6 @@ export async function GET(request: Request) {
     }
 }
 
-async function validateAndSaveVideosData(data: NavigationData, accessToken?: string) {
-    if (!data || typeof data !== 'object') {
-        throw new Error('Invalid videos data: not an object')
-    }
-
-    if (!('navigationItems' in data) || !Array.isArray(data.navigationItems)) {
-        throw new Error('Invalid videos data: missing navigationItems array')
-    }
-
-    const invalidItems = data.navigationItems.filter((item: NavigationItem) =>
-        !item.id || !item.title
-    )
-
-    if (invalidItems.length > 0) {
-        throw new Error('Invalid videos data: some items are malformed')
-    }
-
-    await commitFile(
-        VIDEOS_FILE_PATH,
-        JSON.stringify(data, null, 2),
-        'Update videos data',
-        accessToken
-    )
-}
 
 export async function POST(request: Request) {
     try {
@@ -139,7 +138,21 @@ export async function POST(request: Request) {
         }
 
         const data = await request.json()
-        await validateAndSaveVideosData(data, authCheck.githubToken || undefined)
+
+        // 整包保存也走版本校验：管理端「保存全部」与后台采集并发时，
+        // 谁后写谁赢会静默丢掉对方的改动；带 ifVersion 后冲突可见（409）。
+        const outcome = await mutateVideoLibrary<null>(
+            () => ({ next: data as NavigationData, result: null }),
+            'Update videos data',
+            { token: authCheck.githubToken || undefined }
+        )
+
+        if (!outcome.ok) {
+            return NextResponse.json(
+                { error: 'Conflict', message: '视频库正在被并发修改，请刷新后重试', retryable: true },
+                { status: 409 }
+            )
+        }
 
         return NextResponse.json({ success: true })
     } catch (error) {
@@ -162,7 +175,21 @@ export async function PUT(request: Request) {
         }
 
         const data = await request.json()
-        await validateAndSaveVideosData(data, authCheck.githubToken || undefined)
+
+        // 整包保存也走版本校验：管理端「保存全部」与后台采集并发时，
+        // 谁后写谁赢会静默丢掉对方的改动；带 ifVersion 后冲突可见（409）。
+        const outcome = await mutateVideoLibrary<null>(
+            () => ({ next: data as NavigationData, result: null }),
+            'Update videos data',
+            { token: authCheck.githubToken || undefined }
+        )
+
+        if (!outcome.ok) {
+            return NextResponse.json(
+                { error: 'Conflict', message: '视频库正在被并发修改，请刷新后重试', retryable: true },
+                { status: 409 }
+            )
+        }
 
         return NextResponse.json({ success: true })
     } catch (error) {

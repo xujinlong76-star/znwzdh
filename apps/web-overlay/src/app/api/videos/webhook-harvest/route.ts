@@ -1,14 +1,12 @@
 import { NextResponse } from 'next/server'
-import { getFileContent, commitFile } from '@/lib/github'
-import type { NavigationData, NavigationSubItem } from '@/types/navigation'
+import { mutateVideoLibrary } from '@/lib/video-library-store'
+import type { NavigationData } from '@/types/navigation'
 import {
   MultiSourceConnector,
   type WebhookPayload,
 } from '@/lib/video-multi-source-connector'
 
 export const runtime = 'nodejs'
-
-const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
 /**
  * 未配置密钥就是「关闭」，不是「用默认密钥」。
@@ -92,46 +90,64 @@ export async function POST(request: Request) {
       )
     }
 
-    // Persist into videos.json if valid
-    const currentData = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
-    const categories = currentData.navigationItems || []
+    // 写库走统一入口：带 ifVersion 的读-改-写 + 冲突重放。
+    // 此前是「读整份 → push → 覆盖写」，两个 webhook 同时到达会丢掉一条。
+    const externalId = processRes.subItem.videoConfig?.bvid || processRes.subItem.videoConfig?.videoId
     const targetDomain = body.data.domain || 'cat_ai_engineering'
+    const incoming = processRes.subItem
 
-    let targetCat = categories.find(c => c.id === targetDomain)
-    if (!targetCat) {
-      targetCat = categories[0]
+    const outcome = await mutateVideoLibrary<
+      { kind: 'no-category' } | { kind: 'duplicate' } | { kind: 'created' }
+    >(
+      (data) => {
+        const categories = data.navigationItems ?? []
+        const targetCat = categories.find(c => c.id === targetDomain) ?? categories[0]
+        if (!targetCat) {
+          return { next: data, result: { kind: 'no-category' as const }, skip: true }
+        }
+
+        // 同一 externalId 重复投递不应产生重复条目（此前只靠 id 前缀，挡不住重放）
+        const duplicated = externalId
+          ? (targetCat.items ?? []).some(it => (it.videoConfig?.bvid || it.videoConfig?.videoId) === externalId)
+          : false
+        if (duplicated) {
+          return { next: data, result: { kind: 'duplicate' as const }, skip: true }
+        }
+
+        // 不可变更新：mutate 会随冲突重试被调用多次，直接 push 会重复追加
+        const next: NavigationData = {
+          ...data,
+          navigationItems: categories.map(cat =>
+            cat.id === targetCat.id ? { ...cat, items: [...(cat.items ?? []), incoming] } : cat
+          ),
+        }
+        return { next, result: { kind: 'created' as const } }
+      },
+      `[Webhook Harvest] Ingested video ${incoming.title}`
+    )
+
+    if (!outcome.ok) {
+      // 409 不是失败而是「请重试」：调用方（GitHub Actions / IFTTT）通常自带重试
+      return NextResponse.json(
+        { code: 409, success: false, message: '视频库正在被并发修改，请稍后重试', retryable: true },
+        { status: 409 }
+      )
     }
 
-    if (!targetCat) {
+    if (outcome.result.kind === 'no-category') {
       return NextResponse.json(
         { code: 422, message: '视频库没有任何分类，无法入库' },
         { status: 422 }
       )
     }
 
-    targetCat.items = targetCat.items || []
-    // 同一 externalId 重复投递不应产生重复条目（此前只靠 id 前缀，挡不住重放）
-    const externalId = processRes.subItem.videoConfig?.bvid || processRes.subItem.videoConfig?.videoId
-    const duplicated = externalId
-      ? targetCat.items.some(it => (it.videoConfig?.bvid || it.videoConfig?.videoId) === externalId)
-      : false
-
-    if (duplicated) {
+    if (outcome.result.kind === 'duplicate') {
       return NextResponse.json({
         code: 0,
         success: true,
-        data: { message: '该视频已存在，跳过入库', course: { id: processRes.subItem.id, title: processRes.subItem.title } },
+        data: { message: '该视频已存在，跳过入库', course: { id: incoming.id, title: incoming.title } },
       })
     }
-
-    targetCat.items.push(processRes.subItem)
-
-    // 写失败必须冒泡：此前 catch + console.warn 后仍返回「处理成功且通过 AI 深度审核」。
-    await commitFile(
-      VIDEOS_FILE_PATH,
-      JSON.stringify(currentData, null, 2),
-      `[Webhook Harvest] Ingested video ${processRes.subItem.title}`
-    )
 
     return NextResponse.json({
       code: 0,

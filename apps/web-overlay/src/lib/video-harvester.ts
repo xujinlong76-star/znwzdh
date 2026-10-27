@@ -1,4 +1,5 @@
 import { getFileContent, commitFile, readStorageFresh, getStorageVersion } from '@/lib/github'
+import { appendReplacementHistory } from './video-library-store'
 import { videoExternalKey } from '@/lib/video-identity'
 import { recordHarvestRun } from '@/lib/video-harvest-metrics'
 import { BILI_HEADERS, getWbiMixinKey, signWbiQuery } from '@/lib/bilibili-wbi'
@@ -419,6 +420,31 @@ export interface HarvestRunOptions {
 /** 冲突重试上限：每次重试都会重新读库、重新计算，代价是又一轮搜索请求。 */
 const HARVEST_CONFLICT_RETRIES = 3
 
+/**
+ * 替换审计最多保留多少条。
+ *
+ * 为什么必须有上限：每条记录内嵌完整的 `oldItem` / `newItem`（含章节树与逐句字幕），
+ * 单条实测 6–10KB。整包文档参与**每一次读取**，留几千条会让视频库变成数 MB 的 JSON。
+ * 100 条约数百 KB，按每天数次轮换算可覆盖一两个月。
+ *
+ * 为什么丢弃时必须告警：原实现是裸的 `slice(0, 100)`，**超出的记录静默消失** ——
+ * 运营想回滚两周前的替换时才发现记录没了，而日志里没有任何痕迹。
+ *
+ * 完整的替换历史在关系库的 `video_replacements` 表里（C6，`dual` / `db` 模式会同步），
+ * 所以「永久丢失」只在纯 `json` 模式下成立。
+ */
+const REPLACEMENT_HISTORY_LIMIT = 100
+
+function capReplacementHistory(records: VideoReplacementRecord[]): VideoReplacementRecord[] {
+  if (records.length <= REPLACEMENT_HISTORY_LIMIT) return records
+  const dropped = records.length - REPLACEMENT_HISTORY_LIMIT
+  console.warn(
+    `[video-harvester] 替换历史超过 ${REPLACEMENT_HISTORY_LIMIT} 条，丢弃最旧的 ${dropped} 条` +
+      `（完整历史见 video_replacements 表；纯 json 模式下这部分不可恢复）`,
+  )
+  return records.slice(0, REPLACEMENT_HISTORY_LIMIT)
+}
+
 function isVersionConflict(err: unknown): boolean {
   return (
     typeof err === 'object' &&
@@ -640,7 +666,7 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
 
   // 若不是 Dry-Run，将更新结果和审计记录落盘
   if (!dryRun && (additions.length > 0 || newReplacements.length > 0)) {
-    data.replacementHistory = [...newReplacements, ...replacementHistory].slice(0, 100)
+    data.replacementHistory = capReplacementHistory([...newReplacements, ...replacementHistory])
     await commitFile(
       VIDEOS_FILE_PATH,
       JSON.stringify(data, null, 2),
@@ -650,6 +676,14 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
       // 版本号来自实时查询；null 表示该后端不支持版本校验（github/sqlite）
       version ?? undefined
     )
+
+    // 内联历史有容量上限（capReplacementHistory），独立文件是**不截断**的权威副本：
+    // 回滚记录不会因为超过上限而永久丢失。失败不影响主流程（主数据已落盘）。
+    try {
+      await appendReplacementHistory(newReplacements, { token: accessToken })
+    } catch (error) {
+      console.warn('[video-harvester] 写入独立替换历史失败，回滚记录仅保留在内联上限内', error)
+    }
   }
 
   recordHarvestRun({

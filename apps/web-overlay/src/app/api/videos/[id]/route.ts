@@ -1,24 +1,13 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
-import { commitFile, getFileContent } from '@/lib/github'
+import { getFileContent } from '@/lib/github'
+import { mutateVideoLibrary } from '@/lib/video-library-store'
 import type { NavigationItem, NavigationData } from '@/types/navigation'
 
 export const runtime = 'nodejs'
 
 const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
-async function validateAndSaveVideosData(data: NavigationData, accessToken?: string) {
-    if (!data || typeof data !== 'object') {
-        throw new Error('Invalid videos data')
-    }
-
-    await commitFile(
-        VIDEOS_FILE_PATH,
-        JSON.stringify(data, null, 2),
-        'Update videos data',
-        accessToken
-    )
-}
 
 export async function GET(
     request: Request,
@@ -58,21 +47,37 @@ export async function PUT(
 
         const { id } = await params
         const updatedItem = await request.json()
-        const data = await getFileContent(VIDEOS_FILE_PATH)
 
-        const index = data.navigationItems.findIndex((item: NavigationItem) => item.id === id)
-        if (index === -1) {
+        // 读-改-写走统一入口：带 ifVersion + 冲突重放。此前的整包覆盖写会
+        // 把「打开编辑框之后」发生的采集结果整批抹掉（last-write-wins）。
+        const outcome = await mutateVideoLibrary<{ kind: 'not-found' } | { kind: 'updated' }>(
+            (data) => {
+                const index = data.navigationItems.findIndex((item: NavigationItem) => item.id === id)
+                if (index === -1) {
+                    return { next: data, result: { kind: 'not-found' as const }, skip: true }
+                }
+                // 不可变更新 + 锁定原有 id 不被覆盖
+                const next = {
+                    ...data,
+                    navigationItems: data.navigationItems.map((item, i) =>
+                        i === index ? { ...item, ...updatedItem, id } : item
+                    ),
+                }
+                return { next, result: { kind: 'updated' as const } }
+            },
+            'Update videos data',
+            { token: authCheck.githubToken || undefined }
+        )
+
+        if (!outcome.ok) {
+            return NextResponse.json(
+                { error: 'Conflict', message: '视频库正在被并发修改，请刷新后重试', retryable: true },
+                { status: 409 }
+            )
+        }
+        if (outcome.result.kind === 'not-found') {
             return NextResponse.json({ error: 'Item not found' }, { status: 404 })
         }
-
-        // 更新项目并锁定原有 id 不被覆盖
-        data.navigationItems[index] = {
-            ...data.navigationItems[index],
-            ...updatedItem,
-            id,
-        }
-
-        await validateAndSaveVideosData(data, authCheck.githubToken || undefined)
 
         return NextResponse.json({ success: true })
     } catch (error) {
@@ -98,17 +103,32 @@ export async function DELETE(
         }
 
         const { id } = await params
-        const data = await getFileContent(VIDEOS_FILE_PATH)
 
-        const index = data.navigationItems.findIndex((item: NavigationItem) => item.id === id)
-        if (index === -1) {
+        const outcome = await mutateVideoLibrary<{ kind: 'not-found' } | { kind: 'deleted' }>(
+            (data) => {
+                const exists = data.navigationItems.some((item: NavigationItem) => item.id === id)
+                if (!exists) {
+                    return { next: data, result: { kind: 'not-found' as const }, skip: true }
+                }
+                const next = {
+                    ...data,
+                    navigationItems: data.navigationItems.filter((item: NavigationItem) => item.id !== id),
+                }
+                return { next, result: { kind: 'deleted' as const } }
+            },
+            'Update videos data',
+            { token: authCheck.githubToken || undefined }
+        )
+
+        if (!outcome.ok) {
+            return NextResponse.json(
+                { error: 'Conflict', message: '视频库正在被并发修改，请刷新后重试', retryable: true },
+                { status: 409 }
+            )
+        }
+        if (outcome.result.kind === 'not-found') {
             return NextResponse.json({ error: 'Item not found' }, { status: 404 })
         }
-
-        // 删除项目
-        data.navigationItems.splice(index, 1)
-
-        await validateAndSaveVideosData(data, authCheck.githubToken || undefined)
 
         return NextResponse.json({ success: true })
     } catch (error) {

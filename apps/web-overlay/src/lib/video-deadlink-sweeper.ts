@@ -1,5 +1,8 @@
 import type { NavigationData, NavigationSubItem, VideoReplacementRecord } from '@/types/navigation'
+import { videoLog } from './video-log'
 import { recordSweepRun } from '@/lib/video-harvest-metrics'
+
+export const PRUNE_AFTER_CONSECUTIVE_FAILURES = 2
 
 export interface ProbeResult {
   videoId: string
@@ -255,6 +258,8 @@ export async function sweepVideoHealth(
         if (item.videoConfig) {
           item.videoConfig.healthStatus = 'healthy'
           item.videoConfig.lastVerifiedAt = Date.now()
+          // 恢复健康即清零：中间偶发一次失败不该累积到「下次直接删」
+          item.videoConfig.failStreak = 0
         }
         continue
       }
@@ -270,7 +275,9 @@ export async function sweepVideoHealth(
       }
 
       brokenCount++
-      brokenIds.add(item.id)
+      const streak = (item.videoConfig?.failStreak ?? 0) + 1
+      // 首次失败只标记不删；连续失败达到阈值才进删除候选
+      if (streak >= PRUNE_AFTER_CONSECUTIVE_FAILURES) brokenIds.add(item.id)
       brokenItems.push({
         id: item.id,
         title: item.title,
@@ -279,6 +286,7 @@ export async function sweepVideoHealth(
       if (item.videoConfig) {
         item.videoConfig.healthStatus = 'broken'
         item.videoConfig.lastVerifiedAt = Date.now()
+        item.videoConfig.failStreak = (item.videoConfig.failStreak ?? 0) + 1
       }
     }
   })
@@ -286,6 +294,16 @@ export async function sweepVideoHealth(
 
   let prunedCount = 0
   let updatedCategories = navigationData.navigationItems
+
+  // 结构化落一条：这一轮探测了多少、多少健康/失败、准备删几条
+  videoLog('probe', {
+    count: videoItems.length,
+    healthy: healthyCount,
+    broken: brokenCount,
+    unverified: unverifiedCount,
+    pruneCandidates: brokenIds.size,
+    threshold: PRUNE_AFTER_CONSECUTIVE_FAILURES,
+  })
 
   if (autoPrune && brokenIds.size > 0) {
     updatedCategories = navigationData.navigationItems.map(cat => {

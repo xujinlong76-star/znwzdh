@@ -13,6 +13,7 @@
  *     已测过的结果保存在 `results` 里，不会重复消耗对方的带宽。
  *   - **僵死回收**：`running` 但超过 stale 时限没更新（进程被杀/机器重启）→ 重置为 pending。
  */
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { ProbeOutcomeKind } from "./probe-policy.ts";
@@ -37,6 +38,15 @@ export interface AuditJobProgress {
 export interface AuditJob {
   id: string;
   slug: string;
+  /**
+   * 幂等键：sha256(slug + 排序后的 URL 列表)。
+   *
+   * 同一批 URL 重复提交（用户连点、面板重试、脚本重跑）不应该排两个任务白测一遍：
+   * 对外是重复的出站请求，对内是两份互相覆盖的进度。命中未完成任务时直接返回原任务。
+   */
+  idempotencyKey: string;
+  /** 本次 enqueue 是否命中了已存在的在途任务（只在返回值上有意义） */
+  deduplicated?: boolean;
   /** 入队时固定的抽样列表，保证续跑面对同一批样本 */
   urls: string[];
   state: AuditJobState;
@@ -153,7 +163,17 @@ export async function openAuditQueue(
 
   const queue: AuditQueue = {
     async enqueue({ slug, urls }) {
+      const idempotencyKey = createHash("sha256")
+        .update(slug + "\n" + [...urls].sort().join("\n"))
+        .digest("hex");
+      // 在途任务（pending/running）按幂等键复用；已完成的不复用——重跑是有意的
+      const inflight = jobs.find(
+        (j) => j.idempotencyKey === idempotencyKey && (j.state === "pending" || j.state === "running"),
+      );
+      if (inflight) return { ...inflight, deduplicated: true };
+
       const job: AuditJob = {
+        idempotencyKey,
         id: opts.newId(),
         slug,
         urls: [...urls],

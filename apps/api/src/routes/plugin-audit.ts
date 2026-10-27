@@ -793,6 +793,8 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         slug: job.slug,
         state: job.state,
         total: job.progress.total,
+        // true 表示命中在途任务：客户端拿到的仍是同一个 id，不必重复轮询逻辑
+        deduplicated: job.deduplicated === true,
       })
     },
   )

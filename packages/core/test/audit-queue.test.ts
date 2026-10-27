@@ -179,3 +179,39 @@ describe("失败与容量", () => {
     expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ version: 1 });
   });
 });
+
+describe("幂等提交", () => {
+  it("同一批 URL 重复提交只排一个任务（重复的返回原任务并标 deduplicated）", async () => {
+    const file = await tempFile();
+    const queue = await openAuditQueue(file, { newId: seqIds() });
+    const first = await queue.enqueue({ slug: "p", urls: ["https://a.com", "https://b.com"] });
+    const again = await queue.enqueue({ slug: "p", urls: ["https://b.com", "https://a.com"] });
+    expect(again.id).toBe(first.id);
+    expect(again.deduplicated).toBe(true);
+    expect(await queue.list()).toHaveLength(1);
+  });
+
+  it("URL 集合不同（或 slug 不同）就不算重复", async () => {
+    const file = await tempFile();
+    const queue = await openAuditQueue(file, { newId: seqIds() });
+    await queue.enqueue({ slug: "p", urls: ["https://a.com"] });
+    const other = await queue.enqueue({ slug: "p", urls: ["https://a.com", "https://c.com"] });
+    const otherSlug = await queue.enqueue({ slug: "q", urls: ["https://a.com"] });
+    expect(other.deduplicated).toBeUndefined();
+    expect(otherSlug.deduplicated).toBeUndefined();
+    expect(await queue.list()).toHaveLength(3);
+  });
+
+  it("任务完成后再提交同样的批次会重新排队（重跑是有意的）", async () => {
+    const file = await tempFile();
+    const queue = await openAuditQueue(file, { newId: seqIds() });
+    const first = await queue.enqueue({ slug: "p", urls: ["https://a.com"] });
+    const claimed = await queue.claim();
+    await drainAuditJob(queue, claimed!, async () => ({ kind: "ok", status: 200 }), { batchSize: 5 });
+    expect((await queue.get(first.id))?.state).toBe("done");
+
+    const rerun = await queue.enqueue({ slug: "p", urls: ["https://a.com"] });
+    expect(rerun.id).not.toBe(first.id);
+    expect(rerun.deduplicated).toBeUndefined();
+  });
+});

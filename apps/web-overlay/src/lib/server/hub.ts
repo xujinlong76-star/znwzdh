@@ -7,6 +7,8 @@
  * 为什么不能走 `:3000/api/sites`：web 侧没有这个路由（实测 404），rewrites 只
  * 代理 `/api/auth/*`，`/api/hub/*` 走运行时 route 转发。服务端应当直接访问中枢。
  */
+import { HUB_CACHE_TAG } from '@/lib/server/hub-cache'
+
 const HUB_BASE = (
   process.env.NAVHUB_STORAGE_BASE_URL ??
   process.env.NEXT_PUBLIC_API_URL ??
@@ -32,6 +34,20 @@ const BASE_HEADERS: Record<string, string> = INTERNAL_TOKEN
   : { accept: 'application/json' }
 
 /**
+ * 页面取数的默认超时。
+ *
+ * 为什么必须有：中枢 TCP 连上但不回包时（进程卡死、半开连接、机房黑洞），
+ * 没有超时的 fetch 会一直挂着，把 RSC 渲染连同 ISR 后台再生一起拖死——
+ * 运维看到的不是「降级页」而是整个详情页无响应。有界失败才能走到既有的
+ * null 降级路径（`hubGetProbe` 判 failed → 渲染降级/notFound 由调用方决定）。
+ *
+ * 10s 是经验值：正常取数是毫秒级，10s 远大于任何健康中枢的响应时间；
+ * 同时小于用户的放弃阈值，不会让一次抖动变成「页面转圈半分钟」。
+ * 传 `timeoutMs <= 0` 可显式关闭（与 hubGetProbe 的口径一致）。
+ */
+const DEFAULT_READ_TIMEOUT_MS = 10_000
+
+/**
  * 失败一律返回 null，由调用方降级：sitemap / 页面元信息不该因为一次上游抖动
  * 把整站爬虫体验打穿。
  *
@@ -41,12 +57,19 @@ const BASE_HEADERS: Record<string, string> = INTERNAL_TOKEN
  * 时代的坑，两个 loading 已随 Batch B 删除，缓存与 SSR 直出不再冲突。
  * admin 系列继续用默认 0（后台要实时）。
  */
-export async function hubGet<T>(path: string, revalidate = 0): Promise<T | null> {
+export async function hubGet<T>(
+  path: string,
+  revalidate = 0,
+  timeoutMs = DEFAULT_READ_TIMEOUT_MS,
+): Promise<T | null> {
   try {
-    const init: RequestInit & { next?: { revalidate: number } } = {
+    const init: RequestInit & { next?: { revalidate: number; tags: string[] } } = {
       headers: { ...BASE_HEADERS },
     }
-    if (revalidate > 0) init.next = { revalidate }
+    // 打标签是写侧失效（/api/hub 代理成功写后 revalidateTag）的前提：
+    // 没有 tags 的 Data Cache 条目只能等 revalidate 窗口自然过期。
+    if (revalidate > 0) init.next = { revalidate, tags: [HUB_CACHE_TAG] }
+    if (timeoutMs > 0) init.signal = AbortSignal.timeout(timeoutMs)
     const res = await fetch(`${HUB_BASE}${path}`, init)
     if (!res.ok) return null
     return (await res.json()) as T

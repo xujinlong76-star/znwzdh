@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { revalidateTag } from 'next/cache'
 import { auth, verifyAdminSession } from '@/lib/auth'
 import { canonicalUserId } from '@/lib/me-identity'
+import { HUB_CACHE_TAG, shouldInvalidateAfter } from '@/lib/server/hub-cache'
 import {
   ANON_COOKIE,
   encodeAnonCookie,
@@ -234,6 +236,19 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
       cache: 'no-store',
       signal: upstreamSignal,
     })
+
+    // 写成功即失效中枢取数的 Data Cache。为什么需要：hubGet 的收录面取数带
+    // revalidate=60，收藏/审核/投稿/安装之后，公开页面最多还会按窗口继续展示旧数据。
+    // 为什么包在自己的 try 里：下面的外层 catch 会把异常写成 502/504，
+    // 而写请求已经在上面成功落地——缓存层异常不能把「成功」谎报成「上游故障」。
+    // 最坏代价只是再吃一个 revalidate 窗口的旧数据，比让客户端重试一次已成功的写轻。
+    if (shouldInvalidateAfter(method, upstream.status)) {
+      try {
+        revalidateTag(HUB_CACHE_TAG, 'max')
+      } catch (err) {
+        console.warn('[hub proxy] revalidateTag failed:', err)
+      }
+    }
     const contentType = upstream.headers.get('content-type') ?? 'application/json'
     // 流式响应透传（如 SSE 实时推流）：不可调用 .text() 阻塞缓冲，直接透传 body 流
     if (isStreamingContentType(contentType)) {

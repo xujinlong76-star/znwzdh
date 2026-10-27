@@ -65,16 +65,22 @@ navhub_require_node() {
 // 为什么与 pre-commit 并存、而不是二选一：pre-commit 可被 --no-verify 或直接
 // commit-tree 绕过（本仓库多会话并行，两种都真实发生过）；而「被服务端拒绝」
 // 发生在 push 这一刻，推送前的历史还能在本地处理，推送后再改就是重写。
+//
+// 第二段是「契约同源 + scope 显式」两枚便宜闸门（scripts/prepush-gates.mjs）：
+// 它们原先只有 CI 才知道——改 core 不重生成、写路由漏写 scope，pre-commit 的
+// 目录选测都覆盖不到。相关路径有未提交改动时闸门会说明并跳过，不拿别人的
+// 半成品挡推送。
 const prePush = `#!/bin/sh
 # NavHub Pre-push Hook（生成源：scripts/install-git-hooks.mjs）
 #
-# 扫描「尚未存在于任何远程跟踪 ref 的对象」，超过 50 MiB 的 blob 直接拦下。
-# 已推送过的大文件不会重复报（它在远程 ref 的历史里，重写也救不回来）。
+# 1) 扫描「尚未存在于任何远程跟踪 ref 的对象」，超过 50 MiB 的 blob 直接拦下。
+#    已推送过的大文件不会重复报（它在远程 ref 的历史里，重写也救不回来）。
+# 2) 契约生成物同源 + 写路由 scope 显式（scripts/prepush-gates.mjs）。
 # 临时跳过：NAVHUB_SKIP_PREPUSH=1 git push ...（不推荐 —— 被 GitHub 拒绝时
 # 唯一的解法是重写历史，那比现在花十秒处理文件贵得多）
 
 if [ "$NAVHUB_SKIP_PREPUSH" = "1" ]; then
-  echo "[pre-push] NAVHUB_SKIP_PREPUSH=1，跳过大文件守卫"
+  echo "[pre-push] NAVHUB_SKIP_PREPUSH=1，跳过大文件守卫与契约闸门"
   exit 0
 fi
 
@@ -85,6 +91,7 @@ fi
 navhub_require_node || exit 1
 
 node scripts/check-large-files.mjs --unpushed || exit 1
+node scripts/prepush-gates.mjs || exit 1
 `
 
 // 提交前门禁（升级建议：把 CI 里已有的检查尽可能左移）：

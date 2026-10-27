@@ -2,12 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   classifyFailure,
   cleanLogLines,
+  diffFailures,
   extractAttribution,
   failingStep,
+  failureKey,
   isFailedJob,
+  isSupersededCancel,
   layerCounts,
   parseRepoSlug,
   renderAttributionTable,
+  renderBaselineDiff,
+  splitSuperseded,
   summarizeJob,
 } from "./lib/ci-attribution.mjs";
 import {
@@ -117,6 +122,14 @@ describe("extractAttribution：第一处具体错误 + 栈帧 + 尾巴", () => {
       "DEBUG tail line 2",
       "##[error]Process completed with exit code 1.",
     ]);
+  });
+
+  it("自定义门禁的 [tag] 结论行能当归因头（没有 ##[error] 前缀）", () => {
+    // 真实案例：sync-core-mirrors 只打印这一行，整条 job 的归因头因此是空的
+    const log = "[core-mirror] 1 个镜像与事实源不一致。修复：node scripts/sync-core-mirrors.mjs\n##[error]Process completed with exit code 1.";
+    expect(extractAttribution(log).firstError).toBe("[core-mirror] 1 个镜像与事实源不一致。修复：node scripts/sync-core-mirrors.mjs");
+    // 测试里刻意注入的「失败」字样不在此列（那是注解要压制的那类噪音）
+    expect(extractAttribution("[navhub] 审计写入失败（主操作结果不受影响）: Error: simulated").firstError).toContain("simulated");
   });
 
   it("没有任何错误行时 firstError 为空，不编造", () => {
@@ -256,6 +269,47 @@ describe("summarizeJob：一个 job 一行归因头", () => {
     expect(row.stackLine).toContain("migrate-dialect.test.ts:56:106");
   });
 
+  it("产物缺失警告不冒充归因头：真实失败注解在它后面也要被选中", () => {
+    // 真实 run：upload-artifact 的警告排在 vitest 注解之前，归因头变成了「junit 不存在」
+    const row = summarizeJob(job, {
+      logText: "AssertionError: expected false to be true",
+      annotations: [
+        {
+          annotation_level: "failure",
+          path: ".github",
+          start_line: 15,
+          message: "No files were found with the provided path: junit-sqlite-*.xml. No artifacts will be uploaded.",
+        },
+        {
+          annotation_level: "failure",
+          path: "packages/store/test/migrate-dialect.test.ts",
+          start_line: 56,
+          title: "pg：部分唯一索引与身份索引都下发了",
+          message: "expected false to be true // Object.is equality",
+        },
+      ],
+    });
+    expect(row.firstError).toContain("migrate-dialect.test.ts:56");
+    expect(row.firstError).not.toContain("No files were found");
+  });
+
+  it("只有 workflow 上的注解时仍然用它，不因为降级而丢归因头", () => {
+    const row = summarizeJob(job, {
+      annotations: [{ annotation_level: "failure", path: ".github", start_line: 7, message: "Run failed: 镜像冒烟构建" }],
+    });
+    expect(row.firstError).toBe(".github:7 · Run failed: 镜像冒烟构建");
+  });
+
+  it("workflow 注解没有文件信息时，日志里的 TS 定位更具体，优先于它", () => {
+    // 真实 run：tsc 的注解只有行号 863，看不出是哪个组件；日志有 src/components/x.tsx(863,41)
+    const row = summarizeJob(job, {
+      logText: "##[error]src/components/video-player-page.tsx(863,41): error TS7006: Parameter 'item' implicitly has an 'any' type.",
+      annotations: [{ annotation_level: "failure", path: ".github", start_line: 863, message: "Parameter 'item' implicitly has an 'any' type." }],
+    });
+    expect(row.firstError).toContain("video-player-page.tsx(863,41)");
+    expect(row.layer).toBe("构建");
+  });
+
   it("聚合 job 归到汇总层，不把上游的字眼当根因", () => {
     const row = summarizeJob(
       { id: 99, name: "CI 整体通过 (All Checks Passed)", conclusion: "failure", steps: [{ name: "评估检查结果", conclusion: "failure" }] },
@@ -296,6 +350,81 @@ describe("renderAttributionTable / layerCounts", () => {
       ["环境", 1],
       ["运行时", 1],
     ]);
+  });
+});
+
+describe("跨轮对比：新增红 / 仍在红 / 已修复", () => {
+  const row = (name: string, firstError: string, extra: Record<string, unknown> = {}) => ({
+    name,
+    firstError,
+    layer: "运行时",
+    signals: [],
+    ...extra,
+  });
+
+  it("身份键剥掉行号：代码挪一行不算新增红", () => {
+    const before = row("测试", "packages/store/test/migrate-dialect.test.ts:56 · pg · expected false to be true");
+    const after = row("测试", "packages/store/test/migrate-dialect.test.ts:61 · pg · expected false to be true");
+    expect(failureKey(before)).toBe(failureKey(after));
+  });
+
+  it("同一 job 换了失败用例算新增，不算「老问题还在」", () => {
+    const before = row("测试", "a.test.ts · 用例 A · boom");
+    const after = row("测试", "a.test.ts · 用例 B · boom");
+    const diff = diffFailures([after], [before]);
+    expect(diff.introduced.map(failureKey)).toEqual([failureKey(after)]);
+    expect(diff.persisted).toEqual([]);
+    expect(diff.fixed.map(failureKey)).toEqual([failureKey(before)]);
+  });
+
+  it("三个桶按身份键对齐，缺失归因头时退回 job 名", () => {
+    const same = row("镜像检查", "");
+    const gone = row("前端门禁", "error TS2304");
+    const fresh = row("E2E", "expect(locator)");
+    const diff = diffFailures([same, fresh], [same, gone]);
+    expect(diff.introduced.map((r) => r.name)).toEqual(["E2E"]);
+    expect(diff.persisted.map((r) => r.name)).toEqual(["镜像检查"]);
+    expect(diff.fixed.map((r) => r.name)).toEqual(["前端门禁"]);
+  });
+
+  it("并发取消两边都摘掉：不虚报「新增红」，也不虚报「已修复」", () => {
+    const canceledRun = "Canceling since a higher priority waiting request for CI-refs/heads/main exists";
+    expect(isSupersededCancel(canceledRun)).toBe(true);
+    expect(isSupersededCancel("AssertionError: expected false to be true")).toBe(false);
+    const { code, superseded } = splitSuperseded([row("E2E", canceledRun, { superseded: true }), row("测试", "boom")]);
+    expect(code.map((r) => r.name)).toEqual(["测试"]);
+    expect(superseded.map((r) => r.name)).toEqual(["E2E"]);
+
+    const diff = diffFailures(
+      [row("E2E", canceledRun, { superseded: true })],
+      [row("E2E", canceledRun, { superseded: true })],
+    );
+    expect(diff).toEqual({ introduced: [], persisted: [], fixed: [] });
+  });
+
+  it("summarizeJob 能从日志里认出并发取消", () => {
+    const result = summarizeJob(
+      { id: 1, name: "浏览器 E2E", conclusion: "cancelled", steps: [{ name: "Complete job", conclusion: "failure" }] },
+      { logText: "##[error]Canceling since a higher priority waiting request for CI-refs/heads/main exists" },
+    );
+    expect(result.superseded).toBe(true);
+  });
+
+  it("对比段：三桶为空时给一句话，不为空时按桶分节", () => {
+    expect(renderBaselineDiff({ introduced: [], persisted: [], fixed: [] })).toContain("与基线一致");
+    const text = renderBaselineDiff(
+      {
+        introduced: [row("新", "x.test.ts · 用例 · boom")],
+        persisted: [row("旧", "y.test.ts · 用例 · boom")],
+        fixed: [row("修好了", "z.test.ts · 用例 · boom")],
+      },
+      { baselineLabel: "run #1" },
+    );
+    expect(text).toContain("新增红 1 · 仍在红 1 · 已修复 1（对比 run #1）");
+    expect(text).toContain("### 新增红");
+    expect(text).toContain("### 仍在红");
+    expect(text).toContain("### 已修复");
+    expect(text).toContain("新 — x.test.ts · 用例 · boom");
   });
 });
 

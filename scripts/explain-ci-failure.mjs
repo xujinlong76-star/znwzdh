@@ -15,21 +15,41 @@
  *   node scripts/explain-ci-failure.mjs --sha <sha>
  *   node scripts/explain-ci-failure.mjs --run 40489576417
  *   node scripts/explain-ci-failure.mjs --run 40489576417 --json
+ *   node scripts/explain-ci-failure.mjs --sha <sha> --baseline <上一 tip 的 sha 或 run id>
+ *     基线对比输出「新增红 / 仍在红 / 已修复」——多会话并行时，能让「这条红是不是我造成的」
+ *     不必靠人肉翻两次 run。
  * 退出码：0 = 没有失败 job，1 = 有失败 job，2 = 查询/鉴权失败。
  */
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  diffFailures,
   isFailedJob,
   layerCounts,
   parseRepoSlug,
   renderAttributionTable,
+  renderBaselineDiff,
+  splitSuperseded,
   summarizeJob,
 } from "./lib/ci-attribution.mjs";
 
 const API = "https://api.github.com";
 const MAX_LOG_BYTES = 8 * 1024 * 1024;
+/** 只对传输层失败重试：DNS/TLS 瞬断是常态（本仓库一次会话里遇到三次），HTTP 4xx 不重试 */
+const RETRYABLE_NETWORK = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up/i;
+
+async function fetchWithRetry(url, init, attempts = 3) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch(url, init);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt >= attempts || !RETRYABLE_NETWORK.test(message)) throw error;
+      await new Promise((done) => setTimeout(done, 500 * attempt));
+    }
+  }
+}
 
 function argValue(argv, name, fallback = null) {
   const idx = argv.indexOf(name);
@@ -75,7 +95,7 @@ function createClient(token) {
   if (token) headers.Authorization = "Bearer " + token;
 
   async function api(path) {
-    const res = await fetch(API + path, { headers });
+    const res = await fetchWithRetry(API + path, { headers });
     if (!res.ok) {
       let detail = "";
       try {
@@ -91,7 +111,7 @@ function createClient(token) {
 
   /** 日志接口 302 到签名 URL：跳转后的 URL 不能再带 Authorization */
   async function fetchJobLog(repo, jobId) {
-    const first = await fetch(API + `/repos/${repo}/actions/jobs/${jobId}/logs`, {
+    const first = await fetchWithRetry(API + `/repos/${repo}/actions/jobs/${jobId}/logs`, {
       headers,
       redirect: "manual",
     });
@@ -99,7 +119,7 @@ function createClient(token) {
     if (first.status >= 300 && first.status < 400) {
       const location = first.headers.get("location");
       if (!location) return "";
-      const signed = await fetch(location, { redirect: "follow" });
+      const signed = await fetchWithRetry(location, { redirect: "follow" });
       if (!signed.ok) return "";
       return (await signed.text()).slice(0, MAX_LOG_BYTES);
     }
@@ -157,6 +177,27 @@ async function collectAttribution(client, repo, run) {
   return rows;
 }
 
+/**
+ * 基线 run 解析：基线是「上一轮的 tip」，给 sha 或 run id 都行。
+ * 失败不致命：拿不到基线就退化成单轮归因，绝不让对比把一次正常查询变成报错。
+ */
+async function resolveBaseline(client, repo, value) {
+  if (!value) return null;
+  try {
+    const run = await resolveRun(client, {
+      repo,
+      runId: /^\d+$/.test(value) ? value : null,
+      sha: /^\d+$/.test(value) ? null : value,
+      branch: "main",
+    });
+    const rows = await collectAttribution(client, repo, run);
+    return { run, rows };
+  } catch (error) {
+    console.error("[explain-ci] 基线对比跳过：" + (error instanceof Error ? error.message : String(error)));
+    return null;
+  }
+}
+
 async function main(argv) {
   const repo = resolveRepo(argValue(argv, "--repo"));
   if (!repo) {
@@ -174,6 +215,8 @@ async function main(argv) {
   });
 
   const rows = await collectAttribution(client, repo, run);
+  const baseline = await resolveBaseline(client, repo, argValue(argv, "--baseline"));
+  const diff = baseline ? diffFailures(rows, baseline.rows) : null;
   const json = argv.includes("--json");
 
   if (json) {
@@ -184,6 +227,22 @@ async function main(argv) {
           run: { id: run.id, sha: run.head_sha, url: run.html_url, conclusion: run.conclusion },
           failures: rows,
           layers: Object.fromEntries(layerCounts(rows)),
+          ...(baseline
+            ? {
+                baseline: {
+                  id: baseline.run.id,
+                  sha: baseline.run.head_sha,
+                  url: baseline.run.html_url,
+                  conclusion: baseline.run.conclusion,
+                },
+                diff: {
+                  introduced: diff.introduced.map((row) => ({ name: row.name, firstError: row.firstError })),
+                  persisted: diff.persisted.map((row) => ({ name: row.name, firstError: row.firstError })),
+                  fixed: diff.fixed.map((row) => ({ name: row.name, firstError: row.firstError })),
+                  superseded: splitSuperseded(rows).superseded.map((row) => ({ name: row.name, firstError: row.firstError })),
+                },
+              }
+            : {}),
         },
         null,
         2,
@@ -196,6 +255,7 @@ async function main(argv) {
   console.log(run.html_url);
   if (rows.length === 0) {
     console.log("\n没有失败的 job（run 结论：" + (run.conclusion ?? "进行中") + "）。");
+    if (baseline) console.log("\n" + renderBaselineDiff(diff, { baselineLabel: "run #" + baseline.run.id + " · " + baseline.run.head_sha.slice(0, 12) }));
     return 0;
   }
 
@@ -206,6 +266,14 @@ async function main(argv) {
         .map(([layer, count]) => layer + " " + count)
         .join(" · "),
   );
+  const { superseded } = splitSuperseded(rows);
+  if (superseded.length > 0) {
+    console.log("\n其中 " + superseded.length + " 个 job 是并发取消（新推送抢先，run 被取消），不计入代码失败：" + superseded.map((row) => row.name).join("、"));
+  }
+  if (baseline) {
+    console.log("\n## 跨轮对比");
+    console.log(renderBaselineDiff(diff, { baselineLabel: "run #" + baseline.run.id + " · " + baseline.run.head_sha.slice(0, 12) }));
+  }
 
   for (const row of rows) {
     if (!row.stackLine && row.tail.length === 0) continue;

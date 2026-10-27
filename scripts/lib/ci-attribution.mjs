@@ -122,6 +122,13 @@ export function classifyFailure(text) {
 }
 
 const ERROR_LINE = /(^|\s)(Error:|TypeError:|RangeError:|ReferenceError:|SyntaxError:|AssertionError|error TS\d{4})/;
+/**
+ * 自定义门禁的错误行：这类脚本用 `[tag]` 前缀 + 中文结论（「不一致」「不通过」），
+ * 既不写 `##[error]` 也不抛异常，真实 run 里整条 job 的归因头因此是空的。
+ * 只认这两个结论词，不放宽到「失败」——`[navhub] 审计写入失败` 是测试刻意注入的，
+ * 把它当根因正是注解优先级要解决的问题。
+ */
+const TOOL_GATE_FAILURE = /^\s*\[[a-z][a-z0-9-]*\]\s.*(?:不一致|不通过)/;
 const WORKFLOW_ERROR = /^##\[error\]\s?/;
 /**
  * 包装错误：Actions 与 pnpm 在步骤失败时各补一条「进程退出码非零」，
@@ -182,7 +189,7 @@ export function extractAttribution(logText, { maxTail = 12 } = {}) {
       firstError = withLocation(esbuild[1].trim(), content, i);
       break;
     }
-    if (ERROR_LINE.test(line)) {
+    if (ERROR_LINE.test(line) || TOOL_GATE_FAILURE.test(line)) {
       firstErrorIndex = i;
       firstError = line.trim();
       break;
@@ -217,6 +224,17 @@ export function parseRepoSlug(remoteUrl) {
   return "";
 }
 
+/**
+ * 并发取消：GitHub 在 main 上启用 concurrency 后，新推送会取消旧 run 里排队/运行中的 job。
+ * 这种红表示「这次没验完」，不表示「代码错了」——把它算进代码失败会让人去查不存在的回归。
+ * 只认 GitHub 的固定文案，不按 conclusion=cancelled 泛化：手动取消往往是真问题。
+ */
+const SUPERSEDED_CANCEL = /Canceling since a higher priority waiting request|was canceled by a newer run/i;
+
+export function isSupersededCancel(text) {
+  return typeof text === "string" && SUPERSEDED_CANCEL.test(text);
+}
+
 const FAILED_CONCLUSIONS = new Set(["failure", "timed_out", "cancelled", "action_required"]);
 
 export function isFailedJob(job) {
@@ -240,13 +258,28 @@ function firstLine(text) {
  * 能当归因头用的注解：失败级别 + 非包装文案。
  * 通知（runner 的镜像迁移提醒之类）与 `Process completed with exit code 1.`
  * 都是噪音，留在里面会把归因头带偏。
+ *
+ * 例外：「No files were found with the provided path」是 upload-artifact 的
+ * 产物缺失警告。它永远排在真实失败注解之前，且描述的是**结果**（测试崩了所以没产物），
+ * 真实 run 里它把归因头挤成了「junit-sqlite-*.xml 不存在」，比没有归因头更误导。
  */
 export function usableAnnotations(annotations) {
   return (Array.isArray(annotations) ? annotations : []).filter((a) => {
     if (!a || a.annotation_level === "notice") return false;
     const message = firstLine(a.message);
-    return message !== "" && !isWrapper(message);
+    if (message === "" || isWrapper(message)) return false;
+    return !/No files were found with the provided path/i.test(message);
   });
+}
+
+/** 注解挂在 workflow 文件上而不是源码/测试上：它描述的是 CI 配置，不是失败点 */
+function isWorkflowPath(path) {
+  return /^\.github(?:\/|$)/.test(String(path ?? "").trim());
+}
+
+/** 优先源码/测试上的注解，其次才是 .github 上的；同优先级保持原顺序 */
+function primaryAnnotation(usable) {
+  return usable.find((a) => !isWorkflowPath(a.path)) ?? usable[0] ?? null;
 }
 
 /** `路径:行 · 用例名 · 首行错误`——三样都有时才拼，缺的留空 */
@@ -304,7 +337,11 @@ export function summarizeJob(job, { logText = "", annotations = [] } = {}) {
     if (layer === "未知") ({ layer, signals } = classifyFailure(annotationText + "\n" + logText));
   }
   const { firstError, stackLine, tail } = extractAttribution(logText);
-  const head = usable.length > 0 ? annotationHead(usable[0]) : "";
+  const primary = primaryAnnotation(usable);
+  // 挂在 .github 上的注解没有文件信息（真实 run：tsc 注解只给了 863 行，看不出是哪个组件）；
+  // 这种情况下日志里的 `src/x.tsx(863,41): error TS7006` 更具体，让日志先说话。
+  const useAnnotationHead = Boolean(primary) && !isWorkflowPath(primary.path);
+  const head = useAnnotationHead ? annotationHead(primary) : firstError || (primary ? annotationHead(primary) : "");
   return {
     id: job?.id ?? null,
     name: job?.name ?? "(unknown job)",
@@ -312,10 +349,11 @@ export function summarizeJob(job, { logText = "", annotations = [] } = {}) {
     step: failingStep(job),
     layer,
     firstError: head || firstError,
-    stackLine: head ? stackNearPath(logText, usable[0]) : stackLine,
+    stackLine: useAnnotationHead ? stackNearPath(logText, primary) : stackLine,
     tail,
     signals,
     annotationCount: Array.isArray(annotations) ? annotations.length : 0,
+    superseded: isSupersededCancel(annotationText + "\n" + logText),
   };
 }
 
@@ -336,4 +374,82 @@ export function layerCounts(rows) {
   const counts = new Map(FAILURE_LAYERS.map((layer) => [layer, 0]));
   for (const row of rows) counts.set(row.layer, (counts.get(row.layer) ?? 0) + 1);
   return [...counts.entries()].filter(([, n]) => n > 0);
+}
+
+/* ------------------------------------------------------------------ *
+ * 跨轮对比：把「这一轮红在哪」变成「这一轮**新**红在哪」
+ * ------------------------------------------------------------------ */
+
+/**
+ * 失败身份键 = job 名 + 归一化后的归因头。
+ *
+ * 只按 job 名对齐不够：同一个 job 里换个用例挂，会被误判成「老问题还在」。
+ * 归因头里的行号必须剥掉——代码增删一行就让「同一条用例」变成「新增红」，
+ * 对比表会天天报假新增（真实痛点：migrate-dialect 的 56 行前后移动过）。
+ */
+export function failureKey(row) {
+  const name = String(row?.name ?? "").trim();
+  const head = String(row?.firstError ?? "")
+    .trim()
+    .replace(/([^\s:]+):\d+(?::\d+)?/g, "$1")
+    .replace(/\s+/g, " ");
+  return head ? name + " :: " + head : name;
+}
+
+/** 把并发取消从代码失败里摘出去：它表示「没验完」，不表示「验不过」 */
+export function splitSuperseded(rows) {
+  const code = [];
+  const superseded = [];
+  for (const row of Array.isArray(rows) ? rows : []) (row?.superseded ? superseded : code).push(row);
+  return { code, superseded };
+}
+
+/**
+ * 三轮桶：新增红 / 仍在红 / 已修复。
+ *
+ * 并发取消两边都先摘掉——上一轮被取消的 job 不该在「已修复」里虚报一次修复，
+ * 本轮的取消也不该进「新增红」。
+ */
+export function diffFailures(current, baseline) {
+  const after = splitSuperseded(current).code;
+  const before = splitSuperseded(baseline).code;
+  const beforeKeys = new Set(before.map(failureKey));
+  const afterKeys = new Set(after.map(failureKey));
+  return {
+    introduced: after.filter((row) => !beforeKeys.has(failureKey(row))),
+    persisted: after.filter((row) => beforeKeys.has(failureKey(row))),
+    fixed: before.filter((row) => !afterKeys.has(failureKey(row))),
+  };
+}
+
+function renderRowBrief(row) {
+  const head = String(row?.firstError ?? "").trim();
+  return "- " + row.name + (head ? " — " + head : " —（无归因头）");
+}
+
+/** 对比段的 markdown。三桶都为空时给一句「与基线一致」，不留空白让人猜 */
+export function renderBaselineDiff(diff, { baselineLabel = "基线" } = {}) {
+  const { introduced = [], persisted = [], fixed = [] } = diff ?? {};
+  const lines = [];
+  lines.push(
+    `新增红 ${introduced.length} · 仍在红 ${persisted.length} · 已修复 ${fixed.length}（对比 ${baselineLabel}）`,
+  );
+  if (introduced.length === 0 && persisted.length === 0 && fixed.length === 0) {
+    lines.push("");
+    lines.push("与基线一致：没有新增或消失的失败。");
+    return lines.join("\n");
+  }
+  if (introduced.length > 0) {
+    lines.push("", "### 新增红（本轮引入，需要本次推送负责）");
+    for (const row of introduced) lines.push(renderRowBrief(row));
+  }
+  if (persisted.length > 0) {
+    lines.push("", "### 仍在红（基线已存在，不是本轮引入）");
+    for (const row of persisted) lines.push(renderRowBrief(row));
+  }
+  if (fixed.length > 0) {
+    lines.push("", "### 已修复（基线有、本轮没有）");
+    for (const row of fixed) lines.push(renderRowBrief(row));
+  }
+  return lines.join("\n");
 }

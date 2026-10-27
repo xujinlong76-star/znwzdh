@@ -1,0 +1,31 @@
+{
+  "note": "前端（apps/web 是 vendored 底座）与 packages/* 之间的同构副本登记表。新增副本必须登记，否则 sync-vendored --check 会红。",
+  "entries": [
+    {
+      "id": "health-state",
+      "mode": "verbatim",
+      "source": "packages/core/src/health-state.ts",
+      "copy": "apps/web-overlay/src/lib/health-state.ts",
+      "parityTest": "apps/web-overlay/test/health-state-parity.test.ts",
+      "reason": "体检状态机：面板与只读 API 必须同一份实现；镜像只含 overlay，不能跨包 import"
+    },
+    {
+      "id": "shortlink-target",
+      "mode": "behavior",
+      "source": "packages/core/src/mcp-schemas.ts",
+      "copy": "apps/web-overlay/src/lib/shortlink-target.ts",
+      "symbol": "isInternalShortLinkTarget",
+      "parityTest": "apps/web-overlay/test/shortlink-target.test.ts",
+      "reason": "短链目标校验：core 侧在 mcp-schemas 里，前端只能同构复制；两侧用例各自钉住同一张表"
+    },
+    {
+      "id": "uncategorized-id",
+      "mode": "constant",
+      "source": "packages/core/src/taxonomy-governance.ts",
+      "copy": "apps/web-overlay/src/lib/seo/category-url.ts",
+      "symbol": "UNCATEGORIZED_CATEGORY_ID",
+      "parityTest": "apps/web-overlay/test/category-url.test.ts",
+      "reason": "「未分类」固定 id：前端不依赖 core，只能重复一份常量"
+    }
+  ]
+}

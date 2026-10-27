@@ -123,6 +123,10 @@ node scripts/check-web-overlay.mjs --staged || exit 1
 node scripts/check-extensions.mjs || exit 1
 node scripts/check-upstream-ref.mjs || exit 1
 
+# 提交完整性：已跟踪文件不得引用未入库文件（2026-10-27 事故：vitest.config.ts 引用了
+# 未提交的 worker-budget.ts，本地全绿、CI 两个作业同时崩）。--staged 只查本次暂存集。
+node scripts/check-committed-refs.mjs --staged || exit 1
+
 # CI 工作流变更时校验合并门禁（秒级，仅本次提交涉及 .github/workflows/ 才跑）。
 # 门禁脚本读的就是 ci.yml 的聚合关系：改坏了只有 CI 会红，而 CI 自己正是被改的
 # 那一方——等于没有守门人。放在 typecheck 之前，成本只有一次 YAML 解析。

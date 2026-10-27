@@ -84,7 +84,13 @@ function skip(label, reason) {
 // 语法解析门禁放最前：秒级，先把「少一个括号」这类错误挡在 tsc 之前。
 run("语法解析", "node", ["scripts/check-syntax.mjs"]);
 run("覆盖层同步", "node", ["scripts/check-web-overlay.mjs"]);
+// 网关策略表由枢纽注册声明生成；枢纽新增路由没重跑生成器 = 网关按旧白名单放行/拒绝，
+// 这类分叉只在真实请求时才暴露，所以必须在这里挡住。
+run("网关路由策略新鲜度", "node", ["scripts/gen-hub-route-policy.mjs", "--check"]);
 run("CI 合并门禁", "node", ["scripts/check-ci-gate.mjs"]);
+run("提交完整性（已跟踪文件不引用未入库文件）", "node", ["scripts/check-committed-refs.mjs"]);
+run("依赖边界（vendored 底座 / 分层单向）", "node", ["scripts/check-import-boundaries.mjs"]);
+run("同构副本一致性", "node", ["scripts/sync-vendored.mjs", "--check"]);
 run("core 镜像一致", "node", ["scripts/sync-core-mirrors.mjs", "--check"]);
 run("扩展校验", "node", ["scripts/check-extensions.mjs"]);
 // 后端 lint 已是硬门禁（error + --max-warnings 0），必须进这条链：

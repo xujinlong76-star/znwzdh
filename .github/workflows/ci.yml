@@ -69,8 +69,14 @@ env:
 jobs:
   test-sqlite:
     timeout-minutes: 20
-    name: 测试（SQLite 默认方言）
+    # 分片：654 个测试文件单作业跑满 5~7 分钟，且一红就要等整轮才看到结果。
+    # 三片并行后墙钟约 1/3；fail-fast: false 让三片都跑完，一次拿到全部失败。
+    name: 测试（SQLite 默认方言，分片 ${{ matrix.shard }}/3）
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
@@ -93,9 +99,21 @@ jobs:
       # "Cannot find package '@/lib/auth'" 整作业失败。vendor 只重建 apps/web，
       # 而 typecheck / build 都 --filter "@navhub/*"，故不受影响。
       - run: node scripts/vendor-web.mjs
-      - run: pnpm test
-      # 打包构建闸门：tsc 能过但声明导出/入口路径坏了只有 build 能发现
-      - run: pnpm build
+      # JUnit 供 scripts/test-telemetry.mjs 统计 flake 与失败用例（人类可读的
+      # default reporter 仍然保留，日志体验不变）。
+      - name: 单元/接口测试（分片 ${{ matrix.shard }}/3）
+        run: pnpm test -- --shard=${{ matrix.shard }}/3 --reporter=default --reporter=junit --outputFile=junit-sqlite-${{ matrix.shard }}.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: ${{ !cancelled() }}
+        with:
+          name: junit-sqlite-${{ matrix.shard }}
+          path: junit-sqlite-*.xml
+          if-no-files-found: warn
+          retention-days: 7
+      # 打包构建闸门：tsc 能过但声明导出/入口路径坏了只有 build 能发现。
+      # 只在第 1 片跑：三片各 build 一次是纯浪费，且构建与分片无关。
+      - if: matrix.shard == 1
+        run: pnpm build
 
   test-postgres:
     timeout-minutes: 20
@@ -532,8 +550,14 @@ jobs:
 
   test-e2e:
     timeout-minutes: 30
-    name: 浏览器 E2E 自动化测试（Playwright）
+    # 12.3 分钟是 CI 的最长杆。按 spec 分两片并行（每片仍 workers=1，
+    # 保持「本地 SQLite 不并发写」这一前提不变）。
+    name: 浏览器 E2E 自动化测试（Playwright，分片 ${{ matrix.shard }}/2）
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
@@ -548,7 +572,7 @@ jobs:
       - name: 执行 Playwright E2E 测试
         run: |
           set +e
-          pnpm test:e2e 2>&1 | tee /tmp/e2e.log
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME=junit-e2e-${{ matrix.shard }}.xml             pnpm test:e2e -- --shard=${{ matrix.shard }}/2 --reporter=list --reporter=junit 2>&1 | tee /tmp/e2e.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" != "0" ]; then
@@ -567,7 +591,14 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !cancelled() }}
         with:
-          name: playwright-report
+          name: junit-e2e-${{ matrix.shard }}
+          path: junit-e2e-*.xml
+          if-no-files-found: warn
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           # 通过时 html reporter 不产出报告目录，默认的 warn 会在绿灯 job 上挂一条
           # "No files were found" 注解，掩盖真正的告警；失败时报告仍会被上传。

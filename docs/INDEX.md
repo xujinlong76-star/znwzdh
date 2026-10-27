@@ -19,6 +19,7 @@
 | 任务 | 文档 | 状态 |
 |---|---|---|
 | 备份、恢复、演练 | [`BACKUP-RUNBOOK.md`](BACKUP-RUNBOOK.md) | 现行 |
+| 视频库关系表的灰度、导入与回滚 | [`VIDEO-CATALOG-MIGRATION.md`](VIDEO-CATALOG-MIGRATION.md) | 现行 |
 | 恢复的异步化设计（为什么分批、为什么 staging 落文件） | [`ASYNC-RESTORE-DESIGN.md`](ASYNC-RESTORE-DESIGN.md) | 现行 |
 | 恢复方案的深度审阅与后续 11 项改进（A1–A11） | [`ASYNC-RESTORE-REVIEW-2026-10-25.md`](ASYNC-RESTORE-REVIEW-2026-10-25.md) | 现行 |
 | 写测试：该写守卫还是 E2E | [`TESTING-CONVENTIONS.md`](TESTING-CONVENTIONS.md) | 现行 |
@@ -60,6 +61,7 @@
 
 | 文档 | 那一轮做了什么 |
 |---|---|
+| [`UPGRADE-EXECUTION-2026-10-27.md`](UPGRADE-EXECUTION-2026-10-27.md) | 六方向落地：权限域 / PG 检索 / 任务执行器 / 数据主权 / 查询治理 / MCP 隔离 |
 | [`UPGRADE-EXECUTION-2026-10-24-PASS5.md`](UPGRADE-EXECUTION-2026-10-24-PASS5.md) | 审计遗留项与多会话提交协作 |
 | [`UPGRADE-EXECUTION-2026-10-24-PASS4.md`](UPGRADE-EXECUTION-2026-10-24-PASS4.md) | 执行上一轮的全部建议 |
 | [`UPGRADE-EXECUTION-2026-10-24-PASS3.md`](UPGRADE-EXECUTION-2026-10-24-PASS3.md) | 执行全部后续方案 |
@@ -74,6 +76,7 @@
 
 | 文档 | 主题 |
 |---|---|
+| [`UPGRADE-PLAN-2026-10-27-BACKEND.md`](UPGRADE-PLAN-2026-10-27-BACKEND.md) | 后端全仓扫描（4 P0 / 8 P1 / 13 P2），**最新一份**；执行记录见同日 EXECUTION |
 | [`UPGRADE-PLAN-2026-10-23.md`](UPGRADE-PLAN-2026-10-23.md) | 四路扫描合成的全仓方案，**最完整的一份** |
 | [`NEXT-STEPS-PLAN-2026-10-24.md`](NEXT-STEPS-PLAN-2026-10-24.md) | 第五批候选（部分已执行） |
 | [`UPGRADE-PLAN-2026-10-16.md`](UPGRADE-PLAN-2026-10-16.md) | 最早的改造方案 |

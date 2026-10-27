@@ -22,6 +22,8 @@
     "coverage": "vitest run --coverage && node scripts/check-coverage.mjs",
     "typecheck": "node scripts/typecheck.mjs",
     "typecheck:video": "node scripts/typecheck-video-scope.mjs",
+    "video:catalog": "node --experimental-strip-types apps/api/src/video-catalog-main.ts",
+    "video:catalog:check": "node --experimental-strip-types apps/api/src/video-catalog-main.ts --check",
     "seed": "node apps/api/src/seed-main.ts",
     "mcp:stdio": "pnpm --filter @navhub/mcp start",
     "vendor:web": "node scripts/vendor-web.mjs",

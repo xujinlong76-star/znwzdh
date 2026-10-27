@@ -15,6 +15,7 @@
  */
 import type { AppContext } from "./context.ts";
 import { getEnhancedSiteData, resolveSiteIcon, type SiteAction, type SiteRelation, type SiteLiveMetrics, type SiteHealth } from "@navhub/core";
+import { loadVideoCatalogFromDb, resolveVideoStoreMode, syncVideoCatalogSafely } from "./video-catalog.ts";
 
 export const NAVIGATION_PATH = "src/navsphere/content/navigation.json";
 export const SITE_PATH = "src/navsphere/content/site.json";
@@ -451,6 +452,12 @@ export async function writeResourceMetadata(ctx: AppContext, data: unknown): Pro
  * 会在**每个请求**上刷一条回退警告，把真正的问题淹没。
  */
 export async function readVideosData(ctx: AppContext): Promise<unknown> {
+  // `db` 模式：优先读关系表，表为空（首次切换 / 迁移未跑 / 被误清空）时回落 KV。
+  // 回落而不是返回空库 —— 读路径绝不能因为影子表没准备好就让视频库消失。
+  if (resolveVideoStoreMode() === "db") {
+    const fromDb = await loadVideoCatalogFromDb(ctx);
+    if (fromDb) return fromDb;
+  }
   return readKv(ctx, "videos");
 }
 
@@ -460,6 +467,9 @@ export async function writeVideosData(
   ifVersion?: number,
 ): Promise<void> {
   await writeKv(ctx, "videos", data, ifVersion);
+  // `dual` / `db` 模式下把文档同步进关系表。失败只记状态，不影响本次写入 ——
+  // 影子表是副本，副本故障不该让正本写入报错（详见 video-catalog.ts 文件头）。
+  await syncVideoCatalogSafely(ctx, data);
 }
 
 /* --------------------------- 键值读写（复用 jobs 表） --------------------------- */

@@ -29,6 +29,16 @@ export interface VideoCategoryInput {
   harvestPolicy?: unknown;
 }
 
+export interface VideoCategoryRow {
+  id: string;
+  title: string;
+  description: string | null;
+  icon: string | null;
+  enabled: boolean;
+  sort: number;
+  harvestPolicy: unknown;
+}
+
 export interface VideoItemInput {
   id: string;
   categoryId: string;
@@ -258,6 +268,32 @@ export async function replaceVideoCatalog(
   })
 
   return { categories: categories.length, items: items.length }
+}
+
+/**
+ * 列出全部视频分类（按 sort 升序）。
+ *
+ * 视频库的分类数量是个位数，不做分页；`harvestPolicy` 由 TEXT 列解析回来。
+ */
+export async function listVideoCategories(repo: Repository): Promise<VideoCategoryRow[]> {
+  const map = (r: Record<string, unknown>): VideoCategoryRow => ({
+    id: String(r.id),
+    title: String(r.title ?? ''),
+    description: asStr(r.description),
+    icon: asStr(r.icon),
+    enabled: asBool(r.enabled),
+    sort: asNum(r.sort) ?? 0,
+    harvestPolicy: parseJson(r.harvest_policy),
+  })
+
+  if (repo.db.dialect === "sqlite") {
+    const rows = repo.db.sqlite!
+      .prepare("SELECT * FROM video_categories ORDER BY sort, id")
+      .all() as Array<Record<string, unknown>>
+    return rows.map(map)
+  }
+  const res = await repo.db.pg!.query("SELECT * FROM video_categories ORDER BY sort, id")
+  return (res.rows as Array<Record<string, unknown>>).map(map)
 }
 
 /** 按分类分页列出条目（只返回列字段 + payload，不做 join） */

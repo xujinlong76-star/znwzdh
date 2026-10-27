@@ -2,22 +2,25 @@
 /**
  * CI 合并门禁的离线校验。
  *
- * 为什么需要：`ci-passed` 是分支保护唯一必经项，它靠 `needs` 聚合 8 个作业。
- * 只要有人（或某次合并冲突）把 `test-postgres` 从 `needs` 里删掉，PG 红了也
+ * 为什么需要：`ci-passed` 是分支保护唯一必经项，它靠 `needs` 聚合各作业。
+ * 只要有人（或某次合并冲突）把一个本该阻塞的作业从 `needs` 里删掉，它红了也
  * 不会阻塞合并——而 GitHub 的分支保护配置在仓库外，本地无法读取。
  * 2026-10-24 实测：PG 套件确实红过（`catId is not defined`），说明「聚合了」
  * 不等于「聚合对了」。这个脚本把聚合关系变成可执行断言，进 pre-merge 的
  * `pnpm verify`。
  *
- * 校验项：
- *   1. `ci-passed.needs` 覆盖全部关键作业；
- *   2. 评估脚本逐个读取 `needs.<job>.result`（漏读 = 该作业失败不阻塞）；
- *   3. PG 作业使用带环境守卫的入口 `pnpm test:pg:suite`（防止整体 skip 假绿）；
- *   4. `if: always()` 存在（否则上游失败时聚合作业被跳过，分支保护会把它当
- *      未完成或成功，两种语义都不是我们要的）；
- *   5. 后端 lint 必须有一条**阻塞通道** —— 本地 verify 视其为硬门禁，而 CI 的
- *      该步骤带 `continue-on-error`（退出码被吞，作业仍绿）。两者可以并存，前提是
- *      同一个断言也在被 ci-passed 聚合的阻塞作业里跑一遍（见 LINT_GATE_TEST）。
+ * 2026-10-27 改进：不再维护硬编码作业清单。清单会漏——仓库新增
+ * `seo-audit-prod` 时旧脚本仍然绿。现在解析 `jobs:` 下全部作业：
+ *   - 在 `needs` 里 → 必须逐个读取 `needs.<job>.result`；
+ *   - 不在 `needs` 里 → 必须显式声明为手动/定时作业（`if:` 含 workflow_dispatch
+ *     或 schedule），否则判红：新增的 PR 作业不许悄悄绕过聚合。
+ *
+ * 其余校验：
+ *   - `ci-passed` 必须有 `if: always()`（否则上游失败时聚合作业被跳过）；
+ *   - PG 作业使用带环境守卫的入口 `pnpm test:pg:suite`（防整体 skip 假绿）；
+ *   - 后端 lint 必须有一条**阻塞通道** —— 本地 verify 视其为硬门禁，而 CI 的
+ *     该步骤带 `continue-on-error`（退出码被吞，作业仍绿）。两者可以并存，前提是
+ *     同一个断言也在被 ci-passed 聚合的阻塞作业里跑一遍（见 LINT_GATE_TEST）。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -29,16 +32,8 @@ const CI_PATH = process.env.NAVHUB_CI_PATH || resolve(REPO_ROOT, ".github/workfl
 /** 后端 lint 在阻塞作业里的那份同口径断言；可用测试替换 */
 const LINT_GATE_REL = "apps/api/test/backend-lint-gate.test.ts";
 const LINT_GATE_TEST = process.env.NAVHUB_LINT_GATE_TEST || resolve(REPO_ROOT, LINT_GATE_REL);
-const REQUIRED_JOBS = [
-  "test-sqlite",
-  "test-postgres",
-  "test-web",
-  "check-web-overlay",
-  "check-isr-live",
-  "test-e2e",
-  "docker-smoke",
-  "audit",
-];
+/** 解析下限：低于它说明 YAML 结构变了，脚本不该假装通过 */
+const MIN_JOBS = 6;
 
 const source = readFileSync(CI_PATH, "utf8");
 const problems = [];
@@ -54,16 +49,54 @@ const nextJob = rest.slice(1).search(/\n {2}[a-zA-Z0-9_-]+:\n/);
 const block = nextJob >= 0 ? rest.slice(0, nextJob + 1) : rest;
 
 const needsMatch = block.match(/needs:\s*\[([^\]]*)\]/);
-if (!needsMatch) {
-  problems.push("ci-passed 没有 needs 列表");
-} else {
-  const needs = needsMatch[1].split(",").map((s) => s.trim()).filter(Boolean);
-  for (const job of REQUIRED_JOBS) {
-    if (!needs.includes(job)) problems.push(`needs 缺少 ${job}（该作业失败不会阻塞合并）`);
-    if (!block.includes(`needs.${job}.result`)) {
-      problems.push(`评估脚本没有读取 needs.${job}.result（失败被静默忽略）`);
+const needs = needsMatch ? needsMatch[1].split(",").map((s) => s.trim()).filter(Boolean) : [];
+if (!needsMatch) problems.push("ci-passed 没有 needs 列表");
+
+/** 解析 jobs: 下的全部作业名与块内容 */
+const jobsIndex = source.indexOf("\njobs:");
+if (jobsIndex < 0) {
+  console.error("❌ 找不到 jobs: 段");
+  process.exit(1);
+}
+const jobsBody = source.slice(jobsIndex);
+const jobMatches = [...jobsBody.matchAll(/^ {2}([a-zA-Z0-9_-]+):\s*$/gm)];
+const jobs = jobMatches.map((m, i) => {
+  const from = m.index ?? 0;
+  const to = i + 1 < jobMatches.length ? (jobMatches[i + 1].index ?? jobsBody.length) : jobsBody.length;
+  return { name: m[1], block: jobsBody.slice(from, to) };
+});
+
+if (jobs.length < MIN_JOBS) {
+  problems.push(`只解析到 ${jobs.length} 个作业（下限 ${MIN_JOBS}）：YAML 结构可能已变，门禁校验失效`);
+}
+
+/** 手动/定时作业：`if:` 条件里明确只跑 workflow_dispatch / schedule */
+function isManualOnly(job) {
+  const ifLine = job.block.match(/^\s{4}if:\s*(.+)$/m);
+  if (!ifLine) return false;
+  const cond = ifLine[1];
+  return cond.includes("workflow_dispatch") || cond.includes("schedule");
+}
+
+const aggregated = [];
+const manualOnly = [];
+for (const job of jobs) {
+  if (job.name === "ci-passed") continue;
+  if (needs.includes(job.name)) {
+    aggregated.push(job.name);
+    if (!block.includes(`needs.${job.name}.result`)) {
+      problems.push(`评估脚本没有读取 needs.${job.name}.result（失败被静默忽略）`);
     }
+    continue;
   }
+  if (isManualOnly(job)) {
+    manualOnly.push(job.name);
+    continue;
+  }
+  problems.push(
+    `作业 ${job.name} 既不在 ci-passed.needs 里，也不是手动/定时作业——` +
+      `它红了不会阻塞合并。请加入 needs，或在 if: 里声明 workflow_dispatch/schedule。`,
+  );
 }
 
 if (!/if:\s*always\(\)/.test(block)) {
@@ -71,9 +104,10 @@ if (!/if:\s*always\(\)/.test(block)) {
 }
 
 // PG 作业必须走带环境守卫的入口
-const pgJobStart = source.indexOf("\n  test-postgres:");
-const pgJob = pgJobStart >= 0 ? source.slice(pgJobStart, source.indexOf("\n  test-web:", pgJobStart)) : "";
-if (!pgJob.includes("pnpm test:pg:suite")) {
+const pgJob = jobs.find((j) => j.name === "test-postgres");
+if (!pgJob) {
+  problems.push("找不到 test-postgres 作业");
+} else if (!pgJob.block.includes("pnpm test:pg:suite")) {
   problems.push("test-postgres 没有使用 pnpm test:pg:suite（缺少「拒绝静默跳过」守卫）");
 }
 
@@ -96,7 +130,11 @@ if (problems.length > 0) {
 }
 
 console.log(
-  `✅ CI 合并门禁：ci-passed 聚合 ${REQUIRED_JOBS.length} 个作业，逐个读取结果，PG 走 test:pg:suite，` +
+  `✅ CI 合并门禁：解析 ${jobs.length - 1} 个作业，ci-passed 聚合 ${aggregated.length} 个作业，逐个读取结果，` +
+    "PG 走 test:pg:suite，" +
     (lintStepSuppressed ? "后端 lint 由阻塞作业里的同口径断言把关。" : "后端 lint 步骤本身即为阻塞。"),
 );
+if (manualOnly.length > 0) {
+  console.log(`   手动/定时作业（不参与合并门禁，已显式声明）：${manualOnly.join("、")}`);
+}
 console.log("   提醒：分支保护需在 GitHub 上把 ci-passed 设为唯一必经项（见 docs/CI-BRANCH-PROTECTION.md）。");

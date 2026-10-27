@@ -259,6 +259,7 @@ describe('Proposal [5]: Webhook Notifier Markdown Formatting', () => {
     // 这套字段在报告里一个都不存在，等于测了一个不存在的对象。
     const mockReport: VideoHarvestReport = {
       timestamp: 1735689600000,
+      dryRun: false,
       totalCheckedCategories: 3,
       totalHarvestedCount: 7,
       totalAddedCount: 5,

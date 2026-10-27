@@ -87,9 +87,9 @@ export async function sendHarvestWebhookNotification(
           header: {
             title: {
               tag: 'plain_text',
-              content: `🎬 视频库自动轮换通知 [${report.dryRun ? '预览' : '已应用'}]`
+              content: `🎬 视频库自动轮换通知 [${report.dryRun ? '预览（未写库）' : '已应用'}]`
             },
-            template: report.totalRotated > 0 ? 'orange' : 'blue'
+            template: report.totalReplacedCount > 0 ? 'orange' : 'blue'
           },
           elements: [
             {

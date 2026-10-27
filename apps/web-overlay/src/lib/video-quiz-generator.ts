@@ -1,4 +1,5 @@
 import type { VideoChapter } from '@/types/navigation'
+import { chapterStartSec } from '@/types/navigation'
 
 /**
  * 测验题。
@@ -67,7 +68,7 @@ export function generateVideoQuizzes(
 
   if (chapters.length > 0) {
     chapters.forEach((ch, idx) => {
-      const timeSec = ch.endTime ? Math.max(0, ch.endTime - 5) : ch.startTime + 60
+      const timeSec = ch.endTime ? Math.max(0, ch.endTime - 5) : chapterStartSec(ch) + 60
       const chTitle = ch.title
 
       if (ch.codeLanguage === 'yaml' || chTitle.toLowerCase().includes('k8s') || chTitle.toLowerCase().includes('kubernetes')) {
@@ -164,14 +165,14 @@ export function gradeQuizAnswers(
         questionId: q.id,
         isCorrect,
         selectedIndex: selected,
-        correctIndex: q.correctIndex,
+        correctIndex: quizCorrectIndex(q),
       })
     } else {
       detailedResults.push({
         questionId: q.id,
         isCorrect: false,
         selectedIndex: -1,
-        correctIndex: q.correctIndex,
+        correctIndex: quizCorrectIndex(q),
       })
     }
   })
@@ -211,7 +212,7 @@ export function findQuizTrigger(
   toleranceSec: number = 4
 ): VideoQuizQuestion | null {
   for (const q of questions) {
-    if (Math.abs(currentSec - q.timeSec) <= toleranceSec) {
+    if (Math.abs(currentSec - (q.timeSec ?? q.timestamp ?? 0)) <= toleranceSec) {
       return q
     }
   }

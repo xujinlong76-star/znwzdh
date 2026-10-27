@@ -107,7 +107,7 @@ export interface VideoConfigRaw {
   lastVerifiedAt?: number
   qualityScore?: number
   freshnessScore?: number
-  sourceType?: 'manual' | 'auto_trend' | 'auto_topic'
+  sourceType?: 'manual' | 'auto_trend' | 'auto_topic' | 'webhook'
   trendKeyword?: string
   pinned?: boolean
   healthStatus?: 'healthy' | 'outdated' | 'broken' | 'unverified'
@@ -181,7 +181,12 @@ export interface NavigationSubItem {
 }
 
 export interface VideoConfig {
-  type: 'bilibili' | 'youtube'
+  /**
+   * `custom` 用于无法归到 B 站/YouTube 的来源（webhook 直投、手工录入的第三方链接）。
+   * 之前这里只有两个值，而 `video-deadlink-sweeper` 里写着 `config.type || 'custom'` ——
+   * 那个兜底分支在类型上永远不可达，等于「非 B 站/YouTube 的内容无处可放」。
+   */
+  type: 'bilibili' | 'youtube' | 'custom'
   videoId?: string // simplified ID for youtube or bvid for bilibili
   bvid?: string
   aid?: string
@@ -195,7 +200,7 @@ export interface VideoConfig {
   lastVerifiedAt?: number
   qualityScore?: number
   freshnessScore?: number
-  sourceType?: 'manual' | 'auto_trend' | 'auto_topic'
+  sourceType?: 'manual' | 'auto_trend' | 'auto_topic' | 'webhook'
   trendKeyword?: string
   pinned?: boolean
   healthStatus?: 'healthy' | 'outdated' | 'broken' | 'unverified'

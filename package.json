@@ -21,6 +21,7 @@
     "test:e2e": "playwright test",
     "coverage": "vitest run --coverage && node scripts/check-coverage.mjs",
     "typecheck": "node scripts/typecheck.mjs",
+    "typecheck:video": "node scripts/typecheck-video-scope.mjs",
     "seed": "node apps/api/src/seed-main.ts",
     "mcp:stdio": "pnpm --filter @navhub/mcp start",
     "vendor:web": "node scripts/vendor-web.mjs",

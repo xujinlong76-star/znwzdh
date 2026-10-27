@@ -379,6 +379,8 @@ export async function harvestVideosForTopic(
 
 export interface VideoHarvestReport {
   timestamp: number
+  /** 本次是否为试运行（未写库）。通知/简报要如实标注，不能一律说「已应用」。 */
+  dryRun: boolean
   totalCheckedCategories: number
   totalHarvestedCount: number
   totalAddedCount: number
@@ -659,6 +661,7 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
 
   return {
     timestamp: Date.now(),
+    dryRun,
     totalCheckedCategories: categories.length,
     totalHarvestedCount: totalHarvested,
     totalAddedCount: additions.length,

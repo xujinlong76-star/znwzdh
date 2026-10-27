@@ -13,6 +13,9 @@
  * 把这条规则写成纯函数而不是散落在路由里：路由会新增，规则只有一份；
  * 单测可以枚举「路径 × 令牌类型 × 要求等级」的矩阵，漏判即红。
  */
+import { isPersonalUserWritePath } from "./route-policy.ts";
+
+export { PERSONAL_TOKEN_WRITE_ROUTES } from "./route-policy.ts";
 
 /** 路由要求的等级（与 apps/api 的 RouteScope 对齐，public 不进入判定） */
 export type AuthzRequirement = "read" | "write" | "admin";
@@ -22,7 +25,7 @@ export interface InstanceWriteContext {
   ownerScoped: boolean;
   /** 路由声明的等级 */
   required: AuthzRequirement;
-  /** 原始请求路径（含 query 也无妨，前缀匹配只取 pathname 部分） */
+  /** 原始请求路径（含 query 也无妨，只取 pathname 部分） */
   path: string;
 }
 
@@ -31,16 +34,6 @@ export interface AuthzDecision {
   /** 拒绝原因，用于审计与错误文案；allowed=true 时为 null */
   reason: "personal_token_instance_write" | null;
 }
-
-/**
- * 个人令牌允许触达的**写**路径白名单。
- *
- * 目前只有投稿修改：它是终端用户编辑自己提交的内容，属于用户域，
- * 但历史实现把它声明成了 write 级路由（见 routes/submissions.ts）。
- * 新增用户域写路由时，要么把 scope 改成 public + userDomainWriteAllowed，
- * 要么把前缀加到这里——两条路都要求显式决定，不允许「默认放行」。
- */
-const PERSONAL_WRITE_PREFIXES: readonly string[] = ["/api/submissions/"];
 
 /** 去掉 query / hash，只保留 pathname；非法输入返回空串（调用方按拒绝处理） */
 export function pathnameOf(url: string): string {
@@ -59,7 +52,7 @@ export function pathnameOf(url: string): string {
 export function isPersonalWritePath(url: string): boolean {
   const path = pathnameOf(url);
   if (!path) return false;
-  return PERSONAL_WRITE_PREFIXES.some((prefix) => path === prefix.slice(0, -1) || path.startsWith(prefix));
+  return isPersonalUserWritePath(path);
 }
 
 /**
@@ -67,6 +60,10 @@ export function isPersonalWritePath(url: string): boolean {
  *
  * 规则只有一条：**个人令牌不得通过 write 等级触达实例域**。
  * read/admin 不在此处收窄——admin 本来就是实例级凭据，read 没有写副作用。
+ *
+ * 「哪条 write 路由算用户域」不在这里猜：由 route-policy 的登记表决定，
+ * 未登记的一律按实例域处理（默认拒绝）。所以新增写路由不需要在这里改代码，
+ * 也不会因为忘记登记而被个人令牌越权触达。
  */
 export function evaluateInstanceWrite(ctx: InstanceWriteContext): AuthzDecision {
   if (ctx.required !== "write") return { allowed: true, reason: null };

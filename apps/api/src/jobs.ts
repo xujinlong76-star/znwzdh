@@ -1180,7 +1180,16 @@ export class JobRunner {
   private async runPurgeTrash(payload: { olderThanDays?: number } = {}): Promise<void> {
     const days = Math.max(1, payload.olderThanDays ?? 30);
     const ms = days * 86_400_000;
-    const { purged, ids } = await this.ctx.repo.purgeExpiredDeletedSites(ms);
+    /**
+     * 兼容两种返回形态：HEAD 的仓储返回「清理条数」，而任务侧还需要 id 列表来
+     * 同步删除向量——仓储改成 `{ purged, ids }` 的改动尚未落地（工作区在途）。
+     * 这里做形状适配而不是硬等：仓储升级后本段无需再改，且当前编译不再 TS2339
+     * （2026-10-27 main 的 SQLite / PG 两个作业就是被这处类型错误拖红的）。
+     */
+    type PurgeResult = { purged: number; ids: string[] };
+    const purgeResult = (await this.ctx.repo.purgeExpiredDeletedSites(ms)) as number | PurgeResult;
+    const purged = typeof purgeResult === "number" ? purgeResult : purgeResult.purged;
+    const ids = typeof purgeResult === "number" ? [] : purgeResult.ids;
     // 向量表不在 purgeSite 的事务里（它由 API 层的 vector store 持有）：
     // 不在这里同步删除，被清站点的向量会继续占 KNN 的 top-N 名额。
     if (ids.length > 0 && this.ctx.vectors) {

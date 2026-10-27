@@ -2530,7 +2530,7 @@ export function PluginUrlHealthPanel() {
         a.click()
         URL.revokeObjectURL(url)
       } else {
-        let md = `# NavHub 插件网址体检与治理快照报告\n\n`
+        let md = `# 山羊胡插件网址体检与治理快照报告\n\n`
         md += `> 生成时间：${new Date().toLocaleString('zh-CN')} | 网址包总数：${packs.length} | 已测包数：${globalMetrics.auditedPacks}\n\n`
         md += `### 全局汇总指标\n`
         md += `- 累计抽样 URL: **${globalMetrics.totalSampled}** 条\n`

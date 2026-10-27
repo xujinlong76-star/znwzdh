@@ -1,0 +1,651 @@
+# 视频管理 与 智能热点采集中心 — 后端深度审计与增强方案
+
+- 审计日期：2026-10-28
+- 审计范围：`apps/web-overlay/src/app/videos/**`、`apps/web-overlay/src/app/api/videos/**`、`apps/web-overlay/src/app/api/cron/**`、`apps/web-overlay/src/app/hot/**`、`apps/web-overlay/src/lib/video-*.ts`、中枢侧 `apps/api/src/routes/navsphere.ts` + `apps/api/src/storage.ts`
+- 方法：全链路静态通读 + 数据规模实测 + 契约反查（未修改任何代码，未跑写操作）
+- 结论口径：只报**有代码证据**的问题，每条附 `文件:行号`
+
+---
+
+## 0. 一句话结论
+
+两个模块的**界面与路由骨架已经成型，但服务端内核是「演示级」的**：视频侧存在 4 个匿名可写入口与 1 处写错路径导致能力空转；热点侧根本不存在采集，候选池是 12 条硬编码常量，播放量是 `Math.random()` 生成的。当前状态可以演示，**不能对外承诺「自动采集 / 智能热点」**。
+
+| 维度 | 视频管理 | 热点采集 | 说明 |
+|---|---|---|---|
+| 架构设计 | 5 / 10 | 3 / 10 | 三套写入口各自 read-modify-write 同一 JSON，无单一写入通道 |
+| 代码质量 | 6 / 10 | 3 / 10 | 视频侧结构清晰但有类型断链；热点侧大量「名不副实」命名 |
+| 性能 | 5 / 10 | 6 / 10 | 全量文档覆盖式读写；LLM 摘要服务端无持久缓存 |
+| 安全性 | **2 / 10** | 6 / 10 | 4 处鉴权缺口 + 伪 HMAC + 硬编码密钥 |
+| 可扩展性 | 3 / 10 | 2 / 10 | 文档整包模型不支持按条查询、分页、并发 |
+| 可靠性 | 3 / 10 | 4 / 10 | 锁不释放、任务全内存、一次探测失败即删内容 |
+
+---
+
+## 1. 模块边界与真实调用链
+
+```
+                        ┌──────────────────────────────────────────┐
+  /videos (RSC)  ──────▶│ getFileContent('src/navsphere/content/    │
+  force-dynamic         │                  videos.json')           │
+                        │   ↓ StorageAdapter (http 默认)           │
+                        └──────────────┬───────────────────────────┘
+                                       ▼
+                        ┌──────────────────────────────────────────┐
+                        │ 中枢 GET /api/storage?path=…  (scope:read)│
+                        │      PUT /api/storage         (scope:admin)│
+                        │   ↓ readKv / writeKv                      │
+                        │ jobs 表单行 JSON，ON CONFLICT DO UPDATE    │
+                        └──────────────────────────────────────────┘
+                                       ▲
+        ┌──────────────────────────────┼──────────────────────────────┐
+        │                              │                              │
+  /api/videos/harvest        /api/videos/ai-autonomous-harvest   /api/videos/webhook-harvest
+  (admin ✅)                  (无鉴权 ❌)                          (签名可绕过 ❌)
+        │                              │                              │
+        ▼                              ▼                              ▼
+  runVideoHarvestAndRotation   AutonomousAIHarvesterController   MultiSourceConnector
+  (真实 B 站搜索)               (12 条硬编码常量)                  (弱哈希验签)
+
+  /hot (RSC, revalidate=60) ──▶ 中枢 GET /api/rank/trending + /api/rank/new
+                                └─ 依赖 trend_score 由 recompute_rank 任务产出
+                                   （页面自述「访问量统计尚未积累」）
+
+  /api/cron/video-harvest      ──▶ 同一 harvest 引擎（fail-open 鉴权，且无调度器）
+  /api/cron/video-health-sweep ──▶ 读写 'data/navigation.json'（路径错误 ❌）
+```
+
+**关键事实**：`videos.json` 当前 44KB / 5 分类 / 16 条目，`harvestPolicy.enabled` 为 5（全分类开启）。规模很小，因此下面的问题不是「现在会炸」，而是「一旦真跑起来就会炸」。
+
+---
+
+## 2. 安全性：4 个匿名可写入口与 1 个伪加密
+
+### P0-1 自主采集接口完全无鉴权
+
+`apps/web-overlay/src/app/api/videos/ai-autonomous-harvest/route.ts:70-113`
+
+```ts
+export async function POST(request: Request) {
+  try {
+    const body = await request.json().catch(() => ({}))
+    // ❌ 没有 verifyAdminSession，没有 CRON_SECRET
+    const currentData = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
+    const controller = new AutonomousAIHarvesterController()
+    const { updatedData, report } = await controller.runCycle(currentData, {...})
+    if (!dryRun && report.newCourses.length > 0) {
+      await commitFile(VIDEOS_FILE_PATH, JSON.stringify(updatedData, null, 2), ...)
+    }
+```
+
+- **影响**：任何人 POST 一次即可往视频库写 12 条内容（当前 `dryRun` 默认 false），并触发整包覆盖写。写请求打到中枢 `PUT /api/storage`（scope:admin）——若前端侧配置了 `NAVHUB_STORAGE_TOKEN`，等于把管理员写权限暴露成公开接口。
+- **根因**：该路由是后加的功能，未套用同目录其它路由的 `verifyAdminSession` 模板。
+
+### P0-2 Webhook 签名是伪实现，且可整体绕过
+
+`apps/web-overlay/src/lib/video-multi-source-connector.ts:66-80`
+
+```ts
+export function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
+  if (!signature || !secret) return false
+  if (signature.startsWith('sha256=')) {
+    const rawSig = signature.replace('sha256=', '').trim()
+    // ❌ 注释写 HMAC，实现是 32 位滚动哈希
+    let hash = 0
+    const str = `${secret}:${payload}`
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0
+    }
+    const simulatedHex = Math.abs(hash).toString(16).padStart(8, '0')
+    // ❌ 子串匹配：只对 8 个 hex 位
+    return rawSig.toLowerCase().includes(simulatedHex.toLowerCase()) || rawSig === secret
+  }
+  return signature === secret   // ❌ 允许把密钥本身当签名
+}
+```
+
+`apps/web-overlay/src/lib/video-multi-source-connector.ts:199`
+
+```ts
+if (signature && !verifyWebhookSignature(JSON.stringify(payload), signature, this.webhookSecret)) {
+  return { ok: false, message: 'Webhook HMAC 签名验证失败，拒绝请求' }
+}
+// ❌ signature 为空 → 直接进入业务逻辑
+```
+
+`apps/web-overlay/src/app/api/videos/webhook-harvest/route.ts:13-15`
+
+```ts
+const connector = new MultiSourceConnector(
+  process.env.NAVHUB_VIDEO_WEBHOOK_SECRET || 'navhub_video_webhook_secret_2026'
+)
+// ❌ 默认密钥硬编码，且同文件 GET 把端点和算法公开告知
+```
+
+四个独立缺陷叠加，实际安全强度为零：
+
+| # | 缺陷 | 后果 |
+|---|---|---|
+| a | 不是 HMAC，是 32 位滚动哈希 | 输出空间 4.3e9，可离线暴力 |
+| b | `includes()` 子串匹配 | 8 hex 位任意位置命中即通过，熵进一步坍塌 |
+| c | `rawSig === secret` | 密钥可直接当签名用，泄露即永久通行 |
+| d | `if (signature && …)` | 不带签名头 = 跳过校验 |
+| e | 对 `JSON.stringify(payload)` 验签 | 与原始 body 的键序/空格不一致，正解实现也会误拒 |
+| f | 未配置环境变量时用硬编码默认值 | 攻击者不需要探测密钥 |
+
+### P0-3 Cron 端点 fail-open
+
+`apps/web-overlay/src/app/api/cron/video-harvest/route.ts:24-35`（health-sweep 同构，`:19-29`）
+
+```ts
+const cronSecret = process.env.CRON_SECRET || process.env.INTERNAL_JOB_TOKEN
+const querySecret = searchParams.get('secret')
+const providedSecret = authHeader?.replace(/^Bearer\s+/i, '') || querySecret
+// ❌ 未配置 cronSecret 时整段跳过校验
+if (cronSecret && providedSecret !== cronSecret) {
+  return NextResponse.json({ error: 'Unauthorized: Invalid CRON_SECRET' }, { status: 401 })
+}
+```
+
+- 生产环境漏配 `CRON_SECRET` 即完全开放写接口，且**不会报错、不会告警**。
+- `?secret=` 允许密钥走 URL，会进反向代理 access log、浏览器历史、Referer。
+
+### P0-4 LLM 摘要接口无鉴权且是死代码
+
+`apps/web-overlay/src/app/api/videos/ai-summary/route.ts:6-40`
+
+- 无 `verifyAdminSession`，`description` 从 query 直入 prompt（`video-ai-summary.ts:207`），无长度上限 → prompt 注入 + 任意计费。
+- 实测调用方：`video-player-page.tsx:95` 与 `VideoPlayerContext.tsx:7` 都直接 `import { getVideoAISummary }` 客户端调用，**没有任何地方 fetch 这个路由** → 当前是纯攻击面，零收益。
+- `video-ai-summary.ts:227` 把 Gemini key 拼进 URL query（`?key=`），会进上游日志。
+
+### P1-5 审计与回滚数据的读接口无鉴权
+
+`apps/web-overlay/src/app/api/videos/history/route.ts:11-27` GET 无鉴权，返回全部 `replacementHistory`（含被替换视频的完整 oldItem/newItem）。属内部运营数据。
+
+---
+
+## 3. 正确性与数据安全：三处「静默失效」
+
+### P0-6 健康巡检写错目标文件，能力完全空转
+
+`apps/web-overlay/src/app/api/cron/video-health-sweep/route.ts:8`
+
+```ts
+const VIDEOS_FILE_PATH = 'data/navigation.json'   // ❌ 应为 src/navsphere/content/videos.json
+```
+
+同目录其它 6 个路由全部是 `'src/navsphere/content/videos.json'`。后果：
+
+1. 读进来的是**站点导航**（`navigation.json`），里面 `videoConfig` 为 0 → `videoItems` 为空 → 报告永远 `totalScanned: 0`。
+2. `dryRun=false && report.brokenCount > 0` 才会写；brokenCount 恒 0，所以暂时没触发写。
+3. 但 `writeStoragePath` 对 `navigation.json` 走的是 `writeNavigationData`（`apps/api/src/storage.ts:632-638`），一旦条件成立就是**整站导航结构被视频数据覆盖**。
+
+### P0-7 一次探测失败即永久删除内容
+
+`apps/web-overlay/src/lib/video-deadlink-sweeper.ts:148-158`
+
+```ts
+} catch (err: any) {
+  return {
+    healthy: false,                        // ❌ 超时/网络错误 = 不健康
+    reason: err?.message || 'Network timeout or probe aborted',
+  }
+}
+```
+
+`apps/web-overlay/src/lib/video-deadlink-sweeper.ts:173-175, 222-249`
+
+```ts
+const autoPrune = options?.autoPrune ?? true    // ❌ 默认直接删
+if (autoPrune && brokenIds.size > 0) {
+  updatedCategories = navigationData.navigationItems.map(cat => {
+    const filteredItems = (cat.items || []).filter(item => {
+      if (brokenIds.has(item.id)) { prunedCount++; return false }   // 无二次确认
+```
+
+本仓既有口径是「**超时 = 不可判定，不是死**」（见 `packages` 探活判定与记忆归档）。此处反其道而行：B 站接口抖动一次，条目就从库里消失，且 `replacementRecords` 永远是空数组（`:193` 定义后从未 push），**没有回滚凭据**。
+
+### P0-8 单条增删改会清空替换历史
+
+`apps/web-overlay/src/app/api/videos/[id]/items/route.ts:58-63`（PUT `:106-111`、DELETE `:154-159` 同）
+
+```ts
+await commitFile(
+  VIDEOS_FILE_PATH,
+  JSON.stringify({ navigationItems: updatedItems }, null, 2),  // ❌ 只序列化一个键
+  'Add video item',
+```
+
+`NavigationData` 还有 `replacementHistory`（`video-harvester.ts:584` 写入、`history/route.ts` 读取、`rollbackReplacement` 依赖）。任何一次单条视频编辑都会把它抹成 `undefined` → 回滚功能静默失效，且无报错。
+
+---
+
+## 4. 可靠性：锁、队列、并发写
+
+### P1-9 租约锁永不释放（owner 不匹配）
+
+`apps/web-overlay/src/lib/video-task-queue.ts:221` 与 `:258`
+
+```ts
+const lockResult = videoTaskQueue.acquireLock(`worker_${Date.now()}`)   // owner = worker_1712...
+...
+} finally {
+  videoTaskQueue.releaseLock(task.id)                                   // owner = task_vharvest_<uuid>
+}
+```
+
+`releaseLock` 的实现是 `if (this.currentLock && this.currentLock.owner === owner)`（`:86`）→ 恒不相等，锁永远不释放，只能等 `DEFAULT_LOCK_TTL_MS = 5 * 60 * 1000`（`:50`）自然过期。
+
+**用户可见后果**：采集跑完后 5 分钟内再次点击「开始采集」会得到「已有任务正在执行中（持有者: worker_…）」，而实际上没有任务在跑。
+
+**测试为什么没抓到**：`apps/web-overlay/test/video-evolution-suite.test.ts:58-77` 是手工用同一 `owner1` 配对 acquire/release，只验证了 API 语义，没有覆盖 `scheduleAndRunVideoHarvest` 这条真实调用路径。
+
+### P1-10 「分布式租约锁」是内存单例
+
+`apps/web-overlay/src/lib/video-task-queue.ts:44-59`
+
+```ts
+// 内存态全局单例任务与锁存储
+class VideoTaskQueueStore {
+  private static instance: VideoTaskQueueStore
+  private tasks = new Map<string, VideoHarvestTask>()
+```
+
+- 多副本 / 多容器 / Serverless 并发实例下**零互斥**，注释里的「分布式」不成立。
+- 进程重启 → 所有 task 记录与锁状态丢失；`GET /api/videos/harvest/task` 返回空，管理端看不到历史。
+- `taskOrder` 上限 50（`:138-141`）会把 `tasks` 删除但只在 `createTask` 时裁剪。
+
+### P1-11 后台任务在 Serverless 上不可靠
+
+`apps/web-overlay/src/lib/video-task-queue.ts:230`
+
+```ts
+void (async () => {   // 不 await，HTTP 已返回
+```
+
+Next.js 部署在 Vercel / 边缘函数时，响应返回后执行上下文可能被冻结或终止。这条 `void` 任务会停在 `percent: 10`（`:233-236`），永远不进入 `completeTask`。
+
+### P1-12 读-改-写无并发控制
+
+三个写入口（harvest / ai-autonomous-harvest / webhook-harvest）都是「读整包 → 改内存 → 写整包」，中枢侧落库为：
+
+`apps/api/src/storage.ts:457-459, 488-497`
+
+```ts
+export async function writeVideosData(ctx: AppContext, data: unknown): Promise<void> {
+  await writeKv(ctx, "videos", data);      // 单行 JSON 整包覆盖
+}
+...
+db.sqlite!.prepare(
+  "INSERT INTO jobs (id, kind, payload, ...) VALUES (?,?,?,?,0,?,?) " +
+  "ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at",
+).run("kv:" + key, "kv", payload, "done", now, now);
+```
+
+无版本号、无 `If-Match`/ETag、无事务内的 read-check-write。两个入口同时跑 = **last-write-wins，先写的那批内容凭空消失**，且日志上看不出异常。
+
+### P1-13 写失败被吞成成功
+
+`apps/web-overlay/src/app/api/videos/ai-autonomous-harvest/route.ts:90-92`
+
+```ts
+} catch (commitErr) {
+  console.warn('Storage commit failed (possibly read-only fallback):', commitErr)
+}
+// 继续 return { code: 0, success: true, ... }
+```
+
+`webhook-harvest/route.ts:87-89` 同构。运营看到「处理成功」，实际没入库。
+
+### P1-14 类型契约断链被构建配置静默放行
+
+`apps/web-overlay/src/lib/video-task-queue.ts:11, 31, 178`
+
+```ts
+import { runVideoHarvestAndRotation, type HarvestRunReport } from './video-harvester'
+//                                      ^^^^^^^^^^^^^^^^ 该文件只导出 VideoHarvestReport
+```
+
+全仓 grep 结果：`HarvestRunReport` 在 `video-harvester.ts`、`types/navigation.ts` 中**均无定义**。`apps/web-overlay/next.config.js:44` 是
+
+```js
+typescript: { ignoreBuildErrors: true },
+```
+
+所以这个 TS2305 一路绿灯。`apps/web-overlay/test/video-evolution-suite.test.ts:50` 还从 `@/types/navigation` 导入同名类型（同样不存在），vitest 走 esbuild 剥离类型也不报。
+
+**这不是一个类型错误，而是「该模块的类型检查事实上不存在」**——本次审计发现的多数问题都因此长期未被拦下。
+
+---
+
+## 5. 性能瓶颈
+
+| # | 位置 | 问题 | 量化影响 |
+|---|---|---|---|
+| P1-15 | `api/videos/route.ts:10-20` | `GET` 返回整份 `videos.json`，无分页、无字段裁剪 | 当前 44KB；条目数线性增长，采集跑起来后每次列表请求都传全量 |
+| P1-16 | `app/videos/page.tsx:13` | `dynamic = 'force-dynamic'` + 同请求两次 `getFileContent`（videos + site） | 全量数据进 RSC payload，无法 ISR；`/hot` 反而正确用了 `revalidate = 60` |
+| P1-17 | `lib/video-ai-summary.ts:16-24, 144-181` | 服务端 `getStorage()` 返回 `null`，只剩进程内 `Map` | Serverless 冷启动即失效 → 每次播放都打一次 Gemini，首字延迟 + 成本线性 |
+| P1-18 | `components/video-content.tsx:353-390` | 全量 `map` 渲染，无分页/虚拟化 | 当前 16 条无感；200 条以上首屏 DOM 与 RSC 体积同时失控 |
+| P2-19 | `lib/video-harvester.ts:288-370` | 关键词串行 `for` + 每词 6s 超时，无并发/无整体预算 | 5 分类 × 2 词 ≈ 最坏 60s+，贴近函数超时；超时后整包写不落盘 |
+| P2-20 | `lib/video-deadlink-sweeper.ts:196-217` | 串行探测，默认 30 条 × 3.5s | 最坏 105s，必然超过多数 Serverless 超时窗口 |
+
+---
+
+## 6. 「智能热点采集」的真实性核查（最高优先级产品风险）
+
+这一节不是性能问题，是**内容诚信问题**。
+
+### P0-21 候选池是 12 条硬编码常量，不存在采集
+
+`apps/web-overlay/src/lib/video-trending-harvester.ts:33-249`
+
+```ts
+export const CURATED_TRENDING_TOPICS: TrendingTechTopic[] = [
+  {
+    domain: 'cat_ai_engineering',
+    keyword: '李宏毅机器学习与大模型前沿',
+    hotIndex: 98,                    // ❌ 手写数字，非任何数据源产出
+    recommendedTitle: '李宏毅 2021/2022 …',
+    bvidFallback: 'BV1Wv411h7kN',
+    durationSec: 314062,             // ❌ 87 小时（合集时长，被当成单视频）
+```
+
+全库唯一的"采集"是 `video-harvester.ts:294` 的 B 站 wbi search，而该接口**未带 wbi 签名**（`w_rid`/`wts`），线上大概率返回 `-352`/`412` 风控。`harvestVideosForTopic` 对此的兜底是 `catch → console.warn`（`:366-368`）→ 静默返回空数组，任务仍报 `success: true`。
+
+### P0-22 播放量/点赞是随机数，质量分因此失效
+
+`apps/web-overlay/src/lib/video-trending-harvester.ts:323-329`
+
+```ts
+stats: {
+  views: 125000 + Math.floor(Math.random() * 80000),   // ❌ 每次采集都不一样
+  likes: 9800 + Math.floor(Math.random() * 5000),
+  coins: 4500 + Math.floor(Math.random() * 2000),
+  favorites: 14200 + Math.floor(Math.random() * 4000),
+  danmaku: 850 + Math.floor(Math.random() * 300),
+},
+```
+
+`video-autonomous-ai-harvester.ts:410-416` 更直接，写死 `views: 195000 / likes: 14200 / coins: 6800 / favorites: 18400`。
+
+这些数字随后进入 `calculateQualityScore`（`video-harvester.ts:184-225`，其 `viewsScore = log10(views) * 5`、`favScore = favRate/0.05*20`）→ **质量分是随机数的函数**，且会被 `pinned` 之外的所有排序/推荐逻辑消费。
+
+### P0-23 伪造发布时间，绕过整个保鲜衰减模型
+
+`apps/web-overlay/src/lib/video-trending-harvester.ts:313-316`、`video-autonomous-ai-harvester.ts:400-403`
+
+```ts
+publishedAt: new Date().toISOString(),   // ❌ 2021 年的视频被标成"今天发布"
+freshnessScore: 98,                      // ❌ 写死
+```
+
+`calculateFreshnessScore`（`video-harvester.ts:230-264`）的核心是 `decayFactor = 0.5 ^ (ageDays / halfLife)`。`publishedAt` 被伪造成当前时间 → `ageDays = 0` → `decayFactor = 1` → 永远保鲜。**「过时内容平滑轮换」这个卖点因此在数据层面不可能触发**（`worstScore < 45` 的替换条件永不成立）。
+
+### P0-24 「AI 审核 / AI 提炼」是正则与模板字符串
+
+`apps/web-overlay/src/lib/video-autonomous-ai-harvester.ts:67-160`
+
+```ts
+export function evaluateVideoWithAIModel(rawVideo: {...}): AIEvaluationResult {
+  const clickbaitRegex = /震惊|必看|绝了|逆天|全网最强|看这一篇就够了|秒杀|暴打|吊打/i
+  ...
+  techKeywords.forEach(kw => { if (new RegExp(kw, 'i').test(fullText)) matchedTags.push(kw) })
+  let baseScore = 75
+  if (matchedTags.length >= 3) baseScore += 10
+```
+
+零模型调用、零 API 请求。`generateAISanitizedMetadata`（`:188-261`）输出**固定** 4 个章节（`ai-ch-1..4`）、**固定** 3 道选择题、**固定** 4 条字幕文案。
+
+前端把它呈现为「AI 深度审核」「AI 成功生成 N 个结构化章节、N 条中文字幕与 N 道课后测验」（`:365`）→ 用户看到的是编造的课程大纲。
+
+### P0-25 没有任何调度器在触发采集
+
+- 仓库内无 `apps/web-overlay/vercel.json`；
+- `.github/workflows` 中无任何文件引用 `video-harvest`；
+- 全仓仅 `VideoTelemetryDashboard.tsx:65,110` 手工调用。
+
+结论：所谓「定时自动采集」当前**一次都不会发生**，只有人工点按钮时才跑，而它跑的是硬编码常量。
+
+### P1-26 `/hot` 与视频热点是两套无关的「热度」
+
+- `/hot`（`app/hot/page.tsx:39-51`）读中枢 `/api/rank/trending`，是**站点访问量**排序；页面自己承认「访问量统计尚未积累，榜单暂不反映真实热度」（`hot-view.tsx:237`）。
+- 视频侧的 `hotIndex` 是硬编码常量。
+
+两者共用「热点/热榜」这个词，但数据源、口径、可信度完全不同，对外表述会互相拖累。
+
+---
+
+## 7. 代码质量与可观测性
+
+| # | 位置 | 问题 |
+|---|---|---|
+| P2-27 | `video-task-queue.ts:279-280` | `isRunning` / `timer` 是死字段，从未赋值或读取；`new AutonomousAIHarvesterController()` 每请求新建（`ai-autonomous-harvest/route.ts:76`）→ `logs` 无法跨周期累积 |
+| P2-28 | `video-harvester.ts:375-386` | `parseDurationToSeconds(durationStr?: string)` 内部判 `typeof durationStr === 'number'`，与签名矛盾；B 站搜索返回 `"MM:SS"`，`view` 接口返回 `number`，两条路径口径不一 |
+| P2-29 | `video-harvester.ts:105, 159, 366` | 全部 `console.warn` 后继续，无结构化字段、无指标、无 traceId；与中枢侧 `metrics.ts` / `probe-metrics-buffer.ts` 体系脱节 |
+| P2-30 | `video-harvester.ts:584` | `replacementHistory` 硬截断 100 条，回滚记录随之永久丢失 |
+| P2-31 | `video-multi-source-connector.ts:235` | `bvid: id.startsWith('BV') ? id : 'BV1whDefault'` — 非 B 站来源被塞入**同一个假 BV 号**，去重逻辑会把它们全部判为重复 |
+| P2-32 | `video-multi-source-connector.ts:231, 305, 392` | 所有入库视频共用同一张 Unsplash 图（`photo-1526374965328…`），封面无区分度 |
+| P2-33 | `video-content.tsx:38` | `buildVideoSearchIndex` 在客户端对全量数据建倒排索引，`navigationData` 引用变化即全量重建（当前可接受，需设阈值） |
+
+---
+
+## 8. 增强方案（按优先级）
+
+### 8.1 P0 — 必须先做，否则不具备对外条件
+
+| ID | 措施 | 具体改动 | 预期收益 | 验证方式 |
+|---|---|---|---|---|
+| **A1** | 补鉴权，收敛匿名写入口 | `ai-autonomous-harvest/route.ts` POST 首行加 `verifyAdminSession()`（与同目录 6 个路由一致）；`cron/*` 改为**未配置 secret 即 503 fail-closed**；删掉 `?secret=` 通道 | 消除 4 个匿名写入口中的 3 个 | 未登录 `curl -X POST` 期望 401；`unset CRON_SECRET` 后期望 503 |
+| **A2** | 用真 HMAC 替换伪实现 | 见下方代码；签名头必填；用 `await request.text()` 原始 body 验签 | webhook 从「可绕过」变为可信 | 新增单测：错误签名 401、缺签名 401、正确签名 200、篡改 body 401 |
+| **A3** | 修 health-sweep 路径 | `'data/navigation.json'` → `'src/navsphere/content/videos.json'` | 健康巡检从空转变为真实可用 | 跑一次 `dryRun=true`，断言 `totalScanned === 16` |
+| **A4** | 探测失败改为三态，取消默认删除 | 见下方代码：`dead` / `unverified` / `healthy`；`autoPrune` 默认改 `false`；仅连续 N 次 `dead` 才进入待删列表 | 一次网络抖动不再删内容 | 注入 `AbortError`，断言条目仍在库、`healthStatus='unverified'` |
+| **A5** | 单条编辑保留顶层字段 | `[id]/items/route.ts` 三处 `JSON.stringify({ navigationItems })` → `JSON.stringify({ ...data, navigationItems })` | 替换历史不再被静默清空 | 编辑一条视频后断言 `replacementHistory.length` 不变 |
+| **A6** | 删掉死代码路由 | 删除 `api/videos/ai-summary/route.ts`（无消费方，前端直调 lib） | 移除一个无收益的 LLM 计费攻击面 | `grep -r 'ai-summary' src/` 仅剩注释 |
+| **A7** | 停止把伪造数据当真实内容 | 二选一：① `publishedAt` 用 B 站真实 `pubdate`、`stats` 用真实 API 值，拿不到就**不填**；② 前端明确标注「示例数据」并 `noindex` | 恢复产品诚信；让保鲜模型重新有意义 | 断言新入库条目 `stats` 字段与上游 API 一致；`freshnessScore` 不再恒为 98/99 |
+| **A8** | 恢复类型检查 | 移除 `typescript.ignoreBuildErrors: true`，或至少把 `lib/video-*.ts` 纳入 `scripts/typecheck.mjs` 的显式清单；补 `HarvestRunReport` 定义或改用 `VideoHarvestReport` | 让后续所有同类缺陷在 CI 被拦住 | 修复前后各跑一次类型检查，期望「修复前红、修复后绿」 |
+
+#### A2 参考实现
+
+```ts
+// lib/webhook-signature.ts
+import { createHmac, timingSafeEqual } from 'node:crypto'
+
+export function verifyHmacSha256(rawBody: string, header: string | null, secret: string): boolean {
+  if (!header || !secret) return false                 // fail-closed
+  const provided = header.startsWith('sha256=') ? header.slice(7) : header
+  if (!/^[0-9a-f]{64}$/i.test(provided)) return false  // 固定长度，禁止子串匹配
+  const expected = createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex')
+  const a = Buffer.from(provided.toLowerCase(), 'hex')
+  const b = Buffer.from(expected, 'hex')
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+// route.ts
+const raw = await request.text()                        // 原始 body，不要 stringify
+if (!verifyHmacSha256(raw, request.headers.get('x-hub-signature-256'), secret)) {
+  return NextResponse.json({ error: 'invalid signature' }, { status: 401 })
+}
+const body = JSON.parse(raw) as WebhookPayload
+```
+
+配套：启动时若未配置 `NAVHUB_VIDEO_WEBHOOK_SECRET` 则**禁用该路由**（返回 503）而不是回落到默认值。
+
+#### A4 参考实现
+
+```ts
+export type ProbeState = 'healthy' | 'dead' | 'unverified'
+
+export async function probeVideoAvailability(item, timeoutMs = 4000): Promise<ProbeResult> {
+  try {
+    // …原有请求逻辑
+  } catch (err) {
+    // 超时 / 连接失败 / 5xx / 403 / 429 一律不可判定，不进删除分母
+    return { videoId: item.id, title: item.title, platform: config.type ?? 'custom',
+             state: 'unverified', reason: '网络或限流未能确认状态', latencyMs: Date.now() - start }
+  }
+}
+
+// sweep：只有连续 2 次 dead 才进入 prunedCandidates，且写进 replacementRecords 供回滚
+```
+
+### 8.2 P1 — 让「自动采集」真正成立
+
+| ID | 措施 | 具体改动 | 预期收益 |
+|---|---|---|---|
+| **B1** | 修锁的 owner | `const owner = task.id` 后再 `acquireLock(owner)`；或 `acquireLock` 返回 token 存到 task 上，`finally` 用同一个 token 释放 | 采集结束后可立即再次触发，去掉 5 分钟空窗 |
+| **B2** | 引入真实调度 | 新增 `.github/workflows/video-harvest.yml`（`cron: '0 */6 * * *'`）调 `/api/cron/video-harvest` 带 `Authorization: Bearer`；或接中枢已有 `jobs.ts` 调度器 | 从「人工点按钮」变成真定时 |
+| **B3** | 改用中枢作业队列 | 复用 `apps/api/src/jobs.ts`（已有 `acquireLock`/`releaseLock`、状态机、持久化），删掉 `video-task-queue.ts` 的内存单例 | 任务状态跨重启、跨副本可见；锁真正互斥 |
+| **B4** | 单写通道 | 所有写路径统一走 `mutateVideos(mutator)`：读 → 带版本号 → 写 → 版本冲突重试（≤3 次指数退避）；中枢侧 `PUT /api/storage` 增加 `ifVersion` 字段 | 三个入口不再互相覆盖 |
+| **B5** | 写失败不要报成功 | `commitFile` 抛出后返回 502 + `retryable: true`，前端给重试按钮 | 运营不再误判「已入库」 |
+| **B6** | B 站搜索加 wbi 签名 | 复用社区实现（先取 `nav` 接口拿 `img_key`/`sub_key`，再算 `w_rid`/`wts`）；失败时降级到 YouTube oEmbed/RSS，并在报告里显式标 `degraded` | 采集成功率从「静默 0」变为可观测 |
+| **B7** | 分页与字段裁剪 | `GET /api/videos?limit&cursor&fields=summary`，默认不返回 `videoConfig.chapters/transcript`（单条最大字段） | 列表响应体积降一个数量级 |
+| **B8** | LLM 摘要持久缓存 | 服务端落 KV（`writeKv('video-summary:'+videoId)`）或中枢表；`Cache-Control` 之外再加服务端命中 | 冷启动不再重复计费；P95 延迟显著下降 |
+| **B9** | 并发化采集 | `harvestVideosForTopic` 改 `Promise.allSettled` + 信号量（并发 3）+ 总预算 25s | 任务总时长从 O(n×6s) 降到 O(n/3×6s)，且不会超时 |
+
+#### B4 参考实现（乐观并发）
+
+```ts
+// 中枢侧：/api/storage 接受 ifVersion
+app.put('/api/storage', { config: { scope: 'admin' } }, async (req, reply) => {
+  const { path, content, ifVersion } = schema.parse(req.body)
+  const current = await readVersion(ctx, path)
+  if (ifVersion !== undefined && ifVersion !== current) {
+    reply.code(409)
+    return { error: 'version_conflict', currentVersion: current }
+  }
+  const next = await writeStoragePath(ctx, path, content)
+  return { ...next, version: current + 1 }
+})
+```
+
+### 8.3 P2 — 结构性与体验优化
+
+| ID | 措施 | 预期收益 |
+|---|---|---|
+| **C1** | 热点候选池改为可配置资产（DB 表或 seed JSON），带 `source`/`fetchedAt`/`evidenceUrl` 三个必填字段 | 去掉硬编码；任何"热点"都可追溯到证据 |
+| **C2** | 若短期无真实数据源，把 `/hot` 与视频侧的「热点」表述统一降级为「精选/推荐」，并从 sitemap 与导航中移除暗示实时性的文案 | 避免用户与搜索引擎误判 |
+| **C3** | `video-deadlink-sweeper` 改为并发探测 + 批量落盘（单向遍历一次，不逐条 commit） | 消除 N 次全量 JSON 写 |
+| **C4** | 统一观测：采集/轮换/巡检三条链路输出同一套 metrics（`harvest_total`、`harvest_failed_total`、`prune_total`、`probe_unverified_total`） | 与中枢 `metrics.ts` 对齐，可做告警 |
+| **C5** | 清理死字段（`isRunning`/`timer`）、统一封面来源、去重键改用 `platform:externalId` 复合键 | 降低维护成本；避免跨平台内容被判重复 |
+| **C6** | `videos.json` 落到关系表（`video_category` / `video_item` / `video_replacement_log`） | 支持按条查询、分页、审计、并发写；这是 A/B 阶段的终局形态 |
+
+---
+
+## 9. 落地路线
+
+### 迭代 1（P0，建议 1–2 天）
+1. A1 补鉴权 + cron fail-closed
+2. A2 真 HMAC（含 4 个单测）
+3. A3 修路径、A5 保字段（两处一行改动，收益最大）
+4. A4 探活三态（先只做 `autoPrune=false`，删除策略留到有回滚凭据后再开）
+5. A6 删死路由
+
+**出口标准**：未登录访问 4 个写入口全部 401；`health-sweep?dryRun=true` 返回 `totalScanned = 16`；编辑单条视频后 `replacementHistory` 长度不变。
+
+### 迭代 2（P1，建议 3–5 天）
+1. A7 去伪造数据 + A8 恢复类型检查（这两条决定后续质量下限，优先于功能）
+2. B1 修锁、B3 迁到中枢作业队列、B2 接真实调度
+3. B4 单写通道 + B5 写失败上报
+4. B6 wbi 签名与降级链、B9 并发化
+
+**出口标准**：连续手动触发 3 次采集不出现「已有任务执行中」；同一时间两个入口并发写，最终数据条目数与预期一致（不丢更新）；采集报告里 `degraded` 字段能反映真实成功率。
+
+### 迭代 3（P2，按需）
+B7 分页、B8 LLM 缓存、C1–C6。
+
+---
+
+## 10. 风险与取舍
+
+| 风险 | 说明 | 应对 |
+|---|---|---|
+| A8 恢复类型检查会一次性暴露大量历史错误 | `ignoreBuildErrors: true` 很可能就是为绕过这些而加的 | 不要直接删开关：先只把 `lib/video-*.ts` 加进 `scripts/typecheck.mjs` 显式清单，逐个模块收敛 |
+| A7 去掉伪造 stats 会让「质量分/推荐」短期内缺少输入 | 现有排序依赖这些数字 | 缺失时降级为「无分数」分支，而不是回填随机数；同时在 UI 隐藏分数徽标 |
+| B3 迁队列涉及中枢改动 | `jobs.ts` 已有锁与状态机，但视频任务的进度字段需要扩展 | 先只迁移"互斥 + 状态持久化"，进度字段可后补 |
+| A4 关闭自动删除会让无效内容短期堆积 | 无人清理 | 改为「标记 + 进待审列表」，管理端加一键批量确认，保留可回滚 |
+
+## 11. 本次未覆盖
+
+- 前端交互与可访问性（`video-*.tsx` 共 40+ 组件）只看了数据流，未做交互审计
+- `/videos/player` 播放器链路、P2P/离线缓存未深入
+- 中枢 `recompute_rank` 任务的真实产出质量（决定 `/hot` 是否可信）— 建议单独排一轮
+
+---
+
+## 附：证据索引
+
+| 编号 | 文件 | 行号 |
+|---|---|---|
+| P0-1 | `app/api/videos/ai-autonomous-harvest/route.ts` | 70-113 |
+| P0-2 | `lib/video-multi-source-connector.ts` / `app/api/videos/webhook-harvest/route.ts` | 66-80, 199 / 13-15 |
+| P0-3 | `app/api/cron/video-harvest/route.ts` / `cron/video-health-sweep/route.ts` | 24-35 / 19-29 |
+| P0-4 | `app/api/videos/ai-summary/route.ts` / `lib/video-ai-summary.ts` | 6-40 / 227 |
+| P0-6 | `app/api/cron/video-health-sweep/route.ts` | 8 |
+| P0-7 | `lib/video-deadlink-sweeper.ts` | 148-158, 173-175, 222-249 |
+| P0-8 | `app/api/videos/[id]/items/route.ts` | 58-63, 106-111, 154-159 |
+| P1-9 | `lib/video-task-queue.ts` | 221, 258, 86, 50 |
+| P1-10 | `lib/video-task-queue.ts` | 44-59, 138-141 |
+| P1-11 | `lib/video-task-queue.ts` | 230-260 |
+| P1-12 | `apps/api/src/storage.ts` | 457-459, 488-497 |
+| P1-13 | `app/api/videos/ai-autonomous-harvest/route.ts` / `webhook-harvest/route.ts` | 90-92 / 87-89 |
+| P1-14 | `lib/video-task-queue.ts` / `next.config.js` | 11, 31, 178 / 44 |
+| P0-21..25 | `lib/video-trending-harvester.ts` / `lib/video-autonomous-ai-harvester.ts` | 33-249, 313-329 / 67-160, 188-261, 400-416 |
+| P1-26 | `app/hot/page.tsx` / `app/hot/hot-view.tsx` | 39-51 / 237 |
+
+---
+
+## 12. 本次已实施的修复（2026-10-28 执行）
+
+> 本节记录审计后**实际落地**的改动，与前面第 8 章的"建议"对应。
+> 未标"已完成"的条目仍是待办。
+
+### 12.1 已完成的 P0
+
+| 编号 | 修复内容 | 关键文件 | 回归守卫 |
+|---|---|---|---|
+| A1 | `ai-autonomous-harvest` 的 GET/POST 补 `verifyAdminSession`；两个 cron 改为 `requireCronSecret`（未配置 = 503 fail-closed，取消 `?secret=` 通道，`timingSafeEqual` 比较） | `app/api/videos/ai-autonomous-harvest/route.ts`、`lib/cron-auth.ts`（新增） | `cron-auth.test.ts`（7 例）、`video-api-guards.test.ts` |
+| A2 | 伪哈希换成真 HMAC-SHA256：定长 64 hex + `timingSafeEqual`；签名改为**必填**；默认密钥取消（未配置即 503）；改用 `await request.text()` 原始 body 验签 | `lib/webhook-signature.ts`（新增）、`lib/video-multi-source-connector.ts`、`app/api/videos/webhook-harvest/route.ts` | `video-evolution-v10.test.ts`（新增 4 条反例：密钥当签名 / 子串 / 截断 / 篡改 body）、源码守卫 |
+| A3 | health-sweep 路径 `data/navigation.json` → `src/navsphere/content/videos.json`；落盘改用 `updatedData`（否则 prune 与 healthStatus 落不了盘） | `app/api/cron/video-health-sweep/route.ts` | 源码守卫（断言错误路径不再出现、断言写的是 `updatedData`） |
+| A4 | 探活改三态 `healthy / dead / unverified`；超时、403/429/412、5xx 一律 `unverified` 且**不进删除分母**；`autoPrune` 默认改 `false` | `lib/video-deadlink-sweeper.ts`、`types/navigation.ts` | `video-health-tristate.test.ts`（10 例，含 404→dead、429→unverified、默认不删、显式开启也不删 unverified） |
+| A5 | `[id]/items` 三处写盘改为 `{ ...data, navigationItems }`，不再抹掉 `replacementHistory` | `app/api/videos/[id]/items/route.ts` | 源码守卫（逐条断言三处 `JSON.stringify` 都展开 `...data`） |
+| A6 | 删除无调用方的 `/api/videos/ai-summary`（无鉴权的 LLM 计费入口，调用方实际直连 lib） | 删 `app/api/videos/ai-summary/route.ts` | `grep ai-summary` 无路由引用 |
+| A7 | 停止伪造数据：`stats` 不再用 `Math.random()` / 写死值；`publishedAt` 不再写 `new Date()`；`freshnessScore` 改由真实发布时间推导（缺失时按 `quality*0.8` 的保守值） | `lib/video-trending-harvester.ts`、`lib/video-autonomous-ai-harvester.ts`、`lib/video-harvester.ts`、`lib/video-ai-summary.ts` | `video-scoring-guard.test.ts` |
+| A8 | 恢复类型契约：`VideoChapter` 补 `id/startTime/endTime/summary/codeLanguage`（两套字段超集）、`VideoQuizQuestion` 补 `correctAnswerIndex`；`HarvestRunReport` → `VideoHarvestReport`；评分函数抽到 `lib/video-scoring.ts` 断开 `video-harvester → github → auth → next-auth` 依赖链 | `types/navigation.ts`、`lib/video-quiz-generator.ts`、`lib/video-task-queue.ts`、`lib/webhook-notifier.ts` | 类型错误从 20+ 降到 0（`lib/` 侧）；`quote-dialog` 答对不再判错 |
+
+**A8 的连带发现（已修）**：类型恢复后暴露两个被 `ignoreBuildErrors` 掩盖的真实故障——
+1. `video-task-queue.ts` 读 `report.totalHarvested` / `totalRotated`（字段不存在）→ 管理端进度条永远是 `undefined`；
+2. `webhook-notifier.ts` 整模块读一套**不存在的报告结构**（`dryRun`/`categoriesProcessed`/`summary.freshnessScoreAverage`/`details`），且格式化调用在 `try` 外、调用方是 `void …` → 只要配置 `HARVEST_WEBHOOK_URL` 就产生 unhandled rejection。
+
+### 12.2 已完成的 P1
+
+| 编号 | 修复内容 | 回归守卫 |
+|---|---|---|
+| B1 | 锁 owner 统一：`const lockOwner` 同时用于 acquire/release；`createTask` 抛错也释放；新增 `renewLock` 在进度更新时续租（防 TTL 到期后互斥失效） | 源码守卫（禁止 `releaseLock(task.id)`）+ 反向验证（回退后 2 条断言变红） |
+| B2 | 新增 `.github/workflows/video-harvest.yml`：每 6 小时 + 手动触发，`concurrency` 互斥，缺 secret 直接失败，把 `degradedKeywords` 写进 job summary | YAML 就位；需配 `NAVHUB_SITE_URL` / `CRON_SECRET` 才会生效 |
+| B4 | 乐观并发写：中枢 `PUT /api/storage` 接受 `ifVersion`，冲突返回 409；新增 `GET /api/storage/version`；`writeKv` 写入前比对 `updated_at`；采集主流程改为「实时读 + 带版本写」，409 时**整体重放**（重读→重算→重写，最多 3 次） | `apps/api/test` 1093 例全绿 |
+| B5 | 写失败不再吞成成功：`ai-autonomous-harvest` / `webhook-harvest` 的 `commitFile` 失败直接 500 + `retryable: true` | 源码守卫 |
+| B9 | 采集并发化：关键词池 + 并发 3 + 25s 总预算；每关键词独立计数（修掉跨关键词 `break` 导致的超额采集）；失败原因进 `degradedKeywords` | `video-scoring-guard.test.ts`、源码守卫 |
+
+### 12.3 仍未实施（保留为待办）
+
+| 编号 | 原因 |
+|---|---|
+| B3 迁到中枢作业队列 | 需要扩展 `jobs.ts` 的任务类型与进度字段，属于跨包重构；当前已用 B1+B4 把「同一进程互斥 + 跨实例版本冲突」堵住，风险已降级 |
+| B6 B 站 wbi 签名 | 实测接口返回空（无 `w_rid`/`wts`）；签名算法需要抓 `nav` 接口取 key 后计算，无法在离线环境验证。当前已改为**失败可见**（`degradedKeywords`），不会再伪装成「没有结果」 |
+| B7 列表分页 | 当前 16 条 / 44KB，未到瓶颈；接口形状变更会影响管理端三个页面，留给下一轮 |
+| B8 LLM 摘要服务端缓存 | 复核后确认调用方都是客户端（`video-player-page` / `VideoPlayerContext`），已有 localStorage 缓存；真正的问题是死路由（A6 已删） |
+| C1 候选池转可配置资产 | 需要 DB 迁移与新表 |
+| A8 全量类型检查进 CI | `apps/web-overlay` 当前有 **21555** 个既有类型错误（`plugin-url-health-panel.tsx` 单文件 618 个），直接打开 `ignoreBuildErrors` 会全红。建议先按目录增量收敛（`lib/video-*` 已清零） |
+
+### 12.4 验证记录
+
+| 检查 | 结果 |
+|---|---|
+| `apps/web/test/video*` + 新增守卫 | **18 文件 / 220 例全绿**（基线为 14 文件 176 例，其中 2 例红） |
+| 前端全量 `apps/web/test` | 212 文件 / 2398 例：**2390 通过 / 8 失败**；8 条均为全仓 UI 扫描守卫（clipboard / field-names / keyboard-activation / label-association / silent-catch / tw-source），失败文件均为**并行会话改动的 UI 组件**，不在本次改动范围 |
+| 中枢全量 `apps/api/test` | **112 文件 / 1093 例全绿** |
+| `apps/api` 类型检查 | 通过（0 错误） |
+| `apps/web-overlay` 类型检查（`lib/video-*` / `lib/webhook-*` / `api/videos/**`） | 0 代码错误（剩余 49 条均为 overlay 无 `node_modules` 导致的 `Cannot find module 'next/server'` 环境性报错） |
+| `scripts/check-syntax.mjs` | 1357 文件 / 0 错误 |
+| `scripts/check-web-overlay.mjs` | 863 文件一致 |
+| 锁守卫反向验证 | 回退为 `releaseLock(task.id)` 后 2 条断言变红，恢复后转绿 |

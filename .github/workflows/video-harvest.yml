@@ -1,0 +1,107 @@
+name: video-harvest
+
+# 为什么需要这个文件：
+#   `apps/web-overlay/src/app/api/cron/video-harvest` 一直存在，但仓库里**没有任何
+#   调度器在调它**（无 vercel.json、无 workflow 引用）。所谓「定时自动采集」
+#   实际上一次都不会发生，只有人工点按钮才跑。
+#
+# 前置 secrets（在仓库 Settings → Secrets 配置）：
+#   NAVHUB_SITE_URL  站点根地址，例如 https://navhub.example.com（不带尾斜杠）
+#   CRON_SECRET      与服务端 CRON_SECRET 一致；未配置时服务端会 fail-closed 返回 503
+#
+# 时间选 :17 而不是整点：GitHub Actions 的 schedule 在整点最拥堵，
+# 延迟可达十几分钟，错峰更稳定。
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'      # 每 6 小时一次
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: '只演练不写库'
+        type: boolean
+        default: false
+      categoryId:
+        description: '只处理某个分类（留空 = 全部）'
+        type: string
+        required: false
+
+concurrency:
+  group: video-harvest
+  cancel-in-progress: false
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate secrets
+        env:
+          SITE: ${{ secrets.NAVHUB_SITE_URL }}
+          CRON: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SITE:-}" ]; then
+            echo "::error::缺少 secrets.NAVHUB_SITE_URL"
+            exit 1
+          fi
+          if [ -z "${CRON:-}" ]; then
+            echo "::error::缺少 secrets.CRON_SECRET（服务端未配置时会返回 503）"
+            exit 1
+          fi
+
+      - name: Trigger harvest
+        id: harvest
+        env:
+          SITE: ${{ secrets.NAVHUB_SITE_URL }}
+          CRON: ${{ secrets.CRON_SECRET }}
+          DRY_RUN: ${{ inputs.dryRun }}
+          CATEGORY: ${{ inputs.categoryId }}
+        run: |
+          set -euo pipefail
+          BASE="${SITE%/}"
+          QUERY=""
+          if [ "${DRY_RUN:-false}" = "true" ]; then QUERY="dryRun=true"; fi
+          if [ -n "${CATEGORY:-}" ]; then
+            if [ -n "$QUERY" ]; then QUERY="$QUERY&categoryId=$CATEGORY"; else QUERY="categoryId=$CATEGORY"; fi
+          fi
+          URL="$BASE/api/cron/video-harvest"
+          if [ -n "$QUERY" ]; then URL="$URL?$QUERY"; fi
+
+          # -f：4xx/5xx 直接失败（否则 CDN 的错误页会被当成成功）
+          code=$(curl -sS -o /tmp/harvest.json -w '%{http_code}' \
+            -X POST "$URL" \
+            -H "Authorization: Bearer $CRON" \
+            -H 'Content-Type: application/json' \
+            --max-time 540 || echo '000')
+
+          echo "HTTP $code"
+          cat /tmp/harvest.json || true
+
+          if [ "$code" != "200" ]; then
+            echo "::error::采集端点返回 HTTP $code"
+            exit 1
+          fi
+
+          # 把采集失败的关键词暴露到 job summary，避免「+0 也算成功」被忽略
+          node -e '
+            const fs = require("fs");
+            let r;
+            try { r = JSON.parse(fs.readFileSync("/tmp/harvest.json", "utf8")); } catch { process.exit(0); }
+            const rep = r.report || {};
+            const degraded = rep.degradedKeywords || [];
+            const lines = [
+              "### 视频采集结果",
+              "",
+              `- 新增：${rep.totalAddedCount ?? 0}`,
+              `- 替换：${rep.totalReplacedCount ?? 0}`,
+              `- 采集失败/跳过的关键词：${degraded.length}`,
+            ];
+            if (degraded.length) {
+              lines.push("", "| 关键词 | 原因 |", "| --- | --- |");
+              for (const d of degraded.slice(0, 30)) {
+                lines.push(`| ${String(d.keyword).replace(/\|/g, "\\|")} | ${String(d.reason).replace(/\|/g, "\\|")} |`);
+              }
+            }
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
+          '

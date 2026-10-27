@@ -75,6 +75,11 @@ describe("classifyFailure：按根因优先级分层", () => {
     expect(classifyFailure("something odd happened").layer).toBe("未知");
     expect(classifyFailure("").layer).toBe("未知");
   });
+
+  it("打包器解析不到本地源码算构建层，解析不到包名算依赖层", () => {
+    expect(classifyFailure('✘ [ERROR] Could not resolve "./scripts/worker-budget.ts"').layer).toBe("构建");
+    expect(classifyFailure('✘ [ERROR] Could not resolve "react"').layer).toBe("依赖");
+  });
 });
 
 describe("extractAttribution：第一处具体错误 + 栈帧 + 尾巴", () => {
@@ -115,6 +120,32 @@ describe("extractAttribution：第一处具体错误 + 栈帧 + 尾巴", () => {
   it("没有任何错误行时 firstError 为空，不编造", () => {
     expect(extractAttribution("all good\nnothing to see").firstError).toBe("");
     expect(extractAttribution("##[error]Process completed with exit code 1.").firstError).toBe("");
+  });
+
+  it("esbuild：概览行是包装，取 ✘ [ERROR] 具体行并带上位置", () => {
+    // 真实案例：vitest.config.ts 引用了未入库的 scripts/worker-budget.ts
+    const log = [
+      "✘ [ERROR] Could not resolve \"./scripts/worker-budget.ts\"",
+      "",
+      "    vitest.config.ts:4:36:",
+      '      4 │ import { computeWorkerBudget } from "./scripts/worker-budget.ts";',
+      "        ╵                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+      "",
+      "failed to load config from /repo/vitest.config.ts",
+      "",
+      "⎯⎯⎯⎯⎯⎯⎯ Startup Error ⎯⎯⎯⎯⎯⎯⎯",
+      "Error: Build failed with 1 error:",
+      'vitest.config.ts:4:36: ERROR: Could not resolve "./scripts/worker-budget.ts"',
+      "    at failureErrorWithLog (/repo/node_modules/esbuild/lib/main.js:1752:15)",
+    ].join("\n");
+    const { firstError, stackLine } = extractAttribution(log);
+    expect(firstError).toBe('Could not resolve "./scripts/worker-budget.ts" (vitest.config.ts:4:36)');
+    expect(stackLine).toContain("failureErrorWithLog");
+  });
+
+  it("只有构建概览/启动失败包装行时，不把它当成原因", () => {
+    const log = ["failed to load config from /repo/vitest.config.ts", "⎯⎯⎯ Startup Error ⎯⎯⎯", "Error: Build failed with 1 error:"].join("\n");
+    expect(extractAttribution(log).firstError).toBe("");
   });
 });
 

@@ -33,6 +33,8 @@ const RULES = [
       /Cannot find package '[^']+'/g,
       /pnpm: command not found/g,
       /\bnpm error\b/g,
+      // 打包器解析不了**包名**（@scope/x、react）；解析不了 ./ 或 / 开头的是本地源码，归构建层
+      /Could not resolve "[@A-Za-z][^"]*"/g,
     ],
   },
   {
@@ -59,6 +61,9 @@ const RULES = [
       /Cannot find module '@\//g,
       /\bnext build\b/gi,
       /\bvite build\b/gi,
+      // esbuild：配置/源码引用的本地文件不存在（真实案例：vitest.config.ts import 了未入库的 scripts/worker-budget.ts）
+      /Could not resolve "[./][^"]*"/g,
+      /failed to load config/gi,
     ],
   },
   {
@@ -114,10 +119,28 @@ const WORKFLOW_ERROR = /^##\[error\]\s?/;
  * 它们描述的是**结果**不是**原因**。真实日志里 TS2307 出现在这行之前，
  * 若优先取它，归因头会退化成一句「exit code 1」。
  */
-const WRAPPER_ERROR = /^(Process completed with exit code|The process '.+' failed with exit code|Error: Process completed with exit code|Command failed with exit code)/;
+const WRAPPER_ERROR =
+  /^(Process completed with exit code|The process '.+' failed with exit code|Error: Process completed with exit code|Command failed with exit code|Error: Build failed with \d+ errors?:|failed to load config from\b|(?:⎯+\s*)?Startup Error\b)/;
+
+/**
+ * esbuild 的具体错误行：`✘ [ERROR] <原因>`。
+ * Vite/Vitest 加载配置失败时先打这一行，再补一条概览 `Error: Build failed with N error(s):`。
+ * 概览行是包装，具体行才是根因——真实红 job 里工具曾只报出概览。
+ */
+const ESBUILD_ERROR = /^\s*✘\s*\[ERROR\]\s?(.+)$/;
+const LOCATION_ONLY = /^\s*([^\s:]+:\d+:\d+):\s*$/;
 
 function isWrapper(line) {
   return WRAPPER_ERROR.test(line.replace(WORKFLOW_ERROR, "").trim());
+}
+
+/** esbuild 的 `✘ [ERROR]` 行本身不带位置，位置在下几行的 `file:line:col:` 单独一行 */
+function withLocation(message, lines, at) {
+  for (let i = at + 1; i < Math.min(lines.length, at + 5); i++) {
+    const m = lines[i].match(LOCATION_ONLY);
+    if (m) return `${message} (${m[1]})`;
+  }
+  return message;
 }
 
 /**
@@ -140,6 +163,12 @@ export function extractAttribution(logText, { maxTail = 12 } = {}) {
     if (WORKFLOW_ERROR.test(line)) {
       firstErrorIndex = i;
       firstError = line.replace(WORKFLOW_ERROR, "").trim();
+      break;
+    }
+    const esbuild = line.match(ESBUILD_ERROR);
+    if (esbuild) {
+      firstErrorIndex = i;
+      firstError = withLocation(esbuild[1].trim(), content, i);
       break;
     }
     if (ERROR_LINE.test(line)) {

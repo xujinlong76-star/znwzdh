@@ -25,9 +25,11 @@ export default defineConfig({
       "apps/api/test/**/*.test.ts",
       "apps/web/test/**/*.test.ts",
       "apps/web-overlay/scripts/**/*.test.ts",
-      // overlay 的纯逻辑模块（面板状态机等）测试：overlay 是自有代码事实源，
-      // 逻辑测试放 test/ 而不是 scripts/，两者都要被收集，否则写好的测试不会被执行。
-      "apps/web-overlay/test/**/*.test.ts",
+      // 不收集 apps/web-overlay/test/**：overlay 目录没有自己的 node_modules
+      // （pnpm workspace 显式排除），CI 全新检出里 next/react/lucide 一律解析失败
+      // ——2026-10-27 CI run 40462721097 实测，8 个 overlay 测试整作业报错。
+      // 它们的执行面是 vendor 出来的镜像 apps/web/test/**（逐字节同步），
+      // 新增 overlay 测试必须同时提交镜像，否则 check-web-overlay 会拦下。
       // 仓库根 scripts/ 下的本地脚手架（vendor-web 的搬运逻辑等）也要有回归测试
       "scripts/**/*.test.ts",
     ],

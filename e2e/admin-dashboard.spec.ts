@@ -18,8 +18,8 @@ test.describe('管理端控制台与运营洞察看板 E2E 测试', () => {
     await expect(page.locator('text=安全防护与审计')).toBeVisible();
     await expect(page.locator('text=检索强化学习 (LinUCB)')).toBeVisible();
 
-    // 验证深入分析卡片
-    await expect(page.locator('text=HTTP 状态码分布与性能瓶颈')).toBeVisible();
+    // 验证深入分析卡片（第一张在 723d640 换成了慢请求排障榜，标题随之改变）
+    await expect(page.locator('text=耗时最高路由排障')).toBeVisible();
     await expect(page.locator('text=LinUCB 多通道自适应权重')).toBeVisible();
     await expect(page.locator('text=顶级分类收录分布')).toBeVisible();
     await expect(page.locator('text=存储引擎与数据表容量')).toBeVisible();

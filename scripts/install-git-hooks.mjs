@@ -123,6 +123,13 @@ node scripts/check-web-overlay.mjs --staged || exit 1
 node scripts/check-extensions.mjs || exit 1
 node scripts/check-upstream-ref.mjs || exit 1
 
+# CI 工作流变更时校验合并门禁（秒级，仅本次提交涉及 .github/workflows/ 才跑）。
+# 门禁脚本读的就是 ci.yml 的聚合关系：改坏了只有 CI 会红，而 CI 自己正是被改的
+# 那一方——等于没有守门人。放在 typecheck 之前，成本只有一次 YAML 解析。
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\\.github/workflows/'; then
+  node scripts/check-ci-gate.mjs || exit 1
+fi
+
 # 解析级快速门禁：只查 staged 的 TS/TSX，秒级；tsc 之前先把标点级错误挡住
 node scripts/check-syntax.mjs --staged || exit 1
 

@@ -198,9 +198,16 @@ describe('sendBeacon 丢弃时必须落到 fetch 兜底', () => {
 });
 
 describe('绕道钉子：接口路径与 click 类型只允许出现在包装函数里', () => {
-  /** 递归收集 overlay 源文件（测试读的是源真相，不是 apps/web 镜像） */
+  /**
+   * 递归收集 overlay 源文件（测试读的是源真相，不是 apps/web 镜像）。
+   *
+   * 跳过 `*.generated.ts`：这类文件是路由登记表的生成物（method/path/scope），
+   * 不是组件、也不会自己发请求。把它们算进「绕道」会让守卫在每次重新生成
+   * 路由契约后误报——真正要防的是「组件里手写 /install 直接 fetch」。
+   */
   function sources(dir: string, out: string[] = []): string[] {
     for (const name of readdirSync(dir)) {
+      if (/\.generated\.ts$/.test(name)) continue;
       const p = resolve(dir, name);
       if (statSync(p).isDirectory()) sources(p, out);
       else if (/\.(ts|tsx)$/.test(name)) out.push(p);

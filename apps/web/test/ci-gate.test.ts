@@ -83,6 +83,22 @@ describe("CI 合并门禁", () => {
     expect(res.stderr).toContain("test-postgres");
   });
 
+  it("作业仍在 needs 里但评估脚本漏读 result，必须判红", () => {
+    // 模拟「聚合列表没动，但评估脚本里那一行 result 被误删/改错」：
+    // 这种漏法不会让 needs 少项，只看清单的门禁发现不了。
+    const src = readFileSync(CI_FILE, "utf8");
+    const mutated = src.replaceAll("needs.audit.result", "needs.audit.conclusion");
+    expect(mutated).not.toBe(src);
+    const dir = mkdtempSync(join(tmpdir(), "navhub-ci-gate-missed-result-"));
+    tmpDirs.push(dir);
+    const target = join(dir, "ci.yml");
+    writeFileSync(target, mutated, "utf8");
+    const res = runGate(target);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain("needs.audit.result");
+    expect(res.stderr).toContain("静默忽略");
+  });
+
   it("新增的常驻作业若未纳入 needs，必须判红（清单不再硬编码）", () => {
     const res = runWithInjectedJob([
       "  brand-new-gate:",
@@ -105,6 +121,16 @@ describe("CI 合并门禁", () => {
     ]);
     expect(res.status, res.stderr).toBe(0);
     expect(res.stdout).toContain("nightly-only");
+  });
+
+  it("pre-commit 在 workflow 变更时会跑门禁（否则改坏 ci.yml 本地无感）", () => {
+    const installer = readFileSync(resolve(ROOT, "scripts/install-git-hooks.mjs"), "utf8");
+    expect(installer).toContain("check-ci-gate.mjs");
+    // 条件必须锚定 .github/workflows/，不能每次提交都跑
+    // 用字符串包含判断而不是正则：避免转义层级把条件写错
+    expect(installer).toContain("--diff-filter=ACMRD");
+    expect(installer).toContain(".github/workflows/");
+    expect(installer).toContain("node scripts/check-ci-gate.mjs || exit 1");
   });
 
   it("pnpm verify 与 package.json 都已接入该门禁", () => {

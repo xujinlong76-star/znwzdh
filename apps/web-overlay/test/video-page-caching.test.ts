@@ -61,10 +61,19 @@ describe('搜索倒排索引只在需要时构建', () => {
   })
 })
 
-/*
- * 关于「替换历史硬截断 100 条」（P2-30）：本文件**不**为它加守卫。
- * 该改动落在 `lib/video-harvester.ts`，而同一文件里并行会话正在做「替换历史外置到
- * 独立文件」（`appendReplacementHistory`）。两处改动叠在一个文件里，必须一起落地；
- * 若在此单独断言，会让提交后的 HEAD 因为「源码还没带上另一半」而变红 ——
- * 那种失败是噪音，不是回归。守卫随那一批一起补。
- */
+describe('替换历史上限是可观测的，不是静默丢弃', () => {
+  const code = read('lib/video-harvester.ts')
+
+  it('不再有裸的 slice(0, 100)', () => {
+    // 原来是一行 `[...new, ...old].slice(0, 100)`：第 101 条起静默消失，
+    // 运营想回滚两周前的替换时才发现记录没了，日志里也没有任何痕迹。
+    expect(stripComments(code)).not.toMatch(/slice\(0,\s*100\)/)
+  })
+
+  it('走 capReplacementHistory()，超限时留下告警', () => {
+    expect(stripComments(code)).toContain('capReplacementHistory(')
+    expect(stripComments(code)).toContain('REPLACEMENT_HISTORY_LIMIT')
+    // 上限本身也要有出处，不能又变回魔法数字
+    expect(stripComments(code)).toMatch(/const\s+REPLACEMENT_HISTORY_LIMIT\s*=\s*\d+/)
+  })
+})

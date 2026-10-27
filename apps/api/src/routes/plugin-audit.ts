@@ -990,9 +990,13 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
           `# TYPE navhub_probe_cache_misses counter\nnavhub_probe_cache_misses ${cache.misses}\n` +
           `# TYPE navhub_probe_cache_revalidations counter\nnavhub_probe_cache_revalidations ${cache.revalidations}\n` +
           `# TYPE navhub_probe_cache_hit_ratio gauge\nnavhub_probe_cache_hit_ratio ${ratio.toFixed(4)}\n`
-        return reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8").send(body + extra)
+        return reply
+          .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
+          // 指标每次都可能是新样本：显式禁止中间层缓存（代理/CDN 缓存住指标比不缓存更糟）
+          .header("cache-control", "no-store")
+          .send(body + extra)
       }
-      return { ...probeMetricsSummary(), cache }
+      return reply.header("cache-control", "no-store").send({ ...probeMetricsSummary(), cache })
     },
   )
 

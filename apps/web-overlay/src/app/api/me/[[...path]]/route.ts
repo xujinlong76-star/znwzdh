@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { auth } from '@/lib/auth'
-import { hubIdentitySecret, signIdentity } from '@/lib/identity-signature'
+import { hubIdentitySecret, identitySignatureHeaders, signIdentity } from '@/lib/identity-signature'
 import { ANON_COOKIE, encodeAnonCookie, parseAnonCookie } from '@/lib/hub-identity-guard'
 import { canonicalUserId, isAnonId } from '@/lib/me-identity'
 
@@ -104,7 +104,7 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
       'x-navhub-user-id': targetUserId,
     }
     if (secret) {
-      syncHeaders['x-navhub-identity-signature'] = await signIdentity(secret, targetUserId)
+      Object.assign(syncHeaders, await identitySignatureHeaders(secret, targetUserId))
     }
     try {
       const res = await fetch(HUB_BASE + '/api/users/sync', {
@@ -171,7 +171,7 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
   const secret = hubIdentitySecret()
   let pendingAnonCookie: string | null = null
   if (secret) {
-    headers['x-navhub-identity-signature'] = await signIdentity(secret, identity)
+    Object.assign(headers, await identitySignatureHeaders(secret, identity))
     if (path[0] === 'merge' && rawBody) {
       try {
         const parsed = JSON.parse(rawBody) as { anonId?: unknown }
@@ -194,7 +194,7 @@ async function forward(request: NextRequest, ctx: Ctx): Promise<Response> {
               await signIdentity(secret, parsed.anonId),
             )
           }
-          headers['x-navhub-anon-signature'] = await signIdentity(secret, parsed.anonId)
+          Object.assign(headers, await identitySignatureHeaders(secret, parsed.anonId, 'x-navhub-anon'))
         }
       } catch {
         // body 不是 JSON 时交给中枢返回 400

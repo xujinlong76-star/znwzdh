@@ -80,3 +80,60 @@ export async function signIdentity(secret: string, identity: string): Promise<st
   const signature = await crypto.subtle.sign('HMAC', key, enc.encode(identity))
   return Array.from(new Uint8Array(signature), (b) => b.toString(16).padStart(2, '0')).join('')
 }
+
+/**
+ * v2 待签载荷。与中枢 `identitySignaturePayload`（apps/api/src/identity-signature.ts）
+ * **逐字节一致**：JSON 数组序列化，避免 `identity|ts|nonce` 拼接在身份含分隔符时产生歧义。
+ */
+export function identitySignaturePayload(identity: string, ts: number, nonce: string): string {
+  return JSON.stringify([identity, ts, nonce])
+}
+
+/** HMAC-SHA256(secret, JSON([identity, ts, nonce])) → 小写 hex */
+export async function signIdentityV2(
+  secret: string,
+  identity: string,
+  ts: number,
+  nonce: string,
+): Promise<string> {
+  const enc = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const signature = await crypto.subtle.sign('HMAC', key, enc.encode(identitySignaturePayload(identity, ts, nonce)))
+  return Array.from(new Uint8Array(signature), (b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * 生成一组身份签名头：v1（旧中枢只认它）+ v2 三件套（时间戳/nonce/新签名）。
+ *
+ * 双发是刻意的：Web 与中枢的发布顺序不确定，只发 v2 会把「Web 先上线、中枢还是
+ * 旧版」的部署打红。新中枢看到 v2 头就只验 v2，旧中枢仍能校验 v1。
+ * nonce 每次请求随机（uuid 去横线，32 位 hex），同一秒内的两次合法请求签名不同，
+ * 中枢因此可以按签名精确去重而不误伤并发。
+ *
+ * prefix：登录身份用 `x-navhub-identity`，合并请求里的匿名凭据用 `x-navhub-anon`。
+ */
+export async function identitySignatureHeaders(
+  secret: string,
+  identity: string,
+  prefix: 'x-navhub-identity' | 'x-navhub-anon' = 'x-navhub-identity',
+  now: number = Date.now(),
+): Promise<Record<string, string>> {
+  const ts = Math.floor(now / 1000)
+  const nonce = crypto.randomUUID().replace(/-/g, '')
+  const [legacy, v2] = await Promise.all([
+    signIdentity(secret, identity),
+    signIdentityV2(secret, identity, ts, nonce),
+  ])
+  return {
+    [`${prefix}-signature`]: legacy,
+    [`${prefix}-signature-v2`]: v2,
+    [`${prefix}-ts`]: String(ts),
+    [`${prefix}-nonce`]: nonce,
+  }
+}

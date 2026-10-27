@@ -8,7 +8,7 @@ import { z } from "zod";
 
 import type { AppContext } from "../context.ts";
 import { identityAllowed, isSafeAvatarUrl } from "./shared.ts";
-import { verifyIdentitySignature } from "../identity-signature.ts";
+import { verifyIdentityHeaders } from "../identity-signature.ts";
 
 export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
@@ -52,14 +52,13 @@ export const identityRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     if (email !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) email = null; // 非法邮箱不入库
     const targetId = strict.data.provider + ":" + strict.data.providerId;
     if (ctx.config.identitySecret && (req as any).auth?.kind === "anonymous") {
-      const signature = (req.headers as any)["x-navhub-identity-signature"];
-      if (
-        !verifyIdentitySignature(
-          ctx.config.identitySecret,
-          targetId,
-          typeof signature === "string" ? signature : undefined,
-        )
-      ) {
+      const verdict = verifyIdentityHeaders({
+        secret: ctx.config.identitySecret,
+        identity: targetId,
+        headers: req.headers as Record<string, unknown>,
+        strict: ctx.config.identitySignatureStrict,
+      });
+      if (!verdict.ok) {
         reply.code(401);
         return { error: "身份签名缺失或无效" };
       }

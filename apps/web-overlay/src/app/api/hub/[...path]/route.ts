@@ -18,7 +18,7 @@ import {
   sanitizeForwardedFor,
   upstreamTimeoutMs,
 } from '@/lib/hub-proxy'
-import { hubIdentitySecret, identityFromRequest, signIdentity } from '@/lib/identity-signature'
+import { hubIdentitySecret, identityFromRequest, identitySignatureHeaders, signIdentity } from '@/lib/identity-signature'
 
 /**
  * /api/hub/* 代理：把请求转发到 NavHub 中枢。
@@ -196,7 +196,8 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
   }
 
   if (identitySecret && resolvedIdentity) {
-    headers['x-navhub-identity-signature'] = await signIdentity(identitySecret, resolvedIdentity)
+    // v1 + v2 双发：v2 带时间戳/nonce 由新中枢做重放防护，v1 留给还没升级的中枢
+    Object.assign(headers, await identitySignatureHeaders(identitySecret, resolvedIdentity))
   }
 
   /** 统一出口：匿名请求附加绑定 cookie（共享设备防串号） */

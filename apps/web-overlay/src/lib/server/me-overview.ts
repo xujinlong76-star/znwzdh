@@ -17,7 +17,7 @@
  * 本模块只允许被服务端代码引用，客户端组件不要 import。
  */
 import type { Overview } from '@/lib/me-types'
-import { hubIdentitySecret, signIdentity } from '@/lib/identity-signature'
+import { hubIdentitySecret, identitySignatureHeaders } from '@/lib/identity-signature'
 
 /** 与 BFF 同源的取值顺序，避免「页面直连」和「BFF 转发」打到不同中枢 */
 const HUB_BASE = (
@@ -63,7 +63,7 @@ export async function fetchMeOverview(identity: string): Promise<Overview | null
     // 与 BFF 一致：有密钥用签名，无密钥但开启鉴权时回退附带服务端 Bearer token
     const secret = hubIdentitySecret()
     if (secret) {
-      headers['x-navhub-identity-signature'] = await signIdentity(secret, who)
+      Object.assign(headers, await identitySignatureHeaders(secret, who))
     } else {
       const token = serviceToken()
       if (token) headers['authorization'] = 'Bearer ' + token

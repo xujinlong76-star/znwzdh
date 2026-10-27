@@ -91,6 +91,13 @@ export interface AppConfig {
    */
   identitySecret: string | null;
   /**
+   * 关闭身份签名的 v1 兼容回退（默认 false = 兼容窗口）。
+   *
+   * v1 签名是恒定值，可被无限重放；v2 引入时间戳 + nonce。代理已全部升级后
+   * 置 1，仅接受 v2 三件套——否则攻击者可剥掉 v2 头退回 v1，重放防护形同虚设。
+   */
+  identitySignatureStrict: boolean;
+  /**
    * 生产开放模式显式承认「身份未签名」（默认 false）。
    * NODE_ENV=production 且 authRequired=false 时，identitySecret 为空且本项未开
    * ⇒ 中枢拒绝启动（见 security-readiness.ts）；内网 / NAS 部署可显式设 1 退回历史行为。
@@ -474,6 +481,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     authRequired: bool("NAVHUB_AUTH_REQUIRED", false),
     bootstrapToken: process.env.NAVHUB_BOOTSTRAP_TOKEN || null,
     identitySecret: process.env.NAVHUB_IDENTITY_SECRET || null,
+    identitySignatureStrict: bool("NAVHUB_IDENTITY_SIGNATURE_STRICT", false),
     allowUnsignedIdentity: bool("NAVHUB_ALLOW_UNSIGNED_IDENTITY", false),
     internalToken: process.env.NAVHUB_INTERNAL_TOKEN?.trim() || null,
     // 默认值刻意保持历史口径：只有显式配置才改变限流强度

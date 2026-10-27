@@ -31,7 +31,7 @@ import { EXPORT_FAVORITES_LIMIT, EXPORT_HISTORY_LIMIT, EXPORT_SCHEMA_VERSION } f
 
 import type { AppContext } from "../context.ts";
 import { requestIdentityOf, identityTrusted, userDomainWriteAllowed, isSafeAvatarUrl } from "./shared.ts";
-import { verifyIdentitySignature } from "../identity-signature.ts";
+import { verifyIdentityHeaders } from "../identity-signature.ts";
 import { invalidateProfileThrottle, refreshUserProfile } from "../profile-service.ts";
 import { recordUserCenterMetric } from "../user-center-metrics.ts";
 
@@ -1328,14 +1328,15 @@ export const meRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opt
     }
 
     if (ctx.config.identitySecret) {
-      const signature = req.headers["x-navhub-anon-signature"];
-      if (
-        !verifyIdentitySignature(
-          ctx.config.identitySecret,
-          parsed.data.anonId,
-          typeof signature === "string" ? signature : undefined,
-        )
-      ) {
+      // 匿名签名与登录身份签名是两组独立凭据：nonce 各自独立，重放缓存按签名去重
+      const verdict = verifyIdentityHeaders({
+        secret: ctx.config.identitySecret,
+        identity: parsed.data.anonId,
+        headers: req.headers,
+        prefix: "x-navhub-anon",
+        strict: ctx.config.identitySignatureStrict,
+      });
+      if (!verdict.ok) {
         reply.code(401);
         return { error: "匿名身份签名缺失或无效" };
       }

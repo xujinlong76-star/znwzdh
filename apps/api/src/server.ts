@@ -39,7 +39,7 @@ import {
 } from "./auth.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { identityOf } from "./routes/shared.ts";
-import { verifyIdentitySignature } from "./identity-signature.ts";
+import { verifyIdentityHeaders } from "./identity-signature.ts";
 import { searchRoutes } from "./routes/search.ts";
 import { siteRoutes } from "./routes/sites.ts";
 import { trashRoutes } from "./routes/trash.ts";
@@ -117,6 +117,9 @@ export async function buildServer(ctx: AppContext) {
           "req.headers.authorization",
           "req.headers.cookie",
           "req.headers['x-navhub-identity-signature']",
+          "req.headers['x-navhub-identity-signature-v2']",
+          "req.headers['x-navhub-anon-signature']",
+          "req.headers['x-navhub-anon-signature-v2']",
           // 限流豁免凭据：泄露它等于拿到「不吃按 IP 额度」的通道，绝不能进日志聚合。
           "req.headers['x-navhub-internal-token']",
           "res.headers['set-cookie']",
@@ -553,6 +556,10 @@ export async function buildServer(ctx: AppContext) {
    *
    * 与 authRequired 无关：即便处在开放模式，只要配了密钥，带身份的请求就必须
    * 带对签名——否则没有任何凭据的请求可以自称任意身份读写他人数据。
+   *
+   * 签名本身分两代（见 identity-signature.ts）：v2 把时间戳与 nonce 纳入 MAC，
+   * 因此**同一份签名只能成功一次**；v1（恒定签名）仅在兼容窗口内、且请求完全
+   * 不带 v2 头时被接受，`NAVHUB_IDENTITY_SIGNATURE_STRICT=1` 后彻底关闭。
    */
   app.addHook("preValidation", async (req, reply) => {
     if (!ctx.config.identitySecret) return;
@@ -561,14 +568,13 @@ export async function buildServer(ctx: AppContext) {
     if ((req as { auth?: { ownerIdentity?: string | null } }).auth?.ownerIdentity) return;
     const identity = identityOf(req as never);
     if (!identity) return;
-    const signature = req.headers["x-navhub-identity-signature"];
-    if (
-      !verifyIdentitySignature(
-        ctx.config.identitySecret,
-        identity,
-        typeof signature === "string" ? signature : undefined,
-      )
-    ) {
+    const verdict = verifyIdentityHeaders({
+      secret: ctx.config.identitySecret,
+      identity,
+      headers: req.headers as Record<string, unknown>,
+      strict: ctx.config.identitySignatureStrict,
+    });
+    if (!verdict.ok) {
       return reply.code(401).send({ error: "身份签名缺失或无效" });
     }
   });

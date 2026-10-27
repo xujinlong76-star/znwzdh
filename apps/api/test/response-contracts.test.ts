@@ -10,7 +10,7 @@
  * 改了可空性、把数字降级成字符串，只有真实响应能暴露。
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -175,6 +175,59 @@ describe("绑定表与真实路由同源", () => {
     // 只能在这里钉：清单里写错字段名，这行 satisfies 就会在编译期红。
     const aligned = TAG_CORE_FIELDS satisfies readonly (keyof TagWithCount)[];
     expect(aligned.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * 覆盖率棘轮：绑定表只保证「登记了的不漂」，不保证「新路由会登记」。
+ * 反向（绑定的路由必须真实存在）已在上一组；这里补另一头——每条读路由都要有契约。
+ *
+ * 基线为什么落文件而不是写在测试里：未绑定的读路由有 231 条（历史面），
+ * 塞进正文等于把 231 行噪音焊死在测试文件里。落 fixtures 后语义不变：
+ * **精确快照**（多一条红、少一条也红），任何变化都必须显式改文件——补了绑定
+ * 要删行，新增路由要决定「登记契约」还是「进基线并说明理由」。基线只许缩小。
+ *
+ * 为什么读路由优先：读路由的响应是前端类型生成的输入（HubSite、榜单都从这里来），
+ * 漏一条就等于给前端留一个手写类型的口子；写路由的响应形状目前多是一句话回执，
+ * 暂不纳入，避免为「{ok:true}」制造无意义的 schema 负担。
+ */
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const bindingKeyOf = (route: { method: string; url: string }): string =>
+  route.method.toUpperCase() + " " + route.url.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+
+const UNBOUND_FIXTURE = "test/fixtures/unbound-read-routes.txt";
+
+function readUnboundBaseline(): string[] {
+  const text = readFileSync(new URL("./fixtures/unbound-read-routes.txt", import.meta.url), "utf8");
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"));
+}
+
+describe("契约覆盖率棘轮", () => {
+  it("每条读路由都必须登记响应契约（未登记的与基线精确一致，只许缩小）", () => {
+    const unbound = app.routeInventory
+      .filter((route) => READ_METHODS.has(route.method.toUpperCase()))
+      .map(bindingKeyOf)
+      .filter((key) => !(key in RESPONSE_SCHEMA_BINDINGS))
+      .sort();
+    expect(
+      unbound,
+      "读路由与契约基线不一致。" +
+        "新增读路由 → 在 packages/core/src/rest-responses.ts 加 schema 与绑定，" +
+        "再跑 node scripts/generate-rest-contract-types.mjs；" +
+        "确属无需契约（如 openapi.json 自身）→ 把键加进 " + UNBOUND_FIXTURE + " 并在提交说明理由。" +
+        "补了绑定的路由 → 必须从基线删除（基线只许缩小）",
+    ).toEqual(readUnboundBaseline().sort());
+  });
+
+  it("契约基线不陈旧：每条都仍是真实存在、仍未登记的读路由", () => {
+    const reads = new Map(app.routeInventory.filter((r) => READ_METHODS.has(r.method.toUpperCase())).map((r) => [bindingKeyOf(r), r]));
+    for (const key of readUnboundBaseline()) {
+      expect(reads.has(key), "基线里的读路由不存在了（改名/删除）：" + key).toBe(true);
+      expect(key in RESPONSE_SCHEMA_BINDINGS, "该读路由已登记契约，请从 " + UNBOUND_FIXTURE + " 删除：" + key).toBe(false);
+    }
   });
 });
 

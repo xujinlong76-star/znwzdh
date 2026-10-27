@@ -10,6 +10,8 @@ import { initThemeRuntime } from '@/lib/plugins/theme-runtime'
 import { GlobalAiGateway } from '@/components/ai/global-ai-gateway'
 import { GlobalSpotlightGateway } from '@/components/search/global-spotlight-gateway'
 import { FluidGlassCanvas } from '@/components/theme/fluid-glass-canvas'
+import { VideoPlayerProvider } from '@/contexts/VideoPlayerContext'
+import { VideoMiniPlayer } from '@/components/video-mini-player'
 
 // sonner 与主题试用条都不是首屏必需：把它们的 JS 从根布局公共 chunk 移到
 // 水合后的独立 chunk。主题试用本身只在用户主动试用时才有内容。
@@ -47,7 +49,10 @@ export function Providers({
           <DensityProvider>
             {/* 动态流光毛玻璃画布背景 */}
             <FluidGlassCanvas />
-            {children}
+            <VideoPlayerProvider>
+              {children}
+              <VideoMiniPlayer />
+            </VideoPlayerProvider>
             {/* 主题免安装即时沙箱试用悬浮横条 */}
             <ThemeTryoutRibbon />
             {/* AI Web Copilot 浮窗助手（全局 Cmd+J / 悬浮呼出；首次呼出才加载实现） */}

@@ -1,12 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { safeWindowOpen } from '@/lib/safe-url'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { PlayCircle } from 'lucide-react'
+import { PlayCircle, Clock, Check, Download, Bookmark } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { formatDuration } from '@/lib/video-format'
+import { getSignedMediaProxyUrl } from '@/lib/media-proxy'
+import { isInWatchLater, toggleWatchLater, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
+import { saveOfflineVideo, isOfflineVideo } from '@/lib/offline-video-cache'
 import Image from 'next/image'
 
 interface VideoCardProps {
@@ -20,7 +23,38 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
     const [isOpen, setIsOpen] = useState(false)
     const [imageLoaded, setImageLoaded] = useState(false)
     const [imageError, setImageError] = useState(false)
+    const [isUsingProxy, setIsUsingProxy] = useState(false)
+    const [inWatchLater, setInWatchLater] = useState(false)
+    const [isSavedOffline, setIsSavedOffline] = useState(false)
     const { videoConfig } = item
+
+    useEffect(() => {
+        setInWatchLater(isInWatchLater(item.id))
+        // 离线状态只影响角标显示，探测失败时保持「未离线」即可，不影响播放
+        isOfflineVideo(item.id).then(setIsSavedOffline).catch(() => { /* 见上：纯装饰性状态 */ })
+
+        const handleSync = () => {
+            setInWatchLater(isInWatchLater(item.id))
+        }
+        if (typeof window !== 'undefined') {
+            window.addEventListener(PLAYLIST_UPDATE_EVENT, handleSync)
+            return () => window.removeEventListener(PLAYLIST_UPDATE_EVENT, handleSync)
+        }
+    }, [item.id])
+
+    const handleToggleWatchLater = (e: React.MouseEvent) => {
+        e.stopPropagation()
+        e.preventDefault()
+        const added = toggleWatchLater(item)
+        setInWatchLater(added)
+    }
+
+    const handleSaveOffline = async (e: React.MouseEvent) => {
+        e.stopPropagation()
+        e.preventDefault()
+        await saveOfflineVideo(item)
+        setIsSavedOffline(true)
+    }
 
     const isExternalIcon = item.icon?.startsWith('http') || item.icon?.startsWith('//')
     const isLocalIcon = item.icon && !isExternalIcon
@@ -32,9 +66,21 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
         : item.icon || ''
 
     // 处理可能以 // 开头的 URL
-    const normalizedCoverPath = coverPath.startsWith('//')
+    const rawCoverPath = coverPath.startsWith('//')
         ? `https:${coverPath}`
         : coverPath
+
+    // 默认尝试直链；若触发防盗链拦截或 CDN 错误，自动降级至安全签名代理
+    const normalizedCoverPath = isUsingProxy ? getSignedMediaProxyUrl(rawCoverPath) : rawCoverPath
+
+    const handleCoverError = () => {
+        if (!isUsingProxy && (rawCoverPath.startsWith('http://') || rawCoverPath.startsWith('https://'))) {
+            setIsUsingProxy(true)
+            setImageLoaded(false)
+        } else {
+            setImageError(true)
+        }
+    }
 
     // 卡片本身就是按钮（见下方根元素）：键盘 Enter / 空格会走同一条路径，
     // 不再依赖鼠标点击 —— 视频卡片此前是一个纯 <div onClick>，没有任何可聚焦元素，
@@ -119,13 +165,20 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
 
     return (
         <>
-            <button
-                type="button"
-                className="group @container cursor-pointer text-left w-full overflow-hidden rounded-xl bg-card border border-border/50 
+            <div
+                className="group @container relative cursor-pointer text-left w-full overflow-hidden rounded-xl bg-card border border-border/50 
                            transition-all duration-300 ease-out depth-card hover:shadow-xl hover:shadow-primary/5 
                            hover:border-primary/20 hover:-translate-y-1"
-                onClick={handleCardClick}
             >
+                {/* 主点击区必须是真 <button>：键盘可达、读屏识别为按钮。
+                    右上角「稍后再看 / 离线缓存」是独立按钮，必须放在它**之外** ——
+                    嵌套 <button> 是非法 HTML，浏览器会重排 DOM 并触发 hydration 告警，
+                    此前正是因此退回了 <div role="button">。 */}
+                <button
+                    type="button"
+                    onClick={handleCardClick}
+                    className="block w-full text-left"
+                >
                 {/* 封面图区域 */}
                 <div className="relative aspect-video overflow-hidden bg-muted">
                     {/* 封面图 */}
@@ -146,7 +199,7 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                                 className={`object-cover transition-all duration-500 
                                            group-hover:scale-105 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
                                 onLoad={() => setImageLoaded(true)}
-                                onError={() => setImageError(true)}
+                                onError={handleCoverError}
                             />
                         </>
                     ) : (
@@ -209,7 +262,36 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                         </p>
                     )}
                 </div>
-            </button>
+                </button>
+
+                {/* 右上角快捷操作：稍后再看 / 离线缓存 */}
+                <div className="absolute top-2 right-2 flex items-center gap-1 z-20">
+                    <button
+                        type="button"
+                        onClick={handleToggleWatchLater}
+                        title={inWatchLater ? '已加入稍后再看' : '稍后再看'}
+                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${
+                            inWatchLater
+                                ? 'bg-primary text-primary-foreground shadow-md'
+                                : 'bg-black/60 text-white/80 hover:bg-black/80 hover:text-white'
+                        }`}
+                    >
+                        {inWatchLater ? <Check className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleSaveOffline}
+                        title={isSavedOffline ? '已离线缓存' : '离线缓存'}
+                        className={`p-1.5 rounded-md backdrop-blur-md transition-all ${
+                            isSavedOffline
+                                ? 'bg-emerald-600 text-white shadow-md'
+                                : 'bg-black/60 text-white/80 hover:bg-black/80 hover:text-white'
+                        }`}
+                    >
+                        <Download className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            </div>
 
             {/* 视频播放弹窗 */}
             {videoConfig && (

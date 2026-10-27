@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { VideoCard } from '@/components/video-card'
@@ -9,11 +9,14 @@ import { SearchBar } from '@/components/search-bar'
 import { ModeToggle } from '@/components/mode-toggle'
 import { DensityToggle } from '@/components/density-toggle'
 import { Footer } from '@/components/footer'
-import { MonitorPlay, Menu, Home } from 'lucide-react'
+import { MonitorPlay, Menu, Home, Sparkles, Clock } from 'lucide-react'
 import { Button } from "@/registry/new-york/ui/button"
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { useOverlayBehavior } from '@/components/ui/overlay'
+import { buildVideoSearchIndex, searchVideoIndex } from '@/lib/video-search-index'
+import { getPersonalizedRecommendations } from '@/lib/video-recommendation'
+import { getWatchLaterList, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
 
 interface VideoContentProps {
     navigationData: NavigationData
@@ -31,66 +34,52 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
     })
     const [searchQuery, setSearchQuery] = useState('')
 
-    // 修复类型检查和搜索逻辑
+    // 构建视频 CJK 倒排索引
+    const searchIndex = useMemo(() => buildVideoSearchIndex(navigationData), [navigationData])
+
+    // 基于 BM25 与时效质量加权的智能检索（支持 CJK Bigram、同义词扩展与热度排序）
     const searchResults = useMemo(() => {
-        const query = searchQuery.toLowerCase().trim()
+        const query = searchQuery.trim()
         if (!query) return []
 
-        const results: Array<{
+        const rankedResults = searchVideoIndex(searchIndex, query, navigationData.navigationItems)
+
+        // 重新按分类聚合，并保持命中项的得分倒序排列
+        const categoryMap = new Map<string, {
             category: NavigationItem
-            items: (NavigationItem | NavigationSubItem)[]
-            subCategories: Array<{
-                title: string
-                items: (NavigationItem | NavigationSubItem)[]
-            }>
-        }> = []
+            items: NavigationSubItem[]
+            subCategoryMap: Map<string, { title: string; items: NavigationSubItem[] }>
+        }>()
 
-        navigationData.navigationItems.forEach(category => {
-            // 搜索主分类下的项目（只搜索启用的）
-            const items = (category.items || []).filter(item => {
-                if (item.enabled === false) return false
-                const titleMatch = item.title.toLowerCase().includes(query)
-                const descMatch = item.description?.toLowerCase().includes(query)
-                return titleMatch || descMatch
-            })
-
-            // 搜索子分类下的项目（只搜索启用的）
-            const subResults: Array<{
-                title: string
-                items: (NavigationItem | NavigationSubItem)[]
-            }> = []
-
-            if (category.subCategories) {
-                category.subCategories.forEach(sub => {
-                    if (sub.enabled === false) return
-                    const subItems = (sub.items || []).filter(item => {
-                        if (item.enabled === false) return false
-                        const titleMatch = item.title.toLowerCase().includes(query)
-                        const descMatch = item.description?.toLowerCase().includes(query)
-                        return titleMatch || descMatch
-                    })
-
-                    if (subItems.length > 0) {
-                        subResults.push({
-                            title: sub.title,
-                            items: subItems
-                        })
-                    }
-                })
+        for (const res of rankedResults) {
+            let catEntry = categoryMap.get(res.category.id)
+            if (!catEntry) {
+                catEntry = {
+                    category: res.category,
+                    items: [],
+                    subCategoryMap: new Map()
+                }
+                categoryMap.set(res.category.id, catEntry)
             }
 
-            // 只有当主分类或子分类有匹配结果时才添加到结果中
-            if (items.length > 0 || subResults.length > 0) {
-                results.push({
-                    category,
-                    items,
-                    subCategories: subResults
-                })
+            if (res.subCategory) {
+                let subEntry = catEntry.subCategoryMap.get(res.subCategory.id)
+                if (!subEntry) {
+                    subEntry = { title: res.subCategory.title, items: [] }
+                    catEntry.subCategoryMap.set(res.subCategory.id, subEntry)
+                }
+                subEntry.items.push(res.item)
+            } else {
+                catEntry.items.push(res.item)
             }
-        })
+        }
 
-        return results
-    }, [navigationData, searchQuery])
+        return Array.from(categoryMap.values()).map(cat => ({
+            category: cat.category,
+            items: cat.items,
+            subCategories: Array.from(cat.subCategoryMap.values())
+        }))
+    }, [navigationData, searchQuery, searchIndex])
 
     const handleSearch = (query: string) => {
         setSearchQuery(query)
@@ -108,6 +97,37 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
             return [{ ...category, subCategories }]
         }),
     }), [navigationData])
+
+    // 稍后再看与学习队列同步
+    const [watchLaterList, setWatchLaterList] = useState<NavigationSubItem[]>([])
+    useEffect(() => {
+        setWatchLaterList(getWatchLaterList())
+        const handleUpdate = () => {
+            setWatchLaterList(getWatchLaterList())
+        }
+        if (typeof window !== 'undefined') {
+            window.addEventListener(PLAYLIST_UPDATE_EVENT, handleUpdate)
+            return () => window.removeEventListener(PLAYLIST_UPDATE_EVENT, handleUpdate)
+        }
+    }, [])
+
+    // 全局视频池与个性化协同推荐
+    const allVideoPool = useMemo(() => {
+        const pool: NavigationSubItem[] = []
+        for (const cat of visibleNavigationData.navigationItems) {
+            if (cat.items) pool.push(...cat.items)
+            if (cat.subCategories) {
+                for (const sub of cat.subCategories) {
+                    if (sub.items) pool.push(...sub.items)
+                }
+            }
+        }
+        return pool
+    }, [visibleNavigationData])
+
+    const recommendedVideos = useMemo(() => {
+        return getPersonalizedRecommendations({ pool: allVideoPool, limit: 5 })
+    }, [allVideoPool])
 
     /** 首屏前 4 张封面：预加载以压低 LCP，其余保持懒加载 */
     const eagerItemIds = useMemo(() => {
@@ -279,6 +299,56 @@ export function VideoContent({ navigationData, siteData }: VideoContentProps) {
                                 </div>
                             </div>
                         </div>
+
+                        {/* 稍后再看学习队列 */}
+                        {watchLaterList.length > 0 && (
+                            <section className="scroll-m-16 rounded-xl border border-border/60 bg-card/60 p-4 backdrop-blur-xs">
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <h2 className="text-base font-bold tracking-tight flex items-center gap-2">
+                                            <Clock className="w-4 h-4 text-primary" />
+                                            <span>稍后再看</span>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                                                {watchLaterList.length}
+                                            </span>
+                                        </h2>
+                                    </div>
+                                    <div
+                                        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! transition-all duration-200"
+                                        style={{ gap: 'var(--density-grid-gap, 1rem)' }}
+                                    >
+                                        {watchLaterList.map((item) => (
+                                            <VideoCard key={`wl-${item.id}`} item={item} siteConfig={siteData} />
+                                        ))}
+                                    </div>
+                                </div>
+                            </section>
+                        )}
+
+                        {/* 猜你想学 / 协同推荐专区 */}
+                        {recommendedVideos.length > 0 && (
+                            <section className="scroll-m-16 rounded-xl border border-violet-500/20 bg-gradient-to-r from-violet-500/5 via-transparent to-sky-500/5 p-4 backdrop-blur-xs">
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <h2 className="text-base font-bold tracking-tight flex items-center gap-2 text-violet-600 dark:text-violet-400">
+                                            <Sparkles className="w-4 h-4 text-violet-500" />
+                                            <span>猜你想学 · 协同精选</span>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-500 font-normal">
+                                                基于技术栈与历史偏好
+                                            </span>
+                                        </h2>
+                                    </div>
+                                    <div
+                                        className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 min-[1536px]:grid-cols-5! transition-all duration-200"
+                                        style={{ gap: 'var(--density-grid-gap, 1rem)' }}
+                                    >
+                                        {recommendedVideos.map((item) => (
+                                            <VideoCard key={`rec-${item.id}`} item={item} siteConfig={siteData} />
+                                        ))}
+                                    </div>
+                                </div>
+                            </section>
+                        )}
 
                         {visibleNavigationData.navigationItems.map((category) => (
                             <section key={category.id} id={category.id} className="scroll-m-16">

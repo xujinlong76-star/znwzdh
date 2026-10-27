@@ -49,6 +49,10 @@ export function processNavigationSubItem(item: NavigationSubItemRaw): Navigation
             pinned: item.videoConfig.pinned,
             healthStatus: item.videoConfig.healthStatus,
             stats: item.videoConfig.stats,
+            chapters: item.videoConfig.chapters,
+            mirrors: item.videoConfig.mirrors,
+            danmaku: item.videoConfig.danmaku,
+            transcript: item.videoConfig.transcript,
         }
     }
 

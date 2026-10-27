@@ -56,7 +56,7 @@ export function DetailTabPanels(props: DetailTabPanelsProps) {
     rawCopy,
     handleCopyRaw,
   } = props
-  const [testSearchQuery, setTestSearchQuery] = useState('NavHub')
+  const [testSearchQuery, setTestSearchQuery] = useState('山羊胡')
   return (
     <>
           {activeTab === 'preview' && (

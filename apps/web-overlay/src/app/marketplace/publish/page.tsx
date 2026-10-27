@@ -296,7 +296,7 @@ export default function PluginPublishPage() {
       } else if (Array.isArray(parsedPayload.engines)) {
         for (const e of parsedPayload.engines) {
           if (typeof e.searchUrl === 'string' && e.searchUrl.trim()) {
-            urls.push(e.searchUrl.replace('{q}', 'NavHub').trim())
+            urls.push(e.searchUrl.replace('{q}', '山羊胡').trim())
           }
         }
       }

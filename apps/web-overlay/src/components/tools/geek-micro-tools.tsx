@@ -89,7 +89,7 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
 
         {!input ? (
           <div className="rounded-lg border border-dashed border-border/80 p-4 text-center text-xs text-muted-foreground">
-            在上方继续输入要编码/解码的文本，例如：<button type="button" onClick={() => onSelectSample?.('> b64 Hello NavHub 2026')} className="text-primary underline font-mono">Hello NavHub 2026</button>
+            在上方继续输入要编码/解码的文本，例如：<button type="button" onClick={() => onSelectSample?.('> b64 Hello 山羊胡 2026')} className="text-primary underline font-mono">Hello 山羊胡 2026</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
@@ -438,7 +438,7 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
 
         {!parsed.args ? (
           <div className="rounded-lg border border-dashed border-border/80 p-4 text-center text-xs text-muted-foreground">
-            在上方输入要计算 Hash 的文本，例如：<button type="button" onClick={() => onSelectSample?.('> hash NavHub2026')} className="text-primary underline font-mono">NavHub2026</button>
+            在上方输入要计算 Hash 的文本，例如：<button type="button" onClick={() => onSelectSample?.('> hash 山羊胡2026')} className="text-primary underline font-mono">山羊胡2026</button>
           </div>
         ) : (
           <div className="space-y-2 font-mono">
@@ -503,7 +503,7 @@ export function GeekMicroTools({ query, onSelectSample }: GeekMicroToolsProps) {
             在上方粘贴 JSON 字符串，例如：
             <button
               type="button"
-              onClick={() => onSelectSample?.('> json {"name":"NavHub","version":"2.5.0","features":["AI","CRDT"]}')}
+              onClick={() => onSelectSample?.('> json {"name":"山羊胡","version":"2.5.0","features":["AI","CRDT"]}')}
               className="text-primary underline font-mono block mt-1"
             >
               载入测试 JSON

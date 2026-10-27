@@ -36,6 +36,15 @@ export interface RouteEntry {
   method: string;
   url: string;
   scope: RouteScope;
+  /**
+   * 路由是否**显式**声明了 scope。
+   *
+   * 注册期默认值是 "public"：漏写不会报错，只会让一条写路由静默变成匿名可写。
+   * 把「有没有写」与「写的是什么」分开记录，登记闸门才能对这种静默失败给出
+   * 精确归因（否则它只会在匿名写快照里以「多了一条」的形式出现，容易被当成
+   * 正常新增而顺手补登记）。
+   */
+  scopeExplicit: boolean;
 }
 
 /** 端点中文描述（少量人工标注；未标注的走 URL 段推断） */

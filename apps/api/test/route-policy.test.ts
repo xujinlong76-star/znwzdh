@@ -160,6 +160,49 @@ const READ_SCOPE_WRITE_ROUTES: readonly string[] = [
   "POST /api/sites/:id/recommend-alternative",
 ];
 
+/**
+ * 仍未显式声明 scope 的写路由（注册期默认 public）。
+ *
+ * 它们全部是**用户域写面**：身份与写权限由处理器里的 `userDomainWriteAllowed`
+ * 把关，scope 在这里只是一档等级，漏写不会导致匿名可改共享数据（快照测试
+ * 另有逐条判定）。这份基线存在的意义是把「漏写」这一事实留存下来：
+ * 新路由漏写会立刻红，而不是混进匿名写快照的差异里被当成正常新增。
+ */
+const IMPLICIT_SCOPE_BASELINE: readonly string[] = [
+  "POST /api/search",
+  "POST /api/favorites",
+  "DELETE /api/favorites/:siteId",
+  "PATCH /api/favorites/:siteId",
+  "DELETE /api/favorites",
+  "POST /api/favorites/folders",
+  "DELETE /api/favorites/folders/:id",
+  "PATCH /api/favorites/folders/:id",
+  "DELETE /api/search-history/:id",
+  "DELETE /api/search-history",
+  "POST /api/search-history/batch-delete",
+  "DELETE /api/profile",
+  "DELETE /api/profile/signals/:kind",
+  "PATCH /api/me/settings",
+  "PATCH /api/me/profile",
+  "POST /api/me/diagnostics",
+  "POST /api/me/import",
+  "POST /api/me/prune",
+  "POST /api/me/sessions/check",
+  "POST /api/me/tokens",
+  "DELETE /api/me/tokens/:id",
+  "POST /api/me/notifications/:id/read",
+  "POST /api/me/notifications/read-all",
+  "DELETE /api/me/sessions/:id",
+  "POST /api/me/favorites/sync",
+  "DELETE /api/me",
+  "POST /api/me/merge",
+  "PUT /api/vault/sync",
+  "DELETE /api/vault/sync",
+  "POST /api/users/sync",
+  "POST /api/submissions",
+  "POST /api/events",
+];
+
 describe("路由清单本身足够支撑判定", () => {
   it("注册期快照非空，且三档写路由都有（防止空清单让下列循环变成空转）", () => {
     expect(app.routeInventory.length).toBeGreaterThan(300);
@@ -173,6 +216,38 @@ describe("路由清单本身足够支撑判定", () => {
   it("安全方法在策略表里一律是 read", () => {
     for (const route of app.routeInventory.filter((r) => !isMutating(r.method))) {
       expect(decisionFor(route).mutationClass, keyOf(route)).toBe("read");
+    }
+  });
+
+  /**
+   * 「忘了写 scope」与「明确声明 public」在快照里长得一样（都是 public 写路由），
+   * 前者却是一类静默的安全缺陷：新写路由默认对匿名开放。这里按注册期记录的
+   * scopeExplicit 把它们分开。
+   *
+   * 基线只减不增：表内 32 条都是用户域写面（真正的闸门是处理器里的
+   * `userDomainWriteAllowed` / `identityAllowed`，scope 只是等级），
+   * 漏写属于历史遗留而不是当前缺陷；新路由漏写直接红，且不会被快照
+   * 「顺手补一行」掩盖成正常新增。
+   */
+  it("新写路由必须显式声明 scope（漏写只允许基线内的历史遗留）", () => {
+    const implicit = mutating()
+      .filter((route) => !route.scopeExplicit)
+      .map(keyOf)
+      .sort();
+    expect(
+      implicit,
+      "新增写路由没有在 config 里声明 scope，注册期默认成 public（匿名可写）：补 scope 后再评估写域",
+    ).toEqual([...IMPLICIT_SCOPE_BASELINE].sort());
+  });
+
+  it("scope 基线不陈旧：每条都仍是漏写状态（补了 scope 就从基线删除）", () => {
+    const stillImplicit = new Set(
+      mutating()
+        .filter((route) => !route.scopeExplicit)
+        .map(keyOf),
+    );
+    for (const key of IMPLICIT_SCOPE_BASELINE) {
+      expect(stillImplicit.has(key), key + " 已显式声明 scope，请从 IMPLICIT_SCOPE_BASELINE 删除").toBe(true);
     }
   });
 });

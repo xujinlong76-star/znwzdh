@@ -286,7 +286,8 @@ export async function buildServer(ctx: AppContext) {
   const routeEntries: RouteEntry[] = [];
   app.addHook("onRoute", (route) => {
     const method = typeof route.method === "string" ? route.method : String(route.method);
-    const declared = (route.config as { scope?: RouteScope } | undefined)?.scope ?? "public";
+    const declaredScope = (route.config as { scope?: RouteScope } | undefined)?.scope;
+    const declared = declaredScope ?? "public";
     // 拼错的 scope 不会报错，只会让这条路由从此「人人 403」，
     // 并且把不存在的权限名印进 /api/openapi.json。启动即抛，别等线上第一次调用。
     if (!KNOWN_ROUTE_SCOPES.has(declared as string)) {
@@ -295,7 +296,14 @@ export async function buildServer(ctx: AppContext) {
           `只认 ${[...KNOWN_ROUTE_SCOPES].join("/")}。`,
       );
     }
-    routeEntries.push({ method: method.toUpperCase(), url: route.url, scope: declared });
+    routeEntries.push({
+      method: method.toUpperCase(),
+      url: route.url,
+      scope: declared,
+      // 默认 public 是注册机制，不是声明：写路由漏写 scope 时，
+      // route-policy 的登记闸门靠这个标记把它指出来。
+      scopeExplicit: declaredScope !== undefined,
+    });
   });
 
   app.get("/api/openapi.json", { config: { scope: "public", cache: { maxAge: 60 } } }, async () =>

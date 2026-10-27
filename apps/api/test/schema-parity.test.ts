@@ -18,15 +18,15 @@ import {
  */
 
 const ROUTES: RouteEntry[] = [
-  { method: "GET", url: "/api/health", scope: "public" },
-  { method: "GET", url: "/api/search", scope: "public" },
-  { method: "POST", url: "/api/sites", scope: "write" },
-  { method: "PATCH", url: "/api/sites/:id", scope: "write" },
-  { method: "DELETE", url: "/api/sites/:id", scope: "write" },
-  { method: "GET", url: "/api/tags", scope: "public" },
-  { method: "GET", url: "/api/rank/trending", scope: "public" },
-  { method: "POST", url: "/api/crdt/sync", scope: "write" },
-  { method: "POST", url: "/api/design/harmony", scope: "public" },
+  { method: "GET", url: "/api/health", scope: "public", scopeExplicit: true },
+  { method: "GET", url: "/api/search", scope: "public", scopeExplicit: true },
+  { method: "POST", url: "/api/sites", scope: "write", scopeExplicit: true },
+  { method: "PATCH", url: "/api/sites/:id", scope: "write", scopeExplicit: true },
+  { method: "DELETE", url: "/api/sites/:id", scope: "write", scopeExplicit: true },
+  { method: "GET", url: "/api/tags", scope: "public", scopeExplicit: true },
+  { method: "GET", url: "/api/rank/trending", scope: "public", scopeExplicit: true },
+  { method: "POST", url: "/api/crdt/sync", scope: "write", scopeExplicit: true },
+  { method: "POST", url: "/api/design/harmony", scope: "public", scopeExplicit: true },
 ];
 
 const doc = buildOpenApiDoc(ROUTES) as {

@@ -23,13 +23,6 @@ export default defineConfig({
       // apps/web 是 vendored 底座，package.json 里没有 @navhub/core 依赖（历史上靠根
       // node_modules 偶然解析成功）。测试环境必须显式指向源码，否则 overlay 里
       // 「再导出 core 实现」的模块在这一层解析不到，等于逼着大家再复制一份。
-      // 子路径（@navhub/core/health-state）：前端只用纯函数子模块，避免 barrel 把
-      // node 内置模块带进浏览器包。
-      {
-        find: /^@navhub\/core\/(.*)$/,
-        replacement:
-          fileURLToPath(new URL("./packages/core/src", import.meta.url)).replace(/\\/g, "/") + "/$1",
-      },
       {
         find: /^@navhub\/core$/,
         replacement: fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)).replace(/\\/g, "/"),

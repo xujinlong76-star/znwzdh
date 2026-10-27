@@ -12,6 +12,7 @@
  * 探活复用 `@navhub/ai` 的 `guardedFetch`：逐跳 SSRF 校验 + 超时 + 响应体上限
  * （默认不放行私网，因此内网目标会以 SSRF 拒绝的形式记为不可达）。
  */
+import { createHash } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { DEFAULT_GUARD, guardedFetch, outboundProfile, resolveAndCheck, type GuardedFetchResult } from "@navhub/ai";
 import {
@@ -810,7 +811,12 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         }
         return { slug, state: deriveHealthPanelState(diff as never), auditedAt: row.created_at ?? null }
       })
-      return { ok: true, items }
+      // 批量版同样支持条件请求：ETag 由「各 slug 的 auditedAt + state.kind」拼成摘要，
+      // 任一包结论变化即失效。扩展轮询 50 个包时，命中 304 可省掉整份响应。
+      const etag = 'W/"' + createHash('sha1').update(items.map((i) => i.slug + ':' + (i.auditedAt ?? 0) + ':' + i.state.kind).join('|')).digest('hex').slice(0, 16) + '"'
+      const inm = String(request.headers['if-none-match'] ?? '').trim()
+      if (inm && inm === etag) return reply.code(304).header('etag', etag).header('cache-control', 'no-cache').send()
+      return reply.header('etag', etag).header('cache-control', 'no-cache').send({ ok: true, items })
     },
   )
 

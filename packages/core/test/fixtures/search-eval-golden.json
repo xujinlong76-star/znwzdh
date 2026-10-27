@@ -1,0 +1,523 @@
+{
+  "$comment": "检索质量金标集。candidates 是各通道的召回结果快照（siteId + 通道内排名），relevance 是人工标注的 0–3 分级。测试用生产 fuse() 重放候选再算指标——改 RRF 的 k、通道权重、coverage 强度都会改变输出，从而触发阈值门。改默认权重或重录快照必须在同一个 PR 里一起改，评审时看得到。 阈值 = 录制值 - 0.01（宏平均）；改默认权重或重录快照必须同一 PR 完成。",
+  "version": 1,
+  "k": 10,
+  "weights": {
+    "exact": 1.4,
+    "fts": 1,
+    "pinyin": 0.9,
+    "semantic": 1.15,
+    "personal": 0.3,
+    "coverageStrength": 0.35,
+    "k": 60
+  },
+  "thresholds": {
+    "ndcgAtK": 0.96,
+    "mrrAtK": 0.99,
+    "recallAtK": 0.99
+  },
+  "cases": [
+    {
+      "query": "ai 写作工具",
+      "relevance": {
+        "s-notion-ai": 3,
+        "s-jasper": 2,
+        "s-copyai": 2,
+        "s-chatgpt": 1
+      },
+      "candidates": [
+        {
+          "siteId": "s-notion-ai",
+          "channel": "exact",
+          "rank": 1
+        },
+        {
+          "siteId": "s-jasper",
+          "channel": "exact",
+          "rank": 2
+        },
+        {
+          "siteId": "s-copyai",
+          "channel": "fts",
+          "rank": 1
+        },
+        {
+          "siteId": "s-notion-ai",
+          "channel": "fts",
+          "rank": 3
+        },
+        {
+          "siteId": "s-chatgpt",
+          "channel": "semantic",
+          "rank": 1
+        },
+        {
+          "siteId": "s-grammarly",
+          "channel": "semantic",
+          "rank": 2
+        },
+        {
+          "siteId": "s-midjourney",
+          "channel": "personal",
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "query": "设计素材",
+      "relevance": {
+        "s-figma": 3,
+        "s-dribbble": 3,
+        "s-unsplash": 2,
+        "s-iconfont": 1
+      },
+      "candidates": [
+        {
+          "siteId": "s-figma",
+          "channel": "exact",
+          "rank": 1
+        },
+        {
+          "siteId": "s-dribbble",
+          "channel": "exact",
+          "rank": 2
+        },
+        {
+          "siteId": "s-unsplash",
+          "channel": "fts",
+          "rank": 1
+        },
+        {
+          "siteId": "s-iconfont",
+          "channel": "fts",
+          "rank": 2
+        },
+        {
+          "siteId": "s-pinterest",
+          "channel": "semantic",
+          "rank": 1
+        },
+        {
+          "siteId": "s-figma",
+          "channel": "semantic",
+          "rank": 2
+        },
+        {
+          "siteId": "s-dribbble",
+          "channel": "personal",
+          "rank": 1
+        },
+        {
+          "siteId": "s-notion",
+          "channel": "personal",
+          "rank": 2
+        }
+      ]
+    },
+    {
+      "query": "编程学习",
+      "relevance": {
+        "s-freecodecamp": 3,
+        "s-mdn": 3,
+        "s-coursera": 2,
+        "s-mukewang": 2,
+        "s-leetcode": 1
+      },
+      "candidates": [
+        {
+          "siteId": "s-freecodecamp",
+          "channel": "exact",
+          "rank": 1
+        },
+        {
+          "siteId": "s-mdn",
+          "channel": "exact",
+          "rank": 2
+        },
+        {
+          "siteId": "s-coursera",
+          "channel": "fts",
+          "rank": 1
+        },
+        {
+          "siteId": "s-leetcode",
+          "channel": "fts",
+          "rank": 2
+        },
+        {
+          "siteId": "s-mukewang",
+          "channel": "pinyin",
+          "rank": 1
+        },
+        {
+          "siteId": "s-mdn",
+          "channel": "semantic",
+          "rank": 1
+        },
+        {
+          "siteId": "s-medium",
+          "channel": "semantic",
+          "rank": 2
+        },
+        {
+          "siteId": "s-coursera",
+          "channel": "personal",
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "query": "视频剪辑",
+      "relevance": {
+        "s-capcut": 3,
+        "s-davinci": 3,
+        "s-premier": 2,
+        "s-bilibili": 1
+      },
+      "candidates": [
+        {
+          "siteId": "s-davinci",
+          "channel": "exact",
+          "rank": 1
+        },
+        {
+          "siteId": "s-capcut",
+          "channel": "exact",
+          "rank": 2
+        },
+        {
+          "siteId": "s-premier",
+          "channel": "fts",
+          "rank": 1
+        },
+        {
+          "siteId": "s-bilibili",
+          "channel": "fts",
+          "rank": 2
+        },
+        {
+          "siteId": "s-capcut",
+          "channel": "semantic",
+          "rank": 1
+        },
+        {
+          "siteId": "s-davinci",
+          "channel": "semantic",
+          "rank": 4
+        },
+        {
+          "siteId": "s-youtube",
+          "channel": "semantic",
+          "rank": 3
+        },
+        {
+          "siteId": "s-capcut",
+          "channel": "personal",
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "query": "效率工具",
+      "relevance": {
+        "s-notion": 3,
+        "s-obsidian": 3,
+        "s-todoist": 2,
+        "s-trello": 1
+      },
+      "candidates": [
+        {
+          "siteId": "s-notion",
+          "channel": "exact",
+          "rank": 1
+        },
+        {
+          "siteId": "s-obsidian",
+          "channel": "exact",
+          "rank": 2
+        },
+        {
+          "siteId": "s-todoist",
+          "channel": "fts",
+          "rank": 1
+        },
+        {
+          "siteId": "s-trello",
+          "channel": "fts",
+          "rank": 2
+        },
+        {
+          "siteId": "s-notion",
+          "channel": "personal",
+          "rank": 1
+        },
+        {
+          "siteId": "s-obsidian",
+          "channel": "personal",
+          "rank": 2
+        },
+        {
+          "siteId": "s-slack",
+          "channel": "semantic",
+          "rank": 1
+        },
+        {
+          "siteId": "s-obsidian",
+          "channel": "semantic",
+          "rank": 3
+        }
+      ]
+    },
+    {
+      "query": "数据分析",
+      "relevance": {
+        "s-tableau": 3,
+        "s-jupyter": 3,
+        "s-powerbi": 2,
+        "s-python": 2
+      },
+      "candidates": [
+        {
+          "siteId": "s-tableau",
+          "channel": "exact",
+          "rank": 1
+        },
+        {
+          "siteId": "s-powerbi",
+          "channel": "fts",
+          "rank": 1
+        },
+        {
+          "siteId": "s-jupyter",
+          "channel": "fts",
+          "rank": 2
+        },
+        {
+          "siteId": "s-python",
+          "channel": "semantic",
+          "rank": 1
+        },
+        {
+          "siteId": "s-jupyter",
+          "channel": "semantic",
+          "rank": 2
+        },
+        {
+          "siteId": "s-excel",
+          "channel": "semantic",
+          "rank": 3
+        },
+        {
+          "siteId": "s-tableau",
+          "channel": "personal",
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "query": "前端框架",
+      "relevance": {
+        "s-react": 3,
+        "s-vue": 3,
+        "s-angular": 2,
+        "s-svelte": 2,
+        "s-nextjs": 2
+      },
+      "candidates": [
+        {
+          "siteId": "s-angular",
+          "channel": "exact",
+          "rank": 1
+        },
+        {
+          "siteId": "s-angular",
+          "channel": "fts",
+          "rank": 1
+        },
+        {
+          "siteId": "s-vue",
+          "channel": "exact",
+          "rank": 2
+        },
+        {
+          "siteId": "s-react",
+          "channel": "fts",
+          "rank": 2
+        },
+        {
+          "siteId": "s-react",
+          "channel": "semantic",
+          "rank": 3
+        },
+        {
+          "siteId": "s-svelte",
+          "channel": "semantic",
+          "rank": 4
+        },
+        {
+          "siteId": "s-nextjs",
+          "channel": "fts",
+          "rank": 3
+        },
+        {
+          "siteId": "s-react",
+          "channel": "personal",
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "query": "图标库",
+      "relevance": {
+        "s-iconfont": 3,
+        "s-lucide": 3,
+        "s-fontawesome": 2,
+        "s-heroicons": 1
+      },
+      "candidates": [
+        {
+          "siteId": "s-iconfont",
+          "channel": "exact",
+          "rank": 1
+        },
+        {
+          "siteId": "s-lucide",
+          "channel": "exact",
+          "rank": 2
+        },
+        {
+          "siteId": "s-fontawesome",
+          "channel": "fts",
+          "rank": 1
+        },
+        {
+          "siteId": "s-heroicons",
+          "channel": "fts",
+          "rank": 2
+        },
+        {
+          "siteId": "s-iconfont",
+          "channel": "pinyin",
+          "rank": 1
+        },
+        {
+          "siteId": "s-flaticon",
+          "channel": "semantic",
+          "rank": 1
+        },
+        {
+          "siteId": "s-lucide",
+          "channel": "semantic",
+          "rank": 3
+        },
+        {
+          "siteId": "s-flaticon",
+          "channel": "personal",
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "query": "云服务",
+      "relevance": {
+        "s-aws": 3,
+        "s-vercel": 3,
+        "s-aliyun": 2,
+        "s-cloudflare": 2
+      },
+      "candidates": [
+        {
+          "siteId": "s-vercel",
+          "channel": "exact",
+          "rank": 1
+        },
+        {
+          "siteId": "s-aws",
+          "channel": "exact",
+          "rank": 2
+        },
+        {
+          "siteId": "s-aliyun",
+          "channel": "fts",
+          "rank": 1
+        },
+        {
+          "siteId": "s-cloudflare",
+          "channel": "fts",
+          "rank": 2
+        },
+        {
+          "siteId": "s-aws",
+          "channel": "semantic",
+          "rank": 1
+        },
+        {
+          "siteId": "s-vercel",
+          "channel": "semantic",
+          "rank": 3
+        },
+        {
+          "siteId": "s-digitalocean",
+          "channel": "semantic",
+          "rank": 2
+        },
+        {
+          "siteId": "s-vercel",
+          "channel": "personal",
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "query": "开源项目",
+      "relevance": {
+        "s-github": 3,
+        "s-gitee": 2,
+        "s-gitlab": 2,
+        "s-sourcegraph": 1
+      },
+      "candidates": [
+        {
+          "siteId": "s-github",
+          "channel": "exact",
+          "rank": 1
+        },
+        {
+          "siteId": "s-gitee",
+          "channel": "exact",
+          "rank": 2
+        },
+        {
+          "siteId": "s-gitlab",
+          "channel": "fts",
+          "rank": 1
+        },
+        {
+          "siteId": "s-sourcegraph",
+          "channel": "fts",
+          "rank": 2
+        },
+        {
+          "siteId": "s-github",
+          "channel": "semantic",
+          "rank": 2
+        },
+        {
+          "siteId": "s-gitee",
+          "channel": "semantic",
+          "rank": 3
+        },
+        {
+          "siteId": "s-stackoverflow",
+          "channel": "semantic",
+          "rank": 1
+        },
+        {
+          "siteId": "s-github",
+          "channel": "personal",
+          "rank": 1
+        }
+      ]
+    }
+  ]
+}

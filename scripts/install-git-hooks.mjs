@@ -15,30 +15,20 @@ if (!existsSync(gitHooksDir)) {
 }
 
 const preCommitPath = join(gitHooksDir, 'pre-commit')
-// 提交前门禁（升级建议：把 CI 里已有的检查尽可能左移）：
-//   1) 覆盖层对齐：**只校验本次提交涉及的文件**（--staged）。为什么不全仓库判：
-//      多会话并行时，别人正在编辑的文件的漂移会挡住你的提交（本仓库真实事故：
-//      并发会话在改 overlay，导致连续两次提交中止）。全仓库判定交给 CI 的
-//      check-web-overlay 作业；本地只对「你这次要提交的东西」把关。
-//   2) 扩展规范 + 上游 ref 一致性：秒级
-//   3) 类型门禁：@navhub/* 的 tsc --noEmit（前端走 CI 的 test-web，避免本地几十秒）
-//   4) 语法解析（--staged）+ 变更相关测试：选测依据是**暂存区**（`git diff --cached`），
-//      不是工作区改动集。多会话并行时，别人未提交的改动不再被算进本次提交。
-// 提交变慢时可临时跳过：NAVHUB_SKIP_PRECOMMIT=1 git commit ...（或 --no-verify，但请别滥用）
-const script = `#!/bin/sh
-# NavHub Pre-commit Hook
-# 自动校验覆盖层对齐（仅本次提交涉及的文件）、扩展规范、上游 ref、类型与变更相关测试
+const prePushPath = join(gitHooksDir, 'pre-push')
+const nodeLibPath = join(gitHooksDir, 'navhub-hook-node.sh')
 
-if [ "$NAVHUB_SKIP_PRECOMMIT" = "1" ]; then
-  echo "[pre-commit] NAVHUB_SKIP_PRECOMMIT=1，跳过全部检查"
-  exit 0
-fi
-
+// 两个钩子共用的 node 定位。为什么要共用一份：pre-push 是后加的，把同样的
+// PATH 补全逻辑抄第二遍，下次环境再变就要改两处（真实教训：Trae 宿主下 node
+// 会从 PATH 消失，当时的修法只写在 pre-commit 里）。
+const nodeLib = `#!/bin/sh
+# 由 scripts/install-git-hooks.mjs 生成（勿手改）：pre-commit / pre-push 共用的 node 定位。
+#
 # Node 定位：Trae 的 Agent 工具宿主把 PATH 固定成自己的内部目录，且 PowerShell 以
 # -NoProfile 启动——改注册表、重启 IDE 都不会传导过来，钩子里的 node 会莫名其妙消失。
-# 这里在缺 node 时按常见安装位置补一次 PATH（只影响本次提交），找不到就明确报错，
+# 这里在缺 node 时按常见安装位置补一次 PATH（只影响本次钩子），找不到就明确报错，
 # 不静默放行。
-find_node() {
+navhub_find_node() {
   command -v node >/dev/null 2>&1 && return 0
   if command -v cygpath >/dev/null 2>&1 && [ -n "$LOCALAPPDATA" ]; then
     _navhub_local=$(cygpath -u "$LOCALAPPDATA")
@@ -60,15 +50,75 @@ find_node() {
   return 1
 }
 
-if ! command -v node >/dev/null 2>&1; then
-  if find_node; then
-    echo "[pre-commit] node 不在 PATH，已临时使用 $(command -v node)" >&2
-  else
-    echo "[pre-commit] 未找到 node：请安装 Node.js，或把 node 所在目录加入 PATH" >&2
-    exit 1
+navhub_require_node() {
+  command -v node >/dev/null 2>&1 && return 0
+  if navhub_find_node; then
+    echo "[hook] node 不在 PATH，已临时使用 $(command -v node)" >&2
+    return 0
   fi
+  echo "[hook] 未找到 node：请安装 Node.js，或把 node 所在目录加入 PATH" >&2
+  return 1
+}
+`
+
+// 推送前门禁：只拦一类问题——会撞 GitHub 单文件 100 MiB 硬限制的大对象。
+// 为什么与 pre-commit 并存、而不是二选一：pre-commit 可被 --no-verify 或直接
+// commit-tree 绕过（本仓库多会话并行，两种都真实发生过）；而「被服务端拒绝」
+// 发生在 push 这一刻，推送前的历史还能在本地处理，推送后再改就是重写。
+const prePush = `#!/bin/sh
+# NavHub Pre-push Hook（生成源：scripts/install-git-hooks.mjs）
+#
+# 扫描「尚未存在于任何远程跟踪 ref 的对象」，超过 50 MiB 的 blob 直接拦下。
+# 已推送过的大文件不会重复报（它在远程 ref 的历史里，重写也救不回来）。
+# 临时跳过：NAVHUB_SKIP_PREPUSH=1 git push ...（不推荐 —— 被 GitHub 拒绝时
+# 唯一的解法是重写历史，那比现在花十秒处理文件贵得多）
+
+if [ "$NAVHUB_SKIP_PREPUSH" = "1" ]; then
+  echo "[pre-push] NAVHUB_SKIP_PREPUSH=1，跳过大文件守卫"
+  exit 0
 fi
 
+. "$(git rev-parse --git-path hooks)/navhub-hook-node.sh" || {
+  echo "[pre-push] 缺少 .git/hooks/navhub-hook-node.sh：请重跑 node scripts/install-git-hooks.mjs" >&2
+  exit 1
+}
+navhub_require_node || exit 1
+
+node scripts/check-large-files.mjs --unpushed || exit 1
+`
+
+// 提交前门禁（升级建议：把 CI 里已有的检查尽可能左移）：
+//   0) 大文件：超过 50 MiB 的暂存 blob 直接拦（GitHub 硬限制 100 MiB 的一半）。
+//      真实事故：2026-10-26 并行会话 add -A 带进 141.42 MiB 的 Playwright 安装包，
+//      三次推送被服务端拒绝，最终只能重写三个未推送提交。
+//   1) 覆盖层对齐：**只校验本次提交涉及的文件**（--staged）。为什么不全仓库判：
+//      多会话并行时，别人正在编辑的文件的漂移会挡住你的提交（本仓库真实事故：
+//      并发会话在改 overlay，导致连续两次提交中止）。全仓库判定交给 CI 的
+//      check-web-overlay 作业；本地只对「你这次要提交的东西」把关。
+//   2) 扩展规范 + 上游 ref 一致性：秒级
+//   3) 类型门禁：@navhub/* 的 tsc --noEmit（前端走 CI 的 test-web，避免本地几十秒）
+//   4) 语法解析（--staged）+ 变更相关测试：选测依据是**暂存区**（`git diff --cached`），
+//      不是工作区改动集。多会话并行时，别人未提交的改动不再被算进本次提交。
+// 提交变慢时可临时跳过：NAVHUB_SKIP_PRECOMMIT=1 git commit ...（或 --no-verify，但请别滥用）
+const script = `#!/bin/sh
+# NavHub Pre-commit Hook
+# 自动校验覆盖层对齐（仅本次提交涉及的文件）、扩展规范、上游 ref、类型与变更相关测试
+
+if [ "$NAVHUB_SKIP_PRECOMMIT" = "1" ]; then
+  echo "[pre-commit] NAVHUB_SKIP_PRECOMMIT=1，跳过全部检查"
+  exit 0
+fi
+
+# Node 定位逻辑与 pre-push 共用（生成到 navhub-hook-node.sh）：
+# 缺 node 时按常见安装位置补一次 PATH，找不到就明确报错，不静默放行。
+. "$(git rev-parse --git-path hooks)/navhub-hook-node.sh" || {
+  echo "[pre-commit] 缺少 .git/hooks/navhub-hook-node.sh：请重跑 node scripts/install-git-hooks.mjs" >&2
+  exit 1
+}
+navhub_require_node || exit 1
+
+# 大文件守卫放最前：最便宜，且它拦的是「一旦提交就需要重写历史」的那一类问题。
+node scripts/check-large-files.mjs --staged || exit 1
 node scripts/check-web-overlay.mjs --staged || exit 1
 node scripts/check-extensions.mjs || exit 1
 node scripts/check-upstream-ref.mjs || exit 1
@@ -456,10 +506,15 @@ const selector = [
 ].join('\n')
 writeFileSync(preCommitPath, script, { encoding: 'utf-8', mode: 0o755 })
 writeFileSync(selectorPath, selector, { encoding: 'utf-8' })
-try {
-  chmodSync(preCommitPath, 0o755)
-} catch {
-  // Windows 上可能不支持 chmod，忽略
+writeFileSync(prePushPath, prePush, { encoding: 'utf-8', mode: 0o755 })
+writeFileSync(nodeLibPath, nodeLib, { encoding: 'utf-8' })
+for (const path of [preCommitPath, prePushPath]) {
+  try {
+    chmodSync(path, 0o755)
+  } catch {
+    // Windows 上可能不支持 chmod，忽略
+  }
 }
 
 console.log('✅ Git pre-commit hook 安装成功 (.git/hooks/pre-commit)')
+console.log('✅ Git pre-push hook 安装成功 (.git/hooks/pre-push)')

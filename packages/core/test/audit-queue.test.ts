@@ -9,7 +9,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { drainAuditJob, openAuditQueue, tallyKind, type AuditJobResult } from "../src/audit-queue.ts";
+import { backoffDelayMs, drainAuditJob, openAuditQueue, tallyKind, type AuditJobResult } from "../src/audit-queue.ts";
 
 const dirs: string[] = [];
 
@@ -250,10 +250,40 @@ describe("取消与重试", () => {
     expect(retried?.state).toBe("pending");
     expect(retried?.progress.cursor).toBe(1);
     expect(retried?.error).toBeUndefined();
-    // attempts 已为 1，重试后再次 claim → 2
-    expect((await queue.claim())?.attempt).toBe(2);
+    // 重试进入退避窗口：此刻领取不到（到期后才能领），这是「不连续砸站点」的保证
+    expect(retried?.nextRunAt).toBeGreaterThan(Date.now());
+    expect(await queue.claim()).toBeNull();
 
     const exhausted = await queue.retry(job.id, 1);
     expect(exhausted).toBeNull();
+  });
+});
+
+describe("重试退避", () => {
+  it("退避区间为 1/5/15 分钟，且带 ±20% 抖动", () => {
+    expect(backoffDelayMs(1, () => 0.5)).toBe(60_000);
+    expect(backoffDelayMs(2, () => 0.5)).toBe(5 * 60_000);
+    expect(backoffDelayMs(3, () => 0.5)).toBe(15 * 60_000);
+    // 抖动边界：0 → 0.8x，1 → 1.2x
+    expect(backoffDelayMs(1, () => 0)).toBe(48_000);
+    expect(backoffDelayMs(1, () => 0.999)).toBeGreaterThan(71_000);
+    // 超过三档后沿用最后一档，不会无限增长
+    expect(backoffDelayMs(9, () => 0.5)).toBe(15 * 60_000);
+  });
+
+  it("重试后要等到退避到期才可领取", async () => {
+    let now = 1_000_000;
+    const file = await tempFile();
+    const queue = await openAuditQueue(file, { newId: seqIds(), now: () => now });
+    const job = await queue.enqueue({ slug: "p", urls: ["https://a.com"] });
+    await queue.fail(job.id, "boom");
+    const retried = await queue.retry(job.id, 3);
+    expect(retried?.nextRunAt).toBeGreaterThan(now);
+
+    // 还没到期：领取不到
+    expect(await queue.claim()).toBeNull();
+    // 到期后可以领取
+    now = (retried?.nextRunAt ?? now) + 1;
+    expect((await queue.claim())?.id).toBe(job.id);
   });
 });

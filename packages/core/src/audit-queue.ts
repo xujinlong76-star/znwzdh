@@ -56,6 +56,11 @@ export interface AuditJob {
   createdAt: number;
   updatedAt: number;
   attempt: number;
+  /**
+   * 最早可被领取的时间（毫秒）。失败重试按指数退避排到这里，
+   * 避免一个持续失败的站点被连续砸（既伤对方也烧自己的出口信誉）。
+   */
+  nextRunAt?: number;
   error?: string;
 }
 
@@ -123,6 +128,20 @@ export function tallyKind(kind: ProbeOutcomeKind): keyof Omit<AuditJobProgress, 
     default:
       return null;
   }
+}
+
+/**
+ * 重试退避：1m / 5m / 15m，带 ±20% 抖动。
+ *
+ * 为什么需要抖动：多个实例在同一秒失败后按同一间隔重试，会把重试流量对齐成尖峰。
+ * 抖动让它们错开（这也是 AWS 架构博客里反复强调的「jitter」）。
+ */
+export function backoffDelayMs(attempt: number, random: () => number = Math.random): number {
+  const base = [60_000, 5 * 60_000, 15 * 60_000];
+  const idx = Math.min(base.length - 1, Math.max(0, attempt - 1));
+  const delay = base[idx] ?? base[base.length - 1]!;
+  const jitter = 0.8 + random() * 0.4; // 0.8x ~ 1.2x
+  return Math.round(delay * jitter);
 }
 
 export async function openAuditQueue(
@@ -199,7 +218,10 @@ export async function openAuditQueue(
 
     async claim(staleMs = DEFAULT_STALE_MS) {
       await queue.recoverStale(staleMs);
-      const job = jobs.filter((j) => j.state === "pending").sort((a, b) => a.createdAt - b.createdAt)[0];
+      const now = opts.now();
+      const job = jobs
+        .filter((j) => j.state === "pending" && (j.nextRunAt ?? 0) <= now)
+        .sort((a, b) => a.createdAt - b.createdAt)[0];
       if (!job) return null;
       job.state = "running";
       job.attempt += 1;
@@ -252,6 +274,8 @@ export async function openAuditQueue(
       job.state = "pending";
       job.error = undefined;
       job.updatedAt = opts.now();
+      // 指数退避：第 1/2/3 次重试分别等 1 / 5 / 15 分钟（±20% 抖动，防雪崩同步）
+      job.nextRunAt = opts.now() + backoffDelayMs(job.attempt);
       await persist();
       return job;
     },

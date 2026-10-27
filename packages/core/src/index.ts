@@ -51,3 +51,4 @@ export * from "./query-intent.ts";
 export * from "./plugin-manifest.ts";
 export * from "./bookmark-exporter.ts";
 export * from "./canonical-json.ts";
+export * from "./rest-responses.ts";

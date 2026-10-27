@@ -6,21 +6,25 @@
  * method / path / scope（config.scope）在注册时已确定，onRoute 钩子
  * 能在注册瞬间拿到——文档与真实路由同源。
  *
- * 覆盖不了的部分（响应形状）按最小约定给出：
+ * 覆盖不了的部分按最小约定给出：
  *   - path 参数从 `:name` 提取
  *   - scope → security（public 无锁；read/write/admin → Bearer）
  *   - 请求体 → **从 @navhub/core 的 zod 契约生成**（见 REST_SCHEMA_BINDINGS）
+ *   - 响应体 → **同源契约生成 $ref**（见 RESPONSE_SCHEMA_BINDINGS）
  *
  * 请求体为什么不再手写：MCP 工具与 REST 端点本来就是同一批能力，
  * 两边各写一份字段清单必然漂移（改了 MCP 忘改 REST，或反过来）。
  * 现在 zod 契约只在 packages/core/src/mcp-schemas.ts 定义一次，
  * MCP 的 inputSchema 与本文件的 requestBody / query 参数都从它派生。
+ * 响应体同理收敛到 packages/core/src/rest-responses.ts：文档与端到端
+ * 契约测试共用同一份 schema，文档写错和实现跑偏会同时被抓住。
  * 未绑定契约的端点仍然退回「通用 object」——宁可不写，也不编造字段。
  */
 
 import type { RouteScope } from "./auth.ts";
 import {
   MCP_TOOL_DEFS,
+  RESPONSE_SCHEMA_BINDINGS,
   REST_SCHEMA_BINDINGS,
   SiteCreateBody,
   SiteUpdateBody,
@@ -125,6 +129,11 @@ function buildComponentSchemas(): {
     }
   }
 
+  // 响应契约：显式组件名，多个端点可指向同一组件（GET/POST 共用处理器时必须同源）
+  for (const item of Object.values(RESPONSE_SCHEMA_BINDINGS)) {
+    schemas[item.name] = zodSchemaToJsonSchema(item.schema);
+  }
+
   return { schemas, refOf };
 }
 
@@ -153,6 +162,11 @@ export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
     const key = r.method.toUpperCase() + " " + template;
 
     const security = r.scope === "public" ? [] : [{ bearerAuth: [] }];
+    // 响应契约：有绑定就挂 $ref，没有则保持通用 object（不编造形状）
+    const responseBinding = RESPONSE_SCHEMA_BINDINGS[key];
+    const okSchema = responseBinding
+      ? { $ref: "#/components/schemas/" + responseBinding.name }
+      : { type: "object" };
     const operation: Record<string, unknown> = {
       summary: DESCRIPTIONS[key] ?? inferDescription(r.method.toUpperCase(), r.url),
       description: DESCRIPTIONS[key] ?? inferDescription(r.method.toUpperCase(), r.url),
@@ -160,7 +174,7 @@ export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
       operationId: (r.method + "_" + template.replace(/[^\w]+/g, "_")).toLowerCase(),
       security,
       responses: {
-        "200": { description: "成功", content: { "application/json": { schema: { type: "object" } } } },
+        "200": { description: "成功", content: { "application/json": { schema: okSchema } } },
       },
     };
     const pathParams = params.map((name) => ({

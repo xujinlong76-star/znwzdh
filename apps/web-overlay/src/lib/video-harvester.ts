@@ -1,4 +1,4 @@
-import { getFileContent, commitFile } from '@/lib/github'
+import { getFileContent, commitFile, readStorageFresh, getStorageVersion } from '@/lib/github'
 import type {
   NavigationData,
   NavigationItem,
@@ -8,6 +8,10 @@ import type {
   VideoReplacementRecord,
   VideoStats
 } from '@/types/navigation'
+
+import { calculateQualityScore, calculateFreshnessScore, parseDurationToSeconds } from './video-scoring'
+// 保持既有 import 路径可用（众多组件按 '@/lib/video-harvester' 取这两个函数）
+export { calculateQualityScore, calculateFreshnessScore, parseDurationToSeconds } from './video-scoring'
 
 const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
@@ -178,93 +182,20 @@ export async function resolveVideoUrl(rawUrl: string): Promise<ResolvedVideoInfo
   throw new Error('未能识别该视频平台的 URL（目前支持 Bilibili 与 YouTube）')
 }
 
-/**
- * 综合质量分计算模型 (0 - 100)
- */
-export function calculateQualityScore(
-  stats?: VideoStats,
-  durationSec?: number,
-  pubdateUnix?: number
-): number {
-  if (!stats) return 70
-
-  const views = stats.views || 0
-  const likes = stats.likes || 0
-  const coins = stats.coins || 0
-  const favorites = stats.favorites || 0
-
-  // 1. 播放量级对数评分 (0 - 30)
-  // 1万播放约18分，10万播放约24分，100万播放约30分
-  const viewsScore = Math.min(30, Math.log10(Math.max(10, views)) * 5)
-
-  // 2. 互动转化率与干货比 (0 - 40)
-  // 技术教程最重要的指标是「收藏/播放比」与「投币/点赞比」
-  const favRate = views > 0 ? favorites / views : 0
-  const likeRate = views > 0 ? likes / views : 0
-  const coinToLikeRate = likes > 0 ? coins / likes : 0
-
-  // 收藏率达到 5% 为高质教程满分(20)，投币点赞比达到 30% 满分(20)
-  const favScore = Math.min(20, (favRate / 0.05) * 20)
-  const coinScore = Math.min(20, (coinToLikeRate / 0.3) * 20)
-
-  // 3. 时长契合度 (0 - 20)
-  // 5分钟 - 45分钟为黄金深度教程区间；短于2分钟扣分
-  let durationScore = 15
-  if (durationSec) {
-    if (durationSec < 120) durationScore = 5
-    else if (durationSec >= 300 && durationSec <= 2700) durationScore = 20
-    else if (durationSec > 2700 && durationSec <= 7200) durationScore = 16
-    else durationScore = 12
-  }
-
-  // 4. 基础底分 (10)
-  const baseScore = 10
-
-  const total = Math.round(viewsScore + favScore + coinScore + durationScore + baseScore)
-  return Math.max(20, Math.min(99, total))
-}
 
 /**
- * 计算视频当前的保鲜评分 (0 - 100)
- */
-export function calculateFreshnessScore(
-  publishedAt?: string | number,
-  qualityScore: number = 75,
-  halfLifeDays: number = 90,
-  title?: string
-): number {
-  if (!publishedAt) return Math.round(qualityScore * 0.8)
-
-  const pubTime = typeof publishedAt === 'number'
-    ? (publishedAt < 1e11 ? publishedAt * 1000 : publishedAt)
-    : new Date(publishedAt).getTime()
-
-  if (isNaN(pubTime)) return qualityScore
-
-  const now = Date.now()
-  const ageDays = Math.max(0, (now - pubTime) / (1000 * 3600 * 24))
-
-  // 半衰期指数衰减
-  const decayFactor = Math.pow(0.5, ageDays / Math.max(15, halfLifeDays))
-
-  // 语义年份老化检查：如果标题带有旧年份（如 2021, 2022, 2023），给予额外折旧惩罚
-  let yearPenalty = 1.0
-  if (title) {
-    const currentYear = new Date().getFullYear()
-    for (let y = 2018; y < currentYear - 1; y++) {
-      if (title.includes(String(y))) {
-        yearPenalty = 0.8
-        break
-      }
-    }
-  }
-
-  const effective = Math.round(qualityScore * decayFactor * yearPenalty)
-  return Math.max(5, Math.min(100, effective))
-}
-
-/**
- * 模拟并调用多源公开视频采集通道（根据主题关键词搜索高质量稿件）
+ * 调用公开视频搜索通道（按主题关键词检索高质量稿件）。
+ *
+ * 相对历史实现修了三处：
+ *   1. **串行 → 有界并发**：原来 `for (const kw of keywords)` 逐个 await，每词 6s 超时，
+ *      5 个关键词最坏 30s+，叠加分类循环必然撞上函数超时；现在并发 3 + 25s 总预算。
+ *   2. **超额采集**：原来的 `if (results.length >= limitPerKeyword * keywords.length) break`
+ *      只跳出内层循环，外层继续，实际条数会超过上限。改为每关键词独立计数。
+ *   3. **失败不可见**：原来 `catch { console.warn }` 后返回空数组，任务仍报成功；
+ *      现在把失败原因写进 `failures`，报告能区分「没采到」与「接口被风控」。
+ *
+ * 注：B 站 `wbi/search/type` 需要 `w_rid`/`wts` 签名，缺失时接口返回 -352/-412。
+ * 这类响应现在会被记为失败原因，而不是伪装成「没有结果」。
  */
 export async function harvestVideosForTopic(
   keywords: string[],
@@ -273,117 +204,152 @@ export async function harvestVideosForTopic(
     minDurationSec?: number
     minQualityScore?: number
     limitPerKeyword?: number
+    /** 本次采集的总时间预算（毫秒） */
+    totalBudgetMs?: number
+    /** 同时在飞的请求数上限 */
+    concurrency?: number
+    /** 出参：失败/跳过的关键词及原因 */
+    failures?: Array<{ keyword: string; reason: string }>
   } = {}
 ): Promise<NavigationSubItem[]> {
   const {
     platforms = ['bilibili'],
     minDurationSec = 180,
     minQualityScore = 60,
-    limitPerKeyword = 3
+    limitPerKeyword = 3,
+    totalBudgetMs = 25_000,
+    concurrency = 3,
+    failures,
   } = options
 
   const results: NavigationSubItem[] = []
   const seenIds = new Set<string>()
+  const pending = keywords.map(k => k.trim()).filter(Boolean)
+  const deadline = Date.now() + totalBudgetMs
 
-  for (const kw of keywords) {
-    if (!kw.trim()) continue
+  const harvestOne = async (kw: string): Promise<void> => {
+    if (!platforms.includes('bilibili')) return
+    if (Date.now() > deadline) {
+      failures?.push({ keyword: kw, reason: '超出本次采集时间预算，未执行' })
+      return
+    }
 
-    if (platforms.includes('bilibili')) {
-      try {
-        // 请求 B 站综合排序搜索接口
-        const searchUrl = `https://api.bilibili.com/x/web-interface/wbi/search/type?search_type=video&keyword=${encodeURIComponent(kw.trim())}&order=totalrank&duration=0`
-        const res = await fetch(searchUrl, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Referer': 'https://www.bilibili.com'
-          },
-          signal: AbortSignal.timeout(6000)
-        })
+    try {
+      // 请求 B 站综合排序搜索接口
+      const searchUrl = `https://api.bilibili.com/x/web-interface/wbi/search/type?search_type=video&keyword=${encodeURIComponent(kw)}&order=totalrank&duration=0`
+      const res = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://www.bilibili.com'
+        },
+        signal: AbortSignal.timeout(6000)
+      })
 
-        if (res.ok) {
-          const json = await res.json()
-          const items = json?.data?.result || []
-
-          for (const item of items.slice(0, limitPerKeyword * 2)) {
-            const bvid = item.bvid
-            if (!bvid || seenIds.has(bvid)) continue
-
-            // 过滤时长
-            const durationSec = parseDurationToSeconds(item.duration)
-            if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
-
-            // 过滤标题 html 标签
-            const cleanTitle = (item.title || '').replace(/<[^>]+>/g, '').trim()
-            const cleanDesc = (item.description || '').replace(/<[^>]+>/g, '').trim()
-
-            const stats: VideoStats = {
-              views: item.play || 0,
-              likes: item.like || 0,
-              danmaku: item.video_review || 0,
-              favorites: item.favorites || 0
-            }
-
-            const qualityScore = calculateQualityScore(stats, durationSec, item.pubdate)
-            if (qualityScore < minQualityScore) continue
-
-            const pubDate = item.pubdate ? new Date(item.pubdate * 1000).toISOString() : new Date().toISOString()
-            const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
-
-            let cover = item.pic || ''
-            if (cover.startsWith('//')) cover = `https:${cover}`
-            if (cover.startsWith('http://')) cover = cover.replace('http://', 'https://')
-
-            seenIds.add(bvid)
-            results.push({
-              id: `harvest_${bvid}_${Date.now()}`,
-              title: cleanTitle,
-              href: `https://www.bilibili.com/video/${bvid}`,
-              description: cleanDesc,
-              icon: cover,
-              enabled: true,
-              videoConfig: {
-                type: 'bilibili',
-                bvid,
-                aid: item.aid ? String(item.aid) : undefined,
-                author: item.author || '',
-                durationSec,
-                publishedAt: pubDate,
-                harvestedAt: Date.now(),
-                lastVerifiedAt: Date.now(),
-                qualityScore,
-                freshnessScore,
-                sourceType: 'auto_trend',
-                trendKeyword: kw,
-                pinned: false,
-                healthStatus: 'healthy',
-                stats
-              }
-            })
-
-            if (results.length >= limitPerKeyword * keywords.length) break
-          }
-        }
-      } catch (err) {
-        console.warn(`[video-harvester] Search failed for keyword "${kw}":`, err)
+      if (!res.ok) {
+        failures?.push({ keyword: kw, reason: `B 站搜索返回 HTTP ${res.status}` })
+        return
       }
+
+      const json = await res.json()
+      // code !== 0 是风控/签名问题，不是「没有结果」
+      if (json?.code !== 0) {
+        failures?.push({
+          keyword: kw,
+          reason: `B 站接口 code=${json?.code}${json?.message ? ' ' + json.message : ''}（多为 wbi 签名缺失或被风控）`
+        })
+        return
+      }
+
+      const items = json?.data?.result || []
+      let taken = 0
+
+      for (const item of items) {
+        if (taken >= limitPerKeyword) break
+
+        const bvid = item.bvid
+        if (!bvid || seenIds.has(bvid)) continue
+
+        // 过滤时长
+        const durationSec = parseDurationToSeconds(item.duration)
+        if (minDurationSec && durationSec > 0 && durationSec < minDurationSec) continue
+
+        // 过滤标题 html 标签
+        const cleanTitle = (item.title || '').replace(/<[^>]+>/g, '').trim()
+        const cleanDesc = (item.description || '').replace(/<[^>]+>/g, '').trim()
+
+        const stats: VideoStats = {
+          views: item.play || 0,
+          likes: item.like || 0,
+          danmaku: item.video_review || 0,
+          favorites: item.favorites || 0
+        }
+
+        const qualityScore = calculateQualityScore(stats, durationSec, item.pubdate)
+        if (qualityScore < minQualityScore) continue
+
+        // 没有 pubdate 就**不写** publishedAt：原来兜底成 now 会把老视频标成今天发布
+        const pubDate = item.pubdate ? new Date(item.pubdate * 1000).toISOString() : undefined
+        const freshnessScore = calculateFreshnessScore(pubDate, qualityScore, 90, cleanTitle)
+
+        let cover = item.pic || ''
+        if (cover.startsWith('//')) cover = `https:${cover}`
+        if (cover.startsWith('http://')) cover = cover.replace('http://', 'https://')
+
+        seenIds.add(bvid)
+        taken++
+        results.push({
+          id: `harvest_${bvid}_${Date.now()}`,
+          title: cleanTitle,
+          href: `https://www.bilibili.com/video/${bvid}`,
+          description: cleanDesc,
+          icon: cover,
+          enabled: true,
+          videoConfig: {
+            type: 'bilibili',
+            bvid,
+            aid: item.aid ? String(item.aid) : undefined,
+            author: item.author || '',
+            durationSec,
+            ...(pubDate ? { publishedAt: pubDate } : {}),
+            harvestedAt: Date.now(),
+            lastVerifiedAt: Date.now(),
+            qualityScore,
+            freshnessScore,
+            sourceType: 'auto_trend',
+            trendKeyword: kw,
+            pinned: false,
+            healthStatus: 'healthy',
+            stats
+          }
+        })
+      }
+
+      if (taken === 0) {
+        failures?.push({ keyword: kw, reason: '接口有响应，但没有满足时长/质量阈值的稿件' })
+      }
+    } catch (err) {
+      failures?.push({
+        keyword: kw,
+        reason: err instanceof Error ? err.message : '请求异常'
+      })
     }
   }
+
+  // js 单线程事件循环下，`pending.shift()` 与 `seenIds` 的检查-写入之间没有 await，
+  // 因此不需要额外加锁。
+  const workerCount = Math.max(1, Math.min(concurrency, pending.length))
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (pending.length > 0) {
+      const kw = pending.shift()
+      if (!kw) break
+      await harvestOne(kw)
+    }
+  })
+  await Promise.all(workers)
 
   return results
 }
 
-function parseDurationToSeconds(durationStr?: string): number {
-  if (!durationStr) return 0
-  if (typeof durationStr === 'number') return durationStr
-  const parts = durationStr.split(':').map(Number)
-  if (parts.length === 2 && !isNaN(parts[0]!) && !isNaN(parts[1]!)) {
-    return parts[0]! * 60 + parts[1]!
-  }
-  if (parts.length === 3 && !isNaN(parts[0]!) && !isNaN(parts[1]!) && !isNaN(parts[2]!)) {
-    return parts[0]! * 3600 + parts[1]! * 60 + parts[2]!
-  }
-  return 0
-}
 
 export interface VideoHarvestReport {
   timestamp: number
@@ -393,6 +359,13 @@ export interface VideoHarvestReport {
   totalReplacedCount: number
   additions: Array<{ categoryTitle: string; item: NavigationSubItem }>
   replacements: VideoReplacementRecord[]
+  /**
+   * 本次采集失败/跳过的关键词。
+   *
+   * 为什么需要：历史实现把「接口被风控」和「真的没有好稿件」都吞成空数组，
+   * 报告只显示「+0」，运营无法判断是内容饱和还是采集坏了。
+   */
+  degradedKeywords: Array<{ keyword: string; reason: string }>
   categorySummaries: Array<{
     categoryId: string
     categoryTitle: string
@@ -408,15 +381,64 @@ export interface VideoHarvestReport {
 /**
  * 核心：执行自动化热点采集与过时内容平滑轮换
  */
-export async function runVideoHarvestAndRotation(options: {
+export interface HarvestRunOptions {
   dryRun?: boolean
   categoryId?: string
   forceKeywords?: string[]
   accessToken?: string
-} = {}): Promise<VideoHarvestReport> {
+}
+
+/** 冲突重试上限：每次重试都会重新读库、重新计算，代价是又一轮搜索请求。 */
+const HARVEST_CONFLICT_RETRIES = 3
+
+function isVersionConflict(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'status' in err &&
+    (err as { status?: number }).status === 409
+  )
+}
+
+/**
+ * 执行采集与轮换；遇版本冲突时**整体重放**（重读 → 重算 → 重写）。
+ *
+ * 为什么必须整体重放而不是「重试写入」：写的是整包快照，重试同一个快照只会
+ * 再次冲突，或把对方刚写入的条目抹掉。重读后重新计算才能把两边的变更合并。
+ */
+export async function runVideoHarvestAndRotation(
+  options: HarvestRunOptions = {},
+  attempt: number = 1,
+): Promise<VideoHarvestReport> {
+  try {
+    return await runVideoHarvestOnce(options)
+  } catch (err) {
+    if (isVersionConflict(err) && attempt < HARVEST_CONFLICT_RETRIES) {
+      console.warn(
+        `[video-harvester] 写入版本冲突，第 ${attempt} 次重放（重新读取后再合并）`
+      )
+      await new Promise((resolve) => setTimeout(resolve, 300 * attempt))
+      return runVideoHarvestAndRotation(options, attempt + 1)
+    }
+    throw err
+  }
+}
+
+async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<VideoHarvestReport> {
   const { dryRun = false, categoryId, forceKeywords, accessToken } = options
 
-  const data = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
+  /**
+   * 必须用「绕过一切缓存」的读链路拿基准数据。
+   *
+   * `getFileContent` 有 2.5s 进程内缓存 + Next Data Cache（默认 60s）。
+   * 若版本号来自实时查询、而数据来自 60s 前的缓存，两者会错配：
+   * 写回时把这一分钟内的他人变更整包覆盖掉，且版本校验还会通过（版本号是新的）。
+   */
+  const [freshData, version] = await Promise.all([
+    readStorageFresh<NavigationData>(VIDEOS_FILE_PATH),
+    getStorageVersion(VIDEOS_FILE_PATH),
+  ])
+  const data = (freshData ?? (await getFileContent(VIDEOS_FILE_PATH))) as NavigationData
   const categories = data.navigationItems || []
   const replacementHistory: VideoReplacementRecord[] = data.replacementHistory || []
 
@@ -438,6 +460,7 @@ export async function runVideoHarvestAndRotation(options: {
   const additions: Array<{ categoryTitle: string; item: NavigationSubItem }> = []
   const newReplacements: VideoReplacementRecord[] = []
   const categorySummaries: VideoHarvestReport['categorySummaries'] = []
+  const degradedKeywords: Array<{ keyword: string; reason: string }> = []
 
   let totalHarvested = 0
 
@@ -502,7 +525,9 @@ export async function runVideoHarvestAndRotation(options: {
       platforms: policy.platforms || ['bilibili'],
       minDurationSec: policy.minDurationSec || 180,
       minQualityScore: policy.minQualityScore || 60,
-      limitPerKeyword: 2
+      limitPerKeyword: 2,
+      // 失败原因汇总进报告，不再只打 console.warn
+      failures: degradedKeywords,
     })
 
     totalHarvested += harvestedCandidates.length
@@ -586,7 +611,10 @@ export async function runVideoHarvestAndRotation(options: {
       VIDEOS_FILE_PATH,
       JSON.stringify(data, null, 2),
       `Auto harvest & rotation: +${additions.length} new, ~${newReplacements.length} replaced`,
-      accessToken
+      accessToken,
+      3,
+      // 版本号来自实时查询；null 表示该后端不支持版本校验（github/sqlite）
+      version ?? undefined
     )
   }
 
@@ -598,7 +626,8 @@ export async function runVideoHarvestAndRotation(options: {
     totalReplacedCount: newReplacements.length,
     additions,
     replacements: newReplacements,
-    categorySummaries
+    categorySummaries,
+    degradedKeywords
   }
 }
 
@@ -609,7 +638,13 @@ export async function rollbackReplacement(
   recordId: string,
   accessToken?: string
 ): Promise<{ success: boolean; message: string }> {
-  const data = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
+  // 回滚同样是整包覆盖写：基准必须实时读，并带版本号，否则会把
+  // 「打开历史弹窗之后」发生的采集结果整批抹掉。
+  const [freshRollback, rollbackVersion] = await Promise.all([
+    readStorageFresh<NavigationData>(VIDEOS_FILE_PATH),
+    getStorageVersion(VIDEOS_FILE_PATH),
+  ])
+  const data = (freshRollback ?? (await getFileContent(VIDEOS_FILE_PATH))) as NavigationData
   const record = data.replacementHistory?.find(r => r.id === recordId)
 
   if (!record) {
@@ -651,7 +686,9 @@ export async function rollbackReplacement(
     VIDEOS_FILE_PATH,
     JSON.stringify(data, null, 2),
     `Rollback replacement: restored "${restoredItem.title}"`,
-    accessToken
+    accessToken,
+    3,
+    rollbackVersion ?? undefined
   )
 
   return { success: true, message: `已成功还原视频 "${restoredItem.title}" 并已自动设为防替换锁定` }

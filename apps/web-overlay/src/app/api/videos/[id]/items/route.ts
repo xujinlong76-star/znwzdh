@@ -57,7 +57,7 @@ export async function POST(
 
         await commitFile(
             VIDEOS_FILE_PATH,
-            JSON.stringify({ navigationItems: updatedItems }, null, 2),
+            JSON.stringify({ ...data, navigationItems: updatedItems }, null, 2),
             'Add video item',
             authCheck.githubToken || undefined
         )
@@ -105,7 +105,7 @@ export async function PUT(
 
         await commitFile(
             VIDEOS_FILE_PATH,
-            JSON.stringify({ navigationItems: updatedNavigations }, null, 2),
+            JSON.stringify({ ...data, navigationItems: updatedNavigations }, null, 2),
             'Update video item',
             authCheck.githubToken || undefined
         )
@@ -153,7 +153,7 @@ export async function DELETE(
 
         await commitFile(
             VIDEOS_FILE_PATH,
-            JSON.stringify({ navigationItems: updatedNavigations }, null, 2),
+            JSON.stringify({ ...data, navigationItems: updatedNavigations }, null, 2),
             'Delete video item',
             authCheck.githubToken || undefined
         )

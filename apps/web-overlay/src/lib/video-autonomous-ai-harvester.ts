@@ -15,6 +15,7 @@ import type {
 import type { VideoQuizQuestion } from '@/lib/video-quiz-generator'
 import { CURATED_TRENDING_TOPICS, type TrendingTechTopic } from '@/lib/video-trending-harvester'
 import { calculateFreshnessScore } from '@/lib/video-scoring'
+import { videoExternalKey } from '@/lib/video-identity'
 
 export interface AIEvaluationResult {
   aiQualityScore: number // 0 - 100
@@ -299,8 +300,13 @@ export function generateAISanitizedMetadata(
  * and automatic ingestion into the navigation catalog.
  */
 export class AutonomousAIHarvesterController {
-  private isRunning: boolean = false
-  private timer: any = null
+  /**
+   * 只保留 logs。
+   *
+   * 原来还有 `isRunning: boolean` 与 `timer: any` 两个字段：前者从未被任何代码读写，
+   * 后者从未被赋过值（也没有 setInterval 调用）—— 属于「看起来有并发保护，实际没有」的
+   * 装饰性代码，会误导后续维护者以为这套采集有互斥。
+   */
   private logs: AutonomousHarvestLogEntry[] = []
 
   getLogs(): AutonomousHarvestLogEntry[] {
@@ -329,10 +335,12 @@ export class AutonomousAIHarvesterController {
     const startedAt = Date.now()
     this.addLog('info', `[Autonomous Cycle: ${cycleId}] 启动全流程自主采集流水线...`)
 
+    // 复合键 `platform:externalId`，见 lib/video-identity.ts
     const existingIds = new Set<string>()
     currentData.navigationItems.forEach(cat => {
-      cat.items.forEach(it => {
-        if (it.videoConfig?.bvid) existingIds.add(it.videoConfig.bvid)
+      ;(cat.items || []).forEach(it => {
+        const key = videoExternalKey(it.videoConfig)
+        if (key) existingIds.add(key)
       })
     })
 
@@ -373,7 +381,8 @@ export class AutonomousAIHarvesterController {
       this.addLog('approved', `AI 审核通过: "${topic.recommendedTitle}" - 综合教学价值评分: ${evalResult.aiQualityScore}分 (${evalResult.pedagogicalValue})`)
 
       // Check duplicate
-      if (existingIds.has(topic.bvidFallback)) {
+      const topicKey = `bilibili:${topic.bvidFallback}`
+      if (existingIds.has(topicKey)) {
         this.addLog('info', `跳过已存在视频: ${topic.bvidFallback}`)
         continue
       }
@@ -413,7 +422,8 @@ export class AutonomousAIHarvesterController {
           title: meta.cleanTitle,
           href: `https://www.bilibili.com/video/${topic.bvidFallback}`,
           description: meta.overview,
-          icon: 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&auto=format&fit=crop&q=80',
+          // 不写封面：此前这里对所有 AI 采集内容都用同一张 Unsplash 图，
+          // 等于把图库内容伪装成「有配图」。留空后前端走平台占位。
           enabled: true,
           videoConfig: {
             type: 'bilibili',
@@ -444,7 +454,7 @@ export class AutonomousAIHarvesterController {
         }
 
         targetCat.items.push(subItem)
-        existingIds.add(topic.bvidFallback)
+        existingIds.add(topicKey)
       }
 
       categoriesEnriched.add(targetCat.title)
@@ -479,4 +489,18 @@ export class AutonomousAIHarvesterController {
       report,
     }
   }
+}
+
+/**
+ * 进程内共享的控制器。
+ *
+ * 每次 POST 都 `new AutonomousAIHarvesterController()` 会让 `logs` 每个周期从零开始，
+ * 管理端的「AI 思考过程」因此永远只显示当前这一轮。改为模块级单例后至少在同一进程内
+ * 能连续观察；多副本部署下仍然各看各的（真正的共享需要落库，属 C1/C6 的范围）。
+ */
+let sharedController: AutonomousAIHarvesterController | null = null
+
+export function getAutonomousHarvesterController(): AutonomousAIHarvesterController {
+  if (!sharedController) sharedController = new AutonomousAIHarvesterController()
+  return sharedController
 }

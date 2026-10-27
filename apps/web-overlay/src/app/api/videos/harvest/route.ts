@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { runVideoHarvestAndRotation } from '@/lib/video-harvester'
 import { getFileContent } from '@/lib/github'
+import { videoMetricsSnapshot } from '@/lib/video-harvest-metrics'
 import type { NavigationData } from '@/types/navigation'
 
 export const runtime = 'nodejs'
@@ -10,6 +11,12 @@ const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
 export async function GET() {
   try {
+    // 概览含各分类的采集策略（keywords / maxItems）与运行期计数，属运营数据
+    const authCheck = await verifyAdminSession()
+    if (!authCheck.ok) {
+      return new Response(authCheck.error, { status: authCheck.status })
+    }
+
     const data = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
     const categories = data.navigationItems || []
 
@@ -53,7 +60,15 @@ export async function GET() {
       averageFreshness: scoreCount > 0 ? Math.round(totalScore / scoreCount) : 100,
       outdatedCount,
       historyCount: (data.replacementHistory || []).length,
-      categories: categoryStats
+      categories: categoryStats,
+      /**
+       * 运行期计数（进程内累计）。
+       *
+       * 上面那些是「库的静态快照」，回答不了「今天采集跑了几次、失败几次、
+       * 有多少关键词被风控挡了、探活里多少条不可判定」。这些量只在这里能看到。
+       * 多副本部署时各实例独立计数（不做跨实例汇总）。
+       */
+      runtime: videoMetricsSnapshot(),
     })
   } catch (error) {
     console.error('Failed to get harvest overview:', error)

@@ -232,20 +232,36 @@ export class MultiSourceConnector {
       evalResult.conceptTags
     )
 
+    /**
+     * 平台由来源决定，不再一律当 B 站。
+     *
+     * 原实现把 `type` 写死成 `'bilibili'`，并且对非 BV 号塞了一个硬编码的
+     * `bvid: 'BV1whDefault'` —— 于是所有 webhook 来源在去重时都被判成同一条视频，
+     * 且点开永远指向一个不存在的稿件。没有真实 BV 号就不要伪造。
+     */
+    const platform: 'bilibili' | 'youtube' | 'custom' = id.startsWith('BV')
+      ? 'bilibili'
+      : payload.source === 'youtube'
+        ? 'youtube'
+        : 'custom'
+
     const subItem: NavigationSubItem = {
-      id: `wh_${id}_${Date.now()}`,
+      id: `wh_${platform}_${id}_${Date.now()}`,
       title: meta.cleanTitle,
       href: url,
       description: meta.overview,
-      icon: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=80',
+      // 不写封面：webhook 载荷里没有封面字段，此前统一塞同一张 Unsplash 图，
+      // 等于给所有外部内容伪造配图。留空后前端走平台占位。
       enabled: true,
       videoConfig: {
-        type: 'bilibili',
-        bvid: id.startsWith('BV') ? id : 'BV1whDefault',
+        type: platform,
+        ...(platform === 'bilibili' ? { bvid: id } : {}),
+        ...(platform !== 'bilibili' ? { videoId: id } : {}),
         p: 1,
         author: author || 'Webhook 创作者',
         durationSec: durationSec || 1200,
-        publishedAt: new Date().toISOString(),
+        // 发布时间未知就不写：原来一律写 now，让老内容也显示成今天发布
+        ...(payload.timestamp ? { publishedAt: new Date(payload.timestamp).toISOString() } : {}),
         harvestedAt: Date.now(),
         qualityScore: evalResult.aiQualityScore,
         freshnessScore: 100,

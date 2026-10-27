@@ -1,4 +1,7 @@
 import { getFileContent, commitFile, readStorageFresh, getStorageVersion } from '@/lib/github'
+import { videoExternalKey } from '@/lib/video-identity'
+import { recordHarvestRun } from '@/lib/video-harvest-metrics'
+import { BILI_HEADERS, getWbiMixinKey, signWbiQuery } from '@/lib/bilibili-wbi'
 import type {
   NavigationData,
   NavigationItem,
@@ -227,6 +230,20 @@ export async function harvestVideosForTopic(
   const pending = keywords.map(k => k.trim()).filter(Boolean)
   const deadline = Date.now() + totalBudgetMs
 
+  /**
+   * wbi 签名密钥只取一次（并发关键词共用；`getWbiMixinKey` 内部有缓存 + 并发去重）。
+   *
+   * 拿不到时不要静默降级 —— 无签名请求会被风控挡下并返回空结果，那看起来和
+   * 「没有好稿件」一模一样。这里显式记一条 degraded。
+   */
+  const mixinKey = platforms.includes('bilibili') ? await getWbiMixinKey() : null
+  if (platforms.includes('bilibili') && !mixinKey) {
+    failures?.push({
+      keyword: '(全局)',
+      reason: '未能取得 B 站 wbi 签名密钥（/x/web-interface/nav 不可达或结构变化），本次搜索降级为无签名请求，多半会被风控挡下',
+    })
+  }
+
   const harvestOne = async (kw: string): Promise<void> => {
     if (!platforms.includes('bilibili')) return
     if (Date.now() > deadline) {
@@ -235,13 +252,22 @@ export async function harvestVideosForTopic(
     }
 
     try {
-      // 请求 B 站综合排序搜索接口
-      const searchUrl = `https://api.bilibili.com/x/web-interface/wbi/search/type?search_type=video&keyword=${encodeURIComponent(kw)}&order=totalrank&duration=0`
+      // 请求 B 站综合排序搜索接口（必须带 wbi 签名，否则风控返回 -352/-412 或空结果）
+      const baseParams = {
+        search_type: 'video',
+        keyword: kw,
+        order: 'totalrank',
+        duration: 0,
+      }
+      const query = mixinKey
+        ? signWbiQuery(baseParams, mixinKey, Math.floor(Date.now() / 1000)).query
+        : new URLSearchParams(
+            Object.entries(baseParams).map(([k, v]) => [k, String(v)]),
+          ).toString()
+      const searchUrl = `https://api.bilibili.com/x/web-interface/wbi/search/type?${query}`
+
       const res = await fetch(searchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': 'https://www.bilibili.com'
-        },
+        headers: { ...BILI_HEADERS },
         signal: AbortSignal.timeout(6000)
       })
 
@@ -420,6 +446,11 @@ export async function runVideoHarvestAndRotation(
       await new Promise((resolve) => setTimeout(resolve, 300 * attempt))
       return runVideoHarvestAndRotation(options, attempt + 1)
     }
+    // 只在「最终失败」时计一次：重试中的失败不该让失败率虚高
+    recordHarvestRun({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    })
     throw err
   }
 }
@@ -442,17 +473,18 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
   const categories = data.navigationItems || []
   const replacementHistory: VideoReplacementRecord[] = data.replacementHistory || []
 
-  // 收集历史已存在的所有 video externalId（用于全局去重）
+  // 收集历史已存在的视频（用于全局去重）。
+  // 键必须是 `platform:externalId`：只比 bvid/videoId 会让不同平台的同名 ID 互相判重。
   const existingExternalIds = new Set<string>()
   for (const cat of categories) {
     for (const item of cat.items || []) {
-      const vid = item.videoConfig?.bvid || item.videoConfig?.videoId
-      if (vid) existingExternalIds.add(vid)
+      const key = videoExternalKey(item.videoConfig)
+      if (key) existingExternalIds.add(key)
     }
     for (const sub of cat.subCategories || []) {
       for (const item of sub.items || []) {
-        const vid = item.videoConfig?.bvid || item.videoConfig?.videoId
-        if (vid) existingExternalIds.add(vid)
+        const key = videoExternalKey(item.videoConfig)
+        if (key) existingExternalIds.add(key)
       }
     }
   }
@@ -534,20 +566,20 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
 
     // 过滤掉已存在的项目
     const uniqueCandidates = harvestedCandidates.filter(c => {
-      const vid = c.videoConfig?.bvid || c.videoConfig?.videoId
-      if (!vid || existingExternalIds.has(vid)) return false
+      const key = videoExternalKey(c.videoConfig)
+      if (!key || existingExternalIds.has(key)) return false
       return true
     })
 
     for (const candidate of uniqueCandidates) {
       const maxItems = policy.maxItems || 12
       const candidateScore = candidate.videoConfig?.freshnessScore || 80
-      const vid = candidate.videoConfig?.bvid || candidate.videoConfig?.videoId
+      const candidateKey = videoExternalKey(candidate.videoConfig)
 
       // 1. 若分类未满，直接增加
       if (currentItems.length < maxItems) {
         currentItems.push(candidate)
-        if (vid) existingExternalIds.add(vid)
+        if (candidateKey) existingExternalIds.add(candidateKey)
         additions.push({ categoryTitle: cat.title, item: candidate })
         summary.addedCount++
         continue
@@ -580,7 +612,7 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
 
           // 执行平滑替换
           currentItems[worst.index] = candidate
-          if (vid) existingExternalIds.add(vid)
+          if (candidateKey) existingExternalIds.add(candidateKey)
 
           const rec: VideoReplacementRecord = {
             id: `rep_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -617,6 +649,13 @@ async function runVideoHarvestOnce(options: HarvestRunOptions = {}): Promise<Vid
       version ?? undefined
     )
   }
+
+  recordHarvestRun({
+    ok: true,
+    added: additions.length,
+    replaced: newReplacements.length,
+    degradedKeywords: degradedKeywords.length,
+  })
 
   return {
     timestamp: Date.now(),

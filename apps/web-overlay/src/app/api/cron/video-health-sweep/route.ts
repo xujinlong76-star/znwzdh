@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { commitFile, getFileContent } from '@/lib/github'
 import { sweepVideoHealth } from '@/lib/video-deadlink-sweeper'
 import { requireCronSecret } from '@/lib/cron-auth'
+import { recordSweepRun } from '@/lib/video-harvest-metrics'
 import type { NavigationData } from '@/types/navigation'
 
 export const runtime = 'nodejs'
@@ -71,6 +72,7 @@ async function handleHealthSweep(request: Request) {
       persisted: !dryRun && shouldPersist,
     }, { status: 200 })
   } catch (error: any) {
+    recordSweepRun({ ok: false, error: error?.message || 'health sweep failed' })
     return NextResponse.json({
       error: error?.message || 'Video health sweep execution failed',
       retryable: true,

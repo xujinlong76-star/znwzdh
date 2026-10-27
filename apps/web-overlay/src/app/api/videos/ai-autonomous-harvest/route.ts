@@ -3,7 +3,7 @@ import { verifyAdminSession } from '@/lib/auth'
 import { getFileContent, commitFile } from '@/lib/github'
 import type { NavigationData } from '@/types/navigation'
 import {
-  AutonomousAIHarvesterController,
+  getAutonomousHarvesterController,
   evaluateVideoWithAIModel,
 } from '@/lib/video-autonomous-ai-harvester'
 import { CURATED_TRENDING_TOPICS } from '@/lib/video-trending-harvester'
@@ -86,7 +86,8 @@ export async function POST(request: Request) {
     const { dryRun = false, forceCategory } = body
 
     const currentData = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
-    const controller = new AutonomousAIHarvesterController()
+    // 单例：每次 new 会让 controller.logs（管理端的「AI 思考过程」）每轮从零开始
+    const controller = getAutonomousHarvesterController()
 
     const { updatedData, report } = await controller.runCycle(currentData, {
       dryRun: Boolean(dryRun),

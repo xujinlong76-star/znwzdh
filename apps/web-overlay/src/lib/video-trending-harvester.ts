@@ -5,6 +5,7 @@
 
 import type { NavigationData, NavigationItem, NavigationSubItem, VideoChapter, VideoTranscriptItem } from '@/types/navigation'
 import { calculateFreshnessScore } from '@/lib/video-scoring'
+import { videoExternalKey } from '@/lib/video-identity'
 
 export interface TrendingTechTopic {
   domain: string
@@ -268,12 +269,13 @@ export function harvestTrendingVideos(
   const minHot = options.minHotIndex || 80
 
   const categories = [...currentData.navigationItems]
-  const existingBvids = new Set<string>()
+  const existingKeys = new Set<string>()
 
-  // Collect existing video IDs
+  // Collect existing video IDs（复合键 platform:externalId）
   categories.forEach(cat => {
     ;(cat.items || []).forEach(it => {
-      if (it.videoConfig?.bvid) existingBvids.add(it.videoConfig.bvid)
+      const key = videoExternalKey(it.videoConfig)
+      if (key) existingKeys.add(key)
     })
   })
 
@@ -303,8 +305,9 @@ export function harvestTrendingVideos(
     if (!targetCategory) continue
     if (!targetCategory.items) targetCategory.items = []
 
-    // Skip if already in category or max capacity reached
-    if (existingBvids.has(topic.bvidFallback)) continue
+    // Skip if already in category or max capacity reached（候选池固定为 B 站）
+    const topicKey = `bilibili:${topic.bvidFallback}`
+    if (existingKeys.has(topicKey)) continue
     if (targetCategory.items.length >= maxItems) continue
 
     // 质量分来自候选池的人工评估分；保鲜分由**真实**发布时间推导。
@@ -318,7 +321,7 @@ export function harvestTrendingVideos(
       title: topic.recommendedTitle,
       href: `https://www.bilibili.com/video/${topic.bvidFallback}`,
       description: `【热点精选】深度涵盖 ${topic.keyword}。系统梳理工程架构，提供完整章节大纲与源码演练。`,
-      icon: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=800&auto=format&fit=crop&q=80',
+      // 不写封面：候选池没有真实封面来源，留空后前端走平台占位
       enabled: true,
       videoConfig: {
         type: 'bilibili',
@@ -343,7 +346,7 @@ export function harvestTrendingVideos(
     }
 
     targetCategory.items.push(newItem)
-    existingBvids.add(topic.bvidFallback)
+    existingKeys.add(topicKey)
     enrichedCategories.add(targetCategory.title)
     harvestedCount++
 

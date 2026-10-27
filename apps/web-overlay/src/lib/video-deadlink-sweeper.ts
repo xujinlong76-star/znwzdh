@@ -1,4 +1,5 @@
 import type { NavigationData, NavigationSubItem, VideoReplacementRecord } from '@/types/navigation'
+import { recordSweepRun } from '@/lib/video-harvest-metrics'
 
 export interface ProbeResult {
   videoId: string
@@ -200,12 +201,15 @@ export async function sweepVideoHealth(
     timeoutMs?: number
     prober?: (item: NavigationSubItem) => Promise<ProbeResult>
     autoPrune?: boolean
+    /** 同时在飞的探测数（默认 6）。串行 30 条 × 3.5s 最坏 105s，必然撞函数超时。 */
+    concurrency?: number
   }
 ): Promise<{ report: SweepReport; updatedData: NavigationData }> {
   const maxItems = options?.maxItemsToCheck || 50
   const timeoutMs = options?.timeoutMs || 4000
   // 默认不删：删除是不可逆操作，必须显式开启（并有回滚记录）
   const autoPrune = options?.autoPrune ?? false
+  const concurrency = Math.max(1, Math.min(options?.concurrency ?? 6, 10))
   const prober = options?.prober || ((item) => probeVideoAvailability(item, timeoutMs))
 
   const allItems: NavigationSubItem[] = []
@@ -227,42 +231,58 @@ export async function sweepVideoHealth(
   const replacementRecords: VideoReplacementRecord[] = []
   const brokenIds = new Set<string>()
 
-  for (const item of videoItems) {
-    const result = await prober(item)
-    // 兼容只给 healthy 布尔的外部 prober
-    const state: 'healthy' | 'dead' | 'unverified' = result.state ?? (result.healthy ? 'healthy' : 'dead')
+  /**
+   * 有界并发探测。
+   *
+   * 原实现是 `for (const item of videoItems) { await prober(item) }`：30 条 × 3.5s
+   * 超时 = 最坏 105 秒，直接超过多数 Serverless 函数上限，导致「巡检跑一半被掐断、
+   * 状态只落了一部分」。并发 6 后同样的量级压到 ~20s 以内。
+   *
+   * 计数器与 Set 的读写在 `await` 之后都是同步块，JS 单线程下不需要额外加锁。
+   */
+  const queue = [...videoItems]
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    for (;;) {
+      const item = queue.shift()
+      if (!item) return
 
-    if (state === 'healthy') {
-      healthyCount++
+      const result = await prober(item)
+      // 兼容只给 healthy 布尔的外部 prober
+      const state: 'healthy' | 'dead' | 'unverified' = result.state ?? (result.healthy ? 'healthy' : 'dead')
+
+      if (state === 'healthy') {
+        healthyCount++
+        if (item.videoConfig) {
+          item.videoConfig.healthStatus = 'healthy'
+          item.videoConfig.lastVerifiedAt = Date.now()
+        }
+        continue
+      }
+
+      if (state === 'unverified') {
+        unverifiedCount++
+        // 只标记「没能确认」，绝不进删除候选
+        if (item.videoConfig) {
+          item.videoConfig.healthStatus = 'unverified'
+          item.videoConfig.lastVerifiedAt = Date.now()
+        }
+        continue
+      }
+
+      brokenCount++
+      brokenIds.add(item.id)
+      brokenItems.push({
+        id: item.id,
+        title: item.title,
+        reason: result.reason || '平台确认该视频已不存在',
+      })
       if (item.videoConfig) {
-        item.videoConfig.healthStatus = 'healthy'
+        item.videoConfig.healthStatus = 'broken'
         item.videoConfig.lastVerifiedAt = Date.now()
       }
-      continue
     }
-
-    if (state === 'unverified') {
-      unverifiedCount++
-      // 只标记「没能确认」，绝不进删除候选
-      if (item.videoConfig) {
-        item.videoConfig.healthStatus = 'unverified'
-        item.videoConfig.lastVerifiedAt = Date.now()
-      }
-      continue
-    }
-
-    brokenCount++
-    brokenIds.add(item.id)
-    brokenItems.push({
-      id: item.id,
-      title: item.title,
-      reason: result.reason || '平台确认该视频已不存在',
-    })
-    if (item.videoConfig) {
-      item.videoConfig.healthStatus = 'broken'
-      item.videoConfig.lastVerifiedAt = Date.now()
-    }
-  }
+  })
+  await Promise.all(workers)
 
   let prunedCount = 0
   let updatedCategories = navigationData.navigationItems
@@ -321,6 +341,14 @@ export async function sweepVideoHealth(
   } catch {
     // Ignore storage quota
   }
+
+  recordSweepRun({
+    ok: true,
+    healthy: healthyCount,
+    dead: brokenCount,
+    unverified: unverifiedCount,
+    pruned: prunedCount,
+  })
 
   return { report, updatedData: updatedNavData }
 }

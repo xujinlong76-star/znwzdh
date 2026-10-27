@@ -1,5 +1,15 @@
 import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
+import os from "node:os";
+import { computeWorkerBudget } from "./scripts/worker-budget.ts";
+
+// worker / 堆预算按机器实测算（提案 5）：写死常量在小内存机器上会把
+// N 个 fork 的堆预算加总压垮机器，在多核大内存上又白白闲置。
+// 计算规则与守卫测试见 scripts/worker-budget.ts / worker-budget.test.ts。
+const budget = computeWorkerBudget(
+  typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length,
+  os.totalmem() / 1024 ** 3,
+);
 
 export default defineConfig({
   resolve: {
@@ -9,6 +19,13 @@ export default defineConfig({
       {
         find: /^@\//,
         replacement: fileURLToPath(new URL("./apps/web/src", import.meta.url)).replace(/\\/g, "/") + "/",
+      },
+      // apps/web 是 vendored 底座，package.json 里没有 @navhub/core 依赖（历史上靠根
+      // node_modules 偶然解析成功）。测试环境必须显式指向源码，否则 overlay 里
+      // 「再导出 core 实现」的模块在这一层解析不到，等于逼着大家再复制一份。
+      {
+        find: /^@navhub\/core$/,
+        replacement: fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)).replace(/\\/g, "/"),
       },
     ],
   },
@@ -37,7 +54,9 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 60_000,
     pool: "forks",
-    maxWorkers: 3,
+    // 上限 3 是稳定红线（docs/NEXT-STEPS-PLAN D2），自适应只向下收缩：
+    // 小内存机器自动降到 2/1，避免 fork 数 × 堆预算超过物理内存。
+    maxWorkers: budget.workers,
     // isolate:false 经两轮深研后维持关闭（2026-10-25）：
     //  - 收益实测 457s→149s，但跨文件污染源不止两处——vi.mock 的模块缓存与
     //    process.env 改动按 worker 持久，失败组合随 worker 调度随机，无法稳定收敛；
@@ -45,7 +64,7 @@ export default defineConfig({
     //    两处显式 env 改动补复位——这些修复无论隔离与否都正确，予以保留；
     //  - 若未来要重启此优化：先建「vi.mock/env 改动必须 afterAll 清理」的
     //    lint 规则，再按 worker 分组灰度。详见 docs/NEXT-STEPS-PLAN D2。
-    execArgv: ["--max-old-space-size=4096"],
+    execArgv: [`--max-old-space-size=${budget.heapMB}`],
     coverage: {
       // 覆盖率只统计本仓库自己维护的后端与核心包源码：
       // apps/web 是 vendored 的上游底座（apps/web/src 由 overlay 生成），

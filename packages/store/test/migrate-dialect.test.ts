@@ -51,8 +51,10 @@ describe("migrateSiteIndexes：按方言分派", () => {
   it("pg：部分唯一索引与身份索引都下发了", async () => {
     const { db, calls } = pgRecorder();
     await migrateSiteIndexes(db);
-    expect(calls.some((s) => s.includes("sites_url_idx") && s.includes("WHERE deleted_at IS NULL"))).toBe(true);
-    expect(calls.some((s) => s.includes("events_identity_idx"))).toBe(true);
+    // 部分唯一索引改名 v2 是刻意的：先建新索引再删旧索引，CREATE 失败时旧索引仍在，
+    // 唯一性不会出现「DROP 成功、CREATE 失败」空窗（见 migrateSiteIndexes 注释）。
+    expect(calls.some((s) => s.includes("sites_url_uniq_v2") && s.includes("WHERE deleted_at IS NULL"))).toBe(true);
+    expect(calls.some((s) => s.includes("events_identity_created_idx"))).toBe(true);
     // P3 的「每父标题唯一」：两条部分索引（子树 + 根层），PG 不依赖 NULLS NOT DISTINCT
     expect(
       calls.some((s) => s.includes("categories_child_title_uniq") && s.includes("parent_id, title") && s.includes("WHERE parent_id IS NOT NULL")),

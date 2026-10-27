@@ -832,14 +832,32 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         [slug],
       )
       const row = rows[0] as { created_at?: number; diff?: unknown } | undefined
-      if (!row) return { ok: true, slug, state: deriveHealthPanelState(null), auditedAt: null }
-      let diff: Record<string, unknown> = {}
-      try {
-        diff = (typeof row.diff === "string" ? JSON.parse(row.diff) : row.diff) as Record<string, unknown> || {}
-      } catch {
-        diff = {}
+      let state = deriveHealthPanelState(null)
+      let auditedAt: number | null = null
+      if (row) {
+        let diff: Record<string, unknown> = {}
+        try {
+          diff = (typeof row.diff === "string" ? JSON.parse(row.diff) : row.diff) as Record<string, unknown> || {}
+        } catch {
+          diff = {}
+        }
+        state = deriveHealthPanelState(diff as never)
+        auditedAt = row.created_at ?? null
       }
-      return { ok: true, slug, state: deriveHealthPanelState(diff as never), auditedAt: row.created_at ?? null }
+
+      /**
+       * 弱 ETag：`auditedAt + state.kind` 就足以标识「这份结论有没有变」。
+       * 扩展轮询时带 If-None-Match，命中即 304 —— 省掉带宽，也省掉客户端的重复渲染。
+       */
+      const etag = `W/"${auditedAt ?? 0}-${state.kind}"`
+      const ifNoneMatch = String(request.headers["if-none-match"] ?? "").trim()
+      if (ifNoneMatch && ifNoneMatch === etag) {
+        return reply.code(304).header("etag", etag).header("cache-control", "no-cache").send()
+      }
+      return reply
+        .header("etag", etag)
+        .header("cache-control", "no-cache")
+        .send({ ok: true, slug, state, auditedAt })
     },
   )
 
@@ -936,6 +954,8 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
           createdAt: j.createdAt,
           updatedAt: j.updatedAt,
           attempt: j.attempt,
+          // 退避到期时间：面板据此显示「将于 HH:mm 重试」，否则用户只看到 pending 干等
+          nextRunAt: j.nextRunAt ?? null,
           ...(j.error ? { error: j.error } : {}),
         })),
       }

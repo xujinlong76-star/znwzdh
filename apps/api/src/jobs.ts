@@ -154,6 +154,47 @@ const BACKOFF_BASE_MS = 60_000;
 const BACKOFF_CAP_MS = 60 * 60_000;
 
 /**
+ * 单次执行超出预算。
+ *
+ * 为什么单独一个类型：超时与普通异常的处理策略不同——超时的 handler 可能
+ * 还在后台跑，**不能立刻重试**（否则同一任务会被两个执行流并发处理）。
+ * 因此超时一律落 `failed` 终态，由人工确认后再 retry。
+ */
+export class JobBudgetExceededError extends Error {
+  readonly kind: string;
+  readonly budgetMs: number;
+  constructor(kind: string, budgetMs: number) {
+    super("任务 " + kind + " 超出单次执行预算（" + budgetMs + "ms）");
+    this.name = "JobBudgetExceededError";
+    this.kind = kind;
+    this.budgetMs = budgetMs;
+  }
+}
+
+/**
+ * 在预算内等待一个 Promise；超时抛 JobBudgetExceededError。
+ *
+ * 抽成独立函数（而不是内联在 process 里）有两个原因：
+ *  1. 可单测：不必造一个会卡住的 handler 才能验证超时；
+ *  2. 定时器一定被清理：work 先完成时不能留下一个指向已结束任务的 timer。
+ *
+ * budgetMs <= 0 表示不设预算（保留给手动任务/测试）。
+ */
+export async function runWithBudget<T>(work: Promise<T>, budgetMs: number, kind: string): Promise<T> {
+  if (budgetMs <= 0) return work;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    const budget = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new JobBudgetExceededError(kind, budgetMs)), budgetMs);
+      if (timer && typeof timer.unref === "function") timer.unref();
+    });
+    return await Promise.race([work, budget]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * 轮询间隔可配置：`NAVHUB_JOBS_INTERVAL_MS`（毫秒，默认 30000）。
  * 环境变量而不是 config 字段——它是 Runner 的运行参数，不进能力面。
  */
@@ -174,13 +215,10 @@ export interface JobSchedulePolicy {
    */
   cron?: string;
   /**
-   * 单次执行的预算（毫秒）。**当前不做任务级硬超时**：
-   * 每个 handler 的每次网络/LLM 调用各自带超时（fetch 10s / LLM 20s / embedding 30s），
-   * 所以真正的兜底是「所有调用都有上限」，而不是这个数。
-   * 为什么不用 Promise.race 强行掐：掐不掉——handler 里没有 AbortSignal，
-   * 超时只是让 Runner 提前把任务标成失败并放行下一轮，僵尸 handler 还在跑，
-   * 于是同一个 kind 被两边并发执行（比重置为 retrying 更糟）。
-   * 要变成硬预算，得先把 signal 贯穿 runXxx 与 @navhub/ai 的抓取/嵌入调用。
+   * 单次执行的预算（毫秒）。**自 2026-10-27 起由 Runner 强制执行**：
+   * `process()` 用 Promise.race 在预算到点时脱身，并把任务落 failed 终态
+   * （不自动重试——handler 没有 AbortSignal，可能仍在后台跑，立刻重试会并发执行）。
+   * 各 handler 内部的网络/LLM 调用仍各自带超时；这一层是兜底，不是替代。
    */
   timeoutMs?: number;
   /** 期望的按 kind 最大并发数。**当前 Runner 全程串行**，该值同样只是声明 */
@@ -613,7 +651,17 @@ export class JobRunner {
      * 上一轮就因为把 reindex 的时间算进恢复，得出了错误 30 倍的结论。
      */
     const attemptStartedAt = Date.now();
-    try {
+    /**
+     * 单次执行预算（硬超时）。
+     *
+     * 旧实现只有声明值、从不执行：一个卡住的巡检会把整轮 tick 拖死，
+     * 后续任务全部排队（tick 是串行的）。这里用 Promise.race 在预算到点时
+     * 让 Runner 脱身；handler 本身没有 AbortSignal，可能仍在后台跑，
+     * 所以超时**不重试**（见 catch 里的 JobBudgetExceededError 分支），
+     * 避免同一任务被两个执行流并发处理。
+     */
+    const budgetMs = DEFAULT_SCHEDULES[kind]?.timeoutMs ?? 0;
+    const execution = (async (): Promise<void> => {
       switch (kind) {
         case "health_check":
           await this.runHealthCheck((payload ?? {}) as { siteId?: string; limit?: number });
@@ -656,6 +704,9 @@ export class JobRunner {
         default:
           throw new Error("未知任务类型: " + kind);
       }
+    })();
+    try {
+      await runWithBudget(execution, budgetMs, kind);
       const durationMs = Date.now() - attemptStartedAt;
       const applied = await this.ctx.repo.completeJob(jobId, null, { durationMs });
       if (applied) {
@@ -681,13 +732,18 @@ export class JobRunner {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      // 指数退避重试：瞬时抖动（网络/磁盘）不再一击毙命。
-      // attempts 来自 claimNextJob（已 +1），耗尽后落 failed 终态。
-      const exhausted = attempts >= MAX_JOB_ATTEMPTS;
+      /**
+       * 超时与普通失败分开处理：
+       *  - 普通失败：按指数退避重试，attempts 耗尽后落 failed；
+       *  - 预算超时：handler 可能仍在后台跑，立刻重试会让同一任务并发执行，
+       *    因此直接落 failed 终态（人工确认后可从管理端 retry）。
+       */
+      const timedOut = err instanceof JobBudgetExceededError;
+      const exhausted = timedOut || attempts >= MAX_JOB_ATTEMPTS;
       const retryAt = exhausted ? null : Date.now() + backoffMs(attempts);
       const durationMs = Date.now() - attemptStartedAt;
-      if (durationMs >= 10_000) {
-        console.warn("[navhub-job] 长任务失败", { jobId, kind, durationMs, error: message });
+      if (durationMs >= 10_000 || timedOut) {
+        console.warn("[navhub-job] 长任务失败", { jobId, kind, durationMs, error: message, timedOut });
       }
       const applied = await this.ctx.repo
         .completeJob(jobId, message, { retryAt, exhausted, durationMs })
@@ -707,7 +763,10 @@ export class JobRunner {
       });
       if (exhausted) {
         const detail = { kind, attempts, error: message };
-        this.alert("任务 " + kind + " 连续失败 " + attempts + " 次，已停止重试：" + message, detail);
+        this.alert(
+          (timedOut ? "任务 " + kind + " 超出单次执行预算，已终止（不会自动重试）：" : "任务 " + kind + " 连续失败 " + attempts + " 次，已停止重试：") + message,
+          detail,
+        );
       }
     } finally {
       if (jobHeartbeat) clearInterval(jobHeartbeat);
@@ -1121,7 +1180,17 @@ export class JobRunner {
   private async runPurgeTrash(payload: { olderThanDays?: number } = {}): Promise<void> {
     const days = Math.max(1, payload.olderThanDays ?? 30);
     const ms = days * 86_400_000;
-    const purged = await this.ctx.repo.purgeExpiredDeletedSites(ms);
+    const { purged, ids } = await this.ctx.repo.purgeExpiredDeletedSites(ms);
+    // 向量表不在 purgeSite 的事务里（它由 API 层的 vector store 持有）：
+    // 不在这里同步删除，被清站点的向量会继续占 KNN 的 top-N 名额。
+    if (ids.length > 0 && this.ctx.vectors) {
+      await this.ctx.vectors.remove(ids).catch((err) => {
+        console.warn("[navhub-job] 回收站清理后同步删除向量失败", {
+          count: ids.length,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
     await this.ctx.repo.recordEvent("purge_trash", { meta: { days, purged } }).catch(() => undefined);
   }
 
@@ -1605,24 +1674,7 @@ export class JobRunner {
    * 两种方言都能拿到受影响行数 —— 不为它在 Repository 上加新方法。
    */
   private dataRetentionAdapter(): RetentionAdapter {
-    const { db, repo } = this.ctx;
-    return {
-      placeholder: () => "?",
-      select: (sql, params) => repo.raw(sql, [...params]),
-      execute: (sql, params) => {
-        if (db.dialect === "sqlite" && db.sqlite) {
-          const info = db.sqlite.prepare(sql).run(...bindSqlite([...params])) as { changes?: number };
-          return Promise.resolve(Number(info?.changes ?? 0));
-        }
-        if (db.pg) {
-          return db.pg.query(toPgSql(sql), [...params]).then((r) => Number(r.rowCount ?? 0));
-        }
-        return Promise.reject(new Error(`数据保留任务不支持的存储方言: ${db.dialect}`));
-      },
-      // 仓储层的事务会临时把 db.pg 换成独占连接，因此上面的 select/execute
-      // 在事务期间自动落在同一条连接上。
-      transaction: (fn) => repo.withTransaction(fn),
-    };
+    return createRetentionAdapter(this.ctx);
   }
 
   /** 分类与标签体系智能治理审计 */
@@ -1671,4 +1723,27 @@ export class JobRunner {
     const res = await db.pg!.query(toPgSql(sqlText), params);
     return Number(res.rowCount ?? 0);
   }
+}
+
+function createRetentionAdapter(ctx: AppContext): RetentionAdapter {
+  const db = ctx.db;
+  const isPg = db.dialect === 'pg';
+  return {
+    placeholder: (i: number) => (isPg ? '$' + i : '?'),
+    select: async (sql: string, params: readonly unknown[]) => {
+      if (isPg) {
+        const res = await db.pg!.query(sql, params as unknown[]);
+        return res.rows as never;
+      }
+      return db.sqlite!.prepare(sql).all(...(params as unknown[])) as never;
+    },
+    execute: async (sql: string, params: readonly unknown[]) => {
+      if (isPg) {
+        const res = await db.pg!.query(sql, params as unknown[]);
+        return Number(res.rowCount ?? 0);
+      }
+      const info = db.sqlite!.prepare(sql).run(...(params as unknown[])) as { changes?: number };
+      return Number(info?.changes ?? 0);
+    },
+  };
 }

@@ -22,6 +22,8 @@ import type { PluginDiffResult, PluginManifest, PluginKind } from './plugins/plu
 import type {
   CategoryCountsResponse,
   CategoryListResponse,
+  RankNewResponse,
+  RankTrendingResponse,
   SearchResponse,
   TagListResponse,
 } from './rest-contracts.generated'
@@ -75,27 +77,44 @@ export interface HubSiteRelationsPayload {
   total: number
 }
 
+/**
+ * 站点在契约里的形状。
+ * SitePayload 被列表/搜索/榜单共用，生成物里是内联展开的——取榜首响应的那一份
+ * 作为引用点，字段集合与 /api/openapi.json 的同一份 schema 一致。
+ */
+type ContractSite = RankNewResponse['hits'][number]['site']
+
+/**
+ * UI 展示形态。
+ *
+ * 字段类型不手抄：核心字段逐个从契约生成物取（`ContractSite['x']`），契约改名、
+ * 改类型或放宽可空性，这里会直接编译失败——而手抄接口只会静默漂移成运行时
+ * undefined。展示层**额外**的字段（relations/actions/liveMetrics）由 UI 自己
+ * 补齐，服务端默认不返回，所以单独列出。
+ */
 export interface HubSite {
-  id: string
-  url: string
-  title: string
-  titleEn?: string | null
-  description: string | null
-  descriptionEn?: string | null
-  iconKey: string | null
-  tags: string[]
-  categoryId: string
-  status: string
-  visitCount?: number
-  trendScore?: number
-  health?: { ok: boolean; httpStatus: number | null; latencyMs: number | null; lastCheckedAt: number | null } | null
-  source?: string | null
-  facets?: Record<string, string[]>
+  id: ContractSite['id']
+  url: ContractSite['url']
+  title: ContractSite['title']
+  titleEn?: ContractSite['titleEn']
+  // 契约里 description/iconKey 是可选可空的：本地快照与老版本中枢都真的不带，
+  // UI 必须按「可能缺失」渲染，所以这里跟随契约而不是声称恒有值。
+  description?: ContractSite['description']
+  descriptionEn?: ContractSite['descriptionEn']
+  iconKey?: ContractSite['iconKey']
+  tags: ContractSite['tags']
+  categoryId: ContractSite['categoryId']
+  status: ContractSite['status']
+  visitCount?: ContractSite['visitCount']
+  trendScore?: ContractSite['trendScore']
+  health?: ContractSite['health']
+  source?: ContractSite['source']
+  facets?: ContractSite['facets']
   relations?: HubSiteRelation[]
   actions?: Array<{ id: string; label: string; urlTemplate: string; placeholder?: string; icon?: string }>
   liveMetrics?: { githubStars?: number; latestVersion?: string; openSource?: boolean; license?: string; latencyMs?: number }
-  createdAt?: number
-  updatedAt?: number
+  createdAt?: ContractSite['createdAt']
+  updatedAt?: ContractSite['updatedAt']
 }
 
 export interface HubSearchHit {
@@ -517,7 +536,8 @@ export async function fetchTrending(limit = 20, onDegraded?: DegradedHandler): P
   return degrade(
     [],
     async () => {
-      const data = await getJson<{ hits: Array<{ site: HubSite }> }>('/api/rank/trending?limit=' + limit)
+      // 响应形状由契约生成物定型：中枢给榜单换壳（比如把 hits 改名）会在编译期红
+      const data = await getJson<RankTrendingResponse>('/api/rank/trending?limit=' + limit)
       return data.hits.map((h) => h.site).filter(Boolean)
     },
     onDegraded,
@@ -528,7 +548,7 @@ export async function fetchNewSites(limit = 20, onDegraded?: DegradedHandler): P
   return degrade(
     [],
     async () => {
-      const data = await getJson<{ hits: Array<{ site: HubSite }> }>('/api/rank/new?limit=' + limit)
+      const data = await getJson<RankNewResponse>('/api/rank/new?limit=' + limit)
       return data.hits.map((h) => h.site).filter(Boolean)
     },
     onDegraded,

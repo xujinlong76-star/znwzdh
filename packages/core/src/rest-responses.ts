@@ -385,6 +385,70 @@ export const PluginListResponse = z.object({
 });
 
 /* ------------------------------------------------------------------ *
+ * GET /api/me（用户中心总览）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 用户设置。
+ * 与仓储的 UserSettingsRecord 同形：缺省即「开启 + 默认体验」，所以扩展偏好
+ * 恒有值（不是可选）。前端据此直接渲染开关，不需要自己再兜一层默认值。
+ */
+const MeSettingsPayload = z.looseObject({
+  identity: z.string(),
+  personalizationEnabled: z.boolean(),
+  favoriteSignalCutoff: z.number(),
+  updatedAt: z.number(),
+  defaultSearchEngine: z.enum(["internal", "google", "bing", "duckduckgo", "github", "perplexity"]),
+  openLinksInNewTab: z.boolean(),
+  cardDensity: z.enum(["comfortable", "compact", "minimal"]),
+  speculativeZeroRttEnabled: z.boolean(),
+  daypartSceneEnabled: z.boolean(),
+  spotlightShortcut: z.enum(["mod+k", "slash", "both"]),
+  searchHistoryEnabled: z.boolean(),
+  telemetryEnabled: z.boolean(),
+  historyRetentionDays: z.union([z.literal(30), z.literal(90), z.literal(180), z.literal(365)]),
+});
+
+/**
+ * GET /api/me：用户中心概览与设置一次取回（首屏只发一个请求）。
+ *
+ * 计数值是**该用户自己的聚合**（收藏/收藏夹/搜索/已装插件…），前端据此渲染
+ * 侧栏数字；`user` 为 null 表示尚未绑定登录账号——匿名身份仍是合法身份，
+ * 概览照常返回，所以 null 是契约的一部分而不是异常分支。
+ */
+export const MeOverviewResponse = z.looseObject({
+  ok: z.literal(true),
+  identity: z.string(),
+  user: z
+    .object({
+      id: z.string(),
+      username: z.string(),
+      email: z.string().nullable(),
+      avatar: z.string().nullable(),
+      source: z.string(),
+    })
+    .nullable(),
+  counts: z.object({
+    favorites: z.number().int(),
+    folders: z.number().int(),
+    searches: z.number().int(),
+    activePluginInstalls: z.number().int(),
+    pluginStars: z.number().int(),
+    authoredPlugins: z.number().int(),
+    recentEvents: z.number().int(),
+  }),
+  profile: z.object({ exists: z.boolean(), updatedAt: z.number().nullable() }),
+  vault: z.object({
+    exists: z.boolean(),
+    version: z.number().nullable(),
+    updatedAt: z.number().nullable(),
+  }),
+  llmConfig: z.object({ exists: z.boolean() }),
+  aliases: z.array(z.string()),
+  settings: MeSettingsPayload,
+});
+
+/* ------------------------------------------------------------------ *
  * 绑定表：路由键 -> 响应契约
  * ------------------------------------------------------------------ */
 
@@ -410,4 +474,5 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/rank/trending": { schema: RankTrendingResponse, name: "RankTrendingResponse" },
   "GET /api/rank/new": { schema: RankNewResponse, name: "RankNewResponse" },
   "GET /api/plugins": { schema: PluginListResponse, name: "PluginListResponse" },
+  "GET /api/me": { schema: MeOverviewResponse, name: "MeOverviewResponse" },
 };

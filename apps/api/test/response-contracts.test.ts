@@ -19,6 +19,7 @@ import {
   CategoryListResponse,
   CategoryPageResponse,
   HealthResponse,
+  MeOverviewResponse,
   PluginListResponse,
   RESPONSE_SCHEMA_BINDINGS,
   RankNewResponse,
@@ -72,6 +73,11 @@ const SITE_PACK_MANIFEST: PluginManifest = {
   tags: ["test"],
   payload: { sites: [{ url: "https://example.org", title: "示例站" }] },
 };
+
+// /api/me 是身份域路由：开放模式（authRequired=false）下自报头即可信，
+// 这里用固定身份，避免用户中心概览随内置演示数据变化而抖动。
+const ME_IDENTITY = "contract-user";
+const ME_HEADERS = { "x-navhub-user-id": ME_IDENTITY };
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-response-contracts-"));
@@ -303,6 +309,20 @@ describe("真实响应满足契约", () => {
     expectContract(PluginListResponse, body, "GET /api/plugins?manifest=1");
     expect(body.items[0].manifest).toBeTruthy();
   });
+
+  it("GET /api/me：概览与设置一次取回", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/me", headers: ME_HEADERS });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(MeOverviewResponse, body, "GET /api/me");
+    expect(body.identity).toBe(ME_IDENTITY);
+    // 未绑定登录账号的匿名身份是合法身份：概览照常返回，user 为 null
+    expect(body.user).toBeNull();
+    expect(body.counts.favorites).toBe(0);
+    // 设置缺省即「开启 + 默认体验」：每个字段恒有值，不是可选
+    expect(body.settings.defaultSearchEngine).toBe("internal");
+    expect(body.settings.historyRetentionDays).toBe(180);
+  });
 });
 
 describe("契约不是空转（负控：手工漂移必须被拒）", () => {
@@ -361,5 +381,15 @@ describe("契约不是空转（负控：手工漂移必须被拒）", () => {
     const { summary: _drop, ...noSummary } = body.items[0];
     expect(PluginListResponse.safeParse({ ...body, items: [noSummary] }).success).toBe(false);
     expect(PluginListResponse.safeParse({ ...body, total: String(body.total) }).success).toBe(false);
+  });
+
+  it("me：计数降级、设置枚举漂移、settings 整块缺失都会被拒", async () => {
+    const body = (await app.inject({ method: "GET", url: "/api/me", headers: ME_HEADERS })).json();
+    expect(MeOverviewResponse.safeParse({ ...body, counts: { ...body.counts, favorites: "0" } }).success).toBe(false);
+    expect(
+      MeOverviewResponse.safeParse({ ...body, settings: { ...body.settings, defaultSearchEngine: "baidu" } }).success,
+    ).toBe(false);
+    const { settings: _drop, ...noSettings } = body;
+    expect(MeOverviewResponse.safeParse(noSettings).success).toBe(false);
   });
 });

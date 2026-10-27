@@ -11,7 +11,8 @@
 export interface CloudFavoriteSiteLike {
   title: string
   url: string
-  description: string | null
+  /** 中枢契约里 description 是可选的（可能整块缺席），合并时按「无描述」处理 */
+  description?: string | null
 }
 
 export interface CloudFavoriteLike {

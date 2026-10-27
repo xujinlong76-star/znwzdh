@@ -473,12 +473,67 @@ export interface PluginListResponse {
   offset: number;
 }
 
+/**
+ * GET /api/me
+ */
+export interface MeOverviewResponse {
+  ok: true;
+  identity: string;
+  user: {
+    id: string;
+    username: string;
+    email: string | null;
+    avatar: string | null;
+    source: string;
+  } | null;
+  counts: {
+    favorites: number;
+    folders: number;
+    searches: number;
+    activePluginInstalls: number;
+    pluginStars: number;
+    authoredPlugins: number;
+    recentEvents: number;
+  };
+  profile: {
+    exists: boolean;
+    updatedAt: number | null;
+  };
+  vault: {
+    exists: boolean;
+    version: number | null;
+    updatedAt: number | null;
+  };
+  llmConfig: {
+    exists: boolean;
+  };
+  aliases: string[];
+  settings: {
+    identity: string;
+    personalizationEnabled: boolean;
+    favoriteSignalCutoff: number;
+    updatedAt: number;
+    defaultSearchEngine: "internal" | "google" | "bing" | "duckduckgo" | "github" | "perplexity";
+    openLinksInNewTab: boolean;
+    cardDensity: "comfortable" | "compact" | "minimal";
+    speculativeZeroRttEnabled: boolean;
+    daypartSceneEnabled: boolean;
+    spotlightShortcut: "mod+k" | "slash" | "both";
+    searchHistoryEnabled: boolean;
+    telemetryEnabled: boolean;
+    historyRetentionDays: 30 | 90 | 180 | 365;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 /** 路由键 -> 响应类型（前端按端点取类型，避免自己再抄一份接口） */
 export interface RestContractRoutes {
   "GET /api/categories": CategoryListResponse;
   "GET /api/categories/counts": CategoryCountsResponse;
   "GET /api/categories/page": CategoryPageResponse;
   "GET /api/health": HealthResponse;
+  "GET /api/me": MeOverviewResponse;
   "GET /api/plugins": PluginListResponse;
   "GET /api/rank/new": RankNewResponse;
   "GET /api/rank/trending": RankTrendingResponse;

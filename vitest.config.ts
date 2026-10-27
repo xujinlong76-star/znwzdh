@@ -25,6 +25,9 @@ export default defineConfig({
       "apps/api/test/**/*.test.ts",
       "apps/web/test/**/*.test.ts",
       "apps/web-overlay/scripts/**/*.test.ts",
+      // overlay 的纯逻辑模块（面板状态机等）测试：overlay 是自有代码事实源，
+      // 逻辑测试放 test/ 而不是 scripts/，两者都要被收集，否则写好的测试不会被执行。
+      "apps/web-overlay/test/**/*.test.ts",
       // 仓库根 scripts/ 下的本地脚手架（vendor-web 的搬运逻辑等）也要有回归测试
       "scripts/**/*.test.ts",
     ],

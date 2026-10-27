@@ -16,6 +16,7 @@
  */
 
 import { memo, startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { deriveHealthPanelState } from "@/lib/health-panel-state"
 import {
   AlertCircle,
   AlertTriangle,
@@ -511,6 +512,11 @@ const PackRowItem = memo(function PackRowItem({
   )
   const brokenCount = snap?.brokenCount ?? 0
   const suspiciousCount = snap?.suspiciousCount ?? 0
+  /**
+   * 视图状态的唯一来源。下面所有分支都读 `panelState.kind`，不再各自判 `snap`/`stale`——
+   * 之前正是因为两处各自判断，才写出过一个永远跑不到的分支（前端门禁 TS2339）。
+   */
+  const panelState = deriveHealthPanelState(snap)
 
   return (
     // 行根节点带 data-testid：回归脚本原先按文案过滤 div 定位单行，会命中整个列表容器，
@@ -754,17 +760,17 @@ const PackRowItem = memo(function PackRowItem({
           )}
 
           {/* 抽样指标明细 */}
-          {snap?.stale ? (
+          {panelState.kind === "stale" ? (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 flex flex-wrap items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 text-amber-800 dark:text-amber-200 font-medium">
                 <AlertTriangle className="h-4 w-4" />
-                清单已改动（现有 {snap.declared ?? '--'} 条），健康度待复检
+                清单已改动（现有 {panelState.declared ?? '--'} 条），健康度待复检
               </span>
               <span className="text-[11px] text-muted-foreground">
                 替换与剔除之后没有有效的测量值，系统不会用推算值填补
               </span>
             </div>
-          ) : snap ? (
+          ) : panelState.kind === "verified" || panelState.kind === "no-data" ? (
             <div className="flex flex-wrap items-center gap-3 text-muted-foreground border-b pb-2.5">
               <span>声明 {snap.declared ?? '--'} 条</span>
               <span>抽样 {snap.sampled ?? '--'} 条</span>

@@ -13,7 +13,7 @@
  * （默认不放行私网，因此内网目标会以 SSRF 拒绝的形式记为不可达）。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { DEFAULT_GUARD, guardedFetch, resolveAndCheck } from "@navhub/ai";
+import { DEFAULT_GUARD, guardedFetch, resolveAndCheck, type GuardedFetchResult } from "@navhub/ai";
 import {
   auditPageHealth,
   buildWaybackSnapshotUrl,
@@ -23,10 +23,13 @@ import {
   diagnoseBrokenCause,
   diagnoseUrlDeep,
   isTextualContentType,
+  conditionalHeaders,
   outcomeToCandidateGrade,
   validateAndCleanPluginManifest,
   type CandidateGrade as CoreCandidateGrade,
   type DeepProbeObservations,
+  type ProbeOutcome,
+  type ProbeOutcomeKind,
   type SitePackPayload,
 } from "@navhub/core";
 import {
@@ -41,6 +44,9 @@ import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { callLlm } from "../llm-usage.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
 import type { AppContext } from "../context.ts";
+import { getProbeCache, scheduleProbeCacheFlush } from "../probe-cache.ts";
+import { probeMetricsPrometheus, probeMetricsSummary, recordProbeResults } from "../probe-metrics-buffer.ts";
+import { getAuditQueue, runAuditWorker } from "../audit-queue-service.ts";
 import { safeDecodeParam, badRequest, notFound, identityTrusted, requestIdentityOf } from "./shared.ts";
 
 /** 单次体检抽样上限（防滥用：一次打几百条外部请求会伤人也伤己） */
@@ -282,56 +288,114 @@ export function classifyProbeStatus(status: number): { grade: CandidateGrade; re
   return { grade: outcomeToCandidateGrade(outcome.kind), reason: outcome.reason }
 }
 
+/**
+ * 候选探活结果 → 统一结论。内容层（停放 / 软 404 / 正文过少）也翻译成 ProbeOutcome，
+ * 这样「缓存里存什么」与「面板显示什么档位」来自同一个值，不会各说各话。
+ */
+function candidateOutcomeOf(res: GuardedFetchResult, url: string): ProbeOutcome {
+  const statusOutcome = classifyStatusOutcome(res.status)
+  if (statusOutcome) return statusOutcome
+  // 非文本响应（PDF/图片/压缩包）不做正文判定：二进制乱码的低熵会被读成停放页
+  if (res.body && isTextualContentType(res.contentType)) {
+    const health = auditPageHealth(url, res.body, undefined, undefined, { truncated: res.truncated })
+    // 停放词与软 404 的命中本身就是证据，截断不会凭空造出这些词，所以照常判。
+    if (health.status === "SUSPICIOUS_PARKED" || health.status === "SOFT_404") {
+      return { kind: "parked", status: res.status, reason: health.reason }
+    }
+    /**
+     * THIN_CONTENT 只在「整页都读到了」时才算证据。
+     *
+     * 现代站点前 8KB 常被 inline CSS / modulepreload 占满——实测 nextjs.org 的
+     * 前 8192 字符里正文只有 134 个，gov.cn 有 5048 个，同一阈值下命运完全不同。
+     * 响应被截断时判「正文太少」，等于拿缺失证据当结论：正常站被判成空壳候选，
+     * 然后被静默排除。这里宁可不下结论，只把「内容未判」如实带出去。
+     */
+    if (health.status === "THIN_CONTENT" && !res.truncated) {
+      return { kind: "parked", status: res.status, reason: health.reason }
+    }
+    if (health.status === "THIN_CONTENT") {
+      return { kind: "ok", status: res.status, reason: "响应被截断，内容级判定已跳过（无法确认正文量）" }
+    }
+  }
+  return { kind: "ok", status: res.status, reason: "内容检测通过" }
+}
+
+/** 结论 → 候选探活返回体（唯一出口，保证 ok/latency/reason 三者的口径一致） */
+function candidateProbeOf(
+  kind: ProbeOutcomeKind,
+  status: number | undefined,
+  latencyMs: number,
+  reason: string,
+): CandidateProbe {
+  return {
+    grade: outcomeToCandidateGrade(kind),
+    ok: kind === "ok",
+    ...(status !== undefined ? { status } : {}),
+    latencyMs,
+    reason,
+  }
+}
+
+/**
+ * 候选探活（带缓存与条件请求）。
+ *
+ * 三层加速，逐层降级：
+ *   1. 缓存新鲜（未过 TTL）→ 一个网络请求都不发，直接复用上次判定；
+ *   2. 缓存过期但有 ETag/Last-Modified → 带条件头发请求，对端回 304 就只续期；
+ *   3. 否则完整 GET（仍然走 guardedFetch 的逐跳 SSRF + 超时 + 8KB 上限）。
+ * 失败结论同样入缓存，但 unverified/server-error 的 TTL 只有 1 小时，
+ * 不会把一次网络抖动固化成长期事实。
+ */
 async function probeCandidateUrl(url: string): Promise<CandidateProbe> {
   const started = Date.now()
+  const cache = await getProbeCache()
+  const cached = cache.lookup(url)
+
+  if (cached?.fresh) {
+    const ageMinutes = Math.max(0, Math.round((Date.now() - cached.entry.checkedAt) / 60_000))
+    return candidateProbeOf(
+      cached.entry.kind,
+      cached.entry.status,
+      0,
+      `缓存命中（${ageMinutes} 分钟前实测）：${cached.entry.reason}`,
+    )
+  }
+
   try {
-    const res = await guardedFetch(url, {
-      timeoutMs: CANDIDATE_PROBE_TIMEOUT_MS,
-      // 2KB 不足以做信息熵判断（停放页的「域名出售」区块常在页面尾部），提到 8KB
-      maxBytes: 8 * 1024,
-      maxRedirects: 3,
-      userAgent: AUDIT_USER_AGENT,
-    })
+    const res = await guardedFetch(
+      url,
+      {
+        timeoutMs: CANDIDATE_PROBE_TIMEOUT_MS,
+        // 2KB 不足以做信息熵判断（停放页的「域名出售」区块常在页面尾部），提到 8KB
+        maxBytes: 8 * 1024,
+        maxRedirects: 3,
+        userAgent: AUDIT_USER_AGENT,
+      },
+      { headers: conditionalHeaders(cached?.entry) },
+    )
     const elapsed = Date.now() - started
-    // 401/403/… 的机器人拦截、5xx、其余 4xx 全部由 core 的同一张表判定，
-    // 本文件不再自己写一遍顺序（顺序写错就会把 WAF 拦截算成「请求被拒绝」）。
-    const statusVerdict = classifyProbeStatus(res.status)
-    if (statusVerdict) {
-      return { grade: statusVerdict.grade, ok: false, status: res.status, latencyMs: elapsed, reason: statusVerdict.reason }
+
+    // 304：对端确认「没变」。沿用上次结论并续期，比重新抓一遍更可信。
+    if (res.status === 304 && cached) {
+      cache.markRevalidated(url)
+      scheduleProbeCacheFlush(cache)
+      return candidateProbeOf(cached.entry.kind, cached.entry.status, elapsed, `未变更（304）：${cached.entry.reason}`)
     }
-    // 非文本响应（PDF/图片/压缩包）不做正文判定：二进制乱码的低熵会被读成停放页
-    if (res.body && isTextualContentType(res.contentType)) {
-      const health = auditPageHealth(url, res.body, undefined, undefined, { truncated: res.truncated })
-      // 停放词与软 404 的命中本身就是证据，截断不会凭空造出这些词，所以照常判。
-      if (health.status === "SUSPICIOUS_PARKED" || health.status === "SOFT_404") {
-        return { grade: "suspicious", ok: false, status: res.status, latencyMs: elapsed, reason: health.reason }
-      }
-      /**
-       * THIN_CONTENT 只在「整页都读到了」时才算证据。
-       *
-       * 现代站点前 8KB 常被 inline CSS / modulepreload 占满——实测 nextjs.org 的
-       * 前 8192 字符里正文只有 134 个，gov.cn 有 5048 个，同一阈值下命运完全不同。
-       * 响应被截断时判「正文太少」，等于拿缺失证据当结论：正常站被判成空壳候选，
-       * 然后被静默排除。这里宁可不下结论，只把「内容未判」如实带出去。
-       */
-      if (health.status === "THIN_CONTENT" && !res.truncated) {
-        return { grade: "suspicious", ok: false, status: res.status, latencyMs: elapsed, reason: health.reason }
-      }
-      if (health.status === "THIN_CONTENT") {
-        return {
-          grade: "verified",
-          ok: true,
-          status: res.status,
-          latencyMs: elapsed,
-          reason: "响应被截断，内容级判定已跳过（无法确认正文量）",
-        }
-      }
-    }
-    return { grade: "verified", ok: true, status: res.status, latencyMs: elapsed }
+
+    const outcome = candidateOutcomeOf(res, url)
+    cache.record(url, outcome, { etag: res.etag ?? null, lastModified: res.lastModified ?? null })
+    scheduleProbeCacheFlush(cache)
+    return candidateProbeOf(outcome.kind, outcome.status, elapsed, outcome.reason)
   } catch (err) {
     const elapsed = Date.now() - started
-    const { grade, reason } = classifyProbeFailure(url, err, elapsed, CANDIDATE_PROBE_TIMEOUT_MS)
-    return { grade, ok: false, latencyMs: elapsed, reason }
+    const outcome = classifyErrorOutcome(err, {
+      elapsedMs: elapsed,
+      timeoutMs: CANDIDATE_PROBE_TIMEOUT_MS,
+      url,
+    })
+    cache.record(url, outcome)
+    scheduleProbeCacheFlush(cache)
+    return candidateProbeOf(outcome.kind, outcome.status, elapsed, outcome.reason)
   }
 }
 
@@ -657,7 +721,8 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     const timeoutMs = clampInt(body.timeoutMs, PLUGIN_AUDIT_DEFAULTS.timeoutMs, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
     const urls = (plugin.manifest.payload as SitePackPayload).sites.map((s) => s.url)
 
-    const { summary } = await auditPluginUrls(urls, createGuardedProber(), { sample, timeoutMs })
+    const { summary, probes } = await auditPluginUrls(urls, createGuardedProber(), { sample, timeoutMs })
+    recordProbeResults(probes)
 
     await ctx.repo.audit({
       ip: req.ip,
@@ -700,6 +765,95 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
   /**
    * 批量读取所有插件的最近一次体检快照（工作台秒级预载用）。
    */
+  app.post(
+    /**
+     * 异步体检任务：批量净网这类长任务不再绑在请求生命周期上。
+     *
+     * URL 列表由调用方给定（调用方本来就知道包里有啥），服务端只负责排队与执行；
+     * 任务落盘在 data/audit-jobs.json，进程重启后从 cursor 继续，已测过的不会重测。
+     */
+    "/api/plugins/url-health/jobs",
+    { config: { scope: "write", rateLimit: { max: 20, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const body = (request.body ?? {}) as { slug?: unknown; urls?: unknown }
+      const slug = typeof body.slug === "string" ? body.slug.trim() : ""
+      const urls = Array.isArray(body.urls) ? body.urls.filter((u): u is string => typeof u === "string") : []
+      if (!slug) return reply.code(400).send({ ok: false, error: "bad_request", message: "缺少 slug" })
+      if (urls.length === 0) return reply.code(400).send({ ok: false, error: "bad_request", message: "urls 不能为空" })
+      if (urls.length > MAX_SAMPLE) {
+        return reply.code(400).send({ ok: false, error: "too_many_urls", message: `一次最多 ${MAX_SAMPLE} 条` })
+      }
+      const queue = await getAuditQueue()
+      const job = await queue.enqueue({ slug, urls })
+      // 不 await：任务在后台跑，客户端靠 GET /jobs/:id 轮询进度
+      void runAuditWorker(1)
+      return reply.code(202).send({
+        ok: true,
+        id: job.id,
+        slug: job.slug,
+        state: job.state,
+        total: job.progress.total,
+      })
+    },
+  )
+
+  app.get(
+    "/api/plugins/url-health/jobs/:id",
+    { config: { scope: "read", rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const params = request.params as { id?: string }
+      const id = params.id ? safeDecodeParam(params.id) : ""
+      if (!id) return reply.code(400).send({ ok: false, error: "bad_request", message: "缺少任务 id" })
+      const queue = await getAuditQueue()
+      const job = await queue.get(id)
+      if (!job) return reply.code(404).send({ ok: false, error: "not_found", message: "任务不存在" })
+      return { ok: true, job }
+    },
+  )
+
+  app.get(
+    "/api/plugins/url-health/jobs",
+    { config: { scope: "read", rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async () => {
+      const queue = await getAuditQueue()
+      const jobs = await queue.list()
+      // 列表只回摘要：results 可能与 urls 同长（200 条），列出来会把响应撑大
+      return {
+        ok: true,
+        items: jobs.slice(0, 20).map((j) => ({
+          id: j.id,
+          slug: j.slug,
+          state: j.state,
+          progress: j.progress,
+          createdAt: j.createdAt,
+          updatedAt: j.updatedAt,
+          attempt: j.attempt,
+          ...(j.error ? { error: j.error } : {}),
+        })),
+      }
+    },
+  )
+
+  app.get(
+    /**
+     * 探活指标（RED）：本进程自启动以来最近 5000 条样本。
+     *
+     * 默认 JSON（面板/人工看），`?format=prometheus` 输出标准文本供抓取。
+     * 数据来自内存环形缓冲，所以重启即清零——这是运行态观测，不是业务账本。
+     */
+    "/api/plugins/url-health/metrics",
+    { config: { scope: "read", rateLimit: { max: 60, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const query = request.query as { format?: string } | undefined
+      if (query?.format === "prometheus") {
+        return reply
+          .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
+          .send(probeMetricsPrometheus(process.env.NAVHUB_INSTANCE_ID || undefined))
+      }
+      return probeMetricsSummary()
+    },
+  )
+
   app.get(
     "/api/plugins/url-health/summary",
     { config: { scope: "read", rateLimit: { max: 120, timeWindow: "1 minute" } } },
@@ -925,10 +1079,11 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
         // 参数顺序必须是 (value, fallback, min, max)：此前写成 (value, 1, 200, 30)
         // 导致 Math.min(30, Math.max(200, n)) 恒等于 30 —— sampleLimit 完全失效。
         const limit = clampInt(body.sampleLimit, PLUGIN_AUDIT_DEFAULTS.sample, 1, MAX_SAMPLE)
-        const { summary } = await auditPluginUrls(packSites.map((s) => s.url), createGuardedProber(), {
+        const { summary, probes } = await auditPluginUrls(packSites.map((s) => s.url), createGuardedProber(), {
           sample: limit,
           timeoutMs: 3500,
         })
+        recordProbeResults(probes)
         for (const item of summary.brokenItems ?? []) {
           evidenceMap.set(item.url, {
             source: "live-probe",

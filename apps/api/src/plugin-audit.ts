@@ -274,8 +274,10 @@ export async function auditPluginUrls(
   urls: readonly string[],
   probe: UrlProber,
   options: { sample?: number; concurrency?: number; timeoutMs?: number } = {},
-): Promise<{ summary: PluginAuditSummary; sampledUrls: string[] }> {
+): Promise<{ summary: PluginAuditSummary; sampledUrls: string[]; probes: UrlProbeResult[] }> {
   const sampledUrls = sampleUrls(urls, options.sample ?? PLUGIN_AUDIT_DEFAULTS.sample)
   const probes = await probeUrls(sampledUrls, probe, options)
-  return { summary: summarizeProbes(probes), sampledUrls }
+  // 额外回传逐条探活结果：调用方要用它做指标聚合（原因分布 / 延迟直方图）。
+  // 这是纯附加字段，既有解构 `{ summary }` 的调用方不受影响。
+  return { summary: summarizeProbes(probes), sampledUrls, probes }
 }

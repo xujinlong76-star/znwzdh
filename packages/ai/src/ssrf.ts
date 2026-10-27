@@ -175,8 +175,57 @@ export function isBlockedIpv6(ip: string): boolean {
   return false;
 }
 
+/**
+ * 不该被「用户提交的网址」指向的端口。
+ *
+ * 判据不是「常见不常见」，而是**SSRF 攻击面**：这些端口后面通常是数据库、
+ * 缓存、容器运行时或集群控制面，一旦被服务端代为访问，等于把内网管理接口
+ * 暴露出去（Redis 未授权写 crontab、Docker API 起容器是典型利用链）。
+ *
+ * 同时也保护我们自己：这些端口上不会有正常网页，探活必然是噪声。
+ * 只做「精确端口」匹配，不做范围——避免把 8080/8443 这类正常站点误杀。
+ */
+const BLOCKED_PORTS = new Set([
+  "22", // SSH
+  "23", // Telnet
+  "25", // SMTP
+  "110", // POP3
+  "143", // IMAP
+  "445", // SMB
+  "1433", // SQL Server
+  "1521", // Oracle
+  "2181", // ZooKeeper
+  "2375", // Docker daemon（未加密）
+  "2376", // Docker daemon（TLS）
+  "2379", // etcd client
+  "2380", // etcd peer
+  "3306", // MySQL
+  "3389", // RDP
+  "5432", // PostgreSQL
+  "5601", // Kibana
+  "5672", // AMQP
+  "5984", // CouchDB
+  "6379", // Redis
+  "6380", // Redis（TLS）
+  "6443", // kube-apiserver
+  "7001", // WebLogic
+  "7002", // WebLogic（TLS）
+  "8086", // InfluxDB
+  "8500", // Consul HTTP
+  "8600", // Consul DNS
+  "9042", // Cassandra
+  "9092", // Kafka
+  "9200", // Elasticsearch
+  "9300", // Elasticsearch transport
+  "10250", // kubelet
+  "10255", // kubelet（只读）
+  "11211", // Memcached
+  "15672", // RabbitMQ 管理台
+  "27017", // MongoDB
+  "27018", // MongoDB shard
+]);
+
 /** 校验 URL 协议与主机名形态；不做 DNS（DNS 在 resolveAndCheck 里） */
-const BLOCKED_PORTS = new Set(["22", "25", "110", "143", "3306", "5432", "6379", "6380", "9200", "11211", "27017", "27018"]);
 export function assertUrlShape(raw: string): URL {
   let url: URL;
   try { url = new URL(raw); } catch { throw new SsrfBlockedError("无效的 URL: " + raw, "malformed"); }
@@ -250,6 +299,13 @@ export interface GuardedFetchResult {
   body: string;
   truncated: boolean;
   redirects: string[];
+  /**
+   * 对端给的缓存校验器。调用方存起来，下次带 `If-None-Match` /
+   * `If-Modified-Since` 做条件请求，回 304 就复用上次判定——
+   * 这是链接检查器（lychee 等）避免重复抓取的通用做法。
+   */
+  etag?: string;
+  lastModified?: string;
 }
 
 /** `guardedFetch` 允许的请求方法。GET/HEAD 不允许携带请求体。 */
@@ -425,6 +481,8 @@ export async function guardedFetch(
 
     try {
       const { text, truncated } = await readLimited(res, opts.maxBytes);
+      const etag = res.headers.get("etag");
+      const lastModified = res.headers.get("last-modified");
       return {
         finalUrl: current.toString(),
         status: res.status,
@@ -432,6 +490,8 @@ export async function guardedFetch(
         body: text,
         truncated,
         redirects,
+        ...(etag ? { etag } : {}),
+        ...(lastModified ? { lastModified } : {}),
       };
     } finally {
       clearTimeout(timer);

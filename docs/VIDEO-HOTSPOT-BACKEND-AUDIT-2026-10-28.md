@@ -787,3 +787,153 @@ hydration 告警。代码里 267 行那句注释「button 只允许 phrasing con
 > 附带：`packages/store/src/data-inventory.ts`（既有模块，6.7KB）一直被 `index.ts`
 > 导出但从未进索引，pre-commit 的依赖检查因此拦下 C6 提交 —— store 包与 overlay
 > 一样存在「半跟踪」，这次一并补齐。
+
+---
+
+## 15. 第四轮：把 14 章的三个「阶段成果」推到闭环
+
+### 15.1 A8 类型门禁 —— 从 16 个模块扩到 23 个，`lib/video-*` 全部清零
+
+上一轮只把 16 个模块纳入门禁，剩下的 `lib/video-*` 里还有 **29 处**类型分叉。
+本轮逐个修完：
+
+| 模块 | 处数 | 真实后果 |
+|---|---|---|
+| `video-failover.ts` | 13 | `VideoMirrorSource` 声明的是 `{platform,id,href,title?,author?}`，代码读写的是 `sourceId`/`label`/`priority`/`isDirectStream`；`href` 被声明为必填却**从未被任何代码读过**，也没人填 |
+| `video-slide-detector.ts` | 7 | BigInt 字面量（`0n`）在 `target: es2017` 下报 TS2737 |
+| `video-spaced-repetition.ts` | 4 | 见下（两处功能失效） |
+| `video-scrubber-filmstrip.ts` | 2 | `VideoChapter.startTime` 变可选后仍直接参与算术 |
+| `video-code-diff.ts` | 1 | 同上：里程碑 `timeSec` 取 `ch.startTime` → `undefined` |
+| `video-concept-graph-navigator.ts` | 1 | 同上：章节跳转 `seekSec` 为 `undefined` |
+| `video-offline-storage.ts` | 1 | TS 5.7 起 `Uint8Array<ArrayBufferLike>` 不满足 `BufferSource` |
+
+**两处是真的功能失效，不只是类型洁癖**：
+
+1. **所有自测题闪卡的答案是错的**。`generateFlashcardsFromQuizzes` 把 `options`
+   当 `{ isCorrect, label }` 对象读，而它的类型是 `string[]` —— `find()` 永远返回
+   `undefined`，于是每张卡的答案都是兜底值「查看详解」。同一函数还读了不存在的
+   `q.title`（应为 `q.question`）。改用 `quizCorrectIndex(q)`。
+2. **章节跳转与代码对照的时间点是 `undefined`**。采集器写入的章节只有 `timeSec`，
+   而这三处只读 `startTime`。统一改走 `chapterStartSec()`（`timeSec ?? startTime ?? 0`）。
+
+修法上有一条边界值得记：`VideoMirrorSource.href` 改成可选，但**没有**顺手让
+「只有 href、没有 sourceId」的线路也能进列表 —— `videos.json` 里 `mirrors` 目前
+是 **0 条**，那是潜在功能，没有真实数据支撑的行为改动属于投机。
+
+**`tsconfig.json` 的 target 从 `es2017` 改成 `ES2022`**：`es2017` 是 Next 模板残留，
+而仓库根 `tsconfig.base.json` 是 `ES2022`，应用只跑现代浏览器与 Node 18+。
+改完 `apps/web/tsconfig.json`（vendored）也随之同步。
+
+### 15.2 一个会让门禁假红/假绿的问题
+
+overlay 的 tsconfig 开着 `incremental: true`，会在
+`apps/web-overlay/tsconfig.tsbuildinfo` 留下缓存。实测：**改完 target 后仍报原来的
+7 处 BigInt 错误**，删掉 tsbuildinfo 重跑是 0 错误。
+
+也就是说，同一个门禁在陈旧缓存下可能给出相反结论。现在 `typecheck-video-scope.mjs`
+固定传 `--incremental false`。反向验证：注入 `const p: number = "x"` →
+打印 1 处错误且 **exit=1**，恢复后转绿。
+
+### 15.3 C6 关系表 —— 读写切换落地（三档模式）
+
+第 14 章只建了表和原语，表里没有数据、也没有写入路径 —— 相当于「备好了但没通电」。
+本轮接上：
+
+| `NAVHUB_VIDEO_STORE` | 写 | 读 |
+|---|---|---|
+| `json`（默认，不配就是它） | 只写 KV 文档 | KV 文档 |
+| `dual` | KV + 关系表 | KV 文档 |
+| `db` | KV + 关系表 | 关系表（空表回落 KV） |
+
+三个刻意的决定：
+
+1. **任何模式都继续写 KV 文档。** 它是回滚快照：环境变量改回 `json` 就是完整回滚，
+   不需要反向导入，这期间采集到的内容也不会丢。
+2. **影子表写失败不阻断正本写入。** 事实源是文档，表是副本；让副本故障把
+   `PUT /api/storage` 打成 500 是把主次搞反。失败记进 `videoCatalogSyncState()`
+   （`lastSyncError` / `consecutiveFailures`），由 `--check` 与运维发现。
+3. **`db` 模式下空表回落 KV。** 判据是「条目数为 0」而非「分类数为 0」——
+   迁移中途失败会留下「有分类没条目」的状态，那种状态读出来是「所有分类都是空的」，
+   比回落更糟。
+
+映射上的三个细节：
+
+- `payload` 存**完整原始条目**（`{ item, sub }`）而不是 `videoConfig`：列只承担
+  「可过滤 / 可排序」的投影职责，重建一律以 payload 为准，将来列增删不会让
+  round-trip 丢字段。
+- 子分类元数据（id/title/icon）跟着条目 payload 走 —— 表里没有 sub_category 表，
+  但重建必须还原子分类结构。
+- `video_items.id` 是主键，而文档里同一 id 出现在两个分类下是可能的（复制粘贴类目）。
+  压平时对重复 id 加 `#2` 后缀，避免一条重复让整批 INSERT 失败。
+
+**已知边界（写进 `docs/VIDEO-CATALOG-MIGRATION.md`，不当 bug）**：
+`replacementHistory` 的 `subCategoryId`/`subCategoryTitle` 没有对应列，不 round-trip
+（当前库该数组 0 条）；单次读取上限 500 条，超过时**回落文档**而不是截断；
+`db` 模式不做按条写合并（写入仍是整包 + 全量替换表）。
+
+### 15.4 B6 wbi 签名 —— 找到离线可验证的锚点
+
+第 13 章把 B6 记为「无法在线验证」。这次先把「为什么」测清楚：
+
+```
+https://www.bilibili.com    http=000  time=0.08s
+https://api.bilibili.com    http=000  time=0.04s
+https://example.com         http=200  time=2.78s
+https://www.baidu.com       http=200  time=0.77s
+```
+
+DNS 正常（`api.bilibili.com` → 111.19.247.x），但 TCP 连接**瞬间被重置**
+（0.04s，不是超时）—— 是网络策略拦截 B 站，不是代码问题，也不是风控。
+
+于是换了个思路：`bilibili-API-collect` 的 WBI 文档给出了一组公开样例
+（多份独立实现引用同一组值）：
+
+```
+img_key   = 7cd084941338484aae1ad9425b84077c
+sub_key   = 4932caff0ff746eab6f01bf08b70ac45
+mixin_key = ea1db124af3c7062474693fa704f4ff8
+```
+
+跑 `getMixinKey()` 结果**完全一致**，已固化为断言。这条的价值在于：原有那几条
+（长度 32 / 十六进制 / 前三位对应第 46、47、18 位 / 同输入同输出）在有人把置换表
+末尾几个数字调换顺序时**全部仍会通过**，而签名已经废了 —— 只有样例向量能发现。
+
+**仍未验证（如实记录，不当「已完成」）**：
+- 服务端是否接受该签名（需要能访问 B 站）
+- `w_rid` 的端到端正确性（公开资料只有 `mixin_key` 这一步的样例，没有 `w_rid` 向量）
+- 风控阈值（频率限制、是否需要 cookie / `bili_ticket`）
+
+### 15.5 顺带复核：热点榜单页没有同类问题
+
+原始需求里的「智能热点采集中心」在代码里对应两处：采集链路（`video-trending-harvester`
+/ `video-autonomous-ai-harvester`，前几轮已修）与站内榜单页 `/hot`。
+后者复核结论：`app/hot/page.tsx` 服务端取数（`hubGet`，带 `AbortSignal.timeout` +
+`catch` 降级）、`revalidate=60` 与中枢 `/api/rank/*` 的 maxAge 对齐、失败时把
+`degraded` 传给客户端岛，**无硬编码 / 无 `Math.random` 伪造**。不需要改动。
+
+### 15.6 本轮提交
+
+| commit | 内容 |
+|---|---|
+| `276c51fa` | `fix(video)`：清零剩余 29 处类型分叉，门禁 16 → 23 个模块，tsconfig target → ES2022，新增 `video-type-contract.test.ts`（10 例） |
+| `e271cc48` | `feat(api)`：视频库关系表读写切换（三档模式 + 导入 CLI + 灰度手册），新增 13 例测试 |
+| `f47a9e0d` | `test(video)`：用公开样例锚定 wbi 置换表 |
+
+### 15.7 验证记录（本轮）
+
+| 检查 | 结果 |
+|---|---|
+| `apps/web/test` 全量 | **214 文件 / 2423 例全绿**（本轮起点 213 / 2413） |
+| `apps/api/test` 全量 | **113 文件 / 1106 例全绿**（起点 112 / 1093） |
+| `packages/store/test` | **48 文件 / 355 例全绿** |
+| `scripts/typecheck.mjs` | 5 个包通过（16.8s） |
+| `apps/api` + `packages/store` ESLint（`--max-warnings 0`） | exit 0 |
+| `scripts/typecheck-video-scope.mjs` | **23 模块 0 错误**；反向验证 exit=1 |
+| `scripts/check-bundle-budget.mjs` | 全部路由在预算内 |
+| `scripts/check-web-overlay.mjs` | 871 文件一致 |
+| C6 CLI 端到端（临时库，不碰开发库） | 空库退出 2；`--check` 退出 1 并列出缺失项；导入 `2 分类 / 3 条目`；导入后一致；`db` 模式读出的结构与 `json` 完全一致 |
+
+> 环境说明：`node scripts/verify.mjs` 的「后端 lint」步骤在本机失败，原因是
+> **该 shell 里没有 `pnpm`**（`'pnpm' 不是内部或外部命令`），不是 lint 本身的问题。
+> 已按 `lint:backend` 的实际命令（`eslint . --max-warnings 0`）在
+> `apps/api` 与 `packages/store` 分别复跑，两者 exit 0。

@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "description": "探活判定契约（事实源）。面板 / Chrome 扩展 / Raycast / MCP 展示结论时以本文件为准；改这里必须同步 packages/core/src/probe-policy.ts，由 packages/core/test/probe-contract.test.ts 强制校验。",
+  "outcomeKinds": ["ok", "blocked", "parked", "dead", "unverified", "server-error"],
+  "candidateGrades": ["verified", "blocked", "unverified", "suspicious", "dead"],
+  "botBlockedStatuses": [401, 403, 405, 412, 418, 429],
+  "confirmedGoneStatuses": [404, 410, 451],
+  "kindToGrade": {
+    "ok": "verified",
+    "blocked": "blocked",
+    "parked": "suspicious",
+    "dead": "dead",
+    "unverified": "unverified",
+    "server-error": "unverified"
+  },
+  "kindToHttpVerdict": {
+    "ok": null,
+    "blocked": "bot-blocked",
+    "parked": null,
+    "dead": "http-error",
+    "unverified": "http-error",
+    "server-error": "server-error"
+  }
+}

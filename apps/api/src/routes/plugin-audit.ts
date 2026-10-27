@@ -13,7 +13,7 @@
  * （默认不放行私网，因此内网目标会以 SSRF 拒绝的形式记为不可达）。
  */
 import type { FastifyPluginAsync } from "fastify";
-import { DEFAULT_GUARD, guardedFetch, resolveAndCheck, type GuardedFetchResult } from "@navhub/ai";
+import { DEFAULT_GUARD, guardedFetch, outboundProfile, resolveAndCheck, type GuardedFetchResult } from "@navhub/ai";
 import {
   auditPageHealth,
   buildWaybackSnapshotUrl,
@@ -256,7 +256,8 @@ interface CandidateProbe {
 }
 
 /** 候选探活的超时上限：候选只需证明「能打开且内容正常」，2.5 秒足够，不必等满正式体检的时长 */
-const CANDIDATE_PROBE_TIMEOUT_MS = 2500
+const CANDIDATE_PROFILE = outboundProfile("candidate")
+const CANDIDATE_PROBE_TIMEOUT_MS = CANDIDATE_PROFILE.timeoutMs
 
 /**
  * 探活异常 → 候选档位（薄包装）。
@@ -365,11 +366,12 @@ async function probeCandidateUrl(url: string): Promise<CandidateProbe> {
     const res = await guardedFetch(
       url,
       {
-        timeoutMs: CANDIDATE_PROBE_TIMEOUT_MS,
-        // 2KB 不足以做信息熵判断（停放页的「域名出售」区块常在页面尾部），提到 8KB
-        maxBytes: 8 * 1024,
-        maxRedirects: 3,
-        userAgent: AUDIT_USER_AGENT,
+        // 超时/体积/跳数/UA 统一从 profile 取：2KB 不足以做信息熵判断
+        //（停放页的「域名出售」区块常在页面尾部），candidate profile 定在 8KB
+        timeoutMs: CANDIDATE_PROFILE.timeoutMs,
+        maxBytes: CANDIDATE_PROFILE.maxBytes,
+        maxRedirects: CANDIDATE_PROFILE.maxRedirects,
+        userAgent: CANDIDATE_PROFILE.userAgent,
       },
       { headers: conditionalHeaders(cached?.entry) },
     )

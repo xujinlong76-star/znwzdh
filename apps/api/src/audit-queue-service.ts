@@ -21,12 +21,10 @@ import {
   type AuditJobResult,
   type AuditQueue,
 } from "@navhub/core";
-import { guardedFetch } from "@navhub/ai";
+import { guardedFetch, outboundProfile } from "@navhub/ai";
 
-/** 单条候选/任务探活的超时与体积上限（与同步体检保持一致） */
-const JOB_PROBE_TIMEOUT_MS = 4_000;
-const JOB_PROBE_MAX_BYTES = 8 * 1024;
-const JOB_USER_AGENT = "NavHubBot/0.1 (+https://github.com/navhub)";
+/** 异步任务探活沿用 probe profile：超时/体积/UA 只有一份定义（packages/ai/src/outbound.ts） */
+const JOB_PROFILE = outboundProfile("probe");
 
 let queuePromise: Promise<AuditQueue> | null = null;
 let workerRunning = false;
@@ -48,10 +46,10 @@ export async function probeOneForJob(url: string): Promise<AuditJobResult> {
   const started = Date.now();
   try {
     const res = await guardedFetch(url, {
-      timeoutMs: JOB_PROBE_TIMEOUT_MS,
-      maxBytes: JOB_PROBE_MAX_BYTES,
-      maxRedirects: 3,
-      userAgent: JOB_USER_AGENT,
+      timeoutMs: JOB_PROFILE.timeoutMs,
+      maxBytes: JOB_PROFILE.maxBytes,
+      maxRedirects: JOB_PROFILE.maxRedirects,
+      userAgent: JOB_PROFILE.userAgent,
     });
     const byStatus = classifyProbeStatus(res.status);
     if (byStatus) return { kind: byStatus.kind, ...(res.status ? { status: res.status } : {}) };
@@ -67,7 +65,7 @@ export async function probeOneForJob(url: string): Promise<AuditJobResult> {
   } catch (err) {
     const outcome = classifyProbeError(err, {
       elapsedMs: Date.now() - started,
-      timeoutMs: JOB_PROBE_TIMEOUT_MS,
+      timeoutMs: JOB_PROFILE.timeoutMs,
       url,
     });
     return { kind: outcome.kind };

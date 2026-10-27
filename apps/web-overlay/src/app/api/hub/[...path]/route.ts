@@ -72,7 +72,7 @@ async function forward(request: NextRequest, path: string[]): Promise<Response> 
     const gate = await verifyAdminSession()
     if (!gate.ok) {
       return NextResponse.json(
-        { error: gate.reason ?? '需要管理员身份' },
+        { error: gate.error ?? '需要管理员身份' },
         { status: gate.status ?? 403 },
       )
     }

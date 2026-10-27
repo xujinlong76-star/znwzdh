@@ -16,6 +16,15 @@
 import { isNotFound, type DegradedHandler } from './degrade'
 import { getIdentity } from './identity'
 import type { PluginDiffResult, PluginManifest, PluginKind } from './plugins/plugin-manifest'
+// 响应形状来自中枢契约的生成物（scripts/generate-rest-contract-types.mjs）：
+// 手抄一份接口曾经是最大的漂移面——中枢改了字段，前端照旧编译通过、运行时 undefined。
+// 这里只 import 类型，生成文件是自包含的，不会把 @navhub/core 拖进浏览器包。
+import type {
+  CategoryCountsResponse,
+  CategoryListResponse,
+  SearchResponse,
+  TagListResponse,
+} from './rest-contracts.generated'
 
 const BASE = '/api/hub'
 
@@ -96,37 +105,41 @@ export interface HubSearchHit {
   site: HubSite | null
 }
 
-export interface HubSearchResult {
+/**
+ * 检索响应（前端视图）。
+ *
+ * 标量字段直接继承中枢契约（Pick 出来的形状与 /api/openapi.json 同源），
+ * 只把命中形态换成本地的 HubSearchHit：契约里 hit.site 是完整的 SitePayload，
+ * 而 UI 用的是更宽的展示形态 HubSite（多了 relations/actions/liveMetrics，
+ * health 允许整块缺席）。这层差异是展示需要，不是契约漂移——
+ * 契约一旦改名/改类型，Pick 这里的字段会立刻编译失败。
+ *
+ * 分页语义：offset = 本次分页偏移（0 = 第一页）；hasMore = 召回池内还有余量
+ * （不是全库总数），据它渲染「加载更多」。fallback 只在零结果放宽时出现。
+ */
+export interface HubSearchResult
+  extends Pick<
+    SearchResponse,
+    | 'channelsUsed'
+    | 'semanticAvailable'
+    | 'tookMs'
+    | 'offset'
+    | 'hasMore'
+    | 'fallback'
+    | 'suggestions'
+    | 'popular'
+    | 'inferredFacets'
+    | 'inferredTag'
+    | 'inferredCategory'
+    | 'excludedTerms'
+    | 'didYouMean'
+    | 'queryExpansion'
+  > {
   hits: HubSearchHit[]
-  channelsUsed: string[]
-  semanticAvailable: boolean
-  tookMs: number
-  /** 本次分页偏移（0 = 第一页） */
-  offset?: number
-  /** 召回池内是否还有余量（不是全库总数）——据渲染「加载更多」 */
-  hasMore?: boolean
   /** 客户端标记：true 表示请求失败走了降级 */
   degraded?: boolean
-  /** 零结果时的兜底放宽级别（有结果时缺席）：filter=放宽了筛选，fuzzy=放宽了匹配 */
-  fallback?: 'filter' | 'fuzzy'
-  /** 零结果时的推荐搜索词（有结果时缺席） */
-  suggestions?: string[]
-  /** 零结果时的热门搜索词（有结果时缺席） */
-  popular?: string[]
   /** 知识图谱对标方案与实体关联命中（如搜 "figma" 命中其开源平替 "Penpot"） */
   relationHits?: HubSiteRelation[]
-  /** 智能析取到的分面意图（如搜 "开源 设计" 自动推导 pricing: ["open_source"]） */
-  inferredFacets?: Record<string, string[]>
-  /** 识别到的标签算子修饰符 (#tag) */
-  inferredTag?: string
-  /** 识别到的类目算子修饰符 (@category) */
-  inferredCategory?: string
-  /** 识别到的负向排除关键词 (-keyword) */
-  excludedTerms?: string[]
-  /** 零结果时的智能拼写纠错建议 */
-  didYouMean?: string
-  /** 知识图谱/标签同义词扩展词条 */
-  queryExpansion?: string[]
 }
 
 export interface HubTag {
@@ -429,7 +442,9 @@ export function reportClick(siteId: string, identity?: string, context?: ClickRe
 /* ------------------------------ 标签 ------------------------------ */
 
 export async function fetchTags(onDegraded?: DegradedHandler): Promise<HubTag[]> {
-  return degrade([], () => getJson<HubTag[]>('/api/tags?minCount=1&limit=100'), onDegraded)
+  // 读契约类型（而不是手写的 HubTag）：中枢若改名 name/slug/count，
+  // 这里的返回值就无法赋给 HubTag[]，编译期直接红。
+  return degrade([], () => getJson<TagListResponse>('/api/tags?minCount=1&limit=100'), onDegraded)
 }
 
 /* ------------------------------ 类目 ------------------------------ */
@@ -462,7 +477,9 @@ export async function fetchCategories(onDegraded?: DegradedHandler): Promise<Hub
   return degrade(
     null,
     async () => {
-      const data = await getJson<HubCategoryLite[]>('/api/categories')
+      // 契约类型 -> 展示类型的赋值本身就是门禁：中枢改了 title/parentId 的形状，
+      // 这行会编译失败，而不是让类目树在运行时静默变成「暂无分类」。
+      const data: CategoryListResponse = await getJson<CategoryListResponse>('/api/categories')
       // 非数组（中枢异常时可能返回错误对象）按故障处理，不能让 .filter 抛给 UI
       if (!Array.isArray(data)) throw new Error('类目响应格式异常')
       return data
@@ -481,7 +498,7 @@ export async function fetchCategoryCounts(onDegraded?: DegradedHandler): Promise
   return degrade(
     null,
     async () => {
-      const res = await getJson<{ counts?: Array<{ categoryId?: string; sites?: number }> }>('/api/categories/counts')
+      const res = await getJson<CategoryCountsResponse>('/api/categories/counts')
       if (!res || !Array.isArray(res.counts)) throw new Error('类目计数响应格式异常')
       const map = new Map<string, number>()
       for (const row of res.counts) {

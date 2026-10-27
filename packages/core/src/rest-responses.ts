@@ -17,7 +17,8 @@
 
 import { z } from "zod";
 import { SiteStatusSchema } from "./mcp-schemas.ts";
-import type { SearchHit, Site } from "./types.ts";
+import type { PluginKind } from "./plugin-manifest.ts";
+import type { Category, SearchHit, Site } from "./types.ts";
 
 /* ------------------------------------------------------------------ *
  * 站点（列表/搜索命中/关系来源共用）
@@ -185,6 +186,205 @@ export const SearchResponse = z.looseObject({
 });
 
 /* ------------------------------------------------------------------ *
+ * 类目（全量 / 分页 / 站点计数）
+ * ------------------------------------------------------------------ */
+
+/** 类目核心字段（与 Category 的键集合做编译期对齐） */
+export const CATEGORY_CORE_FIELDS = [
+  "id",
+  "anchor",
+  "parentId",
+  "title",
+  "enabled",
+  "sort",
+  "createdAt",
+  "updatedAt",
+] as const satisfies readonly (keyof Category)[];
+
+type CategoryCoreField = (typeof CATEGORY_CORE_FIELDS)[number];
+
+const categoryCoreShape = {
+  id: z.string(),
+  anchor: z.string(),
+  parentId: z.string().nullable(),
+  title: z.string(),
+  enabled: z.boolean(),
+  sort: z.number(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+} satisfies Record<CategoryCoreField, z.ZodTypeAny>;
+
+export const CategoryPayload = z.looseObject({
+  ...categoryCoreShape,
+  titleEn: z.string().nullable().optional(),
+  // 可空是过渡口径（历史行由启动期迁移回填），不能收成必填
+  slug: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  icon: z.string().nullable().optional(),
+  source: z.string().nullable().optional(),
+  altLabels: z.array(z.string()).optional(),
+  relatedCategories: z.array(z.string()).optional(),
+});
+
+/** GET /api/categories：全表（SKOS 导出与快照构建要整棵树，故无分页壳） */
+export const CategoryListResponse = z.array(CategoryPayload);
+
+/** GET /api/categories/page：有界分页壳 */
+export const CategoryPageResponse = z.object({
+  items: z.array(CategoryPayload),
+  total: z.number().int(),
+  limit: z.number().int(),
+  offset: z.number().int(),
+});
+
+/** GET /api/categories/counts：每个类目的存活站点数 */
+export const CategoryCountsResponse = z.object({
+  counts: z.array(z.object({ categoryId: z.string(), sites: z.number().int() })),
+});
+
+/* ------------------------------------------------------------------ *
+ * 标签云
+ * ------------------------------------------------------------------ */
+
+/**
+ * 标签核心字段。
+ *
+ * 与 `TagWithCount` 的编译期对齐放在 apps/api/test 里：那个类型在
+ * @navhub/store（依赖方向 store → core），core 不能反向 import。
+ */
+export const TAG_CORE_FIELDS = ["id", "name", "slug", "count", "group", "aliases"] as const;
+
+type TagCoreField = (typeof TAG_CORE_FIELDS)[number];
+
+const tagCoreShape = {
+  id: z.string(),
+  name: z.string(),
+  slug: z.string(),
+  count: z.number().int(),
+  group: z.string(),
+  aliases: z.array(z.string()),
+} satisfies Record<TagCoreField, z.ZodTypeAny>;
+
+export const TagPayload = z.looseObject({
+  ...tagCoreShape,
+  color: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+});
+
+/** GET /api/tags：按热度降序的标签数组 */
+export const TagListResponse = z.array(TagPayload);
+
+/* ------------------------------------------------------------------ *
+ * 推荐榜单
+ * ------------------------------------------------------------------ */
+
+/**
+ * GET /api/rank/trending。
+ * trend 是「为什么排在这儿」的可解释分量，前端 tooltip 直接读，
+ * 所以三个字段都是契约的一部分而不是可选装饰。
+ */
+export const RankTrendingResponse = z.looseObject({
+  hits: z.array(
+    z.object({
+      site: SitePayload,
+      trend: z.object({
+        visits: z.number(),
+        trendScore: z.number(),
+        lastVisitedAt: z.number().nullable(),
+      }),
+    }),
+  ),
+});
+
+/** GET /api/rank/new：只带站点，没有热度分量 */
+export const RankNewResponse = z.looseObject({
+  hits: z.array(z.object({ site: SitePayload })),
+});
+
+/* ------------------------------------------------------------------ *
+ * 插件市场列表
+ * ------------------------------------------------------------------ */
+
+/** 与 PLUGIN_KINDS 对齐；写成元组是因为 z.enum 只接受字面量元组 */
+export const PLUGIN_KIND_VALUES = [
+  "site-pack",
+  "workspace-preset",
+  "theme",
+  "search-pack",
+  "bundle",
+] as const satisfies readonly PluginKind[];
+
+const PluginKindSchema = z.enum(PLUGIN_KIND_VALUES);
+
+/**
+ * 列表卡片用的清单摘要。
+ * 列表响应刻意删掉了 manifest（一页 24 条曾达 1.16MB），
+ * 卡片只读 summary，所以这层必须进契约。
+ */
+const PluginSummaryPayload = z.looseObject({
+  kind: PluginKindSchema,
+  siteCount: z.number().int(),
+  categoryCount: z.number().int(),
+  uniqueTagCount: z.number().int(),
+  hosts: z.array(z.string()),
+  boardCount: z.number().int(),
+  widgetCount: z.number().int(),
+  widgetTypes: z.array(z.string()),
+  themeTokenCount: z.number().int(),
+  engineCount: z.number().int(),
+  enginePrefixes: z.array(z.string()),
+  bundleItemCount: z.number().int(),
+  bundleKinds: z.array(z.string()),
+});
+
+export const PluginPayload = z.looseObject({
+  id: z.string(),
+  slug: z.string(),
+  kind: PluginKindSchema,
+  name: z.string(),
+  description: z.string(),
+  icon: z.string().nullable(),
+  tags: z.array(z.string()),
+  author: z.string().nullable(),
+  authorKind: z.string().nullable(),
+  // ownerIdentity 是内部归属串，公共响应必须剔除；ownerKey 是不可逆哈希，可公开
+  ownerKey: z.string().nullable().optional(),
+  license: z.string().nullable(),
+  homepage: z.string().nullable(),
+  version: z.string(),
+  status: z.string(),
+  reviewNote: z.string().nullable(),
+  reviewedAt: z.number().nullable(),
+  source: z.string(),
+  installCount: z.number().int(),
+  starCount: z.number().int(),
+  reportCount: z.number().int(),
+  featured: z.boolean(),
+  featuredRank: z.number().int(),
+  ratingAvg: z.number(),
+  reviewCount: z.number().int(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  publishedAt: z.number().nullable(),
+  // 列表始终带 summary（卡片只读它）；缺失就是契约破了，不能给 optional 放行
+  summary: PluginSummaryPayload,
+  // site-pack 的 manifest 默认被摘掉（单条约 34KB），?manifest=1 时才回来；
+  // 其余 kind 的清单很小，保留原样。故这里只能是可选。
+  manifest: z.unknown().optional(),
+  aiAudit: z
+    .object({ score: z.number(), level: z.string(), auditedAt: z.number() })
+    .nullable()
+    .optional(),
+});
+
+export const PluginListResponse = z.object({
+  items: z.array(PluginPayload),
+  total: z.number().int(),
+  limit: z.number().int(),
+  offset: z.number().int(),
+});
+
+/* ------------------------------------------------------------------ *
  * 绑定表：路由键 -> 响应契约
  * ------------------------------------------------------------------ */
 
@@ -203,4 +403,11 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   // POST 与 GET 共用同一处理器，必须共用同一份契约，否则两边会各自漂移
   "POST /api/search": { schema: SearchResponse, name: "SearchResponse" },
   "GET /api/sites": { schema: SiteListResponse, name: "SiteListResponse" },
+  "GET /api/categories": { schema: CategoryListResponse, name: "CategoryListResponse" },
+  "GET /api/categories/page": { schema: CategoryPageResponse, name: "CategoryPageResponse" },
+  "GET /api/categories/counts": { schema: CategoryCountsResponse, name: "CategoryCountsResponse" },
+  "GET /api/tags": { schema: TagListResponse, name: "TagListResponse" },
+  "GET /api/rank/trending": { schema: RankTrendingResponse, name: "RankTrendingResponse" },
+  "GET /api/rank/new": { schema: RankNewResponse, name: "RankNewResponse" },
+  "GET /api/plugins": { schema: PluginListResponse, name: "PluginListResponse" },
 };

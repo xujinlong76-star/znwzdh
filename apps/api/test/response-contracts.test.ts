@@ -14,14 +14,25 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  CATEGORY_CORE_FIELDS,
+  CategoryCountsResponse,
+  CategoryListResponse,
+  CategoryPageResponse,
   HealthResponse,
+  PluginListResponse,
   RESPONSE_SCHEMA_BINDINGS,
+  RankNewResponse,
+  RankTrendingResponse,
   SEARCH_HIT_CORE_FIELDS,
   SITE_CORE_FIELDS,
   SearchResponse,
   SiteListResponse,
   SitePayload,
+  TAG_CORE_FIELDS,
+  TagListResponse,
 } from "@navhub/core";
+import type { PluginManifest } from "@navhub/core";
+import type { TagWithCount } from "@navhub/store";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
@@ -50,6 +61,18 @@ const SITES = [
   { url: "https://example.com/startup", title: "启动脚本", description: "服务启动脚本编写与运行管理", categoryId: "cat-dev", tags: ["devops"] },
 ];
 
+// 列表瘦身只针对 site-pack（单条清单约 34KB，24 条曾达 1.16MB），
+// 所以契约测试必须用 site-pack 才验得到「默认摘掉 manifest」。
+const SITE_PACK_MANIFEST: PluginManifest = {
+  manifestVersion: 1,
+  kind: "site-pack",
+  name: "契约测试网址包",
+  description: "响应契约测试用的最小网址包",
+  version: "1.0.0",
+  tags: ["test"],
+  payload: { sites: [{ url: "https://example.org", title: "示例站" }] },
+};
+
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-response-contracts-"));
   const config = loadConfig({
@@ -67,6 +90,8 @@ beforeAll(async () => {
   for (const c of CAT_ROOTS) await ctx.repo.createCategory({ id: c.id, title: c.title });
   for (const c of CATS) await ctx.repo.createCategory({ id: c.id, title: c.title, parentId: c.parentId });
   for (const s of SITES) await ctx.repo.createSite(s);
+  // 插件列表要有真实条目才验得到卡片形状（空数组会让契约形同虚设）
+  await ctx.repo.createPlugin({ manifest: SITE_PACK_MANIFEST, source: "seed", status: "published" });
 });
 
 afterAll(async () => {
@@ -127,6 +152,24 @@ describe("绑定表与真实路由同源", () => {
     // 搜索命中的核心字段由 satisfies 在编译期对齐 SearchHit，这里只确认清单非空
     expect(SEARCH_HIT_CORE_FIELDS.length).toBeGreaterThan(0);
   });
+
+  it("类目/标签核心字段清单与 schema 同步", () => {
+    const categoryShape = CategoryListResponse.element.shape as Record<string, unknown>;
+    for (const field of CATEGORY_CORE_FIELDS) {
+      expect(categoryShape[field], "CategoryPayload 缺少核心字段：" + field).toBeTruthy();
+    }
+    const tagShape = TagListResponse.element.shape as Record<string, unknown>;
+    for (const field of TAG_CORE_FIELDS) {
+      expect(tagShape[field], "TagPayload 缺少核心字段：" + field).toBeTruthy();
+    }
+  });
+
+  it("标签契约字段与仓储类型 TagWithCount 编译期对齐", () => {
+    // TagWithCount 在 @navhub/store（依赖方向 store → core），core 里没法反向 import，
+    // 只能在这里钉：清单里写错字段名，这行 satisfies 就会在编译期红。
+    const aligned = TAG_CORE_FIELDS satisfies readonly (keyof TagWithCount)[];
+    expect(aligned.length).toBeGreaterThan(0);
+  });
 });
 
 describe("真实响应满足契约", () => {
@@ -164,6 +207,102 @@ describe("真实响应满足契约", () => {
     expect(res.statusCode).toBe(200);
     expectContract(SearchResponse, res.json(), "POST /api/search");
   });
+
+  it("GET /api/categories", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/categories" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(CategoryListResponse, body, "GET /api/categories");
+    expect(body.length).toBe(CAT_ROOTS.length + CATS.length);
+    const root = body.find((c: { id: string }) => c.id === "root-ai");
+    // 根节点父级必须是 null 而不是缺字段：前端拿 parentId 判层级
+    expect(root.parentId).toBeNull();
+    expect(root.anchor).toBe("root-ai");
+  });
+
+  it("GET /api/categories/page", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/categories/page?limit=2&offset=0" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(CategoryPageResponse, body, "GET /api/categories/page");
+    expect(body.items.length).toBe(2);
+    expect(body.total).toBe(CAT_ROOTS.length + CATS.length);
+    expect(body.limit).toBe(2);
+    expect(body.offset).toBe(0);
+  });
+
+  it("GET /api/categories/page?parentId=null 只回根", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/categories/page?parentId=null" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(CategoryPageResponse, body, "GET /api/categories/page?parentId=null");
+    expect(body.items.map((c: { id: string }) => c.id).sort()).toEqual(CAT_ROOTS.map((c) => c.id).sort());
+  });
+
+  it("GET /api/categories/counts", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/categories/counts" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(CategoryCountsResponse, body, "GET /api/categories/counts");
+    const byId = new Map(body.counts.map((c: { categoryId: string; sites: number }) => [c.categoryId, c.sites]));
+    expect(byId.get("cat-ai")).toBe(2);
+    // 只有存活站点计入；空类目不出现（而不是出现一条 0）
+    expect(byId.has("root-ai")).toBe(false);
+  });
+
+  it("GET /api/tags", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/tags" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(TagListResponse, body, "GET /api/tags");
+    const ai = body.find((t: { name: string }) => t.name === "ai");
+    expect(ai.count).toBe(2);
+    expect(Array.isArray(ai.aliases)).toBe(true);
+  });
+
+  it("GET /api/rank/trending", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/rank/trending?limit=5" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(RankTrendingResponse, body, "GET /api/rank/trending");
+    expect(body.hits.length).toBe(SITES.length);
+    // 热度分量是 tooltip 的「为什么排在这儿」，必须齐全
+    expect(Object.keys(body.hits[0].trend).sort()).toEqual(["lastVisitedAt", "trendScore", "visits"]);
+    expect(body.hits[0].site.id).toBeTruthy();
+  });
+
+  it("GET /api/rank/new", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/rank/new?limit=5" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(RankNewResponse, body, "GET /api/rank/new");
+    expect(body.hits.length).toBe(SITES.length);
+  });
+
+  it("GET /api/plugins：列表带 summary、默认不带 manifest", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(PluginListResponse, body, "GET /api/plugins");
+    expect(body.total).toBe(1);
+    expect(body.items.length).toBe(1);
+    const item = body.items[0];
+    expect(item.slug).toBeTruthy();
+    expect(item.summary.kind).toBe("site-pack");
+    expect(item.summary.siteCount).toBe(1);
+    // 列表瘦身是刻意设计：site-pack 的 manifest 只在 ?manifest=1 时回来
+    expect(item.manifest).toBeUndefined();
+    // 内部归属串不能出现在公共响应里
+    expect(item.ownerIdentity).toBeUndefined();
+  });
+
+  it("GET /api/plugins?manifest=1 才带完整清单", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins?manifest=1" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(PluginListResponse, body, "GET /api/plugins?manifest=1");
+    expect(body.items[0].manifest).toBeTruthy();
+  });
 });
 
 describe("契约不是空转（负控：手工漂移必须被拒）", () => {
@@ -183,5 +322,44 @@ describe("契约不是空转（负控：手工漂移必须被拒）", () => {
     const body = (await app.inject({ method: "GET", url: "/api/search?q=Cursor" })).json();
     const drifted = body.hits.map((h: Record<string, unknown>) => ({ ...h, score: String(h.score) }));
     expect(SearchResponse.safeParse({ ...body, hits: drifted }).success).toBe(false);
+  });
+
+  it("categories：parentId 从 null 漂成缺字段、sort 降级成字符串都会被拒", async () => {
+    const body = (await app.inject({ method: "GET", url: "/api/categories" })).json();
+    const [first] = body;
+    const { parentId: _drop, ...withoutParent } = first;
+    expect(CategoryListResponse.safeParse([withoutParent]).success).toBe(false);
+    expect(CategoryListResponse.safeParse([{ ...first, sort: String(first.sort) }]).success).toBe(false);
+  });
+
+  it("categories/page：分页壳缺 total 或 items 漂成单对象都会被拒", async () => {
+    const body = (await app.inject({ method: "GET", url: "/api/categories/page?limit=1" })).json();
+    const { total: _drop, ...noTotal } = body;
+    expect(CategoryPageResponse.safeParse(noTotal).success).toBe(false);
+    expect(CategoryPageResponse.safeParse({ ...body, items: body.items[0] }).success).toBe(false);
+  });
+
+  it("tags：count 降级成字符串、aliases 变成字符串都会被拒", async () => {
+    const body = (await app.inject({ method: "GET", url: "/api/tags" })).json();
+    const first = body[0];
+    expect(TagListResponse.safeParse([{ ...first, count: String(first.count) }]).success).toBe(false);
+    expect(TagListResponse.safeParse([{ ...first, aliases: "ai" }]).success).toBe(false);
+  });
+
+  it("rank/trending：trend 少一个分量、visits 降级都会被拒", async () => {
+    const body = (await app.inject({ method: "GET", url: "/api/rank/trending?limit=1" })).json();
+    const hit = body.hits[0];
+    const { trendScore: _drop, ...partialTrend } = hit.trend;
+    expect(RankTrendingResponse.safeParse({ hits: [{ ...hit, trend: partialTrend }] }).success).toBe(false);
+    expect(
+      RankTrendingResponse.safeParse({ hits: [{ ...hit, trend: { ...hit.trend, visits: "0" } }] }).success,
+    ).toBe(false);
+  });
+
+  it("plugins：summary 缺失或 total 降级成字符串都会被拒", async () => {
+    const body = (await app.inject({ method: "GET", url: "/api/plugins" })).json();
+    const { summary: _drop, ...noSummary } = body.items[0];
+    expect(PluginListResponse.safeParse({ ...body, items: [noSummary] }).success).toBe(false);
+    expect(PluginListResponse.safeParse({ ...body, total: String(body.total) }).success).toBe(false);
   });
 });

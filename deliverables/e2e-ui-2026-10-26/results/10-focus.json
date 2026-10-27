@@ -1,0 +1,476 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "out": {
+    "install": {
+      "tabs": [
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "Taps 订阅源",
+          "sel": null,
+          "ds": null,
+          "cls": "inline-flex items-center justify-center whitespace-nowrap fo"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "AI 生成插件",
+          "sel": null,
+          "ds": null,
+          "cls": "inline-flex items-center justify-center whitespace-nowrap ri"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "全部插件",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2.5 py-1 rounded-full text-xs transition-all bg-primary t"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "🔥 飙升榜",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2.5 py-1 rounded-full text-xs transition-all bg-primary t"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "🚀 极客全栈装备",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2.5 py-1 rounded-full text-xs transition-all bg-backgroun"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "🔍 快捷直达引擎",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2.5 py-1 rounded-full text-xs transition-all bg-backgroun"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "📊 生产力工作台",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2.5 py-1 rounded-full text-xs transition-all bg-backgroun"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "🎨 赛博与暗黑美学",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2.5 py-1 rounded-full text-xs transition-all bg-backgroun"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "🧩 精选组合包",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2.5 py-1 rounded-full text-xs transition-all bg-backgroun"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "搜索",
+          "sel": null,
+          "ds": null,
+          "cls": "inline-flex items-center justify-center whitespace-nowrap te"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "#开发工具",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/5"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "#AI效率",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/5"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "#设计灵感",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/5"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "#自托管",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/5"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "#搜索增强",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/5"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "#极简生活",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/5"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "#精选常用",
+          "sel": null,
+          "ds": null,
+          "cls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/5"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "3",
+          "sel": null,
+          "ds": null,
+          "cls": "inline-flex items-center gap-1 px-2 py-1.5 min-h-[32px] roun"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "安装",
+          "sel": null,
+          "ds": null,
+          "cls": "inline-flex items-center gap-1.5 h-8 px-3 text-xs font-mediu"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "2",
+          "sel": null,
+          "ds": null,
+          "cls": "inline-flex items-center gap-1 px-2 py-1.5 min-h-[32px] roun"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "安装",
+          "sel": null,
+          "ds": null,
+          "cls": "inline-flex items-center gap-1.5 h-8 px-3 text-xs font-mediu"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "0",
+          "sel": null,
+          "ds": null,
+          "cls": "inline-flex items-center gap-1 px-2 py-1.5 min-h-[32px] roun"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "安装",
+          "sel": null,
+          "ds": null,
+          "cls": "inline-flex items-center gap-1.5 h-8 px-3 text-xs font-mediu"
+        },
+        {
+          "t": "BUTTON",
+          "role": null,
+          "txt": "0",
+          "sel": null,
+          "ds": null,
+          "cls": "inline-flex items-center gap-1 px-2 py-1.5 min-h-[32px] roun"
+        }
+      ],
+      "hasInstall": true,
+      "detail": {
+        "info": {
+          "dlg": true,
+          "confirm": true
+        },
+        "ms": 4094,
+        "reqs": [
+          "POST /api/hub/events",
+          "POST /api/hub/plugins/nordic-glacier/install",
+          "GET /api/hub/plugins?sort=trending&limit=24",
+          "GET /api/hub/plugins?sort=featured&featured=true&limit=6",
+          "GET /api/hub/plugins?sort=popular&limit=5",
+          "GET /api/hub/plugins?sort=rating&limit=5",
+          "GET /api/hub/plugins?sort=new&limit=5"
+        ],
+        "newTabs": 0,
+        "domDelta": -3436,
+        "textSigChanged": true,
+        "svgChanged": false,
+        "popupChanged": false,
+        "toast": [
+          "共 77 个插件",
+          "插件已处于安装状态未产生重复数据 · 用时 0.0s"
+        ],
+        "url": "/marketplace"
+      },
+      "installedPage": {
+        "head": "返回市场 / 已安装管家 已安装插件管家 管理当前设备与账号已安装的所有扩展。支持多套主题一键切换、快捷前缀直达语法速查、待更新插件平滑升级与彻底清理。 浏览插件市场 主题调色板与外观切换器 恢复系统默认主题 北欧冰川极简冷灰主题 生效中 源自北欧斯堪的纳维亚半岛的极简冰川清爽冷灰调（20 项变量全覆盖）：冰川幽蓝冷灰背景配以微霜青强调色，卡片边框轻薄如薄冰，呈现现代高端极简美学质感。 已启用的主",
+        "counts": [
+          "全部 (1)"
+        ],
+        "cards": 2
+      },
+      "api": {
+        "/api/plugins/installed": "404 items=null",
+        "/api/plugins": "404 items=null"
+      }
+    },
+    "videos": {
+      "meta": {
+        "cards": 1,
+        "mainHead": "⌘ K 切换主题 视频中心 按分类浏览视频与教程 收录开发者常用的视频频道与教程源，按技术分类归档；支持播放器模式与实时搜索。 2 个分类 1 个子分类 3 个视频源 精选视频 【唐伯虎点秋香】 4K 自购原碟修复 全网最清晰版本 国语中字周星驰 巩俐 陈百祥 郑佩佩 朱咪咪 梁家仁 苑琼丹 梁荣忠 黄一山 黄霑 吴镇",
+        "filters": [
+          "个人私有空间空间所有者",
+          "精选视频",
+          "七年级",
+          "语文",
+          "多端协同已就绪",
+          "个人私有空间空间所有者",
+          "精选视频",
+          "七年级",
+          "语文",
+          "2 标签页协同中",
+          "切换主题"
+        ]
+      },
+      "res": [
+        {
+          "info": {
+            "label": "精选视频",
+            "found": 1
+          },
+          "ms": 2135,
+          "reqs": [],
+          "newTabs": 0,
+          "domDelta": 0,
+          "textSigChanged": false,
+          "svgChanged": false,
+          "popupChanged": false,
+          "toast": [],
+          "url": "/videos",
+          "cards": 1
+        },
+        {
+          "info": {
+            "label": "语文",
+            "found": 1
+          },
+          "ms": 6043,
+          "reqs": [],
+          "newTabs": 0,
+          "domDelta": 0,
+          "textSigChanged": false,
+          "svgChanged": false,
+          "popupChanged": false,
+          "toast": [],
+          "url": "/videos",
+          "cards": 1
+        },
+        {
+          "info": {
+            "label": "七年级",
+            "found": 1
+          },
+          "ms": 2094,
+          "reqs": [],
+          "newTabs": 0,
+          "domDelta": 0,
+          "textSigChanged": false,
+          "svgChanged": false,
+          "popupChanged": false,
+          "toast": [],
+          "url": "/videos",
+          "cards": 1
+        }
+      ]
+    },
+    "marketTabs": {
+      "before": [
+        {
+          "txt": "全部插件",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "px-2.5 py-1 rounded-full text-xs transition-all bg-primary text-primary-foregrou"
+        },
+        {
+          "txt": "🔥 飙升榜",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "px-2.5 py-1 rounded-full text-xs transition-all bg-primary text-primary-foregrou"
+        },
+        {
+          "txt": "🧩 精选组合包",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "px-2.5 py-1 rounded-full text-xs transition-all bg-background/70 hover:bg-backgr"
+        },
+        {
+          "txt": "搜索",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ri"
+        },
+        {
+          "txt": "#搜索增强",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/50 hover:bg-muted tex"
+        },
+        {
+          "txt": "#精选常用",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/50 hover:bg-muted tex"
+        }
+      ],
+      "after": [
+        {
+          "txt": "全部插件",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "px-2.5 py-1 rounded-full text-xs transition-all bg-primary text-primary-foregrou"
+        },
+        {
+          "txt": "🔥 飙升榜",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "px-2.5 py-1 rounded-full text-xs transition-all bg-primary text-primary-foregrou"
+        },
+        {
+          "txt": "🧩 精选组合包",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "px-2.5 py-1 rounded-full text-xs transition-all bg-background/70 hover:bg-backgr"
+        },
+        {
+          "txt": "搜索",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "inline-flex items-center justify-center whitespace-nowrap text-sm font-medium ri"
+        },
+        {
+          "txt": "#搜索增强",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/50 hover:bg-muted tex"
+        },
+        {
+          "txt": "#精选常用",
+          "aria": null,
+          "ds": null,
+          "dataState": "",
+          "activeCls": "px-2 py-0.5 rounded-md text-[11px] transition-all bg-muted/50 hover:bg-muted tex"
+        }
+      ],
+      "cards0": 4,
+      "cards1": 4,
+      "reqs": [],
+      "textSigChanged": false
+    },
+    "emptyStateDirect": {
+      "found": false
+    },
+    "injectProbe": {
+      "probe": {
+        "occurrences": 2,
+        "inInput": 2,
+        "badEls": 0,
+        "inlineScripts": 6,
+        "inlineWithMark": 0,
+        "leakedIntoText": false,
+        "truncated": {
+          "url": [
+            45,
+            54
+          ]
+        },
+        "note": "badEls>0 或 inlineWithMark>0 才算真注入；Next.js 本身就有内联脚本，不能用 script 数量判定"
+      },
+      "pageText": "返回首页 / 社区收录提案 投稿收录优质网站 发掘并推荐卓越的开发者工具、AI 实验项目或设计灵感站点，审核通过后即刻向全站推送。 推荐与收录新站点 分享优质网站或开源工具，与全网开发者共同构建更强大的生产力矩阵 网站名称 * 网站地址 (URL) * 一句话核心介绍 * 选择主分类 * 选择所属分类 前端开发 后端与云 运维与安全 开发者资源 设计与创意 效率办公 数据与分析 学习成长 学术科研",
+      "screenshot": "shots/10-inject.png"
+    },
+    "accessDenied": {
+      "head": "跳到主要内容 NavSphere CONTROL CENTER 安全管理控制台 统一导航架构与中枢管理 支持基于密码凭证、API Token 以及 GitHub 账号的统一多模态身份认证，保障站点配置、数据审计与资产运维安全。 © 2026 NavSphere Team 返回前台首页 登录管理后台 请验证管理员凭证以访问系统控制台 该账号不在管理员白名单 (NAVHUB_ADMIN_IDS) 中，因此无法访问后台。请换用白名单内的账号。",
+      "hasErrorNode": true,
+      "errorText": "该账号不在管理员白名单 (NAVHUB_ADMIN_IDS) 中，因此无法访问后台。请换用白名单内的账号。"
+    },
+    "refresh:/me": {
+      "found": true,
+      "reqs": [
+        "GET /api/auth/session",
+        "GET /api/me",
+        "GET /_next/static/chunks/348p1bdlhn3y6.js",
+        "GET /_next/static/chunks/0ppap4277pr1r.js",
+        "GET /_next/static/chunks/36k6yv703hpp6.js",
+        "GET /_next/static/chunks/3fmarhe9e8o9g.js",
+        "GET /_next/static/chunks/0pxcoopfs8_n3.js",
+        "GET /_next/static/chunks/2sqnaxdkpsric.js",
+        "GET /_next/static/chunks/38q94am2f8m-j.js",
+        "GET /_next/static/chunks/3o--a7jblgqxv.js",
+        "GET /_next/static/chunks/0prh85fgmnbub.js",
+        "GET /_next/static/chunks/2uw_49vjdfjor.js"
+      ],
+      "textSigChanged": false,
+      "toast": []
+    },
+    "refresh:/admin/plugins": {
+      "found": true,
+      "reqs": [
+        "GET /api/hub/admin/plugin-reviews",
+        "GET /_next/static/chunks/26a82vd5t03d3.js",
+        "GET /_next/static/chunks/3kj_yywg_vi4g.js",
+        "GET /_next/static/chunks/1vsln4mgryztw.js",
+        "GET /_next/static/chunks/09q05uq8c5u30.js",
+        "GET /_next/static/chunks/39pgu5c9dhuzz.js",
+        "GET /_next/static/chunks/348p1bdlhn3y6.js",
+        "GET /_next/static/chunks/2sqnaxdkpsric.js",
+        "GET /_next/static/chunks/38q94am2f8m-j.js",
+        "GET /_next/static/chunks/3o--a7jblgqxv.js",
+        "GET /_next/static/chunks/0prh85fgmnbub.js",
+        "GET /_next/static/chunks/2uw_49vjdfjor.js"
+      ],
+      "textSigChanged": false,
+      "toast": []
+    },
+    "refresh:/admin/plugin-health": {
+      "found": true,
+      "reqs": [
+        "GET /api/hub/plugins?kind=site-pack&limit=200",
+        "GET /api/hub/plugins/url-health/summary"
+      ],
+      "textSigChanged": false,
+      "toast": []
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "rows": [
+    {
+      "tag": "空名称",
+      "disabled": true
+    },
+    {
+      "tag": "填入名称后",
+      "disabled": false
+    },
+    {
+      "tag": "重命名",
+      "renameClicked": "node-not-found",
+      "dialog": false
+    },
+    {
+      "tag": "删除",
+      "delResult": "node-not-found",
+      "confirmClicked": false,
+      "gone": false
+    }
+  ],
+  "created": {
+    "listed": true,
+    "toast": []
+  },
+  "reqs": [
+    "POST me/sync -> 200",
+    "POST me/merge -> 200",
+    "POST categories -> 201"
+  ]
+}

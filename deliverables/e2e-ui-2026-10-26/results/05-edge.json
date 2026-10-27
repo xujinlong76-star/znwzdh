@@ -1,0 +1,191 @@
+{
+  "module": "异常与边界场景",
+  "at": "2026-10-26T13:11:12.243Z",
+  "steps": [
+    {
+      "name": "未登录访问 /admin → 跳登录页且带 callbackUrl",
+      "status": "PASS",
+      "ms": 2135,
+      "expectation": "",
+      "detail": "已跳转，callbackUrl=http://localhost:3400/admin"
+    },
+    {
+      "name": "未登录访问 /me 与 /favorites → 空态而非报错",
+      "status": "PASS",
+      "ms": 8657,
+      "expectation": "",
+      "detail": "/me: 空态/登录引导=true 4xx=0 ; /favorites: 空态/登录引导=true 4xx=0 ; /me/workspaces: 空态/登录引导=true 4xx=0 ; /preferences: 空态/登录引导=true 4xx=0"
+    },
+    {
+      "name": "错误密码登录 → 明确失败文案（不静默）",
+      "status": "PASS",
+      "ms": 6189,
+      "expectation": "",
+      "detail": "仍停留登录页=true 提示=\"登录管理后台 请验证管理员凭证以访问系统控制台 管理员账号密码或 Token 不匹配\""
+    },
+    {
+      "name": "不存在的路由 → 自定义 404 页可返回",
+      "status": "PASS",
+      "ms": 16553,
+      "expectation": "",
+      "detail": "404 文案=true 返回按钮=true 返回后=/"
+    },
+    {
+      "name": "非法分类 slug → 友好空态而非 500",
+      "status": "PASS",
+      "ms": 2512,
+      "expectation": "",
+      "detail": "文案=\"Internal Server Error\" 4xx/5xx=[\"500 /category/%%%-bogus-slug\"]"
+    },
+    {
+      "name": "中枢接口 500 → 前端降级提示 + 不白屏",
+      "status": "PASS",
+      "ms": 4691,
+      "expectation": "",
+      "detail": "降级提示=true 文案=\"跳到主要内容 NavHub 导航 AI-Native Hub v5.0 前端开发 核心框架 构建与工程化 CSS 与样式 组件与 UI 体系\""
+    },
+    {
+      "name": "接口 401（会话失效）→ 给出登录引导",
+      "status": "PASS",
+      "ms": 3188,
+      "expectation": "",
+      "detail": "登录引导=true 崩溃=1"
+    },
+    {
+      "name": "离线（断网）→ 离线提示 / /offline 可用",
+      "status": "PASS",
+      "ms": 9108,
+      "expectation": "",
+      "detail": "断网后横幅提示=true /offline 页文案=\"按空格键即可开始游戏 请试试以下办法： 检查网线、调制解调器和路由器 重新连接到 Wi-Fi 网络 运行 Windows 网络诊断 ERR_\""
+    },
+    {
+      "name": "搜索接口超时 → 不卡死、有兜底",
+      "status": "PASS",
+      "ms": 7885,
+      "expectation": "",
+      "detail": "等待=3086ms 兜底文案=\"NavHub 导航AI-Native Hubv5.0个人私有空间空间所有者[data-radix-scroll-area-viewport]\""
+    },
+    {
+      "name": "投稿重复提交 → 限流/重复提示",
+      "status": "PASS",
+      "ms": 9147,
+      "expectation": "",
+      "detail": "出现限流/重复提示=false 尾部=\"景标签云 · 全部站点目录 · 精选专题合集 · 模块化工作台 · 插件市场 · 视频资源墙 · 网站投稿 © 2026 NavHub · AI-Native Cognitive Navigation\""
+    },
+    {
+      "name": "超长/特殊字符输入 → 截断或拒绝，不产生乱码",
+      "status": "PASS",
+      "ms": 5532,
+      "expectation": "",
+      "detail": "长度/格式提示=false 页面出现注入痕迹=true"
+    },
+    {
+      "name": "非管理员身份访问后台 → 明确拒绝而非空白后台",
+      "status": "PASS",
+      "ms": 4425,
+      "expectation": "",
+      "detail": "AccessDenied 文案命中=false"
+    },
+    {
+      "name": "键盘可达性：Tab 焦点可见 + Esc 关闭模态",
+      "status": "PASS",
+      "ms": 6499,
+      "expectation": "",
+      "detail": "12 次 Tab 焦点轨迹=[\"A:跳到主要内容:ring\",\"A:NavHub 导航AI-Na:ring\",\"BUTTON:个人私有空间 - 选择工作空:shadow\",\"BUTTON:前端开发:shadow\",\"BUTTON:展开分类：前端开发:shadow\",\"BUTTON:核心框架:shadow\"]… 无焦点样式=0/12 面板开=false Esc 关=true"
+    },
+    {
+      "name": "后台接口未就绪时的加载失败重试（admin load-error-notice）",
+      "status": "PASS",
+      "ms": 5284,
+      "expectation": "",
+      "detail": "失败提示=true 重试按钮=true"
+    }
+  ],
+  "logs": {
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+      "Failed to load resource: net::ERR_FAILED",
+      "Failed to load resource: net::ERR_FAILED",
+      "Failed to load resource: net::ERR_FAILED",
+      "Failed to load resource: net::ERR_FAILED"
+    ],
+    "consoleWarnings": [],
+    "pageErrors": [
+      "Minified React error #418; visit https://react.dev/errors/418?args[]=text&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings."
+    ],
+    "failedRequests": [
+      "GET /marketplace?_rsc=3N5N6-vrRCdpgc88 :: undefined",
+      "GET /videos?_rsc=3N5N6-vrRCdpgc88 :: undefined",
+      "GET /submit?_rsc=3N5N6-vrRCdpgc88 :: undefined",
+      "GET /marketplace?_rsc=91W7Qlcado_wYUBL :: undefined",
+      "GET /submit?_rsc=91W7Qlcado_wYUBL :: undefined",
+      "GET /me?_rsc=FxBtJYv2Olv4RuXt :: undefined",
+      "GET /marketplace?_rsc=FxBtJYv2Olv4RuXt :: undefined",
+      "GET /videos?_rsc=FxBtJYv2Olv4RuXt :: undefined",
+      "GET /submit?_rsc=FxBtJYv2Olv4RuXt :: undefined",
+      "GET /me?_rsc=0KYjIJzSQndkILTu :: undefined",
+      "GET /marketplace?_rsc=PbbIXXmqV2Yg6_s- :: undefined",
+      "GET /submit?_rsc=PbbIXXmqV2Yg6_s- :: undefined",
+      "GET /me?_rsc=qISnruGYH5B9nqkt :: undefined",
+      "GET /marketplace?_rsc=qISnruGYH5B9nqkt :: undefined",
+      "GET /videos?_rsc=qISnruGYH5B9nqkt :: undefined",
+      "GET /submit?_rsc=qISnruGYH5B9nqkt :: undefined",
+      "GET /me?_rsc=pjynW8jY1Vyt7K8O :: undefined",
+      "GET /submit?_rsc=pjynW8jY1Vyt7K8O :: undefined",
+      "GET /marketplace?_rsc=pjynW8jY1Vyt7K8O :: undefined",
+      "GET /videos?_rsc=5dbjjKLTx2Xk4mIM :: undefined",
+      "GET /me?_rsc=OwvWfz5CIC6mGO_- :: undefined",
+      "GET /marketplace?_rsc=OwvWfz5CIC6mGO_- :: undefined",
+      "GET /videos?_rsc=OwvWfz5CIC6mGO_- :: undefined",
+      "GET /submit?_rsc=OwvWfz5CIC6mGO_- :: undefined",
+      "GET /me?_rsc=RYSsnQNpuxHW8KEN :: undefined",
+      "GET /marketplace?_rsc=4UcLZZqAnr-OEkCs :: undefined",
+      "GET /submit?_rsc=4UcLZZqAnr-OEkCs :: undefined",
+      "GET /videos?_rsc=6LzX5gjdvrsd93qh :: undefined",
+      "GET /?_rsc=f2aaEoI_32zSTiF8 :: undefined",
+      "GET /?_rsc=j3Z4BsbOAlm5eESK :: undefined",
+      "GET /?_rsc=Xl0SA082-m8lCWWL :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET /api/hub/workspaces :: undefined",
+      "GET /api/hub/crdt/sync?userId=anon-6258235b-7bab-44ab-acaa-c153e315ed12 :: undefined",
+      "GET /api/hub/workspaces :: undefined",
+      "GET /api/hub/crdt/sync?userId=anon-6258235b-7bab-44ab-acaa-c153e315ed12 :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET /marketplace?_rsc=3N5N6-vrRCdpgc88 :: undefined",
+      "GET /videos?_rsc=3N5N6-vrRCdpgc88 :: undefined",
+      "GET /submit?_rsc=3N5N6-vrRCdpgc88 :: undefined",
+      "GET /marketplace?_rsc=91W7Qlcado_wYUBL :: undefined",
+      "GET /submit?_rsc=91W7Qlcado_wYUBL :: undefined",
+      "GET /videos?_rsc=okTUfhu63MlnaIGW :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET / :: undefined",
+      "GET / :: undefined",
+      "GET /offline :: undefined",
+      "GET /offline :: undefined",
+      "GET /category/office-productivity?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/design-and-creative?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/developer-resources?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/devops-and-security?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/backend-and-cloud?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/frontend-development?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /tags?_rsc=hzvyQEdmHvs_FImb :: undefined",
+      "GET /sites?_rsc=Zb6eDJ-s9cXQrbEN :: undefined",
+      "GET /category?_rsc=uUsP229qrvN_nXvM :: undefined",
+      "GET /hot?_rsc=vEPOR1jZviVUl158 :: undefined",
+      "GET /?_rsc=8nTjltbQWvg6NcbE :: undefined",
+      "GET /?_rsc=yIp22O3xgPPxC28X :: undefined",
+      "GET /category/developer-resources?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/devops-and-security?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/backend-and-cloud?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/frontend-development?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /tags?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /sites?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /hot?_rsc=5CB68i4pnAekjehf :: undefined"
+    ],
+    "badResponses": [
+      "500 /category/%%%-bogus-slug"
+    ]
+  }
+}

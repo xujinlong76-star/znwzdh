@@ -1082,6 +1082,12 @@ export default function SiteListPage() {
   return (
     <TooltipProvider>
       <div className="space-y-4">
+        <div>
+          <h1 className="text-xl font-bold">站点列表与录入</h1>
+          <p className="text-xs text-muted-foreground mt-1">
+            检索、录入、批量编辑与状态变更，支持按分类筛选与批量移动。
+          </p>
+        </div>
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 mb-2">

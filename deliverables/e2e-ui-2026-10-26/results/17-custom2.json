@@ -1,0 +1,110 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "rows": [
+    {
+      "label": "⚡ 极速效率启动坞",
+      "found": true,
+      "vis": true,
+      "ls": "1633 -> 1631",
+      "textChanged": true,
+      "btnCount": "23 -> 18",
+      "pressed": "#closed",
+      "reqs": []
+    },
+    {
+      "label": "🎨 创作者灵感画布",
+      "found": false,
+      "vis": false
+    },
+    {
+      "label": "点阵",
+      "found": true,
+      "vis": true,
+      "ls": "1631 -> 1635",
+      "textChanged": true,
+      "btnCount": "18 -> 18",
+      "pressed": "#closed",
+      "reqs": []
+    },
+    {
+      "label": "网格",
+      "found": true,
+      "vis": true,
+      "ls": "1635 -> 1635",
+      "textChanged": true,
+      "btnCount": "18 -> 18",
+      "pressed": "#closed",
+      "reqs": []
+    },
+    {
+      "label": "极光",
+      "found": true,
+      "vis": true,
+      "ls": "1635 -> 1637",
+      "textChanged": true,
+      "btnCount": "18 -> 18",
+      "pressed": "#closed",
+      "reqs": []
+    },
+    {
+      "label": "纯净",
+      "found": true,
+      "vis": true,
+      "ls": "1637 -> 1636",
+      "textChanged": true,
+      "btnCount": "18 -> 18",
+      "pressed": "#closed",
+      "reqs": []
+    },
+    {
+      "label": "自定义排版",
+      "found": true,
+      "vis": true,
+      "ls": "1636 -> 1636",
+      "textChanged": true,
+      "btnCount": "18 -> 52",
+      "pressed": "#closed",
+      "reqs": []
+    },
+    {
+      "label": "编辑",
+      "found": true,
+      "vis": true,
+      "ls": "1636 -> 1636",
+      "textChanged": true,
+      "btnCount": "52 -> 52",
+      "pressed": "#closed",
+      "reqs": []
+    },
+    {
+      "label": "预览",
+      "found": true,
+      "vis": true,
+      "ls": "1636 -> 1636",
+      "textChanged": true,
+      "btnCount": "52 -> 52",
+      "pressed": "#closed",
+      "reqs": []
+    },
+    {
+      "label": "重新生成",
+      "found": true,
+      "vis": true,
+      "ls": "1636 -> 1636",
+      "textChanged": true,
+      "btnCount": "52 -> 52",
+      "pressed": "#closed",
+      "reqs": []
+    },
+    {
+      "label": "复制 UUID",
+      "found": true,
+      "vis": true,
+      "ls": "1636 -> 1636",
+      "textChanged": true,
+      "btnCount": "52 -> 52",
+      "pressed": "#closed",
+      "reqs": []
+    }
+  ]
+}

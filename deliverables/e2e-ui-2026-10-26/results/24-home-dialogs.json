@@ -1,0 +1,57 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "rows": [
+    {
+      "name": "微工具箱",
+      "action": "打开内置微工具箱 (快捷键: T)",
+      "beforeVisible": 0,
+      "afterVisible": 1,
+      "openedLayer": {
+        "w": 768,
+        "h": 537,
+        "state": "open",
+        "vis": true,
+        "text": "开发者极速微工具箱 端侧零延迟运行高频微工具，无需离开导航站即可极速格式化与编解码。 JSON 格式化 Base64 编解码 UUID & "
+      }
+    },
+    {
+      "name": "快捷键指南",
+      "action": "快捷键全景指南 (快捷键: ?)",
+      "beforeVisible": 0,
+      "afterVisible": 1,
+      "openedLayer": {
+        "w": 512,
+        "h": 534,
+        "state": "open",
+        "vis": true,
+        "text": "NavSphere 快捷键全景指南 像操作专业 IDE 一样高效掌控 NavSphere，随时随地单手盲操。 视窗与排版 切换为极客混合流 "
+      }
+    },
+    {
+      "name": "全局搜索（按 / 键）",
+      "action": "/",
+      "beforeVisible": 0,
+      "afterVisible": 1,
+      "openedLayer": {
+        "w": 672,
+        "h": 351,
+        "state": null,
+        "vis": true,
+        "text": "ESC 最近搜索 react vs vue 功能速览 工作台画布 12 栅格看板 AI Web Copilot Ctrl+J 助手 插件应用"
+      }
+    },
+    {
+      "name": "Ctrl+K",
+      "action": "ctrl+k",
+      "beforeVisible": 0,
+      "afterVisible": 1,
+      "openedLayer": {
+        "w": 672,
+        "h": 351,
+        "state": null,
+        "vis": true,
+        "text": "ESC 最近搜索 react vs vue 功能速览 工作台画布 12 栅格看板 AI Web Copilot Ctrl+J 助手 插件应用"
+      }
+    }
+  ]
+}

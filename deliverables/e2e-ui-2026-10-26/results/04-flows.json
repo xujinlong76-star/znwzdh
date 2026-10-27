@@ -1,0 +1,154 @@
+{
+  "module": "核心用户流程（登录→收藏→投稿→导入→安装→DIY→偏好）",
+  "at": "2026-10-26T13:09:38.081Z",
+  "steps": [
+    {
+      "name": "1 登录：管理员快捷通道",
+      "status": "PASS",
+      "ms": 3427,
+      "expectation": "",
+      "detail": "登录耗时=940ms 落地=/admin h1=运营与监控中枢"
+    },
+    {
+      "name": "2 登录态显示：用户中心出现账号信息",
+      "status": "PASS",
+      "ms": 2624,
+      "expectation": "",
+      "detail": "session.user={\"name\":\"本地管理员\",\"email\":\"admin@navhub.local\",\"image\":\"/assets/images/alogo.webp\",\"id\":\"adm"
+    },
+    {
+      "name": "3 站点详情收藏 → 收藏页出现 → 取消收藏",
+      "status": "PASS",
+      "ms": 10012,
+      "expectation": "",
+      "detail": "站点=Cursor toast=[] 收藏页命中=true 列表 0 -> 取消后 0 (取消按钮=true)"
+    },
+    {
+      "name": "4 投稿表单：必填校验 + 非法 URL + 成功提交",
+      "status": "PASS",
+      "ms": 10079,
+      "expectation": "",
+      "detail": "空表提示=true 非法URL提示=true 提交耗时=3414ms 成功提示=true 尾部文案=\"目录\\n·\\n精选专题合集\\n·\\n模块化工作台\\n·\\n插件市场\\n·\\n视频资源墙\\n·\\n网站投稿\\n\\n© 2026 NavHub · AI-Native Cognitive Navigation\""
+    },
+    {
+      "name": "5 书签导入：解析样本 → 预览 → 确认",
+      "status": "PASS",
+      "ms": 6273,
+      "expectation": "",
+      "detail": "文件控件可见=true 解析耗时=3668ms 命中解析结果=true 文案=\"返回主页 / 智能书签导入 浏览器书签一键智能导入 支持 Chrome、Edge、Firefox、Safari 导出的 bookmarks.html。系统将在本地解析层级结构，并通过多维启发式自动建议技术分类。 纯前端本\""
+    },
+    {
+      "name": "6 插件市场：搜索 → 详情 → 安装 → 已安装列表",
+      "status": "PASS",
+      "ms": 41185,
+      "expectation": "",
+      "detail": "列表 173 -> 搜「AI」173；插件=已安装插件管家 弹窗=false 确认=true toast=[] 已安装页命中=true"
+    },
+    {
+      "name": "7 已安装插件卸载（清理本轮安装）",
+      "status": "PASS",
+      "ms": 6594,
+      "expectation": "",
+      "detail": "卸载入口=true 确认=true 已安装计数=[\"全部 (1)\"] API={\"/api/plugins/installed\":\"404 object\",\"/api/plugins?installed=true\":\"404 object\",\"/api/plugins\":\"404 object\"} toast=[] 文案=\"返回市场 / 已安装管家 已安装插件管家 管理当前设备与账号已安装的所有扩展。支持多套主题一键切换、快捷前缀直达语法速查、待更新插件平滑升级与彻底清理。 浏览插件市场 主题调色板与外观切换器 北欧冰川极简冷灰主题 源自北欧斯堪的纳维亚半岛的\" 控件=启用/!ghGitHub/!npmnpm/!mdnMDN Web Docs/!soStack Overflow/!ddDevDocs/!caniuseCan I use/全部 (1)/网址包/主题"
+    },
+    {
+      "name": "8 DIY 工作台：添加模块 → 移动 → 保存 → 撤销",
+      "status": "FAIL",
+      "ms": 21127,
+      "expectation": "",
+      "error": "未找到「添加模块」入口"
+    },
+    {
+      "name": "9 DIY 分享链接（#diy= 生成）",
+      "status": "FAIL",
+      "ms": 46528,
+      "expectation": "",
+      "error": "page.evaluate: Execution context was destroyed, most likely because of a navigation"
+    },
+    {
+      "name": "10 偏好设置：开关切换 + 刷新后保持",
+      "status": "FAIL",
+      "ms": 29,
+      "expectation": "",
+      "error": "page.goto: Navigation to \"http://127.0.0.1:3400/preferences\" is interrupted by another navigation to \"chrome-error://chromewebdata/\"\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:3400/preferences\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    },
+    {
+      "name": "11 管理后台写操作：新建分类 → 编辑 → 删除（夹具）",
+      "status": "FAIL",
+      "ms": 208,
+      "expectation": "",
+      "error": "page.goto: Navigation to \"http://127.0.0.1:3400/admin/categories\" is interrupted by another navigation to \"http://127.0.0.1:3400/preferences\"\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:3400/admin/categories\", waiting until \"domcontentloaded\"\u001b[22m\n"
+    },
+    {
+      "name": "12 退出登录 → 受保护页回到登录页",
+      "status": "FAIL",
+      "ms": 38478,
+      "expectation": "",
+      "error": "未找到退出登录入口"
+    }
+  ],
+  "logs": {
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 409 (Conflict)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "consoleWarnings": [],
+    "pageErrors": [],
+    "failedRequests": [
+      "GET /marketplace?_rsc=3N5N6-vrRCdpgc88 :: undefined",
+      "GET /marketplace?_rsc=91W7Qlcado_wYUBL :: undefined",
+      "GET /marketplace?_rsc=FxBtJYv2Olv4RuXt :: undefined",
+      "GET /videos?_rsc=FxBtJYv2Olv4RuXt :: undefined",
+      "GET /submit?_rsc=FxBtJYv2Olv4RuXt :: undefined",
+      "GET /me?_rsc=0KYjIJzSQndkILTu :: undefined",
+      "GET /marketplace?_rsc=PbbIXXmqV2Yg6_s- :: undefined",
+      "GET /submit?_rsc=PbbIXXmqV2Yg6_s- :: undefined",
+      "GET /videos?_rsc=WTyrP9qdVLdlOLE9 :: undefined",
+      "GET /me?_rsc=m9R-wef6jQlf2psS :: undefined",
+      "GET /marketplace?_rsc=m9R-wef6jQlf2psS :: undefined",
+      "GET /videos?_rsc=m9R-wef6jQlf2psS :: undefined",
+      "GET /submit?_rsc=m9R-wef6jQlf2psS :: undefined",
+      "GET /me?_rsc=3Ut8wJYv436YFa-6 :: undefined",
+      "GET /marketplace?_rsc=-xBKD8-28OWPVmq7 :: undefined",
+      "GET /submit?_rsc=-xBKD8-28OWPVmq7 :: undefined",
+      "GET /videos?_rsc=bOzNKpm07EQrQsIp :: undefined",
+      "GET /marketplace?_rsc=gtYXdbJK5yZ1jp9l :: undefined",
+      "GET /marketplace?_rsc=z6woCgjWv1f3GbB_ :: undefined",
+      "GET /marketplace?_rsc=gtYXdbJK5yZ1jp9l :: undefined",
+      "GET /marketplace?_rsc=z6woCgjWv1f3GbB_ :: undefined",
+      "GET /marketplace?_rsc=gtYXdbJK5yZ1jp9l :: undefined",
+      "GET /marketplace?_rsc=z6woCgjWv1f3GbB_ :: undefined",
+      "GET /marketplace/nordic-glacier?_rsc=gtYXdbJK5yZ1jp9l :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET /blog/ :: undefined",
+      "GET /admin/jobs?_rsc=-mEo4URn3Cf935yt :: undefined",
+      "GET /admin/audit?_rsc=-mEo4URn3Cf935yt :: undefined",
+      "GET /admin/trash?_rsc=-mEo4URn3Cf935yt :: undefined",
+      "GET /admin/tokens?_rsc=-mEo4URn3Cf935yt :: undefined",
+      "GET /admin/data/restore?_rsc=-mEo4URn3Cf935yt :: undefined",
+      "GET /admin?_rsc=DKX9q1tuKqip_TXP :: undefined",
+      "GET /admin/tags?_rsc=DKX9q1tuKqip_TXP :: undefined",
+      "GET /admin/facets?_rsc=DKX9q1tuKqip_TXP :: undefined",
+      "GET /admin/collections?_rsc=DKX9q1tuKqip_TXP :: undefined",
+      "GET /admin/submissions?_rsc=DKX9q1tuKqip_TXP :: undefined",
+      "GET /admin/ai?_rsc=DKX9q1tuKqip_TXP :: undefined",
+      "GET /admin/stats?_rsc=DKX9q1tuKqip_TXP :: undefined",
+      "GET /admin/jobs?_rsc=DKX9q1tuKqip_TXP :: undefined",
+      "GET /admin/trash?_rsc=DKX9q1tuKqip_TXP :: undefined",
+      "GET /admin/data/restore?_rsc=DKX9q1tuKqip_TXP :: undefined",
+      "GET /me?_rsc=45_rOuixOwkGLyGB :: undefined",
+      "GET /marketplace?_rsc=45_rOuixOwkGLyGB :: undefined",
+      "GET /videos?_rsc=45_rOuixOwkGLyGB :: undefined",
+      "GET /submit?_rsc=45_rOuixOwkGLyGB :: undefined",
+      "GET /me?_rsc=fvivQfqYGObJJZ-W :: undefined"
+    ],
+    "badResponses": [
+      "409 /api/submissions",
+      "404 /api/plugins/installed",
+      "404 /api/plugins?installed=true",
+      "404 /api/plugins"
+    ]
+  }
+}

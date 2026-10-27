@@ -3022,6 +3022,20 @@ export interface CopilotChatResponse {
   } | null
 }
 
+/**
+ * 上游网关的「取消」哨兵（兜底用）。
+ *
+ * 后端 `packages/ai` 已在模型边界把这类整段输出判成 cancelled；这里再挡一次，
+ * 是为了兼容旧版中枢 / 第三方网关：它们可能直接回 200 + content="用户已取消"。
+ * 只认整段相等，避免把「解释用户已取消是什么意思」的长回答误判。
+ */
+const CANCEL_NOTICE_RE =
+  /^(用户已取消|用户取消|请求已取消|本次请求已取消|user cancelled|user canceled|cancelled by user|canceled by user|request cancelled|request canceled|operation cancelled|operation canceled)[。.!！?？]?$/i
+
+function isUpstreamCancelNotice(text: string): boolean {
+  return CANCEL_NOTICE_RE.test(text.trim())
+}
+
 export async function sendCopilotChat(
   message: string,
   history?: Array<{ role: string; content: string }>,
@@ -3029,7 +3043,7 @@ export async function sendCopilotChat(
 ): Promise<CopilotChatResponse> {
   // signal 是给「用户中途停止」用的：sendJson 早已支持（:254），此前这里没透传，
   // 抽屉只能干等到底。中枢侧是否随之断开见 copilot 取消链路（run82 只做到前端）。
-  return sendJson<CopilotChatResponse>(
+  const res = await sendJson<CopilotChatResponse>(
     '/api/copilot/chat',
     'POST',
     {
@@ -3039,6 +3053,16 @@ export async function sendCopilotChat(
     },
     options?.signal,
   )
+  // 不把「用户已取消」渲染成模型的回答：转成可重试的失败提示。
+  if (res.ok && typeof res.reply === 'string' && isUpstreamCancelNotice(res.reply)) {
+    return {
+      ...res,
+      ok: false,
+      reply: '',
+      error: '上游模型中断了本次回答（不是你的操作），可直接重试。',
+    }
+  }
+  return res
 }
 
 export interface AiPluginGenerateParams {

@@ -110,6 +110,7 @@ export type LlmErrorCode =
   | "rate_limit"
   | "http"
   | "network"
+  | "cancelled"
   | "invalid_response";
 
 export class LlmError extends Error {
@@ -129,6 +130,39 @@ export class LlmError extends Error {
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_DETAIL_CHARS = 400;
+
+/**
+ * 上游网关的「取消」哨兵。
+ *
+ * 背景：部分 OpenAI 兼容网关在客户端断开 / 上游超时后，不返回错误码，而是回一条
+ * 200 + `choices[0].message.content = "用户已取消"`。原样透传会让界面把它当成
+ * 模型的正式回答渲染出来（用户看到 AI 说「用户已取消」，既不是他说的，也不是
+ * 模型说的），并且会被记成一次成功回答——取消率永远量不出来。
+ *
+ * 只认**整段相等**（去掉尾部标点与空白后）：模型在长回答里解释「用户已取消」
+ * 是正常内容，不能误判。
+ */
+const UPSTREAM_CANCEL_NOTICES = new Set([
+  "用户已取消",
+  "用户取消",
+  "请求已取消",
+  "本次请求已取消",
+  "user cancelled",
+  "user canceled",
+  "cancelled by user",
+  "canceled by user",
+  "request cancelled",
+  "request canceled",
+  "operation cancelled",
+  "operation canceled",
+]);
+
+/** 判断一段模型输出是否只是上游的「取消」提示（整段相等才算） */
+export function isUpstreamCancelNotice(content: string): boolean {
+  const normalized = content.trim().replace(/[。.!！?？\s]+$/g, "").toLowerCase();
+  if (!normalized || normalized.length > 32) return false;
+  return UPSTREAM_CANCEL_NOTICES.has(normalized);
+}
 
 /** 端点不支持 response_format 的进程级记忆（baseUrl|model -> true） */
 const jsonModeUnsupported = new Set<string>();
@@ -375,6 +409,11 @@ async function callOnce(
     const content = normalizeContent(message?.content);
     if (content === null) {
       throw new LlmError("invalid_response", "模型响应缺少 choices[0].message.content", res.status);
+    }
+    if (isUpstreamCancelNotice(content)) {
+      // 网关把「取消」当正常回答返回：这不是模型内容，必须按取消处理，
+      // 否则界面会显示「用户已取消」并把取消记成一次成功回答。
+      throw new LlmError("cancelled", "模型调用被上游取消（网关返回了取消提示）", res.status);
     }
 
     let reasoningContent: string | undefined =

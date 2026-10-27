@@ -1,0 +1,145 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "out": {
+    "adminSidebarTTA": {
+      "domReady": 337,
+      "baseLinks": 16,
+      "firstEffect": {
+        "atMs": 1475,
+        "attempt": 1,
+        "links": 19
+      },
+      "attempts": 1,
+      "timeline": [
+        {
+          "at": 1475,
+          "links": 19
+        }
+      ],
+      "extra": {
+        "lcp": 708,
+        "longTasks": 4,
+        "longMs": 503
+      }
+    },
+    "hotTabs": {
+      "before": {
+        "tabs": [
+          {
+            "txt": "访问量榜",
+            "sel": "true"
+          },
+          {
+            "txt": "最新入库榜",
+            "sel": "false"
+          }
+        ],
+        "panelText": "首页 今日热榜 返回主页 / 站点榜单 全站技术风向标与热度榜 按站点访问量排序展示已收录资源。当前访问量统计尚未积累，榜单暂不反映真实热度。 热度榜 30 条 新品 30 条 访问量统计中，排序暂为默认顺序 Ctrl+K 或 / 访问量榜 最新入库榜 🥇 C Cursor A",
+        "rows": [
+          "首页",
+          "今日热榜",
+          "CCursorAI 驱动的代码编辑器，用自然",
+          "GGitHub全球最大的代码托管与协作平台1",
+          "PPixPin集截图、贴图、长截图与 OCR",
+          "Hhey轻量 HTTP 压测命令，快速探接口"
+        ],
+        "url": "/hot"
+      },
+      "after": {
+        "tabs": [
+          {
+            "txt": "访问量榜",
+            "sel": "false"
+          },
+          {
+            "txt": "最新入库榜",
+            "sel": "true"
+          }
+        ],
+        "panelText": "首页 今日热榜 返回主页 / 站点榜单 全站技术风向标与热度榜 按站点访问量排序展示已收录资源。当前访问量统计尚未积累，榜单暂不反映真实热度。 热度榜 30 条 新品 30 条 访问量统计中，排序暂为默认顺序 Ctrl+K 或 / 访问量榜 最新入库榜 🥇 U UI 巡检夹具站",
+        "rows": [
+          "首页",
+          "今日热榜",
+          "UUI 巡检夹具站点端到端巡检用途的临时站点",
+          "DDiskGenius国产磁盘管理与数据恢复",
+          "TTestDisk & PhotoRec开源",
+          "VVeeam专注虚拟化与云环境的备份恢复平台"
+        ],
+        "url": "/hot?tab=new"
+      },
+      "rowsChanged": true,
+      "selChanged": true
+    },
+    "videosChips": {
+      "base": {
+        "chipCount": 4,
+        "chips": [
+          {
+            "txt": "切换主题",
+            "pressed": null,
+            "dataState": ""
+          },
+          {
+            "txt": "【唐伯虎点秋香】 4K 自购原碟",
+            "pressed": null,
+            "dataState": ""
+          },
+          {
+            "txt": "bilibili【唐伯虎点秋香】",
+            "pressed": null,
+            "dataState": ""
+          },
+          {
+            "txt": "bilibili《沃尔特·施洛斯",
+            "pressed": null,
+            "dataState": ""
+          }
+        ],
+        "titles": [
+          "【唐伯虎点秋香】 4K 自购原碟修复 全",
+          "【唐伯虎点秋香】 4K 自购原碟修复 全",
+          "bilibili【唐伯虎点秋香】 4K ",
+          "【唐伯虎点秋香】 4K 自购原碟修复 全",
+          "bilibili《沃尔特·施洛斯访谈资料",
+          "《沃尔特·施洛斯访谈资料集》 1985年"
+        ],
+        "text": "⌘ K 切换主题 视频中心 按分类浏览视频与教程 收录开发者常用的视频频道与教程源，按技术分类归档；支持播放器模式与实时搜索。 2 个分类 1 个子分类 3 个视频源 精选视频 【唐伯虎点秋香】 4K 自购原碟修复 全网最清晰版本 国语中字"
+      },
+      "res": [
+        {
+          "label": "精选视频",
+          "titlesChanged": false,
+          "textLenDelta": 0,
+          "pressed": null,
+          "titles": [
+            "【唐伯虎点秋香】 4K 自购原碟修复 全",
+            "【唐伯虎点秋香】 4K 自购原碟修复 全",
+            "bilibili【唐伯虎点秋香】 4K "
+          ]
+        },
+        {
+          "label": "语文",
+          "titlesChanged": false,
+          "textLenDelta": 0,
+          "pressed": null,
+          "titles": [
+            "【唐伯虎点秋香】 4K 自购原碟修复 全",
+            "【唐伯虎点秋香】 4K 自购原碟修复 全",
+            "bilibili【唐伯虎点秋香】 4K "
+          ]
+        },
+        {
+          "label": "七年级",
+          "titlesChanged": false,
+          "textLenDelta": 0,
+          "pressed": null,
+          "titles": [
+            "【唐伯虎点秋香】 4K 自购原碟修复 全",
+            "【唐伯虎点秋香】 4K 自购原碟修复 全",
+            "bilibili【唐伯虎点秋香】 4K "
+          ]
+        }
+      ]
+    }
+  }
+}

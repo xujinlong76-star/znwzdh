@@ -446,3 +446,30 @@ NAVHUB_VERIFY_PASSWORD=… node deliverables/plugin-health/ui-regression.mjs --b
 - 真实浏览器回归：**37/37**
 - 控制台 JS 异常：0；`/api/hub/*` 4xx/5xx：0
 - overlay 与 `apps/web` 一致性：707 文件，rc=0
+
+### 10.6 顺着同一口径又抓出一处：候选 5xx 被判成「不可达」
+
+验收跑完后继续按「慢 ≠ 死」的口径横向比对，发现候选探活里还留着一条旧写法：
+
+```ts
+if (res.status >= 400) {
+  return { grade: "dead", ok: false, status: res.status, latencyMs: elapsed, reason: `HTTP ${res.status}` }
+}
+```
+
+500/502/503/504 与 404 一起被判「不可达」。而 503 恰恰证明域名和端口都在应答——站点活着，只是此刻过载或维护。后果有两层：界面上写「站点已确认下线」，以及候选排序里 `GRADE_RANK` 把它排到停放页之后（`unverified` 2 > `suspicious` 1 > `dead` 0），一个临时打嗝的优质站点就此被永久排在末尾。
+
+这不是新增判断，而是**同一个仓库里两套口径**：深检层早就把 5xx 单列为 `server-error`（置信度 0.72，文案「可能维护或过载」），只有候选探活落后。
+
+修法是抽出纯函数 `classifyProbeStatus`，把口径写成一张可测的表：
+
+| 状态码 | 档位 | 理由 |
+|---|---|---|
+| 404 / 410 / 451 | `dead` | 页面确定不存在（451 为法律原因不可用） |
+| 5xx / 408 | `unverified` | 服务端暂时不可用，不等于站点已死 |
+| 其余 4xx（400 等） | `unverified` | 请求被目标拒绝，多为风控，不足以断言下线 |
+| 1xx–3xx | `null` | 不是失败，交回调用方继续做内容判定 |
+
+401/403/405/412/418/429 仍先由 `isBlockedByBotStatus` 归为 `blocked`，判断顺序不变。对自动平替没有影响：`autoApply` 只认 `verified`，这两档本来都不会被采纳。
+
+测试从 9 例扩到 19 例（新增状态码分类 10 例，含 `it.each` 覆盖 500/502/504 与 404/410/451）；`plugin-audit` / `plugin-audit-api` / `health-audit-api` / `candidate-probe-classify` 合计 **62 例全绿**；`apps/api` 的 `tsc --noEmit` exit 0。

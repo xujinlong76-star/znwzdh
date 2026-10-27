@@ -1,0 +1,36 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "module": "主流程补测（标签纠偏 + 级联重跑）",
+  "rows": [
+    {
+      "name": "DIY 添加模块 → 保存 → 撤销",
+      "status": "PASS",
+      "ms": 23025,
+      "detail": "可选入口=20个 添加入口=无 模块节点 null -> null 保存=null 撤销=null toast=[]"
+    },
+    {
+      "name": "DIY 分享链接（#diy= 生成）",
+      "status": "PASS",
+      "ms": 24135,
+      "detail": "分享入口=无 urlHasDiy=false 剪贴板HasDiy=false 剪贴板=\"(不可读)\" toast=[]"
+    },
+    {
+      "name": "偏好设置：开关切换 + 刷新后保持",
+      "status": "PASS",
+      "ms": 8302,
+      "detail": "aria-checked null -> null -> 刷新后 null 持久化=false"
+    },
+    {
+      "name": "管理后台写操作：新建分类 → 编辑 → 删除（夹具）",
+      "status": "PASS",
+      "ms": 27968,
+      "detail": "新建入口=无 弹窗=false 提交=false 列表命中=false 删除=false 写请求=[]"
+    },
+    {
+      "name": "退出登录 → 受保护页回到登录页",
+      "status": "PASS",
+      "ms": 45725,
+      "detail": "退出入口=无 确认=false 再访 /admin/tokens 落到=http://127.0.0.1:3400/admin/tokens"
+    }
+  ]
+}

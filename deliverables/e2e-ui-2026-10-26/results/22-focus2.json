@@ -1,0 +1,85 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "out": {
+    "homeDiyToolbarTitles": [
+      "多选模式：批量导出 / 复制 / 置顶"
+    ],
+    "shareLink": {
+      "entryClicked": true,
+      "dialog": false,
+      "dialogButtons": [
+        "个人私有空间空间所有者",
+        "前端开发",
+        "核心框架",
+        "构建与工程化",
+        "CSS 与样式",
+        "组件与 UI 体系",
+        "状态与数据流",
+        "前端测试",
+        "性能优化",
+        "动效与交互",
+        "全栈与服务端",
+        "WASM 与 Rust",
+        "低代码搭建",
+        "跨端与桌面"
+      ],
+      "shareButton": null,
+      "urlHasDiy": false,
+      "toast": [],
+      "reqs": []
+    },
+    "preferences": {
+      "prefBefore": {
+        "label": "深度思考 (Thinking)",
+        "checked": true,
+        "disabled": false,
+        "lsKeys": [],
+        "lsSnapshot": []
+      },
+      "clickedTo": false,
+      "midSnap": [],
+      "afterReload": {
+        "checked": true,
+        "lsSnapshot": []
+      },
+      "reqs": [
+        "GET auth/session 200",
+        "GET auth/session 200",
+        "GET hub/profile 200",
+        "GET hub/user/ai/config 200",
+        "GET me/llm-usage 200"
+      ]
+    },
+    "newCategory": {
+      "found": true,
+      "disabled": true,
+      "title": null,
+      "aria": null,
+      "parentText": "新类目名称 父类目（可选） （根类目） AI 工具 对话助手 AI 编程助手 AI 图像生成 AI 视频生成 AI 音频语音 AI 写作办公 AI 搜索知识 智能体与自动化 向量库与 RAG 模型训练与微调 模型与数据集 AI 硬件与具身 AI 安全与对齐 AI 评测与学习 前端开发 核心框架 构建与工程化 CSS 与",
+      "treeRoleNodes": 0,
+      "clickableRows": [],
+      "hint": "分类与 SKOS 概念治理 支持主树物化路径（Anchor）、SKOS 概念同义别名（altLabel）与跨树相关分类（skos:related）关联。 导出 SKOS 概念 刷新 新类目名称 父类目（可选） （根类目） AI 工具 对话助手 AI 编程助手 AI 图像生成 AI 视频生成 AI 音频语音 AI 写作办公 AI 搜索知识 智能体与自动化 向量库与 RAG 模型训练与微调 模型与数据集 AI 硬件与具身 AI 安全与对齐 AI 评测与学习 前端开发 核心框架 构建与工程化 CSS 与样式 组件与 UI"
+    },
+    "moduleDialog": {
+      "open": [
+        "visible:添加独立功能模块 从模块库选择并添加"
+      ],
+      "afterEscape": [],
+      "afterCloseBtn": [],
+      "closeButtons": []
+    },
+    "anonProtected": {
+      "adminTokens": {
+        "url": "/auth/signin",
+        "h1": [
+          "统一导航架构与中枢管理"
+        ],
+        "text": "登录管理后台 请验证管理员凭证以访问系统控制台 管理员密码 GitHub 账号 管理身份 密码或 Token 支持管理密码 / API Token 登 录 本地单机 / 开发调试通道 以管理员身份一键进入 (快捷通道) 返回网站首页"
+      },
+      "hubTokensViaProxy": {
+        "status": 200,
+        "body": "[{\"id\":\"63b16c63-c3fe-48f3-a489-f41f3f81a479\",\"name\":\"pw-token-mvey6idp\",\"scopes\":[\"write\"],\"ownerIdentity\":null,\"expire"
+      }
+    }
+  }
+}

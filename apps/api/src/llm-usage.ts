@@ -98,6 +98,13 @@ export async function callLlm(
        *    「用户等太久放弃」算进大盘失败率，让真实故障被稀释。
        */
       if (opts.signal?.aborted) break;
+      /**
+       * 上游网关把「取消」当 200 正常回答返回（content = 用户已取消）时，
+       * 这里会收到 code=cancelled。它不是模型故障：
+       * ① 不打备用池——再打一次只会再拿到一条取消提示或重复回答；
+       * ② 不写 ok:false 的用量行——取消不是失败，记进来会稀释真实故障率。
+       */
+      if (err instanceof LlmError && err.code === "cancelled") break;
       const latencyMs = Date.now() - startedAt;
       const errorCode = err instanceof LlmError ? err.code : "unknown";
 

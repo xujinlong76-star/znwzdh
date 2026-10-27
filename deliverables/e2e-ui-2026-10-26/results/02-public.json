@@ -1,0 +1,261 @@
+{
+  "module": "前台：导航 / 检索 / 浏览 / 详情",
+  "at": "2026-10-26T13:06:28.597Z",
+  "steps": [
+    {
+      "name": "首页可达 + 标题/首屏卡片",
+      "status": "PASS",
+      "ms": 3431,
+      "expectation": "",
+      "detail": "卡片=444"
+    },
+    {
+      "name": "工具栏「微工具箱」开合",
+      "status": "FAIL",
+      "ms": 6839,
+      "expectation": "",
+      "error": "点击后抽屉/对话框未出现"
+    },
+    {
+      "name": "工具栏「热度榜」跳转",
+      "status": "PASS",
+      "ms": 3385,
+      "expectation": "",
+      "detail": "URL=/hot h1=全站技术风向标与热度榜"
+    },
+    {
+      "name": "工具栏「探索矩阵」下拉 → 技术图谱",
+      "status": "PASS",
+      "ms": 24192,
+      "expectation": "",
+      "detail": "menu=true item=false 到/graph=false url=/"
+    },
+    {
+      "name": "工具栏「用户中心」入口",
+      "status": "PASS",
+      "ms": 3151,
+      "expectation": "",
+      "detail": "URL=/me"
+    },
+    {
+      "name": "工具栏「快捷键指南」弹窗",
+      "status": "FAIL",
+      "ms": 4198,
+      "expectation": "",
+      "error": "快捷键弹窗未出现"
+    },
+    {
+      "name": "主题切换（明/暗）",
+      "status": "PASS",
+      "ms": 7132,
+      "expectation": "",
+      "detail": "切换耗时=5217ms before=\"light\" after=\"dark\" 还原后=\"light\" LS={\"theme\":\"dark\"}"
+    },
+    {
+      "name": "多选模式开启/关闭",
+      "status": "PASS",
+      "ms": 7577,
+      "expectation": "",
+      "detail": "批量面板=true 再次点击=true"
+    },
+    {
+      "name": "首页内联搜索框：输入即过滤",
+      "status": "PASS",
+      "ms": 4761,
+      "expectation": "",
+      "detail": "卡片 365 -> 输入后 365 (清空后 365) 建议项=10"
+    },
+    {
+      "name": "全局搜索面板（快捷键 /）+ 结果 + 键盘导航",
+      "status": "FAIL",
+      "ms": 4432,
+      "expectation": "",
+      "error": "快捷键未唤出全局搜索面板"
+    },
+    {
+      "name": "搜索无结果时的空态提示",
+      "status": "PASS",
+      "ms": 5670,
+      "expectation": "",
+      "detail": "空态文案命中=false"
+    },
+    {
+      "name": "0-RTT 意图卡（Cron 表达式原地解析）",
+      "status": "PASS",
+      "ms": 5510,
+      "expectation": "",
+      "detail": "命中意图卡=false"
+    },
+    {
+      "name": "分类页：卡片点击进详情 + 分页 + 排序",
+      "status": "PASS",
+      "ms": 2799,
+      "expectation": "",
+      "detail": "/category/ai-tools 卡片=60 有排序=true 下一页点击=true -> /category/ai-tools"
+    },
+    {
+      "name": "站点详情：收藏 / 访问 / 复制 / 相关站点",
+      "status": "PASS",
+      "ms": 16234,
+      "expectation": "",
+      "detail": "h1=Cursor 收藏点击=true toast=[] 复制=true 剪贴板=\"https://cursor.com\" 相关站点=6 访问按钮=true"
+    },
+    {
+      "name": "标签页 → 标签结果页",
+      "status": "PASS",
+      "ms": 3124,
+      "expectation": "",
+      "detail": "/tags/%E5%BC%80%E6%BA%90 结果卡片=100"
+    },
+    {
+      "name": "合集列表 → 合集详情",
+      "status": "PASS",
+      "ms": 2374,
+      "expectation": "",
+      "detail": "/collections/agentic-ai 卡片=6"
+    },
+    {
+      "name": "/sites 列表页搜索与筛选",
+      "status": "PASS",
+      "ms": 2300,
+      "expectation": "",
+      "detail": "输入框=false 卡片 60 -> 60"
+    },
+    {
+      "name": "/hot 时间窗切换",
+      "status": "PASS",
+      "ms": 16035,
+      "expectation": "",
+      "detail": "切换点击=true 卡片 30 -> 30"
+    },
+    {
+      "name": "/videos 卡片 → 播放页",
+      "status": "PASS",
+      "ms": 6688,
+      "expectation": "",
+      "detail": "/videos/player -> /videos/player"
+    },
+    {
+      "name": "/graph 图谱交互（节点/缩放/过滤）",
+      "status": "PASS",
+      "ms": 6171,
+      "expectation": "",
+      "detail": "节点=71 放大=true 适应=true 点击后URL=/graph 侧栏=true"
+    },
+    {
+      "name": "移动端 390×844：汉堡菜单与导航",
+      "status": "PASS",
+      "ms": 7894,
+      "expectation": "",
+      "detail": "汉堡=true 抽屉/导航=true 横向溢出=false"
+    }
+  ],
+  "logs": {
+    "consoleErrors": [
+      "@bilibili/bili-user-fingerprint(report): report is not found"
+    ],
+    "consoleWarnings": [
+      "Mixed Content: The page at 'https://player.bilibili.com/player.html?isOutside=true&aid=115949621610277&bvid=BV1ADzkBoEDS&cid=35585262359&p=1&autoplay=1' was loaded over HTTPS, but requested an insecure element 'http://i1.hdslb.com/bfs/archive/9452abe7d866ea43c51bec219b091145841024fe.png'. This reque",
+      "Mixed Content: The page at 'https://player.bilibili.com/player.html?isOutside=true&aid=115949621610277&bvid=BV1ADzkBoEDS&cid=35585262359&p=1&autoplay=1' was loaded over HTTPS, but requested an insecure element 'http://i1.hdslb.com/bfs/archive/8dd359b9414ee800fa4274370507476d9c554127.jpg'. This reque",
+      "Mixed Content: The page at 'https://player.bilibili.com/player.html?isOutside=true&aid=115949621610277&bvid=BV1ADzkBoEDS&cid=35585262359&p=1&autoplay=1' was loaded over HTTPS, but requested an insecure element 'http://i1.hdslb.com/bfs/archive/f66b44ed7094d77a8ea26e2abe5c055fa22d52cc.png'. This reque",
+      "Mixed Content: The page at 'https://player.bilibili.com/player.html?isOutside=true&aid=115949621610277&bvid=BV1ADzkBoEDS&cid=35585262359&p=1&autoplay=1' was loaded over HTTPS, but requested an insecure element 'http://i2.hdslb.com/bfs/archive/9bbf3ac1b78aa9663757965eef24721eef6e7f47.jpg'. This reque",
+      "Mixed Content: The page at 'https://player.bilibili.com/player.html?isOutside=true&aid=115949621610277&bvid=BV1ADzkBoEDS&cid=35585262359&p=1&autoplay=1' was loaded over HTTPS, but requested an insecure element 'http://i2.hdslb.com/bfs/archive/f95292ff80c387806fc0d899f82f78ce2170fffa.jpg'. This reque"
+    ],
+    "pageErrors": [],
+    "failedRequests": [
+      "GET /me?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET /category/office-productivity?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/design-and-creative?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/developer-resources?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/devops-and-security?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/backend-and-cloud?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/frontend-development?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/ai-tools?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /tags?_rsc=hzvyQEdmHvs_FImb :: undefined",
+      "GET /sites?_rsc=Zb6eDJ-s9cXQrbEN :: undefined",
+      "GET /category?_rsc=uUsP229qrvN_nXvM :: undefined",
+      "GET /hot?_rsc=vEPOR1jZviVUl158 :: undefined",
+      "GET /?_rsc=8nTjltbQWvg6NcbE :: undefined",
+      "GET /?_rsc=yIp22O3xgPPxC28X :: undefined",
+      "GET /category/backend-and-cloud?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/frontend-development?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/ai-tools?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /tags?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /sites?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /hot?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET /videos?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /marketplace?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /submit?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /marketplace?_rsc=tXyZJ52UQVBCVsD3 :: undefined",
+      "GET /videos?_rsc=Z_-Rmfo5jJLNxGaf :: undefined",
+      "GET /submit?_rsc=tXyZJ52UQVBCVsD3 :: undefined",
+      "GET /category/office-productivity?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/design-and-creative?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/developer-resources?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/devops-and-security?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/backend-and-cloud?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/frontend-development?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/ai-tools?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /tags?_rsc=hzvyQEdmHvs_FImb :: undefined",
+      "GET /sites?_rsc=Zb6eDJ-s9cXQrbEN :: undefined",
+      "GET /category?_rsc=uUsP229qrvN_nXvM :: undefined",
+      "GET /hot?_rsc=vEPOR1jZviVUl158 :: undefined",
+      "GET /?_rsc=8nTjltbQWvg6NcbE :: undefined",
+      "GET /?_rsc=yIp22O3xgPPxC28X :: undefined",
+      "GET /category/devops-and-security?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/backend-and-cloud?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/frontend-development?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/ai-tools?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /tags?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /sites?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /hot?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET /category/office-productivity?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/design-and-creative?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/developer-resources?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/devops-and-security?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/backend-and-cloud?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/frontend-development?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /category/ai-tools?_rsc=8mu-9PhRaVScQBoq :: undefined",
+      "GET /tags?_rsc=hzvyQEdmHvs_FImb :: undefined",
+      "GET /sites?_rsc=Zb6eDJ-s9cXQrbEN :: undefined",
+      "GET /category?_rsc=uUsP229qrvN_nXvM :: undefined",
+      "GET /hot?_rsc=vEPOR1jZviVUl158 :: undefined",
+      "GET /?_rsc=8nTjltbQWvg6NcbE :: undefined",
+      "GET /?_rsc=yIp22O3xgPPxC28X :: undefined",
+      "GET /category/devops-and-security?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/backend-and-cloud?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/frontend-development?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category/ai-tools?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /tags?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /sites?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /category?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /hot?_rsc=5CB68i4pnAekjehf :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET /me?_rsc=dwKd4E45QZqjjmgk :: undefined",
+      "GET /me?_rsc=FRDVpBN7uyar1r71 :: undefined",
+      "GET /me?_rsc=S7AnLAHzIksbVbW5 :: undefined",
+      "GET /marketplace?_rsc=S7AnLAHzIksbVbW5 :: undefined",
+      "GET /submit?_rsc=S7AnLAHzIksbVbW5 :: undefined",
+      "GET /videos?_rsc=S7AnLAHzIksbVbW5 :: undefined",
+      "GET /me?_rsc=z09PN_CikjH9SOz1 :: undefined",
+      "GET /marketplace?_rsc=BvNx5oLkIVJOyl4b :: undefined",
+      "GET /submit?_rsc=BvNx5oLkIVJOyl4b :: undefined",
+      "GET /videos?_rsc=dzb2fo1yqiT8fcNh :: undefined",
+      "GET /site/011c975b-9306-4090-85ae-6c11b875776a?_rsc=j0vYprcNzc59VRy2 :: undefined",
+      "GET /site/ded3eb04-e888-40de-bef1-6b76e8fc8268?_rsc=j0vYprcNzc59VRy2 :: undefined",
+      "GET /site/385c18b1-aa13-4a5c-a18c-be3fb3f9b51d?_rsc=j0vYprcNzc59VRy2 :: undefined",
+      "GET /videos/player?_rsc=x6sdgmH4sdPcpsRy :: undefined",
+      "GET /me?_rsc=x6sdgmH4sdPcpsRy :: undefined",
+      "GET /submit?_rsc=x6sdgmH4sdPcpsRy :: undefined",
+      "GET /marketplace?_rsc=HcIkfjK9IY_WhrIq :: undefined"
+    ],
+    "badResponses": []
+  }
+}

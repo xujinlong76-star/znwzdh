@@ -220,6 +220,25 @@ describe("网关：chatCompletion", () => {
       chatCompletion(provider(), { messages: [{ role: "user", content: "hi" }], fetchImpl }),
     ).rejects.toMatchObject({ code: "invalid_response" });
   });
+
+  it("上游把取消当正常回答返回 ⇒ cancelled，不把「用户已取消」当模型内容", async () => {
+    const { fetchImpl } = captureFetch(() =>
+      jsonResponse({ choices: [{ message: { content: "用户已取消" } }] }),
+    );
+    await expect(
+      chatCompletion(provider(), { messages: [{ role: "user", content: "hi" }], fetchImpl }),
+    ).rejects.toMatchObject({ code: "cancelled" });
+  });
+
+  it("长回答里提到「用户已取消」不算取消（只认整段相等）", async () => {
+    const text = "用户已取消后，恢复任务会停在分片边界，不会继续写入。";
+    const { fetchImpl } = captureFetch(() => jsonResponse({ choices: [{ message: { content: text } }] }));
+    const res = await chatCompletion(provider(), {
+      messages: [{ role: "user", content: "hi" }],
+      fetchImpl,
+    });
+    expect(res.content).toBe(text);
+  });
 });
 
 describe("网关：流式解析", () => {

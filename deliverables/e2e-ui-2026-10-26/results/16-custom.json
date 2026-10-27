@@ -1,0 +1,88 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "baseSnap": {
+    "buttons": [
+      "💻 全栈极客工作台(7)",
+      "⚡ 极速效率启动坞(4)",
+      "点阵",
+      "网格",
+      "极光",
+      "纯净",
+      "自定义排版",
+      "时钟",
+      "专注",
+      "UUID",
+      "时间戳",
+      "Base64",
+      "重新生成",
+      "复制 UUID",
+      "1024 * 768",
+      "192.168.1.0/24",
+      "16 GB",
+      "#3b82f6",
+      "编辑",
+      "预览"
+    ],
+    "dialogs": 0,
+    "modules": 0,
+    "ls": {
+      "navhub_modular_multi_boards_v2": 1633
+    },
+    "text": "返回主页 / 模块化排版系统 模块化自定义工作台 页面由多个独立功能模块组成。支持开启编辑后通过鼠标自由拖拽模块位置、横向及纵向缩放尺寸，并在移动端、平板与宽屏桌面间平滑自适应。 鼠标自由拖拽换位 12 栅格无级缩放 独立沙箱 · 本地持久化 支持 Ctrl+Z 历史撤销 我的工"
+  },
+  "rows": [
+    {
+      "label": "💻 全栈极客工作台",
+      "found": true,
+      "vis": true,
+      "dialogDelta": 0,
+      "moduleDelta": 0,
+      "lsChanged": false,
+      "textChanged": false,
+      "after": {
+        "dialogs": 0,
+        "modules": 0,
+        "ls": {
+          "navhub_modular_multi_boards_v2": 1633
+        }
+      }
+    },
+    {
+      "label": "时钟",
+      "found": true,
+      "vis": true,
+      "dialogDelta": 0,
+      "moduleDelta": 0,
+      "lsChanged": false,
+      "textChanged": false,
+      "after": {
+        "dialogs": 0,
+        "modules": 0,
+        "ls": {
+          "navhub_modular_multi_boards_v2": 1633
+        }
+      }
+    },
+    {
+      "label": "UUID",
+      "found": true,
+      "vis": true,
+      "dialogDelta": 0,
+      "moduleDelta": 0,
+      "lsChanged": false,
+      "textChanged": false,
+      "after": {
+        "dialogs": 0,
+        "modules": 0,
+        "ls": {
+          "navhub_modular_multi_boards_v2": 1633
+        }
+      }
+    },
+    {
+      "label": "套用模版",
+      "found": false,
+      "vis": false
+    }
+  ]
+}

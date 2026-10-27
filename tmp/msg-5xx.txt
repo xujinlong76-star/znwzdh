@@ -1,0 +1,19 @@
+fix(plugin-audit): 候选 5xx 不再判「不可达」——站点还在应答，只是此刻不可用
+
+原实现 `if (res.status >= 400) return dead` 把 500/502/503/504 和 404 一起判死，
+界面上写「不可达（站点已确认下线）」，候选排序里还会掉到停放页之后
+（GRADE_RANK：unverified 2 > suspicious 1 > dead 0）——等于让一个只是临时过载的
+高质量站点被永久排除。这与全仓三分类口径（只有页面确定不存在才算失效）冲突。
+
+抽出纯函数 classifyProbeStatus 并明确口径：
+- 404 / 410 / 451 → dead（页面确定不存在）
+- 5xx / 408 → unverified（服务端暂时不可用）
+- 其余 4xx → unverified（请求被拒绝，多为风控）
+- 1xx–3xx → null（不是失败，交回调用方继续做内容判定）
+401/403/405/412/418/429 仍先由 isBlockedByBotStatus 归为 blocked，判断顺序不变。
+
+不影响自动平替：autoApply 只认 verified，这两档本来都不会被采纳。
+
+测试：candidate-probe-classify 9 → 19 例（新增状态码分类 10 例）；
+plugin-audit / plugin-audit-api / health-audit-api / candidate-probe-classify
+合计 62 例全绿；apps/api tsc --noEmit exit 0。

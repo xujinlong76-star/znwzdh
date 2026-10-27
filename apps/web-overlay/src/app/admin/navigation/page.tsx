@@ -201,6 +201,12 @@ export default function NavigationPage() {
 
   return (
     <div className="h-full flex-1 flex-col space-y-5 sm:space-y-8 p-3 sm:p-6 lg:p-8 md:flex">
+      <div>
+        <h1 className="text-xl font-bold">导航架构管理</h1>
+        <p className="text-xs text-muted-foreground mt-1">
+          管理全站层级分类与二级子类：拖拽调整顺序、按启用状态筛选，改动即时对前台导航生效。
+        </p>
+      </div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 sm:gap-4 flex-1 w-full sm:w-auto">
           <Input aria-label="搜索分类"

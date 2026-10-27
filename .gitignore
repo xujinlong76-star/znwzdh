@@ -93,3 +93,10 @@ apps/web/src/app/api/home/site/*
 
 # --- 本地 GUI 真人模式测试证据（会话产物，不入库）---
 gui-test-screenshots/
+
+# --- E2E 会话凭据产物（含管理员 session-token，严禁入库）---
+storage-state.json
+*cookie-diff.txt
+
+# --- Playwright MCP 会话产物（页面快照与下载包，不入库）---
+.playwright-mcp/

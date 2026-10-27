@@ -1,0 +1,102 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "out": {
+    "sidebar": {
+      "clicked": true,
+      "before": {
+        "navLinks": 16,
+        "navText": "NavSphere 管理控制台 管理菜单 仪表盘 导航管理 标签管理 分面属性 精选专题 视频管理 投稿审核 插件市场 AI 模型 运营数据 任务队列 审计日志 回收站 API Token 资源管理 数据管理 冷备恢复 站点设置 本地管理员",
+        "btnTag": "BUTTON",
+        "btnExpanded": null,
+        "btnClass": "inline-flex items-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors ",
+        "chevronRotated": 0,
+        "subLinksVisible": 0
+      },
+      "after": {
+        "navLinks": 19,
+        "navText": "NavSphere 管理控制台 管理菜单 仪表盘 导航管理 分类管理分类治理站点管理 标签管理 分面属性 精选专题 视频管理 投稿审核 插件市场 AI 模型 运营数据 任务队列 审计日志 回收站 API Token 资源管理 数据管理 冷备恢复 站点设置 本地管理员",
+        "btnTag": "BUTTON",
+        "btnExpanded": null,
+        "btnClass": "inline-flex items-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors ",
+        "chevronRotated": 1,
+        "subLinksVisible": 0
+      },
+      "secondClick": {
+        "navLinks": 19,
+        "navText": "NavSphere 管理控制台 管理菜单 仪表盘 导航管理 分类管理分类治理站点管理 标签管理 分面属性 精选专题 视频管理 投稿审核 插件市场 AI 模型 运营数据 任务队列 审计日志 回收站 API Token 资源管理 数据管理 冷备恢复 站点设置 本地管理员",
+        "btnTag": "BUTTON",
+        "btnExpanded": null,
+        "btnClass": "inline-flex items-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors ",
+        "chevronRotated": 1,
+        "subLinksVisible": 0
+      },
+      "delta": {
+        "links": 3,
+        "chevron": 1
+      }
+    },
+    "videosDom": {
+      "counts": {
+        "a": 16,
+        "article": 0,
+        "li": 0,
+        "[data-video-id]": 0,
+        "iframe": 0,
+        "video": 0,
+        "[class*=\"video\"]": 3,
+        "[class*=\"card\"]": 6
+      },
+      "text": "⌘ K 切换主题 视频中心 按分类浏览视频与教程 收录开发者常用的视频频道与教程源，按技术分类归档；支持播放器模式与实时搜索。 2 个分类 1 个子分类 3 个视频源 精选视频 【唐伯虎点秋香】 4K 自购原碟修复 全网最清晰版本 国语中字周星驰 巩俐 陈百祥 郑佩佩 朱咪咪 梁家仁 苑琼丹 梁荣忠 黄一山 黄霑 吴镇宇 bilibili 【唐伯虎点秋香】 4K 自购原碟修复 全网最清晰版本 国语中字周星驰 巩俐 陈百祥 郑佩佩 朱咪咪 梁家仁 苑琼丹 梁荣忠 黄一山 黄霑 吴镇宇 七年级 语文 bilibili 《沃尔特·施洛斯访谈资料集》 1985年：真材实料 读书分享：《沃尔特·施洛斯访",
+      "filters": [
+        "切换主题",
+        "【唐伯虎点秋香】 4K 自购",
+        "bilibili【唐伯虎点秋",
+        "bilibili《沃尔特·施"
+      ],
+      "sampleHtml": "<div class=\"relative aspect-video overflow-hidden bg-muted\"><img alt=\"\" decoding=\"async\" data-nimg=\"fill\" class=\"object-cover transition-all duration-500 \n                                           group-hover:scale-105 opacity-100\" style=\"position:absolute;height:100%;width:100%;left:0;top:0;right:0;bottom:0;color:transparent\" sizes=\"(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw\" srcset=\"/_next/image?url=%2Fassets%2Fcover%2Fcover_1769518085708.jpg&amp;w=256&amp;q=75 256w, /_next/imag"
+    },
+    "hot": {
+      "clickNew": true,
+      "before": {
+        "tabs": [
+          {
+            "t": "访问量榜",
+            "sel": "true"
+          },
+          {
+            "t": "最新入库榜",
+            "sel": "false"
+          }
+        ],
+        "items": 30,
+        "head": "首页 今日热榜 返回主页 / 站点榜单 全站技术风向标与热度榜 按站点访问量排序展示已收录资源。当前访问量统计尚未积累，榜单暂不反映真实热度。 热度榜 30 条 新品 30 条 访问量统计中，排序暂为默认顺序 Ctrl+K 或 / 访问量榜 最新入库榜 🥇 C Cursor AI 驱动的代码编辑器，用自然语言写代码、改代码 2 次热度 #ai-编程 #代码编辑器 站内详情 🥈 G GitHub",
+        "first3": [
+          "站内详情",
+          "站内详情",
+          "站内详情"
+        ]
+      },
+      "after": {
+        "tabs": [
+          {
+            "t": "访问量榜",
+            "sel": "true"
+          },
+          {
+            "t": "最新入库榜",
+            "sel": "false"
+          }
+        ],
+        "items": 30,
+        "head": "首页 今日热榜 返回主页 / 站点榜单 全站技术风向标与热度榜 按站点访问量排序展示已收录资源。当前访问量统计尚未积累，榜单暂不反映真实热度。 热度榜 30 条 新品 30 条 访问量统计中，排序暂为默认顺序 Ctrl+K 或 / 访问量榜 最新入库榜 🥇 C Cursor AI 驱动的代码编辑器，用自然语言写代码、改代码 2 次热度 #ai-编程 #代码编辑器 站内详情 🥈 G GitHub",
+        "first3": [
+          "站内详情",
+          "站内详情",
+          "站内详情"
+        ]
+      },
+      "url": "/hot",
+      "changed": false
+    }
+  }
+}

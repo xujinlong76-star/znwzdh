@@ -1,0 +1,156 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "out": {
+    "market": {
+      "base": {
+        "names": [
+          {
+            "href": "/marketplace/installed",
+            "txt": "已安装管家"
+          },
+          {
+            "href": "/marketplace/import",
+            "txt": "导入插件文件"
+          },
+          {
+            "href": "/marketplace/mine",
+            "txt": "作者中心"
+          },
+          {
+            "href": "/marketplace/publish",
+            "txt": "发布插件"
+          },
+          {
+            "href": "/marketplace/nordic-glacier",
+            "txt": "1北欧冰川极简冷灰主题2 次安装"
+          },
+          {
+            "href": "/marketplace/ai-power-bundle",
+            "txt": "2AI 效率组合包0 次安装"
+          },
+          {
+            "href": "/marketplace/ai-agentic-future-bundle",
+            "txt": "3AI 智能体时代旗舰全家桶 (Agentic Fu"
+          },
+          {
+            "href": "/marketplace/ai-workbench",
+            "txt": "4AI 智能体工作台0 次安装"
+          },
+          {
+            "href": "/marketplace/mac-sonoma-glass",
+            "txt": "5macOS Sonoma 毛玻璃晶透主题0 次安装"
+          },
+          {
+            "href": "/marketplace/nordic-glacier",
+            "txt": "1北欧冰川极简冷灰主题暂无评价"
+          }
+        ],
+        "count": 173,
+        "chips": [
+          {
+            "txt": "Taps 订阅源",
+            "bg": "rgb(255, 255, 255)",
+            "color": "lab(38.4009 52.6132 -92.3857)"
+          },
+          {
+            "txt": "AI 生成插件",
+            "bg": "rgb(24, 24, 27)",
+            "color": "rgb(250, 250, 250)"
+          },
+          {
+            "txt": "全部插件",
+            "bg": "rgb(24, 24, 27)",
+            "color": "rgb(250, 250, 250)"
+          },
+          {
+            "txt": "🔥 飙升榜",
+            "bg": "rgb(24, 24, 27)",
+            "color": "rgb(250, 250, 250)"
+          },
+          {
+            "txt": "🚀 极客全栈装备",
+            "bg": "oklab(0.999994 0.0000455677 0.0000200868 / 0.7)",
+            "color": "rgb(113, 113, 122)"
+          },
+          {
+            "txt": "🔍 快捷直达引擎",
+            "bg": "oklab(0.999994 0.0000455677 0.0000200868 / 0.7)",
+            "color": "rgb(113, 113, 122)"
+          },
+          {
+            "txt": "📊 生产力工作台",
+            "bg": "oklab(0.999994 0.0000455677 0.0000200868 / 0.7)",
+            "color": "rgb(113, 113, 122)"
+          },
+          {
+            "txt": "🎨 赛博与暗黑美学",
+            "bg": "oklab(0.999994 0.0000455677 0.0000200868 / 0.7)",
+            "color": "rgb(113, 113, 122)"
+          },
+          {
+            "txt": "🧩 精选组合包",
+            "bg": "oklab(0.999994 0.0000455677 0.0000200868 / 0.7)",
+            "color": "rgb(113, 113, 122)"
+          },
+          {
+            "txt": "搜索",
+            "bg": "rgb(255, 255, 255)",
+            "color": "rgb(9, 9, 11)"
+          },
+          {
+            "txt": "#开发工具",
+            "bg": "oklab(0.967559 0.000419199 -0.0012573 / 0.5)",
+            "color": "rgb(113, 113, 122)"
+          },
+          {
+            "txt": "#AI效率",
+            "bg": "oklab(0.967559 0.000419199 -0.0012573 / 0.5)",
+            "color": "rgb(113, 113, 122)"
+          }
+        ]
+      },
+      "seq": [
+        {
+          "label": "飙升榜",
+          "count": 173,
+          "head": [
+            "/marketplace/installed",
+            "/marketplace/import",
+            "/marketplace/mine"
+          ],
+          "changed": false,
+          "chipStyleChanged": false
+        },
+        {
+          "label": "全部插件",
+          "count": 173,
+          "head": [
+            "/marketplace/installed",
+            "/marketplace/import",
+            "/marketplace/mine"
+          ],
+          "changed": false,
+          "chipStyleChanged": false
+        }
+      ]
+    },
+    "sidebar": {
+      "n0": 16,
+      "n1": 19,
+      "n2": 16,
+      "added": [
+        "/admin/categories",
+        "/admin/taxonomy",
+        "/admin/sitelist"
+      ],
+      "removed": [],
+      "ariaExpandedSample": [
+        "#-",
+        "导航管理#-",
+        "插件市场#-",
+        "资源管理#-",
+        "本地管理员#false"
+      ]
+    }
+  }
+}

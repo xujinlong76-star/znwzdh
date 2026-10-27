@@ -554,6 +554,12 @@ export default function ResourceManagement() {
       )}
 
       <div className="space-y-4 p-6">
+        <div>
+          <h1 className="text-xl font-bold">站点图像资源库</h1>
+          <p className="text-xs text-muted-foreground mt-1">
+            上传与检索站点图片资源、复制直链；删除前核对引用关系，避免打断页面上正在使用的图标。
+          </p>
+        </div>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full sm:w-auto">

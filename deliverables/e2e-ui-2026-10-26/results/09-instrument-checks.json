@@ -1,0 +1,219 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "checks": [
+    {
+      "route": "/favorites",
+      "label": "明文 JSON",
+      "expect": "download",
+      "events": [],
+      "reqs": [],
+      "note": "点击失败 locator.click: Timeout 3000ms exceeded.",
+      "domDelta": null,
+      "verdict": "仍无任何可观测响应"
+    },
+    {
+      "route": "/admin/plugin-health",
+      "label": "导出 JSON",
+      "expect": "download",
+      "events": [
+        "download(navhub-plugin-health-report-2026-10-26T12-56-39-746Z.json)"
+      ],
+      "reqs": [],
+      "note": "",
+      "domDelta": null,
+      "verdict": "有响应（形态见 events/reqs/domDelta）"
+    },
+    {
+      "route": "/admin/plugin-health",
+      "label": "导出 Markdown",
+      "expect": "download",
+      "events": [
+        "download(navhub-plugin-health-report-2026-10-26T12-56-43-692Z.md)"
+      ],
+      "reqs": [],
+      "note": "",
+      "domDelta": null,
+      "verdict": "有响应（形态见 events/reqs/domDelta）"
+    },
+    {
+      "route": "/admin/plugin-health",
+      "label": "同步快照",
+      "expect": "network",
+      "events": [],
+      "reqs": [],
+      "note": "",
+      "domDelta": null,
+      "verdict": "仍无任何可观测响应"
+    },
+    {
+      "route": "/me",
+      "label": "刷新",
+      "expect": "network",
+      "events": [],
+      "reqs": [],
+      "note": "",
+      "domDelta": null,
+      "verdict": "仍无任何可观测响应"
+    },
+    {
+      "route": "/admin/plugins",
+      "label": "刷新",
+      "expect": "network",
+      "events": [],
+      "reqs": [],
+      "note": "",
+      "domDelta": null,
+      "verdict": "仍无任何可观测响应"
+    },
+    {
+      "route": "/me/data",
+      "label": "从浏览器书签",
+      "expect": "filechooser",
+      "events": [
+        "filechooser(原生文件选择器)"
+      ],
+      "reqs": [],
+      "note": "",
+      "domDelta": null,
+      "verdict": "有响应（形态见 events/reqs/domDelta）"
+    },
+    {
+      "route": "/submit",
+      "label": "提交推荐收录",
+      "expect": "native-validity",
+      "events": [],
+      "reqs": [],
+      "note": "",
+      "domDelta": null,
+      "verdict": "仍无任何可观测响应"
+    },
+    {
+      "route": "/favorites",
+      "label": "全部 20",
+      "expect": "noop-if-active",
+      "events": [],
+      "reqs": [],
+      "note": "按钮不可见/不存在"
+    },
+    {
+      "route": "/graph",
+      "label": "放大",
+      "expect": "svg-transform",
+      "events": [],
+      "reqs": [],
+      "verdict": "有响应（transform 变化）",
+      "domDelta": {
+        "before": "translate(0, 0) scale(1) | translate(542.989553220116, 293.1290058294413) | translate(655.3890464944512, 334.69066748219",
+        "after": "translate(0, 0) scale(1.15) | translate(542.989553220116, 293.1290058294413) | translate(655.3890464944512, 334.69066748"
+      }
+    },
+    {
+      "route": "/graph",
+      "label": "缩小",
+      "expect": "svg-transform",
+      "events": [],
+      "reqs": [],
+      "verdict": "有响应（transform 变化）",
+      "domDelta": {
+        "before": "translate(0, 0) scale(1.15) | translate(542.989553220116, 293.1290058294413) | translate(655.3890464944512, 334.69066748",
+        "after": "translate(0, 0) scale(0.9999999999999999) | translate(542.989553220116, 293.1290058294413) | translate(655.3890464944512"
+      }
+    },
+    {
+      "route": "/graph",
+      "label": "UI & 设计",
+      "expect": "svg-node-count",
+      "events": [],
+      "reqs": [],
+      "verdict": "有响应（节点 111→36）"
+    },
+    {
+      "route": "/graph",
+      "label": "AI 实验室",
+      "expect": "svg-node-count",
+      "events": [],
+      "reqs": [],
+      "verdict": "有响应（节点 36→30）"
+    },
+    {
+      "route": "/graph",
+      "label": "全部",
+      "expect": "svg-node-count",
+      "events": [],
+      "reqs": [],
+      "verdict": "有响应（节点 30→111）"
+    },
+    {
+      "route": "/videos",
+      "label": "精选视频",
+      "expect": "card-list",
+      "events": [],
+      "reqs": [],
+      "verdict": "仍无响应（列表未变）",
+      "domDelta": {
+        "before": "",
+        "after": ""
+      }
+    },
+    {
+      "route": "/videos",
+      "label": "七年级",
+      "expect": "card-list",
+      "events": [],
+      "reqs": [],
+      "verdict": "仍无响应（列表未变）",
+      "domDelta": {
+        "before": "",
+        "after": ""
+      }
+    },
+    {
+      "route": "/videos",
+      "label": "语文",
+      "expect": "card-list",
+      "events": [],
+      "reqs": [],
+      "verdict": "仍无响应（列表未变）",
+      "domDelta": {
+        "before": "",
+        "after": ""
+      }
+    },
+    {
+      "route": "/marketplace",
+      "label": "全部插件",
+      "expect": "tab-selected",
+      "events": [],
+      "reqs": [],
+      "verdict": "仍无响应（选中态未变）",
+      "domDelta": {
+        "before": "",
+        "after": ""
+      }
+    },
+    {
+      "route": "/marketplace",
+      "label": "飙升榜",
+      "expect": "tab-selected",
+      "events": [],
+      "reqs": [],
+      "verdict": "仍无响应（选中态未变）",
+      "domDelta": {
+        "before": "",
+        "after": ""
+      }
+    },
+    {
+      "route": "/marketplace",
+      "label": "搜索",
+      "expect": "tab-selected",
+      "events": [],
+      "reqs": [],
+      "verdict": "仍无响应（选中态未变）",
+      "domDelta": {
+        "before": "",
+        "after": ""
+      }
+    }
+  ]
+}

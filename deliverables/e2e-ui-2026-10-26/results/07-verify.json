@@ -1,0 +1,710 @@
+{
+  "at": "2026-10-26T13:09:57.162Z",
+  "base": "http://127.0.0.1:3400",
+  "videosFilters": {
+    "route": "/videos",
+    "before": {
+      "cards": 3,
+      "titles": [
+        "语文"
+      ],
+      "activeBtns": [],
+      "bodyLen": 552,
+      "mainText": "⌘ K 切换主题 视频中心 按分类浏览视频与教程 收录开发者常用的视频频道与教程源，按技术分类归档；支持播放器模式与实时搜索。 2 个分类 1 个子分类 3 个视频源 精选视频 【唐伯虎点秋香】 4K 自购原碟修复 全网最清晰版本 国语中字周星驰 巩俐 陈百祥 郑佩佩 朱咪咪 梁家仁 苑琼丹 梁荣忠 黄一山 黄霑 吴镇"
+    },
+    "七年级": {
+      "visible": true,
+      "ms": 1281,
+      "ariaPressed": null,
+      "cls": "inline-flex items-center whitespace-nowrap focus-visible:outline-none ",
+      "titlesChanged": false,
+      "bodyDiff": 0,
+      "beforeTitles": [
+        "语文"
+      ],
+      "afterTitles": [
+        "语文"
+      ]
+    },
+    "语文": {
+      "visible": true,
+      "ms": 1262,
+      "ariaPressed": null,
+      "cls": "inline-flex items-center gap-2 whitespace-nowrap font-medium transitio",
+      "titlesChanged": false,
+      "bodyDiff": 0,
+      "beforeTitles": [
+        "语文"
+      ],
+      "afterTitles": [
+        "语文"
+      ]
+    },
+    "精选视频": {
+      "visible": true,
+      "ms": 1262,
+      "ariaPressed": null,
+      "cls": "inline-flex items-center whitespace-nowrap focus-visible:outline-none ",
+      "titlesChanged": false,
+      "bodyDiff": 0,
+      "beforeTitles": [
+        "语文"
+      ],
+      "afterTitles": [
+        "语文"
+      ]
+    }
+  },
+  "categorySummary": [
+    {
+      "label": "AI 工具 209 · 9 个子分类",
+      "parent": "DETAILS",
+      "open": true,
+      "children": 10,
+      "hasOnClickAttr": false
+    },
+    {
+      "label": "前端开发 147 · 4 个子分类",
+      "parent": "DETAILS",
+      "open": false,
+      "children": 5,
+      "hasOnClickAttr": false
+    },
+    {
+      "label": "后端与云 155 · 5 个子分类",
+      "parent": "DETAILS",
+      "open": false,
+      "children": 6,
+      "hasOnClickAttr": false
+    },
+    {
+      "label": "运维与安全 101 · 1 个子分类",
+      "parent": "DETAILS",
+      "open": false,
+      "children": 2,
+      "hasOnClickAttr": false
+    },
+    {
+      "label": "开发者资源 145 · 5 个子分类",
+      "parent": "DETAILS",
+      "open": false,
+      "children": 6,
+      "hasOnClickAttr": false
+    },
+    {
+      "label": "设计与创意 27 · 1 个子分类",
+      "parent": "DETAILS",
+      "open": false,
+      "children": 2,
+      "hasOnClickAttr": false
+    },
+    {
+      "label": "效率办公 173 · 4 个子分类",
+      "parent": "DETAILS",
+      "open": false,
+      "children": 5,
+      "hasOnClickAttr": false
+    }
+  ],
+  "categorySummaryProbe": {
+    "before": 1,
+    "after": 2,
+    "expanded": true
+  },
+  "adminHeadings": [
+    {
+      "route": "/admin/navigation",
+      "h1": [],
+      "h2": [
+        "管理菜单"
+      ],
+      "headingish": [
+        "NavSphere"
+      ],
+      "mainAria": "",
+      "skeleton": 0
+    },
+    {
+      "route": "/admin/resources",
+      "h1": [],
+      "h2": [
+        "管理菜单"
+      ],
+      "headingish": [
+        "NavSphere"
+      ],
+      "mainAria": "",
+      "skeleton": 0
+    },
+    {
+      "route": "/admin/site",
+      "h1": [],
+      "h2": [
+        "管理菜单"
+      ],
+      "headingish": [
+        "NavSphere"
+      ],
+      "mainAria": "",
+      "skeleton": 0
+    },
+    {
+      "route": "/admin/sitelist",
+      "h1": [],
+      "h2": [
+        "管理菜单"
+      ],
+      "headingish": [
+        "NavSphere"
+      ],
+      "mainAria": "",
+      "skeleton": 0
+    },
+    {
+      "route": "/admin/videos",
+      "h1": [],
+      "h2": [
+        "管理菜单"
+      ],
+      "headingish": [
+        "NavSphere"
+      ],
+      "mainAria": "",
+      "skeleton": 0
+    },
+    {
+      "route": "/admin/tags",
+      "h1": [
+        "多维标签与词表治理"
+      ],
+      "h2": [
+        "管理菜单"
+      ],
+      "headingish": [
+        "NavSphere",
+        "多维标签与词表治理"
+      ],
+      "mainAria": "",
+      "skeleton": 0
+    }
+  ],
+  "homeDialogs": [
+    {
+      "label": "站点导航",
+      "hidden": "true",
+      "state": null,
+      "visible": false,
+      "text": "NavHub 导航AI-Native Hubv5.0个人私有空间空间所有者[da"
+    }
+  ],
+  "homeTabSwitch": {
+    "found": false,
+    "wallMs": 136
+  },
+  "graph": [
+    {
+      "label": "全部",
+      "visible": true,
+      "nodesDiff": 0,
+      "transformChanged": false,
+      "beforeTransform": "translate(0, 0) scale(1)",
+      "afterTransform": "translate(0, 0) scale(1)",
+      "bodyDiff": 0
+    },
+    {
+      "label": "UI & 设计",
+      "visible": true,
+      "nodesDiff": -75,
+      "transformChanged": false,
+      "beforeTransform": "translate(0, 0) scale(1)",
+      "afterTransform": "translate(0, 0) scale(1)",
+      "bodyDiff": -216
+    },
+    {
+      "label": "AI 实验室",
+      "visible": true,
+      "nodesDiff": -6,
+      "transformChanged": false,
+      "beforeTransform": "translate(0, 0) scale(1)",
+      "afterTransform": "translate(0, 0) scale(1)",
+      "bodyDiff": -8
+    },
+    {
+      "label": "放大",
+      "visible": false
+    },
+    {
+      "label": "缩小",
+      "visible": false
+    }
+  ],
+  "marketplace": [
+    {
+      "label": "全部插件",
+      "visible": true,
+      "via": "locator",
+      "ms": 1293,
+      "cardsDiff": 0,
+      "bodyDiff": 0,
+      "dialog": false,
+      "headChanged": false,
+      "beforeActive": [],
+      "afterActive": []
+    },
+    {
+      "label": "🔥 飙升榜",
+      "visible": true,
+      "via": "locator",
+      "ms": 1311,
+      "cardsDiff": 0,
+      "bodyDiff": 0,
+      "dialog": false,
+      "headChanged": false,
+      "beforeActive": [],
+      "afterActive": []
+    },
+    {
+      "label": "搜索",
+      "visible": true,
+      "via": "locator",
+      "ms": 1295,
+      "cardsDiff": 0,
+      "bodyDiff": 0,
+      "dialog": false,
+      "headChanged": false,
+      "beforeActive": [],
+      "afterActive": []
+    },
+    {
+      "label": "已安装",
+      "visible": false
+    },
+    {
+      "label": "Taps 订阅源",
+      "visible": true,
+      "via": "locator",
+      "ms": 1519,
+      "cardsDiff": 0,
+      "bodyDiff": 480,
+      "dialog": true,
+      "headChanged": false,
+      "beforeActive": [],
+      "afterActive": []
+    }
+  ],
+  "custom": [
+    {
+      "label": "💻 全栈极客工作台",
+      "visible": true,
+      "dialogNow": false,
+      "bodyDiff": 0,
+      "modulesDiff": 0,
+      "hashChanged": false,
+      "canvasChanged": false
+    },
+    {
+      "label": "赛博点阵画布",
+      "visible": false
+    },
+    {
+      "label": "时钟",
+      "visible": true,
+      "dialogNow": false,
+      "bodyDiff": 0,
+      "modulesDiff": 0,
+      "hashChanged": false,
+      "canvasChanged": false
+    },
+    {
+      "label": "UUID",
+      "visible": true,
+      "dialogNow": false,
+      "bodyDiff": 0,
+      "modulesDiff": 0,
+      "hashChanged": false,
+      "canvasChanged": false
+    },
+    {
+      "label": "编辑模式",
+      "visible": false
+    },
+    {
+      "label": "复制全文内容",
+      "visible": false
+    },
+    {
+      "label": "添加模块",
+      "visible": false
+    }
+  ],
+  "adminSidebar": [
+    {
+      "label": "导航管理",
+      "visible": true,
+      "latency": 72,
+      "before": {
+        "childPresent": false,
+        "url": "/admin/trash",
+        "chev": 0
+      },
+      "expanded": {
+        "childPresent": false,
+        "url": "/admin/trash",
+        "chev": 1
+      },
+      "collapsed": {
+        "childPresent": false,
+        "url": "/admin/trash",
+        "chev": 0
+      }
+    },
+    {
+      "label": "插件市场",
+      "visible": true,
+      "latency": 102,
+      "before": {
+        "childPresent": false,
+        "url": "/admin/trash",
+        "chev": 0
+      },
+      "expanded": {
+        "childPresent": false,
+        "url": "/admin/trash",
+        "chev": 1
+      },
+      "collapsed": {
+        "childPresent": false,
+        "url": "/admin/trash",
+        "chev": 0
+      }
+    },
+    {
+      "label": "资源管理",
+      "visible": true,
+      "latency": 57,
+      "before": {
+        "childPresent": false,
+        "url": "/admin/trash",
+        "chev": 0
+      },
+      "expanded": {
+        "childPresent": false,
+        "url": "/admin/trash",
+        "chev": 1
+      },
+      "collapsed": {
+        "childPresent": false,
+        "url": "/admin/trash",
+        "chev": 0
+      }
+    }
+  ],
+  "zeroControlPages": [
+    {
+      "route": "/sites",
+      "at": [
+        {
+          "settle": 600,
+          "total": 90,
+          "visible": 86,
+          "buttons": 0,
+          "inputs": 0,
+          "bodyLen": 2532,
+          "sample": [
+            "A:跳到主要内容",
+            "A:首页",
+            "A:按分类浏览",
+            "A:按标签浏览全部站点",
+            "A:精选专题合集",
+            "A:CCursorAI 驱动的代"
+          ]
+        },
+        {
+          "settle": 2500,
+          "total": 90,
+          "visible": 86,
+          "buttons": 0,
+          "inputs": 0,
+          "bodyLen": 2532,
+          "sample": [
+            "A:跳到主要内容",
+            "A:首页",
+            "A:按分类浏览",
+            "A:按标签浏览全部站点",
+            "A:精选专题合集",
+            "A:CCursorAI 驱动的代"
+          ]
+        },
+        {
+          "settle": 5000,
+          "total": 90,
+          "visible": 86,
+          "buttons": 0,
+          "inputs": 0,
+          "bodyLen": 2532,
+          "sample": [
+            "A:跳到主要内容",
+            "A:首页",
+            "A:按分类浏览",
+            "A:按标签浏览全部站点",
+            "A:精选专题合集",
+            "A:CCursorAI 驱动的代"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "/tags",
+      "at": [
+        {
+          "settle": 600,
+          "total": 380,
+          "visible": 376,
+          "buttons": 0,
+          "inputs": 1,
+          "bodyLen": 7325,
+          "sample": [
+            "A:跳到主要内容",
+            "A:首页",
+            "A:返回主页",
+            "INPUT:搜索标签名称或技术栈",
+            "A:开源123",
+            "A:国产34"
+          ]
+        },
+        {
+          "settle": 2500,
+          "total": 380,
+          "visible": 376,
+          "buttons": 0,
+          "inputs": 1,
+          "bodyLen": 7325,
+          "sample": [
+            "A:跳到主要内容",
+            "A:首页",
+            "A:返回主页",
+            "INPUT:搜索标签名称或技术栈",
+            "A:开源123",
+            "A:国产34"
+          ]
+        },
+        {
+          "settle": 5000,
+          "total": 380,
+          "visible": 376,
+          "buttons": 0,
+          "inputs": 1,
+          "bodyLen": 7325,
+          "sample": [
+            "A:跳到主要内容",
+            "A:首页",
+            "A:返回主页",
+            "INPUT:搜索标签名称或技术栈",
+            "A:开源123",
+            "A:国产34"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "/collections",
+      "at": [
+        {
+          "settle": 600,
+          "total": 27,
+          "visible": 23,
+          "buttons": 0,
+          "inputs": 0,
+          "bodyLen": 585,
+          "sample": [
+            "A:跳到主要内容",
+            "A:首页",
+            "A:返回主页",
+            "A:主题2026 前沿 Agen",
+            "A:主题AI 编程工具链从补全到",
+            "A:路线图前端入门路线零基础到能"
+          ]
+        },
+        {
+          "settle": 2500,
+          "total": 27,
+          "visible": 23,
+          "buttons": 0,
+          "inputs": 0,
+          "bodyLen": 585,
+          "sample": [
+            "A:跳到主要内容",
+            "A:首页",
+            "A:返回主页",
+            "A:主题2026 前沿 Agen",
+            "A:主题AI 编程工具链从补全到",
+            "A:路线图前端入门路线零基础到能"
+          ]
+        },
+        {
+          "settle": 5000,
+          "total": 27,
+          "visible": 23,
+          "buttons": 0,
+          "inputs": 0,
+          "bodyLen": 585,
+          "sample": [
+            "A:跳到主要内容",
+            "A:首页",
+            "A:返回主页",
+            "A:主题2026 前沿 Agen",
+            "A:主题AI 编程工具链从补全到",
+            "A:路线图前端入门路线零基础到能"
+          ]
+        }
+      ]
+    },
+    {
+      "route": "/preferences",
+      "at": [
+        {
+          "settle": 600,
+          "total": 38,
+          "visible": 34,
+          "buttons": 3,
+          "inputs": 2,
+          "bodyLen": 798,
+          "sample": [
+            "A:跳到主要内容",
+            "A:概览",
+            "A:账号",
+            "A:工作空间",
+            "A:收藏",
+            "A:搜索历史"
+          ]
+        },
+        {
+          "settle": 2500,
+          "total": 38,
+          "visible": 34,
+          "buttons": 3,
+          "inputs": 2,
+          "bodyLen": 798,
+          "sample": [
+            "A:跳到主要内容",
+            "A:概览",
+            "A:账号",
+            "A:工作空间",
+            "A:收藏",
+            "A:搜索历史"
+          ]
+        },
+        {
+          "settle": 5000,
+          "total": 38,
+          "visible": 34,
+          "buttons": 3,
+          "inputs": 2,
+          "bodyLen": 798,
+          "sample": [
+            "A:跳到主要内容",
+            "A:概览",
+            "A:账号",
+            "A:工作空间",
+            "A:收藏",
+            "A:搜索历史"
+          ]
+        }
+      ]
+    }
+  ],
+  "externalRetry": [
+    {
+      "url": "https://podcastle.ai/",
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 4364
+        },
+        {
+          "status": 200,
+          "ms": 2435
+        }
+      ]
+    },
+    {
+      "url": "https://www.copy.ai/",
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 1544
+        },
+        {
+          "status": 200,
+          "ms": 818
+        }
+      ]
+    },
+    {
+      "url": "https://github.com/huggingface/peft",
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 4486
+        },
+        {
+          "status": 200,
+          "ms": 557
+        }
+      ]
+    },
+    {
+      "url": "https://uniapp.dcloud.net.cn/",
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 273
+        },
+        {
+          "status": 200,
+          "ms": 188
+        }
+      ]
+    },
+    {
+      "url": "https://uberduck.ai/",
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 3925
+        },
+        {
+          "status": 200,
+          "ms": 2020
+        }
+      ]
+    },
+    {
+      "url": "https://x.ai/",
+      "attempts": [
+        {
+          "status": 200,
+          "ms": 2496
+        },
+        {
+          "status": 200,
+          "ms": 774
+        }
+      ]
+    },
+    {
+      "url": "https://poe.com/",
+      "attempts": [
+        {
+          "status": 0,
+          "ms": 12100,
+          "error": "apiRequestContext.get: Timeout 12000ms exceeded."
+        },
+        {
+          "status": 403,
+          "ms": 4594
+        }
+      ]
+    }
+  ]
+}

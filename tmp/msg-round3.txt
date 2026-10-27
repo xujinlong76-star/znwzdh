@@ -1,0 +1,17 @@
+test(plugin-health): 候选档位断言切块到候选行，修掉「不可达」误伤整抽屉的假红
+
+抽屉在 activeTab 为 issues/broken 时都会渲染「确认不可达死链清单（共 N 条）」，
+抽样体检一跑就出现；原断言取整个抽屉 innerText 判「不得出现不可达」
+⇒ 与候选档位无关的稳定假红，也会把指标行的「疑似停放」当成候选证据。
+
+改为 li[title*="合成可信度"] 切块（面板给每行挂了可信度分解），
+并补一条锚点自检：锚点失效先报锚点，不会把空文本读成「没有不可达」。
+
+生产产物实测：
+- NEXT_DIST_DIR=.next-uibuild8 next build（2m21s，exit 0）
+- next start -p 3453（自带 NAVHUB_ADMIN_PASSWORD，不碰其他会话实例）
+- ui-regression：37/37；控制台异常 0；/api/hub/* 4xx/5xx 0
+- 两条新增断言实测生效：超时候选显示「未能验证」、未发起连接显示「未发起连接」
+
+文档补第十章，并记录 fe1bb82 那段「stale 第三分支」为何是死代码
+（刷新后 snap 回退 history[pack.slug]，stale 由 :757 琥珀卡承载）。

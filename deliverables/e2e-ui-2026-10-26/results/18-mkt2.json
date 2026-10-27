@@ -1,0 +1,164 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "baseSnap": {
+    "cards": [
+      "/marketplace/nordic-glacier",
+      "/marketplace/ai-power-bundle",
+      "/marketplace/ai-agentic-future-bundle",
+      "/marketplace/ai-workbench",
+      "/marketplace/mac-sonoma-glass",
+      "/marketplace/nordic-glacier",
+      "/marketplace/ai-agentic-future-bundle",
+      "/marketplace/ai-workbench",
+      "/marketplace/mac-sonoma-glass",
+      "/marketplace/oled-pure-black",
+      "/marketplace/ai-agentic-coding",
+      "/marketplace/ai-tools-arsenal",
+      "/marketplace/seed-dev-efficiency",
+      "/marketplace/ai-agentic-future-bundle",
+      "/marketplace/ai-workbench",
+      "/marketplace/nordic-glacier",
+      "/marketplace/nordic-glacier",
+      "/marketplace/ai-power-bundle",
+      "/marketplace/ai-power-bundle",
+      "/marketplace/ai-agentic-coding",
+      "/marketplace/ai-agentic-coding",
+      "/marketplace/ai-tools-arsenal",
+      "/marketplace/ai-tools-arsenal",
+      "/marketplace/seed-dev-efficiency",
+      "/marketplace/seed-dev-efficiency",
+      "/marketplace/ai-agentic-future-bundle",
+      "/marketplace/ai-agentic-future-bundle",
+      "/marketplace/ai-workbench",
+      "/marketplace/ai-workbench",
+      "/marketplace/mac-sonoma-glass",
+      "/marketplace/mac-sonoma-glass",
+      "/marketplace/oled-pure-black",
+      "/marketplace/oled-pure-black",
+      "/marketplace/catppuccin-mocha",
+      "/marketplace/catppuccin-mocha",
+      "/marketplace/code-and-package-search-pack",
+      "/marketplace/code-and-package-search-pack",
+      "/marketplace/ai-deep-search-pack",
+      "/marketplace/ai-deep-search-pack",
+      "/marketplace/indie-hacker-global-saas",
+      "/marketplace/indie-hacker-global-saas",
+      "/marketplace/homelab-selfhosted-pro",
+      "/marketplace/homelab-selfhosted-pro",
+      "/marketplace/open-models-local-inference",
+      "/marketplace/open-models-local-inference",
+      "/marketplace/mcp-ecosystem-arsenal",
+      "/marketplace/mcp-ecosystem-arsenal",
+      "/marketplace/legal-pro-bundle",
+      "/marketplace/legal-pro-bundle",
+      "/marketplace/family-life-bundle",
+      "/marketplace/family-life-bundle",
+      "/marketplace/life-care",
+      "/marketplace/life-care",
+      "/marketplace/agriculture-rural",
+      "/marketplace/agriculture-rural",
+      "/marketplace/sports-outdoor",
+      "/marketplace/sports-outdoor",
+      "/marketplace/food-drink",
+      "/marketplace/food-drink",
+      "/marketplace/auto-driving"
+    ],
+    "chipActive": [
+      "全部插件",
+      "🔥 飙升榜"
+    ],
+    "chipCount": 7,
+    "kind": null,
+    "sort": "trending",
+    "search": "",
+    "total": null
+  },
+  "rows": [
+    {
+      "label": "🚀 极客全栈装备",
+      "found": true,
+      "cards": "60 -> 20",
+      "listChanged": true,
+      "chipActive": [
+        "🚀 极客全栈装备"
+      ],
+      "dualActive": false,
+      "kind": "null -> null",
+      "sort": "trending -> trending",
+      "search": "\"\" -> \"武器库\"",
+      "total": "null -> null"
+    },
+    {
+      "label": "🎨 赛博与暗黑美学",
+      "found": true,
+      "cards": "20 -> 28",
+      "listChanged": true,
+      "chipActive": [
+        "🎨 赛博与暗黑美学"
+      ],
+      "dualActive": false,
+      "kind": "null -> null",
+      "sort": "trending -> trending",
+      "search": "\"武器库\" -> \"\"",
+      "total": "null -> null"
+    },
+    {
+      "label": "🧩 精选组合包",
+      "found": true,
+      "cards": "28 -> 30",
+      "listChanged": true,
+      "chipActive": [
+        "🧩 精选组合包"
+      ],
+      "dualActive": false,
+      "kind": "null -> null",
+      "sort": "trending -> trending",
+      "search": "\"\" -> \"\"",
+      "total": "null -> null"
+    },
+    {
+      "label": "🔍 快捷直达引擎",
+      "found": true,
+      "cards": "30 -> 10",
+      "listChanged": true,
+      "chipActive": [
+        "🔍 快捷直达引擎"
+      ],
+      "dualActive": false,
+      "kind": "null -> null",
+      "sort": "trending -> trending",
+      "search": "\"\" -> \"\"",
+      "total": "null -> null"
+    },
+    {
+      "label": "全部插件",
+      "found": true,
+      "cards": "10 -> 60",
+      "listChanged": true,
+      "chipActive": [
+        "全部插件",
+        "🔥 飙升榜"
+      ],
+      "dualActive": true,
+      "kind": "null -> null",
+      "sort": "trending -> trending",
+      "search": "\"\" -> \"\"",
+      "total": "null -> null"
+    },
+    {
+      "label": "🔥 飙升榜",
+      "found": true,
+      "cards": "60 -> 60",
+      "listChanged": false,
+      "chipActive": [
+        "全部插件",
+        "🔥 飙升榜"
+      ],
+      "dualActive": true,
+      "kind": "null -> null",
+      "sort": "trending -> trending",
+      "search": "\"\" -> \"\"",
+      "total": "null -> null"
+    }
+  ]
+}

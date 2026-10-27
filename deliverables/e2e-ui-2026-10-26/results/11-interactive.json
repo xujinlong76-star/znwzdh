@@ -1,0 +1,415 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "results": [
+    {
+      "route": "/",
+      "label": "微工具箱",
+      "role": "button",
+      "expect": "dialog",
+      "note": "工具栏图标按钮（Radix Dialog）",
+      "domReady": 1172,
+      "attempts": 30,
+      "firstEffectMs": null,
+      "timeline": [
+        {
+          "at": 2197,
+          "value": 1
+        },
+        {
+          "at": 3356,
+          "value": 1
+        },
+        {
+          "at": 4284,
+          "value": 1
+        },
+        {
+          "at": 5208,
+          "value": 1
+        },
+        {
+          "at": 6161,
+          "value": 1
+        },
+        {
+          "at": 7127,
+          "value": 1
+        },
+        {
+          "at": 8048,
+          "value": 1
+        },
+        {
+          "at": 8982,
+          "value": 1
+        },
+        {
+          "at": 9905,
+          "value": 1
+        },
+        {
+          "at": 10824,
+          "value": 1
+        },
+        {
+          "at": 11866,
+          "value": 1
+        },
+        {
+          "at": 12794,
+          "value": 1
+        },
+        {
+          "at": 13727,
+          "value": 1
+        },
+        {
+          "at": 14675,
+          "value": 1
+        },
+        {
+          "at": 15617,
+          "value": 1
+        },
+        {
+          "at": 16543,
+          "value": 1
+        },
+        {
+          "at": 17467,
+          "value": 1
+        },
+        {
+          "at": 18402,
+          "value": 1
+        },
+        {
+          "at": 19313,
+          "value": 1
+        },
+        {
+          "at": 20355,
+          "value": 1
+        },
+        {
+          "at": 21277,
+          "value": 1
+        },
+        {
+          "at": 22222,
+          "value": 1
+        },
+        {
+          "at": 23160,
+          "value": 1
+        },
+        {
+          "at": 24141,
+          "value": 1
+        },
+        {
+          "at": 25061,
+          "value": 1
+        },
+        {
+          "at": 25976,
+          "value": 1
+        }
+      ],
+      "extra": {
+        "lcp": 3684,
+        "longTasks": 5,
+        "longMs": 1058,
+        "inp": 0
+      }
+    },
+    {
+      "route": "/",
+      "label": "快捷键指南",
+      "role": "button",
+      "expect": "dialog",
+      "note": "工具栏图标按钮（Radix Dialog）",
+      "domReady": 1092,
+      "attempts": 30,
+      "firstEffectMs": null,
+      "timeline": [
+        {
+          "at": 2520,
+          "value": 1
+        },
+        {
+          "at": 3453,
+          "value": 1
+        },
+        {
+          "at": 4372,
+          "value": 1
+        },
+        {
+          "at": 5296,
+          "value": 1
+        },
+        {
+          "at": 6215,
+          "value": 1
+        },
+        {
+          "at": 7129,
+          "value": 1
+        },
+        {
+          "at": 8047,
+          "value": 1
+        },
+        {
+          "at": 8997,
+          "value": 1
+        },
+        {
+          "at": 9942,
+          "value": 1
+        },
+        {
+          "at": 10887,
+          "value": 1
+        },
+        {
+          "at": 11891,
+          "value": 1
+        },
+        {
+          "at": 12915,
+          "value": 1
+        },
+        {
+          "at": 14032,
+          "value": 1
+        },
+        {
+          "at": 14993,
+          "value": 1
+        },
+        {
+          "at": 16245,
+          "value": 1
+        },
+        {
+          "at": 17387,
+          "value": 1
+        },
+        {
+          "at": 18827,
+          "value": 1
+        },
+        {
+          "at": 19976,
+          "value": 1
+        },
+        {
+          "at": 20913,
+          "value": 1
+        },
+        {
+          "at": 21832,
+          "value": 1
+        },
+        {
+          "at": 22806,
+          "value": 1
+        },
+        {
+          "at": 23781,
+          "value": 1
+        },
+        {
+          "at": 24703,
+          "value": 1
+        },
+        {
+          "at": 25631,
+          "value": 1
+        },
+        {
+          "at": 26583,
+          "value": 1
+        },
+        {
+          "at": 27565,
+          "value": 1
+        }
+      ],
+      "extra": {
+        "lcp": 3144,
+        "longTasks": 4,
+        "longMs": 789,
+        "inp": 0
+      }
+    },
+    {
+      "route": "/",
+      "label": "__slash__",
+      "role": "key",
+      "expect": "dialog",
+      "note": "键盘 / 唤出全局搜索面板",
+      "domReady": 2927,
+      "attempts": 1,
+      "firstEffectMs": 4893,
+      "timeline": [
+        {
+          "at": 4893,
+          "value": 2
+        }
+      ],
+      "extra": {
+        "lcp": 2412,
+        "longTasks": 8,
+        "longMs": 1931,
+        "inp": 336
+      }
+    },
+    {
+      "route": "/marketplace",
+      "label": "__select__",
+      "role": "select",
+      "expect": "text",
+      "note": "原生 select 改值后主区文案是否变",
+      "domReady": 1295,
+      "attempts": 1,
+      "firstEffectMs": 2465,
+      "timeline": [
+        {
+          "at": 2465,
+          "value": 16428
+        }
+      ],
+      "extra": {
+        "lcp": 1672,
+        "longTasks": 5,
+        "longMs": 596,
+        "inp": 0
+      }
+    },
+    {
+      "route": "/videos",
+      "label": "精选视频",
+      "role": "button",
+      "expect": "text",
+      "note": "视频墙筛选标签",
+      "domReady": 616,
+      "attempts": 30,
+      "firstEffectMs": null,
+      "timeline": [
+        {
+          "at": 1553,
+          "value": 483
+        },
+        {
+          "at": 2224,
+          "value": 483
+        },
+        {
+          "at": 2782,
+          "value": 483
+        },
+        {
+          "at": 3341,
+          "value": 483
+        },
+        {
+          "at": 3900,
+          "value": 483
+        },
+        {
+          "at": 4444,
+          "value": 483
+        },
+        {
+          "at": 5006,
+          "value": 483
+        },
+        {
+          "at": 5554,
+          "value": 483
+        },
+        {
+          "at": 6103,
+          "value": 483
+        },
+        {
+          "at": 6649,
+          "value": 483
+        },
+        {
+          "at": 7195,
+          "value": 483
+        },
+        {
+          "at": 7754,
+          "value": 483
+        },
+        {
+          "at": 8300,
+          "value": 483
+        },
+        {
+          "at": 8848,
+          "value": 483
+        },
+        {
+          "at": 9392,
+          "value": 483
+        },
+        {
+          "at": 9951,
+          "value": 483
+        },
+        {
+          "at": 10498,
+          "value": 483
+        },
+        {
+          "at": 11057,
+          "value": 483
+        },
+        {
+          "at": 11616,
+          "value": 483
+        },
+        {
+          "at": 12164,
+          "value": 483
+        },
+        {
+          "at": 12724,
+          "value": 483
+        },
+        {
+          "at": 13292,
+          "value": 483
+        },
+        {
+          "at": 13851,
+          "value": 483
+        },
+        {
+          "at": 14395,
+          "value": 483
+        },
+        {
+          "at": 14957,
+          "value": 483
+        },
+        {
+          "at": 15516,
+          "value": 483
+        }
+      ],
+      "extra": {
+        "lcp": 1392,
+        "longTasks": 4,
+        "longMs": 517,
+        "inp": 48
+      }
+    }
+  ]
+}

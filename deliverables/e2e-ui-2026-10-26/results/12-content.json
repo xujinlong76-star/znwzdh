@@ -1,0 +1,83 @@
+{
+  "base": "http://127.0.0.1:3400",
+  "out": {
+    "hotTabs": {
+      "clickNew": true,
+      "before": {
+        "titles": [
+          "首页",
+          "今日热榜",
+          "站内详情",
+          "站内详情",
+          "站内详情"
+        ],
+        "url": "/hot"
+      },
+      "after": {
+        "titles": [
+          "首页",
+          "今日热榜",
+          "站内详情",
+          "站内详情",
+          "站内详情"
+        ],
+        "url": "/hot"
+      },
+      "changed": false
+    },
+    "categoryPaging": {
+      "nextKind": "A|/category/ai-tools/p/2",
+      "clicked": true,
+      "before": {
+        "titles": [
+          "GGitHub CopilotAI 代码补全与编程助手，",
+          "CCursorAI 驱动的代码编辑器，用自然语言写代码、",
+          "DDeepSeek深度求索的大模型对话与推理服务，中文表",
+          "HHugging Face开源模型与数据集社区，模型下载",
+          "OOllama本地一键运行开源大模型，隐私友好"
+        ],
+        "url": "/category/ai-tools"
+      },
+      "after": {
+        "titles": [],
+        "url": "/category/ai-tools/p/2"
+      },
+      "urlChanged": true,
+      "titlesChanged": true
+    },
+    "inlineSearch": {
+      "suggestions": [
+        "Figma在线 UI 设计与原型协作工具，多人实时编辑精",
+        "Figma 插件文档Figma 官方插件开发文档，讲解插",
+        "Figma REST APIFigma 开放接口文档，可",
+        "FFlowbite基于 Tailwind 的开源组件库，"
+      ],
+      "cardsBefore": 365,
+      "afterEnter": {
+        "url": "/",
+        "cards": 365,
+        "dialog": 1
+      }
+    },
+    "videos:精选视频": {
+      "before": [
+        "Player Mode"
+      ],
+      "after": [
+        "Player Mode"
+      ],
+      "changed": false,
+      "count": 1
+    },
+    "videos:语文": {
+      "before": [
+        "Player Mode"
+      ],
+      "after": [
+        "Player Mode"
+      ],
+      "changed": false,
+      "count": 1
+    }
+  }
+}

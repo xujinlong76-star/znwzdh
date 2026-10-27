@@ -4,6 +4,7 @@
  */
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
+import { LlmError } from "@navhub/ai";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
 import { callLlm } from "../llm-usage.ts";
@@ -258,9 +259,21 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
           };
         }
       }
-    } catch {
+    } catch (err) {
       // 容错降级进入本地启发式推荐；「用户已取消」不在这里冒充「模型坏了」，
       // 由下面的取消闸门统一拦。
+      //
+      // 例外：上游网关把取消当 200 正常回答返回（content = 用户已取消）时，
+      // 必须在这里就地收口——继续走兜底会把「取消」记成一次降级成功，
+      // 用户也会看到一条不是模型说的话。直接按取消记账并给可重试提示。
+      if (err instanceof LlmError && err.code === "cancelled") {
+        recordCopilot("copilot_cancel", { stage: "llm" });
+        return {
+          ok: false,
+          error: "上游模型中断了本次回答（不是你的操作），可直接重试。",
+          code: "upstream_cancelled",
+        };
+      }
     }
 
     /**

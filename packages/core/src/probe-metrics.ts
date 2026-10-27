@@ -38,6 +38,31 @@ export interface ProbeMetricsSummary {
   latencySum: number;
   /** 原因计数，按出现次数降序，最多 10 条 */
   topReasons: Array<{ reason: string; count: number }>;
+  /**
+   * 可达率的 95% Wilson 下界（ok + blocked 视为可达）。
+   *
+   * 为什么不用点估计：抽 30 条里 29 条活着，点估计是 96.7%，但真实总体可能低到 88%。
+   * 直接展示 96.7% 会让运营以为「几乎全好」，而 Wilson 下界给出的是「有 95% 把握
+   * 不低于这个数」——这才是能拿去做决策的数字。
+   */
+  reachabilityLower95: number | null;
+}
+
+/**
+ * Wilson score interval 下界（z=1.96 对应 95%）。
+ *
+ * 相比正态近似，它在小样本与极端比例（0% 或 100%）下依然给出有意义的区间：
+ * 30 条全绿时报的是约 0.89 而不是 1.0，符合「样本有限就不该声称满分」的常识。
+ */
+export function wilsonLowerBound(successes: number, total: number, z = 1.96): number | null {
+  if (!Number.isFinite(successes) || !Number.isFinite(total) || total <= 0) return null;
+  const n = total;
+  const p = Math.min(1, Math.max(0, successes / n));
+  const z2 = z * z;
+  const denominator = 1 + z2 / n;
+  const centre = p + z2 / (2 * n);
+  const margin = z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n));
+  return Math.max(0, (centre - margin) / denominator);
 }
 
 const KINDS: ProbeOutcomeKind[] = ["ok", "blocked", "parked", "dead", "unverified", "server-error"];
@@ -81,6 +106,7 @@ export function summarizeProbeSamples(samples: readonly ProbeSample[]): ProbeMet
       max: latencies.length > 0 ? (latencies[latencies.length - 1] ?? null) : null,
     },
     latencySum: latencies.reduce((acc, ms) => acc + ms, 0),
+    reachabilityLower95: wilsonLowerBound(byKind.ok + byKind.blocked, samples.length),
     topReasons: [...reasons.entries()]
       .map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))

@@ -89,7 +89,16 @@ export function conditionalHeaders(entry: ProbeCacheEntry | null | undefined): R
   return headers;
 }
 
+/** 命中率观测：命中/未命中/304 续期各计一次，供指标端点导出 */
+export interface ProbeCacheStats {
+  hits: number;
+  misses: number;
+  revalidations: number;
+}
+
 export interface ProbeCacheStore {
+  /** 只读计数快照（进程内累计，重启清零） */
+  stats(): ProbeCacheStats;
   /** 查缓存。`fresh` 为 false 表示「有记录但已过期」，此时应带条件头重测 */
   lookup(rawUrl: string): { entry: ProbeCacheEntry; fresh: boolean } | null;
   /** 记录一次新结论（写入后由 flush 落盘） */
@@ -127,6 +136,7 @@ export async function openProbeCache(
   const opts: ProbeCacheOptions = { maxEntries: 5000, now: () => Date.now(), ...options };
   let entries: Record<string, ProbeCacheEntry> = {};
   let dirty = false;
+  const counters: ProbeCacheStats = { hits: 0, misses: 0, revalidations: 0 };
 
   try {
     const text = await readFile(file, "utf8");
@@ -149,10 +159,17 @@ export async function openProbeCache(
   }
 
   const store: ProbeCacheStore = {
+    stats() {
+      return { ...counters };
+    },
     lookup(rawUrl) {
       const key = probeCacheKey(rawUrl);
       const entry = entries[key];
-      if (!entry) return null;
+      if (!entry) {
+        counters.misses += 1;
+        return null;
+      }
+      counters.hits += 1;
       return { entry, fresh: isFresh(entry, opts.now()) };
     },
     record(rawUrl, outcome, validators) {
@@ -175,6 +192,7 @@ export async function openProbeCache(
       const key = probeCacheKey(rawUrl);
       const entry = entries[key];
       if (!entry) return;
+      counters.revalidations += 1;
       entries[key] = { ...entry, checkedAt: opts.now() };
       dirty = true;
     },

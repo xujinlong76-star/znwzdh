@@ -845,12 +845,20 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     { config: { scope: "read", rateLimit: { max: 60, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const query = request.query as { format?: string } | undefined
+      // 缓存命中率与探活指标一起暴露：只看可达率看不出「我们是不是在重复抓同一批站点」
+      const cache = (await getProbeCache()).stats()
       if (query?.format === "prometheus") {
-        return reply
-          .header("content-type", "text/plain; version=0.0.4; charset=utf-8")
-          .send(probeMetricsPrometheus(process.env.NAVHUB_INSTANCE_ID || undefined))
+        const body = probeMetricsPrometheus(process.env.NAVHUB_INSTANCE_ID || undefined)
+        const total = cache.hits + cache.misses
+        const ratio = total > 0 ? cache.hits / total : 0
+        const extra =
+          `# TYPE navhub_probe_cache_hits counter\nnavhub_probe_cache_hits ${cache.hits}\n` +
+          `# TYPE navhub_probe_cache_misses counter\nnavhub_probe_cache_misses ${cache.misses}\n` +
+          `# TYPE navhub_probe_cache_revalidations counter\nnavhub_probe_cache_revalidations ${cache.revalidations}\n` +
+          `# TYPE navhub_probe_cache_hit_ratio gauge\nnavhub_probe_cache_hit_ratio ${ratio.toFixed(4)}\n`
+        return reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8").send(body + extra)
       }
-      return probeMetricsSummary()
+      return { ...probeMetricsSummary(), cache }
     },
   )
 

@@ -165,3 +165,25 @@ describe("落盘与容错", () => {
     expect(Object.keys(raw.entries)).toEqual([]);
   });
 });
+
+describe("命中率计数", () => {
+  it("区分命中/未命中/304 续期", async () => {
+    const file = await tempFile();
+    const cache = await openProbeCache(file, { now: () => 1_000 });
+    expect(cache.stats()).toEqual({ hits: 0, misses: 0, revalidations: 0 });
+
+    cache.lookup("https://miss.example/"); // 未命中
+    cache.record("https://hit.example/", { kind: "ok", reason: "ok" });
+    cache.lookup("https://hit.example/"); // 命中
+    cache.markRevalidated("https://hit.example/"); // 304
+
+    expect(cache.stats()).toEqual({ hits: 1, misses: 1, revalidations: 1 });
+  });
+
+  it("对不存在的键 markRevalidated 不计数（避免虚增）", async () => {
+    const file = await tempFile();
+    const cache = await openProbeCache(file);
+    cache.markRevalidated("https://nope.example/");
+    expect(cache.stats().revalidations).toBe(0);
+  });
+});

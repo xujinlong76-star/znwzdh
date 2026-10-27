@@ -129,3 +129,33 @@ describe("Prometheus 文本格式", () => {
     expect(LATENCY_BUCKETS_MS.at(-1)).toBe(10_000);
   });
 });
+
+describe("可达率置信下界（Wilson）", () => {
+  it("小样本满分不会报 100%：30 条全绿的下界明显低于 1", () => {
+    const s = summarizeProbeSamples(Array.from({ length: 30 }, () => ({ kind: "ok" as const, latencyMs: 100 })));
+    expect(s.reachabilityLower95).not.toBeNull();
+    expect(s.reachabilityLower95!).toBeGreaterThan(0.8);
+    expect(s.reachabilityLower95!).toBeLessThan(0.95);
+  });
+
+  it("blocked 计入可达（WAF 挡我不等于站点挂了）", () => {
+    const all = summarizeProbeSamples(Array.from({ length: 20 }, () => ({ kind: "ok" as const })));
+    const mixed = summarizeProbeSamples([
+      ...Array.from({ length: 10 }, () => ({ kind: "ok" as const })),
+      ...Array.from({ length: 10 }, () => ({ kind: "blocked" as const })),
+    ]);
+    expect(mixed.reachabilityLower95).toBeCloseTo(all.reachabilityLower95 ?? 0, 5);
+  });
+
+  it("样本越多区间越窄（下界更接近点估计）", () => {
+    const small = summarizeProbeSamples(Array.from({ length: 10 }, () => ({ kind: "ok" as const })));
+    const large = summarizeProbeSamples(Array.from({ length: 200 }, () => ({ kind: "ok" as const })));
+    expect(large.reachabilityLower95!).toBeGreaterThan(small.reachabilityLower95!);
+  });
+
+  it("全灭时报 0，空样本报 null", () => {
+    const dead = summarizeProbeSamples(Array.from({ length: 10 }, () => ({ kind: "dead" as const })));
+    expect(dead.reachabilityLower95).toBe(0);
+    expect(summarizeProbeSamples([]).reachabilityLower95).toBeNull();
+  });
+});

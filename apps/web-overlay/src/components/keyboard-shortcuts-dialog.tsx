@@ -163,10 +163,10 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
         <DialogHeader className="pb-3 border-b border-border/50 pr-8 sm:pr-6">
           <DialogTitle className="flex items-center gap-2 text-base font-bold">
             <Keyboard className="w-5 h-5 text-primary" />
-            <span>NavSphere 快捷键全景指南</span>
+            <span>山羊胡快捷键全景指南</span>
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
-            像操作专业 IDE 一样高效掌控 NavSphere，随时随地单手盲操。
+            像操作专业 IDE 一样高效掌控山羊胡，随时随地单手盲操。
           </DialogDescription>
         </DialogHeader>
 
@@ -199,7 +199,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onOpenTools }: Key
             <Sparkles className="w-3.5 h-3.5 text-amber-500" />
             <span>随时按「?」呼出本窗口</span>
           </span>
-          <span className="font-mono text-[11px]">NavSphere Pro Keyboard Maestro</span>
+          <span className="font-mono text-[11px]">山羊胡 Pro Keyboard Maestro</span>
         </div>
       </DialogContent>
     </Dialog>

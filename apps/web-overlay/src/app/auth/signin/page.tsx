@@ -139,13 +139,13 @@ function SignInContent() {
             <div className="relative w-8 h-8 overflow-hidden rounded-lg border border-white/20 shadow-md">
               <img
                 src="/assets/images/alogo.webp"
-                alt="NavSphere Logo"
+                alt="山羊胡 Logo"
                 className="object-cover w-full h-full"
               />
             </div>
             <div className="flex flex-col">
               <span className="text-xl font-bold leading-none tracking-tight text-white">
-                NavSphere
+                山羊胡
               </span>
               <span className="text-[11px] text-zinc-400 mt-0.5 tracking-wider uppercase font-semibold">
                 Control Center
@@ -169,7 +169,7 @@ function SignInContent() {
           {/* 年份由客户端时钟计算：客户端组件在 SSR 与 hydrate 各算一次，
               跨年边界（或时区差）会得到不同文本 → 水合文本不一致告警。
               年份是装饰性内容，单点抑制即可（改为挂载后计算会闪一下）。 */}
-          <span suppressHydrationWarning>&copy; {new Date().getFullYear()} NavSphere Team</span>
+          <span suppressHydrationWarning>&copy; {new Date().getFullYear()} 山羊胡 Team</span>
           <Link href="/" className="inline-flex items-center gap-1 hover:text-white transition-colors">
             <ArrowLeft className="w-3 h-3" />
             返回前台首页
@@ -189,7 +189,7 @@ function SignInContent() {
                 className="object-cover w-full h-full"
               />
             </div>
-            <span className="text-xl font-bold tracking-tight">NavSphere 管理后台</span>
+            <span className="text-xl font-bold tracking-tight">山羊胡管理后台</span>
           </div>
 
           <Card className="border-border/70 shadow-lg backdrop-blur-sm">

@@ -380,7 +380,7 @@ export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
                     <img src="/assets/images/alogo.webp" alt="Logo" className="object-cover" />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-sm font-bold leading-none">NavSphere</span>
+                    <span className="text-sm font-bold leading-none">山羊胡</span>
                     <span className="text-xs text-muted-foreground mt-1">管理控制台</span>
                   </div>
                 </SheetTitle>
@@ -398,7 +398,7 @@ export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
             <div className="relative w-6 h-6 overflow-hidden rounded-md">
               <img src="/assets/images/alogo.webp" alt="Logo" className="object-cover" />
             </div>
-            <span className="text-xs sm:text-sm font-bold tracking-tight">NavSphere 控制台</span>
+            <span className="text-xs sm:text-sm font-bold tracking-tight">山羊胡控制台</span>
           </Link>
         </div>
 
@@ -465,7 +465,7 @@ export function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
                     {!isSidebarCollapsed && (
                       <div className="flex flex-col">
                         <span className="text-base font-bold leading-none tracking-tight">
-                          NavSphere
+                          山羊胡
                         </span>
                         <span className="text-xs text-muted-foreground mt-1">
                           管理控制台

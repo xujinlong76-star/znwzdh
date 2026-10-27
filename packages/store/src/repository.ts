@@ -1263,6 +1263,11 @@ export class Repository {
     return systemRepo.setSystemState(this, key, value);
   }
 
+  /** @internal 多实例「窗口内只做一次」：单条 UPSERT 原子占坑，见 repository/system.ts */
+  async claimSystemState(key: string, value: unknown, windowMs: number, now = Date.now()): Promise<boolean> {
+    return systemRepo.claimSystemState(this, key, value, windowMs, now);
+  }
+
 
   /* ------------------------- 任务队列 ------------------------- */
 

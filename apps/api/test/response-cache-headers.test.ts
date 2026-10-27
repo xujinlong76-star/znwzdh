@@ -122,6 +122,53 @@ describe("HEAD 与 GET 共享缓存策略", () => {
 });
 
 /**
+ * 共享缓存（CDN/反代）策略：类目树对匿名请求是全体同一份，
+ * 允许 `s-maxage` 复用；但一旦请求带身份（头或 cookie），必须降级回 private。
+ *
+ * 非空性：把 onSend 的 personalized 判定删掉，第 2 组会拿到 `public` 而失败；
+ * 把 categories 路由的 sharedMaxAge 删掉，第 1 组会拿到 `private` 而失败。
+ */
+describe("共享缓存策略", () => {
+  it("匿名 GET /api/categories → public + s-maxage + SWR + ETag", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/categories" });
+    expect(res.statusCode).toBe(200);
+    const cc = String(res.headers["cache-control"]);
+    expect(cc).toContain("public");
+    expect(cc).toContain("max-age=60");
+    expect(cc).toContain("s-maxage=60");
+    expect(cc).toContain("stale-while-revalidate=30");
+    expect(res.headers["etag"]).toBeTruthy();
+  });
+
+  it("带身份头 / cookie 的请求降级 private，绝不进共享缓存", async () => {
+    const variants: Array<Record<string, string>> = [
+      { authorization: "Bearer test-token" },
+      { "x-navhub-anon-id": "anon-probe" },
+      { "x-navhub-user-id": "user-probe" },
+      { cookie: "navhub_session=probe" },
+    ];
+    for (const headers of variants) {
+      const res = await app.inject({ method: "GET", url: "/api/categories", headers });
+      expect(res.statusCode).toBe(200);
+      const cc = String(res.headers["cache-control"]);
+      expect(cc, JSON.stringify(headers)).toBe("private, max-age=60");
+      expect(cc).not.toContain("s-maxage");
+    }
+  });
+
+  it("匿名请求仍可 304：共享缓存与条件请求共存", async () => {
+    const first = await app.inject({ method: "GET", url: "/api/categories/page?limit=1" });
+    expect(first.headers["cache-control"]).toContain("public");
+    const again = await app.inject({
+      method: "GET",
+      url: "/api/categories/page?limit=1",
+      headers: { "if-none-match": String(first.headers["etag"]) },
+    });
+    expect(again.statusCode).toBe(304);
+  });
+});
+
+/**
  * 推荐类端点：结果与身份无关、每次请求都要重算（向量 KNN / 双曲重排），
  * 此前却和写入路由一样吃 `no-store`。与同域的 trending / new 对齐到 60s + ETag。
  */

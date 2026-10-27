@@ -116,6 +116,19 @@ describe("全局限流的豁免装配", () => {
     expect(await hit({ [INTERNAL_TOKEN_HEADER]: TOKEN.slice(0, 24) })).toBe(429);
     expect(await hit({ [INTERNAL_TOKEN_HEADER]: TOKEN + "0" })).toBe(429);
   });
+
+  /**
+   * 限流响应头是客户端唯一的「自己减速」依据：没有它，客户端只能等 429 再退避。
+   * @fastify/rate-limit 默认开启，这里锁住装配别把它关掉（或换插件时漏配）。
+   */
+  it("429 响应带限流头与 Retry-After", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/health" });
+    expect(res.statusCode).toBe(429);
+    expect(res.headers["x-ratelimit-limit"]).toBe("3");
+    expect(res.headers["x-ratelimit-remaining"]).toBe("0");
+    expect(Number(res.headers["x-ratelimit-reset"])).toBeGreaterThan(0);
+    expect(Number(res.headers["retry-after"])).toBeGreaterThan(0);
+  });
 });
 
 describe("未配置豁免凭据的部署（零回归口径）", () => {

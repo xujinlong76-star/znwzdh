@@ -330,7 +330,29 @@ export async function buildServer(ctx: AppContext) {
      * （见 http-compression.ts:105-109 的同款约束），覆盖掉就等于把别人的隔离声明删了。
      */
     vary?: string[];
+    /**
+     * 共享缓存 TTL（CDN / 反向代理用的 `s-maxage`）。
+     *
+     * 只有「匿名请求拿到的就是全体用户同一份数据」的路由才配声明它。
+     * 即便如此，onSend 仍会做身份降级：请求带 `x-navhub-user-id` /
+     * `x-navhub-anon-id` / `authorization` / `cookie`，或响应自身要 `Set-Cookie`，
+     * 一律退回 `private` —— 共享缓存按 URL 存，把个性化响应塞进 CDN
+     * 就是「A 看到 B 的收藏」那类事故，而路由声明写错不该是唯一防线。
+     */
+    sharedMaxAge?: number;
+    /** 共享缓存过期后允许 `stale-while-revalidate` 的秒数（背景刷新，用户不等） */
+    staleWhileRevalidate?: number;
   }
+
+  /** 与 `/api/search` 的 SEARCH_VARY 同口径：出现这些头就说明响应可能因人而异 */
+  const PERSONALIZATION_HEADERS = [
+    "x-navhub-user-id",
+    "x-user-id",
+    "x-navhub-anon-id",
+    "x-anon-id",
+    "authorization",
+    "cookie",
+  ];
 
   /**
    * GET 与 HEAD 走同一套策略：`exposeHeadRoutes` 会按 GET 路由自动生成 HEAD，
@@ -350,7 +372,24 @@ export async function buildServer(ctx: AppContext) {
     // private：避免共享代理（CDN/nginx）把不同用户/不同 token 的响应串在一起。
     // 但「不牺牲隔离性」只对共享缓存成立：浏览器私有缓存按 URL 复用，带身份头的那一路
     // 不改 URL ⇒ 必须靠下面的 vary 把身份字段纳入缓存键，否则同机两个用户互换个性化结果。
-    reply.header("cache-control", policy.maxAge > 0 ? "private, max-age=" + policy.maxAge : "private, no-cache");
+    const personalized = PERSONALIZATION_HEADERS.some((h) => {
+      const v = req.headers[h];
+      return typeof v === "string" && v.trim() !== "";
+    });
+    const wantsShared = policy.sharedMaxAge !== undefined && policy.sharedMaxAge > 0;
+    // Set-Cookie 的响应天然按会话，不能进共享缓存（即便路由没意识到自己设了 cookie）
+    const shared = wantsShared && !personalized && !reply.getHeader("set-cookie");
+    const cacheParts = [
+      shared ? "public" : "private",
+      policy.maxAge > 0 ? "max-age=" + policy.maxAge : "no-cache",
+    ];
+    if (shared) {
+      cacheParts.push("s-maxage=" + policy.sharedMaxAge);
+      if (policy.staleWhileRevalidate && policy.staleWhileRevalidate > 0) {
+        cacheParts.push("stale-while-revalidate=" + policy.staleWhileRevalidate);
+      }
+    }
+    reply.header("cache-control", cacheParts.join(", "));
 
     if (policy.vary?.length) {
       const existing = String(reply.getHeader("vary") ?? "").trim();

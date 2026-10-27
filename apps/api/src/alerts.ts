@@ -24,9 +24,50 @@ export function clampWebhookTimeout(ms: unknown): number {
 }
 
 /** 同一 kind+error+message 的告警去重窗口（多实例同时失败时不刷屏） */
-const ALERT_DEDUPE_WINDOW_MS = 5 * 60_000;
+export const ALERT_DEDUPE_WINDOW_MS = 5 * 60_000;
 const ALERT_MAX_ATTEMPTS = 3;
-const recentAlerts = new Map<string, number>();
+
+/**
+ * 告警去重的抽象。
+ *
+ * 进程内 Map 只能挡住单副本内的重复；多副本部署时每个副本都会各发一条
+ * （Runner 有单实例锁，但锁只保证一个副本跑任务，告警 webhook 是跨轮次共享的）。
+ * `claim` 必须是原子的：两个副本并发调用最多一个拿到 true。
+ */
+export interface AlertDeduper {
+  /** true = 本次应当投递；false = 窗口内已有实例投过 */
+  claim(key: string, now: number): Promise<boolean>;
+  /** 投递最终失败时释放占位，让下一轮/其它实例还能再试 */
+  release(key: string): Promise<void>;
+}
+
+/** 进程内去重（默认实现；单实例部署已足够） */
+export class MemoryAlertDeduper implements AlertDeduper {
+  private readonly windowMs: number;
+  private readonly entries = new Map<string, number>();
+
+  constructor(windowMs = ALERT_DEDUPE_WINDOW_MS) {
+    this.windowMs = Math.max(1, windowMs);
+  }
+
+  async claim(key: string, now: number): Promise<boolean> {
+    const last = this.entries.get(key);
+    if (last !== undefined && now - last < this.windowMs) return false;
+    this.entries.set(key, now);
+    if (this.entries.size > 1_000) {
+      for (const [k, at] of this.entries) {
+        if (now - at >= this.windowMs) this.entries.delete(k);
+      }
+    }
+    return true;
+  }
+
+  async release(key: string): Promise<void> {
+    this.entries.delete(key);
+  }
+}
+
+const defaultDeduper = new MemoryAlertDeduper();
 
 async function postOnce(
   url: string,
@@ -63,6 +104,8 @@ export async function sendWebhookAlert(
   message: string,
   detail: { kind: string; attempts: number; error: string },
   timeoutMs = 5000,
+  /** 多实例部署传共享 deduper（见 main.ts）；默认进程内去重 */
+  deduper: AlertDeduper = defaultDeduper,
 ): Promise<boolean> {
   let parsed: URL;
   try {
@@ -73,25 +116,20 @@ export async function sendWebhookAlert(
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
 
   const key = detail.kind + "\u0000" + detail.error.slice(0, 200) + "\u0000" + message.slice(0, 200);
-  const now = Date.now();
-  const last = recentAlerts.get(key);
-  if (last !== undefined && now - last < ALERT_DEDUPE_WINDOW_MS) return true;
-  if (recentAlerts.size > 1_000) {
-    for (const [k, at] of recentAlerts) {
-      if (now - at >= ALERT_DEDUPE_WINDOW_MS) recentAlerts.delete(k);
-    }
-  }
+  // 先占坑再投递：并发同键只有第一个能发；发不出去再释放（见下方 for 之后）
+  if (!(await deduper.claim(key, Date.now()))) return true;
 
   // 单次失败不重试就丢弃，最容易在 webhook 侧 5xx/重启窗口里静默漏告警。
   for (let attempt = 1; attempt <= ALERT_MAX_ATTEMPTS; attempt++) {
     if (await postOnce(parsed.toString(), message, detail, timeoutMs)) {
-      recentAlerts.set(key, Date.now());
       return true;
     }
     if (attempt < ALERT_MAX_ATTEMPTS) {
       await new Promise((r) => setTimeout(r, 500 * 2 ** (attempt - 1)));
     }
   }
+  // 投递失败：释放占位，下一轮 tick / 其它副本仍可再试（不能把告警永久吞掉）
+  await deduper.release(key);
   // 不记录 URL（可能含机器人 token），只记录失败事实
   console.warn("[navhub-alert] webhook 投递失败，已重试 " + ALERT_MAX_ATTEMPTS + " 次", { kind: detail.kind });
   return false;

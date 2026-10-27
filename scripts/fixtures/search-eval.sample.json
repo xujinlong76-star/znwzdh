@@ -1,0 +1,20 @@
+{
+  "k": 10,
+  "cases": [
+    {
+      "query": "ai 编程助手",
+      "hits": ["cursor", "github-copilot", "windsurf", "codeium"],
+      "relevance": { "cursor": 3, "github-copilot": 3, "windsurf": 1, "codeium": 1 }
+    },
+    {
+      "query": "免费 图床",
+      "hits": ["imgur", "smms", "cloudflare-images", "imgbb"],
+      "relevance": { "smms": 3, "imgbb": 2, "cloudflare-images": 1 }
+    },
+    {
+      "query": "开源 数据库",
+      "hits": ["postgresql", "mysql", "sqlite", "mongodb"],
+      "relevance": { "postgresql": 3, "sqlite": 2, "mysql": 2 }
+    }
+  ]
+}

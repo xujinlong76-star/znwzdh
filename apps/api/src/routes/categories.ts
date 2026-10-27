@@ -33,10 +33,13 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    *
    * 无分页 = 全表；SKOS 导出与快照构建确实需要整棵树，所以这个口径保留。
    * 只要「一页 + 总数」的调用方走 /api/categories/page。
+   *
+   * `sharedMaxAge`：类目树对匿名请求是全体同一份，允许 CDN/反代在 60s 内复用
+   * （带身份头或 cookie 的请求由 onSend 自动降级回 private，见 server.ts 的守卫）。
    */
   app.get(
     "/api/categories",
-    { config: { scope: "public", cache: { maxAge: 60, etag: true } } },
+    { config: { scope: "public", cache: { maxAge: 60, sharedMaxAge: 60, staleWhileRevalidate: 30, etag: true } } },
     async () => ctx.repo.listCategories()
   );
 
@@ -48,7 +51,7 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    */
   app.get(
     "/api/categories/page",
-    { config: { scope: "public", cache: { maxAge: 60, etag: true } } },
+    { config: { scope: "public", cache: { maxAge: 60, sharedMaxAge: 60, staleWhileRevalidate: 30, etag: true } } },
     async (req, reply) => {
       const query = z
         .object({
@@ -77,7 +80,7 @@ export const categoryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
    */
   app.get(
     "/api/categories/counts",
-    { config: { scope: "public", cache: { maxAge: 60, etag: true } } },
+    { config: { scope: "public", cache: { maxAge: 60, sharedMaxAge: 60, staleWhileRevalidate: 30, etag: true } } },
     async () => ({ counts: await ctx.repo.categorySiteCounts() })
   );
 

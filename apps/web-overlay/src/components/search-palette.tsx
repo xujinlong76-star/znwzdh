@@ -376,7 +376,11 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const openSite = useCallback((hit: HubSearchHit) => {
     const site = hit.site
     if (!site) return
-    reportClick(site.id, identity)
+    // 把「这次命中来自哪一路」带回中枢：telemetry.ts 只有在带 query 时才更新
+    // LinUCB 通道权重；只发 siteId 会让在线学习永远收不到真实反馈。
+    const channel = Object.entries(hit.contributions ?? {})
+      .sort((a, b) => b[1].value - a[1].value)[0]?.[0]
+    reportClick(site.id, identity, { query, channel })
     // site.url 来自后端检索结果（源头是站点库），同样过安全闸：
     // 非 http(s) 一律不跳，避免 javascript: 之类的脏数据直达执行
     const url = safeHref(site.url, '')
@@ -394,7 +398,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     else window.open(url, linkTarget, 'noopener,noreferrer')
     setQuery('')
     setIsFocused(false)
-  }, [identity, linkTarget])
+  }, [identity, linkTarget, query])
 
   const showResults = isFocused && query.trim().length > 0
   /**

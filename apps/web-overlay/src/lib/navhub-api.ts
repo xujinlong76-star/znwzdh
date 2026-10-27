@@ -388,9 +388,40 @@ export async function searchSites(params: SearchParams, signal?: AbortSignal): P
   }
 }
 
+export interface ClickReportContext {
+  /** 触发这次点击的搜索词；带上后服务端的 LinUCB 反馈回路才会更新通道权重 */
+  query?: string
+  /** 该结果真正由哪一路召回（exact/fts/pinyin/semantic/personal） */
+  channel?: string
+  /** 结果在列表中的名次（1 起） */
+  position?: number
+  /** 页面停留秒数（由调用方在离开时补报时使用） */
+  dwellSeconds?: number
+}
+
+const CLICK_CHANNELS = new Set(['exact', 'fts', 'pinyin', 'semantic', 'personal'])
+
+/** 纯函数：把点击上下文收敛成 /api/events 能接受且长度有界的 payload */
+export function buildClickEventBody(
+  siteId: string,
+  context?: ClickReportContext,
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { kind: 'click', siteId }
+  const query = context?.query?.trim().slice(0, 200)
+  if (query) body.query = query
+  if (context?.channel && CLICK_CHANNELS.has(context.channel)) body.channel = context.channel
+  if (typeof context?.position === 'number' && Number.isFinite(context.position) && context.position >= 1) {
+    body.position = Math.min(200, Math.floor(context.position))
+  }
+  if (typeof context?.dwellSeconds === 'number' && Number.isFinite(context.dwellSeconds) && context.dwellSeconds >= 0) {
+    body.dwellSeconds = Math.min(3600, context.dwellSeconds)
+  }
+  return body
+}
+
 /** 点击上报（fire-and-forget，失败静默） */
-export function reportClick(siteId: string, identity?: string): void {
-  void sendJson('/api/events', 'POST', { kind: 'click', siteId }, undefined, anonHeaders(identity)).catch(() => {
+export function reportClick(siteId: string, identity?: string, context?: ClickReportContext): void {
+  void sendJson('/api/events', 'POST', buildClickEventBody(siteId, context), undefined, anonHeaders(identity)).catch(() => {
     // 点击上报是 fire-and-forget：离线、被拦截、匿名模式都算正常，不该冒泡到页面逻辑
   })
 }

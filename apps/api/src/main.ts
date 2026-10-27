@@ -13,7 +13,8 @@ import { createContext } from "./context.ts";
 import { buildServer } from "./server.ts";
 import { registerCompression } from "./http-compression.ts";
 import { JobRunner, MAX_JOB_ATTEMPTS } from "./jobs.ts";
-import { sendWebhookAlert } from "./alerts.ts";
+import { sendWebhookAlert, ALERT_DEDUPE_WINDOW_MS } from "./alerts.ts";
+import { createStoreAlertDeduper } from "./alert-dedupe.ts";
 
 // 本地/容器启动时加载仓库根目录的 .env（Node 原生能力，零依赖）。
 // 注意：dev-all 以 apps/api 为 CWD 启动，默认的 loadEnvFile() 会找 apps/api/.env，
@@ -42,10 +43,12 @@ const jobsEnabled = process.env.NAVHUB_JOBS_ENABLED !== "0" && process.env.NAVHU
 // 任务告警接线：配置了 NAVHUB_ALERT_WEBHOOK 时，任务重试耗尽会额外投递一条 webhook
 // （Runner 内已保证"只在重试耗尽时触发一次"，不会变成每次失败都喊的告警风暴）。
 // fire-and-forget：投递失败只返回 false，不影响任务流。
+// 去重走 system_states（多副本轮换时同一故障不会每个副本各喊一遍）。
+const alertDeduper = createStoreAlertDeduper(ctx.repo, ALERT_DEDUPE_WINDOW_MS);
 const runner = jobsEnabled
   ? new JobRunner(ctx, {
       onAlert: config.alertWebhook
-        ? (message, detail) => { void sendWebhookAlert(config.alertWebhook!, message, detail, config.alertTimeoutMs); }
+        ? (message, detail) => { void sendWebhookAlert(config.alertWebhook!, message, detail, config.alertTimeoutMs, alertDeduper); }
         : undefined,
     })
   : null;

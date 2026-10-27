@@ -9,7 +9,9 @@
  */
 import {
   chatCompletion,
+  isRetryableLlmCode,
   LlmError,
+  RetryBudget,
   type ChatMessage,
   type ChatOptions,
   type ChatResult,
@@ -32,7 +34,30 @@ export interface CallLlmOptions {
   fetchImpl?: typeof fetch;
   /** 单次调用的超时时间（毫秒），未指定时使用 provider.timeoutMs */
   timeoutMs?: number;
+  /**
+   * 端到端截止时间点（`Date.now()` 毫秒）。含备用池轮换在内的全部尝试
+   * 共享这一个预算；耗尽即失败，见 packages/ai/src/deadline.ts 的说明。
+   */
+  deadlineAt?: number;
 }
+
+/**
+ * 交互式对话（copilot / ai_chat）的默认总预算。
+ *
+ * 深度思考单次请求可跑到 60s，备用池还能再轮换两家：不设总闸门时最坏等待
+ * 是「3 个 provider × 60s」，用户早已离开而中枢仍在计费。120s 取「还愿意等」
+ * 与「主模型失败后备用池仍有整整一个单调用窗口」的交点。
+ */
+export const INTERACTIVE_LLM_BUDGET_MS = 120_000;
+
+/**
+ * 备用池重试预算（进程级）。
+ *
+ * 一个请求打几个 provider 由「这一刻整体健不健康」决定，而不是由单个请求决定：
+ * 上游大面积故障时，若每个请求都把整池试完，重试会把一次故障放大成雪崩。
+ * 窗口内重试占比超过阈值即停止轮换，让请求快速失败。
+ */
+const fallbackRetryBudget = new RetryBudget({ ratio: 0.2, minRetries: 5, windowMs: 10_000, maxRetries: 50 });
 
 /**
  * 封装带用量记录的模型调用
@@ -50,6 +75,7 @@ export async function callLlm(
     tools: opts.tools,
     toolChoice: opts.toolChoice,
     signal: opts.signal,
+    deadlineAt: opts.deadlineAt,
     fetchImpl: opts.fetchImpl,
   };
 
@@ -60,6 +86,14 @@ export async function callLlm(
 
   let lastError: unknown = null;
   for (const { provider, source } of candidates) {
+    /**
+     * 总预算耗尽 ⇒ 不再发起任何请求。闸门放在最前：备用池轮换是「用户等待时间的乘法」，
+     * 前一次慢调用把预算烧完后，再打下一个 provider 只会把失败推迟到用户已经离开之后。
+     */
+    if (opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt) {
+      lastError ??= new LlmError("timeout", "模型调用已超出总预算");
+      break;
+    }
     // 无密钥但显式放行内网的本地网关（Ollama 等）同样可调用
     if (!llmProviderReady(provider)) continue;
     // 深度思考：调用点显式指定优先，否则用该 provider 的配置默认值（产品默认开）
@@ -72,6 +106,7 @@ export async function callLlm(
     try {
       const res = await chatCompletion(effectiveProvider, chatOpts);
       const latencyMs = res.latencyMs || (Date.now() - startedAt);
+      fallbackRetryBudget.recordSuccess();
 
       await ctx.repo.recordLlmUsage({
         scenario: opts.scenario,
@@ -118,6 +153,14 @@ export async function callLlm(
         errorCode,
         thinking,
       });
+      /**
+       * 换 provider 只对「这家现在不行」有意义，且必须过预算闸门：
+       *  - 鉴权/配置/坏响应/取消换谁都一样，继续打只是给用户加等待、给大盘加失败行；
+       *  - 预算耗尽意味着池子整体不健康（重试占比过高），再轮换是放大故障而不是吸收故障。
+       */
+      if (!isRetryableLlmCode(errorCode, err instanceof LlmError ? err.status : undefined)) break;
+      if (!fallbackRetryBudget.canRetry()) break;
+      fallbackRetryBudget.recordRetry();
       // 继续尝试备用模型池
     }
   }

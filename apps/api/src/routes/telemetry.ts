@@ -56,6 +56,8 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       /** 插件事件归属（plugin_view / plugin_install_click / plugin_uninstall_click / plugin_share） */
       pluginSlug: z.string().max(80).optional(),
       channel: z.enum(["exact", "fts", "pinyin", "semantic", "personal"]).optional(),
+      /** 结果名次（1 起）：点击归因需要位置，才能区分「第一命中」与「翻到第五个才点」 */
+      position: z.number().int().min(1).max(200).optional(),
       dwellSeconds: z.number().min(0).max(3600).optional(),
       interactionType: z.enum(["click", "copy", "bounce"]).optional(),
       /** 业务分支结果（vault_* 必带；其余 kind 可选） */
@@ -84,12 +86,13 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
     const recordedIdentity = telemetryEnabled ? identity : null;
 
     const meta =
-      recordedIdentity || body.data.pluginSlug || body.data.outcome || body.data.code
+      recordedIdentity || body.data.pluginSlug || body.data.outcome || body.data.code || body.data.position !== undefined
         ? {
             ...(recordedIdentity ? { identity: recordedIdentity } : {}),
             ...(body.data.pluginSlug ? { slug: body.data.pluginSlug } : {}),
             ...(body.data.outcome ? { outcome: body.data.outcome } : {}),
             ...(body.data.code ? { code: body.data.code } : {}),
+            ...(body.data.position !== undefined ? { position: body.data.position } : {}),
           }
         : undefined;
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）

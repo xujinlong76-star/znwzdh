@@ -24,6 +24,7 @@
  *     业务层（如富化）自己的两次尝试与启发式降级保持不变。
  */
 import { DEFAULT_GUARD, assertUrlShape, resolveAndCheck } from "./ssrf.ts";
+import { clampToDeadline } from "./deadline.ts";
 
 /** Agnes 3.0 Flash 官方参数（文档 2026-10） */
 export const AGNES_NAME = "Agnes 3.0 Flash";
@@ -75,6 +76,15 @@ export interface ChatOptions {
    */
   thinking?: boolean;
   signal?: AbortSignal;
+  /**
+   * 端到端总预算的截止时间点（`Date.now()` 毫秒时间戳）。
+   *
+   * 单次调用的 provider.timeoutMs 只约束「这一次请求」；一次业务动作可能包含
+   * 去参重试与备用池轮换，用户的等待是所有层之和。传了绝对时间点后，
+   * 后续每一次请求的超时都被钳进剩余预算，预算耗尽时直接失败、不再发请求。
+   * 传时间点而不是剩余时长：跨层传递不重算，不会因为每层各减一次而漂移。
+   */
+  deadlineAt?: number;
   /** 测试注入；生产不传 */
   fetchImpl?: typeof fetch;
 }
@@ -368,12 +378,19 @@ async function callOnce(
   includeThinking = true,
 ): Promise<ChatResult> {
   assertProvider(provider);
+  // 预算已耗尽：连 SSRF 预检的 DNS 都不必做，直接失败
+  if (typeof opts.deadlineAt === "number" && Date.now() >= opts.deadlineAt) {
+    throw new LlmError("timeout", "模型调用已超出总预算，未再发起请求");
+  }
   const url = chatCompletionsUrl(provider.baseUrl);
   await assertLlmEndpoint(url, provider.allowPrivateNetwork === true);
 
   const baseTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
   // 思维链确实下发时才放宽超时：去参重试走的是普通请求，没必要多等 40 秒
-  const timeoutMs = opts.thinking === true && includeThinking ? Math.max(baseTimeout, 60_000) : baseTimeout;
+  const naturalTimeout = opts.thinking === true && includeThinking ? Math.max(baseTimeout, 60_000) : baseTimeout;
+  // 总预算优先：钳完只剩 0 说明截止时间已到，直接失败（不要用 1ms 超时去撞网络）
+  const timeoutMs = clampToDeadline(naturalTimeout, opts.deadlineAt);
+  if (timeoutMs <= 0) throw new LlmError("timeout", "模型调用已超出总预算，未再发起请求");
   const gate = timeoutSignal(timeoutMs, opts.signal);
   const fetchImpl = opts.fetchImpl ?? fetch;
   const startedAt = Date.now();
@@ -509,10 +526,17 @@ export function extractSseDelta(line: string): string | null {
  */
 export async function* chatStream(provider: LlmProvider, opts: ChatOptions): AsyncGenerator<string, void, unknown> {
   assertProvider(provider);
+  if (typeof opts.deadlineAt === "number" && Date.now() >= opts.deadlineAt) {
+    throw new LlmError("timeout", "模型流式调用已超出总预算，未再发起请求");
+  }
   const url = chatCompletionsUrl(provider.baseUrl);
   await assertLlmEndpoint(url, provider.allowPrivateNetwork === true);
 
-  const timeoutMs = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
+  const naturalTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
+  // 流式调用同样受总预算约束：开流之后不会再有「换 provider」的机会，超时钳不钳只影响
+  // 用户等多久才看到失败，但对多轮 SSE 的累计耗时来说，钳住是唯一能兑现的承诺。
+  const timeoutMs = clampToDeadline(naturalTimeout, opts.deadlineAt);
+  if (timeoutMs <= 0) throw new LlmError("timeout", "模型流式调用已超出总预算，未再发起请求");
   const gate = timeoutSignal(timeoutMs, opts.signal);
   const fetchImpl = opts.fetchImpl ?? fetch;
 

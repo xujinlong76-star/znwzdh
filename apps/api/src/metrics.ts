@@ -11,34 +11,87 @@ import type { AppContext } from "./context.ts";
 const metricsStartedAt = Date.now();
 /** key: method\u0000route\u0000status -> 次数 */
 const httpCounts = new Map<string, number>();
-/** key: method\u0000route -> 累计耗时 */
-const httpDurations = new Map<string, { count: number; sumMs: number }>();
 
-const MAX_LATENCY_SAMPLES = 500;
-const recentLatencies: number[] = [];
-let latencySampleIdx = 0;
+/**
+ * 延迟直方图的固定桶（秒）。
+ *
+ * 为什么从「500 条环形缓冲 + 内存排序」换成固定桶：
+ *  1. 环缓只能回答「本进程最近 500 条」，重启即丢、多实例无法合并；
+ *     而 SLO 要看的是「过去 5 分钟 P95」，跨实例、跨重启都得能算。
+ *  2. 固定桶可以导出成 Prometheus histogram，`histogram_quantile` / 多窗口
+ *     burn-rate 告警直接可用（这是 D3 的目标）；环缓在 /metrics 上只能给
+ *     summary 的 _sum/_count，根本推不出分位数。
+ *  3. 桶边界覆盖 5ms~10s：本机 P50 在几毫秒、P95 几十~几百毫秒，
+ *     LLM/富化类路由到秒级；超出 10s 的落进 +Inf，不丢样本。
+ */
+export const HTTP_DURATION_BUCKETS_S = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10] as const;
+const BUCKET_COUNT = HTTP_DURATION_BUCKETS_S.length + 1; // 末尾为 +Inf
+
+interface DurationHistogram {
+  count: number;
+  sumMs: number;
+  /** 非累计：每档只装落在该档的样本，导出时再算累计 */
+  buckets: number[];
+}
+
+/** key: method\u0000route */
+const httpDurations = new Map<string, DurationHistogram>();
+/** 全局直方图：summary API 的 P50/P95/P99 从这里算，口径与 /metrics 一致 */
+const globalDurations: DurationHistogram = { count: 0, sumMs: 0, buckets: new Array(BUCKET_COUNT).fill(0) };
 
 const SECOND_BUCKETS = 60;
 const secondCounts = new Array(SECOND_BUCKETS).fill(0);
 const secondTimestamps = new Array(SECOND_BUCKETS).fill(0);
+
+function bucketIndex(elapsedMs: number): number {
+  const seconds = elapsedMs / 1000;
+  for (let i = 0; i < HTTP_DURATION_BUCKETS_S.length; i++) {
+    if (seconds <= HTTP_DURATION_BUCKETS_S[i]!) return i;
+  }
+  return HTTP_DURATION_BUCKETS_S.length;
+}
+
+function observe(hist: DurationHistogram, elapsedMs: number): void {
+  const ms = Number.isFinite(elapsedMs) && elapsedMs >= 0 ? elapsedMs : 0;
+  hist.count += 1;
+  hist.sumMs += ms;
+  const idx = bucketIndex(ms);
+  hist.buckets[idx] = (hist.buckets[idx] ?? 0) + 1;
+}
+
+/**
+ * 从固定桶估算分位数（与 Prometheus `histogram_quantile` 同法：桶内线性插值）。
+ * 返回毫秒；+Inf 档只能给「最高有限边界」作为下界估计。
+ */
+export function quantileFromBuckets(buckets: readonly number[], count: number, q: number): number {
+  if (count <= 0) return 0;
+  const rank = Math.min(Math.max(q, 0), 1) * count;
+  let prevCum = 0;
+  let prevUpperS = 0;
+  for (let i = 0; i < buckets.length; i++) {
+    const inBucket = buckets[i] ?? 0;
+    const cum = prevCum + inBucket;
+    if (cum >= rank) {
+      const upperS = i < HTTP_DURATION_BUCKETS_S.length ? HTTP_DURATION_BUCKETS_S[i]! : null;
+      if (upperS === null) return prevUpperS * 1000;
+      const fraction = inBucket > 0 ? (rank - prevCum) / inBucket : 0;
+      return (prevUpperS + (upperS - prevUpperS) * fraction) * 1000;
+    }
+    prevCum = cum;
+    if (i < HTTP_DURATION_BUCKETS_S.length) prevUpperS = HTTP_DURATION_BUCKETS_S[i]!;
+  }
+  return prevUpperS * 1000;
+}
 
 /** onResponse hook 调用：记录一次请求（server.ts 负责挂 hook，这里只存数据） */
 export function recordHttpMetric(route: string, method: string, status: number, elapsedMs: number): void {
   const ckey = method + "\u0000" + route + "\u0000" + String(status);
   httpCounts.set(ckey, (httpCounts.get(ckey) ?? 0) + 1);
   const dkey = method + "\u0000" + route;
-  const d = httpDurations.get(dkey) ?? { count: 0, sumMs: 0 };
-  d.count += 1;
-  d.sumMs += elapsedMs;
+  const d = httpDurations.get(dkey) ?? { count: 0, sumMs: 0, buckets: new Array(BUCKET_COUNT).fill(0) };
+  observe(d, elapsedMs);
   httpDurations.set(dkey, d);
-
-  // 记录环形延迟采样
-  if (recentLatencies.length < MAX_LATENCY_SAMPLES) {
-    recentLatencies.push(elapsedMs);
-  } else {
-    recentLatencies[latencySampleIdx] = elapsedMs;
-    latencySampleIdx = (latencySampleIdx + 1) % MAX_LATENCY_SAMPLES;
-  }
+  observe(globalDurations, elapsedMs);
 
   // 秒级计数滑动桶（用于毫秒级平滑 QPS 估算）
   const sec = Math.floor(Date.now() / 1000);
@@ -109,21 +162,13 @@ export function getHttpMetricsSummary(): HttpMetricsSummary {
   }
   const errorRate = totalRequests > 0 ? Math.round(((s4xx + s5xx) / totalRequests) * 1000) / 10 : 0;
 
-  // 延迟分位数
-  let avgLatencyMs = 0;
-  let p50LatencyMs = 0;
-  let p95LatencyMs = 0;
-  let p99LatencyMs = 0;
-
-  if (recentLatencies.length > 0) {
-    const sorted = [...recentLatencies].sort((a, b) => a - b);
-    const sum = sorted.reduce((a, b) => a + b, 0);
-    const n = sorted.length;
-    avgLatencyMs = Math.round((sum / n) * 10) / 10;
-    p50LatencyMs = Math.round(sorted[Math.min(n - 1, Math.floor(n * 0.5))]! * 10) / 10;
-    p95LatencyMs = Math.round(sorted[Math.min(n - 1, Math.floor(n * 0.95))]! * 10) / 10;
-    p99LatencyMs = Math.round(sorted[Math.min(n - 1, Math.floor(n * 0.99))]! * 10) / 10;
-  }
+  // 延迟分位数：从全局固定桶估算（与 /metrics 的 histogram 同源，重启前口径一致）
+  const avgLatencyMs = globalDurations.count > 0
+    ? Math.round((globalDurations.sumMs / globalDurations.count) * 10) / 10
+    : 0;
+  const p50LatencyMs = Math.round(quantileFromBuckets(globalDurations.buckets, globalDurations.count, 0.5) * 10) / 10;
+  const p95LatencyMs = Math.round(quantileFromBuckets(globalDurations.buckets, globalDurations.count, 0.95) * 10) / 10;
+  const p99LatencyMs = Math.round(quantileFromBuckets(globalDurations.buckets, globalDurations.count, 0.99) * 10) / 10;
 
   // 慢路由 Top 5 (avgLatencyMs >= 5ms, sorted by avgLatency desc)
   const routeStats: Array<{ route: string; method: string; avgLatencyMs: number; count: number }> = [];
@@ -290,7 +335,7 @@ async function cachedStats(ctx: AppContext) {
 
 export async function renderMetrics(ctx: AppContext): Promise<string> {
   const out: string[] = [];
-  const metric = (name: string, help: string, type: "gauge" | "counter" | "summary", lines: string[]) => {
+  const metric = (name: string, help: string, type: "gauge" | "counter" | "summary" | "histogram", lines: string[]) => {
     if (lines.length === 0) return;
     out.push("# HELP " + name + " " + help);
     out.push("# TYPE " + name + " " + type);
@@ -340,15 +385,21 @@ export async function renderMetrics(ctx: AppContext): Promise<string> {
   }).sort();
   metric("navhub_http_requests_total", "HTTP 请求总数", "counter", countLines);
 
-  // HTTP：耗时（summary：_sum 秒 + _count）
+  // HTTP：耗时直方图（_bucket 累计 + _sum 秒 + _count）
   const durLines: string[] = [];
   for (const [k, d] of [...httpDurations.entries()].sort()) {
     const [method, route] = splitKey(k);
-    const labels = `{method="${escLabel(method)}",route="${escLabel(route)}"}`;
-    durLines.push(`navhub_http_request_duration_seconds_sum${labels} ${(d.sumMs / 1000).toFixed(6)}`);
-    durLines.push(`navhub_http_request_duration_seconds_count${labels} ${d.count}`);
+    const labels = `{method="${escLabel(method)}",route="${escLabel(route)}"`;
+    let cumulative = 0;
+    for (let i = 0; i < d.buckets.length; i++) {
+      cumulative += d.buckets[i] ?? 0;
+      const le = i < HTTP_DURATION_BUCKETS_S.length ? String(HTTP_DURATION_BUCKETS_S[i]) : "+Inf";
+      durLines.push(`navhub_http_request_duration_seconds_bucket${labels},le="${le}"} ${cumulative}`);
+    }
+    durLines.push(`navhub_http_request_duration_seconds_sum${labels}} ${(d.sumMs / 1000).toFixed(6)}`);
+    durLines.push(`navhub_http_request_duration_seconds_count${labels}} ${d.count}`);
   }
-  metric("navhub_http_request_duration_seconds", "HTTP 请求耗时（秒）", "summary", durLines);
+  metric("navhub_http_request_duration_seconds", "HTTP 请求耗时（秒）", "histogram", durLines);
 
   // 检索 planner：early-exit 剪枝计数 + 各通道平均耗时（毫秒）
   metric("navhub_search_planner_total", "Query Planner 决策总数", "counter", [

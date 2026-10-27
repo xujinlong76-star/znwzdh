@@ -8,7 +8,7 @@
  */
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { LlmError } from "@navhub/ai";
-import { callLlm } from "../llm-usage.ts";
+import { callLlm, INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
 import { z } from "zod";
 import {
   LlmProviderInputSchema,
@@ -362,6 +362,8 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           messages,
           maxTokens: body.data.maxTokens ?? 512,
           thinking: body.data.thinking,
+          // 交互式对话与 copilot 同一口径：含备用池轮换在内的总等待有上限
+          deadlineAt: Date.now() + INTERACTIVE_LLM_BUDGET_MS,
         });
 
         return {

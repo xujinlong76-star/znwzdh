@@ -15,15 +15,15 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { recordHttpMetric, renderMetrics } from "../src/metrics.ts";
+import { HTTP_DURATION_BUCKETS_S, quantileFromBuckets, recordHttpMetric, renderMetrics } from "../src/metrics.ts";
 import type { AppContext } from "../src/context.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const API_ROOT = resolve(HERE, "..");
 
-const ALLOWED_TYPES = new Set(["counter", "gauge", "summary"]);
+const ALLOWED_TYPES = new Set(["counter", "gauge", "summary", "histogram"]);
 /** 新增标签必须显式更新这里——这是防止「原始 URL / 用户输入进标签」的最后一道闸。 */
-const ALLOWED_LABELS = new Set(["method", "route", "status", "name", "channel", "decision", "mode", "node", "component"]);
+const ALLOWED_LABELS = new Set(["method", "route", "status", "name", "channel", "decision", "mode", "node", "component", "le"]);
 const ALLOWED_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 /**
  * Prometheus 约定 `_total` 留给 counter，但这两个「规模计数」是历史已发布的 gauge 名。
@@ -141,7 +141,7 @@ function parseExposition(text: string): { families: Map<string, Family>; samples
     const value = Number(m[3]);
     if (!Number.isFinite(value)) throw new Error("样本值非有限数: " + line);
 
-    const base = name.replace(/_(sum|count)$/, "");
+    const base = name.replace(/_(bucket|sum|count)$/, "");
     const family = families.get(name) ?? families.get(base);
     if (!family || family.type === null) throw new Error("样本没有对应的 # TYPE 家族: " + line);
     family.samples.push({ name, labelsRaw: raw, labels, value });
@@ -198,10 +198,15 @@ describe("Prometheus 指标格式", () => {
       } else if (name.endsWith("_total")) {
         expect(GAUGE_TOTAL_ALLOWLIST.has(name), "非 counter 不得以 _total 结尾: " + name).toBe(true);
       }
-      // 样本名与家庭类型的对应关系：summary 用 _sum/_count，其余同名
+      // 样本名与家庭类型的对应关系：summary / histogram 用 _sum/_count（+ _bucket），其余同名
       for (const s of f.samples) {
         if (f.type === "summary") {
           expect(s.name === name + "_sum" || s.name === name + "_count", "summary 样本名异常: " + s.name).toBe(true);
+        } else if (f.type === "histogram") {
+          expect(
+            s.name === name + "_bucket" || s.name === name + "_sum" || s.name === name + "_count",
+            "histogram 样本名异常: " + s.name,
+          ).toBe(true);
         } else {
           expect(s.name, "非 summary 样本名必须等于家庭名: " + s.name).toBe(name);
         }
@@ -252,6 +257,46 @@ describe("Prometheus 指标格式", () => {
     }
   });
 
+  it("histogram：桶累计单调、+Inf 覆盖全量、_count 与 +Inf 一致", () => {
+    const groupKey = (s: Sample) =>
+      Object.entries(s.labels)
+        .filter(([k]) => k !== "le")
+        .map(([k, v]) => k + "=" + v)
+        .sort()
+        .join(",");
+    for (const [name, f] of parsed.families) {
+      if (f.type !== "histogram") continue;
+      const buckets = f.samples.filter((s) => s.name === name + "_bucket");
+      expect(buckets.length, name + " 没有任何桶序列").toBeGreaterThan(0);
+      const groups = new Map<string, Sample[]>();
+      for (const s of buckets) {
+        const key = groupKey(s);
+        groups.set(key, [...(groups.get(key) ?? []), s]);
+      }
+      for (const [key, list] of groups) {
+        const inf = list.find((s) => s.labels.le === "+Inf");
+        expect(inf, name + "{" + key + "} 缺少 +Inf 桶").toBeTruthy();
+        const finite = list
+          .filter((s) => s !== inf)
+          .sort((a, b) => Number(a.labels.le) - Number(b.labels.le));
+        for (const s of finite) {
+          expect(Number.isFinite(Number(s.labels.le)), "非法 le 值: " + s.labels.le).toBe(true);
+        }
+        let prev = -1;
+        for (const s of [...finite, inf!]) {
+          expect(s.value, "桶计数必须单调不减: " + key).toBeGreaterThanOrEqual(prev);
+          prev = s.value;
+        }
+        const count = f.samples.find((s) => s.name === name + "_count" && groupKey(s) === key);
+        expect(count, name + "{" + key + "} 缺少 _count").toBeTruthy();
+        expect(count!.value, "histogram _count 必须等于 +Inf 桶").toBe(inf!.value);
+        const sum = f.samples.find((s) => s.name === name + "_sum" && groupKey(s) === key);
+        expect(sum, name + "{" + key + "} 缺少 _sum").toBeTruthy();
+        expect(sum!.value).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
   it("指标家庭清单快照（改名/改类型/新增会失败）", () => {
     const schema = [...parsed.families.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
@@ -262,7 +307,7 @@ describe("Prometheus 指标格式", () => {
       navhub_capability gauge
       navhub_categories_total gauge
       navhub_embedding_ready gauge
-      navhub_http_request_duration_seconds summary
+      navhub_http_request_duration_seconds histogram
       navhub_http_requests_total counter
       navhub_process_heap_total_bytes gauge
       navhub_process_heap_used_bytes gauge
@@ -290,6 +335,34 @@ describe("Prometheus 指标格式", () => {
     expect(line).toContain('\\"');
     expect(line).toContain("\\\\");
     expect(line).toContain("\\n");
+  });
+});
+
+describe("直方图分位数估算", () => {
+  const buckets = () => new Array(HTTP_DURATION_BUCKETS_S.length + 1).fill(0);
+
+  it("没有样本时返回 0", () => {
+    expect(quantileFromBuckets(buckets(), 0, 0.95)).toBe(0);
+  });
+
+  it("桶内线性插值：10 个样本全在 (10ms, 25ms]，P50 = 17.5ms", () => {
+    const b = buckets();
+    b[2] = 10; // 0.01 < x <= 0.025
+    expect(quantileFromBuckets(b, 10, 0.5)).toBeCloseTo(17.5, 5);
+  });
+
+  it("超出最高有限边界的样本按最高边界给下界估计", () => {
+    const b = buckets();
+    b[b.length - 1] = 4; // +Inf
+    expect(quantileFromBuckets(b, 4, 0.95)).toBe(10_000);
+  });
+
+  it("跨桶累计：P95 落在含 95% 样本的那个桶里", () => {
+    const b = buckets();
+    b[0] = 90; // <= 5ms
+    b[4] = 10; // (50ms, 100ms]
+    // rank=95，落在第 4 桶；prevCum=90，该桶 10 个，fraction=0.5 → 50 + 50*0.5 = 75ms
+    expect(quantileFromBuckets(b, 100, 0.95)).toBeCloseTo(75, 5);
   });
 });
 

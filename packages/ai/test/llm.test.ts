@@ -273,6 +273,51 @@ describe("网关：流式解析", () => {
   });
 });
 
+describe("网关：总预算（deadlineAt）", () => {
+  it("预算已耗尽时连请求都不发，直接按超时失败", async () => {
+    const { calls, fetchImpl } = captureFetch(() => jsonResponse(okBody("不该被调用")));
+    await expect(
+      chatCompletion(provider(), {
+        messages: [{ role: "user", content: "hi" }],
+        deadlineAt: Date.now() - 1,
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "timeout" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("单请求超时被钳进剩余预算（provider 30s，预算 80ms）", async () => {
+    const fetchImpl: typeof fetch = (_url, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        const fail = () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }));
+        if (signal?.aborted) fail();
+        else signal?.addEventListener("abort", fail, { once: true });
+      });
+    const startedAt = Date.now();
+    await expect(
+      chatCompletion(provider({ timeoutMs: 30_000 }), {
+        messages: [{ role: "user", content: "hi" }],
+        deadlineAt: startedAt + 80,
+        fetchImpl,
+      }),
+    ).rejects.toMatchObject({ code: "timeout" });
+    expect(Date.now() - startedAt).toBeLessThan(3_000);
+  });
+
+  it("chatStream 同样受总预算约束", async () => {
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error("不应发起流式请求");
+    };
+    const gen = chatStream(provider(), {
+      messages: [{ role: "user", content: "hi" }],
+      deadlineAt: Date.now() - 1,
+      fetchImpl,
+    });
+    await expect(gen.next()).rejects.toMatchObject({ code: "timeout" });
+  });
+});
+
 describe("网关：错误类型", () => {
   it("LlmError 携带 code/status/detail", () => {
     const err = new LlmError("http", "boom", 500, "upstream");

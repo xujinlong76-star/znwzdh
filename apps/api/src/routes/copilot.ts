@@ -7,7 +7,7 @@ import { z } from "zod";
 import { LlmError } from "@navhub/ai";
 import { llmProviderReady, resolveLlm } from "../llm-config.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
-import { callLlm } from "../llm-usage.ts";
+import { callLlm, INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
 import { requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
@@ -234,6 +234,7 @@ ${context.currentQuery ? `- 用户当前搜索关键词：【${context.currentQu
           maxTokens: 1200,
           thinking,
           signal: clientSignal,
+          deadlineAt: startedAt + INTERACTIVE_LLM_BUDGET_MS,
         });
 
         if (res.content) {

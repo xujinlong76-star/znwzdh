@@ -179,11 +179,17 @@ export function SpotlightModal({
    */
   const linkTarget = useExternalLinkTarget(siteLinkTarget)
   const openSite = useCallback(
-    (site: { id: string; title?: string | null; url: string; iconKey?: string | null }) => {
+    (
+      site: { id: string; title?: string | null; url: string; iconKey?: string | null },
+      hit?: HubSearchHit,
+    ) => {
       const url = safeHref(site.url, '')
       // 先过安全闸再上报：给一个根本打不开的脏 URL 记一次点击，会污染热度信号
       if (!url || !isSafeHttpUrl(url)) return
-      reportClick(site.id, identity)
+      const channel = hit
+        ? Object.entries(hit.contributions ?? {}).sort((a, b) => b[1].value - a[1].value)[0]?.[0]
+        : undefined
+      reportClick(site.id, identity, { query, channel })
       // 与首页卡片、内联搜索共用同一份离线「最近访问」：从 ⌘K 打开的站点
       // 断网后也要能在本地列表里找到，否则超级控制台这条路径就漏了快照。
       recordOfflineVisit({
@@ -195,7 +201,7 @@ export function SpotlightModal({
       if (linkTarget === '_self') window.location.href = url
       else window.open(url, '_blank', 'noopener,noreferrer')
     },
-    [identity, linkTarget],
+    [identity, linkTarget, query],
   )
 
   /** 站外出口：只有用户在「默认搜索引擎」里显式选了外部引擎才出现 */
@@ -601,7 +607,7 @@ export function SpotlightModal({
     if (selectedIndex < totalSiteHits) {
       const hit = hits[selectedIndex]
       if (hit?.site?.url) {
-        openSite(hit.site)
+        openSite(hit.site, hit)
         setOpen(false)
       }
     } else {
@@ -976,7 +982,7 @@ export function SpotlightModal({
                       <div
                         key={hit.siteId}
                         onClick={() => {
-                          openSite(site)
+                          openSite(site, hit)
                           setOpen(false)
                         }}
                         id={optionIdOf(idx)}

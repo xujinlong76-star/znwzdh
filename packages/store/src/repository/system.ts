@@ -31,3 +31,28 @@ export async function setSystemState(repo: Repository, key: string, value: unkno
 export async function deleteSystemState(repo: Repository, key: string): Promise<void> {
   await repo.run("DELETE FROM system_states WHERE key = ?", [key]);
 }
+
+/**
+ * 原子占坑：多实例共享的「窗口内只做一次」原语。
+ *
+ * 仅当 key 不存在、或已存在的记录 `updated_at` 早于 `now - windowMs` 时，
+ * 才把它写成 value 并返回 true；并发调用中最多只有一个返回 true。
+ * 为什么必须是单条 UPSERT 而不是「先读后写」：两个副本同时读到「没有记录」
+ * 再各自写入，就会各发一条告警——去重反而变成了双发。
+ */
+export async function claimSystemState(
+  repo: Repository,
+  key: string,
+  value: unknown,
+  windowMs: number,
+  now = Date.now(),
+): Promise<boolean> {
+  const serialized = typeof value === "string" ? value : JSON.stringify(value);
+  const threshold = now - Math.max(0, windowMs);
+  const sql =
+    repo.db.dialect === "pg"
+      ? "INSERT INTO system_states (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at WHERE system_states.updated_at < ?"
+      : "INSERT INTO system_states (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at WHERE system_states.updated_at < ?";
+  const changes = await repo.runCount(sql, [key, serialized, now, threshold]);
+  return changes > 0;
+}

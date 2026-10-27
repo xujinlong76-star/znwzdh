@@ -683,3 +683,43 @@ hydration 告警。代码里 267 行那句注释「button 只允许 phrasing con
 > overlay 目录长期半跟踪（`src/lib` 58 个、`src/components` 48 个文件从未进过索引），
 > 因此 `07d88fe8` 的 115 个文件里大部分是**首次纳入**而非本次改动。`src/app`
 > （含并行会话改动的 admin 页）与 `videos.json`（内容数据变更）未包含。
+
+---
+
+## 13. 第二轮增强：12.4 待办的处理结果
+
+### 13.1 已完成
+
+| 编号 | 内容 | 关键实现 |
+|---|---|---|
+| **C3** | 巡检并发化 | `sweepVideoHealth` 从串行 `for + await` 改为有界并发（默认 6，上限 10）。原来 30 条 × 3.5s = 最坏 105s，超过函数上限会出现「跑一半被掐断、状态只落一部分」 |
+| **C4** | 运行期指标 | 新增 `lib/video-harvest-metrics.ts`，采集/巡检累计计数（runs / failed / added / replaced / degradedKeywords；healthy / dead / unverified / pruned）挂到 `GET /api/videos/harvest` 的 `runtime`；该端点同时补上管理员鉴权 |
+| **C5** | 去重键与伪造内容 | 新增 `lib/video-identity.ts`，去重键统一 `platform:externalId`；webhook 平台由 `payload.source` 决定（原来一律 `bilibili`），去掉硬编码假 BV 号 `BV1whDefault`、三处共用 Unsplash 假封面、`isRunning`/`timer` 死字段；控制器改单例（`logs` 可跨周期累积） |
+| **B6** | B 站 wbi 签名 | 新增 `lib/bilibili-wbi.ts`：nav 取 img/sub key → 置换表推 32 位 mixinKey → 参数排序 + `wts` 算 `w_rid`。密钥缓存 6h + inflight 去重；取不到时返回 null 并记 degraded（不静默降级）。**本机实测 `api.bilibili.com` 返回 `http=000`（连接不通），签名算法只能靠单测锁定确定性，无法在线验证** |
+| **B7** | 列表分页与裁剪 | `GET /api/videos` 增加 `compact=1`（剥离 chapters/transcript）、`categoryId`、`limit`/`offset`；元信息走响应头 `X-Total-Items`，不改响应体形状 |
+| **C1** | 候选池外部化 | 12 条候选移到 `src/navsphere/content/video-topics.json`（18KB），构建期读入；四条数据契约写进 `$schema` 与注释，由 v8 的结构性断言守住 |
+| **C2** | 文案降级 | 「通过 AI 深度审核」→「已通过规则初筛（关键词 / 时长 / 互动加权）」；「【热点精选】」→「【精选】」（候选池是人工维护的静态选题，不是实时热榜） |
+| **B3** | 任务状态持久化（渐进版） | 任务快照写 `data/video-harvest-tasks.json`（防抖 400ms + fire-and-forget），路由读取前 `hydrate()` 懒加载；上次残留的 `running`/`pending` 改判 `failed` 并注明「进程重启，任务中断」；过期锁不恢复 |
+
+### 13.2 仍未做（明确不做的理由）
+
+| 编号 | 理由 |
+|---|---|
+| **B3 完整版**（迁中枢 `jobs.ts`） | 需要扩展中枢任务类型与进度字段，属跨包重构。当前渐进版已解决「重启后看不到历史」，跨实例互斥由 `ifVersion` 兜住，剩余收益不足以承担重构风险 |
+| **C6** `videos.json` 落关系表 | 需要 DB schema 变更 + 迁移脚本 + 双写过渡期 + 回滚方案，是独立的架构演进项。在一个提交流里改 schema 会让「数据迁移失败怎么办」无从回答。建议单独立项，前置条件：先补 PG 方言下的视频表迁移测试 |
+| **A8** 类型检查进 CI | 全仓 **21555** 个既有类型错误（`plugin-url-health-panel.tsx` 单文件 618 个），视频 `lib/` 内也有 **37** 个既有分叉（`video-failover.ts` 用 `sourceId`/`label`，而 `VideoMirrorSource` 定义的是 `id`/`platform`/`href`）。直接开门禁必然全红。**收敛路径**：按目录增量修 → 每个目录清零后加入 `scripts/typecheck.mjs` 的显式清单，而不是一次打开 |
+
+### 13.3 本轮顺带发现并修复
+
+`video-autonomous-ai-harvester` 的 `items: [...cat.items]` 裸展开：`NavigationItem.items` 是可选字段，分类缺它时会在运行期抛 `undefined is not iterable`，整个采集周期中断（tsc 报 TS2488，被 `ignoreBuildErrors` 掩盖）。同一函数内其它地方都写了 `|| []`，唯独这里漏了。
+
+### 13.4 第二轮提交
+
+| commit | 内容 |
+|---|---|
+| `855bc48f` | C3/C4/C5/B6/B7（13 文件，含 3 个新 lib + wbi 单测 15 例） |
+| `0c426d79` | C1 候选池外部化 + C2 文案降级（4 文件，含 18KB JSON 资产） |
+| `a28ab928` | B3 渐进版：任务状态跨重启持久化（3 文件） |
+| `f068b26b` | 修复分类条目裸展开（1 文件） |
+
+验证基线：`apps/web/test` **213 文件 / 2413 例全绿**；`check-syntax` 1362 文件 0 错误；overlay 一致性 869 文件。

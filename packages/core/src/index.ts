@@ -13,6 +13,7 @@ export * from "./linucb.ts";
 export * from "./hyperbolic.ts";
 export * from "./health-sentinel.ts";
 export * from "./probe-policy.ts";
+export * from "./health-state.ts";
 export * from "./probe-cache.ts";
 export * from "./probe-metrics.ts";
 export * from "./audit-queue.ts";

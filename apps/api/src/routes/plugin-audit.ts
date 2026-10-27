@@ -21,6 +21,7 @@ import {
   classifyProbeStatus as classifyStatusOutcome,
   computeReachabilityTrend,
   diagnoseBrokenCause,
+  deriveHealthPanelState,
   diagnoseUrlDeep,
   isTextualContentType,
   conditionalHeaders,
@@ -767,6 +768,35 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
   /**
    * 批量读取所有插件的最近一次体检快照（工作台秒级预载用）。
    */
+  /**
+   * 只读健康结论：给 Chrome 扩展 / Raycast / MCP 用，避免各自再翻译一遍判定。
+   * 与面板共用 core 的 `deriveHealthPanelState`，两边不可能说两套话。
+   */
+  app.get(
+    "/api/plugins/:slug/health",
+    { config: { scope: "read", rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const params = request.params as { slug?: string }
+      const slug = params.slug ? safeDecodeParam(params.slug) : ""
+      if (!slug) return reply.code(400).send({ ok: false, error: "bad_request", message: "缺少 slug" })
+      const rows = await ctx.repo.raw(
+        `SELECT created_at, diff FROM audit_logs
+         WHERE action = 'audit.plugin_url_audit' AND target = ?
+         ORDER BY id DESC LIMIT 1`,
+        [slug],
+      )
+      const row = rows[0] as { created_at?: number; diff?: unknown } | undefined
+      if (!row) return { ok: true, slug, state: deriveHealthPanelState(null), auditedAt: null }
+      let diff: Record<string, unknown> = {}
+      try {
+        diff = (typeof row.diff === "string" ? JSON.parse(row.diff) : row.diff) as Record<string, unknown> || {}
+      } catch {
+        diff = {}
+      }
+      return { ok: true, slug, state: deriveHealthPanelState(diff as never), auditedAt: row.created_at ?? null }
+    },
+  )
+
   app.post(
     /**
      * 异步体检任务：批量净网这类长任务不再绑在请求生命周期上。

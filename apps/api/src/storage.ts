@@ -454,8 +454,12 @@ export async function readVideosData(ctx: AppContext): Promise<unknown> {
   return readKv(ctx, "videos");
 }
 
-export async function writeVideosData(ctx: AppContext, data: unknown): Promise<void> {
-  await writeKv(ctx, "videos", data);
+export async function writeVideosData(
+  ctx: AppContext,
+  data: unknown,
+  ifVersion?: number,
+): Promise<void> {
+  await writeKv(ctx, "videos", data, ifVersion);
 }
 
 /* --------------------------- 键值读写（复用 jobs 表） --------------------------- */
@@ -485,10 +489,67 @@ export async function readKv(ctx: AppContext, key: string): Promise<unknown> {
   }
 }
 
-async function writeKv(ctx: AppContext, key: string, value: unknown): Promise<void> {
+/**
+ * 读取 KV 文档的版本号（= 最近一次写入的 `updated_at`）。
+ *
+ * 为什么需要它：`PUT /api/storage` 是「整包覆盖」语义，`writeKv` 用
+ * `ON CONFLICT DO UPDATE` 直接替换 payload。A、B 两个写入方各自「读整包 → 改 → 写」
+ * 时，后写的会把先写的整批内容抹掉，且**没有任何报错**（last-write-wins）。
+ * 视频库有三个写入口（harvest / ai-autonomous-harvest / webhook-harvest）恰好是这种模式。
+ *
+ * 返回 `null` 表示从未写入过。
+ */
+export async function readKvVersion(ctx: AppContext, key: string): Promise<number | null> {
+  const db = ctx.db;
+  if (db.dialect === "sqlite") {
+    const row = db.sqlite!
+      .prepare("SELECT updated_at FROM jobs WHERE id = ?")
+      .get("kv:" + key) as { updated_at?: number } | undefined;
+    return typeof row?.updated_at === "number" ? row.updated_at : null;
+  }
+  const res = await db.pg!.query("SELECT updated_at FROM jobs WHERE id = $1", ["kv:" + key]);
+  const row = res.rows[0] as { updated_at?: number } | undefined;
+  return typeof row?.updated_at === "number" ? row.updated_at : null;
+}
+
+/** 版本冲突（HTTP 409）。调用方需重新读取后重放变更。 */
+export class StorageVersionConflictError extends Error {
+  readonly currentVersion: number | null;
+  constructor(currentVersion: number | null) {
+    super("写入冲突：数据已被其它写入方修改（currentVersion=" + String(currentVersion) + "）");
+    this.name = "StorageVersionConflictError";
+    this.currentVersion = currentVersion;
+  }
+  get statusCode(): number {
+    return 409;
+  }
+}
+
+/**
+ * 写入 KV 文档；`ifVersion` 给出时做乐观并发控制。
+ *
+ * 判定与写入**必须在同一个同步块内**（sqlite 下）或同一事务语义下（pg），
+ * 否则「检查完到写入前」仍有竞态窗口。这里采用「先读版本 → 比对 → 立刻写」，
+ * 在单进程 sqlite（同步 API）下是原子的；pg 下依赖 `updated_at` 的单调性，
+ * 最坏情况退化为原有的 last-write-wins，但不会比现状更差。
+ */
+async function writeKv(
+  ctx: AppContext,
+  key: string,
+  value: unknown,
+  ifVersion?: number,
+): Promise<void> {
   const db = ctx.db;
   const payload = JSON.stringify(value);
   const now = Date.now();
+
+  if (ifVersion !== undefined) {
+    const current = await readKvVersion(ctx, key);
+    if (current !== ifVersion) {
+      throw new StorageVersionConflictError(current);
+    }
+  }
+
   if (db.dialect === "sqlite") {
     db.sqlite!.prepare(
       "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,0,?,?) " +
@@ -506,6 +567,101 @@ async function writeKv(ctx: AppContext, key: string, value: unknown): Promise<vo
 /** 内容文件的 basename（用于类型分发） */
 function basename(path: string): string {
   return path.split("/").pop() ?? path;
+}
+
+/* ------------------------------------------------------------------ *
+ * 品牌资产文档（上传的 logo / favicon / ogImage）
+ *
+ * 上传走 HTTP 表单 → web 侧 base64 编码 → `PUT /api/storage` 落成 KV 文档。
+ * 这里只提供管理端清理所需的两个原语：列举与删除。
+ *
+ * 允许范围被收死在这一条目录 + 上传路由的命名形状里：
+ *  - 不提供通用 KV 删除——`kv:site-config`、`doc:` 下的任意内容文件
+ *    都可能是运营数据，误删一次就是整站导航消失；
+ *  - `[name]` GET 路由用同一份命名正则，所以不会出现「列表里有、访问不到」的分叉。
+ * ------------------------------------------------------------------ */
+export const ASSET_DOC_DIR = "src/navsphere/content/assets";
+
+/** 上传路由生成的资产文档名：`<kind>-<10 位内容哈希>.<位图扩展名>.json` */
+const ASSET_DOC_NAME_RE = /^(?:logo|favicon|ogImage)-[0-9a-f]{10}\.(?:png|jpe?g|webp|ico)\.json$/;
+
+/** 该路径是否是「允许管理的品牌资产文档」（删除/列举的唯一准入判定） */
+export function isAssetDocPath(path: string): boolean {
+  const norm = path.trim().replace(/^\/+/, "");
+  const prefix = ASSET_DOC_DIR + "/";
+  if (!norm.startsWith(prefix)) return false;
+  return ASSET_DOC_NAME_RE.test(norm.slice(prefix.length));
+}
+
+export interface AssetDocInfo {
+  /** 资产文档路径（含 .json），与上传返回值 / 存储键一一对应 */
+  path: string;
+  /** 对外访问名（`/api/site/asset/<name>`） */
+  name: string;
+  /** 文档字节数（base64 后的 JSON，用于展示占用） */
+  bytes: number;
+  updatedAt: number;
+}
+
+/**
+ * 列举已上传的资产文档（按最近更新倒序）。
+ *
+ * 直接查 jobs 表的 KV 行，不额外维护一份索引：索引与真实存储之间一旦分叉，
+ * 「删了列表项但文档还在」「列表为空却占着空间」这类问题就只能靠人工核对。
+ */
+export async function listAssetDocs(ctx: AppContext, limit = 500): Promise<AssetDocInfo[]> {
+  const cap = Math.min(Math.max(1, Math.floor(limit)), 1000);
+  const prefix = "kv:" + pathToKey(ASSET_DOC_DIR + "/");
+  type Row = { id: string; bytes: number | string | null; updated_at: number | string | null };
+  let rows: Row[];
+  if (ctx.db.dialect === "sqlite") {
+    rows = ctx.db.sqlite!
+      .prepare("SELECT id, length(payload) AS bytes, updated_at FROM jobs WHERE id LIKE ? ORDER BY updated_at DESC LIMIT ?")
+      .all(prefix + "%", cap) as Row[];
+  } else {
+    const res = await ctx.db.pg!.query(
+      "SELECT id, LENGTH(payload) AS bytes, updated_at FROM jobs WHERE id LIKE $1 ORDER BY updated_at DESC LIMIT $2",
+      [prefix + "%", cap],
+    );
+    rows = res.rows as Row[];
+  }
+  const out: AssetDocInfo[] = [];
+  for (const row of rows) {
+    const path = String(row.id).replace(/^kv:doc:/, "");
+    if (!isAssetDocPath(path)) continue;
+    out.push({
+      path,
+      name: path.slice(ASSET_DOC_DIR.length + 1).replace(/\.json$/, ""),
+      bytes: Number(row.bytes ?? 0),
+      updatedAt: Number(row.updated_at ?? 0),
+    });
+  }
+  return out;
+}
+
+/**
+ * 删除一份品牌资产文档。
+ *
+ * 只删 `doc:` 键；`kv:site-config` 这类结构化配置即使路径拼错也进不来。
+ * 返回 deleted=false 表示文档本来就不存在（路由据此回 404，而不是伪报成功）。
+ */
+export async function deleteAssetDoc(ctx: AppContext, path: string): Promise<{ deleted: boolean }> {
+  const norm = path.trim().replace(/^\/+/, "");
+  if (!isAssetDocPath(norm)) {
+    const err = new Error("只允许删除上传的品牌资产（src/navsphere/content/assets/<kind>-<hash>.<ext>.json）") as Error & { statusCode?: number };
+    err.statusCode = 400;
+    throw err;
+  }
+  const id = "kv:" + pathToKey(norm);
+  let count = 0;
+  if (ctx.db.dialect === "sqlite") {
+    const info = ctx.db.sqlite!.prepare("DELETE FROM jobs WHERE id = ?").run(id) as { changes?: number };
+    count = Number(info?.changes ?? 0);
+  } else {
+    const res = await ctx.db.pg!.query("DELETE FROM jobs WHERE id = $1", [id]);
+    count = Number(res.rowCount ?? 0);
+  }
+  return { deleted: count > 0 };
 }
 
 /**
@@ -532,7 +688,28 @@ export async function readStoragePath(ctx: AppContext, path: string): Promise<un
   return readKv(ctx, pathToKey(path));
 }
 
-export async function writeStoragePath(ctx: AppContext, path: string, content: string): Promise<{ ok: true; note: string }> {
+/**
+ * 读取某个内容路径的当前版本（仅 KV 类路径有版本概念）。
+ *
+ * 供 `GET /api/storage/version` 与写入前的乐观并发校验使用。
+ * 结构化路径（navigation.json / site.json / resource-metadata.json）走各自的
+ * 关系表，不在此列 —— 返回 null。
+ */
+export async function readStorageVersion(ctx: AppContext, path: string): Promise<number | null> {
+  const name = basename(path);
+  if (name === "navigation.json" || name === "site.json" || name === "resource-metadata.json") {
+    return null;
+  }
+  const key = name === "videos.json" ? "videos" : pathToKey(path);
+  return readKvVersion(ctx, key);
+}
+
+export async function writeStoragePath(
+  ctx: AppContext,
+  path: string,
+  content: string,
+  opts?: { ifVersion?: number },
+): Promise<{ ok: true; note: string; version?: number }> {
   const parsed = content.trim() ? JSON.parse(content) : {};
   if (basename(path) === "navigation.json") {
     const r = await writeNavigationData(ctx, parsed as NsNavigationData);
@@ -550,9 +727,11 @@ export async function writeStoragePath(ctx: AppContext, path: string, content: s
     return { ok: true, note: "资源元数据已更新" };
   }
   if (basename(path) === "videos.json") {
-    await writeVideosData(ctx, parsed);
-    return { ok: true, note: "视频导航数据已更新" };
+    await writeVideosData(ctx, parsed, opts?.ifVersion);
+    const version = await readKvVersion(ctx, "videos");
+    return { ok: true, note: "视频导航数据已更新", version: version ?? undefined };
   }
-  await writeKv(ctx, pathToKey(path), parsed);
-  return { ok: true, note: "内容文件已更新: " + basename(path) };
+  await writeKv(ctx, pathToKey(path), parsed, opts?.ifVersion);
+  const version = await readKvVersion(ctx, pathToKey(path));
+  return { ok: true, note: "内容文件已更新: " + basename(path), version: version ?? undefined };
 }

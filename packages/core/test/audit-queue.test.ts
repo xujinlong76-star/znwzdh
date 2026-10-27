@@ -215,3 +215,45 @@ describe("幂等提交", () => {
     expect(rerun.deduplicated).toBeUndefined();
   });
 });
+
+describe("取消与重试", () => {
+  it("取消 pending 任务后不再被领取", async () => {
+    const file = await tempFile();
+    const queue = await openAuditQueue(file, { newId: seqIds() });
+    const job = await queue.enqueue({ slug: "p", urls: ["https://a.com"] });
+    const canceled = await queue.cancel(job.id);
+    expect(canceled?.state).toBe("canceled");
+    expect(await queue.claim()).toBeNull();
+  });
+
+  it("已完成的任务不能被取消（避免把结果抹掉）", async () => {
+    const file = await tempFile();
+    const queue = await openAuditQueue(file, { newId: seqIds() });
+    const job = await queue.enqueue({ slug: "p", urls: ["https://a.com"] });
+    const claimed = await queue.claim();
+    await drainAuditJob(queue, claimed!, async () => ({ kind: "ok", status: 200 }), { batchSize: 5 });
+    expect(await queue.cancel(job.id)).toBeNull();
+    expect((await queue.get(job.id))?.state).toBe("done");
+  });
+
+  it("重试保留已有进度（续跑而不是重头），超过轮次上限则拒绝", async () => {
+    const file = await tempFile();
+    const queue = await openAuditQueue(file, { newId: seqIds() });
+    const job = await queue.enqueue({ slug: "p", urls: ["https://a.com", "https://b.com"] });
+    const claimed = await queue.claim();
+    claimed!.progress.cursor = 1;
+    claimed!.results[0] = { kind: "ok", status: 200 };
+    await queue.save(claimed!);
+    await queue.fail(job.id, "boom");
+
+    const retried = await queue.retry(job.id, 3);
+    expect(retried?.state).toBe("pending");
+    expect(retried?.progress.cursor).toBe(1);
+    expect(retried?.error).toBeUndefined();
+    // attempts 已为 1，重试后再次 claim → 2
+    expect((await queue.claim())?.attempt).toBe(2);
+
+    const exhausted = await queue.retry(job.id, 1);
+    expect(exhausted).toBeNull();
+  });
+});

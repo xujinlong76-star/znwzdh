@@ -815,6 +815,34 @@ export const pluginAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     },
   )
 
+  app.post(
+    "/api/plugins/url-health/jobs/:id/cancel",
+    { config: { scope: "write", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const params = request.params as { id?: string }
+      const id = params.id ? safeDecodeParam(params.id) : ""
+      const queue = await getAuditQueue()
+      const job = id ? await queue.cancel(id) : null
+      if (!job) return reply.code(404).send({ ok: false, error: "not_found", message: "任务不存在或已完成" })
+      return { ok: true, id: job.id, state: job.state }
+    },
+  )
+
+  app.post(
+    "/api/plugins/url-health/jobs/:id/retry",
+    { config: { scope: "write", rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      const params = request.params as { id?: string }
+      const id = params.id ? safeDecodeParam(params.id) : ""
+      const queue = await getAuditQueue()
+      const job = id ? await queue.retry(id) : null
+      if (!job) return reply.code(409).send({ ok: false, error: "not_retryable", message: "任务不可重试（已完成或超过轮次上限）" })
+      // 重试后立刻拉起消费，避免等下一次外部触发
+      void runAuditWorker(1)
+      return { ok: true, id: job.id, state: job.state, cursor: job.progress.cursor }
+    },
+  )
+
   app.get(
     "/api/plugins/url-health/jobs",
     { config: { scope: "read", rateLimit: { max: 60, timeWindow: "1 minute" } } },

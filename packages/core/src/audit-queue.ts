@@ -18,7 +18,7 @@ import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { ProbeOutcomeKind } from "./probe-policy.ts";
 
-export type AuditJobState = "pending" | "running" | "done" | "failed";
+export type AuditJobState = "pending" | "running" | "done" | "failed" | "canceled";
 
 export interface AuditJobResult {
   kind: ProbeOutcomeKind;
@@ -75,6 +75,13 @@ export interface AuditQueue {
   save(job: AuditJob): Promise<AuditJob>;
   finish(id: string): Promise<AuditJob | null>;
   fail(id: string, error: string): Promise<AuditJob | null>;
+  /** 取消：pending 直接置 canceled；running 也置 canceled（worker 下一批落盘时读到即停） */
+  cancel(id: string): Promise<AuditJob | null>;
+  /**
+   * 重试一个失败/取消的任务：重置为 pending，保留 cursor 与已测结果（续跑而不是重头）。
+   * 超过上限轮次则拒绝，返回 null——避免一个坏任务被无限重排。
+   */
+  retry(id: string, maxAttempts?: number): Promise<AuditJob | null>;
   get(id: string): Promise<AuditJob | null>;
   list(): Promise<AuditJob[]>;
   /** 把僵死的 running 任务重置为 pending，返回被回收的 id */
@@ -153,7 +160,7 @@ export async function openAuditQueue(
   function evictIfNeeded(): void {
     if (jobs.length <= opts.maxJobs) return;
     const removable = jobs
-      .filter((j) => j.state === "done" || j.state === "failed")
+      .filter((j) => j.state === "done" || j.state === "failed" || j.state === "canceled")
       .sort((a, b) => a.createdAt - b.createdAt);
     for (const job of removable) {
       if (jobs.length <= opts.maxJobs) break;
@@ -229,6 +236,26 @@ export async function openAuditQueue(
       return job;
     },
 
+    async cancel(id) {
+      const job = jobs.find((j) => j.id === id);
+      if (!job || job.state === "done") return null;
+      job.state = "canceled";
+      job.updatedAt = opts.now();
+      await persist();
+      return job;
+    },
+
+    async retry(id, maxAttempts = 3) {
+      const job = jobs.find((j) => j.id === id);
+      if (!job || (job.state !== "failed" && job.state !== "canceled")) return null;
+      if (job.attempt >= maxAttempts) return null;
+      job.state = "pending";
+      job.error = undefined;
+      job.updatedAt = opts.now();
+      await persist();
+      return job;
+    },
+
     async get(id) {
       return jobs.find((j) => j.id === id) ?? null;
     },
@@ -272,6 +299,8 @@ export async function drainAuditJob(
 
   while (job.progress.cursor < job.urls.length) {
     if (options.shouldStop?.()) break;
+    // 取消是「下一批生效」：不在单条探活中途打断（那会留下半个已发起的连接）
+    if (job.state === "canceled") break;
     const index = job.progress.cursor;
     const url = job.urls[index];
     if (!url) break;

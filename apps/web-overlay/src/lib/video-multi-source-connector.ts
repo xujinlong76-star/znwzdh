@@ -274,7 +274,7 @@ export class MultiSourceConnector {
 
     return {
       ok: true,
-      message: 'Webhook 处理成功且通过 AI 深度审核',
+      message: 'Webhook 处理成功，已通过规则初筛（关键词 / 时长 / 互动加权）',
       subItem,
       evaluation: evalResult,
     }

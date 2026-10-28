@@ -66,20 +66,21 @@ navhub_require_node() {
 // commit-tree 绕过（本仓库多会话并行，两种都真实发生过）；而「被服务端拒绝」
 // 发生在 push 这一刻，推送前的历史还能在本地处理，推送后再改就是重写。
 //
-// 第二段是「契约同源 + scope 显式 + 客户端模块图 + core 镜像同源」四枚便宜闸门
+// 第二段是「契约同源 + scope 显式 + 客户端模块图 + core 镜像同源 + 测试镜像配对」五枚便宜闸门
 // （scripts/prepush-gates.mjs）：它们原先只有 CI 才知道——改 core 不重生成、写路由漏写 scope，
 // pre-commit 的目录选测都覆盖不到；客户端图里的 node 内建更要等到 next build 之后的
 // check-bundle-budget 才以「首屏超预算」的形式暴露，根因还得人反推；core 镜像漂移在
-// 工作区里根本查不出来（2026-10-28：HEAD 红、工作区绿，因为修复没提交）。
+// 工作区里根本查不出来（2026-10-28：HEAD 红、工作区绿，因为修复没提交）；测试镜像漏提交
+// 也只有比对 HEAD 上两份 committed blob 才看得见，CI 那侧先跑 vendor-web 重建镜像，更看不见。
 // 前两枚在相关路径有未提交改动时会说明并跳过（不拿别人的半成品挡推送）；
-// 后两枚读 HEAD 的提交内容，与工作区脏不脏无关，所以恒跑。
+// 后三枚读 HEAD 的提交内容，与工作区脏不脏无关，所以恒跑。
 const prePush = `#!/bin/sh
 # NavHub Pre-push Hook（生成源：scripts/install-git-hooks.mjs）
 #
 # 1) 扫描「尚未存在于任何远程跟踪 ref 的对象」，超过 50 MiB 的 blob 直接拦下。
 #    已推送过的大文件不会重复报（它在远程 ref 的历史里，重写也救不回来）。
 # 2) 契约生成物同源 + 写路由 scope 显式 + 客户端模块图不引 node 内建 + core 镜像同源
-#    （scripts/prepush-gates.mjs；后两枚读 HEAD，不看工作区）。
+#    + 已提交测试镜像与 overlay 配对（scripts/prepush-gates.mjs；后三枚读 HEAD，不看工作区）。
 # 临时跳过：NAVHUB_SKIP_PREPUSH=1 git push ...（不推荐 —— 被 GitHub 拒绝时
 # 唯一的解法是重写历史，那比现在花十秒处理文件贵得多）
 

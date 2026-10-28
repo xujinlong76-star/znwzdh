@@ -21,6 +21,13 @@
  *     这枚带 `--baseline <merge-base>`：漂移如果在基线上就以同样根因红着，那是上游的账，
  *     本次推送发不出去既救不了它，还会逼人用 NAVHUB_SKIP_PREPUSH 整条绕过；所以打印警告
  *     放行，新引入的漂移照拦。CI 不带 baseline，那侧继续严格判红。
+ *   - 已提交的测试镜像与 overlay 同源（本文件内现算，不读工作区）：
+ *     `apps/web/test/**` 是**少数被跟踪的 vendored 副本**，正常由 vendor-web/check-web-overlay
+ *     按工作区比对。2026-10-28 连着出现两次「只提交 overlay 侧守卫、漏提交镜像」
+ *     （`10e38d3a` mobile-nav、`d7cf72d6` sync-health-card），HEAD 上两份副本互相矛盾；
+ *     CI 因为两个测试 job 都先 `node scripts/vendor-web.mjs` 重建镜像而**看不见**这层漂移，
+ *     受害的是「不 vendor 直接 pnpm test」的口径（新克隆、IDE）。同 core 镜像那枚的道理：
+ *     只有读提交内容能在这个窗口里说真话，所以 baseline 语义也照搬。
  *
  * 为什么不无条件跑前两枚：本仓库长期多会话并行，工作区里常有别人未提交的半成品。
  * 这两枚检查的是**工作区**，而推送出去的是**提交**。两者不一致时跑出来的红
@@ -43,6 +50,12 @@ const CONTRACT_PATHS = [
 ];
 
 const SCOPE_PATHS = ["apps/api/src", "apps/api/test/route-policy.test.ts"];
+
+/** 受跟踪的测试镜像两侧前缀：同名文件必须逐字节同源（committed blob 相等）。 */
+const MIRROR_SIDES = {
+  web: "apps/web/test/",
+  overlay: "apps/web-overlay/test/",
+};
 
 /**
  * 每枚闸门的执行计划。dirty = 相关路径存在未提交改动（工作区 ≠ HEAD）。
@@ -79,7 +92,40 @@ export function planGates({ contractDirty = false, scopeDirty = false } = {}) {
       run: true,
       skipReason: "",
     },
+    {
+      id: "test-mirror-pairs",
+      title: "已提交的测试镜像与 overlay 同源",
+      run: true,
+      skipReason: "",
+    },
   ];
+}
+
+/**
+ * 纯函数：从 `git ls-tree` 解析出的条目里挑出「两侧同名受跟踪、但 committed blob 不同」的文件名。
+ *
+ * 只算两侧都存在的情况：
+ *   - 只有 overlay 侧有（镜像还没建）不是红灯，root vitest 跑不到它，是覆盖损失；
+ *   - 只有 web 侧有（历史上只在底座里写的测试）同理不管。
+ * 返回排序后的相对名数组，调用方负责与 baseline 求差集。
+ */
+export function pairMirrorDrift(entries) {
+  const sides = { web: new Map(), overlay: new Map() };
+  for (const entry of entries) {
+    for (const side of ["web", "overlay"]) {
+      const prefix = MIRROR_SIDES[side];
+      if (entry.path.startsWith(prefix)) {
+        sides[side].set(entry.path.slice(prefix.length), entry.sha);
+        break;
+      }
+    }
+  }
+  const drift = [];
+  for (const [name, sha] of sides.web) {
+    const other = sides.overlay.get(name);
+    if (other !== undefined && other !== sha) drift.push(name);
+  }
+  return drift.sort();
 }
 
 function isDirty(paths) {
@@ -141,11 +187,65 @@ function runCoreMirrorGate() {
   runNode(args);
 }
 
+/** 读某个提交上两侧 test 目录的 committed blob 清单（不碰工作区）。 */
+function lsTreeMirrorEntries(ref) {
+  const out = execFileSync(
+    "git",
+    [
+      "ls-tree",
+      "-r",
+      ref,
+      "--format=%(objectname) %(path)",
+      "--",
+      MIRROR_SIDES.web,
+      MIRROR_SIDES.overlay,
+    ],
+    { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] },
+  );
+  return out
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const sp = line.indexOf(" ");
+      return { sha: line.slice(0, sp), path: line.slice(sp + 1) };
+    });
+}
+
+function runTestMirrorPairGate() {
+  const atHead = pairMirrorDrift(lsTreeMirrorEntries("HEAD"));
+  const baseline = upstreamBaseline();
+  const atBase = baseline === null ? [] : pairMirrorDrift(lsTreeMirrorEntries(baseline));
+  const known = new Set(atBase);
+  const fresh = atHead.filter((name) => !known.has(name));
+  const inherited = atHead.length - fresh.length;
+
+  if (inherited > 0) {
+    console.log(
+      "[pre-push-gates] ⚠️ " +
+        inherited +
+        " 份已提交测试镜像在基线上就已经不同源，不是本次推送引入的，放行：" +
+        atHead
+          .filter((name) => known.has(name))
+          .map((n) => "apps/web/test/" + n)
+          .join(" / "),
+    );
+  }
+  if (fresh.length > 0) {
+    throw new Error(
+      fresh.length +
+        " 份测试镜像本次推送后两侧不同源：" +
+        fresh.map((n) => "apps/web/test/" + n + " ≠ apps/web-overlay/test/" + n).join(" / ") +
+        "（HEAD 上的 committed blob 不等；root vitest 跑的是 apps/web/test 那份）",
+    );
+  }
+}
+
 const RUNNERS = {
   "rest-contracts": runContractGate,
   "scope-explicit": runScopeGate,
   "client-node-imports": runClientGraphGate,
   "core-mirrors": runCoreMirrorGate,
+  "test-mirror-pairs": runTestMirrorPairGate,
 };
 
 const FIX_HINTS = {
@@ -155,6 +255,8 @@ const FIX_HINTS = {
     "修复：用到 node 内建的逻辑留在服务端（route handler / Server Component），客户端只消费结果；参考 0e720839 的签名下沉做法",
   "core-mirrors":
     "修复：node scripts/sync-core-mirrors.mjs 重新生成镜像，并把 core 事实源与两份镜像一起提交（只改事实源不重生成 = 前端在跑旧算法）",
+  "test-mirror-pairs":
+    "修复：node scripts/vendor-web.mjs 重生成 apps/web/test 那份，然后把 overlay 与镜像**同批提交**（只提交 overlay 侧 = HEAD 上两份守卫互相矛盾，CI 因先跑 vendor-web 看不见）",
 };
 
 /**

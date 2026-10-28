@@ -565,24 +565,59 @@ async function writeKv(
   const payload = JSON.stringify(value);
   const now = Date.now();
 
+  /**
+   * 乐观并发为什么必须写成**数据库层的条件更新**，不能在应用层「先读再写」：
+   *
+   * 原来的实现是 `const current = await readKvVersion(...)` → 比对 → 写入。
+   * 这三步之间有 await，窗口是敞开的。sqlite 驱动全是同步调用，
+   * 微任务排队让窗口实际关着（实测 12 轮并发全部 A=200/B=409）；
+   * 但 pg 驱动是真异步网络往返，两家写入方会同时通过比对，
+   * 后写的那次把前一次悄悄覆盖 —— 正是 ifVersion 要防的丢失更新。
+   *
+   * 所以 sqlite / pg 都走「UPDATE ... WHERE updated_at = 期望值 + 判断受影响行数」：
+   * 比对与写入在同一条语句里，由数据库保证原子性。
+   *
+   * 同时把 `updated_at` 改成 `max(旧值 + 1, now)`：
+   * 版本号就是 updated_at，若两次写入落在同一毫秒，版本会相同，
+   * 第三方拿着这个版本号仍能通过比对 —— 那是个 1ms 宽的同版本窗口。
+   * 取 max 后版本**严格单调递增**，客户端可以真的依赖「版本一定变大」。
+   */
+  const id = "kv:" + key;
+
   if (ifVersion !== undefined) {
-    const current = await readKvVersion(ctx, key);
-    if (current !== ifVersion) {
-      throw new StorageVersionConflictError(current);
+    if (db.dialect === "sqlite") {
+      // node:sqlite 的 run() 返回类型是 unknown（不同版本签名不一致），只取 changes
+      const info = db.sqlite!.prepare(
+        "UPDATE jobs SET payload = ?, updated_at = MAX(updated_at + 1, ?) WHERE id = ? AND updated_at = ?",
+      ).run(payload, now, id, ifVersion) as { changes?: number | bigint };
+      if (Number(info.changes ?? 0) === 0) {
+        throw new StorageVersionConflictError(await readKvVersion(ctx, key));
+      }
+      return;
     }
+    const res = await db.pg!.query(
+      "UPDATE jobs SET payload = $1, updated_at = GREATEST(updated_at + 1, $2) WHERE id = $3 AND updated_at = $4",
+      [payload, now, id, ifVersion],
+    );
+    if ((res.rowCount ?? 0) === 0) {
+      throw new StorageVersionConflictError(await readKvVersion(ctx, key));
+    }
+    return;
   }
 
   if (db.dialect === "sqlite") {
     db.sqlite!.prepare(
       "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES (?,?,?,?,0,?,?) " +
-      "ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at",
-    ).run("kv:" + key, "kv", payload, "done", now, now);
+      "ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, " +
+      "updated_at = MAX(jobs.updated_at + 1, excluded.updated_at)",
+    ).run(id, "kv", payload, "done", now, now);
     return;
   }
   await db.pg!.query(
     "INSERT INTO jobs (id, kind, payload, status, attempts, created_at, updated_at) VALUES ($1,$2,$3,$4,0,$5,$6) " +
-    "ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at",
-    ["kv:" + key, "kv", payload, "done", now, now],
+    "ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, " +
+    "updated_at = GREATEST(jobs.updated_at + 1, EXCLUDED.updated_at)",
+    [id, "kv", payload, "done", now, now],
   );
 }
 

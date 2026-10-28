@@ -38,10 +38,17 @@
  * 预算来源：`scripts/bundle-budget.json`。改预算必须同时更新提案文档里的目标值，
  * 否则「预算」会变成给现状背书的数字。
  *
- * 为什么 --raise 要卡「提交可定位 + 工作区干净 + 产物不过期」三条：预算是给未来
+ * 为什么 --raise 要卡「提交可定位 + 首屏源码干净 + 产物不过期」三条：预算是给未来
  * 提交定的线，而 CI 只认提交。拿未提交的工作区产物定基线，等于把「本地恰好绿」写进
  * 契约——下一轮 CI 照样红，且没人能复现那个数字是哪棵树产出来的。三条里任何一条
  * 不满足都以退出码 2 拒绝写入，并把缺的那条说清楚（这是刻意设计的不方便）。
+ *
+ * 「首屏源码干净」而不是「工作区干净」：本仓库是多会话共用的同一个工作区，实测
+ * 一次提交期就有 287 个脏文件，其中只有约 77 个落在能改变首屏产物的路径里。用全仓
+ * 计数当判据的后果不是更安全，而是 --raise 在这里永远不可用——一条永远满足不了的
+ * 前置等于没有前置，人最终会绕过它手改预算文件，把这条线真正的规矩（必须写明原因、
+ * 必须来自真实产物）一起丢掉。所以判据按 BUNDLE_SOURCE_PATHS 收窄，其余脏文件照样
+ * 报数，只是不挡路。
  */
 import { readFileSync, statSync, existsSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -188,6 +195,27 @@ function collectTurbopack() {
 // 定基线用的三件事：这份数属于哪棵树、过没过期、建议值怎么算
 // ---------------------------------------------------------------------------
 
+/**
+ * 能改变首屏产物的路径集。判据只有两条：会不会进入 web 的构建输入、会不会换掉依赖版本。
+ *   - apps/web/src        Next 的 app 路由树（少一个文件就多一条路由，路由集会变）；
+ *   - apps/web/next.config.js 打包配置（transpilePackages、实验开关直接影响 chunk）；
+ *   - apps/web/package.json / packages/core/package.json 声明与入口解析；
+ *   - apps/web-overlay/src 覆盖层事实源，build 前会被 apply 进 apps/web/src；
+ *   - packages/core/src  纯算法（含镜像），前端直接 import；
+ *   - pnpm-lock.yaml     锁住 React/Next 版本，版本一动首屏字节数就动。
+ * 刻意排除：docs/、scripts/、tmp/、deliverables/、apps/api、packages/store 与
+ * packages/ai（服务端与工具链，不参与浏览器首屏）。
+ */
+const BUNDLE_SOURCE_PATHS = [
+  "apps/web/src",
+  "apps/web/next.config.js",
+  "apps/web/package.json",
+  "apps/web-overlay/src",
+  "packages/core/src",
+  "packages/core/package.json",
+  "pnpm-lock.yaml",
+];
+
 /** git 只读查询；仓库外或 git 不可用返回 null，让调用方按「无法定位」处理 */
 function gitOut(args) {
   const res = spawnSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
@@ -195,17 +223,31 @@ function gitOut(args) {
 }
 
 /**
- * 产物的出处 = sha + 工作区脏文件数。
+ * 产物的出处 = sha + 工作区脏文件数（全仓计数与「能改变首屏的那部分」分开算）。
  * 多会话并行时「这份 .next 是哪棵树产的」直接决定建议基线能不能复现，
  * 所以它必须和字节数一起报出来，而不是让人自己猜。
  */
 function treeProvenance() {
   const head = gitOut(["rev-parse", "--short", "HEAD"]);
-  if (head === null) return { sha: null, dirty: null };
+  if (head === null) return { sha: null, dirty: null, bundleDirty: null, bundleDirtyPaths: [] };
+  const count = (out) => (out === null ? null : out.split("\n").filter((l) => l.trim() !== "").length);
   const status = gitOut(["status", "--porcelain"]);
+  // -uall：默认会把整目录折成一行，「脏 1 个」实际可能是 200 个文件。
+  // 判据要点名到具体源文件，折行就没法说清"到底是哪几个改动挡住定基线"。
+  const bundleStatus = gitOut(["status", "--porcelain", "--untracked-files=all", "--", ...BUNDLE_SOURCE_PATHS]);
+  // porcelain 每行形如 ` M path` / `?? path/`；重命名是 `R  old -> new`，取新路径
+  const bundleDirtyPaths =
+    bundleStatus === null
+      ? []
+      : bundleStatus
+          .split("\n")
+          .filter((l) => l.trim() !== "")
+          .map((l) => (l.includes(" -> ") ? l.slice(3).split(" -> ")[1] : l.slice(3).trim()));
   return {
     sha: head.trim() || null,
-    dirty: status === null ? null : status.split("\n").filter((l) => l.trim() !== "").length,
+    dirty: count(status),
+    bundleDirty: count(bundleStatus),
+    bundleDirtyPaths,
   };
 }
 
@@ -220,9 +262,13 @@ function builtAtMs(bundler) {
 }
 
 /**
- * 源码侧最新 mtime：只走取数真正依赖的那两棵树 + 两个 package.json + 预算文件本身。
+ * 源码侧最新 mtime：走 BUNDLE_SOURCE_PATHS 这一个集合。
  * 不做全仓扫描——「产物比源码旧」这条判定要的是「重跑 build 会不会得到不同的数」，
  * README 改一次不该让人以为基线不可信。
+ *
+ * 必须和脏树判据用**同一个集合**：两处口径不一致时，会出现「判据 A 点名这个文件挡路、
+ * 判据 B 却说它影响不了产物」的自相矛盾，而覆盖层恰恰是最常被改的那部分。
+ * 预算文件本身不在集合里——它改变的是阈值不是产物，写完预算不该把产物判成过期。
  */
 function newestSourceMs() {
   let max = 0;
@@ -232,6 +278,13 @@ function newestSourceMs() {
       if (m > max) max = m;
     } catch {
       // 目录/文件不存在（例如 fixture 里没有 packages/core）：跳过，不是错误
+    }
+  };
+  const isDir = (p) => {
+    try {
+      return statSync(p).isDirectory();
+    } catch {
+      return false;
     }
   };
   const walk = (dir, depth) => {
@@ -251,11 +304,11 @@ function newestSourceMs() {
       touch(p);
     }
   };
-  walk(join(root, "apps", "web", "src"), 12);
-  walk(join(root, "packages", "core", "src"), 12);
-  touch(join(root, "apps", "web", "package.json"));
-  touch(join(root, "packages", "core", "package.json"));
-  touch(budgetPath);
+  for (const rel of BUNDLE_SOURCE_PATHS) {
+    const abs = join(root, rel);
+    if (isDir(abs)) walk(abs, 12);
+    else touch(abs);
+  }
   return max;
 }
 
@@ -322,11 +375,23 @@ function provenanceLines() {
   const built = builtAtMs(collected.bundler);
   const source = newestSourceMs();
   const stale = built !== null && source > built;
+  const dirtyText =
+    prov.dirty === null
+      ? "工作区状态未知"
+      : prov.bundleDirty === 0
+        ? prov.dirty === 0
+          ? "工作区干净"
+          : `首屏源码干净（全仓另有 ${prov.dirty} 个与产物无关的改动）`
+        : `首屏源码脏 ${prov.bundleDirty} 个文件（全仓 ${prov.dirty} 个）`;
   const lines = [
-    `[bundle] 产物出处：提交 ${prov.sha ?? "（不在 git 仓库里，无法定位）"} · 工作区${
-      prov.dirty === null ? "状态未知" : prov.dirty === 0 ? "干净" : `脏 ${prov.dirty} 个文件`
-    } · 构建时间 ${iso(built)}`,
+    `[bundle] 产物出处：提交 ${prov.sha ?? "（不在 git 仓库里，无法定位）"} · ${dirtyText} · 构建时间 ${iso(built)}`,
   ];
+  if (prov.bundleDirty > 0) {
+    const shown = prov.bundleDirtyPaths.slice(0, 8).join("、");
+    lines.push(
+      `[bundle] 挡路的是这些：${shown}${prov.bundleDirtyPaths.length > 8 ? ` 等 ${prov.bundleDirtyPaths.length} 个` : ""}`,
+    );
+  }
   if (stale) {
     lines.push(
       `[bundle] ⚠️ 产物比源码旧（最新源文件 ${iso(source)}）：这份数不是当前树产出来的，别拿它定基线，先重跑 build`,
@@ -345,7 +410,15 @@ function runReport(meta) {
           distDir,
           bundler: collected.bundler,
           mode: "report",
-          provenance: { sha: meta.prov.sha, dirty: meta.prov.dirty, builtAt: meta.built, newestSourceAt: meta.source, stale: meta.stale },
+          provenance: {
+            sha: meta.prov.sha,
+            dirty: meta.prov.dirty,
+            bundleDirty: meta.prov.bundleDirty,
+            bundleDirtyPaths: meta.prov.bundleDirtyPaths,
+            builtAt: meta.built,
+            newestSourceAt: meta.source,
+            stale: meta.stale,
+          },
           routes: rows,
           violations,
           report: d,
@@ -387,9 +460,11 @@ function runReport(meta) {
 }
 
 /**
- * 写预算。三条硬前置（提交可定位 / 工作区干净 / 产物不过期）任一不满足就退出码 2：
+ * 写预算。三条硬前置（提交可定位 / 首屏源码干净 / 产物不过期）任一不满足就退出码 2：
  * 预算是给未来提交定的线，CI 只认提交，拿本地恰好绿的产物定基线等于把不可复现的数字
  * 写进契约。「不允许为了过门禁上调」这条规矩，靠的就是这里的不方便。
+ * 脏树判据只看 BUNDLE_SOURCE_PATHS——全仓计数在多会话工作区里永远非零，
+ * 那样这条前置会因为无法达成而被整体绕过，反而丢掉它真正要守的两样东西。
  */
 function runRaise(meta) {
   const refuse = (msg) => {
@@ -399,11 +474,14 @@ function runRaise(meta) {
   const reason = flagValue("--reason");
   if (reason === "") refuse('必须带 --reason="..."：没写明原因的上调一律不认');
   if (meta.prov.sha === null) refuse("当前目录不在 git 仓库里，无法把这份数钉到某个提交");
-  if (meta.prov.dirty === null) refuse("git status 查询失败，无法确认工作区干净");
-  if (meta.prov.dirty > 0) {
+  if (meta.prov.bundleDirty === null) refuse("git status 查询失败，无法确认首屏源码干净");
+  if (meta.prov.bundleDirty > 0) {
+    const shown = meta.prov.bundleDirtyPaths.slice(0, 8).join("、");
     refuse(
-      `工作区有 ${meta.prov.dirty} 个未提交改动，这份产物不是提交 ${meta.prov.sha} 做出来的。` +
-        "先提交代码改动、再重新 build，然后才谈得上可复现的基线",
+      `首屏源码有 ${meta.prov.bundleDirty} 个未提交改动（${shown}${
+        meta.prov.bundleDirtyPaths.length > 8 ? " 等" : ""
+      }），这份产物不属于提交 ${meta.prov.sha}。` +
+        "先提交这些改动、再重新 build，然后才谈得上可复现的基线",
     );
   }
   if (meta.built === null) refuse("拿不到构建产物的时间戳，无法判断它是否过期");

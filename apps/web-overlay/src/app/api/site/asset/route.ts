@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { createHash } from 'node:crypto'
 import { verifyAdminSession } from '@/lib/auth'
 import { commitFile, invalidateContentCache } from '@/lib/github'
+import { prepareSiteAsset, SiteAssetValidationError, validateSiteAssetUpload } from '@/lib/site-assets'
 
 export const runtime = 'nodejs'
 
@@ -22,17 +22,6 @@ export const runtime = 'nodejs'
 
 const ASSET_DIR = 'src/navsphere/content/assets'
 
-const ALLOWED: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-  'image/x-icon': 'ico',
-  'image/vnd.microsoft.icon': 'ico',
-}
-
-const MAX_BYTES: Record<string, number> = { logo: 512 * 1024, favicon: 128 * 1024, ogImage: 1024 * 1024 }
-const KINDS = Object.keys(MAX_BYTES)
-
 const NO_STORE = { 'cache-control': 'no-store' }
 
 export async function POST(request: Request) {
@@ -48,38 +37,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '需要 multipart 表单' }, { status: 400, headers: NO_STORE })
     }
     const kind = String(form.get('kind') ?? '')
-    if (!KINDS.includes(kind)) {
-      return NextResponse.json(
-        { error: '未知的图片类型，允许：' + KINDS.join('/') },
-        { status: 400, headers: NO_STORE },
-      )
-    }
     const file = form.get('file')
     if (!(file instanceof File)) {
       return NextResponse.json({ error: '缺少 file 字段' }, { status: 400, headers: NO_STORE })
     }
-    const ext = ALLOWED[file.type]
-    if (!ext) {
-      return NextResponse.json(
-        { error: '只接受 PNG / JPEG / WebP / ICO（不接受 SVG：同域渲染的矢量图可携带脚本）' },
-        { status: 415, headers: NO_STORE },
-      )
-    }
-    if (file.size > MAX_BYTES[kind]) {
-      return NextResponse.json(
-        { error: `文件过大（${kind} 上限 ${Math.round(MAX_BYTES[kind] / 1024)} KB，当前 ${Math.round(file.size / 1024)} KB）` },
-        { status: 413, headers: NO_STORE },
-      )
-    }
-
-    const buf = Buffer.from(await file.arrayBuffer())
-    const hash = createHash('sha256').update(buf).digest('hex').slice(0, 10)
-    const name = kind + '-' + hash + '.' + ext
+    validateSiteAssetUpload(kind, file.type, file.size)
+    const asset = await prepareSiteAsset(kind, file.type, Buffer.from(await file.arrayBuffer()))
+    const { buffer, mime, bytes, sha256, width, height } = asset
+    const name = kind + '-' + sha256.slice(0, 10) + '.' + asset.ext
     const path = ASSET_DIR + '/' + name + '.json'
 
     await commitFile(
       path,
-      JSON.stringify({ encoding: 'base64', mime: file.type, bytes: buf.byteLength, data: buf.toString('base64') }),
+      JSON.stringify({ encoding: 'base64', kind, mime, bytes, sha256, width, height, data: buffer.toString('base64') }),
       'Upload site asset: ' + name,
       authCheck.githubToken || undefined,
     )
@@ -87,10 +57,13 @@ export async function POST(request: Request) {
     invalidateContentCache(path)
 
     return NextResponse.json(
-      { success: true, url: '/api/site/asset/' + name, bytes: buf.byteLength, mime: file.type, kind },
+      { success: true, url: '/api/site/asset/' + name, bytes, mime, kind, sha256, width, height },
       { headers: NO_STORE },
     )
   } catch (error) {
+    if (error instanceof SiteAssetValidationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status, headers: NO_STORE })
+    }
     console.error('Failed to upload site asset:', error)
     return NextResponse.json(
       { error: '上传失败：' + (error instanceof Error ? error.message : String(error)) },

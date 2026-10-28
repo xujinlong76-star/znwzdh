@@ -74,7 +74,52 @@ export async function saveSiteSettings(patch: SiteSettingsPatch, signal?: AbortS
   return { settings: normalizeSettings(body?.settings), degraded: false, missing: false }
 }
 
-export type AssetKind = 'logo' | 'favicon' | 'ogImage'
+export type AssetKind = 'logo' | 'favicon' | 'ogImage' | 'appleTouchIcon' | 'pwaIcon192' | 'pwaIcon512' | 'pwaMaskable512'
+
+export interface SiteAsset {
+  path: string
+  name: string
+  bytes: number
+  updatedAt: number
+  createdAt: number
+  kind: string
+  mime: string | null
+  sha256: string | null
+  width: number | null
+  height: number | null
+  references: string[]
+}
+
+export async function listSiteAssets(signal?: AbortSignal): Promise<SiteAsset[]> {
+  const res = await fetch('/api/hub/storage/list?limit=500', { cache: 'no-store', signal })
+  if (!res.ok) throw new SiteSettingsError(`读取资产清单失败 (HTTP ${res.status})`)
+  const body = (await res.json()) as { assets?: SiteAsset[] }
+  if (!Array.isArray(body.assets) || body.assets.some((asset) =>
+    typeof asset?.path !== 'string' || typeof asset?.name !== 'string' ||
+    !Array.isArray(asset.references) || asset.references.some((reference) => typeof reference !== 'string'))) {
+    throw new SiteSettingsError('资产清单缺少有效引用信息，请检查中枢版本；已禁止清理')
+  }
+  return body.assets
+}
+
+export async function deleteSiteAsset(path: string, signal?: AbortSignal): Promise<void> {
+  const res = await fetch('/api/hub/storage', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+    signal,
+  })
+  if (!res.ok) {
+    let message = `删除资产失败 (HTTP ${res.status})`
+    try {
+      const body = (await res.json()) as { error?: string; detail?: string }
+      message = body.detail || body.error || message
+    } catch {
+      // 保留 HTTP 状态错误
+    }
+    throw new SiteSettingsError(message)
+  }
+}
 
 export async function uploadSiteAsset(
   kind: AssetKind,

@@ -36,6 +36,10 @@ function isEmptySettings(s: ReturnType<typeof normalizeSettings>): boolean {
     !s.basic.ogImage &&
     !s.appearance.logo &&
     !s.appearance.favicon &&
+    !s.appearance.appleTouchIcon &&
+    !s.appearance.pwaIcon192 &&
+    !s.appearance.pwaIcon512 &&
+    !s.appearance.pwaMaskable512 &&
     !s.appearance.themeColor &&
     !s.footer?.text &&
     !s.footer?.icp
@@ -123,7 +127,7 @@ export async function POST(request: Request) {
       {
         success: true,
         settings: next,
-        note: '已保存。本页立即反映新值；前台按数据缓存周期刷新（默认最多 60 秒，可用 NAVHUB_STORAGE_REVALIDATE_S=0 改为实时）。',
+        note: '已保存。前台重新加载时读取最新品牌配置；已打开的页面需刷新。',
       },
       { headers: NO_STORE },
     )
@@ -131,7 +135,9 @@ export async function POST(request: Request) {
     console.error('Failed to save site data:', error)
     // 中枢不可达与代码缺陷要分开报：前者管理员能自己处置（看状态页/重试），
     // 返回 503 也避免页面把「连不上」显示成一个看不懂的 500。
-    const status = error instanceof StorageError && error.unreachable ? 503 : 500
+    const status = error instanceof StorageError
+      ? error.unreachable ? 503 : error.status === 409 ? 409 : 500
+      : 500
     return NextResponse.json(
       {
         error:

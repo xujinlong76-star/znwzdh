@@ -23,6 +23,12 @@ export interface SiteSettingsExtra {
   appearance: {
     /** 品牌主色，进 PWA manifest 的 theme_color */
     themeColor?: string
+    /** iOS「添加到主屏幕」图标；缺省用内置 180×180 图 */
+    appleTouchIcon?: string
+    /** 仅接受同 kind 上传、通过尺寸校验的站内 PNG；空值回退内置图 */
+    pwaIcon192?: string
+    pwaIcon512?: string
+    pwaMaskable512?: string
   }
   footer?: {
     text?: string
@@ -34,8 +40,16 @@ export type SiteSettings = SiteConfig & SiteSettingsExtra
 
 /** 表单每个 tab 提交的“部分更新”形状（字段级 null = 显式清空） */
 export type SiteSettingsPatch = {
-  basic?: Partial<SiteSettings['basic'] & { ogImage?: string | null }>
-  appearance?: Partial<SiteSettings['appearance'] & { themeColor?: string | null }>
+  basic?: Partial<Omit<SiteSettings['basic'], 'ogImage'>> & { ogImage?: string | null }
+  appearance?: Partial<Omit<SiteSettings['appearance'], 'logo' | 'favicon' | 'appleTouchIcon' | PwaAssetKind | 'themeColor'>> & {
+    logo?: string | null
+    favicon?: string | null
+    appleTouchIcon?: string | null
+    pwaIcon192?: string | null
+    pwaIcon512?: string | null
+    pwaMaskable512?: string | null
+    themeColor?: string | null
+  }
   navigation?: Partial<SiteSettings['navigation']>
   footer?: { text?: string | null; icp?: string | null }
 }
@@ -62,6 +76,16 @@ const assetField = z
     message: '必须是 http(s) 绝对地址或站内相对路径',
   })
 
+export type PwaAssetKind = 'pwaIcon192' | 'pwaIcon512' | 'pwaMaskable512'
+
+/** 与上传端内容寻址命名一致；不接受外链、任意站内图、跨 kind、query 或 hash。 */
+export function pwaAssetField(kind: PwaAssetKind) {
+  const uploadedPng = new RegExp(`^/api/site/asset/${kind}-[0-9a-f]{10}\\.png$`)
+  return z.string().trim().max(500).refine((v) => v === '' || uploadedPng.test(v), {
+    message: `请上传对应的 ${kind} PNG，或清空以使用默认图标`,
+  })
+}
+
 const hexColor = z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, { message: '必须是 #RRGGBB' })
 
 /** 空串在这里不是「值」，是「没设过」——统一由 normalizeSettings 折叠成 undefined */
@@ -79,6 +103,10 @@ export const siteSettingsPatchSchema = z.object({
     .object({
       logo: assetField.nullable().optional(),
       favicon: assetField.nullable().optional(),
+      appleTouchIcon: assetField.nullable().optional(),
+      pwaIcon192: pwaAssetField('pwaIcon192').nullable().optional(),
+      pwaIcon512: pwaAssetField('pwaIcon512').nullable().optional(),
+      pwaMaskable512: pwaAssetField('pwaMaskable512').nullable().optional(),
       theme: z.enum(['light', 'dark', 'system']).optional(),
       themeColor: hexColor.nullable().optional(),
     })
@@ -121,6 +149,11 @@ function asset(value: unknown): string | undefined {
   return ASSET_RE.test(raw) ? raw : undefined
 }
 
+function pwaAsset(value: unknown, kind: PwaAssetKind): string {
+  const parsed = pwaAssetField(kind).safeParse(value)
+  return parsed.success ? parsed.data : ''
+}
+
 /**
  * 把库里拿到的原始 JSON 收敛成可用形状，**任何情况下都不抛**。
  *
@@ -154,6 +187,10 @@ export function normalizeSettings(raw: unknown): SiteSettings {
     appearance: {
       logo: asset(appearance.logo) ?? '',
       favicon: asset(appearance.favicon) ?? '',
+      appleTouchIcon: asset(appearance.appleTouchIcon) ?? '',
+      pwaIcon192: pwaAsset(appearance.pwaIcon192, 'pwaIcon192'),
+      pwaIcon512: pwaAsset(appearance.pwaIcon512, 'pwaIcon512'),
+      pwaMaskable512: pwaAsset(appearance.pwaMaskable512, 'pwaMaskable512'),
       theme: theme === 'light' || theme === 'dark' || theme === 'system' ? theme : 'system',
       ...(themeColor ? { themeColor } : {}),
     },

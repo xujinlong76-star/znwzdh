@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/registry/new-york/ui/dialog'
 import { Button } from '@/registry/new-york/ui/button'
 import { ScanText, Copy, Check, Play, Code2, Sparkles, RefreshCw, Cpu } from 'lucide-react'
+import { copyText } from '@/lib/clipboard'
 import {
   extractCodeTextFromImageData,
   type CodeOCRExtractionResult,

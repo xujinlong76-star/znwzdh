@@ -142,7 +142,7 @@ export function VideoSandboxRunnerPane({ initialCode }: VideoSandboxRunnerPanePr
         <div className="flex-1 p-2.5 overflow-y-auto font-mono text-[11px] leading-relaxed">
           {previewTab === 'console' ? (
             !executionResult ? (
-              <p className="text-zinc-500">// 点击上方“运行工程”执行代码并查看输出日志</p>
+              <p className="text-zinc-500">{'// 点击上方“运行工程”执行代码并查看输出日志'}</p>
             ) : executionResult.success ? (
               <div className="space-y-1">
                 {executionResult.logs.map((log, idx) => (

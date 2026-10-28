@@ -12,7 +12,7 @@ const META_STORE = 'offline_meta'
 const LS_FALLBACK_KEY = 'devops_video_offline_cache_v1'
 
 const memoryStore = new Map<string, NavigationSubItem>()
-let memoryLastSynced: string | null = null
+const memoryLastSynced: string | null = null
 
 function getIndexedDB(): IDBFactory | null {
   if (typeof window !== 'undefined' && window.indexedDB) {

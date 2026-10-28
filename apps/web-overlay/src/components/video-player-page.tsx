@@ -386,17 +386,17 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
 
     const currentIndex = allVideos.findIndex(v => v.id === selectedVideo?.id)
 
-    const handleNextVideo = () => {
+    const handleNextVideo = useCallback(() => {
         if (currentIndex >= 0 && currentIndex < allVideos.length - 1) {
             setSelectedVideo(allVideos[currentIndex + 1])
         }
-    }
+    }, [currentIndex, allVideos])
 
-    const handlePrevVideo = () => {
+    const handlePrevVideo = useCallback(() => {
         if (currentIndex > 0) {
             setSelectedVideo(allVideos[currentIndex - 1])
         }
-    }
+    }, [currentIndex, allVideos])
 
     const {
         resumePrompt,
@@ -462,7 +462,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                 handlePrevVideo()
                 break
         }
-    }, [handleNextVideo, handlePrevVideo])
+    }, [handleNextVideo, handlePrevVideo, setTranscriptSearchQuery])
 
     // 默认选择第一个视频
     useEffect(() => {

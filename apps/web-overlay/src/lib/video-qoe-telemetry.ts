@@ -34,7 +34,7 @@ export function createQoETracker(
   let totalStallDurationMs = 0
   let watchTimeMs = 1000
   let currentStallStart: number | null = null
-  let bandwidthSamples: number[] = [12.5] // Default ~12.5 Mbps
+  const bandwidthSamples: number[] = [12.5] // Default ~12.5 Mbps
 
   let networkType = 'wifi'
   if (typeof navigator !== 'undefined' && 'connection' in navigator) {

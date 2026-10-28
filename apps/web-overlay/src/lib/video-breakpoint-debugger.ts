@@ -120,7 +120,7 @@ export class InteractiveCodeDebugger {
       const assign = trimmed.match(/^(?:let|const|var)?\s*([a-zA-Z_]\w*)\s*=\s*(.+)$/)
       if (assign) {
         const name = assign[1]
-        let rawVal = assign[2].replace(/;$/, '').trim()
+        const rawVal = assign[2].replace(/;$/, '').trim()
         let typedVal: any = rawVal
         let vType = 'string'
 

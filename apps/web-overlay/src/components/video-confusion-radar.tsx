@@ -83,7 +83,7 @@ export function VideoConfusionRadar({
                     key={qIdx}
                     className="text-[11px] px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-300"
                   >
-                    "{q}"
+                    &quot;{q}&quot;
                   </span>
                 ))}
               </div>

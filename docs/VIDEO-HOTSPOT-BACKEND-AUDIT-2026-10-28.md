@@ -1159,3 +1159,68 @@ writeVideosData → syncVideoCatalogSafely`。**没有一条路径绕开它**，
 |---|---|
 | `a7cffed4` | `test(video)`：补回 P2-30 的三条源码守卫 |
 | 见下一条 | `test(api)`：`data-retention` 方言断言兼容 `this.ctx` / `ctx` 两种写法 |
+
+---
+
+## 18. 门禁收口：手工清单的漏洞，以及「没人跑的门禁等于没有」
+
+### 18.1 手工清单漏了 50 个文件
+
+上一版 `typecheck-video-scope.mjs` 是一份**手工维护的清单**（23 条）。实际清点
+`apps/web-overlay/src/lib/` 下的 `video-*.ts` + `webhook-*.ts` 共 **71 个**，
+也就是说 **50 个文件从来没有被门禁覆盖过** —— 其中任何一个将来写坏都不会被拦。
+
+这不是疏忽，是手工清单这种机制的必然结果：新增文件时没人记得回来补一行。
+
+更关键的第二个问题：**这个门禁没有挂在任何自动流程上**（不在 pre-commit、
+不在 `scripts/verify.mjs`、不在 CI）。一个只有靠人记得才会跑的门禁，实际执行率是零 ——
+和「没有门禁」等价，只是多了一份心理安慰。
+
+### 18.2 改成自动发现
+
+逐个数了 71 个文件各自的错误数，结果**全是 0**。既然整个视频面已经干净，
+手工清单就没有存在意义了，直接改成自动发现：
+
+```js
+readdirSync(LIB)
+  .filter(name => /^(video|webhook)-[a-z0-9-]+\.ts$/.test(name))
+```
+
+配一个 `SCOPE_EXEMPT`（当前为空）用于「确实带债、需要评审后才能临时放行」的例外，
+并要求写原因。另外两个非 `video-` 前缀但同属链路的文件（`cron-auth.ts`、
+`bilibili-wbi.ts`）与 `types/navigation.ts` 留在 `SCOPE_EXTRA`。
+
+覆盖数 23 → **73**（自动发现 70 + 显式 3），仍为 0 错误。
+
+自动发现带来一个**特性而非副作用**：新增一个 `video-*.ts` 就必须自身 0 错误，
+否则门禁立刻红。想让带错误的新文件先合进来，只能显式进 `SCOPE_EXEMPT` ——
+那是一个需要 review 的动作，而不是「忘了加进清单」。
+
+### 18.3 挂进 CI
+
+加在 `ci.yml` 的 `check-web-overlay` 作业里，紧跟 `check-syntax.mjs` 之后
+（只读 `apps/web-overlay`，不需要 vendor，能早失败）：
+
+```yaml
+- run: node scripts/typecheck-video-scope.mjs
+```
+
+### 18.4 反向验证：这次拦的是「此前逃逸的文件」
+
+之前两次反向验证注入的都是**已在清单里**的文件（`video-identity.ts`、
+`video-failover.ts`）。这次专门挑一个此前从未被覆盖的 `video-format.ts`：
+
+```
+gate_exit=1
+[typecheck-video] 1 处类型错误（作用域内 73 个文件）：
+  apps/web-overlay/src/lib/video-format.ts(24,7): error TS2322: Type 'string' is not assignable to type 'number'.
+```
+
+恢复后 `OK：73 个模块 0 类型错误`。说明自动发现确实把覆盖面从 23 扩到了 73，
+而不是把老清单换了个写法。
+
+### 18.5 提交
+
+| commit | 内容 |
+|---|---|
+| 见 §18 对应提交 | `scripts/typecheck-video-scope.mjs` 自动发现 + `ci.yml` 挂载 |

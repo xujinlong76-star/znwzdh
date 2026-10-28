@@ -1,13 +1,21 @@
 #!/usr/bin/env node
 /**
- * 视频模块的**作用域化**类型门禁。
+ * 视频模块的类型门禁（作用域化，但作用域内**自动发现**）。
  *
  * 为什么不能直接打开 `apps/web-overlay/next.config.js` 的 `ignoreBuildErrors`：
- * 该目录当前有 **21518** 个既有类型错误（`plugin-url-health-panel.tsx` 单文件 618 个），
+ * 该目录当前有 **21600+** 个既有类型错误（`plugin-url-health-panel.tsx` 单文件 618 个），
  * 一次打开必然全红，团队只能再关回去 —— 门禁变成摆设。
  *
- * 这里的做法是「按目录增量收敛」的第一步：只对**已经清零的模块**断言 0 错误。
- * 新增文件想进这个清单，前提是它自己先做到 0 错误；已列入的文件一旦退化，立刻红。
+ * 演进过程：
+ *   1. 第一版是**手工清单**（16 个模块），只对「已经清零」的文件断言 0 错误；
+ *   2. 第二版扩到 23 个；
+ *   3. 现在是**自动发现**：`src/lib/video-*.ts` + `src/lib/webhook-*.ts` 全部纳入。
+ *      理由是实测这 71 个文件已经全部 0 错误 —— 手工清单反而成了漏洞：
+ *      上一版漏了 50 个，其中任何一个将来写坏都不会被拦。
+ *
+ * 自动发现带来的约束（这是特性不是副作用）：**新增一个 video-*.ts 就必须自身 0 错误**，
+ * 否则门禁立刻红。想让它先带错误合进来，只能临时把文件放进 `SCOPE_EXEMPT` 并写明原因 ——
+ * 那是一个需要 review 的动作，而不是「忘了加进清单」。
  *
  * 为什么排除 `app/api/**`：overlay 目录没有自己的 `node_modules`（pnpm workspace 显式
  * 排除），`next/server` 解析不到，所有 route 都会报 TS2307。那是环境问题不是代码问题，
@@ -18,48 +26,45 @@
  *   node scripts/typecheck-video-scope.mjs --list   # 只打印清单
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const OVERLAY = join(ROOT, 'apps', 'web-overlay')
+const LIB = join(OVERLAY, 'src', 'lib')
 const TSC = join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')
 
-/**
- * 已清零的模块。加新条目时必须先确认它本身 0 错误 ——
- * 把有错的文件塞进来，这个门禁就失去了「只减不增」的意义。
- */
-const SCOPE = [
+/** 不属于 `video-*` / `webhook-*` 命名，但同属这条链路的显式条目 */
+const SCOPE_EXTRA = [
   'src/types/navigation.ts',
-  'src/lib/video-scoring.ts',
-  'src/lib/video-identity.ts',
-  'src/lib/video-harvest-metrics.ts',
-  'src/lib/video-harvester.ts',
-  'src/lib/video-task-queue.ts',
-  'src/lib/video-deadlink-sweeper.ts',
-  'src/lib/video-trending-harvester.ts',
-  'src/lib/video-autonomous-ai-harvester.ts',
-  'src/lib/video-quiz-generator.ts',
-  'src/lib/video-ai-summary.ts',
-  'src/lib/video-multi-source-connector.ts',
-  'src/lib/webhook-signature.ts',
-  'src/lib/webhook-notifier.ts',
   'src/lib/cron-auth.ts',
   'src/lib/bilibili-wbi.ts',
-  // 第二批（A8 扩展）：这 7 个模块原来是 29 处类型分叉的所在地 ——
-  // VideoMirrorSource 缺 sourceId/label/priority/isDirectStream（13 处）、
-  // VideoChapter.startTime 变可选后未做空值处理（4 处）、
-  // FlashcardItem 与 VideoQuizQuestion 字段错配（4 处）、BigInt 字面量目标版本（7 处）、
-  // Uint8Array 的 ArrayBufferLike 泛型收窄（1 处）。
-  'src/lib/video-failover.ts',
-  'src/lib/video-slide-detector.ts',
-  'src/lib/video-spaced-repetition.ts',
-  'src/lib/video-scrubber-filmstrip.ts',
-  'src/lib/video-offline-storage.ts',
-  'src/lib/video-concept-graph-navigator.ts',
-  'src/lib/video-code-diff.ts',
 ]
+
+/**
+ * 豁免清单：**只允许临时使用，必须写原因**。空数组是健康状态。
+ * 加条目等于承认「这个文件可以带着类型错误存在」，属于需要评审的决定。
+ */
+const SCOPE_EXEMPT = []
+
+if (!existsSync(LIB)) {
+  console.error(`[typecheck-video] 找不到 ${LIB}，worktree 不完整？`)
+  process.exit(1)
+}
+
+const discovered = readdirSync(LIB)
+  .filter(name => /^(video|webhook)-[a-z0-9-]+\.ts$/.test(name))
+  .sort()
+  .map(name => `src/lib/${name}`)
+  .filter(rel => !SCOPE_EXEMPT.includes(rel))
+
+if (discovered.length === 0) {
+  console.error('[typecheck-video] 自动发现结果为 0，路径规则或目录结构变了？拒绝静默通过。')
+  process.exit(1)
+}
+
+const SCOPE = [...discovered, ...SCOPE_EXTRA]
 
 if (process.argv.includes('--list')) {
   for (const rel of SCOPE) console.log(rel)
@@ -98,14 +103,19 @@ const lines = output.split(/\r?\n/).filter(line => line.includes('error TS'))
 
 const inScope = lines.filter(line => {
   if (ENV_NOISE.test(line)) return false
-  return SCOPE.some(rel => line.includes(rel.replace(/\//g, '/')))
+  return SCOPE.some(rel => line.includes(rel))
 })
 
 if (inScope.length > 0) {
   console.error(`[typecheck-video] ${inScope.length} 处类型错误（作用域内 ${SCOPE.length} 个文件）：`)
   for (const line of inScope) console.error('  ' + line)
-  console.error('\n修复后重跑。若确认是既有债务，先从清单里移除该文件并说明原因，不要放宽判定。')
+  console.error(
+    '\n修复后重跑。若确实是既有债务无法立刻修，把文件加进 SCOPE_EXEMPT 并写明原因 —— 不要放宽判定。',
+  )
   process.exit(1)
 }
 
-console.log(`[typecheck-video] OK：${SCOPE.length} 个模块 0 类型错误（已排除 next/* 环境性报错）`)
+const exemptNote = SCOPE_EXEMPT.length > 0 ? `，豁免 ${SCOPE_EXEMPT.length} 个` : ''
+console.log(
+  `[typecheck-video] OK：${SCOPE.length} 个模块 0 类型错误（自动发现 ${discovered.length} 个${exemptNote}；已排除 next/* 环境性报错）`,
+)

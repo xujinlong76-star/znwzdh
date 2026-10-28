@@ -103,15 +103,25 @@ export default function NotificationsPage() {
 
   const markRead = useCallback(
     async (id: string) => {
+      // 只有服务端确认「本次确实标了」（marked === true）才更新本地：
+      // 此前不看响应就把条目染灰并减未读，503/401 时会显示成已读，刷新又变回未读。
+      const fail = () =>
+        toast({ title: '标记已读失败', description: '云端暂未确认，未读状态保持不变，请稍后重试', variant: 'destructive' })
       try {
-        await fetch('/api/me/notifications/' + id + '/read', { method: 'POST', cache: 'no-store' })
+        const res = await fetch('/api/me/notifications/' + id + '/read', { method: 'POST', cache: 'no-store' })
+        const data = (await res.json().catch(() => ({}))) as { marked?: boolean }
+        if (!res.ok || data.marked !== true) {
+          fail()
+          return
+        }
         setItems((prev) => prev.map((n) => (n.id === id && n.readAt === null ? { ...n, readAt: Date.now() } : n)))
         setUnread((u) => Math.max(0, u - 1))
+        if (typeof window !== 'undefined') window.dispatchEvent(new Event('navhub_notifications_changed'))
       } catch {
-        // 已读标记失败不打断浏览：下次进页面未读数会自动对齐
+        fail()
       }
     },
-    [],
+    [toast],
   )
 
   const markAll = useCallback(async () => {
@@ -125,7 +135,10 @@ export default function NotificationsPage() {
       }
       setItems((prev) => prev.map((n) => (n.readAt === null ? { ...n, readAt: Date.now() } : n)))
       setUnread(0)
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('navhub_notifications_changed'))
       toast({ title: `已把 ${data.marked ?? 0} 条通知标为已读` })
+    } catch {
+      toast({ title: '操作失败', description: '网络异常，未读状态保持不变，请稍后重试', variant: 'destructive' })
     } finally {
       setBusy(false)
     }

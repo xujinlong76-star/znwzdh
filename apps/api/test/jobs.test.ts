@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
-import { JobRunner, backoffMs, jobEventBus, type JobEventPayload } from "../src/jobs.ts";
+import { JobRunner, backoffMs, jobEventBus, previewDataRetention, type JobEventPayload } from "../src/jobs.ts";
 import { refreshUserProfile } from "../src/profile-service.ts";
 
 let dir: string;
@@ -280,7 +280,7 @@ describe("data_retention 任务", () => {
     expect(await countClicks()).toBe(before); // 一行没删
   });
 
-  it("内部遥测按 TTL 清理：超过 90 天的巡检历史与 LLM 用量被删，近期保留", async () => {
+  it("内部遥测 dry-run 只统计，apply 才删除过期行并保留近期数据", async () => {
     const old = Date.now() - 120 * 86_400_000;
     const fresh = Date.now() - 2 * 86_400_000;
     const insHealth = ctx.db.sqlite!.prepare("INSERT INTO health_checks (site_id, checked_at, ok) VALUES (?,?,1)");
@@ -291,16 +291,53 @@ describe("data_retention 任务", () => {
     );
     insUsage.run("telemetry-old", "chat", "test", "m", old);
     insUsage.run("telemetry-new", "chat", "test", "m", fresh);
+    const healthIds = async () =>
+      (await ctx.db.sqlite!.prepare("SELECT site_id FROM health_checks WHERE site_id LIKE 'telemetry-%'").all())
+        .map((row) => row.site_id)
+        .sort();
+    const usageIds = async () =>
+      (await ctx.db.sqlite!.prepare("SELECT id FROM llm_usage WHERE id LIKE 'telemetry-%'").all())
+        .map((row) => row.id)
+        .sort();
 
     await ctx.repo.enqueueJob("data_retention", { mode: "rollup", apply: false, telemetryDays: 90 });
     await new JobRunner(ctx).tick();
+    expect(await healthIds()).toEqual(["telemetry-new", "telemetry-old"]);
+    expect(await usageIds()).toEqual(["telemetry-new", "telemetry-old"]);
 
-    const health = await ctx.db.sqlite!
-      .prepare("SELECT site_id FROM health_checks WHERE site_id LIKE 'telemetry-%'")
-      .all();
-    expect(health.map((r) => r.site_id).sort()).toEqual(["telemetry-new"]);
-    const usage = await ctx.db.sqlite!.prepare("SELECT id FROM llm_usage WHERE id LIKE 'telemetry-%'").all();
-    expect(usage.map((r) => r.id)).toEqual(["telemetry-new"]);
+    await ctx.repo.enqueueJob("data_retention", { mode: "rollup", apply: true, telemetryDays: 90 });
+    await new JobRunner(ctx).tick();
+    expect(await healthIds()).toEqual(["telemetry-new"]);
+    expect(await usageIds()).toEqual(["telemetry-new"]);
+  });
+
+  it("自定义用户历史保留期：预演只报命中量，apply 才删除并留审计", async () => {
+    const identity = "retention-preview-user";
+    const old = Date.now() - 120 * 86_400_000;
+    const fresh = Date.now() - 2 * 86_400_000;
+    await ctx.repo.updateUserSettings(identity, { historyRetentionDays: 30 });
+    const insert = ctx.db.sqlite!.prepare(
+      "INSERT INTO search_history (user_id, query, result_count, created_at) VALUES (?,?,1,?)",
+    );
+    insert.run(identity, "old", old);
+    insert.run(identity, "fresh", fresh);
+    const auditCount = async () =>
+      Number(
+        ctx.db.sqlite!
+          .prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'user.search_history_expired' AND target = ?")
+          .get(identity)?.count ?? 0,
+      );
+
+    const preview = await previewDataRetention(ctx, { mode: "rollup", apply: true, telemetryDays: 90 });
+    expect(preview.apply).toBe(false);
+    expect(preview.userRetention).toMatchObject({ usersAffected: 1, rowsDeleted: 1 });
+    expect(await ctx.repo.countSearchHistory(identity)).toBe(2);
+    expect(await auditCount()).toBe(0);
+
+    await ctx.repo.enqueueJob("data_retention", { mode: "rollup", apply: true, telemetryDays: 90 });
+    await new JobRunner(ctx).tick();
+    expect(await ctx.repo.countSearchHistory(identity)).toBe(1);
+    expect(await auditCount()).toBe(1);
   });
 
   it("cleanup dry-run 正常完成并给出命中量（不删任何行）", async () => {
@@ -514,6 +551,9 @@ describe("个性化画像服务", () => {
     expect(checkRow).toBeUndefined();
   });
 
+  // 这条用例要真的跑一遍内置周期任务（含外链探活），实测 18.5s —— 默认 5s 必然超时。
+  // 不要为了「跑得快」把它裁掉：它守的是「cron 水位已更新就不重复入队」，
+  // 而重复入队会在生产上表现为任务风暴，是安静但致命的一类问题。
   it("enableCron 模式在 tick 时自动调度内置周期任务", async () => {
     const runner = new JobRunner(ctx, { enableCron: true });
     const tickRes = await runner.tick();
@@ -522,7 +562,7 @@ describe("个性化画像服务", () => {
     // 再次 tick 时，由于 cron 水位已更新且未到间隔，不会重复入队大量任务
     const secondTick = await runner.tick();
     expect(secondTick.processed).toBe(0);
-  });
+  }, 60_000);
 
   it("jobEventBus 在任务执行生命周期中派发实时状态事件", async () => {
     const events: JobEventPayload[] = [];
@@ -563,7 +603,7 @@ describe("PG advisory lock 同连接语义（fake 池，无需真实 PG）", () 
     };
     const fakeCtx = {
       db: { dialect: "pg", pg: pool },
-      repo: { claimNextJob: async () => null },
+      repo: { claimNextJob: async () => null, relayNotifications: async () => ({ delivered: 0, failed: 0 }) },
     } as unknown as AppContext;
     const runner = new JobRunner(fakeCtx);
     const r = await runner.tick();
@@ -584,7 +624,7 @@ describe("PG advisory lock 同连接语义（fake 池，无需真实 PG）", () 
     };
     const fakeCtx = {
       db: { dialect: "pg", pg: pool },
-      repo: { claimNextJob: async () => null },
+      repo: { claimNextJob: async () => null, relayNotifications: async () => ({ delivered: 0, failed: 0 }) },
     } as unknown as AppContext;
     const runner = new JobRunner(fakeCtx);
     const r = await runner.tick();

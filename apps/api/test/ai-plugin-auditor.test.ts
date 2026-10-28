@@ -111,6 +111,13 @@ afterEach(() => {
   ctx.config.llm = { ...baseLlm };
 });
 
+/**
+ * 插件审核的接口集成用例会真的跑完整审核链路（多步 LLM 桩 + 入库 + 通知），
+ * 单例实测 5.0–6.7s，而默认 testTimeout 是 5000ms —— 它们会在任何负载下随机红，
+ * 报错还只有一句 `Test timed out in 5000ms`。显式给足时间，让失败只代表真的失败。
+ */
+const SLOW_AUDIT_MS = 20_000;
+
 describe("AI 专业级自动化插件审查与审批引擎 (AI Plugin Auditor)", () => {
   const validSitePack: PluginManifest = {
     manifestVersion: 1,
@@ -309,7 +316,7 @@ describe("AI 专业级自动化插件审查与审批引擎 (AI Plugin Auditor)",
     const { plugin: after, audit } = await executeAutoAuditAndPublish(ctx, reloaded!, { identity: "author-revalidate" });
     expect(audit.decision).toBe("pending_review");
     expect(after.status).toBe("published");
-  });
+  }, SLOW_AUDIT_MS);
 
   it("生命周期闭环：模型在线时 executeAutoAuditAndPublish 自动将 pending 插件上架为 published", async () => {
     const plugin = await ctx.repo.createPlugin(
@@ -405,7 +412,7 @@ describe("AI 专业级自动化插件审查与审批引擎 (AI Plugin Auditor)",
     expect(reAudit.statusCode).toBe(200);
     expect(reAudit.json().plugin.status).toBe("published");
     expect(reAudit.json().audit.decision).toBe("approve");
-  });
+  }, SLOW_AUDIT_MS);
 
   it("清单自愈：autoRemediatePluginManifest 自动安全升级 HTTP 为 HTTPS 并去除重复 URL", () => {
     const uncleaned: PluginManifest = {
@@ -473,7 +480,7 @@ describe("AI 专业级自动化插件审查与审批引擎 (AI Plugin Auditor)",
     expect(fixBody.changes.length).toBeGreaterThan(0);
     expect(fixBody.manifest.name).toBe("待自动修复包");
     expect(fixBody.manifest.payload.sites[0].url).toBe("https://example.org");
-  });
+  }, SLOW_AUDIT_MS);
 
   it("版本升级：POST /api/plugins/:slug/versions?autoAudit=true 提交新版本后自动严审上架", async () => {
     // 1. 创建并上架初始版本 v1.0.0
@@ -512,5 +519,5 @@ describe("AI 专业级自动化插件审查与审批引擎 (AI Plugin Auditor)",
     expect(vBody.status).toBe("published");
     expect(vBody.version).toBe("1.1.0");
     expect(vBody.audit.decision).toBe("approve");
-  });
+  }, SLOW_AUDIT_MS);
 });

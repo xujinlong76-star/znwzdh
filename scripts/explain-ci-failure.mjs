@@ -44,10 +44,14 @@ import {
 
 const API = "https://api.github.com";
 const MAX_LOG_BYTES = 8 * 1024 * 1024;
-/** 只对传输层失败重试：DNS/TLS 瞬断是常态（本仓库一次会话里遇到三次），HTTP 4xx 不重试 */
-const RETRYABLE_NETWORK = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up/i;
+/**
+ * 只对传输层失败重试：DNS/TLS 瞬断是常态（本仓库一次会话里遇到三次），HTTP 4xx 不重试。
+ * undici 的瞬断报错文案是 `terminated`（对端提前关连接）——真实 run #40609230621 里
+ * 它让 --baseline 整段被跳过，而 HTTP 响应本身完全正常。
+ */
+const RETRYABLE_NETWORK = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|terminated|UND_ERR_SOCKET/i;
 
-async function fetchWithRetry(url, init, attempts = 3) {
+export async function fetchWithRetry(url, init, attempts = 3) {
   for (let attempt = 1; ; attempt++) {
     try {
       return await fetch(url, init);

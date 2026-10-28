@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fetchWithRetry } from "./explain-ci-failure.mjs";
 import {
   classifyFailure,
   cleanLogLines,
@@ -611,5 +612,61 @@ describe("vitest → GitHub 注解报告器", () => {
     const lines = annotationLines(failures);
     expect(lines).toHaveLength(MAX_ANNOTATIONS + 1);
     expect(lines.at(-1)).toContain("共 " + (MAX_ANNOTATIONS + 5) + " 个失败");
+  });
+});
+
+/**
+ * CLI 自身的传输层健壮性。
+ *
+ * 真实 run #40609230621：基线对比整段因 `terminated`（undici 对端提前关连接）
+ * 被跳过——这正是「工具宣称的降级」在掩盖值得重试的瞬断。瞬断必须重试，
+ * 4xx 这类语义结果必须原样交回调用方。
+ */
+describe("fetchWithRetry：只重试传输层瞬断", () => {
+  it("terminated 视为瞬断，重试后成功", async () => {
+    const original = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      if (calls === 1) throw new TypeError("terminated");
+      return new Response("ok", { status: 200 });
+    }) as typeof fetch;
+    try {
+      const res = await fetchWithRetry("https://example.invalid/x", {}, 2);
+      expect(await res.text()).toBe("ok");
+      expect(calls).toBe(2);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("非传输层错误立即抛出，不重试", async () => {
+    const original = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      throw new TypeError("boom");
+    }) as typeof fetch;
+    try {
+      await expect(fetchWithRetry("https://example.invalid/x", {}, 3)).rejects.toThrow("boom");
+      expect(calls).toBe(1);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("重试耗尽后抛最后一次错误（不静默吞掉）", async () => {
+    const original = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      throw new TypeError("terminated");
+    }) as typeof fetch;
+    try {
+      await expect(fetchWithRetry("https://example.invalid/x", {}, 2)).rejects.toThrow("terminated");
+      expect(calls).toBe(2);
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });

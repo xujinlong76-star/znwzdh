@@ -1724,3 +1724,92 @@ Next.js version: 16.4.2 (Turbopack)
 进程被杀、生成到一半中断 —— 都会留下「半个 emoji」这种尾巴。
 所以规矩是：**任何批量写入内容 JSON 的操作，落盘后必须能被严格解析器解析**，
 不能只信 `JSON.parse`。
+
+---
+
+## 26. 会话收口（2026-10-28 21:35）
+
+§23.4 说「唯一未提交的代码是 `data-inventory.ts` 的 16 行登记项」。这一节把它的
+**解封条件**、**守卫是否真的会拦**、以及**当前谁在改哪些文件**一次记清，
+避免下一个人重新推一遍。
+
+### 26.1 守卫做了反向验证：它确实会拦
+
+「留一条守卫盯着」这句话只有在守卫真的会红时才成立。做法：临时删掉那 16 行登记
+（先 `cp` 备份并比对 sha256），跑同一组用例，再原样恢复。
+
+| 阶段 | `data-inventory.test.ts` | `notification-outbox-user-data.test.ts` |
+|---|---|---|
+| 有登记 | 3 例通过 | 2 例通过 |
+| **删掉登记** | **红**：`以下表带用户归属列但未登记到 data-inventory.ts（注销会漏删）` 点名 `submission_owners(identity)` / `notification_outbox(identity)` | **红**：`注销后仍有通知队列残留: expected [ …(2) ] to deeply equal []`；另一例 `expected [ 'u1:deletion-test', …(3) ] to deeply equal [ 'u2:another' ]` |
+| 恢复后 | 3 例通过 | 2 例通过 |
+
+恢复后 `sha256sum` 与备份一致（`3a7f7d9c…`），`git diff --stat` 仍是
+`1 file changed, 16 insertions(+)` —— 反向验证没有留下任何脏改动。
+
+三条红灯各自对应一种真实后果，不是同一条断言换了措辞：
+**漏登记**（隐私面失守）／**漏删队列**（注销后残留投递身份与错误详情）／
+**误删他人**（越界删除）。三者的失败信息都不含「assertion failed」这类空话，
+而是直接说清漏了什么。
+
+### 26.2 这 16 行的确切解封步骤
+
+前提只有一条：`migrate.ts` 的 `notification_outbox` / `submission_owners` 建表进 HEAD。
+`git show HEAD:packages/store/src/migrate.ts | grep -c notification_outbox` 返回 `0`
+说明还没进。进了之后：
+
+```bash
+# 1) 先确认建表已进 HEAD（返回 0 就是还没进，别急着提交）
+git show HEAD:packages/store/src/migrate.ts | grep -c notification_outbox
+
+# 2) 跑那两条守卫，5 例全绿才继续
+cd packages/store && node ../../node_modules/vitest/vitest.mjs run \
+  test/data-inventory.test.ts test/notification-outbox-user-data.test.ts
+
+# 3) 按路径提交这 16 行（独立索引，不碰别人的暂存）
+node scripts/safe-commit.mjs --msg-file <写好的提交说明> -- packages/store/src/data-inventory.ts
+```
+
+判据：两个文件 5 例全绿即可提交。若届时表已进 HEAD 而这 16 行没跟上，
+`data-inventory.test.ts` 会红 —— 这正是 §23.2 想要的效果，**不要把它改成「表不存在就跳过」**：
+那会让「新增用户表」重新变成可以静默逃逸的事。
+
+### 26.3 当前热区（2026-10-28 21:30 快照）
+
+收口时另有一路会话正在改视频模块，**同一分钟内**有文件落盘：
+
+| 文件 | mtime | 状态 |
+|---|---|---|
+| `apps/web/test/video-topics-consistency.test.ts` | 21:32 | 新建（未跟踪） |
+| `apps/web-overlay/src/navsphere/content/video-topics.json` | 21:31 | 与 `apps/web/src/navsphere/content/` 双份同改 |
+| `apps/web-overlay/src/lib/video-multi-source-connector.ts` | 21:30 | 修改中（+88 行） |
+| `apps/web-overlay/src/app/api/cron/video-health-sweep/route.ts` | 21:30 | 修改中 |
+| `packages/core/src/route-policy.ts` | — | 修改中：`PERSONAL_TOKEN_WRITE_ROUTES` 已清空，并把 §22 的教训写进了注释 |
+
+所以本节没有改任何视频/热点相关代码，只做了两件不冲突的事：反向验证（只读 + 临时
+改动后原样恢复）、以及写这份记录。**热区只报告不改**这条规则在这里是硬约束，
+不是礼貌 —— 21:30 落盘的文件如果被我同时编辑，冲突会静默覆盖其中一方。
+
+### 26.4 一条观察（未改，留给出热区的人判断）
+
+`webhook-harvest/route.ts` 新增了管理员调试通道：
+
+```ts
+const isTestCall = isAdmin && (request.headers.get('x-admin-test') === '1' || !WEBHOOK_SECRET || !signature)
+const processRes = isTestCall ? connector.processAdminTestPayload(body) : connector.processWebhook(body, signature, rawBody)
+```
+
+核对结果：`processAdminTestPayload()` **共用**同一套 `evaluateVideoWithAIModel` +
+`generateAISanitizedMetadata`，只跳过签名，不跳过内容校验 —— 因此不构成
+「绕过审核」。但它确实意味着：**只要持有管理员会话，HMAC 就不再是必要条件**。
+管理员本来就能直接改库，边际风险低，属于产品取舍；值得记的是它的边界——
+一旦未来把「管理员会话」放宽成「任意登录用户」，这条通道会立刻变成匿名写入口。
+
+### 26.5 本轮状态
+
+| 项 | 状态 |
+|---|---|
+| 审计 33 项 | §23.4 的结论不变（31 闭环 / 2 部分 / 1 误判 / 1 不做） |
+| 唯一未提交代码 | `packages/store/src/data-inventory.ts` +16 行，等建表进 HEAD |
+| 本轮新增改动 | 仅本节（文档）；`data-inventory.ts` 经历一次「删→红→恢复」，指纹已核对 |
+| 视频模块代码 | **未改动**（热区） |

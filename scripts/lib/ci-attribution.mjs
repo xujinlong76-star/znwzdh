@@ -14,6 +14,84 @@
 export const FAILURE_LAYERS = ["依赖", "环境", "构建", "契约", "运行时", "汇总", "未知"];
 
 /**
+ * 每条红的下一步：按归因层给**一条可直接执行**的修复入口。
+ *
+ * 层名只是诊断，修复动作仍然要人来做——但如果停在「归因层：契约」，
+ * 读报告的人还得自己想起该跑哪个脚本。这里把每层默认的第一步固化成命令，
+ * 文本报告按层去重打印，JSON 每行都带（无人值守轮可直接取用）。
+ *
+ * 约束：command 必须能在仓库根目录原样执行，不允许 `<占位符>`；
+ * 运行时层的具体测试文件由归因头推断，推断不出就是全量测试。
+ */
+export const LAYER_FIX_HINTS = {
+  依赖: {
+    command: "pnpm install",
+    note: "锁文件变更要一起提交；ERR_PNPM_NO_MATCHING_VERSION 指向的包优先核对版本是否存在",
+  },
+  环境: {
+    command: "node scripts/doctor.mjs",
+    note: "端口占用 / 浏览器缺失 / 资源不足类失败先复现环境，别把环境问题当代码问题修",
+  },
+  构建: {
+    command: "node scripts/typecheck.mjs",
+    note: "TS 与打包错误本地复现后再推；CI 的报错行号与本地一致",
+  },
+  契约: {
+    command: "node --experimental-strip-types scripts/generate-rest-contract-types.mjs && node scripts/check-web-overlay.mjs",
+    note: "ISR / sitemap / seo-audit 类先本地跑同一条门禁；生成物只许由生成脚本改写",
+  },
+  运行时: {
+    command: "node node_modules/vitest/vitest.mjs run",
+    note: "先跑归因头里的失败文件；断言改不动时先确认是契约变了还是行为回归",
+  },
+  汇总: {
+    command: "node scripts/ci-status.mjs",
+    note: "本 job 自身没有代码路径，修复看其余行的上游失败；不要为一个纯汇总 job 改代码",
+  },
+  未知: {
+    command: "node scripts/verify.mjs",
+    note: "归因头为空说明日志里没有可识别错误：先跑全量本地门禁，再带 --json 看该 job 的 tail",
+  },
+};
+
+/** 运行时层能从归因头里拿到具体测试文件时，把命令收窄到那一个文件 */
+function runtimeCommand(firstError) {
+  const match = String(firstError ?? "").match(/([\w./@-]+\.(?:test|spec)\.[cm]?[jt]sx?)/);
+  const base = LAYER_FIX_HINTS.运行时.command;
+  return match ? base + " " + match[1] : base;
+}
+
+/** 单行失败对应的修复入口：{ layer, command, note } */
+export function fixHintFor(row) {
+  const layer = FAILURE_LAYERS.includes(row?.layer) ? row.layer : "未知";
+  const hint = LAYER_FIX_HINTS[layer];
+  return {
+    layer,
+    command: layer === "运行时" ? runtimeCommand(row?.firstError) : hint.command,
+    note: hint.note,
+  };
+}
+
+/** 文本报告的「修复入口」段：按层去重，只列本轮真实出现的层 */
+export function renderFixHints(rows) {
+  const byLayer = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const hint = fixHintFor(row);
+    if (!byLayer.has(hint.layer)) byLayer.set(hint.layer, hint);
+    else if (hint.command !== byLayer.get(hint.layer).command) byLayer.get(hint.layer).command += "（或 " + hint.command + "）";
+  }
+  if (byLayer.size === 0) return "";
+  const lines = ["## 修复入口（按归因层，一条命令起步）"];
+  for (const layer of FAILURE_LAYERS) {
+    const hint = byLayer.get(layer);
+    if (!hint) continue;
+    lines.push("- " + layer + "：" + hint.command);
+    if (hint.note) lines.push("  " + hint.note);
+  }
+  return lines.join("\n");
+}
+
+/**
  * 聚合 job（`CI 整体通过` 这类）没有自己的代码，它红只是因为上游红了。
  * 把它算进任何一层都会污染统计：真实 run 里它因为输出里出现 "ISR" 被归成契约。
  */
@@ -342,7 +420,7 @@ export function summarizeJob(job, { logText = "", annotations = [] } = {}) {
   // 这种情况下日志里的 `src/x.tsx(863,41): error TS7006` 更具体，让日志先说话。
   const useAnnotationHead = Boolean(primary) && !isWorkflowPath(primary.path);
   const head = useAnnotationHead ? annotationHead(primary) : firstError || (primary ? annotationHead(primary) : "");
-  return {
+  const row = {
     id: job?.id ?? null,
     name: job?.name ?? "(unknown job)",
     conclusion: job?.conclusion ?? "unknown",
@@ -355,6 +433,7 @@ export function summarizeJob(job, { logText = "", annotations = [] } = {}) {
     annotationCount: Array.isArray(annotations) ? annotations.length : 0,
     superseded: isSupersededCancel(annotationText + "\n" + logText),
   };
+  return { ...row, fixHint: fixHintFor(row) };
 }
 
 /** 归因表的渲染（markdown 表格；单元格内换行会被压成空格） */
@@ -467,4 +546,40 @@ export function renderBaselineDiff(diff, { baselineLabel = "基线", inProgress 
     for (const row of fixed) lines.push(renderRowBrief(row));
   }
   return lines.join("\n");
+}
+
+/**
+ * 轮询直到 run 结束（conclusion 非空）。
+ *
+ * 为什么需要：刚推送就跑归因时 run 往往还是 queued/in_progress，
+ * 此时「本轮没有某个失败」只代表 job 还没跑到——上一版就是在这里把
+ * pending 误报成「已修复」。等终局再算三桶，才谈得上「这条红是不是我造成的」。
+ *
+ * 依赖全部注入（fetchRun / now / sleep），核心只是状态机的可测性：
+ *   - 超时返回最后一次快照并标记 timedOut，由调用方以独立退出码收尾，
+ *     绝不把超时伪装成「查询失败」(2) 或「有失败 job」(1)。
+ */
+export async function waitForRunConclusion({
+  run,
+  fetchRun,
+  intervalMs = 20_000,
+  timeoutMs = 1_800_000,
+  now = () => Date.now(),
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  onPoll,
+} = {}) {
+  const startedAt = now();
+  let current = run;
+  let polls = 0;
+  while (!current?.conclusion) {
+    const elapsedMs = now() - startedAt;
+    if (elapsedMs >= timeoutMs) {
+      return { run: current, timedOut: true, waitedMs: elapsedMs, polls };
+    }
+    await sleep(Math.min(intervalMs, timeoutMs - elapsedMs));
+    current = await fetchRun(current.id);
+    polls++;
+    if (onPoll) onPoll(current, { polls, waitedMs: now() - startedAt });
+  }
+  return { run: current, timedOut: false, waitedMs: now() - startedAt, polls };
 }

@@ -18,7 +18,13 @@
  *   node scripts/explain-ci-failure.mjs --sha <sha> --baseline <上一 tip 的 sha 或 run id>
  *     基线对比输出「新增红 / 仍在红 / 已修复」——多会话并行时，能让「这条红是不是我造成的」
  *     不必靠人肉翻两次 run。
- * 退出码：0 = 没有失败 job，1 = 有失败 job，2 = 查询/鉴权失败。
+ *   node scripts/explain-ci-failure.mjs --sha <sha> --wait [--timeout 秒] [--interval 秒]
+ *     推送后立刻调用时 run 往往还没跑完：等待终局再算三桶，而不是把「还没跑到」
+ *     误报成「已修复」。默认每 20s 轮询、最多等 30 分钟；超时以退出码 3 收尾，
+ *     并明确标注结果是超时快照。
+ *   每条失败行都带 fixHint（按归因层给出的一条可执行修复命令）；文本模式另有
+ *   「修复入口」段按层去重。JSON 里 failures[].fixHint 与 diff 三桶同形。
+ * 退出码：0 = 没有失败 job，1 = 有失败 job，2 = 查询/鉴权失败，3 = 等待超时（run 仍未结束）。
  */
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -30,8 +36,10 @@ import {
   parseRepoSlug,
   renderAttributionTable,
   renderBaselineDiff,
+  renderFixHints,
   splitSuperseded,
   summarizeJob,
+  waitForRunConclusion,
 } from "./lib/ci-attribution.mjs";
 
 const API = "https://api.github.com";
@@ -56,6 +64,28 @@ function argValue(argv, name, fallback = null) {
   if (idx === -1) return fallback;
   const value = argv[idx + 1];
   return typeof value === "string" && !value.startsWith("--") ? value : fallback;
+}
+
+/** 秒级参数：非法 / 非正数回退默认值——无人值守脚本不该因手滑参数直接崩 */
+function secondsArg(argv, name, fallbackSec) {
+  const n = Number(argValue(argv, name));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 1000) : fallbackSec * 1000;
+}
+
+/**
+ * 推送后立刻解析 run 会撞上「workflow 还没创建」：只在等待模式下重试，
+ * 且反复等到同一个总预算用完，不把「刚推完」当成查询失败。
+ */
+async function resolveRunWhenWait(client, opts, { shouldWait, deadline, intervalMs }) {
+  for (;;) {
+    try {
+      return await resolveRun(client, opts);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!shouldWait || !message.includes("找不到匹配的运行") || Date.now() >= deadline) throw error;
+      await new Promise((done) => setTimeout(done, Math.min(intervalMs, Math.max(0, deadline - Date.now()))));
+    }
+  }
 }
 
 /** 从 git 凭据助手取 token；任何失败都返回 null（降级为匿名请求） */
@@ -207,17 +237,45 @@ async function main(argv) {
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || credentialToken();
   const client = createClient(token);
 
-  const run = await resolveRun(client, {
-    repo,
-    runId: argValue(argv, "--run"),
-    sha: argValue(argv, "--sha"),
-    branch: argValue(argv, "--branch", "main"),
-  });
+  const shouldWait = argv.includes("--wait");
+  const waitTimeoutMs = secondsArg(argv, "--timeout", 1800);
+  const waitIntervalMs = secondsArg(argv, "--interval", 20);
+  const waitDeadline = Date.now() + waitTimeoutMs;
+
+  let run = await resolveRunWhenWait(
+    client,
+    {
+      repo,
+      runId: argValue(argv, "--run"),
+      sha: argValue(argv, "--sha"),
+      branch: argValue(argv, "--branch", "main"),
+    },
+    { shouldWait, deadline: waitDeadline, intervalMs: waitIntervalMs },
+  );
+
+  let waitMeta = null;
+  if (shouldWait && !run.conclusion) {
+    const result = await waitForRunConclusion({
+      run,
+      fetchRun: (id) => client.api(`/repos/${repo}/actions/runs/${id}`),
+      intervalMs: waitIntervalMs,
+      timeoutMs: Math.max(0, waitDeadline - Date.now()),
+      // 进度走 stderr：--json 的 stdout 必须保持纯 JSON，可直接管道给 jq
+      onPoll: (latest, { waitedMs }) => {
+        process.stderr.write(
+          "[explain-ci] run #" + latest.id + " " + (latest.status ?? "unknown") + "（已等 " + Math.round(waitedMs / 1000) + "s）\n",
+        );
+      },
+    });
+    run = result.run;
+    waitMeta = { timedOut: result.timedOut, waitedMs: result.waitedMs, polls: result.polls };
+  }
 
   const rows = await collectAttribution(client, repo, run);
   const baseline = await resolveBaseline(client, repo, argValue(argv, "--baseline"));
   const diff = baseline ? diffFailures(rows, baseline.rows) : null;
   const json = argv.includes("--json");
+  const timedOut = Boolean(waitMeta?.timedOut);
 
   if (json) {
     console.log(
@@ -225,6 +283,7 @@ async function main(argv) {
         {
           repo,
           run: { id: run.id, sha: run.head_sha, url: run.html_url, conclusion: run.conclusion },
+          ...(waitMeta ? { wait: waitMeta } : {}),
           failures: rows,
           layers: Object.fromEntries(layerCounts(rows)),
           ...(baseline
@@ -237,10 +296,10 @@ async function main(argv) {
                 },
                 diff: {
                   inProgress: !run.conclusion,
-                  introduced: diff.introduced.map((row) => ({ name: row.name, firstError: row.firstError })),
-                  persisted: diff.persisted.map((row) => ({ name: row.name, firstError: row.firstError })),
-                  fixed: diff.fixed.map((row) => ({ name: row.name, firstError: row.firstError })),
-                  superseded: splitSuperseded(rows).superseded.map((row) => ({ name: row.name, firstError: row.firstError })),
+                  introduced: diff.introduced.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
+                  persisted: diff.persisted.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
+                  fixed: diff.fixed.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
+                  superseded: splitSuperseded(rows).superseded.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
                 },
               }
             : {}),
@@ -249,15 +308,24 @@ async function main(argv) {
         2,
       ),
     );
+    if (timedOut) return 3;
     return rows.length > 0 ? 1 : 0;
   }
 
   console.log("仓库 " + repo + " · run #" + run.id + " · " + run.head_sha.slice(0, 12) + (run.head_branch ? " · " + run.head_branch : ""));
   console.log(run.html_url);
+  if (waitMeta) {
+    console.log(
+      "已等待 " + Math.round(waitMeta.waitedMs / 1000) + "s（" + waitMeta.polls + " 次轮询）· run 结论：" + (run.conclusion ?? "仍未结束"),
+    );
+  }
+  if (timedOut) {
+    console.log("\n等待超时：run 仍未结束，以下只是超时时刻的快照；「已修复」桶不成立，结论以最终 run 为准。");
+  }
   if (rows.length === 0) {
-    console.log("\n没有失败的 job（run 结论：" + (run.conclusion ?? "进行中") + "）。");
+    if (!timedOut) console.log("\n没有失败的 job（run 结论：" + (run.conclusion ?? "进行中") + "）。");
     if (baseline) console.log("\n" + renderBaselineDiff(diff, { baselineLabel: "run #" + baseline.run.id + " · " + baseline.run.head_sha.slice(0, 12), inProgress: !run.conclusion }));
-    return 0;
+    return timedOut ? 3 : 0;
   }
 
   console.log("\n" + renderAttributionTable(rows));
@@ -271,6 +339,7 @@ async function main(argv) {
   if (superseded.length > 0) {
     console.log("\n其中 " + superseded.length + " 个 job 是并发取消（新推送抢先，run 被取消），不计入代码失败：" + superseded.map((row) => row.name).join("、"));
   }
+  console.log("\n" + renderFixHints(rows));
   if (baseline) {
     console.log("\n## 跨轮对比");
     console.log(renderBaselineDiff(diff, { baselineLabel: "run #" + baseline.run.id + " · " + baseline.run.head_sha.slice(0, 12), inProgress: !run.conclusion }));

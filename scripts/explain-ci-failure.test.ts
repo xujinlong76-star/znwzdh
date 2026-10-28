@@ -4,16 +4,21 @@ import {
   cleanLogLines,
   diffFailures,
   extractAttribution,
+  FAILURE_LAYERS,
   failingStep,
   failureKey,
+  fixHintFor,
   isFailedJob,
   isSupersededCancel,
+  LAYER_FIX_HINTS,
   layerCounts,
   parseRepoSlug,
   renderAttributionTable,
   renderBaselineDiff,
+  renderFixHints,
   splitSuperseded,
   summarizeJob,
+  waitForRunConclusion,
 } from "./lib/ci-attribution.mjs";
 import {
   MAX_ANNOTATIONS,
@@ -440,6 +445,117 @@ describe("跨轮对比：新增红 / 仍在红 / 已修复", () => {
     expect(text).toContain("可能还没跑到");
     // 未结束且零失败：也不能说「与基线一致」
     expect(renderBaselineDiff({ introduced: [], persisted: [], fixed: [row("a", "b")] }, { inProgress: true })).not.toContain("与基线一致");
+  });
+});
+
+describe("waitForRunConclusion：等终局再算桶", () => {
+  it("已结束的 run 不轮询", async () => {
+    let calls = 0;
+    const result = await waitForRunConclusion({
+      run: { id: 1, conclusion: "success" },
+      fetchRun: async () => {
+        calls++;
+        return { id: 1, conclusion: "success" };
+      },
+    });
+    expect(result).toMatchObject({ timedOut: false, polls: 0, waitedMs: 0 });
+    expect(calls).toBe(0);
+  });
+
+  it("queued → in_progress → completed：每次轮询回调最新状态", async () => {
+    const states = [
+      { id: 7, status: "in_progress", conclusion: null },
+      { id: 7, status: "in_progress", conclusion: null },
+      { id: 7, status: "completed", conclusion: "failure" },
+    ];
+    const seen: string[] = [];
+    let clock = 0;
+    const result = await waitForRunConclusion({
+      run: { id: 7, status: "queued", conclusion: null },
+      fetchRun: async () => states.shift(),
+      intervalMs: 1000,
+      timeoutMs: 60_000,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      onPoll: (latest) => seen.push(latest.status),
+    });
+    expect(result.timedOut).toBe(false);
+    expect(result.polls).toBe(3);
+    expect(result.run.conclusion).toBe("failure");
+    // 等待期间的进度必须反映最新状态，而不是停留在调用时的 queued
+    expect(seen).toEqual(["in_progress", "in_progress", "completed"]);
+  });
+
+  it("超时返回最后快照而不是抛错；最后一次等待不超过剩余预算", async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const result = await waitForRunConclusion({
+      run: { id: 9, status: "queued", conclusion: null },
+      fetchRun: async () => ({ id: 9, status: "queued", conclusion: null }),
+      intervalMs: 20_000,
+      timeoutMs: 50_000,
+      now: () => clock,
+      sleep: async (ms) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    });
+    expect(result.timedOut).toBe(true);
+    expect(result.run.status).toBe("queued");
+    // 40s 之后只剩 10s 预算：最后一段等待必须缩到 10s，不能越过超时线
+    expect(sleeps).toEqual([20_000, 20_000, 10_000]);
+  });
+});
+
+describe("fixHint：每层一条可执行入口", () => {
+  it("所有归因层都有非空、无占位符的命令", () => {
+    for (const layer of FAILURE_LAYERS) {
+      const hint = LAYER_FIX_HINTS[layer];
+      expect(hint, layer).toBeTruthy();
+      expect(hint.command.length, layer).toBeGreaterThan(0);
+      // 带占位符的命令还得人补参数，算不上「可直接执行」
+      expect(hint.command, layer).not.toMatch(/<[^>]+>/);
+    }
+  });
+
+  it("运行时层从归因头收窄到具体测试文件，拿不到就全量", () => {
+    const scoped = fixHintFor({
+      layer: "运行时",
+      firstError: "packages/store/test/migrate-dialect.test.ts:56 · pg · expected false to be true",
+    });
+    expect(scoped.command).toBe("node node_modules/vitest/vitest.mjs run packages/store/test/migrate-dialect.test.ts");
+    const generic = fixHintFor({ layer: "运行时", firstError: "AssertionError: boom" });
+    expect(generic.command).toBe("node node_modules/vitest/vitest.mjs run");
+  });
+
+  it("未知层不硬猜：给全量门禁而不是空", () => {
+    const hint = fixHintFor({ layer: "神秘层", firstError: "" });
+    expect(hint.layer).toBe("未知");
+    expect(hint.command).toContain("scripts/verify.mjs");
+  });
+
+  it("文本段按层去重、只列出现的层，同一层多个文件并列", () => {
+    const text = renderFixHints([
+      { layer: "运行时", firstError: "a.test.ts · x · boom" },
+      { layer: "运行时", firstError: "b.test.ts · y · boom" },
+      { layer: "契约", firstError: "rest-contracts 漂移" },
+    ]);
+    expect(text).toContain("## 修复入口");
+    expect(text.match(/- 运行时：/g)).toHaveLength(1);
+    expect(text).toContain("a.test.ts（或 node node_modules/vitest/vitest.mjs run b.test.ts）");
+    expect(text).toContain("- 契约：");
+    expect(text).not.toContain("- 依赖：");
+    expect(renderFixHints([])).toBe("");
+  });
+
+  it("summarizeJob 每一行都带 fixHint（JSON 可直接消费）", () => {
+    const row = summarizeJob(
+      { id: 1, name: "x", conclusion: "failure", steps: [] },
+      { logText: "src/x.ts(3,1): error TS2307: Cannot find module '@/lib/x'" },
+    );
+    expect(row.fixHint).toEqual({ layer: "构建", command: "node scripts/typecheck.mjs", note: LAYER_FIX_HINTS.构建.note });
   });
 });
 

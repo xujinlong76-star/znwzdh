@@ -1352,6 +1352,40 @@ node scripts/safe-commit.mjs --msg-file <msg> -- \
 2. `safe-commit` 与并行会话同时提交会撞 ref
    （`fatal: cannot lock ref 'HEAD': is at X but expected Y`），重试即可，不是代码问题。
 
+### 20.6 交接增补（09:20）
+
+**改动已备份，不怕被清空**：
+
+```bash
+# 备份位置
+.workbuddy/patches/c6-api-pending.diff            # 4 个已跟踪文件的完整 diff（487 行）
+.workbuddy/patches/notification-outbox-user-data.test.ts.bak  # 未跟踪的新测试
+
+# 恢复
+git apply .workbuddy/patches/c6-api-pending.diff
+cp .workbuddy/patches/notification-outbox-user-data.test.ts.bak    packages/store/test/notification-outbox-user-data.test.ts
+```
+
+**解除条件的精确形态**（只写「等对方」不够，下一个人要知道改哪两行）：
+
+`apps/api/test/route-policy.test.ts`
+
+| 行 | 现状 | 应改成 |
+|---|---|---|
+| 264 | `expect(PERSONAL_TOKEN_WRITE_ROUTES.length).toBeGreaterThan(0)` | 清单清空后这条会失败。应改为「非空时逐条验证；为空则显式断言为空」，因为 `PATCH /api/submissions/:number` 已改为 `admin`，白名单本就应该空 |
+| 347 | `{ route: "PATCH /api/submissions/:number", scope: "write", personal: true, … }` | 删除该行（或改成 `scope: "admin", personal: false`），并按需在表里补一条 admin 级样例 |
+
+`packages/core/src/route-policy.ts:44` 的 `PERSONAL_TOKEN_WRITE_ROUTES` 应改为空数组 ——
+`authz.ts` 的注释已经写明「默认拒绝」，空清单正是最安全的状态。
+
+`apps/api/test/fixtures/unbound-read-routes.txt`：3 条通知读路由（+ 各自 HEAD 变体）
+要么补 zod schema 与绑定（`packages/core/src/rest-responses.ts` +
+`node scripts/generate-rest-contract-types.mjs`），要么进基线并写明理由。属通知功能所有者。
+
+**为什么这些不能由本审计代改**：只改测试不改源码，会让 HEAD 反向变红
+（HEAD 上 `PATCH` 仍是 `write`、白名单仍非空）。与 `data-inventory` 依赖
+`migrate.ts` 是同一个陷阱 —— **测试与源码必须同批落地**。
+
 ### 20.5 本轮结束时的基线
 
 | 检查 | 结果 |

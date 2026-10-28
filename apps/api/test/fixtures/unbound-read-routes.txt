@@ -24,9 +24,7 @@ GET /api/categories/by-slug/{slug}
 GET /api/categories/skos
 GET /api/categories/{id}
 GET /api/categories/{id}/related
-GET /api/collections
 GET /api/collections/by-id/{id}
-GET /api/collections/{slug}
 GET /api/comparisons
 GET /api/crdt/sync
 GET /api/docs
@@ -34,7 +32,6 @@ GET /api/export/backup.json
 GET /api/export/bookmarks.html
 GET /api/facets
 GET /api/favicon/{id}
-GET /api/favorites
 GET /api/favorites/version
 GET /api/graph/centrality
 GET /api/graph/compatibility

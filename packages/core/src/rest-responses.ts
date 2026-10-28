@@ -559,6 +559,229 @@ export const MeOverviewResponse = z.looseObject({
  * 绑定表：路由键 -> 响应契约
  * ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ *
+ * 收藏（写侧与列表）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 收藏行。
+ * `userId` 是调用方自己的规范化身份（别名合并后的），对调用方不是秘密，
+ * 但它不是集成方该依赖的业务字段——契约只承诺收藏内容本身。
+ * `site` 只有列表接口会内联（详情写接口不带），所以是可选。
+ */
+export const FavoritePayload = z.looseObject({
+  id: z.string(),
+  siteId: z.string(),
+  folderId: z.string().nullable(),
+  note: z.string().nullable(),
+  tags: z.array(z.string()).nullable().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number().optional(),
+  deletedAt: z.number().nullable().optional(),
+  site: SitePayload.nullable().optional(),
+});
+
+export const FavoriteFolderPayload = z.looseObject({
+  id: z.string(),
+  name: z.string(),
+  sort: z.number(),
+  createdAt: z.number(),
+  // 同名夹去重命中时路由会附带 existed=true（没有这个字段就是新建）
+  existed: z.boolean().optional(),
+});
+
+/**
+ * GET /api/favorites：全量模式（无 limit）与分页模式（带 limit）共用。
+ * 分页模式额外给 total/hasMore/identity；全量模式恒定全量，不能给 total 假装分页。
+ */
+export const FavoritesListResponse = z.looseObject({
+  items: z.array(FavoritePayload),
+  folders: z.array(FavoriteFolderPayload),
+  total: z.number().int().optional(),
+  hasMore: z.boolean().optional(),
+  identity: z.string().optional(),
+});
+
+export const FavoriteCreateResponse = z.looseObject({
+  favorite: FavoritePayload,
+  // true = 这条收藏早已存在（重复收藏是幂等操作，不是错误）
+  existed: z.boolean(),
+});
+
+export const FavoriteUpdateResponse = z.looseObject({
+  ok: z.literal(true),
+  favorite: FavoritePayload,
+});
+
+/** 收藏夹改名/排序回执：载荷键是 folder 而不是 favorite */
+export const FavoriteFolderUpdateResponse = z.looseObject({
+  ok: z.literal(true),
+  folder: FavoriteFolderPayload,
+});
+
+/** DELETE /api/favorites（清空）回执：removed 是清掉的条数 */
+export const FavoriteRemovalResponse = z.looseObject({
+  ok: z.literal(true),
+  removed: z.number().int(),
+});
+
+/** DELETE /api/favorites/{siteId} 回执：removed 是布尔（这一条是否真的被删）。两种语义不能共用同一 schema */
+export const FavoriteSiteRemovalResponse = z.looseObject({
+  ok: z.literal(true),
+  removed: z.boolean(),
+});
+
+/* ------------------------------------------------------------------ *
+ * 精选专题
+ * ------------------------------------------------------------------ */
+
+export const COLLECTION_KIND_VALUES = ["topic", "geo", "roadmap"] as const;
+const CollectionKindSchema = z.enum(COLLECTION_KIND_VALUES);
+
+export const CollectionPayload = z.looseObject({
+  id: z.string(),
+  slug: z.string(),
+  title: z.string(),
+  description: z.string().nullable().optional(),
+  kind: CollectionKindSchema,
+  icon: z.string().nullable().optional(),
+  sort: z.number(),
+  enabled: z.boolean(),
+  siteCount: z.number().int().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const CollectionListResponse = z.array(CollectionPayload);
+
+/** 专题详情里的站点：站点全量字段 + 该专题内的条目注记与排序 */
+export const CollectionSitePayload = z.looseObject({
+  ...SitePayload.shape,
+  collectionNote: z.string().nullable().optional(),
+  collectionSort: z.number().optional(),
+});
+
+export const CollectionDetailResponse = z.looseObject({
+  collection: CollectionPayload,
+  sites: z.array(CollectionSitePayload),
+});
+
+/** POST /api/collections 与 PATCH /api/collections/{id} 均直接返回专题对象 */
+
+export const CollectionDeleteResponse = z.looseObject({
+  ok: z.literal(true),
+  id: z.string(),
+});
+
+/** 专题条目 add/update/remove 的共用回执 */
+export const CollectionItemMutationResponse = z.looseObject({
+  ok: z.literal(true),
+  collectionId: z.string(),
+  siteId: z.string(),
+});
+
+/* ------------------------------------------------------------------ *
+ * 插件安装生命周期（写侧）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 安装/卸载响应里的插件卡片。
+ * 写路由直接回传仓储记录（当前未走 publicPlugin() 剔敏），因此 ownerIdentity /
+ * pendingChangelog 这类内部字段**可能出现**；looseObject 放行多余字段，
+ * 但契约只承诺下面这些公开字段，调用方不该依赖内部字段。
+ */
+const PluginMutationPayload = z.looseObject({
+  id: z.string(),
+  slug: z.string(),
+  kind: PluginKindSchema,
+  name: z.string(),
+  description: z.string(),
+  icon: z.string().nullable(),
+  tags: z.array(z.string()),
+  author: z.string().nullable(),
+  authorKind: z.string().nullable(),
+  version: z.string(),
+  status: z.string(),
+  source: z.string(),
+  installCount: z.number().int(),
+  starCount: z.number().int(),
+  ratingAvg: z.number(),
+  reviewCount: z.number().int(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+/**
+ * 安装落库的增量结果。
+ * bundle 的逐成员明细只在装 bundle 时出现；site-pack 的类目缺口/父级不一致
+ * 也只是告警字段——都不写成 required，免得为空时契约假红。
+ */
+const PluginInstallAppliedPayload = z.looseObject({
+  sitesAdded: z.number().int(),
+  sitesSkipped: z.number().int(),
+  categoriesCreated: z.number().int(),
+  createdSiteIds: z.array(z.string()),
+  enginesAdded: z.number().int().optional(),
+  categoryGaps: z.array(z.string()).optional(),
+  categoryParentMismatches: z.array(z.string()).optional(),
+  bundleItems: z
+    .array(
+      z.looseObject({
+        slug: z.string(),
+        kind: PluginKindSchema,
+        name: z.string(),
+        alreadyInstalled: z.boolean(),
+        sitesAdded: z.number().int(),
+        sitesSkipped: z.number().int(),
+        enginesAdded: z.number().int(),
+      }),
+    )
+    .optional(),
+});
+
+export const PluginInstallResponse = z.looseObject({
+  success: z.literal(true),
+  plugin: PluginMutationPayload,
+  // install 记录含调用方身份：存在性与版本是客户端「已装版本」提示的依据
+  install: z.looseObject({
+    pluginId: z.string(),
+    version: z.string(),
+    installedAt: z.number(),
+    removedAt: z.number().nullable(),
+  }),
+  // true = 重复安装（幂等），计数未变
+  alreadyInstalled: z.boolean(),
+  applied: PluginInstallAppliedPayload,
+});
+
+/**
+ * 卸载回执。
+ * removed=false 是幂等语义（本来就没装），不是错误；sitesRemoved 与 categoriesRemoved
+ * 是 result.removedSites/removedCategories 的对外别名，两套键同时存在是历史形状。
+ */
+export const PluginUninstallResponse = z.looseObject({
+  success: z.literal(true),
+  plugin: PluginMutationPayload,
+  removed: z.boolean(),
+  removedSites: z.number().int(),
+  removedCategories: z.number().int(),
+  sitesRemoved: z.number().int(),
+  categoriesRemoved: z.number().int(),
+});
+
+export const PluginStarResponse = z.looseObject({
+  success: z.literal(true),
+  starred: z.boolean(),
+  starCount: z.number().int(),
+});
+
+/** 无载荷写回执（DELETE 收藏夹等「只表示成功」的端点） */
+export const OkResponse = z.looseObject({ ok: z.literal(true) });
+
+/* ------------------------------------------------------------------ *
+ * 绑定表
+ * ------------------------------------------------------------------ */
+
 export interface ResponseSchemaBinding {
   schema: z.ZodTypeAny;
   /**
@@ -566,6 +789,12 @@ export interface ResponseSchemaBinding {
    * 显式命名（而不是从路由派生）是为了让生成的客户端类型可直接引用。
    */
   name: string;
+  /**
+   * 成功状态码，默认 "200"。
+   * 写路由常以 201 表示「已创建」，收藏创建还会在幂等命中时回 200——
+   * 声明多个状态码时 OpenAPI 里每个都指向同一份组件。
+   */
+  status?: string | string[];
 }
 
 export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
@@ -588,4 +817,28 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/sites/{id}": { schema: SitePayload, name: "SitePayload" },
   "GET /api/search-history": { schema: SearchHistoryPageResponse, name: "SearchHistoryPageResponse" },
   "GET /api/me": { schema: MeOverviewResponse, name: "MeOverviewResponse" },
+  "GET /api/favorites": { schema: FavoritesListResponse, name: "FavoritesListResponse" },
+  "GET /api/collections": { schema: CollectionListResponse, name: "CollectionListResponse" },
+  "GET /api/collections/{slug}": { schema: CollectionDetailResponse, name: "CollectionDetailResponse" },
+
+  /* 写侧：创建返回 201，更新/删除返回 200；收藏创建在幂等命中时回 200 */
+  "POST /api/sites": { schema: SitePayload, name: "SitePayload", status: "201" },
+  "PATCH /api/sites/{id}": { schema: SitePayload, name: "SitePayload" },
+  "POST /api/plugins/{slug}/install": { schema: PluginInstallResponse, name: "PluginInstallResponse" },
+  "POST /api/plugins/{slug}/uninstall": { schema: PluginUninstallResponse, name: "PluginUninstallResponse" },
+  "DELETE /api/plugins/{slug}/install": { schema: PluginUninstallResponse, name: "PluginUninstallResponse" },
+  "POST /api/plugins/{slug}/star": { schema: PluginStarResponse, name: "PluginStarResponse" },
+  "POST /api/favorites": { schema: FavoriteCreateResponse, name: "FavoriteCreateResponse", status: ["200", "201"] },
+  "PATCH /api/favorites/{siteId}": { schema: FavoriteUpdateResponse, name: "FavoriteUpdateResponse" },
+  "DELETE /api/favorites/{siteId}": { schema: FavoriteSiteRemovalResponse, name: "FavoriteSiteRemovalResponse" },
+  "DELETE /api/favorites": { schema: FavoriteRemovalResponse, name: "FavoriteRemovalResponse" },
+  "POST /api/favorites/folders": { schema: FavoriteFolderPayload, name: "FavoriteFolderPayload", status: ["200", "201"] },
+  "PATCH /api/favorites/folders/{id}": { schema: FavoriteFolderUpdateResponse, name: "FavoriteFolderUpdateResponse" },
+  "DELETE /api/favorites/folders/{id}": { schema: OkResponse, name: "OkResponse" },
+  "POST /api/collections": { schema: CollectionPayload, name: "CollectionPayload", status: "201" },
+  "PATCH /api/collections/{id}": { schema: CollectionPayload, name: "CollectionPayload" },
+  "DELETE /api/collections/{id}": { schema: CollectionDeleteResponse, name: "CollectionDeleteResponse" },
+  "POST /api/collections/{id}/items": { schema: CollectionItemMutationResponse, name: "CollectionItemMutationResponse" },
+  "PATCH /api/collections/{id}/items/{siteId}": { schema: CollectionItemMutationResponse, name: "CollectionItemMutationResponse" },
+  "DELETE /api/collections/{id}/items/{siteId}": { schema: CollectionItemMutationResponse, name: "CollectionItemMutationResponse" },
 };

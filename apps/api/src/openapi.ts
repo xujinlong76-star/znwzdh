@@ -176,15 +176,27 @@ export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
     const okSchema = responseBinding
       ? { $ref: "#/components/schemas/" + responseBinding.name }
       : { type: "object" };
+    // 成功状态码由绑定声明（默认 200）：创建类写路由实际回 201，
+    // 文档若一律写 200，照着文档写的客户端会把成功当异常分支。
+    const successStatuses = responseBinding
+      ? Array.isArray(responseBinding.status)
+        ? responseBinding.status
+        : [responseBinding.status ?? "200"]
+      : ["200"];
+    const responses: Record<string, unknown> = {};
+    for (const status of successStatuses) {
+      responses[status] = {
+        description: status === "201" ? "已创建" : "成功",
+        content: { "application/json": { schema: okSchema } },
+      };
+    }
     const operation: Record<string, unknown> = {
       summary: DESCRIPTIONS[key] ?? inferDescription(r.method.toUpperCase(), r.url),
       description: DESCRIPTIONS[key] ?? inferDescription(r.method.toUpperCase(), r.url),
       tags: [template.split("/")[2] ?? "misc"],
       operationId: (r.method + "_" + template.replace(/[^\w]+/g, "_")).toLowerCase(),
       security,
-      responses: {
-        "200": { description: "成功", content: { "application/json": { schema: okSchema } } },
-      },
+      responses,
     };
     const pathParams = params.map((name) => ({
       name, in: "path", required: true,
@@ -213,17 +225,17 @@ export function buildOpenApiDoc(routes: RouteEntry[]): Record<string, unknown> {
       };
     }
     // 错误响应：写操作与详情类端点可能 400/401/404/409 —— 只声明确有语义的
-    const responses = operation.responses as Record<string, unknown>;
+    const errorResponses = operation.responses as Record<string, unknown>;
     if (r.scope !== "public") {
-      responses["401"] = { description: "缺少/无效 Bearer token（NAVHUB_AUTH_REQUIRED 开启时）" };
-      responses["403"] = { description: "token scope 不足（需要 " + r.scope + "）" };
+      errorResponses["401"] = { description: "缺少/无效 Bearer token（NAVHUB_AUTH_REQUIRED 开启时）" };
+      errorResponses["403"] = { description: "token scope 不足（需要 " + r.scope + "）" };
     }
     if (["post"].includes(method) || params.length > 0) {
-      responses["400"] = { description: "参数校验失败" };
-      responses["404"] = { description: "资源不存在" };
+      errorResponses["400"] = { description: "参数校验失败" };
+      errorResponses["404"] = { description: "资源不存在" };
     }
     if (key === "POST /api/sites" || key === "POST /api/trash/{id}/restore") {
-      responses["409"] = { description: "URL 冲突（已存在 / 恢复目标 URL 被占用）" };
+      errorResponses["409"] = { description: "URL 冲突（已存在 / 恢复目标 URL 被占用）" };
     }
 
     paths[template] = paths[template] ?? {};

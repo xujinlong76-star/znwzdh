@@ -18,11 +18,27 @@ import {
   CategoryCountsResponse,
   CategoryListResponse,
   CategoryPageResponse,
+  CollectionDeleteResponse,
+  CollectionDetailResponse,
+  CollectionItemMutationResponse,
+  CollectionListResponse,
+  CollectionPayload,
+  FavoriteCreateResponse,
+  FavoriteFolderPayload,
+  FavoriteFolderUpdateResponse,
+  FavoriteRemovalResponse,
+  FavoriteSiteRemovalResponse,
+  FavoritesListResponse,
+  FavoriteUpdateResponse,
   HealthResponse,
   InstalledPluginsResponse,
   MeOverviewResponse,
+  OkResponse,
+  PluginInstallResponse,
   PluginListResponse,
+  PluginStarResponse,
   PluginTapsResponse,
+  PluginUninstallResponse,
   PublicPluginTapsResponse,
   RESPONSE_SCHEMA_BINDINGS,
   RankNewResponse,
@@ -158,6 +174,23 @@ function expectContract(schema: { safeParse: (v: unknown) => any }, payload: unk
   expect(parsed.success, label + " 不满足响应契约：" + (parsed.success ? "" : JSON.stringify(parsed.error.issues))).toBe(true);
 }
 
+/**
+ * 写路由的运行时覆盖记账：写绑定的响应形状各不相同（回执/实体/安装结果），
+ * 无法像读路由那样用一份基线快照兜住。这里在真实响应校验时登记命中，
+ * 文件末尾再核对「每个非读绑定都被跑过」，新增写绑定没补用例会直接红。
+ */
+const RUNTIME_COVERED = new Set<string>();
+
+function expectRoutedContract(
+  key: string,
+  schema: { safeParse: (v: unknown) => any },
+  payload: unknown,
+  label = key,
+): void {
+  RUNTIME_COVERED.add(key);
+  expectContract(schema, payload, label);
+}
+
 describe("绑定表与真实路由同源", () => {
   it("每个绑定键都能在注册期路由清单里找到", () => {
     const inventory = new Set(
@@ -168,7 +201,7 @@ describe("绑定表与真实路由同源", () => {
     }
   });
 
-  it("每个绑定都进了 openapi.json，且 200 指向组件而不是通用 object", async () => {
+  it("每个绑定都进了 openapi.json，且声明的成功状态码都指向组件而不是通用 object", async () => {
     const doc = (await app.inject({ method: "GET", url: "/api/openapi.json" })).json() as {
       paths: Record<string, Record<string, any>>;
       components: { schemas: Record<string, any> };
@@ -177,8 +210,13 @@ describe("绑定表与真实路由同源", () => {
       const [method, path] = key.split(" ");
       const op = doc.paths[path!]?.[method!.toLowerCase()];
       expect(op, "文档缺少端点：" + key).toBeTruthy();
-      const ref = op.responses["200"].content["application/json"].schema.$ref;
-      expect(ref, key + " 的 200 未引用响应契约").toBe("#/components/schemas/" + binding.name);
+      // 写路由的成功码不都是 200（201 新建、收藏建/改两态并存），
+      // 文档必须按绑定声明的每个成功码都挂同一组件，否则生成的客户端只认一半。
+      const statuses = Array.isArray(binding.status) ? binding.status : [binding.status ?? "200"];
+      for (const status of statuses) {
+        const ref = op.responses[status]?.content?.["application/json"]?.schema?.$ref;
+        expect(ref, key + " 的 " + status + " 未引用响应契约").toBe("#/components/schemas/" + binding.name);
+      }
 
       const component = doc.components.schemas[binding.name];
       expect(component, "组件缺失：" + binding.name).toBeTruthy();
@@ -310,7 +348,7 @@ describe("真实响应满足契约", () => {
   it("POST /api/search", async () => {
     const res = await app.inject({ method: "POST", url: "/api/search", payload: { q: "Cursor" } });
     expect(res.statusCode).toBe(200);
-    expectContract(SearchResponse, res.json(), "POST /api/search");
+    expectRoutedContract("POST /api/search", SearchResponse, res.json());
   });
 
   it("GET /api/categories", async () => {
@@ -578,5 +616,250 @@ describe("契约不是空转（负控：手工漂移必须被拒）", () => {
   it("installed：kind 越界会被拒", async () => {
     const body = (await app.inject({ method: "GET", url: "/api/plugins/installed", headers: { "x-navhub-user-id": PLUGIN_IDENTITY } })).json();
     expect(InstalledPluginsResponse.safeParse({ ...body, items: [{ ...body.items[0], kind: "mystery" }] }).success).toBe(false);
+  });
+});
+
+/**
+ * 写路由真实响应。
+ *
+ * 必须放在读路由与负控之后：本组会建站点、装插件、写收藏与专题，
+ * health / sites / me 那些「初始数据量」断言若在其后就会随写入漂移。
+ */
+describe("写路由真实响应满足契约（状态码 + 形状）", () => {
+  const WRITE_IDENTITY = "contract-write-user";
+  const WRITE_HEADERS = { "x-navhub-user-id": WRITE_IDENTITY };
+  const ADMIN_HEADERS = { authorization: "Bearer " + ADMIN_TOKEN };
+  let writeSiteId = "";
+
+  it("POST /api/sites（201）与 PATCH /api/sites/{id}（200）共用 SitePayload", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/sites",
+      headers: ADMIN_HEADERS,
+      payload: { url: "https://write-contract.example.com", title: "写契约站点", categoryId: "cat-ai", tags: ["契约"] },
+    });
+    expect(created.statusCode).toBe(201);
+    const site = created.json();
+    expectRoutedContract("POST /api/sites", SitePayload, site);
+    expect(site.id).toBeTruthy();
+    writeSiteId = site.id;
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: "/api/sites/" + encodeURIComponent(writeSiteId),
+      headers: ADMIN_HEADERS,
+      payload: { title: "写契约站点（改）", description: "写路由响应契约用例" },
+    });
+    expect(patched.statusCode).toBe(200);
+    const updated = patched.json();
+    expectRoutedContract("PATCH /api/sites/{id}", SitePayload, updated);
+    expect(updated.title).toBe("写契约站点（改）");
+  });
+
+  it("插件安装（POST）与卸载（DELETE 别名 / POST）以及星标", async () => {
+    const list = (await app.inject({ method: "GET", url: "/api/plugins" })).json();
+    const theme = list.items.find((p: { kind: string }) => p.kind === "theme");
+    expect(theme, "种子主题插件丢失，写路由用例无法定位 slug").toBeTruthy();
+    const slug = encodeURIComponent(theme.slug as string);
+
+    const installed = await app.inject({ method: "POST", url: "/api/plugins/" + slug + "/install", headers: WRITE_HEADERS, payload: {} });
+    expect(installed.statusCode).toBe(200);
+    const installBody = installed.json();
+    expectRoutedContract("POST /api/plugins/{slug}/install", PluginInstallResponse, installBody);
+    expect(installBody.success).toBe(true);
+    expect(installBody.alreadyInstalled).toBe(false);
+    // theme 不导入站点：这条断言同时钉住「安装结果里 applied 恒为完整对象」
+    expect(installBody.applied.sitesAdded).toBe(0);
+
+    const uninstalled = await app.inject({ method: "DELETE", url: "/api/plugins/" + slug + "/install", headers: WRITE_HEADERS });
+    expect(uninstalled.statusCode).toBe(200);
+    const uninstallBody = uninstalled.json();
+    expectRoutedContract("DELETE /api/plugins/{slug}/install", PluginUninstallResponse, uninstallBody);
+    expect(uninstallBody.removed).toBe(true);
+    expect(uninstallBody.sitesRemoved).toBe(0);
+    expect(uninstallBody.categoriesRemoved).toBe(0);
+
+    // 再装一次，覆盖 POST /uninstall 这个兼容别名
+    const reinstalled = await app.inject({ method: "POST", url: "/api/plugins/" + slug + "/install", headers: WRITE_HEADERS, payload: {} });
+    expect(reinstalled.statusCode).toBe(200);
+    const viaAlias = await app.inject({ method: "POST", url: "/api/plugins/" + slug + "/uninstall", headers: WRITE_HEADERS, payload: {} });
+    expect(viaAlias.statusCode).toBe(200);
+    expectRoutedContract("POST /api/plugins/{slug}/uninstall", PluginUninstallResponse, viaAlias.json());
+
+    const starred = await app.inject({ method: "POST", url: "/api/plugins/" + slug + "/star", headers: WRITE_HEADERS });
+    expect(starred.statusCode).toBe(200);
+    const starBody = starred.json();
+    expectRoutedContract("POST /api/plugins/{slug}/star", PluginStarResponse, starBody);
+    expect(starBody.starred).toBe(true);
+    expect(starBody.starCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("收藏与收藏夹全链路（含两种状态码并存与清空）", async () => {
+    expect(writeSiteId, "前一条用例没建出站点").toBeTruthy();
+
+    const created = await app.inject({ method: "POST", url: "/api/favorites", headers: WRITE_HEADERS, payload: { siteId: writeSiteId } });
+    expect(created.statusCode).toBe(201);
+    const createdBody = created.json();
+    expectRoutedContract("POST /api/favorites", FavoriteCreateResponse, createdBody);
+    expect(createdBody.existed).toBe(false);
+
+    const again = await app.inject({ method: "POST", url: "/api/favorites", headers: WRITE_HEADERS, payload: { siteId: writeSiteId } });
+    expect(again.statusCode).toBe(200);
+    expectRoutedContract("POST /api/favorites", FavoriteCreateResponse, again.json());
+    expect(again.json().existed).toBe(true);
+
+    const full = await app.inject({ method: "GET", url: "/api/favorites", headers: WRITE_HEADERS });
+    expect(full.statusCode).toBe(200);
+    const fullBody = full.json();
+    expectRoutedContract("GET /api/favorites", FavoritesListResponse, fullBody, "GET /api/favorites（全量）");
+    expect(fullBody.items.length).toBe(1);
+    // 全量模式要把站点详情挂上，前端直接渲染 item.site
+    expect(fullBody.items[0].site?.id).toBe(writeSiteId);
+
+    const paged = await app.inject({ method: "GET", url: "/api/favorites?limit=10", headers: WRITE_HEADERS });
+    expect(paged.statusCode).toBe(200);
+    const pagedBody = paged.json();
+    expectRoutedContract("GET /api/favorites?limit", FavoritesListResponse, pagedBody, "GET /api/favorites（分页）");
+    expect(pagedBody.total).toBe(1);
+    expect(pagedBody.hasMore).toBe(false);
+
+    const folderCreated = await app.inject({ method: "POST", url: "/api/favorites/folders", headers: WRITE_HEADERS, payload: { name: "契约夹" } });
+    expect(folderCreated.statusCode).toBe(201);
+    const folder = folderCreated.json();
+    expectRoutedContract("POST /api/favorites/folders", FavoriteFolderPayload, folder);
+    expect(folder.existed).toBeUndefined();
+
+    const folderDup = await app.inject({ method: "POST", url: "/api/favorites/folders", headers: WRITE_HEADERS, payload: { name: "契约夹" } });
+    expect(folderDup.statusCode).toBe(200);
+    const folderDupBody = folderDup.json();
+    expectRoutedContract("POST /api/favorites/folders", FavoriteFolderPayload, folderDupBody, "POST /api/favorites/folders（同名）");
+    expect(folderDupBody.existed).toBe(true);
+    expect(folderDupBody.id).toBe(folder.id);
+
+    const updated = await app.inject({
+      method: "PATCH",
+      url: "/api/favorites/" + encodeURIComponent(writeSiteId),
+      headers: WRITE_HEADERS,
+      payload: { folderId: folder.id, note: "写契约备注" },
+    });
+    expect(updated.statusCode).toBe(200);
+    const updatedBody = updated.json();
+    expectRoutedContract("PATCH /api/favorites/{siteId}", FavoriteUpdateResponse, updatedBody);
+    expect(updatedBody.favorite.note).toBe("写契约备注");
+
+    const folderPatched = await app.inject({
+      method: "PATCH",
+      url: "/api/favorites/folders/" + encodeURIComponent(folder.id),
+      headers: WRITE_HEADERS,
+      payload: { name: "契约夹改名" },
+    });
+    expect(folderPatched.statusCode).toBe(200);
+    const folderPatchedBody = folderPatched.json();
+    expectRoutedContract("PATCH /api/favorites/folders/{id}", FavoriteFolderUpdateResponse, folderPatchedBody);
+    expect(folderPatchedBody.folder.name).toBe("契约夹改名");
+
+    const folderDeleted = await app.inject({ method: "DELETE", url: "/api/favorites/folders/" + encodeURIComponent(folder.id), headers: WRITE_HEADERS });
+    expect(folderDeleted.statusCode).toBe(200);
+    expectRoutedContract("DELETE /api/favorites/folders/{id}", OkResponse, folderDeleted.json());
+
+    const removed = await app.inject({ method: "DELETE", url: "/api/favorites/" + encodeURIComponent(writeSiteId), headers: WRITE_HEADERS });
+    expect(removed.statusCode).toBe(200);
+    const removedBody = removed.json();
+    expectRoutedContract("DELETE /api/favorites/{siteId}", FavoriteSiteRemovalResponse, removedBody);
+    expect(removedBody.removed).toBe(true);
+
+    await app.inject({ method: "POST", url: "/api/favorites", headers: WRITE_HEADERS, payload: { siteId: writeSiteId } });
+    const cleared = await app.inject({ method: "DELETE", url: "/api/favorites", headers: WRITE_HEADERS });
+    expect(cleared.statusCode).toBe(200);
+    const clearedBody = cleared.json();
+    expectRoutedContract("DELETE /api/favorites", FavoriteRemovalResponse, clearedBody);
+    expect(clearedBody.removed).toBe(1);
+  });
+
+  it("精选专题全链路：建改删 + 条目增改删 + 公开详情", async () => {
+    expect(writeSiteId, "前序用例没建出站点").toBeTruthy();
+
+    const initial = await app.inject({ method: "GET", url: "/api/collections" });
+    expect(initial.statusCode).toBe(200);
+    expectRoutedContract("GET /api/collections", CollectionListResponse, initial.json());
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/collections",
+      headers: ADMIN_HEADERS,
+      payload: { slug: "contract-topic", title: "契约专题", kind: "topic", description: "写路由响应契约用例" },
+    });
+    expect(created.statusCode).toBe(201);
+    const col = created.json();
+    expectRoutedContract("POST /api/collections", CollectionPayload, col);
+    expect(col.slug).toBe("contract-topic");
+    expect(col.enabled).toBe(true);
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: "/api/collections/" + encodeURIComponent(col.id),
+      headers: ADMIN_HEADERS,
+      payload: { title: "契约专题（改）" },
+    });
+    expect(patched.statusCode).toBe(200);
+    const patchedCol = patched.json();
+    expectRoutedContract("PATCH /api/collections/{id}", CollectionPayload, patchedCol);
+    expect(patchedCol.title).toBe("契约专题（改）");
+
+    const added = await app.inject({
+      method: "POST",
+      url: "/api/collections/" + encodeURIComponent(col.id) + "/items",
+      headers: ADMIN_HEADERS,
+      payload: { siteId: writeSiteId },
+    });
+    expect(added.statusCode).toBe(200);
+    expectRoutedContract("POST /api/collections/{id}/items", CollectionItemMutationResponse, added.json());
+
+    const itemPatched = await app.inject({
+      method: "PATCH",
+      url: "/api/collections/" + encodeURIComponent(col.id) + "/items/" + encodeURIComponent(writeSiteId),
+      headers: ADMIN_HEADERS,
+      payload: { note: "专题备注" },
+    });
+    expect(itemPatched.statusCode).toBe(200);
+    expectRoutedContract("PATCH /api/collections/{id}/items/{siteId}", CollectionItemMutationResponse, itemPatched.json());
+
+    const detail = await app.inject({ method: "GET", url: "/api/collections/contract-topic" });
+    expect(detail.statusCode).toBe(200);
+    const detailBody = detail.json();
+    expectRoutedContract("GET /api/collections/{slug}", CollectionDetailResponse, detailBody);
+    expect(detailBody.collection.id).toBe(col.id);
+    expect(detailBody.sites.length).toBe(1);
+    expect(detailBody.sites[0].id).toBe(writeSiteId);
+    expect(detailBody.sites[0].collectionNote).toBe("专题备注");
+
+    const itemRemoved = await app.inject({
+      method: "DELETE",
+      url: "/api/collections/" + encodeURIComponent(col.id) + "/items/" + encodeURIComponent(writeSiteId),
+      headers: ADMIN_HEADERS,
+    });
+    expect(itemRemoved.statusCode).toBe(200);
+    expectRoutedContract("DELETE /api/collections/{id}/items/{siteId}", CollectionItemMutationResponse, itemRemoved.json());
+
+    const emptied = await app.inject({ method: "GET", url: "/api/collections/contract-topic" });
+    expect(emptied.statusCode).toBe(200);
+    expect(emptied.json().sites).toEqual([]);
+
+    const deleted = await app.inject({ method: "DELETE", url: "/api/collections/" + encodeURIComponent(col.id), headers: ADMIN_HEADERS });
+    expect(deleted.statusCode).toBe(200);
+    const deletedBody = deleted.json();
+    expectRoutedContract("DELETE /api/collections/{id}", CollectionDeleteResponse, deletedBody);
+    expect(deletedBody.id).toBe(col.id);
+  });
+});
+
+describe("写侧绑定没有漏测", () => {
+  it("所有非读方法的绑定都在本轮真实响应里验过", () => {
+    const writeBindings = Object.keys(RESPONSE_SCHEMA_BINDINGS).filter((key) => !READ_METHODS.has(key.split(" ")[0]!.toUpperCase()));
+    const missing = writeBindings.filter((key) => !RUNTIME_COVERED.has(key));
+    expect(
+      missing,
+      "以下写绑定没有运行时用例：新增写绑定请在同名 describe 里补 expectRoutedContract",
+    ).toEqual([]);
   });
 });

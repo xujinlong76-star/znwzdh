@@ -544,6 +544,8 @@ export interface PublicPluginTapsResponse {
 
 /**
  * GET /api/sites/{id}
+ * POST /api/sites
+ * PATCH /api/sites/{id}
  */
 export interface SitePayload {
   id: string;
@@ -651,11 +653,468 @@ export interface MeOverviewResponse {
   [key: string]: unknown;
 }
 
+/**
+ * GET /api/favorites
+ */
+export interface FavoritesListResponse {
+  items: ({
+    id: string;
+    siteId: string;
+    folderId: string | null;
+    note: string | null;
+    tags?: string[] | null;
+    createdAt: number;
+    updatedAt?: number;
+    deletedAt?: number | null;
+    site?: {
+      id: string;
+      url: string;
+      title: string;
+      categoryId: string;
+      tags: string[];
+      status: "active" | "pending" | "broken" | "archived";
+      enabled: boolean;
+      sort: number;
+      weight: number;
+      health: {
+        ok: boolean;
+        httpStatus?: number | null;
+        latencyMs?: number | null;
+        redirectTo?: string | null;
+        error?: string | null;
+        lastCheckedAt?: number | null;
+      };
+      createdAt: number;
+      updatedAt: number;
+      titleEn?: string | null;
+      description?: string | null;
+      descriptionEn?: string | null;
+      iconKey?: string | null;
+      screenshotKey?: string | null;
+      subCategoryId?: string | null;
+      featured?: boolean;
+      source?: string | null;
+      visitCount?: number;
+      lastVisitedAt?: number | null;
+      trendScore?: number;
+      deletedAt?: number | null;
+      workspaces?: string[];
+      facets?: Record<string, string[]>;
+      [key: string]: unknown;
+    } | null;
+    [key: string]: unknown;
+  })[];
+  folders: {
+    id: string;
+    name: string;
+    sort: number;
+    createdAt: number;
+    existed?: boolean;
+    [key: string]: unknown;
+  }[];
+  total?: number;
+  hasMore?: boolean;
+  identity?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/collections
+ */
+export type CollectionListResponse = ({
+  id: string;
+  slug: string;
+  title: string;
+  description?: string | null;
+  kind: "topic" | "geo" | "roadmap";
+  icon?: string | null;
+  sort: number;
+  enabled: boolean;
+  siteCount?: number;
+  createdAt: number;
+  updatedAt: number;
+  [key: string]: unknown;
+})[];
+
+/**
+ * GET /api/collections/{slug}
+ */
+export interface CollectionDetailResponse {
+  collection: {
+    id: string;
+    slug: string;
+    title: string;
+    description?: string | null;
+    kind: "topic" | "geo" | "roadmap";
+    icon?: string | null;
+    sort: number;
+    enabled: boolean;
+    siteCount?: number;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
+  sites: ({
+    id: string;
+    url: string;
+    title: string;
+    categoryId: string;
+    tags: string[];
+    status: "active" | "pending" | "broken" | "archived";
+    enabled: boolean;
+    sort: number;
+    weight: number;
+    health: {
+      ok: boolean;
+      httpStatus?: number | null;
+      latencyMs?: number | null;
+      redirectTo?: string | null;
+      error?: string | null;
+      lastCheckedAt?: number | null;
+    };
+    createdAt: number;
+    updatedAt: number;
+    titleEn?: string | null;
+    description?: string | null;
+    descriptionEn?: string | null;
+    iconKey?: string | null;
+    screenshotKey?: string | null;
+    subCategoryId?: string | null;
+    featured?: boolean;
+    source?: string | null;
+    visitCount?: number;
+    lastVisitedAt?: number | null;
+    trendScore?: number;
+    deletedAt?: number | null;
+    workspaces?: string[];
+    facets?: Record<string, string[]>;
+    collectionNote?: string | null;
+    collectionSort?: number;
+    [key: string]: unknown;
+  })[];
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/plugins/{slug}/install
+ */
+export interface PluginInstallResponse {
+  success: true;
+  plugin: {
+    id: string;
+    slug: string;
+    kind: "site-pack" | "workspace-preset" | "theme" | "search-pack" | "bundle";
+    name: string;
+    description: string;
+    icon: string | null;
+    tags: string[];
+    author: string | null;
+    authorKind: string | null;
+    version: string;
+    status: string;
+    source: string;
+    installCount: number;
+    starCount: number;
+    ratingAvg: number;
+    reviewCount: number;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
+  install: {
+    pluginId: string;
+    version: string;
+    installedAt: number;
+    removedAt: number | null;
+    [key: string]: unknown;
+  };
+  alreadyInstalled: boolean;
+  applied: {
+    sitesAdded: number;
+    sitesSkipped: number;
+    categoriesCreated: number;
+    createdSiteIds: string[];
+    enginesAdded?: number;
+    categoryGaps?: string[];
+    categoryParentMismatches?: string[];
+    bundleItems?: ({
+      slug: string;
+      kind: "site-pack" | "workspace-preset" | "theme" | "search-pack" | "bundle";
+      name: string;
+      alreadyInstalled: boolean;
+      sitesAdded: number;
+      sitesSkipped: number;
+      enginesAdded: number;
+      [key: string]: unknown;
+    })[];
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/plugins/{slug}/uninstall
+ * DELETE /api/plugins/{slug}/install
+ */
+export interface PluginUninstallResponse {
+  success: true;
+  plugin: {
+    id: string;
+    slug: string;
+    kind: "site-pack" | "workspace-preset" | "theme" | "search-pack" | "bundle";
+    name: string;
+    description: string;
+    icon: string | null;
+    tags: string[];
+    author: string | null;
+    authorKind: string | null;
+    version: string;
+    status: string;
+    source: string;
+    installCount: number;
+    starCount: number;
+    ratingAvg: number;
+    reviewCount: number;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  };
+  removed: boolean;
+  removedSites: number;
+  removedCategories: number;
+  sitesRemoved: number;
+  categoriesRemoved: number;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/plugins/{slug}/star
+ */
+export interface PluginStarResponse {
+  success: true;
+  starred: boolean;
+  starCount: number;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/favorites
+ */
+export interface FavoriteCreateResponse {
+  favorite: {
+    id: string;
+    siteId: string;
+    folderId: string | null;
+    note: string | null;
+    tags?: string[] | null;
+    createdAt: number;
+    updatedAt?: number;
+    deletedAt?: number | null;
+    site?: {
+      id: string;
+      url: string;
+      title: string;
+      categoryId: string;
+      tags: string[];
+      status: "active" | "pending" | "broken" | "archived";
+      enabled: boolean;
+      sort: number;
+      weight: number;
+      health: {
+        ok: boolean;
+        httpStatus?: number | null;
+        latencyMs?: number | null;
+        redirectTo?: string | null;
+        error?: string | null;
+        lastCheckedAt?: number | null;
+      };
+      createdAt: number;
+      updatedAt: number;
+      titleEn?: string | null;
+      description?: string | null;
+      descriptionEn?: string | null;
+      iconKey?: string | null;
+      screenshotKey?: string | null;
+      subCategoryId?: string | null;
+      featured?: boolean;
+      source?: string | null;
+      visitCount?: number;
+      lastVisitedAt?: number | null;
+      trendScore?: number;
+      deletedAt?: number | null;
+      workspaces?: string[];
+      facets?: Record<string, string[]>;
+      [key: string]: unknown;
+    } | null;
+    [key: string]: unknown;
+  };
+  existed: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * PATCH /api/favorites/{siteId}
+ */
+export interface FavoriteUpdateResponse {
+  ok: true;
+  favorite: {
+    id: string;
+    siteId: string;
+    folderId: string | null;
+    note: string | null;
+    tags?: string[] | null;
+    createdAt: number;
+    updatedAt?: number;
+    deletedAt?: number | null;
+    site?: {
+      id: string;
+      url: string;
+      title: string;
+      categoryId: string;
+      tags: string[];
+      status: "active" | "pending" | "broken" | "archived";
+      enabled: boolean;
+      sort: number;
+      weight: number;
+      health: {
+        ok: boolean;
+        httpStatus?: number | null;
+        latencyMs?: number | null;
+        redirectTo?: string | null;
+        error?: string | null;
+        lastCheckedAt?: number | null;
+      };
+      createdAt: number;
+      updatedAt: number;
+      titleEn?: string | null;
+      description?: string | null;
+      descriptionEn?: string | null;
+      iconKey?: string | null;
+      screenshotKey?: string | null;
+      subCategoryId?: string | null;
+      featured?: boolean;
+      source?: string | null;
+      visitCount?: number;
+      lastVisitedAt?: number | null;
+      trendScore?: number;
+      deletedAt?: number | null;
+      workspaces?: string[];
+      facets?: Record<string, string[]>;
+      [key: string]: unknown;
+    } | null;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/favorites/{siteId}
+ */
+export interface FavoriteSiteRemovalResponse {
+  ok: true;
+  removed: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/favorites
+ */
+export interface FavoriteRemovalResponse {
+  ok: true;
+  removed: number;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/favorites/folders
+ */
+export interface FavoriteFolderPayload {
+  id: string;
+  name: string;
+  sort: number;
+  createdAt: number;
+  existed?: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * PATCH /api/favorites/folders/{id}
+ */
+export interface FavoriteFolderUpdateResponse {
+  ok: true;
+  folder: {
+    id: string;
+    name: string;
+    sort: number;
+    createdAt: number;
+    existed?: boolean;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/favorites/folders/{id}
+ */
+export interface OkResponse {
+  ok: true;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/collections
+ * PATCH /api/collections/{id}
+ */
+export interface CollectionPayload {
+  id: string;
+  slug: string;
+  title: string;
+  description?: string | null;
+  kind: "topic" | "geo" | "roadmap";
+  icon?: string | null;
+  sort: number;
+  enabled: boolean;
+  siteCount?: number;
+  createdAt: number;
+  updatedAt: number;
+  [key: string]: unknown;
+}
+
+/**
+ * DELETE /api/collections/{id}
+ */
+export interface CollectionDeleteResponse {
+  ok: true;
+  id: string;
+  [key: string]: unknown;
+}
+
+/**
+ * POST /api/collections/{id}/items
+ * PATCH /api/collections/{id}/items/{siteId}
+ * DELETE /api/collections/{id}/items/{siteId}
+ */
+export interface CollectionItemMutationResponse {
+  ok: true;
+  collectionId: string;
+  siteId: string;
+  [key: string]: unknown;
+}
+
 /** 路由键 -> 响应类型（前端按端点取类型，避免自己再抄一份接口） */
 export interface RestContractRoutes {
+  "DELETE /api/collections/{id}": CollectionDeleteResponse;
+  "DELETE /api/collections/{id}/items/{siteId}": CollectionItemMutationResponse;
+  "DELETE /api/favorites": FavoriteRemovalResponse;
+  "DELETE /api/favorites/folders/{id}": OkResponse;
+  "DELETE /api/favorites/{siteId}": FavoriteSiteRemovalResponse;
+  "DELETE /api/plugins/{slug}/install": PluginUninstallResponse;
   "GET /api/categories": CategoryListResponse;
   "GET /api/categories/counts": CategoryCountsResponse;
   "GET /api/categories/page": CategoryPageResponse;
+  "GET /api/collections": CollectionListResponse;
+  "GET /api/collections/{slug}": CollectionDetailResponse;
+  "GET /api/favorites": FavoritesListResponse;
   "GET /api/health": HealthResponse;
   "GET /api/me": MeOverviewResponse;
   "GET /api/plugins": PluginListResponse;
@@ -669,5 +1128,18 @@ export interface RestContractRoutes {
   "GET /api/sites": SiteListResponse;
   "GET /api/sites/{id}": SitePayload;
   "GET /api/tags": TagListResponse;
+  "PATCH /api/collections/{id}": CollectionPayload;
+  "PATCH /api/collections/{id}/items/{siteId}": CollectionItemMutationResponse;
+  "PATCH /api/favorites/folders/{id}": FavoriteFolderUpdateResponse;
+  "PATCH /api/favorites/{siteId}": FavoriteUpdateResponse;
+  "PATCH /api/sites/{id}": SitePayload;
+  "POST /api/collections": CollectionPayload;
+  "POST /api/collections/{id}/items": CollectionItemMutationResponse;
+  "POST /api/favorites": FavoriteCreateResponse;
+  "POST /api/favorites/folders": FavoriteFolderPayload;
+  "POST /api/plugins/{slug}/install": PluginInstallResponse;
+  "POST /api/plugins/{slug}/star": PluginStarResponse;
+  "POST /api/plugins/{slug}/uninstall": PluginUninstallResponse;
   "POST /api/search": SearchResponse;
+  "POST /api/sites": SitePayload;
 }

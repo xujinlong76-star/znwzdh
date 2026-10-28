@@ -22,8 +22,15 @@ import type { PluginDiffResult, PluginManifest, PluginKind } from './plugins/plu
 import type {
   CategoryCountsResponse,
   CategoryListResponse,
+  CollectionDetailResponse,
+  CollectionListResponse,
+  CollectionPayload,
+  FavoritesListResponse,
   InstalledPluginsResponse,
+  PluginInstallResponse,
+  PluginStarResponse,
   PluginTapsResponse,
+  PluginUninstallResponse,
   PublicPluginTapsResponse,
   RankNewResponse,
   RankTrendingResponse,
@@ -644,24 +651,21 @@ export async function fetchSimilar(siteId: string, limit = 6, onDegraded?: Degra
 
 /* ------------------------------ 收藏夹 ------------------------------ */
 
-export interface HubFavorite {
-  id: string
-  siteId: string
-  folderId: string | null
-  note: string | null
-  /** 标签（T22）：服务端已归一（≤8 个、各 ≤24 字符）；null = 未打标签 */
-  tags?: string[] | null
-  createdAt: number
-  site: HubSite | null
-}
+/**
+ * 契约生成物带 `[key: string]: unknown` 索引签名；直接用 Omit 会把具名字段一起
+ * 折进索引签名（Omit 基于 keyof，string 覆盖了所有字面量键），这里先剥掉索引。
+ */
+type LiteralKeys<T> = { [K in keyof T as K extends string ? (string extends K ? never : K) : never]: T[K] }
+
+/**
+ * 收藏行：字段全部取自 GET /api/favorites 的契约生成物。
+ * `site` 在收藏列表响应里恒有键（null 或站点详情），展示层也依赖它，故收窄回必填；
+ * 写接口（创建/更新）不带 site，那种响应走 FavoriteCreateResponse/FavoriteUpdateResponse。
+ */
+export type HubFavorite = LiteralKeys<FavoritesListResponse['items'][number]> & { site: HubSite | null }
 
 /** 云端收藏接口的返回形状（listFavorites / 同步结果共用） */
-export interface HubFavoriteFolder {
-  id: string
-  name: string
-  sort?: number
-  createdAt?: number
-}
+export type HubFavoriteFolder = FavoritesListResponse['folders'][number]
 
 export interface HubFavoritesPayload {
   items: HubFavorite[]
@@ -681,7 +685,7 @@ export async function listFavorites(identity: string, onDegraded?: DegradedHandl
   )
 }
 
-export interface HubFavoriteSyncItem extends HubFavorite {
+export type HubFavoriteSyncItem = HubFavorite & {
   /** 行最后更新时间（服务端时钟） */
   updatedAt?: number
   /** 非空表示墓碑：该 siteId 已被删除，本地必须一并移除 */
@@ -1149,38 +1153,23 @@ export async function deleteCloudVault(
 
 /* ------------------------------ 精选专题 ------------------------------ */
 
-export interface HubCollection {
-  id: string
-  slug: string
-  title: string
-  description?: string | null
-  kind: 'topic' | 'geo' | 'roadmap'
-  coverUrl?: string | null
-  icon?: string | null
-  enabled: boolean
-  sort: number
-  siteCount?: number
-  createdAt?: number
-  updatedAt?: number
-}
+/** 精选专题：形状来自 /api/collections 的契约生成物（coverUrl 之类的手抄字段不再保留） */
+export type HubCollection = CollectionPayload
 
-export async function fetchCollections(onDegraded?: DegradedHandler): Promise<HubCollection[]> {
-  return degrade([], () => getJson<HubCollection[]>('/api/collections'), onDegraded)
+export async function fetchCollections(onDegraded?: DegradedHandler): Promise<CollectionListResponse> {
+  return degrade([], () => getJson<CollectionListResponse>('/api/collections'), onDegraded)
 }
 
 /** 专题详情：404 = 专题确实不存在（不触发降级回调）；5xx / 网络失败触发 */
-export interface HubCollectionDetailSite extends HubSite {
-  collectionNote?: string | null
-  collectionSort?: number
-}
+export type HubCollectionDetailSite = CollectionDetailResponse['sites'][number]
 
 /** 专题详情：404 = 专题确实不存在（不触发降级回调）；5xx / 网络失败触发 */
 export async function fetchCollectionDetail(
   slug: string,
   onDegraded?: DegradedHandler,
-): Promise<{ collection: HubCollection; sites: HubCollectionDetailSite[] } | null> {
+): Promise<CollectionDetailResponse | null> {
   try {
-    return await getJson<{ collection: HubCollection; sites: HubCollectionDetailSite[] }>('/api/collections/' + encodeURIComponent(slug))
+    return await getJson<CollectionDetailResponse>('/api/collections/' + encodeURIComponent(slug))
   } catch (error) {
     if (!isNotFound(error)) notifyDegraded(onDegraded, error)
     return null
@@ -1641,7 +1630,7 @@ export async function installPlugin(
   slug: string,
   identity?: string,
   options?: { version?: string; selectedSites?: string[] },
-): Promise<{ success: boolean; alreadyInstalled: boolean; plugin: HubPluginItem; applied: any }> {
+): Promise<PluginInstallResponse> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   trackPluginEvent('plugin_install_click', slug, effectiveIdentity)
   const qs = new URLSearchParams()
@@ -1660,7 +1649,7 @@ export async function uninstallPlugin(
   slug: string,
   identity?: string,
   removeSites = true,
-): Promise<{ success: boolean; uninstalled: boolean; sitesRemoved: number; categoriesRemoved?: number }> {
+): Promise<PluginUninstallResponse> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   trackPluginEvent('plugin_uninstall_click', slug, effectiveIdentity)
   const qs = new URLSearchParams()
@@ -1679,7 +1668,7 @@ export async function uninstallPlugin(
 export async function starPlugin(
   slug: string,
   identity?: string,
-): Promise<{ success: boolean; starred: boolean; starCount: number }> {
+): Promise<PluginStarResponse> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}/star`,
@@ -1693,7 +1682,7 @@ export async function starPlugin(
 export async function unstarPlugin(
   slug: string,
   identity?: string,
-): Promise<{ success: boolean; starred: boolean; starCount: number }> {
+): Promise<PluginStarResponse> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
   return sendJson(
     `/api/plugins/${encodeURIComponent(slug)}/star`,

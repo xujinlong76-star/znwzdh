@@ -1813,3 +1813,91 @@ const processRes = isTestCall ? connector.processAdminTestPayload(body) : connec
 | 唯一未提交代码 | `packages/store/src/data-inventory.ts` +16 行，等建表进 HEAD |
 | 本轮新增改动 | 仅本节（文档）；`data-inventory.ts` 经历一次「删→红→恢复」，指纹已核对 |
 | 视频模块代码 | **未改动**（热区） |
+
+---
+
+## 27. 越权收口：一条被证伪的文档，和一个真正落地的接线（2026-10-28 21:50）
+
+### 27.1 先纠正 §22 的一个前提：那条判定链在 HEAD 上从未被执行
+
+§22.1 写「判定链（读代码得出）」，§22.2 逐条核对 42 条 write 路由「都被默认拒」。
+**那两张表描述的是 `evaluateInstanceWrite()` 这个纯函数的返回值，不是服务的实际行为。**
+收口时复核 HEAD：
+
+```
+git grep -n "evaluateInstanceWrite" HEAD -- apps/* packages/*
+  packages/core/src/authz.ts:68            ← 定义
+  packages/core/test/authz.test.ts:2,11,24 ← 测试
+  apps/api/test/route-policy.test.ts:15,28,321,323,336,362 ← 测试
+```
+
+生产代码一处都没有。HEAD 的 `server.ts` 只做「等级够不够」（`scopeSatisfies`），
+**不看 owner**。于是真实行为是：
+
+```
+POST /api/me/tokens { permission: "write" }   # 任何登录用户；me.ts:934 → scopes "read,write"
+  → 这枚令牌可以调用所有 scope:"write" 的路由
+```
+
+受影响的不止 §21 那一条投稿审批：`POST /api/admin/audit/apply`（把任意站点 URL 改成
+任意目标 + 重建索引）、`POST /api/tags/merge`、`POST /api/trash/:id/restore`、
+`PATCH /api/sites/:id` 全在集合内。**§21 的实际暴露面被低估了一整个量级。**
+
+教训：把「纯函数的判定」当成「系统的判定」是这次审计里最容易犯的错。
+判据必须是「谁在请求链上调用它」，而不是「它返回什么」。
+
+### 27.2 已修：接线级落地（`ddf3b506`）
+
+| 文件 | 内容 | 规模 |
+|---|---|---|
+| `apps/api/src/server.ts` | 两条令牌认证分支（鉴权模式 / 开放模式）各接一次判定，拒绝 403 + 统一文案 + `auditAuthFailure` 记账 | **55 行纯新增，0 删除** |
+| `apps/api/test/personal-token-boundary.test.ts` | 走真实签发端点拿令牌：个人 write 建站 → 403；同令牌写自己收藏 → 放行；实例 write 建站 → 放行；个人 write 入队破坏性任务 → 403 | 4 例 |
+
+这段接线 **18 小时前就写好了**（`server.ts` mtime 03:36），一直没提交。它不依赖任何
+未入库特性（用的 `evaluateInstanceWrite` / `PERSONAL_TOKEN_WRITE_ROUTES` /
+`auditAuthFailure` 全在 HEAD），所以可以单独落地。
+
+验证：`apps/api/test` **125 文件 / 1209 例全绿**（提交时实跑，282s）。
+
+### 27.3 为什么「接手通知功能那一批」被否决
+
+原计划是「只挑建表 + `scope:"admin"` + 16 行登记」提交。核完 diff 后该计划**不成立**：
+
+| 文件 | 规模 | 混了什么 |
+|---|---|---|
+| `packages/store/src/migrate.ts` | +164 −15 | `notification_outbox`/`submission_owners` 建表 **＋** `migration_failures` 台账 **＋** `migrateWorkspaceBlobs`（DELETE 加 EXISTS 守卫，修的是明文工作区永久丢失）**＋** `sites_url_uniq_v2` 先建后删（修的是唯一性静默失效）**＋** favorites 两个索引 |
+| `packages/store/src/repository.ts` | +55 −1 | `emitNotification`/`relayNotifications`/`listNotificationDeliveries`（通知）**＋** `purgeExpiredDeletedSites`（保留策略）**＋** `collectionIn` |
+| `apps/api/src/routes/submissions.ts` | +70 −18 | `scope:"admin"` **＋** 归属表读写 **＋** 通知投递（依赖 `repo.emitNotification`，而该方法不在 HEAD） |
+| `packages/store/src/repository/notifications.ts` | +199 −2 | 整个投递队列实现 |
+
+也就是说：`submissions.ts` 一旦提交就必须带 `repository.ts`，而 `repository.ts` 又混入
+保留策略；`migrate.ts` 里那两个数据安全修复（workspace_blobs 的 DELETE 守卫、
+sites_url_uniq_v2 的「先建后删」）**不可能单独切出来而不重写别人的错误处理**——
+删掉它们等于用「最小化」的名义拆掉两处真实修复。
+
+结论：**这一批是内聚的，最小切分不存在。** 要么整批接手（约 520 行 + 6 个未跟踪文件，
+其中还混着 copilot-rag / candidate-probe / retention / webmcp / job-budget 五六个特性
+共用的 `server.ts`、`repository.ts`），要么等作者。两者都不该由审计方替作者决定。
+
+### 27.4 另一处需要更正：通用守卫此前并不在 HEAD（已修 `d54fbde6`）
+
+§23.2 写「把守卫先落进 HEAD，让它去强制这项登记」。复核发现
+`packages/store/test/data-inventory.test.ts` 一直是**未跟踪文件**——HEAD 里只有
+`notification-outbox-user-data.test.ts`（只管 `notification_outbox` 一张表），
+没有任何「新增用户表会不会逃出数据主权范围」的通用检查。
+
+已补提（`d54fbde6`，+78 行）。判据是它在两种状态下都绿：HEAD 现状没有这两张表、
+清单里也没有（一致）；建表落地后库里出现未登记表 ⇒ 红。按 HEAD 口径实测：
+库内 48 张表、带归属列 26 张，全部已登记或豁免，离下限（≥15）有余量。
+
+### 27.5 剩余风险的精确表述
+
+| 项 | 状态 |
+|---|---|
+| 个人令牌触达**任意** write 级实例路由 | **已关闭**（`ddf3b506`，有 4 例接线测试） |
+| 个人令牌对 `PATCH /api/submissions/:number` 自审自批 | **仍未关闭**：该路由在 HEAD 是 `write` + 白名单唯一一条 + 处理体无归属校验。白名单在 HEAD 上仍非空（`grep -c submissions/:number` = 3） |
+| 新用户表逃出数据主权范围 | 守卫已进 HEAD（`d54fbde6`），建表落地即生效 |
+| `data-inventory.ts` 那 16 行登记 | 仍未提交；`HEAD:migrate.ts` 里 `notification_outbox` 计数为 0 |
+
+关闭第二项需要的三处改动（`submissions.ts` 改 admin、白名单清空、归属表建表）
+全部落在 §27.3 那一批里，因此**只能以整批或作者提交的方式关闭**，没有第三条路。

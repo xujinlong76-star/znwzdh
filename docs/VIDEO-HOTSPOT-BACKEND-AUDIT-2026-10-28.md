@@ -1963,3 +1963,39 @@ store 侧 `data-inventory` / `notification-outbox` / `notification-outbox-user-d
 再自己批仍然走得通。要落双人原则需在 PATCH 里比较 `submission_owners.identity` 与
 `req.auth.actor`，相同则 403。**单人运营的实例禁止自批等于无法审核**，所以这属于
 产品取舍，留作决策项（§21.3 已记录）。
+
+---
+
+## 29. §21.3 的「双人原则」建议被证伪：那条检查会静默 fail-open（22:25）
+
+§21.3 留的口子写的是「要落实双人原则，需在 PATCH 里比较
+`submission_owners.identity` 与 `req.auth.actor`，相同则 403」。按运行期事实核对后，
+**这条建议不能照做**——它会变成一段永远不成立的比较：
+
+| 事实 | 证据 |
+|---|---|
+| `req.auth.actor` 是**令牌名**，不是身份 | `server.ts:575` `auth.actor = record.name`；开放模式分支同理 |
+| 能通过 `scope:"admin"` 的凭据都没有身份 | 实例令牌 `ownerIdentity = null`；管理员会话无 owner |
+| **有身份**的个人令牌拿不到 admin | `me.ts` 的 `z.enum(["read","favorites","write"])` |
+
+于是「自审自批」在今天的权限模型里**不可达**：能审批的人没有身份，有身份的人不能
+审批。真正该守的不是「比较两个字符串」，而是这个前提本身——哪天有人给个人令牌加上
+admin 权限，双人原则立刻失效，而一段 `actor === identity` 的比较会**静默放行**
+（两边形态不同，永远不相等），看起来却像做了检查。这比不写更糟。
+
+新增 `apps/api/test/submission-review-separation.test.ts`（3 例）把这个前提钉住：
+
+1. `POST /api/me/tokens { permission: "admin" }` → **400**（明确拒绝，不是静默降级：
+   静默降级会给用户一枚与他理解不符的凭据，等他审批 403 时已无从判断原因）；
+2. 拿到 write 个人令牌后 `PATCH /api/submissions/:number` → 401/403（进不了门）；
+3. 源码级前置：`auth.actor = record.name` 与权限枚举保持现状 —— 一旦有人改动这
+   两处，用例会红，提醒「双人原则需要真正实现」。
+
+### 29.1 一个必须说明的测法陷阱
+
+第 2 例**必须开鉴权模式**（`authRequired: true`）才有意义。第一次写成默认配置时它
+返回的是 **404**（handler 报「投稿不存在」）而不是 403 —— 因为开放模式根本没有
+scope 门槛，`evaluateInstanceWrite` 又对 `required !== "write"` 直接放行。
+换句话说：**开放模式下个人令牌能调到 admin 级路由**。这不是漏洞（开放模式里匿名者
+本来就等价于管理员，config.ts 也有这条警告），但如果哪天把开放模式当公网默认，
+它就是洞。测安全边界时「测到的是不是那个边界」比断言本身更要紧。

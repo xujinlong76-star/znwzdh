@@ -45,7 +45,6 @@ GET /api/me/activity
 GET /api/me/export
 GET /api/me/export/bookmarks.html
 GET /api/me/llm-usage
-GET /api/me/notifications
 GET /api/me/plugins
 GET /api/me/sessions
 GET /api/me/settings
@@ -113,6 +112,8 @@ HEAD /api/admin/dashboard/security
 HEAD /api/admin/dashboard/stream
 HEAD /api/admin/health/trend
 HEAD /api/admin/maintenance/status
+HEAD /api/admin/notifications
+HEAD /api/admin/notifications/deliveries
 HEAD /api/admin/plugin-reviews
 HEAD /api/admin/plugins
 HEAD /api/admin/plugins/funnel
@@ -128,6 +129,7 @@ HEAD /api/categories/counts
 HEAD /api/categories/page
 HEAD /api/categories/skos
 HEAD /api/categories/{id}
+HEAD /api/categories/{id}/impact
 HEAD /api/categories/{id}/related
 HEAD /api/collections
 HEAD /api/collections/by-id/{id}
@@ -156,6 +158,7 @@ HEAD /api/me/export
 HEAD /api/me/export/bookmarks.html
 HEAD /api/me/llm-usage
 HEAD /api/me/notifications
+HEAD /api/me/notifications/unread-count
 HEAD /api/me/plugins
 HEAD /api/me/sessions
 HEAD /api/me/settings

@@ -254,13 +254,13 @@ describe("额度到顶后的降级响应（诚实性）", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.ok).toBe(true);
-    // 兜底是站内关键词匹配，不能报一个模型名冒充来源
+    // 兜底是站内混合检索，不能报一个模型名冒充来源
     expect(body.model).toBe("local-heuristic-match");
     expect(body.degraded).toBe("quota");
     expect(body.quota).toMatchObject({ scope: "identity", metric: "calls", limit: 1, used: 1 });
     expect(res.headers["retry-after"]).toBeTruthy();
     // 正文开头就要交代这不是模型生成的，否则用户会把「没匹配到」读成「AI 认为没有」
-    expect(body.reply).toContain("站内关键词匹配");
+    expect(body.reply).toContain("站内混合检索");
     expect(body.reply).not.toContain("我是 **Agnes 3.0 Flash**");
     // 拦住了 = 一条用量都没多（provider 是 ready 的，没拦必然会产生记录）
     const after = Number((await ctx.repo.raw("SELECT COUNT(*) AS c FROM llm_usage"))[0].c);

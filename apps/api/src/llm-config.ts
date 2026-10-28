@@ -94,6 +94,8 @@ interface StoredLlmFallback {
   maxTokens: number;
   jsonMode: JsonMode;
   allowPrivateNetwork: boolean;
+  /** 备用池这一跳是否下发思维链；省略时按产品默认「开」 */
+  thinking?: boolean;
 }
 
 interface StoredLlmProvider {
@@ -129,6 +131,8 @@ const StoredLlmFallbackSchema = z.object({
   maxTokens: z.number().default(1024),
   jsonMode: z.enum(["auto", "response_format", "prompt"]).default("auto"),
   allowPrivateNetwork: z.boolean().default(false),
+  // 读侧一定要声明：zod 的 object 会剥掉未声明的键，漏一行等于「配置存进去了但永远读不出来」
+  thinking: z.boolean().optional(),
 });
 
 const StoredLlmProviderSchema = z.object({
@@ -142,6 +146,10 @@ const StoredLlmProviderSchema = z.object({
   maxTokens: z.number().default(1024),
   jsonMode: z.enum(["auto", "response_format", "prompt"]).default("auto"),
   allowPrivateNetwork: z.boolean().default(false),
+  // 同上：管理端「深度思考 = 关」落库后必须在读取时活着回来，
+  // 否则 thinking 永远是 undefined → 下游按产品默认「开」处理，
+  // 表现为关不掉、超时被抬到 60s、大盘的「思考调用数」恒等于总调用数。
+  thinking: z.boolean().optional(),
   costPer1kTokensRmb: z.number().min(0).max(1000).optional(),
   fallbacks: z.array(StoredLlmFallbackSchema).default([]),
   updatedAt: z.number().default(0),
@@ -196,6 +204,8 @@ function fallbackToProvider(fb: StoredLlmFallback, apiKey: string): LlmProvider 
     maxTokens: fb.maxTokens,
     jsonMode: fb.jsonMode,
     allowPrivateNetwork: fb.allowPrivateNetwork,
+    // 省略时由调用点按产品默认「开」处理；显式关掉必须能关掉
+    thinking: fb.thinking,
   };
 }
 
@@ -560,6 +570,8 @@ export async function saveSystemLlmConfig(
         maxTokens: fb.maxTokens ?? prev?.maxTokens ?? 1024,
         jsonMode: fb.jsonMode ?? prev?.jsonMode ?? "auto",
         allowPrivateNetwork: fbAllowPrivate,
+        // 省略 = 沿用该条既有的思考开关（与 apiKey 同的「不填不改」语义）
+        thinking: fb.thinking ?? prev?.thinking,
       });
     }
     fallbacks = next;

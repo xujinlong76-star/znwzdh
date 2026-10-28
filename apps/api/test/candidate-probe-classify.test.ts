@@ -11,9 +11,13 @@
  *      既看不懂，也分不出该重试还是该放弃。
  *
  * 这些断言不触网：分类是纯函数，只吃「耗时 + 异常」。
+ *
+ * 导入路径改过一次：这两个函数连同整套候选探活已从 `routes/plugin-audit.ts` 抽到
+ * `src/candidate-probe.ts`（普通站点的平替推荐要用同一套判据）。**断言一条没动**，
+ * 改的只是被测函数的出处——契约属于探活本身，不属于某条路由。
  */
 import { describe, expect, it } from "vitest";
-import { classifyProbeFailure, classifyProbeStatus } from "../src/routes/plugin-audit.ts";
+import { classifyProbeFailure, classifyProbeStatus } from "../src/candidate-probe.ts";
 
 const TIMEOUT = 2500;
 

@@ -52,6 +52,10 @@ interface HubCopilotEventSummary {
   degradedBy: Array<{ reason: string; count: number }>
   quotaLimited: number
   thinkingBy: Array<{ thinking: string; count: number }>
+  /** 以下三项由 AI-1 新增；旧中枢不返回时要按「未采集」处理，不能当 0 */
+  citations?: number
+  citationClicks?: number
+  citationClickRate?: number | null
 }
 
 function waitMsText(ms: number | null): string {
@@ -409,6 +413,24 @@ export function AiObservabilityPanel() {
                   {waitMsText(copilot.waitMs.p50)} / {waitMsText(copilot.waitMs.p95)}
                 </p>
               </div>
+            </div>
+            {/* 可验证引用的使用情况：分母来自 copilot 事件的 meta.citations，
+                分子来自来源为 copilot_citation 的点击。旧中枢不返回时如实写「未采集」 */}
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
+              <span>
+                参考来源 {copilot.citations === undefined ? '未采集' : `${copilot.citations.toLocaleString()} 条`}
+              </span>
+              <span>
+                引用点击 {copilot.citationClicks === undefined ? '未采集' : `${copilot.citationClicks.toLocaleString()} 次`}
+              </span>
+              <span>
+                引用点击率{' '}
+                {copilot.citationClickRate === undefined
+                  ? '未采集'
+                  : copilot.citationClickRate === null
+                    ? '无引用样本'
+                    : `${(copilot.citationClickRate * 100).toFixed(1)}%`}
+              </span>
             </div>
             <p className="text-xs text-muted-foreground">
               停止发生在调模型前 {copilot.cancelStage.pre_llm} 次、调模型后 {copilot.cancelStage.llm} 次；

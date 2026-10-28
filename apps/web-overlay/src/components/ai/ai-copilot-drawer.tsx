@@ -7,7 +7,12 @@
  * 1. 全局唤醒：响应 Cmd+J / Ctrl+J 快捷键或 Spotlight 派发的 open-ai-copilot 事件；
  * 2. 意图洞察与工具链推荐：基于最新全站现场图谱与分类；
  * 3. 动态行动预设：一键发送极客效率、全站 AI 工具链、离线微工具、自治健康度等探索任务；
- * 4. Markdown 智能渲染：原生解析推荐站点直达超链 [标题](链接)，链接一律过 safeHref 安全闸。
+ * 4. Markdown 智能渲染：原生解析推荐站点直达超链 [标题](链接)，链接一律过 safeHref 安全闸；
+ * 5. 可验证引用：中枢只把「本次检索召回且真实出现在回答里」的站点放进 citations，
+ *    抽屉在回答下方单独列出来源，用户能核对每条推荐的真实出处；
+ * 6. 逐段输出（AI-3）：模型能跑时按 SSE 增量渲染草稿，首个 token 前保留等待进度，
+ *    随时可停止。草稿一律不解析链接（未定稿的 URL 不可点击），终稿以 done 事件的
+ *    权威正文整体覆盖；额度用尽 / 未配置模型这两类降级不开流，仍回一次性 JSON。
  *
  * 界面不写死任何厂商模型名：管理员可换 DeepSeek / Ollama 等，前端只有在中枢回报
  * `model` 之后才知道是谁在回答；降级为站内匹配时也必须让用户看见（degraded 条）。
@@ -30,8 +35,18 @@ import {
   Square,
   Wand2,
 } from 'lucide-react'
-import { sendCopilotChat, type CopilotChatResponse } from '@/lib/navhub-api'
+import { hubSend } from '@/lib/navhub-api'
+import { streamCopilotChat, type CopilotCitation, type CopilotReplyBody } from '@/lib/copilot-stream'
 import { describeDegrade } from '@/lib/degrade'
+import {
+  AI_STUDIO_OPEN_EVENT,
+  COPILOT_OPEN_EVENT,
+  markCopilotDrawerReady,
+  normalizeAiStudioOpenDetail,
+  normalizeCopilotOpenDetail,
+  takeStashedCopilotOpen,
+  type CopilotOpenDetail,
+} from '@/lib/ai-entry'
 import { Button } from '@/registry/new-york/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { AiPluginStudioModal } from '../plugins/ai-plugin-studio-modal'
@@ -43,8 +58,14 @@ interface ChatMessage {
   reasoningContent?: string
   model?: string
   suggestions?: string[]
-  degraded?: CopilotChatResponse['degraded']
-  quota?: CopilotChatResponse['quota']
+  degraded?: CopilotReplyBody['degraded']
+  quota?: CopilotReplyBody['quota']
+  /**
+   * 中枢校验过的站内引用（siteId + 库里的原始 URL）。
+   * 类型来自 copilot-stream.ts 而不是 navhub-api.ts：后者与并行会话共享，
+   * 新增字段若在共享文件里改，冲突成本高于收益。
+   */
+  citations?: CopilotCitation[]
   /**
    * 一键重试要带的原始提问。只有「重试有意义」的失败/取消才写这个字段
    * （鉴权与额度用尽类重试没用），渲染层据此决定要不要出按钮。
@@ -69,17 +90,40 @@ function degradedNotice(msg: Pick<ChatMessage, 'degraded' | 'quota'>): string | 
     const q = msg.quota
     const hours = q ? Math.max(1, Math.ceil(q.retryAfterSeconds / 3600)) : null
     const used = q ? `（${q.metric} ${q.used}/${q.limit}）` : ''
-    return `今天的 AI 对话额度已用完${used}${hours ? `，约 ${hours} 小时后恢复` : ''}。以下结果由站内关键词匹配给出，未经模型生成。`
+    return `今天的 AI 对话额度已用完${used}${hours ? `，约 ${hours} 小时后恢复` : ''}。以下结果由站内混合检索给出，未经模型生成。`
   }
   if (msg.degraded === 'unconfigured') {
-    return '管理端尚未配置可用的模型密钥，以下结果由站内关键词匹配给出。'
+    return '管理端尚未配置可用的模型密钥，以下结果由站内混合检索给出。'
   }
   if (msg.degraded === 'error') {
     // 以前这句结尾是一句空口承诺，却没有对应的按钮。
     // 现在重试是消息下方那颗真控件（带 retryText 才渲染），这里只交代事实。
-    return '模型这次调用失败，以下结果由站内关键词匹配给出，未经模型生成。'
+    return '模型这次调用失败，以下结果由站内混合检索给出，未经模型生成。'
   }
   return null
+}
+
+/**
+ * 中枢会在降级正文开头自带一段状态说明（对任何消费方都诚实），而抽屉又有
+ * 同义的琥珀色横幅——正文里再显示一遍就是同一句话说两次（浏览器实测）。
+ * 这里把「已由横幅承载」的首段从正文剥掉，只留真正的检索结果。
+ * 前缀一旦变化就自动不剥离：宁可重复，也绝不吞掉正文。
+ */
+const DEGRADED_PREAMBLE_PREFIXES = [
+  '今天的 AI 对话额度已用完',
+  '管理端尚未配置可用的模型密钥',
+  '模型暂时不可用，已降级为站内混合检索',
+] as const
+
+function splitDegradedPreamble(content: string): { notice: string | null; body: string } {
+  const splitAt = content.indexOf('\n\n')
+  if (splitAt > 0) {
+    const first = content.slice(0, splitAt)
+    if (DEGRADED_PREAMBLE_PREFIXES.some((prefix) => first.startsWith(prefix))) {
+      return { notice: first, body: content.slice(splitAt + 2) }
+    }
+  }
+  return { notice: null, body: content }
 }
 
 export function AiCopilotDrawer() {
@@ -97,9 +141,25 @@ export function AiCopilotDrawer() {
   const [elapsedMs, setElapsedMs] = useState(0)
   // 读屏播报只报阶段变化（开始/停止/失败/完成），容器常驻 DOM 才符合 WCAG 4.1.3
   const [statusMessage, setStatusMessage] = useState('')
+  /**
+   * 流式草稿（AI-3）：逐段输出期间的正文与思维链。
+   *
+   * 单独一个状态、而不是往 messages 里塞一条「进行中的助手消息」：
+   *   - messages 每变一次就触发一次平滑滚动，按 token 追加会把滚动做成抽搐；
+   *   - 草稿没有经过服务端的引用校验（done 才是权威终稿），不能和终稿混在
+   *     同一个列表里——混了就会有「把编造链接渲染成可点击」的那一秒。
+   * ref 是同一次生成的累加器：setState 传函数式更新也能做，但回调里读不到
+   * 当前长度（要给读屏/字数用），留着 ref 更直白。
+   */
+  const [draft, setDraft] = useState<{ content: string; reasoning: string } | null>(null)
+  const draftRef = useRef<{ content: string; reasoning: string } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  // 事件监听只挂一次，而 handleSend 每次渲染都会重建（依赖 messages/loading 等）。
+  // ref 指向最新实现，避免监听器调用到首帧的 stale closure。
+  const sendRef = useRef<((text?: string) => Promise<void>) | null>(null)
+  const loadingRef = useRef(false)
 
   // 滚动至最新消息
   const scrollToBottom = useCallback(() => {
@@ -112,14 +172,33 @@ export function AiCopilotDrawer() {
     }
   }, [messages, scrollToBottom])
 
+  // 每次渲染后把最新发送实现与 loading 同步给事件侧（effects 按声明顺序执行，
+  // 这两个同步必须在下面的监听器挂载/取寄存意图之前）
+  useEffect(() => {
+    sendRef.current = handleSend
+  })
+  useEffect(() => {
+    loadingRef.current = loading
+  }, [loading])
+
   // 全局事件监听与快捷键
   useEffect(() => {
-    const handleOpen = (e: Event) => {
-      const customEvent = e as CustomEvent<{ query?: string }>
+    const applyOpen = (detail: CopilotOpenDetail) => {
       setIsOpen(true)
-      if (customEvent.detail?.query) {
-        handleSend(customEvent.detail.query)
+      if (!detail.query) return
+      if (loadingRef.current) {
+        // 正在生成上一条回答：不再静默丢弃，把问题放进输入框并说明原因
+        setInput(detail.query)
+        setStatusMessage('正在生成上一条回答，这条问题已放入输入框，可稍后发送')
+        return
       }
+      void sendRef.current?.(detail.query)
+    }
+
+    const handleOpen = (e: Event) => {
+      // 事件已直接到达抽屉，网关寄存的旧意图作废（防止 HMR 等场景重复重放）
+      takeStashedCopilotOpen()
+      applyOpen(normalizeCopilotOpenDetail((e as CustomEvent).detail))
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -132,19 +211,28 @@ export function AiCopilotDrawer() {
     }
 
     const handleOpenStudio = (e: Event) => {
-      const ce = e as CustomEvent<{ prompt?: string }>
-      setStudioPrompt(ce.detail?.prompt || '')
+      setStudioPrompt(normalizeAiStudioOpenDetail((e as CustomEvent).detail).prompt || '')
       setStudioOpen(true)
     }
 
-    window.addEventListener('open-ai-copilot', handleOpen)
-    window.addEventListener('open-ai-plugin-studio', handleOpenStudio)
+    window.addEventListener(COPILOT_OPEN_EVENT, handleOpen)
+    window.addEventListener(AI_STUDIO_OPEN_EVENT, handleOpenStudio)
     window.addEventListener('keydown', handleKeyDown)
+    // 登记后网关不再拦截事件
+    markCopilotDrawerReady()
+    // 首屏寄存的意图延后一个宏任务再取。StrictMode 会在挂载后立刻卸载再重挂，
+    // 若在 effect 体内直接发请求，卸载清理会把它当成「关抽屉」掐断——
+    // 浏览器实测表现为第一次唤起就显示「已停止本次回答」。
+    const stashTimer = setTimeout(() => {
+      const stashed = takeStashedCopilotOpen()
+      if (stashed) applyOpen(stashed)
+    }, 0)
 
     return () => {
-      window.removeEventListener('open-ai-copilot', handleOpen)
-      window.removeEventListener('open-ai-plugin-studio', handleOpenStudio)
+      window.removeEventListener(COPILOT_OPEN_EVENT, handleOpen)
+      window.removeEventListener(AI_STUDIO_OPEN_EVENT, handleOpenStudio)
       window.removeEventListener('keydown', handleKeyDown)
+      clearTimeout(stashTimer)
     }
   }, [isOpen])
 
@@ -181,21 +269,47 @@ export function AiCopilotDrawer() {
     const startedAt = Date.now()
     const tick = setInterval(() => setElapsedMs(Date.now() - startedAt), 1000)
 
+    // 终稿入列与草稿销毁必须同批：否则会有「草稿 + 终稿」同屏的一帧，
+    // 而草稿里的链接是没经过引用校验的，多显示一秒都是多一秒的谎。
+    const commit = (msg: ChatMessage) => {
+      draftRef.current = null
+      setDraft(null)
+      setMessages((prev) => [...prev, msg])
+    }
+
     try {
       const history = messages.slice(-6).map((m) => ({
         role: m.role,
         content: m.content,
       }))
 
-      const res = await sendCopilotChat(content, history, {
+      let announcedStream = false
+      const appendDraft = (key: 'content' | 'reasoning', text: string) => {
+        const base = draftRef.current ?? { content: '', reasoning: '' }
+        const next = { ...base, [key]: base[key] + text }
+        draftRef.current = next
+        setDraft(next)
+        // 只在第一个 token 播报一次：每秒逐段都塞 live region 会把语音缓冲挤爆，
+        // 与「已等待 Ns」不进气泡播报是同一个理由。
+        if (!announcedStream) {
+          announcedStream = true
+          setStatusMessage('回答开始逐段输出，可随时停止')
+        }
+      }
+
+      const { final: res } = await streamCopilotChat(content, history, {
         thinking: enableThinking,
         signal: controller.signal,
+        onDelta: (text) => appendDraft('content', text),
+        onReasoning: (text) => appendDraft('reasoning', text),
       })
       if (res.ok && res.reply) {
         const realModel = res.model?.trim() && res.model.trim() !== LOCAL_MATCH_MODEL ? res.model.trim() : undefined
         const assistantMsg: ChatMessage = {
           id: `bot-${Date.now()}`,
           role: 'assistant',
+          // 逐段拼出来的草稿在这里整体作废：done.reply 是服务端引用校验后的正文，
+          // 模型编造的链接已被降级成纯文本，两者可能不同。
           content: res.reply,
           reasoningContent: res.reasoningContent,
           // 只写中枢真正回报的模型名：以前缺省就硬编码 'agnes-3.0-flash'，
@@ -203,12 +317,13 @@ export function AiCopilotDrawer() {
           model: res.model?.trim() || undefined,
           degraded: res.degraded,
           quota: res.quota ?? undefined,
+          citations: res.citations && res.citations.length > 0 ? res.citations : undefined,
           // 模型这次没答上、用站内匹配兜了底：这一类重试有意义，给出口
           retryText: res.degraded === 'error' ? content : undefined,
           suggestions: res.suggestions,
           timestamp: Date.now(),
         }
-        setMessages((prev) => [...prev, assistantMsg])
+        commit(assistantMsg)
         if (realModel) setAssistantModel(realModel)
         setStatusMessage(`回答已生成${realModel ? `，由模型 ${realModel} 给出` : ''}`)
       } else {
@@ -224,10 +339,14 @@ export function AiCopilotDrawer() {
           retryText: res.degraded && res.degraded !== 'error' ? undefined : content,
           timestamp: Date.now(),
         }
-        setMessages((prev) => [...prev, assistantMsg])
+        commit(assistantMsg)
         setStatusMessage('这次没有拿到答复')
       }
     } catch (err) {
+      // 草稿一律作废：它没经过引用校验，停止或失败后留在屏幕上就是把「编造的链接」
+      // 交给用户点击。已产出多少字不由用户负责，由下一次完整生成负责。
+      draftRef.current = null
+      setDraft(null)
       if (controller.signal.aborted) {
         // 用户自己按了停止/关了抽屉：这不是故障，也不能骗用户说「模型答完了」。
         // 代理与中枢各有期限，前端 abort 只保证本端不再等待，上游可能还在收尾。
@@ -238,7 +357,7 @@ export function AiCopilotDrawer() {
           retryText: content,
           timestamp: Date.now(),
         }
-        setMessages((prev) => [...prev, stopMsg])
+        commit(stopMsg)
         setStatusMessage('已停止本次回答')
         return
       }
@@ -252,7 +371,7 @@ export function AiCopilotDrawer() {
         retryText: notice.retryable ? content : undefined,
         timestamp: Date.now(),
       }
-      setMessages((prev) => [...prev, errMsg])
+      commit(errMsg)
       setStatusMessage(notice.retryable ? '本次回答失败，可点重试再问一次' : '本次回答失败')
     } finally {
       clearInterval(tick)
@@ -266,9 +385,28 @@ export function AiCopilotDrawer() {
     abortRef.current?.abort()
   }, [])
 
-  // 关抽屉 / 组件卸载：进行中请求一律中断，别留一个看不还在烧配额的调用
+  /**
+   * 停止控件在「等待首 token 的转圈气泡」与「流式草稿气泡」之间共用同一份实现：
+   * 两处出现的是同一个真 abort，不存在「一个能停一个只是样子」。
+   */
+  const renderStopButton = () => (
+    <button
+      type="button"
+      onClick={stopGenerating}
+      className="self-start inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border border-border bg-background text-foreground hover:border-primary/40 hover:text-primary transition-colors"
+    >
+      <Square className="h-3 w-3" />
+      <span>停止</span>
+    </button>
+  )
+
+  // 关抽屉 / 组件卸载：进行中请求一律中断，别留一个看不还在烧配额的调用。
+  // 必须在「打开 → 关闭」的下降沿才断：首屏网关寄存的意图会在挂载的同一
+  // commit 里直接发起请求，此时 isOpen 仍是 false——按状态值判会把正常请求秒掐。
+  const wasOpenRef = useRef(isOpen)
   useEffect(() => {
-    if (!isOpen) abortRef.current?.abort()
+    if (wasOpenRef.current && !isOpen) abortRef.current?.abort()
+    wasOpenRef.current = isOpen
   }, [isOpen])
   useEffect(
     () => () => {
@@ -430,7 +568,11 @@ export function AiCopilotDrawer() {
                 </div>
               </div>
             ) : (
-              messages.map((m) => (
+              messages.map((m) => {
+                // 降级说明只出现一次：横幅优先（带样式与额度明细），正文里的同义首段剥掉
+                const shown = m.role === 'assistant' ? splitDegradedPreamble(m.content) : { notice: null, body: m.content }
+                const notice = degradedNotice(m) ?? shown.notice
+                return (
                 <div
                   key={m.id}
                   className={`flex gap-2.5 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -449,10 +591,10 @@ export function AiCopilotDrawer() {
                     }`}
                   >
                     {/* 降级来源条：额度 / 未配置 / 调用失败是三种不同行动，恢复时间取自中枢额度窗口 */}
-                    {degradedNotice(m) && (
+                    {notice && (
                       <div className="mb-2.5 flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
                         <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" aria-hidden="true" />
-                        <span>{degradedNotice(m)}</span>
+                        <span>{notice}</span>
                       </div>
                     )}
 
@@ -469,7 +611,65 @@ export function AiCopilotDrawer() {
                       </details>
                     )}
 
-                    <div className="whitespace-pre-wrap">{renderMessageContent(m.content)}</div>
+                    <div className="whitespace-pre-wrap">{renderMessageContent(shown.body)}</div>
+
+                    {/*
+                      可验证引用：只列中枢校验过、且真的出现在回答里的站内站点。
+                      链接仍走 safeHref（服务端已校验候选集，这里是第二道 XSS 闸）。
+                      没有引用就不渲染空壳——「无来源」本身也是信息，不能伪装成有。
+                    */}
+                    {m.role === 'assistant' && m.citations && m.citations.length > 0 && (
+                      <div
+                        className="mt-2.5 rounded-lg border border-border/60 bg-background/60 px-2 py-1.5"
+                        aria-label="参考来源"
+                      >
+                        <p className="mb-1 text-[10px] font-medium text-muted-foreground">
+                          参考来源（站内收录 {m.citations.length} 条）
+                        </p>
+                        <ul className="space-y-1">
+                          {m.citations.map((citation, index) => {
+                            const href = safeHref(citation.url, '')
+                            return (
+                              <li key={citation.siteId} className="text-[11px] leading-relaxed">
+                                {href ? (
+                                  <a
+                                    href={href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    /*
+                                      引用点击率的分母是服务端 copilot 事件的 meta.citations，
+                                      分子就是这里。只带 position 与 source：
+                                      query 是自由文本（本路由原则不记问题原文），
+                                      channel 会喂给搜索排序的 LinUCB 通道权重——引用点击
+                                      不是某一路召回的强化信号，传了就是往排序器里灌噪声。
+                                    */
+                                    onClick={() => {
+                                      void hubSend('/api/events', 'POST', {
+                                        kind: 'click',
+                                        siteId: citation.siteId,
+                                        position: index + 1,
+                                        source: 'copilot_citation',
+                                      }).catch(() => {
+                                        /* 埋点失败只丢一条统计，不该影响用户已经点开的跳转：不重试、不打扰。 */
+                                      })
+                                    }}
+                                    className="inline-flex items-center gap-1 font-medium text-primary underline underline-offset-4 hover:text-primary/80 transition-colors"
+                                  >
+                                    <span>{citation.title}</span>
+                                    <ExternalLink className="h-2.5 w-2.5" aria-hidden="true" />
+                                  </a>
+                                ) : (
+                                  <span className="font-medium">{citation.title}</span>
+                                )}
+                                {citation.description ? (
+                                  <span className="text-muted-foreground"> · {citation.description}</span>
+                                ) : null}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    )}
 
                     {/*
                       把 retryable 变成动作：以前失败只有一句话，用户得自己把问题重打一遍。
@@ -542,7 +742,49 @@ export function AiCopilotDrawer() {
                     </div>
                   )}
                 </div>
-              ))
+                )
+              })
+            )}
+
+            {/*
+              流式草稿气泡（AI-3）：done 之前唯一的正文出口。
+              两处刻意的「比终稿少」：
+                1) 不做 Markdown 链接解析——草稿里的 URL 还没过服务端的引用校验，
+                   编造链接在这一秒是可点击的就是漏洞（终稿由 renderMessageContent 走 safeHref 两道闸）；
+                2) 不带参考来源 / 建议追问 / 打包按钮——那些是终稿的属性，提前渲染
+                   等于承诺还没兑现的东西。
+            */}
+            {draft && (
+              <div className="flex gap-2.5 justify-start items-start">
+                <div className="h-7 w-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-primary mt-0.5">
+                  <Sparkles className="h-3.5 w-3.5" />
+                </div>
+                <div className="max-w-[85%] bg-muted/60 border border-border/80 rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-xs leading-relaxed text-foreground shadow-sm flex flex-col gap-2">
+                  {draft.reasoning && (
+                    <details className="rounded-lg border border-primary/20 bg-primary/5 p-2 text-[11px] overflow-hidden" open>
+                      <summary className="cursor-pointer font-medium text-primary select-none">
+                        🧠 思考推演中…
+                      </summary>
+                      <div className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-muted-foreground pl-2 border-l-2 border-primary/30">
+                        {draft.reasoning}
+                      </div>
+                    </details>
+                  )}
+                  <p className="whitespace-pre-wrap">
+                    {draft.content}
+                    <span
+                      className="ml-0.5 inline-block h-3 w-1 align-middle animate-pulse bg-primary/60"
+                      aria-hidden="true"
+                    />
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {renderStopButton()}
+                    <span className="text-[10px] text-muted-foreground">
+                      已输出 {draft.content.length} 字（尚未定稿）
+                    </span>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/*
@@ -550,8 +792,11 @@ export function AiCopilotDrawer() {
               既看不出「在算」还是「卡死」，也没有出路。现在给秒数 + 真中断按钮。
               秒数只给肉眼（aria-hidden），读屏由下面的 role="status" 报阶段变化——
               每秒都塞进 live region 会把语音缓冲挤爆，反而什么都听不清。
+              首个 token 之后让位给上面的草稿气泡：进度已经写在屏幕上，
+              再挂一个转圈是重复信息，还会把「停止」按钮做成两个。
             */}
             {loading && (
+              draft ? null : (
               <div className="flex gap-2.5 justify-start items-start">
                 <div className="h-7 w-7 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-primary mt-0.5">
                   <Sparkles className="h-3.5 w-3.5 animate-spin" />
@@ -567,16 +812,10 @@ export function AiCopilotDrawer() {
                     </span>
                     {elapsedMs >= 10_000 ? '（深度思考可能更久，可随时停止）' : ''}
                   </span>
-                  <button
-                    type="button"
-                    onClick={stopGenerating}
-                    className="self-start inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border border-border bg-background text-foreground hover:border-primary/40 hover:text-primary transition-colors"
-                  >
-                    <Square className="h-3 w-3" />
-                    <span>停止</span>
-                  </button>
+                  {renderStopButton()}
                 </div>
               </div>
+              )
             )}
 
             {/*

@@ -82,7 +82,9 @@ describe("抽屉：一次请求一个 AbortController，三条路都能中断", 
 
   it("发起请求前建控制器并透传 signal", () => {
     expect(send).toMatch(/new AbortController\(\)/);
-    expect(send).toMatch(/sendCopilotChat\([\s\S]*?signal:\s*controller\.signal/);
+    // 抽屉的发起点已从 navhub-api 的 sendCopilotChat 换成流式客户端 streamCopilotChat：
+    // 换了传输（fetch + SSE 读取）不等于换了契约——点「停止」仍然要把这颗 AbortSignal 递到底层 fetch。
+    expect(send).toMatch(/streamCopilotChat\([\s\S]*?signal:\s*controller\.signal/);
   });
 
   it("停止按钮点下去是真的 abort（不是只藏转圈）", () => {
@@ -93,8 +95,10 @@ describe("抽屉：一次请求一个 AbortController，三条路都能中断", 
     expect(drawer.slice(Math.max(0, idx - 260), idx + 60)).toMatch(/type="button"/);
   });
 
-  it("关抽屉与组件卸载都中断进行中请求", () => {
-    expect(drawer).toMatch(/if \(!isOpen\) abortRef\.current\?\.abort\(\)/);
+  it("关抽屉与组件卸载都中断进行中请求（首屏直接发起的那次不被误断）", () => {
+    // 必须是「打开 → 关闭」的下降沿：首屏网关寄存的意图会在挂载的同一 commit
+    // 里直接发请求，此时 isOpen 仍是 false；按状态值判会把正常请求秒掐（浏览器实测）
+    expect(drawer).toMatch(/if \(wasOpenRef\.current && !isOpen\) abortRef\.current\?\.abort\(\)/);
     expect(drawer).toMatch(/useEffect\(\s*\(\) => \(\) => \{[\s\S]{0,80}?abortRef\.current\?\.abort\(\)/);
   });
 

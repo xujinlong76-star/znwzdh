@@ -417,3 +417,68 @@ export async function listVideoReplacements(
     : await repo.db.pg!.query("SELECT * FROM video_replacements ORDER BY created_at DESC LIMIT $1", [limit])
   return (res.rows as Array<Record<string, unknown>>).map(map)
 }
+
+/**
+ * 全量替换替换审计（幂等）。
+ *
+ * 为什么需要「全量替换」而不是逐条 upsert：
+ *   审计的权威副本是 `video-replacements.json`（不截断），它是**整份文档**语义 ——
+ *   同步时传进来的就是全部。如果只 upsert，被外部删掉的记录会永远留在表里，
+ *   表与权威副本悄悄分叉。
+ *
+ * 与 `replaceVideoCatalog` 一样放在事务里：中途失败不会留下「删完了但没写回」的空表。
+ */
+export async function replaceVideoReplacements(
+  repo: Repository,
+  records: VideoReplacementInput[],
+): Promise<number> {
+  const rows = records.map((record) => ({
+    id: record.id,
+    categoryId: record.categoryId,
+    categoryTitle: record.categoryTitle ?? null,
+    oldItem: JSON.stringify(record.oldItem ?? {}),
+    newItem: JSON.stringify(record.newItem ?? {}),
+    reason: record.reason ?? null,
+    scoreDiff: record.scoreDiff ?? null,
+    trendKeyword: record.trendKeyword ?? null,
+    rolledBack: boolFor(repo, record.rolledBack, false),
+    createdAt: record.createdAt ?? Date.now(),
+  }))
+
+  const seen = new Set<string>()
+  const unique = rows.filter((row) => {
+    if (seen.has(row.id)) return false
+    seen.add(row.id)
+    return true
+  })
+
+  await repo.withTransaction(async () => {
+    if (repo.db.dialect === "sqlite") {
+      const db = repo.db.sqlite!
+      db.prepare("DELETE FROM video_replacements").run()
+      const ins = db.prepare(
+        "INSERT INTO video_replacements (id,category_id,category_title,old_item,new_item,reason,score_diff,trend_keyword,rolled_back,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+      )
+      for (const row of unique) {
+        ins.run(
+          row.id, row.categoryId, row.categoryTitle, row.oldItem, row.newItem,
+          row.reason, row.scoreDiff, row.trendKeyword, row.rolledBack, row.createdAt,
+        )
+      }
+      return
+    }
+
+    await repo.db.pg!.query("DELETE FROM video_replacements")
+    for (const row of unique) {
+      await repo.db.pg!.query(
+        "INSERT INTO video_replacements (id,category_id,category_title,old_item,new_item,reason,score_diff,trend_keyword,rolled_back,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+        [
+          row.id, row.categoryId, row.categoryTitle, row.oldItem, row.newItem,
+          row.reason, row.scoreDiff, row.trendKeyword, row.rolledBack, row.createdAt,
+        ],
+      )
+    }
+  })
+
+  return unique.length
+}

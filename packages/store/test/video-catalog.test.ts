@@ -11,6 +11,7 @@ import {
   listVideoItems,
   logVideoReplacement,
   replaceVideoCatalog,
+  replaceVideoReplacements,
   type VideoCategoryInput,
   type VideoItemInput,
 } from '../src/repository/videos.ts'
@@ -193,5 +194,57 @@ describe('替换审计', () => {
     rows = await listVideoReplacements(repo, { categoryId: 'cat_ai' })
     expect(rows).toHaveLength(2)
     expect(rows.find(r => r.id === 'rep1')!.rolledBack).toBe(true)
+  })
+})
+
+describe('replaceVideoReplacements（外置审计文档的全量同步）', () => {
+  const rec = (id: string, createdAt: number) => ({
+    id,
+    categoryId: 'cat_ai',
+    categoryTitle: 'AI 与大模型',
+    oldItem: { id: 'old-' + id },
+    newItem: { id: 'new-' + id },
+    reason: 'freshness_decay',
+    scoreDiff: 5,
+    createdAt,
+  })
+
+  it('全量替换语义：未出现在入参里的记录会被删除', async () => {
+    await replaceVideoReplacements(repo, [rec('r1', 1000), rec('r2', 2000)])
+    expect(await listVideoReplacements(repo)).toHaveLength(2)
+
+    // 权威文档里删掉了 r1（例如运维清理），表必须跟着删 —— 只 upsert 会留下幽灵行
+    const n = await replaceVideoReplacements(repo, [rec('r2', 2000)])
+    expect(n).toBe(1)
+    const rows = await listVideoReplacements(repo)
+    expect(rows.map(r => r.id)).toEqual(['r2'])
+  })
+
+  it('幂等：同样输入重复调用结果一致（不会翻倍）', async () => {
+    await replaceVideoReplacements(repo, [rec('r1', 1000), rec('r2', 2000)])
+    await replaceVideoReplacements(repo, [rec('r1', 1000), rec('r2', 2000)])
+    expect(await listVideoReplacements(repo)).toHaveLength(2)
+  })
+
+  it('入参有重复 id 时只保留第一条（否则主键冲突会让整批失败）', async () => {
+    const n = await replaceVideoReplacements(repo, [rec('dup', 1000), rec('dup', 9000)])
+    expect(n).toBe(1)
+    const rows = await listVideoReplacements(repo)
+    expect(rows).toHaveLength(1)
+    // 保留第一条：文档里同一 id 出现两次属于上游脏数据，取先出现的更可预测
+    expect(rows[0].createdAt).toBe(1000)
+  })
+
+  it('空数组表示「确实没有记录」：会把表清空', async () => {
+    await replaceVideoReplacements(repo, [rec('r1', 1000)])
+    expect(await replaceVideoReplacements(repo, [])).toBe(0)
+    expect(await listVideoReplacements(repo)).toHaveLength(0)
+  })
+
+  it('不设条数上限：120 条全量写入后仍能全部读出（内联数组只留 100 是另一层的事）', async () => {
+    const many = Array.from({ length: 120 }, (_, i) => rec('bulk-' + i, 1000 + i))
+    expect(await replaceVideoReplacements(repo, many)).toBe(120)
+    // listVideoReplacements 默认 limit 50、上限 500，这里显式要 500
+    expect(await listVideoReplacements(repo, { limit: 500 })).toHaveLength(120)
   })
 })

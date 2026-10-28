@@ -11,7 +11,14 @@
  */
 
 /** 图标键：组件侧用 Record<RecoveryIcon, LucideIcon> 映射，TypeScript 保证不漏 */
-export type RecoveryIcon = 'home' | 'trending' | 'tags' | 'collections' | 'graph' | 'favorites'
+export type RecoveryIcon =
+  | 'home'
+  | 'categories'
+  | 'trending'
+  | 'tags'
+  | 'collections'
+  | 'graph'
+  | 'favorites'
 
 export interface RecoveryLink {
   /** 站内绝对路径 */
@@ -25,6 +32,9 @@ export interface RecoveryLink {
 /** 顺序有意义：越靠前越通用，404 页按此顺序展示 */
 export const RECOVERY_LINKS: readonly RecoveryLink[] = [
   { href: '/', label: '返回主页', description: '回到导航主干，按分类浏览全部收录', icon: 'home' },
+  // 薄分类页按 SEO 口径是 404（见 category-hub.test.ts）：这类 404 的用户
+  // 本来就想按分类浏览，分类总览是最近的一个有效入口，必须排在前面。
+  { href: '/category', label: '分类总览', description: '按主题从大类逐层下钻（只列已达标的分类）', icon: 'categories' },
   { href: '/hot', label: '热度榜', description: '看看最近全网在用什么', icon: 'trending' },
   { href: '/tags', label: '标签云', description: '按技术标签下钻，适合描述不了需求的时候', icon: 'tags' },
   { href: '/collections', label: '精选专题', description: '按主题成组浏览（地域 / 路线图 / 技术栈）', icon: 'collections' },

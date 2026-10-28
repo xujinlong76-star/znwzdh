@@ -133,7 +133,7 @@ function getAdapter(): StorageAdapter {
  * 默认 60s）。后台分 tab 保存时，若合并基准取自缓存，第二次保存拿到的是第一次
  * 保存**之前**的现值，整坨覆盖就会把刚写进去的字段抹掉——实测连续保存「分享图 +
  * 页脚备案 + 导航设置」后，中枢里只剩最后一个 tab 的字段。
- * `revalidateS: 0` 让读请求不带 `next.revalidate`，route handler 里即 no-store。
+ * `revalidateS: 0` 显式使用 `cache: 'no-store'`，不依赖路由的默认缓存策略。
  */
 let cachedFresh: StorageAdapter | null = null;
 
@@ -253,21 +253,50 @@ export async function getFileContent<T = any>(path: string): Promise<T> {
   return (await getFileContentWithStatus<T>(path)).data;
 }
 
+/**
+ * 读取内容版本号（乐观并发写的前置查询）。
+ *
+ * 只有 http 适配器有版本列；github / sqlite 后端返回 null，
+ * 调用方应据此降级为「不做版本校验」（与历史行为一致）。
+ */
+export async function getStorageVersion(path: string): Promise<number | null> {
+  const adapter = getAdapter();
+  if (!adapter.version) return null;
+  try {
+    return await adapter.version(path);
+  } catch {
+    return null;
+  }
+}
+
 export async function commitFile(
   path: string,
   content: string,
   message: string,
   _token?: string,
   retryCount = 3,
+  ifVersion?: number,
 ) {
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= retryCount; attempt++) {
     try {
-      const result = await getAdapter().write(path, content, message);
+      const result = await getAdapter().write(
+        path,
+        content,
+        message,
+        ifVersion !== undefined ? { ifVersion } : undefined,
+      );
       invalidateContentCache(path);
-      return { ok: true, note: result.note, attempts: attempt };
+      return { ok: true, note: result.note, version: result.version, attempts: attempt };
     } catch (error) {
       lastError = error;
+      /**
+       * 409 是版本冲突，重试同一个 `ifVersion` 永远失败 —— 必须由调用方
+       * 重新读取并重放变更，所以这里直接抛出，不做无意义的重试。
+       */
+      if (error instanceof StorageError && error.status === 409) {
+        throw error;
+      }
       if (attempt < retryCount) {
         await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
         continue;

@@ -20,10 +20,30 @@
 
 export type StorageAdapterKind = "github" | "http" | "sqlite";
 
+export interface StorageWriteOptions {
+  /**
+   * 乐观并发控制：给出时要求中枢的当前版本与此一致，否则 409。
+   *
+   * 只有 http 适配器实现（中枢有版本列）；github/sqlite 适配器接受该参数但忽略，
+   * 保持行为不变。用途见 `commitFile` 的冲突重试。
+   */
+  ifVersion?: number;
+}
+
 export interface StorageAdapter {
   readonly kind: StorageAdapterKind;
   read(path: string): Promise<unknown>;
-  write(path: string, content: string, message: string): Promise<{ ok: true; note?: string }>;
+  write(
+    path: string,
+    content: string,
+    message: string,
+    opts?: StorageWriteOptions,
+  ): Promise<{ ok: true; note?: string; version?: number }>;
+  /**
+   * 读取当前版本号（乐观并发写的前置查询）。
+   * 只有 http 适配器实现；其它后端没有版本列，返回 null 由调用方降级为「不做版本校验」。
+   */
+  version?(path: string): Promise<number | null>;
 }
 
 export class StorageError extends Error {
@@ -179,7 +199,7 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
         ...init,
         headers: headers(),
         signal: controller.signal,
-        ...(isRead && revalidateS > 0 ? { next: { revalidate: revalidateS } } : {}),
+        ...(isRead && revalidateS > 0 ? { next: { revalidate: revalidateS } } : { cache: "no-store" as const }),
       });
     } catch (err) {
       // 只有 fetch 自身抛出才算连接级故障。必须与下面的「响应处理」分开
@@ -216,11 +236,24 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
       throwIfCoolingDown();
       return call(base + "/api/storage?path=" + encodeURIComponent(path), { method: "GET" });
     },
-    async write(path: string, content: string, message: string) {
+    async write(path: string, content: string, message: string, writeOpts?: StorageWriteOptions) {
       throwIfCoolingDown();
-      const body = JSON.stringify({ path, content, message });
-      const res = (await call(base + "/api/storage", { method: "PUT", body })) as { note?: string };
-      return { ok: true, note: res?.note };
+      const body = JSON.stringify({
+        path,
+        content,
+        message,
+        ...(writeOpts?.ifVersion !== undefined ? { ifVersion: writeOpts.ifVersion } : {}),
+      });
+      const res = (await call(base + "/api/storage", { method: "PUT", body })) as { note?: string; version?: number };
+      return { ok: true, note: res?.note, version: res?.version };
+    },
+    async version(path: string) {
+      throwIfCoolingDown();
+      const res = (await call(
+        base + "/api/storage/version?path=" + encodeURIComponent(path),
+        { method: "GET" },
+      )) as { version?: number | null };
+      return typeof res?.version === "number" ? res.version : null;
     },
   };
 }

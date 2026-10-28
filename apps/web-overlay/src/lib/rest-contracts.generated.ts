@@ -796,6 +796,78 @@ export interface CollectionDetailResponse {
 }
 
 /**
+ * GET /api/me/notifications
+ * GET /api/admin/notifications
+ */
+export interface NotificationListResponse {
+  items: ({
+    id: string;
+    identity: string;
+    kind: string;
+    title: string;
+    body: string | null;
+    readAt: number | null;
+    createdAt: number;
+    [key: string]: unknown;
+  })[];
+  hasMore: boolean;
+  unread: number;
+  nextOffset: number;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/me/notifications/unread-count
+ */
+export interface NotificationUnreadCountResponse {
+  ok: true;
+  unread: number;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/admin/notifications/deliveries
+ */
+export interface NotificationDeliveryListResponse {
+  items: ({
+    id: string;
+    identity: string;
+    channel: string;
+    kind: string;
+    status: "pending" | "delivered" | "deferred" | "failed";
+    attempts: number;
+    nextAttemptAt: number | null;
+    lastError: string | null;
+    createdAt: number;
+    deliveredAt: number | null;
+    [key: string]: unknown;
+  })[];
+  hasMore: boolean;
+  nextOffset: number;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/categories/{id}/impact
+ */
+export interface CategoryImpactResponse {
+  category: {
+    id: string;
+    title: string;
+    slug: string | null;
+    enabled: boolean;
+    parentId: string | null;
+    anchor: string;
+    [key: string]: unknown;
+  };
+  childCategories: number;
+  descendantCategories: number;
+  directSites: number;
+  subtreeSites: number;
+  [key: string]: unknown;
+}
+
+/**
  * POST /api/plugins/{slug}/install
  */
 export interface PluginInstallResponse {
@@ -1109,14 +1181,19 @@ export interface RestContractRoutes {
   "DELETE /api/favorites/folders/{id}": OkResponse;
   "DELETE /api/favorites/{siteId}": FavoriteSiteRemovalResponse;
   "DELETE /api/plugins/{slug}/install": PluginUninstallResponse;
+  "GET /api/admin/notifications": NotificationListResponse;
+  "GET /api/admin/notifications/deliveries": NotificationDeliveryListResponse;
   "GET /api/categories": CategoryListResponse;
   "GET /api/categories/counts": CategoryCountsResponse;
   "GET /api/categories/page": CategoryPageResponse;
+  "GET /api/categories/{id}/impact": CategoryImpactResponse;
   "GET /api/collections": CollectionListResponse;
   "GET /api/collections/{slug}": CollectionDetailResponse;
   "GET /api/favorites": FavoritesListResponse;
   "GET /api/health": HealthResponse;
   "GET /api/me": MeOverviewResponse;
+  "GET /api/me/notifications": NotificationListResponse;
+  "GET /api/me/notifications/unread-count": NotificationUnreadCountResponse;
   "GET /api/plugins": PluginListResponse;
   "GET /api/plugins/installed": InstalledPluginsResponse;
   "GET /api/plugins/taps": PluginTapsResponse;

@@ -199,7 +199,7 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
         ...init,
         headers: headers(),
         signal: controller.signal,
-        ...(isRead && revalidateS > 0 ? { next: { revalidate: revalidateS } } : {}),
+        ...(isRead && revalidateS > 0 ? { next: { revalidate: revalidateS } } : { cache: "no-store" as const }),
       });
     } catch (err) {
       // 只有 fetch 自身抛出才算连接级故障。必须与下面的「响应处理」分开

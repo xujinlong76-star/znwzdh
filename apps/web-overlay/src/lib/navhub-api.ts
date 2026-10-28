@@ -2378,6 +2378,22 @@ export interface HubAiCanvasGenerateResult {
    * 后端只返回这个字段时前端必须说出来：否则用户只会觉得「AI 少给我排了几张卡」。
    */
   droppedTypes?: string[]
+  /**
+   * true = 模型这次没给出任何合法模块，layout 是系统保底布局。
+   * 前端必须据此标注「未按原规划生成」，不能把它当成模型规划的结果展示。
+   */
+  fallbackUsed?: boolean
+  /** 逐条改动台账（跨度夹紧 / 配置回退 / 非法字段丢弃）；后端最多随响应给 20 条 */
+  canvasIssues?: Array<{
+    index: number
+    type: string
+    field: string
+    key: string
+    message: string
+    action: string
+  }>
+  /** 台账总条数（可能大于 canvasIssues 的长度） */
+  canvasIssueTotal?: number
 }
 
 /** 一句话自然语言规划并生成模块化工作台画布 */
@@ -2812,12 +2828,64 @@ export async function applySiteHealingAction(data: {
   return sendJson<{ ok: boolean; action: string; site?: any }>('/api/admin/audit/apply', 'POST', data)
 }
 
-export async function recommendSiteAlternatives(siteId: string): Promise<{
+/**
+ * 候选平替的实测档位。
+ *
+ * `unverified` 与 `dead` 是两件不同的事：前者是「这次没测到」（超时、连接中断），
+ * 后者是「测到了且确认不可用」（404、域名解析失败、内网地址被拦）。
+ * 界面把它们都渲染成「不可达」，运营就会放弃一个其实活着的站点。
+ */
+export type HubCandidateGrade = 'verified' | 'blocked' | 'unverified' | 'suspicious' | 'dead'
+
+/** 可信度分解：总分能追到「可达性 / 内容健康 / 领域匹配」三个来源，不是一个无法解释的数字 */
+export interface HubCandidateConfidence {
+  total: number
+  reachability: number
+  contentHealth: number
+  domainFit: number
+}
+
+export interface HubSiteAlternative {
+  title: string
+  url: string
+  reason: string
+  tag?: string
+  qualityScore?: number
+  /** 仅实测通过为 true */
+  verified?: boolean
+  latencyMs?: number
+  /** 候选来源：模型 / 站内同类目兜底 / 检索 */
+  source?: 'ai' | 'catalog' | 'search'
+  grade?: HubCandidateGrade
+  /** 未通过时的原因（停放页 / 软 404 / HTTP 状态 / 超时 / 内网地址） */
+  gradeReason?: string
+  confidence?: HubCandidateConfidence
+  domainFit?: number
+}
+
+/** 一批候选的整体读数；前端据此写横幅文案，而不是逐条猜「是不是都挂了」 */
+export interface HubCandidateProbeSummary {
+  checked: number
+  verified: number
+  /** dead + suspicious：实测确认不可用 */
+  unreachable: number
+  /** blocked + unverified：没测准，慢 ≠ 死 */
+  inconclusive: number
+  /** 未在总预算内给出结论的条数 */
+  pending: number
+  budgetMs: number
+  hasVerified: boolean
+  /** 口径声明：结论只代表「从本机网络实测的即时快照」 */
+  caveat: string
+}
+
+export interface HubSiteAlternativesResult {
   ok: boolean
   siteId: string
   /** 真实模型名，或哨兵 `fallback-heuristics`（本次是同类活跃站点兜底，没有模型参与） */
   model: string
-  recommendations: Array<{ title: string; url: string; reason: string }>
+  recommendations: HubSiteAlternative[]
+  probe?: HubCandidateProbeSummary
   aiDegraded?: 'quota' | 'error'
   degradedReason?: string
   quota?: {
@@ -2827,22 +2895,10 @@ export async function recommendSiteAlternatives(siteId: string): Promise<{
     used: number
     retryAfterSeconds: number
   } | null
-}> {
-  return sendJson<{
-    ok: boolean
-    siteId: string
-    model: string
-    recommendations: Array<{ title: string; url: string; reason: string }>
-    aiDegraded?: 'quota' | 'error'
-    degradedReason?: string
-    quota?: {
-      scope: string
-      metric: string
-      limit: number
-      used: number
-      retryAfterSeconds: number
-    } | null
-  }>(`/api/sites/${encodeURIComponent(siteId)}/recommend-alternative`, 'POST', {})
+}
+
+export async function recommendSiteAlternatives(siteId: string): Promise<HubSiteAlternativesResult> {
+  return sendJson<HubSiteAlternativesResult>(`/api/sites/${encodeURIComponent(siteId)}/recommend-alternative`, 'POST', {})
 }
 
 export interface SiteKnowledgeNode {

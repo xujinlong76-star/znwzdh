@@ -226,6 +226,7 @@ describe("读请求的 Data Cache（next.revalidate）", () => {
 
     await adapter.read("site.json");
     expect(lastInit(fetchImpl).next).toBeUndefined();
+    expect(lastInit(fetchImpl).cache).toBe("no-store");
   });
 
   it("write（PUT）永远不带 next —— 写不过缓存", async () => {

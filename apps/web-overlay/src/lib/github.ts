@@ -133,7 +133,7 @@ function getAdapter(): StorageAdapter {
  * 默认 60s）。后台分 tab 保存时，若合并基准取自缓存，第二次保存拿到的是第一次
  * 保存**之前**的现值，整坨覆盖就会把刚写进去的字段抹掉——实测连续保存「分享图 +
  * 页脚备案 + 导航设置」后，中枢里只剩最后一个 tab 的字段。
- * `revalidateS: 0` 让读请求不带 `next.revalidate`，route handler 里即 no-store。
+ * `revalidateS: 0` 显式使用 `cache: 'no-store'`，不依赖路由的默认缓存策略。
  */
 let cachedFresh: StorageAdapter | null = null;
 

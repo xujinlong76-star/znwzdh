@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useMemo } from 'react'
-import type { VideoChapter, VideoDanmakuItem } from '@/types/navigation'
+import { chapterStartSec, type VideoChapter, type VideoDanmakuItem } from '@/types/navigation'
 import {
   generateEngagementHeatmap,
   buildHeatmapSvgPath,
@@ -130,7 +130,7 @@ export function VideoHeatmapTimeline({
 
       {/* Chapter Marker Dots */}
       {chapters.map(ch => {
-        const leftPercent = durationSec > 0 ? (ch.startTime / durationSec) * 100 : 0
+        const leftPercent = durationSec > 0 ? (chapterStartSec(ch) / durationSec) * 100 : 0
         return (
           <div
             key={ch.id}

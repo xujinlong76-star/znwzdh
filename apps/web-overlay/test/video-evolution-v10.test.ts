@@ -230,6 +230,7 @@ describe('Video Autonomous Evolution V10 Full Suite (Proposals 1-6)', () => {
               id: 'c1',
               title: 'DeepSeek 核心架构与微调',
               href: 'https://bilibili.com/video/BV1c1',
+              enabled: true,
               videoConfig: {
                 type: 'bilibili',
                 bvid: 'BV1c1',
@@ -240,6 +241,7 @@ describe('Video Autonomous Evolution V10 Full Suite (Proposals 1-6)', () => {
               id: 'c2',
               title: 'Docker 容器化与 Kubernetes 编排',
               href: 'https://bilibili.com/video/BV1c2',
+              enabled: true,
               videoConfig: {
                 type: 'bilibili',
                 bvid: 'BV1c2',

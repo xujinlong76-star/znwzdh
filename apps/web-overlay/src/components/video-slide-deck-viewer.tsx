@@ -8,7 +8,7 @@ import {
 import { Button } from '@/registry/new-york/ui/button'
 import { Presentation, Download, ExternalLink, Sparkles, Clock } from 'lucide-react'
 import { formatDuration } from '@/lib/video-format'
-import type { VideoChapter } from '@/types/navigation'
+import { chapterStartSec, type VideoChapter } from '@/types/navigation'
 
 interface VideoSlideDeckViewerProps {
   chapters?: VideoChapter[]
@@ -64,7 +64,7 @@ export function VideoSlideDeckViewer({
     return chapters.map((ch, idx) => ({
       id: ch.id || `slide-${idx + 1}`,
       pageNumber: idx + 1,
-      timestampSec: ch.startTime,
+      timestampSec: chapterStartSec(ch),
       durationSec: ch.duration || 300,
       title: ch.title,
       pHash: `slide-hash-${idx}`,

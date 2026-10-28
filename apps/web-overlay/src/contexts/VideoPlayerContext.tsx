@@ -1,7 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
-import type { NavigationSubItem, VideoChapter, VideoMirrorSource } from '@/types/navigation'
+import { chapterStartSec, type NavigationSubItem, type VideoChapter, type VideoMirrorSource } from '@/types/navigation'
 import { resolveAvailableMirrors, selectBestMirror, recordMirrorFailover } from '@/lib/video-failover'
 import { savePlaybackPosition, getResumePosition } from '@/lib/video-playback-storage'
 import { getVideoAISummary } from '@/lib/video-ai-summary'
@@ -119,7 +119,8 @@ export function VideoPlayerProvider({ children }: { children: React.ReactNode })
         title: activeVideo.title,
         author: activeVideo.videoConfig.author,
         cover: activeVideo.icon,
-        platform: activeVideo.videoConfig.type,
+        // VideoConfig.type 有 `custom`，播放历史只为 bilibili/youtube/other 建模
+        platform: activeVideo.videoConfig.type === 'custom' ? 'other' : activeVideo.videoConfig.type,
         timestampSec: sec,
         durationSec: activeVideo.videoConfig.durationSec || 600,
       })
@@ -131,10 +132,11 @@ export function VideoPlayerProvider({ children }: { children: React.ReactNode })
     if (!chapters || chapters.length === 0) return
     const current = chapters.find(ch => {
       const end = ch.endTime || Infinity
-      return playheadSec >= ch.startTime && playheadSec < end
+      return playheadSec >= chapterStartSec(ch) && playheadSec < end
     })
-    if (current && current.id !== activeChapterId) {
-      setActiveChapterId(current.id)
+    const currentId = current?.id ?? null
+    if (currentId !== activeChapterId) {
+      setActiveChapterId(currentId)
     }
   }, [playheadSec, chapters, activeChapterId])
 
@@ -156,8 +158,8 @@ export function VideoPlayerProvider({ children }: { children: React.ReactNode })
 
   // Seek to specific chapter
   const seekToChapter = useCallback((chapter: VideoChapter) => {
-    setPlayheadSec(chapter.startTime)
-    setActiveChapterId(chapter.id)
+    setPlayheadSec(chapterStartSec(chapter))
+    setActiveChapterId(chapter.id ?? null)
   }, [setPlayheadSec])
 
   // Native Document PiP

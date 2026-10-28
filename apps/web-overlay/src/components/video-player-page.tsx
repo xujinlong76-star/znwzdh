@@ -2,14 +2,16 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { safeHref } from '@/lib/safe-url'
-import type {
-  NavigationData,
-  NavigationItem,
-  NavigationSubItem,
-  VideoChapter,
-  VideoMirrorSource,
-  VideoDanmakuItem,
-  VideoTranscriptItem,
+import {
+  chapterStartSec,
+  type NavigationData,
+  type NavigationCategory,
+  type NavigationItem,
+  type NavigationSubItem,
+  type VideoChapter,
+  type VideoMirrorSource,
+  type VideoDanmakuItem,
+  type VideoTranscriptItem,
 } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { ModeToggle } from '@/components/mode-toggle'
@@ -325,6 +327,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         voiceClarity: false,
         loudnessNormalization: false,
         volumeBoost: 1.0,
+        noiseSuppression: false,
         lowCut: false,
     })
 
@@ -507,7 +510,10 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
         setFilmstripThumbnails(
             generateFilmstripSequence(
                 selectedVideo.videoConfig.durationSec || 600,
-                selectedVideo.videoConfig.chapters || []
+                (selectedVideo.videoConfig.chapters || []).map(ch => ({
+                    startTime: chapterStartSec(ch),
+                    title: ch.title,
+                }))
             )
         )
 
@@ -608,7 +614,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
     }
 
     const handleSeekToChapter = (chapter: VideoChapter) => {
-        setChapterSeekSec(chapter.startTime)
+        setChapterSeekSec(chapterStartSec(chapter))
     }
 
     const handleOpenSandbox = (code?: string, lang?: string) => {
@@ -1322,7 +1328,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                 <VideoPipWindowRenderer
                                     videoTitle={selectedVideo?.title || '技术课程'}
                                     currentSubtitle={transcriptList[0]?.text}
-                                    lastCodeCommand={codeMilestones[0]?.code.split('\n')[0]}
+                                    lastCodeCommand={codeMilestones[0]?.afterCode.split('\n')[0]}
                                 />
 
                                 {/* 双语字幕 */}
@@ -1844,7 +1850,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                                     onClick={() => handleSeekToChapter(ch)}
                                                     className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-muted hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
                                                 >
-                                                    {formatDuration(ch.startTime)}
+                                                    {formatDuration(chapterStartSec(ch))}
                                                 </button>
                                             </div>
                                             {ch.summary && (
@@ -1865,7 +1871,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                                                                 <Play className="w-3 h-3 fill-current" /> 沙箱运行
                                                             </button>
                                                             <button
-                                                                onClick={() => handleCopyCode(ch.id, ch.codeSnippet!)}
+                                                                onClick={() => handleCopyCode(ch.id ?? `ch-${idx}`, ch.codeSnippet!)}
                                                                 className="hover:text-white transition-colors"
                                                                 title="复制代码"
                                                             >
@@ -1919,7 +1925,7 @@ export function VideoPlayerPage({ navigationData }: VideoPlayerPageProps) {
                         {activeTab === 'debugger' && (
                             <div className="p-3">
                                 <VideoDebuggerStepperPane
-                                    initialCode={codeMilestones[0]?.code || '// 交互式断点调试器\nfunction calculateProgress(time, total) {\n  let ratio = time / total;\n  if (ratio > 1) ratio = 1;\n  return Math.round(ratio * 100);\n}\nlet currentProgress = calculateProgress(120, 600);\nconsole.log("Current progress:", currentProgress);'}
+                                    initialCode={codeMilestones[0]?.afterCode || '// 交互式断点调试器\nfunction calculateProgress(time, total) {\n  let ratio = time / total;\n  if (ratio > 1) ratio = 1;\n  return Math.round(ratio * 100);\n}\nlet currentProgress = calculateProgress(120, 600);\nconsole.log("Current progress:", currentProgress);'}
                                 />
                             </div>
                         )}
@@ -2365,7 +2371,7 @@ ls -la /workspace`}
                 open={showShaderDialog}
                 onOpenChange={setShowShaderDialog}
                 options={sharpenerOptions}
-                onChange={setSharpenerOptions}
+                onOptionsChange={setSharpenerOptions}
             />
 
             {/* 艾宾浩斯智能抽认卡复习弹窗 */}
@@ -2380,10 +2386,9 @@ ls -la /workspace`}
             <VideoCertificateDialog
                 open={showCertDialog}
                 onOpenChange={setShowCertDialog}
-                courseTitle={selectedVideo?.title || '全栈高级工程进阶'}
-                quizScore={88}
+                videoTitle={selectedVideo?.title || '全栈高级工程进阶'}
                 notesCount={notesList.length}
-                watchDurationSec={selectedVideo?.videoConfig?.durationSec || 1800}
+                quizScorePercent={88}
             />
 
             {/* 离线缓存管理弹窗 */}
@@ -2438,8 +2443,8 @@ ls -la /workspace`}
                 onOpenChange={setShowWorkspaceExportDialog}
                 courseTitle={selectedVideo?.title || '技术实战'}
                 videoId={selectedVideo?.id || 'demo'}
-                milestones={codeMilestones}
-                notes={notesList}
+                milestones={codeMilestones.map(m => ({ title: m.title, code: m.afterCode, language: m.language }))}
+                notes={notesList.map(n => ({ userNote: n.userNote ?? '', codeSnippet: n.codeSnippet }))}
             />
 
             {/* 双语字幕对齐与导出弹窗 */}

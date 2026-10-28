@@ -18,6 +18,7 @@ describe('Autonomous AI Video Harvester & Intelligent Content Enrichment Pipelin
             id: 'video_seed_1',
             title: '现有深度学习课程',
             href: 'https://www.bilibili.com/video/BV1seed1',
+            enabled: true,
             videoConfig: {
               type: 'bilibili',
               bvid: 'BV1seed1',
@@ -150,8 +151,8 @@ describe('Autonomous AI Video Harvester & Intelligent Content Enrichment Pipelin
       expect(report.logs.length).toBeGreaterThan(5)
 
       // dryRun should not insert new items into updatedData
-      const originalItemCount = mockNavigationData.navigationItems[0].items.length
-      const updatedItemCount = updatedData.navigationItems[0].items.length
+      const originalItemCount = mockNavigationData.navigationItems[0]?.items?.length ?? 0
+      const updatedItemCount = updatedData.navigationItems[0]?.items?.length ?? 0
       expect(updatedItemCount).toBe(originalItemCount)
     })
 
@@ -163,12 +164,13 @@ describe('Autonomous AI Video Harvester & Intelligent Content Enrichment Pipelin
       const aiCat = updatedData.navigationItems.find(c => c.id === 'cat_ai_engineering')
       expect(aiCat).toBeDefined()
       // Should have new items added
-      expect(aiCat!.items.length).toBeGreaterThan(1)
+      const aiItems = aiCat!.items ?? []
+      expect(aiItems.length).toBeGreaterThan(1)
 
-      const newlyAdded = aiCat!.items[aiCat!.items.length - 1]
-      expect(newlyAdded.videoConfig?.qualityScore).toBeGreaterThanOrEqual(70)
-      expect(newlyAdded.videoConfig?.chapters).toBeDefined()
-      expect(newlyAdded.videoConfig?.transcript).toBeDefined()
+      const newlyAdded = aiItems[aiItems.length - 1]
+      expect(newlyAdded?.videoConfig?.qualityScore).toBeGreaterThanOrEqual(70)
+      expect(newlyAdded?.videoConfig?.chapters).toBeDefined()
+      expect(newlyAdded?.videoConfig?.transcript).toBeDefined()
     })
 
     it('respects forceCategory to restrict autonomous scan to single domain', async () => {

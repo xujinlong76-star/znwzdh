@@ -1423,3 +1423,63 @@ node scripts/safe-commit.mjs --msg-file <msg> -- \
 
 不做这条的理由：它属于并行会话正在写的那条链路；且「管理员能否自批」是产品决策 ——
 单人运营的站点，禁止自批等于无法审核。留作决策项，不替产品拍板。
+
+---
+
+## 22. `write` 面复核：默认拒绝真的生效，问题出在唯一那条白名单
+
+§21 之后我怀疑「同一个 `write` 等级里还藏着别的越权」，于是把中枢 **42 条
+`scope: "write"` 路由**逐条过了一遍。结论是**默认拒绝的设计是有效的**，
+问题只集中在一条白名单上。
+
+### 22.1 判定链（读代码得出）
+
+`packages/core/src/authz.ts` 的 `evaluateInstanceWrite()`：
+
+```ts
+if (ctx.required !== "write") return { allowed: true };     // read / admin 不在此收窄
+if (!ctx.ownerScoped) return { allowed: true };             // 非个人令牌（admin）放行
+if (isPersonalWritePath(ctx.path)) return { allowed: true }; // 只有白名单例外
+return { allowed: false, reason: "personal_token_instance_write" }; // 默认拒绝
+```
+
+白名单只有一条：`PERSONAL_TOKEN_WRITE_ROUTES = ["PATCH /api/submissions/:number"]`。
+
+### 22.2 高风险 write 路由逐个核对：都被默认拒
+
+| 路由 | 能造成的后果 | 个人令牌 |
+|---|---|---|
+| `POST /api/admin/audit/apply` | `action: "replacement"` 会把**任意站点的 URL 改成任意 `targetUrl`** 并 `indexSite()` 重建索引；`dismiss` 可直接归档任意站点 | 拒绝（未登记） |
+| `POST /api/admin/audit/scan` | 触发全站巡检（资源消耗） | 拒绝 |
+| `POST /api/taxonomy/proposals/:id/apply` | 采纳分类体系变更 | 拒绝 |
+| `POST /api/tags/merge` / `POST /api/categories/merge` | 合并标签/分类（不可逆） | 拒绝 |
+| `POST /api/trash/:id/restore` | 恢复已删站点 | 拒绝 |
+| `PATCH /api/sites/:id`、`POST /api/sites/batch` | 批量改站点 | 拒绝 |
+
+也就是说：路径前缀写着 `/api/admin/` 却声明成 `write` 的那几条**并不构成漏洞** ——
+判定不靠路径前缀猜，而靠「未登记即实例域」的默认方向。这个设计是对的，
+值得保留（新增写路由不需要记得加开关）。
+
+### 22.3 真正的问题：白名单的「理由」是自由文本，没人验证过它
+
+`route-policy.ts:36-44` 的注释把这条例外解释为「作者改自己的投稿」。
+但该路由的处理体（`apps/api/src/routes/submissions.ts:121-123`）只接受
+`action: "approve" | "reject"`，**从来没有「作者改自己的投稿」这个能力**。
+
+于是这条登记的实际效果不是「把用户域写面放行」，而是**把一个实例域的审批动作
+ laundering 成了个人令牌可用**（`whitelist` 一词的字面含义）。§21 的越权面就是这么来的。
+
+**教训**：例外清单里的 `why` 如果只是自由文本，它会退化成永久豁免 ——
+因为没有任何测试能反驳一句注释。真正该守的是**能力**，不是**描述**。
+
+### 22.4 建议（未实施，属跨包改动）
+
+给 `PERSONAL_TOKEN_WRITE_ROUTES` 加一条「能力断言」测试：
+
+- 每个登记项对应的处理体里，必须能找到一处**归属校验**调用
+  （如比较 `submission_owners.identity` 与 `req.auth.actor`）；
+- 找不到就红，并在错误信息里指向这条注释 —— 让「写理由」变成「写证据」。
+
+这样新增例外必须同时交出一个可被测试看见的归属校验，而不是一句说明。
+当前不做：`PATCH` 已改为 `admin`（白名单条目应随之删除），等并行会话那批落地后
+清单会变空；此时加断言等于给一条空清单写测试，收益为零。**空清单本身就是最好的状态**。

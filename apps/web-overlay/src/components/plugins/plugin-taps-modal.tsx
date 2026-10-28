@@ -25,6 +25,7 @@ import {
   syncPluginTap,
   fetchPublicPluginTaps,
   type HubPluginTap,
+  type HubPublicPluginTap,
   type HubFeaturedTapItem,
 } from '@/lib/navhub-api'
 import {
@@ -49,7 +50,9 @@ interface PluginTapsModalProps {
 }
 
 export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModalProps) {
-  const [taps, setTaps] = useState<HubPluginTap[]>([])
+  // 管理面与公开面的条目形状不同（公开面刻意不带 url）：状态用联合类型，
+  // 渲染时按字段存在性取值，而不是假装两条路由同形。
+  const [taps, setTaps] = useState<Array<HubPluginTap | HubPublicPluginTap>>([])
   const [loading, setLoading] = useState(false)
   const [syncingId, setSyncingId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
@@ -325,7 +328,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
                       )}
                     </div>
                     <div className="text-[11px] text-muted-foreground font-mono truncate max-w-md">
-                      {tap.url}
+                      {'url' in tap ? tap.url : ''}
                     </div>
                     {tap.description && (
                       <div className="text-[11px] text-muted-foreground leading-relaxed">
@@ -376,7 +379,7 @@ export function PluginTapsModal({ open, onOpenChange, onSynced }: PluginTapsModa
 
             <div className="grid grid-cols-1 gap-2.5">
               {featuredTaps.map((feat) => {
-                const isSubscribed = taps.some((t) => t.url.toLowerCase() === feat.url.toLowerCase())
+                const isSubscribed = taps.some((t) => 'url' in t && t.url.toLowerCase() === feat.url.toLowerCase())
                 const isSubscribing = subscribingUrl === feat.url
                 return (
                   <div

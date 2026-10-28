@@ -58,11 +58,8 @@ GET /api/metrics
 GET /api/openapi.json
 GET /api/plugins/author/{key}
 GET /api/plugins/health
-GET /api/plugins/installed
 GET /api/plugins/mine
 GET /api/plugins/search
-GET /api/plugins/taps
-GET /api/plugins/taps/public
 GET /api/plugins/url-health/jobs
 GET /api/plugins/url-health/jobs/{id}
 GET /api/plugins/url-health/metrics
@@ -84,11 +81,9 @@ GET /api/rank/similar/{siteId}
 GET /api/ready
 GET /api/recipes
 GET /api/relations/types
-GET /api/search-history
 GET /api/search/linucb
 GET /api/shortlinks/{code}
 GET /api/sites/duplicates
-GET /api/sites/{id}
 GET /api/sites/{id}/archive
 GET /api/sites/{id}/collections
 GET /api/sites/{id}/facets

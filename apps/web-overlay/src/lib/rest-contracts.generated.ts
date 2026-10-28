@@ -474,6 +474,130 @@ export interface PluginListResponse {
 }
 
 /**
+ * GET /api/plugins/installed
+ */
+export interface InstalledPluginsResponse {
+  items: ({
+    id: string;
+    slug: string;
+    kind: "site-pack" | "workspace-preset" | "theme" | "search-pack" | "bundle";
+    name: string;
+    description: string;
+    icon: string | null;
+    version: string;
+    installedVersion: string;
+    installedAt: number;
+    source: string;
+    [key: string]: unknown;
+  })[];
+  total: number;
+}
+
+/**
+ * GET /api/plugins/taps
+ */
+export interface PluginTapsResponse {
+  ok: true;
+  items: {
+    id: string;
+    name: string;
+    url: string;
+    description?: string;
+    enabled: boolean;
+    pluginCount: number;
+    lastSyncedAt?: number;
+    createdAt: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  }[];
+  featuredTaps: {
+    id: string;
+    name: string;
+    description: string;
+    url: string;
+    isFeatured: true;
+    author: string;
+  }[];
+}
+
+/**
+ * GET /api/plugins/taps/public
+ */
+export interface PublicPluginTapsResponse {
+  ok: true;
+  items: ({
+    id: string;
+    name: string;
+    description?: string;
+    pluginCount: number;
+    lastSyncedAt: number | null;
+  })[];
+  featuredTaps: {
+    id: string;
+    name: string;
+    description: string;
+    url: string;
+    isFeatured: true;
+    author: string;
+  }[];
+}
+
+/**
+ * GET /api/sites/{id}
+ */
+export interface SitePayload {
+  id: string;
+  url: string;
+  title: string;
+  categoryId: string;
+  tags: string[];
+  status: "active" | "pending" | "broken" | "archived";
+  enabled: boolean;
+  sort: number;
+  weight: number;
+  health: {
+    ok: boolean;
+    httpStatus?: number | null;
+    latencyMs?: number | null;
+    redirectTo?: string | null;
+    error?: string | null;
+    lastCheckedAt?: number | null;
+  };
+  createdAt: number;
+  updatedAt: number;
+  titleEn?: string | null;
+  description?: string | null;
+  descriptionEn?: string | null;
+  iconKey?: string | null;
+  screenshotKey?: string | null;
+  subCategoryId?: string | null;
+  featured?: boolean;
+  source?: string | null;
+  visitCount?: number;
+  lastVisitedAt?: number | null;
+  trendScore?: number;
+  deletedAt?: number | null;
+  workspaces?: string[];
+  facets?: Record<string, string[]>;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/search-history
+ */
+export interface SearchHistoryPageResponse {
+  items: {
+    id: number;
+    query: string;
+    resultCount: number;
+    createdAt: number;
+    [key: string]: unknown;
+  }[];
+  hasMore: boolean;
+  nextOffset: number;
+}
+
+/**
  * GET /api/me
  */
 export interface MeOverviewResponse {
@@ -535,10 +659,15 @@ export interface RestContractRoutes {
   "GET /api/health": HealthResponse;
   "GET /api/me": MeOverviewResponse;
   "GET /api/plugins": PluginListResponse;
+  "GET /api/plugins/installed": InstalledPluginsResponse;
+  "GET /api/plugins/taps": PluginTapsResponse;
+  "GET /api/plugins/taps/public": PublicPluginTapsResponse;
   "GET /api/rank/new": RankNewResponse;
   "GET /api/rank/trending": RankTrendingResponse;
   "GET /api/search": SearchResponse;
+  "GET /api/search-history": SearchHistoryPageResponse;
   "GET /api/sites": SiteListResponse;
+  "GET /api/sites/{id}": SitePayload;
   "GET /api/tags": TagListResponse;
   "POST /api/search": SearchResponse;
 }

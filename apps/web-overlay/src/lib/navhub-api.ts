@@ -22,9 +22,14 @@ import type { PluginDiffResult, PluginManifest, PluginKind } from './plugins/plu
 import type {
   CategoryCountsResponse,
   CategoryListResponse,
+  InstalledPluginsResponse,
+  PluginTapsResponse,
+  PublicPluginTapsResponse,
   RankNewResponse,
   RankTrendingResponse,
+  SearchHistoryPageResponse,
   SearchResponse,
+  SitePayload,
   TagListResponse,
 } from './rest-contracts.generated'
 
@@ -79,10 +84,10 @@ export interface HubSiteRelationsPayload {
 
 /**
  * 站点在契约里的形状。
- * SitePayload 被列表/搜索/榜单共用，生成物里是内联展开的——取榜首响应的那一份
- * 作为引用点，字段集合与 /api/openapi.json 的同一份 schema 一致。
+ * 生成物里 SitePayload 是独立组件（列表/搜索/榜单/详情共用同一份 schema），
+ * 直接引用它，不再借道某个具体响应的内联展开。
  */
-type ContractSite = RankNewResponse['hits'][number]['site']
+type ContractSite = SitePayload
 
 /**
  * UI 展示形态。
@@ -614,8 +619,9 @@ export async function fetchHyperbolicAlternatives(
 export async function fetchSite(idOrUrl: string, onDegraded?: DegradedHandler): Promise<HubSite | null> {
   try {
     // id 或 URL 都走 /api/sites/:id —— URL 必须先 encodeURIComponent，
-    // 否则斜杠会被切成多段导致 404（实测：编码后 200，不编码 404）
-    return await getJson<HubSite>('/api/sites/' + encodeURIComponent(idOrUrl))
+    // 否则斜杠会被切成多段导致 404（实测：编码后 200，不编码 404）。
+    // 形状取自生成契约「GET /api/sites/{id}」，与列表共用同一份 SitePayload。
+    return await getJson<ContractSite>('/api/sites/' + encodeURIComponent(idOrUrl))
   } catch (error) {
     if (!isNotFound(error)) notifyDegraded(onDegraded, error)
     return null
@@ -843,7 +849,7 @@ export async function deleteFavoriteFolder(identity: string, folderId: string, o
 
 export async function fetchSearchHistory(identity: string, limit = 8, onDegraded?: DegradedHandler): Promise<string[]> {
   return degrade([], async () => {
-    const data = await getJson<{ items: Array<{ query: string }> }>(
+    const data = await getJson<SearchHistoryPageResponse>(
       '/api/search-history?limit=' + limit,
       undefined,
       anonHeaders(identity),
@@ -852,24 +858,20 @@ export async function fetchSearchHistory(identity: string, limit = 8, onDegraded
   }, onDegraded)
 }
 
-export interface HubSearchHistoryItem {
-  id: number
-  query: string
-  resultCount: number
-  createdAt: number
-}
+/** 历史记录条目：形状直接取生成契约（GET /api/search-history） */
+export type HubSearchHistoryItem = SearchHistoryPageResponse['items'][number]
 
 export async function fetchSearchHistoryPage(
   identity: string,
   options: { limit?: number; offset?: number } = {},
   onDegraded?: DegradedHandler,
-): Promise<{ items: HubSearchHistoryItem[]; hasMore: boolean; nextOffset: number }> {
+): Promise<SearchHistoryPageResponse> {
   const limit = options.limit ?? 20
   const offset = options.offset ?? 0
   return degrade(
     { items: [], hasMore: false, nextOffset: offset },
     () =>
-      getJson<{ items: HubSearchHistoryItem[]; hasMore: boolean; nextOffset: number }>(
+      getJson<SearchHistoryPageResponse>(
         '/api/search-history?limit=' + limit + '&offset=' + offset,
         undefined,
         anonHeaders(identity),
@@ -1327,18 +1329,8 @@ export interface HubPluginsResponse {
   offset: number
 }
 
-export interface HubPluginInstalledItem {
-  id: string
-  slug: string
-  kind: string
-  name: string
-  description: string
-  icon?: string | null
-  version: string
-  installedVersion: string
-  installedAt: number
-  source: string
-}
+/** 已装插件条目：形状直接取生成契约（GET /api/plugins/installed） */
+export type HubPluginInstalledItem = InstalledPluginsResponse['items'][number]
 
 export async function fetchPlugins(
   params: { kind?: string; q?: string; sort?: string; featured?: boolean; ownerKey?: string; limit?: number; offset?: number } = {},
@@ -1384,12 +1376,12 @@ export async function fetchAdminPlugins(
 export async function fetchInstalledPlugins(
   identity?: string,
   onDegraded?: DegradedHandler,
-): Promise<{ items: HubPluginInstalledItem[]; total: number }> {
+): Promise<InstalledPluginsResponse> {
   const effectiveIdentity = identity || (typeof window !== 'undefined' ? getIdentity() : undefined)
-  return degrade<{ items: HubPluginInstalledItem[]; total: number }>(
+  return degrade<InstalledPluginsResponse>(
     { items: [], total: 0 },
     () =>
-      getJson<{ items: HubPluginInstalledItem[]; total: number }>(
+      getJson<InstalledPluginsResponse>(
         `/api/plugins/installed`,
         undefined,
         effectiveIdentity ? anonHeaders(effectiveIdentity) : undefined,
@@ -2462,17 +2454,10 @@ export async function healSiteWayback(
 
 /* ------------------------------ 开放生态 2.0: Taps 远程订阅源 & 安全审计 ------------------------------ */
 
-export interface HubPluginTap {
-  id: string
-  name: string
-  url: string
-  description?: string
-  enabled: boolean
-  pluginCount?: number
-  lastSyncedAt?: number
-  createdAt: number
-  updatedAt: number
-}
+/** 管理面订阅源条目：形状取生成契约（GET /api/plugins/taps） */
+export type HubPluginTap = PluginTapsResponse['items'][number]
+/** 公开面订阅源条目：没有 url（凭据不外发），不能与管理面条目混为一谈 */
+export type HubPublicPluginTap = PublicPluginTapsResponse['items'][number]
 
 export interface HubPluginAuditReport {
   slug: string
@@ -2517,14 +2502,8 @@ export interface HubPluginAuditReport {
   } | null
 }
 
-export interface HubFeaturedTapItem {
-  id: string
-  name: string
-  description: string
-  url: string
-  isFeatured?: boolean
-  author?: string
-}
+/** 精选推荐源条目：形状取生成契约的 featuredTaps */
+export type HubFeaturedTapItem = PluginTapsResponse['featuredTaps'][number]
 
 export interface HubSeedCatalogStatus {
   ok: boolean
@@ -2554,14 +2533,14 @@ export interface HubSeedSyncResult {
   syncedAt: number
 }
 
-/** 获取已配置的远程插件市场订阅源列表（附带官方推荐源） */
-export async function fetchPluginTaps(): Promise<{ ok: boolean; items: HubPluginTap[]; featuredTaps?: HubFeaturedTapItem[] }> {
-  return getJson<{ ok: boolean; items: HubPluginTap[]; featuredTaps?: HubFeaturedTapItem[] }>('/api/plugins/taps')
+/** 获取已配置的远程插件市场订阅源列表（附带官方推荐源；管理面才带 url） */
+export async function fetchPluginTaps(): Promise<PluginTapsResponse> {
+  return getJson<PluginTapsResponse>('/api/plugins/taps')
 }
 
-/** 公开获取可读的 Taps 与官方推荐精选源（不依赖管理员权限） */
-export async function fetchPublicPluginTaps(): Promise<{ ok: boolean; items: HubPluginTap[]; featuredTaps?: HubFeaturedTapItem[] }> {
-  return getJson<{ ok: boolean; items: HubPluginTap[]; featuredTaps?: HubFeaturedTapItem[] }>('/api/plugins/taps/public')
+/** 公开获取可读的 Taps 与官方推荐精选源（不依赖管理员权限；条目不含 url） */
+export async function fetchPublicPluginTaps(): Promise<PublicPluginTapsResponse> {
+  return getJson<PublicPluginTapsResponse>('/api/plugins/taps/public')
 }
 
 /** 获取官方插件资源库同步状态 */

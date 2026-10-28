@@ -19,13 +19,17 @@ import {
   CategoryListResponse,
   CategoryPageResponse,
   HealthResponse,
+  InstalledPluginsResponse,
   MeOverviewResponse,
   PluginListResponse,
+  PluginTapsResponse,
+  PublicPluginTapsResponse,
   RESPONSE_SCHEMA_BINDINGS,
   RankNewResponse,
   RankTrendingResponse,
   SEARCH_HIT_CORE_FIELDS,
   SITE_CORE_FIELDS,
+  SearchHistoryPageResponse,
   SearchResponse,
   SiteListResponse,
   SitePayload,
@@ -74,16 +78,49 @@ const SITE_PACK_MANIFEST: PluginManifest = {
   payload: { sites: [{ url: "https://example.org", title: "示例站" }] },
 };
 
+// 安装目标刻意用 theme 而不是 site-pack：装 site-pack 会把包内站点导入
+// 「未分类」，本文件的站点/类目计数断言全部随之漂移。theme 安装不导入任何数据，
+// /api/plugins/installed 的契约照样验得到（version/installedVersion 都在）。
+const THEME_MANIFEST: PluginManifest = {
+  manifestVersion: 1,
+  kind: "theme",
+  name: "契约测试主题",
+  description: "响应契约测试用的最小主题",
+  version: "2.1.0",
+  tags: ["test"],
+  payload: { accent: "violet" },
+};
+
 // /api/me 是身份域路由：开放模式（authRequired=false）下自报头即可信，
 // 这里用固定身份，避免用户中心概览随内置演示数据变化而抖动。
 const ME_IDENTITY = "contract-user";
 const ME_HEADERS = { "x-navhub-user-id": ME_IDENTITY };
+
+// 已装插件用独立身份：装/卸会改变 /api/me 的 counts，混用会让概览断言随用例顺序抖动
+const PLUGIN_IDENTITY = "contract-plugin-user";
+const ADMIN_TOKEN = "contract-admin-token";
+const TAP_URL = "https://example.com/tap.json";
+const TAP_STATE = [
+  {
+    id: "tap-contract",
+    name: "契约测试源",
+    url: TAP_URL,
+    description: "响应契约测试用订阅源",
+    enabled: true,
+    pluginCount: 0,
+    createdAt: 1_700_000_000_000,
+    updatedAt: 1_700_000_000_000,
+  },
+];
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "navhub-response-contracts-"));
   const config = loadConfig({
     mode: "lite",
     sqlitePath: join(dir, "contracts.db"),
+    // 本文件是开放模式；adminToken 仍配上，保证测试请求的 Bearer 在
+    // 两种鉴权模式下都被视作管理端凭据（开放模式忽略，鉴权模式放行）
+    adminToken: ADMIN_TOKEN,
     embedding: { model: "Xenova/bge-small-zh-v1.5", endpoint: "https://hf-mirror.com", dtype: "q8", cacheDir: join(dir, "models"), dim: 512, enabled: false },
     llm: { baseUrl: "https://api.deepseek.com", apiKey: null, model: "deepseek-chat", timeoutMs: 5000 },
     fetch: { timeoutMs: 2000, maxBytes: 262144, maxRedirects: 2, allowPrivateNetworks: false, userAgent: "NavHubTest/0.1" },
@@ -96,8 +133,17 @@ beforeAll(async () => {
   for (const c of CAT_ROOTS) await ctx.repo.createCategory({ id: c.id, title: c.title });
   for (const c of CATS) await ctx.repo.createCategory({ id: c.id, title: c.title, parentId: c.parentId });
   for (const s of SITES) await ctx.repo.createSite(s);
-  // 插件列表要有真实条目才验得到卡片形状（空数组会让契约形同虚设）
-  await ctx.repo.createPlugin({ manifest: SITE_PACK_MANIFEST, source: "seed", status: "published" });
+  // 插件列表要有真实条目才验得到卡片形状（空数组会让契约形同虚设）；
+  // 两种 kind 共存还能验到「列表混合 kind 时 summary 依然按各自形状出现」
+  const seeded = await ctx.repo.createPlugin({ manifest: SITE_PACK_MANIFEST, source: "seed", status: "published" });
+  const themed = await ctx.repo.createPlugin({ manifest: THEME_MANIFEST, source: "seed", status: "published" });
+  // 已装清单同理：必须真装一次，「installedVersion 与 version 可能不同」才有被验的机会
+  await ctx.repo.installPlugin(themed.slug, PLUGIN_IDENTITY);
+  // 搜索历史：一条有结果、一条零结果——零结果是历史管理页「一键清理」的判断依据
+  await ctx.repo.recordSearch(ME_IDENTITY, "Cursor", 1);
+  await ctx.repo.recordSearch(ME_IDENTITY, "零结果的词", 0);
+  // 订阅源：公开面（脱敏）与 admin 面（完整）必须来自同一份数据才算验到差异
+  await ctx.repo.setSystemState("plugins:taps", TAP_STATE);
 });
 
 afterAll(async () => {
@@ -343,9 +389,11 @@ describe("真实响应满足契约", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expectContract(PluginListResponse, body, "GET /api/plugins");
-    expect(body.total).toBe(1);
-    expect(body.items.length).toBe(1);
-    const item = body.items[0];
+    expect(body.total).toBe(2);
+    expect(body.items.length).toBe(2);
+    // 列表里混着两种 kind：按 kind 取 site-pack，而不是依赖排序
+    const item = body.items.find((p: { kind: string }) => p.kind === "site-pack");
+    expect(item).toBeTruthy();
     expect(item.slug).toBeTruthy();
     expect(item.summary.kind).toBe("site-pack");
     expect(item.summary.siteCount).toBe(1);
@@ -360,7 +408,73 @@ describe("真实响应满足契约", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expectContract(PluginListResponse, body, "GET /api/plugins?manifest=1");
-    expect(body.items[0].manifest).toBeTruthy();
+    const item = body.items.find((p: { kind: string }) => p.kind === "site-pack");
+    expect(item.manifest).toBeTruthy();
+  });
+
+  it("GET /api/plugins/installed：已装清单带 installedVersion", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins/installed", headers: { "x-navhub-user-id": PLUGIN_IDENTITY } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(InstalledPluginsResponse, body, "GET /api/plugins/installed");
+    expect(body.total).toBe(1);
+    // 装了 1.0、市场已达 2.0 时前端靠这两个字段提示升级——必须都在
+    expect(body.items[0].installedVersion).toBeTruthy();
+    expect(body.items[0].version).toBeTruthy();
+    expect(body.items[0].kind).toBe("theme");
+  });
+
+  it("GET /api/plugins/taps/public：公开面不带订阅源 url（凭据不外发）", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/plugins/taps/public" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(PublicPluginTapsResponse, body, "GET /api/plugins/taps/public");
+    expect(body.items.length).toBe(1);
+    expect(body.items[0].url, "公开面泄露了订阅源地址").toBeUndefined();
+    expect(body.featuredTaps.length).toBeGreaterThan(0);
+  });
+
+  it("GET /api/plugins/taps：管理面带完整源（含 url）", async () => {
+    // 本文件跑在开放模式（authRequired=false），admin 面的 401/403 语义由
+    // auth.test.ts 在鉴权模式下覆盖；这里只验形状与「完整源」的数据口径。
+    const res = await app.inject({ method: "GET", url: "/api/plugins/taps", headers: { authorization: "Bearer " + ADMIN_TOKEN } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(PluginTapsResponse, body, "GET /api/plugins/taps");
+    expect(body.items[0].url).toBe(TAP_URL);
+    expect(body.items[0].enabled).toBe(true);
+    expect(body.featuredTaps.length).toBeGreaterThan(0);
+  });
+
+  it("GET /api/sites/{id}：单站详情与列表同形", async () => {
+    const id = (await app.inject({ method: "GET", url: "/api/sites" })).json()[0].id as string;
+    const res = await app.inject({ method: "GET", url: "/api/sites/" + encodeURIComponent(id) });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(SitePayload, body, "GET /api/sites/{id}");
+    expect(body.id).toBe(id);
+    expect(Array.isArray(body.tags)).toBe(true);
+  });
+
+  it("GET /api/search-history：键集分页壳 + 零结果记录可辨识", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/search-history?limit=10", headers: ME_HEADERS });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(SearchHistoryPageResponse, body, "GET /api/search-history");
+    expect(body.items.length).toBe(2);
+    expect(body.items.some((i: { resultCount: number }) => i.resultCount === 0)).toBe(true);
+    expect(body.hasMore).toBe(false);
+    // nextOffset 由服务端算好：前端拿它翻页，不该自己拿 limit 推
+    expect(body.nextOffset).toBe(body.items.length);
+  });
+
+  it("GET /api/search-history 未带身份：空壳而不是 500", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/search-history" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expectContract(SearchHistoryPageResponse, body, "GET /api/search-history（匿名）");
+    expect(body.items).toEqual([]);
+    expect(body.nextOffset).toBe(0);
   });
 
   it("GET /api/me：概览与设置一次取回", async () => {
@@ -444,5 +558,25 @@ describe("契约不是空转（负控：手工漂移必须被拒）", () => {
     ).toBe(false);
     const { settings: _drop, ...noSettings } = body;
     expect(MeOverviewResponse.safeParse(noSettings).success).toBe(false);
+  });
+
+  it("search-history：resultCount 降级成字符串会被拒", async () => {
+    const body = (await app.inject({ method: "GET", url: "/api/search-history", headers: ME_HEADERS })).json();
+    const drifted = body.items.map((i: Record<string, unknown>) => ({ ...i, resultCount: String(i.resultCount) }));
+    expect(SearchHistoryPageResponse.safeParse({ ...body, items: drifted }).success).toBe(false);
+  });
+
+  it("taps：公开面缺 lastSyncedAt、admin 面缺 enabled 都会被拒", async () => {
+    const pub = (await app.inject({ method: "GET", url: "/api/plugins/taps/public" })).json();
+    const noSync = pub.items.map(({ lastSyncedAt: _drop, ...rest }: Record<string, unknown>) => rest);
+    expect(PublicPluginTapsResponse.safeParse({ ...pub, items: noSync }).success).toBe(false);
+    const admin = (await app.inject({ method: "GET", url: "/api/plugins/taps", headers: { authorization: "Bearer " + ADMIN_TOKEN } })).json();
+    const noEnabled = admin.items.map(({ enabled: _drop, ...rest }: Record<string, unknown>) => rest);
+    expect(PluginTapsResponse.safeParse({ ...admin, items: noEnabled }).success).toBe(false);
+  });
+
+  it("installed：kind 越界会被拒", async () => {
+    const body = (await app.inject({ method: "GET", url: "/api/plugins/installed", headers: { "x-navhub-user-id": PLUGIN_IDENTITY } })).json();
+    expect(InstalledPluginsResponse.safeParse({ ...body, items: [{ ...body.items[0], kind: "mystery" }] }).success).toBe(false);
   });
 });

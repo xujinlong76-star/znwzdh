@@ -302,6 +302,33 @@ export const RankNewResponse = z.looseObject({
 });
 
 /* ------------------------------------------------------------------ *
+ * 搜索历史（「最近搜索」与历史管理页）
+ * ------------------------------------------------------------------ */
+
+/**
+ * 单条搜索历史。
+ * resultCount 是「那次查询当时命中几条」——历史管理页靠它区分零结果记录，
+ * 并支持一次清掉它们（DELETE /api/search-history?filter=zero_results）。
+ */
+const SearchHistoryItemPayload = z.looseObject({
+  id: z.number().int(),
+  query: z.string(),
+  resultCount: z.number().int(),
+  createdAt: z.number(),
+});
+
+/**
+ * GET /api/search-history：键集分页壳。
+ * hasMore 与 nextOffset 由服务端算好，前端不该自己拿 limit 推——
+ * probe 式分页（多取一条判 hasMore）是仓储的实现细节，写进契约就会绑死它。
+ */
+export const SearchHistoryPageResponse = z.object({
+  items: z.array(SearchHistoryItemPayload),
+  hasMore: z.boolean(),
+  nextOffset: z.number().int(),
+});
+
+/* ------------------------------------------------------------------ *
  * 插件市场列表
  * ------------------------------------------------------------------ */
 
@@ -382,6 +409,86 @@ export const PluginListResponse = z.object({
   total: z.number().int(),
   limit: z.number().int(),
   offset: z.number().int(),
+});
+
+/* ------------------------------------------------------------------ *
+ * 插件订阅源（Taps）与已装清单
+ * ------------------------------------------------------------------ */
+
+/**
+ * 订阅源记录（admin 面）。description 创建时可选；lastSyncedAt 只有同步过才有。
+ * 其余字段创建即写死，缺一个说明系统状态被写坏了——所以不是 optional。
+ */
+const PluginTapPayload = z.looseObject({
+  id: z.string(),
+  name: z.string(),
+  url: z.string(),
+  description: z.string().optional(),
+  enabled: z.boolean(),
+  pluginCount: z.number().int(),
+  lastSyncedAt: z.number().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+/** 官方精选源：内置常量（FEATURED_TAPS），不落库，字段因此恒有值 */
+const FeaturedTapPayload = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  url: z.string(),
+  isFeatured: z.literal(true),
+  author: z.string(),
+});
+
+/** GET /api/plugins/taps（admin）：完整源清单 + 官方精选 */
+export const PluginTapsResponse = z.object({
+  ok: z.literal(true),
+  items: z.array(PluginTapPayload),
+  featuredTaps: z.array(FeaturedTapPayload),
+});
+
+/**
+ * GET /api/plugins/taps/public 的条目：**刻意不含 url**。
+ * 订阅源地址常带访问凭据（GitHub raw 的 ?token= 一类），admin 与公开面
+ * 字段集不同，因此不能共用一份 schema——共用就等于把「不泄露 url」这件事
+ * 降级成路由里的约定。
+ */
+const PublicPluginTapPayload = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  pluginCount: z.number().int(),
+  lastSyncedAt: z.number().nullable(),
+});
+
+export const PublicPluginTapsResponse = z.object({
+  ok: z.literal(true),
+  items: z.array(PublicPluginTapPayload),
+  featuredTaps: z.array(FeaturedTapPayload),
+});
+
+/**
+ * GET /api/plugins/installed 的条目。
+ * installedVersion 与 version 可能不同（装了 1.0，市场已到 2.0），
+ * 前端靠这两个字段提示「可升级」，所以都进契约。
+ */
+const InstalledPluginPayload = z.looseObject({
+  id: z.string(),
+  slug: z.string(),
+  kind: PluginKindSchema,
+  name: z.string(),
+  description: z.string(),
+  icon: z.string().nullable(),
+  version: z.string(),
+  installedVersion: z.string(),
+  installedAt: z.number(),
+  source: z.string(),
+});
+
+export const InstalledPluginsResponse = z.object({
+  items: z.array(InstalledPluginPayload),
+  total: z.number().int(),
 });
 
 /* ------------------------------------------------------------------ *
@@ -474,5 +581,11 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/rank/trending": { schema: RankTrendingResponse, name: "RankTrendingResponse" },
   "GET /api/rank/new": { schema: RankNewResponse, name: "RankNewResponse" },
   "GET /api/plugins": { schema: PluginListResponse, name: "PluginListResponse" },
+  "GET /api/plugins/installed": { schema: InstalledPluginsResponse, name: "InstalledPluginsResponse" },
+  "GET /api/plugins/taps": { schema: PluginTapsResponse, name: "PluginTapsResponse" },
+  "GET /api/plugins/taps/public": { schema: PublicPluginTapsResponse, name: "PublicPluginTapsResponse" },
+  // 单站详情与列表共用同一份站点形状（路由直接返回站点对象，没有外壳）
+  "GET /api/sites/{id}": { schema: SitePayload, name: "SitePayload" },
+  "GET /api/search-history": { schema: SearchHistoryPageResponse, name: "SearchHistoryPageResponse" },
   "GET /api/me": { schema: MeOverviewResponse, name: "MeOverviewResponse" },
 };

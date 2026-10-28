@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { verifyAdminSession } from '@/lib/auth'
 import { runVideoHarvestAndRotation } from '@/lib/video-harvester'
-import { getFileContent } from '@/lib/github'
+import { getFileContent, readStorageFresh } from '@/lib/github'
 import { videoMetricsSnapshot } from '@/lib/video-harvest-metrics'
-import type { NavigationData } from '@/types/navigation'
+import { readDocResilient } from '@/lib/video-doc-read'
+import type { NavigationData, NavigationSubItem } from '@/types/navigation'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 const VIDEOS_FILE_PATH = 'src/navsphere/content/videos.json'
 
@@ -17,7 +19,26 @@ export async function GET() {
       return new Response(authCheck.error, { status: authCheck.status })
     }
 
-    const data = (await getFileContent(VIDEOS_FILE_PATH)) as NavigationData
+    const read = await readDocResilient<NavigationData>({
+      fresh: () => readStorageFresh<NavigationData>(VIDEOS_FILE_PATH),
+      cached: () => getFileContent(VIDEOS_FILE_PATH) as Promise<NavigationData>,
+    })
+
+    // 两层都失败才报错，且是 503 + retryable，不是 500：
+    // 这不是代码 bug，是存储后端暂时不可达，客户端重试即可。
+    if (!read.data) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: '读取视频库失败：存储后端不可达',
+          details: read.errors,
+          retryable: true,
+        },
+        { status: 503 },
+      )
+    }
+
+    const data = read.data
     const categories = data.navigationItems || []
 
     let totalVideos = 0
@@ -27,7 +48,10 @@ export async function GET() {
     let outdatedCount = 0
 
     const categoryStats = categories.map(cat => {
-      const items = cat.items || []
+      const directItems = cat.items || []
+      const subItems = (cat.subCategories || []).flatMap(sub => sub.items || [])
+      const items: NavigationSubItem[] = [...directItems, ...subItems]
+
       totalVideos += items.length
       if (cat.harvestPolicy?.enabled) {
         autoHarvestCategories++
@@ -47,6 +71,7 @@ export async function GET() {
         title: cat.title,
         enabled: cat.enabled,
         videoCount: items.length,
+        subCategoriesCount: (cat.subCategories || []).length,
         harvestPolicy: cat.harvestPolicy,
         averageScore: items.length > 0
           ? Math.round(items.reduce((sum, it) => sum + (it.videoConfig?.freshnessScore ?? 75), 0) / items.length)
@@ -61,14 +86,14 @@ export async function GET() {
       outdatedCount,
       historyCount: (data.replacementHistory || []).length,
       categories: categoryStats,
-      /**
-       * 运行期计数（进程内累计）。
-       *
-       * 上面那些是「库的静态快照」，回答不了「今天采集跑了几次、失败几次、
-       * 有多少关键词被风控挡了、探活里多少条不可判定」。这些量只在这里能看到。
-       * 多副本部署时各实例独立计数（不做跨实例汇总）。
-       */
       runtime: videoMetricsSnapshot(),
+      /**
+       * 这份统计来自哪一层：`fresh`（直连中枢）/ `cached`（进程内或 Data Cache）。
+       * 降级时必须让调用方看见 —— 否则「缓存里的旧数字」和「实时数字」长得一模一样，
+       * 运维会拿一份过时数据做决策。`readErrors` 同时给出降级原因。
+       */
+      dataSource: read.source,
+      ...(read.errors.length > 0 ? { readErrors: read.errors } : {}),
     })
   } catch (error) {
     console.error('Failed to get harvest overview:', error)
@@ -89,7 +114,12 @@ export async function POST(request: Request) {
       return new Response(authCheck.error, { status: authCheck.status })
     }
 
-    const body = await request.json()
+    let body: Record<string, any> = {}
+    try {
+      body = await request.json()
+    } catch {
+      body = {}
+    }
     const { dryRun = false, categoryId, forceKeywords } = body
 
     const report = await runVideoHarvestAndRotation({
@@ -104,6 +134,7 @@ export async function POST(request: Request) {
     console.error('Failed to run video harvest and rotation:', error)
     return NextResponse.json(
       {
+        success: false,
         error: '自动采集与轮换执行失败',
         details: (error as Error).message
       },

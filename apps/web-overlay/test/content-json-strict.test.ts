@@ -127,3 +127,47 @@ describe("内容 JSON 必须能被严格解析器接受", () => {
     });
   }
 });
+
+/**
+ * 混合内容：内容库里的可加载资源不得写死 `http://`。
+ *
+ * 页面在 HTTPS 下渲染时，`<img src="http://...">` 会被浏览器自动升级并打警告
+ * （Mixed Content），升级失败就是一张裂图。`videos.json` 全部是 B 站内容，
+ * 封面与播放页都支持 https，没有任何理由留 http。
+ *
+ * 注意边界：**只校验 icon / href 这类会被当作 URL 加载的字段**，
+ * 不校验 description —— 描述里出现 `http://` 是引用文本，不会发起请求。
+ * 真出现过这个误判：把 29 处描述里的链接当成混合内容来源，白查一轮。
+ */
+describe("内容库不得写死 http:// 资源", () => {
+  const dir = resolveContentDir();
+
+  it("videos.json 的 icon / href 全部使用 https", () => {
+    const raw = JSON.parse(readFileSync(join(dir, "videos.json"), "utf8")) as {
+      navigationItems?: Array<{
+        items?: Array<{ id?: string; icon?: string; href?: string }>;
+        subCategories?: Array<{ items?: Array<{ id?: string; icon?: string; href?: string }> }>;
+      }>;
+    };
+
+    const offenders: string[] = [];
+    let checked = 0;
+    for (const cat of raw.navigationItems ?? []) {
+      const groups = [cat.items ?? [], ...(cat.subCategories ?? []).map((s) => s.items ?? [])];
+      for (const items of groups) {
+        for (const item of items) {
+          checked++;
+          for (const field of ["icon", "href"] as const) {
+            const value = item[field];
+            if (typeof value === "string" && value.startsWith("http://")) {
+              offenders.push(`${item.id ?? "(no id)"}.${field} = ${value.slice(0, 60)}`);
+            }
+          }
+        }
+      }
+    }
+
+    expect(checked, "没扫到条目，守卫空跑").toBeGreaterThan(0);
+    expect(offenders, "这些字段在 HTTPS 页面下会触发 Mixed Content：\n" + offenders.slice(0, 10).join("\n")).toEqual([]);
+  });
+});

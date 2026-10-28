@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import dynamic from 'next/dynamic'
 import { safeHref } from '@/lib/safe-url'
 import {
   chapterStartSec,
@@ -98,37 +99,18 @@ import { getVideoAISummary, type VideoAISummary } from '@/lib/video-ai-summary'
 import { isInWatchLater, toggleWatchLater, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
 import { getRelatedVideos } from '@/lib/video-recommendation'
 import { useVideoPlayer } from '@/contexts/VideoPlayerContext'
-import { VideoCodeSandbox } from '@/components/video-code-sandbox'
 import { parseWebVTT, searchTranscript, exportTranscriptAsMarkdown } from '@/lib/video-transcript-sync'
 import { saveStudyNote, listStudyNotes, exportNotesAsMarkdown, type VideoStudyNote } from '@/lib/video-frame-clipper'
 import { getStoredDanmaku, saveDanmakuItem } from '@/lib/video-danmaku-engine'
 import { getP2PStreamCoordinator } from '@/lib/p2p-stream-loader'
-import { VideoCodeDiffViewer } from '@/components/video-code-diff-viewer'
-import { VideoQuizDialog } from '@/components/video-quiz-dialog'
-import { VideoMindmapView } from '@/components/video-mindmap-view'
+// 常驻组件：随播放器一起在首屏渲染，保持静态导入
 import { VideoHeatmapTimeline } from '@/components/video-heatmap-timeline'
 import { VideoKaraokeSubtitles } from '@/components/video-karaoke-subtitles'
-import { VideoTerminalPlayer } from '@/components/video-terminal-player'
 import { VideoNetworkSentinel } from '@/components/video-network-sentinel'
-import { VideoSharePosterDialog } from '@/components/video-share-poster-dialog'
-import { VideoShaderFilterDialog } from '@/components/video-shader-filter'
 import { VideoVoiceIndicator } from '@/components/video-voice-indicator'
-import { VideoWasmTerminalPane } from '@/components/video-wasm-terminal-pane'
-import { VideoFlashcardDeck } from '@/components/video-flashcard-deck'
-import { VideoConfusionRadar } from '@/components/video-confusion-radar'
-import { VideoCertificateDialog } from '@/components/video-certificate-dialog'
 import { VideoTelestratorCanvas } from '@/components/video-telestrator-canvas'
-import { VideoOfflineManager } from '@/components/video-offline-manager'
-import { VideoSmartSpeedDialog } from '@/components/video-smart-speed-controls'
-import { VideoFrameOcrDialog } from '@/components/video-frame-ocr-overlay'
-import { VideoA11ySettingsDialog } from '@/components/video-a11y-settings-dialog'
-import { VideoSkillTreeDialog } from '@/components/video-skill-tree-dialog'
-import { VideoSpectrogramDialog } from '@/components/video-spectrogram-canvas'
-import { VideoWorkspaceExportDialog } from '@/components/video-workspace-export-dialog'
-import { VideoBilingualSubtitlesDialog } from '@/components/video-bilingual-subtitles-dialog'
 import { VideoPipWindowRenderer } from '@/components/video-pip-window-renderer'
-import { VideoSessionReplayDialog } from '@/components/video-session-replay-dialog'
-import { VideoScrubberPreview } from '@/components/video-scrubber-preview'
+import { VideoGestureHudOverlay } from '@/components/video-gesture-hud-overlay'
 import { generateFilmstripSequence, type FilmstripThumbnail } from '@/lib/video-filmstrip-generator'
 import { SessionActivityRecorder } from '@/lib/video-session-recorder'
 import { type SilenceDetectorConfig, type SilenceDetectorState } from '@/lib/video-silence-detector'
@@ -144,28 +126,53 @@ import { calculatePrefetchQueue } from '@/lib/video-cache-manager'
 import { generateFlashcardsFromNotes, generateFlashcardsFromQuizzes, type FlashcardItem } from '@/lib/video-spaced-repetition'
 import { type SharpenerOptions } from '@/lib/video-webgpu-sharpener'
 import { type VoiceCommandIntent } from '@/lib/video-voice-commander'
-import { VideoNeuralAudioControls } from '@/components/video-neural-audio-controls'
-import { VideoDebuggerStepperPane } from '@/components/video-debugger-stepper-pane'
-import { VideoDanmakuMeshMonitor } from '@/components/video-danmaku-mesh-monitor'
-import { VideoAssistantCopilot } from '@/components/video-assistant-copilot'
-import { VideoClipMakerDialog } from '@/components/video-clip-maker-dialog'
-import { VideoPomodoroDialog } from '@/components/video-pomodoro-overlay'
 import { type NeuralDenoiserConfig } from '@/lib/video-neural-denoiser'
-import { VideoSlideDeckViewer } from '@/components/video-slide-deck-viewer'
-import { VideoAudioStemMixerDialog } from '@/components/video-audio-stem-mixer-dialog'
-import { VideoP2PSwarmHud } from '@/components/video-p2p-swarm-hud'
-import { VideoGestureHudOverlay } from '@/components/video-gesture-hud-overlay'
-import { VideoLiveTestPane } from '@/components/video-live-test-pane'
-import { VideoAdaptiveRemedyDialog } from '@/components/video-adaptive-remedy-dialog'
-import { VideoAutoHarvestDialog } from '@/components/video-auto-harvest-dialog'
-import { VideoAutonomousHarvestConsole } from '@/components/video-autonomous-harvest-console'
-import { VideoMultisourceWebhookDialog } from '@/components/video-multisource-webhook-dialog'
-import { VideoOcrCodeExtractorDialog } from '@/components/video-ocr-code-extractor-dialog'
-import { VideoBilingualTtsDialog } from '@/components/video-bilingual-tts-dialog'
-import { VideoConceptGraphDialog } from '@/components/video-concept-graph-dialog'
-import { VideoSandboxRunnerPane } from '@/components/video-sandbox-runner-pane'
-import { VideoCrdtStudyRoomDialog } from '@/components/video-crdt-study-room-dialog'
 import { copyText } from '@/lib/clipboard'
+
+/**
+ * 按需加载面：这些组件只在对应 tab 激活或弹窗 open 后才真正渲染，
+ * 静态 import 会把整棵播放器 UI 树塞进首屏 chunk（实测 +200KB / 预算红线）。
+ * ssr:false 对纯客户端面板无副作用；首帧它们本来就是「关闭/未激活」。
+ */
+const VideoCodeSandbox = dynamic(() => import('@/components/video-code-sandbox').then(m => m.VideoCodeSandbox), { ssr: false })
+const VideoCodeDiffViewer = dynamic(() => import('@/components/video-code-diff-viewer').then(m => m.VideoCodeDiffViewer), { ssr: false })
+const VideoQuizDialog = dynamic(() => import('@/components/video-quiz-dialog').then(m => m.VideoQuizDialog), { ssr: false })
+const VideoMindmapView = dynamic(() => import('@/components/video-mindmap-view').then(m => m.VideoMindmapView), { ssr: false })
+const VideoTerminalPlayer = dynamic(() => import('@/components/video-terminal-player').then(m => m.VideoTerminalPlayer), { ssr: false })
+const VideoSharePosterDialog = dynamic(() => import('@/components/video-share-poster-dialog').then(m => m.VideoSharePosterDialog), { ssr: false })
+const VideoShaderFilterDialog = dynamic(() => import('@/components/video-shader-filter').then(m => m.VideoShaderFilterDialog), { ssr: false })
+const VideoWasmTerminalPane = dynamic(() => import('@/components/video-wasm-terminal-pane').then(m => m.VideoWasmTerminalPane), { ssr: false })
+const VideoFlashcardDeck = dynamic(() => import('@/components/video-flashcard-deck').then(m => m.VideoFlashcardDeck), { ssr: false })
+const VideoConfusionRadar = dynamic(() => import('@/components/video-confusion-radar').then(m => m.VideoConfusionRadar), { ssr: false })
+const VideoCertificateDialog = dynamic(() => import('@/components/video-certificate-dialog').then(m => m.VideoCertificateDialog), { ssr: false })
+const VideoOfflineManager = dynamic(() => import('@/components/video-offline-manager').then(m => m.VideoOfflineManager), { ssr: false })
+const VideoSmartSpeedDialog = dynamic(() => import('@/components/video-smart-speed-controls').then(m => m.VideoSmartSpeedDialog), { ssr: false })
+const VideoFrameOcrDialog = dynamic(() => import('@/components/video-frame-ocr-overlay').then(m => m.VideoFrameOcrDialog), { ssr: false })
+const VideoA11ySettingsDialog = dynamic(() => import('@/components/video-a11y-settings-dialog').then(m => m.VideoA11ySettingsDialog), { ssr: false })
+const VideoSkillTreeDialog = dynamic(() => import('@/components/video-skill-tree-dialog').then(m => m.VideoSkillTreeDialog), { ssr: false })
+const VideoSpectrogramDialog = dynamic(() => import('@/components/video-spectrogram-canvas').then(m => m.VideoSpectrogramDialog), { ssr: false })
+const VideoWorkspaceExportDialog = dynamic(() => import('@/components/video-workspace-export-dialog').then(m => m.VideoWorkspaceExportDialog), { ssr: false })
+const VideoBilingualSubtitlesDialog = dynamic(() => import('@/components/video-bilingual-subtitles-dialog').then(m => m.VideoBilingualSubtitlesDialog), { ssr: false })
+const VideoSessionReplayDialog = dynamic(() => import('@/components/video-session-replay-dialog').then(m => m.VideoSessionReplayDialog), { ssr: false })
+const VideoNeuralAudioControls = dynamic(() => import('@/components/video-neural-audio-controls').then(m => m.VideoNeuralAudioControls), { ssr: false })
+const VideoDebuggerStepperPane = dynamic(() => import('@/components/video-debugger-stepper-pane').then(m => m.VideoDebuggerStepperPane), { ssr: false })
+const VideoDanmakuMeshMonitor = dynamic(() => import('@/components/video-danmaku-mesh-monitor').then(m => m.VideoDanmakuMeshMonitor), { ssr: false })
+const VideoAssistantCopilot = dynamic(() => import('@/components/video-assistant-copilot').then(m => m.VideoAssistantCopilot), { ssr: false })
+const VideoClipMakerDialog = dynamic(() => import('@/components/video-clip-maker-dialog').then(m => m.VideoClipMakerDialog), { ssr: false })
+const VideoPomodoroDialog = dynamic(() => import('@/components/video-pomodoro-overlay').then(m => m.VideoPomodoroDialog), { ssr: false })
+const VideoSlideDeckViewer = dynamic(() => import('@/components/video-slide-deck-viewer').then(m => m.VideoSlideDeckViewer), { ssr: false })
+const VideoAudioStemMixerDialog = dynamic(() => import('@/components/video-audio-stem-mixer-dialog').then(m => m.VideoAudioStemMixerDialog), { ssr: false })
+const VideoP2PSwarmHud = dynamic(() => import('@/components/video-p2p-swarm-hud').then(m => m.VideoP2PSwarmHud), { ssr: false })
+const VideoLiveTestPane = dynamic(() => import('@/components/video-live-test-pane').then(m => m.VideoLiveTestPane), { ssr: false })
+const VideoAdaptiveRemedyDialog = dynamic(() => import('@/components/video-adaptive-remedy-dialog').then(m => m.VideoAdaptiveRemedyDialog), { ssr: false })
+const VideoAutoHarvestDialog = dynamic(() => import('@/components/video-auto-harvest-dialog').then(m => m.VideoAutoHarvestDialog), { ssr: false })
+const VideoAutonomousHarvestConsole = dynamic(() => import('@/components/video-autonomous-harvest-console').then(m => m.VideoAutonomousHarvestConsole), { ssr: false })
+const VideoMultisourceWebhookDialog = dynamic(() => import('@/components/video-multisource-webhook-dialog').then(m => m.VideoMultisourceWebhookDialog), { ssr: false })
+const VideoOcrCodeExtractorDialog = dynamic(() => import('@/components/video-ocr-code-extractor-dialog').then(m => m.VideoOcrCodeExtractorDialog), { ssr: false })
+const VideoBilingualTtsDialog = dynamic(() => import('@/components/video-bilingual-tts-dialog').then(m => m.VideoBilingualTtsDialog), { ssr: false })
+const VideoConceptGraphDialog = dynamic(() => import('@/components/video-concept-graph-dialog').then(m => m.VideoConceptGraphDialog), { ssr: false })
+const VideoSandboxRunnerPane = dynamic(() => import('@/components/video-sandbox-runner-pane').then(m => m.VideoSandboxRunnerPane), { ssr: false })
+const VideoCrdtStudyRoomDialog = dynamic(() => import('@/components/video-crdt-study-room-dialog').then(m => m.VideoCrdtStudyRoomDialog), { ssr: false })
 
 interface VideoPlayerPageProps {
     navigationData: NavigationData

@@ -4,6 +4,7 @@ import { Metadata } from 'next/types'
 import { ScrollToTop } from '@/components/ScrollToTop'
 import { getProcessedData } from '@/lib/data-loader'
 import { getFileContent } from '@/lib/github'
+import { withSignedVideoIcons } from '@/lib/media-proxy'
 import { pageShareMetadata } from '@/lib/seo/metadata'
 
 /**
@@ -37,7 +38,9 @@ const getData = cache(async () => {
     getFileContent(VIDEOS_PATH),
     getFileContent(SITE_PATH),
   ])
-  return getProcessedData(videosRaw as never, siteRaw as never)
+  const processed = getProcessedData(videosRaw as never, siteRaw as never)
+  // 图片代理签名在服务端算好下发：客户端自己签会把 node:crypto 垫片打进首屏包
+  return { ...processed, navigationData: withSignedVideoIcons(processed.navigationData) }
 })
 
 export async function generateMetadata(): Promise<Metadata> {

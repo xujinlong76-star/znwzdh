@@ -192,6 +192,14 @@ export interface NavigationSubItem {
     httpStatus?: number | null
     lastCheckedAt?: number | null
   }
+  /**
+   * 服务端预签的图片代理地址（icon 直链被防盗链拦截时的降级 URL）。
+   *
+   * 客户端不能自己签：`node:crypto` 一旦进客户端组件图，Turbopack 会把
+   * buffer/crypto 垫片整包打进去（实测 +476KB），签名密钥也会落进 bundle。
+   * 由服务端页面渲染时签好，随数据 props 下发。
+   */
+  mediaProxyIconUrl?: string
   videoConfig?: VideoConfig
 }
 

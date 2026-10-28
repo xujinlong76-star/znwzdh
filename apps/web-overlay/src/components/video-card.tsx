@@ -7,7 +7,6 @@ import { PlayCircle, Clock, Check, Download, Bookmark } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { formatDuration } from '@/lib/video-format'
-import { getSignedMediaProxyUrl } from '@/lib/media-proxy'
 import { isInWatchLater, toggleWatchLater, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
 import { saveOfflineVideo, isOfflineVideo } from '@/lib/offline-video-cache'
 import Image from 'next/image'
@@ -70,11 +69,14 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
         ? `https:${coverPath}`
         : coverPath
 
-    // 默认尝试直链；若触发防盗链拦截或 CDN 错误，自动降级至安全签名代理
-    const normalizedCoverPath = isUsingProxy ? getSignedMediaProxyUrl(rawCoverPath) : rawCoverPath
+    // 默认尝试直链；触发防盗链拦截或 CDN 错误时，降级到服务端预签的代理地址
+    // （签名不能在这里现算：node:crypto 会把 buffer/crypto 垫片打进客户端包）
+    const normalizedCoverPath = isUsingProxy && item.mediaProxyIconUrl
+        ? item.mediaProxyIconUrl
+        : rawCoverPath
 
     const handleCoverError = () => {
-        if (!isUsingProxy && (rawCoverPath.startsWith('http://') || rawCoverPath.startsWith('https://'))) {
+        if (!isUsingProxy && item.mediaProxyIconUrl) {
             setIsUsingProxy(true)
             setImageLoaded(false)
         } else {

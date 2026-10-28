@@ -1,8 +1,13 @@
 /**
- * 媒体防盗链代理安全加签与 SSRF 防护校验工具
+ * 媒体防盗链代理安全加签与 SSRF 防护校验工具。
+ *
+ * 只允许服务端引用：`node:crypto` 被客户端组件图带入时，打包器会内联
+ * buffer/crypto 垫片（实测 +476KB 首屏 JS），且签名密钥会随 bundle 泄露。
+ * 客户端需要的代理地址一律由页面在服务端签好后下发（见 withSignedVideoIcons）。
  */
 
 import { createHmac } from 'node:crypto'
+import type { NavigationData, NavigationItem, NavigationSubItem } from '@/types/navigation'
 
 const MEDIA_PROXY_SECRET = process.env.MEDIA_PROXY_SECRET || 'navhub-media-secret-key-default-2026'
 
@@ -71,4 +76,33 @@ export function getSignedMediaProxyUrl(rawUrl: string): string {
   }
   const sig = generateMediaSignature(rawUrl)
   return `/api/media/proxy?url=${encodeURIComponent(rawUrl)}&sig=${sig}`
+}
+
+function signIcon(item: NavigationSubItem): NavigationSubItem {
+  const icon = item.icon
+  if (!icon) return item
+  // 与 VideoCard 的归一化一致：协议相对 URL（//host/x）按 https 处理
+  const raw = icon.startsWith('//') ? `https:${icon}` : icon
+  if (!raw.startsWith('http://') && !raw.startsWith('https://')) return item
+  return { ...item, mediaProxyIconUrl: getSignedMediaProxyUrl(raw) }
+}
+
+/**
+ * 给视频库中每个条目的 `icon` 预签代理地址。
+ *
+ * 为什么不放在 VideoCard 里现算：那条路径会把 `node:crypto` 带进客户端组件图。
+ * 签名是 URL 的纯函数，服务端渲染（含 ISR 再生成）时算一次即可，签名无时效。
+ */
+export function withSignedVideoIcons(navigationData: NavigationData): NavigationData {
+  const signItems = (items: NavigationSubItem[] | undefined) =>
+    items?.map(signIcon)
+  const signCategory = (category: NavigationItem): NavigationItem => ({
+    ...category,
+    items: signItems(category.items),
+    subCategories: category.subCategories?.map(sub => ({ ...sub, items: signItems(sub.items) })),
+  })
+  return {
+    ...navigationData,
+    navigationItems: navigationData.navigationItems.map(signCategory),
+  }
 }

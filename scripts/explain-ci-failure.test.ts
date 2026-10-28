@@ -1,8 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSnapshot, fetchWithRetry, snapshotFileName, writeSnapshot } from "./explain-ci-failure.mjs";
+import {
+  buildSnapshot,
+  collectAttribution,
+  fetchResilient,
+  fetchWithRetry,
+  main,
+  snapshotFileName,
+  writeSnapshot,
+} from "./explain-ci-failure.mjs";
 import {
   classifyFailure,
   cleanLogLines,
@@ -727,6 +735,311 @@ describe("归因快照：--json 同形落盘", () => {
       expect(JSON.parse(readFileSync(path, "utf8")).run.id).toBe(7);
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * 抗抖层：本脚本跑在推送后的无人值守链路上，「一次瞬断把整轮归因变空白」
+ * 比红灯本身更贵——人只能重推一次再等 20 分钟。
+ * 所以这里钉的全是失败路径：状态码重试、轮询容错、逐 job 降级、部分快照。
+ */
+describe("fetchResilient：429/5xx 重试，4xx 原样交回", () => {
+  const stub = (responses: Response[]) => {
+    const original = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      const res = responses[Math.min(calls, responses.length - 1)];
+      calls++;
+      return res;
+    }) as typeof fetch;
+    return { original, calls: () => calls };
+  };
+
+  it("429 带 Retry-After：按头里的秒数等待，第二次拿到正文", async () => {
+    const waits: number[] = [];
+    const fake = stub([
+      new Response("{}", { status: 429, headers: { "retry-after": "3" } }),
+      new Response('{"ok":1}', { status: 200 }),
+    ]);
+    try {
+      const { res, attempts } = await fetchResilient("https://example.invalid/x", {}, { sleepFn: async (ms: number) => { waits.push(ms); } });
+      expect(res.ok).toBe(true);
+      expect(attempts).toBe(2);
+      expect(await res.json()).toEqual({ ok: 1 });
+      // Retry-After 是权威值：不该拿固定退避去撞同一个限流窗口
+      expect(waits).toEqual([3000]);
+    } finally {
+      globalThis.fetch = fake.original;
+    }
+  });
+
+  it("Retry-After 过大要封顶：无人值守脚本不能为一句话卡住半小时", async () => {
+    const waits: number[] = [];
+    const fake = stub([
+      new Response("slow down", { status: 503, headers: { "retry-after": "999999" } }),
+      new Response("ok", { status: 200 }),
+    ]);
+    try {
+      const { attempts } = await fetchResilient("https://example.invalid/x", {}, { sleepFn: async (ms: number) => { waits.push(ms); } });
+      expect(attempts).toBe(2);
+      expect(waits).toEqual([20_000]);
+    } finally {
+      globalThis.fetch = fake.original;
+    }
+  });
+
+  it("5xx 打满预算：返回最后一个响应并如实报尝试次数，不静默说成没数据", async () => {
+    const fake = stub([new Response("boom", { status: 500 })]);
+    try {
+      const { res, attempts } = await fetchResilient("https://example.invalid/x", {}, { sleepFn: async () => {} });
+      expect(res.status).toBe(500);
+      expect(attempts).toBe(3);
+      expect(fake.calls()).toBe(3);
+    } finally {
+      globalThis.fetch = fake.original;
+    }
+  });
+
+  it("404 一次就回：语义结果重试只会掩盖真因", async () => {
+    const fake = stub([new Response("Not Found", { status: 404 })]);
+    try {
+      const { res, attempts } = await fetchResilient("https://example.invalid/x", {}, { sleepFn: async () => {} });
+      expect(res.status).toBe(404);
+      expect(attempts).toBe(1);
+      expect(fake.calls()).toBe(1);
+    } finally {
+      globalThis.fetch = fake.original;
+    }
+  });
+
+  it("传输层重试耗尽要写明次数：「一次没连上」和「预算用光」是两个结论", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new TypeError("terminated");
+    }) as typeof fetch;
+    try {
+      const error = await fetchWithRetry("https://example.invalid/x", {}, 2).catch((e) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toContain("terminated");
+      expect(error.message).toContain("传输层重试 2 次仍失败");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});
+
+describe("waitForRunConclusion：轮询瞬断继续等", () => {
+  it("中途失败一次：计数但等到终局，polls 只算成功的那几次", async () => {
+    let clock = 0;
+    let calls = 0;
+    const result = await waitForRunConclusion({
+      run: { id: 7, status: "queued", conclusion: null },
+      fetchRun: async () => {
+        calls++;
+        if (calls === 1) throw new TypeError("terminated（传输层重试 3 次仍失败）");
+        return { id: 7, status: "completed", conclusion: "failure" };
+      },
+      intervalMs: 1000,
+      timeoutMs: 60_000,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+    expect(result.timedOut).toBe(false);
+    expect(result.run.conclusion).toBe("failure");
+    expect(result.polls).toBe(1);
+    expect(result.pollErrors).toBe(1);
+  });
+
+  it("全程取不到：按超时收尾，并说明这轮结论是「等出来的」", async () => {
+    let clock = 0;
+    const result = await waitForRunConclusion({
+      run: { id: 8, status: "queued", conclusion: null },
+      fetchRun: async () => {
+        throw new Error("fetch failed");
+      },
+      intervalMs: 1000,
+      timeoutMs: 3000,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+    expect(result.timedOut).toBe(true);
+    expect(result.polls).toBe(0);
+    expect(result.pollErrors).toBe(3);
+    // 状态没推进也不能抛：调用方要拿最后一次已知快照落盘
+    expect(result.run.id).toBe(8);
+  });
+});
+
+describe("collectAttribution：一个 job 的证据缺口不拖垮整轮", () => {
+  const jobsRun = { id: 12345 };
+  const jobA = { id: 1, name: "ci / build", conclusion: "failure", check_run_url: "" };
+  const jobB = { id: 2, name: "ci / test", conclusion: "failure", check_run_url: "" };
+  const client = (overrides: Record<string, unknown> = {}) =>
+    ({
+      api: async () => ({ jobs: [jobA, jobB] }),
+      fetchJobLog: async () => "src/a.ts:1:2: error TS1\n",
+      ...overrides,
+    }) as never;
+
+  it("日志抛错：该行标 partial 并带上原因，其余行照常归因", async () => {
+    const { rows, degraded } = await collectAttribution(
+      client({
+        fetchJobLog: async (_repo: string, jobId: number) => {
+          if (jobId === 1) throw new TypeError("terminated（传输层重试 3 次仍失败）");
+          return "AssertionError: boom\n";
+        },
+      }),
+      "a/b",
+      jobsRun,
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0].partial).toBe(true);
+    expect(rows[0].partialReason).toContain("日志：terminated");
+    expect(rows[1].partial).toBeUndefined();
+    expect(degraded).toEqual(["ci / build"]);
+  });
+
+  it("job 清单本身取不到要往上抛：那是「整轮没有结论」，不是「没有红灯」", async () => {
+    await expect(collectAttribution(client({ api: async () => { throw new Error("GitHub API 403 x：resource not accessible"); } }), "a/b", jobsRun)).rejects.toThrow("403");
+  });
+});
+
+describe("buildSnapshot：归因完整性也要进快照", () => {
+  const run = { id: 12345, head_sha: "abcdef1234567890abcdef1234567890abcdef12", html_url: "https://example.invalid/run", conclusion: "failure" };
+  const rows = [
+    { name: "ci / build", firstError: "src/a.ts:1:2: error TS1", fixHint: "pnpm typecheck", superseded: false },
+    { name: "ci / test", firstError: "AssertionError: boom", fixHint: "pnpm test", superseded: false },
+  ];
+
+  it("证据完整时不写 attribution：键存在本身就是「这轮不完整」的标记", () => {
+    const clean = buildSnapshot({ repo: "a/b", run, waitMeta: null, rows, baseline: null, diff: null });
+    expect("attribution" in clean).toBe(false);
+  });
+
+  it("degraded 与 partial 分别记账，部分快照照样带 run 身份", () => {
+    const snapshot = buildSnapshot({
+      repo: "a/b",
+      run,
+      waitMeta: null,
+      rows: [],
+      baseline: null,
+      diff: null,
+      degraded: ["ci / build"],
+      partial: { stage: "jobs", error: "GitHub API 500 x" },
+    });
+    expect(snapshot.attribution.degraded).toEqual(["ci / build"]);
+    expect(snapshot.attribution.partial).toEqual({ stage: "jobs", error: "GitHub API 500 x" });
+    expect(snapshot.run.id).toBe(12345);
+  });
+
+  it("基线失败集内嵌：日志过期后也能重算谁新增、谁关掉", () => {
+    const baseline = { run: { ...run, id: 999 }, rows: [rows[1]], degraded: ["ci / test"] };
+    const snapshot = buildSnapshot({ repo: "a/b", run, waitMeta: null, rows, baseline, diff: diffFailures(rows, baseline.rows) });
+    expect(snapshot.baseline.failures.map((f: { name: string }) => f.name)).toEqual(["ci / test"]);
+    expect(snapshot.baseline.failures[0].fixHint).toBe("pnpm test");
+    expect(snapshot.baseline.degraded).toEqual(["ci / test"]);
+  });
+});
+
+describe("main：失败也要落部分快照，绝不空白退出", () => {
+  const run = {
+    id: 12345,
+    head_sha: "abcdef1234567890abcdef1234567890abcdef12",
+    html_url: "https://example.invalid/run",
+    conclusion: "failure",
+    head_branch: "main",
+  };
+  const capture = () => {
+    const logs: string[] = [];
+    const errors: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => logs.push(args.map(String).join(" ")));
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => errors.push(args.map(String).join(" ")));
+    vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string) => {
+      errors.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write);
+    return { logs, errors, restore: () => vi.restoreAllMocks() };
+  };
+
+  const tokenGuard = <T>(fn: () => Promise<T>): Promise<T> => {
+    const previous = process.env.GITHUB_TOKEN;
+    process.env.GITHUB_TOKEN = "test-token";
+    return fn().finally(() => {
+      if (previous === undefined) delete process.env.GITHUB_TOKEN;
+      else process.env.GITHUB_TOKEN = previous;
+    });
+  };
+
+  it("jobs 清单 403：--json 仍是可解析 JSON，--save 仍落盘，退出码 2，且不算跨轮对比", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ci-explain-partial-"));
+    const target = join(dir, "snap.json");
+    const cap = capture();
+    try {
+      const rc = await tokenGuard(() =>
+        main(
+          ["--repo", "a/b", "--json", "--save", target, "--baseline", "999"],
+          {
+            clientFactory: () =>
+              ({
+                api: async (path: string) => {
+                  if (path.includes("/actions/runs?")) return { workflow_runs: [run] };
+                  throw new Error("GitHub API 403 /repos/a/b/actions/runs/12345/jobs：resource not accessible by integration");
+                },
+                fetchJobLog: async () => "",
+              }) as never,
+          },
+        ),
+      );
+      expect(rc).toBe(2);
+      const stdout = JSON.parse(cap.logs.at(-1) ?? "");
+      expect(stdout.attribution.partial.stage).toBe("jobs");
+      expect(stdout.run.id).toBe(12345);
+      // 本轮没证据 → 基线整段省略：把「基线有、本轮没取到」说成「已修复」是最坏的假绿灯
+      expect("diff" in stdout).toBe(false);
+      expect("baseline" in stdout).toBe(false);
+      const saved = JSON.parse(readFileSync(target, "utf8"));
+      expect(saved.attribution.partial.error).toContain("403");
+    } finally {
+      cap.restore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("逐 job 降级：文本模式点名证据不全的 job，退出码仍是有红灯的 1", async () => {
+    const cap = capture();
+    try {
+      const rc = await tokenGuard(() =>
+        main(
+          ["--repo", "a/b"],
+          {
+            clientFactory: () =>
+              ({
+                api: async (path: string) => {
+                  if (path.includes("/actions/runs?")) return { workflow_runs: [run] };
+                  return { jobs: [{ id: 1, name: "ci / build", conclusion: "failure" }, { id: 2, name: "ci / test", conclusion: "failure" }] };
+                },
+                fetchJobLog: async (_repo: string, jobId: number) => {
+                  if (jobId === 1) throw new TypeError("terminated");
+                  return "AssertionError: boom\n    at Object.<anonymous> (src/a.test.ts:3:1)\n";
+                },
+              }) as never,
+          },
+        ),
+      );
+      expect(rc).toBe(1);
+      const out = cap.logs.join("\n");
+      expect(out).toContain("证据不全的 job 1 个");
+      expect(out).toContain("ci / build");
+      // 另一条 job 的归因不受影响：这是「不拖垮整轮」的实际含义
+      expect(out).toContain("ci / test");
+      expect(out).not.toContain("没有失败的 job");
+    } finally {
+      cap.restore();
     }
   });
 });

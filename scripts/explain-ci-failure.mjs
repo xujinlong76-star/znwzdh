@@ -27,7 +27,17 @@
  *     多会话并行时，事后复盘不依赖 Actions 保留期：日志会在 90 天后过期。
  *   每条失败行都带 fixHint（按归因层给出的一条可执行修复命令）；文本模式另有
  *   「修复入口」段按层去重。JSON 里 failures[].fixHint 与 diff 三桶同形。
- * 退出码：0 = 没有失败 job，1 = 有失败 job，2 = 查询/鉴权失败，3 = 等待超时（run 仍未结束）。
+ *
+ * 抗抖：本脚本跑在推送后的无人值守链路上，一次瞬断不该让整轮归因凭空消失。
+ *   - 传输层瞬断（含 undici 的 terminated）重试 3 次；429/5xx/408 另按状态码重试，
+ *     带 Retry-After（上限 20s）。
+ *   - --wait 期间单次轮询失败只计数（wait.pollErrors），继续等到预算用尽。
+ *   - 某个 job 的日志/注解取不到 → 该行标 partial + partialReason，其余 job 照常归因。
+ *   - 连失败 job 清单都取不到 → 落「部分快照」：attribution.partial 记失败环节与原因，
+ *     有 --save 就照常写盘，有 --json 就照常输出（绝不给空 stdout），跨轮对比整段省略
+ *     ——本轮没证据时把「基线有、本轮没有」说成「已修复」是最坏的假绿灯。
+ * 退出码：0 = 没有失败 job，1 = 有失败 job，2 = 查询/鉴权失败（含归因不完整），
+ *         3 = 等待超时（run 仍未结束）。
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -56,15 +66,63 @@ const MAX_LOG_BYTES = 8 * 1024 * 1024;
  */
 const RETRYABLE_NETWORK = /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|terminated|UND_ERR_SOCKET/i;
 
+/**
+ * 传输层之外还要看状态码：429（中枢速率限制，按 IP 计）与 5xx / 408 是间歇性的，
+ * 再试一次通常就有正文；403/404 这类 4xx 是语义结果，重试只会拖慢并掩盖真实原因。
+ */
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+const STATUS_ATTEMPTS = 3;
+/** 退避上限：无人值守脚本不该因为一个 429 的 Retry-After 写很大就卡住半小时 */
+const MAX_BACKOFF_MS = 20_000;
+
+const messageOf = (error) => (error instanceof Error ? error.message : String(error));
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+/** Retry-After 只认「秒数」写法；HTTP-date 与缺省一律回落到默认退避（不猜） */
+function retryAfterMs(res) {
+  const raw = res.headers?.get?.("retry-after");
+  const sec = Number(raw);
+  return Number.isFinite(sec) && sec > 0 ? Math.min(sec * 1000, MAX_BACKOFF_MS) : null;
+}
+
+/** 丢弃响应体只为归还连接；读不动也不该影响重试本身 */
+async function discardBody(res) {
+  try {
+    if (res.body?.cancel) await res.body.cancel();
+    else await res.text();
+  } catch {
+    // 连接已经断了：下一次请求自己会重建
+  }
+}
+
 export async function fetchWithRetry(url, init, attempts = 3) {
   for (let attempt = 1; ; attempt++) {
     try {
       return await fetch(url, init);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (attempt >= attempts || !RETRYABLE_NETWORK.test(message)) throw error;
-      await new Promise((done) => setTimeout(done, 500 * attempt));
+      const message = messageOf(error);
+      // 非传输层错误（参数写错、代码里真正的 bug）原样抛出，不套重试文案
+      if (!RETRYABLE_NETWORK.test(message)) throw error;
+      if (attempt >= attempts) {
+        // 把「试了几次」写进文案：只说 terminated 无法区分「一次都没连上」和
+        // 「重试预算用光」，而后者才是要不要重跑这一轮的依据。
+        throw new Error(message + "（传输层重试 " + attempt + " 次仍失败）", { cause: error });
+      }
+      await sleep(500 * attempt);
     }
+  }
+}
+
+/**
+ * 一次「会自己重试的读」：返回 Response 和真正发出的状态层尝试次数，
+ * 交给调用方决定失败文案（不在这里抛，让 api 和日志接口各自保留自己的语义）。
+ */
+export async function fetchResilient(url, init, { attempts = STATUS_ATTEMPTS, sleepFn = sleep } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetchWithRetry(url, init);
+    if (res.ok || !RETRYABLE_STATUS.has(res.status) || attempt >= attempts) return { res, attempts: attempt };
+    await discardBody(res);
+    await sleepFn(retryAfterMs(res) ?? 500 * attempt);
   }
 }
 
@@ -84,15 +142,19 @@ function secondsArg(argv, name, fallbackSec) {
 /**
  * 推送后立刻解析 run 会撞上「workflow 还没创建」：只在等待模式下重试，
  * 且反复等到同一个总预算用完，不把「刚推完」当成查询失败。
+ *
+ * 等待模式下传输层瞬断也要接着等：一次 30 分钟的等待不该在第 25 分钟
+ * 因为一条断掉的连接整轮作废——那等于让人重新推一次才拿到归因。
  */
-async function resolveRunWhenWait(client, opts, { shouldWait, deadline, intervalMs }) {
+async function resolveRunWhenWait(client, opts, { shouldWait, deadline, intervalMs, sleepFn = sleep }) {
   for (;;) {
     try {
       return await resolveRun(client, opts);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!shouldWait || !message.includes("找不到匹配的运行") || Date.now() >= deadline) throw error;
-      await new Promise((done) => setTimeout(done, Math.min(intervalMs, Math.max(0, deadline - Date.now()))));
+      const message = messageOf(error);
+      const transient = message.includes("找不到匹配的运行") || RETRYABLE_NETWORK.test(message);
+      if (!shouldWait || !transient || Date.now() >= deadline) throw error;
+      await sleepFn(Math.min(intervalMs, Math.max(0, deadline - Date.now())));
     }
   }
 }
@@ -134,7 +196,7 @@ function createClient(token) {
   if (token) headers.Authorization = "Bearer " + token;
 
   async function api(path) {
-    const res = await fetchWithRetry(API + path, { headers });
+    const { res, attempts } = await fetchResilient(API + path, { headers });
     if (!res.ok) {
       let detail = "";
       try {
@@ -143,14 +205,20 @@ function createClient(token) {
       } catch {
         detail = "";
       }
-      throw new Error("GitHub API " + res.status + " " + path + (detail ? "：" + detail : ""));
+      // 状态码重试过就自报次数：429 打满 3 次和 404 一次命中，对调用方是两个不同的结论
+      const retried = attempts > 1 ? "（状态层重试 " + attempts + " 次）" : "";
+      throw new Error("GitHub API " + res.status + " " + path + retried + (detail ? "：" + detail : ""));
     }
     return res.json();
   }
 
-  /** 日志接口 302 到签名 URL：跳转后的 URL 不能再带 Authorization */
+  /**
+   * 日志接口 302 到签名 URL：跳转后的 URL 不能再带 Authorization。
+   * 读正文本身也可能被截断（undici 在流中途抛 terminated），这里不吞——
+   * 由 collectAttribution 把这一条 job 标成证据不全，其余 job 照常归因。
+   */
   async function fetchJobLog(repo, jobId) {
-    const first = await fetchWithRetry(API + `/repos/${repo}/actions/jobs/${jobId}/logs`, {
+    const { res: first } = await fetchResilient(API + `/repos/${repo}/actions/jobs/${jobId}/logs`, {
       headers,
       redirect: "manual",
     });
@@ -158,7 +226,7 @@ function createClient(token) {
     if (first.status >= 300 && first.status < 400) {
       const location = first.headers.get("location");
       if (!location) return "";
-      const signed = await fetchWithRetry(location, { redirect: "follow" });
+      const { res: signed } = await fetchResilient(location, { redirect: "follow" });
       if (!signed.ok) return "";
       return (await signed.text()).slice(0, MAX_LOG_BYTES);
     }
@@ -189,31 +257,50 @@ async function resolveRun(client, { repo, runId, sha, branch }) {
   return run;
 }
 
-/** job 的 check-run 注解（工具主动标注的错误，含文件/行号） */
+/** job 的 check-run 注解（工具主动标注的错误，含文件/行号）；失败要把原因带回调用方 */
 async function fetchAnnotations(client, repo, job) {
   const url = typeof job?.check_run_url === "string" ? job.check_run_url : "";
   const id = url.match(/\/check-runs\/(\d+)$/)?.[1];
-  if (!id) return [];
+  if (!id) return { annotations: [], error: "" };
+  // 没有 check-run id 不是失败：按空注解继续，归因照样能从日志里算出来
   try {
     const list = await client.api(`/repos/${repo}/check-runs/${id}/annotations?per_page=50`);
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
+    return { annotations: Array.isArray(list) ? list : [], error: "" };
+  } catch (error) {
+    return { annotations: [], error: messageOf(error) };
   }
 }
 
-async function collectAttribution(client, repo, run) {
+/**
+ * 逐 job 收集证据。两条铁律：
+ *   1. 一个 job 的日志/注解取不到，不许拖垮整轮——其余 job 的归因同样有价值；
+ *      取不到的那条标 partial，并带上原因，绝不用空正文冒充「这一步没报错」。
+ *   2. jobs 清单本身取不到要往上抛：那是「整轮没有结论」，调用方必须落成部分快照，
+ *      而不是打印「没有失败的 job」。
+ */
+export async function collectAttribution(client, repo, run) {
   const jobsData = await client.api(`/repos/${repo}/actions/runs/${run.id}/jobs?per_page=100&filter=latest`);
   const jobs = (jobsData?.jobs ?? []).filter(isFailedJob);
   const rows = [];
   for (const job of jobs) {
-    const [logText, annotations] = await Promise.all([
-      client.fetchJobLog(repo, job.id),
+    const [logResult, annoResult] = await Promise.all([
+      client.fetchJobLog(repo, job.id).then(
+        (logText) => ({ logText, error: "" }),
+        (error) => ({ logText: "", error: messageOf(error) }),
+      ),
       fetchAnnotations(client, repo, job),
     ]);
-    rows.push(summarizeJob(job, { logText, annotations }));
+    const reasons = [];
+    if (logResult.error) reasons.push("日志：" + logResult.error);
+    if (annoResult.error) reasons.push("注解：" + annoResult.error);
+    const row = summarizeJob(job, { logText: logResult.logText, annotations: annoResult.annotations });
+    if (reasons.length > 0) {
+      row.partial = true;
+      row.partialReason = reasons.join("；");
+    }
+    rows.push(row);
   }
-  return rows;
+  return { rows, degraded: rows.filter((row) => row.partial).map((row) => row.name) };
 }
 
 /**
@@ -231,14 +318,25 @@ export function snapshotFileName({ runId, sha, now = new Date() }) {
 /**
  * 快照载荷：--json 的 stdout 与 --save 落盘文件必须同形。
  * 各自拼一份对象迟早会漂移（加字段只改一处），所以只在这里构造。
+ *
+ * attribution 段只在「证据不全」时出现：degraded 是逐 job 的缺证据名单，
+ * partial 是整轮级别的（jobs 清单没拿到）。读快照的人靠它区分
+ * 「本轮确实没有红灯」和「本轮没能取到红灯」——少了这一段，部分快照会被当成绿灯。
+ *
+ * baseline.failures 把基线那一轮的失败集一起内嵌：日志 90 天后过期，
+ * 事后要重算「谁新增、谁关掉」不该再依赖 Actions 还在不在。
  */
-export function buildSnapshot({ repo, run, waitMeta, rows, baseline, diff }) {
+export function buildSnapshot({ repo, run, waitMeta, rows, baseline, diff, degraded = [], partial = null }) {
+  const slim = (row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint });
   return {
     repo,
     run: { id: run.id, sha: run.head_sha, url: run.html_url, conclusion: run.conclusion },
     ...(waitMeta ? { wait: waitMeta } : {}),
     failures: rows,
     layers: Object.fromEntries(layerCounts(rows)),
+    ...(degraded.length > 0 || partial
+      ? { attribution: { ...(degraded.length > 0 ? { degraded } : {}), ...(partial ? { partial } : {}) } }
+      : {}),
     ...(baseline
       ? {
           baseline: {
@@ -246,13 +344,15 @@ export function buildSnapshot({ repo, run, waitMeta, rows, baseline, diff }) {
             sha: baseline.run.head_sha,
             url: baseline.run.html_url,
             conclusion: baseline.run.conclusion,
+            failures: baseline.rows.map(slim),
+            ...(baseline.degraded?.length > 0 ? { degraded: baseline.degraded } : {}),
           },
           diff: {
             inProgress: !run.conclusion,
-            introduced: diff.introduced.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
-            persisted: diff.persisted.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
-            fixed: diff.fixed.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
-            superseded: splitSuperseded(rows).superseded.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
+            introduced: diff.introduced.map(slim),
+            persisted: diff.persisted.map(slim),
+            fixed: diff.fixed.map(slim),
+            superseded: splitSuperseded(rows).superseded.map(slim),
           },
         }
       : {}),
@@ -277,6 +377,8 @@ export function writeSnapshot({ target = null, snapshot, now = new Date() }) {
 /**
  * 基线 run 解析：基线是「上一轮的 tip」，给 sha 或 run id 都行。
  * 失败不致命：拿不到基线就退化成单轮归因，绝不让对比把一次正常查询变成报错。
+ * 但基线里逐 job 的证据缺口要带回去（degraded），否则「这条已经关了」
+ * 可能只是基线那轮的日志压根没取到。
  */
 async function resolveBaseline(client, repo, value) {
   if (!value) return null;
@@ -287,22 +389,27 @@ async function resolveBaseline(client, repo, value) {
       sha: /^\d+$/.test(value) ? null : value,
       branch: "main",
     });
-    const rows = await collectAttribution(client, repo, run);
-    return { run, rows };
+    const { rows, degraded } = await collectAttribution(client, repo, run);
+    return { run, rows, degraded };
   } catch (error) {
-    console.error("[explain-ci] 基线对比跳过：" + (error instanceof Error ? error.message : String(error)));
+    console.error("[explain-ci] 基线对比跳过：" + messageOf(error));
     return null;
   }
 }
 
-async function main(argv) {
+/**
+ * 流程入口。clientFactory 只为了可测性注入：真实网络下没人能稳定复现
+ * 「429 打满重试」或「jobs 清单整段取不到」，而这两条恰恰是假绿灯的最后一道闸，
+ * 不该只能靠人肉断网验证。
+ */
+export async function main(argv, { clientFactory = createClient } = {}) {
   const repo = resolveRepo(argValue(argv, "--repo"));
   if (!repo) {
     console.error("[explain-ci] 无法确定仓库：请在 git 仓库内运行，或用 --repo owner/repo 指定");
     return 2;
   }
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || credentialToken();
-  const client = createClient(token);
+  const client = clientFactory(token);
 
   const shouldWait = argv.includes("--wait");
   const waitTimeoutMs = secondsArg(argv, "--timeout", 1800);
@@ -328,22 +435,43 @@ async function main(argv) {
       intervalMs: waitIntervalMs,
       timeoutMs: Math.max(0, waitDeadline - Date.now()),
       // 进度走 stderr：--json 的 stdout 必须保持纯 JSON，可直接管道给 jq
-      onPoll: (latest, { waitedMs }) => {
+      onPoll: (latest, { waitedMs, error }) => {
         process.stderr.write(
-          "[explain-ci] run #" + latest.id + " " + (latest.status ?? "unknown") + "（已等 " + Math.round(waitedMs / 1000) + "s）\n",
+          "[explain-ci] " +
+            (error ? "轮询瞬断（继续等）：" + messageOf(error) : "run #" + latest.id + " " + (latest.status ?? "unknown")) +
+            "（已等 " + Math.round(waitedMs / 1000) + "s）\n",
         );
       },
     });
     run = result.run;
-    waitMeta = { timedOut: result.timedOut, waitedMs: result.waitedMs, polls: result.polls };
+    waitMeta = { timedOut: result.timedOut, waitedMs: result.waitedMs, polls: result.polls, pollErrors: result.pollErrors };
   }
 
-  const rows = await collectAttribution(client, repo, run);
-  const baseline = await resolveBaseline(client, repo, argValue(argv, "--baseline"));
-  const diff = baseline ? diffFailures(rows, baseline.rows) : null;
+  let rows = [];
+  let degraded = [];
+  let partial = null;
+  try {
+    const collected = await collectAttribution(client, repo, run);
+    rows = collected.rows;
+    degraded = collected.degraded;
+  } catch (error) {
+    // 失败 job 清单本身没取到：这不是「没有红灯」。上一版让这个异常冒到进程外，
+    // stdout 一片空白，调用方只看到一行 undici 的 terminated——现在先把已拿到的
+    // run 身份落成部分快照，退出码仍按查询失败给 2，绝不伪装成 0。
+    partial = { stage: "jobs", error: messageOf(error) };
+  }
+
+  // 跨轮对比只在「本轮证据完整」时才算：拿不到 jobs 就把基线一起丢掉，
+  // 否则「基线有、本轮没有」会被算成已修复——那正是 --wait 当初要消灭的误报。
+  let baseline = null;
+  let diff = null;
+  if (!partial && argValue(argv, "--baseline")) {
+    baseline = await resolveBaseline(client, repo, argValue(argv, "--baseline"));
+    diff = baseline ? diffFailures(rows, baseline.rows) : null;
+  }
   const json = argv.includes("--json");
   const timedOut = Boolean(waitMeta?.timedOut);
-  const snapshot = buildSnapshot({ repo, run, waitMeta, rows, baseline, diff });
+  const snapshot = buildSnapshot({ repo, run, waitMeta, rows, baseline, diff, degraded, partial });
 
   if (argv.includes("--save")) {
     // 显式路径跟 --save 后面；没给就走 tmp/ 默认命名。写盘与 --json 同形。
@@ -354,6 +482,10 @@ async function main(argv) {
 
   if (json) {
     console.log(JSON.stringify(snapshot, null, 2));
+    if (partial) {
+      process.stderr.write("[explain-ci] 归因不完整：" + partial.error + "（stdout 的 JSON 是部分快照，attribution.partial 有标注）\n");
+      return 2;
+    }
     if (timedOut) return 3;
     return rows.length > 0 ? 1 : 0;
   }
@@ -362,11 +494,21 @@ async function main(argv) {
   console.log(run.html_url);
   if (waitMeta) {
     console.log(
-      "已等待 " + Math.round(waitMeta.waitedMs / 1000) + "s（" + waitMeta.polls + " 次轮询）· run 结论：" + (run.conclusion ?? "仍未结束"),
+      "已等待 " + Math.round(waitMeta.waitedMs / 1000) + "s（" + waitMeta.polls + " 次轮询" +
+        (waitMeta.pollErrors > 0 ? "，" + waitMeta.pollErrors + " 次瞬断已重试" : "") +
+        "）· run 结论：" + (run.conclusion ?? "仍未结束"),
     );
   }
   if (timedOut) {
     console.log("\n等待超时：run 仍未结束，以下只是超时时刻的快照；「已修复」桶不成立，结论以最终 run 为准。");
+  }
+  if (degraded.length > 0) {
+    console.log("\n证据不全的 job " + degraded.length + " 个（日志或注解没取到，归因只按已取到的那半算）：" + degraded.join("、"));
+  }
+  if (partial) {
+    console.log("\n归因不完整：" + partial.error);
+    console.log("以下是部分快照（run 身份 + 已取到的证据）；退出码 2，不代表没有红灯。");
+    return 2;
   }
   if (rows.length === 0) {
     if (!timedOut) console.log("\n没有失败的 job（run 结论：" + (run.conclusion ?? "进行中") + "）。");
@@ -392,8 +534,9 @@ async function main(argv) {
   }
 
   for (const row of rows) {
-    if (!row.stackLine && row.tail.length === 0) continue;
+    if (!row.stackLine && row.tail.length === 0 && !row.partialReason) continue;
     console.log("\n--- " + row.name + " ---");
+    if (row.partialReason) console.log("证据不全：" + row.partialReason);
     if (row.stackLine) console.log("栈帧：" + row.stackLine);
     if (row.tail.length > 0) console.log(row.tail.join("\n"));
   }
@@ -405,7 +548,7 @@ if (invokedDirectly) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (error) => {
-      console.error("[explain-ci] " + (error instanceof Error ? error.message : String(error)));
+      console.error("[explain-ci] " + messageOf(error));
       process.exit(2);
     },
   );

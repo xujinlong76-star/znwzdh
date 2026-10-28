@@ -558,6 +558,9 @@ export function renderBaselineDiff(diff, { baselineLabel = "基线", inProgress 
  * 依赖全部注入（fetchRun / now / sleep），核心只是状态机的可测性：
  *   - 超时返回最后一次快照并标记 timedOut，由调用方以独立退出码收尾，
  *     绝不把超时伪装成「查询失败」(2) 或「有失败 job」(1)。
+ *   - 单次轮询失败只计数不中止：预算 30 分钟的等待不该在第 25 分钟因为一条
+ *     断掉的连接整轮作废（那等于让人重推一次才拿到归因）。全部失败照样超时收尾，
+ *     但 pollErrors 会告诉调用方「这次结论是等出来的还是查出来的」。
  */
 export async function waitForRunConclusion({
   run,
@@ -571,15 +574,22 @@ export async function waitForRunConclusion({
   const startedAt = now();
   let current = run;
   let polls = 0;
+  let pollErrors = 0;
   while (!current?.conclusion) {
     const elapsedMs = now() - startedAt;
     if (elapsedMs >= timeoutMs) {
-      return { run: current, timedOut: true, waitedMs: elapsedMs, polls };
+      return { run: current, timedOut: true, waitedMs: elapsedMs, polls, pollErrors };
     }
     await sleep(Math.min(intervalMs, timeoutMs - elapsedMs));
-    current = await fetchRun(current.id);
-    polls++;
+    try {
+      current = await fetchRun(current.id);
+      polls++;
+    } catch (error) {
+      pollErrors++;
+      if (onPoll) onPoll(current, { polls, waitedMs: now() - startedAt, error });
+      continue;
+    }
     if (onPoll) onPoll(current, { polls, waitedMs: now() - startedAt });
   }
-  return { run: current, timedOut: false, waitedMs: now() - startedAt, polls };
+  return { run: current, timedOut: false, waitedMs: now() - startedAt, polls, pollErrors };
 }

@@ -18,6 +18,9 @@
  *     **在工作区里查不出来**——2026-10-28 实测 HEAD 上 `webmcp-bridge` 漂移、
  *     CI 的覆盖层 job 报红，而同一个工作区里 `--check` 是绿的（修复躺在别的会话
  *     没提交）。只有读提交的版本能在这个窗口里说真话。
+ *     这枚带 `--baseline <merge-base>`：漂移如果在基线上就以同样根因红着，那是上游的账，
+ *     本次推送发不出去既救不了它，还会逼人用 NAVHUB_SKIP_PREPUSH 整条绕过；所以打印警告
+ *     放行，新引入的漂移照拦。CI 不带 baseline，那侧继续严格判红。
  *
  * 为什么不无条件跑前两枚：本仓库长期多会话并行，工作区里常有别人未提交的半成品。
  * 这两枚检查的是**工作区**，而推送出去的是**提交**。两者不一致时跑出来的红
@@ -110,8 +113,32 @@ function runClientGraphGate() {
   runNode(["scripts/check-client-node-imports.mjs"]);
 }
 
+/**
+ * 本次推送的基线 = HEAD 与上游分支的 merge-base。
+ * 拿不到（没配 upstream、浅克隆、 detached HEAD）就返回 null，让闸门退回「按 HEAD 严格判红」——
+ * 未知比较对象时收紧不放宽。
+ */
+function upstreamBaseline() {
+  try {
+    const out = execFileSync("git", ["merge-base", "HEAD", "@{upstream}"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return out === "" ? null : out;
+  } catch {
+    return null;
+  }
+}
+
 function runCoreMirrorGate() {
-  runNode(["scripts/check-core-mirrors.mjs"]);
+  const baseline = upstreamBaseline();
+  const args = ["scripts/check-core-mirrors.mjs"];
+  if (baseline !== null) args.push("--baseline", baseline);
+  console.log(
+    "[pre-push-gates] core 镜像基线 = " +
+      (baseline === null ? "（拿不到上游 merge-base，按 HEAD 严格判红）" : baseline.slice(0, 10)),
+  );
+  runNode(args);
 }
 
 const RUNNERS = {

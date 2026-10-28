@@ -21,7 +21,12 @@
  *
  * 用法：
  *   node scripts/check-core-mirrors.mjs [--json] [--ref <git-ref>] [--working-tree]
- * 退出码：0 = 一致；1 = 有漂移/缺失；2 = 跑不起来（不是「没查就算过」）。
+ *   node scripts/check-core-mirrors.mjs --baseline <git-ref>
+ *     只把「本次要推的提交相对基线新引入的漂移」算失败，基线上本来就红的改成显式警告放行。
+ *     这是给 pre-push 用的：闸门该拦住把漂移推上去的人，而不该让后面所有提交都发不出去
+ *     ——漂移已经在 main 上时，拦别人既救不了它，还会逼人用 NAVHUB_SKIP_PREPUSH 绕过整条钩子。
+ *     CI 不加 --baseline，那侧继续按 HEAD 严格判红。
+ * 退出码：0 = 一致（或漂移全部早于基线）；1 = 有漂移/缺失；2 = 跑不起来（不是「没查就算过」）。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -52,6 +57,46 @@ export function assess(entries, contents) {
   const io = { exists: (p) => contents.has(p), read: (p) => contents.get(p) };
   return checkMirrors(entries, io, { legs: ["overlay"] });
 }
+
+/** 漂移身份：条目名 + 全部根因。刻意不把行号/内容指纹剥掉——见 splitDrift 注释 */
+const driftKey = (f) => `${f.name} :: ${[...(f.reasons ?? [])].sort().join(" | ")}`;
+
+/**
+ * 纯函数：把当前 ref 的漂移按「基线 ref 上是否已经以同样方式红着」分组。
+ *
+ * 为什么键里带根因而不是只用条目名：同名条目从「overlay 缺失」变成「overlay 被手改」
+ * 是一次**新的**破坏，不能因为这条早就红过就免检——和 CI 归因里的「同 job 换因」
+ * 同一个口径（见 scripts/lib/ci-attribution.mjs 的 reasonSignature）。
+ * 返回三组：introduced（要拦）、preexisting（同样根因，放行但报出）、
+ * changed（名字在基线上红过、根因不同，归入 introduced 但另给一句话说明）。
+ */
+export function splitDrift(nowFailures, baseFailures) {
+  const baseKeys = new Set(baseFailures.map(driftKey));
+  const baseNames = new Set(baseFailures.map((f) => f.name));
+  const introduced = [];
+  const preexisting = [];
+  const changed = [];
+  for (const f of nowFailures) {
+    if (baseKeys.has(driftKey(f))) {
+      preexisting.push(f);
+    } else {
+      introduced.push(f);
+      if (baseNames.has(f.name)) changed.push(f);
+    }
+  }
+  return { introduced, preexisting, changed };
+}
+
+/**
+ * 纯函数：把分组结果折成「退出码 + 要不要打印早于基线的警告」。
+ * 单独拆出来是为了让「放行」这个决定可测——它是最容易写反的一条（写成 rc 1 就白改，
+ * 写成 rc 0 且不报就是把别人的漂移藏起来了）。
+ */
+export function verdictWithBaseline(nowFailures, baseFailures) {
+  const split = splitDrift(nowFailures, baseFailures);
+  return { ...split, rc: split.introduced.length > 0 ? 1 : 0, passWithWarning: nowFailures.length > 0 && split.introduced.length === 0 };
+}
+
 
 /** 读 HEAD（或任意 ref）的已入库副本 */
 export function run({ ref = "HEAD" } = {}) {
@@ -84,10 +129,19 @@ function main(argv) {
   const asJson = argv.includes("--json");
   const refIdx = argv.indexOf("--ref");
   const ref = refIdx >= 0 ? argv[refIdx + 1] : "HEAD";
+  const baseIdx = argv.indexOf("--baseline");
+  const baseline = baseIdx >= 0 ? argv[baseIdx + 1] : undefined;
+  if (baseIdx >= 0 && (baseline === undefined || baseline.startsWith("--"))) {
+    // 给了旗标却没值：宁可rc 2，也不要在「比较对象未知」时悄悄当成「没有基线」再放行
+    console.error("❌ --baseline 需要一个 git ref 作值（例：--baseline origin/main）");
+    return 2;
+  }
 
   let out;
+  let base;
   try {
     out = argv.includes("--working-tree") ? runWorkingTree() : run({ ref });
+    if (baseline !== undefined) base = run({ ref: baseline });
   } catch (error) {
     console.error(`❌ core 镜像闸门跑不起来：${error instanceof Error ? error.message : String(error)}`);
     return 2;
@@ -100,7 +154,13 @@ function main(argv) {
     overlay: p.overlay,
     reasons: p.reasons,
   }));
+  const baseFailures = base
+    ? base.result.failures.map((p) => ({ name: p.name, source: p.source, overlay: p.overlay, reasons: p.reasons }))
+    : null;
+  const verdict = baseFailures === null ? null : verdictWithBaseline(failures, baseFailures);
 
+  // 钩子传进来的是 merge-base 的 40 位 sha；提示语要能一眼读完，展示一律截到 10 位
+  const baseLabel = baseline === undefined ? "" : /^[0-9a-f]{12,40}$/.test(baseline) ? baseline.slice(0, 10) : baseline;
   if (asJson) {
     console.log(
       JSON.stringify(
@@ -110,17 +170,47 @@ function main(argv) {
           legs: ["core", "overlay"],
           ok: result.ok,
           failures,
+          baseline:
+            baseFailures === null
+              ? null
+              : {
+                  ref: base.ref,
+                  ok: base.result.ok,
+                  failures: baseFailures,
+                  introduced: verdict.introduced,
+                  preexisting: verdict.preexisting,
+                  changed: verdict.changed,
+                  rc: verdict.rc,
+                },
         },
         null,
         2,
       ),
     );
+  } else if (failures.length > 0 && verdict && verdict.passWithWarning) {
+    console.warn(
+      `⚠️ ${failures.length} 个 core 镜像漂移在基线 ${baseLabel} 上就已经以同样的根因存在，不是 ${out.ref} 新引入的：闸门放行，但这条红是真的。`,
+    );
+    for (const f of failures) console.warn(`   · ${f.name}：${f.reasons.join("；")}`);
+    console.warn(`   谁该修：把 ${baseLabel} 上那条漂移带进来的提交作者。`);
+    console.warn("   怎么修：node scripts/sync-core-mirrors.mjs，然后把 core 事实源与镜像一起提交。");
+    console.warn("   CI 不带 --baseline，那侧仍按 HEAD 严格判红——左移是为了早发现，不是给 main 减绿。");
   } else if (failures.length > 0) {
     console.error(
-      `❌ ${out.ref} 上有 ${failures.length} 个 core 镜像不满足「与事实源逐字节一致」：`,
+      `❌ ${out.ref} 上有 ${failures.length} 个 core 镜像不满足「与事实源逐字节一致」${
+        verdict ? `（其中 ${verdict.introduced.length} 个相对基线 ${baseLabel} 是新引入的）` : ""
+      }：`,
     );
     for (const f of failures) {
-      console.error(`   ${f.name}`);
+      const mark =
+        verdict === null
+          ? ""
+          : verdict.preexisting.includes(f)
+            ? "（基线上已存在，同样的根因）"
+            : verdict.changed.includes(f)
+              ? "（同名条目基线上也红，但根因变了 = 新的破坏）"
+              : "（本次新引入）";
+      console.error(`   ${f.name}${mark}`);
       for (const r of f.reasons) console.error(`      - ${r}`);
     }
     console.error("\n   为什么要拦：apps/web 是独立安装的 vendored 底座，import 不到 @navhub/core，");
@@ -133,6 +223,7 @@ function main(argv) {
         "（已入库的 core↔overlay 两条腿；apps/web 那条是 gitignore 生成物，由 CI 兜）。",
     );
   }
+  if (verdict !== null) return verdict.rc;
   return failures.length > 0 ? 1 : 0;
 }
 

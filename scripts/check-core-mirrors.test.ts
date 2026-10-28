@@ -4,10 +4,16 @@
  * 这枚闸门存在的理由就是「工作区绿、提交红」，所以夹具一律喂内存 Map：
  * 判定只能由**传进去的内容**决定，不能取决于本机工作区脏不脏。
  * 唯一的真实 git 用例放在最后，用来钉住 plumbing（读不到 blob / ref 无效时不许装成通过）。
+ * --baseline 那一组同样只用内存里的漂移记录：放行/拦下的决定必须由「基线上红的是什么」
+ * 推出，不能取决于本机 main 此刻有没有别人的漂移。
  */
 import { describe, expect, it } from "vitest";
-import { assess, run, runWorkingTree, trackedPathsOf } from "./check-core-mirrors.mjs";
+import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
+import { assess, run, runWorkingTree, splitDrift, trackedPathsOf, verdictWithBaseline } from "./check-core-mirrors.mjs";
 import { composeMirror } from "./lib/core-mirror.mjs";
+
+const SCRIPT = resolve("scripts/check-core-mirrors.mjs");
 
 const ENTRIES = [
   { name: "demo", why: "x" },
@@ -114,6 +120,77 @@ describe("assess：判定只看传进去的内容", () => {
     files["packages/core/src/demo.ts"] = "  \n";
     const res = assess(ENTRIES, asMap(files));
     expect(res.failures[0].status).toBe("empty-source");
+  });
+});
+
+describe("splitDrift / verdictWithBaseline：只拦本次推送新引入的漂移", () => {
+  const drift = (name: string, ...reasons: string[]) => ({
+    name,
+    reasons,
+    source: `packages/core/src/${name}.ts`,
+    overlay: `apps/web-overlay/src/lib/${name}.ts`,
+  });
+
+  it("基线上以同样根因红着 -> 放行并显式警告（rc 0，且不能悄悄藏起来）", () => {
+    const now = [drift("webmcp-bridge", "overlay 与事实源不一致：apps/web-overlay/src/lib/webmcp-bridge.ts")];
+    const base = [drift("webmcp-bridge", "overlay 与事实源不一致：apps/web-overlay/src/lib/webmcp-bridge.ts")];
+    const v = verdictWithBaseline(now, base);
+    expect(v.rc).toBe(0);
+    expect(v.passWithWarning).toBe(true);
+    expect(v.preexisting.map((f: { name: string }) => f.name)).toEqual(["webmcp-bridge"]);
+    expect(v.introduced).toEqual([]);
+  });
+
+  it("基线全绿而当前红 = 本次新引入 -> 拦（rc 1）", () => {
+    const v = verdictWithBaseline([drift("demo", "overlay 与事实源不一致：x")], []);
+    expect(v.rc).toBe(1);
+    expect(v.passWithWarning).toBe(false);
+    expect(v.introduced.map((f: { name: string }) => f.name)).toEqual(["demo"]);
+  });
+
+  it("同名条目换了根因算新的破坏：不许因为「这条早就红过」就免检", () => {
+    const v = verdictWithBaseline([drift("demo", "overlay 缺失")], [drift("demo", "overlay 与事实源不一致：x")]);
+    expect(v.rc).toBe(1);
+    expect(v.introduced.map((f: { name: string }) => f.name)).toEqual(["demo"]);
+    // changed 是给打印用的第二层信息：它已经在 introduced 里了
+    expect(v.changed.map((f: { name: string }) => f.name)).toEqual(["demo"]);
+  });
+
+  it("一部分早就红、一部分新引入 -> 仍然拦，但只有新引入的那部分该被点名", () => {
+    const shared = drift("webmcp-bridge", "overlay 与事实源不一致：y");
+    const v = verdictWithBaseline([shared, drift("cjk", "overlay 缺失")], [shared]);
+    expect(v.rc).toBe(1);
+    expect(v.preexisting.map((f: { name: string }) => f.name)).toEqual(["webmcp-bridge"]);
+    expect(v.introduced.map((f: { name: string }) => f.name)).toEqual(["cjk"]);
+  });
+
+  it("当前不红时不报「早于基线」的假警（passWithWarning 前提是确有漂移）", () => {
+    const v = verdictWithBaseline([], [drift("demo", "overlay 缺失")]);
+    expect(v.rc).toBe(0);
+    expect(v.passWithWarning).toBe(false);
+  });
+
+  it("根因顺序不影响身份：同一批原因换个排列仍算已存在", () => {
+    const split = splitDrift([drift("demo", "r1", "r2")], [drift("demo", "r2", "r1")]);
+    expect(split.preexisting).toHaveLength(1);
+    expect(split.introduced).toEqual([]);
+    expect(verdictWithBaseline([drift("demo", "r1", "r2")], [drift("demo", "r2", "r1")]).rc).toBe(0);
+  });
+});
+
+describe("真实 CLI：--baseline 的失败关闭", () => {
+  const cli = (args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8" });
+
+  it("给了 --baseline 却没值 -> rc 2，不退化成「按 HEAD 严格判」的静默放行", () => {
+    const res = cli(["--baseline"]);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain("需要一个 git ref 作值");
+  });
+
+  it("基线 ref 不存在 -> rc 2：拿不到比较对象时既不判绿也不放行", () => {
+    const res = cli(["--baseline", "no-such-baseline-ref-9f3c21"]);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain("跑不起来");
   });
 });
 

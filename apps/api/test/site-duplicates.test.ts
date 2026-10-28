@@ -188,6 +188,8 @@ describe("站点重复检测改写等价性（参考实现逐对比对）", () =
     expect(analyzeDuplicates(sites, catMap).pairs).toEqual(referenceDuplicates(sites, catMap));
   });
 
+  // 显式超时：600 样本要跑两遍（改写实现 + 参考实现），单跑约 5.7s 且随机器负载浮动。
+  // 参考实现本来就是慢的那一方，这里比的是**等价性**不是速度（速度由下面的用例单独断言）。
   it("600 站点随机样本：输出与参考实现完全一致（含配对顺序）", () => {
     const sites = makeSites(600, 20261022);
     const mine = analyzeDuplicates(sites, catMap, Number.POSITIVE_INFINITY);
@@ -195,7 +197,7 @@ describe("站点重复检测改写等价性（参考实现逐对比对）", () =
     expect(mine.truncated).toBe(false);
     expect(mine.pairs.length).toBeGreaterThan(500); // 不是"两边都空"的假绿
     expect(mine.pairs).toEqual(ref);
-  });
+  }, 30_000);
 
   it("配对上限：达到 limit 即截断并如实标记", () => {
     const sites = makeSites(600, 20261022);
@@ -211,16 +213,28 @@ describe("站点重复检测改写等价性（参考实现逐对比对）", () =
     // 各自跑两遍取第二遍，让两份实现处于同等的 JIT 温度下
     analyzeDuplicates(sites, catMap, Number.POSITIVE_INFINITY);
     referenceDuplicates(sites, catMap);
-    const t0 = performance.now();
-    const mine = analyzeDuplicates(sites, catMap, Number.POSITIVE_INFINITY);
-    const t1 = performance.now();
-    const ref = referenceDuplicates(sites, catMap);
-    const t2 = performance.now();
 
-    expect(mine.pairs).toEqual(ref);
-    const fast = t1 - t0;
-    const slow = t2 - t1;
+    // 5 轮取中位数，而不是单轮对比：2026-10-23 实测过一次「覆盖插桩下
+    // 单轮 GC 停顿把 3× 断言打翻」的假红灯——单轮测的是运气，不是复杂度。
+    // 中位数只对**持续性**差距敏感，插桩/时序噪声会被吸收。
+    const rounds = 5;
+    const fast: number[] = [];
+    const slow: number[] = [];
+    for (let i = 0; i < rounds; i++) {
+      const t0 = performance.now();
+      const mine = analyzeDuplicates(sites, catMap, Number.POSITIVE_INFINITY);
+      const t1 = performance.now();
+      const ref = referenceDuplicates(sites, catMap);
+      const t2 = performance.now();
+      // 每轮都必须结果等价：快但算错比慢更危险
+      expect(mine.pairs).toEqual(ref);
+      fast.push(t1 - t0);
+      slow.push(t2 - t1);
+    }
+    const median = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
+    const medFast = median(fast);
+    const medSlow = median(slow);
     // 3× 是保守阈值：实测差距是两个数量级（每对省掉 2 次 URL 解析 + 4 次集合分配）
-    expect(fast * 3).toBeLessThan(slow);
+    expect(medFast * 3).toBeLessThan(medSlow);
   });
 });

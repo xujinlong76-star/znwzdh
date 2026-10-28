@@ -136,6 +136,9 @@ describe("站点自治巡检与无感自愈 API (/api/admin/audit/*)", () => {
     expect(updated?.url).toContain("web.archive.org");
   });
 
+  // 显式超时：这条要真跑一遍「候选平替探活」（推荐前必须实测，见 candidate-probe），
+  // 单跑约 3.9s、机器满载 5.1s——落在默认 5s 边界上会随机红。红的是耗时不是逻辑，
+  // 判据是先放大超时复跑：全绿即超时问题，别去改根本没坏的业务代码。
   it("POST /api/sites/:id/recommend-alternative 生成智能平替推荐", async () => {
     const res = await app.inject({
       method: "POST",
@@ -148,5 +151,5 @@ describe("站点自治巡检与无感自愈 API (/api/admin/audit/*)", () => {
     expect(body.recommendations.length).toBeGreaterThan(0);
     expect(body.recommendations[0].title).toBeDefined();
     expect(body.recommendations[0].url).toBeDefined();
-  });
+  }, 30_000);
 });

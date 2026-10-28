@@ -236,6 +236,7 @@ async function main(argv) {
                   conclusion: baseline.run.conclusion,
                 },
                 diff: {
+                  inProgress: !run.conclusion,
                   introduced: diff.introduced.map((row) => ({ name: row.name, firstError: row.firstError })),
                   persisted: diff.persisted.map((row) => ({ name: row.name, firstError: row.firstError })),
                   fixed: diff.fixed.map((row) => ({ name: row.name, firstError: row.firstError })),
@@ -255,7 +256,7 @@ async function main(argv) {
   console.log(run.html_url);
   if (rows.length === 0) {
     console.log("\n没有失败的 job（run 结论：" + (run.conclusion ?? "进行中") + "）。");
-    if (baseline) console.log("\n" + renderBaselineDiff(diff, { baselineLabel: "run #" + baseline.run.id + " · " + baseline.run.head_sha.slice(0, 12) }));
+    if (baseline) console.log("\n" + renderBaselineDiff(diff, { baselineLabel: "run #" + baseline.run.id + " · " + baseline.run.head_sha.slice(0, 12), inProgress: !run.conclusion }));
     return 0;
   }
 
@@ -272,7 +273,7 @@ async function main(argv) {
   }
   if (baseline) {
     console.log("\n## 跨轮对比");
-    console.log(renderBaselineDiff(diff, { baselineLabel: "run #" + baseline.run.id + " · " + baseline.run.head_sha.slice(0, 12) }));
+    console.log(renderBaselineDiff(diff, { baselineLabel: "run #" + baseline.run.id + " · " + baseline.run.head_sha.slice(0, 12), inProgress: !run.conclusion }));
   }
 
   for (const row of rows) {

@@ -426,6 +426,21 @@ describe("跨轮对比：新增红 / 仍在红 / 已修复", () => {
     expect(text).toContain("### 已修复");
     expect(text).toContain("新 — x.test.ts · 用例 · boom");
   });
+
+  it("run 未结束时不许把 pending 报成已修复（真实 run #40605609970 的假绿）", () => {
+    const diff = {
+      introduced: [row("新", "x.test.ts · 用例 · boom")],
+      persisted: [],
+      fixed: [row("还没跑到", "y.test.ts · 用例 · boom")],
+    };
+    const text = renderBaselineDiff(diff, { baselineLabel: "run #1", inProgress: true });
+    expect(text).toContain("run 尚未结束，暂不计算「已修复」");
+    expect(text).not.toContain("已修复 1");
+    expect(text).toContain("### 待确认");
+    expect(text).toContain("可能还没跑到");
+    // 未结束且零失败：也不能说「与基线一致」
+    expect(renderBaselineDiff({ introduced: [], persisted: [], fixed: [row("a", "b")] }, { inProgress: true })).not.toContain("与基线一致");
+  });
 });
 
 describe("vitest → GitHub 注解报告器", () => {

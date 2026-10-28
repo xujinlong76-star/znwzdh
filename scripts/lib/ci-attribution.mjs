@@ -428,15 +428,26 @@ function renderRowBrief(row) {
 }
 
 /** 对比段的 markdown。三桶都为空时给一句「与基线一致」，不留空白让人猜 */
-export function renderBaselineDiff(diff, { baselineLabel = "基线" } = {}) {
+/**
+ * `inProgress` 是必须的：run 未结束时「本轮没有这个失败」只说明 job 还没跑到，
+ * 不是已修复。真实 run #40605609970 上第一版把 6 条 pending 报成「已修复」——
+ * 这种假绿比不报更危险，所以未结束时就明确不算「已修复」。
+ */
+export function renderBaselineDiff(diff, { baselineLabel = "基线", inProgress = false } = {}) {
   const { introduced = [], persisted = [], fixed = [] } = diff ?? {};
   const lines = [];
-  lines.push(
-    `新增红 ${introduced.length} · 仍在红 ${persisted.length} · 已修复 ${fixed.length}（对比 ${baselineLabel}）`,
-  );
+  if (inProgress) {
+    lines.push(
+      `新增红 ${introduced.length} · 仍在红 ${persisted.length}（对比 ${baselineLabel}）· run 尚未结束，暂不计算「已修复」`,
+    );
+  } else {
+    lines.push(
+      `新增红 ${introduced.length} · 仍在红 ${persisted.length} · 已修复 ${fixed.length}（对比 ${baselineLabel}）`,
+    );
+  }
   if (introduced.length === 0 && persisted.length === 0 && fixed.length === 0) {
     lines.push("");
-    lines.push("与基线一致：没有新增或消失的失败。");
+    lines.push(inProgress ? "目前还没有失败的 job（run 尚未结束，结论以最终为准）。" : "与基线一致：没有新增或消失的失败。");
     return lines.join("\n");
   }
   if (introduced.length > 0) {
@@ -447,7 +458,11 @@ export function renderBaselineDiff(diff, { baselineLabel = "基线" } = {}) {
     lines.push("", "### 仍在红（基线已存在，不是本轮引入）");
     for (const row of persisted) lines.push(renderRowBrief(row));
   }
-  if (fixed.length > 0) {
+  if (fixed.length > 0 && inProgress) {
+    lines.push("", "### 待确认（基线有、本轮尚未失败）");
+    lines.push("run 尚未结束：这些 job 可能还没跑到，结束后再看是否真的修复。");
+    for (const row of fixed) lines.push(renderRowBrief(row));
+  } else if (fixed.length > 0) {
     lines.push("", "### 已修复（基线有、本轮没有）");
     for (const row of fixed) lines.push(renderRowBrief(row));
   }

@@ -5,6 +5,8 @@
  * 上一轮就踩过两次：① 收窄只影响日志、实际仍跑整棵目录；
  * ② 复数归一阈值写错，`jobs.ts` 收不到 `backup-restore-job.test.ts`。
  * 两次都不报错，只能靠人肉核对「到底跑了哪些文件」才发现。
+ * ③ 是这一轮补的另一头：词根命中面过宽不会报错，只会**白跑**（改一个
+ *    check-*.mjs 拖进整族 12 个文件，收窄等于没做）。两个方向都要断言。
  *
  * 这里把「哪些改动 → 应该选中哪些文件」固定成断言。选测器是生成物
  * （`.git/hooks/navhub-precommit-tests.mjs`），所以先重装再跑；
@@ -48,8 +50,44 @@ describe("pre-commit 选测：改动 → 测试文件", () => {
     expect(files).toContain("apps/api/test/backup-async-api.test.ts");
     expect(files).toContain("apps/api/test/backup-restore-job.test.ts");
     expect(files.some((f) => f.includes("plugin"))).toBe(false);
-    // 收窄的意义：不能是整棵 93 个文件
+    // 收窄的意义：不能是整棵目录
     expect(files.length).toBeLessThan(30);
+  });
+
+  it("改 check-bundle-budget.mjs：通用词根不许把同前缀族整族拖进来", () => {
+    // 曾经的过度匹配：词根 check 命中 scripts 下 11/N 个测试文件名，「按名字收窄」
+    // 于是选出 12 个——离整棵只差一点，收窄等于没做。判据是词根的**广度**，
+    // 不是把 check 这类词手工加进黑名单（那样下一个动词会再踩一次）。
+    const files = select(["scripts/check-bundle-budget.mjs"]);
+    expect(files).toContain("scripts/check-bundle-budget.test.ts");
+    expect(files.some((f) => /typecheck|check-syntax|check-large-files|check-committed-refs/.test(f))).toBe(false);
+    expect(files.length).toBeLessThanOrEqual(3);
+  });
+
+  it("收窄是量级上的收窄，不是日志上的一句「已收窄」", () => {
+    const narrowed = select(["scripts/check-bundle-budget.mjs"]);
+    const whole = select(["scripts/check-bundle-budget.mjs"], { NAVHUB_PRECOMMIT_SCOPE: "all" });
+    expect(whole.length).toBeGreaterThan(20);
+    expect(narrowed.length * 4).toBeLessThan(whole.length);
+  });
+
+  it("专属词根没有对应测试时，退回同前缀族，而不是整棵（只准变准，不准变宽）", () => {
+    // 若把层级写成「sharp 命中不了 → 整棵」，改一个 qq 无对应测试的 check-qq 脚本
+    // 反而比修之前跑得更久。这条钉住「本次改动只会更准」这个不变量。
+    const narrowed = select(["scripts/check-qq-no-such-script.mjs"]);
+    const whole = select(["scripts/check-qq-no-such-script.mjs"], { NAVHUB_PRECOMMIT_SCOPE: "all" });
+    expect(narrowed.length).toBeGreaterThan(0);
+    expect(narrowed.length).toBeLessThan(whole.length);
+  });
+
+  it("目录名当词根时的噪声：改选测器自己不再整棵跑，但内容相关的测试要收到", () => {
+    // scripts 这个词出现在 29/39 个测试文件的内容里（到处都是 scripts/ 路径），
+    // 它一混进内容层就「整族都提到」，把真正相关的 install 一起淹掉 → 退回整棵。
+    // 内容层用同一条判别力规则后：既收窄了，又保住只有内容层才能找到的耦合
+    // （precommit-select 就是用 execFileSync 跑生成物来断言的）。
+    const files = select(["scripts/install-git-hooks.mjs"]);
+    expect(files).toContain("scripts/precommit-select.test.ts");
+    expect(files.length).toBeLessThanOrEqual(8);
   });
 
   it("改 src/jobs.ts：必须带上 backup-restore-job（复数归一回归）", () => {

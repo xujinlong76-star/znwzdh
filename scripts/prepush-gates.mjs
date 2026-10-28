@@ -1,18 +1,25 @@
 #!/usr/bin/env node
 /**
- * pre-push 门禁：把两枚「只有 CI 才知道」的闸门左移到推送前。
+ * pre-push 门禁：把几枚「只有 CI 才知道」的闸门左移到推送前。
  *
- * 为什么是这两枚：
+ * 为什么是这几枚：
  *   - 契约生成物同源（scripts/generate-rest-contract-types.mjs --check）：
  *     pre-commit 按目录映射选测，只改 packages/core 时跑的是 packages/core/test，
  *     而漂移用例在 scripts/ 下——**改 core 不重生成**从钩子底下溜过去是常态。
  *   - scope 显式断言（apps/api/test/route-policy.test.ts）：它依赖注册期的真实路由清单，
  *     只有跑起来才知道；漏写 scope 的写路由会静默变成匿名可写。
+ *   - 客户端模块图不碰 node 内建（scripts/check-client-node-imports.mjs）：
+ *     这类问题的 CI 反馈是最慢也最难懂的——tsc/eslint/build 全绿，直到
+ *     `check-bundle-budget` 报「首屏超预算」才知道，且没有线索指向根因
+ *     （2026-10-28 实测：`node:crypto` 的垫片让 /videos 首屏 +476 KB）。
  *
- * 为什么不无条件跑：本仓库长期多会话并行，工作区里常有别人未提交的半成品。
- * 这些闸门检查的是**工作区**，而推送出去的是**提交**。两者不一致时跑出来的红
+ * 为什么不无条件跑前两枚：本仓库长期多会话并行，工作区里常有别人未提交的半成品。
+ * 这两枚检查的是**工作区**，而推送出去的是**提交**。两者不一致时跑出来的红
  * 与本次推送无关，只会冤枉人。所以每枚闸门只看自己相关的路径：
  * 干净 → 与推送内容一致，跑；有未提交改动 → 明确跳过并说明（CI 全量兜底），不阻塞。
+ *
+ * 第三枚没有这个包袱：它读的是 HEAD 的提交内容（= 正要推出去的东西），
+ * 别人的未提交改动进不了它的视野，所以无条件跑。
  *
  * 退出码：0 = 通过或按规则跳过，1 = 闸门失败。
  */
@@ -31,6 +38,7 @@ const SCOPE_PATHS = ["apps/api/src", "apps/api/test/route-policy.test.ts"];
 /**
  * 每枚闸门的执行计划。dirty = 相关路径存在未提交改动（工作区 ≠ HEAD）。
  * 纯函数：跳过语义（「不阻塞、但说清楚为什么」）在这里可测。
+ * `unconditional` 的闸门只看提交内容，dirty 与它无关，所以恒跑。
  */
 export function planGates({ contractDirty = false, scopeDirty = false } = {}) {
   return [
@@ -49,6 +57,12 @@ export function planGates({ contractDirty = false, scopeDirty = false } = {}) {
       skipReason: scopeDirty
         ? "工作区里 " + SCOPE_PATHS.join(" / ") + " 有未提交改动，检查结果与本次推送无关"
         : "",
+    },
+    {
+      id: "client-node-imports",
+      title: "客户端模块图不引 node 内建",
+      run: true,
+      skipReason: "",
     },
   ];
 }
@@ -80,6 +94,23 @@ function runScopeGate() {
   runNode([vitestEntry, "run", "apps/api/test/route-policy.test.ts", "--reporter=dot"]);
 }
 
+function runClientGraphGate() {
+  runNode(["scripts/check-client-node-imports.mjs"]);
+}
+
+const RUNNERS = {
+  "rest-contracts": runContractGate,
+  "scope-explicit": runScopeGate,
+  "client-node-imports": runClientGraphGate,
+};
+
+const FIX_HINTS = {
+  "rest-contracts": "修复：node --experimental-strip-types scripts/generate-rest-contract-types.mjs",
+  "scope-explicit": "修复：给新写路由补 config.scope（或进 IMPLICIT_SCOPE_BASELINE 并说明理由）",
+  "client-node-imports":
+    "修复：用到 node 内建的逻辑留在服务端（route handler / Server Component），客户端只消费结果；参考 0e720839 的签名下沉做法",
+};
+
 function main() {
   if (process.env.NAVHUB_SKIP_PREPUSH === "1") {
     console.log("[pre-push-gates] NAVHUB_SKIP_PREPUSH=1，跳过");
@@ -98,15 +129,10 @@ function main() {
     }
     console.log("[pre-push-gates] 检查「" + gate.title + "」…");
     try {
-      if (gate.id === "rest-contracts") runContractGate();
-      else runScopeGate();
+      RUNNERS[gate.id]();
     } catch (error) {
       console.error("[pre-push-gates] 「" + gate.title + "」未通过：" + (error instanceof Error ? error.message : String(error)));
-      if (gate.id === "rest-contracts") {
-        console.error("[pre-push-gates] 修复：node --experimental-strip-types scripts/generate-rest-contract-types.mjs");
-      } else {
-        console.error("[pre-push-gates] 修复：给新写路由补 config.scope（或进 IMPLICIT_SCOPE_BASELINE 并说明理由）");
-      }
+      console.error("[pre-push-gates] " + FIX_HINTS[gate.id]);
       return 1;
     }
   }

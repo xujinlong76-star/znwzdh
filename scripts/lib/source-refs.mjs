@@ -1,7 +1,7 @@
 /**
- * 源码引用解析（被「提交完整性」与「依赖边界」两个门禁共用）。
+ * 源码引用解析（被「提交完整性」「依赖边界」「客户端模块图」三个门禁共用）。
  *
- * 为什么单独抽：两处门禁都需要回答同一个问题——「这一行到底引用了哪个文件」。
+ * 为什么单独抽：三处门禁都需要回答同一个问题——「这一行到底引用了哪个文件」。
  * 各自写一份正则，迟早出现「一个认得出 `export … from`、另一个只认 `import`」，
  * 于是同一个漏网文件只被其中一道门禁看见。
  *
@@ -87,6 +87,97 @@ export function stripComments(source) {
       state = "code";
     }
     out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * 遮掉模板字符串（反引号）内容：保留行数与列宽，字符换成空格。
+ *
+ * 为什么要单独一步：`extractSpecifiers` 认单引号/双引号里的说明符是**正确**的
+ * （`import("x")`、`next/dynamic` 靠它），但示例代码常写成模板串，里面那句
+ * `import { createServer } from 'node:http'` 会被当真引用抓到。
+ * 真实例子：`video-ocr-code-extractor-dialog.tsx` 的 OCR 演示文案。
+ *
+ * 只遮反引号，不遮单/双引号——否则动态 import 的边全丢，模块图就不完整了。
+ * 注释、字符串、模板串之间的边界与 `stripComments` 用同一套状态机口径。
+ */
+export function maskTemplateLiterals(source) {
+  let out = "";
+  let i = 0;
+  const n = source.length;
+  let state = "code"; // code | line | block | single | double | template
+  const blank = (ch) => (ch === "\n" ? "\n" : " ");
+  while (i < n) {
+    const ch = source[i];
+    const next = source[i + 1];
+    if (state === "code") {
+      if (ch === "/" && next === "/") {
+        state = "line";
+        out += ch + next;
+        i += 2;
+        continue;
+      }
+      if (ch === "/" && next === "*") {
+        state = "block";
+        out += ch + next;
+        i += 2;
+        continue;
+      }
+      if (ch === "`") {
+        state = "template";
+        out += " ";
+        i += 1;
+        continue;
+      }
+      if (ch === "'" || ch === '"') state = ch === "'" ? "single" : "double";
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (state === "line") {
+      if (ch === "\n") state = "code";
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (state === "block") {
+      if (ch === "*" && next === "/") {
+        state = "code";
+        out += ch + next;
+        i += 2;
+        continue;
+      }
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (state === "single" || state === "double") {
+      if (ch === "\\") {
+        out += ch + (next ?? "");
+        i += 2;
+        continue;
+      }
+      if (ch === "'" && state === "single") state = "code";
+      if (ch === '"' && state === "double") state = "code";
+      out += ch;
+      i += 1;
+      continue;
+    }
+    // template：整段（含 ${…}）遮成空格，只保留换行以对齐行号
+    if (ch === "\\") {
+      out += "  ";
+      i += 2;
+      continue;
+    }
+    if (ch === "`") {
+      state = "code";
+      out += " ";
+      i += 1;
+      continue;
+    }
+    out += blank(ch);
     i += 1;
   }
   return out;

@@ -66,16 +66,19 @@ navhub_require_node() {
 // commit-tree 绕过（本仓库多会话并行，两种都真实发生过）；而「被服务端拒绝」
 // 发生在 push 这一刻，推送前的历史还能在本地处理，推送后再改就是重写。
 //
-// 第二段是「契约同源 + scope 显式」两枚便宜闸门（scripts/prepush-gates.mjs）：
+// 第二段是「契约同源 + scope 显式 + 客户端模块图」三枚便宜闸门（scripts/prepush-gates.mjs）：
 // 它们原先只有 CI 才知道——改 core 不重生成、写路由漏写 scope，pre-commit 的
-// 目录选测都覆盖不到。相关路径有未提交改动时闸门会说明并跳过，不拿别人的
-// 半成品挡推送。
+// 目录选测都覆盖不到；客户端图里的 node 内建更要等到 next build 之后的
+// check-bundle-budget 才以「首屏超预算」的形式暴露，根因还得人反推。
+// 前两枚在相关路径有未提交改动时会说明并跳过（不拿别人的半成品挡推送）；
+// 第三枚读 HEAD 的提交内容，与工作区脏不脏无关，所以恒跑。
 const prePush = `#!/bin/sh
 # NavHub Pre-push Hook（生成源：scripts/install-git-hooks.mjs）
 #
 # 1) 扫描「尚未存在于任何远程跟踪 ref 的对象」，超过 50 MiB 的 blob 直接拦下。
 #    已推送过的大文件不会重复报（它在远程 ref 的历史里，重写也救不回来）。
-# 2) 契约生成物同源 + 写路由 scope 显式（scripts/prepush-gates.mjs）。
+# 2) 契约生成物同源 + 写路由 scope 显式 + 客户端模块图不引 node 内建
+#    （scripts/prepush-gates.mjs）。
 # 临时跳过：NAVHUB_SKIP_PREPUSH=1 git push ...（不推荐 —— 被 GitHub 拒绝时
 # 唯一的解法是重写历史，那比现在花十秒处理文件贵得多）
 

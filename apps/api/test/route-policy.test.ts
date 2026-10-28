@@ -8,7 +8,8 @@
  * `app.routeInventory`（与 openapi.json 同源）逐条过一遍策略表：
  *
  *   1. 默认拒绝方向：未登记的 write/admin 写路由 ⇒ 个人令牌不可触达；
- *   2. 唯一例外清单（PERSONAL_TOKEN_WRITE_ROUTES）必须命中且只命中一条真实写路由；
+ *   2. 个人写例外清单（PERSONAL_TOKEN_WRITE_ROUTES）当前必须是空的；非空时每条
+ *      必须命中且只命中一条 write 级真实路由；
  *   3. 匿名写面账本（PUBLIC_INSTANCE_WRITE_ROUTES）必须与 public 级写路由逐一对应；
  *   4. 匿名写路由全集是**复核快照**：新增/删除都会红，逼一次显式决定；
  *   5. read 级写方法只允许已复核的计算型路由；
@@ -260,16 +261,38 @@ describe("默认拒绝：未登记的 write/admin 写路由不接受个人令牌
     }
   });
 
-  it("个人写清单的每条登记都命中且只命中一条真实写路由（防陈旧 / 防 :param 泛化）", () => {
-    expect(PERSONAL_TOKEN_WRITE_ROUTES.length).toBeGreaterThan(0);
+  it("个人写例外清单为空：write 等级里不再有任何个人令牌可越过的门槛", () => {
+    // 唯一一条曾登记的例外是 `PATCH /api/submissions/:number`，理由写「作者改自己的投稿」。
+    // 这个能力从未存在：处理体只接受 action: approve|reject，且没有归属校验。于是例外不是
+    // 放行用户域写面，而是把实例域的审核动作交给个人令牌 ⇒ 自审自批、自发布（P0）。
+    // 路由现在声明 admin，例外随之清空。
+    // 断言「为空」不是图省事：新增一条例外必须同时改掉这一行，等于强制一次显式决定，
+    // 让「写理由」变成「写证据」（见 route-policy.ts 的同类教训）。
+    expect([...PERSONAL_TOKEN_WRITE_ROUTES]).toEqual([]);
+  });
+
+  it("非空时逐条验证：每条登记命中且只命中一条 write 级真实路由（防陈旧 / 防 :param 泛化）", () => {
     for (const key of PERSONAL_TOKEN_WRITE_ROUTES) {
       const [method, pattern] = key.split(" ") as [string, string];
       const matched = mutating().filter((r) => r.method === method && matchesRoutePath(pattern, r.url));
       expect(matched.length, key + " 命中 " + matched.map(keyOf).join(", ")).toBe(1);
+      // 等级仍必须是 write：若路由被提成 admin 却留着登记，说明例外已陈旧
       expect(matched[0]!.scope, key).toBe("write");
-      // 登记的是「作者改自己的投稿」这一条语义，不是任何一个以 /api/submissions/ 开头的路径
-      expect(matchesRoutePath(pattern, "/api/submissions"), key).toBe(false);
+      // 按段匹配不许退化成前缀放行：去掉末尾参数段的那个更短路径必须不命中
+      const withoutParam = pattern.replace(/\/:[A-Za-z0-9_]+$/, "");
+      if (withoutParam !== pattern) {
+        expect(matchesRoutePath(pattern, withoutParam), key + " 不许前缀泛化").toBe(false);
+      }
     }
+  });
+
+  it("回归锁：投稿审批不再对个人令牌开放（P0 自审自批）", () => {
+    const key = "PATCH /api/submissions/:number";
+    const route = mutating().find((r) => keyOf(r) === key);
+    // 路由消失时这条锁该红着提醒人，而不是悄悄变成空跑
+    expect(route, key + " 已不在真实路由表里：请确认是删除了路由，还是改了路径").toBeTruthy();
+    expect(route!.scope, key).toBe("admin");
+    expect(classifyRoute({ method: "PATCH", path: route!.url, declaredScope: route!.scope }).personalTokenAllowed, key).toBe(false);
   });
 });
 
@@ -344,7 +367,7 @@ describe("策略表与 authz.ts 运行时判定一致", () => {
 
   it("具名矩阵：真实路由 × 令牌类型", () => {
     const tables: Array<{ route: string; scope: RouteScope; personal: boolean; why: string }> = [
-      { route: "PATCH /api/submissions/:number", scope: "write", personal: true, why: "作者改自己的投稿（唯一登记例外）" },
+      { route: "PATCH /api/submissions/:number", scope: "admin", personal: false, why: "审核动作属实例域：曾登记为 write 例外（理由「作者改自己的投稿」）导致自审自批" },
       { route: "POST /api/sites", scope: "write", personal: false, why: "实例写面：建站" },
       { route: "PATCH /api/categories/:id", scope: "write", personal: false, why: "实例写面：类目" },
       { route: "POST /api/jobs", scope: "write", personal: false, why: "实例写面：任务入队" },

@@ -32,3 +32,38 @@ export function inPredicate(column: string, values: Iterable<string | number>): 
   const list: unknown[] = [...values];
   return { sql: `${column} IN (${list.map(() => "?").join(",")})`, params: list };
 }
+
+/** 与 driver.ts 的 Dialect 保持同形：新方言在两侧同步增加，类型上不会静默漏配 */
+export type SqlDialect = "sqlite" | "pg" | "libsql";
+
+/**
+ * 把整个列表绑成**一个**参数的集合谓词（`IN` 的无分片形态）。
+ *
+ * 为什么必须存在：`inPredicate` 把每个值绑成一个参数，语句级绑参上限（SQLite 999）
+ * 意味着 >500 个 id 就得拆成多条语句，调用方被迫做「分片查 + JS 归并」
+ * （见 repository/sites.ts 的 listSites）。两种方言各有一个原生的单参数写法：
+ *   - SQLite / libsql：`col IN (SELECT value FROM json_each(?))`，
+ *     参数是 JSON 数组字符串，长度只受文本长度限制，与绑参上限无关；
+ *   - PostgreSQL：`col = ANY(?::text[])`，node-postgres 把 JS 数组序列化成
+ *     数组字面量，同样只占一个参数位。
+ *
+ * 空列表返回 null：空集合的业务语义是「无匹配」，不是「恒假条件」，
+ * 必须由调用方短路（返回空页），否则会把语义交给 SQL 引擎的空 IN 行为。
+ *
+ * JSON1 是否可用由 Repository 首次调用时探测（老 SQLite 构建没有 JSON1），
+ * 探测失败时调用方回退到分片路径——本函数不做运行时能力假设。
+ */
+export function collectionInPredicate(
+  dialect: SqlDialect,
+  column: string,
+  values: Array<string | number>,
+): { sql: string; params: unknown[] } | null {
+  if (values.length === 0) return null;
+  if (dialect === "pg") {
+    return { sql: `${column} = ANY(?::text[])`, params: [values] };
+  }
+  if (dialect === "sqlite" || dialect === "libsql") {
+    return { sql: `${column} IN (SELECT value FROM json_each(?))`, params: [JSON.stringify(values)] };
+  }
+  return null;
+}

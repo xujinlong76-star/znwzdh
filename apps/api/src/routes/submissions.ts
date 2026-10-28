@@ -5,9 +5,11 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { httpUrl } from "@navhub/core";
 import { indexSite } from "../index-site.ts";
-import { submissionNumber } from "./shared.ts";
+import { ADMIN_NOTIFICATION_IDENTITY } from "../notifications.ts";
+import { identityTrusted, requestIdentityOf, submissionNumber } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
 
@@ -41,18 +43,44 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
     const category = await ctx.repo.getCategory(body.data.categoryId);
     if (!category) { reply.code(400); return { success: false, message: "投稿类目不存在" }; }
 
-    const site = await ctx.repo.createSite({
-      url: body.data.url,
-      title: body.data.title,
-      description: body.data.description || null,
-      categoryId: body.data.categoryId,
-      subCategoryId: body.data.subCategoryId ?? null,
-      status: "pending",
-      source: "submission",
+    // 投稿正文不参与归属；只使用经过身份闸门的凭据/签名身份。
+    const identityRequest = { auth: req.auth, headers: req.headers, query: req.query };
+    const rawIdentity = identityTrusted(ctx, req) ? requestIdentityOf(identityRequest) : null;
+    const identity = rawIdentity ? await ctx.repo.resolveIdentity(rawIdentity) : null;
+    if (rawIdentity === ADMIN_NOTIFICATION_IDENTITY || identity === ADMIN_NOTIFICATION_IDENTITY) {
+      reply.code(403);
+      return { success: false, message: "保留身份不能投稿" };
+    }
+    const owner = identity && !identity.startsWith("anon-") && identity !== "anonymous" &&
+      !rawIdentity?.startsWith("anon-") && rawIdentity !== "anonymous" ? identity : null;
+    const site = await ctx.repo.withTransaction(async () => {
+      const created = await ctx.repo.createSite({
+        url: body.data.url,
+        title: body.data.title,
+        description: body.data.description || null,
+        categoryId: body.data.categoryId,
+        subCategoryId: body.data.subCategoryId ?? null,
+        status: "pending",
+        source: "submission",
+      });
+      if (owner) {
+        await ctx.repo.run(
+          "INSERT INTO submission_owners (site_id, identity, created_at) VALUES (?,?,?)",
+          [created.id, owner, created.createdAt],
+        );
+      }
+      await ctx.repo.audit({ ip: req.ip, actor: identity || rawIdentity || "anonymous", actorKind: "user", action: "site.submit", target: created.id, diff: { url: created.url, title: created.title } });
+      await ctx.repo.emitNotification({
+        identity: ADMIN_NOTIFICATION_IDENTITY,
+        idempotencyKey: `submission:${created.id}:pending`,
+        kind: "submission_pending",
+        title: "有新投稿待审核",
+        body: JSON.stringify({ siteId: created.id }),
+      });
+      return created;
     });
     await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
     await ctx.repo.recordEvent("submission", { siteId: site.id, categoryId: category.id }).catch(() => undefined);
-    await ctx.repo.audit({ ip: req.ip, actor: "anonymous", actorKind: "user", action: "site.submit", target: site.id, diff: { url: site.url, title: site.title } });
     reply.code(201);
     return { success: true, message: "投稿已提交，等待审核", siteId: site.id };
   });
@@ -115,7 +143,7 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
    * :number 优先支持新前端直传 siteId；若查无结果且为数字则兼容旧版 djb2 哈希编号查找。
    * 审核动作落 submission.approve / submission.reject 审计（此前只有 POST 有审计）。
    */
-  app.patch("/api/submissions/:number", { config: { scope: "write" } }, async (req, reply) => {
+  app.patch("/api/submissions/:number", { config: { scope: "admin" } }, async (req, reply) => {
     const { number } = req.params as { number: string };
     const body = z.object({
       action: z.enum(["approve", "reject"]),
@@ -139,15 +167,39 @@ export const submissionRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (
     if (!site) { reply.code(404); return { success: false, message: "投稿不存在" }; }
 
     const nextStatus = body.data.action === "approve" ? "active" : "archived";
-    await ctx.repo.updateSite(site.id, { status: nextStatus as never });
-    if (body.data.action === "approve") {
-      await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
-    }
-    await ctx.repo.audit({
-      ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
-      action: body.data.action === "approve" ? "submission.approve" : "submission.reject",
-      target: site.id, diff: { url: site.url, title: site.title, reason: body.data.reason ?? null },
+    const siteId = site.id;
+    const transitionId = randomUUID();
+    const reviewed = await ctx.repo.withTransaction(async () => {
+      await ctx.repo.raw(
+        "SELECT id FROM sites WHERE id = ?" + (ctx.repo.db.dialect === "pg" ? " FOR UPDATE" : ""),
+        [siteId],
+      );
+      const current = await ctx.repo.getSite(siteId);
+      if (!current || current.source !== "submission") return null;
+      if (current.status === nextStatus) return current;
+      await ctx.repo.updateSite(siteId, { status: nextStatus });
+      await ctx.repo.audit({
+        ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind,
+        action: body.data.action === "approve" ? "submission.approve" : "submission.reject",
+        target: siteId, diff: { url: current.url, title: current.title, reason: body.data.reason ?? null },
+      });
+      const mapping = (await ctx.repo.raw("SELECT identity FROM submission_owners WHERE site_id = ?", [siteId]))[0];
+      const owner = mapping ? await ctx.repo.resolveIdentity(String(mapping.identity)) : null;
+      if (owner && owner !== ADMIN_NOTIFICATION_IDENTITY && !owner.startsWith("anon-") && owner !== "anonymous") {
+        await ctx.repo.emitNotification({
+          identity: owner,
+          idempotencyKey: `submission:${siteId}:review:${transitionId}`,
+          kind: body.data.action === "approve" ? "submission_approved" : "submission_rejected",
+          title: body.data.action === "approve" ? "投稿已通过" : "投稿未通过",
+          body: JSON.stringify({ siteId }),
+        });
+      }
+      return current;
     });
+    if (!reviewed) { reply.code(404); return { success: false, message: "投稿不存在" }; }
+    if (body.data.action === "approve") {
+      await indexSite(ctx, reviewed.id, reviewed.title, reviewed.description ?? null, reviewed.url);
+    }
     return {
       success: true,
       message: body.data.action === "approve" ? "投稿已通过并已上架" : "投稿已拒绝",

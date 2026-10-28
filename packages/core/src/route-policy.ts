@@ -36,12 +36,22 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
  * 声明为 write 级、但语义属于用户域的路由。
  *
  * 这是**唯一**允许个人令牌越过 write 门槛的形态：路由等级受历史实现所限标成
- * write，实际操作对象是调用者自己提交的内容（`/api/submissions/:number` 的
- * PATCH 是作者改自己的投稿）。新增条目必须同时评估：这条路由的写对象真的是
- * 「调用者自己的数据」吗？如果是新路由，正确做法是把 scope 设成 public 并配
- * `userDomainWriteAllowed`，而不是往这里加行。
+ * write，实际操作对象必须是调用者自己的数据。新增条目必须同时评估：这条路由的
+ * 写对象真的是「调用者自己的数据」吗？如果是新路由，正确做法是把 scope 设成 public
+ * 并配 `userDomainWriteAllowed`，而不是往这里加行。
+ *
+ * 清单为空是 2026-10-28 的收敛结果，不是巧合。原先唯一一条
+ * `PATCH /api/submissions/:number`（理由写「作者改自己的投稿」）与实现不符：
+ * 处理体只接受 `action: approve|reject`，且无任何归属校验——「作者改自己的投稿」
+ * 这个能力从未存在。于是这条例外不是放行用户域写面，而是把**实例域的审核动作**
+ * laundering 成个人令牌可用：任意登录用户投稿 → 拿编号 → 自审自批 → 站点转
+ * active 并进索引。路由等级已改为 admin，例外同步清空。
+ *
+ * 教训写在这里而不是写在提交说明里：例外清单的 `why` 若是自由文本，就变成没人
+ * 能反驳的永久豁免。要往这里加条目，先加一条能证伪它的断言（处理体里必须能找到
+ * 归属校验调用），否则应当改路由等级。
  */
-export const PERSONAL_TOKEN_WRITE_ROUTES: readonly string[] = ["PATCH /api/submissions/:number"];
+export const PERSONAL_TOKEN_WRITE_ROUTES: readonly string[] = [];
 
 /**
  * 声明为 public、但实际会改**共享实例数据**的路由（匿名写面审计账本）。

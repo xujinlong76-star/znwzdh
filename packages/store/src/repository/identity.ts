@@ -181,6 +181,11 @@ export async function mergeIdentity(
       [target, source],
     );
 
+    // 3.5) 通知与未投递的 outbox：别名解析后只按 canonical 身份读取/投递，
+    //      源身份的行不改归属就会永远读不到、邮件/推送也会继续发往旧地址。
+    await repo.run("UPDATE notifications SET identity = ? WHERE identity = ?", [target, source]);
+    await repo.run("UPDATE notification_outbox SET identity = ? WHERE identity = ?", [target, source]);
+
     // 4) 画像：源画像删除；目标画像保留，后续用合并后的事件刷新
     await repo.run("DELETE FROM user_profiles WHERE user_id = ?", [source]);
 

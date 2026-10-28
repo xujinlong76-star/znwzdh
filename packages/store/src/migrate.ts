@@ -14,6 +14,7 @@
  */
 
 import { categorySlug } from "@navhub/core";
+import { createHash } from "node:crypto";
 import { toPgSql } from "./repository/dialect.ts";
 
 export interface ColumnAlter {
@@ -171,21 +172,137 @@ export async function dedupeUserEmails(db: { dialect: string; sqlite?: any; pg?:
 }
 
 /**
+ * 迁移失败台账。
+ *
+ * 旧实现的逐语句 `catch {}` 是空的：一条 DDL 因权限/重复数据/扩展缺失失败后，
+ * 除了「下次启动再试」没有任何痕迹。运维看到的是一份「启动成功」的日志，
+ * 而某个唯一索引/列可能从未建上。
+ *
+ * 这张表只记**失败**（成功的幂等 DDL 不记，避免每次启动写几十行噪音）：
+ *   - step：语句哈希（同一句反复失败只更新 last_at，不堆行）
+ *   - error：最后一次错误原文
+ */
+const MIGRATION_FAILURES_DDL =
+  "CREATE TABLE IF NOT EXISTS migration_failures (" +
+  "id TEXT PRIMARY KEY, step TEXT NOT NULL, error TEXT NOT NULL, created_at BIGINT NOT NULL)";
+
+async function execSql(db: { dialect: string; sqlite?: any; pg?: any }, sqlText: string): Promise<void> {
+  if (db.dialect !== "pg" && db.sqlite) {
+    db.sqlite.exec(sqlText);
+  } else if (db.pg) {
+    await db.pg.query(sqlText);
+  }
+}
+
+async function ensureMigrationFailures(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  try {
+    await execSql(db, MIGRATION_FAILURES_DDL);
+  } catch {
+    // 只读副本/权限受限时连台账都建不了：不能因此阻断启动，退回 console
+  }
+}
+
+/** 记录一条迁移失败；永不抛错（迁移失败本身已经够糟，不该再引发启动失败） */
+export async function recordMigrationFailure(
+  db: { dialect: string; sqlite?: any; pg?: any },
+  step: string,
+  err: unknown,
+): Promise<void> {
+  const message = err instanceof Error ? err.message : String(err);
+  const id = createHash("sha256").update(step).digest("hex").slice(0, 24);
+  try {
+    await execSql(db, MIGRATION_FAILURES_DDL);
+    if (db.dialect !== "pg" && db.sqlite) {
+      db.sqlite
+        .prepare(
+          "INSERT INTO migration_failures (id, step, error, created_at) VALUES (?,?,?,?) " +
+            "ON CONFLICT(id) DO UPDATE SET error = excluded.error, created_at = excluded.created_at",
+        )
+        .run(id, step.slice(0, 300), message.slice(0, 1000), Date.now());
+    } else if (db.pg) {
+      await db.pg.query(
+        "INSERT INTO migration_failures (id, step, error, created_at) VALUES ($1,$2,$3,$4) " +
+          "ON CONFLICT(id) DO UPDATE SET error = EXCLUDED.error, created_at = EXCLUDED.created_at",
+        [id, step.slice(0, 300), message.slice(0, 1000), Date.now()],
+      );
+    }
+  } catch {
+    // 台账写不进去时至少留一行进程日志
+  }
+  console.warn("[migrate] 迁移步骤失败（已记录，下次启动重试）:", step.slice(0, 120), message);
+}
+
+/**
+ * 工作区明文从 `user_vault_sync` 搬到 `user_workspace_blobs`。
+ *
+ * 旧实现是「INSERT 一句 + DELETE 一句」并列在通用语句表里，各自 try/catch：
+ * INSERT 失败（目标表缺失/权限/类型不匹配）时 DELETE 照跑，明文工作区永久丢失。
+ *
+ * 现在 DELETE 带 `EXISTS` 守卫：**只删已经在目标表里存在的键**。
+ * 即使 INSERT 完全失败，DELETE 也一行都删不掉；INSERT 成功时两条语句天然幂等，
+ * 不需要跨方言的长事务。
+ */
+export async function migrateWorkspaceBlobs(db: {
+  dialect: string;
+  sqlite?: any;
+  pg?: any;
+}): Promise<{ copied: number; skipped: boolean }> {
+  const insertSql = `INSERT INTO user_workspace_blobs (user_id, payload, updated_at)
+       SELECT user_id, payload, updated_at FROM user_vault_sync
+       WHERE (user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\')
+         AND payload IS NOT NULL
+       ON CONFLICT(user_id) DO NOTHING`;
+  const deleteSql = `DELETE FROM user_vault_sync
+       WHERE (user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\')
+         AND EXISTS (SELECT 1 FROM user_workspace_blobs b WHERE b.user_id = user_vault_sync.user_id)`;
+  const countSql = `SELECT COUNT(*) AS c FROM user_vault_sync
+       WHERE (user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\')`;
+
+  const countSource = async (): Promise<number> => {
+    if (db.dialect !== "pg" && db.sqlite) {
+      const row = db.sqlite.prepare(countSql).get() as { c?: number } | undefined;
+      return Number(row?.c ?? 0);
+    }
+    if (db.pg) {
+      const res = await db.pg.query(countSql);
+      return Number((res as { rows?: Array<{ c?: number }> }).rows?.[0]?.c ?? 0);
+    }
+    return 0;
+  };
+
+  try {
+    const before = await countSource();
+    await execSql(db, insertSql);
+    await execSql(db, deleteSql);
+    const remaining = await countSource();
+    return { copied: Math.max(0, before - remaining), skipped: false };
+  } catch (err) {
+    // 关键：失败时**不执行** DELETE。旧行全部保留，下次启动重试。
+    await recordMigrationFailure(db, "workspace_blobs_v1", err);
+    return { copied: 0, skipped: true };
+  }
+}
+
+/**
  * 软删除（回收站）需要的索引演进。必须在 migrateColumns 之后调用
  * （依赖 deleted_at 列存在），因此不放进 DDL。
  *
- * 1. `sites_url_idx` 从「全表唯一」改为「仅未删除行唯一」（部分唯一索引）。
- *    旧索引会挡住「删完同 URL 站点后重新添加」。删旧建新的窗口极小
- *    且发生在启动期（尚无写入），可接受。
+ * 1. `sites_url_uniq_v2` 从「全表唯一」改为「仅未删除行唯一」（部分唯一索引）。
+ *    **先建新索引、再删旧索引**：旧实现是 DROP 后 CREATE，CREATE 因存量重复 URL
+ *    失败时，唯一性从那一刻起静默失效（下一次启动再试、再失败）。
  * 2. `sites_deleted_at_idx`：回收站探针的部分索引，体积只随删除量增长。
  * 3. `users_email_unique_idx`：users.email 部分唯一。调用顺序要求
  *    **dedupeUserEmails 在前**（见 driver.ts 的 openDb 序列），否则存量重复会让
  *    建索引失败并被逐语句 try/catch 静默跳过。
  */
 export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg?: any }): Promise<void> {
+  await ensureMigrationFailures(db);
   const statements = [
+    // 先建后删：CREATE 失败时旧索引仍在，唯一性不会出现空窗。
+    // 索引名改为 v2 是刻意的——旧名可能被部署脚本引用，直接复用会让「是否已建」
+    // 无法判断；新名 + IF NOT EXISTS 天然幂等。
+    "CREATE UNIQUE INDEX IF NOT EXISTS sites_url_uniq_v2 ON sites(url) WHERE deleted_at IS NULL",
     "DROP INDEX IF EXISTS sites_url_idx",
-    "CREATE UNIQUE INDEX IF NOT EXISTS sites_url_idx ON sites(url) WHERE deleted_at IS NULL",
     "CREATE INDEX IF NOT EXISTS sites_deleted_at_idx ON sites(deleted_at) WHERE deleted_at IS NOT NULL",
     // 存储层补索引（旧库补齐；幂等 IF NOT EXISTS；与 driver.ts DDL 保持一致）
     "CREATE INDEX IF NOT EXISTS sites_source_status_idx ON sites(source, status)",
@@ -227,21 +344,31 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS user_workspace_blobs (user_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at BIGINT NOT NULL)"
       : "CREATE TABLE IF NOT EXISTS user_workspace_blobs (user_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at INTEGER NOT NULL)",
-    // 一次性搬迁（幂等）：先把存量明文键复制进新表，再删掉 vault 里的旧行。
-    // LIKE 里的下划线是通配符，必须 ESCAPE 转义，否则 ws_members 会匹配到其它键。
-    `INSERT INTO user_workspace_blobs (user_id, payload, updated_at)
-       SELECT user_id, payload, updated_at FROM user_vault_sync
-       WHERE (user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\')
-         AND payload IS NOT NULL
-       ON CONFLICT(user_id) DO NOTHING`,
-    `DELETE FROM user_vault_sync
-       WHERE user_id LIKE 'workspaces:%' OR user_id LIKE 'ws\\_members:%' ESCAPE '\\'`,
+    // 注意：存量搬迁不在这张语句表里——它由 migrateWorkspaceBlobs 单独执行，
+    // 因为 DELETE 必须带「已复制」守卫（见该函数注释）。
     // 站内通知（T13）：轻量用户消息表
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, read_at BIGINT, created_at BIGINT NOT NULL)"
       : "CREATE TABLE IF NOT EXISTS notifications (id TEXT PRIMARY KEY, identity TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT, read_at INTEGER, created_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS notifications_identity_created_idx ON notifications(identity, created_at)",
+    // Outbox 由幂等启动迁移补齐；BIGINT 在 SQLite 中同样为整数亲和性。
+    `CREATE TABLE IF NOT EXISTS notification_outbox (
+      id TEXT PRIMARY KEY, identity TEXT NOT NULL,
+      channel TEXT NOT NULL CHECK (channel IN ('inapp', 'email', 'push')),
+      kind TEXT NOT NULL, title TEXT NOT NULL, body TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'delivered', 'deferred', 'failed')),
+      attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 3),
+      next_attempt_at BIGINT, last_error TEXT, created_at BIGINT NOT NULL, delivered_at BIGINT
+    )`,
+    "CREATE INDEX IF NOT EXISTS notification_outbox_due_idx ON notification_outbox(next_attempt_at, created_at, id) WHERE status = 'pending' AND channel = 'inapp'",
+    "CREATE INDEX IF NOT EXISTS notification_outbox_created_idx ON notification_outbox(created_at DESC, id DESC)",
+    "CREATE TABLE IF NOT EXISTS submission_owners (site_id TEXT PRIMARY KEY REFERENCES sites(id) ON DELETE CASCADE, identity TEXT NOT NULL, created_at BIGINT NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS submission_owners_identity_idx ON submission_owners(identity)",
     "CREATE INDEX IF NOT EXISTS api_tokens_owner_idx ON api_tokens(owner_identity)",
+    // 收藏域补索引：`WHERE site_id = ?`（站点详情/清理）与 `WHERE user_id=? AND folder_id=?`
+    // （收藏夹视图）此前只能走 user_id 单列索引或全表扫。
+    "CREATE INDEX IF NOT EXISTS favorites_site_idx ON favorites(site_id)",
+    "CREATE INDEX IF NOT EXISTS favorites_user_folder_idx ON favorites(user_id, folder_id)",
     // 标签概念别名索引
     "CREATE INDEX IF NOT EXISTS tag_aliases_tag_idx ON tag_aliases(tag_id)",
     // 分面属性表与索引 (Taxonomy Phase 2)
@@ -301,6 +428,8 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS llm_usage_time_idx ON llm_usage(created_at)",
     "CREATE INDEX IF NOT EXISTS llm_usage_scenario_idx ON llm_usage(scenario, created_at)",
     "CREATE INDEX IF NOT EXISTS llm_usage_source_idx ON llm_usage(source, created_at)",
+    // 配额判定与注销匿名化都按 identity 过滤：没有索引时每次 LLM 调用前都要全表扫。
+    "CREATE INDEX IF NOT EXISTS llm_usage_identity_idx ON llm_usage(identity, created_at)",
     // 分享短链：只存内部 /marketplace/ 目标（防开放重定向）
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS short_links (code TEXT PRIMARY KEY, target TEXT NOT NULL, plugin_slug TEXT, clicks INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL)"
@@ -317,10 +446,15 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
       } else if (db.pg) {
         await db.pg.query(sqlText);
       }
-    } catch {
-      // 并发启动 / 只读副本等场景下允许跳过，下次启动兜底
+    } catch (err) {
+      // 并发启动 / 只读副本等场景下允许跳过，但**必须留下痕迹**：
+      // 空 catch 会让「唯一索引没建上」和「建上了」在日志里长得一样。
+      await recordMigrationFailure(db, sqlText, err);
     }
   }
+
+  // 存量搬迁单独执行：DELETE 带 EXISTS 守卫，INSERT 失败时不会误删源数据。
+  await migrateWorkspaceBlobs(db);
 }
 
 async function tableColumns(db: { dialect: string; sqlite?: any; pg?: any }, table: string): Promise<Set<string>> {

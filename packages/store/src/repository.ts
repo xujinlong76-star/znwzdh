@@ -14,6 +14,7 @@ import {
   type SiteOfflineArchive,
 } from "@navhub/core";
 import type { Db } from "./driver.ts";
+import { collectionInPredicate } from "./sql-in.ts";
 import type {
     ApiTokenRecord,
     AuditLogRecord,
@@ -173,6 +174,8 @@ export class Repository {
    * 事务期间必须阻止普通查询插进同一个连接，否则事务回滚会连带丢失外部写入。
    */
   private readonly dbGate = new DbAccessGate();
+  /** 集合绑定（json_each / ANY）能力探测结果：null = 尚未探测 */
+  private collectionBindOk: boolean | null = null;
 
   constructor(db: Db) {
     this.db = db;
@@ -946,6 +949,23 @@ export class Repository {
     return notificationsRepo.createNotification(this, input);
   }
 
+  async emitNotification(input: notificationsRepo.EmitNotificationInput): Promise<{ ids: string[] }> {
+    return notificationsRepo.emitNotification(this, input);
+  }
+
+  async relayNotifications(limit = 50): Promise<notificationsRepo.RelayNotificationsResult> {
+    // 必须拥有顶层事务边界，失败后才能完整回滚并独立记录重试。
+    if (this.txContext.getStore()) throw new Error("relayNotifications must run outside a transaction");
+    return notificationsRepo.relayNotifications(this, limit);
+  }
+
+  /** 仅供管理员调用；调用层负责鉴权。 */
+  async listNotificationDeliveries(
+    options: notificationsRepo.ListNotificationDeliveriesOptions = {},
+  ): Promise<{ items: notificationsRepo.NotificationDeliverySummary[]; hasMore: boolean }> {
+    return notificationsRepo.listNotificationDeliveries(this, options);
+  }
+
   /** 同 kind 通知的去重窗口（触发源据此降噪） */
   async hasRecentNotification(identity: string, kind: string, withinMs: number): Promise<boolean> {
     return notificationsRepo.hasRecentNotification(this, identity, kind, withinMs);
@@ -1271,7 +1291,7 @@ export class Repository {
 
   /* ------------------------- 任务队列 ------------------------- */
 
-  async purgeExpiredDeletedSites(olderThanMs: number): Promise<number> {
+  async purgeExpiredDeletedSites(olderThanMs: number): Promise<{ purged: number; ids: string[] }> {
     return jobsRepo.purgeExpiredDeletedSites(this, olderThanMs);
   }
 
@@ -1531,6 +1551,40 @@ export class Repository {
   async raw(sqlText: string, params: unknown[] = []): Promise<Record<string, any>[]> {
     if (this.txContext.getStore()) return ioRepo.raw(this, sqlText, params);
     return this.dbGate.read(() => ioRepo.raw(this, sqlText, params));
+  }
+
+  /**
+   * 把整个 id 列表绑成**一个**参数的 IN 谓词（绕开语句级绑参上限）。
+   *
+   * 首次调用做一次能力探测：老 SQLite 构建没有 JSON1，`json_each` 会直接抛错；
+   * 探测结果缓存在实例上（Repository 每个进程一个，探测成本可忽略），
+   * 失败后恒返回 null，调用方退回「分片 + JS 归并」的老路径——行为与引入前一致。
+   *
+   * 空列表返回 null：空集合的业务语义是「无匹配」，调用方必须自己短路，
+   * 不能把它交给 SQL 的空 IN 行为（各方言不一致）。
+   *
+   * @internal repository/* 域函数使用
+   */
+  async collectionIn(
+    column: string,
+    values: Array<string | number>,
+  ): Promise<{ sql: string; params: unknown[] } | null> {
+    if (values.length === 0) return null;
+    if (this.collectionBindOk === null) {
+      if (this.db.dialect === "pg") {
+        // PostgreSQL 原生支持 = ANY($1::text[])，无需任何扩展
+        this.collectionBindOk = true;
+      } else {
+        try {
+          // 走与业务查询完全相同的执行路径（含参数绑定），避免探测与真实查询的方言漂移
+          await this.raw("SELECT COUNT(*) AS c FROM json_each(?)", ["[]"]);
+          this.collectionBindOk = true;
+        } catch {
+          this.collectionBindOk = false;
+        }
+      }
+    }
+    return this.collectionBindOk ? collectionInPredicate(this.db.dialect, column, values) : null;
   }
 
   /** @internal repository/* 域函数使用 */

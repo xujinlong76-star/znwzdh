@@ -112,6 +112,22 @@ export const USER_DATA_DOMAINS: readonly UserDataDomain[] = [
     note: "站内通知",
   },
   {
+    id: "submissionOwners",
+    table: "submission_owners",
+    ownerColumns: ["identity"],
+    disposition: "delete",
+    note: "投稿私有归属；注销只清除映射，不修改公共站点",
+  },
+  {
+    id: "notificationOutbox",
+    table: "notification_outbox",
+    ownerColumns: ["identity"],
+    disposition: "delete",
+    // 不导出：这是投递队列（含重试次数、下次重试时间、上次错误），不是用户撰写的内容。
+    // 但**必须删**：行里带着收件身份与错误详情，注销后残留等于泄漏。
+    note: "外部渠道（邮件/推送）投递队列；不导出，但注销必须删净",
+  },
+  {
     id: "apiTokens",
     table: "api_tokens",
     ownerColumns: ["owner_identity"],

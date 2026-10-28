@@ -1016,9 +1016,9 @@ async function getData() { /* 每次请求两次 getFileContent */ }
 | P0-2 | Webhook 签名是伪实现且可绕过 | 已修 | §12.1 A2 |
 | P0-3 | Cron 端点 fail-open | 已修 | §12.1 A3（`cron-auth.ts`） |
 | P0-4 | LLM 摘要接口无鉴权且是死代码 | 已修 | §12.1 A6（删除） |
-| P1-5 | 审计/回滚读接口无鉴权 | 已修 | `api/videos/history` 已加 `verifyAdminSession` |
+| P1-5 | 审计/回滚读接口无鉴权 | 已修 | `api/videos/history` 加 `verifyAdminSession`，并随 `c04d1f19` 落地 |
 | P0-6 | 健康巡检写错目标文件 | 已修 | §12.1 A3 |
-| P0-7 | 一次探测失败即永久删除 | 已修 | §12.1 A4（三态 + 默认不删）；并行会话又加了「连续失败 2 次」阈值 |
+| P0-7 | 一次探测失败即永久删除 | 已修 | §12.1 A4（三态 + 默认不删）+ `c04d1f19` 的「连续失败 2 次」阈值（`PRUNE_AFTER_CONSECUTIVE_FAILURES`） |
 | P0-8 | 单条增删改清空替换历史 | 已修 | §12.1 A5 |
 | P1-9 | 租约锁 owner 不匹配 | 已修 | §12.2 B1 |
 | P1-10 | 「分布式租约锁」是内存单例 | 部分 | §12.2 B1（`renewLock` 续租）+ B3 渐进版；真正的跨实例租约见 §14.3 的取舍 |
@@ -1040,8 +1040,8 @@ async function getData() { /* 每次请求两次 getFileContent */ }
 | P1-26 | `/hot` 与视频热点是两套热度 | 已修 | §13.1 C2（文案）+ §15.5（`/hot` 复核无伪数据） |
 | P2-27 | 死字段 + 控制器每请求新建 | 已修 | §13.1 C5 |
 | P2-28 | `parseDurationToSeconds` 签名矛盾 | 已修 | §16.5（抽取时改 `string \| number`） |
-| P2-29 | 全 `console.warn`，无指标 | 已修 | §13.1 C4（运行期指标）+ 并行会话的 `videoLog` 结构化 |
-| **P2-30** | 替换历史硬截断 100 条 | **已修**（随并行会话的历史外置同批落地） | §16.2 |
+| P2-29 | 全 `console.warn`，无指标 | 已修 | §13.1 C4（运行期指标）+ `c04d1f19` 的 `video-log.ts` 结构化落盘 |
+| **P2-30** | 替换历史硬截断 100 条 | **已修** | §16.2（`capReplacementHistory`，随 `c04d1f19` 落地） |
 | P2-31 | 非 B 站来源塞同一个假 BV 号 | 已修 | §13.1 C5 |
 | P2-32 | 全库共用同一张 Unsplash 封面 | 已修 | §13.1 C5 |
 | **P2-33** | 客户端倒排索引全量重建 | **已修** | §16.3 |
@@ -1065,3 +1065,97 @@ P2-29 的结构化日志、以及「连续失败两次才删」的阈值增强 �
 
 处理原则（与 §12.3 一致）：**不修别人的业务分支、不把别人的 WIP 混进自己的提交**，
 等对方完成后只提交自己那几个文件。
+
+---
+
+## 17. 并行批次落地后的交叠核对
+
+上一节记录的「随并行会话落地」四项，已在 `c04d1f19`（A1 并发写 / A2 两次才删 /
+A3 历史不截断 / B1 游标 / B3 结构化日志）里全部落地。这一节核对交叠处有没有互相破坏。
+
+### 17.1 交叠的两个文件，最终状态
+
+| 文件 | 我方改动 | 对方改动 | 结果 |
+|---|---|---|---|
+| `lib/video-harvester.ts` | `capReplacementHistory()` + `REPLACEMENT_HISTORY_LIMIT` | `appendReplacementHistory()` 把不截断的全量历史写进独立文档 | 两处都在 HEAD 里，互补而非冲突：内联数组有上限（不让整包文档膨胀），独立文件不截断（回滚记录不丢） |
+| `lib/video-library-store.ts` | 两处 `.catch(() => null)` 补「缺失即空」理由（纯注释） | 新模块本体 | 注释随 `c04d1f19` 一起入库（`git show HEAD:… | grep -c 缺失即空` = 2） |
+
+### 17.2 双写同步没有被新写路径绕过（关键核对）
+
+C6 的影子表同步挂在 `writeVideosData()` 里，前提是**所有写入口都经过中枢的
+`PUT /api/storage`**。对方的 A1 批次重写了 5 个路由的写逻辑，逐个核对：
+
+```
+app/api/videos/[id]/route.ts            → commitFile(VIDEOS_FILE_PATH, …)
+app/api/videos/route.ts                 → commitFile(…)
+app/api/videos/ai-autonomous-harvest    → commitFile(…)
+app/api/videos/webhook-harvest          → commitFile(…)
+lib/video-library-store.ts              → commitFile(VIDEOS_FILE_PATH, …)  ← 并发写收敛到这里
+```
+
+`commitFile → getAdapter().write() → PUT /api/storage → writeStoragePath →
+writeVideosData → syncVideoCatalogSafely`。**没有一条路径绕开它**，所以
+`NAVHUB_VIDEO_STORE=dual|db` 时影子表仍然跟着每次写入同步。
+
+新增的 `video-library-store.ts` 还引入了第二个文档
+`src/navsphere/content/video-replacements.json`（替换历史外置）。它走
+`readStoragePath` 的「通用 JSON 文档」分支（`doc:` 键），不参与 `videos.json` 的
+关系化同步 —— 这是对的，它是审计日志不是目录。
+
+### 17.3 三个历史来源的权威顺序（已知边界，写进手册）
+
+现在「替换历史」有三处副本，优先级必须写清楚，否则将来会有人拿错的那份去回滚：
+
+| 顺序 | 位置 | 是否截断 | 谁在读 |
+|---|---|---|---|
+| 1（权威） | `video-replacements.json` 独立文档 | **不截断** | `readReplacementHistory()`，即 `/api/videos/history` |
+| 2 | `videos.json` 的内联 `replacementHistory` | 上限 100 | 旧客户端 / 采集器的读-改-写 |
+| 3（镜像） | 关系表 `video_replacements` | 取决于同步时的内联数组（≤100） | 仅 SQL 查询与 `db` 模式的文档重建 |
+
+注意第 3 行：`dual` / `db` 模式的同步源是内联数组，所以**表里最多 100 条**，
+而独立文件才是全量。`db` 模式重建出来的文档因此会带上「表里的那 100 条」而不是
+全量 —— 由于 UI 走的是第 1 顺位，这不影响功能；但**不要用 `db` 模式重建的文档
+去做历史审计**。已写进 `docs/VIDEO-CATALOG-MIGRATION.md` §5。
+
+真正的收敛（让表也吃全量）需要同步源改成独立文件，属于下一轮；当前 0 条记录，
+没有实际影响。
+
+### 17.4 补回 P2-30 的守卫
+
+`bf520f55` 里为了不让提交后的 HEAD 变红（源码那半还没提交），把断言
+`video-harvester.ts` 的用例删掉了。现在 `capReplacementHistory` 已在 HEAD，
+移除的理由消失，`a7cffed4` 把三条断言补回：
+不再出现裸 `slice(0, 100)` / 走 `capReplacementHistory()` / 上限是具名常量。
+
+### 17.5 第三处陈旧源码断言（同样按「两套写法都成立」修）
+
+`apps/api/test/data-retention-rollup-dialect.test.ts` 断言调用点是
+`dialect: this.ctx.db.dialect === "pg" ? …`，而并行会话把任务类里的 `this.ctx`
+提成了局部 `ctx`，源码变成 `ctx.db.dialect` → 断言红。
+
+修法不是照抄新写法（那样等对方再改回去又要红一次），而是把前缀写成可选：
+
+```ts
+/dialect:\s*(?:this\.)?ctx\.db\.dialect\s*===\s*"pg"\s*\?\s*"postgres"\s*:\s*"sqlite"/
+```
+
+这条断言要守的是「显式按 ctx 方言传参」，不是「变量叫什么」。
+
+### 17.6 最终验证基线
+
+| 检查 | 结果 |
+|---|---|
+| `apps/web/test` 全量 | **217 文件 / 2447 例全绿** |
+| `apps/api/test` 全量 | **115 文件 / 1124 例全绿** |
+| `packages/store/test` | **48 文件 / 355 例全绿**（另 28 例 skip 为既有 PG 用例） |
+| `scripts/typecheck.mjs` | 5 个包通过 |
+| `scripts/typecheck-video-scope.mjs` | 23 模块 0 错误 |
+| `scripts/check-web-overlay.mjs` | 876 文件一致 |
+| `scripts/check-bundle-budget.mjs` | 全部路由在预算内 |
+
+### 17.7 本轮提交
+
+| commit | 内容 |
+|---|---|
+| `a7cffed4` | `test(video)`：补回 P2-30 的三条源码守卫 |
+| 见下一条 | `test(api)`：`data-retention` 方言断言兼容 `this.ctx` / `ctx` 两种写法 |

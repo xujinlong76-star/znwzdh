@@ -19,7 +19,10 @@ describe("data_retention 的 rollup 方言契约", () => {
   it("唯一的 runRollup 调用点显式传 dialect", () => {
     const call = src.slice(src.indexOf("await runRollup(adapter,"), src.indexOf("await runRollup(adapter,") + 700);
     expect(call).toContain("await runRollup(adapter,");
-    expect(call).toMatch(/dialect:\s*this\.ctx\.db\.dialect\s*===\s*"pg"\s*\?\s*"postgres"\s*:\s*"sqlite"/);
+    // 前缀写成可选：任务类里可能直接持有 ctx（`ctx.db.dialect`），也可能通过
+    // `this.ctx`（`this.ctx.db.dialect`）。这条断言要守的是「显式按 ctx 方言传参」，
+    // 不该因为重构把 this.ctx 提成局部变量就红。
+    expect(call).toMatch(/dialect:\s*(?:this\.)?ctx\.db\.dialect\s*===\s*"pg"\s*\?\s*"postgres"\s*:\s*"sqlite"/);
   });
 
   it("调用点只有一处（新增调用也必须带 dialect）", () => {

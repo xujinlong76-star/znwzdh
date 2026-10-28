@@ -63,15 +63,29 @@ NAVHUB_VIDEO_STORE=db     # 重启 API
 
 ## 5. 已知边界（不要当成 bug）
 
-- **`replacementHistory` 的两个字段不 round-trip**：`subCategoryId` / `subCategoryTitle`
-  没有对应列。审计记录的其余字段（含 `oldItem`/`newItem` 全文）都在。
-  当前库里该数组为 0 条，实际无影响。
+- **替换历史有三处副本，权威顺序必须记住**：
+
+  | 顺序 | 位置 | 是否截断 | 谁在读 |
+  |---|---|---|---|
+  | 1（权威） | `src/navsphere/content/video-replacements.json` | **不截断** | `/api/videos/history`（`readReplacementHistory`） |
+  | 2 | `videos.json` 内联 `replacementHistory` | 上限 100（`capReplacementHistory`） | 采集器的读-改-写 |
+  | 3（镜像） | 关系表 `video_replacements` | ≤ 上限 100 | SQL 查询 / `db` 模式的文档重建 |
+
+  第 3 行是重点：`dual` / `db` 模式的同步源是**内联数组**，所以表里最多 100 条，
+  而独立文件才是全量。`db` 模式重建出的文档带的是表里那 100 条 ——
+  页面与 `/api/videos/history` 走第 1 顺位，功能不受影响，但
+  **不要拿 `db` 模式重建的文档做历史审计**。要让表吃全量，得把同步源改成独立文件（下一轮）。
+- **审计记录的两个字段不 round-trip**：`subCategoryId` / `subCategoryTitle` 没有对应列，
+  其余字段（含 `oldItem` / `newItem` 全文）都在。当前该数组为 0 条，实际无影响。
 - **单次读取上限 500 条**。超过时 `loadVideoCatalogFromDb()` 会**回落文档读取**
   而不是截断 —— 宁可变慢，不可返回残缺的视频库。
 - **多实例**：影子表是同一个库（sqlite 单实例 / PG 多实例共享），
   但 `videoCatalogSyncState()` 是进程内状态，各实例各看各的。
 - **`db` 模式不做写合并**：写入仍是整包文档 + 全量替换表。真正的按条 UPDATE
   属于下一阶段（需要把 overlay 的写入口改成调用条级 API），不在本次范围。
+- **写入口没有绕过同步**：overlay 侧 5 个写路由（含并发写收敛后的
+  `video-library-store`）都走 `commitFile → PUT /api/storage`，即都会触发
+  `syncVideoCatalogSafely`。新增写入口时必须同样走 `commitFile`，不要直连数据库。
 
 ## 6. 排障
 

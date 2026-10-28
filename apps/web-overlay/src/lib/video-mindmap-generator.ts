@@ -1,4 +1,4 @@
-import type { VideoChapter } from '@/types/navigation'
+import { chapterStartSec, type VideoChapter } from '@/types/navigation'
 
 export interface MindMapNode {
   id: string
@@ -55,7 +55,8 @@ export function generateVideoMindMap(params: {
       const node: MindMapNode = {
         id: `node-${videoId}-${idx + 1}`,
         title: ch.title,
-        timeSec: ch.startTime,
+        // 两套字段并存（见 VideoChapter）：统一走 chapterStartSec，timeSec 优先
+        timeSec: chapterStartSec(ch),
         type: ch.codeSnippet ? 'action' : 'concept',
         children: [],
       }
@@ -64,7 +65,7 @@ export function generateVideoMindMap(params: {
         node.children.push({
           id: `node-${videoId}-${idx + 1}-code`,
           title: `代码实现 (${ch.codeLanguage || 'code'})`,
-          timeSec: ch.startTime,
+          timeSec: chapterStartSec(ch),
           type: 'action',
           children: [],
         })

@@ -131,7 +131,9 @@ export function extractCodeMilestones(
     const ext = lang === 'typescript' ? 'ts' : lang === 'python' ? 'py' : lang === 'yaml' ? 'yaml' : 'sh'
 
     const milestone: VideoCodeMilestone = {
-      id: ch.id || `ms-${i + 1}-${ch.startTime}`,
+      // 无 id 的章节：兜底 id 也要用归一后的秒，否则只有 timeSec 的章节会拿到
+      // `ms-1-undefined`，多次生成时对不上、diff 视图的 key 会互相撞
+      id: ch.id || `ms-${i + 1}-${chapterStartSec(ch)}`,
       // startTime / timeSec 两套字段并存（见 VideoChapter），统一走 chapterStartSec
       timeSec: chapterStartSec(ch),
       title: ch.title,

@@ -191,6 +191,24 @@ jobs:
       # 也能预渲染 /sites」：静态渲染链（根布局 metadataBase + 站点目录）一旦把
       # siteOrigin() 的 headers() 兜底放回来，/sites 退化成 ƒ，这里立刻红灯。
       - run: node scripts/check-isr-routes.mjs
+      # 首屏预算账（只读）：把 check-bundle-budget --report 的三类发现 + 产物出处写成一份
+      # 跨轮可对比的账。为什么门禁之外还要它：门禁只答「超没超」，不答「哪几条路由该补
+      # 专属预算、哪几条其实可以下调」——那 15+58 条此前只活在本地一次 --report 的 stdout 里。
+      # `if: always()` 是必须的：预算门禁红灯的时候正是最需要这份账的时候（超了哪几条、
+      # 差多少、产物是不是过期）。账自己不判定，数字全部来自 --report --json，
+      # 所以不会出现第二套预算口径。
+      - name: 首屏预算账（Step Summary + artifact）
+        if: always()
+        run: node scripts/bundle-budget-summary.mjs --out-json "$RUNNER_TEMP/bundle-budget-report.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: bundle-budget-report
+          path: ${{ runner.temp }}/bundle-budget-report.json
+          # 这里必须是 error，不是 warn：本仓 junit 那几步用的是 warn，实测最近 3 个 run
+          # 的 artifact 总数都是 0——「上传步骤绿灯、实际什么都没传」正是这种账最坏的失效方式。
+          if-no-files-found: error
+          retention-days: 30
 
   # --live 抽查此前只存在于 seo-audit-prod（workflow_dispatch + 需要仓库变量
   # NAVHUB_SITE_URL），也就是**每个 PR 都没跑过**：ISR 快照「跑起来之后」是不是

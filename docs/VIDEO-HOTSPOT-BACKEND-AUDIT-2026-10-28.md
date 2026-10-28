@@ -1901,3 +1901,65 @@ sites_url_uniq_v2 的「先建后删」）**不可能单独切出来而不重写
 
 关闭第二项需要的三处改动（`submissions.ts` 改 admin、白名单清空、归属表建表）
 全部落在 §27.3 那一批里，因此**只能以整批或作者提交的方式关闭**，没有第三条路。
+
+---
+
+## 28. §21 收口：用「依赖闭包」证明一个 12 文件的提交是完整的（22:10）
+
+§27.3 的结论是「整批内聚、最小切分不存在」。这个结论一半对：**按文件切分不可能**，
+但**按依赖闭包切分可以**。区别在于判据不是「这批改了哪些文件」，而是
+「HEAD 缺了哪些符号」。
+
+### 28.1 闭包是怎么算出来的
+
+写了个一次性脚本（未入库）做三件事，跑完即可判定能不能提交：
+
+1. 从候选提交集出发，沿**相对 import** 广度遍历，解析到实际的 `.ts` 文件；
+2. 对每个依赖：在 HEAD 里就用 `git show HEAD:<path>` 取原文，不在就要求它必须在集合内；
+3. 对**脏依赖**（HEAD 有、工作区又改过）不下「必须纳入」的结论，而是逐个核对本次
+   代码用到的符号在 HEAD 版本里是否已存在——存在就说明那份脏改动与本提交无关。
+
+第一次跑出来 8 条告警，全是 `repository.ts` 的下游（`sql-in` / `sites` / `events` /
+`jobs` / `io` / `settings` / `user-data` / `config`）。逐符号核对后只剩一个真缺口：
+`sql-in.ts` 的 `collectionInPredicate` 是新增的。于是提交集从 11 个变成 12 个。
+
+**这条方法的可复用之处**：它把「能不能提交」变成一个可执行判定，而不是靠通读 diff
+凭感觉。8 条告警里 7 条是噪音、1 条是真缺口——这正好说明凭感觉会两头都错：
+要么因为噪音放弃提交，要么漏掉那一个缺口。
+
+### 28.2 提交内容（`f9a7f801`，12 文件 / +1046 −47）
+
+| 类别 | 文件 |
+|---|---|
+| P0 修复 | `apps/api/src/routes/submissions.ts`（`scope:"admin"` + 归属表 + 审批通知）、`packages/core/src/route-policy.ts`（例外清单清空）、`apps/api/test/route-policy.test.ts`（空清单断言 + 回归锁） |
+| 通知数据层 | `apps/api/src/notifications.ts`（新，2 行常量）、`packages/store/src/repository/notifications.ts`、`repository.ts` 的三个方法 |
+| 建表与登记 | `packages/store/src/migrate.ts`（outbox / submission_owners）、`repository/identity.ts`、`data-inventory.ts`（那 16 行） |
+| 顺带修复 | `migrateWorkspaceBlobs`（DELETE 加 EXISTS 守卫）、`sites_url_uniq_v2`（先建后删）、`migration_failures` 台账、`sql-in.ts` 的 `collectionInPredicate` |
+| 新测试 | `notification-outbox.test.ts`（21 例）、`migration-safety.test.ts` |
+
+### 28.3 提交后 HEAD 的四条事实（逐条 `git show` 核对）
+
+| 判据 | 结果 |
+|---|---|
+| `PERSONAL_TOKEN_WRITE_ROUTES` | `[]`（空清单） |
+| `PATCH /api/submissions/:number` | `scope: "admin"` |
+| `migrate.ts` 里的 outbox 建表 | 命中 3 处（表 + 两个索引） |
+| `data-inventory.ts` 的登记项 | 2 条（`submissionOwners` / `notificationOutbox`） |
+
+测试：`route-policy` 16 例 + `personal-token-boundary` 4 例全绿；
+store 侧 `data-inventory` / `notification-outbox` / `notification-outbox-user-data` /
+`migration-safety` 合计 29 例全绿。
+
+### 28.4 仍未纳入的（不是遗漏，是切片边界）
+
+`apps/api/src/jobs.ts`（调度器重构）、`routes/jobs.ts`（作业载荷 schema + 投递查询）、
+`routes/me.ts`、`routes/plugins.ts`、`ai-plugin-auditor.ts`（自动审核通知）——它们与
+保留策略、作业载荷校验、插件治理交织，属于另外三条切片。**HEAD 不缺它们也能编译、
+也能跑**（HEAD 版本的这些文件本来就不 import 新常量），所以才敢切。
+
+### 28.5 剩下的一条产品决策（不是缺陷）
+
+`scope:"admin"` 只保证「必须是管理员」，不保证「审批人 ≠ 投稿人」——管理员自己投稿
+再自己批仍然走得通。要落双人原则需在 PATCH 里比较 `submission_owners.identity` 与
+`req.auth.actor`，相同则 403。**单人运营的实例禁止自批等于无法审核**，所以这属于
+产品取舍，留作决策项（§21.3 已记录）。

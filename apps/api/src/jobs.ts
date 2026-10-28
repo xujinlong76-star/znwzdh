@@ -36,6 +36,7 @@ import {
 import type { AppContext } from "./context.ts";
 import { indexSite, indexSitesBatch } from "./index-site.ts";
 import { indexPluginsBatch, indexItemFromManifest } from "./index-plugin.ts";
+import { ADMIN_NOTIFICATION_IDENTITY } from "./notifications.ts";
 
 /** 仓储返回的站点行类型：显式取一次，避免重构期返回类型退化时回调参数变成隐式 any */
 type SiteRow = Awaited<ReturnType<AppContext["repo"]["listSites"]>>[number];
@@ -81,7 +82,7 @@ export interface DataRetentionPayload {
   maxGroups?: number;
   /** cleanup：单表最多扫描多少行后收尾，默认 200000（别一次扫全表） */
   maxScan?: number;
-  /** 内部遥测（health_checks / llm_usage）保留天数，默认 90。不受 apply 约束。 */
+  /** 内部遥测（health_checks / llm_usage）保留天数，默认 90；dry-run 只统计命中量。 */
   telemetryDays?: number;
 }
 
@@ -423,7 +424,9 @@ export class JobRunner {
     this.enableCron = true;
     // 引入 ±20% 抖动（jitter）：多实例部署时错开唤醒峰值，避免同时抢锁打满 DB
     const jitterMs = Math.max(200, Math.round(this.intervalMs * (0.8 + Math.random() * 0.4)));
-    this.timer = setInterval(() => void this.tick(), jitterMs);
+    this.timer = setInterval(() => {
+      void this.tick().catch(() => console.error("[navhub-job] 调度或通知持久化失败，将在后续周期恢复"));
+    }, jitterMs);
     // 不阻塞启动：首个周期也交给定时器
     if (typeof this.timer.unref === "function") this.timer.unref();
   }
@@ -470,6 +473,7 @@ export class JobRunner {
         if (typeof this.ctx.repo.reapStaleJobs === "function") {
           await this.ctx.repo.reapStaleJobs().catch(() => undefined);
         }
+        await this.relayNotificationsSafely();
         for (let i = 0; i < this.maxPerTick; i++) {
           // 心跳已发现锁丢失：停止认领，避免与合法新持有者双跑
           if (this.lockLost || !this.lockHeld) break;
@@ -477,6 +481,7 @@ export class JobRunner {
           if (!job) break;
           await this.process(job.kind as JobKind, job.payload, job.id, job.attempts);
           processed++;
+          await this.relayNotificationsSafely();
           if (this.lockLost) break;
         }
       } finally {
@@ -486,6 +491,15 @@ export class JobRunner {
       return { processed, skipped: false };
     } finally {
       this.ticking = false;
+    }
+  }
+
+  /** 通知投递失败不应中断本轮任务消费：outbox 会在下一轮 tick 自动重试。 */
+  private async relayNotificationsSafely(): Promise<void> {
+    try {
+      await this.ctx.repo.relayNotifications();
+    } catch (err) {
+      console.error("[navhub-job] 通知投递失败，将在后续周期重试:", err);
     }
   }
 
@@ -705,10 +719,25 @@ export class JobRunner {
           throw new Error("未知任务类型: " + kind);
       }
     })();
+    let executionCompleted = false;
     try {
       await runWithBudget(execution, budgetMs, kind);
+      executionCompleted = true;
       const durationMs = Date.now() - attemptStartedAt;
-      const applied = await this.ctx.repo.completeJob(jobId, null, { durationMs });
+      const applied = await this.ctx.repo.withTransaction(async () => {
+        const changed = await this.ctx.repo.completeJob(jobId, null, { durationMs });
+        if (changed && kind === "data_retention") {
+          const apply = (payload as DataRetentionPayload | null)?.apply === true;
+          await this.ctx.repo.emitNotification({
+            identity: ADMIN_NOTIFICATION_IDENTITY,
+            idempotencyKey: `job:${jobId}:retention_completed`,
+            kind: "retention_completed",
+            title: apply ? "数据保留执行完成" : "数据保留预演完成（未删除数据）",
+            body: `任务 ${jobId} 已完成。详细统计请查看任务与数据保留记录。`,
+          });
+        }
+        return changed;
+      });
       if (applied) {
         /**
          * 超过 10 秒就留一行日志。
@@ -731,6 +760,8 @@ export class JobRunner {
         console.warn("[navhub-job] 完成回写被忽略（任务已不在 running）", { jobId, kind });
       }
     } catch (err) {
+      // 终态/通知持久化故障不能伪装成任务执行失败。
+      if (executionCompleted) throw err;
       const message = err instanceof Error ? err.message : String(err);
       /**
        * 超时与普通失败分开处理：
@@ -745,9 +776,19 @@ export class JobRunner {
       if (durationMs >= 10_000 || timedOut) {
         console.warn("[navhub-job] 长任务失败", { jobId, kind, durationMs, error: message, timedOut });
       }
-      const applied = await this.ctx.repo
-        .completeJob(jobId, message, { retryAt, exhausted, durationMs })
-        .catch(() => false);
+      const applied = await this.ctx.repo.withTransaction(async () => {
+        const changed = await this.ctx.repo.completeJob(jobId, message, { retryAt, exhausted, durationMs });
+        if (changed && exhausted) {
+          await this.ctx.repo.emitNotification({
+            identity: ADMIN_NOTIFICATION_IDENTITY,
+            idempotencyKey: `job:${jobId}:failed`,
+            kind: kind === "backup_restore" ? "backup_failed" : "job_failed",
+            title: kind === "backup_restore" ? "备份恢复任务失败" : `自动化任务失败：${kind}`,
+            body: `任务 ${jobId} 已停止自动重试。请到任务管理查看详情并决定是否重试。`,
+          });
+        }
+        return changed;
+      });
       if (!applied) {
         console.warn("[navhub-job] 失败回写被忽略（任务已不在 running）", { jobId, kind, error: message });
         return;
@@ -1557,8 +1598,9 @@ export class JobRunner {
         const lastAt = Number(lastExport?.m ?? 0);
         if (lastAt > now3 - THIRTY_DAYS) continue;
         if (await this.ctx.repo.hasRecentNotification(identity, "backup_due", SEVEN_DAYS)) continue;
-        await this.ctx.repo.createNotification({
+        await this.ctx.repo.emitNotification({
           identity,
+          idempotencyKey: `backup_due:${Math.floor(now3 / SEVEN_DAYS)}`,
           kind: "backup_due",
           title: "该备份数据了",
           body: "你的收藏已经超过 30 天没有导出备份。到「用户中心 → 数据与隐私」一键导出 JSON 或加密金库，防患于未然。",
@@ -1595,95 +1637,12 @@ export class JobRunner {
       );
     }
     const apply = payload.apply === true;
-    const adapter = this.dataRetentionAdapter();
-    let summary: Record<string, unknown>;
-
-    if (mode === "rollup") {
-      const res = await runRollup(adapter, {
-        targets: DEFAULT_ROLLUP_TARGETS.map((t) => ({ spec: t.spec, keepDays: t.keepDays })),
-        // 建聚合表时按方言分叉（AUTOINCREMENT vs BIGSERIAL）：这里的词汇是 "postgres"，
-        // 与存储层的 "pg" 不同名。漏传即默认 SQLite DDL，PG 上建表直接报错、聚合永不生效。
-        dialect: this.ctx.db.dialect === "pg" ? "postgres" : "sqlite",
-        maxDaysPerRun: payload.maxDays ?? 30,
-        maxGroupsPerDay: payload.maxGroups ?? 5000,
-        dryRun: !apply,
-      });
-      summary = {
-        mode,
-        apply,
-        days: res.tables.map((t) => t.days),
-        groups: res.tables.reduce((s, t) => s + t.groups, 0),
-        rows: res.tables.reduce((s, t) => s + t.rows, 0),
-        deleted: res.tables.reduce((s, t) => s + t.deleted, 0),
-        skippedDays: res.tables.reduce((s, t) => s + t.skippedDays, 0),
-        truncated: res.tables.map((t) => t.truncated),
-      };
-    } else {
-      const res = await runRetention(adapter, {
-        targets: DEFAULT_RETENTION_TARGETS,
-        // 任务里限量扫描：dry-run 一次扫全表会把连接占住，也看不出趋势
-        maxScan: payload.maxScan ?? 200_000,
-        dryRun: true,
-      });
-      summary = {
-        mode,
-        apply: false,
-        reason: "cleanup 在任务里只做 dry-run，真正删除请用 CLI",
-        scanned: res.tables.reduce((s, t) => s + t.scanned, 0),
-      };
-    }
-
-    // 内部遥测按固定 TTL 自动清理：巡检历史每站每天一行、LLM 用量每次调用一行，
-    // 都是只增不删的机器数据，且不承载用户内容 —— 不需要像 events/audit 那样
-    // 先看 dry-run 再人工确认。用户侧数据（搜索历史/离线归档）仍只走 CLI。
-    const telemetryDays = Math.max(1, payload.telemetryDays ?? 90);
-    const since = Date.now() - telemetryDays * 86_400_000;
-    summary.telemetry = {
-      days: telemetryDays,
-      healthChecks: await this.ctx.repo.pruneHealthChecks(since),
-      llmUsage: await this.ctx.repo.pruneLlmUsage(since),
-    };
-
-    // T11 保留期自动化：只执行**用户显式设置**的历史保留期（30/90/365 天）。
-    // 默认 180 天的全局口径不变——仍走 CLI / cleanup dry-run；这里动手的每一行
-    // 都对应用户在 /me/settings 里亲手选过的周期（设置页的「自动保留」承诺由此兑现）。
-    try {
-      const custom = await this.ctx.repo.listCustomHistoryRetention();
-      let usersAffected = 0;
-      let rowsDeleted = 0;
-      const now2 = Date.now();
-      for (const { identity, retentionDays } of custom) {
-        const cutoff = now2 - retentionDays * 86_400_000;
-        const deleted = await this.ctx.repo.deleteSearchHistoryBefore(identity, cutoff);
-        if (deleted > 0) {
-          usersAffected += 1;
-          rowsDeleted += deleted;
-          await this.ctx.repo.audit({
-            actor: "system:data_retention",
-            actorKind: "system",
-            action: "user.search_history_expired",
-            target: identity,
-            diff: { retentionDays, deleted },
-          }).catch(() => undefined);
-        }
-      }
-      summary.userRetention = { usersAffected, rowsDeleted };
-    } catch (err) {
-      // 保留期执行失败不阻断整轮任务：汇总里如实记录，下一轮再试
-      summary.userRetention = { error: String((err as Error)?.message ?? "unknown") };
-    }
-
-    // 留一条行为事件：运维在事件流里能看到"这轮会动多少行 / 动了多少行"
+    const summary = await runRetentionMainPhase(this.ctx, payload, apply);
+    const sideEffects = apply
+      ? await applyRetentionSideEffects(this.ctx, payload)
+      : await previewRetentionSideEffects(this.ctx, payload);
+    Object.assign(summary, sideEffects);
     await this.ctx.repo.recordEvent("data_retention", { meta: summary }).catch(() => undefined);
-  }
-
-  /**
-   * 用仓储层现有通道拼一个 {@link RetentionAdapter}：
-   * 占位符统一 `?`（PG 侧由 `toPgSql` 转换），写操作走 `runCount` 的同等实现，
-   * 两种方言都能拿到受影响行数 —— 不为它在 Repository 上加新方法。
-   */
-  private dataRetentionAdapter(): RetentionAdapter {
-    return createRetentionAdapter(this.ctx);
   }
 
   /** 分类与标签体系智能治理审计 */
@@ -1755,4 +1714,146 @@ function createRetentionAdapter(ctx: AppContext): RetentionAdapter {
       return Number(info?.changes ?? 0);
     },
   };
+}
+
+async function runRetentionMainPhase(
+  ctx: AppContext,
+  payload: DataRetentionPayload,
+  apply: boolean,
+): Promise<Record<string, unknown>> {
+  const adapter = createRetentionAdapter(ctx);
+  const mode = payload.mode === "cleanup" ? "cleanup" : "rollup";
+  if (mode === "rollup") {
+    const res = await runRollup(adapter, {
+      targets: DEFAULT_ROLLUP_TARGETS.map((target) => ({ spec: target.spec, keepDays: target.keepDays })),
+      dialect: ctx.db.dialect === "pg" ? "postgres" : "sqlite",
+      maxDaysPerRun: payload.maxDays ?? 30,
+      maxGroupsPerDay: payload.maxGroups ?? 5000,
+      dryRun: !apply,
+    });
+    return {
+      mode,
+      apply,
+      days: res.tables.map((table) => table.days),
+      groups: res.tables.reduce((sum, table) => sum + table.groups, 0),
+      rows: res.tables.reduce((sum, table) => sum + table.rows, 0),
+      deleted: res.tables.reduce((sum, table) => sum + table.deleted, 0),
+      skippedDays: res.tables.reduce((sum, table) => sum + table.skippedDays, 0),
+      truncated: res.tables.map((table) => table.truncated),
+    };
+  }
+
+  const res = await runRetention(adapter, {
+    targets: DEFAULT_RETENTION_TARGETS,
+    maxScan: payload.maxScan ?? 200_000,
+    dryRun: true,
+  });
+  return {
+    mode,
+    apply: false,
+    reason: "cleanup 在任务里只做 dry-run，真正删除请用 CLI",
+    scanned: res.tables.reduce((sum, table) => sum + table.scanned, 0),
+    truncated: res.tables.map((table) => table.truncated),
+  };
+}
+
+async function previewRetentionSideEffects(
+  ctx: AppContext,
+  payload: DataRetentionPayload,
+): Promise<Record<string, unknown>> {
+  const adapter = createRetentionAdapter(ctx);
+  const telemetryDays = Math.max(1, payload.telemetryDays ?? 90);
+  const since = Date.now() - telemetryDays * 86_400_000;
+  const health = await adapter.select(
+    `SELECT COUNT(*) AS count FROM health_checks WHERE checked_at < ${adapter.placeholder(1)}`,
+    [since],
+  );
+  const usage = await adapter.select(
+    `SELECT COUNT(*) AS count FROM llm_usage WHERE created_at < ${adapter.placeholder(1)}`,
+    [since],
+  );
+
+  let usersAffected = 0;
+  let rowsDeleted = 0;
+  try {
+    const custom = await ctx.repo.listCustomHistoryRetention();
+    const now = Date.now();
+    for (const { identity, retentionDays } of custom) {
+      const cutoff = now - retentionDays * 86_400_000;
+      const rows = await adapter.select(
+        `SELECT COUNT(*) AS count FROM search_history WHERE user_id = ${adapter.placeholder(1)} AND created_at < ${adapter.placeholder(2)}`,
+        [identity, cutoff],
+      );
+      const count = Number(rows[0]?.count ?? 0);
+      if (count > 0) {
+        usersAffected += 1;
+        rowsDeleted += count;
+      }
+    }
+    return {
+      telemetry: {
+        days: telemetryDays,
+        healthChecks: Number(health[0]?.count ?? 0),
+        llmUsage: Number(usage[0]?.count ?? 0),
+      },
+      userRetention: { usersAffected, rowsDeleted },
+    };
+  } catch (err) {
+    return {
+      telemetry: {
+        days: telemetryDays,
+        healthChecks: Number(health[0]?.count ?? 0),
+        llmUsage: Number(usage[0]?.count ?? 0),
+      },
+      userRetention: { error: String((err as Error)?.message ?? "unknown") },
+    };
+  }
+}
+
+async function applyRetentionSideEffects(
+  ctx: AppContext,
+  payload: DataRetentionPayload,
+): Promise<Record<string, unknown>> {
+  const telemetryDays = Math.max(1, payload.telemetryDays ?? 90);
+  const since = Date.now() - telemetryDays * 86_400_000;
+  const telemetry = {
+    days: telemetryDays,
+    healthChecks: await ctx.repo.pruneHealthChecks(since),
+    llmUsage: await ctx.repo.pruneLlmUsage(since),
+  };
+
+  try {
+    const custom = await ctx.repo.listCustomHistoryRetention();
+    let usersAffected = 0;
+    let rowsDeleted = 0;
+    const now = Date.now();
+    for (const { identity, retentionDays } of custom) {
+      const cutoff = now - retentionDays * 86_400_000;
+      const deleted = await ctx.repo.deleteSearchHistoryBefore(identity, cutoff);
+      if (deleted > 0) {
+        usersAffected += 1;
+        rowsDeleted += deleted;
+        await ctx.repo.audit({
+          actor: "system:data_retention",
+          actorKind: "system",
+          action: "user.search_history_expired",
+          target: identity,
+          diff: { retentionDays, deleted },
+        }).catch(() => undefined);
+      }
+    }
+    return { telemetry, userRetention: { usersAffected, rowsDeleted } };
+  } catch (err) {
+    return { telemetry, userRetention: { error: String((err as Error)?.message ?? "unknown") } };
+  }
+}
+
+export async function previewDataRetention(
+  ctx: AppContext,
+  payload: DataRetentionPayload = {},
+): Promise<Record<string, unknown>> {
+  const preview = { ...payload, apply: false };
+  const summary = await runRetentionMainPhase(ctx, preview, false);
+  Object.assign(summary, await previewRetentionSideEffects(ctx, preview));
+  return summary;
 }

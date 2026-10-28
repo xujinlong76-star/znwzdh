@@ -5,10 +5,11 @@
  */
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { RunJobInput } from "@navhub/core";
+import { JobPayloadSchemas, RunJobInput, validateJobPayload } from "@navhub/core";
 
 import type { AppContext } from "../context.ts";
-import { jobEventBus, type JobEventPayload } from "../jobs.ts";
+import { ADMIN_NOTIFICATION_IDENTITY } from "../notifications.ts";
+import { jobEventBus, previewDataRetention, type DataRetentionPayload, type JobEventPayload } from "../jobs.ts";
 import {
   badRequest,
   created,
@@ -19,6 +20,33 @@ import {
 
 export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   const ctx = opts.ctx;
+
+  app.get("/api/admin/notifications/deliveries", { config: { scope: "admin" } }, async (req, reply) => {
+    const parsed = z.object({
+      status: z.enum(["pending", "delivered", "deferred", "failed"]).optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(50),
+      offset: z.coerce.number().int().min(0).max(100_000).default(0),
+    }).safeParse(req.query ?? {});
+    if (!parsed.success) return badRequest(reply, "投递状态筛选无效", parsed.error.issues);
+    reply.header("cache-control", "private, no-store");
+    const result = await ctx.repo.listNotificationDeliveries(parsed.data);
+    return { ...result, nextOffset: parsed.data.offset + result.items.length };
+  });
+
+  app.get("/api/admin/notifications", { config: { scope: "admin" } }, async (req, reply) => {
+    const { limit, offset } = parsePagination(req.query, { defaultLimit: 20, maxLimit: 50 });
+    const [page, unread] = await Promise.all([
+      ctx.repo.listNotificationsPage(ADMIN_NOTIFICATION_IDENTITY, limit, offset, false),
+      ctx.repo.countUnreadNotifications(ADMIN_NOTIFICATION_IDENTITY),
+    ]);
+    reply.header("cache-control", "private, no-store");
+    return { ...page, unread, nextOffset: offset + page.items.length };
+  });
+
+  app.post("/api/admin/notifications/read-all", { config: { scope: "admin" } }, async () => ({
+    ok: true,
+    marked: await ctx.repo.markAllNotificationsRead(ADMIN_NOTIFICATION_IDENTITY),
+  }));
 
   /* ------------------------------------------------------------------ *
    * 任务队列查询与入队
@@ -35,8 +63,12 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
       if (!parsed.success) {
         return badRequest(reply, "参数无效", parsed.error.issues);
       }
+      const payload = validateJobPayload(parsed.data.kind, parsed.data.payload);
+      if (!payload.ok) {
+        return badRequest(reply, "任务参数无效", payload.issues);
+      }
 
-      const id = await ctx.repo.enqueueJob(parsed.data.kind, parsed.data.payload ?? {});
+      const id = await ctx.repo.enqueueJob(parsed.data.kind, payload.payload);
       await ctx.repo.audit({
         ip: req.ip,
         actor: req.auth.actor,
@@ -48,6 +80,26 @@ export const jobRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, op
 
       return created(reply, { id, kind: parsed.data.kind });
     }
+  );
+
+  app.post(
+    "/api/jobs/retention/preview",
+    { config: { rateLimit: { max: 10, timeWindow: "1 minute" }, scope: "admin" } },
+    async (req, reply) => {
+      const parsed = JobPayloadSchemas.data_retention.safeParse(req.body ?? {});
+      if (!parsed.success) return badRequest(reply, "保留策略参数无效", parsed.error.issues);
+      const payload: DataRetentionPayload = { ...parsed.data, apply: false };
+      const summary = await previewDataRetention(ctx, payload);
+      await ctx.repo.audit({
+        ip: req.ip,
+        actor: req.auth.actor,
+        actorKind: req.auth.kind,
+        action: "job.retention_preview",
+        target: "data_retention",
+        diff: { mode: payload.mode ?? "rollup", apply: false },
+      });
+      return summary;
+    },
   );
 
   /**

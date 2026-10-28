@@ -87,7 +87,9 @@ describe('sync-health-card 空态引导', () => {
   })
 
   it('引导是键盘可达的链接，带 focus-visible 环与箭头指示', () => {
-    expect(src).toMatch(/<Link\s+href=\{next\.href\}/)
+    // 外链/配置来源的地址现在过安全闸：`safeHref(next.href, '/')`。
+    // 守卫要守的是「用 Link 且 href 经过闸门」，不是某个字面量。
+    expect(src).toMatch(/<Link\s+href=\{safeHref\(next\.href/)
     expect(src).toContain('focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring')
     expect(src).toContain('ArrowRight')
     // 色号沿用卡片既有层级（muted-foreground 在亮色下约 4.6:1，达 AA）
@@ -95,7 +97,7 @@ describe('sync-health-card 空态引导', () => {
   })
 
   it('引导命中区不小于 24×24 CSS px（WCAG 2.5.8），且不靠负 margin 达成', () => {
-    const m = /<Link\s+href=\{next\.href\}\s+className="([^"]+)"/.exec(src)
+    const m = /<Link\s+href=\{safeHref\(next\.href,\s*\'\/\'\)\}\s+className="([^"]+)"/.exec(src)
     expect(m, '找不到引导 Link 的 className').toBeTruthy()
     const classes = m![1].split(/\s+/)
     // Tailwind min-h-6 = 1.5rem = 24px；11px 文字自身约 13px 高，不撑不达下限

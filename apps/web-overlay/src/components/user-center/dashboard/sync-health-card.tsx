@@ -14,6 +14,7 @@
  * 约 13px 高，靠 min-h 撑开而不用负 margin 叠压邻居——空态行因此略高于实心行。
  */
 import Link from 'next/link'
+import { safeHref } from '@/lib/safe-url'
 import { Button } from '@/components/ui/button'
 import { Activity, ArrowRight, Bot, CheckCircle2, CircleDashed, ShieldCheck, Sparkles, UserCheck } from 'lucide-react'
 import type { Overview } from '@/lib/me-types'
@@ -57,8 +58,9 @@ function Row({
         </span>
         {next && !ok ? (
           <span className="flex min-w-0 pl-3.5">
+            {/* 下一跳地址可能来自配置（外部可控）：站内相对路径原样放行，其余过闸 */}
             <Link
-              href={next.href}
+              href={safeHref(next.href, '/')}
               className="inline-flex min-h-6 items-center gap-1 rounded-sm text-[11px] text-muted-foreground underline decoration-border underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {next.label}

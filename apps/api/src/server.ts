@@ -20,6 +20,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { createHash } from "node:crypto";
+import { evaluateInstanceWrite, type AuthzRequirement } from "@navhub/core";
 import type { AppContext } from "./context.ts";
 import { assertIdentitySecurity } from "./security-readiness.ts";
 import { INTERNAL_TOKEN_HEADER, isInternalTraffic } from "./internal-traffic.ts";
@@ -94,6 +95,13 @@ declare module "fastify" {
  */
 const AUTH_FAIL_AUDIT_THROTTLE_MS = 10_000;
 const AUTH_FAIL_AUDIT_AT = new Map<string, number>();
+
+/**
+ * 个人令牌越权的统一拒绝文案。
+ * 开放模式与鉴权模式两条分支共用一份，避免文案/语义漂移。
+ */
+const PERSONAL_WRITE_DENIED_MESSAGE =
+  "个人令牌只能写自己的用户域数据（收藏/历史/画像/金库/工作区）；实例级写操作需要实例令牌或管理员凭据";
 
 export async function buildServer(ctx: AppContext) {
   // 生产 + 鉴权 + 无身份签名 = 任意持票人可冒充其他 userId；在装配路由前直接拒绝启动。
@@ -458,6 +466,27 @@ export async function buildServer(ctx: AppContext) {
           auth.tokenId = openRecord.id;
           auth.scopes = parseScopes(Array.isArray(openRecord.scopes) ? openRecord.scopes.join(",") : String(openRecord.scopes ?? ""));
           auth.ownerIdentity = openRecord.ownerIdentity ?? null;
+          // 与鉴权模式同一条边界：个人令牌的 write 不得触达实例写面。
+          // 开放模式没有 scope 门槛，如果不在这里拦，个人令牌反而比鉴权模式更宽松。
+          const openDecision = evaluateInstanceWrite({
+            ownerScoped: Boolean(auth.ownerIdentity),
+            required: required as AuthzRequirement,
+            path: req.url,
+          });
+          if (!openDecision.allowed) {
+            void ctx.repo
+              .audit({
+                ip: req.ip,
+                actor: auth.actor,
+                actorKind: "user",
+                action: "auth.personal_token_instance_write",
+                target: openRecord.id,
+                diff: { path: req.url, required },
+              })
+              .catch(() => undefined);
+            reply.code(403).send({ error: PERSONAL_WRITE_DENIED_MESSAGE });
+            return;
+          }
           void ctx.repo.touchApiToken(openRecord.id).catch(() => undefined);
         }
       }
@@ -549,6 +578,32 @@ export async function buildServer(ctx: AppContext) {
     auth.scopes = tokenScopes;
     // 用户级令牌（T20）：owner 非空 = 个人令牌，用户域路由把它当作该用户的身份
     auth.ownerIdentity = record.ownerIdentity ?? null;
+
+    /**
+     * 个人令牌的 write 只覆盖用户域。
+     *
+     * `scopeSatisfies` 是一维等级：个人令牌拿到 write 后，同样会通过
+     * `POST /api/sites`、`PATCH /api/categories/:id`、`POST /api/jobs` 这些
+     * **实例级**写面的门槛——这与签发时承诺的「写自己的用户域数据」不符。
+     * 用户域路由的 scope 是 public（真正的闸门是 handler 里的
+     * `userDomainWriteAllowed`），因此这里只需拦住「声明为 write 的实例路由」。
+     */
+    const instanceWrite = evaluateInstanceWrite({
+      ownerScoped: Boolean(auth.ownerIdentity),
+      required: required as AuthzRequirement,
+      path: req.url,
+    });
+    if (!instanceWrite.allowed) {
+      void auditAuthFailure(
+        "auth.personal_token_instance_write",
+        "个人令牌不得触达实例级写面：" + req.url,
+        record.id,
+      );
+      return reply.code(403).send({
+        error: PERSONAL_WRITE_DENIED_MESSAGE,
+      });
+    }
+
     void ctx.repo.touchApiToken(record.id).catch(() => undefined);
   });
 

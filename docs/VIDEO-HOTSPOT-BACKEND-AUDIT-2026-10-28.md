@@ -1112,13 +1112,9 @@ writeVideosData → syncVideoCatalogSafely`。**没有一条路径绕开它**，
 | 2 | `videos.json` 的内联 `replacementHistory` | 上限 100 | 旧客户端 / 采集器的读-改-写 |
 | 3（镜像） | 关系表 `video_replacements` | 取决于同步时的内联数组（≤100） | 仅 SQL 查询与 `db` 模式的文档重建 |
 
-注意第 3 行：`dual` / `db` 模式的同步源是内联数组，所以**表里最多 100 条**，
-而独立文件才是全量。`db` 模式重建出来的文档因此会带上「表里的那 100 条」而不是
-全量 —— 由于 UI 走的是第 1 顺位，这不影响功能；但**不要用 `db` 模式重建的文档
-去做历史审计**。已写进 `docs/VIDEO-CATALOG-MIGRATION.md` §5。
-
-真正的收敛（让表也吃全量）需要同步源改成独立文件，属于下一轮；当前 0 条记录，
-没有实际影响。
+第 3 行当时是个缺陷：`dual` / `db` 的同步源是内联数组，所以表里最多 100 条，
+而独立文件才是全量 —— 表作为「可 SQL 查询的镜像」等于残废。
+**已在 §19 修掉**：同步源改为外置文档，表持有全量。
 
 ### 17.4 补回 P2-30 的守卫
 
@@ -1224,3 +1220,58 @@ gate_exit=1
 | commit | 内容 |
 |---|---|
 | 见 §18 对应提交 | `scripts/typecheck-video-scope.mjs` 自动发现 + `ci.yml` 挂载 |
+
+---
+
+## 19. 收尾 C6：让关系表吃全量替换审计
+
+### 19.1 先复述问题
+
+§17.3 记录的那个缺陷：`dual` / `db` 模式下，`video_replacements` 表的同步源是
+`videos.json` 的**内联数组**，而内联数组有 100 条上限（`capReplacementHistory`）。
+结果是表里永远只有最近 100 条，而权威副本
+`video-replacements.json` 是全量的 —— 表这个「可 SQL 查询的镜像」名不副实。
+
+### 19.2 改法：每个文档同步自己的领域
+
+- **新增 store 原语** `replaceVideoReplacements()`：全量替换（事务内 delete + insert，
+  按 id 去重保留第一条）。为什么不能用现成的 `logVideoReplacement()` 逐条 upsert ——
+  被外部删掉的记录会永远留在表里，表与权威副本悄悄分叉。
+- **写入口接线**：`writeStoragePath` 增加 `video-replacements.json` 分支，
+  先写 KV 再 `syncReplacementHistorySafely()`。路径事实源只有一个
+  （`VIDEO_REPLACEMENTS_PATH`），避免 api 与 overlay 两处硬编码漂移。
+- **形状不认识时不清表**：`flattenReplacementDoc()` 返回 `null`（文档既不是数组也没有
+  `records` 数组）就跳过同步并告警。**用一个空数组去全量替换是最危险的默认行为** ——
+  上游把 `records` 改个名，审计就全没了。
+
+`videos.json` 的内联同步仍然保留（`logVideoReplacement` upsert）。两者的分工是：
+内联同步负责「只有 videos.json 时的种子数据」，外置同步负责「全量权威」。
+
+### 19.3 一个刻意保留的取舍：`db` 重建仍截断 100
+
+`db` 模式重建出来的 `videos.json` 里，`replacementHistory` 仍按
+`INLINE_REPLACEMENT_LIMIT = 100` 截断。理由：重建产物是**整包文档**，要参与每次读取，
+不能因为它而膨胀到几千条。全量请查表或走 `/api/videos/history`。
+
+于是「表是全量、文档内联是 100、重建文档也是 100」三者自洽：
+- 要审计 → 表或外置文档（全量）
+- 要渲染历史弹窗 → `/api/videos/history`（全量）
+- 要整包读视频库 → 内联 100（有界）
+
+### 19.4 测试
+
+store 侧 5 例（`video-catalog.test.ts`）：全量替换语义（未出现的被删）／幂等／
+重复 id 只留第一条／空数组清表／120 条全量写入后能全部读出。
+
+api 侧 4 例（`video-catalog-store.test.ts`）：
+- 写这份文档会把 120 条全部同步进表（内联数组只留 100 是另一层的事）
+- 文档形状不认识时不清表（宁可不同步，也不能把审计抹掉）
+- `db` 重建文档只带内联上限条数，而表里仍是 120 条
+- `json` 模式不写表（行为与改造前一致）
+
+### 19.5 提交
+
+`601bad9a` `feat(store)`：`replaceVideoReplacements` 原语 + 5 例测试。
+api 侧的接线（`storage.ts` / `video-catalog.ts` / 4 例）**暂未提交** ——
+`apps/api/test` 当前有两处与本次无关的红灯（新读路由未登记响应契约基线、
+PG advisory lock 用例），属并行会话在飞的改动。

@@ -15,7 +15,10 @@
  */
 import type { AppContext } from "./context.ts";
 import { getEnhancedSiteData, resolveSiteIcon, type SiteAction, type SiteRelation, type SiteLiveMetrics, type SiteHealth } from "@navhub/core";
-import { loadVideoCatalogFromDb, resolveVideoStoreMode, syncVideoCatalogSafely } from "./video-catalog.ts";
+import { loadVideoCatalogFromDb, resolveVideoStoreMode, syncReplacementHistorySafely, syncVideoCatalogSafely, VIDEO_REPLACEMENTS_PATH } from "./video-catalog.ts";
+
+/** 外置替换审计文档的 basename（路径事实源在 video-catalog.ts，避免两处硬编码漂移） */
+const REPLACEMENTS_BASENAME = VIDEO_REPLACEMENTS_PATH.split("/").pop()!;
 
 export const NAVIGATION_PATH = "src/navsphere/content/navigation.json";
 export const SITE_PATH = "src/navsphere/content/site.json";
@@ -431,7 +434,15 @@ export async function readSiteConfig(ctx: AppContext): Promise<Record<string, un
 }
 
 export async function writeSiteConfig(ctx: AppContext, config: Record<string, unknown>): Promise<void> {
-  await writeKv(ctx, "site-config", config);
+  await ctx.repo.withTransaction(async () => {
+    await lockBrandAssets(ctx);
+    for (const [path, references] of assetReferences(config)) {
+      if (await readKv(ctx, pathToKey(path)) === null) {
+        throw Object.assign(new Error(`引用的上传资源不存在，请重新上传：${references.join("、")}`), { statusCode: 409 });
+      }
+    }
+    await writeKv(ctx, "site-config", config);
+  });
 }
 
 /** resource-metadata.json：资源（工具/文档）元数据 */
@@ -480,7 +491,7 @@ export async function writeVideosData(
  * 注意：返回 null 表示「从未写入过」，与「写入过空对象」是不同语义 ——
  * 调用方需要据此决定是否返回默认值。
  */
-export async function readKv(ctx: AppContext, key: string): Promise<unknown> {
+export async function readKv(ctx: AppContext, key: string, strict = false): Promise<unknown> {
   const db = ctx.db;
   let payloadStr: string | undefined;
   if (db.dialect === "sqlite") {
@@ -491,10 +502,11 @@ export async function readKv(ctx: AppContext, key: string): Promise<unknown> {
     const row = res.rows[0] as { payload: string } | undefined;
     payloadStr = row?.payload;
   }
-  if (!payloadStr) return null;
+  if (payloadStr === undefined) return null;
   try {
     return JSON.parse(payloadStr);
   } catch {
+    if (strict) throw Object.assign(new Error("站点配置损坏，无法确认资源引用；已禁止清理"), { statusCode: 503 });
     return null;
   }
 }
@@ -593,7 +605,7 @@ function basename(path: string): string {
 export const ASSET_DOC_DIR = "src/navsphere/content/assets";
 
 /** 上传路由生成的资产文档名：`<kind>-<10 位内容哈希>.<位图扩展名>.json` */
-const ASSET_DOC_NAME_RE = /^(?:logo|favicon|ogImage)-[0-9a-f]{10}\.(?:png|jpe?g|webp|ico)\.json$/;
+const ASSET_DOC_NAME_RE = /^(?:logo|favicon|ogImage|appleTouchIcon|pwaIcon192|pwaIcon512|pwaMaskable512)-[0-9a-f]{10}\.(?:png|jpe?g|webp|ico)\.json$/;
 
 /** 该路径是否是「允许管理的品牌资产文档」（删除/列举的唯一准入判定） */
 export function isAssetDocPath(path: string): boolean {
@@ -603,7 +615,45 @@ export function isAssetDocPath(path: string): boolean {
   return ASSET_DOC_NAME_RE.test(norm.slice(prefix.length));
 }
 
+async function lockBrandAssets(ctx: AppContext): Promise<void> {
+  // PostgreSQL 的事务锁跨进程串行化配置保存与删除；SQLite 已持有 BEGIN IMMEDIATE 写锁。
+  if (ctx.db.dialect === "pg") await ctx.db.pg!.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["navhub:brand-assets"]);
+}
+
+function assetReferences(config: unknown): Map<string, string[]> {
+  const references = new Map<string, string[]>();
+  const pending: Array<{ value: unknown; field: string }> = [{ value: config, field: "" }];
+  while (pending.length) {
+    const { value, field } = pending.pop()!;
+    if (value && typeof value === "object") {
+      for (const [key, child] of Object.entries(value)) pending.push({ value: child, field: field ? `${field}.${key}` : key });
+    } else if (typeof value === "string") {
+      let pathname: string;
+      try { pathname = decodeURIComponent(new URL(value, "http://navhub.invalid").pathname); } catch { continue; }
+      if (!pathname.startsWith("/api/site/asset/")) continue;
+      const path = `${ASSET_DOC_DIR}/${pathname.slice("/api/site/asset/".length)}.json`;
+      if (isAssetDocPath(path)) references.set(path, [...(references.get(path) ?? []), field]);
+    }
+  }
+  return references;
+}
+
+async function persistedAssetReferences(ctx: AppContext): Promise<Map<string, string[]>> {
+  const config = await readKv(ctx, "site-config", true);
+  if (config !== null && (typeof config !== "object" || Array.isArray(config))) {
+    throw Object.assign(new Error("站点配置格式异常，无法确认资源引用；已禁止清理"), { statusCode: 503 });
+  }
+  return assetReferences(config);
+}
+
 export interface AssetDocInfo {
+  references: string[];
+  kind: string;
+  createdAt: number;
+  mime: string | null;
+  sha256: string | null;
+  width: number | null;
+  height: number | null;
   /** 资产文档路径（含 .json），与上传返回值 / 存储键一一对应 */
   path: string;
   /** 对外访问名（`/api/site/asset/<name>`） */
@@ -622,19 +672,30 @@ export interface AssetDocInfo {
 export async function listAssetDocs(ctx: AppContext, limit = 500): Promise<AssetDocInfo[]> {
   const cap = Math.min(Math.max(1, Math.floor(limit)), 1000);
   const prefix = "kv:" + pathToKey(ASSET_DOC_DIR + "/");
-  type Row = { id: string; bytes: number | string | null; updated_at: number | string | null };
+  type Row = {
+    id: string; bytes: number | string | null; updated_at: number | string | null;
+    created_at: number | string; mime: string | null; sha256: string | null;
+    width: number | null; height: number | null;
+  };
   let rows: Row[];
   if (ctx.db.dialect === "sqlite") {
     rows = ctx.db.sqlite!
-      .prepare("SELECT id, length(payload) AS bytes, updated_at FROM jobs WHERE id LIKE ? ORDER BY updated_at DESC LIMIT ?")
+      .prepare("SELECT id, length(payload) AS bytes, updated_at, created_at, " +
+        "json_extract(payload, '$.mime') AS mime, json_extract(payload, '$.sha256') AS sha256, " +
+        "json_extract(payload, '$.width') AS width, json_extract(payload, '$.height') AS height " +
+        "FROM jobs WHERE id LIKE ? AND json_valid(payload) ORDER BY updated_at DESC LIMIT ?")
       .all(prefix + "%", cap) as Row[];
   } else {
     const res = await ctx.db.pg!.query(
-      "SELECT id, LENGTH(payload) AS bytes, updated_at FROM jobs WHERE id LIKE $1 ORDER BY updated_at DESC LIMIT $2",
+      "SELECT id, LENGTH(payload) AS bytes, updated_at, created_at, " +
+      "payload::jsonb->>'mime' AS mime, payload::jsonb->>'sha256' AS sha256, " +
+      "payload::jsonb->>'width' AS width, payload::jsonb->>'height' AS height " +
+      "FROM jobs WHERE id LIKE $1 ORDER BY updated_at DESC LIMIT $2",
       [prefix + "%", cap],
     );
     rows = res.rows as Row[];
   }
+  const references = await persistedAssetReferences(ctx);
   const out: AssetDocInfo[] = [];
   for (const row of rows) {
     const path = String(row.id).replace(/^kv:doc:/, "");
@@ -644,6 +705,13 @@ export async function listAssetDocs(ctx: AppContext, limit = 500): Promise<Asset
       name: path.slice(ASSET_DOC_DIR.length + 1).replace(/\.json$/, ""),
       bytes: Number(row.bytes ?? 0),
       updatedAt: Number(row.updated_at ?? 0),
+      references: references.get(path) ?? [],
+      kind: path.slice(ASSET_DOC_DIR.length + 1).split("-")[0]!,
+      createdAt: Number(row.created_at),
+      mime: row.mime,
+      sha256: row.sha256,
+      width: row.width === null ? null : Number(row.width),
+      height: row.height === null ? null : Number(row.height),
     });
   }
   return out;
@@ -662,16 +730,20 @@ export async function deleteAssetDoc(ctx: AppContext, path: string): Promise<{ d
     err.statusCode = 400;
     throw err;
   }
-  const id = "kv:" + pathToKey(norm);
-  let count = 0;
-  if (ctx.db.dialect === "sqlite") {
-    const info = ctx.db.sqlite!.prepare("DELETE FROM jobs WHERE id = ?").run(id) as { changes?: number };
-    count = Number(info?.changes ?? 0);
-  } else {
+  return ctx.repo.withTransaction(async () => {
+    await lockBrandAssets(ctx);
+    const references = (await persistedAssetReferences(ctx)).get(norm) ?? [];
+    if (references.length) {
+      throw Object.assign(new Error(`资源仍被已保存的配置引用：${references.join("、")}，请先替换并保存设置`), { statusCode: 409 });
+    }
+    const id = "kv:" + pathToKey(norm);
+    if (ctx.db.dialect === "sqlite") {
+      const info = ctx.db.sqlite!.prepare("DELETE FROM jobs WHERE id = ?").run(id) as { changes?: number };
+      return { deleted: Number(info?.changes ?? 0) > 0 };
+    }
     const res = await ctx.db.pg!.query("DELETE FROM jobs WHERE id = $1", [id]);
-    count = Number(res.rowCount ?? 0);
-  }
-  return { deleted: count > 0 };
+    return { deleted: Number(res.rowCount ?? 0) > 0 };
+  });
 }
 
 /**
@@ -740,6 +812,15 @@ export async function writeStoragePath(
     await writeVideosData(ctx, parsed, opts?.ifVersion);
     const version = await readKvVersion(ctx, "videos");
     return { ok: true, note: "视频导航数据已更新", version: version ?? undefined };
+  }
+  if (basename(path) === REPLACEMENTS_BASENAME) {
+    await writeKv(ctx, pathToKey(path), parsed, opts?.ifVersion);
+    // 这份文档是替换审计的**权威副本**（不截断）。同步进关系表后，
+    // `video_replacements` 才持有全量而不仅是 videos.json 内联的那 100 条。
+    // 同步失败不影响本次写入（副本语义，见 video-catalog.ts 文件头第 2 条）。
+    await syncReplacementHistorySafely(ctx, parsed);
+    const version = await readKvVersion(ctx, pathToKey(path));
+    return { ok: true, note: "替换审计已更新", version: version ?? undefined };
   }
   await writeKv(ctx, pathToKey(path), parsed, opts?.ifVersion);
   const version = await readKvVersion(ctx, pathToKey(path));

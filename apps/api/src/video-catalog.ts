@@ -28,6 +28,7 @@ import {
   listVideoReplacements,
   logVideoReplacement,
   replaceVideoCatalog,
+  replaceVideoReplacements,
   type VideoCategoryInput,
   type VideoCategoryRow,
   type VideoItemInput,
@@ -155,6 +156,59 @@ function uniqueId(candidate: string, seen: Set<string>): string {
   return fallback;
 }
 
+/**
+ * 替换审计的权威副本（独立于 `videos.json`，**不截断**）。
+ *
+ * 与 overlay 侧 `lib/video-library-store.ts` 的 `REPLACEMENTS_FILE_PATH` 必须是同一个
+ * 路径字符串 —— 两边各自硬编码是既有设计（api 不能 import overlay 的模块），
+ * 改路径要同时改两处。
+ */
+export const VIDEO_REPLACEMENTS_PATH = "src/navsphere/content/video-replacements.json";
+
+/**
+ * 文档里内联的替换历史保留多少条。
+ *
+ * 与 overlay 侧 `capReplacementHistory()` 的上限一致：内联数组随整包文档读写，
+ * 不能无限长。**关系表不吃这个限制**（它由外置文档全量同步）；
+ * `db` 模式重建文档时按这个上限截断，保证与 `json` 模式的文档形状一致。
+ */
+const INLINE_REPLACEMENT_LIMIT = 100;
+
+/** 一条替换记录 → 表行（文档里字段名是 `timestamp`，表里叫 `created_at`） */
+function toReplacementInput(raw: unknown, index: number): VideoReplacementInput {
+  const record = isRecord(raw) ? raw : {}
+  const id = typeof record.id === "string" && record.id !== "" ? record.id : `replacement-${index}`
+  return {
+    id,
+    categoryId: asString(record.categoryId) ?? "unknown",
+    categoryTitle: asString(record.categoryTitle),
+    oldItem: record.oldItem ?? {},
+    newItem: record.newItem ?? {},
+    reason: asString(record.reason),
+    scoreDiff: asNumber(record.scoreDiff),
+    trendKeyword: asString(record.trendKeyword),
+    rolledBack: asBoolean(record.rolledBack, false),
+    createdAt: asNumber(record.timestamp) ?? Date.now(),
+  }
+}
+
+/**
+ * 压平外置的替换审计文档。
+ *
+ * 兼容两种形状：`{ version, records: [...] }`（当前写入口的格式）与裸数组
+ * （内联历史搬过来时的样子）。形状不认识就返回 `null`，由调用方决定记日志 ——
+ * 「静默把表清空」是这一层最不能犯的错。
+ */
+export function flattenReplacementDoc(data: unknown): VideoReplacementInput[] | null {
+  const list = Array.isArray(data)
+    ? data
+    : isRecord(data) && Array.isArray(data.records)
+      ? (data.records as unknown[])
+      : null
+  if (!list) return null
+  return list.map((raw, index) => toReplacementInput(raw, index))
+}
+
 export interface FlattenedVideoCatalog {
   categories: VideoCategoryInput[];
   items: VideoItemInput[];
@@ -234,20 +288,7 @@ export function flattenVideoCatalog(data: unknown): FlattenedVideoCatalog {
   })
 
   asArray(doc.replacementHistory).forEach((raw, index) => {
-    const record = isRecord(raw) ? raw : {}
-    const id = typeof record.id === "string" && record.id !== "" ? record.id : `replacement-${index}`
-    replacements.push({
-      id,
-      categoryId: asString(record.categoryId) ?? "unknown",
-      categoryTitle: asString(record.categoryTitle),
-      oldItem: record.oldItem ?? {},
-      newItem: record.newItem ?? {},
-      reason: asString(record.reason),
-      scoreDiff: asNumber(record.scoreDiff),
-      trendKeyword: asString(record.trendKeyword),
-      rolledBack: asBoolean(record.rolledBack, false),
-      createdAt: asNumber(record.timestamp) ?? Date.now(),
-    })
+    replacements.push(toReplacementInput(raw, index))
   })
 
   return { categories, items, replacements }
@@ -407,6 +448,53 @@ export async function syncVideoCatalogSafely(
 }
 
 /**
+ * 把**外置**的替换审计文档同步进 `video_replacements` 表（全量替换语义）。
+ *
+ * 为什么单独一个同步入口：`videos.json` 里的内联历史有 100 条上限（整包文档不能膨胀），
+ * 而 `video-replacements.json` 是**不截断**的权威副本。表的定位是「可 SQL 查询的全量镜像」，
+ * 所以它必须吃外置文档 —— 否则表里永远只有最近 100 条，回滚审计等于残废。
+ *
+ * 返回 `null` 表示当前模式不同步（`json`）或文档形状不认识。
+ */
+export async function syncReplacementHistory(
+  ctx: AppContext,
+  data: unknown,
+): Promise<{ replacements: number } | null> {
+  if (resolveVideoStoreMode() === "json") return null
+
+  const records = flattenReplacementDoc(data)
+  if (!records) {
+    // 形状不认识时**不清表**，只记一条告警。用一个空数组去全量替换是最危险的默认行为。
+    console.warn("[video-catalog] 外置替换历史文档形状无法识别，已跳过同步（表未被清空）")
+    return null
+  }
+
+  return { replacements: await replaceVideoReplacements(ctx.repo, records) }
+}
+
+/** 同步外置替换历史并记录状态；**永不抛出**（理由同 syncVideoCatalogSafely） */
+export async function syncReplacementHistorySafely(
+  ctx: AppContext,
+  data: unknown,
+): Promise<{ replacements: number } | null> {
+  syncState.lastAttemptAt = Date.now()
+  try {
+    const result = await syncReplacementHistory(ctx, data)
+    if (result) {
+      syncState.lastSuccessAt = Date.now()
+      syncState.lastSyncError = null
+      syncState.consecutiveFailures = 0
+    }
+    return result
+  } catch (err) {
+    syncState.lastSyncError = err instanceof Error ? err.message : String(err)
+    syncState.consecutiveFailures += 1
+    console.warn(`[video-catalog] 替换历史同步失败（不影响文档写入）：${syncState.lastSyncError}`)
+    return null
+  }
+}
+
+/**
  * 从关系表读取完整文档。
  *
  * 返回 `null` 表示「表里没有可用数据」，调用方应回落 KV 文档。
@@ -420,7 +508,10 @@ export async function loadVideoCatalogFromDb(ctx: AppContext): Promise<Record<st
   const [categories, items, replacements] = await Promise.all([
     listVideoCategories(ctx.repo),
     listVideoItems(ctx.repo, { limit: 500 }),
-    listVideoReplacements(ctx.repo, { limit: 500 }),
+    // 只取内联语义允许的条数：表里可能是**全量**（由 video-replacements.json 同步），
+    // 而重建出来的 videos.json 是整包文档，不能把几千条审计塞回去。
+    // 全量历史请走 /api/videos/history（读外置文档）或直接查 video_replacements 表。
+    listVideoReplacements(ctx.repo, { limit: INLINE_REPLACEMENT_LIMIT }),
   ])
 
   // 条目超过单次上限（500）时不能静默截断：宁可回落文档，也不返回残缺的视频库

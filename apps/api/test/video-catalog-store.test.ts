@@ -22,9 +22,10 @@ import {
   resolveVideoStoreMode,
   syncVideoCatalog,
   videoCatalogSyncState,
+  VIDEO_REPLACEMENTS_PATH,
 } from "../src/video-catalog.ts";
-import { readVideosData, writeVideosData } from "../src/storage.ts";
-import { countVideoItems, listVideoCategories, listVideoItems } from "@navhub/store";
+import { readVideosData, writeStoragePath, writeVideosData } from "../src/storage.ts";
+import { countVideoItems, listVideoCategories, listVideoItems, listVideoReplacements } from "@navhub/store";
 
 /** 刻意构造三种边界：子分类、重复 id、章节大字段 */
 const DOC = {
@@ -133,6 +134,8 @@ beforeEach(() => {
   ctx.db.sqlite!.exec("DELETE FROM video_categories");
   ctx.db.sqlite!.exec("DELETE FROM video_replacements");
   ctx.db.sqlite!.exec("DELETE FROM jobs WHERE id = 'kv:videos'");
+  // 外置替换审计文档走通用 JSON 文档分支（doc: 前缀），也要清
+  ctx.db.sqlite!.exec("DELETE FROM jobs WHERE id LIKE 'kv:doc:%'");
 });
 
 describe("模式解析", () => {
@@ -329,5 +332,71 @@ describe("模式行为", () => {
     // cat_ai 直属 2 条 + 子分类 1 条；cat_dev 已整体移除
     expect(await countVideoItems(ctx.repo)).toBe(3)
     expect((await listVideoCategories(ctx.repo)).map(c => c.id)).toEqual(["cat_ai"])
+  })
+})
+
+describe('外置替换审计：全量进表，不受内联 100 条限制', () => {
+  const makeRecords = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `rep-${i}`,
+      timestamp: 1_700_000_000_000 + i,
+      categoryId: 'cat_ai',
+      categoryTitle: 'AI 与大模型',
+      oldItem: { id: `old-${i}` },
+      newItem: { id: `new-${i}` },
+      reason: 'freshness_decay',
+      scoreDiff: i,
+    }))
+
+  it('写这份文档会把 120 条全部同步进表（内联数组只留 100 是另一层的事）', async () => {
+    process.env.NAVHUB_VIDEO_STORE = 'dual'
+    await writeStoragePath(
+      ctx,
+      VIDEO_REPLACEMENTS_PATH,
+      JSON.stringify({ version: 1, records: makeRecords(120) }),
+    )
+
+    const rows = await listVideoReplacements(ctx.repo, { limit: 500 })
+    expect(rows).toHaveLength(120)
+    expect(rows[0].id).toBe('rep-119') // 按 created_at 倒序
+  })
+
+  it('文档形状不认识时不清表（宁可不同步，也不能把审计抹掉）', async () => {
+    process.env.NAVHUB_VIDEO_STORE = 'dual'
+    await writeStoragePath(
+      ctx,
+      VIDEO_REPLACEMENTS_PATH,
+      JSON.stringify({ version: 1, records: makeRecords(3) }),
+    )
+    expect(await listVideoReplacements(ctx.repo, { limit: 500 })).toHaveLength(3)
+
+    // 上游把 records 改名了 / 写成了别的结构
+    await writeStoragePath(ctx, VIDEO_REPLACEMENTS_PATH, JSON.stringify({ version: 2, items: [] }))
+    expect(await listVideoReplacements(ctx.repo, { limit: 500 })).toHaveLength(3)
+  })
+
+  it('db 模式重建文档只带内联上限条数，不把全量塞回整包文档', async () => {
+    process.env.NAVHUB_VIDEO_STORE = 'dual'
+    await writeVideosData(ctx, DOC)
+    await writeStoragePath(
+      ctx,
+      VIDEO_REPLACEMENTS_PATH,
+      JSON.stringify({ version: 1, records: makeRecords(120) }),
+    )
+
+    process.env.NAVHUB_VIDEO_STORE = 'db'
+    const fromDb = (await readVideosData(ctx)) as { replacementHistory?: unknown[] }
+    expect(fromDb.replacementHistory).toHaveLength(100)
+    // 表里仍是全量：文档截断只影响重建出来的整包大小，不影响审计
+    expect(await listVideoReplacements(ctx.repo, { limit: 500 })).toHaveLength(120)
+  })
+
+  it('json 模式不写表（行为与改造前一致）', async () => {
+    await writeStoragePath(
+      ctx,
+      VIDEO_REPLACEMENTS_PATH,
+      JSON.stringify({ version: 1, records: makeRecords(5) }),
+    )
+    expect(await listVideoReplacements(ctx.repo, { limit: 500 })).toHaveLength(0)
   })
 })

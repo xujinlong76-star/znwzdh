@@ -16,17 +16,17 @@
  *   node scripts/explain-ci-failure.mjs --run 40489576417
  *   node scripts/explain-ci-failure.mjs --run 40489576417 --json
  *   node scripts/explain-ci-failure.mjs --sha <sha> --baseline <上一 tip 的 sha 或 run id>
- *     基线对比输出「新增红 / 仍在红 / 已修复」——多会话并行时，能让「这条红是不是我造成的」
+ *     基线对比输出「新增红 / 同 job 换因 / 仍在红 / 已修复」——多会话并行时，能让「这条红是不是我造成的」
  *     不必靠人肉翻两次 run。
  *   node scripts/explain-ci-failure.mjs --sha <sha> --wait [--timeout 秒] [--interval 秒]
- *     推送后立刻调用时 run 往往还没跑完：等待终局再算三桶，而不是把「还没跑到」
+ *     推送后立刻调用时 run 往往还没跑完：等待终局再算四桶，而不是把「还没跑到」
  *     误报成「已修复」。默认每 20s 轮询、最多等 30 分钟；超时以退出码 3 收尾，
  *     并明确标注结果是超时快照。
  *   node scripts/explain-ci-failure.mjs --sha <sha> --save [路径]
  *     把与 --json 同形的快照落盘（默认 tmp/ci-explain-<run>-<sha12>-<时间戳>.json）。
  *     多会话并行时，事后复盘不依赖 Actions 保留期：日志会在 90 天后过期。
  *   每条失败行都带 fixHint（按归因层给出的一条可执行修复命令）；文本模式另有
- *   「修复入口」段按层去重。JSON 里 failures[].fixHint 与 diff 三桶同形。
+ *   「修复入口」段按层去重。JSON 里 failures[].fixHint 与 diff 四桶同形。
  *
  * 抗抖：本脚本跑在推送后的无人值守链路上，一次瞬断不该让整轮归因凭空消失。
  *   - 传输层瞬断（含 undici 的 terminated）重试 3 次；429/5xx/408 另按状态码重试，
@@ -350,6 +350,8 @@ export function buildSnapshot({ repo, run, waitMeta, rows, baseline, diff, degra
           diff: {
             inProgress: !run.conclusion,
             introduced: diff.introduced.map(slim),
+            // 换因行要多带一个「基线里是什么」，否则 JSON 侧无法判断新因是不是本轮造成的
+            changed: diff.changed.map((row) => ({ ...slim(row), previousErrors: row.previousErrors })),
             persisted: diff.persisted.map(slim),
             fixed: diff.fixed.map(slim),
             superseded: splitSuperseded(rows).superseded.map(slim),

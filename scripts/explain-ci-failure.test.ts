@@ -95,6 +95,36 @@ describe("classifyFailure：按根因优先级分层", () => {
     expect(classifyFailure("expected false to be true // Object.is equality").layer).toBe("运行时");
   });
 
+  it("runner 侧 self-installer 失败算环境层（真实 run #40654949211 分片 1/3）", () => {
+    const log = "Something went wrong, self-installer exits with code 1\n##[error]Process completed with exit code 1.";
+    const { layer, signals } = classifyFailure(log);
+    expect(layer).toBe("环境");
+    expect(signals.join(" ")).toContain("self-installer");
+  });
+
+  it("每个 job 日志都有的 Running self-installer 不许把代码红盖成环境问题", () => {
+    // 真实 run #40659065545 覆盖层 job 的日志片段：装机那行是 runner 的常规开场，
+    // 真正的失败是 core 镜像门禁。判据放宽到裸 self-installer 时这里会变成「环境」。
+    const log = [
+      "##[group]Running self-installer...",
+      "##[group]Run node scripts/sync-core-mirrors.mjs --check",
+      "[core-mirror] 1 个镜像与事实源不一致。修复：node scripts/sync-core-mirrors.mjs",
+      "##[error]Process completed with exit code 1.",
+    ].join("\n");
+    expect(classifyFailure(log).layer).toBe("契约");
+  });
+
+  it("core 镜像不同源直接给重生成命令，不放契约层那条 rest-contracts 长命令", () => {
+    const row = summarizeJob(
+      { id: 1, name: "覆盖层与扩展规范性检查", conclusion: "failure", steps: [{ name: "Run node scripts/sync-core-mirrors.mjs --check", conclusion: "failure" }] },
+      { logText: "[core-mirror] 1 个镜像与事实源不一致。修复：node scripts/sync-core-mirrors.mjs\n##[error]Process completed with exit code 1." },
+    );
+    expect(row.layer).toBe("契约");
+    expect(row.fixHint.command).toBe("node scripts/sync-core-mirrors.mjs");
+    // 同一条 override 不能被「镜像一致」的成功输出误触：判据只看归因头，而 OK 行不是错误行
+    expect(summarizeJob({ id: 2, name: "x", conclusion: "failure" }, { logText: "[core-mirror] OK：13 个 verbatim 镜像一致" }).firstError).not.toContain("OK");
+  });
+
   it("认不出来就是未知，不硬猜", () => {
     expect(classifyFailure("something odd happened").layer).toBe("未知");
     expect(classifyFailure("").layer).toBe("未知");
@@ -370,7 +400,7 @@ describe("renderAttributionTable / layerCounts", () => {
   });
 });
 
-describe("跨轮对比：新增红 / 仍在红 / 已修复", () => {
+describe("跨轮对比：新增红 / 同 job 换因 / 仍在红 / 已修复", () => {
   const row = (name: string, firstError: string, extra: Record<string, unknown> = {}) => ({
     name,
     firstError,
@@ -385,16 +415,47 @@ describe("跨轮对比：新增红 / 仍在红 / 已修复", () => {
     expect(failureKey(before)).toBe(failureKey(after));
   });
 
-  it("同一 job 换了失败用例算新增，不算「老问题还在」", () => {
+  it("同一 job 换了失败用例：算「同 job 换因」，不算新增也不算修复", () => {
     const before = row("测试", "a.test.ts · 用例 A · boom");
     const after = row("测试", "a.test.ts · 用例 B · boom");
     const diff = diffFailures([after], [before]);
-    expect(diff.introduced.map(failureKey)).toEqual([failureKey(after)]);
+    // 老版本这里 introduced 和 fixed 同时各得一条：一边把别人的常驻红报成本轮引入，
+    // 一边宣布它被修好了。换因桶就是为了不再说这两句假话。
+    expect(diff.introduced).toEqual([]);
     expect(diff.persisted).toEqual([]);
-    expect(diff.fixed.map(failureKey)).toEqual([failureKey(before)]);
+    expect(diff.fixed).toEqual([]);
+    expect(diff.changed.map(failureKey)).toEqual([failureKey(after)]);
+    expect(diff.changed[0].previousErrors).toEqual(["a.test.ts · 用例 A · boom"]);
   });
 
-  it("三个桶按身份键对齐，缺失归因头时退回 job 名", () => {
+  it("换因不影响别的桶：job 名整条消失才叫已修复", () => {
+    const before = [row("测试", "a.test.ts · 用例 A"), row("前端", "b.test.ts · 用例 C")];
+    const after = [row("测试", "a.test.ts · 用例 B"), row("镜像", "")];
+    const diff = diffFailures(after, before);
+    expect(diff.changed.map((r) => r.name)).toEqual(["测试"]);
+    expect(diff.introduced.map((r) => r.name)).toEqual(["镜像"]);
+    expect(diff.fixed.map((r) => r.name)).toEqual(["前端"]);
+    expect(diff.persisted).toEqual([]);
+  });
+
+  it("同 job 且根因里的行号移动了 -> 仍是「仍在红」，不是换因", () => {
+    const before = row("测试", "packages/store/test/migrate-dialect.test.ts:56 · pg · expected false to be true");
+    const after = row("测试", "packages/store/test/migrate-dialect.test.ts:61 · pg · expected false to be true");
+    const diff = diffFailures([after], [before]);
+    expect(diff.persisted.map(failureKey)).toEqual([failureKey(after)]);
+    expect(diff.changed).toEqual([]);
+  });
+
+  it("基线该 job 没有归因头时，换因行明确说「基线无归因头」", () => {
+    const before = row("镜像检查", "");
+    const after = row("镜像检查", "overlay 漂移");
+    const diff = diffFailures([after], [before]);
+    expect(diff.changed[0].previousErrors).toEqual([]);
+    const text = renderBaselineDiff(diff, { baselineLabel: "run #1" });
+    expect(text).toContain("基线该 job 无归因头");
+  });
+
+  it("桶按身份键对齐，缺失归因头时退回 job 名", () => {
     const same = row("镜像检查", "");
     const gone = row("前端门禁", "error TS2304");
     const fresh = row("E2E", "expect(locator)");
@@ -416,7 +477,7 @@ describe("跨轮对比：新增红 / 仍在红 / 已修复", () => {
       [row("E2E", canceledRun, { superseded: true })],
       [row("E2E", canceledRun, { superseded: true })],
     );
-    expect(diff).toEqual({ introduced: [], persisted: [], fixed: [] });
+    expect(diff).toEqual({ introduced: [], changed: [], persisted: [], fixed: [] });
   });
 
   it("summarizeJob 能从日志里认出并发取消", () => {
@@ -427,7 +488,7 @@ describe("跨轮对比：新增红 / 仍在红 / 已修复", () => {
     expect(result.superseded).toBe(true);
   });
 
-  it("对比段：三桶为空时给一句话，不为空时按桶分节", () => {
+  it("对比段：四桶为空时给一句话，不为空时按桶分节", () => {
     expect(renderBaselineDiff({ introduced: [], persisted: [], fixed: [] })).toContain("与基线一致");
     const text = renderBaselineDiff(
       {
@@ -442,6 +503,22 @@ describe("跨轮对比：新增红 / 仍在红 / 已修复", () => {
     expect(text).toContain("### 仍在红");
     expect(text).toContain("### 已修复");
     expect(text).toContain("新 — x.test.ts · 用例 · boom");
+  });
+
+  it("换因段：标题里点明「既不算本轮新增也不算已修复」，并带上基线根因", () => {
+    const diff = {
+      introduced: [],
+      changed: [{ ...row("测试", "a.test.ts · 用例 B"), previousErrors: ["a.test.ts · 用例 A"] }],
+      persisted: [],
+      fixed: [],
+    };
+    const text = renderBaselineDiff(diff, { baselineLabel: "run #1" });
+    expect(text).toContain("新增红 0 · 换因 1 · 仍在红 0 · 已修复 0（对比 run #1）");
+    expect(text).toContain("### 同 job 换因");
+    expect(text).toContain("测试 — a.test.ts · 用例 B");
+    expect(text).toContain("← 基线是：a.test.ts · 用例 A");
+    // 没换因时整段不出现，老报告的形状不能被多出来的空段污染
+    expect(renderBaselineDiff({ introduced: [], persisted: [], fixed: [] })).not.toContain("换因");
   });
 
   it("run 未结束时不许把 pending 报成已修复（真实 run #40605609970 的假绿）", () => {
@@ -546,6 +623,18 @@ describe("fixHint：每层一条可执行入口", () => {
     const hint = fixHintFor({ layer: "神秘层", firstError: "" });
     expect(hint.layer).toBe("未知");
     expect(hint.command).toContain("scripts/verify.mjs");
+  });
+
+  it("self-installer 的修复入口换成「复跑」，不让人白跑全量门禁", () => {
+    const row = summarizeJob(
+      { id: 1, name: "后端测试 (1/3)", conclusion: "failure", steps: [{ name: "Set up pnpm", conclusion: "failure" }] },
+      { logText: "Something went wrong, self-installer exits with code 1\n##[error]Process completed with exit code 1." },
+    );
+    expect(row.layer).toBe("环境");
+    expect(row.fixHint.command).toBe("node scripts/ci-status.mjs");
+    expect(row.fixHint.note).toContain("Re-run failed jobs");
+    // 其它环境类失败仍走默认入口：覆盖只针对这一条信号，不能把整层改掉
+    expect(fixHintFor({ layer: "环境", firstError: "EADDRINUSE 127.0.0.1:4000" }).command).toBe("node scripts/doctor.mjs");
   });
 
   it("文本段按层去重、只列出现的层，同一层多个文件并列", () => {
@@ -943,6 +1032,25 @@ describe("buildSnapshot：归因完整性也要进快照", () => {
     expect(snapshot.baseline.failures.map((f: { name: string }) => f.name)).toEqual(["ci / test"]);
     expect(snapshot.baseline.failures[0].fixHint).toBe("pnpm test");
     expect(snapshot.baseline.degraded).toEqual(["ci / test"]);
+  });
+
+  it("换因行落盘带上「基线那一条红」：日志过期后仍能判新因是不是本轮造成的", () => {
+    const baseline = {
+      run: { ...run, id: 999 },
+      rows: [{ name: "ci / test", firstError: "Something went wrong, self-installer exits with code 1", fixHint: "node scripts/verify.mjs", superseded: false }],
+    };
+    const current = [{ name: "ci / test", firstError: "AssertionError: boom", fixHint: "pnpm test", superseded: false }];
+    const snapshot = buildSnapshot({ repo: "a/b", run, waitMeta: null, rows: current, baseline, diff: diffFailures(current, baseline.rows) });
+    expect(snapshot.diff.introduced).toEqual([]);
+    expect(snapshot.diff.fixed).toEqual([]);
+    expect(snapshot.diff.changed).toEqual([
+      {
+        name: "ci / test",
+        firstError: "AssertionError: boom",
+        fixHint: "pnpm test",
+        previousErrors: ["Something went wrong, self-installer exits with code 1"],
+      },
+    ]);
   });
 });
 

@@ -5,7 +5,8 @@
  * 输入是 GitHub Actions 的 job 元数据 + 原始日志（已去 ANSI/时间戳），
  * 输出是一行可直接贴进排查记录的归因头。
  *
- * 分层刻意只有五类，且按**根因优先级**排列（依赖 → 环境 → 构建 → 契约 → 运行时）：
+ * 分层刻意只有七类（含「汇总」「未知」两个非代码层），且按**根因优先级**排列
+ * （依赖 → 环境 → 构建 → 契约 → 运行时）：
  * 同一个日志里既有 `ECONNREFUSED` 又有 ISR 断言失败时，根因是环境，
  * 把两层都报出来反而会把人引向错误的修复方向。
  */
@@ -61,9 +62,37 @@ function runtimeCommand(firstError) {
   return match ? base + " " + match[1] : base;
 }
 
+/**
+ * 某些信号的正确动作与「层的默认第一步」不同，差别大到会浪费人 20 分钟时必须覆盖。
+ * 命令仍受上面那条约束：必须能在仓库根目录原样执行、不带占位符——所以这里给的是
+ * 「先确认到底哪几个 job 红」的只读命令，复跑本身是 Actions 页面的按钮，写在 note 里。
+ *
+ * 判据只认失败句本身（`self-installer exits with code N`）：每个 job 日志里都有一行
+ * `##[group]Running self-installer...`（真实 run #40659065545 的覆盖层 job），
+ * 放宽到裸 `self-installer` 会把所有「注解太泛、要靠日志判层」的代码红统统盖成环境问题。
+ */
+const SIGNAL_FIX_HINTS = [
+  {
+    test: /\bself-installer exits with code \d+/i,
+    command: "node scripts/ci-status.mjs",
+    note: "runner 侧 self-installer 失败：一行代码都还没跑到，与本次推送无关。在 Actions 页面点「Re-run failed jobs」复跑即可；同一 sha 复跑转绿就不要改代码。",
+  },
+  {
+    // core 事实源与前端镜像不同源：真实 run #40659065545 的覆盖层 job。
+    // 契约层的默认入口是 rest-contracts 生成 + overlay 规范性检查，两条都不指向这里，
+    // 会让人先白跑一遍门禁才发现答案就是「重新生成镜像」。
+    test: /\[core-mirror\]/i,
+    command: "node scripts/sync-core-mirrors.mjs",
+    note: "core 事实源改过但镜像没重生成：跑上面这条命令把两份镜像刷成事实源，再把 core 与镜像一起提交（只改镜像不改事实源同样会被闸门拦下）。",
+  },
+];
+
 /** 单行失败对应的修复入口：{ layer, command, note } */
 export function fixHintFor(row) {
   const layer = FAILURE_LAYERS.includes(row?.layer) ? row.layer : "未知";
+  const haystack = [String(row?.firstError ?? ""), ...(Array.isArray(row?.signals) ? row.signals : [])].join(" ");
+  const override = SIGNAL_FIX_HINTS.find((o) => o.test.test(haystack));
+  if (override) return { layer, command: override.command, note: override.note };
   const hint = LAYER_FIX_HINTS[layer];
   return {
     layer,
@@ -128,6 +157,15 @@ const RULES = [
       /Target page, context or browser has been closed/gi,
       /\bOut of memory\b/gi,
       /\bdocker: .*daemon\b/gi,
+      // runner 自己没起来：Actions 的 self-installer 在装 runner 阶段就退了，
+      // 一行代码都没跑到。真实 run #40654949211 的分片 1/3 就是这个红，
+      // 上一版归到「未知」并给出 `node scripts/verify.mjs`——让人去查自己的代码，
+      // 而正确动作是复跑。
+      // 判据必须是**失败句**而不是裸 `self-installer`：每个 job 日志都有一行
+      // `##[group]Running self-installer...`（真实 run #40659065545 的覆盖层 job 就被它
+      // 判成过环境层，把 `[core-mirror] 不一致` 这种代码红盖掉了）。
+      // 同理刻意不匹配 `pnpm/action-setup` 这类步骤名：出现它不代表失败原因在装机。
+      /\bself-installer exits with code \d+/gi,
     ],
   },
   {
@@ -152,6 +190,9 @@ const RULES = [
       /生成物与源码同源/g,
       /check:overlay/g,
       /overlay 漂移/g,
+      // core↔前端镜像不同源：这个 tag 只由 scripts/sync-core-mirrors.mjs 打出来
+      // （真实 run #40659065545 覆盖层 job 的失败就是它，上一版无人认领、落到「未知」）
+      /\[core-mirror\]/g,
       /\bsitemap\b/gi,
       /\bISR\b/g,
       /\bseo-audit\b/gi,
@@ -460,6 +501,25 @@ export function layerCounts(rows) {
  * ------------------------------------------------------------------ */
 
 /**
+ * 失败身份拆成两问，因为它们是两件事：
+ *   - jobNameOf：这条红属于哪个 job（归属）；
+ *   - reasonSignature：这个 job 为什么红（根因）。
+ * 合成一个键做配对会撒谎：分片换了根因就同时进「新增红」和「已修复」两桶，
+ * 于是别人那条常驻的老红被算成本轮引入，需要本次推送负责。
+ */
+export function jobNameOf(row) {
+  return String(row?.name ?? "").trim();
+}
+
+/** 归因头归一化：剥掉行号（代码挪一行不该变成新根因），压掉空白 */
+export function reasonSignature(row) {
+  return String(row?.firstError ?? "")
+    .trim()
+    .replace(/([^\s:]+):\d+(?::\d+)?/g, "$1")
+    .replace(/\s+/g, " ");
+}
+
+/**
  * 失败身份键 = job 名 + 归一化后的归因头。
  *
  * 只按 job 名对齐不够：同一个 job 里换个用例挂，会被误判成「老问题还在」。
@@ -467,11 +527,8 @@ export function layerCounts(rows) {
  * 对比表会天天报假新增（真实痛点：migrate-dialect 的 56 行前后移动过）。
  */
 export function failureKey(row) {
-  const name = String(row?.name ?? "").trim();
-  const head = String(row?.firstError ?? "")
-    .trim()
-    .replace(/([^\s:]+):\d+(?::\d+)?/g, "$1")
-    .replace(/\s+/g, " ");
+  const name = jobNameOf(row);
+  const head = reasonSignature(row);
   return head ? name + " :: " + head : name;
 }
 
@@ -484,21 +541,56 @@ export function splitSuperseded(rows) {
 }
 
 /**
- * 三轮桶：新增红 / 仍在红 / 已修复。
+ * 四轮桶：新增红 / 同 job 换因 / 仍在红 / 已修复。
  *
  * 并发取消两边都先摘掉——上一轮被取消的 job 不该在「已修复」里虚报一次修复，
  * 本轮的取消也不该进「新增红」。
+ *
+ * 「同 job 换因」是为了第四种情况单开的桶：job 名两边都有、根因却变了。
+ * 只按完整键配对时它会同时落进「新增红」和「已修复」，于是
+ * ① 别人那条常驻的老红被报成本轮引入、要本次推送负责，
+ * ② 同一轮又宣布它被修复了。两条都是假话，且方向相反。
+ * 换因的每条带上 `previousErrors`（基线里这个 job 的红是什么），
+ * 好让人判断新因到底是不是本轮造成的。
  */
 export function diffFailures(current, baseline) {
   const after = splitSuperseded(current).code;
   const before = splitSuperseded(baseline).code;
   const beforeKeys = new Set(before.map(failureKey));
   const afterKeys = new Set(after.map(failureKey));
-  return {
-    introduced: after.filter((row) => !beforeKeys.has(failureKey(row))),
-    persisted: after.filter((row) => beforeKeys.has(failureKey(row))),
-    fixed: before.filter((row) => !afterKeys.has(failureKey(row))),
+  const groupByJob = (rows) => {
+    const map = new Map();
+    for (const row of rows) {
+      const name = jobNameOf(row);
+      if (!map.has(name)) map.set(name, []);
+      map.get(name).push(row);
+    }
+    return map;
   };
+  const beforeByJob = groupByJob(before);
+  const afterByJob = groupByJob(after);
+
+  const introduced = [];
+  const changed = [];
+  const persisted = [];
+  for (const row of after) {
+    if (beforeKeys.has(failureKey(row))) {
+      persisted.push(row);
+      continue;
+    }
+    const prev = beforeByJob.get(jobNameOf(row));
+    if (prev && prev.length > 0) {
+      changed.push({
+        ...row,
+        previousErrors: prev.map((p) => String(p?.firstError ?? "").trim()).filter(Boolean),
+      });
+    } else {
+      introduced.push(row);
+    }
+  }
+  // 「已修复」只认 job 名整条消失：同 job 换因说明它还在红，报成修好最伤信任
+  const fixed = before.filter((row) => !afterKeys.has(failureKey(row)) && !afterByJob.has(jobNameOf(row)));
+  return { introduced, changed, persisted, fixed };
 }
 
 function renderRowBrief(row) {
@@ -506,32 +598,38 @@ function renderRowBrief(row) {
   return "- " + row.name + (head ? " — " + head : " —（无归因头）");
 }
 
-/** 对比段的 markdown。三桶都为空时给一句「与基线一致」，不留空白让人猜 */
+/** 对比段的 markdown。四桶都为空时给一句「与基线一致」，不留空白让人猜 */
 /**
  * `inProgress` 是必须的：run 未结束时「本轮没有这个失败」只说明 job 还没跑到，
  * 不是已修复。真实 run #40605609970 上第一版把 6 条 pending 报成「已修复」——
  * 这种假绿比不报更危险，所以未结束时就明确不算「已修复」。
  */
 export function renderBaselineDiff(diff, { baselineLabel = "基线", inProgress = false } = {}) {
-  const { introduced = [], persisted = [], fixed = [] } = diff ?? {};
+  const { introduced = [], changed = [], persisted = [], fixed = [] } = diff ?? {};
   const lines = [];
+  // 「换因」只在非零时出现：零换因的轮次保持原来的三桶措辞，不被空段落打断
+  const counts = ["新增红 " + introduced.length, changed.length > 0 ? "换因 " + changed.length : "", "仍在红 " + persisted.length].filter(Boolean);
   if (inProgress) {
-    lines.push(
-      `新增红 ${introduced.length} · 仍在红 ${persisted.length}（对比 ${baselineLabel}）· run 尚未结束，暂不计算「已修复」`,
-    );
+    lines.push(counts.join(" · ") + `（对比 ${baselineLabel}）· run 尚未结束，暂不计算「已修复」`);
   } else {
-    lines.push(
-      `新增红 ${introduced.length} · 仍在红 ${persisted.length} · 已修复 ${fixed.length}（对比 ${baselineLabel}）`,
-    );
+    lines.push(counts.join(" · ") + ` · 已修复 ${fixed.length}（对比 ${baselineLabel}）`);
   }
-  if (introduced.length === 0 && persisted.length === 0 && fixed.length === 0) {
+  if (introduced.length === 0 && changed.length === 0 && persisted.length === 0 && fixed.length === 0) {
     lines.push("");
     lines.push(inProgress ? "目前还没有失败的 job（run 尚未结束，结论以最终为准）。" : "与基线一致：没有新增或消失的失败。");
     return lines.join("\n");
   }
   if (introduced.length > 0) {
-    lines.push("", "### 新增红（本轮引入，需要本次推送负责）");
+    lines.push("", "### 新增红（这个 job 基线是绿的，本轮才红）");
     for (const row of introduced) lines.push(renderRowBrief(row));
+  }
+  if (changed.length > 0) {
+    lines.push("", "### 同 job 换因（基线已红、根因变了：既不算本轮新增，也不算已修复）");
+    for (const row of changed) {
+      const prev = (row.previousErrors ?? []).filter(Boolean);
+      lines.push(renderRowBrief(row) + (prev.length > 0 ? "　← 基线是：" + prev.join(" / ") : "　← 基线该 job 无归因头"));
+    }
+    lines.push("先判新因是否本轮造成；同时确认旧因是被修好了，还是被新因盖住了（同一个 job 只会报第一条红）。");
   }
   if (persisted.length > 0) {
     lines.push("", "### 仍在红（基线已存在，不是本轮引入）");
@@ -553,7 +651,7 @@ export function renderBaselineDiff(diff, { baselineLabel = "基线", inProgress 
  *
  * 为什么需要：刚推送就跑归因时 run 往往还是 queued/in_progress，
  * 此时「本轮没有某个失败」只代表 job 还没跑到——上一版就是在这里把
- * pending 误报成「已修复」。等终局再算三桶，才谈得上「这条红是不是我造成的」。
+ * pending 误报成「已修复」。等终局再算桶，才谈得上「这条红是不是我造成的」。
  *
  * 依赖全部注入（fetchRun / now / sleep），核心只是状态机的可测性：
  *   - 超时返回最后一次快照并标记 timedOut，由调用方以独立退出码收尾，

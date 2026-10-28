@@ -12,7 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Eye, Star, Zap, Pin, Clock } from 'lucide-react'
+import { Eye, Star, Zap, Pin, Clock, Info } from 'lucide-react'
 import { Button } from '@/registry/new-york/ui/button'
 import { useToast } from "@/components/ui/use-toast"
 import { pinSiteToWorkbench } from '@/lib/modular/workbench-bridge'
@@ -190,6 +190,52 @@ export function NavigationCard({
         selected && 'ring-primary/70 border-primary/60 bg-primary/5',
       )
 
+  /**
+   * 合成站点（自定义站点）没有对应的中枢站点记录，`/site/{id}` 会 404 ——
+   * 这类卡片只保留外链，不渲染详情内链。
+   */
+  const hasSiteDetail = !item.id.startsWith('custom_site_')
+  const siteDetailHref = `/site/${encodeURIComponent(item.id)}`
+
+  /** 标题/详情与整卡同语义：多选时不导航，只切换选中 */
+  const handleDetailClick = (e: React.MouseEvent) => {
+    if (!selectable) return
+    e.preventDefault()
+    e.stopPropagation()
+    onToggleSelect?.(item.id)
+  }
+
+  /**
+   * 卡片的内容层：外链覆盖层之下/之上的兄弟层。
+   *
+   * 结构纪律（与 tag-results-board 同一套）：**外链 <a>、标题内链、操作按钮
+   * 三者是兄弟节点，任何 `<a>` 都不嵌套 `<a>`**。外链是空锚覆盖整卡，
+   * 内容层整体 pointer-events-none，只有真正可点的元素（标题内链、
+   * 快照自愈、平替徽标、标签）单独 pointer-events-auto —— 否则描述与空白处
+   * 的点击会被内容层吞掉，「点卡片开官网」的默认行为当场失效。
+   */
+  const detailAction = (sizeClass: string) =>
+    hasSiteDetail ? (
+      <Button
+        asChild
+        tabIndex={-1}
+        data-card-action=""
+        variant="ghost"
+        size="icon"
+        className={cn(sizeClass, 'text-muted-foreground hover:text-foreground hover:bg-accent')}
+        title="查看站点详情"
+      >
+        <Link
+          href={siteDetailHref}
+          tabIndex={-1}
+          onClick={handleDetailClick}
+          aria-label={`查看站点详情：${item.title}`}
+        >
+          <Info className="w-3.5 h-3.5" />
+        </Link>
+      </Button>
+    ) : null
+
   // 1. 紧凑单行条形多态 (Compact Bar Mode)
   if (cardDisplayMode === 'compact') {
     return (
@@ -207,7 +253,8 @@ export function NavigationCard({
                 selectionClass
               )}
             >
-              <Link
+              {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
+              <a
                 href={safeHref(item.href)}
                 target={linkTarget}
                 rel="noopener noreferrer"
@@ -217,8 +264,12 @@ export function NavigationCard({
                 onKeyDown={handleKeyDown}
                 aria-keyshortcuts="Space ArrowRight"
                 aria-describedby={keyboardHintId}
-                className="flex items-center gap-2 min-w-0 flex-1 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
-              >
+                aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}
+                draggable={false}
+                className="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
+              />
+
+              <div className="relative z-10 pointer-events-none flex items-center gap-2 min-w-0 flex-1">
                 <div className="flex-shrink-0 w-6 h-6 rounded-md p-0.5 bg-muted/50 dark:bg-muted/20 border border-border/40 flex items-center justify-center transition-transform duration-150 group-hover:scale-105">
                   <SiteFavicon
                     title={item.title}
@@ -229,9 +280,20 @@ export function NavigationCard({
                   />
                 </div>
                 <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                  <span className="text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors truncate">
-                    {item.title}
-                  </span>
+                  {hasSiteDetail ? (
+                    <Link
+                      href={siteDetailHref}
+                      onClick={handleDetailClick}
+                      tabIndex={-1}
+                      className="pointer-events-auto truncate rounded text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary hover:underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    >
+                      {item.title}
+                    </Link>
+                  ) : (
+                    <span className="truncate text-xs sm:text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors">
+                      {item.title}
+                    </span>
+                  )}
                   {isPinnedInCategory && (
                     <Pin className="w-2.5 h-2.5 text-amber-500 fill-amber-500 shrink-0" />
                   )}
@@ -248,7 +310,7 @@ export function NavigationCard({
                         e.stopPropagation()
                         onPeek?.(item)
                       }}
-                      className="inline-flex items-center gap-0.5 text-[9px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
+                      className="pointer-events-auto inline-flex items-center gap-0.5 text-[9px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.2 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer shrink-0"
                       title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
                     >
                       <Clock className="w-2.5 h-2.5 text-amber-500" />
@@ -256,10 +318,10 @@ export function NavigationCard({
                     </span>
                   )}
                 </div>
-              </Link>
+              </div>
 
               {/* 紧凑操作按钮 */}
-              <div className="flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity" onKeyDown={handleActionsKeyDown}>
+              <div className="relative z-20 flex items-center gap-0.5 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity" onKeyDown={handleActionsKeyDown}>
                 {onTogglePinInCategory && (
                   <Button
                   tabIndex={-1}
@@ -277,6 +339,7 @@ export function NavigationCard({
                     <Pin className={cn("w-3 h-3", isPinnedInCategory && "fill-amber-500")} />
                   </Button>
                 )}
+                {detailAction('h-6 w-6 rounded-md')}
                 <Button
                   tabIndex={-1}
                   data-card-action=""
@@ -345,7 +408,8 @@ export function NavigationCard({
                 </div>
               )}
 
-              <Link
+              {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
+              <a
                 href={safeHref(item.href)}
                 target={linkTarget}
                 rel="noopener noreferrer"
@@ -355,8 +419,12 @@ export function NavigationCard({
                 onKeyDown={handleKeyDown}
                 aria-keyshortcuts="Space ArrowRight"
                 aria-describedby={keyboardHintId}
-                className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
-              >
+                aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}
+                draggable={false}
+                className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
+              />
+
+              <div className="relative z-10 pointer-events-none">
                 <CardHeader className="p-4 sm:p-5">
                   <div className="flex items-start gap-3.5">
                     <div className="flex-shrink-0 w-11 h-11 rounded-xl p-2 bg-muted/60 dark:bg-muted/30 border border-border/60 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
@@ -371,7 +439,18 @@ export function NavigationCard({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap pr-14 sm:pr-20">
                         <CardTitle className="text-sm sm:text-base font-bold tracking-tight text-foreground group-hover:text-primary transition-colors truncate">
-                          {item.title}
+                          {hasSiteDetail ? (
+                            <Link
+                              href={siteDetailHref}
+                              onClick={handleDetailClick}
+                              tabIndex={-1}
+                              className="pointer-events-auto rounded hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                            >
+                              {item.title}
+                            </Link>
+                          ) : (
+                            <span>{item.title}</span>
+                          )}
                         </CardTitle>
                         {item.liveMetrics?.githubStars && (
                           <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
@@ -386,7 +465,7 @@ export function NavigationCard({
                               e.stopPropagation()
                               onPeek?.(item)
                             }}
-                            className="inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
+                            className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
                             title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
                           >
                             <Clock className="w-2.5 h-2.5 text-amber-500" />
@@ -403,24 +482,19 @@ export function NavigationCard({
                     </div>
                   </div>
                 </CardHeader>
-              </Link>
+              </div>
 
-              {/* 丰富标签池：**必须在卡片外链 </Link> 之外**。
-                  <a> 里嵌 <a> 是非法 HTML，浏览器会自动闭合外层 <a>，
-                  整卡点击当场坏掉（tag-results-board 双模式卡片的同一纪律）。
+              {/* 丰富标签池：与外链覆盖层、标题内链同为兄弟节点（<a> 不嵌 <a>）。
                   标签是真内链：/tags/{slug} 与 sitemap、标签云同形态
                   （tagSlug 与 store slugify 同构，见 lib/seo/tag-slug.ts），
-                  给标签页提供来自首页的内链——这是 Batch C 的核心。
-                  外链为什么不带 h-full：rich 网格同行拉伸（grid 默认
-                  align-items: stretch），h-full 的 Link 会按整卡高解析，
-                  把后面流内的标签池挤出 overflow-hidden 的卡片。 */}
-              <div className="flex items-center gap-1.5 px-4 sm:px-5 pb-4 sm:pb-5 flex-wrap">
+                  给标签页提供来自首页的内链——这是 Batch C 的核心。 */}
+              <div className="relative z-10 pointer-events-none flex items-center gap-1.5 px-4 sm:px-5 pb-4 sm:pb-5 flex-wrap">
                 {item.tags?.slice(0, 3).map((tag) => (
                   <Link
                     key={tag}
                     href={'/tags/' + encodeURIComponent(tagSlug(tag))}
                     onClick={handleTagClick}
-                    className="inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
+                    className="pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted/70 text-muted-foreground font-mono hover:bg-primary/10 hover:text-primary transition-colors"
                   >
                     #{tag}
                   </Link>
@@ -432,7 +506,7 @@ export function NavigationCard({
                       e.stopPropagation()
                       onPeek?.(item)
                     }}
-                    className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
+                    className="pointer-events-auto inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
                   >
                     <span>平替: {topAlternative.targetTitle}</span>
                   </span>
@@ -446,7 +520,7 @@ export function NavigationCard({
               </div>
 
               {/* 操作区：右上角悬浮药丸胶囊 */}
-              <div className="absolute top-2 right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
+              <div className="absolute top-2 right-2 z-20 flex items-center gap-0.5 p-0.5 rounded-full bg-background/90 dark:bg-background/95 backdrop-blur-md border border-border/70 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
                 {onTogglePinInCategory && (
                   <Button
                   tabIndex={-1}
@@ -464,6 +538,7 @@ export function NavigationCard({
                     <Pin className={cn("w-3.5 h-3.5", isPinnedInCategory && "fill-amber-500")} />
                   </Button>
                 )}
+                {detailAction('h-7 w-7 rounded-full')}
                 <Button
                   tabIndex={-1}
                   data-card-action=""
@@ -531,7 +606,8 @@ export function NavigationCard({
               </div>
             )}
 
-            <Link
+            {/* 外链覆盖层：唯一 Tab 停留点（Enter 打开站点 / Space 速览 / → 进操作区） */}
+            <a
               href={safeHref(item.href)}
               target={linkTarget}
               rel="noopener noreferrer"
@@ -541,8 +617,12 @@ export function NavigationCard({
               onKeyDown={handleKeyDown}
               aria-keyshortcuts="Space ArrowRight"
               aria-describedby={keyboardHintId}
-              className="block h-full rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
-            >
+              aria-label={selectable ? `选择站点：${item.title}` : `访问 ${item.title}`}
+              draggable={false}
+              className="absolute inset-0 z-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1"
+            />
+
+            <div className="relative z-10 pointer-events-none">
               <CardHeader className="p-[var(--density-card-padding,0.875rem)]">
                 <div className="flex items-start gap-2.5 @[280px]:gap-3">
                   <div className="flex-shrink-0 w-9 h-9 @[280px]:w-10 @[280px]:h-10 rounded-lg p-1.5 bg-muted/50 dark:bg-muted/20 border border-border/50 flex items-center justify-center transition-transform duration-200 group-hover:scale-105 shadow-xs">
@@ -557,7 +637,18 @@ export function NavigationCard({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap pr-14 sm:pr-20">
                       <CardTitle className="text-sm font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors truncate">
-                        {item.title}
+                        {hasSiteDetail ? (
+                          <Link
+                            href={siteDetailHref}
+                            onClick={handleDetailClick}
+                            tabIndex={-1}
+                            className="pointer-events-auto rounded hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                          >
+                            {item.title}
+                          </Link>
+                        ) : (
+                          <span>{item.title}</span>
+                        )}
                       </CardTitle>
                       {item.liveMetrics?.githubStars && (
                         <span className="inline-flex items-center gap-0.5 text-xs font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
@@ -572,7 +663,7 @@ export function NavigationCard({
                             e.stopPropagation()
                             onPeek?.(item)
                           }}
-                          className="inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
+                          className="pointer-events-auto inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded-full hover:bg-amber-500/20 transition-colors cursor-pointer"
                           title="检测到站点当前无法直连，点击开启时光机历史快照自愈"
                         >
                           <Clock className="w-2.5 h-2.5 text-amber-500" />
@@ -596,7 +687,7 @@ export function NavigationCard({
                               e.stopPropagation()
                               onPeek?.(item)
                             }}
-                            className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
+                            className="pointer-events-auto inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors cursor-pointer"
                           >
                             <span>平替: {topAlternative.targetTitle}</span>
                           </span>
@@ -612,10 +703,10 @@ export function NavigationCard({
                   </div>
                 </div>
               </CardHeader>
-            </Link>
+            </div>
 
             {/* 操作区：右上角悬浮药丸胶囊 */}
-            <div className="absolute top-1.5 right-1.5 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
+            <div className="absolute top-1.5 right-1.5 z-20 @[280px]:top-2 @[280px]:right-2 flex items-center gap-0.5 p-0.5 rounded-full bg-background/85 dark:bg-background/90 backdrop-blur-md border border-border/60 shadow-xs opacity-90 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-all duration-150" onKeyDown={handleActionsKeyDown}>
               {onTogglePinInCategory && (
                 <Button
                   tabIndex={-1}
@@ -633,6 +724,7 @@ export function NavigationCard({
                   <Pin className={cn("w-3.5 h-3.5", isPinnedInCategory && "fill-amber-500")} />
                 </Button>
               )}
+              {detailAction('h-6.5 w-6.5 rounded-full')}
               <Button
                   tabIndex={-1}
                   data-card-action=""

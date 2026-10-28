@@ -43,9 +43,12 @@ describe("站点卡片：单一 Tab 入口 + 方向键操作区", () => {
     expect(card).toContain("linkRef.current?.focus()");
   });
 
-  it("九个操作按钮全部退出 Tab 序列（三个变体 × 置顶/速览/工作台）", () => {
+  it("操作按钮全部退出 Tab 序列（三个变体 × 置顶/速览/工作台 + 共用详情入口）", () => {
     const marked = card.match(/data-card-action=""/g) ?? [];
-    expect(marked.length).toBe(9);
+    // 9 个内联按钮 + detailAction() 里那 1 个共用详情入口
+    expect(marked.length).toBe(10);
+    // 详情入口必须真的被三个变体各用一次，否则有一种密度无法用键盘进入站点详情
+    expect((card.match(/detailAction\(/g) ?? []).length).toBe(3);
     // 收藏按钮走组件参数，三处都必须显式传入
     const favs = card.match(/cardAction/g) ?? [];
     expect(favs.length).toBe(3);

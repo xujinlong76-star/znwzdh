@@ -72,6 +72,8 @@ import {
   type HubPluginSearchResponse,
 } from '@/lib/navhub-api'
 import { getIdentity } from '@/lib/identity'
+import { openCopilot } from '@/lib/ai-entry'
+import { searchChannelStatus } from '@/lib/search-degrade'
 import { getModifierKey } from '@/lib/platform'
 import { isSafeHttpUrl, safeHref, safeWindowOpen } from '@/lib/safe-url'
 import { recordOfflineVisit } from '@/lib/offline-recent'
@@ -147,6 +149,12 @@ export function SpotlightModal({
   const searchEngine = useUserPreference('defaultSearchEngine')
   /** 站点召回通道是否失败（区别于「真的没有结果」） */
   const [sitesUnavailable, setSitesUnavailable] = useState(false)
+  /** 站点语义未就绪：当前召回是关键词 / 拼音 / 全文混合 */
+  const [semanticUnavailable, setSemanticUnavailable] = useState(false)
+  /** 插件召回通道请求失败（与「插件市场没有匹配」区分） */
+  const [pluginUnavailable, setPluginUnavailable] = useState(false)
+  /** 插件语义未就绪：结果是关键词回退给出的 */
+  const [pluginSemanticFallback, setPluginSemanticFallback] = useState(false)
   /** 重试令牌：只给「再问一次同一个词」用，不改查询文本 */
   const [searchNonce, setSearchNonce] = useState(0)
   useEffect(() => {
@@ -372,7 +380,7 @@ export function SpotlightModal({
       category: 'AI 交互',
       handler: () => {
         setOpen(false)
-        window.dispatchEvent(new CustomEvent('open-ai-copilot'))
+        openCopilot({ source: 'spotlight' })
       },
     },
     {
@@ -506,6 +514,9 @@ export function SpotlightModal({
       setHits([])
       setPluginHits(null)
       setSitesUnavailable(false)
+      setSemanticUnavailable(false)
+      setPluginUnavailable(false)
+      setPluginSemanticFallback(false)
       setLoading(false)
       return
     }
@@ -517,6 +528,7 @@ export function SpotlightModal({
     setLoading(true)
     const timer = setTimeout(() => {
       let siteSearchFailed = false
+      let pluginSearchFailed = false
       Promise.all([
         searchSites({ q: trimmed, limit: 8, identity }, ac.signal).catch(() => {
           // 站点召回失败必须留痕：以前直接当成「这一路没有结果」，
@@ -524,15 +536,28 @@ export function SpotlightModal({
           siteSearchFailed = true
           return null
         }),
-        searchPlugins({ q: trimmed, limit: 3 }).catch(() => {
-          // 插件召回是附赠通道：失败就当没有插件结果，站点结果照常展示
+        // onDegraded 标记请求真的没到中枢：响应体里的 degraded 还可能是服务端关键词回退
+        searchPlugins({ q: trimmed, limit: 3 }, () => {
+          pluginSearchFailed = true
+        }).catch(() => {
+          pluginSearchFailed = true
           return null
         }),
       ]).then(([sitesRes, pluginsRes]) => {
         if (!ac.signal.aborted) {
           setHits(sitesRes?.hits ?? [])
           setPluginHits(pluginsRes)
-          setSitesUnavailable(siteSearchFailed)
+          // navhub-api 失败时返回 degraded 兜底值而不抛错，只监听 catch 会谎报「没有结果」
+          const status = searchChannelStatus({
+            sites: sitesRes,
+            sitesFailed: siteSearchFailed,
+            plugins: pluginsRes,
+            pluginsFailed: pluginSearchFailed,
+          })
+          setSitesUnavailable(status.sitesUnavailable)
+          setSemanticUnavailable(status.semanticUnavailable)
+          setPluginUnavailable(status.pluginUnavailable)
+          setPluginSemanticFallback(status.pluginSemanticFallback)
           setLoading(false)
           setSelectedIndex(0)
         }
@@ -598,7 +623,8 @@ export function SpotlightModal({
     if (isAiMode) {
       if (!cleanAiPrompt) return
       setOpen(false)
-      window.dispatchEvent(new CustomEvent('open-ai-copilot', { detail: { prompt: cleanAiPrompt } }))
+      // 键名必须是契约里的 query：以前用 { prompt }，抽屉只读 { query }，问题会静默消失
+      openCopilot({ query: cleanAiPrompt, source: 'spotlight' })
       return
     }
 
@@ -889,7 +915,7 @@ export function SpotlightModal({
                         type="button"
                         onClick={() => {
                           setOpen(false)
-                          window.dispatchEvent(new CustomEvent('open-ai-copilot'))
+                          openCopilot({ source: 'spotlight' })
                         }}
                         className="p-2.5 rounded-xl border border-border/60 bg-muted/20 hover:bg-muted/50 text-left flex items-center gap-2.5 transition-colors"
                       >
@@ -957,6 +983,13 @@ export function SpotlightModal({
                       </button>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* 语义未就绪必须外显：用户有权知道结果是关键词召回而不是语义召回 */}
+              {!loading && query.trim() && !sitesUnavailable && semanticUnavailable && (
+                <div className="px-3 py-1.5 text-[11px] text-muted-foreground">
+                  语义检索未就绪（未配置本地模型），当前为关键词 / 拼音 / 全文混合召回。
                 </div>
               )}
 
@@ -1091,6 +1124,9 @@ export function SpotlightModal({
                     <span className="flex items-center gap-1.5">
                       <Store className="w-3.5 h-3.5 text-rose-500" />
                       <span>插件市场组件 (Plugins)</span>
+                      {pluginSemanticFallback && (
+                        <span className="text-[10px] font-normal text-muted-foreground">语义未就绪 · 关键词匹配</span>
+                      )}
                     </span>
                     <button
                       type="button"
@@ -1162,6 +1198,22 @@ export function SpotlightModal({
                         </button>
                       </div>
                     </>
+                  ) : pluginUnavailable ? (
+                    <>
+                      <div className="text-xs text-amber-600 dark:text-amber-400 flex items-center justify-center gap-1.5">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        <span>站点没有匹配；插件检索通道本次不可用，无法确认插件市场有没有相关结果</span>
+                      </div>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => setSearchNonce((n) => n + 1)}
+                          className="text-[11px] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted/60 transition-colors"
+                        >
+                          重试
+                        </button>
+                      </div>
+                    </>
                   ) : (
                     <>
                       <div className="text-xs text-muted-foreground">
@@ -1192,6 +1244,12 @@ export function SpotlightModal({
               {!loading && sitesUnavailable && hits.length === 0 && !!pluginHits && pluginHits.items.length > 0 && (
                 <div className="px-3 py-2 text-[11px] text-amber-600 dark:text-amber-400">
                   站点检索通道暂时不可用，以下只有插件结果。
+                </div>
+              )}
+              {/* 插件通道挂了但站点有结果：不能让「插件市场没有匹配」冒充事实 */}
+              {!loading && pluginUnavailable && hits.length > 0 && (
+                <div className="px-3 py-2 text-[11px] text-amber-600 dark:text-amber-400 border-t border-border/40">
+                  插件检索通道暂时不可用，以下只有站点结果。
                 </div>
               )}
             </>

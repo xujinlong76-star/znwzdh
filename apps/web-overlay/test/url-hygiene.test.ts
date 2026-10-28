@@ -310,6 +310,17 @@ const SANCTIONED: Array<{ file: string; kind: Hit["kind"]; expr: string; why: st
       "也不可能是伪协议。这里刻意不再叠一层 safeHref——那只会把「构造点已编码」这件事变模糊。",
     evidence: ["href: categoryHref(c)", "import { categoryHref } from '@/lib/seo/category-url'"],
   },
+  // ---- 引用行：过闸后只剩一个本地变量，href 位置拿不到未过闸的值 ----
+  {
+    file: "src/components/ai/ai-copilot-drawer.tsx",
+    kind: "href",
+    expr: "href",
+    why:
+      "引用地址来自中枢的 citations（服务端已按检索候选集校验过出处），渲染前一句 " +
+      "`const href = safeHref(citation.url, '')` 再过第二道闸；" +
+      "过不了就落到无链接的 <span> 分支，所以 href 这个位置不存在「外部数据直接进 href」。",
+    evidence: ["const href = safeHref(citation.url, '')", 'rel="noopener noreferrer"'],
+  },
 ];
 
 describe("渲染期 URL 卫生：外部可控地址一律过安全闸", () => {
@@ -373,7 +384,10 @@ describe("这一批补齐的出口：确实换成了公共安全闸", () => {
     ["src/components/search/spotlight-modal.tsx", "safeWindowOpen(res.saveUrl)"],
     ["src/app/marketplace/installed/page.tsx", "safeWindowOpen(eng.searchUrl.replace('{q}', ''))"],
     ["src/components/site-peek-dialog.tsx", "if (snap) safeWindowOpen(snap)"],
-    ["src/app/admin/videos/[id]/items/page.tsx", "safeWindowOpen(item.href)"],
+    // 该页的外链出口是锚点（要支持中键新标签/右键复制地址），所以合格写法是
+    // `href={safeHref(item.href, '#')}`，不是 safeWindowOpen —— 两者都是同一个安全闸，
+    // 区别只在「谁触发导航」。这里守的是「过了闸」，别锁死具体函数名。
+    ["src/app/admin/videos/[id]/items/page.tsx", "safeHref(item.href"],
   ];
 
   it.each(cases)("%s 用上了 %s", (file, needle) => {

@@ -13,6 +13,9 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useIdentityReady } from '@/hooks/useIdentityReady'
+import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
+import { unreadBadgeText } from '@/lib/notification-badge'
 
 const ITEMS = [
   { href: '/me', label: '概览' },
@@ -30,6 +33,9 @@ const ITEMS = [
 
 export function UserCenterNav() {
   const pathname = usePathname() || '/me'
+  const identityState = useIdentityReady()
+  const unread = useUnreadNotifications(identityState)
+  const unreadText = unreadBadgeText(unread)
   // 窄屏不再折成两行（折行后高度翻倍、点击目标挤在一起）：改为横向滚动，
   // 一屏内滑动切换；桌面端宽度足够，不会出现滚动条。
   return (
@@ -39,11 +45,13 @@ export function UserCenterNav() {
     >
       {ITEMS.map((item) => {
         const active = item.href === '/me' ? pathname === '/me' : pathname === item.href || pathname.startsWith(item.href + '/')
+        const showBadge = item.href === '/me/notifications' && unreadText !== null
         return (
           <Link
             key={item.href}
             href={item.href}
             aria-current={active ? 'page' : undefined}
+            aria-label={showBadge ? `${item.label}，${unread} 条未读` : undefined}
             className={cn(
               'shrink-0 whitespace-nowrap rounded-xl px-3 py-1.5 text-xs font-medium transition-all duration-200',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
@@ -53,7 +61,20 @@ export function UserCenterNav() {
                 : 'text-foreground/70 hover:bg-muted/60 hover:text-foreground',
             )}
           >
-            {item.label}
+            <span className="inline-flex items-center gap-1">
+              {item.label}
+              {showBadge && (
+                <span
+                  aria-hidden
+                  className={cn(
+                    'min-w-[14px] rounded-full px-1 text-center text-[9px] font-semibold leading-[14px] tabular-nums',
+                    active ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-primary text-primary-foreground',
+                  )}
+                >
+                  {unreadText}
+                </span>
+              )}
+            </span>
           </Link>
         )
       })}

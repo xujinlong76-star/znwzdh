@@ -130,3 +130,22 @@ describe("not-found.tsx：把「可以搜索」兑现，并给出成组出口", 
     }
   });
 });
+
+describe("薄分类 404 的恢复路径（不把薄页变成 200 空页）", () => {
+  const src = overlayFile("src/app/not-found.tsx");
+
+  it("分类总览是一个恢复出口（薄分类 404 的最近有效入口）", () => {
+    const link = RECOVERY_LINKS.find((l) => l.href === "/category");
+    expect(link).toBeTruthy();
+    expect(link!.label).toContain("分类");
+    expect(routes.has("/category")).toBe(true);
+  });
+
+  it("分类路径的 404 要解释「达标才开放」，且不编造处理中的状态", () => {
+    expect(src).toContain("pathname?.startsWith('/category/')");
+    expect(src).toContain("站点数达标");
+    // 薄页仍是 404（见 category-hub.test.ts）；这里不许改成「内容整理中」的伪空态
+    expect(src).not.toContain("敬请期待");
+    expect(src).not.toContain("内容整理中");
+  });
+});

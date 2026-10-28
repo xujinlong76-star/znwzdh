@@ -90,6 +90,7 @@ export async function generateMetadata(): Promise<Metadata> {
     icons: {
       // 默认指向真实存在的 PWA 图标：public/ 下没有 favicon.ico（曾 404 刷屏），用 icon-192 兜底
       icon: settings.appearance.favicon || '/icons/icon-192.png',
+      apple: settings.appearance.appleTouchIcon || '/icons/apple-touch-icon.png',
     },
   };
 }
@@ -185,7 +186,7 @@ export default async function RootLayout({
         <link rel="preconnect" href="https://www.googletagmanager.com" />
         {/* iOS 桌面图标（apple-touch-icon）：用显式 link 而不是 metadata.icons.apple——
             实测 Next 15.5 只渲染 appleWebApp 的 meta 而不渲染该 link */}
-        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <link rel="apple-touch-icon" href={settings.appearance.appleTouchIcon || '/icons/apple-touch-icon.png'} />
         {/* Google Analytics */}
         {gaId && (
           <>

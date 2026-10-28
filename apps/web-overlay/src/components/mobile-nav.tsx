@@ -23,6 +23,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Heart, Home, LayoutGrid, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useIdentityReady } from '@/hooks/useIdentityReady'
+import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
+import { unreadBadgeText } from '@/lib/notification-badge'
 
 const ITEMS = [
   { href: '/', label: '首页', Icon: Home },
@@ -40,6 +43,10 @@ function isActive(href: string, pathname: string): boolean {
 
 export default function MobileNav() {
   const pathname = usePathname() || '/'
+  // hooks 必须在 /videos 早退之前调用，否则路由切换时 hook 数量变化会炸 React。
+  const identityState = useIdentityReady()
+  const unread = useUnreadNotifications(identityState)
+  const unreadText = unreadBadgeText(unread)
   // /videos 与 /videos/player：无 footer 预留位，且播放器路由自带 fixed bottom-0 面板
   if (pathname.startsWith('/videos')) return null
 
@@ -51,18 +58,29 @@ export default function MobileNav() {
       <ul className="flex h-full items-center justify-around">
         {ITEMS.map(({ href, label, Icon }) => {
           const active = isActive(href, pathname)
+          const showBadge = href === '/me' && unreadText !== null
           return (
             <li key={href} className="flex-1">
               <Link
                 href={href}
-                aria-label={label}
+                aria-label={href === '/me' && unread > 0 ? `${label}，${unread} 条未读通知` : label}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   'flex h-full w-full flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
                   active ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                <Icon className="h-5 w-5" aria-hidden />
+                <span className="relative inline-flex">
+                  <Icon className="h-5 w-5" aria-hidden />
+                  {showBadge && (
+                    <span
+                      aria-hidden
+                      className="absolute -right-2 -top-1.5 min-w-[14px] rounded-full bg-primary px-0.5 text-center text-[8px] font-semibold leading-[14px] text-primary-foreground tabular-nums"
+                    >
+                      {unreadText}
+                    </span>
+                  )}
+                </span>
                 <span>{label}</span>
               </Link>
             </li>

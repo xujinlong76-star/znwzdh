@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { safeHref } from '@/lib/safe-url'
 import {
   HeartPulse,
   RefreshCw,
@@ -25,8 +26,64 @@ import {
   recommendSiteAlternatives,
   type HubSiteHealthSummary,
   type HubSiteHealthIssue,
+  type HubSiteAlternative,
+  type HubCandidateGrade,
+  type HubCandidateProbeSummary,
 } from '@/lib/navhub-api'
 import { describeDegrade } from '@/lib/degrade'
+
+/**
+ * 档位的展示口径。
+ *
+ * `adoptable` 是这套 UI 唯一的硬约束：实测确认不可用（dead）或疑似停放/空壳（suspicious）
+ * 的候选不能一键写进 `sites` 并置为 active —— 改造前这条链路一个探活请求都不发，
+ * 模型说什么就渲染什么。blocked / unverified 仍可采纳但要带警告：
+ * 「没测准」不等于「已死」，把它禁掉会让人放弃一个只是慢或被 WAF 挡住的站点。
+ */
+const GRADE_META: Record<HubCandidateGrade, { label: string; tone: string; adoptable: boolean; hint: string }> = {
+  verified: {
+    label: '实测可达',
+    tone: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+    adoptable: true,
+    hint: '',
+  },
+  blocked: {
+    label: '被挡住，内容未验证',
+    tone: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    adoptable: true,
+    hint: '站点在线但拒绝了本机请求（WAF/403/429 等），内容是否正常没有验证。采纳前请人工打开确认。',
+  },
+  unverified: {
+    label: '没测准',
+    tone: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    adoptable: true,
+    hint: '超时或连接中断，只说明这次没测到，不代表站点已下线（慢 ≠ 死）。采纳前请人工复核。',
+  },
+  suspicious: {
+    label: '疑似停放页/空壳',
+    tone: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300',
+    adoptable: false,
+    hint: '实测返回的是停放/占位内容，不是真正的替代站点，已禁止直接采纳。',
+  },
+  dead: {
+    label: '实测不可用',
+    tone: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300',
+    adoptable: false,
+    hint: '实测确认不可用（死链、域名解析失败或指向内网地址），已禁止直接采纳。',
+  },
+}
+
+/** 未探活的候选（例如报告里自带的建议替换）不给假档位，也不冒充「已验证」 */
+function gradeMetaOf(alt: HubSiteAlternative) {
+  return alt.grade ? GRADE_META[alt.grade] : null
+}
+
+/** 图标按档位分三类：通过 / 确认不可用 / 需要人看一眼（含没测准与被挡住） */
+function gradeIconOf(grade?: HubCandidateGrade) {
+  if (grade === 'verified') return CheckCircle2
+  if (grade === 'dead' || grade === 'suspicious') return ShieldAlert
+  return AlertTriangle
+}
 
 interface SiteHealthAuditModalProps {
   open: boolean
@@ -38,7 +95,10 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
   const [scanning, setScanning] = useState(false)
   const [healingId, setHealingId] = useState<string | null>(null)
   const [recommendingId, setRecommendingId] = useState<string | null>(null)
-  const [aiAlternatives, setAiAlternatives] = useState<Record<string, Array<{ title: string; url: string; reason: string }>>>({})
+  const [aiAlternatives, setAiAlternatives] = useState<Record<string, HubSiteAlternative[]>>({})
+  // 每个站点本轮探活的整体读数：没有它就无法如实写「3 条里只测通 1 条」，
+  // 也只能逐条猜档位。缺省表示这批候选没实测过（如报告自带的建议替换）。
+  const [altProbes, setAltProbes] = useState<Record<string, HubCandidateProbeSummary>>({})
   // 每个站点的平替来源说明：额度/未配置/调用失败三种降级都必须写在列表上，
   // 否则同分类兜底会被读成「AI 精选平替」。
   const [altNotices, setAltNotices] = useState<Record<string, string>>({})
@@ -105,7 +165,13 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
     }
   }
 
-  const handleApplyAlternative = async (issue: HubSiteHealthIssue, alt: { title: string; url: string }) => {
+  const handleApplyAlternative = async (issue: HubSiteHealthIssue, alt: HubSiteAlternative) => {
+    // 按钮已禁用，这里再拦一道：禁用只防手滑，不防键盘绕过或将来新增的调用点
+    const meta = gradeMetaOf(alt)
+    if (meta && !meta.adoptable) {
+      toast.error(`该候选实测不通过（${meta.label}），不能直接采纳为平替`)
+      return
+    }
     setHealingId(issue.siteId)
     try {
       const res = await applySiteHealingAction({
@@ -130,21 +196,35 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
     try {
       const res = await recommendSiteAlternatives(issue.siteId)
       if (res.ok && res.recommendations?.length > 0) {
+        const probe = res.probe
         setAiAlternatives((prev) => ({
           ...prev,
           [issue.siteId]: res.recommendations,
         }))
+        if (probe) {
+          setAltProbes((prev) => ({ ...prev, [issue.siteId]: probe }))
+        }
+        // 「模型说这个替代品知名度高」不是证据，实测才是。读数随来源说明一起写在列表上。
+        const probeCounts = probe
+          ? `${probe.verified} 条可达、${probe.unreachable} 条不可用` +
+            (probe.inconclusive > 0 ? `、${probe.inconclusive} 条没测准（慢 ≠ 死）` : '')
+          : ''
+        const probeLine = probe ? `已实测 ${probe.checked} 条：${probeCounts}` : '本轮未实测，采纳前请人工打开确认'
         const fromModel = res.model && res.model !== 'fallback-heuristics' ? res.model : null
         if (fromModel) {
           setAltNotices((prev) => ({ ...prev, [issue.siteId]: '' }))
-          toast.success(`模型 ${fromModel} 已生成 ${res.recommendations.length} 个智能平替建议`)
+          if (probe && !probe.hasVerified) {
+            toast.warning(`模型 ${fromModel} 给出的 ${probe.checked} 个候选全部没通过实测（${probeCounts}）：请先人工复核`)
+          } else {
+            toast.success(`模型 ${fromModel} 已生成 ${res.recommendations.length} 个智能平替建议。${probeLine}`)
+          }
         } else {
           const notice =
             res.aiDegraded === 'quota'
               ? `今日 AI 额度已用完${res.quota ? `（${res.quota.metric} ${res.quota.used}/${res.quota.limit}）` : ''}，约 ${Math.max(1, Math.ceil((res.quota?.retryAfterSeconds ?? 0) / 3600))} 小时后恢复。以下结果是同分类高活跃站点兜底，未经模型筛选。`
               : '本次没有模型参与（未配置密钥或调用失败），以下结果是同分类高活跃站点兜底，未经模型筛选。'
-          setAltNotices((prev) => ({ ...prev, [issue.siteId]: notice }))
-          toast.info(notice)
+          setAltNotices((prev) => ({ ...prev, [issue.siteId]: `${notice} ${probeLine}` }))
+          toast.info(`${notice} ${probeLine}`)
         }
       } else {
         toast.info('暂无更高匹配度的替代站点')
@@ -257,6 +337,8 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
 
               {summary.issues.map((issue) => {
                 const currentAlts = aiAlternatives[issue.siteId] || issue.suggestedReplacements || []
+                // 与 currentAlts 同源：只有本轮实测过才有读数，报告自带的建议替换不配借用别轮的结论
+                const currentProbe = altProbes[issue.siteId]
                 return (
                   <div
                     key={issue.siteId}
@@ -321,28 +403,92 @@ export function SiteHealthAuditModal({ open, onClose }: SiteHealthAuditModalProp
                             <span>{altNotices[issue.siteId]}</span>
                           </div>
                         )}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {currentAlts.map((alt, i) => (
-                            <div
-                              key={i}
-                              className="p-2 rounded-lg border border-border/50 bg-background/80 flex items-center justify-between text-xs gap-2"
-                            >
-                              <div className="min-w-0">
-                                <div className="font-medium text-xs text-foreground truncate">{alt.title}</div>
-                                <div className="text-[10px] text-muted-foreground truncate">{alt.reason}</div>
-                              </div>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={healingId === issue.siteId}
-                                className="h-6 px-2 text-[10px] gap-1 text-primary hover:text-primary shrink-0"
-                                onClick={() => handleApplyAlternative(issue, alt)}
-                              >
-                                <span>一键平替</span>
-                                <ArrowRight className="w-2.5 h-2.5" />
-                              </Button>
+                        {currentProbe && (
+                          <div className="rounded-lg border border-border/40 bg-muted/20 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground space-y-1">
+                            <div>
+                              实测读数：{currentProbe.checked} 条参与 · {currentProbe.verified} 条可达 ·{' '}
+                              {currentProbe.unreachable} 条实测不可用 · {currentProbe.inconclusive} 条没测准
+                              {currentProbe.pending > 0 &&
+                                `（其中 ${currentProbe.pending} 条未在 ${Math.round(currentProbe.budgetMs / 1000)} 秒预算内出结论）`}
                             </div>
-                          ))}
+                            <p>{currentProbe.caveat}</p>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {currentAlts.map((alt, i) => {
+                            const meta = gradeMetaOf(alt)
+                            const adoptable = !meta || meta.adoptable
+                            const GradeIcon = gradeIconOf(alt.grade)
+                            return (
+                              <div
+                                key={i}
+                                className={`p-2 rounded-lg border text-xs flex flex-col gap-1 ${
+                                  adoptable ? 'border-border/50 bg-background/80' : 'border-rose-500/40 bg-rose-500/5'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="font-medium text-xs text-foreground truncate">{alt.title}</div>
+                                    {/* AI 建议里的 URL 来自模型输出，属外部可控：必须过安全闸 */}
+                                    <a
+                                      href={safeHref(alt.url, '#')}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[10px] text-muted-foreground truncate block hover:text-foreground hover:underline"
+                                    >
+                                      {alt.url}
+                                    </a>
+                                  </div>
+                                  <span
+                                    className={`inline-flex items-center gap-1 shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] ${
+                                      meta ? meta.tone : 'border-border/50 bg-muted/30 text-muted-foreground'
+                                    }`}
+                                  >
+                                    <GradeIcon className="w-2.5 h-2.5" aria-hidden="true" />
+                                    <span>{meta ? meta.label : '未实测'}</span>
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-muted-foreground leading-relaxed">{alt.reason}</div>
+                                {alt.gradeReason && (
+                                  <div className="text-[10px] text-muted-foreground/90 leading-relaxed">
+                                    实测依据：{alt.gradeReason}
+                                  </div>
+                                )}
+                                {meta?.hint && (
+                                  <div
+                                    role="note"
+                                    className={`text-[10px] leading-relaxed ${
+                                      adoptable ? 'text-amber-700 dark:text-amber-400' : 'text-rose-700 dark:text-rose-300'
+                                    }`}
+                                  >
+                                    {meta.hint}
+                                  </div>
+                                )}
+                                <div className="flex items-center justify-between gap-2 pt-0.5">
+                                  <span className="text-[10px] text-muted-foreground truncate">
+                                    {alt.confidence
+                                      ? `可信度 ${alt.confidence.total}（可达性 ${alt.confidence.reachability} · 内容 ${alt.confidence.contentHealth} · 领域 ${alt.confidence.domainFit}）`
+                                      : alt.source === 'catalog'
+                                        ? '来源：站内同类目兜底'
+                                        : alt.source === 'ai'
+                                          ? '来源：模型推荐，未实测'
+                                          : ''}
+                                    {typeof alt.latencyMs === 'number' ? ` · ${alt.latencyMs}ms` : ''}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={!adoptable || healingId === issue.siteId}
+                                    className="h-6 px-2 text-[10px] gap-1 text-primary hover:text-primary shrink-0 disabled:cursor-not-allowed"
+                                    onClick={() => handleApplyAlternative(issue, alt)}
+                                  >
+                                    <span>一键平替</span>
+                                    <ArrowRight className="w-2.5 h-2.5" />
+                                  </Button>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     )}

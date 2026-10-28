@@ -4,7 +4,7 @@ import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import { usePathname } from 'next/navigation'
 import { Button } from "@/registry/new-york/ui/button"
-import { Compass, Home, Flame, Tags, Layers, Share2, Star, type LucideIcon } from 'lucide-react'
+import { Compass, Home, FolderTree, Flame, Tags, Layers, Share2, Star, type LucideIcon } from 'lucide-react'
 import { RECOVERY_LINKS, type RecoveryIcon } from '@/lib/recovery-links'
 
 /**
@@ -40,6 +40,7 @@ const SearchPalette = dynamic(
 
 const ICONS: Record<RecoveryIcon, LucideIcon> = {
   home: Home,
+  categories: FolderTree,
   trending: Flame,
   tags: Tags,
   collections: Layers,
@@ -73,6 +74,17 @@ export default function NotFound() {
                 {pathname}
               </code>{' '}
               不存在或已被移除。
+            </p>
+          )}
+          {/*
+            薄分类按 SEO 口径是 404（站内链接也不会指向它），但用户往往是
+            从旧外链/旧收藏进来的：这里说清为什么没有页，并把人送到分类总览。
+            不谎称「分类存在但内容不足」——已停用与从不存在在 404 这一层无法区分。
+          */}
+          {pathname?.startsWith('/category/') && (
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              分类页只对站点数达标的类目开放：这个分类可能还没积累足够内容、已停用或已合并。
+              可以到「分类总览」按主题换个入口，或直接搜索站点。
             </p>
           )}
         </div>

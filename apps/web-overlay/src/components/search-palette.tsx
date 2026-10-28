@@ -32,6 +32,7 @@ import {
   type HubPluginSearchResponse,
   type HubCollection,
 } from '@/lib/navhub-api'
+import { searchChannelStatus } from '@/lib/search-degrade'
 import { pluginKindLabel } from '@/lib/plugins/plugin-manifest'
 import { recordOfflineVisit } from '@/lib/offline-recent'
 import { highlightParts } from '@/lib/highlight'
@@ -116,6 +117,8 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
   const [pluginLoading, setPluginLoading] = useState(false)
   /** 插件子检索请求失败：与「插件市场真的没有匹配」区分，不能让失败静默变成空分区 */
   const [pluginFailed, setPluginFailed] = useState(false)
+  /** 插件语义未就绪：服务端已关键词回退，必须如实标注 */
+  const [pluginSemanticFallback, setPluginSemanticFallback] = useState(false)
   const [allCollections, setAllCollections] = useState<HubCollection[]>([])
 
   useEffect(() => {
@@ -254,6 +257,7 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
     setPluginHits(null)
     setPluginLoading(false)
     setPluginFailed(false)
+    setPluginSemanticFallback(false)
     setHasMore(false)
     setMoreFailed(false)
     setSuggestions([])
@@ -282,18 +286,31 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
       // 统一搜索：插件召回与站点召回并行，插件失败不影响站点结果
       setPluginLoading(true)
       setPluginFailed(false)
-      void searchPlugins({ q, limit: 5 })
+      setPluginSemanticFallback(false)
+      // searchPlugins 网络失败时返回 degraded 兜底值而不抛错：只靠 catch 判失败
+      // 会把「请求没到达」显示成「插件市场没有匹配」，onDegraded 才是可靠信号
+      let pluginRequestFailed = false
+      void searchPlugins({ q, limit: 5 }, () => {
+        pluginRequestFailed = true
+      })
         .then((res) => {
           if (controller.signal.aborted || activeQueryRef.current !== q) return
+          const status = searchChannelStatus({
+            sites: null,
+            plugins: res,
+            pluginsFailed: pluginRequestFailed,
+          })
           setPluginHits(res)
           setPluginLoading(false)
-          setPluginFailed(false)
+          setPluginFailed(status.pluginUnavailable)
+          setPluginSemanticFallback(status.pluginSemanticFallback)
         })
         .catch(() => {
           if (controller.signal.aborted || activeQueryRef.current !== q) return
           setPluginHits(null)
           setPluginLoading(false)
           setPluginFailed(true)
+          setPluginSemanticFallback(false)
         })
       void searchSites({ q, limit: 12, categoryId, identity }, controller.signal)
         .then((res) => {
@@ -847,6 +864,9 @@ export function SearchPalette({ siteConfig, categoryId, placeholder = '搜索导
                       <Store className="h-3.5 w-3.5" />
                       插件市场
                       {pluginLoading && <Loader2 className="h-3 w-3 animate-spin opacity-60" />}
+                      {pluginSemanticFallback && (
+                        <span className="text-[10px] font-normal text-muted-foreground">语义未就绪 · 关键词匹配</span>
+                      )}
                     </span>
                     <Link
                       href={`/marketplace?q=${encodeURIComponent(query.trim())}`}

@@ -5,10 +5,9 @@ import { BRAND_FALLBACK } from '@/lib/site-settings'
 /**
  * PWA manifest。
  *
- * 名称/描述/品牌色跟随后台站点设置，图标与快捷方式保持静态：
- * 中枢不可达时 `getFileContent` 回退构建期基线、不抛错，所以这里拿到的永远是
- * 一份可用的值，不会出现「装不上 / 安装元信息为空」。基线品牌名是上游的
- * NavSphere，因此仍要过一遍品牌收敛，缺省回落内置默认。
+ * 名称/描述/品牌色/图标跟随后台站点设置，图标未配置时使用内置默认。
+ * `readSiteSettings` 读取最新配置，中枢不可达时返回归一化默认值。
+ * 历史品牌名可能仍是上游 NavSphere，因此仍要过一遍品牌收敛。
  */
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const settings = await readSiteSettings()
@@ -28,9 +27,9 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     lang: 'zh-CN',
     categories: ['navigation', 'productivity', 'utilities'],
     icons: [
-      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: settings.appearance.pwaIcon192 || '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: settings.appearance.pwaIcon512 || '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: settings.appearance.pwaMaskable512 || '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
     shortcuts: [
       { name: '热度榜', url: '/hot' },

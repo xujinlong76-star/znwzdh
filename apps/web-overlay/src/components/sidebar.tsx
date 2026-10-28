@@ -9,11 +9,14 @@ import { Button } from '@/registry/new-york/ui/button'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import type { NavigationData } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
-import { ChevronDown, ChevronRight, Compass, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Compass, Bell, X } from 'lucide-react'
 import { NavIcon } from '@/components/nav-icon'
 import { NAV_ICON_FALLBACK, isIconUrl, resolveNavIcon } from '@/lib/nav-icons'
 import { WorkspaceSwitcher } from '@/components/workspace/workspace-switcher'
 import { CrdtSyncStatusPill } from '@/components/crdt/crdt-sync-status-pill'
+import { useIdentityReady } from '@/hooks/useIdentityReady'
+import { useUnreadNotifications } from '@/hooks/useUnreadNotifications'
+import { unreadBadgeText } from '@/lib/notification-badge'
 
 interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
   navigationData: NavigationData
@@ -22,6 +25,9 @@ interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export function Sidebar({ className, navigationData, siteInfo, onClose }: SidebarProps) {
+  const identityState = useIdentityReady()
+  const unread = useUnreadNotifications(identityState)
+  const unreadText = unreadBadgeText(unread)
 
 
 
@@ -192,6 +198,21 @@ export function Sidebar({ className, navigationData, siteInfo, onClose }: Sideba
 
       <div className="p-2.5 pb-[max(env(safe-area-inset-bottom,0px),0.625rem)] border-t border-border/40 flex items-center justify-between">
         <CrdtSyncStatusPill />
+        <Link
+          href="/me/notifications"
+          aria-label={unread > 0 ? `通知，${unread} 条未读` : '通知'}
+          className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Bell className="h-4 w-4" aria-hidden />
+          {unreadText && (
+            <span
+              aria-hidden
+              className="absolute -right-0.5 -top-0.5 min-w-[15px] rounded-full bg-primary px-1 text-center text-[9px] font-semibold leading-[15px] text-primary-foreground tabular-nums"
+            >
+              {unreadText}
+            </span>
+          )}
+        </Link>
       </div>
     </div>
   )

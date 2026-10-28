@@ -6,10 +6,14 @@
  * （<a> 嵌 <a> 是非法 HTML，浏览器自动闭合外层，整卡点击当场坏掉，
  * 与 tag-results-board 双模式卡片同一纪律）。
  *
+ * 现在（#14）卡片改为「自闭合外链覆盖层 + 内容层 + 操作层」三兄弟结构：
+ * 外链是空锚铺满整卡，标题内链、标签池、操作按钮都在它之外。
+ *
  * 这里锁四件事：
  *   1. rich 模式的 #tag 是真 <Link>，href 走 /tags/{slug}（tagSlug 与
  *      store slugify 同构——URL 形态与 sitemap、标签云一致，杜绝双 URL）；
- *   2. 标签池在卡片外链 </Link> 与 </CardHeader> **之后**（结构上不可能嵌套）；
+ *   2. 标签池、标题内链与外链覆盖层是**兄弟节点**：外链自闭合在 CardHeader
+ *      之前，结构上不存在 <a> 嵌 <a>；
  *   3. 多选模式下标签点击与整卡同语义（不导航、只切换选中）；
  *   4. 紧凑/标准模式不渲染标签（首页三密度保持现状，不顺手加）。
  *
@@ -52,28 +56,42 @@ describe("卡片 #tag 内链化（rich 模式）", () => {
     expect(richSrc).toContain("hover:bg-primary/10 hover:text-primary transition-colors");
   });
 
-  it("标签池在卡片外链 </Link> 与 </CardHeader> 之后——结构上杜绝 <a> 嵌 <a>", () => {
-    const cardLinkOpen = richSrc.indexOf("href={safeHref(item.href)}");
-    const cardLinkClose = richSrc.indexOf("</Link>", cardLinkOpen);
-    const headerClose = richSrc.indexOf("</CardHeader>");
-    const tagLink = richSrc.indexOf("href={'/tags/'");
-    expect(cardLinkOpen).toBeGreaterThan(-1);
-    expect(cardLinkClose).toBeGreaterThan(cardLinkOpen);
-    // 嵌套序：</CardHeader> 先于 </Link>（Link 包着 CardHeader）
-    expect(headerClose).toBeLessThan(cardLinkClose);
-    // 标签链在两个闭合之后 → 手序上不可能嵌在卡片外链里
-    expect(tagLink).toBeGreaterThan(headerClose);
-    expect(tagLink).toBeGreaterThan(cardLinkClose);
+  it("外链是自闭合覆盖层：CardHeader 不在 <a> 里——结构上杜绝 <a> 嵌 <a>", () => {
+    const overlayAnchor = richSrc.indexOf("href={safeHref(item.href)}");
+    const anchorOpen = richSrc.lastIndexOf("<a", overlayAnchor);
+    const anchorClose = richSrc.indexOf("/>", overlayAnchor);
+    const headerOpen = richSrc.indexOf("<CardHeader");
+    expect(overlayAnchor).toBeGreaterThan(-1);
+    expect(anchorOpen).toBeGreaterThan(-1);
+    // 覆盖层在 CardHeader 之前就自闭合：它没有包住任何内容
+    expect(anchorClose).toBeGreaterThan(overlayAnchor);
+    expect(anchorClose).toBeLessThan(headerOpen);
+    expect(richSrc.slice(anchorOpen, anchorClose)).not.toContain("</a>");
   });
 
-  it("卡片外链不再带 h-full（rich 网格同行拉伸会把手序标签池挤出 overflow-hidden）", () => {
-    const cardLinkOpen = richSrc.indexOf("href={safeHref(item.href)}");
-    // 只取 <Link 开标签的属性区——否则会误伤 CardHeader 里 favicon 的
-    // `w-full h-full`（object-contain 图标）与注释文字里的 h-full
-    const linkTag = richSrc.slice(richSrc.lastIndexOf("<Link", cardLinkOpen), richSrc.indexOf(">", cardLinkOpen));
-    // 允许附加焦点环等工具类；关键约束是「block 且不带 h-full」
-    expect(linkTag).toContain('className="block');
-    expect(linkTag).not.toContain("h-full");
+  it("标签池在 CardHeader 之后（手序上不可能嵌进外链或标题内链）", () => {
+    const headerClose = richSrc.indexOf("</CardHeader>");
+    const tagLink = richSrc.indexOf("href={'/tags/'");
+    expect(headerClose).toBeGreaterThan(-1);
+    expect(tagLink).toBeGreaterThan(headerClose);
+  });
+
+  it("内容层 pointer-events-none，只有真可点元素放行（点空白仍走外链）", () => {
+    expect(richSrc).toContain("relative z-10 pointer-events-none");
+    // 标题内链
+    const titleLink = richSrc.indexOf("href={siteDetailHref}");
+    expect(titleLink).toBeGreaterThan(-1);
+    const titleTag = richSrc.slice(richSrc.lastIndexOf("<Link", titleLink), richSrc.indexOf(">", titleLink));
+    expect(titleTag).toContain("pointer-events-auto");
+    // 标签芯片
+    expect(richSrc).toContain("pointer-events-auto inline-flex items-center text-[10px] px-1.5 py-0.5 rounded bg-muted/70");
+  });
+
+  it("外链覆盖层绝对定位铺满且不带 h-full（不参与网格同行拉伸）", () => {
+    const overlayAnchor = richSrc.indexOf("href={safeHref(item.href)}");
+    const anchorTag = richSrc.slice(richSrc.lastIndexOf("<a", overlayAnchor), richSrc.indexOf(">", overlayAnchor));
+    expect(anchorTag).toContain('className="absolute inset-0');
+    expect(anchorTag).not.toContain("h-full");
   });
 
   it("多选模式下标签点击与整卡同语义：不导航，只切换选中", () => {

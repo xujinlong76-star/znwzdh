@@ -187,7 +187,9 @@ export function AiCanvasGeneratorModal({
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-sm text-foreground">{result.layout.title}</span>
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-600 dark:text-purple-300">
-                      {result.layout.widgets.length} 个规划组件 · {result.latencyMs}ms
+                      {result.fallbackUsed
+                        ? `系统保底 ${result.layout.widgets.length} 张卡 · ${result.latencyMs}ms`
+                        : `${result.layout.widgets.length} 个规划组件 · ${result.latencyMs}ms`}
                     </span>
                   </div>
                   {result.layout.description && (
@@ -210,6 +212,36 @@ export function AiCanvasGeneratorModal({
                   <span className="font-mono ml-1">{result.droppedTypes.join('、')}</span>
                   <span className="block mt-1 text-muted-foreground">让它改用现有模块重新规划一次，即可补齐这部分排版。</span>
                 </div>
+              )}
+
+              {/* 保底布局：一张合法卡都没拿到，这是系统兜底而不是模型规划的结果 */}
+              {result.fallbackUsed && (
+                <div role="alert" className="p-2.5 rounded-lg border border-destructive/40 bg-destructive/10 text-xs text-destructive leading-relaxed">
+                  <span className="font-semibold">保底布局：未按原规划生成。</span>
+                  <span className="block mt-1 text-muted-foreground">
+                    这次没有拿到任何可用模块（见下方原因），下面是系统给的通用三件套。可以直接用，也可以重新规划一次。
+                  </span>
+                </div>
+              )}
+
+              {/* 逐条改动台账：跨度夹紧、配置回退、字段丢弃都记在这里，不许静默发生 */}
+              {result.canvasIssues && result.canvasIssues.length > 0 && (
+                <details className="rounded-lg border border-border/50 bg-background/60 text-xs">
+                  <summary className="cursor-pointer px-2.5 py-2 text-muted-foreground">
+                    校验改动了 {result.canvasIssueTotal ?? result.canvasIssues.length} 处
+                    {result.canvasIssueTotal && result.canvasIssueTotal > result.canvasIssues.length
+                      ? `（仅列出前 ${result.canvasIssues.length} 处）`
+                      : ''}
+                  </summary>
+                  <ul className="px-4 pb-2.5 space-y-1 list-disc">
+                    {result.canvasIssues.map((issue, i) => (
+                      <li key={`${issue.index}-${issue.key}-${i}`}>
+                        <span className="font-mono text-[10px] text-muted-foreground mr-1">#{issue.index + 1} {issue.type}</span>
+                        {issue.message}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               )}
 
               {/* 组件矩阵预览 */}

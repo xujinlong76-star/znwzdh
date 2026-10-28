@@ -1311,7 +1311,7 @@ PG advisory lock 用例），属并行会话在飞的改动。
 |---|---|---|
 | **响应契约棘轮**（`response-contracts.test.ts`） | 实际 232 条未绑定读路由 vs 基线 226 | 通知功能的三条读路由需登记契约或进基线并说明理由：`GET/HEAD /api/admin/notifications`、`GET/HEAD /api/admin/notifications/deliveries`、`GET/HEAD /api/me/notifications/unread-count`（各带一个 HEAD 变体，共 6 行差异）。属通知功能所有者：`{ unread: number }` 之类的形状要由他们定义 |
 | **路由策略表**（`route-policy.test.ts`） | 具名矩阵里找不到新路由 | 同上，把三条读路由登记进 `authz.ts` 的策略表 |
-| **`mobile-nav` 源码断言** | 断言 `aria-label={label}`，组件已改成带未读数的模板字符串 | 对方提交 `mobile-nav.tsx` 时一并更新断言。**不要现在改测试** —— HEAD 的组件还是旧写法，改测试会让 HEAD 变红 |
+| ~~**`mobile-nav` 源码断言**~~ | 断言 `aria-label={label}`，组件已改成带未读数的模板字符串 | **已解除**（`10e38d3a`）：改为 `/aria-label=\{[^}]*label/`，对旧写法与带后缀写法都成立，因此不依赖组件那半是否提交 |
 | **`data-inventory` 的 HEAD 一致性** | 登记项依赖 `notification_outbox` 建表，而建表在对方未提交的 `migrate.ts` 里 | 与 `migrate.ts` 同批提交。单独提交会让 HEAD 的「清单里每张表都真实存在」用例红 |
 
 ### 20.4 下一个人怎么继续
@@ -1343,6 +1343,67 @@ node scripts/safe-commit.mjs --msg-file <msg> -- \
 | `scripts/typecheck.mjs` | 5 个包通过 |
 | `scripts/typecheck-video-scope.mjs` | 73 模块 0 错误 |
 | `scripts/check-syntax.mjs` | 1381 文件 0 错误 |
-| `packages/store/test` | 50 文件 / 382 例全绿（含新增 5 例） |
-| `apps/api/test` | 1152 通过 / 3 失败（全部为 20.3 的登记项） |
-| `apps/web/test` | 2483 通过 / 5 失败（全部为 20.3 的在飞改动） |
+| `packages/store/test` | 51 文件（50 通过 + 1 跳过）/ **383 例全绿**（含新增 7 例） |
+| `apps/api/test` | 117 文件 / 1160 例：**1157 通过 / 3 失败**（全部为 20.3 的登记项） |
+| `apps/web/test` | 221 文件 / **2491 例全绿**（`10e38d3a` 之后） |
+
+---
+
+## 21. 附带发现：投稿审阅接口对个人令牌开放（越权）
+
+> 严格说这不属于「视频管理 / 热点采集」两个模块，是核对 `apps/api/test` 红灯时发现的。
+> 但它与本次审计反复强调的「鉴权边界」是同一类问题，后果比视频侧任何一条都重，故记录。
+
+### 21.1 证据（HEAD 状态）
+
+`apps/api/src/routes/submissions.ts`：
+
+```
+118: app.patch("/api/submissions/:number", { config: { scope: "write" } }, ...)
+121:   const body = z.object({ action: z.enum(["approve", "reject"]), reason?: string })
+141:   await ctx.repo.updateSite(site.id, { status: nextStatus as never })
+143:   if (body.data.action === "approve") await indexSite(ctx, site.id, ...)
+```
+
+而 `apps/api/test/route-policy.test.ts:347` 把这条登记成「唯一登记例外」：
+
+```ts
+{ route: "PATCH /api/submissions/:number", scope: "write", personal: true,
+  why: "作者改自己的投稿（唯一登记例外）" }
+```
+
+### 21.2 后果
+
+`scope: "write"` 意味着**个人令牌可用**。该处理体的动作只有「审批 / 驳回」，
+且 HEAD 上**没有任何归属校验**（连 `submission_owners` 表都还没有）。于是完整链条是：
+
+```
+任何登录用户 → POST /api/submissions 提交任意 URL（这是 write，本就该开放）
+            → 拿到自己的投稿编号
+            → PATCH /api/submissions/{number} { action: "approve" }
+            → status: active + 立刻 indexSite() 进检索索引
+```
+
+即**自审自批、自发布**。后果是站点库可被任意内容填充：SEO 污染、钓鱼链接被收录、
+品牌词被劫持。审计日志只会留一条「该用户 approve 了该投稿」，看不出越权。
+
+值得单独指出的是：同一文件里已经有过一次相关修复的注释 ——
+「任何 write 令牌都能借审核接口下架/强行上架任意站点」，但那次只修了
+**分支条件**（非投稿站点必须清空 `site`），**没修权限声明**。半个修复比没修更容易
+让人以为「这里已经安全了」。
+
+### 21.3 现状与遗留
+
+并行会话已把注册改为 `scope: "admin"`（工作区 `submissions.ts:146`），并引入
+`submission_owners` 记录归属。越权面已关。
+
+但 `route-policy.test.ts:347` 的登记项**立刻变陈旧**（仍写 `scope: "write"`、
+`personal: true`），门禁因此红 —— 这正是「策略表是事实源」的设计意图：
+改 `authz` 语义必须同步改登记，否则运行时与文档悄悄分叉。
+
+**残留建议（未实施）**：`scope: "admin"` 只保证「必须是管理员」，不保证
+「审批人 ≠ 投稿人」。管理员自己投稿再自己批仍然走得通。要落实双人原则，需在 PATCH 里
+比较 `submission_owners.identity` 与 `req.auth.actor`，相同则 403。
+
+不做这条的理由：它属于并行会话正在写的那条链路；且「管理员能否自批」是产品决策 ——
+单人运营的站点，禁止自批等于无法审核。留作决策项，不替产品拍板。

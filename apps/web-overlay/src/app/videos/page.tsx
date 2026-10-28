@@ -52,7 +52,13 @@ export async function generateMetadata(): Promise<Metadata> {
     // 点击行为是站内弹窗播放或无播放配置时直达原站，不是「进入站内播放页」
     description: '按分类浏览收录的视频与教程，支持站内弹窗播放或直达原站',
     alternates: { canonical: '/videos' },
-    // 视频库仍是占位内容：保持 noindex,follow 并留在 sitemap 之外（I4 收录策略）
+    // 收录口径（2026-10-28 复核后更新，旧注释写的是「视频库仍是占位内容」，已与事实不符）：
+    //   库里是**真实内容**——video_categories 12 个类目（带 harvest_policy）、
+    //   video_items 5578 条（含 platform / external_id / duration_sec / quality_score）。
+    //   仍然 noindex 的原因不再是「内容是占位」，而是**链接全部指向第三方视频站**，
+    //   收录本页对本站无增益、还会把 crawl budget 花在外链上。
+    //   是否放开收录，取决于 /videos/sitemap.xml 那条路由（当前在视频线 WIP 中）：
+    //   它一旦上线，本行的 robots 必须与之同口径修改，不能一边 sitemap 一边 noindex。
     robots: { index: false, follow: true },
     ...(await pageShareMetadata({
       url: '/videos',

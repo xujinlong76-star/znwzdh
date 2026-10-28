@@ -30,11 +30,11 @@
  * 用法：node scripts/check-client-node-imports.mjs [--json] [--ref <git-ref>] [--working-tree]
  * 退出码：0 = 干净；1 = 有违规或有陈旧例外；2 = 参数/仓库状态错误。
  */
-import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { extractSpecifiers, maskTemplateLiterals, normalizePath, resolveSpecifier, stripComments } from "./lib/source-refs.mjs";
+import { listFiles, readBlobs } from "./lib/git-blobs.mjs";
+import { extractSpecifiers, maskTemplateLiterals, resolveSpecifier, stripComments } from "./lib/source-refs.mjs";
 
 const ROOT = process.cwd();
 
@@ -191,45 +191,17 @@ export function analyzeSources(contents, { exceptions = EXCEPTIONS } = {}) {
   };
 }
 
-function gitBuf(args, input) {
-  const r = spawnSync("git", args, { cwd: ROOT, input, maxBuffer: 256 * 1024 * 1024 });
-  if (r.status !== 0) {
-    throw new Error(`git ${args.join(" ")} 失败：${(r.stderr ? r.stderr.toString("utf8") : "").trim()}`);
-  }
-  return r.stdout;
-}
-
 /**
- * 批量读 ref 里的源码：一次 `git cat-file --batch`，不是每文件一次 `git show`。
+ * 批量读 ref 里的源码：一次 `git cat-file --batch`，不是每文件一次 `git show`
+ * （解析器与它的字节数坑见 scripts/lib/git-blobs.mjs）。
  * 客户端闭包要读 450+ 个文件，逐个子进程实测 29 s——pre-push 里没人会留着这种闸门。
- * 注意 blob 的 size 是**字节数**，所以必须按 Buffer 切片再解码（本仓库源码里全是中文，
- * 用 utf8 字符串的 length 切会错位）。
  */
 function readTree(ref) {
-  const listing = gitBuf(["ls-tree", "-r", "--name-only", "-z", ref, "--", SRC_ROOT]).toString("utf8");
-  const paths = listing.split("\0").filter((p) => p && SOURCE_RE.test(p)).map(normalizePath);
-  const contents = new Map();
-  if (paths.length === 0) throw new Error(`ref ${ref} 下 ${SRC_ROOT} 一个源码文件都没读到`);
-  const out = gitBuf(["cat-file", "--batch"], Buffer.from(paths.map((p) => `${ref}:${p}`).join("\n") + "\n", "utf8"));
-  let i = 0;
-  for (const path of paths) {
-    const nl = out.indexOf(0x0a, i);
-    if (nl < 0) break;
-    const header = out.subarray(i, nl).toString("utf8");
-    const m = /^([0-9a-f]{40}) (\w+) (\d+)$/.exec(header);
-    if (m) {
-      const size = Number(m[3]);
-      if (m[2] === "blob") contents.set(path, out.subarray(nl + 1, nl + 1 + size).toString("utf8"));
-      i = nl + 1 + size + 1;
-      continue;
-    }
-    if (header.endsWith(" missing")) {
-      i = nl + 1;
-      continue;
-    }
-    throw new Error(`git cat-file --batch 输出解析不了（位置 ${i}）：${header.slice(0, 80)}`);
+  const paths = listFiles(ref, SRC_ROOT, SOURCE_RE, { cwd: ROOT });
+  const contents = readBlobs(ref, paths, { cwd: ROOT });
+  if (paths.length === 0 || contents.size === 0) {
+    throw new Error(`ref ${ref} 下 ${SRC_ROOT} 一个源码文件都没读到`);
   }
-  if (contents.size === 0) throw new Error(`ref ${ref} 下 ${SRC_ROOT} 一个源码文件都没读到`);
   return contents;
 }
 

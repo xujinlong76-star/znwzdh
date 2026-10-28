@@ -13,6 +13,8 @@
  *   - 校验：剥掉生成横幅后，两侧必须逐字节一致（CRLF 归一后）
  *
  * 只放纯逻辑（无 process.exit、无副作用 I/O 之外的东西），I/O 由脚本负责。
+ * 读 git 提交内容的闸门（scripts/check-core-mirrors.mjs）只能查 overlay 这条腿，
+ * 因为 apps/web/src 整棵树被 gitignore——见 planSync 的 `legs`。
  */
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -80,8 +82,14 @@ export function webPathOf(entry) {
  * @param {object} io
  * @param {(p: string) => boolean} io.exists
  * @param {(p: string) => string} io.read
+ * @param {object} [opts]
+ * @param {("overlay"|"web")[]} [opts.legs] 只查这些生成腿。
+ *   默认两条都查（写盘/工作区校验的正确口径）。读 git ref 的闸门必须传
+ *   `["overlay"]`：`apps/web/src` 整棵树被 gitignore（`.gitignore:45`），
+ *   提交里根本不存在这条腿，按默认口径查会永远报「web 缺失」——那是假红灯。
  */
-export function planSync(entries, io = { exists: existsSync, read: readFileSync }) {
+export function planSync(entries, io = { exists: existsSync, read: readFileSync }, opts = {}) {
+  const legs = opts.legs ?? ["overlay", "web"];
   return entries.map((entry) => {
     const source = sourcePathOf(entry);
     const overlay = overlayPathOf(entry);
@@ -102,6 +110,7 @@ export function planSync(entries, io = { exists: existsSync, read: readFileSync 
     const expected = normalize(composeMirror(sourceText, source));
 
     for (const [label, rel] of [["overlay", overlay], ["web", web]]) {
+      if (!legs.includes(label)) continue;
       if (!io.exists(rel)) {
         plan.reasons.push(`${label} 缺失：${rel}`);
       } else if (normalize(stripBanner(io.read(rel))) !== normalize(sourceText)) {
@@ -118,9 +127,10 @@ export function planSync(entries, io = { exists: existsSync, read: readFileSync 
  * 校验模式：返回失败清单（为空即全部一致）。
  * @param {object[]} entries
  * @param {object} io
+ * @param {object} [opts] 透传给 planSync（`legs`）
  */
-export function checkMirrors(entries, io = { exists: existsSync, read: readFileSync }) {
-  const plans = planSync(entries, io);
+export function checkMirrors(entries, io = { exists: existsSync, read: readFileSync }, opts = {}) {
+  const plans = planSync(entries, io, opts);
   const failures = plans.filter((p) => p.status !== "ok");
   return { ok: failures.length === 0, plans, failures };
 }

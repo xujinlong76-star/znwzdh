@@ -12,14 +12,20 @@
  *     这类问题的 CI 反馈是最慢也最难懂的——tsc/eslint/build 全绿，直到
  *     `check-bundle-budget` 报「首屏超预算」才知道，且没有线索指向根因
  *     （2026-10-28 实测：`node:crypto` 的垫片让 /videos 首屏 +476 KB）。
+ *   - core 镜像与事实源同源（scripts/check-core-mirrors.mjs）：
+ *     `packages/core` 的纯算法在覆盖层有一份逐字节副本，CI 用
+ *     `sync-core-mirrors --check` 守（.github/workflows/ci.yml:550）。这条闸门
+ *     **在工作区里查不出来**——2026-10-28 实测 HEAD 上 `webmcp-bridge` 漂移、
+ *     CI 的覆盖层 job 报红，而同一个工作区里 `--check` 是绿的（修复躺在别的会话
+ *     没提交）。只有读提交的版本能在这个窗口里说真话。
  *
  * 为什么不无条件跑前两枚：本仓库长期多会话并行，工作区里常有别人未提交的半成品。
  * 这两枚检查的是**工作区**，而推送出去的是**提交**。两者不一致时跑出来的红
  * 与本次推送无关，只会冤枉人。所以每枚闸门只看自己相关的路径：
  * 干净 → 与推送内容一致，跑；有未提交改动 → 明确跳过并说明（CI 全量兜底），不阻塞。
  *
- * 第三枚没有这个包袱：它读的是 HEAD 的提交内容（= 正要推出去的东西），
- * 别人的未提交改动进不了它的视野，所以无条件跑。
+ * 后两枚没有这个包袱：它们读的是 HEAD 的提交内容（= 正要推出去的东西），
+ * 别人的未提交改动进不了它们的视野，所以无条件跑。
  *
  * 退出码：0 = 通过或按规则跳过，1 = 闸门失败。
  */
@@ -64,6 +70,12 @@ export function planGates({ contractDirty = false, scopeDirty = false } = {}) {
       run: true,
       skipReason: "",
     },
+    {
+      id: "core-mirrors",
+      title: "core 与前端运行时镜像同源",
+      run: true,
+      skipReason: "",
+    },
   ];
 }
 
@@ -98,10 +110,15 @@ function runClientGraphGate() {
   runNode(["scripts/check-client-node-imports.mjs"]);
 }
 
+function runCoreMirrorGate() {
+  runNode(["scripts/check-core-mirrors.mjs"]);
+}
+
 const RUNNERS = {
   "rest-contracts": runContractGate,
   "scope-explicit": runScopeGate,
   "client-node-imports": runClientGraphGate,
+  "core-mirrors": runCoreMirrorGate,
 };
 
 const FIX_HINTS = {
@@ -109,7 +126,17 @@ const FIX_HINTS = {
   "scope-explicit": "修复：给新写路由补 config.scope（或进 IMPLICIT_SCOPE_BASELINE 并说明理由）",
   "client-node-imports":
     "修复：用到 node 内建的逻辑留在服务端（route handler / Server Component），客户端只消费结果；参考 0e720839 的签名下沉做法",
+  "core-mirrors":
+    "修复：node scripts/sync-core-mirrors.mjs 重新生成镜像，并把 core 事实源与两份镜像一起提交（只改事实源不重生成 = 前端在跑旧算法）",
 };
+
+/**
+ * 每枚闸门都要同时有 runner 和修复提示：漏 runner 会让钩子遍历时直接 TypeError，
+ * 漏 fixHint 会打印 "undefined"——两种都是「闸门自己坏掉」，测试钉住这条不变量。
+ */
+export function hasImpl(gateId) {
+  return Boolean(RUNNERS[gateId] && FIX_HINTS[gateId]);
+}
 
 function main() {
   if (process.env.NAVHUB_SKIP_PREPUSH === "1") {

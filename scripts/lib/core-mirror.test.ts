@@ -153,6 +153,49 @@ describe('checkMirrors', () => {
   })
 })
 
+describe('legs：只查已入库的那条腿', () => {
+  const source = 'export const v = 1\n'
+  const mirror = composeMirror(source, 'packages/core/src/demo.ts')
+
+  it('legs=["overlay"] 时 apps/web 整棵树缺失也不算漂移', () => {
+    // 提交里没有 apps/web/src（.gitignore:45），HEAD 口径必须看不见它，
+    // 否则 13 条镜像会集体报「web 缺失」——闸门说谎。
+    const files = {
+      'packages/core/src/demo.ts': source,
+      'apps/web-overlay/src/lib/demo.ts': mirror,
+    }
+    expect(checkMirrors([{ name: 'demo' }], memoryIo(files), { legs: ['overlay'] }).ok).toBe(true)
+    expect(checkMirrors([{ name: 'demo' }], memoryIo(files)).ok).toBe(false)
+  })
+
+  it('legs=["overlay"] 只让 overlay 的漂移过关，web 的漂移不参与判定', () => {
+    const files = {
+      'packages/core/src/demo.ts': source,
+      'apps/web-overlay/src/lib/demo.ts': mirror,
+      'apps/web/src/lib/demo.ts': '手改\n',
+    }
+    expect(checkMirrors([{ name: 'demo' }], memoryIo(files), { legs: ['overlay'] }).ok).toBe(true)
+    const bad = { ...files, 'apps/web-overlay/src/lib/demo.ts': '手改\n' }
+    const res = checkMirrors([{ name: 'demo' }], memoryIo(bad), { legs: ['overlay'] })
+    expect(res.failures[0].reasons).toEqual(['overlay 与事实源不一致：apps/web-overlay/src/lib/demo.ts'])
+  })
+
+  it('legs 反过来也能只查 web 那条（vendor 校验用得上）', () => {
+    const files = {
+      'packages/core/src/demo.ts': source,
+      'apps/web-overlay/src/lib/demo.ts': '手改\n',
+      'apps/web/src/lib/demo.ts': mirror,
+    }
+    expect(checkMirrors([{ name: 'demo' }], memoryIo(files), { legs: ['web'] }).ok).toBe(true)
+  })
+
+  it('事实源缺失与 legs 无关，永远算异常（没源头就没有「一致」可言）', () => {
+    const files = { 'apps/web-overlay/src/lib/demo.ts': mirror }
+    const res = checkMirrors([{ name: 'demo' }], memoryIo(files), { legs: ['overlay'] })
+    expect(res.failures[0].status).toBe('missing-source')
+  })
+})
+
 describe('清单解析', () => {
   it('按 verbatim / adapter / external 分组，缺省为空数组', () => {
     const m = parseManifest(JSON.stringify({ verbatim: [{ name: 'a' }] }))

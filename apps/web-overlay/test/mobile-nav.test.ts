@@ -71,7 +71,11 @@ describe('mobile-nav 组件本体', () => {
     expect(src).toContain("import { usePathname } from 'next/navigation'")
     expect(src).toContain('usePathname()')
     expect(src).toContain("aria-current={active ? 'page' : undefined}")
-    expect(src).toContain('aria-label={label}')
+    // 可访问名必须**由 label 派生**。允许追加状态后缀 ——
+    // 例如「我的，3 条未读通知」：读屏能听到未读数，是改进而非退化。
+    // 这里刻意不写成 `aria-label={label}` 的精确快照：那样任何合法的状态后缀
+    // 都会让守卫变红，而它真正要守的是「别把 label 换掉或写成固定文案」。
+    expect(src).toMatch(/aria-label=\{[^}]*\blabel\b/)
     // 根路径只认精确匹配，其余走前缀匹配（/category/xxx 也点亮分类）
     expect(src).toContain("pathname.startsWith(href + '/')")
   })

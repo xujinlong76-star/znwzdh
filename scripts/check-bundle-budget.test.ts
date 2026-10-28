@@ -532,3 +532,111 @@ describe("check-bundle-budget：参数卫生", () => {
   });
 });
 
+
+/**
+ * 「首屏源码干净」这条前置对 apps/web 派生镜像的处理。
+ *
+ * 为什么单独一组：CI 的 test-web 第 6 步就是 vendor-web，它必然重写 apps/web/src 的镜像。
+ * HEAD 里跟踪的镜像只要落后于已提交的事实源，脏判据就永远为真——2026-10-28 实测
+ * tip 1a21763 的账 bundleDirty=3，三条全是这一类，等于 --raise 在 CI 里结构性不可能。
+ */
+describe("check-bundle-budget：apps/web 生成镜像不挡定基线", () => {
+  /** 夹具：overlay 事实源 + apps/web 镜像一起提交，之后按场景制造「镜像脏」 */
+  function makeMirrorRoot(): { root: string; bump: (body: string) => void; sync: () => void } {
+    const root = mkdtempSync(join(tmpdir(), "navhub-bundle-mirror-"));
+    git(root, ["init", "-q"]);
+    git(root, ["config", "user.email", "mirror@test.local"]);
+    git(root, ["config", "user.name", "mirror-test"]);
+    git(root, ["config", "commit.gpgsign", "false"]);
+    write(root, "scripts/bundle-budget.json", JSON.stringify(RAISE_BUDGETS, null, 2) + "\n");
+    const manifest = writeTurbopackDist(root, RAISE_SPEC, 1_000);
+    write(root, "apps/web-overlay/src/app/page.tsx", "export default function V1() { return null }\n");
+    write(root, "apps/web/src/app/page.tsx", "export default function V1() { return null }\n");
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "-m", "fixture"]);
+    const future = new Date(Date.now() + 60_000);
+    utimesSync(manifest, future, future);
+    return {
+      root,
+      // 只提交事实源，不动镜像：这就是「HEAD 里镜像落后」的成因
+      bump: (body) => {
+        write(root, "apps/web-overlay/src/app/page.tsx", body);
+        git(root, ["add", "apps/web-overlay/src/app/page.tsx"]);
+        git(root, ["commit", "-q", "-m", "overlay only"]);
+      },
+      // 等价于 vendor-web 的覆写：镜像内容 = 已提交的事实源
+      sync: () => {
+        const src = readFileSync(join(root, "apps/web-overlay/src/app/page.tsx"), "utf8");
+        write(root, "apps/web/src/app/page.tsx", src);
+        const m2 = new Date(Date.now() + 120_000);
+        utimesSync(join(root, "apps/web/fixture-dist/build-manifest.json"), m2, m2);
+      },
+    };
+  }
+
+  it("镜像内容等于 HEAD 的事实源：中性化，--raise 放行", () => {
+    const fx = makeMirrorRoot();
+    try {
+      fx.bump("export default function V2() { return null }\n");
+      fx.sync();
+      const res = spawnSync(process.execPath, [SCRIPT, "--report", "--json"], {
+        cwd: fx.root,
+        encoding: "utf8",
+        env: { ...process.env, NEXT_DIST_DIR: "fixture-dist" },
+      });
+      expect(res.status, res.stderr).toBe(0);
+      const json = JSON.parse(res.stdout);
+      expect(json.provenance.bundleDirty).toBe(0);
+      expect(json.provenance.bundleDirtyPaths).toEqual([]);
+      expect(json.provenance.mirrorNeutral).toBe(1);
+      expect(json.provenance.mirrorNeutralPaths).toEqual(["apps/web/src/app/page.tsx"]);
+      // 中性化不等于看不见：报数那一行要点名
+      const out = runBudget(fx.root, ["--report"]);
+      expect(out.code, out.out).toBe(0);
+      expect(out.out).toContain("vendor-web 从已提交事实源重写的 apps/web 镜像");
+      const raised = runBudget(fx.root, ["--raise", "--reason=镜像来自已提交事实源"]);
+      expect(raised.code, raised.out).toBe(0);
+      expect(raised.out).toContain("已写入");
+    } finally {
+      rmSync(fx.root, { recursive: true, force: true });
+    }
+  });
+
+  it("镜像被手改（内容不等于 HEAD 的事实源）：继续挡， refusal 点名到文件", () => {
+    const fx = makeMirrorRoot();
+    try {
+      fx.bump("export default function V2() { return null }\n");
+      write(fx.root, "apps/web/src/app/page.tsx", "export default function HandEdited() { return null }\n");
+      const { code, out } = runBudget(fx.root, ["--raise", "--reason=确实变大"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain("首屏源码有 1 个未提交改动");
+      expect(out).toContain("apps/web/src/app/page.tsx");
+    } finally {
+      rmSync(fx.root, { recursive: true, force: true });
+    }
+  });
+
+  it("新文件直接落在 apps/web/src（HEAD 里没有事实源）：不算镜像，继续挡", () => {
+    const fx = makeMirrorRoot();
+    try {
+      write(fx.root, "apps/web/src/app/brand-new/page.tsx", "export default function N() { return null }\n");
+      const { code, out } = runBudget(fx.root, ["--raise", "--reason=确实变大"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain("apps/web/src/app/brand-new/page.tsx");
+    } finally {
+      rmSync(fx.root, { recursive: true, force: true });
+    }
+  });
+
+  it("packages/core 与 overlay 的脏永远挡路：中性化只认 apps/web/src 这一类", () => {
+    const fx = makeMirrorRoot();
+    try {
+      write(fx.root, "packages/core/src/cjk.ts", "export const x = 1;\n");
+      const { code, out } = runBudget(fx.root, ["--raise", "--reason=确实变大"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain("packages/core/src/cjk.ts");
+    } finally {
+      rmSync(fx.root, { recursive: true, force: true });
+    }
+  });
+});

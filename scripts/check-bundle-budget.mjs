@@ -222,6 +222,48 @@ function gitOut(args) {
   return res.status === 0 ? res.stdout : null;
 }
 
+/** 带 stdin 的批量 git 查询：脏文件可能几十个，逐个起子进程没人受得了 */
+function gitIn(args, input) {
+  const res = spawnSync("git", args, { cwd: root, encoding: "utf8", input, maxBuffer: 32 * 1024 * 1024 });
+  return res.status === 0 ? res.stdout : null;
+}
+
+const MIRROR_PREFIX = "apps/web/src/";
+const FACT_PREFIX = "apps/web-overlay/src/";
+
+/**
+ * apps/web/src/** 是 vendor-web 从 apps/web-overlay 逐文件覆写出来的派生镜像
+ * （见 scripts/vendor-web.mjs：walkAndCopy(OVERLAY, TARGET)，「overlay always wins」）。
+ * 于是 `--raise` 的「首屏源码干净」前置在 CI 里是**结构性不可能**：test-web 第 6 步就是
+ * vendor-web，它必然重写这些镜像；只要 HEAD 里跟踪的镜像落后于已提交的事实源，
+ * `git status` 就永远报脏。2026-10-28 实测 tip 1a21763 的账 bundleDirty=3，三条全是这一类
+ * （videos/page.tsx、lib/github.ts、lib/storage-adapter.ts），没有一个来自人的未提交改动。
+ *
+ * 判据必须是「镜像的工作区内容 == HEAD 里对应事实源的 blob」，不能是路径白名单：
+ * 白名单会把「有人手改派生文件」这类漂移一起放过，而那正是 check-web-overlay 要拦的东西。
+ * 相等 → 这份脏不携带任何信息，产物仍可从提交完全复现；不等（含 HEAD 里根本没有事实源，
+ * 即新文件直接落在 apps/web/src）→ 继续拦。
+ */
+function partitionGeneratedMirrors(paths) {
+  const others = paths.filter((p) => !p.startsWith(MIRROR_PREFIX));
+  const mirrors = paths.filter((p) => p.startsWith(MIRROR_PREFIX));
+  if (mirrors.length === 0) return { neutral: new Set(), handEdited: others };
+  const wt = gitIn(["hash-object", "--stdin-paths"], mirrors.join("\n") + "\n");
+  const wtLines = wt === null ? [] : wt.split("\n").filter((l) => l.trim() !== "");
+  if (wtLines.length !== mirrors.length) return { neutral: new Set(), handEdited: [...others, ...mirrors] };
+  const specs = mirrors.map((p) => "HEAD:" + FACT_PREFIX + p.slice(MIRROR_PREFIX.length));
+  const head = gitIn(["cat-file", "--batch-check=%(objectname) %(objecttype)"], specs.join("\n") + "\n");
+  const headLines = head === null ? [] : head.split("\n").filter((l) => l.trim() !== "");
+  const neutral = new Set();
+  const unmatched = [];
+  mirrors.forEach((p, i) => {
+    const [oid, type] = (headLines[i] ?? "").split(" ");
+    if (type === "blob" && oid === wtLines[i].trim()) neutral.add(p);
+    else unmatched.push(p);
+  });
+  return { neutral, handEdited: [...others, ...unmatched] };
+}
+
 /**
  * 产物的出处 = sha + 工作区脏文件数（全仓计数与「能改变首屏的那部分」分开算）。
  * 多会话并行时「这份 .next 是哪棵树产的」直接决定建议基线能不能复现，
@@ -243,11 +285,15 @@ function treeProvenance() {
           .split("\n")
           .filter((l) => l.trim() !== "")
           .map((l) => (l.includes(" -> ") ? l.slice(3).split(" -> ")[1] : l.slice(3).trim()));
+  const { neutral, handEdited } = partitionGeneratedMirrors(bundleDirtyPaths);
   return {
     sha: head.trim() || null,
     dirty: count(status),
-    bundleDirty: count(bundleStatus),
-    bundleDirtyPaths,
+    bundleDirty: bundleStatus === null ? null : handEdited.length,
+    bundleDirtyPaths: handEdited,
+    // 单独立一项：中性化不等于看不见，报数照报，只是不挡路
+    mirrorNeutral: bundleStatus === null ? 0 : neutral.size,
+    mirrorNeutralPaths: [...neutral],
   };
 }
 
@@ -386,6 +432,12 @@ function provenanceLines() {
   const lines = [
     `[bundle] 产物出处：提交 ${prov.sha ?? "（不在 git 仓库里，无法定位）"} · ${dirtyText} · 构建时间 ${iso(built)}`,
   ];
+  if (prov.mirrorNeutral > 0) {
+    lines.push(
+      `[bundle] 其中 ${prov.mirrorNeutral} 个是 vendor-web 从已提交事实源重写的 apps/web 镜像` +
+        `（内容 == HEAD 的 overlay blob，产物可完全复现）：照报，但不挡定基线`,
+    );
+  }
   if (prov.bundleDirty > 0) {
     const shown = prov.bundleDirtyPaths.slice(0, 8).join("、");
     lines.push(
@@ -415,6 +467,8 @@ function runReport(meta) {
             dirty: meta.prov.dirty,
             bundleDirty: meta.prov.bundleDirty,
             bundleDirtyPaths: meta.prov.bundleDirtyPaths,
+            mirrorNeutral: meta.prov.mirrorNeutral,
+            mirrorNeutralPaths: meta.prov.mirrorNeutralPaths,
             builtAt: meta.built,
             newestSourceAt: meta.source,
             stale: meta.stale,

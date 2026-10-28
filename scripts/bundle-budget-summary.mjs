@@ -68,6 +68,9 @@ export function renderLedger(report, opts = {}) {
   lines.push("");
   lines.push(`- 产物：提交 \`${prov.sha ?? "不可定位"}\` · 打包器 ${report?.bundler ?? "未知"} · 构建于 ${iso(prov.builtAt)}`);
   lines.push(
+    `- 工作区：全仓脏 ${prov.dirty ?? "不可定位"} · 挡定基线 ${prov.bundleDirty ?? "不可定位"} · 生成镜像已中性化 ${prov.mirrorNeutral ?? 0}（vendor-web 从已提交事实源重写，内容等于 HEAD 的 overlay blob）`,
+  );
+  lines.push(
     `- 覆盖面：${(Array.isArray(report?.routes) ? report.routes.length : 0)} 条路由 · 门禁违规 ${(Array.isArray(report?.violations) ? report.violations.length : 0)} 条 · 建议阈值口径 = 实测 ×${report?.headroom ?? "?"} 向上取整到 KiB`,
   );
   const why = [];

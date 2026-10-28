@@ -1275,3 +1275,74 @@ api 侧 4 例（`video-catalog-store.test.ts`）：
 api 侧的接线（`storage.ts` / `video-catalog.ts` / 4 例）**暂未提交** ——
 `apps/api/test` 当前有两处与本次无关的红灯（新读路由未登记响应契约基线、
 PG advisory lock 用例），属并行会话在飞的改动。
+
+---
+
+## 20. 会话交接清单（2026-10-28 08:50）
+
+本轮的代码在文件层面已完成并通过本地验证，但**有 5 个文件因并行会话在飞的改动而无法提交**
+（提交钩子会跑对应的测试根，而那几个测试根当前是红的）。这里把状态与解除条件写清楚。
+
+### 20.1 已提交
+
+| commit | 内容 |
+|---|---|
+| `601bad9a` | `feat(store)` `replaceVideoReplacements` 全量替换原语 + 5 例测试 |
+| `c7262e82` | `docs(video)` 手册 §5 边界改写成当前事实 + 报告 §17.3 修订 + 第 19 章 |
+
+### 20.2 已验证但未提交（改动已完成，只差一次绿灯提交）
+
+| 文件 | 内容 | 本地验证 |
+|---|---|---|
+| `apps/api/src/video-catalog.ts` | `VIDEO_REPLACEMENTS_PATH`、`INLINE_REPLACEMENT_LIMIT`、`flattenReplacementDoc()`、`syncReplacementHistory(Safely)()`、db 重建按内联上限截断 | `tsc -p apps/api` 0 错误；`video-catalog-store.test.ts` 17 例全绿 |
+| `apps/api/src/storage.ts` | `video-replacements.json` 写入口 → 全量同步审计表 | 同上 |
+| `apps/api/test/video-catalog-store.test.ts` | 4 例：120 条全量进表 / 形状不认识不清表 / db 重建截断 / json 不写表 | 17 例全绿 |
+| `packages/store/src/data-inventory.ts` | 登记 `notification_outbox(identity)`，`disposition: "delete"` | `data-inventory.test.ts` 3 例全绿 |
+| `packages/store/test/notification-outbox-user-data.test.ts` | 2 例：注销清空队列 / 不误删其他身份 | 2 例全绿；撤掉登记后 2 例变红（反向验证） |
+
+另外顺手在两处**他人的未提交文件**里做了最小改动（零行为变更，等对方那批吸收）：
+- `packages/store/src/repository/notifications.ts`：`new Set<NotificationChannel>(...)` 补类型参数，
+  修掉 `CHANNEL_ERRORS[channel]` 的 TS7053；
+- `apps/web-overlay/src/hooks/useUnreadNotifications.ts`：`.catch(() => null)` 补「解析失败即无数据」理由。
+
+### 20.3 阻断项与解除条件
+
+| 阻断 | 现象 | 解除条件 |
+|---|---|---|
+| **响应契约棘轮**（`response-contracts.test.ts`） | 实际 232 条未绑定读路由 vs 基线 226 | 通知功能的三条读路由需登记契约或进基线并说明理由：`GET/HEAD /api/admin/notifications`、`GET/HEAD /api/admin/notifications/deliveries`、`GET/HEAD /api/me/notifications/unread-count`（各带一个 HEAD 变体，共 6 行差异）。属通知功能所有者：`{ unread: number }` 之类的形状要由他们定义 |
+| **路由策略表**（`route-policy.test.ts`） | 具名矩阵里找不到新路由 | 同上，把三条读路由登记进 `authz.ts` 的策略表 |
+| **`mobile-nav` 源码断言** | 断言 `aria-label={label}`，组件已改成带未读数的模板字符串 | 对方提交 `mobile-nav.tsx` 时一并更新断言。**不要现在改测试** —— HEAD 的组件还是旧写法，改测试会让 HEAD 变红 |
+| **`data-inventory` 的 HEAD 一致性** | 登记项依赖 `notification_outbox` 建表，而建表在对方未提交的 `migrate.ts` 里 | 与 `migrate.ts` 同批提交。单独提交会让 HEAD 的「清单里每张表都真实存在」用例红 |
+
+### 20.4 下一个人怎么继续
+
+```bash
+# 1) 确认阻断已解除
+node node_modules/vitest/vitest.mjs run apps/api/test packages/store/test apps/web/test
+
+# 2) 一次性提交攒下的改动（各自独立、互不依赖）
+node scripts/safe-commit.mjs --msg-file <msg> -- \
+  apps/api/src/video-catalog.ts apps/api/src/storage.ts \
+  apps/api/test/video-catalog-store.test.ts
+node scripts/safe-commit.mjs --msg-file <msg> -- \
+  packages/store/src/data-inventory.ts \
+  packages/store/test/notification-outbox-user-data.test.ts
+```
+
+注意两件事：
+1. `packages/store/src/repository/notifications.ts` 与
+   `apps/web-overlay/src/hooks/useUnreadNotifications.ts` 里的最小改动**不要单独提交** ——
+   它们是对方文件的注释/类型修补，跟着对方那批走；
+2. `safe-commit` 与并行会话同时提交会撞 ref
+   （`fatal: cannot lock ref 'HEAD': is at X but expected Y`），重试即可，不是代码问题。
+
+### 20.5 本轮结束时的基线
+
+| 检查 | 结果 |
+|---|---|
+| `scripts/typecheck.mjs` | 5 个包通过 |
+| `scripts/typecheck-video-scope.mjs` | 73 模块 0 错误 |
+| `scripts/check-syntax.mjs` | 1381 文件 0 错误 |
+| `packages/store/test` | 50 文件 / 382 例全绿（含新增 5 例） |
+| `apps/api/test` | 1152 通过 / 3 失败（全部为 20.3 的登记项） |
+| `apps/web/test` | 2483 通过 / 5 失败（全部为 20.3 的在飞改动） |

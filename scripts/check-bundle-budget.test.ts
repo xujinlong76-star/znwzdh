@@ -1,15 +1,17 @@
 /**
  * 包体预算检查器的回归测试（fixture 驱动，不依赖真实构建）。
  *
- * 守两件事：
+ * 守三件事：
  *   1. Turbopack（Next 16）取数口径正确：框架 chunk + 非异步路由 chunk − 异步 chunk；
- *   2. webpack（Next ≤15）旧产物仍可读（向后兼容，避免升级后检查器直接失效）。
+ *   2. webpack（Next ≤15）旧产物仍可读（向后兼容，避免升级后检查器直接失效）；
+ *   3. --report / --raise 的「可复现重定基线」：只读报告不拦人，写预算必须
+ *      提交可定位 + 工作区干净 + 产物不过期，且只上调、不顺手把可下调的改掉。
  */
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
 
 const SCRIPT = resolve("scripts/check-bundle-budget.mjs");
 
@@ -188,3 +190,239 @@ describe("check-bundle-budget：webpack 兼容", () => {
     }
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * --report / --raise：从真实产物可复现地重定基线
+ * ------------------------------------------------------------------ */
+
+/**
+ * Turbopack 产物夹具：framework 共载 + 每条路由一个专属 chunk。
+ * 返回 build-manifest 的路径，好让测试精确控制「产物时间 vs 源码时间」。
+ */
+function writeTurbopackDist(root: string, spec: Record<string, number>, frameworkBytes: number): string {
+  const dist = "apps/web/fixture-dist";
+  const keyOf = (route: string) => (route === "/" ? "/page" : `${route}/page`);
+  write(
+    root,
+    `${dist}/build-manifest.json`,
+    JSON.stringify({
+      rootMainFiles: ["/_next/static/chunks/framework.js"],
+      pagesChunkGroupBootstrapParams: Object.fromEntries(Object.keys(spec).map((r) => [keyOf(r), {}])),
+    }),
+  );
+  write(root, `${dist}/static/chunks/framework.js`, bytes(frameworkBytes));
+  for (const [route, extra] of Object.entries(spec)) {
+    const rel = route === "/" ? "" : route.slice(1);
+    const chunk = `static/chunks/r-${route.replace(/[^a-z0-9]/gi, "_")}.js`;
+    write(root, `${dist}/${chunk}`, bytes(extra));
+    write(
+      root,
+      `${dist}/server/app/${rel}/page_client-reference-manifest.js`,
+      `globalThis.__RSC_MANIFEST = ${JSON.stringify({ [keyOf(route)]: { clientModules: { m: { chunks: [`/_next/${chunk}`], async: false } } } })};`,
+    );
+  }
+  return join(root, dist, "build-manifest.json");
+}
+
+/** 临时 git 仓库夹具：可定位提交 + 可控脏文件数，--raise 的前置条件才有真东西可验 */
+function makeRepoRoot(spec: Record<string, number>, budgets: Record<string, any>): { root: string; manifest: string } {
+  const root = mkdtempSync(join(tmpdir(), "navhub-bundle-repo-"));
+  git(root, ["init", "-q"]);
+  git(root, ["config", "user.email", "budget@test.local"]);
+  git(root, ["config", "user.name", "budget-test"]);
+  git(root, ["config", "commit.gpgsign", "false"]);
+  write(root, "scripts/bundle-budget.json", JSON.stringify(budgets, null, 2) + "\n");
+  const manifest = writeTurbopackDist(root, spec, 1_000);
+  write(root, "apps/web/src/app/page.tsx", "export default function P() { return null }\n");
+  git(root, ["add", "-A"]);
+  git(root, ["commit", "-q", "-m", "fixture"]);
+  // 产物「比源码新」：夹具里所有文件同时落盘，mtime 差在毫秒级，判定会随调度抖动
+  const future = new Date(Date.now() + 60_000);
+  utimesSync(manifest, future, future);
+  return { root, manifest };
+}
+
+function git(cwd: string, args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+function runBudget(root: string, args: string[]): { code: number; out: string } {
+  const res = spawnSync(process.execPath, [SCRIPT, ...args], {
+    cwd: root,
+    encoding: "utf8",
+    env: { ...process.env, NEXT_DIST_DIR: "fixture-dist" },
+  });
+  return { code: res.status ?? -1, out: `${res.stdout}${res.stderr}` };
+}
+
+const RAISE_BUDGETS = {
+  _comment: "夹具说明不许丢",
+  default: 10_000,
+  routes: { "/": 9_000, "/hot": 20_000 },
+};
+// framework 1000 + 各自 chunk：/ = 9500（超）、/hot = 5000（宽）、/new = 4000（没配条目）
+const RAISE_SPEC = { "/": 8_500, "/hot": 4_000, "/new": 3_000 };
+
+describe("check-bundle-budget：--report 只读建议", () => {
+  it("三类差异分别列出：上调候选 / 漏配条目 / 可下调，且退出码 0（报告不是门禁）", () => {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    try {
+      const before = readFileSync(join(root, "scripts/bundle-budget.json"), "utf8");
+      const { code, out } = runBudget(root, ["--report"]);
+      expect(code, out).toBe(0);
+      expect(out).toContain("上调候选（实测超预算，需要显式 --raise）（1 条）");
+      // 建议值取整到 KiB 后是确定的两个数；实测/现有预算随夹具展示，不在这里钉格式
+      expect(out).toMatch(/- \/：实测 .* > 预算 .* → 建议 10 KB/);
+      expect(out).toContain("漏配专属预算（正落 default，建议补一条更紧的阈值）（1 条）");
+      expect(out).toMatch(/- \/new：实测 .*，无 routes 条目（default .*）→ 建议 5 KB/);
+      expect(out).toContain("可下调（实测比预算低 5% 以上；棘轮只降不升，这条要人工决定）（1 条）");
+      expect(out).toContain("- /hot：实测 ");
+      expect(out).toContain("产物出处：提交 ");
+      expect(readFileSync(join(root, "scripts/bundle-budget.json"), "utf8")).toBe(before);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("--json --report 给出机器可读的三类桶与出处，建议值口径是实测 ×1.05 向上取整到 KiB", () => {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    try {
+      const res = spawnSync(process.execPath, [SCRIPT, "--report", "--json"], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, NEXT_DIST_DIR: "fixture-dist" },
+      });
+      expect(res.status, res.stderr).toBe(0);
+      const json = JSON.parse(res.stdout);
+      expect(json.mode).toBe("report");
+      expect(json.headroom).toBe(1.05);
+      expect(json.report.raise.map((r: { route: string }) => r.route)).toEqual(["/"]);
+      // 9500 × 1.05 = 9975 → 向上取整到 KiB = 10240
+      expect(json.report.raise[0].proposed).toBe(10_240);
+      expect(json.report.addMissing[0]).toEqual({ route: "/new", bytes: 4_000, limit: 10_000, proposed: 5_120 });
+      expect(json.report.tighten.map((r: { route: string }) => r.route)).toEqual(["/hot"]);
+      expect(json.provenance.sha).toMatch(/^[0-9a-f]{7,}$/);
+      expect(json.provenance.dirty).toBe(0);
+      expect(json.provenance.stale).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("产物比源码旧时报告里明说，而不是继续给一份不可复现的建议值", () => {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    try {
+      const src = join(root, "apps/web/src/app/page.tsx");
+      const future = new Date(Date.now() + 3_600_000);
+      utimesSync(src, future, future);
+      const { code, out } = runBudget(root, ["--report"]);
+      expect(code, out).toBe(0);
+      expect(out).toContain("⚠️ 产物比源码旧");
+      expect(out).toContain("别拿它定基线");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("check-bundle-budget：--raise 写预算的三条硬前置", () => {
+  it("缺 --reason 就拒绝：没有书面依据的上调等于给现状背书", () => {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    try {
+      const { code, out } = runBudget(root, ["--raise"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain('必须带 --reason="..."');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("工作区脏就拒绝：那份产物不属于任何提交，写进预算无法复现", () => {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    try {
+      write(root, "apps/web/src/app/dirty.tsx", "export const x = 1\n");
+      const { code, out } = runBudget(root, ["--raise", "--reason=抽屉改懒加载后确实变大"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain("工作区有 1 个未提交改动");
+      expect(out).toContain("先提交代码改动、再重新 build");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("产物过期就拒绝：拿旧产物定基线，CI 下一轮必然对不上", () => {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    try {
+      const future = new Date(Date.now() + 3_600_000);
+      utimesSync(join(root, "apps/web/src/app/page.tsx"), future, future);
+      const { code, out } = runBudget(root, ["--raise", "--reason=确实变大"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain("构建产物比源码旧");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("三条都满足才写：只动 routes、注释键保留、可下调不写、审计行带 sha 与原因，写完门禁转绿", () => {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    try {
+      const { code, out } = runBudget(root, ["--raise", "--reason=AI 抽屉改成常驻，实测 +4.7 KB"]);
+      expect(code, out).toBe(0);
+      expect(out).toContain("已写入 scripts/bundle-budget.json（上调 1 条 · 补条目 1 条）");
+      const next = JSON.parse(readFileSync(join(root, "scripts/bundle-budget.json"), "utf8"));
+      expect(next._comment).toBe("夹具说明不许丢");
+      expect(next.default).toBe(10_000); // default 不许被 --raise 改动
+      expect(next.routes["/"]).toBe(10_240); // 超预算的那条被上调
+      expect(next.routes["/new"]).toBe(5_120); // 漏配的补上专属（更紧的）条目
+      expect(next.routes["/hot"]).toBe(20_000); // 可下调的只报不写
+      expect(next._raise_log[0].reason).toBe("AI 抽屉改成常驻，实测 +4.7 KB");
+      expect(next._raise_log[0].sha).toMatch(/^[0-9a-f]{7,}$/);
+      expect(next._raise_log[0].changes).toEqual([
+        { route: "/", from: 9_000, to: 10_240, measured: 9_500 },
+        { route: "/new", from: 10_000, to: 5_120, measured: 4_000 },
+      ]);
+      // 上调的目的就是让门禁认这份新现实：重跑默认模式必须绿
+      expect(runBudget(root, []).code).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("没有需要上调的路由时不动文件，也不假装写了一条空审计", () => {
+    const { root } = makeRepoRoot({ "/": 8_000 }, { default: 10_000, routes: { "/": 9_000 } });
+    try {
+      const before = readFileSync(join(root, "scripts/bundle-budget.json"), "utf8");
+      const { code, out } = runBudget(root, ["--raise", "--reason=没有超限也想顺手改"]);
+      expect(code, out).toBe(0);
+      expect(out).toContain("没有需要上调或补条目的路由，预算文件未改动");
+      expect(readFileSync(join(root, "scripts/bundle-budget.json"), "utf8")).toBe(before);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("check-bundle-budget：参数卫生", () => {
+  it("拼错的旗标以退出码 2 拒绝，不静默当成门禁跑一遍", () => {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    try {
+      const { code, out } = runBudget(root, ["--rai"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain("不认识的参数：--rai");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("--report 与 --raise 互斥：后者会自己重算建议值", () => {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    try {
+      const { code, out } = runBudget(root, ["--report", "--raise", "--reason=x"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain("不能同时给");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+

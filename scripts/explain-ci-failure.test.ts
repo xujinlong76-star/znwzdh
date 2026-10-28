@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { fetchWithRetry } from "./explain-ci-failure.mjs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildSnapshot, fetchWithRetry, snapshotFileName, writeSnapshot } from "./explain-ci-failure.mjs";
 import {
   classifyFailure,
   cleanLogLines,
@@ -667,6 +670,63 @@ describe("fetchWithRetry：只重试传输层瞬断", () => {
       expect(calls).toBe(2);
     } finally {
       globalThis.fetch = original;
+    }
+  });
+});
+
+describe("归因快照：--json 同形落盘", () => {
+  const run = { id: 12345, head_sha: "abcdef1234567890abcdef1234567890abcdef12", html_url: "https://example.invalid/run", conclusion: "failure" };
+  const rows = [
+    { name: "ci / build", firstError: "src/a.ts:1:2: error TS1", fixHint: "pnpm typecheck", superseded: false },
+    { name: "ci / test", firstError: "AssertionError: boom", fixHint: "pnpm test", superseded: false },
+  ];
+
+  it("文件名带 run / 短 sha / 本地时间戳，可稳定排序", () => {
+    const name = snapshotFileName({ runId: 12345, sha: run.head_sha, now: new Date(2026, 9, 28, 9, 15, 0) });
+    expect(name).toBe("ci-explain-12345-abcdef123456-20261028-091500.json");
+  });
+
+  it("无基线时不含 baseline/diff 键；有基线时三桶带 fixHint", () => {
+    const plain = buildSnapshot({ repo: "a/b", run, waitMeta: null, rows, baseline: null, diff: null });
+    expect(plain.failures).toHaveLength(2);
+    expect(plain.layers["契约"]).toBeUndefined();
+    expect("baseline" in plain).toBe(false);
+    expect("diff" in plain).toBe(false);
+
+    const baseline = { run: { ...run, id: 999, conclusion: "failure" }, rows: [rows[1]] };
+    const diff = diffFailures(rows, baseline.rows);
+    const withBaseline = buildSnapshot({ repo: "a/b", run: { ...run, conclusion: null }, waitMeta: null, rows, baseline, diff });
+    expect(withBaseline.baseline.id).toBe(999);
+    expect(withBaseline.diff.inProgress).toBe(true);
+    expect(withBaseline.diff.introduced.map((r) => r.name)).toEqual(["ci / build"]);
+    expect(withBaseline.diff.persisted.map((r) => r.name)).toEqual(["ci / test"]);
+    expect(withBaseline.diff.introduced[0].fixHint).toBe("pnpm typecheck");
+  });
+
+  it("落盘到指定路径：JSON 可读回；同名冲突追加序号而不是覆盖", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ci-explain-snapshot-"));
+    try {
+      const snapshot = buildSnapshot({ repo: "a/b", run, waitMeta: null, rows, baseline: null, diff: null });
+      const first = writeSnapshot({ target: join(dir, "snap.json"), snapshot });
+      const second = writeSnapshot({ target: join(dir, "snap.json"), snapshot });
+      expect(first).toBe(join(dir, "snap.json"));
+      expect(second).toBe(join(dir, "snap-2.json"));
+      expect(JSON.parse(readFileSync(first, "utf8")).run.id).toBe(12345);
+      expect(JSON.parse(readFileSync(second, "utf8")).repo).toBe("a/b");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("默认目录会自建：写到不存在的嵌套 tmp 也能成功", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ci-explain-dir-"));
+    try {
+      const target = join(dir, "nested", "deep", "out.json");
+      const path = writeSnapshot({ target, snapshot: { run: { id: 7, sha: "abc" } } });
+      expect(path).toBe(target);
+      expect(JSON.parse(readFileSync(path, "utf8")).run.id).toBe(7);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

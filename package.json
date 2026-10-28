@@ -44,6 +44,7 @@
     "test:telemetry": "node scripts/test-telemetry.mjs",
     "doctor": "node scripts/doctor.mjs",
     "ci:status": "node scripts/ci-status.mjs",
+    "ci:explain": "node scripts/explain-ci-failure.mjs",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
     "check:extensions": "node scripts/check-extensions.mjs",
     "seo:audit": "node scripts/seo-audit.mjs",

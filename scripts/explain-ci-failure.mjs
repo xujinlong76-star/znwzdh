@@ -22,12 +22,16 @@
  *     推送后立刻调用时 run 往往还没跑完：等待终局再算三桶，而不是把「还没跑到」
  *     误报成「已修复」。默认每 20s 轮询、最多等 30 分钟；超时以退出码 3 收尾，
  *     并明确标注结果是超时快照。
+ *   node scripts/explain-ci-failure.mjs --sha <sha> --save [路径]
+ *     把与 --json 同形的快照落盘（默认 tmp/ci-explain-<run>-<sha12>-<时间戳>.json）。
+ *     多会话并行时，事后复盘不依赖 Actions 保留期：日志会在 90 天后过期。
  *   每条失败行都带 fixHint（按归因层给出的一条可执行修复命令）；文本模式另有
  *   「修复入口」段按层去重。JSON 里 failures[].fixHint 与 diff 三桶同形。
  * 退出码：0 = 没有失败 job，1 = 有失败 job，2 = 查询/鉴权失败，3 = 等待超时（run 仍未结束）。
  */
 import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   diffFailures,
@@ -43,6 +47,7 @@ import {
 } from "./lib/ci-attribution.mjs";
 
 const API = "https://api.github.com";
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_LOG_BYTES = 8 * 1024 * 1024;
 /**
  * 只对传输层失败重试：DNS/TLS 瞬断是常态（本仓库一次会话里遇到三次），HTTP 4xx 不重试。
@@ -212,6 +217,64 @@ async function collectAttribution(client, repo, run) {
 }
 
 /**
+ * 快照文件名：run id + 短 sha + 本地时间戳。
+ * 放 tmp/ 而不是仓库根：快照是排障中间产物，不该污染工作树，也不该进提交。
+ */
+export function snapshotFileName({ runId, sha, now = new Date() }) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const stamp =
+    now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) +
+    "-" + pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
+  return "ci-explain-" + runId + "-" + String(sha ?? "").slice(0, 12) + "-" + stamp + ".json";
+}
+
+/**
+ * 快照载荷：--json 的 stdout 与 --save 落盘文件必须同形。
+ * 各自拼一份对象迟早会漂移（加字段只改一处），所以只在这里构造。
+ */
+export function buildSnapshot({ repo, run, waitMeta, rows, baseline, diff }) {
+  return {
+    repo,
+    run: { id: run.id, sha: run.head_sha, url: run.html_url, conclusion: run.conclusion },
+    ...(waitMeta ? { wait: waitMeta } : {}),
+    failures: rows,
+    layers: Object.fromEntries(layerCounts(rows)),
+    ...(baseline
+      ? {
+          baseline: {
+            id: baseline.run.id,
+            sha: baseline.run.head_sha,
+            url: baseline.run.html_url,
+            conclusion: baseline.run.conclusion,
+          },
+          diff: {
+            inProgress: !run.conclusion,
+            introduced: diff.introduced.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
+            persisted: diff.persisted.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
+            fixed: diff.fixed.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
+            superseded: splitSuperseded(rows).superseded.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * 落盘：默认写到仓库 tmp/，同名冲突追加序号而不是覆盖上一轮。
+ * 返回绝对路径，调用方负责告诉用户（走 stderr，保持 --json 的 stdout 纯净）。
+ */
+export function writeSnapshot({ target = null, snapshot, now = new Date() }) {
+  const basePath = target ? resolve(target) : resolve(REPO_ROOT, "tmp", snapshotFileName({ runId: snapshot.run?.id ?? "run", sha: snapshot.run?.sha, now }));
+  mkdirSync(dirname(basePath), { recursive: true });
+  let file = basePath;
+  for (let n = 2; existsSync(file); n++) {
+    file = basePath.replace(/\.json$/i, "") + "-" + n + ".json";
+  }
+  writeFileSync(file, JSON.stringify(snapshot, null, 2) + "\n", "utf8");
+  return file;
+}
+
+/**
  * 基线 run 解析：基线是「上一轮的 tip」，给 sha 或 run id 都行。
  * 失败不致命：拿不到基线就退化成单轮归因，绝不让对比把一次正常查询变成报错。
  */
@@ -280,38 +343,17 @@ async function main(argv) {
   const diff = baseline ? diffFailures(rows, baseline.rows) : null;
   const json = argv.includes("--json");
   const timedOut = Boolean(waitMeta?.timedOut);
+  const snapshot = buildSnapshot({ repo, run, waitMeta, rows, baseline, diff });
+
+  if (argv.includes("--save")) {
+    // 显式路径跟 --save 后面；没给就走 tmp/ 默认命名。写盘与 --json 同形。
+    const target = argValue(argv, "--save");
+    const path = writeSnapshot({ target, snapshot });
+    process.stderr.write("[explain-ci] 快照已写入 " + path + "\n");
+  }
 
   if (json) {
-    console.log(
-      JSON.stringify(
-        {
-          repo,
-          run: { id: run.id, sha: run.head_sha, url: run.html_url, conclusion: run.conclusion },
-          ...(waitMeta ? { wait: waitMeta } : {}),
-          failures: rows,
-          layers: Object.fromEntries(layerCounts(rows)),
-          ...(baseline
-            ? {
-                baseline: {
-                  id: baseline.run.id,
-                  sha: baseline.run.head_sha,
-                  url: baseline.run.html_url,
-                  conclusion: baseline.run.conclusion,
-                },
-                diff: {
-                  inProgress: !run.conclusion,
-                  introduced: diff.introduced.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
-                  persisted: diff.persisted.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
-                  fixed: diff.fixed.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
-                  superseded: splitSuperseded(rows).superseded.map((row) => ({ name: row.name, firstError: row.firstError, fixHint: row.fixHint })),
-                },
-              }
-            : {}),
-        },
-        null,
-        2,
-      ),
-    );
+    console.log(JSON.stringify(snapshot, null, 2));
     if (timedOut) return 3;
     return rows.length > 0 ? 1 : 0;
   }

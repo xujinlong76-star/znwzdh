@@ -9,6 +9,7 @@
  */
 import {
   chatCompletion,
+  chatStream,
   isRetryableLlmCode,
   LlmError,
   RetryBudget,
@@ -16,6 +17,7 @@ import {
   type ChatOptions,
   type ChatResult,
   type LlmProvider,
+  type LlmStreamEvent,
 } from "@navhub/ai";
 import type { AppContext } from "./context.ts";
 import { llmProviderReady, type ResolvedLlm } from "./llm-config.ts";
@@ -162,6 +164,105 @@ export async function callLlm(
       if (!fallbackRetryBudget.canRetry()) break;
       fallbackRetryBudget.recordRetry();
       // 继续尝试备用模型池
+    }
+  }
+
+  if (lastError) throw lastError;
+  throw new LlmError("config", "当前未配置有效的模型 API 密钥");
+}
+
+/**
+ * 流式调用的选项：与 callLlm 同一套预算/身份/取消语义。
+ * JSON 模式没有流式等价物（结构化生成必须看到完整文本才能校验），故不接收。
+ */
+export type CallLlmStreamOptions = Omit<CallLlmOptions, "json" | "tools" | "toolChoice">;
+
+/**
+ * 流式版 callLlm：用量、预算、轮换、取消四条语义与非流式对齐。
+ *
+ * 轮换只允许发生在「第一个正文分块之前」：一旦有字节发给用户，再换一家模型
+ * 只会让界面出现两段拼接的回答；此时失败按该跳失败记账并原样抛出，由路由层
+ * 决定是降级兜底还是报错。
+ *
+ * 取消（客户端 abort / 上游取消哨兵）不写 llm_usage：与非流式同口径，
+ * 取消不是模型坏，记进失败率会把真实故障稀释掉。
+ */
+export async function* callLlmStream(
+  ctx: AppContext,
+  resolved: ResolvedLlm,
+  opts: CallLlmStreamOptions,
+): AsyncGenerator<LlmStreamEvent, void, unknown> {
+  const baseChatOpts: Omit<ChatOptions, "thinking"> = {
+    messages: opts.messages,
+    temperature: opts.temperature,
+    maxTokens: opts.maxTokens,
+    signal: opts.signal,
+    deadlineAt: opts.deadlineAt,
+    fetchImpl: opts.fetchImpl,
+  };
+
+  const candidates: Array<{ provider: LlmProvider; source: string }> = [
+    { provider: resolved.provider, source: resolved.source },
+    ...resolved.fallbacks.map((fb) => ({ provider: fb, source: "fallback" })),
+  ];
+
+  let lastError: unknown = null;
+  for (const { provider, source } of candidates) {
+    if (opts.deadlineAt !== undefined && Date.now() >= opts.deadlineAt) {
+      lastError ??= new LlmError("timeout", "模型流式调用已超出总预算");
+      break;
+    }
+    if (!llmProviderReady(provider)) continue;
+    const thinking = opts.thinking ?? provider.thinking ?? true;
+    const chatOpts: ChatOptions = { ...baseChatOpts, thinking };
+    const effectiveProvider: LlmProvider = opts.timeoutMs
+      ? { ...provider, timeoutMs: Math.max(provider.timeoutMs ?? 20_000, opts.timeoutMs) }
+      : provider;
+    const startedAt = Date.now();
+    let emitted = false;
+    try {
+      for await (const event of chatStream(effectiveProvider, chatOpts)) {
+        if (event.type === "delta") emitted = true;
+        if (event.type === "end") {
+          fallbackRetryBudget.recordSuccess();
+          await ctx.repo.recordLlmUsage({
+            scenario: opts.scenario,
+            source,
+            model: event.model || provider.model,
+            identity: opts.identity,
+            promptTokens: event.usage?.promptTokens,
+            completionTokens: event.usage?.completionTokens,
+            latencyMs: Date.now() - startedAt,
+            ok: true,
+            // 网关按「实际是否下发思维链参数」回报，不用请求值冒充
+            thinking: event.thinkingApplied,
+          });
+        }
+        yield event;
+      }
+      return;
+    } catch (err) {
+      lastError = err;
+      // 客户端取消 / 上游取消：不打备用池、不写失败用量（与非流式同口径）
+      if (opts.signal?.aborted) throw err;
+      if (err instanceof LlmError && err.code === "cancelled") throw err;
+      const latencyMs = Date.now() - startedAt;
+      const errorCode = err instanceof LlmError ? err.code : "unknown";
+      await ctx.repo.recordLlmUsage({
+        scenario: opts.scenario,
+        source,
+        model: provider.model,
+        identity: opts.identity,
+        latencyMs,
+        ok: false,
+        errorCode,
+        thinking,
+      });
+      // 已经把内容发出去再换模型 = 两段回答拼接，只能原样失败
+      if (emitted) throw err;
+      if (!isRetryableLlmCode(errorCode, err instanceof LlmError ? err.status : undefined)) throw err;
+      if (!fallbackRetryBudget.canRetry()) throw err;
+      fallbackRetryBudget.recordRetry();
     }
   }
 

@@ -115,6 +115,32 @@ describe("GET /api/admin/copilot/events", () => {
     expect(wide.cancels).toBe(5);
   });
 
+  it("引用点击率：分母是 copilot 回答的 citations 总数，分子只认 source=copilot_citation", async () => {
+    await ctx.repo.recordEvent("copilot", {
+      identity: "anon-e",
+      meta: { thinking: true, degraded: null, model: "gpt-x", reply_chars: 100, waited_ms: 500, quota_limited: false, citations: 4, retrieval_hits: 6 },
+    });
+    // 走真实的 /api/events：schema 必须接受 source，并把它写进 meta 供读侧归类
+    const cited = await app.inject({
+      method: "POST",
+      url: "/api/events",
+      payload: { kind: "click", siteId: "site-1", position: 2, source: "copilot_citation" },
+    });
+    expect(cited.statusCode).toBe(200);
+    // 普通搜索点击不是引用点击：分子不能把两者混为一谈
+    const plain = await app.inject({
+      method: "POST",
+      url: "/api/events",
+      payload: { kind: "click", siteId: "site-2", position: 1, source: "search" },
+    });
+    expect(plain.statusCode).toBe(200);
+
+    const body = await readSummary();
+    expect(body.citations).toBe(4);
+    expect(body.citationClicks).toBe(1);
+    expect(body.citationClickRate).toBeCloseTo(0.25, 3);
+  });
+
   it("读取上限是导出的具名常量，且超过时如实回报 truncated", async () => {
     expect(typeof COPILOT_EVENT_READ_CAP).toBe("number");
     expect(COPILOT_EVENT_READ_CAP).toBeGreaterThan(0);

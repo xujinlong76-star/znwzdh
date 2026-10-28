@@ -112,6 +112,20 @@ export interface ChatResult {
   thinkingApplied?: boolean;
 }
 
+/**
+ * 流式增量事件。
+ *
+ * 只产出「模型真正发来的东西」：
+ *  - `delta`    正文增量；
+ *  - `reasoning` 思维链增量（Agnes/DeepSeek 的 reasoning_content，或内联 <think> 段）；
+ *  - `end`      流结束时的模型名与真实用量（流式响应常把 usage 放在最后一个空 choices
+ *               分块里；没给就是 0，绝不按字数估算冒充真实用量）。
+ */
+export type LlmStreamEvent =
+  | { type: "delta"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "end"; model: string; usage: ChatUsage; thinkingApplied: boolean };
+
 export type LlmErrorCode =
   | "config"
   | "ssrf"
@@ -186,10 +200,20 @@ const jsonModeUnsupported = new Set<string>();
  */
 const thinkingParamUnsupported = new Set<string>();
 
+/**
+ * 端点不支持 `stream_options`（OpenAI 兼容的「流式返回 usage」开关）的进程级记忆。
+ *
+ * 流式请求开流后无法「先 400 再去参重试」，但**开流之前**的非 2xx 仍然可以：
+ * 判定只看 400/422 且错误体点名 stream_options / include_usage，命中后记住该端点，
+ * 后续流式请求不再带这个字段——真实用量拿不到就记 0，绝不为了拿 usage 让整条流失败。
+ */
+const streamUsageUnsupported = new Set<string>();
+
 /** 测试用：清空能力记忆 */
 export function resetLlmCapabilityCache(): void {
   jsonModeUnsupported.clear();
   thinkingParamUnsupported.clear();
+  streamUsageUnsupported.clear();
 }
 
 /** baseUrl 归一化为 chat/completions 终点 */
@@ -506,25 +530,137 @@ export async function chatCompletion(provider: LlmProvider, opts: ChatOptions): 
   }
 }
 
-/** SSE 行解析：返回增量文本；非数据行返回 null */
-export function extractSseDelta(line: string): string | null {
+/** SSE 分块里能取出的有用信息（正文/思维链/模型名/用量） */
+interface SsePayload {
+  content?: string;
+  reasoning?: string;
+  model?: string;
+  usage?: ChatUsage;
+}
+
+/**
+ * 解析一行 SSE data。
+ *
+ * 兼容两种思维链形态：`delta.reasoning_content`（Agnes/DeepSeek）与
+ * `delta.reasoning`（部分 vLLM 网关）。返回 null 表示这一行没有可用信息
+ * （心跳、[DONE]、坏 JSON、纯 role 分块都在此列）。
+ */
+function parseSsePayload(line: string): SsePayload | null {
   const trimmed = line.trim();
   if (!trimmed.startsWith("data:")) return null;
   const data = trimmed.slice(5).trim();
   if (!data || data === "[DONE]") return null;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: unknown } }> };
-    return normalizeContent(parsed.choices?.[0]?.delta?.content);
+    parsed = JSON.parse(data);
   } catch {
     return null;
   }
+  const record = (parsed ?? {}) as Record<string, unknown>;
+  const out: SsePayload = {};
+  if (typeof record.model === "string" && record.model) out.model = record.model;
+  // 流式 usage 通常在最后一个 choices 为空的分块里；拿到之前保持 0，不估算
+  if (record.usage && typeof record.usage === "object") out.usage = normalizeUsage(record.usage);
+  const choices = Array.isArray(record.choices) ? (record.choices as Array<Record<string, unknown>>) : [];
+  const delta = choices[0]?.delta as Record<string, unknown> | undefined;
+  const content = normalizeContent(delta?.content);
+  if (content) out.content = content;
+  const reasoning =
+    typeof delta?.reasoning_content === "string"
+      ? delta.reasoning_content
+      : normalizeContent(delta?.reasoning);
+  if (reasoning) out.reasoning = reasoning;
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** SSE 行解析：返回增量文本；非数据行返回 null */
+export function extractSseDelta(line: string): string | null {
+  return parseSsePayload(line)?.content ?? null;
+}
+
+const THINK_OPEN_TAG = "<think>";
+const THINK_CLOSE_TAG = "</think>";
+
+/** 文本末尾可能只是「标签的前半截」时，先扣住等下一个分块再判定 */
+function possibleTagTail(text: string): number {
+  const lower = text.toLowerCase();
+  for (let len = Math.min(THINK_CLOSE_TAG.length, lower.length); len > 0; len--) {
+    const tail = lower.slice(-len);
+    if (THINK_OPEN_TAG.startsWith(tail) || THINK_CLOSE_TAG.startsWith(tail)) return len;
+  }
+  return 0;
 }
 
 /**
- * 流式调用（供后续对话式功能使用）。
- * 逐段产出增量文本；调用方负责拼接与最终校验。
+ * 把正文里内联的 `<think>…</think>` 拆成思维链与正文。
+ *
+ * 非流式路径用一个正则就能剥掉；流式必须跨分块判断——标签可能被切在
+ * `"<thi"` / `"nk>"` 两个分块里。所以遇到可能是标签前缀的尾巴先扣住，
+ * 下一个分块到达后再定夺。结束时仍未闭合的内容按原文字面输出：
+ * 宁可露出标签，也绝不吞掉模型真正说过的正文。
  */
-export async function* chatStream(provider: LlmProvider, opts: ChatOptions): AsyncGenerator<string, void, unknown> {
+export function createThinkTagFilter(): {
+  push: (text: string) => { content: string; reasoning: string };
+  flush: () => { content: string; reasoning: string };
+} {
+  let pending = "";
+  let inThink = false;
+  const step = (chunk: string, final: boolean): { content: string; reasoning: string } => {
+    const text = pending + chunk;
+    pending = "";
+    let content = "";
+    let reasoning = "";
+    let i = 0;
+    while (i < text.length) {
+      if (!inThink) {
+        const open = text.toLowerCase().indexOf(THINK_OPEN_TAG, i);
+        if (open === -1) {
+          const rest = text.slice(i);
+          const hold = final ? 0 : possibleTagTail(rest);
+          content += rest.slice(0, rest.length - hold);
+          if (hold > 0) pending = rest.slice(rest.length - hold);
+          break;
+        }
+        content += text.slice(i, open);
+        i = open + THINK_OPEN_TAG.length;
+        inThink = true;
+      } else {
+        const close = text.toLowerCase().indexOf(THINK_CLOSE_TAG, i);
+        if (close === -1) {
+          const rest = text.slice(i);
+          const hold = final ? 0 : possibleTagTail(rest);
+          reasoning += rest.slice(0, rest.length - hold);
+          if (hold > 0) pending = rest.slice(rest.length - hold);
+          break;
+        }
+        reasoning += text.slice(i, close);
+        i = close + THINK_CLOSE_TAG.length;
+        inThink = false;
+      }
+    }
+    if (final && pending) {
+      if (inThink) reasoning += pending;
+      else content += pending;
+      pending = "";
+    }
+    return { content, reasoning };
+  };
+  return { push: (text: string) => step(text, false), flush: () => step("", true) };
+}
+
+const STREAM_USAGE_HINT = /stream[\s_-]?options|include[\s_-]?usage/i;
+
+/**
+ * 流式调用。
+ *
+ * 与非流式网关共享：SSRF 预检、截止预算、鉴权头、错误归一化、思维链能力记忆。
+ * 差别只有两点：
+ *  - 请求带 `stream: true`，并尝试 `stream_options.include_usage` 拿真实用量；
+ *    端点拒收该字段时（开流前 400/422）去参重试一次并记住，之后不再带；
+ *  - 不在网关内做「去参重试思维链参数」——流已经开了，只能复用非流式调用学到的
+ *    能力记忆，一开始就不带。
+ */
+export async function* chatStream(provider: LlmProvider, opts: ChatOptions): AsyncGenerator<LlmStreamEvent, void, unknown> {
   assertProvider(provider);
   if (typeof opts.deadlineAt === "number" && Date.now() >= opts.deadlineAt) {
     throw new LlmError("timeout", "模型流式调用已超出总预算，未再发起请求");
@@ -532,9 +668,11 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
   const url = chatCompletionsUrl(provider.baseUrl);
   await assertLlmEndpoint(url, provider.allowPrivateNetwork === true);
 
-  const naturalTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
-  // 流式调用同样受总预算约束：开流之后不会再有「换 provider」的机会，超时钳不钳只影响
-  // 用户等多久才看到失败，但对多轮 SSE 的累计耗时来说，钳住是唯一能兑现的承诺。
+  const key = capabilityKey(provider);
+  const thinkingSent = opts.thinking === true && !thinkingParamUnsupported.has(key);
+  const baseTimeout = provider.timeoutMs && provider.timeoutMs > 0 ? provider.timeoutMs : DEFAULT_TIMEOUT_MS;
+  // 与非流式同口径：思维链确实下发时放宽超时，否则长推理流会被默认 20s 腰斩
+  const naturalTimeout = thinkingSent ? Math.max(baseTimeout, 60_000) : baseTimeout;
   const timeoutMs = clampToDeadline(naturalTimeout, opts.deadlineAt);
   if (timeoutMs <= 0) throw new LlmError("timeout", "模型流式调用已超出总预算，未再发起请求");
   const gate = timeoutSignal(timeoutMs, opts.signal);
@@ -544,42 +682,97 @@ export async function* chatStream(provider: LlmProvider, opts: ChatOptions): Asy
     const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "text/event-stream" };
     if (provider.apiKey) headers.Authorization = "Bearer " + provider.apiKey;
 
-    const res = await fetchImpl(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(
-        // 流式无法「先 400 再去参重试」（请求体已经开流），所以只复用非流式调用
-        // 学到的能力记忆：该端点已知不支持思维链参数时，一开始就不带。
-        buildBody(provider, opts, false, true, opts.thinking === true && !thinkingParamUnsupported.has(capabilityKey(provider))),
-      ),
-      signal: gate.signal,
-      redirect: "error",
-    });
+    const request = (includeUsage: boolean) => {
+      const body = buildBody(provider, opts, false, true, thinkingSent);
+      if (includeUsage) body.stream_options = { include_usage: true };
+      return fetchImpl(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: gate.signal,
+        redirect: "error",
+      });
+    };
+
+    let includeUsage = !streamUsageUnsupported.has(key);
+    let res = await request(includeUsage);
     if (!res.ok) {
       const detail = await readErrorDetail(res);
-      throw httpError(res, detail);
+      if (includeUsage && (res.status === 400 || res.status === 422) && STREAM_USAGE_HINT.test(detail)) {
+        streamUsageUnsupported.add(key);
+        includeUsage = false;
+        res = await request(false);
+        if (!res.ok) throw httpError(res, await readErrorDetail(res));
+      } else {
+        throw httpError(res, detail);
+      }
     }
     if (!res.body) throw new LlmError("invalid_response", "模型未返回流式响应体", res.status);
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
+    const filter = createThinkTagFilter();
+    let sawReasoningField = false;
     let buffer = "";
-    for (;;) {
+    let model = provider.model;
+    let usage: ChatUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+
+    const pump = (payload: SsePayload): LlmStreamEvent[] => {
+      const events: LlmStreamEvent[] = [];
+      if (payload.model) model = payload.model;
+      if (payload.usage) usage = payload.usage;
+      if (payload.reasoning) {
+        if (!sawReasoningField) {
+          // 先到内联正文、后到 reasoning 字段（罕见）：把扣住的尾巴先结清
+          const rest = filter.flush();
+          if (rest.reasoning) events.push({ type: "reasoning", text: rest.reasoning });
+          if (rest.content) events.push({ type: "delta", text: rest.content });
+          sawReasoningField = true;
+        }
+        events.push({ type: "reasoning", text: payload.reasoning });
+      }
+      if (payload.content) {
+        if (sawReasoningField) {
+          events.push({ type: "delta", text: payload.content });
+        } else {
+          const split = filter.push(payload.content);
+          if (split.reasoning) events.push({ type: "reasoning", text: split.reasoning });
+          if (split.content) events.push({ type: "delta", text: split.content });
+        }
+      }
+      return events;
+    };
+
+    /** 处理一行；stop=true 表示遇到 [DONE]，应停止读取 */
+    const handleLine = (line: string): { stop: boolean; events: LlmStreamEvent[] } => {
+      if (line.trim() === "data: [DONE]") return { stop: true, events: [] };
+      const payload = parseSsePayload(line);
+      return { stop: false, events: payload ? pump(payload) : [] };
+    };
+
+    outer: for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? "";
       for (const line of lines) {
-        const delta = extractSseDelta(line);
-        if (delta) yield delta;
-        if (line.trim() === "data: [DONE]") return;
+        const { stop, events } = handleLine(line);
+        for (const event of events) yield event;
+        if (stop) break outer;
       }
     }
+    buffer += decoder.decode();
+    // 最后一截可能没有换行结尾：[DONE] 或最后一个 data 分块都在这儿
     if (buffer.trim()) {
-      const delta = extractSseDelta(buffer);
-      if (delta) yield delta;
+      const { events } = handleLine(buffer);
+      for (const event of events) yield event;
     }
+
+    const tail = filter.flush();
+    if (tail.reasoning) yield { type: "reasoning", text: tail.reasoning };
+    if (tail.content) yield { type: "delta", text: tail.content };
+    yield { type: "end", model, usage, thinkingApplied: thinkingSent };
   } catch (err) {
     if (err instanceof LlmError) throw err;
     if (gate.timedOut()) throw new LlmError("timeout", "模型流式调用超时（" + timeoutMs + "ms）");

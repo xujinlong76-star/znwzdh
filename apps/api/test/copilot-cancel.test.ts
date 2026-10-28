@@ -217,8 +217,11 @@ describe("copilot 路由：取消落 499 + copilot_cancel，正常兜底落 copi
         url: "/api/copilot/chat",
         payload: { message: "推荐一个 Markdown 编辑器" },
       });
-      // 「模型确实发出去了」才允许挂断——不用裸 sleep 赌 pre-LLM 那几段 DB 读的快慢
-      await until("本地网关收到连接", 3000, () => state.hubHits > 0, () => state);
+      // 「模型确实发出去了」才允许挂断——不用裸 sleep 赌 pre-LLM 那几段 DB 读的快慢。
+      // 这里的 10s 是「脚本愿意等多久」，不是产品阈值：真阈值在下面的
+      // settledAt - hungUpAt < 1500。同机还跑着 next dev + 中枢 + Chromium 时，
+      // pre-LLM 检索本身就可能吃掉 3 秒，把等待预算写成 3s 会把「机器忙」报成「取消没穿透」。
+      await until("本地网关收到连接", 10_000, () => state.hubHits > 0, () => state);
 
       const raw = (captured as unknown as { raw: EventEmitter & { writableEnded: boolean } }).raw;
       expect(raw.writableEnded).toBe(false);
@@ -236,7 +239,8 @@ describe("copilot 路由：取消落 499 + copilot_cancel，正常兜底落 copi
         /* 见上 */
       }
       // 取消闸门写的事件行就是中枢收尾的落点
-      settledAt = await until("取消闸门写事件行", 3000, async () => (await eventRows()).length > 0, () => state);
+      // 同上：预算 6s，产品阈值仍是下面的 <1500ms（settledAt 由 until 实测返回）
+      settledAt = await until("取消闸门写事件行", 6000, async () => (await eventRows()).length > 0, () => state);
     } finally {
       hub.close();
       await resetSystemLlmConfig(ctx, "test");

@@ -4,4 +4,5 @@ export * from "./outbound.ts";
 export * from "./metadata.ts";
 export * from "./llm.ts";
 export * from "./deadline.ts";
+export * from "./with-timeout.ts";
 export * from "./enrich.ts";

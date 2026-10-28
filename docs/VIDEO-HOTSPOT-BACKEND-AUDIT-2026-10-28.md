@@ -1658,3 +1658,69 @@ A8 作用域化类型门禁（73 模块 + CI 挂载）。
 `ifVersion` 会被参数校验拒绝（400）。采集器侧写的是 `version ?? undefined`
 （`video-harvester.ts` 的 `commitFile(..., version ?? undefined)`），是正确姿势：
 「文档不存在」时不要带 `ifVersion`，让它走首次创建路径。
+
+---
+
+## 25. 内容数据完整性：一次让 `next build` 失败的截断
+
+> 这节不是审计条目，是 2026-10-28 16:06 用户报上来的真实构建失败的处理记录。
+> 放在这里是因为它属于同一批文件（`videos.json`），且暴露了一类**测试永远发现不了**的问题。
+
+### 25.1 症状
+
+```
+./apps/web/src/navsphere/content/videos.json:69341:105
+Error: Unable to make a module from invalid JSON
+unexpected end of hex escape at line 69341 column 105
+Next.js version: 16.4.2 (Turbopack)
+```
+
+### 25.2 根因
+
+那条视频描述以 emoji 结尾，写入时被**截断**，只剩高位代理（下面的 `\ud83d` 是六个字符的转义）：
+
+```json
+"description": "💬 想让我拆解哪个出海副业项目，评论区告诉我。\ud83d"
+```
+
+它是 UTF-16 的高位代理，后面的低位代理（`\udcXX`）丢了。
+
+### 25.3 为什么单测全绿、只有构建红（这是关键）
+
+| 解析器 | 对孤立代理的态度 |
+|---|---|
+| JSON 规范 | **允许**（孤立代理是合法码位） |
+| `JSON.parse`（Node） | **接受**，原样返回一个孤立代理字符 |
+| serde（Turbopack 读 JSON 用的 Rust 库） | **拒绝**，报 `unexpected end of hex escape` |
+
+于是出现最坏的组合：`JSON.parse` 过、所有 vitest 用例过、`next build` 红，
+而报错指向一个看起来完全正常的字符串。**这类损坏必须由专门的守卫来抓，
+`JSON.parse` 天然抓不到。**
+
+### 25.4 处理
+
+1. **移除**该孤立转义，**不猜原来的 emoji** —— 凭空补一个比删掉更糟（会造假数据）。
+   只改一处：文件体积正好少 6 字节。
+2. overlay 源与 vendored 副本按字节同步（sha256 一致）；`check-web-overlay` 通过。
+3. 附带核对了这次数据导入的完整性（该文件同日被另一会话从 4 分类 / 5 条目
+   扩到 **12 分类 / 36 子分类 / 5578 条目**）：
+   条目总数 5578、缺必填 0、重复 id 0、非法 href 0、`videoConfig.type` 全部为 bilibili。
+4. 全仓 40 个 JSON 扫描：**0 处孤立代理**；两个 `tsconfig.json` 的 `JSON.parse` 失败是
+   JSONC 注释（正常）。文件无 BOM、无未转义控制字符、结尾完整。
+
+### 25.5 新增守卫（`content-json-strict.test.ts`）
+
+扫 `src/navsphere/content/*.json`（当前 6 个文件），两条判据：
+
+- **转义层面**：`\uXXXX` 必须 4 位十六进制；代理必须成对（高位后必须紧跟 `\uDC00–\uDFFF`）；
+- **字符层面**：文件里不得直接存未配对代理字符。
+
+反向验证：向 `videos.json` 注入一个孤立 `\ud83d` → 只有该文件红、其余 5 个绿；
+恢复后 7 例全绿。
+
+### 25.6 这类损坏从哪来
+
+不是人写出来的，是**写入被截断**：磁盘满（当时 C: 只剩 8.2G / 94% 已用）、
+进程被杀、生成到一半中断 —— 都会留下「半个 emoji」这种尾巴。
+所以规矩是：**任何批量写入内容 JSON 的操作，落盘后必须能被严格解析器解析**，
+不能只信 `JSON.parse`。

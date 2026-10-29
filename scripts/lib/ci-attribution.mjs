@@ -146,10 +146,20 @@ export function fixHintFor(row) {
 /** 文本报告的「修复入口」段：按层去重，只列本轮真实出现的层 */
 export function renderFixHints(rows) {
   const byLayer = new Map();
+  // 已并进去的命令集，按层各一份。判据必须是「这条命令进没进过」，
+  // 不能拿它跟**已经拼接过的**字符串比：真实 run 40927211876 的「构建」层有
+  // 1 条预算门禁 + 3 条同款 `pnpm run typecheck`，后者与拼接结果永远不相等
+  // ⇒ 同一句话贴了 3 遍「（或 node scripts/typecheck.mjs）」。
+  const used = new Map();
   for (const row of Array.isArray(rows) ? rows : []) {
     const hint = fixHintFor(row);
-    if (!byLayer.has(hint.layer)) byLayer.set(hint.layer, hint);
-    else if (hint.command !== byLayer.get(hint.layer).command) byLayer.get(hint.layer).command += "（或 " + hint.command + "）";
+    if (!byLayer.has(hint.layer)) {
+      byLayer.set(hint.layer, hint);
+      used.set(hint.layer, new Set([hint.command]));
+    } else if (!used.get(hint.layer).has(hint.command)) {
+      used.get(hint.layer).add(hint.command);
+      byLayer.get(hint.layer).command += "（或 " + hint.command + "）";
+    }
   }
   if (byLayer.size === 0) return "";
   const lines = ["## 修复入口（按归因层，一条命令起步）"];

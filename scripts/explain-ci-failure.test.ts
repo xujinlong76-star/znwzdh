@@ -741,6 +741,20 @@ describe("fixHint：每层一条可执行入口", () => {
     expect(renderFixHints([])).toBe("");
   });
 
+  it("同一层里重复的同款命令只并一次「（或 …）」", () => {
+    // 真实 run 40927211876 的形状：构建层 = 1 条预算门禁（红在自己的退出码）
+    // + 3 片同款 `pnpm run typecheck`。去重判据若拿「拼接后的整串」比，
+    // 三条都不相等 ⇒ 同一句话贴三遍，人分不清到底有几条不同的入口。
+    const text = renderFixHints([
+      { layer: "构建", headLevel: "failure", step: "Run node scripts/check-bundle-budget.mjs", firstError: "首屏预算超限 /videos/player" },
+      { layer: "构建", firstError: "apps/api/src/context.ts:157 · error TS2353" },
+      { layer: "构建", firstError: "apps/api/src/context.ts:157 · error TS2353" },
+      { layer: "构建", firstError: "apps/api/src/context.ts:157 · error TS2353" },
+    ]);
+    expect(text.match(/（或 node scripts\/typecheck\.mjs）/g)).toHaveLength(1);
+    expect(text).toContain("- 构建：node scripts/check-bundle-budget.mjs（或 node scripts/typecheck.mjs）");
+  });
+
   it("summarizeJob 每一行都带 fixHint（JSON 可直接消费）", () => {
     const row = summarizeJob(
       { id: 1, name: "x", conclusion: "failure", steps: [] },

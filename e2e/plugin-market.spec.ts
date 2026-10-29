@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type APIRequestContext, type BrowserContext } from '@playwright/test';
+import { loginViaAdmin } from './helpers';
 
 /**
  * 核心旅程：插件市场（声明式插件的浏览、安装与审核链路）。
@@ -67,6 +68,29 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
   // 全套件连重试的最坏发布量 ≤4 < 5，避免 429 被重试打满后污染结果。
   test.describe.configure({ retries: 1 });
 
+  /**
+   * 落库通道 `POST /api/hub/plugins/import` 在中枢声明 scope=admin
+   * （apps/api/src/routes/plugins.ts:1313），而代理网关把 read/write/admin 一律
+   * 判成「需要管理员会话」（apps/web-overlay/src/lib/hub-route-policy.ts:82 →
+   * app/api/hub/[...path]/route.ts:86 返 401 HUB_ROUTE_FORBIDDEN）。
+   * 匿名 request 夹具因此根本进不了导入——CI 里 5 条用例同点红。
+   *
+   * 会话放在**独立 context**，可见 page 保持匿名：市场页对登录态有分支
+   * （管理入口、已安装聚合），把主页面登录成管理员会连带改掉断言基线。
+   * 一个 worker 只登录一次（playwright.config 里 workers:1），
+   * 冷编译预算沿用 helpers.loginViaAdmin 的既有强化。
+   */
+  let adminRequest: APIRequestContext;
+  let adminContext: BrowserContext | undefined;
+  test.beforeAll(async ({ browser }, testInfo) => {
+    adminContext = await browser.newContext({ baseURL: testInfo.project.use.baseURL });
+    await loginViaAdmin(await adminContext.newPage());
+    adminRequest = adminContext.request;
+  });
+  test.afterAll(async () => {
+    await adminContext?.close().catch(() => {});
+  });
+
   test.beforeEach(async ({ page }) => {
     // 诊断通道：CI 失败时把浏览器报错与失败 API 落进任务日志，便于远程排查
     page.on('console', msg => console.log(`[BROWSER ${msg.type()}]`, msg.text()));
@@ -86,7 +110,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const slug = `e2e-pack-${stamp}`;
 
     // 通过导入通道落库（直接上架、无发布限流）
-    const imported = await request.post('/api/hub/plugins/import', {
+    const imported = await adminRequest.post('/api/hub/plugins/import', {
       data: { manifest: sitePackManifest(name, stamp), slug },
     });
     expect(imported.ok(), `导入失败 ${imported.status()}: ${await imported.text()}`).toBeTruthy();
@@ -154,13 +178,13 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const bundleSlug = `e2e-bundle-${stamp}`;
 
     // 1. 先导入已上架成员（组合包只允许引用已上架插件）
-    const memberImport = await request.post('/api/hub/plugins/import', {
+    const memberImport = await adminRequest.post('/api/hub/plugins/import', {
       data: { manifest: sitePackManifest(memberName, stamp), slug: memberSlug },
     });
     expect(memberImport.ok(), `成员导入失败 ${memberImport.status()}: ${await memberImport.text()}`).toBeTruthy();
 
     // 2. 导入单层组合包
-    const bundleImport = await request.post('/api/hub/plugins/import', {
+    const bundleImport = await adminRequest.post('/api/hub/plugins/import', {
       data: {
         manifest: {
           manifestVersion: 1,
@@ -338,7 +362,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     };
 
     // 1. 通过直接上架通道导入该主题
-    const imported = await request.post('/api/hub/plugins/import', {
+    const imported = await adminRequest.post('/api/hub/plugins/import', {
       data: { manifest: themeManifest, slug },
     });
     expect(imported.ok(), `导入失败 ${imported.status()}: ${await imported.text()}`).toBeTruthy();
@@ -447,7 +471,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     };
 
     // 1. 通过直接上架通道导入该搜索引擎包
-    const imported = await request.post('/api/hub/plugins/import', {
+    const imported = await adminRequest.post('/api/hub/plugins/import', {
       data: { manifest: searchPackManifest, slug },
     });
     expect(imported.ok(), `导入失败 ${imported.status()}: ${await imported.text()}`).toBeTruthy();
@@ -554,7 +578,7 @@ test.describe('插件市场：浏览、安装与审核链路', () => {
     const memberSlug = `e2e-picker-${stamp}`;
 
     // 1. 通过导入通道落库一个已上架成员（候选只要求「已上架」）
-    const imported = await request.post('/api/hub/plugins/import', {
+    const imported = await adminRequest.post('/api/hub/plugins/import', {
       data: { manifest: sitePackManifest(memberName, stamp), slug: memberSlug },
     });
     expect(imported.ok(), `成员导入失败 ${imported.status()}: ${await imported.text()}`).toBeTruthy();

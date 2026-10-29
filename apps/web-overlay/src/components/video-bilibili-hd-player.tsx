@@ -16,11 +16,10 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  buildBilibiliEmbedUrl,
-  ensureHttpsUrl,
-  type BilibiliHdParseResult,
-} from '@/lib/video-bilibili-hd-parser'
+// 只从 client-safe 模块取值：解析器顶层引用 bilibili-wbi（node:crypto），
+// 从它 import 会把 node 内建带进浏览器包
+import { buildBilibiliEmbedUrl, ensureHttpsUrl } from '@/lib/video-bilibili-hd-url'
+import type { BilibiliHdParseResult } from '@/lib/video-bilibili-hd-parser'
 
 const BILI_ACCESS_KEY_STORAGE = 'navhub_bili_access_key'
 const BILI_PLAY_MODE_STORAGE = 'navhub_bili_prefer_mode'
@@ -772,6 +771,9 @@ export function VideoBilibiliHdPlayer({
       )}
 
       {/* 播放主视图：优先使用原生 HTML5 <video> 播放解析出的高清 MP4 直链 */}
+      {/* 注意：这里不要再给 <video> 加 referrerPolicy——它不是 <video> 的合法属性
+          （只在 <iframe>/<img>/<a>/<script> 上生效），写了既过不了 tsc（TS2322），
+          浏览器也完全忽略。防盗链走直链签名与媒体代理，不靠这个属性「看起来生效」。 */}
       {!isLoading && effectiveStage !== 'iframe' && activeVideoSrc ? (
         <video
           ref={videoRef}
@@ -781,7 +783,6 @@ export function VideoBilibiliHdPlayer({
           controls
           autoPlay={autoPlay}
           playsInline
-          referrerPolicy="no-referrer"
           onLoadedMetadata={handleLoadedMetadata}
           onTimeUpdate={e => {
             if (onTimeUpdateSec) {

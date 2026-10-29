@@ -346,7 +346,8 @@ describe("真实仓库 plumbing", () => {
     const mutated = new Map(head.contents);
     mutated.set(first, "// 不是镜像\n");
     expect(assess(head.entries, mutated).ok).toBe(false);
-    expect(tree.contents.size).toBe(26);
+    // 同上：钉关系不钉条数（工作区读到的条数 = 计划条数 × 2）
+    expect(tree.contents.size).toBe(tree.result.plans.length * 2);
   });
 
   it("ref 不存在时拒绝给结论（不把「读不到」说成「有漂移」，也不说成「通过」）", () => {

@@ -195,7 +195,7 @@ describe("CI 接线（源码级钉子）", () => {
     expect(block).toContain("if: always()");
   });
 
-  it("artifact 传的就是脚本写的那个文件，且缺文件必须 error（junit 用 warn，实测三连 0 个 artifact）", () => {
+  it("artifact 传的就是脚本写的那个文件，且缺文件必须 error（junit 同理，见 workflow-actions 的接线钉子）", () => {
     const ledger = wf.indexOf("node scripts/bundle-budget-summary.mjs");
     const block = wf.slice(ledger, ledger + 900);
     expect(block).toContain('"$RUNNER_TEMP/bundle-budget-report.json"');

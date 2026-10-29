@@ -101,14 +101,19 @@ jobs:
       - run: node scripts/vendor-web.mjs
       # JUnit 供 scripts/test-telemetry.mjs 统计 flake 与失败用例（人类可读的
       # default reporter 仍然保留，日志体验不变）。
+      # 不能写 `pnpm test -- --shard=...`：pnpm 会把那个 `--` 原样透传给 vitest，
+      # 之后的 --shard / --reporter / --outputFile 全被当成文件过滤器吃掉。
+      # 实测（run 40671824883）：三片各自跑了全量 473 个文件，junit 0 个产物，
+      # 上传步骤靠 if-no-files-found: warn 静默通过——分片和遥测同时失效了三轮。
       - name: 单元/接口测试（分片 ${{ matrix.shard }}/3）
-        run: pnpm test -- --shard=${{ matrix.shard }}/3 --reporter=default --reporter=junit --outputFile=junit-sqlite-${{ matrix.shard }}.xml
+        run: pnpm test --shard=${{ matrix.shard }}/3 --reporter=default --reporter=junit --outputFile.junit=junit-sqlite-${{ matrix.shard }}.xml
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !cancelled() }}
         with:
           name: junit-sqlite-${{ matrix.shard }}
           path: junit-sqlite-*.xml
-          if-no-files-found: warn
+          # 缺 junit = 遥测链路断了，必须红：warn 曾让这条链空转三轮没人发现
+          if-no-files-found: error
           retention-days: 7
       # 打包构建闸门：tsc 能过但声明导出/入口路径坏了只有 build 能发现。
       # 只在第 1 片跑：三片各 build 一次是纯浪费，且构建与分片无关。
@@ -595,7 +600,9 @@ jobs:
       - name: 执行 Playwright E2E 测试
         run: |
           set +e
-          PLAYWRIGHT_JUNIT_OUTPUT_NAME=junit-e2e-${{ matrix.shard }}.xml             pnpm test:e2e -- --shard=${{ matrix.shard }}/2 --reporter=list --reporter=junit 2>&1 | tee /tmp/e2e.log
+          # 同单元测试：`pnpm test:e2e -- …` 的 `--` 会被透传给 playwright，
+          # 后面的 --shard/--reporter 全被当成文件过滤器（实测两个「分片」各跑了全量）
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME=junit-e2e-${{ matrix.shard }}.xml pnpm test:e2e --shard=${{ matrix.shard }}/2 --reporter=list --reporter=junit 2>&1 | tee /tmp/e2e.log
           rc=${PIPESTATUS[0]}
           set -e
           if [ "$rc" != "0" ]; then
@@ -616,7 +623,8 @@ jobs:
         with:
           name: junit-e2e-${{ matrix.shard }}
           path: junit-e2e-*.xml
-          if-no-files-found: warn
+          # 同单元测试：缺 junit 就是遥测链路断了，不能靠 warn 静默放行
+          if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !cancelled() }}

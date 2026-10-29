@@ -99,6 +99,16 @@ L4 还有额外固定成本：需要独占端口（`scripts/e2e-local.mjs` 自�
 10. **内存不够会让 Next dev 直接崩**（退出码 `3221226505` / `2147483651`），
     报错是 `Timed out waiting ... webServer`，看起来像启动慢。本机同时跑两套 E2E
     基本必崩：先确认没有别人的 Playwright 在跑（`Win32_Process` 里看命令行），再启动。
+11. **依赖真实出网探活的用例，期望值不能写成「几个候选能 verified」**。
+    实例：`apps/api/test/plugin-audit-api.test.ts` 的 `autoApply=true` 那条在 run 40953186707 里
+    期望 `replacedCount` 2 得 1，而本机同一片（`--shard=1/3`，该片确实含此文件）2015 例全绿。
+    判据链是 `resolveCatalogCandidates`（静态词典 + `offsetIndex` 轮转）→ 逐候选真实探活/内容判定 →
+    **只有 `grade === "verified"` 的候选才被采纳**（`apps/api/src/routes/plugin-audit.ts:1104`）。
+    所以「2」量的不是逻辑不变量，而是「出网能连通两个真实新闻站」这个**环境不变量**——
+    CI runner 的 egress / 地域 / 限流与本机（走代理）不同，同一段代码两边结果就是不一样。
+    同族已有的正解是那条「私网目标一律判不可达…（离线可复现）」：要稳定就把候选探活 stub 成夹具，
+    **不要改期望数字**（改成 1 只是把另一个环境钉死）。碰到这类红的正确动作：
+    先本机同片复现 + 看 CI 的 egress，判「环境敏感」还是「逻辑回归」，再决定动谁。
 
 ## 4.5 pre-commit 钩子的选测口径（2026-10-29 起：模块图影响面）
 

@@ -542,6 +542,10 @@ describe("waitForRunConclusion：等终局再算桶", () => {
     let calls = 0;
     const result = await waitForRunConclusion({
       run: { id: 1, conclusion: "success" },
+      // 必须注入时钟：waitedMs 走真实 Date.now() 时，负载高的 CI 机器上
+      // 「同一毫秒返回」不成立（实测 ≥1ms），这条断言会间歇红——断言的是
+      // 「没等待」这个语义，就该用假时钟把它钉死。
+      now: () => 0,
       fetchRun: async () => {
         calls++;
         return { id: 1, conclusion: "success" };

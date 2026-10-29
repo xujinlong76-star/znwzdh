@@ -100,17 +100,38 @@ L4 还有额外固定成本：需要独占端口（`scripts/e2e-local.mjs` 自�
     报错是 `Timed out waiting ... webServer`，看起来像启动慢。本机同时跑两套 E2E
     基本必崩：先确认没有别人的 Playwright 在跑（`Win32_Process` 里看命令行），再启动。
 
-## 4.5 pre-commit 钩子的选测口径（2026-10-25 起）
+## 4.5 pre-commit 钩子的选测口径（2026-10-29 起：模块图影响面）
 
-钩子不再「改一个文件就跑整棵目录」，而是**先收窄**：
+钩子不再「改一个文件就跑整棵目录」，也不再只靠名字猜：
 
 1. 改动文件 → 测试根（`apps/api` → `apps/api/test`，`packages/store` → `packages/store/test`…）；
-2. 在根内按**词干匹配**收窄：改动文件的文件名/父目录名（≥4 字符、非通用词）出现在测试文件名里就选中
-   （`plugins` → `plugin`，复数已归一）；文件名没命中再看**测试内容**是否提到该词;
-3. 都没命中就**回退整棵**——宁可多跑，不可漏跑（跨模块影响由 CI 全量兜底）；
-4. 任何 `apps/web*/src` 改动都会**额外**跑全仓扫描门禁（`field-names`、`keyboard-activation`）。
+2. **图优先**：`scripts/lib/test-impact.mjs` 建「文件 → 谁引用它」倒排，三类边缺一不可：
+   - **import 边**：import / export-from / require / import()，含 `@/`、`@navhub/*` 别名与扩展名回退；
+   - **路径字面量边**：守卫型测试不 import 源码而是 readFileSync / spawn 它。只从测试文件里抽，
+     且先剥注释；`resolve(ROOT, "scripts", "x.mjs")` 这种**分段拼接**也认（真实盲区：
+     `check-large-files.test.ts` 就是这么写的）；
+   - **镜像边**：`scripts/core-mirrors.json` 登记的 core ↔ overlay 镜像，改任一侧都影响消费另一侧的测试。
+   从改动文件做**反向 BFS**（谁传递地引用了它），命中测试根的测试全部入选。
+   目录依赖（测试扫描某个目录）**只对起点生效**，否则改一个 api 路由会把「扫 apps/api/test」的
+   web 测试也串进来；
+3. 图没命中时按**词根回退**：文件名/父目录名的词干出现在测试文件名里就选中（`plugins` → `plugin`），
+   文件名没命中再看测试内容；判别力过差的词根（命中面 >25% 且 >5）不提供收窄信息、不参与；
+4. 图与词根都命中不了就**回退整棵**——宁可多跑，不可漏跑（跨模块影响由 CI 全量兜底）；
+5. 任何 `apps/web*/src` 改动都会**额外**跑全仓扫描门禁（`field-names`、`keyboard-activation`）。
 
-实测：改 `apps/api/src/routes/backup.ts` 从 93 个测试文件降到 8 个（约 40 秒）。
+实测（2026-10-29，本机）：
+
+| 改动 | 选中 |
+|---|---|
+| `scripts/check-bundle-budget.mjs` | 2（自身测试 + 选测器自检），不再拖 check-* 整族 |
+| `scripts/check-large-files.mjs` | 1（分段拼接路径已认） |
+| `apps/api/src/routes/backup.ts` | 95 / 128（经 `server.ts` 引导的 api 测试全部入选） |
+| `packages/core/src/ranking.ts` | 138（122 api + 8 web + 8 scripts） |
+| overlay 恢复页 | 图 4 + 全仓门禁 2 + 页面守卫等 3 |
+
+**变宽是刻意的**：词根口径把「名字无关但真的依赖」当成不相关（改 `backup.ts` 只跑 3 个），
+漏选不会报错。图的口径是可达性闭包，改共享入口（`server.ts`、core 的 `index.ts`）附近时接近整棵——
+整棵 `apps/api/test` 实测 234s，95 个约 170s；多跑只花本机时间，漏跑由 CI 全量兜底。
 
 | 环境变量 | 作用 |
 |---|---|
@@ -120,9 +141,9 @@ L4 还有额外固定成本：需要独占端口（`scripts/e2e-local.mjs` 自�
 | `NAVHUB_PRECOMMIT_DRYRUN=1` | 只打印将运行哪些文件（`DRYRUN_FILES=[...]`），不真跑 |
 | `NAVHUB_PRECOMMIT_FILES=a,b` | 覆盖「暂存集」，供自检注入（正常提交别设） |
 
-选测器本身有测试：`scripts/precommit-select.test.ts` 固定了「改动 → 选中哪些文件」，
-其中一条专门锁 `jobs.ts → 必须包含 backup-restore-job.test.ts`（复数归一回归）。
-改选测逻辑后先跑它，别靠人肉核对。
+选测器本身有两层测试：`scripts/precommit-select.test.ts` 固定「改动 → 选中哪些文件」（走生成物的
+dry-run），`scripts/test-impact.test.ts` 固定图的语义（三类边、目录依赖只对起点生效、注释不算依赖、
+真实仓库验收口径）。改选测逻辑后先跑它们，别靠人肉核对。
 
 **a11y 门禁的范围**：暂存了 `apps/web-overlay/src/**/*.tsx` 时，钩子会设
 `NAVHUB_A11Y_SCOPE=<这些文件>`，`field-names` 只检查它们。

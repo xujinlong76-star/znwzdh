@@ -45,13 +45,19 @@ function select(changed: string[], extraEnv: Record<string, string> = {}): strin
 }
 
 describe("pre-commit 选测：改动 → 测试文件", () => {
-  it("改 routes/backup.ts：选中 backup 相关，不带无关的插件测试", () => {
+  it("改 routes/backup.ts：backup 自己的测试在，且按图把经 server 引导的测试也带上", () => {
     const files = select(["apps/api/src/routes/backup.ts"]);
     expect(files).toContain("apps/api/test/backup-async-api.test.ts");
-    expect(files).toContain("apps/api/test/backup-restore-job.test.ts");
-    expect(files.some((f) => f.includes("plugin"))).toBe(false);
-    // 收窄的意义：不能是整棵目录
-    expect(files.length).toBeLessThan(30);
+    // 图的口径是「谁（传递地）引用了它」：routes/backup.ts ← server.ts ← 引导整个服务的
+    // api 测试。名字与 backup 无关的用例因此也会入选——它们确实在启动期加载这条路由，
+    // 旧词根口径只选 3 个（把这类漏选当成了「收窄成功」）。
+    expect(files).toContain("apps/api/test/plugins-api.test.ts");
+    // 反向的取舍：backup-restore-job.test.ts 只 import jobs.ts，不 import 本路由，
+    // 所以改路由不再顺带跑它（词根只作回退，见下一条用例）。任务执行器的改动仍由
+    // 改 jobs.ts 选中它（本文件第 6 条用例钉住）。
+    expect(files.length).toBeGreaterThan(50);
+    // 但仍小于整棵 apps/api/test（128）：收窄还在，只是依据从名字换成了依赖
+    expect(files.length).toBeLessThan(128);
   });
 
   it("改 check-bundle-budget.mjs：通用词根不许把同前缀族整族拖进来", () => {
@@ -106,16 +112,29 @@ describe("pre-commit 选测：改动 → 测试文件", () => {
     expect(files).toContain("apps/web/test/keyboard-activation.test.ts");
   });
 
-  it("e2e 用例不进 vitest（那是 Playwright 的地盘）", () => {
-    // 只改 e2e：没有任何 vitest 目标 → SKIP
-    expect(select(["e2e/admin-restore-async.spec.ts"])).toEqual([]);
+  it("e2e 用例不进 vitest（只选中「引用它」的 vitest 测试）", () => {
+    // e2e 由 Playwright 跑，选测器不把它交给 vitest；但图会选中测试里提到这个 spec 的
+    // vitest 用例（precommit-select 自己就内嵌了这个路径）——那是真的依赖，不是误选。
+    const files = select(["e2e/admin-restore-async.spec.ts"]);
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.every((f) => f.endsWith(".test.ts"))).toBe(true);
+    expect(files.some((f) => f.startsWith("e2e/"))).toBe(false);
   });
 
-  it("收窄不了时回退整棵（宁可多跑，不可漏跑）", () => {
-    // page.tsx 的父目录是 restore，能命中；换一个既无词干也无同名测试的路径：
+  it("图能解释的改动按图收窄：未引用的文件也不会把整棵拖进来", () => {
+    // zzz-unrelated 没有任何测试 import 它；图仍会命中「扫描 apps/api/src 目录」的测试。
+    // 旧口径靠名字收窄 → 一个词根都命中不了 → 退回整棵 128 个。
     const files = select(["apps/api/src/routes/zzz-unrelated.ts"]);
-    // 词干 zzz-unrelated 命中不了任何测试 → 回退 apps/api/test 整棵
-    expect(files.length).toBeGreaterThan(30);
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.length).toBeLessThan(20);
+    expect(files).toContain("apps/api/test/backend-lint-gate.test.ts");
+    expect(files).not.toContain("apps/api/test/backup-async-api.test.ts");
+  });
+
+  it("图与词根都给不出线索时回退整棵（宁可多跑，不可漏跑）", () => {
+    // 非源码扩展名不进图（looksLikeSource），词干 xqzv-config 也命中不了任何测试
+    const files = select(["apps/api/src/xqzv-config.json"]);
+    expect(files.length).toBeGreaterThan(100);
   });
 
   it("只改文档：一个测试都不跑（SKIP）", () => {

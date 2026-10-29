@@ -30,6 +30,29 @@ describe("mock 卫生自动补齐：判定", () => {
     const src = ["import { describe, it } from 'vitest'", "describe('x', () => {});"].join("\n");
     expect(needsHook(src)).toBe(false);
   });
+
+  it("写 process.env 但没 afterAll → 要补（mock 卫生的第二条规则）", () => {
+    const src = [
+      "import { describe, it, vi } from 'vitest'",
+      "describe('x', () => {",
+      "  it('a', () => { process.env.FOO = '1' })",
+      "})",
+    ].join("\n");
+    expect(needsHook(src)).toBe(true);
+    const out = addResetModulesHook(src);
+    expect(out).toContain("afterAll");
+    expect(out).toContain("process.env.FOO");
+  });
+
+  it("读 process.env 不算改写 → 不补", () => {
+    const src = ["import { describe, it } from 'vitest'", "describe('x', () => { it('a', () => { const v = process.env.FOO }) })"].join("\n");
+    expect(needsHook(src)).toBe(false);
+  });
+
+  it("显式豁免（mock-hygiene: exempt）→ 不补", () => {
+    const src = ["// mock-hygiene: exempt", "import { describe, it, vi } from 'vitest'", "vi.mock('@/lib/x', () => ({}));", "describe('x', () => {});"].join("\n");
+    expect(needsHook(src)).toBe(false);
+  });
 });
 
 describe("mock 卫生自动补齐：改写", () => {

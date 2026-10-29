@@ -50,11 +50,22 @@ function testFiles() {
   return out;
 }
 
-/** 待补判定：跨模块 mock 且缺 vi.resetModules() */
+/**
+ * mock 卫生的两条规则（与 mock-hygiene.test.ts 同口径）：
+ *   1. 跨模块 vi.mock → 必须有 vi.resetModules()；
+ *   2. 写 process.env.X = → 必须有 afterAll（清理挂载点）。
+ * 两条任一不满足就补一个 afterAll，钩子体统一清模块缓存。
+ */
+const ENV_WRITE = /process\.env\.[A-Z_]+\s*=(?!=)/;
+
 export function needsHook(src) {
-  if (!src.includes("vi.mock(")) return false;
-  if (!CROSS_MODULE_MOCK.test(src)) return false;
-  return !src.includes("vi.resetModules()");
+  if (src.includes("mock-hygiene: exempt")) return false;
+  const crossModuleMock = src.includes("vi.mock(") && CROSS_MODULE_MOCK.test(src);
+  const writesEnv = ENV_WRITE.test(src);
+  if (!crossModuleMock && !writesEnv) return false;
+  if (crossModuleMock && !src.includes("vi.resetModules()")) return true;
+  if (writesEnv && !/\bafterAll\b/.test(src)) return true;
+  return false;
 }
 
 /**
@@ -64,13 +75,19 @@ export function needsHook(src) {
 export function addResetModulesHook(src) {
   if (!needsHook(src)) return src;
 
-  // 1) import 里带上 afterAll（已导入就不动）
+  // 1) import 里带上 afterAll 与 vi（钩子体调 vi.resetModules()，缺 vi 会 ReferenceError）
   let out = src.replace(
     /^import\s*\{([^}]*)\}\s*from\s*['"]vitest['"];?\s*$/m,
     (whole, names) => {
       const list = names.split(",").map((s) => s.trim()).filter(Boolean);
-      if (list.includes("afterAll")) return whole;
-      list.push("afterAll");
+      let changed = false;
+      for (const need of ["afterAll", "vi"]) {
+        if (!list.includes(need)) {
+          list.push(need);
+          changed = true;
+        }
+      }
+      if (!changed) return whole;
       // 保持原分隔风格：单行还是多行由原 import 决定
       const joined = whole.includes("\n") ? list.join(",\n  ") : list.join(", ");
       return whole.replace(names.trim(), joined);
@@ -79,8 +96,8 @@ export function addResetModulesHook(src) {
 
   // 2) 在第一条 describe( 之前插入钩子
   const hook =
-    "\n// mock 卫生兜底：本文件跨模块 mock 了别的模块，isolate:false 下必须清缓存，\n" +
-    "// 否则同 worker 的后续测试文件会拿到假模块。\n" +
+    "\n// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的\n" +
+    "// 跨模块 mock 与 process.env 改写，这里统一清掉。\n" +
     "afterAll(() => {\n  vi.resetModules();\n});\n";
   const idx = out.indexOf("\ndescribe(");
   if (idx === -1) {

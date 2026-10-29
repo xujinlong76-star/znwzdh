@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterAll } from "vitest";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -50,6 +50,12 @@ import {
  * 必须归到环境），以及 `##[error]` 这种工具主动标注优先于日志里的偶然
  * `Error:` 字样。
  */
+// mock 卫生兜底：isolate:false 下同 worker 的后续文件会看到本文件留下的
+// 跨模块 mock 与 process.env 改写，这里统一清掉。
+afterAll(() => {
+  vi.resetModules();
+});
+
 describe("cleanLogLines：去噪但不动行数", () => {
   it("剥掉 ANSI 色码与 Actions 行首时间戳", () => {
     const raw = "\u001b[31m2026-10-27T10:34:49.1234567Z error TS2307\u001b[0m\r\n2026-10-27T10:34:50.1Z done";

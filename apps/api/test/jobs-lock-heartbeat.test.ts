@@ -57,11 +57,17 @@ describe("JobRunner 单实例锁心跳", () => {
     (ctx.repo as unknown as { completeJob: (...a: unknown[]) => Promise<unknown> }).completeJob = async (...args) => {
       // 此刻锁刚被本轮抢到（任务体已完成），记下基线，然后模拟一段很长的执行
       heldSinceAt = lockRow()!.createdAt;
-      const deadline = Date.now() + 300;
-      while (Date.now() < deadline) {
+      // 心跳间隔 40ms：等到观察到 ≥3 个不同续期时间戳再收尾（上限 2s）。
+      // 固定睡 300ms 在高负载下可能一次心跳都没轮到，会把「心跳存在」误判成失败。
+      const distinct = new Set<number>();
+      const deadline = Date.now() + 2_000;
+      while (Date.now() < deadline && distinct.size < 3) {
         await new Promise((r) => setTimeout(r, 20));
         const row = lockRow();
-        if (row) observed.push(row.createdAt);
+        if (row) {
+          observed.push(row.createdAt);
+          distinct.add(row.createdAt);
+        }
       }
       return (original as (...a: unknown[]) => Promise<unknown>)(...args);
     };

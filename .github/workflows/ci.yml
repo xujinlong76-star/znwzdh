@@ -582,6 +582,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # 语法快速门禁：解析级检查，不依赖 vendor，几秒内定位标点级错误
       - run: node scripts/check-syntax.mjs
+      # 依赖完整性：装残的包会让几百个测试套件同时报「找不到模块」，看起来像代码全坏
+      # （2026-10-29 本地一天两次）。CI 也跑，否则干净检出后 node_modules 损坏时无从发现。
+      - run: node scripts/check-deps-integrity.mjs
       # 视频链路的作用域化类型门禁：自动发现 src/lib/video-*.ts 与 webhook-*.ts
       # （70 个），断言 0 错误。整棵 overlay 的 ignoreBuildErrors 暂时关不掉
       # （21600+ 既有错误），但这条链路必须保持干净 —— 否则「类型不存在却一路绿灯」

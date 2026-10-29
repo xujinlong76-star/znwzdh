@@ -18,6 +18,48 @@ export function isManualOnlyJob(block) {
   return cond.includes("workflow_dispatch") || cond.includes("schedule");
 }
 
+/** 剥掉整行 YAML 注释：注释里解释口径时常会写出 `upload-artifact`、`if-no-files-found: error` */
+export function stripYamlCommentLines(block) {
+  return String(block ?? "")
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+}
+
+/**
+ * 级联登记表的**覆盖面**：有「产物缺失会把自己判红」的上传的作业，必须在登记表里。
+ *
+ * 为什么单独一条判据（2026-10-30）：登记表按作业手工登记，是因为「这一步读的是
+ * 哪个步骤的产物」从 YAML 推不出来——但**「这个作业有没有自我判红的读取步骤」推得出来**
+ * （`if-no-files-found: error` 就是它自己的声明）。此前这条只在注释里承诺
+ * 「漏登记会在那一步的红里显出来」，而那要靠事故才发现：产物生产者真被跳过时才红，
+ * 平时加一个未登记的读取步骤，门禁一路绿灯。
+ *
+ * 判据范围刻意收窄：
+ *   - 只看 `if-no-files-found: error`（warn/ignore 缺文件不会自己判红，不该逼登记）；
+ *   - 只看参与合并阻塞的作业（`!manualOnly`）——手动作业的多处红不阻塞合并，
+ *     而硬要求它登记会逼人给非阻塞作业补 `id:`，是净摩擦。
+ * `run:` 步骤里的读取（`junit-summary.mjs` / `bundle-budget-summary.mjs`）仍只能靠
+ * `products` 正则登记，这条判据覆盖不了它——它管的是「新作业带自我判红的上传」这一形。
+ */
+export function readerJobCoverageProblems(jobs, registeredJobNames) {
+  const registered = new Set(registeredJobNames);
+  const problems = [];
+  for (const job of jobs ?? []) {
+    if (job.name === "ci-passed") continue;
+    if (job.manualOnly) continue;
+    const code = stripYamlCommentLines(job.block);
+    if (!/if-no-files-found:\s*error/.test(code)) continue;
+    if (registered.has(job.name)) continue;
+    problems.push(
+      `作业 ${job.name} 带 if-no-files-found: error 的上传（产物缺失会把自己判红），` +
+        `却没在级联登记表里登记：它红的时候没人看得出根因在上游。` +
+        `请补一条 { job: "${job.name}", anchor: "<产物生产者步骤 id>", products: [/…/] }`,
+    );
+  }
+  return problems;
+}
+
 /**
  * 级联红：**一个根因只留一处红**。
  *
@@ -56,10 +98,7 @@ export function cascadeProblems(jobBlock, { anchor, products }) {
     // `junit-summary.mjs` 这些字样，直接整块正则会把**生产者步骤自己**误判成消费者
     // （2026-10-29 实测：test-sqlite 的 vitest 步骤带着解释注释，被判成
     // 「没有以 steps.vitest.outcome != 'skipped' 为条件」——而它正是产出 junit 的那一步）。
-    const code = step
-      .split("\n")
-      .filter((line) => !/^\s*#/.test(line))
-      .join("\n");
+    const code = stripYamlCommentLines(step);
     // 生产者不是消费者：它的 run 行里本来就带着产物文件名（--outputFile.junit=junit-…）。
     if (anchorRe.test(code)) continue;
     if (!products.some((re) => re.test(code))) continue;

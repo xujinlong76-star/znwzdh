@@ -1,15 +1,18 @@
 /**
- * `cascadeProblems` 的单元自检（级联红：一次根因只留一处红）。
+ * `cascadeProblems` 与 `readerJobCoverageProblems` 的单元自检（级联红：一次根因只留一处红）。
  *
  * 为什么单独测纯函数而不只靠真实 ci.yml 派生夹具：级联判定的三个分支
  * （生产者自我排除 / 注释剥离 / `if-no-files-found` 豁免）在 HEAD 的 ci.yml 上
  * 全都只走一条路，「现状绿」证明不了另两条真的存在。合成片段可以逐个钉。
  *
+ * 覆盖面那条同理：HEAD 的 ci.yml 里「有 error 上传的作业」恰好全登记了，
+ * 现状绿证明不了「漏登记」真会被拦——所以这里用合成作业把正反两面各钉一次。
+ *
  * 真实接线（test-sqlite / test-e2e / test-web 三处守卫确实在）由
  * scripts/check-ci-gate.test.ts 负责，这里不重复。
  */
 import { describe, expect, it } from "vitest";
-import { cascadeProblems } from "./ci-workflow.mjs";
+import { cascadeProblems, readerJobCoverageProblems } from "./ci-workflow.mjs";
 
 /** 一个「跑测试并产出 junit」的作业，末尾挂着读产物的收尾步骤 */
 function job(consumerIf: string | null, extra = ""): string {
@@ -102,6 +105,52 @@ ${uploadIf ? `        if: \${{ ${uploadIf} }}\n` : ""}        with:
   it("error + 守卫 ⇒ 绿：豁免是 if-no-files-found 决定的，不是「上传一律不管」", () => {
     expect(
       cascadeProblems(withUpload("error", "!cancelled() && steps.vitest.outcome != 'skipped'"), RULE),
+    ).toEqual([]);
+  });
+});
+
+describe("readerJobCoverageProblems：登记表漏作业必须当场红，而不是等事故", () => {
+  /** 带一步上传的作业片段；`name`/`manualOnly` 由调用方拼成 jobs 元素 */
+  const withUploadBlock = (ifNoFiles: string) =>
+    job(" ${{ !cancelled() && steps.vitest.outcome != 'skipped' }}") +
+    `      - uses: actions/upload-artifact@0000000000000000000000000000000000000000
+        with:
+          name: junit-x-1
+          path: junit-x-*.xml
+          if-no-files-found: ${ifNoFiles}
+`;
+  const asJobs = (name: string, block: string, manualOnly = false) => [{ name, block, manualOnly }];
+
+  it("有 error 上传且已登记 ⇒ 绿", () => {
+    expect(readerJobCoverageProblems(asJobs("test-x", withUploadBlock("error")), ["test-x"])).toEqual([]);
+  });
+
+  it("有 error 上传却没登记 ⇒ 红，点名作业并给出登记形状", () => {
+    const problems = readerJobCoverageProblems(asJobs("test-x", withUploadBlock("error")), []);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("test-x");
+    expect(problems[0]).toContain("anchor");
+  });
+
+  it("ignore 的上传不要求登记：它缺文件不会自己判红，没什么可收敛的", () => {
+    expect(readerJobCoverageProblems(asJobs("test-x", withUploadBlock("ignore")), [])).toEqual([]);
+  });
+
+  it("注释里写着 `if-no-files-found: error` 的作业 ⇒ 不误判成有自我判红上传", () => {
+    // 真实 ci.yml 就有这个形状：test-web 用注释解释「为什么不能写 always()」，
+    // 里面原样引用了那行配置。判据只看代码行，与 cascadeProblems 同一口径。
+    const commented = asJobs("test-y", `  test-y:
+    steps:
+      # 原先是 if-no-files-found: error，2026-10-29 改成 ignore
+      - name: 无关步骤
+        run: pnpm build
+`);
+    expect(readerJobCoverageProblems(commented, [])).toEqual([]);
+  });
+
+  it("手动/定时作业豁免：它的多处红不阻塞合并，登记只增加摩擦", () => {
+    expect(
+      readerJobCoverageProblems(asJobs("seo-audit-prod", withUploadBlock("error"), true), []),
     ).toEqual([]);
   });
 });

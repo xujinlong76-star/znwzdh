@@ -26,12 +26,15 @@
  *     （`steps.<锚点 id>.outcome != 'skipped'`）。只写 `!cancelled()` 或 `always()` 时，
  *     上游一红就会连带多处红，真根因被淹没。与上面「不再维护硬编码作业清单」不矛盾：
  *     聚合关系能从 YAML 推出来，而「这一步读的是哪个步骤的产物」推不出来，
- *     所以级联规则按作业登记，登记表漏了一个作业会在那一步的红里显出来。
+ *     所以级联规则按作业登记。
+ *     登记表的**覆盖面**是可推出来的（2026-10-30 补）：带 `if-no-files-found: error`
+ *     上传的作业就是自己声明了「产物缺失我会判红」，这类作业没登记 ⇒ 直接红。
+ *     此前这句只写在注释里（「漏登记会在那一步的红里显出来」），实际要靠事故才发现。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseWorkflow, cascadeProblems } from "./lib/ci-workflow.mjs";
+import { parseWorkflow, cascadeProblems, readerJobCoverageProblems } from "./lib/ci-workflow.mjs";
 
 /** 允许测试注入替代文件，验证「删掉关键作业确实会红」 */
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -128,6 +131,13 @@ for (const rule of CASCADE_RULES) {
   }
 }
 
+// 登记表本身的覆盖面：有「自我判红的读取步骤」的作业必须在表里（判据来自 YAML，不靠事故发现）
+const uncoveredReaders = readerJobCoverageProblems(
+  jobs,
+  CASCADE_RULES.map((r) => r.job),
+);
+problems.push(...uncoveredReaders);
+
 if (problems.length > 0) {
   console.error("❌ CI 合并门禁校验失败：");
   for (const p of problems) console.error("   - " + p);
@@ -137,7 +147,7 @@ if (problems.length > 0) {
 console.log(
   `✅ CI 合并门禁：解析 ${jobs.length - 1} 个作业，ci-passed 聚合 ${aggregated.length} 个作业，逐个读取结果，` +
     "PG 走 test:pg:suite，" +
-    `级联红已按产物生产者 outcome 收敛（${CASCADE_RULES.length} 个作业登记），` +
+    `级联红已按产物生产者 outcome 收敛（${CASCADE_RULES.length} 个作业登记，覆盖面按 error 上传核对），` +
     (lintStepSuppressed ? "后端 lint 由阻塞作业里的同口径断言把关。" : "后端 lint 步骤本身即为阻塞。"),
 );
 if (manualOnly.length > 0) {

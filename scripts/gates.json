@@ -1,7 +1,7 @@
 {
   "_comment": "门禁清单的单一事实源：每一枚「会拦住提交/推送/合并」的检查都在这里登记。只登记能被自动核对的坐标（命令 / runner id / CI 作业）与它的测试，不复制实现。双向口径见 scripts/check-gates-registry.mjs：登记了没接线 = 以为在拦其实没跑；接线了没登记 = 下次改钩子会悄悄删掉它。test 里的文件必须真实存在；确实没有专属测试的写 whyNoTest 说明理由（没有理由的「裸门禁」不许入库）。",
   "version": 1,
-  "updatedAt": "2026-10-29",
+  "updatedAt": "2026-10-30",
   "gates": [
     {
       "name": "large-files-staged",
@@ -76,7 +76,7 @@
         "scripts/lib/ci-workflow.test.ts",
         "apps/web/test/ci-gate.test.ts"
       ],
-      "why": "ci-passed 的聚合关系被改坏时，只有 CI 会红——而 CI 自己正是被改的那一方；读上游产物的收尾步骤还兼管级联红（一次根因只留一处红，2026-10-29 run40835496871；判据不限于 junit，test-web 的预算账同受管）"
+      "why": "ci-passed 的聚合关系被改坏时，只有 CI 会红——而 CI 自己正是被改的那一方；读上游产物的收尾步骤还兼管级联红（一次根因只留一处红，2026-10-29 run40835496871；判据不限于 junit，test-web 的预算账同受管）。2026-10-30 起还核对登记表覆盖面：带 if-no-files-found: error 上传的阻塞作业没登记就直接红，不再等事故发现"
     },
     {
       "name": "gates-registry",

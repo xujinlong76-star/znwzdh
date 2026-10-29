@@ -176,4 +176,28 @@ describe("check-ci-gate 第 6 项：级联红收敛", () => {
     const res = runGate(writeFixture("ci-comment.yml", annotated), GATE_TEST);
     expect(res.status, res.out).toBe(0);
   });
+
+  it("给一个没登记的作业加上 error 上传 ⇒ 红：覆盖面漏了不该等事故才发现", () => {
+    // 现状里三个带 error 上传的作业（test-sqlite / test-web / test-e2e）全在登记表里，
+    // 所以「登记表齐全」这件事从来没被证明过。把同一个形状搬到 check-web-overlay
+    // （它没有规则）——此前门禁一路绿灯，现在必须点名。
+    const withReader = readFileSync(REAL_CI, "utf8").replace(
+      /(      - run: node scripts\/check-extensions\.mjs(\r?\n))/,
+      (_match, line: string, eol: string) =>
+        line +
+        [
+          "      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7",
+          "        with:",
+          "          name: overlay-drift-report",
+          "          path: overlay-drift.json",
+          "          if-no-files-found: error",
+        ].join(eol) +
+        eol,
+    );
+    expect(withReader).toContain("overlay-drift-report");
+    const res = runGate(writeFixture("ci-unregistered-reader.yml", withReader), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("check-web-overlay");
+    expect(res.out).toContain("没在级联登记表里登记");
+  });
 });

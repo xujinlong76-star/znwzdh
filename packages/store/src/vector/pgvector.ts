@@ -1,5 +1,5 @@
 import type { VectorMatch, VectorRecord, VectorStore } from "./types.ts";
-import { normalize } from "./types.ts";
+import { clampSimilarity, normalize } from "./types.ts";
 import { fitDimension, toPostgresParam } from "./codec.ts";
 
 /**
@@ -90,10 +90,10 @@ export class PgVectorStore implements VectorStore {
         LIMIT $2`,
       [toPostgresParam(normalize(fitDimension(query, this.dim))), limit],
     );
-    return (res.rows as Array<{ siteId: string; distance: number | string }>).map((r) => ({
-      siteId: r.siteId,
-      distance: Number(r.distance),
-    }));
+    return (res.rows as Array<{ siteId: string; distance: number | string }>).map((r) => {
+      const distance = Number(r.distance); // `<=>` 即余弦距离
+      return { siteId: r.siteId, distance, similarity: clampSimilarity(1 - distance) };
+    });
   }
 
   async count(): Promise<number> {

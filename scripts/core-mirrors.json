@@ -4,6 +4,7 @@
     { "name": "architecture-recipe", "why": "Graph-RAG 多跳配方，纯函数" },
     { "name": "batch-operations", "why": "批量置顶/移动/删除/导出，纯函数" },
     { "name": "comparison", "why": "竞品对比矩阵合成，纯函数" },
+    { "name": "copilot-frame", "why": "Copilot 流式帧类型白名单与运行时解析，服务端/浏览器共用" },
     { "name": "crdt-sync", "why": "LWW 操作日志合并，纯函数" },
     { "name": "dynamic-tool-synthesizer", "why": "0-RTT 工具合成 + SSRF 主机名判定，core 侧含更强 IP 编码防护" },
     { "name": "federated-recommendation", "why": "联邦推荐权重，纯函数" },

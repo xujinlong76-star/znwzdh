@@ -1,5 +1,5 @@
 import type { VectorMatch, VectorRecord, VectorStore } from "./types.ts";
-import { normalize } from "./types.ts";
+import { clampSimilarity, normalize } from "./types.ts";
 import { fitDimension } from "./codec.ts";
 
 /** 内存实现：无 sqlite-vec / 无 pgvector 时的降级与单元测试基准 */
@@ -33,7 +33,8 @@ export class MemoryVectorStore implements VectorStore {
     for (const [siteId, row] of this.rows) {
       let dot = 0;
       for (let i = 0; i < this.dim; i++) dot += q[i]! * row.vector[i]!;
-      scored.push({ siteId, distance: 1 - dot });
+      const distance = 1 - dot; // 余弦距离（向量已归一化）
+      scored.push({ siteId, distance, similarity: clampSimilarity(1 - distance) });
     }
     scored.sort((a, b) => a.distance - b.distance || a.siteId.localeCompare(b.siteId));
     return scored.slice(0, limit);

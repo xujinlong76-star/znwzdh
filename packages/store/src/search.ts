@@ -63,6 +63,13 @@ export interface SearchEngineOptions {
    * 设为 0 关闭 early-exit（全通道恒跑，便于离线评估与回归对比）。
    */
   earlyExitExactHits?: number;
+  /**
+   * 语义通道的余弦相似度闸门：低于该值的向量命中不进入候选池。
+   * 0（默认）= 关闭闸门，保持旧行为；API 层按 NAVHUB_SEMANTIC_MIN_SIMILARITY 注入。
+   * 只认 VectorMatch.similarity —— 各存储实现的 distance 度量不同（L2 / 余弦），
+   * 拿 distance 当阈值会在换存储后端时静默改变语义。
+   */
+  semanticMinSimilarity?: number;
 }
 
 /**
@@ -77,6 +84,8 @@ export interface ChannelTimings {
   pinyinMs: number;
   semanticMs: number;
   skippedSemantic: boolean;
+  /** 被相似度闸门剔除的向量命中数（回表前统计；闸门关闭时恒为 0） */
+  semanticFiltered: number;
 }
 
 /**
@@ -126,6 +135,7 @@ export class SearchEngine {
   private deps: SearchEngineDeps;
   private perChannel: number;
   private earlyExitExactHits: number;
+  private semanticMinSimilarity: number;
   private linucbModel: LinUCBModel;
   private feedbackCount = 0;
   private savingPromise: Promise<void> | null = null;
@@ -137,6 +147,8 @@ export class SearchEngine {
     this.deps = deps;
     this.perChannel = opts.perChannel ?? 50;
     this.earlyExitExactHits = opts.earlyExitExactHits ?? 5;
+    const gate = opts.semanticMinSimilarity ?? 0;
+    this.semanticMinSimilarity = Number.isFinite(gate) ? Math.min(1, Math.max(0, gate)) : 0;
     this.linucbModel = createLinUCBModel(0.15);
   }
 
@@ -541,13 +553,18 @@ export class SearchEngine {
       ] as const);
       return {
         candidates: [...exact, ...ftsHits, ...pinyin],
-        timings: { exactMs, ftsMs, pinyinMs, semanticMs: 0, skippedSemantic: true },
+        timings: { exactMs, ftsMs, pinyinMs, semanticMs: 0, skippedSemantic: true, semanticFiltered: 0 },
       };
     }
+    const semanticStats = { filtered: 0 };
     const [[ftsHits, ftsMs], [pinyin, pinyinMs], [semantic, semanticMs]] = await Promise.all([
       timed(() => this.channelFts(raw, opt, extraTerms, cache, recall)),
       timed(() => this.channelPinyin(raw, opt, fuzzy, cache, recall)),
-      timed(() => (opt.disableSemantic ? Promise.resolve<SearchCandidate[]>([]) : this.channelSemantic(raw, opt, cache, recall))),
+      timed(() =>
+        opt.disableSemantic
+          ? Promise.resolve<SearchCandidate[]>([])
+          : this.channelSemantic(raw, opt, cache, recall, semanticStats),
+      ),
     ] as const);
     return {
       candidates: [...exact, ...ftsHits, ...pinyin, ...semantic],
@@ -557,6 +574,7 @@ export class SearchEngine {
         pinyinMs,
         semanticMs: opt.disableSemantic ? 0 : semanticMs,
         skippedSemantic: Boolean(opt.disableSemantic),
+        semanticFiltered: opt.disableSemantic ? 0 : semanticStats.filtered,
       },
     };
   }
@@ -707,11 +725,24 @@ export class SearchEngine {
   }
 
   /** 通道 4：语义向量 */
-  private async channelSemantic(q: string, opt: SearchQuery, cache?: FilterCache, limit = this.perChannel): Promise<SearchCandidate[]> {
+  private async channelSemantic(
+    q: string,
+    opt: SearchQuery,
+    cache?: FilterCache,
+    limit = this.perChannel,
+    stats?: { filtered: number },
+  ): Promise<SearchCandidate[]> {
     if (!this.deps.vectors || !this.deps.embed) return [];
     try {
       const vec = await this.deps.embed(q);
-      const matches = await this.deps.vectors.search(vec, limit);
+      let matches = await this.deps.vectors.search(vec, limit);
+      // 闸门只认 similarity（统一余弦口径）；过滤放在回表之前，省掉无谓的 SQL。
+      // 阈值 0 表示关闭：旧行为连「近似正交」的命中也会进 RRF，靠覆盖率乘子兜底。
+      if (this.semanticMinSimilarity > 0 && matches.length > 0) {
+        const kept = matches.filter((m) => m.similarity >= this.semanticMinSimilarity);
+        if (stats) stats.filtered += matches.length - kept.length;
+        matches = kept;
+      }
       if (matches.length === 0) return [];
       const rows = await this.rawRows(
         // 语义通道同样只应召回启用中的站点：向量表不会随 enabled 变更自动清理，

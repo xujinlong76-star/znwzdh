@@ -101,6 +101,7 @@ GET /api/workspaces
 GET /api/workspaces/{id}/members
 HEAD /api/admin/ai/config
 HEAD /api/admin/ai/observability
+HEAD /api/admin/ai/prices
 HEAD /api/admin/audit
 HEAD /api/admin/audit/export
 HEAD /api/admin/audit/report

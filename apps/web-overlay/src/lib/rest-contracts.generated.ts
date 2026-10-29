@@ -827,6 +827,21 @@ export interface NotificationUnreadCountResponse {
 }
 
 /**
+ * GET /api/admin/ai/prices
+ */
+export interface AdminAiPricesResponse {
+  prices: {
+    model: string;
+    promptPer1kRmb: number;
+    completionPer1kRmb: number;
+    updatedAt: number;
+    [key: string]: unknown;
+  }[];
+  legacyUnitPriceRmb: number | null;
+  [key: string]: unknown;
+}
+
+/**
  * GET /api/admin/notifications/deliveries
  */
 export interface NotificationDeliveryListResponse {
@@ -1248,6 +1263,7 @@ export interface RestContractRoutes {
   "DELETE /api/favorites/folders/{id}": OkResponse;
   "DELETE /api/favorites/{siteId}": FavoriteSiteRemovalResponse;
   "DELETE /api/plugins/{slug}/install": PluginUninstallResponse;
+  "GET /api/admin/ai/prices": AdminAiPricesResponse;
   "GET /api/admin/notifications": NotificationListResponse;
   "GET /api/admin/notifications/deliveries": NotificationDeliveryListResponse;
   "GET /api/categories": CategoryListResponse;

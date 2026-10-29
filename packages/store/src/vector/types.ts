@@ -24,8 +24,20 @@ export interface VectorRecord {
 
 export interface VectorMatch {
   siteId: string;
-  /** 余弦距离（越小越接近；归一化向量下 0 = 完全相同） */
+  /**
+   * 存储层**自身**的度量距离（越小越接近）。
+   * sqlite-vec 的 vec0 默认是 L2，其余实现是余弦距离——不要把这里的数值
+   * 直接跨实现比较或当阈值用。
+   */
   distance: number;
+  /**
+   * 余弦相似度（-1..1，越大越接近）。
+   *
+   * 各实现按自己的度量换算到同一把尺子（L2: `1 - d²/2`，余弦距离: `1 - d`，
+   * 前提都是向量已归一化——upsert/search 两侧都做了 normalize）。语义通道的
+   * 质量闸门只认这个字段：阈值不能建立在「distance 是什么度量」的默认假设上。
+   */
+  similarity: number;
 }
 
 export interface VectorStore {
@@ -47,6 +59,12 @@ export interface VectorStore {
  * 用哈希而非自增，是为了保证「同一 siteId 在任何进程/任何时刻都映射到同一 key」——
  * 否则重建索引后 key 变化会污染 vec0 表。
  */
+/** 余弦相似度裁剪到 [-1, 1] 并吞掉非有限值（浮点误差可能越界 1e-7，NaN 视为 0=不相似也不相斥）。 */
+export function clampSimilarity(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return v > 1 ? 1 : v < -1 ? -1 : v;
+}
+
 export function hashSiteId(siteId: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < siteId.length; i++) {

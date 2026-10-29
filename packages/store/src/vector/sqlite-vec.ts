@@ -1,5 +1,5 @@
 import type { VectorMatch, VectorRecord, VectorStore } from "./types.ts";
-import { normalize } from "./types.ts";
+import { clampSimilarity, normalize } from "./types.ts";
 import { fitDimension } from "./codec.ts";
 
 /**
@@ -136,7 +136,9 @@ export class SqliteVecStore implements VectorStore {
       // site_id 列是唯一事实源；仅在旧数据（site_id 为 NULL）时才退回进程内映射，
       // 再退回哈希值（后两者都不是站点 UUID，只是尽力而为的兜底）。
       const siteId = row.siteId ?? this.keyToSite.get(key) ?? String(key);
-      out.push({ siteId, distance: Number(row.distance) });
+      const distance = Number(row.distance);
+      // vec0 默认 L2：归一化向量间 d² = 2 - 2·cos，换算回余弦相似度
+      out.push({ siteId, distance, similarity: clampSimilarity(1 - (distance * distance) / 2) });
     }
     return out;
   }

@@ -170,6 +170,7 @@ export const SearchResponse = z.looseObject({
       pinyinMs: z.number(),
       semanticMs: z.number(),
       skippedSemantic: z.boolean(),
+      semanticFiltered: z.number().int(),
     })
     .optional(),
   inferredFacets: z.record(z.string(), z.array(z.string())).optional(),
@@ -925,6 +926,22 @@ export interface ResponseSchemaBinding {
   status?: string | string[];
 }
 
+/** GET /api/admin/ai/prices：模型单价簿 + 旧版单一价回落值 */
+export const AdminAiPricesResponse = z.looseObject({
+  prices: z.array(
+    z.looseObject({
+      model: z.string(),
+      /** 输入价（¥/1K tokens） */
+      promptPer1kRmb: z.number(),
+      /** 输出价（¥/1K tokens） */
+      completionPer1kRmb: z.number(),
+      updatedAt: z.number(),
+    }),
+  ),
+  /** 旧版单一价（¥/1K，输入输出同价）：单价簿没命中的模型才回落到它；无回落值时为 null */
+  legacyUnitPriceRmb: z.number().nullable(),
+});
+
 export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
   "GET /api/health": { schema: HealthResponse, name: "HealthResponse" },
   "GET /api/search": { schema: SearchResponse, name: "SearchResponse" },
@@ -955,6 +972,7 @@ export const RESPONSE_SCHEMA_BINDINGS: Record<string, ResponseSchemaBinding> = {
     schema: NotificationUnreadCountResponse,
     name: "NotificationUnreadCountResponse",
   },
+  "GET /api/admin/ai/prices": { schema: AdminAiPricesResponse, name: "AdminAiPricesResponse" },
   "GET /api/admin/notifications/deliveries": {
     schema: NotificationDeliveryListResponse,
     name: "NotificationDeliveryListResponse",

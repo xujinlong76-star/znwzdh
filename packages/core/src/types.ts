@@ -362,6 +362,8 @@ export interface SearchResult {
     pinyinMs: number;
     semanticMs: number;
     skippedSemantic: boolean;
+    /** 被相似度闸门剔除的向量命中数（闸门关闭时恒为 0） */
+    semanticFiltered: number;
   };
   /** 自动从查询中提取到的分面修饰符意图 */
   inferredFacets?: Record<string, string[]>;

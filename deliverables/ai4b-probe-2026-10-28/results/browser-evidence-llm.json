@@ -1,0 +1,173 @@
+{
+  "mode": "llm",
+  "rows": [
+    {
+      "id": "G-0 登录态与 admin 代理前置成立",
+      "pass": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "id": "G0 报告里有待治愈站点",
+      "pass": true,
+      "detail": {
+        "brokenTitle": "AI4B 旧工具（已失效）"
+      }
+    },
+    {
+      "id": "G1 候选列表出现",
+      "pass": true,
+      "detail": {}
+    },
+    {
+      "id": "G2 实测读数出现在列表上",
+      "pass": false,
+      "detail": {
+        "probeLine": ""
+      }
+    },
+    {
+      "id": "G3 口径声明随读数渲染",
+      "pass": false,
+      "detail": {
+        "caveat": ""
+      }
+    },
+    {
+      "id": "G4 三条候选都带档位徽章",
+      "pass": true,
+      "detail": {
+        "badges": [
+          "未实测",
+          "未实测",
+          "未实测"
+        ],
+        "titles": [
+          "AI4B 同类候选 3",
+          "AI4B 同类候选 1",
+          "AI4B 同类候选 2"
+        ]
+      }
+    },
+    {
+      "id": "G5 每条候选带可点开的 URL 与实测依据",
+      "pass": false,
+      "detail": {
+        "hrefs": [
+          "https://ai4b-demo.example/peer-blocked",
+          "https://ai4b-demo.example/peer-ok",
+          "https://ai4b-demo.example/peer-parked"
+        ]
+      }
+    },
+    {
+      "id": "S1 档位顺序=实测档位降序",
+      "pass": false,
+      "detail": {
+        "badges": [
+          "未实测",
+          "未实测",
+          "未实测"
+        ]
+      }
+    },
+    {
+      "id": "S2 「实测不可用」禁止一键采纳",
+      "pass": false,
+      "detail": {
+        "title": "AI4B 同类候选 2",
+        "notes": []
+      }
+    },
+    {
+      "id": "S3 「没测准」仍可采纳但带人工复核提示",
+      "pass": false,
+      "detail": {
+        "notes": []
+      }
+    },
+    {
+      "id": "S4 拦截理由写在卡片上而不是只变灰",
+      "pass": false,
+      "detail": {
+        "notes": []
+      }
+    },
+    {
+      "id": "S5 可信度是分解值",
+      "pass": false,
+      "detail": {
+        "confidence": ""
+      }
+    },
+    {
+      "id": "P1 实测可达候选仍可一键采纳",
+      "pass": true,
+      "detail": {
+        "applyCalls": [
+          "POST http://127.0.0.1:3414/api/hub/admin/audit/apply"
+        ]
+      }
+    },
+    {
+      "id": "P2 采纳后该条从待治愈列表消失",
+      "pass": false,
+      "detail": {
+        "stillThere": true
+      }
+    },
+    {
+      "id": "Z1 无 console error",
+      "pass": true,
+      "detail": {
+        "consoleErrors": []
+      }
+    },
+    {
+      "id": "Z2 浏览器没有替候选 URL 发过请求",
+      "pass": true,
+      "detail": {
+        "outboundCount": 0,
+        "outbound": []
+      }
+    }
+  ],
+  "cards": [
+    {
+      "title": "AI4B 同类候选 3",
+      "href": "https://ai4b-demo.example/peer-blocked",
+      "badge": "未实测",
+      "disabled": false,
+      "notes": [],
+      "hasEvidence": false,
+      "evidence": "",
+      "sourceLine": ""
+    },
+    {
+      "title": "AI4B 同类候选 1",
+      "href": "https://ai4b-demo.example/peer-ok",
+      "badge": "未实测",
+      "disabled": false,
+      "notes": [],
+      "hasEvidence": false,
+      "evidence": "",
+      "sourceLine": ""
+    },
+    {
+      "title": "AI4B 同类候选 2",
+      "href": "https://ai4b-demo.example/peer-parked",
+      "badge": "未实测",
+      "disabled": false,
+      "notes": [],
+      "hasEvidence": false,
+      "evidence": "",
+      "sourceLine": ""
+    }
+  ],
+  "applyCalls": [
+    "POST http://127.0.0.1:3414/api/hub/admin/audit/apply"
+  ],
+  "outbound": [],
+  "consoleErrors": []
+}

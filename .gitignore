@@ -94,6 +94,12 @@ apps/web/src/app/api/home/site/*
 # --- 本地 GUI 真人模式测试证据（会话产物，不入库）---
 gui-test-screenshots/
 
+# --- E2E/UI 走查截图（会话产物，同上口径）---
+# HEAD 的 deliverables/ 自建立以来就是 0 张截图：截图是过程证据，报告与工装才是交付物。
+# 一次全量走查能产出 100+ 张（实测 14.7MB），入库即永久膨胀；需要时按 REPORT 里的
+# 步骤重跑 harness 就能再产出。小体积的结论性截图（results/*.png）仍随各自目录入库。
+deliverables/**/shots/
+
 # --- E2E 会话凭据产物（含管理员 session-token，严禁入库）---
 storage-state.json
 *cookie-diff.txt

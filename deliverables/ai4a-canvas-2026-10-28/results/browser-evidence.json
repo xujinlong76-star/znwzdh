@@ -1,0 +1,69 @@
+{
+  "task": "[AI-4a] 画布逐类型 schema 校验 · 浏览器实测",
+  "date": "2026-10-28",
+  "environment": {
+    "api": "127.0.0.1:8910 (apps/api node src/main.ts, NAVHUB_MODE=lite, NAVHUB_SQLITE_PATH=data/ai4a/navhub.db 全新空库, NAVHUB_EMBEDDING_ENABLED=0)",
+    "web": "127.0.0.1:3413 (apps/web next dev, NEXT_DIST_DIR=.next-ai4a, NEXT_PUBLIC_API_URL=http://127.0.0.1:8910)",
+    "llmUpstream": "127.0.0.1:8919 stub-llm.mjs（本地假大模型，两条可重复布局；NAVHUB_LLM_ALLOW_PRIVATE=1）",
+    "parallelStackUntouched": "8787/3200/3411 全程未连接、未kill、未写库",
+    "note": "in-app 浏览器当前不可见（take_screenshot 报 NATIVE_BROWSER_VIEWPORT_UNAVAILABLE），因此没有截图；判据来自 a11y 快照 + evaluate_script 真读 DOM 文本，与截图同为渲染结果而非源码断言。"
+  },
+  "cases": {
+    "dirty": {
+      "trigger": "提示词不含「保底」⇒ stub 返回 hyperbolic-radar colSpan=2 / not-a-real-widget / rss-feed feedUrl=javascript:alert(1) limit=\"很多\"",
+      "apiResponse": {
+        "fallbackUsed": false,
+        "droppedTypes": ["not-a-real-widget"],
+        "canvasIssueTotal": 4,
+        "widgets": ["hyperbolic-radar:4x1", "rss-feed:4x2"]
+      },
+      "browserDom": {
+        "headerBadge": "2 个规划组件 · 5ms",
+        "droppedBanner": "其中 1 类模块本站没有对应卡片，已跳过：not-a-real-widget",
+        "alertPresent": false,
+        "ledgerSummary": "校验改动了 4 处",
+        "ledgerItems": [
+          "#1 hyperbolic-radar宽度 2 超出该卡支持的 4~8，已改为 4",
+          "#2 not-a-real-widget本部署没有「not-a-real-widget」这张卡片，整条已丢弃",
+          "#3 rss-feed「订阅地址」不是 http(s) 或同源相对地址，已清空（伪协议/私有协议不进画布）",
+          "#3 rss-feed「显示条数上限」的值 \"很多\" 不合法，已回退默认值"
+        ],
+        "appliedBoard": "脏数据工作台 (2) —— 丢弃的那张卡没有进画布"
+      }
+    },
+    "fallback": {
+      "trigger": "提示词含「保底」⇒ stub 只返回本部署不存在的类型（weather-widget 与空类型）",
+      "apiResponse": {
+        "fallbackUsed": true,
+        "droppedTypes": ["weather-widget", "(空类型)"],
+        "canvasIssueTotal": 2,
+        "widgets": ["quick-search:6x1", "favorites-dock:4x1", "markdown-notes:5x2"]
+      },
+      "browserDom": {
+        "headerBadge": "系统保底 3 张卡 · 5ms",
+        "alertRole": "alert",
+        "alertClass": "p-2.5 rounded-lg border border-destructive/40 bg-destructive/10 text-xs text-destructive leading-relaxed",
+        "alertText": "保底布局：未按原规划生成。 这次没有拿到任何可用模块（见下方原因），下面是系统给的通用三件套。可以直接用，也可以重新规划一次。",
+        "ledgerSummary": "校验改动了 2 处",
+        "ledgerItems": [
+          "#1 weather-widget本部署没有「weather-widget」这张卡片，整条已丢弃",
+          "#2 (空类型)本部署没有「(空类型)」这张卡片，整条已丢弃"
+        ],
+        "widgetList": [
+          "多引擎聚合快捷搜索 宽 6/12 · 高 1",
+          "星标快捷启动坞 宽 4/12 · 高 1",
+          "极客随手备忘便签 宽 5/12 · 高 2"
+        ]
+      }
+    }
+  },
+  "securityCheck": {
+    "assert": "javascript: 伪协议不进画布，也不落到渲染后的 DOM",
+    "result": "document.body.innerHTML.includes('javascript:alert')=false；iframe 数 0；rss-feed 卡片显示「尚未配置订阅地址」的配置提示，而不是任何写死来源"
+  },
+  "console": { "errors": 0, "warnings": 0 },
+  "latencyNote": "stub 响应即时，故 latencyMs 显示 5~6ms；这条链路耗时在真模型上是几十秒级，本项不测性能。",
+  "knownCosmeticDebt": [
+    "台账每条重复卡片名（`#3 rss-feed「订阅地址」…`），信息密度偏低但不误导，留待后续排版打磨。"
+  ]
+}

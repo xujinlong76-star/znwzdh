@@ -1,0 +1,28 @@
+: connected
+
+data: {"type":"reasoning","text":"先核对检"}
+
+data: {"type":"reasoning","text":"索候选，"}
+
+data: {"type":"reasoning","text":"只引用真实存"}
+
+data: {"type":"reasoning","text":"在的站点。"}
+
+data: {"type":"delta","text":"我按你的问题查"}
+
+data: {"type":"delta","text":"了站内收录。"}
+
+data: {"type":"delta","text":"站内最匹配的是 [示例候选](https://ex"}
+
+data: {"type":"delta","text":"ample.com/a)，它就在本次检索候选里。"}
+
+data: {"type":"delta","text":"另外推荐 [编造站点](https://fabricat"}
+
+data: {"type":"delta","text":"ed.example/not-in-catalog)，"}
+
+data: {"type":"delta","text":"这条其实不在候选里，用来验"}
+
+data: {"type":"delta","text":"证服务端会不会把它降级。"}
+
+data: {"type":"done","ok":true,"reply":"我按你的问题查了站内收录。站内最匹配的是 示例候选，它就在本次检索候选里。另外推荐 编造站点，这条其实不在候选里，用来验证服务端会不会把它降级。","reasoningContent":"先核对检索候选，只引用真实存在的站点。","model":"fake-stream-model","citations":[],"retrieval":{"candidates":12,"unverifiedLinks":2,"failed":false},"suggestions":["查看同类热门工具","导出离线阅读快照","打开知识拓扑星图"]}
+

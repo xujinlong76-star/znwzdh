@@ -1,0 +1,970 @@
+{
+  "results": [
+    {
+      "name": "P0 中枢这一轮确实走流式（直连探测）",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "putStatus": 200,
+        "contentType": "text/event-stream; charset=utf-8",
+        "head": ": connected\n\ndata: {\"type\":\"reasoning\",\"text\":\"先核对检\"}\n\ndata: {\"type\":\"reasoning\",\"text\":\"索候选，\"}\n\ndata: {\"type\":\"reasoning\",\"text\":\"只引用真实存\"}\n"
+      }
+    },
+    {
+      "name": "A1 Ctrl+J 唤起抽屉",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "count": 1,
+        "url": "http://127.0.0.1:3412/"
+      }
+    },
+    {
+      "name": "B1 出现流式草稿气泡",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "servedUpstream": true,
+        "firstSample": {
+          "at": 384,
+          "len": 0,
+          "fp": "811c9dc5",
+          "anchors": 0
+        },
+        "samples": 20,
+        "elapsedMs": 3427
+      }
+    },
+    {
+      "name": "B2 草稿是增量前缀链（真逐段：每帧都以上一帧全文开头）",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "lengths": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          7,
+          7,
+          13,
+          13,
+          51,
+          51,
+          88,
+          88,
+          116,
+          116,
+          143,
+          156,
+          156
+        ],
+        "distinctFingerprints": 8,
+        "prefixViolations": 0,
+        "maxDraftLen": 156
+      }
+    },
+    {
+      "name": "B3 草稿期内没有任何可点击链接",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "anchorsInDraftMax": 0
+      }
+    },
+    {
+      "name": "B4 流式期间「停止」按钮可见",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "stopVisibleDuringStream": true
+      }
+    },
+    {
+      "name": "B5 状态文案切到「逐段输出」（读屏区）",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "statusSeen": [
+          "正在深度思考，可随时停止",
+          "回答开始逐段输出，可随时停止",
+          "回答已生成，由模型 fake-stream-model 给出"
+        ]
+      }
+    },
+    {
+      "name": "B6 首个 token 后转圈让位（全程只有一颗「停止」）",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "maxStopButtons": 1,
+        "busyPeak": true
+      }
+    },
+    {
+      "name": "C1 流式中途点得到「停止」",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "stopClickedAt": 1762,
+        "draftLenAtStop": 51
+      }
+    },
+    {
+      "name": "C2 停止后草稿作废",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "draftStillOnScreen": false,
+        "postStop": [
+          {
+            "at": 1889,
+            "len": -1
+          },
+          {
+            "at": 2022,
+            "len": -1
+          },
+          {
+            "at": 2147,
+            "len": -1
+          },
+          {
+            "at": 2272,
+            "len": -1
+          },
+          {
+            "at": 2396,
+            "len": -1
+          },
+          {
+            "at": 2518,
+            "len": -1
+          }
+        ]
+      }
+    },
+    {
+      "name": "C3 停止后不再继续吐字",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "postStop": [
+          {
+            "at": 1889,
+            "len": -1
+          },
+          {
+            "at": 2022,
+            "len": -1
+          },
+          {
+            "at": 2147,
+            "len": -1
+          },
+          {
+            "at": 2272,
+            "len": -1
+          },
+          {
+            "at": 2396,
+            "len": -1
+          },
+          {
+            "at": 2518,
+            "len": -1
+          }
+        ]
+      }
+    },
+    {
+      "name": "C4 如实播报「已停止本次回答」",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "statusSeen": [
+          "正在深度思考，可随时停止",
+          "回答开始逐段输出，可随时停止",
+          "已停止本次回答"
+        ],
+        "textHit": true
+      }
+    },
+    {
+      "name": "C5 底层请求真的中断（net::ERR_ABORTED）",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "aborted": [
+          {
+            "url": "http://127.0.0.1:3412/api/hub/copilot/chat",
+            "failure": "net::ERR_ABORTED"
+          }
+        ],
+        "responses": [
+          {
+            "status": 200,
+            "contentType": "text/event-stream; charset=utf-8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "C6 停止气泡给了「重试这次提问」出口",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "hit": true
+      }
+    },
+    {
+      "name": "D1 终稿渲染出可点击引用",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "citationCount": 1,
+        "label": "参考来源（站内收录 1 条）"
+      }
+    },
+    {
+      "name": "D2 编造链接没有变成 href",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "hrefs": [
+          "https://www.techsmith.com/video-editor.html",
+          "https://www.techsmith.com/video-editor.html"
+        ]
+      }
+    },
+    {
+      "name": "D3 编造链接降级成纯文本留在正文",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "hit": true
+      }
+    },
+    {
+      "name": "D4 草稿作废、终稿整体覆盖（无同屏）",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "draftStillOnScreen": false
+      }
+    },
+    {
+      "name": "D5 走的是事件流（content-type 判定）",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "responses": [
+          {
+            "status": 200,
+            "contentType": "text/event-stream; charset=utf-8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "D6 模型名如实上报",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "hit": true
+      }
+    },
+    {
+      "name": "D7 终稿里有真候选的站内链接",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "hrefs": [
+          "https://www.techsmith.com/video-editor.html",
+          "https://www.techsmith.com/video-editor.html"
+        ]
+      }
+    },
+    {
+      "name": "E0 关掉模型配置生效",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "putStatus": 200
+      }
+    },
+    {
+      "name": "E1 降级不开流（全程没有草稿气泡）",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "sawDraft": false,
+        "responses": [
+          {
+            "status": 200,
+            "contentType": "application/json; charset=utf-8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "E2 降级回一次性 JSON",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "responses": [
+          {
+            "status": 200,
+            "contentType": "application/json; charset=utf-8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "E3 琥珀横幅如实说明不是模型答的",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "amber": "管理端尚未配置可用的模型密钥，以下结果由站内混合检索给出。"
+      }
+    },
+    {
+      "name": "E4 降级不冒充模型来源",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "hit": false
+      }
+    },
+    {
+      "name": "E5 降级仍给可点击的站内候选",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "citationCount": 5,
+        "label": "参考来源（站内收录 5 条）"
+      }
+    },
+    {
+      "name": "E6 降级这一轮没有打上游",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "upstream": {
+          "tagged": 0,
+          "untagged": 0
+        }
+      }
+    },
+    {
+      "name": "Z1 无未过滤的 console error",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "console": []
+      }
+    },
+    {
+      "name": "Z2 没有别的客户端混进这一轮",
+      "kind": "pass",
+      "pass": true,
+      "detail": {
+        "untaggedUpstreamCalls": 0,
+        "perPhase": {
+          "B": 1,
+          "C": 1,
+          "D": 1,
+          "E": 0
+        }
+      }
+    }
+  ],
+  "bags": {
+    "A": {
+      "aborted": [],
+      "responses": []
+    },
+    "B": {
+      "aborted": [
+        {
+          "url": "http://127.0.0.1:3412/api/hub/copilot/chat",
+          "failure": "net::ERR_ABORTED"
+        }
+      ],
+      "responses": [
+        {
+          "status": 200,
+          "contentType": "text/event-stream; charset=utf-8"
+        }
+      ]
+    },
+    "C": {
+      "aborted": [
+        {
+          "url": "http://127.0.0.1:3412/api/hub/copilot/chat",
+          "failure": "net::ERR_ABORTED"
+        }
+      ],
+      "responses": [
+        {
+          "status": 200,
+          "contentType": "text/event-stream; charset=utf-8"
+        }
+      ]
+    },
+    "D": {
+      "aborted": [
+        {
+          "url": "http://127.0.0.1:3412/api/hub/copilot/chat",
+          "failure": "net::ERR_ABORTED"
+        }
+      ],
+      "responses": [
+        {
+          "status": 200,
+          "contentType": "text/event-stream; charset=utf-8"
+        }
+      ]
+    },
+    "E": {
+      "aborted": [],
+      "responses": [
+        {
+          "status": 200,
+          "contentType": "application/json; charset=utf-8"
+        }
+      ]
+    }
+  },
+  "b": {
+    "samples": [
+      {
+        "at": 384,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 510,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 633,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 757,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 882,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1006,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1132,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1263,
+        "len": 7,
+        "fp": "1e282990",
+        "anchors": 0
+      },
+      {
+        "at": 1388,
+        "len": 7,
+        "fp": "1e282990",
+        "anchors": 0
+      },
+      {
+        "at": 1521,
+        "len": 13,
+        "fp": "64cf2c59",
+        "anchors": 0
+      },
+      {
+        "at": 1646,
+        "len": 13,
+        "fp": "64cf2c59",
+        "anchors": 0
+      },
+      {
+        "at": 1771,
+        "len": 51,
+        "fp": "d26018ec",
+        "anchors": 0
+      },
+      {
+        "at": 1896,
+        "len": 51,
+        "fp": "d26018ec",
+        "anchors": 0
+      },
+      {
+        "at": 2021,
+        "len": 88,
+        "fp": "1a166a98",
+        "anchors": 0
+      },
+      {
+        "at": 2146,
+        "len": 88,
+        "fp": "1a166a98",
+        "anchors": 0
+      },
+      {
+        "at": 2271,
+        "len": 116,
+        "fp": "86e6eb1b",
+        "anchors": 0
+      },
+      {
+        "at": 2397,
+        "len": 116,
+        "fp": "86e6eb1b",
+        "anchors": 0
+      },
+      {
+        "at": 2521,
+        "len": 143,
+        "fp": "c5efade3",
+        "anchors": 0
+      },
+      {
+        "at": 2647,
+        "len": 156,
+        "fp": "a3e2a69b",
+        "anchors": 0
+      },
+      {
+        "at": 2770,
+        "len": 156,
+        "fp": "a3e2a69b",
+        "anchors": 0
+      }
+    ],
+    "distinctFingerprints": 8,
+    "prefixViolations": 0,
+    "maxDraftLen": 156,
+    "sawDraft": true,
+    "draftAnchorsMax": 0,
+    "stopVisibleDuringStream": true,
+    "busyPeak": true,
+    "maxStopButtons": 1,
+    "statusSeen": [
+      "正在深度思考，可随时停止",
+      "回答开始逐段输出，可随时停止",
+      "回答已生成，由模型 fake-stream-model 给出"
+    ],
+    "stopClickedAt": -1,
+    "draftLenAtStop": -1,
+    "postStopSamples": [],
+    "amberSeen": "",
+    "finalText": "智能导航伴侣\nfake-stream-model\n\n智慧导航伴侣 · 全站意图感知\n\n深度思考\n有没有做视频剪辑的站点 #巡检B\n🧠 思考推演过程\n(点击折叠/展开)\n我按你的问题查了站内收录。站内最匹配的是 \nCamtasia\n，它就在本次检索候选里。另外推荐 编造站点，这条其实不在候选里，用来验证服务端会不会把它降级。\n\n参考来源（站内收录 1 条）\n\nCamtasia\n · TechSmith 出品的录屏与视频剪辑软件，教程制作体验成熟。\n\n由模型 fake-stream-model 生成\n\n在 AI 插件工坊中一键打包为插件\n\n建议探索：\n\n查看同类热门工具\n导出离线阅读快照\n打开知识拓扑星图\n回答已生成，由模型 fake-stream-model 给出\n深度思考已开\n·\nCmd/Ctrl+J 唤出\n发送",
+    "finalHrefs": [
+      "https://www.techsmith.com/video-editor.html",
+      "https://www.techsmith.com/video-editor.html"
+    ],
+    "citationCount": 1,
+    "citationLabel": "参考来源（站内收录 1 条）",
+    "draftStillOnScreen": false,
+    "elapsedMs": 3427,
+    "question": "有没有做视频剪辑的站点 #巡检B",
+    "upstream": {
+      "tagged": 1,
+      "untagged": 0
+    }
+  },
+  "c": {
+    "samples": [
+      {
+        "at": 384,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 510,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 637,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 760,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 884,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1007,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1132,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1256,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1382,
+        "len": 7,
+        "fp": "1e282990",
+        "anchors": 0
+      },
+      {
+        "at": 1509,
+        "len": 13,
+        "fp": "64cf2c59",
+        "anchors": 0
+      },
+      {
+        "at": 1631,
+        "len": 13,
+        "fp": "64cf2c59",
+        "anchors": 0
+      },
+      {
+        "at": 1759,
+        "len": 51,
+        "fp": "d26018ec",
+        "anchors": 0
+      }
+    ],
+    "distinctFingerprints": 4,
+    "prefixViolations": 0,
+    "maxDraftLen": 51,
+    "sawDraft": true,
+    "draftAnchorsMax": 0,
+    "stopVisibleDuringStream": true,
+    "busyPeak": true,
+    "maxStopButtons": 1,
+    "statusSeen": [
+      "正在深度思考，可随时停止",
+      "回答开始逐段输出，可随时停止",
+      "已停止本次回答"
+    ],
+    "stopClickedAt": 1762,
+    "draftLenAtStop": 51,
+    "postStopSamples": [
+      {
+        "at": 1889,
+        "len": -1
+      },
+      {
+        "at": 2022,
+        "len": -1
+      },
+      {
+        "at": 2147,
+        "len": -1
+      },
+      {
+        "at": 2272,
+        "len": -1
+      },
+      {
+        "at": 2396,
+        "len": -1
+      },
+      {
+        "at": 2518,
+        "len": -1
+      },
+      {
+        "at": 2643,
+        "len": -1
+      },
+      {
+        "at": 2770,
+        "len": -1
+      },
+      {
+        "at": 2895,
+        "len": -1
+      },
+      {
+        "at": 3019,
+        "len": -1
+      },
+      {
+        "at": 3140,
+        "len": -1
+      },
+      {
+        "at": 3267,
+        "len": -1
+      },
+      {
+        "at": 3388,
+        "len": -1
+      },
+      {
+        "at": 3513,
+        "len": -1
+      },
+      {
+        "at": 3638,
+        "len": -1
+      },
+      {
+        "at": 3763,
+        "len": -1
+      }
+    ],
+    "amberSeen": "",
+    "finalText": "智能导航伴侣\n\n智慧导航伴侣 · 全站意图感知\n\n深度思考\n有没有做视频剪辑的站点 #巡检C\n已停止本次回答：本机不再等待，中枢侧最多还会跑到代理期限（120 秒）。\n重试这次提问\n原文：有没有做视频剪辑的站点 #巡检C\n已停止本次回答\n深度思考已开\n·\nCmd/Ctrl+J 唤出\n发送",
+    "finalHrefs": [],
+    "citationCount": 0,
+    "citationLabel": "",
+    "draftStillOnScreen": false,
+    "elapsedMs": 3764,
+    "question": "有没有做视频剪辑的站点 #巡检C",
+    "upstream": {
+      "tagged": 1,
+      "untagged": 0
+    }
+  },
+  "d": {
+    "samples": [
+      {
+        "at": 386,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 516,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 640,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 765,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 888,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1015,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1139,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1264,
+        "len": 0,
+        "fp": "811c9dc5",
+        "anchors": 0
+      },
+      {
+        "at": 1386,
+        "len": 7,
+        "fp": "1e282990",
+        "anchors": 0
+      },
+      {
+        "at": 1515,
+        "len": 13,
+        "fp": "64cf2c59",
+        "anchors": 0
+      },
+      {
+        "at": 1639,
+        "len": 13,
+        "fp": "64cf2c59",
+        "anchors": 0
+      },
+      {
+        "at": 1764,
+        "len": 51,
+        "fp": "d26018ec",
+        "anchors": 0
+      },
+      {
+        "at": 1887,
+        "len": 51,
+        "fp": "d26018ec",
+        "anchors": 0
+      },
+      {
+        "at": 2013,
+        "len": 88,
+        "fp": "1a166a98",
+        "anchors": 0
+      },
+      {
+        "at": 2136,
+        "len": 88,
+        "fp": "1a166a98",
+        "anchors": 0
+      },
+      {
+        "at": 2265,
+        "len": 116,
+        "fp": "86e6eb1b",
+        "anchors": 0
+      },
+      {
+        "at": 2392,
+        "len": 116,
+        "fp": "86e6eb1b",
+        "anchors": 0
+      },
+      {
+        "at": 2516,
+        "len": 143,
+        "fp": "c5efade3",
+        "anchors": 0
+      },
+      {
+        "at": 2642,
+        "len": 143,
+        "fp": "c5efade3",
+        "anchors": 0
+      },
+      {
+        "at": 2765,
+        "len": 156,
+        "fp": "a3e2a69b",
+        "anchors": 0
+      }
+    ],
+    "distinctFingerprints": 8,
+    "prefixViolations": 0,
+    "maxDraftLen": 156,
+    "sawDraft": true,
+    "draftAnchorsMax": 0,
+    "stopVisibleDuringStream": true,
+    "busyPeak": true,
+    "maxStopButtons": 1,
+    "statusSeen": [
+      "正在深度思考，可随时停止",
+      "回答开始逐段输出，可随时停止",
+      "回答已生成，由模型 fake-stream-model 给出"
+    ],
+    "stopClickedAt": -1,
+    "draftLenAtStop": -1,
+    "postStopSamples": [],
+    "amberSeen": "",
+    "finalText": "智能导航伴侣\nfake-stream-model\n\n智慧导航伴侣 · 全站意图感知\n\n深度思考\n有没有做视频剪辑的站点 #巡检D\n🧠 思考推演过程\n(点击折叠/展开)\n我按你的问题查了站内收录。站内最匹配的是 \nCamtasia\n，它就在本次检索候选里。另外推荐 编造站点，这条其实不在候选里，用来验证服务端会不会把它降级。\n\n参考来源（站内收录 1 条）\n\nCamtasia\n · TechSmith 出品的录屏与视频剪辑软件，教程制作体验成熟。\n\n由模型 fake-stream-model 生成\n\n在 AI 插件工坊中一键打包为插件\n\n建议探索：\n\n查看同类热门工具\n导出离线阅读快照\n打开知识拓扑星图\n回答已生成，由模型 fake-stream-model 给出\n深度思考已开\n·\nCmd/Ctrl+J 唤出\n发送",
+    "finalHrefs": [
+      "https://www.techsmith.com/video-editor.html",
+      "https://www.techsmith.com/video-editor.html"
+    ],
+    "citationCount": 1,
+    "citationLabel": "参考来源（站内收录 1 条）",
+    "draftStillOnScreen": false,
+    "elapsedMs": 3404,
+    "question": "有没有做视频剪辑的站点 #巡检D",
+    "upstream": {
+      "tagged": 1,
+      "untagged": 0
+    }
+  },
+  "e": {
+    "samples": [],
+    "distinctFingerprints": 0,
+    "prefixViolations": 0,
+    "maxDraftLen": 0,
+    "sawDraft": false,
+    "draftAnchorsMax": -1,
+    "stopVisibleDuringStream": false,
+    "busyPeak": true,
+    "maxStopButtons": 1,
+    "statusSeen": [
+      "正在深度思考，可随时停止",
+      "回答已生成"
+    ],
+    "stopClickedAt": -1,
+    "draftLenAtStop": -1,
+    "postStopSamples": [],
+    "amberSeen": "管理端尚未配置可用的模型密钥，以下结果由站内混合检索给出。",
+    "finalText": "智能导航伴侣\n\n智慧导航伴侣 · 全站意图感知\n\n深度思考\n有没有做视频剪辑的站点 #巡检E\n管理端尚未配置可用的模型密钥，以下结果由站内混合检索给出。\n针对您的提问「有没有做视频剪辑的站点 #巡检E」：\n\n站内混合检索为您匹配到以下收录站点：\n\n- \nCamtasia\n：TechSmith 出品的录屏与视频剪辑软件，教程制作体验成熟。\n- \nDescript\n：像编辑文档一样编辑音视频，转写与剪辑一体。\n- \nRunway\n：视频生成与编辑平台，影视级 AI 创作工具。\n- \nPodcastle\n：面向播客的 AI 音频工作台，集录音、转写、剪辑与配音于一体。\n- \nAstro\n：内容驱动站点的岛屿架构框架，默认输出零 JS 的静态页面。\n\n以上链接均来自本次检索的站内候选，可直接点击直达；也可通过快捷键 Cmd+K 启动全局即时穿梭检索。\n\n参考来源（站内收录 5 条）\n\nCamtasia\n · TechSmith 出品的录屏与视频剪辑软件，教程制作体验成熟。\nDescript\n · 像编辑文档一样编辑音视频，转写与剪辑一体。\nRunway\n · 视频生成与编辑平台，影视级 AI 创作工具。\nPodcastle\n · 面向播客的 AI 音频工作台，集录音、转写、剪辑与配音于一体。\nAstro\n · 内容驱动站点的岛屿架构框架，默认输出零 JS 的静态页面。\n\n建议探索：\n\n推荐适合前端开发的效率神器\n帮我整理当前全站 AI 工具链\n有哪些离线可用的极客微工具？\n回答已生成\n深度思考已开\n·\nCmd/Ctrl+J 唤出\n发送",
+    "finalHrefs": [
+      "https://www.techsmith.com/video-editor.html",
+      "https://www.descript.com/",
+      "https://runwayml.com/",
+      "https://podcastle.ai/",
+      "https://astro.build/",
+      "https://www.techsmith.com/video-editor.html",
+      "https://www.descript.com/",
+      "https://runwayml.com/",
+      "https://podcastle.ai/",
+      "https://astro.build/"
+    ],
+    "citationCount": 5,
+    "citationLabel": "参考来源（站内收录 5 条）",
+    "draftStillOnScreen": false,
+    "elapsedMs": 654,
+    "question": "有没有做视频剪辑的站点 #巡检E",
+    "upstream": {
+      "tagged": 0,
+      "untagged": 0
+    }
+  },
+  "consoleErrors": [],
+  "gate": {
+    "ok": true,
+    "putStatus": 200,
+    "contentType": "text/event-stream; charset=utf-8",
+    "head": ": connected\n\ndata: {\"type\":\"reasoning\",\"text\":\"先核对检\"}\n\ndata: {\"type\":\"reasoning\",\"text\":\"索候选，\"}\n\ndata: {\"type\":\"reasoning\",\"text\":\"只引用真实存\"}\n"
+  }
+}

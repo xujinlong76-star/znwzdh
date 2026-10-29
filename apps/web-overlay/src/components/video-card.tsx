@@ -4,13 +4,15 @@ import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { safeWindowOpen } from '@/lib/safe-url'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
-import { PlayCircle, Clock, Check, Download, Bookmark, Play, Eye, User, ExternalLink, Sparkles, MonitorPlay } from 'lucide-react'
+import { PlayCircle, Clock, Check, Download, Bookmark, Play, Eye, User, ExternalLink, Sparkles, MonitorPlay, FileText } from 'lucide-react'
 import type { NavigationSubItem } from '@/types/navigation'
 import type { SiteConfig } from '@/types/site'
 import { formatDuration } from '@/lib/video-format'
 import { isInWatchLater, toggleWatchLater, PLAYLIST_UPDATE_EVENT } from '@/lib/user-playlists'
 import { saveOfflineVideo, isOfflineVideo } from '@/lib/offline-video-cache'
 import { VideoBilibiliHdPlayer } from '@/components/video-bilibili-hd-player'
+import { buildVideoEmbedUrlForSeo } from '@/lib/video-seo'
+import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-platform-registry'
 import Image from 'next/image'
 import Link from 'next/link'
 
@@ -120,16 +122,16 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
             )
         }
 
-        if (videoConfig.type === 'youtube') {
-            const { videoId } = videoConfig
+        const embedUrl = buildVideoEmbedUrlForSeo(videoConfig)
+        if (embedUrl) {
             return (
                 <div className="w-full aspect-video">
                     <iframe
                         className="w-full h-full rounded-lg"
-                        src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
+                        src={embedUrl}
                         title={item.title}
                         frameBorder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                         allowFullScreen
                     ></iframe>
                 </div>
@@ -141,18 +143,17 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
 
     // 获取平台标识
     const getPlatformBadge = () => {
+        const platform = videoConfig?.type || 'bilibili'
+        const platformMeta = VIDEO_PLATFORM_REGISTRY[platform] || VIDEO_PLATFORM_REGISTRY.custom
+
         return (
             <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
-                {videoConfig?.type === 'bilibili' && (
-                    <span className="px-2 py-0.5 text-[11px] font-semibold bg-[#FB7299] text-white rounded-md shadow-xs backdrop-blur-md tracking-tight">
-                        bilibili
-                    </span>
-                )}
-                {videoConfig?.type === 'youtube' && (
-                    <span className="px-2 py-0.5 text-[11px] font-semibold bg-[#FF0000] text-white rounded-md shadow-xs backdrop-blur-md tracking-tight">
-                        YouTube
-                    </span>
-                )}
+                <span
+                    className="px-2 py-0.5 text-[11px] font-semibold text-white rounded-md shadow-xs backdrop-blur-md tracking-tight"
+                    style={{ backgroundColor: platformMeta.badgeColor }}
+                >
+                    {platformMeta.shortName}
+                </span>
                 {videoConfig?.sourceType === 'auto_trend' && (
                     <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-500/95 text-amber-950 dark:text-amber-100 rounded-md shadow-xs backdrop-blur-md">
                         🔥 热门
@@ -322,12 +323,12 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                 <div className="space-y-1 flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                        {videoConfig?.type === 'bilibili' && (
-                                            <span className="px-2 py-0.5 text-[10px] font-semibold bg-[#FB7299] text-white rounded">bilibili</span>
-                                        )}
-                                        {videoConfig?.type === 'youtube' && (
-                                            <span className="px-2 py-0.5 text-[10px] font-semibold bg-[#FF0000] text-white rounded">YouTube</span>
-                                        )}
+                                        <span
+                                            className="px-2 py-0.5 text-[10px] font-semibold text-white rounded"
+                                            style={{ backgroundColor: (VIDEO_PLATFORM_REGISTRY[videoConfig?.type || 'bilibili'] || VIDEO_PLATFORM_REGISTRY.custom).badgeColor }}
+                                        >
+                                            {(VIDEO_PLATFORM_REGISTRY[videoConfig?.type || 'bilibili'] || VIDEO_PLATFORM_REGISTRY.custom).shortName}
+                                        </span>
                                         {videoConfig?.author && (
                                             <span className="text-xs text-zinc-400 flex items-center gap-1">
                                                 <User className="w-3 h-3 text-zinc-500" />
@@ -372,11 +373,19 @@ export function VideoCard({ item, priority = false }: VideoCardProps) {
                                         </button>
                                     )}
                                     <Link
-                                        href="/videos/player"
+                                        href={`/videos/v/${encodeURIComponent(item.id)}`}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+                                        title="查看独立详情与关键时刻目录"
+                                    >
+                                        <FileText className="w-3.5 h-3.5" />
+                                        <span>详情</span>
+                                    </Link>
+                                    <Link
+                                        href={`/videos/player?id=${encodeURIComponent(item.id)}`}
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-600 hover:bg-violet-500 text-white transition-colors"
                                     >
                                         <MonitorPlay className="w-3.5 h-3.5" />
-                                        <span>全功能工作台</span>
+                                        <span>演播室</span>
                                     </Link>
                                 </div>
                             </div>

@@ -14,7 +14,7 @@ import {
   generateVideoObjectSchema,
 } from '@/lib/video-seo'
 import { VIDEO_PLATFORM_REGISTRY } from '@/lib/video-multi-platform-harvester'
-import type { NavigationData, NavigationSubItem } from '@/types/navigation'
+import { chapterStartSec, type NavigationData, type NavigationSubItem } from '@/types/navigation'
 
 /**
  * 视频独立 SEO 索引落地页（/videos/v/[id]）
@@ -115,6 +115,19 @@ function formatDurationHuman(seconds?: number): string {
     return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+/**
+ * 发布日期渲染。
+ *
+ * publishedAt 可能是 ISO 字符串，也可能是时间戳（number）——类型里两者都允许，
+ * 但原先这里直接 `.slice(0, 10)`，遇到时间戳会抛「slice 不存在」。
+ * 字符串按原样截前 10 位（保持既有渲染口径），数字才按时间戳转。
+ */
+function formatPublishedAt(value: string | number): string {
+  if (typeof value === 'string') return value.slice(0, 10)
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? String(value) : d.toISOString().slice(0, 10)
 }
 
 export async function generateMetadata({
@@ -243,8 +256,8 @@ export default async function VideoSeoDetailPage({
                 </span>
               ) : null}
               {vc.publishedAt ? (
-                <time dateTime={vc.publishedAt} className="text-slate-400">
-                  发布于 {vc.publishedAt.slice(0, 10)}
+                <time dateTime={String(vc.publishedAt)} className="text-slate-400">
+                  发布于 {formatPublishedAt(vc.publishedAt)}
                 </time>
               ) : null}
             </div>
@@ -332,16 +345,16 @@ export default async function VideoSeoDetailPage({
                 </h2>
                 <ol className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {vc.chapters.map((ch, idx) => (
-                    <li key={`${ch.time}-${idx}`}>
+                    <li key={`${chapterStartSec(ch)}-${idx}`}>
                       <Link
-                        href={`/videos/player?id=${encodeURIComponent(item.id)}&t=${Math.max(0, Math.floor(ch.time))}`}
+                        href={`/videos/player?id=${encodeURIComponent(item.id)}&t=${Math.max(0, Math.floor(chapterStartSec(ch)))}`}
                         className="flex items-center justify-between gap-3 p-3 rounded-xl bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 transition-colors"
                       >
                         <span className="text-sm text-slate-200 font-medium truncate">
                           {idx + 1}. {ch.title}
                         </span>
                         <span className="text-xs font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 shrink-0">
-                          {formatDurationHuman(ch.time)}
+                          {formatDurationHuman(chapterStartSec(ch))}
                         </span>
                       </Link>
                     </li>
@@ -358,9 +371,9 @@ export default async function VideoSeoDetailPage({
                 </h2>
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-2 text-sm text-slate-300">
                   {vc.transcript.map((line, idx) => (
-                    <p key={`${line.time}-${idx}`} className="flex gap-3 leading-relaxed">
+                    <p key={`${line.startSec}-${idx}`} className="flex gap-3 leading-relaxed">
                       <span className="font-mono text-xs text-slate-400 shrink-0 pt-0.5">
-                        [{formatDurationHuman(line.time)}]
+                        [{formatDurationHuman(line.startSec)}]
                       </span>
                       <span>{line.text}</span>
                     </p>

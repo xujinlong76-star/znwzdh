@@ -87,7 +87,6 @@ import {
   Shuffle,
 } from 'lucide-react'
 import { Button } from "@/registry/new-york/ui/button"
-import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/registry/new-york/ui/scroll-area'
 import { formatDuration } from '@/lib/video-format'

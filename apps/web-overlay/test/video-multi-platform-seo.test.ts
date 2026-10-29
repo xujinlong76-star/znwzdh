@@ -13,6 +13,7 @@ import {
   enrichVideoItemSeo,
   generateVideoBreadcrumbSchema,
   generateVideoObjectSchema,
+  generateVideoRssFeed,
   generateVideoSitemapXml,
 } from '../src/lib/video-seo'
 import type { NavigationSubItem } from '../src/types/navigation'
@@ -238,9 +239,9 @@ describe('多平台视频采集与搜索引擎收录 (SEO) 深度套件', () => 
           healthStatus: 'healthy',
           stats: { views: 68000, likes: 5400, favorites: 3200 },
           chapters: [
-            { time: 0, title: '为什么视频内容需要独立索引落地页' },
-            { time: 420, title: 'VideoObject 与 Google Key Moments 配置' },
-            { time: 980, title: 'Google Video Sitemap 与 IndexNow 自动推送' },
+            { startTime: 0, title: '为什么视频内容需要独立索引落地页' },
+            { startTime: 420, title: 'VideoObject 与 Google Key Moments 配置' },
+            { startTime: 980, title: 'Google Video Sitemap 与 IndexNow 自动推送' },
           ],
         },
       },
@@ -305,6 +306,17 @@ describe('多平台视频采集与搜索引擎收录 (SEO) 深度套件', () => 
       expect(audit.indexableVideos).toBe(1)
       expect(audit.withKeyMomentsChapters).toBe(1)
       expect(audit.seoScore).toBeGreaterThanOrEqual(90)
+    })
+
+    it('generateVideoRssFeed 正确输出符合 RSS 2.0 与 MRSS 媒体扩展格式的聚合源', () => {
+      const feedXml = generateVideoRssFeed([sampleItem], 'https://nav.example.com')
+      expect(feedXml).toContain('<?xml version="1.0" encoding="UTF-8"?>')
+      expect(feedXml).toContain('<rss version="2.0"')
+      expect(feedXml).toContain('xmlns:media="http://search.yahoo.com/mrss/"')
+      expect(feedXml).toContain('<channel>')
+      expect(feedXml).toContain('视频教程订阅源')
+      expect(feedXml).toContain('<media:thumbnail')
+      expect(feedXml).toContain('<link>https://nav.example.com/videos/v/vid_seo_01</link>')
     })
   })
 })

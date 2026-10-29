@@ -59,7 +59,7 @@ export async function POST(
                 }
 
                 const category = data.navigationItems[navIndex]
-                let updatedCategory = { ...category }
+                const updatedCategory = { ...category }
 
                 if (subCategoryId) {
                     const subCategories = (category.subCategories || []).map(sub => {
@@ -123,7 +123,7 @@ export async function PUT(
                 }
 
                 const category = data.navigationItems[navIndex]
-                let updatedCategory = { ...category }
+                const updatedCategory = { ...category }
 
                 if (subCategoryId) {
                     const subIndex = (category.subCategories || []).findIndex(s => s.id === subCategoryId)
@@ -198,7 +198,7 @@ export async function DELETE(
                 }
 
                 const category = data.navigationItems[navIndex]
-                let updatedCategory = { ...category }
+                const updatedCategory = { ...category }
 
                 if (subCategoryId) {
                     const subIndex = (category.subCategories || []).findIndex(s => s.id === subCategoryId)

@@ -40,6 +40,12 @@ import {
 
 export default function SubCategoryVideoItemsPage() {
     const params = useParams<{ id: string; categoryId: string }>()
+    // 依赖数组里只放**简单标识符**：React Compiler 不接受 `params?.id` 这种
+    // 带可选链的表达式当依赖，会判成 "Compilation Skipped: Existing
+    // memoization could not be preserved"（react-hooks/immutability 报 error）。
+    // 这里把路由参数摊平成普通常量，deps 与 effect 体都用它。
+    const paramsId = params?.id
+    const categoryId = params?.categoryId
     const router = useRouter()
     const { toast } = useToast()
 
@@ -54,14 +60,6 @@ export default function SubCategoryVideoItemsPage() {
     const [isLoading, setIsLoading] = useState(true)
     const [loadError, setLoadError] = useState<unknown>(null)
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
-
-    useEffect(() => {
-        if (!params?.id || !params?.categoryId) {
-            router.push('/admin/videos')
-            return
-        }
-        fetchNavigation()
-    }, [params?.id, params?.categoryId])
 
     const fetchNavigation = async () => {
         setIsLoading(true)
@@ -86,10 +84,22 @@ export default function SubCategoryVideoItemsPage() {
         }
     }
 
+    // fetchNavigation 必须**先声明再被 effect 调用**：原先 effect 在前、函数在后，
+    // 是典型的暂时性死区，React Compiler 因此无法保留该组件的 memoization，
+    // eslint 的 react-hooks/immutability 会判成 error（"Compilation Skipped"）。
+    // effect 体在渲染后执行，纯粹调整声明顺序不改变行为。
+    useEffect(() => {
+        if (!paramsId || !categoryId) {
+            router.push('/admin/videos')
+            return
+        }
+        fetchNavigation()
+    }, [paramsId, categoryId])
+
     const subCategory: NavigationCategory | null = useMemo(() => {
-        if (!navigation || !params?.categoryId) return null
-        return (navigation.subCategories || []).find(s => s.id === params.categoryId) || null
-    }, [navigation, params?.categoryId])
+        if (!navigation || !categoryId) return null
+        return (navigation.subCategories || []).find(s => s.id === categoryId) || null
+    }, [navigation, categoryId])
 
     const subCategoryItems: NavigationSubItem[] = useMemo(() => {
         return subCategory?.items || []
@@ -276,8 +286,8 @@ export default function SubCategoryVideoItemsPage() {
                             视频管理
                         </Link>
                         <span>/</span>
-                        <Link href={`/admin/videos/${navigation.id}/categories`} className="hover:text-foreground transition-colors">
-                            {navigation.title}
+                        <Link href={`/admin/videos/${navigation?.id ?? params.id}/categories`} className="hover:text-foreground transition-colors">
+                            {navigation?.title ?? '视频分类'}
                         </Link>
                         <span>/</span>
                         <span className="text-foreground font-medium">{subCategory.title}</span>
@@ -308,7 +318,7 @@ export default function SubCategoryVideoItemsPage() {
                     <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => router.push(`/admin/videos/${navigation.id}/items`)}
+                        onClick={() => router.push(`/admin/videos/${navigation?.id ?? params.id}/items`)}
                         className="text-xs h-9 gap-1.5"
                     >
                         <Layers className="h-3.5 w-3.5 text-primary" />
@@ -491,7 +501,7 @@ export default function SubCategoryVideoItemsPage() {
                                         onClick={() => setEditingItem({ index: originalIndex, item })}
                                         title="编辑视频信息"
                                     >
-                                        <Icons.edit className="h-4 w-4" />
+                                        <Icons.pencil className="h-4 w-4" />
                                     </Button>
 
                                     <Button

@@ -83,6 +83,10 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => ({}))
     const nowIso = new Date().toISOString()
+    // lastIndexedAt 在类型里是 number（毫秒时间戳，video-seo.ts 也这么写）。
+    // 这里原先塞的是 ISO 字符串，类型对不上——而且两种口径混用会让「何时索引过」
+    // 这个值没法直接比较。
+    const nowMs = Date.now()
 
     const outcome = await mutateVideoLibrary(
       (data) => {
@@ -96,7 +100,7 @@ export async function POST(request: Request) {
               ...enriched,
               videoConfig: {
                 ...enriched.videoConfig!,
-                lastIndexedAt: nowIso,
+                lastIndexedAt: nowMs,
               },
             }
           })
@@ -111,7 +115,7 @@ export async function POST(request: Request) {
                 ...enriched,
                 videoConfig: {
                   ...enriched.videoConfig!,
-                  lastIndexedAt: nowIso,
+                  lastIndexedAt: nowMs,
                 },
               }
             }),

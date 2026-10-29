@@ -110,9 +110,33 @@ function git(args, opts = {}) {
   }).replace(/\s+$/, "");
 }
 
-function fail(message) {
+/**
+ * 可预期的中止。用抛错而不是 `process.exit()`：后者**不执行 finally**，
+ * 独立索引 `.git/index.safe-commit` 会留在原地，下次运行把「我自己的残留」
+ * 误判成「另一次 safe-commit 正在运行」（本轮实测被坑 3 次）。
+ */
+class SafeCommitAbort extends Error {
+  constructor(message, code = 1) {
+    super(message);
+    this.name = "SafeCommitAbort";
+    this.exitCode = code;
+  }
+}
+
+function fail(message, code = 1) {
   console.error(`\n✗ ${message}\n`);
-  process.exit(1);
+  throw new SafeCommitAbort(message, code);
+}
+
+/** 本脚本在 .git/ 下留下的三个临时文件：收口时一律清掉 */
+function cleanupOwnFiles(cwd) {
+  for (const name of ["index.safe-commit", "index.safe-commit.lock", "SAFE_COMMIT_MSG"]) {
+    try {
+      unlinkSync(join(cwd, ".git", name));
+    } catch {
+      // 已经不在了就算了；真正删不掉时下次 clearOwnLeftovers 还会兜
+    }
+  }
 }
 
 /**
@@ -166,7 +190,13 @@ function main() {
 
   const cwd = process.cwd();
   const lockNote = clearOwnLeftovers(cwd);
-
+  /**
+   * 从这里开始 `.git/index.safe-commit` 就存在了。下面任何一条失败路径
+   * （空提交 / 钩子拦下 / 校验不符）都必须把它清掉，否则下次运行会把自己的
+   * 残留误判成「另一次 safe-commit 正在运行」。fail() 抛错而不是 process.exit，
+   * 正是为了让这个 finally 真的跑得到。
+   */
+  try {
   /**
    * 1) 从 HEAD 起一份**独立索引**，再只加我的路径。
    *
@@ -298,12 +328,25 @@ function main() {
     for (const p of extra) console.error(`  · ${p.replace(cwd + "/", "")}`);
   }
   if (missing.length > 0 || extra.length > 0) {
-    console.error("\n提交内容与预期不一致。用 `git show --stat HEAD` 核对，必要时 `git reset --soft HEAD~1` 重来。\n");
-    process.exit(2);
+    fail(
+      "提交内容与预期不一致。用 `git show --stat HEAD` 核对，必要时 `git reset --soft HEAD~1` 重来。",
+      2,
+    );
   }
   console.log(`✓ 提交内容与预期完全一致（${committed.length} 个文件）\n`);
+  } finally {
+    // 无论成功、失败还是抛错，本脚本在 .git/ 下的临时文件都要收走
+    cleanupOwnFiles(cwd);
+  }
 }
 
 // 只在直接执行时跑 main，便于测试 import 上面的纯函数
 const invokedDirectly = process.argv[1] && /safe-commit\.mjs$/.test(process.argv[1].replace(/\\/g, "/"));
-if (invokedDirectly) main();
+if (invokedDirectly) {
+  try {
+    main();
+  } catch (err) {
+    // fail() 已经把原因打出来了，这里只负责退出码
+    process.exit(err instanceof SafeCommitAbort ? err.exitCode : 1);
+  }
+}

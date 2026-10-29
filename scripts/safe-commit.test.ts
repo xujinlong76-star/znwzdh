@@ -12,7 +12,7 @@
  *     pathspec 提交不会把它带上」——这是这个工具唯一的核心保证，纯函数测不到。
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -164,5 +164,39 @@ describe("集成：pathspec 隔离", () => {
     }
     expect(failed).toBe(true);
     expect(git(["rev-parse", "HEAD"])).toBe(before);
+  });
+
+  it("失败路径不留 .git/index.safe-commit（否则下次把自己当并发会话）", () => {
+    /**
+     * 回归 2026-10-29：fail() 原先用 process.exit(1)，Node 不执行 finally，
+     * 独立索引留在 .git/ 下。下次运行的 clearOwnLeftovers 只有在文件**超过 2 分钟**
+     * 时才当残留清掉，于是几分钟内连续两次失败会互相挡住——本轮实测被坑 3 次。
+     */
+    writeFileSync(join(repo, ".msg3"), "chore: 空\n");
+    expect(() =>
+      execFileSync(process.execPath, [SCRIPT, "--msg-file", ".msg3", "--", "mine.ts"], {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: "pipe",
+        env: cleanEnv(),
+      }),
+    ).toThrow();
+
+    for (const name of ["index.safe-commit", "index.safe-commit.lock", "SAFE_COMMIT_MSG"]) {
+      expect(
+        existsSync(join(repo, ".git", name)),
+        `失败后 .git/${name} 不该留在原地`,
+      ).toBe(false);
+    }
+
+    // 紧接着再跑一次必须能立刻开始，而不是被「另一次 safe-commit 正在运行」挡住
+    writeFileSync(join(repo, "mine.ts"), "export const a = 3;\n");
+    writeFileSync(join(repo, ".msg4"), "fix: 接着跑\n");
+    const out = execFileSync(
+      process.execPath,
+      [SCRIPT, "--msg-file", ".msg4", "--", "mine.ts"],
+      { cwd: repo, encoding: "utf8", env: cleanEnv() },
+    );
+    expect(out).toContain("提交内容与预期完全一致");
   });
 });

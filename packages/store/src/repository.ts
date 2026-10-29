@@ -44,6 +44,7 @@ import * as statsRepo from "./repository/stats.ts";
 import * as dashboardRepo from "./repository/dashboard.ts";
 import * as eventsRepo from "./repository/events.ts";
 import * as llmUsageRepo from "./repository/llm-usage.ts";
+import * as llmPriceRepo from "./repository/llm-prices.ts";
 import * as healthRepo from "./repository/health.ts";
 import * as tagsRepo from "./repository/tags.ts";
 import * as favoritesRepo from "./repository/favorites.ts";
@@ -681,6 +682,20 @@ export class Repository {
   /** 按 retention 清理旧用量，返回删除条数 */
   async pruneLlmUsage(before: number): Promise<number> {
     return llmUsageRepo.pruneLlmUsage(this, before);
+  }
+
+  /* ------------------------------ LLM 单价簿 ------------------------------ */
+
+  async listLlmModelPrices() {
+    return llmPriceRepo.listLlmModelPrices(this);
+  }
+
+  async getLlmModelPrice(model: string) {
+    return llmPriceRepo.getLlmModelPrice(this, model);
+  }
+
+  async replaceLlmModelPrices(items: Array<{ model: string; promptPer1kRmb: number; completionPer1kRmb: number }>) {
+    return llmPriceRepo.replaceLlmModelPrices(this, items);
   }
 
   async pruneHealthChecks(before: number): Promise<number> {

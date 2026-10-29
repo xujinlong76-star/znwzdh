@@ -1085,6 +1085,31 @@ export class JobRunner {
       await this.runReindexPlugins();
     }
     if (!targets.includes("sites")) return;
+
+    // 全量重建 = 换代的时刻：先清掉旧模型/旧维度的向量残留。
+    // 它们永远进不了 KNN（rehydrate 只灌当前模型/维度），却会永久占空间，
+    // 并在「换回旧模型」时以陈旧语义悄悄复活。增量重建（siteId/siteIds）
+    // 不动全表——不能替并行写入的其他站点做决定。
+    // 只在 embedding 真的可用时清：没有模型就写不回向量，删了等于纯破坏。
+    const isFullRebuild =
+      payload.vectors !== false && !payload.siteId && !(Array.isArray(payload.siteIds) && payload.siteIds.length > 0);
+    let stalePurged = 0;
+    if (isFullRebuild && this.ctx.embedding && this.ctx.config.embedding.enabled) {
+      const model = this.ctx.config.embedding.model;
+      const dim = this.ctx.config.embedding.dim;
+      const purgeParams = [model, dim];
+      stalePurged = Number(
+        (
+          await this.ctx.repo.raw(
+            "SELECT COUNT(*) AS c FROM embeddings WHERE model <> ? OR dim <> ?",
+            purgeParams,
+          )
+        )[0]?.c ?? 0,
+      );
+      if (stalePurged > 0) {
+        await this.ctx.repo.run("DELETE FROM embeddings WHERE model <> ? OR dim <> ?", purgeParams);
+      }
+    }
     // 重建索引需要 id/标题/描述/网址四列。全量分支不能走 listSites()：它默认
     // limit=100（给匿名搜索通道设的成本上限），会让"全站重建"静默只覆盖前 100
     // 条，事件里还照报 sites:100；也不能走 listAllSites()：那会为每行再做标签与
@@ -1156,7 +1181,11 @@ export class JobRunner {
         );
       }
     }
-    await this.ctx.repo.recordEvent("reindex", { meta: { sites: sites.length, vectors: payload.vectors !== false } }).catch(() => undefined);
+    await this.ctx.repo
+      .recordEvent("reindex", {
+        meta: { sites: sites.length, vectors: payload.vectors !== false, staleEmbeddingsPurged: stalePurged },
+      })
+      .catch(() => undefined);
   }
 
   /** 重建插件语义索引：分页拉全量已上架插件，批量向量化（失败只记 notes，不中断） */
@@ -1164,6 +1193,24 @@ export class JobRunner {
     const PAGE = 100;
     let offset = 0;
     let total = 0;
+    // 与站点侧同口径：全量重建前清旧模型/旧维度残留（只在 embedding 可用时）
+    let stalePurged = 0;
+    if (this.ctx.embedding && this.ctx.config.embedding.enabled) {
+      const model = this.ctx.config.embedding.model;
+      const dim = this.ctx.config.embedding.dim;
+      const purgeParams = [model, dim];
+      stalePurged = Number(
+        (
+          await this.ctx.repo.raw(
+            "SELECT COUNT(*) AS c FROM plugin_embeddings WHERE model <> ? OR dim <> ?",
+            purgeParams,
+          )
+        )[0]?.c ?? 0,
+      );
+      if (stalePurged > 0) {
+        await this.ctx.repo.run("DELETE FROM plugin_embeddings WHERE model <> ? OR dim <> ?", purgeParams);
+      }
+    }
     for (;;) {
       const res = await this.ctx.repo.listPlugins({ status: "published", limit: PAGE, offset });
       if (res.items.length === 0) break;
@@ -1176,7 +1223,7 @@ export class JobRunner {
       if (res.items.length < PAGE) break;
     }
     await this.ctx.repo
-      .recordEvent("reindex", { meta: { plugins: total } })
+      .recordEvent("reindex", { meta: { plugins: total, stalePluginEmbeddingsPurged: stalePurged } })
       .catch(() => undefined);
   }
 
@@ -1603,12 +1650,23 @@ export class JobRunner {
     // 判据用 config.enabled 而不是 `ctx.embedding` 是否存在：service 对象在关闭时
     // 仍会被构造（供 /api/health 如实上报能力），非 null 不代表真的会写向量。
     if (this.ctx.embedding && this.ctx.config.embedding.enabled) {
+      // 覆盖面必须按「当前模型 + 当前维度」判定，不能只看 site_id 是否存在：
+      // 换模型/维度后旧向量仍留在表里，只判存在会把「没重灌的站点」报成已覆盖，
+      // 而它们在内核里一条向量都没有（rehydrate 只灌当前模型/维度）。
+      const model = this.ctx.config.embedding.model;
+      const dim = this.ctx.config.embedding.dim;
+      summary.embeddingModel = model;
+      summary.embeddingDim = dim;
       summary.sitesMissingEmbedding = Number(
         (
           await this.ctx.repo.raw(
             `SELECT COUNT(*) AS c FROM sites s
              WHERE s.deleted_at IS NULL
-               AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.site_id = s.id)`,
+               AND NOT EXISTS (
+                 SELECT 1 FROM embeddings e
+                  WHERE e.site_id = s.id AND e.model = ? AND e.dim = ?
+               )`,
+            [model, dim],
           )
         )[0]?.c ?? 0,
       );
@@ -1616,6 +1674,15 @@ export class JobRunner {
         (
           await this.ctx.repo.raw(
             "SELECT COUNT(*) AS c FROM embeddings e WHERE NOT EXISTS (SELECT 1 FROM sites s WHERE s.id = e.site_id)",
+          )
+        )[0]?.c ?? 0,
+      );
+      // 旧模型/旧维度的残留：下次全量 reindex 会被清掉，在那之前先让它可见
+      summary.staleEmbeddings = Number(
+        (
+          await this.ctx.repo.raw(
+            "SELECT COUNT(*) AS c FROM embeddings WHERE model <> ? OR dim <> ?",
+            [model, dim],
           )
         )[0]?.c ?? 0,
       );

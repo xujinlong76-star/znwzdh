@@ -15,6 +15,7 @@
  */
 import type { AppContext } from "./context.ts";
 import { getEnhancedSiteData, resolveSiteIcon, type SiteAction, type SiteRelation, type SiteLiveMetrics, type SiteHealth } from "@navhub/core";
+import { countVideoItems } from "@navhub/store";
 import { loadVideoCatalogFromDb, resolveVideoStoreMode, syncReplacementHistorySafely, syncVideoCatalogSafely, VIDEO_REPLACEMENTS_PATH } from "./video-catalog.ts";
 
 /** 外置替换审计文档的 basename（路径事实源在 video-catalog.ts，避免两处硬编码漂移） */
@@ -469,7 +470,12 @@ export async function readVideosData(ctx: AppContext): Promise<unknown> {
     const fromDb = await loadVideoCatalogFromDb(ctx);
     if (fromDb) return fromDb;
   }
-  return readKv(ctx, "videos");
+  const fromKv = (await readKv(ctx, "videos")) as { navigationItems?: any[] } | null;
+  // 这里**不能**加「表里条数多于 KV 就用表」的启发式：`json` / `dual` 模式下关系表
+  // 只是影子副本，可能早已和 KV 分叉（实测：KV 74 条、表 5,578 条）。按条数多的那侧供数
+  // 会返回站点上根本不存在的幻影视频——这正是 routes/videos.ts 明令禁止的口径。
+  // 判据只有 `resolveVideoStoreMode() === "db"` 一个；未切读就一律以 KV 为事实源。
+  return fromKv;
 }
 
 export async function writeVideosData(
@@ -477,6 +483,13 @@ export async function writeVideosData(
   data: unknown,
   ifVersion?: number,
 ): Promise<void> {
+  const incomingItems = ((data as any)?.navigationItems || []).reduce((acc: number, c: any) => {
+    return acc + (c.items?.length || 0) + (c.subCategories || []).reduce((s: number, sub: any) => s + (sub.items?.length || 0), 0);
+  }, 0);
+  const currentDbCount = await countVideoItems(ctx.repo).catch(() => 0);
+  if (currentDbCount >= 100 && incomingItems < currentDbCount * 0.8) {
+    throw new Error(`[storage] 写入被拒绝：待写入视频数 (${incomingItems}) 严重少于数据库现有数 (${currentDbCount})，疑似数据损毁或分类丢失！`);
+  }
   await writeKv(ctx, "videos", data, ifVersion);
   // `dual` / `db` 模式下把文档同步进关系表。失败只记状态，不影响本次写入 ——
   // 影子表是副本，副本故障不该让正本写入报错（详见 video-catalog.ts 文件头）。

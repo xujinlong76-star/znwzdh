@@ -31,6 +31,7 @@ import {
   WIDGET_TYPE_NAMES,
   validateCanvasWidgets,
 } from "@navhub/core";
+import { canvasQualitySummary } from "@navhub/store";
 import { identityTrusted, requestIdentityOf, unauthorized, resolveCanonicalIdentity } from "./shared.ts";
 import { checkLlmQuota, replyQuotaBlocked } from "../llm-quota.ts";
 import type { AppContext } from "../context.ts";
@@ -133,6 +134,9 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       tokens: sc.tokens,
       avgLatencyMs: sc.avgLatencyMs,
       errorCalls: sc.errorCalls,
+      // 分场景成本：快照缺失的场景是 null，不是 0
+      costRmb: sc.costRmb,
+      pricedCalls: sc.pricedCalls,
     }));
 
     const hourlyTrend = agg.hourly.map((h) => ({
@@ -162,8 +166,21 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
     // 0.001 元/1K token，既不是任何厂商的报价，也不区分 prompt/completion，
     // 等于在运维面板上放假账。
     const unitPrice = await getLlmCostUnitPriceRmb(ctx);
-    const estimatedCostRmb =
+    /**
+     * 成本两档口径：
+     *   - snapshot：调用时按「分模型单价簿」快照折算的真实合计（首选）；
+     *   - legacy：没有快照时，用旧版单一价 × 全部 token 的近似估算（兼容既有部署，
+     *     不区分输入输出，只可作为量级参考）。
+     * 两档都没有就是 null——UI 显示「未配置」，绝不折算成 ¥0。
+     */
+    const legacyCostRmb =
       unitPrice > 0 ? Number(((agg.totalTokens / 1000) * unitPrice).toFixed(4)) : null;
+    const estimatedCostRmb =
+      agg.totalCostRmb !== null ? Number(agg.totalCostRmb.toFixed(4)) : legacyCostRmb;
+    const costSource: "snapshot" | "legacy" | "none" =
+      agg.totalCostRmb !== null ? "snapshot" : legacyCostRmb !== null ? "legacy" : "none";
+    // 画布生成质量（首过率）：来自 canvas_generate 事件，与成本同窗口
+    const canvasQuality = await canvasQualitySummary(ctx.repo, windowDays);
 
     // 额度闸门：三档里只有「无身份合池」与「运维 key」能整体计量，
     // 单身份档是按人分别限的，聚合出一个总数没有意义 → used 留 null。
@@ -189,6 +206,16 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
       thinkingCalls: agg.thinkingCalls,
       estimatedCostRmb,
       costUnitPriceRmb: unitPrice > 0 ? unitPrice : null,
+      costSource,
+      /** 成本覆盖率：有多少调用带单价快照、覆盖了多少 token。分母为 0 时 rate=null */
+      costCoverage: {
+        totalCalls: agg.totalCalls,
+        pricedCalls: agg.pricedCalls,
+        unpricedCalls: agg.unpricedCalls,
+        totalTokens: agg.totalTokens,
+        pricedTokens: agg.pricedTokens,
+      },
+      canvasQuality,
       activeModel: resolved.provider.model?.trim() || null,
       quota: {
         windowHours: 24,
@@ -206,9 +233,64 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
         },
       },
       byScenario,
+      byModel: agg.byModel,
       hourlyTrend,
       recentLogs,
     };
+  });
+
+  /* ---------------------- 分模型单价簿（成本折算的唯一真源） ---------------------- */
+
+  const PriceBookBody = z.object({
+    items: z
+      .array(
+        z.object({
+          model: z.string().trim().min(1, "模型名不能为空").max(120, "模型名最长 120 字符"),
+          promptPer1kRmb: z.number().finite().min(0).max(10_000),
+          completionPer1kRmb: z.number().finite().min(0).max(10_000),
+        }),
+      )
+      .max(200, "单价簿最多 200 个模型"),
+  });
+
+  app.get("/api/admin/ai/prices", { config: { scope: "admin" } }, async () => {
+    const [prices, legacy] = await Promise.all([
+      ctx.repo.listLlmModelPrices(),
+      getLlmCostUnitPriceRmb(ctx),
+    ]);
+    return {
+      prices,
+      /** 旧版单一价（¥/1K，输入输出同价）：单价簿没命中的模型才回落到它 */
+      legacyUnitPriceRmb: legacy > 0 ? legacy : null,
+    };
+  });
+
+  app.put("/api/admin/ai/prices", { config: { scope: "admin" } }, async (req, reply) => {
+    const body = PriceBookBody.safeParse(req.body ?? {});
+    if (!body.success) {
+      reply.code(400);
+      return { error: "参数无效", detail: body.error.issues };
+    }
+    // 保存前先规范化（trim + 去重后者胜），审计与实际落库看到同一份清单
+    const normalized = new Map<string, { model: string; promptPer1kRmb: number; completionPer1kRmb: number }>();
+    for (const item of body.data.items) {
+      normalized.set(item.model.trim(), {
+        model: item.model.trim(),
+        promptPer1kRmb: item.promptPer1kRmb,
+        completionPer1kRmb: item.completionPer1kRmb,
+      });
+    }
+    const items = [...normalized.values()];
+    const saved = await ctx.repo.replaceLlmModelPrices(items);
+    await ctx.repo.audit({
+      actor: req.auth.actor,
+      action: "ai.prices.update",
+      target: "llm_model_prices",
+      // 审计只记规模与模型名，价格本身不是敏感信息但全量快照会快速膨胀
+      diff: { count: saved, models: items.slice(0, 50).map((i) => i.model) },
+      ip: req.ip,
+    });
+    return { prices: await ctx.repo.listLlmModelPrices() };
   });
 
   /* ------------------------------ 用户端 ------------------------------ */
@@ -550,6 +632,30 @@ export const aiConfigRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (ap
           rationale,
           widgets: validation.widgets,
         };
+
+        /**
+         * 画布生成质量事件（首过率的唯一数据源）。
+         * 只记维度：计划/存活/丢弃的卡片数、issue 数与是否保底；
+         * 不记用户提示词，也不记身份——质量读数不该顺带新增一个原文存储。
+         */
+        const planned = Array.isArray((parsed as { widgets?: unknown }).widgets)
+          ? (parsed as { widgets: unknown[] }).widgets.length
+          : 0;
+        // 保底布局时 validation.widgets 是系统卡片，不是模型计划的存活项：
+        // 计划里的每一张都被丢弃了，不能按「planned - 保底卡片数」记成 0。
+        const dropped = validation.usedFallback ? planned : Math.max(0, planned - validation.widgets.length);
+        void ctx.repo
+          .recordEvent("canvas_generate", {
+            meta: {
+              model: result.model,
+              planned,
+              widgets: validation.widgets.length,
+              dropped,
+              issues: validation.issues.length,
+              fallback: validation.usedFallback,
+            },
+          })
+          .catch(() => undefined);
 
         return {
           success: true,

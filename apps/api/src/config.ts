@@ -135,6 +135,18 @@ export interface AppConfig {
   /** Webhook 投递超时（毫秒，内部限制于 1s~30s 范围） */
   alertTimeoutMs: number;
   /**
+   * 检索质量策略（升级 AI-5）。
+   *
+   * 语义通道此前**没有任何相似度下限**：KNN 永远返回 top-N，哪怕最相近的向量
+   * 余弦相似度只有 0.1，也会按名次进 RRF 融合，污染「写代码的AI」这类查询的
+   * 结果。默认 0.40 来自真实模型标定（deliverables/ai5-vector-2026-10-30）：
+   * 保留 96.9% 相关命中、剔除 73% 噪声，且 0 个查询丢失相关 top-5。
+   */
+  search: {
+    /** 余弦相似度下限（0..1）；0 = 关闭闸门，保持旧行为 */
+    semanticMinSimilarity: number;
+  };
+  /**
    * 模型单价（人民币 / 1K token），供观测大盘估算花费。0 = 未配置。
    *
    * 以前大盘直接按 `totalTokens * 0.001` 报一个 ¥ 数：那个单价是凭空写的，
@@ -419,13 +431,14 @@ function assertSecurityConstraints(
  * 其余顶层字段保持 Partial。这样新增配置项不会强迫所有调用点同步补齐。
  */
 export type ConfigOverrides = Partial<
-  Omit<AppConfig, "llm" | "embedding" | "fetch" | "tokenPolicy" | "llmQuota">
+  Omit<AppConfig, "llm" | "embedding" | "fetch" | "tokenPolicy" | "llmQuota" | "search">
 > & {
   llm?: Partial<AppConfig["llm"]>;
   embedding?: Partial<AppConfig["embedding"]>;
   fetch?: Partial<AppConfig["fetch"]>;
   tokenPolicy?: Partial<AppConfig["tokenPolicy"]>;
   llmQuota?: Partial<AppConfig["llmQuota"]>;
+  search?: Partial<AppConfig["search"]>;
 };
 
 export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
@@ -507,6 +520,11 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     // 密钥轮换：上一代密钥仍接受校验（不断签），新签发只用新密钥
     previousSecret: process.env.NAVHUB_SESSION_SECRET_PREV || null,
 
+    search: {
+      // 越界值钳到 [0,1]：负数会被当成「关闭」（意外的宽松），>1 会剔除一切（语义通道静默失效）
+      semanticMinSimilarity: Math.min(1, Math.max(0, num("NAVHUB_SEMANTIC_MIN_SIMILARITY", 0.4))),
+    },
+
     alertWebhook: process.env.NAVHUB_ALERT_WEBHOOK?.trim() || null,
     alertTimeoutMs: num("NAVHUB_ALERT_TIMEOUT_MS", 5_000),
     costPer1kTokensRmb: num("NAVHUB_LLM_COST_PER_1K_TOKENS", 0),
@@ -533,6 +551,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): AppConfig {
     fetch: { ...base.fetch, ...(overrides.fetch ?? {}) },
     tokenPolicy: { ...base.tokenPolicy, ...(overrides.tokenPolicy ?? {}) },
     llmQuota: { ...base.llmQuota, ...(overrides.llmQuota ?? {}) },
+    search: { ...base.search, ...(overrides.search ?? {}) },
   };
   assertSecurityConstraints(finalConfig, isProd, allowInsecurePublic);
 

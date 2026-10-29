@@ -163,7 +163,7 @@ describe("检索写入失败的可见性", () => {
       // 之后响应序列化还会读同一对象，继续抛会变成 500（那是另一种缺陷）
       let thrown = false;
       const hostile = new Proxy(
-        { exactMs: 0, ftsMs: 0, pinyinMs: 0, semanticMs: 0, skippedSemantic: false },
+        { exactMs: 0, ftsMs: 0, pinyinMs: 0, semanticMs: 0, skippedSemantic: false, semanticFiltered: 0 },
         {
           get(target, prop, receiver) {
             if (!thrown) {

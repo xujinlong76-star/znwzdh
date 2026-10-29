@@ -244,11 +244,29 @@ export interface CopilotEventSummary {
   thinkingBy: Array<{ thinking: string; count: number }>;
   /** 本窗口 copilot 回答里「参考来源」的总条数（分母） */
   citations: number;
+  /** 模型回答里指向候选集之外、被服务端降级成纯文本的链接数 */
+  unverifiedLinks: number;
+  /** citations / (citations + unverifiedLinks)，保留 3 位小数；无样本时为 null */
+  citationValidityRate: number | null;
   /** 来源为 copilot_citation 的 click 事件数（分子） */
   citationClicks: number;
   /** citationClicks / citations，保留 3 位小数；无引用样本时为 null */
   citationClickRate: number | null;
 }
+
+/** 画布生成质量读数：schema 一次通过率（结构无 issue 且未用保底布局） */
+export interface CanvasQualitySummary {
+  windowDays: number;
+  generations: number;
+  cleanGenerations: number;
+  fallbackGenerations: number;
+  droppedWidgets: number;
+  /** cleanGenerations / generations，保留 3 位小数；无样本时为 null */
+  firstPassRate: number | null;
+}
+
+/** 画布质量事件的读取上限：与 copilot 同口径，比率不需要全表扫描 */
+export const CANVAS_EVENT_READ_CAP = 5000;
 
 function percentile(sorted: number[], q: number): number | null {
   if (sorted.length === 0) return null;
@@ -287,6 +305,7 @@ export async function copilotEventSummary(
   let degraded = 0;
   let quotaLimited = 0;
   let citations = 0;
+  let unverifiedLinks = 0;
   const degradedBy = new Map<string, number>();
   const thinkingBy = new Map<string, number>();
   const waits: number[] = [];
@@ -322,6 +341,8 @@ export async function copilotEventSummary(
     asks += 1;
     const cited = Number(meta.citations);
     if (Number.isFinite(cited) && cited > 0) citations += cited;
+    const unverified = Number(meta.unverified_links);
+    if (Number.isFinite(unverified) && unverified > 0) unverifiedLinks += unverified;
     const reason = meta.degraded;
     if (reason != null && reason !== "" && reason !== "null") {
       degraded += 1;
@@ -375,7 +396,70 @@ export async function copilotEventSummary(
     quotaLimited,
     thinkingBy: tallyTop(thinkingBy, 5).map(({ key, count }) => ({ thinking: key, count })),
     citations,
+    unverifiedLinks,
+    citationValidityRate:
+      citations + unverifiedLinks > 0
+        ? Math.round((citations / (citations + unverifiedLinks)) * 1000) / 1000
+        : null,
     citationClicks,
     citationClickRate: citations > 0 ? Math.round((citationClicks / citations) * 1000) / 1000 : null,
+  };
+}
+
+/**
+ * 画布生成质量（schema 一次通过率）。
+ *
+ * 写入侧是 `/api/user/ai/canvas/generate` 的 `canvas_generate` 事件：
+ * meta 只带结构维度（widgets/issues/dropped/fallback），不带 prompt 与布局内容。
+ * 一次生成被判定为「一次通过」= 校验零 issue 且没有触发保底布局：
+ * 用了保底布局的生成即使 issue 为 0，也不是模型规划的结果。
+ */
+export async function canvasQualitySummary(
+  repo: Repository,
+  days: number,
+): Promise<CanvasQualitySummary> {
+  const windowDays = Math.min(Math.max(Math.round(days) || 1, 1), 90);
+  const since = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+  const rows = await repo.raw(
+    "SELECT meta FROM events WHERE kind = 'canvas_generate' AND created_at >= ? ORDER BY id DESC LIMIT ?",
+    [since, CANVAS_EVENT_READ_CAP],
+  );
+
+  let generations = 0;
+  let cleanGenerations = 0;
+  let fallbackGenerations = 0;
+  let droppedWidgets = 0;
+
+  for (const row of rows) {
+    const rawMeta = row.meta;
+    let meta: Record<string, unknown> = {};
+    if (typeof rawMeta === "string" && rawMeta) {
+      try {
+        const parsed = JSON.parse(rawMeta);
+        if (parsed && typeof parsed === "object") meta = parsed as Record<string, unknown>;
+      } catch {
+        // 脏行跳过：读数宁少不假
+        continue;
+      }
+    } else if (rawMeta && typeof rawMeta === "object") {
+      meta = rawMeta as Record<string, unknown>;
+    }
+
+    generations += 1;
+    const issues = Number(meta.issues);
+    const dropped = Number(meta.dropped);
+    const fallback = meta.fallback === true;
+    if (fallback) fallbackGenerations += 1;
+    if (Number.isFinite(dropped) && dropped > 0) droppedWidgets += dropped;
+    if ((!Number.isFinite(issues) || issues === 0) && !fallback) cleanGenerations += 1;
+  }
+
+  return {
+    windowDays,
+    generations,
+    cleanGenerations,
+    fallbackGenerations,
+    droppedWidgets,
+    firstPassRate: generations > 0 ? Math.round((cleanGenerations / generations) * 1000) / 1000 : null,
   };
 }

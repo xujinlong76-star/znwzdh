@@ -478,6 +478,25 @@ describe("用户级配置（个人设置）", () => {
   const configDefault = (type: string, key: string) =>
     BUILTIN_WIDGET_CATALOG[type]?.configSchema?.find((c) => c.key === key)?.defaultValue;
 
+  /** recordEvent 是 fire-and-forget：轮询到目标样本出现，避免断言抢跑 */
+  async function waitForCanvasEvent(predicate: (meta: Record<string, any>) => boolean) {
+    for (let i = 0; i < 100; i++) {
+      const rows = (await ctx.repo.raw(
+        "SELECT meta FROM events WHERE kind = 'canvas_generate' ORDER BY id DESC LIMIT 20",
+      )) as Array<{ meta: string }>;
+      for (const row of rows) {
+        try {
+          const meta = JSON.parse(row.meta) as Record<string, any>;
+          if (predicate(meta)) return meta;
+        } catch {
+          // 脏 JSON 跳过
+        }
+      }
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    throw new Error("canvas_generate 事件未出现");
+  }
+
   it("AI 画布：越界跨度/非法类型/伪协议逐条记账，而不是静默换一张卡", async () => {
     const radar = BUILTIN_WIDGET_CATALOG["hyperbolic-radar"];
     const { status, body } = await generateCanvasWithLayout("anon-test-canvas-dirty", {
@@ -523,6 +542,13 @@ describe("用户级配置（个人设置）", () => {
     }
     expect(body.droppedTypes.length).toBeGreaterThan(0);
     expect(body.canvasIssueTotal).toBeGreaterThan(0);
+
+    // 质量事件必须如实记「计划全被丢弃」：保底三张卡不是计划里的存活项，
+    // 按 planned - 保底卡片数会得到 0，让首过率面板把一次全丢的生成看成没丢卡。
+    const meta = await waitForCanvasEvent((m) => m.fallback === true && m.planned === 2);
+    expect(meta.dropped).toBe(2);
+    expect(meta.widgets).toBeGreaterThan(0);
+    expect(meta.issues).toBeGreaterThan(0);
   });
 
   it("GET /api/admin/ai/observability 聚合效能与 Token 消耗指标", async () => {

@@ -109,6 +109,13 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 无处表达——客户端按 updated_at 拉增量时看不见任何痕迹，于是删除永不传播。
   { table: "favorites", column: "deleted_at", sqlite: "INTEGER", pg: "BIGINT" },
   { table: "user_settings", column: "preferences_json", sqlite: "TEXT NOT NULL DEFAULT '{}'", pg: "TEXT NOT NULL DEFAULT '{}'" },
+  // 成本核算（2026-10-30）：调用时的按模型单价快照。
+  // 可空是语义的一部分：老行 / 未配置单价的调用 = 成本未知，禁止回填成 0
+  // （0 会被大盘当成「这次免费」，合计从此不可信）。
+  { table: "llm_usage", column: "cost_rmb", sqlite: "REAL", pg: "DOUBLE PRECISION" },
+  { table: "llm_usage", column: "prompt_price_per_1k", sqlite: "REAL", pg: "DOUBLE PRECISION" },
+  { table: "llm_usage", column: "completion_price_per_1k", sqlite: "REAL", pg: "DOUBLE PRECISION" },
+  { table: "llm_usage", column: "price_source", sqlite: "TEXT", pg: "TEXT" },
 ];
 
 /**
@@ -463,6 +470,10 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     "CREATE INDEX IF NOT EXISTS llm_usage_source_idx ON llm_usage(source, created_at)",
     // 配额判定与注销匿名化都按 identity 过滤：没有索引时每次 LLM 调用前都要全表扫。
     "CREATE INDEX IF NOT EXISTS llm_usage_identity_idx ON llm_usage(identity, created_at)",
+    // 分模型单价簿（2026-10-30）：按模型 + 输入/输出分开报价，写入时快照进 llm_usage。
+    db.dialect === "pg"
+      ? "CREATE TABLE IF NOT EXISTS llm_model_prices (model TEXT PRIMARY KEY, prompt_per_1k_rmb DOUBLE PRECISION NOT NULL, completion_per_1k_rmb DOUBLE PRECISION NOT NULL, updated_at BIGINT NOT NULL)"
+      : "CREATE TABLE IF NOT EXISTS llm_model_prices (model TEXT PRIMARY KEY, prompt_per_1k_rmb REAL NOT NULL, completion_per_1k_rmb REAL NOT NULL, updated_at INTEGER NOT NULL)",
     // 分享短链：只存内部 /marketplace/ 目标（防开放重定向）
     db.dialect === "pg"
       ? "CREATE TABLE IF NOT EXISTS short_links (code TEXT PRIMARY KEY, target TEXT NOT NULL, plugin_slug TEXT, clicks INTEGER NOT NULL DEFAULT 0, created_at BIGINT NOT NULL)"

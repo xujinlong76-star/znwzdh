@@ -645,6 +645,16 @@ export const llmUsage = sqliteTable("llm_usage", {
   ok: integer("ok", { mode: "boolean" }).notNull().default(true),
   errorCode: text("error_code"),
   thinking: integer("thinking", { mode: "boolean" }).notNull().default(false),
+  /**
+   * 调用时按单价簿折算的花费（元）。NULL = 该次调用没有可用单价或没有
+   * token 读数——「不知道」不能写成 0，否则大盘的合计会把未知当免费。
+   */
+  costRmb: real("cost_rmb"),
+  /** 调用当时的输入/输出单价快照（¥/1K tokens）：改价后历史成本不重算 */
+  promptPricePer1k: real("prompt_price_per_1k"),
+  completionPricePer1k: real("completion_price_per_1k"),
+  /** 快照来源：book（分模型单价簿）/ legacy（单一价兼容档） */
+  priceSource: text("price_source"),
   createdAt: integer("created_at").notNull().$defaultFn(now),
 }, (t) => [
   index("llm_usage_time_idx").on(t.createdAt),
@@ -652,11 +662,25 @@ export const llmUsage = sqliteTable("llm_usage", {
   index("llm_usage_source_idx").on(t.source, t.createdAt),
 ]);
 
+/**
+ * 分模型单价簿（¥/1K tokens，输入与输出分开报价）。
+ *
+ * 为什么不是单个全局单价：多模型/备用池下 input 与 output 价格不同，
+ * 一个全局单价折算出来的 ¥ 数是假账。写入 llm_usage 时快照到行上。
+ */
+export const llmModelPrices = sqliteTable("llm_model_prices", {
+  model: text("model").primaryKey(),
+  promptPer1kRmb: real("prompt_per_1k_rmb").notNull(),
+  completionPer1kRmb: real("completion_per_1k_rmb").notNull(),
+  updatedAt: integer("updated_at").notNull().$defaultFn(now),
+});
+
 export const schema = {
   categories, sites, tags, tagAliases, siteTags, siteFacets, siteRelations, collections, collectionItems,
   users, sessions, notifications, apiTokens, events, healthChecks, auditLogs, jobs, idempotency, embeddings, pluginEmbeddings,
   favorites, favoriteFolders, userProfiles, searchHistory, userVaultSync, userWorkspaceBlobs, systemStates, taxonomyProposals,
   plugins, pluginInstalls, pluginStars, pluginReports, pluginVersions, pluginReviews, shortLinks, siteArchives, llmUsage,
+  llmModelPrices,
   // 用户域补齐（N11）：此前这四张表没有进入导出，drizzle 工具链拿不到它们，
   // 「schema 是单一事实源」名不副实——迁移脚本与 DDL 各写一份，drift 无从校验。
   identityAliases, identityMerges, userLlmConfigs, userSettings,

@@ -27,9 +27,10 @@
  *   1 = 失败 / 不一致
  *   2 = KV 里没有视频库数据（从未保存过），无法对账
  */
+import { readFileSync, existsSync } from "node:fs";
 import { loadConfig } from "./config.ts";
 import { createContext } from "./context.ts";
-import { readKv } from "./storage.ts";
+import { readKv, writeVideosData } from "./storage.ts";
 import {
   checkVideoCatalogConsistency,
   resolveVideoStoreMode,
@@ -47,6 +48,9 @@ const sampleSize = (() => {
   return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 500) : 10;
 })();
 
+const fromFileIdx = argv.indexOf("--from-file");
+const fromFilePath = fromFileIdx !== -1 ? argv[fromFileIdx + 1] : null;
+
 /** 机器可读模式下，人读日志一律走 stderr，避免污染 stdout 的 JSON */
 function note(message: string): void {
   if (jsonOut) console.error(message);
@@ -61,7 +65,19 @@ const config = loadConfig();
 const ctx = await createContext(config);
 
 try {
-  const doc = await readKv(ctx, "videos");
+  let doc: unknown;
+  if (fromFilePath) {
+    if (!existsSync(fromFilePath)) {
+      fail(`[video-catalog] 文件不存在: ${fromFilePath}`);
+      process.exit(2);
+    }
+    doc = JSON.parse(readFileSync(fromFilePath, "utf8"));
+    await writeVideosData(ctx, doc);
+    note(`[video-catalog] 已将 ${fromFilePath} 载入 KV (kv:videos)`);
+  } else {
+    doc = await readKv(ctx, "videos");
+  }
+
   if (!doc || typeof doc !== "object") {
     fail("[video-catalog] KV 文档里没有视频库数据（从未保存过），无法对账 / 导入。");
     process.exit(2);

@@ -18,13 +18,16 @@ import { createServer, type Server } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { FastifyReply } from "fastify";
+import { parseCopilotFrame } from "@navhub/core";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
 import { callLlmStream } from "../src/llm-usage.ts";
-import { resetSystemLlmConfig, saveSystemLlmConfig, type ResolvedLlm } from "../src/llm-config.ts";
+import { checkLlmQuota } from "../src/llm-quota.ts";
+import { llmProviderReadyAny, resetSystemLlmConfig, saveSystemLlmConfig, type ResolvedLlm } from "../src/llm-config.ts";
 
 const TARGET_URL = "https://obsidian.md";
 const HALLUCINATED_HOST = "hallucinated.example.com";
@@ -209,6 +212,14 @@ async function eventRows(kind: string) {
   >;
 }
 
+/** 直接写一行用量：额度用例只关心「窗口里已有消耗」，不必真调一次模型 */
+async function insertUsageRow(id: string, scenario: string, identity: string | null) {
+  await ctx.repo.run(
+    "INSERT INTO llm_usage (id, scenario, source, model, identity, prompt_tokens, completion_tokens, latency_ms, ok, error_code, thinking, created_at) VALUES (?, ?, ?, ?, ?, 1, 1, 10, 1, NULL, 0, ?)",
+    [id, scenario, "system", "fake", identity, Date.now()],
+  );
+}
+
 /** 轮询到条件成立；超时就把现场写进消息，免得只看到一个无声的红 */
 async function until(label: string, ms: number, cond: () => boolean | Promise<boolean>, scene: () => unknown = () => ({})) {
   const end = Date.now() + ms;
@@ -246,22 +257,23 @@ describe("stream:true 但模型不可用：不许开流，回与旧版一致的 
 
 describe("SSE 出口：逐段增量 + 权威终稿", () => {
   let hub: ReturnType<typeof startHub>;
+  let hubBase = "";
 
   beforeAll(async () => {
     hub = startHub([]);
-    const baseUrl = await hub.listen();
+    hubBase = await hub.listen();
     await saveSystemLlmConfig(
       ctx,
       {
         enabled: true,
-        baseUrl,
+        baseUrl: hubBase,
         model: "fake-stream",
         apiKey: "sk-fake",
         timeoutMs: 5000,
         thinking: false,
         allowPrivateNetwork: true,
         // 备用池指向同一个网关：网关命中数因此能直接分辨「有没有轮换」
-        fallbacks: [{ baseUrl, model: "fake-stream-backup", apiKey: "sk-fake", timeoutMs: 5000, allowPrivateNetwork: true }],
+        fallbacks: [{ baseUrl: hubBase, model: "fake-stream-backup", apiKey: "sk-fake", timeoutMs: 5000, allowPrivateNetwork: true }],
       },
       "test",
     );
@@ -341,6 +353,131 @@ describe("SSE 出口：逐段增量 + 权威终稿", () => {
     expect(Number(meta.citations)).toBe(1);
     expect(Number(meta.unverified_links)).toBe(1);
     expect(Number(meta.retrieval_hits)).toBe(1);
+  });
+
+  it("真实 SSE 响应逐帧通过共享 schema：类型全在白名单，且恰好一个 done", async () => {
+    hub.setPlan({
+      kind: "sse",
+      chunks: [reasoningChunk("先看候选，"), contentChunk("[Obsidian](https://obsidian.md) 很合适。"), usageChunk(2, 3), DONE],
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/copilot/chat",
+      payload: { message: "离线 Markdown 编辑器", stream: true, thinking: true },
+    });
+
+    const blocks = res.body
+      .split(/\r?\n\r?\n/)
+      .map((block) => block.trim())
+      .filter((block) => block.length > 0 && !block.startsWith(":"));
+    const parsed = blocks.map((block) =>
+      parseCopilotFrame(
+        block
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trim())
+          .join("\n"),
+      ),
+    );
+    expect(parsed.every((frame) => frame !== null)).toBe(true);
+    const types = parsed.map((frame) => frame!.type) as string[];
+    expect(types).toContain("reasoning");
+    expect(types).toContain("delta");
+    expect(types.filter((type) => type === "done")).toHaveLength(1);
+    expect(types.filter((type) => !["delta", "reasoning", "done"].includes(type))).toEqual([]);
+  });
+
+  it("额度用尽 ⇒ 即使 stream:true 也不开流：JSON 降级 + Retry-After + quota 明细", async () => {
+    const hitsBefore = hub.state.hits;
+    const usageBefore = (await usageRows()).length;
+    const quotaCfg = ctx.config.llmQuota;
+    const saved = { ...quotaCfg };
+    const rowId = randomUUID();
+    try {
+      // 匿名合池档：identity IS NULL 的消耗共享一份调用次数上限。
+      // 前面的用例已经留下真实用量，基线必须现算，否则断言会写成「固定 1」而误判。
+      const since = Date.now() - 24 * 60 * 60 * 1000;
+      const before = await ctx.repo.sumLlmUsage({ since, identity: null });
+      quotaCfg.anonymousDailyCalls = before.calls + 1;
+      await insertUsageRow(rowId, "quota_fixture", null);
+
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/copilot/chat",
+        payload: { message: "离线 Markdown 编辑器", stream: true },
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["content-type"]).not.toContain("text/event-stream");
+      expect(res.headers["retry-after"]).toBeTruthy();
+      expect(res.body).not.toContain("data: ");
+      const body = res.json();
+      expect(body.degraded).toBe("quota");
+      expect(body.quota).toMatchObject({
+        scope: "anonymous",
+        metric: "calls",
+        limit: before.calls + 1,
+        used: before.calls + 1,
+      });
+      // 额度拦截的目标就是「不再花钱」：网关一跳都不该被访问
+      expect(hub.state.hits).toBe(hitsBefore);
+      expect(await usageRows()).toHaveLength(usageBefore);
+    } finally {
+      Object.assign(quotaCfg, saved);
+      await ctx.repo.run("DELETE FROM llm_usage WHERE id = ?", [rowId]);
+    }
+  });
+
+  it("取消发生在准备阶段（检索未完成）⇒ copilot_cancel(stage=pre_llm)，零用量、零网关命中", async () => {
+    const usageBefore = (await usageRows()).length;
+    const cancelBefore = (await eventRows("copilot_cancel")).length;
+    const hitsBefore = hub.state.hits;
+
+    const originalSearch = ctx.search.search.bind(ctx.search);
+    let release: (() => void) | null = null;
+    ctx.search.search = (async (input: Parameters<typeof originalSearch>[0]) => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return originalSearch(input);
+    }) as typeof ctx.search.search;
+
+    try {
+      const inflight = app
+        .inject({
+          method: "POST",
+          url: "/api/copilot/chat",
+          payload: { message: "离线 Markdown 编辑器", stream: true },
+        })
+        .catch(() => null);
+
+      await until("请求进入检索阶段", 3000, () => release !== null, () => ({ release: release !== null }));
+      // 客户端在首 token 之前就走了：这里掐掉连接，再放行检索
+      rawOf(lastReply as FastifyReply).raw.emit("close");
+      (release as unknown as () => void)();
+
+      await until("pre_llm 取消落库", 3000, async () => (await eventRows("copilot_cancel")).length > cancelBefore);
+      await inflight;
+
+      const meta = JSON.parse((await eventRows("copilot_cancel")).at(-1)!.meta ?? "{}") as Record<string, unknown>;
+      expect(meta.stage).toBe("pre_llm");
+      expect(hub.state.hits).toBe(hitsBefore);
+      expect((await usageRows()).length).toBe(usageBefore);
+    } finally {
+      ctx.search.search = originalSearch as typeof ctx.search.search;
+    }
+  });
+
+  it("候选池可用性：主模型未就绪但备用池有密钥 ⇒ 仍视为可跑（不再误报 unconfigured）", () => {
+    const unready = { apiKey: null, allowPrivateNetwork: false };
+    const ready = { apiKey: "sk-x", allowPrivateNetwork: false };
+    expect(llmProviderReadyAny({ provider: unready, fallbacks: [ready] })).toBe(true);
+    expect(llmProviderReadyAny({ provider: ready, fallbacks: [] })).toBe(true);
+    // 本地 Ollama 场景：无密钥但放行私网也算可用
+    expect(llmProviderReadyAny({ provider: { apiKey: null, allowPrivateNetwork: true }, fallbacks: [] })).toBe(true);
+    expect(llmProviderReadyAny({ provider: unready, fallbacks: [unready] })).toBe(false);
+    expect(llmProviderReadyAny(null)).toBe(false);
   });
 
   it("端点不给 usage ⇒ 记 0，不按字符数估算冒充真实成本", async () => {
@@ -626,6 +763,43 @@ describe("callLlmStream：取消即停、开流前可轮换、开流后不轮换
     expect(rows[0].error_code).toBe("network");
   });
 
+  it("只吐了 reasoning 也算已开流：不换模型拼接两段思考", async () => {
+    let attempts = 0;
+    const fakeFetch = (async () => {
+      attempts += 1;
+      let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          controller = c;
+          c.enqueue(encoder.encode(reasoningChunk("先想一段")));
+        },
+      });
+      setTimeout(() => controller?.error(new TypeError("terminated")), 30);
+      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+    }) as unknown as typeof fetch;
+
+    const seen: string[] = [];
+    await expect(
+      (async () => {
+        for await (const event of callLlmStream(ctx, pool("stream-reasoning", 2), {
+          scenario: "copilot_stream_reasoning",
+          messages: [{ role: "user", content: "ping" }],
+          fetchImpl: fakeFetch,
+        })) {
+          seen.push(event.type);
+        }
+      })(),
+    ).rejects.toThrow(/流式/);
+
+    expect(seen).toEqual(["reasoning"]);
+    // 备胎一跳都没打：思考链已经推给用户，换模型只会把两家的推理拼成一段
+    expect(attempts).toBe(1);
+    const rows = await usageRowsFor("copilot_stream_reasoning");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ok).toBe(0);
+    expect(rows[0].error_code).toBe("network");
+  });
+
   it("总预算已经耗尽 ⇒ 一个请求都不发（备用池是等待时间的乘法）", async () => {
     let attempts = 0;
     const fakeFetch = (async () => {
@@ -647,5 +821,44 @@ describe("callLlmStream：取消即停、开流前可轮换、开流后不轮换
     ).rejects.toThrow(/预算/);
     expect(attempts).toBe(0);
     expect(await usageRowsFor("copilot_stream_budget")).toHaveLength(0);
+  });
+});
+
+describe("额度边界：到上限才拒，档位之间不串", () => {
+  it("anonymous 合池：used = limit-1 放行，used = limit 拒；有身份时不命中该档", async () => {
+    const cfg = ctx.config.llmQuota;
+    const saved = { ...cfg };
+    const rows = [randomUUID(), randomUUID()];
+    try {
+      // 前面的用例已经留下匿名用量，基线必须现算
+      const since = Date.now() - 24 * 60 * 60 * 1000;
+      const base = (await ctx.repo.sumLlmUsage({ since, identity: null })).calls;
+      const limit = base + 2;
+      Object.assign(cfg, {
+        identityDailyCalls: 0,
+        identityDailyTokens: 0,
+        anonymousDailyCalls: limit,
+        anonymousDailyTokens: 0,
+        systemDailyCalls: 0,
+        systemDailyTokens: 0,
+      });
+
+      await insertUsageRow(rows[0], "quota_boundary", null);
+      expect(await checkLlmQuota(ctx, null)).toEqual({ ok: true });
+
+      await insertUsageRow(rows[1], "quota_boundary", null);
+      const blocked = await checkLlmQuota(ctx, null);
+      expect(blocked.ok).toBe(false);
+      if (!blocked.ok) {
+        expect(blocked.error).toMatchObject({ scope: "anonymous", metric: "calls", limit, used: limit });
+        expect(blocked.error.retryAfterMs).toBeGreaterThan(0);
+      }
+
+      // 有身份时不再落进「无法归属流量」的合池；identity 档为 0 表示关闭
+      expect(await checkLlmQuota(ctx, "anon:someone")).toEqual({ ok: true });
+    } finally {
+      Object.assign(cfg, saved);
+      await ctx.repo.run("DELETE FROM llm_usage WHERE id IN (?, ?)", rows);
+    }
   });
 });

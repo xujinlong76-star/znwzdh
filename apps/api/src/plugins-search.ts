@@ -87,12 +87,17 @@ async function slugsByVector(
   const matches = await ctx.pluginVectors.search(vec, limit);
   const slugs: string[] = [];
   const scoreBySlug = new Map<string, number>();
+  // 与站点检索同一把尺子：只认 similarity（各存储实现的 distance 度量不同，
+  // 1 - distance 在 sqlite-vec 的 L2 下会把「不相关」算成 0.5 左右）。
+  // 低于闸门的命中不构成「语义命中」——全部被剔时回退关键词并如实标 degraded。
+  const minSimilarity = ctx.config.search.semanticMinSimilarity;
   for (const m of matches) {
+    if (minSimilarity > 0 && m.similarity < minSimilarity) continue;
     const slug = pluginSlugFromVectorId(m.siteId);
     if (!slug || scoreBySlug.has(slug)) continue;
     slugs.push(slug);
-    // 余弦距离 -> 相似度分数（越小越近；仅供展示与调试，不参与排序）
-    scoreBySlug.set(slug, Number((1 - m.distance).toFixed(4)));
+    // 仅供展示与调试，不参与排序
+    scoreBySlug.set(slug, Number(m.similarity.toFixed(4)));
   }
   return { slugs, scoreBySlug };
 }

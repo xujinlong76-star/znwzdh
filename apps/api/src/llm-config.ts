@@ -33,6 +33,8 @@ import {
 import { z } from "zod";
 import type { AppConfig } from "./config.ts";
 import type { AppContext } from "./context.ts";
+// 循环 import 是安全的：两边都只导出函数声明（提升），且互调用发生在请求期而非模块求值期
+import { resolveLlmPrice } from "./llm-prices.ts";
 
 /** system_states 中的配置键（带版本号，便于未来结构演进） */
 export const SYSTEM_LLM_CONFIG_KEY = "ai.llm.config.v1";
@@ -396,6 +398,20 @@ export function llmProviderReady(
 ): boolean {
   if (!provider) return false;
   return Boolean(provider.apiKey) || provider.allowPrivateNetwork === true;
+}
+
+/**
+ * 任一候选可用即视为「模型能跑」。
+ *
+ * 只看主模型会把「主模型没配密钥、备用池可用」误判成未配置：路由据此回
+ * `degraded=unconfigured` 的 JSON 降级，用户永远走不到本来能工作的备用模型。
+ * 轮换语义在 `callLlmStream` 里：可用候选按序尝试，不可用的直接跳过。
+ */
+export function llmProviderReadyAny(
+  resolved: Pick<ResolvedLlm, "provider" | "fallbacks"> | null | undefined,
+): boolean {
+  if (!resolved) return false;
+  return llmProviderReady(resolved.provider) || resolved.fallbacks.some((fb) => llmProviderReady(fb));
 }
 
 /* ------------------------------------------------------------------ *
@@ -846,6 +862,7 @@ export async function testLlmProvider(
       completionTokens: result.usage.completionTokens,
       latencyMs,
       ok: true,
+      price: await resolveLlmPrice(ctx, result.model),
     });
     return {
       ok: true,
@@ -863,6 +880,7 @@ export async function testLlmProvider(
       latencyMs,
       ok: false,
       errorCode: err instanceof LlmError ? err.code : "network",
+      price: await resolveLlmPrice(ctx, input.model),
     });
     if (err instanceof LlmError) {
       return {

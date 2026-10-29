@@ -21,6 +21,7 @@ import {
 } from "@navhub/ai";
 import type { AppContext } from "./context.ts";
 import { llmProviderReady, type ResolvedLlm } from "./llm-config.ts";
+import { resolveLlmPrice } from "./llm-prices.ts";
 
 export interface CallLlmOptions {
   scenario: "copilot" | "ai_chat" | "canvas" | "health_audit" | "config_test" | "enrich" | string;
@@ -122,6 +123,8 @@ export async function callLlm(
         // 端点拒收思维链参数时会去参重试；记账必须按「实际下发」而不是「请求了」，
         // 否则大盘的「思考调用数」把没思考的调用也算进去了。
         thinking: res.thinkingApplied ?? thinking,
+        // 单价快照按「实际应答的模型」取：备用池换过家时，主模型的价格不适用
+        price: await resolveLlmPrice(ctx, res.model || provider.model),
       });
 
       return res;
@@ -154,6 +157,7 @@ export async function callLlm(
         ok: false,
         errorCode,
         thinking,
+        price: await resolveLlmPrice(ctx, provider.model),
       });
       /**
        * 换 provider 只对「这家现在不行」有意义，且必须过预算闸门：
@@ -222,7 +226,9 @@ export async function* callLlmStream(
     let emitted = false;
     try {
       for await (const event of chatStream(effectiveProvider, chatOpts)) {
-        if (event.type === "delta") emitted = true;
+        // reasoning 也算「已经开流」：思考链已经推给用户，此时换模型会把
+        // 两家模型的推理过程拼成一段，比失败更糟
+        if (event.type === "delta" || event.type === "reasoning") emitted = true;
         if (event.type === "end") {
           fallbackRetryBudget.recordSuccess();
           await ctx.repo.recordLlmUsage({
@@ -236,6 +242,7 @@ export async function* callLlmStream(
             ok: true,
             // 网关按「实际是否下发思维链参数」回报，不用请求值冒充
             thinking: event.thinkingApplied,
+            price: await resolveLlmPrice(ctx, event.model || provider.model),
           });
         }
         yield event;
@@ -257,6 +264,7 @@ export async function* callLlmStream(
         ok: false,
         errorCode,
         thinking,
+        price: await resolveLlmPrice(ctx, provider.model),
       });
       // 已经把内容发出去再换模型 = 两段回答拼接，只能原样失败
       if (emitted) throw err;
@@ -288,17 +296,20 @@ export function createEnrichUsageCallback(
     errorCode?: string;
     thinking?: boolean;
   }) => {
-    void ctx.repo.recordLlmUsage({
-      scenario,
-      source,
-      model: call.model,
-      identity,
-      promptTokens: call.promptTokens,
-      completionTokens: call.completionTokens,
-      latencyMs: call.latencyMs,
-      ok: call.ok,
-      errorCode: call.errorCode,
-      thinking: Boolean(call.thinking),
-    });
+    void (async () => {
+      await ctx.repo.recordLlmUsage({
+        scenario,
+        source,
+        model: call.model,
+        identity,
+        promptTokens: call.promptTokens,
+        completionTokens: call.completionTokens,
+        latencyMs: call.latencyMs,
+        ok: call.ok,
+        errorCode: call.errorCode,
+        thinking: Boolean(call.thinking),
+        price: await resolveLlmPrice(ctx, call.model),
+      });
+    })();
   };
 }

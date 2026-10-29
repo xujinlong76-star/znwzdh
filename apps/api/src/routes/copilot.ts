@@ -10,9 +10,9 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { isUpstreamCancelNotice, LlmError } from "@navhub/ai";
-import type { Site as NavSite } from "@navhub/core";
+import type { CopilotFrame, Site as NavSite } from "@navhub/core";
 import type { AppContext } from "../context.ts";
-import { llmProviderReady, resolveLlm, type ResolvedLlm } from "../llm-config.ts";
+import { llmProviderReadyAny, resolveLlm, type ResolvedLlm } from "../llm-config.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
 import { callLlm, callLlmStream, INTERACTIVE_LLM_BUDGET_MS } from "../llm-usage.ts";
 import { citationOfSite, groundCopilotReply, type CopilotCitation } from "../copilot-grounding.ts";
@@ -393,7 +393,7 @@ function buildFallbackBody(prep: CopilotPrep, degradedOverride?: "error" | "quot
   const retrieval = prep.retrieval;
   const quotaInfo = prep.quotaInfo;
   const degraded = degradedOverride ??
-    (quotaInfo ? "quota" : llmProviderReady(prep.llm.provider) ? "error" : "unconfigured");
+    (quotaInfo ? "quota" : llmProviderReadyAny(prep.llm) ? "error" : "unconfigured");
   const fallbackSites = retrieval.sites.slice(0, COPILOT_FALLBACK_LIMIT);
 
   let preamble: string;
@@ -467,7 +467,7 @@ async function streamCopilotReply(
 ): Promise<FastifyReply> {
   setupSseStream(reply);
   let closed = false;
-  const write = (payload: unknown) => {
+  const write = (payload: CopilotFrame) => {
     if (closed) return;
     try {
       reply.raw.write("data: " + JSON.stringify(payload) + "\n\n");
@@ -600,15 +600,27 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
     const prep = await prepareCopilot(ctx, reply, req, { message, thinking, history, context });
 
     /**
+     * 取消闸门（准备阶段）：浏览器在检索/额度阶段就走了。既不该开流，
+     * 也不该把这次取消记成「调模型后取消」——stage 决定大盘里取消率的归因。
+     */
+    if (clientSignal.aborted) {
+      prep.recordCopilot("copilot_cancel", { stage: "pre_llm" });
+      reply.code(499);
+      return { ok: false, error: "请求已取消", code: "client_closed" };
+    }
+
+    /**
      * 流式只在「模型真能跑」时开启：额度/未配置这两类降级没有逐段内容可推，
      * 直接回与旧版完全相同的一次性 JSON，前端按 content-type 分流。
+     * 「能跑」看整个候选池：主模型没配密钥但备用池可用时仍应尝试，而不是
+     * 直接告诉用户未配置。
      */
-    if (stream && prep.quotaInfo === null && llmProviderReady(prep.llm.provider)) {
+    if (stream && prep.quotaInfo === null && llmProviderReadyAny(prep.llm)) {
       return streamCopilotReply(ctx, reply, prep, clientSignal, cleanupAbort);
     }
 
     try {
-      if (prep.quotaInfo === null && llmProviderReady(prep.llm.provider)) {
+      if (prep.quotaInfo === null && llmProviderReadyAny(prep.llm)) {
         const { candidates } = prep;
         const res = await callLlm(ctx, prep.llm, {
           scenario: "copilot",
@@ -660,7 +672,7 @@ export const copilotRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app
      * 「用户按了停止」在大盘里长成「降级答案成功」，取消率永远量不出来。
      */
     if (clientSignal.aborted) {
-      const reachedLlm = prep.quotaInfo === null && llmProviderReady(prep.llm.provider);
+      const reachedLlm = prep.quotaInfo === null && llmProviderReadyAny(prep.llm);
       prep.recordCopilot("copilot_cancel", { stage: reachedLlm ? "llm" : "pre_llm" });
       reply.code(499);
       return { ok: false, error: "请求已取消", code: "client_closed" };

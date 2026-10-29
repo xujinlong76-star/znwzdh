@@ -499,11 +499,23 @@ CREATE TABLE IF NOT EXISTS llm_usage (
   ok INTEGER NOT NULL,
   error_code TEXT,
   thinking INTEGER NOT NULL DEFAULT 0,
+  cost_rmb REAL,
+  prompt_price_per_1k REAL,
+  completion_price_per_1k REAL,
+  price_source TEXT,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS llm_usage_time_idx ON llm_usage(created_at);
 CREATE INDEX IF NOT EXISTS llm_usage_scenario_idx ON llm_usage(scenario, created_at);
 CREATE INDEX IF NOT EXISTS llm_usage_source_idx ON llm_usage(source, created_at);
+
+/* 分模型单价簿：写入时快照进 llm_usage，改价不重算历史成本 */
+CREATE TABLE IF NOT EXISTS llm_model_prices (
+  model TEXT PRIMARY KEY,
+  prompt_per_1k_rmb REAL NOT NULL,
+  completion_per_1k_rmb REAL NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 
 /* ------------------------- 视频库（关系化） -------------------------
  * 为什么单独建表：videos.json 是「整包文档」模型，只能整体读写，
@@ -1029,11 +1041,23 @@ CREATE TABLE IF NOT EXISTS llm_usage (
   ok BOOLEAN NOT NULL DEFAULT TRUE,
   error_code TEXT,
   thinking BOOLEAN NOT NULL DEFAULT FALSE,
+  cost_rmb DOUBLE PRECISION,
+  prompt_price_per_1k DOUBLE PRECISION,
+  completion_price_per_1k DOUBLE PRECISION,
+  price_source TEXT,
   created_at BIGINT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS llm_usage_time_idx ON llm_usage(created_at);
 CREATE INDEX IF NOT EXISTS llm_usage_scenario_idx ON llm_usage(scenario, created_at);
 CREATE INDEX IF NOT EXISTS llm_usage_source_idx ON llm_usage(source, created_at);
+
+/* 分模型单价簿：写入时快照进 llm_usage，改价不重算历史成本 */
+CREATE TABLE IF NOT EXISTS llm_model_prices (
+  model TEXT PRIMARY KEY,
+  prompt_per_1k_rmb DOUBLE PRECISION NOT NULL,
+  completion_per_1k_rmb DOUBLE PRECISION NOT NULL,
+  updated_at BIGINT NOT NULL
+);
 
 /* ------------------------- 视频库（关系化） -------------------------
  * 为什么单独建表：videos.json 是「整包文档」模型，只能整体读写，

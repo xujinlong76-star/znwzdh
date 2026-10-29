@@ -31,12 +31,28 @@ export interface LlmUsageInput {
   errorCode?: string | null;
   /** 本次是否启用了深度思考 */
   thinking?: boolean;
+  /**
+   * 调用时命中的单价（¥/1K tokens，输入/输出分开）。缺省 = 没有可用单价，
+   * 成本列写 NULL——未知成本绝不能落成 0。
+   */
+  price?: LlmUsagePrice | null;
 }
 
-export interface LlmUsageRecord extends Required<Omit<LlmUsageInput, "identity">> {
+export interface LlmUsagePrice {
+  promptPer1kRmb: number;
+  completionPer1kRmb: number;
+  /** book（分模型单价簿）/ legacy（单一价兼容档） */
+  source: string;
+}
+
+export interface LlmUsageRecord extends Required<Omit<LlmUsageInput, "identity" | "price">> {
   id: string;
   identity: string | null;
   createdAt: number;
+  /** 调用时折算的花费（元）；NULL = 成本未知 */
+  costRmb: number | null;
+  /** 快照来源：book / legacy；NULL = 未配置单价 */
+  priceSource: string | null;
 }
 
 export interface LlmUsageAggregate {
@@ -53,7 +69,32 @@ export interface LlmUsageAggregate {
   p50LatencyMs: number | null;
   p95LatencyMs: number | null;
   thinkingCalls: number;
-  byScenario: Array<{ scenario: string; count: number; tokens: number; avgLatencyMs: number; errorCalls: number }>;
+  /** 窗口内已知成本合计（元）；一条带单价的调用都没有时为 null */
+  totalCostRmb: number | null;
+  /** 有 / 无成本快照的调用数。覆盖率 = pricedCalls / totalCalls */
+  pricedCalls: number;
+  unpricedCalls: number;
+  /** 有成本快照的调用覆盖的 token 数（分母 totalTokens） */
+  pricedTokens: number;
+  byScenario: Array<{
+    scenario: string;
+    count: number;
+    tokens: number;
+    avgLatencyMs: number;
+    errorCalls: number;
+    /** 该场景已知成本；全无单价时为 null */
+    costRmb: number | null;
+    pricedCalls: number;
+  }>;
+  /** 分模型读数：多模型/备用池下，成本与失败率必须能按模型拆开看 */
+  byModel: Array<{
+    model: string;
+    count: number;
+    tokens: number;
+    errorCalls: number;
+    costRmb: number | null;
+    pricedCalls: number;
+  }>;
   bySource: Array<{ source: string; count: number; tokens: number }>;
   /** 最近 24 小时（本地时区）真实分桶；没有调用的小时为 0 */
   hourly: Array<{ hour: number; calls: number; tokens: number; avgLatencyMs: number }>;
@@ -71,16 +112,40 @@ function num(v: unknown, fallback = 0): number {
 /** 写入一条用量（失败静默：观测绝不能反噬业务调用） */
 export async function recordLlmUsage(repo: Repository, input: LlmUsageInput): Promise<void> {
   try {
+    const promptTokens = Math.max(0, Math.round(num(input.promptTokens)));
+    const completionTokens = Math.max(0, Math.round(num(input.completionTokens)));
+    const price =
+      input.price &&
+      Number.isFinite(input.price.promptPer1kRmb) &&
+      Number.isFinite(input.price.completionPer1kRmb) &&
+      input.price.promptPer1kRmb >= 0 &&
+      input.price.completionPer1kRmb >= 0
+        ? input.price
+        : null;
+    /**
+     * 成本只在「有单价 + 有 token 读数」时才算得出来：
+     * 模型未回 usage（成功但 token 未知）与没有单价的调用一律 NULL。
+     * 写成 0 会让合计把「不知道」当成「免费」。
+     */
+    const costRmb =
+      price && (promptTokens > 0 || completionTokens > 0)
+        ? Number(
+            (
+              (promptTokens / 1000) * price.promptPer1kRmb +
+              (completionTokens / 1000) * price.completionPer1kRmb
+            ).toFixed(6),
+          )
+        : null;
     await repo.run(
-      "INSERT INTO llm_usage (id, scenario, source, model, identity, prompt_tokens, completion_tokens, latency_ms, ok, error_code, thinking, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO llm_usage (id, scenario, source, model, identity, prompt_tokens, completion_tokens, latency_ms, ok, error_code, thinking, cost_rmb, prompt_price_per_1k, completion_price_per_1k, price_source, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
       [
         randomUUID(),
         String(input.scenario).slice(0, SCENARIO_MAX),
         String(input.source).slice(0, 20),
         String(input.model).slice(0, 120),
         input.identity ? String(input.identity).slice(0, 64) : null,
-        Math.max(0, Math.round(num(input.promptTokens))),
-        Math.max(0, Math.round(num(input.completionTokens))),
+        promptTokens,
+        completionTokens,
         Math.max(0, Math.round(num(input.latencyMs))),
         // 布尔必须按原生类型传：SQLite 由 bindSqlite 转 0/1，PostgreSQL 的
         // ok/thinking 是真 BOOLEAN 列，传整数会直接报类型错误（写入被 catch 吞掉，
@@ -88,6 +153,10 @@ export async function recordLlmUsage(repo: Repository, input: LlmUsageInput): Pr
         Boolean(input.ok),
         input.errorCode ? String(input.errorCode).slice(0, 40) : null,
         Boolean(input.thinking),
+        costRmb,
+        price ? price.promptPer1kRmb : null,
+        price ? price.completionPer1kRmb : null,
+        price ? String(price.source).slice(0, 20) : null,
         Date.now(),
       ],
     );
@@ -123,7 +192,13 @@ export async function aggregateLlmUsage(
     // 与整数比较会抛 `operator does not exist: boolean = integer`；SQLite 的 0/1
     // 在 CASE WHEN 里同样可用，因此这一种写法对两个方言都成立。
     // MIN(created_at) 也随之放进聚合：窗口内最早一条不再受下面明细 LIMIT 影响。
-    "SELECT scenario, source, COUNT(*) AS cnt, SUM(prompt_tokens) AS pt, SUM(completion_tokens) AS ct, SUM(latency_ms) AS lt, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS errs, SUM(CASE WHEN thinking THEN 1 ELSE 0 END) AS think, MIN(created_at) AS first_at FROM llm_usage WHERE created_at >= ? AND created_at <= ? GROUP BY scenario, source",
+    // 成本列同理只用 SUM/IS NULL：两个方言都返回 NULL（而不是 0）表示「无带价行」。
+    "SELECT scenario, source, COUNT(*) AS cnt, SUM(prompt_tokens) AS pt, SUM(completion_tokens) AS ct, SUM(latency_ms) AS lt, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS errs, SUM(CASE WHEN thinking THEN 1 ELSE 0 END) AS think, MIN(created_at) AS first_at, SUM(cost_rmb) AS cost, SUM(CASE WHEN cost_rmb IS NULL THEN 1 ELSE 0 END) AS unpriced, SUM(CASE WHEN cost_rmb IS NOT NULL THEN prompt_tokens + completion_tokens ELSE 0 END) AS priced_tokens FROM llm_usage WHERE created_at >= ? AND created_at <= ? GROUP BY scenario, source",
+    [since, until],
+  );
+
+  const modelRows = await repo.raw(
+    "SELECT model, COUNT(*) AS cnt, SUM(prompt_tokens) AS pt, SUM(completion_tokens) AS ct, SUM(CASE WHEN ok THEN 0 ELSE 1 END) AS errs, SUM(cost_rmb) AS cost, SUM(CASE WHEN cost_rmb IS NULL THEN 1 ELSE 0 END) AS unpriced FROM llm_usage WHERE created_at >= ? AND created_at <= ? GROUP BY model",
     [since, until],
   );
 
@@ -138,7 +213,13 @@ export async function aggregateLlmUsage(
   let promptTokens = 0;
   let completionTokens = 0;
   let thinkingCalls = 0;
-  const scenarioMap = new Map<string, { count: number; tokens: number; latency: number; errorCalls: number }>();
+  let totalCostRmb: number | null = null;
+  let unpricedCalls = 0;
+  let pricedTokens = 0;
+  const scenarioMap = new Map<
+    string,
+    { count: number; tokens: number; latency: number; errorCalls: number; cost: number | null; unpriced: number }
+  >();
   const sourceMap = new Map<string, { count: number; tokens: number }>();
 
   for (const row of grouped) {
@@ -148,6 +229,9 @@ export async function aggregateLlmUsage(
     const lt = num(row.lt);
     const errs = num(row.errs);
     const think = num(row.think);
+    // SUM(cost_rmb) 全为 NULL 时返回 NULL（两个方言一致）：保持「未知」不落 0
+    const cost = row.cost == null ? null : num(row.cost);
+    const unpriced = num(row.unpriced);
 
     totalCalls += cnt;
     errorCalls += errs;
@@ -155,13 +239,18 @@ export async function aggregateLlmUsage(
     completionTokens += ct;
     totalTokens += pt + ct;
     thinkingCalls += think;
+    unpricedCalls += unpriced;
+    pricedTokens += num(row.priced_tokens);
+    if (cost !== null) totalCostRmb = (totalCostRmb ?? 0) + cost;
 
     const scenario = String(row.scenario ?? "unknown");
-    const prev = scenarioMap.get(scenario) ?? { count: 0, tokens: 0, latency: 0, errorCalls: 0 };
+    const prev = scenarioMap.get(scenario) ?? { count: 0, tokens: 0, latency: 0, errorCalls: 0, cost: null, unpriced: 0 };
     prev.count += cnt;
     prev.tokens += pt + ct;
     prev.latency += lt;
     prev.errorCalls += errs;
+    prev.unpriced += unpriced;
+    if (cost !== null) prev.cost = (prev.cost ?? 0) + cost;
     scenarioMap.set(scenario, prev);
 
     const source = String(row.source ?? "unknown");
@@ -169,6 +258,22 @@ export async function aggregateLlmUsage(
     prevSrc.count += cnt;
     prevSrc.tokens += pt + ct;
     sourceMap.set(source, prevSrc);
+  }
+
+  const modelMap = new Map<
+    string,
+    { count: number; tokens: number; errorCalls: number; cost: number | null; unpriced: number }
+  >();
+  for (const row of modelRows) {
+    const model = String(row.model ?? "unknown");
+    const cost = row.cost == null ? null : num(row.cost);
+    modelMap.set(model, {
+      count: num(row.cnt),
+      tokens: num(row.pt) + num(row.ct),
+      errorCalls: num(row.errs),
+      cost,
+      unpriced: num(row.unpriced),
+    });
   }
 
   // 延迟分位数与小时分桶：来自明细行
@@ -221,6 +326,10 @@ export async function aggregateLlmUsage(
     p50LatencyMs: percentile(latencies, 0.5),
     p95LatencyMs: percentile(latencies, 0.95),
     thinkingCalls,
+    totalCostRmb: totalCostRmb === null ? null : Number(totalCostRmb.toFixed(6)),
+    pricedCalls: totalCalls - unpricedCalls,
+    unpricedCalls,
+    pricedTokens,
     byScenario: Array.from(scenarioMap.entries())
       .map(([scenario, v]) => ({
         scenario,
@@ -228,8 +337,20 @@ export async function aggregateLlmUsage(
         tokens: v.tokens,
         avgLatencyMs: v.count > 0 ? Math.round(v.latency / v.count) : 0,
         errorCalls: v.errorCalls,
+        costRmb: v.cost === null ? null : Number(v.cost.toFixed(6)),
+        pricedCalls: v.count - v.unpriced,
       }))
       .sort((a, b) => b.count - a.count),
+    byModel: Array.from(modelMap.entries())
+      .map(([model, v]) => ({
+        model,
+        count: v.count,
+        tokens: v.tokens,
+        errorCalls: v.errorCalls,
+        costRmb: v.cost === null ? null : Number(v.cost.toFixed(6)),
+        pricedCalls: v.count - v.unpriced,
+      }))
+      .sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model)),
     bySource: Array.from(sourceMap.entries())
       .map(([source, v]) => ({ source, count: v.count, tokens: v.tokens }))
       .sort((a, b) => b.count - a.count),
@@ -302,7 +423,7 @@ export async function sumLlmUsage(
 export async function listRecentLlmUsage(repo: Repository, limit = 20): Promise<LlmUsageRecord[]> {
   const cap = Math.min(Math.max(limit, 1), 100);
   const rows = await repo.raw(
-    "SELECT id, scenario, source, model, identity, prompt_tokens, completion_tokens, latency_ms, ok, error_code, thinking, created_at FROM llm_usage ORDER BY created_at DESC LIMIT ?",
+    "SELECT id, scenario, source, model, identity, prompt_tokens, completion_tokens, latency_ms, ok, error_code, thinking, cost_rmb, price_source, created_at FROM llm_usage ORDER BY created_at DESC LIMIT ?",
     [cap],
   );
   return rows.map((r) => ({
@@ -317,6 +438,8 @@ export async function listRecentLlmUsage(repo: Repository, limit = 20): Promise<
     ok: r.ok === true || num(r.ok) === 1,
     errorCode: r.error_code ? String(r.error_code) : null,
     thinking: r.thinking === true || num(r.thinking) === 1,
+    costRmb: r.cost_rmb == null ? null : num(r.cost_rmb),
+    priceSource: r.price_source ? String(r.price_source) : null,
     createdAt: num(r.created_at),
   }));
 }

@@ -9,7 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MemoryVectorStore } from "@navhub/store";
+import { MemoryVectorStore, pluginVectorId } from "@navhub/store";
 import type { EmbeddingService } from "@navhub/ai";
 import { buildServer } from "../src/server.ts";
 import { createContext, type AppContext } from "../src/context.ts";
@@ -203,5 +203,35 @@ describe("插件检索：桩编码器下的语义通道", () => {
       url: "/api/plugins/search?q=" + encodeURIComponent("开发者效率工具"),
     });
     expect(search.json().items.map((p: { slug: string }) => p.slug)).not.toContain(devSlug);
+  });
+
+  it("语义闸门：低于阈值的向量命中不算语义结果（回退关键词 + degraded）", async () => {
+    const prevStore = ctx.pluginVectors;
+    const prevGate = ctx.config.search.semanticMinSimilarity;
+    ctx.config.search.semanticMinSimilarity = 0.5;
+    ctx.pluginVectors = {
+      kind: "memory",
+      dim: DIM,
+      async upsert() {},
+      async remove() {},
+      async count() { return 1; },
+      async clear() {},
+      async search() {
+        // distance 看起来「很近」（0.1），similarity 只有 0.2：闸门只认后者
+        return [{ siteId: pluginVectorId(designSlug), distance: 0.1, similarity: 0.2 }];
+      },
+    };
+    try {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/plugins/search?q=" + encodeURIComponent("寻找设计灵感"),
+      });
+      const body = res.json();
+      expect(body.mode).toBe("keyword");
+      expect(body.degraded).toBe(true);
+    } finally {
+      ctx.pluginVectors = prevStore;
+      ctx.config.search.semanticMinSimilarity = prevGate;
+    }
   });
 });

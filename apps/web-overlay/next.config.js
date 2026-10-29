@@ -55,12 +55,17 @@ const nextConfig = {
     // 导航站要展示任意站点的 favicon / 截图，域名天然不可枚举，
     // 因此默认保持 https 通配；需要收紧的部署可用 NAVHUB_IMAGE_HOSTS
     // 指定白名单（逗号分隔，如 "cdn.example.com,img.example.com"）。
+    // unoptimized 必须写在 images 里（next 的 config-schema 里它是 images.strictObject
+    // 的字段）；写在 nextConfig 顶层时 Next 只会把未知键忽略掉——名字叫 unoptimized
+    // 却一点没生效，正是「看起来生效」那类陷阱。开启后图片直出、不再过 /_next/image
+    // 优化器：与媒体代理同向（任意第三方图不必由我们抓取/缓存）。
+    unoptimized: true,
     remotePatterns: (process.env.NAVHUB_IMAGE_HOSTS || "")
       .split(",")
       .map((h) => h.trim())
       .filter(Boolean)
       .map((hostname) => ({ protocol: "https", hostname }))
-      .concat([{ protocol: "https", hostname: "**" }].filter(() => !process.env.NAVHUB_IMAGE_HOSTS)),
+      .concat([{ protocol: "https", hostname: "**", pathname: "/**" }].filter(() => !process.env.NAVHUB_IMAGE_HOSTS)),
   },
   // 安全响应头：Docker 自托管走 `next start`，vercel.json 里的头在那种形态下不生效，
   // 因此把头下沉到应用本身，任何部署形态都一致。

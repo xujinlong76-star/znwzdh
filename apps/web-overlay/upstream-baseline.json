@@ -1,0 +1,28 @@
+{
+  "$comment": "自动生成，请勿手改。登记『上游派生、不在 overlay』的关键路径文件；check-web-overlay 第三向据此识别新增文件。更新：node scripts/gen-overlay-baseline.mjs --update",
+  "upstreamRef": "6ba74fab9f86aa6ba4e276c002128a8f5a0acc0a",
+  "criticalPrefixes": [
+    "src/app/admin/submissions/",
+    "src/app/admin/data/",
+    "src/app/admin/resources/download/",
+    "src/app/admin/navigation/[id]/",
+    "src/app/api/favicon/",
+    "src/app/api/favicon-im/",
+    "src/app/api/resource/check-references/",
+    "src/app/api/site-config/"
+  ],
+  "files": [
+    "src/app/admin/data/page.tsx",
+    "src/app/admin/navigation/[id]/categories/[categoryId]/items/page.tsx",
+    "src/app/admin/navigation/[id]/categories/page.tsx",
+    "src/app/admin/navigation/[id]/items/page.tsx",
+    "src/app/admin/navigation/[id]/page.tsx",
+    "src/app/admin/navigation/[id]/subcategory/[subId]/page.tsx",
+    "src/app/admin/resources/download/page.tsx",
+    "src/app/admin/submissions/page.tsx",
+    "src/app/api/favicon-im/route.ts",
+    "src/app/api/favicon/route.ts",
+    "src/app/api/resource/check-references/route.ts",
+    "src/app/api/site-config/route.ts"
+  ]
+}

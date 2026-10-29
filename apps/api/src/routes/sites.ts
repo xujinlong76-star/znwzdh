@@ -12,6 +12,7 @@ import { indexSite, indexSitesBatch } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
+import { selectEnrichmentFields } from "../enrich-fields.ts";
 import { badRequest, canSeeUnpublishedSites, clampFacets, requestIdentityOf, identityTrusted } from "./shared.ts";
 import type { AppContext } from "../context.ts";
 
@@ -107,10 +108,21 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         heuristicOnly: !quota.ok,
         onLlmCall: createEnrichUsageCallback(ctx, resolved.source, identity),
       });
-      const suggested = enriched.suggestedCategory ?? "";
-      const resolution = suggested
+      // 字段级取舍：没选 category 就不拿模型/规则的建议去解析类目，也不记类目缺口
+      const selection = selectEnrichmentFields(
+        enriched,
+        Array.isArray(rawBody.enrichFields) ? (rawBody.enrichFields as string[]) : undefined,
+      );
+      const titleToUse =
+        (typeof rawBody.title === "string" && rawBody.title.trim()) || selection.applied.title || "";
+      if (!titleToUse) {
+        reply.code(400);
+        return { error: "取消 title 字段时必须显式提供 title", appliedFields: selection.appliedFields, skippedFields: selection.skipped };
+      }
+      const categorySuggestion = selection.applied.category ?? "";
+      const resolution = categorySuggestion
         ? resolveCategoryTitleSuggestion(
-            suggested,
+            categorySuggestion,
             categories.map((c) => ({ id: c.id, title: c.title, altLabels: c.altLabels })),
           )
         : ({ status: "none" } as const);
@@ -118,15 +130,15 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
       // P1 之前这里会按建议直接建一个**根**类目（106 平铺根的成因之一）。
       const categoryId =
         resolution.status === "unique" ? resolution.categoryId : await ctx.repo.ensureUncategorized();
-      const gapTitle = suggested && resolution.status !== "unique" ? suggested : null;
+      const gapTitle = categorySuggestion && resolution.status !== "unique" ? categorySuggestion : null;
       const site = await ctx.repo.createSite({
         url: enriched.url,
-        title: (typeof rawBody.title === "string" && rawBody.title.trim()) ? rawBody.title.trim() : enriched.title,
-        description: enriched.description,
+        title: titleToUse,
+        description: selection.applied.description,
         categoryId,
         // 富化抓的是目标站自带的 icon 声明：若指向第三方图标服务（icon.horse 等）不落库
-        iconKey: sanitizeIconUrl(enriched.iconUrl),
-        tags: Array.isArray(rawBody.tags) ? (rawBody.tags as string[]) : enriched.tags,
+        iconKey: selection.applied.iconUrl ? sanitizeIconUrl(selection.applied.iconUrl) : null,
+        tags: Array.isArray(rawBody.tags) ? (rawBody.tags as string[]) : selection.applied.tags,
         source: "ai",
       });
       if (gapTitle) {
@@ -139,7 +151,7 @@ export const siteRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app, o
         });
       }
       await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
-      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance } });
+      await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance, appliedFields: selection.appliedFields, skippedFields: selection.skipped, ignoredFields: selection.ignoredFields } });
       reply.code(201);
       return site;
     }

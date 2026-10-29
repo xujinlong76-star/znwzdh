@@ -53,7 +53,33 @@ export interface EnrichmentResult {
   httpStatus: number | null;
   /** 结果来源，前端据此标注可信度 */
   provenance: "llm" | "heuristic";
+  /** 逐字段来源：审核界面据此逐项决定「采纳 / 保留原值」 */
+  fields: EnrichmentFields;
   warnings: string[];
+}
+
+/**
+ * 每个字段的值从哪来。
+ *
+ * `missing` 是"没拿到"，不是"拿到了空值"：页面没有 description 元数据、
+ * 抽不出标签、没有图标，都属于这一档。审核界面必须把它和 `scraped` 分开，
+ * 否则空值会被当成"最新信息"覆盖掉人工填写的内容。
+ */
+export type FieldSource = "llm" | "scraped" | "heuristic" | "missing";
+
+export interface EnrichmentField<T> {
+  value: T;
+  source: FieldSource;
+  /** 为什么是这个来源（missing 时说明缺什么），界面直接展示 */
+  note?: string;
+}
+
+export interface EnrichmentFields {
+  title: EnrichmentField<string>;
+  description: EnrichmentField<string>;
+  tags: EnrichmentField<string[]>;
+  category: EnrichmentField<string | null>;
+  icon: EnrichmentField<string | null>;
 }
 
 export const EnrichmentSchema = z.object({
@@ -253,6 +279,17 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
           suggestedRelations: getEnhancedSiteData(finalUrl).relations ?? [],
           iconUrl, imageUrl, lang,
           provenance: "llm",
+          fields: {
+            title: { value: payload.title, source: "llm" },
+            description: { value: payload.description, source: "llm" },
+            tags: payload.tags.length
+              ? { value: payload.tags, source: "llm" }
+              : { value: [], source: "missing", note: "模型没有给出标签" },
+            category: { value: payload.category, source: "llm" },
+            icon: iconUrl
+              ? { value: iconUrl, source: "scraped" }
+              : { value: null, source: "missing", note: "页面没有声明图标" },
+          },
           warnings,
         };
       }
@@ -263,18 +300,37 @@ export async function enrichUrl(rawUrl: string, options: EnrichOptions = {}): Pr
   }
 
   // ---- 4. 启发式降级 ----
+  const heuristicTagList = heuristicTags(fallbackText);
+  const heuristicCategoryName = heuristicCategory(fallbackText, metaTitle ?? undefined);
   return {
     url: finalUrl,
     httpStatus,
     title: fallbackTitle,
     description: metaDesc ?? "（未能获取站点描述）",
-    tags: heuristicTags(fallbackText),
-    keywords: heuristicTags(fallbackText).slice(0, 6),
-    suggestedCategory: heuristicCategory(fallbackText, metaTitle ?? undefined),
+    tags: heuristicTagList,
+    keywords: heuristicTagList.slice(0, 6),
+    suggestedCategory: heuristicCategoryName,
     suggestedFacets: heuristicFacets(finalUrl, fallbackText, lang),
     suggestedRelations: getEnhancedSiteData(finalUrl).relations ?? [],
     iconUrl, imageUrl, lang,
     provenance: "heuristic",
+    fields: {
+      title: metaTitle
+        ? { value: fallbackTitle, source: "scraped" }
+        : { value: fallbackTitle, source: "missing", note: "页面没有 title，只能用主机名占位" },
+      description: metaDesc
+        ? { value: metaDesc, source: "scraped" }
+        : { value: metaDesc ?? "", source: "missing", note: "页面没有 description 元数据" },
+      tags: heuristicTagList.length
+        ? { value: heuristicTagList, source: "heuristic" }
+        : { value: [], source: "missing", note: "关键词规则没有命中" },
+      category: heuristicCategoryName
+        ? { value: heuristicCategoryName, source: "heuristic" }
+        : { value: null, source: "missing", note: "关键词规则无法判断类目" },
+      icon: iconUrl
+        ? { value: iconUrl, source: "scraped" }
+        : { value: null, source: "missing", note: "页面没有图标，也没有可回退的 favicon 地址" },
+    },
     warnings,
   };
 }

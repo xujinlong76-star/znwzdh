@@ -299,7 +299,7 @@ export async function listVideoCategories(repo: Repository): Promise<VideoCatego
 /** 按分类分页列出条目（只返回列字段 + payload，不做 join） */
 export async function listVideoItems(
   repo: Repository,
-  opts: { categoryId?: string; limit?: number; offset?: number; healthStatus?: string } = {},
+  opts: { categoryId?: string; limit?: number; offset?: number; healthStatus?: string; platform?: string } = {},
 ): Promise<VideoItemRow[]> {
   const limit = Math.max(1, Math.min(opts.limit ?? 50, 500))
   const offset = Math.max(0, opts.offset ?? 0)
@@ -309,6 +309,7 @@ export async function listVideoItems(
     const args: unknown[] = []
     if (opts.categoryId) { where.push("category_id = ?"); args.push(opts.categoryId) }
     if (opts.healthStatus) { where.push("health_status = ?"); args.push(opts.healthStatus) }
+    if (opts.platform) { where.push("platform = ?"); args.push(opts.platform) }
     const sql =
       "SELECT * FROM video_items" +
       (where.length ? " WHERE " + where.join(" AND ") : "") +
@@ -321,6 +322,7 @@ export async function listVideoItems(
   const args: unknown[] = []
   if (opts.categoryId) { args.push(opts.categoryId); where.push(`category_id = $${args.length}`) }
   if (opts.healthStatus) { args.push(opts.healthStatus); where.push(`health_status = $${args.length}`) }
+  if (opts.platform) { args.push(opts.platform); where.push(`platform = $${args.length}`) }
   args.push(limit); const limitIdx = args.length
   args.push(offset); const offsetIdx = args.length
   const sql =
@@ -341,16 +343,43 @@ export async function getVideoItem(repo: Repository, id: string): Promise<VideoI
   return row ? rowToVideoItem(row) : null
 }
 
-export async function countVideoItems(repo: Repository, categoryId?: string): Promise<number> {
+export interface VideoItemCountFilter {
+  categoryId?: string
+  platform?: string
+  healthStatus?: string
+}
+
+/**
+ * 统计条目数。
+ *
+ * `filter` 兼容旧的 `countVideoItems(repo, categoryId)` 写法；新增 platform /
+ * healthStatus 是为了让分页接口的 `total` 与筛选条件口径一致 —— 否则带筛选时
+ * 前端会拿到「全分类总数」，分页器直接失真。
+ */
+export async function countVideoItems(
+  repo: Repository,
+  filter: string | VideoItemCountFilter = {},
+): Promise<number> {
+  const f: VideoItemCountFilter = typeof filter === "string" ? { categoryId: filter } : filter
+
   if (repo.db.dialect === "sqlite") {
-    const row = categoryId
-      ? (repo.db.sqlite!.prepare("SELECT COUNT(*) AS n FROM video_items WHERE category_id = ?").get(categoryId) as { n: number })
-      : (repo.db.sqlite!.prepare("SELECT COUNT(*) AS n FROM video_items").get() as { n: number })
+    const where: string[] = []
+    const args: unknown[] = []
+    if (f.categoryId) { where.push("category_id = ?"); args.push(f.categoryId) }
+    if (f.platform) { where.push("platform = ?"); args.push(f.platform) }
+    if (f.healthStatus) { where.push("health_status = ?"); args.push(f.healthStatus) }
+    const sql = "SELECT COUNT(*) AS n FROM video_items" + (where.length ? " WHERE " + where.join(" AND ") : "")
+    const row = repo.db.sqlite!.prepare(sql).get(...args) as { n: number }
     return Number(row?.n ?? 0)
   }
-  const res = categoryId
-    ? await repo.db.pg!.query("SELECT COUNT(*)::int AS n FROM video_items WHERE category_id = $1", [categoryId])
-    : await repo.db.pg!.query("SELECT COUNT(*)::int AS n FROM video_items")
+
+  const where: string[] = []
+  const args: unknown[] = []
+  if (f.categoryId) { args.push(f.categoryId); where.push(`category_id = $${args.length}`) }
+  if (f.platform) { args.push(f.platform); where.push(`platform = $${args.length}`) }
+  if (f.healthStatus) { args.push(f.healthStatus); where.push(`health_status = $${args.length}`) }
+  const sql = "SELECT COUNT(*)::int AS n FROM video_items" + (where.length ? " WHERE " + where.join(" AND ") : "")
+  const res = await repo.db.pg!.query(sql, args)
   return Number((res.rows[0] as { n?: number } | undefined)?.n ?? 0)
 }
 

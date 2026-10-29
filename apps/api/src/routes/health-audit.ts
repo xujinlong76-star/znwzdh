@@ -30,10 +30,14 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
    * 1. 获取全站健康度评分与自愈提案
    */
   app.get("/api/admin/audit/report", { config: { scope: "read" } }, async () => {
-    const sites = await ctx.repo.listSites({ limit: 500 });
+    const allSites = await ctx.repo.listSites({ limit: 500 });
+    // 归档 = 运营已经决定不要了（dismiss、或平替到站内既有条目）：它既不该继续占着
+    // 「待治愈」，也不该把健康分永久压住。此前把 archived 也算作异常，导致 dismiss
+    // 点了等于没点、健康分永远上不去。
+    const sites = allSites.filter((s) => s.status !== "archived");
     const totalSites = sites.length;
     const activeSites = sites.filter((s) => s.status === "active");
-    const brokenSites = sites.filter((s) => s.status === "broken" || s.status === "archived");
+    const brokenSites = sites.filter((s) => s.status === "broken");
 
     const issues: SiteHealthAuditIssue[] = [];
 
@@ -84,10 +88,12 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
    * 2. 触发一次站点自治巡检
    */
   app.post("/api/admin/audit/scan", { config: { scope: "write" } }, async (req) => {
-    const sites = await ctx.repo.listSites({ limit: 100 });
+    const allSites = await ctx.repo.listSites({ limit: 100 });
+    // 与报告同一口径：已归档的不参与巡检（见 GET /api/admin/audit/report 的说明）
+    const sites = allSites.filter((s) => s.status !== "archived");
     const totalSites = sites.length;
     const activeSites = sites.filter((s) => s.status === "active");
-    const brokenSites = sites.filter((s) => s.status === "broken" || s.status === "archived");
+    const brokenSites = sites.filter((s) => s.status === "broken");
 
     const issues: SiteHealthAuditIssue[] = [];
     for (const site of brokenSites) {
@@ -185,6 +191,37 @@ export const healthAuditRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async 
     }
     if (targetTitle) {
       updates.title = targetTitle;
+    }
+
+    /**
+     * 目标 URL 已经在站内收录时不能走「改写 URL」：兜底候选本来就取自站内同分类站点，
+     * 模型也常推荐已收录的站，直接写会撞 `sites.url` 唯一约束，运营只看到 500。
+     * 正确语义是「关联」——失效站点归档，平替结果指向既有条目，不产生重复行。
+     */
+    if (targetUrl && targetUrl !== site.url) {
+      const occupant = await ctx.repo.findSiteByUrl(targetUrl);
+      if (occupant && occupant.id !== site.id) {
+        await ctx.repo.updateSite(site.id, { status: "archived" });
+        await ctx.repo.audit({
+          ip: req.ip,
+          actor: req.auth.actor,
+          actorKind: req.auth.kind,
+          action: "audit.site_healed",
+          target: site.id,
+          diff: {
+            before: { url: site.url, status: site.status },
+            archivedFor: { siteId: occupant.id, url: occupant.url, title: occupant.title },
+            action,
+          },
+        });
+        return {
+          ok: true,
+          action,
+          site: occupant,
+          archivedSiteId: site.id,
+          merged: { siteId: occupant.id, title: occupant.title, url: occupant.url },
+        };
+      }
     }
 
     const updated = await ctx.repo.updateSite(site.id, updates);

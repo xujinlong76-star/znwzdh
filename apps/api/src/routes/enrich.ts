@@ -11,6 +11,7 @@ import { indexSite } from "../index-site.ts";
 import { enrichLlmOf, resolveLlm } from "../llm-config.ts";
 import { createEnrichUsageCallback } from "../llm-usage.ts";
 import { checkLlmQuota } from "../llm-quota.ts";
+import { selectEnrichmentFields } from "../enrich-fields.ts";
 import { requestIdentityOf, identityTrusted } from "./shared.ts";
 
 import type { AppContext } from "../context.ts";
@@ -83,6 +84,11 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       url: httpUrl(),
       categoryId: z.string().optional(),
       tags: z.array(z.string()).max(50).optional(),
+      // 建站必须有标题：取消 title 字段时必须自带标题（见 enrich-fields 的取舍说明）
+      title: z.string().min(1).max(120).optional(),
+      description: z.string().optional(),
+      /** 只应用哪些富化字段；不传 = 全应用（旧行为） */
+      enrichFields: z.array(z.string()).max(10).optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
 
@@ -100,18 +106,27 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       onLlmCall: createEnrichUsageCallback(ctx, resolved.source, budget.identity),
     });
 
-    // 分类解析：调用方指定 -> 富化建议匹配已有类目 -> 落「未分类」并产类目缺口提案
+    // 分类解析：调用方指定 -> 富化建议匹配已有类目 -> 落「未分类」并产类目缺口提案。
+    // 「富化建议」只有在调用方把 category 选进 enrichFields 时才参与：取消该字段
+    // 就是不想让模型碰类目，这时也不该再拿它的建议去记一条类目缺口提案。
+    const selection = selectEnrichmentFields(enriched, body.data.enrichFields);
+    const titleToUse = body.data.title ?? selection.applied.title;
+    if (!titleToUse) {
+      reply.code(400);
+      return { error: "取消 title 字段时必须显式提供 title", appliedFields: selection.appliedFields, skippedFields: selection.skipped };
+    }
+
     let categoryId = body.data.categoryId ?? null;
     let gapTitle: string | null = null;
     let ambiguousCategoryIds: string[] = [];
-    if (!categoryId && enriched.suggestedCategory) {
+    if (!categoryId && selection.applied.category) {
       const resolution = resolveCategoryTitleSuggestion(
-        enriched.suggestedCategory,
+        selection.applied.category,
         categories.map((c) => ({ id: c.id, title: c.title, altLabels: c.altLabels })),
       );
       if (resolution.status === "unique") categoryId = resolution.categoryId;
       else {
-        gapTitle = enriched.suggestedCategory;
+        gapTitle = selection.applied.category;
         if (resolution.status === "ambiguous") ambiguousCategoryIds = resolution.categoryIds;
       }
     }
@@ -121,12 +136,12 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
 
     const site = await ctx.repo.createSite({
       url: enriched.url,
-      title: enriched.title,
-      description: enriched.description,
+      title: titleToUse,
+      description: body.data.description ?? selection.applied.description,
       categoryId,
       // 富化抓的是目标站自带的 icon 声明：若指向第三方图标服务（icon.horse 等）不落库
-      iconKey: sanitizeIconUrl(enriched.iconUrl),
-      tags: body.data.tags ?? enriched.tags,
+      iconKey: selection.applied.iconUrl ? sanitizeIconUrl(selection.applied.iconUrl) : null,
+      tags: body.data.tags ?? selection.applied.tags,
       source: "ai",
     });
     // 建不建这个类目是编辑决策：模型自由发挥的名字直接进树 = 106 个平铺根的成因
@@ -134,13 +149,17 @@ export const enrichRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (app,
       ? await ctx.repo.recordCategoryGap({ title: gapTitle, siteId: site.id, siteUrl: site.url, source: "AI 富化", ambiguousCategoryIds })
       : null;
     await indexSite(ctx, site.id, site.title, site.description ?? null, site.url);
-    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance, categoryGap: categoryGap?.proposalId ?? null, aiSkipped: budget.llmBlocked ? "quota" : null } });
+    await ctx.repo.audit({ ip: req.ip, actor: req.auth.actor, actorKind: req.auth.kind, action: "site.auto", target: site.id, diff: { provenance: enriched.provenance, categoryGap: categoryGap?.proposalId ?? null, aiSkipped: budget.llmBlocked ? "quota" : null, appliedFields: selection.appliedFields, skippedFields: selection.skipped } });
     reply.code(201);
     return {
       created: true,
       site,
       enrichment: enriched,
       categoryGap,
+      // 审核界面与调用方都要能对上账：哪些字段真的写进去了、哪些因为没值被跳过
+      appliedFields: selection.appliedFields,
+      skippedFields: selection.skipped,
+      ignoredFields: selection.ignoredFields,
       ...(budget.llmBlocked ? { aiSkipped: "quota" as const, quota: budget.quotaInfo } : {}),
     };
   });

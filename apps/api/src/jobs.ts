@@ -129,6 +129,17 @@ export const DEFAULT_CRON_SCHEDULES: CronScheduleConfig[] = [
   { kind: "user_data_audit", intervalMs: 86_400_000 },
 ];
 
+/**
+ * 只能手动触发、**绝不进 DEFAULT_CRON_SCHEDULES** 的 kind。
+ *
+ * 入队只看 `checkRecurringSchedules()` 遍历的那张表（按 intervalMs 到期），
+ * 与 cron 表达式、`cronDue()` 都无关 —— 所以「cron: "MANUAL"」并不构成保护：
+ * 把这些 kind 加进排期表，它们就会按 intervalMs 真的自动跑起来。
+ * backup_restore 一旦自动执行，是按备份把库改回去，属不可逆操作。
+ * 守卫在 apps/api/test/upgrade-batch1.test.ts「手动专属任务绝不被排期」。
+ */
+export const MANUAL_ONLY_KINDS: JobKind[] = ["backup_restore"];
+
 const LOCK_KEY = "lock:job-runner";
 /**
  * SQLite 持锁有效期（不是「任务预算」）：崩溃后最多等这么久，别的实例就能接管。
@@ -195,6 +206,27 @@ export async function runWithBudget<T>(work: Promise<T>, budgetMs: number, kind:
   }
 }
 
+/** 分批任务在预算到点前留出的默认安全余量：最后一次抓取不能把预算吃穿。 */
+export const HEALTH_CHECK_SAFETY_MARGIN_MS = 10_000;
+
+/**
+ * health_check 的协作式截止时间（0 表示不设截止）。
+ *
+ * `runWithBudget` 只能让 Runner 脱身，handler 本身还在跑；分批巡检真正需要的
+ * 是「在预算内主动停手，剩余顺延下一次」。余量必须覆盖最后一次抓取的最坏耗时
+ * （fetch.timeoutMs），否则边界上仍会撞上外层硬预算。余量再按预算的 1/4 封顶，
+ * 让很小的预算（测试）按比例缩小，不会算出早于起点的截止时间。
+ */
+export function healthCheckDeadline(
+  attemptStartedAt: number,
+  budgetMs: number,
+  safetyMs = HEALTH_CHECK_SAFETY_MARGIN_MS,
+): number {
+  if (budgetMs <= 0) return 0;
+  const margin = Math.min(safetyMs, Math.floor(budgetMs / 4));
+  return attemptStartedAt + budgetMs - margin;
+}
+
 /**
  * 轮询间隔可配置：`NAVHUB_JOBS_INTERVAL_MS`（毫秒，默认 30000）。
  * 环境变量而不是 config 字段——它是 Runner 的运行参数，不进能力面。
@@ -242,9 +274,9 @@ export const DEFAULT_SCHEDULES: Record<JobKind, Required<JobSchedulePolicy>> = {
   /**
    * 备份恢复：**手动触发，绝不自动调度**。
    *
-   * cron 只是声明值（真正入队看 DEFAULT_CRON_SCHEDULES），而本 kind 刻意不在那个
-   * 列表里——否则每天会自动跑一次恢复，把库改回备份状态。`cronDue("MANUAL")`
-   * 因为不是 5 段表达式而恒返回 false，即使有人误把它加进 cron 列表也会静默不触发。
+   * cron 只是声明值，真正入队看 DEFAULT_CRON_SCHEDULES 的 intervalMs —— 本 kind
+   * 刻意不在那张表里，且由 MANUAL_ONLY_KINDS 与守卫测试双保险。注意「误加进
+   * 排期表也不会触发」的说法是错的：入队不查 cronDue，加进去就会真跑。
    * 预算按 5 万条 + 分片写锁给到 30 分钟。
    */
   backup_restore: { cron: "MANUAL", timeoutMs: 1_800_000, maxConcurrency: 1 },
@@ -384,6 +416,8 @@ export interface JobRunnerOptions {
   jobHeartbeatMs?: number;
   /** 连续失败告警阈值（达到后 log.error 一次；测试可注入回调收集） */
   onAlert?: (message: string, detail: { kind: string; attempts: number; error: string }) => void;
+  /** 覆盖单次执行预算（测试与本地演练用；生产沿用 DEFAULT_SCHEDULES） */
+  budgetOverrides?: Partial<Record<JobKind, number>>;
 }
 
 export class JobRunner {
@@ -395,6 +429,7 @@ export class JobRunner {
   private lockHeartbeatMs: number;
   private jobHeartbeatMs: number;
   private onAlert: JobRunnerOptions["onAlert"];
+  private budgetOverrides: JobRunnerOptions["budgetOverrides"];
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
   private lockHeld = false;
@@ -412,6 +447,7 @@ export class JobRunner {
     this.lockHeartbeatMs = opts.lockHeartbeatMs ?? LOCK_HEARTBEAT_DEFAULT_MS;
     this.jobHeartbeatMs = opts.jobHeartbeatMs ?? JOB_HEARTBEAT_DEFAULT_MS;
     this.onAlert = opts.onAlert;
+    this.budgetOverrides = opts.budgetOverrides;
   }
 
   /** 当前轮询间隔（启动横幅与 /admin/jobs 展示用） */
@@ -674,11 +710,16 @@ export class JobRunner {
      * 所以超时**不重试**（见 catch 里的 JobBudgetExceededError 分支），
      * 避免同一任务被两个执行流并发处理。
      */
-    const budgetMs = DEFAULT_SCHEDULES[kind]?.timeoutMs ?? 0;
+    const budgetMs = this.budgetOverrides?.[kind] ?? DEFAULT_SCHEDULES[kind]?.timeoutMs ?? 0;
     const execution = (async (): Promise<void> => {
       switch (kind) {
         case "health_check":
-          await this.runHealthCheck((payload ?? {}) as { siteId?: string; limit?: number });
+          // 分批巡检走协作式截止：预算内主动停手、剩余顺延，不把整轮标失败。
+          // 余量按 fetch 超时 + 2s 兑现，保证「最后一次抓取」也落在外层硬预算内。
+          await this.runHealthCheck(
+            (payload ?? {}) as { siteId?: string; limit?: number },
+            healthCheckDeadline(attemptStartedAt, budgetMs, this.ctx.config.fetch.timeoutMs + 2_000),
+          );
           break;
         case "refetch_metadata":
           await this.runRefetch((payload ?? {}) as { siteId?: string; llm?: boolean });
@@ -863,7 +904,7 @@ export class JobRunner {
   }
 
   /** 健康巡检：与 MCP health_check 同一套抓取逻辑，但走仓储（双方言） */
-  private async runHealthCheck(payload: { siteId?: string; limit?: number }): Promise<void> {
+  private async runHealthCheck(payload: { siteId?: string; limit?: number }, deadlineAt = 0): Promise<void> {
     const { guardedFetch } = await import("@navhub/ai");
     const limit = payload.limit ?? 50;
     const found: Array<SiteRow | null> = payload.siteId
@@ -871,7 +912,12 @@ export class JobRunner {
       : await this.patrolTargets(limit);
     const targets = found.filter((s): s is SiteRow => Boolean(s));
     let ok = 0;
+    let checked = 0;
     for (const site of targets) {
+      // 协作式截止：到点就收手。patrolTargets 按「上次巡检最久」优先挑选，
+      // 所以停下的这批下一次（下一轮排期）会被排在最前面，不会饿死。
+      if (deadlineAt > 0 && Date.now() >= deadlineAt) break;
+      checked++;
       const t0 = Date.now();
       try {
         const res = await guardedFetch(site!.url, { ...this.ctx.config.fetch });
@@ -912,7 +958,15 @@ export class JobRunner {
         });
       }
     }
-    await this.ctx.repo.recordEvent("health_check", { meta: { checked: targets.length, ok } }).catch(() => undefined);
+    const deferred = targets.length - checked;
+    if (deferred > 0) {
+      console.warn("[navhub-job] health_check 预算到点，剩余站点顺延下一轮", {
+        planned: targets.length,
+        checked,
+        deferred,
+      });
+    }
+    await this.ctx.repo.recordEvent("health_check", { meta: { planned: targets.length, checked, ok, deferred } }).catch(() => undefined);
   }
 
   /**

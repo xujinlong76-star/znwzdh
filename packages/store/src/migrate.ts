@@ -73,6 +73,12 @@ export const COLUMN_ALTERS: ColumnAlter[] = [
   // 行为事件身份独立列（原藏在 meta JSON 里，LIKE 过滤走不了索引）。
   // 补齐后由 migrateEventIdentity 从 meta 回填历史行。
   { table: "events", column: "identity", sqlite: "TEXT", pg: "TEXT" },
+  // 幂等键物化列（原只在 meta JSON 里，去重只能 LIKE 预筛 + 应用层解析）。
+  // event_day 是 created_at 的日桶（created_at - created_at % 86400000 的商），
+  // 与 event_id 一起进唯一索引：同一天同键只许一行，跨天复用视为新动作。
+  // 历史行为 NULL，部分索引把它们排除在外（回填没有意义：老行本来就没有键）。
+  { table: "events", column: "event_id", sqlite: "TEXT", pg: "TEXT" },
+  { table: "events", column: "event_day", sqlite: "INTEGER", pg: "BIGINT" },
   // 标签多维分组与概念别名（Taxonomy Phase 1）
   { table: "tags", column: "group_name", sqlite: "TEXT NOT NULL DEFAULT 'topic'", pg: "TEXT NOT NULL DEFAULT 'topic'" },
   { table: "tags", column: "color", sqlite: "TEXT", pg: "TEXT" },
@@ -340,6 +346,10 @@ export async function migrateSiteIndexes(db: { dialect: string; sqlite?: any; pg
     // 增量同步游标：WHERE user_id = ? AND updated_at > ? 的主路径
     "CREATE INDEX IF NOT EXISTS favorites_user_updated_idx ON favorites(user_id, updated_at)",
     "CREATE INDEX IF NOT EXISTS events_identity_created_idx ON events(identity, created_at)",
+    // 幂等键的硬约束：LIKE 预筛是快速路径，并发重放/预筛异常时由这条部分唯一索引兜底。
+    // 参与键的 site_id 为 NULL 时（非站点类事件）各方言的唯一索引都不互斥——这是刻意的：
+    // 没有 siteId 就没有「同一站点的重复点击」语义，交给应用层判断。
+    "CREATE UNIQUE INDEX IF NOT EXISTS events_event_id_uniq ON events(kind, site_id, event_id, event_day) WHERE event_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS plugins_owner_identity_idx ON plugins(owner_identity)",
     "CREATE INDEX IF NOT EXISTS health_checks_checked_idx ON health_checks(checked_at)",
     "CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, id DESC)",

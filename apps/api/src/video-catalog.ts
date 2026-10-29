@@ -494,6 +494,45 @@ export async function syncReplacementHistorySafely(
   }
 }
 
+/** 分页大小：与 repository 内部的单次上限保持一致（传更大值也会被夹到 500） */
+const VIDEO_ITEM_PAGE_SIZE = 500
+
+/** 全量重建的条目硬上限：防止误配或数据异常把进程内存打满 */
+const VIDEO_REBUILD_MAX_ITEMS = (() => {
+  const raw = Number(process.env.NAVHUB_VIDEO_REBUILD_MAX || 50000)
+  return Number.isFinite(raw) && raw >= 1000 ? Math.floor(raw) : 50000
+})()
+
+/**
+ * 分页读全表条目。
+ *
+ * 历史实现是单次 `listVideoItems({ limit: 500 })`，条目数一旦超过 500 就整条
+ * 读路径回落 KV —— 当前库有 5,578 条，于是 `NAVHUB_VIDEO_STORE=db` 永远读不到
+ * 关系表，灰度开关形同虚设（还照样付着双写的成本）。
+ *
+ * 这里按 500 一页翻到底；上限用 `NAVHUB_VIDEO_REBUILD_MAX` 控制，超限时抛错，
+ * 由调用方决定回落（而不是静默截断成半份视频库）。
+ */
+async function listAllVideoItems(ctx: AppContext, total: number): Promise<VideoItemRow[]> {
+  if (total > VIDEO_REBUILD_MAX_ITEMS) {
+    throw Object.assign(
+      new Error(
+        `关系表条目数 ${total} 超过全量重建上限 ${VIDEO_REBUILD_MAX_ITEMS}；` +
+          `请调大 NAVHUB_VIDEO_REBUILD_MAX，或改用分页接口读取`,
+      ),
+      { statusCode: 413 },
+    )
+  }
+
+  const out: VideoItemRow[] = []
+  for (let offset = 0; offset < total; offset += VIDEO_ITEM_PAGE_SIZE) {
+    const page = await listVideoItems(ctx.repo, { limit: VIDEO_ITEM_PAGE_SIZE, offset })
+    if (page.length === 0) break
+    out.push(...page)
+  }
+  return out
+}
+
 /**
  * 从关系表读取完整文档。
  *
@@ -505,19 +544,31 @@ export async function loadVideoCatalogFromDb(ctx: AppContext): Promise<Record<st
   const itemCount = await countVideoItems(ctx.repo)
   if (itemCount === 0) return null
 
-  const [categories, items, replacements] = await Promise.all([
-    listVideoCategories(ctx.repo),
-    listVideoItems(ctx.repo, { limit: 500 }),
-    // 只取内联语义允许的条数：表里可能是**全量**（由 video-replacements.json 同步），
-    // 而重建出来的 videos.json 是整包文档，不能把几千条审计塞回去。
-    // 全量历史请走 /api/videos/history（读外置文档）或直接查 video_replacements 表。
-    listVideoReplacements(ctx.repo, { limit: INLINE_REPLACEMENT_LIMIT }),
-  ])
+  let categories: Awaited<ReturnType<typeof listVideoCategories>>
+  let items: VideoItemRow[]
+  let replacements: Awaited<ReturnType<typeof listVideoReplacements>>
 
-  // 条目超过单次上限（500）时不能静默截断：宁可回落文档，也不返回残缺的视频库
+  try {
+    ;[categories, items, replacements] = await Promise.all([
+      listVideoCategories(ctx.repo),
+      listAllVideoItems(ctx, itemCount),
+      // 只取内联语义允许的条数：表里可能是**全量**（由 video-replacements.json 同步），
+      // 而重建出来的 videos.json 是整包文档，不能把几千条审计塞回去。
+      // 全量历史请走 /api/videos/history（读外置文档）或直接查 video_replacements 表。
+      listVideoReplacements(ctx.repo, { limit: INLINE_REPLACEMENT_LIMIT }),
+    ])
+  } catch (err) {
+    // 读路径不能因为影子表异常就让视频库消失：回落 KV 并留下可排查的日志
+    console.warn(
+      `[video-catalog] 关系表读取失败，已回落文档读取：${err instanceof Error ? err.message : String(err)}`,
+    )
+    return null
+  }
+
+  // 分页读到的条目数与 COUNT(*) 不一致：宁可回落文档，也不返回残缺的视频库
   if (items.length < itemCount) {
     console.warn(
-      `[video-catalog] 关系表条目数 ${itemCount} 超过单次读取上限，已回落文档读取以避免截断`,
+      `[video-catalog] 关系表条目数 ${itemCount}，实际读到 ${items.length}，已回落文档读取以避免截断`,
     )
     return null
   }
@@ -552,10 +603,12 @@ export async function checkVideoCatalogConsistency(
   data: unknown,
 ): Promise<VideoCatalogCheckResult> {
   const flattened = flattenVideoCatalog(data)
-  const [categories, items] = await Promise.all([
+  // 一致性检查必须读全表：只读前 500 行会把「表里多出来的条目」全判成缺失
+  const [categories, dbItemCount] = await Promise.all([
     listVideoCategories(ctx.repo),
-    listVideoItems(ctx.repo, { limit: 500 }),
+    countVideoItems(ctx.repo),
   ])
+  const items = await listAllVideoItems(ctx, dbItemCount)
 
   const docIds = new Set(flattened.items.map(i => i.id))
   const dbIds = new Set(items.map(i => i.id))

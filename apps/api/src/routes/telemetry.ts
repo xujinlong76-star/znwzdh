@@ -40,6 +40,13 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
     // 登录后「本机偏好 → 云端」交接：只在交接被尝试时上报，
     // 云端已有行的正常运行不发消息（否则分母会被每次页面加载灌满）。
     "settings_handoff",
+    /**
+     * 点击投递的失败/修复面（低基数、只在「差点丢了」时发）：
+     * click 成功送达本身就是事件，不需要再报一次；这个 kind 只记
+     * 入队（failed/enqueued）、补送成功（success/drained）、按同意删除（deleted/consent_off）。
+     * 有了它，「点击 → 落库」的分母才不再只能靠 visit_count 为 0 反推。
+     */
+    "click_delivery",
   ] as const;
 
   /** outcome 词表（有界）：每条分支的成败，与各 kind 组合后仍能一笔画出漏斗 */
@@ -72,6 +79,15 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
       /** 身份标识（登录 userId 或匿名 anonId），用于归属画像聚合 */
       userId: z.string().max(64).optional(),
       anonId: z.string().max(64).optional(),
+      /**
+       * 客户端幂等键：端侧「点击出箱」会在回到线上后重放同一条证据，
+       * 没有这个键，重放就会给 `visit_count` 多加 1（该列本机实测 99.8% 为 0，
+       * 是排序的次键，重复计数会被小分母放大成错误排名）。
+       * 字符集与长度必须受限：它会被拼进 `meta LIKE ?` 的匹配模式。
+       */
+      eventId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
+      /** 客户端事件时刻（毫秒）：重放时保住真实点击时间，不被服务端 now() 抹平 */
+      clientCreatedAt: z.number().int().positive().optional(),
     }).safeParse(req.body ?? {});
     if (!body.success) { reply.code(400); return { error: "参数无效", detail: body.error.issues }; }
     const rawIdentity = requestIdentityOf(req as never);
@@ -102,17 +118,24 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
           }
         : undefined;
     // 遥测事件不阻断主操作（与其余 recordEvent 调用点保持一致的容错语义）
-    await ctx.repo.recordEvent(body.data.kind, {
-      siteId: body.data.siteId,
-      query: body.data.query,
-      categoryId: body.data.categoryId,
-      meta,
-    }).catch(() => undefined);
-    if (body.data.kind === "click" && body.data.siteId) {
+    // `false` = 幂等键命中（端侧出箱重放）；此时后面的三个副作用一个都不能再走。
+    // 读失败时 store 放行插入并返回 true，故 `.catch` 的 undefined 也按「已插入」处理。
+    const inserted = await ctx.repo
+      .recordEvent(body.data.kind, {
+        siteId: body.data.siteId,
+        query: body.data.query,
+        categoryId: body.data.categoryId,
+        meta,
+        eventId: body.data.eventId,
+        clientCreatedAt: body.data.clientCreatedAt,
+      })
+      .catch(() => undefined);
+    const replayed = inserted === false;
+    if (!replayed && body.data.kind === "click" && body.data.siteId) {
       await ctx.repo.bumpVisit(body.data.siteId).catch(() => undefined);
     }
     // 在线强化学习闭环：若带有搜索词，实时反馈更新 Discounted-LinUCB 通道权重
-    if (body.data.query && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "dismiss")) {
+    if (!replayed && body.data.query && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "dismiss")) {
       const targetChannel: RetrievalChannel = body.data.channel ?? "exact";
       const explicitReward =
         body.data.kind === "favorite" ? 2.0 : body.data.kind === "dismiss" ? -0.5 : undefined;
@@ -122,8 +145,8 @@ export const telemetryRoutes: FastifyPluginAsync<{ ctx: AppContext }> = async (a
         interactionType: body.data.interactionType,
       });
     }
-    // 行为变化 -> 刷新个性化画像（节流 60s，失败静默）
-    if (recordedIdentity && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "unfavorite")) {
+    // 行为变化 -> 刷新个性化画像（节流 60s，失败静默）；重放不再刷一次
+    if (!replayed && recordedIdentity && (body.data.kind === "click" || body.data.kind === "favorite" || body.data.kind === "unfavorite")) {
       void refreshUserProfile(ctx, recordedIdentity);
     }
     return { ok: true };

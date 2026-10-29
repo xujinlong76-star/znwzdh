@@ -580,7 +580,18 @@ export class Repository {
 
   /* ------------------------- 事件与审计 ------------------------- */
 
-  async recordEvent(kind: string, payload: { siteId?: string; query?: string; categoryId?: string; identity?: string; meta?: unknown } = {}): Promise<void> {
+  async recordEvent(
+    kind: string,
+    payload: {
+      siteId?: string;
+      query?: string;
+      categoryId?: string;
+      identity?: string;
+      meta?: unknown;
+      eventId?: string;
+      clientCreatedAt?: number;
+    } = {},
+  ): Promise<boolean> {
     return eventsRepo.recordEvent(this, kind, payload);
   }
 

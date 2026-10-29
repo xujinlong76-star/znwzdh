@@ -217,7 +217,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_idx ON api_tokens(token_hash);
 
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, site_id TEXT, query TEXT,
-  category_id TEXT, meta TEXT, identity TEXT, created_at INTEGER NOT NULL
+  category_id TEXT, meta TEXT, identity TEXT, created_at INTEGER NOT NULL,
+  event_id TEXT, event_day INTEGER
 );
 CREATE INDEX IF NOT EXISTS events_kind_idx ON events(kind);
 CREATE INDEX IF NOT EXISTS events_site_idx ON events(site_id);
@@ -550,8 +551,13 @@ CREATE TABLE IF NOT EXISTS video_items (
 );
 CREATE INDEX IF NOT EXISTS video_items_category_idx ON video_items(category_id, sort);
 CREATE INDEX IF NOT EXISTS video_items_health_idx ON video_items(health_status);
--- 跨平台唯一：外部 ID 只在同一平台内唯一（B 站的 BV 与 YouTube 的 11 位 ID 是两套空间）
-CREATE UNIQUE INDEX IF NOT EXISTS video_items_external_idx
+-- 外部 ID 索引：**非唯一**。
+-- 原先是 UNIQUE(platform, external_id)，但文档模型允许同一视频出现在多个分类/子分类
+-- （实测 KV 中 74 条里有 4 个重复的 platform:externalId），唯一约束会让
+-- 「文档 → 表」的全量同步直接失败（SQLITE_CONSTRAINT_UNIQUE），关系表永远对不齐事实源。
+-- 「采集不得重复入库」由应用层 videoExternalKey 去重保证，不由这张镜像表的索引保证。
+DROP INDEX IF EXISTS video_items_external_idx;
+CREATE INDEX IF NOT EXISTS video_items_external_lookup_idx
   ON video_items(platform, external_id) WHERE external_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS video_replacements (
@@ -744,7 +750,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS api_tokens_hash_idx ON api_tokens(token_hash);
 
 CREATE TABLE IF NOT EXISTS events (
   id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL, site_id TEXT, query TEXT,
-  category_id TEXT, meta TEXT, identity TEXT, created_at BIGINT NOT NULL
+  category_id TEXT, meta TEXT, identity TEXT, created_at BIGINT NOT NULL,
+  event_id TEXT, event_day BIGINT
 );
 CREATE INDEX IF NOT EXISTS events_kind_idx ON events(kind);
 CREATE INDEX IF NOT EXISTS events_site_idx ON events(site_id);
@@ -1074,8 +1081,13 @@ CREATE TABLE IF NOT EXISTS video_items (
 );
 CREATE INDEX IF NOT EXISTS video_items_category_idx ON video_items(category_id, sort);
 CREATE INDEX IF NOT EXISTS video_items_health_idx ON video_items(health_status);
--- 跨平台唯一：外部 ID 只在同一平台内唯一（B 站的 BV 与 YouTube 的 11 位 ID 是两套空间）
-CREATE UNIQUE INDEX IF NOT EXISTS video_items_external_idx
+-- 外部 ID 索引：**非唯一**。
+-- 原先是 UNIQUE(platform, external_id)，但文档模型允许同一视频出现在多个分类/子分类
+-- （实测 KV 中 74 条里有 4 个重复的 platform:externalId），唯一约束会让
+-- 「文档 → 表」的全量同步直接失败（SQLITE_CONSTRAINT_UNIQUE），关系表永远对不齐事实源。
+-- 「采集不得重复入库」由应用层 videoExternalKey 去重保证，不由这张镜像表的索引保证。
+DROP INDEX IF EXISTS video_items_external_idx;
+CREATE INDEX IF NOT EXISTS video_items_external_lookup_idx
   ON video_items(platform, external_id) WHERE external_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS video_replacements (

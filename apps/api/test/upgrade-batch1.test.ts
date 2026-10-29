@@ -10,7 +10,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createContext, type AppContext } from "../src/context.ts";
 import { loadConfig } from "../src/config.ts";
-import { JobRunner, cronDue, scheduleCronOf, DEFAULT_SCHEDULES } from "../src/jobs.ts";
+import {
+  JobRunner,
+  cronDue,
+  scheduleCronOf,
+  DEFAULT_SCHEDULES,
+  DEFAULT_CRON_SCHEDULES,
+  JOB_KINDS,
+  MANUAL_ONLY_KINDS,
+} from "../src/jobs.ts";
 
 describe("Query Planner early-exit", () => {
   it("强精确命中剪掉语义通道并打标 planner", async () => {
@@ -111,6 +119,56 @@ describe("cron 调度语义", () => {
     // 每天 04:00 的任务：只有 4 点整到
     expect(cronDue(scheduleCronOf("data_retention"), new Date(2026, 9, 18, 4, 0, 0))).toBe(true);
     expect(cronDue(scheduleCronOf("data_retention"), new Date(2026, 9, 18, 3, 0, 0))).toBe(false);
+  });
+});
+
+describe("手动专属任务绝不被排期", () => {
+  /**
+   * 入队只看 checkRecurringSchedules() 遍历的 DEFAULT_CRON_SCHEDULES（按 intervalMs），
+   * 与 cron 表达式和 cronDue() 无关 —— 所以 cron: "MANUAL" 不是保护。
+   * 把 backup_restore 加进排期表，它就会真的自动跑：按备份把库改回去，不可逆。
+   */
+  const scheduled = new Set(DEFAULT_CRON_SCHEDULES.map((s) => s.kind));
+
+  it("MANUAL_ONLY_KINDS 一个都不在排期表里，且 cron 声明为 MANUAL", () => {
+    expect(MANUAL_ONLY_KINDS.length).toBeGreaterThan(0);
+    for (const kind of MANUAL_ONLY_KINDS) {
+      expect(
+        scheduled.has(kind),
+        `${kind} 出现在 DEFAULT_CRON_SCHEDULES：会被 intervalMs 真的自动入队`,
+      ).toBe(false);
+      expect(DEFAULT_SCHEDULES[kind].cron).toBe("MANUAL");
+      expect(cronDue(scheduleCronOf(kind))).toBe(false);
+    }
+  });
+
+  it("每个 JobKind 的归属明确：排期 / 手动 / 按需各一次（新增 kind 不会静默永不运行）", () => {
+    /**
+     * 第三类「按需」指只能由调用方入队、不走 intervalMs 的 kind：
+     * refetch_metadata / site_self_healing 需要 siteId（payload 校验见 core/job-payloads.ts），
+     * reindex 由备份导入等流程触发（routes/backup.ts、jobs.ts 的 manifest 写回）。
+     * 走的是同一条 POST /api/jobs → repo.enqueueJob；这里把它们显式列出来，
+     * 是为了让「新加一个 kind 却没有任何入队路径」在测试里立刻暴露。
+     */
+    const ON_DEMAND_KINDS: Array<(typeof JOB_KINDS)[number]> = [
+      "refetch_metadata",
+      "reindex",
+      "site_self_healing",
+    ];
+    for (const kind of JOB_KINDS) {
+      const times = DEFAULT_CRON_SCHEDULES.filter((s) => s.kind === kind).length;
+      const manual = MANUAL_ONLY_KINDS.includes(kind) ? 1 : 0;
+      const onDemand = ON_DEMAND_KINDS.includes(kind) ? 1 : 0;
+      expect(
+        times + manual + onDemand,
+        `${kind}：排期 ${times} 次 / 手动 ${manual} / 按需 ${onDemand}`,
+      ).toBe(1);
+    }
+  });
+
+  it("排期表无重复 kind 且间隔为正", () => {
+    expect(scheduled.size).toBe(DEFAULT_CRON_SCHEDULES.length);
+    for (const s of DEFAULT_CRON_SCHEDULES) expect(s.intervalMs).toBeGreaterThan(0);
   });
 });
 

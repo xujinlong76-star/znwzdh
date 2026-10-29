@@ -57,7 +57,7 @@ const MAX_HIT_FILES = 12;
  */
 const CONSUMER_FILE_RE =
   /^(?:apps\/(?:api|web-overlay)\/(?:src|test)\/|packages\/[A-Za-z0-9._-]+\/(?:src|test|scripts)\/|scripts\/)/;
-/** 上面那条正则的 pathspec 版本（给 git grep 少扫一半语料）；node_modules 里有打包进来的源码镜像 */
+/** 上面那条正则的 pathspec 版本——为**准确性**收窄，不为省时间（实测反而贵几毫秒，见 grepCommittedTree） */
 const CONSUMER_PATHSPEC = [
   "apps/api/",
   "apps/web-overlay/src/",
@@ -184,12 +184,14 @@ function unstagedChanges() {
 /**
  * 一次 `git grep --cached` 搜完所有 token。
  *
- * 两个必须合在一起的口径（都是量出来的，见 docs/GATES-OPERATIONS.md）：
- *   - **一条 `-E` 交替**而不是 N 个 `-F`：多 `-F` 模式在 git 里是逐个扫的，实测 95 个 token
- *     要 7.7s；换成一条 `\.a\b|\.b\b|…` 是 1.5s。
- *   - **pathspec 收窄到 CI 真检查的那几棵树**：同一条正则在「全仓 `*.ts`」是 1508ms、
- *     收窄后 752ms——`deliverables/` 与 vendor 镜像里的同名符号只会把引用点数抬高，
- *     撞满 MAX_HIT_FILES 后反而整条不报。
+ * 两个必须合在一起的口径（数字是 `tmp` 探针同机 A/B 各 3 轮复测出来的，见 docs/GATES-OPERATIONS.md）：
+ *   - **一条 `-E` 交替**而不是 N 个 `-F`：多 `-F` 模式在 git 里是逐个扫的，耗时随 token 数线性
+ *     （17 个 = 311–331ms，35 个 = 1057–1092ms）；一条 `\.a\b|\.b\b|…` 与 token 数基本无关
+ *     （80–103ms）。差值从 3.4x 涨到 11x——候选越多越必须合。
+ *   - **pathspec 收窄到 CI 真检查的那几棵树**是为了**引用点集合干净**，不是省时间：
+ *     同一条正则在「全仓 `*.ts`」是 88–92ms / 10783 行，收窄后 96–98ms / 7087 行——**贵 4–22ms、
+ *     少 34% 命中**。`deliverables/` 与 `apps/web/` 的 vendor 镜像会把同名字段的引用点报两遍，
+ *     撞上 MAX_HIT_FILES 后真问题整条不报；排除 node_modules 那条子句同理（镜像里有打包进来的源码）。
  * `\b` 保证 `.search` 不会命中 `.searchable`；无命中时 git grep 退出码 1，那不是失败，是空集。
  */
 function grepCommittedTree(tokens) {

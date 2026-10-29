@@ -24,8 +24,10 @@ import {
   createStorageAdapter,
   resolveAdapterKind,
   StorageError,
+  storageTag,
   type StorageAdapter,
 } from "@/lib/storage-adapter";
+import { HUB_CACHE_TAG } from "@/lib/server/hub-cache";
 
 /** 惰性单例：避免每个请求都重建适配器（会重复读环境变量与构造闭包） */
 let cached: StorageAdapter | null = null;
@@ -81,6 +83,9 @@ function httpAdapterConfig(revalidateS: number) {
       // 读请求进 Next Data Cache（配合路由级 revalidate 变 ISR）；
       // 详见 storage-adapter.ts 里 HttpAdapterOptions.revalidateS 的注释
       revalidateS,
+      // 与 /api/hub、lib/server/hub.ts 共用同一个粗粒度标签：任何写成功后
+      // revalidateTag 都能把这些缓存读一起失效，保存后刷新即见新值。
+      tags: [HUB_CACHE_TAG],
     },
   };
 }
@@ -269,6 +274,25 @@ export async function getStorageVersion(path: string): Promise<number | null> {
   }
 }
 
+/**
+ * 写成功后让该内容路径的 Data Cache 标签失效。
+ *
+ * 只清进程内 Map（`invalidateContentCache`）不够：`getFileContent` 的读请求进了
+ * Next Data Cache（默认 60s），不清标签就会出现「保存成功 → 立刻刷新 → 还是旧值」，
+ * 用户再保存一次，用旧值覆盖掉刚写入的新值。
+ *
+ * 动态 import + try/catch 是必需的：脚本与 vitest 环境没有 `next/cache`，
+ * 且 `revalidateTag` 只能在请求上下文里调用。这些情况属于预期，不能影响写入结果。
+ */
+async function revalidateStorageTag(path: string): Promise<void> {
+  try {
+    const { revalidateTag } = await import("next/cache");
+    revalidateTag(storageTag(path), "max");
+  } catch {
+    // 非 Next 运行时 / 非请求上下文：忽略
+  }
+}
+
 export async function commitFile(
   path: string,
   content: string,
@@ -287,6 +311,7 @@ export async function commitFile(
         ifVersion !== undefined ? { ifVersion } : undefined,
       );
       invalidateContentCache(path);
+      await revalidateStorageTag(path);
       return { ok: true, note: result.note, version: result.version, attempts: attempt };
     } catch (error) {
       lastError = error;

@@ -67,6 +67,39 @@ describe("createHttpAdapter 正常路径", () => {
     expect(info).not.toHaveBeenCalled();
   });
 
+  it("read 请求带按路径生成的 Data Cache 标签（写侧才能定点失效）", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const adapter = createHttpAdapter({
+      baseUrl: BASE,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      revalidateS: 60,
+    });
+
+    await adapter.read("src/navsphere/content/videos.json");
+
+    const init = fetchImpl.mock.calls[0][1] as RequestInit & {
+      next?: { revalidate?: number; tags?: string[] };
+    };
+    expect(init.next?.tags).toEqual(["storage:src/navsphere/content/videos.json"]);
+  });
+
+  it("version 请求不吃缓存（no-store）：旧版本号会让写入白撞 409", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ version: 7 }));
+    const adapter = createHttpAdapter({
+      baseUrl: BASE,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      revalidateS: 60,
+    });
+
+    // version 在 StorageAdapter 上是可选能力（github/sqlite 后端没有）
+    expect(adapter.version).toBeDefined();
+    expect(await adapter.version!("src/navsphere/content/videos.json")).toBe(7);
+
+    const init = fetchImpl.mock.calls[0][1] as RequestInit & { next?: unknown };
+    expect(init.cache).toBe("no-store");
+    expect(init.next).toBeUndefined();
+  });
+
   it("write 返回 note 并 PUT 到 /api/storage", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ note: "ok" }));
     const adapter = createHttpAdapter({ baseUrl: BASE + "/", fetchImpl: fetchImpl as unknown as typeof fetch });
@@ -207,7 +240,7 @@ describe("读请求的 Data Cache（next.revalidate）", () => {
     const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch });
 
     await adapter.read("site.json");
-    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60 });
+    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60, tags: ["storage:site.json"] });
   });
 
   it("revalidateS 可覆盖（部署侧按内容变更频率调档）", async () => {
@@ -216,7 +249,7 @@ describe("读请求的 Data Cache（next.revalidate）", () => {
     const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch, revalidateS: 300 });
 
     await adapter.read("site.json");
-    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 300 });
+    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 300, tags: ["storage:site.json"] });
   });
 
   it("revalidateS=0 时不带 next 选项（显式禁用 = 回到实时读）", async () => {
@@ -239,7 +272,7 @@ describe("读请求的 Data Cache（next.revalidate）", () => {
     });
 
     await adapter.read("site.json");
-    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60, tags: ["navhub-hub"] });
+    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60, tags: ["navhub-hub", "storage:site.json"] });
   });
 
   it("revalidateS=0 时 tags 不生效：实时读不进缓存，写后无需失效", async () => {
@@ -273,7 +306,7 @@ describe("读请求的 Data Cache（next.revalidate）", () => {
     const adapter = createHttpAdapter({ baseUrl: BASE, fetchImpl: fetchImpl as unknown as typeof fetch, token: "t0ken" });
 
     await adapter.read("site.json");
-    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60 });
+    expect(lastInit(fetchImpl).next).toEqual({ revalidate: 60, tags: ["storage:site.json"] });
     expect((lastInit(fetchImpl).headers as Record<string, string>).Authorization).toBe("Bearer t0ken");
   });
 });

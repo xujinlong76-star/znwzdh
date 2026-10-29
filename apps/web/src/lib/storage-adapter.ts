@@ -111,6 +111,22 @@ export interface HttpAdapterOptions {
    * 注意：只给 GET 读加，写（PUT）永远不过缓存。
    */
   revalidateS?: number;
+  /**
+   * 读请求的 Data Cache 标签（可选）。只在真的进 Data Cache（revalidateS > 0）
+   * 时附加：写侧按标签 revalidateTag 才能让「保存后刷新即见新值」与
+   * 「ISR 页面保持静态」同时成立——没有标签的条目只能等 revalidate 窗口过期。
+   */
+  tags?: string[];
+}
+
+/**
+ * 内容路径 → Data Cache 标签。
+ *
+ * 读（适配器 `read`）与写（`commitFile` 成功后的 `revalidateTag`）必须用同一个
+ * 函数生成标签，否则两边对不上，「保存后刷新还是旧值」的问题依旧存在。
+ */
+export function storageTag(path: string): string {
+  return `storage:${path.replace(/^\/+/, "")}`;
 }
 
 export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
@@ -119,6 +135,7 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
   const timeout = opts.timeoutMs ?? 15_000;
   const cooldownMs = opts.cooldownMs ?? 5_000;
   const revalidateS = opts.revalidateS ?? 60;
+  const tags = opts.tags ?? [];
 
   /**
    * 连接熔断器（进程内，按适配器实例；0 = 未跳闸）。
@@ -187,19 +204,31 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
     return h;
   };
 
-  async function call(url: string, init: RequestInit): Promise<unknown> {
+  async function call(
+    url: string,
+    init: RequestInit,
+    opts: { tags?: string[]; noStore?: boolean } = {},
+  ): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     // 读请求（GET/无 method）才进 Data Cache；写不过缓存。
     // next 是 Next 对 fetch 的扩展字段，非 Next 环境（脚本/测试的 fetchImpl）忽略。
     const isRead = !init.method || init.method.toUpperCase() === "GET";
+    // noStore 用于「必须实时」的读：版本号（乐观并发的判据）绝不能吃 60s 缓存，
+    // 否则客户端会拿着过时版本去写，白撞一次 409。
+    const useDataCache = isRead && revalidateS > 0 && !opts.noStore;
+    // 静态标签（构造时给定，用于「整类内容一起失效」）与按路径标签合并去重：
+    // 后者是写侧定点失效的抓手，前者保留给需要批量失效的部署。
+    const effectiveTags = Array.from(new Set([...tags, ...(opts.tags ?? [])]));
     let res: Response;
     try {
       res = await doFetch(url, {
         ...init,
         headers: headers(),
         signal: controller.signal,
-        ...(isRead && revalidateS > 0 ? { next: { revalidate: revalidateS } } : { cache: "no-store" as const }),
+        ...(useDataCache
+          ? { next: { revalidate: revalidateS, ...(effectiveTags.length > 0 ? { tags: effectiveTags } : {}) } }
+          : { cache: "no-store" as const }),
       });
     } catch (err) {
       // 只有 fetch 自身抛出才算连接级故障。必须与下面的「响应处理」分开
@@ -234,7 +263,13 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
     kind: "http",
     async read(path: string) {
       throwIfCoolingDown();
-      return call(base + "/api/storage?path=" + encodeURIComponent(path), { method: "GET" });
+      // 每个内容路径一个独立标签：写侧按同一标签 revalidateTag，
+      // 才能做到「保存后刷新即见新值」而不用把整个 Data Cache 清空。
+      return call(
+        base + "/api/storage?path=" + encodeURIComponent(path),
+        { method: "GET" },
+        { tags: [storageTag(path)] },
+      );
     },
     async write(path: string, content: string, message: string, writeOpts?: StorageWriteOptions) {
       throwIfCoolingDown();
@@ -249,9 +284,11 @@ export function createHttpAdapter(opts: HttpAdapterOptions): StorageAdapter {
     },
     async version(path: string) {
       throwIfCoolingDown();
+      // 版本号必须实时：它是乐观并发的判据，吃缓存会让客户端拿旧版本去写、白撞 409
       const res = (await call(
         base + "/api/storage/version?path=" + encodeURIComponent(path),
         { method: "GET" },
+        { noStore: true },
       )) as { version?: number | null };
       return typeof res?.version === "number" ? res.version : null;
     },

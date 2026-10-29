@@ -94,8 +94,11 @@ describe("收藏同步：软删墓碑 + 版本游标 + 批量 ops", () => {
 
   it("applyFavoriteOps 在一个事务里应用全部 3 条 ops", async () => {
     const opsUser = "github:u-sync-batch";
+    // 夹子必须真实存在且归该用户所有：applyFavoriteOps 对「外夹」按 BOLA 口径降级成 null
+    // （收藏照样落库，只是未归档），所以要验「合法夹子会被保留」得先建出来。
+    const folder = await repo.createFavoriteFolder(opsUser, "同步夹");
     const { applied, version } = await repo.applyFavoriteOps(opsUser, [
-      { op: "add", siteId: "batch-1", folderId: "f-1", at: 5_000 },
+      { op: "add", siteId: "batch-1", folderId: folder.id, at: 5_000 },
       { op: "add", siteId: "batch-2", note: "备注", at: 5_001 },
       { op: "add", siteId: "batch-3", at: 5_002 },
     ]);
@@ -104,7 +107,7 @@ describe("收藏同步：软删墓碑 + 版本游标 + 批量 ops", () => {
 
     const list = await repo.listFavorites(opsUser);
     expect(list.map((f) => f.siteId).sort()).toEqual(["batch-1", "batch-2", "batch-3"]);
-    expect(list.find((f) => f.siteId === "batch-1")!.folderId).toBe("f-1");
+    expect(list.find((f) => f.siteId === "batch-1")!.folderId).toBe(folder.id);
     expect(list.find((f) => f.siteId === "batch-2")!.note).toBe("备注");
   });
 

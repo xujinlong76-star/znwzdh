@@ -23,7 +23,7 @@
 
 ---
 
-## 2. 改 CI 的「五处联动」+ 第 6 处文档
+## 2. 改 CI 的「六处联动」+ 第 7 处文档
 
 > **适用范围（重要）**：只在**新增 / 删除 / 改名 CI 作业**时全套适用。
 > 改既有作业的 `steps`（例如给 `test-sqlite` 加覆盖率）**不碰聚合闸门**，只需同步 timeout 与文档。
@@ -34,7 +34,9 @@
 2. `ci.yml`：`ci-passed.needs` 数组加入作业名。
 3. `ci.yml`：`ci-passed` 评估脚本加 `[ "${{ needs.<job>.result }}" != "success" ] ||` 分支 + 一行 `echo` 结果。
    （只加 `needs` 不加读取 = 该作业失败被静默忽略，`check-ci-gate.mjs` 第 2 项校验的正是这个。）
-4. `scripts/check-ci-gate.mjs`：`REQUIRED_JOBS` 数组加入作业名。
+4. `scripts/gates.json`：给新作业加一条 `when: "ci"` 登记（`blocks` = 它红了该不该拦合并）。
+   `check-ci-gate.mjs` 已改为动态解析 `jobs:`，不再维护硬编码清单；但清单里查不到的作业
+   会被 `check-gates-registry.mjs` 判红——「新作业该不该拦合并」必须由人回答一次。
 5. `apps/web/test/ci-gate.test.ts`：
    - 正向用例的作业数同步；
    - 反向用例里 `needs` 的**精确字符串**必须同步（不同步会因 `expect(broken).not.toBe(src)` 变红，这是故意的「强制提醒」，不要改用正则绕过）；
@@ -45,6 +47,7 @@
 
 ```bash
 node scripts/check-ci-gate.mjs
+node scripts/check-gates-registry.mjs
 node node_modules/vitest/vitest.mjs run apps/web/test/ci-gate.test.ts
 pnpm verify
 ```
@@ -55,6 +58,23 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 
 - `ci-passed` 把 **`skipped` 也算失败**。任何「只在 PR 事件跑」的新作业必须设计成 push 事件下也 success（内部判空 `exit 0`），否则 push 到 main 永久红。
 - `seo-audit-prod` **故意不在 `needs` 里**：它带 `if: github.event_name == 'workflow_dispatch' && vars.NAVHUB_SITE_URL != ''`，PR 下必然 skipped，加进去会让每个 PR 永久红。不要「顺手补全」。
+
+### 2.1 门禁清单（`scripts/gates.json`）
+
+从 2026-10-29 起，钩子与 CI 里「到底挂了哪些检查」有了单一清单。`scripts/check-gates-registry.mjs`
+拿它和**真实接线**逐条对账，而不是拿清单自说自话。
+
+- **字段**：`name`（唯一）/ `when`（`staged` | `prepush` | `ci`）/ `blocks`（红了是否拦合并）/ `why`（为什么存在，一句话）/
+  `script` + `args`（被钩子调用的脚本）/ `runner: "prepush-gates"`（pre-push 内层，由 `planGates()` 产出）/
+  `job`（CI 作业名，缺省即 `name`）。
+- **双向对账**：
+  - 登记了但接线里没有 ⇒ 「以为在拦，其实没跑」；
+  - 接线里有但清单没登记 ⇒ 下次改钩子时会被人顺手删掉，且没人知道它拦过什么。
+- **退出码**：`0` 全一致；`1` 有对账差异；`2` 清单本身读不出/不是合法 JSON/字段缺失（与「不一致」分开，避免把配置错误当成门禁红灯）。
+- **pre-commit 触发时机**：暂存了 `.github/workflows/`、`scripts/gates.json`、`scripts/install-git-hooks.mjs`
+  或 `scripts/prepush-gates.mjs` 时，钩子在 `check-ci-gate.mjs` 之后追加跑一次；平时不占提交时间。
+- **它不管的事**：门禁内部的判定逻辑（那是各脚本自己的测试），以及 `journal` 式的人工豁免记录。
+  清单只回答「这枚门禁**存在且被接线**」，不回答「它判得对不对」。
 
 ---
 
@@ -75,7 +95,9 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 | `seo-audit-prod` | ❌（故意） | 仅 `workflow_dispatch` + 有 `NAVHUB_SITE_URL` 时跑 |
 | `ci-passed` | — | 聚合闸门，分支保护唯一必经项 |
 
-`REQUIRED_JOBS` = 8（上表前 8 个）。改这个数字必须同时改 §2 的五处。
+`ci-passed.needs` 目前 **8 个作业**（上表前 8 个）；`REQUIRED_JOBS` 硬编码数组已随动态解析下线，
+现在由 `scripts/check-ci-gate.mjs` 直接读 `needs` 与作业清单比对，`scripts/gates.json` 负责登记
+「每个作业该不该拦合并」。增删作业仍须走 §2 全套。
 
 ---
 
@@ -109,14 +131,14 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 原计划「直接给 `test-sqlite` 加 `--coverage`，timeout 20m→25m」。实测后修正为：
 
 1. **先确认套件是绿的**。2026-10-25 全量运行有 3 个失败（`backend-lint-gate` / `backup-restore-job` 的 470ms<300ms 时序断言 / `metrics-format` 的指标快照），在红灯套件上设覆盖率基线没有意义。
-2. **先在 CI 实测 `test-sqlite` 时长**（Linux runner 与本机差异大）。若加覆盖率后 >22m，拆独立 `coverage` 作业——但那是新增作业，必须走 §2 全套五处联动。
+2. **先在 CI 实测 `test-sqlite` 时长**（Linux runner 与本机差异大）。若加覆盖率后 >22m，拆独立 `coverage` 作业——但那是新增作业，必须走 §2 全套联动。
 3. 阶段 A 允许 `continue-on-error: true` 观察两周，但**不要**在 PR 上长期挂一个每轮多花几分钟、又不阻断的步骤；观察期结束就转硬门禁或撤掉。
 
 ### 4.4 优化建议（按收益）
 
 1. `docker-smoke` 加 `cache-from/cache-to: type=gha`：冷构建 8–15m 可降到 3–5m，零联动成本。
 2. 不做 vitest `--shard` 拆片：`test-sqlite` 未接近 timeout，拆片只增加 runner 分钟数。
-3. `check-isr-live` 短期不动：拆「限流豁免」会新增作业，须走五处联动，风险高于收益。
+3. `check-isr-live` 短期不动：拆「限流豁免」会新增作业，须走 §2 联动，风险高于收益。
 4. 若全量继续变慢，优先查 worker 启动开销（`isolate: false` 已被证明会引入跨文件污染，不能开；见 `vitest.config.ts` 注释）。
 
 ---

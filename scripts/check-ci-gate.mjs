@@ -25,6 +25,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseWorkflow } from "./lib/ci-workflow.mjs";
 
 /** 允许测试注入替代文件，验证「删掉关键作业确实会红」 */
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -38,68 +39,39 @@ const MIN_JOBS = 6;
 const source = readFileSync(CI_PATH, "utf8");
 const problems = [];
 
-/** 截取 ci-passed 作业块：从 `  ci-passed:` 到下一个同级作业或文件尾 */
-const start = source.indexOf("\n  ci-passed:");
-if (start < 0) {
+const workflow = parseWorkflow(source);
+const { jobs, needs, needsFound, ciPassedBlock, aggregated, manualOnly } = workflow;
+
+if (!ciPassedBlock) {
   console.error("❌ 找不到 ci-passed 作业：分支保护将失去唯一必经项");
   process.exit(1);
 }
-const rest = source.slice(start + 1);
-const nextJob = rest.slice(1).search(/\n {2}[a-zA-Z0-9_-]+:\n/);
-const block = nextJob >= 0 ? rest.slice(0, nextJob + 1) : rest;
-
-const needsMatch = block.match(/needs:\s*\[([^\]]*)\]/);
-const needs = needsMatch ? needsMatch[1].split(",").map((s) => s.trim()).filter(Boolean) : [];
-if (!needsMatch) problems.push("ci-passed 没有 needs 列表");
-
-/** 解析 jobs: 下的全部作业名与块内容 */
-const jobsIndex = source.indexOf("\njobs:");
-if (jobsIndex < 0) {
+if (!workflow.hasJobs) {
   console.error("❌ 找不到 jobs: 段");
   process.exit(1);
 }
-const jobsBody = source.slice(jobsIndex);
-const jobMatches = [...jobsBody.matchAll(/^ {2}([a-zA-Z0-9_-]+):\s*$/gm)];
-const jobs = jobMatches.map((m, i) => {
-  const from = m.index ?? 0;
-  const to = i + 1 < jobMatches.length ? (jobMatches[i + 1].index ?? jobsBody.length) : jobsBody.length;
-  return { name: m[1], block: jobsBody.slice(from, to) };
-});
+if (!needsFound) problems.push("ci-passed 没有 needs 列表");
 
 if (jobs.length < MIN_JOBS) {
   problems.push(`只解析到 ${jobs.length} 个作业（下限 ${MIN_JOBS}）：YAML 结构可能已变，门禁校验失效`);
 }
 
-/** 手动/定时作业：`if:` 条件里明确只跑 workflow_dispatch / schedule */
-function isManualOnly(job) {
-  const ifLine = job.block.match(/^\s{4}if:\s*(.+)$/m);
-  if (!ifLine) return false;
-  const cond = ifLine[1];
-  return cond.includes("workflow_dispatch") || cond.includes("schedule");
-}
-
-const aggregated = [];
-const manualOnly = [];
 for (const job of jobs) {
   if (job.name === "ci-passed") continue;
   if (needs.includes(job.name)) {
-    aggregated.push(job.name);
-    if (!block.includes(`needs.${job.name}.result`)) {
+    if (!ciPassedBlock.includes(`needs.${job.name}.result`)) {
       problems.push(`评估脚本没有读取 needs.${job.name}.result（失败被静默忽略）`);
     }
     continue;
   }
-  if (isManualOnly(job)) {
-    manualOnly.push(job.name);
-    continue;
-  }
+  if (job.manualOnly) continue;
   problems.push(
     `作业 ${job.name} 既不在 ci-passed.needs 里，也不是手动/定时作业——` +
       `它红了不会阻塞合并。请加入 needs，或在 if: 里声明 workflow_dispatch/schedule。`,
   );
 }
 
-if (!/if:\s*always\(\)/.test(block)) {
+if (!/if:\s*always\(\)/.test(ciPassedBlock)) {
   problems.push("ci-passed 缺少 if: always()：上游失败时聚合作业会被跳过");
 }
 

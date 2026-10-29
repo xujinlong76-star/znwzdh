@@ -144,11 +144,13 @@ node scripts/check-committed-refs.mjs --staged || exit 1
 # 入库」，这枚管「HEAD 里还是旧版本」。只审测试文件，成本是几次 git 调用。
 node scripts/check-commit-atomicity.mjs --staged || exit 1
 
-# CI 工作流变更时校验合并门禁（秒级，仅本次提交涉及 .github/workflows/ 才跑）。
+# CI 工作流 / 门禁清单变更时校验合并门禁与清单一致性（秒级，仅相关文件暂存时才跑）。
 # 门禁脚本读的就是 ci.yml 的聚合关系：改坏了只有 CI 会红，而 CI 自己正是被改的
-# 那一方——等于没有守门人。放在 typecheck 之前，成本只有一次 YAML 解析。
-if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\\.github/workflows/'; then
+# 那一方——等于没有守门人。清单（gates.json / 本安装脚本 / prepush-gates）也一样：
+# 登记与接线不一致时只有下一次提交才会发现。放在 typecheck 之前，成本只有一次 YAML 解析。
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^(\\.github/workflows/|scripts/gates\\.json|scripts/install-git-hooks\\.mjs|scripts/prepush-gates\\.mjs)'; then
   node scripts/check-ci-gate.mjs || exit 1
+  node scripts/check-gates-registry.mjs || exit 1
 fi
 
 # 解析级快速门禁：只查 staged 的 TS/TSX，秒级；tsc 之前先把标点级错误挡住

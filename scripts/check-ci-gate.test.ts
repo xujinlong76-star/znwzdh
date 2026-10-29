@@ -1,12 +1,14 @@
 /**
- * `scripts/check-ci-gate.mjs` 第 5 项的守卫（2026-10-25 run47）。
+ * `scripts/check-ci-gate.mjs` 的两项守卫（第 5 项 2026-10-25 run47，第 6 项 2026-10-29）。
  *
- * 这一项管的是「后端 lint 到底哪边说了算」：CI 的那一步带 continue-on-error，
+ * 第 5 项管的是「后端 lint 到底哪边说了算」：CI 的那一步带 continue-on-error，
  * 退出码会被吞掉，所以同一份断言必须在被 ci-passed 聚合的阻塞作业里也跑一遍。
  * 检查本身只有在**两种方向都会红**时才有意义，因此这里用真实 ci.yml 派生夹具：
  *   1. 现状（有 continue-on-error + 有阻塞断言文件）⇒ 绿；
  *   2. 阻塞断言文件消失 ⇒ 红，且话里说清缺的是哪条通道；
  *   3. 工作流自己收紧（去掉 continue-on-error）⇒ 绿 —— 证明它不是「无论如何都要第二通道」的死规则。
+ *
+ * 第 6 项管「一次根因只留一处红」，见下面 describe 的注释。
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
@@ -76,6 +78,75 @@ describe("check-ci-gate 第 5 项：后端 lint 的阻塞通道", () => {
     expect(tightened).not.toContain("continue-on-error: true");
     const fixture = writeFixture("ci-tightened.yml", tightened);
     const res = runGate(fixture, join(dir, "does-not-exist.test.ts"));
+    expect(res.status, res.out).toBe(0);
+  });
+});
+
+/**
+ * 第 6 项：级联红收敛（2026-10-29，run 40835496871）。
+ *
+ * typecheck 一红 → 测试步骤被跳过 → junit 不存在 → 红灯光谱/台账/上传三步仍按
+ * `!cancelled()` 跑，各自再判一次红。四处红淹没一个根因，所以「读 junit 的收尾步骤
+ * 必须以测试步骤 outcome 为条件」必须是可执行断言，而不是 ci.yml 里一段会被顺手删掉的注释。
+ *
+ * 这一组还钉住一个**反向**坑：判定不能把测试步骤自己当遥测步骤。HEAD 上就是这么坏的
+ * （步骤注释里写了「与 upload-artifact 的口径一致」，门禁对着干净的 ci.yml 报红），
+ * 所以「现状绿」和「注释里出现 upload-artifact 依然绿」是两条独立断言。
+ */
+describe("check-ci-gate 第 6 项：级联红收敛", () => {
+  it("仓库现状：读 junit 的收尾步骤都带 outcome 守卫 ⇒ 绿", () => {
+    const source = readFileSync(REAL_CI, "utf8");
+    expect(source).toContain("!cancelled() && steps.vitest.outcome != 'skipped'");
+    expect(source).toContain("!cancelled() && steps.e2e.outcome != 'skipped'");
+    const res = runGate(REAL_CI, GATE_TEST);
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).toContain("级联红已按测试步骤 outcome 收敛");
+  });
+
+  it("SQLite 的守卫被删回 !cancelled() ⇒ 红，并点名「红灯光谱」", () => {
+    const source = readFileSync(REAL_CI, "utf8");
+    // ci.yml 的注释正文里也写了 steps.vitest.outcome（解释判据），所以只能比对完整守卫串
+    const guard = `!cancelled() && steps.vitest.outcome != 'skipped'`;
+    expect(source.split(guard).length - 1).toBeGreaterThan(0);
+    const weakened = source.replaceAll(guard, "!cancelled()");
+    expect(weakened).not.toContain(guard);
+    const res = runGate(writeFixture("ci-sqlite-unguarded.yml", weakened), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("test-sqlite");
+    expect(res.out).toContain("红灯光谱");
+    expect(res.out).toContain("一次根因多处红");
+  });
+
+  it("E2E 的守卫被删 ⇒ 红（分片作业同样不许把缺产物当第二次红）", () => {
+    const weakened = readFileSync(REAL_CI, "utf8").replaceAll(
+      "!cancelled() && steps.e2e.outcome != 'skipped'",
+      "!cancelled()",
+    );
+    const res = runGate(writeFixture("ci-e2e-unguarded.yml", weakened), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("test-e2e");
+  });
+
+  it("测试步骤 id 消失 ⇒ 红：守卫挂在一个不存在的步骤上等于没有守卫", () => {
+    const orphaned = readFileSync(REAL_CI, "utf8").replace(
+      /^(\s*)id: vitest\s*\n/m,
+      "",
+    );
+    expect(orphaned).not.toContain("id: vitest");
+    const res = runGate(writeFixture("ci-no-vitest-id.yml", orphaned), GATE_TEST);
+    expect(res.status).not.toBe(0);
+    expect(res.out).toContain("级联判据挂在它上面");
+  });
+
+  it("步骤注释里出现 upload-artifact / junit-summary ⇒ 不误判成遥测步骤", () => {
+    const source = readFileSync(REAL_CI, "utf8");
+    // 注释跟在产出 junit 的步骤正文之后 ⇒ 它属于那个步骤的切片，判定必须先看代码行
+    const annotated = source.replace(
+      /(        run: pnpm test --shard=[^\n]*\n)/,
+      "$1        # 口径同 upload-artifact 与 scripts/junit-summary.mjs：缺 junit 就是遥测链路断了\n",
+    );
+    expect(annotated).not.toBe(source);
+    const res = runGate(writeFixture("ci-comment.yml", annotated), GATE_TEST);
     expect(res.status, res.out).toBe(0);
   });
 });

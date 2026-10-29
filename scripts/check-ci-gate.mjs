@@ -21,11 +21,14 @@
  *   - 后端 lint 必须有一条**阻塞通道** —— 本地 verify 视其为硬门禁，而 CI 的
  *     该步骤带 `continue-on-error`（退出码被吞，作业仍绿）。两者可以并存，前提是
  *     同一个断言也在被 ci-passed 聚合的阻塞作业里跑一遍（见 LINT_GATE_TEST）。
+ *   - **级联红收敛**（2026-10-29）：读 junit 产物的收尾步骤（红灯光谱 / 红灯台账 /
+ *     upload-artifact）必须以「测试步骤真的跑过」为条件（`steps.<id>.outcome != 'skipped'`）。
+ *     只写 `!cancelled()` 时，typecheck 一红就会连带四处红，真根因被淹没。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseWorkflow } from "./lib/ci-workflow.mjs";
+import { parseWorkflow, telemetryCascadeProblems } from "./lib/ci-workflow.mjs";
 
 /** 允许测试注入替代文件，验证「删掉关键作业确实会红」 */
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -95,6 +98,24 @@ if (lintStepSuppressed && !existsSync(LINT_GATE_TEST)) {
   );
 }
 
+// 级联红收敛：一次根因只留一处红。2026-10-29 实战——typecheck 一红，
+// 测试步骤被跳过、junit 不存在，而「红灯光谱/红灯台账/上传 junit」三步仍按
+// !cancelled() 执行，各自再判一次红，真根因被四处红淹没。
+const CASCADE_JOBS = [
+  { job: "test-sqlite", testStepId: "vitest" },
+  { job: "test-e2e", testStepId: "e2e" },
+];
+for (const { job, testStepId } of CASCADE_JOBS) {
+  const found = jobs.find((j) => j.name === job);
+  if (!found) {
+    problems.push(`找不到 ${job} 作业：级联红校验失去对象`);
+    continue;
+  }
+  for (const p of telemetryCascadeProblems(found.block, testStepId)) {
+    problems.push(`${job}：${p}`);
+  }
+}
+
 if (problems.length > 0) {
   console.error("❌ CI 合并门禁校验失败：");
   for (const p of problems) console.error("   - " + p);
@@ -104,6 +125,7 @@ if (problems.length > 0) {
 console.log(
   `✅ CI 合并门禁：解析 ${jobs.length - 1} 个作业，ci-passed 聚合 ${aggregated.length} 个作业，逐个读取结果，` +
     "PG 走 test:pg:suite，" +
+    "级联红已按测试步骤 outcome 收敛，" +
     (lintStepSuppressed ? "后端 lint 由阻塞作业里的同口径断言把关。" : "后端 lint 步骤本身即为阻塞。"),
 );
 if (manualOnly.length > 0) {

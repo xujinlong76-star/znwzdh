@@ -45,12 +45,20 @@ export function telemetryCascadeProblems(jobBlock, testStepId) {
     `if:\\s*\\$\\{\\{[^\\n]*steps\\.${testStepId}\\.outcome != 'skipped'`,
   );
   for (const step of steps) {
+    // 判定前先剥掉 YAML 注释行：注释里解释口径时会顺带写出 `upload-artifact`、
+    // `junit-summary.mjs` 这些字样，直接整块正则会把**测试步骤**误判成遥测步骤
+    // （2026-10-29 实测：test-sqlite 的 vitest 步骤带着解释注释，被判成
+    // 「没有以 steps.vitest.outcome != 'skipped' 为条件」——而它正是产出 junit 的那一步）。
+    const code = step
+      .split("\n")
+      .filter((line) => !/^\s*#/.test(line))
+      .join("\n");
     const isTelemetry =
-      /junit-summary\.mjs/.test(step) ||
-      /ci-red-ledger\.mjs/.test(step) ||
-      (/upload-artifact/.test(step) && /junit-/.test(step));
+      /junit-summary\.mjs/.test(code) ||
+      /ci-red-ledger\.mjs/.test(code) ||
+      (/upload-artifact/.test(code) && /junit-/.test(code));
     if (!isTelemetry) continue;
-    if (guardRe.test(step)) continue;
+    if (guardRe.test(code)) continue;
     const label =
       step.match(/- name: ([^\n]+)/)?.[1] ??
       step.match(/name: (junit-[^\n]+)/)?.[1] ??

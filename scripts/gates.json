@@ -69,7 +69,7 @@
       "script": "scripts/check-ci-gate.mjs",
       "blocks": true,
       "test": ["scripts/check-ci-gate.test.ts", "apps/web/test/ci-gate.test.ts"],
-      "why": "ci-passed 的聚合关系被改坏时，只有 CI 会红——而 CI 自己正是被改的那一方"
+      "why": "ci-passed 的聚合关系被改坏时，只有 CI 会红——而 CI 自己正是被改的那一方；读 junit 的收尾步骤还兼管级联红（一次根因只留一处红，2026-10-29 run40835496871）"
     },
     {
       "name": "gates-registry",

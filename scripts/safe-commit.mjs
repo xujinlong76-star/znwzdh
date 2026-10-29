@@ -140,6 +140,16 @@ function cleanupOwnFiles(cwd) {
 }
 
 /**
+ * 同步睡一会儿（毫秒）。
+ *
+ * Atomics.wait 是 Node 里唯一不占用事件循环的 sleep——这里必须同步：
+ * 清理发生在 finally 里，后面紧跟 git 提交，不能把控制权交回事件循环。
+ */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
  * 清理上次崩溃留下的独立索引（`.git/index.safe-commit`）。
  *
  * 现在不碰共享 `.git/index`，所以**不再需要处理 `.git/index.lock`**——
@@ -270,10 +280,19 @@ function main() {
     fail(`提交失败（钩子拦下或 git 报错）：${err?.message ?? err}`);
   } finally {
     for (const p of [msgPath, join(cwd, SAFE_INDEX)]) {
-      try {
-        unlinkSync(p);
-      } catch {
-        // 删不掉也不影响提交，下次运行会先清
+      // Windows 上 git 进程退出后，索引文件的句柄可能还会滞留几十毫秒，
+      // 此刻 unlinkSync 会抛 EPERM/EBUSY。失败不重试的话，残留的
+      // .git/index.safe-commit 会被下一次运行当成「另一次 safe-commit 正在运行」，
+      // 白等 STALE_LOCK_MS（本仓 120s）——实测每次钩子拦下都要多付这两分钟。
+      // 这里做短时重试：句柄一释放就能删掉，不必等到年龄阈值。
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        try {
+          unlinkSync(p);
+          break;
+        } catch {
+          if (attempt === 19) break;
+          sleepSync(100);
+        }
       }
     }
   }

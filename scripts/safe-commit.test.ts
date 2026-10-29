@@ -11,8 +11,8 @@
  *   · **集成**：在一个临时 git 仓库里真跑一次，验证「索引里有别人的暂存内容时，
  *     pathspec 提交不会把它带上」——这是这个工具唯一的核心保证，纯函数测不到。
  */
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -198,5 +198,35 @@ describe("集成：pathspec 隔离", () => {
       { cwd: repo, encoding: "utf8", env: cleanEnv() },
     );
     expect(out).toContain("提交内容与预期完全一致");
+  });
+
+  it("钩子拦下提交后不留独立索引（Windows 上 git 退出后句柄滞留，unlink 会失败）", () => {
+    /**
+     * 回归 2026-10-29（Windows 实测）：钩子拦下提交时，git 进程虽然退出了，
+     * 却仍持有 .git/index.safe-commit 的句柄，此刻 unlinkSync 抛 EPERM。
+     * 原实现把异常吞掉，残留文件被下一次运行当成「另一次 safe-commit 正在运行」，
+     * 白等 STALE_LOCK_MS（120s）——本轮连续两次提交各多付了两分钟。
+     * 现在 finally 里做短时重试，句柄一释放就删掉，不必等年龄阈值。
+     */
+    const hook = join(repo, ".git", "hooks", "pre-commit");
+    writeFileSync(hook, "#!/bin/sh\necho 'hook 拒绝' >&2\nexit 1\n");
+    try {
+      chmodSync(hook, 0o755);
+    } catch {
+      // Windows 上 git 用自己的 shell 跑钩子，不看执行位
+    }
+
+    writeFileSync(join(repo, "mine.ts"), "export const a = 4;\n");
+    writeFileSync(join(repo, ".msg5"), "chore: 被钩子拦下\n");
+    const res = spawnSync(
+      process.execPath,
+      [SCRIPT, "--msg-file", ".msg5", "--", "mine.ts"],
+      { cwd: repo, encoding: "utf8", env: cleanEnv() },
+    );
+    expect(res.status, "钩子拦下时提交应当失败").not.toBe(0);
+    expect(
+      existsSync(join(repo, ".git", "index.safe-commit")),
+      "钩子拦下后 .git/index.safe-commit 不该留在原地",
+    ).toBe(false);
   });
 });

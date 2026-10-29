@@ -289,6 +289,7 @@ export async function removeOfflineVideo(id: string): Promise<void> {
  * Batch cache multiple videos for offline viewing.
  */
 export async function cacheVideoBatch(items: NavigationSubItem[]): Promise<number> {
+  // cleanup-noop: 空集合什么都没写，id 集合没变，不需要失效
   if (!items || items.length === 0) return 0
 
   const idb = getIndexedDB()

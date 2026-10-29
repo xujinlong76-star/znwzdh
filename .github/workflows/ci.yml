@@ -87,6 +87,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # 覆盖层比对在 check-web-overlay 作业里单独跑（全新检出需先 vendor，见那里）
       - run: pnpm run typecheck
+        id: typecheck
       # 后端 ESLint（方案 P1-8）：apps/api / packages/store 此前零静态检查。
       # 首轮只开 no-unused-vars / no-empty / no-console 且全部为 warning，
       # 所以这里 continue-on-error：告警看得见，但不阻塞合并。
@@ -106,13 +107,21 @@ jobs:
       # 实测（run 40671824883）：三片各自跑了全量 473 个文件，junit 0 个产物，
       # 上传步骤靠 if-no-files-found: warn 静默通过——分片和遥测同时失效了三轮。
       - name: 单元/接口测试（分片 ${{ matrix.shard }}/3）
+        id: vitest
         run: pnpm test --shard=${{ matrix.shard }}/3 --reporter=default --reporter=junit --outputFile.junit=junit-sqlite-${{ matrix.shard }}.xml
+      # 下面三步只在**测试步骤真的跑过**时执行（成功或失败都算）。
+      #
+      # 为什么不能只写 !cancelled()（2026-10-29 实战）：typecheck 一红，测试步骤被跳过、
+      # junit 不存在，而这三步照样跑 ⇒ 「缺 junit 判红」的光谱/台账/上传各自再红一次，
+      # 一次根因变成四处红。级联红会淹没真正的根因，也会把「遥测链路断了」这条告警
+      # 变成狼来了。判据是 steps.vitest.outcome：skipped 说明根因在上游，这里不掺和。
+      #
       # 红灯用例名进 Step Summary：无 token 时 job 日志读不到（/actions/jobs/{id}/logs
       # 恒 403）、本机也拉不到 artifact 内容，「哪一例红了」此前实际不可读。
       # 只读解析，不判定对错——测试红绿由测试步骤负责；本步骤只在产物缺失时红
       # （遥测链路断了必须看得见，与 upload-artifact 的 error 口径一致）。
       - name: 红灯光谱（Step Summary）
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.vitest.outcome != 'skipped' }}
         run: node scripts/junit-summary.mjs junit-sqlite-${{ matrix.shard }}.xml
       # 跨轮对比：junit-summary 只说「这一次红了什么」，说不出「是不是这一轮才红的」。
       # 本步骤拿 docs/ci-red-ledger.json 对账，台账之外的红（含同用例换因）直接判红。
@@ -121,10 +130,10 @@ jobs:
       # --strict-ttl：台账条目带到期日，过期仍在红就判失败——台账是「已知的债」，
       # 不是免死金牌（只记账不催收，长期红会变成背景噪音）。
       - name: 红灯台账（跨轮对比 + TTL）
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.vitest.outcome != 'skipped' }}
         run: node scripts/ci-red-ledger.mjs --from junit-sqlite-${{ matrix.shard }}.xml --require-no-new --strict-ttl
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.vitest.outcome != 'skipped' }}
         with:
           name: junit-sqlite-${{ matrix.shard }}
           path: junit-sqlite-*.xml
@@ -614,6 +623,7 @@ jobs:
       - name: 安装 Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
       - name: 执行 Playwright E2E 测试
+        id: e2e
         run: |
           set +e
           # 同单元测试：`pnpm test:e2e -- …` 的 `--` 会被透传给 playwright，
@@ -636,18 +646,19 @@ jobs:
           fi
       # 同单元测试：失败用例名进 Step Summary。awk 抽 list reporter 的兜底仍保留
       # （它在测试步骤内部、红灯时立即发 ::error::），这里补的是结构化、可累积的账。
+      # 三步都只在 E2E 步骤真的跑过时执行：安装/构建阶段的红不该再变成「缺 junit」的红。
       - name: 红灯光谱（Step Summary）
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         run: node scripts/junit-summary.mjs junit-e2e-${{ matrix.shard }}.xml
       # 同单元测试：与 docs/ci-red-ledger.json 对账，台账之外的红判失败。
       # E2E 的 flake 历史上很常见（见 2026-10-23 的徽章 toast 间歇红），
       # 台账正是为了让「每轮都红的已知项」不再淹没「本轮新引入的红」。
       # --strict-ttl：过期未修同样判红，避免「已知红」永久躺在账上。
       - name: 红灯台账（跨轮对比 + TTL）
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         run: node scripts/ci-red-ledger.mjs --from junit-e2e-${{ matrix.shard }}.xml --require-no-new --strict-ttl
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         with:
           name: junit-e2e-${{ matrix.shard }}
           path: junit-e2e-*.xml
@@ -655,7 +666,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         with:
           name: playwright-report-${{ matrix.shard }}
           path: playwright-report/

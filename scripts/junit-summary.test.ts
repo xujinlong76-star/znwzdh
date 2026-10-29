@@ -165,6 +165,16 @@ describe("CLI", () => {
 describe("CI 接线（源码级钉子）", () => {
   const wf = readFileSync(join(process.cwd(), ".github", "workflows", "ci.yml"), "utf8").replace(/\r\n/g, "\n");
 
+  /**
+   * 红灯也要跑，所以条件至少含 `!cancelled()`。
+   *
+   * 2026-10-29 起又加了一段：只有**测试步骤真的跑过**（成功或失败）才执行，
+   * 即 `steps.vitest.outcome != 'skipped'`。typecheck 一红时测试步骤会被跳过、
+   * junit 根本不存在，这三步照样跑就会把「一次根因」变成「四处级联红」，
+   * 还会把「遥测链路断了」这条告警变成狼来了。
+   */
+  const RED_RUNS = "!cancelled()";
+
   it("单元测试分片：junit-summary 在测试步骤之后、artifact 上传之前，且红灯也跑", () => {
     const testStep = wf.indexOf("单元/接口测试（分片 ${{ matrix.shard }}/3）");
     const summary = wf.indexOf("node scripts/junit-summary.mjs junit-sqlite-${{ matrix.shard }}.xml");
@@ -173,13 +183,17 @@ describe("CI 接线（源码级钉子）", () => {
     expect(summary).toBeGreaterThan(testStep);
     expect(upload).toBeGreaterThan(summary);
     const block = wf.slice(summary - 220, summary);
-    expect(block).toContain("if: ${{ !cancelled() }}");
+    expect(block).toContain("if: ${{ " + RED_RUNS);
+    // 测试步骤被跳过时不掺和（上游才是根因所在）
+    expect(block).toContain("steps.vitest.outcome != 'skipped'");
   });
 
   it("E2E 分片：同样接上，且传的是本分片的 junit 文件名", () => {
     const summary = wf.indexOf("node scripts/junit-summary.mjs junit-e2e-${{ matrix.shard }}.xml");
     expect(summary).toBeGreaterThan(-1);
-    expect(wf.slice(summary - 220, summary)).toContain("if: ${{ !cancelled() }}");
+    const block = wf.slice(summary - 220, summary);
+    expect(block).toContain("if: ${{ " + RED_RUNS);
+    expect(block).toContain("steps.e2e.outcome != 'skipped'");
     // 文件名必须与 PLAYWRIGHT_JUNIT_OUTPUT_NAME 一致，否则账永远是「产物缺失」
     expect(wf).toContain("PLAYWRIGHT_JUNIT_OUTPUT_NAME=junit-e2e-${{ matrix.shard }}.xml");
   });

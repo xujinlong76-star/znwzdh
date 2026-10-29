@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Activity,
-  AlertTriangle,
   ArrowRight,
   ArrowUpRight,
   Bug,
@@ -13,19 +12,16 @@ import {
   Clock,
   Database,
   Download,
-  ExternalLink,
   Flame,
   Folders,
   Gauge,
   Globe,
   HardDrive,
   History,
-  KeyRound,
   Layers,
   Lock,
   Menu,
   Plus,
-  Radio,
   RefreshCw,
   Search,
   Server,
@@ -33,7 +29,6 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
-  TrendingUp,
   Workflow,
   Wrench,
   Zap,
@@ -197,14 +192,6 @@ function formatRelativeTime(ts: number): string {
   if (diffSec < 3600) return `${Math.floor(diffSec / 60)}分钟前`
   if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}小时前`
   return `${Math.floor(diffSec / 86400)}天前`
-}
-
-const CHANNEL_LABELS: Record<string, string> = {
-  exact: '精准匹配 (exact)',
-  fts: '全文分词 (fts)',
-  pinyin: '拼音双向 (pinyin)',
-  semantic: '向量语义 (semantic)',
-  personal: '个性化偏置 (personal)',
 }
 
 const CHANNEL_STYLES: Record<string, { label: string; barClass: string; badgeClass: string }> = {

@@ -6,6 +6,8 @@
 
 import { writeFileSync, existsSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { MANIFEST_NAME, buildManifest } from './lib/hooks-fresh.mjs'
 
 const gitHooksDir = join(process.cwd(), '.git', 'hooks')
 
@@ -143,6 +145,10 @@ node scripts/check-committed-refs.mjs --staged || exit 1
 # 测试先提交、源码还在暂存区，本地全绿、CI 26 例红）。与上一枚互补——那枚管「从未
 # 入库」，这枚管「HEAD 里还是旧版本」。只审测试文件，成本是几次 git 调用。
 node scripts/check-commit-atomicity.mjs --staged || exit 1
+
+# 钩子自检：改了本安装脚本却忘记重装时，下面所有检查跑的还是旧生成物——
+# 新加的闸门看起来「已经上了」，其实一次都没执行过。hash 对照是毫秒级。
+node scripts/check-hooks-fresh.mjs || exit 1
 
 # CI 工作流 / 门禁清单变更时校验合并门禁与清单一致性（秒级，仅相关文件暂存时才跑）。
 # 门禁脚本读的就是 ci.yml 的聚合关系：改坏了只有 CI 会红，而 CI 自己正是被改的
@@ -637,6 +643,13 @@ writeFileSync(preCommitPath, script, { encoding: 'utf-8', mode: 0o755 })
 writeFileSync(selectorPath, selector, { encoding: 'utf-8' })
 writeFileSync(prePushPath, prePush, { encoding: 'utf-8', mode: 0o755 })
 writeFileSync(nodeLibPath, nodeLib, { encoding: 'utf-8' })
+// 安装清单必须最后写：它记录的是上面四个文件**落盘后**的 hash。
+// pre-commit 里的 check-hooks-fresh 拿它判断「模板改了没重装」。
+writeFileSync(
+  join(gitHooksDir, MANIFEST_NAME),
+  JSON.stringify(buildManifest({ hooksDir: gitHooksDir, sourcePath: fileURLToPath(import.meta.url) }), null, 2) + '\n',
+  { encoding: 'utf-8' },
+)
 for (const path of [preCommitPath, prePushPath]) {
   try {
     chmodSync(path, 0o755)

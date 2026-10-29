@@ -67,6 +67,17 @@ export function hookCommands(template) {
   return [...keys].sort();
 }
 
+/** 一枚门禁登记的测试文件（string 或 string[]，去空） */
+export function testFilesOf(gate) {
+  const raw = gate?.test;
+  if (typeof raw === "string") {
+    const one = raw.trim();
+    return one ? [one] : [];
+  }
+  if (Array.isArray(raw)) return raw.map((x) => String(x ?? "").trim()).filter(Boolean);
+  return [];
+}
+
 /** 清单基本形状。坏清单比没清单更危险：它会让人相信某些东西被拦着 */
 export function validateRegistry(registry) {
   const problems = [];
@@ -95,6 +106,17 @@ export function validateRegistry(registry) {
     if (!WHEN.includes(gate.when)) problems.push(`${where} 的 when 必须是 ${WHEN.join("|")}`);
     if (typeof gate.blocks !== "boolean") problems.push(`${where} 缺 blocks（boolean）`);
     if (!String(gate.why ?? "").trim()) problems.push(`${where} 缺 why（为什么它必须拦）`);
+
+    // 门禁自己的测试：要么有，要么写清为什么没有。没有理由的「裸门禁」不许入库——
+    // 否则清单只是把「没人验证过」换了个说法。
+    const tests = testFilesOf(gate);
+    const whyNoTest = String(gate.whyNoTest ?? "").trim();
+    if (tests.length === 0 && !whyNoTest) {
+      problems.push(`${where} 缺 test（或在确实没有专属测试时写 whyNoTest 说明理由）`);
+    }
+    if (tests.length > 0 && whyNoTest) {
+      problems.push(`${where} 同时写了 test 与 whyNoTest——要么补测试，要么删掉 test`);
+    }
 
     if (gate.when === "ci") {
       if (!String(gate.job ?? "").trim()) problems.push(`${where} 是 ci 门禁，缺 job`);
@@ -136,7 +158,8 @@ function missingAndExtra(registered, wired, lane) {
 export function reviewGates({ registry, hookSource, workflowSource, prepushIds }) {
   const problems = [];
   const gates = (registry.gates ?? []).filter((g) => g && typeof g === "object");
-  const summary = { staged: 0, prepushOuter: 0, prepushInner: 0, ci: 0, ciBlocking: 0, ciManual: 0 };
+  const summary = { staged: 0, prepushOuter: 0, prepushInner: 0, ci: 0, ciBlocking: 0, ciManual: 0, noTest: 0 };
+  summary.noTest = gates.filter((g) => testFilesOf(g).length === 0).length;
 
   // —— pre-commit ——
   const stagedTemplate = extractTemplate(hookSource, "script");

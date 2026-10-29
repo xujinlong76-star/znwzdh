@@ -66,7 +66,13 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
 
 - **字段**：`name`（唯一）/ `when`（`staged` | `prepush` | `ci`）/ `blocks`（红了是否拦合并）/ `why`（为什么存在，一句话）/
   `script` + `args`（被钩子调用的脚本）/ `runner: "prepush-gates"`（pre-push 内层，由 `planGates()` 产出）/
-  `job`（CI 作业名，缺省即 `name`）。
+  `job`（CI 作业名，缺省即 `name`）/ `test`（一个路径或数组，指向这枚门禁的测试）/
+  `whyNoTest`（确无专属测试时说明理由，与 `test` 二选一）。
+- **门禁自己的测试**：`test` 指向的文件必须真实存在（`check-gates-registry` 逐个 `existsSync`），
+  否则「清单说它有测试」只是换个说法骗人；目前只有 `extensions` / `upstream-ref` 用 `whyNoTest` 豁免。
+- **钩子新鲜度**：`hooks-fresh` 门禁在 pre-commit 里比对 `.git/hooks/.navhub-hooks.json`
+  与四个生成物 + 模板源 hash。改了 `scripts/install-git-hooks.mjs` 却没重装 ⇒ 提交被拦，
+  提示 `node scripts/install-git-hooks.mjs`——否则钩子里的新检查一次都不会跑。
 - **双向对账**：
   - 登记了但接线里没有 ⇒ 「以为在拦，其实没跑」；
   - 接线里有但清单没登记 ⇒ 下次改钩子时会被人顺手删掉，且没人知道它拦过什么。

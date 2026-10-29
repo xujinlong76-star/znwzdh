@@ -71,8 +71,41 @@ describe("门禁清单：现状与双向对照", () => {
     const res = run();
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("门禁清单一致");
-    expect(res.out).toContain("pre-commit 11 枚");
+    expect(res.out).toContain("pre-commit 12 枚");
     expect(res.out).toContain("CI 9 个作业");
+    expect(res.out).toContain("登记的测试文件全部存在");
+    expect(res.out).toContain("2 枚无专属测试，已声明理由");
+  });
+
+  it("登记的测试文件不存在 ⇒ 红（写了 test 却没东西验证这枚门禁）", () => {
+    const registry = JSON.parse(readFileSync(REAL_REGISTRY, "utf8"));
+    const target = registry.gates.find((g: { name: string }) => g.name === "syntax");
+    target.test = "scripts/does-not-exist.test.ts";
+    const path = writeFixture("registry-missing-test.json", JSON.stringify(registry, null, 2));
+    const res = run({ registry: path });
+    expect(res.status, res.out).toBe(1);
+    expect(res.out).toContain("门禁「syntax」登记的测试文件不存在");
+    expect(res.out).toContain("does-not-exist.test.ts");
+  });
+
+  it("既没有 test 也没有 whyNoTest ⇒ rc 2（裸门禁不许入库）", () => {
+    const registry = JSON.parse(readFileSync(REAL_REGISTRY, "utf8"));
+    const target = registry.gates.find((g: { name: string }) => g.name === "syntax");
+    delete target.test;
+    const path = writeFixture("registry-no-test.json", JSON.stringify(registry, null, 2));
+    const res = run({ registry: path });
+    expect(res.status, res.out).toBe(2);
+    expect(res.out).toContain("缺 test");
+  });
+
+  it("test 与 whyNoTest 同时写 ⇒ rc 2（要么补测试，要么删掉 test）", () => {
+    const registry = JSON.parse(readFileSync(REAL_REGISTRY, "utf8"));
+    const target = registry.gates.find((g: { name: string }) => g.name === "extensions");
+    target.test = "scripts/check-syntax.test.ts";
+    const path = writeFixture("registry-test-and-why.json", JSON.stringify(registry, null, 2));
+    const res = run({ registry: path });
+    expect(res.status, res.out).toBe(2);
+    expect(res.out).toContain("同时写了 test 与 whyNoTest");
   });
 
   it("登记了但 pre-commit 模板没接线 ⇒ 红（以为在拦，其实没跑）", () => {
@@ -142,7 +175,7 @@ describe("门禁清单：现状与双向对照", () => {
 
   it("清单登记了不存在的 CI 作业 ⇒ 红", () => {
     const registry = JSON.parse(readFileSync(REAL_REGISTRY, "utf8"));
-    registry.gates.push({ name: "ghost-job", when: "ci", job: "test-ghost", blocks: true, why: "夹具" });
+    registry.gates.push({ name: "ghost-job", when: "ci", job: "test-ghost", blocks: true, why: "夹具", test: "apps/web/test/ci-gate.test.ts" });
     const path = writeFixture("registry-ghost-job.json", JSON.stringify(registry, null, 2));
     const res = run({ registry: path });
     expect(res.status, res.out).toBe(1);

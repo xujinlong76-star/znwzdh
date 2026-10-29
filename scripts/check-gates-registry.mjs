@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
-import { reviewGates, validateRegistry } from "./lib/gates-registry.mjs";
+import { reviewGates, testFilesOf, validateRegistry } from "./lib/gates-registry.mjs";
 
 const P = "[gates-registry] ";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -87,16 +87,32 @@ async function main(argv) {
   }
 
   const { problems, summary } = reviewGates({ registry, hookSource, workflowSource, prepushIds });
+
+  // 登记的测试文件必须真实存在：写一条指向不存在文件的 test，比不写更糟——
+  // 清单会显示「它有测试」，而实际上没有任何东西在验证这枚门禁。
+  const missingTests = [];
+  for (const gate of registry.gates) {
+    for (const test of testFilesOf(gate)) {
+      if (!existsSync(resolve(REPO_ROOT, test))) {
+        missingTests.push(`门禁「${gate.name}」登记的测试文件不存在：${test}`);
+      }
+    }
+  }
+  problems.push(...missingTests);
+
   if (problems.length > 0) {
     console.error(`${P}❌ 门禁清单与接线不一致：`);
     for (const p of problems) console.error(`   - ${p}`);
-    console.error(`${P}口径：登记 ↔ 接线必须双向一致。改钩子模板/CI 作业后跑这一条。`);
+    console.error(`${P}口径：登记 ↔ 接线必须双向一致；test 里的文件必须存在。改钩子模板/CI 作业后跑这一条。`);
     return 1;
   }
 
   console.log(
     `${P}✅ 门禁清单一致：pre-commit ${summary.staged} 枚、pre-push 外层 ${summary.prepushOuter} 枚 + 内层 ${summary.prepushInner} 枚、` +
-      `CI ${summary.ci} 个作业（阻塞 ${summary.ciBlocking} / 手动豁免 ${summary.ciManual}）。`,
+      `CI ${summary.ci} 个作业（阻塞 ${summary.ciBlocking} / 手动豁免 ${summary.ciManual}）；` +
+      `登记的测试文件全部存在` +
+      (summary.noTest > 0 ? `（${summary.noTest} 枚无专属测试，已声明理由）` : "") +
+      "。",
   );
   return 0;
 }

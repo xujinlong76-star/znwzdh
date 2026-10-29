@@ -30,8 +30,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   dirnameOf,
+  escapeRegExp,
   extractSpecifiers,
+  isRepoRelativePath,
   normalizePath,
+  REPO_RELATIVE_PREFIXES,
   resolveSpecifier,
   stripComments,
   WORKSPACE_ALIAS_ROOTS,
@@ -75,17 +78,14 @@ const ALIAS_ROOTS = {
 /**
  * 路径字面量：测试里 readFileSync / spawn 的目标。
  * 两种写法都要认：
- *   - 仓库相对（`scripts/check-x.mjs`、`packages/core/src/x.ts`）；
+ *   - 仓库相对（`scripts/check-x.mjs`、`packages/core/src/x.ts`、`.github/workflows/ci.yml`）；
  *   - overlay 相对（`src/app/.../page.tsx`）——守卫型测试普遍用 `join(overlayRoot, "src/…")`。
  *
- * 前缀表里那三类**非代码**（`.github/`、`docker/`、`docs/`）是 2026-10-29 补的盲区：
- * 它们不在 BASE_SCAN_DIRS、也没代码后缀，于是「改 CI 接线」在选测眼里等于没改——
- * `scripts/check-ci-gate.test.ts` 真读 `.github/workflows/ci.yml`，改 ci.yml 却不选它。
- * 一张表两处用（抽取正则 + 判「仓库相对还是 overlay 相对」）：分两处写迟早只加一半。
+ * 仓库根前缀表在 scripts/lib/source-refs.mjs（`REPO_RELATIVE_PREFIXES`）：那三类非代码目录
+ * （`.github/`、`docker/`、`docs/`）是 2026-10-29 补的盲区，选测与提交原子性两道门禁共用同一张表。
  */
-export const REPO_RELATIVE_PREFIXES = ["apps", "packages", "scripts", "types", "e2e", ".github", "docker", "docs"];
 const OVERLAY_RELATIVE_PREFIXES = ["src", "app"];
-const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRe = escapeRegExp;
 const PATH_LITERAL_RE = new RegExp(
   `["'\`]((?:${[...REPO_RELATIVE_PREFIXES, ...OVERLAY_RELATIVE_PREFIXES]
     .map(escapeRe)
@@ -94,9 +94,7 @@ const PATH_LITERAL_RE = new RegExp(
 );
 const FILE_LIKE_RE = /\.(tsx?|mts|cts|mjs|cjs|jsx?|json|md|ya?ml|xml|css|txt)$/;
 
-function isRepoRelative(lit) {
-  return REPO_RELATIVE_PREFIXES.some((p) => lit.startsWith(p + "/"));
-}
+const isRepoRelative = isRepoRelativePath;
 
 /**
  * 一笔提交里「图可能有节点」的那些路径 = 回放的可见集。

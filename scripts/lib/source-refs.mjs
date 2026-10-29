@@ -14,6 +14,30 @@
  */
 
 /**
+ * 仓库根相对的顶层目录：路径字面量以此开头才算「指向仓库里的某个文件」，
+ * 否则是包名、URL、临时目录里的假路径。
+ *
+ * `.github/`、`docker/`、`docs/` 这三类**非代码**目标是 2026-10-29 补进来的盲区：
+ * 它们没有代码后缀，于是「改 CI 接线」在两道门禁眼里都等于没改——
+ *   · 选测：`scripts/check-ci-gate.test.ts` 真读 `.github/workflows/ci.yml`，改 ci.yml 却不选它；
+ *   · 提交原子性：只提交那个测试、把 ci.yml 的改动留在工作区，本地绿、CI 检出提交树红。
+ * 同一件事在两处各判一次，所以表只放这里。
+ *
+ * 一处定义四处用（选测的抽取正则 / 选测的「仓库相对 vs overlay 相对」判定 /
+ * 回放的可见集 / 提交原子性的依赖抽取）：分两处写迟早只加一半——这是同日实测到的失效方式。
+ */
+export const REPO_RELATIVE_PREFIXES = ["apps", "packages", "scripts", "types", "e2e", ".github", "docker", "docs"];
+
+/** 字面量里的目录名转成正则片段（`.github` 的点必须转义） */
+export const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** 路径字面量的「仓库根相对」判定：以表内某项 + `/` 开头 */
+export function isRepoRelativePath(p) {
+  const s = String(p).replace(/\\/g, "/");
+  return REPO_RELATIVE_PREFIXES.some((prefix) => s.startsWith(prefix + "/"));
+}
+
+/**
  * 正则字面量的前导字符：出现在这些字符之后，`/` 才是「正则开头」而不是除号。
  * 判据保守：只认明确的表达式开头位置；认不出就按除号处理（最坏是没识别到正则，
  * 不会把普通代码当成正则吞掉）。

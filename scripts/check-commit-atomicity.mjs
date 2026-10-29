@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 提交原子性门禁：**本次提交的测试，不得依赖「脏了但没提交」的源码**。
+ * 提交原子性门禁：**本次提交的测试，不得依赖「脏了但没提交」的文件**。
  *
  * 事故形状（2026-10-29，89a20b42）：并行会话先提交测试、源码还在暂存区。
  * 本地 vitest 读工作区（新源码）全绿，CI 检出提交树（旧源码）立刻 26 例红，
@@ -8,7 +8,10 @@
  *
  * 判定（详见 scripts/lib/commit-atomicity.mjs）：
  *   1. 取本次提交集（`git diff --cached`，尊重 GIT_INDEX_FILE）；
- *   2. 只审其中的测试文件，解析两类依赖：模块说明符 + 源码路径字面量；
+ *   2. 只审其中的测试文件，解析两类依赖：模块说明符 + 路径字面量。字面量的目标既可以是
+ *      源码，也可以是**被断言的非代码文件**（`.github/workflows/ci.yml`、`*.css`、
+ *      `docker/Dockerfile.*`、`docs/*.json`）——门禁测试就是靠读这些内容做钉子断言的，
+ *      「只提交测试、把 ci.yml 留在工作区」与「只提交测试、把 page.tsx 留在工作区」是同一种不原子。
  *   3. 依赖不在提交集，且工作区版本与 HEAD 不同（或压根未入库）→ 拦下。
  *
  * 为什么目标必须「脏」才报：目标干净 = 提交树里的版本就是工作区版本，测试在 CI
@@ -141,15 +144,15 @@ function main() {
     if (AS_JSON) {
       console.log(JSON.stringify({ mode: "staged", tests: tests.length, violations }, null, 2));
     } else {
-      console.error(`❌ 提交原子性：${violations.length} 处测试依赖了「已改动但不在本次提交集」的源码\n`);
-      console.error("   本地测试读工作区（新源码），CI 检出提交树（旧源码）——这种提交本地全绿、CI 必红。\n");
+      console.error(`❌ 提交原子性：${violations.length} 处测试依赖了「已改动但不在本次提交集」的文件\n`);
+      console.error("   本地测试读工作区（新版本），CI 检出提交树（旧版本）——这种提交本地全绿、CI 必红。\n");
       for (const v of violations) {
         console.error(`   ${v.test}`);
         console.error(`     依赖 ${v.spec}  →  ${v.target}`);
         console.error(`     该文件在工作区已改动（或未入库），但不在本次提交里。`);
       }
       console.error("\n   处理：");
-      console.error("     1) 源码与测试属于同一改动 → 把源码一起加进本次提交（git add <path>，再重跑 safe-commit）");
+      console.error("     1) 依赖方与测试属于同一改动 → 把它一起加进本次提交（git add <path>，再重跑 safe-commit）");
       console.error("     2) 测试改动先不提交 → git restore --staged <test>，等源码就绪后一起提");
       console.error("     3) 确认脏依赖与本次测试无关（例如对方只改了注释）→ NAVHUB_ALLOW_DIRTY_TEST_DEPS=1 重新提交");
     }

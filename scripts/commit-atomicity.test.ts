@@ -24,6 +24,8 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   aliasRootsFor,
   changedExportNames,
+  extractPathLiterals,
+  isReadArgument,
   mentionsSymbol,
   reexportClosure,
 } from "./lib/commit-atomicity.mjs";
@@ -248,6 +250,133 @@ describe("提交原子性门禁", () => {
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("NAVHUB_ALLOW_DIRTY_TEST_DEPS");
     expect(res.out).toContain("apps/web-overlay/src/lib/x.ts");
+  });
+});
+
+/**
+ * 测试 → **非代码文件**的原子性（2026-10-29 补的盲区）。
+ *
+ * 门禁测试大量直接读接线/样式/镜像文件（`.github/workflows/ci.yml`、`src/styles/*.css`、
+ * `docker/Dockerfile.api`）。只认代码后缀时，「提交测试、把 ci.yml 留在工作区」这条
+ * 与事故同形的不原子完全看不见——本地绿、CI 检出提交树红。
+ *
+ * 反向的一半同样必须钉住：非代码路径名会被当成**例子**写进夹具，所以对非代码要求
+ * 「被当作输入读取」（isReadArgument）。没有这半边，热区文件会让每个举了例的测试都变敏感，
+ * 噪音门禁的终点是被人 `--no-verify` 绕过。
+ */
+describe("提交原子性：测试 → 非代码文件", () => {
+  // 读取形态的夹具刻意用探针名（probe-*）：本文件真被提交时，这些字面量会在**真实仓库**里
+  // 解析，撞 `.github/workflows/ci.yml` 这种热区文件就等于让本测试对别人的脏改动敏感。
+  // 反向用例（下面那条「举例不敏感」）反过来必须用真实名——它要证的正是「撞了也不敏感」。
+  const READER = 'import { readFileSync } from "node:fs"\nreadFileSync(".github/workflows/probe-ci.yml", "utf8")\n';
+
+  function ciRepo() {
+    return makeRepo({ ".github/workflows/probe-ci.yml": "jobs:\n  test:\n    steps: []\n" });
+  }
+
+  it("接线文件脏了没提交、只提交读它的测试 → 必须红并点名接线文件", () => {
+    const dir = ciRepo();
+    write(dir, ".github/workflows/probe-ci.yml", "jobs:\n  test:\n    steps:\n      - run: pnpm test\n");
+    write(dir, "scripts/check-ci-gate.test.ts", READER);
+    git(dir, ["add", "scripts/check-ci-gate.test.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(1);
+    expect(res.out).toContain("scripts/check-ci-gate.test.ts");
+    expect(res.out).toContain(".github/workflows/probe-ci.yml");
+  });
+
+  it("测试与接线文件同批提交 → 必须绿（当天 P0 的真实形状）", () => {
+    const dir = ciRepo();
+    write(dir, ".github/workflows/probe-ci.yml", "jobs:\n  test:\n    steps:\n      - run: pnpm test\n");
+    write(dir, "scripts/check-ci-gate.test.ts", READER);
+    git(dir, ["add", "scripts/check-ci-gate.test.ts", ".github/workflows/probe-ci.yml"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+  });
+
+  it("无后缀的 Dockerfile 走配置对象键（dockerfilePath:）也算读取 → 必须红", () => {
+    const dir = makeRepo({ "docker/Dockerfile.probe": "FROM node\n" });
+    write(dir, "docker/Dockerfile.probe", "FROM node:24\n");
+    write(
+      dir,
+      "scripts/check-hooks-fresh.test.ts",
+      'const problems = prepareClosureProblems({\n  dockerfilePath: "docker/Dockerfile.probe",\n  entry: "scripts/x.mjs",\n});\n',
+    );
+    git(dir, ["add", "scripts/check-hooks-fresh.test.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(1);
+    expect(res.out).toContain("docker/Dockerfile.probe");
+  });
+
+  it("样式：overlay 相对写法 src/styles/*.css 归一到事实源后脏了 → 必须红", () => {
+    const dir = makeRepo({ "apps/web-overlay/src/styles/probe-globals.css": ":root { --x: 1 }\n" });
+    write(dir, "apps/web-overlay/src/styles/probe-globals.css", ":root { --x: 2 }\n");
+    write(dir, "apps/web-overlay/test/design-system.test.ts", 'const s = overlayFile("src/styles/probe-globals.css")\n');
+    git(dir, ["add", "apps/web-overlay/test/design-system.test.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(1);
+    expect(res.out).toContain("apps/web-overlay/src/styles/probe-globals.css");
+  });
+
+  it("夹具里的「举例」不敏感：对象键 / 数组元素 / 赋值 / 写字类 / 集合断言第二元素 → 必须绿", () => {
+    const dir = makeRepo({
+      ".github/workflows/ci.yml": "jobs:\n  test:\n",
+      "docker/Dockerfile.api": "FROM node\n",
+      "docs/GATES-OPERATIONS.md": "# gates\n",
+    });
+    // 三个热区文件全部改脏，但都不进本次提交
+    write(dir, ".github/workflows/ci.yml", "jobs:\n  test:\n    steps: []\n");
+    write(dir, "docker/Dockerfile.api", "FROM node:24\n");
+    write(dir, "docs/GATES-OPERATIONS.md", "# gates v2\n");
+    write(
+      dir,
+      "scripts/test-impact.test.ts",
+      [
+        'const root = makeRepo({ ".github/workflows/ci.yml": "jobs:\\n", "docs/GATES-OPERATIONS.md": "# x\\n" })',
+        'expect(graphVisibleFiles([".github/workflows/ci.yml", "docker/Dockerfile.api", "docs/GATES-OPERATIONS.md"]))',
+        'const p = "docker/Dockerfile.api";',
+        'write(root, "docs/GATES-OPERATIONS.md", "x")',
+        'expect(x).toEqual(["docs/GATES-OPERATIONS.md", ".github/workflows/ci.yml"])',
+      ].join("\n") + "\n",
+    );
+    git(dir, ["add", "scripts/test-impact.test.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+  });
+
+  it("isReadArgument：逐条钉住「读取形态」与「举例形态」的分界", () => {
+    // 每一项都是「字面量之前的文本」，直接给字符串，避免靠下标反推
+    const reads = [
+      'readFileSync(',
+      'const ci = readFileSync(resolve(ROOT, ',
+      'const REAL_CI = join(REPO_ROOT, ',
+      'const s = overlayFile(',
+      'const problems = prepareClosureProblems({\n  dockerfilePath: ',
+      'const css = overlaySource(',
+    ];
+    for (const before of reads) expect(isReadArgument(before), before).toBe(true);
+
+    const examples = [
+      'const root = makeRepo({ ', // 对象键：夹具在造文件
+      'expect(graphVisibleFiles(["a.yml", ', // 数组第二个元素：不是第二个实参
+      'const p = ', // 赋值：路径只是数据
+      'write(root, ', // 写字类：目标在夹具临时树里
+      'expect(x).toEqual(["docs/a.md", ', // 集合断言里的元素
+      '(p === ', // 比较：mock 的路由谓词
+      'expect(workspace.files[', // 下标访问
+    ];
+    for (const before of examples) expect(isReadArgument(before), before).toBe(false);
+
+    // 整行级：括号内出现方括号就不认，集合断言里的路径一个字都不进依赖
+    expect(extractPathLiterals('expect(x).toEqual(["docs/a.md", ".github/workflows/ci.yml"])')).toEqual([]);
+    expect(extractPathLiterals('readFileSync(resolve(ROOT, ".github/workflows/probe-ci.yml"), "utf8")')).toEqual([
+      ".github/workflows/probe-ci.yml",
+    ]);
   });
 });
 

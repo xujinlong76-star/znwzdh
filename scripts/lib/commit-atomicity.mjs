@@ -13,8 +13,9 @@
  *
  * 依赖的两种形态都要认：
  *   1) 模块说明符：`import … from "@/lib/x"` / `../src/x`；
- *   2) 路径字面量：`readFileSync(resolve(ROOT, "src/app/admin/x.ts"))`。
- * 本仓大量门禁测试是第 2 种形态（读源码做钉子断言），只查 import 会漏掉事故里
+ *   2) 路径字面量：`readFileSync(resolve(ROOT, "src/app/admin/x.ts"))`，
+ *      以及**非代码**目标 `readFileSync(join(ROOT, ".github/workflows/ci.yml"))`。
+ * 本仓大量门禁测试是第 2 种形态（读源码/接线做钉子断言），只查 import 会漏掉事故里
  * 最典型的一类（admin-category-impact 就是直接读 page.tsx）。
  *
  * 口径：
@@ -30,8 +31,11 @@
  */
 
 import {
+  escapeRegExp,
   extractSpecifiers,
+  isRepoRelativePath,
   normalizePath,
+  REPO_RELATIVE_PREFIXES,
   resolveSpecifier,
   stripComments,
   WORKSPACE_ALIAS_ROOTS,
@@ -40,14 +44,78 @@ import {
 export const TEST_FILE_RE = /\.(?:test|spec)\.(?:ts|tsx|mts|cts)$/;
 
 /**
- * 仓库内路径字面量：必须带已知顶层前缀与源码扩展名。
+ * 仓库内路径字面量：必须带已知顶层前缀，且后缀说明它是个**被读的文件**。
  *
  * `src/`、`test/` 是相对「测试所属的那棵源码树」，其余按仓库根解析。
- * 不收纳 `public/`、`data/` 等运行期数据：它们是数据不是代码，改动了也未必
- * 属于同一个提交，收进来只会制造假红。
+ *
+ * 为什么认非代码文件（2026-10-29 补）：本仓的门禁测试大量直接读 `.github/workflows/ci.yml`
+ * （check-ci-gate / check-gates-registry / check-rate-limit-exemption / ci-red-ledger /
+ * lib/workflow-actions）与 `docs/ci-red-ledger.json`。此前只认代码后缀，于是「只提交测试、
+ * 把 ci.yml 留在工作区」这条**同一种不原子**的形状完全看不见——而它恰恰是最常见的一种：
+ * 当天 P0 那笔提交就是测试 + ci.yml 同批。前缀表与选测同源（source-refs.mjs），
+ * 不再分两处写。
+ *
+ * 仍不收纳 `public/`、`data/`：它们是数据不是断言对象，改动了也未必属于同一个提交，
+ * 收进来只会制造假红。
+ *
+ * **非代码目标要求「被当作输入读取」**（见 isReadArgument）。为什么只对非代码加这条：
+ * 代码文件的名字几乎只出现在真读取处（守卫测试就是读源码做断言），而非代码路径名会被当成
+ * **例子**大量写进夹具——`makeRepo({ ".github/workflows/ci.yml": "jobs:" })`（对象键）、
+ * `graphVisibleFiles(["docs/GATES-OPERATIONS.md"])`（数组元素）、`const p = "…ci.yml"`（赋值）。
+ * 不加这条，热区文件 `.github/workflows/ci.yml` 会让每个只是「举了个例」的测试
+ * 都对它的脏状态敏感——噪音门禁最后的去处是被人 `--no-verify` 绕过，等于没有门禁。
+ * 实测本仓真读者的形态只有三种：`readFileSync(resolve(ROOT, "…"))` / `join(REPO_ROOT, "…")` /
+ * 自研 helper `overlayFile("…")`，外加 `prepareClosureProblems({ dockerfilePath: "…" })`
+ * 这种「键名说明它是个文件」的配置对象——四种都在，其余全是夹具举例。
+ * 前提仍是「夹具路径不得撞真实路径」（docs/TESTING-CONVENTIONS.md）：撞了就退化成假红。
  */
-const PATH_LITERAL_RE =
-  /["'`]((?:apps\/(?:web-overlay|web|api)\/|packages\/[A-Za-z0-9._-]+\/|scripts\/|e2e\/|src\/|test\/)[^"'`\r\n]*?\.(?:ts|tsx|mts|cts|mjs|cjs|js|jsx|json))["'`]/g;
+const CODE_EXT = "ts|tsx|mts|cts|mjs|cjs|js|jsx|json";
+/** 门禁测试断言的「内容契约」文件：接线、文档、样式、脚本，都不是代码但会被读 */
+const NON_CODE_EXT = "md|ya?ml|xml|css|txt|sql|sh";
+const TREE_PREFIXES = ["src", "test"];
+const PREFIX_ALT = [...REPO_RELATIVE_PREFIXES, ...TREE_PREFIXES].map(escapeRegExp).join("|");
+const PATH_LITERAL_RE = new RegExp(
+  `["'\`]((?:${PREFIX_ALT})/[^"'\`\r\n]*?\\.(?:${CODE_EXT}|${NON_CODE_EXT})` +
+    `|(?:${PREFIX_ALT})/[^"'\`\r\n]*?Dockerfile(?:\\.[A-Za-z0-9_-]+)?)["'\`]`,
+  "g",
+);
+const CODE_SUFFIX_RE = new RegExp(`\\.(?:${CODE_EXT})$`);
+
+/**
+ * 写字类调用：它们的目标几乎都在临时目录（夹具自己造的树），不算「读了仓库里的文件」。
+ * 只按**被调用名**判断，所以 `overlayFile("…")`、`read("…")` 这类自研读取 helper 不受影响。
+ */
+const WRITE_CALLEE_RE =
+  /^(?:write|writeFile|writeFileSync|appendFile|appendFileSync|mkdir|mkdirSync|rm|rmSync|rimraf|unlink|unlinkSync|cp|cpSync|copyFile|copyFileSync|mv|rename|utimes|utimesSync)$/;
+
+/** 字面量前面的文本以「某调用的左括号（最多再加一个实参和逗号）」结尾 ⇒ 它是这个调用的实参。
+ * 实参文本里**不许出现方括号/花括号**：`.toEqual(["x", ".github/workflows/ci.yml"])` 里第二个
+ * 元素是数组成员（数据），不是第二个实参——只按「前面有逗号」判会把集合断言读成依赖。 */
+const CALL_ARG_RE = /[\w$)\]]\s*\(\s*(?:[^\s(),[\]{}][^(),[\]{}]*?\s*,\s*)?$/;
+/**
+ * 属性值形态：`{ dockerfilePath: "docker/Dockerfile.api", readFile, exists }`。
+ * 只有**键名说明它是个文件/目录目标**（以 Path/File/Dir 结尾）才算读取——
+ * 否则 `{ name: "docs/x.md" }` 这种拿路径当数据的夹具会凭空制造敏感边。
+ * 真实形状来自 scripts/check-hooks-fresh.test.ts：它把 Dockerfile 路径按配置对象传进
+ * 闭包检查器，而那条断言确实依赖真实的 `docker/Dockerfile.api`（间接经 spawn 的同一枚门禁）。
+ */
+const PROP_VALUE_RE = /([A-Za-z_$][\w$]*(?:Path|File|Dir))\s*:\s*$/;
+/** 从同样的位置把被调用名捞出来，用来排除写字类 */
+const CALLEE_RE = /([\w$]+)\s*\(\s*(?:[^\s(),[\]{}][^(),[\]{}]*?\s*,\s*)?$/;
+
+/**
+ * 「这一处字面量是不是被当作输入读的」——只看字面量之前的文本，不跨行找左括号。
+ * 代价：`readFileSync(\n  ".github/workflows/ci.yml"\n)` 这种把路径单独起一行的写法读不出来；
+ * 本仓没有这种形态，且漏判的方向是「不拦」，不会假红。
+ */
+export function isReadArgument(textBeforeLiteral) {
+  const callee = CALLEE_RE.exec(textBeforeLiteral)?.[1];
+  if (callee && WRITE_CALLEE_RE.test(callee)) return false;
+  if (CALL_ARG_RE.test(textBeforeLiteral)) return true;
+  // 键名本身是写字类（`{ writeFile: "…" }`）时不算读取目标
+  const key = PROP_VALUE_RE.exec(textBeforeLiteral)?.[1];
+  return !!key && !WRITE_CALLEE_RE.test(key);
+}
 
 /**
  * 别名：`@/` 按「文件所在的那棵源码树」解析（与 check-committed-refs.mjs 同口径），
@@ -76,7 +144,10 @@ export function extractPathLiterals(code) {
   PATH_LITERAL_RE.lastIndex = 0;
   let m;
   while ((m = PATH_LITERAL_RE.exec(code)) !== null) {
-    if (m[1]) out.push(m[1]);
+    const lit = m[1];
+    if (!lit) continue;
+    // 代码后缀直接收；非代码目标要求「在本次出现处是被当实参读的」，否则只是夹具举的例子
+    if (CODE_SUFFIX_RE.test(lit) || isReadArgument(code.slice(0, m.index))) out.push(lit);
   }
   return [...new Set(out)];
 }
@@ -84,9 +155,7 @@ export function extractPathLiterals(code) {
 /** 路径字面量 → 仓库根相对路径；不是仓库内形态返回 null */
 export function literalToRepoPath(literal, fromFile) {
   const p = normalizePath(literal);
-  if (p.startsWith("apps/") || p.startsWith("packages/") || p.startsWith("scripts/") || p.startsWith("e2e/")) {
-    return p;
-  }
+  if (isRepoRelativePath(p)) return p;
   if (p.startsWith("src/") || p.startsWith("test/")) {
     const root = treeRootOf(fromFile);
     return root ? root + "/" + p : p;

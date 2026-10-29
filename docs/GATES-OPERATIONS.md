@@ -86,6 +86,15 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
   在 HEAD→工作区里删改的导出符号，如果真出现在 staged 源码里 ⇒ 拦下并点名两处文件；
   改的是没用到的导出 / 只删注释 / 只新增导出 ⇒ 放行（共享工作区里别人的日常改动不该拦无关提交）。
   逃生口 `NAVHUB_ALLOW_DIRTY_SOURCE_DEPS=1`，放行时逐条列出被跳过的清单。
+- **测试 → 非代码文件**（同日补齐，同属 `commit-atomicity`）：门禁测试不 import 而是**直接读**
+  `.github/workflows/ci.yml`、`apps/web-overlay/src/styles/*.css`、`docker/Dockerfile.api`、
+  `docs/ci-red-ledger.json`。此前只认代码后缀，于是「提交测试、把 ci.yml 留在工作区」这条
+  与 89a20b42 同形的不原子看不见——本地绿、CI 检出提交树红。前缀表与选测同源
+  （`source-refs.mjs` 的 `REPO_RELATIVE_PREFIXES`，一处定义四处用）。
+  代价是夹具里大量把非代码路径当**例子**写，所以对非代码目标额外要求「被当作输入读取」
+  （`isReadArgument`：函数实参，或 `*Path|File|Dir:` 结尾的配置键；对象键 / 数组元素 / 赋值 /
+  `write(...)` 不算）。实测本仓 12 个 ci.yml 读者、4 个 css 读者、1 个 Dockerfile 读者全部保留，
+  夹具举例全部排除；前提见 docs/TESTING-CONVENTIONS.md「夹具路径不得撞真实路径」。
 - **双向对账**：
   - 登记了但接线里没有 ⇒ 「以为在拦，其实没跑」；
   - 接线里有但清单没登记 ⇒ 下次改钩子时会被人顺手删掉，且没人知道它拦过什么。

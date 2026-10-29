@@ -120,18 +120,20 @@ describe("图的三类边", () => {
    * （落到 `dir:` 分支的话，那条边永远匹配不上「改这个文件本身」）。
    */
   it("非代码文件也是节点：.github / docker 的字面量按仓库根记账", () => {
+    // 夹具路径刻意避开真实文件（docs/TESTING-CONVENTIONS.md）：撞真路径的夹具字面量
+    // 会让本测试对「ci.yml 脏了没提交」敏感，而它只是举了个例——提交原子性据此判红就是假红。
     const root = makeRepo({
-      ".github/workflows/ci.yml": "jobs:\n  test:\n",
-      "docker/Dockerfile.api": "FROM node\n",
-      "scripts/check-ci-gate.test.ts": 'const a = ".github/workflows/ci.yml";\n',
-      "scripts/check-hooks-fresh.test.ts": 'const b = "docker/Dockerfile.api";\n',
+      ".github/workflows/probe-ci.yml": "jobs:\n  test:\n",
+      "docker/Dockerfile.probe": "FROM node\n",
+      "scripts/check-ci-gate.test.ts": 'const a = ".github/workflows/probe-ci.yml";\n',
+      "scripts/check-hooks-fresh.test.ts": 'const b = "docker/Dockerfile.probe";\n',
     });
     const graph = buildGraph({ root });
-    expect(impactedTests(graph, [".github/workflows/ci.yml"])).toEqual(["scripts/check-ci-gate.test.ts"]);
-    expect(impactedTests(graph, ["docker/Dockerfile.api"])).toEqual(["scripts/check-hooks-fresh.test.ts"]);
+    expect(impactedTests(graph, [".github/workflows/probe-ci.yml"])).toEqual(["scripts/check-ci-gate.test.ts"]);
+    expect(impactedTests(graph, ["docker/Dockerfile.probe"])).toEqual(["scripts/check-hooks-fresh.test.ts"]);
     // 仓库根前缀不许被当成 overlay 相对写法（加了 apps/web-overlay/ 前缀就是死边）
-    expect(pathLiteralDeps('const p = ".github/workflows/ci.yml";').has(".github/workflows/ci.yml")).toBe(true);
-    expect(pathLiteralDeps('const p = "docker/Dockerfile.api";').has("apps/web-overlay/docker/Dockerfile.api")).toBe(false);
+    expect(pathLiteralDeps('const p = ".github/workflows/probe-ci.yml";').has(".github/workflows/probe-ci.yml")).toBe(true);
+    expect(pathLiteralDeps('const p = "docker/Dockerfile.probe";').has("apps/web-overlay/docker/Dockerfile.probe")).toBe(false);
   });
 
   it("带斜杠的目录字面量仍按目录记账（改目录下任何文件都命中）", () => {

@@ -184,6 +184,34 @@ dry-run），`scripts/test-impact.test.ts` 固定图的语义（三类边、目�
 > 已知取舍：收窄只保证「名字相关」的测试会跑。改 `backup.ts` 却破坏了某个名字里没有
 > `backup` 的用例时，钩子会放过它，由 CI 全量兜住。这是刻意换来的速度。
 
+### 夹具路径不得撞真实路径（选测与提交原子性共用这条前提）
+
+一次性夹具（`makeRepo({ … })`、`write(root, …)`）里的文件路径是**临时树里的假文件**，
+但两道门禁都在**真实仓库**上解析它们：
+
+- 选测（`scripts/lib/test-impact.mjs`）按真实存在性判「文件还是目录」；
+- 提交原子性（`scripts/lib/commit-atomicity.mjs`）用真实 `exists`/`isDirty` 判依赖。
+
+于是夹具里写 `".github/workflows/ci.yml"` 时，只要测试文件真被提交、而那个热区文件恰好
+「脏了没提交」，无关的夹具测试就会被判红——假红的来源不是判据错，是**夹具撞了真实路径**。
+
+约定：夹具里的路径一律带明显的探针名，例如 `.github/workflows/probe-ci.yml`、
+`docker/Dockerfile.probe`、`docs/notes.md`。判据侧的补偿是把非代码目标限制在
+「被当作输入读取」的形态（实参 / `*Path|File|Dir:` 配置键），对象键、数组元素、赋值、
+`write(...)` 都不算——这条只减夹具举例的误报；真要覆盖的读者形态必须补进
+`isReadArgument` 的用例表（`scripts/commit-atomicity.test.ts` 逐条钉了正反面）。
+
+**为什么这条只加在非代码上**（2026-10-29 实测）：把同一要求扩到代码后缀会丢掉 324 个真依赖，
+其中 61 个是对象键形态——而它们多数不是夹具，是真的断言表
+（`main-landmark.test.ts` 用 `{ "apps/web-overlay/src/app/page.tsx": … }` 列出要逐页读的主区域、
+`check-client-node-imports.test.ts` 用文件路径做键）。代码文件的名字在测试里几乎只表示「我要读它」，
+非代码文件的名字常常只是举例，所以判据按后缀类型不对称。
+
+**残留的一类假敏感**：别名目标必须用真名（`@navhub/core` 只能解析到 `packages/core/src/index.ts`、
+镜像表只能叫 `scripts/core-mirrors.json`），这类夹具改不了名，撞上别人未提交的改动时门禁会拦。
+核对断言确实不依赖该文件内容后走 `NAVHUB_ALLOW_DIRTY_TEST_DEPS=1`——放行时门禁会逐条打印跳过了什么，
+跳过是可见的，不是静默。
+
 ---
 
 ## 4.6 提交纪律：用 `scripts/safe-commit.mjs`（并行会话必读）

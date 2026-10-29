@@ -73,6 +73,7 @@ import { aiConfigRoutes } from "./routes/ai-config.ts";
 import { telemetryRoutes } from "./routes/telemetry.ts";
 import { clientErrorRoutes } from "./routes/errors.ts";
 import { navsphereRoutes } from "./routes/navsphere.ts";
+import { videoRoutes } from "./routes/videos.ts";
 import { tokenRoutes } from "./routes/tokens.ts";
 import { workspacesRoutes } from "./routes/workspaces.ts";
 import { healthAuditRoutes } from "./routes/health-audit.ts";
@@ -677,6 +678,8 @@ export async function buildServer(ctx: AppContext) {
   await app.register(telemetryRoutes, { ctx });
   await app.register(clientErrorRoutes, { ctx });
   await app.register(navsphereRoutes, { ctx });
+  // 视频库只读查询：关系表优先、KV 回落。写路径仍由 BFF 的 mutateVideoLibrary 收口
+  await app.register(videoRoutes, { ctx });
   await app.register(tokenRoutes, { ctx });
   await app.register(workspacesRoutes, { ctx });
   await app.register(healthAuditRoutes, { ctx });

@@ -13,12 +13,43 @@
  *     真出现时由 typecheck 兜底（模块解析失败会报错）。
  */
 
-/** 去掉块注释与行注释（保留换行，行号不变）；字符串原样保留 */
+/**
+ * 正则字面量的前导字符：出现在这些字符之后，`/` 才是「正则开头」而不是除号。
+ * 判据保守：只认明确的表达式开头位置；认不出就按除号处理（最坏是没识别到正则，
+ * 不会把普通代码当成正则吞掉）。
+ */
+const REGEX_PRECEDERS = new Set([..."(=:[,!&|?{};+-*%~^<>"]);
+
+/**
+ * 从 `start` 处的 `/` 起找同行闭合的 `/`（跳过转义与字符类里的 `/`）。
+ * 找不到返回 -1——模板里出现跨行「正则」时宁可当除号。
+ */
+function regexLiteralEnd(source, start) {
+  let inClass = false;
+  for (let i = start + 1; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === "\\") {
+      i += 1;
+      continue;
+    }
+    if (ch === "\n") return -1;
+    if (ch === "[") inClass = true;
+    else if (ch === "]") inClass = false;
+    else if (ch === "/" && !inClass) return i;
+  }
+  return -1;
+}
+
+/** 去掉块注释与行注释（保留换行，行号不变）；字符串、正则字面量原样保留 */
 export function stripComments(source) {
   let out = "";
   let i = 0;
   const n = source.length;
   let state = "code"; // code | line | block | single | double | template
+  // 上一个非空白字符：用来判断 `/` 是正则还是除号。正则里常含引号/反引号，
+  // 不认出来就会把它当成字符串起点，此后整段代码（含注释）都不再被剥离——
+  // 原子性门禁因此把文档注释里的示例路径读成真实依赖（2026-10-29 实际踩到）。
+  let last = "";
   while (i < n) {
     const ch = source[i];
     const next = source[i + 1];
@@ -33,25 +64,40 @@ export function stripComments(source) {
         i += 2;
         continue;
       }
+      if (ch === "/" && (last === "" || REGEX_PRECEDERS.has(last))) {
+        const end = regexLiteralEnd(source, i);
+        if (end !== -1) {
+          let j = end + 1;
+          while (j < n && /[a-z]/i.test(source[j])) j += 1;
+          out += source.slice(i, j);
+          last = source[j - 1] ?? "/";
+          i = j;
+          continue;
+        }
+      }
       if (ch === "'") {
         state = "single";
         out += ch;
+        last = ch;
         i += 1;
         continue;
       }
       if (ch === '"') {
         state = "double";
         out += ch;
+        last = ch;
         i += 1;
         continue;
       }
       if (ch === "`") {
         state = "template";
         out += ch;
+        last = ch;
         i += 1;
         continue;
       }
       out += ch;
+      if (!/\s/.test(ch)) last = ch;
       i += 1;
       continue;
     }
@@ -85,6 +131,7 @@ export function stripComments(source) {
       (state === "template" && ch === "`")
     ) {
       state = "code";
+      last = ch;
     }
     out += ch;
     i += 1;
@@ -235,6 +282,22 @@ export function extractScriptRefs(scripts) {
   }
   return refs;
 }
+
+/**
+ * 工作区包别名：`@navhub/store` → `packages/store/src`。
+ *
+ * 谁需要共享它：模块图（test-impact）与提交原子性（commit-atomicity）都要解析
+ * 跨包 import。各写一份的后果是 2026-10-29 的事故漏检——路由 `from "@navhub/store"`，
+ * 原子性门禁只认相对路径与 `@/`，依赖整条边解析不到，脏文件自然看不见。
+ *
+ * `@/` 不在这里：它随「文件属于哪棵树」（overlay / vendored web）而变，由调用方补。
+ */
+export const WORKSPACE_ALIAS_ROOTS = {
+  "@navhub/core": "packages/core/src",
+  "@navhub/ai": "packages/ai/src",
+  "@navhub/mcp": "packages/mcp/src",
+  "@navhub/store": "packages/store/src",
+};
 
 const EXTENSIONS = ["", ".ts", ".tsx", ".mjs", ".cjs", ".js", ".jsx", ".json"];
 

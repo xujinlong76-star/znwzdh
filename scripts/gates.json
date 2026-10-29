@@ -53,7 +53,7 @@
       "args": "--staged",
       "blocks": true,
       "test": "scripts/commit-atomicity.test.ts",
-      "why": "测试不得依赖「改了但没提交」的源码（2026-10-29：CI 26 例红的根因）"
+      "why": "测试不得依赖「改了但没提交」的源码；源码经 barrel 用到的导出被删改却没随本次提交（2026-10-29：CI 26 例红与三个 typecheck 分片红是同一根因的两种形状）"
     },
     {
       "name": "hooks-fresh",

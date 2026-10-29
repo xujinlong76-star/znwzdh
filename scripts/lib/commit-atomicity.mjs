@@ -18,14 +18,24 @@
  * 最典型的一类（admin-category-impact 就是直接读 page.tsx）。
  *
  * 口径：
- *   - 只审**测试文件**（*.test.* / *.spec.*）：普通源码允许依赖脏文件（那是并行开发），
+ *   - 测试：只审**测试文件**（*.test.* / *.spec.*）：普通源码允许依赖脏文件（那是并行开发），
  *     测试不行——测试在 CI 里必然按提交树运行；
- *   - 目标必须真实存在且是文件；解析不到（包名、目录、动态拼接）一律不管；
+ *   - 源码：只审「导出签名被改写且本次源码真的用到该符号」的依赖（见 findSourceCompanionViolations），
+ *     闭包里有脏文件本身不算——共享工作区里那样会把无关提交全部拦下；
+ *   - 依赖解析要穿两跳：`@navhub/store` 这类 barrel 先展开**再导出闭包**，否则签名变化
+ *     藏在 `packages/store/src/repository/*.ts` 第二跳就漏检（2026-10-29 事故正是如此）；
+ *   - 目标必须真实存在且是文件；解析不到（外部包名、目录、动态拼接）一律不管；
  *   - `apps/web/src/x` 先归一到 `apps/web-overlay/src/x`（overlay 是事实源，
  *     apps/web/src 是构建期生成物、被 gitignore 覆盖，直接判会永远「不脏」而漏报）。
  */
 
-import { extractSpecifiers, normalizePath, resolveSpecifier, stripComments } from "./source-refs.mjs";
+import {
+  extractSpecifiers,
+  normalizePath,
+  resolveSpecifier,
+  stripComments,
+  WORKSPACE_ALIAS_ROOTS,
+} from "./source-refs.mjs";
 
 export const TEST_FILE_RE = /\.(?:test|spec)\.(?:ts|tsx|mts|cts)$/;
 
@@ -39,11 +49,18 @@ export const TEST_FILE_RE = /\.(?:test|spec)\.(?:ts|tsx|mts|cts)$/;
 const PATH_LITERAL_RE =
   /["'`]((?:apps\/(?:web-overlay|web|api)\/|packages\/[A-Za-z0-9._-]+\/|scripts\/|e2e\/|src\/|test\/)[^"'`\r\n]*?\.(?:ts|tsx|mts|cts|mjs|cjs|js|jsx|json))["'`]/g;
 
-/** `@/` 别名按「文件所在的那棵源码树」解析（与 check-committed-refs.mjs 同口径） */
+/**
+ * 别名：`@/` 按「文件所在的那棵源码树」解析（与 check-committed-refs.mjs 同口径），
+ * `@navhub/<pkg>` 是工作区包别名（与模块图共用同一份 WORKSPACE_ALIAS_ROOTS——
+ * 少一份就会漏掉 2026-10-29 那种 `from "@navhub/store"` 的跨包依赖）。
+ */
 export function aliasRootsFor(file) {
-  if (file.startsWith("apps/web-overlay/")) return { "@/": "apps/web-overlay/src" };
-  if (file.startsWith("apps/web/")) return { "@/": "apps/web/src" };
-  return {};
+  const tree = file.startsWith("apps/web-overlay/")
+    ? { "@/": "apps/web-overlay/src" }
+    : file.startsWith("apps/web/")
+      ? { "@/": "apps/web/src" }
+      : {};
+  return { ...tree, ...WORKSPACE_ALIAS_ROOTS };
 }
 
 /** `src/…`、`test/…` 这类相对字面量的锚点树 */
@@ -92,10 +109,16 @@ export function toFactSource(relPath, exists) {
 }
 
 /**
- * 收集一个测试文件依赖的全部仓库内文件。
+ * 收集一个文件依赖的全部仓库内文件。
  * 返回 Map<仓库路径, 首个触发它的说明符>，用于报错时给出人能看懂的来源。
+ *
+ * `pathLiterals` 默认开：测试会 readFileSync/spawn 源码，路径字符串就是真依赖。
+ * 源码侧关掉（见 findSourceCompanionViolations）：源码之间的依赖是 import，
+ * 路径字符串多半是文案/日志/文档注释里的例子；且 stripComments 对「含引号的
+ * 正则字面量」并不可靠（会把后面的块注释当成字符串而不剥离），放进源码侧
+ * 只会把注释里的示例路径读成依赖，制造假红。
  */
-export function collectTestDependencies(source, testFile, { exists }) {
+export function collectDependencies(source, file, { exists, pathLiterals = true }) {
   const deps = new Map();
   const add = (target, spec) => {
     if (!target) return;
@@ -104,14 +127,12 @@ export function collectTestDependencies(source, testFile, { exists }) {
   };
 
   for (const { spec } of extractSpecifiers(source)) {
-    add(
-      resolveSpecifier(testFile, spec, { aliasRoots: aliasRootsFor(testFile), exists }),
-      spec,
-    );
+    add(resolveSpecifier(file, spec, { aliasRoots: aliasRootsFor(file), exists }), spec);
   }
+  if (!pathLiterals) return deps;
   // 注释里的示例路径不是依赖（同 extractSpecifiers 的口径）
   for (const literal of extractPathLiterals(stripComments(source))) {
-    const rel = literalToRepoPath(literal, testFile);
+    const rel = literalToRepoPath(literal, file);
     if (rel && exists(rel)) add(rel, literal);
   }
   return deps;
@@ -142,13 +163,196 @@ export function findAtomicityViolations({ commitSet, readCommitted, exists, isDi
     }
     if (typeof source !== "string") continue;
 
-    for (const [target, spec] of collectTestDependencies(source, test, { exists })) {
+    for (const [target, spec] of collectDependencies(source, test, { exists })) {
       if (committed.has(target)) continue;
       if (!isDirty(target)) continue;
       const key = `${test}\0${target}`;
       if (seen.has(key)) continue;
       seen.add(key);
       violations.push({ test, spec, target });
+    }
+  }
+  return violations;
+}
+
+/**
+ * 源码 → 源码的伴随改动：staged 源码依赖的另一个源文件「导出签名改过、却没随本次提交」。
+ *
+ * 为什么要这条（2026-10-29 真实事故）：并行会话先提交路由（`7de79c31`），它调用的
+ * `countVideoItems(repo, filter)` 对象重载还留在 `packages/store/src/repository/videos.ts`
+ * 的工作区改动里。本机 typecheck 读工作区 → 全绿；CI 检出提交树（旧签名 `categoryId?: string`）
+ * → 三个 SQLite 分片全部红在 typecheck，连带红灯光谱/台账/上传/聚合，一次根因五片红。
+ *
+ * 为什么不能像测试那样「闭包里只要脏就报」：共享工作区里另一条线天天有未提交的改动，
+ * 闭包级判定会把无关提交全部拦下（噪音门禁最终会被人 --no-verify 绕过）。这里的判据收紧到
+ * **符号级**：
+ *   1. 目标文件的 HEAD→工作区 diff 里，有**被删除/改写的导出声明**（纯新增导出不算）；
+ *   2. staged 源码的提交版本里**真的出现了那个符号名**。
+ * 两个条件同时成立才拦——也就是「你调的那个 API，它在你没提交的另一半里变了」。
+ */
+const SOURCE_FILE_RE =
+  /^(?:apps\/api\/|packages\/[A-Za-z0-9._-]+\/src\/|apps\/web-overlay\/src\/|scripts\/).*\.(?:ts|tsx|mts|cts|mjs|cjs)$/;
+
+const DECL_RE =
+  /^\s*(?:export\s+)?(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
+const EXPORTED_DECL_RE =
+  /^\s*export\s+(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\*?|const|let|var|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
+const EXPORT_LIST_RE = /^\s*export\s+(?:type\s*)?\{([^}]*)\}/;
+
+/**
+ * 从 `git diff` 里抽「签名/实现被改过的导出符号」。
+ *
+ * 两种形态：
+ *   1. 导出声明行本身被删（`-export async function foo(...)`）；
+ *   2. 删除行落在某个导出声明的**参数/实现体内**（`-  opts: {…}`）——
+ *      2026-10-29 的 `listVideoItems` 就是这种：函数名那行没动，签名类型行改了。
+ *      靠 hunk 上下文里最近出现的声明头归属；非导出声明会清空归属，避免张冠李戴。
+ *
+ * 纯新增导出不算（`+` 行），那是「多了一个能力」，HEAD 的旧文件仍满足调用方。
+ */
+export function changedExportNames(diffText) {
+  const names = new Set();
+  let current = null;
+  for (const raw of String(diffText).split(/\r?\n/)) {
+    if (raw.startsWith("diff ") || raw.startsWith("index ") || raw.startsWith("---") || raw.startsWith("+++")) {
+      continue;
+    }
+    if (raw.startsWith("@@")) {
+      current = null;
+      continue;
+    }
+    const sign = raw[0];
+    if (sign !== " " && sign !== "+" && sign !== "-") continue;
+    const line = raw.slice(1);
+    const decl = EXPORTED_DECL_RE.exec(line);
+    if (decl) {
+      current = decl[1];
+      if (sign === "-") names.add(current);
+      continue;
+    }
+    if (DECL_RE.test(line)) {
+      current = null;
+      continue;
+    }
+    const list = EXPORT_LIST_RE.exec(line);
+    if (list) {
+      current = null;
+      if (sign !== "-") continue;
+      for (const item of list[1].split(",")) {
+        const name = item.trim().split(/\s+as\s+/)[0]?.trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(name ?? "")) names.add(name);
+      }
+      continue;
+    }
+    if (sign !== "-" || current === null) continue;
+    // 删掉一行注释/空行不算签名变化
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("//") || trimmed.startsWith("/*") || trimmed.startsWith("*")) continue;
+    names.add(current);
+  }
+  return names;
+}
+
+/** 符号是否在源码里出现（词边界；`ns.foo` 与 `foo(` 都算） */
+export function mentionsSymbol(source, symbol) {
+  const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\w$])${escaped}([^\\w$]|$)`).test(String(source));
+}
+
+const REEXPORT_RE = /^\s*export\s+(?:\*|\{[^}]*\})\s+from\s*["']([^"']+)["']/;
+
+/** 一个文件的「再导出」说明符（`export * from` / `export {x} from`），已解析成仓库路径 */
+export function reexportTargets(source, file, { exists }) {
+  const out = [];
+  for (const line of stripComments(source).split(/\r?\n/)) {
+    const m = REEXPORT_RE.exec(line);
+    if (!m) continue;
+    const target = resolveSpecifier(file, m[1], { aliasRoots: aliasRootsFor(file), exists });
+    if (target) out.push(target);
+  }
+  return [...new Set(out)];
+}
+
+/**
+ * 依赖目标的「再导出闭包」：`packages/store/src/index.ts` 里的 `export * from
+ * "./repository/videos.ts"` 要把 videos.ts 也纳进来。
+ *
+ * 为什么必须展开：事故里路由 import 的是 barrel（`@navhub/store`），真正改签名的
+ * 是 barrel 深处的 `repository/videos.ts`。只看直接依赖，签名变化藏在第二跳就漏了。
+ * 只沿**再导出**走（不沿普通 import），否则等于遍历整包，噪声与开销都失控。
+ */
+export function reexportClosure(target, { readCommitted, exists, maxFiles = 200 }) {
+  const out = [];
+  const seen = new Set([target]);
+  const queue = [target];
+  while (queue.length > 0 && out.length < maxFiles) {
+    const file = queue.shift();
+    let source;
+    try {
+      source = readCommitted(file);
+    } catch {
+      continue;
+    }
+    if (typeof source !== "string") continue;
+    for (const next of reexportTargets(source, file, { exists })) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      out.push(next);
+      queue.push(next);
+    }
+  }
+  return out;
+}
+
+/**
+ * @param {object} io
+ * @param {(rel:string)=>Set<string>} io.changedExportsOf
+ *        目标文件 HEAD→工作区被改写/删除的导出符号；干净文件返回空集。
+ * @param {(rel:string)=>boolean} io.isDirty  先过脏集再算 diff，避免每个依赖都起一次 git
+ * @returns {{file:string,spec:string,target:string,symbols:string[]}[]}
+ */
+export function findSourceCompanionViolations({
+  commitSet,
+  readCommitted,
+  exists,
+  isDirty,
+  changedExportsOf,
+}) {
+  const committed = new Set(commitSet.map(normalizePath));
+  const violations = [];
+  const exportsCache = new Map();
+  const changedOf = (rel) => {
+    if (!exportsCache.has(rel)) exportsCache.set(rel, changedExportsOf(rel) ?? new Set());
+    return exportsCache.get(rel);
+  };
+
+  for (const file of [...committed].sort()) {
+    if (TEST_FILE_RE.test(file)) continue;
+    if (!SOURCE_FILE_RE.test(file)) continue;
+    // apps/web 是 vendor 生成物（gitignore），事实源在 overlay；对它判「脏」永远是否
+    if (file.startsWith("apps/web/")) continue;
+    let source;
+    try {
+      source = readCommitted(file);
+    } catch {
+      continue;
+    }
+    if (typeof source !== "string") continue;
+
+    const bare = stripComments(source);
+    const seenTargets = new Set();
+    for (const [dep, spec] of collectDependencies(bare, file, { exists, pathLiterals: false })) {
+      for (const target of [dep, ...reexportClosure(dep, { readCommitted, exists })]) {
+        if (seenTargets.has(target)) continue;
+        seenTargets.add(target);
+        if (committed.has(target)) continue;
+        if (!isDirty(target)) continue;
+        const changed = changedOf(target);
+        if (changed.size === 0) continue;
+        const symbols = [...changed].filter((name) => mentionsSymbol(bare, name)).sort();
+        if (symbols.length === 0) continue;
+        violations.push({ file, spec, target, symbols });
+      }
     }
   }
   return violations;

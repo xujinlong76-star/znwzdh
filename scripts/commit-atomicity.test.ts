@@ -10,6 +10,10 @@
  *   · 被 gitignore 覆盖的生成物（apps/web/src） ⇒ 必须绿
  *   · 注释里的路径字面量                       ⇒ 必须绿
  *   · 镜像测试（apps/web/test）的 `@/x` 归一到 overlay 事实源 ⇒ 必须红
+ *
+ * 源码 → 源码的伴随改动（2026-10-29 第二起，7de79c31）另有一组：
+ *   · 提交的路由 → `@navhub/store` barrel → 第二跳定义文件改签名未提交 ⇒ 必须红
+ *   · 改的是没被用到的导出 / 只删注释 / 只新增导出 ⇒ 必须绿（符号级判据）
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -17,6 +21,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
+import {
+  aliasRootsFor,
+  changedExportNames,
+  mentionsSymbol,
+  reexportClosure,
+} from "./lib/commit-atomicity.mjs";
+import { resolveSpecifier, WORKSPACE_ALIAS_ROOTS } from "./lib/source-refs.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT = join(ROOT, "scripts/check-commit-atomicity.mjs");
@@ -42,6 +53,7 @@ function gitEnv(extra: Record<string, string> = {}) {
   // 门禁自己的豁免开关同样不能泄漏进夹具：本机为了提交别的东西设了它，
   // 「必须红」的用例就会静默变绿（2026-10-29 实际踩到，4 例同时假绿）。
   delete env.NAVHUB_ALLOW_DIRTY_TEST_DEPS;
+  delete env.NAVHUB_ALLOW_DIRTY_SOURCE_DEPS;
   return { ...env, ...extra };
 }
 
@@ -236,5 +248,240 @@ describe("提交原子性门禁", () => {
     expect(res.status, res.out).toBe(0);
     expect(res.out).toContain("NAVHUB_ALLOW_DIRTY_TEST_DEPS");
     expect(res.out).toContain("apps/web-overlay/src/lib/x.ts");
+  });
+});
+
+const STORE_BARREL = 'export * from "./repository/videos.ts"\n';
+
+const STORE_VIDEOS_OLD = [
+  "export async function countVideoItems(repo: Repository, categoryId?: string): Promise<number> {",
+  "  return categoryId ? 1 : 2",
+  "}",
+  "",
+  "export async function listVideoItems(repo: Repository, opts: { limit?: number } = {}): Promise<unknown[]> {",
+  "  return [opts]",
+  "}",
+  "",
+].join("\n");
+
+const STORE_VIDEOS_NEW = [
+  "export interface VideoItemCountFilter {",
+  "  categoryId?: string",
+  "  platform?: string",
+  "}",
+  "",
+  "export async function countVideoItems(",
+  "  repo: Repository,",
+  "  filter: string | VideoItemCountFilter = {},",
+  "): Promise<number> {",
+  "  return typeof filter === \"string\" ? 1 : 2",
+  "}",
+  "",
+  "export async function listVideoItems(repo: Repository, opts: { limit?: number; platform?: string } = {}): Promise<unknown[]> {",
+  "  return [opts]",
+  "}",
+  "",
+].join("\n");
+
+const ROUTE_OLD = [
+  'import { countVideoItems } from "../../../../packages/fx-store/src/index.ts"',
+  "export async function total(repo: Repository) {",
+  '  return countVideoItems(repo, "cat")',
+  "}",
+  "",
+].join("\n");
+
+const ROUTE_NEW = [
+  'import { countVideoItems } from "../../../../packages/fx-store/src/index.ts"',
+  "export async function total(repo: Repository) {",
+  '  return countVideoItems(repo, { categoryId: "cat", platform: "bili" })',
+  "}",
+  "",
+].join("\n");
+
+/**
+ * 源码 → 源码的伴随改动（2026-10-29 事故形状，`7de79c31`）：
+ * 路由提交了、它调的 `@navhub/store` 里真正改签名的那一跳没提交。
+ * 本机 typecheck 读工作区全绿，CI 检出提交树旧签名，三个分片一起红。
+ */
+describe("提交原子性：源码 → 源码伴随改动", () => {
+  function incidentRepo() {
+    const dir = makeRepo({
+      "packages/fx-store/src/index.ts": STORE_BARREL,
+      "packages/fx-store/src/repository/videos.ts": STORE_VIDEOS_OLD,
+      "apps/api/src/routes/videos.ts": ROUTE_OLD,
+    });
+    write(dir, "packages/fx-store/src/repository/videos.ts", STORE_VIDEOS_NEW);
+    write(dir, "apps/api/src/routes/videos.ts", ROUTE_NEW);
+    return dir;
+  }
+
+  it("事故形状：路由提交了、barrel 深处改签名的 store 文件没提交 → 必须红并点名两处", () => {
+    const dir = incidentRepo();
+    git(dir, ["add", "apps/api/src/routes/videos.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(1);
+    expect(res.out).toContain("apps/api/src/routes/videos.ts");
+    // 依赖直接从 barrel 解析，但要点名的是第二跳的定义文件
+    expect(res.out).toContain("packages/fx-store/src/repository/videos.ts");
+    expect(res.out).toContain("countVideoItems");
+    expect(res.out).toContain("NAVHUB_ALLOW_DIRTY_SOURCE_DEPS");
+  });
+
+  it("伴随改动随本次提交一起进 → 必须绿", () => {
+    const dir = incidentRepo();
+    git(dir, ["add", "apps/api/src/routes/videos.ts", "packages/fx-store/src/repository/videos.ts"]);
+
+    expect(run(dir).status).toBe(0);
+  });
+
+  it("脏文件改的是本次源码没用到的导出 → 必须绿（符号级判据，不看「文件脏」）", () => {
+    const dir = incidentRepo();
+    // 只把 listVideoItems 的参数行改掉；路由只提 countVideoItems
+    write(
+      dir,
+      "packages/fx-store/src/repository/videos.ts",
+      STORE_VIDEOS_OLD.replace("opts: { limit?: number } = {}", "opts: { limit?: number; platform?: string } = {}"),
+    );
+    git(dir, ["add", "apps/api/src/routes/videos.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+  });
+
+  it("只新增导出、没有删改 → 必须绿（HEAD 旧文件仍满足调用方）", () => {
+    const dir = makeRepo({
+      "packages/fx-store/src/index.ts": STORE_BARREL,
+      "packages/fx-store/src/repository/videos.ts": STORE_VIDEOS_OLD,
+      "apps/api/src/routes/videos.ts": ROUTE_OLD,
+    });
+    write(
+      dir,
+      "packages/fx-store/src/repository/videos.ts",
+      STORE_VIDEOS_OLD + "\nexport interface Extra {\n  a?: string\n}\n",
+    );
+    write(dir, "apps/api/src/routes/videos.ts", ROUTE_NEW);
+    git(dir, ["add", "apps/api/src/routes/videos.ts"]);
+
+    expect(run(dir).status).toBe(0);
+  });
+
+  it("导出函数体内只删了一行注释 → 必须绿（不给噪声开门）", () => {
+    const withComment = STORE_VIDEOS_OLD.replace(
+      "export async function countVideoItems(",
+      "// 兼容旧的字符串参数\nexport async function countVideoItems(",
+    );
+    const dir = makeRepo({
+      "packages/fx-store/src/index.ts": STORE_BARREL,
+      "packages/fx-store/src/repository/videos.ts": withComment,
+      "apps/api/src/routes/videos.ts": ROUTE_OLD,
+    });
+    write(dir, "packages/fx-store/src/repository/videos.ts", STORE_VIDEOS_OLD);
+    write(dir, "apps/api/src/routes/videos.ts", ROUTE_NEW);
+    git(dir, ["add", "apps/api/src/routes/videos.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+  });
+
+  it("相对路径的直接依赖改签名未提交 → 必须红", () => {
+    const dir = makeRepo({
+      "apps/api/src/lib/helper.ts": "export function buildFilter(x: string): string {\n  return x\n}\n",
+      "apps/api/src/routes/r.ts": 'import { buildFilter } from "../lib/helper"\nvoid buildFilter\n',
+    });
+    write(dir, "apps/api/src/lib/helper.ts", "export function buildFilter(x: string, y?: number): string {\n  return x\n}\n");
+    write(
+      dir,
+      "apps/api/src/routes/r.ts",
+      'import { buildFilter } from "../lib/helper"\nvoid buildFilter("a", 1)\n',
+    );
+    git(dir, ["add", "apps/api/src/routes/r.ts"]);
+
+    const res = run(dir);
+    expect(res.status, res.out).toBe(1);
+    expect(res.out).toContain("apps/api/src/lib/helper.ts");
+    expect(res.out).toContain("buildFilter");
+  });
+
+  it("NAVHUB_ALLOW_DIRTY_SOURCE_DEPS=1 时放行并逐条列出", () => {
+    const dir = incidentRepo();
+    git(dir, ["add", "apps/api/src/routes/videos.ts"]);
+
+    const res = run(dir, { NAVHUB_ALLOW_DIRTY_SOURCE_DEPS: "1" });
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).toContain("NAVHUB_ALLOW_DIRTY_SOURCE_DEPS");
+    expect(res.out).toContain("packages/fx-store/src/repository/videos.ts");
+  });
+});
+
+describe("伴随改动的符号抽取", () => {
+  it("changedExportNames：声明行被改写（含 - 行）→ 收到符号", () => {
+    const diff = [
+      "@@ -1 +1 @@",
+      "-export async function countVideoItems(repo: Repository, categoryId?: string): Promise<number> {",
+      "+export async function countVideoItems(repo: Repository, filter: Filter = {}): Promise<number> {",
+    ].join("\n");
+    expect([...changedExportNames(diff)]).toEqual(["countVideoItems"]);
+  });
+
+  it("changedExportNames：参数/实现体内的删行归属到最近的导出声明", () => {
+    const diff = [
+      "@@ -10,4 +10,4 @@",
+      " export async function listVideoItems(",
+      "   repo: Repository,",
+      "-  opts: { limit?: number } = {},",
+      "+  opts: { limit?: number; platform?: string } = {},",
+      " ): Promise<Row[]> {",
+    ].join("\n");
+    expect([...changedExportNames(diff)]).toEqual(["listVideoItems"]);
+  });
+
+  it("changedExportNames：删注释、纯新增导出都不算", () => {
+    const diff = [
+      "@@ -1,3 +1,4 @@",
+      " export function f() {",
+      "-  // stale",
+      "   return 1",
+      "+}",
+      "+export interface NewThing { a: string }",
+    ].join("\n");
+    expect(changedExportNames(diff).size).toBe(0);
+  });
+
+  it("changedExportNames：`export { a, b as c }` 的删行逐个收", () => {
+    const diff = '@@ -1 +1 @@\n-export { alpha, beta as gamma } from "./x.ts"\n';
+    expect([...changedExportNames(diff)].sort()).toEqual(["alpha", "beta"]);
+  });
+
+  it("mentionsSymbol：词边界，不命中前缀相同的别的标识符", () => {
+    expect(mentionsSymbol('import { countVideoItems } from "@navhub/store"', "countVideoItems")).toBe(true);
+    expect(mentionsSymbol("countVideoItems(repo, f)", "countVideoItems")).toBe(true);
+    expect(mentionsSymbol("repo.countVideoItems()", "countVideoItems")).toBe(true);
+    expect(mentionsSymbol("countVideoItemsLegacy()", "countVideoItems")).toBe(false);
+    expect(mentionsSymbol("$countVideoItems", "countVideoItems")).toBe(false);
+  });
+
+  it("工作区包别名：@navhub/* 与模块图共用一份映射（少了它跨包依赖整条边看不见）", () => {
+    const expected = `${WORKSPACE_ALIAS_ROOTS["@navhub/store"]}/index.ts`;
+    const exists = (p: string) => p === expected;
+    const resolved = resolveSpecifier("apps/api/src/routes/videos.ts", "@navhub/store", {
+      aliasRoots: aliasRootsFor("apps/api/src/routes/videos.ts"),
+      exists,
+    });
+    expect(resolved).toBe(expected);
+  });
+
+  it("reexportClosure：沿 barrel 找到第二跳的定义文件", () => {
+    const files: Record<string, string> = {
+      "packages/fx-store/src/index.ts": 'export * from "./repository/videos.ts"\nexport { a } from "./a.ts"\n',
+      "packages/fx-store/src/a.ts": "export const a = 1\n",
+      "packages/fx-store/src/repository/videos.ts": "export const countVideoItems = 1\n",
+    };
+    const exists = (p: string) => Object.hasOwn(files, p);
+    const readCommitted = (p: string) => files[p] ?? null;
+    const out = reexportClosure("packages/fx-store/src/index.ts", { readCommitted, exists });
+    expect(out).toContain("packages/fx-store/src/repository/videos.ts");
+    expect(out).toContain("packages/fx-store/src/a.ts");
   });
 });

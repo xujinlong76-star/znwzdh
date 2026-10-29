@@ -27,7 +27,14 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { dirnameOf, extractSpecifiers, normalizePath, resolveSpecifier, stripComments } from "./source-refs.mjs";
+import {
+  dirnameOf,
+  extractSpecifiers,
+  normalizePath,
+  resolveSpecifier,
+  stripComments,
+  WORKSPACE_ALIAS_ROOTS,
+} from "./source-refs.mjs";
 
 export const TEST_FILE_RE = /\.(test|spec)\.(ts|tsx|mts|cts)$/;
 const SOURCE_RE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
@@ -61,10 +68,7 @@ function isResultTestFile(file) {
 
 const ALIAS_ROOTS = {
   "@/": "apps/web-overlay/src",
-  "@navhub/core": "packages/core/src",
-  "@navhub/ai": "packages/ai/src",
-  "@navhub/mcp": "packages/mcp/src",
-  "@navhub/store": "packages/store/src",
+  ...WORKSPACE_ALIAS_ROOTS,
 };
 
 /**

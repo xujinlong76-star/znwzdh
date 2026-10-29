@@ -78,6 +78,14 @@ CI 侧验收：故意让新作业红一次，确认 `ci-passed` 红、PR Merge �
   2026-10-29 实战：给它加了 `./lib/hooks-fresh.mjs` 的 import 却没改 Dockerfile，本机全绿，
   `docker-smoke` 的「构建 API 镜像」在 install 阶段 `ERR_MODULE_NOT_FOUND` 直接红。
   门禁按「Dockerfile 的 COPY 源 ⊇ 闭包」判定，漏拷会点名文件并给出要补的 COPY 行。
+- **源码伴随改动**（同日新增，同属 `commit-atomicity`）：这枚门禁原先只防「提交的测试 → 脏源码」。
+  2026-10-29 的另一半事故是「提交的路由 → 未提交的同包签名」：`apps/api/src/routes/videos.ts`
+  经 `@navhub/store` 调用 `countVideoItems(repo, filter)`，对象参数重载还留在
+  `packages/store/src/repository/videos.ts` 的工作区里 ⇒ 本机 typecheck 全绿、CI 三个分片全红在 typecheck。
+  判据收紧到**符号级**：staged 源码的依赖（barrel 会展开再导出闭包，`@navhub/*` 与模块图共用一份别名表）
+  在 HEAD→工作区里删改的导出符号，如果真出现在 staged 源码里 ⇒ 拦下并点名两处文件；
+  改的是没用到的导出 / 只删注释 / 只新增导出 ⇒ 放行（共享工作区里别人的日常改动不该拦无关提交）。
+  逃生口 `NAVHUB_ALLOW_DIRTY_SOURCE_DEPS=1`，放行时逐条列出被跳过的清单。
 - **双向对账**：
   - 登记了但接线里没有 ⇒ 「以为在拦，其实没跑」；
   - 接线里有但清单没登记 ⇒ 下次改钩子时会被人顺手删掉，且没人知道它拦过什么。

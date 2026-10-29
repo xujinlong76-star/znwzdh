@@ -20,12 +20,18 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { findAtomicityViolations, TEST_FILE_RE } from "./lib/commit-atomicity.mjs";
+import {
+  changedExportNames,
+  findAtomicityViolations,
+  findSourceCompanionViolations,
+  TEST_FILE_RE,
+} from "./lib/commit-atomicity.mjs";
 import { normalizePath } from "./lib/source-refs.mjs";
 
 const ROOT = process.cwd();
 const AS_JSON = process.argv.includes("--json");
 const ALLOW = process.env.NAVHUB_ALLOW_DIRTY_TEST_DEPS === "1";
+const ALLOW_SOURCE = process.env.NAVHUB_ALLOW_DIRTY_SOURCE_DEPS === "1";
 
 function git(args) {
   return execFileSync("git", args, {
@@ -79,18 +85,44 @@ function readCommitted(file) {
   }
 }
 
+/** 目标文件 HEAD → 工作区被改写/删除的导出符号（干净文件返回空集） */
+function changedExportsOf(file) {
+  let diff;
+  try {
+    diff = git(["diff", "HEAD", "--", file]);
+  } catch {
+    return new Set();
+  }
+  return changedExportNames(diff);
+}
+
+function reportSourceCompanions(violations) {
+  if (ALLOW_SOURCE) {
+    console.log(
+      `⚠️ 提交原子性：NAVHUB_ALLOW_DIRTY_SOURCE_DEPS=1，跳过 ${violations.length} 处源码伴随改动：`,
+    );
+    for (const v of violations) console.log(`   ${v.file}  →  ${v.target}（${v.symbols.join(", ")}）`);
+    return false;
+  }
+  console.error(
+    `❌ 提交原子性：${violations.length} 处源码依赖了「导出签名改过、但没随本次提交」的源文件\n`,
+  );
+  console.error("   本机 typecheck 读工作区（新签名）会绿，CI 检出提交树（旧签名）会红在 typecheck。\n");
+  for (const v of violations) {
+    console.error(`   ${v.file}`);
+    console.error(`     依赖 ${v.spec}  →  ${v.target}`);
+    console.error(`     被改写的导出：${v.symbols.join(", ")}（该文件不在本次提交里）`);
+  }
+  console.error("\n   处理：");
+  console.error("     1) 把伴随改动一起加进本次提交（git add <path>，再重跑 safe-commit）");
+  console.error("     2) 先不提交这处源码，等依赖方就绪后一起提");
+  console.error("     3) 确认改的不是你用的那个符号的语义（例如只动了实现）→ NAVHUB_ALLOW_DIRTY_SOURCE_DEPS=1 重新提交");
+  return true;
+}
+
 function main() {
   const commit = commitSet();
   const tests = commit.filter((f) => TEST_FILE_RE.test(f));
-
-  if (tests.length === 0) {
-    if (AS_JSON) {
-      console.log(JSON.stringify({ mode: "staged", tests: 0, violations: [] }, null, 2));
-    } else {
-      console.log("✅ 提交原子性：本次提交不含测试文件，无需检查。");
-    }
-    return;
-  }
 
   const dirty = dirtySet();
   const violations = findAtomicityViolations({
@@ -105,10 +137,7 @@ function main() {
       `⚠️ 提交原子性：NAVHUB_ALLOW_DIRTY_TEST_DEPS=1，跳过 ${violations.length} 处脏依赖：`,
     );
     for (const v of violations) console.log(`   ${v.test}  →  ${v.target}`);
-    return;
-  }
-
-  if (violations.length > 0) {
+  } else if (violations.length > 0) {
     if (AS_JSON) {
       console.log(JSON.stringify({ mode: "staged", tests: tests.length, violations }, null, 2));
     } else {
@@ -127,10 +156,36 @@ function main() {
     process.exit(1);
   }
 
+  const sourceViolations = findSourceCompanionViolations({
+    commitSet: commit,
+    readCommitted,
+    exists: existsAsFile,
+    isDirty: (rel) => dirty.has(rel),
+    changedExportsOf,
+  });
+  if (sourceViolations.length > 0) {
+    if (AS_JSON) {
+      console.log(
+        JSON.stringify(
+          { mode: "staged", tests: tests.length, violations: [], sourceViolations, allowed: ALLOW_SOURCE },
+          null,
+          2,
+        ),
+      );
+      if (!ALLOW_SOURCE) process.exit(1);
+    } else if (reportSourceCompanions(sourceViolations)) {
+      process.exit(1);
+    }
+  }
+
   if (AS_JSON) {
-    console.log(JSON.stringify({ mode: "staged", tests: tests.length, violations: [] }, null, 2));
+    console.log(JSON.stringify({ mode: "staged", tests: tests.length, violations: [], sourceViolations: [] }, null, 2));
+  } else if (sourceViolations.length > 0) {
+    console.log("⚠️ 提交原子性：源码伴随改动已按 NAVHUB_ALLOW_DIRTY_SOURCE_DEPS=1 放行（清单见上）。");
+  } else if (tests.length === 0) {
+    console.log("✅ 提交原子性：本次提交不含测试文件，源码伴随即动检查通过。");
   } else {
-    console.log(`✅ 提交原子性：${tests.length} 个测试的依赖均随本次提交（或与 HEAD 一致）。`);
+    console.log(`✅ 提交原子性：${tests.length} 个测试的依赖均随本次提交（或与 HEAD 一致）；源码伴随改动一致。`);
   }
 }
 

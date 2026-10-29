@@ -78,6 +78,23 @@ describe('replaceVideoCatalog', () => {
     expect(await getVideoItem(repo, 'a2')).toBeNull()
   })
 
+  it('允许同一外部 ID 出现在多个分类：文档模型支持「一处视频、多处挂载」', async () => {
+    /**
+     * 回归守卫：`video_items` 上曾有 UNIQUE(platform, external_id)，而
+     * `videos.json` 允许同一视频同时挂在分类与子分类下（实测 74 条里有 4 个
+     * 重复的 platform:externalId）。唯一约束会让全量同步直接抛
+     * SQLITE_CONSTRAINT_UNIQUE，关系表永远对不齐事实源。
+     * 去重是**采集入口**的职责（videoExternalKey），不是这张镜像表的职责。
+     */
+    const res = await replaceVideoCatalog(repo, categories, [
+      item({ id: 'dup1', categoryId: 'cat_ai', externalId: 'BVSAME' }),
+      item({ id: 'dup2', categoryId: 'cat_fe', externalId: 'BVSAME' }),
+    ])
+
+    expect(res.items).toBe(2)
+    expect(await countVideoItems(repo)).toBe(2)
+  })
+
   it('幂等：同样输入重复调用结果一致', async () => {
     const items = [item({ id: 'a1', categoryId: 'cat_ai' })]
     await replaceVideoCatalog(repo, categories, items)
@@ -103,24 +120,40 @@ describe('replaceVideoCatalog', () => {
     expect(row!.pinned).toBe(true)
   })
 
-  it('同一 platform+externalId 不允许出现两行（跨平台同名 ID 不冲突）', async () => {
-    // 先写入一条
+  it('同一 platform+externalId 允许多行（不同 id）：本表是 KV 的镜像，不去重', async () => {
+    /**
+     * 设计取舍（2026-10-29 定为 A：保留多分类能力）：
+     * 同一视频可以出现在多个分类/子分类——KV 事实源里 74 条就有 4 个重复的
+     * platform:externalId。若在这里加 UNIQUE(platform, external_id)，
+     * 「文档 → 表」的全量同步会直接 SQLITE_CONSTRAINT_UNIQUE 失败，
+     * 关系表永远对不齐事实源（见 driver.ts 的 DDL 注释）。
+     *
+     * 「采集不得重复入库」由应用层保证，不是这张镜像表的职责；
+     * 本表只用 id 主键保证行不重复。
+     */
     await replaceVideoCatalog(repo, categories, [item({ id: 'x1', categoryId: 'cat_ai', externalId: 'same-id' })])
 
-    // 追加一条同 platform 同 externalId、但 id 不同 —— 唯一索引应拒绝
-    const direct = () =>
+    // 同 platform 同 externalId、id 不同 → 允许（多分类的正常形态）
+    expect(() =>
       db.sqlite!.prepare(
         "INSERT INTO video_items (id,category_id,title,href,platform,external_id,enabled,sort,pinned,payload,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-      ).run('x2', 'cat_fe', 't', 'h', 'bilibili', 'same-id', 1, 0, 0, '{}', 1, 1)
+      ).run('x2', 'cat_fe', 't', 'h', 'bilibili', 'same-id', 1, 0, 0, '{}', 1, 1),
+    ).not.toThrow()
+    expect(await countVideoItems(repo)).toBe(2)
 
-    expect(direct).toThrow()
-
-    // 换平台则允许（ID 空间不同）
+    // 跨平台同名 externalId 也允许（ID 空间不同）
     expect(() =>
       db.sqlite!.prepare(
         "INSERT INTO video_items (id,category_id,title,href,platform,external_id,enabled,sort,pinned,payload,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
       ).run('y1', 'cat_fe', 't', 'h', 'youtube', 'same-id', 1, 0, 0, '{}', 1, 1),
     ).not.toThrow()
+
+    // 行不重复由 id 主键保证：同 id 再插必须被拒
+    expect(() =>
+      db.sqlite!.prepare(
+        "INSERT INTO video_items (id,category_id,title,href,platform,external_id,enabled,sort,pinned,payload,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+      ).run('x1', 'cat_fe', 't', 'h', 'bilibili', 'other', 1, 0, 0, '{}', 1, 1),
+    ).toThrow()
   })
 })
 

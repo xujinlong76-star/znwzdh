@@ -664,6 +664,150 @@ describe("提交原子性：源码 → 源码伴随改动", () => {
   });
 });
 
+describe("提交原子性：HEAD 自洽性（已提交的消费者读只在本地的字段）", () => {
+  const CFG_HEAD = `export interface AppConfig {
+  search: {
+    enabled: boolean
+  }
+}
+`;
+  const CFG_LOCAL = `export interface AppConfig {
+  search: {
+    enabled: boolean
+    semanticMinSimilarity: number
+  }
+}
+`;
+  const CTX = `import type { AppConfig } from "./config.ts"
+
+export function semanticGate(config: AppConfig) {
+  return config.search.semanticMinSimilarity
+}
+`;
+
+  /** 事故形状（2026-10-30 那 9 条常驻红）：消费者早已提交，生产者新加的字段只在工作区 */
+  function headRepo() {
+    const dir = makeRepo({
+      "apps/api/src/config.ts": CFG_HEAD,
+      "apps/api/src/context.ts": CTX,
+    });
+    write(dir, "apps/api/src/config.ts", CFG_LOCAL);
+    return dir;
+  }
+
+  it("只报不拦：rc 仍是 0，但当场点名生产者、字段名和在读它的消费者行", () => {
+    const res = run(headRepo());
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).toContain("HEAD 自洽性");
+    expect(res.out).toContain("apps/api/src/config.ts");
+    expect(res.out).toContain(".semanticMinSimilarity");
+    expect(res.out).toContain("apps/api/src/context.ts");
+    expect(res.out).toContain("1 处引用");
+    expect(res.out).toContain("git add");
+  });
+
+  it("生产者 git add 进索引后本条自动消失（判据量的是「工作区 − 索引」，不是「工作区 − HEAD」）", () => {
+    const dir = headRepo();
+    git(dir, ["add", "apps/api/src/config.ts"]);
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).not.toContain("HEAD 自洽性");
+  });
+
+  it("字段本来就在提交树里、只改了实现 → 不报（不看「文件脏」这一条）", () => {
+    const withField = `export interface AppConfig {
+  search: {
+    semanticMinSimilarity: number
+  }
+}
+
+export const DEFAULT_CONFIG = {
+  search: {
+    semanticMinSimilarity: 0.55
+  }
+}
+`;
+    const dir = makeRepo({ "apps/api/src/config.ts": withField, "apps/api/src/context.ts": CTX });
+    write(dir, "apps/api/src/config.ts", withField.replace("0.55", "0.62"));
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).not.toContain("HEAD 自洽性");
+  });
+
+  it("引用点与生产者之间没有依赖边 → 不报（去掉边判据这一例会变噪音）", () => {
+    const dir = makeRepo({
+      "apps/api/src/config.ts": CFG_HEAD,
+      "apps/api/src/telemetry.ts": `export function gate(cfg: { search: { semanticMinSimilarity: number } }) {
+  return cfg.search.semanticMinSimilarity
+}
+`,
+    });
+    write(dir, "apps/api/src/config.ts", CFG_LOCAL);
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).not.toContain("HEAD 自洽性");
+  });
+
+  it("注释里的字段名不算「消费者在读它」", () => {
+    const dir = makeRepo({
+      "apps/api/src/config.ts": CFG_HEAD,
+      "apps/api/src/context.ts": `import type { AppConfig } from "./config.ts"
+
+// TODO: 改成读 config.search.semanticMinSimilarity
+void ({} as AppConfig)
+`,
+    });
+    write(dir, "apps/api/src/config.ts", CFG_LOCAL);
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).not.toContain("HEAD 自洽性");
+  });
+
+  it("经 barrel 再导出才够到生产者 → 必须报（少了反向图，第二跳的边看不见）", () => {
+    const dir = makeRepo({
+      "apps/api/src/config.ts": CFG_HEAD,
+      "apps/api/src/index.ts": `export * from "./config.ts"
+`,
+      "apps/api/src/routes/ai-config.ts": `import type { AppConfig } from "../index.ts"
+
+export function gate(c: AppConfig) {
+  return c.search.semanticMinSimilarity
+}
+`,
+    });
+    write(dir, "apps/api/src/config.ts", CFG_LOCAL);
+    const res = run(dir);
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).toContain("HEAD 自洽性");
+    expect(res.out).toContain("apps/api/src/routes/ai-config.ts");
+  });
+
+  it("--strict-head-consumers：同一形状退出 1（本地排查用的硬档）", () => {
+    const res = run(headRepo(), {}, ["--strict-head-consumers"]);
+    expect(res.status, res.out).toBe(1);
+    expect(res.out).toContain("HEAD 自洽性");
+  });
+
+  it("NAVHUB_SKIP_HEAD_CONSUMERS=1：整段静默（总闸必须能真关掉）", () => {
+    const res = run(headRepo(), { NAVHUB_SKIP_HEAD_CONSUMERS: "1" });
+    expect(res.status, res.out).toBe(0);
+    expect(res.out).not.toContain("HEAD 自洽性");
+  });
+
+  it("--json：HEAD 那半是结构化字段，stdout 仍是可解析的纯 JSON", () => {
+    const res = run(headRepo(), {}, ["--json"]);
+    expect(res.status, res.out).toBe(0);
+    const parsed = JSON.parse(res.stdout);
+    expect(parsed.violations).toEqual([]);
+    expect(parsed.headConsumers).toHaveLength(1);
+    expect(parsed.headConsumers[0].producer).toBe("apps/api/src/config.ts");
+    expect(parsed.headConsumers[0].member).toBe("semanticMinSimilarity");
+    expect(parsed.headConsumers[0].consumers[0].file).toBe("apps/api/src/context.ts");
+    expect(parsed.headConsumersUnattributed).toBe(0);
+    expect(parsed.strictHeadConsumers).toBe(false);
+  });
+});
+
 describe("伴随改动的符号抽取", () => {
   it("changedExportNames：声明行被改写（含 - 行）→ 收到符号", () => {
     const diff = [
@@ -732,5 +876,79 @@ describe("伴随改动的符号抽取", () => {
     const out = reexportClosure("packages/fx-store/src/index.ts", { readCommitted, exists });
     expect(out).toContain("packages/fx-store/src/repository/videos.ts");
     expect(out).toContain("packages/fx-store/src/a.ts");
+  });
+});
+
+describe("HEAD 自洽性的字段级判据", () => {
+  it("memberNamesOf：接口与对象字面量的成员、readonly/可选修饰符", () => {
+    const names = memberNamesOf(
+      "interface T {\n  readonly id: string\n  count?: number\n  search: { enabled: boolean }\n}\n",
+    );
+    // 单行嵌套只收成 `search`——事故里那个字段是跨行的，成员名逐行才拿得到。
+    expect([...names].sort()).toEqual(["count", "id", "search"]);
+  });
+
+  it("memberNamesOf：switch/类型关键字标签与注释行不算字段", () => {
+    const names = memberNamesOf('switch (kind) {\n  default: 0\n}\nconst y = { type: "t" }\n// note: hi\n');
+    expect([...names].sort()).toEqual([]);
+  });
+
+  it("addedMemberNames：只认 `+` 行，`+++` 文件头不算正文", () => {
+    const diff = [
+      "--- a/apps/api/src/config.ts",
+      "+++ b/apps/api/src/config.ts",
+      "@@ -1,3 +1,4 @@",
+      "   search: {",
+      "-    enabled: boolean",
+      "+    semanticMinSimilarity: number",
+      "   }",
+    ].join("\n");
+    expect([...addedMemberNames(diff)]).toEqual(["semanticMinSimilarity"]);
+  });
+
+  it("findHeadConsumerOrphans：提交版本里已有同名字段 → 消费者读得到，不算孤儿", () => {
+    const out = findHeadConsumerOrphans({
+      producers: [{ file: "apps/api/src/config.ts", unstagedDiff: "+  semanticMinSimilarity: 0.62\n" }],
+      committedMembersOf: () => new Set(["semanticMinSimilarity"]),
+      grepCommitted: () => [{ file: "apps/api/src/context.ts", line: 4, text: "  return c.search.semanticMinSimilarity" }],
+      dependsOn: () => true,
+    });
+    expect(out).toEqual([]);
+  });
+
+  it("findHeadConsumerOrphans：注释行不算引用；引用点散落超过 maxHitFiles 时不报、只经 onSkip 记账", () => {
+    const hits = [
+      ...Array.from({ length: 13 }, (_, i) => ({ file: `apps/api/src/c${i}.ts`, line: 1, text: "  x.wide" })),
+      { file: "apps/api/src/consumer.ts", line: 4, text: "  return c.narrow" },
+      { file: "apps/api/src/notes.ts", line: 2, text: "  // c.narrow" },
+    ];
+    const skipped: { member: string; files: number }[] = [];
+    const out = findHeadConsumerOrphans({
+      producers: [{ file: "apps/api/src/config.ts", unstagedDiff: "+  narrow: number\n+  wide: number\n" }],
+      committedMembersOf: () => new Set(["search"]),
+      grepCommitted: () => hits,
+      dependsOn: () => true,
+      maxHitFiles: 12,
+      onSkip: (member: string, files: number) => skipped.push({ member, files }),
+    });
+    expect(out.map((o) => o.member)).toEqual(["narrow"]);
+    expect(out[0].consumers).toHaveLength(1);
+    expect(out[0].consumerCount).toBe(1);
+    expect(skipped).toEqual([{ member: "wide", files: 13 }]);
+  });
+
+  it("findHeadConsumerOrphans：测试文件不当生产者（也不为此起一次 grep）", () => {
+    let greps = 0;
+    const out = findHeadConsumerOrphans({
+      producers: [{ file: "apps/api/test/x.test.ts", unstagedDiff: "+  narrow: number\n" }],
+      committedMembersOf: () => new Set(),
+      grepCommitted: () => {
+        greps += 1;
+        return [{ file: "apps/api/src/consumer.ts", line: 1, text: "  c.narrow" }];
+      },
+      dependsOn: () => true,
+    });
+    expect(out).toEqual([]);
+    expect(greps).toBe(0);
   });
 });

@@ -56,7 +56,7 @@
       "args": "--staged",
       "blocks": true,
       "test": "scripts/commit-atomicity.test.ts",
-      "why": "测试不得依赖「改了但没提交」的文件——源码、被断言的非代码契约（.github/workflows/ci.yml、*.css、docker/Dockerfile.*、docs/*.json）同理，分段拼接写法（resolve(ROOT, \"scripts\", \"x.mjs\")）也算；源码经 barrel 用到的导出被删改却没随本次提交（2026-10-29：CI 26 例红与三个 typecheck 分片红是同一根因的两种形状）"
+      "why": "测试不得依赖「改了但没提交」的文件——源码、被断言的非代码契约（.github/workflows/ci.yml、*.css、docker/Dockerfile.*、docs/*.json）同理，分段拼接写法（resolve(ROOT, \"scripts\", \"x.mjs\")）也算；源码经 barrel 用到的导出被删改却没随本次提交（2026-10-29：CI 26 例红与三个 typecheck 分片红是同一根因的两种形状）；另有一路只报不拦的 HEAD 自洽性——已提交的消费者在读只存在于工作区的字段（2026-10-30：9 条常驻红的根因，--strict-head-consumers 才拦）"
     },
     {
       "name": "hooks-fresh",

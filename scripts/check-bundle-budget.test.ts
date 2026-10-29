@@ -640,3 +640,223 @@ describe("check-bundle-budget：apps/web 生成镜像不挡定基线", () => {
     }
   });
 });
+
+/**
+ * --raise --from：吃一份「别处算好的账」（CI artifact）。
+ *
+ * 为什么需要：干净的树只存在于 CI——本地常年有别人的未提交改动，拿本地 .next 定基线
+ * 等于把「我这一棵树恰好多大」写进契约。换来的代价是要多回答一个本地不需要回答的问题：
+ * 这份账还属于当前 HEAD 吗。下面每条拒绝对应一个真实会发生的坏姿势。
+ */
+describe("check-bundle-budget：--raise --from 吃 CI 的账", () => {
+  function reportAt(root: string): any {
+    const res = spawnSync(process.execPath, [SCRIPT, "--report", "--json"], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, NEXT_DIST_DIR: "fixture-dist" },
+    });
+    if (res.status !== 0) throw new Error(`--report 失败：${res.stderr}`);
+    return JSON.parse(res.stdout);
+  }
+
+  /** 报告落在仓库内也不会把「首屏源码」判脏：它不在 BUNDLE_SOURCE_PATHS 里 */
+  function save(root: string, report: any, name = "ci-report.json"): void {
+    write(root, name, JSON.stringify(report, null, 2) + "\n");
+  }
+
+  function repoWithReport(): { root: string; report: any } {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    const report = reportAt(root);
+    save(root, report);
+    return { root, report };
+  }
+
+  it("账干净且有出处：写预算、审计行记 source=report 与报告里的 sha，写完门禁转绿", () => {
+    const { root, report } = repoWithReport();
+    try {
+      // HEAD 往前走一步，但首屏源码一行未动：账仍然属于当前树
+      write(root, "docs/note.md", "unrelated\n");
+      git(root, ["add", "-A"]);
+      git(root, ["commit", "-q", "-m", "docs only"]);
+
+      const { code, out } = runBudget(root, [
+        "--raise",
+        "--from",
+        "ci-report.json",
+        "--reason=CI 干净树实测，本地无干净树",
+      ]);
+      expect(code, out).toBe(0);
+      expect(out).toContain("数字来自 --from 的报告");
+      expect(out).toContain("已写入");
+
+      const budget = JSON.parse(readFileSync(join(root, "scripts/bundle-budget.json"), "utf8"));
+      expect(budget._comment).toBe("夹具说明不许丢");
+      expect(budget.routes["/"]).toBe(report.report.raise[0].proposed);
+      expect(budget.routes["/new"]).toBe(report.report.addMissing[0].proposed);
+      expect(budget.routes["/hot"]).toBe(20_000);
+      const log = budget._raise_log[0];
+      expect(log.source).toBe("report");
+      expect(log.sha).toBe(report.provenance.sha);
+      expect(log.bundler).toBe("turbopack");
+      expect(typeof log.builtAt).toBe("string");
+
+      // 写进去的阈值必须让当前产物不再违规：否则等于写了一版没用的数
+      const gate = runChecker(root);
+      expect(gate.code, JSON.stringify(gate.json)).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("报告自称过期（stale≠false）就拒：无法确认这份数属于报告里的提交", () => {
+    const { root, report } = repoWithReport();
+    try {
+      report.provenance.stale = true;
+      save(root, report);
+      const { code, out } = runBudget(root, ["--raise", "--from", "ci-report.json", "--reason=x"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain("无法确认产物新鲜");
+      expect(readFileSync(join(root, "scripts/bundle-budget.json"), "utf8")).not.toContain("_raise_log");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("报告自称首屏源码脏（bundleDirty≠0）就拒：账本身就不可复现", () => {
+    const { root, report } = repoWithReport();
+    try {
+      report.provenance.bundleDirty = 3;
+      save(root, report);
+      const { code, out } = runBudget(root, ["--raise", "--from", "ci-report.json", "--reason=x"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain("首屏源码脏 3 个");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("报告的提交本仓库不认识 / 不是 HEAD 的祖先：两种都拒，且说清是哪一种", () => {
+    const { root, report } = repoWithReport();
+    try {
+      const unknown = "0".repeat(40);
+      report.provenance.sha = unknown;
+      save(root, report);
+      const notHere = runBudget(root, ["--raise", "--from", "ci-report.json", "--reason=x"]);
+      expect(notHere.code, notHere.out).toBe(2);
+      expect(notHere.out).toContain("不在本仓库里");
+
+      const base = git(root, ["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+      git(root, ["checkout", "-q", "-b", "elsewhere"]);
+      write(root, "docs/other.md", "x\n");
+      git(root, ["add", "-A"]);
+      git(root, ["commit", "-q", "-m", "elsewhere"]);
+      const otherSha = git(root, ["rev-parse", "HEAD"]).trim();
+      git(root, ["checkout", "-q", base]);
+      report.provenance.sha = otherSha;
+      save(root, report);
+      const notAncestor = runBudget(root, ["--raise", "--from", "ci-report.json", "--reason=x"]);
+      expect(notAncestor.code, notAncestor.out).toBe(2);
+      expect(notAncestor.out).toContain("不是 HEAD 的祖先");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("报告之后首屏源码改了（packages/core）：账属于旧树，拒绝并点名文件", () => {
+    const { root } = repoWithReport();
+    try {
+      write(root, "packages/core/src/cjk.ts", "export const x = 1;\n");
+      git(root, ["add", "-A"]);
+      git(root, ["commit", "-q", "-m", "core change"]);
+      const { code, out } = runBudget(root, ["--raise", "--from", "ci-report.json", "--reason=x"]);
+      expect(code, out).toBe(2);
+      expect(out).toContain("首屏源码变了 1 个");
+      expect(out).toContain("packages/core/src/cjk.ts");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("镜像在报告之后追平事实源：不算漂移（overlay 没变，产物照样可复现）", () => {
+    const { root } = makeRepoRoot(RAISE_SPEC, RAISE_BUDGETS);
+    try {
+      write(root, "apps/web-overlay/src/app/page.tsx", "export default function V1() { return null }\n");
+      write(root, "apps/web/src/app/page.tsx", "export default function V1() { return null }\n");
+      git(root, ["add", "-A"]);
+      git(root, ["commit", "-q", "-m", "A"]);
+      // B：只提交事实源，镜像落后——仓库里真实存在的那种欠账
+      write(root, "apps/web-overlay/src/app/page.tsx", "export default function V2() { return null }\n");
+      git(root, ["add", "-A"]);
+      git(root, ["commit", "-q", "-m", "B"]);
+      // CI：vendor-web 把工作区镜像覆写成事实源 → 中性化 → 账里 bundleDirty=0
+      write(root, "apps/web/src/app/page.tsx", "export default function V2() { return null }\n");
+      const future = new Date(Date.now() + 120_000);
+      utimesSync(join(root, "apps/web/fixture-dist/build-manifest.json"), future, future);
+      const report = reportAt(root);
+      expect(report.provenance.bundleDirty).toBe(0);
+      expect(report.provenance.mirrorNeutral).toBe(1);
+      save(root, report);
+      // C：镜像落盘提交 → HEAD 里镜像 == HEAD 的事实源
+      git(root, ["add", "apps/web/src/app/page.tsx"]);
+      git(root, ["commit", "-q", "-m", "C"]);
+
+      const { code, out } = runBudget(root, ["--raise", "--from", "ci-report.json", "--reason=镜像同步不算漂移"]);
+      expect(code, out).toBe(0);
+      expect(out).toContain("已写入");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("本地没有构建产物也能写：数字本来就不是本地产的", () => {
+    const { root } = repoWithReport();
+    try {
+      const res = spawnSync(
+        process.execPath,
+        [SCRIPT, "--raise", "--from", "ci-report.json", "--reason=无本地 build"],
+        { cwd: root, encoding: "utf8", env: { ...process.env, NEXT_DIST_DIR: "no-such-dist" } },
+      );
+      expect(res.status, res.stderr).toBe(0);
+      expect(`${res.stdout}${res.stderr}`).toContain("已写入");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("参数与输入卫生：读不到 / 坏 JSON / 不是报告 / 给 --report / 空值 / 缺 reason，全部退出码 2", () => {
+    const { root } = repoWithReport();
+    try {
+      const before = readFileSync(join(root, "scripts/bundle-budget.json"), "utf8");
+      const missing = runBudget(root, ["--raise", "--from", "nope.json", "--reason=x"]);
+      expect(missing.code, missing.out).toBe(2);
+      expect(missing.out).toContain("读不到 --from 指定的报告");
+
+      write(root, "bad.json", "{");
+      const corrupt = runBudget(root, ["--raise", "--from", "bad.json", "--reason=x"]);
+      expect(corrupt.code, corrupt.out).toBe(2);
+      expect(corrupt.out).toContain("不是合法 JSON");
+
+      write(root, "not-a-report.json", JSON.stringify({ provenance: { sha: "abc1234" } }));
+      const notReport = runBudget(root, ["--raise", "--from", "not-a-report.json", "--reason=x"]);
+      expect(notReport.code, notReport.out).toBe(2);
+      expect(notReport.out).toContain("没有 report.raise/addMissing");
+
+      const wrongMode = runBudget(root, ["--report", "--from", "ci-report.json"]);
+      expect(wrongMode.code, wrongMode.out).toBe(2);
+      expect(wrongMode.out).toContain("只和 --raise 搭配");
+
+      const empty = runBudget(root, ["--raise", "--from", "--reason=x"]);
+      expect(empty.code, empty.out).toBe(2);
+      expect(empty.out).toContain("--from 后面要跟报告路径");
+
+      const noReason = runBudget(root, ["--raise", "--from", "ci-report.json"]);
+      expect(noReason.code, noReason.out).toBe(2);
+      expect(noReason.out).toContain("必须带 --reason");
+
+      expect(readFileSync(join(root, "scripts/bundle-budget.json"), "utf8")).toBe(before);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+

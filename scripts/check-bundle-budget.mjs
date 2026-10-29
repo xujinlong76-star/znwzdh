@@ -69,13 +69,18 @@ function flagValue(name) {
   const next = i >= 0 ? argv[i + 1] : undefined;
   return next !== undefined && !next.startsWith("--") ? next : "";
 }
-const KNOWN_FLAGS = ["--json", "--report", "--raise", "--reason"];
+const KNOWN_FLAGS = ["--json", "--report", "--raise", "--reason", "--from"];
+const fromGiven = hasFlag("--from") || argv.some((a) => a.startsWith("--from="));
 /** 拼错的旗标不能静默当成门禁跑：那会让人以为 `--rai` 生效了，其实写进去的是老口径 */
 for (const a of argv) {
   if (a.startsWith("--") && !KNOWN_FLAGS.some((f) => a === f || a.startsWith(f + "="))) {
-    console.error(`[bundle] 不认识的参数：${a}（可用：--json / --report / --raise / --reason=）`);
+    console.error(`[bundle] 不认识的参数：${a}（可用：--json / --report / --raise / --reason= / --from=）`);
     process.exit(2);
   }
+}
+if (fromGiven && !hasFlag("--raise")) {
+  console.error("[bundle] --from 只和 --raise 搭配：它提供的是要写进预算的数字，报告模式请直接跑 --report");
+  process.exit(2);
 }
 
 
@@ -244,6 +249,30 @@ const FACT_PREFIX = "apps/web-overlay/src/";
  * 相等 → 这份脏不携带任何信息，产物仍可从提交完全复现；不等（含 HEAD 里根本没有事实源，
  * 即新文件直接落在 apps/web/src）→ 继续拦。
  */
+/** 批量取 HEAD 里的 blob id；不存在的路径那一项为 null（不猜、也不让整批失败） */
+function headBlobs(specs) {
+  if (specs.length === 0) return [];
+  const out = gitIn(["cat-file", "--batch-check=%(objectname) %(objecttype)"], specs.join("\n") + "\n");
+  const lines = out === null ? [] : out.split("\n").filter((l) => l.trim() !== "");
+  return specs.map((_, i) => {
+    const [oid, type] = (lines[i] ?? "").split(" ");
+    return type === "blob" ? oid : null;
+  });
+}
+
+/** 这些镜像在 HEAD 里是否已与事实源同步：--from 判断「账是否还属于当前树」时要用 */
+function mirrorsInSyncAtHead(paths) {
+  const mirrors = paths.filter((p) => p.startsWith(MIRROR_PREFIX));
+  if (mirrors.length === 0) return new Set();
+  const at = headBlobs(mirrors.map((p) => "HEAD:" + p));
+  const fact = headBlobs(mirrors.map((p) => "HEAD:" + FACT_PREFIX + p.slice(MIRROR_PREFIX.length)));
+  const sync = new Set();
+  mirrors.forEach((p, i) => {
+    if (at[i] !== null && at[i] === fact[i]) sync.add(p);
+  });
+  return sync;
+}
+
 function partitionGeneratedMirrors(paths) {
   const others = paths.filter((p) => !p.startsWith(MIRROR_PREFIX));
   const mirrors = paths.filter((p) => p.startsWith(MIRROR_PREFIX));
@@ -251,14 +280,11 @@ function partitionGeneratedMirrors(paths) {
   const wt = gitIn(["hash-object", "--stdin-paths"], mirrors.join("\n") + "\n");
   const wtLines = wt === null ? [] : wt.split("\n").filter((l) => l.trim() !== "");
   if (wtLines.length !== mirrors.length) return { neutral: new Set(), handEdited: [...others, ...mirrors] };
-  const specs = mirrors.map((p) => "HEAD:" + FACT_PREFIX + p.slice(MIRROR_PREFIX.length));
-  const head = gitIn(["cat-file", "--batch-check=%(objectname) %(objecttype)"], specs.join("\n") + "\n");
-  const headLines = head === null ? [] : head.split("\n").filter((l) => l.trim() !== "");
+  const fact = headBlobs(mirrors.map((p) => "HEAD:" + FACT_PREFIX + p.slice(MIRROR_PREFIX.length)));
   const neutral = new Set();
   const unmatched = [];
   mirrors.forEach((p, i) => {
-    const [oid, type] = (headLines[i] ?? "").split(" ");
-    if (type === "blob" && oid === wtLines[i].trim()) neutral.add(p);
+    if (fact[i] !== null && fact[i] === wtLines[i].trim()) neutral.add(p);
     else unmatched.push(p);
   });
   return { neutral, handEdited: [...others, ...unmatched] };
@@ -388,13 +414,21 @@ function diffBudgets(rows, budgets) {
 
 // ---------------------------------------------------------------------------
 
+const jsonMode = hasFlag("--json");
+const reportMode = hasFlag("--report");
+const raiseMode = hasFlag("--raise");
+
 const collected = collectTurbopack() ?? collectWebpack();
 if (!collected) {
-  console.error(`[bundle] 找不到构建产物：${join(appDir, "build-manifest.json")}`);
-  console.error("[bundle] 先跑 `NEXT_DIST_DIR=" + distDir + " pnpm --filter navsphere build`");
-  process.exit(2);
+  // --raise --from 要的数字是别处（CI）产的：本地没有 build 也得能定基线，
+  // 否则「干净的树只存在于 CI」这条前提就和「先本地 build」自相矛盾了
+  if (!(raiseMode && hasFlag("--from"))) {
+    console.error(`[bundle] 找不到构建产物：${join(appDir, "build-manifest.json")}`);
+    console.error("[bundle] 先跑 `NEXT_DIST_DIR=" + distDir + " pnpm --filter navsphere build`");
+    process.exit(2);
+  }
 }
-const rows = collected.rows;
+const rows = collected?.rows ?? [];
 rows.sort((a, b) => b.bytes - a.bytes);
 
 const violations = [];
@@ -403,9 +437,6 @@ for (const r of rows) {
   if (r.bytes > limit) violations.push({ ...r, limit });
 }
 
-const jsonMode = hasFlag("--json");
-const reportMode = hasFlag("--report");
-const raiseMode = hasFlag("--raise");
 const iso = (ms) => {
   if (ms === null) return "（未知）";
   // 刻意用本地时间：这行要和 `ls -l`、资源管理器里的产物时间对得上，
@@ -418,7 +449,7 @@ const iso = (ms) => {
 /** 可追溯性一行 + 过期判定；两条模式都要打印，报告不报出处就等于没跑 */
 function provenanceLines() {
   const prov = treeProvenance();
-  const built = builtAtMs(collected.bundler);
+  const built = collected === null ? null : builtAtMs(collected.bundler);
   const source = newestSourceMs();
   const stale = built !== null && source > built;
   const dirtyText =
@@ -520,6 +551,62 @@ function runReport(meta) {
  * 脏树判据只看 BUNDLE_SOURCE_PATHS——全仓计数在多会话工作区里永远非零，
  * 那样这条前置会因为无法达成而被整体绕过，反而丢掉它真正要守的两样东西。
  */
+/**
+ * --from：吃一份「别处已经算好的账」（CI artifact 里的 bundle-budget-report.json）。
+ * 为什么需要：干净的树只存在于 CI——本地工作区常年有别人的未提交改动（实测 300+ 个脏文件），
+ * 拿本地 .next 定基线，等于把「我这一棵树恰好多大」写进契约。
+ *
+ * 换来的代价是要多回答一个本地路径不需要回答的问题：**这份账还属于当前 HEAD 吗**。
+ * 三条判据缺一即拒：报告自称干净且不过期（stale=false 且 bundleDirty=0）、报告的提交是本仓库
+ * HEAD 的祖先、从那枚提交到 HEAD 之间「能改变首屏」的源码一行未动。已与事实源同步的
+ * apps/web 镜像是例外——它们的权威在 overlay，overlay 真变了会自己出现在 diff 里。
+ */
+function reportSource(fromPath, refuse) {
+  let raw;
+  try {
+    raw = readFileSync(fromPath, "utf8");
+  } catch {
+    refuse(`读不到 --from 指定的报告：${fromPath}`);
+  }
+  let r;
+  try {
+    r = JSON.parse(raw);
+  } catch {
+    refuse(`--from 不是合法 JSON：${fromPath}`);
+  }
+  const d = r?.report;
+  if (!d || !Array.isArray(d.raise) || !Array.isArray(d.addMissing)) {
+    refuse("--from 里没有 report.raise/addMissing：这不是 `--report --json` 的输出");
+  }
+  const p = r.provenance ?? {};
+  if (!p.sha) refuse("--from 的报告没有 provenance.sha：无法定位它是哪棵树产的");
+  if (p.stale !== false) refuse(`--from 的报告无法确认产物新鲜（stale=${String(p.stale)}）：先让 CI 重跑`);
+  if (p.bundleDirty !== 0) refuse(`--from 的报告首屏源码脏 ${String(p.bundleDirty)} 个：不可用作基线`);
+  if (gitOut(["cat-file", "-e", `${p.sha}^{commit}`]) === null) refuse(`--from 的提交 ${p.sha} 不在本仓库里`);
+  if (gitOut(["merge-base", "--is-ancestor", p.sha, "HEAD"]) === null) {
+    refuse(`--from 的提交 ${p.sha} 不是 HEAD 的祖先：这份账来自另一条历史`);
+  }
+  const changed = gitOut(["diff", "--name-only", p.sha, "HEAD", "--", ...BUNDLE_SOURCE_PATHS]);
+  if (changed === null) refuse(`无法比较 ${p.sha}..HEAD 的首屏源码差异`);
+  const all = changed.split("\n").map((s) => s.trim()).filter(Boolean);
+  const synced = mirrorsInSyncAtHead(all);
+  const drift = all.filter((x) => !synced.has(x));
+  if (drift.length > 0) {
+    refuse(
+      `从 ${p.sha} 到现在（HEAD）首屏源码变了 ${drift.length} 个（${drift.slice(0, 8).join("、")}${
+        drift.length > 8 ? " 等" : ""
+      }）：这份账属于旧树，先让 CI 对当前 HEAD 出账`,
+    );
+  }
+  return {
+    kind: "report",
+    sha: p.sha,
+    builtAt: typeof p.builtAt === "number" ? p.builtAt : null,
+    bundler: r.bundler ?? "unknown",
+    diff: d,
+  };
+}
+
 function runRaise(meta) {
   const refuse = (msg) => {
     console.error(`[bundle] --raise 拒绝写入：${msg}`);
@@ -527,21 +614,38 @@ function runRaise(meta) {
   };
   const reason = flagValue("--reason");
   if (reason === "") refuse('必须带 --reason="..."：没写明原因的上调一律不认');
-  if (meta.prov.sha === null) refuse("当前目录不在 git 仓库里，无法把这份数钉到某个提交");
-  if (meta.prov.bundleDirty === null) refuse("git status 查询失败，无法确认首屏源码干净");
-  if (meta.prov.bundleDirty > 0) {
-    const shown = meta.prov.bundleDirtyPaths.slice(0, 8).join("、");
-    refuse(
-      `首屏源码有 ${meta.prov.bundleDirty} 个未提交改动（${shown}${
-        meta.prov.bundleDirtyPaths.length > 8 ? " 等" : ""
-      }），这份产物不属于提交 ${meta.prov.sha}。` +
-        "先提交这些改动、再重新 build，然后才谈得上可复现的基线",
-    );
+  const fromPath = flagValue("--from");
+  if (fromGiven && fromPath === "") {
+    refuse("--from 后面要跟报告路径（CI artifact 里的 bundle-budget-report.json），空值不等于没用");
   }
-  if (meta.built === null) refuse("拿不到构建产物的时间戳，无法判断它是否过期");
-  if (meta.stale) refuse(`构建产物比源码旧（产物 ${iso(meta.built)}，最新源文件 ${iso(meta.source)}）：先重跑 build`);
+  let src;
+  if (fromPath !== "") {
+    src = reportSource(fromPath, refuse);
+    console.log(`[bundle] 数字来自 --from 的报告：提交 ${src.sha} · 构建时间 ${iso(src.builtAt)}`);
+  } else {
+    if (meta.prov.sha === null) refuse("当前目录不在 git 仓库里，无法把这份数钉到某个提交");
+    if (meta.prov.bundleDirty === null) refuse("git status 查询失败，无法确认首屏源码干净");
+    if (meta.prov.bundleDirty > 0) {
+      const shown = meta.prov.bundleDirtyPaths.slice(0, 8).join("、");
+      refuse(
+        `首屏源码有 ${meta.prov.bundleDirty} 个未提交改动（${shown}${
+          meta.prov.bundleDirtyPaths.length > 8 ? " 等" : ""
+        }），这份产物不属于提交 ${meta.prov.sha}。` +
+          "先提交这些改动、再重新 build，然后才谈得上可复现的基线",
+      );
+    }
+    if (meta.built === null) refuse("拿不到构建产物的时间戳，无法判断它是否过期");
+    if (meta.stale) refuse(`构建产物比源码旧（产物 ${iso(meta.built)}，最新源文件 ${iso(meta.source)}）：先重跑 build`);
+    src = {
+      kind: "local",
+      sha: meta.prov.sha,
+      builtAt: meta.built,
+      bundler: collected.bundler,
+      diff: diffBudgets(rows, budgets),
+    };
+  }
 
-  const d = diffBudgets(rows, budgets);
+  const d = src.diff;
   if (d.raise.length === 0 && d.addMissing.length === 0) {
     console.log("[bundle] 没有需要上调或补条目的路由，预算文件未改动");
     return;
@@ -553,11 +657,12 @@ function runRaise(meta) {
   next._raise_log = [
     {
       at: stamp,
-      sha: meta.prov.sha,
+      sha: src.sha,
+      source: src.kind,
       distDir,
-      bundler: collected.bundler,
+      bundler: src.bundler,
       // 审计记录存 UTC：展示用本地时间（和 ls 对得上），落档要无歧义
-      builtAt: meta.built === null ? null : new Date(meta.built).toISOString(),
+      builtAt: src.builtAt === null ? null : new Date(src.builtAt).toISOString(),
       reason,
       changes: changes.map((c) => ({ route: c.route, from: c.limit, to: c.proposed, measured: c.bytes })),
     },
@@ -576,7 +681,7 @@ function runRaise(meta) {
   }
   console.log(`[bundle] 已写入 scripts/bundle-budget.json（上调 ${d.raise.length} 条 · 补条目 ${d.addMissing.length} 条）`);
   for (const c of changes) console.log(`  - ${c.route}: ${kb(c.limit)} → ${kb(c.proposed)}（实测 ${kb(c.bytes)}）`);
-  console.log(`  审计行 _raise_log[0]：@${meta.prov.sha} · reason="${reason}" · 构建时间 ${iso(meta.built)}`);
+  console.log(`  审计行 _raise_log[0]：@${src.sha}（${src.kind === "report" ? "--from 报告" : "本地产物"}）· reason="${reason}" · 构建时间 ${iso(src.builtAt)}`);
   console.log("[bundle] 这条改动要单独提交（不与代码改动混提），CI 会用同一份文件复测");
 }
 
